@@ -7,8 +7,8 @@ import { RemoteShare } from './remote-share.tsx';
 import { strong } from './service-card.tsx';
 
 /**
- * 远端算力页（原型 designs/cuccut/app/page-shell.jsx `RemotePage`）：标题右侧两个页签，默认落在「共享这台 Mac」——
- * 这一页住在「服务」里，先回答开没开。页签只存在页面里（路由没有页签段）。
+ * Remote compute page (prototype designs/cuccut/app/page-shell.jsx `RemotePage`): two tabs on the right of the title, defaulting to “Share this Mac”.
+ * This page lives under “Services”, so it first answers whether sharing is on. The tabs exist only in the page (the route has no tab segment).
  */
 export function RemotePage() {
   const [tab, setTab] = useState<'share' | 'nodes'>('share');

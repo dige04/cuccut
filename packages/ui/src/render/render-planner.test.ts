@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { VideoSnapshot } from '@cuccut/protocol';
 import { PlanFailure, RenderPlanner } from './render-planner.ts';
 
-// 编出来的 WASM 与原生 Rust 对同一个夹具视频给出逐字节相同的计划（金标准由 `cargo test -p render-graph` 维护）。
+// The WASM compiled from the same fixture video gives a plan byte-identical to native Rust (the gold standard is maintained by `cargo test -p render-graph`).
 const wasm = fileURLToPath(new URL('./generated/preview.wasm', import.meta.url));
 const fixtures = fileURLToPath(new URL('../../../../crates/render-graph/tests/fixtures/', import.meta.url));
 const fonts = fileURLToPath(new URL('../../../../crates/render-raster/assets/fonts/', import.meta.url));
@@ -101,7 +101,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(files[0]).toBe('NotoSansSC-Variable.ttf');
     planner.addFonts([new Uint8Array(readFileSync(`${fonts}${files[0]}`))]);
 
-    // 横版视频层送一张纯红的画面。
+    // A landscape video layer is fed a solid red picture.
     const red = new Uint8Array(64 * 36 * 4).map((_, index) => (index % 4 === 0 || index % 4 === 3 ? 255 : 0));
     planner.setPicture('item_land_a', red, 64, 36);
     const rendered = planner.render(1.5, 320, 180);
@@ -117,14 +117,14 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(opaque).toBe(true);
     expect(reds).toBeGreaterThan(320 * 180 * 0.1);
 
-    // 画面的字节数不对是错误。
+    // A picture with the wrong byte count is an error.
     expect(() => planner.setPicture('item_land_a', red, 10, 10)).toThrow(expect.objectContaining({ code: 'INVALID_PICTURE' }));
   });
 
   it('素材频谱在临时实例里算；声波缺哪份报哪份，送进去之后照着声音画', async () => {
     const { planner, video } = await setup();
     planner.addFonts([new Uint8Array(readFileSync(`${fonts}${planner.fontFiles()[0]}`))]);
-    // 合成的声音：一秒 440 Hz。立体声取两声道的平均，与单声道送平均值相同；同一份样本两次算出同样的字节。
+    // Synthesized audio: one second of 440 Hz. Stereo takes the average of the two channels, which is the same as feeding the averaged mono signal; the same samples twice give the same bytes.
     const left = Float32Array.from({ length: 48_000 }, (_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48_000));
     const right = left.map((v) => v * 0.5);
     const mono = left.map((v, i) => (v + right[i]!) / 2);
@@ -192,10 +192,10 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(planner.addLocalFont(font, new Uint8Array(readFileSync(probeFont)))).toBe(true);
     expect(planner.addLocalFont(font, new Uint8Array(readFileSync(probeFont)))).toBe(false);
     expect(planner.render(1, 160, 90).fonts).toEqual([]);
-    // 先分出去的缩略图实例也收到了（不用重新要）。
+    // A thumbnail instance split off earlier also receives it (no need to ask again).
     expect(early.render(1, 160, 90).fonts).toEqual([]);
     expect(loads).toBe(0);
-    // 之后分的实例按 `load` 重新要一次。
+    // An instance split off later asks for it again through `load`.
     const late = await planner.fork();
     late.setVideo(withTitle);
     expect(late.render(1, 160, 90).fonts).toEqual([]);
@@ -206,7 +206,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     const { planner } = await setup();
     const style = { fontSize: 24, fontWeight: 'bold', lineHeight: 1.2, backgroundColor: '#000000CC', backgroundPadding: 14 };
     const canvas = { width: 1920, height: 1080 };
-    // 没注入字体时量不了。
+    // Text cannot be measured without fonts injected.
     expect(() => planner.measureText('输入文字', style, null, canvas)).toThrow(expect.objectContaining({ code: 'INVALID_PARAMS' }));
     planner.addFonts(planner.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     const one = planner.measureText('输入文字', style, null, canvas);
@@ -218,8 +218,8 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
 });
 
 /**
- * 一个手写的小模块，只有量文字与送字体用到的导出：输入超过 100 字节时 `bc_measure_text` 陷阱（`unreachable`），否则答一个固定的框。
- * 陷阱之后的重新载入不依赖编出来的预览 WASM。
+ * A hand-written small module, with only the exports used for measuring text and feeding fonts. When input exceeds 100 bytes, the `bc_measure_text` trap (`unreachable`) fires; otherwise it answers a fixed box.
+ * Reloading after a trap does not depend on the compiled preview WASM.
  */
 function trappingModule(): WebAssembly.Module {
   const answer = [...new TextEncoder().encode('{"width":12,"height":34}')];
@@ -242,7 +242,7 @@ function trappingModule(): WebAssembly.Module {
   return new WebAssembly.Module(
     new Uint8Array([
       ...[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
-      // 类型：(i32)→i32、(i32 i32)→()、()→i32、(i32 i32)→i32
+      // Types: (i32)→i32, (i32 i32)→(), ()→i32, (i32 i32)→i32
       ...section(
         1,
         vec([
@@ -258,13 +258,13 @@ function trappingModule(): WebAssembly.Module {
       ...section(
         10,
         vec([
-          body([0x41, ...uleb(1024), 0x0b]), // bc_alloc：固定在 1024
+          body([0x41, ...uleb(1024), 0x0b]), // bc_alloc: fixed at 1024
           body([0x0b]), // bc_free
-          body([0x41, 0, 0x0b]), // bc_output_ptr：答案在 0
+          body([0x41, 0, 0x0b]), // bc_output_ptr: the answer is at 0
           body([0x41, answer.length, 0x0b]), // bc_output_len
-          // bc_measure_text：len > 100 时 unreachable，否则返回 0
+          // bc_measure_text: unreachable when len > 100, otherwise returns 0
           body([0x20, 1, 0x41, 0xe4, 0x00, 0x4a, 0x04, 0x40, 0x00, 0x0b, 0x41, 0, 0x0b]),
-          body([0x41, 0, 0x0b]), // bc_add_font：收下
+          body([0x41, 0, 0x0b]), // bc_add_font: accepts it
         ]),
       ),
       ...section(11, vec([[0, 0x41, 0, 0x0b, ...uleb(answer.length), ...answer]])),
@@ -283,12 +283,12 @@ describe('帧计划器的重新载入', () => {
     planner.onRecovered = onRecovered;
     const long = '字'.repeat(60);
     expect(() => planner.measureText(long, {}, null, canvas)).toThrow(expect.objectContaining({ code: 'PLANNER_CRASHED' }));
-    // 重新载入期间的调用照样抛 PLANNER_CRASHED。
+    // Calls made during reloading still throw PLANNER_CRASHED.
     expect(() => planner.measureText('字', {}, null, canvas)).toThrow(expect.objectContaining({ code: 'PLANNER_CRASHED' }));
     let ready = false;
     const waiting = planner.recovered().then(() => {
       ready = true;
-      // 兑现在 `onRecovered` 之后才轮到等它的人。
+      // Those waiting are settled only after `onRecovered`.
       expect(onRecovered).toHaveBeenCalledTimes(1);
     });
     expect(ready).toBe(false);
@@ -319,7 +319,7 @@ describe('帧计划器的重新载入', () => {
     const recovered = planner.recovered();
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(loads).toEqual(['a', 'gone']);
-    // 重新载入期间送来的只记下，一并要回来。
+    // Anything sent during reloading is only recorded, and requested back together with the reload.
     expect(planner.addLocalFont(font('b'), new Uint8Array([1]))).toBe(true);
     expect(onRecovered).not.toHaveBeenCalled();
     release();

@@ -1,14 +1,12 @@
-//! HTDemucs-FT 真权重分离（移植自 v2 的 `htdemucs_smoke`，另加一段语音 + 合成低音的混音）：同一组测试对 MLX（`mlx::`，
-//! Apple Silicon）与 candle（`candle::`，开 `backend-candle`；默认设备，CPU 或 CUDA）各跑一遍；两者都编进来时再比一次
-//! 两个后端的人声输出（`parity::`）。
+//! HTDemucs-FT real-weight separation (ported from v2's `htdemucs_smoke`, plus a speech-and-synthetic-bass mix): the same set of tests runs against MLX (`mlx::`, Apple Silicon) and against candle (`candle::`, with `backend-candle` enabled; default device, CPU or CUDA). When both are compiled in, the vocal outputs of the two backends are compared once more (`parity::`).
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --features backend-candle --test separate_htdemucs -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! 权重不在（没设 `CUCCUT_TEST_MODELS_DIR` 或没有 `.ccut-manifest.json`）时打印原因后跳过。模型目录只读。
-//! `CUCCUT_REQUIRE_CUDA=1` 时 candle 必须拿到 CUDA，不许静默回退 CPU（同 v2 的 `CCUT_REQUIRE_CUDA`）。
+//! If the weights are absent (no `CUCCUT_TEST_MODELS_DIR` or no `.ccut-manifest.json`), the reason is printed and the test is skipped. The model directory is read-only.
+//! With `CUCCUT_REQUIRE_CUDA=1`, candle must get CUDA and must not silently fall back to CPU (same as v2's `CCUT_REQUIRE_CUDA`).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -25,7 +23,7 @@ use serde_json::Value;
 
 const REPO: &str = "aufklarer/HTDemucs-FT-MLX";
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验文件清单；权重不在时给 `None` 并打印原因。
+/// Builds and validates the file manifest from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified() -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
@@ -98,7 +96,7 @@ fn synth(len: usize, rate: u32) -> StereoAudio {
     }
 }
 
-/// 皮尔逊相关系数。
+/// Pearson correlation coefficient.
 fn correlation(a: &[f32], b: &[f32]) -> f64 {
     let n = a.len().min(b.len());
     let mean = |x: &[f32]| x[..n].iter().map(|v| f64::from(*v)).sum::<f64>() / n as f64;
@@ -113,20 +111,20 @@ fn correlation(a: &[f32], b: &[f32]) -> f64 {
     cov / (va.sqrt() * vb.sqrt()).max(1e-12)
 }
 
-/// 同一组测试对一个后端的加载函数展开一遍。
+/// Expands the same set of tests once for one backend's loading function.
 macro_rules! separation_tests {
     ($backend:ident, $load:path) => {
         mod $backend {
             use super::*;
 
-            /// v2 的冒烟测试：48 kHz 输入走重采样，四个声部等长、有限，之和大致还原混音；第一次回调返回 `false` 必须报错。
+            /// v2 smoke test: 48 kHz input goes through resampling; the four stems are equal length and finite, and their sum roughly reconstructs the mix; the first callback returning `false` must produce an error.
             #[test]
             #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
             fn separates_short_clip_and_reconstructs_mix() {
                 let Some(mut separator) = $load() else { return };
                 assert_eq!(separator.sample_rate(), 44_100);
 
-                // 2 秒 48 kHz 输入：走重采样路径，输出应是 44.1 kHz。
+                // 2-second 48 kHz input: goes through the resampling path, and the output should be 44.1 kHz.
                 let mix = synth(96_000, 48_000);
                 let mut windows_seen = 0;
                 let stems = separator
@@ -146,7 +144,7 @@ macro_rules! separation_tests {
                     assert!(stem.left.iter().all(|v| v.is_finite()));
                 }
 
-                // 四个声部之和应大致还原混音（各子模型独立预测，允许一定残差）。
+                // The sum of the four stems should roughly reconstruct the mix (each sub-model predicts independently, so some residual is allowed).
                 let resampled_left = resample(&mix.left, 48_000, 44_100);
                 let sum: Vec<f32> = (0..expected_len)
                     .map(|i| stems.vocals.left[i] + stems.drums.left[i] + stems.bass.left[i] + stems.other.left[i])
@@ -155,12 +153,12 @@ macro_rules! separation_tests {
                 let residual: f32 = sum.iter().zip(&resampled_left).map(|(a, b)| (a - b) * (a - b)).sum();
                 assert!(residual / energy < 0.5, "残差能量比 {}", residual / energy);
 
-                // 取消：第一次回调返回 false 必须报错。
+                // Cancellation: the first callback returning false must produce an error.
                 let err = separator.separate(&mix, &mut |_| false).expect_err("取消应报错");
                 assert!(err.to_string().contains("取消"), "{err}");
             }
 
-            /// 一段英文语音（16 kHz 夹具，升到 44.1 kHz）叠一条合成低音（82 Hz + 二次谐波）：人声该跟语音走，背景该跟低音走。
+            /// An English speech clip (16 kHz fixture, upsampled to 44.1 kHz) overlaid with a synthetic bass (82 Hz + second harmonic): the vocals should follow the speech, and the background should follow the bass.
             #[test]
             #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
             fn splits_speech_from_a_synthetic_bass_line() {
@@ -198,8 +196,7 @@ macro_rules! separation_tests {
                 assert!(bs.abs() < 0.1, "背景里不该有语音：{bs:.3}");
             }
 
-            /// 自检样本（同一段 16 kHz 英文语音，单声道升到 44.1 kHz）只有人声：人声的 RMS 至少是背景的 2 倍——
-            /// 与 `models.test` 对分离模型包的判定同一个阈值（Model Worker 协议规范 §4.3）。
+            /// The self-check sample (the same 16 kHz English speech, mono, upsampled to 44.1 kHz) contains only vocals: vocal RMS must be at least 2× the background. This is the same threshold `models.test` uses to judge separation model packs (Model Worker protocol spec §4.3).
             #[test]
             #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
             fn pure_speech_lands_in_vocals() {
@@ -234,7 +231,7 @@ separation_tests!(mlx, load_mlx);
 #[cfg(feature = "backend-candle")]
 separation_tests!(candle, load_candle);
 
-/// 信号失真比（dB）：`estimate` 相对 `reference` 的误差能量。
+/// Signal-to-distortion ratio (dB): the error energy of `estimate` relative to `reference`.
 #[cfg(all(feature = "backend-candle", feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 fn sdr(reference: &[f32], estimate: &[f32]) -> f64 {
     let n = reference.len().min(estimate.len());
@@ -247,8 +244,7 @@ fn sdr(reference: &[f32], estimate: &[f32]) -> f64 {
     10.0 * (signal / noise.max(1e-20)).log10()
 }
 
-/// 两个后端读同一份权重、算同一张图：同一段混音的人声与背景应几乎一样（candle 的 CPU f32 对 MLX 的 Metal f32，
-/// 只差浮点累加次序）。
+/// Both backends read the same weights and compute the same graph: the vocals and background of the same mix should be nearly identical (candle's CPU f32 versus MLX's Metal f32 differ only in floating-point accumulation order).
 #[cfg(all(feature = "backend-candle", feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]

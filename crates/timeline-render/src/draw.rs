@@ -1,13 +1,8 @@
-//! Timeline 元素的**纯几何 → DrawOp 组装**。
+//! **Pure geometry → DrawOp assembly** for Timeline elements.
 //!
-//! 这里刻意只依赖三样东西：`render_raster::drawop` 的指令类型、
-//! `motion::preset_registry` 的目录型配方、`timeline` 的契约与几何。
-//! 没有文件系统、没有 ffmpeg、没有 `apps/cli` 的任何 I/O 类型——P0 写下第一行
-//! 时就写在可下沉的位置，P6a 原样搬进本 crate（`git mv`，函数体一字未改）。
+//! This deliberately depends on only three things: the instruction types of `render_raster::drawop`, the catalog-style recipes of `motion::preset_registry`, and the contract and geometry of `timeline`. It has no filesystem, no ffmpeg, and no I/O types from `apps/cli`. The code was placed where it can move down from the first line written in P0, and in P6a it was moved into this crate unchanged (`git mv`, function bodies not touched by a single character).
 //!
-//! 坐标约定：路径点是**画布绝对像素**，`tf` 只承载"绕元素盒中心的旋转 / 镜像 /
-//! 动画位姿"。元素盒本身由 `timeline::static_box` 给出——与舞台选中框、
-//! 命中框同一个函数，所以"环画在一处、像素画在另一处"不可能再发生。
+//! Coordinate convention: path points are **absolute canvas pixels**. `tf` carries only the "rotation / mirror / animation pose around the element box center". The element box itself comes from `timeline::static_box`, the same function that gives the stage selection box and hit box, so the selection outline drawn in one place and the pixels drawn in another can no longer happen.
 
 use motion::preset_registry::{CatalogueRecipe, ShapeHead, ShapeParam, ShapePath};
 use render_raster::drawop::{Color4, DrawOp, FrameBuilder, Mat6, PaintData, PathData, PathSeg};
@@ -16,7 +11,7 @@ use timeline::schema::{
     DrawBrush, DrawProps, Place, PlaceholderProps, PlaceholderVariant, ShapeProps, StickerProps,
 };
 
-/// 元素盒（画布像素，左上原点）。
+/// Element box (canvas pixels, top-left origin).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ElementBox {
     pub x: f64,
@@ -31,11 +26,10 @@ impl ElementBox {
     }
 }
 
-/// 元素的姿态输入。字段与 `timeline::AnimationPose` 的同名通道一一对应，
-/// 单独立一个结构是为了让本模块不依赖动画求值——下沉时少一条边。
+/// The element's pose input. Fields map one-to-one to the same-named channels of `timeline::AnimationPose`. It is a separate struct so this module does not depend on animation evaluation, which leaves one fewer edge when it moves down.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ElementPose {
-    /// 画布短边比例的平移（与媒体元素同口径）。
+    /// Translation as a ratio of the canvas short edge (same basis as media elements).
     pub dx: f64,
     pub dy: f64,
     pub scale_x: f64,
@@ -44,7 +38,7 @@ pub struct ElementPose {
 }
 
 impl ElementPose {
-    /// 无动画的元素。host 的默认入参。
+    /// An element with no animation. The host's default input.
     pub const IDENTITY: Self = Self {
         dx: 0.0,
         dy: 0.0,
@@ -54,10 +48,9 @@ impl ElementPose {
     };
 }
 
-/// 绕元素盒中心的仿射：镜像 → 姿态缩放 → 旋转 → 平移。
+/// Affine transform around the element box center: mirror → pose scale → rotation → translation.
 ///
-/// `place.scale` **不进这里**——它已经烘在元素盒尺寸里（`static_box`），
-/// 再乘一次就是双重缩放，舞台上的选中框会和像素对不上。
+/// `place.scale` **does not go here**. It is already baked into the element box size (`static_box`), and multiplying it again would be double scaling. The stage selection box would then no longer match the pixels.
 pub fn element_transform(
     place: &Place,
     pose: &ElementPose,
@@ -71,8 +64,7 @@ pub fn element_transform(
     let scale_y = flip_y * pose.scale_y;
     let radians = (place.rot.unwrap_or(0.0) + pose.rotation).to_radians();
     let (sin, cos) = radians.sin_cos();
-    // 复合顺序：T(-c) · S · R · T(c + d)，与 `render_media_element` 的
-    // `from_translate(...).post_scale(...).post_rotate(...).post_translate(...)` 同序。
+    // Composition order: T(-c) · S · R · T(c + d), the same order as `from_translate(...).post_scale(...).post_rotate(...).post_translate(...)` in `render_media_element`.
     let a = scale_x * cos;
     let b = scale_x * sin;
     let c = -scale_y * sin;
@@ -82,8 +74,7 @@ pub fn element_transform(
     [a as f32, b as f32, c as f32, d as f32, tx as f32, ty as f32]
 }
 
-/// `#RRGGBB` / `#RRGGBBAA` → 非预乘 RGBA 0..1。格式已在 schema 层收口
-/// （`validate_color`），这里的 `None` 只在契约被绕过时出现。
+/// `#RRGGBB` / `#RRGGBBAA` → non-premultiplied RGBA 0..1. The format is already enforced at the schema layer (`validate_color`), so the `None` here appears only when the contract has been bypassed.
 pub fn parse_color(color: &str, opacity: f64) -> Option<Color4> {
     let hex = color.strip_prefix('#')?;
     if !matches!(hex.len(), 6 | 8) {
@@ -103,16 +94,14 @@ pub fn parse_color(color: &str, opacity: f64) -> Option<Color4> {
     ])
 }
 
-/// 描边宽度换算：`ShapeProps.strokeWidth` 是**参考短边 540 上的像素**，
-/// 与 `lower_element_effects` 的长度口径一致，4K 导出不会退化成发丝线。
+/// Stroke width conversion: `ShapeProps.strokeWidth` is **pixels on the reference short edge of 540**. It matches the length basis of `lower_element_effects`, so 4K export does not degrade into hairlines.
 fn stroke_pixels(props: &ShapeProps, short_edge: f64) -> f64 {
     props.stroke_width() * short_edge / REFERENCE_SHORT_EDGE
 }
 
-/// 把一个 shape 元素画成 `FillRect` / `FillPath` / `StrokePath`。
+/// Draws a shape element as `FillRect` / `FillPath` / `StrokePath`.
 ///
-/// 形状定义来自目录型配方（ADR-E05），颜色与端点来自 `ShapeProps`；
-/// 配方声明不支持的参数一律不读（`params` 是封闭词汇表）。
+/// The shape definition comes from catalog-style recipes (ADR-E05). Colors and endpoints come from `ShapeProps`. Parameters the recipe declares unsupported are never read, because `params` is a closed vocabulary.
 pub fn push_shape_ops(
     builder: &mut FrameBuilder,
     recipe: &CatalogueRecipe,
@@ -147,8 +136,7 @@ pub fn push_shape_ops(
             };
             let uniform = radius.iter().all(|value| *value == radius[0]);
             if uniform {
-                // 四角相同就走 `FillRect`——它是圆角矩形的原生指令，
-                // 拆成 path 只会让指纹多一条 path 侧表。
+                // When all four corners are the same, use `FillRect`. It is the native instruction for rounded rectangles, and splitting it into a path would only add a path side table to the fingerprint.
                 if let Some(color) = fill {
                     builder.push(DrawOp::FillRect {
                         x: bbox.x as f32,
@@ -202,8 +190,7 @@ pub fn push_shape_ops(
             let [x1, y1, x2, y2] = props.endpoints();
             let start = (bbox.x + bbox.w * x1 / 100.0, bbox.y + bbox.h * y1 / 100.0);
             let end = (bbox.x + bbox.w * x2 / 100.0, bbox.y + bbox.h * y2 / 100.0);
-            // 线段类没有填充：`stroke` 缺省时退回 `fill`，让"只设了一个颜色"
-            // 的元素仍然画得出来。
+            // Line-type shapes have no fill. When `stroke` is absent, fall back to `fill`, so an element where only one color is set can still be drawn.
             let color = stroke
                 .or(fill)
                 .or_else(|| parse_color("#ffffff", opacity))
@@ -260,23 +247,16 @@ pub fn push_shape_ops(
     builder.frame.ops.len() - before
 }
 
-/// 把一份模板贴纸画成一叠 `FillPath` / `StrokePath`。
+/// Draws a template sticker as a stack of `FillPath` / `StrokePath`.
 ///
-/// **为什么是 path 直出而不是把 SVG 交给 resvg**（设计 §10 P7 的二选一）：
+/// **Why paths are emitted directly instead of handing the SVG to resvg** (one of the two options in design §10 P7):
 ///
-/// 1. **resvg 在 `ccut-render/media` 后面，wasm 侧没有它**（P6a 的 feature
-///    矩阵）。走 resvg 就等于让模板贴纸变成"只有 CLI 画得出"的元素，studio 的
-///    wasm overlay 从此对每一个贴纸都要报 `host_rasterized_elements`——P6b 刚
-///    立起来的"预览 = 导出"在有贴纸的项目上直接失效。走 path 则一行新依赖都
-///    没有，两边共用本函数。
-/// 2. **确定性**。SVG 是一门带滤镜、渐变、文字与字体回退的语言，它的光栅结果
-///    不是 `strict` 能承诺的；这里的 verb 集合（move/line/quad/cubic/close）
-///    在注册表解析期就校验完了，剩下的只有 tiny-skia。
-/// 3. **分辨率无关**。resvg 要么按天然尺寸光栅化（4K 上糊），要么得把目标尺寸
-///    一路传进资源解码期；path 直接落在元素盒像素上，4K 与 540p 同样锐利。
-/// 4. **零新代码**。P7a 的 `outline_path` 与解析期校验原样复用。
+/// 1. **resvg sits behind `ccut-render/media`, and the wasm side does not have it** (P6a's feature matrix). Going through resvg would make template stickers into elements that only the CLI can draw. The studio's wasm overlay would then report `host_rasterized_elements` for every sticker, which breaks the "preview = export" guarantee just set up in P6b for any project with stickers. Going through paths needs no new dependency, and both sides share this function.
+/// 2. **Determinism.** SVG is a language with filters, gradients, text and font fallback, and its rasterized result is not something `strict` can promise. The verb set here (move/line/quad/cubic/close) is validated at registry-parse time, so only tiny-skia is left.
+/// 3. **Resolution independence.** resvg either rasterizes at its natural size (blurry at 4K), or the target size has to be threaded all the way into resource decoding. Paths land directly on element-box pixels, so 4K and 540p are equally sharp.
+/// 4. **No new code.** P7a's `outline_path` and the parse-time validation are reused unchanged.
 ///
-/// 返回推进的指令条数（0 = 什么都没画）。
+/// Returns the number of instructions emitted (0 = nothing drawn).
 fn sticker_color<'a>(props: &'a StickerProps, source: &'a str) -> &'a str {
     props
         .fill_overrides
@@ -304,8 +284,7 @@ pub fn push_sticker_ops(
         return 0;
     };
     let before = builder.frame.ops.len();
-    // 描边宽度是**元素盒短边**的比例：贴纸放大一倍，外框跟着粗一倍。
-    // 与 shape 的「跟画布短边走」刻意不同，理由在 `StickerLayer::stroke_width`。
+    // Stroke width is a ratio of the **element box short edge**: double the sticker's size and its outline gets twice as thick. This is deliberately different from shapes, which follow the canvas short edge. The reason is in `StickerLayer::stroke_width`.
     let short_edge = bbox.w.min(bbox.h);
     for layer in &body.layers {
         let path = builder.path_id(outline_path(&layer.segments, bbox));
@@ -336,9 +315,8 @@ pub fn push_sticker_ops(
     builder.frame.ops.len() - before
 }
 
-/// P3 之前的 visualizer / progress 占位：元素盒里的一块半透明纯色。
-/// 刻意**不**留空——留空会让"我加的波形没画出来"和"这个阶段还没实现"
-/// 在画面上无法区分。
+/// The visualizer / progress placeholder before P3: a semi-transparent solid block inside the element box.
+/// Deliberately **not** left empty. Leaving it empty would make "the waveform I added didn't draw" and "this stage isn't implemented yet" indistinguishable on screen.
 pub fn push_placeholder_ops(builder: &mut FrameBuilder, bbox: ElementBox, tf: Mat6, color: Color4) {
     builder.push(DrawOp::FillRect {
         x: bbox.x as f32,
@@ -351,7 +329,7 @@ pub fn push_placeholder_ops(builder: &mut FrameBuilder, bbox: ElementBox, tf: Ma
     });
 }
 
-/// 自由绘制图层：归一化点 → 二次贝塞尔中点平滑 → DrawOp v4 描边。
+/// Freehand drawing layer: normalized points → quadratic Bézier midpoint smoothing → DrawOp v4 stroke.
 pub fn push_draw_ops(
     builder: &mut FrameBuilder,
     props: &DrawProps,
@@ -427,7 +405,7 @@ pub fn push_draw_ops(
     builder.frame.ops.len() - before
 }
 
-/// 未替换素材的占位框。颜色属于视频画面内容，不是 App chrome。
+/// Placeholder box for an asset that has not been replaced. The color belongs to the video picture content, not the App chrome.
 pub fn push_media_placeholder_ops(
     builder: &mut FrameBuilder,
     props: &PlaceholderProps,
@@ -507,10 +485,9 @@ pub fn push_media_placeholder_ops(
     builder.frame.ops.len() - before
 }
 
-/// 四角半径：`ShapeProps.cornerRadius` 与 `strokeWidth` 同口径，是**参考短边
-/// 540 上的像素**，再夹到盒子的半边长以内（相邻两角不会互相吃掉）。
+/// Corner radius: `ShapeProps.cornerRadius` uses the same basis as `strokeWidth`, namely **pixels on the reference short edge of 540**. It is clamped to within half the box's side length, so adjacent corners cannot eat each other.
 ///
-/// 不跟画布走就会出现"1080p 上是圆角、4K 上几乎是直角"这种分辨率相关的外观。
+/// If it did not follow the canvas, the look would vary with resolution, such as rounded corners at 1080p and almost square corners at 4K.
 fn scaled_corner_radius(props: &ShapeProps, bbox: ElementBox, short_edge: f64) -> [f64; 4] {
     let limit = (bbox.w.min(bbox.h) / 2.0).max(0.0);
     props
@@ -550,7 +527,7 @@ fn close() -> PathSeg {
     seg(4, [0.0; 6])
 }
 
-/// 四角独立的圆角矩形（顺时针，起点在左上角圆弧结束处）。
+/// Rounded rectangle with independent corners (clockwise, starting where the top-left corner arc ends).
 fn rounded_rect_path(bbox: ElementBox, radius: [f64; 4]) -> PathData {
     let ElementBox { x, y, w, h } = bbox;
     let [tl, tr, br, bl] = radius;
@@ -592,7 +569,7 @@ fn rounded_rect_path(bbox: ElementBox, radius: [f64; 4]) -> PathData {
     PathData(out)
 }
 
-/// 元素盒的内切椭圆（四段三次贝塞尔）。
+/// The ellipse inscribed in the element box (four cubic Bézier segments).
 fn ellipse_path(bbox: ElementBox) -> PathData {
     let (cx, cy) = bbox.center();
     let (rx, ry) = (bbox.w / 2.0, bbox.h / 2.0);
@@ -607,7 +584,7 @@ fn ellipse_path(bbox: ElementBox) -> PathData {
     ])
 }
 
-/// 箭头端头：以线段方向为轴的等腰三角形，尺寸跟随描边宽度。
+/// Arrowhead: an isosceles triangle whose axis follows the line direction. Its size follows the stroke width.
 fn arrow_head_path(start: (f64, f64), end: (f64, f64), stroke_width: f64) -> Option<PathData> {
     let (dx, dy) = (end.0 - start.0, end.1 - start.1);
     let length = dx.hypot(dy);
@@ -626,7 +603,7 @@ fn arrow_head_path(start: (f64, f64), end: (f64, f64), stroke_width: f64) -> Opt
     ]))
 }
 
-/// 归一化轮廓（0..1）→ 元素盒内的画布像素。
+/// Normalized outline (0..1) → canvas pixels inside the element box.
 fn outline_path(segments: &[motion::preset_registry::PathSegment], bbox: ElementBox) -> PathData {
     use motion::preset_registry::PathSegment as S;
     let map = |point: [f64; 2]| (bbox.x + bbox.w * point[0], bbox.y + bbox.h * point[1]);
@@ -680,8 +657,7 @@ mod tests {
         assert!(parse_color("#fff", 1.0).is_none());
     }
 
-    /// 单位姿态 + 无旋转 = 单位矩阵：不含镜像/旋转的元素不该因为经过变换而
-    /// 换像素（重采样会改字节）。
+    /// Identity pose with no rotation is the identity matrix. An element without mirror or rotation should not change its pixels just because it went through a transform, since resampling would change the bytes.
     #[test]
     fn an_unposed_element_gets_the_identity_transform() {
         let tf = element_transform(
@@ -693,7 +669,7 @@ mod tests {
         assert_eq!(tf, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
     }
 
-    /// 镜像绕盒中心：中心不动，左右两边互换。
+    /// Mirror about the box center. The center stays put, and left and right swap.
     #[test]
     fn flip_x_mirrors_around_the_box_center() {
         let place = Place {
@@ -754,7 +730,7 @@ mod tests {
         assert_eq!(builder.frame.paths.len(), 1);
     }
 
-    /// 半径夹在半边长以内：相邻两角不会互相吃掉。
+    /// Radius clamped to within half the side length, so adjacent corners cannot eat each other.
     #[test]
     fn the_corner_radius_is_clamped_to_half_the_short_side() {
         let mut props = ShapeProps::new("rect");
@@ -763,7 +739,7 @@ mod tests {
             scaled_corner_radius(&props, bbox(), REFERENCE_SHORT_EDGE),
             [100.0; 4]
         );
-        // 半径跟画布短边走：4K 上的 12 不会退化成几乎直角。
+        // The radius follows the canvas short edge, so a 12 at 4K does not degrade into almost square.
         let mut small = ShapeProps::new("rect");
         small.corner_radius = Some([12.0; 4]);
         assert_eq!(
@@ -788,7 +764,7 @@ mod tests {
             540.0,
         );
         assert_eq!(builder.frame.paths.len(), 1);
-        // 4 段三次贝塞尔 + move + close
+        // 4 cubic Bézier segments + move + close
         assert_eq!(builder.frame.paths[0].0.len(), 6);
     }
 
@@ -824,7 +800,7 @@ mod tests {
         assert_eq!(builder.frame.ops.len(), 2);
         assert!(matches!(builder.frame.ops[1], DrawOp::FillPath { .. }));
 
-        // `head: "none"` 关掉端头。
+        // `head: "none"` turns the arrowhead off.
         props.head = Some("none".to_owned());
         let mut builder = FrameBuilder::default();
         push_shape_ops(
@@ -839,7 +815,7 @@ mod tests {
         assert_eq!(builder.frame.ops.len(), 1);
     }
 
-    /// 描边宽度跟画布短边走：4K 导出不会退化成发丝线。
+    /// The stroke width follows the canvas short edge, so 4K export does not degrade into hairlines.
     #[test]
     fn the_stroke_width_scales_with_the_canvas_short_edge() {
         let props = ShapeProps::new("line");

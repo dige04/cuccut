@@ -3,7 +3,7 @@ import { defineNoun } from './context.ts';
 import { M } from './nodes-copy.ts';
 import { describeNode, formatHostPort } from './nodes-output.ts';
 
-/** `cuccut nodes`：已配对的局域网节点（节点协议规范 §10）。 */
+/** `cuccut nodes`: paired LAN nodes (Node protocol spec §10). */
 export const nodes = defineNoun({
   name: 'nodes',
   get usage() {
@@ -47,7 +47,7 @@ export const nodes = defineNoun({
   },
 });
 
-/** `host`、`host:port`、`[v6]:port`；不带端口时用默认端口。 */
+/** `host`, `host:port`, or `[v6]:port`. The default port is used when no port is given. */
 export function parseHostPort(text: string): { host: string; port: number } {
   const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(text);
   const plain = /^([^:]+)(?::(\d+))?$/.exec(text);

@@ -39,33 +39,32 @@ export type ToolsModelsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 工具页的「选一只模型」（设计稿 tool-tts.jsx `ModelLine`、image-gen.jsx `ModelLine`、tool-transcribe.jsx 的语音模型 Picker）：
- * 从 `models` 主题的能力视图里折出可选的模型。服务商清单不写死；没连上的也列出来，标「未连接」，选中时页面给门卡。
- * 键与模型页的默认模型菜单同形：`providerId/modelId`。
+ * The "pick a model" control on tool pages (design mocks tool-tts.jsx `ModelLine`, image-gen.jsx `ModelLine`, and the speech model Picker in tool-transcribe.jsx):
+ * derives the selectable models from the capability view of the `models` topic. The provider list is not hard-coded; providers that are not connected are listed too, marked "Not connected", and selecting one shows a gate card on the page.
+ * The key has the same shape as the default model menu on the models page: `providerId/modelId`.
  */
 
 export interface ToolModelOption<M> {
   key: string;
   providerId: string;
-  /** 服务商的名字（OpenAI、自建服务商的名字）。 */
+  /** Provider name (OpenAI, or a self-hosted provider's name). */
   provider: string;
   modelId: string;
-  /** 模型的名字（自建服务商声明的可能与 ID 不同）。 */
+  /** Model name (a self-hosted provider may declare one that differs from its ID). */
   label: string;
   connected: boolean;
-  /** 连上了、这一档可用、这只模型也可用：可以提交。 */
+  /** Connected, usable at this tier, and this model is usable too: can be submitted. */
   usable: boolean;
-  /** 不能用的原因（未连接、没有声明模型……）；能用时 null。 */
+  /** Reason it can't be used (not connected, no model declared, and so on); null when usable. */
   why: string | null;
   info: M;
-  /** 本机模型（设计稿 image-gen.jsx 的「本机 · 不联网」一组）：没装好也能选，选中时页面给下载卡；开页的回落不落到它。 */
+  /** Local models (the design mock image-gen.jsx group "Local · no network"): can be selected even when not installed properly; choosing one shows a download card on the page; the fallback when opening the page doesn't go to it. */
   local?: boolean;
 }
 
 /**
- * 云端（在线 Provider）的模型：已连接的服务商排前面、列出它的每只模型；没连上的只列它的第一只（设计稿 image-gen.jsx
- * `x.ready ? x.models : x.models.slice(0, 1)`），`all` 时全列（转录的 Picker 照设计稿全列）。Codex 画图这类智能体
- * Provider 不在这里（`cloudProviders` 只取在线的）。
+ * Cloud (online provider) models: connected providers come first, listing each of their models; providers not connected list only their first model (design mock image-gen.jsx
+ * `x.ready ? x.models : x.models.slice(0, 1)`); `all` lists everything (the transcription Picker lists everything, per the design). Agent providers such as Codex image generation are not here (`cloudProviders` only takes online ones).
  */
 export function cloudModelOptions<C extends OnlineCapability>(
   view: ModelCapabilitiesView,
@@ -97,12 +96,12 @@ export function cloudModelOptions<C extends OnlineCapability>(
   });
 }
 
-/** 本机模型没下载时的原因（页面据此给下载卡、主按钮说「还没安装」）：按当前界面语言，拿 `why` 比对时也调它。 */
+/** Why a local model isn't ready (the page uses this to show a download card, and the main button says "Not installed yet"): in the current UI language; also called when matching against `why`. */
 export function localNotDownloaded(): string {
   return M.notDownloaded;
 }
 
-/** 本机模型不能用的原因（设计稿 model-cloud-image.js `engines` 的 `why`）。 */
+/** Why a local model can't be used (design mock model-cloud-image.js `engines`' `why`). */
 function localWhy(
   capability: { available: boolean; detail?: string; detailRef?: MessageRef },
   info: { unavailableReason?: string; available?: boolean; detail?: string; detailRef?: MessageRef },
@@ -115,8 +114,8 @@ function localWhy(
 }
 
 /**
- * 本机（`kind: 'local'` 的 Provider）的模型：都列出来（没装的也列，选中时页面说还没安装、给去设置或下载），
- * 名字用模型的名字（产品设计 §2.7「模型」一行）。
+ * Models of local providers (`kind: 'local'`): all are listed (uninstalled ones too; choosing one shows that it is not installed yet, with links to settings or download),
+ * named with the model's name (product design §2.7, "Models" row).
  */
 export function localModelOptions<C extends ModelServiceCapability>(
   view: ModelCapabilitiesView,
@@ -143,20 +142,20 @@ export function localModelOptions<C extends ModelServiceCapability>(
     );
 }
 
-/** 选中的本机模型还没装时换用哪只（设计稿 tool-tts.jsx「换用已装的 X」）：菜单里第一只装好能用的本机模型；没有时 null。 */
+/** When the selected local model isn't installed yet, which one to switch to (design mock tool-tts.jsx "Switch to installed X"): the first installed, usable local model in the menu; null if there is none. */
 export function installedAlternative<M>(options: readonly ToolModelOption<M>[], selected: ToolModelOption<M> | null): ToolModelOption<M> | null {
   return options.find((o) => o.local && o.usable && o.key !== selected?.key) ?? null;
 }
 
-/** 「模型」一行的菜单：这种能力已配置的云端模型在前、本机模型在后。 */
+/** The "Model" row's menu: configured cloud models for this capability first, then local models. */
 export function modelOptions<C extends OnlineCapability>(view: ModelCapabilitiesView, capability: C): ToolModelOption<ModelInfoByCapability[C]>[] {
   return [...cloudModelOptions(view, capability), ...localModelOptions(view, capability)];
 }
 
 /**
- * 进页时选哪只：上次选的（还在清单里就留着，哪怕现在不能用——页面给门卡），再是这种能力的生效默认值，
- * 再是第一只能用的，最后是第一只。清单为空时 null。后两步只在 `fallback` 认的里面挑（生图不回落到本机模型，
- * 设计稿 model-cloud-image.js `preferred`）。
+ * Which one is picked on opening: the last one chosen (kept if it is still in the list, even if it can't be used now; the page shows a gate card), then this capability's effective default,
+ * then the first usable one, and finally the first one. null when the list is empty. The last two steps only pick among what `fallback` accepts (image generation doesn't fall back to local models,
+ * design mock model-cloud-image.js `preferred`).
  */
 export function initialModelKey<M>(
   options: readonly ToolModelOption<M>[],
@@ -175,7 +174,7 @@ export function findOption<M>(options: readonly ToolModelOption<M>[], key: strin
   return options.find((o) => o.key === key) ?? null;
 }
 
-/** 键 → Provider 与模型（带回一条记录的设置时用）。 */
+/** Key → provider and model (used when restoring the settings of a saved record). */
 export function modelKeyOf(providerId: string, modelId: string): string {
   return defaultKey({ providerId, modelId });
 }
@@ -184,14 +183,14 @@ export function parseModelKey(key: string): ModelRef | null {
   return parseDefaultKey(key);
 }
 
-// ---- 语言 ----
+// ---- Languages ----
 
-/** 模型不限语言（`any`）时 Picker 里列的常用语言。 */
+/** Common languages listed in the Picker when a model accepts any language (`any`). */
 const COMMON_LANGUAGES = ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'pt', 'ru', 'ar'];
 
 const namesByLocale = new Map<string, Intl.DisplayNames | null>();
 
-/** 语言按界面语言写的名字（中文界面 `zh` → 中文，英文界面 → Chinese）；认不出来时原样返回。 */
+/** Language names written in the UI's language (for the Chinese UI, `zh` → 中文; for the English UI, → Chinese); returned unchanged when not recognized. */
 export function langName(tag: string): string {
   const locale = intlLocale();
   let names = namesByLocale.get(locale);
@@ -210,31 +209,31 @@ export function langName(tag: string): string {
   }
 }
 
-/** BCP 47 的主语言子标签（`zh-CN` → `zh`）。 */
+/** The primary language subtag of a BCP 47 tag (`zh-CN` → `zh`). */
 export function primaryLanguage(tag: string): string {
   return tag.split('-')[0]!.toLowerCase();
 }
 
 export interface LanguageOption {
-  /** 空串为「自动」：不给 `language`。 */
+  /** An empty string means "auto": don't send `language`. */
   key: string;
   label: string;
 }
 
-/** 语言下拉：自动 + 模型声明的语言（不限时列常用的）。 */
+/** Language dropdown: auto, plus the languages the model declares (the common ones when it accepts any). */
 export function languageOptions(languages: 'any' | readonly string[], auto: string = M.auto): LanguageOption[] {
   const list = languages === 'any' ? COMMON_LANGUAGES : languages;
   return [{ key: '', label: auto }, ...list.map((tag) => ({ key: tag, label: langName(tag) }))];
 }
 
-/** 这只模型会不会念 / 认这种语言（`any` 都会）。 */
+/** Whether this model can speak or recognize this language (`any` means all of them). */
 export function speaks(languages: 'any' | readonly string[], tag: string): boolean {
   if (languages === 'any') return true;
   const want = primaryLanguage(tag);
   return languages.some((l) => primaryLanguage(l) === want);
 }
 
-/** 按字符粗判文字的语言（设计稿 model-tools.js `detectLang`）：假名、韩文、阿拉伯文、汉字、拉丁字母；都没有时 null。 */
+/** Rough per-character guess of a text's language (design mock model-tools.js `detectLang`): kana, Hangul, Arabic, Han characters, Latin letters; null when none apply. */
 export function detectLang(text: string): string | null {
   if (/[぀-ヿ]/.test(text)) return 'ja';
   if (/[가-힯]/.test(text)) return 'ko';
@@ -244,12 +243,12 @@ export function detectLang(text: string): string | null {
   return null;
 }
 
-/** 按 Unicode 码点数（Runtime 的上限也按码点计）。 */
+/** Counted in Unicode code points (the Runtime's limits are also counted that way). */
 export function codePoints(text: string): number {
   return Array.from(text).length;
 }
 
-/** 种子：留空或一个非负整数。 */
+/** Seed: empty, or a non-negative integer. */
 export function parseSeed(text: string): { ok: true; seed: number | null } | { ok: false } {
   const t = text.trim();
   if (!t) return { ok: true, seed: null };
@@ -258,12 +257,12 @@ export function parseSeed(text: string): { ok: true; seed: number | null } | { o
   return Number.isSafeInteger(n) ? { ok: true, seed: n } : { ok: false };
 }
 
-/** 记录卡上的服务商名：按 Provider ID 在这种能力的视图里找；找不到（已删除的自建服务商）时写 ID。 */
+/** Provider name on a record card: looked up by provider ID in this capability's view; if not found (a deleted self-hosted provider), the ID is written. */
 export function providerName(view: ModelCapabilitiesView | null, capability: ModelServiceCapability, providerId: string): string {
   return view?.[capability].providers.find((p) => p.providerId === providerId)?.label ?? providerId;
 }
 
-/** 语言清单的短说法：不限时「多种语言」，三种以内列名字，再多写「中文、英语等 N 种」。 */
+/** Short form of a language list: "multiple languages" when unrestricted, names for up to three, otherwise "Chinese, English and N more". */
 export function languagesShort(languages: 'any' | readonly string[]): string {
   if (languages === 'any') return M.anyLanguage;
   const named = languages.map(langName);

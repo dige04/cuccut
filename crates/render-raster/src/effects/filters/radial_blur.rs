@@ -1,18 +1,13 @@
-//! `filter.radialBlur@1`：径向（zoom）模糊——每个像素沿「像素 → 中心」的连线取样
-//! 平均，离中心越远拖得越长，中心点本身不动。
+//! `filter.radialBlur@1`: radial (zoom) blur. Each pixel averages samples along the line from "pixel → center", so the blur stretches further the farther the pixel is from the center. The center point itself does not move.
 //!
-//! 实现是三遍对数步长的缩放取样（`filter.godRays` 共用 [`zoom_passes`]）：以中心为原点，
-//! 取样点 `c + (p − c)·e^{−o}`，`o` 是对数缩放量。第 k 遍（k = 1, 2, 3）取
-//! `o = j·σ/Tᵏ, j = 0..T`，三遍复合后的 `o` 恰好是 `[0, σ)` 上步长 `σ/T³` 的 T³ 个
-//! 均匀点——每像素只做 3T 次双线性取样，得到 T³ 个采样点的效果。
-//! `σ = −ln(1 − strength)`：`strength` 是最远取样点朝中心走过的比例。
+//! The implementation is three passes of log-step scaled sampling, shared with `filter.godRays` through [`zoom_passes`]. With the center as origin, sample points are `c + (p − c)·e^{−o}`, where `o` is the log scale amount. Pass k (k = 1, 2, 3) uses `o = j·σ/Tᵏ, j = 0..T`. After the three passes are composed, `o` is exactly T³ evenly spaced points with step `σ/T³` over `[0, σ)`. Each pixel therefore does only 3T bilinear samples and gets the effect of T³ sample points.
+//! `σ = −ln(1 − strength)`: `strength` is the fraction of the way the farthest sample point travels toward the center.
 //!
-//! 数值：f32 四则运算，`e^{−o}` 与权重在进像素循环前用 `libm` 各算一次（每遍 T 个），
-//! native 与 wasm 逐位一致。像素约定与其余滤镜相同：预乘 sRGB / u8。
+//! Numerics: f32 arithmetic. `e^{−o}` and the weights are each computed once with `libm` before the per-pixel loop (T per pass), so native and wasm are bit-identical. Pixel conventions match the other filters: premultiplied sRGB / u8.
 
 pub(crate) type Px = [f32; 4];
 
-/// 遍数：T³ 个等效采样点。
+/// Passes: T³ effective sample points.
 const PASSES: u32 = 3;
 
 pub(crate) fn to_planes(data: &[u8]) -> Vec<Px> {
@@ -28,7 +23,7 @@ pub(crate) fn to_planes(data: &[u8]) -> Vec<Px> {
         .collect()
 }
 
-/// 双线性取样；坐标是像素中心为整数的连续坐标，边缘夹取。
+/// Bilinear sampling. Coordinates are continuous, with pixel centers at integer values. Edges are clamped.
 #[inline]
 pub(crate) fn bilinear(buf: &[Px], width: usize, height: usize, x: f32, y: f32) -> Px {
     let x = x.clamp(0.0, (width - 1) as f32);
@@ -48,10 +43,7 @@ pub(crate) fn bilinear(buf: &[Px], width: usize, height: usize, x: f32, y: f32) 
     out
 }
 
-/// 三遍对数步长缩放取样。`center` 是像素坐标（像素中心为 `x + 0.5`，可以在画面外），
-/// `sigma` 是总对数缩放量，`taps` 是每遍取样数，`far_weight` 是最远取样点相对
-/// 最近取样点的权重（1 = 等权平均，越小越偏向近处——光柱的衰减）。各遍权重都归一，
-/// 复合后仍是加权平均。
+/// Three-pass log-step scaled sampling. `center` is in pixel coordinates (the pixel center is `x + 0.5`; it may lie outside the canvas). `sigma` is the total log scale amount. `taps` is the number of samples per pass. `far_weight` is the weight of the farthest sample relative to the nearest one: 1 means an equal-weight average, and smaller values favor the near side, which gives the light-shaft falloff. Each pass normalizes its weights, so the composed result is still a weighted average.
 pub(crate) fn zoom_passes(
     buf: &mut Vec<Px>,
     width: usize,
@@ -100,7 +92,7 @@ pub(crate) fn zoom_passes(
     }
 }
 
-/// 写回 u8：四舍五入并保持预乘不变量（RGB ≤ alpha）。
+/// Writes back to u8: rounds and keeps the premultiplication invariant (RGB ≤ alpha).
 pub(crate) fn store(data: &mut [u8], buf: &[Px]) {
     for (out, px) in data.chunks_exact_mut(4).zip(buf) {
         let alpha = px[3].clamp(0.0, 255.0).round();
@@ -111,8 +103,7 @@ pub(crate) fn store(data: &mut [u8], buf: &[Px]) {
     }
 }
 
-/// 径向模糊。`cx` / `cy` 是画布（= 输入 surface）宽高的比例，`strength` ∈ [0, 0.95]
-/// 是最远取样点朝中心走过的比例，`samples` 是每遍取样数（三遍）。
+/// Radial blur. `cx` / `cy` are ratios of the canvas (= input surface) width and height. `strength` ∈ [0, 0.95] is the fraction of the way the farthest sample point travels toward the center. `samples` is the number of samples per pass (three passes).
 pub fn radial_blur(
     data: &mut [u8],
     width: usize,
@@ -166,7 +157,7 @@ mod tests {
         let mut data = dot(size, (56, 32));
         radial_blur(&mut data, size, size, 0.5, 0.5, 0.4, 8.0);
         let alpha = |x: usize, y: usize| data[(y * size + x) * 4 + 3];
-        // 点在中心右侧：外侧（朝中心的反方向）有拖影，内侧没有。
+        // The point is to the right of the center. The outer side (opposite the direction toward the center) has smearing, and the inner side has none.
         assert!(alpha(60, 32) > 0, "外侧应有拖影");
         assert_eq!(alpha(50, 32), 0, "内侧不应有拖影");
         assert_eq!(alpha(56, 20), 0, "垂直方向不应扩散");

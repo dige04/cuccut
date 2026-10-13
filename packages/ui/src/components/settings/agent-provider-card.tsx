@@ -65,7 +65,7 @@ import {
   type ProblemAction,
 } from './agent-setup.ts';
 
-// 卡片在提供方列表那张无内边距的卡里一张接一张，之间一条分隔线（settings-agent.css .agset-provider）。
+// The cards sit one after another inside the provider list’s padding-less card, with a divider line between them (.agset-provider in settings-agent.css).
 const card = style({
   borderTopWidth: { default: 1, ':first-child': 0 },
   borderXWidth: 0,
@@ -85,7 +85,7 @@ const avatar = style({
   borderStyle: 'solid',
   borderColor: { default: 'gray-200', isReady: 'green-200' },
   backgroundColor: { default: 'transparent', isReady: 'green-100' },
-  // 头像里是 Agent 自己的图标（AgentProviderIcon）：「能用」只由底色和边框表示，单色图标不跟着染绿（原型 .agset-avatar.is-ready）。
+  // The avatar shows the agent’s own icon (AgentProviderIcon). “Ready” (能用) is shown only by the background and border; the monochrome icon is not tinted green (prototype .agset-avatar.is-ready).
   color: 'gray-700',
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
@@ -94,7 +94,7 @@ const nameRow = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap',
 const name = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
 const sub = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere' });
 const headControls = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginStart: 'auto' });
-// 问题条、配置模型提示、新版本提示：通栏贴在卡头下面，上面一条分隔线（.agp-problem / .agp-update）。
+// The problem bar, the model-configuration hint and the new-version hint run full width directly under the card header, with a divider line above them (.agp-problem / .agp-update).
 const problemStrip = style({
   display: 'flex',
   alignItems: 'start',
@@ -169,7 +169,7 @@ const checkLabel = style({ font: 'ui-sm', fontWeight: 'medium', color: 'gray-900
 const checkDetail = style({ margin: 0, overflowWrap: 'anywhere', userSelect: 'text' });
 const verdict = style({ marginTop: 12, marginBottom: 0, font: 'ui-sm', fontWeight: 'medium', color: { default: 'negative-900', isOk: 'positive-900' } });
 const pickers = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
-// 详情顶上的说明条（.agp-note）：图标加一段话；`isNotice` 是要留意的那种（只能完全访问）。
+// The note bar at the top of the details (.agp-note): an icon plus a line of text. `isNotice` marks the kind that needs attention (full access only).
 const noteBox = style({
   display: 'flex',
   alignItems: 'start',
@@ -193,15 +193,16 @@ const docsLink = style({ marginTop: 8 });
 const TONE_BADGE = { positive: 'positive', notice: 'notice', negative: 'negative', neutral: 'neutral' } as const;
 
 /**
- * 一家 Agent（设计稿 settings-agent-provider.jsx）：一行回答装没装、能不能用、开没开；有问题时问题条直接露在行下面。
- * 展开后是日常会动的几样：默认模型、版本与升级、账号、安装位置、排查。没装时展开的是安装说明。
+ * One agent (design mockup settings-agent-provider.jsx): a single row answers whether it is installed, whether it can be used, and whether it is on. When there is a problem, the problem bar shows right under the row.
+ * Expanded, it shows the things that change day to day: default model, version and upgrade, account, install location, troubleshooting. When it is not installed, the expanded view shows install instructions.
  *
- * 安装、升级与登录（架构设计 §12.9，经 Runtime 的 `agents.*` 命令）：
- * - brew、npm 这类安装、升级命令左边有 ▶：先弹确认（显示完整命令），确认后由 Runtime 在应用内运行，输出显示在命令下面，
- *   跑完 Runtime 自动重新检测。失败时给「在终端里运行」。问题条的「升级到 X」与配置模型提示的升级按钮也走同一条路。
- * - `curl … | bash` 这类官方脚本不给 ▶，只给复制。
- * - 登录（「打开终端登录」「换一个账号…」）打开系统终端运行登录命令；打不开时退回复制并说明。回到窗口时重新检测一次。
- * 运行状态在 Runtime（`agent-setup` 主题，`useAgentSetup` 镜像），同一个 Agent 同一时间只跑一条。
+ * Install, upgrade and login (architecture design §12.9, via the Runtime’s `agents.*` commands):
+ * - Install and upgrade commands such as brew and npm have a ▶ on their left: a confirmation pops up first (showing the full command). After confirming, the Runtime runs it inside the app, the output appears below the command,
+ *   and the Runtime re-detects automatically when it finishes. On failure, it offers “Run in terminal”. The “Upgrade to X” in the problem bar and the upgrade button in the model-configuration hint take the same path.
+ * - Official scripts such as `curl … | bash` get no ▶, only copy.
+ * - Login (“Log in in Terminal”, “Switch account…”) opens the system terminal and runs the login command. If that cannot be opened, it falls back to copy and explains. Detection runs once more when the user returns to the window.
+ *
+ * Run state lives in the Runtime (`agent-setup` topic, mirrored by `useAgentSetup`); the same agent runs only one command at a time.
  */
 export function AgentProviderCard({
   driver,
@@ -220,7 +221,7 @@ export function AgentProviderCard({
   const [diagnosing, setDiagnosing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const installed = isInstalled(driver);
-  // 用户添加的（产品设计 §7.6）：CucCut 没有它的安装命令，只知道怎么启动它；npx / uvx 现取现用的不用单独装。
+  // User-added (product design §7.6): CucCut has no install command for it, only knows how to launch it. Agents run on demand via npx / uvx need no separate install.
   const added = isCustomDriver(driver);
   const launch = added ? (driver.custom?.command ?? [driver.command]) : null;
   const launcher = launch ? launcherOf(launch) : null;
@@ -229,10 +230,10 @@ export function AgentProviderCard({
   const problem = agentProblem(driver);
   const gate = configModelGate(driver);
   const update = hasUpdate(driver);
-  // 浏览器里只能看与复制：启停、检测、默认、安装运行、终端与位置都要 Web 白名单之外的 `agents.*`。
+  // In the browser you can only view and copy. Start/stop, detect, default, install and run, terminal and location all need `agents.*` commands outside the web allowlist.
   const disabled = web || !connected || busy !== null;
 
-  // ---- 安装、升级：方式由卡片记着（问题条的「升级到 X」跟着分段里选的那一种），运行状态来自 Runtime ----
+  // ---- Install and upgrade: the method is remembered by the card (the “Upgrade to X” in the problem bar follows whichever option is selected in the segmented control); run state comes from the Runtime ----
   const plan = installPlan(driver);
   const [picked, setPicked] = useState<InstallKind | null>(null);
   const choice = plan.choices.find((c) => c.kind === (picked ?? plan.initial)) ?? plan.choices[0] ?? null;
@@ -262,7 +263,7 @@ export function AgentProviderCard({
     }
   };
 
-  // ---- 系统终端：登录、失败后改在终端里运行。打开后用户回到这个窗口时重新检测一次 ----
+  // ---- System terminal: for login, and for running in the terminal after a failure. When the user returns to this window after opening it, detection runs once more ----
   const stopWatchingReturn = useRef<(() => void) | null>(null);
   useEffect(() => () => stopWatchingReturn.current?.(), []);
   const recheckOnReturn = () => {
@@ -279,7 +280,7 @@ export function AgentProviderCard({
   };
   const inTerminal = async (action: 'login' | AgentSetupAction, kind?: InstallKind) => {
     const label = action === 'login' ? CARD_COPY.loginCommand : action === 'install' ? CARD_COPY.installCommand : CARD_COPY.upgradeCommand;
-    // 探测结果里没有登录命令时 Runtime 不收，直接让用户复制（loginCommandOf 退回直接起 CLI）。
+    // When the detection result has no login command, the Runtime does not supply one and the user is simply asked to copy it (loginCommandOf falls back to launching the CLI directly).
     if (action === 'login' && !driver.loginCommand) return void copyText(loginCommandOf(driver), label);
     try {
       const result = await openAgentTerminal(runtime, driver.id, action, kind);
@@ -290,7 +291,7 @@ export function AgentProviderCard({
         recheckOnReturn();
         return;
       }
-      // 这台电脑上打不开终端（或不认识的系统）：退回复制。
+      // If no terminal can be opened on this computer (or the OS is not recognized), fall back to copy.
       try {
         await navigator.clipboard.writeText(result.command);
         ToastQueue.neutral(CARD_COPY.terminalCopied(label), { timeout: 5000 });
@@ -302,7 +303,7 @@ export function AgentProviderCard({
     }
   };
 
-  // 浏览器里不给 ▶（`agents.runSetup` 不在 Web 白名单里），命令只复制，说明也按「复制」写。
+  // The browser shows no ▶ (`agents.runSetup` is not on the web allowlist). Commands are copy-only, and the instructions are written for copying too.
   const runnerFor = (c: InstallChoice): CommandRunner | undefined =>
     c.runnable && !web
       ? {
@@ -351,7 +352,7 @@ export function AgentProviderCard({
     if (action === 'login') return void inTerminal('login');
     onToggle(true);
     if (action === 'diagnose') recheck();
-    // 能在应用内运行就直接弹确认；官方脚本类只展开详情，让用户看到复制入口（设计稿 runPlan）。
+    // If it can run inside the app, a confirmation pops up directly. Official-script types only expand the details, so the user sees the copy entry (design mockup runPlan).
     else if (action === 'upgrade') askRun();
   };
 
@@ -409,7 +410,7 @@ export function AgentProviderCard({
             <Text>{installed ? CARD_COPY.details : added ? ADDED_COPY.detect : CARD_COPY.install}</Text>
             {open ? <ChevronUp /> : <ChevronDown />}
           </ActionButton>
-          {/* 移除只给用户添加的；浏览器里不给（`agents.removeProvider` 不在 Web 白名单里）。 */}
+          {/* Removal is offered only for user-added agents, and not shown in the browser (`agents.removeProvider` is not on the web allowlist). */}
           {added && !web ? (
             <ActionButton isQuiet size="S" isDisabled={!connected} onPress={() => setRemoving(true)}>
               {ADDED_COPY.remove}
@@ -418,7 +419,7 @@ export function AgentProviderCard({
         </div>
       </div>
 
-      {/* 用 Codex 画图（settings-agent-provider.jsx:200-203）：只在 Codex 已找到时出现，挂在卡头下、问题条之前。 */}
+      {/* Image generation with Codex (settings-agent-provider.jsx:200-203): appears only when Codex has been found, placed under the card header and before the problem bar. */}
       {driver.id === 'codex' && installed ? <CodexImageRow driver={driver} connected={connected} /> : null}
 
       {problem ? (
@@ -503,7 +504,7 @@ export function AgentProviderCard({
       <DialogContainer onDismiss={() => setConfirm(null)}>
         {confirm ? <RunCommandDialog action={setupAction} name={driver.name} command={confirm.command} onRun={() => void startRun(confirm)} /> : null}
       </DialogContainer>
-      {/* 移除先确认（不做撤销：Runtime 只回环境变量名，撤销补不回值；正在用它的任务也已经结束）。 */}
+      {/* Removal asks for confirmation first. There is no undo: the Runtime returns only the environment variable names, so an undo cannot restore the values. Tasks that were using it have also already ended. */}
       <DialogContainer onDismiss={() => setRemoving(false)}>
         {removing ? (
           <AlertDialog
@@ -522,17 +523,17 @@ export function AgentProviderCard({
 
 type InstallKind = DriverInstallOption['kind'];
 
-/** 卡片交给安装、升级那一段的：方式、选中的那一种、每条命令的 ▶。 */
+/** Passed to the install/upgrade section of the card: the methods, the selected one, and the ▶ for each command. */
 interface SetupControls {
   plan: InstallPlan;
   choice: InstallChoice | null;
   pick: (kind: InstallKind) => void;
   runnerFor: (choice: InstallChoice) => CommandRunner | undefined;
-  /** 这个 Agent 有命令正在跑：分段不让换。 */
+  /** A command is running for this agent, so the segmented control cannot be switched. */
   running: boolean;
 }
 
-/** 卡片上同一时间只跑一件事；刷新模型单独一档，不跟「运行排查」共用文案，也不展开排查结果。 */
+/** The card runs only one thing at a time. Refreshing models has its own slot and does not share the “Run diagnostics” wording, and it does not expand the diagnostic results. */
 type Busy = 'enable' | 'detect' | 'models' | 'default' | 'model';
 type Run = (kind: Busy, task: () => Promise<unknown>, failure: (message: string) => string) => Promise<boolean>;
 
@@ -548,7 +549,7 @@ function InstalledDetail({
   onLogin,
   canLogin,
 }: {
-  /** 用户添加的那一家的启动命令；内置的为 null。 */
+  /** The launch command of the user-added agent; null for built-in ones. */
   launch: readonly string[] | null;
   launcher: Launcher | null;
   driver: DriverInfo;
@@ -575,10 +576,10 @@ function InstalledDetail({
   const setEffort = (key: string) => {
     const choice = efforts?.find((e) => e.key === key);
     if (!choice || choice.missing || choice.effort === driver.defaultEffort) return;
-    // 只传强度：Runtime 只改强度、存的模型不动（没设过的仍跟着推荐模型走）。带上 `driver.defaultModel` 会把推荐模型钉成设过的。
+    // Pass only the effort: the Runtime changes only the effort and leaves the saved model alone (a model never set still follows the recommended model). Including `driver.defaultModel` would pin the recommended model as if the user had set it.
     void run('model', () => configureAgent(runtime, driver.id, { defaultEffort: choice.effort }), CARD_COPY.saveEffortFailed);
   };
-  // 协议没有单独的「刷新模型」，模型表随检测一起更新，所以这里也走 agents.detect。
+  // The protocol has no separate “refresh models” call. The model list updates together with detection, so this also goes through agents.detect.
   const refreshModels = () =>
     void run('models', () => detectAgents(runtime, driver.id), CARD_COPY.refreshFailed).then(
       (ok) => ok && ToastQueue.neutral(CARD_COPY.refreshed(driver.name), { timeout: 3000 }),
@@ -704,15 +705,15 @@ function InstalledDetail({
   );
 }
 
-/** 升级说明的最后一句：认出了来源就点名，否则请用户用当初的方式。 */
+/** The last sentence of the upgrade note: if the install source was recognized, name it; otherwise ask the user to use the same method as originally. */
 function upgradeSource(plan: InstallPlan): string {
   const via = plan.choices.find((c) => c.kind === plan.detected);
   return via ? CARD_COPY.sourceKnown(via.label) : CARD_COPY.sourceUnknown;
 }
 
 /**
- * 安装或升级的方式（多于一种时分段切换，运行中不让换）与命令。起手选认出来的那一种。
- * 文案按设计稿（settings-agent-provider.jsx:89-94、259-266）：安装时先说 ▶ 能做什么；不能在应用内运行的给一句复制说明。
+ * The install or upgrade methods (a segmented switch when there is more than one; cannot be changed while running) and their commands. The method recognized at startup is selected first.
+ * Copy follows the design mockup (settings-agent-provider.jsx:89-94, 259-266): when installing, first say what ▶ does; for commands that cannot run inside the app, give one line of copy instructions.
  */
 function InstallCommands({ setup, copyLabel }: { setup: SetupControls; copyLabel: string }) {
   const { plan, choice } = setup;
@@ -725,7 +726,7 @@ function InstallCommands({ setup, copyLabel }: { setup: SetupControls; copyLabel
       ? installing
         ? CARD_COPY.scriptInstall
         : CARD_COPY.scriptUpgrade
-      : // 官方脚本类自带的升级命令（例如 claude update）：不下载脚本，但同样不在应用内运行。设计稿没有这一种。
+      : // Upgrade commands that come with an official script (for example claude update): no script is downloaded, but they likewise do not run inside the app. The design mockup has no such type.
         installing
         ? null
         : CARD_COPY.copyUpgrade;
@@ -760,7 +761,7 @@ function InstallCommands({ setup, copyLabel }: { setup: SetupControls; copyLabel
   );
 }
 
-/** 详情顶上的一段说明（.agp-note）。 */
+/** A note at the top of the details (.agp-note). */
 function Note({ notice = false, children }: { notice?: boolean; children: ReactNode }) {
   return (
     <div className={noteBox({ isNotice: notice })} role="note">
@@ -773,8 +774,8 @@ function Note({ notice = false, children }: { notice?: boolean; children: ReactN
 }
 
 /**
- * 用户添加的、还没检测到的那一家（原型 `AddedInstallPanel`，产品设计 §7.6）：CucCut 没有它的安装命令，只知道怎么启动它。
- * 由 npx / uvx 现取现用的不用单独装；其余按它自己的说明装好（目录里的给「打开官方说明」），回来点检测。
+ * A user-added agent that has not been detected yet (prototype `AddedInstallPanel`, product design §7.6): CucCut has no install command for it, only knows how to launch it.
+ * Agents fetched on demand by npx / uvx need no separate install. The rest are installed following their own instructions (the directory entries give “Open official instructions”), then come back and click detect.
  */
 function AddedInstallPanel({
   driver,
@@ -921,7 +922,7 @@ const STEP_ICON: Record<'ok' | 'fail' | 'skip', ReactNode> = {
   skip: <Clock />,
 };
 
-/** 排查清单：按依赖顺序五步，前一步不过后面的标「上一步通过后再检查」，结论一句话。 */
+/** Troubleshooting checklist: five steps in dependency order. If a step fails, the later steps are marked “Check after the previous step passes”, with a one-sentence conclusion. */
 function Diagnosis({ driver }: { driver: DriverInfo }) {
   const list = diagnose(driver);
   const result = diagnosisVerdict(list);

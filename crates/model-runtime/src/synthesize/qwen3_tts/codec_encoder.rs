@@ -1,13 +1,13 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/SpeechTokenizerEncoder.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/SpeechTokenizerEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! 语音分词器编码器（HF `MimiModel` 结构）：24 kHz 波形 → 16 组 codebook。
-//! 权重是 Qwen3-TTS-Tokenizer-12Hz 里的 `encoder.*`（F32，PyTorch 布局）。
-//! 只在 ICL 音色克隆时用来把参考音频编成 codec 前缀。
+//! Speech tokenizer encoder (HF `MimiModel` structure): 24 kHz waveform → 16 codebook groups.
+//! Weights are the `encoder.*` entries in Qwen3-TTS-Tokenizer-12Hz (F32, PyTorch layout).
+//! Only used during ICL voice cloning to encode the reference audio into the codec prefix.
 
 use crate::synthesize::tensor::fast::{self, ScaledDotProductAttentionMask};
 use crate::synthesize::tensor::ops;
@@ -30,7 +30,7 @@ const ROPE_THETA: f32 = 10_000.0;
 const LAYER_NORM_EPS: f32 = 1e-5;
 const CODEBOOK_USAGE_EPS: f32 = 1e-5;
 
-/// `elu(x) = x (x>0) / exp(x)-1`，自己展开避免 mlx-rs 每次调用都重新 compile。
+/// `elu(x) = x (x>0) / exp(x)-1`, expanded by hand to avoid mlx-rs recompiling on every call.
 fn elu(x: &Array) -> Result<Array> {
     let zero = Array::from_f32(0.0);
     let one = Array::from_f32(1.0);
@@ -38,7 +38,7 @@ fn elu(x: &Array) -> Result<Array> {
     Ok(ops::which(&x.gt(&zero)?, x, &negative)?)
 }
 
-/// Mimi 的流式因果卷积：左侧补 `k_eff - stride`，右侧补齐到整帧的 `extra`。
+/// Mimi's streaming causal convolution: pads `k_eff - stride` on the left, and pads on the right by `extra` to complete a full frame.
 struct MimiConv1d {
     weight: Array,
     bias: Option<Array>,
@@ -110,7 +110,7 @@ impl EncoderLayer {
     }
 }
 
-/// SEANet 卷积编码器：`[B, N, 1]` → `[B, N/960, 512]`。
+/// SEANet convolutional encoder: `[B, N, 1]` → `[B, N/960, 512]`.
 struct SeanetEncoder {
     init_conv: MimiConv1d,
     layers: Vec<EncoderLayer>,
@@ -118,7 +118,7 @@ struct SeanetEncoder {
 }
 
 impl SeanetEncoder {
-    /// 权重是扁平 `layers` 列表：0 = 初始卷积；第 k 阶段残差块在 1+3k、下采样在 3+3k；14 = 末卷积。
+    /// Weights are a flat `layers` list: 0 = initial conv; the residual block of stage k is at 1+3k, downsampling at 3+3k; 14 = final conv.
     fn load(weights: &mut Weights) -> Result<Self> {
         let init_conv = MimiConv1d::load(weights, "encoder.layers.0.conv", 1, 1, false)?;
         let mut layers = Vec::with_capacity(RATIOS.len());
@@ -149,7 +149,7 @@ impl SeanetEncoder {
     }
 }
 
-/// HF Mimi transformer 层：LayerNorm(带偏置) + 8×64 头注意力 + fc1/gelu/fc2，各带 LayerScale。
+/// HF Mimi transformer layer: LayerNorm (with bias) + 8×64-head attention + fc1/gelu/fc2, each with LayerScale.
 struct TransformerLayer {
     input_layernorm: LayerNorm,
     post_attention_layernorm: LayerNorm,
@@ -234,10 +234,10 @@ impl EncoderTransformer {
     }
 }
 
-/// EMA 码本：`embedding = embed_sum / max(cluster_usage, 1e-5)`。
+/// EMA codebook: `embedding = embed_sum / max(cluster_usage, 1e-5)`.
 struct Codebook {
     embedding: Array,
-    /// `‖e‖² / 2`，形状 `[size]`。
+    /// `‖e‖² / 2`, shape `[size]`.
     half_norms: Array,
 }
 
@@ -277,7 +277,7 @@ impl ResidualVq {
         for index in 0..count {
             codebooks.push(Codebook::load(weights, &format!("{prefix}.layers.{index}.codebook"))?);
         }
-        // 编码用不到 output_proj，丢弃以免残留计数误报。
+        // Encoding does not use output_proj; drop it so it does not cause false positives in the leftover-weight count.
         let _ = weights.take_optional(&format!("{prefix}.output_proj.weight"));
         Ok(Self { input_proj, codebooks })
     }
@@ -305,7 +305,7 @@ pub struct CodecEncoder {
 }
 
 impl CodecEncoder {
-    /// `weights` 已剥掉 `encoder.` 前缀。
+    /// `weights` already has the `encoder.` prefix stripped.
     pub fn load(weights: &mut Weights) -> Result<Self> {
         Ok(Self {
             seanet: SeanetEncoder::load(weights)?,
@@ -316,7 +316,7 @@ impl CodecEncoder {
         })
     }
 
-    /// 24 kHz 单声道样本 → `[1, 16, T]` Int32 codes。
+    /// 24 kHz mono samples → `[1, 16, T]` Int32 codes.
     pub fn encode(&self, samples: &[f32]) -> Result<Array> {
         if samples.is_empty() {
             bail!("参考音频为空，无法编码");

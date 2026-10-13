@@ -9,8 +9,8 @@ import { CodexDriver } from './codex-driver.ts';
 import { CODEX_TOOL_TIMEOUT_SEC, codexPolicy } from './codex-session.ts';
 
 /**
- * Codex Driver 对着假 codex（`testing/fake-codex.ts`）：探测的几种状态、模型目录与配置里的模型，与受限的一次性会话（§6.9）
- * 在 `thread/start` 里实际发出的参数。从不启动本机真实的 codex。会话本身的行为见 `codex-session.test.ts`。
+ * The Codex Driver runs against a fake codex (`testing/fake-codex.ts`): the several probe states, the model catalog and the model in the config, and the arguments actually sent in `thread/start` by a restricted one-off session (§6.9).
+ * It never starts the real codex on this machine. For the session's own behavior, see `codex-session.test.ts`.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_000): Promise<T> {
@@ -75,7 +75,7 @@ describe('CodexDriver（假 codex）', () => {
       },
       expect.objectContaining({ id: 'fake-luna', tier: 'fast', isDefault: false }),
     ]);
-    // 没有 config.toml。
+    // No config.toml.
     expect(probe).toMatchObject({ configModel: null, configModelKnown: null });
     const lists = fake.requests('model/list');
     expect(lists.map((r) => r.params)).toEqual([{ includeHidden: true }, { includeHidden: true, cursor: '2' }]);
@@ -109,7 +109,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(await driver.probe()).toMatchObject({ configModel: 'fake-hidden', configModelKnown: true });
     await fs.writeFile(config, '# 新客户端写的\nmodel = "gpt-from-the-future"\n');
     expect(await driver.probe()).toMatchObject({ configModel: 'gpt-from-the-future', configModelKnown: false });
-    // profile 表里的不算。
+    // Entries in the profile table do not count.
     await fs.writeFile(config, '[profiles.fast]\nmodel = "fake-luna"\n');
     expect(await driver.probe()).toMatchObject({ configModel: null, configModelKnown: null });
   });
@@ -118,7 +118,7 @@ describe('CodexDriver（假 codex）', () => {
     fake.scenario({ models: 'error' });
     await fs.writeFile(path.join(fake.codexHome, 'config.toml'), 'model = "fake-sol"\n');
     expect(await driver.probe()).toMatchObject({ state: 'ready', models: [], configModel: 'fake-sol', configModelKnown: null });
-    // 失败也缓存一会儿，不每次探测都起进程。
+    // Failures are also cached for a while, so that every probe does not start a process.
     await driver.probe();
     expect(fake.log().filter((e) => e.kind === 'catalog-start')).toHaveLength(1);
   });
@@ -186,7 +186,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(start!.params).toMatchObject({ cwd, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'workspace-write' });
     const config = start!.params.config as Record<string, unknown>;
     expect(Object.keys(config)).toEqual(['mcp_servers']);
-    // 工具调用可能在等用户批准：不用 Codex 默认的 60 秒上限。
+    // Tool calls may be waiting for user approval: do not use Codex's default 60-second limit.
     expect(config.mcp_servers).toMatchObject({ cuccut: { default_tools_approval_mode: 'approve', tool_timeout_sec: CODEX_TOOL_TIMEOUT_SEC } });
     expect(CODEX_TOOL_TIMEOUT_SEC).toBe(86400);
     await session.close();

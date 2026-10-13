@@ -14,12 +14,12 @@ import { pl } from './mcp-copy.pl.ts';
 import { tr } from './mcp-copy.tr.ts';
 import { vi } from './mcp-copy.vi.ts';
 
-/** `cuccut mcp install|status` 的文案（英文是键与类型的来源，译文在 `mcp-copy.<语言>.ts`）。 */
+/** Copy for `cuccut mcp install|status`. The English is the source of the keys and types; the translations are in `mcp-copy.<language>.ts`. */
 const en = {
   previousClientUnknown: "Couldn't identify the client used by the replaced entry, so no client was revoked: cuccut mcp status lists existing clients; revoke unused ones with cuccut services mcp revoke <clientId>",
   defaultProjectRegistered: (name: string, path: string) => `CucCut had no projects: registered default project "${name}" (${path}) for external agents to create videos in`,
 
-  /** `cuccut mcp --help` 与 `cuccut help mcp` 的正文。 */
+  /** The body of `cuccut mcp --help` and `cuccut help mcp`. */
   help: `Usage:
   cuccut mcp install --agent <claude-code|codex|cursor|gemini> [--level ask|auto] [--name <client name>] [--yes]
                                    Connect an external agent to CucCut's MCP service: start the service (and make it start with
@@ -54,7 +54,7 @@ const en = {
   replacedRevokeFailed: (reason: string) => `Replaced the old entry, but couldn't revoke the client it used: ${reason}`,
   oldClientRemains: (ids: readonly string[]) =>
     `The old client is still there: ${ids.join(', ')}. If it's no longer used: cuccut services mcp revoke <clientId>`,
-  /** 同名的客户端还在；`unrecognized`：替换了条目，但认不出原来的条目用的是哪个客户端。 */
+  /** The client with the same name still exists. `unrecognized`: the entry was replaced, but the client the original entry used cannot be recognized. */
   sameNameClientsRemain: (ids: readonly string[], unrecognized: boolean) =>
     `${unrecognized ? "Couldn't tell which client the old entry used; clients" : 'Clients'} with the same name are still there: ${ids.join(', ')}. If they're no longer used: cuccut services mcp revoke <clientId>`,
   hostsHeading: (entry: string) => `Whether each agent's config has a ${entry} entry:`,

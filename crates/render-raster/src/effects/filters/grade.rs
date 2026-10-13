@@ -1,8 +1,7 @@
-//! `filter.grade@1`：lift / gamma / gain + 饱和度 + 色温 + 高光肩部。
+//! `filter.grade@1`: lift / gamma / gain, plus saturation, color temperature and a highlight shoulder.
 //!
-//! 反预乘到 f64 运算，`pow` / `exp` 走 `libm`（native 与 wasm 同一份实现）。
-//! 全不透明像素的色调曲线查 256 项表——表项与逐像素算法是同一个函数、同一个
-//! 输入值（`p / 255`），查表与直算逐位相同。
+//! Un-premultiplies and computes in f64. `pow` / `exp` go through `libm`, so native and wasm use the same implementation.
+//! For fully opaque pixels, the tone curve is read from a 256-entry table. Each table entry and the per-pixel algorithm are the same function applied to the same input value (`p / 255`), so table lookup and direct computation give bit-identical results.
 
 #[derive(Clone, Copy, Debug)]
 pub struct Grade {
@@ -24,7 +23,7 @@ impl Grade {
             && self.shoulder == 0.0
     }
 
-    /// 逐通道的色调曲线：gamma → gain / lift → shoulder。
+    /// Per-channel tone curve: gamma, then gain / lift, then shoulder.
     fn tone(&self, c: f64) -> f64 {
         let mut v = if self.gamma == 1.0 {
             c
@@ -42,8 +41,7 @@ impl Grade {
         v
     }
 
-    /// 色温乘子：暖端 (1, 0.78, 0.52)、冷端 (0.62, 0.8, 1)，按 Rec.709 亮度归一，
-    /// 只偏色不改明暗。
+    /// Color temperature multipliers: warm end (1, 0.78, 0.52), cool end (0.62, 0.8, 1). Normalized by Rec.709 luminance, so they only shift color and do not change brightness.
     fn tint_mul(&self) -> [f64; 3] {
         let t = self.tint.clamp(-1.0, 1.0);
         let target = if t >= 0.0 {

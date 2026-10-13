@@ -6,8 +6,8 @@ import { RejectedAlert } from './export-remedy.tsx';
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 每页底部（设计稿 export.jsx 的 `.xacts`）：上一次提交被拒的原因与补救，视频没追平时的一句说明，取消与导出按钮。
- * `settings` 为 null 时这页现在导不了（没勾内容、范围为空……），导出按钮置灰，原因由各页自己写在上面。
+ * Footer of each page (design mockup export.jsx `.xacts`): the reason the last submission was rejected and its remedy, a one-line note when the video is not up to date, the cancel and export buttons.
+ * When `settings` is null, this page cannot export right now (nothing ticked, range empty, ...): the export button is disabled, and each page writes the reason above.
  */
 export function SubmitFoot({
   env,
@@ -22,7 +22,7 @@ export function SubmitFoot({
   settings: ExportSettings | null;
   label: string;
   onClose: () => void;
-  /** 导出按钮另有提交方式（音频页「每种一份」一次提交几份）；不给时提交 `settings`。 */
+  /** The export button has another submit mode (the audio page's "one per kind" submits several at once); when not given, `settings` is submitted. */
   onSubmit?: () => void;
 }) {
   return (

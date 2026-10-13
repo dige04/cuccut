@@ -4,7 +4,7 @@ import { defineNoun } from './context.ts';
 import { GRANT_OPTIONS, grantOptions } from './grants.ts';
 import { formatApprovalGrants, parseApprovalGrantChoice } from './grants-output.ts';
 
-/** `cuccut approvals`：待处理的审批（会话的与对外服务的）与处理它们（架构设计 §3.12）。 */
+/** `cuccut approvals`: pending approvals (session ones and those of the external service), and handling them (Architecture design §3.12). */
 export const approvals = defineNoun({
   name: 'approvals',
   get usage() {
@@ -16,7 +16,7 @@ export const approvals = defineNoun({
     if (command.kind === 'list') {
       const result = await ctx.client.request('approvals.list', {});
       const lines = formatApprovals(result.approvals);
-      // 带数据外发的审批：下面列出要授权的数据（§12.5）。
+      // Approvals that send data out: the data to be authorized is listed below (§12.5).
       const out =
         result.approvals.length === 0 ? lines : result.approvals.flatMap((approval, i) => [lines[i]!, ...formatApprovalGrants(approval)]);
       return ctx.done(result, out);

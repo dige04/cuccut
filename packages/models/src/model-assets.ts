@@ -6,21 +6,19 @@ import { ModelsModelAssets as M } from '@cuccut/protocol/messages/models/model-a
 import type { ModelText } from './model-text.ts';
 
 /**
- * 随应用分发、按路径读的模型数据（`packages/models/assets/`：自测样本、内置音色的参考录音）。路径会交给 Model Worker 读，
- * 所以必须是磁盘上的真实文件，不能在 asar 里。
+ * Model data shipped with the app and read by path (`packages/models/assets/`: self-test samples, reference recordings for built-in voices). The path is handed to the Model Worker to read, so it must be a real file on disk, not inside asar.
  *
- * 不能用 `new URL('../assets/…', import.meta.url)`：Runtime 被打进桌面端的 `out/main/runtime.js` 之后，`import.meta.url` 是 bundle，
- * 相对路径就指到 `out/assets/` 去了。与内置模板（`resolveBuiltinTemplatesDir`）同一个办法，按次序找：
- * 1. `CUCCUT_MODEL_ASSETS_DIR` 环境变量（打包后的应用由主进程给出 `<resources>/model-assets`）；
- * 2. 打包后的资源目录 `<resources>/model-assets`；
- * 3. 从本模块往上找仓库里的 `packages/models/assets`（源码运行、测试、CLI 与开发时的桌面构建）。
+ * Do not use `new URL('../assets/…', import.meta.url)`: after the Runtime is bundled into the desktop app's `out/main/runtime.js`, `import.meta.url` is the bundle, so the relative path points to `out/assets/`. Use the same approach as the built-in templates (`resolveBuiltinTemplatesDir`), searching in this order:
+ * 1. the `CUCCUT_MODEL_ASSETS_DIR` environment variable (in a packaged app the main process provides `<resources>/model-assets`);
+ * 2. the packaged resource directory `<resources>/model-assets`;
+ * 3. walk up from this module to find `packages/models/assets` in the repository (running from source, tests, the CLI, and development desktop builds).
  */
 export const MODEL_ASSETS_ENV = 'CUCCUT_MODEL_ASSETS_DIR';
 
 const RESOURCES_DIR = 'model-assets';
 const IN_REPO = path.join('packages', 'models', 'assets');
 
-/** 模型数据目录；都找不到时 null。每次调用都重新找（环境变量在调用时读）。 */
+/** Model data directory; null if none is found. Searches again on every call (the environment variable is read at call time). */
 export function resolveModelAssetsDir(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env[MODEL_ASSETS_ENV]) return env[MODEL_ASSETS_ENV];
   const resources = (process as { resourcesPath?: string }).resourcesPath;
@@ -39,8 +37,7 @@ export function resolveModelAssetsDir(env: NodeJS.ProcessEnv = process.env): str
 }
 
 /**
- * 一个随应用分发的文件（`asset` 是相对模型数据目录的路径，以 `/` 分隔）的绝对路径；找不到目录时 null。
- * 不检查文件在不在：读的地方读不出来时报 `appFileMissing`。
+ * Absolute path of a file shipped with the app (`asset` is a path relative to the model data directory, separated by `/`); null when the directory cannot be found. Does not check whether the file exists: where it is read, a read failure is reported as `appFileMissing`.
  */
 export function modelAssetPath(asset: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const dir = resolveModelAssetsDir(env);
@@ -55,12 +52,11 @@ function isDirectory(dir: string): boolean {
   }
 }
 
-/** 随应用分发的文件缺失或读不出来的错误码（命令与协议规范 §11.3）。 */
+/** Error code for a file shipped with the app that is missing or cannot be read (command and protocol spec §11.3). */
 export const APP_FILE_MISSING = 'APP_FILE_MISSING';
 
 /**
- * 随应用分发的文件缺失或读不出来：是安装的问题，不是用户给的输入，也不是模型的问题。`what` 是给人看的名字（「识别检查的样本」）；
- * 句子里不带路径：`details.asset` 是模型数据目录里的相对路径（不知道时 null），期望的位置在 `details.file`（找不到模型数据目录时 null）。`RpcError.code` 为 `conflict`，错误码在 `details.code`。
+ * A file shipped with the app is missing or cannot be read: this is an installation problem, not user input, nor a model problem. `what` is the name shown to people (“识别检查的样本”, the recognition check sample). The sentence does not include the path: `details.asset` is the relative path within the model data directory (null if unknown), and the expected location is in `details.file` (null if the model data directory cannot be found). `RpcError.code` is `conflict`, and the error code is in `details.code`.
  */
 export function appFileMissing(what: ModelText, asset: string | null, file: string | null): RpcError {
   return new RpcError('conflict', M.appFileMissing({ what }), {

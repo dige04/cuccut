@@ -14,7 +14,7 @@ import { pl } from './job-application.pl.ts';
 import { tr } from './job-application.tr.ts';
 import { vi } from './job-application.vi.ts';
 
-/** `packages/jobs/src/job-application.ts`：把任务结果应用到视频时的错误。 */
+/** `packages/jobs/src/job-application.ts`: errors when applying a job's result to the video. */
 const en = {
   applyFailed: "Couldn't write to the video",
   taskProtected: "The result touches content the task contract marks as do-not-change, so it wasn't written to the video",

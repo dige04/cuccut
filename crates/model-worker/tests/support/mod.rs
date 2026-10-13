@@ -1,4 +1,4 @@
-//! 测试里驱动一个真实的 `model-worker` 进程：写请求、按超时读事件与响应、等它退出。
+//! Drives a real `model-worker` process in tests: writes requests, reads events and responses with timeouts, and waits for it to exit.
 
 #![allow(dead_code)]
 
@@ -20,7 +20,7 @@ pub struct WorkerProcess {
 }
 
 impl WorkerProcess {
-    /// 以本测试进程为父进程启动。
+    /// Start it with this test process as the parent.
     pub fn spawn() -> Self {
         Self::spawn_with_parent(std::process::id())
     }
@@ -58,7 +58,7 @@ impl WorkerProcess {
         self.try_send_raw(line).expect("write to model-worker stdin");
     }
 
-    /// 写一行；worker 可能中途退出（管道断开），由调用方决定是否在意。
+    /// Write one line. The worker may exit midway (the pipe breaks), and the caller decides whether that matters.
     pub fn try_send_raw(&mut self, line: &str) -> std::io::Result<()> {
         let stdin = self.stdin.as_mut().expect("stdin open");
         stdin.write_all(line.as_bytes())?;
@@ -66,7 +66,7 @@ impl WorkerProcess {
         stdin.flush()
     }
 
-    /// 发一个请求，返回它的 id。
+    /// Send one request and return its id.
     pub fn send(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -74,7 +74,7 @@ impl WorkerProcess {
         id
     }
 
-    /// 下一行输出（事件或响应）。
+    /// The next line of output (an event or a response).
     pub fn next(&self, timeout: Duration) -> Value {
         match self.lines.recv_timeout(timeout) {
             Ok(value) => value,
@@ -83,7 +83,7 @@ impl WorkerProcess {
         }
     }
 
-    /// 读到 `id` 的响应为止，返回途中的事件与响应本身。
+    /// Read until the response with `id` arrives, and return the events and responses seen along the way, plus the response itself.
     pub fn response(&self, id: u64, timeout: Duration) -> (Vec<Value>, Value) {
         let deadline = Instant::now() + timeout;
         let mut events = Vec::new();
@@ -97,7 +97,7 @@ impl WorkerProcess {
         }
     }
 
-    /// 发请求并等响应。
+    /// Send a request and wait for its response.
     pub fn call(&mut self, method: &str, params: Value, timeout: Duration) -> (Vec<Value>, Value) {
         let id = self.send(method, params);
         self.response(id, timeout)
@@ -107,7 +107,7 @@ impl WorkerProcess {
         drop(self.stdin.take());
     }
 
-    /// 等进程退出；超时返回 `None`。
+    /// Wait for the process to exit. Returns `None` on timeout.
     pub fn wait_exit(&mut self, timeout: Duration) -> Option<ExitStatus> {
         let deadline = Instant::now() + timeout;
         loop {
@@ -142,7 +142,7 @@ pub fn result(response: &Value) -> &Value {
         .unwrap_or_else(|| panic!("expected a result response: {response}"))
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造协议里的 `ModelFiles`。
+/// Build the protocol's `ModelFiles` from `<models-root>/<repo>/.ccut-manifest.json`.
 pub fn model_files(models_root: &Path, repo: &str, family: &str) -> Value {
     let dir = models_root.join(repo);
     let manifest: Value =
@@ -156,8 +156,7 @@ pub fn model_files(models_root: &Path, repo: &str, family: &str) -> Value {
     json!({ "family": family, "revision": manifest["revision"], "dir": dir.to_string_lossy(), "files": files })
 }
 
-/// 同 [`model_files`]，只取仓库里 `subdir/` 之下的文件，组件的目录就是这个子目录（Runtime 按登记的 `subdir`
-/// 交给 Worker 的就是这个形状：`argmaxinc/whisperkit-coreml` 的 large-v3 在 `openai_whisper-large-v3_947MB/` 里）。
+/// Same as [`model_files`], but takes only the files under `subdir/` in the repo. The component's directory is that subdirectory. This is the shape the Runtime passes to the Worker from the registered `subdir`: the large-v3 model of `argmaxinc/whisperkit-coreml` lives in `openai_whisper-large-v3_947MB/`.
 pub fn model_files_in(models_root: &Path, repo: &str, subdir: &str, family: &str) -> Value {
     let mut files = model_files(models_root, repo, family);
     let prefix = format!("{subdir}/");
@@ -177,7 +176,7 @@ pub fn model_files_in(models_root: &Path, repo: &str, subdir: &str, family: &str
     files
 }
 
-/// Whisper（CoreML）的模型包：模型包 ID、`asr` 的仓库与仓库里的子目录（没有是 `None`）。
+/// The Whisper (CoreML) bundle: the bundle ID, the `asr` repo, and the subdirectory within the repo (`None` if there is none).
 pub type WhisperBundle = (&'static str, &'static str, Option<&'static str>);
 pub const WHISPER_LARGE_V3: WhisperBundle = (
     "whisper-large-v3@coreml",
@@ -185,10 +184,10 @@ pub const WHISPER_LARGE_V3: WhisperBundle = (
     Some("openai_whisper-large-v3_947MB"),
 );
 pub const WHISPER_LARGE_V3_TURBO: WhisperBundle = ("whisper-large-v3-turbo@coreml", "aufklarer/Whisper-Large-v3-Turbo-CoreML", None);
-/// Whisper 的分词器仓库，large-v3 与 turbo 共用。
+/// The Whisper tokenizer repo, shared by large-v3 and turbo.
 pub const WHISPER_TOKENIZER_REPO: &str = "openai/whisper-large-v3";
 
-/// 本机已安装的 Whisper（CoreML）+ Silero + 分词器模型包。可选的对齐器装了就带上（同 Runtime）。
+/// The locally installed Whisper (CoreML) + Silero + tokenizer bundle. The optional aligner is included if it is installed (same as the Runtime).
 pub fn whisper_bundle(models_root: &Path, (bundle_id, asr_repo, subdir): WhisperBundle) -> Value {
     let asr = match subdir {
         Some(subdir) => model_files_in(models_root, asr_repo, subdir, "whisper-coreml"),
@@ -212,13 +211,12 @@ pub fn whisper_bundle(models_root: &Path, (bundle_id, asr_repo, subdir): Whisper
     bundle
 }
 
-/// Whisper（MLX）的模型包：模型包 ID 与 `asr` 的仓库（mlx-community 的 fp16 转换）。
+/// The Whisper (MLX) bundle: the bundle ID and the `asr` repo (mlx-community's fp16 conversion).
 pub type WhisperMlxBundle = (&'static str, &'static str);
 pub const WHISPER_LARGE_V3_MLX: WhisperMlxBundle = ("whisper-large-v3@mlx", "mlx-community/whisper-large-v3-fp16");
 pub const WHISPER_LARGE_V3_TURBO_MLX: WhisperMlxBundle = ("whisper-large-v3-turbo@mlx", "mlx-community/whisper-large-v3-turbo-fp16");
 
-/// 本机已安装的 Whisper（MLX）+ Silero + 分词器模型包（分词器组件要带 `generation_config.json`）。可选的对齐器装了就
-/// 带上（同 Runtime）。
+/// The locally installed Whisper (MLX) + Silero + tokenizer bundle. The tokenizer component must include `generation_config.json`. The optional aligner is included if it is installed (same as the Runtime).
 pub fn whisper_mlx_bundle(models_root: &Path, (bundle_id, asr_repo): WhisperMlxBundle) -> Value {
     let mut bundle = json!({
         "bundleId": bundle_id,
@@ -238,20 +236,20 @@ pub fn whisper_mlx_bundle(models_root: &Path, (bundle_id, asr_repo): WhisperMlxB
     bundle
 }
 
-/// 默认的识别模型包：模型包 ID 与 `asr` 组件的仓库。
+/// The default recognition bundle: the bundle ID and the repo of the `asr` component.
 pub const QWEN3_ASR_0_6B: (&str, &str) = ("qwen3-asr-0.6b@mlx-4bit", "aufklarer/Qwen3-ASR-0.6B-MLX-4bit");
-/// 大一档的 Qwen3-ASR，与 0.6B 共用 Silero VAD。
+/// The larger Qwen3-ASR. It shares Silero VAD with the 0.6B model.
 pub const QWEN3_ASR_1_7B: (&str, &str) = ("qwen3-asr-1.7b@mlx-8bit", "aufklarer/Qwen3-ASR-1.7B-MLX-8bit");
 
-/// 这个仓库在本机装好了（有 `.ccut-manifest.json`）。
+/// This repo is installed locally (it has `.ccut-manifest.json`).
 pub fn is_installed(models_root: &Path, repo: &str) -> bool {
     models_root.join(repo).join(".ccut-manifest.json").is_file()
 }
 
-/// 识别模型包（Qwen3-ASR、Whisper）共用的可选对齐器。
+/// The optional aligner shared by the recognition bundles (Qwen3-ASR, Whisper).
 pub const QWEN3_FORCED_ALIGNER: &str = "aufklarer/Qwen3-ForcedAligner-0.6B-4bit";
 
-/// 本机已安装的 Qwen3-ASR + Silero 模型包：`(模型包 ID, asr 的仓库)`。可选的对齐器装了就带上（同 Runtime）。
+/// The locally installed Qwen3-ASR + Silero bundle: `(bundle ID, asr repo)`. The optional aligner is included if it is installed (same as the Runtime).
 pub fn qwen3_asr_bundle(models_root: &Path, (bundle_id, asr_repo): (&str, &str)) -> Value {
     let mut bundle = json!({
         "bundleId": bundle_id,
@@ -270,16 +268,16 @@ pub fn qwen3_asr_bundle(models_root: &Path, (bundle_id, asr_repo): (&str, &str))
     bundle
 }
 
-/// MOSS Transcribe Diarize：模型包 ID 与 `asr` 组件的仓库。
+/// MOSS Transcribe Diarize: the bundle ID and the repo of the `asr` component.
 pub const MOSS_TRANSCRIBE_DIARIZE: (&str, &str) = ("moss-transcribe-diarize@mlx-8bit", "OpenMOSS-Team/MOSS-Transcribe-Diarize");
 
-/// MOSS 合并跨块说话人用的可选说话人模型。
+/// The optional speaker model MOSS uses to merge speakers across chunks.
 pub const WESPEAKER: &str = "aufklarer/WeSpeaker-ResNet34-LM-MLX";
 
-/// 「说话人区分」模型包的 Pyannote 分段模型（与 [`WESPEAKER`] 一起给 Qwen3-ASR、Whisper 区分说话人）。
+/// The Pyannote segmentation model of the speaker-diarization bundle (together with [`WESPEAKER`], it gives speakers to Qwen3-ASR and Whisper).
 pub const PYANNOTE: &str = "aufklarer/Pyannote-Segmentation-MLX";
 
-/// 识别模型包带上「说话人区分」模型包的两个组件（同 Runtime：模型包装好了才带）；没装返回 `None`。
+/// A recognition bundle carries the two components of the speaker-diarization bundle (same as the Runtime: only once that bundle is installed). Returns `None` if it is not installed.
 pub fn with_diarization(models_root: &Path, mut bundle: Value) -> Option<Value> {
     if !is_installed(models_root, PYANNOTE) || !is_installed(models_root, WESPEAKER) {
         return None;
@@ -289,7 +287,7 @@ pub fn with_diarization(models_root: &Path, mut bundle: Value) -> Option<Value> 
     Some(bundle)
 }
 
-/// 本机已安装的 MOSS 模型包（没有 VAD）。可选的对齐器与说话人模型装了就带上（同 Runtime）。
+/// The locally installed MOSS bundle (no VAD). The optional aligner and speaker model are included if installed (same as the Runtime).
 pub fn moss_bundle(models_root: &Path) -> Value {
     let (bundle_id, asr_repo) = MOSS_TRANSCRIBE_DIARIZE;
     let mut bundle = json!({
@@ -309,12 +307,12 @@ pub fn moss_bundle(models_root: &Path) -> Value {
     bundle
 }
 
-/// candle 后端的模型包 ID：与 MLX 的同一批仓库、同样的组件。
+/// The candle backend's bundle IDs: the same repos as MLX, with the same components.
 pub const QWEN3_ASR_0_6B_CANDLE: &str = "qwen3-asr-0.6b@candle";
 pub const QWEN3_ASR_1_7B_CANDLE: &str = "qwen3-asr-1.7b@candle";
 pub const MOSS_TRANSCRIBE_DIARIZE_CANDLE: &str = "moss-transcribe-diarize@candle";
 
-/// 同一个模型包换到 candle 后端的 CPU 上跑（Runtime 在 Windows / Linux 上登记的就是这个形状）。
+/// The same bundle, switched to candle's CPU backend. This is the shape the Runtime registers on Windows and Linux.
 pub fn on_candle(mut bundle: Value, bundle_id: &str) -> Value {
     bundle["bundleId"] = json!(bundle_id);
     bundle["backend"] = json!("candle");
@@ -322,13 +320,13 @@ pub fn on_candle(mut bundle: Value, bundle_id: &str) -> Value {
     bundle
 }
 
-/// 去掉可选的对齐器：词时间退回按字符长度估计。
+/// Drop the optional aligner. Word timing falls back to estimates based on character length.
 pub fn without_aligner(mut bundle: Value) -> Value {
     bundle["components"].as_object_mut().expect("components").remove("aligner");
     bundle
 }
 
-/// 本机已安装的默认识别模型包（Qwen3-ASR 0.6B + Silero）。
+/// The locally installed default recognition bundle (Qwen3-ASR 0.6B + Silero).
 pub fn installed_bundle(models_root: &Path) -> Value {
     qwen3_asr_bundle(models_root, QWEN3_ASR_0_6B)
 }

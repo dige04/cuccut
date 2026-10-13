@@ -57,7 +57,7 @@ const list = style({ display: 'flex', flexDirection: 'column', gap: 8, margin: 0
 const hint = style({ margin: 0, marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 const loading = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'gray-700' });
 
-/** 导入对话框收的文件：各节的媒体，加上库条目（颜色、字幕样式）的 JSON。 */
+/** Files accepted by the import dialog: the media of each section, plus the JSON for library entries (colors, caption styles). */
 function importFilters() {
   return [
     {
@@ -67,7 +67,7 @@ function importFilters() {
   ];
 }
 
-/** 节名在用的时候按当前语言取。 */
+/** Section names are looked up in the current language when they are used. */
 function sectionTitle(kind: string): string | undefined {
   return BRAND_SECTIONS.find((section) => section.kind === kind)?.title;
 }
@@ -83,9 +83,9 @@ const fileName = (path: string) => path.split(/[\\/]/).pop() || path;
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * 编辑器 › 品牌（产品设计 §13.7，设计稿 panel-brand.jsx）：品牌库里的视频、图片、贴纸、品牌色、字体与字幕样式。
- * 品牌库在 Runtime Home 里、跨视频复用；放进视频是拷一份（`library.applyToVideo`），之后库里的修改与删除不影响视频。
- * 列表跟着 `library` 主题；条目的内容按版本读一次。模板（`overlayTemplate`）还没有，不画那一节。
+ * Editor › Brand (product design §13.7, mockup panel-brand.jsx): videos, images, stickers, brand colors, fonts and caption styles from the brand library.
+ * The brand library lives in the Runtime Home and is reused across videos; putting an item into a video copies it (`library.applyToVideo`), and later edits and deletes in the library do not affect the video.
+ * The list follows the `library` topic; each item's content is read once per version. Templates (`overlayTemplate`) are not there yet, so that section is not drawn.
  */
 export function BrandPanel({
   sequence,
@@ -102,7 +102,7 @@ export function BrandPanel({
   const editable = useVideo((s) => canEdit(s.video));
   const applyEntry = useBrandApply();
   const [dialog, setDialog] = useState<DialogState>(null);
-  /** 正在往哪一节里添加（按钮转圈）。 */
+  /** Which section is being added to (the button spins). */
   const [adding, setAdding] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const pickFiles = runtime.host.pickFiles;
@@ -124,7 +124,7 @@ export function BrandPanel({
       for (const path of paths) {
         try {
           const entry = await importLibraryFile(runtime, path);
-          // 进哪一节由 Runtime 按内容判：回执说真落点。
+          // The Runtime decides which section an item goes into from its content: the receipt states the actual destination.
           if (entry.library === 'brand') {
             const content = entry.content as BrandContent;
             ToastQueue.positive(IB.imported(sectionTitle(content.kind) ?? IB.brand, content.name), { timeout: 4000 });
@@ -142,7 +142,7 @@ export function BrandPanel({
     }
   };
 
-  /** 本机文件存进某一节：每个文件一条，失败的逐个说原因。 */
+  /** Stores local files into a section: one entry per file; failures are explained one by one. */
   const addFiles = async (section: BrandSection & { kind: BrandMediaKind }) => {
     if (!pickFiles) return;
     const paths = await pickFiles({
@@ -169,7 +169,7 @@ export function BrandPanel({
     if (added) ToastQueue.positive(IB.addedCount(section.title, added), { timeout: 4000 });
   };
 
-  /** 这个视频里的一个素材存进某一节：生成的用产物，链接的用原文件。 */
+  /** Stores one asset from this video into a section: generated assets use the product, linked assets use the original file. */
   const addAsset = async (section: BrandSection & { kind: BrandMediaKind }, candidate: BrandCandidate) => {
     if (!candidate.source) return;
     setAdding(section.kind);
@@ -180,7 +180,7 @@ export function BrandPanel({
     }
   };
 
-  /** 把视频里正在用的一份字幕样式存进来（读那份 `caption-style` 文档的当前版本）。 */
+  /** Stores the caption style in use in this video (reads the current version of that `caption-style` document). */
   const saveStyle = async (candidate: CaptionStyleCandidate) => {
     const record = documents[candidate.documentId];
     if (!record) return;
@@ -203,7 +203,7 @@ export function BrandPanel({
     }
   };
 
-  /** 改名：带文件的条目只给名字与种类（文件沿用当前版本的），颜色与字幕样式带上原内容。 */
+  /** Rename: entries with files get only a name and kind (the file stays at its current version); colors and caption styles carry their original content. */
   const rename = async (entry: LibraryEntry, name: string) => {
     const content = entry.content as BrandContent;
     const next = clip(name);
@@ -350,7 +350,7 @@ export function BrandPanel({
   );
 }
 
-/** 媒体节的「添加」：本机文件，或这个视频里的素材（取不到原文件的灰着，写明原因）。 */
+/** “Add” in media sections: a local file, or an asset from this video (grayed out if the original file cannot be obtained, with the reason written). */
 function AddMenu({
   section,
   candidates,
@@ -414,7 +414,7 @@ function AddMenu({
   );
 }
 
-/** 字幕样式节的「存当前样式」：视频里只用一份样式时直接存，几份时选一份；没有时灰着（原因写在节里）。 */
+/** “Store current style” in the caption style section: stores directly when the video uses only one style, lets the user pick one when there are several; grayed out when there is none (the reason is written in the section). */
 function SaveStyle({
   candidates,
   isPending,

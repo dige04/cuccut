@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 
 /**
- * 规范 JSON：对象的键按字典序，没有空白；`undefined` 的字段省略。与 `@cuccut/jobs` 的同名函数规则相同；
- * 存储层不能依赖 jobs（依赖方向），所以在这里各写一份。
+ * Canonical JSON: object keys in lexicographic order, no whitespace, and `undefined` fields omitted. Same rules as the function of the same name in `@cuccut/jobs`.
+ * The storage layer cannot depend on jobs (dependency direction), so a copy is kept here.
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
@@ -17,7 +17,7 @@ export function sha256Hex(data: string | Uint8Array): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-/** 条目内容的摘要 `sha256:<hex>`。 */
+/** Content digest of an entry, `sha256:<hex>`. */
 export function contentHashOf(content: unknown): string {
   return `sha256:${sha256Hex(canonicalJson(content))}`;
 }

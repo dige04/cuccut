@@ -1,10 +1,10 @@
 /**
- * Codex 的模型目录：起一个临时的 `codex app-server`，经 `model/list` 取模型表，换成 `DriverModel`。
+ * Model catalog for Codex: starts a temporary `codex app-server`, gets the model table via `model/list`, and converts it to `DriverModel`.
  *
- * 模型字段的取法参考了 paseo 的 packages/server/src/server/agent/providers/codex-app-server-agent.ts
- * （`CodexModelListResponseSchema`、`buildCodexModelDefinition`、`buildCodexThinkingOptionMap`），
- * Apache-2.0，Copyright (c) 2025-present Mohamed Boudra；modified：改成 CucCut 的 `DriverModel` 形状，
- * 加上隐藏模型的区分、tier 推断与分页上限。
+ * The model field handling is based on paseo's packages/server/src/server/agent/providers/codex-app-server-agent.ts
+ * (`CodexModelListResponseSchema`, `buildCodexModelDefinition`, `buildCodexThinkingOptionMap`),
+ * Apache-2.0, Copyright (c) 2025-present Mohamed Boudra. Modified: changed to CucCut's `DriverModel` shape,
+ * and added the hidden-model distinction, tier inference, and a pagination cap.
  */
 import { spawn } from 'node:child_process';
 import os from 'node:os';
@@ -14,7 +14,7 @@ import type { CodexInstall } from './codex-binary.ts';
 import type { CodexModel, InitializeParams, ModelListParams, ModelListResponse } from './codex-protocol.ts';
 import { CodexRpcConnection } from './rpc-connection.ts';
 
-/** 一次 `model/list` 的结果。`all` 含隐藏模型，用来判断配置里的模型这一版 CLI 认不认得。 */
+/** Result of one `model/list` call. `all` includes hidden models, and is used to check whether this CLI version recognizes the models in the config. */
 export interface CodexCatalog {
   models: DriverModel[];
   all: string[];
@@ -23,8 +23,8 @@ export interface CodexCatalog {
 const MAX_PAGES = 5;
 
 /**
- * 起临时 app-server 取模型表。不跑模型回合，不花额度；整个过程限时 `timeoutMs`，结束（含失败、超时）一定关掉进程。
- * 没登录时能不能拿到：未验证（本机的 codex 是登录状态）；拿不到时调用方给空表。
+ * Starts a temporary app-server to get the model table. Runs no model turns and spends no quota. The whole process is limited to `timeoutMs`; the process is always killed when it ends (including on failure or timeout).
+ * Whether this works without a login is unverified (the local codex is logged in); when the table cannot be fetched, the caller gets an empty table.
  */
 export async function listCodexModels(install: CodexInstall, log: Logger, timeoutMs = 15_000): Promise<CodexCatalog> {
   const child = spawn(install.command, ['app-server'], {
@@ -46,7 +46,7 @@ export async function listCodexModels(install: CodexInstall, log: Logger, timeou
 }
 
 async function fetchCatalog(conn: CodexRpcConnection, timeoutMs: number): Promise<CodexCatalog> {
-  // 真实的 app-server 会发 configWarning 之类的通知，一律不管。
+  // The real app-server sends notifications such as configWarning; ignore all of them.
   conn.onNotification(() => {});
   const init: InitializeParams = {
     clientInfo: { name: 'cuccut', title: 'CucCut', version: RUNTIME_VERSION },
@@ -78,7 +78,7 @@ export function toDriverModel(m: CodexModel): DriverModel {
   const efforts = (Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts : [])
     .map((e) => (typeof e?.reasoningEffort === 'string' ? e.reasoningEffort : ''))
     .filter(Boolean)
-    // 中文标签由界面按 id 映射；原生没有短标签，就用 id。
+    // Chinese labels are mapped by id in the UI; since the native side has no short labels, the id is used.
     .map((id) => ({ id, label: id }));
   const description = typeof m.description === 'string' && m.description.trim() ? m.description.trim() : null;
   return {
@@ -86,7 +86,7 @@ export function toDriverModel(m: CodexModel): DriverModel {
     label: typeof m.displayName === 'string' && m.displayName ? m.displayName : m.id,
     description,
     tier: inferTier(m.id, description),
-    // 原样转述 Codex 自己标的默认，不替用户改（设计稿：模型目录是「发现」的证据，不是改写选择的许可）。
+    // Pass Codex's own default through as-is and do not change it for the user (design note: the model catalog is evidence for "discovery", not permission to rewrite the user's choice).
     isDefault: m.isDefault === true,
     efforts,
     defaultEffort: typeof m.defaultReasoningEffort === 'string' && m.defaultReasoningEffort ? m.defaultReasoningEffort : null,
@@ -94,8 +94,8 @@ export function toDriverModel(m: CodexModel): DriverModel {
 }
 
 /**
- * 按名字与说明推断定位。名字的家族后缀优先（`-sol` 主力、`-astra` 最强、`-luna` 最快，对照 0.159.0 的目录），
- * 其次看说明里的说法；都推不出来为 null。界面只给推荐的那一个标「推荐」，所以 balanced 标得宽一些无妨。
+ * Infers the tier from the name and description. The family suffix in the name takes priority (`-sol` main workhorse, `-astra` strongest, `-luna` fastest, per the 0.159.0 catalog),
+ * then the wording in the description; if neither works, null. The UI marks only the recommended one as "Recommended", so it is fine for balanced to be matched broadly.
  */
 export function inferTier(id: string, description: string | null): ModelTier | null {
   const name = id.toLowerCase();

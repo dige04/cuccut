@@ -14,9 +14,9 @@ import { pl } from './job-manager.pl.ts';
 import { tr } from './job-manager.tr.ts';
 import { vi } from './job-manager.vi.ts';
 
-/** `packages/jobs/src/job-manager.ts`：提交、执行、恢复与应用任务时的错误、校验问题与警告。 */
+/** `packages/jobs/src/job-manager.ts`: errors, validation problems and warnings when submitting, running, recovering and applying jobs. */
 const en = {
-  // 提交与查询
+  // Submit and query
   runtimeStopping: 'Runtime is shutting down',
   jobNotFound: "The task doesn't exist",
   noBundle: 'No such model bundle',
@@ -39,7 +39,7 @@ const en = {
   localInferenceUnavailable: 'Local inference is unavailable',
   invalidLanguageTag: (p: { tag: string }) => `Not a valid BCP 47 language tag: ${p.tag}`,
   cannotReadInput: "Couldn't read the input file",
-  // 对账与恢复
+  // Reconciliation and recovery
   jobReconciling: 'This task is being recovered or reconciled',
   openVideoToRetry: "The video isn't open; open it, then try again",
   openVideoToApply: "The video isn't open; open it, then apply",
@@ -57,13 +57,13 @@ const en = {
   interrupted: "The task didn't finish before Runtime stopped; you can submit it again",
   needsReconciliation:
     "An outgoing call hadn't returned when Runtime stopped, so it's unknown whether the remote side ran it or charged for it. Choose to retry or discard (it won't be resent automatically)",
-  // 执行
+  // Execution
   executeFailed: 'Running the task failed',
   providerUnavailable: 'Provider is unavailable',
   executorGone: "The task's executor is gone",
   localCrashedAfterRetry: 'The local inference process still crashed after a retry',
   transcribeFailedAfterRetry: 'Transcription still failed after a retry',
-  // 生成的输出校验（进 `details.problems`）
+  // Validation of generated output (goes into `details.problems`)
   outputCountMismatch: (p: { actual: number; expected: number }) =>
     `There ${p.actual === 1 ? 'is 1 output' : `are ${p.actual} outputs`}, but ${p.expected} ${p.expected === 1 ? 'was' : 'were'} requested`,
   outputNotInStaging: (p: { n: number }) => `Output ${p.n} isn't in the staging folder`,
@@ -85,16 +85,16 @@ const en = {
   notJson: "The output isn't valid JSON",
   emptyOutput: 'The output is empty',
   generatedInvalid: 'The generated output failed the decode check',
-  // 转写结果校验
+  // Transcription result validation
   asrFileNotInStaging: "The output file isn't in the staging folder",
   asrFileMissing: "The output file doesn't exist",
   asrLengthMismatch: (p: { actual: number; declared: number }) => `The output is ${p.actual} bytes, but the response said ${p.declared}`,
   asrShaMismatch: "The output's sha256 doesn't match the response",
   asrContractInvalid: "The model output doesn't satisfy cuccut.asr-result/v1",
-  // 警告
+  // Warnings
   outputTruncated: (p: { limit: number }) => `The output hit the limit (${p.limit} tokens) and was cut off; the content is incomplete`,
   saveCopyFailed: (p: { dir: string; reason: string }) => `Couldn't write a copy in ${p.dir}: ${p.reason}`,
-  // 应用到视频
+  // Apply to video
   applyError: 'Writing to the video failed',
   transcribeLabel: 'Transcribe',
   voiceOverLabel: 'Generate voice-over',

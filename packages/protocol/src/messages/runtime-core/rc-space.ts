@@ -14,14 +14,14 @@ import { pl } from './rc-space.pl.ts';
 import { tr } from './rc-space.tr.ts';
 import { vi } from './rc-space.vi.ts';
 
-/** Space（space-catalog、space/）的错误与说明。英文是键与类型的来源，译文在 `rc-space.<语言>.ts`。 */
+/** Spaces (space-catalog, space/): errors and descriptions. English is the source of keys and types; translations are in `rc-space.<language>.ts`. */
 const en = {
-  // 扫描没有列全（SpaceScanIssue.detail）
+  // Scan not complete (SpaceScanIssue.detail)
   dirUnreadable: (p: { code: string }) => `Couldn't read the folder (${p.code})`,
   tooManyDirEntries: (p: { max: number }) => `More than ${p.max} folder items; only some are listed`,
   tooManyFiles: (p: { max: number }) => `More than ${p.max} files; only some are listed`,
 
-  // 条目
+  // Entries
   entryGone: 'This item is no longer in Space',
   trashVideoUseDelete: 'To delete a video, use videos.delete',
   restoreVideoUseRestore: 'To restore a deleted video, use videos.restore',
@@ -35,7 +35,7 @@ const en = {
   entryKindNotAccepted: (p: { kind: string }) => `A ${p.kind} item can't be used here`,
   notVideo: "This item isn't a video",
 
-  // 登记（space.import）
+  // Registration (space.import)
   projectNotFound: "The project doesn't exist",
   needAbsolutePath: 'Give the absolute path of the file',
   fileNotFound: "The file doesn't exist",
@@ -49,7 +49,7 @@ const en = {
   designSystemDirFile: "Files in a design system folder belong to the design system and can't be added on their own",
   tooManySameName: "Too many files with the same name in the project's imports/",
 
-  // 物理删除（space.purge）
+  // Physical deletion (space.purge)
   purgeVideoDeleteFirst:
     'Delete the video first (videos.delete) to move it to the trash, then delete it permanently from the trash',
   purgeTaskRunning: 'The task is still running. Cancel it first (jobs.cancel)',
@@ -58,7 +58,7 @@ const en = {
   refRunningTaskUsesVideo: (p: { jobId: string }) => `Task ${p.jobId} in progress is using this video`,
   refTaskAwaitsDecision: (p: { jobId: string }) =>
     `Task ${p.jobId} has results waiting for you to decide whether to add them to this video`,
-  /** `names` 是最多 3 个文件名，用 `/` 分隔（文件名里不会有 `/`）；`total` 是总数。 */
+  /** `names` is up to 3 file names, separated by `/` (file names never contain `/`); `total` is the total count. */
   refStrayFiles: (p: { names: string; total: number }) =>
     `The video folder has files the video doesn't manage (${new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(p.names.split('/'))}${p.total > 3 ? `, ${p.total} in total` : ''}). Restore the video and move them out before deleting`,
   refRunningTaskUsesOutput: (p: { jobId: string }) => `Task ${p.jobId} in progress is using this output`,
@@ -66,7 +66,7 @@ const en = {
     `Video ${p.dir} can't be read right now (or its index is still updating), so it can't be confirmed that it doesn't use this file`,
   refVideoAssetLinks: (p: { video: string; asset: string }) => `Asset "${p.asset}" in video "${p.video}" links to this file`,
 
-  // 派生的条目（statusDetail.reason 与名字）
+  // Derived entries (statusDetail.reason and names)
   importedFileGone: 'The added file is no longer in the project folder',
   resultNotApplied: "The result wasn't applied to the video",
   taskNotFinished: "The task didn't finish",
@@ -78,7 +78,7 @@ const en = {
   labelGenerateText: 'Generated text',
   labelExport: 'Export',
 
-  // 内容索引、继续、素材
+  // Content index, continue, assets
   engineUnavailable: 'The video engine is unavailable',
   continueFromTrash: "Items in the trash can't be continued. Restore it first",
   conversationCantSee:

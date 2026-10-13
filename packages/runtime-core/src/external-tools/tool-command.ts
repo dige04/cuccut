@@ -2,16 +2,16 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { killProcessTree, type SpawnProcess } from '@cuccut/process-host';
 
 /**
- * 代用户执行一条命令（架构设计 §12.9 的更新动作）：不经 shell，标准输入关闭，输出按到达的顺序逐段交给调用方；
- * 停止时连同它派生的进程一起结束（POSIX 上是整个进程组，Windows 上是 taskkill /T 的进程树），超时同样处理。
+ * Runs one command on the user's behalf (the update action in architecture design §12.9): no shell, standard input closed, and output handed to the caller segment by segment in arrival order.
+ * When stopped, it ends the processes it spawned as well (on POSIX, the whole process group; on Windows, the process tree via taskkill /T). A timeout is handled the same way.
  */
 
-/** 输出的末尾：去掉终端颜色，`\r` 改写的行只留最后一次，超过上限时按整行截掉前面的。 */
+/** The end of the output: strips terminal color, keeps only the last version of lines rewritten by `\r`, and when over the limit, cuts off whole earlier lines. */
 export class CommandOutput {
   readonly #limit: number;
-  /** 写完的行，每行以 `\n` 结尾。 */
+  /** Completed lines, each ending with `\n`. */
   #done = '';
-  /** 还没写完的那一行。 */
+  /** The line that is not finished yet. */
   #line = '';
   #lines = 0;
   #carriage = false;
@@ -76,10 +76,10 @@ export interface RunCommandOptions {
   signal: AbortSignal;
   timeoutMs: number;
   onOutput(chunk: string): void;
-  /** 先请程序结束、过多久没结束就强制结束。 */
+  /** Asks the program to exit first; forcibly ends it if it has not exited after a while. */
   killGraceMs?: number;
   platform?: NodeJS.Platform;
-  /** 测试注入；也用来起 Windows 上的 taskkill。 */
+  /** Injected by tests; also used to launch taskkill on Windows. */
   spawn?: SpawnProcess;
 }
 
@@ -95,7 +95,7 @@ export async function runCommand(argv: readonly string[], options: RunCommandOpt
         env: options.env,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
-        // POSIX：自成一个进程组，停止时连同它派生的进程（brew 的 curl、pip 的构建）一起结束。
+        // POSIX: it forms its own process group, so stopping ends the processes it spawned (brew's curl, pip's build) as well.
         detached: posix,
       });
     } catch (error) {
@@ -104,7 +104,7 @@ export async function runCommand(argv: readonly string[], options: RunCommandOpt
     }
     let stopped: 'aborted' | 'timed-out' | null = null;
     let killTimer: NodeJS.Timeout | null = null;
-    // Windows 的 taskkill /F 是强制结束，宽限期到了只是再结束一次。
+    // Windows' taskkill /F is a forced kill; if the grace period runs out, it just kills again.
     const kill = (signal: NodeJS.Signals) => killProcessTree(child, signal, { platform, spawn: run });
     const stop = (reason: 'aborted' | 'timed-out') => {
       if (stopped) return;

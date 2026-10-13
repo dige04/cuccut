@@ -1,16 +1,16 @@
-//! OmniVoice 文本侧的纯逻辑：语言解析、文本拼接清洗、参考文本补标点、
-//! 非语言标签切分与时长（token 数）估算。全部对照官方源码逐条移植：
-//! - `omnivoice/models/omnivoice.py`：`_resolve_language`、`_combine_text`、
-//!   `_NONVERBAL_PATTERN`、`_estimate_target_tokens`、`_ZH_RE` 的用法；
-//! - `omnivoice/utils/text.py::add_punctuation`；
-//! - `omnivoice/utils/duration.py::RuleDurationEstimator`。
+//! Pure logic for the OmniVoice text side: language resolution, text concatenation and cleaning, punctuation completion for reference text,
+//! splitting of non-verbal tags, and duration (token count) estimation. All ported line by line from the upstream source:
+//! - `omnivoice/models/omnivoice.py`: `_resolve_language`, `_combine_text`,
+//!   `_NONVERBAL_PATTERN`, `_estimate_target_tokens`, and how `_ZH_RE` is used;
+//! - `omnivoice/utils/text.py::add_punctuation`;
+//! - `omnivoice/utils/duration.py::RuleDurationEstimator`.
 
 use super::lang_table::LANG_NAME_TO_ID;
 use fancy_regex::Regex as FancyRegex;
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// 官方 `_ZH_RE`：`[一-鿿]`。
+/// Upstream `_ZH_RE`: `[一-鿿]`.
 pub fn contains_zh(text: &str) -> bool {
     text.chars().any(is_cjk)
 }
@@ -19,11 +19,10 @@ fn is_cjk(c: char) -> bool {
     ('\u{4e00}'..='\u{9fff}').contains(&c)
 }
 
-/// 官方 `_resolve_language`：`None` / `"none"` → 语言无关；语言 id 精确命中照用；
-/// 否则按小写语言名查表；都不中回退 `None`（官方同样只打警告）。
+/// Upstream `_resolve_language`: `None` / `"none"` → language-independent; an exact language id match is used as-is;
+/// otherwise the lowercase language name is looked up in the table; if neither matches, it falls back to `None` (upstream likewise only logs a warning).
 ///
-/// CucCut 补一步：官方认不出时再取 BCP-47 主标签的小写（`zh-CN` → `zh`、`EN` → `en`），
-/// 因为 CucCut 各处传的是 BCP-47 标签。
+/// CucCut adds one step: when upstream fails to recognize the value, it takes the lowercase primary subtag of the BCP-47 tag (`zh-CN` → `zh`, `EN` → `en`), because CucCut passes BCP-47 tags everywhere.
 pub fn resolve_language(language: Option<&str>) -> Option<String> {
     let language = language?;
     if language.to_lowercase() == "none" {
@@ -53,8 +52,7 @@ fn is_language_id(tag: &str) -> bool {
     LANG_NAME_TO_ID.iter().any(|(_, id)| *id == tag)
 }
 
-/// 官方 `_combine_text`：有参考文本时 `ref.strip() + " " + text.strip()`；去掉 CR/LF、
-/// 全角括号换半角、连续空格 / 制表符合一、去掉紧挨汉字的空白。
+/// Upstream `_combine_text`: when there is reference text, `ref.strip() + " " + text.strip()`; removes CR/LF, converts full-width brackets to half-width, merges consecutive spaces and tabs into one, and removes whitespace directly adjacent to Han characters.
 pub fn combine_text(text: &str, ref_text: Option<&str>) -> String {
     static NEWLINES: OnceLock<Regex> = OnceLock::new();
     static SPACES: OnceLock<Regex> = OnceLock::new();
@@ -74,18 +72,18 @@ pub fn combine_text(text: &str, ref_text: Option<&str>) -> String {
         .into_owned()
 }
 
-/// Python `str.strip()`：去掉两端 Unicode 空白。
+/// Python `str.strip()`: removes Unicode whitespace at both ends.
 fn py_strip(s: &str) -> &str {
     s.trim()
 }
 
-/// 官方 `END_PUNCTUATION`（`omnivoice/utils/text.py`）；官方集合里的两字符「……」永远
-/// 匹配不上单个末字符，这里省去。
+/// Upstream `END_PUNCTUATION` (`omnivoice/utils/text.py`); the two-character “……” in the upstream set can never
+/// match a single final character, so it is omitted here.
 const END_PUNCTUATION: &[char] = &[
     '!', '"', '\'', ')', ',', '.', ':', ';', '?', ']', '}', '‘', '’', '“', '”', '…', '、', '。', '】', '！', '）', '，', '：', '；', '？',
 ];
 
-/// 官方 `add_punctuation`：参考文本末尾没有标点时补「。」（含汉字）或「.」。
+/// Upstream `add_punctuation`: if the reference text does not end with punctuation, appends “。” (when it contains Han characters) or “.”.
 pub fn add_punctuation(text: &str) -> String {
     let text = text.trim();
     match text.chars().last() {
@@ -96,7 +94,7 @@ pub fn add_punctuation(text: &str) -> String {
     }
 }
 
-/// 官方 `_NONVERBAL_PATTERN` 的 13 个非语言标签。
+/// The 13 non-verbal tags of upstream `_NONVERBAL_PATTERN`.
 pub const NONVERBAL_TAGS: [&str; 13] = [
     "laughter",
     "sigh",
@@ -113,8 +111,8 @@ pub const NONVERBAL_TAGS: [&str; 13] = [
     "dissatisfaction-hnn",
 ];
 
-/// 官方 `_tokenize_with_nonverbal_tags` 的切分：非语言标签（`[laughter]` 等）单独成段，
-/// 其余文本按原样成段（各段分别分词再拼接）。
+/// Splitting in upstream `_tokenize_with_nonverbal_tags`: non-verbal tags (`[laughter]` etc.) form their own segments,
+/// and the remaining text forms segments as-is (each segment is tokenized separately, then concatenated).
 pub fn split_nonverbal(text: &str) -> Vec<&str> {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     let pattern = PATTERN.get_or_init(|| Regex::new(&format!(r"\[({})\]", NONVERBAL_TAGS.join("|"))).expect("regex"));
@@ -133,7 +131,7 @@ pub fn split_nonverbal(text: &str) -> Vec<&str> {
     parts
 }
 
-/// 官方 `RuleDurationEstimator` 的字符权重。
+/// Character weights of upstream `RuleDurationEstimator`.
 fn char_weight(c: char) -> f64 {
     const LATIN: f64 = 1.0;
     const SPACE: f64 = 0.2;
@@ -159,7 +157,7 @@ fn char_weight(c: char) -> f64 {
         Category::Number => return DIGIT,
         Category::Other => {}
     }
-    // bisect_left(breakpoints, code)：第一个上界 >= code 的区段。
+    // bisect_left(breakpoints, code): the first range whose upper bound is >= code.
     match SCRIPT_RANGES.iter().find(|(upper, _)| *upper >= code) {
         Some((_, weight)) => *weight,
         None if code > 0x20000 => CJK,
@@ -175,7 +173,7 @@ enum Category {
     Other,
 }
 
-/// Unicode 一般类别的前缀（M / P·S / Z / N），与 Python `unicodedata.category` 同口径。
+/// Prefixes of Unicode general categories (M / P·S / Z / N), using the same convention as Python `unicodedata.category`.
 fn general_category(c: char) -> Category {
     static CLASSES: OnceLock<[Regex; 4]> = OnceLock::new();
     let classes = CLASSES.get_or_init(|| {
@@ -201,9 +199,9 @@ fn general_category(c: char) -> Category {
     }
 }
 
-/// 官方 `self.ranges`：`(区段上界, 权重)`，权重已按脚本类型代入
-/// （cjk 3.0 / hangul 2.5 / kana 2.2 / ethiopic 3.0 / yi 3.0 / indic 1.8 / thai_lao 1.5 /
-/// khmer_myanmar 1.8 / arabic 1.5 / hebrew 1.5 / latin·cyrillic·greek·armenian·georgian·default 1.0）。
+/// Upstream `self.ranges`: `(range upper bound, weight)`, with weights already substituted by script type
+/// (cjk 3.0 / hangul 2.5 / kana 2.2 / ethiopic 3.0 / yi 3.0 / indic 1.8 / thai_lao 1.5 /
+/// khmer_myanmar 1.8 / arabic 1.5 / hebrew 1.5 / latin·cyrillic·greek·armenian·georgian·default 1.0).
 const SCRIPT_RANGES: [(u32, f64); 88] = [
     (0x02AF, 1.0), // latin
     (0x03FF, 1.0), // greek
@@ -295,13 +293,13 @@ const SCRIPT_RANGES: [(u32, f64); 88] = [
     (0xFFEF, 1.0), // latin
 ];
 
-/// 一段文本的总权重（官方 `calculate_total_weight`）。
+/// Total weight of a piece of text (upstream `calculate_total_weight`).
 pub fn total_weight(text: &str) -> f64 {
     text.chars().map(char_weight).sum()
 }
 
-/// 官方 `RuleDurationEstimator.estimate_duration`（`low_threshold=50`、`boost_strength=3`）。
-/// 这里的「时长」单位与参考长度一致（调用方传的是参考音频 token 数）。
+/// Upstream `RuleDurationEstimator.estimate_duration` (`low_threshold=50`, `boost_strength=3`).
+/// The unit of “duration” here is the same as the reference length (the caller passes the reference audio token count).
 pub fn estimate_duration(target_text: &str, ref_text: &str, ref_duration: f64) -> f64 {
     const LOW_THRESHOLD: f64 = 50.0;
     const BOOST_STRENGTH: f64 = 3.0;
@@ -321,8 +319,8 @@ pub fn estimate_duration(target_text: &str, ref_text: &str, ref_duration: f64) -
     }
 }
 
-/// 官方 `_estimate_target_tokens`：没有参考音频或参考文本为空时以「Nice to meet you.」
-/// = 25 token 为基准；`speed > 0` 且不等于 1 时按语速缩放；至少 1。
+/// Upstream `_estimate_target_tokens`: when there is no reference audio or the reference text is empty, the baseline is “Nice to meet you.”
+/// = 25 tokens; when `speed > 0` and not equal to 1, it is scaled by speed; at least 1.
 pub fn estimate_target_tokens(text: &str, ref_text: Option<&str>, num_ref_audio_tokens: Option<usize>, speed: f64) -> usize {
     let (ref_text, ref_tokens) = match (ref_text, num_ref_audio_tokens) {
         (Some(r), Some(n)) if !r.is_empty() => (r, n as f64),
@@ -347,7 +345,7 @@ mod tests {
         assert_eq!(resolve_language(Some("English")).as_deref(), Some("en"));
         assert_eq!(resolve_language(Some("cantonese")).as_deref(), Some("yue"));
         assert_eq!(resolve_language(Some("Ömie")).as_deref(), Some("aom"));
-        // CucCut 补的 BCP-47 主标签回退。
+        // CucCut's added BCP-47 primary subtag fallback.
         assert_eq!(resolve_language(Some("zh-CN")).as_deref(), Some("zh"));
         assert_eq!(resolve_language(Some("EN")).as_deref(), Some("en"));
         assert_eq!(resolve_language(Some("klingon")), None);
@@ -355,7 +353,7 @@ mod tests {
         assert!(LANG_NAME_TO_ID.windows(2).all(|w| w[0].0.as_bytes() < w[1].0.as_bytes()));
     }
 
-    // 期望值由官方 `_combine_text` 跑出。
+    // Expected values were produced by upstream `_combine_text`.
     #[test]
     fn combines_text_like_the_official_cleaner() {
         assert_eq!(combine_text("  你好 世界 ", None), "你好世界");
@@ -386,7 +384,7 @@ mod tests {
         assert_eq!(split_nonverbal("[unknown] x"), vec!["[unknown] x"]);
     }
 
-    // 期望值由官方 `RuleDurationEstimator` / `_estimate_target_tokens` 跑出。
+    // Expected values were produced by upstream `RuleDurationEstimator` / `_estimate_target_tokens`.
     #[test]
     fn duration_estimates_match_the_official_estimator() {
         let cases: [(&str, f64); 7] = [
@@ -396,7 +394,7 @@ mod tests {
             ("Chào thế giới", 11.4),
             ("Hello 🌍! This is fun 🎉", 16.5),
             ("123 abc", 13.7),
-            // 阿拉伯延长符 / 组合附加符 / 扩展 B 汉字 / 标题大小写字母。
+            // Arabic tatweel / combining marks / Extension B Han characters / titlecase letters.
             ("\u{0640}a\u{00e9}\u{0301} \u{20000} \u{01c5}", 4.4),
         ];
         for (text, want) in cases {

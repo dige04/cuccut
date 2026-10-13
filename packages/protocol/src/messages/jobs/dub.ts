@@ -14,7 +14,7 @@ import { pl } from './dub.pl.ts';
 import { tr } from './dub.tr.ts';
 import { vi } from './dub.vi.ts';
 
-/** `packages/jobs/src/pipelines/dub.ts`：「翻译配音」流程的名字、步骤、参数与运行时的错误、警告，以及写进视频的名字。 */
+/** `packages/jobs/src/pipelines/dub.ts`: the name, steps, parameters, runtime errors and warnings of the “translate and dub” flow, and the names written into the video. */
 const en = {
   label: 'Translated voice-over',
   description:
@@ -28,7 +28,7 @@ const en = {
   stepSynthesize: 'Synthesize sentences',
   stepAlign: 'Align timing',
   stepApply: 'Apply voice-over',
-  // 参数
+  // Parameters
   regroupConflict: (p: { params: string }) =>
     `Sentence re-voicing (regroup) takes the translation, language, voice, and original audio handling from that group's voice-over plan, so it can't be combined with ${p.params}`,
   orTranslationId: 'or translationId must be given',
@@ -38,7 +38,7 @@ const en = {
   unitsCount: (p: { max: number }) => `must have 1 to ${p.max} translation unit IDs`,
   mustBeUnique: "can't contain duplicates",
   seedInvalid: (p: { max: number }) => `must be 'new' or an integer from 0 to ${p.max}`,
-  // 准备
+  // Prepare
   videoNotOpen: "The video isn't open",
   translationFromOther: (p: { translationId: string; from: string; expected: string }) =>
     `Translation ${p.translationId} was translated from ${p.from}, not ${p.expected}`,
@@ -55,7 +55,7 @@ const en = {
     `${p.count} sentences aren't in this voice-over group's plan or translation: ${p.units}`,
   planNoVoice: "The voice-over plan doesn't record the provider, model, and voice used for synthesis",
   seedNotAccepted: (p: { model: string }) => `Model ${p.model} doesn't accept a seed`,
-  // 核对译文
+  // Check translation
   videoClosed: 'The video was closed',
   translationGone: 'The translation document is no longer in the video',
   translationNotSchema: (p: { schema: string }) => `The translation isn't ${p.schema}`,
@@ -66,7 +66,7 @@ const en = {
   unitsStale: (p: { count: number }) =>
     `${p.count} translated sentences are out of date (the source or glossary changed, or they were marked out of date) and weren't synthesized`,
   nothingToDub: 'The translation has no sentences to voice over: all of them are out of date or empty',
-  // 分离人声与背景
+  // Separate vocals and background
   separationUnavailable: 'Separating vocals and background is no longer available',
   noSourceAsset: "The transcript has no source asset, so it can't be separated",
   sourceAssetMissing: "The transcript's source asset isn't available",
@@ -77,7 +77,7 @@ const en = {
     `The sample rate of ${p.name} (${p.rate}) differs from the input's (${p.input})`,
   stemDuration: (p: { name: string; duration: number; input: number }) =>
     `${p.name} is ${p.duration} seconds long; the input is ${p.input} seconds`,
-  // 逐句合成
+  // Synthesize segment by segment
   sentenceJob: (p: { n: number }) => `Sentence ${p.n}`,
   audioUndecodable: "The synthesized audio can't be decoded",
   outputNoAudio: 'The synthesized output has no audio',
@@ -89,7 +89,7 @@ const en = {
     `The voices bound to the speakers (${p.speakers}) aren't available, so no sentence could be synthesized. Fix the voices (clone them again or add the consent statement), then try again`,
   voicesUnavailable: (p: { count: number; speakers: string }) =>
     `${p.count} sentences weren't synthesized because the voices bound to their speakers (${p.speakers}) aren't available; no other voice was used instead`,
-  // 时间对齐
+  // Time alignment
   mutedUnvoiced: (p: { count: number }) =>
     `${p.count} muted items also contain sentences that weren't synthesized because their voice isn't available; the original audio of those sentences was muted too`,
   unitsOverlong: (p: { count: number; tempo: number }) =>
@@ -99,7 +99,7 @@ const en = {
   nothingPlaced: 'No voice-over sentence fits on the timeline',
   artifactGone: (p: { artifactId: string }) => `Output ${p.artifactId} no longer exists`,
   stretchNoAudio: 'No audio after changing the speed',
-  // 应用
+  // Apply
   videoClosedKept: 'The video was closed; the synthesized audio is kept in the outputs',
   videoChanged:
     'The video changed after alignment, so nothing was applied. Trying again realigns to the current timeline (the synthesized audio is reused)',
@@ -111,7 +111,7 @@ const en = {
   planGone: "This voice-over group's plan is no longer in the video",
   regroupRejected: 'The transaction to regenerate the voice-over was rejected; the synthesized audio is kept in the outputs',
   planNotSchema: (p: { schema: string }) => `The voice-over plan isn't ${p.schema}`,
-  // 写进视频的名字与事务 label
+  // Names written into the video and the transaction label
   transactionLabel: (p: { language: string }) => `Voice-over (${p.language})`,
   regroupLabel: (p: { language: string }) => `Regenerate voice-over (${p.language})`,
   trackName: (p: { language: string }) => `Voice-over (${p.language})`,

@@ -1,8 +1,7 @@
 /**
- * Runtime 一侧全部文案目录的登记处（message-ref.ts）。界面、CLI 与 Runtime 都经 `@cuccut/protocol` 加载它，所以任何一方都能按
- * 自己的语言展开别的进程发来的消息引用。这些文件只放文案，不 import Node 专有模块。
+ * The registry of all Runtime-side message catalogs (message-ref.ts). The UI, the CLI and the Runtime all load it through `@cuccut/protocol`, so each can expand message references sent by other processes in its own language. These files hold only text and do not import Node-specific modules.
  *
- * 一个目录对应发出这些文字的包（Rust crate 也一样，见 `tools/rust-messages.mjs`），包内再按区域分文件；区域名（键的前缀）全仓唯一。
+ * One catalog corresponds to the package that emits the text (Rust crates too; see `tools/rust-messages.mjs`). Within a package, the files are split by area. Area names (the key prefix) are unique across the repository.
  */
 import './runtime-core/index.ts';
 import './jobs/index.ts';

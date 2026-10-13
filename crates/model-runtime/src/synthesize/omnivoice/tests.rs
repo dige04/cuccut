@@ -1,8 +1,8 @@
-//! 合成小权重单测：用确定性的小权重跑一遍完整的 MLX 模型图（v2 同一份测试，原样移植）。
+//! Unit tests with small weights: runs the complete MLX model graph with deterministic small weights (the same tests as v2, ported as-is).
 //!
-//! 小分词器：hop 6（降采样 [2, 3]）、语义采样率同为 24 kHz（重采样直通）、HuBERT 总步长 3
-//! （两侧补 1 个零，对应真实模型总步长 320 补 160）、2 个量化器 × 16 码字。
-//! 小主干：隐藏 8、2 层、2/1 头、2 码本 × 17（掩码 16）；文本词表 = 256 个字节符号 + 7 个特殊 token。
+//! Small tokenizer: hop 6 (downsampling [2, 3]), semantic sample rate also 24 kHz (resampling is a pass-through), HuBERT total stride 3
+//! (1 zero padded on each side, corresponding to the real model's total stride 320 padded by 160), 2 quantizers × 16 codewords.
+//! Small backbone: hidden size 8, 2 layers, 2/1 heads, 2 codebooks × 17 (mask 16); text vocabulary = 256 byte symbols + 7 special tokens.
 
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ use crate::synthesize::qwen3_tts::weights::Weights;
 use crate::synthesize::tensor::Array;
 use crate::synthesize::types::{TtsProgress, TtsRequest, VoiceSpec};
 
-/// MLX 单测互斥并先确认 Metal：同一进程里并发提交 MLX 图会互相干扰（与 `backend::mlx` 的单测同一把锁）。
+/// MLX unit tests are mutually exclusive and first confirm Metal: submitting MLX graphs concurrently in the same process interferes with each other (same lock as the `backend::mlx` unit tests).
 pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     let guard = crate::synthesize::tensor::host::TEST_LOCK
         .lock()
@@ -26,7 +26,7 @@ pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     guard
 }
 
-/// 确定性的小权重：LCG 出 `[-scale, scale)` 均匀值。
+/// Deterministic small weights: LCG produces uniform values in `[-scale, scale)`.
 struct Filler {
     state: u64,
     tensors: HashMap<String, Array>,
@@ -67,7 +67,7 @@ impl Filler {
         }
     }
 
-    /// PyTorch 布局 `[out, in, k]` 的 Conv1d。
+    /// Conv1d in PyTorch layout `[out, in, k]`.
     fn conv(&mut self, prefix: &str, out: i32, input: i32, kernel: i32, bias: bool) {
         let scale = 1.0 / ((input * kernel) as f32).sqrt();
         self.rand(&format!("{prefix}.weight"), &[out, input, kernel], scale);
@@ -124,9 +124,9 @@ fn codec_config() -> CodecConfig {
     .unwrap()
 }
 
-/// 小分词器的全部权重（PyTorch 布局），外加几项训练专用 / EMA 键验证加载时会丢弃。
+/// All weights of the small tokenizer (PyTorch layout), plus several training-only / EMA keys, which loading validation discards.
 fn codec_weights(f: &mut Filler) {
-    // HuBERT：两层卷积 [3/3, 1/1]、group norm、投影、weight-norm 位置卷积（k4、2 组）、2 层。
+    // HuBERT: two conv layers [3/3, 1/1], group norm, projection, weight-norm positional conv (k4, 2 groups), 2 layers.
     let h = "semantic_model";
     f.conv(&format!("{h}.feature_extractor.conv_layers.0.conv"), 4, 1, 3, false);
     f.norm(&format!("{h}.feature_extractor.conv_layers.0.layer_norm"), 4);
@@ -148,7 +148,7 @@ fn codec_weights(f: &mut Filler) {
         f.linear(&format!("{p}.feed_forward.output_dense"), 8, 16, true);
         f.norm(&format!("{p}.final_layer_norm"), 8);
     }
-    // 语义编码器：conv k3 无偏置；两块 × 两个残差单元（无偏置）+ 块卷积（stride 1 → k3，有偏置）。
+    // Semantic encoder: conv k3 without bias; two blocks × two residual units (without bias) + block conv (stride 1 → k3, with bias).
     f.conv("encoder_semantic.conv", 8, 8, 3, false);
     for i in 0..2 {
         let p = format!("encoder_semantic.conv_blocks.{i}");
@@ -158,7 +158,7 @@ fn codec_weights(f: &mut Filler) {
         }
         f.conv(&format!("{p}.conv"), 8, 8, 3, true);
     }
-    // DAC 编码器：2 → 4 → 8 通道，输出 6。
+    // DAC encoder: 2 → 4 → 8 channels, output 6.
     f.conv("acoustic_encoder.conv1", 2, 1, 7, true);
     for (i, (dim, stride)) in [(2, 2), (4, 3)].into_iter().enumerate() {
         let p = format!("acoustic_encoder.block.{i}");
@@ -168,7 +168,7 @@ fn codec_weights(f: &mut Filler) {
     }
     f.snake("acoustic_encoder.snake1", 8);
     f.conv("acoustic_encoder.conv2", 6, 8, 3, true);
-    // DAC 解码器：6 → 8 → 4 → 2 → 1；转置卷积权重 `[in, out, 2·stride]`。
+    // DAC decoder: 6 → 8 → 4 → 2 → 1; transposed conv weights `[in, out, 2·stride]`.
     f.conv("acoustic_decoder.conv1", 8, 6, 7, true);
     for (i, (dim, stride)) in [(8, 3), (4, 2)].into_iter().enumerate() {
         let p = format!("acoustic_decoder.block.{i}");
@@ -183,7 +183,7 @@ fn codec_weights(f: &mut Filler) {
     }
     f.snake("acoustic_decoder.snake1", 2);
     f.conv("acoustic_decoder.conv2", 1, 2, 7, true);
-    // 拼接后的 14 维（声学 6 + 语义 8）、2 个量化器（码本 16 × 4）。
+    // The concatenated 14 dims (acoustic 6 + semantic 8), 2 quantizers (codebook 16 × 4).
     f.linear("fc", 14, 14, true);
     f.linear("fc2", 6, 14, true);
     for i in 0..2 {
@@ -219,11 +219,11 @@ const SPECIALS: [&str; 7] = [
 ];
 const TEXT_VOCAB: i32 = 256 + SPECIALS.len() as i32;
 
-/// 字节级词表（无 merge）+ 7 个特殊 token（id 256 起）。
+/// Byte-level vocabulary (no merges) + 7 special tokens (starting at id 256).
 fn tiny_tokenizer() -> Tokenizer {
     let mut vocab = serde_json::Map::new();
     for b in 0..=255u8 {
-        // GPT-2 的字节 → 可见字符映射由分词器内部生成；这里直接按同一张表造词表。
+        // The GPT-2 byte → visible character mapping is generated inside the tokenizer; here the vocabulary is built directly from the same table.
         vocab.insert(byte_char(b).to_string(), serde_json::Value::from(b as u64));
     }
     let added: Vec<serde_json::Value> = SPECIALS
@@ -290,7 +290,7 @@ fn backbone_weights(f: &mut Filler) {
         f.fill(&format!("{p}.post_attention_layernorm.weight"), &[8], 1.0);
     }
     f.fill("llm.norm.weight", &[8], 1.0);
-    // 输出头放大些，让各候选的对数概率拉开，贪心结果对浮点误差不敏感。
+    // Enlarge the output head so the candidates' log-probabilities spread apart; greedy results are then insensitive to floating-point error.
     f.rand("audio_heads.weight", &[2 * 17, 8], 3.0);
 }
 
@@ -327,7 +327,7 @@ fn tiny_codec_config_matches_hf_derivations() {
     assert_eq!(config.hop_length(), 6);
     assert_eq!(config.frame_rate(), 4000);
     assert_eq!(config.semantic_downsample_factor(), 2);
-    // 1000·32 // (4000 · 4 bit) = 2 个量化器。
+    // 1000·32 // (4000 · 4 bit) = 2 quantizers.
     assert_eq!(config.num_quantizers(), 2);
 }
 
@@ -340,12 +340,12 @@ fn codec_encodes_one_frame_per_hop_and_decodes_back_to_hop_samples() {
     let codes = codec.encode(&wave(6 * frames)).unwrap();
     assert_eq!(codes.len(), 2 * frames);
     assert!(codes.iter().all(|&c| (0..16).contains(&c)), "{codes:?}");
-    // 编码是确定性的。
+    // Encoding is deterministic.
     assert_eq!(codec.encode(&wave(6 * frames)).unwrap(), codes);
     let audio = codec.decode(&codes, frames).unwrap();
     assert_eq!(audio.len(), 6 * frames);
     assert!(audio.iter().all(|s| s.is_finite()));
-    // 长度不是 hop 的整数倍、形状不符都报错。
+    // Errors for a length that is not an integer multiple of the hop, and for mismatched shapes.
     assert!(codec.encode(&wave(6 * frames + 1)).is_err());
     assert!(codec.decode(&codes, frames + 1).is_err());
 }
@@ -358,7 +358,7 @@ fn codec_load_keeps_unknown_keys_for_the_leftover_check() {
     f.fill("quantizer.quantizers.2.codebook.embed", &[16, 4], 0.0);
     let mut weights = f.into_weights();
     Codec::load(&mut weights, &codec_config()).unwrap();
-    // 第 3 个量化器不在配置里：不能被静默丢弃，引擎据此报「未使用的权重」。
+    // The 3rd quantizer is not in the config: it must not be silently dropped; the engine reports “未使用的权重” (unused weights) because of it.
     assert_eq!(weights.keys(), vec!["quantizer.quantizers.2.codebook.embed"]);
 }
 
@@ -375,7 +375,7 @@ fn backbone_attention_is_bidirectional() {
         host(&logits)
     };
     let a = logits_for(&[16, 16, 16, 16, 16, 16]);
-    // 只改最后一帧的 token：因果注意力下第 0 帧不受影响，双向注意力下会变。
+    // Only the last frame's token is changed: under causal attention frame 0 is unaffected; under bidirectional attention it changes.
     let b = logits_for(&[16, 16, 5, 16, 16, 7]);
     let first_frame = |v: &[f32]| v[..17].to_vec();
     assert_ne!(first_frame(&a), first_frame(&b));
@@ -384,14 +384,14 @@ fn backbone_attention_is_bidirectional() {
 #[test]
 fn predict_applies_guidance_in_log_space_and_never_picks_mask() {
     let _mlx = mlx_lock();
-    // 1 码本 × 1 帧、词表 3（掩码 = 2）。
+    // 1 codebook × 1 frame, vocabulary 3 (mask = 2).
     let cond = Array::from_slice(&[0.0f32, 1.0, 10.0], &[1, 1, 3]);
     let (pred, score) = predict(&cond, None, 0.0, 2).unwrap();
     assert_eq!(pred, vec![1]);
     let lse = (0f64.exp() + 1f64.exp() + 10f64.exp()).ln();
     assert!((f64::from(score[0]) - (1.0 - lse)).abs() < 1e-4, "{score:?}");
 
-    // 有引导：log_softmax(lp_c + g·(lp_c − lp_u))，再在非掩码项里取最大。
+    // With guidance: log_softmax(lp_c + g·(lp_c − lp_u)), then take the maximum over the non-masked entries.
     let uncond = Array::from_slice(&[0.0f32, 3.0, 0.0], &[1, 1, 3]);
     let (pred, score) = predict(&cond, Some(&uncond), 2.0, 2).unwrap();
     let ls = |v: [f64; 3]| {
@@ -442,7 +442,7 @@ fn generate_fills_every_position_and_is_seeded() {
     assert_eq!(a.len(), 2 * 5);
     assert!(a.iter().all(|&t| t < 16), "{a:?}");
     assert_eq!(run(7, 2.0), a);
-    // cfg = 0 跳过无条件分支，也能跑完。
+    // cfg = 0 skips the unconditional branch and still runs to completion.
     assert!(run(7, 0.0).iter().all(|&t| t < 16));
 }
 
@@ -523,7 +523,7 @@ fn voice_design_chunks_reuse_the_first_chunk_as_reference() {
             "done 1"
         ]
     );
-    // 两侧各补 0.1 s。
+    // Pad 0.1 s on each side.
     assert!(audio.len() >= 2 * 2400, "{}", audio.len());
     assert!(audio.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
 }
@@ -532,7 +532,7 @@ fn voice_design_chunks_reuse_the_first_chunk_as_reference() {
 fn clone_prompt_encodes_reference_and_duration_fixes_target_length() {
     let _mlx = mlx_lock();
     let model = tiny_model();
-    // 0.01 s 的参考：240 个样本 = 40 帧。
+    // 0.01 s reference: 240 samples = 40 frames.
     let prompt = model.prompt_from_samples(&wave(240), Some("ab")).unwrap();
     let mut events = Vec::new();
     let mut sink = collect_progress(&mut events);
@@ -542,7 +542,7 @@ fn clone_prompt_encodes_reference_and_duration_fixes_target_length() {
             Some(&prompt),
             Some("English"),
             None,
-            // 4000 Hz 帧率下 0.002 s = 8 帧 = 48 个样本。
+            // At a 4000 Hz frame rate, 0.002 s = 8 frames = 48 samples.
             Some(0.002),
             1.0,
             sampling(2, 100),
@@ -569,8 +569,7 @@ fn engine_voice_design_is_deterministic_under_a_seed() {
     let b = model.synthesize(&request, &mut |_| true).unwrap();
     assert_eq!(a.samples, b.samples);
 
-    // 取消、未知 instruct、认不出的内置音色都报错（v2 这里测的是未解析的声音档案；v3 的声音档案在 Runtime 里
-    // 解析成参考音频，引擎只见 `Clone`，改测同样走 `reference_for` 拒掉的未知预置音色）。
+    // Cancellation, unknown instruct, and unrecognized built-in voices all report errors (v2 tested unresolved voice profiles here; in v3 voice profiles are resolved into reference audio inside the Runtime, so the engine only sees `Clone`; instead, test the unknown preset voice that `reference_for` likewise rejects).
     let err = model.synthesize(&request, &mut |_| false).unwrap_err();
     assert!(err.to_string().contains("合成已取消"), "{err}");
     request.instruct = Some("robot".into());

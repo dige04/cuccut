@@ -11,11 +11,11 @@ import { actionTitle, useTaskAction } from './tasks/use-task-actions.ts';
 import { useTaskRows } from './tasks/use-task-rows.ts';
 import { useNow } from './use-now.ts';
 
-/** 原型 task-pill.jsx：停 250ms 才弹卡，离开 150ms 才收（从胶囊挪进卡片时不闪）。 */
+/** Prototype task-pill.jsx: the card pops up only after the pointer rests for 250ms, and closes only after it has been away for 150ms (so moving from the pill into the card doesn't flicker). */
 const OPEN_MS = 250;
 const CLOSE_MS = 150;
 
-/** 原型 ui.css `.tpillw` `.tpill` `.tpill__go` `.tpill__x` `.tpill__more`。 */
+/** Prototype ui.css `.tpillw` `.tpill` `.tpill__go` `.tpill__x` `.tpill__more`. */
 const wrap = style({ position: 'relative', display: 'inline-flex' });
 const pill = style({
   display: 'inline-flex',
@@ -59,7 +59,7 @@ const more = style({
   paddingX: '[6px]',
   borderRadius: 'full',
   backgroundColor: 'gray-300',
-  // `font` 简写会连带设 `color: 'body'`，写在它后面才不被盖掉。
+  // The `font` shorthand also sets `color: 'body'`, so write it after `font` or it gets overridden.
   font: 'ui-xs',
   color: 'gray-900',
   fontWeight: 'bold',
@@ -86,7 +86,7 @@ const close = style({
 });
 const closeIcon = iconStyle({ size: 'XS' });
 
-/** 原型 `.tpcard`：右对齐弹在胶囊下面；多条时外边距收紧、每行自带内边距。 */
+/** Prototype `.tpcard`: right-aligned, pops up below the pill; with several items the margin is tighter and each row carries its own padding. */
 const card = style({
   position: 'absolute',
   top: '[calc(100% + 6px)]',
@@ -184,7 +184,7 @@ const overflowLine = style({
   borderColor: 'gray-200',
 });
 
-/** 数字不跳宽（原型 `font-variant-numeric: tabular-nums`；style macro 没有这一项）。 */
+/** Numbers don't shift width (prototype `font-variant-numeric: tabular-nums`; the style macro has no such option). */
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
 
 function CardRow({ r, multi, onOpen }: { r: PillCardRow; multi: boolean; onOpen: () => void }) {
@@ -213,9 +213,7 @@ function CardRow({ r, multi, onOpen }: { r: PillCardRow; multi: boolean; onOpen:
 }
 
 /**
- * 视频栏的任务胶囊（原型 task-pill.jsx、shell.jsx `MovieActions`）：只报这个视频的后台任务，念表头那一条，
- * 其余是「+N」；停上去弹卡。只有一条时点胶囊去它的详情、悬停露出 × 取消或停止；多条时点胶囊去任务页，× 不出现
- * （不知道要取消哪一条），卡里每行点进各自的详情。没有任务时不画。
+ * Task pill in the video bar (prototype task-pill.jsx, shell.jsx `MovieActions`): reports only this video's background tasks, reading out the first one, and the rest is shown as “+N”. Hovering over it opens the card. With only one task, clicking the pill opens its details, and hovering reveals × (cancel) or stop. With several tasks, clicking the pill goes to the tasks page and × does not appear (since it is unclear which one would be cancelled); each row in the card opens its own details. Nothing is drawn when there are no tasks.
  */
 export function TaskPill({ videoId }: { videoId: Id | null }) {
   const { rows } = useTaskRows();

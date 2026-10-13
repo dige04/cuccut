@@ -1,8 +1,8 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/jsonl-rpc-process.ts 的 JsonlRpcProcess（`req_N` 请求号、挂起表、逐请求超时、
- * requestStopWork、stderr 尾部、关闭时 stdin end → SIGTERM → SIGKILL）与 jsonl-frame-decoder.ts 的分行（只按 LF 切、去掉行尾 CR）。
- * 改成 CucCut 的 Logger 与 Node 自带的 spawn；去掉 rpc_chunk 分片（v2）与进程树清理。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * JsonlRpcProcess in packages/server/src/server/agent/providers/jsonl-rpc-process.ts (`req_N` request ids, the pending table, per-request timeouts,
+ * requestStopWork, the stderr tail, shutdown as stdin end → SIGTERM → SIGKILL) and line splitting in jsonl-frame-decoder.ts (split only on LF, strip the trailing CR).
+ * Changed to CucCut's Logger and Node's built-in spawn. Removed rpc_chunk fragmentation (v2) and process-tree cleanup.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { Localized } from '@cuccut/protocol';
@@ -31,9 +31,9 @@ interface Pending {
 export type PiCommand = { type: string; [key: string]: unknown };
 
 /**
- * `pi --mode rpc` 的一个子进程：stdin 写命令（每行一个 JSON，带 `id`），stdout 读应答（`type: 'response'`，`id` 对上）与事件（没有 `id`）。
+ * One child process of `pi --mode rpc`: commands are written to stdin (one JSON object per line, with an `id`); replies are read from stdout (`type: 'response'`, matched by `id`), along with events (no `id`).
  *
- * 分行只认 LF：JSON 字符串里可能有 U+2028 / U+2029，Node 的 readline 会在那里切开，所以不用它。
+ * Line splitting recognizes only LF. JSON strings may contain U+2028 / U+2029, where Node's readline would split, so readline is not used.
  */
 export class PiRpcProcess {
   readonly #child: ChildProcessWithoutNullStreams;
@@ -46,7 +46,7 @@ export class PiRpcProcess {
   #disposed = false;
   #exited = false;
   #closing: Promise<void> | null = null;
-  /** 进程退出时完成，值是退出的说明（码、信号与 stderr 尾部）。 */
+  /** Completes when the process exits, with the exit description as the value (code, signal, and stderr tail). */
   readonly exited: Promise<Localized>;
 
   constructor(launch: PiRpcLaunch, log: Logger) {
@@ -80,7 +80,7 @@ export class PiRpcProcess {
     return this.#exited;
   }
 
-  /** stderr 最后几行，报错时附上。 */
+  /** Last few lines of stderr, attached on error. */
   stderrTail(): string {
     return this.#stderr.trim().split('\n').slice(-5).join('\n');
   }
@@ -90,7 +90,7 @@ export class PiRpcProcess {
     return () => this.#listeners.delete(listener);
   }
 
-  /** 发一条命令，等应答的 `data`；`success: false` 时以它的 `error` 失败。`timeoutMs` 为 null 时只等应答、退出或关闭。 */
+  /** Send one command and wait for the response's `data`. With `success: false`, fails with its `error`. When `timeoutMs` is null, only wait for the response, exit, or close. */
   request(command: PiCommand, timeoutMs: number | null = PI_RPC_DEFAULT_TIMEOUT_MS): Promise<unknown> {
     if (this.#disposed) return Promise.reject(new Error(String(DriversPi.processClosed())));
     const id = `req_${this.#nextId++}`;
@@ -109,8 +109,8 @@ export class PiRpcProcess {
   }
 
   /**
-   * 目的是「让它停下」的命令（abort、clear_queue）：进程已经退了就算达成，不报错。
-   * 子进程临死前 stdin 先断、请求先失败，这时等关闭结束再看它是不是真的退了。
+   * For commands meant to make it stop (abort, clear_queue): if the process has already exited, the goal counts as achieved, and no error is raised.
+   * Just before a child process dies, its stdin may close first and requests fail first. In that case, wait for close and then check whether it really exited.
    */
   async requestStopWork(command: PiCommand, timeoutMs: number | null = PI_RPC_DEFAULT_TIMEOUT_MS): Promise<void> {
     if (this.#exited) return;
@@ -122,7 +122,7 @@ export class PiRpcProcess {
     }
   }
 
-  /** 不等应答的消息（extension_ui_response 之类）。 */
+  /** Messages that do not wait for a reply (extension_ui_response and the like). */
   send(message: Record<string, unknown>): void {
     if (this.#disposed) return;
     if (this.#child.stdin.destroyed || !this.#child.stdin.writable) {
@@ -136,7 +136,7 @@ export class PiRpcProcess {
     }
   }
 
-  /** 关掉：先关 stdin 让它自己退，2 秒不退发 SIGTERM，再 1 秒发 SIGKILL。 */
+  /** Shut down: close stdin first to let it exit on its own. If it has not exited after 2 seconds, send SIGTERM; then after 1 more second, send SIGKILL. */
   close(): Promise<void> {
     if (!this.#closing) {
       this.#failAll(new Error(String(DriversPi.processClosed())));
@@ -150,7 +150,7 @@ export class PiRpcProcess {
     try {
       this.#child.stdin.end();
     } catch {
-      // 关闭时的竞争，忽略。
+      // Race at close time, ignored.
     }
     const wait = (ms: number) =>
       Promise.race([this.exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms).unref())]);
@@ -200,7 +200,7 @@ export class PiRpcProcess {
     const id = typeof message.id === 'string' ? message.id : null;
     const pending = id ? this.#pending.get(id) : undefined;
     if (!pending) {
-      // 没有 id 的应答：命令本身不是合法 JSON（`command: 'parse'`）。我们不会发出那样的命令，记一下即可。
+      // A reply with no id: the command itself was not valid JSON (`command: 'parse'`). We never send such a command, so just log it.
       if (message.success === false) this.#log.warn('Pi sent an error response with no matching request', { error: String(message.error ?? '') });
       return;
     }
@@ -218,7 +218,7 @@ export class PiRpcProcess {
   #stdinFailed(error: unknown): void {
     if (this.#disposed) return;
     this.#log.warn("Writing to Pi's stdin failed", { error: error instanceof Error ? error.message : String(error) });
-    // 多半是进程正在退出：稍等它的 exit，让挂着的请求带着真实的退出原因（stderr）失败；还不退再关。
+    // Most likely the process is exiting. Wait a moment for its exit, so pending requests fail with the real exit reason (stderr). If it still does not exit, shut it down.
     setTimeout(() => {
       if (!this.#exited) void this.close();
     }, 500).unref();

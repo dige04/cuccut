@@ -71,7 +71,7 @@ describe('新建项目文件（projects.files.create）', () => {
     expect([first, second, third].map((r) => r.entry.name)).toEqual(['page.html', 'page 2.html', 'page 3.html']);
     expect(await fs.readFile(path.join(root, 'page.html'), 'utf8')).toBe('1');
     expect(await fs.readFile(path.join(root, 'page 3.html'), 'utf8')).toBe('3');
-    // 和已有目录重名也跳过。
+    // Also skips a directory with the same name.
     const dirClash = await createProjectFile(root, scope, { name: 'pages', content: 'x' });
     expect(dirClash.entry.name).toBe('pages 2');
     expect(numberedName('archive.tar.gz', 2)).toBe('archive.tar 2.gz');

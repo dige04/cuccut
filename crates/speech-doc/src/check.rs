@@ -1,12 +1,6 @@
-//! `check` 报告里不依赖工程状态的纯函数。
+//! Pure functions in `check` reports that do not depend on project state.
 //!
-//! 移植自 CucCut v2 `ccut-engine` 的 `flows/check.rs`。那里的 `check_verdict` 读
-//! `transcript.json` / `timeline.json` / `ai/*.json`、落盘 `checks/check-*.json`，
-//! lint 码以字符串字面量写在它的判定分支里，没有单独的定义表；它与只给它用的
-//! `cps_bad`、`read_polish_fallback_records`、输出信封的 `run_check` 都不在本 crate；依赖时间线
-//! schema 的 `place_out_of_canvas` 在 `subtitle-render` 的 `check`。这里只带对报告 JSON
-//! 做摘要的 [`align_metrics_summary_lines`]。各阶段答案的 lint（`lint_agent_answer_*`、
-//! [`crate::language_quality`]、载体的 `Problem` / `Warning` 码）本来就在本 crate 里。
+//! Ported from `flows/check.rs` in CucCut v2 `ccut-engine`. There, `check_verdict` reads `transcript.json`, `timeline.json` and `ai/*.json`, and writes `checks/check-*.json`. Its lint codes are string literals in its verdict branches, with no separate definition table. `cps_bad`, `read_polish_fallback_records` and the output envelope `run_check`, which are used only by it, are not in this crate. `place_out_of_canvas`, which depends on the timeline schema, lives in `check` in `subtitle-render`. Only [`align_metrics_summary_lines`], which summarizes the report JSON, is carried here. The per-stage answer lints (`lint_agent_answer_*`, [`crate::language_quality`], and the `Problem` / `Warning` codes of the carrier) already live in this crate.
 
 use serde_json::Value;
 

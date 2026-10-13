@@ -20,12 +20,12 @@ import { useToolStart, useVideoTools, type LinkDraft } from './use-video-tools.t
 import { firstWhy, lede, SubmitBar, useRefreshWhenReady } from './video-tool-parts.tsx';
 
 /**
- * 本机检测到的浏览器（`externalTools.cookieBrowsers`）：进下载视频时检测一次，「重新检测浏览器」再检测。
- * Web 服务不开放 `externalTools.*`，浏览器里不检测、也不显示「网站登录」。
+ * Browsers detected on this machine (`externalTools.cookieBrowsers`): detected once when entering the video download, and detected again by “重新检测浏览器” (Detect browsers again).
+ * The web service does not expose `externalTools.*`, so in the browser nothing is detected and “网站登录” (Website sign-in) is not shown.
  */
 interface CookieBrowsersState {
   state: 'idle' | 'checking' | 'done' | 'failed';
-  /** Runtime 所在主机的平台：系统授权的提示看它。 */
+  /** The platform of the host the Runtime runs on; the system permission prompt depends on it. */
   platform: string | null;
   browsers: CookieBrowserInfo[];
   error: string | null;
@@ -57,7 +57,7 @@ function useDetectedBrowsers(enabled: boolean): CookieBrowsersState & { detect(a
 
 const browserRow = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, minWidth: 0 });
 
-/** 「网站登录」：只列出检测到的浏览器，最前面是「所有浏览器」（全选 / 半选）；都不勾是匿名下载。 */
+/** “网站登录” (Website sign-in): lists only the detected browsers, with “所有浏览器” (All browsers) first (all checked / partly checked); with none checked, the download is anonymous. */
 function CookieSection({ checked, onChange, detected }: {
   checked: LinkCookieBrowser[];
   onChange(next: LinkCookieBrowser[]): void;

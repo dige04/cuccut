@@ -14,9 +14,9 @@ import { pl } from './font-settings-copy.pl.ts';
 import { tr } from './font-settings-copy.tr.ts';
 import { vi } from './font-settings-copy.vi.ts';
 
-/** 设置 › 字体（font-settings.tsx）的文案。英文是键与类型的来源，译文在 `font-settings-copy.<语言>.ts`。 */
+/** Copy for Settings › Fonts (font-settings.tsx). English is the source of keys and types; translations live in `font-settings-copy.<language>.ts`. */
 const en = {
-  /** `total` 是 Google Fonts 目录里的族数；目录还没读到时为 null。 */
+  /** `total` is the number of families in the Google Fonts catalog; null when the catalog has not been read yet. */
   lead: (total: number | null) =>
     `Fonts come from three sources: those shipped with the app, those installed on this computer, and the Google Fonts directory (${total === null ? 'about two thousand' : `about ${total.toLocaleString(intlLocale())}`} families, open-source licenses, downloaded on demand). Downloads send only the family name and weight and need no account; fonts are stored in app data, not in the video folder.`,
   download: 'Download',
@@ -38,9 +38,9 @@ const en = {
   removed: (family: string, size: string) => `Deleted “${family}” · Freed ${size}`,
   inUseTip: "An unfinished export is using it; delete it after the export finishes",
   removeTip: "Delete this font's downloaded files",
-  /** 删除按钮的无障碍名：提示加族名。 */
+  /** Accessible name of the delete button: the hint plus the family name. */
   removeLabel: (tip: string, family: string) => `${tip}: ${family}`,
-  /** `weights` 是排好的字重列表，`ago` 是「几天前」那样的相对时间。 */
+  /** `weights` is the sorted list of font weights; `ago` is a relative time such as “N days ago” (几天前). */
   facts: (weights: string, size: string, licence: string, ago: string | null) =>
     `Weights ${weights} · ${size} · ${licence}${ago ? ` · Downloaded ${ago}` : ''}`,
   inUse: 'Used by export',

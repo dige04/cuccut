@@ -1,26 +1,16 @@
-//! 单个 Timeline 元素 → DrawOp 指令。
+//! A single Timeline element → DrawOp instructions.
 //!
-//! 这一层是 P6a 从 `core/crates/ccut-kernel/src/cmd/studio_export/render_plan.rs` 下沉过来的
-//! **纯函数**部分：元素盒 + 仿射 + 三种矢量直出 kind（shape / visualizer /
-//! progress）+ 缺频谱的占位块。函数体逐字搬迁，host 侧只剩「取数据、建视图、
-//! 收诊断」三件事。
+//! This layer is the **pure-function** part that P6a moved down from `core/crates/ccut-kernel/src/cmd/studio_export/render_plan.rs`: the element box, the affine transform, the three direct-vector kinds (shape / visualizer / progress), and the placeholder block for missing spectrum. Function bodies were moved verbatim. The host side keeps only three jobs: fetch data, build views, collect diagnostics.
 //!
-//! ## 为什么必须是同一份代码而不是两份对齐的实现
+//! ## Why it must be the same code and not two aligned implementations
 //!
-//! §10 P6 的验收标准是「同一 timeline + 同一 BCS1 + 同一 t，wasm 的
-//! `fingerprintAt(t)` 与 CLI 的 DrawOp 指纹**逐位相同**」。两份实现互相对齐
-//! 只能靠测试**发现**漂移；同一份实现让"逐位相同"变成结构性的——两边推进
-//! 指令流的是同一个 `push_*`，指纹自然同源。
+//! The acceptance criterion of §10 P6 is that "the same timeline + the same BCS1 + the same t give wasm's `fingerprintAt(t)` and the CLI's DrawOp fingerprint **bit-identical**". Two implementations kept aligned can only rely on tests to **discover** drift. A single implementation makes "bit-identical" structural: both sides advance the instruction stream through the same `push_*`, so the fingerprints share one origin.
 //!
-//! ## host 要预先算好、这里不做的事
+//! ## What the host must precompute and this does not do
 //!
-//! * **频谱轨**（`VizTrack`）：读盘、派生、按元素 id 归并都在 host（ADR-E04
-//!   的注入协议）。这里只收一个 `Option<&VizTrack>`。
-//! * **采样时刻折算**：输出时刻 → 源媒体时刻要过
-//!   [`timeline::TimelineProjection`]，投影表是 host 的（CLI 从项目读，
-//!   wasm 侧当前没有投影表 ⇒ 传 `Some(time)`，与 CLI 无投影时的退化路径逐字
-//!   相同）。这里只收一个 `Option<f64>`：`None` = 这一刻没有该音频源在播。
-//! * **诊断去重**：`warn` 是个 sink，同一条诊断每帧都会命中，去重归 host。
+//! * **Spectrum track** (`VizTrack`): reading from disk, deriving, and merging by element id all happen in the host (the injection protocol of ADR-E04). Here we only receive an `Option<&VizTrack>`.
+//! * **Sample-time conversion**: converting output time to source media time goes through [`timeline::TimelineProjection`]. The projection table belongs to the host. The CLI reads it from the project. The wasm side currently has no projection table, so it passes `Some(time)`, which is identical to the CLI's degenerate path when there is no projection. Here we only receive an `Option<f64>`: `None` means no such audio source is playing at this moment.
+//! * **Diagnostic deduplication**: `warn` is a sink. The same diagnostic hits every frame, and deduplication is left to the host.
 
 use std::sync::Arc;
 
@@ -39,8 +29,7 @@ use timeline::schema::{
     StickerProps, TimeValue, VisualizerProps, WhiteboardHand, WhiteboardPace, WhiteboardProps,
 };
 
-/// 画布尺寸。`u32` 而不是 `f64`：`short_edge` 与 `pixel_scale` 的折算口径由
-/// `width.min(height)` 定义，先转成浮点再取 min 会在极端尺寸上换一个数。
+/// Canvas size. `u32` rather than `f64`: the conversion basis of `short_edge` and `pixel_scale` is defined by `width.min(height)`. Converting to float first and then taking the min would give a different number at extreme sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stage {
     pub width: u32,
@@ -56,18 +45,15 @@ impl Stage {
         (f64::from(self.width), f64::from(self.height))
     }
 
-    /// 像素单位配方参数（`strokeWidth` / `cornerRadius` / progress 的线宽）的
-    /// 折算基准。参考短边的真相只有 [`timeline::REFERENCE_SHORT_EDGE`] 一处。
+    /// The base for scaling pixel-unit recipe parameters (`strokeWidth` / `cornerRadius` / the progress line width). The single source of truth for the reference short edge is [`timeline::REFERENCE_SHORT_EDGE`].
     pub fn short_edge(self) -> f64 {
         f64::from(self.width.min(self.height))
     }
 }
 
-/// 绘制一个元素所需的全部**契约**输入的借用视图。
+/// A borrowed view of all the **contract** inputs needed to draw an element.
 ///
-/// host 各自的元素表（CLI 的 `TimelineVisualElement`、wasm 的
-/// [`timeline::schema::Element`]）字段多寡不同，但绘制只读这几项；
-/// 立一个借用视图比让本 crate 认识某一个 host 的结构体便宜得多。
+/// Each host's element table (the CLI's `TimelineVisualElement`, the wasm side's [`timeline::schema::Element`]) has different fields, but drawing reads only these. A borrowed view is much cheaper than having this crate know about one host's struct.
 #[derive(Debug, Clone, Copy)]
 pub struct ElementDraw<'a> {
     pub id: &'a str,
@@ -81,19 +67,17 @@ pub struct ElementDraw<'a> {
     pub progress: Option<&'a ProgressProps>,
     pub draw: Option<&'a DrawProps>,
     pub placeholder: Option<&'a PlaceholderProps>,
-    /// `kind: "confetti"` 的参数（0.6，设计稿 `docs/design/elements/ccut-confetti-element-design.md`）。
+    /// Parameter for `kind: "confetti"` (0.6; design draft `docs/design/elements/ccut-confetti-element-design.md`).
     pub confetti: Option<&'a ConfettiProps>,
-    /// `kind: "whiteboard"` 的参数（0.8，设计稿 `docs/design/video/ccut-whiteboard-animation-design.md`）。
-    /// 绘制走 host 的光栅路径（同 image），这里只为 `element_aspect` 等契约保留。
+    /// Parameter for `kind: "whiteboard"` (0.8; design draft `docs/design/video/ccut-whiteboard-animation-design.md`). Drawing goes through the host's raster path (same as image). It is kept here only for `element_aspect` and other contract uses.
     pub whiteboard: Option<&'a WhiteboardProps>,
     pub has_source: bool,
 }
 
-/// 诊断出口。host 负责去重与上浮（CLI 的 `warn_once`）。
+/// Diagnostic outlet. The host handles deduplication and surfacing (the CLI's `warn_once`).
 pub type WarnSink<'a> = &'a mut dyn FnMut(String);
 
-/// `visualizer` 的音频源 id。`VISUALIZER_AUDIO_DEFAULT` 是「跟着主音轨走」，
-/// 落到 source 层就是 `main`。
+/// The audio source id for `visualizer`. `VISUALIZER_AUDIO_DEFAULT` means "follow the main audio track". At the source layer it resolves to `main`.
 pub fn visualizer_audio_source(props: &VisualizerProps) -> String {
     let audio = props.audio();
     if audio == timeline::schema::VISUALIZER_AUDIO_DEFAULT {
@@ -103,8 +87,7 @@ pub fn visualizer_audio_source(props: &VisualizerProps) -> String {
     }
 }
 
-/// `draw` 缺省：`min(0.8 × 元素时长, 由分析推算的自然时长)`（ADR-WB05）。
-/// 开放式片尾（`duration` 非有限）只取自然时长。结果至少 0.1 s。
+/// Default for `draw`: `min(0.8 × element duration, natural duration derived from analysis)` (ADR-WB05). For an open-ended tail (non-finite `duration`) only the natural duration is used. The result is at least 0.1 s.
 pub fn whiteboard_draw_seconds(props: &WhiteboardProps, duration: f64, natural: f64) -> f64 {
     let draw = props.draw.unwrap_or_else(|| {
         if duration.is_finite() && duration > 0.0 {
@@ -116,12 +99,9 @@ pub fn whiteboard_draw_seconds(props: &WhiteboardProps, duration: f64, natural: 
     draw.max(0.1)
 }
 
-/// `WhiteboardProps` → 渲染内核参数：`beats[].at` / `end`（元素本地秒）按 `draw` 归一化，
-/// `pace` / `strict` 原样带过去，`draw` 作为 `natural` 换算秒的基准。
+/// `WhiteboardProps` → render kernel parameters. `beats[].at` and `end` (element-local seconds) are normalized by `draw`. `pace` and `strict` are passed through unchanged, and `draw` serves as the basis for converting `natural` into seconds.
 ///
-/// 词锚点写法的拍在这之前由宿主（`host_support::tracks_with_resolved_anchors`）解析成
-/// 本地秒；到这里仍是锚点的拍（解析失败、或没有词表的路径）**整拍剔除**——它的 box
-/// 里的笔画退回几何顺序，元素不消失。
+/// Beats written as word anchors are resolved into local seconds by the host (`host_support::tracks_with_resolved_anchors`) before this point. Beats that are still anchors here (resolution failed, or a path with no word list) are **dropped whole**. The strokes in their box fall back to geometric order, and the element does not disappear.
 pub fn whiteboard_params(
     props: &WhiteboardProps,
     draw: f64,
@@ -154,7 +134,7 @@ pub fn whiteboard_params(
     }
 }
 
-/// `hand` 属性 → 内核的笔样式。
+/// The `hand` attribute → the kernel's pen style.
 pub fn whiteboard_hand(props: &WhiteboardProps) -> render_raster::source::WhiteboardHand {
     match props.hand() {
         WhiteboardHand::Marker => render_raster::source::WhiteboardHand::Marker,
@@ -163,7 +143,7 @@ pub fn whiteboard_hand(props: &WhiteboardProps) -> render_raster::source::Whiteb
     }
 }
 
-/// `paper` 属性 → 纸色（非预乘 RGBA 0..1）；缺席或非法 = 透明。
+/// The `paper` attribute → paper color (non-premultiplied RGBA 0..1). Absent or invalid means transparent.
 pub fn whiteboard_paper(props: &WhiteboardProps) -> Option<Color4> {
     props
         .paper
@@ -171,16 +151,14 @@ pub fn whiteboard_paper(props: &WhiteboardProps) -> Option<Color4> {
         .and_then(|hex| crate::draw::parse_color(hex, 1.0))
 }
 
-/// 元素本地进度：`(time − start) / draw`，画完后恒为 1。
+/// Element-local progress: `(time − start) / draw`. It stays at 1 once drawing is complete.
 pub fn whiteboard_progress(element: &ElementDraw<'_>, time: f64, draw: f64) -> f64 {
     ((time - element.start) / draw).clamp(0.0, 1.0)
 }
 
-/// 目录型配方声明的 `aspect` → `timeline` 的几何默认表（ADR-E01）。
+/// The `aspect` declared by a catalog-style recipe → the geometry default table in `timeline` (ADR-E01).
 ///
-/// 只有 visualizer / progress 两种 kind 有这个维度；其余 kind 的高度由 shape /
-/// sticker 分支决定，返回 `None`。样式没登记时也返回 `None`——几何按各自的
-/// 横条类默认兜底，`preset-unknown` 的诊断由绘制分支给。
+/// Only the visualizer and progress kinds have this dimension. Other kinds get their height from the shape and sticker branches and return `None`. When the style is not registered, this also returns `None`, and geometry falls back to the default for its horizontal-bar class. The `preset-unknown` diagnostic is issued by the drawing branch.
 pub fn element_aspect(element: &ElementDraw<'_>) -> Option<timeline::ElementAspect> {
     use motion::preset_registry::{ProgressAspect, VisualizerAspect};
     use timeline::ElementAspect;
@@ -200,7 +178,7 @@ pub fn element_aspect(element: &ElementDraw<'_>) -> Option<timeline::ElementAspe
                 ProgressAspect::Frame => ElementAspect::Frame,
             })
         }
-        // confetti 恒为 `frame`（铺满画幅）；样式没登记时同样交给几何默认表。
+        // confetti is always `frame` (covers the full frame). When the style is not registered, it likewise falls back to the geometry default table.
         ElementKind::Confetti => {
             motion::preset_registry::timeline_confetti(&element.confetti?.style)?;
             Some(ElementAspect::Frame)
@@ -209,8 +187,7 @@ pub fn element_aspect(element: &ElementDraw<'_>) -> Option<timeline::ElementAspe
     }
 }
 
-/// 元素盒 + 仿射：几何全部来自 `timeline`（ADR-E01 的单一来源），
-/// 舞台选中框与导出像素因此不可能算成两个盒子。
+/// Element box plus affine transform. All geometry comes from `timeline` (the single source for ADR-E01), so the stage selection box and the export pixels cannot be computed as two different boxes.
 pub fn element_frame(
     element: &ElementDraw<'_>,
     pose: &timeline::AnimationPose,
@@ -220,9 +197,7 @@ pub fn element_frame(
     let geometry = timeline::ElementGeometry {
         shape: element.shape,
         sticker: element.sticker,
-        // visualizer / progress 的 `aspect` 来自目录型配方（P2 起在注册表里）。
-        // 不读它就会让 `ring_bars` / `circle` / `donut` 拿到横条类的
-        // 默认盒——几何默认表与绘制端因此各说各话。
+        // The `aspect` for visualizer and progress comes from the catalog-style recipe (in the registry since P2). Without reading it, `ring_bars` / `circle` / `donut` would get the horizontal-bar default box, and the geometry default table and the drawing side would disagree.
         aspect: element_aspect(element),
     };
     let (x, y, w, h) = timeline::static_box(element.kind, &geometry, Some(element.place), canvas);
@@ -242,7 +217,7 @@ pub fn element_opacity(element: &ElementDraw<'_>, pose: &timeline::AnimationPose
     (element.place.opacity.unwrap_or(1.0) * pose.opacity).clamp(0.0, 1.0)
 }
 
-/// `kind: "shape"`：注册表的形状配方 + `ShapeProps` → 矢量直出。
+/// `kind: "shape"`: the registry's shape recipe + `ShapeProps` → direct vector output.
 pub fn push_shape_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -254,8 +229,7 @@ pub fn push_shape_element(
         return;
     };
     let Some(recipe) = motion::preset_registry::timeline_shape(&props.shape) else {
-        // 注册表里没有这个 id = 文档引用了不存在的形状：`preset-unknown`
-        // 的时机（§5.3），不是配方文件本身非法的 `manifest-invalid`。
+        // No such id in the registry means the document references a nonexistent shape. That is the timing of `preset-unknown` (§5.3), not `manifest-invalid`, which means the recipe file itself is invalid.
         warn(format!(
             "元素 {} 引用了未登记的形状 {}（preset-unknown），已跳过渲染",
             element.id, props.shape
@@ -276,14 +250,11 @@ pub fn push_shape_element(
     }
 }
 
-/// `kind: "sticker"` 且 `source == "template"`：注册表的模板配方 → 矢量直出。
+/// `kind: "sticker"` with `source == "template"`: the registry's template recipe → direct vector output.
 ///
-/// **只认 `template` 源**。`asset` 源（PNG / JPEG / SVG / 带 alpha 的循环
-/// WebM）要先解码再发 `DrawMedia`，那需要图像解码器与 ffmpeg，归 host——
-/// 与 `image` / `video` 同一条路径。返回 `false` 就是"本 crate 不认领"。
+/// **Only the `template` source is accepted.** `asset` sources (PNG / JPEG / SVG / looping WebM with alpha) must be decoded before emitting `DrawMedia`. That requires an image decoder and ffmpeg, so it belongs to the host, on the same path as `image` / `video`. Returning `false` means "this crate does not claim it".
 ///
-/// 元素盒是**正方**（`element_height` 的 sticker 缺省），模板几何也画在单位
-/// 正方里，因此不需要 `element_aspect` 那条配方问询。
+/// The element box is **square** (the sticker default in `element_height`), and the template geometry is also drawn in a unit square, so no `element_aspect` recipe lookup is needed here.
 pub fn push_sticker_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -305,7 +276,7 @@ pub fn push_sticker_element(
         return true;
     };
     let Some(recipe) = motion::preset_registry::timeline_sticker(template_id) else {
-        // 与 shape / visualizer 同一时机同一码：文档引用了注册表里没有的模板。
+        // Same timing and same code as shape / visualizer: the document references a template that is not in the registry.
         warn(format!(
             "元素 {} 引用了未登记的贴纸模板 {template_id}（preset-unknown），已跳过渲染",
             element.id
@@ -351,7 +322,7 @@ struct ConfettiInput {
     bbox: ElementBox,
     affine: Mat6,
     local_time: f64,
-    /// 元素时长（`emit.settle` 用）；开放式片尾 `None`。
+    /// Element duration (used by `emit.settle`). `None` for an open-ended tail.
     duration: Option<f64>,
 }
 
@@ -386,8 +357,7 @@ fn resolve_visualizer(
         return ResolvedElement::Skip;
     }
     let Some(track) = track else {
-        // preflight 缺频谱是硬错误（host 的 `load_visualizer_tracks`），走到这里
-        // 只能是「没经过 preflight 的计划」——单测里的 `compile_with` 就是这样。
+        // A missing spectrum during preflight is a hard error (the host's `load_visualizer_tracks`). Reaching this point can only mean "a plan that did not go through preflight", as with `compile_with` in unit tests.
         warn(format!("元素 {} 没有注入频谱轨，已画占位块", element.id));
         return ResolvedElement::Placeholder;
     };
@@ -423,7 +393,7 @@ fn resolve_visualizer(
         frame,
         bbox,
         affine,
-        // 元素本地时刻（scanline/noise 相位）只由自己的 start 决定。
+        // Element-local time (scanline / noise phase) is determined only by its own start.
         local_time: (time - element.start).max(0.0),
     })
 }
@@ -501,8 +471,7 @@ fn resolve_confetti(
     let body = recipe
         .confetti()
         .expect("confetti 目录里只有 confetti 配方");
-    // 色板 / 形状表：用户写了就整表替换，否则用配方的。`validate` 已保证非空，
-    // 这里对单个坏值只做跳过（解析不出的颜色不画、未知形状不画）。
+    // Color and shape tables: if the user wrote one, it replaces the whole table; otherwise the recipe's is used. `validate` has already guaranteed non-empty. Here a single bad value is only skipped (a color that does not parse is not drawn, an unknown shape is not drawn).
     let color_names: &[String] = match &props.colors {
         Some(colors) if !colors.is_empty() => colors,
         _ => &body.palette,
@@ -564,7 +533,7 @@ fn resolve_confetti(
 }
 
 fn push_confetti_reference(builder: &mut FrameBuilder, input: &ConfettiInput) {
-    // 空帧（还没发射 / 已全部落完）合法地零条指令。
+    // An empty frame (nothing emitted yet / everything has already landed) legitimately produces zero instructions.
     let _ = render_raster::source::confetti_frame(
         builder,
         input.recipe,
@@ -581,11 +550,9 @@ fn push_confetti_reference(builder: &mut FrameBuilder, input: &ConfettiInput) {
     );
 }
 
-/// `kind: "confetti"`：`confetti-v1` 闭式运动核 → 矢量直出（设计稿 §5）。
+/// `kind: "confetti"`: the `confetti-v1` closed-form motion kernel → direct vector output (design draft §5).
 ///
-/// 与 progress 同一条通路：CPU 发 `ClipPath + FillPath × N + PopClip`，GPU 端
-/// 自动落 `SceneNode::Vectors`；本地时刻 = `t − start`，粒子表只由它与
-/// `seed` 决定，因此乱序采样 == 顺序采样。
+/// It uses the same path as progress: the CPU emits `ClipPath + FillPath × N + PopClip`, and the GPU side automatically lands `SceneNode::Vectors`. Local time = `t − start`, and the particle table is determined only by it and `seed`, so out-of-order sampling equals sequential sampling.
 pub fn push_confetti_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -600,9 +567,7 @@ pub fn push_confetti_element(
 }
 
 fn push_visualizer_reference(builder: &mut FrameBuilder, input: &VisualizerInput) {
-    // 10 款声波静音时各有自己的静止形态（柱子留 minHeight、示波器留中线…），
-    // ccut-render 的 golden 逐款钉住；但退化盒（零宽高）合法返回 0 条指令。
-    // 配方是否实现完整由那边的目录测试保证，不拿一帧的指令数当运行期不变量。
+    // Each of the 10 visualizer styles has its own resting form when the audio is silent (bars keep minHeight, the oscilloscope keeps the center line, …). ccut-render's goldens pin each style. A degenerate box (zero width or height) legitimately returns 0 instructions. Whether a recipe is fully implemented is guaranteed by the catalog tests over there. We do not treat one frame's instruction count as a runtime invariant.
     let _ = render_raster::source::visualizer_frame(
         builder,
         input.recipe,
@@ -620,7 +585,7 @@ fn push_visualizer_reference(builder: &mut FrameBuilder, input: &VisualizerInput
 }
 
 fn push_progress_reference(builder: &mut FrameBuilder, input: &ProgressInput) {
-    // `pushed == 0` 只可能是无背景 strobe 在自己的空端点，属于合法画面。
+    // `pushed == 0` can only happen for a strobe with no background at its own empty endpoint. That is a legitimate picture.
     let _ = render_raster::source::progress_frame(
         builder,
         input.recipe,
@@ -637,26 +602,15 @@ fn push_progress_reference(builder: &mut FrameBuilder, input: &ProgressInput) {
     );
 }
 
-/// `visualizer`：注入的 [`render_raster::source::VizTrack`] 采样 → 配方绘制。
+/// `visualizer`: sampling of the injected [`render_raster::source::VizTrack`] → recipe drawing.
 ///
-/// 数据链路在 P2 走通（BCS1 在 preflight 读好、整轨派生好、按元素 id 注入好），
-/// P3–P5b 逐族填实绘制。**P5b 之后 15 种全部有实现**，因此这里只剩"没有注入
-/// 频谱轨 / 频谱轨是空的"这两种真实故障才落回占位块——留空会让「我加的波形
-/// 没画出来」和「这个项目的频谱没准备好」在画面上无法区分。
+/// The data path was made to work in P2 (BCS1 read in preflight, whole track derived, injected by element id). P3–P5b filled in the drawing family by family. **After P5b all 15 have implementations**, so only two real failures fall back to the placeholder block: "no spectrum track was injected" and "the spectrum track is empty". Leaving it blank would make "the waveform I added didn't draw" and "this project's spectrum isn't ready" indistinguishable on screen.
 ///
-/// ## 采样时刻（P3 定案）
+/// ## Sampling time (P3 decision)
 ///
-/// `audio: "project"` 的语义是「观众此刻听到的声音」，而 BCS1 是按**整条源
-/// 媒体**算的。因此输出时刻 `time` 必须先经
-/// [`timeline::TimelineProjection::timeline_to_source`] 折算回源媒体时刻，
-/// 再取帧——剪切过的项目里输出第 7 秒可能对应源媒体的第 12 秒，直接拿输出
-/// 时刻查表就会画出「几秒前的声音」。折算是 host 的活，结果由 `source_time`
-/// 传进来；`None` = 折算不到本元素那条音频源（落在剪掉的空隙里、或该时刻在
-/// 播另一条源），按**静音帧**处理：柱状样式的 `max(freq, minHeight)` 会画成
-/// 一排小柱子，与真实静音段的观感一致。
+/// The meaning of `audio: "project"` is "the sound the viewer hears at this moment", but BCS1 is computed over the **entire source media**. So the output time `time` must first be converted back to source-media time through [`timeline::TimelineProjection::timeline_to_source`] before fetching the frame. In a trimmed project, output second 7 may correspond to source second 12. Looking up the table directly with output time would draw "sound from several seconds ago". The conversion is the host's job, and its result is passed in as `source_time`. `None` means the conversion does not land on this element's audio source (it falls in a cut gap, or another source is playing at that moment). It is treated as a **silent frame**: for bar-style styles, `max(freq, minHeight)` draws a row of small bars, matching how a real silent passage looks.
 ///
-/// 平滑递推**不受影响**：它在 host preflight 沿源媒体时间轴整轨算完一次
-/// （`VizTrack::derive`），采样期只剩查表，因此确定性与乱序采样的契约不变。
+/// The smoothing recurrence is **not affected**. It is computed once over the whole track along the source-media timeline during host preflight (`VizTrack::derive`), so at sampling time only lookups remain. The determinism and out-of-order sampling contracts are unchanged.
 pub fn push_visualizer_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -676,10 +630,9 @@ pub fn push_visualizer_element(
     }
 }
 
-/// `kind: "progress"`：进度值 + 目录型配方 → 矢量直出。
+/// `kind: "progress"`: progress value + catalog-style recipe → direct vector output.
 ///
-/// 进度值走 [`timeline::progress_at`]（ADR-E04 的
-/// `clamp((t − start) / (end − start), 0, 1)`）。
+/// The progress value comes from [`timeline::progress_at`] (ADR-E04's `clamp((t − start) / (end − start), 0, 1)`).
 pub fn push_progress_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -731,12 +684,9 @@ pub fn push_placeholder_element(
     true
 }
 
-/// `visualizer` 缺频谱数据时的占位：主色（缺省半透明白）铺满元素盒。
+/// Placeholder for `visualizer` when spectrum data is missing: the main color (default semi-transparent white) fills the element box.
 ///
-/// **刻意不留空**——留空会让「我加的波形没画出来」和「这个项目的频谱没准备
-/// 好」在画面上无法区分。P5b 之后 29 个样式全部有绘制实现，走到这里只剩
-/// 「没有注入频谱轨」「频谱轨是空的」两种真实故障（`progress` 不吃素材，
-/// 因此永远不会走到这里）。
+/// **Deliberately not left empty.** Leaving it empty would make "the waveform I added didn't draw" and "this project's spectrum isn't ready" indistinguishable on screen. After P5b all 29 styles have drawing implementations, so reaching this point means only one of two real failures: "no spectrum track was injected" or "the spectrum track is empty". (`progress` does not consume material, so it never reaches here.)
 pub fn push_element_placeholder(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -771,12 +721,9 @@ pub fn push_element_placeholder(
     push_placeholder_ops(builder, bbox, tf, color);
 }
 
-/// 按 kind 分派：矢量直出的走这里，其余（text / image / video / audio 与
-/// **asset 源的 sticker**）由 host 自己的光栅化路径处理，本函数原样跳过。
+/// Dispatch by kind. The direct-vector kinds are handled here. The rest (text / image / video / audio and **asset-source stickers**) are handled by the host's own rasterization path, and this function skips them as-is.
 ///
-/// 返回 `true` = 这个元素由本 crate 负责。host 用它做显式分派而不是靠
-/// `match` 抄一遍 kind 表。**sticker 是唯一按 props 而不是按 kind 认领的**：
-/// 同一个 kind 的两种 `source` 走两条完全不同的通路（P7b）。
+/// Returns `true` when this element is this crate's responsibility. The host uses this for explicit dispatch rather than copying the kind table into a `match`. **Sticker is the only kind claimed by props rather than by kind**: the two `source` values of the same kind take two completely different paths (P7b).
 pub fn push_element(
     builder: &mut FrameBuilder,
     element: &ElementDraw<'_>,
@@ -819,7 +766,7 @@ pub fn push_element(
         }
         ElementKind::Placeholder => push_placeholder_element(builder, element, pose, stage),
         ElementKind::Sticker => push_sticker_element(builder, element, pose, stage, warn),
-        // whiteboard 与 image 同路：host 光栅化（`render_media_element` 里做揭示）。
+        // whiteboard takes the same path as image: host rasterization (the reveal is done inside `render_media_element`).
         ElementKind::Text
         | ElementKind::Image
         | ElementKind::Video
@@ -828,9 +775,7 @@ pub fn push_element(
     }
 }
 
-/// 单个元素在实时场景里的执行节点，以及与现有 CPU/三端指纹完全同源的
-/// DrawOp reference。`reference` 只做一致性、回退与指纹；GPU 节点不会把它
-/// 光栅成整幅位图。
+/// The execution node of a single element in the live scene, together with a DrawOp reference that is fully homologous to the existing CPU / three-end fingerprint. `reference` is used only for consistency, fallback and fingerprinting. GPU nodes do not rasterize it into a whole-frame bitmap.
 #[derive(Debug, Clone)]
 pub struct EvaluatedSceneElement {
     pub node: Option<SceneNode>,
@@ -838,10 +783,7 @@ pub struct EvaluatedSceneElement {
 }
 
 impl EvaluatedSceneElement {
-    /// 把本元素已经求出的 reference 合并进整帧指纹流。这里只重映射四张侧表，
-    /// 不再调用元素配方；SceneFrame 因此既保留逐节点 z 序，又不会为了指纹把
-    /// visualizer/progress 再求值一次。reference 是完整 DrawOp 语义，不应被 GPU
-    /// 执行器当前支持的子集反向限制（圆角 progress 本来就含 ClipPath）。
+    /// Merges the reference this element has already computed into the whole-frame fingerprint stream. It only remaps the four side tables and no longer invokes the element recipe. That way SceneFrame keeps the per-node z-order, and visualizer / progress do not have to be evaluated again just for fingerprinting. The reference carries full DrawOp semantics and should not be constrained backwards by the subset the GPU executor currently supports (rounded progress already contains a ClipPath).
     pub fn append_reference_to(&self, builder: &mut FrameBuilder) -> Result<()> {
         let path_ids = self
             .reference
@@ -972,12 +914,9 @@ impl EvaluatedSceneElement {
     }
 }
 
-/// 以同一份元素输入同时求出 CPU reference 与实时 GPU 节点。
+/// Derives both the CPU reference and the live GPU node from the same element input.
 ///
-/// shape/template sticker 继续作为矢量 DrawOp；progress 变成 `ShaderQuad`；
-/// visualizer 10 款全部是 CPU 矢量配方，与 shape 一样落 `SceneNode::Vectors`，
-/// 缺频谱等降级场景原样使用 CPU 占位 DrawOp。text/image/video/audio 与 asset
-/// sticker 返回 `None`，明确留给 host/R2/R4，不静默吞进 R1。
+/// shape and template stickers continue as vector DrawOps. progress becomes a `ShaderQuad`. All 10 visualizer styles are CPU vector recipes and, like shape, land in `SceneNode::Vectors`. In degraded scenarios such as missing spectrum, the CPU placeholder DrawOp is used as-is. text / image / video / audio and asset stickers return `None`, explicitly left to host / R2 / R4, and are not silently swallowed into R1.
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_scene_element(
     element: &ElementDraw<'_>,
@@ -1054,8 +993,7 @@ mod tests {
     use super::*;
     use timeline::AnimationPose;
 
-    /// ADR-WB05 的缺省画时一字不改：12 s 的条、4 s 自然画时 → 画 4 s；条短时取 0.8 × 时长。
-    /// 0.9 缺省（无 beats、`pace` 缺席）换算出的内核参数就是 0.8 的几何顺序 + stretch。
+    /// ADR-WB05's default drawing time is unchanged: for a 12 s bar with 4 s natural drawing time, it draws for 4 s. For a short bar it takes 0.8 × the duration. The kernel parameters produced by the 0.9 default (no beats, `pace` absent) are the 0.8 geometric order plus stretch.
     #[test]
     fn whiteboard_default_draw_and_params_are_unchanged_by_0_9() {
         let props = WhiteboardProps::default();
@@ -1073,7 +1011,7 @@ mod tests {
         assert!(baseline.beats.is_empty());
     }
 
-    /// 0.9：`end` 与 `at` 同按 `draw` 归一化；仍是锚点的拍整拍剔除；`pace` / `strict` 带过去。
+    /// 0.9: `end` and `at` are both normalized by `draw`. Beats that are still anchors are dropped whole. `pace` and `strict` are passed through.
     #[test]
     fn whiteboard_params_normalize_end_and_drop_unresolved_anchor_beats() {
         let props: WhiteboardProps = serde_json::from_value(serde_json::json!({
@@ -1136,7 +1074,7 @@ mod tests {
         }
     }
 
-    /// 未登记的样式 = `preset-unknown`：一条诊断、零指令。
+    /// An unregistered style = `preset-unknown`: one diagnostic, zero instructions.
     #[test]
     fn an_unregistered_style_warns_and_draws_nothing() {
         let place = Place::default();
@@ -1156,7 +1094,7 @@ mod tests {
         assert!(warnings[0].contains("preset-unknown"), "{}", warnings[0]);
     }
 
-    /// `aspect` 决定几何默认表那一档：方形样式的盒子必须是正方形，横条样式不是。
+    /// `aspect` determines which tier of the geometry default table applies. A square style's box must be square; a horizontal-bar style's box must not be.
     #[test]
     fn the_recipe_aspect_picks_the_geometry_default() {
         let place = Place::default();
@@ -1180,21 +1118,20 @@ mod tests {
             &pose(),
             stage,
         );
-        // 两档的默认盒**必须不同**：不读 `aspect` 就会让 `ring_bars`
-        // 拿到横条类的盒，几何默认表与绘制端从此各说各话。
+        // The default boxes of the two tiers **must differ**. Without reading `aspect`, `ring_bars` would get the horizontal-bar-class box, and the geometry default table and the drawing side would disagree from then on.
         assert_ne!(
             (square_box.w, square_box.h),
             (bar_box.w, bar_box.h),
             "square 与 free 两档必须落在几何默认表的不同一行"
         );
-        // `square` 档更高、且垂直居中；`free` 档是贴底的横条。
+        // The `square` tier is taller and vertically centered. The `free` tier is a horizontal bar anchored to the bottom.
         assert!(
             square_box.h > bar_box.h && square_box.y < bar_box.y,
             "square 档应更高且不贴底：{square_box:?} / {bar_box:?}"
         );
     }
 
-    /// 没有注入频谱轨 ⇒ 两条诊断 + 一块占位（不是留空）。
+    /// No injected spectrum track ⇒ two diagnostics plus a placeholder block (not blank).
     #[test]
     fn a_visualizer_without_a_track_falls_back_to_the_placeholder_block() {
         let place = Place::default();
@@ -1225,10 +1162,7 @@ mod tests {
         assert!(warnings[1].contains("没有可用的频谱数据"));
     }
 
-    /// 静音帧画的是各款的**静止形态**（示波器中线、丝带中线、频谱面积的
-    /// `minHeight` 底边），不是空画面；同一条轨后面的非静音帧仍必须正常出图。
-    /// 元素在片头 / 无声段不会从画布上消失，也不会把静止形态误当成“配方未实现”
-    /// 去杀 App 的 overlay 线程。
+    /// On silent frames, each style draws its **resting form** (the oscilloscope centerline, the ribbon centerline, the `minHeight` baseline of the spectrum area), not an empty picture. Non-silent frames on the same track must still render normally. The element does not vanish from the canvas during intros or silent passages, and the resting form is not mistaken for "recipe not implemented" and used to kill the App's overlay thread.
     #[test]
     fn silent_frames_draw_the_resting_shape_and_loud_frames_still_draw() {
         use render_raster::source::{VizFrame, VizParams, VizTrack};
@@ -1292,7 +1226,7 @@ mod tests {
         }
     }
 
-    /// `progress` 不吃素材：不给任何轨也画得出真实画面。
+    /// `progress` does not consume material, so it draws a real picture even when no track is given.
     #[test]
     fn a_progress_element_draws_without_any_injected_data() {
         let place = Place::default();
@@ -1354,8 +1288,7 @@ mod tests {
         assert!(transform.transform[4].abs() > 0.01);
     }
 
-    /// 声波 10 款全部是 CPU 矢量配方：带轨时也落 `SceneNode::Vectors`，
-    /// 与 CPU reference 是同一份指令流，不走 `ShaderQuad`。
+    /// All 10 visualizer styles are CPU vector recipes. Even with a track they land in `SceneNode::Vectors`, the same instruction stream as the CPU reference, and they do not go through `ShaderQuad`.
     #[test]
     fn scene_evaluation_keeps_visualizers_as_vectors_even_with_a_track() {
         use render_raster::source::{VizFrame, VizParams, VizTrack};
@@ -1536,8 +1469,7 @@ mod tests {
         );
     }
 
-    /// 分派表：三种矢量直出 kind 归本 crate，其余四种归 host；`sticker` 不在
-    /// 这张表里——它按 props 分家，由下面那条测试单独钉住。
+    /// Dispatch table: the three direct-vector kinds belong to this crate, and the other four belong to the host. `sticker` is not in this table, because it is split by props. The test below pins that separately.
     #[test]
     fn the_dispatch_table_claims_exactly_the_three_vector_kinds() {
         let place = Place::default();
@@ -1570,7 +1502,7 @@ mod tests {
         }
     }
 
-    // ── 模板贴纸（P7b）────────────────────────────────────────────
+    // ── Template stickers (P7b) ────────────────────────────────────────────
 
     fn sticker_view<'a>(place: &'a Place, props: &'a StickerProps) -> ElementDraw<'a> {
         ElementDraw {
@@ -1616,8 +1548,7 @@ mod tests {
         props
     }
 
-    /// **sticker 按 props 分家**：`template` 归本 crate（矢量直出），
-    /// `asset` 归 host（要解码器）。这条分派是 P7b 的核心契约。
+    /// **Sticker is split by props**: `template` belongs to this crate (direct vector output), and `asset` belongs to the host (it needs a decoder). This dispatch is the core contract of P7b.
     #[test]
     fn only_template_stickers_are_claimed_by_this_crate() {
         let place = Place::default();
@@ -1648,7 +1579,7 @@ mod tests {
         }
     }
 
-    /// 每份模板都画得出指令，且两两不同——撞车说明某一层没被读。
+    /// Every template must produce instructions, and no two may match. A collision means some layer was not read.
     #[test]
     fn every_template_pushes_a_distinct_instruction_stream() {
         use motion::preset_registry::timeline_stickers;
@@ -1668,8 +1599,7 @@ mod tests {
         assert_eq!(seen.len(), 10);
     }
 
-    /// 未登记的模板 = `preset-unknown`：一条诊断、零指令；缺 `templateId` 同理。
-    /// 两条都**认领**（返回 true）——不认领会让 host 再报一遍"需要光栅化"。
+    /// An unregistered template = `preset-unknown`: one diagnostic, zero instructions. A missing `templateId` is handled the same way. Both are **claimed** (return true). Not claiming them would make the host report "needs rasterization" again.
     #[test]
     fn an_unregistered_template_warns_and_draws_nothing() {
         for props in [
@@ -1682,8 +1612,7 @@ mod tests {
         }
     }
 
-    /// 描边宽度跟着**元素盒**走，不跟画布走：同一份模板放大一倍，
-    /// 外框像素宽度也翻倍（否则粗细比例会随尺寸漂移）。
+    /// The stroke width follows the **element box**, not the canvas. The same template enlarged twice has its outline's pixel width doubled too. Otherwise the thickness ratio would drift with size.
     #[test]
     fn sticker_stroke_width_scales_with_the_element_box() {
         use render_raster::drawop::DrawOp;
@@ -1725,7 +1654,7 @@ mod tests {
         );
     }
 
-    /// `audio` 缺省 = 主音轨。
+    /// `audio` default = the main audio track.
     #[test]
     fn the_default_audio_source_is_the_main_track() {
         assert_eq!(

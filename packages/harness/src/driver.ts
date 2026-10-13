@@ -12,128 +12,111 @@ import type {
 } from '@cuccut/protocol';
 
 /**
- * Driver ABI（架构设计 §3.1）。
+ * Driver ABI (architecture design §3.1).
  *
- * `AgentDriver` 连接一个完整的智能体运行时，经它的机器协议，不解析终端屏幕。
- * 这里的类型不带任何具体引擎的概念：Codex 的 thread / item 在 Driver 内部翻译成下面的事件。
+ * `AgentDriver` connects to a complete agent runtime through its machine protocol, not by parsing the terminal screen. The types here carry no concepts from any specific engine: Codex's thread / item are translated inside the Driver into the events below.
  */
 export interface AgentDriver {
   readonly id: DriverId;
   /**
-   * false：这个 Driver 还没有通过集成测试（架构设计 §3.11 的 D08），只显示探测结果，Harness 不让它开始会话。
-   * 不给按 true。探测结果的 `verified` 与它一致。
+   * false: this Driver has not passed integration testing (architecture design §3.11 D08); only probe results are shown, and the Harness does not let it start sessions. If not given, true. Matches `verified` in the probe result.
    */
   readonly verified?: boolean;
   /**
-   * 这一家在 CucCut 里真机跑通过完整会话（Claude、Codex、OpenCode 为 true）。同一协议的共享实现在一家验证通过即算 `verified`，
-   * 其余预设与用户添加的智能体 `tested` 为 false：能开会话，界面提示「未在 CucCut 实测」（§3.11 的 D08）。
-   * 不给按 `verified` 处理。探测结果的 `tested` 与它一致。
+   * Whether this one has been run end to end in CucCut on a real machine (true for Claude, Codex, OpenCode). When a shared implementation of the same protocol is verified with one member, it counts as `verified`; other presets and user-added agents have `tested` false: sessions can be opened, but the UI shows "not tested in CucCut" (§3.11 D08). If not given, it is treated as `verified`. Matches `tested` in the probe result.
    */
   readonly tested?: boolean;
   /**
-   * true：探测要拉起智能体进程（ACP 的智能体冷启动可达十几秒），而不只是 `--version` 一类的快命令。`agents.list` 不等它的
-   * 首次探测，「便宜的纠正」也不重探它（架构设计 §3.11）。不给按 false。
+   * true: probing starts an agent process (ACP agents can take over ten seconds to cold-start), not just fast commands like `--version`. `agents.list` doesn't wait for its first probe, and the "cheap correction" doesn't re-probe it (architecture design §3.11). If not given, false.
    */
   readonly slowProbe?: boolean;
   /**
-   * 探测安装、版本、登录状态与模型表，给出能力快照条目（§3.6、§3.11）。不含用户偏好：启用、默认与否由 Harness 合并。
-   * 探测不得启动会花钱的模型调用；模型表能在没登录时拿到就照样给（Claude 的 `supportedModels()` 可以）。
+   * Probes installation, version, login status, and model table, and gives a capability snapshot entry (§3.6, §3.11). Does not include user preferences: enabled, default, etc. are merged by the Harness. Probing must not start model calls that cost money; if the model table can be obtained without being logged in, it is still provided (Claude's `supportedModels()` can).
    */
   probe(options?: ProbeOptions): Promise<DriverProbe>;
   /**
-   * Driver 这一版的常量（名字、命令、最低版本、订阅、登录命令、安装方式、`verified`、`tested`、能力），不探测、不起进程。
-   * Driver 注册表用它把磁盘缓存里的本机事实（`store/agent-probes.json`，§3.11）补成完整的探测结果：缓存只存本机事实，
-   * 不存常量，换了 CucCut 版本之后常量总是新的，不必给缓存文件记版本、对不上就整份作废。
-   * 没有实现它的 Driver（测试里的假 Driver）不读磁盘缓存，每次启动从头探测。
+   * This Driver version's constants (name, command, minimum version, subscription, login command, install method, `verified`, `tested`, capabilities), with no probing and no process start. The Driver registry uses this to fill in the disk cache's machine facts (`store/agent-probes.json`, §3.11) into full probe results: the cache stores only machine facts, not constants, so after a CucCut upgrade the constants are always fresh, and the cache file doesn't need a version record; if it doesn't match, the whole file is invalidated.
+   * Drivers that don't implement it (test fakes) don't read the disk cache and probe from scratch at each startup.
    */
   describe?(): DriverDescription;
   createSession(options: CreateSessionOptions): Promise<AgentSession>;
 }
 
-/** `describe()` 给出的常量部分：探测结果去掉本机事实与由 `state` 推出的 `status` / `unavailableReason`。 */
+/** The constant part of `describe()`: the probe result minus machine facts and the `status` / `unavailableReason` derived from `state`. */
 export type DriverDescription = Pick<
   DriverProbe,
   'id' | 'name' | 'command' | 'minVersion' | 'plan' | 'planRef' | 'loginCommand' | 'install' | 'verified' | 'tested' | 'capabilities'
 >;
 
 export interface ProbeOptions {
-  /** 用户手动指定的可执行文件；null 按 PATH 与常见安装位置找。 */
+  /** Executable specified manually by the user; null means search PATH and common install locations. */
   executable?: string | null;
   /**
-   * 强制：不用 Driver 自己的缓存（Claude 的模型表、Codex 与 ACP 的模型目录与登录状态），真的再查一遍。
-   * 「重新检测」（`agents.detect`）、安装结束与运行中出错后的纠正用它；启动时的后台刷新不用。
+   * Forced: don't use the Driver's own cache (Claude's model table, Codex and ACP's model catalog and login status); query again for real. "Re-detect" (`agents.detect`), after installation finishes, and the correction after a runtime error use this; the background refresh at startup does not.
    */
   force?: boolean;
 }
 
 /**
- * 每一轮的设置（架构设计 §3.11、§3.12）。会话上的模型、强度、访问模式改了，下一轮按新的跑，不重开原生会话：
- * Codex 在 `turn/start` 上带 approvalPolicy / sandboxPolicy / model / effort；Claude 用 `setPermissionMode`、`setModel`，
- * 强度变了由 Driver 自己带着恢复句柄重启 Query。
+ * Per-turn settings (architecture design §3.11, §3.12). When model, effort, or access mode changes on a session, the next turn runs with the new settings, without restarting the native session: Codex passes approvalPolicy / sandboxPolicy / model / effort on `turn/start`; Claude uses `setPermissionMode` and `setModel`, and when effort changes, the Driver restarts Query itself with the resume handle.
  *
- * 访问模式到原生策略的映射（两边取更严的）。原生侧来问的动作由 Harness 按风险等级与模式查表（`decideApproval`）：
+ * Mapping from access mode to native policy (whichever side is stricter). Actions the native side asks about are looked up by the Harness by risk level and mode (`decideApproval`):
  *
- * | 模式 | Claude permissionMode | Codex approvalPolicy / sandbox |
+ * | Mode | Claude permissionMode | Codex approvalPolicy / sandbox |
  * | --- | --- | --- |
  * | plan | plan | untrusted / read-only |
  * | ask | default | untrusted / workspace-write |
- * | autoAcceptEdits | acceptEdits | untrusted / workspace-write，工作目录内的 fileChange 由 Harness 自动答应 |
- * | auto | auto（模型不支持时退回 default） | on-request / workspace-write，越出沙箱来问时算 `high` |
- * | fullAccess | bypassPermissions | never / workspace-write（隔离不放开） |
+ * | autoAcceptEdits | acceptEdits | untrusted / workspace-write; fileChange inside the working directory is auto-approved by the Harness |
+ * | auto | auto (falls back to default when the model doesn't support it) | on-request / workspace-write; a request to escape the sandbox counts as `high` |
+ * | fullAccess | bypassPermissions | never / workspace-write (isolation not relaxed) |
  *
- * Codex 在 `untrusted` 下 apply_patch 会发 fileChange 审批（依 codex 源码 main@4642370542 推断，未实测：`core/src/safety.rs` 的 `assess_patch_safety` 在 UnlessTrusted 下一律 AskUser，经 `app-server/src/bespoke_event_handling.rs` 转成 `item/fileChange/requestApproval`），ask 与 autoAcceptEdits 不会塌成一档；答 acceptForSession 后同一路径不再问。
+ * Under `untrusted`, Codex's apply_patch sends a fileChange approval (inferred from the codex source at main@4642370542, not tested: `assess_patch_safety` in `core/src/safety.rs` always returns AskUser under UnlessTrusted, and `app-server/src/bespoke_event_handling.rs` converts it to `item/fileChange/requestApproval`); ask and autoAcceptEdits don't collapse into one tier; after answering acceptForSession, the same path no longer asks.
  *
- * CucCut 自己的 MCP 服务（`cuccut`）在原生侧一律放行（Codex `default_tools_approval_mode: 'approve'`，Claude 预批
- * `mcp__cuccut__*`）：它的写操作由 Runtime 的 ApprovalService 按访问模式把关，原生侧再拦一次用户就要点两次。
+ * CucCut's own MCP server (`cuccut`) is always allowed on the native side (Codex `default_tools_approval_mode: 'approve'`, Claude pre-approves `mcp__cuccut__*`): its write operations are gated by the Runtime's ApprovalService according to access mode; blocking again on the native side would make the user click twice.
  */
 export interface TurnSettings {
   accessMode: AgentMode;
-  /** null = 不传，用 Agent 自己的默认。 */
+  /** null = not passed; the Agent's own default is used. */
   model: string | null;
   effort: string | null;
 }
 
 export interface CreateSessionOptions extends TurnSettings {
   cwd: string;
-  /** 用户手动指定的可执行文件。 */
+  /** Executable specified manually by the user. */
   executable?: string | null;
-  /** 上一次 `describePersistence()` 的结果；有则恢复原生会话。 */
+  /** Result of the last `describePersistence()`; if present, the native session is resumed. */
   resume: AgentPersistenceHandle | null;
   developerInstructions?: string;
-  /** 智能体经 MCP 进入 Runtime 的工具通道（架构设计 §3.5）。新建与恢复都要带上：令牌按原生会话签发。 */
+  /** The tool channel through which the agent enters the Runtime over MCP (architecture design §3.5). Must be included on both creation and resume: tokens are issued per native session. */
   mcpServers?: Record<string, McpServerSpec>;
   /**
-   * 受限的一次性调用（智能体作为 Provider，架构设计 §6.9）：`cwd-write-only` 只允许写工作目录（不含系统临时目录），
-   * 命令不联网，从不请求审批（越界的动作直接被拒绝，没有人来批）。给了它时 `accessMode` 不起作用。
+   * A restricted one-shot call (agent as Provider, architecture design §6.9): `cwd-write-only` allows writing only in the working directory (not including the system temp directory), commands have no network access, and it never requests approval (out-of-bounds actions are denied directly, since no one is there to approve). When given, `accessMode` has no effect.
    */
   confinement?: 'cwd-write-only';
 }
 
-/** 一个 Streamable HTTP 的 MCP 服务。`headers` 里有令牌，不得写进日志。 */
+/** A Streamable HTTP MCP server. `headers` contains the token and must not be written to logs. */
 export interface McpServerSpec {
   url: string;
   headers: Record<string, string>;
 }
 
 /**
- * Driver 给 MCP 工具调用设的原生超时下限。CucCut 的工具在 `ask` 这类档位要等用户在卡片上点允许才返回，
- * 原生侧的默认超时（Codex 的 `tool_timeout_sec` 默认 60 秒）一到，工具调用就在 Agent 那边失败了，
- * 而卡片还挂着、随后被「MCP 断开」收掉，用户看不出为什么。和原生审批一样「一直等」，这里取 24 小时。
- * 耗时的工具本来就立即返回 `jobId`（架构设计 §3.5），不靠这个超时。
+ * Native timeout floor the Driver sets for MCP tool calls. CucCut's tools at levels like `ask` wait for the user to click allow on the card before returning; when the native default timeout (Codex's `tool_timeout_sec`, default 60 seconds) is reached, the tool call fails on the Agent side while the card is still shown, and it is then cleared by "MCP disconnected", so the user can't tell why. Like native approval, it "waits indefinitely"; here it is set to 24 hours.
+ * Time-consuming tools already return `jobId` immediately (architecture design §3.5) and don't rely on this timeout.
  */
 export const MCP_TOOL_CALL_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 工具通道的签发方（ToolCatalog 的入口，架构设计 §3.5）。每个原生会话一份授权，会话关闭时收回；
- * 授权只认会话，工具调用的权限在 Runtime 里按会话当前的任务检查。
+ * Issuer of the tool channel (the entry point of ToolCatalog, architecture design §3.5). One authorization per native session, revoked when the session closes; authorization is bound to the session only, and tool-call permissions are checked in the Runtime against the session's current task.
  */
 export interface AgentToolAccess {
   grant(conversationId: Id): ToolGrant;
-  /** 入口层的指导（§3.8）：作为开发者指令交给原生会话。 */
+  /** Entry-layer guidance (§3.8): handed to the native session as developer instructions. */
   readonly instructions: string;
   /**
-   * 每个原生会话开始时另附在 `instructions` 后面的一段（§3.8：开着的 skill 的索引）。空串表示不附；出错时按空串处理，不拦住会话。
-   * 只在会话开始时取一次：会话进行中改了也不影响这个原生会话。
+   * A segment appended after `instructions` at the start of each native session (§3.8: index of open skills). An empty string means nothing is appended; on error it is treated as empty and doesn't block the session. It is fetched only once at session start: changes made during the session do not affect this native session.
    */
   sessionInstructions?(conversationId: Id): Promise<string>;
 }
@@ -143,12 +126,12 @@ export interface ToolGrant {
   revoke(): void;
 }
 
-/** 原生恢复句柄。Runtime 只保存、不解释。 */
+/** Native resume handle. The Runtime only stores it and does not interpret it. */
 export type AgentPersistenceHandle = { driverId: DriverId; data: unknown };
 
 export interface AgentInput {
   text: string;
-  /** 随消息的图片，已经落在本机。Driver 不支持图片（`capabilities.images` 为 false）时 Harness 不会传。 */
+  /** Images attached to a message, already stored locally. The Harness doesn't pass them when the Driver doesn't support images (`capabilities.images` is false). */
   images?: AgentImage[];
 }
 
@@ -158,14 +141,13 @@ export interface AgentImage {
 }
 
 export interface InterruptReceipt {
-  /** `unknown`：原生取消是否生效不确定，调用方不得立即放行替代的回合（§3.1）。 */
+  /** `unknown`: whether native cancellation took effect is uncertain; the caller must not immediately let through the replacement turn (§3.1). */
   status: 'requested' | 'not-running' | 'unknown';
 }
 
 export interface ApprovalResponse {
   /**
-   * `cancel`：拒绝并结束本回合，只由停止屏障使用（D04），不对外暴露。
-   * `accept-always` 到了 Driver 这里等同 `accept-for-session`：规则由 Harness 存，Driver 不写原生的持久设置。
+   * `cancel`: rejects and ends this turn; used only by the stop barrier (D04), not exposed externally. `accept-always` at the Driver is equivalent to `accept-for-session`: the rule is stored by the Harness, and the Driver doesn't write native persistent settings.
    */
   decision: ApprovalDecision | 'cancel';
 }
@@ -182,7 +164,7 @@ export interface AgentSession {
   close(): Promise<void>;
 }
 
-/** 驱动无关的条目。 */
+/** Driver-independent entry. */
 export type AgentItem =
   | { kind: 'agent-message'; id: string; text: string }
   | { kind: 'reasoning'; id: string; text: string }
@@ -209,7 +191,7 @@ export type AgentEvent =
       turnId: string;
       outcome: TurnOutcome;
       error: string | null;
-      /** `error` 的消息引用（message-ref.ts）：Driver 自己写的原因带上；Agent 的原话没有。 */
+      /** Message reference for `error` (message-ref.ts): included when the Driver wrote the reason itself; not included when it is the Agent's original words. */
       errorRef?: MessageRef;
       errorCode?: AgentErrorCode | null;
     }
@@ -228,14 +210,13 @@ export type AgentEvent =
       approvalId: Id;
       request: ApprovalRequest;
       /**
-       * 这次请求是要越出沙箱（写工作目录之外、联网等），不是策略要求的逐项确认。Harness 据此把它算作 `high`（§3.12）。
-       * Driver 不知道时不给。
+       * Whether this request is an attempt to escape the sandbox (writing outside the working directory, network access, etc.), not a per-item confirmation required by policy. The Harness counts it as `high` based on this (§3.12). Not given when the Driver doesn't know.
        */
       escalation?: boolean;
     }
-  /** 原生侧已经结算了这次审批（例如回合被中断），界面上的待批卡片要收起。 */
+  /** The native side has already settled this approval (e.g., the turn was interrupted), so the pending card in the UI should be collapsed. */
   | { type: 'approval.resolved'; approvalId: Id }
   | { type: 'session.warning'; message: string; messageRef?: MessageRef }
   | { type: 'session.error'; turnId: string | null; message: string; messageRef?: MessageRef; willRetry: boolean; code?: AgentErrorCode | null }
-  /** 智能体进程退出。`error` 为空表示正常关闭。 */
+  /** Agent process exited. `error` is empty for a normal close. */
   | { type: 'session.exited'; error: string | null; errorRef?: MessageRef };

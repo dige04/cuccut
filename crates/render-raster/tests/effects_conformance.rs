@@ -1,14 +1,12 @@
-//! Strict effect 的 conformance 夹具（设计 §11「Conformance」）。
+//! Conformance fixtures for strict effects (design §11 “Conformance”).
 //!
-//! 每个效果一个目录 `core/fixtures/effects/<id>@<ver>/`：
-//! `uniforms.json`（case 名 → uniform 表）、`expected-<case>.png`（逐字节
-//! 参考输出）、`expected.json`（尺寸 + 输出像素指纹，用来给出精确的失败信息）。
-//! 输入是共享的 `input-a.png` / `input-b.png`（程序生成，见 `write_inputs`）。
+//! One directory per effect, `core/fixtures/effects/<id>@<ver>/`:
+//! `uniforms.json` (case name → uniform table), `expected-<case>.png` (byte-exact reference output), `expected.json` (size + output pixel fingerprint, used to give precise failure messages).
+//! The inputs are the shared `input-a.png` / `input-b.png` (generated programmatically, see `write_inputs`).
 //!
-//! 重生成：`CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-render --test effects_conformance`。
+//! To regenerate: `CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-render --test effects_conformance`.
 //!
-//! **同一套夹具将来要被 GPU / Web 实现原样跑过**——这是 ADR-M05 里
-//! 「GPU 只是加速，不过 conformance 就自动回退」的可执行形态。
+//! **The same fixtures will later be run unchanged against the GPU and Web implementations**. This is the executable form of “the GPU is only an accelerator; if it fails conformance it falls back automatically” in ADR-M05.
 
 use motion::effect::{
     Determinism, EffectDomain, EffectRef, UniformMap, UniformValue, builtin_registry,
@@ -31,9 +29,9 @@ fn updating() -> bool {
     std::env::var_os("CCUT_UPDATE_GOLDEN").is_some_and(|value| !value.is_empty())
 }
 
-/// 输入 A：高频彩色渐变 + 一块半透明区域 + 一块纯绿（给色键用），四角透明。
-/// 输入 B：径向亮度斜坡（给 `mask.luma` / `mask.image` 用）。
-/// 两者都是解析式给值 ⇒ 跨机器逐字节确定。
+/// Input A: high-frequency colour gradient + a semi-transparent region + a solid green block (for chroma key), transparent corners.
+/// Input B: radial luminance ramp (for `mask.luma` / `mask.image`).
+/// Both have analytically defined values ⇒ byte-identical across machines.
 fn make_input_a() -> Pixmap {
     let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
@@ -47,7 +45,7 @@ fn make_input_a() -> Pixmap {
                 255
             };
             let (r, g, b) = if x < SIZE / 3 && y >= SIZE / 2 {
-                (0u32, 255u32, 0u32) // 纯绿区：色键
+                (0u32, 255u32, 0u32) // Solid green area: chroma key
             } else {
                 (
                     (x * 7 + y * 13) % 256,
@@ -55,7 +53,7 @@ fn make_input_a() -> Pixmap {
                     (y * 5 + 90) % 256,
                 )
             };
-            // 预乘
+            // Premultiplied
             data.push((r * alpha / 255) as u8);
             data.push((g * alpha / 255) as u8);
             data.push((b * alpha / 255) as u8);
@@ -120,7 +118,7 @@ fn uniforms_from_json(object: &Map<String, Value>) -> UniformMap {
 
 /// `(id, version, [(case, uniforms JSON)])`。
 fn cases() -> Vec<(&'static str, u32, Vec<(&'static str, Value)>)> {
-    // `length` 参数是**画布短边的比例**：48 px 的短边下 3/48 = 3 px。
+    // The `length` parameter is a **fraction of the canvas's short side**: with a 48 px short side, 3/48 = 3 px.
     vec![
         (
             "filter.blur",
@@ -338,8 +336,8 @@ fn every_conformance_case_names_a_registered_effect() {
     }
 }
 
-/// 每个可执行的 strict 效果（`composite.blend` 是表、不是像素内核）都必须
-/// 至少有一个 conformance case——加效果不加夹具会在这里红。
+/// Every executable strict effect (`composite.blend` is a table, not a pixel kernel) must
+/// have at least one conformance case. Adding an effect without a fixture fails here.
 #[test]
 fn every_pixel_effect_is_covered_by_conformance() {
     let covered: std::collections::BTreeSet<String> = cases()
@@ -348,10 +346,10 @@ fn every_pixel_effect_is_covered_by_conformance() {
         .collect();
     for manifest in builtin_registry().iter() {
         if manifest.kernel == "porter-duff-separable" {
-            continue; // blend 表由 raster 的 blend 参考测试覆盖
+            continue; // The blend table is covered by the raster blend reference test
         }
         if manifest.domain == EffectDomain::Transition {
-            continue; // 双画面转场由 `every_surface_transition_is_covered_by_conformance` 管
+            continue; // Dual-surface transitions are covered by `every_surface_transition_is_covered_by_conformance`
         }
         assert!(
             covered.contains(&manifest.qualified()),
@@ -432,7 +430,7 @@ fn cpu_reference_output_matches_the_conformance_fixtures() {
     }
 }
 
-/// `radius = 0` 必须是恒等变换：折叠成「没有效果」的分支要能依赖这一点。
+/// `radius = 0` must be the identity transform: the branch that folds to “no effect” must be able to rely on this.
 #[test]
 fn a_zero_radius_blur_is_the_identity() {
     let input = make_input_a();
@@ -446,7 +444,7 @@ fn a_zero_radius_blur_is_the_identity() {
     assert_eq!(input.data(), output.data());
 }
 
-/// 两次执行必须逐位一致（strict 的最低门槛）。
+/// Two runs must be bit-for-bit identical (the minimum bar for strict).
 #[test]
 fn cpu_reference_is_bitwise_repeatable() {
     let input = make_input_a();
@@ -460,7 +458,7 @@ fn cpu_reference_is_bitwise_repeatable() {
     assert_eq!(first.data(), second.data());
 }
 
-/// 单输入的 Filter pass 拿不到第二张 surface，必须明确报错而不是静默忽略。
+/// A single-input Filter pass has no second surface to use, so it must fail with a clear error rather than silently ignore it.
 #[test]
 fn a_two_input_mask_is_rejected_by_the_single_input_entry() {
     let error = apply_filter(
@@ -474,9 +472,9 @@ fn a_two_input_mask_is_rejected_by_the_single_input_entry() {
     assert!(error.contains("effect-input-mismatch"), "{error}");
 }
 
-/// `box_blur_content`（包围盒版）与 `box_blur_premul_u8`（整幅版）必须逐字节
-/// 相同——`filter.blur@1` 的参考实现走前者，`blur.rs` 的注释给的是证明，
-/// 这条测试是它的可执行形态。半径覆盖「内容占比小」与「触发半幅整帧回退」两侧。
+/// `box_blur_content` (bounding-box version) and `box_blur_premul_u8` (whole-frame version) must be byte-identical.
+/// The reference implementation of `filter.blur@1` uses the former; the comment in `blur.rs` gives the proof, and
+/// this test is its executable form. The radii cover both “content is a small fraction” and “triggers the half-frame whole-frame fallback”.
 #[test]
 fn the_bounded_blur_equals_the_full_frame_blur() {
     for radius in [1usize, 2, 3, 5, 8, 13] {
@@ -492,8 +490,8 @@ fn the_bounded_blur_equals_the_full_frame_blur() {
     }
 }
 
-/// 稀疏内容夹具：在 `WIDE × TALL` 的全零缓冲里，只往 `[rows] × [cols]` 这块
-/// 区域随机点亮像素（播种 LCG，无外部随机源）。返回缓冲与内容所在的区域。
+/// Sparse content fixture: in a `WIDE × TALL` all-zero buffer, pixels are lit at random only within the `[rows] × [cols]` region
+/// (seeded LCG, no external random source). Returns the buffer and the region containing the content.
 fn sparse_frame(seed: u64) -> (Vec<u8>, std::ops::Range<usize>, std::ops::Range<usize>) {
     const WIDE: usize = 320;
     const TALL: usize = 180;
@@ -523,8 +521,8 @@ fn sparse_frame(seed: u64) -> (Vec<u8>, std::ops::Range<usize>, std::ops::Range<
     (data, rows, cols)
 }
 
-/// 限定窗口的包围盒扫描：只要窗口是内容的超集，答案就必须与全帧扫描相同。
-/// 调用方（字幕渲染）用布局几何算窗口，这条不变量是它敢跳过全帧扫描的全部依据。
+/// Bounding-box scan over a bounded window: as long as the window is a superset of the content, the answer must equal the full-frame scan.
+/// The caller (subtitle rendering) computes the window from layout geometry; this invariant is the entire basis for its willingness to skip the full-frame scan.
 #[test]
 fn a_windowed_alpha_bbox_matches_the_full_frame_scan() {
     const WIDE: usize = 320;
@@ -563,7 +561,7 @@ fn a_windowed_alpha_bbox_matches_the_full_frame_scan() {
             );
         }
     }
-    // 空窗口 / 全零窗口都必须是 None，而不是一个退化的空区间。
+    // An empty window or an all-zero window must both return None, not a degenerate empty interval.
     let (data, rows, _) = sparse_frame(1);
     assert_eq!(
         render_raster::effects::alpha_bbox_within(
@@ -579,8 +577,8 @@ fn a_windowed_alpha_bbox_matches_the_full_frame_scan() {
     );
 }
 
-/// 走「窗口扫描 → bounded blur」这条路，与「全帧扫描 → 整幅 blur」必须逐字节
-/// 相同。字幕导出把每帧的 glow / 转场模糊都换到了前一条路上。
+/// The “window scan → bounded blur” path must be byte-identical to the “full-frame scan → whole-frame blur” path.
+/// Subtitle export has switched every frame's glow / transition blur over to the former path.
 #[test]
 fn the_windowed_blur_path_equals_the_full_frame_blur_path() {
     const WIDE: usize = 320;
@@ -611,17 +609,17 @@ fn the_windowed_blur_path_equals_the_full_frame_blur_path() {
     }
 }
 
-// ── Surface Transition（规范 §9，设计 §11「Golden 帧」）─────────────────
+// ── Surface Transition (spec §9, design §11 “Golden frames”) ─────────────────
 
-/// 设计 §11 钉的采样点。端点 `0` / `1` 同时是 conformance 的硬要求：
-/// 输出必须与 `from` / `to` **逐字节**相同。
+/// The sample points pinned by design §11. Endpoints `0` / `1` are also a hard conformance requirement:
+/// the output must be **byte-identical** to `from` / `to`.
 const PROGRESS: &[f64] = &[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
 
 fn progress_case(progress: f64) -> String {
     format!("p{:03}", (progress * 100.0).round() as u32)
 }
 
-/// `(id, version, uniforms)`。每条转场一组 uniform × 七个 progress。
+/// `(id, version, uniforms)`. Each transition gets a set of uniforms × seven progress values.
 fn transition_cases() -> Vec<(&'static str, u32, Value)> {
     vec![
         ("transition.crossfade", 1, json!({})),
@@ -666,7 +664,7 @@ fn run_transition(id: &str, version: u32, uniforms: &UniformMap, progress: f64) 
     .unwrap()
 }
 
-/// 每条已注册的 `transition.*` 都要有 case——加一条配方不加夹具就红。
+/// Every registered `transition.*` must have a case; adding a recipe without a fixture fails.
 #[test]
 fn every_surface_transition_is_covered_by_conformance() {
     let covered: std::collections::BTreeSet<String> = transition_cases()
@@ -683,15 +681,15 @@ fn every_surface_transition_is_covered_by_conformance() {
     assert!(!covered.is_empty());
 }
 
-/// **端点纪律**（规范 §9）：`progress = 0` 逐字节等于 `from`，`= 1` 等于 `to`。
-/// 不是"看起来一样"——是同一串字节。
+/// **Endpoint discipline** (spec §9): `progress = 0` is byte-equal to `from`, and `= 1` is equal to `to`.
+/// Not “looks the same”: it is the same byte sequence.
 #[test]
 fn progress_zero_is_from_and_progress_one_is_to() {
     let (from, to) = (make_input_a(), make_input_b());
     for (id, version, raw) in transition_cases() {
         let manifest = builtin_registry().get(id, version).unwrap();
-        // 每个 uniform 组合都要过，不只是默认值：softness / invert / direction
-        // 都不该动端点。
+        // Every uniform combination must pass, not just the defaults: softness / invert / direction
+        // must not move the endpoints either.
         let variants = [
             raw.clone(),
             json!({}),
@@ -710,8 +708,7 @@ fn progress_zero_is_from_and_progress_one_is_to() {
     }
 }
 
-/// 单调推进的 progress 必须给出**互不相同**的画面——「配方注册了但什么都没做」
-/// 会在这里红。
+/// Monotonically advancing progress must produce **pairwise distinct** frames. A “recipe registered but does nothing” fails here.
 #[test]
 fn monotonic_progress_yields_distinct_frames() {
     for (id, version, raw) in transition_cases() {
@@ -727,8 +724,8 @@ fn monotonic_progress_yields_distinct_frames() {
     }
 }
 
-/// **可 seek**：随机顺序采样与顺序采样逐字节相同（设计 §11 的 Property 一条）。
-/// 转场不许持有增量时钟。
+/// **Seekable**: sampling in random order must be byte-identical to sampling in sequence (one of the properties in design §11).
+/// Transitions must not hold an incremental clock.
 #[test]
 fn transitions_are_seek_safe() {
     for (id, version, raw) in transition_cases() {
@@ -741,7 +738,7 @@ fn transitions_are_seek_safe() {
                     .to_vec()
             })
             .collect();
-        // 固定的"乱序"：不引入随机源，但顺序与上面不同。
+        // A fixed “shuffled” order: no random source is introduced, but the order differs from the one above.
         let shuffled = [3usize, 0, 6, 2, 5, 1, 4];
         let mut out = vec![Vec::new(); PROGRESS.len()];
         for index in shuffled {
@@ -753,7 +750,7 @@ fn transitions_are_seek_safe() {
     }
 }
 
-/// 闭区间之外必须报错，而不是悄悄夹回来——`progress` 的定义域是契约。
+/// Values outside the closed interval must error rather than being silently clamped; the domain of `progress` is part of the contract.
 #[test]
 fn progress_outside_the_closed_interval_is_refused() {
     for progress in [-0.01f32, 1.01] {
@@ -771,7 +768,7 @@ fn progress_outside_the_closed_interval_is_refused() {
     }
 }
 
-/// 两张输入尺寸不同时必须报错（manifest 声明 `resizeMode: same-as-input`）。
+/// Must error when the two inputs have different sizes (the manifest declares `resizeMode: same-as-input`).
 #[test]
 fn mismatched_input_sizes_are_refused() {
     let small = Pixmap::new(SIZE / 2, SIZE).unwrap();

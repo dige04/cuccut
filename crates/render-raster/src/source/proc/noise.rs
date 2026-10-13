@@ -1,4 +1,4 @@
-//! 值噪声与 fbm：格点哈希 + smoothstep 插值，银河与云共用。无周期、无状态。
+//! Value noise and fbm: lattice hash + smoothstep interpolation, shared by the galaxy and the clouds. No period, no state.
 use super::unit;
 
 fn lattice(seed: u64, ix: i64, iy: i64) -> f64 {
@@ -13,7 +13,7 @@ fn fade(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// 单层值噪声 ∈ [0, 1)。
+/// Single-layer value noise ∈ [0, 1).
 pub(crate) fn value(seed: u64, x: f64, y: f64) -> f64 {
     let (fx, fy) = (libm::floor(x), libm::floor(y));
     let (ix, iy) = (fx as i64, fy as i64);
@@ -27,7 +27,7 @@ pub(crate) fn value(seed: u64, x: f64, y: f64) -> f64 {
     top + (bottom - top) * ty
 }
 
-/// `octaves` 层分形和，归一到 [0, 1)。
+/// Fractal sum of `octaves` layers, normalized to [0, 1).
 pub(crate) fn fbm(seed: u64, x: f64, y: f64, octaves: u32) -> f64 {
     let (mut sum, mut amp, mut norm, mut freq) = (0.0, 1.0, 0.0, 1.0);
     for octave in 0..octaves {

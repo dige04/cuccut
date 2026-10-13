@@ -1,24 +1,21 @@
-//! 十进制浮点秒与整数刻度之间的换算（视频格式规范 §2.10）。
+//! Conversion between decimal floating-point seconds and integer ticks (video format spec §2.10).
 //!
-//! - 刻度 → 秒：`ticks / timescale` 按 IEEE 754 除法取最近的 f64。两个数都不超过 2^53 − 1 时都能精确表示，
-//!   结果是真实商的正确舍入。
-//! - 秒 → 刻度：先取这个 f64 的最短十进制写法（能读回同一个 f64 的最少位数），把这个十进制数精确乘以
-//!   `timescale`，再取整到最近的整数刻度，正好一半时远离零。这与旧项目导入器换算微秒的规则相同
-//!   （`scripts/legacy-import/exact-time.ts` 的 `micros`），也就是同一份旧数据经两条路得到同一个刻度。
-//!   它与 §2.13 的 pts 取整（正好一半时取偶数）、编辑吸附的取整是不同的规则，只用在这里。
+//! - Ticks → seconds: `ticks / timescale` using IEEE 754 division, giving the nearest f64. When both numbers are at most 2^53 − 1 they are exactly representable, and the result is the correctly rounded true quotient.
+//! - Seconds → ticks: first take the shortest decimal form of this f64 (the fewest digits that read back as the same f64), multiply that decimal number exactly by `timescale`, then round to the nearest integer tick, with ties going away from zero. This is the same rule the legacy project importer uses to convert microseconds (`micros` in `scripts/legacy-import/exact-time.ts`), so the same old data gives the same ticks by either path.
+//!   It differs from the pts rounding in §2.13 (ties to even) and from the rounding of edit snapping; it is used only here.
 
 use editor_semantics::{MAX_SAFE_INTEGER, MediaTime};
 
 use crate::BridgeError;
 
-/// 没有底稿时新写的正文用的时间基：微秒，与旧项目导入相同。
+/// Time base for a newly written body when there is no base: microseconds, the same as the legacy project import.
 pub const FRESH_TIMESCALE: i64 = 1_000_000;
 
-/// 一次秒 → 刻度换算的结果。
+/// Result of one seconds → ticks conversion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rounded {
     pub ticks: i64,
-    /// 十进制值乘以时间基正好是整数，没有发生取整。
+    /// The decimal value times the time base is exactly an integer; no rounding occurred.
     pub exact: bool,
 }
 
@@ -29,7 +26,7 @@ pub fn check_timescale(timescale: i64) -> Result<(), BridgeError> {
     Ok(())
 }
 
-/// 刻度 → 秒。
+/// Ticks → seconds.
 pub fn ticks_to_seconds(ticks: i64, timescale: i64) -> Result<f64, BridgeError> {
     check_timescale(timescale)?;
     if (ticks as i128).abs() > MAX_SAFE_INTEGER {
@@ -38,7 +35,7 @@ pub fn ticks_to_seconds(ticks: i64, timescale: i64) -> Result<f64, BridgeError> 
     Ok(ticks as f64 / timescale as f64)
 }
 
-/// `MediaTime` → 秒，规则同 [`ticks_to_seconds`]。
+/// `MediaTime` → seconds, same rules as [`ticks_to_seconds`].
 pub fn media_time_seconds(value: &MediaTime) -> Result<f64, BridgeError> {
     let ticks: i64 = value
         .ticks
@@ -47,30 +44,29 @@ pub fn media_time_seconds(value: &MediaTime) -> Result<f64, BridgeError> {
     ticks_to_seconds(ticks, value.timescale)
 }
 
-/// 秒 → 刻度，规则见模块文档。
+/// Seconds → ticks; the rules are in the module docs.
 pub fn seconds_to_ticks(seconds: f64, timescale: i64) -> Result<Rounded, BridgeError> {
     check_timescale(timescale)?;
     if !seconds.is_finite() {
         return Err(BridgeError::new(format!("时间 {seconds} 不是有限数")));
     }
-    // 结果必须是安全整数；先粗筛，免得下面的十进制串过长。
+    // The result must be a safe integer; coarse-filter first so the decimal string below does not get too long.
     if seconds.abs() > (MAX_SAFE_INTEGER as f64) / timescale as f64 + 1.0 {
         return Err(BridgeError::new(format!("时间 {seconds} 秒换成刻度超出安全整数")));
     }
-    // Rust 的 `Display` 给出最短的往返十进制写法，且从不用指数形式。
+    // Rust's `Display` gives the shortest round-trip decimal form, and never uses exponent notation.
     let text = format!("{}", seconds.abs());
     let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
     let digits: u128 = format!("{whole}{fraction}")
         .parse()
         .map_err(|_| BridgeError::new(format!("时间 {seconds} 的十进制写法读不出来")))?;
-    // 十进制值 = digits / 10^k。|seconds| < 2^53 / timescale + 1，有效数字不超过 17 位，
-    // digits · timescale < 10^17 · 2^53 ≈ 9·10^32，在 u128 之内。
+    // Decimal value = digits / 10^k. |seconds| < 2^53 / timescale + 1, at most 17 significant digits, digits · timescale < 10^17 · 2^53 ≈ 9·10^32, which fits within u128.
     let k = fraction.len() as u32;
     let scaled = digits * timescale as u128;
     let (quotient, exact) = if k == 0 {
         (scaled, true)
     } else if k >= 38 {
-        // 10^k 超出 u128；这时 scaled / 10^k < 10^33 / 10^38，取整为 0。
+        // 10^k exceeds u128; in that case scaled / 10^k < 10^33 / 10^38, which rounds to 0.
         (0, scaled == 0)
     } else {
         let unit = 10u128.pow(k);
@@ -91,7 +87,7 @@ pub fn seconds_to_ticks(seconds: f64, timescale: i64) -> Result<Rounded, BridgeE
 mod tests {
     use super::*;
 
-    /// 旧项目导入器 `micros()` 的逐字复刻（不含指数写法的分支）：最短十进制写法截到第 7 位小数，第 7 位 ≥ 5 进一。
+    /// Verbatim copy of the legacy project importer's `micros()` (excluding the exponent-notation branch): take the shortest decimal form, truncate it to 7 decimal places, and round up by one when the 7th place is ≥ 5.
     fn legacy_micros(seconds: f64) -> i64 {
         let text = format!("{}", seconds.abs());
         let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
@@ -155,7 +151,7 @@ mod tests {
                 exact: true
             }
         );
-        // 0.1 + 0.2 的最短写法是 0.30000000000000004：按十进制精确乘，不是 0.3。
+        // The shortest form of 0.1 + 0.2 is 0.30000000000000004: multiply exactly in decimal, which gives 0.30000000000000004, not 0.3.
         assert_eq!(
             seconds_to_ticks(0.1 + 0.2, 1_000_000).unwrap(),
             Rounded {
@@ -175,8 +171,7 @@ mod tests {
         assert!(ticks_to_seconds(1 << 53, 1).is_err());
     }
 
-    /// 刻度 → 秒 → 刻度对任意时间基都回到原值：|ticks| < 2^51 时，相邻两个刻度的间隔大于 f64 在这个量级的
-    /// 舍入误差，最短十进制写法读回的值离原刻度不到半个刻度。
+    /// Ticks → seconds → ticks returns the original value for any time base: when |ticks| < 2^51, adjacent ticks are farther apart than the f64 rounding error at that magnitude, so the value read back from the shortest decimal form is less than half a tick from the original tick.
     #[test]
     fn ticks_survive_the_round_trip_for_any_timescale() {
         let mut state = 0x9e37_79b9_7f4a_7c15_u64;

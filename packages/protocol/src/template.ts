@@ -1,34 +1,32 @@
 /**
- * 创作模板（模板包规范 docs/spec/template-spec.md）：Home 起始页「模板」入口用的视频制作模板。一个模板是一个目录
- * `templates/<id>/`：清单 `template.json`、提示词正文 `prompt.md`，可选封面 `cover.*`、预览 `preview.*` 与 `assets/` 下的素材。
+ * Creative template (template package spec docs/spec/template-spec.md): the video-making template used by the “Templates” entry on the Home start page. A template is a directory `templates/<id>/`, containing the manifest `template.json`, the prompt body `prompt.md`, and optionally a cover `cover.*`, a preview `preview.*`, and materials under `assets/`.
  *
- * 这里是清单的类型、取值集合与无依赖的检查函数，随主入口进界面，不带 zod；校验用的 zod schema 在 `template-schemas.ts`，
- * 经 `@cuccut/protocol/schemas` 导出。
+ * This file holds the manifest types, value sets and dependency-free check functions. It ships with the main entry into the UI and does not use zod. The zod schemas used for validation are in `template-schemas.ts`, exported through `@cuccut/protocol/schemas`.
  */
 
 import { DEFAULT_LOCALE, LOCALES, localeOfTag, type Locale } from './i18n.ts';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 
-/** 清单格式版本（`schema` 字段）。不认识的版本整份跳过（规范 §2.3）。 */
+/** Manifest format version (the `schema` field). A version not recognized causes the whole file to be skipped (spec §2.3). */
 export const TEMPLATE_SCHEMA_VERSION = 1;
 
-/** 清单与提示词的文件名。 */
+/** File names of the manifest and the prompt. */
 export const TEMPLATE_MANIFEST_FILE = 'template.json';
 export const TEMPLATE_PROMPT_FILE = 'prompt.md';
-/** 素材目录：清单 `assets[].path` 都在它下面。 */
+/** Asset directory: all manifest `assets[].path` entries are under it. */
 export const TEMPLATE_ASSETS_DIR = 'assets';
-/** 译文目录（规范 §3.6）：`locales/<语言>.json` 是文案，`locales/<语言>.md` 是提示词，文件名是出货语言代码的小写。 */
+/** Translation directory (spec §3.6): `locales/<language>.json` is the copy, `locales/<language>.md` is the prompt. File names use the lowercase shipped-language code. */
 export const TEMPLATE_LOCALES_DIR = 'locales';
 
 /**
- * 两类模板（规范 §1.2）：
- * - `scene`：场景模板。给一个创作方向和默认画幅、时长；使用时智能体先引导用户过一遍简报，确认后再制作。
- * - `example`：作品示例。一条完整的提示词，选用即放进输入框，不走简报。
+ * Two kinds of template (spec §1.2):
+ * - `scene`: a scene template. It gives a creative direction, a default aspect ratio and a default duration. When used, the agent first guides the user through a brief, and only produces the video after confirmation.
+ * - `example`: a work example. A complete prompt. Selecting it puts it straight into the input box and skips the brief.
  */
 export const TEMPLATE_KINDS = ['scene', 'example'] as const;
 export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
 
-/** 按题材分的分类，两类模板共用（规范 §3.2）。显示名由界面给。 */
+/** Category by subject matter, shared by both kinds of template (spec §3.2). Display names are provided by the UI. */
 export const TEMPLATE_CATEGORIES = [
   'marketing',
   'product-launch',
@@ -43,24 +41,24 @@ export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 export const TEMPLATE_SOURCES = ['official', 'community'] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
 
-/** 默认画幅；缺省表示交给智能体。 */
+/** Default aspect ratio. When omitted, the agent decides. */
 export const TEMPLATE_RATIOS = ['16:9', '9:16', '1:1'] as const;
 export type TemplateRatio = (typeof TEMPLATE_RATIOS)[number];
 
-/** 默认时长（秒）：与 Home 时长滑杆同一组数值，5–600 秒，步长 5。 */
+/** Default duration (seconds): the same set of values as the Home duration slider, 5–600 seconds in steps of 5. */
 export const TEMPLATE_DURATION_MIN = 5;
 export const TEMPLATE_DURATION_MAX = 600;
 export const TEMPLATE_DURATION_STEP = 5;
 
-/** 占位封面的底色。 */
+/** Background color of the placeholder cover. */
 export const TEMPLATE_TONES = ['blue', 'orange', 'green', 'purple', 'cyan', 'indigo', 'magenta', 'seafoam', 'brown'] as const;
 export type TemplateTone = (typeof TEMPLATE_TONES)[number];
 
-/** 占位封面里那枚图形的画法。 */
+/** How the shape on the placeholder cover is drawn. */
 export const TEMPLATE_FIGURES = ['bars', 'ring', 'cards', 'steps'] as const;
 export type TemplateFigure = (typeof TEMPLATE_FIGURES)[number];
 
-/** 随模板分发的素材种类与允许的扩展名（小写）。 */
+/** Material kinds distributed with the template, and their allowed extensions (lowercase). */
 export const TEMPLATE_ASSET_TYPES = ['image', 'svg', 'audio', 'video'] as const;
 export type TemplateAssetType = (typeof TEMPLATE_ASSET_TYPES)[number];
 export const TEMPLATE_ASSET_EXTENSIONS: Readonly<Record<TemplateAssetType, readonly string[]>> = {
@@ -69,24 +67,24 @@ export const TEMPLATE_ASSET_EXTENSIONS: Readonly<Record<TemplateAssetType, reado
   audio: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'],
   video: ['mp4', 'webm', 'mov'],
 };
-/** 封面图与预览视频允许的扩展名。 */
+/** Allowed extensions for cover images and preview videos. */
 export const TEMPLATE_COVER_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'svg'] as const;
 export const TEMPLATE_PREVIEW_EXTENSIONS = ['mp4', 'webm'] as const;
 
-/** 文案与列表的上限（字符数按 UTF-16 码元计）。 */
+/** Limits for copy and lists (character counts are measured in UTF-16 code units). */
 export const TEMPLATE_LIMITS = {
   id: 64,
   title: 40,
   summary: 80,
   description: 400,
-  /** scene 的 `brief`：选用模板时填进输入框的那段话。 */
+  /** The scene `brief`: the paragraph filled into the input box when the template is chosen. */
   brief: 400,
-  /** 待填项（`fields`）最多几项，以及每项的 label、hint、example 的上限。 */
+  /** Maximum number of fill-in slots (`fields`), and the limits for each one's label, hint and example. */
   fields: 8,
   fieldLabel: 24,
   fieldHint: 80,
   fieldExample: 80,
-  /** 建议先读的 craft（`skills`）最多几项，每个 id 的上限。 */
+  /** Maximum number of suggested craft entries to read first (`skills`), and the limit for each id. */
   skills: 4,
   skill: 64,
   kicker: 24,
@@ -97,25 +95,24 @@ export const TEMPLATE_LIMITS = {
   tag: 24,
   assets: 64,
   note: 200,
-  /** `prompt.md` 的上限（字节，UTF-8）。 */
+  /** Limit for `prompt.md` (bytes, UTF-8). */
   promptBytes: 16 * 1024,
 } as const;
 
 /**
- * 封面图与预览视频的体积上限（字节，规范 §3.3）：模板随应用分发，预览只是一段压缩过的示意，封面只是一张缩略图。
+ * Size limit for cover images and preview videos (bytes, spec §3.3). Templates ship with the app. The preview is only a compressed illustration, and the cover is only a thumbnail.
  */
 export const TEMPLATE_FILE_MAX_BYTES = {
   cover: 150 * 1024,
   preview: 2 * 1024 * 1024,
 } as const;
 
-/** 验证记录的结论（规范 §3.5）。 */
+/** Conclusion of a verification record (spec §3.5). */
 export const TEMPLATE_VERIFICATION_OUTCOMES = ['pass', 'partial', 'fail'] as const;
 export type TemplateVerificationOutcome = (typeof TEMPLATE_VERIFICATION_OUTCOMES)[number];
 
 /**
- * 验证时缺失、因而降级或跳过的能力（规范 §3.5）。`transcribe`、`synthesizeSpeech`、`generateImage`、`generateText` 与
- * `generateMusic` 与模型服务的能力同名；视频与音效生成还没有对应的 Provider，先在这里占名字。
+ * Capabilities that were missing during verification and therefore degraded or skipped (spec §3.5). `transcribe`, `synthesizeSpeech`, `generateImage`, `generateText` and `generateMusic` share names with the model service's capabilities. Video and sound-effect generation have no matching Provider yet, so their names are reserved here.
  */
 export const TEMPLATE_VERIFICATION_CAPABILITIES = [
   'transcribe',
@@ -128,7 +125,7 @@ export const TEMPLATE_VERIFICATION_CAPABILITIES = [
 ] as const;
 export type TemplateVerificationCapability = (typeof TEMPLATE_VERIFICATION_CAPABILITIES)[number];
 
-/** 验证记录的文案上限。 */
+/** Length limit for verification record copy. */
 export const TEMPLATE_VERIFICATION_LIMITS = {
   engine: 32,
   input: 4000,
@@ -140,127 +137,123 @@ export const TEMPLATE_VERIFICATION_LIMITS = {
   notes: 1000,
 } as const;
 
-/** 模板 id：小写字母开头，小写字母、数字与单个连字符，等于目录名。 */
+/** Template id: starts with a lowercase letter; contains lowercase letters, digits and single hyphens; equals the directory name. */
 export const TEMPLATE_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
-/** `skills` 里的 craft id（仓库根 `skills/cuccut/built-in-skills/<id>`）：与模板 id 同一种 kebab-case。 */
+/** A craft id in `skills` (repo root `skills/cuccut/built-in-skills/<id>`): the same kebab-case as template ids. */
 export const TEMPLATE_SKILL_ID_PATTERN = TEMPLATE_ID_PATTERN;
 
 /**
- * 待填项（规范 §3.1、§5.5）：模板文字里用 `{{label}}` 留给用户填的一处。scene 写在 `brief` 里，example 写在 `prompt.md` 里。
+ * Fill-in slot (spec §3.1, §5.5): a place in the template text marked `{{label}}` for the user to fill in. In a scene it is written in `brief`; in an example it is written in `prompt.md`.
  */
 export interface TemplateField {
-  /** 占位符里的名字，模板内唯一；不含 `{`、`}` 与换行。 */
+  /** Name in the placeholder, unique within the template. Does not contain `{`, `}` or newlines. */
   label: string;
-  /** 给用户看的「填什么」。 */
+  /** “What to fill in”, shown to the user. */
   hint?: string;
-  /** 示例值：把它代进占位符，就是「可以这样说」的示例句。 */
+  /** Example value. Substituting it into the placeholder gives a sample sentence of the form “you can say it like this”. */
   example?: string;
 }
 
 export interface TemplateCover {
-  /** 封面图，模板目录里的 `cover.<ext>`；缺省时界面用下面三项画占位封面。 */
+  /** Cover image: the `cover.<ext>` in the template directory. When absent, the UI draws a placeholder cover using the three fields below. */
   file?: string;
   tone?: TemplateTone;
   figure?: TemplateFigure;
-  /** 封面左上角的小字。 */
+  /** Small text in the top-left corner of the cover. */
   kicker?: string;
 }
 
 export interface TemplatePreview {
-  /** 预览视频，模板目录里的 `preview.<ext>`。 */
+  /** Preview video: the `preview.<ext>` in the template directory. */
   file?: string;
-  /** 3–5 句分镜要点：没有预览视频时轮播的占位画面。只用于展示，不拼进提示词。 */
+  /** 3–5 storyboard points. Placeholder frames that rotate when there is no preview video. For display only; not concatenated into the prompt. */
   beats?: string[];
 }
 
 export interface TemplateAsset {
-  /** `assets/` 下的相对路径。 */
+  /** Relative path under `assets/`. */
   path: string;
   type: TemplateAssetType;
-  /** 这个素材做什么用：给用户看，也随提示词交给智能体。 */
+  /** What this material is for. Shown to the user, and also handed to the agent along with the prompt. */
   note: string;
 }
 
-/** 验证时用到的一项公开素材：来源与许可。素材本身不随模板分发。 */
+/** A public material used during verification: its source and license. The material itself is not distributed with the template. */
 export interface TemplateVerificationMaterial {
   title: string;
-  /** 素材页的 https 地址。 */
+  /** The https address of the material's page. */
   url: string;
-  /** 许可，例如 `CC0-1.0`、`Public-Domain`，或素材站自己的许可名。 */
+  /** License, for example `CC0-1.0`, `Public-Domain`, or the material site's own license name. */
   license: string;
   note?: string;
 }
 
 /**
- * 验证记录（规范 §3.5）：用真实的智能体按这个模板做过一条视频，记下输入、条件与结果。`preview.file` 与 `cover.file`
- * 通常就取自这次的成片。只供维护与展示，不拼进提示词。
+ * Verification record (spec §3.5): a real agent made one video with this template, and the input, conditions and result were recorded. `preview.file` and `cover.file` usually come from this run's finished cut. For maintenance and display only; not concatenated into the prompt.
  */
 export interface TemplateVerification {
-  /** 验证的日期，`YYYY-MM-DD`。 */
+  /** Date of verification, `YYYY-MM-DD`. */
   date: string;
-  /** 跑的是哪个模板版本（之后按发现改了模板时，`version` 会比它新）。 */
+  /** Which template version was run (if the template is later changed after problems are found, `version` will be newer than this). */
   version: string;
-  /** 智能体引擎，例如 `codex`。 */
+  /** Agent engine, for example `codex`. */
   engine: string;
-  /** 发给智能体的话：scene 是用户消息，example 写「按提示词原样」或改动说明。 */
+  /** Message given to the agent. For a scene, it is the user message. For an example, write “as in the prompt” or a description of the changes. */
   input: string;
   materials: TemplateVerificationMaterial[];
-  /** 缺失、因而降级或跳过的能力。 */
+  /** Capabilities that were missing and therefore degraded or skipped. */
   capabilities: TemplateVerificationCapability[];
   outcome: TemplateVerificationOutcome;
-  /** 成片实测的画幅（宽高约分后的 `W:H`）与时长（秒）。`fail` 且没有成片时可以缺省。 */
+  /** Measured aspect ratio of the finished cut (`W:H`, reduced by GCD) and duration (seconds). May be omitted when the result is `fail` and there is no finished cut. */
   output?: { ratio: string; durationSeconds: number };
-  /** 发现的问题与对模板做的修改。 */
+  /** Problems found, and changes made to the template. */
   notes: string;
 }
 
 export interface TemplateManifest {
   schema: typeof TEMPLATE_SCHEMA_VERSION;
   id: string;
-  /** 模板自身的版本，semver。 */
+  /** The template's own version, semver. */
   version: string;
   kind: TemplateKind;
   title: string;
-  /** 卡片上的一句话。 */
+  /** One-sentence line on the card. */
   summary: string;
-  /** 详情里的一小段。 */
+  /** A short paragraph in the details. */
   description: string;
   /**
-   * 文案（title、summary、description、brief、fields、beats、prompt.md）的语言标签，BCP 47。不是成片的语言。
-   * 其他语言的文案在 `locales/` 里（规范 §3.6）；`templates.*` 给出的清单已经换成挑中的那种语言，这一项随之改成它。
+   * Language tag (BCP 47) of the copy (title, summary, description, brief, fields, beats, prompt.md). This is not the language of the finished cut.
+   * Copy in other languages is in `locales/` (spec §3.6). A manifest from `templates.*` has already been switched to the chosen language, and this field changes to match it.
    */
   language: string;
   category: TemplateCategory;
-  /** 缺省为自动。scene 必填。 */
+  /** Defaults to auto. Required for scene. */
   ratio?: TemplateRatio;
-  /** 缺省为自动。scene 必填。 */
+  /** Defaults to auto. Required for scene. */
   durationSeconds?: number;
   /**
-   * 选用模板时填进输入框的那段话：用户口吻，一到三句，用 `{{label}}` 留出待填项。scene 必填，example 不得有
-   * （example 的待填项直接写在 `prompt.md` 里）。
+   * The paragraph filled into the input box when the template is chosen: in the user's voice, one to three sentences, with `{{label}}` marking the fill-in slots. Required for scene, and must not be present for example (an example's fill-in slots are written directly in `prompt.md`).
    */
   brief?: string;
-  /** 待填项，`brief`（scene）或 `prompt.md`（example）里的每个占位符都要在这里声明，声明的每项都要被引用。 */
+  /** Fill-in slots. Every placeholder in `brief` (scene) or `prompt.md` (example) must be declared here, and every declared item must be referenced. */
   fields?: TemplateField[];
-  /** 做这类成片建议先读的 craft（`skills/cuccut/built-in-skills/<id>`）。 */
+  /** Craft to read first when making this kind of finished cut (`skills/cuccut/built-in-skills/<id>`). */
   skills?: string[];
   author: string;
   source: TemplateSource;
-  /** SPDX 许可标识。 */
+  /** SPDX license identifier. */
   license: string;
   tags: string[];
   cover: TemplateCover;
   preview: TemplatePreview;
   assets?: TemplateAsset[];
-  /** 最近一次的验证记录。 */
+  /** Most recent verification record. */
   verification?: TemplateVerification;
 }
 
 /**
- * 一种语言的译文（`locales/<语言>.json`，规范 §3.6）：只有文案，语言无关的字段（种类、分类、画幅、时长、skills、文件、
- * 验证记录）沿用 `template.json`。scene 必须给 `brief`、example 不得有；`fields` 与 `beats` 的项数与 `template.json` 相同，
- * 按顺序一一对应；`kicker` 与素材的 `note` 不给时沿用 `template.json`。
+ * Translation for one language (`locales/<language>.json`, spec §3.6). Copy only. Language-independent fields (kind, category, aspect ratio, duration, skills, files, verification record) are inherited from `template.json`. A scene must give `brief`, and an example must not. The number of items in `fields` and `beats` is the same as in `template.json`, matched one-to-one in order. `kicker` and material `note` are inherited from `template.json` when not given.
  */
 export interface TemplateTranslation {
   title: string;
@@ -271,17 +264,17 @@ export interface TemplateTranslation {
   tags: string[];
   cover?: { kicker?: string };
   preview?: { beats?: string[] };
-  /** 素材用途说明的译文，`path` 是 `template.json` 登记过的素材。 */
+  /** Translation of a material's usage note. `path` is a material registered in `template.json`. */
   assets?: { path: string; note: string }[];
 }
 
-/** 一种语言的两个译文文件：`locales/<语言小写>.json` 与 `.md`。 */
+/** The two translation files for one language: `locales/<language lowercase>.json` and `.md`. */
 export function templateTranslationFiles(locale: Locale): { text: string; prompt: string } {
   const stem = `${TEMPLATE_LOCALES_DIR}/${locale.toLowerCase()}`;
   return { text: `${stem}.json`, prompt: `${stem}.md` };
 }
 
-/** `locales/` 下的一个文件是哪种语言的哪一份译文；不是 `<出货语言小写>.json|md` 时为 null。 */
+/** Which language and which translation of it a file under `locales/` is. null when it is not `<shipped language lowercase>.json|md`. */
 export function templateTranslationFile(file: string): { locale: Locale; part: 'text' | 'prompt' } | null {
   const match = new RegExp(`^${TEMPLATE_LOCALES_DIR}/([a-z-]+)\\.(json|md)$`).exec(file);
   const locale = match ? LOCALES.find((l) => l.toLowerCase() === match[1]) : undefined;
@@ -289,8 +282,7 @@ export function templateTranslationFile(file: string): { locale: Locale; part: '
 }
 
 /**
- * 按界面语言挑模板的语言版本（规范 §3.6）：同一种出货语言，其次同一主语言的另一种写法（繁体缺译文时用简体，反之亦然），
- * 再其次英文，都没有时用 `template.json` 本身。返回要用的译文语言；null 表示用 `template.json`。
+ * Picks a template's language version by UI language (spec §3.6). First, the same shipped language; then another spelling of the same primary language (when Traditional has no translation, Simplified is used, and vice versa); then English; and when none exist, `template.json` itself. Returns the translation language to use. null means use `template.json`.
  */
 export function pickTemplateLanguage(baseLanguage: string, translations: readonly Locale[], wanted: string | null | undefined): Locale | null {
   const base = localeOfTag(baseLanguage);
@@ -304,7 +296,7 @@ export function pickTemplateLanguage(baseLanguage: string, translations: readonl
   return null;
 }
 
-/** 清单套上一种语言的译文：文案换成译文，`language` 改成它，其余字段原样。 */
+/** Applies one language's translation to the manifest: the copy is replaced with the translation, `language` is changed to it, and other fields are unchanged. */
 export function localizeTemplateManifest(manifest: TemplateManifest, locale: Locale, translation: TemplateTranslation): TemplateManifest {
   const notes = new Map((translation.assets ?? []).map((a) => [a.path, a.note]));
   return {
@@ -323,8 +315,7 @@ export function localizeTemplateManifest(manifest: TemplateManifest, locale: Loc
 }
 
 /**
- * 模板内文件路径的问题（规范 §4.1）；合规时返回 null。只接受目录内的相对路径：正斜杠分隔，不以 `/` 或盘符开头，
- * 不含 `..`、`.`、空段、反斜杠或控制字符。
+ * A problem with a file path inside a template (spec §4.1). Returns null when compliant. Only relative paths inside the directory are accepted: forward-slash separated, not starting with `/` or a drive letter, and not containing `..`, `.`, empty segments, backslashes or control characters.
  */
 export function templatePathProblem(path: string): string | null {
   if (!path) return V.pathEmpty().text;
@@ -335,24 +326,24 @@ export function templatePathProblem(path: string): string | null {
   return null;
 }
 
-// ---- 待填项（规范 §5.5） ----
+// ---- Fill-in slots (spec §5.5) ----
 
-/** 一个占位符：`{{label}}`，label 不含花括号与换行、不为空。 */
+/** One placeholder: `{{label}}`. The label does not contain braces or newlines, and is not empty. */
 const TEMPLATE_SLOT = /\{\{([^{}\n]+)\}\}/g;
 
-/** 文本里的占位符 label，按出现顺序（重复出现的照样列出）。 */
+/** Placeholder labels in the text, in order of appearance (repeated ones are listed each time). */
 export function templateSlots(text: string): string[] {
   return [...text.matchAll(TEMPLATE_SLOT)].map((m) => m[1]!);
 }
 
-/** 把每个占位符换成 `fill(label)` 的结果；不是占位符的文字原样保留。 */
+/** Replaces each placeholder with the result of `fill(label)`. Text that is not a placeholder is kept as is. */
 export function replaceTemplateSlots(text: string, fill: (label: string) => string): string {
   return text.replace(TEMPLATE_SLOT, (_whole, label: string) => fill(label));
 }
 
 /**
- * 示例句（规范 §5.5）：把每个占位符换成该项的 `example`，没有 example（或没有声明）的换成 label 本身。
- * scene 用 `brief`，example 用 `prompt.md`。
+ * Example sentence (spec §5.5): replaces each placeholder with that item's `example`. Where there is no example (or none is declared), the label itself is used.
+ * A scene uses `brief`, and an example uses `prompt.md`.
  */
 export function templateExampleText(text: string, fields: readonly TemplateField[] = []): string {
   const examples = new Map(fields.map((f) => [f.label, f.example ?? f.label]));
@@ -360,15 +351,14 @@ export function templateExampleText(text: string, fields: readonly TemplateField
 }
 
 /**
- * 发送时没填的待填项（规范 §5.5）：占位符换成「[label]」写进消息，智能体把它们当作简报缺项来问。
+ * Fill-in slots left unfilled at send time (spec §5.5): each placeholder is replaced with “[label]” in the message, and the agent asks about them as missing brief items.
  */
 export function templateUnfilledText(text: string): string {
   return replaceTemplateSlots(text, (label) => `[${label}]`);
 }
 
 /**
- * 文本与待填项声明对不上的地方（规范 §3.1）；合规时为空数组。文本里的每个 `{{…}}` 都要对应一个声明的 label，
- * 声明的每项至少被引用一次；拆不成占位符的 `{{` 也算问题。scene 传 `brief`，example 传 `prompt.md`。
+ * Places where the text does not match the fill-in declarations (spec §3.1). An empty array when compliant. Every `{{…}}` in the text must correspond to a declared label, and every declared item must be referenced at least once. A `{{` that cannot be split into a placeholder also counts as a problem. Pass `brief` for a scene and `prompt.md` for an example.
  */
 export function templateSlotProblems(text: string, fields: readonly TemplateField[] = []): string[] {
   const problems: string[] = [];
@@ -381,95 +371,93 @@ export function templateSlotProblems(text: string, fields: readonly TemplateFiel
 }
 
 /**
- * `prompt.md` 里的占位符问题（规范 §2.2）：example 的正文就是放进输入框的话，占位符要与 `fields` 对得上；
- * scene 的正文是给智能体的制作要求，不得出现 `{{`（待填项写在 `brief` 里）。
+ * Placeholder problems in `prompt.md` (spec §2.2). For an example, the body is the text put into the input box, and its placeholders must match `fields`. For a scene, the body is production instructions for the agent and must not contain `{{` (fill-in slots are written in `brief`).
  */
 export function templatePromptSlotProblems(manifest: Pick<TemplateManifest, 'kind' | 'fields'>, prompt: string): string[] {
   if (manifest.kind === 'scene') return prompt.includes('{{') ? [V.templateScenePromptSlots().text] : [];
   return templateSlotProblems(prompt, manifest.fields ?? []);
 }
 
-/** 小写扩展名；没有时为空串。 */
+/** Lowercase extension. An empty string when there is none. */
 export function templateFileExtension(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-/** 读到的 `schema` 是否是这一版认识的；不认识的模板整份跳过，不拖垮整个目录。 */
+/** Whether the `schema` that was read is one this version recognizes. A template not recognized is skipped entirely, without dragging down the whole directory. */
 export function isSupportedTemplateSchema(value: unknown): value is typeof TEMPLATE_SCHEMA_VERSION {
   return value === TEMPLATE_SCHEMA_VERSION;
 }
 
-// ---- 模板目录（`templates.*`，模板包规范 §6、§8） ----
+// ---- Template directory (`templates.*`, template package spec §6, §8) ----
 
-/** 模板从哪个目录来：随应用分发的内置目录，或 Runtime Home 下用户自己放的 `templates/`。与清单的 `source` 无关。 */
+/** Where a template comes from: the built-in directory shipped with the app, or the user's own `templates/` under the Runtime Home. Unrelated to the manifest's `source`. */
 export const TEMPLATE_ORIGINS = ['builtin', 'user'] as const;
 export type TemplateOrigin = (typeof TEMPLATE_ORIGINS)[number];
 
 /**
- * 跳过一个模板的原因（规范 §6）：
- * - `unsupported-schema`：`schema` 缺失或不认识；
- * - `invalid`：清单、`prompt.md` 或目录里的文件不合规（含 id 与目录名不符、路径越出目录、符号链接、未登记的文件）；
- * - `duplicate-id`：同一个来源里两个模板的 id 相同，两个都跳过；
- * - `builtin-conflict`：用户目录里的模板与内置模板同 id，用户的这一份跳过，内置的照常提供。
+ * Reasons a template is skipped (spec §6):
+ * - `unsupported-schema`: `schema` is missing or not recognized;
+ * - `invalid`: the manifest, `prompt.md` or a file in the directory is non-compliant (including an id that does not match the directory name, a path that escapes the directory, symbolic links, and unregistered files);
+ * - `duplicate-id`: two templates in the same source have the same id. Both are skipped;
+ * - `builtin-conflict`: a template in the user directory has the same id as a built-in template. The user's copy is skipped, and the built-in one is still provided.
  */
 export const TEMPLATE_DIAGNOSTIC_CODES = ['unsupported-schema', 'invalid', 'duplicate-id', 'builtin-conflict'] as const;
 export type TemplateDiagnosticCode = (typeof TEMPLATE_DIAGNOSTIC_CODES)[number];
 
-/** 一个没能加载的模板目录。 */
+/** A template directory that could not be loaded. */
 export interface TemplateDiagnostic {
   code: TemplateDiagnosticCode;
   origin: TemplateOrigin;
-  /** 模板目录的名字（期望等于 id）。 */
+  /** Name of the template directory (expected to equal the id). */
   dir: string;
-  /** 模板目录的绝对路径，给用户去找那个目录。 */
+  /** Absolute path of the template directory, so the user can find it. */
   path: string;
-  /** 一句给人看的说明。 */
+  /** A one-sentence explanation for people. */
   message: string;
-  /** 具体的问题，一条一项；可以为空。 */
+  /** Specific problems, one per item. May be empty. */
   issues: string[];
 }
 
-/** 目录里的一个可用模板：挑中的那种语言的清单（规范 §3.6），加上来源、可选的语言与随附文件的概况。 */
+/** An available template in the directory: the manifest in the chosen language (spec §3.6), plus its source, optional language, and an overview of its accompanying files. */
 export interface TemplateSummary {
-  /** 已经换成挑中语言的清单；`manifest.language` 是实际用的语言。 */
+  /** The manifest already switched to the chosen language. `manifest.language` is the language actually used. */
   manifest: TemplateManifest;
   origin: TemplateOrigin;
-  /** 这个模板有哪些语言版本：`template.json` 的 `language` 在前，译文按 `LOCALES` 的顺序。 */
+  /** Which language versions this template has. `language` from `template.json` comes first, and translations follow the order of `LOCALES`. */
   languages: string[];
-  /** 有没有封面图、预览视频，带几项素材（文件都经 `templates.openHandle` 取）。 */
+  /** Whether it has a cover image and a preview video, and how many material items it has. The files are all obtained through `templates.openHandle`. */
   files: { cover: boolean; preview: boolean; assets: number };
 }
 
 export interface TemplateListResult {
   templates: TemplateSummary[];
-  /** 跳过的模板目录。只在 `templates.list` 里给出。 */
+  /** Skipped template directories. Only given in `templates.list`. */
   diagnostics: TemplateDiagnostic[];
 }
 
 export interface TemplateDetail {
   template: TemplateSummary;
-  /** 提示词全文：`prompt.md`，或挑中语言的 `locales/<语言>.md`。 */
+  /** Full prompt text: `prompt.md`, or the chosen language's `locales/<language>.md`. */
   prompt: string;
 }
 
 /**
- * 发送消息时挂上的场景模板（`conversations.send` 的 `template`，规范 §5.2）。`version` 只是参考：Runtime 总用目录里当前的版本，
- * 实际用的版本记在消息上。`assets` 是用户留下的素材（清单 `assets[].path`），不给时全部附上，给空数组时一项也不附。
+ * Scene template attached when a message is sent (`template` of `conversations.send`, spec §5.2). `version` is for reference only: the Runtime always uses the current version in the directory, and the version actually used is recorded on the message. `assets` are materials the user left (manifest `assets[].path`). When not given, all of them are attached; when given as an empty array, none are attached.
  */
 export interface TemplateSendRef {
   id: string;
   version?: string;
   assets?: string[];
-  /** 用哪种语言的模板文案（规范 §3.6），通常是界面语言；不给时用 Runtime 的界面语言。 */
+  /** Which language of the template copy to use (spec §3.6), usually the UI language. When not given, the Runtime's UI language is used. */
   language?: string;
 }
 
-/** 用户消息上的模板标记：会话里显示「模板：标题」，不含提示词正文。 */
+/** Template marker on a user message. The conversation shows “Template: title”, without the prompt body. */
 export interface TemplateMessageRef {
   id: string;
-  /** 实际用的版本。 */
+  /** The version actually used. */
   version: string;
   title: string;
   kind: TemplateKind;

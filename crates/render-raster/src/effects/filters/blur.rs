@@ -1,32 +1,23 @@
-//! Box blur 的 CPU 参考实现。
+//! CPU reference implementation of box blur.
 //!
-//! 最初逐行搬自 `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs`（`box_blur_rgba`、
-//! `box_blur_rgba_bounded`、`box_blur_rgba_content`）与 `render_plan.rs`
-//! （`alpha_bbox`）。位精确是硬要求：`studio_export` 的导出像素夹具钉着它。
-//! 之后为预览提速改了遍历顺序（纵向一遍改行主序）、除法（定点倒数）与包围盒
-//! 扫描（只扫左右边距），不再是逐行搬运；逐字节相同由本文件单测对拍原实现
-//! 保证（倒数除法穷举全部取值）。
+//! Originally moved line by line from `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs` (`box_blur_rgba`, `box_blur_rgba_bounded`, `box_blur_rgba_content`) and `render_plan.rs` (`alpha_bbox`). Bit-exactness is a hard requirement: the export pixel fixtures of `studio_export` pin it.
+//! Later, for preview speed, the traversal order (one vertical pass changed to row-major), the division (fixed-point reciprocal) and the bounding-box scan (only the left and right margins are scanned) were changed, so it is no longer a line-by-line move. Byte-for-byte identity is guaranteed by this file's unit tests, which compare against the original implementation (the reciprocal division is checked exhaustively over all values).
 //!
-//! 语义要点（进 `filter.blur@1` 的 manifest）：单遍可分离 box、u8 整数
-//! **截断**除法（不是四舍五入）、作用在**预乘 sRGB**、边缘按窗口收缩
-//! （除数变小）而不是补零。
+//! Key semantic points (they go into the `filter.blur@1` manifest): a single-pass separable box, u8 integer **truncating** division (not rounding), operating on **premultiplied sRGB**, with edges shrinking the window (smaller divisor) rather than zero-padding.
 
 use std::ops::Range;
 
-/// 模糊半径的结构性上限。滑动窗口是 O(1)/像素，半径本身不增加计算量，这个上限
-/// 只是挡住手写 JSON 的病态值把局部拷贝的边距（`radius * 2`）撑到整幅之外。
-/// 4K + 面板最大 glow（0.9·fontSize）也远在其内。
+/// Structural upper bound on blur radius. The sliding window is O(1) per pixel, so the radius itself adds no computation. This bound only stops pathological values in hand-written JSON from pushing the local copy margin (`radius * 2`) beyond the whole frame. 4K plus the panel's maximum glow (0.9·fontSize) is also well within it.
 pub const MAX_BLUR_RADIUS: usize = 256;
 
-/// 非零内容的行/列包围盒（半开区间）。
+/// Row/column bounding box of nonzero content (half-open intervals).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContentBox {
     pub rows: Range<usize>,
     pub cols: Range<usize>,
 }
 
-/// 非零 alpha 的行/列包围盒（半开区间）。缓冲是预乘 RGBA，任何通道非零都
-/// 蕴含 alpha 非零，因此按字节找非零即可。返回 `None` 表示整帧透明。
+/// Row/column bounding box of nonzero alpha (half-open intervals). The buffer is premultiplied RGBA, so any nonzero channel implies nonzero alpha, and a byte-level nonzero check is enough. Returns `None` if the whole frame is transparent.
 pub fn alpha_bbox(rgba: &[u8], width: usize, height: usize) -> Option<ContentBox> {
     alpha_bbox_within(
         rgba,
@@ -39,13 +30,9 @@ pub fn alpha_bbox(rgba: &[u8], width: usize, height: usize) -> Option<ContentBox
     )
 }
 
-/// [`alpha_bbox`] 的**限定窗口**形态：只扫 `window` 覆盖的行列。
+/// The **restricted-window** form of [`alpha_bbox`]: scans only the rows and columns covered by `window`.
 ///
-/// 调用方常常已经知道内容画在哪（字幕的布局几何、元素的仿射盒），全帧扫描
-/// 纯属浪费——1080p 的透明 overlay 每次扫描要读满 8.3MB。契约是：
-/// **`window` 必须是非零像素的超集**。满足这一条时返回值与
-/// [`alpha_bbox`] 逐字段相同（窗口只是缩小搜索范围，不改变答案）；不满足时
-/// 结果会被窗口裁掉，因此窗口只能由「画了什么」的几何上界推出来，不能猜。
+/// Callers often already know where content is drawn (the subtitle layout geometry, an element's affine box), and a full-frame scan is pure waste: a 1080p transparent overlay would read the full 8.3 MB on every scan. The contract is that **`window` must be a superset of the nonzero pixels**. When that holds, the return value is field-for-field identical to [`alpha_bbox`] (the window only narrows the search range and does not change the answer). When it does not hold, the result is clipped by the window, so the window may only be derived from a geometric upper bound on what was drawn, never guessed.
 pub fn alpha_bbox_within(
     rgba: &[u8],
     width: usize,
@@ -61,16 +48,15 @@ pub fn alpha_bbox_within(
         return None;
     }
     let row = |y: usize| &rgba[y * row_bytes + col_start * 4..y * row_bytes + col_end * 4];
-    // 先从两头找非零行，再只扫每行落在当前左右界**之外**的那一截：盒子只会
-    // 变大，中间段不必重看。与逐行全扫取 min/max 的结果相同。
+    // First find the nonzero rows from both ends, then scan only the part of each row **outside** the current left and right bounds. The box can only grow, so the middle segment need not be re-examined. The result is the same as scanning every row in full and taking min/max.
     let min_row = (row_start..row_end).find(|&y| !bytes_are_zero(row(y)))?;
     let max_row = (min_row..row_end)
         .rev()
         .find(|&y| !bytes_are_zero(row(y)))
         .unwrap_or(min_row);
     let span = col_end - col_start;
-    let mut first = span; // 相对 col_start 的最左非零像素
-    let mut last: Option<usize> = None; // 相对 col_start 的最右非零像素
+    let mut first = span; // Leftmost nonzero pixel, relative to col_start
+    let mut last: Option<usize> = None; // Rightmost nonzero pixel, relative to col_start
     for y in min_row..=max_row {
         let pixels = row(y);
         if let Some(x) = pixels[..first * 4]
@@ -97,16 +83,14 @@ pub fn alpha_bbox_within(
     })
 }
 
-/// 整段字节是否全为 0。按 64 字节一块做按位或再判零，比逐字节 `all` 少分支。
+/// Whether a whole byte slice is all zeros. Checks in 64-byte blocks with a bitwise OR and then tests for zero, which has fewer branches than a per-byte `all`.
 fn bytes_are_zero(bytes: &[u8]) -> bool {
     bytes
         .chunks(64)
         .all(|block| block.iter().fold(0_u8, |acc, &byte| acc | byte) == 0)
 }
 
-/// `n / d` 的定点倒数：对 `d ≤ 2·MAX_BLUR_RADIUS + 1`、`n ≤ 255·d`（box 窗口
-/// 里 `d` 个 u8 之和的上界），`(n · reciprocal(d)) >> 32` 与整数截断除法逐值
-/// 相同（误差项 `n / 2³² < 1 / d`；单测穷举全部 (n, d)）。
+/// Fixed-point reciprocal for `n / d`: for `d ≤ 2·MAX_BLUR_RADIUS + 1` and `n ≤ 255·d` (the upper bound on the sum of `d` u8 values in a box window), `(n · reciprocal(d)) >> 32` equals integer truncating division value for value (the error term `n / 2³² < 1 / d`; unit tests exhaustively cover all (n, d)).
 fn reciprocal(divisor: u32) -> u64 {
     (1_u64 << 32) / u64::from(divisor) + 1
 }
@@ -115,12 +99,9 @@ fn divide(sum: u32, reciprocal: u64) -> u8 {
     ((u64::from(sum) * reciprocal) >> 32) as u8
 }
 
-/// 整幅预乘 RGBA 的单遍可分离 box blur。
+/// Single-pass separable box blur over a whole premultiplied RGBA frame.
 ///
-/// 两遍都按行主序走内存：横向一遍四个通道共用一个窗口，纵向一遍对整行维护
-/// `width × 4` 个滑动和。每个 (像素, 通道) 的求和顺序、加减项与除数都与逐列
-/// 实现相同，只是换了遍历顺序，除法换成逐值相同的定点倒数，因此逐字节一致
-/// （单测对拍逐列参考实现）。
+/// Both passes walk memory in row-major order. The horizontal pass shares one window across four channels, and the vertical pass maintains `width × 4` sliding sums over a whole row. The summation order, the add and subtract terms, and the divisor for each (pixel, channel) are the same as in the per-column implementation; only the traversal order changed, and the division is replaced by a value-for-value identical fixed-point reciprocal. The output is therefore byte-identical (unit tests compare against the per-column reference implementation).
 pub fn box_blur_premul_u8(data: &mut [u8], width: u32, height: u32, radius: usize) {
     let width = width as usize;
     let height = height as usize;
@@ -129,7 +110,7 @@ pub fn box_blur_premul_u8(data: &mut [u8], width: u32, height: u32, radius: usiz
         return;
     }
     let row_bytes = width * 4;
-    // 窗口大小只有 1..=2·radius+1 这几种，倒数先算成表。
+    // Window sizes are only 1..=2·radius+1, so the reciprocals are precomputed as a table.
     let reciprocals: Vec<u64> = (0..=2 * radius as u32 + 1)
         .map(|count| if count == 0 { 0 } else { reciprocal(count) })
         .collect();
@@ -199,12 +180,9 @@ pub fn box_blur_premul_u8(data: &mut [u8], width: u32, height: u32, radius: usiz
     }
 }
 
-/// 只在非零内容包围盒的邻域内做 box blur，输出与整帧模糊逐字节一致：
-/// 单次模糊最多把内容向外扩散 `radius`，包围盒外扩 2×radius 后，子区边缘
-/// 像素的窗口读到的全是零（两种算法都得 0）；子区内部像素的窗口不越界，
-/// 与整帧的除数语义相同；子区边界与画布边界重合时窗口收缩也一致。
+/// Box blur only within the neighborhood of the nonzero content bounding box. The output is byte-identical to a whole-frame blur: a single blur spreads content outward by at most `radius`, so with the bounding box expanded by 2×radius, edge pixels of the sub-region have windows that read only zeros (both algorithms give 0). Pixels inside the sub-region have windows that do not go out of bounds, with the same divisor semantics as the whole frame. When the sub-region boundary coincides with the canvas boundary, window shrinking is also consistent.
 ///
-/// 返回模糊后的非零包围盒。
+/// Returns the nonzero bounding box after blurring.
 pub fn box_blur_bounded(
     data: &mut [u8],
     width: u32,
@@ -228,7 +206,7 @@ pub fn box_blur_bounded(
     let x1 = (cols.end + margin).min(width_usize);
     let y0 = rows.start.saturating_sub(margin);
     let y1 = (rows.end + margin).min(height_usize);
-    // 内容占到半幅以上时局部拷贝不再划算，直接整帧。
+    // When content covers more than half the frame, a local copy is no longer worthwhile, so the whole frame is done directly.
     if (x1 - x0) * (y1 - y0) * 2 >= width_usize * height_usize {
         box_blur_premul_u8(data, width, height, radius);
         return blurred;
@@ -248,7 +226,7 @@ pub fn box_blur_bounded(
     blurred
 }
 
-/// [`box_blur_bounded`] 的自动扫描版本（`None` = 整帧透明）。
+/// Auto-scanning version of [`box_blur_bounded`] (`None` = whole frame transparent).
 pub fn box_blur_content(
     data: &mut [u8],
     width: u32,
@@ -259,8 +237,7 @@ pub fn box_blur_content(
     Some(box_blur_bounded(data, width, height, radius, &content))
 }
 
-/// 把 `bounds` 覆盖的像素清零。绘制到全零缓冲上的 source-over 只会在绘制处
-/// 产生非零字节，因此清空「非零包围盒」即可让缓冲重新变成整幅全零。
+/// Clears the pixels covered by `bounds` to zero. Source-over drawn onto an all-zero buffer only produces nonzero bytes where it is drawn, so clearing the "nonzero bounding box" returns the buffer to all zeros.
 pub fn clear_content_box(data: &mut [u8], width: usize, bounds: &ContentBox) {
     for y in bounds.rows.clone() {
         let start = (y * width + bounds.cols.start) * 4;
@@ -273,7 +250,7 @@ pub fn clear_content_box(data: &mut [u8], width: usize, bounds: &ContentBox) {
 mod tests {
     use super::*;
 
-    /// 行主序改写之前的逐列实现（搬自 `studio_export/raster.rs`），作对照组。
+    /// The per-column implementation from before the row-major rewrite (moved from `studio_export/raster.rs`), kept as a control.
     fn reference_box_blur(data: &mut [u8], width: u32, height: u32, radius: usize) {
         let width = width as usize;
         let height = height as usize;
@@ -348,7 +325,7 @@ mod tests {
         }
     }
 
-    /// 改写之前逐行全扫的包围盒实现，作对照组。
+    /// The full-row bounding-box scan implementation from before the rewrite, kept as a control.
     fn reference_alpha_bbox_within(
         rgba: &[u8],
         width: usize,
@@ -416,7 +393,7 @@ mod tests {
                     cols: 0..width,
                 }
             } else {
-                // 窗口可以越出画布（实现会夹取），也可以是空的。
+                // The window may extend beyond the canvas (the implementation clamps it), and it may also be empty.
                 let r0 = rng.next() as usize % (height + 2);
                 let c0 = rng.next() as usize % (width + 2);
                 ContentBox {
@@ -442,7 +419,7 @@ mod tests {
                 let mut data: Vec<u8> = (0..width * height * 4)
                     .map(|_| (rng.next() % 256) as u8)
                     .collect();
-                // 一半的用例留出大片零区，贴近真实的稀疏输入。
+                // Half of the cases leave large zero regions, close to realistic sparse inputs.
                 if rng.next() % 2 == 0 {
                     for (index, byte) in data.iter_mut().enumerate() {
                         if (index / 4) % 5 != 0 {

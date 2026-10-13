@@ -14,7 +14,7 @@ import { pl } from './local-source.pl.ts';
 import { tr } from './local-source.tr.ts';
 import { vi } from './local-source.vi.ts';
 
-/** `packages/models/src/local-source.ts` 给人看的文字：本机 Provider 的名字。 */
+/** `packages/models/src/local-source.ts`: text shown to people with the name of the local provider. */
 const en = {
   localLabel: 'This computer',
 };

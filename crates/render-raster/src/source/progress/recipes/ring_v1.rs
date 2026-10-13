@@ -1,14 +1,10 @@
-//! `ring-v1`：`circle` / `donut`（设计 §7.4）。
+//! `ring-v1`: `circle` / `donut` (design §7.4).
 //!
-//! 参考实现（`progress_circle.frag` / `progress_donut.frag`）：`len = |texCoord·2 − 1|`
-//! 的内切圆，`anglePercent`（自正上方顺时针，`atan(−centred.x, −centred.y) + π`）
-//! 小于 `u_progress` 的扇区用主色，其余用副色；`donut` 再乘一层 `innerRadius = 0.8`
-//! 的内圈遮罩。
+//! Reference implementation (`progress_circle.frag` / `progress_donut.frag`): `len = |texCoord·2 − 1|` on the inscribed circle. Sectors whose `anglePercent` (clockwise from straight up, `atan(−centred.x, −centred.y) + π`) is less than `u_progress` use the primary color, and the rest use the secondary. `donut` also multiplies by an inner-ring mask with `innerRadius = 0.8`.
 //!
-//! 矢量侧：底环（整圆 / 整环）+ 进度扇区（饼形 / 环形扇区）两条 `FillPath`。
-//! `innerRadius` 是**相对外半径**的比例，与参考实现的 `len` 同一量纲。
-//! `featherPx` / `edgeFeatherPx` 是 shader 的抗锯齿带宽，矢量路径不读（见
-//! `super::super::draw` 的模块文档）。
+//! Vector side: a base ring (a full circle or full annulus) and progress sectors (a pie slice or an annular sector), as two `FillPath`s.
+//! `innerRadius` is a ratio **relative to the outer radius**, in the same units as the reference implementation's `len`.
+//! `featherPx` / `edgeFeatherPx` are the shader's antialiasing bandwidth. The vector path does not read them (see the module docs of `super::super::draw`).
 
 use motion::preset_registry::ProgressBody;
 
@@ -38,13 +34,12 @@ pub(crate) fn draw(
         return 0;
     }
     let inner = outer * inner_ratio.clamp(0.0, 1.0);
-    // `startAngle` 的封闭取值目前只有 `"top"`（注册表 `ENUM_KEYS`），而
-    // `kernel::polar` 的零角就在正上方；将来加档在这里给偏移。
+    // The only closed value of `startAngle` at present is `"top"` (registry `ENUM_KEYS`), while `kernel::polar`'s zero angle is straight up. When more values are added, the offset goes here.
     let phase = match start_angle {
         "top" => 0.0,
         _ => 0.0,
     };
-    // `direction` 的封闭取值里 `ccw` / `rtl` 目前没有 progress 配方在用。
+    // Of the closed values of `direction`, `ccw` and `rtl` are not used by any progress recipe at present.
     let sign = if direction == "ccw" { -1.0 } else { 1.0 };
 
     let before = builder.frame.ops.len();

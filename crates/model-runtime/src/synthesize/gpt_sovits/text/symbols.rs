@@ -1,11 +1,11 @@
-//! GPT-SoVITS v2 音素符号表。
+//! GPT-SoVITS v2 phone symbol table.
 //!
-//! 由 v2 仓库（`cuccut-app`）的 `scripts/dev/gpt-sovits-text/gen_data.py` 从上游 `GPT_SoVITS/text/symbols2.py`（RVC-Boss/GPT-SoVITS@48b1a0169a28）生成，勿手改。
+//! Generated from upstream `GPT_SoVITS/text/symbols2.py` (RVC-Boss/GPT-SoVITS@48b1a0169a28) by `scripts/dev/gpt-sovits-text/gen_data.py` in the v2 repository (`cuccut-app`). Do not edit by hand.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// v2 符号表，下标即 id（共 732 个）。
+/// v2 symbol table; the index is the id (732 in total).
 pub const SYMBOLS: &[&str] = &[
     "!", ",", "-", ".", "?", "AA", "AA0", "AA1", "AA2", "AE0", "AE1", "AE2", "AH0", "AH1", "AH2", "AO0", "AO1", "AO2", "AW0", "AW1", "AW2",
     "AY0", "AY1", "AY2", "B", "CH", "D", "DH", "E1", "E2", "E3", "E4", "E5", "EE", "EH0", "EH1", "EH2", "ER", "ER0", "ER1", "ER2", "EY0",
@@ -53,7 +53,7 @@ pub const SYMBOLS: &[&str] = &[
 static SYMBOL_IDS: LazyLock<HashMap<&'static str, u32>> =
     LazyLock::new(|| SYMBOLS.iter().enumerate().map(|(i, s)| (*s, i as u32)).collect());
 
-/// 符号 → id；不在表内返回 `None`。
+/// Symbol → id; returns `None` if the symbol is not in the table.
 pub fn symbol_id(s: &str) -> Option<u32> {
     SYMBOL_IDS.get(s).copied()
 }

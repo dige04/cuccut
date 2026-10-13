@@ -24,7 +24,7 @@ import type { AgentDriver, AgentSession, DriverDescription, ProbeOptions } from 
 import { Harness } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
-/** Agent 探测的缓存、后台刷新、`agents` 主题与运行中的纠正（架构设计 §3.11）。Driver 全是假的，文件都在临时目录里。 */
+/** Caching of agent probes, background refresh, the `agents` topic, and in-runtime correction (architecture design §3.11). Drivers are all fakes; files are in a temp directory. */
 
 interface Gate {
   promise: Promise<void>;
@@ -42,14 +42,14 @@ class FakeDriver implements AgentDriver {
   readonly verified: boolean;
   readonly slowProbe: boolean;
   readonly calls: ProbeOptions[] = [];
-  /** 给了就等它打开再返回：模拟慢的探测。 */
+  /** If given, waits for it to open before returning: simulates a slow probe. */
   hold: Gate | null = null;
   fail: string | null = null;
   state: DriverProbe['state'] = 'ready';
   version = '1.0.0';
-  /** createSession 抛的错（带 agentCode）。 */
+  /** Error thrown by createSession (with agentCode). */
   sessionError: (Error & { agentCode?: string }) | null = null;
-  /** 给了就当探测时间：模拟很久没探过的结果。 */
+  /** If given, used as the probe time: simulates a result that was probed long ago. */
   checkedAt: string | null = null;
 
   constructor(id: DriverId, verified = true, slowProbe = false) {
@@ -177,7 +177,7 @@ describe('Agent 探测缓存', () => {
     const view = await h.agents();
     expect(view.checking).toEqual([]);
     expect(view.drivers).toHaveLength(1);
-    // 本机事实来自缓存，常量来自 describe()，status 由 state 推出。
+    // Machine facts come from the cache, constants come from describe(), and status is derived from state.
     expect(view.drivers[0]).toMatchObject({
       id: 'codex',
       state: 'signed-out',
@@ -196,7 +196,7 @@ describe('Agent 探测缓存', () => {
     harness = null;
     const file = JSON.parse(await fs.readFile(home.agentProbesFile, 'utf8'));
     expect(file.drivers.codex).toMatchObject({ state: 'ready', version: '1.0.0', executableOverride: null });
-    // 只存本机事实，不存 Driver 的常量。
+    // Only machine facts are stored, not Driver constants.
     expect(file.drivers.codex.name).toBeUndefined();
     expect(file.drivers.codex.install).toBeUndefined();
     expect(file.drivers.codex.capabilities).toBeUndefined();
@@ -213,7 +213,7 @@ describe('Agent 探测缓存', () => {
     expect(view.checking).toEqual(['gemini']);
     await until(() => lastView()?.drivers.some((d) => d.id === 'codex'));
     expect(lastView()!.checking).toEqual(['gemini']);
-    // 同一个 Driver 的刷新共用一次探测：启动刷新与 agents.list 只探了一次。
+    // Concurrent refreshes for the same Driver share one probe: the startup refresh and agents.list probed only once.
     expect(gemini.calls).toHaveLength(1);
 
     gemini.hold.open();
@@ -256,7 +256,7 @@ describe('Agent 探测缓存', () => {
     expect(view.drivers.find((d) => d.id === 'codex')!.version).toBe('2.0.0');
     expect(events.length).toBeGreaterThan(before);
     expect(lastView()!.drivers.find((d) => d.id === 'codex')!.version).toBe('2.0.0');
-    // 只探了 codex。
+    // Only codex was probed.
     expect(claude.calls).toHaveLength(1);
 
     await h.agents({ fresh: true });

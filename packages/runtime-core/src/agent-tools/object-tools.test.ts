@@ -15,9 +15,8 @@ import { TOOL_RISK } from './tool-scope.ts';
 import { ToolDriver, tool, until, type Loose } from './testing/fake-agent.ts';
 
 /**
- * 对象的读写工具端到端（架构设计 §3.5，Agent 面设计 §4.3）：`assets_import`、`documents_put`、`videos_frames`、
- * `videos_history`、`videos_import_package`、`edits_ops` 经终端的 `catalog.call`（`LocalPrincipal`）落到真实的引擎里；
- * 取帧与写文档另经会话里的智能体（规划模式）核对风险。需要 engine-host 与 ffmpeg，缺了就跳过。
+ * Object read/write tools end to end (architecture §3.5, agent-surface design §4.3): `assets_import`, `documents_put`, `videos_frames`, `videos_history`, `videos_import_package`, and `edits_ops` run through the terminal's `catalog.call` (`LocalPrincipal`) and land in the real engine.
+ * Frame fetching and document writing are also checked for risk through the in-session agent (plan mode). Needs engine-host and ffmpeg; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -71,7 +70,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
   beforeAll(async () => {
     fixtures = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-object-tools-fixtures-'));
     clip = path.join(fixtures, 'clip.mp4');
-    // 1920×1080：取帧的默认长边上限（1280）要真的缩小。
+    // 1920×1080: the default long-edge cap for frame fetching (1280) must actually shrink it.
     execFileSync('ffmpeg', [
       ...['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=1920x1080:rate=30:duration=2'],
       ...['-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', 'mpeg4', '-c:a', 'aac', '-shortest', clip],
@@ -128,7 +127,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
   const video = (videoId: Id) => runtime.videos.mirror(videoId)!.video;
   const items = (videoId: Id) => video(videoId).sequences[video(videoId).rootSequenceId]!.items;
 
-  /** 新建一个视频，把 media/clip.mp4 导入并放到 0 秒。 */
+  /** Create a new video, import media/clip.mp4 and place it at 0 s. */
   async function placedVideo(name: string): Promise<{ videoId: Id; assetId: Id; itemId: Id }> {
     const created = await ok('videos_create', { name });
     const imported = await ok('assets_import', { video: created.videoId, path: 'media/clip.mp4', place: { at: '0' } });
@@ -157,13 +156,13 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(item).toMatchObject({ type: 'video', assetRef: { id: placed.assetId }, span: { fromFrame: 0 } });
     expect(video(videoId).assets[placed.assetId]).toBeDefined();
 
-    // 只登记：itemId 为 null，时间线不变。
+    // Registration only: itemId is null, and the timeline is unchanged.
     const before = items(videoId).length;
     const registered = await ok('assets_import', { video: videoId, path: 'media/clip.mp4', name: '再导一次', storage: 'managed' });
     expect(registered).toMatchObject({ status: 'committed', itemId: null, assetId: expect.any(String) });
     expect(items(videoId)).toHaveLength(before);
 
-    // at 是秒数：落在 5 秒（30 fps 的第 150 帧），接在指定的轨道上。
+    // `at` is in seconds: it lands at 5 s (frame 150 at 30 fps), on the specified track.
     const atFive = await ok('assets_import', {
       video: videoId,
       path: 'media/clip.mp4',
@@ -187,14 +186,14 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(frames.frames[0].file).toBe(path.join(framesDir, 'at-500ms.png'));
     expect(await header(frames.frames[0].file, 4)).toEqual(PNG);
     expect(frames.frames[1].file).toBe(path.join(framesDir, 'at-1000ms.png'));
-    // 人脸检测：构建了 face-detect 时由它检测（测试图案上没有脸），没有时 detector 为 null；有文件的帧都带 faces。
+    // Face detection: when face-detect is built, it does the detection (there is no face in the test pattern); when it is not built, detector is null; frames with files all carry faces.
     expect(frames.detector).toBe(resolveFaceDetectCommand() ? 'yunet' : null);
     expect(frames.frames[0].faces).toEqual([]);
     expect(frames.frames[1].faces).toEqual([]);
-    // 3 秒处时间线上没有视频片段：不是错误，file 为 null，也没有 faces。
+    // No video clip on the timeline at 3 s: not an error; file is null, and there are no faces.
     expect(frames.frames[2]).toEqual({ at: '3', file: null });
 
-    // 上面一条视觉轨（order 更大）上的片段盖住下面的：取它。
+    // On a visual track above (higher order), the clip that covers the one below is taken.
     const inspected = await ok('videos_inspect', { video: videoId });
     const added = await ok('edits_apply', {
       video: videoId,
@@ -211,7 +210,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     const stacked = await ok('videos_frames', { video: videoId, at: ['0.2', '1'] });
     expect(stacked.frames.map((f: Loose) => f.item)).toEqual([itemId, upper.itemId]);
 
-    // range + count：等间隔、从起点开始；jpeg 与 maxWidth。
+    // range + count: equally spaced, starting at the start point; jpeg and maxWidth.
     const ranged = await ok('videos_frames', { video: videoId, range: '0:2', count: 4, format: 'jpeg', maxWidth: 640 });
     expect(ranged.frames.map((f: Loose) => f.at)).toEqual(['0', '0.5', '1', '1.5']);
     for (const frame of ranged.frames) {
@@ -248,7 +247,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(video(videoId).documents[documentId]!.currentRevision).not.toBe(firstRevision);
     const read = await ok('documents_read', { video: videoId, documentId });
     expect(read.body.words[0].text).toBe('Hi');
-    // 正文与原来相同：文档不产生新版本。
+    // The body is the same as before: the document does not create a new version.
     const current = video(videoId).documents[documentId]!.currentRevision;
     await call('documents_put', { video: videoId, document: documentId, body: speechBody(fixed) });
     expect(video(videoId).documents[documentId]!.currentRevision).toBe(current);
@@ -278,7 +277,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
       const read = await ok('documents_read', { video: videoId, documentId: speech.documentId });
       const basis = read.translationBasis;
       expect(basis.sentences).toHaveLength(2);
-      // 每句带素材时钟上的起止（秒）：首个可见词的起点到末个可见词的终点。
+      // Each sentence carries its start and end on the source clock (seconds): from the start of the first visible word to the end of the last visible word.
       expect(basis.sentences.map((s: Loose) => [s.id, s.start, s.end])).toEqual([
         ['s-w1', 0, 1],
         ['s-w3', 1.1, 1.9],

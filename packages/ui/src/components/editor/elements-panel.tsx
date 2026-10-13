@@ -20,7 +20,7 @@ import { useBrandStickers, type BrandSticker } from './use-brand-stickers.ts';
 import { useInsertVisual } from './use-insert-visual.ts';
 import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 
-/** 目录页每一段摆几格，多的走「查看全部」。 */
+/** Each section on the catalog page shows a fixed number of cells; the rest are reached through “查看全部” (view all). */
 const PEEK = 4;
 
 type Section = ElementSection['key'];
@@ -51,7 +51,7 @@ const CHIPS: { key: Section | 'all'; label: string }[] = [
   },
 ];
 
-/** 可视化的二级分类（设计稿 `VIZ_CATS`）：计时两格跟着进度网格走，不自己占一格。 */
+/** Secondary categories for visualizers (design `VIZ_CATS`): the two timer cells follow the progress grid and do not take a cell of their own. */
 type VizSub = 'all' | 'progress' | 'wave';
 const VIZ_CHIPS: { key: VizSub; label: string }[] = [
   {
@@ -75,8 +75,7 @@ const VIZ_CHIPS: { key: VizSub; label: string }[] = [
 ];
 
 /**
- * 贴纸的二级分类（设计稿 `stickerChips`）：「我的贴纸」恒在「全部」之后第一格。设计稿后面是第三方静态包（精选、表情、⋯），
- * 那些要随包素材，这里没有；内置的十款模板单占一格。
+ * Secondary categories for stickers (design `stickerChips`): “我的贴纸” (My stickers) is always the first cell after “全部” (All). Later in the design come third-party static packs (featured, emoji, ⋯), which need bundled assets that are not here. The ten built-in templates take one cell of their own.
  */
 type StickerSub = 'all' | 'brand' | 'builtin';
 const STICKER_CHIPS: { key: StickerSub; label: string }[] = [
@@ -100,7 +99,7 @@ const STICKER_CHIPS: { key: StickerSub; label: string }[] = [
   },
 ];
 
-/** 动态贴纸的二级分类（设计稿 `animCats`，只留做得出来的几格：我的贴纸、彩纸）。 */
+/** Secondary categories for animated stickers (design `animCats`; only the cells that can be produced are kept: My stickers and Confetti). */
 type DynSub = 'all' | 'brand' | 'confetti';
 const DYN_CHIPS: { key: DynSub; label: string }[] = [
   {
@@ -126,14 +125,14 @@ const DYN_CHIPS: { key: DynSub; label: string }[] = [
 const search = style({ flexShrink: 0, paddingX: 12, paddingTop: 12 });
 const subChips = style({ paddingBottom: 8 });
 const grid = style({ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '[6px]' });
-/** 动态贴纸的网格（设计稿 .stgrid--anim）：三列——动的东西细节多，四列下看不出它在动什么。 */
+/** Grid for animated stickers (design .stgrid--anim): three columns. Moving things have many details, and with four columns you cannot see what is moving. */
 const animGrid = style({ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '[6px]' });
-/** 进度网格（设计稿 .tgrid--prog）：三列，条形两款横跨两列，空位由后面的方格补上。 */
+/** Progress grid (design .tgrid--prog): three columns. The two bar styles span two columns, and the empty slots are filled by the square cells after them. */
 const progressGrid = style({ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridAutoFlow: 'row dense', gap: 8 });
-/** 声波网格（设计稿 .tgrid--wave）：两列 2:1 宽格。 */
+/** Waveform grid (design .tgrid--wave): two columns of 2:1 wide cells. */
 const waveGrid = style({ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 });
 const span2 = style({ gridColumnEnd: 'span 2' });
-/** 一格（原型 .stile）：方格、灰底，悬停加深，按下微缩。 */
+/** One cell (prototype .stile): square, grey background, darkens on hover, shrinks slightly when pressed. */
 const tile = style({
   display: 'flex',
   flexDirection: 'column',
@@ -150,7 +149,7 @@ const tile = style({
   transform: { default: 'none', isPressed: 'scale(0.96)' },
   transition: 'default',
 });
-/** 缩略图那一块：方格、2:1 宽格，或撑满这一行的高（横跨两列的进度条）。彩纸格（设计稿 .stile--cft）深底、不留边。 */
+/** The thumbnail part: a square, a 2:1 wide cell, or the full height of its row (progress bars that span two columns). A confetti cell (design .stile--cft) has a dark background and no margin. */
 const face = style({
   display: 'block',
   boxSizing: 'border-box',
@@ -164,7 +163,7 @@ const face = style({
   backgroundColor: { default: 'gray-100', isHovered: 'gray-200', isDark: { default: 'gray-800', isHovered: 'gray-700' } },
   transition: 'default',
 });
-/** 动态贴纸那一段标题前的小徽标（设计稿 .secbadge）：目录页唯一带徽标的一段。 */
+/** Small badge before the title of the animated-sticker section (design .secbadge): the only section on the catalog page with a badge. */
 const badgeTitle = style({ display: 'inline-flex', alignItems: 'center', gap: 4 });
 const badgeIcon = iconStyle({ size: 'XS', color: 'neutral' });
 const tileLabel = style({
@@ -187,7 +186,7 @@ const viewAll = style({
   cursor: 'pointer',
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** 子页里一组的组头（设计稿 .packhead）：组名、说明，右边一个入口。 */
+/** Group header in a sub-page (design .packhead): group name, description, and one entry point on the right. */
 const packHead = style({
   display: 'flex',
   alignItems: 'baseline',
@@ -199,11 +198,11 @@ const packTitle = style({ flexShrink: 0, font: 'ui-sm', fontWeight: 'bold', colo
 const packNote = style({ minWidth: 0, font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const packAction = style({ flexShrink: 0, marginStart: 'auto' });
 const empty = style({ font: 'ui-sm', color: 'gray-600', textAlign: 'center', paddingY: 24 });
-/** 「我的贴纸」空着时的路牌（设计稿 `Empty`）：说清东西从哪来，不是一片空白。 */
+/** Signpost shown when “我的贴纸” (My stickers) is empty (design `Empty`): it says where things come from, rather than showing a blank space. */
 const emptyBox = style({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingY: 16, paddingX: 8, textAlign: 'center' });
 const emptyTitle = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900' });
 const emptyText = style({ font: 'ui-xs', color: 'gray-600' });
-/** 「我的贴纸」底下那一句（设计稿 .signpost）。 */
+/** The line under “我的贴纸” (My stickers) (design .signpost). */
 const signpost = style({ marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 const hint = style({
   marginTop: 16,
@@ -227,8 +226,7 @@ const headNote = style({
 const byKey = (keys: readonly string[]) => keys.map((key) => ELEMENT_TILES.find((t) => t.key === key)).filter((t): t is ElementTile => !!t);
 
 /**
- * 元素面板（原型 §14）：目录页是贴纸、形状、可视化几段各摆几格，「查看全部」或分节头下的
- * 二级分类钻进那一段；点一格就在播放头处新建一条并选中。
+ * Elements panel (prototype §14): the catalog page shows a few cells each for the stickers, shapes and visualizers sections. “查看全部” (view all), or a secondary category under a section header, drills into that section. Clicking a cell creates a new clip at the playhead and selects it.
  */
 export function ElementsPanel({ sequence }: { sequence: Sequence }) {
   const [tab, setTab] = useState<Section | 'all'>('all');
@@ -243,7 +241,7 @@ export function ElementsPanel({ sequence }: { sequence: Sequence }) {
   const brand = useBrandStickers();
   const root = tab === 'all';
   const q = query.trim();
-  // 品牌库贴纸：图片进贴纸那一段，Lottie 进动态贴纸那一段；搜索时命中了，那一段就留着。
+  // Brand-library stickers: images go into the stickers section, Lottie into the animated-stickers section. If a search hits one, that section stays.
   const mine = (dynamic: boolean): BrandProps => ({
     stickers: brand.stickers.filter((sticker) => sticker.dynamic === dynamic && stickerMatches(sticker.summary.name, dynamic, q)),
     ready: brand.ready,
@@ -263,7 +261,7 @@ export function ElementsPanel({ sequence }: { sequence: Sequence }) {
     const layer = item.layer(sequence.canvas);
     void insert(sequence, { span, layers: [layer], label: layer.name ?? item.label, trackName: EL.elementsTrack });
   };
-  // 回目录时把二级分类清回「全部」：目录页的样本是各类轮流取的，下次进来停在上次那一格就对不上了。
+  // When returning to the catalog, reset the secondary category to “全部” (All). The catalog samples take turns from each category, so staying on the last cell would no longer match.
   const back = () => {
     setTab('all');
     setViz('all');
@@ -373,7 +371,7 @@ function ViewAll({ onPress, children = EL.viewAll }: { onPress(): void; children
   );
 }
 
-/** 目录页分节头底下那一行二级分类（设计稿 `SubChips`）：高亮停在「全部」，点别的一格就带着它钻进那一段。 */
+/** The row of secondary categories under a catalog section header (design `SubChips`): the highlight stays on “全部” (All); clicking another cell drills into that section with it selected. */
 function SubChips<K extends string>({ label, items, onPick }: { label: string; items: readonly { key: K; label: string }[]; onPick(key: K): void }) {
   return (
     <div className={subChips}>
@@ -414,8 +412,7 @@ interface TileProps {
 }
 
 /**
- * 可视化子页（设计稿 `VizSection`）：「全部」下是进度条、声波两小段，各摆前几格、各带「查看全部」切过去；
- * 「进度」摆进度网格（计时两格夹在里面），「声波」摆 10 款。搜索时两段各摆全部命中的。
+ * Visualizer sub-page (design `VizSection`): under “全部” (All) there are two small sections, progress bars and waveforms, each showing its first few cells and each with a “查看全部” (view all) that switches to it. “进度” (Progress) shows the progress grid, with the two timer cells in between; “声波” (Waveform) shows 10 styles. When searching, each section shows all of its matches.
  */
 function Visualizers({
   items,
@@ -448,7 +445,7 @@ function Visualizers({
   );
 }
 
-/** 「我的贴纸」那一组要的东西：这一页命中的品牌库贴纸、读好了没有、搜的词、点一格怎么放。 */
+/** What the “我的贴纸” (My stickers) group needs: the brand-library stickers that match on this page, whether they have been read, the search term, and how clicking a cell places it. */
 interface BrandProps {
   stickers: BrandSticker[];
   ready: boolean;
@@ -456,11 +453,11 @@ interface BrandProps {
   onAdd(sticker: BrandSticker): void;
 }
 
-/** 「我的贴纸」这一组摆不摆：「全部」下搜索没命中就不摆（别处有命中），单看「我的贴纸」时总摆（好说没找到）。 */
+/** Whether the “我的贴纸” (My stickers) group is shown. Under “全部” (All), if the search has no match here it is hidden (the matches are elsewhere); when viewing “我的贴纸” (My stickers) alone it is always shown, so it can say nothing was found. */
 const showMine = (sub: string, brand: BrandProps) => sub !== 'builtin' && sub !== 'confetti' && (sub === 'brand' || !brand.query || brand.stickers.length > 0);
 
 /**
- * 贴纸子页（设计稿 `StickerSection`）：先「我的贴纸」（用户自己的东西先于随包目录），再内置的十款模板。
+ * Sticker sub-page (design `StickerSection`): “我的贴纸” (My stickers) first (the user's own items come before the bundled catalog), then the ten built-in templates.
  */
 function Stickers({ sub, items, brand, ...tiles }: TileProps & { sub: StickerSub; items: ElementTile[]; brand: BrandProps }) {
   const withMine = showMine(sub, brand);
@@ -478,7 +475,7 @@ function Stickers({ sub, items, brand, ...tiles }: TileProps & { sub: StickerSub
 }
 
 /**
- * 动态贴纸子页（设计稿 `AnimPackSection`）：先品牌库里的 Lottie（「我的贴纸」），再彩纸十款（算法粒子，不是动图）。
+ * Animated-sticker sub-page (design `AnimPackSection`): first the Lotties from the brand library (“我的贴纸” (My stickers)), then ten confetti styles (algorithmic particles, not animated images).
  */
 function Dynamic({ sub, items, brand, ...tiles }: TileProps & { sub: DynSub; items: ElementTile[]; brand: BrandProps }) {
   const withMine = showMine(sub, brand);
@@ -501,8 +498,7 @@ function Dynamic({ sub, items, brand, ...tiles }: TileProps & { sub: DynSub; ite
 }
 
 /**
- * 「我的贴纸」（设计稿 `BrandStickerGrid`）：品牌库里上传的贴纸，贴纸与动态贴纸两页各摆各的（图片 / Lottie，不重复）。
- * 点一格就拷进视频、放到播放头处（与品牌页的「放进视频」同一条路）。空着时是路牌：东西从哪来、去哪传。
+ * “我的贴纸” (My stickers) (design `BrandStickerGrid`): stickers uploaded to the brand library. The stickers and animated-stickers pages each show their own (images or Lottie, no duplicates). Clicking a cell copies it into the video and places it at the playhead, the same route as the brand page's “放进视频” (put into video). When empty, a signpost says where things come from and where to upload them.
  */
 function BrandStickerGrid({ anim, brand, editable, first }: { anim: boolean; brand: BrandProps; editable: boolean; first?: boolean }) {
   const { stickers, ready, query, onAdd } = brand;

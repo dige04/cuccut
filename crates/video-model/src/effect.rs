@@ -1,23 +1,23 @@
-//! 视觉媒体与合成实例的效果（视频格式规范 §3.9）、遮罩，以及源画面的裁剪（§3.5）。
+//! Effects on visual media and composition instances (video format spec §3.9), masks, and cropping of the source picture (§3.5).
 //!
-//! `fx` 是 v2 元素模型的固定字段，渲染按规范里的固定顺序作用，与字段的书写顺序无关；取值区间以
-//! `timeline::schema` 为准（`FX_AMOUNT_RANGE`、`FX_ADJUST_RANGE`、`FX_BLUR_RANGE`）。`temperature`、
-//! `shadow`、`stroke` 是 v3 原有的三种效果并进来的字段，v2 没有，区间见这里的常量。
+//! `fx` is a fixed field of the v2 element model; rendering applies effects in the fixed order given in the spec, regardless of the order the fields are written in. Value ranges are defined by
+//! `timeline::schema` (`FX_AMOUNT_RANGE`, `FX_ADJUST_RANGE`, `FX_BLUR_RANGE`). `temperature`,
+//! `shadow` and `stroke` are fields merged in from the three effects that v3 already had; v2 does not have them, and their ranges are the constants here.
 
 use message_ref::{Text, msg};
 use serde::{Deserialize, Serialize};
 pub use timeline::schema::{EffectPreset, FilterPreset, MaskShape};
 
-/// `fx.temperature` 的区间。
+/// The range of `fx.temperature`.
 pub const FX_TEMPERATURE_RANGE: (f64, f64) = (-1.0, 1.0);
-/// `fx.shadow.blur` 的区间（540 短边下的像素）。
+/// The range of `fx.shadow.blur` (pixels at a 540 short edge).
 pub const FX_SHADOW_BLUR_RANGE: (f64, f64) = (0.0, 200.0);
-/// `fx.stroke.width` 的上限（540 短边下的像素），下限不含 0。
+/// The upper limit of `fx.stroke.width` (pixels at a 540 short edge); the lower limit excludes 0.
 pub const FX_STROKE_WIDTH_MAX: f64 = 100.0;
-/// `fx.shadow.opacity` 的区间。
+/// The range of `fx.shadow.opacity`.
 pub const FX_SHADOW_OPACITY_RANGE: (f64, f64) = (0.0, 1.0);
 
-/// 固定字段的效果（§3.9）。省略或等于恒等值的字段不产生效果。
+/// Effects on fixed fields (§3.9). A field that is omitted or equal to its identity value produces no effect.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Fx {
@@ -37,12 +37,12 @@ pub struct Fx {
     pub contrast: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saturation: Option<f64>,
-    /// [-1, 1]，乘 180 度。
+    /// [-1, 1], multiplied by 180 degrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hue: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    /// [0, 100]，540 短边下的像素。
+    /// [0, 100], pixels at a 540 short edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blur: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,7 +57,7 @@ pub struct Fx {
     pub stroke: Option<FxStroke>,
 }
 
-/// 阴影：alpha 轮廓平移、模糊、填色，画在画面下面。长度是 540 短边下的像素，向右、向下为正。
+/// Shadow: the alpha outline is offset, blurred and filled, drawn under the picture. Lengths are pixels at a 540 short edge; right and down are positive.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FxShadow {
@@ -68,7 +68,7 @@ pub struct FxShadow {
     pub opacity: f64,
 }
 
-/// 描边：沿 alpha 轮廓的外侧画一圈。`width` 在 (0, 100]，540 短边下的像素。
+/// Stroke: drawn as a ring along the outside of the alpha outline. `width` is in (0, 100], pixels at a 540 short edge.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FxStroke {
@@ -77,7 +77,7 @@ pub struct FxStroke {
 }
 
 impl Fx {
-    /// v2 的同名字段（不含 v3 并进来的三种），交给 `timeline` 校验与求值。
+    /// v2's fields of the same names (excluding the three merged in from v3); validated and evaluated by `timeline`.
     pub fn to_timeline(&self) -> timeline::schema::Fx {
         timeline::schema::Fx {
             grayscale: self.grayscale,
@@ -96,7 +96,7 @@ impl Fx {
         }
     }
 
-    /// v3 并进来的三种字段的取值检查；v2 的字段由 `timeline::schema::Fx::validate` 检查。
+    /// Value checks for the three fields merged in from v3; v2 fields are checked by `timeline::schema::Fx::validate`.
     pub fn check_v3_fields(&self) -> Result<(), Text> {
         let (lo, hi) = FX_TEMPERATURE_RANGE;
         if self.temperature.is_some_and(|v| !v.is_finite() || !(lo..=hi).contains(&v)) {
@@ -129,13 +129,13 @@ impl Fx {
         Ok(())
     }
 
-    /// 没有任何字段：等于没有效果。
+    /// No fields at all: equivalent to no effect.
     pub fn is_empty(&self) -> bool {
         *self == Fx::default()
     }
 }
 
-/// 遮罩（§3.9）：内切于框的椭圆，`feather` 是 540 短边下的像素。
+/// Mask (§3.9): an ellipse inscribed in the frame; `feather` is pixels at a 540 short edge.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Mask {
@@ -153,7 +153,7 @@ impl Mask {
     }
 }
 
-/// 源画面的裁剪（§3.5）：四边各裁掉的比例。
+/// Cropping of the source picture (§3.5): the proportion cut from each edge.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Crop {
@@ -164,24 +164,24 @@ pub struct Crop {
 }
 
 impl Crop {
-    /// 每边在 [0, 1)，左右、上下加起来小于 1（留下的画面有面积）。
+    /// Each side in [0, 1); left plus right, and top plus bottom, sum to less than 1 (so the remaining picture has area).
     pub fn is_valid(&self) -> bool {
         let sides = [self.left, self.top, self.right, self.bottom];
         sides.iter().all(|v| v.is_finite() && (0.0..1.0).contains(v)) && self.left + self.right < 1.0 && self.top + self.bottom < 1.0
     }
 
-    /// 四边都是 0：等于没有裁剪。
+    /// All four sides 0: equivalent to no cropping.
     pub fn is_empty(&self) -> bool {
         self.left == 0.0 && self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0
     }
 
-    /// 留下的区域，相对源的显示尺寸归一化的 `[u0, v0, u1, v1]`。
+    /// The kept region, normalized to the source's displayed size as `[u0, v0, u1, v1]`.
     pub fn rect(&self) -> [f64; 4] {
         [self.left, self.top, 1.0 - self.right, 1.0 - self.bottom]
     }
 }
 
-/// `#RRGGBB` 或 `#RRGGBBAA`（§3.7：颜色一律这两种写法）。
+/// `#RRGGBB` or `#RRGGBBAA` (§3.7: colors are always written in one of these two forms).
 pub fn is_color(text: &str) -> bool {
     matches!(text.len(), 7 | 9) && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }

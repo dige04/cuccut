@@ -241,7 +241,7 @@ describe('授权', () => {
     expect(grantRefusal(new RpcError('forbidden', 'x', { code: 'BUDGET_EXCEEDED' }))).toBeNull();
     expect(grantRefusal(new RpcError('forbidden', 'x', { code: 'GRANT_REQUIRED', recipient: 'openai', remedy: { action: 'other' } }))).toBeNull();
     expect(grantRefusal(new Error('boom'))).toBeNull();
-    // 任务记录里的失败（不是 RpcError）也认。
+    // A failure in the task record (not an RpcError) also counts.
     expect(grantRefusal({ message: 'x', details: { code: 'GRANT_REVOKED', recipient: 'p', dataKinds: [], remedy: { action: 'create-grant' } } })).toMatchObject(
       {
         code: 'GRANT_REVOKED',

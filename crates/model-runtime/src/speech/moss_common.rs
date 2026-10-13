@@ -1,7 +1,5 @@
-//! MOSS-Transcribe-Diarize 的后端无关部分：配置、提示词常量、低能量分块、分块转录循环与输出协议渲染。
-//! 从 v2 `ccut-speech` 原样移植；引擎在 `backend::mlx::moss` 与 `backend::candle::moss`。v2 的 `MossCallbacks`、`MossCancelled`、
-//! `MossTranscription` 就是这里的 [`SegmentingCallbacks`]、[`SegmentingCancelled`]、[`SegmentedTranscription`]。
-// 分块循环与流式状态只有 MLX 与 candle 引擎用；两者都没编译的构建里它们没有调用方。
+//! The backend-independent parts of MOSS-Transcribe-Diarize: configuration, prompt constants, low-energy chunking, the chunked transcription loop and output protocol rendering. Ported verbatim from v2 `ccut-speech`; the engines are in `backend::mlx::moss` and `backend::candle::moss`. v2's `MossCallbacks`, `MossCancelled` and `MossTranscription` are here as [`SegmentingCallbacks`], [`SegmentingCancelled`] and [`SegmentedTranscription`].
+// The chunk loop and streaming state are used only by the MLX and candle engines; in builds where neither is compiled, they have no callers.
 #![cfg_attr(
     not(any(
         all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"),
@@ -44,24 +42,16 @@ pub const DEFAULT_PROMPT: &str = "Transcribe the audio into text. Start each seg
 timestamp and speaker label ([S01], [S02], [S03], ...), write the corresponding spoken content, \
 and end each segment with the ending timestamp to clearly mark the segment range.";
 
-/// `auto` 时追加在 [`DEFAULT_PROMPT`] 之后的语言约束。
+/// Language constraint appended after [`DEFAULT_PROMPT`] when `auto`.
 ///
-/// MOSS 没有独立的语言参数。只给 [`DEFAULT_PROMPT`] 时，即便是 300 s 以内的短块也会把
-/// 英文整段译成法文输出（贪心解码，同一素材每次都一样）；「照原语言转写、不要翻译」
-/// 这类抽象说法它不理（六种措辞、含一种中文，都还是法文），点名几种常见语言它才会回到
-/// 实际说的那种。点名的语言不是白名单：列表外的意大利语、葡萄牙语、俄语照样按原文
-/// 转写，列表内的也不会被拉向列表里的别种（v2 的实测结论）。
+/// MOSS has no separate language parameter. With only [`DEFAULT_PROMPT`] given, even short chunks under 300 s will translate an entire English passage into French (greedy decoding, so the same material gives the same output every time). Abstract wordings such as “照原语言转写、不要翻译”(transcribe in the original language, do not translate) do not work: six wordings, one of them in Chinese, all still yield French. Naming a few common languages does bring it back to the language actually spoken. The named languages are not a whitelist: Italian, Portuguese and Russian outside the list are still transcribed in their original language, and languages inside the list are not pulled toward other languages in the list (the measured conclusion from v2).
 pub const AUTO_LANGUAGE_RULE: &str = "The speech may be in Chinese, English, Japanese, Korean, \
 French, German, Spanish or another language. Transcribe it verbatim in the language actually \
 spoken; do not translate.";
 
-/// 用户轮里的整段转写指令：[`DEFAULT_PROMPT`] 加语言约束。
+/// Full-chunk transcription instruction in the user turn: [`DEFAULT_PROMPT`] plus the language constraint.
 ///
-/// `language` 是要写进指令的源语言，`None` / `auto` 表示自动。**点名是强约束**：
-/// MOSS 会把别的语言译成点名的那种输出（英文素材配 `de` 得到德文译文，措辞写成
-/// 「预期是」「如果实际不是就照实际」都拦不住），所以调用方只该在语言是用户对这条
-/// 素材的断言时传进来（`job.run` 只在 `language` 是断言时交给 MOSS）。
-/// 夹在里面的别种语言词（中文口播里的 OPENAI / CHATGPT）按原样保留。
+/// `language` is the source language written into the instruction; `None` / `auto` means automatic. **Naming a language is a hard constraint**: MOSS will translate other languages into the named output language (English material with `de` yields a German translation). Wordings such as “预期是”(“expected to be”) or “如果实际不是就照实际”(“if it is not, follow the actual one”) do not stop it. So callers should pass a language only when it is the user's assertion for this material (`job.run` hands `language` to MOSS only when it is asserted). Words from other languages embedded in the text (OPENAI / CHATGPT inside 中文口播, Chinese narration) are kept as-is.
 pub fn moss_instruction(language: Option<&str>) -> String {
     match language.and_then(language_name) {
         Some(name) => format!(
@@ -73,10 +63,9 @@ pub fn moss_instruction(language: Option<&str>) -> String {
     }
 }
 
-/// 指令里用的英文语言名；认不出或是 `auto` 时返回 `None`（按自动处理）。
+/// English language name used in the instruction; returns `None` when the code is unrecognized or `auto` (treated as automatic).
 ///
-/// 汉语的各种写法（`zh-*`、`yue`、`cmn`）一律是 `Chinese`（同 v2 的 autolang 归一），其余按 MOSS 的语言表
-/// （[`MOSS_LANGUAGES`]，与 v2 语言目录给语音模型的英文名相同）取。
+/// All Chinese variants (`zh-*`, `yue`, `cmn`) are always `Chinese` (same as the v2 autolang normalization). Everything else is taken from MOSS's language table ([`MOSS_LANGUAGES`], the same English names the v2 language catalog gives speech models).
 pub fn language_name(code: &str) -> Option<String> {
     let code = code.trim();
     if code.is_empty() || code.eq_ignore_ascii_case("auto") {
@@ -158,7 +147,7 @@ impl MossConfig {
     }
 }
 
-/// processor_config.json 中影响 prompt 组装的字段。
+/// Fields in processor_config.json that affect prompt assembly.
 #[derive(Debug, Clone)]
 pub struct MossProcessorConfig {
     pub audio_tokens_per_second: f32,
@@ -177,7 +166,7 @@ impl Default for MossProcessorConfig {
 }
 
 impl MossProcessorConfig {
-    /// `processor_path` 是清单里的 `processor_config.json`；没有时用默认值。
+    /// `processor_path` is the `processor_config.json` in the manifest; default values are used when it is absent.
     pub fn load(processor_path: Option<&Path>) -> Result<Self> {
         let mut config = Self::default();
         if let Some(processor_path) = processor_path {
@@ -198,20 +187,20 @@ impl MossProcessorConfig {
     }
 }
 
-/// v2 的名字：MOSS 的结构化输出就是自分段识别器的输出（`rows` 已带绝对时间与说话人标签）。
+/// v2 name: MOSS's structured output is the output of the self-segmenting recognizer (`rows` already carry absolute times and speaker labels).
 pub type MossTranscription = SegmentedTranscription;
-/// v2 的名字：生成过程的观测与中止钩子。
+/// v2 name: observation and abort hooks for the generation process.
 pub type MossCallbacks<'a> = SegmentingCallbacks<'a>;
-/// v2 的名字：取消时的错误载荷。
+/// v2 name: payload of the error on cancellation.
 pub use super::SegmentingCancelled as MossCancelled;
 
-/// 一块没写完整时 [`transcribe_chunks`] 写进 `warnings` 的前缀；`job.run` 据此报 `segment-incomplete`。
+/// Prefix that [`transcribe_chunks`] writes into `warnings` when a chunk is not fully written; `job.run` uses it to report `segment-incomplete`.
 pub const INCOMPLETE_WARNING_PREFIX: &str = "moss-incomplete: ";
 
-/// 每积累这么多新 token 就做一次增量解码、旁路解析和取消检查。
+/// Every time this many new tokens accumulate, run an incremental decode, side-channel parse and cancellation check.
 pub(crate) const STREAM_FLUSH_INTERVAL: usize = 16;
 
-/// 提前终止生成不能伪装成 EOS，否则分块驱动会把漏掉的音频当成成功。
+/// Stopping generation early must not masquerade as EOS, or the chunk driver would treat the audio it missed as a success.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GenerationStopReason {
     Eos,
@@ -225,26 +214,25 @@ pub(crate) struct ChunkGeneration {
     pub(crate) stop_reason: GenerationStopReason,
 }
 
-/// 单块生成期间的流式观测状态。`covered` 是跨块共享的全局高水位。
+/// Streaming observation state during single-chunk generation. `covered` is the global high-water mark shared across chunks.
 pub(crate) struct StreamState<'a, 'b> {
     pub(crate) callbacks: &'a mut MossCallbacks<'b>,
     pub(crate) offset_seconds: f64,
     pub(crate) chunk_duration: f64,
     pub(crate) total_duration: f64,
     pub(crate) covered: f64,
-    /// 全局秒数；起点早于它的实时段不再发出。重跑一块时，失败那次已经把这之前的
-    /// 预览推给了界面，重跑只补后面的，不让实时轨上同一段出现两遍。
+    /// Global seconds; live segments starting before it are no longer emitted. When a chunk is re-run, the failed attempt had already pushed its previews to the UI; the re-run only fills in what follows, so the same segment does not appear twice on the live track.
     pub(crate) preview_floor: f64,
-    /// 已发出的实时段里最晚的终点（全局秒数）。
+    /// Latest end point (global seconds) among the live segments already emitted.
     pub(crate) previewed: f64,
     repetition: RepetitionGuard,
 }
 
 impl StreamState<'_, '_> {
-    /// 返回 true 时后端应立即结束本次生成，并用 Repetition 原因交回分块驱动。
+    /// When true, the backend should end this generation immediately and hand back to the chunk driver with the Repetition reason.
     pub(crate) fn observe(&mut self, segments: &[MossOutputSegment]) -> bool {
         for segment in segments {
-            // 即便没有界面订阅、或预览被重试的 floor 抑制，也必须检查生成循环。
+            // Even without a UI subscriber, or when previews are suppressed by the retry floor, the generation loop must still be checked.
             if self.repetition.observe(segment) {
                 return true;
             }
@@ -265,7 +253,7 @@ impl StreamState<'_, '_> {
         false
     }
 
-    /// 推进覆盖进度并保证全局单调不减。
+    /// Advances the coverage progress and guarantees it never decreases globally.
     pub(crate) fn advance(&mut self, covered: f64) {
         if !covered.is_finite() || covered <= self.covered {
             return;
@@ -304,7 +292,7 @@ pub fn split_audio_at_low_energy(audio: &[f32], chunk_duration: f64, search_seco
             break;
         }
         let search_start = expected_end.saturating_sub(search).max(start);
-        // 只在目标边界之前找低能量点，保证任何块都不超过 chunk_duration 硬上限。
+        // Only look for low-energy points before the target boundary, so no chunk ever exceeds the chunk_duration hard cap.
         let search_end = expected_end;
         let cut = lowest_energy_point(audio, search_start, search_end, window)
             .unwrap_or(expected_end)
@@ -319,8 +307,7 @@ pub fn split_audio_at_low_energy(audio: &[f32], chunk_duration: f64, search_seco
     chunks
 }
 
-/// `audio[search_start..search_end]` 里能量最低的 `window` 样本窗的中心；区间不比窗长
-/// 时返回 `None`。
+/// Center of the lowest-energy `window`-sample window within `audio[search_start..search_end]`; returns `None` when the range is not longer than the window.
 fn lowest_energy_point(audio: &[f32], search_start: usize, search_end: usize, window: usize) -> Option<usize> {
     let region = &audio[search_start..search_end];
     if region.len() <= window {
@@ -339,11 +326,10 @@ fn lowest_energy_point(audio: &[f32], search_start: usize, search_end: usize, wi
     Some(search_start + minimum_index + window / 2)
 }
 
-/// 重切一块时，切出来的每一半至少这么长。半块短于它就不再切，按部分结果收下。
+/// When a chunk is re-split, each resulting half is at least this long. If a half would be shorter, it is not split further and is accepted as a partial result.
 pub(crate) const MIN_RETRY_PIECE_SECONDS: f64 = MossGenerationPlan::MIN_CHUNK_DURATION;
 
-/// 在中点前后 5 s 内找低能量点把一块切成两半，两半都不短于 `min_seconds`；
-/// 块太短切不出来时返回 `None`。返回值是切点的样本下标。
+/// Finds a low-energy point within 5 s before and after the midpoint to split a chunk in two, with both halves at least `min_seconds` long; returns `None` when the chunk is too short to split. The return value is the sample index of the split point.
 pub(crate) fn split_in_half_at_low_energy(audio: &[f32], min_seconds: f64) -> Option<usize> {
     let minimum = (min_seconds * SAMPLE_RATE as f64) as usize;
     if minimum == 0 || audio.len() < minimum * 2 {
@@ -358,11 +344,10 @@ pub(crate) fn split_in_half_at_low_energy(audio: &[f32], min_seconds: f64) -> Op
     Some(cut.clamp(minimum, audio.len() - minimum))
 }
 
-/// 交给后端跑一次生成的一块音频。
+/// One chunk of audio handed to the backend to run a generation.
 pub(crate) struct ChunkRequest<'a> {
     pub(crate) samples: &'a [f32],
-    /// 在初始分块计划里的序号；重切出来的子块为 `None`。mlx 后端据此取预先物化好的
-    /// 输入，子块现算。
+    /// Index in the initial chunking plan; re-split sub-chunks are `None`. The mlx backend uses it to fetch the input materialized in advance; sub-chunks are computed on the fly.
     #[cfg_attr(not(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64")), allow(dead_code))]
     pub(crate) planned: Option<usize>,
     pub(crate) max_tokens: usize,
@@ -374,15 +359,9 @@ struct Piece<'a> {
     planned: Option<usize>,
 }
 
-/// 分块转录循环（v2 里 mlx 与 candle 两个后端共用）。`generate` 对一块音频跑一次生成，
-/// 返回原始输出、实际生成的 token 数与停止原因。
+/// Chunked transcription loop (shared by the mlx and candle backends in v2). `generate` runs one generation over a chunk of audio and returns the raw output, the number of tokens actually generated and the stop reason.
 ///
-/// 某块检测到重复循环，或用满 token 预算、输出却没写到块尾时（常见于音乐、静音，或
-/// 语速极快的段落），原样重试没有用：解码是贪心的，同样的输入每次得到同样的输出。
-/// 这时在块中点附近的低能量处切成两半各自重跑——每半至少拿到
-/// [`MossGenerationPlan::MIN_TOKENS`] 的预算，每秒可用的 token 翻倍，上下文也变了。
-/// 半块短于 [`MIN_RETRY_PIECE_SECONDS`] 还不行，就收下已经写出的段落（剪掉尾部的
-/// 循环重复），在 `warnings` 里写明哪一段可能缺字，而不是让前面几个小时的结果作废。
+/// When a chunk shows a repetition loop, or when the token budget is used up while the output does not reach the end of the chunk (common with music, silence, or very fast speech), retrying the same input does not help: decoding is greedy, so the same input always produces the same output. Instead, the chunk is split in two at a low-energy point near its midpoint and each half is re-run: each half gets at least [`MossGenerationPlan::MIN_TOKENS`] of budget, the usable tokens per second double, and the context changes. If a half is still shorter than [`MIN_RETRY_PIECE_SECONDS`], the segments already written are kept (trailing repetition loop trimmed) and `warnings` records which passage may be missing words, rather than discarding the results of the preceding hours.
 pub(crate) fn transcribe_chunks<'a, G>(
     audio: &'a [f32],
     chunks: &[AudioChunk<'a>],
@@ -401,7 +380,7 @@ where
     let mut covered = 0.0_f64;
     let mut preview_floor = 0.0_f64;
     let mut previewed = 0.0_f64;
-    // 后进先出：重切出来的两半压回栈顶，先于后面的块处理，时间顺序不乱。
+    // Last in, first out: the two re-split halves are pushed back on top of the stack and processed before the later chunks, so time order is preserved.
     let mut pending = chunks
         .iter()
         .enumerate()
@@ -442,7 +421,7 @@ where
         let needs_recovery = match generation.stop_reason {
             GenerationStopReason::Eos => false,
             GenerationStopReason::TokenLimit => plan.stopped_at_token_limit(generation.token_count, last_end, piece_duration),
-            // 循环即使发生在块尾也不是正常结束，不能用末尾 5 s 容差掩盖它。
+            // A loop that occurs at the end of a chunk is still not a normal finish, so it must not be hidden by the 5 s tail tolerance.
             GenerationStopReason::Repetition => true,
         };
         if needs_recovery {
@@ -483,7 +462,7 @@ where
                 clock(piece.offset_seconds + kept_until),
             ));
         }
-        // 块已生成完，覆盖进度至少推进到块尾，避免空块导致进度停滞。
+        // The chunk has been generated, so coverage progress advances at least to the chunk end, to avoid stalls caused by empty chunks.
         stream.advance((piece.offset_seconds + piece_duration).min(total_duration));
         covered = stream.covered;
         previewed = stream.previewed;
@@ -493,8 +472,7 @@ where
             row.start += piece.offset_seconds;
             row.end += piece.offset_seconds;
         }
-        // 每次生成的说话人标签都各自从 S01 编起，重切出来的两半也是两次独立生成，
-        // 所以按实际收下的块计序号，不沿用初始计划的序号。
+        // Each generation's speaker labels number themselves from S01 independently, and the two re-split halves are also two independent generations. So the chunk sequence number is counted by the chunks actually accepted, not by the sequence number of the initial plan.
         for range in &mut adapted.speaker_ranges {
             range.start += piece.offset_seconds;
             range.end += piece.offset_seconds;
@@ -515,15 +493,13 @@ where
     Ok(result)
 }
 
-/// 生成失败的输出里，尾部往往是同几句话换着时间戳反复出现。收下部分结果前
-/// 去掉时间倒退的段，以及与最近几段文本相同的段。只用在失败兜底上：正常输出里连着
-/// 说两遍「はい」是真话。
+/// In the output of a failed generation, the tail often repeats the same few sentences with shifting timestamps. Before accepting partial results, drop segments whose time goes backwards, and segments whose text matches one of the most recent few segments. Used only as a fallback on failure: in normal output, saying 「はい」 twice in a row is genuine.
 pub(crate) fn drop_runaway_repeats(segments: Vec<MossOutputSegment>) -> Vec<MossOutputSegment> {
     const LOOKBACK: usize = 4;
     let mut kept: Vec<MossOutputSegment> = Vec::with_capacity(segments.len());
     for segment in segments {
         let text = segment.text.trim();
-        // 与最终 rows 的有效性一致；否则警告会把零时长幻觉的终点当成已保留文本。
+        // Consistent with the validity of the final rows; otherwise the warning would treat a zero-duration hallucinated end point as retained text.
         if segment.end <= segment.start || text.is_empty() {
             continue;
         }
@@ -592,7 +568,7 @@ mod tests {
         assert!(english.contains("Transcribe it verbatim in English, exactly as spoken"));
         assert!(english.contains("do not translate"));
         assert!(!english.contains(AUTO_LANGUAGE_RULE));
-        // 内核传进来的是 autolang 归一后的 code，别处可能带地区 / 书写系统子标签。
+        // The kernel passes in a code already normalized by autolang; elsewhere it may carry region / writing-system subtags.
         assert!(moss_instruction(Some("zh")).contains("expected to be in Chinese."));
         assert!(moss_instruction(Some("zh-Hans")).contains("expected to be in Chinese."));
         assert!(moss_instruction(Some("fr")).contains("expected to be in French."));
@@ -606,7 +582,7 @@ mod tests {
         assert_eq!(moss_instruction(Some("auto")), expected);
         assert_eq!(moss_instruction(Some("AUTO")), expected);
         assert_eq!(moss_instruction(Some("  ")), expected);
-        // 认不出的 code 不硬塞进指令（点名就会被当成翻译目标），按自动处理。
+        // An unrecognized code is not forced into the instruction (naming it would make it a translation target); it is treated as automatic.
         assert_eq!(moss_instruction(Some("xx-unknown")), expected);
         assert!(AUTO_LANGUAGE_RULE.contains("in the language actually spoken; do not translate"));
     }
@@ -616,13 +592,13 @@ mod tests {
         assert_eq!(language_name("en").as_deref(), Some("English"));
         assert_eq!(language_name("de").as_deref(), Some("German"));
         assert_eq!(language_name("yue").as_deref(), Some("Chinese"));
-        // autolang 不认、语言目录认的 code 取目录里给语音模型的英文名。
+        // Codes that autolang does not recognize but the language catalog does use the catalog's English name for the speech model.
         assert_eq!(language_name("uk").as_deref(), Some("Ukrainian"));
         assert_eq!(language_name("auto"), None);
         assert_eq!(language_name(""), None);
     }
 
-    /// 复刻两个后端的分块循环：每块新建 StreamState 但沿用 covered，块末强制推进到块边界。
+    /// Replicates the chunk loop of both backends: each chunk creates a new StreamState but keeps `covered`, and the chunk end is forced to advance to the chunk boundary.
     fn drive_chunks(chunks: &[(f64, Vec<MossOutputSegment>)], chunk_duration: f64, total_duration: f64, callbacks: &mut MossCallbacks<'_>) {
         let mut covered = 0.0_f64;
         for (offset_seconds, segments) in chunks {
@@ -658,11 +634,11 @@ mod tests {
                 0.0,
                 vec![
                     segment(10.0, 20.0, "one"),
-                    // 回退的段不得让进度倒车。
+                    // Rolled-back segments must not move progress backwards.
                     segment(2.0, 5.0, "back"),
-                    // 含替换字符的段被抑制：不发实时段，但仍然推进覆盖秒数。
+                    // Segments containing replacement characters are suppressed: no live segment is emitted, but the covered seconds still advance.
                     segment(30.0, 40.0, "bro\u{FFFD}ken"),
-                    // 越过块边界的段要被夹回块尾。
+                    // Segments crossing the chunk boundary are clamped back to the chunk end.
                     segment(1_700.0, 5_000.0, "over"),
                 ],
             ),
@@ -729,7 +705,7 @@ mod tests {
         assert_eq!((live[0].start, live[0].end), (11.98, 11.99));
     }
 
-    /// 假生成器的一次输出：`[start][S01]text[end]` 相对块内时间。
+    /// One output of the fake generator: `[start][S01]text[end]`, relative to in-chunk time.
     fn raw(segments: &[(f64, f64, &str)]) -> String {
         segments
             .iter()
@@ -743,8 +719,7 @@ mod tests {
 
     #[test]
     fn exhausted_chunk_is_split_and_retried_instead_of_failing() {
-        // 第 27 块那种尾块：162 s，预算 5184 token。整块跑用满预算只写到 40 s；
-        // 两半各自跑都能写到结尾。
+        // A tail chunk like chunk 27: 162 s, budget 5184 tokens. Running the whole chunk at full budget only writes up to 40 s; running each half separately can write to the end.
         let audio = vec![0.1_f32; SAMPLE_RATE * 162];
         let chunks = vec![AudioChunk {
             samples: &audio,
@@ -794,20 +769,19 @@ mod tests {
         );
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         assert_eq!(result.generation_tokens, 5_184 + 900 * 2);
-        // 失败那次的段落不进结果；两半按时间顺序拼回，末行写到整块结尾附近。
+        // Segments from the failed attempt are not included in the results; the two halves are joined back in time order, and the last row is written up to near the end of the whole chunk.
         let texts = result.rows.iter().map(|row| row.text.as_str()).collect::<Vec<_>>();
         assert_eq!(texts, vec!["head", "tail", "head", "tail"]);
         assert!(result.rows.windows(2).all(|pair| pair[1].start >= pair[0].start));
         assert!(result.rows.last().unwrap().end > 160.0);
-        // 两半是两次独立生成，说话人区间的块序号与簇编号各自分开。
+        // The two halves are two independent generations, so the chunk index of speaker ranges and the cluster numbers are counted separately.
         let chunks_seen = result
             .speaker_ranges
             .iter()
             .map(|range| (range.chunk, range.cluster))
             .collect::<HashSet<_>>();
         assert_eq!(chunks_seen, HashSet::from([(0, 0), (1, 1)]));
-        // 失败那次已经推给实时轨的 0–40 s 不再重发：第一半起点在 40 s 之前的两段都压住，
-        // 只补后面的。音频能量处处相同，切点落在中点前 5 s 搜索区的起点（76.05 s）。
+        // The 0–40 s already pushed to the live track by the failed attempt is not resent: the two segments whose start is before 40 s in the first half are suppressed, and only the later ones are filled in. Audio energy is uniform everywhere, so the split point lands at the start of the search zone 5 s before the midpoint (76.05 s).
         let live = live.iter().map(|(start, text)| (start.round(), text.as_str())).collect::<Vec<_>>();
         assert_eq!(live, vec![(0.0, "one"), (20.0, "two"), (76.0, "head"), (119.0, "tail")]);
     }
@@ -828,7 +802,7 @@ mod tests {
             &mut MossCallbacks::none(),
             |request, stream| {
                 calls += 1;
-                // 检测不依赖预览订阅或 floor；即使这一段不会发到界面也不能继续循环。
+                // Detection does not depend on a preview subscription or the floor; even if this segment would not be sent to the UI, the loop must not continue.
                 stream.preview_floor = f64::INFINITY;
                 let duration = seconds(request.samples);
                 if request.planned.is_some() {
@@ -946,7 +920,7 @@ mod tests {
 
     #[test]
     fn chunk_that_cannot_be_split_further_keeps_partial_output_with_warning() {
-        // 100 s 的块切成两半就短于 60 s，不再切：收下已写出的部分，剪掉尾部的循环。
+        // Splitting a 100 s chunk in two gives halves shorter than 60 s, so no further splitting: accept the part already written and trim the trailing loop.
         let audio = vec![0.1_f32; SAMPLE_RATE * 100];
         let chunks = vec![AudioChunk {
             samples: &audio,
@@ -1013,7 +987,7 @@ mod tests {
     #[test]
     fn half_split_prefers_the_quiet_point_and_respects_minimum() {
         let mut audio = vec![0.5_f32; SAMPLE_RATE * 160];
-        // 中点前 2 s 处有一段静音。
+        // There is a stretch of silence 2 s before the midpoint.
         let quiet = SAMPLE_RATE * 78;
         audio[quiet..quiet + SAMPLE_RATE / 5].fill(0.0);
         let cut = split_in_half_at_low_energy(&audio, 60.0).unwrap();

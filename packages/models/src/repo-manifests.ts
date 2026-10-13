@@ -2,65 +2,59 @@ import type { ComponentRelease } from './bundle-registry.ts';
 import { hostPlatformKey, releaseAsset } from './release-component.ts';
 
 /**
- * 内置的仓库清单（架构设计 §6.3；Model Worker 协议规范 §4）：每个登记的组件（上游仓库的一个固定版本）要下载哪些文件，
- * 每个文件的 sha256 与大小。下载器只下载这里列出的文件，逐个按这里的 sha256 校验；装好之后写进仓库目录的
- * `.ccut-manifest.json`。
+ * Built-in repository manifests (architecture design §6.3; Model Worker protocol spec §4): for each registered component (a fixed revision of an upstream repository), which files to download, and each file's sha256 and size. The downloader downloads only the files listed here and verifies each one against the sha256 here. After installation, the manifest is written into the repository directory as `.ccut-manifest.json`.
  *
- * 规则：
- * - 不编造哈希。`sha256` 为 null 的文件没有可信的哈希，安装被拒绝（`MODEL_MANIFEST_INCOMPLETE`），不会「下载了再算」。
- * - `size` 为 null 表示离线时无法确认大小：安装计划先向下载来源发 HEAD 取得大小，取不到时总字节数报告为未知
- *   （不伪造百分比），确认时用 `estimatedBytes`。下载完成后以实际字节与 sha256 为准写入清单。
- * - `provenance` 记下哈希从哪里来；没有在这个环境里重新核对过的，列在架构设计 §14 的待评审事项里。
+ * Rules:
+ * - Do not fabricate hashes. A file with `sha256` null has no trustworthy hash, so installation is refused (`MODEL_MANIFEST_INCOMPLETE`); it will not be "downloaded and then computed".
+ * - `size` null means the size cannot be confirmed offline. The install plan first sends a HEAD request to the download source to get the size; if that fails, the total bytes are reported as unknown (no fabricated percentage), and `estimatedBytes` is used at confirmation. After download, the manifest is written from the actual bytes and sha256.
+ * - `provenance` records where the hash came from. Those not re-verified in this environment are listed in the open items of architecture design §14.
  */
 
 export interface RepoFileSpec {
-  /** 相对仓库目录，`/` 分隔。 */
+  /** Relative to the repository directory, `/`-separated. */
   path: string;
   size: number | null;
   sha256: string | null;
 }
 
 export interface RepoManifestSpec {
-  /** `<owner>/<repo>`：模型目录里的位置（`<models-root>/<owner>/<repo>/`），也是组件登记的 `repo`。 */
+  /** `<owner>/<repo>`: the location in the model directory (`<models-root>/<owner>/<repo>/`), and also the `repo` a component is registered under. */
   repo: string;
   /**
-   * 下载来源的 `<owner>/<repo>`，与 `repo` 不同时才写：几个模型包要的文件在上游同一个仓库、同一版本里，又要各装各删时，
-   * 各自登记在兄弟目录名下，下载仍从上游仓库取（whisper.cpp 的 GGML 权重）。
+   * The `<owner>/<repo>` of the download source, written only when it differs from `repo`. When several model packages need files from the same upstream repository and the same revision, and each must install and delete its own, each is registered under a sibling directory name, while the download still comes from the upstream repository (whisper.cpp's GGML weights).
    */
   sourceRepo?: string;
   revision: string;
   files: RepoFileSpec[];
-  /** 大小未知时的估计（字节），只用于确认与提示。 */
+  /** Estimate (bytes) used when the size is unknown; used only for confirmation and prompts. */
   estimatedBytes: number;
-  /** 哈希的来源。 */
+  /** Source of the hashes. */
   provenance: string;
 }
 
 const LEGACY_PINNED = 'sha256 pinned for the same revision by legacy CucCut (cuccut-app, catalog.rs in ccut-models); not re-verified offline in this repo; sizes unknown';
-/** 本地语音合成：sha256 取自旧版的固定清单，大小与 sha256 和本机已装好的同一版本逐个比对一致。 */
+/** Local speech synthesis: sha256 taken from the old version's fixed manifest; size and sha256 compared one by one against the same revision installed on this machine, and they match. */
 const TTS_PINNED_LOCAL =
   'sha256 pinned for the same revision by legacy CucCut (cuccut-app, catalog.rs in ccut-models); sizes and hashes checked one by one against a local install of the same revision';
-/** 本地语音合成：sha256 取自旧版的固定清单；大小与哈希（LFS 文件的 oid、其余文件按版本下载后计算）已向下载来源逐个核对。 */
+/** Local speech synthesis: sha256 taken from the old version's fixed manifest; size and hash (the LFS file's oid; for other files, computed after downloading the revision) checked one by one against the download source. */
 const TTS_PINNED_HUB =
   'sha256 pinned for the same revision by legacy CucCut (cuccut-app, catalog.rs in ccut-models); sizes and hashes checked one by one against the download source at this revision';
-/** 本地识别：sha256 取自旧版的固定清单；大小与哈希已和本机装好的同一版本逐个核对。 */
+/** Local recognition: sha256 taken from the old version's fixed manifest; size and hash checked one by one against the same revision installed on this machine. */
 const ASR_PINNED_LOCAL =
   'sha256 pinned for the same revision by legacy CucCut (cuccut-app, catalog.rs in ccut-models); sizes and hashes checked one by one against a local install of the same revision';
-/** Whisper 的 MLX 权重：大小与 safetensors 的 sha256 取自下载来源在这个版本上的 LFS 记录，config.json 按版本下载后计算。 */
+/** Whisper's MLX weights: size and the safetensors sha256 are taken from the download source's LFS record for this revision; config.json is computed after downloading the revision. */
 const MLX_WHISPER_HUB = 'Sizes and the sha256 of model.safetensors come from the download source\'s LFS records at this revision; config.json computed after downloading at this revision';
-/** 本地人声分离：sha256 取自旧版的固定清单；大小与哈希已和本机装好的同一版本逐个核对。 */
+/** Local vocal separation: sha256 taken from the old version's fixed manifest; size and hash checked one by one against the same revision installed on this machine. */
 const SEP_PINNED_LOCAL = ASR_PINNED_LOCAL;
 
 /**
- * 本地文生图（Qwen-Image-2.1）：9 个文件（`model_index.json`、`processor/tokenizer.json`、`scheduler/scheduler_config.json` 与三段的
- * `config.json`、`model.safetensors`）的 sha256 取自旧版的固定清单；其余 11 个旧版只记了大小，sha256 按本机装好的同一版本计算。
- * 全部 20 个的大小与哈希已和本机装好的同一版本逐个核对。
+ * Local text-to-image (Qwen-Image-2.1): the sha256 of 9 files (`model_index.json`, `processor/tokenizer.json`, `scheduler/scheduler_config.json`, the `config.json` of each of the three segments, and `model.safetensors`) is taken from the old version's fixed manifest. The other 11 recorded only their size in the old version, so their sha256 is computed from the same revision installed on this machine.
+ * The sizes and hashes of all 20 have been checked one by one against the same revision installed on this machine.
  */
 const IMAGE_PINNED_LOCAL =
   'sha256 of 9 files pinned for the same revision by legacy CucCut (cuccut-app, catalog.rs in ccut-models); the other 11 computed from a local install of the same revision; all sizes and hashes checked one by one against the local install';
 /**
- * 本地音乐生成（YuE2 的 GGUF）：两个 GGUF 的大小与 sha256 取自下载来源在这个版本上的 LFS 记录；四个配置文件（不走 LFS）按版本
- * 从下载来源流式读下来计算。没有在本机装过，也没有跑过推理。
+ * Local music generation (YuE2's GGUF): the size and sha256 of both GGUFs are taken from the download source's LFS record for this revision. The four config files (not stored in LFS) were streamed from the download source at this revision and their hashes computed. Not installed on this machine, and inference has not been run.
  */
 const MUSIC_PINNED_HUB =
   "Sizes and the sha256 of the two GGUF files come from the download source's LFS records at this revision; the four sidecar files were streamed from the download source at this revision and hashed; no local install or inference in this repo";
@@ -90,7 +84,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: Math.round(1.2 * 1024 * 1024),
     provenance: LEGACY_PINNED,
   },
-  // ---- 本地识别：大一档的 Qwen3-ASR、共用的对齐器与说话人模型、Whisper、MOSS（bundle-registry.ts）----
+  // ---- Local recognition: the one-size-up Qwen3-ASR, the shared aligner and speaker model, Whisper, MOSS (bundle-registry.ts) ----
   {
     repo: 'aufklarer/Qwen3-ASR-1.7B-MLX-8bit',
     revision: 'e5450a26d1fd417c45fc9c405651ddc3180a27a6',
@@ -353,8 +347,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     revision: '06f233fe06e710322aca913c1bc4249a0d71fce1',
     files: [
       { path: 'added_tokens.json', size: 34648, sha256: '3c51f66c4c21f9e126970078f11ae77a78c74aee8df606ee9daba86e467108e0' },
-      // MLX 包的解码配置（语言 token 表、抑制表）：mlx-community 的仓库没有它，按这个版本下载后计算。早先装好的分词器组件因此缺这一个
-      // 文件，「只下载缺的组件」会补上。
+      // The MLX package's decoding config (language token table, suppression table): mlx-community's repository does not have it, so it is computed after downloading this revision. Tokenizer components installed earlier are therefore missing this one file, and "download only the missing components" will fill it in.
       { path: 'generation_config.json', size: 3903, sha256: 'fbdfa70135de9b1d31553393f14e80aaeb1936ea36576b2ba864055943c09d23' },
       { path: 'merges.txt', size: 493869, sha256: '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6' },
       { path: 'normalizer.json', size: 52666, sha256: 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd' },
@@ -367,7 +360,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 4387516,
     provenance: `${ASR_PINNED_LOCAL}; generation_config.json computed after downloading at this revision`,
   },
-  // Whisper 的 MLX 权重（mlx-community 的 fp16 转换）：分词器与 generation_config.json 在 openai/whisper-large-v3。
+  // Whisper's MLX weights (mlx-community's fp16 conversion): the tokeniser and generation_config.json are in openai/whisper-large-v3.
   {
     repo: 'mlx-community/whisper-large-v3-fp16',
     revision: '5467ef1f82cf0e110f521092acb434d9c82b5d5a',
@@ -388,7 +381,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 1613977880,
     provenance: MLX_WHISPER_HUB,
   },
-  // whisper.cpp 的 GGML 权重：上游同一仓库、同一版本；large-v3 登记在兄弟目录名下，两个模型包各装各删。
+  // whisper.cpp's GGML weights: same upstream repository and revision; large-v3 is registered under a sibling directory name, so the two model packages install and delete their own.
   {
     repo: 'ggerganov/whisper.cpp-large-v3',
     sourceRepo: 'ggerganov/whisper.cpp',
@@ -430,7 +423,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 1833055757,
     provenance: ASR_PINNED_LOCAL,
   },
-  // ---- 本地语音合成（speech-bundles.ts）----
+  // ---- Local speech synthesis (speech-bundles.ts) ----
   {
     repo: 'Qwen/Qwen3-TTS-Tokenizer-12Hz',
     revision: '7dd38ad4e9bad454aae9cd937d0cd577604fe229',
@@ -667,7 +660,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 1103713380,
     provenance: TTS_PINNED_HUB,
   },
-  // ---- 本地人声分离（bundle-registry.ts 的 htdemucs-ft@mlx）----
+  // ---- Local vocal separation (htdemucs-ft@mlx in bundle-registry.ts) ----
   {
     repo: 'aufklarer/HTDemucs-FT-MLX',
     revision: '39820e356306479d81dacb9f1042e5de86d49e29',
@@ -679,7 +672,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 336118007,
     provenance: SEP_PINNED_LOCAL,
   },
-  // ---- 本地文生图（image-bundles.ts）----
+  // ---- Local text-to-image (image-bundles.ts) ----
   {
     repo: 'mlx-community/Qwen-Image-2.1-MLX-4bit',
     revision: '4db4e8c0c0e7a1debf0320415bec8388e888494c',
@@ -728,7 +721,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
     estimatedBytes: 10497208109,
     provenance: IMAGE_PINNED_LOCAL,
   },
-  // ---- 本地音乐生成（music-bundles.ts）：只下载 Q8 主模型、F16 VAE 与配置文件 ----
+  // ---- Local music generation (music-bundles.ts): only the Q8 main model, F16 VAE and config files are downloaded ----
   {
     repo: 'audio-cpp/Yue2-3B-GGUF',
     revision: 'cca74d8980c00f30ab8d52248a367c01ad633ec2',
@@ -745,7 +738,7 @@ export const REPO_MANIFESTS: readonly RepoManifestSpec[] = [
   },
 ];
 
-/** 一个仓库版本的内置清单；没有登记时 null。 */
+/** The built-in manifest of one repository revision; null if not registered. */
 export function repoManifestFor(
   repo: string,
   revision: string,
@@ -755,9 +748,7 @@ export function repoManifestFor(
 }
 
 /**
- * 一组组件（仓库与版本）的权重总字节数：按内置清单的文件大小加起来，大小未知的仓库用 `estimatedBytes`。有组件没有登记清单时
- * null（不知道多大）。用来估计 Model Worker 加载它们要多少内存，也是下载前显示的大小。来自发布页的组件（`release`，audio.cpp 引擎）
- * 按 `platformKey` 这个平台的压缩包大小算，这个平台没有压缩包时 null。
+ * Total weight bytes of a group of components (repositories and revisions): the sum of file sizes from the built-in manifests, using `estimatedBytes` for repositories of unknown size. null if any component has no registered manifest (its size is unknown). Used to estimate how much memory the Model Worker needs to load them, and as the size shown before download. For release-page components (`release`, the audio.cpp engine), the size is that of the archive for `platformKey`; null if there is no archive for that platform.
  */
 export function weightBytes(
   sources: ReadonlyArray<{ repo: string; revision: string; release?: ComponentRelease }>,

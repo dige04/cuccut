@@ -1,13 +1,11 @@
-//! 端到端：真实的「说话人区分」模型包（Pyannote 分段 + WeSpeaker）单独加载，`job.run`（`diarize`）给一份已有转写的词区分
-//! 说话人（协议规范 §2.5.5）。需要本机装好的模型，默认忽略：
+//! End-to-end: a real speaker-diarization bundle (Pyannote segmentation + WeSpeaker) loaded on its own. `job.run` (`diarize`) assigns speakers to the words of an existing transcript (protocol spec §2.5.5). It needs models installed on this machine and is ignored by default:
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-worker --test diarization -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! 输入在测试里现拼：英文样本接中文样本（两个人）。词是合成的：每 1.5 秒一个 0.5 秒的词（词间停顿超过发言段的切分
-//! 阈值，每个词各自成段），只核对离接缝 0.3 秒以外的词。模型目录只读。
+//! The input is assembled inside the test: an English sample followed by a Chinese sample (two speakers). The words are synthetic: one 0.5-second word every 1.5 seconds. The gap between words is longer than the utterance segmentation threshold, so each word becomes its own segment. Only words more than 0.3 seconds away from the seam are checked. The model directory is read-only.
 
 mod support;
 
@@ -27,7 +25,7 @@ fn models_root() -> PathBuf {
     PathBuf::from(std::env::var("CUCCUT_TEST_MODELS_DIR").expect("set CUCCUT_TEST_MODELS_DIR to the models root"))
 }
 
-/// 本机装好的「说话人区分」模型包（只有 `segmentation` 与 `speaker`）；没装时 `None`。
+/// The locally installed speaker-diarization bundle (only `segmentation` and `speaker`). `None` if it is not installed.
 fn diarization_bundle(models_root: &Path, backend: &str, device: &str) -> Option<Value> {
     if !is_installed(models_root, PYANNOTE) || !is_installed(models_root, WESPEAKER) {
         return None;
@@ -45,7 +43,7 @@ fn diarization_bundle(models_root: &Path, backend: &str, device: &str) -> Option
     }))
 }
 
-/// 把几个 16 kHz 单声道 16 位的样本首尾相接，写进 `dir/name`；返回路径与每个样本的长度（tick）。
+/// Concatenate several 16 kHz mono 16-bit samples end to end and write them to `dir/name`. Returns the path and the length of each sample (in ticks).
 fn joined_fixtures(dir: &Path, name: &str, samples: &[&str]) -> (PathBuf, Vec<u64>) {
     let joined = dir.join(name);
     let spec = hound::WavSpec {
@@ -175,7 +173,7 @@ fn diarizes_two_speakers_on(backend: &str, device: &str) {
     }
     assert_eq!(seen.len(), 2, "both samples have words");
 
-    // 识别的任务交给说话人区分的模型包：模型包做不到。
+    // A recognition task sent to a speaker-diarization bundle: the bundle cannot do it.
     let staging = tempfile::tempdir().unwrap();
     let (_, response) = worker.call(
         "job.run",

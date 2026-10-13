@@ -50,7 +50,7 @@ describe('网页标签的地址规则', () => {
     expect(checkWebUrl('http://localhost:5173/')).toEqual({ ok: false, reason: 'loopback' });
     expect(checkWebUrl('http://[::1]/')).toEqual({ ok: false, reason: 'loopback' });
     expect(checkWebUrl('http://localhost:5173/x', { appOrigins: ['http://localhost:5173'] })).toEqual({ ok: false, reason: 'app-origin' });
-    // 界面主动交给系统浏览器时可以放行回环地址。
+    // Loopback addresses may be allowed when the UI itself hands a URL to the system browser.
     expect(checkWebUrl('http://localhost:3000/', { allowLoopback: true })).toEqual({ ok: true, url: 'http://localhost:3000/' });
   });
 

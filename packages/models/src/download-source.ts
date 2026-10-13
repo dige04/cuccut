@@ -1,34 +1,29 @@
 /**
- * 模型下载的来源（架构设计 §6.3）。
+ * Sources for model downloads (architecture design §6.3).
  *
- * 基址的取法，先到先用：环境变量 `CUCCUT_MODELS_ENDPOINT` → 设置 `models.downloadEndpoint` → 公共模型仓库
- * `https://huggingface.co`。镜像只要按同样的路径规则提供文件即可。
+ * The base URL is chosen in priority order: environment variable `CUCCUT_MODELS_ENDPOINT`, then setting `models.downloadEndpoint`, then the public model repository `https://huggingface.co`. A mirror only needs to serve files following the same path rules.
  *
- * 文件 URL：`<基址>/<owner>/<repo>/resolve/<revision>/<文件路径>`，每一段按 URL 编码，文件路径里的 `/` 保留。
- * 基址可以带路径前缀（`https://mirror.example/hf`），结尾的 `/` 去掉。
+ * File URL: `<base>/<owner>/<repo>/resolve/<revision>/<file path>`. Each segment is URL-encoded, and the `/` in the file path is kept. The base may carry a path prefix (`https://mirror.example/hf`); a trailing `/` is removed.
  *
- * ModelScope（基址的主机是 `modelscope.cn` 或 `www.modelscope.cn`）按它自己的路径规则：
- * `<源>/models/<owner>/<repo>/resolve/master/<文件路径>`。它的提交与公共模型仓库不共用 SHA，所以取 `master`，
- * 文件照样按内置清单的 sha256 逐个核对；个别仓库在 ModelScope 上换了名字（`MODELSCOPE_ALIASES`），
- * ModelScope 上没有的仓库（`MODELSCOPE_UNAVAILABLE`）改从公共模型仓库下载。
+ * ModelScope (base URL host is `modelscope.cn` or `www.modelscope.cn`) follows its own path rules: `<source>/models/<owner>/<repo>/resolve/master/<file path>`. Its commits do not share SHAs with the public model repository, so `master` is used. Files are still verified one by one against the sha256 in the built-in manifest. Some repositories were renamed on ModelScope (`MODELSCOPE_ALIASES`). Repositories not on ModelScope (`MODELSCOPE_UNAVAILABLE`) are downloaded from the public model repository instead.
  *
- * 不带凭据：基址里不允许用户名、密码、查询参数与片段；下载请求不发 `Authorization`。
+ * No credentials: the base URL may not contain a username, password, query parameters or fragment, and download requests send no `Authorization`.
  */
 
 import { DEFAULT_MODELS_ENDPOINT, isModelScopeEndpoint, MODELSCOPE_ENDPOINT } from '@cuccut/protocol';
 import { ModelsDownloadSource as M } from '@cuccut/protocol/messages/models/download-source.ts';
 
-// 默认来源、ModelScope 的基址与识别放在协议包里，设置页也按它们认出选的是哪一个。
+// The default source, the ModelScope base URL and the recognition logic live in the protocol package, so the settings page can also tell which one is selected.
 export { DEFAULT_MODELS_ENDPOINT, isModelScopeEndpoint, MODELSCOPE_ENDPOINT };
 export const MODELS_ENDPOINT_ENV = 'CUCCUT_MODELS_ENDPOINT';
 
-/** ModelScope 上换了名字的仓库；没列出的按同名找。 */
+/** Repositories renamed on ModelScope. Unlisted ones are found under the same name. */
 const MODELSCOPE_ALIASES: Readonly<Record<string, string>> = {
   'openai/whisper-large-v3': 'openai-mirror/whisper-large-v3',
   'OpenMOSS-Team/MOSS-Transcribe-Diarize': 'OpenMOSS/MOSS-Transcribe-Diarize',
 };
 
-/** ModelScope 上没有的仓库（或没有同样内容的）：选了 ModelScope 时这些改从公共模型仓库下载。 */
+/** Repositories not on ModelScope (or without identical content). When ModelScope is selected, these are downloaded from the public model repository instead. */
 const MODELSCOPE_UNAVAILABLE: ReadonlySet<string> = new Set(['ggerganov/whisper.cpp', 'PJMixers-Dev/lj1995_GPT-SoVITS-safetensors']);
 
 export type EndpointOrigin = 'env' | 'setting' | 'default';
@@ -38,7 +33,7 @@ export interface ResolvedEndpoint {
   origin: EndpointOrigin;
 }
 
-/** 基址是否可用：`http(s)://`，没有凭据、查询参数与片段。 */
+/** Whether a base URL is usable: `http(s)://`, with no credentials, query parameters or fragment. */
 export function validEndpoint(value: string): boolean {
   let url: URL;
   try {
@@ -49,7 +44,7 @@ export function validEndpoint(value: string): boolean {
   return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password && !url.search && !url.hash;
 }
 
-/** 按优先级取基址。环境变量的值不合规时抛错（不悄悄退回公共仓库）。 */
+/** Gets the base URL by priority. Throws when the environment variable's value is invalid (it does not silently fall back to the public repository). */
 export function resolveModelsEndpoint(env: NodeJS.ProcessEnv, setting: string | null | undefined): ResolvedEndpoint {
   const fromEnv = env[MODELS_ENDPOINT_ENV]?.trim();
   if (fromEnv) {
@@ -60,12 +55,12 @@ export function resolveModelsEndpoint(env: NodeJS.ProcessEnv, setting: string | 
   return { endpoint: DEFAULT_MODELS_ENDPOINT, origin: 'default' };
 }
 
-/** 这个仓库实际从哪个基址下载：选了 ModelScope 而它上面没有这个仓库时是公共模型仓库，其余就是 `endpoint`。 */
+/** Which base URL this repository is actually downloaded from. When ModelScope is selected and the repository is not on it, this is the public model repository; otherwise it is `endpoint`. */
 export function repoEndpoint(endpoint: string, repo: string): string {
   return isModelScopeEndpoint(endpoint) && MODELSCOPE_UNAVAILABLE.has(repo) ? DEFAULT_MODELS_ENDPOINT : trimSlash(endpoint);
 }
 
-/** 一个文件的下载 URL。`revision` 是内置清单里固定的版本；ModelScope 取 `master`（见文件开头）。 */
+/** The download URL for one file. `revision` is the version fixed in the built-in manifest. ModelScope uses `master` (see the top of the file). */
 export function modelFileUrl(endpoint: string, repo: string, revision: string, file: string): string {
   const base = repoEndpoint(endpoint, repo);
   const filePath = file.split('/').map(encodeURIComponent).join('/');

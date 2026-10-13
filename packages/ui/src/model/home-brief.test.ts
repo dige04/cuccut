@@ -80,7 +80,7 @@ describe('Agent 指引', () => {
   it('还有 Driver 在首次探测、又没有就绪的：不下结论，不闪指引卡', () => {
     expect(homeGate([], ['codex'])).toBeNull();
     expect(homeGate([driver('claude', 'not-installed')], ['codex'])).toBeNull();
-    // 已经有一个就绪的，就不必等检测中的那个。
+    // If one is already ready, there is no need to wait for the one still being detected.
     expect(homeGate([driver('claude', 'ready')], ['codex'])).toEqual({ ok: true });
   });
 

@@ -1,20 +1,18 @@
-//! 端到端：真实的合成模型包，`worker.hello` → `model.load` → `job.run`（`synthesize`）→ 结果。需要本机装好的模型，默认忽略：
+//! End-to-end: a real synthesis bundle, `worker.hello` → `model.load` → `job.run` (`synthesize`) → result. It needs models installed on this machine and is ignored by default:
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-worker --test synthesis -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! `candle_` 开头的几条在 candle 后端的 CPU 上跑同一批模型包（Apple Silicon 以外的平台登记的形状），要只编 candle 的构建
-//! （带 MLX 的 Apple Silicon 构建里合成走 MLX，candle 的合成模型包会被拒绝）：
+//! The tests whose names start with `candle_` run the same bundles on candle's CPU backend (the shape registered on platforms other than Apple Silicon). To build with only candle (in an Apple Silicon build with MLX, synthesis goes through MLX, and candle synthesis bundles are rejected):
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR=… cargo test -p model-worker --no-default-features --features backend-candle --test synthesis \
 //!   -- --ignored --test-threads=1 --nocapture candle_
 //! ```
 //!
-//! 合成的 WAV 留在 `CUCCUT_TEST_OUTPUT_DIR`（不给时是系统临时目录下的 `cuccut-synthesis-e2e/`），供人耳复核。
-//! 模型目录只读：测试不写、不修模型包。
+//! The synthesized WAV is left in `CUCCUT_TEST_OUTPUT_DIR` (if not set, `cuccut-synthesis-e2e/` under the system temp directory) for listening review. The model directory is read-only: the test neither writes nor repairs the bundle.
 
 mod support;
 
@@ -31,12 +29,12 @@ use support::{WorkerProcess, fixture, model_files, result};
 use support::{is_installed, on_candle};
 
 const LOAD_TIMEOUT: Duration = Duration::from_secs(600);
-/// candle 在 CPU 上比 Metal 慢一个数量级。
+/// On CPU, candle is an order of magnitude slower than Metal.
 const JOB_TIMEOUT: Duration = Duration::from_secs(1_800);
 const QUICK: Duration = Duration::from_secs(10);
 const CODEC_REPO: &str = "Qwen/Qwen3-TTS-Tokenizer-12Hz";
 const INDEX_TTS2_REPO: &str = "aufklarer/IndexTTS2-MLX-fp16";
-/// `test-sample.wav` 念的原文。
+/// The original text read aloud in `test-sample.wav`.
 const SAMPLE_TRANSCRIPT: &str = "Testing one two three, CucCut is ready.";
 
 fn models_root() -> PathBuf {
@@ -57,7 +55,7 @@ fn bundle(bundle_id: &str, family: &str, repo: &str) -> Value {
     if family == "qwen3-tts" {
         components["codec"] = model_files(&root, CODEC_REPO, "qwen3-tts-tokenizer");
     }
-    // IndexTTS 2.5 的辅助权重（语义编码器、声码器等）借用整个 IndexTTS2 仓库。
+    // IndexTTS 2.5's auxiliary weights (semantic encoder, vocoder, etc.) borrow from the whole IndexTTS2 repo.
     if family == "indextts2.5" {
         components["aux"] = model_files(&root, INDEX_TTS2_REPO, "indextts2-aux");
     }
@@ -75,7 +73,7 @@ fn loaded_worker(bundle_id: &str, family: &str, repo: &str) -> WorkerProcess {
     loaded_worker_with(bundle(bundle_id, family, repo), family)
 }
 
-/// 起一个 Worker，确认模型包的后端可用、`synthesizeFamilies` 列出 `family`，再加载 `bundle`。
+/// Start a Worker, confirm that the bundle's backend is available and that `synthesizeFamilies` lists `family`, then load `bundle`.
 fn loaded_worker_with(bundle: Value, family: &str) -> WorkerProcess {
     let bundle_id = bundle["bundleId"].as_str().unwrap().to_owned();
     let backend = bundle["backend"].as_str().unwrap().to_owned();
@@ -151,7 +149,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// 读 16-bit PCM 单声道 WAV 的样本；头不对就失败。
+/// Read the samples of a 16-bit PCM mono WAV. Fail if the header is wrong.
 fn read_wav(bytes: &[u8]) -> (u32, Vec<f32>) {
     assert_eq!(&bytes[0..4], b"RIFF");
     assert_eq!(&bytes[8..12], b"WAVE");
@@ -172,7 +170,7 @@ fn read_wav(bytes: &[u8]) -> (u32, Vec<f32>) {
     (sample_rate, samples)
 }
 
-/// 跑一次合成并校验：阶段与步数进度、`speech.wav` 的摘要与长度、WAV 头、时长与响度；WAV 复制到输出目录。
+/// Run one synthesis and verify it: the stage and step progress, the digest and length of `speech.wav`, the WAV header, the duration and loudness. The WAV is copied to the output directory.
 fn synthesize(worker: &mut WorkerProcess, name: &str, request: &Request<'_>, seconds: std::ops::RangeInclusive<f64>) -> Value {
     let staging = tempfile::tempdir().unwrap();
     let started = Instant::now();
@@ -264,7 +262,7 @@ fn qwen3_tts_customvoice_speaks_with_a_model_speaker() {
     let outcome = synthesize(&mut worker, "qwen3-tts-customvoice-preset", &request, 1.5..=20.0);
     assert_eq!(outcome["readingsDropped"], json!([]));
 
-    // 目录里的说话人名（`Uncle_Fu`、`Ono_Anna`）与模型的说话人表大小写不同；内置音色 id 就近换成最像的说话人。
+    // Speaker names in the catalog (`Uncle_Fu`, `Ono_Anna`) differ in case from the model's speaker table. The built-in voice id is swapped for the closest-matching speaker.
     for (name, voice) in [
         ("qwen3-tts-customvoice-uncle-fu", "Uncle_Fu"),
         ("qwen3-tts-customvoice-ono-anna", "Ono_Anna"),
@@ -347,7 +345,7 @@ fn voxcpm2_speaks_with_a_builtin_voice() {
     synthesize(&mut worker, "voxcpm2-builtin", &request, 1.5..=20.0);
 }
 
-/// IndexTTS 2.5（主模型 + `aux` 组件）：内置音色，`<行|hang2>` 原样交给模型，不报 dropped。
+/// IndexTTS 2.5 (main model + `aux` component): built-in voice. `<行|hang2>` is passed to the model as-is and is not reported as dropped.
 #[test]
 #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
 fn index_tts25_speaks_with_a_builtin_voice_and_keeps_readings() {
@@ -364,7 +362,7 @@ fn index_tts25_speaks_with_a_builtin_voice_and_keeps_readings() {
     assert_eq!(outcome["readingsDropped"], json!([]));
 }
 
-/// GPT-SoVITS 不认读音标注：`<行|hang2>` 按表面文字合成，并如实出现在 `readingsDropped` 里。
+/// GPT-SoVITS does not read pronunciation annotations. `<行|hang2>` is synthesized from the surface text, and that shows up honestly in `readingsDropped`.
 #[test]
 #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
 fn gpt_sovits_speaks_with_a_builtin_voice_and_reports_dropped_readings() {
@@ -384,7 +382,7 @@ fn gpt_sovits_speaks_with_a_builtin_voice_and_reports_dropped_readings() {
     );
 }
 
-/// 合成中途 `job.cancel`：立即确认，`job.run` 以 `cancelled` 返回、没有输出，Worker 回到 ready，下一个任务照常完成。
+/// `job.cancel` during synthesis: it is acknowledged immediately. `job.run` returns `cancelled` with no output, the Worker goes back to ready, and the next job completes as usual.
 #[test]
 #[ignore = "needs installed models (CUCCUT_TEST_MODELS_DIR)"]
 fn cancel_stops_synthesis_and_the_worker_stays_ready() {
@@ -446,7 +444,7 @@ fn cancel_stops_synthesis_and_the_worker_stays_ready() {
     synthesize(&mut worker, "qwen3-tts-after-cancel", &short, 0.8..=15.0);
 }
 
-/// candle（CPU）上的 Qwen3-TTS：同一批仓库换成 `@candle` 的模型包，权重加载时换成 f32。
+/// Qwen3-TTS on candle (CPU): the same repos, with the `@candle` bundles. The weights are loaded as f32.
 #[cfg(all(
     feature = "backend-candle",
     not(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))

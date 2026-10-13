@@ -108,7 +108,7 @@ describe('quickForm', () => {
     pick = { ...pick, kind: 'numbers' };
     let next = chooseLang(INDEX_TTS2, pick, 'ja');
     expect(next).toMatchObject({ lang: 'ja', kind: 'numbers', voice: 'ja-female' });
-    // 没有这门语言的内置音色：落到第一只
+    // No built-in voice for this language: fall back to the first one
     expect(chooseLang(INDEX_TTS2, pick, 'ko').voice).toBe('zh-female');
     next = chooseLang(INDEX_TTS2, chooseVoice(pick, 'en-male'), 'ja');
     expect(next.voice).toBe('en-male');
@@ -138,7 +138,7 @@ describe('quickForm', () => {
     expect(quickForm(GPT_SOVITS, withFile, mine).request).toMatchObject({
       reference: { file: '/Users/me/rec/我的录音.wav', transcript: '你好' },
     });
-    // IndexTTS 不读原文：写了也不带
+    // IndexTTS does not read the source text: it is not sent even if written
     expect(quickForm(INDEX_TTS2, { ...withFile }, mine).request!.reference).toEqual({ file: '/Users/me/rec/我的录音.wav' });
     const sample = chooseSample(GPT_SOVITS, { ...pick, lang: 'en' });
     expect(quickForm(GPT_SOVITS, sample, mine).request).toMatchObject({ voice: 'en-female' });

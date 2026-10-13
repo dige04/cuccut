@@ -1,22 +1,18 @@
-//! 分段引擎（对拍 voice-ink `SegmentEngine` 的 segmentOnly 路径，M27/M51）。
+//! Segmentation engine (parity with voice-ink `SegmentEngine` segmentOnly path, M27/M51).
 //!
-//! LLM 契约：逐字保留原文、只许添加/修正标点，再按 1–4 句分段。「只许加标点」
-//! 不是恳求而是可判定命题——`normalize_chars` 后与源词区间严格相等才保留文本，
-//! 不等则文本降级为原词、边界照用：**边界容忍漂移，文本从不说谎**。
+//! LLM contract: keep the source text verbatim, only add or fix punctuation, then split into 1–4 sentence paragraphs. "Only add punctuation" is not a plea but a decidable proposition: the text is kept only when it strictly equals the source word range after `normalize_chars`; otherwise the text is downgraded to the original words and the boundaries are used as-is. **Boundaries tolerate drift, text never lies.**
 //!
-//! 五层映射阶梯（1–2 在每次 attempt 内依序尝试；4–5 是升级）：
-//! - tier 1 exact — 页级归一化字符相等 → O(n) 字符偏移映射
-//! - tier 2 diff  — atom-LCS（模型顺手修了个错字），匹配率 ≥ 0.75
-//! - tier 3 align — **刻意省略**（见下）
-//! - tier 4 json  — 3 次 attempt 失败后一次索引契约调用（只回区间下标）
-//! - tier 5 split — 确定性兜底（说话人/停顿/句末/硬断），永不失败
+//! Five-tier mapping ladder (tiers 1–2 are tried in order within each attempt; tiers 4–5 are escalations):
+//! - tier 1 exact: page-level normalized characters equal, O(n) character offset mapping
+//! - tier 2 diff: atom-LCS (the model fixed a typo in passing), match ratio ≥ 0.75
+//! - tier 3 align: **deliberately omitted** (see below)
+//! - tier 4 json: one index-contract call after 3 failed attempts (returns only range indices)
+//! - tier 5 split: deterministic fallback (speaker, pause, sentence end, hard break), never fails
 //!
-//! 与 voice-ink 的刻意偏差：
-//! - tier 3（`SubAlign.recoverWordRange` 逐段游标扫描）省略——它只在
-//!   「exact 与 diff 都失败、但文本仍大体对得上」的窄缝里生效，且文本一律
-//!   丢弃只留边界；tier4 索引契约覆盖同一场景。attempt 失败直接升级 tier4/5。
-//! - 行宽复核（repunct 二次调用）不在本引擎内，由调用方按需另跑。
-//! - 页间 1s 延迟经注入的 `sleep` 执行（core 零时钟）。
+//! Deliberate deviations from voice-ink:
+//! - tier 3 (`SubAlign.recoverWordRange` per-segment cursor scan) is omitted. It only takes effect in the narrow gap where exact and diff both fail but the text still roughly matches, and there the text is always discarded, keeping only the boundaries. The tier 4 index contract covers the same case. A failed attempt escalates directly to tier 4/5.
+//! - The width review after line breaking (the repunct second call) is not in this engine; the caller runs it separately if needed.
+//! - The 1s delay between pages runs through an injected `sleep` (core has no clock).
 
 use serde::{Deserialize, Serialize};
 
@@ -33,27 +29,27 @@ use crate::paging::{budgets, paginate_word_ranges};
 use crate::rebind::{IdSource, rebind_corrected};
 use crate::timing::normalize_doc_words;
 
-// 常量（对拍 SegmentEngine）。
+// Constants (parity with SegmentEngine).
 const TEMPERATURE: f32 = 0.2;
 const PAGE_DELAY_SECONDS: f64 = 1.0;
-/// tier-2 接受门槛：matches / max(srcKeys, outKeys)。
+/// tier-2 acceptance threshold: matches / max(srcKeys, outKeys).
 const MIN_DIFF_MATCH_RATIO: f64 = 0.75;
-/// carry-over 雪球守卫：pending 段超过此长度强制提交切分。
+/// carry-over snowball guard: a pending segment longer than this is forced to commit and split.
 const MAX_CARRY_CHARS: usize = 600;
-/// M51：提交后的段长硬顶，超长贪心再切（re-split 出的片文本丢弃）。
+/// M51: hard cap on segment length after commit; over-long segments are greedily re-split (the text of re-split pieces is discarded).
 const MAX_PARA_CHARS: usize = 600;
-/// tier-5 规则：停顿刻意高于 0.6s 的 Cue 停顿（段落尺度）。
+/// tier-5 rule: pauses deliberately above 0.6s among Cue pauses (paragraph scale).
 const FALLBACK_PAUSE_SEC: f64 = 1.2;
 const FALLBACK_SOFT_CHARS: usize = 200;
 const FALLBACK_HARD_CHARS: usize = 400;
-/// tier-4 连续性自愈：≤10 词空隙吸附，更大 gap → 失败。
+/// tier-4 continuity self-heal: gaps of ≤10 words are snapped; a larger gap is a failure.
 const MAX_TAIL_GAP: i64 = 10;
-/// force-commit 的句末/停顿边界用 Cue 尺度停顿（Rules.pauseSec）。
+/// Sentence-end and pause boundaries for force-commit use the Cue-scale pause (Rules.pauseSec).
 const RULES_PAUSE_SEC: f64 = 0.6;
 
 #[derive(Debug, Clone)]
 pub struct SegmentOptions {
-    /// BCP-47 源语言，进 prompt。
+    /// BCP-47 source language, included in the prompt.
     pub language: String,
     pub page_budget: usize,
     pub instructions: Option<String>,
@@ -73,7 +69,7 @@ impl Default for SegmentOptions {
     }
 }
 
-/// 落盘态段记录（id+时间锚定，经得起后续编辑）。
+/// Persisted segment record (id plus time anchoring, robust to later edits).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SegmentRecord {
@@ -89,10 +85,10 @@ pub struct SegmentRecord {
 #[derive(Debug)]
 pub struct SegmentOutcome {
     pub records: Vec<SegmentRecord>,
-    /// 走到 tier5 确定性兜底的页数。
+    /// Number of pages that reach the tier-5 deterministic fallback.
     pub fallback_pages: u32,
-    /// 出口版式体检：布局铺设后的 Cue 条数 / 最长宽度 / 超单行预算条数。
-    /// `over_width > 0` 即代表管线自己放出了贪心永远不会产生的超宽行。
+    /// Exit layout check: Cue count, longest width, and the count of lines over the single-line budget, after layout is applied.
+    /// `over_width > 0` means the pipeline itself produced an over-wide line, which greedy layout never would.
     pub cue_layout: crate::layout::CueLayoutStats,
 }
 
@@ -115,7 +111,7 @@ impl Source {
     }
 }
 
-/// 运行态段落（词下标含入区间，易变；落盘走 [`SegmentRecord`]）。
+/// Runtime segment (word indices, inclusive range; volatile. The persisted form is [`SegmentRecord`]).
 #[derive(Debug, Clone)]
 struct SegPara {
     start: usize,
@@ -124,7 +120,7 @@ struct SegPara {
     source: Source,
 }
 
-// ---------- prompts（逐字对拍 SegmentPrompts.swift） ----------
+// ---------- prompts (verbatim parity with SegmentPrompts.swift) ----------
 
 fn system_prompt(language: &str, instructions: Option<&str>) -> String {
     let mut prompt = format!(
@@ -167,9 +163,9 @@ The source language is "{language}"."#
     )
 }
 
-// ---------- 归一化字符映射工具 ----------
+// ---------- normalized character mapping utilities ----------
 
-/// 词区间的归一化字符流 + 每字符所属词下标（对拍 `SubAlign.buildWordCharMap`）。
+/// Normalized character stream of a word range, plus the word index each character belongs to (parity with `SubAlign.buildWordCharMap`).
 fn span_norm_chars(span: &[Word]) -> (Vec<char>, Vec<usize>) {
     let mut chars = Vec::new();
     let mut char_to_word = Vec::new();
@@ -182,8 +178,7 @@ fn span_norm_chars(span: &[Word]) -> (Vec<char>, Vec<usize>) {
     (chars, char_to_word)
 }
 
-/// 文本的归一化字符流 + 每字符的原始 char 偏移（对拍 `SubAlign.normalizeChars`
-/// 的 origIndex——小写展开的多字符共享同一原始偏移）。
+/// Normalized character stream of the text, plus each character's original char offset (parity with the origIndex of `SubAlign.normalizeChars`: multi-character lowercase expansions share the same original offset).
 fn normalize_with_orig(text: &str) -> (Vec<char>, Vec<usize>) {
     let mut chars = Vec::new();
     let mut orig = Vec::new();
@@ -196,13 +191,13 @@ fn normalize_with_orig(text: &str) -> (Vec<char>, Vec<usize>) {
     (chars, orig)
 }
 
-/// 文本门：「逐字保留 modulo 标点/空白/大小写」的可判定形式。
+/// Text gate: the decidable form of "kept verbatim, modulo punctuation, whitespace and case".
 fn text_matches_range(text: &str, span: &[Word]) -> bool {
     let norm: Vec<char> = normalize_chars(text).chars().collect();
     norm == span_norm_chars(span).0
 }
 
-// ---------- tier 1: exact 归一化映射 ----------
+// ---------- tier 1: exact normalized mapping ----------
 
 fn map_paragraphs_exact(paras: &[String], span: &[Word], base: usize) -> Option<Vec<SegPara>> {
     let (chars, char_to_word) = span_norm_chars(span);
@@ -221,13 +216,12 @@ fn map_paragraphs_exact(paras: &[String], span: &[Word], base: usize) -> Option<
     let mut prev_end: isize = -1;
     for (k, pn) in out_norm.iter().enumerate() {
         if pn.is_empty() {
-            continue; // 纯标点"段"——无区间、无文本
+            continue; // Pure-punctuation "segment": no range, no text
         }
         let start_char = offset;
         offset += pn.len();
         let end_char = offset - 1;
-        // 边界落在词中间时向后吸附到词尾——段边界从不劈开一个词。被吸附
-        // 吃光的区间跳过；其邻居的文本门随后失败、文本降级为原词。
+        // When a boundary falls in the middle of a word, snap it forward to the word end. A segment boundary never splits a word. Ranges consumed entirely by the snap are skipped. Their neighbor's text gate then fails, and its text is downgraded to the original words.
         let start = (char_to_word[start_char] as isize).max(prev_end + 1);
         let end = (char_to_word[end_char] as isize).max(start - 1);
         if end < start {
@@ -248,7 +242,7 @@ fn map_paragraphs_exact(paras: &[String], span: &[Word], base: usize) -> Option<
     let last = out.len() - 1;
     out[last].end = base + span.len() - 1;
 
-    // 文本门（逐段）：切片匹配才保留文本。
+    // Text gate (per segment): text is kept only when the slice matches.
     for (index, para) in out.iter_mut().enumerate() {
         let a = para.start - base;
         let b = para.end - base;
@@ -259,16 +253,14 @@ fn map_paragraphs_exact(paras: &[String], span: &[Word], base: usize) -> Option<
     Some(out)
 }
 
-// ---------- tier 2: atom-LCS 边界恢复 ----------
+// ---------- tier 2: atom-LCS boundary recovery ----------
 
 fn map_paragraphs_by_diff(paras: &[String], span: &[Word], base: usize) -> Option<Vec<SegPara>> {
-    // 两侧过同一个原子化器——共享算法才让 diff 有意义。比对用的键取最细的
-    // 口径（韩文逐音节）：模型补一处空格、改一个助词不该让整个어절对不上。
+    // Both sides go through the same atomizer. A shared algorithm is what makes the diff meaningful. The comparison key uses the finest granularity (Korean, per syllable): the model adding one space or changing one particle should not break the match of a whole eojeol.
     let mut intern = AtomInterner::default();
     let mut src_keys: Vec<u32> = Vec::new();
     let mut src_word: Vec<usize> = Vec::new();
-    // 泰文一类按词建稿的区间两侧都切到字素簇（见 comparison_atoms），段界仍
-    // 映射回词下标。
+    // For Thai and similar scripts whose ranges are built per word, both sides are cut down to grapheme clusters (see comparison_atoms), and segment boundaries are still mapped back to word indices.
     let fine = needs_fine_comparison(span);
     for (wi, word) in span.iter().enumerate() {
         for atom in comparison_atoms(&word.text, fine) {
@@ -295,7 +287,7 @@ fn map_paragraphs_by_diff(paras: &[String], span: &[Word], base: usize) -> Optio
         return None;
     }
 
-    // 段 p 之后的边界 = p 匹配到的最后一个源词；无匹配的前沿词并入前段。
+    // The boundary after segment p is the last source word matched by p. Frontier words with no match are merged into the previous segment.
     let mut last_word = vec![-1_isize; paras.len()];
     for (si, oi) in matches {
         let p = out_para[oi];
@@ -315,7 +307,7 @@ fn map_paragraphs_by_diff(paras: &[String], span: &[Word], base: usize) -> Optio
             last_word[pi]
         };
         if end < start {
-            continue; // 无匹配——向前并段
+            continue; // No match: merge forward
         }
         end = end.min(span.len() as isize - 1);
         out.push(SegPara {
@@ -343,11 +335,9 @@ fn map_paragraphs_by_diff(paras: &[String], span: &[Word], base: usize) -> Optio
     Some(out)
 }
 
-// tier 3（align，SubAlign.recoverWordRange 游标扫描）刻意省略：它只覆盖
-// 「exact/diff 都失败但文本大体对得上」的窄缝且文本一律丢弃，tier4 索引契约
-// 覆盖同一场景——attempt 失败直接升级到 tier4/5。
+// tier 3 (align, the SubAlign.recoverWordRange cursor scan) is deliberately omitted. It only covers the narrow gap where exact and diff both fail but the text roughly matches, and there the text is always discarded. The tier 4 index contract covers the same case, so a failed attempt escalates directly to tier 4/5.
 
-// ---------- 一次 attempt：LLM 调用 + tier 1–2 ----------
+// ---------- one attempt: LLM call + tier 1–2 ----------
 
 #[derive(Debug, Deserialize)]
 struct PageResponse {
@@ -372,7 +362,7 @@ fn segment_page(
         retry_reason,
     })?;
     let response: PageResponse = decode(&raw)?;
-    // 响应落地即清洗：剥标记回声、折叠模型插入的 CJK 空格。
+    // Sanitize on receipt: strip echoed markers and collapse the CJK spaces the model inserted.
     let cleaned: Vec<String> = response
         .paragraphs
         .iter()
@@ -395,7 +385,7 @@ fn segment_page(
         })
 }
 
-// ---------- tier 4: 索引契约（只回区间，标点牺牲） ----------
+// ---------- tier 4: index contract (returns ranges only; punctuation is sacrificed) ----------
 
 #[derive(Debug, Deserialize)]
 struct RangesResponse {
@@ -412,7 +402,7 @@ struct RangeRow {
     end_word_index: serde_json::Value,
 }
 
-/// 数字字段宽松解码：同时接受 `12` / `12.0` / `"12"`。
+/// Lenient numeric field decoding: accepts `12`, `12.0` and `"12"`.
 fn lenient_index(value: &serde_json::Value) -> Option<i64> {
     match value {
         serde_json::Value::Number(number) => number
@@ -429,8 +419,7 @@ fn lenient_index(value: &serde_json::Value) -> Option<i64> {
     }
 }
 
-/// tier4 payload：`{"words":{"<idx>":"<带标记词>"}}`，键按数值升序手工组装
-/// （prompt 说 "in speaking order"，不能靠 map 遍历顺序）。
+/// tier 4 payload: `{"words":{"<idx>":"<marked word>"}}`. Keys are assembled by hand in ascending numeric order, because the prompt says "in speaking order" and map iteration order cannot be relied on.
 fn index_payload(range: &std::ops::Range<usize>, words: &[Word]) -> String {
     let mut entries: Vec<String> = Vec::with_capacity(range.len());
     for index in range.clone() {
@@ -464,7 +453,7 @@ fn segment_page_by_indexes(
     })?;
     let response: RangesResponse = decode(&raw)?;
 
-    // 钳位 + 连续性自愈：≤10 词空隙吸附，更大 gap → 失败。
+    // Clamp and continuity self-heal: gaps of ≤10 words are snapped; a larger gap is a failure.
     let lo = range.start as i64;
     let hi = range.end as i64 - 1;
     let mut out: Vec<SegPara> = Vec::new();
@@ -521,7 +510,7 @@ fn segment_page_by_indexes(
     Ok(out)
 }
 
-// ---------- tier 5: 确定性兜底（永不失败） ----------
+// ---------- tier 5: deterministic fallback (never fails) ----------
 
 fn fallback_segment(range: &std::ops::Range<usize>, words: &[Word]) -> Vec<SegPara> {
     let mut out: Vec<SegPara> = Vec::new();
@@ -558,9 +547,9 @@ fn fallback_segment(range: &std::ops::Range<usize>, words: &[Word]) -> Vec<SegPa
     out
 }
 
-// ---------- 后处理 ----------
+// ---------- post-processing ----------
 
-/// 词区间的展示字符数（含 Latin 词间空格）；`limit` 命中即可提前返回。
+/// Display character count of a word range (including Latin inter-word spaces). Returns early once `limit` is hit.
 fn range_chars(words: &[Word], a: usize, b: usize, limit: Option<usize>) -> usize {
     if a > b || b >= words.len() {
         return 0;
@@ -581,8 +570,7 @@ fn range_chars(words: &[Word], a: usize, b: usize, limit: Option<usize>) -> usiz
     chars
 }
 
-/// 在 `boundary_after(i)`（词 i 与 i+1 之间）处切段；文本沿归一化对齐在词边界
-/// 剪切并逐片重过文本门，切不出/不匹配的片文本降级为空。
+/// Cuts a segment at `boundary_after(i)` (between word i and word i+1). The text is cut along the normalized alignment at word boundaries and each piece is re-run through the text gate. Pieces that cannot be cut or do not match get empty text.
 fn split_at_boundaries(
     p: &SegPara,
     words: &[Word],
@@ -618,7 +606,7 @@ fn split_at_boundaries(
         return fallback_pieces();
     }
 
-    // 文本非空 ⇒ 已过文本门 ⇒ 与词区间归一化 1:1，可精确剪切。
+    // Non-empty text means it passed the text gate, so it maps 1:1 to the word range after normalization and can be cut precisely.
     let span = &words[p.start..=p.end];
     let (span_chars, char_to_word) = span_norm_chars(span);
     let (norm, orig_index) = normalize_with_orig(&p.text);
@@ -629,7 +617,7 @@ fn split_at_boundaries(
     let mut cuts: Vec<usize> = vec![0];
     let mut alignment_index = 0_usize;
     for &b in &bounds {
-        let local_next = b - p.start + 1; // 下一片首词（span 内下标）
+        let local_next = b - p.start + 1; // First word of the next piece (index within the span)
         while alignment_index < char_to_word.len() && char_to_word[alignment_index] < local_next {
             alignment_index += 1;
         }
@@ -674,13 +662,12 @@ fn split_at_boundaries(
         .collect()
 }
 
-/// 硬保障：⏹ 只是 prompt 提示，说话人切换处确定性强制分段。
+/// Hard guarantee: ⏹ is only a hint in the prompt. Speaker changes force a segment break deterministically.
 fn split_at_speaker_changes(p: &SegPara, words: &[Word]) -> Vec<SegPara> {
     split_at_boundaries(p, words, &|i| words[i].sp != words[i + 1].sp)
 }
 
-/// carry-over 雪球守卫：把 pending 段的头部提交到其**最后一个**句末/停顿边界，
-/// 只有余量继续 carry；完全无边界（或边界后余量仍超限）则硬切到 ≤600 字符。
+/// carry-over snowball guard: commit the head of the pending segment up to its **last** sentence-end or pause boundary. Only the remainder continues to be carried. If there is no boundary at all, or the remainder still exceeds the limit after the boundary, hard-cut to ≤600 characters.
 fn force_commit_split(p: &SegPara, words: &[Word]) -> (Vec<SegPara>, SegPara) {
     let mut cut: isize = -1;
     for index in p.start..p.end {
@@ -690,14 +677,14 @@ fn force_commit_split(p: &SegPara, words: &[Word]) -> (Vec<SegPara>, SegPara) {
             cut = index as isize;
         }
     }
-    // 边界可能远在段首、carry 仍超限——改走硬切路径。
+    // The boundary may be far back at the segment start and the carry still over the limit, so take the hard-cut path.
     if cut >= p.start as isize
         && range_chars(words, cut as usize + 1, p.end, Some(MAX_CARRY_CHARS)) > MAX_CARRY_CHARS
     {
         cut = -1;
     }
     if cut < 0 {
-        // 硬切：从段尾向前回走直到 carry 放得下。
+        // Hard cut: walk back from the segment end until the carry fits.
         let mut chars = 0_usize;
         let mut index = p.end;
         while index > p.start {
@@ -735,8 +722,7 @@ fn force_commit_split(p: &SegPara, words: &[Word]) -> (Vec<SegPara>, SegPara) {
     }
 }
 
-/// M51：程序化段长守卫——超过 600 字符的段贪心再切（切点取本轮扫描见到的
-/// 最后一个句末/停顿边界，实在没有才在预算处硬切）。切出的片文本丢弃。
+/// M51: programmatic segment-length guard. Segments over 600 characters are greedily re-split. The cut point is the last sentence-end or pause boundary seen in this scan; only if there is none is it hard-cut at the budget. The text of the cut-off pieces is discarded.
 fn enforce_paragraph_length(paras: Vec<SegPara>, words: &[Word]) -> Vec<SegPara> {
     let mut out: Vec<SegPara> = Vec::new();
     for p in paras {
@@ -793,13 +779,11 @@ fn enforce_paragraph_length(paras: Vec<SegPara>, words: &[Word]) -> Vec<SegPara>
     out
 }
 
-// ---------- 页循环 + 写回 ----------
+// ---------- page loop and write-back ----------
 
-/// 模型是否把多个正常源词的空格吞掉，焊成一个不可断的超宽 Latin 原子。
+/// Whether the model swallowed the spaces between several normal source words, welding them into one unbreakable over-wide Latin atom.
 ///
-/// `normalize_chars` 刻意忽略空白，所以这种答案会通过 exact 文本门；rebind 随后
-/// 把整串落成一个 Word，Cue 已没有任何内部词缝可断。只在 corrected 新原子超过
-/// 单行硬预算且显著宽于源侧任一原子时降级文本，真实长标识符原样保留。
+/// `normalize_chars` deliberately ignores whitespace, so such an answer passes the exact text gate. Rebind then turns the whole string into one Word, and the Cue has no internal word seam left to break at. The text is downgraded only when the corrected new atom exceeds the single-line hard budget and is clearly wider than either source-side atom. Real long identifiers are kept as they are.
 fn introduces_overwide_atom(span: &[Word], corrected: &str, max_width: usize) -> bool {
     let corrected_max = atomize_like(span, corrected)
         .iter()
@@ -818,8 +802,7 @@ fn introduces_overwide_atom(span: &[Word], corrected: &str, max_width: usize) ->
     corrected_max > source_max
 }
 
-/// 分段主入口：分页 → 每页五层阶梯 → carry-over → 硬保障 → 段长守卫 →
-/// 标点经 rebind 落词、段落钉写 `paraBreaks`、盖 `stages.segment`。
+/// Main segmentation entry point: paginate, run the five-tier ladder per page, carry-over, hard speaker guarantee, segment-length guard. Punctuation lands on words via rebind, paragraph breaks are pinned as `paraBreaks`, and `stages.segment` is stamped.
 pub fn run_segment(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -847,16 +830,14 @@ pub fn run_segment(
         if page_index > 0 {
             sleep(PAGE_DELAY_SECONDS);
         }
-        // carry-over：上一页的 pending 段带着新右上下文重发——LLM 重新决定
-        // 它的边界，段落永远不会在页缝处被劈开。
+        // carry-over: the previous page's pending segment is re-sent with the new right-hand context. The LLM re-decides its boundary, so a paragraph is never split at a page seam.
         let payload_start = pending
             .as_ref()
             .map_or(page.start, |p| p.start.min(page.start));
         let range = payload_start..page.end;
 
         let words = &doc.words;
-        // attempt ×3（退避 2s；重试携带上一次失败原因）→ tier4 一次索引契约
-        // → tier5 确定性兜底。鉴权/模型不存在等不可重试错误中止整个 run。
+        // attempt ×3 (2s backoff; each retry carries the reason for the previous failure), then one tier-4 index-contract call, then the tier-5 deterministic fallback. Non-retryable errors such as auth failure or a missing model abort the whole run.
         let mut retry_reason: Option<String> = None;
         let attempts = with_retry(MAX_RETRIES, &mut *sleep, |attempt| {
             let result = segment_page(
@@ -891,7 +872,7 @@ pub fn run_segment(
             },
         };
 
-        // 硬说话人保障（prompt 的 ⏹ 只是提示）。
+        // Hard speaker guarantee (the prompt's ⏹ is only a hint).
         let mut paras: Vec<SegPara> = paras
             .iter()
             .flat_map(|p| split_at_speaker_changes(p, words))
@@ -916,18 +897,17 @@ pub fn run_segment(
     }
     let paras = enforce_paragraph_length(committed, &doc.words);
 
-    // 写回：标点经 rebind 落词（LCS 保 id/时间）+ normalize 收尾；段落钉写
-    // paraBreaks（保守只新增，不清人工钉）；最后盖结构指纹。
+    // Write-back: punctuation lands on words via rebind (LCS keeps ids and times), then normalize to finish. Paragraph pins are written to paraBreaks, conservatively: only additions, and manual pins are never cleared. Finally the structure fingerprint is stamped.
     let mut new_words: Vec<Word> = Vec::with_capacity(doc.words.len());
     let mut records: Vec<SegmentRecord> = Vec::with_capacity(paras.len());
     let mut pins: Vec<String> = Vec::new();
-    // 0.5 之前逐音节的韩文区间：重绑后按旧规则重定「贴前」标记。
+    // Korean ranges built per syllable before 0.5: after rebinding, the "attach to previous" marks are re-derived by the old rules.
     let mut legacy_spans: Vec<std::ops::Range<usize>> = Vec::new();
     let mut cursor = 0_usize;
     let atom_width_limit =
         options.cue_max_chars + crate::layout_profile::cue_params_for_doc(doc).overflow_slack;
     for p in &paras {
-        // 防御：阶梯保证全覆盖连续；万一有缝也绝不丢词。
+        // Defensive: the ladder guarantees full, contiguous coverage. Even if there is a gap, never drop words.
         if p.start > cursor {
             new_words.extend_from_slice(&doc.words[cursor..p.start]);
         }
@@ -984,22 +964,17 @@ pub fn run_segment(
         doc.para_breaks.insert(id, true);
     }
     if refresh_polish {
-        // segment 只允许标点/分段修订；它发生在 polish 之后时，这些修订是该阶段
-        // 的合法后处理，不应把刚完成的 polish 误报 stale。
+        // segment only permits punctuation and segmentation revisions. When it runs after polish, these revisions are legitimate post-processing for that stage and must not flag the just-finished polish as stale.
         doc.stages.polish = Some(fingerprint(&doc.words));
     }
     doc.stages.segment = Some(id_fingerprint(&doc.words));
-    // 段落钉落定后铺设均衡断点布局：优化器总是运行，用户 `breaks` 与段落钉是
-    // 硬约束，结果只进 `autoBreaks[layoutProfile]`；管线自身的版式改动刷新
-    // asrLayout 戳（只算用户 breaks/paraBreaks/hidden），避免被误判为人工编辑。
-    // §18.5 参数取文档 profile 的 `source`，`--cue-line-length` 只覆盖行宽。
+    // After the paragraph pins are settled, the balanced break layout is laid out. The optimizer always runs. User `breaks` and paragraph pins are hard constraints. The result goes only to `autoBreaks[layoutProfile]`. Layout changes made by the pipeline itself refresh the asrLayout stamp (which counts only user breaks, paraBreaks and hidden), so they are not mistaken for manual edits. The §18.5 parameters take the document profile's `source`; `--cue-line-length` only overrides the line width.
     let cue_params = crate::cue::CueParams {
         max_chars: options.cue_max_chars,
         ..crate::layout_profile::cue_params_for_doc(doc)
     };
     crate::layout::remove_overwide_nobreaks(doc, &cue_params);
-    // rebase/prune、段落钉与超宽 nobreak 修复都属于本阶段的合法版式写回；必须以
-    // 最终的用户钉集刷新布局指纹（自动 pin 不参与指纹）。
+    // Rebase and prune, paragraph pins, and over-wide nobreak fixes are all legitimate layout write-backs of this stage. The layout fingerprint must be refreshed with the final set of user pins (auto pins do not take part in the fingerprint).
     crate::layout::ensure_balanced_cue_layout(doc, &cue_params);
     doc.stages.asr_layout = Some(crate::layout::layout_fingerprint(doc));
     let cue_layout = crate::layout::cue_layout_stats(doc, &cue_params);
@@ -1094,18 +1069,18 @@ mod tests {
         assert_eq!(outcome.records[0].source, "exact");
         assert_eq!(outcome.records[0].text, "hello world.");
         assert_eq!(outcome.records[1].text, "how are you?");
-        // 模型只加了段落结构:词 id 一个不变。
+        // The model only added paragraph structure. No word id changed.
         let ids_after: Vec<String> = doc.words.iter().map(|w| w.id.clone()).collect();
         assert_eq!(ids_after, original_ids);
-        // 第二段首词钉入 paraBreaks;第一段不钉。
+        // The first word of the second segment is pinned into paraBreaks. The first segment is not pinned.
         assert_eq!(doc.para_breaks.get("g1.2"), Some(&true));
         assert_eq!(doc.para_breaks.len(), 1);
         assert_eq!(doc.stages.segment, Some(id_fingerprint(&doc.words)));
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(llm.calls[0].0, "segment");
-        // 页 payload 是带标记文本(此处无停顿/切换 → 纯文本)。
+        // The page payload is text with inline markers (there are no pauses or speaker switches here, so it is plain text).
         assert_eq!(llm.calls[0].2, "hello world. how are you?");
-        // prompt 逐字含契约句与语言尾行。
+        // The prompt contains the contract sentence and the language trailer line verbatim.
         assert!(
             llm.calls[0]
                 .1
@@ -1116,7 +1091,7 @@ mod tests {
 
     #[test]
     fn garbage_answers_escalate_to_tier5_full_coverage() {
-        // P3 验收:假 LLM 全错答案下仍产出合法的全覆盖边界。
+        // P3 acceptance: even when the fake LLM returns entirely wrong answers, a legal, fully covering set of boundaries is still produced.
         let mut doc = five_words();
         let garbage = r#"{"paragraphs":["completely unrelated nonsense entirely"]}"#;
         let mut llm = FakeLlm::ok([garbage, garbage, garbage, r#"{}"#]);
@@ -1137,10 +1112,10 @@ mod tests {
             assert_eq!(record.source, "split");
             assert!(record.text.is_empty());
         }
-        // 全覆盖:首尾闭合、区间连续。
+        // Full coverage: closed at both ends, ranges contiguous.
         assert_eq!(outcome.records[0].first_word_id, "g1.0");
         assert_eq!(outcome.records.last().unwrap().last_word_id, "g1.4");
-        // 3 次主契约 + 1 次 tier4 索引契约;重试携带失败原因。
+        // 3 main-contract calls plus 1 tier-4 index-contract call. Retries carry the failure reason.
         let kinds: Vec<&str> = llm.calls.iter().map(|c| c.0.as_str()).collect();
         assert_eq!(
             kinds,
@@ -1149,11 +1124,11 @@ mod tests {
         assert!(llm.calls[1].3.is_some());
         assert!(llm.calls[2].3.is_some());
         assert!(llm.calls[3].3.is_some());
-        // tier4 payload 是索引契约形状。
+        // The tier-4 payload is in the index-contract shape.
         assert!(llm.calls[3].2.starts_with("{\"words\":{\"0\":"));
-        // 2 次重试退避。
+        // 2 retry backoffs.
         assert_eq!(sleeps, vec![2.0, 2.0]);
-        // 兜底不动词。
+        // The fallback does not touch words.
         assert_eq!(doc.words.len(), 5);
         assert_eq!(doc.stages.segment, Some(id_fingerprint(&doc.words)));
     }
@@ -1166,7 +1141,7 @@ mod tests {
             ("g2.0", 0.8, 1.2, "yes", "s2"),
             ("g2.1", 1.2, 1.6, "sir", "s2"),
         ]);
-        // 模型无视 ⏹ 合并成一段。
+        // The model ignored ⏹ and merged everything into one segment.
         let mut llm = FakeLlm::ok([r#"{"paragraphs":["hi there yes sir"]}"#]);
         let mut ids = SeqIds::default();
         let outcome = run_segment(
@@ -1184,7 +1159,7 @@ mod tests {
         assert_eq!(outcome.records[0].last_word_id, "g1.1");
         assert_eq!(outcome.records[1].first_word_id, "g2.0");
         assert_eq!(doc.para_breaks.get("g2.0"), Some(&true));
-        // payload 里注入了 ⏹。
+        // ⏹ was injected into the payload.
         assert!(llm.calls[0].2.contains('⏹'));
     }
 
@@ -1204,8 +1179,7 @@ mod tests {
         doc.breaks
             .insert("g1.3".to_owned(), crate::doc::BreakOverride::Nobreak);
         doc.para_breaks.insert("orphan".to_owned(), true);
-        // 第二段改写了一个词:tier1 失败、tier2 ratio 7/8 ≥ 0.75 过;
-        // 第一段过文本门保留标点,第二段文本置空、边界照用。
+        // The second segment rewrote one word: tier 1 fails, tier 2 ratio 7/8 ≥ 0.75 passes. The first segment passes the text gate and keeps its punctuation. The second segment's text is emptied, and its boundaries are used as-is.
         let mut llm =
             FakeLlm::ok([r#"{"paragraphs":["one two three four,","five six SEVENX eight"]}"#]);
         let mut ids = SeqIds::default();
@@ -1224,10 +1198,10 @@ mod tests {
         assert_eq!(outcome.records[1].text, "");
         assert_eq!(outcome.records[1].first_word_id, "g1.4");
         assert_eq!(outcome.records[1].last_word_id, "g1.7");
-        // 文本降级的段:词原样保留。
+        // A text-downgraded segment keeps its words as they are.
         let texts: Vec<&str> = doc.words[4..].iter().map(|w| w.text.as_str()).collect();
         assert_eq!(texts, vec!["five", "six", "seven", "eight"]);
-        // 标点段:rebind 保住未改词的 id,"four," 换发新 id。
+        // Punctuation-only segment: rebind keeps the ids of unchanged words, and "four," gets a new id.
         assert_eq!(doc.words[0].id, "g1.0");
         assert_eq!(doc.words[3].text, "four,");
         assert_ne!(doc.words[3].id, "g1.3");
@@ -1297,7 +1271,7 @@ mod tests {
             &mut |_| {},
         );
         assert!(matches!(result, Err(LlmError::Http { status: 401, .. })));
-        // 绝不拿降级结果掩盖配置问题:文档未被动过。
+        // Never mask a configuration problem with a downgraded result. The document was not touched.
         assert!(doc.stages.segment.is_none());
         assert!(doc.para_breaks.is_empty());
     }
@@ -1314,7 +1288,7 @@ mod tests {
                 glue: false,
             })
             .collect();
-        // 词 2 与词 3 之间 ≥1.2s 停顿。
+        // A pause of ≥1.2s between word 2 and word 3.
         for word in &mut words[3..] {
             word.t0 += 2.0;
             word.t1 += 2.0;
@@ -1328,7 +1302,7 @@ mod tests {
     #[test]
     fn tier4_healing_snaps_small_gaps_and_rejects_big_ones() {
         let words = five_words().words;
-        // ≤10 词空隙吸附:{1..2}{4..4} → 3 处缺口吸进第二段。
+        // ≤10-word gap snapping: {1..2}{4..4} means the 3 gap words are absorbed into the second segment.
         let mut llm = FakeLlm::ok([
             r#"{"paragraphs":[{"startWordIndex":"0","endWordIndex":1.0},{"startWordIndex":3,"endWordIndex":9}]}"#,
         ]);
@@ -1337,7 +1311,7 @@ mod tests {
         assert_eq!((paras[0].start, paras[0].end), (0, 1));
         assert_eq!((paras[1].start, paras[1].end), (2, 4));
 
-        // 空响应 → Malformed。
+        // Empty response → Malformed.
         let mut llm = FakeLlm::ok([r#"{"paragraphs":[]}"#]);
         assert!(matches!(
             segment_page_by_indexes(0..5, &words, "en", &mut llm, None),
@@ -1345,8 +1319,7 @@ mod tests {
         ));
     }
 
-    /// 按词建稿的泰文：段落文本按空白只能切到短语，两侧切到字素簇才对得上，
-    /// 段界落回词边界（这里是行尾）。模型在数字两边补的空格不影响。
+    /// Thai text built per word: segment text split on whitespace can only reach phrases, so both sides are cut to grapheme clusters to match. The segment boundary falls back on a word boundary (here, the line end). Spaces the model adds around numbers do not affect this.
     #[test]
     fn thai_paragraphs_map_onto_a_word_split_transcript() {
         let rows = [

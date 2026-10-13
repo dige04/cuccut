@@ -1,9 +1,6 @@
-//! 规范 §6.3 新定型的样式值：`background` 渐变对象、`shadow`、`fontStyle`、`mask`，
-//! 以及 §6.4 的 `rotationX` / `rotationY` 拒绝。
+//! Style values newly finalized in spec §6.3: the `background` gradient object, `shadow`, `fontStyle`, `mask`, and the rejection of `rotationX` / `rotationY` in §6.4.
 //!
-//! 这些键此前要么 lint 放行而渲染画不出（CSS 渐变字串、`shadow` 字串、
-//! `rotationX`），要么根本不在子集里（`fontStyle`、`mask`）。本文件把两种
-//! 「静默」都钉死成诊断或可解析结构。
+//! These keys used to either pass lint but render nothing (CSS gradient strings, `shadow` strings, `rotationX`), or not be in the subset at all (`fontStyle`, `mask`). This file pins both kinds of “silence” down as either diagnostics or parseable structures.
 
 use scene_primitives::lint::lint;
 use scene_primitives::resolve::{BgGradient, BoxBorder, BoxShadow, ElementMask, Resolver};
@@ -82,7 +79,7 @@ fn gradient_object_parses_and_defaults_even_stops() {
     .unwrap();
     assert!(matches!(r, BgGradient::Radial { cx, .. } if cx == 0.3));
 
-    // 颜色字串 ⇒ None（交给 Rgba）；坏颜色 ⇒ 错
+    // Color string ⇒ None (handed to Rgba); bad color ⇒ error
     assert!(BgGradient::parse(&json!("#123456")).unwrap().is_none());
     assert!(BgGradient::parse(&json!("not-a-color")).is_err());
     assert!(BgGradient::parse(&json!({"kind": "conic", "stops": []})).is_err());
@@ -142,7 +139,7 @@ fn shadow_object_becomes_a_drop_shadow_effect() {
     let node = &ir.visual_clips[0].tree.children[0];
     assert_eq!(node.effects.len(), 1);
     assert_eq!(node.effects[0].effect.id, "filter.dropShadow");
-    // 像素 / 画布短边（1080）
+    // px / canvas short side (1080)
     let radius = node.effects[0].uniforms.scalar("radius").unwrap();
     assert!((radius - 54.0 / 1080.0).abs() < 1e-9, "{radius}");
     let dy = node.effects[0].uniforms.scalar("dy").unwrap();
@@ -271,7 +268,7 @@ fn mask_source_unknown_when_missing_or_ancestor() {
         codes(&doc)
     );
 
-    // 指向自己的祖先（stage）
+    // Points to its own ancestor (stage)
     let doc = masked_pair(json!({"source": "#stage"}), Value::Null);
     assert!(
         has_code(&doc, "mask-source-unknown", "祖先或后代"),
@@ -321,10 +318,10 @@ fn rotation_x_is_rejected_instead_of_rendering_nothing() {
         err.contains("motion-unsupported") && err.contains("rotationX"),
         "{err}"
     );
-    // lint 把它映射到 schema（§16 没有为未实现的运动能力定独立码）
+    // lint maps it to schema (§16 defines no separate code for unimplemented motion capabilities)
     assert!(has_code(&doc, "schema", "rotationX"), "{:?}", codes(&doc));
 
-    // skewX 是仿射，照常通过
+    // skewX is affine and passes as usual
     let ok = doc_with_children(json!([{
         "type": "box", "id": "card",
         "style": {"width": 800, "height": 300, "background": "#fff"},

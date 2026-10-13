@@ -22,11 +22,11 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
 const SHA = 'c'.repeat(40);
 const SKILL_MD = '---\nname: Podcast chapters\ndescription: 给播客分章节\n---\n\n# 步骤\n';
 
-/** 假的 GitHub：仓库 `o/r`，默认分支 main，文件按路径给出。记录请求过的地址。 */
+/** Fake GitHub: repo `o/r`, default branch main, files given by path. Records the requested URLs. */
 function fakeGithub(files: Record<string, string>, options: { truncated?: boolean; symlink?: string; rateLimited?: boolean } = {}) {
   const requests: string[] = [];
   const trees = new Map<string, { path: string; mode: string; type: string; sha: string; size?: number }[]>();
-  // 树的 sha 用目录路径表示：根是提交 sha。
+  // Tree shas are keyed by directory path: the root is the commit sha.
   const dirs = new Set<string>(['']);
   for (const file of Object.keys(files)) {
     const parts = file.split('/');

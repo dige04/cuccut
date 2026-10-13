@@ -7,9 +7,9 @@ type Level = 'debug' | 'info' | 'warn' | 'error';
 
 export interface FileLoggerOptions {
   file: string;
-  /** 同时写到 stderr（开发时用）。写不出去（终端关了是 EIO，管道断了是 EPIPE）就不再回显，只写文件。 */
+  /** Also writes to stderr (for development). If that cannot be written (EIO when the terminal has closed, EPIPE when the pipe is broken), echo stops and only the file is written. */
   echo?: boolean;
-  /** 回显写到哪里，默认 `process.stderr`；测试注入。 */
+  /** Where echoed output is written. Defaults to `process.stderr`. Tests inject their own. */
   echoStream?: Writable;
   level?: Level;
 }
@@ -20,7 +20,7 @@ export interface ClosableLogger extends Logger {
   close(): Promise<void>;
 }
 
-/** 一行一条 JSON 的日志，写在 Runtime Home 的 logs/ 下（架构设计 §12.6）。 */
+/** One JSON object per line, written under `logs/` in the Runtime Home (architecture design §12.6). */
 export function createFileLogger(options: FileLoggerOptions): ClosableLogger {
   fs.mkdirSync(path.dirname(options.file), { recursive: true });
   const stream = fs.createWriteStream(options.file, { flags: 'a', mode: 0o600 });
@@ -29,8 +29,7 @@ export function createFileLogger(options: FileLoggerOptions): ClosableLogger {
   const line = (level: Level, scope: string, message: string, fields?: Record<string, unknown>) =>
     `${JSON.stringify({ t: new Date().toISOString(), level, scope, message, ...fields })}\n`;
 
-  // 回显的写入失败是异步报的：先回调，再在流上发 'error'。没人接的 'error' 会成为未捕获的异常，Runtime 的入口把它记进
-  // 日志，日志又回显、又失败，就成了打满磁盘的死循环。所以这里接住它，第一次失败就停止回显（以后不再写这个流）。
+  // Echo write failures are reported asynchronously: the callback runs first, then 'error' is emitted on the stream. An unhandled 'error' becomes an uncaught exception, which the Runtime entry records in the log. The log echoes again, fails again, and that becomes an endless loop that fills the disk. So the error is caught here, and on the first failure echo stops (this stream is not written to again).
   const echoStream = options.echo ? (options.echoStream ?? process.stderr) : null;
   let echoing = echoStream !== null;
   const stopEcho = (error: unknown) => {

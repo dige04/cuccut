@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 import { SPACE_LIST_MAX_LIMIT, SPACE_SEARCH_MAX_LIMIT } from './space.ts';
 
-/** `space.*` 的入站校验（架构设计 §5.7、§5.11），由 `schemas.ts` 并进方法表。 */
+/** Inbound validation for `space.*` (architecture design §5.7, §5.11), merged into the method table by `schemas.ts`. */
 
 const id = z.string().min(1).max(200);
 const filePath = z.string().min(1).max(4096);

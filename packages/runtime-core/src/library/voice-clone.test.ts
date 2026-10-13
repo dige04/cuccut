@@ -10,8 +10,7 @@ import { resolveRuntimeHome } from '@cuccut/runtime-storage';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 音色克隆（架构设计 §5.9）：`library.createVoiceClone` / `library.removeVoiceClone` 经真实的 Runtime，ElevenLabs 指向本机回环
- * 地址上的假供应商。密钥是测试里编的字符串。参考录音的解码校验要 ffprobe（没有时跳过）。
+ * Voice cloning (architecture design §5.9): `library.createVoiceClone` and `library.removeVoiceClone` run through the real Runtime. ElevenLabs points at a fake provider on the local loopback address. The keys are strings made up for the test. Decode validation of reference recordings needs ffprobe (skipped when absent).
  */
 
 const KEY = 'xi-test-ONLY-FOR-TESTS-voice-clone-0123456789';
@@ -42,7 +41,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
   let client: CucCutClient;
   let fake: FakeProviderServer;
   let reference: string;
-  /** 假供应商对删除的回复（默认成功）。 */
+  /** The fake provider's reply to a deletion (success by default). */
   let deleteReply: () => FakeReply;
   const jobs = new Map<Id, JobRecord>();
 
@@ -148,7 +147,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     const unsupported = await rejection(client.request('library.createVoiceClone', { id: declared.id, providerId: 'openai' }));
     expect(unsupported.details).toMatchObject({ code: 'VOICE_CLONE_UNSUPPORTED' });
 
-    // 启用 Provider 发放的默认授权不含 audio：克隆要用户另外授权。
+    // The default grant that an enabled Provider issues does not include audio, so cloning needs a separate user grant.
     const ungranted = await rejection(client.request('library.createVoiceClone', { id: declared.id, providerId: 'elevenlabs' }));
     expect(ungranted.code).toBe('forbidden');
     expect(ungranted.details).toMatchObject({ code: 'GRANT_REQUIRED' });
@@ -170,7 +169,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     expect(upload.headers['xi-api-key']).toBe(KEY);
     expect(upload.fields.name).toEqual(['我的声音']);
     expect(upload.file).toMatchObject({ name: 'reference.wav', type: 'audio/wav', size: wavFixture(1).length });
-    // 密钥只在请求头里：任务记录与库条目都没有。
+    // Keys are only in request headers. Neither the task record nor the library entry contains them.
     expect(JSON.stringify(job)).not.toContain(KEY);
 
     let { entry: after } = await client.request('library.get', { library: 'voices', id: entry.id });
@@ -182,11 +181,11 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     const usage = await client.request('grants.usage', { grantId });
     expect(usage.grant.usage.calls).toBe(1);
 
-    // 已经有有效克隆：拒绝。
+    // A valid clone already exists: rejected.
     const exists = await rejection(client.request('library.createVoiceClone', { id: entry.id, providerId: 'elevenlabs' }));
     expect(exists.details).toMatchObject({ code: 'VOICE_CLONE_EXISTS' });
 
-    // 换参考录音：旧克隆转为 stale。
+    // Reference recording replaced: the old clone becomes stale.
     const changed = path.join(dir, 'changed.wav');
     await fs.writeFile(changed, wavFixture(1.5));
     await client.request('library.put', {
@@ -204,7 +203,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     ({ entry: after } = await client.request('library.get', { library: 'voices', id: entry.id }));
     expect(after.clones?.elevenlabs).toMatchObject({ voiceId: 'clone-1', state: 'stale' });
 
-    // 重新克隆：新的有效，旧的远端删掉。
+    // Re-clone: the new one is valid, and the old one is deleted remotely.
     const again = await clone(entry.id);
     expect(again.state).toBe('completed');
     expect(again.warnings).toEqual([]);
@@ -216,7 +215,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
       'DELETE /v1/voices/clone-1',
     ]);
 
-    // 远端删除失败：记录保留，如实报告。
+    // Remote deletion fails: the record is kept, and the failure is reported as is.
     deleteReply = () => ({ status: 500, json: { detail: 'boom' } });
     const failed = await rejection(client.request('library.removeVoiceClone', { id: entry.id, providerId: 'elevenlabs' }));
     expect(failed.code).toBe('conflict');
@@ -225,7 +224,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     ({ entry: after } = await client.request('library.get', { library: 'voices', id: entry.id }));
     expect(after.clones?.elevenlabs?.voiceId).toBe('clone-2');
 
-    // 远端已经没有：照样清掉记录。
+    // Remote side no longer has it: the record is cleared anyway.
     deleteReply = () => ({ status: 404, json: { detail: { status: 'voice_not_found' } } });
     expect(await client.request('library.removeVoiceClone', { id: entry.id, providerId: 'elevenlabs' })).toEqual({
       removed: true,

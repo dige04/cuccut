@@ -14,7 +14,7 @@ import { pl } from './pipeline-runner.pl.ts';
 import { tr } from './pipeline-runner.tr.ts';
 import { vi } from './pipeline-runner.vi.ts';
 
-/** `packages/jobs/src/pipelines/pipeline-runner.ts`：固定流程的编排发出的错误与子任务名。 */
+/** `packages/jobs/src/pipelines/pipeline-runner.ts`: errors and sub-task names emitted by the orchestration of fixed flows. */
 const en = {
   unknownPipeline: (p: { name: string }) => `No pipeline named "${p.name}"`,
   entryTargetUnsupported: "This Runtime can't open videos from Space entries",
@@ -29,7 +29,7 @@ const en = {
   pipelineFailed: 'The pipeline ran into an error',
   stepFailed: 'The step ran into an error',
   interrupted: 'The Runtime stopped before the pipeline finished. Use pipelines.retry to continue from the step where it stopped.',
-  /** 一步下多开的子任务：步骤名加上子任务自己的名字。 */
+  /** For a step that starts several sub-tasks: the step name plus the sub-task's own name. */
   subtask: (p: { step: string; label: string }) => `${p.step}: ${p.label}`,
 };
 

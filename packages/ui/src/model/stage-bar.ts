@@ -3,8 +3,7 @@ import { ratioCanvas } from './property-values.ts';
 import { primaryMedia } from './stage-media.ts';
 
 /**
- * 舞台下沿工具条（原型 stage.jsx 的 `StageBar`；画布上选中元素时浮出的是另一条，见 stage-toolbar.ts）的判据：
- * 画幅表与当前是哪一档、自定义画幅、竖幅的平台安全区。不碰 React。
+ * Rules for the stage bottom bar (`StageBar` in the prototype stage.jsx; the bar that floats up when an element is selected on the canvas is a different one, see stage-toolbar.ts): the aspect-ratio table and which preset is current, custom aspect ratios, and the platform safe zones for portrait. Does not touch React.
  */
 
 export interface StageRatio {
@@ -13,7 +12,7 @@ export interface StageRatio {
   h: number;
 }
 
-/** 画幅表（原型 data.js `ratios`，「原始」另算）：短边不变换长边，与检查器的画幅同一种换法（`ratioCanvas`）。 */
+/** Aspect-ratio table (`ratios` in the prototype's data.js; “Original” is handled separately): the short side stays fixed and the long side is derived, the same way the inspector's aspect ratio works (`ratioCanvas`). */
 export const STAGE_RATIOS: readonly StageRatio[] = [
   { key: '16:9', w: 16, h: 9 },
   { key: '9:16', w: 9, h: 16 },
@@ -26,14 +25,14 @@ export const STAGE_RATIOS: readonly StageRatio[] = [
 ];
 export const ORIGINAL_RATIO = 'original';
 
-/** 引擎收的画布边长上限（crates/video-engine `MAX_CANVAS_SIDE`）。 */
+/** Maximum canvas side length the engine accepts (`MAX_CANVAS_SIDE` in crates/video-engine). */
 export const CANVAS_SIDE_MAX = 16_384;
 
 type Size = { width: number; height: number };
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
 
-/** 「原始」：主媒体里第一段视频的显示尺寸；没有视频（纯音频、图片、空的）时 null，菜单里这一档灰着。 */
+/** “Original”: the display size of the first video in the main media; null when there is no video (audio only, image, or empty), and the menu entry is greyed out. */
 export function sourceSize(sequence: Sequence, assets: Record<Id, AssetRecord>): Size | null {
   for (const media of primaryMedia(sequence)) {
     if (media.kind !== 'video') continue;
@@ -43,7 +42,7 @@ export function sourceSize(sequence: Sequence, assets: Record<Id, AssetRecord>):
   return null;
 }
 
-/** 画布现在是哪一档：表里的优先（钮上写比例比写「原始」有用），都不是再看是不是原始比例；都不是 null（自定义）。 */
+/** Which preset the canvas currently matches: entries in the table take priority (showing the ratio on the button is more useful than showing “Original”); if none match, check whether it matches the original ratio; if neither, null (custom). */
 export function stageRatioOf(canvas: Size, original: Size | null): string | null {
   const ratio = canvas.width / canvas.height;
   const named = STAGE_RATIOS.find((r) => near(r.w / r.h, ratio));
@@ -51,7 +50,7 @@ export function stageRatioOf(canvas: Size, original: Size | null): string | null
   return original && near(original.width / original.height, ratio) ? ORIGINAL_RATIO : null;
 }
 
-/** 钮上的字：表里的写那一档；别的约成最简整数比，约不小（如 1778:1000）写成 `1.78:1`。 */
+/** Button label: entries in the table use their preset label; anything else is reduced to the simplest integer ratio, and if reducing does not make the numbers much smaller (e.g. 1778:1000), it is written as `1.78:1`. */
 export function ratioText(canvas: Size): string {
   const named = STAGE_RATIOS.find((r) => near(r.w / r.h, canvas.width / canvas.height));
   if (named) return named.key;
@@ -66,7 +65,7 @@ export function ratioText(canvas: Size): string {
 
 const trim = (n: number) => String(Math.round(n * 100) / 100);
 
-/** 选一档要换成的画布；「原始」没有视频时 null。 */
+/** The canvas to switch to when a preset is picked; null for “Original” when there is no video. */
 export function stageRatioCanvas(canvas: Size, key: string, original: Size | null): Size | null {
   if (key === ORIGINAL_RATIO) return original ? ratioCanvas(canvas, original.width, original.height) : null;
   const ratio = STAGE_RATIOS.find((r) => r.key === key);
@@ -75,21 +74,21 @@ export function stageRatioCanvas(canvas: Size, key: string, original: Size | nul
 
 export type CustomRatio = { ok: true; canvas: Size } | { ok: false; reason: 'invalid' | 'tooLong' };
 
-/** 自定义画幅（原型「自定义…」对话框的两个数）：都要是正数；短边不变换出来的长边不能超过引擎的上限。 */
+/** Custom aspect ratio (the two numbers in the prototype's “Custom…” dialog): both must be positive; the long side derived from the unchanged short side must not exceed the engine limit. */
 export function customRatio(canvas: Size, w: number, h: number): CustomRatio {
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return { ok: false, reason: 'invalid' };
   const next = ratioCanvas(canvas, w, h);
   return next.width > CANVAS_SIDE_MAX || next.height > CANVAS_SIDE_MAX ? { ok: false, reason: 'tooLong' } : { ok: true, canvas: next };
 }
 
-/** 竖幅：平台安全区只对它有意义（原型 model-shorts.js `isPortrait`）。 */
+/** Portrait: platform safe zones only apply to this case (`isPortrait` in the prototype's model-shorts.js). */
 export function isPortrait(canvas: Size): boolean {
   return canvas.height > canvas.width;
 }
 
-// ---- 平台安全区（原型 model-shorts.js `SAFE` / `zones` / `safeBox`）----
+// ---- Platform safe zones (`SAFE` / `zones` / `safeBox` in the prototype's model-shorts.js) ----
 
-/** 竖屏平台的界面遮住的地方，占画面的百分比。原型那边是唯一的数字来源，改要两边一起改。 */
+/** Areas covered by the platform UI on portrait screens, as a percentage of the frame. The prototype is the only source of these numbers; change both sides together. */
 export const SAFE_AREA = { top: 8, right: 18, bottom: 24, side: 6 } as const;
 
 export type SafeZoneKey = 'top' | 'right' | 'bottom';
@@ -100,7 +99,7 @@ export interface SafeRect {
   h: number;
 }
 
-/** 三块遮挡区：顶部状态栏、右侧按钮列、底部文案与评论。右侧那一列夹在上下两块之间，不重叠。 */
+/** Three covered areas: the top status bar, the right-hand button column, and the bottom caption and comments. The right column sits between the top and bottom areas and does not overlap them. */
 export function safeZones(): Array<SafeRect & { key: SafeZoneKey }> {
   const { top, right, bottom } = SAFE_AREA;
   return [
@@ -110,7 +109,7 @@ export function safeZones(): Array<SafeRect & { key: SafeZoneKey }> {
   ];
 }
 
-/** 虚线框：不被挡住、放字放人都安全的那块。 */
+/** Dashed box: the area that is not covered, safe for text and people. */
 export function safeBox(): SafeRect {
   const { top, right, bottom, side } = SAFE_AREA;
   return { x: side, y: top, w: 100 - side - right, h: 100 - top - bottom };

@@ -17,7 +17,7 @@ import { pl } from './tools-transcribe.pl.ts';
 import { tr } from './tools-transcribe.tr.ts';
 import { vi } from './tools-transcribe.vi.ts';
 
-/** 转录工具的文案（译文在 `tools-transcribe.<语言>.ts`）。 */
+/** Copy for the transcription tool (translations are in `tools-transcribe.<language>.ts`). */
 const en = {
   mediaFormats: 'MP4, MOV, MP3, WAV, M4A',
   notInstalled: 'Not installed',
@@ -32,31 +32,31 @@ export type ToolsTranscribeMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 工具 › 转录（设计稿 tool-transcribe.jsx）的语音模型与文件判断：本机 / 在线、模型、语言，认不认这份文件。
- * 提交走 `transcribe` 流程（model/tool-runs.ts `transcribeParams`）：本机文件新建一个视频，或写进 Space 里的视频。
+ * Tools › Transcribe (design mockup tool-transcribe.jsx): speech model and file checks: local or online, model, language, and whether this file is accepted.
+ * Submission goes through the `transcribe` flow (model/tool-runs.ts `transcribeParams`): a local file creates a new video, or is written into a video in the Space.
  */
 
 export type TranscribeOption = ToolModelOption<TranscribeModelInfo>;
 export type TranscribeMode = 'local' | 'cloud';
 
-/** 拖放区下面那行支持的格式（设计稿原文）。 */
+/** The line of supported formats below the drop zone (wording as in the design mockup). */
 export function mediaFormats(): string {
   return M.mediaFormats;
 }
 
-/** 认不认这份文件：Space 分类里的视频或音频。 */
+/** Whether this file is accepted: videos or audio in the Space category. */
 export function isTranscribable(fileName: string): boolean {
   const kind = kindOfFileName(fileName);
   return kind === 'video-file' || kind === 'audio';
 }
 
-/** 路径的最后一段。 */
+/** The last segment of the path. */
 export function baseName(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
 }
 
-/** 本机的语音识别模型：`local` Provider 下的模型包；不可用的（没装好、停用）也列，标「未安装」。 */
+/** Local speech recognition models: model packs under the `local` provider. Unavailable ones (not installed properly, or disabled) are listed too, marked 「未安装」 (not installed). */
 function localOptions(view: ModelCapabilitiesView): TranscribeOption[] {
   return view.transcribe.providers
     .filter((p) => p.kind === 'local' || p.providerId === LOCAL_PROVIDER)
@@ -82,19 +82,19 @@ function localOptions(view: ModelCapabilitiesView): TranscribeOption[] {
     );
 }
 
-/** 这种转录方式下的模型：本地是本机的模型包，云端是在线服务商的每只模型（没连上的也全列，标「未连接」）。 */
+/** Models for this transcription method: for local, the model packs on this machine; for cloud, every model from the online provider (ones not connected are listed too, marked 「未连接」 (not connected)). */
 export function transcribeOptions(view: ModelCapabilitiesView, mode: TranscribeMode): TranscribeOption[] {
   return mode === 'local' ? localOptions(view) : cloudModelOptions(view, 'transcribe', true);
 }
 
-/** Picker 里的一项：云端带服务商名，不能用的带「未连接 / 未安装」（设计稿原文）。 */
+/** An item in the picker: cloud items carry the provider name; unusable items carry 「未连接 / 未安装」 (not connected / not installed) (wording as in the design mockup). */
 export function transcribeOptionLabel(option: TranscribeOption, mode: TranscribeMode): string {
   const name = mode === 'cloud' ? `${option.provider} · ${option.label}` : option.label;
   if (option.usable) return name;
   return `${name} · ${mode === 'cloud' ? M.notConnected : M.notInstalled}`;
 }
 
-/** 进页时的方式与模型：生效的默认值在哪边就落在哪边，没有时本地优先。 */
+/** The method and model on opening the page: the active default decides which side it lands on; when there is none, local takes priority. */
 export function initialTranscribe(view: ModelCapabilitiesView, saved: { mode: TranscribeMode; model: string | null } | null): {
   mode: TranscribeMode;
   model: string | null;
@@ -112,12 +112,12 @@ export function initialTranscribe(view: ModelCapabilitiesView, saved: { mode: Tr
   return { mode, model: initialModelKey(transcribeOptions(view, mode), null, effective) };
 }
 
-/** 换转录方式：落到这一边第一只能用的（没有时第一只），语言回到自动（设计稿 `switchMode`）。 */
+/** Switching the transcription method lands on the first usable model on that side (or the first one, if none is usable), and the language returns to automatic (design mockup `switchMode`). */
 export function switchMode(view: ModelCapabilitiesView, mode: TranscribeMode): { mode: TranscribeMode; model: string | null; language: string } {
   return { mode, model: initialModelKey(transcribeOptions(view, mode), null, view.transcribe.effective), language: '' };
 }
 
-/** 模型下面那句现状（设计稿原文）。 */
+/** The status sentence below the model (wording as in the design mockup). */
 export function transcribeStatus(option: TranscribeOption | null, mode: TranscribeMode): string {
   if (mode === 'cloud') {
     if (!option) return M.noCloud;

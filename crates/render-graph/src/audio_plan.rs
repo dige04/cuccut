@@ -1,22 +1,14 @@
-//! 声音的区间计划（架构设计 §9.13 的音频导出）：一段序列范围里有哪些声音、各自取素材的哪一段、放在时间线的哪里、
-//! 增益与淡变是多少。它是 [`plan_frame`](super::plan_frame) 里 `voices` 的区间形式：哪些实例发声、增益、淡变与速度
-//! 都按同一套规则（轨道静音与 Solo、实例停用、`mix.muted`、内嵌音频的开关、合成的预渲染替身），只是不逐帧求，
-//! 而是给出每个实例在范围里的整段。混音由后端按计划去做（导出时是 ffmpeg），这里不解码、不混音。
+//! The interval plan for sound (the audio export in architecture design §9.13): which sounds are in a sequence range, which segment of source material each one takes, where it sits on the timeline, and its gain and fades. It is the interval form of `voices` in [`plan_frame`](super::plan_frame): which instances sound, gain, fades and speed all follow the same rules (track mute and Solo, instance disable, `mix.muted`, the embedded-audio switch, the pre-rendered stand-in for compositions), except that instead of being evaluated per frame, it gives each instance's whole span within the range. Mixing is done by the backend according to the plan (ffmpeg at export time); nothing is decoded or mixed here.
 //!
-//! 闪避与转场的声音交叉淡化也是同一份实现：闪避的压低量来自 [`DuckingEnvelope`]（给出折点，后端在折点之间线性插值），
-//! 交叉淡化的窗口来自 [`transition_window`](super::transition_window)，曲线与逐帧计划相同（等功率，线性进度）；
-//! 窗口里另一侧在自己区间之外的声音按它的时间映射取 handles，是单独的一段（`handle`），不套它自己的淡入淡出。
+//! Ducking and the audio cross-fade of transitions use the same implementation: the ducking attenuation comes from [`DuckingEnvelope`] (which gives the breakpoints; the backend linearly interpolates between them), and the cross-fade window comes from [`transition_window`](super::transition_window). The curve is the same as in the per-frame plan (equal-power, linear progress). Within the window, sounds from the other side that lie outside its own interval take handles according to its time mapping; these form a separate segment (`handle`) that does not apply its own fade in/out.
 //!
-//! 音量包络（`mix.envelope`、`embeddedAudio.envelope`、合成的 `audio.envelope`）取代实例的 `volume`，与逐帧计划用同一个
-//! 求值（[`VolumeCurve`]）：有包络的段 `gain_db` 是 0，音量在 `envelope` 的折点里（线性倍数，折点之间线性，两端外延）。
+//! Volume envelopes (`mix.envelope`, `embeddedAudio.envelope`, the synthesized `audio.envelope`) replace the instance's `volume`, and are evaluated with the same method as the per-frame plan ([`VolumeCurve`]): for a segment with an envelope, `gain_db` is 0, and the volume is in the envelope's breakpoints (linear multiplier, linear between breakpoints, extended at both ends).
 //!
-//! 与逐帧计划一致的取舍：
-//! - 按文稿触发的闪避规则（`trigger.kind = speech`）要有效词流，由调用方用 [`speech_activity`] 求出、交给
-//!   [`plan_audio_with_speech`]；词流为空时不压低，被压低的实例各报一条 `DUCK_NO_SPEECH`。预览把同一份词流交给逐帧计划
-//!   （[`plan_frame_with_speech`](super::plan_frame_with_speech)），两边在同一时刻的压低量相同；
-//! - 交叉淡化要的 handles 超出素材的两端时，超出的部分没有声音，报出来（`CROSSFADE_HANDLE_SHORT`）；
-//! - 定格（`TimeMap::Hold`）的实例逐帧计划给出速度 0，预览在速度 0 时不出声，这里不给出区间，同样报出来；
-//! - 素材没有音频流（例如没有声音的视频）时没有可混的声音，不给出区间，报出来。
+//! Trade-offs consistent with the per-frame plan:
+//! - Ducking rules triggered by the script (`trigger.kind = speech`) need the effective word stream, which the caller computes with [`speech_activity`] and passes to [`plan_audio_with_speech`]. When the word stream is empty there is no attenuation, and each instance that would have been attenuated reports one `DUCK_NO_SPEECH`. The preview passes the same word stream to the per-frame plan ([`plan_frame_with_speech`](super::plan_frame_with_speech)), so the attenuation at any given moment is identical on both sides;
+//! - When the handles a cross-fade needs extend past the ends of the material, the part that extends past has no sound, and this is reported (`CROSSFADE_HANDLE_SHORT`);
+//! - Instances in a freeze (`TimeMap::Hold`) get speed 0 in the per-frame plan, and the preview is silent at speed 0; here no interval is given, and this is likewise reported;
+//! - When the material has no audio stream (for example a video without sound), there is nothing to mix and no interval is given; this is reported.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -33,7 +25,7 @@ use crate::ducking::DuckingEnvelope;
 use crate::envelope::VolumeCurve;
 use crate::text_plan::plan_text;
 
-/// 计划覆盖的序列范围 `[start, end)`：精确值与秒数。
+/// The sequence range `[start, end)` covered by the plan: exact value and seconds.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanRange {
@@ -57,15 +49,15 @@ impl PlanRange {
     }
 }
 
-/// 淡变：振幅在 `[start, end)` 里线性变化（淡入从 0 升到 1，淡出从 1 降到 0）。秒，相对范围的起点；可以落在区间之外
-/// （区间被范围裁过时，淡变照原来的位置算）。
+/// Fade: the amplitude changes linearly within `[start, end)` (fade-in rises from 0 to 1, fade-out falls from 1 to 0). In seconds, relative to the start of the range; it may fall outside the interval
+/// (when the interval has been clipped by the range, the fade is still computed at its original position).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct AudioFade {
     pub start: f64,
     pub end: f64,
 }
 
-/// 交叉淡化里的哪一侧：出场的一侧乘 cos(p·π/2)，入场的一侧乘 sin(p·π/2)。
+/// Which side of a cross-fade: the outgoing side is multiplied by cos(p·π/2), the incoming side by sin(p·π/2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CrossfadeRole {
@@ -73,8 +65,8 @@ pub enum CrossfadeRole {
     Incoming,
 }
 
-/// 转场的声音交叉淡化（等功率，格式规范 §3.9）：p 是 `[start, end)` 里的线性进度（不经缓动），窗口之前夹到 0、之后夹到 1。
-/// 秒，相对范围的起点。
+/// Sound cross-fade of a transition (equal-power, format spec §3.9): p is the linear progress within `[start, end)` (no easing applied); before the window it is clamped to 0, and after it to 1.
+/// In seconds, relative to the start of the range.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioCrossfade {
@@ -85,7 +77,7 @@ pub struct AudioCrossfade {
 }
 
 impl AudioCrossfade {
-    /// `t`（秒，相对范围的起点）这一刻的振幅系数。
+    /// The amplitude coefficient at the moment `t` (seconds, relative to the start of the range).
     pub fn amplitude(&self, t: f64) -> f64 {
         let p = ((t - self.start) / (self.end - self.start)).clamp(0.0, 1.0);
         let angle = p * std::f64::consts::FRAC_PI_2;
@@ -96,7 +88,7 @@ impl AudioCrossfade {
     }
 }
 
-/// 一个实例在范围里发声的一整段。
+/// The whole span during which an instance sounds within the range.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSegment {
@@ -104,37 +96,36 @@ pub struct AudioSegment {
     pub source: VoiceSource,
     pub asset: VersionRef,
     pub track_order: i64,
-    /// 在输出里的位置 `[start, end)`，秒，相对范围的起点。
+    /// Position in the output `[start, end)`, in seconds, relative to the start of the range.
     pub start: f64,
     pub end: f64,
-    /// `start` 这一刻取素材的哪一秒，以及之后每过一秒序列时间走多少秒源时间。
+    /// Which second of the material is taken at the moment `start`, and how many seconds of source time advance for each second of sequence time thereafter.
     pub source_start: f64,
     pub source_rate: f64,
-    /// 实例的增益（不含淡变）。有音量包络时是 0：音量在 `envelope` 里。
+    /// The instance's gain (excluding fades). When there is a volume envelope it is 0: the volume lives in `envelope`.
     pub gain_db: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fade_in: Option<AudioFade>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fade_out: Option<AudioFade>,
-    /// 这一段所在的转场交叉淡化（一个实例可以同时是一个转场的入场和另一个转场的出场）。
+    /// The transition cross-fade this segment belongs to (one instance can be both the incoming side of one transition and the outgoing side of another).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub crossfades: Vec<AudioCrossfade>,
-    /// 闪避压低量的折点 `[秒, dB]`（相对范围的起点）：折点之间线性，第一个之前是 0，最后一个之后保持最后的值；同一时刻两个
-    /// 折点是台阶（先左侧、再右侧的值）。只给覆盖这一段要用的折点；没有闪避时为空。压低量从增益里减去。
+    /// Breakpoints `[seconds, dB]` of the ducking attenuation (relative to the start of the range): linear between breakpoints, 0 before the first, and the last value is held after the last; when two
+    /// breakpoints share the same moment, it is a step (the value on the left first, then the value on the right). Only the breakpoints needed to cover this segment are given; empty when there is no ducking. The attenuation is subtracted from the gain.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ducking: Vec<(f64, f64)>,
-    /// 音量包络的折点 `[秒, 线性倍数]`（相对范围的起点）：折点之间线性，第一个之前取它的值，最后一个之后取最后的值
-    /// （[`envelope_at`]）。只给覆盖这一段要用的折点；没有包络时为空。包络取代实例的音量，乘在增益上。
+    /// Breakpoints `[seconds, linear multiplier]` of the volume envelope (relative to the start of the range): linear between breakpoints, the first breakpoint's value is used before it, and the last breakpoint's value after the last
+    /// ([`envelope_at`]). Only the breakpoints needed to cover this segment are given; empty when there is no envelope. The envelope replaces the instance's volume and is multiplied into the gain.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub envelope: Vec<(f64, f64)>,
-    /// 交叉淡化时在实例自己的区间之外取 handles 的一段：不套实例的淡入淡出。
+    /// A segment taking handles outside the instance's own interval during a cross-fade: the instance's fade in/out is not applied.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub handle: bool,
 }
 
 impl AudioSegment {
-    /// `t`（秒，相对范围的起点）这一刻的增益：实例的增益、音量包络、淡入淡出、交叉淡化与闪避都算进去。和逐帧计划的
-    /// `AudioVoice.gain_db` 同一个量（测试按它核对两份计划），振幅同样不低于 -100 dB。
+    /// The gain at the moment `t` (seconds, relative to the start of the range): includes the instance's gain, volume envelope, fade in/out, cross-fade and ducking. It is the same quantity as `AudioVoice.gain_db` in the per-frame plan (tests check the two plans against it), and the amplitude likewise is not below -100 dB.
     pub fn gain_db_at(&self, t: f64) -> f64 {
         let mut fade: f64 = 1.0;
         if let Some(f) = self.fade_in {
@@ -154,8 +145,8 @@ impl AudioSegment {
     }
 }
 
-/// 音量包络的折点在 `t` 的值（见 [`AudioSegment::envelope`]）：与 `timeline::duck::GainEnvelope::at` 同一口径。
-/// 没有折点时是 1。
+/// The value of the volume envelope's breakpoints at `t` (see [`AudioSegment::envelope`]): same convention as `timeline::duck::GainEnvelope::at`.
+/// It is 1 when there are no breakpoints.
 pub fn envelope_at(knots: &[(f64, f64)], t: f64) -> f64 {
     let Some(&(t0, first)) = knots.first() else {
         return 1.0;
@@ -163,7 +154,7 @@ pub fn envelope_at(knots: &[(f64, f64)], t: f64) -> f64 {
     if t <= t0 {
         return first;
     }
-    // 第一个时刻大于 t 的折点。
+    // The first breakpoint whose time is greater than t.
     let i = knots.partition_point(|&(at, _)| at <= t);
     let Some(&(t1, g1)) = knots.get(i) else {
         return knots[knots.len() - 1].1;
@@ -175,7 +166,7 @@ pub fn envelope_at(knots: &[(f64, f64)], t: f64) -> f64 {
     g0 + (g1 - g0) * ((t - t0) / (t1 - t0))
 }
 
-/// 折点之间线性插值（见 [`AudioSegment::ducking`]）。
+/// Linear interpolation between breakpoints (see [`AudioSegment::ducking`]).
 pub fn knots_at(knots: &[(f64, f64)], t: f64) -> f64 {
     let Some(i) = knots.iter().rposition(|&(at, _)| at <= t) else {
         return 0.0;
@@ -189,7 +180,7 @@ pub fn knots_at(knots: &[(f64, f64)], t: f64) -> f64 {
     }
 }
 
-/// 计划没有照做的东西：定格、没有音频流的素材、按文稿触发的闪避、不够的 handles。
+/// Things the plan did not carry out: freezes, material without an audio stream, ducking triggered by the script, and insufficient handles.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioPlanNote {
@@ -203,13 +194,12 @@ pub struct AudioPlan {
     pub sequence_id: Id,
     pub sequence_revision: Revision,
     pub range: PlanRange,
-    /// 按轨道 `order`、再按实例 ID 排（与逐帧计划的 `voices` 同序）。
+    /// Sorted by track `order`, then by instance ID (same order as `voices` in the per-frame plan).
     pub segments: Vec<AudioSegment>,
     pub notes: Vec<AudioPlanNote>,
 }
 
-/// 序列的精确长度：固定长度按帧；派生长度取所有实例的尾端，音频实例按采样级的尾端（格式规范 §2.10，纯音频导出不继承
-/// 视觉尾端的补帧）。
+/// The exact length of the sequence: a fixed length is in frames; a derived length takes the end of all instances, with audio instances using their sample-level end (format spec §2.10; pure audio export does not inherit the frame padding of the visual tail).
 pub fn sequence_end(sequence: &Sequence) -> Result<Ratio, PlanError> {
     let fps = checked_fps(sequence)?;
     if let DurationPolicy::Fixed { frames } = sequence.header.duration_policy {
@@ -226,7 +216,7 @@ pub fn sequence_end(sequence: &Sequence) -> Result<Ratio, PlanError> {
     Ok(end)
 }
 
-/// 导出范围：不给时是整条序列。范围的终点超过序列长度时截到序列长度；截完是空的就报 `EXPORT_RANGE_EMPTY`。
+/// Export range: when not given, the whole sequence. If the range end exceeds the sequence length, it is clipped to the sequence length; if it is empty after clipping, `EXPORT_RANGE_EMPTY` is reported.
 pub fn resolve_range(sequence: &Sequence, range: Option<(Ratio, Ratio)>) -> Result<(Ratio, Ratio), PlanError> {
     let end_of_sequence = sequence_end(sequence)?;
     let (start, end) = range.unwrap_or((Ratio::ZERO, end_of_sequence));
@@ -243,7 +233,7 @@ pub fn resolve_range(sequence: &Sequence, range: Option<(Ratio, Ratio)>) -> Resu
     Ok((start, end))
 }
 
-/// 一个发声的实例：它在序列上响的区间、取源的映射、增益与淡变。
+/// A sounding instance: the interval in which it sounds on the sequence, its source mapping, gain and fades.
 struct Voice<'a> {
     item_id: &'a Id,
     source: VoiceSource,
@@ -256,12 +246,9 @@ struct Voice<'a> {
     fade_out: Option<&'a MediaTime>,
 }
 
-/// 有效词流（视频格式规范 §5.7）在序列上的区间（秒，从序列开头算）：每份转写文档（`cuccut.speech/1`）按
-/// [`plan_text`] 投到序列上的词，剪掉的、定格的、不在时间线上的都不在里面。投不上序列的文档跳过。按文稿触发的闪避
-/// 以它为触发区间（§3.9）。
+/// Intervals (seconds, counted from the start of the sequence) of the effective word stream (video format spec §5.7) on the sequence: the words of each transcript document (`cuccut.speech/1`) projected onto the sequence by [`plan_text`]; words that were trimmed away, frozen, or not on the timeline are excluded. Documents that cannot be projected onto the sequence are skipped. Ducking triggered by the script uses these as its trigger intervals (§3.9).
 ///
-/// 在源素材时钟上的转写经播放它的素材的实例投影（按起点、再按 ID 排），不经字幕实例：字幕只显示一段时，
-/// 其余部分的说话照样触发闪避。
+/// Transcripts on the source material clock are projected through the instances of the material that plays them (sorted by start, then by ID), not through caption instances: when a caption only displays one segment, speech in the remaining parts still triggers ducking.
 pub fn speech_activity(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -273,8 +260,7 @@ pub fn speech_activity(
     Ok(intervals)
 }
 
-/// 每位说话人在序列上说话的区间（秒，从序列开头算）：有效词流（同 [`speech_activity`]）里写了 `speaker` 的词按说话人
-/// 分开，各自按开始时刻排。没有说话人的词不算。声波的 `speaker`（视频格式规范 §3.7）以它为准，预览与导出用同一份。
+/// The intervals (seconds, counted from the start of the sequence) during which each speaker talks on the sequence: words in the effective word stream (same as [`speech_activity`]) that carry a `speaker` are split by speaker, and each group is sorted by start time. Words without a speaker are not counted. A waveform's `speaker` (video format spec §3.7) follows this, and the preview and export use the same data.
 pub fn speaker_activity(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -292,7 +278,7 @@ pub fn speaker_activity(
     Ok(speakers)
 }
 
-/// 有效词流里的每个词：说话人与它在序列上的区间（`end > start` 的才给）。
+/// Each word in the effective word stream: its speaker and its interval on the sequence (only given when `end > start`).
 fn for_each_spoken_word(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -339,12 +325,12 @@ fn for_each_spoken_word(
     Ok(())
 }
 
-/// 序列 `sequence_id` 在 `range`（序列时间）里的声音，按文稿触发的闪避当作没有词流（见 [`plan_audio_with_speech`]）。
+/// The sound of sequence `sequence_id` within `range` (sequence time); script-triggered ducking is treated as having no word stream (see [`plan_audio_with_speech`]).
 pub fn plan_audio(video: VideoView<'_>, sequence_id: &str, range: Option<(Ratio, Ratio)>) -> Result<AudioPlan, PlanError> {
     plan_audio_with_speech(video, sequence_id, range, &[])
 }
 
-/// 序列 `sequence_id` 在 `range`（序列时间）里的声音。`speech` 是 [`speech_activity`] 求出的有效词流区间。
+/// The sound of sequence `sequence_id` within `range` (sequence time). `speech` is the effective word stream intervals computed by [`speech_activity`].
 pub fn plan_audio_with_speech(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -363,7 +349,7 @@ pub fn plan_audio_with_speech(
 
     let mut segments: Vec<AudioSegment> = Vec::new();
     let mut notes: Vec<AudioPlanNote> = Vec::new();
-    // 按文稿触发的闪避：词流为空时不压低，报 `DUCK_NO_SPEECH`。
+    // Ducking triggered by the script: when the word stream is empty there is no attenuation, and `DUCK_NO_SPEECH` is reported.
     let speech_rules: Vec<_> = sequence
         .ducking
         .iter()
@@ -501,9 +487,7 @@ fn has_audio(video: &VideoView<'_>, asset: &VersionRef) -> bool {
         .is_some_and(|revision| revision.audio.is_some())
 }
 
-/// 实例的音量在 `[start, end)`（序列时间）这一段怎么给：没有包络时是 `volume` 折成的 dB 与空折点；有包络时增益是 0 dB，
-/// 折点取包络烘焙出的折线里覆盖这一段要用的那些，换成相对范围起点的秒。`bounds` 是实例自己的区间（包络的局部时钟与
-/// 百分比按它算）。
+/// How the instance's volume is given for the segment `[start, end)` (sequence time): without an envelope it is the `volume` converted to dB with empty breakpoints; with an envelope the gain is 0 dB, and the breakpoints are those from the envelope's baked polyline that cover this segment, converted to seconds relative to the start of the range. `bounds` is the instance's own interval (the envelope's local clock and percentages are computed against it).
 fn volume_plan(
     volume: f64,
     points: &[EnvelopePoint],
@@ -524,13 +508,13 @@ fn volume_plan(
     let origin = since(bounds.0)?;
     let knots: Vec<(f64, f64)> = curve.points().iter().map(|&[t, g]| (origin + t, g)).collect();
     let (start, end) = (since(start)?, since(end)?);
-    // 从 `start` 之前（含）最后一个折点到 `end` 之后（含）第一个折点；两端外延，段落在折线之外时只留一个折点。
+    // From the last breakpoint at or before `start` to the first breakpoint at or after `end`; extended at both ends, and when the segment lies outside the polyline only one breakpoint is kept.
     let first = knots.iter().rposition(|&(t, _)| t <= start).unwrap_or(0);
     let last = knots.iter().position(|&(t, _)| t >= end).unwrap_or(knots.len() - 1);
     Ok((0.0, knots[first..=last.max(first)].to_vec()))
 }
 
-/// 实例在 `[start, end)`（序列时间）里受到的闪避：只留覆盖这一段要用的折点，换成相对范围起点的秒。
+/// The ducking the instance receives within `[start, end)` (sequence time): only the breakpoints needed to cover this segment are kept, converted to seconds relative to the start of the range.
 fn ducking_knots(
     sequence: &Sequence,
     item: &TimelineItem,
@@ -547,7 +531,7 @@ fn ducking_knots(
         return Ok(Vec::new());
     }
     let (start, end, origin) = (start.to_f64(), end.to_f64(), range_start.to_f64());
-    // 从 `start` 之前（含）最后一个折点到 `end` 之后（含）第一个折点；段落在包络之外时没有压低。
+    // From the last breakpoint at or before `start` to the first breakpoint at or after `end`; when the segment is outside the envelope there is no attenuation.
     let first = knots.iter().rposition(|&(t, _)| t <= start).unwrap_or(0);
     let last = knots.iter().position(|&(t, _)| t >= end).unwrap_or(knots.len() - 1);
     let slice = &knots[first..=last.max(first)];
@@ -557,7 +541,7 @@ fn ducking_knots(
     Ok(slice.iter().map(|&(t, db)| (t - origin, db)).collect())
 }
 
-/// 求交叉淡化的段时要用到的序列上下文。
+/// The sequence context needed when computing cross-fade segments.
 struct Context<'a, 'v> {
     video: &'a VideoView<'v>,
     sequence: &'a Sequence,
@@ -574,8 +558,7 @@ impl Context<'_, '_> {
         Ok(t.checked_sub(self.range.0).ok_or_else(|| PlanError::overflow("t"))?.to_f64())
     }
 
-    /// 带 `audioCrossfade` 的两侧转场（逐帧计划的 `crossfade_voices`）：两侧自己的段带上曲线；窗口里在实例区间之外的部分
-    /// 另起一段，按实例的时间映射取 handles。两侧都启用、轨道发声才淡化；某一侧关掉了自带声音时那一侧没有声音。
+    /// Two-sided transitions with `audioCrossfade` (`crossfade_voices` in the per-frame plan): each side's own segment carries the curve; the part of the window outside the instance's interval starts a separate segment, taking handles according to the instance's time mapping. Cross-fading only happens when both sides are enabled and the track sounds; when one side has its own sound turned off, that side has no sound.
     fn crossfade_segments(&self, segments: &mut Vec<AudioSegment>, notes: &mut Vec<AudioPlanNote>) -> Result<(), PlanError> {
         for tr in self.sequence.transitions.iter().filter(|tr| tr.audio_crossfade) {
             let Some((Some(TimelineItem::Video(left)), Some(TimelineItem::Video(right)), start, end)) = transition_window(self.items, tr)
@@ -610,7 +593,7 @@ impl Context<'_, '_> {
                 {
                     continue;
                 }
-                // 窗口里不在实例自己区间的部分：出场的一侧在剪切点之后，入场的一侧在剪切点之前。
+                // The part of the window outside the instance's own interval: for the outgoing side it lies after the cut point; for the incoming side it lies before the cut point.
                 let (lo, hi) = match role {
                     CrossfadeRole::Outgoing => (cut.max(from), to),
                     CrossfadeRole::Incoming => (from, cut.min(to)),
@@ -627,7 +610,7 @@ impl Context<'_, '_> {
         Ok(())
     }
 
-    /// 一侧在自己区间之外的 handles：素材开头之前与结尾之后没有声音（段从源的 0 秒开始；结尾之后由后端补静音），报出来。
+    /// Handles on one side outside its own interval: there is no sound before the start of the material or after its end (the segment starts at source second 0; silence after the end is padded by the backend), and this is reported.
     fn handle(
         &self,
         side: &video_model::VideoItem,

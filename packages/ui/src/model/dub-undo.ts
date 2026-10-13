@@ -1,10 +1,7 @@
 import type { DocumentRecord, EditOperation, Id, Sequence } from '@cuccut/protocol';
 
 /**
- * 翻译配音收据上的「撤销这组配音」。Runtime 在一笔事务里应用一组配音（导入合成的音频、新增配音轨、带 `groupId` 的实例、
- * 配音计划文档，`mute` 时静音原句所在的实例，`duck` 时加一条闪避规则），所以首选撤掉那一笔（`videos.undo`）——它把轨道与
- * 文档一起撤掉。那一笔之后视频又改过、撤不了时（`UNDO_CONFLICT`）退回到能做到的部分：删掉这一组的实例（含分离出来的背景）、
- * 恢复这次静音的实例、去掉以配音轨为触发的闪避。协议里没有删轨道与删文档的操作，配音轨（空的）与配音计划文档会留下。
+ * “撤销这组配音” (undo this dub group) on the translated-dub receipt. The Runtime applies a dub group in one transaction: the imported synthesized audio, the new dub track, instances with `groupId`, the dub plan document, `mute` for the original-sentence instances, and `duck` for a ducking rule. So the preferred step is to undo that whole transaction (`videos.undo`), which removes the track and the document together. If the video has changed since and the undo is refused (`UNDO_CONFLICT`), it falls back to what can still be done: delete this group's instances (including the separated background), restore the instances this dub muted, and remove the ducking triggered by the dub track. The protocol has no operation to delete a track or a document, so the (empty) dub track and the dub plan document are left behind.
  */
 
 export const DUB_EXTENSION = 'cuccut.dub';
@@ -12,7 +9,7 @@ export const DUB_EXTENSION = 'cuccut.dub';
 type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** 写入配音计划的那一笔事务：文档最早一个版本的 `createdBy`（应用配音时写入，之后就地改的版本更晚）。 */
+/** The transaction that wrote the dub plan: the `createdBy` of the document's earliest version (written when the dub was applied; later in-place edits are later versions). */
 export function planTransaction(record: Pick<DocumentRecord, 'revisions'> | undefined): Id | null {
   if (!record) return null;
   let first: { createdAt: string; createdBy: Id } | null = null;
@@ -23,7 +20,7 @@ export function planTransaction(record: Pick<DocumentRecord, 'revisions'> | unde
   return first?.createdBy ?? null;
 }
 
-/** 配音计划里记着的、这次静音的实例（之前已经静音的不在里面）。 */
+/** The instances muted by this action, recorded in the dub plan (those already muted before are not in it). */
 export function mutedItemsOf(planBody: unknown): Id[] {
   if (!isObject(planBody) || !isObject(planBody.extensions)) return [];
   const own = planBody.extensions[DUB_EXTENSION];
@@ -31,7 +28,7 @@ export function mutedItemsOf(planBody: unknown): Id[] {
   return own.mutedItemIds.filter((id): id is Id => typeof id === 'string' && id !== '');
 }
 
-/** 实例是不是这一组配音的（配音与分离出来的背景都带 `extensions['cuccut.dub'].groupId`）。 */
+/** Whether an instance belongs to this dub group. Both the dub and the separated background carry `extensions['cuccut.dub'].groupId`. */
 export function inDubGroup(item: { extensions?: Record<string, unknown> }, groupId: string): boolean {
   const own = item.extensions?.[DUB_EXTENSION];
   return isObject(own) && own.groupId === groupId;
@@ -39,15 +36,14 @@ export function inDubGroup(item: { extensions?: Record<string, unknown> }, group
 
 export interface FallbackUndo {
   operations: EditOperation[];
-  /** 删掉的实例、恢复声音的实例、去掉的闪避规则各几个。 */
+  /** The counts of deleted instances, instances whose sound was restored, and ducking rules removed. */
   removed: number;
   unmuted: number;
   ducking: number;
 }
 
 /**
- * 撤不了那一笔时的部分撤销：一笔事务里删掉这一组的实例（锁着的照样列上，整笔被拒时编辑器给原话）、对还静音着的
- * 「这次静音的」实例恢复声音（用户已经自己恢复过的不动）、去掉以这条配音轨为触发的闪避。什么都不剩时操作为空。
+ * Partial undo when the whole transaction cannot be undone: in one transaction, delete this group's instances (locked ones are still listed; if the whole transaction is rejected, the editor gives the reason), restore the sound of instances still muted by this action (the ones the user already restored by hand are left alone), and remove the ducking triggered by this dub track. If nothing is left, the operation is empty.
  */
 export function fallbackUndoOperations(sequence: Sequence, group: { groupId: string; trackId: Id }, mutedItemIds: readonly Id[]): FallbackUndo {
   const operations: EditOperation[] = [];

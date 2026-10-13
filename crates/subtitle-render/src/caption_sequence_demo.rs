@@ -1,6 +1,6 @@
-//! 画廊「动态排版」卡的真跑小样：三句样例词序列过同一条
-//! [`compile_caption_sequence`] / [`CaptionSequencePlan::sample`]，用真字形画出来。
-//! 缩略图与舞台是同一套排版 / 镜头，卡上看到的就是套上去会得到的。
+//! Live sample for the gallery's “Dynamic typography” card: three sample word sequences run through the same
+//! [`compile_caption_sequence`] / [`CaptionSequencePlan::sample`], drawn with real glyphs.
+//! The thumbnail and the stage use the same typography and camera, so what the card shows is what you get when applied.
 use render_raster::fonts::TextEngine;
 use tiny_skia::{FillRule, Pixmap, Transform};
 
@@ -10,15 +10,15 @@ use crate::{
     caption_sequence_layout_tokens, compile_caption_sequence, paint, parse_css_color,
 };
 
-/// 小样一圈的时长（秒）：三句念完再留一拍看总览。
+/// Duration of one loop of the sample (seconds): the three sentences are read through, then one more beat to show the overview.
 pub const LOOP_SECONDS: f64 = 6.4;
-/// 静止小样取这一刻（第二句念到一半，镜头刚落定）。
+/// The still sample is taken at this moment (the second sentence is halfway through, and the camera has just settled).
 pub const STILL_SECONDS: f64 = 2.4;
 
 const FONT: &str = "Arial";
 const WEIGHT: u16 = 700;
 
-/// 三句样例（词级时间），`beat` 是主角词。
+/// Three sample sentences (word-level timing); `beat` is the hero word.
 fn demo_cues() -> (Vec<CaptionSequenceCue>, Vec<(String, SeqRole)>) {
     let script: [(&str, &[(&str, f64, f64)]); 3] = [
         (
@@ -73,7 +73,7 @@ fn demo_cues() -> (Vec<CaptionSequenceCue>, Vec<(String, SeqRole)>) {
     (cues, roles)
 }
 
-/// 编译小样计划（画布 `width × height`，`seed` 与卡片 / 样式同一个种子）。
+/// Compiled sample plan (canvas `width × height`, `seed` is the same seed as the card / style).
 pub fn plan(text: &mut TextEngine, width: u32, height: u32, seed: u64) -> CaptionSequencePlan {
     let (cues, roles) = demo_cues();
     let input = CaptionSequenceInput {
@@ -100,7 +100,7 @@ pub fn plan(text: &mut TextEngine, width: u32, height: u32, seed: u64) -> Captio
     compile_caption_sequence(&input, &env, &mut measure)
 }
 
-/// 画 `seconds` 那一帧。`palette` 是 `[primary, accent, secondary, background]` 的 CSS 色。
+/// Draws the frame at `seconds`. `palette` is the CSS colours `[primary, accent, secondary, background]`.
 pub fn render(
     text: &mut TextEngine,
     plan: &CaptionSequencePlan,
@@ -162,7 +162,7 @@ pub fn render(
     Some(image)
 }
 
-/// 默认种子（与画廊卡 / 描述符同一个）。
+/// Default seed (the same as the gallery card / descriptor).
 pub fn default_seed() -> u64 {
     CAPTION_SEQUENCE_DEFAULT_SEED
 }

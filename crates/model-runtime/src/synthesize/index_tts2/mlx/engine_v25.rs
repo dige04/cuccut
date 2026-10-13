@@ -1,17 +1,17 @@
-//! `IndexTts25` 引擎：IndexTTS 2.5（`mlx-community/IndexTTS-2.5-fp16`）接到 `TtsEngine`。
+//! `IndexTts25` engine: connects IndexTTS 2.5 (`mlx-community/IndexTTS-2.5-fp16`) to `TtsEngine`.
 //!
-//! 对照官方 `IndexTTS2.infer_v2_5`，与 2.0 的差异：
-//! - 文本：60 509 项 tiktoken 多语言词表（zh / en / ja / es / ar），每段带 `<|lang|> `
-//!   前缀，语言 id 另经 `lang_embedding` 加到文本位置（[`crate::synthesize::index_tts2::v25::frontend`]）。
-//! - GPT 条件：`[spk_emb_proj(CAM++ 风格) + 情感向量, 0, 0]`，没有音色 conformer /
-//!   perceiver 与 speed 嵌入，也不再把 GPT latent 叠进 S2Mel 内容特征。
-//! - 语义码经 `codec.decode`（码本 → Vocos 骨干 → ×2 上采样）得到 50 Hz 内容特征，
-//!   长度规整到 `floor(2N × 1.72 / 语速)` 帧（`--speed`，缺省 1）；提示条件直接由参考音频的 w2v-BERT 隐状态规整，
-//!   不经 MaskGCT 量化。
+//! Corresponds to the official `IndexTTS2.infer_v2_5`; differences from 2.0:
+//! - Text: a 60,509-entry tiktoken multilingual vocabulary (zh / en / ja / es / ar); each segment carries a `<|lang|> `
+//!   prefix, and the language id is added to the text positions via `lang_embedding` ([`crate::synthesize::index_tts2::v25::frontend`]).
+//! - GPT conditioning: `[spk_emb_proj(CAM++ style) + emotion vector, 0, 0]`; there is no voice conformer / perceiver or speed embedding, and the GPT latent is no longer
+//!   added to the S2Mel content features.
+//! - The semantic codes go through `codec.decode` (codebook → Vocos backbone → ×2 upsampling) to give 50 Hz content features, length-normalized to
+//!   `floor(2N × 1.72 / speaking rate)` frames (`--speed`, default 1). The prompt conditioning is normalized directly from the reference audio's w2v-BERT
+//!   hidden states, without MaskGCT quantization.
 //!
-//! w2v-BERT / CAM++ / BigVGAN / 统计量与情感特征表和 2.0 逐字节相同，不在 2.5 的仓库里：模型包另带一个
-//! `aux` 组件（整个 `aufklarer/IndexTTS2-MLX-fp16` 仓库，与 IndexTTS2 模型包共用一份），从它的清单里取
-//! `aux/` 下的权重与三个统计量文件。
+//! w2v-BERT / CAM++ / BigVGAN / statistics and the emotion feature tables are byte-for-byte identical to 2.0 and are not in the 2.5 repository: the model package
+//! has an extra `aux` component (the whole `aufklarer/IndexTTS2-MLX-fp16` repository, shared with the IndexTTS2 model package), from whose manifest the weights under
+//! `aux/` and the three statistics files are taken.
 
 use super::conditioning::ReferenceConditioning;
 use super::engine_impl::{
@@ -44,15 +44,15 @@ pub struct IndexTts25 {
     s2mel: S2Mel,
     codec: CodecDecoderV25,
     aux: SharedAux,
-    /// 最后一个字段：权重先析构，再等 GPU 并清缓存。
+    /// Last field: the weights are dropped first, then wait for the GPU and clear the cache.
     _cache_guard: ModelMemoryCacheGuard,
 }
 
 impl IndexTts25 {
-    /// GPT → S2Mel → 语义码本解码器 → w2v-BERT → CAM++ → BigVGAN → 统计量 / 情感特征表。
+    /// GPT → S2Mel → semantic codebook decoder → w2v-BERT → CAM++ → BigVGAN → statistics / emotion feature tables.
     ///
-    /// `model` 是 2.5 的主模型组件，必须带 `config.yaml`（没有它认不出 tiktoken 分词器）；`aux` 是辅助权重组件
-    /// （IndexTTS2 仓库）。缺文件是 `MODEL_NOT_INSTALLED`，在碰 Metal 之前就报。
+    /// `model` is 2.5's main model component and must include `config.yaml` (without it the tiktoken tokenizer cannot be identified); `aux` is the auxiliary weights
+    /// component (from the IndexTTS2 repository). A missing file is `MODEL_NOT_INSTALLED`, reported before Metal is touched.
     pub fn load(model: &VerifiedFiles, aux: &VerifiedFiles) -> Result<Self> {
         Self::load_with_progress(model, aux, &mut |_| true)
     }
@@ -70,7 +70,7 @@ impl IndexTts25 {
         let aux_files = SharedAuxFiles::resolve(aux)?;
 
         configure_memory_cache()?;
-        // 先建守卫：后面任何一步加载失败，展开时也会等 GPU 并清掉已分配的缓存。
+        // Create the guard first: if any later step fails to load, unwinding will also wait for the GPU and clear the cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
         let tokenizer = TiktokenTokenizer::load(vocabulary).with_context(|| format!("加载 {ENGINE_NAME} 分词器 {}", config.bpe_model))?;
 
@@ -108,7 +108,7 @@ impl IndexTts25 {
         })
     }
 
-    /// 每段：GPT 生成语义码 → 码本解码成 50 Hz 内容特征 → 长度规整 → 流匹配梅尔 → BigVGAN。
+    /// Per segment: GPT generates semantic codes → the codebook decodes them into 50 Hz content features → length normalization → flow-matched mel → BigVGAN.
     fn synthesize_segment(
         &self,
         text_tokens: &[i32],
@@ -143,7 +143,7 @@ impl TtsEngine for IndexTts25 {
         self.config.output_sample_rate()
     }
 
-    /// 模型自己没有说话人表；露出来的是随包的内置音色（`VoiceSpec::Preset` 的取值）。
+    /// The model itself has no speaker table; what is exposed is the built-in voices bundled with the package (the values of `VoiceSpec::Preset`).
     fn preset_speakers(&self) -> Vec<String> {
         crate::synthesize::voices::ids()
     }

@@ -1,11 +1,7 @@
-//! `program` 资产（规范 §6.5.3）：`ccut-compile` 把程序求值成每帧一份 SVG，这里
-//! 把它光栅成位图帧，经 [`crate::media::MediaStore`] 与动图同一条取帧路径供给。
+//! `program` asset (spec §6.5.3): `ccut-compile` evaluates the program into one SVG per frame. Here it is rasterized into bitmap frames, and supplied through the same frame-fetch path as animated images, via [`crate::media::MediaStore`].
 //!
-//! 求值器（QuickJS）是 `!Send` 的，`MediaStore` 却要跨线程移交；所以
-//! [`ProgramSource`] 本身只放可共享的只读部分，求值器按线程懒建、按源缓存在
-//! 线程局部表里（[`with_instance`]）。程序是逐帧纯函数，哪个线程画哪一帧结果都一样。
-//! 模块顶层每个求值器只跑一次、之后一直留着，所以作者在顶层存可变状态会破坏这一点：
-//! 加载期把首帧求值两次比对，不一致就报出来（[`ProgramSource::probe`]）。
+//! The evaluator (QuickJS) is `!Send`, but `MediaStore` must be handed across threads. So [`ProgramSource`] itself holds only the shareable, read-only part, and the evaluator is built lazily per thread and cached per source in a thread-local table ([`with_instance`]). A program is a pure function of the frame, so it does not matter which thread renders which frame; the result is the same.
+//! Each evaluator runs its module top level only once and is then kept alive, so an author who stores mutable state at the top level would break this. During loading, the first frame is evaluated twice and the results compared, and any mismatch is reported ([`ProgramSource::probe`]).
 
 use crate::plan::PreflightDiagnostic;
 use anyhow::{Result, anyhow, bail};
@@ -22,16 +18,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use tiny_skia::Pixmap;
 
-/// `asset("…")` 在 SVG 里写出的 `href` 前缀（运行时 `program.js` 的 `asset`）。
+/// The `href` prefix that `asset("…")` writes in SVG (the `asset` in the runtime's `program.js`).
 const ASSET_SCHEME: &str = "bcasset:";
 
-/// 每个线程最多同时留几个程序的求值器。一个求值器是一整个 JS 堆（几十 MB），
-/// 一份文档里的程序通常只有一两个。
+/// Maximum number of program evaluators kept alive per thread at once. An evaluator is an entire JS heap (tens of MB), and a document usually has only one or two programs.
 const INSTANCES_PER_THREAD: usize = 4;
 
 static NEXT_SERIAL: AtomicU64 = AtomicU64::new(1);
 
-/// 一条降级提示：运行时的提示码、最早在哪一帧碰到，以及加载期试渲时是否已经报过。
+/// One degradation hint: the runtime's hint code, the earliest frame where it was hit, and whether it was already reported during the trial render at load time.
 #[derive(Debug)]
 struct Degraded {
     warning: String,
@@ -39,8 +34,7 @@ struct Degraded {
     probed: bool,
 }
 
-/// 一个加载好的 `program` 资产：模块图、`files` 字节、声明的画布与帧表，以及排版
-/// 用的字体库。渲染期不做 I/O。
+/// A loaded `program` asset: the module graph, `files` bytes, declared canvas and frame table, and the font library used for typesetting. No I/O during rendering.
 pub struct ProgramSource {
     id: String,
     serial: u64,
@@ -52,10 +46,9 @@ pub struct ProgramSource {
     frames: u32,
     frame_starts_ms: Vec<i64>,
     fontdb: Arc<fontdb::Database>,
-    /// 字体库里的「最后手段」字体（macOS 的 `.LastResort`）：它给任何字符都画一个占位框，
-    /// 文档没登记字体、走系统字体时，缺字形落到它身上而不是字形号 0。
+    /// The "last resort" font in the font library (macOS `.LastResort`). It draws a placeholder box for any character, so when the document registers no fonts and the system font is used, missing glyphs fall to it rather than to glyph 0.
     last_resort: Vec<fontdb::ID>,
-    /// 渲染过的帧里碰到的降级提示（跨线程汇总，同一条只记一次）。
+    /// Degradation hints hit in rendered frames (aggregated across threads; each entry is recorded only once).
     degraded: Mutex<Vec<Degraded>>,
 }
 
@@ -106,12 +99,12 @@ impl ProgramSource {
         self.height
     }
 
-    /// `N + 1` 项帧起点表（毫秒），与动图 / Lottie 同一形状。
+    /// `N + 1` frame start-time table (milliseconds), the same shape as animated images and Lottie.
     pub fn frame_starts_ms(&self) -> &[i64] {
         &self.frame_starts_ms
     }
 
-    /// 一轮的时长（秒）。
+    /// Duration of one cycle (seconds).
     pub fn duration(&self) -> f64 {
         self.frame_starts_ms.last().copied().unwrap_or(0) as f64 / 1000.0
     }
@@ -120,12 +113,12 @@ impl ProgramSource {
         &self.bundle
     }
 
-    /// `ms` 落在第几帧（越界夹到首末帧）。
+    /// Which frame `ms` falls in (out-of-range values are clamped to the first or last frame).
     pub fn frame_index(&self, ms: i64) -> u32 {
         crate::source::frame_index(&self.frame_starts_ms, ms) as u32
     }
 
-    /// `ms` 所在帧的起点：同一帧窗口里的时刻画出来逐字节相同，缓存按它建键。
+    /// The start of the frame containing `ms`. Moments within the same frame window render byte-for-byte identically, so the cache is keyed by it.
     pub fn frame_start_ms(&self, ms: i64) -> i64 {
         crate::source::frame_start_ms(&self.frame_starts_ms, ms)
     }
@@ -141,22 +134,19 @@ impl ProgramSource {
         }
     }
 
-    /// 第 `frame` 帧的 SVG 文本。
+    /// SVG text of frame `frame`.
     pub fn svg(&self, frame: u32) -> Result<String> {
         with_instance(self, |instance| {
             instance.render_svg(&self.frame_args(frame))
         })
     }
 
-    /// 运行时在本线程最近求值的一帧里记下的降级提示（不支持的 CSS 等）。
+    /// Degradation hints noted on this thread during the most recent frame the runtime evaluated (unsupported CSS, etc.).
     pub fn warnings(&self) -> Vec<String> {
         with_instance(self, |instance| Ok(instance.warnings())).unwrap_or_default()
     }
 
-    /// 资源加载期的试渲：求值首帧并光栅一次，模块顶层之外的运行期错误（首帧就
-    /// 抛的异常、引用了没声明的文件）在加载期就报出来，降级提示并进 preflight。
-    /// 首帧再求值一次（不光栅）比对：两次不同说明模块顶层有跨帧的可变状态，
-    /// 单帧渲染和多线程整片会画出不同的画面。
+    /// Trial render during resource loading: evaluates and rasterizes the first frame once, so runtime errors other than those at module top level (exceptions thrown on the first frame, references to undeclared files) are reported at load time, and the degradation hints go into preflight. The first frame is then evaluated again (without rasterizing) and compared. If the two differ, the module top level holds mutable state across frames, and a single-frame render and a multi-threaded full render would produce different pictures.
     pub fn probe(&self) -> Result<Vec<PreflightDiagnostic>> {
         let (_, svg) = self.render_frame(0, None)?;
         if self.svg(0)? != svg {
@@ -172,8 +162,7 @@ impl ProgramSource {
             .collect())
     }
 
-    /// 试渲首帧之后、渲染中才碰到的降级提示（后段才用到的写法、缺字形），按最早
-    /// 出现的帧排序。加载期已经报过的不再重复；渲染结束后读。
+    /// Degradation hints hit during rendering, after the trial render of the first frame (constructs used only in later segments, missing glyphs), sorted by the earliest frame where they appear. Ones already reported during loading are not repeated. Read after rendering finishes.
     pub fn late_diagnostics(&self) -> Vec<PreflightDiagnostic> {
         let seen = self.degraded.lock().unwrap_or_else(|e| e.into_inner());
         let mut late: Vec<&Degraded> = seen.iter().filter(|entry| !entry.probed).collect();
@@ -210,14 +199,13 @@ impl ProgramSource {
         }
     }
 
-    /// 取 `ms` 所在帧。`target = None` 按声明的画布尺寸光栅，否则按目标像素
-    /// 尺寸重新排版光栅（矢量内容不经位图缩放）。这一帧的降级提示记进汇总。
+    /// Gets the frame at `ms`. `target = None` rasterizes at the declared canvas size; otherwise it re-lays out and rasterizes at the target pixel size (vector content is not scaled from a bitmap). Degradation hints for this frame are recorded into the aggregate.
     pub fn render(&self, ms: i64, target: Option<(u32, u32)>) -> Result<Pixmap> {
         let (pixmap, _) = self.render_frame(self.frame_index(ms), target)?;
         Ok(pixmap)
     }
 
-    /// 求值并光栅第 `frame` 帧，连同这一帧的 SVG 文本。
+    /// Evaluates and rasterizes frame `frame`, together with that frame's SVG text.
     fn render_frame(&self, frame: u32, target: Option<(u32, u32)>) -> Result<(Pixmap, String)> {
         let (svg, mut warnings) = with_instance(self, |instance| {
             let svg = instance.render_svg(&self.frame_args(frame))?;
@@ -234,8 +222,7 @@ impl ProgramSource {
         Ok((pixmap, svg))
     }
 
-    /// 光栅一帧，连同文字里没有任何字体能画的字符（画成了 .notdef 空框），以及
-    /// 字体库里找不到、改用缺省无衬线字体画的 `font-family`。
+    /// Rasterizes one frame. Also returns characters in the text that no font can draw (drawn as .notdef empty boxes), and `font-family` values not found in the font library, which were drawn with the default sans-serif font instead.
     fn rasterize(
         &self,
         frame: u32,
@@ -258,7 +245,7 @@ impl ProgramSource {
                 self.id
             )
         })?;
-        // asset() 的路径用 `..` 越出文档目录：只有求值时才知道，由这里报与 lint 同一个码
+        // An asset() path that uses `..` to escape the document directory is only known at evaluation time; it is reported here with the same code as lint
         let escaped = std::mem::take(&mut *escaped.lock().unwrap_or_else(|e| e.into_inner()));
         if let Some(first) = escaped.first() {
             let more = match escaped.len() {
@@ -307,9 +294,7 @@ impl ProgramSource {
     }
 }
 
-/// 按 `font-family` 列表选字体。usvg 的缺省做法是列表都落空时找 `serif`：严格字体库里
-/// 通常没有它（缺省是 Times New Roman），整段文字静默消失；有系统字体时又悄悄换成衬线体。
-/// 这里列表落空就用缺省无衬线字体（文档登记的第一个字体）画，并记下落空的字族列表。
+/// Selects a font from the `font-family` list. usvg's default behaviour, when every entry fails, is to look for `serif`. The strict font library usually does not have it (the default is Times New Roman), so the whole text silently disappears; when a system font is present, it is quietly swapped for a serif face. Here, if the list finds nothing, the default sans-serif font (the first font the document registered) is used, and the families that found nothing are recorded.
 fn font_selector(unmatched: Arc<Mutex<Vec<String>>>) -> usvg::FontSelectionFn<'static> {
     Box::new(move |font, db| {
         let declared = font
@@ -351,7 +336,7 @@ fn font_selector(unmatched: Arc<Mutex<Vec<String>>>) -> usvg::FontSelectionFn<'s
         if let Some(id) = query(&declared) {
             return Some(id);
         }
-        // `FontFamily` 的 Display 给具名字族加引号，消息里写裸名。
+        // The Display of `FontFamily` adds quotes around named families, so the message writes bare names.
         let families = font
             .families()
             .iter()
@@ -370,8 +355,7 @@ fn font_selector(unmatched: Arc<Mutex<Vec<String>>>) -> usvg::FontSelectionFn<'s
     })
 }
 
-/// 排版结果里没有真字形的字符：字形号 0（.notdef），或落到了「最后手段」字体上。
-/// 文档字体与内置字体都没有它，usvg 的逐字回退也找不到，画出来是空框，而且不会报错。
+/// Characters in the typeset result that have no real glyph: glyph ID 0 (.notdef), or ones that fell to the "last resort" font. Neither the document fonts nor the built-in fonts have them, and usvg's per-character fallback cannot find them either. They are drawn as empty boxes, with no error.
 fn missing_glyphs(group: &usvg::Group, last_resort: &[fontdb::ID], out: &mut Vec<char>) {
     for node in group.children() {
         match node {
@@ -398,8 +382,7 @@ fn missing_glyphs(group: &usvg::Group, last_resort: &[fontdb::ID], out: &mut Vec
     }
 }
 
-/// 给加载期错误标上资产名，诊断码仍留在最前面（`program-…: asset "x"：…`），
-/// 宿主按码分流不受影响。
+/// Tags a load-time error with the asset name and keeps the diagnostic code at the front (`program-…: asset "x": …`), so the host can dispatch on the code unaffected.
 pub fn tag_asset(id: &str, error: anyhow::Error) -> anyhow::Error {
     let text = format!("{error:#}");
     let tag = format!("asset \"{id}\"");
@@ -416,9 +399,8 @@ pub fn tag_asset(id: &str, error: anyhow::Error) -> anyhow::Error {
     }
 }
 
-/// `bcasset:` 引用从 `files` 取字节；其余 `href` 只认 data URI，磁盘路径一律不读。
-/// `asset()` 的路径用 `..` 越出文档目录的记进 `escaped`（报 `program-path-escape`），
-/// 其余取不到的记进 `missing`（报 `program-file-missing`）。
+/// `bcasset:` references take bytes from `files`. Other `href`s accept only data URIs, and disk paths are never read.
+/// `asset()` paths that use `..` to escape the document directory are recorded in `escaped` (reported as `program-path-escape`). Other files that cannot be obtained are recorded in `missing` (reported as `program-file-missing`).
 fn asset_resolver(
     bundle: Arc<ProgramBundle>,
     missing: Arc<Mutex<Vec<String>>>,
@@ -463,7 +445,7 @@ fn asset_resolver(
     }
 }
 
-/// 按字节头认图片格式（文件名可能没有或不可信）。
+/// Identifies the image format from the byte header (the file name may be absent or untrustworthy).
 fn sniff(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         Some("image/png")
@@ -517,18 +499,18 @@ fn describe_warning(warning: &str) -> String {
 type InstanceSlot = (u64, Weak<ProgramBundle>, Rc<ProgramInstance>);
 
 thread_local! {
-    /// 本线程的求值器，按 [`ProgramSource`] 的序号建键，最近用过的在尾部。
+    /// The evaluators of this thread, keyed by the sequence number of the [`ProgramSource`]. The most recently used one is at the tail.
     static INSTANCES: RefCell<Vec<InstanceSlot>> = const { RefCell::new(Vec::new()) };
 }
 
-/// 在本线程的求值器上跑 `f`；没有就建一个（首次约几十毫秒）。
+/// Runs `f` on this thread's evaluator. Creates one if none exists (the first time takes about tens of milliseconds).
 fn with_instance<T>(
     source: &ProgramSource,
     f: impl FnOnce(&ProgramInstance) -> Result<T>,
 ) -> Result<T> {
     let instance = INSTANCES.with(|cell| -> Result<Rc<ProgramInstance>> {
         let mut slots = cell.borrow_mut();
-        // 源已经释放的求值器随手清掉：它们的 JS 堆不该活到线程结束。
+        // Evaluators whose source has been released are discarded right away: their JS heaps should not outlive the thread.
         slots.retain(|(_, bundle, _)| bundle.strong_count() > 0);
         if let Some(index) = slots
             .iter()
@@ -557,9 +539,7 @@ fn with_instance<T>(
     f(&instance)
 }
 
-/// `measureText` 的宿主实现：按 CSS 字体族列表、字重、斜体在文档字体库里选字，
-/// 用与 usvg 排版同一份 rustybuzz 塑形后累加步进。找不到字体返回 NaN，运行时
-/// 退回按字号估算。
+/// Host implementation of `measureText`: selects a font from the document's font library by CSS font-family list, weight and italic style, and accumulates advances using the same rustybuzz shaping as usvg's layout. Returns NaN if no font is found, and the runtime falls back to estimating from the font size.
 fn measure_text(db: Arc<fontdb::Database>) -> MeasureText {
     let faces: RefCell<HashMap<(String, u16, bool), Option<fontdb::ID>>> =
         RefCell::new(HashMap::new());
@@ -589,9 +569,7 @@ fn measure_text(db: Arc<fontdb::Database>) -> MeasureText {
     })
 }
 
-/// `measureText` 的 `ascent` / `descent` 的宿主实现：与 [`measure_text`] 同一套选字，取字体级
-/// 度量（ttf-parser 的 `ascender` / `descender`：OS/2 置了 USE_TYPO_METRICS 用 typo 值，否则
-/// hhea，hhea 为 0 再退 OS/2）——usvg 排版放基线用的就是这两个数。descent 取正。
+/// Host implementation of `ascent` and `descent` for `measureText`. Uses the same font selection as [`measure_text`] and takes the font-level metrics (ttf-parser's `ascender` / `descender`: if OS/2 has USE_TYPO_METRICS set, the typo values are used; otherwise hhea, and if hhea is 0, OS/2). These are the two numbers usvg uses to place the baseline. descent is returned as a positive value.
 fn font_metrics(db: Arc<fontdb::Database>) -> FontMetrics {
     let faces: RefCell<HashMap<(String, u16, bool), Option<fontdb::ID>>> =
         RefCell::new(HashMap::new());
@@ -646,7 +624,7 @@ fn select_face(
     })
 }
 
-/// CSS `font-family` 列表：逗号分隔，名字可带单 / 双引号。
+/// CSS `font-family` list: comma-separated, and names may be quoted with single or double quotes.
 fn parse_family_list(list: &str) -> Vec<String> {
     list.split(',')
         .map(|name| name.trim().trim_matches(|c| c == '"' || c == '\'').trim())
@@ -667,7 +645,7 @@ mod tests {
         );
     }
 
-    /// 降级提示点名那个值、说明按 normal 画，并给出两条改法。
+    /// The degradation hint names that value, says it is drawn as normal, and gives two ways to fix it.
     #[test]
     fn unsupported_blend_modes_are_described() {
         let text = describe_warning("css-blend-unsupported:plus-lighter");
@@ -682,9 +660,7 @@ mod tests {
         }
     }
 
-    /// 运行时的 `BLEND_MODES`（`ccut spec program` 的 `cssBlendModes`）与光栅器逐项对拍：
-    /// 名单里的每个值 usvg 都解析成对应的混合模式，名单外的 `plus-lighter` / `plus-darker`
-    /// 解析期被丢掉、按 normal 画——名单错了就会误报或漏报。
+    /// The runtime's `BLEND_MODES` (`cssBlendModes` of `ccut spec program`) is cross-checked item by item against the rasterizer. Every value in the list is parsed by usvg into its corresponding blend mode, while `plus-lighter` and `plus-darker`, which are not in the list, are dropped at parse time and drawn as normal. An incorrect list would cause false reports or misses.
     #[test]
     fn program_blend_list_matches_what_usvg_parses() {
         fn blended(mode: &str) -> bool {
@@ -711,8 +687,7 @@ mod tests {
         }
     }
 
-    /// 字体级 ascent / descent 取自选中的那张字面，按字号缩放、descent 取正；
-    /// 找不到字族时是 `None`（运行时退回估算）。
+    /// Font-level ascent and descent are taken from the selected face, scaled by font size, with descent as a positive value. If no font family is found, the result is `None` (the runtime falls back to estimation).
     #[test]
     fn program_font_metrics_come_from_the_selected_face() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/Arimo.ttf");

@@ -12,16 +12,16 @@ import { langName } from './tools-models.ts';
 import { sameLanguage } from './translate-setup.ts';
 
 /**
- * 视频工具的输入目标（产品设计 §2.7，设计稿 model-tool-targets.js）：视频选择器的行、置灰原因、标注、预选，
- * 写进已有视频时的提示，翻译配音能选用的译文；重新转录的落点、选「取代」时的影响预览（产品设计 §5.11），
- * Space 视频条目菜单里的转录动作与「重试转录…」要预填的那次失败（§4.4）。
+ * Input targets for video tools (product design §2.7, design mock model-tool-targets.js): the picker rows for videos, disabled reasons, labels, preselection,
+ * the hint when writing into an existing video, and translations that dubbing can pick; the landing target for retranscription, the impact preview when choosing "replace" (product design §5.11),
+ * the transcription action in the Space video item menu, and the failed run to prefill for "Retry transcription…" (§4.4).
  *
- * 候选来自 Runtime 的 `tools.candidates`（读 Space 目录与内容索引，不打开视频）：`videos` 规则是全部视频（文稿不列），
- * `videos-with-transcript` 只列有文稿的视频（还没有索引的照样列出，`documents` 可能不全）。
- * 「正在转录 / 在队列里 / 上次失败」从 `jobs` 主题推（候选里没有）；素材缺失、视频里没有素材在候选里看不出来，不判断。
+ * Candidates come from the Runtime's `tools.candidates` (reads the Space catalog and content index, does not open videos): the `videos` rule lists all videos (transcripts not listed),
+ * `videos-with-transcript` lists only videos that have a transcript (ones not indexed yet are still listed, and `documents` may be incomplete).
+ * "Transcribing / queued / last failed" is inferred from the `jobs` topic (it is not in candidates); missing media and media missing inside a video can't be seen in candidates, so they are not judged.
  */
 
-/** 这个工具要视频有什么：转录不要求（候选里看不出有没有素材），翻译字幕、翻译配音要有文稿，从链接导入加进已有视频什么都不要。 */
+/** What this tool needs from a video: transcription needs nothing (media availability can't be seen in candidates), translated subtitles and translated dubbing need a transcript, and importing from a link into an existing video needs nothing. */
 export const NEEDS: Record<VideoToolId, 'media' | 'transcript' | 'any'> = {
   transcribe: 'media',
   'translate-subtitles': 'transcript',
@@ -46,16 +46,16 @@ export interface PickerRow {
   documents: ToolCandidateDocument[];
   tags: PickerTag[];
   eligible: boolean;
-  /** 不能选的原因；能选时 null。 */
+  /** Why this can't be selected; null when it can. */
   reason: string | null;
 }
 
-/** 语言标签的界面名（`en` → 英语）；没有时「未知语言」。 */
+/** Display name of a language tag (`en` → English); "未知语言" (unknown language) when there is none. */
 export function langLabel(tag: string | null | undefined): string {
   return tag ? langName(tag) : M.unknownLanguage;
 }
 
-/** 一组语言 → 「英语、日语」；同一种语言出现多份时记成「英语 ×2」。 */
+/** A set of languages → "English, Japanese"; the same language appearing more than once is recorded as "English ×2". */
 export function langsText(langs: readonly (string | null)[]): string {
   const order: string[] = [];
   const count = new Map<string, number>();
@@ -71,7 +71,7 @@ function isTranscribeJob(job: JobRecord): boolean {
   return job.kind === 'transcribe' || job.pipeline?.name === 'transcribe';
 }
 
-/** 这个视频的转录在做什么（从 `jobs` 推）：在跑、在排队；最近一次失败了也算（之后又转录成功的不算）。 */
+/** What transcription is doing for this video (inferred from `jobs`): running or queued; a most recent failure also counts (a later successful transcription does not). */
 export function transcribeState(videoId: Id | null, jobs: readonly JobRecord[]): TranscribeState {
   if (!videoId) return null;
   const mine = jobs.filter((j) => j.videoId === videoId && isTranscribeJob(j));
@@ -81,7 +81,7 @@ export function transcribeState(videoId: Id | null, jobs: readonly JobRecord[]):
   return last?.state === 'failed' ? 'failed' : null;
 }
 
-/** 选择器每一行的标注：文稿 · 中文 / 译文 · 英语、日语 / 配音 · 英语。 */
+/** Label on each picker row: transcript · Chinese / translation · English, Japanese / dub · English. */
 export function tagsOf(documents: readonly ToolCandidateDocument[]): PickerTag[] {
   const out: PickerTag[] = [];
   if (documents.length) out.push({ key: 'transcript', label: M.tagTranscript(langsText(documents.map((d) => d.language))) });
@@ -92,7 +92,7 @@ export function tagsOf(documents: readonly ToolCandidateDocument[]): PickerTag[]
   return out;
 }
 
-/** 内容还没读完、读不出文稿时的那枚标注：能选，开始时由 Runtime 选文稿。 */
+/** The label shown when the content hasn't been fully read and no transcript can be read: the video is selectable, and the Runtime picks the transcript when starting. */
 export const PENDING_TAG: PickerTag = {
   key: 'pending',
   get label() {
@@ -100,7 +100,7 @@ export const PENDING_TAG: PickerTag = {
   },
 };
 
-/** 这个视频对这个工具来说为什么不能选；能选时 null。 */
+/** Why this video can't be selected for this tool; null when it can. */
 export function blockReason(tool: VideoToolId, candidate: Pick<ToolCandidate, 'documents' | 'indexed'>, state: TranscribeState): string | null {
   const need = NEEDS[tool];
   if (need === 'any') return null;
@@ -113,15 +113,14 @@ export function blockReason(tool: VideoToolId, candidate: Pick<ToolCandidate, 'd
   if (state === 'running') return M.blockTranscribingWait;
   if (state === 'queued') return M.blockQueuedWait;
   if (state === 'failed') return M.blockFailed;
-  // 还没有索引：Runtime 照样列出它（不能断定没有文稿），开始时由流程自己找文稿。
+  // Not indexed yet: the Runtime still lists it (it can't rule out a transcript), and the flow itself looks for the transcript when starting.
   if (!candidate.indexed) return null;
   return M.blockNoTranscript;
 }
 
 /**
- * 某个工具的候选行：按名字搜索；能选的排在前面，同组内保持 Runtime 给的顺序（最近活动在前）。
- * 不能选的保留在列表里（置灰），`reason` 说明为什么。`extra` 是同一批视频的文稿（转录工具的 `videos` 规则不列文稿，
- * 用有文稿规则的候选补上，好写标注与「不覆盖」提示）。
+ * Candidate rows for a tool: searched by name; selectable ones come first, and the order from the Runtime is kept within each group (most recent activity first).
+ * Non-selectable ones stay in the list (greyed out), with `reason` saying why. `extra` holds the transcripts for the same videos (the transcription tool's `videos` rule doesn't list transcripts, so candidates from the with-transcript rule fill them in, for labels and the "does not overwrite" hint).
  */
 export function pickerRows(
   tool: VideoToolId,
@@ -157,38 +156,38 @@ export function pickerRows(
   return rows.map((r) => r.row);
 }
 
-/** 文稿的候选按文档 ID 收成表（给 `pickerRows` 的 `extra`）。 */
+/** Collects transcript candidates into a table keyed by document ID (for `extra` in `pickerRows`). */
 export function documentsByEntry(candidates: readonly ToolCandidate[]): Map<Id, ToolCandidateDocument[]> {
   return new Map(candidates.filter((c) => c.documents.length).map((c) => [c.entryId, c.documents]));
 }
 
-/** 能选的有几个。 */
+/** How many are selectable. */
 export function eligibleCount(rows: readonly PickerRow[]): number {
   return rows.filter((r) => r.eligible).length;
 }
 
-/** 预选：给了的视频能选就用它，否则第一个能选的；都不能选时 null。 */
+/** Preselection: the given video if it is selectable, otherwise the first selectable one; null if none is selectable. */
 export function pick(rows: readonly Pick<PickerRow, 'entryId' | 'eligible'>[], want: Id | null | undefined): Id | null {
   const hit = want ? rows.find((r) => r.entryId === want && r.eligible) : undefined;
   if (hit) return hit.entryId;
   return rows.find((r) => r.eligible)?.entryId ?? null;
 }
 
-/** 要用的那份文稿：选了的那份，否则最后一份（最近写进的）；没有时 null。 */
+/** The transcript to use: the chosen one, otherwise the last one (the most recently written); null if there is none. */
 export function sourceDocument(row: Pick<PickerRow, 'documents'> | null, documentId?: Id | null): ToolCandidateDocument | null {
   if (!row || !row.documents.length) return null;
   return row.documents.find((d) => d.documentId === documentId) ?? row.documents[row.documents.length - 1]!;
 }
 
-/** 翻译的目标语言里不该出现文稿自己的语言。 */
+/** The target languages for translation should not include the transcript's own language. */
 export function targetLangs(langs: readonly string[], source: ToolCandidateDocument | null): string[] {
   const from = source?.language;
   return from ? langs.filter((l) => !sameLanguage(l, from)) : [...langs];
 }
 
 /**
- * 目标语言的缺省（设计稿 tool-translate.jsx）：选过的还能选就用它；否则原文是英语时译成简体中文，其余译成英语；
- * 都不能选时第一门能选的。
+ * Default target language (design mock tool-translate.jsx): keep the previously chosen one if it is still selectable; otherwise, if the source is English, translate to Simplified Chinese, and translate to English for anything else;
+ * the first selectable one if neither can be chosen.
  */
 export function defaultTargetLang(available: readonly string[], want: string | null, source: string | null): string | null {
   if (want && available.includes(want)) return want;
@@ -197,8 +196,8 @@ export function defaultTargetLang(available: readonly string[], want: string | n
 }
 
 /**
- * 写进已有视频时的说明；没有同类结果时 null。文稿：默认新建一部视频，选「取代这部视频的文稿」走换用文稿（§5.11）；
- * 译文与配音：不覆盖、新增一份（§2.7）。`lang`：翻译字幕 / 翻译配音的目标语言。
+ * Explanation shown when writing into an existing video; null when there is no matching result. Transcript: by default it creates a new video; choosing "replace this video's transcript" uses the replace-transcript flow (§5.11);
+ * translations and dubs: do not overwrite, add a new one (§2.7). `lang`: the target language for translated subtitles / translated dubbing.
  */
 export function duplicateNote(tool: VideoToolId, row: Pick<PickerRow, 'documents'> | null, lang?: string | null): string | null {
   if (!row) return null;
@@ -215,22 +214,22 @@ export function duplicateNote(tool: VideoToolId, row: Pick<PickerRow, 'documents
   return null;
 }
 
-/** 写进已有视频时那条提示的标题。 */
+/** Title of the hint shown when writing into an existing video. */
 export const DUPLICATE_TITLE: Record<Exclude<VideoToolId, 'link-import'>, string> = live(() => M.duplicateTitle);
 
 export interface TranslationOption {
-  /** 译文的文档 ID（`DubParams.translationId`）。 */
+  /** Translation document ID (`DubParams.translationId`). */
   id: Id;
-  /** 译自哪份文稿（`DubParams.documentId`）。 */
+  /** The transcript this was translated from (`DubParams.documentId`). */
   documentId: Id;
   lang: string | null;
   label: string;
   sub: string;
-  /** 过期的单元数（原文改过、译文空着）。 */
+  /** Number of stale units (the source was changed, the translation left empty). */
   stale: number;
 }
 
-/** 翻译配音能直接选用的译文：每份一项，标出来源文稿的语言；同一种语言多份时加「第 N 份」。 */
+/** Translations that dubbing can use directly: one entry each, labelled with the language of the source transcript; when there are several in the same language, add "Copy N". */
 export function translationOptions(row: Pick<PickerRow, 'documents'> | null): TranslationOption[] {
   if (!row) return [];
   const all = row.documents.flatMap((d) => d.translations.map((t) => ({ t, from: d })));
@@ -248,7 +247,7 @@ export function translationOptions(row: Pick<PickerRow, 'documents'> | null): Tr
   });
 }
 
-// ---- 重新转录的落点（产品设计 §5.11、§2.7；设计稿 model-tool-targets.js `retargetOptions` / `replaceImpact`） ----
+// ---- Retranscription target (product design §5.11, §2.7; design mock model-tool-targets.js `retargetOptions` / `replaceImpact`) ----
 
 export interface RetargetOption {
   key: TranscribeDestination;
@@ -256,7 +255,7 @@ export interface RetargetOption {
   note: string;
 }
 
-/** 落点单选：视频已有文稿时「新建视频」（缺省）/「取代这部视频的文稿」；没有文稿时 null（不显示落点，直接写进它）。 */
+/** Single choice of target: when the video already has a transcript, "New video" (default) or "Replace this video's transcript"; null when there is no transcript (no target is shown, and it writes directly into the video). */
 export function retargetOptions(row: Pick<PickerRow, 'documents'> | null): RetargetOption[] | null {
   if (!row || !row.documents.length) return null;
   return [
@@ -265,27 +264,27 @@ export function retargetOptions(row: Pick<PickerRow, 'documents'> | null): Retar
   ];
 }
 
-/** 落点的缺省（改过原文时也是它，§5.11）。 */
+/** Default target (also the default when the source was edited, §5.11). */
 export const DEFAULT_DESTINATION: TranscribeDestination = 'new-video';
 
-/** 新建视频的默认名：「<原名> · 重新转录」（与 Runtime 不给名字时的缺省一致）。 */
+/** Default name for a new video: "<original name> · Retranscribe" (same as the Runtime's default when no name is given). */
 export function newVideoName(name: string): string {
   return M.newVideoName(name);
 }
 
 export interface ReplaceImpact {
-  /** 每种译文语言一行：「英语 · 62 句」。已审句数候选里没有，不写。 */
+  /** One line per translation language: "English · 62 sentences". Not written when the reviewed-sentence count is not among the candidates. */
   translations: string[];
-  /** 每种语言的配音一行：组数与「句子译文不变的保留，标可能不一致」。 */
+  /** One line per language's dub: the group count, and "sentences whose translation is unchanged are kept, marked as possibly inconsistent". */
   dubs: string[];
-  /** 有译文时那一句规则（开始之前算不出会过期几句）。 */
+  /** Rule line for when a translation exists (how many sentences will go stale can't be computed before starting). */
   rule: string | null;
   undo: string;
 }
 
 /**
- * 选「取代」时的影响预览（§5.11）：开跑前只报现有的数。读的是候选里的事实（内容索引）：译文的句数与语言、配音组；
- * 已审句数与字幕 pin 的处数索引里没有，不报（结果里有）。同一语言多份译文时各占一行。
+ * Impact preview when choosing "replace" (§5.11): before running, it only reports the existing counts. It reads facts from the candidates (content index): the translation's sentence count and language, and the dub groups;
+ * the reviewed-sentence count and the number of subtitle pins are not in the index, so they are not reported (the result shows them). With several translations in the same language, each takes its own line.
  */
 export function replaceImpact(row: Pick<PickerRow, 'documents'> | null): ReplaceImpact {
   const docs = row?.documents ?? [];
@@ -299,14 +298,14 @@ export function replaceImpact(row: Pick<PickerRow, 'documents'> | null): Replace
   return { translations, dubs, rule: translations.length ? M.impactRule : null, undo: M.impactUndo };
 }
 
-// ---- Space 视频条目的转录动作（产品设计 §4.4；设计稿 model-space.js `transcribeAction`） ----
+// ---- Transcription action for a Space video item (product design §4.4; design mock model-space.js `transcribeAction`) ----
 
-/** 转录过 → 重新转录…；上次失败 → 重试转录…；有素材但没转录过 → 转录…。 */
+/** Already transcribed → Retranscribe…; last attempt failed → Retry transcription…; has media but never transcribed → Transcribe…. */
 export type SpaceTranscribeAction = 'first' | 'redo' | 'retry';
 
 /**
- * 视频条目菜单里给哪一项：转录中、排队中或源文件缺失的不给（null）。`transcribed` 是有没有文稿（读不出来时 null：
- * 候选还没读到，不给，免得先写「转录…」再变成「重新转录…」）。
+ * Which item to offer in the video item menu: none while transcribing, queued, or when the source file is missing (null). `transcribed` is whether a transcript exists (null if it can't be read:
+ * candidates haven't loaded yet, so offer nothing, to avoid showing "Transcribe…" and then changing it to "Retranscribe…").
  */
 export function spaceTranscribeAction(state: TranscribeState, transcribed: boolean | null, missing: boolean): SpaceTranscribeAction | null {
   if (missing || state === 'running' || state === 'queued') return null;
@@ -315,7 +314,7 @@ export function spaceTranscribeAction(state: TranscribeState, transcribed: boole
   return transcribed ? 'redo' : 'first';
 }
 
-/** 这个视频最近一次失败的转录（「重试转录…」预填它的参数）：流程任务优先（参数全），之后又成功过的不算；没有时 null。 */
+/** The most recent failed transcription for this video ("Retry transcription…" prefills its parameters): flow tasks take precedence (full parameters); one that later succeeded doesn't count; null if there is none. */
 export function failedTranscribeJob(videoId: Id | null, jobs: readonly JobRecord[]): JobRecord | null {
   if (transcribeState(videoId, jobs) !== 'failed') return null;
   const mine = jobs.filter((j) => j.videoId === videoId && isTranscribeJob(j) && j.state === 'failed');
@@ -324,7 +323,7 @@ export function failedTranscribeJob(videoId: Id | null, jobs: readonly JobRecord
   return newest(mine.filter((j) => j.kind === 'pipeline')) ?? newest(mine);
 }
 
-/** 失败那次的语音模型与选项（`pipeline.params`，没有时取任务记录上的 Provider 与模型）。 */
+/** The speech model and options of the failed run (`pipeline.params`; when absent, the provider and model on the task record). */
 export interface AsrRetryParams {
   provider: string | null;
   model: string | null;
@@ -335,7 +334,7 @@ export interface AsrRetryParams {
 export function retryParamsOf(job: JobRecord): AsrRetryParams {
   const p = job.pipeline?.params ?? {};
   const text = (v: unknown) => (typeof v === 'string' && v ? v : null);
-  // 流程父任务记录上的 Provider 与模型不是转写用的那个；只有直接的转写任务才拿它们兜底。
+  // The provider and model on a flow parent task record are not the ones used for transcription; only direct transcription tasks fall back to them.
   const own = job.kind === 'pipeline' ? null : job;
   return {
     provider: text(p.provider) ?? text(own?.providerId),

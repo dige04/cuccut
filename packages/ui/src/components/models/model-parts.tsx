@@ -5,8 +5,8 @@ import type { ModelChip } from '../../model/models-local.ts';
 import { PANEL } from '../settings/settings-ui.tsx';
 
 /*
- * 模型页几页共用的版式（设计稿 settings-cloud.css、settings-local.css、page-settings.css）：
- * 小节标题 + 说明（.cloud-h / .cloud-desc）、卡片层（.card--layer）、设置行（.setrow）、标签、虚线空态（.vlib-empty）。
+ * Layout shared by several pages of the model page (design mocks settings-cloud.css, settings-local.css, page-settings.css):
+ * section title + description (.cloud-h / .cloud-desc), card layer (.card--layer), settings row (.setrow), tags, and dashed empty state (.vlib-empty).
  */
 
 const heading = style({ display: 'flex', alignItems: 'start', gap: 12, marginTop: 32, marginBottom: 12 });
@@ -14,10 +14,10 @@ const headingFirst = style({ display: 'flex', alignItems: 'start', gap: 12, marg
 const headingText = style({ flexGrow: 1, minWidth: 0 });
 const headingTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900' });
 const headingDesc = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
-/** 右边的按钮不让说明挤成两行（窄窗口下「添加自建服务商」会折行）。 */
+/** Buttons on the right must not squeeze the description onto two lines (in a narrow window, “添加自建服务商”(Add custom provider) wraps). */
 const headingAction = style({ flexShrink: 0, whiteSpace: 'nowrap' });
 
-/** 小节标题、一句说明，右边可带一个按钮。 */
+/** Section title with one sentence of description; a button may sit on the right. */
 export function Lede({ title, desc, action, first = false }: { title: string; desc?: ReactNode; action?: ReactNode; first?: boolean }) {
   return (
     <div className={first ? headingFirst : heading}>
@@ -36,7 +36,7 @@ const card = style({
   minWidth: 0,
 });
 
-/** 卡片层。 */
+/** Card layer. */
 export function Card({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <section className={`${card} ${PANEL}`} aria-label={label}>
@@ -62,7 +62,7 @@ const rowLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 const rowDesc = style({ marginTop: 4, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere' });
 const rowControl = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
 
-/** 一行设置：左边名字与说明，右边控件。 */
+/** One settings row: name and description on the left, control on the right. */
 export function SettingRow({ label, desc, children }: { label: string; desc?: ReactNode; children?: ReactNode }) {
   return (
     <div className={row}>
@@ -75,7 +75,7 @@ export function SettingRow({ label, desc, children }: { label: string; desc?: Re
   );
 }
 
-/** 一串标签（默认、已加载、不可用的原因…）。 */
+/** A row of tags (default, loaded, the reason it is unavailable…). */
 export function Chips({ chips }: { chips: readonly ModelChip[] }) {
   return (
     <>
@@ -107,7 +107,7 @@ const emptyBody = style({ margin: 0, maxWidth: '[460px]', font: 'ui-sm', color: 
 const emptyActions = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 8 });
 const emptyNote = style({ margin: 0, maxWidth: '[460px]', font: 'ui-xs', color: 'gray-600' });
 
-/** 虚线框的空态：可选的图标、标题、一句话、可选的按钮与一句注。 */
+/** Dashed-frame empty state: optional icon, title, one sentence, optional button and a note. */
 export function EmptyCard({
   icon,
   title,
@@ -138,7 +138,7 @@ export function EmptyCard({
 
 const status = style({ margin: 0, paddingY: 24, font: 'ui-sm', color: 'gray-600' });
 
-/** 还没连上 Runtime、或视图还没到时的一句话。 */
+/** One sentence shown when not yet connected to the Runtime or the view has not arrived. */
 export function PageStatus({ children }: { children: ReactNode }) {
   return (
     <p className={status} role="status">

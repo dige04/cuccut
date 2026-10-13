@@ -1,34 +1,34 @@
 import { isMessageRef, localizeText, type MessageRef } from '@cuccut/protocol';
 
 /**
- * Runtime 存下的文字在显示时按界面当前语言重新生成（message-ref.ts、仓库约定 §5）：字段 `foo` 旁边的 `fooRef` 认得出就用它，
- * 否则照用文本。这里收口几种常见形状；有类型的字段直接 `localizeText(x.detail, x.detailRef)`。
+ * Text the Runtime stores is regenerated in the current interface language when displayed (message-ref.ts, repository convention §5): if a `fooRef` next to field `foo` is recognized, it is used; otherwise the text is used as is.
+ * This covers a few common shapes; for typed fields, call `localizeText(x.detail, x.detailRef)` directly.
  */
 
-/** 从 `details: unknown` 这类未知形状里取一条引用。 */
+/** Takes a reference from an unknown shape such as `details: unknown`. */
 export function refIn(value: unknown): MessageRef | null {
   return isMessageRef(value) ? value : null;
 }
 
-/** 任务的错误（`JobError` 的 `message` / `messageRef`）。 */
+/** The error of a task (the `message` / `messageRef` of `JobError`). */
 export function jobErrorText(error: { message: string; messageRef?: MessageRef }): string;
 export function jobErrorText(error: { message: string; messageRef?: MessageRef } | null | undefined): string | null;
 export function jobErrorText(error: { message: string; messageRef?: MessageRef } | null | undefined): string | null {
   return error ? localizeText(error.message, error.messageRef) : null;
 }
 
-/** 排队时在等什么（`JobRecord.wait` / 资源快照里等待者的 `wait`：`detail` / `detailRef`）；没有时 null。 */
+/** What it is waiting for while queued (`JobRecord.wait`, or the `wait` of a waiter in the resource snapshot: `detail` / `detailRef`); null when absent. */
 export function jobWaitText(wait: { detail: string; detailRef?: MessageRef } | null | undefined): string | null {
   return wait ? localizeText(wait.detail, wait.detailRef) : null;
 }
 
-/** 错误 `details` 里字符串形状的补救说明（`remedy` / `remedyRef`）；不是字符串或为空时 null。 */
+/** The remedy explanation in string form inside error `details` (`remedy` / `remedyRef`); null when it is not a string or is empty. */
 export function remedyText(details: unknown): string | null {
   const { remedy, remedyRef } = (details ?? {}) as { remedy?: unknown; remedyRef?: unknown };
   return typeof remedy === 'string' && remedy ? localizeText(remedy, refIn(remedyRef)) : null;
 }
 
-/** 对象形状的补救（`{ hint, hintRef, … }`，授权与能力未配置的拒绝）里的提示；没有或为空时 null。 */
+/** The hint in an object-shaped remedy (`{ hint, hintRef, … }`, for rejections of authorization and unconfigured capabilities); null when absent or empty. */
 export function remedyHintText(remedy: unknown): string | null {
   const { hint, hintRef } = (remedy ?? {}) as { hint?: unknown; hintRef?: unknown };
   return typeof hint === 'string' && hint ? localizeText(hint, refIn(hintRef)) : null;

@@ -74,23 +74,18 @@ import { StageTextEdit } from './stage-text-edit.tsx';
 import { StageToolbar } from './stage-toolbar.tsx';
 
 /**
- * 舞台叠加层（原型 stage-objects.jsx、stage-marquee.jsx、stage.jsx）：盖在预览画布上，接画面上的点选、多选、拖动、
- * 改大小、旋转、框选、双击改字与方向键微调。
+ * Stage overlay (prototypes stage-objects.jsx, stage-marquee.jsx, stage.jsx): it sits over the preview canvas and handles pointer selection, multi-select, dragging, resizing, rotating, marquee selection, double-click text editing, and arrow-key nudging on the picture.
  *
- * - 点选按帧计划的层几何算（`stage-hit`）：看得见的才点得中；没选中的主视频不挡点选，在它上面按下拖动是框选，
- *   不动松手才选中它。⇧ / ⌘ 单击切换多选（主视频不进多选），点空白清空。
- * - 拖动中只改草稿：单件走 store 的草稿（预览与属性页一起跟手）；多件用引擎的临时覆盖（属性页不跟），
- *   松手按起手状态算出的终值提交**一笔**事务，失败就回到原值。真的动过才吞掉随后补发的 click。
- * - 字幕没有 `place`，按在它上面拖动是挪字幕样式的水平中心与锚线（原型 stage.jsx 的字幕 SelectionBox，见 model/stage-caption-move）：
- *   拖动中走 store 的文档草稿（预览与属性页一起跟手），松手写入样式文档，用同一份样式的字幕一起动。双语时只拖选中的那一行
- *   （原型里每条字幕轨各拖各的），框选或 ⇧ / ⌘ 单击把两行都选上再拖才整组动（框选同时框到画面元素时只留元素）。
- * - 只读、锁定或正在播放时不出把手，只读时点选照常；播放中按下画面只暂停（原型 stage.jsx），停下后再点选。
+ * - Point selection is computed from the frame plan's layer geometry (`stage-hit`): only what is visible can be hit. An unselected main video does not block selection; pressing and dragging on it does a marquee selection, and pressing without moving selects it on release. ⇧ / ⌘ click toggles multi-select (the main video does not join multi-select), and clicking empty space clears the selection.
+ * - While dragging, only a draft is changed. A single item uses the store's draft (preview and properties page follow the pointer together). Multiple items use the engine's temporary override (the properties page does not follow); on release, one **single** transaction is committed with the final values computed from the starting state, and on failure it returns to the original values. A click that follows is swallowed only if a real drag happened.
+ * - Captions have no `place`. Dragging one moves the horizontal center and anchor line of the caption style (the prototype's caption SelectionBox in stage.jsx, see model/stage-caption-move). While dragging it uses the store's document draft (preview and properties page follow together); on release it is written to the style document, and captions sharing the same style move together. For bilingual captions only the selected line is dragged (in the prototype each caption track is dragged separately). Marquee or ⇧ / ⌘ click selecting both lines and then dragging moves the group (when a marquee also catches picture elements, only the elements are kept).
+ * - No handles appear when read-only, locked, or playing. Point selection still works in read-only mode. Pressing on the picture during playback only pauses (prototype stage.jsx), and selection works again after it stops.
  */
 
 const root = style({ position: 'absolute', inset: 0, outlineStyle: 'none', userSelect: 'none', touchAction: 'none' });
 const space = style({ position: 'absolute' });
 
-/** 画面在舞台里的位置与显示尺寸（舞台像素）。 */
+/** The picture's position and display size on the stage (stage pixels). */
 export interface FrameRect {
   left: number;
   top: number;
@@ -98,7 +93,7 @@ export interface FrameRect {
   height: number;
 }
 
-/** 每种拖动提交时的修改名；提交时才生成，跟着当时的语言。 */
+/** The change label for each kind of drag on commit. It is generated only at commit time, in the language current at that time. */
 const LABEL: Record<Gesture['kind'], () => Localized> = {
   move: EditLabel.move,
   edge: EditLabel.resize,
@@ -110,9 +105,7 @@ const LABEL: Record<Gesture['kind'], () => Localized> = {
 };
 
 /**
- * 拖字幕：起手时的样式文档、正文与根样式，拖到某处时根样式变成什么（整组挪根样式，双语单拖一行写那一行的覆盖），
- * 起手时拖的那些行的行框（拖动中平移着画，预览重画回来的行框会晚一拍）。`remember` 是松手后记进新字幕选项：
- * 单拖一行的位置在行覆盖里，新字幕选项不记它，为了另一行不跳而挪的根样式锚线也不该记。
+ * Dragging captions: the style document, body and root style at the start of the gesture; what the root style becomes when dragged to a certain place (moving a whole group moves the root style; dragging a single line in bilingual mode writes that line's override); and the line boxes of the lines dragged at the start (during dragging they are translated on screen, and the line boxes redrawn by the preview arrive one beat late). `remember` means whether to record the result into the new caption options after release: the position of a single dragged line lives in the line override, so new caption options do not record it, and the root-style anchor line moved to keep the other line from jumping should not be recorded either.
  */
 interface CaptionDrag {
   move: CaptionMove;
@@ -124,7 +117,7 @@ interface CaptionDrag {
   hits: CaptionHit[];
 }
 
-/** 一次按下：过了阈值做什么（几何手势、拖字幕或框选），没动就松手算一次点击做什么。 */
+/** One press: what to do once the threshold is passed (geometry gesture, caption drag or marquee); if it never moves and is released, what a single click does. */
 interface Press {
   pointerId: number;
   client0: Point;
@@ -139,7 +132,7 @@ interface Press {
   raf: number;
 }
 
-/** 拖动多件时的临时盒：手势中一直用；松手提交后用到新版本到达为止。 */
+/** Temporary box while dragging multiple items: used throughout the gesture; after release and commit, used until the new version arrives. */
 interface Override {
   poses: Map<Id, Pose>;
   until: Revision | null;
@@ -152,7 +145,7 @@ const toCanvas = (canvas: CanvasSize, frame: DOMRect, clientX: number, clientY: 
 
 const modsOf = (event: { shiftKey: boolean; altKey: boolean }): Modifiers => ({ shift: event.shiftKey, alt: event.altKey });
 
-/** 浏览器在 pointerup 之后还会补发一次 click：真的拖过时吞掉它，免得落到别处把选中清掉（原型 swallowDrag）。 */
+/** The browser still fires a click after pointerup: swallow it when a real drag happened, so it does not land elsewhere and clear the selection (prototype swallowDrag). */
 function swallowClick(): void {
   const stop = (event: globalThis.MouseEvent) => {
     event.stopPropagation();
@@ -162,7 +155,7 @@ function swallowClick(): void {
   window.setTimeout(() => window.removeEventListener('click', stop, true), 0);
 }
 
-/** 这一帧画面上有哪些实例（随帧计划更新，没变就不重渲染）。 */
+/** Which instances are on this frame of the picture (updated with the frame plan; not re-rendered when unchanged). */
 function useVisibleItems(engine: PreviewEngine): Id[] {
   const [ids, setIds] = useState<Id[]>([]);
   useEffect(
@@ -200,7 +193,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
   const [captionShift, setCaptionShift] = useState<{ hits: CaptionHit[]; dx: number; dy: number } | null>(null);
 
   const canvas = sequence.canvas;
-  // 媒体框的高按源的宽高比推，要查素材表。
+  // The media box's height is derived from the source's aspect ratio, which requires looking up the asset table.
   const assets = useVideo((s) => s.video?.state?.video.assets);
   const view: View = { kx: frame.width / canvas.width, ky: frame.height / canvas.height };
   const byId = useMemo(() => new Map(sequence.items.map((item) => [item.id, item])), [sequence]);
@@ -211,14 +204,14 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     return !!item && isMainVideo(item, sequence);
   };
 
-  // 多件拖动的临时盒：手势中一直用，提交后等到新版本到达就作废。
+  // Temporary box for multi-item drag: used throughout the gesture; after commit it is discarded once the new version arrives.
   const overridePoses = override && (override.until === null || override.until === sequence.revision) ? override.poses : null;
   useEffect(() => {
     if (override?.until != null && override.until !== sequence.revision) setOverride(null);
   }, [override, sequence.revision]);
   const poseFor = (item: PlacedItem) => overridePoses?.get(item.id) ?? poseOf(item, canvas, assets);
 
-  // 选中的、此刻画面上有的、有布局框的那几件。改字中的文字在画布上藏着（不在帧计划里），照样算。
+  // The selected items that are on the picture right now and have a layout box. Text being edited is hidden on the canvas (not in the frame plan), but it still counts.
   const onStage = new Set(visible);
   if (editing) onStage.add(editing);
   const picked = selection
@@ -229,7 +222,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
   const group = !single && others.length >= 2 ? others : null;
   const groupBounds = group ? boundsOf(group.map((item) => aabbOf(poseFor(item)))) : null;
   const groupChangeable = !!group && group.every(changeable);
-  // 选中的全是字幕、用同一份样式、都能改、此刻画面上有它们：出字幕的工具条（字幕没有布局框，不走上面那几件）。
+  // If all selected items are captions with the same style, all editable, and present on the picture right now, show the caption toolbar (captions have no layout box, so they do not go through the items above).
   const pickedCaptions = selection.map((id) => byId.get(id)).filter((item): item is CaptionItem => item?.type === 'caption');
   const captionBar =
     pickedCaptions.length &&
@@ -239,7 +232,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
       ? pickedCaptions
       : null;
 
-  // ---- 引擎的临时覆盖（多件拖动、改字时藏起画布上的那段字） ----
+  // ---- Engine temporary overrides (hiding the canvas text while dragging multiple items or editing text) ----
 
   const paintSequence = (seq: Sequence) => {
     const snapshot = useVideo.getState().video?.state?.video;
@@ -248,8 +241,8 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
   const paint = (drafts: ItemDraft[]) => paintSequence(applyDrafts(latest.current, drafts));
   const restore = () => paint([]);
 
-  // 改字中：画布上那段字一露出来（别处重新给了引擎序列）就再藏一次。放到微任务里，等引擎这一轮同步完。
-  // 藏的是哪一件记在 ref 里，结束改字时同步清掉，免得提交那一刻画上去的新字又被藏回去。
+  // While editing text: whenever that text on the canvas is revealed again (some other place gave the engine a new sequence), hide it again. This is deferred to a microtask so the engine finishes its synchronous work for this round first.
+  // Which item is hidden is recorded in a ref and cleared synchronously when editing ends, so the new text drawn at commit time is not hidden again.
   const hidden = useRef<Id | null>(null);
   useEffect(() => {
     if (!editing) return;
@@ -266,16 +259,16 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
       stop();
       if (hidden.current === editing) hidden.current = null;
     };
-    // paint 只读 ref 与 store，不随渲染变，不进依赖。
+    // paint only reads refs and the store, does not change with rendering, and is not in the dependencies.
   }, [engine, editing]);
   useEffect(() => {
     if (editing && !byId.has(editing)) setEditing(null);
   }, [editing, byId]);
 
-  // ---- 选中 ----
+  // ---- Selection ----
 
   const select = (ids: Id[]) => useEditor.getState().select(ids);
-  /** ⇧ / ⌘ 单击：切换这一件；主视频不进多选。 */
+  /** ⇧ / ⌘ click: toggles this item; the main video does not join multi-select. */
   const toggle = (id: Id) => {
     if (isMain(id)) return;
     const current = useEditor.getState().selection;
@@ -291,16 +284,16 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
       contains: poseContains,
     });
   };
-  /** 吸附参照：画面上其它有布局框的实例（主视频除外，它的边就是画布的边）。 */
+  /** Snap references: other instances on the picture that have a layout box (the main video is excluded, since its edges are the canvas edges). */
   const snapRects = (exclude: Set<Id>): Rect[] =>
     visible.flatMap((id) => {
       const item = byId.get(id);
       return item && isPlaced(item) && !exclude.has(id) && !isMainVideo(item, sequence) ? [boxRect(poseOf(item, canvas, assets))] : [];
     });
 
-  // ---- 手势 ----
+  // ---- Gestures ----
 
-  /** 把这一步画出来；`live` 是手势还在进行（出参考线与角度气泡），松手提交时只画终值。 */
+  /** Draws this step. `live` means the gesture is still in progress (guide lines and the angle bubble are shown); on release at commit, only the final value is drawn. */
   const show = (gesture: Gesture, result: GestureFrame, live = true) => {
     const seq = latest.current;
     const members = membersOf(gesture);
@@ -348,11 +341,10 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     });
   };
 
-  // ---- 拖字幕 ----
+  // ---- Dragging captions ----
 
   /**
-   * 按在一件字幕上：样式正文此刻在手、要拖的行此刻画在画面上，才起手。`group` 是两行都选中了（整组动）；否则同一份样式
-   * 在这一帧里原文、译文两种行都有（渲染器按双语排，见 frame-render 的 `compile`），只拖这一行。
+   * Pressing on a caption: the style body is available at this moment and the line to be dragged is drawn on the picture, so the gesture can start. `group` means both lines are selected (the group moves). Otherwise, when the same style has both source and translation lines in this frame (the renderer lays them out bilingually, see `compile` in frame-render), only this line is dragged.
    */
   const captionDragOf = (item: CaptionItem, p0: Point, group: boolean): CaptionDrag | null => {
     const records = useVideo.getState().video?.state?.video.documents ?? {};
@@ -418,7 +410,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
       const item = byId.get(id);
       return item && isPlaced(item) && !isMainVideo(item, seq) ? [{ id, rect: aabbOf(poseOf(item, seq.canvas, assets)) }] : [];
     });
-    // 字幕按画出来的行框参与框选（一件字幕这一帧可能有几行，合成一个框）。
+    // Captions take part in marquee selection by their drawn line boxes (one caption may have several lines in this frame, combined into one box).
     const captions = [...new Set(engine.captionHits.map((hit) => hit.itemId))].flatMap((id) => {
       const rect = captionBox(engine.captionHits.filter((hit) => hit.itemId === id));
       return rect ? [{ id, rect }] : [];
@@ -439,7 +431,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || press.current) return;
     const target = event.target as Element;
-    // 工具条的弹层挂在 body 上，事件却沿 React 树冒泡到这里：不在叠加层里的一律不接（否则会抢走指针、拦掉输入框的聚焦）。
+    // The toolbar's popovers are mounted on body, but events still bubble up through the React tree to here: anything not inside the overlay is ignored (otherwise it would steal the pointer and block focus on input fields).
     if (!rootRef.current?.contains(target) || target.closest('[data-stage-editor]')) return;
     const rootEl = rootRef.current;
     const frameEl = spaceRef.current;
@@ -452,11 +444,11 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     const p = toCanvas(seq.canvas, fr, event.clientX, event.clientY);
     const additive = event.shiftKey || event.metaKey || event.ctrlKey;
     const hit = hitTest(p);
-    // 没选中的主视频不挡点选；按在它上面、不动就松手，才选中它（原型：主视频只能点选）。
+    // An unselected main video does not block point selection; pressing on it and releasing without moving selects it (prototype: the main video can only be selected by clicking).
     const under = hit ?? hitAt(engine.plan?.layers ?? [], p, { captionHits: engine.captionHits });
 
     if (playing) {
-      // 原型 stage.jsx：播放中按下画面只暂停，这一下的点击吞掉，不改选中、不起手势。
+      // Prototype stage.jsx: pressing the picture during playback only pauses. That click is swallowed, so selection is unchanged and no gesture starts.
       pause();
       swallowClick();
       return;
@@ -483,8 +475,8 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     } else if (group && inGroup && !additive) {
       if (groupChangeable) gesture = { kind: 'group-move', members: group.map((item) => memberOf(item, seq.canvas, assets)), p0: p };
     } else if (hit && !additive) {
-      // 按在一件上：没选中的先选中，拖动就移动它（原型要先选中才能拖；这里与常见剪辑器一致，按下即可拖）。
-      // 选中的全是同一份样式的字幕（双语两行都框选或 ⇧ / ⌘ 点选上了）时按下不收成一件，拖动整组动；不动就松手才只留这一行。
+      // Pressing on an item: if it is not selected, it becomes selected, and dragging moves it (the prototype requires selecting first before dragging; here, as in common editors, pressing is enough to drag).
+      // If all selected items are captions with the same style (both bilingual lines were marquee-selected or ⇧ / ⌘ click-selected), pressing does not collapse the selection to one item, and dragging moves the whole group. If there is no movement on release, only that line is kept.
       const item = byId.get(hit);
       const current = useEditor.getState().selection;
       const captionGroup =
@@ -497,14 +489,14 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
         });
       if (captionGroup) click = () => select([hit]);
       else if (!current.includes(hit) || current.length > 1) select([hit]);
-      // 铺满、cover、带裁剪的视频（剪成短视频的子视频）没有可挪的框：拖动是平移它的裁剪窗口，只改这一段。
+      // Full-frame, cover and cropped videos (child videos cut into shorts) have no box that can be moved: dragging pans their crop window, changing only this segment.
       if (item && isPannable(item) && changeable(item)) gesture = panGesture(item, p, seq.canvas, assets);
       else if (item && isPlaced(item) && changeable(item)) gesture = { kind: 'move', member: memberOf(item, seq.canvas, assets), p0: p };
       else if (item?.type === 'caption' && changeable(item) && (!captionGroup || current.every((id) => changeable(byId.get(id)!))))
         caption = captionDragOf(item, p, captionGroup);
       moving = new Set([hit]);
     } else {
-      // 空白、主视频面、或按着 ⇧ / ⌘：拖过 4px 起框选，不动松手是一次点击。
+      // On empty space, on the main video's surface, or while holding ⇧ / ⌘: dragging past 4px starts a marquee selection; releasing without moving is a single click.
       marqueeMode = { additive };
       click = additive ? () => under && toggle(under) : () => select(under ? [under] : []);
     }
@@ -525,7 +517,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     rootEl.setPointerCapture(event.pointerId);
   };
 
-  /** 没在拖时：指针下有可点的实例就换成手形（选中框与把手有自己的光标）。 */
+  /** When not dragging: if there is a clickable instance under the pointer, the cursor changes to a hand (the selection box and handles have their own cursors). */
   const hover = (event: PointerEvent<HTMLDivElement>) => {
     const rootEl = rootRef.current;
     const frameEl = spaceRef.current;
@@ -538,7 +530,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     if (!(fr.width > 0)) return;
     const hit = hitTest(toCanvas(latest.current.canvas, fr, event.clientX, event.clientY));
     const item = hit ? byId.get(hit) : undefined;
-    // 选中的字幕没有自己的选中框接指针：能拖时在这里换成移动光标。
+    // Selected captions have no selection box of their own to capture the pointer, so when they can be dragged, the move cursor is set here.
     const movable = item?.type === 'caption' && changeable(item) && useEditor.getState().selection.includes(item.id);
     rootEl.style.cursor = movable ? 'move' : hit ? 'pointer' : '';
   };
@@ -583,7 +575,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     if (!p.moved) return p.click();
     swallowClick();
     reset();
-    // 松开的位置也算上：快速拖动时浏览器会合并 pointermove。
+    // The release position is also counted: during fast drags the browser coalesces pointermove events.
     const at = toCanvas(p.env.canvas, p.frame, event.clientX, event.clientY);
     if (p.gesture) commit(p.gesture, stepGesture(p.gesture, at, modsOf(event), p.env));
     else if (p.caption) commitCaption(p.caption, stepCaptionMove(p.caption.move, at, modsOf(event), p.env));
@@ -600,11 +592,11 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     reset();
   };
 
-  // ---- 双击：旋转钮归零；文字就地改 ----
+  // ---- Double-click: reset rotation to zero; edit text in place ----
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!rootRef.current?.contains(event.target as Node)) return;
-    // 按下时根节点捕获了指针，随后的 click / dblclick 落在根节点上；按指针位置找真正点到的东西。
+    // On press the root node captures the pointer, so the following click / dblclick land on the root node; find what was actually hit by the pointer position.
     const target = document.elementFromPoint(event.clientX, event.clientY) ?? (event.target as Element);
     if (target.closest('[data-stage-editor]') || target.closest('[data-handle]')) return;
     const seq = latest.current;
@@ -636,7 +628,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     setEditing(null);
     if (byKey) rootRef.current?.focus({ preventScroll: true });
     if (text === null) return restore();
-    // 新字先画上，不等回执（否则提交往返的这一下画面上是空的）。
+    // Draw the new text first without waiting for the receipt (otherwise the picture is blank during the commit round trip).
     const seq = latest.current;
     paintSequence({ ...seq, items: seq.items.map((item) => (item.id === id && item.type === 'text' ? { ...item, text } : item)) });
     void apply([{ type: 'setText', sequenceId: latest.current.id, itemId: id, text }], EditLabel.editText()).then((receipt) => {
@@ -644,20 +636,19 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     });
   };
 
-  // ---- 键盘：舞台有焦点时方向键微调（1%，⇧ 5%，⌥↑/↓ 0.1%；⌥←/→ 留给编辑器的时间微调） ----
-  // 与编辑器快捷键（video-editor 的 useEditorKeys，挂在 window 冒泡段）的约定：舞台接了的方向键 preventDefault，
-  // 编辑器见到 defaultPrevented 就不再移播放头；根节点带 `data-stage`，焦点在这里时编辑器的 ←/→ 也不移播放头。
+  // ---- Keyboard: when the stage has focus, arrow keys nudge (1%, ⇧ 5%, ⌥↑/↓ 0.1%; ⌥←/→ are left for the editor's time nudge) ----
+  // Convention with the editor shortcuts (video-editor's useEditorKeys, attached in the window bubble phase): arrow keys the stage handles call preventDefault, and when the editor sees defaultPrevented it does not move the playhead. The root node carries `data-stage`, so while focus is here the editor's ←/→ does not move the playhead either.
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== rootRef.current || event.metaKey || event.ctrlKey || !editable) return;
     const seq = latest.current;
     const delta = nudgeDelta(event.key, event.shiftKey, event.altKey, seq.canvas);
     if (!delta) return;
-    // 选中压过播放：有能推的就推，没有就让给编辑器（逐帧、播放中跳 5 秒）。
+    // The selection takes precedence over playback: if there is something it can nudge, it nudges; otherwise it yields to the editor (frame by frame, or a 5-second jump during playback).
     const targets = picked.filter((item) => !isMainVideo(item, seq) && !locked(item));
     if (!targets.length) return;
     event.preventDefault();
-    // 连按时上一笔还没回来：从上一笔的落点接着推，不从旧位置重算。
+    // When pressed repeatedly and the previous commit has not returned yet, keep nudging from the previous commit's landing point rather than recalculating from the old position.
     const pending = nudges.current;
     const base = targets.map((item) => {
       const place = pending.at.get(item.id);
@@ -677,7 +668,7 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
     });
   };
 
-  // ---- 画 ----
+  // ---- Drawing ----
 
   const dragging = active === 'move' || active === 'group-move' || active === 'pan';
   const editingItem = editing ? byId.get(editing) : undefined;

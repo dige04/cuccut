@@ -1,10 +1,10 @@
-//! 相对长度（设计 §5.5）。阶段 1 只有 `CanvasWidth`/`CanvasHeight` 被 lowering 用到。
+//! Relative lengths (design §5.5). In stage 1, only `CanvasWidth`/`CanvasHeight` are used by lowering.
 
 use crate::MotionError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LengthBasis {
-    /// 绝对像素，不乘任何画布尺寸。
+    /// Absolute pixels, not multiplied by any canvas size.
     Absolute,
     CanvasWidth,
     CanvasHeight,
@@ -82,9 +82,8 @@ impl LengthContext {
 }
 
 impl RelativeLength {
-    /// `Self*`/`Parent*` 依赖静态布局：调用方必须先跑 `layout_tree` 再把布局盒
-    /// 填进 `LengthContext`（设计 §5.5，`scene_primitives::resolve::build_channels_after_layout`）。
-    /// 没有盒可用时报 `relative-basis-unresolved`（规范 §16）。
+    /// `Self*`/`Parent*` depend on static layout: the caller must first run `layout_tree` and then fill the layout boxes into `LengthContext` (design §5.5, `scene_primitives::resolve::build_channels_after_layout`).
+    /// If no box is available, report `relative-basis-unresolved` (spec §16).
     pub fn resolve(&self, ctx: &LengthContext) -> Result<f64, MotionError> {
         let (w, h) = ctx.canvas;
         let layout_box =
@@ -101,8 +100,7 @@ impl RelativeLength {
             LengthBasis::ParentHeight => layout_box(ctx.parent_box)?.1,
         };
         let scaled = self.value * base;
-        // `offset_px == 0` 时不做加法：`-1.0 * w` 与 `-w` 逐位相同，但
-        // `-0.0 + 0.0 == 0.0` 会丢掉零的符号，而旧实现写的是 `-canvas_h`。
+        // When `offset_px == 0`, no addition is done: `-1.0 * w` and `-w` are bit-identical, but `-0.0 + 0.0 == 0.0` would drop the sign of zero, and the old implementation wrote `-canvas_h`.
         if self.offset_px == 0.0 {
             Ok(scaled)
         } else {

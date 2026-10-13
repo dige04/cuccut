@@ -42,13 +42,12 @@ import { pairNode, unpairNode } from './share-commands.ts';
 import { useNodesPolling } from './use-share-status.ts';
 
 /*
- * 远端算力 ›「使用其他电脑」（原型 designs/cuccut/app/page-shell.jsx `NodeCard` 与 RemotePage 的 nodes 页签）。
- * 已配对读 `nodes.list`（页签开着时轮询），附近读 `nodes.discover`（只在点「查找附近的电脑」时扫一次），
- * 配对走 `nodes.pair`，取消配对走 `nodes.remove`。原型菜单里的「诊断这台节点」没有后端（没有 doctor 方法）：
- * 不画，改成卡片下方按 `problem` 拼的一句「为什么用不了、怎么办」。
+ * Remote compute › “Use other computers” (prototype designs/cuccut/app/page-shell.jsx `NodeCard` and the nodes tab of RemotePage).
+ * Paired nodes are read with `nodes.list` (polled while the tab is open), nearby nodes with `nodes.discover` (scanned once, only when “Find nearby computers” is clicked),
+ * pairing uses `nodes.pair`, and unpairing uses `nodes.remove`. The prototype's menu item “Diagnose this node” has no backend (there is no doctor method), so it is not drawn. Instead, one sentence built from `problem` appears below the card, saying why it can't be used and what to do.
  */
 
-/** 原型 `Card layer`，padding 12，上下 8。 */
+/** Prototype `Card layer`, padding 12, top and bottom 8. */
 const nodeCard = style({
   boxSizing: 'border-box',
   paddingX: 12,
@@ -83,7 +82,7 @@ const dialogBody = style({ display: 'flex', flexDirection: 'column', gap: 12 });
 const dialogError = style({ margin: 0, font: 'ui-sm', color: 'negative' });
 const codeField = style({ width: 160 });
 
-/** 配对对话框的对象：附近找到的一台（地址已知），或按地址添加（地址要用户填）。 */
+/** The subject of the pairing dialog: one nearby computer (address known), or one added by address (the user enters the address). */
 type PairTarget = { kind: 'nearby'; name: string; host: string; port: number } | { kind: 'address' };
 
 export function RemoteNodes() {
@@ -234,9 +233,9 @@ function NodeCard({ node }: { node: PairedNode }) {
 }
 
 /**
- * 配对对话框：附近的一台只问配对码；按地址添加先问地址再问码。校验不过的写在对应输入框下；
- * `nodes.pair` 失败的原因（码不对、锁定、版本、连不上）写在对话框里，不关对话框、不吞输入。
- * 状态放在 Dialog 外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+ * Pairing dialog: for a nearby computer it only asks for the pairing code; when adding by address it asks for the address first, then the code. Validation failures are shown under the corresponding input.
+ * Reasons for a failed `nodes.pair` (wrong code, locked, version, cannot connect) are shown in the dialog; the dialog is not closed and the input is not discarded.
+ * State lives in the outer Dialog: S2's Dialog renders its children once in each of several slots.
  */
 function PairDialog({ target, onClose }: { target: PairTarget; onClose: () => void }) {
   const runtime = useRuntime();

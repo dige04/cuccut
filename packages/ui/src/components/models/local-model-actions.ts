@@ -2,8 +2,7 @@ import type { Id, ModelInstallPlan, ModelInstallResult, ModelRemoveResult } from
 import type { RuntimeSession } from '../../runtime/session.ts';
 
 /**
- * 本地模型包的命令（架构设计 §6.3）：安装与修复的两步确认、停下、删除、检查。模型包的新状态与进度由 `models` 主题送回来，
- * 这里不改本地状态；失败原样抛给调用方（对话框留着写原因，或弹出提示）。
+ * Commands for local model packages (architecture design §6.3): install and repair with their two-step confirmation, stop, delete, and check. The new state and progress of model packages are sent back by the `models` topic; this code does not change local state. Failures are thrown as-is to the caller (the dialog keeps the reason, or a toast is shown).
  */
 
 type Session = Pick<
@@ -12,8 +11,7 @@ type Session = Pick<
 >;
 
 /**
- * `complete`：自己的文件在盘上的模型包补上缺的组件（可选组件，或别的模型带来的公共组件），与 `install` 同一个请求（计划里只有
- * 缺的那几件），只是不再问许可、标题不同。
+ * `complete`: for a model package whose own files are on disk, fills in the missing components (optional components, or shared components brought by another model). It uses the same request as `install` (the plan only contains the missing pieces), but does not ask for license again and has a different title.
  */
 export type InstallMode = 'install' | 'complete' | 'repair';
 
@@ -21,20 +19,20 @@ function call(session: Session, mode: InstallMode, bundleId: string, confirmByte
   return mode === 'repair' ? session.repairModelBundle(bundleId, confirmBytes) : session.installModelBundle(bundleId, confirmBytes);
 }
 
-/** 第一步：只拿计划，不下载（修复时 Runtime 会先把已装的文件校验一遍）。 */
+/** Step 1: fetches the plan only, no download (on repair, the Runtime first verifies the files already installed). */
 export function planInstall(session: Session, mode: InstallMode, bundleId: string): Promise<ModelInstallResult> {
   return call(session, mode, bundleId);
 }
 
 export type ConfirmOutcome =
-  /** 提交了安装任务（同一个模型包已经在装时是那个任务）。 */
+  /** An install task was submitted (if the same model package is already being installed, that task is returned). */
   | { kind: 'started'; jobId: Id }
-  /** 要下载的大小变了：按新计划再确认一次。 */
+  /** The size to download changed: confirm again with the new plan. */
   | { kind: 'replan'; plan: ModelInstallPlan }
-  /** 已经齐全，没有要下载的。 */
+  /** Already complete, nothing to download. */
   | { kind: 'up-to-date'; plan: ModelInstallPlan };
 
-/** 第二步：把计划里的 `confirmBytes` 原样交回去。大小变了（`MODEL_INSTALL_SIZE_CHANGED`）时带回新计划，不算失败。 */
+/** Step 2: passes back `confirmBytes` from the plan unchanged. When the size has changed (`MODEL_INSTALL_SIZE_CHANGED`), the new plan is returned, not treated as a failure. */
 export async function confirmInstall(session: Session, mode: InstallMode, plan: ModelInstallPlan): Promise<ConfirmOutcome> {
   let result: ModelInstallResult;
   try {
@@ -48,17 +46,17 @@ export async function confirmInstall(session: Session, mode: InstallMode, plan: 
   return result.plan.upToDate ? { kind: 'up-to-date', plan: result.plan } : { kind: 'replan', plan: result.plan };
 }
 
-/** 停下安装：`discard` 为 false 时保留已经收到的部分（下次续传），为 true 时一并删掉。 */
+/** Stops the install: when `discard` is false, the parts already received are kept (resume next time); when true, they are deleted too. */
 export async function stopInstall(session: Session, bundleId: string, discard: boolean): Promise<void> {
   await session.cancelModelInstall(bundleId, discard);
 }
 
-/** 删除模型包；别的模型包还在用的共享组件 Runtime 会保留，结果里列出。 */
+/** Deletes a model package; shared components still used by other model packages are kept by the Runtime and listed in the result. */
 export function removeBundle(session: Session, bundleId: string): Promise<ModelRemoveResult> {
   return session.removeModelBundle(bundleId);
 }
 
-/** 检查：返回任务 ID，结论记在模型包的 `selfTest` 上。 */
+/** Check: returns a task ID; the conclusion is recorded in the model package's `selfTest`. */
 export function startSelfTest(session: Pick<Session, 'testModelBundle'>, bundleId: string): Promise<Id> {
   return session.testModelBundle(bundleId);
 }

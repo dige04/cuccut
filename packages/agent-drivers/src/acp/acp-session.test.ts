@@ -8,8 +8,8 @@ import { createFakeAcp, type FakeAcp, type FakeAcpScenario } from '../testing/fa
 import { AcpDriver } from './acp-driver.ts';
 
 /**
- * ACP 会话对着假智能体：新建与恢复、消息与工具事件、三种审批答复与本会话放行、取消、访问模式、MCP 不支持 HTTP 的提示。
- * 假智能体在进程启动时读场景，所以改场景之后要新开会话。
+ * ACP session tests against a fake agent: new and resumed sessions, message and tool events, the three approval responses and allow-for-this-session, cancel, access modes, and the notice that MCP over HTTP is not supported.
+ * The fake agent reads its scenario when the process starts, so a new session must be opened after changing a scenario.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_000): Promise<T> {
@@ -91,7 +91,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(items).toContainEqual(expect.objectContaining({ kind: 'agent-message', text: 'hello world' }));
     expect(events.indexOf(done)).toBe(events.length - 1);
 
-    // 第二轮不再附指令。
+    // The second turn no longer attaches the instructions.
     const second = await session.startTurn({ text: 'again' }, settings());
     await completed(second.turnId);
     expect(fake.requests('session/prompt').at(-1)!.params.prompt).toEqual([{ type: 'text', text: 'again' }]);
@@ -307,7 +307,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
       const { turnId } = await s.session.startTurn({ text: mode }, settings(mode, 'fake-flash'));
       await s.completed(turnId);
       const set = fake.requests('session/set_mode');
-      // 和当前模式相同时不发。
+      // Not sent when it equals the current mode.
       if (set.length > 0) expect(set.at(-1)!.params.modeId).toBe(native);
     }
     expect(fake.requests('session/set_mode').map((r) => r.params.modeId)).toEqual(['plan', 'default', 'yolo']);
@@ -332,7 +332,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
       const { turnId } = await s.session.startTurn({ text: mode }, settings(mode));
       await s.completed(turnId);
     }
-    // 假智能体的当前模式是 'default'，第一轮 ask 也要设到 #agent；之后 ask ↔ fullAccess 只动 allow_all。
+    // The fake agent's current mode is 'default', so the first ask turn must also set #agent; after that, ask ↔ fullAccess only changes allow_all.
     expect(fake.requests('session/set_mode').map((r) => r.params.modeId)).toEqual([agent, plan, agent]);
     expect(fake.requests('session/set_config_option').map((r) => [r.params.configId, r.params.value])).toEqual([
       ['allow_all', 'on'],
@@ -340,7 +340,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
       ['allow_all', 'on'],
     ]);
     expect(s.events.filter((e) => e.type === 'session.warning')).toEqual([]);
-    // 离开完全访问时先关 allow_all 再换模式。
+    // When leaving full access, turn off allow_all before switching the mode.
     const order = fake
       .log()
       .filter((e) => e.kind === 'in' && (e.msg?.method === 'session/set_mode' || e.msg?.method === 'session/set_config_option'))
@@ -354,7 +354,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
       'session/set_config_option',
     ]);
 
-    // 没有 allow_all 配置项：完全访问不设开关，提示一次，按 #agent 运行。
+    // No allow_all config option: full access sets no switch, shows a notice once, and runs as #agent.
     const before = fake.requests('session/set_config_option').length;
     const n = await start({ modes: [agent, plan], allowAll: false });
     const { turnId } = await n.session.startTurn({ text: 'x' }, settings('fullAccess'));

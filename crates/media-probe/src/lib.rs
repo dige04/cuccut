@@ -1,47 +1,33 @@
 /*!
- * ccut-media-probe —— 全仓统一的媒体探测。
+ * ccut-media-probe — the unified media probe for the whole repo.
  *
- * 一句话职责：**回答"这个文件是什么、多长、多大、多少帧率、带不带 alpha"**，
- * 主路径纯 Rust，`ffprobe` 只作为解不了的容器的可选兜底。
+ * One-line responsibility: **answer “what is this file, how long is it, how big, what frame rate, does it have alpha”**. The main path is pure Rust; `ffprobe` is only an optional fallback for containers it cannot parse.
  *
- * ## 为什么单独一个 crate
+ * ## Why a separate crate
  *
- * 迁移前同一个问题在仓库里有 9 份互不相同的 `ffprobe` 子进程实现（渲染资源
- * 加载、语音时长、studio 初始化、时间轴 fps、`ccut source probe`、serve 的
- * filmstrip、导出前的音轨检查、App v2 的素材导入……），每一份的参数、解析和
- * 容错语义都略有出入，而且**全都把 ffprobe 当硬前置**。ffmpeg/ffprobe 正在从
- * 默认依赖降为可选增强，探测必须先于它可用。
+ * Before the migration, the repo had 9 different `ffprobe` subprocess implementations (render asset loading, speech duration, studio init, timeline fps, `ccut source probe`, serve's filmstrip, pre-export audio track checks, App v2 asset import...). Each differed slightly in arguments, parsing and error-tolerance semantics, and **all of them treated ffprobe as a hard prerequisite**. ffmpeg/ffprobe is being demoted from a default dependency to an optional enhancement, so probing must work before it is available.
  *
- * ## 后端
+ * ## Backends
  *
- * | 容器 | 后端 | 拿得到 |
+ * | Container | Backend | Provides |
  * | --- | --- | --- |
- * | MP4 / MOV / M4A（ISO-BMFF） | [`re_mp4`] | 时长、编码尺寸、fps、codec、音轨 |
- * | MKV / WebM（EBML） | [`matroska_demuxer`] | 时长、尺寸、fps、codec、**alpha** |
- * | WAV / MP3 / FLAC / OGG / OPUS / CAF… | [`symphonia`] | 时长、codec、采样率、声道 |
- * | PNG / JPEG / GIF / WebP / BMP / TIFF | [`image`]（只读头部） | 尺寸 |
- * | 其余（AVI / TS / FLV / HEIC…） | 无 | —— 交给 [`probe_with_fallback`] |
+ * | MP4 / MOV / M4A (ISO-BMFF) | [`re_mp4`] | duration, coded size, fps, codec, audio tracks |
+ * | MKV / WebM (EBML) | [`matroska_demuxer`] | duration, size, fps, codec, **alpha** |
+ * | WAV / MP3 / FLAC / OGG / OPUS / CAF… | [`symphonia`] | duration, codec, sample rate, channels |
+ * | PNG / JPEG / GIF / WebP / BMP / TIFF | [`image`] (header only) | size |
+ * | Others (AVI / TS / FLV / HEIC…) | none; handed to [`probe_with_fallback`] | — |
  *
- * ## 二进制发现不归本 crate
+ * ## Binary discovery is not this crate's job
  *
- * [`probe_with_fallback`] 的 `ffprobe` 路径**由调用方传入**：全仓统一经
- * `ccut_exec::find_executable("ffprobe")`（core workspace 的统一搜索目录表，
- * WP3 收敛，见 `core/crates/ccut-exec`），找不到就传 `None`。本 crate 自己绝
- * 不搜 PATH——那会让"用哪个 ffprobe"变成两套规则。
+ * The `ffprobe` path for [`probe_with_fallback`] is **passed in by the caller**: the whole repo goes through `ccut_exec::find_executable("ffprobe")` (the unified search directory table of the core workspace, consolidated in WP3, see `core/crates/ccut-exec`), and passes `None` if it is not found. This crate never searches PATH itself, since that would make “which ffprobe to use” a second set of rules.
  *
- * ## 旋转与两种尺寸
+ * ## Rotation and two sizes
  *
- * [`VideoInfo::width`] / [`VideoInfo::height`] 继续是 `naturalW/naturalH` 的既有
- * 口径：**编码尺寸、不含旋转**（见 `docs/design/cli/ccut-cli-server-reference.md`）。
- * 解码器默认会按容器旋转元数据摆正像素，因此另外交出
- * [`VideoInfo::display_width`] / [`VideoInfo::display_height`] 给帧缓冲与渲染几何使用。
- * 新字段是 additive 的，不改任何已有 `naturalW/naturalH` 输出。
+ * [`VideoInfo::width`] / [`VideoInfo::height`] keep the existing `naturalW/naturalH` convention: **coded size, without rotation** (see `docs/design/cli/ccut-cli-server-reference.md`). Decoders rotate pixels upright by default according to the container's rotation metadata, so [`VideoInfo::display_width`] / [`VideoInfo::display_height`] are also exposed for the frame buffer and render geometry. The new fields are additive and do not change any existing `naturalW/naturalH` output.
  *
- * ## 音轨编辑表
+ * ## Audio edit list
  *
- * [`audio_edit_start`] 回答另一个「这个文件是什么」的问题：MP4 / M4A / MOV 音轨
- * 的 `elst` 让解码后先丢掉多少编码器前置帧。Symphonia 不应用编辑表，全仓三条
- * Symphonia 解码循环（渲染混音、语音 / 节拍 / 分离、波形）都靠它对齐 ffmpeg。
+ * [`audio_edit_start`] answers another “what is this file” question: the `elst` of an MP4 / M4A / MOV audio track says how many encoder-priming frames to drop after decoding. Symphonia does not apply edit lists, so the repo's three Symphonia decode loops (render mixing; speech / beat / separation; waveform) all rely on it to align with ffmpeg.
  */
 
 use std::path::Path;
@@ -55,7 +41,7 @@ mod native;
 pub use edit_list::{EditStart, audio_edit_start};
 pub use ffprobe::probe_with_ffprobe;
 
-/// 媒体的粗分类。与 `ccut source probe` 的 `kind` 字段同口径。
+/// Coarse media classification. Uses the same convention as the `kind` field of `ccut source probe`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaKind {
     Video,
@@ -64,7 +50,7 @@ pub enum MediaKind {
 }
 
 impl MediaKind {
-    /// `ccut source probe` / timeline `source.kind` 用的小写名。
+    /// Lowercase name used for `ccut source probe` / timeline `source.kind`.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Video => "video",
@@ -74,46 +60,42 @@ impl MediaKind {
     }
 }
 
-/// 视觉轨信息。静态图片也走这里（尺寸就是图片自身的像素尺寸）。
+/// Visual track info. Static images also go through here (the size is the image's own pixel size).
 #[derive(Debug, Clone, PartialEq)]
 pub struct VideoInfo {
-    /// 编码尺寸，**不含旋转**（与迁移前的 ffprobe `stream=width,height` 同口径）。
+    /// Coded size, **without rotation** (same convention as the pre-migration ffprobe `stream=width,height`).
     pub width: u32,
     pub height: u32,
-    /// 解码器应用容器旋转元数据后的输出像素尺寸。
+    /// Output pixel size after the decoder applies the container's rotation metadata.
     ///
-    /// 无旋转时与 `width` / `height` 相同；90° / 270° 时两者互换。
-    /// 这两个字段只服务帧缓冲几何，不会替代 `naturalW/naturalH`。
+    /// Same as `width` / `height` when there is no rotation; the two are swapped at 90° / 270°.
+    /// These two fields only serve frame buffer geometry and do not replace `naturalW/naturalH`.
     pub display_width: u32,
     pub display_height: u32,
-    /// 源自身帧率；`None` = 容器里问不出来。
+    /// Source frame rate; `None` = the container does not report it.
     ///
-    /// 与 ffprobe 的 `r_frame_rate` / `avg_frame_rate` **不保证有理数级一致**，
-    /// 只保证 f64 容差一致——下游全都转 f64 用。
+    /// Not **guaranteed to match ffprobe's `r_frame_rate` / `avg_frame_rate` exactly as rationals**; only guaranteed to match within f64 tolerance, since all downstream consumers use f64.
     pub fps: Option<f64>,
     /// Average video-track bitrate in bit/s, excluding audio and container overhead.
     pub bitrate: Option<f64>,
-    /// ffprobe `codec_name` 口径的小写短名（`h264` / `hevc` / `vp9` / `av1`…）。
+    /// Lowercase short name in ffprobe `codec_name` convention (`h264` / `hevc` / `vp9` / `av1`…).
     pub codec: Option<String>,
-    /// 容器**标注**这条轨带 alpha 平面。
+    /// The container **marks** this track as carrying an alpha plane.
     ///
-    /// 现实里只有 Matroska/WebM 会标（`AlphaMode`，EBML 0x53C0），对应迁移前
-    /// ffprobe 的 `stream_tags=alpha_mode`。这是带 alpha 的 WebM 贴纸能不能
-    /// 正确解码的唯一判据（见 `ccut_render::assets::probe_alpha_decoder`）。
+    /// In practice only Matroska/WebM sets it (`AlphaMode`, EBML 0x53C0), corresponding to the pre-migration ffprobe `stream_tags=alpha_mode`. This is the only criterion for whether an alpha WebM sticker can be decoded correctly (see `ccut_render::assets::probe_alpha_decoder`).
     pub alpha: bool,
 }
 
 impl VideoInfo {
-    /// 摆正后的解码帧尺寸。
+    /// Decoded frame size after upright correction.
     pub fn display_dimensions(&self) -> (u32, u32) {
         (self.display_width, self.display_height)
     }
 }
 
-/// 编码尺寸 + 象限旋转 → 摆正后的解码帧尺寸。
+/// Coded size + quadrant rotation → decoded frame size after upright correction.
 ///
-/// 容器理论上可以存任意角度，但各解码后端对非象限仿射的输出画布
-/// 口径不一致；这种情况保留编码尺寸，由具体解码后端决定是否支持。
+/// Containers can in theory store any angle, but decoder backends disagree on the output canvas convention for non-quadrant affine transforms; in that case the coded size is kept, and it is up to the specific decoder backend whether to support it.
 pub(crate) fn display_dimensions_for_rotation(width: u32, height: u32, degrees: f64) -> (u32, u32) {
     if !degrees.is_finite() {
         return (width, height);
@@ -130,42 +112,42 @@ pub(crate) fn display_dimensions_for_rotation(width: u32, height: u32, degrees: 
     }
 }
 
-/// 音轨信息。**存在即代表这个文件有音轨**（`has_audio` 就看它是不是 `Some`）。
+/// Audio track info. **Presence means the file has an audio track** (`has_audio` just checks whether this is `Some`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioInfo {
-    /// ffprobe `codec_name` 口径的小写短名（`aac` / `mp3` / `flac` / `opus`…）。
+    /// Lowercase short name in ffprobe `codec_name` convention (`aac` / `mp3` / `flac` / `opus`…).
     pub codec: Option<String>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u16>,
 }
 
-/// 一次探测的全部产出。
+/// All output of one probe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaProbe {
     pub kind: MediaKind,
-    /// 容器时长（秒）。图片恒为 `None`；容器没写时长也是 `None`。
+    /// Container duration in seconds. Always `None` for images; also `None` when the container does not record a duration.
     pub duration_seconds: Option<f64>,
     pub video: Option<VideoInfo>,
     pub audio: Option<AudioInfo>,
 }
 
 impl MediaProbe {
-    /// 有没有音轨。
+    /// Whether there is an audio track.
     pub fn has_audio(&self) -> bool {
         self.audio.is_some()
     }
 
-    /// 编码尺寸；没有视觉轨时为 `None`。
+    /// Coded size; `None` when there is no visual track.
     pub fn dimensions(&self) -> Option<(u32, u32)> {
         self.video.as_ref().map(|video| (video.width, video.height))
     }
 
-    /// 应用容器旋转元数据后的解码帧尺寸；没有视觉轨时为 `None`。
+    /// Decoded frame size after applying the container's rotation metadata; `None` when there is no visual track.
     pub fn display_dimensions(&self) -> Option<(u32, u32)> {
         self.video.as_ref().map(VideoInfo::display_dimensions)
     }
 
-    /// 源帧率；探测不到为 `None`。
+    /// Source frame rate; `None` if it cannot be probed.
     pub fn fps(&self) -> Option<f64> {
         self.video.as_ref().and_then(|video| video.fps)
     }
@@ -188,19 +170,19 @@ impl MediaProbe {
             })
     }
 
-    /// 大于 0 的有限时长，否则 `None`（迁移前各调用点都在做这层过滤）。
+    /// A finite duration greater than 0, otherwise `None` (every pre-migration call site applied this filter).
     pub fn positive_duration(&self) -> Option<f64> {
         self.duration_seconds
             .filter(|value| value.is_finite() && *value > 0.0)
     }
 }
 
-/// 实际出活的探测后端。
+/// The probe backend that actually produced the result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeBackend {
-    /// 纯 Rust。
+    /// Pure Rust.
     Native,
-    /// 兜底的 `ffprobe` 子进程。
+    /// The fallback `ffprobe` subprocess.
     Ffprobe,
 }
 
@@ -213,16 +195,14 @@ impl ProbeBackend {
     }
 }
 
-/// 被当成静态图片的扩展名（小写）。
+/// File extensions (lowercase) treated as static images.
 ///
-/// 分类**只看扩展名**，与迁移前 `ccut source probe` / App v2 素材导入的判据
-/// 一致：容器里那张 PNG 在 ffprobe 眼里也是一条"视频流"，靠流类型分不出
-/// "图片"和"单帧视频"。
+/// Classification **looks only at the extension**, consistent with the pre-migration criterion of `ccut source probe` / App v2 asset import: in ffprobe's view, a PNG inside a container is also a “video stream”, so stream type cannot distinguish an “image” from a “single-frame video”.
 pub const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif",
 ];
 
-/// 路径扩展名是否属于静态图片。
+/// Whether the path's extension belongs to a static image.
 pub fn is_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -231,17 +211,14 @@ pub fn is_image_path(path: &Path) -> bool {
         })
 }
 
-/// 纯 Rust 探测。解不了的容器返回 `Err`——调用方要兜底就用
-/// [`probe_with_fallback`]。
+/// Pure Rust probe. Containers it cannot parse return `Err`; callers that need a fallback should use [`probe_with_fallback`].
 pub fn probe(path: &Path) -> Result<MediaProbe> {
     native::probe_native(path)
 }
 
-/// 纯 Rust 优先、`ffprobe` 兜底。
+/// Pure Rust first, `ffprobe` as fallback.
 ///
-/// `ffprobe` 是**调用方给的可执行文件路径**（通常是
-/// `ccut_exec::find_executable("ffprobe")` 的结果）；`None` = 这台机器上没有
-/// ffprobe，此时纯 Rust 的失败就是最终失败。
+/// `ffprobe` is **an executable path supplied by the caller** (usually the result of `ccut_exec::find_executable("ffprobe")`); `None` = there is no ffprobe on this machine, in which case a pure Rust failure is the final failure.
 pub fn probe_with_fallback(
     path: &Path,
     ffprobe: Option<&Path>,
@@ -265,7 +242,7 @@ pub fn probe_with_fallback(
     }
 }
 
-/// 读文件头若干字节做容器嗅探。
+/// Sniffs the container by reading the first few bytes of the file.
 pub(crate) fn read_magic(path: &Path) -> Result<[u8; 16]> {
     use std::io::Read as _;
 

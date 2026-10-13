@@ -76,7 +76,7 @@ describe('粘贴的时间', () => {
     expect(pasteStart({ start: 30, end: 90 }, 90, 300)).toBe(30);
     expect(pasteStart({ start: 30, end: 90 }, 150, 300)).toBe(150);
     expect(pasteStart({ start: 30, end: 90 }, 280, 300)).toBe(240);
-    // 片子比片段还短：起点落在 0。
+    // The clip is shorter than the segment: the start lands at 0.
     expect(pasteStart({ start: 30, end: 90 }, 200, 40)).toBe(0);
   });
 });
@@ -88,9 +88,9 @@ describe('粘贴的位置', () => {
   it('中心往右下错开 2% × 第几次，夹在限位里；大小与角度不变', () => {
     expect(pastePlace(at({ x: 50, y: 50, w: 10, rot: 15 }), canvas, 1)).toEqual({ x: 52, y: 52, w: 10, rot: 15 });
     expect(pastePlace(at({ x: 50, y: 50, w: 10 }), canvas, 3)).toEqual({ x: 56, y: 56, w: 10 });
-    // 已经在右下角附近：只推到 97% / 96%。
+    // Already near the bottom right: only pushed to 97% / 96%.
     expect(pastePlace(at({ x: 96, y: 95, w: 10 }), canvas, 2)).toEqual({ x: 97, y: 96, w: 10 });
-    // 没写位置的按画面中央算，错开后写明。
+    // An item with no position counts as centered in the frame; the offset is spelled out below.
     expect(pastePlace(at({ w: 10 }), canvas, 1)).toEqual({ x: 52, y: 52, w: 10 });
   });
 
@@ -124,13 +124,13 @@ describe('粘贴', () => {
     const tracks = [track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('v2', 2, 'visual'), track('v3', 3, 'visual', { locked: true })];
     const a = shape('a', 'v1', 0, 60);
     const seq = sequence(tracks, [a, shape('b', 'v2', 0, 30)]);
-    // v2 在 [0, 60) 被占、v3 锁着：新建一条。
+    // v2 is occupied in [0, 60) and v3 is locked: create a new one.
     const plan = pasteOperations(seq, [a], { playheadFrame: 10, generation: 1, labelOf });
     expect(plan.operations[0]).toEqual({ type: 'addTrack', sequenceId: 'seq', kind: 'visual', ref: 'paste-track-0' });
     const insert = plan.operations[1]!;
     expect(insert.type === 'insertItems' && insert.items[0]).toMatchObject({ trackRef: 'paste-track-0' });
 
-    // 搬到播放头 [70, 130)：v1 被后面那件占着，v2 空着。
+    // Moved to the playhead [70, 130): v1 is occupied by the item after it, v2 is empty.
     const longer = sequence(tracks, [a, shape('x', 'v1', 60, 140), shape('b', 'v2', 0, 30)]);
     const later = pasteOperations(longer, [a], { playheadFrame: 70, generation: 1, labelOf });
     expect(later.operations).toHaveLength(1);

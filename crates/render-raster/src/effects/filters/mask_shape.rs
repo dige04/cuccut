@@ -1,9 +1,9 @@
-//! 圆角矩形 / 椭圆的 SDF 覆盖率遮罩（`mask.shape@1`）。
+//! SDF coverage mask for rounded rectangles and ellipses (`mask.shape@1`).
 //!
-//! **逐行搬自** `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs::apply_local_clip`。
-//! 覆盖率乘在**预乘四通道**上，因此预乘不变式 `rgb ≤ a` 保持成立。
+//! **Moved line by line from** `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs::apply_local_clip`.
+//! Coverage is multiplied onto the **premultiplied four channels**, so the premultiplication invariant `rgb ≤ a` still holds.
 
-/// 覆盖率乘一个像素的全部四个通道。位精确来源：`multiply_pixel_coverage`。
+/// Multiplies all four channels of a pixel by the coverage. Bit-exact source: `multiply_pixel_coverage`.
 pub fn multiply_pixel_coverage(pixel: &mut [u8], coverage: f64) {
     let coverage = coverage.clamp(0.0, 1.0);
     for channel in pixel {
@@ -11,11 +11,10 @@ pub fn multiply_pixel_coverage(pixel: &mut [u8], coverage: f64) {
     }
 }
 
-/// 整幅乘一个不透明度。位精确来源：`multiply_premultiplied_alpha`。
+/// Multiplies the whole frame by one opacity. Bit-exact source: `multiply_premultiplied_alpha`.
 pub fn multiply_premultiplied_alpha(data: &mut [u8], opacity: f64) {
     let opacity = opacity.clamp(0.0, 1.0);
-    // `(v as f64 * 1.0).round() as u8 == v` 对全部 u8 成立，所以满不透明是恒等变换：
-    // 跳过整幅扫描，不写任何字节（与 `mask_shape` 的恒等短路同一约定）。
+    // `(v as f64 * 1.0).round() as u8 == v` holds for every u8, so full opacity is an identity transform. Skip the full-frame scan and write no bytes. This is the same convention as the identity short-circuit in `mask_shape`.
     if opacity >= 1.0 {
         return;
     }
@@ -24,7 +23,7 @@ pub fn multiply_premultiplied_alpha(data: &mut [u8], opacity: f64) {
     }
 }
 
-/// `radius <= 0 && !ellipse` 时是恒等变换（与原实现一致：不写任何字节）。
+/// When `radius <= 0 && !ellipse`, this is an identity transform. It matches the original implementation and writes no bytes.
 pub fn mask_shape(
     data: &mut [u8],
     width: u32,
@@ -36,8 +35,7 @@ pub fn mask_shape(
     mask_shape_corners(data, width, height, [radius; 4], ellipse, feather)
 }
 
-/// 四角独立的圆角矩形遮罩。半径顺序为左上、右上、右下、左下；旧单值入口
-/// [`mask_shape`] 只是把同一个值复制四次，因此历史像素保持不变。
+/// Rounded-rectangle mask with an independent radius for each corner. The radius order is top-left, top-right, bottom-right, bottom-left. The older single-value entry [`mask_shape`] copies the same value four times, so existing pixels do not change.
 pub fn mask_shape_corners(
     data: &mut [u8],
     width: u32,

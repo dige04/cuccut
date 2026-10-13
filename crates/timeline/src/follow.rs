@@ -1,31 +1,18 @@
-//! 跟随：片段与剪口改了时钟之后，元素怎么跟（BCF §19.1「跟随」，剪辑工具缺口方案 §2.1）。
+//! Following: after segments and cuts change the clock, how elements follow (BCF §19.1 "following", clip-tool gap plan §2.1).
 //!
-//! `clips[]` 加 `sources.<id>.cuts` 是时钟的唯一真相，画面与声音只在元素上。每一项改时钟的
-//! 写入（剪口增删、片段增删 / 分割 / 挪动 / 修剪 / 倍速）在同一写事务里调用 [`follow_clock`]：
-//! 入参是**这一项之前**的文档（只用它的时钟）与已经改好片段 / 剪口、元素还没动的文档。
+//! `clips[]` plus `sources.<id>.cuts` is the only source of truth for the clock; pictures and sound live only on the elements. Every write that changes the clock (adding or removing cuts, adding, removing, splitting, moving, trimming or speed-changing segments) calls [`follow_clock`] inside the same write transaction:
+//! the inputs are the document **before this item** (used only for its clock) and the document with segments / cuts already changed but elements not yet moved.
 //!
-//! 四条规则：
+//! Four rules:
 //!
-//! 1. **哪些元素算「片段的画面」**：在操作前的文档里，`kind:"video"`、角色不是 broll /
-//!    watermark、不在音频轨上，`srcId` 与某个片段相同，并且时间区间落在该片段投影出的某一段
-//!    之内、`srcStart` 与这一段在同一时刻对得上、`rate` 与片段相同（逐段判，容差
-//!    [`COMPOSE_EPS`]）。挪开过（源时刻对不上）或拉长过（超出这一段）的不算。只在分离文档上认领。
-//!    补一档**陈旧画面**：旧版本在分离文档上剪口时画面不跟，留下的画面对不上折叠后的任何
-//!    一段，却按同样的判据对得上片段**不计剪口**的时钟（清掉全部剪口后的投影），并且这个片段
-//!    一件跟得上的画面都没有——这样的也归这个片段（[`stale_pictures`]）。它们按源区间走规则 2，
-//!    等于先补放了历史剪口；不改时钟的写入不碰它们。
-//! 2. **操作之后画面怎么办**：对操作后每一段投影（片段 c，源区间 `[a, b)`），取归属于 c 的
-//!    画面（分割出的右片段沿用母片段）、按源时间排序、各自收到交集上；**这次操作才变得可见**的
-//!    源区间（恢复剪口、修剪外扩）由前一件延长补上，段首由后一件向前补，隔着旧空当时照邻件
-//!    复制一件；操作前就可见却没有画面的源区间（用户删过 / 缩过）不补；不自动合并相邻两件。
-//!    同一件被分到多段时源时间最靠前的一份保留原 id。整件落在被去掉范围里的删除。新加的片段按
-//!    分离的缺省新建；原本就没有画面的片段不补。
-//! 3. **其它按数字时间放的元素**：起止各自按「操作前成片时刻 → 片段与源时刻 → 操作后成片时刻」
-//!    换算；落在被去掉的范围里时起点推到后面第一个保留时刻、终点退到前面最后一个保留时刻，
-//!    终点不大于起点的删除；自带源的（`video` / `audio`）起点被推后时 `srcStart` 按操作前
-//!    时钟上的推后量同步前移；跨剪口的只缩短不挖洞；超出片尾的保持到片尾的距离。挪片段时只有
-//!    起止都落在同一个片段里的元素跟着片段走；分割不改时钟，切开压在分割点上的元素。
-//! 4. 词锚点（`~词`）与不设终点的元素不动。
+//! 1. **Which elements count as "a segment's picture"**: in the document before the operation, `kind:"video"`, role not broll / watermark, not on an audio track, `srcId` matching a segment, and the time range falls within one of the spans that segment projects
+//!    (judged span by span, tolerance [`COMPOSE_EPS`]), with `srcStart` matching that span at the same moment, and `rate` equal to the segment's. Anything that was moved (source moment does not match) or stretched (beyond that span) does not count. Claimed only on a separated document.
+//!    One more category, **stale pictures**: when an old version cut on a separated document, the picture did not follow, leaving a picture that does not match any folded span, but matches, by the same criteria, the segment's **uncut** clock (the projection after clearing all cuts), and the segment has no picture that follows properly — such pictures also belong to this segment ([`stale_pictures`]). They follow rule 2 by their source range, which is equivalent to first back-filling the historical cut. Writes that do not change the clock do not touch them.
+//! 2. **What happens to pictures after the operation**: for each span of the projection after the operation (segment c, source range `[a, b)`), take the pictures belonging to c (the right half of a split segment inherits its parent), sort them by source time, and clip each to the intersection; source ranges **that only became visible with this operation** (restoring a cut, trim expansion) are filled by extending the preceding item, and the start of a span is filled backward by the following item; across an old gap, a neighbouring item is copied; source ranges that were visible before the operation but have no picture (deleted or shrunk by the user) are not filled; adjacent items are not automatically merged.
+//!    When the same item is assigned to multiple spans, the part with the earliest source time keeps the original id. An item that falls entirely within the removed range is deleted. A newly added segment is created with the separated default; a segment that had no picture originally is not filled.
+//! 3. **Other elements placed by numeric time**: start and end are each converted through "timeline moment before the operation → segment and source moment → timeline moment after the operation"; if inside a removed range, the start is pushed to the first kept moment after it and the end is pulled back to the last kept moment before it;
+//!    an element whose end is not greater than its start is deleted; elements with their own source (`video` / `audio`) have `srcStart` moved forward by the same push amount as measured on the pre-operation clock when their start is pushed later; elements that span a cut are only shortened and no hole is dug; anything beyond the tail keeps its distance to the tail. When a segment is moved, only elements whose start and end both fall within the same segment move with it; when splitting, the clock does not change, and elements stacked on the split point are cut.
+//! 4. Word anchors (`~word`) and elements with no end point are not moved.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::ser::SerializeStruct;
@@ -39,46 +26,46 @@ use crate::schema::{
 use crate::schema::{Track, TrackKind};
 use crate::video_elements::default_picture_element;
 
-/// 画面认领与接缝判等的容差：内核按秒写 `segments`，元素 `start/end/srcStart` 从同一组数
-/// 序列化而来，1ms 足够吸收浮点抖动，又远小于任何真实剪缝（剪口模式最短 40ms）。编辑器的
-/// 碎片归组（`ccut-editor-core` 的 `compose_assignments`）引用同一个常量。
+/// Tolerance for claiming pictures and judging seam equality: the kernel writes `segments` in seconds, and element `start/end/srcStart` are serialized from the same set of
+/// numbers; 1 ms is enough to absorb floating-point jitter, and it is far smaller than any real editing seam (the shortest in cut mode is 40 ms). The editor's
+/// fragment grouping (`compose_assignments` in `ccut-editor-core`) references the same constant.
 pub const COMPOSE_EPS: f64 = 1e-3;
 
 const RATE_EPS: f64 = 1e-6;
 const TINY: f64 = 1e-9;
 
-/// 这一项写入对时钟做了什么。
+/// What this write did to the clock.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClockEdit {
-    /// 改时钟长度：剪口增删、片段增删、修剪、倍速。
+    /// Changes the clock length: adding or removing cuts, adding or removing segments, trimming, speed.
     Retime,
-    /// 分割：不改时钟。`right` 是新片段，画面沿用 `left`；`at` 是分割点（成片时刻）。
+    /// Splitting: does not change the clock. `right` is the new segment, and its picture is inherited from `left`; `at` is the split point (timeline moment).
     Split {
         left: String,
         right: String,
         at: f64,
     },
-    /// 只改片段顺序。
+    /// Only changes the order of segments.
     Move,
 }
 
-/// 跟随新建的一件元素。
+/// An element newly created by following.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FollowCreated {
     pub id: String,
-    /// 从哪件元素分出 / 照哪件复制；按缺省新建的片段画面没有来源。
+    /// Which element it was split from / copied from; a segment created with the default has no picture source.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
-    /// 片段画面所属的片段；其它元素为空。
+    /// The segment that a segment picture belongs to; empty for other elements.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clip_id: Option<String>,
 }
 
-/// 跟随的结果：删了哪些、新建了哪些（及来源）、哪些保留原 id 但改了时间。
+/// The result of following: which were deleted, which were newly created (and their sources), and which kept their original id but had their time changed.
 ///
-/// 序列化形状（命令行回执与 `EditApplied` 的 `follow`）：
-/// `{"removed":[id…],"created":[{"id","from"?,"clipId"?}…],"retimed":N}`。
+/// Serialized shape (command-line receipt and `follow` in `EditApplied`):
+/// `{"removed":[id…],"created":[{"id","from"?,"clipId"?}…],"retimed":N}`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FollowReport {
     pub removed: Vec<String>,
@@ -101,7 +88,7 @@ impl FollowReport {
         self.removed.is_empty() && self.created.is_empty() && self.retimed.is_empty()
     }
 
-    /// 同一写事务里的下一项。前面新建、后面删掉的只是没出现过；前面改时间、后面删掉的记删除。
+    /// The next item in the same write transaction. Something created earlier and deleted later never existed; something whose time was changed earlier and deleted later is recorded as a deletion.
     pub fn merge(&mut self, next: FollowReport) {
         for id in next.removed {
             if let Some(index) = self.created.iter().position(|created| created.id == id) {
@@ -126,7 +113,7 @@ impl FollowReport {
     }
 }
 
-/// 只留时钟（源、剪口、片段、`main`）的副本，给 [`follow_clock`] 当「操作前」。
+/// A copy keeping only the clock (sources, cuts, segments, `main`), used by [`follow_clock`] as the "before the operation" state.
 pub fn clock_snapshot(document: &TimelineDocument) -> TimelineDocument {
     TimelineDocument {
         version: document.version.clone(),
@@ -138,8 +125,8 @@ pub fn clock_snapshot(document: &TimelineDocument) -> TimelineDocument {
     }
 }
 
-/// 两份文档的时钟是否相同（片段与各源剪口）。登记一个新源、或补出一个空的 `main` 源
-/// 不改时钟：缺席的源与没有剪口的源等价。
+/// Whether the clocks of two documents are the same (segments and each source's cuts). Registering a new source, or filling in an empty `main` source,
+/// does not change the clock: an absent source and a source with no cuts are equivalent.
 pub fn same_clock(a: &TimelineDocument, b: &TimelineDocument) -> bool {
     fn cuts_of<'a>(document: &'a TimelineDocument, id: &str) -> &'a [Cut] {
         document
@@ -154,13 +141,13 @@ pub fn same_clock(a: &TimelineDocument, b: &TimelineDocument) -> bool {
             .all(|id| cuts_of(a, id) == cuts_of(b, id))
 }
 
-/// 让元素跟随这一项对时钟的修改。
+/// Makes elements follow the clock change made by this item.
 ///
-/// - `before`：这一项之前的文档，只读它的时钟（[`clock_snapshot`] 即可）。
-/// - `document`：片段 / 剪口已改好、元素还是操作前的文档；跟随就地改它的轨与元素。
-/// - `durations`：各源时长（同 [`TimelineProjection::build`]）。
-/// - `widths`：新片段按分离缺省新建画面时的 `place.w`（按源，缺省 100）。
-/// - `next_id`：新元素 id。
+/// - `before`: the document before this item, of which only the clock is read ([`clock_snapshot`] is enough).
+/// - `document`: segments / cuts already changed, elements still in their pre-operation state; following changes its tracks and elements in place.
+/// - `durations`: the duration of each source (same as [`TimelineProjection::build`]).
+/// - `widths`: the `place.w` used when a new segment is created with the default separated picture (per source, default 100).
+/// - `next_id`: the id of new elements.
 pub fn follow_clock(
     before: &TimelineDocument,
     document: &mut TimelineDocument,
@@ -179,7 +166,7 @@ pub fn follow_clock(
         .map(|track| track.id.clone())
         .collect();
 
-    // 1–2. 片段的画面（只在分离文档上）。
+    // 1–2. Segment pictures (only on a separated document).
     let mut pictures: HashSet<String> = HashSet::new();
     if document.is_detached() && (!pre.clips().is_empty() || !post.clips().is_empty()) {
         let unfolded = unfolded_projection(before, durations);
@@ -196,7 +183,7 @@ pub fn follow_clock(
         );
     }
 
-    // 3. 其它按数字时间放的元素。
+    // 3. Other elements placed by numeric time.
     if !pre.clips().is_empty() {
         match edit {
             ClockEdit::Retime => retime_elements(&pre, &post, document, &pictures, &mut report),
@@ -216,7 +203,7 @@ pub fn follow_clock(
         }
     }
 
-    // 被闪避引用的轨即使跟随后空了也留着：`duck.under` 不能指向不存在的轨。
+    // A track referenced by ducking is kept even if it becomes empty after following: `duck.under` must not point to a non-existent track.
     let ducked: HashSet<String> = document
         .tracks
         .iter()
@@ -233,12 +220,12 @@ pub fn follow_clock(
 }
 
 // ---------------------------------------------------------------------------
-// 片段的画面
+// Segment pictures
 // ---------------------------------------------------------------------------
 
-/// 规则 1 的公开形：每个片段名下的画面元素 id，按源时间排序（`clip list` 的 `elements`、
-/// `element list` 的 `clipId` 与跟随共用这一个判据）。旧式文档（没有分离）恒为空表；
-/// 没有画面的片段不出现在表里。
+/// The public form of rule 1: the picture element ids under each segment name, sorted by source time (`clip list`'s `elements`, `element list`'s
+/// `clipId` and following all share this one criterion). A legacy document (without separation) is always an empty table;
+/// segments without pictures do not appear in the table.
 pub fn picture_assignments(
     document: &TimelineDocument,
     projection: &TimelineProjection,
@@ -267,16 +254,16 @@ pub fn picture_assignments(
     out
 }
 
-/// 一件没跟上剪口的「陈旧画面」（规则 1 的补充）。
+/// A "stale picture" that did not follow a cut (a supplement to rule 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StalePicture {
     pub element_id: String,
     pub clip_id: String,
 }
 
-/// 分离文档里认成陈旧画面的元素（`ccut check` 的 `picture-not-following-cuts` 用）。
-/// 旧版本在分离文档上剪口时画面不跟，留下来的画面还对着片段不计剪口的位置；下一次改时钟的
-/// 写入会把它们收到各段上（[`follow_clock`]），在那之前它们不进 [`picture_assignments`]。
+/// An element in a separated document recognised as a stale picture (used by `ccut check`'s `picture-not-following-cuts`).
+/// An old version, when cutting a separated document, did not make the picture follow, so the remaining picture still sits at the segment's uncut position; the next write that changes the clock
+/// will distribute them over the spans ([`follow_clock`]), and until then they do not enter [`picture_assignments`].
 pub fn stale_pictures(
     document: &TimelineDocument,
     projection: &TimelineProjection,
@@ -300,8 +287,8 @@ pub fn stale_pictures(
         .collect()
 }
 
-/// 不计剪口的时钟：清掉各源剪口之后的投影（片段顺序、下标与折叠后的投影一一对应）。
-/// 文档里没有任何剪口时两者相同，返回 `None`。
+/// The uncut clock: the projection after clearing all cuts of each source (segment order, indices correspond one-to-one with the folded projection).
+/// If the document has no cuts at all, the two are the same and `None` is returned.
 fn unfolded_projection(
     document: &TimelineDocument,
     durations: &BTreeMap<String, f64>,
@@ -320,7 +307,7 @@ fn unfolded_projection(
     TimelineProjection::build(&clock, durations).ok()
 }
 
-/// 认领到的一件画面：第 `track` 条轨第 `index` 件，归属片段 `clip`（投影下标）。
+/// One claimed picture: track `track`, item `index`, belonging to segment `clip` (projection index).
 struct Claim {
     track: usize,
     index: usize,
@@ -328,13 +315,12 @@ struct Claim {
     stale: bool,
 }
 
-/// 规则 1 与它的补充。
+/// Rule 1 and its supplement.
 ///
-/// - 跟得上的画面：对得上折叠后投影的某一段（[`claim_picture`]）。
-/// - 陈旧画面（只在给了 `unfolded` 时判）：对不上折叠后的任何一段，却在片段**不计剪口**的
-///   时钟上源同步（落在某一段之内、`srcStart` 对得上、倍速相同），并且这个片段一件跟得上的
-///   画面都没有。旧版本剪口不带画面留下的就是这个形状；有意摆放的叠加视频起点不在片段未折叠
-///   的位置上，片段自己的画面也还在，两条都挡住它。
+/// - Pictures that follow properly: match some span of the folded projection ([`claim_picture`]).
+/// - Stale pictures (judged only when `unfolded` is given): match no span of the folded projection, but on the segment's **uncut** clock they are source-synchronised (fall within a span, `srcStart` matches, same rate),
+///   and the segment has no picture that follows properly. This is the shape left when an old version's cut did not carry its picture along; an intentionally placed overlay video whose start is not at the unfolded position of the segment,
+///   and the segment's own picture that still exists, both block it.
 fn claim_all(
     document: &TimelineDocument,
     folded: &TimelineProjection,
@@ -380,7 +366,7 @@ fn claim_all(
     claims
 }
 
-/// 投影里的全部段，按成片时间排好（片段依次、段依次，本来就有序）。
+/// All spans in the projection, sorted by timeline time (segments in order, spans in order, already ordered by construction).
 fn pre_segments(projection: &TimelineProjection) -> Vec<PreSegment> {
     projection
         .clips()
@@ -411,7 +397,7 @@ fn element_rate(element: &Element) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// 操作前投影里的一段，按成片时间排好。
+/// One span in the projection before the operation, sorted by timeline time.
 struct PreSegment {
     tl0: f64,
     tl1: f64,
@@ -419,7 +405,7 @@ struct PreSegment {
     clip: usize,
 }
 
-/// 规则 1：这件元素算不算片段 `clip`（操作前投影里的下标）的画面。
+/// Rule 1: whether this element counts as a picture of segment `clip` (index in the projection before the operation).
 fn claim_picture(
     element: &Element,
     segments: &[PreSegment],
@@ -459,12 +445,11 @@ struct Candidate {
     index: usize,
     s0: f64,
     s1: f64,
-    /// 操作前所属片段的倍速。
+    /// The speed of the segment the projection before the operation belongs to.
     rate: f64,
 }
 
-/// 操作后的一件画面：`candidate` 是保留的原件（`None` = 复制出来的补片），`template` 是
-/// 属性来源（原件或被照着复制的那件）。
+/// One picture after the operation: `candidate` is the retained original (`None` = a copied patch), and `template` is the source of its attributes (the original or the one copied from).
 struct Piece {
     candidate: Option<usize>,
     template: usize,
@@ -486,8 +471,8 @@ fn follow_pictures(
     pictures: &mut HashSet<String>,
     report: &mut FollowReport,
 ) {
-    // 认领（跟得上的与陈旧的一视同仁：陈旧画面按源区间收到操作后的各段上，等于先补放了
-    // 历史剪口）。两种投影的片段下标一一对应，倍速取折叠后的即可。
+    // Claiming (those that follow properly and stale ones are treated alike: stale pictures are distributed over the spans after the operation by their source range, equivalent to
+    // first back-filling the historical cut). The segment indices of the two projections correspond one-to-one, so the rate of the folded projection is sufficient.
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut by_clip: Vec<Vec<usize>> = vec![Vec::new(); pre.clips().len()];
     for claim in claim_all(document, pre, unfolded) {
@@ -624,7 +609,7 @@ fn follow_pictures(
         }
     }
 
-    // 定 id：每件原件源时间最靠前的一份留原 id。
+    // Assigning ids: among the pieces of each original, the one with the earliest source time keeps the original id.
     let mut by_candidate: Vec<Vec<usize>> = vec![Vec::new(); candidates.len()];
     let mut clones: Vec<Vec<usize>> = vec![Vec::new(); candidates.len()];
     for (piece_index, piece) in pieces.iter().enumerate() {
@@ -684,7 +669,7 @@ fn follow_pictures(
         }
     }
 
-    // 新加的片段：按分离的缺省新建。
+    // Newly added segments: created as the separated default.
     if new_clips.is_empty() {
         return;
     }
@@ -759,7 +744,7 @@ fn follow_pictures(
     }
 }
 
-/// `[g0, g1)` 里操作前不可见（不在 `visible` 的任何一段里）的部分。
+/// The part of `[g0, g1)` that was not visible before the operation (not within any span of `visible`).
 fn newly_visible(g0: f64, g1: f64, visible: &[crate::arrange::ClipSegment]) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
     let mut cursor = g0;
@@ -795,8 +780,7 @@ fn nearest(list: &[usize], candidates: &[Candidate], n0: f64, n1: f64) -> usize 
         .expect("clip has candidates")
 }
 
-/// `template` 是这件画面照着的那件原件（关键帧按它的源区间换算），`divided` = 这件原件
-/// 分成了不止一件。
+/// `template` is the original this picture copies from (keyframes are converted by its source range), and `divided` = whether this original was split into more than one item.
 fn place_piece(
     original: &Element,
     piece: &Piece,
@@ -843,10 +827,10 @@ fn place_piece(
 }
 
 // ---------------------------------------------------------------------------
-// 其它按数字时间放的元素
+// Other elements placed by numeric time
 // ---------------------------------------------------------------------------
 
-/// 操作前成片时间 `[p0, p1)` 线性对到操作后 `[q0, q1)`：同一片段、同一段源。
+/// Linearly maps the timeline range `[p0, p1)` before the operation to `[q0, q1)` after it: same segment, same source span.
 #[derive(Debug, Clone, Copy)]
 struct MapPiece {
     p0: f64,
@@ -923,7 +907,7 @@ impl ClockMap {
         }
     }
 
-    /// 起点：落在被去掉的范围里推到后面第一个保留时刻。返回（操作后时刻，操作前时钟上的推后量）。
+    /// Start: if it falls inside a removed range, it is pushed to the first kept moment after it. Returns (moment after the operation, the push amount on the pre-operation clock).
     fn start(&self, t: f64) -> (f64, f64) {
         let k = self.pieces.partition_point(|piece| piece.p1 <= t);
         match self.pieces.get(k) {
@@ -936,7 +920,7 @@ impl ClockMap {
         }
     }
 
-    /// 终点：落在被去掉的范围里退到前面最后一个保留时刻。
+    /// End: if it falls inside a removed range, it is pulled back to the last kept moment before it.
     fn end(&self, t: f64) -> f64 {
         let k = self.pieces.partition_point(|piece| piece.p1 < t);
         match self.pieces.get(k) {
@@ -950,7 +934,7 @@ impl ClockMap {
     }
 }
 
-/// 可以按数字时间换算的元素：起止都不是词锚点，并且设了终点。
+/// Elements that can be converted by numeric time: neither start nor end is a word anchor, and an end is set.
 fn numeric_span(element: &Element) -> Option<(f64, f64)> {
     if matches!(element.start, Some(TimeValue::Anchor(_))) {
         return None;
@@ -1053,9 +1037,8 @@ fn move_elements(
     }
 }
 
-/// 分割缝切开所有轨：数字 `start < t < end` 的元素变成 `[start, t]`（原 id）加
-/// `[t, end]`（新 id），媒体元素的右半 `srcStart` 前进已播放的量。边落在缝上的、
-/// 不设终点的、词锚点的不动。返回 `(新 id, 原 id)`。
+/// A split seam cuts all tracks: an element with numeric `start < t < end` becomes `[start, t]` (original id) plus
+/// `[t, end]` (new id); for media elements the right half's `srcStart` advances by the amount already played. An element whose edge lies exactly on the seam, one with no end point, or a word anchor is unchanged. Returns `(new id, original id)`.
 fn split_elements(
     document: &mut TimelineDocument,
     timeline_time: f64,

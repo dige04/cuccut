@@ -37,7 +37,7 @@ function supervisorFor(home: RuntimeHome, legacyAutoDetect = false) {
   });
 }
 
-/** 报告就绪的 Runtime 子进程；收到停止消息就退出。 */
+/** A Runtime child process that reports ready and exits when it receives a stop message. */
 function fakeRuntime() {
   const received: unknown[] = [];
   const child = Object.assign(new EventEmitter(), {
@@ -89,7 +89,7 @@ it('does not start another Runtime once quitting has begun', async () => {
 
   await supervisor.stop();
   expect(runtime.received).toEqual([STOP_MESSAGE]);
-  // 自己的 Runtime 停了、发现文件没了；窗口还开着，界面按重连退避再来要连接。
+  // Its own Runtime has stopped and the discovery file is gone. The window is still open, so the UI will ask to connect again on its reconnect backoff.
   mocks.readDiscovery.mockResolvedValue(null);
   await expect(supervisor.connection()).rejects.toThrow(M.runtimeQuitting);
   await expect(supervisor.connection()).rejects.toThrow(M.runtimeQuitting);

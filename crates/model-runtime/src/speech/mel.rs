@@ -1,12 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/AudioPreprocessing.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/AudioPreprocessing.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backends, model packages and transcription interface; the original upstream source attribution is retained.
+//! Full text of the original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! Whisper 风格的 128-mel 前端（Qwen3-ASR 用）：16 kHz、n_fft 400、hop 160、补零到 512 点 FFT、
-//! 功率乘 4（对齐 Swift vDSP 的振幅约定）、Slaney 滤波器组。常量与旧实现逐位一致，不要改。
+//! Whisper-style 128-mel front end (used by Qwen3-ASR): 16 kHz, n_fft 400, hop 160, zero-padded to a 512-point FFT, power multiplied by 4 (matching Swift vDSP's amplitude convention), Slaney filter bank. The constants are bit-identical to the old implementation; do not change them.
 
 use std::sync::Arc;
 
@@ -20,7 +19,7 @@ pub struct TimeMajorMelFeatures {
     pub time_frames: usize,
 }
 
-/// 与 Swift `WhisperFeatureExtractor` 数值语义一致的 Whisper mel 前端。
+/// Whisper mel front end, numerically consistent with Swift's `WhisperFeatureExtractor`.
 pub struct WhisperFeaturePipeline {
     pub sample_rate: usize,
     pub n_fft: usize,
@@ -56,12 +55,12 @@ impl Default for WhisperFeaturePipeline {
 }
 
 impl WhisperFeaturePipeline {
-    /// Qwen3-ASR / forced aligner 使用的 Swift vDSP 兼容前端。
+    /// Swift vDSP-compatible front end used by Qwen3-ASR and the forced aligner.
     pub fn new(n_mels: usize) -> Self {
         Self::with_config(16_000, 400, 160, n_mels, 512, 120_000)
     }
 
-    /// MOSS 的标准 Whisper 前端：400 点 FFT，不做 vDSP 振幅补偿。
+    /// MOSS's standard Whisper front end: 400-point FFT, without vDSP amplitude compensation.
     pub fn moss(n_mels: usize) -> Self {
         Self::build(16_000, 400, 160, n_mels, 400, 120_000, 1.0)
     }
@@ -161,7 +160,7 @@ impl WhisperFeaturePipeline {
                 .context("执行 512 点 real FFT")?;
             let base = frame * frequency_bins;
             for (bin, value) in spectrum.iter().enumerate() {
-                // Qwen 的 Swift vDSP 路径需要 4 倍功率补偿；MOSS 使用标准 DFT。
+                // Qwen's Swift vDSP path needs 4x power compensation; MOSS uses the standard DFT.
                 magnitude[base + bin] = self.power_scale * (value.re * value.re + value.im * value.im);
             }
         }
@@ -179,7 +178,7 @@ impl WhisperFeaturePipeline {
         }
         normalize_log_mel(&mut mel);
 
-        // Swift 与 Whisper 一致地丢弃最后一帧，再应用 1200 秒上限。
+        // As in Whisper, Swift drops the last frame, then applies the 1200-second cap.
         let retained_frames = frame_count.saturating_sub(1).min(self.maximum_frames);
         mel.truncate(retained_frames * self.n_mels);
         Ok(TimeMajorMelFeatures {
@@ -285,7 +284,7 @@ mod tests {
         assert!(pipeline.extract(&[]).unwrap().data.is_empty());
     }
 
-    // ---- 以下三个移植自 v2 `ccut-speech/tests/frontend.rs` ----
+    // ---- The following three are ported from v2 `ccut-speech/tests/frontend.rs` ----
 
     fn assert_close(actual: f32, expected: f32, tolerance: f32) {
         assert!((actual - expected).abs() <= tolerance, "{actual} != {expected} ± {tolerance}");
@@ -332,7 +331,7 @@ mod tests {
             -0.36192143,
         ];
         for (actual, expected) in actual.into_iter().zip(expected) {
-            // 两套 FFT 实现的浮点累加次序不同，逐值容差 1e-4。
+            // The two FFT implementations accumulate floats in a different order, so the per-value tolerance is 1e-4.
             assert_close(actual, expected, 1e-4);
         }
         Ok(())

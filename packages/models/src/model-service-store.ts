@@ -28,26 +28,26 @@ import {
 } from '@cuccut/runtime-storage';
 
 /**
- * 模型服务配置（架构设计 §6.8）。
+ * Model service configuration (architecture design §6.8).
  *
- * - `<home>/store/model-services.json`（0600、临时文件加改名、`formatVersion: 2`）：在线 Provider 的开关、启用时间、端点与
- *   （自定义端点的）声明模型、账号（有序）、最近一次向供应商取到的模型与音色列表，每种能力的默认值
- *   `{ providerId, modelId } | null`，以及能力参数的默认值（`generateText` 的推理强度与并发上限）。
- * - 一个 Provider 可以有多个账号（一个账号一把密钥）。密钥经 `CredentialStore` 读写，key 是
- *   `provider:<providerId>/<accountId>`（开发版本在 `model-credentials.json`，正式版本在钥匙串）。配置文件里每个账号只存
- *   写入时算好的掩码（前 3 + … + 后 4；不超过 8 个字符时全是 •），不存密钥。
- * - 选用（§6.2）：一次调用用第一个启用且有密钥的账号（`resolveCredential()`）；失败不换账号。账号的 `status` 只记录最近
- *   一次调用的结果（`recordAccountResult()`），不据此自动换账号。
- * - 迁移：第 1 版的文件里密钥在 `provider:<providerId>`。打开时对每个有旧键的 Provider 建账号 `main`：先写新键
- *   `provider:<providerId>/main`，再写第 2 版的配置文件，最后删旧键（两种后端相同）。凭据存储读不了时记下原因、保留待迁移的
- *   标记（`legacyCredential`），下次打开再试，不当作没有密钥；中途停下时再来一遍结果相同。
+ * - `<home>/store/model-services.json` (0600, temp file plus rename, `formatVersion: 2`): per-provider switches, enable times, endpoints and
+ *   (for custom endpoints) declared models, accounts (ordered), the most recent model and voice lists fetched from the vendor, the default for each capability
+ *   `{ providerId, modelId } | null`, and defaults for capability parameters (`generateText`'s reasoning effort and concurrency cap).
+ * - A provider can have multiple accounts (one key per account). Keys are read and written through `CredentialStore`, with key `provider:<providerId>/<accountId>`
+ *   (development builds use `model-credentials.json`, release builds use the keychain). The config file stores for each account only the mask computed at write time
+ *   (first 3 + … + last 4; if 8 characters or fewer, all •), never the key.
+ * - Selection (§6.2): a call uses the first enabled account that has a key (`resolveCredential()`); on failure it does not switch accounts. An account's `status` records only the result of the most recent call
+ *   (`recordAccountResult()`) and does not trigger automatic switching.
+ * - Migration: version 1 files keep keys at `provider:<providerId>`. On open, for each provider with an old key, create account `main`: first write the new key
+ *   `provider:<providerId>/main`, then write the version 2 config file, and finally delete the old key (same for both backends). If the credential store cannot be read, record the reason and keep the pending
+ *   marker (`legacyCredential`), try again on the next open, and do not treat it as having no key; if interrupted midway, running again gives the same result.
  *
- * 读配置的方法只报告 `credential: 'set' | 'missing'` 与账号的掩码；各账号有没有密钥在打开时逐个查一次并记在内存里，密钥本身
- * 只经 `resolveCredential()` 在发请求时取，交给适配器，不缓存。凭据存储不可用时如实报告原因（`credentialProblem()`），
- * 不回退到别的存放。内存里的配置是权威，文件是它的快照；写入串行。默认值指向的 Provider 被删除后照样保留（§6.8）。
+ * Methods that read the config report only `credential: 'set' | 'missing'` and the account's mask; whether each account has a key is checked once at open and kept in memory, and the key itself
+ * is fetched only via `resolveCredential()` when a request is sent, handed to the adapter, and not cached. When the credential store is unavailable, the reason is reported as-is (`credentialProblem()`),
+ * with no fallback to another storage. The in-memory config is authoritative and the file is its snapshot; writes are serialized. Defaults pointing to a provider that has been deleted are still kept (§6.8).
  */
 
-/** 一个账号（不含密钥）。 */
+/** An account (no key). */
 export interface StoredAccount {
   accountId: string;
   label: string | null;
@@ -62,23 +62,23 @@ export interface StoredAccount {
 
 export interface StoredProvider {
   enabled: boolean;
-  /** 最近一次启用的时间（启用即是持续的授权，§6.2）；停用时清空。 */
+  /** Time of the most recent enable (enabling is a standing authorization, §6.2); cleared on disable. */
   enabledAt: string | null;
   endpoint?: string;
   label?: string;
-  /** 自定义端点声明的模型。 */
+  /** Models declared by a custom endpoint. */
   models?: DeclaredModel[];
-  /** 最近一次 `models.refreshProvider` 的结果。 */
+  /** Result of the most recent `models.refreshProvider`. */
   discovered?: DiscoveredList;
-  /** 账号（有序）。 */
+  /** Accounts (ordered). */
   accounts: StoredAccount[];
-  /** 第 1 版的密钥（`provider:<providerId>`）还没迁成账号：上次打开时凭据存储读不了，下次打开再试。 */
+  /** The version 1 key (`provider:<providerId>`) has not yet been migrated into an account: the credential store could not be read at the last open; try again on the next open. */
   legacyCredential?: true;
 }
 
 /**
- * 向供应商取到的列表（§6.8）：`ok` 时有 `models`（供应商的模型 ID）与可选的 `voices`（账号里的音色）；取不到时只记时间
- * 与原因，照旧用内置的列表。
+ * List fetched from the vendor (§6.8): `ok` has `models` (the vendor's model IDs) and optional `voices` (voices on the account); when it cannot be fetched, only the time
+ * and reason are recorded, and the built-in list continues to be used.
  */
 export interface DiscoveredList {
   at: string;
@@ -92,7 +92,7 @@ interface ServicesFile {
   formatVersion: 2;
   providers: Record<string, StoredProvider>;
   defaults: Partial<Record<ModelServiceCapability, ModelRef | null>>;
-  /** 能力参数的默认值；没设的字段用出厂值。 */
+  /** Defaults for capability parameters; unset fields use factory values. */
   parameters: { generateText?: { effort?: TextEffort; concurrency?: number } };
 }
 
@@ -100,23 +100,23 @@ export interface ModelServiceStorePaths {
   modelServicesFile: string;
 }
 
-/** 凭据存储读写失败时网关错误的 `details.code`（命令与协议规范 §11）。 */
+/** `details.code` of the gateway error when a credential store read or write fails (command and protocol spec §11). */
 export const CREDENTIAL_UNAVAILABLE = 'CREDENTIAL_UNAVAILABLE';
 
-/** 账号的密钥在凭据存储里的 key（§6.8）。 */
+/** The key in the credential store for an account's key (§6.8). */
 export function accountCredentialKey(providerId: string, accountId: string): string {
   return `${providerCredentialKey(providerId)}/${accountId}`;
 }
 
-/** 密钥的掩码（写入时算一次）：前 3 + … + 后 4；不超过 8 个字符时一律 8 个 •（不透露长度）。 */
+/** Key mask (computed once at write time): first 3 + … + last 4; if 8 characters or fewer, always 8 • (does not reveal the length). */
 export function maskCredential(secret: string): string {
   if (secret.length <= 8) return '••••••••';
   return `${secret.slice(0, 3)}…${secret.slice(-4)}`;
 }
 
-/** 迁移与 `models.configure` 建的第一个账号的 id。 */
+/** The id of the first account, created by migration and by `models.configure`. */
 export const MAIN_ACCOUNT_ID = 'main';
-/** `lastUsedAt` 至多这么久落一次盘（状态变化时立即落盘）。 */
+/** `lastUsedAt` is persisted to disk at most this often (state changes are persisted immediately). */
 const LAST_USED_FLUSH_MS = 60_000;
 
 export interface AccountPatch {
@@ -131,15 +131,15 @@ export class ModelServiceStore {
   readonly #file: JsonStoreFile;
   readonly #services: ServicesFile;
   readonly #credentials: CredentialStore;
-  /** 有密钥的账号（`<providerId>/<accountId>`；打开时查一次，之后随修改更新）。 */
+  /** Accounts with a key (`<providerId>/<accountId>`; checked once at open, then updated on change). */
   readonly #present = new Set<string>();
-  /** 查不了或取不到密钥的 Provider 与原因（不含密钥）。 */
+  /** Providers whose key cannot be checked or fetched, with the reason (no key included). */
   readonly #problems = new Map<string, string>();
-  /** 账号状态变化的监听者（`ModelServices` 据此重算视图）。 */
+  /** Listener for account state changes (`ModelServices` recomputes the view from this). */
   readonly #listeners = new Set<() => void>();
-  /** 各账号最近一次落盘的 `lastUsedAt`（毫秒）。 */
+  /** Each account's most recently persisted `lastUsedAt` (milliseconds). */
   readonly #flushedUse = new Map<string, number>();
-  /** 打开时没能迁移（凭据存储读不了）的 Provider：原因一直报告到下次打开。 */
+  /** Providers that could not be migrated at open (the credential store could not be read): the reason is reported until the next open. */
   readonly #migrationFailed = new Set<string>();
   #chain: Promise<void> = Promise.resolve();
 
@@ -150,12 +150,12 @@ export class ModelServiceStore {
   }
 
   /**
-   * 读配置文件（没有时从空的配置开始，第一次修改时才写；不是 JSON 或认不出时改名保留、从空开始；更新版本写下的或读不了的
-   * 按空处理且不再写它，见 `store-file.ts`），把第 1 版的密钥迁成账号，再向凭据存储逐个查各账号有没有
-   * 密钥。查不了时记下原因，不让打开失败。
+   * Read the config file (if absent, start from an empty config, written only on the first change; if it is not JSON or unrecognized, rename it to keep it and start empty; a file written by a newer version, or one that cannot be read,
+   * is treated as empty and not written again, see `store-file.ts`), migrate version 1 keys into accounts, then check each account in the credential store
+   * for a key. If a check fails, record the reason rather than failing the open.
    *
-   * 迁移的顺序（§6.8）：先把密钥写到新键 `provider:<id>/main`，再写第 2 版的配置文件，最后删旧键。写配置失败时不删旧键，
-   * 第 1 版的文件与旧键都还在，下次打开重新迁移；旧键删不掉时保留待迁移的标记，下次打开再删（账号已经在，只删旧键）。
+   * Migration order (§6.8): first write the key to the new key `provider:<id>/main`, then write the version 2 config file, and finally delete the old key. If writing the config fails, do not delete the old key;
+   * the version 1 file and old key both remain, and migration runs again on the next open. If the old key cannot be deleted, keep the pending marker and delete it on the next open (the account already exists, only the old key is deleted).
    */
   static async open(
     paths: ModelServiceStorePaths,
@@ -192,7 +192,7 @@ export class ModelServiceStore {
     try {
       await store.#save();
     } catch {
-      return store; // 第 1 版的文件与旧键都还在：下次打开重新迁移。
+      return store; // The version 1 file and old key both still exist: migrate again on the next open.
     }
     let cleared = false;
     for (const providerId of pendingDelete) {
@@ -201,7 +201,7 @@ export class ModelServiceStore {
         delete services.providers[providerId]!.legacyCredential;
         cleared = true;
       } catch {
-        // 旧键删不掉：保留标记，下次打开再删，不影响使用。
+        // The old key could not be deleted: keep the marker, delete it on the next open; usage is not affected.
       }
     }
     if (cleared) await store.#save().catch(() => {});
@@ -209,9 +209,9 @@ export class ModelServiceStore {
   }
 
   /**
-   * 迁一个 Provider 的第 1 版密钥：还没有 `main` 账号时把旧键的密钥写到新键并建账号（掩码由密钥算出）；旧键还在时返回
-   * `delete-legacy`，等配置写好再删。没有旧键时去掉标记（没有凭据的 Provider 不建账号）。凭据存储读不了时记下原因、保留
-   * 标记，返回 `failed`。
+   * Migrate one provider's version 1 key: if there is no `main` account yet, write the old key's secret to the new key and create the account (the mask is computed from the key); while the old key still exists, return
+   * `delete-legacy`, to be deleted after the config is written. With no old key, clear the marker (a provider without a credential does not create an account). If the credential store cannot be read, record the reason, keep
+   * the marker, and return `failed`.
    */
   async #migrate(providerId: string, provider: StoredProvider, now: () => string): Promise<'delete-legacy' | 'done' | 'failed'> {
     try {
@@ -232,7 +232,7 @@ export class ModelServiceStore {
     }
   }
 
-  /** 配置过的 Provider（含停用的）。 */
+  /** Providers that have been configured (including disabled ones). */
   providerIds(): string[] {
     return Object.keys(this.#services.providers);
   }
@@ -242,14 +242,14 @@ export class ModelServiceStore {
     return found ? structuredClone(found) : null;
   }
 
-  /** 有没有至少一个启用且有密钥的账号。 */
+  /** Whether there is at least one enabled account with a key. */
   hasCredential(providerId: string): boolean {
     return (this.#services.providers[providerId]?.accounts ?? []).some(
       (a) => a.enabled && this.#present.has(presenceKey(providerId, a.accountId)),
     );
   }
 
-  /** 第一个启用且有密钥的账号（不取密钥；描述与列模型用它的 region 与端点）。 */
+  /** The first enabled account with a key (does not fetch the key; the description and model listing use its region and endpoint). */
   activeAccount(providerId: string): StoredAccount | null {
     const found = (this.#services.providers[providerId]?.accounts ?? []).find(
       (a) => a.enabled && this.#present.has(presenceKey(providerId, a.accountId)),
@@ -257,19 +257,19 @@ export class ModelServiceStore {
     return found ? structuredClone(found) : null;
   }
 
-  /** 凭据存储读不了这个 Provider 的密钥时的原因；没有问题时 null。 */
+  /** The reason the credential store could not read this provider's key; null when there is no problem. */
   credentialProblem(providerId: string): string | null {
     return this.#problems.get(providerId) ?? null;
   }
 
-  /** 给适配器的密钥（第一个启用且有密钥的账号的）。见 `resolveCredential()`。 */
+  /** Key for the adapter (of the first enabled account with a key). See `resolveCredential()`. */
   async credential(providerId: string): Promise<string | null> {
     return (await this.resolveCredential(providerId))?.secret ?? null;
   }
 
   /**
-   * 这次调用用的账号与密钥（§6.2）：按顺序取第一个启用且有密钥的账号；一个也没有时 null。只在发请求时取，不缓存到别处。
-   * 凭据存储不可用时抛 `CredentialStoreError` 并记下原因（之后的视图报告它）；成功时清掉原来记下的问题。
+   * The account and key used for this call (§6.2): take the first enabled account that has a key, in order; null if there is none. Fetched only when the request is sent, and not cached elsewhere.
+   * When the credential store is unavailable, throw `CredentialStoreError` and record the reason (later views report it); on success, clear any previously recorded problem.
    */
   async resolveCredential(providerId: string): Promise<{ accountId: string; secret: string } | null> {
     const accounts = (this.#services.providers[providerId]?.accounts ?? []).filter((a) => a.enabled);
@@ -285,7 +285,7 @@ export class ModelServiceStore {
         if (!this.#migrationFailed.has(providerId)) this.#problems.delete(providerId);
         return { accountId: account.accountId, secret };
       }
-      // 第 1 版的密钥还没迁过来（凭据存储读不了）：是凭据不可用，不是没有密钥（§6.8）。
+      // Version 1 key not yet migrated (credential store cannot be read): this is credentials unavailable, not no key (§6.8).
       if (this.#migrationFailed.has(providerId)) {
         throw new CredentialStoreError('unavailable', this.#problems.get(providerId) ?? M.notMigrated().text);
       }
@@ -298,7 +298,7 @@ export class ModelServiceStore {
     }
   }
 
-  /** 一个账号的密钥（验证已保存的密钥时用）；没有时 null。凭据存储不可用时抛 `CredentialStoreError` 并记下原因。 */
+  /** One account's key (used when verifying a saved key); null if none. Throws `CredentialStoreError` and records the reason if the credential store is unavailable. */
   async accountCredential(providerId: string, accountId: string): Promise<string | null> {
     try {
       return await this.#credentials.get(accountCredentialKey(providerId, accountId));
@@ -308,7 +308,7 @@ export class ModelServiceStore {
     }
   }
 
-  /** 只读视图：密钥只报告有没有，账号只有掩码。 */
+  /** Read-only view: keys report only whether they exist; accounts show only the mask. */
   configView(providerId: string): ProviderConfigView {
     const stored = this.#services.providers[providerId];
     return {
@@ -336,13 +336,13 @@ export class ModelServiceStore {
     };
   }
 
-  /** 账号状态变化时通知（只在 `status.state` 变了时，`lastUsedAt` 不算）。 */
+  /** Notified when an account's state changes (only when `status.state` changes; `lastUsedAt` does not count). */
   onAccountChange(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  /** 记下一次刷新的结果（成功时替换列表，失败时丢掉旧列表、照旧用内置的）。Provider 还没有配置过时建一条停用的。 */
+  /** Record the result of a refresh (on success, replace the list; on failure, discard the old list and keep using the built-in one). A provider not yet configured gets a disabled entry created. */
   async setDiscovered(providerId: string, discovered: DiscoveredList): Promise<ProviderRefreshStatus> {
     const current = this.#services.providers[providerId] ?? emptyProvider();
     this.#services.providers[providerId] = { ...current, discovered: structuredClone(discovered) };
@@ -350,13 +350,13 @@ export class ModelServiceStore {
     return refreshStatus(discovered);
   }
 
-  /** `generateText` 的参数默认值，补上出厂值。 */
+  /** Fill in factory values for the `generateText` parameter defaults. */
   textParameters(): TextCapabilityParameters {
     const stored = this.#services.parameters.generateText ?? {};
     return { effort: stored.effort ?? null, concurrency: stored.concurrency ?? DEFAULT_TEXT_CONCURRENCY };
   }
 
-  /** 改 `generateText` 的参数默认值：null 恢复出厂值，undefined 不变。 */
+  /** Change the `generateText` parameter defaults: null restores factory values, undefined leaves them unchanged. */
   async setTextParameters(patch: { effort?: TextEffort | null; concurrency?: number | null }): Promise<TextCapabilityParameters> {
     const next = { ...this.#services.parameters.generateText };
     if (patch.effort === null) delete next.effort;
@@ -369,9 +369,8 @@ export class ModelServiceStore {
   }
 
   /**
-   * 修改一个 Provider 的配置。`enabled: true` 记下 `enabledAt`（已启用的保持原值），`false` 清空它；`endpoint: null` 删除
-   * 改写的端点。`credential`（兼容 `models.configure` 与 CLI）为字符串时写进第一个账号（没有账号时建 `main`），null 时删掉
-   * 第一个账号，undefined 不变。先写凭据：凭据存储不可用时以 `conflict`（`CREDENTIAL_UNAVAILABLE`）拒绝，配置不变。
+   * Modify a provider's config. `enabled: true` records `enabledAt` (an already-enabled one keeps its value); `false` clears it; `endpoint: null` deletes the overridden endpoint. When `credential` (compatible with `models.configure` and the CLI) is a string, it is written to the first account (creating `main` if there are no accounts); null deletes
+   * the first account; undefined leaves it unchanged. The credential is written first: if the credential store is unavailable, reject with `conflict` (`CREDENTIAL_UNAVAILABLE`) and leave the config unchanged.
    */
   async updateProvider(
     providerId: string,
@@ -414,8 +413,8 @@ export class ModelServiceStore {
   }
 
   /**
-   * 加一个账号（加在最后），返回它的 id。Provider 还没有配置过时建一条（不改开关）。先写凭据：凭据存储不可用时以
-   * `conflict`（`CREDENTIAL_UNAVAILABLE`）拒绝，配置不变。
+   * Add an account (appended at the end) and return its id. If the provider has not been configured yet, create one (the switch is not changed). The credential is written first: if the credential store is unavailable, reject with
+   * `conflict` (`CREDENTIAL_UNAVAILABLE`) and leave the config unchanged.
    */
   async addAccount(
     providerId: string,
@@ -432,7 +431,7 @@ export class ModelServiceStore {
     return accountId;
   }
 
-  /** 改一个账号；没有这个账号时 `not-found`。换密钥时先写凭据，状态回到 `unknown`。 */
+  /** Modify an account; `not-found` if there is no such account. When the key is replaced, the credential is written first and the status returns to `unknown`. */
   async updateAccount(providerId: string, accountId: string, patch: AccountPatch): Promise<void> {
     const provider = this.#services.providers[providerId];
     const index = provider?.accounts.findIndex((a) => a.accountId === accountId) ?? -1;
@@ -457,7 +456,7 @@ export class ModelServiceStore {
     await this.#save();
   }
 
-  /** 删一个账号与它的密钥（先删凭据）。没有这个账号时 `not-found`。删掉最后一个账号不移除 Provider。 */
+  /** Delete an account and its key (delete the credential first). `not-found` if there is no such account. Deleting the last account does not remove the provider. */
   async removeAccount(providerId: string, accountId: string): Promise<void> {
     const provider = this.#services.providers[providerId];
     if (!provider?.accounts.some((a) => a.accountId === accountId)) throw accountNotFound(providerId, accountId);
@@ -467,7 +466,7 @@ export class ModelServiceStore {
     await this.#save();
   }
 
-  /** 账号的新顺序：要恰好是现有账号的一个排列，否则 `invalid-request`。 */
+  /** The new order of accounts: must be exactly a permutation of the existing accounts, otherwise `invalid-request`. */
   async arrangeAccounts(providerId: string, order: string[]): Promise<void> {
     const provider = this.#services.providers[providerId] ?? emptyProvider();
     const byId = new Map(provider.accounts.map((a) => [a.accountId, a]));
@@ -479,8 +478,8 @@ export class ModelServiceStore {
   }
 
   /**
-   * 记下一次调用的结果（§6.2：只记录，不换账号）：`status` 为 null 时只更新 `lastUsedAt`（例如与密钥无关的失败）。
-   * 状态变化时立即落盘并通知监听者；`lastUsedAt` 至多每分钟落一次盘。账号已经不在时什么也不做。
+   * Record the result of one call (§6.2: record only, do not switch accounts). When `status` is null, only `lastUsedAt` is updated (e.g., a failure unrelated to the key).
+   * On a state change, persist immediately and notify listeners; `lastUsedAt` is persisted at most once per minute. If the account no longer exists, do nothing.
    */
   recordAccountResult(providerId: string, accountId: string, at: string, status: ProviderAccountStatus | null): void {
     const account = this.#services.providers[providerId]?.accounts.find((a) => a.accountId === accountId);
@@ -499,9 +498,8 @@ export class ModelServiceStore {
   }
 
   /**
-   * 删除一个 Provider 的配置与它全部账号的密钥（还有第 1 版留下的旧键）。指向它的默认值保留。没有时返回 false。
-   * 先删凭据：凭据存储不可用时以 `conflict`（`CREDENTIAL_UNAVAILABLE`）拒绝，配置不变（不留下删不掉的密钥；已经删掉的账号
-   * 从配置里去掉，再删一次接着删剩下的）。
+   * Delete a provider's config and all of its accounts' keys (and any old version 1 key left behind). Defaults pointing to it are kept. Returns false if it does not exist.
+   * Delete the credentials first: if the credential store is unavailable, reject with `conflict` (`CREDENTIAL_UNAVAILABLE`) and leave the config unchanged (so no undeletable keys remain; accounts already deleted are removed from the config, and a retry continues deleting the rest).
    */
   async removeProvider(providerId: string): Promise<boolean> {
     const provider = this.#services.providers[providerId];
@@ -533,12 +531,12 @@ export class ModelServiceStore {
     await this.#save();
   }
 
-  /** 等待排队的写入（测试与停止时用）。 */
+  /** Writes waiting in the queue (used in tests and on stop). */
   flush(): Promise<void> {
     return this.#chain;
   }
 
-  /** 新账号的 id：给了偏好且没被占用时用它，否则随机 8 位十六进制。 */
+  /** Id for a new account: use the preferred id if given and not taken, otherwise a random 8-character hex string. */
   #freshAccountId(provider: StoredProvider, preferred?: string): string {
     const taken = new Set(provider.accounts.map((a) => a.accountId));
     if (preferred && !taken.has(preferred)) return preferred;
@@ -560,7 +558,7 @@ export class ModelServiceStore {
 
   #save(): Promise<void> {
     const services = structuredClone(this.#services);
-    // 没有账号的 Provider（智能体 Provider、还没加密钥的服务商）不写 `accounts`。
+    // Providers without accounts (agent providers, vendors without a key added yet) do not write `accounts`.
     for (const provider of Object.values(services.providers)) {
       if (provider.accounts.length === 0) delete (provider as Partial<StoredProvider>).accounts;
     }
@@ -571,9 +569,9 @@ export class ModelServiceStore {
 }
 
 async function writePrivate(file: JsonStoreFile, value: unknown): Promise<void> {
-  if (file.readOnly) return file.write(value); // 只记一次 warn，不写。
+  if (file.readOnly) return file.write(value); // Log a warning only once; do not write.
   await file.write(value, { mode: 0o600 });
-  // umask 可能放宽了新文件的权限：改名之后再收紧一次。
+  // umask may have loosened the new file's permissions: tighten them again after the rename.
   await fs.chmod(file.file, 0o600);
 }
 
@@ -638,7 +636,7 @@ function parseAccount(raw: unknown): StoredAccount | null {
   };
 }
 
-/** 读第 1、2 版的文件。第 1 版的每个 Provider 都标为待迁移（`legacy` 为 true 表示文件要换成第 2 版）。 */
+/** Read version 1 and 2 files. Every provider in a version 1 file is marked pending migration (`legacy` true means the file must be rewritten as version 2). */
 function parseServices(value: unknown): { services: ServicesFile; legacy: boolean } {
   const empty: ServicesFile = { formatVersion: 2, providers: {}, defaults: {}, parameters: {} };
   if (!isObject(value) || (value.formatVersion !== 1 && value.formatVersion !== 2)) return { services: empty, legacy: false };

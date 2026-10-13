@@ -1,7 +1,4 @@
-/// 一次烧录保留哪几类叠加内容。语义与 `ccut-editable` 的 `include_element`
-/// 逐条对齐（见 `core/crates/ccut-editable/src/builder.rs`）：可编辑工程导出
-/// 和视频烧录必须对同一份 `--no-*` 组合给出同一套元素，否则「先预览再导工程」
-/// 会看到两份不同的内容。
+/// Which categories of overlay content to keep for one burn-in. The semantics are aligned entry by entry with `include_element` in `ccut-editable` (see `core/crates/ccut-editable/src/builder.rs`): the editable project export and the video burn-in must produce the same set of elements for the same `--no-*` combination, otherwise “preview first, then export the project” would show two different pieces of content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverlayIncludes {
     pub subtitles: bool,
@@ -11,7 +8,7 @@ pub struct OverlayIncludes {
 }
 
 impl OverlayIncludes {
-    /// 全部保留——预览、单测和未指定 `--no-*` 的导出都用它。
+    /// Keep everything. Used by preview, unit tests, and exports that do not specify any `--no-*`.
     pub const ALL: Self = Self {
         subtitles: true,
         texts: true,
@@ -19,24 +16,19 @@ impl OverlayIncludes {
         watermarks: true,
     };
 
-    /// 与 `ccut-editable::builder::include_element` 同构：水印角色先于 kind 判定，
-    /// 但仅在水印被排除时短路，否则仍要过 kind 那一关。
+    /// Same shape as `ccut-editable::builder::include_element`: the watermark role is checked before the kind, but it short-circuits only when the watermark is excluded; otherwise it still goes through the kind check.
     pub fn allows(self, element: &Element) -> bool {
         if element.role == Some(ElementRole::Watermark) && !self.watermarks {
             return false;
         }
         match element.kind {
             ElementKind::Text => self.texts,
-            // 叠加层不承载音频：音轨由 timeline_media 预合成进源媒体。
+            // Overlay layers carry no audio: the audio track is pre-mixed into the source media by timeline_media.
             ElementKind::Audio => false,
             ElementKind::Image | ElementKind::Video | ElementKind::Whiteboard => {
                 self.media_overlays
             }
-            // 0.2 转正的四种元素**没有对应的 `--no-*` 开关**：`--no-texts` 是
-            // 「普通文字元素」、`--no-broll` 是「B-roll 图片/视频」，把形状或
-            // 波形塞进任一类都会让那个开关名不副实。要不要给它们一个开关是
-            // 产品决定，不是本阶段能顺手替用户做的（新开关还会改 CLI 契约，
-            // 触发 `docs/design/cli/ccut-cli-server-reference.md` 的同步硬规则）。
+            // The four elements promoted to formal status in 0.2 have **no corresponding `--no-*` switch**: `--no-texts` covers “plain text elements” and `--no-broll` covers “B-roll images/videos”. Putting shapes or waveforms into either category would make that switch name misleading. Whether to give them a switch is a product decision, not something this stage can quietly make for the user (a new switch would also change the CLI contract and trigger the sync hard rule in `docs/design/cli/ccut-cli-server-reference.md`).
             ElementKind::Shape
             | ElementKind::Sticker
             | ElementKind::Visualizer
@@ -47,7 +39,7 @@ impl OverlayIncludes {
         }
     }
 
-    /// 帧缓存键的一段——同一份文档在不同 `--no-*` 组合下画出的像素不同。
+    /// One segment of the frame-cache key: the same document renders different pixels under different `--no-*` combinations.
     pub fn key(self) -> String {
         [
             self.subtitles,
@@ -70,9 +62,9 @@ impl Default for OverlayIncludes {
 #[cfg(feature = "host")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TimelineMediaFailurePolicy {
-    /// CLI/export：素材缺失或损坏必须失败，不能静默交付缺层视频。
+    /// CLI/export: missing or corrupt media must fail. It must not silently deliver a video with a missing layer.
     Strict,
-    /// App 实时预览：跳过坏素材对应的元素，保住同一张 overlay 上的文字与矢量。
+    /// App live preview: skip the elements that correspond to bad media, so the text and vectors on the same overlay are preserved.
     SkipFailedElement,
 }
 
@@ -93,25 +85,25 @@ pub fn source_item_id(item: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-/// 原文行的「长相」：逐词动画与由它派生的配方常量。整条轨一份
-/// （[`OverlayRenderPlan::track_look`]），每条带逐条样式的字幕各一份。
+/// The “look” of the original-text line: per-word animation and the recipe constants derived from it. One per track
+/// ([`OverlayRenderPlan::track_look`]), and one for each subtitle that has per-item styling.
 #[derive(Debug, Clone)]
 pub struct CaptionLook {
     pub animation: Arc<WordAnimation>,
     pub descriptor: Option<&'static CaptionRecipeDescriptor>,
-    /// 样式是否带 Designed Caption。
+    /// Whether the style carries a Designed Caption.
     pub designed: bool,
-    /// 经典逐词高亮块是否带非恒定的时间轨。
+    /// Whether the classic per-word highlight block carries a non-constant timing track.
     pub word_box_animated: bool,
     pub composite: CaptionCompositeMode,
-    /// 配方是否要求整组居中。
+    /// Whether the recipe requires the whole group to be centered.
     pub centered: bool,
-    /// 跨句序列配方（倒鸭子）：原文行不走 cue 级排版，整条轨由 `CaptionSequencePlan` 接管。
+    /// Cross-sentence sequence recipe (Daoyazi, 倒鸭子): original-text lines do not go through cue-level layout; the whole track is taken over by `CaptionSequencePlan`.
     pub sequence: bool,
 }
 
 impl CaptionLook {
-    /// `merged_original` 是 `merged_line_style(root, Original)`。
+    /// `merged_original` is `merged_line_style(root, Original)`.
     pub fn of(merged_original: &Value) -> Self {
         let animation = Arc::new(word_animation(merged_original));
         let descriptor = animation
@@ -142,7 +134,7 @@ impl CaptionLook {
     }
 }
 
-/// 一条字幕的逐条样式，编译期解好：叠过覆盖表的根样式、行样式与原文长相。
+/// The per-item style of one subtitle, resolved at compile time: the root style with the override table applied, the line style, and the original-text look.
 #[derive(Debug, Clone)]
 pub struct CueOverride {
     pub root: Value,
@@ -194,12 +186,9 @@ pub fn translation_inputs<'a>(
     inputs
 }
 
-/// 这一句在当前投影里是否已有可用译文：对齐后的 `transCue` 命中，或句级 `trans`
-/// 非空。
+/// Whether this sentence already has a usable translation in the current projection: either the aligned `transCue` matches, or the sentence-level `trans` is non-empty.
 ///
-/// 判定为「未译」的句子在译文模式下直接留空——不排任何绘制输入，也不画背景框。
-/// 导出信封的译文覆盖率共用这一个口径：画面上的空白和信封里的缺译数必须来自同一
-/// 处判定，否则用户既看不见译文，也不知道少了几句。
+/// Sentences judged “untranslated” are left blank directly in translation mode: no drawing input is laid out for them, and no background box is drawn. The translation coverage in the export envelope uses this same criterion. The blank space on screen and the missing-translation count in the envelope must come from the same judgment; otherwise the user neither sees the translation nor knows how many sentences are missing.
 pub fn sentence_is_translated(sentence: &Value, sentence_id: &str, trans_cues: &[Value]) -> bool {
     item_text_is_filled(sentence, "trans")
         || trans_cues.iter().any(|cue| {
@@ -209,14 +198,12 @@ pub fn sentence_is_translated(sentence: &Value, sentence_id: &str, trans_cues: &
         })
 }
 
-/// 当前投影的句级译文覆盖率 `(已译, 参与判定的句数)`。
+/// The sentence-level translation coverage `(translated, sentences counted)` of the current projection.
 ///
-/// 差值就是译文模式下会被留空的句数——用户看到的「这一句突然没字幕」正是它。
-/// 没有 id 的句子不计入分母，与烧录侧的取样保持一致。
+/// The difference is the number of sentences that will be left blank in translation mode. The “this sentence suddenly has no subtitle” that the user sees is exactly this.
+/// Sentences without an id are not counted in the denominator, consistent with the sampling on the burn-in side.
 ///
-/// 传进来的必须是已经过时间轴投影的文档（`overlay_document_with_live_timeline`
-/// 的产物）：未投影的正文顶层只镜像主素材，且包含被剪掉的句子，数出来的不是成片
-/// 里真正出现的内容。
+/// The argument must be a document that has already been projected through the timeline (the output of `overlay_document_with_live_timeline`). An unprojected top-level body mirrors only the main media and includes clipped-out sentences, so the count would not match what actually appears in the finished video.
 pub fn sentence_translation_coverage(document: &Value) -> (usize, usize) {
     let sentences = document["sentences"]
         .as_array()
@@ -240,16 +227,13 @@ pub fn sentence_translation_coverage(document: &Value) -> (usize, usize) {
     (translated, total)
 }
 
-/// 这次烧录真正生效的显示模式。**唯一一处**烧录侧的模式判据。
+/// The display mode that this burn-in actually takes effect with. **The only** mode criterion on the burn-in side.
 ///
-/// - `--mode` 给了就它说了算（串非法 → `Err`）；
-/// - 缺省时按**生效**字幕轨集派生（[`effective_mode`]：先读时迁移，再跳过
-///   `hidden`）。不给 `--mode` 的导出照样按 timeline 上摆着的轨烧译文；
-/// - 生效轨集为空（所有字幕轨都被关掉）→ `Ok(None)` = 这次一条字幕都不烧，
-///   等价 `--no-subs`。
+/// - If `--mode` is given, it decides (an invalid string → `Err`).
+/// - When it is omitted, the mode is derived from the **effective** subtitle track set ([`effective_mode`]: read with migration first, then skip `hidden`). Exports without `--mode` still burn in the translation according to the tracks placed on the timeline.
+/// - If the effective track set is empty (all subtitle tracks are turned off) → `Ok(None)`, meaning no subtitle is burned in at all this time, equivalent to `--no-subs`.
 ///
-/// 注意与 [`StudioMode::of_style`] 的分工：那个读的是文档**声明**的模式（样式
-/// 面板、轨头、写路径 canonicalize 用），这里读的是**画面上真会出现什么**。
+/// Note the division of labor with [`StudioMode::of_style`]: that one reads the mode the document **declares** (used by the style panel, track headers, and write-path canonicalization). This one reads **what will actually appear on screen**.
 fn burn_in_mode(document: &Value, mode_override: Option<&str>) -> Result<Option<StudioMode>> {
     match mode_override {
         Some(value) => Ok(Some(
@@ -261,9 +245,7 @@ fn burn_in_mode(document: &Value, mode_override: Option<&str>) -> Result<Option<
     }
 }
 
-/// 这次烧录会不会排出译文轨，以及按哪种模式：`None` 表示原文模式、模式串非法
-/// （由 [`OverlayRenderPlan::compile`] 去报错），或字幕轨全被关掉，此时「缺译」
-/// 无从谈起。判据见 [`burn_in_mode`]。
+/// Whether this burn-in will lay out a translation track, and in which mode. `None` means original-text mode, an invalid mode string (which [`OverlayRenderPlan::compile`] reports as an error), or all subtitle tracks turned off; in that last case “missing translation” does not apply. See [`burn_in_mode`] for the criterion.
 pub fn translation_burn_in_mode(
     document: &Value,
     mode_override: Option<&str>,
@@ -275,26 +257,19 @@ pub fn translation_burn_in_mode(
     }
 }
 
-/// MP4 字幕必须覆盖 Mac 样式面板真正提供的完整内置字体集，而不只是旧 Web
-/// Studio 的五个选项。Standalone CLI 内嵌字体；App-only 包从同一套签名资源
-/// 读字节，两条路径保持完全相同的顺序与内容。
+/// MP4 subtitles must cover the full set of built-in fonts that the Mac style panel actually offers, not just the five options of the old Web Studio. The standalone CLI embeds the fonts. The App-only package reads the bytes from the same set of signed resources, so the two paths keep exactly the same order and content.
 #[cfg(feature = "host")]
 pub fn bundled_studio_fonts() -> Vec<Vec<u8>> {
-    // 字节都在 ccut-render（`include_bytes!` 只在那一处）：BCF 文档渲染按名字用的是
-    // 同一份，思源黑体与展示字体都不会在二进制里躺两遍。
+    // The bytes all live in ccut-render (`include_bytes!` appears only there). BCF document rendering uses the same copy when looking fonts up by name, so Source Han Sans and the display fonts are not stored twice in the binary.
     std::iter::once(render_raster::fonts::cjk_fallback_font())
         .chain(render_raster::fonts::bundled_display_fonts().iter().copied())
         .map(<[u8]>::to_vec)
         .collect()
 }
 
-/// CucCut 的“导入字体”：由宿主经 [`crate::host::FontSource`] 注入
-/// （提案 §5.2）。渲染内核不再自己定位配置根——`<config_root>/fonts` 的解析
-/// 属于宿主，实现在 `ccut_workspace::timeline::overlay`，CLI / `ccut serve` /
-/// App v2 三处经同一个 `register` 拿到同一份。
+/// CucCut's “imported fonts”: injected by the host through [`crate::host::FontSource`] (proposal §5.2). The render core no longer locates the config root itself. Resolving `<config_root>/fonts` belongs to the host, and the implementation lives in `ccut_workspace::timeline::overlay`. The CLI, `ccut serve`, and App v2 all get the same set through one `register`.
 ///
-/// 记录筛选判据（只认 registry 明确认领的 bare filename）仍在
-/// [`font_library_fonts_at`]，宿主实现直接调它。
+/// The record filter criterion (only bare filenames that the registry explicitly claims) still lives in [`font_library_fonts_at`]; host implementations call it directly.
 #[cfg(feature = "host")]
 pub fn cuccut_library_fonts() -> Vec<Vec<u8>> {
     crate::host::extra_fonts()
@@ -334,22 +309,18 @@ pub fn font_library_fonts_at(directory: &Path) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// `visualizer.audio` → 媒体源 id。
+/// `visualizer.audio` → media source id.
 ///
-/// `"project"` 是「整片输出音轨」的写法，落到媒体上就是 `main` 源；与
-/// `serve` 的渲染指纹（`jobs_history::visualizer_spectrum_hashes`）用的是同一条
-/// 换算，两处一旦分叉就会出现「指纹说没变、画面已经变了」。
+/// `"project"` is the way of writing “the whole output audio track”, which maps to the `main` source on media. It uses the same conversion as the render fingerprint in `serve` (`jobs_history::visualizer_spectrum_hashes`). If the two ever diverge, you get “the fingerprint says nothing changed, but the picture has changed”.
 ///
-/// 实现在 `ccut-timeline-render`（P6a 下沉）：wasm 预览按同一条换算取频谱，
-/// 「预览 = 导出」才成立。
+/// The implementation lives in `ccut-timeline-render` (moved down in P6a). The wasm preview takes the spectrum with this same conversion, so “preview = export” holds.
 pub fn visualizer_audio_source(props: &VisualizerProps) -> String {
     element_draw::visualizer_audio_source(props)
 }
 
-/// `TimelineVisualElement` → 下沉层的借用视图。
+/// `TimelineVisualElement` → borrowed view for the lower layer.
 ///
-/// 本地元素表的字段比绘制需要的多（媒体、文本、效果、动画……），绘制只读
-/// 契约那几项；视图把这条边收窄成一处。
+/// The local element table has more fields than drawing needs (media, text, effects, animation, …). Drawing reads only the fields in the contract. The view narrows this boundary to one place.
 pub fn element_view(element: &TimelineVisualElement) -> element_draw::ElementDraw<'_> {
     element_draw::ElementDraw {
         id: &element.id,
@@ -369,15 +340,13 @@ pub fn element_view(element: &TimelineVisualElement) -> element_draw::ElementDra
     }
 }
 
-/// 「按屏幕上的实际大小光栅」这条规则的唯一判据：`ratio` ＝ 屏幕尺寸 ÷ 自然
-/// 尺寸，返回要用的目标像素（`None` ＝ 照自然尺寸）。
+/// The single criterion for the rule “rasterize at the size it actually occupies on screen”: `ratio` = screen size ÷ natural size. Returns the target pixels to use (`None` = use the natural size).
 ///
-/// 只在**能省**的时候给目标：放大一律不做（矢量放大更清楚，但那是另一件事，
-/// 会让既有产物的像素变），省下不到一成也不做（多走一遍光栅不值）。
+/// Only give a target when it **saves** work. Never upscale: vector upscaling looks clearer, but that is a separate matter and would change the pixels of existing outputs. Also skip it if the saving is less than one tenth (not worth an extra rasterization pass).
 fn shrink_target_px(natural_width: u32, natural_height: u32, ratio: f64) -> Option<(u32, u32)> {
-    /// 目标尺寸的像素下限：再小的图也不值得为省几微秒画成一团。
+    /// Minimum pixel size for a target: an image that is too small is not worth rendering into a blur just to save a few microseconds.
     const MIN_EDGE: f64 = 16.0;
-    /// 省不到这个比例就照自然尺寸走。
+    /// If the saving does not reach this ratio, use the natural size.
     const WORTH_IT: f64 = 0.9;
 
     if !(ratio > 0.0) || ratio >= WORTH_IT {
@@ -389,10 +358,9 @@ fn shrink_target_px(natural_width: u32, natural_height: u32, ratio: f64) -> Opti
     (target != (natural_width, natural_height)).then_some(target)
 }
 
-/// 纯几何探针 → 这枚外部纹理在画布上实际占多少像素（等比，`None` ＝ 照自然尺寸）。
+/// Pure geometry probe → how many pixels this external texture actually occupies on the canvas (proportional; `None` = use the natural size).
 ///
-/// 节点带的 `transform` 里含 `place.scale` 与动画 pose 的缩放，所以弹跳、放大
-/// 入场这类动效不会被按静止尺寸光栅成糊的。判据本身见 [`shrink_target_px`]。
+/// The `transform` on a node includes `place.scale` and the scaling from the animation pose, so motion such as bounce or a scale-up entrance is not rasterized blurry from its static size. For the criterion itself, see [`shrink_target_px`].
 #[cfg(feature = "host")]
 fn scene_texture_target_px(
     nodes: &[element_draw::SceneNode],
@@ -425,9 +393,7 @@ fn scene_texture_target_px(
     shrink_target_px(natural_width, natural_height, ratio)
 }
 
-/// native 导出的外部媒体元素 → R3 已冻结的 renderer-neutral 纹理视图。
-/// `texture` 是本计划内的元素级槽，不等于项目 `srcId`：同一视频源可以被两个
-/// 元素以不同 `srcStart/rate` 同时采样，二者不能争用一张纹理。
+/// Native-export external media element → R3's frozen renderer-neutral texture view. `texture` is the element-level slot within this plan and is not the project `srcId`. The same video source can be sampled by two elements at different `srcStart/rate` at the same time, and the two must not compete for one texture.
 #[cfg(feature = "host")]
 fn external_media_view<'a>(
     element: &'a TimelineVisualElement,
@@ -454,11 +420,9 @@ fn external_media_view<'a>(
     }
 }
 
-/// 读项目里某个源的 BCS1 缓存。**缺就报错，不代生成、不静默出空图。**
+/// Read the BCS1 cache of a source in the project. **If it is missing, report an error. Do not generate it on the caller's behalf, and do not silently produce an empty image.**
 ///
-/// 路径解析与 `ccut spectrum` / `GET /__ccut/spectrum` / 渲染指纹逐字相同
-/// （`paths::project_media_path` + `paths::spectrum_cache_path`）：换一条解析就会
-/// 算出另一个缓存文件名，"命令刚生成过、导出却说找不到"就是这么来的。
+/// Path resolution is character-for-character identical to `ccut spectrum`, `GET /__ccut/spectrum`, and the render fingerprint (`paths::project_media_path` + `paths::spectrum_cache_path`). A different resolution would compute a different cache filename, and that is how “the command just generated it, but export says it cannot be found” happens.
 #[cfg(feature = "host")]
 pub fn read_project_spectrum(project: &Path, source_id: &str, element_id: &str) -> Result<Vec<u8>> {
     let hint = format!(
@@ -475,7 +439,7 @@ pub fn read_project_spectrum(project: &Path, source_id: &str, element_id: &str) 
             path.display()
         )
     })?;
-    // 提前校验一次：坏缓存要在 preflight 就说清楚是哪个元素、哪条源。
+    // Validate once up front: a bad cache should be explained at preflight, naming which element and which source.
     waveform::bcs1::parse(&bytes).with_context(|| {
         format!(
             "元素 {element_id} 的频谱缓存 {} 无效；{hint}",
@@ -485,61 +449,42 @@ pub fn read_project_spectrum(project: &Path, source_id: &str, element_id: &str) 
     Ok(bytes)
 }
 
-// ── 模板层 ──────────────────────────────────────────────────────────────
+// ── Template layer ──────────────────────────────────────────────────────────────
 
-/// 项目套用的模板层（`timeline.json` 的 `template`），逐帧由
-/// [`crate::template_layer::raster`] 直绘成一张与画布同尺寸的透明底 Pixmap，
-/// 随后按**字幕层同一形态**（动态资源 ＋ 一条 `DrawMedia`）并进 overlay 的指令流：
-/// scene 身份（[`element_draw::SceneFrame::fingerprint`]）要不要算。
+/// The template layer applied to the project (`template` in `timeline.json`). Each frame, [`crate::template_layer::raster`] draws it directly into a transparent-background Pixmap of the same size as the canvas. It is then merged into the overlay's instruction stream in the **same form as the subtitle layer** (a dynamic resource plus one `DrawMedia`). Whether the scene identity ([`element_draw::SceneFrame::fingerprint`]) needs to be computed depends on the caller.
 ///
-/// 算它的代价几乎全在**整帧解码像素**的 FNV-1a 上：时间轴媒体元素每帧都要把
-/// 自己那张 RGBA 过一遍（720p 实测 3.3 ms/帧，占 GPU 导出「字幕合成」的 23%），
-/// 模板 chrome 同理。
+/// Almost all of the cost of computing it lies in FNV-1a over the **whole decoded frame's pixels**. Each timeline media element has to pass its own RGBA through this every frame (measured at 3.3 ms/frame at 720p, 23% of the GPU export's “subtitle compositing”), and the template chrome is the same.
 ///
-/// 而这个身份只有一个生产消费者：macOS GPU 预览用它给 overlay 上屏去重
-/// （`apps/cuccut/src/engine/overlay.rs` 的 `gpu_presentation_fingerprint`）。
-/// 离线导出那条路只读 `next_change` 做场景缓存窗口，从不读 `fingerprint`。
+/// And this identity has only one production consumer: the macOS GPU preview uses it to de-duplicate overlay presentation (`gpu_presentation_fingerprint` in `apps/cuccut/src/engine/overlay.rs`). The offline export path reads only `next_change`, for its scene-cache window, and never reads `fingerprint`.
 ///
-/// 预览那条路也付不起像素哈希：1080p 源一帧 8.3 MB、4K 33 MB，模板 chrome 还要
-/// 再按**画布**尺寸（5K 全屏 ≈ 42 MB）哈希一次，在 overlay 线程上实测占了播放期
-/// CPU 的 79%。去重只需要「这张纹理是不是同一张」，而同一 `MediaStore` 里
-/// `(源 id, 媒体时钟)` 就唯一决定解码结果，所以 [`Self::Structural`] 拿它做像素
-/// 代理，只哈希几十个字节。
+/// The preview path cannot afford pixel hashing either. A 1080p source frame is 8.3 MB and 4K is 33 MB. The template chrome must additionally be hashed at the **canvas** size (5K full screen ≈ 42 MB). Measured on the overlay thread, this took 79% of CPU during playback. De-duplication only needs to know “is this the same texture”, and within the same `MediaStore`, `(source id, media clock)` alone uniquely determines the decode result. So [`Self::Structural`] uses that as a pixel proxy and hashes only a few dozen bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneIdentity {
-    /// 照常算，像素逐字节进身份。wasm 与测试用这一档，`fingerprint` 可用。
+    /// Computed as usual, with pixels going into the identity byte for byte. The wasm and test paths use this tier, where `fingerprint` is available.
     Full,
-    /// 结构身份：节点几何、采样钟、效果照旧逐字段冻结，像素位换成
-    /// `(纹理 key, 真正取帧的源 id, media_ms, 源尺寸)`；模板 chrome 用
-    /// `(chrome 指纹, 画布尺寸, 正文字体)`。同一计划内与 [`Self::Full`] 等价
-    /// 可用于去重；**不能**跨计划 / 跨进程对拍像素。macOS GPU 预览用这一档。
+    /// Structural identity: node geometry, sampling clock, and effects are still frozen field by field as before. The pixel bits are replaced by `(texture key, the source id that actually fetches the frame, media_ms, source size)`. Template chrome uses `(chrome fingerprint, canvas size, body font)`. Within the same plan it is equivalent to [`Self::Full`] and can be used for de-duplication. It **cannot** be used to compare pixels across plans or across processes. The macOS GPU preview uses this tier.
     Structural,
-    /// 跳过整帧像素哈希，`fingerprint` 恒为 `0`——**不得**再拿它做去重或对拍。
+    /// Skips the whole-frame pixel hash; `fingerprint` is always `0`. **Must not** be used for de-duplication or comparison any more.
     Skip,
 }
 
-/// 每帧动态栅格（文字、媒体元素、字幕层）在 DrawOp 指令流里的资源名怎么取。
+/// How the resource name of each frame's dynamic raster (text, media elements, subtitle layer) is taken in the DrawOp instruction stream.
 ///
-/// 动态表在每帧组装前清空，资源名只需在**这一帧**里唯一；像素指纹进名字是为了让
-/// 内容变化进入 `draw_op_fingerprint`（预览去重、跨引擎对拍要它）。不读这个指纹的
-/// 宿主（frame-render 的导出与预览）付不起逐帧哈希整帧解码像素（1080p 一帧
-/// 8.3 MB），改用 [`Self::Slot`]。
+/// The dynamic table is cleared before each frame is assembled, so a resource name only needs to be unique **within that frame**. Putting the pixel fingerprint into the name makes content changes enter `draw_op_fingerprint`, which preview de-duplication and cross-engine comparison need. Hosts that do not read this fingerprint (frame-render's export and preview) cannot afford a per-frame hash of the whole decoded frame's pixels (8.3 MB per 1080p frame), so they use [`Self::Slot`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DynamicAssetNames {
-    /// `kind:owner:像素指纹`：内容变了指令流就变。缺省，其余宿主与测试用这一档。
+    /// `kind:owner:pixel-fingerprint`: when the content changes, the instruction stream changes. This is the default; other hosts and tests use this tier.
     #[default]
     PixelFingerprint,
-    /// `kind:owner#序号`：只保证同一帧里唯一，不哈希像素；`draw_op_fingerprint`
-    /// 不再反映动态栅格的内容，**不得**拿它去重或对拍。
+    /// `kind:owner#sequence`: only guarantees uniqueness within the same frame and does not hash pixels. `draw_op_fingerprint` no longer reflects the content of dynamic rasters, so it **must not** be used for de-duplication or comparison.
     Slot,
 }
 
-/// 模板前景恒在正片、字幕与元素之上。
+/// The template foreground is always above the main picture, the subtitles, and the elements.
 ///
-/// 两个 feature 共用：场景本身无 I/O，`host` 由 [`crate::host::OverlayHost::template_scene`]
-/// 装载，浏览器 / App 预览经 [`OverlayRenderPlan::set_template_scene`] 注入。
+/// Both features share this: the scene itself does no I/O. `host` is loaded by [`crate::host::OverlayHost::template_scene`], and the browser and App preview inject it via [`OverlayRenderPlan::set_template_scene`].
 pub struct TemplateLayer {
-    /// 场景内容指纹（文档、章节、标题、台标像素任一变了都变）。
+    /// Scene content fingerprint (changes whenever the document, chapters, title, or logo pixels change).
     pub fingerprint: u64,
     pub scene: TemplateScene,
 }
@@ -552,19 +497,17 @@ impl TemplateLayer {
         }
     }
 
-    /// 模板层没有时间区间：套上就整片在场。
+    /// The template layer has no time interval: once applied, it is present for the whole timeline.
     pub fn active(&self, _time: f64) -> bool {
         true
     }
 
-    /// 下一次内容变化的**保守上界**：章节条与进度线逐帧都在动，内核无从静态
-    /// 判定，于是一律退化为「下一帧」。代价是导出的 `ensure_composited` 缓存
-    /// 在模板项目里失效——先接对，性能另计。
+    /// A **conservative upper bound** on the next content change. The chapter bar and the progress line move every frame, and the kernel cannot determine that statically, so it always falls back to “the next frame”. The cost is that the export's `ensure_composited` cache is invalidated in template projects. Wire it correctly first; performance comes later.
     fn next_change(&self, time: f64, fps: f64) -> Option<f64> {
         Some(time + 1.0 / fps.max(1.0))
     }
 
-    /// 取一帧模板像素（premultiplied RGBA，透明底），直接按 overlay 画布尺寸画。
+    /// Gets one frame of template pixels (premultiplied RGBA, transparent background), drawn directly at the overlay canvas size.
     fn frame(
         &self,
         time: f64,
@@ -663,28 +606,18 @@ fn draw_line_background(
     bounds
 }
 
-/// 当前帧动态栅格的资源名。`owner` 只负责区分同帧里的资产槽，像素指纹负责
-/// 让内容变化进入 DrawOp 指令流。
+/// The resource name of the current frame's dynamic raster. `owner` only distinguishes the asset slots within the same frame. The pixel fingerprint makes content changes enter the DrawOp instruction stream.
 ///
-/// 不得把 [`OverlayRenderPlan::definition_key`] 拼进这里：动态表在每帧组装前
-/// 清空，字幕只有一个固定槽，timeline 元素 id 又由文档校验保证唯一，因此计划
-/// 缓存键不参与资源查找的唯一性。把它编码进资源名只会让渲染无关的文档 schema
-/// 变化污染 `draw_op_fingerprint`。
+/// Do not concatenate [`OverlayRenderPlan::definition_key`] into this. The dynamic table is cleared before each frame is assembled, the subtitle has only one fixed slot, and timeline element ids are guaranteed unique by document validation. So the plan cache key does not take part in the uniqueness of resource lookup. Encoding it into the resource name would only let render-irrelevant document schema changes pollute `draw_op_fingerprint`.
 fn dynamic_raster_asset_name(kind: &str, owner: &str, rgba: &[u8]) -> String {
     let pixel_fingerprint = render_raster::drawop::fnv1a64(rgba);
     format!("{kind}:{owner}:{pixel_fingerprint:016x}")
 }
 
-/// Timeline 的历史 `SourceKind::Image` 同时接收 PNG/JPEG 与 GIF/APNG/animated
-/// WebP。按容器字节先尝试动图，静态 PNG/WebP 再回落静态解码；这样无需改写
-/// Timeline 0.3 持久格式，旧项目与新导入都能直接恢复动态画面。
-/// 一份「素材贴纸 ＋ 换色表」在光栅缓存里的键。
+/// Timeline's historical `SourceKind::Image` accepts both PNG/JPEG and GIF/APNG/animated WebP. It first tries animated decoding by the container bytes, and falls back to static decoding for static PNG/WebP. This way the persisted Timeline 0.3 format does not need rewriting, and old projects and new imports both restore animated pictures directly.
+/// The key in the raster cache for a “material sticker + recolor table”.
 ///
-/// 光栅缓存（`LoadedAssets.images`）本来按 source id 键，可
-/// `sticker.fillOverrides` 是**元素级**的：同一份 SVG 被两个贴纸用两张覆盖表
-/// 引用时，画面必须是两张不同的图。所以换色后的位图按 `(source, 覆盖表)` 另
-/// 起一个 id 存放，取帧时再按同一把尺算回来——两处必须调这一个函数，否则
-/// 「预载了却取不到」会静默退回原色（正是用户 2026-09-08 回报的现象）。
+/// The raster cache (`LoadedAssets.images`) was originally keyed by source id. But `sticker.fillOverrides` is **per element**: when the same SVG is referenced by two stickers with two different override tables, the picture must be two different images. So the recolored bitmap is stored under a separate id keyed by `(source, override table)`, and when a frame is fetched it is looked up with the same key. Both places must call this one function. Otherwise “preloaded but not retrievable” would silently fall back to the original color, which is exactly the symptom the user reported on 2026-09-08.
 pub fn sticker_fill_variant_id(
     source_id: &str,
     overrides: &std::collections::BTreeMap<String, String>,
@@ -702,25 +635,21 @@ pub fn sticker_fill_variant_id(
     )
 }
 
-/// 一个 Timeline source 该走哪个解码器：由引用它的元素 kind 与 source 自述
-/// kind 共同决定（见 `load_timeline_media` 里的归一化）。
+/// Which decoder a Timeline source should use. This is decided jointly by the kind of the element that references it and the kind the source declares about itself (see the normalization in `load_timeline_media`).
 #[cfg(feature = "host")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TimelineSourceDecoder {
     Image,
     Video,
-    /// Timeline 0.7 `sources[].kind: "lottie"`（bodymovin JSON），只有素材贴纸引用。
+    /// Timeline 0.7 `sources[].kind: "lottie"` (bodymovin JSON). Referenced only by material stickers.
     Lottie,
-    /// 元素不引用媒体源（text / shape / visualizer …）。
+    /// The element does not reference a media source (text / shape / visualizer …).
     None,
 }
 
-/// 装载一个 Lottie source（Timeline 0.7）：解析 → 收集并读入子资源（内嵌或相对
-/// 于 JSON 所在目录）→ 可选换色 → prepare / probe → 以 `source_id` 归档进
-/// `assets.lotties`。与 BCF 的 `assets.rs` Lottie 分支同一套顺序，渲染期不再 I/O。
+/// Loads a Lottie source (Timeline 0.7): parse → collect and read sub-resources (embedded, or relative to the JSON's directory) → optional recolor → prepare / probe → archive under `source_id` in `assets.lotties`. This is the same order as the Lottie branch in BCF's `assets.rs`, and there is no I/O at render time.
 ///
-/// `overrides` 非空时这就是一份换色变体（调用方以 `sticker_fill_variant_id`
-/// 作 `source_id`）；子资源仍按变体 id 归档，两份 Lottie 互不共享像素表。
+/// When `overrides` is non-empty, this is a recolored variant (the caller passes `sticker_fill_variant_id` as the `source_id`). Sub-resources are still archived under the variant id, so the two Lotties do not share pixel tables.
 #[cfg(feature = "host")]
 fn load_timeline_lottie_source(
     assets: &mut LoadedAssets,
@@ -814,8 +743,7 @@ fn load_timeline_image_source(
                 return Ok(());
             }
             Err(animated_error) => {
-                // 静态 PNG/WebP 也有这些容器魔数；只有静态解码同样失败时，才把
-                // 两条诊断一起交给 strict export 或 preview 的单元素隔离策略。
+                // Static PNG/WebP also carry these container magic numbers. Only when static decoding fails as well are the two diagnostics handed together to the single-element isolation policy of strict export or preview.
                 return match decode_image(&path.to_string_lossy(), bytes) {
                     Ok(pixmap) => {
                         assets.images.insert(source_id.to_owned(), Arc::new(pixmap));
@@ -835,11 +763,7 @@ fn load_timeline_image_source(
     Ok(())
 }
 
-/// 文字元素的整块底板（`backgroundStyle == "block"`）宽度：原型 `textCss` 在
-/// `mode: 'block'` 下是 `display: block`，底板填满元素盒——盒宽即 `place.w`；没给宽度
-/// 时盒子包住最宽的一行加内边距。字幕轨那条「28% 画幅最小宽」（`resolve_line_style`）
-/// 是给逐条字幕定的，套在标题上就是用户 2026-09-05 回报的「背景色明显太大」：
-/// 一个词的标题拖出半屏宽的底板。字幕路径不经这里，golden 不变。
+/// The width of the full backing plate of a text element (`backgroundStyle == "block"`). In the prototype, `textCss` under `mode: 'block'` is `display: block`, so the plate fills the element box: the box width is `place.w`. If no width is given, the box wraps the widest line plus inner padding. The “minimum 28% of frame width” for the subtitle track (`resolve_line_style`) is meant for per-item subtitles. Applied to titles, it produces the user report of 2026-09-05 that the “background color is clearly too large”: a one-word title drags out a plate half the screen wide. The subtitle path does not go through here, so the golden output is unchanged.
 fn text_element_block_plate(
     style: &mut LineStyle,
     element: &TimelineVisualElement,
@@ -852,7 +776,7 @@ fn text_element_block_plate(
 }
 
 impl OverlayRenderPlan {
-    /// 保留全部叠加内容地编译。Studio 预览走这条路：预览永远画全量。
+    /// Compiles keeping all overlay content. The Studio preview takes this path: the preview always draws the full set.
     #[cfg(feature = "host")]
     pub fn compile_project(
         project: &Path,
@@ -900,9 +824,7 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// App 实时预览入口。与严格导出使用同一份布局/绘制实现，唯一差别是一个坏
-    /// 媒体源只拿掉引用它的元素并留下 warning，不能让共享 overlay 上的文字、
-    /// shape、visualizer 一起消失。
+    /// Entry point for App live preview. It uses the same layout and drawing implementation as strict export. The only difference is that a bad media source removes just the element that references it and leaves a warning, so the text, shapes, and visualizers on the shared overlay do not all disappear together.
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "host")]
     pub fn compile_project_preview_with(
@@ -928,10 +850,7 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// [`Self::compile_project_preview_with`] 的**拿走所有权**版本：调用方手里
-    /// 的正文本来就是一份可丢弃的副本（App 从内核共享缓存 `Arc` 里深拷出来的
-    /// 那一份）时走这条，活时间轴投影直接改在它身上，不再为投影多深拷一次
-    /// 十几 MB 的 Studio 正文。语义与借用版本逐字相同。
+    /// The **take-ownership** version of [`Self::compile_project_preview_with`]. When the caller already holds a body that it can discard (the App's deep copy taken out of the kernel's shared cache `Arc`), this path is used. The live timeline projection is then applied in place to that copy, and another 10+ MB Studio body does not need to be deep-copied for the projection. The semantics are character-for-character identical to the borrowing version.
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "host")]
     pub fn compile_project_preview_owned(
@@ -970,11 +889,8 @@ impl OverlayRenderPlan {
         includes: OverlayIncludes,
         media_failure_policy: TimelineMediaFailurePolicy,
     ) -> Result<Self> {
-        // `overlay_document_with_live_timeline` 会为活时间轴投影深拷整份 Studio
-        // 文档，并逐条复制 cue / sentence / word。超长项目里这一步的瞬时堆峰值
-        // 可达正文常驻体积的数倍。译文模式且整份项目根本没有译文时，结果必然
-        // 失败；在投影前做无分配 preflight，避免先制造几百 MB 临时对象再报错。
-        // 多源项目必须扫描 sourceDocs，不能只看正文顶层的 main 镜像。
+        // `overlay_document_with_live_timeline` deep-copies the whole Studio document for the live timeline projection, copying each cue, sentence, and word. In very long projects, the transient heap peak of this step can reach several times the resident size of the body. When the whole project has no translation at all in translation mode, the result must fail anyway. So run a non-allocating preflight before the projection, to avoid creating several hundred MB of temporary objects only to report an error.
+        // A multi-source project must scan sourceDocs. Looking only at the main mirror at the top level of the body is not enough.
         if includes.subtitles
             && let Some(mode) = burn_in_mode(&document, mode_override)?
             && matches!(mode, StudioMode::Translated | StudioMode::Bilingual)
@@ -994,9 +910,7 @@ impl OverlayRenderPlan {
             cuccut_library_fonts(),
         )?;
         plan.load_timeline_elements_with_policy(project, &document, media_failure_policy)?;
-        // 模板层装载失败不外抛：章节表读坏、台标图片被删——这些都不该让整幅
-        // overlay 编译失败，那意味着字幕连带黑掉。原因存进 `chrome_error`，
-        // 由宿主决定怎么说（App 挂在模板属性页上）。
+        // Template layer load failures are not propagated outward. A corrupt chapter table or a deleted logo image should not make the whole overlay compile fail, because that would also black out the subtitles. The reason is stored in `chrome_error`, and the host decides how to report it (the App shows it on the template property page).
         match crate::host::template_scene(project) {
             Ok(scene) => plan.set_template_scene(scene),
             Err(error) => plan.chrome_error = Some(format!("{error:#}")),
@@ -1005,7 +919,7 @@ impl OverlayRenderPlan {
         Ok(plan)
     }
 
-    /// 保留全部叠加内容地编译。单测专用——生产路径一律显式给出 includes。
+    /// Compiles keeping all overlay content. For unit tests only. Production paths always pass the includes explicitly.
     #[cfg(feature = "host")]
     pub fn compile(
         document: &Value,
@@ -1076,11 +990,9 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// 浏览器 / 文档资产宿主的确定性字幕入口：只使用调用方注入的字体字节，
-    /// 不扫描系统字体，也不把 Studio 的整套内嵌字体链接进消费者产物。
+    /// The deterministic subtitle entry point for the browser and document asset hosts. It uses only the font bytes injected by the caller. It does not scan system fonts, and it does not link the Studio's full set of embedded fonts into the consumer's artifact.
     ///
-    /// 字体列表不能为空。首份字体同时是未知 family 的确定性 sans-serif fallback；
-    /// 因此 host 应把 Noto Sans SC 放在第一个，再追加当前样式实际引用的字体。
+    /// The font list must not be empty. The first font is also the deterministic sans-serif fallback for unknown families. So the host should put Noto Sans SC first, then append the fonts the current style actually references.
     #[allow(clippy::too_many_arguments)]
     pub fn compile_with_injected_fonts(
         document: &Value,
@@ -1113,8 +1025,7 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// 同 [`Self::compile_with_injected_fonts`]，沿用一个已经装好字体的排版引擎（`fonts_loaded` 是它装的字体份数）：
-    /// 同一批字体换尺寸、换样式重编时不必再解析一遍字体。
+    /// Same as [`Self::compile_with_injected_fonts`], but reuses a typesetting engine that already has its fonts loaded (`fonts_loaded` is the number of fonts it loaded). When recompiling the same batch of fonts at a different size or style, the fonts do not need to be parsed again.
     #[allow(clippy::too_many_arguments)]
     pub fn compile_with_text_engine(
         document: &Value,
@@ -1130,7 +1041,7 @@ impl OverlayRenderPlan {
         Self::compile_with_font_engine(document, width, height, duration, fps, mode_override, includes, fonts_loaded, text)
     }
 
-    /// 拆下这份计划的排版引擎（连同字形缓存），给同一批字体的下一份计划用。
+    /// Takes apart this plan's typesetting engine (together with its glyph cache), for the next plan that uses the same batch of fonts.
     pub fn into_text_engine(self) -> TextEngine {
         self.text
     }
@@ -1149,9 +1060,7 @@ impl OverlayRenderPlan {
     ) -> Result<Self> {
         let style = document.get("style").cloned().unwrap_or(Value::Null);
         text_design::validate_motion_tree(&style).map_err(|error| anyhow!(error))?;
-        // 生效轨集为空 = 所有字幕轨都被关掉（D10 / lanes `subs:` 覆盖），这次就
-        // 不烧字幕：从这里收窄 `includes`，下面所有 `includes.subtitles` 分支和
-        // `--no-subs` 走同一条路，不必再各自判一次。
+        // An effective track set that is empty means all subtitle tracks are turned off (D10 / the lanes `subs:` override). In that case no subtitles are burned this time. Narrow `includes` here, so that all the `includes.subtitles` branches below and `--no-subs` take the same path, without each one judging it separately.
         let mut includes = includes;
         let mode = match burn_in_mode(document, mode_override)? {
             Some(mode) => mode,
@@ -1176,8 +1085,7 @@ impl OverlayRenderPlan {
         let translation_inputs = if includes.subtitles {
             translation_inputs(document, target_language)
         } else {
-            // 不烧录字幕：不扫描译文，也不物化任何字幕输入。显示模式的前提
-            // 校验一并让路，没有译文也能导出干净画面。
+            // Do not burn subtitles: do not scan translations, and do not materialize any subtitle input. The display-mode precondition check is also skipped, so a clean picture can be exported even without a translation.
             Vec::new()
         };
         let has_translation = !translation_inputs.is_empty();
@@ -1186,9 +1094,7 @@ impl OverlayRenderPlan {
                 bail!("当前 Studio 投影没有译文，无法导出译文或双语视频");
             }
         }
-        // 译文前提已经验证后再把全量原文物化成 TimedItem。失败路径不应为
-        // 11 万词的长项目分配每个 Word/String；这也是 compile_with（不走项目
-        // 时间轴投影）的低峰值保证。
+        // Only after the translation precondition has been verified is the full original text materialized into TimedItems. The failure path should not allocate every Word/String for an 110k-word long project. This is also the low-peak guarantee of compile_with (which does not go through the project timeline projection).
         let cues = if includes.subtitles {
             timed_items(
                 document["cues"]
@@ -1205,10 +1111,7 @@ impl OverlayRenderPlan {
         if includes.subtitles && mode == StudioMode::Bilingual && cues.is_empty() {
             bail!("当前 Studio 投影没有原文字幕，无法导出双语视频");
         }
-        // 译文模式下缺译句不排任何输入：那一段画面留空（连字幕背景框都不画），
-        // 绝不用原文顶替译文。缺译句数由 `sentence_translation_coverage` 记进导
-        // 出信封的 `missingTranslations` 并出 `partial-translation` 告警——留空
-        // 只有配上信封才是「可见的缺译」，而不是悄悄少几句。
+        // In translation mode, sentences missing a translation contribute no input: that stretch of the picture is left blank (not even the subtitle background box is drawn). The original text is never used in place of the translation. The number of missing sentences is recorded by `sentence_translation_coverage` into the export envelope's `missingTranslations`, and a `partial-translation` warning is emitted. Leaving it blank is a “visible missing translation” only when paired with the envelope. Otherwise a few sentences would just quietly disappear.
         let translations = timed_inputs(&translation_inputs, &style);
         let compact_original = mode == StudioMode::Bilingual;
         let original_style =
@@ -1220,10 +1123,7 @@ impl OverlayRenderPlan {
             height,
             compact_original,
         );
-        // 逐词动画只由 `style` 决定，而 `style` 编译之后不再变动——所以这里解一次
-        // 就是全片的答案。以前 `render_subtitle_frame` / `active_layouts` /
-        // `stack_layout` / `designed_caption_active` 每帧各自重算一遍，每遍都要
-        // 深拷根样式 Map 并重新解析 CSS 颜色。
+        // Per-word animation is determined only by `style`, and `style` does not change after compilation. So solving it once here gives the answer for the whole film. Previously `render_subtitle_frame` / `active_layouts` / `stack_layout` / `designed_caption_active` each recomputed it every frame. Each pass had to deep-copy the root style Map and re-parse the CSS colors.
         let track_look = CaptionLook::of(&merged_line_style(&style, LineKind::Original));
         let CaptionLook {
             animation: original_animation,
@@ -1234,8 +1134,7 @@ impl OverlayRenderPlan {
             centered: centered_caption,
             sequence: track_sequence,
         } = track_look.clone();
-        // 逐条样式：每条带覆盖的字幕各解一份行样式与长相。同一源条目在投影里可能出现
-        // 多次（同一段素材剪进来两回），按源 id 共用一份。
+        // Per-item style: each subtitle that has an override resolves its own line style and look. The same source entry can appear several times in the projection (the same material clipped in twice), so it is shared by source id.
         let has_cue_styles = includes.subtitles
             && style
                 .get(CUE_STYLES_KEY)
@@ -1296,7 +1195,7 @@ impl OverlayRenderPlan {
             original_style.font_name.as_str(),
             translation_style.font_name.as_str(),
         ];
-        // `emphasisLook.fontFamily` 只落在强调词上，缺字体同样要报。
+        // `emphasisLook.fontFamily` applies only to emphasized words. A missing font must also be reported.
         for style in [&original_style, &translation_style] {
             if let Some(family) = style
                 .emphasis
@@ -1326,8 +1225,7 @@ impl OverlayRenderPlan {
                 format!("字体 {family:?} 在当前字体库中不可用，将使用 Noto Sans SC fallback")
             })
             .collect();
-        // `--no-*` 不改文档，却决定画哪些元素，必须自成一段进缓存键。画质档不参与：
-        // 它只改码率，不改任何一个像素。
+        // `--no-*` does not change the document, but it decides which elements are drawn, so it must form its own segment of the cache key. The quality preset does not take part: it changes only the bitrate, not any pixel.
         let definition_key = format!(
             "{:016x}:{width}x{height}:{duration:.6}:{:.6}:{}:{}",
             render_raster::drawop::fnv1a64(serde_json::to_string(document)?.as_bytes()),
@@ -1347,8 +1245,7 @@ impl OverlayRenderPlan {
         change_points.sort_by(f64::total_cmp);
         change_points.dedup();
         let caps = render_raster::CapabilityProfile::cpu_reference();
-        // 倒鸭子：只在原文轨参与、字幕层打开时启用；字体口径取原文行的非紧凑
-        // 解算（双语也按单语字号排世界），说话人投影读 cue 的 `sp`。
+        // Daoyazi is enabled only when the original-text track participates and the subtitle layer is on. The font basis is the non-compact solve of the original-text line (bilingual also lays out the world at single-language size). The speaker projection reads the cue's `sp`.
         let sequence = (track_sequence && includes.subtitles && mode != StudioMode::Translated)
             .then(|| {
                 let full = resolve_line_style(&style, LineKind::Original, width, height, false);
@@ -1454,7 +1351,7 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// 装饰层装载失败的原因（`None` = 没绑定，或装载成功）。
+    /// The reason the decoration layer failed to load (`None` = not bound, or loaded successfully).
     pub fn template_chrome_error(&self) -> Option<&str> {
         self.chrome_error.as_deref()
     }
@@ -1473,25 +1370,18 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 舞台彩纸试穿：把一份临时配方**就地**装到计划上；`None` 撤回（第 236 轮）。
+    /// Stage sticker-confetti trial: installs a temporary recipe **in place** on the plan. `None` withdraws it (round 236).
     ///
-    /// 与 `set_element_anim_preview` 那条「整份重编译」通道的差别是全部收益所在：
-    /// 换一款彩纸只动 `element.confetti` 一个字段，画面靠 `composited = None`
-    /// 重出一帧，**不重读磁盘、不重编译、不重装素材**。彩纸的配方进的是 draw
-    /// ops，`element_drawop_fingerprint` 天然跟着变，宿主的同指纹去重不会把预览
-    /// 帧吞掉——这一点字幕样式那条通道做不到（它要绕 `hash_document`）。
+    /// The full benefit lies in the difference from the `set_element_anim_preview` channel, which does a “recompile the whole plan” pass. Changing one confetti style touches only the single `element.confetti` field. The picture is regenerated by `composited = None`, **without re-reading from disk, recompiling, or reloading materials**. The confetti recipe feeds the draw ops, so `element_drawop_fingerprint` changes with it, and the host's same-fingerprint de-duplication does not swallow the preview frame. The subtitle style channel cannot do this, because it has to go around `hash_document`.
     ///
-    /// `id` 在计划里找不到时**凭空补一件幽灵**（[`TimelineVisualElement::confetti_preview`]）：
-    /// 素材库网格悬停一格时时间轴上还没有这件元素，这是那条链唯一能在舞台上看见
-    /// 效果的办法。幽灵追加在末尾＝最上层，与「点这一格新建一件」落到的层序一致。
+    /// If `id` is not found in the plan, a **phantom element is appended** ([`TimelineVisualElement::confetti_preview`]). When the user hovers over a cell in the asset library grid, the element is not yet on the timeline, and this is the only way that chain can show the effect on stage. The phantom is appended at the end, which makes it topmost, matching the layer order of “click this cell to create a new one”.
     ///
-    /// 采样时刻不在这条通道里：它走既有的 [`Self::set_element_sample_time`]，
-    /// 目标件与幽灵件同一个 id、同一套 `[start, end)` 判活。
+    /// The sampling time is not handled in this channel. It goes through the existing [`Self::set_element_sample_time`]. The target element and the phantom share the same id and the same `[start, end)` liveness check.
     pub fn set_confetti_peek(&mut self, peek: Option<ConfettiPeek>) {
         if self.confetti_peek == peek {
             return;
         }
-        // 先撤上一次，再装这一次：装第二次之前不撤，第一次的原配方就永久丢了。
+        // Withdraw the previous one first, then install this one. If you do not withdraw before installing the second time, the original recipe from the first install is lost permanently.
         match self.confetti_peek_undo.take() {
             Some(ConfettiPeekUndo::Restore(saved)) => {
                 if let Some(current) = self.confetti_peek.as_ref() {
@@ -1535,19 +1425,17 @@ impl OverlayRenderPlan {
         self.composited = None;
     }
 
-    /// 这份计划是否带一层模板。
+    /// Whether this plan carries a template layer.
     pub fn has_template_chrome(&self) -> bool {
         self.chrome.is_some()
     }
 
-    /// 当前套用的模板场景（`None` = 没套）。
+    /// The template scene currently applied (`None` = none applied).
     pub fn template_scene(&self) -> Option<&TemplateScene> {
         self.chrome.as_ref().map(|layer| &layer.scene)
     }
 
-    /// 换入 / 撤掉模板场景。App 版面编辑器的草稿真渲染与浏览器合成器都走这里
-    /// （它们不经 `compile_project`）；换场景会让帧身份与字幕避让一起跟着变，
-    /// 已合成缓存随之作废。
+    /// Swaps the template scene in or withdraws it. The App layout editor's draft live render and the browser compositor both go through here (they do not go through `compile_project`). Switching scenes changes the frame identity and the subtitle avoidance together, so the composited cache is invalidated along with them.
     pub fn set_template_scene(&mut self, scene: Option<TemplateScene>) {
         self.chrome = scene.map(TemplateLayer::new);
         self.chrome_error = None;
@@ -1555,7 +1443,7 @@ impl OverlayRenderPlan {
         self.cache.clear();
     }
 
-    /// 取一帧模板像素（`None` = 没套模板）。`fallback_family` 是原文行的字体。
+    /// Gets one frame of template pixels (`None` = no template applied). `fallback_family` is the font of the original-text line.
     fn template_frame(&mut self, time: f64) -> Result<Option<Pixmap>> {
         let Some(layer) = self.chrome.as_ref() else {
             return Ok(None);
@@ -1571,9 +1459,7 @@ impl OverlayRenderPlan {
         Ok(Some(pixmap))
     }
 
-    /// 元素效果的 preflight（设计 §6.5）：在逐帧之前定案，不允许渲染到一半
-    /// 才发现后端不支持。overlay 的效果只能来自 `lower_element_effects`，
-    /// 所以两种形态（画中画/平铺与全屏）各走一遍就是完整的引用集合。
+    /// Preflight for element effects (design §6.5). It is settled before frame-by-frame rendering, so it is not allowed to discover mid-render that a backend does not support something. Overlay effects can only come from `lower_element_effects`, so walking each of the two forms (picture-in-picture/tiled and full-screen) once gives the complete set of references.
     pub fn run_preflight(&mut self) -> Result<()> {
         let mut refs: Vec<render_raster::plan::EffectRef> = Vec::new();
         for element in &self.elements {
@@ -1598,14 +1484,12 @@ impl OverlayRenderPlan {
         Ok(())
     }
 
-    /// 本次导出的 preflight 结论。`ccut serve` 的视频任务信封读它。
+    /// The conclusion of this export's preflight. The `ccut serve` video task envelope reads it.
     pub fn preflight(&self) -> &render_raster::PreflightReport {
         &self.preflight
     }
 
-    /// 从 host 已完成词锚解析的 Studio 投影载入元素。这里只解析契约、筛 include、
-    /// 稳定提升 watermark；不读 timeline.json、不探测素材，也不拉频谱，因此
-    /// 浏览器字体规划器与 CLI host 可以共用同一份元素顺序。
+    /// Loads elements from a Studio projection whose word anchors the host has already resolved. Here we only parse the contract, filter by include, and stably promote the watermark. We do not read timeline.json, probe media, or fetch the spectrum. That way the browser font planner and the CLI host can share the same element order.
     pub fn load_projected_timeline_elements(&mut self, document: &Value) -> Result<()> {
         self.parse_projected_timeline_elements(document).map(|_| ())
     }
@@ -1616,8 +1500,7 @@ impl OverlayRenderPlan {
     ) -> Result<Vec<(String, ElementKind)>> {
         self.elements.clear();
         let mut required_sources = Vec::new();
-        // 水印**渲染期固定最上层**（M5-B8，设计文档 §20 #10）：轨道顺序决定其余
-        // 元素的 z 序，水印不参与。稳定提取后统一追加，水印之间仍保持文档顺序。
+        // The watermark is **fixed to the top layer at render time** (M5-B8, design doc §20 #10). Track order determines the z-order of the other elements, and the watermark does not take part in it. After stable extraction it is appended uniformly, and watermarks keep their document order among themselves.
         let mut watermarks: Vec<TimelineVisualElement> = Vec::new();
         let tracks = document
             .pointer("/timeline/tracks")
@@ -1741,10 +1624,7 @@ impl OverlayRenderPlan {
         let timeline_path = project.join("timeline.json");
         let timeline = if timeline_path.is_file() {
             let contents = fs::read_to_string(&timeline_path)?;
-            // 旧撤销记录曾把「不存在的可选时间轴」恢复成空文件。编辑器
-            // ProjectTimeline::load 已将其视为缺省文档；渲染必须同样处理，
-            // 否则投影中的视频元素能播放声音，却因这里解析失败而整层黑屏。
-            // 只读兼容，不修写项目；非空损坏 JSON 仍明确报错。
+            // Old undo records once restored a “non-existent optional timeline” as an empty file. The editor's ProjectTimeline::load already treats that as the default document, and rendering must handle it the same way. Otherwise a video element in the projection could play its sound while the whole layer goes black, because parsing fails here. This is read-only compatibility and does not repair the project on write. Non-empty corrupt JSON still reports an error explicitly.
             if contents.trim().is_empty() {
                 TimelineDocument::default()
             } else {
@@ -1767,15 +1647,13 @@ impl OverlayRenderPlan {
         let projected_sources = self.parse_projected_timeline_elements(document)?;
         let mut required_sources: HashMap<String, TimelineSourceDecoder> = HashMap::new();
         for (source_id, kind) in projected_sources {
-            // sticker / placeholder 的解码器**跟着 source 的自述 kind 走**（P7b）：
-            // 静态资产与 image 共用解码器，带 alpha 的循环 WebM 必须走视频解码器，
-            // Timeline 0.7 的 `lottie` 源走 bodymovin 光栅器。
+            // The decoder for a sticker or placeholder **follows the source's self-declared kind** (P7b). Static assets share a decoder with image. Looping WebM with alpha must use the video decoder. A Timeline 0.7 `lottie` source uses the bodymovin rasterizer.
             let source_kind = timeline
                 .sources
                 .get(&source_id)
                 .and_then(|source| source.kind);
             let decoder = match kind {
-                // 白板元素的源恒为静态图（`whiteboard-source-kind` 已在 schema 校验）。
+                // The source of a whiteboard element is always a static image (`whiteboard-source-kind` is already validated in the schema).
                 ElementKind::Image | ElementKind::Whiteboard => TimelineSourceDecoder::Image,
                 ElementKind::Video => TimelineSourceDecoder::Video,
                 ElementKind::Sticker | ElementKind::Placeholder => match source_kind {
@@ -1783,8 +1661,7 @@ impl OverlayRenderPlan {
                     Some(timeline::SourceKind::Lottie) => TimelineSourceDecoder::Lottie,
                     _ => TimelineSourceDecoder::Image,
                 },
-                // shape / visualizer / progress 不引用媒体源（visualizer 的
-                // `audio` 指的是 BCS1 频谱，P1 的活）。
+                // shape / visualizer / progress do not reference a media source. (The visualizer's `audio` refers to the BCS1 spectrum, which is P1 work.)
                 ElementKind::Text
                 | ElementKind::Audio
                 | ElementKind::Shape
@@ -1852,8 +1729,7 @@ impl OverlayRenderPlan {
                         assets.videos.insert(
                             source_id.clone(),
                             VideoInfo {
-                                // 带 alpha 的 WebM（动态贴纸）要点名解码器，
-                                // 否则 alpha 平面被静默丢掉（P7b）。
+                                // WebM with alpha (dynamic stickers) must name the decoder explicitly. Otherwise the alpha plane is silently discarded (P7b).
                                 decoder: render_raster::assets::probe_alpha_decoder(&path),
                                 path,
                                 width,
@@ -1899,19 +1775,13 @@ impl OverlayRenderPlan {
         Ok(())
     }
 
-    /// 预载**换色后**的素材贴纸位图（第 122 轮 §14.4 的渲染腿）。
+    /// Preloads the **recolored** material-sticker bitmap (the rendering leg of §14.4 in round 122).
     ///
-    /// 判据在纯层 [`timeline::svg_fill::apply_overrides`]，与属性页色卡
-    /// 共用一份分组——面板上点出来的颜色和画面上看到的颜色因此不可能分家。
-    /// 这里只负责读盘、光栅化并按 [`sticker_fill_variant_id`] 归档。
+    /// The criterion lives in the pure layer [`timeline::svg_fill::apply_overrides`], which shares one grouping with the property page's color swatches. So the color picked in the panel and the color seen on screen can never diverge. Here it only reads from disk, rasterizes, and archives under [`sticker_fill_variant_id`].
     ///
-    /// Lottie 源（Timeline 0.7）走 [`render_raster::source::Lottie::apply_fill_overrides`]：
-    /// 命中的纯色填充 / 描边在文档层换掉，变体以另一份 `Lottie` 归档，逐帧
-    /// 采样与循环语义和原件完全一样。
+    /// Lottie sources (Timeline 0.7) go through [`render_raster::source::Lottie::apply_fill_overrides`]. Matching solid fills and strokes are replaced at the document level, the variant is archived as another `Lottie`, and per-frame sampling and loop semantics stay exactly the same as the original.
     ///
-    /// 三类源**故意不生成变体**，取帧时会原样退回 source id 那一份：位图
-    /// （`fillOverrides` 对 PNG 无意义）、动图/视频贴纸（逐帧解码，换色要另设
-    /// 计划），以及读盘或光栅失败的素材。缺变体不是错误，只是不换色。
+    /// Three kinds of source **deliberately do not generate variants**. When a frame is fetched, they fall back unchanged to the source-id copy: bitmaps (`fillOverrides` is meaningless for PNG), animated or video stickers (decoded per frame, so recoloring would need a separate plan), and assets whose disk read or rasterization failed. A missing variant is not an error. It just means no recoloring.
     #[cfg(feature = "host")]
     fn load_sticker_fill_variants(
         &mut self,
@@ -1938,8 +1808,7 @@ impl OverlayRenderPlan {
             let Ok(path) = source_path(project, timeline, &source_id) else {
                 continue;
             };
-            // Lottie 的换色在文档层做（纯色填充 / 描边），变体是另一份
-            // `Lottie`，与 SVG 变体同样按 `sticker_fill_variant_id` 归档。
+            // Lottie recoloring is done at the document level (solid fills and strokes). The variant is another `Lottie`, archived under `sticker_fill_variant_id` just like the SVG variant.
             if assets.lotties.contains_key(&source_id) {
                 if assets.lotties.contains_key(&variant) {
                     continue;
@@ -1962,7 +1831,7 @@ impl OverlayRenderPlan {
                 }
                 continue;
             }
-            // 只有走静态图解码器的源才有换色变体；动图/视频那一份不在 images 里。
+            // Only sources that go through the static-image decoder have recolor variants. The animated/video copy is not in `images`.
             if !assets.images.contains_key(&source_id) {
                 continue;
             }
@@ -1992,18 +1861,13 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// **ADR-E04 数据流的 host 侧**：读 BCS1 → 按元素参数整轨派生 → 注入。
+    /// **The host side of the ADR-E04 data flow**: read BCS1 → derive the whole track from the element parameters → inject.
     ///
-    /// 三件事必须在这里做完，渲染期一件都不许再做：
+    /// Three things must be done here, and none may be done at render time:
     ///
-    /// 1. **读**。`ccut-render` 是无 I/O 的，BCS1 的缓存路径、指纹与读取只能在
-    ///    host。缓存文件由 `ccut spectrum` 产出，本函数**不代生成**——重新解码
-    ///    一整条音轨是分钟级的活，藏在一次 overlay 渲染里不合适。
-    /// 2. **派生**。指数平滑天然递推（`y[n] = τ·y[n-1] + (1-τ)·x[n]`，`y[-1]=0`），
-    ///    必须从帧 0 顺序推进；`VizTrack::derive` 一次性走完整条轨，
-    ///    `sample(t)` 因此是纯查表，乱序采样才可能与顺序采样逐位一致。
-    /// 3. **fail-fast**。缺 BCS1 直接报错并指路 `ccut spectrum`，绝不静默出空图
-    ///    ——「频谱还没生成」和「这段确实静音」在画面上长得一模一样。
+    /// 1. **Read.** `ccut-render` performs no I/O, so the BCS1 cache path, fingerprint, and reading can only happen in the host. The cache file is produced by `ccut spectrum`. This function does **not** generate it on the caller's behalf. Re-decoding a whole audio track takes minutes, and hiding that inside one overlay render is not appropriate.
+    /// 2. **Derive.** Exponential smoothing is a natural recurrence (`y[n] = τ·y[n-1] + (1-τ)·x[n]`, `y[-1]=0`) and must advance sequentially from frame 0. `VizTrack::derive` walks the whole track once, so `sample(t)` is then a pure table lookup. Only then can out-of-order sampling match sequential sampling bit for bit.
+    /// 3. **Fail fast.** If BCS1 is missing, report an error immediately and point to `ccut spectrum`. Never silently produce an empty image: “the spectrum has not been generated yet” and “this stretch is genuinely silent” look exactly the same on screen.
     #[cfg(feature = "host")]
     pub fn load_visualizer_tracks(&mut self, project: &Path) -> Result<()> {
         let wanted: Vec<(String, String, VisualizerProps)> = self
@@ -2018,14 +1882,12 @@ impl OverlayRenderPlan {
         if wanted.is_empty() {
             return Ok(());
         }
-        // 采样时刻的折算表（见 `viz_projection` 的字段文档）。只在真的有
-        // visualizer 元素时才建：没有元素的项目一个字节都不该多读。
+        // The lookup table for sample times (see the field docs of `viz_projection`). It is built only when there really is a visualizer element. A project with no such element should not read a single extra byte.
         self.viz_projection = Some(
             crate::host::project_timeline_projection(project)
                 .context("visualizer 的采样时刻需要时间轴投影")?,
         );
-        // `(源, 参数)` 相同的元素共享同一条轨：一条 3 分钟音轨的 VizTrack 是
-        // 十几 MB，两个同参数的波形没有理由各存一份。
+        // Elements with the same `(source, parameters)` share one track. The VizTrack for a 3-minute audio track is over ten MB, and two waveforms with the same parameters have no reason to each store their own copy.
         let mut derived: HashMap<String, Arc<render_raster::source::VizTrack>> = HashMap::new();
         let mut spectra: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
         for (element_id, source_id, props) in wanted {
@@ -2066,12 +1928,9 @@ impl OverlayRenderPlan {
         &self.warnings
     }
 
-    /// 输出时间轴上的字幕内容签名：每条原文/译文行一项，`key` 覆盖一切会改变
-    /// 画面的内容（层、id、文本、显示窗、逐词高亮时刻）。
+    /// The content signature of subtitles on the output timeline: one entry per original-text or translation line. `key` covers everything that changes the picture: layer, id, text, display window, and per-word highlight timing.
     ///
-    /// 区间重渲用它判定「基线文档与本次文档的差异是否全部落在补丁窗内」——窗外
-    /// 每一帧都从基线产物直通，一处窗外差异就是一份静默的错误产物。字幕行只在
-    /// `[display_start, display_end)` 内参与绘制，因此比对整条显示窗即可。
+    /// Partial-window re-rendering uses this to decide whether all differences between the baseline document and this document fall inside the patch window. Every frame outside the window passes straight through from the baseline output, so a single difference outside the window would silently produce a wrong output. Subtitle lines take part in drawing only within `[display_start, display_end)`, so comparing the whole display window is enough.
     pub fn subtitle_spans(&self) -> Vec<SubtitleSpan> {
         let layers = self
             .cues
@@ -2106,8 +1965,7 @@ impl OverlayRenderPlan {
         self.height
     }
 
-    /// 同一条字幕行显示期间文本、样式与换行宽度都不变，shaping 结果按
-    /// `(层, 行 id)` 复用；逐词高亮只影响绘制阶段，不参与排版。
+    /// While the same subtitle line is displayed, its text, style, and wrap width do not change. So the shaping result is reused by `(layer, line id)`. Per-word highlighting affects only the drawing stage and does not take part in typesetting.
     pub fn cached_layout(
         &mut self,
         kind: LineKind,
@@ -2200,15 +2058,14 @@ impl OverlayRenderPlan {
         let base_wrap_width = f64::from(self.width)
             * clamp(finite(self.style.get("width"), 80.0), 5.0, 100.0)
             / 100.0;
-        // 编译期定案的常量，取一份不借用 `self` 的句柄，好在下面继续调
-        // `&mut self` 的布局缓存方法。
+        // A handle to the constants fixed at compile time that does not borrow `self`, so that below we can keep calling the `&mut self` layout cache methods.
         let track_look = self.track_look.clone();
         let canvas_scale = f64::from(self.width.min(self.height)) / REFERENCE_SHORT_EDGE
             * finite(self.style.get("scale"), 1.0).max(0.05);
         let sequence_takes_original = self.sequence.is_some();
         let mut layouts = mode_lines(self.mode, &self.order)
             .into_iter()
-            // 倒鸭子接管原文轨：cue 级排版只剩译文行（双语）或什么都不画（单语）。
+            // Daoyazi takes over the original-text track. Cue-level layout is left with only the translation line (bilingual), or nothing at all (monolingual).
             .filter(|kind| !(sequence_takes_original && *kind == LineKind::Original))
             .filter_map(|kind| {
                 let mut item = match kind {
@@ -2287,7 +2144,7 @@ impl OverlayRenderPlan {
                 })
             })
             .collect::<Vec<_>>();
-        // 双语两行叠放：下面那行的引导点画在它自己下方，不压上一行的字。
+        // Bilingual two-line stacking: the guide dot of the lower line is drawn beneath it, and does not overlap the text of the line above.
         for line in layouts.iter_mut().skip(1) {
             line.guide_below = true;
         }
@@ -2297,10 +2154,7 @@ impl OverlayRenderPlan {
         layouts
     }
 
-    /// KTV 双行排版：只显示一行（原文或仅译文）时，正在唱的这句带
-    /// `textMotion.karaoke.nextLine`，下一句排在它下面预告。双语画面本来就是
-    /// 原文 + 译文两行，再预告就成了四行，所以不预告。下一句离得太远（间奏）
-    /// 也不预告。
+    /// KTV two-line layout. When only one line is shown (original only, or translation only), the line currently being sung carries `textMotion.karaoke.nextLine`, and the next sentence is set beneath it as a preview. Bilingual pictures already show two lines (original plus translation), so adding a preview would make four lines, and so no preview is shown. A next sentence that is too far away (an interlude) is not previewed either.
     fn karaoke_next_line(
         &mut self,
         layouts: &[LineLayout],
@@ -2357,7 +2211,7 @@ impl OverlayRenderPlan {
         pose: TransitionPose,
         suppressed: bool,
     ) -> String {
-        // 预告行由当前句决定，不进键：与 `render_subtitle_frame` 的轻量键同形。
+        // The preview line is determined by the current sentence and does not enter the key. It has the same shape as the light-weight key of `render_subtitle_frame`.
         let items = layouts
             .iter()
             .filter(|line| !line.preview)
@@ -2366,11 +2220,9 @@ impl OverlayRenderPlan {
         self.cache_key_of(&items, time, pose, suppressed)
     }
 
-    /// [`Self::cache_key`] 的**轻量**形态：键只认「哪几条 cue + 各自当前词」，
-    /// 排版结果一个字节都不进键。所以查缓存根本不需要先把布局物化出来——
-    /// `render_subtitle_frame` 靠这一点把 shaping 深拷贝推迟到未命中之后。
+    /// The **light-weight** form of [`Self::cache_key`]. The key recognizes only “which cues, plus each one's current word”. No layout result goes into the key at all. So looking up the cache does not need the layout materialized first. `render_subtitle_frame` relies on this to defer the shaping deep copy until after a cache miss.
     ///
-    /// 两条路径必须走同一个函数：键要是分叉了，命中的就是另一张图。
+    /// The two paths must go through the same function. If the keys diverge, a hit would return a different picture.
     pub fn cache_key_of(
         &self,
         items: &[(&str, usize)],
@@ -2389,20 +2241,14 @@ impl OverlayRenderPlan {
         } else {
             "@settled".to_owned()
         };
-        // 真被压掉的那些帧必须与不压制时分键：Designed Caption 活跃时逐帧键
-        // 只按帧号取值，两种状态会在同一帧号上撞成同一个键、却是两张不同的图。
-        // 落定之后压制本就是恒等变换，键保持一致，不平白打散缓存。
+        // Frames that really are suppressed must be keyed differently from unsuppressed ones. While a Designed Caption is active, the per-frame key takes its value only from the frame number. The two states would then collide on the same frame number into the same key while being two different images. Once settled, suppression is an identity transform, so the key stays consistent and the cache is not needlessly fragmented.
         let suppressed = if suppressed { "!nt" } else { "" };
         format!("{items}{transition}{suppressed}{motion_key}")
     }
 
-    /// 本帧的字幕入场姿态，外加「压制是否真的改变了这一帧」（只喂缓存键）。
+    /// This frame's subtitle entrance pose, plus “whether suppression actually changed this frame” (this bit only feeds the cache key).
     ///
-    /// 客户端不能也不该二次施加转场：`scale_x/scale_y` 经 `group_transform`
-    /// 绕锚点落地、`opacity` 逐笔进 `raster::paint`、`blur` 经
-    /// `box_blur_rgba_bounded` 落地，全在这张 PNG 里烘死了。所以 Mac
-    /// `Stage/Frame/StageFrameMotion.swift::subtitlePoseNodes` 的两处压制
-    /// （任意字幕被选中 / Designed Caption 让位）只能从这里开口。
+    /// The client cannot and should not apply the transition a second time. `scale_x/scale_y` are applied around the anchor by `group_transform`, `opacity` goes per stroke into `raster::paint`, and `blur` is applied by `box_blur_rgba_bounded`. All of it is baked into this PNG. So the two suppressions in Mac's `Stage/Frame/StageFrameMotion.swift::subtitlePoseNodes` (any subtitle selected, or a Designed Caption yielding its place) can only be initiated from here.
     pub fn transition_pose_at(
         &self,
         display_start: f64,
@@ -2417,25 +2263,24 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// S14：把字幕入场压成单位姿态。默认 `false`，与 2.0 前逐字节一致。
+    /// S14: collapses the subtitle entrance into the unit pose. Default `false`, byte-identical to before 2.0.
     pub fn set_suppress_transition(&mut self, suppress: bool) {
         self.suppress_transition = suppress;
     }
 
-    /// 见 [`DynamicAssetNames`]。
+    /// See [`DynamicAssetNames`].
     pub fn set_dynamic_asset_names(&mut self, names: DynamicAssetNames) {
         self.dynamic_asset_names = names;
     }
 
-    /// 媒体元素画完就从 `media.injected` 里拿走它用的源画面（缺省不拿）。
+    /// After a media element is drawn, takes away the source picture it uses from `media.injected` (not taken by default).
     ///
-    /// 只给每帧重新注入、画一次就清空注入表的宿主（frame-render 一次画一个实例）：没有效果要烘时，
-    /// 计划独占的源画面直接当局部画布用，省一次整幅复制。像素不变。
+    /// Only for hosts that re-inject every frame and clear the injected table once each frame is drawn (frame-render draws one instance at a time). When no effect needs baking, the source picture owned by the plan is used directly as the local canvas, which saves one full-frame copy. Pixels are unchanged.
     pub fn set_consume_injected_sources(&mut self, consume: bool) {
         self.consume_injected_sources = consume;
     }
 
-    /// 这一帧第 `slot` 个动态栅格的资源名（[`DynamicAssetNames`]）。
+    /// The resource name of the `slot`-th dynamic raster in this frame ([`DynamicAssetNames`]).
     fn dynamic_asset_name(&self, kind: &str, owner: &str, rgba: &[u8], slot: usize) -> String {
         match self.dynamic_asset_names {
             DynamicAssetNames::PixelFingerprint => dynamic_raster_asset_name(kind, owner, rgba),
@@ -2443,20 +2288,15 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 把底层视频解码器切到**随机访问**：向前跳太远时重开而不是逐帧抽干
-    /// （见 `render_raster::MediaStore::set_random_access`）。
+    /// Switches the underlying video decoder to **random access**: when jumping forward too far, reopen instead of draining frame by frame (see `render_raster::MediaStore::set_random_access`).
     ///
-    /// 只给交互式预览用（App 的 overlay 渲染线程、serve 的单帧预览端点）：
-    /// 那里一次跳转能跨过成千上万帧，抽干等于把整段视频重解一遍。导出走的
-    /// `studio_export` 不调用它，行为一字不改；两条路径取的仍是同一源帧。
+    /// Only for interactive preview (the App's overlay render thread, and the serve single-frame preview endpoint). There, one seek can cross thousands of frames, and draining would mean re-decoding the whole video. The `studio_export` export path, which does not call it, is unchanged. Both paths fetch the same source frame.
     #[cfg(feature = "host")]
     pub fn set_random_access(&mut self, enabled: bool) {
         self.media.base.set_random_access(enabled);
     }
 
-    /// 底层视频解码器的**关键帧吸附**开关（见
-    /// `render_raster::MediaStore::set_keyframe_snap`）：拖 playhead 期间取帧时刻
-    /// 吸到之前最近的关键帧，只解一帧；松手后关掉即回到精确取帧。导出不碰。
+    /// The underlying video decoder's **keyframe snap** switch (see `render_raster::MediaStore::set_keyframe_snap`). While the playhead is being dragged, the fetch time snaps to the nearest earlier keyframe and decodes only one frame. After release it is turned off and exact fetching resumes. Export does not touch it.
     #[cfg(feature = "host")]
     pub fn set_keyframe_snap(&mut self, enabled: bool) {
         self.media.base.set_keyframe_snap(enabled);
@@ -2466,7 +2306,7 @@ impl OverlayRenderPlan {
         self.designed_caption
     }
 
-    /// 某一行上这条字幕的逐条样式（没有覆盖时 `None`）。
+    /// The per-item style of this subtitle on a given line (`None` when there is no override).
     pub fn cue_override(&self, kind: LineKind, item_id: &str) -> Option<&Arc<CueOverride>> {
         match kind {
             LineKind::Original => self.cue_original.get(item_id),
@@ -2474,13 +2314,13 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 这一行画出来用的根样式：有逐条覆盖就是叠过覆盖的那份，否则整条轨。
+    /// The root style used to draw this line: if there is a per-item override, it is the one with the override applied; otherwise it is the whole track's style.
     fn line_root(&self, kind: LineKind, item_id: &str) -> &Value {
         self.cue_override(kind, item_id)
             .map_or(&self.style, |entry| &entry.root)
     }
 
-    /// 决定这一帧长相的那一行：译文模式看译文行，其余看原文行。
+    /// The line that determines this frame's look: in translation mode it is the translation line, otherwise the original-text line.
     fn look_kind(&self) -> LineKind {
         if self.mode == StudioMode::Translated {
             LineKind::Translation
@@ -2489,7 +2329,7 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 这一帧的原文长相，按已经排好的行取。
+    /// This frame's original-text look, taken from the line that has already been laid out.
     fn look_for_layouts(&self, layouts: &[LineLayout]) -> &CaptionLook {
         let kind = self.look_kind();
         layouts
@@ -2499,7 +2339,7 @@ impl OverlayRenderPlan {
             .map_or(&self.track_look, |entry| &entry.look)
     }
 
-    /// 与 [`Self::look_for_layouts`] 同一答案，但不必先排版（缓存命中路径用）。
+    /// The same answer as [`Self::look_for_layouts`], but without laying out first (used by the cache-hit path).
     fn look_at(&self, time: f64) -> &CaptionLook {
         let kind = self.look_kind();
         let items = match kind {
@@ -2511,22 +2351,17 @@ impl OverlayRenderPlan {
             .map_or(&self.track_look, |entry| &entry.look)
     }
 
-    /// 本片是否有会随时间变化的逐词高亮块。与 [`Self::designed_caption_active`]
-    /// 一样只喂缓存键与 `next_change`：两者都表示「字幕层这一帧不能靠
-    /// `(cue, 当前词)` 定身份」。
+    /// Whether this film has any per-word highlight block whose timing changes over time. Like [`Self::designed_caption_active`], it feeds only the cache key and `next_change`. Both mean “for this frame, the subtitle layer cannot be identified by `(cue, current word)`”.
     pub fn word_box_animated(&self) -> bool {
         self.word_box_animated
     }
 
-    /// 字幕层是否必须逐帧出图（转场姿态 ／ Designed Caption ／ 逐词块时间轨）。
+    /// Whether the subtitle layer must be rendered as an image every frame (transition pose, Designed Caption, or a per-word block timing track).
     fn per_frame_subtitle(&self, pose_active: bool) -> bool {
         pose_active || self.designed_caption_active() || self.word_box_animated()
     }
 
-    /// 本片是否有任何一条字幕带分层文字动画。**不是**准入判据——GPU 场景按帧
-    /// 看 [`Self::text_motion_active_at`]；这里只留给还按整片决定字幕层交付形态的
-    /// 宿主（浏览器预览：一旦有动效就整层走 `render_subtitle_raster`，避免首个
-    /// 动效帧抛错那一帧字幕空白）。
+    /// Whether any subtitle in this film has layered text animation. This is **not** the admission criterion: the GPU scene checks per frame via [`Self::text_motion_active_at`]. This is kept only for hosts that still decide the delivery form of the subtitle layer for the whole film (browser preview). Once any motion is present, the whole layer goes through `render_subtitle_raster`, so that the subtitle does not go blank on the first motion frame, where an error would otherwise be thrown.
     pub fn has_text_motion(&self) -> bool {
         self.text_motion_cues
             .iter()
@@ -2534,7 +2369,7 @@ impl OverlayRenderPlan {
             .any(Option::is_some)
     }
 
-    /// 某一行在 `time` 的活动字幕，以及它编译期冻结的动效量（不带新动画时 `None`）。
+    /// The active subtitle on a given line at `time`, and the motion amount frozen for it at compile time (`None` when there is no new animation).
     fn active_text_motion(
         &self,
         kind: LineKind,
@@ -2548,9 +2383,7 @@ impl OverlayRenderPlan {
         Some((items.get(index)?, motion.get(index)?.as_ref()?))
     }
 
-    /// 这一帧真正画出来的某一行是否带分层文字动画 / 逐词底块。字幕 glyph scene
-    /// 还表达不了它们：这一帧返回 [`SubtitleSceneFallback::WordAnimation`]，宿主
-    /// 只把**字幕层**换成 CPU 光栅（host 合成器里是一张纹理节点），元素照旧在 GPU。
+    /// Whether the line actually drawn in this frame carries layered text animation or a per-word background block. The subtitle glyph scene cannot yet express these. In that case this frame returns [`SubtitleSceneFallback::WordAnimation`], and the host rasterizes only the **subtitle layer** on the CPU (in the host compositor, as a texture node). Elements stay on the GPU as usual.
     pub fn text_motion_active_at(&self, time: f64) -> bool {
         (0.0..self.duration).contains(&time)
             && mode_lines(self.mode, &self.order)
@@ -2625,7 +2458,7 @@ impl OverlayRenderPlan {
         next
     }
 
-    /// 空白帧共享同一份零缓冲，避免每帧分配整幅 RGBA。
+    /// Blank frames share the same zero buffer, to avoid allocating a whole RGBA image for each frame.
     pub fn blank_rgba(&mut self) -> Arc<Vec<u8>> {
         if let Some(blank) = &self.blank_frame {
             return blank.clone();
@@ -2635,16 +2468,12 @@ impl OverlayRenderPlan {
         blank
     }
 
-    /// 字幕堆栈的**摆放**几何：锚点、每行槽位、共享底板判定与堆栈跨度。
+    /// The **placement** geometry of the subtitle stack: the anchor, the per-line slots, the shared-plate decision, and the stack span.
     ///
-    /// 光栅化（[`Self::render_subtitle_frame`]）与几何侧车
-    /// （[`Self::subtitle_layout`]，供客户端做行命中/拖拽）共用同一份答案。
-    /// 拆出来的唯一理由就是这个：两处各算一遍摆放，就是两种「这行在哪」的意见，
-    /// 而选中框跟画面错位正是这一类分叉的典型症状。
+    /// Rasterization ([`Self::render_subtitle_frame`]) and the geometry sidecar ([`Self::subtitle_layout`], used by the client for line hit-testing and dragging) share one answer. The sole reason for splitting it out: computing placement in two places means two opinions about “where this line is”. A selection box misaligned with the picture is the typical symptom of exactly this kind of divergence.
     pub fn stack_layout(&self, layouts: &[LineLayout], canvas_scale: f64) -> StackLayout {
         let centered_caption = self.look_for_layouts(layouts).centered;
-        // 单行模式只有一行，它的逐条覆盖可以挪整组锚点；双语的锚点恒是整条轨的，
-        // 逐条位置走下面的行级覆盖。
+        // In single-line mode there is only one line, and its per-item override can move the whole group's anchor. In bilingual mode the anchor is always the whole track's, and per-item positions go through the line-level override below.
         let anchor_root = match layouts.first() {
             Some(line) if self.mode != StudioMode::Bilingual => {
                 self.line_root(line.kind, &line.item.id)
@@ -2656,8 +2485,7 @@ impl OverlayRenderPlan {
         } else {
             f64::from(self.width) * finite(anchor_root.get("x"), 50.0) / 100.0
         };
-        // 模板避让（原型第 112 轮）：底部有整宽的模板带时，字幕锚线最多抬到带的上沿。
-        // 只抬 y，不动字号 / 宽度 / 底板——模板改字幕摆位，不改字幕长相。
+        // Template avoidance (prototype round 112): when there is a full-width template band at the bottom, the subtitle anchor line is raised at most to the top edge of the band. Only y is moved. Font size, width, and plate are not touched: the template changes where subtitles sit, not what they look like.
         let lift = self.chrome.as_ref().map_or(0.0, |layer| {
             timeline::template::subs_bottom(&layer.scene.doc, 0.0)
         });
@@ -2671,8 +2499,7 @@ impl OverlayRenderPlan {
             f64::from(self.height) * y / 100.0
         };
         let gap = finite(self.style.get("gap"), 6.0).max(0.0) * canvas_scale;
-        // 行级位置覆盖只改「这一行画在哪」；width/scale/rotation 与转场仍是整组共享，
-        // 所以 group_tf 的支点始终是全局锚点，脱离堆栈的行照样跟着整组缩放旋转。
+        // A line-level position override changes only “where this line is drawn”. Width, scale, rotation, and transitions remain shared by the whole group. So the pivot of group_tf is always the global anchor, and lines that have left the stack still follow the whole group's scaling and rotation.
         let boxes = layouts
             .iter()
             .map(|line| LineBox {
@@ -2692,12 +2519,9 @@ impl OverlayRenderPlan {
             })
             .collect::<Vec<_>>();
         let overrides = boxes.iter().map(|line| line.over).collect::<Vec<_>>();
-        // 共享底板的样式只跟**一行**走（见 `shared_plate_line`）：另一行的
-        // backgroundPadding / backgroundColor 在 shared 模式下被完全忽略。
+        // The shared plate's style follows only **one** line (see `shared_plate_line`). The other line's backgroundPadding and backgroundColor are completely ignored in shared mode.
         //
-        // 这里必须按 kind 取行，不能顺手取「堆栈里的第一行」：`mode_lines` 在 transTop 时
-        // 把译文行排在前面，而 `origStyle`/`transStyle` 能各自覆盖 backgroundPadding，
-        // 那样两端会分叉。
+        // The line must be picked by kind here, not conveniently as “the first line in the stack”. `mode_lines` puts the translation line first under transTop, and `origStyle` / `transStyle` can each override backgroundPadding. Picking by position would let the two ends diverge.
         let stacked_line = |want: LineKind| {
             layouts
                 .iter()
@@ -2712,13 +2536,9 @@ impl OverlayRenderPlan {
             stacked_line(LineKind::Translation),
             |index| has_real_background(&layouts[index]),
         );
-        // 共享背景只包住仍在堆栈里的行：脱离堆栈的行不在这个矩形的连续区间内，
-        // 它自己画自己的底板。堆栈只剩一行时共享矩形与单行底板逐像素等价，
-        // 所以这里直接退回逐行分支。
+        // The shared background wraps only the lines still in the stack. A line that has left the stack is not inside this rectangle's continuous span, so it draws its own plate. When only one line remains in the stack, the shared rectangle and the single-line plate are pixel-equivalent, so it falls back directly to the per-line branch here.
         //
-        // 判据只有 backgroundMode 与堆栈行数——**不含** background_on。摆放形态必须
-        // 与 Mac `prepareStack` 一致，底板关掉的 shared 栈也得按共享槽位排，
-        // 「画不画那块板」是后面 `has_real_background` 单独管的事。
+        // The criteria are only backgroundMode and the stack's line count. They **do not include** background_on. The placement shape must match Mac's `prepareStack`: a shared-mode stack with the plate turned off must still be arranged in shared slots. “Whether to draw that plate” is handled separately by `has_real_background` later.
         let stacked_count = boxes.iter().filter(|line| line.over.is_none()).count();
         let shared_background = self.style.get("backgroundMode").and_then(Value::as_str)
             == Some("shared")
@@ -2749,12 +2569,9 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 几何侧车：当前时刻每条字幕行的画布矩形，供客户端做行命中、选中框与拖拽。
+    /// Geometry sidecar: the canvas rectangle of each subtitle line at the current time, used by the client for line hit-testing, selection boxes, and dragging.
     ///
-    /// 与 [`Self::render_subtitle_frame`] 同源（同一次 `active_layouts` +
-    /// 同一个 [`Self::stack_layout`]），只是不光栅化。`key` 与 overlay PNG 的
-    /// `X-Ccut-Overlay-Key` 是同一个内容键，客户端据此判断「这份几何配不配
-    /// 得上手里那张图」。
+    /// It comes from the same source as [`Self::render_subtitle_frame`] (the same single `active_layouts` and the same [`Self::stack_layout`]), except that it does not rasterize. `key` is the same content key as the overlay PNG's `X-Ccut-Overlay-Key`. The client uses it to judge “whether this geometry matches the picture in hand”.
     pub fn subtitle_layout(&mut self, time: f64) -> Result<SubtitleLayoutFrame> {
         let mut classic = self.subtitle_layout_classic(time)?;
         if self.sequence.is_none() || !(0.0..self.duration).contains(&time) {
@@ -2763,7 +2580,7 @@ impl OverlayRenderPlan {
         let Some(plan) = self.ensure_caption_sequence() else {
             return Ok(classic);
         };
-        // 键与 `render_subtitle_frame` / `subtitle_scene_frame` 同一条拼法，宿主拿它对帧
+        // The key uses the same concatenation as `render_subtitle_frame` / `subtitle_scene_frame`. The host uses it to match frames
         let (frame, sequence_key, _) = self.caption_sequence_frame(&plan, time);
         classic.key = format!("{sequence_key}|{}", classic.key);
         classic.sequence = Some(self.caption_sequence_layout(&plan, &frame));
@@ -2829,20 +2646,14 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// R2 第一条字幕实时路径：复用 `active_layouts + stack_layout` 的唯一排版
-    /// 结果，把普通单色字形变成 atlas quad。逐词状态只改 run-local uniform，整组
-    /// 入场由 `SceneMotion` 在合成期采样；相同 Arc glyph geometry 与 swash mask 命中
-    /// TextEngine 限容缓存和 compositor atlas，不再重写字形顶点或光栅整幅 RGBA。
+    /// R2's first real-time subtitle path. It reuses the single layout result of `active_layouts + stack_layout`, and turns ordinary single-color glyphs into atlas quads. Per-word state only changes the run-local uniform. The whole-group entrance is sampled at compositing time by `SceneMotion`. Identical Arc glyph geometry and swash masks hit the TextEngine's bounded cache and the compositor atlas, so glyph vertices are no longer rewritten and no whole RGBA image is rasterized.
     ///
-    /// 当前未覆盖的效果一律返回 [`SubtitleSceneFallback`]，由宿主继续走
-    /// [`Self::render_subtitle_frame`]；这使迁移可以逐 pass 扩展而不牺牲像素语义。
+    /// Any effect not yet covered returns [`SubtitleSceneFallback`], and the host continues with [`Self::render_subtitle_frame`]. This lets the migration extend pass by pass without giving up pixel semantics.
     pub fn subtitle_scene_static_fallback(&self) -> Option<SubtitleSceneFallback> {
         self.subtitle_scene_static_fallback_with_target_sampling(false)
     }
 
-    /// 宿主已把真实主画面放进同一可采样 target 时的静态准入判据。
-    /// Web/App 透明 overlay 不得调用；只有显式持有 backdrop 的宿主
-    /// 才能用它放行 Difference / Exclusion。
+    /// The static admission criterion for when the host has already placed the real main picture into the same sampleable target. Web/App transparent overlays must not call it. Only a host that explicitly holds a backdrop may use it to allow Difference / Exclusion.
     pub fn subtitle_scene_static_fallback_with_backdrop(&self) -> Option<SubtitleSceneFallback> {
         self.subtitle_scene_static_fallback_with_target_sampling(true)
     }
@@ -2851,9 +2662,7 @@ impl OverlayRenderPlan {
         &self,
         allow_target_sampling: bool,
     ) -> Option<SubtitleSceneFallback> {
-        // 静态判据：整条轨与每一条逐条覆盖都得过，任一条不行整片回退。
-        // 分层文字动画不在这里：它按帧判（`text_motion_active_at`），没有动效
-        // cue 活动的帧照常走 glyph scene。
+        // Static criterion: the whole track and every per-item override must all pass. If any one fails, the whole film falls back. Layered text animation is not decided here. It is decided per frame (`text_motion_active_at`), and frames with no active motion cue continue on the glyph scene.
         let includes_original = matches!(self.mode, StudioMode::Original | StudioMode::Bilingual);
         let overrides = match self.look_kind() {
             LineKind::Original => &self.cue_original,
@@ -2887,9 +2696,7 @@ impl OverlayRenderPlan {
         None
     }
 
-    /// 非 Normal 模式由外层 retained group 执行；子节点先按 CPU 的
-    /// Normal/source-over z 序合入透明层。当前只准入所有子 pass 都有精确 scene
-    /// 表达的层型；普通 vector/effect 继续回退。
+    /// Non-Normal modes are executed by the outer retained group. Child nodes are first merged into the transparent layer in the CPU's Normal/source-over z-order. Currently only the layer types whose child passes all have an exact scene expression are admitted. Ordinary vector/effect continues to fall back.
     fn group_composite_scene_supported(&self, look: &CaptionLook) -> bool {
         if !look.descriptor.is_some_and(|descriptor| {
             matches!(descriptor.layers.as_slice(), [glyphs] if glyphs == "glyphs")
@@ -2934,9 +2741,7 @@ impl OverlayRenderPlan {
         self.subtitle_scene_frame_with_target_sampling(time, false)
     }
 
-    /// 为已经把真实主画面放进同一 GPU target 的宿主生成字幕 scene。
-    /// 返回的 Difference / Exclusion 只能交给携带底层纹理且具有
-    /// `COPY_SRC` 的 compositor 入口。
+    /// Generates the subtitle scene for a host that has already put the real main picture into the same GPU target. The returned Difference / Exclusion may only be handed to a compositor entry that carries the underlying texture and has `COPY_SRC`.
     pub fn subtitle_scene_frame_with_backdrop(
         &mut self,
         time: f64,
@@ -2944,8 +2749,7 @@ impl OverlayRenderPlan {
         self.subtitle_scene_frame_with_target_sampling(time, true)
     }
 
-    /// 倒鸭子接管时先画序列层（历史块 / 淡出的上一段 / 当前段），再叠 cue 级的
-    /// 译文行；不接管时原样走 cue 级路径。
+    /// When Daoyazi takes over, the sequence layer is drawn first (history blocks, the fading previous segment, the current segment), and then the cue-level translation line is overlaid. If it does not take over, the cue-level path is used unchanged.
     fn subtitle_scene_frame_with_target_sampling(
         &mut self,
         time: f64,
@@ -2993,8 +2797,7 @@ impl OverlayRenderPlan {
         {
             return Err(fallback);
         }
-        // CPU 先把整张字幕 source-over 到透明 pixmap，最后才与 backdrop 复合。
-        // retained 子节点因此必须保持 Normal，非 Normal 模式只落在外层 group。
+        // The CPU first source-overs the whole subtitle onto a transparent pixmap, and only then composites it with the backdrop. Retained children must therefore stay Normal, and non-Normal modes land only on the outer group.
         let glyph_composite = element_draw::GlyphCompositeMode::Normal;
         if !(0.0..self.duration).contains(&time) {
             return Ok(SubtitleSceneFrame {
@@ -3024,7 +2827,7 @@ impl OverlayRenderPlan {
                 key,
             });
         }
-        // 这一帧的原文长相：带逐条样式的字幕用它自己的那份。
+        // This frame's original-text look: subtitles with per-item styling use their own.
         let look = self.look_for_layouts(&layouts).clone();
         let scene_composite = match look.composite {
             CaptionCompositeMode::Normal => element_draw::SceneCompositeMode::Normal,
@@ -3069,10 +2872,7 @@ impl OverlayRenderPlan {
             })
             .flatten();
         let background_ops = subtitle_background_ops(&layouts, &stack, &look.animation);
-        // recipe 状态只求值一次：除了喂逐词 uniform，textSwap 还决定本帧实际
-        // glyph geometry。替字不光栅整幅 RGBA，但必须按项目 fps 的离散 phase
-        // 切换受影响字形；把替字签名并入有界 Arc cache 后，相同 phase/seek 会
-        // 复用同一份 geometry。
+        // The recipe state is evaluated only once. Besides feeding the per-word uniforms, textSwap also determines this frame's actual glyph geometry. It does not rasterize the whole RGBA, but it must switch the affected glyphs at the discrete phases of the project fps. After the swap signature is folded into the bounded Arc cache, the same phase or seek reuses the same geometry.
         let word_visuals = subtitle_scene_word_visuals(&layouts, &look.animation);
         let geometry_key =
             subtitle_glyph_geometry_key_with_visuals(&self.definition_key, &layouts, &word_visuals);
@@ -3180,11 +2980,7 @@ impl OverlayRenderPlan {
                     let color = visual.color.or(chunk.color).unwrap_or(layout.style.color);
                     let paint = glyph_uniform_paint(&look.animation, &visual, opacity);
                     let bounce = visual.bottom_em.unwrap_or(0.0) * layout.style.font_size;
-                    // 稳定 geometry 已把 glyph 放到未动画的画布坐标。run uniform
-                    // 先补 chunk part/bounce，再应用 Designed Caption 的逐词 pose；
-                    // compositor 最后才叠 scene_pose。这个顺序与 CPU
-                    // `glyph_canvas_transform` 的
-                    // `placement -> recipe -> group` 完全相同。
+                    // The stable geometry has already placed the glyph at the un-animated canvas coordinates. The run uniform first adds the chunk part/bounce, then applies Designed Caption's per-word pose. The compositor applies scene_pose last. This order is exactly the same as the CPU `glyph_canvas_transform`'s `placement -> recipe -> group`.
                     let recipe_transform = caption_recipe_transform(
                         layout,
                         chunk,
@@ -3208,9 +3004,7 @@ impl OverlayRenderPlan {
                             .post_concat(word_motion_transform)
                             .post_concat(recipe_transform)
                             .post_concat(block_transform);
-                    // fragment 在稳定 geometry 的画布坐标上裁剪。CPU 的 mask 先带
-                    // part delta、再应用 recipe/group；把 run translate 逆掉后，x/y
-                    // part 正好消去，而 bounce 要回补到未动画坐标。
+                    // The fragment is clipped in the canvas coordinates of the stable geometry. The CPU mask first carries the part delta and then applies recipe/group. After the run translate is reversed, the x/y part cancels out exactly, while bounce must be added back to the un-animated coordinates.
                     let clip = caption_recipe_clip_box(
                         cursor,
                         line_top + bounce,
@@ -3247,8 +3041,7 @@ impl OverlayRenderPlan {
                         .filter(|emoji| !emoji.is_empty())
                         .map_or(0.0, |_| opacity);
                     decoration_uniforms.push(element_draw::GlyphRunUniform {
-                        // CPU decoration 接收的是已加 part delta 的 cursor/line_top，
-                        // 但不消费 recipe transform 或 bounce。
+                        // The CPU decoration receives a cursor and line_top that already include the part delta, but it does not consume the recipe transform or the bounce.
                         transform: transform_array(Transform::from_translate(
                             part_dx as f32,
                             part_dy as f32,
@@ -3433,11 +3226,7 @@ impl OverlayRenderPlan {
                         && let Some(background) = visual.background
                     {
                         let mut frame = FrameOps::default();
-                        // 几何与 alpha 都来自 CPU `draw_line_layout` 用的同一对
-                        // `classic_word_box` / `classic_word_box_alpha`：块的胀缩
-                        // 与块 alpha 在两条渲染链上必须逐字段相同。这里的
-                        // `opacity` 已经是 `part_opacity × 词 opacity`，块要的是
-                        // `part_opacity × 块 alpha`，所以不能直接复用。
+                        // The geometry and alpha both come from the same pair, `classic_word_box` and `classic_word_box_alpha`, that the CPU `draw_line_layout` uses. The block's expansion and contraction and the block's alpha must match field for field on both rendering chains. Here `opacity` is already `part_opacity × word opacity`, while the block needs `part_opacity × block alpha`, so it cannot be reused directly.
                         let box_rect = classic_word_box(
                             layout.style.font_size,
                             cursor,
@@ -3801,9 +3590,7 @@ impl OverlayRenderPlan {
             nodes
         };
         let motion_end = scene_motion.as_ref().map(|motion| motion.end);
-        // Designed Caption 的 recipe resolver 在项目 fps 网格上产出逐词 uniform。
-        // 它不重光栅整幅字幕，但宿主仍须在下一个离散样本重建 uniforms；普通字幕
-        // 与已下沉的整组 transition motion 继续只报真实边界。
+        // The Designed Caption recipe resolver produces per-word uniforms on the project's fps grid. It does not re-rasterize the whole subtitle, but the host must still rebuild the uniforms at the next discrete sample. Ordinary subtitles, and the already-lowered whole-group transition motion, continue to report only real boundaries.
         let next_change = min_optional_time(
             self.next_change_after(time, self.per_frame_subtitle(false)),
             motion_end,
@@ -3822,15 +3609,9 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// R3 的普通文字元素 retained scene 出口。排版、折行、字形 mask、底板、
-    /// 描边与 shadow/glow 全部复用 [`Self::render_text_element`] 的同一组
-    /// `LineLayout` / `TextEngine` 结果；这里只把最终执行从整幅 Pixmap 换成
-    /// renderer-neutral vector + glyph nodes。
+    /// The retained scene exit for R3's ordinary text elements. Layout, wrapping, glyph masks, plates, outline, and shadow/glow all reuse the same `LineLayout` / `TextEngine` results as [`Self::render_text_element`]. Only the final execution changes: from a whole Pixmap to renderer-neutral vector and glyph nodes.
     ///
-    /// 元素动画仍由 [`timeline::resolve_text_animation`] 在项目 fps 网格上
-    /// 采样：容器姿态只改 [`element_draw::ScenePose`]，级联文字只改 run-local
-    /// uniform，字形 mask 不会逐帧重光栅。`next_change` 与 CPU overlay 共用
-    /// [`Self::element_next_change`]。
+    /// Element animation is still sampled by [`timeline::resolve_text_animation`] on the project's fps grid. The container pose changes only [`element_draw::ScenePose`], cascading text changes only the run-local uniform, and glyph masks are not re-rasterized per frame. `next_change` shares [`Self::element_next_change`] with the CPU overlay.
     pub fn text_element_scene_frame_for(
         &mut self,
         element_id: &str,
@@ -3965,8 +3746,7 @@ impl OverlayRenderPlan {
         let x = base_x + pose.dx * short;
         let y = base_y + pose.dy * short;
         let scale = element.place.scale.unwrap_or(1.0);
-        // 第 122 轮 D2：`scaleY` 是**乘在 `scale` 之上**的纵向倍率（缺席 = 1），
-        // 不是「替代 `scale` 的纵向分量」——缺席时两式同值，老文档逐字节不变。
+        // Round 122 D2: `scaleY` is a vertical multiplier **applied on top of `scale`** (absent = 1). It is not “a vertical component that replaces `scale`”. When it is absent, both readings give the same value, so old documents are byte-identical.
         let scale_y = scale * element.place.scale_y.unwrap_or(1.0);
         let rotation = element.place.rot.unwrap_or(0.0) + pose.rotation;
         let opacity = element.place.opacity.unwrap_or(1.0) * pose.opacity;
@@ -4322,11 +4102,9 @@ impl OverlayRenderPlan {
         Ok(nodes)
     }
 
-    /// 浏览器合成器的 CPU 字幕层：[`Self::render_subtitle_frame`] 的
-    /// straight-alpha 非零子矩形形态。
+    /// The CPU subtitle layer for the browser compositor: the straight-alpha, non-zero sub-rectangle form of [`Self::render_subtitle_frame`].
     ///
-    /// glyph scene 覆盖不到的样式（[`SubtitleSceneFallback`]）必须整幅回退 CPU
-    /// overlay，桌面宿主走 `render_rgba_frame`，浏览器走这里；两条路同一份排版。
+    /// Styles that the glyph scene cannot cover ([`SubtitleSceneFallback`]) must fall back to the whole-frame CPU overlay. Desktop hosts go through `render_rgba_frame`, and the browser goes through here. Both use the same typesetting.
     pub fn render_subtitle_raster_layer(&mut self, time: f64) -> Result<SubtitleRasterLayer> {
         let frame = self.render_subtitle_frame(time)?;
         let Some(bounds) = frame.bounds.clone() else {
@@ -4362,14 +4140,11 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// 浏览器合成器的模板层：[`Self::template_frame`] 的 straight-alpha 非零子矩形。
+    /// The template layer for the browser compositor: the straight-alpha non-zero sub-rectangle of [`Self::template_frame`].
     ///
-    /// 桌面宿主把同一张 Pixmap 作为 `tplchrome:` 动态资源并进 overlay；浏览器的
-    /// GPU 场景没有这类宿主光栅节点，于是和 CPU 字幕层一样单独交付、叠在最上层
-    /// （`RESERVED_Z`：模板前景恒在正片、元素与字幕之上）。`None` = 没套模板。
+    /// The desktop host puts the same Pixmap into the overlay as the dynamic resource `tplchrome:`. The browser's GPU scene has no such host raster node, so it is delivered separately, like the CPU subtitle layer, and stacked on top (`RESERVED_Z`: the template foreground is always above the main picture, the elements, and the subtitles). `None` = no template applied.
     ///
-    /// 键带**这一帧的像素身份**：章节条与进度线逐帧在动，只看场景指纹会把
-    /// 变了的画面宣称成没变（与 `tplchrome:` 资源名同一个道理）。
+    /// The key carries **this frame's pixel identity**. The chapter bar and progress line move every frame, so looking only at the scene fingerprint would declare a changed picture unchanged. This is the same reasoning as for the `tplchrome:` resource name.
     pub fn render_template_raster_layer(
         &mut self,
         time: f64,
@@ -4431,8 +4206,7 @@ impl OverlayRenderPlan {
         }))
     }
 
-    /// 一帧字幕透明层。倒鸭子接管时：序列层自绘一幅，再把 cue 级（译文）帧叠上去，
-    /// 结果按「序列状态键 | cue 级键」缓存；不接管时原样走 cue 级路径。
+    /// One frame of the subtitle transparent layer. When Daoyazi takes over, the sequence layer draws one image on its own, and then the cue-level (translation) frame is overlaid on it. The result is cached under “sequence-state key | cue-level key”. If it does not take over, the cue-level path is used unchanged.
     pub fn render_subtitle_frame(&mut self, time: f64) -> Result<RenderedSubtitleFrame> {
         if self.sequence.is_none() || !(0.0..self.duration).contains(&time) {
             return self.render_subtitle_frame_classic(time);
@@ -4513,10 +4287,8 @@ impl OverlayRenderPlan {
                 composite: CaptionCompositeMode::Normal,
             });
         }
-        // ── 先用「哪几条 cue + 各自当前词」拼键查缓存 ────────────────────
-        // 这一段只借用 cue 表，不排版、不深拷贝：`active_at` 返回引用，当前词
-        // 是一次对 words 的线性扫描。以前这里先跑整个 `active_layouts`
-        // （逐行深拷 TimedItem + 深拷已 shaping 的 LayoutLine），命中之后整份丢掉。
+        // ── First look up the cache using a key built from “which cues plus each one's current word” ────
+        // This part only borrows the cue table. It does no typesetting and no deep copy: `active_at` returns a reference, and the current word is a linear scan over the words. Previously this first ran the whole `active_layouts` (deep-copying each line's TimedItem and the already-shaped LayoutLine), and all of it was thrown away after a hit.
         let display_start = {
             let original = active_at(&self.cues, time);
             let translation = active_at(&self.translations, time);
@@ -4566,7 +4338,7 @@ impl OverlayRenderPlan {
         };
         let next_change = self.next_change_after(time, self.per_frame_subtitle(pose.active));
         if let Some(frame) = self.cache.iter().find(|frame| frame.key == key) {
-            // Arc 共享：命中不再复制整幅 RGBA。
+            // Arc sharing: a hit no longer copies the whole RGBA.
             return Ok(RenderedSubtitleFrame {
                 key,
                 rgba: frame.rgba.clone(),
@@ -4576,12 +4348,10 @@ impl OverlayRenderPlan {
             });
         }
 
-        // ── 未命中才付排版的代价 ──────────────────────────────────────────
+        // ── The typesetting cost is paid only on a cache miss ──────────────────────────
         let mut layouts = self.active_layouts(time);
         if layouts.is_empty() {
-            // 上面的轻量判空与 `active_layouts` 用的是同一组 `mode_lines` +
-            // `active_at`，走到这里说明两者分叉了。保守起见按空白帧返回，且
-            // **逐字段复刻**上面那条空白分支——绝不能拿内容键去缓存一张空图。
+            // The light-weight empty check above uses the same `mode_lines` and `active_at` as `active_layouts`. Reaching this point means the two have diverged. To be safe, return a blank frame, and **replicate field by field** the blank-frame branch above. Never cache a blank image under a content key.
             let next_change = self.next_change_after(time, false);
             return Ok(RenderedSubtitleFrame {
                 key: format!(
@@ -4598,7 +4368,7 @@ impl OverlayRenderPlan {
         let (width, height) = (self.width as usize, self.height as usize);
         let mut pixmap = Pixmap::new(self.width, self.height)
             .ok_or_else(|| anyhow!("无法创建字幕透明层 {}x{}", self.width, self.height))?;
-        // 本帧所有落笔的并集。求包围盒时只在它内部扫，省掉整幅 8.3MB 的搜索。
+        // The union of everything drawn in this frame. When computing the bounding box, scan only inside it, which saves searching the whole 8.3 MB.
         let mut drawn = DrawBounds::default();
         let stack = self.stack_layout(&layouts, canvas_scale);
         let (x, center_y) = stack.anchor;
@@ -4643,7 +4413,7 @@ impl OverlayRenderPlan {
         }
         let placements = stack.placements;
 
-        // 绘制顺序保持 `mode_lines` 给出的行序：位置变了，叠放次序不能变。
+        // Drawing order keeps the line order given by `mode_lines`. The positions may change, but the stacking order must not.
         let positioned = layouts
             .drain(..)
             .zip(placements)
@@ -4656,9 +4426,8 @@ impl OverlayRenderPlan {
             {
                 continue;
             }
-            // Konva blurs only the text shadow/glow. Keep that effect isolated so
-            // the glyph fill, outline, highlight plates, and backgrounds stay crisp.
-            // 缓冲取自 scratch（归还前已按包围盒清零，等价于新建的全零 Pixmap）。
+            // Konva blurs only the text shadow/glow. Keep that effect isolated so the glyph fill, outline, highlight plates, and backgrounds stay crisp.
+            // The buffer is taken from scratch (it is already zeroed by bounding box before it is returned, equivalent to a newly created all-zero Pixmap).
             let mut effect = match self.effect_scratch.take() {
                 Some(scratch) => scratch,
                 None => Pixmap::new(self.width, self.height).ok_or_else(|| {
@@ -4675,8 +4444,7 @@ impl OverlayRenderPlan {
                 pose.opacity,
                 group_tf,
             );
-            // 效果层只被 `draw_line_effect` 写过，它的落笔窗口就是非零像素的
-            // 超集：不必为了找包围盒把整幅 8.3MB 再读一遍。
+            // The effect layer is written only by `draw_line_effect`, and its drawn window is a superset of its non-zero pixels. So there is no need to read the whole 8.3 MB again to find the bounding box.
             let effect_bounds = effect_drawn
                 .window(width, height)
                 .and_then(|window| alpha_bbox_within(effect.data(), width, height, &window))
@@ -4694,8 +4462,7 @@ impl OverlayRenderPlan {
                     }
                 });
             if let Some(effect_bounds) = effect_bounds {
-                // 并进整帧窗口的是**模糊后**的盒子（`box_blur_rgba_bounded` 已经
-                // 把扩散半径算进返回值），所以整帧窗口不必再为 glow 留额外边距。
+                // What gets merged into the whole-frame window is the **blurred** box (`box_blur_rgba_bounded` already includes the spread radius in its return value). So the whole-frame window does not need extra margin for the glow.
                 drawn.merge_content_box(&effect_bounds);
                 composite_premultiplied_rgba(
                     pixmap.data_mut(),
@@ -4720,9 +4487,7 @@ impl OverlayRenderPlan {
             ));
         }
 
-        // 包围盒必须在最后一次写入之后求：转场模糊会把内容再向外扩散。
-        // 搜索范围收到本帧的落笔窗口：`drawn` 并了底板、正文与效果层**模糊后**
-        // 合成进来的盒子，因此它仍是整帧非零像素的超集。
+        // The bounding box must be computed after the last write, because transition blur spreads content further outward. The search range is narrowed to this frame's drawn window: `drawn` merges the **blurred** boxes of the plate, the body text, and the effect layer, so it is still a superset of all the non-zero pixels of the frame.
         let bounds = drawn
             .window(width, height)
             .and_then(|window| alpha_bbox_within(pixmap.data(), width, height, &window))
@@ -4747,8 +4512,7 @@ impl OverlayRenderPlan {
             bounds: bounds.clone(),
             composite,
         });
-        // 按字节预算限容（128MB）：1080p 仍是 8 帧，4K 收缩到 4 帧，
-        // 避免高分辨率下缓存驻留数百 MB。
+        // Bounded by a byte budget (128 MB): 1080p still holds 8 frames, and 4K shrinks to 4 frames, so the cache does not keep hundreds of MB resident at high resolutions.
         let frame_bytes = self.width as usize * self.height as usize * 4;
         let max_entries = ((128 << 20) / frame_bytes.max(1)).clamp(1, 8);
         while self.cache.len() > max_entries {
@@ -4828,8 +4592,7 @@ impl OverlayRenderPlan {
         let x = base_x + pose.dx * short;
         let y = base_y + pose.dy * short;
         let scale = element.place.scale.unwrap_or(1.0);
-        // 第 122 轮 D2：`scaleY` 是**乘在 `scale` 之上**的纵向倍率（缺席 = 1），
-        // 不是「替代 `scale` 的纵向分量」——缺席时两式同值，老文档逐字节不变。
+        // Round 122 D2: `scaleY` is a vertical multiplier **applied on top of `scale`** (absent = 1). It is not “a vertical component that replaces `scale`”. When it is absent, both readings give the same value, so old documents are byte-identical.
         let scale_y = scale * element.place.scale_y.unwrap_or(1.0);
         let rotation = element.place.rot.unwrap_or(0.0) + pose.rotation;
         let opacity = element.place.opacity.unwrap_or(1.0) * pose.opacity;
@@ -4871,11 +4634,9 @@ impl OverlayRenderPlan {
                 scale_y * pose.scale_y,
                 rotation,
             );
-            // 块级垂直锚点：`place.y` 钉住文本块的哪条边。缺席 = center = 现状，
-            // 折行时 top 向哪边长由此决定；行内仍逐行向下排，行序永不翻转。
+            // Block-level vertical anchor: `place.y` pins which edge of the text block. Absent = center = the current behavior. When wrapping, the direction in which the top grows is decided by this. Within a line, text still goes downward line by line, so the line order never flips.
             //
-            // 钉的是含内边距的盒子（Mac `stackPlacement` 的单行分支用 `prepared.size`），
-            // 所以先按 `height + 2 × pad_v` 挂块，再进 `pad_v` 得到字形顶边。
+            // What is pinned is the box including inner padding (Mac `stackPlacement`'s single-line branch uses `prepared.size`). So the block is first hung with `height + 2 × pad_v`, and then `pad_v` is applied to get the glyph top edge.
             let pad_v = layout.style.background_pad_v;
             let top = anchor_block(
                 center_y,
@@ -4949,20 +4710,16 @@ impl OverlayRenderPlan {
         Ok(pixmap)
     }
 
-    /// 同一条诊断每帧都会命中，去重后再进 `warnings()`——一段 5 分钟的导出
-    /// 否则会往信封里灌 9000 条一模一样的字符串。
+    /// The same diagnostic is hit on every frame. It is de-duplicated before it enters `warnings()`. Otherwise a 5-minute export would flood the envelope with 9000 identical strings.
     pub fn warn_once(&mut self, message: String) {
         if !self.warnings.contains(&message) {
             self.warnings.push(message);
         }
     }
 
-    /// 元素盒 + 仿射。实现在 `ccut-timeline-render`（P6a 下沉）——几何全部来自
-    /// `timeline`（ADR-E01 的单一来源），舞台选中框、导出像素与 wasm 预览
-    /// 因此不可能算成三个盒子。
+    /// Element box + affine transform. Implemented in `ccut-timeline-render` (moved down in P6a). The geometry all comes from `timeline` (the single source of truth of ADR-E01), so the stage selection box, the export pixels, and the wasm preview cannot compute three different boxes.
     ///
-    /// 生产路径不再经过这里（三个 `push_*` 各自向下沉层要盒子）；保留是给
-    /// `tests.rs` 的几何断言用的。
+    /// The production path no longer goes through here (the three `push_*` functions each ask the lower layer for their own box). It is kept for the geometry assertions in `tests.rs`.
     pub fn element_frame(
         &self,
         element: &TimelineVisualElement,
@@ -4971,23 +4728,21 @@ impl OverlayRenderPlan {
         element_draw::element_frame(&element_view(element), pose, self.stage())
     }
 
-    /// 下沉层的画布尺寸入参。
+    /// Canvas size input for the lower layer.
     pub fn stage(&self) -> element_draw::Stage {
         element_draw::Stage::new(self.width, self.height)
     }
 
-    /// 下沉层的诊断出口 → `warn_once`。
+    /// The diagnostic outlet of the lower layer → `warn_once`.
     ///
-    /// 先收进 `Vec` 再上浮而不是直接传 `&mut self` 的闭包：`push_*` 要同时
-    /// 借 `builder` 与诊断出口，而诊断出口写的是 `self.warnings`。去重语义
-    /// 不变（`warn_once` 仍然是那一处）。
+    /// Diagnostics are collected into a `Vec` and then bubbled up, instead of passing a `&mut self` closure directly. The `push_*` functions need to borrow `builder` and the diagnostic outlet at the same time, and the diagnostic outlet writes to `self.warnings`. The de-duplication semantics are unchanged (`warn_once` is still the one place).
     pub fn drain_element_warnings(&mut self, warnings: Vec<String>) {
         for message in warnings {
             self.warn_once(message);
         }
     }
 
-    /// `kind: "shape"`：注册表的形状配方 + `ShapeProps` → 矢量直出。
+    /// `kind: "shape"`: the registry's shape recipe + `ShapeProps` → direct vector output.
     pub fn push_shape_element(
         &mut self,
         builder: &mut FrameBuilder,
@@ -5005,10 +4760,9 @@ impl OverlayRenderPlan {
         self.drain_element_warnings(warnings);
     }
 
-    /// `visualizer`：注入的 `VizTrack` 采样 → 配方绘制。
+    /// `visualizer`: sampling of the injected `VizTrack` → recipe drawing.
     ///
-    /// host 这一侧只剩两件事：把 preflight 派生好的轨取出来，以及把输出时刻
-    /// 折算成源媒体时刻（`source_time_for`）。绘制本身在下沉层。
+    /// On the host side only two things remain: take out the track prepared by preflight, and convert the output time into source media time (`source_time_for`). The drawing itself is done in the lower layer.
     pub fn push_visualizer_element(
         &mut self,
         builder: &mut FrameBuilder,
@@ -5035,26 +4789,23 @@ impl OverlayRenderPlan {
         self.drain_element_warnings(warnings);
     }
 
-    /// 输出时刻 → 该 visualizer 的音频源上的**源媒体时刻**。
+    /// Output time → **source media time** on this visualizer's audio source.
     ///
-    /// `None` = 这一刻没有该音频源在播（剪掉的空隙、或另一条源占着这段输出）。
-    /// 没有投影表时（单测的 `compile_with`）退化为"输出时刻即源时刻"——wasm
-    /// 预览当前走的也是这条退化路径（下沉层的 `source_time` 入参文档）。
+    /// `None` = the audio source is not playing at this moment (a cut gap, or another source occupies this stretch of the output). When there is no projection table (`compile_with` in unit tests), it degrades to “output time = source time”. The wasm preview also currently takes this degraded path (see the `source_time` input documentation of the lower layer).
     pub fn source_time_for(&self, props: &VisualizerProps, time: f64) -> Option<f64> {
         let Some(projection) = self.viz_projection.as_ref() else {
             return Some(time);
         };
         let wanted = visualizer_audio_source(props);
-        // `Following`：接缝处取**后一段**的首帧，与"这一帧接下来要显示什么"一致。
+        // `Following`: at a seam, take the **first frame of the following segment**, consistent with “what this frame is about to show next”.
         let (src_id, source_time) =
             projection.timeline_to_source(time, timeline::SeamBias::Following)?;
         (src_id == wanted).then_some(source_time)
     }
 
-    /// `kind: "sticker"` 且 `source == "template"`：模板配方 → 矢量直出。
+    /// `kind: "sticker"` with `source == "template"`: template recipe → direct vector output.
     ///
-    /// 返回 `false` = 这是 `asset` 源，归 `render_media_element`（P7b 的分家点，
-    /// 判据在下沉层的 `push_sticker_element`——host 不重抄一遍）。
+    /// Returns `false` = this is an `asset` source, which is handled by `render_media_element`. (This is the split point of P7b. The criterion is in the lower layer's `push_sticker_element`, and the host does not copy it again.)
     pub fn push_sticker_element(
         &mut self,
         builder: &mut FrameBuilder,
@@ -5073,7 +4824,7 @@ impl OverlayRenderPlan {
         claimed
     }
 
-    /// `kind: "progress"`：进度值 + 目录型配方 → 矢量直出。
+    /// `kind: "progress"`: progress value + catalog-style recipe → direct vector output.
     pub fn push_progress_element(
         &mut self,
         builder: &mut FrameBuilder,
@@ -5093,7 +4844,7 @@ impl OverlayRenderPlan {
         self.drain_element_warnings(warnings);
     }
 
-    /// `kind: "confetti"`：闭式运动核 → 矢量直出（设计稿 §5）。
+    /// `kind: "confetti"`: closed-form motion kernel → direct vector output (design draft §5).
     pub fn push_confetti_element(
         &mut self,
         builder: &mut FrameBuilder,
@@ -5131,18 +4882,15 @@ impl OverlayRenderPlan {
         element_draw::push_placeholder_element(builder, &element_view(element), &pose, self.stage())
     }
 
-    /// **动态贴纸的取帧时刻**（P7b）：`StickerProps.loop` 的三个面值第一次被
-    /// 真正消费。
+    /// **Frame time for animated stickers** (P7b): the three values of `StickerProps.loop` are consumed for the first time.
     ///
-    /// 动态贴纸是 GIF → 带 alpha 的 WebM，在渲染管线里就是一个普通视频层。
-    /// 循环用**已经在契约里**的 `sticker.loop` 表达，因此不需要给 `Element` 加字段。
+    /// An animated sticker is a GIF → alpha-carrying WebM. In the render pipeline it is just an ordinary video layer. Looping is expressed with `sticker.loop`, which is **already in the contract**, so no field needs to be added to `Element`.
     ///
-    /// - `loop`（缺省）：`srcStart + 经过时间` 对**源时长取模**——贴纸时长
-    ///   通常远短于它在时间轴上的占位，不取模就会在第一遍播完后定格。
-    /// - `once`：播一遍，播完停在末帧（不取模，正是 `VideoReader` 的 EOF 行为）。
-    /// - `hold`：定格首帧，把动态贴纸当静态贴纸用。
+    /// - `loop` (default): `srcStart + elapsed time`, taken **modulo the source duration**. A sticker's duration is usually much shorter than its slot on the timeline. Without the modulo, it would freeze on the last frame after the first pass.
+    /// - `once`: plays once and freezes on the last frame when it ends (no modulo; this is exactly `VideoReader`'s EOF behavior).
+    /// - `hold`: freezes on the first frame, so the animated sticker is used as a static sticker.
     ///
-    /// 源时长拿不到（0 或负）时退回 `once`——除以 0 只会算出 NaN。
+    /// If the source duration is unavailable (0 or negative), it falls back to `once`. Dividing by 0 would only produce NaN.
     fn sticker_media_time(&self, element: &TimelineVisualElement, time: f64) -> f64 {
         let loop_mode = element
             .sticker
@@ -5164,10 +4912,7 @@ impl OverlayRenderPlan {
         if loop_mode == timeline::schema::STICKER_LOOP_LOOP {
             return elapsed.rem_euclid(duration);
         }
-        // `once`：播完停末帧。**必须夹取**——`VideoReader` 的"越过片尾冻结末帧"
-        // 只在顺序读到 EOF 时成立；直接 `-ss` 到片尾之后，管道一帧都吐不出来，
-        // 那是一条硬错误而不是冻结。夹到源的最后一个可解码时刻（按**源**帧率
-        // 算，不是合成帧率——8 fps 的贴纸留 1/30 s 余量还是会越过末帧）。
+        // `once`: freeze on the last frame when it ends. **The value must be clamped.** `VideoReader`'s “freeze the last frame once past the end” holds only when reading sequentially to EOF. A direct `-ss` past the end produces no frames from the pipe at all, which is a hard error rather than a freeze. Clamp to the source's last decodable moment, computed with the **source** frame rate rather than the composition frame rate (an 8 fps sticker that leaves 1/30 s of margin would still run past the last frame).
         let last = element
             .src_id
             .as_deref()
@@ -5176,9 +4921,7 @@ impl OverlayRenderPlan {
         elapsed.min(last)
     }
 
-    /// Timeline 的媒体时钟。静态图用 -1；视频线性推进；GIF/APNG/WebP image
-    /// 在自身时长内循环。Timeline 0.3 没有 BCF `animatedImage.loop` 字段，产品
-    /// 导入语义因此固定为循环，正好覆盖 4 秒 B-roll 与动态贴纸的既有体验。
+    /// Timeline's media clock. Still images use -1. Video advances linearly. GIF/APNG/WebP images loop within their own duration. Timeline 0.3 has no BCF `animatedImage.loop` field, so the product's import semantics are fixed to looping. That exactly covers the existing experience of 4-second B-roll and animated stickers.
     fn timeline_media_time_ms(&self, element: &TimelineVisualElement, time: f64) -> i64 {
         let Some(source_id) = element.src_id.as_deref() else {
             return -1;
@@ -5203,11 +4946,9 @@ impl OverlayRenderPlan {
         (sampled * 1_000.0).round() as i64
     }
 
-    /// 取帧该用哪个 id：换过色的素材贴纸走**变体**（见
-    /// `load_sticker_fill_variants`），其余一律 `None` ＝ 原样用 source id。
+    /// Which id to use when fetching a frame. A material sticker that has been recolored uses a **variant** (see `load_sticker_fill_variants`). Everything else is `None`, meaning the source id is used as-is.
     ///
-    /// 变体不存在就是「这份源不支持换色」——位图、动图/视频贴纸、wasm 的注入
-    /// store 都走这一支，按原色画而不是报错。
+    /// “The variant does not exist” means “this source does not support recoloring”. Bitmaps, animated or video stickers, and the injected store under wasm all take this branch, and are drawn in their original colors rather than reporting an error.
     fn recolored_source_id(
         &self,
         element: &TimelineVisualElement,
@@ -5221,12 +4962,9 @@ impl OverlayRenderPlan {
         self.media.has_image(&variant).then_some(variant)
     }
 
-    /// 白板源图，按 `target` 给的目标像素降采样过（`None` ＝ 原样）。
+    /// The whiteboard source image, downsampled to the target pixels given by `target` (`None` = as-is).
     ///
-    /// 揭示场逐帧在这张图上跑，所以它有多大直接等于每帧要算多少像素；而它最后
-    /// 只会被画进元素盒。缩过的图按 `(源 id, 目标尺寸)` 记住，整条时间轴只缩
-    /// 一次。墨线分析的键里本来就带着尺寸（`源 id | 尺寸 | 参数`），跟着换键，
-    /// 不会拿大图的分析去套小图。
+    /// The reveal field runs per frame on this image, so its size directly equals how many pixels must be computed each frame. And it is ultimately only drawn into the element box. A scaled image is remembered by `(source id, target size)`, so the whole timeline is scaled only once. The key of the stroke analysis already carries the size (`source id | size | params`), so it changes along with it, and the analysis of a large image is never reused for a small one.
     fn whiteboard_source_at(
         &mut self,
         source_id: &str,
@@ -5248,12 +4986,9 @@ impl OverlayRenderPlan {
         scaled
     }
 
-    /// 白板源图能不能按元素盒缩，以及缩到多少。
+    /// Whether the whiteboard source image can be scaled down to the element box, and to what size.
     ///
-    /// `fx` 在场时不缩：效果的半径是画布短边折出来、落在源图自身分辨率上的
-    /// （`apply_media_effects` 的 scale 只看画布），图一小，同一个模糊盖住的比
-    /// 例就变了；而且它还参与墨/色分类，动它等于动揭示次序。平铺同理不缩——
-    /// 那张图要按格重复，按盒子缩会让每一格都糊。
+    /// It is not scaled when `fx` is present. The effect's radius is derived from the canvas's short side and falls on the source image's own resolution (`apply_media_effects`' scale looks only at the canvas). If the image were smaller, the proportion covered by the same blur would change. Moreover, `fx` also takes part in the ink/color classification, so changing the size would change the reveal order. Tiling likewise is not scaled: that image must be repeated per cell, and scaling it to the box would blur every cell.
     fn whiteboard_target_px(
         &self,
         element: &TimelineVisualElement,
@@ -5265,17 +5000,15 @@ impl OverlayRenderPlan {
         if element.fx.is_some() || element.tile.as_ref().is_some_and(|tile| tile.on) {
             return None;
         }
-        // 取两轴里更大的那个比例：`contain` 会留边、`cover` 会裁掉一侧，按大的
-        // 来意味着宁可多算几个像素，也不会把要显示的部分算糊。
+        // Take the larger of the two axis ratios. `contain` leaves margins, and `cover` crops one side. Going with the larger means preferring to compute a few more pixels, rather than blurring the part that is to be shown.
         let ratio = (box_width / f64::from(natural_width.max(1)))
             .max(box_height / f64::from(natural_height.max(1)));
         shrink_target_px(natural_width, natural_height, ratio)
     }
 
-    /// 白板手绘：源图 → 「画到 `time` 为止」的一帧（设计稿 §4）。
+    /// Whiteboard hand-drawing: source image → a frame “drawn up to `time`” (design draft §4).
     ///
-    /// 分析按 `源 id | 尺寸 | 参数` 记忆化；`draw` 缺席时先做一次无 `beats` 的
-    /// 分析拿自然时长（同样进缓存），再按最终 `draw` 归一化 `beats`。
+    /// The analysis is memoized by `source id | size | params`. When `draw` is absent, a first analysis without `beats` is done to get the natural duration (also cached), and then `beats` is normalized against the final `draw`.
     fn whiteboard_reveal(
         &mut self,
         element: &TimelineVisualElement,
@@ -5292,7 +5025,7 @@ impl OverlayRenderPlan {
             String,
             Arc<render_raster::source::WhiteboardAnalysis>,
         >| {
-            // 0.9：`pace` / `strict` / `end` / 生效画时都进键；锚点拍已由宿主解析成秒。
+            // 0.9: `pace`, `strict`, `end`, and the effective draw time all enter the key. Anchor beats have already been resolved to seconds by the host.
             let key = format!(
                 "{source_id}|{size}|{}|{}|{}|{:.4}|{}",
                 params.ink_first,
@@ -5348,9 +5081,7 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// Whiteboard GPU scene 的唯一 CPU 像素阶段：在源图天然尺寸上执行静态效果与
-    /// 揭示场。fit / contain 背景 / mask / tile / transition / pose blur 全部留给
-    /// [`element_draw::external_media_scene_nodes_at`]，不能先在 CPU 铺成整张画布再上传。
+    /// The only CPU pixel stage of the Whiteboard GPU scene: it runs the static effects and the reveal field at the source image's native size. Fit, contain background, mask, tile, transition, and pose blur are all left to [`element_draw::external_media_scene_nodes_at`]. They must not first be tiled into a full canvas on the CPU and then uploaded.
     fn whiteboard_source_frame(
         &mut self,
         element: &TimelineVisualElement,
@@ -5361,8 +5092,7 @@ impl OverlayRenderPlan {
         if element.fx.is_none() {
             return Ok(self.whiteboard_reveal(element, source_id, source, time));
         }
-        // CPU reference 的顺序是 source effects → reveal。效果会改变白板的墨/色
-        // 分类，不能为了省一次处理把它挪到 reveal 后的 GPU texture pass。
+        // The order in the CPU reference is source effects → reveal. Effects change the whiteboard's ink/color classification, so they cannot be moved to a GPU texture pass after the reveal just to save one processing step.
         let mut filtered = Pixmap::from_vec(
             source.data().to_vec(),
             IntSize::from_wh(source.width(), source.height()).context("白板源尺寸非法")?,
@@ -5392,7 +5122,7 @@ impl OverlayRenderPlan {
             }
             return Ok(None);
         };
-        // 静态图恒为 -1；视频与动图共用正数毫秒时钟，差异只在上游折时。
+        // Still images are always -1. Video and animated images share a positive millisecond clock. The only difference is in the upstream time folding.
         let media_ms = self.timeline_media_time_ms(element, time);
         let recolored = self.recolored_source_id(element, source_id);
         let source_id = recolored.as_deref().unwrap_or(source_id);
@@ -5400,8 +5130,7 @@ impl OverlayRenderPlan {
         let canvas_width = f64::from(self.width);
         let canvas_height = f64::from(self.height);
         let tiled = element.tile.as_ref().is_some_and(|tile| tile.on);
-        // 盒子只用源的**宽高比**，而揭示场与效果都不改尺寸——所以同一段算式拿源
-        // 尺寸先算一遍是合法的，白板据此决定要不要先把源缩到盒子大小。
+        // The box uses only the source's **aspect ratio**, and neither the reveal field nor the effects change the size. So it is valid to run the same expression once with the source size first. The whiteboard uses this to decide whether to shrink the source to the box size beforehand.
         let media_box = |natural_width: f64, natural_height: f64| match (tiled, element.mode) {
             (false, VisualMode::Fullscreen) => (
                 canvas_width,
@@ -5410,8 +5139,7 @@ impl OverlayRenderPlan {
                 canvas_height / 2.0,
             ),
             (_, VisualMode::Pip) | (true, VisualMode::Fullscreen) => {
-                // B-roll 的历史缺省是 34%；sticker 是 0.2 的新元素，走 core 的
-                // 统一缺省（`DEFAULT_ELEMENT_W`），与舞台盒同宽。
+                // B-roll's historical default is 34%. Sticker is a new element in 0.2 and uses core's unified default (`DEFAULT_ELEMENT_W`), the same width as the stage box.
                 let defaults = timeline::geometry::default_place(element.kind, None);
                 let default_w = match element.kind {
                     ElementKind::Sticker => timeline::geometry::DEFAULT_ELEMENT_W,
@@ -5433,9 +5161,7 @@ impl OverlayRenderPlan {
             }
         };
         let filtered = if element.kind == ElementKind::Whiteboard {
-            // 白板手绘（Timeline 0.8）：源图经时间场揭示成「画到 t 为止」的一帧，
-            // 之后与 image 共用盒子 / 遮罩 / 转场 / 仿射。分析按源 id + props 记忆化。
-            // 揭示是逐帧的、成本跟着源图像素走，所以先把源缩到元素盒的大小。
+            // Whiteboard hand-drawing (Timeline 0.8): the source image is revealed through a time field into a frame “drawn up to t”. After that, it shares the box, mask, transition, and affine transform with image. The analysis is memoized by source id plus props. The reveal runs per frame and its cost scales with the source image's pixels, so the source is first scaled to the size of the element box.
             let (box_width, box_height, _, _) = media_box(
                 f64::from(source.width().max(1)),
                 f64::from(source.height().max(1)),
@@ -5450,7 +5176,7 @@ impl OverlayRenderPlan {
             let source = self.whiteboard_source_at(source_id, &source, target);
             self.whiteboard_source_frame(element, source_id, &source, time)?
         } else {
-            // 宿主声明注入的源画面只用这一次、又没有效果要烘时，从注入表拿走：计划独占它就不必复制。
+            // An injected source picture, declared by the host, is used only once, and no effect needs baking. Taking it out of the injected table means the plan owns it, so no copy is needed.
             if self.consume_injected_sources
                 && element.fx.is_none()
                 && self
@@ -5492,18 +5218,11 @@ impl OverlayRenderPlan {
             canvas_width.min(canvas_height),
             &element.place,
         );
-        // 背景板只有「全屏 + contain」且元素有底（`bg`）才预填；其余情形局部画布在
-        // `draw_fit_pixmap` 之前是全透明的。合成替身没有底，留边与透明像素都露出下层。
+        // The background plate is pre-filled only when it is “full screen + contain” and the element has a background (`bg`). In other cases the local canvas is fully transparent before `draw_fit_pixmap`. The compositing stand-in has no background, so margins and transparent pixels would expose what is underneath.
         let backdrop = element.bg.filter(|_| element.mode == VisualMode::Fullscreen && element.fit == Fit::Contain);
         let has_backdrop = backdrop.is_some();
-        // 恒等直通：盒子与源同尺寸时 `draw_fit_pixmap` 的 scale 恰为 1、偏移恰为 0，
-        // 贴到全透明画布上是逐字节拷贝（`tests/identity_media_pass_through.rs` 实测
-        // 位精确），于是直接接管 `filtered`，省掉一次 8.3 MB 清零分配和一次全幅
-        // Bilinear 重采样。恒等 PIP（`detach_main_video` 归一化后的主画面）每帧都走这条。
-        // 有背景板（全屏 + contain + `bg`）时，只要源图逐像素不透明，源就盖满整个盒子，
-        // 背景板（黑 / 纯色 / 模糊）完全被遮住，source-over 的结果也恰是源字节，同样直通；
-        // 任一像素半透明则仍走背景板路径，让底色透出来。alpha 扫描只在尺寸已吻合且有
-        // 背景板时才跑，其余情形零开销。
+        // Identity pass-through: when the box and the source are the same size, `draw_fit_pixmap`'s scale is exactly 1 and its offset exactly 0. Pasting onto a fully transparent canvas is then a byte-for-byte copy (`tests/identity_media_pass_through.rs` verifies it is bit-exact), so `filtered` is taken over directly. This saves one 8.3 MB zeroing allocation and one full-frame bilinear resample. Identity PIP (the main picture after `detach_main_video` normalization) takes this path every frame.
+        // When there is a background plate (full screen + contain + `bg`), as long as the source image is opaque pixel by pixel, the source covers the whole box, the background plate (black, solid color, or blur) is completely hidden, and the source-over result is exactly the source bytes. So it also passes straight through. If any pixel is semi-transparent, it still takes the background-plate path so the background color shows through. The alpha scan runs only when the sizes already match and there is a background plate. Otherwise there is zero overhead.
         let mut local = if local_width == filtered.width()
             && local_height == filtered.height()
             && (!has_backdrop || is_opaque(&filtered))
@@ -5549,9 +5268,7 @@ impl OverlayRenderPlan {
             }
         }
 
-        // 局部画布上的遮罩栈：`mask.shape@1` → `mask.progress@1`。顺序与
-        // uniform 都来自 `timeline::lower_element_effects`（Timeline 0.1
-        // 的持久字段 → 效果配方），长度参数是画布短边的比例。
+        // The mask stack on the local canvas: `mask.shape@1` → `mask.progress@1`. The order and uniforms both come from `timeline::lower_element_effects` (Timeline 0.1's persisted fields → effect recipe). The length parameter is a ratio of the canvas's short side.
         let canvas_short_edge = f64::from(self.width.min(self.height));
         for lowered in timeline::lower_element_effects(
             None,
@@ -5577,14 +5294,10 @@ impl OverlayRenderPlan {
                     .ok_or_else(|| anyhow!("无法创建媒体元素合成层"))?,
             ));
         }
-        // 镜像是几何（ADR-E01）：只进仿射的 `post_scale`，不参与盒子尺寸与
-        // 平铺点阵的换算。缺席 = (1, 1) ⇒ 旧文档逐字节不变。
+        // Mirroring is geometry (ADR-E01). It enters only the affine's `post_scale`, and does not take part in the box size or in the tile dot-grid conversion. Absent = (1, 1), so old documents are byte-identical.
         let (flip_x, flip_y) = element.place.flip_signs();
         let uniform_scale = element.place.scale.unwrap_or(1.0) * pose.scale_x;
-        // 第 122 轮 D2：`place.scaleY` 是**乘在 `scale` 之上**的纵向倍率（缺席 = 1），
-        // 不是「替代 `scale` 的纵向分量」。写回路径 `stage_drag::place_resize` 把
-        // 「盒子原样不动」算成 `scaleY = 1`，若这里回落成 `scale`，`scale ≠ 1` 的
-        // 元素一拖边就会被压回自然高。`scaleY` 缺席时两式同值，老文档逐字节不变。
+        // Round 122 D2: `place.scaleY` is a vertical multiplier **applied on top of `scale`** (absent = 1). It is not “a vertical component that replaces `scale`”. The write-back path `stage_drag::place_resize` computes “box left unchanged” as `scaleY = 1`. If this fell back to `scale`, an element with `scale ≠ 1` would be pressed back to its natural height as soon as an edge was dragged. When `scaleY` is absent, both readings give the same value, so old documents are byte-identical.
         let vertical_scale = element.place.scale.unwrap_or(1.0)
             * element.place.scale_y.unwrap_or(1.0)
             * pose.scale_y;
@@ -5638,10 +5351,7 @@ impl OverlayRenderPlan {
             )
             .post_rotate((element.place.rot.unwrap_or(0.0) + pose.rotation) as f32)
             .post_translate((center_x + dx) as f32, (center_y + dy) as f32);
-            // 恒等接管：局部画布满幅、仿射恒等时，往全透明合成层上 SrcOver 一次就是
-            // 逐字节拷贝（同上，实测位精确）——直接把局部画布当合成层，再省一次
-            // 8.3 MB 清零分配和一次全幅 Bilinear。判据用 `Transform::is_identity()`
-            // 而不是逐条枚举 scale / rot / x / y，漏一种情形就会静默改画面。
+            // Identity takeover: when the local canvas fills the frame and the affine is the identity, doing one SrcOver onto a fully transparent composite layer is a byte-for-byte copy (same as above, verified bit-exact). So the local canvas is used directly as the composite layer, saving another 8.3 MB zeroing allocation and one full-frame bilinear pass. The criterion uses `Transform::is_identity()` rather than checking scale, rotation, x, and y one by one, since missing one case would silently change the picture.
             if transform.is_identity() && local_width == self.width && local_height == self.height {
                 field = local;
             } else {
@@ -5661,13 +5371,9 @@ impl OverlayRenderPlan {
             }
         }
         if pose.blur > 0.5 {
-            // 阶段 4A 唯一一条**真正的 Filter pass**（设计 §6.1）：姿态模糊作用
-            // 在画布尺寸的合成层上，尺寸与半径换算都不需要改，因此可以位精确地
-            // 表达成 FramePlan。元素的局部缓冲不走这条路——`fx.blur` 烘在天然
-            // 尺寸的源图上，改成 Filter pass 会换分辨率、换像素（阶段 4B 的活）。
+            // Phase 4A's only **true Filter pass** (design §6.1). Pose blur acts on the composite layer at canvas size, where neither the size nor the radius conversion needs to change, so it can be expressed bit-exactly as a FramePlan. The element's local buffer does not take this path: `fx.blur` is baked into the source image at its native size, and changing it to a Filter pass would change the resolution and the pixels (that is phase 4B's work).
             //
-            // 输入 surface 声明为 `External`：直接把已经画好的 `field` 当输入，
-            // 不经 `draw_pixmap` blit——blit 有可能改字节。
+            // The input surface is declared as `External`: the already-drawn `field` is used directly as input, without going through a `draw_pixmap` blit, since a blit might change the bytes.
             let radius_px = (pose.blur * f64::from(self.width.min(self.height))
                 / REFERENCE_SHORT_EDGE)
                 .round()
@@ -5723,14 +5429,9 @@ impl OverlayRenderPlan {
         self.render_drawop_overlay_frame(time, None)
     }
 
-    /// R1 的元素层场景出口：数组顺序就是 timeline z 序，shape/template sticker
-    /// 保持 DrawOp，visualizer/progress 变成 ShaderQuad。每个元素只求值一次：
-    /// 同一结果既给 SceneNode，也把 CPU reference 合入整帧指纹；`next_change`
-    /// 与 [`Self::build_overlay_ops`] 共用 [`Self::element_next_change`]，因此 GPU
-    /// 执行层不会发明第二份身份或时间模型。
+    /// R1's element-layer scene exit. Array order is the timeline z-order. Shape and template sticker stay as DrawOp, while visualizer and progress become ShaderQuad. Each element is evaluated only once: the same result feeds both the SceneNode and the CPU reference folded into the whole-frame fingerprint. `next_change` shares [`Self::element_next_change`] with [`Self::build_overlay_ops`], so the GPU execution layer does not invent a second identity or time model.
     ///
-    /// text/image/video/asset sticker 与模板 chrome 仍需要 host 光栅/媒体纹理，
-    /// 在 R2/R4 接入前整帧明确报错，让 App 无感回退现有 CPU overlay。
+    /// Text, image, video, asset sticker, and template chrome still need host raster or media textures. Until R2/R4 integrate them, the whole frame explicitly errors, so the App falls back silently to the existing CPU overlay.
     pub fn element_scene_frame(&mut self, time: f64) -> Result<element_draw::SceneFrame> {
         if self.chrome.is_some() {
             bail!("compositor-scene-unsupported: 模板层尚未进入 R1 GPU 场景");
@@ -5803,18 +5504,14 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// R5 离屏 GPU 导出的完整 renderer-neutral overlay scene。
+    /// The complete renderer-neutral overlay scene for R5 offscreen GPU export.
     ///
-    /// timeline 元素按投影后的声明序绘制，字幕叠在视频等普通元素之上；水印已由
-    /// [`Self::parse_projected_timeline_elements`] 稳定提升到末尾。普通 text 走
-    /// retained glyph scene，shape/template sticker/visualizer/progress 走 R1
-    /// 求值层。外部 image/video/asset sticker 使用元素级 `TextureNode`，模板 chrome
-    /// 使用 host 光栅后的全画布纹理；二者都保持在同一节点数组的全局 z 序中。
+    /// Timeline elements are drawn in their projected declaration order, and subtitles are overlaid above ordinary elements such as video. The watermark has been stably promoted to the end by [`Self::parse_projected_timeline_elements`]. Plain text goes through the retained glyph scene. Shape, template sticker, visualizer, and progress go through the R1 evaluation layer. External image, video, and asset sticker use element-level `TextureNode`s, and template chrome uses the full-canvas texture after host rasterization. All of them stay in the global z-order of the same node array.
     pub fn compositor_scene_frame(&mut self, time: f64) -> Result<element_draw::SceneFrame> {
         self.compositor_scene_frame_with(time, SceneIdentity::Full)
     }
 
-    /// 同上，但由调用方决定要不要算 [`SceneIdentity`]。
+    /// Same as above, but the caller decides whether [`SceneIdentity`] is computed.
     pub fn compositor_scene_frame_with(
         &mut self,
         time: f64,
@@ -5845,23 +5542,19 @@ impl OverlayRenderPlan {
             color: [0.0, 0.0, 0.0, 0.0],
         });
         for mut element in active {
-            // 采样时刻必须在这里就换掉：悬停试穿把某一件单独钉在它自己的本地
-            // 钟上，姿态、源时间与元素求值都得用这个钟，只换文字分支等于让
-            // 彩纸永远停在局部 0 秒（GPU 合成路径上舞台就是空的）。
+            // The sampling time must be swapped here. Hover-trial pins one piece to its own local clock, so pose, source time, and element evaluation all have to use this clock. Swapping only the text branch would leave the confetti forever at local 0 seconds (on the GPU composite path, the stage would be empty).
             let time = self.sample_time_for(&element.id, time);
             element.keyframe_place(time);
             if element.kind == ElementKind::Text {
                 let scene_nodes = match self.text_element_scene_nodes(&element, time) {
                     Ok(scene_nodes) => scene_nodes,
-                    // 带分层文字动画的文字元素：CPU 光栅（`render_text_element`，与
-                    // DrawOp 参考同一张图）裁成纹理节点，留在元素数组里保持 z 序。
+                    // A text element with layered text animation: CPU rasterization (`render_text_element`, the same picture as the DrawOp reference) is cropped into a texture node, which stays in the element array to keep its z-order.
                     #[cfg(feature = "host")]
                     Err(SubtitleSceneFallback::WordAnimation)
                         if text_element_has_motion(&element) =>
                     {
                         let pixmap = self.render_text_element(&element, time)?;
-                        // 静止段（入场结束到退场开始、没有循环）整段一张图：身份与
-                        // 采样钟都取段起点，不混进 `time`，上屏去重才认得出来。
+                        // A still segment (from the end of the entrance to the start of the exit, with no loop) is one image for the whole segment. Its identity and sampling clock both take the segment start rather than being mixed with `time`, so that on-screen de-duplication can recognize it.
                         let clock = match text_element_motion_phase(&element, time, self.fps) {
                             TextElementMotionPhase::Changing => time,
                             TextElementMotionPhase::Still { anchor, .. } => anchor,
@@ -5905,11 +5598,7 @@ impl OverlayRenderPlan {
                 self.fps,
             );
             if element.kind == ElementKind::Whiteboard {
-                // 白板手绘的揭示场在 CPU 上逐帧光栅化（`render_media_element` 里做
-                // 盒子 / 遮罩 / 转场 / 揭示），进 GPU 场景时是一张全画布纹理，与
-                // 模板 chrome 同一种节点，但留在元素数组里保持 z 序。不加这一支
-                // 会掉进 `evaluate_scene_element` 的 `false` 分支被静默丢掉，
-                // 导出 / App 预览就看不到白板件。
+                // The whiteboard hand-drawn reveal field is rasterized per frame on the CPU (`render_media_element` does the box, mask, transition, and reveal). In the GPU scene it is a full-canvas texture: the same node type as template chrome, but kept in the element array to preserve z-order. Without this branch it would fall into the `false` branch of `evaluate_scene_element` and be silently dropped, so export and App preview would not show whiteboard pieces.
                 #[cfg(feature = "host")]
                 {
                     if let Some(fingerprint) = self.compositor_whiteboard_node(
@@ -5979,10 +5668,7 @@ impl OverlayRenderPlan {
                     active_until = min_optional_time(active_until, subtitle.scene.active_until);
                     nodes.extend(subtitle.scene.nodes);
                 }
-                // 本帧活动 cue 带分层文字动画：只有**字幕层**走共享 CPU 光栅
-                // （`render_subtitle_frame`，自带帧键缓存与 `next_change`），按非零
-                // alpha 包围盒裁成一张 1:1 纹理，放在原字幕节点的位置；元素、媒体、
-                // 模板照旧是 GPU 节点。非 Normal 复合仍需要 backdrop 语义，不在此列。
+                // On frames where the active cue has layered text animation, only the **subtitle layer** goes through the shared CPU rasterization (`render_subtitle_frame`, with its own frame-key cache and `next_change`). It is cropped by the non-zero alpha bounding box into a 1:1 texture and placed at the original subtitle node's position. Elements, media, and template stay GPU nodes as usual. Non-Normal compositing still needs backdrop semantics and is not in this set.
                 #[cfg(feature = "host")]
                 Err(SubtitleSceneFallback::WordAnimation) if self.text_motion_active_at(time) => {
                     let frame = self.render_subtitle_frame(time)?;
@@ -6007,8 +5693,7 @@ impl OverlayRenderPlan {
                         texture,
                         &frame.rgba,
                         Some(frame.bounds.as_ref()),
-                        // 帧键在动的帧里已带帧号、静止时是 `@settled`：内容变化全由
-                        // `structural` / 像素承载，采样钟固定，静止段身份才不逐帧变。
+                        // On moving frames the frame key already carries the frame number. When still, it is `@settled`. All content changes are carried by `structural` or pixels, and the sampling clock is fixed, so the identity of a still segment does not change frame by frame.
                         0,
                         scene_identity,
                         structural,
@@ -6020,7 +5705,7 @@ impl OverlayRenderPlan {
                 Err(fallback) => bail!("compositor-scene-unsupported: {fallback}"),
             }
         }
-        // 场景纹理节点是 host 专属（`external-media-scene`）；wasm-safe 只走 DrawMedia 路径。
+        // Scene texture nodes are host-specific (`external-media-scene`). The wasm-safe path goes only through the DrawMedia path.
         #[cfg(feature = "host")]
         if let Some((boundary, fingerprint)) = self
             .chrome
@@ -6053,8 +5738,7 @@ impl OverlayRenderPlan {
                     SceneIdentity::Full => identity.extend_from_slice(
                         &texture_scene_fingerprint(&node, pixmap.data()).to_le_bytes(),
                     ),
-                    // chrome 光栅由 (场景指纹, 画布, 字体) 唯一决定；采样钟已在
-                    // 节点元数据里，不必重复混入。
+                    // The chrome raster is uniquely determined by (scene fingerprint, canvas, font). The sampling clock is already in the node metadata, so it need not be mixed in again.
                     SceneIdentity::Structural => {
                         let pixel_hash = structural_pixel_hash(&[
                             b"template-chrome",
@@ -6090,18 +5774,10 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// 一幅整画布 premultiplied CPU 光栅（字幕层 / 带文字动画的文字元素）→ 一个
-    /// 1:1 的 [`element_draw::TextureNode`]：按非零 alpha 包围盒（`bounds`
-    /// 为 `None` 时现算；`Some(None)` = 已知整帧透明）裁出
-    /// [`motion_texture_window`]，像素注入 `dynamic`，节点矩形落在整数坐标、
-    /// 与源尺寸相等、变换恒等——线性采样器在这种映射下逐纹素取值，与 CPU 参考
-    /// 的 DrawMedia source-over 同像素。
+    /// Turns one full-canvas premultiplied CPU raster (the subtitle layer, or a text element with text animation) into one 1:1 [`element_draw::TextureNode`]. The window [`motion_texture_window`] is cropped by the non-zero alpha bounding box (computed on the spot when `bounds` is `None`; `Some(None)` means a known fully transparent frame). The pixels are injected into `dynamic`, and the node rectangle lands on integer coordinates, equal to the source size, with an identity transform. Under this mapping the linear sampler takes values per texel, matching the CPU reference's DrawMedia source-over pixel for pixel.
     ///
-    /// 槽名由调用方给**稳定**的名字（字幕层按计划定义键，文字元素按元素 id）：
-    /// 离屏导出的外部纹理按槽名常驻，逐帧换名会让长片导出无限堆显存。内容变化
-    /// 由身份（`structural` = 帧键代理，`Full` = 真像素）与调用方给的 `media_ms`
-    /// 承载：`media_ms` 进身份，所以它在静止段必须保持不变（不要直接填 `time`）。
-    /// 返回本节点的 scene 身份（`Skip` 或整帧透明时 `None`）。
+    /// The caller gives the slot name as a **stable** name (the subtitle layer uses the plan's definition key, and a text element uses its element id). In offscreen export, an external texture stays resident under its slot name, and renaming it per frame would make a long export grow VRAM without bound. Content changes are carried by the identity (`structural` = a frame-key proxy, `Full` = real pixels) and by the `media_ms` the caller provides. `media_ms` enters the identity, so it must stay unchanged during still segments (do not fill it directly with `time`).
+    /// Returns this node's scene identity (`None` for `Skip` or a fully transparent frame).
     #[cfg(feature = "host")]
     #[allow(clippy::too_many_arguments)]
     fn compositor_raster_texture_node(
@@ -6163,13 +5839,8 @@ impl OverlayRenderPlan {
         Ok(fingerprint)
     }
 
-    /// 为一个可见 native 媒体元素解码源帧并冻结 TextureNode。像素按元素级槽
-    /// 注入 `dynamic`，随后离屏 host 可通过 [`Self::compositor_texture_frame`]
-    /// 取走；这样同一 `srcId` 的两个独立媒体钟不会覆盖彼此。
-    /// 白板件 → 天然尺寸揭示纹理 + 普通 external-media scene。CPU 只做白板
-    /// 时间场的 threshold；fit / mask / tile / transition / pose blur 由 GPU 节点
-    /// 完成，不再先光栅一张整画布纹理。纹理名按元素 id 固定，`media_ms` 用项目
-    /// 帧区分；结构指纹只混入 (定义键, 元素 id, 采样帧, 源尺寸)，与像素无关。
+    /// Decodes the source frame for a visible native media element and freezes a TextureNode. The pixels are injected into `dynamic` under an element-level slot. The offscreen host can then take them via [`Self::compositor_texture_frame`]. This way two independent media clocks on the same `srcId` do not overwrite each other.
+    /// A whiteboard piece → a native-size reveal texture + an ordinary external-media scene. The CPU does only the threshold of the whiteboard's time field. Fit, mask, tile, transition, and pose blur are done by the GPU node, and a full-canvas texture is no longer rasterized first. The texture name is fixed by element id, and `media_ms` distinguishes frames by project frame. The structural fingerprint mixes in only (definition key, element id, sampled frame, source size), and does not depend on pixels.
     #[cfg(feature = "host")]
     fn compositor_whiteboard_node(
         &mut self,
@@ -6187,9 +5858,7 @@ impl OverlayRenderPlan {
         })?;
         let source = self.media.base.frame(source_id, -1)?;
         let texture = format!("whiteboard:{}", element.id);
-        // 揭示场按**元素盒的实际像素**跑，不按源图天然尺寸：这张图最后是画进那
-        // 个盒子的，源图多大与每帧该算多少像素无关。几何只读宽高比，所以先拿自
-        // 然尺寸探一遍盒子、再按那个尺寸缩源，两遍不会得到两个盒子。
+        // The reveal field runs at the **actual pixels of the element box**, not at the source image's native size. The image is ultimately drawn into that box, so how big the source is has nothing to do with how many pixels must be computed per frame. Geometry reads only the aspect ratio, so the box is first probed with the natural size, and then the source is scaled to that size. The two passes yield the same box.
         let target = {
             let mut probe_view = external_media_view(element, &texture, time);
             probe_view.kind = ElementKind::Image;
@@ -6286,23 +5955,15 @@ impl OverlayRenderPlan {
         })?;
         let time_varying = self.media.base.is_time_varying(source_id);
         let media_ms = self.timeline_media_time_ms(element, time);
-        // GPU 合成路径与 CPU overlay 必须取同一张图，换色也不例外。
+        // The GPU composite path and the CPU overlay must take the same image. Recoloring is no exception.
         let recolored = self.recolored_source_id(element, source_id);
         let source_id = recolored.as_deref().unwrap_or(source_id);
         let texture = format!("timeline-media:{}", element.id);
-        // 矢量动图（Lottie / 动画 SVG）按**元素盒的实际像素尺寸**光栅，不按原件
-        // 尺寸：纹理最后是画进那个盒子的，原件多大与要算多少像素无关。1024² 的
-        // 原件画进 461² 的贴纸盒，多出来的四倍像素要逐层分配、合成、上传，最后
-        // 被 GPU 缩掉——`bars_bottom` 声波满画幅都只要 3 ms/帧的工程里，这一笔
-        // 能占掉四分之三的导出时间。
+        // Vector animated images (Lottie / animated SVG) are rasterized at the **actual pixel size of the element box**, not at the original size. The texture is ultimately drawn into that box, so how big the original is has nothing to do with how many pixels must be computed. A 1024² original drawn into a 461² sticker box would require allocating, compositing, and uploading four times the pixels for each layer, and the GPU would then downscale all of it. In a project where the `bars_bottom` waveform spans the full frame and costs only 3 ms/frame, this one item could take three quarters of the export time.
         //
-        // 先用自然尺寸走一遍**纯几何**量出占多少像素：几何只读宽高比
-        // （`external_media_scene_nodes_at` 里 `height = width × h / w`），等比
-        // 缩放出来的节点逐字段相同，两遍不会得到两个盒子。
+        // First walk through with the natural size to measure how many pixels the **pure geometry** occupies. Geometry reads only the aspect ratio (`height = width × h / w` in `external_media_scene_nodes_at`), and nodes scaled proportionally are field-for-field identical, so the two passes do not yield two boxes.
         //
-        // 带 `fx` 的元素除外：效果链的半径是**画布短边**折出来的、落在纹理自身
-        // 分辨率上（`lower_texture_effects(element.fx, short)`），纹理一变小，同
-        // 一个模糊半径盖住的比例就变了。省那点光栅不值得改已有成片的像素。
+        // Elements with `fx` are excepted. The effect chain's radius is derived from the **canvas short side** and falls on the texture's own resolution (`lower_texture_effects(element.fx, short)`). Once the texture shrinks, the same blur radius covers a different proportion. Saving that rasterization is not worth changing the pixels of finished videos that already exist.
         let target = element
             .fx
             .is_none()
@@ -6352,9 +6013,7 @@ impl OverlayRenderPlan {
             )
         })?;
         debug_assert!(nodes.iter().all(texture_scene_node_is_supported));
-        // Full 要把**整帧解码像素**过一遍 FNV-1a：720p 实测 3.3 ms/帧，1080p/4K
-        // 成十倍地涨。Structural 用「取帧参数」代替像素：同一 `MediaStore` 内
-        // `(源 id, media_ms)` 唯一决定这张图，换色源 id 也在其中。见 [`SceneIdentity`]。
+        // Full mode runs the **whole decoded frame's pixels** through FNV-1a: 3.3 ms/frame measured at 720p, and it grows tenfold at 1080p/4K. Structural uses the “fetch parameters” in place of pixels. Within the same `MediaStore`, `(source id, media_ms)` uniquely determines this image, and the recolored source id is included as well. See [`SceneIdentity`].
         let fingerprint = match scene_identity {
             SceneIdentity::Full => Some(texture_scene_nodes_fingerprint(
                 &nodes,
@@ -6376,8 +6035,7 @@ impl OverlayRenderPlan {
         Ok((nodes, fingerprint))
     }
 
-    /// 离屏 compositor 在提交 scene 前取走当前可见纹理。这里只暴露已解码的
-    /// premultiplied RGBA，不泄漏 `MediaStore` 或平台 decoder 状态。
+    /// The offscreen compositor takes the currently visible texture before submitting the scene. Only the decoded premultiplied RGBA is exposed here. `MediaStore` or platform decoder state is not leaked.
     #[cfg(feature = "host")]
     pub fn compositor_texture_frame(
         &mut self,
@@ -6387,7 +6045,7 @@ impl OverlayRenderPlan {
         self.media.frame(texture, media_ms)
     }
 
-    /// 静态检查当前计划是否能完整进入 [`Self::compositor_scene_frame`]。
+    /// Statically checks whether the current plan can fully enter [`Self::compositor_scene_frame`].
     pub fn compositor_scene_support(&self) -> Result<()> {
         if self.includes.subtitles
             && let Some(fallback) = self.subtitle_scene_static_fallback_with_target_sampling(true)
@@ -6397,8 +6055,7 @@ impl OverlayRenderPlan {
         Ok(())
     }
 
-    /// 元素边界与逐帧窗口的唯一调度口径。CPU overlay 与 SceneFrame 共用，
-    /// 避免为了求 `next_change` 先完整录一次 DrawOp 再把元素求值第二遍。
+    /// The single scheduling rule for element boundaries and per-frame windows. The CPU overlay and SceneFrame share it. This avoids recording a full DrawOp pass just to compute `next_change`, and then evaluating the elements a second time.
     fn element_next_change(&self, time: f64, active: &[TimelineVisualElement]) -> Option<f64> {
         let mut next_change = None;
         for element in &self.elements {
@@ -6440,11 +6097,9 @@ impl OverlayRenderPlan {
                         | ElementKind::Progress
                         | ElementKind::Confetti
                 )
-                // 带分层文字动画的文字元素只在动的帧逐帧光栅（入场 / 循环 / 退场）；
-                // 静止段走下面的 `Still` 分支，直接跳到下一个边界。
+                // A text element with layered text animation is rasterized frame by frame only on moving frames (entrance, loop, exit). Still segments go to the `Still` branch below, which jumps straight to the next boundary.
                 || text_motion == Some(TextElementMotionPhase::Changing)
-                // 白板只在 draw 窗内逐帧揭示（手也在动）；显式 draw 结束后的
-                // hold 段复用最后一张 source texture，不再空转到元素 end。
+                // A whiteboard reveals frame by frame only within its draw window (the hand is also moving). The hold segment after an explicit draw ends reuses the last source texture, and does not spin idly until the element's end.
                 || whiteboard_drawing
                 || time_varying_media
             {
@@ -6479,9 +6134,7 @@ impl OverlayRenderPlan {
         self.render_drawop_layer(time, subtitle, OverlayParts::ALL)
     }
 
-    /// [`Self::render_drawop_overlay_frame`] 的实体，另由调用方挑时间轴元素 / 模板
-    /// 前景画不画。只有 CPU 导出的分层（[`Self::render_export_overlay`]）要拆开画；
-    /// 其余入口恒为 [`OverlayParts::ALL`]，指令流与拆分前逐字节相同。
+    /// The entity of [`Self::render_drawop_overlay_frame`]. The caller separately chooses whether to draw the timeline elements and the template foreground. Only the CPU export layering ([`Self::render_export_overlay`]) needs to draw these separately. Other entry points are always [`OverlayParts::ALL`], and their instruction stream is byte-identical to before the split.
     fn render_drawop_layer(
         &mut self,
         time: f64,
@@ -6489,12 +6142,9 @@ impl OverlayRenderPlan {
         parts: OverlayParts,
     ) -> Result<RenderedOverlayFrame> {
         let (frame_ops, next_change) = self.build_overlay_ops(time, subtitle.as_ref(), parts)?;
-        // 整图身份仍取 **DrawOp 原语指纹**：overlay 是一张折叠计划，指令流与
-        // 输出 surface 一一对应，换成 surface 指纹只会让 `X-Ccut-DrawOp-Fingerprint`
-        // 的历史取值再失效一次（客户端只做等值比较，换值没有收益）。
+        // The identity of the whole image still uses the **DrawOp primitive fingerprint**. The overlay is one folded plan, and its instruction stream corresponds one-to-one with the output surface. Switching to the surface fingerprint would invalidate the historical values of `X-Ccut-DrawOp-Fingerprint` once more (clients only do equality comparison, so changing the values brings no benefit).
         let draw_op_fingerprint = render_raster::fingerprint(&frame_ops);
-        // 折叠 FramePlan：执行器对这个形状直接调 `rasterize_with_media`，
-        // 与旧路径同一个函数调用、逐字节相同。
+        // The folded FramePlan: the executor calls `rasterize_with_media` directly for this shape, the same function call as the old path, byte-identical.
         let plan = render_raster::FramePlan::single_draw(
             self.width,
             self.height,
@@ -6504,8 +6154,7 @@ impl OverlayRenderPlan {
         debug_assert!(plan.is_folded());
         let pixmap = render_raster::execute_plan(&plan, &mut self.executor, &mut self.media, None)?;
         Ok(RenderedOverlayFrame {
-            // 字幕层的内容键原样上浮，供 serve 与几何侧车配对；整图身份另由
-            // `draw_op_fingerprint` 表示，两者不可互相顶替。
+            // The subtitle layer's content key is passed up as-is, so that serve can pair it with the geometry sidecar. The whole-image identity is separately represented by `draw_op_fingerprint`. The two cannot substitute for each other.
             subtitle_key: subtitle.map(|subtitle| subtitle.key),
             draw_op_fingerprint,
             rgba: pixmap.take(),
@@ -6513,12 +6162,9 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// 组装一帧 overlay 的 **DrawOp 指令流**（不光栅化）。
+    /// Assembles one frame's **DrawOp instruction stream** (no rasterization).
     ///
-    /// [`Self::render_drawop_overlay_frame`] 与
-    /// [`Self::element_drawop_fingerprint`] 共用这一个组装器——指纹出口与真正
-    /// 上屏/导出的那一帧**同源**是硬要求：一旦分家，跨引擎门禁比的就不再是
-    /// 同一条指令流（元素方案 §9.1 的 wasm 对拍同理）。
+    /// [`Self::render_drawop_overlay_frame`] and [`Self::element_drawop_fingerprint`] share this one assembler. The fingerprint output and the frame that is actually put on screen or exported must come from the **same source**. If they diverged, the cross-engine gate would no longer be comparing the same instruction stream (the wasm comparison in the element plan §9.1 applies the same way).
     fn build_overlay_ops(
         &mut self,
         time: f64,
@@ -6544,7 +6190,7 @@ impl OverlayRenderPlan {
         if let Some(boundary) = self.element_next_change(time, &active) {
             next_change = Some(next_change.map_or(boundary, |current| current.min(boundary)));
         }
-        // 动态栅格在这一帧里的序号（[`DynamicAssetNames::Slot`] 的资源名用）。
+        // The sequence number of this dynamic raster within this frame (used for the resource name of [`DynamicAssetNames::Slot`]).
         let mut slot = 0usize;
         for mut element in active {
             let time = self.sample_time_for(&element.id, time);
@@ -6574,9 +6220,7 @@ impl OverlayRenderPlan {
                         tf: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
                     });
                 }
-                // shape / visualizer / progress 是**矢量直出**：不经离屏 Pixmap，
-                // 直接把 FillRect/FillPath/StrokePath 录进同一条指令流，
-                // 因此天然进 DrawOp 指纹、天然可下沉进 wasm（设计 §9.1）。
+                // shape / visualizer / progress are **direct vector output**. They do not pass through an off-screen Pixmap. FillRect, FillPath, and StrokePath are recorded straight into the same instruction stream. So they naturally enter the DrawOp fingerprint, and they can naturally be lowered into wasm (design §9.1).
                 ElementKind::Shape => self.push_shape_element(&mut builder, &element, pose),
                 ElementKind::Visualizer => {
                     self.push_visualizer_element(&mut builder, &element, time, pose);
@@ -6590,10 +6234,7 @@ impl OverlayRenderPlan {
                 ElementKind::Draw => self.push_draw_element(&mut builder, &element, pose),
                 ElementKind::Placeholder
                     if self.push_placeholder_element(&mut builder, &element, pose) => {}
-                // sticker 是唯一**按 props 分家**的 kind（P7b）：`template` 源
-                // 与 shape 同路（矢量直出、进 wasm），`asset` 源与 image / video
-                // 同路（离屏光栅化 + `DrawMedia`）。落到下面那条 fallthrough 的
-                // 只可能是 `asset`。
+                // sticker is the only kind that **splits by props** (P7b). The `template` source takes the same path as shape (direct vector output, which can go to wasm). The `asset` source takes the same path as image and video (off-screen rasterization plus `DrawMedia`). Only `asset` can reach the fallthrough below.
                 ElementKind::Sticker if self.push_sticker_element(&mut builder, &element, pose) => {
                 }
                 ElementKind::Image
@@ -6639,11 +6280,9 @@ impl OverlayRenderPlan {
                 tf: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             });
         }
-        // 模板装饰层最后画：`RESERVED_Z` 的语义就是「前景恒在正片与元素之上」。
+        // The template decoration layer is drawn last. The semantics of `RESERVED_Z` are “the foreground is always above the main video and the elements”.
         //
-        // 形态照抄上面的字幕层（离屏 Pixmap → 动态资源 → 一条 DrawMedia），而不是
-        // 把装饰的 FrameOps 并进 builder：两份指令流各有自己的 path/string/paint
-        // 内插表，合并要整套重映射 id，为一层前景不值得。
+        // Its shape copies the subtitle layer above (off-screen Pixmap → dynamic resource → one DrawMedia), rather than merging the decoration's FrameOps into the builder. The two instruction streams each have their own path, string, and paint interning tables. Merging would require remapping every id, which is not worth it for a single foreground layer.
         if let Some((boundary, fingerprint)) = self
             .chrome
             .as_ref()
@@ -6654,8 +6293,7 @@ impl OverlayRenderPlan {
                 next_change = Some(next_change.map_or(boundary, |current| current.min(boundary)));
             }
             if let Some(pixmap) = self.template_frame(time)? {
-                // 资源名带**这一帧的像素身份**：DrawOp 指纹只看指令流，名字不变
-                // 就等于宣称画面没变。字幕层用 `subtitle.key` 解决同一个问题。
+                // The resource name carries **this frame's pixel identity**. The DrawOp fingerprint looks only at the instruction stream, so if the name stayed unchanged it would claim the picture has not changed. The subtitle layer solves the same problem with `subtitle.key`.
                 let stamp = render_raster::drawop::fnv1a64(pixmap.data());
                 let name = format!("tplchrome:{fingerprint}:{stamp:016x}");
                 self.media.dynamic.insert(name.clone(), Arc::new(pixmap));
@@ -6672,15 +6310,11 @@ impl OverlayRenderPlan {
         Ok((frame_ops, next_change))
     }
 
-    /// 当前 timeline 上**需要 host 光栅化**的元素 id（按声明序）。
+    /// The element ids on the current timeline that **need host rasterization** (in declaration order).
     ///
-    /// 判据与 `ccut-wasm` 的 `Preview::host_rasterized_elements` 逐条相同：
-    /// text / image / video 恒需要；sticker 按 `source` 分家——`template` 是
-    /// 矢量直出，其余（`asset`）走离屏 Pixmap；audio / shape / visualizer /
-    /// progress 不需要。
+    /// The criterion matches `Preview::host_rasterized_elements` in `ccut-wasm`, item by item. Text, image, and video always need it. Sticker splits by `source`: `template` is direct vector output, and the rest (`asset`) go through an off-screen Pixmap. Audio, shape, visualizer, and progress do not need it.
     ///
-    /// 这里过滤的是**已经过 `includes.allows()` 的** `self.elements`，与 wasm
-    /// 侧一致：被 include 过滤掉的元素本来就不会进指令流。
+    /// What is filtered here is `self.elements` that have **already passed `includes.allows()`**, consistent with the wasm side. Elements filtered out by include never enter the instruction stream in the first place.
     pub fn host_rasterized_elements(&self) -> Vec<&str> {
         self.elements
             .iter()
@@ -6705,22 +6339,13 @@ impl OverlayRenderPlan {
             .collect()
     }
 
-    /// 当前 `t` 的**元素层 DrawOp 指纹**（十六进制 16 位）。
+    /// The **element-layer DrawOp fingerprint** (16 hex digits) at the current `t`.
     ///
-    /// 与 `ccut-wasm` 的 `fingerprintAt`、CLI `studio export` 的
-    /// `X-Ccut-DrawOp-Fingerprint` 同一个函数（`render_raster::fingerprint`）、
-    /// 同一条指令流（[`Self::build_overlay_ops`]，`subtitle = None` 分支），
-    /// 因此三端逐位可比——这是 M4 退出条件 5 矢量四类那一段的门禁出口。
+    /// It uses the same function as `fingerprintAt` in `ccut-wasm`, and as `X-Ccut-DrawOp-Fingerprint` from the CLI's `studio export` (`render_raster::fingerprint`). It also uses the same instruction stream ([`Self::build_overlay_ops`], the `subtitle = None` branch). So the three ends are bit-for-bit comparable. This is the gate exit for the vector four-class part of M4 exit criterion 5.
     ///
-    /// **不含字幕层**：字幕层的 `DrawMedia` 只在
-    /// [`Self::render_overlay_frame`] 那条路上录入。含 host 光栅化元素时本方法
-    /// **主动报错**而不是给一个假的跨引擎可比值——wasm 没有这些元素的宿主
-    /// 光栅结果，无法生成同一条指令流。与
-    /// [`RenderedOverlayFrame::draw_op_fingerprint`]（整幅 overlay 的像素身份，
-    /// 含字幕层）是两个数，不可互相顶替。
+    /// **It does not include the subtitle layer.** The subtitle layer's `DrawMedia` is recorded only on the path [`Self::render_overlay_frame`]. When host-rasterized elements are included, this method **actively errors** rather than giving a fake cross-engine comparable value, because wasm does not have the host raster results for these elements and cannot generate the same instruction stream. It is a different number from [`RenderedOverlayFrame::draw_op_fingerprint`] (the pixel identity of the whole overlay, including the subtitle layer), and the two cannot substitute for each other.
     pub fn element_drawop_fingerprint(&mut self, time: f64) -> Result<String> {
-        // 模板层是 host 光栅化的一张 Pixmap；wasm 没有这份宿主结果，带装饰时
-        // 主动报错，而不是给一个跨引擎比不了的数。
+        // The template layer is a Pixmap rasterized by the host. wasm does not have this host result. So when there is decoration, it actively errors rather than giving a number that cannot be compared across engines.
         if self.chrome.is_some() {
             bail!(
                 "element_drawop_fingerprint 只在纯矢量元素的 timeline 上与导出指纹可比；\
@@ -6738,21 +6363,14 @@ impl OverlayRenderPlan {
         Ok(format!("{:016x}", render_raster::fingerprint(&frame_ops)))
     }
 
-    /// 测试用：导出走 `composite_bgra` 的 fast path，此入口保留 DrawOp 全路径。
+    /// For testing. Export goes through the fast path of `composite_bgra`. This entry point keeps the full DrawOp path.
     pub fn render_rgba(&mut self, time: f64) -> Result<Vec<u8>> {
         Ok(self.render_overlay_frame(time)?.rgba)
     }
 
-    /// App v2 预览的取帧入口：与 [`Self::render_png`] 走**同一次**
-    /// `render_overlay_frame`，只是把 PNG 编码那一步省掉——GPUI 直接上传
-    /// premultiplied RGBA，再编码一次 PNG 纯属浪费。
+    /// The frame-fetch entry point for App v2 preview. It goes through **the same single** `render_overlay_frame` call as [`Self::render_png`], only skipping the PNG encoding step. GPUI uploads premultiplied RGBA directly, so encoding it to PNG once more would be pure waste.
     ///
-    /// 两个入口同帧同像素是契约（主方案 M1-R3「同一内核同一输入应当同像素」），
-    /// 由 `render_png_is_the_encoded_form_of_render_rgba_frame` 守着。
-    /// 三个身份各司其职，不可互相顶替：`subtitle_key` 是字幕层内容键
-    /// （`X-Ccut-Overlay-Key`），`draw_op_fingerprint` 是整幅 overlay 的像素身份
-    /// （`X-Ccut-DrawOp-Fingerprint`），`next_change` 是下一次内容变化的时刻
-    /// （`X-Ccut-Overlay-Next`）。
+    /// That both entry points give the same frame and the same pixels is a contract (main plan M1-R3: “the same kernel with the same input should produce the same pixels”), guarded by `render_png_is_the_encoded_form_of_render_rgba_frame`. The three identities each do their own job and cannot substitute for one another. `subtitle_key` is the subtitle layer's content key (`X-Ccut-Overlay-Key`). `draw_op_fingerprint` is the pixel identity of the whole overlay (`X-Ccut-DrawOp-Fingerprint`). `next_change` is the time of the next content change (`X-Ccut-Overlay-Next`).
     pub fn render_rgba_frame(&mut self, time: f64) -> Result<OverlayRgbaFrame> {
         let frame = self.render_overlay_frame(time)?;
         Ok(OverlayRgbaFrame {
@@ -6770,8 +6388,7 @@ impl OverlayRenderPlan {
         let size = IntSize::from_wh(self.width, self.height).context("overlay 尺寸必须大于零")?;
         let pixmap = Pixmap::from_vec(frame.rgba, size).context("overlay RGBA 缓冲区尺寸无效")?;
         Ok(OverlayFrame {
-            // 走 `render_overlay_frame` 就一定有字幕层；`unwrap_or_default` 只是
-            // 类型上的收口，不是可达分支。
+            // Going through `render_overlay_frame` guarantees there is a subtitle layer. `unwrap_or_default` is only there to close the type, and is not a reachable branch.
             subtitle_key: frame.subtitle_key.unwrap_or_default(),
             draw_op_fingerprint: frame.draw_op_fingerprint,
             png: pixmap.encode_png().context("编码字幕 overlay PNG")?,
@@ -6779,22 +6396,14 @@ impl OverlayRenderPlan {
         })
     }
 
-    /// 导出路径（`--render-backend cpu`，以及 GPU 场景整帧回退）的分层 overlay
-    /// 与全体变化边界。叠放顺序与 GPU 场景（[`Self::compositor_scene_frame_with`]）
-    /// 一致：时间轴元素 → 字幕 → 模板前景。
+    /// The layered overlay and the whole-change boundaries for the export path (`--render-backend cpu`, and the whole-frame fallback of the GPU scene). The stacking order matches the GPU scene ([`Self::compositor_scene_frame_with`]): timeline elements → subtitles → template foreground.
     ///
-    /// 字幕层单独成层、保留自己的混合模式，所以 Designed Caption 的复合模式读到的
-    /// 底色是「主画面 + 元素」（与 GPU 的 target sampling 同一语义），又不会作用到
-    /// 模板前景上。字幕这一刻为空、或上面没有任何元素 / 模板时，与字幕先后无关，
-    /// 沿用「字幕一层 + 元素与模板折成一层」的形状：纯字幕、纯元素的帧逐位不变，
-    /// 也省一次整幅光栅。
+    /// The subtitle layer is kept as its own layer with its own blend mode. So the background that a Designed Caption's blend mode reads is “main picture plus elements” (the same semantics as the GPU's target sampling), and it does not apply to the template foreground either. When the subtitle is empty at this moment, or there are no elements or template above it, the order relative to the subtitle does not matter. In that case the shape stays as “one subtitle layer, with the elements and template folded into one layer”. Pure-subtitle or pure-element frames stay bit-identical, and one full-frame raster is saved.
     pub fn render_export_overlay(
         &mut self,
         time: f64,
     ) -> Result<(Vec<ExportOverlayLayer>, Option<f64>)> {
-        // 装饰层与元素层共用 `build_overlay_ops`，所以「要不要出这一层」的判据
-        // 必须把装饰算进去：只看元素会让纯模板项目（一条元素都没有）在导出里
-        // 丢掉整个前景。
+        // The decoration layer and the element layer share `build_overlay_ops`, so the criterion for “whether to emit this layer” must count the decoration. If only elements were checked, a pure template project (with no elements at all) would drop its entire foreground during export.
         let elements_active = self
             .elements
             .iter()
@@ -6863,9 +6472,7 @@ impl OverlayRenderPlan {
         Ok((layers, next_change))
     }
 
-    /// 保证 `self.composited` 覆盖 `time`。overlay 在 `[time, next_change)`
-    /// 内逐像素不变（`next_change` 契约，Studio 预览端同样依赖），区间内的
-    /// 后续帧零渲染成本；补丁窗回跳时间时自然缓存失效重渲。
+    /// Guarantees that `self.composited` covers `time`. The overlay is pixel-identical within `[time, next_change)` (the `next_change` contract, which the Studio preview side also relies on), so subsequent frames within that interval have zero rendering cost. When a patch window jumps the time backward, the cache is naturally invalidated and re-rendered.
     pub fn ensure_composited(&mut self, time: f64) -> Result<()> {
         if let Some(cached) = &self.composited
             && time >= cached.start
@@ -6880,7 +6487,7 @@ impl OverlayRenderPlan {
         let frames = layers
             .into_iter()
             .filter_map(|layer| {
-                // 字幕层在渲染时就求出了包围盒；只有 DrawOp 全路径需要现扫。
+                // The subtitle layer already computed its bounding box at render time. Only the full DrawOp path needs to scan it now.
                 let bounds = match layer.content {
                     OverlayContent::Unknown => alpha_bbox(&layer.rgba, width, height),
                     OverlayContent::Empty => None,
@@ -6901,8 +6508,7 @@ impl OverlayRenderPlan {
         Ok(())
     }
 
-    /// 该输出时刻的 overlay 是否整帧透明——透明时 `composite_bgra` 完全不
-    /// 触碰目标缓冲。
+    /// Whether the overlay at this output time is fully transparent. When it is, `composite_bgra` does not touch the target buffer at all.
     pub fn overlay_is_blank(&mut self, time: f64) -> Result<bool> {
         self.ensure_composited(time)?;
         Ok(self
@@ -6927,7 +6533,7 @@ impl OverlayRenderPlan {
             return Ok(());
         };
         for frame in frames {
-            // 只遍历非零 alpha 包围盒；盒外像素 alpha 恒为 0，混合是恒等操作。
+            // Only the non-zero alpha bounding box is traversed. Outside the box, alpha is always 0, so blending there is an identity operation.
             let (rows, cols) = (frame.bounds.rows.clone(), frame.bounds.cols.clone());
             for y in rows {
                 let overlay = &frame.rgba[(y * width + cols.start) * 4..(y * width + cols.end) * 4];
@@ -6940,16 +6546,12 @@ impl OverlayRenderPlan {
         Ok(())
     }
 
-    /// GPU overlay 合成前只处理主画面的缩放/位置/透明度。导出宿主随后把这张
-    /// BGRA 底图交给平台纹理直达或离屏 target sampling 路径；实时预览不走这条入口。
-    /// 主画面层是否整段导出都恒等于「一张不透明纯黑底」。
+    /// Before GPU overlay compositing, only the main picture's scale, position, and opacity are handled. The export host then hands this BGRA base image to the platform texture pass-through, or to the offscreen target sampling path. Live preview does not use this entry point.
+    /// Whether the main picture layer equals, for the whole export, an opaque solid black base.
     ///
-    /// 媒体被「元素化」搬到时间轴之后（`main.detached`）就是这个形状：底图恒黑，
-    /// 画面全部由时间轴元素画。此时源帧的每一个像素都到不了输出，导出可以整条
-    /// 跳过「解码源帧 → 缩放拷进画布 → [`Self::prepare_video_bgra`] 填黑 →
-    /// BGRA→RGBA swizzle → 上传 GPU」，改让合成器把目标清掉再叠 scene。
+    /// This is the shape after the media has been “elementized” and moved onto the timeline (`main.detached`). The base is always black, and the whole picture is drawn by timeline elements. In this case no pixel of the source frame ever reaches the output, so export can skip the whole chain “decode the source frame → scale and copy into the canvas → [`Self::prepare_video_bgra`] fills black → BGRA-to-RGBA swizzle → upload to the GPU”. Instead it lets the compositor clear the target and then stack the scene on top.
     ///
-    /// `main.place` 不随时间变化，所以调用方只需在导出开始时问一次。
+    /// `main.place` does not change over time, so the caller only needs to ask once, at the start of the export.
     pub fn base_frame_is_uniform_black(&self) -> bool {
         main_transform_is_uniform_black(self.main.as_ref())
     }
@@ -6968,12 +6570,12 @@ impl OverlayRenderPlan {
     }
 }
 
-/// 一张 DrawOp overlay 里画哪些部分（字幕另由调用方决定给不给）。
+/// Which parts of one DrawOp overlay to draw. (Whether to include the subtitle is decided separately by the caller.)
 #[derive(Debug, Clone, Copy)]
 struct OverlayParts {
-    /// 时间轴元素。
+    /// Timeline element.
     elements: bool,
-    /// 模板前景（chrome）。
+    /// Template foreground (chrome).
     chrome: bool,
 }
 
@@ -6992,9 +6594,7 @@ impl OverlayParts {
     };
 }
 
-/// 把一整张 premultiplied RGBA normal overlay source-over 到不透明 BGRA 视频。
-/// 保留给 normal-only host/reference 使用；需要读取 backdrop 的模式必须走合成器的
-/// 显式纹理入口或 [`OverlayRenderPlan::composite_bgra`]。
+/// Source-over one whole premultiplied RGBA normal overlay onto an opaque BGRA video. Kept for normal-only host and reference use. Modes that need to read the backdrop must go through the compositor's explicit texture entry point or [`OverlayRenderPlan::composite_bgra`].
 pub fn composite_normal_rgba_bgra(
     pixels: &mut [u8],
     stride: usize,
@@ -7049,7 +6649,7 @@ fn glyph_scene_mask(
     )))
 }
 
-/// CPU effect 层对彩色位图字形不画描边/阴影/发光；只有正文层保留 RGBA。
+/// The CPU effect layer draws no outline, shadow, or glow for colored bitmap glyphs. Only the body layer keeps RGBA.
 fn glyph_scene_effect_mask(
     mask: GlyphAtlasRender,
 ) -> std::result::Result<Option<Arc<element_draw::GlyphMask>>, SubtitleSceneFallback> {
@@ -7059,10 +6659,7 @@ fn glyph_scene_effect_mask(
     }
 }
 
-/// 把一枚预乘 RGBA 字幕像素合到不透明 BGRA 视频像素。非 normal 模式按
-/// Core Graphics/W3C 的 separable blend 公式，先在非预乘色域求 blend，
-/// 再用源 alpha 做 source-over；这一步必须看到真实视频像素，不能在透明
-/// overlay 上预先“烘焙”。
+/// Merges one premultiplied RGBA subtitle pixel into an opaque BGRA video pixel. For non-normal modes, the blend is computed in the non-premultiplied color space by the Core Graphics/W3C separable blend formula, and then source-over is applied using the source alpha. This step must see the real video pixels, and cannot be “baked in” ahead of time on the transparent overlay.
 pub fn composite_caption_pixel_bgra(
     target: &mut [u8],
     source: &[u8],
@@ -7100,11 +6697,9 @@ pub fn composite_caption_pixel_bgra(
     target[3] = 255;
 }
 
-/// 该时刻「当前词」的下标。空白词不能当当前词——它没有可高亮的字形，
-/// 落在空白上会让整行看起来没有活动词。先向前找最近的非空白词，找不到再向后。
+/// The index of the “current word” at this moment. A whitespace word cannot be the current word, because it has no glyph to highlight, and landing on whitespace would make the whole line look as if it has no active word. Search forward first for the nearest non-whitespace word, and search backward only if none is found.
 ///
-/// 缓存键与实际渲染都用它，必须是同一个函数：两处各写一遍就是两种「现在念到
-/// 哪个词」的意见，缓存会开始返回配不上这一帧的图。
+/// The cache key and the actual rendering both use it, so it must be the same function. Writing it out twice would give two opinions about “which word is being read now”, and the cache would start returning images that do not match the frame.
 pub fn current_word_index(item: &TimedItem, time: f64) -> usize {
     let current = item
         .words
@@ -7124,9 +6719,7 @@ pub fn current_word_index(item: &TimedItem, time: f64) -> usize {
         .unwrap_or(current)
 }
 
-/// `definition_key + subtitle_key` 的确定性 64-bit 投影。字幕 key 只描述当前
-/// cue/词/动画帧；字体、样式、画布等计划定义必须同时进入 SceneFrame 身份，
-/// 否则两个不同项目会错误复用 retained scene。
+/// A deterministic 64-bit projection of `definition_key + subtitle_key`. The subtitle key describes only the current cue, word, and animation frame. Plan definitions such as font, style, and canvas must enter the SceneFrame identity at the same time. Otherwise two different projects would wrongly reuse a retained scene.
 pub fn subtitle_scene_fingerprint(definition_key: &str, key: &str) -> u64 {
     definition_key
         .as_bytes()
@@ -7138,19 +6731,11 @@ pub fn subtitle_scene_fingerprint(definition_key: &str, key: &str) -> u64 {
         })
 }
 
-/// 文本元素在 GPU SceneFrame 身份里的贡献。
+/// A text element's contribution to the GPU SceneFrame identity.
 ///
-/// `definition_key` 只覆盖**磁盘投影文档** + 画布/fps/模式/includes；App 舞台
-/// 拖拽时的预览直接改内存 `OverlayRenderPlan` 上的 `place`，磁盘真相不动。
-/// 身份若只由 `definition_key + id + time` 组成，它对文本几何完全不敏感，
-/// 每一帧预览都会被 SceneFrame 去重守卫整帧丢掉——选框在动、glyph 却要等
-/// 松手提交才跳过去。所以这里把所有能改变文本 scene 节点的元素字段一并折
-/// 进 key：时间窗、几何 `Place`（x/y/w/scale/scaleY/rot/opacity/radius/镜像）、
-/// 垂直锚点、平铺、文案与计数、样式和动画。
+/// `definition_key` covers only the **on-disk projected document**, plus canvas, fps, mode, and includes. During App stage dragging, the preview changes the `place` on the in-memory `OverlayRenderPlan` directly, and the on-disk truth does not move. If the identity were composed only of `definition_key + id + time`, it would be completely insensitive to text geometry. Every preview frame would then be dropped by the SceneFrame de-duplication guard, so the selection box would move while the glyphs waited until mouse-up to jump. So here every element field that can change the text scene node is folded into the key: the time window, the geometry `Place` (x/y/w/scale/scaleY/rot/opacity/radius/mirror), the vertical anchor, tiling, the text and its counts, the style, and the animation.
 ///
-/// 全部字段走 `Debug` / 定长格式化：没有 HashMap 迭代序，也没有指针地址
-/// （`serde_json::Value` 的 object 是有序 `Map`），因此同一份元素重复求值必
-/// 然得到同一个值，去重守卫对"什么都没动"的帧仍然成立。
+/// All fields go through `Debug` or fixed-length formatting. There is no HashMap iteration order and no pointer address (`serde_json::Value`'s object is an ordered `Map`). So evaluating the same element repeatedly always gives the same value, and the de-duplication guard still holds for frames where “nothing moved”.
 fn text_element_scene_fingerprint(
     definition_key: &str,
     element: &TimelineVisualElement,
@@ -7242,8 +6827,7 @@ fn element_display_text(element: &TimelineVisualElement, time: f64) -> String {
         .unwrap_or_else(|| element.text.clone().unwrap_or_default())
 }
 
-/// TextureNode 的 renderer-neutral 身份。像素只折成一个 hash，避免把一整张源帧
-/// 复制进 scene identity 临时缓冲；几何、采样钟与 fit/background 仍逐字段冻结。
+/// The renderer-neutral identity of a TextureNode. The pixels are folded into a single hash, to avoid copying a whole source frame into a temporary scene-identity buffer. Geometry, sampling clock, and fit/background are still frozen field by field.
 #[cfg(feature = "host")]
 fn texture_scene_fingerprint(node: &element_draw::TextureNode, rgba: &[u8]) -> u64 {
     texture_scene_fingerprint_with_pixel_hash(node, render_raster::drawop::fnv1a64(rgba))
@@ -7346,8 +6930,7 @@ fn texture_scene_fingerprint_with_pixel_hash(
     render_raster::drawop::fnv1a64(&bytes)
 }
 
-/// [`SceneIdentity::Structural`] 的像素代理：把决定一张纹理内容的几段字节拼起来
-/// 哈希（段间放 0 分隔，避免「ab|c」与「a|bc」相撞）。
+/// The pixel proxy for [`SceneIdentity::Structural`]: concatenates several byte segments that determine a texture's content and hashes them (a 0 separator between segments, so that “ab|c” does not collide with “a|bc”).
 #[cfg(feature = "host")]
 fn structural_pixel_hash(parts: &[&[u8]]) -> u64 {
     let mut bytes = Vec::with_capacity(parts.iter().map(|part| part.len() + 1).sum());
@@ -7358,7 +6941,7 @@ fn structural_pixel_hash(parts: &[&[u8]]) -> u64 {
     render_raster::drawop::fnv1a64(&bytes)
 }
 
-/// 把媒体元素的一组 scene 节点与它们共用的像素哈希（真像素或结构代理）合成一个身份。
+/// Combines a group of scene nodes of one media element, and the pixel hash they share (real pixels or the structural proxy), into one identity.
 #[cfg(feature = "host")]
 fn texture_scene_nodes_fingerprint(nodes: &[element_draw::SceneNode], pixel_hash: u64) -> u64 {
     let mut node_fingerprints = nodes
@@ -7420,22 +7003,18 @@ fn texture_scene_node_fingerprint(node: &element_draw::SceneNode, pixel_hash: u6
     }
 }
 
-/// 一条带分层文字动画的字幕在编译期冻结的量。`text_motion_state` 每帧被缓存键
-/// 与 `next_change` 各调一次，词起点与字素数只取决于这条字幕与计划帧率，
-/// 不该每帧重新分配、重新数一遍。
+/// Quantities of a subtitle with layered text animation that are frozen at compile time. `text_motion_state` is called once per frame by both the cache key and `next_change`. Word start times and the grapheme count depend only on this subtitle and the plan's frame rate, so they should not be re-allocated and re-counted every frame.
 #[derive(Debug, Clone)]
 struct TextMotionItem {
-    /// 词起点（显示钟偏移，已吸到帧）；与 `text_motion_starts` 同一口径。
+    /// Word start time (display-clock offset, snapped to frames). Same convention as `text_motion_starts`.
     starts: Arc<[f64]>,
-    /// 字素数（至少 1），喂 `boundary_windows` / `changing_at`。
+    /// Grapheme count (at least 1), fed to `boundary_windows` and `changing_at`.
     units: usize,
-    /// 译文行的 KTV 扫字跟着原文唱：与这条译文同时段的原文真实词 `(起, 止)`
-    /// （项目秒）。原文行与不带 `karaoke` 的行为 `None`。
+    /// The translation line's KTV word sweep follows the original-text singing. It uses the real original-text words `(start, end)` (project seconds) that fall within the same time span as this translation. Original-text lines and lines without `karaoke` give `None`.
     karaoke_words: Option<Arc<[(f64, f64)]>>,
 }
 
-/// 按下标对齐 `items` 的动效表：这一条最终样式（整条轨叠逐条覆盖）带
-/// `textMotion` 或 `wordBackground` 才是 `Some`。`fps` 与计划一致取 `max(1.0)`。
+/// A timing table aligned to items by index. An entry is `Some` only if this item's final style (the whole track with per-item overrides applied) carries `textMotion` or `wordBackground`. `fps` takes `max(1.0)`, consistent with the plan.
 fn text_motion_items(
     items: &[TimedItem],
     kind: LineKind,
@@ -7466,9 +7045,7 @@ fn text_motion_items(
         .collect()
 }
 
-/// 译文没有自己的词时间：KTV 扫字借同时段的原文真实词。时段取这条译文的
-/// 句级起止（派生词铺满 `start..end`），中点落在里面的原文词都算（相邻句贴着
-/// 边界开唱的词不算）；派生占位词不算。一个都没有就不扫。
+/// A translation has no words of its own, so KTV sweeping borrows the real original-text words in the same time span. The span is the sentence-level start and end of this translation (derived words fill `start..end`). Original-text words whose midpoint falls inside it are counted. Words of adjacent sentences that start exactly at the boundary are not counted. Derived placeholder words are not counted. If there are none, nothing is swept.
 fn karaoke_words_for(item: &TimedItem, originals: &[TimedItem]) -> Option<Arc<[(f64, f64)]>> {
     let start = item.words.first().map_or(item.display_start, |w| w.start);
     let end = item.words.last().map_or(item.display_end, |w| w.end);
@@ -7487,35 +7064,31 @@ fn karaoke_words_for(item: &TimedItem, originals: &[TimedItem]) -> Option<Arc<[(
     (!words.is_empty()).then(|| words.into())
 }
 
-/// KTV 预告下一句的最长间隔（秒）：再远就是间奏，下一句等它自己出场。
+/// The maximum gap (seconds) for KTV to preview the next sentence. Any further away and it is an interlude, so the next sentence waits to appear on its own.
 const KARAOKE_NEXT_LINE_MAX_GAP: f64 = 8.0;
 
-/// [`active_at`] 的下标版：同一条 `partition_point` 判据。
+/// The index-returning version of [`active_at`]: same `partition_point` criterion.
 fn active_index(items: &[TimedItem], time: f64) -> Option<usize> {
     let next = items.partition_point(|item| item.display_start <= time);
     next.checked_sub(1)
         .filter(|&index| time < items[index].display_end)
 }
 
-/// 文字元素的样式是否带分层文字动画 / 逐词底块（与 `text_element_scene_nodes`
-/// 的回退判据同一口径）。
+/// Whether a text element's style carries layered text animation or a per-word background block (the same criterion as the fallback check in `text_element_scene_nodes`).
 fn text_element_has_motion(element: &TimelineVisualElement) -> bool {
     element.style["textMotion"].is_object() || element.style["wordBackground"].is_object()
 }
 
-/// 带分层文字动画的文字元素在某一时刻的调度相位。
+/// The scheduling phase of a text element with layered text animation at a given moment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum TextElementMotionPhase {
-    /// 这一帧在动（入场 / 退场 / 循环，或元素另带 `animation`）：逐帧重建。
+    /// On this frame it is moving (entrance, exit, or loop, or the element also has an `animation`), so it is rebuilt frame by frame.
     Changing,
-    /// 静止段：整段同一张图。`anchor` 是段起点（项目秒），拿来当身份与采样钟；
-    /// `until` 是下一个会变的时刻（退场开始的前半帧，没有退场就是元素 end）。
+    /// A still segment: one image for the whole segment. `anchor` is the segment start (project seconds), used as the identity and the sampling clock. `until` is the next moment it changes (the half-frame before the exit starts; if there is no exit, it is the element's end).
     Still { anchor: f64, until: f64 },
 }
 
-/// 与 `text_motion_raster` 采样同一口径：局部钟吸到帧、时长 = `end − start`、
-/// 文字元素没有词时间（starts 为空，词强调不触发）、units = 显示文字的字素数。
-/// 只有 `wordBackground`（没有 `textMotion`）时底块不随时间变，整段静止。
+/// The same sampling convention as `text_motion_raster`: the local clock snaps to frames, duration = `end − start`, text elements have no word times (starts is empty, so word emphasis does not trigger), and units = the grapheme count of the displayed text. Only with `wordBackground` (and no `textMotion`) does the block not change over time, so it stays entirely still.
 fn text_element_motion_phase(
     element: &TimelineVisualElement,
     time: f64,
@@ -7549,7 +7122,7 @@ fn text_element_motion_phase(
         return TextElementMotionPhase::Changing;
     }
     let (enter, exit) = motion.boundary_windows(duration, fps, units);
-    // 没有退场时 `exit == duration`，那半帧边界落在 end 前却什么都不变。
+    // With no exit, `exit == duration`, and that half-frame boundary falls before the end but changes nothing.
     let exit_at = element.start + exit - 0.5 / fps;
     TextElementMotionPhase::Still {
         anchor: element.start + enter,
@@ -7561,10 +7134,7 @@ fn text_element_motion_phase(
     }
 }
 
-/// CPU 光栅层进 GPU 场景时裁出的纹理窗：一定盖住非零 alpha 包围盒，宽高向上取整到
-/// 64 像素的倍数（不超画布；贴边时窗口往回挪）。窗口外本就全透明，所以任何盖住
-/// 包围盒的窗都与整幅逐像素等价；取整只是让逐帧微动的包围盒复用同一尺寸的
-/// GPU 纹理槽，不必每帧重建纹理与绑定。
+/// The texture window cropped when a CPU raster layer enters the GPU scene. It must cover the non-zero alpha bounding box, and its width and height are rounded up to multiples of 64 pixels (not exceeding the canvas; near an edge the window is shifted back). Outside the window everything is already fully transparent, so any window covering the bounding box is pixel-equivalent to the whole. The rounding only lets a bounding box that shifts slightly from frame to frame reuse a GPU texture slot of the same size, instead of rebuilding the texture and bindings every frame.
 #[cfg(feature = "host")]
 fn motion_texture_window(
     bounds: &ContentBox,
@@ -7598,8 +7168,7 @@ fn min_optional_time(left: Option<f64>, right: Option<f64>) -> Option<f64> {
     }
 }
 
-/// 字幕底板的唯一几何结果。CPU 光栅与 GPU scene 都消费这份 plate 列表，
-/// 不在 DrawOp 侧重算折行、shared plate 或脱离堆栈的行。
+/// The single geometry result for the subtitle plates. The CPU rasterization and the GPU scene both consume this plate list. The DrawOp side does not recompute line wrapping, shared plates, or lines that have left the stack.
 fn subtitle_background_plates(layouts: &[LineLayout], stack: &StackLayout) -> Vec<SubtitlePlate> {
     let mut plates = Vec::new();
     if stack.shared_background
@@ -7607,8 +7176,7 @@ fn subtitle_background_plates(layouts: &[LineLayout], stack: &StackLayout) -> Ve
         && has_real_background(plate_line)
         && let Some((span_top, span_bottom)) = stack.span
     {
-        // `span` 是字形范围，板向外扩一圈；三条边距都取自 `plate_line`，
-        // 与 Mac `max(裸宽) + bg.padH × 2` 同构。
+        // `span` is the glyph range, and the plate extends outward by a ring. All three margins are taken from `plate_line`, isomorphic to Mac's `max(bare width) + bg.padH × 2`.
         let pad_h = plate_line.style.background_pad_h;
         let pad_v = plate_line.style.background_pad_v;
         let width = (layouts
@@ -7653,7 +7221,7 @@ fn subtitle_background_plates(layouts: &[LineLayout], stack: &StackLayout) -> Ve
     plates
 }
 
-/// 把唯一 plate 几何编码成 renderer-neutral DrawOp；不引入第二套布局规则。
+/// Encodes the unique plate geometry as renderer-neutral DrawOps. No second set of layout rules is introduced.
 fn subtitle_background_ops(
     layouts: &[LineLayout],
     stack: &StackLayout,
@@ -7705,19 +7273,15 @@ const SUBTITLE_INTERLEAVED_RUN_LIMIT: usize = 128;
 
 struct SubtitleWordPass {
     uniform_index: u32,
-    /// CPU `draw_line_layout` 在本 chunk 字形之前落的经典逐词底板或 Designed
-    /// Caption 程序化底板；已经带好 scene pose/motion，可直接按绘制顺序插入。
+    /// The classic per-word backing plate, or the procedural backing plate of a Designed Caption, that the CPU `draw_line_layout` lays down before this chunk's glyphs. It already carries scene pose and motion, and can be inserted directly in draw order.
     before: Vec<element_draw::SceneNode>,
-    /// CPU `draw_line_layout` 在本 chunk 字形之后落的普通/逐词下划线。
+    /// The ordinary or per-word underline that the CPU `draw_line_layout` lays down after this chunk's glyphs.
     after: FrameOps,
-    /// 当前 chunk 是否需要 descriptor 声明的 `glyphDuplicate` 层。数组本身为保持
-    /// uniform index 对齐也包含翻译行的透明项；只有该位为真才装配节点。
+    /// Whether the current chunk needs the `glyphDuplicate` layer declared by the descriptor. The array itself also contains transparent entries for the translation line, to keep uniform indices aligned. A node is assembled only when this bit is true.
     duplicate: bool,
-    /// neon glow / weight shift 的固定描边层。未活动阶段仍提交透明 uniform，
-    /// 所以节点与 alpha-mask geometry 跨帧保持同一身份。
+    /// The fixed outline layer for neon glow and weight shift. While inactive it still submits transparent uniforms, so the node and the alpha-mask geometry keep the same identity across frames.
     recipe_stroke: bool,
-    /// 当前 chunk 是否有稳定 emoji 几何。即使本帧效果未活动也保持该节点，透明度
-    /// 由 decoration uniform 置零，后续帧不会重新 shape / 光栅。
+    /// Whether the current chunk has stable emoji geometry. Even when this frame's effect is inactive, the node is kept. Opacity is set to zero by the decoration uniform, so later frames do not re-shape or re-rasterize.
     emoji: bool,
 }
 
@@ -7743,9 +7307,7 @@ fn push_subtitle_word_background(
     });
 }
 
-/// `GlyphRender::ColorBitmap` 在 CPU reference 中不进入 echo/duplicate 分支。
-/// 大多数字幕都是 alpha mask，此时直接复用正文 Arc；混合彩色字形时才构造并
-/// 限容缓存一份过滤后的稳定 geometry。
+/// In the CPU reference, `GlyphRender::ColorBitmap` does not enter the echo/duplicate branch. Most subtitles are alpha masks, in which case the body Arc is reused directly. Only when colored glyphs are mixed in is a filtered stable geometry built, and it is cached with a bounded size.
 fn duplicate_glyph_geometry(
     geometry_key: &str,
     geometry: &Arc<[element_draw::GlyphInstance]>,
@@ -7995,9 +7557,7 @@ fn push_interleaved_word_nodes(
                 geometry_cache,
             );
             pending.clear();
-            // CPU `draw_caption_recipe_decorations` 在 plate、duplicate、outline 与
-            // 正文之前执行；emoji 必须留在同一个逐词 z 槽，而不是按类型汇总到
-            // 全部正文之前或之后。
+            // The CPU `draw_caption_recipe_decorations` runs before the plate, duplicate, outline, and body text. Emoji must stay in the same per-word z slot, rather than being grouped by type before or after all the body text.
             if emoji {
                 push_glyph_fill_segment(
                     nodes,
@@ -8090,10 +7650,7 @@ fn push_interleaved_word_nodes(
     );
 }
 
-/// CPU `draw_line_layout` 的下划线口径：默认 0.10em 基线偏移、至少 1px 的
-/// 0.06em 线高与 0.03em 圆角。经典逐词 Paint 可覆盖 offset，并与对应 chunk
-/// 字形按 CPU 顺序交错；Designed Caption 的 plate/duplicate 已走各自 retained
-/// 节点，其余 recipe 装饰仍类型化回退。
+/// The underline conventions of the CPU `draw_line_layout`: a default baseline offset of 0.10em, a line height of 0.06em with at least 1px, and a corner radius of 0.03em. Classic per-word Paint can override the offset and interleave with the corresponding chunk glyphs in CPU order. Designed Caption's plate and duplicate already go through their own retained nodes, while the other recipe decorations still fall back by type.
 fn push_subtitle_underline(
     frame: &mut FrameOps,
     x: f64,
@@ -8124,11 +7681,7 @@ fn subtitle_scene_color(color: SubtitleColor, opacity: f64) -> [f32; 4] {
     ]
 }
 
-/// scene 的稳定几何只认计划定义与当前可见行；逐词状态、入场 pose 和颜色均由
-/// run uniform 承担。Designed Caption 的分组布局会在同一 cue id 内替换可见词，
-/// 因而还要编码实际行/词签名；普通整句字幕的签名跨逐词边界不变。双语模式把
-/// kind 一并编码，防止相同 id 的原文/译文相撞。textSwap 的逐帧替字签名由
-/// [`subtitle_glyph_geometry_key_with_visuals`] 追加，不能混进这个静态布局键。
+/// The stable geometry of the scene depends only on the plan definition and the currently visible lines. Per-word state, entrance pose, and color are all carried by run uniforms. Designed Caption's grouped layout replaces the visible words within the same cue id, so it also encodes the actual line and word signature. For ordinary whole-sentence subtitles, the signature does not change across per-word boundaries. In bilingual mode the kind is encoded too, to prevent the original and the translation with the same id from colliding. The per-frame text-swap signature is appended by [`subtitle_glyph_geometry_key_with_visuals`], and must not be mixed into this static layout key.
 pub fn subtitle_glyph_geometry_key(definition_key: &str, layouts: &[LineLayout]) -> String {
     let lines = layouts
         .iter()
@@ -8221,14 +7774,7 @@ fn subtitle_glyph_geometry_key_with_visuals(
     }
 }
 
-/// glyph uniform + 有序 vector/procedural pass 当前能完整表达的经典逐词状态：
-/// 颜色、不透明度、垂直 bounce、Highlight/Custom 底板与 Paint 下划线；Designed
-/// Caption 准入单 glyph、repeat-linear gradient + glyph，以及程序化 highlight/pill
-/// 底板、echo/RGB glyph duplicate + glyph、尾置 metadata-only glyphDuplicate 的
-/// editorial colorMix、retained emoji + glyph，以及在项目 fps 网格切换局部字形
-/// geometry 的 textSwap、固定 quad 的扫描线/确定性粒子，以及带内容身份的单纹理
-/// repeat fill；除该规范纹理外必须无资产，全部 operator/channel 都要有精确 scene
-/// 表达。其余多层 glyph 继续显式回退，不能按 style id 猜能力。
+/// The classic per-word states that the glyph uniform plus ordered vector and procedural passes can fully express: colors, opacity, vertical bounce, Highlight and Custom backing plates, and Paint underlines. Designed Caption admits: a single glyph; a repeat-linear gradient plus glyph; procedural highlight and pill backing plates; echo and RGB glyph duplicate plus glyph; a trailing metadata-only glyphDuplicate with editorial colorMix; retained emoji plus glyph; textSwap, which switches local glyph geometry on the project fps grid; scanline and deterministic particles with a fixed quad; and a single-texture repeat fill with content identity. Apart from that canonical texture it must have no assets, and every operator and channel must have an exact scene expression. Other multi-layer glyphs continue to fall back explicitly. Capabilities must not be guessed from the style id.
 pub fn glyph_uniform_animation_supported(animation: &WordAnimation) -> bool {
     let Some(design) = animation.caption.as_ref() else {
         return [&animation.spoken, &animation.active, &animation.unspoken]
@@ -8347,13 +7893,12 @@ fn transform_array(transform: Transform) -> [f32; 6] {
     ]
 }
 
-/// 非零 alpha 的行/列包围盒（半开区间；实现在 `render_raster::effects`）。
+/// The row and column bounding box of non-zero alpha (half-open interval; implemented in `render_raster::effects`).
 pub fn alpha_bbox(rgba: &[u8], width: usize, height: usize) -> Option<ContentBox> {
     render_raster::effects::alpha_bbox(rgba, width, height)
 }
 
-/// [`alpha_bbox`] 的限定窗口版本：`window` 必须是非零像素的超集，此时结果与
-/// 全帧扫描逐字段相同。字幕路径的窗口来自 [`DrawBounds`]（跟着落笔走）。
+/// The windowed version of [`alpha_bbox`]. `window` must be a superset of the non-zero pixels, in which case the result is field-for-field identical to a full-frame scan. The subtitle path's window comes from [`DrawBounds`], which follows the drawing.
 pub fn alpha_bbox_within(
     rgba: &[u8],
     width: usize,
@@ -8363,22 +7908,22 @@ pub fn alpha_bbox_within(
     render_raster::effects::alpha_bbox_within(rgba, width, height, window)
 }
 
-/// 字幕堆栈摆放的一次解算结果，见 [`OverlayRenderPlan::stack_layout`]。
+/// The result of one solve of the subtitle stack placement. See [`OverlayRenderPlan::stack_layout`].
 pub struct StackLayout {
-    /// 全局锚点（画布像素），转场缩放与整组旋转都绕它。
+    /// The global anchor (canvas pixels). Transition scaling and whole-group rotation both pivot around it.
     pub anchor: (f64, f64),
-    /// 每行的位置覆盖（与 `layouts` 同序）。
+    /// Per-line position override (same order as `layouts`).
     pub overrides: Vec<Option<(f64, f64)>>,
-    /// 共享底板取哪一行的样式（`layouts` 下标）。
+    /// Which line's style the shared plate takes (an index into `layouts`).
     pub plate_line: Option<usize>,
     pub shared_background: bool,
-    /// 每行的 `(字形中心 x, 字形顶 y)`（与 `layouts` 同序）。
+    /// Each line's `(glyph center x, glyph top y)` (same order as `layouts`).
     pub placements: Vec<(f64, f64)>,
-    /// 仍在堆栈里的行的纵向跨度。
+    /// The vertical span of the lines still in the stack.
     pub span: Option<(f64, f64)>,
 }
 
-/// 几何侧车的一条行，见 [`OverlayRenderPlan::subtitle_layout`]。
+/// One line of the geometry sidecar. See [`OverlayRenderPlan::subtitle_layout`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitleLayoutLine {
     pub kind: &'static str,
@@ -8390,7 +7935,7 @@ pub struct SubtitleLayoutLine {
     pub detached: bool,
 }
 
-/// 几何侧车的一帧，见 [`OverlayRenderPlan::subtitle_layout`]。
+/// One frame of the geometry sidecar. See [`OverlayRenderPlan::subtitle_layout`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitleLayoutFrame {
     pub key: String,
@@ -8399,59 +7944,56 @@ pub struct SubtitleLayoutFrame {
     pub rotation: f64,
     pub anchor: (f64, f64),
     pub lines: Vec<SubtitleLayoutLine>,
-    /// 倒鸭子接管原文轨时的行几何（§3.2 舞台拾取、§3.3 编辑态）；`None` = 没有序列层。
+    /// The line geometry when Daoyazi takes over the original-text track (§3.2 stage picking, §3.3 edit mode). `None` = there is no sequence layer.
     pub sequence: Option<SequenceLayout>,
 }
 
-/// 序列层这一帧的一行：画布像素四角 + 写盘要用的段局部坐标。
+/// One line of the sequence layer in this frame: the four canvas-pixel corners, plus the segment-local coordinates used when writing to disk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SequenceLayoutRow {
-    /// 行键 = 行首词 id。
+    /// The line key is the id of the line's first word.
     pub key: String,
     pub cue_id: String,
-    /// 首词起点（点行 → 播放头跳到这里）。
+    /// The start time of the first word (tapping the line moves the playhead here).
     pub onset: f64,
     pub pinned: bool,
     pub rot_deg: f64,
-    /// 段局部世界坐标，540 短边单位（`captionSequences.pins[key].center` 的口径）。
+    /// Segment-local world coordinates, in 540 short-side units (the convention of `captionSequences.pins[key].center`).
     pub local_center: [f64; 2],
-    /// 画布像素，顺时针：左上、右上、右下、左下。
+    /// Canvas pixels, clockwise: top-left, top-right, bottom-right, bottom-left.
     pub quad: [[f64; 2]; 4],
-    /// 这一帧画了它（历史行淡着也算画了；编辑态全部为真）。
+    /// Whether this frame drew it (a line that is still fading counts as drawn; in edit mode all are true).
     pub visible: bool,
 }
 
-/// 序列层这一帧的几何与统计。
+/// The geometry and statistics of the sequence layer for this frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SequenceLayout {
-    /// 当前段下标 / 段键（播放头落在任何段之前时都是 `None`）。
+    /// The current segment index and segment key (both `None` when the playhead is before any segment).
     pub seq_index: Option<usize>,
     pub seq_key: Option<String>,
     pub seq_count: usize,
-    /// 全轨行数。
+    /// The total number of lines on the track.
     pub row_total: usize,
     pub pinned_total: usize,
     pub editing: bool,
-    /// 画布 1 像素 = 多少世界像素（编辑态相机角度为零，位移只需除以缩放）。
+    /// How many world pixels one canvas pixel equals. (In edit mode the camera angle is zero, so displacement only needs to be divided by the scale.)
     pub world_per_px: f64,
-    /// 540 短边单位 1 = 多少世界像素。
+    /// How many world pixels one 540-short-side unit equals.
     pub unit_px: f64,
     pub diagnostics: Vec<String>,
-    /// 当前段的行（编辑态全出；播放态只出画了的）。
+    /// The lines of the current segment (in edit mode all appear; in playback mode only the ones drawn appear).
     pub rows: Vec<SequenceLayoutRow>,
 }
 
-/// 编辑态（§3.3「调整布局」）：镜头改成总览、整段每一行都实显；`drag` 是正在拖的行
-/// 与它此刻的**段局部中心**（540 短边单位，与 `captionSequences.pins[].center` 同口径）。
-/// 松手写盘的就是同一个值，所以钉住之后覆盖层与计划重合，撤掉覆盖不会闪。
+/// Edit mode (§3.3 “adjust layout”): the camera switches to an overview, and every line of the whole segment is shown solid. `drag` is the line being dragged and its **segment-local center** at this moment (540 short-side units, the same convention as `captionSequences.pins[].center`). The value written on release is the same one, so after pinning the overlay coincides with the plan, and removing the overlay does not flicker.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaptionSequenceEdit {
     pub seq: usize,
     pub drag: Option<(String, [f64; 2])>,
 }
 
-/// 一条字幕行在输出时间轴上的可见窗与内容键，见
-/// [`OverlayRenderPlan::subtitle_spans`]。
+/// A subtitle line's visible window and content key on the output timeline. See [`OverlayRenderPlan::subtitle_spans`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitleSpan {
     pub start: f64,
@@ -8459,27 +8001,26 @@ pub struct SubtitleSpan {
     pub key: String,
 }
 
-/// 倒鸭子在 `OverlayRenderPlan` 上的运行态：字体口径与说话人投影编译期定好，
-/// 计划、区域 clip mask 与最近几帧在第一次采样时才建。
+/// The runtime state of Daoyazi on `OverlayRenderPlan`. The font basis and speaker projection are fixed at compile time. The plan, the region clip mask, and the last few frames are built on the first sample.
 #[derive(Debug)]
 pub struct SequenceState {
     pub font_name: String,
     pub font_weight: u16,
     pub font_px: f64,
-    /// cue id → 说话人（读 cue 的 `sp`），换人断段用。
+    /// cue id → speaker (read from the cue's `sp`), used for segment breaks when the speaker changes.
     pub speakers: HashMap<String, String>,
     pub plan: Option<Arc<CaptionSequencePlan>>,
     pub clip: Option<PixmapMask>,
     pub cache: VecDeque<CachedFrame>,
-    /// 编辑态覆盖（`None` = 正常播放取景）。
+    /// The edit-mode override (`None` = normal playback framing).
     pub edit: Option<CaptionSequenceEdit>,
 }
 
-/// 序列层 CPU 帧缓存条数：来回 seek 一两帧够用，别把整段动画都攒着。
+/// The number of CPU frame-cache entries for the sequence layer. A seek back and forth of one or two frames is enough, so do not accumulate the animation of the whole sequence.
 const SEQUENCE_FRAME_CACHE: usize = 4;
 
-/// 540 短边参考单位在这块画布上的像素数（`captionSequences` 的坐标口径）。
-/// 序列层描边：宽度（em，单侧）与颜色。GPU 的 stroke mask 与 CPU 的 `stroke_path` 同值。
+/// The number of pixels that one 540-short-side reference unit occupies on this canvas (the coordinate convention of `captionSequences`).
+/// Sequence-layer stroke: its width (em, single side) and color. The GPU stroke mask and the CPU `stroke_path` take the same value.
 const SEQ_OUTLINE_EM: f64 = 0.045;
 const SEQ_OUTLINE_COLOR: SubtitleColor = SubtitleColor {
     r: 18,
@@ -8487,7 +8028,7 @@ const SEQ_OUTLINE_COLOR: SubtitleColor = SubtitleColor {
     b: 20,
     a: 0,
 };
-/// GPU 字形光栅字号上限（px）：再大就让采样放大一点，换 atlas 装得下。
+/// The GPU glyph raster font-size cap (px). Above this, the sampling scales up slightly instead, so that it fits in the atlas.
 const SEQ_RASTER_FONT_CAP: f64 = 144.0;
 
 pub fn caption_sequence_unit_px(width: u32, height: u32) -> f64 {
@@ -8495,13 +8036,12 @@ pub fn caption_sequence_unit_px(width: u32, height: u32) -> f64 {
 }
 
 impl OverlayRenderPlan {
-    /// 这份计划是否由倒鸭子接管原文轨。
+    /// Whether this plan has Daoyazi taking over the original-text track.
     pub fn caption_sequence_active(&self) -> bool {
         self.sequence.is_some()
     }
 
-    /// 懒建序列计划：cue 词表 + 说话人 + 主角词覆盖 → `compile_caption_sequence`。
-    /// 测宽走 `TextEngine::shape`，与实际画字同一口径。
+    /// Lazily builds the sequence plan: the cue word table, the speakers, and the protagonist word overrides → `compile_caption_sequence`. Width measurement uses `TextEngine::shape`, the same convention as the actual drawing.
     pub fn ensure_caption_sequence(&mut self) -> Option<Arc<CaptionSequencePlan>> {
         let state = self.sequence.as_ref()?;
         if let Some(plan) = &state.plan {
@@ -8580,7 +8120,7 @@ impl OverlayRenderPlan {
         Some(plan)
     }
 
-    /// 进入 / 退出编辑态（§3.3）。编辑态帧的键与播放帧不同，缓存自然分开。
+    /// Enters or exits edit mode (§3.3). Frame keys in edit mode differ from playback frames, so the cache separates them naturally.
     pub fn set_caption_sequence_edit(&mut self, edit: Option<CaptionSequenceEdit>) {
         let Some(state) = self.sequence.as_mut() else {
             return;
@@ -8595,8 +8135,7 @@ impl OverlayRenderPlan {
         self.sequence.as_ref().and_then(|state| state.edit.as_ref())
     }
 
-    /// 这一帧的序列采样 + 键 + 下一次变化：播放态按时间采样；编辑态给总览帧，键里带
-    /// 段号与拖拽位移。
+    /// This frame's sequence sampling, key, and next change. In playback mode it samples by time. In edit mode it gives the overview frame, whose key carries the segment number and the drag offset.
     fn caption_sequence_frame(
         &self,
         plan: &CaptionSequencePlan,
@@ -8624,7 +8163,7 @@ impl OverlayRenderPlan {
         }
     }
 
-    /// 拖拽预览：正在拖的那一行挪到覆盖给的段局部中心（540 单位），其余按计划。返回世界坐标。
+    /// Drag preview: the line being dragged is moved to the segment-local center given by the overlay (540 units), and the rest follow the plan. Returns world coordinates.
     fn caption_sequence_drag_center(
         plan: &CaptionSequencePlan,
         edit: Option<&CaptionSequenceEdit>,
@@ -8643,7 +8182,7 @@ impl OverlayRenderPlan {
         ])
     }
 
-    /// 几何侧车里的序列层（§3.2 / §3.3）。
+    /// The sequence layer within the geometry sidecar (§3.2 / §3.3).
     fn caption_sequence_layout(
         &self,
         plan: &CaptionSequencePlan,
@@ -8703,9 +8242,7 @@ impl OverlayRenderPlan {
         layout
     }
 
-    /// 序列层的缓存键与下一次状态变化。镜头在飞 / 词在入场时按帧编号成键，并把下一
-    /// 个半帧边界算进 next_change；静止时把离散状态（段、块、词可见与否、说话中）
-    /// 哈希成键，跨帧命中缓存。
+    /// The cache key and the next state change of the sequence layer. While the camera is flying or words are entering, the key is built from the frame number, and the next half-frame boundary is put into `next_change`. When still, the discrete state (segment, block, word visibility, speaking) is hashed into the key, so the cache hits across frames.
     fn caption_sequence_key(
         &self,
         plan: &CaptionSequencePlan,
@@ -8752,19 +8289,13 @@ impl OverlayRenderPlan {
         )
     }
 
-    /// 本帧要画的块：淡出中的上一段（历史口径、乘淡出 alpha）在前，当前段按
-    /// rank 降序（历史块先画、当前块最后压在上面）。返回 `(段, 块, 逐词状态, alpha)`。
-    /// 透明底（叠在视频上）时给序列层加一圈深色描边——视频画面花，纯填充的字读不清；
-    /// 舞台模式铺了底色就不描。
+    /// The blocks to draw this frame: the previous segment fading out (historical convention, multiplied by the fade alpha) comes first, then the current segment's blocks in descending rank (history blocks are drawn first, and the current block last, on top). Returns `(segment, block, per-word state, alpha)`. When on a transparent background (overlaid on video), a dark outline is added to the sequence layer, because the video imagery is busy and pure-fill text is hard to read. In stage mode, where a background color is laid down, no outline is added.
     pub(crate) fn caption_sequence_outlined(plan: &CaptionSequencePlan) -> bool {
         !(plan.presentation == SeqPresentationMode::Stage
             && plan.background.is_some_and(|color| color.a != 255))
     }
 
-    /// GPU 字形的光栅倍率：atlas 里的 mask 按**屏幕上的字号**光栅，而不是按世界字号
-    /// 光栅再让镜头放大（那样一放大就糊）。倍率取变换的实际缩放，向上量化到 2^(1/4)
-    /// 一档（镜头变焦途中不至于每帧换一套 mask），光栅字号封顶 [`SEQ_RASTER_FONT_CAP`]
-    /// ——一帧的字形要装进 2048² 的 atlas。
+    /// The GPU glyph raster scale. The mask in the atlas is rasterized at **the on-screen font size**, rather than rasterizing at the world font size and letting the camera magnify it (which would blur on zoom). The scale takes the transform's actual scaling, quantized upward to one 2^(1/4) step, so that mid-zoom the mask is not swapped every frame. The raster font size is capped at [`SEQ_RASTER_FONT_CAP`], so that one frame's glyphs fit in a 2048² atlas.
     fn caption_sequence_raster_scale(transform: Transform, font: f64) -> f64 {
         let scale = f64::from(transform.sx.hypot(transform.ky)).max(1e-6);
         let step = (scale.log2() * 4.0).ceil() / 4.0;
@@ -8774,8 +8305,7 @@ impl OverlayRenderPlan {
             .max(0.25)
     }
 
-    /// 这一行落不落在字幕区域里（行盒四角过变换后的包围盒与视口求交，四周留一行高
-    /// 的余量给入场缩放与描边）。区域外的历史行不出字形：GPU 省 atlas，CPU 省填充。
+    /// Whether this line falls inside the subtitle region. The four corners of the line box, after the transform, are intersected with the viewport, leaving a margin of one line height on all sides for the entrance scale and the outline. Historical lines outside the region produce no glyphs: the GPU saves atlas space and the CPU saves filling.
     fn caption_sequence_block_visible(
         block: &SeqBlock,
         transform: Transform,
@@ -8838,8 +8368,7 @@ impl OverlayRenderPlan {
         list
     }
 
-    /// 词色：行的底色档（逐句换色）打底；强调 / 主角 / 正在念的词取一档**不同于行
-    /// 底色**的强调色，保证它在彩色行里仍然跳得出来。
+    /// The word color. The line's base color tier (which changes color sentence by sentence) is the base. Emphasized, protagonist, and currently spoken words take an emphasis color **different from the line's base color**, which ensures they still stand out on colored lines.
     pub(crate) fn caption_sequence_word_color(
         palette: [SubtitleColor; 3],
         tone: u8,
@@ -8868,8 +8397,7 @@ impl OverlayRenderPlan {
             })
     }
 
-    /// GPU 路：序列层压成一个 `GlyphRun`（一词一个 uniform，全部裁在字幕区域），
-    /// 舞台模式再在前面垫一块背景。返回 `(节点, 键, 下一次变化)`；无序列则 `None`。
+    /// GPU path: the sequence layer is compressed into one `GlyphRun` (one uniform per word, all clipped to the subtitle region). In stage mode, a background is laid under it first. Returns `(node, key, next change)`. Returns `None` if there is no sequence.
     fn caption_sequence_scene(
         &mut self,
         time: f64,
@@ -8954,8 +8482,7 @@ impl OverlayRenderPlan {
                         paint: element_draw::GlyphPaint::Solid,
                     });
                 }
-                // 按屏幕字号光栅：整形与 mask 都在 `font × raster` 下取，再用 1 / raster
-                // 缩回块内坐标——镜头把这一行放多大，atlas 里就有多大的字。
+                // Rasterize at the on-screen font size. Shaping and the mask are both taken at `font × raster`, then scaled back by 1 / raster for in-block coordinates. However much the camera magnifies the line, the atlas holds glyphs of that size.
                 let raster = Self::caption_sequence_raster_scale(block_transform, word.font);
                 let shaped =
                     self.text
@@ -9026,7 +8553,7 @@ impl OverlayRenderPlan {
         Ok(Some((nodes, key, next_change)))
     }
 
-    /// CPU 路：把序列层画进 `pixmap`（裁在字幕区域），返回落笔包围。
+    /// CPU path: draws the sequence layer into `pixmap` (clipped to the subtitle region), and returns the bounding box of the marks laid down.
     fn draw_caption_sequence(
         &mut self,
         pixmap: &mut Pixmap,
@@ -9076,7 +8603,7 @@ impl OverlayRenderPlan {
         let text = &mut self.text;
         let outlined = Self::caption_sequence_outlined(plan);
         let draw_list = Self::caption_sequence_draw_list(plan, frame);
-        // 两遍：先把整层的描边铺完，再填字——否则后一个字的描边会压在前一个字的填充上
+        // Two passes: first lay down the outlines for the whole layer, then fill the glyphs. Otherwise the outline of a later glyph would sit on top of the fill of an earlier glyph.
         for outline_pass in [true, false] {
             if outline_pass && !outlined {
                 continue;
@@ -9170,7 +8697,7 @@ impl OverlayRenderPlan {
                 }
             }
         }
-        // 区域外的落笔被 mask 裁掉了，包围盒也收到区域内。
+        // Marks outside the region are clipped by the mask, and the bounding box is also restricted to the region.
         if let Some([left, top, right, bottom]) = drawn.rect {
             drawn.rect = Some([
                 left.max(vx),
@@ -9179,7 +8706,7 @@ impl OverlayRenderPlan {
                 bottom.min(vy + vh),
             ]);
         }
-        // mask 归还给运行态，别每帧重建整幅。
+        // Return the mask to the runtime state; do not rebuild the whole image every frame.
         if let Some(state) = self.sequence.as_mut() {
             state.clip = Some(clip);
         }
@@ -9187,7 +8714,7 @@ impl OverlayRenderPlan {
     }
 }
 
-/// 逐像素检查 alpha 是否全为 255（premultiplied 下即不透明，source-over 时完全遮住下层）。
+/// Checks pixel by pixel whether alpha is 255 everywhere. Under premultiplied alpha this means opaque, and with source-over it completely covers what is below.
 fn is_opaque(pixmap: &Pixmap) -> bool {
     pixmap.data().chunks_exact(4).all(|pixel| pixel[3] == 255)
 }

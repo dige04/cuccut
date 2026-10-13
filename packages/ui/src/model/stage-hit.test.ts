@@ -6,7 +6,7 @@ import { poseContains } from './stage-pose.ts';
 
 type Matrix = VisualLayer['matrix'];
 
-/** 与 render-graph 的 `placement` 同一个式子：中心锚点的框绕锚点顺时针转。 */
+/** Same formula as `placement` in render-graph: a box with a center anchor rotates clockwise around the anchor. */
 function placed(cx: number, cy: number, w: number, h: number, deg = 0): Matrix {
   const t = (deg * Math.PI) / 180;
   const cos = Math.cos(t);

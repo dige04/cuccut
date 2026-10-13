@@ -148,7 +148,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const created: PipelineCaptionsSummary = { status: 'created', documentId: 'cap1', cueCount: 3, enabled: true, transactionId: 'tx-cap' };
 
-/** 转录流程的父任务；`summary` 给了时是完成时的摘要（`captions` 之外的字段这里用不到）。 */
+/** Parent task of the transcription flow. If `summary` is given, it is the summary on completion (fields other than `captions` aren't used here). */
 function pipeline(state: JobRecord['state'], summary: Record<string, unknown> | null = null, extra: Partial<JobRecord> = {}): JobRecord {
   return job(state, {
     jobId: 'p1',
@@ -262,7 +262,7 @@ describe('生成字幕', () => {
     await startTranscribe('vid', { id: 'asset', name: '访谈.mp4' });
     expect(useSubtitleRun.getState().runs.vid).toMatchObject({ jobId: 'p1', status: 'running' });
 
-    // 转写一步在跑：这一轮还在。
+    // The transcribe step is still running: this round is still on.
     useJobs.setState({ jobs: [pipeline('running'), job('running', { submitter: { kind: 'pipeline', id: 'p1' } })] });
     await flush();
     expect(useSubtitleRun.getState().runs.vid?.status).toBe('running');
@@ -316,7 +316,7 @@ describe('生成字幕', () => {
     const { deps, toasts } = fake();
     bindTranscribe(deps);
     await startTranscribe('vid', { id: 'asset', name: '访谈.mp4' });
-    // 转写做完了、没写出文档：流程的转写一步记为失败，原因看那个转写 Job。
+    // Transcription finished but no document was written: the flow's transcribe step is recorded as failed; the reason is in that transcribe Job.
     useJobs.setState({
       jobs: [
         pipeline('failed', null, { error: { code: 'APPLY_FAILED', message: '转写完成了，但没有写进视频' } }),
@@ -356,7 +356,7 @@ describe('生成字幕', () => {
     expect(decisionProblem(unapplied)).toMatchObject({ title: '转写没有写进视频', message: expect.stringContaining('视频已经改过。') });
     expect(awaitingDecision(job('failed', { ...ended, applications: [application('committed')] }))).toBe(false);
     expect(awaitingDecision(job('cancelled', { ...ended, applications: [application('cancelled')] }))).toBe(false);
-    // 崩溃后正在自动重跑的不算；流程的父任务也不算。
+    // A job being automatically re-run after a crash doesn't count; neither does the flow's parent task.
     expect(awaitingDecision(job('interrupted'))).toBe(false);
     expect(awaitingDecision(pipeline('failed'))).toBe(false);
 

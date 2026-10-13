@@ -1,18 +1,18 @@
-// Google Gemini 转写适配器（架构设计 §6.4）。2026-10-03 读过的文档：
+// Google Gemini transcription adapter (architecture design §6.4). Documentation read on 2026-10-03:
 //   https://ai.google.dev/gemini-api/docs/audio
 //   https://ai.google.dev/gemini-api/docs/transcribe
 //   https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe
 //   https://ai.google.dev/gemini-api/docs/interactions-breaking-changes-may-2026
 //   https://ai.google.dev/gemini-api/docs/interactions/structured-output.md.txt
 //   https://discuss.ai.google.dev/t/gemini-3-5-transcribe-documented-custom-vocabulary-diarization-timestamps-configuration-is-rejected-by-the-interactions-api/180240
-// 文档确认的：`POST {base}/interactions`，请求头 `x-goog-api-key` 与 `Api-Revision: 2026-05-20`（密钥放请求头，不放查询串）；
-// 输入 `{ type: 'audio', data（base64）, mime_type }`；整个请求 ≤ 20 MB；`response_format`（顶层）`{ type: 'text',
-// mime_type: 'application/json', schema }`，结果在 `output_text`；gemini-3.5-transcribe 的
-// `generation_config.transcription_config`：`language_codes`、`mode: { type: 'verbatim', timestamp_granularities: ['word'] }`，
-// 词时间在 `steps[].content[].annotations[]` 的 `word_info`（`start_offset`/`end_offset` 形如 "0.100s"）；带时间戳时单次 ≤ 30 分钟；
-// `custom_vocabulary` 与时间戳不能同用（所以 gemini-3.5-transcribe 不接受提示词）。
-// 没能确认的：gemini-3.5-transcribe 是否接受内联的 `data`（文档的例子用 `uri`）；`steps[]` 里 `content` 的确切嵌套；
-// 是否返回识别出的语言；400 `API_KEY_INVALID` 的错误体形状；`GET {base}/models` 用作密钥验证。
+// Confirmed by the docs: `POST {base}/interactions`, with the `x-goog-api-key` and `Api-Revision: 2026-05-20` request headers (the key goes in the header, not the query string);
+// input `{ type: 'audio', data (base64), mime_type }`; the whole request is ≤ 20 MB; `response_format` (top level) `{ type: 'text',
+// mime_type: 'application/json', schema }`, with the result in `output_text`; for gemini-3.5-transcribe's
+// `generation_config.transcription_config`: `language_codes`, `mode: { type: 'verbatim', timestamp_granularities: ['word'] }`,
+// word timings are in `word_info` under `steps[].content[].annotations[]` (`start_offset`/`end_offset` look like "0.100s"); with timestamps, a single request is ≤ 30 minutes;
+// `custom_vocabulary` cannot be used together with timestamps (so gemini-3.5-transcribe does not accept a prompt).
+// Not confirmed: whether gemini-3.5-transcribe accepts inline `data` (the docs' example uses `uri`); the exact nesting of `content` inside `steps[]`;
+// whether the detected language is returned; the shape of the error body for a 400 `API_KEY_INVALID`; whether `GET {base}/models` can be used to verify the key.
 import fs from 'node:fs/promises';
 import { ProviderFailure } from '@cuccut/models';
 import type { TranscribeModelInfo } from '@cuccut/protocol';
@@ -31,7 +31,7 @@ import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 export const GOOGLE_DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 export const GOOGLE_API_REVISION = '2026-05-20';
 const LABEL = 'Google Gemini';
-/** 内联音频按 base64 膨胀 4/3，再留出请求其余部分的余量：原始字节不超过这个数，整个请求就在 20 MB 以内。 */
+/** Inline audio grows by 4/3 when base64-encoded, so some headroom is left for the rest of the request: if the raw bytes do not exceed this number, the whole request stays within 20 MB. */
 const MAX_INLINE_BYTES = 12_000_000;
 const TIMELESS_CHUNK_SEC = 120;
 
@@ -62,7 +62,7 @@ const MODELS: TranscribeModelInfo[] = [
   },
 ];
 
-/** 通用模型的结构化输出：语言与带起止秒数的段。 */
+/** Structured output of the general-purpose model: the language and the segments with start and end seconds. */
 const SEGMENTS_SCHEMA = {
   type: 'object',
   properties: {
@@ -102,7 +102,7 @@ export class GoogleAdapter implements TranscribeAdapter {
     const { config, model } = request;
     const audio = async () => ({
       type: 'audio',
-      // 内联音频要整块读进内存：切片的上限（约 12 MB）保证它不大。
+      // Inline audio has to be read into memory in one piece: the chunk size cap (about 12 MB) keeps it small.
       data: (await fs.readFile(request.file)).toString('base64'),
       mime_type: CHUNK_FORMATS[request.format].mimeType,
     });
@@ -163,7 +163,7 @@ function generalPrompt(request: ChunkRequest): string {
   return lines.join('\n');
 }
 
-/** gemini-3.5-transcribe：词时间来自 `word_info` 标注；没有标注时整块一段（由组装按字符长度插值）。 */
+/** gemini-3.5-transcribe: word timings come from the `word_info` annotations; without annotations, the whole block is one segment (assembly interpolates by character length). */
 export function parseTranscribeInteraction(value: unknown): ChunkTranscript {
   const interaction = interactionOf(value);
   const words: NonNullable<ChunkTranscript['words']> = [];
@@ -186,7 +186,7 @@ export function parseTranscribeInteraction(value: unknown): ChunkTranscript {
   };
 }
 
-/** 通用模型：`output_text` 是结构化的 JSON；读不出段时整块一段（单段兜底）。 */
+/** General-purpose model: `output_text` is structured JSON; if no segments can be read, the whole block becomes one segment (single-segment fallback). */
 export function parseGeneralInteraction(value: unknown): ChunkTranscript {
   const interaction = interactionOf(value);
   const raw =
@@ -228,7 +228,7 @@ function interactionOf(value: unknown): Record<string, unknown> {
   return value;
 }
 
-/** 所有 step 里的 content 项。 */
+/** Content items from all steps. */
 function contentsOf(interaction: Record<string, unknown>): Array<Record<string, unknown>> {
   return arrayOf(interaction.steps).flatMap((step) => arrayOf(step.content));
 }
@@ -241,7 +241,7 @@ export function offsetSec(value: unknown): number | null {
   return match ? Number(match[1]) : null;
 }
 
-/** 400 且错误体里是 `API_KEY_INVALID`：密钥不对，按认证失败处理。 */
+/** 400 with `API_KEY_INVALID` in the error body: the key is wrong, so it is treated as an authentication failure. */
 export function classifyGoogle(status: number, body: string): RejectionCode | null {
   if (status === 400 && /API_KEY_INVALID|API key not valid/i.test(body)) return 'PROVIDER_AUTH_FAILED';
   return null;

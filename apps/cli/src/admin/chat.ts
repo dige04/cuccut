@@ -9,9 +9,9 @@ import { parseChatSkill } from './skills-output.ts';
 import { parseChatTemplate } from './templates-output.ts';
 
 /**
- * `cuccut chat <消息>`：在会话里发一条消息，跟到这次任务结束。给人读时回复正文流到 stdout、工具调用与提示流到 stderr；
- * `--json` 时过程全部写 stderr，stdout 只有最后的信封（`{conversationId, taskId, status}`）。任务失败时退出码 1。
- * 审批：`--yes` 自动批准（仅当前会话）；终端里逐个问；不在终端里又没给 `--yes` 时拒绝并说明。
+ * `cuccut chat <message>`: sends one message in the session and follows it until the task ends. For people to read, the reply body streams to stdout, and tool calls and prompts stream to stderr.
+ * With `--json`, all progress is written to stderr, and stdout holds only the final envelope (`{conversationId, taskId, status}`). Exit code 1 when the task fails.
+ * Approvals: `--yes` approves automatically (for the current session only). In a terminal, each one is asked. When not in a terminal and `--yes` is not given, it refuses and explains why.
  */
 export const chat = defineNoun({
   name: 'chat',
@@ -31,14 +31,14 @@ export const chat = defineNoun({
     const text = ctx.args.join(' ').trim();
     if (!text) throw ctx.usageError(M.missingMessage);
     const mode = ctx.parse(() => parseModeOption(values.mode));
-    // 模板按 CLI 的输出语言挂（模板包规范 §3.6），和 `cuccut templates show` 看到的是同一版本。
+    // The template is attached per the CLI's output language (Template package spec §3.6), the same version that `cuccut templates show` displays.
     const parsedTemplate = ctx.parse(() => parseChatTemplate(values.template));
     const template = parsedTemplate ? { ...parsedTemplate, language: getLocale() } : undefined;
     const skill = ctx.parse(() => parseChatSkill(values.skill));
-    // 回复正文：给人读时写 stdout；`--json` 时 stdout 留给信封。
+    // Reply body: written to stdout for people to read. With `--json`, stdout is reserved for the envelope.
     const body = output.json ? output.stderr : output.stdout;
 
-    // 先查模板，免得为一个挂不上的模板新建一个空会话（没有这个模板时 Runtime 报 TEMPLATE_NOT_FOUND）。
+    // Check the template first, so that an empty session is not created for a template that cannot be attached (without this template, the Runtime reports TEMPLATE_NOT_FOUND).
     if (template) {
       const { manifest } = (await client.request('templates.get', { id: template.id, language: template.language })).template;
       if (manifest.kind !== 'scene') {

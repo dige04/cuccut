@@ -32,7 +32,7 @@ function summary(id: string, version = '1.0.0'): TemplateSummary {
   };
 }
 
-/** 假的会话：只有 `client.request`，按方法名回答，记下每次调用。 */
+/** Fake session: only `client.request`, answers by method name and records each call. */
 function fakeSession(answer: (method: string, params: Record<string, unknown>) => unknown) {
   const calls: { method: string; params: Record<string, unknown> }[] = [];
   const session = {
@@ -48,7 +48,7 @@ function fakeSession(answer: (method: string, params: Record<string, unknown>) =
 
 const startLocale = getLocale();
 
-/** 测试进程用 CUCCUT_LOCALE 固定了语言：换语言时连它一起换。 */
+/** The test process pins the language with CUCCUT_LOCALE: switch it together when changing the language. */
 function switchLocale(locale: Locale): void {
   vi.stubEnv('CUCCUT_LOCALE', locale);
   setLocale(locale);

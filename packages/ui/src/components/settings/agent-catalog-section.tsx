@@ -39,7 +39,7 @@ import { useConnection } from '../../state/connection-store.ts';
 import { CATALOG_COPY, CUSTOM_DIALOG_COPY } from './agent-copy.ts';
 import { PANEL, SubHeading } from './settings-ui.tsx';
 
-// 目录卡（settings-agent.css .agcat）：搜索条一行，下面是可滚动的列表，行之间一条分隔线。
+// Catalog card (settings-agent.css .agcat): search bar on one line, scrollable list below, with a divider line between rows.
 const card = style({
   overflow: 'hidden',
   minWidth: 0,
@@ -89,7 +89,7 @@ const empty = style({
   color: 'gray-700',
 });
 const webNote = style({ marginTop: 0, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
-// 对话框（.agcat-form）：字段一列、间距 16；说明与底部提示 12px。
+// Dialog (.agcat-form): fields in one column, spacing 16; description and bottom hint 12px.
 const formStack = style({ display: 'flex', flexDirection: 'column', gap: 16 });
 const full = style({ width: 'full' });
 const lede = style({ margin: 0, font: 'ui-sm', color: 'gray-700' });
@@ -97,10 +97,10 @@ const formNote = style({ display: 'flex', alignItems: 'start', gap: 8, marginTop
 const noteIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, '--iconPrimary': { type: 'fill', value: 'gray-700' } });
 
 /**
- * 添加更多 Agent（原型 settings-agent-catalog.jsx，产品设计 §7.6）：内置九家之外，任何说 ACP 的命令行 Agent 都能由用户添加。
- * 一块可搜索的目录，每行一颗「添加」（已添加的换成「已添加」），另有「自定义命令…」对话框。添加之后它是一张普通的 Agent 卡，
- * 由 Runtime 检测；检测到之后与内置的一样进会话选择器。`onAdded(id)` 让列表展开刚加的那张卡。
- * 浏览器里只说明去桌面应用：`agents.addProvider` 不在 Web 白名单里（它决定这台电脑上运行什么命令）。
+ * Add more Agents (prototype settings-agent-catalog.jsx, product design §7.6): beyond the nine built-in ones, any command-line Agent that speaks ACP can be added by the user.
+ * A searchable catalog, with one “Add” per row (already-added ones switch to “Added”), plus a “Custom command…” dialog. Once added, it is an ordinary Agent card,
+ * detected by the Runtime. After detection, it appears in the session picker like the built-in ones. `onAdded(id)` makes the list expand the card that was just added.
+ * In the browser, it only points to the desktop app: `agents.addProvider` is not on the Web allowlist (it decides what command runs on this computer).
  */
 export function AgentCatalogSection({ onAdded }: { onAdded(id: DriverId): void }) {
   const runtime = useRuntime();
@@ -112,7 +112,7 @@ export function AgentCatalogSection({ onAdded }: { onAdded(id: DriverId): void }
   const [custom, setCustom] = useState(false);
   const [adding, setAdding] = useState<DriverId | null>(null);
 
-  // 已添加 = Runtime 列出的用户添加的，加上刚添加、还在首次探测的（还没有探测结果，不在 drivers 里）。
+  // “Added” means the ones the Runtime lists as user-added, plus the ones just added that are still in their first detection (no detection result yet, so not in drivers).
   const known = useMemo(() => [...(drivers ?? []).map((d) => d.id), ...checking], [drivers, checking]);
   const addedIds = useMemo(
     () => new Set([...(drivers ?? []).filter((d) => d.source === 'custom').map((d) => d.id), ...checking]),
@@ -246,9 +246,8 @@ function CatalogItem({ entry, pending, isDisabled, onAdd }: { entry: CatalogRow;
 const EMPTY_FORM: CustomForm = { id: '', name: '', command: '', env: '' };
 
 /**
- * 自定义命令（原型 `AgentCustomDialog`）：名字、id、整行命令、可选的环境变量。第一次点「添加」之后错误就地显示，改到对为止；
- * Runtime 以 id 重名拒绝时写回 id 一栏，其余失败写在命令一栏下面，不吞掉已填的内容。状态放在对话框外层（S2 的 Dialog 会把
- * children 在几个 slot 里各渲染一遍）。
+ * Custom command (prototype `AgentCustomDialog`): name, id, the full command line, and optional environment variables. After the first “Add” press, errors are shown in place, and the user corrects them until they pass.
+ * When the Runtime rejects a duplicate id, it writes back to the id field. Other failures are written under the command field, without discarding what has been filled in. State lives in the outer dialog (S2's Dialog renders its children once in each of several slots).
  */
 function CustomAgentDialog({
   open,

@@ -15,8 +15,7 @@ import { tr } from './skills-copy.tr.ts';
 import { vi } from './skills-copy.vi.ts';
 
 /**
- * 管理桶 `cuccut skills …`（CucCut 自己的 skill）与 `cuccut skill …`（给外部 Agent 的说明书）的文案（英文是键与类型的来源，
- * 译文在 `skills-copy.<语言>.ts`）。
+ * Copy for the admin buckets `cuccut skills …` (CucCut's own skills) and `cuccut skill …` (instructions for external agents). English is the source of the keys and types; translations are in `skills-copy.<lang>.ts`.
  */
 const en = {
   skillsHelp: `Usage:

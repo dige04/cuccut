@@ -3,8 +3,8 @@ import type { PairedNode, ShareStatus } from '@cuccut/protocol';
 import type { ServicePhase } from '../model/services.ts';
 
 /**
- * 远端算力的镜像：`nodes.share.status` 的最近一次结果、起停中的那一两秒、已配对节点的最近一次 `nodes.list`。
- * 节点协议没有订阅主题，服务页可见时轮询刷新（见 components/services/use-share-status.ts）；rail 的角标与侧栏的灯读同一份。
+ * Mirror of remote compute: the latest result of `nodes.share.status`, the one or two seconds while starting or stopping, and the latest `nodes.list` of paired nodes.
+ * The node protocol has no subscription topic, so the services page polls to refresh while visible (see components/services/use-share-status.ts); the rail badge and the sidebar light read the same copy.
  */
 export interface ShareStore {
   status: ShareStatus | null;

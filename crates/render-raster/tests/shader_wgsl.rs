@@ -1,17 +1,12 @@
-//! WGSL 的静态校验与 §8 契约对拍（元素方案 §10 P5 的两条验收点）。
+//! Static validation of WGSL and contract cross-checking against §8 (the two acceptance points of element plan §10 P5).
 //!
-//! 三件事：
+//! Three things:
 //!
-//! 1. **naga 校验**：仓库里现有的每一份组装源都过 `wgsl-in` 解析 + `Validator`；
-//! 2. **GLSL ES 300 转译**：同一份模块打到 naga 的 GLSL 后端（ADR-E06 的
-//!    "WebGL2 经 naga 自动转译"在这里变成可执行断言，不是一句承诺）；
-//! 3. **§8.2 / §8.3 契约对拍**：WGSL 里的 `@group(1)` 声明顺序、`@group(2)` 的
-//!    音频纹理与 sampler、行语义常量，逐条与 Rust 侧的冻结表比对。
+//! 1. **naga validation**: every existing assembled source in the repo passes `wgsl-in` parsing and `Validator`;
+//! 2. **GLSL ES 300 translation**: the same module is lowered through naga's GLSL backend (the "automatic translation to WebGL2 via naga" of ADR-E06 becomes an executable assertion here, not just a promise);
+//! 3. **§8.2 / §8.3 contract cross-check**: the declaration order of `@group(1)` in WGSL, the audio texture and sampler of `@group(2)`, and the row-semantics constants are compared line by line against the frozen table on the Rust side.
 //!
-//! `SHADER_SOURCES` 当前只有 progress 的 4 份源码（14 款）；visualizer 10 款是
-//! CPU 矢量配方，没有 WGSL，但它的 `VisualizerUniforms` / prelude 契约仍在这里
-//! 对拍，将来加 GPU 声波配方时**只需往 `SHADER_SOURCES` 加行**——本文件遍历
-//! 整张表，新样式自动进覆盖面。
+//! `SHADER_SOURCES` currently holds only the 4 progress sources (14 styles). The 10 visualizer styles are CPU vector recipes with no WGSL, but their `VisualizerUniforms` / prelude contract is still cross-checked here. When GPU sound-wave recipes are added later, **only a row needs to be added to `SHADER_SOURCES`**: this file iterates the whole table, so new styles enter coverage automatically.
 //!
 //! ```bash
 //! cd core
@@ -28,7 +23,7 @@ use render_raster::plan::shader_source::{
 use render_raster::source::kernel::Easing;
 use render_raster::source::visualizer::{AUDIO_TEXTURE_ROW_FREQ, AUDIO_TEXTURE_ROW_TIME};
 
-/// 从 prelude 里抠出 `@group(g) @binding(b) var<uniform> name` 的三元组。
+/// Extract the triples `@group(g) @binding(b) var<uniform> name` from the prelude.
 fn uniform_declarations(source: &str, group: u32) -> Vec<(u32, String)> {
     let needle = format!("@group({group}) @binding(");
     source
@@ -45,7 +40,7 @@ fn uniform_declarations(source: &str, group: u32) -> Vec<(u32, String)> {
         .collect()
 }
 
-/// 每一份组装源都过 naga 的解析 + 全量校验。
+/// Every assembled source passes naga's parsing and full validation.
 #[test]
 fn every_registered_shader_passes_naga_validation() {
     assert!(
@@ -60,11 +55,9 @@ fn every_registered_shader_passes_naga_validation() {
     }
 }
 
-/// 同一份模块能打到 **GLSL ES 300**（WebGL2 目标）。
+/// The same module can be lowered to **GLSL ES 300** (the WebGL2 target).
 ///
-/// ADR-E06 的"WGSL 单源、naga 负责到 GLSL ES 300 的转译"如果只是一句承诺，
-/// P6 接 WebGL2 时才会发现某个内建函数在 ES 300 上落不了地。这条断言把它提前
-/// 到 P5——两个入口各转译一次（顶点与片元的可用特性面不同）。
+/// If ADR-E06's "WGSL as single source, with naga responsible for translating to GLSL ES 300" were only a sentence, we would discover at P6, when hooking up WebGL2, that some built-in function cannot be lowered onto ES 300. This assertion moves that discovery forward to P5. Each of the two entry points is translated once, because the vertex and fragment stages expose different feature sets.
 #[test]
 fn every_registered_shader_translates_to_glsl_es_300() {
     for source in SHADER_SOURCES {
@@ -120,9 +113,9 @@ fn every_registered_shader_translates_to_glsl_es_300() {
     }
 }
 
-/// §8.2 的 uniform 顺序：WGSL 的声明与 Rust 的冻结表**逐行相同**。
+/// The §8.2 uniform order: the WGSL declarations and the frozen Rust table are **identical line by line**.
 ///
-/// 这是"§8 是跨文档契约"在两侧代码之间的接缝。任何一边改了顺序，这条立刻红。
+/// This is the seam where "§8 is a cross-document contract" meets across the two codebases. If either side changes the order, this goes red immediately.
 #[test]
 fn the_wgsl_group1_declarations_match_the_frozen_tables() {
     let visualizer = uniform_declarations(ShaderDomain::Visualizer.prelude(), 1);
@@ -140,7 +133,7 @@ fn the_wgsl_group1_declarations_match_the_frozen_tables() {
     assert_eq!(progress, expected, "progress 的 @group(1) 顺序");
 }
 
-/// §8.1 的 `@group(0)`：两个变换 uniform，顶点阶段可见。
+/// §8.1 `@group(0)`: two transform uniforms, visible to the vertex stage.
 #[test]
 fn both_preludes_declare_the_same_group0() {
     for domain in [ShaderDomain::Visualizer, ShaderDomain::Progress] {
@@ -156,11 +149,9 @@ fn both_preludes_declare_the_same_group0() {
     }
 }
 
-/// §8.3 的行语义在 WGSL 里也是**写死的**：`AUDIO_ROW_TIME == 0`、
-/// `AUDIO_ROW_FREQ == 1`，与 Rust 侧的两个常量同值。
+/// The row semantics of §8.3 are also **hard-coded** in WGSL: `AUDIO_ROW_TIME == 0` and `AUDIO_ROW_FREQ == 1`, with the same values as the two Rust-side constants.
 ///
-/// GLSL 参考实现开了 `UNPACK_FLIP_Y_WEBGL`、行序相反——这条断言是"移植时忘了
-/// 翻回来"的最后一道门（另两道在 `shader_quad` 的字节断言与 GPU 侧的行探针）。
+/// The GLSL reference implementation enables `UNPACK_FLIP_Y_WEBGL`, so its row order is reversed. This assertion is the last gate against forgetting to flip back during porting (the other two are the byte assertions in `shader_quad` and the row probe on the GPU side).
 #[test]
 fn the_wgsl_audio_rows_agree_with_the_frozen_constants() {
     let prelude = ShaderDomain::Visualizer.prelude();
@@ -178,14 +169,14 @@ fn the_wgsl_audio_rows_agree_with_the_frozen_constants() {
         )),
         "频域行号与 AUDIO_TEXTURE_ROW_FREQ 不一致"
     );
-    // 两个采样助手各读各的行，不得互换。
+    // The two sampling helpers each read their own row; they must not be swapped.
     assert!(prelude.contains("fn sampleTemporal") && prelude.contains("vec2f(x, AUDIO_ROW_TIME)"));
     assert!(prelude.contains("fn sampleFrequency") && prelude.contains("vec2f(x, AUDIO_ROW_FREQ)"));
-    // progress 没有音频纹理。
+    // progress has no audio texture.
     assert!(!ShaderDomain::Progress.prelude().contains("u_audio"));
 }
 
-/// `common.wgsl` 里的缓动分派表与 Rust 的 [`Easing::code`] 同一套编码。
+/// The easing dispatch table in `common.wgsl` uses the same encoding as Rust's [`Easing::code`].
 #[test]
 fn the_easing_codes_agree_between_rust_and_wgsl() {
     assert_eq!(
@@ -197,7 +188,7 @@ fn the_easing_codes_agree_between_rust_and_wgsl() {
         ],
         [0, 1, 2, 3]
     );
-    // `applyEasing` 的阈值是 0.5 / 1.5 / 2.5，即"码 0 / 1 / 2，其余落 outCubic"。
+    // The thresholds of `applyEasing` are 0.5 / 1.5 / 2.5, i.e. "code 0 / 1 / 2, anything else falls to outCubic".
     let dispatch = COMMON_WGSL
         .split("fn applyEasing")
         .nth(1)
@@ -217,8 +208,7 @@ fn the_easing_codes_agree_between_rust_and_wgsl() {
     assert!(dispatch.contains("return easeOutCubic(x);"), "兜底臂");
 }
 
-/// 不用 WGSL 内建的 `smoothstep`：`edge0 > edge1` 在规范里是未定义行为，而
-/// `gapCurve` 恰恰是下降斜坡（CPU 参照对两个方向都有定义）。
+/// Does not use WGSL's built-in `smoothstep`: `edge0 > edge1` is undefined behavior in the spec, whereas `gapCurve` is exactly a falling ramp (the CPU reference is defined for both directions).
 #[test]
 fn the_shaders_use_the_explicit_ramp_instead_of_the_builtin_smoothstep() {
     assert!(
@@ -226,7 +216,7 @@ fn the_shaders_use_the_explicit_ramp_instead_of_the_builtin_smoothstep() {
         "common.wgsl 必须自带 ramp"
     );
     for source in SHADER_SOURCES {
-        // 注释里出现 `smoothstep(...)` 是在解释参考实现，不算调用。
+        // A `smoothstep(...)` appearing in a comment is explaining the reference implementation, not a call.
         let code: String = source
             .assemble()
             .lines()

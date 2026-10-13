@@ -14,11 +14,11 @@ import { pl } from './models-tts-local-copy.pl.ts';
 import { tr } from './models-tts-local-copy.tr.ts';
 import { vi } from './models-tts-local-copy.vi.ts';
 
-/** 设置 › 模型 › 语音合成 › 本地模型那一行的文案（英文是键与类型的来源，译文在 `models-tts-local-copy.<语言>.ts`）。 */
+/** Copy for the local-model row under Settings › Models › Speech synthesis (the English is the source of keys and types; translations are in `models-tts-local-copy.<lang>.ts`). */
 
 const voices = (n: number) => `${n} built-in ${n === 1 ? 'voice' : 'voices'}`;
 
-/** 语言标签的显示名；`Intl` 不认得时写标签本身。 */
+/** Display name of a language label; when `Intl` does not recognize it, write the label itself. */
 function languageName(code: string): string {
   try {
     return new Intl.DisplayNames([intlLocale()], { type: 'language' }).of(code) ?? code;
@@ -28,25 +28,25 @@ function languageName(code: string): string {
 }
 
 const en = {
-  /** 行上一种语言的简称。 */
+  /** Short name of one language on the row. */
   languageShort: languageName,
   languagesAny: 'Any language',
-  /** 多于五种时：前四种的简称与总数。 */
+  /** When there are more than five: the short names of the first four, and the total. */
   languagesMore: (shown: readonly string[], total: number) => `${shown.join(' / ')} and more (${total} languages)`,
-  /** 内置音色 + 克隆 + 按描述造声；`byDuration`：能按目标时长念。 */
+  /** Built-in voices + cloning + voice from description; `byDuration`: can speak to a target duration. */
   summaryCloneDescribe: (builtins: number, byDuration: boolean) =>
     `${voices(builtins)}, clone a voice from a recording, or create a new voice by choosing gender, age and pitch${
       byDuration ? '; can read to a target duration' : ''
     }`,
-  /** 内置音色 + 克隆；`style`：可用一句话指定风格。 */
+  /** Built-in voices + cloning; `style`: a style can be specified in one sentence. */
   summaryClone: (builtins: number, style: boolean) =>
     `${voices(builtins)}, or clone a voice from a recording${style ? '; a one-line prompt can set the style' : ''}`,
-  /** 按描述造声；`builtins` 为 0 时不提内置音色。 */
+  /** Voice from description; when `builtins` is 0, built-in voices are not mentioned. */
   summaryDescribe: (builtins: number) =>
     builtins
       ? `Describe the voice you want in one sentence and the model creates it; you can also use the ${voices(builtins)} directly`
       : 'Describe the voice you want in one sentence and the model creates it',
-  /** 模型自带说话人；`style`：可用一句话指定语气。 */
+  /** The model's built-in speakers; `style`: tone can be specified in one sentence. */
   summaryPreset: (speakers: number, style: boolean) =>
     `${speakers} preset ${speakers === 1 ? 'voice' : 'voices'}; pick one and it reads${style ? '; a one-line prompt can set the tone' : ''}`,
   modeCloneDescribe: 'Built-in voices / Clone / Describe',
@@ -55,12 +55,12 @@ const en = {
   modePreset: 'Preset voices',
   factStyle: 'Style prompt',
   factSlow: 'Slower',
-  /** 只许非商业用途的标签。 */
+  /** Label for licenses that only permit non-commercial use. */
   nonCommercialChip: 'Non-commercial only',
   licenseCommercial: (name: string) => `${name} · Commercial use allowed`,
   licenseNonCommercial: (name: string, owner: string) =>
     `${name} · Non-commercial use only · For commercial use, apply to ${owner} separately`,
-  /** 引擎家族的说明，按 `LocalSpeechTraits.family` 取。 */
+  /** Description of the engine family, taken from `LocalSpeechTraits.family`. */
   familyDesc: {
     'qwen3-tts':
       'Qwen3-TTS: CustomVoice has 9 preset speakers and a one-line prompt can set the tone; Base clones from a reference recording; 1.7B VoiceDesign creates a new voice from just a description. 1.7B sounds better but is slower.',

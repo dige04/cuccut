@@ -13,18 +13,18 @@ import { decimalSeconds } from './property-values.ts';
 import { M } from './transition-panel-copy.ts';
 
 /**
- * 属性页「转场」一节的纯逻辑（视频格式规范 §3.9；命令 `setTransition` / `removeTransition`）。
+ * Pure logic for the “Transition” section of the properties page (video format spec §3.9; commands `setTransition` / `removeTransition`).
  *
- * 一个画面片段有两条边：开头（「进入」，转场的 `rightItemId` 是它）与结尾（「离开」，`leftItemId` 是它）。一条边上
- * 只有一个转场。同一轨道上首尾相接的邻居在时，可以把这条边做成两侧转场（「衔接」：和邻居之间过渡）；否则是单侧转场，
- * 另一侧是透明的，露出下面的轨道。单侧转场只能居中，也不能交叉淡化声音（引擎拒绝）。
+ * A picture clip has two edges: the start (“In”, where the transition's `rightItemId` is this clip) and the end (“Out”, where `leftItemId` is this clip). An edge
+ * holds at most one transition. When a neighbour that abuts it on the same track exists, the edge can be made a two-sided transition (“Join”: a transition between the two neighbours); otherwise it is a one-sided transition,
+ * and the other side is transparent, showing the track below. A one-sided transition can only be centred, and cannot cross-fade audio (the engine rejects it).
  */
 
 export type TransitionSlot = 'in' | 'out';
 export type TransitionChoice = TransitionKind | 'none';
 export type TransitionDirection = 'left' | 'right' | 'up' | 'down';
 
-/** 一组选项：键固定，名字按当前语言读。 */
+/** A group of options: keys are fixed, names are read in the current language. */
 function options<K extends string>(keys: readonly K[], labels: () => Record<K, string>): readonly { key: K; label: string }[] {
   return keys.map((key) => ({
     key,
@@ -36,35 +36,35 @@ function options<K extends string>(keys: readonly K[], labels: () => Record<K, s
 
 export const SLOTS: readonly { key: TransitionSlot; label: string }[] = options(['in', 'out'], () => M.slot);
 
-/** 页上的转场瓦片，按设计稿的顺序；「叠色」「推入」是格式里有、设计稿没画的两种，只能两侧（和邻居衔接）。 */
+/** Transition tiles on the page, in design-draft order. “Color overlay” and “Push” are the two kinds that the format has but the design draft does not draw; they can only be two-sided (joined with a neighbour). */
 export const TRANSITION_CHOICES: readonly { key: TransitionChoice; label: string }[] = options(
   ['none', 'dissolve', 'wipe', 'slide', 'zoom', 'dip-to-color', 'push'],
   () => M.choice,
 );
 
-/** 方向：推入时画面朝哪边走，缺省 `right`。 */
+/** Direction: which way the picture moves for a push; defaults to `right`. */
 export const DIRECTIONS: readonly { key: TransitionDirection; label: string }[] = options(['right', 'left', 'down', 'up'], () => M.direction);
 
 export const EASINGS: readonly { key: Easing; label: string }[] = options(['linear', 'ease-in', 'ease-out', 'ease-in-out'], () => M.easing);
 
-/** 新加转场的时长（秒），同设计稿。 */
+/** Duration (seconds) of a newly added transition, same as the design draft. */
 export const DEFAULT_SECONDS = 0.5;
 export const DEFAULT_DIRECTION: TransitionDirection = 'right';
 export const DEFAULT_DIP_COLOR = '#000000';
-/** 引擎的上限。 */
+/** The engine's upper limit. */
 export const MAX_SECONDS = 10;
 
-/** 能加转场的片段：画面片段（音频与字幕不能）。 */
+/** Clips that can take a transition: picture clips (audio and captions cannot). */
 export function isTransitionable(item: SequenceItem): item is Exclude<SequenceItem, { type: 'audio' | 'caption' }> {
   return item.type !== 'audio' && item.type !== 'caption';
 }
 
-/** 这条边上的转场。 */
+/** The transition on this edge. */
 export function slotTransition(sequence: Sequence, itemId: string, slot: TransitionSlot): Transition | undefined {
   return (sequence.transitions ?? []).find((t) => (slot === 'in' ? t.rightItemId === itemId : t.leftItemId === itemId));
 }
 
-/** 这条边外侧、同一轨道上首尾相接的画面片段（能做两侧转场的邻居）。 */
+/** Picture clips on the outer side of this edge, abutting on the same track (the neighbours that can form a two-sided transition). */
 export function slotNeighbor(sequence: Sequence, item: SequenceItem, slot: TransitionSlot): SequenceItem | undefined {
   if (!isTransitionable(item)) return undefined;
   const from = item.span.fromFrame;
@@ -78,7 +78,7 @@ export function slotNeighbor(sequence: Sequence, item: SequenceItem, slot: Trans
   );
 }
 
-/** 时长滑杆的范围（秒）：设计稿是 0.1 到 min(2, 片段长 / 2)；精确输入可到片段长（不超过 10 秒），超了由引擎拒绝。 */
+/** Range of the duration slider (seconds): the design draft uses 0.1 to min(2, clip length / 2); exact input can go up to the clip length (no more than 10 seconds), and the engine rejects anything beyond that. */
 export function durationLimits(item: SequenceItem, fps: Rate): { min: number; max: number; hardMax: number } {
   const length = isTransitionable(item) ? framesToSeconds(item.span.durationFrames, fps) : 0;
   const max = Math.max(0, Math.min(2, length / 2));
@@ -86,10 +86,10 @@ export function durationLimits(item: SequenceItem, fps: Rate): { min: number; ma
   return { min: Math.min(Math.max(0.1, frame), max), max, hardMax: Math.max(max, Math.min(MAX_SECONDS, length)) };
 }
 
-/** 页上这条边的样子：选的种类、参数、时长、缓动、是否和邻居衔接、声音交叉淡化。 */
+/** What this edge looks like on the page: the chosen kind, parameters, duration, easing, whether it joins a neighbour, and audio cross-fade. */
 export interface SlotState {
   kind: TransitionChoice;
-  /** 认不出的种类（别的版本写的）：页上不选中任何瓦片。 */
+  /** Unrecognised kind (written by another version): no tile is selected on the page. */
   unknownKind?: string;
   direction: TransitionDirection;
   color: string;
@@ -127,7 +127,7 @@ export function slotState(sequence: Sequence, item: SequenceItem, slot: Transiti
   };
 }
 
-/** 种类要的参数（引擎按种类严格校验，多一个字段也拒绝）：只有叠色带颜色、推入带方向，其余没有参数。 */
+/** Parameters each kind takes (the engine validates strictly per kind and rejects even one extra field): only color overlay takes a colour and only push takes a direction; the rest have no parameters. */
 export function transitionParams(kind: TransitionKind, state: Pick<SlotState, 'direction' | 'color'>): Record<string, unknown> | undefined {
   switch (kind) {
     case 'dip-to-color':
@@ -139,22 +139,22 @@ export function transitionParams(kind: TransitionKind, state: Pick<SlotState, 'd
   }
 }
 
-/** 这种转场能不能单侧（没有邻居、另一侧透明）：叠色与推入只能两侧。 */
+/** Whether this kind of transition can be one-sided (no neighbour, other side transparent): color overlay and push can only be two-sided. */
 export function singleSided(kind: TransitionChoice): boolean {
   return kind === 'none' || SINGLE_SIDED_TRANSITION_KINDS.includes(kind);
 }
 
-/** 种类要不要选方向。 */
+/** Whether the kind takes a direction. */
 export const directed = (kind: TransitionChoice) => kind === 'push';
 
-/** 片段带声音（视频自带的声音、合成发出的声音）：两侧都带时才有「声音交叉淡化」可言。 */
+/** The clip has sound (sound from the video itself, or synthesized sound): “audio cross-fade” only makes sense when both sides have sound. */
 export function hasSound(item: SequenceItem | undefined): boolean {
   return item?.type === 'video' || (item?.type === 'composition' && !!item.audio);
 }
 
 /**
- * 写这条边的转场。选「无」是删掉已有的；其余是 `setTransition`：两侧（和邻居衔接）时沿用已有两侧转场的 placement，
- * 否则居中；单侧不带 placement 以外的位置、不交叉淡化声音。时长按十进制秒给，引擎对齐到最近的一帧。
+ * Writes the transition on this edge. Choosing “None” removes the existing one; anything else is `setTransition`: for a two-sided transition (joined with a neighbour) it keeps the placement of the existing two-sided transition,
+ * otherwise it is centred. A one-sided transition gets no placement other than centred, and does not cross-fade audio. Duration is given in decimal seconds, and the engine snaps it to the nearest frame.
  */
 export function slotOperations(sequence: Sequence, item: SequenceItem, slot: TransitionSlot, next: SlotState): EditOperation[] {
   const existing = slotTransition(sequence, item.id, slot);
@@ -169,7 +169,7 @@ export function slotOperations(sequence: Sequence, item: SequenceItem, slot: Tra
       : { leftItemId: item.id };
   const params = transitionParams(next.kind, next);
   const twoSided = !!neighbor;
-  // 只能两侧的种类没有邻居时写不进去（引擎拒绝），页上那几格是灰的。
+  // Kinds that can only be two-sided cannot be written without a neighbour (the engine rejects it), so those tiles are greyed out on the page.
   if (!twoSided && !singleSided(next.kind)) return [];
   const keepPlacement = twoSided && existing?.leftItemId && existing.rightItemId ? existing.placement : 'center';
   return [

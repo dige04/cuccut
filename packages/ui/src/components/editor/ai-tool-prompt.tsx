@@ -39,13 +39,13 @@ const boxTitle = style({ flexGrow: 1, font: 'detail', fontWeight: 'bold', color:
 const notice = style({ display: 'flex', alignItems: 'start', gap: '[6px]', marginTop: 8, font: 'ui-xs', color: 'gray-700', lineHeight: '[1.5]' });
 const noticeIcon = iconStyle({ size: 'S' });
 
-/** 这个视频交给 Agent 时用到的一切：发到哪条会话、用哪个 Agent · 模型 · 强度与访问模式（参数页的「用」「会话」两行与提示词框共用一份）。 */
+/** Everything needed when this video is handed to an Agent: which conversation it goes to, and which Agent · model · effort and access mode (shared by the 「用」 (Use) and 「会话」 (Conversation) rows of the parameters page and by the prompt box). */
 export interface ToolHandoff {
   ref: VideoRef | null;
-  /** 没有可用的 Agent 时的指引（「用」一行与列表页顶上的卡）。 */
+  /** The guidance shown when no Agent is available (the 「用」 row and the card at the top of the list page). */
   guide: GateGuide | null;
   options: SessionOption[];
-  /** 选中的那一项；视频不在任何项目或会话里时 null。 */
+  /** The selected item; null when the video is not in any project or conversation. */
   session: SessionOption | null;
   setSession(key: SessionOption['key']): void;
   driver: DriverInfo | null;
@@ -56,13 +56,13 @@ export interface ToolHandoff {
   onAgentChange(change: AgentChange): void;
   accessMode: AgentMode;
   onAccessModeChange(mode: AgentMode): void;
-  /** 新会话：这页上选过的访问模式与 Agent · 模型 · 强度。 */
+  /** New conversation: the access mode and Agent · model · effort chosen on this page. */
   create: { accessMode?: AgentMode; driverId?: DriverInfo['id']; model?: string | null; effort?: string | null };
 }
 
 /**
- * 参数页「交给智能体」的状态（产品设计 §5.10）：「会话」缺省新会话，这个视频有说过话的会话时多一项「接着」，写明已有几条消息；
- * 新会话的 Agent 与访问模式是这页上自己的选择（同悬浮会话的草稿，但不持久化），接着一条会话时就是那条会话的，改了直接改那条会话。
+ * The state of 「交给智能体」 (Hand to agent) on the parameters page (product design §5.10): 「会话」 (Conversation) defaults to a new conversation; when this video has conversations that have already spoken, an extra option 「接着」 (Continue) appears, stating how many messages there are;
+ * for a new conversation, the Agent and access mode are this page's own choices (like the floating conversation's draft, but not persisted); when continuing one conversation, that conversation's settings apply, and changing them changes that conversation directly.
  */
 export function useToolHandoff(): ToolHandoff {
   const runtime = useRuntime();
@@ -72,7 +72,7 @@ export function useToolHandoff(): ToolHandoff {
   const checking = useConnection((s) => s.checking);
   const guide = gateGuide(homeGate(drivers, checking));
   const conversations = useDirectory((s) => s.conversations);
-  // 「当前」：Home 左侧的会话，或 Space 里这个视频的悬浮会话最近发起的那条。
+  // 「当前」 (Current): the conversation on the left of Home, or the one most recently started by this video's floating conversation in Space.
   const current = useShell((s) => {
     if (s.route.tab === 'home') return s.route.conversationId;
     const shown = routeVideo(s.route);
@@ -80,13 +80,13 @@ export function useToolHandoff(): ToolHandoff {
   });
   const candidate = useMemo(() => currentConversation({ source, current, conversations }), [source, current, conversations]);
   const candidateId = candidate?.id ?? null;
-  // 消息数要读会话的时间线：盯着它（引用计数，会话页也在盯时共用一份）。
+  // Message counts are read from the conversation's timeline: watch it (reference-counted; shared with the conversation page when that is watching too).
   useEffect(() => (candidateId ? runtime.watchConversation(candidateId) : undefined), [runtime, candidateId]);
   const items = useTimeline((s) => (candidateId ? s.byConversationId[candidateId]?.items : undefined));
   const messages = items ? messageCount(items) : null;
   const locked = !!items?.some((i) => i.kind === 'task');
   const { options, fallback } = sessionOptions({
-    // 不属于项目的视频：新会话与它所在的那条会话共用工作目录（架构设计 §3.10），那条会话要还在。
+    // For a video not in any project: a new conversation shares a working directory with the conversation it sits in (architecture design §3.10), so that conversation must still exist.
     canCreate: !!source?.projectId || (!!source?.conversationId && conversations.some((c) => c.id === source.conversationId)),
     current: candidate ? { id: candidate.id, title: candidate.title, messages } : null,
   });
@@ -94,7 +94,7 @@ export function useToolHandoff(): ToolHandoff {
   const session = options.find((o) => o.key === picked) ?? options.find((o) => o.key === fallback) ?? null;
   const onCurrent = session?.key === 'current' && candidate ? candidate : null;
 
-  // 新会话：这页上的选择；没选过的跟设置里的默认。
+  // New conversation: the choices made on this page; if none were made, follow the default in settings.
   const [choice, setChoice] = useState<AgentChoice | undefined>(undefined);
   const [mode, setMode] = useState<AgentMode | null>(null);
   const defaultMode = useSetting('agent.defaultAccessMode') ?? DEFAULT_AGENT_MODE;
@@ -135,8 +135,8 @@ export function useToolHandoff(): ToolHandoff {
 }
 
 /**
- * 参数页的「用」一行：交给 Agent（写着家 · 模型，与提示词框底栏的 chip 是同一份），或直接调模型（写着哪只文本模型）。
- * 直接调模型做不了的工具那一项置灰、下面写原因；交给 Agent 而没有可用的 Agent 时给去处。
+ * The 「用」 (Use) row on the parameters page: hand to the Agent (showing 「家 · 模型」 (Agent family · model), the same as the chip on the prompt box's bottom bar), or call a model directly (showing which text model).
+ * For a tool that cannot call a model directly, that item is greyed out with the reason below; when handing to an Agent with no usable Agent, a way to fix it is given.
  */
 export function AgentUseRow({
   handoff,
@@ -172,7 +172,7 @@ export function AgentUseRow({
   );
 }
 
-/** 「会话」一行：新会话（缺省）或接着这个视频当前的会话，每项下面一句说清代价。 */
+/** The 「会话」 (Conversation) row: a new conversation (default) or continue this video's current conversation; each option has a sentence below it stating its cost. */
 export function SessionRow({ handoff }: { handoff: ToolHandoff }) {
   if (!handoff.session) return null;
   return (
@@ -197,27 +197,25 @@ export function SessionRow({ handoff }: { handoff: ToolHandoff }) {
   );
 }
 
-/** 直接调模型时提示词框要的东西（工具页持有模型与运行，见 ai-tools-agent-page.tsx）。 */
+/** What the prompt box needs when calling a model directly (the tool page holds the model and the run; see ai-tools-agent-page.tsx). */
 export interface DirectPrompt {
   context: Omit<DirectContext, 'attachments' | 'skills'>;
   model: { name: string | null; local: boolean; ready: boolean };
-  /** 底栏右边的文本模型选择。 */
+  /** The text-model picker on the right of the bottom bar. */
   picker: ReactNode;
-  /** 选中的模型不能用时框下的门卡。 */
+  /** The gate under the box when the selected model cannot be used. */
   gate: ReactNode;
-  /** 模型不能用时按下主按钮：说清差什么、把门卡带到眼前；不灰掉按钮。 */
+  /** When the model cannot be used and the main button is pressed: say what is missing and bring the gate into view; the button is not greyed out. */
   onNotReady(): void;
   onStart(prompt: string, attachments: Id[], skills: string[]): Promise<boolean>;
 }
 
 /**
- * 参数页的提示词框与主按钮（原型 tool-prompt.jsx，产品设计 §5.10 第 3、4 段）：预填模板（没改过就跟着范围与勾选项变，
- * 改过才出「恢复默认」），默认挂着这个工具的内置 skill（标着「这个工具的做法」，摘掉后框下一行说明并给加回），
- * 「+ › 使用 Skill」再挂别的（接在后面，已经挂着的不重复，加回内置的也接在后面，同原型 `addSkill`），每个可以单独摘掉；
- * 底栏是访问模式与「家 · 模型」（与「用」一行同一份）。按下就按「会话」行交出去，挂着的 skill 按顺序一起发（`conversations.send`
- * 的 `skills`），`onDone` 回列表；给了 `onHandedOff` 的（找可剪的口、刷新过期译文）不切到会话，交给它在原地画进度。
- * 「用」选了直接调模型（`direct`）时：底栏换成文本模型的选择，框下写挂着的 skill 作系统提示词、发给模型的上下文，主按钮写
- * 这个工具的动作，下面一行说调哪只模型、结果去哪、花不花钱；按下去由工具页提交 `ai-tool` 流程，留在原地看进度与结果。
+ * The prompt box and main button on the parameters page (prototype tool-prompt.jsx, product design §5.10 paragraphs 3 and 4): pre-filled with a template (if it has not been edited, it follows the range and checkbox options; once edited, 「恢复默认」 (Restore default) appears), with this tool's built-in skill attached by default (marked 「这个工具的做法」 (this tool's method); if removed, a line under the box explains and offers to add it back),
+ * 「+ › 使用 Skill」 (+ › Use Skill) attaches others (appended after, not duplicated if already attached; re-adding the built-in one is also appended, like prototype `addSkill`), and each can be removed individually;
+ * the bottom bar holds the access mode and 「家 · 模型」 (Agent family · model) (the same as the 「用」 row). Pressing it hands off according to the 「会话」 (Conversation) row; attached skills are sent together in order (`conversations.send`'s `skills`), and `onDone` returns to the list. Tools given `onHandedOff` (finding cut points, refreshing stale translations) do not switch to the conversation; they draw their progress in place.
+ * When 「用」 (Use) is set to call a model directly (`direct`): the bottom bar becomes the text-model picker; under the box, two lines say that the attached skills are used as the system prompt and what context is sent to the model; the main button states this tool's action,
+ * and pressing it has the tool page submit the `ai-tool` flow, staying in place to show progress and results.
  */
 export function AiToolPrompt({
   videoId,
@@ -238,23 +236,23 @@ export function AiToolPrompt({
   handoff: ToolHandoff;
   isDisabled?: boolean;
   onDone(): void;
-  /** 留在原地（`agentStaysOnPage`）：交出去后不切到会话、不回列表，由工具页画进度卡。话没发出去（放进了会话的输入框）时照常 `onDone`。 */
+  /** Stay on the page (`agentStaysOnPage`): after handing off, do not switch to the conversation or back to the list; the tool page draws the progress card. If the message was not actually sent (it was put into the conversation's input box), `onDone` is still called as usual. */
   onHandedOff?(handoff: Handoff): void;
-  /** 话真发出去了（不是放进了输入框）：剪成短视频记下这一轮，跑完后翻到结果页。在 `onDone` / `onHandedOff` 之前调。 */
+  /** The message was really sent (not just put into the input box): cut into a short video, record this round, and switch to the result page when it finishes. Called before `onDone` / `onHandedOff`. */
   onSent?(handoff: Handoff): void;
-  /** 「用」选了直接调模型：底栏换成文本模型的选择，框下多两行（skill 作系统提示词、发给模型的），按下去走 `ai-tool` 流程。 */
+  /** When 「用」 (Use) is set to call a model directly: the bottom bar becomes the text-model picker, and under the box two more lines appear (the skills as system prompt, and what is sent to the model); pressing it goes through the `ai-tool` flow. */
   direct?: DirectPrompt | null;
-  /** 不按「会话」行、固定发到哪（剪成短视频：总是新开一条；视频不属于项目时发到它所在的那条）。 */
+  /** Does not follow the 「会话」 (Conversation) row; always sent to a fixed place (for cutting a short video: always start a new one; if the video does not belong to a project, send it to the conversation it sits in). */
   target?: 'new' | { id: Id };
-  /** 主按钮下那行去向，不给时按「会话」行说。 */
+  /** The destination line under the main button; when not given, it follows the 「会话」 (Conversation) row. */
   hint?: string;
 }) {
   const runtime = useRuntime();
   const draftKey = toolDraftKey(videoId, tool);
-  // 改过的提示词不放组件状态：运行态、结果与收据页会换掉这个框，回列表也会，「完成」或回来时还要在（ai-tool-run.ts）。
+  // An edited prompt is not kept in component state: the run state, result and receipt pages replace this box, and so does going back to the list; it must survive 「完成」 (Done) or coming back (ai-tool-run.ts).
   const edited = useAiToolPrompts((s) => s.prompts[draftKey]);
   const builtin = TOOL_SKILL[tool] ?? null;
-  // 挂着的 skill 同理：摘掉的内置 skill、后挂上的都要在「完成」或回来时还在；没存过就是这个工具的内置 skill。
+  // Same for attached skills: built-in skills that were removed, and skills attached later, must survive 「完成」 (Done) or coming back; if nothing was saved, it is this tool's default built-in skill.
   const defaultSkills = useMemo(() => (builtin ? [builtin] : []), [builtin]);
   const skillIds = useAiToolSkills((s) => s.skills[draftKey]) ?? defaultSkills;
   const attachSkill = (id: string) => attachAiToolSkill(draftKey, id, defaultSkills);
@@ -288,7 +286,7 @@ export function AiToolPrompt({
       </span>
     </p>
   ) : null;
-  // 直接调模型：挂着 skill 时说清它们怎么发；再一行写发给模型的上下文（附件数由输入框给）。
+  // Calling a model directly: when skills are attached, say how they are sent; then one line stating the context sent to the model (the attachment count comes from the input box).
   const skillsNotice =
     direct && skillIds.length ? (
       <p className={notice}>
@@ -320,7 +318,7 @@ export function AiToolPrompt({
       </div>
       <Composer
         draftKey={draftKey}
-        // 直接调模型不经过 Agent：不按 Agent 的状态拦发送，也不出 Agent 选择。
+        // Calling a model directly does not go through an Agent: do not gate sending on the Agent's state, and do not show an Agent picker.
         driverId={direct ? null : handoff.driverId}
         model={handoff.model}
         effort={handoff.effort}

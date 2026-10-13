@@ -1,18 +1,16 @@
 /**
- * 「总是允许」记下的规则：命令名，加上像子命令的第二个词（`npm install`、`git status`）。
- * 带路径或参数的部分不进规则，免得一条规则只认一次性的参数。
+ * The rule recorded by "always allow": the command name, plus a second word that looks like a subcommand (`npm install`, `git status`). Parts with paths or arguments do not go into the rule, so that a rule does not match only a one-off argument.
  *
- * - 包在 shell 里的命令（Codex 常发 `/bin/zsh -lc 'npm test'`、`bash -lc "git status"`）取里面真正执行的那条。
- * - 开头的 `cd <目录> &&` 跳过：它只换工作目录。
- * - 剩下的仍是多条命令（`&&`、`||`、`;`、`|`、`&`、换行）、带重定向或命令替换（`>`、`<`、`` ` ``、`$(`）、
- *   或以 `VAR=...` 开头时给 null，不提供「总是允许」：规则只认一条命令，`npm install && rm -rf ~` 不能被 `npm install` 放行。
+ * - A command wrapped in a shell (Codex often sends `/bin/zsh -lc 'npm test'` or `bash -lc "git status"`) uses the command actually run inside.
+ * - A leading `cd <dir> &&` is skipped: it only changes the working directory.
+ * - If what remains is still several commands (`&&`, `||`, `;`, `|`, `&`, newlines), has redirection or command substitution (`>`, `<`, `` ` ``, `$(`), or starts with `VAR=...`, it returns null and no "always allow" is offered: a rule matches only one command, so `npm install && rm -rf ~` must not be allowed by `npm install`.
  */
 export function commandRule(command: string): string | null {
   let words = parseSimpleCommand(command);
   for (let depth = 0; words?.length; depth++) {
     const wrapped = shellScript(words);
     if (wrapped === null) break;
-    // 套了太多层、或 `-c` 后面没有脚本：认不出真正执行的是什么。
+    // Too many layers of wrapping, or no script after `-c`: it cannot tell what is actually executed.
     if (wrapped === 'invalid' || depth >= 3) return null;
     words = parseSimpleCommand(wrapped.script);
   }
@@ -28,8 +26,8 @@ export function commandRule(command: string): string | null {
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /**
- * `<shell> [选项] -c '<脚本>'` 里的脚本（`-lc`、`-l -c`、`--login -c`、`-o pipefail -c` 都算）。
- * 不是 shell、或在第一个非选项的词（脚本文件）之前没有 `-c`：null，按普通命令处理。`-c` 后面没有脚本：`invalid`。
+ * The script in `<shell> [options] -c '<script>'` (`-lc`, `-l -c`, `--login -c` and `-o pipefail -c` all count).
+ * If it is not a shell, or there is no `-c` before the first non-option word (a script file), it returns null and the command is handled as an ordinary one. No script after `-c`: `invalid`.
  */
 function shellScript(words: string[]): { script: string } | 'invalid' | null {
   const name = words[0]!.split('/').pop()!;
@@ -46,8 +44,8 @@ function shellScript(words: string[]): { script: string } | 'invalid' | null {
 type Token = { op: string } | { word: string };
 
 /**
- * 把一行 shell 拆成一条简单命令的词：认单引号、双引号与反斜杠；去掉开头的 `cd <目录> &&`。
- * 还剩控制符、重定向或命令替换时为 null（见 `commandRule`）。
+ * Splits one line of shell into the words of a single simple command: handles single quotes, double quotes and backslashes, and strips a leading `cd <dir> &&`.
+ * If control operators, redirection or command substitution remain, it returns null (see `commandRule`).
  */
 function parseSimpleCommand(input: string): string[] | null {
   const tokens = tokenize(input);
@@ -70,7 +68,7 @@ function isOp(token: Token | undefined, op: string): boolean {
   return !!token && 'op' in token && token.op === op;
 }
 
-/** null：引号没配对，或有命令替换（不去猜它展开成什么）。 */
+/** null: unmatched quotes, or command substitution is present (it does not guess what that expands to). */
 function tokenize(input: string): Token[] | null {
   const tokens: Token[] = [];
   let word = '';

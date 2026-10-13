@@ -18,8 +18,8 @@ import { useSettings } from '../state/settings-store.ts';
 import type { RuntimeSession } from './session.ts';
 
 /**
- * 设置 › Agent 提供方的命令（`agents.*`）。每一条都返回完整的 `AgentsView`，拿到就整份写回连接镜像，
- * 界面不在本地改 Agent 状态。和 `RuntimeSession` 的其他命令一样走它的连接，只是单独成文件，免得设置页的命令把会话通道撑大。
+ * Commands for the Agent provider settings (`agents.*`). Each returns the complete `AgentsView`; once received, the whole view is written back to the connection mirror, and the UI does not change agent state locally.
+ * Like the other `RuntimeSession` commands, they go through its connection. They live in a separate file so the settings page's commands do not overload the session channel.
  */
 async function apply(view: Promise<AgentsView>): Promise<AgentsView> {
   const result = await view;
@@ -27,14 +27,14 @@ async function apply(view: Promise<AgentsView>): Promise<AgentsView> {
   return result;
 }
 
-/** 「重新检测」：不用缓存，重新探测安装、版本、登录，并刷新模型表。 */
+/** “Re-detect”: does not use the cache; re-probes installation, version and login, and refreshes the model table. */
 export function detectAgents(session: RuntimeSession, driverId?: DriverId): Promise<AgentsView> {
   return apply(session.client.request('agents.detect', driverId ? { driverId } : {}));
 }
 
 /**
- * 启用或停用、默认模型与强度、手动指定的可执行文件（null 取消指定，回到自动查找）。
- * 只改 `defaultModel` 不带 `defaultEffort` 时，Runtime 会把强度清回模型默认。
+ * Enable or disable; default model and effort; a manually specified executable (null clears the choice and returns to automatic lookup).
+ * If only `defaultModel` is changed, without `defaultEffort`, the Runtime resets the effort to the model's default.
  */
 export function configureAgent(
   session: RuntimeSession,
@@ -49,9 +49,8 @@ export function setDefaultAgent(session: RuntimeSession, driverId: DriverId): Pr
 }
 
 /**
- * 添加一个说 ACP 的智能体（目录条目或自定义命令，产品设计 §7.6）。Runtime 存下它、注册成 Driver 并在后台探测：
- * 刚返回时它多半还在 `checking` 里，探测结果经 `agents` 主题送达。id 重名以 `conflict`（`details.code: 'AGENT_PROVIDER_EXISTS'`）拒绝。
- * 浏览器会话不能调用（不在 Web 白名单里）。
+ * Adds an ACP-speaking agent (a catalog entry or a custom command; product design §7.6). The Runtime stores it, registers it as a Driver, and probes it in the background. Right after returning, it is most likely still `checking`; the probe result is delivered through the `agents` topic. A duplicate id is rejected with `conflict` (`details.code: 'AGENT_PROVIDER_EXISTS'`).
+ * Browser sessions cannot call it (it is not on the Web allowlist).
  */
 export function addAgentProvider(
   session: RuntimeSession,
@@ -60,7 +59,7 @@ export function addAgentProvider(
   return apply(session.client.request('agents.addProvider', { ...provider, commandId: newId('cmd') }));
 }
 
-/** 移除一个用户添加的智能体：连同它的探测缓存、启用状态与默认模型偏好；内置的不能移除（用 `configureAgent` 停用）。 */
+/** Removes a user-added agent, along with its probe cache, enabled state and default model preference. Built-in agents cannot be removed (disable them with `configureAgent`). */
 export function removeAgentProvider(session: RuntimeSession, id: DriverId): Promise<AgentsView> {
   return apply(session.client.request('agents.removeProvider', { id }));
 }
@@ -77,19 +76,18 @@ export function removeAgentRule(session: RuntimeSession, rule: string): Promise<
 }
 
 /**
- * 新会话的默认访问模式（设置 `agent.defaultAccessMode`，§3.12）。没切过访问模式的会话也跟着它走。
- * 返回的快照先写进 `useSettings`，`settings` 主题随后推的变化是同一个值。
+ * Default access mode for new sessions (setting `agent.defaultAccessMode`, §3.12). Sessions that have never changed their access mode also follow it.
+ * The returned snapshot is written into `useSettings` first; the change pushed later on the `settings` topic is the same value.
  */
 export async function setDefaultAccessMode(session: RuntimeSession, mode: AgentMode): Promise<void> {
   const snapshot = await session.client.request('settings.set', { values: { 'agent.defaultAccessMode': mode } });
   useSettings.getState().replace(snapshot);
 }
 
-// ---- 安装、升级与登录（架构设计 §12.9）：命令都由 Runtime 从探测结果里取，这里只说哪个 Agent、做什么、哪种方式 ----
+// ---- Install, upgrade and login (architecture design §12.9): the commands are all taken from the probe results by the Runtime; here we only say which Agent and what to do, and in which way ----
 
 /**
- * 在设置页里运行安装或升级命令（只有 brew、npm 类；用户在确认框里看过完整命令之后才调）。
- * 返回刚登记的那次运行；之后的输出与结果经 `agent-setup` 主题送达（`watchAgentSetup`）。
+ * Runs an install or upgrade command from the settings page (only brew and npm kinds; called only after the user has seen the full command in the confirmation dialog). Returns the run that was just registered; later output and results are delivered through the `agent-setup` topic (`watchAgentSetup`).
  */
 export async function runAgentSetup(
   session: RuntimeSession,
@@ -98,7 +96,7 @@ export async function runAgentSetup(
   kind: DriverInstallOption['kind'],
 ): Promise<AgentSetupRun> {
   const { run } = await session.client.request('agents.runSetup', { driverId, action, kind, commandId: newId('cmd') });
-  // 主题事件可能先到（那时已经带着输出），只在镜像里还没有这次时补上，免得用空输出盖掉。
+  // Topic events may arrive first (already carrying output). They are added only if this run is not yet in the mirror, so the output is not overwritten with an empty one.
   const store = useAgentSetup.getState();
   if (!store.runs.some((r) => r.runId === run.runId)) store.apply({ type: 'setup.updated', run });
   return run;
@@ -109,8 +107,8 @@ export async function cancelAgentSetup(session: RuntimeSession, runId: Id): Prom
 }
 
 /**
- * 在系统终端里运行登录、安装或升级命令（要交互、要密码、或是官方脚本的）。
- * `unsupported`（这台电脑上打不开终端）时结果里带着命令，调用方退回复制。
+ * Runs a login, install or upgrade command in the system terminal (for commands that are interactive, need a password, or come from an official script).
+ * When the result is `unsupported` (a terminal cannot be opened on this machine), it includes the command, and the caller falls back to copying it.
  */
 export function openAgentTerminal(
   session: RuntimeSession,
@@ -122,12 +120,11 @@ export function openAgentTerminal(
 }
 
 /**
- * 订阅 `agent-setup` 主题，写进 `useAgentSetup`；返回取消订阅（同时清空镜像）。只在 Agent 提供方页签挂着时订阅。
+ * Subscribes to the `agent-setup` topic and writes into `useAgentSetup`. Returns an unsubscribe function (which also clears the mirror). Subscribed only while the Agent provider tab is mounted.
  *
- * 一次运行到终态时，Runtime 已经重新探测过：先读 `agents.list` 写回连接镜像，再把终态交给界面，
- * 这样界面看到「已完成」时版本、登录状态已经是新的；`onFinished` 在这之后调用（成功的 toast 用它）。
- * `agents` 主题也会推新视图，但协议不保证它先于 `agent-setup` 的终态到达，所以这里仍主动读一次。
- * 快照与事件按到达顺序串行处理，读列表的那一下不会让后到的事件抢先。
+ * When a run reaches its terminal state, the Runtime has already re-probed. It first reads `agents.list` and writes it back to the connection mirror, then hands the terminal state to the UI, so that when the UI sees “completed”, the version and login state are already new. `onFinished` is called after that (the success toast uses it).
+ * The `agents` topic also pushes new views, but the protocol does not guarantee that they arrive before the `agent-setup` terminal state, so this still reads the list once actively.
+ * Snapshots and events are processed serially in arrival order, so the list read does not let later events jump ahead.
  */
 export function watchAgentSetup(session: RuntimeSession, onFinished?: (run: AgentSetupRun, view: AgentsView | null) => void): () => void {
   let stopped = false;
@@ -147,7 +144,7 @@ export function watchAgentSetup(session: RuntimeSession, onFinished?: (run: Agen
         const view = finished ? await apply(session.client.request('agents.list', {})).catch(() => null) : null;
         if (stopped) return;
         useAgentSetup.getState().apply(event);
-        // 只对这次订阅里看着它跑完的那次回调；重连后补发的旧终态不再弹一遍。
+        // Only the callback for a run that was seen running through to the end in this subscription; old terminal states replayed after a reconnect do not pop up again.
         if (finished && wasRunning) onFinished?.(finished, view);
       }),
   });
@@ -158,11 +155,11 @@ export function watchAgentSetup(session: RuntimeSession, onFinished?: (run: Agen
   };
 }
 
-// ---- 用 Codex 画图（图片生成的智能体 Provider `agent:codex`，架构设计 §6.9）：开关在 Codex 卡上，状态是模型服务的视图 ----
+// ---- Image generation with Codex (the image-generation agent provider `agent:codex`, architecture design §6.9): the switch is on the Codex card, and its state is a view of the model service ----
 
 /**
- * 探测一次模型能力（`models.capabilities`：会问 Driver 与节点，最多约 2 秒），结果写进 `useModels`。
- * 视图没变时 `models` 主题不推事件，所以这里自己写一下。
+ * Probes model capabilities once (`models.capabilities`: asks the Driver and nodes, up to about 2 seconds) and writes the result into `useModels`.
+ * When the view has not changed, the `models` topic pushes no event, so this writes it directly.
  */
 export async function probeModelCapabilities(session: RuntimeSession): Promise<ModelCapabilitiesView> {
   const { capabilities } = await session.client.request('models.capabilities', {});
@@ -170,7 +167,7 @@ export async function probeModelCapabilities(session: RuntimeSession): Promise<M
   return capabilities;
 }
 
-/** 打开或关闭一个智能体 Provider（只有开关）。新视图经 `models` 主题送达 `useModels`，这里不另写。 */
+/** Turns an agent provider on or off (toggle only). The new view reaches `useModels` through the `models` topic, so it is not written separately here. */
 export async function setAgentProviderEnabled(session: RuntimeSession, providerId: string, enabled: boolean): Promise<ProviderView> {
   const { provider } = await session.client.request('models.configure', { providerId, enabled });
   return provider;

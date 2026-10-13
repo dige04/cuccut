@@ -50,7 +50,7 @@ test('下载中的 face 隔一会儿再问，直到下载结束；本机有的�
     ['Lobster', 'Broken Font'],
     ['Lobster'],
   ]);
-  // 只有第一次带 download：再问只等已经开始的下载，刚取消的不会被再问重新开始。
+  // Only the first request carries download: asking again only waits for downloads already started, so a download that was just cancelled is not restarted by a new request.
   expect(asked.map((a) => a.download)).toEqual([true, false, false]);
   expect(sleeps).toEqual([5, 5]);
   expect(result.faces.map((f) => [f.family, f.source])).toEqual([

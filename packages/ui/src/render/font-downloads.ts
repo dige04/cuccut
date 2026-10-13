@@ -1,8 +1,8 @@
 import type { FontFaceQuery, FontsResolveResult } from '@cuccut/protocol';
 
-/** 下载中的 face 多久再问一次。 */
+/** How often a face that is still downloading is asked about again. */
 const POLL_MS = 1_500;
-/** 最多等多久（之后照回退字体画，下次打开再要）。 */
+/** Maximum time to wait (after that, drawing falls back to the fallback font; it is requested again the next time the document is opened). */
 const MAX_WAIT_MS = 10 * 60_000;
 
 export interface DownloadWaitOptions {
@@ -11,15 +11,13 @@ export interface DownloadWaitOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** 一批里先到的 face：本机就有的、已经下载好的、等的时候刚下载完的。 */
+/** Faces that arrive first in a batch: ones already available locally, ones already downloaded, and ones that finished downloading while waiting. */
 export type PartialFaces = (faces: FontsResolveResult['faces']) => void;
 
 /**
- * 按需下载的字体（架构设计 §9.1）：包住 `fonts.resolve`，带 `download: true` 去问——字体目录里有、还没下载的 face
- * 由 Runtime 按设置开始下载，记为 `downloading`。这里隔一会儿再问那几个，直到下载结束（下好了就有，失败、取消就照
- * 回退字体画），再把结果合起来交给 `runtimeFonts`。这段时间预览照回退字体画、不报缺字体（这个 face 还在「取」）。
- * 再问时不带 `download`：只等已经开始的下载。取消不算失败、不挡自动下载，带着的话刚取消的下载会被下一次再问重新开始。
- * 同一批里先到的 face（本机就有的、已经下载好的、等的时候先下载完的）经 `onPartial` 先交出去，不等这一批里最慢的那个。
+ * On-demand downloaded fonts (architecture design §9.1): wraps `fonts.resolve`, asking with `download: true`. A face that is in the font catalog but not yet downloaded is started by the Runtime according to settings, and marked `downloading`. Here those faces are asked again after a while until the downloads finish (once downloaded they are available; if they fail or are cancelled, drawing falls back to the fallback font), and the combined results are handed to `runtimeFonts`. During this time the preview draws with the fallback font and does not report a missing font (this face is still being “fetched”).
+ * When asking again, `download` is not passed: it only waits for downloads already started. A cancellation is not a failure and does not block automatic download; if `download` were passed, a just-cancelled download would be restarted by the next ask.
+ * Faces in the same batch that arrive first (ones available locally, ones already downloaded, and ones that finish downloading while waiting) are handed out first through `onPartial`, without waiting for the slowest one in the batch.
  */
 export function downloadingResolve(
   request: (params: { faces: FontFaceQuery[]; download: boolean }) => Promise<FontsResolveResult>,

@@ -3,28 +3,22 @@ import { ModelsMusicBundles as M } from '@cuccut/protocol/messages/models/music-
 import type { BundleComponentSource, ComponentRelease } from './bundle-registry.ts';
 
 /**
- * audio.cpp 引擎（`audiocpp_cli`）的发布登记（架构设计 §6.3、§6.5；Model Worker 协议规范 §4.4）。引擎不随应用分发，也不是受管
- * 外部工具，而是音乐生成模型包的共享组件 `audiocpp-engine`：随模型包的安装计划下载、核对、解开到 Runtime Home 的
- * `tools/audiocpp/<版本>/`，按组件引用计数保留，最后一个用它的模型包删除时回收。这里是它唯一的登记。
+ * Release registration of the audio.cpp engine (`audiocpp_cli`) (architecture design §6.3, §6.5; Model Worker protocol spec §4.4). The engine is not distributed with the app, and it is not a managed external tool. It is the shared component `audiocpp-engine` of music generation model packages: it is downloaded, verified and unpacked to the Runtime Home's `tools/audiocpp/<version>/` according to the model package's install plan, kept by per-component reference count, and reclaimed when the last model package that uses it is deleted. This is its only registration.
  *
- * 发布物：上游 GitHub Releases（https://github.com/0xShug0/audio.cpp/releases）每个版本按平台出一个压缩包，可执行文件在包的根目录，
- * Linux 包旁边还有 `libggml*.so`，Windows 包旁边有 MSVC 运行库 DLL，所以整包下载、只解开根目录的普通文件（`archive.skip` 里的
- * 同包工具不解开）。各平台选：
- * - macOS（arm64、x64）：`metal` 包，静态链接，只依赖系统框架。
- * - Linux x64、Windows x64：`vulkan-portable` 包。上游说非 portable 的包按 GitHub 构建机的 CPU 开了 AVX-512，别的机器可能崩溃；
- *   CPU 包跑 3B 模型太慢，CUDA 包连运行库要 0.8–1.1 GB。Vulkan 包启动时要系统里有 Vulkan 加载器（显卡驱动带的 `vulkan-1.dll`、
- *   `libvulkan.so.1`），没有时启动失败。
- * - Linux arm64、Windows arm64：上游没有发布，模型包在这样的主机上报告为 `unsupported`，只能自己构建后用 `CUCCUT_AUDIOCPP_CLI` 指定。
+ * Release artefacts: each version on the upstream GitHub Releases (https://github.com/0xShug0/audio.cpp/releases) provides one archive per platform, with the executable at the root of the archive. Linux packages have `libggml*.so` alongside, and Windows packages have the MSVC runtime DLLs alongside, so the whole archive is downloaded and only the regular files at its root are unpacked (tools listed in `archive.skip` within the same archive are not unpacked). Platform choices:
+ * - macOS (arm64, x64): the `metal` package, statically linked, depending only on system frameworks.
+ * - Linux x64, Windows x64: the `vulkan-portable` package. Upstream says the non-portable package has AVX-512 enabled based on the CPU of the GitHub build machine, and may crash on other machines. CPU packages are too slow for 3B models, and CUDA packages need 0.8–1.1 GB for the runtime libraries alone. The Vulkan package needs a Vulkan loader in the system at startup (`vulkan-1.dll`, `libvulkan.so.1` shipped with the graphics driver); without it, startup fails.
+ * - Linux arm64, Windows arm64: upstream does not publish these; model packages on such hosts report `unsupported`, and the only option is to build it yourself and point `CUCCUT_AUDIOCPP_CLI` at it.
  *
- * 大小与 sha256 取自 2026-10-11 上游 Releases API 给出的 `digest`，四个包都在本机下载后重新算过 sha256，一致。
- * 许可：上游 `LICENSE` 是 Apache-2.0（Copyright 2026 ShugoAI LLC）；CucCut 不分发引擎，从上游下载，不需要另附 NOTICE。
- * 模型权重（YuE2）的许可另算，见 `music-bundles.ts`。
+ * Size and sha256 are taken from the `digest` given by the upstream Releases API on 2026-10-11. All four packages were downloaded on this machine and their sha256 recomputed; they match.
+ * Licence: upstream `LICENSE` is Apache-2.0 (Copyright 2026 ShugoAI LLC). CucCut does not distribute the engine; it is downloaded from upstream, so no separate NOTICE is needed.
+ * The licence for the model weights (YuE2) is assessed separately; see `music-bundles.ts`.
  */
 
-/** 组件目录与镜像路径里引擎的名字：`<toolsDir>/audiocpp/<版本>/`。 */
+/** The engine's name in the component directory and mirror paths: `<toolsDir>/audiocpp/<version>/`. */
 export const AUDIO_CPP_TOOL = 'audiocpp';
 
-/** 引擎可执行文件的名字（不带 `.exe`）。 */
+/** Engine executable name (without `.exe`). */
 export const AUDIO_CPP_COMMAND = 'audiocpp_cli';
 
 const POSIX_SKIP = ['audiocpp_server', 'audiocpp_gguf'];
@@ -33,7 +27,7 @@ const WINDOWS_SKIP = ['audiocpp_server.exe', 'audiocpp_gguf.exe'];
 export const AUDIO_CPP_RELEASE: ComponentRelease = {
   name: AUDIO_CPP_TOOL,
   version: '0.9.1',
-  // 上游的标签带 `v`，版本号（`--version` 打印的）不带。
+  // Upstream tags carry a `v`; the version number (as printed by `--version`) does not.
   urlTemplate: 'https://github.com/0xShug0/audio.cpp/releases/download/v{version}/{file}',
   assets: {
     'darwin-arm64': {
@@ -67,20 +61,19 @@ export const AUDIO_CPP_RELEASE: ComponentRelease = {
   },
 };
 
-/** 引擎的许可（模型详情的组件许可里列出）。 */
+/** The engine's licence (listed in the component licences of the model details). */
 export const AUDIO_CPP_LICENSE: ModelLicense = {
   name: 'Apache-2.0',
   url: 'https://github.com/0xShug0/audio.cpp/blob/main/LICENSE',
   commercialUse: true,
-  // 许可摘要给人看：用 getter，读的时候（列出状态、序列化过线）按当前语言生成。
+  // The licence summary is for display: a getter, generated in the current language when read (when listing status or serialising over the wire).
   get summary() {
     return M.audioCppLicense().text;
   },
 };
 
 /**
- * 音乐生成模型包的引擎组件 `audiocpp-engine`。`repo` 是合成的（上游的 GitHub 仓库名），`revision` 是上游的标签，持有者与安装记录
- * 照旧按 `repo@revision` 算；以后基于 audio.cpp 的模型包用同一个对象，共用同一份。
+ * The engine component `audiocpp-engine` of music generation model packages. `repo` is synthetic (the upstream GitHub repository name), and `revision` is the upstream tag. The owner and install record are still keyed as `repo@revision`. Future model packages based on audio.cpp will use the same object and share the same copy.
  */
 export const AUDIO_CPP_ENGINE_COMPONENT: BundleComponentSource = {
   family: 'audio-cpp-engine',
@@ -91,7 +84,7 @@ export const AUDIO_CPP_ENGINE_COMPONENT: BundleComponentSource = {
 };
 
 /**
- * 从 `audiocpp_cli --version` 的输出取版本：第一行是 `audio.cpp <版本>`（发布构建是 `0.9.1`，自己构建没给版本时是 `dev`）。
+ * Gets the version from the output of `audiocpp_cli --version`: the first line is `audio.cpp <version>` (release builds print `0.9.1`; a self-build given no version prints `dev`).
  */
 export function parseAudioCppVersion(output: string): string | null {
   return /^\s*audio\.cpp\s+v?(\S+)/m.exec(output)?.[1] ?? null;

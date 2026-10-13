@@ -2,38 +2,38 @@ import { AGENT_PROVIDER_PREFIX, localizeText, type DriverInfo, type ModelCapabil
 import { CODEX_IMAGE_COPY } from './agent-copy.ts';
 
 /**
- * 「用 Codex 画图」（设计稿 settings-agent-provider.jsx 的 CodexImageRow）：Codex 卡头下面一行开关。
- * 后端是图片生成的智能体 Provider `agent:codex`（架构设计 §6.9）：开关走 `models.configure`，状态读 `models` 主题的
- * 能力视图。这里只把视图折成这一行要显示的东西，不在界面里写死最低版本——不够新时原因取 Provider 自己给的 `detail`。
+ * “Image generation with Codex” (CodexImageRow in the design mockup settings-agent-provider.jsx): one toggle row under the Codex card header.
+ * The backend is the image-generation agent provider `agent:codex` (architecture design §6.9). The toggle goes through `models.configure`, and the state is read from the capability view of the `models` topic.
+ * This only folds the view into what this row needs to show. The minimum version is not hard-coded in the UI; when the version is too old, the reason is taken from the provider’s own `detail`.
  */
 
 export const CODEX_IMAGE_PROVIDER = `${AGENT_PROVIDER_PREFIX}codex`;
 
-/** 能力视图里图片生成的 `agent:codex`；Runtime 没注册它时为 null（这一行就不显示）。 */
+/** The image-generation `agent:codex` in the capability view; null when the Runtime has not registered it (this row is then not shown). */
 export function codexImageProvider(view: ModelCapabilitiesView | null): ProviderCapabilityView | null {
   return view?.generateImage.providers.find((p) => p.providerId === CODEX_IMAGE_PROVIDER) ?? null;
 }
 
 /**
- * 这一页有没有主动探测过一次（`models.capabilities`）。没启用、也没探测过时，Provider 只报「没有启用」，
- * 会盖住「没登录」「版本太旧」，所以没探测过之前不敢说能打开。
+ * Whether this page has actively probed once (`models.capabilities`). When it is not enabled and has not been probed, the provider only reports “not enabled”,
+ * which would hide “not logged in” and “version too old”. So until it has been probed, it does not claim the toggle can be opened.
  */
 export type CodexImageProbe = 'pending' | 'done' | 'failed';
 
 export interface CodexImageRowState {
-  /** 配置里的开关（用户打开过且没关）。 */
+  /** The toggle in the config (the user turned it on and has not turned it off). */
   enabled: boolean;
-  /** 开着，而且此刻能画：显示「已打开」。 */
+  /** On, and able to generate right now: shows “On” (已打开). */
   ready: boolean;
-  /** 打开之后能用：开关可以拨。已经开着的总能关掉，不看这一项。 */
+  /** Can be used once turned on: the toggle can be switched. Something already on can always be turned off; this item is not checked for that. */
   canEnable: boolean;
-  /** 还在等第一次探测：开关先不让拨。 */
+  /** Still waiting for the first probe: the toggle cannot be switched yet. */
   checking: boolean;
-  /** 不能打开（或开着却画不了）时的一句原因；能用时为 null。 */
+  /** One-sentence reason when it cannot be turned on (or is on but cannot generate); null when usable. */
   why: string | null;
 }
 
-/** Codex 已找到、Runtime 也带着这个 Provider 时才有这一行；否则 null。 */
+/** This row appears only when Codex has been found and the Runtime also includes this provider; otherwise null. */
 export function codexImageRow(
   provider: ProviderCapabilityView | null,
   driver: Pick<DriverInfo, 'id' | 'state'>,
@@ -43,7 +43,7 @@ export function codexImageRow(
   const enabled = provider.config?.enabled ?? false;
   if (provider.available) return { enabled, ready: enabled, canEnable: true, checking: false, why: null };
   const reason = provider.unavailableReason ?? 'unsupported';
-  // 开着的时候 Runtime 每次都会问 Driver，原因是准的；没开时只有探测过才准。
+  // While it is on, the Runtime asks the Driver every time, so the reason is accurate. While it is off, the reason is accurate only after a probe.
   const known = enabled || probe === 'done';
   if (reason === 'not-configured') {
     if (known) return { enabled, ready: false, canEnable: true, checking: false, why: null };
@@ -58,7 +58,7 @@ function sentence(text: string): string {
   return /[。！？.!?]$/.test(trimmed) ? trimmed : `${trimmed}${CODEX_IMAGE_COPY.period}`;
 }
 
-/** 不能画的原因：设计稿是「原因 · 画图至少要 Codex X 并登录」；最低版本只在 Provider 的 detail 里，版本不够时整句用它。 */
+/** The reason it cannot generate. The design mockup pattern is “原因 · 画图至少要 Codex X 并登录” (reason · image generation needs at least Codex X and a login). The minimum version appears only in the provider’s detail, and when the version is not enough, the whole sentence comes from it. */
 function codexImageWhy(reason: NonNullable<ProviderCapabilityView['unavailableReason']>, detail: string | undefined): string {
   switch (reason) {
     case 'outdated':
@@ -72,7 +72,7 @@ function codexImageWhy(reason: NonNullable<ProviderCapabilityView['unavailableRe
   }
 }
 
-/** 开关拨动后的一句提示（设计稿的 toast；模型菜单里出现的名字是 Provider 自己的「Codex」）。 */
+/** The one-line message after the toggle is switched (the design mockup’s toast; the name shown in the model menu is the provider’s own “Codex”). */
 export function codexImageToast(enabled: boolean): string {
   return enabled ? CODEX_IMAGE_COPY.turnedOn : CODEX_IMAGE_COPY.turnedOff;
 }

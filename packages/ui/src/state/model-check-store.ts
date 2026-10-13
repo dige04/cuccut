@@ -2,10 +2,10 @@ import { create } from 'zustand';
 import type { CheckRejection } from '../model/model-check.ts';
 
 /**
- * 本地模型「检查」里 Runtime 不知道的两件事，按模型包 ID 记（model/model-check.ts）：
- * - `rejections`：最近一次提交检查被拒（检查没能开始），下一次提交时清掉；
- * - `repairs`：这一行发起的修复任务，修完后自动再检查一次，然后清掉。
- * 只在这次运行里有效，不落盘；离开设置页再回来还在。
+ * Two things the local-model "check" needs that the Runtime does not know, keyed by model package ID (model/model-check.ts):
+ * - `rejections`: the most recent submitted check was rejected (the check could not start). Cleared on the next submission.
+ * - `repairs`: the repair task started from this row. After it finishes, the check runs again automatically, and then the entry is cleared.
+ * Valid only for this run, not written to disk. It is still there after leaving and returning to the settings page.
  */
 export interface ModelCheckStore {
   rejections: Record<string, CheckRejection>;

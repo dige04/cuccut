@@ -1,4 +1,4 @@
-//! 引擎的取值区间经 WASM 入口：数是校验用的那几个常量本身。
+//! Engine value ranges through the WASM entry: the numbers are the constants used for validation themselves.
 
 use editor_wasm::ranges::engine_ranges;
 use serde_json::{Value, json};

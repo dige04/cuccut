@@ -1,39 +1,37 @@
-//! 长文本逐块合成后的拼接：块与块之间的停顿与响度由这里统一定，不交给模型。
+//! Stitching of long text after per-chunk synthesis: the pauses and loudness between chunks are set here in a unified way, not left to the model.
 //!
-//! 每块是一次独立生成：模型在块首尾各留一段长短不一的静音，响度也各不相同。原样首尾相接时，块边界的停顿
-//! （实测 0.7–1.1 s）比块内句间的停顿（0.2–0.5 s）长得多，相邻块的响度差 3–5 dB，听起来像「说一段、停很久、
-//! 换个人再说一段」。[`Stitcher`] 按块到达的次序拼接：
+//! Each chunk is an independent generation: the model leaves silences of varying length at the start and end of each chunk, and the loudness also varies. When chunks are simply joined end to end, the pause at a chunk boundary (measured 0.7–1.1 s) is much longer than the pause between sentences within a chunk (0.2–0.5 s), and the loudness difference between adjacent chunks is 3–5 dB. It sounds like “speak a passage, pause for a long time, then another person speaks a passage”. [`Stitcher`] stitches in the order the chunks arrive:
 //!
-//! 1. 块边界两侧的首尾静音（10 ms 窗的 RMS 低于 −45 dBFS）去掉，每侧最多留 50 ms，切口做 5 ms 淡入淡出；
-//!    整段的开头与结尾不动；
-//! 2. 块之间插固定停顿，按上一块之后的边界级别（[`ChunkBreak`]）：句末 0.35 s、段落 0.6 s、句中断开 0.2 s。
-//!    停顿量的是「上一块最后的有声窗」到「下一块第一个有声窗」，留下的边缘静音算在里面；
-//! 3. 每块的响度（有声窗的 RMS）对齐到第一块，增益限制在 ±6 dB，放大后峰值不超过 −1 dBFS；
-//! 4. 只有一块时原样交出，什么都不做。
+//! 1. Remove the leading and trailing silence on both sides of each chunk boundary (10 ms windows with RMS below −45 dBFS), keeping at most 50 ms per side; the cut gets a 5 ms fade-in and fade-out;
+//!    the start and end of the whole output are left untouched;
+//! 2. Insert a fixed pause between chunks, according to the boundary level after the previous chunk ([`ChunkBreak`]): sentence end 0.35 s, paragraph 0.6 s, mid-sentence break 0.2 s.
+//!    The pause is measured from the last voiced window of the previous chunk to the first voiced window of the next chunk, and the residual edge silence is counted within it;
+//! 3. Align each chunk's loudness (RMS of its voiced windows) to the first chunk, with gain limited to ±6 dB, and the peak after amplification not exceeding −1 dBFS;
+//! 4. With only one chunk, output it as-is and do nothing.
 //!
-//! 文本的内容与顺序不变；整段的峰值上限另由 [`super::loudness::PeakLimited`] 管。
+//! The text's content and order are unchanged; the peak limit for the whole output is handled separately by [`super::loudness::PeakLimited`].
 
 use super::loudness::PEAK_CEILING;
 use super::text::ChunkBreak;
 
-/// 静音门限：−45 dBFS（`10^(−45/20)`）。
+/// Silence threshold: −45 dBFS (`10^(−45/20)`).
 pub const SILENCE_THRESHOLD: f32 = 0.005_623_413;
-/// 判静音的窗长（秒）。
+/// Window length (seconds) used to detect silence.
 pub const WINDOW_SECONDS: f64 = 0.01;
-/// 去首尾静音后，每侧最多保留的静音（秒）。
+/// Maximum silence (seconds) kept on each side after trimming leading and trailing silence.
 pub const KEEP_EDGE_SECONDS: f64 = 0.05;
-/// 切口的淡入淡出（秒）。
+/// Fade-in and fade-out at the cut point (seconds).
 pub const FADE_SECONDS: f64 = 0.005;
-/// 块以句末标点收尾时的停顿（秒）：取自同一模型块内句间停顿的实测分布。
+/// Pause (seconds) when a chunk ends with sentence-final punctuation: taken from the measured distribution of pauses between sentences within the same model chunk.
 pub const SENTENCE_PAUSE_SECONDS: f64 = 0.35;
-/// 段落（换行）边界的停顿（秒）。
+/// Pause (seconds) at a paragraph (line break) boundary.
 pub const PARAGRAPH_PAUSE_SECONDS: f64 = 0.6;
-/// 块在句中断开（分句标点或硬切）时的停顿（秒）。
+/// Pause (seconds) when a chunk breaks mid-sentence (at clause punctuation or a hard cut).
 pub const CLAUSE_PAUSE_SECONDS: f64 = 0.2;
-/// 响度对齐的增益上限（dB，正负对称）。
+/// Gain limit for loudness alignment (dB, symmetric in both directions).
 pub const MAX_GAIN_DB: f32 = 6.0;
 
-/// 一级边界之后的停顿（秒）。
+/// Pause (seconds) after a first-level boundary.
 pub const fn pause_seconds(after: ChunkBreak) -> f64 {
     match after {
         ChunkBreak::Clause => CLAUSE_PAUSE_SECONDS,
@@ -42,17 +40,17 @@ pub const fn pause_seconds(after: ChunkBreak) -> f64 {
     }
 }
 
-/// 按次序接上逐块合成的音频。块数在开始时就知道（切块先于合成），所以每块到达时就能处理完，
-/// [`Self::seconds`] 在每块之后都是已拼好的累计时长（`TtsProgress::ChunkFinished.seconds`）。
+/// Joins the per-chunk synthesized audio in order. The number of chunks is known at the start (chunking happens before synthesis), so each chunk can be processed as soon as it arrives, and
+/// [`Self::seconds`] is the cumulative stitched duration after each chunk (`TtsProgress::ChunkFinished.seconds`).
 #[derive(Debug)]
 pub struct Stitcher {
     sample_rate: u32,
     count: usize,
     pushed: usize,
     samples: Vec<f32>,
-    /// 第一块（第一块有声的块）的有声 RMS，后面的块对齐到它。
+    /// Voiced RMS of the first chunk (the first chunk that has voiced content); later chunks are aligned to it.
     reference_rms: Option<f32>,
-    /// 上一块之后要插的停顿（秒），与上一块尾部留下的静音样本数。
+    /// Pause (seconds) to insert after the previous chunk, and the number of silent samples left at the end of the previous chunk.
     pending: Option<(f64, usize)>,
 }
 
@@ -68,7 +66,7 @@ impl Stitcher {
         }
     }
 
-    /// 接上下一块。`after` 是这一块之后的边界级别（最后一块的不用）。
+    /// Appends the next chunk. `after` is the boundary level after this chunk (not used for the last chunk).
     pub fn push(&mut self, chunk: &[f32], after: ChunkBreak) {
         self.pushed += 1;
         if self.count <= 1 {
@@ -79,7 +77,7 @@ impl Stitcher {
         let last = self.pushed >= self.count;
         let pause = pause_seconds(after);
         let Some((voiced_start, voiced_end)) = voiced_span(chunk, self.sample_rate) else {
-            // 整块没有声音（模型一开头就收尾）：不接它，也不多插一次停顿，取两级边界里长的那个。
+            // The whole chunk is silent (the model ends right at the start): do not append it, and do not insert an extra pause; use the longer of the two boundary levels.
             if let Some((pending, _)) = &mut self.pending {
                 *pending = pending.max(pause);
             }
@@ -123,7 +121,7 @@ impl Stitcher {
         self.pending = Some((pause, end.saturating_sub(voiced_end)));
     }
 
-    /// 已拼好的时长（秒）。
+    /// Stitched duration so far (seconds).
     pub fn seconds(&self) -> f64 {
         self.samples.len() as f64 / f64::from(self.sample_rate)
     }
@@ -145,7 +143,7 @@ fn mean_square(samples: &[f32]) -> f64 {
     samples.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / samples.len().max(1) as f64
 }
 
-/// 第一个有声窗的起点与最后一个有声窗的终点（样本下标，左闭右开）；整块静音时 `None`。
+/// Start of the first voiced window and end of the last voiced window (sample indices, half-open interval [start, end)); `None` when the whole chunk is silent.
 pub fn voiced_span(samples: &[f32], sample_rate: u32) -> Option<(usize, usize)> {
     let window = window(sample_rate);
     let threshold = f64::from(SILENCE_THRESHOLD) * f64::from(SILENCE_THRESHOLD);
@@ -160,7 +158,7 @@ pub fn voiced_span(samples: &[f32], sample_rate: u32) -> Option<(usize, usize)> 
     span
 }
 
-/// 有声窗（RMS 高于静音门限）的 RMS；没有有声窗时是整段的 RMS。
+/// RMS of the voiced windows (RMS above the silence threshold); when there are no voiced windows, the RMS of the whole segment.
 pub fn voiced_rms(samples: &[f32], sample_rate: u32) -> f32 {
     let threshold = f64::from(SILENCE_THRESHOLD) * f64::from(SILENCE_THRESHOLD);
     let (mut sum, mut count) = (0.0f64, 0usize);
@@ -180,10 +178,10 @@ fn peak(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0_f32, |max, s| max.max(s.abs()))
 }
 
-/// 把 `rms` 对齐到 `reference` 的增益：限制在 ±[`MAX_GAIN_DB`]；放大时峰值不超过 [`PEAK_CEILING`]
-/// （本来就超过的不再放大）。
+/// Gain that aligns `rms` to `reference`: clamped to ±[`MAX_GAIN_DB`]; when amplifying, the peak must not exceed [`PEAK_CEILING`]
+/// (anything already above it is not amplified further).
 fn alignment_gain(reference: f32, rms: f32, peak: f32) -> f32 {
-    // NaN 与 0 都不对齐。
+    // Neither NaN nor 0 is aligned.
     if !(rms.is_finite() && reference.is_finite() && rms > 0.0 && reference > 0.0) {
         return 1.0;
     }
@@ -205,7 +203,7 @@ mod tests {
         seconds_to_samples(seconds, RATE)
     }
 
-    /// 一个假块：`lead` 秒静音（夹一点低于门限的底噪）、`voiced` 秒幅度 `amplitude` 的 220 Hz 正弦、`trail` 秒静音。
+    /// A fake chunk: `lead` seconds of silence (with a little noise floor below the threshold), `voiced` seconds of a 220 Hz sine at amplitude `amplitude`, and `trail` seconds of silence.
     fn fake_chunk(lead: f64, voiced: f64, trail: f64, amplitude: f32) -> Vec<f32> {
         let noise = |i: usize| if i.is_multiple_of(2) { 0.001 } else { -0.001 };
         let mut out: Vec<f32> = (0..samples(lead)).map(noise).collect();
@@ -214,7 +212,7 @@ mod tests {
         out
     }
 
-    /// 输出里按 10 ms 窗找出的有声段 `[start, end)`（样本）。
+    /// Voiced segment `[start, end)` (samples) found in the output using 10 ms windows.
     fn voiced_runs(samples: &[f32]) -> Vec<(usize, usize)> {
         let window = window(RATE);
         let threshold = f64::from(SILENCE_THRESHOLD).powi(2);
@@ -247,7 +245,7 @@ mod tests {
 
     #[test]
     fn boundaries_get_the_fixed_pause_and_chunks_match_the_first_chunks_level() {
-        // 首尾静音各不相同、响度各不相同（−3 dB、+4 dB）的三块。
+        // Three chunks with different leading and trailing silences and different loudness (−3 dB, +4 dB).
         let chunks = vec![
             (fake_chunk(0.12, 1.0, 0.9, 0.3), ChunkBreak::Sentence),
             (fake_chunk(0.7, 1.5, 0.4, 0.3 * 10f32.powf(-3.0 / 20.0)), ChunkBreak::Paragraph),
@@ -257,7 +255,7 @@ mod tests {
         let runs = voiced_runs(&out);
         assert_eq!(runs.len(), 3, "{runs:?}");
         let gap = |i: usize| (runs[i + 1].0 - runs[i].1) as f64 / f64::from(RATE);
-        // 停顿按 10 ms 窗量，差不出一个窗。
+        // The pause is measured in 10 ms windows, so it cannot differ by a whole window.
         assert!(
             (gap(0) - SENTENCE_PAUSE_SECONDS).abs() <= WINDOW_SECONDS + 1e-9,
             "句末停顿 {}",
@@ -269,13 +267,13 @@ mod tests {
             gap(1)
         );
 
-        // 各块有声部分的 RMS 都等于第一块。
+        // The RMS of each chunk's voiced part equals that of the first chunk.
         let levels: Vec<f32> = runs.iter().map(|(s, e)| voiced_rms(&out[*s..*e], RATE)).collect();
         for level in &levels[1..] {
             assert!(db(level / levels[0]).abs() < 0.1, "{levels:?}");
         }
 
-        // 总长可预期：第一块的开头与最后一块的结尾原样留着，中间是三段有声 + 两个停顿。
+        // The total length is predictable: the start of the first chunk and the end of the last chunk are kept as-is; in between are three voiced sections plus two pauses.
         let expected = samples(0.12)
             + samples(1.0)
             + samples(SENTENCE_PAUSE_SECONDS)
@@ -288,10 +286,10 @@ mod tests {
             "总长 {} 预期 {expected}",
             out.len()
         );
-        // 进度是已拼好的累计时长：单调递增，最后一次等于总长。
+        // Progress is the cumulative stitched duration: monotonically increasing, and the last value equals the total length.
         assert!(progress.windows(2).all(|w| w[0] < w[1]), "{progress:?}");
         assert_eq!(*progress.last().unwrap(), out.len() as f64 / f64::from(RATE));
-        // 第一块的开头没有动（它是响度基准，也不缩放）。
+        // The start of the first chunk is left untouched (it is the loudness reference, and is not scaled).
         assert_eq!(&out[..samples(0.12)], &chunks[0].0[..samples(0.12)]);
     }
 
@@ -316,7 +314,7 @@ mod tests {
 
     #[test]
     fn gain_is_limited_to_six_db_and_never_pushes_the_peak_over_the_ceiling() {
-        // 低 12 dB 的块只抬 6 dB，仍低 6 dB。
+        // A chunk 12 dB too quiet is raised by only 6 dB, so it is still 6 dB too quiet.
         let (out, _) = stitch(&[
             (fake_chunk(0.1, 0.5, 0.3, 0.4), ChunkBreak::Sentence),
             (fake_chunk(0.3, 0.5, 0.1, 0.1), ChunkBreak::Paragraph),
@@ -325,7 +323,7 @@ mod tests {
         let levels: Vec<f32> = runs.iter().map(|(s, e)| voiced_rms(&out[*s..*e], RATE)).collect();
         assert!((db(levels[1] / levels[0]) + 6.0).abs() < 0.1, "{levels:?}");
 
-        // 高 10 dB 的块只压 6 dB，仍高 4 dB。
+        // A chunk 10 dB too loud is lowered by only 6 dB, so it is still 4 dB too loud.
         let (out, _) = stitch(&[
             (fake_chunk(0.1, 0.5, 0.3, 0.1), ChunkBreak::Sentence),
             (fake_chunk(0.3, 0.5, 0.1, 0.1 * 10f32.powf(10.0 / 20.0)), ChunkBreak::Paragraph),
@@ -334,7 +332,7 @@ mod tests {
         let levels: Vec<f32> = runs.iter().map(|(s, e)| voiced_rms(&out[*s..*e], RATE)).collect();
         assert!((db(levels[1] / levels[0]) - 4.0).abs() < 0.1, "{levels:?}");
 
-        // 安静但带一个尖峰的块：要抬约 9 dB，但抬到峰值 −1 dBFS 就停。
+        // A quiet chunk with a single spike: it should be raised by about 9 dB, but raising stops when the peak reaches −1 dBFS.
         let mut spiky = fake_chunk(0.3, 0.5, 0.1, 0.15);
         let spike = samples(0.5);
         spiky[spike] = 0.8;
@@ -343,7 +341,7 @@ mod tests {
             (spiky, ChunkBreak::Paragraph),
         ]);
         assert!((peak(&out) - PEAK_CEILING).abs() < 1e-5, "峰值 {}", peak(&out));
-        // 本来就超过 −1 dBFS 的块不再放大（Base 的 codec 输出常到满幅之上，整段由 PeakLimited 缩）。
+        // A chunk already above −1 dBFS is not amplified further (Base's codec output often goes above full scale; the whole output is reduced by PeakLimited).
         assert_eq!(alignment_gain(0.5, 0.2, 1.2), 1.0);
         assert!((alignment_gain(0.1, 0.4, 1.2) - 0.25f32.max(10f32.powf(-0.3))).abs() < 1e-6);
     }
@@ -358,7 +356,7 @@ mod tests {
         ]);
         let runs = voiced_runs(&out);
         assert_eq!(runs.len(), 2, "{runs:?}");
-        // 跳过的块里最长的那一级边界（段落）。
+        // The longest boundary level among the skipped chunks (paragraph).
         let gap = (runs[1].0 - runs[0].1) as f64 / f64::from(RATE);
         assert!((gap - PARAGRAPH_PAUSE_SECONDS).abs() <= WINDOW_SECONDS + 1e-9, "{gap}");
         assert_eq!(progress.len(), 4);
@@ -368,19 +366,19 @@ mod tests {
 
     #[test]
     fn cut_edges_fade_instead_of_clicking() {
-        // 有声部分紧贴块边（没有首尾静音可去）时，切口在有声样本上，要淡入淡出。
+        // When the voiced part sits right against the chunk edge (no leading or trailing silence to remove), the cut falls on voiced samples and needs a fade-in and fade-out.
         let mut first = fake_chunk(0.0, 0.5, 0.0, 0.3);
         first.extend(vec![0.3; samples(0.2)]);
         let mut second = vec![0.3; samples(0.2)];
         second.extend(fake_chunk(0.0, 0.5, 0.0, 0.3));
         let (out, _) = stitch(&[(first, ChunkBreak::Sentence), (second, ChunkBreak::Paragraph)]);
-        // 两块的有声部分都贴着块边，没有可去的静音：中间只插停顿，块尾、块首的样本原样（没有切口，不淡）。
+        // Both chunks' voiced parts sit against their chunk edges with no silence to remove: only a pause is inserted between them, and the samples at the chunk tail and head are kept as-is (no cut, so no fade).
         let runs = voiced_runs(&out);
         assert_eq!(runs.len(), 2);
         assert!((out[runs[0].1 - 1] - 0.3).abs() < 1e-3);
         assert!((out[runs[1].0] - 0.3).abs() < 1e-3);
 
-        // 留下 50 ms 后的切口落在静音上：切口两侧都淡到 0。
+        // After keeping 50 ms, the cut falls on silence: both sides of the cut fade to 0.
         let (out, _) = stitch(&[
             (fake_chunk(0.0, 0.5, 0.5, 0.3), ChunkBreak::Sentence),
             (fake_chunk(0.5, 0.5, 0.0, 0.3), ChunkBreak::Paragraph),

@@ -15,18 +15,18 @@ import { Gate, SectionLink } from './tool-parts.tsx';
 import { GATE_COPY } from './tools-copy.ts';
 
 /*
- * 选中的本机模型还不能用时的门卡（设计稿 image-gen.jsx `EngineGate` 的本机分支、panel-tts.jsx `TtsModelGate`）：没下载的给
- * 「下载 {大小}」（走设置页同一个安装对话框，先看大小与许可；权重已在、只缺公共组件的按补齐走，只下缺的、不再问许可）、下载中给
- * 进度条；这个平台或构建跑不了的只给「换用可用的云端模型」。
- * 都带「管理本地模型…」。
+ * The gate shown when the selected local model cannot be used yet (the local branch of design file image-gen.jsx `EngineGate`, and panel-tts.jsx `TtsModelGate`): if it is not downloaded, it offers
+ * “下载 {大小}” (Download {size}), which goes through the same install dialog as the settings page and shows the size and license first; if the weights are already present and only the shared components are missing, it completes the install instead, downloads only what is missing, and does not ask for the license again.
+ * While downloading, it shows a progress bar; if this platform or build cannot run the model, it offers only “换用可用的云端模型” (Switch to an available cloud model).
+ * Every state also offers “管理本地模型…” (Manage local models…).
  */
 
 const progress = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'gray-800' });
 const progressBar = style({ width: 120 });
 
 /**
- * 本机模型包的就地下载卡：标题「先下载 X · 大小」，没在下时给下载（停在一半时给继续下载），在下时给进度。`extra` 是调用方再塞的按钮
- * （换用别的模型），`category` 决定「管理本地模型…」去设置的哪一类。装好后调用方不再渲染它。
+ * In-place download card for a local model pack: the title is “先下载 X · 大小” (Download X first · size). When not downloading, it offers a download (or resume, if it stopped halfway); while downloading, it shows progress. `extra` is an extra button the caller can add
+ * (such as switching to another model), and `category` decides which section of settings “管理本地模型…” (Manage local models…) opens. The caller stops rendering it once the model is installed.
  */
 export function LocalDownloadGate({
   bundle,
@@ -40,13 +40,13 @@ export function LocalDownloadGate({
   name: string;
   category: ModelCategory;
   body: (paused: boolean) => string;
-  /** 不许商用时安装对话框里那一句（默认语音合成的说法）。 */
+  /** The line in the install dialog for when commercial use is not allowed (the wording used for the default speech synthesis). */
   licenseUse?: string;
   extra?: ReactNode;
 }) {
   const go = useShell((s) => s.go);
   const bundles = useModels((s) => s.bundles);
-  // 打开对话框时定下下载还是补齐：下载中组件陆续落地，不让对话框中途换计划。
+  // The choice between download and completion is fixed when the dialog opens: components land one by one during a download, so the dialog must not change plan midway.
   const [installing, setInstalling] = useState<'install' | 'complete' | null>(null);
   const view = downloadView(bundle);
   const label = view.state === 'running' ? GATE_COPY.downloading(view.percent) : null;
@@ -96,7 +96,7 @@ export function LocalDownloadGate({
   );
 }
 
-/** 生图（工具页与编辑器的生图面板）选中的本机模型的门卡；回落只落到云端（设计稿 `preferred`）。 */
+/** The gate for the local model selected for image generation (the tool page and the editor's image panel); the fallback only goes to the cloud (design file `preferred`). */
 export function LocalModelGate<M>({
   selected,
   options,

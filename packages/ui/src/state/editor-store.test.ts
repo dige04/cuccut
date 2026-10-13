@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostPanelTab, PANEL_WIDTH_DEFAULT, PANEL_WIDTH_MAX, useEditor, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from './editor-store.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {

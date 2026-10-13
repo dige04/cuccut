@@ -44,7 +44,7 @@ import { editTranslation, markTranslation, openFlow, putOnScreen, startRefresh, 
 import { TranslationStatbar, UnitMenu, useAgentRetranslate, useRetranslateModel, type UnitMenuActions } from './translation-actions.tsx';
 import { useVirtualRows } from './use-virtual-rows.ts';
 
-/** 对照条（原型 panel-subtitle.jsx `ListBar`、.sublist）。 */
+/** Comparison bar (prototype panel-subtitle.jsx `ListBar`, .sublist). */
 const bar = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -87,9 +87,9 @@ const colhead = style({
   color: 'gray-600',
 });
 const list = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingBottom: 12 });
-/** 虚拟列表的一行：行与行之间不能有外边距，卡间距（第一张离顶也是）是这一层的上内边距 8px。 */
+/** A row of the virtual list: there must be no margin between rows; the card spacing (also above the first card) is this layer's 8px top padding. */
 const pairRow = style({ paddingTop: 8 });
-/** 一对（原型 panel-translate.jsx `PlainCard`）：上面原文、下面译文；正在播的蓝底，正在改的蓝框。 */
+/** One pair (prototype panel-translate.jsx `PlainCard`): original above, translation below. The pair being played has a blue background; the pair being edited has a blue border. */
 const card = style({
   position: 'relative',
   overflow: 'hidden',
@@ -111,7 +111,7 @@ const accent = style({
   backgroundColor: { default: 'gray-300', isOn: 'blue-800', isEditing: 'blue-800', isStale: 'orange-700', isGone: 'gray-400' },
 });
 const cardHead = style({ display: 'flex', alignItems: 'center', gap: '[6px]', marginBottom: '[5px]', minHeight: 20 });
-/** ⋯ 菜单靠右，不撑高卡头（XS 钮比卡头的 20 高一点，往上下各让一点）。 */
+/** The ⋯ menu sits on the right and does not enlarge the card header (the XS button is a little taller than the header's 20px, so it leaves a little room above and below). */
 const headEnd = style({ marginStart: 'auto', marginY: -4, flexShrink: 0 });
 const number = style({ fontSize: '[10px]', color: 'gray-500', minWidth: 16 });
 const time = style({
@@ -170,15 +170,14 @@ const editor = style({
 });
 const muted = style({ font: 'ui-sm', color: 'gray-600', paddingY: 24, paddingX: 12, textAlign: 'center' });
 /**
- * 一行的估计高（量到之前顶着）：上内边距 8 + 卡的边框 2 + 上下内边距 18 + 卡头 20 + 卡头下 5；原文与译文每行 22.4（14px × 1.6），
- * 译文上面再空 4；文字比列表内容窄 24（边框 2、左右内边距 12 与 10）。
+ * Estimated height of a row (used before it is measured): top padding 8, card border 2, top and bottom padding 18, card header 20, 5 below the header. Each line of original and translation is 22.4 (14px × 1.6), with 4 more above the translation. Text is 24 narrower than the list content (border 2, left and right padding 12 and 10).
  */
 const ROW_BASE = 53;
 const TEXT_SIZE = 14;
 const TEXT_LINE = 22.4;
 const CARD_INSET = 24;
 
-/** 对照条里一门译文的名字：语言名；同一门语言有几份（译自不同的转写）时带上文档名。 */
+/** Name of a translation in the comparison bar: the language name. When the same language has several (translated from different transcripts), add the document name. */
 function optionLabel(record: DocumentRecord, all: readonly DocumentRecord[]): string {
   const name = record.language ? languageName(record.language) : record.name;
   const twins = record.language ? all.filter((d) => d.language === record.language).length : 1;
@@ -186,8 +185,7 @@ function optionLabel(record: DocumentRecord, all: readonly DocumentRecord[]): st
 }
 
 /**
- * 对照条（原型 panel-subtitle.jsx `ListBar`）：列表只看原文、原文 ＋ 译文还是只看译文，对照哪一门译文。一门译文都没有时
- * 后两档进不去：由调用方说清楚去哪开（不静默弹回）。
+ * Comparison bar (prototype panel-subtitle.jsx `ListBar`): the list shows only the original, the original plus the translation, or only the translation, and says which translation to compare against. When no translation exists, the last two modes cannot be entered: the caller must say where to create one (no silent fallback).
  */
 export function CompareBar({
   mode,
@@ -229,10 +227,9 @@ export function CompareBar({
   );
 }
 
-/** 文档的正文；新版本还在取时先用上一版。 */
+/** Document body; while a new version is still being fetched, the previous version is used. */
 /**
- * 按取回来的正文对象记下的派生（正文取回来之后不再改，改了是新对象）：从「只看原文」切回对照时列表重挂，不必把几千句
- * 再交给 WASM 拆一遍。
+ * Derivations recorded against the fetched body object (the body does not change after fetching; a change yields a new object): when switching from “only original” back to comparison, the list remounts without having to split several thousand sentences with WASM again.
  */
 const derived = new WeakMap<object, Map<string, unknown>>();
 function derive<T>(body: unknown, name: string, compute: (body: unknown) => T): T {
@@ -251,10 +248,7 @@ function useLoaded(record: DocumentRecord | undefined): unknown {
 }
 
 /**
- * 原文 ＋ 译文的对照列表（原型 panel-translate.jsx `EditView`，`only: 'trans'` 时只看译文）：逐句配对、标出过期、未翻译与
- * 原句已删的；单击译文就地改写（失焦提交、Esc 放弃），一笔事务连同画面上从它生成的字幕一起改，一次撤销。
- * 过期与没有译文的句子可以用模型 API 就地重译（Runtime 的 `translate` 就地刷新）或交给 Agent，一句或一批；也可以手工标为过期、
- * 去掉标记（translation-actions.tsx）。网页宿主只有标记与复制。
+ * Original plus translation comparison list (prototype panel-translate.jsx `EditView`; with `only: 'trans'`, only the translation is shown): pairs sentences, and marks stale ones, untranslated ones and ones whose original was deleted. Clicking a translation rewrites it in place (commit on blur, Esc to discard), in one transaction together with the subtitles generated from it on screen, undoable in one step. Stale and untranslated sentences can be re-translated in place via the model API (Runtime's `translate` refreshes in place) or handed to the Agent, one at a time or in batches. They can also be marked stale by hand, or have the mark cleared (translation-actions.tsx). Web hosts have only markers and copy.
  */
 export function TranslationList({
   videoId,
@@ -266,7 +260,7 @@ export function TranslationList({
   videoId: Id;
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
-  /** `translation` 文档。 */
+  /** `translation` document. */
   record: DocumentRecord;
   only: 'trans' | null;
 }) {
@@ -275,14 +269,14 @@ export function TranslationList({
   const web = useRuntime().host.platform === 'web';
   const model = useRetranslateModel();
   const toAgent = useAgentRetranslate(videoId);
-  // 正在就地刷新这份译文：从这里提交的（回执到之前也算），或别处发起的。
+  // Refreshing this translation in place: submitted from here (counts even before the receipt arrives), or started elsewhere.
   const ownRefresh = useTranslateRun((s) => s.refreshes[record.id] ?? null);
-  // 选出整份任务列表再算：`liveRefresh` 每次给新对象，直接当选择器会让 zustand 5 的订阅每次都以为变了。
+  // Select the whole task list before computing: `liveRefresh` gives a new object each time, and using it directly as a selector would make zustand 5's subscription think it changed every time.
   const jobs = useJobs((s) => s.jobs);
   const foreignRefresh = useMemo(() => liveRefresh(jobs, record.id), [jobs, record.id]);
   const refreshing = ownRefresh ? ownRefresh.count : foreignRefresh ? foreignRefresh.count : undefined;
   const loaded = useLoaded(record);
-  // 刚改完、新版本还没取回来的译文：接着的改动在它上面做。
+  // A translation just edited whose new version is not yet fetched back: further edits are applied on top of it.
   const [local, setLocal] = useState<{ base: unknown; body: TranslationBody } | null>(null);
   useEffect(() => {
     if (local && local.base !== loaded) setLocal(null);
@@ -299,13 +293,13 @@ export function TranslationList({
     () => (speechBody === undefined ? null : derive(speechBody, 'words', (body) => readSpeechWords(body))),
     [speechBody],
   );
-  // 句子与指纹经 editor-wasm 同步求出（WASM 随 bundle 内联，第一次调用时同步实例化）：按正文算一次。
+  // Sentences and fingerprints are computed via editor-wasm (WASM is inlined in the bundle and instantiated synchronously on first call): computed once per body.
   const ready = useMemo(() => (speechBody === undefined ? null : derive(speechBody, 'sentences', speechSentences)), [speechBody]);
 
   const rows = useMemo(() => (translation && ready ? pairRows(ready, translation) : []), [translation, ready]);
   const stats = useMemo(() => pairStats(rows), [rows]);
 
-  /** 每一句在序列上第一次出现的区间（素材时钟的词经实例投过去；剪掉的没有）。 */
+  /** The interval where each sentence first appears on the sequence (words from the source clock are projected through the instance; cut ones have none). */
   const spans = useMemo(() => {
     const map = new Map<Id, { start: number; end: number }>();
     const assetId = speechRecord?.sourceAssetId;
@@ -336,7 +330,7 @@ export function TranslationList({
   const listRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
 
-  // 虚拟列表：只挂视口前后一屏的卡，外加正在改的那一张（编辑框卸掉会丢掉没提交的字、打断输入法组字）。
+  // Virtual list: only mounts the cards for one screen before and after the viewport, plus the one being edited (unmounting the edit box would lose uncommitted text and interrupt IME composition).
   const keys = useMemo(() => rows.map((r) => r.key), [rows]);
   const sentenceIndex = useMemo(() => new Map(rows.flatMap((r, index) => (r.sentence ? [[r.sentence.id, index] as const] : []))), [rows]);
   const estimate = useCallback(
@@ -351,23 +345,22 @@ export function TranslationList({
   );
   const virtual = useVirtualRows({ scrollRef: listRef, keys, estimate, pinned: [editing], measureKey: `${record.id}:${only ?? 'both'}` });
   const { scrollToIndex } = virtual;
-  // 播放跟随的开关（产品设计 §5.7）：手动滚开就停，本面板里跳播、重新开始播放时恢复。对照与只看译文之间切换算换了画面，
-  // 也恢复（与原文 ↔ 对照之间切换时列表重新装上一致）。
+  // Playback-follow switch (product design §5.7): turned off when the user scrolls away manually; restored when seeking in this panel, or when playback restarts. Switching between comparison and translation-only counts as a changed view, so it is also restored (consistent with the list remounting when switching between original and comparison).
   const follow = usePlaybackFollow(listRef);
   useEffect(() => follow.resume(), [only]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 播放时跟着正在播的那句，滚到看得见为止（只在换句、开始播放、退出编辑、切换视图时滚一次）。
+  // While playing, follow the sentence being played and scroll it into view. Scroll only once: on a sentence change, on starting playback, on leaving edit, or on switching view.
   useEffect(() => {
     if (!playing || !activeId || editing || follow.off.current) return;
     const index = sentenceIndex.get(activeId);
     if (index !== undefined) void scrollToIndex(index, { align: 'nearest' });
   }, [activeId, playing, editing, only]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** 本面板里的跳播（点时间、点卡片）：恢复跟随。 */
+  /** Seeking within this panel (clicking a time, clicking a card): restores following. */
   const seekHere = (at: number) => {
     follow.resume();
     seek(at);
   };
 
-  // 卡上的动作：卡是 memo 的，拿这个不变的 ref 调最新的处理函数，播放时只重画进出「正在播」的两张。
+  // Card actions: cards are memoized, so they call the latest handler through this stable ref. During playback, only the two cards entering and leaving “playing” are repainted.
   const actions = useRef<PairActions & UnitMenuActions>(null!);
 
   const [placing, setPlacing] = useState(false);
@@ -382,7 +375,7 @@ export function TranslationList({
   const languageLabel = language ? languageName(language) : C.unnamed;
   const sourceLanguage = speechRecord.language ? langName(speechRecord.language) : C.source;
   const todo = rows.filter(needsTranslation).length;
-  // 整句的画面都剪掉了的句子；时间线上没用到这份转写时不算（不然每一句都算）。
+  // Sentences whose whole frame has been cut. Not computed when this transcript is not used on the timeline (otherwise every sentence would be computed).
   const cut = spans.size ? rows.filter((r) => r.sentence && r.state !== 'sentence-gone' && !spans.has(r.sentence.id)).length : 0;
   const scopeOf = (row: PairRow) => {
     const at = row.sentence ? spans.get(row.sentence.id)?.start : undefined;
@@ -492,7 +485,7 @@ function stateChip(row: PairRow): { text: string; tone?: 'muted' | 'info'; tip?:
   return null;
 }
 
-/** 卡上的动作（TranslationList 每次渲染换成最新的一份，卡经 ref 调）。 */
+/** Card actions (TranslationList supplies the latest version on every render; cards call it via ref). */
 interface PairActions {
   seek(at: number): void;
   begin(row: PairRow): void;
@@ -516,12 +509,12 @@ const PairCard = memo(function PairCard({
   row: PairRow;
   index: number;
   only: 'trans' | null;
-  /** 这一句在序列上第一次出现的时刻；剪掉了（或原句已删）时 null。 */
+  /** The moment this sentence first appears on the sequence; null when it has been cut (or the original sentence was deleted). */
   at: number | null;
   on: boolean;
   editing: boolean;
   editable: boolean;
-  /** ⋯ 菜单：桌面端（能调模型与会话）、这份译文正在重译、直接调的模型名。 */
+  /** ⋯ menu: desktop (can call models and sessions), whether this translation is being re-translated, and the name of the model called directly. */
   ai: boolean;
   busy: boolean;
   modelName: string | null;
@@ -592,7 +585,7 @@ const PairCard = memo(function PairCard({
   );
 });
 
-/** 改一句译文：失焦或 Enter 提交，Esc 放弃，Shift+Enter 换行；输入法组字时的 Enter 不算。 */
+/** Edit a sentence's translation: commit on blur or Enter, Esc to discard, Shift+Enter for a new line. Enter during IME composition does not count. */
 function UnitEditor({ initial, onCommit, onCancel }: { initial: string; onCommit(text: string): void; onCancel(): void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const handled = useRef(false);

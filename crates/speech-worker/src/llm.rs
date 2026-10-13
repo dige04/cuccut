@@ -1,10 +1,10 @@
-//! 核心的 `LlmJson` 落在 stdio 上：一次调用 = 一个 `llm.request` 事件 + 阻塞等 Runtime 的 `llm.reply`。
+//! The core's `LlmJson` runs over stdio: one call = one `llm.request` event + a blocking wait for the Runtime's `llm.reply`.
 //!
-//! Worker 不联网、不持有密钥：Runtime 收到请求后经流程既有的 `generateText` 路径发出（选 Provider、授权、任务预算、
-//! 账本与停止屏障都在那边），把文本或分类过的失败交回来。重试、半页、逐单元修复仍是核心自己的语义（`RetryPolicy`）。
+//! The Worker does no networking and holds no keys. After receiving a request, the Runtime sends it through the flow's existing `generateText` path (provider selection, authorization, task budget,
+//! ledger, and stop barrier all live there), and hands back the text or a classified failure. Retry, half-page, and per-unit repair are still the core's own semantics (`RetryPolicy`).
 //!
-//! 请求的整形从 v2 `ccut-engine/src/llm_exec.rs` 原样移植：文件契约的 kind 把载体包进内联输入信封、按输入定标输出上限，
-//! 重试原因附在信封外。这些是提示词的一部分，归 Worker（架构设计 §13.6）；Runtime 只按模型能力去掉温度、夹输出上限。
+//! Request shaping is ported verbatim from v2 `ccut-engine/src/llm_exec.rs`: the kind from the file contract wraps the carrier in an inline input envelope and scales the output cap to the input,
+//! and the retry reason is attached outside the envelope. These are part of the prompt and belong to the Worker (architecture design §13.6). The Runtime only strips temperature and clamps the output cap according to model capability.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,13 +15,13 @@ use speech_doc::llm::{LlmError, LlmJson, LlmRequest};
 
 use crate::protocol::{Control, ErrorClass, Reply, ReplyError, Waited, event};
 
-/// 经 stdio 的模型调用。
+/// Model call over stdio.
 pub struct StdioLlm {
     control: Rc<RefCell<Control>>,
     next_id: u64,
-    /// 发出的调用数（含核心自己的重试）。
+    /// Number of calls sent (including the core's own retries).
     pub calls: u64,
-    /// 第一个终止性失败（预算、授权、停止屏障……）：任务的错误照它报。
+    /// The first terminal failure (budget, authorization, stop barrier, ...). The task's error is reported from it.
     pub terminal: Option<ReplyError>,
 }
 
@@ -69,7 +69,7 @@ impl LlmJson for StdioLlm {
     }
 }
 
-/// `llm.request` 事件的参数。
+/// Parameters of the `llm.request` event.
 pub fn request_params(request_id: u64, request: &LlmRequest) -> Value {
     let file_contract = uses_file_contract(request.kind);
     json!({
@@ -83,7 +83,7 @@ pub fn request_params(request_id: u64, request: &LlmRequest) -> Value {
     })
 }
 
-/// 文件契约下该 kind 的载体：`(逻辑文件名后缀, media-type)`（v2 `file_carrier_format_opt`）。
+/// The carrier for this kind under the file contract: `(logical filename suffix, media-type)` (v2 `file_carrier_format_opt`).
 pub fn file_carrier_format(kind: &str) -> (&'static str, &'static str) {
     match kind {
         "translate" => ("html", "text/html"),
@@ -96,7 +96,7 @@ pub fn file_carrier_format(kind: &str) -> (&'static str, &'static str) {
     }
 }
 
-/// 内联输入信封的逻辑文件名：按 kind 稳定的词干，同一页在修复轮里不换名字（不打断提示词缓存）。
+/// Logical filename of the inline input envelope: a stem that is stable per kind, so the same page keeps its name across repair rounds (so the prompt cache is not broken).
 fn inline_input_name(kind: &str) -> String {
     format!("{kind}.src.{}", file_carrier_format(kind).0)
 }
@@ -105,13 +105,13 @@ const FILE_CONTRACT_OUTPUT_CHARS_PER_TOKEN: usize = 2;
 const FILE_CONTRACT_MIN_OUTPUT_TOKENS: u64 = 4_096;
 const FILE_CONTRACT_MAX_OUTPUT_TOKENS: u64 = 16_384;
 
-/// 文件契约下按输入定标的输出上限（token）。Runtime 再夹到模型的上限之内。
+/// Output cap (tokens) scaled to the input under the file contract. The Runtime then clamps it to the model's limit.
 pub fn file_contract_max_output_tokens(input: &str) -> u64 {
     let tokens = max_output_chars(input.chars().count()).div_ceil(FILE_CONTRACT_OUTPUT_CHARS_PER_TOKEN);
     (tokens as u64).clamp(FILE_CONTRACT_MIN_OUTPUT_TOKENS, FILE_CONTRACT_MAX_OUTPUT_TOKENS)
 }
 
-/// 用户消息正文：文件契约下包进内联输入信封；重试上下文留在信封外——它是指令，不是文档内容。
+/// User message body. Under the file contract it is wrapped in the inline input envelope; the retry context stays outside the envelope, because it is an instruction, not document content.
 pub fn request_user_content(request: &LlmRequest, file_contract: bool) -> String {
     let body = if file_contract {
         let (_, media_type) = file_carrier_format(request.kind);

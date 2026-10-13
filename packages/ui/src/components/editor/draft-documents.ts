@@ -3,22 +3,21 @@ import { useEditor, type DocumentDraft } from '../../state/editor-store.ts';
 import type { PreviewDocuments } from './preview-engine.ts';
 
 /**
- * 文档正文叠上属性页的草稿（字幕样式拖动中的值）：草稿所基于的那个版本取草稿；提交之后文档有了新版本、
- * 新正文还没取到时也先用草稿，免得样式先跳回旧的再跳到新的。新正文到了就用新正文。
+ * Overlays the properties page's draft (the value being dragged for a caption style) onto the document body: the draft is used for the version it was based on. After a commit, when the document has a new version and its new body is not fetched yet, the draft is still used, so the style does not jump back to the old one and then to the new one. Once the new body arrives, it is used.
  */
 export function draftedBody(draft: DocumentDraft | null, documentId: Id, revision: Revision, body: unknown): unknown {
   if (!draft || draft.documentId !== documentId) return body;
   return revision === draft.baseRevision || body === undefined ? draft.body : body;
 }
 
-/** 草稿已经被新版本的正文取代：丢掉，免得撤销回到旧版本时它又露出来。 */
+/** The draft has been replaced by the new version's body: discard it, so that when undo returns to the old version, it does not reappear. */
 export function dropStaleDraft(documentId: Id, revision: Revision, body: unknown): void {
   const draft = useEditor.getState().documentDraft;
   if (draft?.documentId === documentId && draft.baseRevision !== revision && body !== undefined)
     useEditor.setState({ documentDraft: null });
 }
 
-/** 给预览的文档来源：正文来自缓存，叠上草稿；草稿变了也通知重画。 */
+/** The document source for the preview: the body comes from the cache with the draft overlaid; when the draft changes, a redraw is also signaled. */
 export class DraftDocuments implements PreviewDocuments {
   readonly #inner: PreviewDocuments;
 
@@ -29,8 +28,7 @@ export class DraftDocuments implements PreviewDocuments {
   peek(documentId: Id, revision: Revision): unknown {
     const body = this.#inner.peek(documentId, revision);
     const draft = useEditor.getState().documentDraft;
-    // 文档已经离开草稿所基于的版本（提交了）：新正文到了就丢掉草稿；还没到就在这里去取——这时返回的是草稿，
-    // 预览拿不到 undefined 就不会自己去取，草稿永远丢不掉，撤销回到旧版本时画面又停在草稿上。
+    // The document has moved past the version the draft was based on (it was committed): once the new body arrives, drop the draft; until then, fetch it here, since the draft is what is returned in the meantime. The preview does not fetch on its own when it gets undefined, so the draft would never be dropped, and after undoing back to the old version the picture would stay stuck on the draft.
     if (draft?.documentId === documentId && draft.baseRevision !== revision) {
       if (body === undefined) this.#inner.load(documentId, revision);
       else queueMicrotask(() => dropStaleDraft(documentId, revision, body));

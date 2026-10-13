@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RpcError, setLocale } from '@cuccut/protocol';
 import { CucCutClient } from './client.ts';
 
-/** 界面语言是英文时，客户端自己写的连接错误是英文，并带消息引用。 */
+/** When the UI language is English, the connection errors the client writes itself are in English, and include a message reference. */
 describe('client 的英文文案', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

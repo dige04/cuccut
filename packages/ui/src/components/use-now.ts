@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-/** 每隔一段时间重绘一次，用于「多久前」与计时。 */
+/** Repaints at intervals, for “多久前” (time ago) and timers. */
 export function useNow(intervalMs: number, enabled = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

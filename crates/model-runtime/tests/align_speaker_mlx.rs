@@ -1,10 +1,10 @@
-//! 对齐器与说话人嵌入的真权重测试（移植自 v2 `ccut-speech` 的 e2e）：对齐器卸载后不留 GPU 缓存、完整流水线
-//! （Qwen3-ASR + Silero + 对齐器）给出合契约的 `aligned` 词时间、WeSpeaker 同一说话人的两段嵌入彼此接近。
+//! Real-weights tests for the aligner and speaker embedding (ported from v2 `ccut-speech`'s e2e). After the aligner is unloaded, no GPU cache is left behind; the full pipeline
+//! (Qwen3-ASR + Silero + aligner) yields `aligned` word times that conform to the contract, and two WeSpeaker embeddings of the same speaker are close to each other.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test align_speaker_mlx -- --ignored --test-threads=1 --nocapture
 //!
-//! 权重不在（没设 `CUCCUT_TEST_MODELS_DIR` 或没有 `.ccut-manifest.json`）时打印原因后跳过。
+//! When the weights are absent (`CUCCUT_TEST_MODELS_DIR` not set, or no `.ccut-manifest.json`), the reason is printed and the test is skipped.
 
 #![cfg(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 
@@ -36,7 +36,7 @@ fn audio(name: &str) -> Vec<f32> {
     decode_mono(&fixture(name), 16_000).expect("decode fixture")
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造协议里的 `ModelFiles`；权重不在时给 `None` 并打印原因。
+/// Builds the protocol's `ModelFiles` from `<models-root>/<repo>/.ccut-manifest.json`; when the weights are absent, returns `None` and prints the reason.
 fn model_files(repo: &str, family: &str) -> Option<Value> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
@@ -177,18 +177,18 @@ fn wespeaker_embeds_same_speaker_segments_close_together() {
         assert!(embedding.iter().all(|value| value.is_finite()));
     }
 
-    // 同一段自身：完全一致，距离为 0（确定性）。
+    // The same segment against itself: identical, distance 0 (deterministic).
     let repeated = embedder.embed(first).unwrap();
     let self_distance = cosine_distance(&first_embedding, &repeated);
     assert!(self_distance.abs() <= 1e-5, "同段自身距离 {self_distance}");
 
     let speaker_distance = cosine_distance(&first_embedding, &second_embedding);
 
-    // 另一位说话人（中文 fixture）：跨说话人距离必须远大于同说话人。
+    // A different speaker (Chinese fixture): the cross-speaker distance must be much larger than the same-speaker distance.
     let other_embedding = embedder.embed(&audio("chinese-sample.wav")).unwrap();
     let cross_speaker_distance = cosine_distance(&first_embedding, &other_embedding);
 
-    // 白噪声段：与语音的距离必须显著大于同一说话人两段之间的距离。
+    // White-noise segment: its distance from speech must be clearly larger than the distance between two segments from the same speaker.
     let mut state = 987_654_321_u32;
     let noise = (0..first.len())
         .map(|_| {
@@ -203,8 +203,8 @@ fn wespeaker_embeds_same_speaker_segments_close_together() {
         "WeSpeaker: 同说话人 {speaker_distance:.4}、跨说话人 {cross_speaker_distance:.4}、\
          噪声 {noise_distance:.4}、自身 {self_distance:.6}"
     );
-    // fixture 里有约 0.6 秒数字静音，会把同说话人距离抬到 0.38 左右；
-    // 经 VAD 裁剪的真实语音段之间约为 0.07。
+    // The fixture contains about 0.6 seconds of digital silence, which raises the same-speaker distance to around 0.38;
+    // between real speech segments trimmed by VAD it is about 0.07.
     assert!(speaker_distance < 0.4, "同一说话人两段距离过大：{speaker_distance}");
     assert!(
         cross_speaker_distance > speaker_distance + 0.3,
@@ -215,6 +215,6 @@ fn wespeaker_embeds_same_speaker_segments_close_together() {
         "噪声 {noise_distance} 未显著远于同说话人 {speaker_distance}"
     );
 
-    // 输入不足 0.5 秒必须拒绝，由调用方过滤。
+    // Input shorter than 0.5 seconds must be rejected; the caller filters it out.
     assert!(embedder.embed(&audio_samples[..7_999]).is_err());
 }

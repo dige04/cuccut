@@ -1,14 +1,10 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering path and the host byte layer), and it does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! BCF 的 `effects[]` / `style.blendMode` / `blur` / `clipPath` 四条通道
-//! （规范 §6.6 / §6.3，设计 §15 阶段 4B）。
+//! The four BCF channels `effects[]` / `style.blendMode` / `blur` / `clipPath`
+//! (spec §6.6 / §6.3, design §15 stage 4B).
 //!
-//! 四条的分工是**可执行的**：`blendMode` 与 `clipPath` 是单 surface 语义，
-//! 走 DrawOp v3 的 `PushLayer{blend}` / `ClipPath`，计划仍然折叠成单 Draw
-//! pass；`effects[]` 与 `blur` 要离屏 surface，计划因此长出 `Filter` 与
-//! `Composite`。没有这四条的文档一个 pass 都不多。
+//! The division of labor among the four is **executable**: `blendMode` and `clipPath` have single-surface semantics and go through DrawOp v3's `PushLayer{blend}` / `ClipPath`, so the plan still folds into a single Draw pass. `effects[]` and `blur` need off-screen surfaces, so the plan grows a `Filter` and a `Composite`. A document without these four has no extra passes at all.
 
 use render_raster::plan::{CapabilityProfile, CpuExecutor, FramePlanner, RenderPass, execute_plan};
 use render_raster::{FrameRenderer, LoadedAssets, MediaStore, TextEngine};
@@ -27,7 +23,7 @@ fn doc_with_element(element: Value) -> Value {
     })
 }
 
-/// 左上角起的 100×100 实心方块——像素断言最好读的形状。
+/// A solid 100×100 square starting at the top-left corner, the shape that is easiest to read for pixel assertions.
 fn square(extra: Value) -> Value {
     let mut node = json!({
         "type": "box",
@@ -69,13 +65,13 @@ fn render(mut ir: Ir, t: f64) -> (Vec<u8>, usize, usize) {
     (pixmap.data().to_vec(), plan.passes.len(), filters)
 }
 
-/// 像素取样：`data` 是预乘 RGBA。
+/// Pixel sampling: `data` is premultiplied RGBA.
 fn px(data: &[u8], x: u32, y: u32) -> [u8; 4] {
     let i = ((y * 240 + x) * 4) as usize;
     [data[i], data[i + 1], data[i + 2], data[i + 3]]
 }
 
-// ── 单 surface 的两条：blendMode / clipPath ─────────────────────────
+// ── The two single-surface channels: blendMode / clipPath ─────────────────────────
 
 #[test]
 fn blend_mode_and_clip_path_stay_in_one_draw_pass() {
@@ -96,7 +92,7 @@ fn blend_mode_and_clip_path_stay_in_one_draw_pass() {
     }
 }
 
-/// 圆形 `clipPath` 真的切掉了方块的四角。
+/// A circular `clipPath` really clips off the square's four corners.
 #[test]
 fn a_circle_clip_path_removes_the_corners() {
     let plain = render(ir_of(doc_with_element(square(json!({})))), 1.0).0;
@@ -107,7 +103,7 @@ fn a_circle_clip_path_removes_the_corners() {
         1.0,
     )
     .0;
-    // 盒是 0..99 见方。角落 (3, 3) 在圆外，中心 (50, 50) 在圆内。
+    // The box is 0..99 square. The corner (3, 3) is outside the circle, and the center (50, 50) is inside it.
     assert_eq!(px(&plain, 3, 3)[0], px(&plain, 50, 50)[0]);
     assert_eq!(
         px(&clipped, 3, 3),
@@ -121,7 +117,7 @@ fn a_circle_clip_path_removes_the_corners() {
     );
 }
 
-/// `inset` 的四边与圆角。
+/// The four edges and corner radii of `inset`.
 #[test]
 fn an_inset_clip_path_trims_each_edge() {
     let clipped = render(
@@ -131,12 +127,12 @@ fn an_inset_clip_path_trims_each_edge() {
         1.0,
     )
     .0;
-    // 左上四分之一被切掉，右下保留。
+    // The top-left quarter is clipped away, and the bottom-right is kept.
     assert_eq!(px(&clipped, 10, 10), [0x10, 0x10, 0x14, 0xff]);
     assert_eq!(px(&clipped, 60, 60)[0], 0xff);
 }
 
-/// `blendMode: screen` 把方块提亮到底色之上——与 normal 不同。
+/// `blendMode: screen` brightens the square above the base color, which differs from normal.
 #[test]
 fn blend_mode_changes_the_composited_pixels() {
     let normal = render(ir_of(doc_with_element(square(json!({})))), 1.0).0;
@@ -152,7 +148,7 @@ fn blend_mode_changes_the_composited_pixels() {
         px(&screen, 50, 50),
         "screen 必须与 normal 得到不同的合成结果"
     );
-    // screen 只会变亮，不会变暗。
+    // screen only brightens, never darkens.
     for channel in 0..3 {
         assert!(
             px(&screen, 50, 50)[channel] >= px(&normal, 50, 50)[channel],
@@ -161,7 +157,7 @@ fn blend_mode_changes_the_composited_pixels() {
     }
 }
 
-// ── 离屏 surface 的两条：effects[] / blur ───────────────────────────
+// ── The two off-screen-surface channels: effects[] / blur ───────────────────────────
 
 #[test]
 fn an_effect_stack_grows_filter_and_composite_passes() {
@@ -176,7 +172,7 @@ fn an_effect_stack_grows_filter_and_composite_passes() {
     assert_eq!(g, b);
 }
 
-/// `blur` 通道终于出画：动画到非零半径时长出 `Filter` pass 并真的糊边。
+/// The `blur` channel finally produces output: when the animation reaches a non-zero radius, a `Filter` pass appears and the edges really blur.
 #[test]
 fn the_blur_channel_finally_renders() {
     let ir = ir_of(doc_with_element(square(json!({
@@ -187,7 +183,7 @@ fn the_blur_channel_finally_renders() {
     let sharp = render(ir_of(doc_with_element(square(json!({})))), 1.0).0;
     let (blurred, _, filters) = render(ir, 2.0);
     assert_eq!(filters, 1, "非零 blur ⇒ 一个隐式 filter.blur");
-    // 方块右边界外一点：清晰时是纯底色，模糊后必然被染上一些红。
+    // A point just outside the square's right edge: when sharp it is pure background color, and after blurring it must be tinted with some red.
     assert_eq!(px(&sharp, 104, 50), [0x10, 0x10, 0x14, 0xff]);
     assert_ne!(
         px(&blurred, 104, 50),
@@ -196,7 +192,7 @@ fn the_blur_channel_finally_renders() {
     );
 }
 
-/// `blur` 采样为 0 的时刻不该白付一次离屏合成——计划仍然折叠。
+/// When the `blur` sample is 0, no off-screen composite should be paid for for nothing; the plan still folds.
 #[test]
 fn a_zero_blur_frame_still_folds() {
     let mut ir = ir_of(doc_with_element(square(json!({
@@ -214,7 +210,7 @@ fn a_zero_blur_frame_still_folds() {
     );
 }
 
-/// 显式 `filter.blur` 与 `blur` 通道同时存在 ⇒ 半径相加（§6.6）。
+/// When an explicit `filter.blur` and the `blur` channel both exist, the radii add (§6.6).
 #[test]
 fn the_blur_channel_adds_to_an_explicit_filter_blur() {
     let ir = ir_of(doc_with_element(square(json!({
@@ -237,12 +233,12 @@ fn the_blur_channel_adds_to_an_explicit_filter_blur() {
     let RenderPass::Filter { uniforms, .. } = filters[0] else {
         unreachable!()
     };
-    // 短边 160：0.02 + 8/160 = 0.07 ⇒ 11.2 px（round-to-int 在执行期做）。
+    // Short edge 160: 0.02 + 8/160 = 0.07 ⇒ 11.2 px (round-to-int is done at execution time).
     let radius = uniforms.scalar("radius").unwrap();
     assert!((radius - 0.07).abs() < 1e-9, "实得 {radius}");
 }
 
-// ── 结构性约束（preflight 拒绝而不是画错） ─────────────────────────
+// ── Structural constraints (preflight rejects rather than drawing incorrectly) ─────────
 
 #[test]
 fn nested_effect_stacks_apply_inside_out() {
@@ -275,7 +271,7 @@ fn an_effect_under_a_non_normal_blend_ancestor_is_composited() {
     assert!(px(&data, 50, 50)[1] < 0x10);
 }
 
-/// 效果路径也必须是 `(ir, t)` 的纯函数：两次计划逐字节相同。
+/// The effect path must also be a pure function of `(ir, t)`: two plans are byte-for-byte identical.
 #[test]
 fn the_effect_path_is_bitwise_repeatable() {
     let make = || {
@@ -387,7 +383,7 @@ fn mask_chain_renders_and_cycles_fail_during_resolve() {
     assert!(result.err().unwrap().to_string().contains("成环"));
 }
 
-// ── 效果参数通道 `effects[N].<param>`（§6.6）─────────────────────────
+// ── Effect parameter channel `effects[N].<param>` (§6.6) ─────────────────────────
 
 fn fingerprint_at(doc: Value, t: f64) -> u64 {
     let mut ir = ir_of(doc);
@@ -429,12 +425,12 @@ fn keyframed_effect_params_change_pixels_and_fingerprints() {
     assert_ne!(at0, at1, "动画的效果参数必须进帧指纹");
     assert_eq!(at1, at2, "关键帧结束后保持末值 ⇒ 同一帧");
 
-    // 光晕在强度 3 时溢出方块边界，强度 0 时没有。
+    // The glow overflows the square's boundary at strength 3, and does not at strength 0.
     let (dark, _, _) = render(ir_of(doc.clone()), 0.0);
     let (glow, _, _) = render(ir_of(doc), 1.0);
     assert!(px(&glow, 104, 50)[0] > px(&dark, 104, 50)[0]);
 
-    // 只动 tint：冷调蓝升红降，暖调红升蓝降。
+    // Only tint changes: a cool tint raises blue and lowers red, and a warm tint raises red and lowers blue.
     let tint_only = doc_with_element(graded_square(Some(json!({"keyframes": [
         {"prop": "effects[0].tint", "frames": [{"t": 0, "v": -1.0}, {"t": 1, "v": 1.0}]}
     ]}))));
@@ -459,17 +455,16 @@ fn effect_channel_values_are_clamped_to_the_manifest_range() {
         ]});
         fingerprint_at(doc_with_element(graded_square(Some(animate))), 0.5)
     };
-    // manifest 上限 8：超出的值与 8 同帧。
+    // Manifest cap of 8: values beyond it render the same frame as 8.
     assert_eq!(pinned(8.0), pinned(50.0));
     assert_ne!(pinned(2.0), pinned(8.0));
 }
 
-// ── 径向模糊与光柱（§6.6）──────────────────────────────────────────
+// ── Radial blur and light shafts (§6.6) ──────────────────────────────────────────
 
 #[test]
 fn radial_blur_strength_animates_through_the_effect_channel() {
-    // 方块中心在 (50, 50)，径向中心放在画布正中 (120, 80)：方块右下角外侧
-    // 被朝中心方向拖出的内容不存在，而方块左上角外侧（背离中心）会有拖影。
+    // The square's center is at (50, 50), and the radial center is placed at the middle of the canvas (120, 80). Outside the square's bottom-right corner there is no content dragged in the direction of the center, while outside the top-left corner (facing away from the center) there is a smear.
     let blurred = |animate: Value| {
         doc_with_element(square(json!({
             "effects": [{"preset": "filter.radialBlur", "presetVersion": 1,
@@ -487,11 +482,10 @@ fn radial_blur_strength_animates_through_the_effect_channel() {
     let (still, _, _) = render(ir_of(doc.clone()), 0.0);
     let (zoomed, _, filters) = render(ir_of(doc), 1.0);
     assert_eq!(filters, 1);
-    // strength 0 与无效果逐像素相同。
+    // strength 0 is pixel-for-pixel identical to no effect.
     let (plain, _, _) = render(ir_of(doc_with_element(square(json!({})))), 0.0);
     assert_eq!(still, plain, "strength = 0 必须恒等");
-    // 每个像素朝中心取样：方块右缘（朝向中心的一侧）取到方块外的透明，被拖淡；
-    // 左上角离中心最远、取样全落在方块内，基本不变。
+    // Each pixel samples toward the center. The square's right edge (the side facing the center) samples transparent pixels outside the square and is faded. The top-left corner is farthest from the center and all its samples fall inside the square, so it is essentially unchanged.
     assert!(zoomed != still);
     let edge = px(&zoomed, 98, 50);
     assert!(
@@ -500,7 +494,7 @@ fn radial_blur_strength_animates_through_the_effect_channel() {
     );
     let corner = px(&zoomed, 2, 2);
     assert!(corner[0] >= 250, "远端角落应保持实心：{corner:?}");
-    // 可重放：同一时刻两次渲染逐字节相同。
+    // Replayable: two renders at the same moment are byte-for-byte identical.
     let doc = blurred(json!({"keyframes": [
         {"prop": "effects[0].strength", "frames": [{"t": 0, "v": 0.3}, {"t": 1, "v": 0.3}]}
     ]}));
@@ -511,7 +505,7 @@ fn radial_blur_strength_animates_through_the_effect_channel() {
 
 #[test]
 fn god_rays_cast_a_shaft_away_from_an_offscreen_light() {
-    // 暗场上一块金色亮条，光源在画面正上方画外：亮条下方长出光柱，上方不亮。
+    // A gold bright bar on a dark scene, with the light source just off-frame above: a light shaft grows below the bar, and the area above is not lit.
     let bar = json!({
         "type": "box", "id": "root",
         "style": {"width": 240, "height": 160},
@@ -527,7 +521,7 @@ fn god_rays_cast_a_shaft_away_from_an_offscreen_light() {
     let mut dark = bar;
     dark["effects"][0]["params"]["intensity"] = json!(0.0);
     let (plain, _, _) = render(ir_of(doc_with_element(dark)), 0.0);
-    // 亮条下方 40 px 处被照亮，亮条上方与左右远处不变。
+    // The area 40 px below the bar is lit, while the area above the bar and far to the left and right is unchanged.
     assert!(
         px(&lit, 120, 90)[0] > px(&plain, 120, 90)[0] + 8,
         "{:?}",
@@ -537,9 +531,9 @@ fn god_rays_cast_a_shaft_away_from_an_offscreen_light() {
     assert_eq!(px(&lit, 20, 120), px(&plain, 20, 120));
 }
 
-// ── 分词模糊（§6.4）：`animate.parts` 里的 `blur` 通道 ─────────────────
+// ── Per-word blur (§6.4): the `blur` channel in `animate.parts` ─────────────────
 
-/// 两个词、逐词 0.5 s 的 `motion.blurIn`（不淡入，只看模糊）。
+/// Two words, each with a 0.5 s `motion.blurIn` (no fade-in; only the blur is observed).
 fn blurred_title(animated: bool, opacity: f64) -> Value {
     let mut node = json!({
         "type": "text", "id": "title", "text": "AB CD",
@@ -554,7 +548,7 @@ fn blurred_title(animated: bool, opacity: f64) -> Value {
     node
 }
 
-/// 预乘 alpha 落在 (0, 255) 的像素数：模糊把实心字形的边缘摊成半透明。
+/// The number of pixels whose premultiplied alpha falls in (0, 255): blur spreads the edges of solid glyphs into semi-transparency.
 fn soft_pixels(data: &[u8]) -> usize {
     data.chunks_exact(4)
         .filter(|px| px[0] > 0x10 && px[0] < 0xf0)
@@ -566,7 +560,7 @@ fn part_blur_softens_each_word_on_its_own_schedule() {
     let doc = |animated: bool| doc_with_element(blurred_title(animated, 1.0));
     let (reference, _, filters) = render(ir_of(doc(false)), 1.5);
     assert_eq!(filters, 0);
-    // t = 0.25：第一个词正在变清，第二个词还没开始（停在起始半径）⇒ 两个半径桶。
+    // t = 0.25: the first word is coming into focus, and the second word has not started yet (it is held at its starting radius), so there are two radius buckets.
     let (mid, _, filters) = render(ir_of(doc(true)), 0.25);
     assert_eq!(filters, 2, "每个不同的模糊半径各一层 filter.blur");
     assert_ne!(mid, reference);
@@ -576,21 +570,20 @@ fn part_blur_softens_each_word_on_its_own_schedule() {
         soft_pixels(&mid),
         soft_pixels(&reference)
     );
-    // t = 0.75：第一个词已清晰，只剩第二个词在模糊。
+    // t = 0.75: the first word is already sharp, and only the second word is still blurred.
     let (_, _, filters) = render(ir_of(doc(true)), 0.75);
     assert_eq!(filters, 1);
-    // 全部落定：没有滤镜，与不动画的文字逐像素相同。
+    // Everything has settled: no filter, pixel-for-pixel identical to unanimated text.
     let (settled, _, filters) = render(ir_of(doc(true)), 1.5);
     assert_eq!(filters, 0);
     assert_eq!(settled, reference);
-    // 纯函数：同一时刻重复渲染逐字节相同。
+    // Pure function: repeated rendering at the same moment is byte-for-byte identical.
     assert_eq!(render(ir_of(doc(true)), 0.25).0, mid);
 }
 
 #[test]
 fn part_blur_under_group_opacity_still_blurs() {
-    // 元素自己带 opacity < 1 时整元素改走离屏组，part 的模糊层在组内生成，
-    // 组透明度仍然只施加一次。
+    // When the element itself has opacity < 1, the whole element switches to an off-screen group. The part's blur layer is generated inside the group, and the group opacity is still applied only once.
     let (faded, _, filters) = render(ir_of(doc_with_element(blurred_title(true, 0.5))), 0.25);
     assert_eq!(filters, 2);
     let (sharp, _, _) = render(ir_of(doc_with_element(blurred_title(false, 0.5))), 0.25);
@@ -599,7 +592,7 @@ fn part_blur_under_group_opacity_still_blurs() {
 
 #[test]
 fn flat_recording_draws_blurred_parts_inline() {
-    // `record()` 的平坦指令流没有 Filter pass：模糊中的 part 照常内联，字形一个不少。
+    // The flat instruction stream from `record()` has no Filter pass: parts being blurred are still inlined as usual, and not a single glyph is missing.
     let fills = |t: f64| {
         let mut ir = ir_of(doc_with_element(blurred_title(true, 1.0)));
         let mut engine = TextEngine::new();

@@ -1,10 +1,7 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/acp-agent.ts 的 mergeToolSnapshot / coalesceDefined（工具调用的增量合并）、
- * mapToolStatus、extractToolText / contentBlockToText、buildShellCommand、mapPermissionRequest / selectPermissionOption
- * （审批选项）、deriveModesFromACP / deriveModelDefinitionsFromACP / findSelectConfigOption / flattenSelectOptions
- * （模式与模型表）、normalizeMcpServers（只留 Streamable HTTP）、mapPlanToTimeline。
- * 改成 CucCut 的 AgentItem / ApprovalRequest / DriverModel，审批种类、「本会话放行」的分类键与 `diff` 内容块转 unified diff 是新加的。
+ * Some mechanisms are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * mergeToolSnapshot / coalesceDefined (incremental merging of tool calls), mapToolStatus, extractToolText / contentBlockToText, buildShellCommand, mapPermissionRequest / selectPermissionOption (approval options), deriveModesFromACP / deriveModelDefinitionsFromACP / findSelectConfigOption / flattenSelectOptions (mode and model tables), normalizeMcpServers (keeps only Streamable HTTP), mapPlanToTimeline, all in packages/server/src/server/agent/providers/acp-agent.ts.
+ * Changed to CucCut's AgentItem / ApprovalRequest / DriverModel; the approval kinds, the classification key for "allow for this session", and the conversion of `diff` content blocks to unified diff are new.
  */
 import type { ApprovalRequest, DriverModel, ToolCallKind, ToolCallStatus } from '@cuccut/protocol';
 import type { AgentItem, McpServerSpec } from '@cuccut/harness';
@@ -26,7 +23,7 @@ import type {
 import { commandRule } from '../approval-rule.ts';
 import { diffPath, textDiff } from '../unified-diff.ts';
 
-/** 一次工具调用到目前为止的样子：`tool_call` 与之后的 `tool_call_update` 合并。 */
+/** The state of one tool call so far: `tool_call` merged with the subsequent `tool_call_update`. */
 export interface ToolSnapshot {
   toolCallId: string;
   title: string;
@@ -62,7 +59,7 @@ export function mapToolStatus(status: AcpToolStatus | null | undefined): ToolCal
   }
 }
 
-/** ACP 的工具种类 → CucCut 的步骤种类。读、搜、想之类没有专门的图标，算 `other`。 */
+/** ACP tool kind → CucCut step kind. Reading, searching, thinking and similar have no dedicated icon, so they map to `other`. */
 export function toolCallKind(kind: ToolKind | null): ToolCallKind {
   switch (kind) {
     case 'execute':
@@ -79,9 +76,8 @@ export function toolCallKind(kind: ToolKind | null): ToolCallKind {
 }
 
 /**
- * 时间线上的一步。`status` 给了就用它（回合结束时还没终态的记成 `interrupted`，被拒的记成 `declined`）。
- * 改文件的步骤成功时 `output` 是 unified diff（架构设计 §3.1）：由 ACP 的 `diff` 内容块（`oldText` → `newText`）生成，
- * 文件头的路径相对 `cwd`；没有 `diff` 块时退回文字内容。
+ * A step on the timeline. If `status` is given, it is used (a step still without a terminal state when the turn ends is recorded as `interrupted`, and a rejected one as `declined`).
+ * When a file-modifying step succeeds, `output` is a unified diff (architecture design §3.1): generated from ACP's `diff` content block (`oldText` → `newText`), with the file header paths relative to `cwd`; without a `diff` block it falls back to the text content.
  */
 export function toolItem(
   snapshot: ToolSnapshot,
@@ -108,7 +104,7 @@ export function toolItem(
   };
 }
 
-/** 计划（`plan`）写成一段清单文字，作为一条智能体消息显示。 */
+/** A plan (`plan`) is written as a checklist text and shown as one agent message. */
 export function planText(plan: Plan): string {
   return plan.entries.map((entry) => `${entry.status === 'completed' ? '- [x]' : '- [ ]'} ${entry.content}`).join('\n');
 }
@@ -126,7 +122,7 @@ export function contentText(block: ContentBlock): string {
   }
 }
 
-/** 内容里的 `diff` 块，每个文件一段 unified diff，连起来。没有（或都没有变化）时为 null。 */
+/** The `diff` blocks in the content, one unified diff per file, joined together. null when there are none (or none changed). */
 function toolDiff(content: ToolCallContent[] | null, cwd: string | null): string | null {
   const parts: string[] = [];
   for (const item of content ?? []) {
@@ -164,8 +160,7 @@ function shellCommand(snapshot: ToolSnapshot): string | null {
 }
 
 /**
- * 一次 `session/request_permission` → CucCut 的审批内容，加上「本会话放行」用的分类键：
- * 命令按 `commandRule`（`ccut <子命令>` 或第一个词），文件修改一类，别的工具按种类或标题。
+ * One `session/request_permission` → CucCut's approval content, plus the classification key used for "allow for this session": commands by `commandRule` (`ccut <subcommand>` or the first word); file modifications as one category; other tools by kind or title.
  */
 export function approvalOf(snapshot: ToolSnapshot, cwd: string): { request: ApprovalRequest; grantKey: string } {
   const raw = record(snapshot.rawInput);
@@ -185,11 +180,11 @@ export function approvalOf(snapshot: ToolSnapshot, cwd: string): { request: Appr
     case 'edit':
     case 'delete':
     case 'move':
-      // 文件修改按访问模式放行，不存规则。
+      // File modifications are allowed according to the access mode, so no rule is stored.
       return { request: { kind: 'file-change', reason: snapshot.title, files, rule: null }, grantKey: 'file-change' };
     default: {
       const title = snapshot.title || snapshot.kind || 'tool';
-      // 读、搜、取网页这几类的标题常带参数（「Fetching https://…」），规则按种类记才稳定；别的（MCP 工具）标题就是工具名。
+      // For read, search and fetch-web kinds, the titles often carry parameters ("Fetching https://…"), so rules are recorded by kind to be stable; for others (MCP tools) the title is the tool name.
       const rule = snapshot.kind && STABLE_KINDS.has(snapshot.kind) ? snapshot.kind : title;
       const mcp = mcpToolOf(title);
       return {
@@ -203,8 +198,7 @@ export function approvalOf(snapshot: ToolSnapshot, cwd: string): { request: Appr
 const STABLE_KINDS = new Set<ToolKind>(['read', 'search', 'fetch', 'think', 'switch_mode']);
 
 /**
- * 标题里认出的 MCP 工具：`mcp__<服务>__<工具>`（claude-code-acp 等沿用 Claude Code 的命名）或
- * `<工具> (<服务> MCP Server)`（Gemini CLI 的显示名；未验证：按 Gemini CLI 0.46.0 的源码推断，没跑真实回合核对）。认不出时为 null。
+ * An MCP tool recognized from the title: `mcp__<service>__<tool>` (claude-code-acp and others follow Claude Code's naming), or `<tool> (<service> MCP Server)` (Gemini CLI's display name; unverified: inferred from the Gemini CLI 0.46.0 source, not checked against a real turn). null when it is not recognized.
  */
 export function mcpToolOf(title: string): { server: string; tool: string } | null {
   const claude = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(title);
@@ -215,9 +209,8 @@ export function mcpToolOf(title: string): { server: string; tool: string } | nul
 }
 
 /**
- * 这次审批是不是 CucCut 自己的工具（经工具通道交给智能体的 MCP 服务，`servers` 是开会话时传过去的服务名）。
- * 这些工具在 Runtime 里按访问模式与风险另行把关（架构设计 §3.12），原生侧直接放行，免得同一个动作问两次、只读的也来问
- * （Claude 的 Driver 同样在 canUseTool 里放行 `mcp__cuccut__*`）。只认种类为 other / 没给的：命令与改文件不算。
+ * Whether this approval is one of CucCut's own tools (an MCP service handed to the agent through the tool channel; `servers` are the service names passed when the session was opened).
+ * These tools are gated separately in the Runtime by access mode and risk (architecture design §3.12), so on the native side they are allowed directly: this avoids asking twice for the same action, and avoids asking about read-only ones (Claude's Driver likewise allows `mcp__cuccut__*` in canUseTool). Only kind other or unspecified matches: commands and file edits do not count.
  */
 export function isOwnMcpTool(snapshot: ToolSnapshot, servers: ReadonlySet<string>): boolean {
   if (servers.size === 0 || (snapshot.kind !== null && snapshot.kind !== 'other')) return false;
@@ -232,21 +225,20 @@ function summarizeInput(raw: Record<string, unknown> | null): string | null {
 }
 
 /**
- * 按 CucCut 的答复挑原生选项。允许一律挑「只这一次」：「本会话」由 Driver 自己记，「总是允许」的规则归 Harness 存，
- * 不能选原生的 `allow_always`（它会写进智能体自己的持久设置）。没有「只这一次」的选项时为 null，按取消处理。
+ * Picks the native option from CucCut's reply. Allow always picks "this time only": "this session" is recorded by the Driver itself, and "always allow" rules are stored by the Harness, so the native `allow_always` must not be chosen (it would write into the agent's own persistent settings). When there is no "this time only" option, it is null, and the request is handled as a cancel.
  */
 export function selectPermissionOption(options: PermissionOption[], behavior: 'allow' | 'reject'): PermissionOption | null {
   if (behavior === 'allow') return options.find((o) => o.kind === 'allow_once') ?? null;
   return options.find((o) => o.kind === 'reject_once') ?? options.find((o) => o.kind === 'reject_always') ?? null;
 }
 
-/** 旧版的会话模型状态（`session/new` 应答里的 `models`，Gemini CLI 等还在用；SDK 的类型里已经没有）。 */
+/** The legacy session model state (`models` in the `session/new` response; Gemini CLI and others still use it; removed from the SDK types). */
 export interface LegacyModelState {
   availableModels?: Array<{ modelId: string; name?: string | null; description?: string | null }> | null;
   currentModelId?: string | null;
 }
 
-/** 会话应答里与模式、模型有关的部分。 */
+/** The part of the session response related to modes and models. */
 export interface AcpSessionState {
   modes?: SessionModeState | null;
   models?: LegacyModelState | null;
@@ -265,7 +257,7 @@ export function flattenSelectOptions(option: Extract<SessionConfigOption, { type
   return option.options.flatMap((o) => ('group' in o ? o.options : [o]));
 }
 
-/** 模型表：优先旧版的 `models`，否则取分类为 model 的配置项。ACP 没有推理强度的统一说法，`efforts` 一律空。 */
+/** Model table: prefers the legacy `models`, otherwise takes the config options categorized as model. ACP has no unified term for reasoning effort, so `efforts` is always empty. */
 export function deriveModels(state: AcpSessionState): DriverModel[] {
   const legacy = state.models;
   if (legacy?.availableModels?.length) {
@@ -282,7 +274,7 @@ function model(id: string, label: string, description: string | null, isDefault:
   return { id, label, description, tier: null, isDefault, efforts: [], defaultEffort: null };
 }
 
-/** 能用的会话模式 id：`modes` 优先，否则取分类为 mode 的配置项。 */
+/** Usable session mode ids: `modes` first, otherwise the config options categorized as mode. */
 export function availableModes(state: AcpSessionState): { ids: string[]; via: 'modes' | 'config' | null; configId: string | null } {
   if (state.modes?.availableModes?.length) return { ids: state.modes.availableModes.map((m) => m.id), via: 'modes', configId: null };
   const option = findSelectOption(state.configOptions, 'mode');
@@ -290,7 +282,7 @@ export function availableModes(state: AcpSessionState): { ids: string[]; via: 'm
   return { ids: [], via: null, configId: null };
 }
 
-/** CucCut 的 MCP 服务 → ACP 的 `mcpServers`（Streamable HTTP）。 */
+/** CucCut's MCP services → ACP's `mcpServers` (Streamable HTTP). */
 export function acpMcpServers(servers: Record<string, McpServerSpec> | undefined): McpServer[] {
   return Object.entries(servers ?? {}).map(([name, spec]) => ({
     type: 'http' as const,

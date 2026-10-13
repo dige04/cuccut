@@ -4,52 +4,52 @@ import { LocalizedError, type JobText } from '../job-text.ts';
 import { joinWords } from './translation-document.ts';
 
 /**
- * 字幕文件（SRT、WebVTT）的严格读写，供字幕文件的翻译（`translate-subtitles`，架构设计 §7.9）用：时间码原样保留，
- * 只换文本，不合并、不拆分字幕条。与播放器叠加显示用的宽松解析（`packages/ui` 的 subtitles.ts：排序、丢掉空条与坏条）
- * 不同，这里读不准的文件一律拒绝并指出行号，不猜。
+ * Strict reading and writing of subtitle files (SRT, WebVTT), for translating subtitle files (`translate-subtitles`, architecture design §7.9): timecodes are kept as they are,
+ * only the text is replaced, and cues are neither merged nor split. Unlike the lenient parsing used for player overlay display (`subtitles.ts` in `packages/ui`: sorts, drops empty and bad cues),
+ * a file that cannot be read exactly is always rejected here, with its line number reported; nothing is guessed.
  *
- * 认的写法：UTF-8（可带 BOM）、UTF-16（带 BOM）、不是合法 UTF-8 时按 GB18030；CRLF、CR 换行；多行文本；空文本的条；
- * SRT 的序号行可以省略；VTT 的头部、cue 标识、cue settings 与 NOTE、STYLE、REGION 块。拒绝：有文本却没有时间行的块、
- * 文本里出现时间行（通常是两条之间少了空行）、毫秒不是三位、分秒越界、结束早于开始、一条也没有、超过大小与条数上限。
+ * Accepted forms: UTF-8 (BOM allowed), UTF-16 (with BOM), GB18030 when the input is not valid UTF-8; CRLF and CR line endings; multi-line text; cues with empty text;
+ * SRT index lines may be omitted; VTT header, cue identifiers, cue settings, and NOTE, STYLE, REGION blocks. Rejected: a block with text but no timing line,
+ * a timing line appearing inside text (usually a missing blank line between two cues), milliseconds that are not three digits, minutes or seconds out of range, end before start, no cues at all, or exceeding the size and cue-count limits.
  *
- * 行内标记（SRT 的 `<i>`、`<font>`、`{\an8}`，VTT 的 `<c.x>`、`<v 说话人>`、时间戳标签与字符实体）送模型前去掉，
- * 输出的文本也不带；调用方记下有多少条去了标记。
+ * Inline markup (SRT `<i>`, `<font>`, `{\an8}`; VTT `<c.x>`, `<v 说话人>`, timestamp tags and character entities) is stripped before the text is sent to the model,
+ * and the output text does not carry it either; the caller records how many cues had markup removed.
  */
 
 export type SubtitleFormat = 'srt' | 'vtt';
 
-/** 文件大小的上限（字节）。 */
+/** Upper limit on file size (bytes). */
 export const MAX_SUBTITLE_BYTES = 4 * 1024 * 1024;
-/** 字幕条数的上限。 */
+/** Upper limit on the number of cues. */
 export const MAX_SUBTITLE_CUES = 10_000;
-/** 一条字幕文本的字数上限。 */
+/** Upper limit on the number of characters in one cue's text. */
 export const MAX_CUE_CHARS = 1000;
 
 export interface SubtitleCue {
-  /** SRT 的序号行、VTT 的 cue 标识；没有时 null。 */
+  /** The SRT index line or VTT cue identifier; null when absent. */
   id: string | null;
-  /** 原样的时间行（去掉首尾空白；VTT 含 cue settings）。 */
+  /** The timing line as written (trimmed; for VTT, includes cue settings). */
   timing: string;
   startMs: number;
   endMs: number;
-  /** 结束时间之后的部分（VTT 的 cue settings、SRT 偶见的坐标）；没有时空串。 */
+  /** The part after the end time (VTT cue settings, or the coordinates occasionally seen in SRT); empty string when absent. */
   settings: string;
-  /** 原样的文本行（可以没有）。 */
+  /** The text lines as written (may be none). */
   lines: string[];
-  /** 时间行在文件里的行号（从 1 开始）。 */
+  /** Line number of the timing line in the file (1-based). */
   line: number;
 }
 
 export interface SubtitleDocument {
   format: SubtitleFormat;
-  /** VTT 的头部块（`WEBVTT` 行与之后的头部行）；SRT 为 null。 */
+  /** The VTT header block (the `WEBVTT` line and the header lines after it); null for SRT. */
   header: string | null;
   cues: SubtitleCue[];
-  /** VTT 的 NOTE、STYLE、REGION 块：原样，`before` 是它之后那一条字幕的下标（在全部字幕之后时等于条数）。 */
+  /** VTT NOTE, STYLE and REGION blocks, unchanged; `before` is the index of the cue that follows the block (equal to the cue count when it comes after all cues). */
   blocks: Array<{ before: number; text: string }>;
 }
 
-/** 读不准的字幕文件。`code` 是命令与协议规范 §11.3 的错误码；`message` 给目录文字时引用记在 `messageRef`。 */
+/** A subtitle file that could not be read exactly. `code` is the error code from command and protocol spec §11.3; when `message` is catalog text, its reference is recorded in `messageRef`. */
 export class SubtitleFileError extends LocalizedError {
   readonly code: 'SUBTITLE_FILE_INVALID' | 'SUBTITLE_FILE_TOO_LARGE';
   readonly details: Record<string, unknown>;
@@ -62,13 +62,13 @@ export class SubtitleFileError extends LocalizedError {
   }
 }
 
-/** 按扩展名认格式；不是 .srt、.vtt 时 null。 */
+/** Detects the format by file extension; null when it is not .srt or .vtt. */
 export function subtitleFormatOf(file: string): SubtitleFormat | null {
   const ext = /\.([^./\\]+)$/.exec(file)?.[1]?.toLowerCase();
   return ext === 'srt' || ext === 'vtt' ? ext : null;
 }
 
-/** 字节转文字：UTF-16 的 BOM 按 UTF-16；否则 UTF-8（可带 BOM），不是合法 UTF-8 时按 GB18030。 */
+/** Bytes to text: a UTF-16 BOM is decoded as UTF-16; otherwise UTF-8 (BOM allowed), and GB18030 when the input is not valid UTF-8. */
 export function decodeSubtitleBytes(bytes: Uint8Array): string {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes);
@@ -79,7 +79,7 @@ export function decodeSubtitleBytes(bytes: Uint8Array): string {
   }
 }
 
-/** 读一个字幕文件的字节：检查大小、解码、严格解析。 */
+/** Reads a subtitle file's bytes: checks the size, decodes, and parses strictly. */
 export function readSubtitleBytes(bytes: Uint8Array, format: SubtitleFormat): SubtitleDocument {
   if (bytes.byteLength > MAX_SUBTITLE_BYTES) {
     throw new SubtitleFileError('SUBTITLE_FILE_TOO_LARGE', JobsSubtitleFile.tooLarge({ bytes: bytes.byteLength, limit: MAX_SUBTITLE_BYTES }), {
@@ -91,8 +91,8 @@ export function readSubtitleBytes(bytes: Uint8Array, format: SubtitleFormat): Su
 }
 
 /**
- * 字幕文件去掉时间码与行内标记后的正文（工具的 Space 条目输入当文字用，架构设计 §7.9）：每条一行，空的条不要。
- * 读不准时同 `readSubtitleBytes` 抛 `SubtitleFileError`。
+ * The body of a subtitle file with timecodes and inline markup removed (used as text when a tool's Space entry is the input, architecture design §7.9): one line per cue, empty cues dropped.
+ * When the file cannot be read exactly, it throws `SubtitleFileError`, as `readSubtitleBytes` does.
  */
 export function subtitleText(bytes: Uint8Array, format: SubtitleFormat): string {
   const document = readSubtitleBytes(bytes, format);
@@ -109,11 +109,11 @@ const VTT_TIMING = new RegExp(String.raw`^${VTT_TIME}[ \t]+-->[ \t]+${VTT_TIME}(
 
 interface Block {
   lines: string[];
-  /** 第一行的行号（从 1 开始）。 */
+  /** Line number of the first line (1-based). */
   line: number;
 }
 
-/** 严格解析：读不准时抛 `SubtitleFileError`。 */
+/** Strict parsing: throws `SubtitleFileError` when the input cannot be read exactly. */
 export function parseSubtitles(source: string, format: SubtitleFormat): SubtitleDocument {
   const text = source.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   if (text.includes('\u0000')) throw invalidAt(1, JobsSubtitleFile.nul());
@@ -147,7 +147,7 @@ export function parseSubtitles(source: string, format: SubtitleFormat): Subtitle
   return { format, header, cues, blocks: extras };
 }
 
-/** 以空行（只有空白的行）分块。 */
+/** Splits into blocks at blank lines (lines containing only whitespace). */
 function splitBlocks(text: string): Block[] {
   const blocks: Block[] = [];
   let current: Block | null = null;
@@ -194,7 +194,7 @@ function toMs([h, m, s, ms]: Array<string | undefined>, line: number): number {
   return ((Number(h ?? 0) * 60 + minutes) * 60 + seconds) * 1000 + Number(ms);
 }
 
-/** `details.problem` 是按当前语言生成的文字（`details` 没有引用字段），整句的引用在错误的 `messageRef` 里。 */
+/** `details.problem` is text generated in the current language (`details` has no reference field); the reference for the whole sentence is in the error's `messageRef`. */
 function invalidAt(line: number, problem: Localized): SubtitleFileError {
   return new SubtitleFileError('SUBTITLE_FILE_INVALID', JobsSubtitleFile.invalidAt({ line, problem }), { line, problem: problem.text });
 }
@@ -202,8 +202,8 @@ function invalidAt(line: number, problem: Localized): SubtitleFileError {
 const VTT_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', nbsp: ' ', lrm: '', rlm: '' };
 
 /**
- * 一条字幕去掉行内标记后的各行（去掉首尾空白与空行）。`marked`：原文带标记。
- * VTT 里 `<…>` 都是标记（字面的 `<` 要写成 `&lt;`）；SRT 里只认以字母或 `/` 开头的标签与 `{\…}`。
+ * The lines of one cue with inline markup removed (trimmed, blank lines dropped). `marked`: the source text contains markup.
+ * In VTT every `<…>` is markup (a literal `<` must be written as `&lt;`); in SRT only tags starting with a letter or `/`, and `{\…}`, are recognized.
  */
 export function plainLines(cue: SubtitleCue, format: SubtitleFormat): { lines: string[]; marked: boolean } {
   const tags = format === 'vtt' ? VTT_TAG : SRT_TAG;
@@ -228,12 +228,12 @@ const OVERRIDE = /\{\\[^}]*\}/;
 const VTT_TAG = /<[^>]*>/;
 const SRT_TAG = /<\/?[A-Za-z][^<>]*>/;
 
-/** 一条字幕送模型的文本：去掉标记的各行接成一句（拉丁文字之间补空格，中文不加）。空串表示这条不用翻译。 */
+/** The text of one cue sent to the model: its lines with markup removed, joined into one sentence (a space is added between Latin-script words; none is added for Chinese). An empty string means the cue needs no translation. */
 export function cueText(lines: string[]): string {
   return joinWords(lines);
 }
 
-/** 译文整理成字幕的文本行：按换行拆开、去掉首尾空白与空行，`-->` 换成箭头（不能出现在字幕文本里）。 */
+/** Turns a translation into subtitle text lines: split at newlines, trimmed, blank lines dropped, and `-->` replaced with an arrow (it cannot appear in subtitle text). */
 export function translationLines(text: string): string[] {
   return text
     .split(/\r\n?|\n/)
@@ -243,16 +243,16 @@ export function translationLines(text: string): string[] {
 
 export interface RenderedSubtitles {
   text: string;
-  /** VTT 转 SRT 时丢掉的 cue settings 条数与 NOTE、STYLE、REGION 块数。 */
+  /** Counts of the cue settings and of NOTE, STYLE and REGION blocks dropped when converting VTT to SRT. */
   droppedSettings: number;
   droppedBlocks: number;
 }
 
 /**
- * 写出字幕文件（UTF-8、LF、不带 BOM）：每条的时间码不变，文本换成 `texts[i]` 的各行。
- * 同一格式时序号或标识、时间行（含 cue settings）原样照抄，VTT 的头部与 NOTE、STYLE、REGION 块留在原处；
- * 换格式时时间码按毫秒重写（SRT 用 `,`，VTT 用 `.`、小时补足两位）。VTT 转 SRT：标识都是正整数时用作序号，否则按顺序编号；
- * cue settings 与 NOTE 等块 SRT 放不下，丢掉并计数。
+ * Writes a subtitle file (UTF-8, LF, no BOM): each cue's timecode is unchanged, and its text is replaced with the lines of `texts[i]`.
+ * In the same format, the index or identifier and the timing line (including cue settings) are copied as they are; the VTT header and the NOTE, STYLE and REGION blocks stay in place;
+ * when the format changes, timecodes are rewritten from milliseconds (SRT uses `,`, VTT uses `.` with the hours padded to two digits). VTT to SRT: identifiers are used as index numbers when they are all positive integers, otherwise cues are numbered in order;
+ * cue settings and blocks such as NOTE, which SRT cannot hold, are dropped and counted.
  */
 export function renderSubtitles(source: SubtitleDocument, texts: string[][], format: SubtitleFormat): RenderedSubtitles {
   const same = format === source.format;
@@ -287,7 +287,7 @@ export function renderSubtitles(source: SubtitleDocument, texts: string[][], for
   return { text: `${out.join('\n\n')}\n`, droppedSettings, droppedBlocks };
 }
 
-/** `hh:mm:ss,ttt`（SRT）或 `hh:mm:ss.ttt`（VTT）。 */
+/** `hh:mm:ss,ttt` (SRT) or `hh:mm:ss.ttt` (VTT). */
 export function clock(ms: number, format: SubtitleFormat): string {
   const pad = (n: number, width = 2) => String(n).padStart(width, '0');
   const h = Math.floor(ms / 3_600_000);

@@ -1,9 +1,9 @@
-// OpenAI 兼容端点的转写适配器（架构设计 §6.4）：用户给出基址与模型，请求形状同 OpenAI。2026-10-03 读过的文档：
+// Transcription adapter for OpenAI-compatible endpoints (architecture design §6.4): the user supplies the base URL and model, and the request shape matches OpenAI. Documentation read on 2026-10-03:
 //   https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create
-// 兼容端点各家实现不一（vLLM、LocalAI、faster-whisper-server 等），这里只假定 `POST {base}/audio/transcriptions`
-// 接受 multipart 的 `file`/`model`/`response_format`/`language`/`prompt`，`verbose_json` 时可能带 `segments`、`words`；
-// 都是假定，没有逐家确认。声明了 `wordTimestamps: 'native'` 的模型请求 `verbose_json` 与词、段时间，其余请求 `json`。
-// 密钥可选；切片用 WAV（兼容端点最普遍接受的格式）。
+// Compatible endpoints differ from one implementation to another (vLLM, LocalAI, faster-whisper-server, etc.), so here we only assume `POST {base}/audio/transcriptions`
+// accepts multipart `file`/`model`/`response_format`/`language`/`prompt`, and with `verbose_json` it may include `segments` and `words`;
+// all of this is assumed, not confirmed for each implementation. Models declaring `wordTimestamps: 'native'` request `verbose_json` with word and segment timestamps; the rest request `json`.
+// The key is optional; slices use WAV (the format most widely accepted by compatible endpoints).
 import type { DeclaredModel, ModelServiceCapability, TranscribeModelInfo } from '@cuccut/protocol';
 import type { ChunkFormat } from '../audio/audio-prep.ts';
 import type { AdapterConfig, AdapterHttp, ChunkRequest, ChunkTranscript, TranscribeAdapter } from '../adapter.ts';
@@ -14,7 +14,7 @@ const TIMELESS_CHUNK_SEC = 120;
 
 export class CompatibleAdapter implements TranscribeAdapter {
   readonly version = 'cuccut-providers/openai-compatible@1';
-  /** 显示名可能随配置改变：每次用时再取。 */
+  /** The display name may change with configuration: it is read each time it is used. */
   readonly #label: () => string;
 
   constructor(label: () => string) {
@@ -42,12 +42,12 @@ export class CompatibleAdapter implements TranscribeAdapter {
   }
 }
 
-/** 声明为某种能力的模型（`capability` 不给时是 `transcribe`），按声明的顺序；第一个是这种能力的默认模型。 */
+/** Models declared for a capability (`transcribe` when `capability` is not given), in declaration order; the first is the default model for that capability. */
 export function declaredOf(config: AdapterConfig, capability: ModelServiceCapability): DeclaredModel[] {
   return config.declared.filter((m) => (m.capability ?? 'transcribe') === capability);
 }
 
-/** 声明的模型补上保守的默认值。 */
+/** Fills in conservative defaults for declared models. */
 export function declaredModelInfo(model: DeclaredModel, isDefault: boolean): TranscribeModelInfo {
   return {
     modelId: model.modelId,

@@ -1,10 +1,10 @@
-// 打包产物的字体检查（`npm run check:file-fonts`）：在 Electron 里以 file:// 打开渲染进程的生产构建（`out/renderer/index.html`），
-// 经产物里的自检入口（`src/renderer/kernel-check.ts`）走预览同一条载入路，核对渲染内核拿到了随产物发布的每一份字体，
-// 并经内核量出一个文字框。规则见架构设计 §9.1；检查依赖什么见开发流程 §2。
+// Font check for the packaged output (`npm run check:file-fonts`): opens the renderer's production build (`out/renderer/index.html`) under file:// in Electron,
+// goes through the output's self-check entry (`src/renderer/kernel-check.ts`) on the same loading path as the preview, verifies that the rendering kernel got every font shipped with the output,
+// and measures one text box through the kernel. For the rules see architecture design §9.1; for what the check depends on see development process §2.
 //
-// 同一个文件两种身份：用 node 运行时准备临时目录、启动 Electron 并看住总时限；Electron 以它为主进程时做检查。
-// 检查自己的主进程只开一个隐藏窗口：不启动 Runtime（因而不碰钥匙串、不启动任何智能体），不读写真实的应用数据目录，
-// 除 file:、data:、blob: 以外的请求一律拦下（不联网）。退出码：0 通过，1 不通过，2 超时或起不来。
+// One file with two roles: run by node, it prepares a temporary directory, starts Electron and enforces an overall time limit; when Electron runs it as its main process, it performs the check.
+// The check's own main process opens only one hidden window: it does not start the Runtime (so it does not touch the keychain or start any agent), does not read or write the real app data directory,
+// and blocks every request except file:, data: and blob: (no network). Exit codes: 0 pass, 1 fail, 2 timeout or failed to start.
 
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,19 +13,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // --out=<Resources/app.asar/out> also checks the final packaged font layout.
 const OUT = resolve(process.argv.find((arg) => arg.startsWith('--out='))?.slice(6) ?? resolve(dirname(fileURLToPath(import.meta.url)), '../out'));
-/** Electron 里的检查自己的时限；外面再多给一些，连 Electron 起不来、卡住也收得住。 */
+/** The check's own time limit inside Electron; the outer limit is set somewhat longer, so that even if Electron fails to start or hangs, it is still stopped. */
 const CHECK_TIMEOUT_MS = 60_000;
 const LAUNCH_TIMEOUT_MS = 90_000;
-/** 产物里的字体文件名是 `<原名>-<8 位哈希>.ttf`。 */
+/** Font file names in the output are `<original name>-<8-character hash>.ttf`. */
 const HASHED_FONT = /^(.+)-[A-Za-z0-9_-]{8}\.ttf$/;
 
-// 不在顶层 await：ESM 的主进程模块求值完之前 Electron 不发 ready，在顶层等 ready 会卡死。
+// No top-level await: Electron does not emit ready until the ESM main-process module has finished evaluating, so awaiting ready at the top level would hang.
 (process.versions.electron ? check() : launch()).catch((error) => {
   console.error(error);
   process.exit(2);
 });
 
-/** node 一侧：临时的 Home、项目、下载与 Electron 数据目录，启动 Electron，超时就杀掉，结束后删掉临时目录。 */
+/** Node side: creates temporary Home, project, downloads and Electron data directories, starts Electron, kills it on timeout, and deletes the temporary directories when done. */
 async function launch() {
   for (const file of ['renderer/index.html', 'preload/index.js']) {
     // Plain Node cannot read ASAR paths; the Electron child validates them.
@@ -62,12 +62,12 @@ async function launch() {
   process.exit(code);
 }
 
-/** Electron 一侧：隐藏窗口以 file:// 打开产物，调自检入口，核对字体与量出来的框。 */
+/** Electron side: the hidden window opens the output under file://, calls the self-check entry, and verifies the fonts and the measured box. */
 async function check() {
   const { app, BrowserWindow, ipcMain, session } = await import('electron');
   const temp = process.argv.find((arg) => arg.startsWith('--cuccut-temp='))?.slice('--cuccut-temp='.length);
   if (!temp) throw new Error('缺少 --cuccut-temp：用 node 运行这个脚本');
-  // Electron 自己的数据（缓存、Cookie、日志、崩溃转储）也落在临时目录。
+  // Electron's own data (cache, cookies, logs, crash dumps) also goes into the temporary directory.
   for (const name of ['userData', 'sessionData', 'logs', 'crashDumps']) app.setPath(name, join(temp, 'electron', name));
   app.dock?.hide();
 
@@ -91,7 +91,7 @@ async function check() {
   session.defaultSession.webRequest.onCompleted({ urls: ['file://*/*'] }, (details) => {
     if (details.url.endsWith('.ttf')) fontLoads.set(basename(fileURLToPath(details.url)), details.statusCode);
   });
-  // 页面照常向主进程要 Runtime 的连接与更新状态：这里不启动 Runtime、不查更新，一直不答（页面停在连接中）。
+  // The page still asks the main process for the Runtime connection and update status as usual: here the Runtime is not started and updates are not checked, so it never answers (the page stays at “connecting”).
   for (const channel of ['cuccut:connection', 'cuccut:updates-get']) ipcMain.handle(channel, () => new Promise(() => {}));
 
   const win = new BrowserWindow({
@@ -139,7 +139,7 @@ async function check() {
         `内核注入的字体与产物里的不一致：产物有、内核没有 ${missing.join('、') || '无'}；内核要、产物没有 ${extra.join('、') || '无'}`,
       );
     }
-    // 读字体的 XHR 在 file:// 下没有 HTTP 状态（0）或是 200；请求要逐份看到。
+    // Font-reading XHRs under file:// have no HTTP status (0) or 200; each request has to be seen individually.
     const unread = shipped.filter((item) => ![0, 200].includes(fontLoads.get(item.file)));
     if (unread.length > 0) problems.push(`没有看到这些字体经 file:// 读成功：${unread.map((item) => item.file).join('、')}`);
     if (!(result.box.width > 0 && result.box.height > 0)) problems.push(`内核量出的框不对：${JSON.stringify(result.box)}`);

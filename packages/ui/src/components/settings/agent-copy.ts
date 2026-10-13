@@ -16,19 +16,19 @@ import { tr } from './agent-copy.tr.ts';
 import { vi } from './agent-copy.vi.ts';
 
 /**
- * 设置 › Agent 提供方、Skills 与隐私页里 Agent 权限的文案（设计稿 designs/cuccut/app/page-settings-agent.jsx、settings-agent-provider.jsx、
- * page-settings-skills.jsx，data.js `agent.policy`）。访问模式四档的名字与说明在 `copy.ts`，与输入框共用。
- * 英文是键与类型的来源，译文在 `agent-copy.<语言>.ts`；读文字要在渲染或调用时读。
+ * Copy for Agent permissions on the Settings › Agent providers, Skills and Privacy pages (design mock designs/cuccut/app/page-settings-agent.jsx, settings-agent-provider.jsx,
+ * page-settings-skills.jsx, data.js `agent.policy`). The names and descriptions of the four access modes are in `copy.ts`, shared with the input box.
+ * English is the source of keys and types; translations are in `agent-copy.<language>.ts`. Read the text when rendering or calling.
  */
 const en = {
-  /** 页标题（设计稿 page-settings-agent.jsx 的 h1）。 */
+  /** Page title (design mock page-settings-agent.jsx, h1). */
   pageTitle: 'Agent providers',
-  /** 页标题下三条事实那一列的无障碍名。 */
+  /** Accessible name for the column of three facts under the page title. */
   factsLabel: 'How Agents work',
-  /** 隐私页里「Agent 权限」小标题（page-settings.jsx 的 `setpage__perm`）。 */
+  /** The “Agent permissions” subheading on the Privacy page (page-settings.jsx `setpage__perm`). */
   permissionsTitle: 'Agent permissions',
   lede: 'An Agent is an AI coding assistant installed on your computer, such as Claude Code or Codex. CucCut calls it directly, so a single sentence can get transcribing, translating and editing done.',
-  /** 三条事实（page-settings-agent.jsx:12-16）。 */
+  /** The three facts (page-settings-agent.jsx:12-16). */
   facts: [
     { key: 'cli', title: 'Uses what you already have', body: "CucCut calls the command-line Agent on this computer instead of installing its own." },
     { key: 'plan', title: 'Uses your own subscription', body: 'No extra payment to CucCut, and no API key to fill in.' },
@@ -38,10 +38,10 @@ const en = {
   providersHeading: 'Agents on this computer',
   providersHint:
     "CucCut finds the ones already installed. One working Agent is enough; you don't need them all. If unsure, pick Claude Code or Codex. Built-in ones can only be disabled; ones you added can be removed.",
-  /** 列表底下那一行：几时检查过、内置几家、添加了几家、检测到几家（page-settings-agent.jsx 的 `agset-meta`）。 */
+  /** The line under the list: when it was last checked, how many built-in ones, how many added, and how many detected (page-settings-agent.jsx `agset-meta`). */
   providersMeta: (checked: string | null, builtin: number, added: number, found: number) =>
     `${checked ? `Checked ${checked} · ` : ''}CucCut has ${builtin} built-in ${builtin === 1 ? 'Agent' : 'Agents'}${added ? `, you added ${added}` : ''}; ${found} detected on this computer`,
-  /** 状态区的无障碍名。 */
+  /** Accessible name for the status area. */
   statusLabel: 'Agent status',
   scanDone: (n: number) => (n ? `Check complete · ${n} ${n === 1 ? 'Agent' : 'Agents'} on this computer` : 'Check complete · No installed Agents found'),
   scanFailed: (message: string) => `Couldn't check again: ${message}`,
@@ -56,7 +56,7 @@ const en = {
   goCloudModels: 'Go to cloud models',
   goSkills: 'Go to Skills',
 
-  /** 「更多」折叠段（page-settings-agent.jsx）：没检测到的四家 ACP 智能体收在这里。 */
+  /** The “More” collapsible section (page-settings-agent.jsx): the four ACP agents that were not detected are collapsed here. */
   moreProviders: {
     title: (count: number) => `Other supported Agents · ${count}`,
     sub: (names: string) => `${names} · None detected on this computer`,
@@ -64,17 +64,17 @@ const en = {
     collapse: 'Hide',
   },
 
-  /** 「没有逐次询问的通道」的那几家（data.js 的 `FULL_ONLY`）：`capabilities.approvals` 为 false。 */
+  /** The agents with “no per-action approval channel” (data.js `FULL_ONLY`): `capabilities.approvals` is false. */
   fullAccessOnly:
     "It has no way to ask for approval step by step, so CucCut can only run it in Full access mode: it won't ask you before running commands or changing files.",
 
-  /** `tested` 为 false 的 Agent：能开会话，但没在 CucCut 里真机跑通过完整会话。 */
+  /** Agents with `tested` set to false: a session can be opened, but a full session has not been run end to end on a real machine in CucCut. */
   untested: {
     badge: 'Not tested in CucCut',
     body: "This one hasn't completed a full session in CucCut on a real machine. Detection, sign-in and the model list work as usual; for problems during a session, follow its own documentation.",
   },
 
-  /** 添加更多 Agent（settings-agent-catalog.jsx，产品设计 §7.6）。 */
+  /** Add more Agents (settings-agent-catalog.jsx, product design §7.6). */
   catalog: {
     heading: 'Add more Agents',
     hint: "Other command-line Agents that support ACP (Agent Client Protocol) can be added too. CucCut hasn't verified them one by one; whether they work depends on the check result.",
@@ -94,7 +94,7 @@ const en = {
       "Agents can't be added or removed in the browser because this decides which commands run on this computer. Use the CucCut desktop app instead.",
   },
 
-  /** 自定义命令对话框（settings-agent-catalog.jsx 的 `AgentCustomDialog`）。 */
+  /** Custom command dialog (settings-agent-catalog.jsx `AgentCustomDialog`). */
   customDialog: {
     title: 'Add an Agent with a custom command',
     lede: 'Enter the command that starts it in ACP mode in a terminal. CucCut starts the program directly, without a terminal.',
@@ -116,7 +116,7 @@ const en = {
     exists: (id: string) => `An Agent already uses “${id}”. Choose another id.`,
   },
 
-  /** 用户添加的那一家的卡片（settings-agent-provider.jsx 的 `AddedInstallPanel` 与详情）。 */
+  /** Card for the provider the user added (settings-agent-provider.jsx `AddedInstallPanel` and detail). */
   added: {
     chip: 'Added by you',
     detect: 'Check',
@@ -154,15 +154,15 @@ const en = {
   },
 
   /**
-   * 「用 Codex 画图」那一行（settings-agent-provider.jsx:103-119）。设计稿说打开后「图片 Tab、工具页与 ccut image 里多一只
-   * 「Codex 画图」」；现在出现它的地方是 `ccut image` 与会话里 Agent 的生图工具，菜单里的名字是 Provider 自己的「Codex」，照实写。
+   * The “Draw images with Codex” row (settings-agent-provider.jsx:103-119). The design mock says that once opened, the “Image” tab, the tools page and `ccut image` gain one “Draw images with Codex”.
+   * Now it appears in `ccut image` and in the Agent's image generation tool within sessions. The name in the menu is the Provider's own “Codex”, stated as it is.
    */
   codexImage: {
     title: 'Draw with Codex',
     body: "No key needed; uses your Codex subscription. One image at a time, ignores size and quality, and 5–10× slower than the API. Once on, both ccut image and Agents in sessions can choose it (named “Codex”). It's never picked for you; to use it by default, set it as the default under Models › Image generation › Cloud models.",
     checking: 'Checking whether Codex on this computer can draw…',
     on: 'On',
-    /** 补在 Provider 给的原因后面的句号（原因已经以句号结尾就不补）。 */
+    /** The full stop appended after the reason the Provider gives (not appended if the reason already ends with one). */
     period: '.',
     probeFailed: "Couldn't check whether Codex can draw · Click “Check again” to try again.",
     outdated: 'Codex is too old · Upgrade Codex CLI, then turn this on',
@@ -176,7 +176,7 @@ const en = {
       enabled ? `Couldn't turn on Draw with Codex: ${message}` : `Couldn't turn off Draw with Codex: ${message}`,
   },
 
-  /** 常见问题（page-settings-agent.jsx:142-157）。`link` 是答案下面那颗按钮。 */
+  /** Common questions (page-settings-agent.jsx:142-157). `link` is the button under the answer. */
   faq: [
     {
       key: 'cost',
@@ -202,13 +202,13 @@ const en = {
     },
   ] as readonly { key: string; title: string; body: string; link?: 'models' | 'skills' }[],
 
-  // ---- Agent 权限（设置 › 隐私与权限；page-settings-agent.jsx:166-185） ----
+  // ---- Agent permissions (Settings › Privacy & permissions; page-settings-agent.jsx:166-185) ----
   permissionsHeading: 'You decide when it asks first',
   policyHeading: 'Fewer repeated prompts',
   policyHint: 'These rules allow the matching actions automatically; the access mode also affects whether it asks.',
   /**
-   * 三条放行策略的文案。设计稿页面渲染的是 page-settings-agent.jsx:20-24 的 `policyCopy`（:158 取它），
-   * data.js `agent.policy` 里的 label / desc 不上屏，只提供键与默认值。
+   * Copy for the three release policies. The design mock page renders `policyCopy` from page-settings-agent.jsx:20-24 (used at :158).
+   * The label and desc in data.js `agent.policy` are not shown on screen; they only provide keys and defaults.
    */
   policy: {
     read: { label: 'Read video content', desc: 'Lets the assistant view transcripts and video settings without asking each time.' },
@@ -221,11 +221,11 @@ const en = {
   saveFailed: (message: string) => `Couldn't save: ${message}`,
   ruleRemoved: (rule: string) => `Removed rule ${rule}`,
   ruleRemoveFailed: (message: string) => `Couldn't remove the rule: ${message}`,
-  /** 访问模式那一行的说明：首次默认是哪一档、最近选的是哪一档。 */
+  /** Description for the access mode row: which tier is the default on first use, and which tier was chosen most recently. */
   modeHint: (firstDefault: string, last: string | null) =>
     `Choose the access mode below the input box of each session. The first time it defaults to “${firstDefault}”; after that, new sessions keep your latest choice${last ? ` (currently “${last}”)` : ''}.`,
 
-  // ---- 高级（page-settings-agent.jsx:167-183） ----
+  // ---- Advanced (page-settings-agent.jsx:167-183) ----
   advancedHeading: 'Advanced & troubleshooting',
   advancedHint: 'When the connection works, nothing here needs changing.',
   modelAutoUpdate: {
@@ -240,14 +240,14 @@ const en = {
   techEmpty: 'No check results yet.',
   techNotInstalled: '· Not installed',
   techNoModels: 'No model list reported',
-  /** 复制按钮与「已复制」提示里的那个名词。 */
+  /** The noun in the copy button and the “Copied” hint. */
   pathLabel: 'path',
   diagnosticsLabel: 'diagnostics',
   copyDiagnostics: 'Copy diagnostics',
   locateTitle: "Set an Agent's location by hand",
   locateSubtitle: "For when automatic detection can't find it",
 
-  /** 命令块、应用内运行与手动指定位置（agent-command-block.tsx）。 */
+  /** Command block, in-app run, and manual location setting (agent-command-block.tsx). */
   command: {
     copied: (label: string) => `Copied ${label}`,
     copyFailed: "Couldn't copy. Select the text and copy it yourself.",
@@ -282,7 +282,7 @@ const en = {
     restoreAuto: 'Use automatic lookup',
   },
 
-  // ---- Skills（产品设计 §6.9；原型 settings-agent-skills.jsx、settings-agent-skill-detail.jsx） ----
+  // ---- Skills (product design §6.9; prototype settings-agent-skills.jsx, settings-agent-skill-detail.jsx) ----
   skills: {
     lede: "A skill is a folder (a SKILL.md, plus optional reference files) that teaches the Agents in CucCut to do things a certain way. With the switch on, an Agent uses it on its own when it seems relevant to the task; with it off, it's used only when you pick it from “+” in the input box. Turning skills on or off, adding or removing them takes effect from the next new Agent session.",
     search: 'Search skills',
@@ -314,7 +314,7 @@ const en = {
     diagnosticsTitle: (count: number) => `${count} ${count === 1 ? 'folder' : 'folders'} couldn't be loaded`,
     diagnosticsHint: "These folders aren't usable skills and were skipped. Fix them and come back to this page to reload.",
     diagnosticCode: { invalid: 'Invalid format', 'duplicate-id': 'Duplicate name', 'builtin-conflict': 'Same name as a built-in skill' } as Record<string, string>,
-    /** 没能加载的那一行：文件夹 · 原因：第一条问题。 */
+    /** The row for a skill that failed to load: folder · reason: the first problem. */
     diagnosticLine: (dir: string, reason: string, issue: string) => `${dir} · ${reason}: ${issue}`,
     externalTitle: 'Use CucCut from Agents in a terminal or other apps',
     externalBody:
@@ -363,7 +363,7 @@ const en = {
 
 export type AgentMessages = typeof en;
 
-/** 这一页的文案目录：在渲染或调用时读（`AGENT_COPY.lede`）。 */
+/** This page's copy catalog: read it when rendering or calling (`AGENT_COPY.lede`). */
 export const AGENT_COPY = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 const M = AGENT_COPY;
 

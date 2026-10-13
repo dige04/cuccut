@@ -9,25 +9,23 @@ import {
 import { RuntimeStorageCredentials as SC } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 正式版本的凭据存放（架构设计 §6.8）：系统的安全存储，经随应用签名的 `credential-helper` 访问（macOS 钥匙串 / Windows Credential Manager）。
+ * Production credential storage (architecture design §6.8): the system's secure storage, accessed through `credential-helper`, which is signed with the app (macOS Keychain / Windows Credential Manager).
  *
- * 每个操作起一个助手进程：stdin 写一行 JSON 请求 `{ op, key, secret? }`，stdout 读一行 JSON 响应
- * `{ ok: true, secret? , exists? }` 或 `{ ok: false, error, message }`。密钥只经 stdin 与 stdout：不进命令行参数、
- * 环境变量与日志；助手的 stderr 读掉丢弃。操作串行。
+ * Each operation starts a helper process: stdin receives one line of JSON request `{ op, key, secret? }`, and stdout returns one line of JSON response `{ ok: true, secret? , exists? }` or `{ ok: false, error, message }`. Secrets pass only through stdin and stdout: not into command-line arguments, environment variables, or logs. The helper's stderr is read and discarded. Operations are serialized.
  *
- * 助手缺失、起不来、超时都报告 `unavailable`；绝不换成明文文件。
+ * If the helper is missing, fails to start, or times out, report `unavailable`. Never fall back to a plaintext file.
  */
 
-/** 助手的命令。测试用 `{ command: process.execPath, args: [假助手脚本] }`。 */
+/** The helper's command. Tests use `{ command: process.execPath, args: [fake helper script] }`. */
 export interface CredentialHelperCommand {
   command: string;
   args?: string[];
 }
 
 export interface KeychainCredentialStoreOptions {
-  /** null：没有找到助手程序，每个操作都以 `unavailable` 失败。 */
+  /** null: the helper program was not found, so every operation fails with `unavailable`. */
   helper: CredentialHelperCommand | null;
-  /** 一个操作的期限。系统可能弹出授权提示等用户回应，所以默认较长（60 秒）。 */
+  /** Deadline for one operation. The system may show an authorization prompt that waits for the user, so the default is long (60 seconds). */
   timeoutMs?: number;
 }
 
@@ -83,7 +81,7 @@ export class KeychainCredentialStore implements CredentialStore {
     return response.exists;
   }
 
-  /** 串行地跑一个操作。`not-found` 以 `{ ok: false }` 返回（`get` 与 `delete` 据此处理），其余错误抛出。 */
+  /** Runs one operation serially. `not-found` is returned as `{ ok: false }` (`get` and `delete` handle it). Other errors are thrown. */
   #call(op: Op, key: string, secret?: string): Promise<HelperResponse> {
     const next = this.#chain.then(() => this.#run(op, key, secret));
     this.#chain = next.catch(() => {});
@@ -115,7 +113,7 @@ export class KeychainCredentialStore implements CredentialStore {
         const reason = error.code === 'ENOENT' ? SC.helperMissing().text : SC.helperStartFailed({ code: error.code ?? 'unknown' }).text;
         finish({ error: new CredentialStoreError('unavailable', reason) });
       });
-      // 助手的 stderr 可能有系统的诊断：读掉，不记录。
+      // The helper's stderr may contain system diagnostics: read it and drop it, do not log it.
       child.stderr.resume();
       child.stdin.on('error', () => {});
       child.stdout.on('data', (chunk: Buffer) => {
@@ -156,7 +154,7 @@ function interpret(op: Op, value: unknown, secret: string | undefined): { respon
   return { error: new CredentialStoreError(mapped, helperMessage(response.message, secret)) };
 }
 
-/** 助手给的说明：截短，并且万一含有这次的密钥也去掉。 */
+/** The helper's message: truncated, and with this request's secret removed if it appears in it. */
 function helperMessage(message: unknown, secret: string | undefined): string {
   let text = typeof message === 'string' && message.trim() ? message.trim().slice(0, 300) : SC.helperReportedError().text;
   if (secret) text = text.split(secret).join(SC.redacted().text);

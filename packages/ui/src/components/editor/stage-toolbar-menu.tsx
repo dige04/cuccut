@@ -78,28 +78,28 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
- * 工具条的溢出菜单（原型 stage-toolbar-menu.jsx）与工具条、菜单共用的动作：
- * 第一段是图标钮一行（翻转 · 适应画布，或 B / I · 三对齐），其余是菜单项；滑杆与时间这几项在同一个弹层里下钻一层
- * （原型是向右展开的子菜单，这里收在弹层里，免得盖住画面）。不能用的项灰着，点开说明原因。
+ * The toolbar's overflow menu (prototype stage-toolbar-menu.jsx) and the actions shared by the toolbar and the menu:
+ * the first section is a row of icon buttons (flip · fit to canvas, or B / I · three alignments), the rest are menu items; the slider and time items drill down one level in the same popover
+ * (the prototype expands a submenu to the right; here it stays inside the popover so it does not cover the picture). Disabled items are greyed out, and opening them explains why.
  *
- * 每一格怎么动由 `ToolHost` 给：画面上的片段一份（`itemHost`），字幕一份（stage-caption-toolbar），菜单只管摆。
+ * `ToolHost` supplies what each cell does: one for on-screen clips (`itemHost`) and one for captions (stage-caption-toolbar); the menu only lays them out.
  */
 
 export type ToolProps = ItemPageProps<PlacedItem>;
 
-/** 条子与菜单上的格怎么动（画面元素与字幕各给一份）。 */
+/** What each cell on the bar and the menu does (one set for on-screen elements, one for captions). */
 export interface ToolHost {
-  /** 开关类的格现在是不是开着。 */
+  /** Whether the toggle cell is currently on. */
   isOn(id: ToolId): boolean;
-  /** 一下就生效的格：命令、开关、跳到别处。 */
+  /** Cells that take effect immediately: commands, toggles, and jumps elsewhere. */
   run(tool: Tool): void;
-  /** 下钻一层的编辑（滑杆、时间）。 */
+  /** Edits that drill down one level (sliders, timing). */
   subPage(tool: Tool): ReactNode;
-  /** 飞出的二级菜单（层级）；`close` 收起整个弹层。 */
+  /** Flyout submenu (layer order); `close` collapses the whole popover. */
   submenu?(tool: Tool, close: () => void): ReactElement | undefined;
-  /** 图标钮上画什么：缺省是 `TOOL_ICON` 里的图标（字幕的大小写钮画字形）。 */
+  /** What to draw on the icon button: by default the icon from `TOOL_ICON` (the caption case button draws a glyph). */
   face?(tool: Tool): ReactNode;
-  /** 图标钮的悬停提示与读屏名；缺省是显示名。 */
+  /** Hover tooltip and screen-reader name of the icon button; defaults to the display name. */
   label?(tool: Tool): string;
 }
 
@@ -110,7 +110,7 @@ const rule = style({ height: '[1px]', backgroundColor: 'gray-100', marginY: 4, m
 const subHead = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui', fontWeight: 'bold', color: 'gray-900', paddingBottom: 4 });
 const subBody = style({ display: 'flex', flexDirection: 'column', gap: 8, paddingX: 4, paddingBottom: 4 });
 
-/** 每一格的图标（原型 `Ic`）；菜单项与条子上的图标钮共用。 */
+/** Icon for each cell (prototype `Ic`); shared by menu items and icon buttons on the bar. */
 export const TOOL_ICON: Partial<Record<ToolId, ComponentType>> = {
   'text-styles': Brush,
   animation: Animation,
@@ -153,14 +153,14 @@ export const TOOL_ICON: Partial<Record<ToolId, ComponentType>> = {
 /** The selection inspector (inspector-column.tsx), wherever it is mounted: the session's slot or the pane's own column. */
 const panelSelector = () => '[data-inspector]';
 
-/** 属性页里节头的标题（跟着界面语言）；`jump()` 传的是稳定的节 key。 */
+/** Section header titles in the properties page (follow the UI language); `jump()` takes the stable section key. */
 const SECTION_TITLES: Record<InspectorSection, () => string> = {
   style: () => IC.style,
   transition: () => IC.transition,
   effects: () => IC.effects,
 };
 
-/** 节头：标题是节头里的第一个 span（inspector-controls 的 SecHead）。 */
+/** Section header: the title is the first span inside the header (SecHead in inspector-controls). */
 function sectionHead(panel: Element, section: InspectorSection): HTMLElement | null {
   const title = SECTION_TITLES[section]();
   for (const span of panel.querySelectorAll('span')) {
@@ -170,8 +170,8 @@ function sectionHead(panel: Element, section: InspectorSection): HTMLElement | n
 }
 
 /**
- * 打开这一件的属性页并滚到某一节（`null` 是页首）。选区里还带着别的（主视频）时先只选它，属性页才是它的那一页。
- * 页面刚挂上时节头还没出来：逐帧找几次，找不到就停在页首。
+ * Opens the properties page for this item and scrolls to a section (`null` is the top of the page). If the selection also holds other things (the main video), select only this item first, so the properties page is its own page.
+ * When the page has just mounted, the section headers may not be there yet: look for them over a few frames, and if they are still missing, stay at the top.
  */
 export function jumpToSection(itemId: Id, section: InspectorSection | null): void {
   const editor = useEditor.getState();
@@ -188,7 +188,7 @@ export function jumpToSection(itemId: Id, section: InspectorSection | null): voi
   else requestAnimationFrame(() => document.querySelector(panelSelector())?.querySelector('.cc-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }));
 }
 
-/** 开关类的格现在是不是开着（翻转、粗斜体、对齐）。 */
+/** Whether the toggle cells are currently on (flip, bold/italic, alignment). */
 export function toolIsOn(id: ToolId, item: PlacedItem): boolean {
   const style = item.type === 'text' ? asObject(item.style) : {};
   const align = style.textAlign ?? style.align;
@@ -212,7 +212,7 @@ export function toolIsOn(id: ToolId, item: PlacedItem): boolean {
   }
 }
 
-/** 一下就生效的格：命令、开关、跳到属性页。改值的写法与属性页同一条（`edit.commit`）。 */
+/** Cells that take effect immediately: commands, toggles, and jumps to the properties page. Value changes follow the same path as the properties page (`edit.commit`). */
 export function runTool(tool: Tool, { item, sequence, assets, edit }: ToolProps, actions: EditorActions, runtime: RuntimeSession): void {
   const target = { sequenceId: sequence.id, itemId: item.id };
   const text = (patch: Record<string, unknown>) =>
@@ -223,7 +223,7 @@ export function runTool(tool: Tool, { item, sequence, assets, edit }: ToolProps,
     case 'command':
       if (tool.id === 'copy') return void duplicateItems(actions, [item.id]);
       if (tool.id === 'delete') return void deleteItems(actions, [item.id]);
-      // 停用之后画面上没有它了，条子随选中框一起收起；提示带撤销，并说在时间线上右键可重新启用。
+      // Once disabled, the item disappears from the picture and the bar collapses with the selection box; the notice has an Undo and says it can be re-enabled by right-clicking it on the timeline.
       if (tool.id === 'disable') return void setItemEnabled(actions, item.id, false, TOOLBAR_COPY.disabledNotice);
       if (tool.id === 'detach-audio' && item.type === 'video') return void detachAudio(actions, sequence, item, TOOLBAR_COPY.detachedNotice);
       if (tool.id === 'replace-video' || tool.id === 'replace-image') {
@@ -265,7 +265,7 @@ export function runTool(tool: Tool, { item, sequence, assets, edit }: ToolProps,
   }
 }
 
-/** 不能用的格的说明弹层（条子上与菜单里共用）。 */
+/** Explanation popover for unavailable cells (shared by the bar and the menu). */
 export function OffNote({ tool }: { tool: Tool }) {
   return (
     <ContextualHelpPopover>
@@ -277,7 +277,7 @@ export function OffNote({ tool }: { tool: Tool }) {
   );
 }
 
-/** 菜单第一段那一行图标钮：开关用 ToggleButton，命令用 ActionButton；不能用的灰着、点开说原因。 */
+/** The row of icon buttons in the first section of the menu: toggles use ToggleButton, commands use ActionButton; unavailable ones are greyed out, and opening them explains why. */
 function RowTool({ tool, host }: { tool: Tool; host: ToolHost }) {
   const Icon = TOOL_ICON[tool.id];
   const icon = host.face?.(tool) ?? (Icon ? <Icon /> : <Text>{tool.label}</Text>);
@@ -311,11 +311,11 @@ function RowTool({ tool, host }: { tool: Tool; host: ToolHost }) {
 
 const KEYS: Partial<Record<ToolId, string>> = { copy: `${MOD_KEY}D`, delete: '⌫' };
 
-/** 一行菜单项；`submenu` 给的是悬停 / 点开就飞出的二级菜单（原型里二级菜单都是飞出的）。 */
+/** One menu item row; `submenu` supplies the submenu that flies out on hover or click (in the prototype, submenus always fly out). */
 function MenuTool({ tool, submenu }: { tool: Tool; submenu?: ReactElement }) {
   const Icon = TOOL_ICON[tool.id];
   const item = (
-    // DialogTrigger 也给菜单提供了「选中即收起」的状态：下钻项要留在弹层里换页，不能跟着收起。
+    // DialogTrigger also gives the menu a “选中即收起” (collapse on select) state: drill-down items must stay in the popover and switch pages, so they must not collapse it.
     <MenuItem id={tool.id} textValue={tool.label} shouldCloseOnSelect={tool.action.kind !== 'sub'}>
       {Icon ? <Icon /> : null}
       <Text slot="label">{tool.label}</Text>
@@ -339,13 +339,13 @@ function MenuTool({ tool, submenu }: { tool: Tool; submenu?: ReactElement }) {
   );
 }
 
-/** 「层级」四行的图标与快捷键（原型 OrderSub：移到最前 F、前移一层 ⌘↑、后移一层 ⌘↓、移到最后 B）。 */
+/** Icons and shortcuts for the four “层级” (layer order) rows (prototype OrderSub: bring to front F, bring forward ⌘↑, send backward ⌘↓, send to back B). */
 const ARRANGE_ICON: Record<ArrangeDirection, ComponentType> = { front: SortUp, forward: ChevronUp, backward: ChevronDown, back: SortDown };
 const ARRANGE_KEY: Record<ArrangeDirection, string> = { front: 'F', forward: `${MOD_KEY}↑`, backward: `${MOD_KEY}↓`, back: 'B' };
 
 /**
- * 「层级」的飞出菜单：往前的两行、一条线、往后的两行。走不动的方向灰着（独占一条轨道、已经在画面与字幕这一叠的最上 / 最下）；
- * 点一行就提交一笔并收起整个弹层。
+ * The “层级” (layer order) flyout menu: two rows for moving forward, a divider, then two rows for moving backward. A direction that can't move is greyed out (the item is alone on its track, or already at the top / bottom of the stack of pictures and captions);
+ * clicking a row commits one change and collapses the whole popover.
  */
 function ArrangeSub({ props, actions, onDone }: { props: ToolProps; actions: EditorActions; onDone(): void }) {
   const { item, sequence, canChange } = props;
@@ -377,7 +377,7 @@ function ArrangeSub({ props, actions, onDone }: { props: ToolProps; actions: Edi
   );
 }
 
-/** 行高与字距两行滑杆（文字元素与字幕共用）：与属性页同一套控件，拖动中只叠草稿，松手一笔提交。 */
+/** Two sliders for line height and letter spacing (shared by text elements and captions): the same controls as the properties page; while dragging they only overlay a draft, and on release one change is committed. */
 export function SpacingRow({
   id,
   style,
@@ -417,7 +417,7 @@ export function SpacingRow({
   );
 }
 
-/** 画面上的片段下钻一层的编辑：不透明度、行高、字距、调整时间。 */
+/** Edits that drill down one level for an on-screen clip: opacity, line height, letter spacing, adjust timing. */
 function ItemSubPage({ tool, props }: { tool: Tool; props: ToolProps }) {
   const { item, sequence, edit, canChange } = props;
   if (tool.id === 'opacity') return <OpacityRow {...props} />;
@@ -435,7 +435,7 @@ function ItemSubPage({ tool, props }: { tool: Tool; props: ToolProps }) {
   return null;
 }
 
-/** 选中画面上的一件时，条子与菜单上的格怎么动。 */
+/** What the cells on the bar and menu do when one on-screen item is selected. */
 export function itemHost(props: ToolProps, actions: EditorActions, runtime: RuntimeSession): ToolHost {
   return {
     isOn: (id) => toolIsOn(id, props.item),
@@ -445,7 +445,7 @@ export function itemHost(props: ToolProps, actions: EditorActions, runtime: Runt
   };
 }
 
-/** 下钻的那一页：顶上一颗返回与这一格的名字。 */
+/** The drill-down page: a back button at the top and this cell's name. */
 function SubPage({ tool, onBack, children }: { tool: Tool; onBack(): void; children: ReactNode }) {
   return (
     <>
@@ -460,7 +460,7 @@ function SubPage({ tool, onBack, children }: { tool: Tool; onBack(): void; child
   );
 }
 
-/** 溢出菜单：⋯ 钮开一个弹层。命令与跳转点了就收起；下钻项留在弹层里换一页。 */
+/** Overflow menu: the ⋯ button opens a popover. Commands and jumps collapse it when clicked; drill-down items stay in the popover and switch to another page. */
 export function StageToolbarMenu({ groups, host }: { groups: MenuGroup[]; host: ToolHost }) {
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<Tool | null>(null);
@@ -474,7 +474,7 @@ export function StageToolbarMenu({ groups, host }: { groups: MenuGroup[]; host: 
   const onAction = (key: string | number) => {
     const tool = tools.get(String(key) as ToolId);
     if (!tool || tool.action.kind === 'off') return;
-    // 飞出的二级菜单（层级）由 SubmenuTrigger 自己开合；其余下钻项在弹层里换一页。
+    // The flyout submenu (layer order) is opened and closed by SubmenuTrigger itself; other drill-down items switch pages inside the popover.
     if (submenus.has(tool.id)) return;
     if (tool.action.kind === 'sub') return setSub(tool);
     setOpen(false);

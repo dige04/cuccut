@@ -3,9 +3,7 @@ import { M } from './resource-capacity-copy.ts';
 import { formatBytes } from './space.ts';
 
 /**
- * 设置 → 诊断里的「资源调度」（架构设计 §7.6、§7.7；设计稿没有这一块）：读 `jobs.resources` 说清机器的容量从哪来、
- * 后台任务此刻还能用多少、谁在用、谁在等；偏好设置 `resources.capacity` 可以覆盖内存、GPU 内存与 CPU 线程数，
- * 某一项留空就照旧自动探测。磁盘不能覆盖（按 staging 所在卷的可用空间）。
+ * “Resource scheduling” in Settings → Diagnostics (architecture design §7.6, §7.7; the design draft has no such section): reads `jobs.resources` to show where the machine's capacity comes from, how much background work can still use right now, who is using it, and who is waiting. The preference `resources.capacity` can override memory, GPU memory and CPU thread count; leaving any one of them empty keeps automatic detection. Disk cannot be overridden (it follows the free space on the volume where staging lives).
  */
 
 const MiB = 1024 * 1024;
@@ -14,7 +12,7 @@ const SOURCE_LABEL: Record<ResourceCapacity['sources'][ResourceDimension], strin
 
 const DIMENSION_LABEL: Record<ResourceDimension, string> = live(() => M.dimensions);
 
-/** 内存与 GPU 内存一律按 GB 取一位小数，与覆盖框的单位和占位一致；临时磁盘照常换算单位。 */
+/** Memory and GPU memory are always shown in GB with one decimal place, matching the unit and placeholder of the override box; temp disk converts units as usual. */
 function amount(dimension: ResourceDimension, value: number | null): string {
   if (value === null) return M.unknown;
   if (dimension === 'cpuThreads') return M.threads(value);
@@ -25,15 +23,15 @@ function amount(dimension: ResourceDimension, value: number | null): string {
 export interface CapacityRow {
   dimension: ResourceDimension;
   label: string;
-  /** 「16 GB」「10 线程」「未知」。 */
+  /** “16 GB”, “10 线程”（10 threads）, “未知”（unknown）. */
   total: string;
-  /** 来源 · 已租出 · 后台还能用；统一内存时 GPU 那行说明同时计入内存。 */
+  /** Source · allocated · still available to background work; with unified memory, the GPU row's note says it is also counted in memory. */
   desc: string;
-  /** 来源是手动设定。 */
+  /** The source is a manual setting. */
   overridden: boolean;
 }
 
-/** 四个维度各一行：容量、来源、已经租出去的、后台任务此刻还能用的。 */
+/** One row per dimension: capacity, source, the amount already allocated out, and the amount background tasks can still use right now. */
 export function capacityRows(snapshot: ResourcesSnapshot): CapacityRow[] {
   const { capacity, leased, available } = snapshot;
   return (['memory', 'gpuMemory', 'cpuThreads', 'scratchDisk'] as const).map((dimension) => {
@@ -54,7 +52,7 @@ export function capacityRows(snapshot: ResourcesSnapshot): CapacityRow[] {
   });
 }
 
-/** 一项工作占的量：「内存 2.0 GB、CPU 4 线程」；什么都不占时「不占本机资源」。 */
+/** The amount one job takes: “内存 2.0 GB、CPU 4 线程”（memory 2.0 GB, CPU 4 threads); “不占本机资源”（uses no local resources) when it takes nothing. */
 export function demandLine(demand: ResourceDemand): string {
   const parts = (['memory', 'gpuMemory', 'cpuThreads', 'scratchDisk'] as const)
     .filter((d) => demand[d])
@@ -62,7 +60,7 @@ export function demandLine(demand: ResourceDemand): string {
   return parts.length ? M.joinDemand(parts) : M.noDemand;
 }
 
-/** 表单：内存与 GPU 内存按 GB 填（可带一位小数），线程数是整数；null 是「自动」。 */
+/** Form: memory and GPU memory are entered in GB (one decimal place allowed); the thread count is an integer; null means “auto”. */
 export interface CapacityForm {
   memoryGB: number | null;
   gpuMemoryGB: number | null;
@@ -70,7 +68,7 @@ export interface CapacityForm {
 }
 
 export const CAPACITY_LIMITS = {
-  /** 设置的下限是 512 MiB。 */
+  /** The minimum for the setting is 512 MiB. */
   memoryGB: { min: 0.5, max: 16 * 1024 },
   gpuMemoryGB: { min: 0, max: 16 * 1024 },
   cpuThreads: { min: 1, max: 4096 },
@@ -83,21 +81,21 @@ export function capacityForm(setting: ResourceCapacitySetting | null): CapacityF
   return { memoryGB: toGB(setting?.memoryMiB ?? null), gpuMemoryGB: toGB(setting?.gpuMemoryMiB ?? null), cpuThreads: setting?.cpuThreads ?? null };
 }
 
-/** 写回设置的值：三项都自动时整个设置为 null。 */
+/** The value written back to the setting: when all three are automatic, the whole setting is null. */
 export function capacitySetting(form: CapacityForm): ResourceCapacitySetting | null {
   const threads = form.cpuThreads === null || Number.isNaN(form.cpuThreads) ? null : Math.round(form.cpuThreads);
   const setting = { memoryMiB: toMiB(form.memoryGB), gpuMemoryMiB: toMiB(form.gpuMemoryGB), cpuThreads: threads };
   return setting.memoryMiB === null && setting.gpuMemoryMiB === null && setting.cpuThreads === null ? null : setting;
 }
 
-/** 两份设置是不是同一个值（null 与三项全空视为相同）。 */
+/** Whether two settings hold the same value (null and three empty items count as equal). */
 export function sameCapacity(a: ResourceCapacitySetting | null, b: ResourceCapacitySetting | null): boolean {
   const x = capacitySetting(capacityForm(a));
   const y = capacitySetting(capacityForm(b));
   return x?.memoryMiB === y?.memoryMiB && x?.gpuMemoryMiB === y?.gpuMemoryMiB && x?.cpuThreads === y?.cpuThreads;
 }
 
-/** 自动探测时这一项的值（覆盖框的占位）：手动设定过的项不知道系统值，写「自动」。 */
+/** The value of this item under automatic detection (the placeholder in the override box): items set manually don't know the system value, so they show “auto”. */
 export function autoPlaceholder(snapshot: ResourcesSnapshot | null, key: keyof CapacityForm): string {
   if (!snapshot) return M.auto;
   const { capacity } = snapshot;

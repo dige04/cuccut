@@ -2,8 +2,7 @@ import { z } from 'zod';
 import { CODE_BUNDLE_CONTRACTS, COMPOSITION_INLINE_LIMITS, COMPOSITION_PREVIEW_MAX_FRAMES } from './code-bundle.ts';
 
 /**
- * `compositions.*` 的入站校验（架构设计 §8），由 `schemas.ts` 并进方法表。形状与工具 compositions_preview / compositions_import
- * 的参数相同；「几种来源给且只给一个」「durationSeconds 要和 fps 一起给」由服务检查。
+ * Inbound validation for `compositions.*` (architecture design §8), merged into the method table by `schemas.ts`. The shape is the same as the arguments of the tools compositions_preview / compositions_import; "exactly one of several sources given" and "durationSeconds must be given together with fps" are checked by the service.
  */
 
 const id = z.string().min(1).max(200);

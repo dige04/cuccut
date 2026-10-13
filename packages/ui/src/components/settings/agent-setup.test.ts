@@ -122,7 +122,7 @@ describe('版本与状态', () => {
     const upgradable = driver({ configModel: 'gpt-6', configModelKnown: false, latestVersion: '0.140.0' });
     expect(configModelGate(upgradable)?.latest).toBe('0.140.0');
     expect(agentBadge(upgradable).label).toBe('可用 · 默认模型需升级');
-    // 不知道（null）不算不认得；不可用时由问题条说话。
+    // Unknown (null) does not count as unrecognized. When unavailable, the problem bar speaks for it.
     expect(configModelGate(driver({ configModel: 'gpt-6', configModelKnown: null }))).toBeNull();
     expect(configModelGate(driver({ state: 'signed-out', configModel: 'gpt-6', configModelKnown: false }))).toBeNull();
   });
@@ -280,7 +280,7 @@ describe('安装与升级命令', () => {
     );
     expect(plan.choices[0]).toMatchObject({ downloadsScript: true, runnable: false });
     expect(installPlan(driver()).choices.every((c) => !c.downloadsScript && c.runnable)).toBe(true);
-    // 官方脚本类的升级命令不下载脚本，但同样不在应用内运行（Runtime 按类别拒绝）。
+    // Upgrade commands of the official-script type do not download a script, but likewise do not run inside the app (the Runtime rejects them by category).
     const upgrade = installPlan(driver({ install: [{ kind: 'script', label: '官方脚本', needs: null, command: 'curl -fsSL https://claude.ai/install.sh | bash', upgrade: 'claude update' }] }));
     expect(upgrade.choices[0]).toMatchObject({ command: 'claude update', downloadsScript: false, runnable: false });
     expect(installPlan(driver({ install: [] }))).toMatchObject({ choices: [], initial: null });
@@ -323,7 +323,7 @@ describe('默认模型与强度', () => {
     expect(rows.find((r) => r.key === 'gpt-6-sol')).toMatchObject({ tag: null, description: null });
     expect(rows.find((r) => r.key === 'gpt-6-astra')?.tag).toBe('最强');
     expect(rows.find((r) => r.key === 'gpt-6-luna')?.tag).toBe('最快');
-    // Claude Code 推荐第一个 Sonnet，即使它没标 balanced。
+    // Claude Code recommends the first Sonnet, even if it is not tagged balanced.
     const claudeModels = [model('opus', { tier: 'balanced' }), model('sonnet')];
     const claude = modelChoices(driver({ id: 'claude', models: claudeModels, defaultModel: 'sonnet' }));
     expect(claude.filter((r) => r.tag === '推荐').map((r) => r.key)).toEqual(['sonnet']);
@@ -338,7 +338,7 @@ describe('默认模型与强度', () => {
     expect(effortChoices(gone)?.map((r) => r.key)).toEqual([MODEL_DEFAULT_EFFORT_KEY, 'low', 'high']);
     expect(defaultModelLabel(gone)).toBe('GPT-6.1-SOL');
     expect(defaultModelLabel(driver({ models, defaultModel: null }))).toBe('Agent 默认模型');
-    // 明确选了「Agent 默认模型」不受影响；模型表还没检测到时没法判断，原样选它。
+    // An explicit choice of “Agent default model” is not affected. When the model list has not been detected yet there is no way to judge, so the choice is kept as is.
     expect(selectedModelKey(driver({ models, defaultModel: null }))).toBe(AGENT_DEFAULT_MODEL_KEY);
     expect(selectedModelKey(driver({ defaultModel: 'gpt-5-sol' }))).toBe('gpt-5-sol');
   });

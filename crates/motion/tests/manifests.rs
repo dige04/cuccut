@@ -1,7 +1,6 @@
-//! 目录与 `include_str!` 清单的一致性守卫。
+//! Consistency guard between the directory and the `include_str!` manifest list.
 //!
-//! `ccut-motion` 本体不做 I/O，所以这条检查只能放在 dev 测试目标里：
-//! 少写一行 `builtin!(...)` 时 crate 照样能编译，只有这里会红。
+//! `ccut-motion` itself does no I/O, so this check can only live in a dev test target: if one `builtin!(...)` line is missing, the crate still compiles, and only this test goes red.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -14,10 +13,10 @@ fn presets_dir(domain: &str) -> PathBuf {
         .join(domain)
 }
 
-/// `core/presets/builtin/transition/` 是**两张**注册表共用的目录：
-/// `bcf.*`（双通道属性配方）与 `caption.*`（字幕入场姿态）由 preset 注册表管，
-/// `transition.*` 是 effect 注册表的双画面效果（`tests/effects.rs` 管）。
-/// 按前缀切分，谁也别把对方的文件算成缺注册。
+/// `core/presets/builtin/transition/` is a directory shared by **two** registries:
+/// `bcf.*` (dual-channel property recipes) and `caption.*` (caption entry poses) are managed by the preset registry,
+/// and `transition.*` are the two-picture effects of the effect registry (managed by `tests/effects.rs`).
+/// Split by prefix, so neither side counts the other's files as missing registrations.
 fn files_on_disk(domain: &str) -> BTreeSet<String> {
     std::fs::read_dir(presets_dir(domain))
         .expect("preset directory")
@@ -38,10 +37,9 @@ fn files_on_disk(domain: &str) -> BTreeSet<String> {
 
 #[test]
 fn every_manifest_file_on_disk_is_registered() {
-    // `shape` / `sticker` / `visualizer` / `progress` 是目录型配方（ADR-E05），
-    // `textpreset` 是文字预设包（`docs/design/app-v2/text-pane-and-groups.md` §6.2）。
-    // 不把它们加进这个循环，新目录就**永远**不做一致性检查——少写一行
-    // `builtin!(...)` 时 crate 照样编译。
+    // `shape` / `sticker` / `visualizer` / `progress` are directory-type recipes (ADR-E05),
+    // and `textpreset` is the text preset pack (`docs/design/app-v2/text-pane-and-groups.md` §6.2).
+    // If they are not added to this loop, a new directory will **never** get a consistency check: if one `builtin!(...)` line is missing, the crate still compiles.
     for domain in [
         "motion",
         "transition",
@@ -66,8 +64,7 @@ fn every_manifest_file_on_disk_is_registered() {
 
 #[test]
 fn the_effect_domain_directories_exist() {
-    // effect manifest 的目录一致性由 `tests/effects.rs` 守（它们不是 motion
-    // preset，注册表也是另一张）；这里只确认路径约定没被搬走。
+    // Directory consistency of the effect manifests is guarded by `tests/effects.rs` (they are not motion presets, and they sit in a different registry); here we only confirm the path convention has not been moved.
     for domain in ["filter", "composite"] {
         assert!(
             presets_dir(domain).is_dir(),
@@ -79,13 +76,13 @@ fn the_effect_domain_directories_exist() {
 #[test]
 fn all_manifests_parse_and_the_catalogue_is_frozen() {
     validate_all().unwrap();
-    // 文字目录 25/21/11 + 元素目录 28/28/9（2026-09-08）。
+    // Text catalogue 25/21/11 + element catalogue 28/28/9 (2026-09-08).
     assert_eq!(ids(Domain::TimelineEnter).len(), 53);
     assert_eq!(ids(Domain::TimelineExit).len(), 49);
     assert_eq!(ids(Domain::TimelineLoop).len(), 20);
     assert_eq!(ids(Domain::BcfMotion).len(), 5);
     assert_eq!(ids(Domain::BcfTransition).len(), 10);
-    // P7a：23 种基础形状 + CucCut 自有的 `line`，顺序 = 面板网格序。
+    // P7a: 23 basic shapes + CucCut's own `line`, in panel grid order.
     assert_eq!(
         ids(Domain::TimelineShape),
         vec![
@@ -94,7 +91,7 @@ fn all_manifests_parse_and_the_catalogue_is_frozen() {
             "love2", "love", "diamond", "star", "sharp", "star2", "sharp2"
         ]
     );
-    // P7b：模板贴纸首批 10 份，全部是 CucCut 自绘的归一化 path。
+    // P7b: first batch of 10 template stickers, all normalized paths drawn by CucCut itself.
     assert_eq!(
         ids(Domain::TimelineSticker),
         vec![
@@ -110,16 +107,16 @@ fn all_manifests_parse_and_the_catalogue_is_frozen() {
             "crown"
         ]
     );
-    // 声波 10（2026-09 重设计）+ 进度 14（设计 §7.3 / §7.4）——CucCut 不做付费分层，
-    // 也不把 Countdown / Count Up 当 progress（那是文字元素）。
+    // Waveforms 10 (redesigned 2026-09) + progress 14 (design §7.3 / §7.4). CucCut does not do paid tiers,
+    // and does not treat Countdown / Count Up as progress (those are text elements).
     assert_eq!(ids(Domain::TimelineVisualizer).len(), 10);
     assert_eq!(ids(Domain::TimelineProgress).len(), 14);
-    // 彩纸十款（`docs/design/elements/ccut-confetti-element-design.md` §4.4）。
+    // Ten confetti styles (`docs/design/elements/ccut-confetti-element-design.md` §4.4).
     assert_eq!(ids(Domain::TimelineConfetti).len(), 10);
 }
 
-/// 目录型配方的 id **就是** `timeline.json` 的面值，也**就是**文件名——
-/// 三者逐字相同，`preset-unknown` 才不需要额外的前缀换算规则。
+/// The id of a directory-type recipe **is** the value in `timeline.json`, and **is** also the file name:
+/// the three are identical word for word, so `preset-unknown` needs no extra prefix conversion rule.
 #[test]
 fn the_catalogue_ids_match_the_files_and_the_document_values() {
     for (dir, domain) in [
@@ -139,9 +136,8 @@ fn the_catalogue_ids_match_the_files_and_the_document_values() {
     }
 }
 
-/// `(id, version)` 是目录型配方的冻结单位，`manifest_hash` 是源文件内容 hash——
-/// 34 份逐份钉住：id 与文件名逐字相同、`version` 恒为 1、`manifest_hash` 互不相同
-/// 且随文件内容变（改一个参数就必须自觉升 `version`）。
+/// `(id, version)` is the frozen unit of a directory-type recipe, and `manifest_hash` is the content hash of the source file.
+/// All 34 are pinned one by one: id identical to the file name, `version` always 1, and `manifest_hash` all different and changing with file content (changing one parameter must consciously bump `version`).
 #[test]
 fn the_thirty_four_catalogue_recipes_are_frozen_at_version_one() {
     use motion::preset_registry::{timeline_confettis, timeline_progresses, timeline_visualizers};
@@ -166,7 +162,7 @@ fn the_thirty_four_catalogue_recipes_are_frozen_at_version_one() {
         assert!(recipe.available, "{}", recipe.id);
         assert_eq!(recipe.qualified_id(), format!("confetti.{}", recipe.id));
         let body = recipe.confetti().expect(&recipe.id);
-        // 「起点」开关只给四款爆发（设计稿 §6.2）。
+        // The “start point” toggle is only given to the four burst styles (design draft §6.2).
         let burst = body
             .recipe
             .object("emit")
@@ -183,12 +179,12 @@ fn the_thirty_four_catalogue_recipes_are_frozen_at_version_one() {
     assert_eq!(hashes.len(), total, "两份配方的 manifest_hash 撞了");
 }
 
-/// `available` 是**表面目录**开关（ADR-M09），不是内核门：核心求值从不读它，
-/// `ccut render` 照样能画 `wipe`。它只回答「App 的动画面板里能不能选到这一行」，
-/// 而 `wipe` 还没有元素包围盒可裁，所以目录里藏着它
-/// （`core/crates/ccut-editor-core/src/anim_presets.rs`）。
-/// 第 156 轮起目录里没有不可用的行（`wipe` 的 reveal 由核心合成场景裁切）；
-/// 这条表钉住"没有配方悄悄以 available: false 溜进目录"。
+/// `available` is a **surface catalog** switch (ADR-M09), not a kernel gate: core evaluation never reads it,
+/// and `ccut render` still renders `wipe`. It only answers “can this row be selected in the App's animation panel”,
+/// and since `wipe` still has no element bounding box to clip against, it is hidden in the catalog
+/// (`core/crates/ccut-editor-core/src/anim_presets.rs`).
+/// Since round 156 the catalog has no unavailable rows (`wipe`'s reveal is clipped by the core-composited scene);
+/// this table pins that no recipe quietly slips into the catalog with available: false.
 const UNAVAILABLE_TIMELINE_PRESETS: &[&str] = &[];
 
 #[test]
@@ -217,11 +213,10 @@ fn every_manifest_declares_a_determinism_level() {
     }
 }
 
-// ── 字幕入场姿态（阶段 5 收编的 `magic-*`）────────────────────────────
+// ── Caption entry poses (the `magic-*` absorbed in phase 5) ────────────────────────────
 
-/// 三条配方的数字是**字幕像素的真相**。这条测试把它们和收编前
-/// `core/crates/ccut-kernel/src/cmd/studio_export/transition.rs` 里的字面量逐项对齐——
-/// 改配方就得先改这里，改不动就说明改错了。
+/// The numbers in these three recipes are the **ground truth for caption pixels**. This test aligns them item by item with the literals in `core/crates/ccut-kernel/src/cmd/studio_export/transition.rs` from before they were absorbed:
+/// changing a recipe means changing this first; if you cannot change it here, that means you changed it wrong.
 #[test]
 fn the_caption_transition_recipes_match_the_historical_constants() {
     use motion::curve::CurveSpec;
@@ -250,7 +245,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
         assert_eq!(recipe.id, *id);
         assert_eq!(recipe.version, 1);
         assert_eq!(recipe.determinism, "strict");
-        // 相位量化是配方参数，不是实现细节：字幕姿态跟的是帧号。
+        // Phase quantization is a recipe parameter, not an implementation detail: caption poses follow the frame number.
         assert_eq!(recipe.time_quantization, "round-both-ends");
         assert_eq!(recipe.solver, "newton6-bisect10-1e-6");
         assert_eq!(
@@ -264,7 +259,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
         );
     }
 
-    // 派生通道逐条对齐原实现的表达式。
+    // Each derived channel is aligned, one by one, with the expression in the original implementation.
     let fade = caption_transition("magic-fade").unwrap();
     assert_eq!(
         fade.channels
@@ -279,7 +274,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
             fade.channel_value(&fade.channels[0], e, 2.5),
             e.clamp(0.0, 1.0)
         );
-        // blur = (6 × canvasScale × (1 − e)).max(0) —— 求值顺序与原式相同
+        // blur = (6 × canvasScale × (1 − e)).max(0) —— same evaluation order as the original expression
         for scale in [1.0, 2.5, 0.75] {
             assert_eq!(
                 fade.channel_value(&fade.channels[1], e, scale),
@@ -289,7 +284,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
     }
     let pop = caption_transition("magic-pop").unwrap();
     for e in [0.0, 0.4, 1.0, 1.1] {
-        // scale = 0.7 + 0.3e，**不夹**（曲线会过冲到 1 以上）
+        // scale = 0.7 + 0.3e, **not clamped** (the curve overshoots above 1)
         assert_eq!(pop.channel_value(&pop.channels[0], e, 1.0), 0.7 + 0.3 * e);
     }
     let flip = caption_transition("magic-flip").unwrap();
@@ -300,7 +295,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
         );
     }
 
-    // 相位：两端各自按 fps 取整再相减。
+    // Phase: both ends are each rounded to fps, then subtracted.
     let fps = 30.0;
     assert_eq!(
         fade.phase(1.0 / 3.0, 0.02, 0.4, fps),
@@ -308,8 +303,8 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
     );
 }
 
-/// 字幕配方为什么要显式声明 `solver`：两条求解器在 `[0, 1]` 上**不等**，
-/// 差值乘 255 之后落到 u8 舍入边界上就是字幕像素差。
+/// Why caption recipes must declare `solver` explicitly: the two solvers are **not equal** on `[0, 1]`,
+/// and once the difference is multiplied by 255 and lands on a u8 rounding boundary, it becomes a caption pixel difference.
 #[test]
 fn the_caption_solver_is_not_interchangeable_with_the_default_one() {
     let (x1, y1, x2, y2) = (0.22, 0.19, 0.54, 1.62);
@@ -326,7 +321,7 @@ fn the_caption_solver_is_not_interchangeable_with_the_default_one() {
     }
     assert!(differs, "两条求解器如果逐位相同，配方就不必声明 solver 了");
     assert!(worst > 1e-7, "实测最大差 {worst}");
-    // 端点仍然一致——差的是中间的迭代精度。
+    // The endpoints still agree; what differs is the iterative precision in between.
     for (x1, y1, x2, y2) in [(0.42, 0.0, 0.58, 1.0), (0.25, 0.46, 0.45, 0.94)] {
         assert_eq!(
             motion::curve::cubic_bezier_caption(x1, y1, x2, y2, 0.0),
@@ -339,12 +334,10 @@ fn the_caption_solver_is_not_interchangeable_with_the_default_one() {
     }
 }
 
-// ── 模板贴纸目录（设计 §10 P7 / P7b）─────────────────────────────────
+// ── Template sticker catalog (design §10 P7 / P7b) ─────────────────────────────────
 
-/// 模板贴纸的**结构**判据：这一批的价值不在"画了什么"，而在"配方形状对不对"。
-/// 每份都要有层、每层都要有颜色和轮廓、`strokeWidth` 是元素盒短边的比例而不是
-/// 像素、`(id, version)` 冻结、`manifest_hash` 互不相同。P7c 扩充模板是纯数据，
-/// 这条测试是它的护栏。
+/// The **structural** criteria for template stickers: the value of this batch lies not in “what it draws” but in “whether the recipe shape is right”.
+/// Each one must have layers, each layer must have a color and an outline, `strokeWidth` is a proportion of the element box's short side rather than pixels, `(id, version)` is frozen, and `manifest_hash` values are all different. P7c expanding the templates is pure data, and this test is its guardrail.
 #[test]
 fn every_sticker_template_is_a_stack_of_coloured_outlines() {
     use motion::preset_registry::{PathSegment, timeline_sticker, timeline_stickers};
@@ -355,7 +348,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
         assert_eq!(recipe.version, 1, "{id}");
         assert!(recipe.available, "{id}");
         assert_eq!(recipe.qualified_id(), format!("sticker.{id}"), "{id}");
-        // 贴纸没有绘制算法：它是矢量直出，不像 visualizer / progress 要内核名。
+        // Stickers have no drawing algorithm: they are output directly as vectors, unlike visualizer / progress, which need a kernel name.
         assert!(recipe.recipe().is_none(), "{id}");
         assert!(recipe.shape().is_none(), "{id}");
         let body = recipe.sticker().expect("sticker 目录只装 sticker 配方");
@@ -380,7 +373,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
                 matches!(layer.segments.first(), Some(PathSegment::Move(_))),
                 "{id}: 轮廓必须以 move 开头"
             );
-            // 几何写在单位正方里（0..1）：越界会在元素盒外画出去。
+            // Geometry is written within the unit square (0..1): anything out of range would be drawn outside the element box.
             for point in layer.segments.iter().flat_map(|segment| match segment {
                 PathSegment::Move(p) | PathSegment::Line(p) => vec![*p],
                 PathSegment::Quad(a, b) => vec![*a, *b],
@@ -404,8 +397,8 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
     assert!(timeline_sticker("no-such-template").is_none());
 }
 
-/// 多层多色是贴纸与 shape 的分水岭：至少有一份模板真的用了两层以上、两种颜色。
-/// 只有一层单色的"贴纸"应该做成 shape 配方，不该占贴纸目录。
+/// Multiple layers and multiple colors are the dividing line between stickers and shapes: at least one template really uses two or more layers and two or more colors.
+/// A monochrome single-layer “sticker” should be made as a shape recipe, not take up a spot in the sticker catalog.
 #[test]
 fn the_sticker_catalogue_actually_uses_more_than_one_layer() {
     use motion::preset_registry::timeline_stickers;
@@ -417,10 +410,7 @@ fn the_sticker_catalogue_actually_uses_more_than_one_layer() {
     assert!(multi >= 6, "多层模板只有 {multi} 份");
 }
 
-/// 贴纸几何的自证不变量（原先长在 `gen_element_sticker_paths.rs` 的
-/// `every_sticker_recipe_has_geometry` 里；Swift/`designs/cuccut-mac` 两份
-/// 生成物随旧 Mac 表面一起下线后，生成器整体删除，这些与生成物无关的注册表
-/// 断言搬到这里继续守着）。
+/// Self-verifying invariants of sticker geometry (originally in `every_sticker_recipe_has_geometry` in `gen_element_sticker_paths.rs`; after the two generated outputs for Swift and `designs/cuccut-mac` were taken offline along with the old Mac surface and the generator was removed entirely, these registry assertions that do not depend on generated output were moved here and continue to guard it).
 #[test]
 fn every_sticker_layer_is_well_formed() {
     use motion::preset_registry::{PathSegment, timeline_stickers};
@@ -429,19 +419,19 @@ fn every_sticker_layer_is_well_formed() {
         let layers = &recipe.sticker().expect("sticker body").layers;
         assert!(!layers.is_empty(), "{} 一层都没有", recipe.id);
         for layer in layers {
-            // 每层的第一段必须是 `move`（解析期已校验），消费者因此不必防守。
+            // The first segment of each layer must be `move` (validated at parse time), so consumers need not defend against it.
             assert!(
                 matches!(layer.segments.first(), Some(PathSegment::Move(_))),
                 "{} 的某一层没有以 move 开头",
                 recipe.id
             );
-            // 至少一种颜色（解析期已校验），否则这一层画不出任何东西。
+            // At least one color (validated at parse time), otherwise the layer draws nothing.
             assert!(
                 layer.fill.is_some() || layer.stroke.is_some(),
                 "{} 的某一层既没有 fill 也没有 stroke",
                 recipe.id
             );
-            // 口径自证：描边宽度是比例，不是像素。
+            // Self-check of the convention: stroke width is a ratio, not pixels.
             assert!(
                 layer.stroke_width > 0.0 && layer.stroke_width <= 1.0,
                 "{} 的 strokeWidth 不像比例：{}",
@@ -452,12 +442,10 @@ fn every_sticker_layer_is_well_formed() {
     }
 }
 
-/// 波次列的自证：「柱状 4 种 + 曲线/点阵/脉冲 6 种 + progress 8 种」不是一份手抄 id 清单，
-/// 而是「绘制内核已落地的算法 ∩ strict」的结果（设计 §7.3/§7.4 的波次列）。
-/// 消费者用同一条规则筛，这里钉住它在当前目录上的解——否则 P5 往白名单里加
-/// 算法（并放开 strict 限定）时没人知道基线是多少。
-/// （原先长在 `gen_element_catalogue.rs`：那份契约夹具的唯一消费者是已下线的
-/// Mac 客户端，生成器随之删除，这条与生成物无关的注册表断言搬到这里。）
+/// Self-check of the wave column: “4 bar-style + 6 curve/dot-matrix/pulse-style + 8 progress-style” is not a hand-copied id list,
+/// but the result of “algorithms the drawing kernel has landed ∩ strict” (the wave column in design §7.3/§7.4).
+/// Consumers filter with the same rule; here we pin its solution on the current catalog, otherwise, when P5 adds algorithms to the allowlist (and loosens the strict restriction), nobody would know what the baseline is.
+/// (Originally in `gen_element_catalogue.rs`: the only consumer of that contract fixture was the Mac client, which has since been taken offline, and the generator was removed with it; this registry assertion that does not depend on generated output has been moved here.)
 #[test]
 fn the_shipped_wave_is_a_function_of_algorithm_and_determinism() {
     use motion::preset_registry::{timeline_progresses, timeline_visualizers};
@@ -537,7 +525,7 @@ fn the_shipped_wave_is_a_function_of_algorithm_and_determinism() {
         "P4 的 snake 2 种"
     );
 
-    // 已上线的合集正是消费者白名单的解：10 + 8。
+    // The collection that is live is exactly the solution of the consumer allowlist: 10 + 8.
     let mut shipped = VISUALIZER_BARS.to_vec();
     shipped.extend(VISUALIZER_CURVES);
     assert_eq!(visualizers(&shipped).len(), 10);

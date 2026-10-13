@@ -11,15 +11,14 @@ import { s2Styles, s2StylesChunk } from '../../tools/s2-styles.ts';
 import tailwindcss from '@tailwindcss/vite';
 import { cuccutTheme, s2ShimAlias } from '../../tools/cuccut-theme.ts';
 
-// 工作区包是 TypeScript 源码（没有构建产物），必须打进 bundle；第三方依赖照常外置。
+// Workspace packages are TypeScript source (with no build output), so they must be bundled in; third-party dependencies are externalized as usual.
 const bundleWorkspace = { exclude: ['@cuccut/runtime', '@cuccut/runtime-storage', '@cuccut/protocol', '@cuccut/ui'] };
 
-/** 界面里存状态的模块：Zustand store 与 Runtime 会话。 */
+/** Modules in the UI that hold state: the Zustand store and the Runtime session. */
 const STATEFUL = /\/packages\/ui\/src\/(state|runtime)\//;
 
 /**
- * 开发时改到状态模块（或它依赖的模块，如协议包）就整页重载。热替换会让这些模块另起一份空状态，
- * 而已经连着的 Runtime 会话还往旧的那份里写，界面就一直停在「正在整理」之类的载入态。
+ * During development, editing a state module (or a module it depends on, such as the protocol package) triggers a full page reload. Hot replacement would give these modules a fresh, empty copy of their state, while the Runtime session that is still connected keeps writing to the old copy, and the UI would stay stuck in a loading state such as “正在整理” (preparing).
  */
 export function reloadOnStateChange(): Plugin {
   const reachesState = (node: EnvironmentModuleNode, seen: Set<EnvironmentModuleNode>): boolean => {
@@ -42,9 +41,8 @@ export function reloadOnStateChange(): Plugin {
 }
 
 /**
- * Runtime 打进 `out/main/runtime.js` 之后在 Node 里同步读编辑语义的 WASM：把 `generated/editor.wasm` 原样放到 bundle 旁边
- * （`out/main/generated/editor.wasm`），`@cuccut/editor-wasm` 的 `locateEditorWasm` 先找那里。界面一侧由 Vite 内联，不走这条路。
- * 没有构建 WASM 时只提醒：用到它的流程调用时才报 `EDITOR_WASM_UNAVAILABLE`，与界面一侧一致。
+ * After the Runtime is bundled into `out/main/runtime.js`, it synchronously reads the editing-semantics WASM in Node: `generated/editor.wasm` is copied as is next to the bundle (`out/main/generated/editor.wasm`), and `locateEditorWasm` in `@cuccut/editor-wasm` looks there first. On the UI side, Vite inlines it, so this path is not used.
+ * When the WASM has not been built, this only warns: the error `EDITOR_WASM_UNAVAILABLE` is raised only when a flow that uses it is called, which matches the UI side.
  */
 export function shipEditorWasm(): Plugin {
   const source = resolve(import.meta.dirname, '../../packages/editor-wasm/src/generated/editor.wasm');
@@ -62,11 +60,9 @@ export function shipEditorWasm(): Plugin {
 }
 
 /**
- * 预览的字体（`npm run build:wasm` 拷进 `packages/ui/src/render/generated/fonts`）以 `?url` 引入，是 bundle 旁边的单独文件：
- * 打包后的页面在 file:// 下，`new URL(文件名, import.meta.url)` 指到 `out/renderer/assets/` 里的那一份，再由 XHR 读
- * （`preview-wasm.ts`）。构建时核对两件事，不对就让构建失败，不等到打开预览才画不出字：
- * - `base` 是相对的（绝对的 `/assets/…` 在 file:// 下指到磁盘根；electron-vite 的生产构建把它定成 `./`，这里防它变）；
- * - `generated/fonts` 里的每一份都作为资源进了产物。
+ * Preview fonts (copied into `packages/ui/src/render/generated/fonts` by `npm run build:wasm`) are imported with `?url` and are separate files next to the bundle: under file:// the packaged page's `new URL(filename, import.meta.url)` points to the copy in `out/renderer/assets/`, which is then read by XHR (`preview-wasm.ts`). The build checks two things and fails if either is wrong, rather than the preview failing to draw text only when it is opened:
+ * - `base` is relative (an absolute `/assets/…` under file:// points to the disk root; electron-vite's production build sets it to `./`, and this guards against that changing);
+ * - every file in `generated/fonts` has been emitted into the output as an asset.
  */
 export function checkPreviewFonts(source = resolve(import.meta.dirname, '../../packages/ui/src/render/generated/fonts')): Plugin {
   let root = '';
@@ -100,10 +96,10 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(import.meta.dirname, 'src/main/index.ts'),
-          // Runtime 与主进程一起构建，由主进程用 Electron 自带的 Node 启动（ELECTRON_RUN_AS_NODE）。
+          // The Runtime is built together with the main process, and the main process starts it with Electron's bundled Node (ELECTRON_RUN_AS_NODE).
           runtime: resolve(import.meta.dirname, '../runtime/src/main.ts'),
           'legacy-import-worker': resolve(import.meta.dirname, '../../packages/legacy-import/src/worker.ts'),
-          // 产物的自检入口（`tools/check-model-assets.mjs` 用 Electron 的 Node 运行）：随应用分发的模型数据解析到哪里；应用自己不加载它。
+          // Self-check entry for the output (run by `tools/check-model-assets.mjs` with Electron's Node): where the model data shipped with the app resolves to; the app itself does not load it.
           'model-assets-check': resolve(import.meta.dirname, 'src/main/model-assets-check.ts'),
         },
       },
@@ -117,13 +113,13 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(import.meta.dirname, 'src/renderer'),
-    // 预览的 WASM 以 `?inline` 引入成 data URL（打包后的 file:// 页面取不了单独的 .wasm 文件）。
-    // Vite 默认不把 .wasm 当资源，要明说。
+    // The preview's WASM is imported as a data URL with `?inline` (a packaged file:// page cannot fetch a separate .wasm file).
+    // Vite does not treat .wasm as an asset by default, so this must be stated explicitly.
     assetsInclude: ['**/*.wasm', '**/*.bcmap', '**/*.pfb'],
     // CucCut: S2 imports go through the theme shim (agentcut's button language on S2 components).
     resolve: { alias: [s2ShimAlias()] },
     plugins: [
-      // S2 的 style 宏必须最先处理（开发时另把 S2 样式合并去重，见 tools/s2-styles.ts）。
+      // The S2 style macro must be processed first (in development, S2 styles are also merged and deduplicated separately; see tools/s2-styles.ts).
       ...s2Styles(),
       tailwindcss(),
       // CucCut: agentcut's palette over every S2 colour (tools/cuccut-theme.ts).
@@ -137,19 +133,19 @@ export default defineConfig({
     ],
     build: {
       target: 'es2022',
-      // electron-vite 给渲染进程默认 minify: false，CSS 跟着不压缩，style 宏给每份 CSS 附的内联 source map（含整份源文件）
-      // 就原样进了产物（三十多 MB）。CSS 照 Web 客户端一样压缩，注释连同 source map 一起去掉；JS 仍按 electron-vite 的默认不压缩。
+      // electron-vite defaults the renderer to minify: false, so the CSS is left uncompressed, and the inline source map that the style macro attaches to each CSS file (which contains the whole source file)
+      // ends up in the output as is (over thirty MB). CSS is compressed as in the web client, with comments and the source map removed; JS stays uncompressed as electron-vite's default.
       cssMinify: 'esbuild',
       rollupOptions: {
         input: {
           index: resolve(import.meta.dirname, 'src/renderer/index.html'),
-          // 产物的自检入口（`tools/check-file-fonts.mjs` 在 file:// 下动态导入）；应用自己不加载它。
+          // Self-check entry for the output (dynamically imported under file:// by `tools/check-file-fonts.mjs`); the app itself does not load it.
           'kernel-check': resolve(import.meta.dirname, 'src/renderer/kernel-check.ts'),
-          // 预览播放的端到端基准（`tools/preview-bench.mjs` 同样动态导入）；应用自己不加载它。
+          // End-to-end benchmark for preview playback (likewise dynamically imported by `tools/preview-bench.mjs`); the app itself does not load it.
           'preview-bench': resolve(import.meta.dirname, 'src/renderer/preview-bench.ts'),
         },
         output: {
-          // S2、S2 AI 组件与 style 宏生成的 CSS 合成一个文件，避免按 chunk 拆开后的层叠顺序问题。
+          // CSS generated by S2, the S2 AI components and the style macro is combined into one file, to avoid cascade-order problems that come from splitting it by chunk.
           manualChunks: s2StylesChunk,
         },
       },

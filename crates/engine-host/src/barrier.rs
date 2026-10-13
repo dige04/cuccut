@@ -1,11 +1,11 @@
-//! 引擎侧的停止屏障（架构设计 §7.4）。
+//! The engine-side stop barrier (architecture design §7.4).
 //!
-//! 任务与流水线的写入带着 `run: { runId, runGeneration }` 提交；Runtime 停止一个执行时先发 `runs.invalidate`，
-//! 之后同一执行、代数不高于失效代数的提交在视频的串行提交入口被拒（`TASK_STOPPED`），不开事务、不产生回执。
-//! 普通的用户与 Agent 编辑不带 `run`，不受影响。
+//! Task and pipeline writes are submitted with `run: { runId, runGeneration }`. When the Runtime stops a run, it first sends `runs.invalidate`;
+//! afterwards, submissions for the same run whose generation is not above the invalidated generation are rejected at the video's serial commit entry (`TASK_STOPPED`), without opening a transaction or producing a receipt.
+//! Ordinary user and Agent edits do not carry `run` and are not affected.
 //!
-//! 记录只在内存里、按视频分开：视频关闭时清掉；每个视频最多记 `MAX_RUNS_PER_VIDEO` 个执行，满了先进先出淘汰最早的。
-//! 引擎重启或记录被淘汰之后，退回 Node 侧的屏障（ApplicationRunner 每次提交前查停止标记）。
+//! Records are kept in memory, separately per video: they are cleared when the video closes; each video keeps at most `MAX_RUNS_PER_VIDEO` runs, and when full, the oldest is evicted first in, first out.
+//! After an engine restart or once records are evicted, it falls back to the Node-side barrier (ApplicationRunner checks the stop marker before each submission).
 
 use std::collections::{HashMap, VecDeque};
 
@@ -14,14 +14,14 @@ use message_ref::msg;
 use video_engine::model::Id;
 use video_engine::{ErrorBody, Retryability};
 
-/// 每个视频最多记住的失效执行数。
+/// Maximum number of invalidated runs remembered per video.
 pub const MAX_RUNS_PER_VIDEO: usize = 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RunRef {
     pub run_id: Id,
-    /// 十进制整数字符串；重试换代时递增。
+    /// Decimal integer string; incremented when a retry starts a new generation.
     pub run_generation: String,
 }
 
@@ -39,9 +39,9 @@ impl RunRef {
 
 #[derive(Default)]
 struct VideoRuns {
-    /// runId → 已失效的最高代数。
+    /// runId → highest invalidated generation.
     invalid: HashMap<Id, u64>,
-    /// 记录的先后，满了从前面淘汰。
+    /// Order of records; when full, evicted from the front.
     order: VecDeque<Id>,
 }
 
@@ -51,7 +51,7 @@ pub struct RunBarrier {
 }
 
 impl RunBarrier {
-    /// 让这个执行的这一代及更早的代失效。
+    /// Invalidates this run's generation and all earlier generations.
     pub fn invalidate(&mut self, video_id: &str, run: &RunRef) -> Result<(), ErrorBody> {
         let generation = run.generation()?;
         let runs = self.videos.entry(video_id.to_string()).or_default();
@@ -70,7 +70,7 @@ impl RunBarrier {
         Ok(())
     }
 
-    /// 这次提交所属的执行是否已被停止；返回失效到的代数。
+    /// Whether the run this submission belongs to has been stopped; returns the generation it was invalidated up to.
     pub fn stopped(&self, video_id: &str, run: &RunRef) -> Result<Option<u64>, ErrorBody> {
         let generation = run.generation()?;
         Ok(self
@@ -81,7 +81,7 @@ impl RunBarrier {
             .filter(|stopped| generation <= *stopped))
     }
 
-    /// 视频关闭：它的记录一起清掉。
+    /// Video closed: its records are cleared together with it.
     pub fn forget(&mut self, video_id: &str) {
         self.videos.remove(video_id);
     }
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(barrier.stopped("v", &run("job_a", 3)).unwrap(), None);
         assert_eq!(barrier.stopped("v", &run("job_b", 1)).unwrap(), None);
         assert_eq!(barrier.stopped("other", &run("job_a", 1)).unwrap(), None);
-        // 失效到更早的代不会放宽已有的记录。
+        // Invalidating up to an earlier generation does not loosen existing records.
         barrier.invalidate("v", &run("job_a", 1)).unwrap();
         assert_eq!(barrier.stopped("v", &run("job_a", 2)).unwrap(), Some(2));
         assert!(barrier.stopped("v", &run("job_a", 0)).is_ok());
@@ -138,7 +138,7 @@ mod tests {
             barrier.invalidate("v", &run(&format!("job_{i}"), 1)).unwrap();
         }
         assert_eq!(barrier.len("v"), MAX_RUNS_PER_VIDEO);
-        // 最早的被淘汰，最近的还在。
+        // The oldest is evicted; the most recent stays.
         assert_eq!(barrier.stopped("v", &run("job_0", 1)).unwrap(), None);
         let last = format!("job_{}", MAX_RUNS_PER_VIDEO + 4);
         assert_eq!(barrier.stopped("v", &run(&last, 1)).unwrap(), Some(1));

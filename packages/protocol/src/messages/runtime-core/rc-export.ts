@@ -16,13 +16,13 @@ import { vi } from './rc-export.vi.ts';
 
 const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** 导出（exports/）：导出任务的错误、警告与说明。英文是键与类型的来源，译文在 `rc-export.<语言>.ts`。 */
+/** Export (exports/): errors, warnings and descriptions for export tasks. English is the source of keys and types; translations are in `rc-export.<language>.ts`. */
 const en = {
-  // 列表分隔：顿号式（`、`）与分句式（`；`）。
+  // List separators: enumeration-comma style (`、`) and clause style (`；`).
   listSeparator: ', ',
   clauseSeparator: '; ',
 
-  // 导出的落点与发布
+  // Export destination and publishing
   destinationNotAbsolute: 'The export folder must be an absolute path',
   destinationCreateFailed: (p: { reason: string }) => `Can't create the export folder: ${p.reason}`,
   destinationNotDirectory: "The export folder doesn't exist or isn't a folder",
@@ -33,7 +33,7 @@ const en = {
   destinationExistsRecovery: 'Choose another file name, or explicitly ask to overwrite (overwrite)',
   destinationUnwritableRecovery: 'Choose a writable folder, or have the user change its permissions',
 
-  // 预检与提交
+  // Preflight and submission
   exportTaskNotFound: 'Export task not found',
   exportKindUnsupported: (p: { kind: string }) => `This version can't export ${p.kind} yet`,
   videoNotOpen: "The video isn't open; open it first",
@@ -68,14 +68,14 @@ const en = {
   linkedAssetGoneBeforeExport: (p: { name: string }) => `Linked asset "${p.name}" disappeared before the export started`,
   linkedAssetChangedBeforeExport: (p: { name: string }) => `Linked asset "${p.name}" was modified before the export started`,
 
-  // 任务的结果
+  // Task results
   fileNotExported: (p: { fileName: string; problems: string }) => `${p.fileName} wasn't exported: ${p.problems}`,
   noFilesExported: 'None of the files were exported',
   partiallyPublished: (p: { failed: number; published: number }) =>
     `${p.failed} ${s(p.failed, "file wasn't", "files weren't")} exported; ${p.published} ${s(p.published, 'was', 'were')} published`,
   xmlIncomplete: 'The written XML is incomplete',
 
-  // 外部工具
+  // External tools
   toolStartFailed: (p: { tool: string; error: string }) => `${p.tool} failed to start: ${p.error}`,
   toolExited: (p: { tool: string; code: string; output: string }) => `${p.tool} exited with ${p.code}: ${p.output}`,
   ffmpegEncoder: (p: { encoder: string }) => `the ffmpeg ${p.encoder} encoder`,
@@ -85,7 +85,7 @@ const en = {
   workerExitedUnexpectedly: (p: { signal: string | null; code: string; output: string }) =>
     `export-worker exited unexpectedly (${p.signal ?? `exit code ${p.code}`})${p.output ? `: ${p.output}` : ''}`,
 
-  // 音频
+  // Audio
   planAssetNotFrozen: (p: { assetId: string }) => `Asset ${p.assetId} in the plan wasn't frozen`,
   loudnessNotMeasurable: 'The mix is silent or too short to measure loudness; only the true-peak ceiling was applied',
   audioNote: (p: { itemId: string; note: string }) => `Item ${p.itemId}: ${p.note}`,
@@ -98,7 +98,7 @@ const en = {
   gainAbovePreview: (p: { itemId: string; gainDb: number }) =>
     `Item ${p.itemId} has a peak gain of +${p.gainDb} dB: the preview caps volume at 0 dB, but the export applies the setting, so it will sound louder than the preview`,
 
-  // 成片
+  // Final cut
   outputSizeAdjusted: (p: { width: number; height: number; canvasWidth: number; canvasHeight: number }) =>
     `Output size set to ${p.width}×${p.height} (matching the ${p.canvasWidth}×${p.canvasHeight} canvas aspect ratio, with even width and height)`,
   outputSizeLetterboxed: (p: { width: number; height: number; pictureWidth: number; pictureHeight: number }) =>
@@ -115,7 +115,7 @@ const en = {
   fontStillMissingAfterDownload: 'Still not found after downloading',
   fontDownloadUnavailable: 'Font download is unavailable',
 
-  // 字幕与文稿
+  // Captions and transcripts
   translationPartialSkipped: (p: { count: number }) =>
     `${p.count} ${s(p.count, 'sentence was', 'sentences were')} cut partway and got no translation`,
   translationStale: (p: { count: number }) =>
@@ -127,7 +127,7 @@ const en = {
   assStyleUnmapped: (p: { styles: string }) => `Styles ASS can't express (not written): ${p.styles}`,
   assWholeStyle: (p: { schema: string | null }) => `The whole style (${p.schema ?? 'no schema'})`,
 
-  // 校验（发布前按格式读回来）
+  // Verification (read back in each format before publishing)
   durationMismatch: (p: { actual: number; expected: number; tolerance: number }) =>
     `Duration is ${p.actual} s, expected ${p.expected} s (tolerance ${p.tolerance})`,
   sampleRateMismatch: (p: { actual: number; expected: number }) => `Sample rate is ${p.actual}, but the setting is ${p.expected}`,
@@ -163,7 +163,7 @@ const en = {
   entryCountMismatch: (p: { parsed: number; written: number }) => `Parsed ${p.parsed} entries, but ${p.written} were written`,
   noContent: 'No content',
 
-  // 工程（xmeml）导出：表达不了、没有写进工程文件的内容
+  // Project (xmeml) export: content that cannot be expressed and was not written into the project file
   itemKindVideo: 'Video',
   itemKindImage: 'Image',
   itemKindAudio: 'Audio',

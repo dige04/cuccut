@@ -1,12 +1,10 @@
-//! BCP 47 语言标签 ↔ Qwen3-ASR 的语言名。Qwen3-ASR 用英文语言名指定语言（`language English`），
-//! 自动识别时也以同样的前缀报出它听到的语言。
+//! BCP 47 language tags ↔ Qwen3-ASR language names. Qwen3-ASR specifies a language by its English name (`language English`), and when auto-detecting it reports the language it hears with the same prefix.
 //!
-//! 各识别模型族认的语言各有一张表（从 v2 的语言目录移植）：[`QWEN_LANGUAGES`]、[`WHISPER_LANGUAGES`]、
-//! [`MOSS_LANGUAGES`]；断言的语言由 [`supports`] 按模型族把关。Runtime 的 `@cuccut/models` 有同样的三张表。
+//! Each recognition model family has its own table of accepted languages (ported from the v2 language catalog): [`QWEN_LANGUAGES`], [`WHISPER_LANGUAGES`], [`MOSS_LANGUAGES`]; whether an asserted language is accepted is gated by [`supports`] per model family. The Runtime's `@cuccut/models` has the same three tables.
 
 use crate::bundle::{FAMILY_MOSS_TRANSCRIBE_DIARIZE, FAMILY_QWEN3_ASR, FAMILY_WHISPER_COREML, FAMILY_WHISPER_GGML, FAMILY_WHISPER_MLX};
 
-/// Qwen3-ASR 支持的语言：规范码与模型认的语言名。
+/// Languages supported by Qwen3-ASR: canonical codes and the language names the model accepts.
 pub const QWEN_LANGUAGES: &[(&str, &str)] = &[
     ("zh", "Chinese"),
     ("en", "English"),
@@ -40,7 +38,7 @@ pub const QWEN_LANGUAGES: &[(&str, &str)] = &[
     ("mk", "Macedonian"),
 ];
 
-/// Whisper large-v3 / large-v3-turbo 认的语言（规范码，即 Whisper 的语言 token）。
+/// Languages accepted by Whisper large-v3 / large-v3-turbo (canonical codes, i.e. Whisper's language tokens).
 pub const WHISPER_LANGUAGES: &[&str] = &[
     "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk",
     "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn",
@@ -49,7 +47,7 @@ pub const WHISPER_LANGUAGES: &[&str] = &[
     "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue",
 ];
 
-/// MOSS-Transcribe-Diarize 认的语言：语言目录里全部主语种（规范码与指令里用的英文名）。
+/// Languages accepted by MOSS-Transcribe-Diarize: all major languages in the language catalog (canonical codes and the English names used in the instructions).
 pub const MOSS_LANGUAGES: &[(&str, &str)] = &[
     ("zh", "Chinese"),
     ("en", "English"),
@@ -154,7 +152,7 @@ pub const MOSS_LANGUAGES: &[(&str, &str)] = &[
     ("fil", "Filipino"),
 ];
 
-/// 这个识别模型族认得 `tag`（按规范码比较）。认不出的模型族一律 `false`。
+/// Whether this recognition model family accepts `tag` (compared by canonical code). Unknown model families always return `false`.
 pub fn supports(family: &str, tag: &str) -> bool {
     let Some(code) = canonical_code(tag) else {
         return false;
@@ -167,7 +165,7 @@ pub fn supports(family: &str, tag: &str) -> bool {
     }
 }
 
-/// 三字母码与历史别名 → 规范码。
+/// Three-letter codes and legacy aliases → canonical codes.
 const ALIASES: &[(&str, &str)] = &[
     ("jv", "jw"),
     ("cmn", "zh"),
@@ -177,8 +175,8 @@ const ALIASES: &[(&str, &str)] = &[
     ("kor", "ko"),
 ];
 
-/// BCP 47 标签 → 规范码（取主语言子标签并小写，再查别名）：`zh-Hant` → `zh`，`EN-us` → `en`。
-/// 不检查模型是否支持。
+/// BCP 47 tag → canonical code (take the primary language subtag, lowercase it, then look up aliases): `zh-Hant` → `zh`, `EN-us` → `en`.
+/// Does not check whether the model supports the language.
 pub fn canonical_code(tag: &str) -> Option<String> {
     let primary = tag.trim().split(['-', '_']).next()?.to_ascii_lowercase();
     if primary.is_empty() || !primary.chars().all(|character| character.is_ascii_alphabetic()) {
@@ -192,13 +190,13 @@ pub fn canonical_code(tag: &str) -> Option<String> {
     )
 }
 
-/// BCP 47 标签 → Qwen3-ASR 语言名；模型不支持时 `None`。
+/// BCP 47 tag → Qwen3-ASR language name; `None` if the model does not support it.
 pub fn qwen_name(tag: &str) -> Option<&'static str> {
     let code = canonical_code(tag)?;
     QWEN_LANGUAGES.iter().find(|(known, _)| *known == code).map(|(_, name)| *name)
 }
 
-/// Qwen3-ASR 报出的语言名 → 规范码（`English` → `en`，大小写与首尾空白不计）。
+/// Language name reported by Qwen3-ASR → canonical code (`English` → `en`; case and leading/trailing whitespace are ignored).
 pub fn code_from_qwen_name(name: &str) -> Option<&'static str> {
     let name = name.trim();
     QWEN_LANGUAGES
@@ -244,7 +242,7 @@ mod tests {
         assert!(supports(FAMILY_WHISPER_MLX, "sw-KE"));
         assert!(supports(FAMILY_WHISPER_MLX, "jv"), "别名折到 jw");
         assert!(!supports(FAMILY_WHISPER_MLX, "fil"));
-        // whisper.cpp 的 GGML 包与 MLX 包是同一个模型，认同一张表。
+        // whisper.cpp's GGML package and the MLX package are the same model, so they accept the same table.
         assert!(supports(FAMILY_WHISPER_GGML, "sw-KE"));
         assert!(supports(FAMILY_WHISPER_GGML, "yue"));
         assert!(!supports(FAMILY_WHISPER_GGML, "fil"));
@@ -252,7 +250,7 @@ mod tests {
         assert!(!supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "tlh"));
         assert!(!supports("unknown-family", "en"));
         assert!(!supports(FAMILY_QWEN3_ASR, "12"));
-        // MOSS 的表覆盖另两张；每张表里的码都已是规范码，没有重复。
+        // The MOSS table covers the other two. The codes in each table are already canonical, with no duplicates.
         for code in WHISPER_LANGUAGES.iter().chain(QWEN_LANGUAGES.iter().map(|(code, _)| code)) {
             assert!(supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, code), "{code}");
         }
@@ -270,10 +268,9 @@ mod tests {
         }
     }
 
-    // ---- 以下移植自 v2 `ccut-speech-core/src/asr_language.rs`。v3 没有 `resolve()`（换模型时的语言回落）
-    // 和按语言名查 Qwen 参数，只移植落在 `supports` / `canonical_code` / `qwen_name` 上的断言 ----
+    // ---- Below is ported from v2 `ccut-speech-core/src/asr_language.rs`. v3 has no `resolve()` (fallback to another language when switching models) and no lookup of Qwen parameters by language name; only the assertions that land on `supports` / `canonical_code` / `qwen_name` are ported ----
 
-    /// 原 `model_switch_keeps_supported_language_and_falls_back_to_auto`：v2 不认就回落 auto，v3 由 `supports` 把关。
+    /// Original `model_switch_keeps_supported_language_and_falls_back_to_auto`: in v2, an unsupported language fell back to auto; in v3, `supports` gates it.
     #[test]
     fn each_family_accepts_only_its_own_languages() {
         assert!(supports(FAMILY_QWEN3_ASR, "ja"));
@@ -281,7 +278,7 @@ mod tests {
         assert!(supports(FAMILY_WHISPER_MLX, "uk"));
         assert!(supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "ja"));
         assert!(supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "uk"));
-        // `auto` 与乱写的标签不是语言（`not-a-language` 的主子标签是 `not`，也不在任何表里）。
+        // `auto` and malformed tags are not languages (the primary subtag of `not-a-language` is `not`, which is in no table).
         for family in [
             FAMILY_QWEN3_ASR,
             FAMILY_WHISPER_MLX,
@@ -293,8 +290,8 @@ mod tests {
         }
     }
 
-    /// 原 `every_moss_code_has_an_instruction_name`：每个可选 code 都能写进 MOSS 的指令，且与表里的英文名一致；
-    /// 唯一例外 `yue` 折成 `Chinese`。
+    /// Original `every_moss_code_has_an_instruction_name`: every optional code can be written into a MOSS instruction and matches the English name in the table;
+    /// the only exception is that `yue` is folded to `Chinese`.
     #[test]
     fn every_moss_code_has_an_instruction_name() {
         use super::super::moss_common::language_name;
@@ -304,7 +301,7 @@ mod tests {
         }
     }
 
-    /// 原 `qwen_parameters_use_names_and_keep_cantonese_distinct`。
+    /// Original `qwen_parameters_use_names_and_keep_cantonese_distinct`.
     #[test]
     fn qwen_names_keep_cantonese_distinct() {
         assert_eq!(qwen_name("yue"), Some("Cantonese"));
@@ -313,14 +310,14 @@ mod tests {
         assert_eq!(qwen_name("auto"), None);
         assert_eq!(qwen_name("Fujian"), None);
         assert_eq!(qwen_name("english-nonsense"), None);
-        // 模型报出的名字反查回规范码；粤语与汉语各是各的。
+        // Map the name the model reports back to the canonical code; Cantonese and Chinese are kept separate.
         assert_eq!(code_from_qwen_name("Japanese"), Some("ja"));
         assert_eq!(code_from_qwen_name("Portuguese"), Some("pt"));
         assert_eq!(code_from_qwen_name("Cantonese"), Some("yue"));
         assert_eq!(code_from_qwen_name("Chinese"), Some("zh"));
     }
 
-    /// 原 `hints_keep_whisper_only_languages_and_accept_model_names`：粤语不折成汉语，Whisper 照收。
+    /// Original `hints_keep_whisper_only_languages_and_accept_model_names`: Cantonese is not folded into Chinese, and Whisper accepts it.
     #[test]
     fn cantonese_stays_distinct_and_whisper_accepts_it() {
         assert_eq!(canonical_code("yue").as_deref(), Some("yue"));

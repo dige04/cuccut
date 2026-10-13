@@ -7,8 +7,7 @@ import { ROW_EDGE } from './dialog-fills.ts';
 import { intro, sectionHeading, sectionTitle } from './help-guide-list.tsx';
 
 /**
- * 快捷键页（原型 help-center.jsx 的 `section === 'keys'`）：和编辑器的快捷键清单（shortcut-sheet）同一份 rows，
- * 不另抄；macOS 与 Windows / Linux 的写法切换照原型 `keyLabel`。
+ * Keyboard shortcuts page (prototype help-center.jsx `section === 'keys'`): uses the same rows as the editor's shortcut list (shortcut-sheet), not a separate copy; the switch between the macOS and Windows / Linux key labels follows the prototype's `keyLabel`.
  */
 export function HelpKeys({ mac, onPlatform }: { mac: boolean; onPlatform(mac: boolean): void }) {
   return (

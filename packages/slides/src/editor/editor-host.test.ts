@@ -3,7 +3,7 @@ import type { PublishBatch, PublishResult, UploadResult } from '../file-protocol
 import { createEditorHost, createHttpBackend, encodeWireBatch, LOCAL_USER, readSessionCanEdit, type Backend } from './editor-host.ts';
 import { flushEdits } from './index.ts';
 
-/** 记录请求、按预设返回响应的假 fetch。 */
+/** Fake fetch that records requests and returns preset responses. */
 function fakeFetch(respond: (url: string, init: RequestInit) => Response | Promise<Response>) {
   const calls: { url: string; init: RequestInit }[] = [];
   const impl: typeof fetch = async (input, init = {}) => {
@@ -167,7 +167,7 @@ describe('readSessionCanEdit', () => {
 });
 
 describe('flushEdits', () => {
-  /** 一个假窗口：有未保存改动时 beforeunload 被取消，并开始一次发布。 */
+  /** A fake window: when there are unsaved changes, beforeunload is canceled and a publish starts. */
   function fakeEditor(rounds: number, publishMs = 5) {
     const target = new EventTarget();
     let left = rounds;

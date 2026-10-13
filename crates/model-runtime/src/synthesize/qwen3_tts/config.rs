@@ -1,28 +1,28 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Configuration.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/Configuration.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Qwen3-TTS 模型配置：从模型包的 `config.json` 解析出
-//! Talker / Code Predictor 维度、量化位宽与 CustomVoice 的说话人表。
+//! Qwen3-TTS model configuration: parses from the model package's `config.json`
+//! the Talker / Code Predictor dimensions, the quantization bit width, and CustomVoice's speaker table.
 //!
-//! 纯逻辑，全平台编译；权重形状仍以 safetensors 为准，这里只决定模块的
-//! 构造参数。
+//! Pure logic, compiled on all platforms; weight shapes are still determined by safetensors, and this only decides the modules'
+//! construction parameters.
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-/// 模型规模：0.6B（隐藏维 1024）或 1.7B（隐藏维 2048）。
+/// Model size: 0.6B (hidden size 1024) or 1.7B (hidden size 2048).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelSize {
     Small,
     Large,
 }
 
-/// Talker（28 层 Qwen3 主干）配置，默认值即 0.6B。
+/// Talker (28-layer Qwen3 backbone) configuration; the defaults are those of 0.6B.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TalkerConfig {
     pub hidden_size: usize,
@@ -36,7 +36,7 @@ pub struct TalkerConfig {
     pub text_vocab_size: usize,
     pub text_hidden_size: usize,
     pub codec_vocab_size: usize,
-    /// 0 表示 bf16 非量化；4 / 8 表示 MLX 仿射量化位宽。
+    /// 0 means bf16 unquantized; 4 / 8 mean MLX affine quantization bit width.
     pub bits: u32,
     pub group_size: usize,
 }
@@ -62,7 +62,7 @@ impl Default for TalkerConfig {
 }
 
 impl TalkerConfig {
-    /// 1.7B：隐藏维 2048、FFN 6144，其余同 0.6B。
+    /// 1.7B: hidden size 2048, FFN 6144; otherwise the same as 0.6B.
     pub fn large() -> Self {
         Self {
             hidden_size: 2048,
@@ -72,11 +72,11 @@ impl TalkerConfig {
     }
 }
 
-/// Code Predictor（5 层小 transformer，15 个 lm head）配置。
+/// Code Predictor configuration (5-layer small transformer, 15 lm heads).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodePredictorConfig {
     pub hidden_size: usize,
-    /// 输入嵌入维（等于 Talker 隐藏维；1.7B 为 2048，需要 `small_to_mtp_projection`）。
+    /// Input embedding dimension (equal to the Talker hidden size; 2048 for 1.7B, requires `small_to_mtp_projection`).
     pub embedding_dim: usize,
     pub num_layers: usize,
     pub num_heads: usize,
@@ -119,15 +119,15 @@ impl CodePredictorConfig {
         }
     }
 
-    /// 是否需要 embedding_dim → hidden_size 的投影。
+    /// Whether a projection from embedding_dim → hidden_size is needed.
     pub fn needs_projection(&self) -> bool {
         self.embedding_dim != self.hidden_size
     }
 }
 
-/// 官方 12 Hz 系列的三种变体（对照 `config.json` 的 `tts_model_type`）：
-/// Base 走参考音频克隆，CustomVoice 走 9 个预置说话人，VoiceDesign 只吃一句
-/// 声音描述。老的精简导出（aufklarer 的 Base）没有这个字段，按说话人表回退。
+/// The three variants of the official 12 Hz series (matched against `tts_model_type` in `config.json`):
+/// Base does reference-audio cloning, CustomVoice uses 9 preset speakers, and VoiceDesign takes only a sentence
+/// describing the voice. Older slimmed exports (aufklarer's Base) lack this field and fall back to the speaker table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelVariant {
     Base,
@@ -136,7 +136,7 @@ pub enum ModelVariant {
 }
 
 impl ModelVariant {
-    /// 报错文案里的变体名，与官方仓库名一致。
+    /// Variant name used in error messages, matching the official repository name.
     pub fn label(self) -> &'static str {
         match self {
             Self::Base => "Base",
@@ -146,25 +146,25 @@ impl ModelVariant {
     }
 }
 
-/// CustomVoice 变体的说话人表（Base 模型没有，为 `None`）。
+/// Speaker table of the CustomVoice variant (absent in the Base model, `None`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpeakerConfig {
-    /// 小写说话人名 → codec token id。
+    /// Lowercase speaker name → codec token id.
     pub speaker_ids: BTreeMap<String, i32>,
-    /// 小写说话人名 → 方言语言名（如 `sichuan_dialect`）。
+    /// Lowercase speaker name → dialect language name (e.g. `sichuan_dialect`).
     pub speaker_dialects: BTreeMap<String, String>,
-    /// config.json 里声明的语言 id 表（小写语言名 → id）。
+    /// Language id table declared in config.json (lowercase language name → id).
     pub codec_language_ids: BTreeMap<String, i32>,
 }
 
 impl SpeakerConfig {
-    /// 按字母序排列的说话人名。
+    /// Speaker names in alphabetical order.
     pub fn available_speakers(&self) -> Vec<String> {
         self.speaker_ids.keys().cloned().collect()
     }
 }
 
-/// 一个模型目录解析出的完整配置。
+/// The complete configuration parsed from one model directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Qwen3TtsConfig {
     pub model_size: ModelSize,
@@ -175,7 +175,7 @@ pub struct Qwen3TtsConfig {
 }
 
 impl Qwen3TtsConfig {
-    /// 按规模与位宽构造默认配置。
+    /// Builds the default configuration from size and bit width.
     pub fn for_size(size: ModelSize, bits: u32) -> Self {
         let mut talker = match size {
             ModelSize::Small => TalkerConfig::default(),
@@ -196,12 +196,12 @@ impl Qwen3TtsConfig {
         }
     }
 
-    /// 是否是量化权重（决定线性层走 `QuantizedDense` 还是 `Dense`）。
+    /// Whether the weights are quantized (decides whether linear layers use `QuantizedDense` or `Dense`).
     pub fn is_quantized(&self) -> bool {
         self.talker.bits != 0
     }
 
-    /// 解析模型目录里的 `config.json` 文本。
+    /// Parses the text of `config.json` in the model directory.
     pub fn parse(json: &str) -> Result<Self> {
         let raw: RawConfig = serde_json::from_str(json).context("解析 Qwen3-TTS config.json 失败")?;
 
@@ -251,7 +251,7 @@ impl Qwen3TtsConfig {
             Some("custom_voice") => ModelVariant::CustomVoice,
             Some("voice_design") => ModelVariant::VoiceDesign,
             Some("base") | Some("") | None => {
-                // 精简导出没有这个字段：有说话人表就是 CustomVoice，否则按 Base。
+                // Slimmed exports lack this field: if there is a speaker table it is CustomVoice, otherwise Base.
                 if config.speaker.is_some() {
                     ModelVariant::CustomVoice
                 } else {
@@ -370,8 +370,8 @@ impl RawTalker {
         Ok(())
     }
 
-    /// spk_id 为空即 Base 模型，返回 `None`；
-    /// `spk_is_dialect` 里只有字符串值才是方言（布尔 false 忽略）。
+    /// An empty spk_id means the Base model and returns `None`;
+    /// in `spk_is_dialect`, only string values count as dialects (a boolean false is ignored).
     fn speaker_config(&self) -> Option<SpeakerConfig> {
         let mut speaker_ids = BTreeMap::new();
         for (name, value) in &self.spk_id {
@@ -402,11 +402,10 @@ impl RawTalker {
     }
 }
 
-/// `config.json` 里 CustomVoice 的说话人名（`talker_config.spk_id` 的键）。官方名单
-/// （[`super::prompt::CUSTOM_VOICE_SPEAKERS`]）里有的用名单的写法、按名单次序排在前面（官方
-/// 权重的键是小写）；名单外的照原文、按字母序跟在后面。大小写不同的同名键只留一个——引擎
-/// 按小写建表（[`SpeakerConfig::speaker_ids`]），它们本就是同一只。没有说话人表（Base）或
-/// 解析不了给 `None`。
+/// Speaker names of CustomVoice in `config.json` (the keys of `talker_config.spk_id`). Those in the official list
+/// ([`super::prompt::CUSTOM_VOICE_SPEAKERS`]) use the list's spelling and come first, in list order (the keys in
+/// the official weights are lowercase); names outside the list are kept as written and follow in alphabetical order. Keys with the same name differing only in case keep just one: the engine
+/// builds its table in lowercase ([`SpeakerConfig::speaker_ids`]), so they are in fact the same speaker. Gives `None` when there is no speaker table (Base) or it cannot be parsed.
 pub fn declared_speakers(json: &str) -> Option<Vec<String>> {
     let raw: RawConfig = serde_json::from_str(json).ok()?;
     let known = &super::prompt::CUSTOM_VOICE_SPEAKERS;
@@ -425,7 +424,7 @@ pub fn declared_speakers(json: &str) -> Option<Vec<String>> {
     (!names.is_empty()).then(|| names.into_iter().map(|(_, name)| name).collect())
 }
 
-/// 同上，读模型包清单里列出的 `config.json`；没列出或读不了给 `None`。
+/// Same as above, but reads the `config.json` listed in the model package manifest; gives `None` if it is not listed or cannot be read.
 pub fn declared_speakers_in(model: &crate::bundle::VerifiedFiles) -> Option<Vec<String>> {
     declared_speakers(&std::fs::read_to_string(model.path("config.json")?).ok()?)
 }
@@ -515,7 +514,7 @@ mod tests {
 
     #[test]
     fn declares_variant_from_tts_model_type() {
-        // 1.7B CustomVoice（mlx-community 8bit 导出）：说话人表与 0.6B 同源。
+        // 1.7B CustomVoice (mlx-community 8bit export): the speaker table comes from the same source as 0.6B.
         let custom = Qwen3TtsConfig::parse(
             r#"{
             "tts_model_type": "custom_voice",
@@ -532,7 +531,7 @@ mod tests {
         assert_eq!(custom.speaker.unwrap().speaker_ids["vivian"], 3065);
         assert!(custom.code_predictor.needs_projection());
 
-        // 1.7B VoiceDesign：spk_id 是空表，只吃声音描述。
+        // 1.7B VoiceDesign: spk_id is an empty table; it takes only the voice description.
         let design = Qwen3TtsConfig::parse(
             r#"{
             "tts_model_type": "voice_design",
@@ -545,16 +544,15 @@ mod tests {
         assert_eq!(design.variant, ModelVariant::VoiceDesign);
         assert!(design.speaker.is_none());
 
-        // 精简导出（aufklarer Base）没有这个字段，按说话人表回退。
+        // Slimmed exports (aufklarer Base) lack this field and fall back to the speaker table.
         let base = Qwen3TtsConfig::parse(r#"{"model_size": "1.7B", "quantization_config": {"bits": 8, "group_size": 64}}"#).unwrap();
         assert_eq!(base.variant, ModelVariant::Base);
 
         assert!(Qwen3TtsConfig::parse(r#"{"model_size": "0.6B", "tts_model_type": "ictl"}"#).is_err());
     }
 
-    /// 官方名单里的说话人用名单写法、按名单次序在前（官方权重的键是小写），名单外的照原文、
-    /// 按字母序在后，大小写不同的同名键只留一个；Base（`spk_id` 为空）、非整数 id、解析不了都
-    /// 不算说话人表。
+    /// Speakers on the official list use the list's spelling and come first, in list order (the keys in official weights are lowercase); names outside the list are kept as written and
+    /// follow in alphabetical order; keys with the same name differing only in case keep just one; Base (empty `spk_id`), non-integer ids, and unparseable input do not count as a speaker table.
     #[test]
     fn declared_speakers_use_published_names_and_order() {
         let json = r#"{"talker_config": {"spk_id": {

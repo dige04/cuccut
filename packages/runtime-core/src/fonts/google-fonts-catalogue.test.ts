@@ -9,7 +9,7 @@ import { FontCatalogue, defaultFaces, snapFace } from './font-catalogue.ts';
 import { FontDownloadError, fetchFontFile, fetchFontText } from './font-download.ts';
 import { cssUrl, parseFontFaceCss, underEndpoint } from './google-fonts-css.ts';
 
-/** 字体目录、CSS 接口的请求与回应、下载的上限（架构设计 §9.1）。不联网：下载用本机的假服务。 */
+/** Font catalogue, requests and responses for the CSS endpoint, and download limits (architecture design §9.1). No network: downloads use the local fake service. */
 
 describe('随应用发布的字体目录', () => {
   const catalogue = FontCatalogue.builtin();
@@ -24,7 +24,7 @@ describe('随应用发布的字体目录', () => {
       expect(f.weights.length + f.italics.length, f.family).toBeGreaterThan(0);
       expect(Array.isArray(f.subsets), f.family).toBe(true);
     }
-    // 中日韩的族是整个文件下载的（几 MB 到二十来 MB）。
+    // CJK families are downloaded as one whole file (a few MB to around 20 MB).
     expect(catalogue.get('noto sans jp')).toMatchObject({ family: 'Noto Sans JP', scripts: expect.arrayContaining(['japanese']) });
     expect(catalogue.get('Noto Sans KR')!.scripts).toContain('korean');
     expect(catalogue.get('LXGW WenKai TC') ?? catalogue.get('Noto Serif SC')).toBeTruthy();

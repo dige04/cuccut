@@ -14,7 +14,7 @@ pub mod host {
 #[cfg(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 pub use mlx_rs::*;
 
-// 开了 candle 就编译适配层（含它自己的单测）；Apple Silicon 同时开 MLX 时合成图仍走 MLX。
+// The adapter layer (with its own unit tests) is compiled when candle is enabled; on Apple Silicon, when MLX is also enabled, the synthesis graph still goes through MLX.
 #[cfg(feature = "backend-candle")]
 #[cfg_attr(
     all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"),

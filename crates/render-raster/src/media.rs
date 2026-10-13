@@ -1,26 +1,17 @@
-//! 帧级媒体供给（opencat MediaContext::frame_rgba_at_time 的 CLI 版）：
-//! 每个渲染线程持一个 MediaStore；video 顺序解码，线程内媒体时刻单调前进
-//! （stride 分帧保证），回退时重开解码器。
+//! Frame-level media supply (the CLI version of opencat MediaContext::frame_rgba_at_time): each render thread holds one MediaStore. Video is decoded sequentially, and within a thread the media time only moves forward (guaranteed by stride framing); the decoder is reopened when it goes backwards.
 //!
-//! ## 解码后端：原生为主、ffmpeg 兜底（WP6a）
+//! ## Decoding backends: native first, ffmpeg as fallback (WP6a)
 //!
-//! 视频帧过去一律由 `ffmpeg … -f rawvideo -pix_fmt rgba -r <fps> -` 管道供给，
-//! 每个 clip 一个子进程。现在先试 [`media_native::open_frame_stream`]
-//! （macOS = AVFoundation、Windows = Media Foundation），解不了才回落到原来那条
-//! ffmpeg 管道。回落是**静默且自动**的，不改变任何画面契约：
+//! Video frames used to be supplied uniformly by an `ffmpeg … -f rawvideo -pix_fmt rgba -r <fps> -` pipe, one subprocess per clip. Now [`media_native::open_frame_stream`] is tried first (AVFoundation on macOS, Media Foundation on Windows), and only if it cannot decode does it fall back to the original ffmpeg pipe. The fallback is **silent and automatic** and does not change any picture contract:
 //!
-//! | 情况 | 后端 |
+//! | Case | Backend |
 //! | --- | --- |
-//! | macOS / Windows 上的 MP4·MOV（H.264 / HEVC / ProRes…） | 原生 |
-//! | 带 alpha 的 WebM（要显式点名 `libvpx-vp9`，平台解码器解不开） | ffmpeg |
-//! | 平台打不开的容器 / 编码 | ffmpeg |
-//! | Linux（`media_native::available()` 为 false） | ffmpeg |
+//! | MP4/MOV on macOS / Windows (H.264 / HEVC / ProRes…) | native |
+//! | WebM with alpha (must explicitly name `libvpx-vp9`, since platform decoders cannot open it) | ffmpeg |
+//! | Containers / codecs the platform cannot open | ffmpeg |
+//! | Linux (`media_native::available()` is false) | ffmpeg |
 //!
-//! 按 `docs/design/bcf/cuccut-format-spec.md` §15.1，视频帧解码像素只承诺**语义等价 +
-//! 容差**（跨后端灰度 SSIM ≥ 0.95），"取哪一帧"仍是硬承诺；同一次渲染里同一个
-//! 源恒定用同一个后端，所以 `drawops_are_byte_deterministic` 这类"同后端两次
-//! 自比"的字节级断言照样成立。实际用了哪个后端由
-//! [`MediaStore::video_backend`] 交出（§15.1「解码后端必须可观测」）。
+//! Per `docs/design/bcf/cuccut-format-spec.md` §15.1, decoded video frame pixels only promise **semantic equivalence + tolerance** (cross-backend grayscale SSIM ≥ 0.95), while “which frame is taken” remains a hard guarantee. Within one render, a given source always uses the same backend, so byte-level assertions such as `drawops_are_byte_deterministic`, which compare a backend against itself twice, still hold. The backend actually used is exposed by [`MediaStore::video_backend`] (§15.1 “decoding backend must be observable”).
 
 use crate::assets::{LoadedAssets, VideoInfo};
 use crate::source::{MediaTime, VisualSource};
@@ -31,58 +22,47 @@ use std::process::{Child, ChildStdout, Stdio};
 use std::sync::Arc;
 use tiny_skia::Pixmap;
 
-/// ffmpeg 兜底后端的标识。原生后端的标识来自
-/// [`media_native::backend`]（`avfoundation` / `media-foundation`）。
+/// Identifier of the ffmpeg fallback backend. The native backend's identifier comes from [`media_native::backend`] (`avfoundation` / `media-foundation`).
 pub const FFMPEG_BACKEND: &str = "ffmpeg";
 
-/// 随机访问模式下触发「重开解码器」的向前跳阈值（合成帧数）。
+/// Forward-jump threshold (in composition frames) that triggers “reopen the decoder” in random-access mode.
 ///
-/// 顺序抽干一帧 1080p H.264 约 5 ms，重开一次解码器几十毫秒；30 帧（合成
-/// fps = 30 时正好 1 秒）既高过普通播放的逐帧前进与预取（idx 每次 +1），
-/// 也高过导出 stride（worker 数，实际远小于 30），不会把顺序推进误判成跳转。
+/// Sequentially draining one 1080p H.264 frame takes about 5 ms, while reopening the decoder takes tens of milliseconds. 30 frames (exactly 1 second at composition fps = 30) is both above normal playback's frame-by-frame advance and prefetch (idx +1 each time), and above the export stride (the worker count, which is in practice far below 30), so sequential advance is never mistaken for a jump.
 const RANDOM_ACCESS_REOPEN_FRAMES: i64 = 30;
 
-/// 起点落在视频流尽头之后、一帧都读不出来时，往回退着重开的步长（秒）。
-/// 先试探测时长给的末帧时刻（通常一步到位，只解一帧）；容器时长按音轨算、比
-/// 视频流长时再逐级退，最远退 32 s——更远就是片源本身有问题，照旧报错。
+/// Step size (seconds) used when reopening while stepping backwards, for when the start point falls after the end of the video stream and no frame can be read. First try the last-frame time given by the probed duration (usually this lands in one step and decodes only one frame). When the container duration, computed from the audio track, is longer than the video stream, step back further level by level, at most 32 s. Going further back means the source file itself is at fault, and the error is still reported as before.
 const TAIL_BACKOFF_SECONDS: [f64; 4] = [0.5, 2.0, 8.0, 32.0];
 
-/// 当前在用的解码器。两条路径的消费方式一样：顺序要下一帧、要不到就是片尾。
+/// The decoder currently in use. Both paths are consumed the same way: ask for the next frame in sequence; if none can be obtained, it is end of stream.
 enum Decoder {
-    /// 平台原生顺序帧流（AVFoundation / Media Foundation）。
+    /// Platform-native sequential frame stream (AVFoundation / Media Foundation).
     Native(media_native::FrameStream),
-    /// `ffmpeg … -f rawvideo -pix_fmt rgba -r <fps> -` 管道。
+    /// `ffmpeg … -f rawvideo -pix_fmt rgba -r <fps> -` pipe.
     Ffmpeg { child: Child, stdout: ChildStdout },
 }
 
 struct VideoReader {
     info: VideoInfo,
     fps: f64,
-    /// 当前解码器从哪个媒体时刻开始（帧 0 的时刻）
+    /// Media time at which the current decoder starts (the time of frame 0)
     origin: f64,
-    /// 下一个待读帧号（相对 origin）
+    /// Index of the next frame to read (relative to origin)
     next_idx: i64,
     decoder: Option<Decoder>,
-    /// 实际在用的解码后端（§15.1 可观测条款）。
+    /// Decoding backend actually in use (§15.1 observability clause).
     backend: &'static str,
-    /// 这条片源的原生路径已被判定不可用（不支持、几何不符、或中途出错），
-    /// 之后一律走 ffmpeg——一条片源不来回换后端，否则同一次渲染里的帧会来自
-    /// 两个解码器，跨后端容差就成了帧间抖动。
+    /// The native path for this source has been judged unusable (unsupported, geometry mismatch, or an error mid-stream), so from then on it always goes through ffmpeg. A source never switches backends back and forth; otherwise the frames within one render would come from two decoders, and the cross-backend tolerance would turn into inter-frame jitter.
     native_disabled: bool,
     last: Option<Arc<Pixmap>>,
     last_idx: i64,
     eof: bool,
-    /// 允许「向前跳太远就重开解码器」（见 [`MediaStore::set_random_access`]）。
+    /// Allows “reopen the decoder when jumping too far forward” (see [`MediaStore::set_random_access`]).
     random_access: bool,
-    /// 关键帧吸附（见 [`MediaStore::set_keyframe_snap`]）：取帧时刻吸到它之前
-    /// 最近的关键帧，跳转只付「重开 + 解一帧」的价。
+    /// Keyframe snapping (see [`MediaStore::set_keyframe_snap`]): the frame time is snapped to the nearest keyframe before it, so a jump costs only “reopen + decode one frame”.
     snap: bool,
-    /// `last` 是吸附出来的**近似帧**时，记下它代表的媒体时刻。`None` = `last`
-    /// 是精确帧。精确请求撞见 `Some` 必须从目标时刻重开，绝不能从关键帧网格
-    /// 抽干过去——那条网格与合成网格错开半帧。
+    /// When `last` is an **approximate frame** produced by snapping, this records the media time it represents. `None` = `last` is an exact frame. An exact request that meets `Some` must reopen from the target time, and must never drain forward from the keyframe grid, because that grid is offset by half a frame from the composition grid.
     approx: Option<f64>,
-    /// 近似帧自己（那个关键帧）的呈现时刻：同 GOP 内再拖时判断能否复用。
-    /// 常驻解码器给的近似帧不经过顺序流，`origin`/`last_idx` 说不出它在哪。
+    /// Presentation time of the approximate frame itself (that keyframe): used to decide whether it can be reused when scrubbing again within the same GOP. Approximate frames from the resident decoder do not pass through the sequential stream, so `origin`/`last_idx` cannot say where they are.
     approx_pts: Option<f64>,
 }
 
@@ -106,19 +86,15 @@ impl VideoReader {
         }
     }
 
-    /// 这条片源值不值得先试原生路径。
+    /// Whether this source is worth trying the native path for first.
     fn native_eligible(&self) -> bool {
-        // `decoder` 非空 = 带 alpha 的 WebM，必须点名 `libvpx-vp9` / `libvpx`
-        // （`assets::probe_alpha_decoder`）。那是 ffmpeg 独有的能力：平台解码器
-        // 连 VP8/VP9 容器都打不开，更谈不上还原 `BlockAdditional` 里的 alpha。
+        // A non-empty `decoder` means WebM with alpha, which must name `libvpx-vp9` / `libvpx` (`assets::probe_alpha_decoder`). That is an ffmpeg-only capability: platform decoders cannot even open VP8/VP9 containers, let alone recover the alpha in `BlockAdditional`.
         media_native::available() && self.info.decoder.is_none()
     }
 
-    /// 从 `from` 重开解码器：原生优先，不成回落 ffmpeg。
+    /// Reopens the decoder from `from`: native first, falling back to ffmpeg if that fails.
     ///
-    /// 手上已经是原生流时先试**原地重开**（同一份容器解析与轨道，只换
-    /// reader）：随机访问每次跳转都要走这里，完整重开里的容器解析与找轨是纯
-    /// 浪费。原地重开失败就丢掉它完整重开，语义不变。
+    /// When a native stream is already in hand, first try an **in-place reopen** (same container parsing and tracks, only the reader is swapped). Random access goes through here on every jump, and container parsing and track lookup in a full reopen would be pure waste. If the in-place reopen fails, discard it and do a full reopen; the semantics are unchanged.
     fn open(&mut self, from: f64) -> Result<()> {
         self.approx = None;
         self.approx_pts = None;
@@ -134,10 +110,7 @@ impl VideoReader {
         self.close();
         if !self.native_disabled && self.native_eligible() {
             match media_native::open_frame_stream(&self.info.path, from, self.fps) {
-                // 几何必须与资源加载期探到的**摆正后 display 尺寸**
-                // 逐像素相符：下游 `Pixmap` 按 `info.width × info.height` 构造，
-                // 尺寸不符就是错帧。旋转素材的原生流与 ffmpeg autorotate 都交出
-                // display 几何，不再因 `naturalW/H` 的编码口径误判为原生失败。
+                // The geometry must match, pixel for pixel, the **display size after rotation correction** probed at resource load time: the downstream `Pixmap` is built from `info.width × info.height`, and a size mismatch means wrong frames. Both the native stream of rotated footage and ffmpeg autorotate hand over display geometry, so they are no longer misjudged as native failures because of the encoded-size convention of `naturalW/H`.
                 Ok(stream)
                     if (stream.width(), stream.height()) == (self.info.width, self.info.height) =>
                 {
@@ -155,12 +128,10 @@ impl VideoReader {
     }
 
     fn spawn_ffmpeg(&mut self, from: f64) -> Result<()> {
-        // -ss 在 -i 前：关键帧快进 + 精确解码到点；输出重采样到合成 fps
+        // -ss before -i: fast seek to the keyframe plus exact decoding up to the point; output is resampled to the composition fps
         let mut command = crate::exec::command("ffmpeg");
         command.args(["-loglevel", "error", "-ss", &format!("{from:.6}")]);
-        // 带 alpha 的 WebM 必须点名 `libvpx-vp9` / `libvpx`：ffmpeg 的原生
-        // vp9/vp8 解码器会静默丢掉 alpha 平面（`assets::probe_alpha_decoder`）。
-        // `-c:v` 要在 `-i` **之前**才作用于输入。
+        // WebM with alpha must explicitly name `libvpx-vp9` / `libvpx`: ffmpeg's native vp9/vp8 decoders silently drop the alpha plane (`assets::probe_alpha_decoder`). `-c:v` must come **before** `-i` to take effect on the input.
         if let Some(decoder) = &self.info.decoder {
             command.args(["-c:v", decoder]);
         }
@@ -197,20 +168,20 @@ impl VideoReader {
         }
     }
 
-    /// 解码器的下一帧（straight RGBA，源尺寸）；`None` = 片源尽头。
+    /// The decoder's next frame (straight RGBA, source size); `None` = end of the source.
     fn read_frame(&mut self) -> Result<Option<Vec<u8>>> {
         match self.decoder.as_mut() {
             Some(Decoder::Native(stream)) => Ok(stream.next_frame()?.map(|frame| frame.data)),
             Some(Decoder::Ffmpeg { stdout, .. }) => {
                 let mut buf = vec![0u8; self.info.width as usize * self.info.height as usize * 4];
-                // 管道读不满一帧就是片尾（ffmpeg 正常收工也走这条）。
+                // A pipe that cannot fill a whole frame means end of stream (ffmpeg's normal completion also takes this path).
                 Ok(stdout.read_exact(&mut buf).ok().map(|()| buf))
             }
             None => Ok(None),
         }
     }
 
-    /// 解码出的一帧 → 预乘 `Pixmap`，记为 `last`。
+    /// Converts a decoded frame into a premultiplied `Pixmap` and records it as `last`.
     fn store_frame(&mut self, mut bytes: Vec<u8>) -> Result<Arc<Pixmap>> {
         premultiply_in_place(&mut bytes);
         let pixmap = Pixmap::from_vec(
@@ -224,9 +195,7 @@ impl VideoReader {
         Ok(pixmap)
     }
 
-    /// 关键帧吸附取帧：`mtime` 之前最近的关键帧那一张。`Ok(None)` = 这条路径
-    /// 答不了（还没开过解码器、不是原生流、平台不提供关键帧表、或解码出错），
-    /// 调用方走精确路径。
+    /// Keyframe-snapped frame fetch: the nearest keyframe before `mtime`. `Ok(None)` = this path cannot answer (no decoder has been opened yet, it is not a native stream, the platform does not provide a keyframe table, or decoding failed), and the caller takes the exact path.
     fn snapped_frame(&mut self, mtime: f64) -> Result<Option<Arc<Pixmap>>> {
         let Some(Decoder::Native(stream)) = self.decoder.as_mut() else {
             return Ok(None);
@@ -237,9 +206,7 @@ impl VideoReader {
         let Some(keyframe) = stream.sync_sample_at_or_before(mtime)? else {
             return Ok(None);
         };
-        // 手上那张帧落在 [关键帧, mtime] 之间就是合格的近似：拖动经过同一个
-        // GOP 时不重开也不重解。近似帧自己就在关键帧上（`approx_pts`），
-        // 精确帧则按它在网格上的时刻算。
+        // A frame in hand that falls between [keyframe, mtime] is a valid approximation: while dragging through the same GOP, nothing is reopened or re-decoded. The approximate frame itself sits on the keyframe (`approx_pts`), while an exact frame is computed from its time on the grid.
         let shown = self.approx_pts.or_else(|| {
             (self.last_idx >= 0).then(|| self.origin + self.last_idx as f64 / self.fps)
         });
@@ -251,8 +218,7 @@ impl VideoReader {
             self.approx = Some(mtime);
             return Ok(self.last.clone());
         }
-        // 快路径：常驻关键帧解码器直接出图，顺序流原地不动（精确请求反正要
-        // 从目标时刻重开）。
+        // Fast path: the resident keyframe decoder produces the image directly, and the sequential stream stays where it is (an exact request will reopen from the target time anyway).
         if let Some((pts, frame)) = stream.keyframe_at_or_before(mtime)? {
             self.last_idx = i64::MIN;
             let pixmap = self.store_frame(frame.data)?;
@@ -260,7 +226,7 @@ impl VideoReader {
             self.approx_pts = Some(pts);
             return Ok(Some(pixmap));
         }
-        // 慢路径：重开到关键帧 + 解一帧。
+        // Slow path: reopen to the keyframe and decode one frame.
         self.open(keyframe)?;
         self.last_idx = i64::MIN;
         match self.read_frame() {
@@ -272,14 +238,13 @@ impl VideoReader {
                 self.approx_pts = Some(keyframe);
                 Ok(Some(pixmap))
             }
-            // 关键帧上一帧都读不出来：让精确路径按它自己的规则（含片尾冻结）
-            // 从头处理。
+            // No frame can be read at the keyframe: let the exact path handle it from the beginning under its own rules (including end-of-stream freezing).
             Ok(None) => {
                 self.close();
                 Ok(None)
             }
             Err(_) => {
-                // 原生流中途出错：与精确路径同一条纪律，整条片源降级 ffmpeg。
+                // The native stream fails mid-way: same discipline as the exact path, so the whole source is demoted to ffmpeg.
                 self.native_disabled = true;
                 self.close();
                 Ok(None)
@@ -287,7 +252,7 @@ impl VideoReader {
         }
     }
 
-    /// 媒体时刻 mtime 处的帧（合成 fps 网格量化）；越过片尾冻结末帧。
+    /// The frame at media time mtime (quantized to the composition fps grid); past the end, the last frame is frozen.
     fn frame_at(&mut self, mtime: f64) -> Result<Arc<Pixmap>> {
         let mtime = mtime.max(0.0);
         if self.snap
@@ -296,17 +261,13 @@ impl VideoReader {
             return Ok(pixmap);
         }
         if self.approx.take().is_some() {
-            // 手上是拖动时的近似帧：精确请求从目标时刻重开（原地重开很便宜），
-            // 不从关键帧网格上抽干过去——那会把合成网格挪开半帧。
+            // A dragging approximate frame is in hand: the exact request reopens from the target time (in-place reopen is cheap), rather than draining forward along the keyframe grid, which would shift the composition grid by half a frame.
             self.open(mtime)?;
             self.last = None;
             self.last_idx = i64::MIN;
         }
         let seeks_backward = mtime + 1e-9 < self.origin;
-        // 已经读到片尾（`eof` 同时关掉了解码器）后的前进请求：同一原点上 ≥
-        // `next_idx` 的帧都不存在，直接冻结末帧。不能落到下面的
-        // `decoder.is_none()` 重开——那会在片尾之外开一个空解码器，播放走到头
-        // 之后第二帧起就报「无帧可读」。
+        // A forward request after the end of the stream has already been reached (`eof` also closes the decoder): on the same origin, no frames with index ≥ `next_idx` exist, so freeze the last frame directly. It must not fall through to the `decoder.is_none()` reopen below, because that would open an empty decoder beyond the end of the stream, and after playback reaches the end, every frame from the second onward would report “no frame to read”.
         if self.eof
             && !seeks_backward
             && ((mtime - self.origin) * self.fps).round() as i64 >= self.last_idx
@@ -316,19 +277,14 @@ impl VideoReader {
         }
         if self.decoder.is_none() || seeks_backward {
             self.open(mtime)?;
-            // 帧号相对原点：原点挪了，旧的 `last_idx` 就不可比，留着会被下面的
-            // loop 折回守卫当成「帧号倒退」。`last` 只在后退时作废，前进时留作
-            // 读不出帧的兜底。
+            // Frame indices are relative to the origin. Once the origin moves, the old `last_idx` is no longer comparable, and keeping it would make the loop-wrap guard below mistake it for “frame index went backwards”. `last` is invalidated only on backward movement; on forward movement it is kept as a fallback for when no frame can be read.
             self.last_idx = i64::MIN;
             if seeks_backward {
                 self.last = None;
             }
         }
         let mut idx = ((mtime - self.origin) * self.fps).round() as i64;
-        // loop 动画会在同一 decoder origin 内把媒体钟从片尾折回片头。只比较
-        // `mtime < origin` 看不见这种后退：next_idx 已经越过目标帧，旧实现会
-        // 直接把上一遍的末次帧当成新一遍的首帧。帧号倒退时从目标时刻重开，
-        // 与显式 seek 的乱序采样语义一致。
+        // A loop animation wraps the media clock from the end back to the start within the same decoder origin. Comparing only `mtime < origin` cannot see this kind of backward movement: next_idx has already passed the target frame, and the old implementation would take the last frame of the previous pass as the first frame of the new pass. When the frame index goes backwards, reopen from the target time, consistent with the out-of-order sampling semantics of an explicit seek.
         if idx < self.last_idx {
             self.open(mtime)?;
             self.last = None;
@@ -340,21 +296,11 @@ impl VideoReader {
         {
             return Ok(pixmap.clone());
         }
-        // 随机访问（交互式预览）：向前跳太远时重开解码器，而不是把中间帧全部
-        // 解出来丢掉。拖 playhead 一次能跳过上万帧，抽干等于把整段视频解一遍。
+        // Random access (interactive preview): when jumping too far forward, reopen the decoder instead of decoding every intermediate frame only to discard them. One drag of the playhead can skip tens of thousands of frames, and draining would amount to decoding the whole video.
         if self.random_access && !self.eof && idx - self.next_idx >= RANDOM_ACCESS_REOPEN_FRAMES {
-            // 重开点取**合成网格上的目标时刻**而不是 mtime：`open` 之后
-            // `origin = target`、`idx = 0`，取到的仍是「包含 target 的那一源
-            // 帧」（AVAssetReader 的 timeRange 与 ffmpeg `-ss` 都交出与起点相交
-            // 的样本），与顺序抽干落在同一帧上；网格也不发生位移，后续帧号仍以
-            // 1/fps 为步长。直接用 mtime 会把网格挪到 mtime 上，跟导出的抽干
-            // 路径产生半帧错位。
+            // The reopen point takes the **target time on the composition grid** rather than mtime. After `open`, `origin = target` and `idx = 0`, and what is obtained is still the “source frame that contains target” (both AVAssetReader's timeRange and ffmpeg `-ss` yield samples that intersect the start point), landing on the same frame as sequential draining. The grid is also not shifted, and subsequent frame indices still step by 1/fps. Using mtime directly would move the grid onto mtime, producing a half-frame offset from the export's draining path.
             let raw = self.origin + idx as f64 / self.fps;
-            // 越过片尾时夹到最后一个可解码时刻：抽干路径在那里是「冻结末帧」，
-            // 重开路径必须给出同一张末帧，而不是一个解不出帧的起点。算这个时刻
-            // 要源帧率与片长（`VideoInfo::fps` 的注释里就是这个用途）；两者有一
-            // 个探测不到，就只在**确定还在片内**时才敢重开，否则退回顺序抽干
-            // ——慢，但与导出路径逐字节一致。
+            // Past the end of the stream, clamp to the last decodable time. On the draining path that case is “freeze the last frame”, and the reopen path must give the same last frame rather than a start point from which no frame can be decoded. Computing this time requires the source frame rate and duration (the comment on `VideoInfo::fps` describes exactly this use). If either cannot be probed, reopen only when it is **certainly still inside the clip**, otherwise fall back to sequential draining: slower, but byte-identical with the export path.
             let target = if self.info.fps > 0.0 && self.info.duration > 0.0 {
                 Some(raw.min((self.info.duration - 1.0 / self.info.fps).max(0.0)))
             } else if raw < self.info.duration {
@@ -364,8 +310,7 @@ impl VideoReader {
             };
             if let Some(target) = target {
                 self.open(target)?;
-                // 只作废帧号（否则 idx = 0 会撞上旧的 last_idx）；`last` 留着当
-                // 兜底，万一重开后一帧都读不出来仍然冻结上一帧而不是报错。
+                // Invalidate only the frame index (otherwise idx = 0 would collide with the old last_idx). `last` is kept as a fallback, so that if no frame can be read even after reopening, the previous frame is still frozen instead of reporting an error.
                 self.last_idx = i64::MIN;
                 idx = 0;
             }
@@ -378,11 +323,10 @@ impl VideoReader {
                     latest = Some(bytes);
                 }
                 Ok(None) => {
-                    self.eof = true; // 片源尽头：冻结最后一帧
+                    self.eof = true; // End of the source: freeze the last frame
                     self.close();
                 }
-                // 原生解码器中途出错：整条片源降级到 ffmpeg，从同一个 origin
-                // 重开并把已经走过的帧重放掉，之后的帧全部来自 ffmpeg。
+                // The native decoder fails mid-way: the whole source is demoted to ffmpeg, reopened from the same origin, the frames already passed are replayed, and all subsequent frames come from ffmpeg.
                 Err(error) if matches!(self.decoder, Some(Decoder::Native(_))) => {
                     let _ = error;
                     self.native_disabled = true;
@@ -404,11 +348,7 @@ impl VideoReader {
             .ok_or_else(|| anyhow!("视频 {} 在 t={mtime:.3} 无帧可读", self.info.path.display()))
     }
 
-    /// 从 `origin` 起一帧都读不出来 = 原点落在视频流尽头之后：片段或项目比
-    /// 视频流长（容器时长按音轨算、编码器补尾）时，冷启动或 seek 到最后那几十
-    /// 毫秒就是这样。往回退着重开、顺序抽干到尽头，把真正的末帧冻结住（与从头
-    /// 抽干走到片尾交出同一张）；手上若有跳转前留下的兜底帧，也换成它。全都
-    /// 读不出来就原样返回，让调用方报错。
+    /// No frame can be read from `origin` onward, meaning the origin falls after the end of the video stream. This happens when the clip or project is longer than the video stream (container duration is computed from the audio track, and encoders pad the tail), on a cold start or when seeking to the last few tens of milliseconds. Reopen while stepping backwards, sequentially drain to the end, and freeze the true last frame (the same frame that draining from the beginning to the end yields). If a fallback frame left over from before the jump is in hand, that is used instead. If nothing can be read at all, return as-is and let the caller report the error.
     fn freeze_tail(&mut self) -> Result<()> {
         let beyond = self.origin;
         let probed_end = (self.info.fps > 0.0 && self.info.duration > 0.0)
@@ -418,7 +358,7 @@ impl VideoReader {
             .map(|seconds| (beyond - seconds).max(0.0));
         let mut tried = beyond;
         for from in probed_end.into_iter().chain(backoff) {
-            // 只往回退：每一步都要比上一步更早，否则同一个空区间白开一次。
+            // Only step backwards: each step must be earlier than the previous one, otherwise the same empty interval would be reopened for nothing.
             if from + 1e-9 >= tried {
                 continue;
             }
@@ -433,8 +373,7 @@ impl VideoReader {
                         latest = Some(bytes);
                     }
                     Ok(None) => break,
-                    // 与顺序抽干同一条纪律：原生解码器中途出错，整条片源降级
-                    // ffmpeg，从同一起点重来。
+                    // Same discipline as sequential draining: if the native decoder fails mid-way, the whole source is demoted to ffmpeg and restarted from the same starting point.
                     Err(_) if matches!(self.decoder, Some(Decoder::Native(_))) => {
                         self.native_disabled = true;
                         self.open(from)?;
@@ -458,20 +397,16 @@ impl VideoReader {
     }
 }
 
-/// ffmpeg 的 `-pix_fmt rgba` 是 **straight**（非预乘）RGBA，而 `tiny_skia::Pixmap`
-/// 的字节约定是**预乘**。不换算就把 straight 当预乘用，合成时颜色会偏亮。
+/// ffmpeg's `-pix_fmt rgba` output is **straight** (non-premultiplied) RGBA, whereas the byte convention of `tiny_skia::Pixmap` is **premultiplied**. Using straight values as if they were premultiplied, without conversion, makes colors look too bright when compositing.
 ///
-/// **不透明视频上这是恒等变换**（α = 255 ⇒ `c·255/255 = c`），所以在带 alpha 的
-/// 视频出现之前谁也碰不到它——P7b 的动态贴纸（GIF → 带 alpha 的 WebM）
-/// 是第一条会走到 α < 255 的片源。
-/// 逐帧只在**真有半透明像素时**才写回，全不透明的帧只多一趟只读扫描。
+/// **On opaque video this is an identity transform** (α = 255 ⇒ `c·255/255 = c`), so nothing ever touched it before videos with alpha appeared. P7b's animated stickers (GIF → WebM with alpha) are the first sources that reach α < 255.
+/// Per frame, the result is written back **only when there are actually semi-transparent pixels**; fully opaque frames only incur an extra read-only scan pass.
 fn premultiply_in_place(rgba: &mut [u8]) {
     if rgba.chunks_exact(4).all(|px| px[3] == 255) {
         return;
     }
     for px in rgba.chunks_exact_mut(4) {
-        // tiny-skia 自己的 `ColorU8::premultiply`：唯一一份取整规则，
-        // 与 `assets::decode_image_bytes` 走的是同一个函数。
+        // tiny-skia's own `ColorU8::premultiply`: the single rounding rule, the same function that `assets::decode_image_bytes` uses.
         let premultiplied = tiny_skia::ColorU8::from_rgba(px[0], px[1], px[2], px[3]).premultiply();
         px[0] = premultiplied.red();
         px[1] = premultiplied.green();
@@ -480,14 +415,11 @@ fn premultiply_in_place(rgba: &mut [u8]) {
     }
 }
 
-/// 已光栅化的动图帧缓存（`(源 id, 帧起点毫秒, 目标像素尺寸)` → 像素）。
+/// Cache of rasterized animated-image frames (`(source id, frame start in ms, target pixel size)` → pixels).
 ///
-/// 动图与矢量动图**没有解码器状态**，取帧是纯函数——于是同一格被反复要到时，
-/// 唯一省得下来的就是重算。会反复要的场合不少：暂停在一帧上、拖 playhead 来回
-/// 经过、`loop` 贴纸转一圈回到同一格、以及同一时刻先建场景再取纹理。
+/// Animated images and vector animated images have **no decoder state**, so fetching a frame is a pure function. When the same cell is requested repeatedly, the only thing that can be saved is recomputation. There are many cases where this happens: pausing on one frame, dragging the playhead back and forth across it, a `loop` sticker cycling back to the same cell, and building a scene and fetching its texture at the same moment.
 ///
-/// 字节上限而不是条数上限：一张 1024² RGBA 是 4 MB，按条数限容在大素材上会驻留
-/// 几百 MB。
+/// The limit is in bytes rather than entry count: one 1024² RGBA is 4 MB, and limiting by count on large assets would keep several hundred MB resident.
 struct AnimatedFrameCache {
     entries: std::sync::Mutex<std::collections::VecDeque<(AnimatedFrameKey, Arc<Pixmap>)>>,
     byte_cap: usize,
@@ -495,7 +427,7 @@ struct AnimatedFrameCache {
 
 type AnimatedFrameKey = (String, i64, u32, u32);
 
-/// 动图帧缓存的字节上限：32 MB（1024² 约 8 张，512² 约 32 张）。
+/// Byte limit for the animated-frame cache: 32 MB (about 8 frames at 1024², about 32 at 512²).
 const ANIMATED_CACHE_BYTES: usize = 32 << 20;
 
 impl AnimatedFrameCache {
@@ -520,7 +452,7 @@ impl AnimatedFrameCache {
             return;
         };
         if bytes > self.byte_cap {
-            return; // 单张就超预算：不缓存，也不把已有条目全挤掉
+            return; // A single frame exceeds the budget: do not cache it, and do not evict all existing entries either
         }
         if entries.iter().any(|(candidate, _)| *candidate == key) {
             return;
@@ -540,32 +472,30 @@ fn pixmap_bytes(pixmap: &Pixmap) -> usize {
     pixmap.width() as usize * pixmap.height() as usize * 4
 }
 
-/// 单线程媒体供给器：image 直引 LoadedAssets，animatedImage 查已解码的帧表，
-/// video 持顺序解码器。
+/// Single-threaded media supplier: image references LoadedAssets directly, animatedImage looks up the decoded frame table, and video holds a sequential decoder.
 pub struct MediaStore {
     assets: Arc<LoadedAssets>,
     fps: f64,
     readers: HashMap<String, VideoReader>,
-    /// 宿主已准备的可采样画面源（例如 BCF 合成）；与真实视频共用源时间入口。
+    /// A sampleable picture source prepared by the host (e.g. a BCF composition); it shares the source-time entry point with real video.
     external_video: HashMap<String, Box<dyn crate::raster::FrameMedia + Send>>,
     random_access: bool,
     keyframe_snap: bool,
     animated_cache: AnimatedFrameCache,
     image_cache: AnimatedFrameCache,
     video_cache: AnimatedFrameCache,
-    /// 动画 SVG 的天然尺寸备忘（解一次就记住；见 [`MediaStore::vector_natural_size`]）。
+    /// Memo of the natural size of an animated SVG (decoded once and remembered; see [`MediaStore::vector_natural_size`]).
     svg_natural: std::sync::Mutex<HashMap<String, (u32, u32)>>,
 }
 
-/// 宿主提供的合成画面源。元数据供布局使用，像素仍按明确的源时间请求。
+/// A composition picture source provided by the host. Its metadata is used for layout; pixels are still requested by explicit source time.
 pub struct ExternalVideoSource {
     pub info: VideoInfo,
     pub frames: Box<dyn crate::raster::FrameMedia + Send>,
     pub warning: Option<String>,
 }
 
-/// 缓存键里的目标尺寸位：`None`（自然尺寸）与任何显式尺寸都必须能区分开，
-/// 而 `(0, 0)` 不是任何合法的目标尺寸，正好当"没指定"。
+/// The target-size field in the cache key: `None` (natural size) must be distinguishable from any explicit size, and `(0, 0)` is not a valid target size, so it conveniently serves as “unspecified”.
 fn target_key(target: Option<(u32, u32)>) -> (u32, u32) {
     target.unwrap_or((0, 0))
 }
@@ -586,15 +516,11 @@ impl MediaStore {
         }
     }
 
-    /// 打开**随机访问**模式：向前跳超过 [`RANDOM_ACCESS_REOPEN_FRAMES`] 帧时
-    /// 重开解码器，而不是逐帧抽干中间帧。
+    /// Turns on **random-access** mode: when jumping forward by more than [`RANDOM_ACCESS_REOPEN_FRAMES`] frames, reopen the decoder instead of draining the intermediate frames one by one.
     ///
-    /// 默认关闭，导出（`render_video_cancellable`）的行为一字不改——它按 stride
-    /// 顺序推进，抽干本来就是它的正常工作方式。只有交互式预览会一次跳过成千
-    /// 上万帧（拖 playhead、打开项目定位），那里抽干等于把整段视频解一遍。
+    /// Off by default; the behaviour of export (`render_video_cancellable`) is unchanged in every respect. It advances in stride order, and draining is its normal mode of operation. Only interactive preview skips thousands of frames at once (dragging the playhead, opening a project to locate it), where draining would amount to decoding the whole video.
     ///
-    /// 两条路径取的是**同一源帧**：重开点落在合成网格上（见 `frame_at`），所以
-    /// `docs/design/bcf/cuccut-format-spec.md` §15.1 的「取哪一帧」硬承诺不受影响。
+    /// Both paths obtain the **same source frame**: the reopen point lies on the composition grid (see `frame_at`), so the hard guarantee about “which frame is taken” in `docs/design/bcf/cuccut-format-spec.md` §15.1 is unaffected.
     pub fn set_random_access(&mut self, enabled: bool) {
         self.random_access = enabled;
         for reader in self.readers.values_mut() {
@@ -602,17 +528,11 @@ impl MediaStore {
         }
     }
 
-    /// 打开**关键帧吸附**模式：取帧时刻吸到它之前最近的关键帧，只解那一帧。
+    /// Turns on **keyframe-snap** mode: the frame time is snapped to the nearest keyframe before it, and only that frame is decoded.
     ///
-    /// 给交互式预览**拖动中**用：精确取帧每次跳转都要「从关键帧解到目标」，
-    /// 1080p H.264 一个 GOP 上百帧时那是几十毫秒，拖 playhead 时肉眼可见地
-    /// 跟不上手。吸附之后每次跳转只付重开 + 解一帧的价，画面与目标时刻最多差
-    /// 一个 GOP——老 AppKit 客户端拖动时（`AVPlayer` 的关键帧容差 seek）就是
-    /// 这个体验。松手后关掉它，下一次取帧回到精确路径，并且**不会**从近似帧
-    /// 抽干过去（网格错半帧），而是从目标时刻重开。
+    /// Used by interactive preview **while dragging**. An exact fetch decodes “from the keyframe up to the target” on every jump, which for a 1080p H.264 GOP of over a hundred frames takes tens of milliseconds, so the playhead visibly lags behind the hand. With snapping, each jump costs only reopen + decode one frame, and the picture is at most one GOP away from the target time. This is the experience older AppKit clients had while dragging (`AVPlayer`'s keyframe-tolerant seek). After release, turn it off: the next fetch returns to the exact path, and it **never** drains forward from the approximate frame (the grid is offset by half a frame) but reopens from the target time.
     ///
-    /// 只有原生流（AVFoundation）答得出关键帧表；ffmpeg 兜底与其它平台上这
-    /// 个开关是 no-op，行为与精确路径相同。默认关闭，导出一字不改。
+    /// Only native streams (AVFoundation) can supply a keyframe table. On the ffmpeg fallback and on other platforms this switch is a no-op, and behaviour matches the exact path. Off by default; export is unchanged.
     pub fn set_keyframe_snap(&mut self, enabled: bool) {
         self.keyframe_snap = enabled;
         for reader in self.readers.values_mut() {
@@ -673,17 +593,14 @@ impl MediaStore {
         self.assets.images.get(id).cloned()
     }
 
-    /// 这个 source 是不是按**视频**加载的。host 用它决定媒体时刻怎么算——
-    /// 同一个 `kind: "sticker"` 元素，静态资产恒取 -1，动态资产要按
-    /// `sticker.loop` 逐帧取（P7b）。判据留在这里而不是让 host 自己猜扩展名。
+    /// Whether this source was loaded as a **video**. The host uses it to decide how the media time is computed: for the same `kind: "sticker"` element, static assets always take -1, while dynamic assets must be fetched frame by frame according to `sticker.loop` (P7b). The criterion is kept here rather than letting the host guess from the file extension.
     pub fn has_video(&self, id: &str) -> bool {
         self.assets.videos.contains_key(id)
     }
 
-    /// 这个 source 是不是预解码的 GIF / APNG / animated WebP。
+    /// Whether this source is a pre-decoded GIF / APNG / animated WebP.
     ///
-    /// Timeline 的 `SourceKind::Image` 历史上同时接收静态图和动图扩展名，host
-    /// 必须按容器字节区分两者；元素层不能再拿 `kind == image` 推断它恒定不变。
+    /// Historically the Timeline's `SourceKind::Image` accepted both static-image and animated-image extensions, so the host must tell the two apart by container bytes. The element layer can no longer infer that it is constant from `kind == image`.
     pub fn has_animated(&self, id: &str) -> bool {
         self.assets.animated.contains_key(id)
             || self.assets.animated_svgs.contains_key(id)
@@ -691,15 +608,12 @@ impl MediaStore {
             || self.assets.programs.contains_key(id)
     }
 
-    /// 这个 source 是不是 Lottie（Timeline 0.7 `sources[].kind: "lottie"`）。
-    /// 与动图同一条取帧路径（[`MediaStore::animated_frame`]），只是像素由
-    /// `Lottie::sample` 按素材原尺寸即时光栅。
+    /// Whether this source is a Lottie (Timeline 0.7 `sources[].kind: "lottie"`). It uses the same frame-fetch path as animated images ([`MediaStore::animated_frame`]), except that its pixels are rasterized on the fly by `Lottie::sample` at the asset's native size.
     pub fn has_lottie(&self, id: &str) -> bool {
         self.assets.lotties.contains_key(id)
     }
 
-    /// 动图一轮的时长。Timeline image/B-roll 用它把本地时钟折回帧表；BCF
-    /// `animatedImage` 自己的 loop/segment 语义仍在 core 录制期处理。
+    /// Duration of one cycle of an animated image. Timeline image/B-roll uses it to wrap the local clock back into the frame table; the loop/segment semantics of BCF `animatedImage` itself are still handled in core during recording.
     pub fn animated_duration(&self, id: &str) -> Option<f64> {
         self.assets
             .animated
@@ -729,22 +643,20 @@ impl MediaStore {
             .or_else(|| self.animated_duration(id))
     }
 
-    /// 视频源的时长（秒）。动态贴纸的 `loop` 取模需要它。
+    /// Duration of the video source (seconds). The `loop` modulo for dynamic stickers needs it.
     pub fn video_duration(&self, id: &str) -> Option<f64> {
         self.assets.videos.get(id).map(|info| info.duration)
     }
 
-    /// 视频源上**最后一个可解码的时刻**（`duration - 1/fps`，下夹到 0）。
+    /// The **last decodable time** on the video source (`duration - 1/fps`, floored at 0).
     ///
-    /// `ffmpeg -ss` 到最后一帧之后一帧都读不出来（硬错误，不是冻结末帧），
-    /// 所以想"停在末帧"的调用方必须夹到这里。源帧率探测不到时退回
-    /// `duration`——那时夹取无效，但也没有更好的估计。
+    /// `ffmpeg -ss` past the last frame cannot read any frame (a hard error, not a frozen last frame), so callers who want to “stop on the last frame” must clamp to this. When the source frame rate cannot be probed, fall back to `duration`: clamping is then ineffective, but there is no better estimate.
     pub fn video_last_frame_time(&self, id: &str) -> Option<f64> {
         if let Some(svg) = self.assets.animated_svgs.get(id) {
             return Some(((svg.duration() * 30.0).ceil() - 1.0).max(0.0) / 30.0);
         }
         if let Some(lottie) = self.assets.lotties.get(id) {
-            // 帧表是 N+1 项起点表：末帧的起点就是最后一个可采样时刻。
+            // The frame table is an N+1-entry table of start times: the start of the last frame is the last sampleable time.
             let starts = lottie.frame_starts_ms();
             let last = starts.len().checked_sub(2).map_or(0, |index| starts[index]);
             return Some(last as f64 / 1000.0);
@@ -763,18 +675,14 @@ impl MediaStore {
         })
     }
 
-    /// 动图：`sample(sourceTime)` 一次查表。与 video 不同，这里没有解码器状态，
-    /// 也就没有"回退要重开管道"这回事——乱序采样与顺序采样同价。
+    /// Animated images: `sample(sourceTime)` is a single table lookup. Unlike video, there is no decoder state here, so there is no “reopen the pipe when going backwards”. Out-of-order and sequential sampling cost the same.
     pub fn animated_frame(&self, id: &str, mtime_ms: i64) -> Option<Result<Arc<Pixmap>>> {
         self.animated_frame_for_target(id, mtime_ms, None)
     }
 
-    /// **矢量动图**（Lottie / SMIL 动画 SVG）的自然尺寸；位图动图与视频返回
-    /// `None`。
+    /// Natural size of **vector animated images** (Lottie / SMIL animated SVG). Bitmap animated images and video return `None`.
     ///
-    /// 调用方用它先量几何、再决定要多大一张纹理（见
-    /// [`Self::animated_frame_for_target`]）。位图动图不在其列：它们的帧尺寸就是
-    /// 源数据本身，"换个尺寸取"只会多一次重采样，缩放交给 GPU 更划算。
+    /// Callers use it to measure geometry first, then decide how large a texture to make (see [`Self::animated_frame_for_target`]). Bitmap animated images are not in this category: their frame size is the source data itself, and fetching at a different size would only add one resampling pass, so it is cheaper to leave scaling to the GPU.
     pub fn vector_natural_size(&self, id: &str) -> Option<(u32, u32)> {
         if let Some(lottie) = self.assets.lotties.get(id) {
             let meta = lottie.metadata();
@@ -787,7 +695,7 @@ impl MediaStore {
         if let Some(size) = self.svg_natural.lock().ok()?.get(id) {
             return Some(*size);
         }
-        // 动画 SVG 的天然尺寸只有解出来才知道；解一帧、把尺寸记下来，之后不再解。
+        // The natural size of an animated SVG is only known after decoding. Decode one frame, record the size, and do not decode again afterwards.
         let frame = svg.sample(0.0);
         let pixmap = crate::assets::decode_image("frame.svg", frame.as_bytes()).ok()?;
         let size = (pixmap.width().max(1), pixmap.height().max(1));
@@ -797,10 +705,9 @@ impl MediaStore {
         Some(size)
     }
 
-    /// 动图取帧，矢量源按 `target` 给的**目标像素尺寸**光栅。
+    /// Fetches an animated-image frame; vector sources are rasterized at the **target pixel size** given by `target`.
     ///
-    /// `target = None` ＝ 按自然尺寸（既有行为）。位图动图一律忽略 `target`。
-    /// 目标尺寸进缓存键：同一格在两种尺寸下是两张图，不能互相顶替。
+    /// `target = None` means natural size (existing behaviour). Bitmap animated images always ignore `target`. The target size is part of the cache key: the same cell at two sizes is two images and must not replace each other.
     pub fn animated_frame_for_target(
         &self,
         id: &str,
@@ -815,8 +722,7 @@ impl MediaStore {
             }
             let frame = svg.sample(mtime_ms as f64 / 1000.0);
             let decoded = match target {
-                // 等比：长边落到目标长边，短边跟着走（与 `decode_svg_at_long_edge`
-                // 同一条取整规则）。
+                // Proportional: the long edge lands on the target long edge and the short edge follows (same rounding rule as `decode_svg_at_long_edge`).
                 Some((width, height)) => {
                     crate::assets::decode_svg_at_long_edge(frame.as_bytes(), width.max(height))
                 }
@@ -831,9 +737,7 @@ impl MediaStore {
         if let Some(lottie) = self.assets.lotties.get(id) {
             let time = MediaTime::from_millis(mtime_ms);
             let meta = lottie.metadata();
-            // 键取**帧起点**而不是请求时刻：同一格内的任意时刻画出来逐字节相同
-            // （`Lottie::sample_scaled` 只读 `frame_at`），按请求时刻建键等于让
-            // 缓存永不命中。
+            // The key uses the **frame start** rather than the requested time: any time within the same cell renders byte-identically (`Lottie::sample_scaled` only reads `frame_at`), and keying by request time would mean the cache never hits.
             let start_ms = meta.frame_start(time).millis();
             let key = (id.to_owned(), start_ms, target_width, target_height);
             if let Some(hit) = self.animated_cache.get(&key) {
@@ -846,7 +750,7 @@ impl MediaStore {
             }));
         }
         if let Some(program) = self.assets.programs.get(id) {
-            // 同 Lottie：键取帧起点，同一帧窗口里的时刻共用一张图。
+            // Same as Lottie: the key is the frame start, and times within the same frame window share one image.
             let start_ms = program.frame_start_ms(mtime_ms);
             let key = (id.to_owned(), start_ms, target_width, target_height);
             if let Some(hit) = self.animated_cache.get(&key) {
@@ -917,11 +821,9 @@ impl MediaStore {
         Ok(frame)
     }
 
-    /// 这个视频源实际在用的解码后端（`avfoundation` / `media-foundation` /
-    /// [`FFMPEG_BACKEND`]）。`None` = 还没为它开过解码器。
+    /// The decoding backend actually in use for this video source (`avfoundation` / `media-foundation` / [`FFMPEG_BACKEND`]). `None` = no decoder has been opened for it yet.
     ///
-    /// §15.1 的「解码后端必须可观测」：原生与 ffmpeg 的像素只承诺语义等价 +
-    /// 容差，任何跨路径对拍或诊断都必须能说出自己量的是哪一侧。
+    /// §15.1's “decoding backend must be observable”: native and ffmpeg pixels only promise semantic equivalence + tolerance, so any cross-path comparison or diagnostic must be able to state which side it measured.
     pub fn video_backend(&self, id: &str) -> Option<&'static str> {
         if self.external_video.contains_key(id) {
             return Some("composition");
@@ -929,7 +831,7 @@ impl MediaStore {
         self.readers.get(id).map(|reader| reader.backend)
     }
 
-    /// 注入准备好的画面源。替换时释放旧解码器；具体编译与依赖读取留在宿主。
+    /// Injects a prepared picture source. On replacement, the old decoder is released; the concrete compilation and dependency reads remain in the host.
     pub fn insert_video_source(
         &mut self,
         id: String,
@@ -950,7 +852,7 @@ impl Drop for VideoReader {
 mod tests {
     use super::premultiply_in_place;
 
-    /// 不透明帧是恒等变换——存量视频的像素一个字节都不变。
+    /// For opaque frames this is an identity transform: the pixels of existing videos do not change by a single byte.
     #[test]
     fn an_opaque_frame_passes_through_untouched() {
         let mut rgba = vec![10, 200, 30, 255, 0, 0, 0, 255, 255, 255, 255, 255];
@@ -959,14 +861,13 @@ mod tests {
         assert_eq!(rgba, before);
     }
 
-    /// 带 alpha 的帧按 tiny-skia 的取整规则预乘：α = 0 全清零，
-    /// α = 128 约等于半亮，α = 255 原样。
+    /// Frames with alpha are premultiplied using tiny-skia's rounding rule: α = 0 clears everything to zero, α = 128 is roughly half brightness, and α = 255 is unchanged.
     #[test]
     fn a_frame_with_alpha_is_premultiplied() {
         let mut rgba = vec![
-            255, 255, 255, 0, // 全透明 → 全零
-            255, 255, 255, 128, // 半透明白
-            200, 100, 50, 255, // 不透明原样
+            255, 255, 255, 0, // Fully transparent → all zeros
+            255, 255, 255, 128, // Semi-transparent white
+            200, 100, 50, 255, // Opaque, unchanged
         ];
         premultiply_in_place(&mut rgba);
         assert_eq!(&rgba[0..4], &[0, 0, 0, 0]);
@@ -977,8 +878,7 @@ mod tests {
         assert_eq!(&rgba[8..12], &[200, 100, 50, 255]);
     }
 
-    /// 幂等：预乘过的字节再走一遍不会二次变暗（α = 255 与 α = 0 都是不动点，
-    /// 中间值只在取整误差内）——这条挡住"某天有人在两处都调一次"。
+    /// Idempotent: bytes that are already premultiplied do not get darkened a second time when run through again (α = 255 and α = 0 are both fixed points, and intermediate values change only within rounding error). This guards against “someday someone calls it in two places”.
     #[test]
     fn premultiplying_a_fully_transparent_or_opaque_frame_is_idempotent() {
         let mut rgba = vec![9, 9, 9, 0, 7, 7, 7, 255];

@@ -1,23 +1,13 @@
-//! speaker-names：polish **收尾**的说话人实名推断波次（`kind = "speaker-names"`）。
+//! speaker-names: the speaker real-name inference wave that runs at the **end** of polish (`kind = "speaker-names"`).
 //!
-//! 背景：diarization 只给得出 `s1`/`s2` 这样的声音 id，三端 UI 于是一直显示
-//! `S01`/`S02` 占位名。[`crate::speaker::propose_names`] 的确定性启发式只认
-//! **自我介绍**（`my name is …` / `我是…` / `我叫…`），而访谈、播客、圆桌里
-//! 的实名绝大多数由**对方**给出（"today I'm joined by Andrew Ng"、"有请张三"），
-//! 或者只出现在标题与简介里——那些证据没有任何可写的句式，启发式必然空手。
-//! 这一波把这件事交给模型：证据（开场白 + 每个待命名说话人的首次登场上下文
-//! + 项目/来源元数据 + analysis 的命名实体）进去，答案只回 `S2 = Andrew Ng`。
+//! Background: diarization can only produce voice ids such as `s1` and `s2`, so the three UI surfaces have been showing `S01` and `S02` placeholder names. The deterministic heuristic in [`crate::speaker::propose_names`] only recognizes **self-introductions** (`my name is …`, `我是…`, `我叫…`, "I am…", "my name is…"). But in interviews, podcasts and panel discussions, most real names are given by **the other party** ("today I'm joined by Andrew Ng", "有请张三" ("please welcome Zhang San")), or appear only in titles and descriptions. That evidence has no sentence pattern to write a rule for, so the heuristic necessarily comes back empty. This wave hands the task to the model. The evidence (the opening remarks, the first-appearance context of each speaker still awaiting a name, the project and source metadata, and the named entities from analysis) goes in, and the answer comes back only as `S2 = Andrew Ng`.
 //!
-//! 波次位置在 polish 的**最后**（正文已 [`super::polish::apply`] 落盘之后）：
+//! The wave runs last in polish, after the body text has been persisted by [`super::polish::apply`]:
 //!
-//! - `speaker-repair` 会重写 `words[].sp`，可能把一个假聚簇整个吸收掉，
-//!   先命名就会把名字挂在一个已经没有词的说话人上；
-//! - 润色后的文本才有标点，第三方介绍（"欢迎 Andrew Ng。"）远比生 ASR 好读。
+//! - `speaker-repair` rewrites `words[].sp` and may absorb a false cluster entirely. Naming first would hang a name on a speaker who no longer has any words.
+//! - Only polished text has punctuation, and third-party introductions ("欢迎 Andrew Ng。" ("Welcome, Andrew Ng.")) are far easier to read than raw ASR.
 //!
-//! 编辑面**只有 `speakers[<id>].name`**：`sp` 与 `speakers[].name` 都不进阶段
-//! 指纹（见 [`crate::doc::TranscriptDoc::stage_stamp`]），改名不会让 polish /
-//! segment / translate / align 变 stale，因此这一波对已翻译的项目是安全的。
-//! 且只写**占位名**——用户改过的名字永远不动。
+//! The only edit surface is **`speakers[<id>].name`**. Neither `sp` nor `speakers[].name` enters the stage fingerprint (see [`crate::doc::TranscriptDoc::stage_stamp`]), so renaming does not make polish, segment, translate or align stale. That makes this wave safe for projects that are already translated. It also writes only **placeholder names**: a name the user has edited is never touched.
 
 use serde::Serialize;
 
@@ -28,18 +18,15 @@ use crate::filepipe::common::{Problem, ProblemCode, ProblemScope};
 use crate::llm::{LlmError, LlmJson, LlmRequest};
 use crate::speaker::{SpeakerLabels, is_placeholder_name};
 
-/// 开场白证据窗口：文档开头这么多词。第三方介绍几乎总在开场的一两分钟里
-/// （"welcome back… today I'm joined by…"），400 词覆盖约 2–3 分钟口播。
+/// Opening-remarks evidence window: this many words from the start of the document. Third-party introductions almost always come in the first minute or two ("welcome back… today I'm joined by…"). 400 words covers about 2–3 minutes of speech.
 pub const SPEAKER_NAMES_OPENING_WORDS: usize = 400;
-/// 每个待命名说话人首次登场处的证据窗口：其前这么多词（介绍通常出自**对方**
-/// 之口，所以上文比下文重要）。
+/// Evidence window before each awaiting speaker's first appearance: this many words before it. Introductions usually come from **the other party**, so the context before matters more than the context after.
 pub const SPEAKER_NAMES_CONTEXT_WORDS: usize = 60;
-/// 每个待命名说话人首次登场处的证据窗口：其后这么多词。
+/// Evidence window after each awaiting speaker's first appearance: this many words after it.
 pub const SPEAKER_NAMES_SPEAKER_WORDS: usize = 120;
-/// 单个名字的字符上限（含空格）。超限一律判非法——模型在越界时的典型失败
-/// 形态是把整句介绍抄回来。
+/// Character cap on a single name (including spaces). Anything over the limit is always invalid. The typical failure mode of the model when it goes out of bounds is copying the whole introduction sentence back.
 pub const SPEAKER_NAMES_MAX_NAME_CHARS: usize = 40;
-/// 答案被拒后的重发轮数上限（含首轮）。
+/// Upper limit on resends after a rejected answer (including the first round).
 pub const SPEAKER_NAMES_MAX_ROUNDS: u32 = 2;
 
 pub const FENCE_OPENING: &str = "<<<OPENING";
@@ -51,59 +38,54 @@ pub const FENCE_ASK_END: &str = "<<<NAMES-ASK-END>>>";
 pub const FENCE_NAMES: &str = "<<<NAMES>>>";
 pub const FENCE_NAMES_END: &str = "<<<NAMES-END>>>";
 
-/// 模型放弃命名时的答案值。
+/// Answer value when the model gives up on naming.
 pub const UNKNOWN_ANSWER: &str = "?";
 
-/// speaker-names 的账目（进 polish 信封 `speakerNames.wave`）。
+/// Accounting for speaker-names (goes into the polish envelope as `speakerNames.wave`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeakerNamesReport {
-    /// 整波跳过的原因：`disabled` / `no-words` / `scoped-run` /
-    /// `no-placeholders`；`None` 表示真的发了调用。
+    /// Reasons for skipping the whole wave: `disabled` / `no-words` / `scoped-run` / `no-placeholders`. `None` means the call was actually made.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
-    /// 待命名（名字仍是占位、且在正文里还有词）的说话人数。
+    /// Number of speakers awaiting a name (the name is still a placeholder and the speaker still has words in the body).
     pub targets: u32,
-    /// 调用次数（含重试轮）。
+    /// Number of calls (including retry rounds).
     pub calls: u32,
-    /// 模型给出了名字的说话人数（含被引擎拒绝的）。
+    /// Number of speakers for whom the model gave a name (including those the engine rejected).
     pub proposed: u32,
-    /// 实际写进 `speakers[].name` 的说话人数。
+    /// Number of speakers actually written to `speakers[].name`.
     pub named: u32,
-    /// 模型明确回 `?`（证据不足）的说话人数。
+    /// Number of speakers for whom the model explicitly answered `?` (insufficient evidence).
     pub unknown: u32,
-    /// 轮次耗尽仍没有可用答案 ⇒ 整波无结果。
+    /// If the rounds are exhausted with no usable answer, the whole wave yields nothing.
     pub rejected: bool,
-    /// 落盘的实名，`(说话人 id, 名字)`，按 id 升序。
+    /// Persisted real names, `(speaker id, name)`, sorted by id ascending.
     pub names: Vec<(String, String)>,
 }
 
-/// 一次 speaker-names 波次的证据计划。
+/// Evidence plan for one speaker-names wave.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeakerNamesPlan {
-    /// 待命名说话人：`(说话人 id, 标签)`，按标签在文档中首次出现的顺序。
+    /// Speakers awaiting a name: `(speaker id, label)`, in the order their label first appears in the document.
     pub targets: Vec<(String, String)>,
-    /// 全篇标签表（单说话人文档也出标签，见
-    /// [`SpeakerLabels::from_words_allow_single`]）。
+    /// Full label table for the whole transcript. Single-speaker documents also get labels (see [`SpeakerLabels::from_words_allow_single`]).
     pub labels: SpeakerLabels,
-    /// 开场白证据的词区间（左闭右开）。
+    /// Word range (half-open) of the opening-remarks evidence.
     pub opening: std::ops::Range<usize>,
-    /// 每个待命名说话人的首次登场证据区间；与 `targets` 同序，落在开场白
-    /// 窗口里的说话人为 `None`（证据已在开场白里，不重复发）。
+    /// First-appearance evidence range for each speaker awaiting a name, in the same order as `targets`. A speaker who falls inside the opening window is `None`, because their evidence is already in the opening remarks and is not sent again.
     pub spotlights: Vec<Option<std::ops::Range<usize>>>,
 }
 
-/// 筛出待命名的说话人并规划证据窗口。
+/// Filters the speakers awaiting a name and plans their evidence windows.
 ///
-/// 待命名 = 名字仍是占位（[`is_placeholder_name`]）**且**在 `doc.words` 里还有
-/// 词。后一条是必须的：`speaker-repair` 会把假聚簇整个吸收掉，留下一个零词的
-/// 说话人条目，给它命名等于凭空发明一个人。
+/// Awaiting a name means the name is still a placeholder ([`is_placeholder_name`]) **and** the speaker still has words in `doc.words`. The second condition is required. `speaker-repair` may absorb a false cluster entirely, leaving a speaker entry with zero words, and naming it would mean inventing a person out of nothing.
 pub fn plan_speaker_names(doc: &TranscriptDoc) -> SpeakerNamesPlan {
     let labels = SpeakerLabels::from_words_allow_single(&doc.words);
     let opening_end = doc.words.len().min(SPEAKER_NAMES_OPENING_WORDS);
     let mut targets: Vec<(String, String)> = Vec::new();
     let mut spotlights: Vec<Option<std::ops::Range<usize>>> = Vec::new();
-    // 按标签表的顺序遍历，答案里的标签顺序才与载荷一致。
+    // Iterate in the label table's order, so the label order in the answer matches the payload.
     for (id, speaker) in &doc.speakers {
         if !is_placeholder_name(&speaker.name, id) {
             continue;
@@ -126,7 +108,7 @@ pub fn plan_speaker_names(doc: &TranscriptDoc) -> SpeakerNamesPlan {
             Some(start..end)
         });
     }
-    // 标签是 `S<数字>`；按数字排序即"文档里的说话人编号"顺序。
+    // Labels are `S<number>`. Sorting by the number gives the "speaker number in the document" order.
     let mut order: Vec<usize> = (0..targets.len()).collect();
     order.sort_by_key(|&index| label_number(&targets[index].1));
     let sorted_targets = order.iter().map(|&index| targets[index].clone()).collect();
@@ -142,7 +124,7 @@ pub fn plan_speaker_names(doc: &TranscriptDoc) -> SpeakerNamesPlan {
     }
 }
 
-/// `S12` → 12；不可解析（理论上不会发生）排到最后。
+/// `S12` → 12. Anything unparseable (should not happen in theory) sorts last.
 fn label_number(label: &str) -> usize {
     label
         .trim_start_matches(['S', 's'])
@@ -160,7 +142,7 @@ fn timecode(seconds: f64) -> String {
     )
 }
 
-/// 渲染证据载荷（`speaker-names` 的 file-v1 纯文本载体）。
+/// Renders the evidence payload (the file-v1 plain-text carrier for `speaker-names`).
 pub fn render_speaker_names_page(doc: &TranscriptDoc, plan: &SpeakerNamesPlan) -> String {
     let labels = Some(&plan.labels);
     let mut out = String::new();
@@ -170,7 +152,7 @@ pub fn render_speaker_names_page(doc: &TranscriptDoc, plan: &SpeakerNamesPlan) -
         opening.len(),
         plan.labels.all_labels().join(",")
     ));
-    // 开场白起手的说话人没有切换标记，显式补一个，否则模型分不清第一段是谁说的。
+    // The speaker who starts the opening remarks has no switch marker, so one is added explicitly. Otherwise the model cannot tell who said the first segment.
     if let Some(first) = opening.first()
         && let Some(label) = plan.labels.label(&first.sp)
     {
@@ -214,10 +196,9 @@ pub fn render_speaker_names_page(doc: &TranscriptDoc, plan: &SpeakerNamesPlan) -
     out
 }
 
-/// 载荷里被问到的标签（`<<<NAMES-ASK>>>` 块），按载荷顺序。
+/// Labels asked about in the payload (the `<<<NAMES-ASK>>>` block), in payload order.
 ///
-/// 这是 lint 与引擎共用的**唯一**期望集合来源：agent 侧只拿得到载荷与答案，
-/// 拿不到 `SpeakerNamesPlan`。
+/// This is the **only** source of the expected set, shared by lint and engine. The agent side only has the payload and the answer, not `SpeakerNamesPlan`.
 pub fn speaker_names_asked(payload: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut inside = false;
@@ -237,15 +218,15 @@ pub fn speaker_names_asked(payload: &str) -> Vec<String> {
     out
 }
 
-/// 解析结果：与载荷问的标签同序，`None` = 模型回了 `?`。
+/// Parse result: same order as the labels asked in the payload. `None` means the model answered `?`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpeakerNamesParsed {
-    /// `(标签, 名字)`；整份答案不可用时为空。
+    /// `(label, name)`. Empty when the whole answer is unusable.
     pub names: Vec<(String, Option<String>)>,
     pub problems: Vec<Problem>,
 }
 
-/// 名字是否可接受：非空、单行、不超长、不含 `=`、本身不是占位名。
+/// Whether a name is acceptable: non-empty, single line, not overlong, no `=`, and not itself a placeholder name.
 fn valid_name(label: &str, name: &str) -> Result<(), &'static str> {
     if name.is_empty() {
         return Err("名字为空——证据不足时回 `?`，不要回空值");
@@ -262,9 +243,7 @@ fn valid_name(label: &str, name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// 解析并校验答案。判据全是算术与字符串级：标签集必须与载荷所问**恰好相等**、
-/// 不重复、值要么是 `?` 要么是合法名字。任一不满足即整份答案不可用（这一波
-/// 只有一次调用，没有「部分接受」的意义——重发一次比落一半名字更划算）。
+/// Parses and validates the answer. Every criterion is arithmetic or string-level: the label set must be **exactly equal** to the labels the payload asked about, with no duplicates, and each value must be either `?` or a valid name. If any condition fails, the whole answer is unusable. This wave makes only one call, so "partial acceptance" has no meaning here. Resending once is more economical than landing half the names.
 pub fn parse_speaker_names_page(payload: &str, answer: &str) -> SpeakerNamesParsed {
     let asked = speaker_names_asked(payload);
     let mut parsed = SpeakerNamesParsed::default();
@@ -349,7 +328,7 @@ pub fn parse_speaker_names_page(payload: &str, answer: &str) -> SpeakerNamesPars
     parsed
 }
 
-/// 取 `<<<NAMES>>>` … `<<<NAMES-END>>>` 之间的正文；缺栅栏返回 `None`。
+/// Gets the body between `<<<NAMES>>>` and `<<<NAMES-END>>>`. Returns `None` if the fence is missing.
 fn fenced_body(answer: &str) -> Option<String> {
     let mut inside = false;
     let mut closed = false;
@@ -376,7 +355,7 @@ fn fenced_body(answer: &str) -> Option<String> {
     (inside && closed).then_some(body)
 }
 
-/// agent 侧 `task submit` 对 speaker-names 答案的镜像 lint。
+/// Mirror lint on the agent side for speaker-names answers submitted through `task submit`.
 pub fn lint_agent_answer_speaker_names(payload: &str, answer: &str) -> Vec<String> {
     parse_speaker_names_page(payload, answer)
         .problems
@@ -385,9 +364,7 @@ pub fn lint_agent_answer_speaker_names(payload: &str, answer: &str) -> Vec<Strin
         .collect()
 }
 
-/// 系统提示词。与 [`super::speaker_repair::speaker_repair_system_prompt`] 不同，
-/// 这里**必须**吃到项目/来源元数据与 analysis 的命名实体：第三方介绍常常只在
-/// 标题、频道名或简介里给出全名（"Andrew Ng"），正文里只剩 "Andrew"。
+/// System prompt. Unlike [`super::speaker_repair::speaker_repair_system_prompt`], this **must** receive the project and source metadata and the named entities from analysis. Third-party introductions often give the full name only in the title, channel name or description ("Andrew Ng"), while the body has only "Andrew".
 pub fn speaker_names_system_prompt(
     reference_context: Option<&str>,
     summary: Option<&str>,
@@ -431,14 +408,11 @@ Rules:
     prompt
 }
 
-/// speaker-names 波次。返回是否真的写了名字。
+/// speaker-names wave. Returns whether any name was actually written.
 ///
-/// `enabled=false`、空文档、定向重润（`scoped`）或没有占位说话人时整波跳过、
-/// `report.skipped` 给出原因。答案被拒时最多重发到
-/// [`SPEAKER_NAMES_MAX_ROUNDS`] 轮，仍不可用就保持占位名（`report.rejected`）。
+/// The whole wave is skipped when `enabled=false`, the document is empty, the run is a targeted re-polish (`scoped`), or there are no placeholder speakers. `report.skipped` gives the reason. When an answer is rejected, the request is resent up to [`SPEAKER_NAMES_MAX_ROUNDS`] rounds. If it is still unusable, the placeholder names are kept (`report.rejected`).
 ///
-/// 只写 `speakers[<id>].name`，且**只覆盖占位名**：一次波次内两次读取
-/// 占位判据（规划时、落盘前），用户在这中间改过名字的说话人不会被盖掉。
+/// Only `speakers[<id>].name` is written, and **only placeholders are overwritten**. The placeholder test is read twice within one wave (at planning time and again before writing to disk), so a speaker whose name the user changed in between is not overwritten.
 pub fn speaker_names_wave(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -486,7 +460,7 @@ pub fn speaker_names_wave(
             Some(Ok(raw)) => raw,
             Some(Err(error)) if error.is_retryable() => continue,
             Some(Err(error)) => return Err(error),
-            // 宿主返回空批：当作一次不可重试的协议故障，保持占位名。
+            // The host returned an empty batch. Treat it as a non-retryable protocol failure and keep the placeholder names.
             None => break,
         };
         let parsed = parse_speaker_names_page(&payload, &raw);
@@ -533,7 +507,7 @@ pub fn speaker_names_wave(
         let Some(speaker) = doc.speakers.get_mut(&id) else {
             continue;
         };
-        // 落盘前复核占位判据：用户改过名字的说话人绝不覆盖。
+        // Re-check the placeholder test before writing to disk. A speaker whose name the user has changed is never overwritten.
         if !is_placeholder_name(&speaker.name, &id) {
             continue;
         }
@@ -563,7 +537,7 @@ mod tests {
         }
     }
 
-    /// 主持人开场介绍嘉宾：证据在开场白里，嘉宾的名字只由**对方**说出。
+    /// The host introduces the guest in the opening remarks. The evidence is in the opening, but the guest's name is spoken only by **the other party**.
     fn interview(ids: [&str; 2], names: [&str; 2]) -> TranscriptDoc {
         let mut doc = TranscriptDoc::new(
             DocMedia {
@@ -616,7 +590,7 @@ mod tests {
         format!("{FENCE_NAMES}\n{}\n{FENCE_NAMES_END}\n", lines.join("\n"))
     }
 
-    /// 顺序回放的假 LLM。
+    /// Fake LLM that replays its responses in order.
     struct Scripted {
         answers: Vec<String>,
         seen: Vec<LlmRequest>,
@@ -657,7 +631,7 @@ mod tests {
     #[test]
     fn plan_targets_placeholders_that_still_have_words() {
         let mut doc = interview(["s1", "s2"], ["S01", "S02"]);
-        // speaker-repair 把 s3 的假聚簇整个吸收掉，只剩一个零词条目。
+        // speaker-repair absorbed s3's false cluster entirely, leaving a single entry with zero words.
         doc.speakers.insert(
             "s3".to_owned(),
             Speaker {
@@ -705,10 +679,10 @@ mod tests {
             vec!["S1".to_owned(), "S2".to_owned()]
         );
         assert!(payload.contains("Today I'm joined by Andrew Ng."));
-        // 开场白首句的说话人显式补标记，模型才分得清第一段是谁说的。
+        // The speaker of the opening sentence is marked explicitly, so the model can tell who said the first segment.
         assert!(payload.contains("⏹S1 Welcome"));
         assert!(payload.contains("⏹S2"));
-        // 两位说话人都在开场白窗口里，不再补发单独的登场证据块。
+        // Both speakers are inside the opening window, so no separate first-appearance evidence block is sent.
         assert!(!payload.contains(FENCE_SPEAKER));
     }
 
@@ -759,7 +733,7 @@ mod tests {
 
     #[test]
     fn wave_maps_labels_back_through_the_label_table_not_the_digits() {
-        // id 不是 `s<数字>` ⇒ 标签退回首次出现序号，`S2` 并不意味着 id `s2`。
+        // If the id is not `s<number>`, the label falls back to first-appearance order. `S2` does not imply id `s2`.
         let mut doc = interview(["spk-b", "spk-a"], ["S01", "S02"]);
         let plan = plan_speaker_names(&doc);
         assert_eq!(
@@ -931,7 +905,7 @@ mod tests {
         assert!(prompt.contains("An interview about AI agents."));
         assert!(prompt.contains("Andrew Ng, Stanford"));
         assert!(prompt.contains(FENCE_NAMES));
-        // 空元数据不留下空标题。
+        // Empty metadata does not leave an empty title.
         let bare = speaker_names_system_prompt(Some("  "), None, &[]);
         assert!(!bare.contains("Project / source metadata"));
     }

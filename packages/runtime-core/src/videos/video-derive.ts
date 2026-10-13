@@ -36,20 +36,18 @@ import { videoPlace } from './pipeline-targets.ts';
 import { hasVideoDb, videoDirName, type EngineProtection, type VideoLocation, type VideoService } from './video-service.ts';
 
 /**
- * 派生子视频（`videos.derive`、工具 `videos_derive`，架构设计 §3.5「派生子视频」）：复制父视频，把区间之外剪掉，
- * 建在父视频旁边（同一个来源目录、同一层目录），目录名以幂等键结尾。规划见 `derive-plan.ts`。
+ * Derived sub-video (`videos.derive`, tool `videos_derive`, architecture design §3.5 “Deriving a sub-video”): copies the parent video, cuts away everything outside the range, and builds it beside the parent (same source directory, same directory level), with a directory name ending in the idempotency key. Planning is in `derive-plan.ts`.
  *
- * 幂等：同一父视频版本、同一区间与设置的键相同。三层认回：Space 索引里记着这个键的子视频（`findDerived`）、
- * 同一层里以 `-<键>` 结尾且有数据库的目录、子视频里按命令 ID 持久化的回执（复制、收尾与字幕层各一笔，中断后从断处接上）。
+ * Idempotent: the same parent video version, with the same range and settings, gives the same key. The key is recognized at three levels: a sub-video in the Space index that records this key (`findDerived`); a directory at the same level, ending in `-<key>`, that has a database; and receipts persisted in the sub-video by command ID (one each for copy, finishing and the subtitle layer, resumed from where it was interrupted).
  */
 
 export interface DeriveDeps {
   videos: VideoService;
-  /** Space 索引里派生自这个父视频、键相同的子视频（视频目录的绝对路径）；没有时 null。 */
+  /** A sub-video in the Space index derived from this parent with the same key (absolute path of the video directory); null if none. */
   findDerived?: (parentVideoId: Id, key: string) => Promise<string | null> | string | null;
 }
 
-/** 按 Space 索引的视频事实（`origin`）找子视频。 */
+/** Finds sub-videos by the video facts in the Space index (`origin`). */
 export function spaceDerivedFinder(space: {
   videos(): { dir: string }[];
   readonly index: { at(dir: string): { facts: { origin?: { parentVideoId: Id; key: string } | null } } | null } | null;
@@ -65,18 +63,17 @@ export function spaceDerivedFinder(space: {
 
 export interface DeriveOptions {
   taskId?: Id;
-  /** 这次调用所在任务的保护范围（只对父视频有意义，子视频是新建的）。 */
+  /** The protection scope of the task this call belongs to (meaningful only for the parent video; sub-videos are newly created). */
   protections?: (videoId: Id) => EngineProtection[];
 }
 
-/** 子视频默认名：「父视频名 · mm:ss–mm:ss」。 */
+/** Default sub-video name: “parent video name · mm:ss–mm:ss”. */
 export function defaultDerivedName(parentName: string, range: { start: number; end: number }): string {
   return `${parentName} · ${clockLabel(range.start)}–${clockLabel(range.end)}`;
 }
 
 /**
- * 解析参数：补全设置、读要复制的文稿与译文、对齐区间（边界留在句间的停顿里，`alignRange`）、算幂等键。调用方在确认之前
- * 用它拿到摘要里的名字与时刻；`videos.derive` 再用同一份结果规划。
+ * Parses the arguments: fills in the settings, reads the transcript and translations to copy, aligns the range (the boundaries stay in the pauses between sentences, `alignRange`), and computes the idempotency key. Callers use this before confirmation to get the name and times for the summary; `videos.derive` then plans with the same result.
  */
 export async function prepareDerive(videos: Pick<VideoService, 'document'>, snapshot: VideoSnapshot, params: Omit<VideoDeriveParams, 'videoId'>) {
   const sequence = snapshot.sequences[snapshot.rootSequenceId]!;
@@ -93,7 +90,7 @@ export async function prepareDerive(videos: Pick<VideoService, 'document'>, snap
   const documents = new Map<Id, unknown>();
   for (const id of needs.documentIds) documents.set(id, (await videos.document(snapshot.id, id)).body);
   const range = deriveCall(() => alignRange(sequence, params.start, params.end, timelineWords(snapshot, documents)));
-  // 分段取景对到帧、截到区间之后才进设置（幂等键按对齐后的算）；没给时不带这个字段，老调用的键不变。
+  // Segment framing is snapped to frames and cut to the range before the settings are taken (the idempotency key is computed after alignment). When not given, the field is left out, so the keys of old calls do not change.
   const aligned = params.crops?.length ? alignCrops(sequence, range, params.crops) : null;
   if (aligned) settings.crops = aligned.crops;
   const key = derivationKey({ parentVideoId: snapshot.id, parentRevision: snapshot.revision, range, settings });
@@ -101,7 +98,7 @@ export async function prepareDerive(videos: Pick<VideoService, 'document'>, snap
   return { sequence, range, settings, key, name, needs, documents, cropsAdjusted: aligned?.adjusted ?? 0 };
 }
 
-/** 规划里的拒绝换成 RPC 错误（`details.code` 是 `DERIVE_*`）。 */
+/** Rejections from planning are turned into RPC errors (`details.code` is `DERIVE_*`). */
 function deriveCall<T>(fn: () => T): T {
   try {
     return fn();
@@ -135,11 +132,11 @@ export async function deriveVideo(
   const { sequence, range, settings, key, name, needs, documents, cropsAdjusted } = await prepareDerive(videos, parent, params);
 
   const place = videoPlace(videos, parent.id) as { root: string; file: string; scope: VideoLocation['scope'] } | null;
-  // 父视频就是来源目录本身（或不是从项目、会话打开的）：旁边没有地方放子视频。
+  // The parent video is the source directory itself, or was not opened from a project or session: there is no place beside it for a sub-video.
   if (!place || place.file === '.' || place.file === '') throw deriveRpcError(new DeriveError('DERIVE_PARENT_UNPLACED'));
   const location = (file: string): VideoLocation => ({ root: place.root, file, scope: place.scope });
 
-  // ---- 子视频：认回已有的，或新建 ----
+  // ---- Sub-video: recognize an existing one, or create a new one ----
   const siblingsRel = path.posix.dirname(place.file.split(path.sep).join('/'));
   const indexed = await deps.findDerived?.(parent.id, key);
   const indexedRel = indexed ? path.relative(place.root, indexed).split(path.sep).join('/') : null;
@@ -175,11 +172,11 @@ export async function deriveVideo(
   const label = RcAgentTools.deriveVideoLabel({ name: parent.name }).text;
   const guard = { ...(options.taskId ? { taskId: options.taskId } : {}), protections: options.protections?.(childId) ?? [] };
 
-  // ---- 读父视频的素材文件，规划（文档正文在 prepareDerive 里读过） ----
+  // ---- Read the parent video's media files and plan (the document body was read in prepareDerive) ----
   const files = new Map<string, string>();
   for (const asset of needs.assets) {
     const found = await videos.assetFile(parent.id, asset.id, asset.revision).catch((error: unknown) => {
-      // 不能经媒体通道给出去的链接素材（目录、字幕文件等）：不能复制。
+      // Linked assets that cannot be handed out through the media channel (directories, subtitle files, etc.) cannot be copied.
       if (error instanceof RpcError && error.code === 'forbidden') {
         throw deriveRpcError(new DeriveError('DERIVE_UNSUPPORTED_ITEM', { assetId: asset.id, kind: parent.assets[asset.id]?.kind ?? 'asset' }));
       }
@@ -203,7 +200,7 @@ export async function deriveVideo(
     }),
   );
 
-  // ---- 第一笔：复制 ----
+  // ---- First receipt: copy ----
   const copyCommand = `derive:${key}:apply`;
   let copyReceipt: TransactionReceipt | null = await videos.receiptFor(childId, copyCommand);
   const alreadyCopied = Object.values(child().documents).some((d) => d.kind === DERIVATION_KIND);
@@ -217,7 +214,7 @@ export async function deriveVideo(
   }
   const refs = copyReceipt?.refs ?? {};
 
-  // ---- 第二笔：收尾与剪口 ----
+  // ---- Second receipt: finishing and cut points ----
   const trimCommand = `derive:${key}:trim`;
   let trimReceipt: TransactionReceipt | null = copyReceipt ? await videos.receiptFor(childId, trimCommand) : null;
   if (copyReceipt && !trimReceipt) {
@@ -234,11 +231,11 @@ export async function deriveVideo(
   }
   const trimRefs = trimReceipt?.refs ?? {};
 
-  // ---- 字幕层：按剪辑后的时间线，每个素材至多一层 ----
+  // ---- Subtitle layer: following the edited timeline, at most one layer per asset ----
   const warnings: VideoDeriveResult['warnings'] = [...plan.warnings];
   const captions: VideoDeriveResult['captions'] = [];
   if (settings.captions) {
-    // 字幕条数只数剪完之后还看得到的：落在区间里播放的源区间之内的（字幕在素材时钟上）。
+    // Only subtitles still visible after cutting are counted: those inside the source range that plays within the range (subtitles are on the asset clock).
     const keptOf = (assetId: Id | undefined) => plan.kept.filter((k) => k.assetId === assetId);
     const reader = {
       document: async (v: Id, d: Id, revision?: string) => {
@@ -255,7 +252,7 @@ export async function deriveVideo(
       if (made === 'skipped') warnings.push({ code: 'captions-skipped', documentId });
       else captions.push({ documentId: made.documentId, sourceDocumentId: documentId, cueCount: made.cueCount });
     }
-    // 译文：父视频里有字幕层的译文同样建一层（与父视频对应）；父视频的原文字幕层显示着时是双语。
+    // Translation: a translation of the subtitle layer in the parent video also gets a layer (matching the parent); when the parent's original subtitle layer is shown, it is bilingual.
     const parentSequence = parent.sequences[parent.rootSequenceId]!;
     for (const [n, t] of plan.trim.translations.entries()) {
       const documentId = trimRefs[`translation-${n + 1}`];
@@ -281,7 +278,7 @@ export async function deriveVideo(
     target: { ...(place.scope), path: opened.ref.relPath },
     videoRevision: final.revision,
   };
-  // 挑选说明按子视频里派生来源文档的现状回显：认回已有的子视频时它不改写，回显的是原来那份，不是这次传的。
+  // The selection note is echoed according to the current state of the derived source document in the sub-video. When an existing sub-video is recognized, it is not rewritten: the echo is the original one, not the one passed this time.
   const derivationDocumentId = Object.values(final.documents).find((d) => d.kind === DERIVATION_KIND)?.id ?? null;
   const derivationBody = derivationDocumentId ? ((await videos.document(childId, derivationDocumentId)).body as DerivePick | null) : null;
   const pick = pickFields(derivationBody ?? undefined);
@@ -304,7 +301,7 @@ export async function deriveVideo(
   return { result, opened: { ...opened, snapshot: videos.mirror(childId) ?? opened.snapshot } };
 }
 
-/** 同一层里以 `-<键>` 结尾、有数据库的目录（相对来源目录）。 */
+/** A directory at the same level, ending in `-<key>`, that has a database (relative to the source directory). */
 async function findSibling(dir: string, key: string, rel: string): Promise<string | null> {
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
@@ -314,7 +311,7 @@ async function findSibling(dir: string, key: string, rel: string): Promise<strin
   return null;
 }
 
-/** 每个素材至多建一层字幕：父视频里已有字幕层的那份转写优先，否则取最后一份。 */
+/** At most one subtitle layer per asset: the transcript from the parent video that already has a subtitle layer takes priority; otherwise the last one. */
 function captionSources<S extends { from: Id; assetId: Id }>(speech: S[], parent: VideoSnapshot): S[] {
   const sequence = parent.sequences[parent.rootSequenceId]!;
   const byAsset = new Map<Id, S>();

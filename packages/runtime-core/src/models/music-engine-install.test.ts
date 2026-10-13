@@ -25,15 +25,12 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { resolveAudioCppCli } from './model-jobs.ts';
 
 /**
- * 音乐模型包与它的引擎组件经网关端到端（架构设计 §6.3、§6.5；Model Worker 协议规范 §4.4）：`models.install` 一份计划里既有
- * YuE2 的权重（本机回环地址上的假模型来源），也有 audio.cpp 引擎（`audiocpp-engine`，来自 GitHub 发布页的组件；这里由假的工具
- * 下载镜像 `CUCCUT_TOOLS_ENDPOINT` 提供）。
+ * The music model pack and its engine component end to end through the gateway (architecture design §6.3, §6.5; Model Worker protocol spec §4.4). One `models.install` plan includes YuE2's weights (a fake model source on a loopback address), and also the audio.cpp engine (`audiocpp-engine`, a component from the GitHub release page, supplied here by a fake tool download mirror `CUCCUT_TOOLS_ENDPOINT`).
  *
- * - 「发布文件」是测试里打的 `.tar.gz`，结构照上游（`./` 前缀、根目录的可执行文件与库、同包的其他工具、子目录）；里面的
- *   `audiocpp_cli` 是打印 `audio.cpp 0.9.1` 的 shell 脚本。模型包登记里引擎的压缩包换成它（大小与 sha256 现算）；不访问真实网络。
- * - 安装后引擎在 `<home>/tools/audiocpp/<版本>/`，只有根目录里该解开的文件和清单；模型包 `installed`，能力视图看到引擎；删除后回收。
- * - 坏包、探测不过：任务以 `MODEL_DOWNLOAD_INTEGRITY` 失败，不留半个目录。
- * - 旧版作为受管外部工具装下的引擎（有可执行文件、没有清单）直接算装好，计划不再下载它。
+ * - The “release file” is a `.tar.gz` built in the test, laid out like upstream (`./` prefix, executables and libraries at the root, other tools from the same package, subdirectories). The `audiocpp_cli` inside is a shell script that prints `audio.cpp 0.9.1`. In the model pack registry, the engine archive is swapped for this one (size and sha256 computed on the fly); no real network access.
+ * - After install, the engine is at `<home>/tools/audiocpp/<version>/`, with only the files to extract at the root, plus the manifest. The model pack is `installed`, and the capability view sees the engine. Removal cleans it up.
+ * - Bad package or failed probe: the task fails with `MODEL_DOWNLOAD_INTEGRITY` and leaves no half-finished directory.
+ * - An engine installed in the old way as a managed external tool (has an executable, no manifest) counts as installed directly, and the plan does not download it.
  */
 
 const MUSIC_BUNDLE = 'yue2-3b@audio-cpp-q8';
@@ -60,7 +57,7 @@ async function packRelease(dir: string, script: string): Promise<Release> {
   return { bytes: await fs.readFile(archive), fileName };
 }
 
-/** 这台主机的模型包，音乐模型包的引擎压缩包换成测试打的那一个。 */
+/** The host's model pack; the music model pack's engine archive is swapped for the one the test built. */
 function bundlesWith(release: Release): BundleDefinition[] {
   const sha256 = createHash('sha256').update(release.bytes).digest('hex');
   const engine = {
@@ -130,7 +127,7 @@ async function startSide(source: FakeModelSource, release: Release, prepare?: (t
     modelWorker: null,
     externalTools: {
       env: async () => ({ PATH: emptyPath }),
-      // 不读真实环境：没有 CUCCUT_AUDIOCPP_CLI，PATH 是空目录，工具下载镜像指向假服务。
+      // Does not read the real environment: no CUCCUT_AUDIOCPP_CLI, PATH is an empty directory, and the tool download mirror points at a fake service.
       overrides: { PATH: emptyPath, CUCCUT_TOOLS_ENDPOINT: `http://127.0.0.1:${port}/mirror` },
       lookup: async () => ['93.184.216.34'],
     },
@@ -162,7 +159,7 @@ async function bundleOf(client: CucCutClient): Promise<ModelBundleStatus> {
   return (await client.request('models.list', {})).bundles.find((b) => b.bundleId === MUSIC_BUNDLE)!;
 }
 
-/** 能力视图里本地音乐模型的引擎：`local.engine.executable`。 */
+/** The local music model's engine in the capability view: `local.engine.executable`. */
 async function musicEngineInCapabilities(client: CucCutClient): Promise<string | null | undefined> {
   const { capabilities } = await client.request('models.capabilities', {});
   let found: string | null | undefined;
@@ -179,7 +176,7 @@ async function musicEngineInCapabilities(client: CucCutClient): Promise<string |
   return found;
 }
 
-/** 两步安装（先拿计划，再按计划的字节确认），等任务结束。 */
+/** Two-step install (get the plan first, then confirm against the plan's bytes), and wait for the task to finish. */
 async function install(side: Side) {
   const first = await side.client.request('models.install', { bundleId: MUSIC_BUNDLE });
   expect(first.jobId).toBeNull();
@@ -229,7 +226,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     const dir = path.join(s.toolsDir, 'audiocpp', VERSION);
     expect((await fs.readdir(dir)).sort()).toEqual(['.ccut-manifest.json', 'LICENSE', 'audiocpp_cli', 'libggml.so']);
     expect((await fs.stat(path.join(dir, 'audiocpp_cli'))).mode & 0o111).not.toBe(0);
-    // 暂存区不留压缩包与解开的目录。
+    // The staging area keeps no archive and no unpacked directory.
     expect(await fs.readdir(s.toolsDir)).toEqual(['audiocpp']);
 
     const after = await bundleOf(s.client);
@@ -237,7 +234,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     expect(after.components).toContainEqual(expect.objectContaining({ component: ENGINE, origin: 'github-release', state: 'installed' }));
     expect(await musicEngineInCapabilities(s.client)).toBe(path.join(dir, 'audiocpp_cli'));
 
-    // 再装：已是最新，不下载。
+    // Install again: already the latest, no download.
     expect((await s.client.request('models.install', { bundleId: MUSIC_BUNDLE })).plan).toMatchObject({ upToDate: true, downloadBytes: 0 });
 
     await s.client.request('models.remove', { bundleId: MUSIC_BUNDLE });
@@ -278,7 +275,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     expect(plan.downloadBytes).toBe(MUSIC_BYTES);
     expect(job).toMatchObject({ state: 'completed' });
     expect(s.requests).toEqual([]);
-    // 旧的目录原样留着（没有补写清单）。
+    // The old directory is left as is (no manifest is written into it).
     expect(await fs.readdir(path.dirname(legacy(s.toolsDir)))).toEqual(['audiocpp_cli']);
 
     expect((await bundleOf(s.client)).state).toBe('installed');
@@ -298,7 +295,7 @@ describe('resolveAudioCppCli 的查找顺序', () => {
         return file;
       };
       const toolsDir = path.join(dir, 'tools');
-      // 目录按 darwin-arm64 取压缩包：可执行文件是 `audiocpp_cli`。
+      // The directory picks the darwin-arm64 archive: the executable is `audiocpp_cli`.
       const catalog = new ModelCatalog({ root: path.join(dir, 'models'), toolsDir, platform: 'darwin', arch: 'arm64' });
       const installed = () => catalog.engineExecutable(MUSIC_BUNDLE);
 
@@ -311,7 +308,7 @@ describe('resolveAudioCppCli 的查找顺序', () => {
 
       const explicit = await write(path.join(dir, 'env', exe));
       expect(resolveAudioCppCli({ ...env, [AUDIO_CPP_CLI_ENV]: explicit }, installed)).toBe(explicit);
-      // 环境变量指向不存在的文件：找不到，不换别的来源。
+      // The environment variable points to a file that does not exist: not found, and no other source is tried.
       expect(resolveAudioCppCli({ ...env, [AUDIO_CPP_CLI_ENV]: path.join(dir, 'gone', exe) }, installed)).toBeNull();
     } finally {
       await fs.rm(dir, { recursive: true, force: true });

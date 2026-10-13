@@ -1,17 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/VoxCPM2TTS/AudioVAE.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/VoxCPM2TTS/AudioVAE.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the relevant Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! VoxCPM2 AudioVAE：16 kHz 波形 → 64 维 latent（每帧 640 样本）→ 48 kHz 波形
-//! （每帧 1920 样本）。对照 speech-swift `AudioVAE.swift`。
+//! VoxCPM2 AudioVAE: 16 kHz waveform → 64-dim latent (640 samples per frame) → 48 kHz waveform
+//! (1920 samples per frame). Corresponds to speech-swift `AudioVAE.swift`.
 //!
-//! 全部走通道在后（`[B, T, C]`）的 MLX 卷积布局；权重已是融合过 weight-norm 的 F32，
-//! 卷积核就是 MLX 布局 `[out, k, in/groups]`，不用再转置。
-//! 与 Swift 的差别：采样率条件（`sr_cond_layers`）按 48 kHz 在加载时查好表，
-//! 推理时只剩一次乘加；不带 `NoiseBlock`（这份 checkpoint 没有它）。
+//! Everything uses the MLX convolution layout with channels last (`[B, T, C]`); the weights are already F32 with weight-norm fused, and the convolution kernel is already in MLX layout `[out, k, in/groups]`, so no transposition is needed.
+//! Differences from Swift: the sample-rate conditioning (`sr_cond_layers`) has its table looked up at load time for 48 kHz, so at inference only one multiply-add remains; `NoiseBlock` is not included (this checkpoint does not have it).
 
 use crate::synthesize::qwen3_tts::layers::{CausalConv1d, CausalConvTranspose1d};
 use crate::synthesize::qwen3_tts::weights::Weights;
@@ -26,7 +24,7 @@ fn take_f32(weights: &mut Weights, key: &str) -> Result<Array> {
     Ok(weights.take(key)?.as_dtype(Dtype::Float32)?)
 }
 
-/// `Snake1d`：`x + 1/(α+1e-9) · sin²(αx)`，`α` 形状 `[1, 1, C]`。
+/// `Snake1d`: `x + 1/(α+1e-9) · sin²(αx)`, with `α` shaped `[1, 1, C]`.
 struct Snake {
     alpha: Array,
     inv_alpha: Array,
@@ -45,7 +43,7 @@ impl Snake {
     }
 }
 
-/// speech-swift 的 `CausalConv1d`：`padding > 0` 时左侧补 `max(0, 2·padding − output_padding)` 个零。
+/// speech-swift's `CausalConv1d`: when `padding > 0`, pads zeros on the left, `max(0, 2·padding − output_padding)` of them.
 struct Conv {
     conv: CausalConv1d,
     left_pad: i32,
@@ -81,7 +79,7 @@ impl Conv {
     }
 }
 
-/// `CausalResidualUnit`：snake → k7 空洞卷积（`groups`）→ snake → 1×1 卷积，残差相加。
+/// `CausalResidualUnit`: snake → k7 dilated convolution (`groups`) → snake → 1×1 convolution, residual added.
 struct ResidualUnit {
     snake1: Snake,
     conv1: Conv,
@@ -122,7 +120,7 @@ struct EncoderBlock {
 }
 
 struct DecoderBlock {
-    /// 采样率条件：`h · scale + bias`，按输出采样率在加载时取好行。
+    /// Sample-rate conditioning: `h · scale + bias`, with the row selected at load time according to the output sample rate.
     sr_scale: Array,
     sr_bias: Array,
     snake: Snake,
@@ -138,9 +136,9 @@ pub struct AudioVae {
     dec_blocks: Vec<DecoderBlock>,
     snake_out: Snake,
     conv_out: Conv,
-    /// 编码一帧 latent 对应的输入样本数（16 kHz 下 640）。
+    /// Number of input samples per encoded latent frame (640 at 16 kHz).
     pub hop: usize,
-    /// 解码一帧 latent 产出的输出样本数（48 kHz 下 1920）。
+    /// Number of output samples produced by decoding one latent frame (1920 at 48 kHz).
     pub decode_hop: usize,
     pub latent_dim: usize,
     pub sample_rate: u32,
@@ -148,7 +146,7 @@ pub struct AudioVae {
 }
 
 impl AudioVae {
-    /// `weights` 是去掉 `audio_vae.` 前缀后的子集。
+    /// `weights` is the subset with the `audio_vae.` prefix removed.
     pub fn load(weights: &mut Weights, config: &AudioVaeConfig) -> Result<Self> {
         let enc_conv_in = Conv::load(weights, "encoder.conv_in", 1, 1, 3, 0, 1)?;
         let mut enc_blocks = Vec::new();
@@ -202,14 +200,14 @@ impl AudioVae {
                 sr_scale,
                 sr_bias,
                 snake: Snake::load(weights, &format!("{p}.snake"))?,
-                // 右侧裁 `2·ceil(s/2) − s%2 = s` 个样本，与核长 − stride 相同。
+                // Trim `2·ceil(s/2) − s%2 = s` samples from the right, the same as kernel length − stride.
                 conv_t: CausalConvTranspose1d::new(weight, bias, stride),
                 res: residual_triple(weights, &p, if config.depthwise { output } else { 1 })?,
             });
         }
         let snake_out = Snake::load(weights, "decoder.snake_out")?;
         let conv_out = Conv::load(weights, "decoder.conv_out", 1, 1, 3, 0, 1)?;
-        // 仅 Swift 端用来算 sr 下标的常量；这里已按配置算好。
+        // A constant used only on the Swift side to compute the sr index; here it has already been computed from the config.
         let _ = weights.take_optional("decoder._sr_boundaries");
         Ok(Self {
             enc_conv_in,
@@ -227,7 +225,7 @@ impl AudioVae {
         })
     }
 
-    /// `[B, T, 1]` 16 kHz 波形（T 已是 `hop` 的整数倍）→ `[B, T/hop, latent]`。
+    /// `[B, T, 1]` 16 kHz waveform (T is already an integer multiple of `hop`) → `[B, T/hop, latent]`.
     pub fn encode(&self, x: &Array) -> Result<Array> {
         let mut h = self.enc_conv_in.forward(x)?;
         for block in &self.enc_blocks {
@@ -239,7 +237,7 @@ impl AudioVae {
         self.fc_mu.forward(&h)
     }
 
-    /// `[B, T, latent]` → `[B, T·decode_hop]` 输出采样率波形。
+    /// `[B, T, latent]` → `[B, T·decode_hop]` waveform at the output sample rate.
     pub fn decode(&self, z: &Array) -> Result<Array> {
         let mut h = z.clone();
         for conv in &self.dec_conv_in {

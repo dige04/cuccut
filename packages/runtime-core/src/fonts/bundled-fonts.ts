@@ -1,7 +1,7 @@
 /**
- * 随渲染内核发布的字体的族名（`crates/frame-render` 的 `BUNDLED_FONT_FILES`，文件在 `crates/render-raster/assets/fonts`）。
- * 排字时这些族总是用内核自带的那一份（本机装的、下载的都不用），所以选字列表把它们标为「随内核」，也不下载。
- * 与文件里的族名对拍的测试在 `bundled-fonts.test.ts`。
+ * Family names of the fonts shipped with the render kernel (`BUNDLED_FONT_FILES` in `crates/frame-render`; the files are in `crates/render-raster/assets/fonts`).
+ * When typesetting, these families always use the kernel's own copy (never a locally installed or downloaded one), so the font picker marks them “随内核” (bundled with the kernel) and does not download them.
+ * The test that checks these family names against the files is in `bundled-fonts.test.ts`.
  */
 export const BUNDLED_FONT_FAMILIES: readonly string[] = [
   'Alata',
@@ -34,8 +34,8 @@ export const BUNDLED_FONT_FAMILIES: readonly string[] = [
 ];
 
 /**
- * 渲染内核的回退族（`frame_render::FALLBACK_FAMILY`）：点了名、却哪里都没取到的族（没下载、下载失败、自动下载关着），
- * 字由它画。`fonts.usage` 以 Render Worker 报的为准，这里是 Worker 没跑（空的序列）时的同一个值。
+ * The render kernel's fallback family (`frame_render::FALLBACK_FAMILY`): a family that was named but could not be obtained anywhere (not downloaded, download failed, or auto-download off) is drawn with this font.
+ * `fonts.usage` uses the value reported by the Render Worker; this is the same value used when the Worker has not run (empty sequence).
  */
 export const FALLBACK_FONT_FAMILY = 'Noto Sans SC';
 

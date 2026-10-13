@@ -1,4 +1,4 @@
-//! 手绘能力的 lint 契约（规范 §6.2.1 / §6.3 / §16）。
+//! Lint contract for the sketch capability (spec §6.2.1 / §6.3 / §16).
 
 use scene_primitives::lint::{Severity, lint};
 use serde_json::{Value, json};
@@ -142,7 +142,7 @@ fn cadence_doc(fps: f64, cadence: Value, second_start: f64, transition: Option<&
 fn cadence_rules_fire_only_inside_a_sampling_domain() {
     let has = |doc: &Value, rule: &str| rules(doc).iter().any(|(r, _)| *r == rule);
 
-    // 12fps 域、24fps 输出、切点落格、硬切：三条都不触发
+    // 12fps domain, 24fps output, cut point on the grid, hard cut: none of the three triggers
     let clean = cadence_doc(24.0, json!({"fps": 12}), 1.0, None);
     for rule in [
         "cue-off-grid",
@@ -152,15 +152,15 @@ fn cadence_rules_fire_only_inside_a_sampling_domain() {
         assert!(!has(&clean, rule), "{rule}: {:?}", rules(&clean));
     }
 
-    // 切点不在 1/12 格上
+    // Cut point is not on a 1/12 grid cell
     assert!(has(
         &cadence_doc(24.0, json!({"fps": 12}), 1.03, None),
         "cue-off-grid"
     ));
-    // 30fps 输出不是 12 的整数倍：info
+    // 30fps output is not an integer multiple of 12: info
     let mismatch = cadence_doc(30.0, json!({"fps": 12}), 1.0, None);
     assert!(rules(&mismatch).contains(&("cadence-fps-mismatch", Severity::Info)));
-    // crossfade 进了采样域
+    // crossfade entered the sampling domain
     assert!(has(
         &cadence_doc(24.0, json!({"fps": 12}), 1.0, Some("crossfade")),
         "transition-in-sketch"
@@ -170,7 +170,7 @@ fn cadence_rules_fire_only_inside_a_sampling_domain() {
         "transition-in-sketch"
     ));
 
-    // 没有 cadence 的普通文档：同样的写法一条都不报
+    // A plain document with no cadence: the same constructs produce no reports at all
     let mut plain = cadence_doc(30.0, json!({"fps": 12}), 1.03, Some("crossfade"));
     plain["meta"].as_object_mut().unwrap().remove("cadence");
     for rule in [
@@ -237,7 +237,7 @@ fn sketch_profile_flags_mixed_finish_off_palette_and_stray_text() {
         "{:?}",
         sketch_rules(&clean)
     );
-    // document 剖面永远不报 sketch-*
+    // The document profile never reports sketch-*
     assert!(!rules(&clean).iter().any(|(r, _)| r.starts_with("sketch-")));
 
     let messy = sketch_doc(
@@ -259,6 +259,6 @@ fn sketch_profile_flags_mixed_finish_off_palette_and_stray_text() {
             "{rule}: {got:?}"
         );
     }
-    // 同样的脏文档在 document 剖面下一条都不报
+    // The same dirty document reports nothing under the document profile
     assert!(!rules(&messy).iter().any(|(r, _)| r.starts_with("sketch-")));
 }

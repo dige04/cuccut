@@ -1,22 +1,19 @@
-//! polish 阶段的 txt 载体编解码器（§6）。
+//! The txt carrier codec for the polish stage (§6).
 //!
-//! 本模块只负责「载体」：把词流切页、渲染成带哨兵栅栏与软标记的纯文本，
-//! 再把模型返回的文本解析回段落序列与诊断。它不做词绑定 / 重绑定 /
-//! 相似度匹配（那是 M2 的 rebind 职责），也不写任何真相。
+//! This module handles only the "carrier": it splits the word stream into pages and renders them as plain text with sentinel fences and soft markers,
+//! then parses the model's returned text back into a paragraph sequence and diagnostics. It does not do word binding / rebinding / similarity matching (that is the rebind job of M2), and it writes no truth.
 //!
-//! 复用关系（禁止在本文件里另造阈值）：
+//! Reuse relationships (do not invent new thresholds in this file):
 //!
-//! - ⏸ / ⏹ 与 0.6 / 1.0 / 1.8 秒档位来自 [`crate::engines::markers`]；
-//! - 断点评分来自 [`crate::paging::breakpoint_rank`]（说话人 3 > 停顿 2 >
-//!   句末 1 > 0）；
-//! - 页预算的「词」口径来自 [`crate::atomize::word_count`]。
+//! - ⏸ / ⏹ and the 0.6 / 1.0 / 1.8 second tiers come from [`crate::engines::markers`];
+//! - breakpoint scoring comes from [`crate::paging::breakpoint_rank`] (speaker change 3 > pause 2 > sentence end 1 > 0);
+//! - the "word" counting basis for page budgets comes from [`crate::atomize::word_count`].
 //!
-//! 零 I/O、零时钟、零随机：全部为纯函数，同样的输入恒等地产出同样的输出。
+//! Zero I/O, zero clock, zero randomness: all pure functions; the same input always yields the same output.
 //!
-//! # 输入约定
+//! # Input convention
 //!
-//! 本模块接收的 `words` 必须已经是**参与本次 AI 处理的投影**：隐藏（被裁掉）
-//! 的词不得出现在切片里。页内索引一律是该切片的下标，绝对时间戳不进 payload。
+//! The `words` this module receives must already be the **projection that participates in this AI run**: hidden (trimmed-away) words must not appear in the slices. Page-internal indices are always indices into that slice; absolute timestamps do not enter the payload.
 
 use std::ops::Range;
 
@@ -31,38 +28,34 @@ use super::common::{
     normalize_llm_output, sanitize_inline_text,
 };
 
-/// 只读上文栅栏行（整行精确匹配）。
+/// Read-only leading-context fence line (exact whole-line match).
 pub const FENCE_CONTEXT_BEFORE: &str = "<<<CONTEXT-BEFORE 只读，勿修改>>>";
-/// 可编辑核心区起始栅栏行。
+/// Start fence line of the editable core region.
 pub const FENCE_EDIT_BEGIN: &str = "<<<EDIT-BEGIN>>>";
-/// 可编辑核心区结束栅栏行。
+/// End fence line of the editable core region.
 pub const FENCE_EDIT_END: &str = "<<<EDIT-END>>>";
-/// 只读下文栅栏行（同时是整页的终止标记）。
+/// Read-only trailing-context fence line (also the termination marker for the whole page).
 pub const FENCE_CONTEXT_AFTER: &str = "<<<CONTEXT-AFTER 只读，勿修改>>>";
 
-/// 只读区指纹相似度低于此值才判 [`ProblemCode::SourceDrift`] 拒页。
+/// Only a read-only region whose fingerprint similarity falls below this value triggers [`ProblemCode::SourceDrift`] and rejects the page.
 ///
-/// 口径：`atomize::similarity`（归一化字符编辑距离，已剥 ⏸/⏹ 与结构行）。
-/// 表面级顺手修（错词、重复词——实测 p850 素材单区 ~70 词改 3 处）落在
-/// 0.97+；截断、整句跨栅栏泄漏或答非所问会跌到 0.8 以下。阈值取两者之间，
-/// 偏保守。
+/// Basis: `atomize::similarity` (normalized character edit distance, with ⏸/⏹ and structure lines stripped).
+/// Incidental surface fixes (wrong words, repeated words — measured on p850 material: a single ~70-word region with 3 edits) fall at 0.97+;
+/// truncation, whole sentences leaking across the fence, or off-topic answers drop below 0.8. The threshold sits between the two, leaning conservative.
 const READONLY_DRIFT_MIN_SIMILARITY: f64 = 0.85;
-/// 硬切标记行：页缝落在句中时提示模型「此处不是段落边界」。
+/// Hard-cut marker line: when a page seam falls mid-sentence, it tells the model that "this is not a paragraph boundary".
 pub const MARKER_HARD_CUT: &str = "<<<HARD-CUT>>>";
 
-/// 单段落词数上限（Latin，[`word_count`] 口径：Latin 每词计一）。
+/// Word-count cap for a single paragraph (Latin, [`word_count`] basis: each Latin word counts as one).
 ///
-/// 口语段落通常 40–150 词；分段退化（模型一个空行都不插，整页糊成一段）时
-/// 会冲到页预算量级（默认核心区 2200 词）。真实语料上限与退化值之间差一个
-/// 数量级，阈值取 300 只拦退化，不误伤密集独白。
+/// Spoken paragraphs are usually 40–150 words; when segmentation degenerates (the model inserts no blank lines at all, so the whole page becomes one block), it grows to the page-budget scale (default core region 2200 words). The gap between realistic upper bounds and degenerate values is an order of magnitude; the threshold of 300 only catches degeneration and does not penalize dense monologues.
 pub const MAX_PARAGRAPH_WORDS_LATIN: usize = 300;
-/// 单段落词数上限（CJK，[`word_count`] 口径：CJK 逐字计一）。
+/// Word-count cap for a single paragraph (CJK, [`word_count`] basis: each CJK character counts as one).
 ///
-/// 信息密度不同（1 个 Latin 词 ≈ 1.5–2 个 CJK 字），同一词数量纲下 CJK 段落
-/// 天然更长，阈值相应放宽。
+/// Information density differs (1 Latin word ≈ 1.5–2 CJK characters), so on the same word-count scale CJK paragraphs are naturally longer; the threshold is relaxed accordingly.
 pub const MAX_PARAGRAPH_WORDS_CJK: usize = 500;
 
-/// 按段落文本的语言取单段词数上限（任一 CJK 字符即走 CJK 档，宽松方向）。
+/// The per-paragraph word cap is chosen by the paragraph text's language (any CJK character selects the CJK tier, the lenient direction).
 pub fn paragraph_word_limit(text: &str) -> usize {
     if is_cjk_text(text) {
         MAX_PARAGRAPH_WORDS_CJK
@@ -71,26 +64,26 @@ pub fn paragraph_word_limit(text: &str) -> usize {
     }
 }
 
-/// 哨兵前缀：正文行以它开头时需要中和，避免伪造栅栏。
+/// Sentinel prefix: body lines starting with it must be neutralized to avoid forging fences.
 const SENTINEL_PREFIX: &str = "<<<";
-/// 断点搜索窗口下界比例（对齐 [`crate::paging`] 的「最后 20%」约定）。
+/// Lower bound ratio of the breakpoint search window (aligned with the "last 20%" convention of [`crate::paging`]).
 const WINDOW_FLOOR_RATIO: f64 = 0.8;
 
-/// polish 分页预算（§6.2 / §12，全部以词为单位）。
+/// Polish page budget (§6.2 / §12, all in words).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolishBudget {
-    /// 核心区目标词数。
+    /// Target word count of the core region.
     pub core_words: usize,
-    /// 单侧只读上下文的词数上限。
+    /// Maximum word count of one-sided read-only context.
     pub context_words: usize,
-    /// 单侧只读上下文的句数上限。
+    /// Maximum sentence count of one-sided read-only context.
     pub context_sentences: usize,
-    /// 为够到下一个 rank≥1 断点允许的溢出比例。
+    /// Allowed overflow ratio for reaching the next rank≥1 breakpoint.
     pub overflow_ratio: f64,
 }
 
 impl Default for PolishBudget {
-    /// §6.2 默认：核心区 2200 词，上下文 min(200 词, 3 句)，溢出 15%。
+    /// §6.2 defaults: core region 2200 words, context min(200 words, 3 sentences), overflow 15%.
     fn default() -> Self {
         Self {
             core_words: 2200,
@@ -101,92 +94,69 @@ impl Default for PolishBudget {
     }
 }
 
-/// 一页的切分计划。所有区间都是 `words` 切片上的下标区间（左闭右开）。
+/// Split plan for one page. All ranges are half-open index ranges `[start, end)` on the `words` slice.
 ///
-/// 页边界不入盘：本结构由 [`plan_polish_pages`] 从词流确定性重推。
+/// Page boundaries are not written to disk: this structure is deterministically re-derived from the word stream by [`plan_polish_pages`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolishPagePlan {
-    /// 页 id（`p001` 起）。
+    /// Page id (starting from `p001`).
     pub id: String,
-    /// 只读上文区间（首页为空区间）。
+    /// Read-only leading-context range (empty range for the first page).
     pub before: Range<usize>,
-    /// 可编辑核心区间。
+    /// Editable core range.
     pub core: Range<usize>,
-    /// 只读下文区间（末页为空区间）。
+    /// Read-only trailing-context range (empty range for the last page).
     pub after: Range<usize>,
-    /// 本页开头是否由硬切产生（上一页在句中被切开）。
+    /// Whether this page begins with a hard cut (the previous page was split mid-sentence).
     pub hard_cut_start: bool,
-    /// 本页结尾是否为硬切。
+    /// Whether this page ends with a hard cut.
     pub hard_cut_end: bool,
-    /// 已有的人工段钉（`words` 上的绝对下标，表示该词必须另起一段）。
+    /// Existing manual paragraph pins (absolute indices into `words`, meaning that word must start a new paragraph).
     ///
-    /// 等于 `core.start` 的段钉天然成立（该词本就是首段段首），不产生额外分段；
-    /// 落在核心区之外的下标被忽略。
+    /// A pin equal to `core.start` holds naturally (that word already starts the first paragraph), so it produces no extra segmentation; pins outside the core region are ignored.
     pub para_starts: Vec<usize>,
 }
 
-/// 渲染结果：文本 + 渲染期产生的告警（如哨兵中和）。
+/// Render result: the text plus warnings raised during rendering (e.g. sentinel neutralization).
 ///
-/// 载体渲染需要回传 [`WarningCode::SentinelNeutralized`]，所以返回结构体而不是
-/// 裸 `String`。
+/// Carrier rendering needs to return [`WarningCode::SentinelNeutralized`], so it returns a struct rather than a bare `String`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PolishRendered {
-    /// 完整页文本（以换行结尾）。
+    /// Full page text (ending with a newline).
     pub text: String,
-    /// 渲染期告警。
+    /// Warnings raised during rendering.
     pub warnings: Vec<Warning>,
 }
 
-/// 解析结果。
+/// Parse result.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PolishParsed {
-    /// 核心区解析出的段落（已剥标记、折叠 CJK 空格）。
+    /// Paragraphs parsed from the core region (markers stripped, CJK spaces folded).
     pub paragraphs: Vec<String>,
-    /// ⏹ 硬保证：这些 `words` 绝对下标必须是段首。
+    /// ⏹ hard guarantee: these `words` absolute indices must be paragraph starts.
     ///
-    /// 无论模型返回什么，本字段都按原文说话人切换位置无条件给出；
-    /// 只有在「逐字保真」（模型未改动核心区文字）时，解析才会据此把
-    /// [`PolishParsed::paragraphs`] 真正切开并记 [`WarningCode::BoundaryForced`]。
-    /// 非保真情形的落位交由 M2 的 rebind 处理。
+    /// Regardless of what the model returns, this field is given unconditionally from the original speaker-change positions;
+    /// only when the text is verbatim (the model did not alter the core region's text) does parsing actually split [`PolishParsed::paragraphs`] on them and record [`WarningCode::BoundaryForced`].
+    /// Placement in the non-verbatim case is handled by rebind in M2.
     pub forced_boundaries: Vec<usize>,
-    /// 页缝显式信号：模型在 `EDIT-BEGIN` 之后、第一句之前留了空行，表示
-    /// 核心区首段**不延续**只读上文的末段（另起一段）。没留空行只表示
-    /// 「未表态」——引擎交给 seam-repair 波次判定，不能反推为「延续」。
+    /// Explicit page-seam signal: the model left a blank line after `EDIT-BEGIN` and before the first sentence, meaning the core region's first paragraph does **not** continue the last paragraph of the read-only leading context (it starts a new paragraph). No blank line only means "no stance taken" — the engine hands it to the seam-repair wave to decide, and it must not be inferred as "continues".
     pub starts_new_paragraph: bool,
-    /// 协议问题与告警。
+    /// Protocol problems and warnings.
     pub diagnostics: Diagnostics,
 }
 
-/// 按 §6.2 把词流切成 polish 页。
+/// Splits the word stream into polish pages per §6.2.
 ///
-/// 页数先按 `ceil(总核心词 / (core_words + slack))` 确定（见
-/// [`crate::paging::page_count_for_total`]），每页目标取「剩余词数 / 剩余
-/// 页数」——贪心装填会在结尾留碎尾页，均衡后各页词量相当；剩余页数按
-/// `ceil(剩余词数 / (core_words + slack))` 兜底，前页亏空过大时宁可多出
-/// 一页也不让末页超载。
+/// The page count is first fixed as `ceil(total core words / (core_words + slack))` (see [`crate::paging::page_count_for_total`]). Each page's target is "remaining words / remaining pages": greedy filling would leave a short tail page at the end, so balancing keeps the pages' word counts comparable. The remaining page count is backstopped by `ceil(remaining words / (core_words + slack))`, so that when earlier pages fall far short, adding a page is preferred over overloading the last page.
 ///
-/// **分页单位随说话人信息切换**：
+/// **The paging unit switches with speaker information**:
 ///
-/// - **有说话人**（词流里出现过 ≥2 个 `sp`）：单位是**轮次序列**——页 =
-///   连续整轮次的并，页界取 +15% 溢出上限内、词成本最接近页目标的轮次
-///   起点（平局取靠后）。短轮次自然成组；只有单独超预算的长轮次才在内部
-///   切开，此时**句界优先**（句末标点，见 [`sentence_end`]），窗口内没有
-///   句界才回落到下面的通用评分。页缝因此只落在轮次边界或长轮次内的句界，
-///   不会劈开一个人话的中段。最接近页目标的轮次边界仍够不到窗口下界时
-///   （下一个轮次单独就超预算），不为一句"嗯"单开一页：改在长轮次内部按
-///   句界断，这页 = 短轮次 + 长轮次的头；长轮次内什么断点都没有才退回那个
-///   偏短的整轮次页。
-/// - **无说话人**（全篇单一 `sp`）：单位是词流 + 断点评分——核心区累计到
-///   页目标的最后 20% 起，断点按「词位 + rank×(页目标/20)」联合评分
-///   （[`breakpoint_rank`] 每高一档只值约 5% 页目标的提前量，同分取靠后），
-///   但与长轮次内部一样**句界优先**：窗口里只要有句末标点就取评分最高的
-///   句界，没有句界才回落到停顿断点。
+/// - **With speakers** (at least two distinct `sp` appear in the word stream): the unit is a **sequence of turns**. A page is a union of consecutive whole turns; the page boundary is a turn start within the +15% overflow cap whose word cost is closest to the page target (ties go to the later one). Short turns group naturally; only long turns that individually exceed the budget are split internally, and in that case **sentence boundaries take priority** (sentence-final punctuation, see [`sentence_end`]). Only when the window has no sentence boundary does it fall back to the generic scoring below. Page seams therefore fall only on turn boundaries or on sentence boundaries inside long turns, and never split the middle of someone's speech. When the turn boundary closest to the page target still cannot reach the window's lower bound (the next turn alone exceeds the budget), no page is opened for a single "嗯" (um): instead the split is made at a sentence boundary inside the long turn, so this page = the short turns + the head of the long turn. Only if the long turn has no breakpoints at all does it fall back to that shorter whole-turn page.
+/// - **Without speakers** (a single `sp` throughout): the unit is the word stream plus breakpoint scoring. Core words accumulate from 20% before the page target, and breakpoints are scored jointly as "word position + rank×(page target/20)" ([`breakpoint_rank`] is worth only about 5% of the page target in advance per rank step; ties go to the later one). But as inside long turns, **sentence boundaries take priority**: if the window contains any sentence-final punctuation, the highest-scoring sentence boundary is taken; only without one does it fall back to pause breakpoints.
 ///
-/// 两条路径都在窗口里找不到断点时于 +15% 溢出区里先取**第一个**句界，再取
-/// 第一个 rank≥1 的断点，仍找不到才硬切并置 `hard_cut_*`。上下文取相邻页核心区里的完整句，最多
-/// `context_sentences` 句或 `context_words` 词，且至少 1 句。
+/// When neither path finds a breakpoint in the window, it first takes the **first** sentence boundary in the +15% overflow zone, then the first breakpoint with rank ≥1; only if that also fails does it hard-cut and set `hard_cut_*`. Context is taken from complete sentences in the adjacent pages' core regions, at most `context_sentences` sentences or `context_words` words, and at least 1 sentence.
 ///
-/// 传入的 `words` 必须是已排除隐藏词的投影（见模块文档）。
+/// The `words` passed in must be a projection with hidden words already excluded (see module docs).
 pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPagePlan> {
     if words.is_empty() {
         return Vec::new();
@@ -196,13 +166,13 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
     let total = words.len();
     let total_cost: usize = counts.iter().sum();
     let target_pages = crate::paging::page_count_for_total(total_cost, core_budget);
-    // 轮次序列（无说话人信息时只有一个轮次，走原词流路径）。
+    // Turn sequence (without speaker information there is only one turn, which takes the original word-stream path).
     let turn_starts: Vec<usize> = speaker_turns(words).into_iter().map(|t| t.start).collect();
     let turn_aware = turn_starts.len() > 1;
     let prefix_cost = crate::paging::cost_prefix(&counts);
 
     let mut cores: Vec<Range<usize>> = Vec::new();
-    // 每页尾部是否硬切。
+    // Whether each page's tail is a hard cut.
     let mut hard_cuts: Vec<bool> = Vec::new();
     let mut start = 0usize;
     let mut remaining_cost = total_cost;
@@ -224,7 +194,7 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
             break;
         }
         let rank_bonus = (page_budget / 20).max(1) as i64;
-        // 有说话人时先按整轮次找页界；命中即整页由完整轮次组成。
+        // With speakers, find page boundaries by whole turns first; on a hit the whole page is made of complete turns.
         let turn_cut = turn_aware
             .then(|| {
                 crate::paging::turn_boundary_cut(
@@ -236,19 +206,16 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
                 )
             })
             .flatten();
-        // 最接近页目标的轮次边界仍够不到窗口下界 ⇒ 下一个轮次单独就超预算
-        //（长独白）。此时不为一句"嗯"单开一页，改为在长轮次内部按句界断，
-        // 让这页= 短轮次 + 长轮次的头。
+        // The turn boundary closest to the page target still cannot reach the window's lower bound ⇒ the next turn alone exceeds the budget (a long monologue).
+        // Rather than opening a page for a single "嗯" (um), split at a sentence boundary inside the long turn,
+        // so that this page = the short turns + the head of the long turn.
         let mut cut = turn_cut
             .filter(|boundary| prefix_cost[*boundary].saturating_sub(prefix_cost[start]) >= floor);
         if cut.is_none() {
-            // 长轮次内部（或无说话人的词流）：窗口内联合评分。
+            // Inside a long turn (or a word stream without speakers): joint scoring within the window.
             let mut cut_score = 0i64;
-            // 句界优先（两条路径一致）：窗口里只要有句末标点就取评分最高的
-            // 句界；没有句界才回落到通用评分（停顿）。否则一个 0.6s 的犹豫
-            // 停顿就能压过窗口里所有句末——单人长讲实测 47 个页缝里 30 个
-            // 落在句中（「我们大 ‖ 脑的皮层」），页缝两侧各剩半句、又被当成
-            // 段落边界。句界优先后只剩完全无标点的区段才会在句中切页。
+            // Sentence boundaries take priority (both paths consistent): if the window contains any sentence-final punctuation, take the highest-scoring sentence boundary;
+            // only if there is none does it fall back to generic scoring (pauses). Otherwise a 0.6s hesitation pause could outscore every sentence end in the window — in a measured single-speaker long talk, 30 of 47 page seams fell mid-sentence (“我们大 ‖ 脑的皮层”), leaving half a sentence on each side of the seam, which then got treated as paragraph boundaries. With sentence-boundary priority, cuts mid-sentence happen only in stretches with no punctuation at all.
             let mut clause_cut: Option<(usize, i64)> = None;
             let mut used = 0usize;
             for index in start..budget_end {
@@ -258,8 +225,8 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
                 }
                 if used >= floor {
                     let rank = breakpoint_rank(&words[index], &words[index + 1]);
-                    // 评分 = 词位 + rank 加成（与 paginate_word_ranges 同法）；
-                    // 高档断点最多换取每档约 5% 页目标的提前量，平局取靠后者。
+                    // Score = word position + rank bonus (same method as paginate_word_ranges);
+                    // a higher-rank breakpoint trades for at most about 5% of the page target in advance per rank step; ties go to the later one.
                     if rank > 0 {
                         let score = used as i64 + i64::from(rank) * rank_bonus;
                         if cut.is_none() || score >= cut_score {
@@ -278,8 +245,7 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
                 cut = Some(sentence_cut);
             }
             if cut.is_none() {
-                // 溢出区同样句界优先（轮次感知下这段一定还在同一轮次内：
-                // 轮次边界已被 turn_boundary_cut 吃掉）。
+                // The overflow zone also gives sentence boundaries priority (under turn awareness this stretch is certainly still within one turn: turn boundaries were already consumed by turn_boundary_cut).
                 for index in budget_end..overflow_end {
                     if index + 1 >= total {
                         break;
@@ -291,8 +257,7 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
                 }
             }
             if cut.is_none() {
-                // 窗口 + 溢出区连一个句末标点都没有：退回通用断点（停顿），
-                // 仍找不到才硬切。
+                // If the window plus overflow zone has not a single sentence-final punctuation mark: fall back to generic breakpoints (pauses); only if none is found, hard-cut.
                 for index in budget_end..overflow_end {
                     if index + 1 >= total {
                         break;
@@ -303,13 +268,13 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
                     }
                 }
             }
-            // 长轮次内什么断点都没有：宁可要一页偏短的完整轮次，也不硬切。
+            // Inside a long turn with no breakpoints at all: prefer a shorter-than-ideal whole-turn page over a hard cut.
             if cut.is_none() {
                 cut = turn_cut;
             }
         }
         let hard = cut.is_none();
-        // 不变式：每页至少吃掉一个词，否则会死循环。
+        // Invariant: every page consumes at least one word, otherwise this loops forever.
         let cut = cut.unwrap_or(budget_end).clamp(start + 1, total);
         cores.push(start..cut);
         hard_cuts.push(hard);
@@ -342,7 +307,7 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
     plans
 }
 
-/// 计算从 `start` 起分别吃满核心预算 / 溢出预算的结束下标（左闭右开）。
+/// Computes the end indices (half-open) that fully consume the core budget and the overflow budget, respectively, starting from `start`.
 fn span_ends(
     counts: &[usize],
     start: usize,
@@ -367,7 +332,7 @@ fn span_ends(
     (budget_end, overflow_end.max(budget_end))
 }
 
-/// 向前收集完整句作为只读上文，下界夹到上一页核心区起点。
+/// Collects complete sentences backward as read-only leading context, with the lower bound clamped to the start of the previous page's core region.
 fn context_before(
     words: &[Word],
     counts: &[usize],
@@ -396,7 +361,7 @@ fn context_before(
     best..core_start
 }
 
-/// 向后收集完整句作为只读下文，上界夹到下一页核心区终点。
+/// Collects complete sentences forward as read-only trailing context, with the upper bound clamped to the end of the next page's core region.
 fn context_after(
     words: &[Word],
     counts: &[usize],
@@ -425,9 +390,9 @@ fn context_after(
     core_end..best
 }
 
-/// 渲染一页 polish txt（§6.2 栅栏布局）。
+/// Renders one polish txt page (§6.2 fence layout).
 ///
-/// 布局：
+/// Layout:
 ///
 /// ```text
 /// <<<CONTEXT-BEFORE 只读，勿修改>>>
@@ -439,15 +404,13 @@ fn context_after(
 /// <<<CONTEXT-AFTER 只读，勿修改>>>
 /// ```
 ///
-/// `<<<HARD-CUT>>>` 落在编辑栅栏**之外**（`EDIT-BEGIN` 前 / `EDIT-END` 后），
-/// 保证核心区是纯正文。正文行若以 `<<<` 开头，行首补一个空格中和，并记
-/// [`WarningCode::SentinelNeutralized`]。
+/// `<<<HARD-CUT>>>` falls **outside** the editing fences (before `EDIT-BEGIN` / after `EDIT-END`), guaranteeing the core region is pure body text. If a body line starts with `<<<`, a space is prepended to the line to neutralize it and [`WarningCode::SentinelNeutralized`] is recorded.
 pub fn render_polish_page(words: &[Word], plan: &PolishPagePlan) -> PolishRendered {
     let mut warnings = Vec::new();
     let before = clamp_range(&plan.before, words.len());
     let core = clamp_range(&plan.core, words.len());
     let after = clamp_range(&plan.after, words.len());
-    // 标签从**整份投影**派生，因此同一说话人在所有页里的标签一致。
+    // Labels are derived from the **whole projection**, so the same speaker has the same label on every page.
     let labels = SpeakerLabels::from_words(words);
     let labels = (!labels.is_empty()).then_some(labels);
     let mut lines: Vec<String> = Vec::new();
@@ -486,34 +449,27 @@ pub fn render_polish_page(words: &[Word], plan: &PolishPagePlan) -> PolishRender
     PolishRendered { text, warnings }
 }
 
-/// 只靠「payload 字符串 + answer 字符串」就能算出的全部检查（§6.4 第 1 档）。
+/// All checks that can be computed from the "payload string + answer string" alone (§6.4 tier 1).
 ///
-/// **为什么校验要按这条线切成两半**：agent 侧 `task submit` 的镜像 lint 只拿得到
-/// 磁盘上那两份文本，**没有 `words`**（词流不进 agent 任务目录，任务目录里只有
-/// 渲染出来的 txt）。所以判据必须按「是否需要真相」分工：
+/// **Why validation is split along this line**: the agent-side mirror lint of `task submit` only has access to the two texts on disk, **without `words`** (the word stream does not go into the agent task directory; the task directory holds only the rendered txt). So the checks are divided by whether they need ground truth:
 ///
-/// - 本函数（字符串就够）：输出体积护栏、哨兵栅栏完整性/顺序/重复、栅栏之外的
-///   杂物、只读区漂移（拿 `input` **自己的**只读区与 `output` 的比，不需要词流）、
-///   空行语义与 ≥3 连续换行折叠、代码块残留、核心区为空；
-/// - 引擎侧 validate（必须有 `words`）：整页 atom-LCS 比值、逐句相似度门、
-///   单句源跨度上限（字符 / 秒）。
+/// - This function (strings are enough): the output size guard, sentinel fence integrity/order/duplication, stray material outside the fences, read-only region drift (compares the input's **own** read-only regions against the output, no word stream needed), blank-line semantics and folding of three or more consecutive newlines, leftover code blocks, and an empty core region;
+/// - Engine-side validation (needs `words`): whole-page atom-LCS ratio, per-sentence similarity gate, per-sentence source span cap (characters / seconds).
 ///
-/// [`parse_polish_page`] **内部调用**本函数，`engines::polish::lint_agent_answer_file`
-/// 也直接调用它——协议校验只有这一份实现。
+/// [`parse_polish_page`] **calls this function internally**, and `engines::polish::lint_agent_answer_file` also calls it directly, so there is only one implementation of the protocol validation.
 ///
-/// 作用域一律是 [`ProblemScope::Document`]（本函数不知道页 id）；
-/// [`parse_polish_page`] 会把它们改写成页作用域。
+/// The scope is always [`ProblemScope::Document`] (this function does not know the page id); [`parse_polish_page`] rewrites them to page scope.
 pub fn lint_polish_page(input: &str, output: &str) -> Diagnostics {
     lint_page(input, output).diagnostics
 }
 
-/// [`lint_polish_page`] 的内部形态：诊断 + 已切好的核心区段落。
+/// The internal form of [`lint_polish_page`]: diagnostics plus the core region's already-split paragraphs.
 struct PolishLint {
     diagnostics: Diagnostics,
     paragraphs: Vec<String>,
-    /// 核心区以空行开头（页缝显式「另起一段」信号）。
+    /// The core region starts with a blank line (the explicit "start a new paragraph" signal at the page seam).
     starts_new_paragraph: bool,
-    /// 四条栅栏是否定位成功（失败时 `paragraphs` 必为空）。
+    /// Whether the four fences were located successfully (on failure `paragraphs` is necessarily empty).
     fenced: bool,
 }
 
@@ -545,7 +501,7 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
         diagnostics.push_problem(Problem::document(problem.code, problem.detail));
     }
 
-    // 载荷侧的栅栏总是我们自己渲染出来的，逐字精确定位即可。
+    // The payload-side fences are always ones we rendered ourselves, so exact per-character location is enough.
     let input_lines: Vec<&str> = input.lines().collect();
     let input_anchors = locate_fences(&input_lines);
     let expected_before = input_anchors
@@ -587,14 +543,9 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
         });
     }
 
-    // 只读区漂移一律降级为 advisory（重试策略重设计 §2.2）。
+    // Read-only region drift is always downgraded to advisory (retry strategy redesign §2.2).
     //
-    // 解析只取核心区，输出里的只读区从不写回真相；核心区另有词流真相门
-    // （映射覆盖、相似度、跨度）独立把关。旧实现在相似度跌破
-    // [`READONLY_DRIFT_MIN_SIMILARITY`] 时整页拒收——实测这条规则拒掉的全部是
-    // 「模型顺手修掉只读区里的 ASR 错词」与「只读区被截断」，两者都不影响本页
-    // 正文，却在温度 0 下确定性复现，三次重试全灭后整页 fallback。现在只记
-    // Warning，阈值只用来区分措辞。
+    // Parsing takes only the core region; the read-only region in the output is never written back to truth, and the core region is separately guarded by the word-stream truth gates (mapping coverage, similarity, span). The old implementation rejected the whole page when similarity fell below [`READONLY_DRIFT_MIN_SIMILARITY`]. Measurement showed that this rule rejected only two cases, both of which left this page's body unaffected: the model incidentally fixed ASR wrong words in the read-only region, and the read-only region was truncated. Both reproduced deterministically at temperature 0, so after three retries all failed, the whole page fell back. Now only a Warning is recorded; the threshold is used only to distinguish wording.
     if let Some([_, _, in_end, in_after]) = input_anchors {
         let zones = [
             (
@@ -674,14 +625,9 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
             "核心区为空",
         ));
     }
-    // 表面级瑕疵**不拒页**（重试策略重设计 §2.2）：冲突标点已在
-    // [`flush_block`] 里代码归一；粘连 Latin 串与悬垂假句末只记
-    // [`WarningCode::SurfaceArtifact`]，引擎映射成句之后把它们送进 `polish-retry`
-    // 的句级补做队列。旧实现把这三条挂在 `document-oversize` 名下，一句的表面
-    // 瑕疵就拒掉整页并重掷全部句子（实测占 polish 重试的相当一部分）。
+    // Surface-level blemishes do **not** reject the page (retry strategy redesign §2.2): conflicting punctuation is already normalized in code in [`flush_block`]; glued Latin strings and dangling false sentence endings only record [`WarningCode::SurfaceArtifact`], and once the engine maps them into sentences it sends them to the sentence-level follow-up queue of `polish-retry`. The old implementation filed these three under `document-oversize`, so one sentence's surface blemish rejected the whole page and re-rolled all sentences (measured: a considerable share of polish retries).
     for (index, paragraph) in paragraphs.iter().enumerate() {
-        // 中文 ASR 的英文 code-switching 偶尔会整串粘进一个 atom。空格不参与
-        // atom-LCS 保真签名，因此模型可以、也应该恢复它。
+        // Chinese ASR's English code-switching occasionally gets glued into a single atom in full. Spaces do not take part in the atom-LCS fidelity signature, so the model can, and should, restore them.
         if crate::atomize::is_cjk_text(paragraph)
             && crate::seam::contains_likely_collapsed_latin_atom(paragraph, 20)
         {
@@ -703,9 +649,7 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
             ));
         }
     }
-    // 单段词数超限（分段退化）**不在这里拦**：润色正文本身有效，整页重试
-    // 只会重掷全部句子。主页首轮即接受，退化段落由 `segment-repair` 载体
-    // （见 [`parse_segment_repair_page`]）在波次后定向补分段。
+    // Over-limit paragraph word counts (degenerate segmentation) are **not** blocked here: the polish body itself is valid, and a whole-page retry would only re-roll all sentences. The main page is accepted on the first round, and degenerate paragraphs are given targeted re-segmentation after the wave by the `segment-repair` carrier (see [`parse_segment_repair_page`]).
 
     PolishLint {
         diagnostics,
@@ -715,15 +659,13 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
     }
 }
 
-/// 解析模型返回的 polish txt（§6.3 / §6.4）。
+/// Parses the polish txt returned by the model (§6.3 / §6.4).
 ///
-/// 顺序：[`lint_polish_page`] 的全部字符串级检查 → ⏹ 硬保证。
+/// Order: all string-level checks of [`lint_polish_page`], then the ⏹ hard guarantee.
 ///
-/// 换行语义：单换行是软换行（折成空格，无边界含义），空行是段落边界，
-/// 连续 ≥2 个空行折叠成一个并记 [`WarningCode::BlankLinesCollapsed`]。
+/// Newline semantics: a single newline is a soft newline (folded to a space, no boundary meaning); a blank line is a paragraph boundary; two or more consecutive blank lines are folded into one and record [`WarningCode::BlankLinesCollapsed`].
 ///
-/// `words` 与 `plan` 必须与渲染时完全一致（同一投影、同一计划）：逐字保真判定
-/// 直接由词流推出。`input` 是当初实际发给模型的那份渲染文本。
+/// `words` and `plan` must be exactly the same as at render time (same projection, same plan): the verbatim judgment is derived directly from the word stream. `input` is the rendered text that was actually sent to the model.
 pub fn parse_polish_page(
     words: &[Word],
     plan: &PolishPagePlan,
@@ -757,7 +699,7 @@ pub fn parse_polish_page(
     }
     let mut paragraphs = lint.paragraphs;
 
-    // ⏹ 硬保证：仅在逐字保真时就地落位（非保真交给 M2 rebind）。
+    // ⏹ hard guarantee: placed in situ only when verbatim (the non-verbatim case is handed to M2 rebind).
     let source_signature = words_signature(&words[core.clone()]);
     let actual_signature = normalize_chars(&paragraphs.join(" "));
     if !source_signature.is_empty() && source_signature == actual_signature {
@@ -785,12 +727,11 @@ pub fn parse_polish_page(
     }
 }
 
-/// ⏹ 硬保证的边界表：核心区内说话人切换处的绝对词下标。
+/// The boundary table of the ⏹ hard guarantee: absolute word indices of speaker changes within the core region.
 ///
-/// 页缝本身就是说话人切换时，该边界归**后一页**所有（段落 id 取段首词），
-/// 因此 `core.start` 也会入表；硬切页缝是残句续写，不入表。
+/// When the page seam is itself a speaker change, that boundary belongs to the **later page** (the paragraph id takes the first word), so `core.start` is also included; a hard-cut page seam continues a split sentence and is not included.
 ///
-/// 公开给引擎侧：整页兜底路径没有 [`PolishParsed`] 可取，但仍要落 ⏹ 硬保证。
+/// Exposed to the engine: the whole-page fallback path has no [`PolishParsed`] to take, but must still enforce the ⏹ hard guarantee.
 pub fn forced_boundaries(words: &[Word], plan: &PolishPagePlan) -> Vec<usize> {
     let core = clamp_range(&plan.core, words.len());
     let mut boundaries = Vec::new();
@@ -808,7 +749,7 @@ pub fn forced_boundaries(words: &[Word], plan: &PolishPagePlan) -> Vec<usize> {
     boundaries
 }
 
-/// 按归一化字符偏移把段落切开，记 [`WarningCode::BoundaryForced`]。
+/// Splits paragraphs at normalized character offsets, recording [`WarningCode::BoundaryForced`].
 fn apply_forced_boundaries(
     paragraphs: Vec<String>,
     targets: &[usize],
@@ -851,7 +792,7 @@ fn apply_forced_boundaries(
     result
 }
 
-/// 在 `text` 中找到「已消费 `target` 个归一化字符」之后第一个实义字符的字节下标。
+/// Finds the byte index of the first substantive character after `target` normalized characters have been consumed in `text`.
 fn split_index(text: &str, target: usize) -> Option<usize> {
     let mut consumed = 0usize;
     for (index, ch) in text.char_indices() {
@@ -865,28 +806,27 @@ fn split_index(text: &str, target: usize) -> Option<usize> {
     None
 }
 
-/// 归一化后的字符数（[`normalize_chars`] 会丢弃空白与标点）。
+/// Number of normalized characters ([`normalize_chars`] drops whitespace and punctuation).
 fn normalized_len(text: &str) -> usize {
     normalize_chars(text).chars().count()
 }
 
-/// 核心区分段过程中的观察结果。
+/// Observations gathered while splitting the core region into paragraphs.
 #[derive(Debug, Default)]
 struct CoreNotes {
     blank_runs: bool,
     marker_residue: bool,
     structural_ignored: bool,
     code_fence: bool,
-    /// 第一行正文之前有空行（页缝显式「另起一段」信号）。
+    /// There is a blank line before the first line of body text (the explicit page-seam "start a new paragraph" signal).
     leading_blank: bool,
-    /// 有段落的冲突相邻标点被代码归一（R2 代码先修）。
+    /// Adjacent conflicting punctuation in some paragraphs was normalized in code (R2: code fixes first).
     punctuation_normalized: bool,
 }
 
-/// 把核心区行序列切成段落：空行分段，单换行折成空格。
+/// Splits core-region lines into paragraphs: blank lines start a new paragraph, single newlines fold to spaces.
 ///
-/// 正文之前的空行不产生段落，只记 [`CoreNotes::leading_blank`]；单个前导
-/// 空行不算「连续空行」（它是契约允许的信号，不该记 `BlankLinesCollapsed`）。
+/// Blank lines before the body produce no paragraph and only set [`CoreNotes::leading_blank`]; a single leading blank line does not count as "consecutive blank lines" (it is a signal the contract allows, so it should not record `BlankLinesCollapsed`).
 fn parse_core_blocks(lines: &[&str]) -> (Vec<String>, CoreNotes) {
     let mut notes = CoreNotes::default();
     let mut blocks: Vec<String> = Vec::new();
@@ -909,9 +849,7 @@ fn parse_core_blocks(lines: &[&str]) -> (Vec<String>, CoreNotes) {
         }
         blank_run = 0;
         seen_content = true;
-        // 结构行一律不进正文：硬切标记，以及**任何**哨兵栅栏行。栅栏恢复
-        // （[`recover_fences`]）可能把一条错位/缩进的栅栏留在核心区里，正文
-        // 行本身则在渲染期被行首空格中和过，因此这里的判据不会误伤真内容。
+        // Structure lines never enter the body: hard-cut markers, and **any** sentinel fence line. Fence recovery ([`recover_fences`]) may leave a misplaced or indented fence inside the core region, while body lines were already neutralized by a prepended space at render time, so this test does not falsely hit real content.
         if trimmed == MARKER_HARD_CUT || is_fence_line(line) {
             notes.structural_ignored = true;
             continue;
@@ -929,10 +867,9 @@ fn parse_core_blocks(lines: &[&str]) -> (Vec<String>, CoreNotes) {
     (blocks, notes)
 }
 
-/// 收束一个段落：软换行折空格 → 剥标记 → 折叠 CJK 空格 → 冲突标点归一。
+/// Finalizes a paragraph: soft newlines folded to spaces, markers stripped, CJK spaces folded, conflicting punctuation normalized.
 ///
-/// 冲突相邻标点（`。，` / `，。` / `，，` / `..`）是能用代码确定性消解的表面
-/// 瑕疵，不再回灌给模型重掷整页（R2 代码先修）。
+/// Conflicting adjacent punctuation (`。，` / `，。` / `，，` / `..`) is a surface blemish that code can resolve deterministically, so it is no longer fed back to the model to re-roll the whole page (R2: code fixes first).
 fn flush_block(current: &mut Vec<&str>, blocks: &mut Vec<String>, normalized: &mut bool) {
     if current.is_empty() {
         return;
@@ -953,9 +890,9 @@ fn flush_block(current: &mut Vec<&str>, blocks: &mut Vec<String>, normalized: &m
     }
 }
 
-/// 定位四条栅栏：每条必须恰好出现一次且顺序正确。
+/// Locates the four fences: each must appear exactly once, in the correct order.
 ///
-/// 整行精确匹配，允许行尾空白（`trim_end`），不允许行首空白。
+/// Whole-line exact match; trailing whitespace is allowed (`trim_end`), leading whitespace is not.
 fn locate_fences(lines: &[&str]) -> Option<[usize; 4]> {
     let mut anchors = [0usize; 4];
     for (slot, fence) in [
@@ -985,22 +922,22 @@ fn locate_fences(lines: &[&str]) -> Option<[usize; 4]> {
     }
 }
 
-/// 栅栏恢复后的三段行区间（左闭右开，都是 `lines` 上的下标）。
+/// The three line ranges after fence recovery (half-open, all indices into `lines`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FenceRegions {
-    /// 只读上文区。
+    /// Read-only leading-context region.
     before: Range<usize>,
-    /// 可编辑核心区。
+    /// Editable core region.
     core: Range<usize>,
-    /// 只读下文区。
+    /// Read-only trailing-context region.
     after: Range<usize>,
-    /// 栅栏结构的首行（含）：之前的行必须全空白。
+    /// Start line (inclusive) of the fence structure: all lines before it must be whitespace.
     head: usize,
-    /// 栅栏结构的末行之后（不含）：之后的行必须全空白。
+    /// Line after the end of the fence structure (exclusive): all lines after it must be whitespace.
     tail: usize,
 }
 
-/// 某条栅栏在 `lines` 里 `from` 之后的第一次出现。
+/// The first occurrence of a fence in `lines` after `from`.
 fn fence_at(lines: &[&str], fence: &str, from: usize) -> Option<usize> {
     lines
         .iter()
@@ -1010,25 +947,18 @@ fn fence_at(lines: &[&str], fence: &str, from: usize) -> Option<usize> {
         .map(|(index, _)| index)
 }
 
-/// 哨兵栅栏恢复（重试策略重设计 §2.2）。
+/// Sentinel fence recovery (retry strategy redesign §2.2).
 ///
-/// 实测 7 次「document-truncated 哨兵栅栏缺失」里 5 次只是漏写了
-/// `<<<EDIT-END>>>` 而 `<<<CONTEXT-AFTER …>>>` 还在，1 次漏 CONTEXT-AFTER，
-/// 1 次漏 EDIT-BEGIN——核心区本身**都是完整的**。整页重试三轮只是在重掷同一份
-/// 答案，因此改为先按相邻栅栏推断边界：
+/// Measured: among 7 cases of "document-truncated, sentinel fence missing", 5 only lacked `<<<EDIT-END>>>` while `<<<CONTEXT-AFTER …>>>` was still there, 1 lacked CONTEXT-AFTER, and 1 lacked EDIT-BEGIN; in all of them the core region itself was **complete**. Three rounds of whole-page retry only re-rolled the same answer, so boundaries are now first inferred from adjacent fences:
 ///
-/// - EDIT-END 缺、CONTEXT-AFTER 在 → 以 CONTEXT-AFTER 为核心区终点，只读下文区
-///   视为空；两者都缺 → 核心区一直到文末；
-/// - EDIT-BEGIN 缺、CONTEXT-BEFORE 在 → 从 CONTEXT-BEFORE 之后起扫，剥掉与载荷
-///   只读上文区归一化相似度 ≥ [`READONLY_DRIFT_MIN_SIMILARITY`] 的前缀；剥不掉
-///   才 page-fatal；
-/// - CONTEXT-BEFORE 缺、EDIT-BEGIN 在 → 只读上文区取 EDIT-BEGIN 之前的全部行；
-/// - 两条 EDIT 栅栏都缺且无从推断 → `None`（page-fatal `document-truncated`）；
-/// - 栅栏重复 → 取第一组合法顺序的实例（逐条按前一条之后首见）。
+/// - EDIT-END missing, CONTEXT-AFTER present → CONTEXT-AFTER is taken as the end of the core region and the read-only trailing region is treated as empty; if both are missing → the core region runs to the end of the file;
+/// - EDIT-BEGIN missing, CONTEXT-BEFORE present → scan from after CONTEXT-BEFORE, stripping the prefix whose normalized similarity to the payload's read-only leading region is ≥ [`READONLY_DRIFT_MIN_SIMILARITY`]; if it cannot be stripped, it is page-fatal;
+/// - CONTEXT-BEFORE missing, EDIT-BEGIN present → the read-only leading region takes all lines before EDIT-BEGIN;
+/// - both EDIT fences missing and nothing can be inferred → `None` (page-fatal `document-truncated`);
+/// - duplicated fences → take the instance in the first legal order (for each fence, the first occurrence after the previous one).
 ///
-/// `expected_before` 是载荷只读上文区的指纹（[`region_signature`] 口径），只在
-/// 剥前缀那一支使用；`None` 表示拿不到载荷结构，此时不做前缀剥离。
-/// 返回值第二项是恢复动作说明，调用方记 [`WarningCode::FenceRecovered`]。
+/// `expected_before` is the fingerprint of the payload's read-only leading region ([`region_signature`] basis); it is used only in the prefix-stripping branch. `None` means the payload structure is unavailable, in which case no prefix is stripped.
+/// The second return value describes the recovery action; the caller records [`WarningCode::FenceRecovered`].
 fn recover_fences(
     lines: &[&str],
     expected_before: Option<&str>,
@@ -1059,7 +989,7 @@ fn recover_fences(
         end_at.or(begin_at).or(before_at).map_or(0, |at| at + 1),
     );
 
-    // 核心区起点。
+    // Start of the core region.
     let (core_start, before) = match begin_at {
         Some(at) => (at + 1, before_at.map_or(0, |b| b + 1)..at),
         None => {
@@ -1077,7 +1007,7 @@ fn recover_fences(
             (start, before_at + 1..start)
         }
     };
-    // 核心区终点与只读下文区。
+    // End of the core region and the read-only trailing region.
     let (core_end, after, tail) = match (end_at, after_at) {
         (Some(end), Some(after)) if after > end => (end, end + 1..after, after + 1),
         (Some(end), _) => {
@@ -1095,7 +1025,7 @@ fn recover_fences(
         }
         (None, _) => {
             if begin_at.is_none() {
-                // 两条 EDIT 栅栏都缺，且上面那支也没能剥出起点。
+                // Both EDIT fences are missing, and the branch above also failed to strip out a start.
                 return None;
             }
             notes.push(format!(
@@ -1107,8 +1037,7 @@ fn recover_fences(
     if core_start > core_end {
         return None;
     }
-    // 恢复路径下核心区两端可能夹着一条缩进/错位的栅栏行：收紧边界，别让它
-    // 变成一段正文。
+    // On the recovery path, the core region's two ends may hold an indented or misplaced fence line: tighten the boundaries so it does not become a body paragraph.
     let mut core_start = core_start;
     let mut core_end = core_end;
     while core_start < core_end && is_loose_fence_line(lines[core_start]) {
@@ -1134,9 +1063,7 @@ fn recover_fences(
     ))
 }
 
-/// 缺 `EDIT-BEGIN` 时的前缀剥离：在 `[from, limit)` 里找第一个 `k`，使
-/// `lines[from..k]` 的指纹与载荷只读上文区相似度 ≥
-/// [`READONLY_DRIFT_MIN_SIMILARITY`]。找不到即无法推断核心区起点。
+/// Prefix stripping when `EDIT-BEGIN` is missing: within `[from, limit)`, finds the first `k` such that the fingerprint of `lines[from..k]` has similarity ≥ [`READONLY_DRIFT_MIN_SIMILARITY`] with the payload's read-only leading region. If none is found, the core region's start cannot be inferred.
 fn strip_readonly_prefix(
     lines: &[&str],
     from: usize,
@@ -1145,7 +1072,7 @@ fn strip_readonly_prefix(
 ) -> Option<usize> {
     let expected = expected_before?;
     if expected.is_empty() {
-        // 首页没有只读上文区：CONTEXT-BEFORE 之后立刻就是核心区。
+        // The first page has no read-only leading region: right after CONTEXT-BEFORE comes the core region directly.
         return Some(from);
     }
     let mut best: Option<(usize, f64)> = None;
@@ -1158,7 +1085,7 @@ fn strip_readonly_prefix(
     best.map(|(k, _)| k)
 }
 
-/// 只读区指纹：剔除结构行 → 剥标记 → 归一化字符。
+/// Fingerprint of a read-only region: strip structure lines, strip markers, then normalized characters.
 fn region_signature(lines: &[&str]) -> String {
     let joined = lines
         .iter()
@@ -1169,13 +1096,12 @@ fn region_signature(lines: &[&str]) -> String {
     normalize_chars(&markers::strip_markers(&joined))
 }
 
-/// 词流侧的同口径指纹（用于只读区漂移与逐字保真判定）。
+/// The same-basis fingerprint on the word-stream side (used for read-only drift and the verbatim judgment).
 fn words_signature(words: &[Word]) -> String {
     normalize_chars(&markers::strip_markers(&markers::marked_text(words)))
 }
 
-/// 是否为四条哨兵栅栏之一（与 [`locate_fences`] 同口径：允许行尾空白，
-/// **不允许行首空白**——渲染期正是靠行首补一个空格中和正文里的假栅栏）。
+/// Whether a line is one of the four sentinel fences (same basis as [`locate_fences`]: trailing whitespace allowed, **leading whitespace not allowed**, because at render time a leading space is exactly how a fake fence inside body text is neutralized).
 fn is_fence_line(line: &str) -> bool {
     matches!(
         line.trim_end(),
@@ -1183,8 +1109,7 @@ fn is_fence_line(line: &str) -> bool {
     )
 }
 
-/// 宽松栅栏判据：两端都 trim。只用于[`recover_fences`]收紧核心区边界——
-/// 恢复路径下一条缩进/错位的栅栏行不该被当成正文。
+/// Lenient fence test: both ends trimmed. Used only by [`recover_fences`] to tighten the core region's boundaries, since on the recovery path an indented or misplaced fence line should not be treated as body text.
 fn is_loose_fence_line(line: &str) -> bool {
     matches!(
         line.trim(),
@@ -1192,7 +1117,7 @@ fn is_loose_fence_line(line: &str) -> bool {
     )
 }
 
-/// 是否为结构行（硬切标记 / 哨兵栅栏 / 代码块围栏），不参与漂移比对。
+/// Whether a line is a structure line (hard-cut marker, sentinel fence, or code block fence), excluded from the drift comparison.
 fn is_structural_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed == MARKER_HARD_CUT
@@ -1201,10 +1126,9 @@ fn is_structural_line(line: &str) -> bool {
         || trimmed.starts_with("~~~")
 }
 
-/// 把一段区间渲染成若干正文块（说话人切换与人工段钉处分段）。
+/// Renders a range into body blocks, splitting at speaker changes and manual paragraph pins.
 ///
-/// 段落聚合天然不跨轮次：每个说话人切换都在这里切成独立的正文块，页面上
-/// 表现为一个空行段落边界，[`forced_boundaries`] 再无条件为它兜底。
+/// Paragraph aggregation never crosses turns: each speaker change is split here into an independent body block, which appears on the page as a single blank-line paragraph boundary; [`forced_boundaries`] then guarantees it unconditionally.
 fn render_region(
     words: &[Word],
     range: &Range<usize>,
@@ -1230,7 +1154,7 @@ fn render_region(
     blocks
 }
 
-/// 区间内的分段点：说话人切换 + 人工段钉。
+/// Split points within a range: speaker changes plus manual paragraph pins.
 fn segments(words: &[Word], range: &Range<usize>, para_starts: &[usize]) -> Vec<Range<usize>> {
     let mut output = Vec::new();
     if range.start >= range.end {
@@ -1248,7 +1172,7 @@ fn segments(words: &[Word], range: &Range<usize>, para_starts: &[usize]) -> Vec<
     output
 }
 
-/// 追加正文块：块间留一个空行，哨兵前缀中和。
+/// Appends a body block: one blank line between blocks, sentinel prefix neutralized.
 fn push_blocks(
     lines: &mut Vec<String>,
     blocks: Vec<String>,
@@ -1274,14 +1198,14 @@ fn push_blocks(
     }
 }
 
-/// 把区间夹到词流长度内（防御外部传入的陈旧计划）。
+/// Clamps the range to the word stream length (defensive against a stale plan passed in from outside).
 fn clamp_range(range: &Range<usize>, len: usize) -> Range<usize> {
     let start = range.start.min(len);
     let end = range.end.clamp(start, len);
     start..end
 }
 
-/// 把 [`lint_polish_page`] 的文档级作用域改写成页作用域；其余作用域原样保留。
+/// Rewrites the document-level scope of [`lint_polish_page`] to page scope; other scopes are kept as they are.
 fn rescope(scope: ProblemScope, plan: &PolishPagePlan) -> ProblemScope {
     match scope {
         ProblemScope::Document => ProblemScope::Page {
@@ -1292,27 +1216,24 @@ fn rescope(scope: ProblemScope, plan: &PolishPagePlan) -> ProblemScope {
 }
 
 // ---------------------------------------------------------------------------
-// segment-repair 载体（kind = "segment-repair"）
+// segment-repair carrier (kind = "segment-repair")
 // ---------------------------------------------------------------------------
 //
-// 定向补分段 / 页缝判定的**索引契约**载体（kind = "segment-repair" /
-// "seam-repair"）：主 polish 页首轮即接受正文，波次后把仍超
-// [`paragraph_word_limit`] 的段落（或页缝两侧的窗口）凑到一起、按词数预算
-// 二次分页。载荷仍是纯文本：每块一对栅栏，栅栏内**一句一行且带行号**
-// （`12| 句子`）；块头栅栏写明句数、词数与最少段数。答案**不再复述正文**，
-// 每块只回若干 `a-b` 行号区间（一行一个段落），必须从 1 开始、首尾相接、
-// 覆盖到最后一行。这样验收是纯算术：区间不连续/不覆盖 ⇒ `range-invalid`；
-// 单区间盖住整块且整块超限 ⇒ `paragraph-oversize`。改写正文这一类幻觉在
-// 索引契约里没有落脚点（模型顺手改一个字的旧载体 source-drift 占补分段
-// 失败的四分之一，而答案文本本就只用来定位边界，从不回写）。答案里若仍
-// 复述了带行号的句行（`12| …`），按空行分组也能被接受——只认行号。
+// The **index-contract** carriers for targeted re-segmentation and page-seam judgment (kind = "segment-repair" /
+// "seam-repair"): the main polish page accepts body text on the first round; after the wave, paragraphs still over
+// [`paragraph_word_limit`] (or windows on either side of a page seam) are gathered together and re-paged by word budget.
+// The payload is still plain text: each block sits between a pair of fences, and inside the fences there is **one sentence per line, with a line number**
+// (`12| sentence`); the block-header fence states the sentence count, word count and minimum paragraph count. The answer **no longer restates the body**;
+// each block returns only a few `a-b` line-number ranges (one paragraph per line), which must start from 1, be contiguous end to end, and cover through the last line.
+// This makes validation pure arithmetic: non-contiguous or non-covering ranges ⇒ `range-invalid`; a single range covering the whole block when the block exceeds the limit ⇒ `paragraph-oversize`.
+// The class of hallucinated body rewriting has no foothold in the index contract. In the old source-drift carrier, a model that changed even one character accounted for a quarter of segmentation-repair failures, whereas the answer text only serves to locate boundaries and is never written back. If the answer still restates a numbered sentence line (`12| …`), it is accepted too, as long as paragraphs are grouped by blank lines — only the line numbers are trusted.
 
-/// 索引契约块头栅栏前缀：`<<<BLOCK 1 | 63 sentences | 1832 characters | at least 4 paragraphs>>>`。
+/// Index-contract block-header fence prefix: `<<<BLOCK 1 | 63 sentences | 1832 characters | at least 4 paragraphs>>>`.
 pub const FENCE_BLOCK_PREFIX: &str = "<<<BLOCK";
-/// 索引契约块尾栅栏行。
+/// Index-contract block-closing fence line.
 pub const FENCE_BLOCK_END: &str = "<<<BLOCK-END>>>";
 
-/// 一块的最少段数：`ceil(词数 / 单段上限)`，至少 1。
+/// Minimum paragraph count for a block: `ceil(word count / single-paragraph cap)`, at least 1.
 pub fn block_min_paragraphs(lines: &[String]) -> usize {
     let text = lines.join(" ");
     let count = word_count(&text);
@@ -1320,11 +1241,9 @@ pub fn block_min_paragraphs(lines: &[String]) -> usize {
     count.div_ceil(limit).max(1)
 }
 
-/// 渲染一块索引契约载荷：块头 `<<<BLOCK k | n sentences | c words|characters[ | extra]>>>`，
-/// 栅栏内每句一行、行首 `N| `（1 起），块尾 `<<<BLOCK-END>>>`。
+/// Renders one index-contract payload block: the block header `<<<BLOCK k | n sentences | c words|characters[ | extra]>>>`, then inside the fences one sentence per line prefixed `N| ` (starting at 1), closed by `<<<BLOCK-END>>>`.
 ///
-/// 行内换行折成空格（软换行语义）。行号前缀天然中和了 `<<<` 哨兵，无需
-/// 再补空格。
+/// Newlines within a line are folded into spaces (soft-newline semantics). The line-number prefix already neutralizes the `<<<` sentinel, so no extra leading space is needed.
 fn render_index_block(index: usize, lines: &[String], extra: &str) -> String {
     let text = lines.join(" ");
     let count = word_count(&text);
@@ -1353,8 +1272,7 @@ fn render_index_block(index: usize, lines: &[String], extra: &str) -> String {
     out.join("\n")
 }
 
-/// 渲染 segment-repair 载荷：每个超限段落一块，块头额外写明最少段数
-/// （`at least N paragraphs`，见 [`block_min_paragraphs`]）；块之间空一行。
+/// Renders the segment-repair payload: one block per over-limit paragraph. The block header additionally states the minimum paragraph count (`at least N paragraphs`, see [`block_min_paragraphs`]); blocks are separated by one blank line.
 pub fn render_segment_repair_page(paragraphs: &[Vec<String>]) -> String {
     let mut blocks = Vec::with_capacity(paragraphs.len());
     for (index, lines) in paragraphs.iter().enumerate() {
@@ -1370,9 +1288,7 @@ pub fn render_segment_repair_page(paragraphs: &[Vec<String>]) -> String {
     text
 }
 
-/// 渲染 seam-repair 载荷：每个页缝窗口一块，块头额外写明页缝位置
-/// （`page seam before line N`，多个页缝逗号分隔；`seams` 是块内 0 起的句行
-/// 偏移，即页 k+1 首句所在行）；不写最少段数——整块同段是合法答案。
+/// Renders the seam-repair payload: one block per page-seam window. The block header additionally states the page-seam positions (`page seam before line N`, multiple seams comma-separated; `seams` are the 0-based sentence-line offsets within the block, i.e. the line where page k+1's first sentence sits). No minimum paragraph count is stated, since a whole block in one paragraph is a legal answer.
 pub fn render_seam_repair_page(blocks: &[(Vec<String>, Vec<usize>)]) -> String {
     let mut rendered = Vec::with_capacity(blocks.len());
     for (index, (lines, seams)) in blocks.iter().enumerate() {
@@ -1392,20 +1308,16 @@ pub fn render_seam_repair_page(blocks: &[(Vec<String>, Vec<usize>)]) -> String {
     text
 }
 
-/// [`parse_segment_repair_page`] 的结果：诊断 + 逐块分组方案。
+/// The result of [`parse_segment_repair_page`]: diagnostics plus the per-block grouping plan.
 #[derive(Debug)]
 pub struct SegmentRepairParsed {
-    /// 字符串级诊断。problems 逐块定位（`ProblemScope::Paragraph`，index 为
-    /// 载荷内块序），只挡住对应块；文档级 problem（体积护栏）挡住整份答案。
+    /// String-level diagnostics. Problems are located per block (`ProblemScope::Paragraph`, index is the block's order within the payload) and block only the corresponding block; document-level problems (the size guard) block the whole answer.
     pub diagnostics: Diagnostics,
-    /// 与 payload 块一一对应：`Some(groups)` = 该块验收通过，按答案区间切出
-    /// 的组，每组元素是该块句行的下标（0 起，连续递增，合起来恰好覆盖全块）；
-    /// `None` = 该块被拒（区间非法/缺块/整块一段且超限）。
+    /// One-to-one with the payload blocks: `Some(groups)` = the block passed validation, and the groups are cut according to the answer's ranges, each element being a 0-based, consecutively increasing sentence-line index of the block, which together exactly cover the whole block; `None` = the block was rejected (illegal ranges, missing block, or a single paragraph covering the whole block while over the limit).
     pub paragraphs: Vec<Option<Vec<Vec<usize>>>>,
 }
 
-/// 块头栅栏：返回块序号（1 起）。接受 `<<<BLOCK 3 | …>>>`、`<<<BLOCK 3>>>`、
-/// `BLOCK 3`（模型丢了尖括号）；`<<<BLOCK-END>>>` 不算块头。
+/// Block-header fence: returns the block number (1-based). Accepts `<<<BLOCK 3 | …>>>`, `<<<BLOCK 3>>>`, and `BLOCK 3` (angle brackets dropped by the model); `<<<BLOCK-END>>>` does not count as a block header.
 fn block_header_index(line: &str) -> Option<usize> {
     let trimmed = line.trim();
     let body = trimmed.strip_prefix("<<<").unwrap_or(trimmed).trim_start();
@@ -1423,7 +1335,7 @@ fn block_header_index(line: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
-/// 是否块尾栅栏（容忍丢尖括号）。
+/// Whether it is a block-closing fence (tolerates dropped angle brackets).
 fn is_block_end(line: &str) -> bool {
     let trimmed = line.trim();
     let body = trimmed.strip_prefix("<<<").unwrap_or(trimmed);
@@ -1431,7 +1343,7 @@ fn is_block_end(line: &str) -> bool {
     body.trim().eq_ignore_ascii_case("BLOCK-END")
 }
 
-/// 带行号的句行 `12| 句子` → `(12, "句子")`。
+/// Numbered sentence line `12| 句子` → `(12, "句子")`.
 fn numbered_line(line: &str) -> Option<(usize, &str)> {
     let trimmed = line.trim();
     let digits_end = trimmed
@@ -1447,7 +1359,7 @@ fn numbered_line(line: &str) -> Option<(usize, &str)> {
     Some((trimmed[..digits_end].parse().ok()?, rest.trim()))
 }
 
-/// payload 侧：按块头/块尾栅栏切出各块的句行（去掉行号、trim 后、非空）。
+/// Payload side: splits out each block's sentence lines between its block-header and closing fences (line numbers removed, trimmed, non-empty).
 fn segment_repair_payload_paragraphs(payload: &str) -> Vec<Vec<&str>> {
     let mut paragraphs: Vec<Vec<&str>> = Vec::new();
     let mut current: Option<Vec<&str>> = None;
@@ -1473,9 +1385,7 @@ fn segment_repair_payload_paragraphs(payload: &str) -> Vec<Vec<&str>> {
     paragraphs
 }
 
-/// 一行答案里的区间：`1-14`、`15 – 30`、`31~40`、单个 `41`；一行可写多个
-/// （逗号/分号/空格分隔）。出现任何数字、分隔符、连字符之外的字符 ⇒ 整行
-/// 不是区间行（返回 None），由调用方忽略。
+/// A range within an answer line: `1-14`, `15 – 30`, `31~40`, or a single `41`; one line may hold several (separated by commas, semicolons or spaces). If the line contains any character other than digits, separators or hyphens, the whole line is not a range line (returns None) and the caller ignores it.
 fn parse_range_line(line: &str) -> Option<Vec<(usize, usize)>> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Tok {
@@ -1522,10 +1432,9 @@ fn parse_range_line(line: &str) -> Option<Vec<(usize, usize)>> {
     Some(ranges)
 }
 
-/// 答案里某一块正文的两种可接受形态：区间行，或复述的带行号句行（按空行
-/// 分组，只认行号）。返回 (区间列表, 是否解析到任何内容)。
+/// The two acceptable forms of one block's body in the answer: range lines, or restated numbered sentence lines (grouped by blank lines, only the line numbers trusted). Returns (list of ranges, whether anything was parsed).
 fn parse_block_answer(lines: &[&str]) -> Vec<(usize, usize)> {
-    // 形态二：带行号句行。
+    // Form two: numbered sentence lines.
     let numbered: Vec<Option<usize>> = lines
         .iter()
         .map(|line| numbered_line(line).map(|(n, _)| n))
@@ -1556,7 +1465,7 @@ fn parse_block_answer(lines: &[&str]) -> Vec<(usize, usize)> {
         }
         return ranges;
     }
-    // 形态一：区间行。
+    // Form one: range lines.
     let mut ranges = Vec::new();
     for line in lines {
         if let Some(mut found) = parse_range_line(line) {
@@ -1566,7 +1475,7 @@ fn parse_block_answer(lines: &[&str]) -> Vec<(usize, usize)> {
     ranges
 }
 
-/// 区间序列是否从 1 开始、首尾相接、覆盖到 `total`。返回首个缺陷说明。
+/// Whether the range sequence starts from 1, is contiguous end to end, and covers through `total`. Returns a description of the first defect.
 fn validate_ranges(ranges: &[(usize, usize)], total: usize) -> Result<(), String> {
     if ranges.is_empty() {
         return Err("没有解析到任何 `a-b` 行号区间".to_owned());
@@ -1601,24 +1510,15 @@ fn validate_ranges(ranges: &[(usize, usize)], total: usize) -> Result<(), String
     Ok(())
 }
 
-/// 解析并逐块校验索引契约答案（字符串级，agent 镜像 lint 复用同一实现）。
+/// Parses and validates the index-contract answer block by block (string level; the agent mirror lint reuses the same implementation).
 ///
-/// 判据全部只靠 payload/answer 两份文本。答案按 `<<<BLOCK k>>>` /
-/// `<<<BLOCK-END>>>` 切成各块（块头丢了尖括号也认；载荷只有一块而答案没写
-/// 块头时整份答案就是第 1 块）；每块正文解析成 `a-b` 区间序列（也接受复述的
-/// 带行号句行按空行分组）：
+/// All checks rely only on the payload and answer texts. The answer is split into blocks by `<<<BLOCK k>>>` / `<<<BLOCK-END>>>` (block headers without angle brackets are accepted too; if the payload has only one block and the answer has no block header, the whole answer is block 1). Each block's body is parsed into a sequence of `a-b` ranges (restated numbered sentence lines grouped by blank lines are also accepted):
 ///
-/// - 缺块 / 没有区间 / 区间不从 1 开始、不首尾相接、不覆盖到末行 / 越界 ⇒
-///   该块 [`ProblemCode::RangeInvalid`]（detail 定位首个缺陷），
-///   `paragraphs[i] = None`；
-/// - 区间合法但只有一个且整块超 [`paragraph_word_limit`] ⇒ 该块
-///   [`ProblemCode::ParagraphOversize`]（detail 即定向重试指令，含最少段数），
-///   `paragraphs[i] = None`；页缝块由引擎把它当"整块同段"接受；
-/// - 区间合法且 ≥2 个（或整块本就不超限）⇒ 该块通过，`paragraphs[i] =
-///   Some(groups)`。切出的组若仍超限，**不在这里判罪**——引擎按溢出幅度决定
-///   确定性补切还是下一轮再问（见 `engines::polish::segment_repair_wave`）。
+/// - missing block, no ranges, ranges not starting at 1, not contiguous end to end, not covering through the last line, or out of bounds ⇒ that block gets [`ProblemCode::RangeInvalid`] (detail locates the first defect), and `paragraphs[i] = None`;
+/// - legal ranges but only one, and the whole block exceeds [`paragraph_word_limit`] ⇒ that block gets [`ProblemCode::ParagraphOversize`] (the detail is the targeted retry instruction, including the minimum paragraph count), and `paragraphs[i] = None`; the engine accepts seam blocks as "whole block in one paragraph";
+/// - legal ranges with two or more of them (or the whole block was not over the limit to begin with) ⇒ the block passes, `paragraphs[i] = Some(groups)`. If the cut groups still exceed the limit, **this does not judge it guilty here**: the engine decides by overflow magnitude whether to cut further deterministically or ask again in the next round (see `engines::polish::segment_repair_wave`).
 ///
-/// 体积护栏（[`guard_output_size`]）是唯一的文档级 problem，命中即全块拒收。
+/// The size guard ([`guard_output_size`]) is the only document-level problem; when it hits, all blocks are rejected.
 pub fn parse_segment_repair_page(payload: &str, answer: &str) -> SegmentRepairParsed {
     let mut diagnostics = Diagnostics::new();
     let source = segment_repair_payload_paragraphs(payload);
@@ -1638,7 +1538,7 @@ pub fn parse_segment_repair_page(payload: &str, answer: &str) -> SegmentRepairPa
         };
     }
 
-    // 答案侧：按块头切段；块头之前的行归入"无块头"桶。
+    // Answer side: split by block headers; lines before any block header go into a "no block header" bucket.
     let mut sections: std::collections::BTreeMap<usize, Vec<&str>> =
         std::collections::BTreeMap::new();
     let mut unlabeled: Vec<&str> = Vec::new();
@@ -1725,37 +1625,34 @@ pub fn parse_segment_repair_page(payload: &str, answer: &str) -> SegmentRepairPa
 }
 
 // ---------------------------------------------------------------------------
-// punct-repair 载体（kind = "punct-repair"）
+// punct-repair carrier (kind = "punct-repair")
 // ---------------------------------------------------------------------------
 //
-// 定向补标点：主 polish 页首轮即接受正文，波次后把**所有页**里仍超过单句
-// 跨度上限的映射句（模型没在语义完结处加句末标点，一句吞掉上千源字符）凑到
-// 一起、二次分页，只要求「加句末标点」。载体仍是纯文本：payload 里每个超长
-// 句夹在一对**带 id 的**栅栏之间（`<<<SENTENCE-BEGIN id=s01 min-sentences=4>>>`
-// / `<<<SENTENCE-END id=s01>>>`），句与句之间互相隔离；答案按 id 定位，逐句
-// 验收：词序列（[`crate::atomize::atom_key`] 口径，纯标点 atom 不计）必须与
-// 载荷完全恒等，且至少新增一个句内句末标点。一句被改写不连累同载荷的其他句。
+// Targeted punctuation repair: after the main polish page accepts body text on the first round, all mapped sentences **across all pages** that still exceed the single-sentence span cap
+// (the model did not add sentence-final punctuation at semantic completion points, so one sentence swallows thousands of source characters) are gathered together and re-paged once,
+// asking only for "add sentence-final punctuation". The carrier is still plain text: in the payload, each over-long sentence sits between a pair of **id-tagged** fences
+// (`<<<SENTENCE-BEGIN id=s01 min-sentences=4>>>` / `<<<SENTENCE-END id=s01>>>`), and sentences are isolated from each other. The answer is located by id, and each sentence is validated individually:
+// the word sequence (per the [`crate::atomize::atom_key`] basis, pure-punctuation atoms not counted) must be exactly identical to the payload, and at least one new in-sentence sentence-final punctuation mark must be added. One rewritten sentence does not implicate the other sentences in the same payload.
 
-/// punct-repair 载荷里每句起始栅栏的前缀（整行形如
-/// `<<<SENTENCE-BEGIN id=s01 min-sentences=4>>>`）。
+/// The prefix of the start fence for each sentence in the punct-repair payload (a whole line looks like `<<<SENTENCE-BEGIN id=s01 min-sentences=4>>>`).
 pub const FENCE_SENTENCE_BEGIN_PREFIX: &str = "<<<SENTENCE-BEGIN";
-/// punct-repair 载荷里每句结束栅栏的前缀（整行形如 `<<<SENTENCE-END id=s01>>>`）。
+/// The prefix of the end fence for each sentence in the punct-repair payload (a whole line looks like `<<<SENTENCE-END id=s01>>>`).
 pub const FENCE_SENTENCE_END_PREFIX: &str = "<<<SENTENCE-END";
 
-/// punct-repair 载荷里的一句。
+/// One sentence in the punct-repair payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PunctRepairItem {
-    /// 载荷内 id（`s01` 起），答案按它定位。
+    /// In-payload id (starting from `s01`); answers are located by it.
     pub id: String,
-    /// 句子文本（最终口径文本，可含引擎按源停顿投影插入的 ⏸ 提示）。
+    /// Sentence text (final-basis text, which may include ⏸ hints inserted by the engine's projection of source pauses).
     pub text: String,
-    /// 该句至少应切成几句（提示值，只进栅栏属性；验收只要求 ≥ 2）。
+    /// How many sentences this one should be split into at minimum (a hint value that only goes into the fence attribute; validation only requires ≥ 2).
     pub min_sentences: usize,
 }
 
-/// 渲染 punct-repair 载荷：每句一对带 id 的栅栏行，句块之间空一行。
+/// Renders the punct-repair payload: one pair of id-tagged fence lines per sentence, with blank lines between sentence blocks.
 ///
-/// 句内换行折成空格（软换行语义），以 `<<<` 开头的句行行首补空格中和。
+/// Newlines within a sentence are folded into spaces (soft-newline semantics); a sentence line starting with `<<<` gets a leading space to neutralize it.
 pub fn render_punct_repair_page(items: &[PunctRepairItem]) -> String {
     let mut blocks = Vec::with_capacity(items.len());
     for item in items {
@@ -1775,20 +1672,17 @@ pub fn render_punct_repair_page(items: &[PunctRepairItem]) -> String {
     text
 }
 
-/// [`parse_punct_repair_page`] 的结果：诊断 + 逐句验收文本。
+/// The result of [`parse_punct_repair_page`]: diagnostics plus per-sentence validated text.
 #[derive(Debug)]
 pub struct PunctRepairParsed {
-    /// 字符串级诊断。problems 逐句定位（`ProblemScope::Sentence { id }`），只
-    /// 挡住对应句；文档级 problem（体积护栏）挡住整份答案。
+    /// String-level diagnostics. Problems are located per sentence (`ProblemScope::Sentence { id }`) and block only the corresponding sentence; document-level problems (the size guard) block the whole answer.
     pub diagnostics: Diagnostics,
-    /// 与 payload 句一一对应：`Some(text)` = 该句验收通过，值是剥掉标记、
-    /// 折叠软换行后的答案文本（引擎再按句末标点切开并回映射）；`None` = 该句
-    /// 被拒（缺失 / 词被改写 / 一个句末标点都没加 / 标点冲突或假句末）。
+    /// One-to-one with the payload sentences: `Some(text)` = the sentence passed validation, and the value is the answer text with markers stripped and soft newlines folded (the engine then splits it at sentence-final punctuation and maps it back); `None` = the sentence was rejected (missing, words rewritten, no sentence-final punctuation added, or conflicting or false sentence endings).
     pub sentences: Vec<Option<String>>,
 }
 
-/// 从栅栏行里取 `id=` 属性；栅栏行形如 `<<<SENTENCE-BEGIN id=s01 …>>>`。
-/// 属性容错：`id=s01` / `id="s01"` / 只写裸 `s01` 都认。
+/// Gets the `id=` attribute from a fence line; a fence line looks like `<<<SENTENCE-BEGIN id=s01 …>>>`.
+/// Attribute tolerance: `id=s01`, `id="s01"`, and a bare `s01` are all accepted.
 fn fence_id(line: &str, prefix: &str) -> Option<String> {
     let trimmed = line.trim();
     let rest = trimmed.strip_prefix(prefix)?;
@@ -1799,7 +1693,7 @@ fn fence_id(line: &str, prefix: &str) -> Option<String> {
             return Some(value.trim_matches(|ch| ch == '"' || ch == '\'').to_owned());
         }
     }
-    // 没有 `id=`：把第一个不含 `=` 的 token 当 id（`<<<SENTENCE-END s01>>>`）。
+    // No `id=`: take the first token without `=` as the id (`<<<SENTENCE-END s01>>>`).
     let bare = rest
         .split_whitespace()
         .find(|token| !token.contains('='))
@@ -1807,8 +1701,7 @@ fn fence_id(line: &str, prefix: &str) -> Option<String> {
     bare.or_else(|| Some(String::new()))
 }
 
-/// 按栅栏切出 `(id, 句文本)`；答案侧与载荷侧同一解析器。栅栏外的正文
-/// 一律忽略（答案里的寒暄/说明不构成拒收理由——正文验收足够严）。
+/// Splits out `(id, sentence text)` by fence; the answer side and the payload side use the same parser. Body text outside the fences is ignored entirely: chit-chat or explanation in the answer is not grounds for rejection, since body validation is strict enough.
 fn punct_repair_blocks(text: &str) -> Vec<(String, String)> {
     let mut blocks: Vec<(String, String)> = Vec::new();
     let mut current: Option<(String, Vec<String>)> = None;
@@ -1841,9 +1734,7 @@ fn punct_repair_blocks(text: &str) -> Vec<(String, String)> {
     blocks
 }
 
-/// 词序列签名：剥标记后 atom 化，纯标点 atom 丢弃，其余按 [`atom_key`]
-/// 归一化。标点增删替换都不改变签名；改词、增删词、拆合 Latin 词都会改变。
-/// 韩文按音节计键：补空格、改空格不改变签名。
+/// Word-sequence signature: after stripping markers, atomize, drop pure-punctuation atoms, and normalize the rest by [`atom_key`]. Adding, removing or replacing punctuation does not change the signature; changing words, adding or removing words, or splitting or merging Latin words does. Korean is keyed by syllable, so adding or changing spaces does not change the signature.
 fn lexical_keys(text: &str) -> Vec<String> {
     crate::atomize::atomize_syllables(&markers::strip_markers(text))
         .iter()
@@ -1851,7 +1742,7 @@ fn lexical_keys(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 句内句末标点个数（末尾 atom 的句末不计：那只是整句自身的收尾）。
+/// Number of in-sentence sentence-final punctuation marks (a sentence-final mark on the last atom is not counted, since that is just the sentence's own ending).
 fn internal_sentence_ends(text: &str) -> usize {
     let atoms = crate::atomize::atomize_syllables(text);
     let last = atoms.len().saturating_sub(1);
@@ -1862,23 +1753,17 @@ fn internal_sentence_ends(text: &str) -> usize {
         .count()
 }
 
-/// 解析并逐句校验 punct-repair 答案（字符串级，agent 镜像 lint 复用同一实现）。
+/// Parses and validates the punct-repair answer sentence by sentence (string level; the agent mirror lint reuses the same implementation).
 ///
-/// 判据全部只靠 payload/answer 两份文本，agent 侧就是完整校验；引擎侧只多做
-/// 「按句末标点切开 + LCS 回映射 + 子句是否仍超限」——那不拒句，只决定是否
-/// 进下一轮。逐句：
+/// All checks rely only on the payload and answer texts. The agent side runs the full validation; the engine side adds only "split at sentence-final punctuation, LCS mapping back, and whether sub-clauses still exceed the limit", which does not reject sentences and only decides whether to go to the next round. Per sentence:
 ///
-/// - 答案里找不到该 id 的栅栏块（或块为空）→ [`ProblemCode::MissingId`]；
-/// - 词序列签名与载荷不同 → [`ProblemCode::SourceDrift`]（detail 定位首个被
-///   改写/增删的词）；
-/// - 词恒等但一个句内句末标点都没加 → [`ProblemCode::SentenceOversize`]
-///   （detail 即定向重试指令）；
-/// - 出现互相冲突的相邻标点（`。，`/`，。`）→ 代码归一（R2），只记
-///   [`WarningCode::PunctuationNormalized`]，不拒句；
-/// - 悬垂假句末（`当。`）→ [`ProblemCode::SurfaceArtifact`]（与主 polish 的
-///   表面级判据同口径）。
+/// - no fence block with that id in the answer (or the block is empty) ⇒ [`ProblemCode::MissingId`];
+/// - word signature differs from the payload ⇒ [`ProblemCode::SourceDrift`] (detail locates the first rewritten, added or removed word);
+/// - words identical but no in-sentence sentence-final punctuation added at all ⇒ [`ProblemCode::SentenceOversize`] (detail is the targeted retry instruction);
+/// - conflicting adjacent punctuation (`。，`/`，。`) appears ⇒ normalized in code (R2), recording only [`WarningCode::PunctuationNormalized`] and not rejecting the sentence;
+/// - dangling false sentence end (`当。`) ⇒ [`ProblemCode::SurfaceArtifact`] (same basis as the main polish surface checks).
 ///
-/// 体积护栏（[`guard_output_size`]）是唯一的文档级 problem，命中即全句拒收。
+/// The size guard ([`guard_output_size`]) is the only document-level problem; when it hits, all sentences are rejected.
 pub fn parse_punct_repair_page(payload: &str, answer: &str) -> PunctRepairParsed {
     let mut diagnostics = Diagnostics::new();
     let source = punct_repair_blocks(payload);
@@ -1904,7 +1789,7 @@ pub fn parse_punct_repair_page(payload: &str, answer: &str) -> PunctRepairParsed
     let mut sentences: Vec<Option<String>> = Vec::with_capacity(source.len());
     for (position, (id, expected)) in source.iter().enumerate() {
         let scope = ProblemScope::Sentence { id: id.clone() };
-        // 先按 id 找；答案丢了 id 但块数一致时按位置容错。
+        // Look up by id first; if the answer lost its ids but the block count matches, tolerate by position.
         let slot = got
             .iter()
             .position(|(got_id, _, taken)| !taken && got_id == id)
@@ -1926,8 +1811,7 @@ pub fn parse_punct_repair_page(payload: &str, answer: &str) -> PunctRepairParsed
             continue;
         };
         got[slot].2 = true;
-        // R2 代码先修：冲突相邻标点先归一，再验收。旧实现把它挂在
-        // `document-oversize` 名下逐句拒收，模型下一轮往往只是重掷同一个答案。
+        // R2 code fixes first: normalize conflicting adjacent punctuation before validation. The old implementation filed this under `document-oversize` and rejected sentences one by one, so the next round the model often just re-rolled the same answer.
         let sanitized = markers::sanitize_corrected(&got[slot].1);
         let text = crate::seam::normalize_conflicting_punctuation(&sanitized);
         if text != sanitized {
@@ -1992,7 +1876,7 @@ pub fn parse_punct_repair_page(payload: &str, answer: &str) -> PunctRepairParsed
     }
 }
 
-/// 词序列签名不一致时的定位说明：报出首个不一致的词位置与两侧词形。
+/// Locating note for a word-signature mismatch: reports the position of the first mismatched word and the word forms on both sides.
 fn punct_repair_drift_detail(id: &str, expected: &[String], got: &[String]) -> String {
     let first = expected
         .iter()
@@ -2039,7 +1923,7 @@ mod tests {
         }
     }
 
-    /// 无停顿、同说话人的连续词流。
+    /// A continuous word stream without pauses, from the same speaker.
     fn stream(texts: &[&str]) -> Vec<Word> {
         texts
             .iter()
@@ -2063,13 +1947,13 @@ mod tests {
         }
     }
 
-    /// 测试用解析入口：`input` 恒取本页的渲染文本（体积护栏基准）。
+    /// Test-only parse entry point: `input` is always this page's rendered text (the size-guard baseline).
     fn parse(words: &[Word], plan: &PolishPagePlan, output: &str) -> PolishParsed {
         let input = render_polish_page(words, plan).text;
         parse_polish_page(words, plan, &input, output)
     }
 
-    /// 与解析口径一致的期望段落。
+    /// Expected paragraphs under the same parsing basis.
     fn expected_paragraphs(words: &[Word], plan: &PolishPagePlan) -> Vec<String> {
         segments(words, &plan.core, &plan.para_starts)
             .into_iter()
@@ -2110,8 +1994,7 @@ mod tests {
         assert!(rendered.warnings.is_empty());
     }
 
-    /// 分段与标记摆放的逐字锚点：不经 `segments()` 反算期望值，
-    /// 以免渲染与期望共享同一处实现而互相掩盖回归。
+    /// Character-exact anchors for paragraphing and marker placement: expected values are not derived back through `segments()`, so that rendering and expectations do not share one implementation and mask regressions.
     #[test]
     fn segments_and_markers_render_verbatim() {
         let words = vec![
@@ -2140,7 +2023,7 @@ mod tests {
         assert_eq!(parsed.paragraphs, vec!["hello there.", "yes indeed."]);
         assert_eq!(parsed.forced_boundaries, vec![2]);
 
-        // 等于 core.start 的段钉天然成立，不改变任何输出。
+        // A pin equal to core.start holds naturally and changes no output.
         let mut pinned = plan.clone();
         pinned.para_starts = vec![0];
         assert_eq!(render_polish_page(&words, &pinned).text, rendered.text);
@@ -2177,8 +2060,7 @@ mod tests {
         let texts: Vec<&str> = std::iter::repeat_n("word", 900).collect();
         let words = stream(&texts);
         let mut plan = single_page(&words);
-        // 段钉切成 3×300 词：分段质量门落地后，恰在单段上限内的合法分段
-        // 才是可回环的答案；本测试关心的是超长单句行的渲染/解析恒等。
+        // Pins split into 3×300 words: once the paragraph quality gate landed, only legal segmentations exactly within the per-paragraph cap are answers that round-trip. This test is concerned with the render/parse identity of over-long single-sentence lines.
         plan.para_starts = vec![300, 600];
         assert_round_trip(&words, &plan);
     }
@@ -2225,18 +2107,17 @@ mod tests {
         assert_eq!(plans[1].core, 3..6);
         assert!(!plans[0].hard_cut_end);
         assert!(!plans[1].hard_cut_start);
-        // 页缝即说话人切换 → 边界归后一页。
+        // A page seam that is a speaker change → the boundary belongs to the later page.
         assert!(forced_boundaries(&words, &plans[1]).contains(&3));
         assert!(!forced_boundaries(&words, &plans[0]).contains(&3));
     }
 
     #[test]
     fn plan_stronger_rank_cannot_veto_a_much_later_breakpoint() {
-        // 窗口早段有停顿(rank2)、尾段有句末(rank1)：联合评分下 rank 每档只
-        // 值 5% 页目标的提前量，应选 48 词处的句末而不是 42 词处的停顿。
+        // Window: an early pause (rank 2) and a late sentence end (rank 1). Under joint scoring each rank step is worth only 5% of the page target in advance, so it should choose the sentence end at word 48, not the pause at word 42.
         let mut words = stream(&vec!["aaaa"; 100]);
-        words[42].t0 = 21.6; // 41→42 之间 0.7s 停顿（rank2）
-        words[47].text = "aaaa.".to_owned(); // 47→48 句末（rank1）
+        words[42].t0 = 21.6; // 0.7s pause (rank 2) between words 41 and 42
+        words[47].text = "aaaa.".to_owned(); // Sentence end (rank 1) between words 47 and 48
         let budget = PolishBudget {
             core_words: 90,
             context_words: 3,
@@ -2306,11 +2187,10 @@ mod tests {
         assert_round_trip(&words, &plans[1]);
     }
 
-    /// 回归锁：全篇单一 `sp`（无说话人信息）时的分页基线。
+    /// Regression lock: the pagination baseline for a single `sp` throughout (no speaker information).
     ///
-    /// 2026-08 起无说话人路径与长轮次内部一样**句界优先**：窗口里有句末标点
-    /// 就不在停顿处切页（此前基线 `(0,55)…` 里 55/165 两处页缝落在句中的
-    /// 停顿上）。每个页缝都必须落在句末，且期望值不得再刷新。
+    /// From 2026-08 on, the no-speaker path is also **sentence-boundary-first**, like the interior of long turns: when the window contains a sentence-final mark,
+    /// pages are not cut at a pause. (The earlier baseline `(0,55)…` had page seams at 55 and 165 falling on mid-sentence pauses.) Every page seam must fall at a sentence end, and the expected values must not be refreshed again.
     #[test]
     fn plan_pages_without_speakers_match_the_pre_turn_baseline() {
         let mut rng = Lcg(0xB40C_0757_0004_0001);
@@ -2361,11 +2241,10 @@ mod tests {
         }
     }
 
-    /// 无说话人路径的句界优先：窗口里靠后的停顿（rank 2）不再压过靠前的
-    /// 句末（rank 1）；窗口与溢出区都没有句末时才回落到停顿。
+    /// Sentence-boundary priority on the no-speaker path: a later pause (rank 2) in the window no longer outscores an earlier sentence end (rank 1); fall back to pauses only when neither the window nor the overflow zone has a sentence end.
     #[test]
     fn plan_without_speakers_prefers_sentence_end_over_a_later_pause() {
-        // 60 词预算 → 窗口 [48, 60)。第 50 词句末、第 57 词后 0.9s 停顿（句中）。
+        // 60-word budget → window [48, 60). Sentence end after word 50, a 0.9s pause after word 57 (mid-sentence).
         let mut words: Vec<Word> = Vec::new();
         let mut clock = 0.0_f64;
         for index in 0..120 {
@@ -2388,7 +2267,7 @@ mod tests {
         let plans = plan_polish_pages(&words, &budget);
         assert_eq!(plans[0].core.end, 50, "应在句末切页，而不是靠后的句中停顿");
         assert!(!plans[0].hard_cut_end);
-        // 把句末挪出窗口与溢出区：只剩停顿可用，回落到停顿断点。
+        // Move the sentence end out of the window and overflow zone: only pauses are left, so it falls back to a pause breakpoint.
         for w in words.iter_mut() {
             if w.text == "aaaa." {
                 w.text = "aaaa".to_owned();
@@ -2399,7 +2278,7 @@ mod tests {
         assert!(!plans[0].hard_cut_end);
     }
 
-    /// 逐词指定说话人的密排词流（词间隔 0.1s，不产生停顿断点）。
+    /// Word-by-word speaker assignment for a densely packed word stream (0.1s between words, so it produces no pause breakpoints).
     fn voices(entries: &[(&str, &str)]) -> Vec<Word> {
         entries
             .iter()
@@ -2411,8 +2290,7 @@ mod tests {
             .collect()
     }
 
-    /// 轮次感知分页的共同断言：页界只落在轮次边界，或**单独超预算**的长轮次
-    /// 内部的句界；页面连续覆盖全篇。
+    /// Shared assertions for turn-aware pagination: page boundaries fall only on turn boundaries, or on sentence boundaries inside a long turn that **individually exceeds the budget**; the pages cover the whole text continuously.
     fn assert_turn_aware_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPagePlan> {
         let plans = plan_polish_pages(words, budget);
         let turns = speaker_turns(words);
@@ -2445,7 +2323,7 @@ mod tests {
         plans
     }
 
-    /// 短轮次对话：页 = 连续整轮次的并，每个页界都是轮次起点。
+    /// Short-turn dialogue: a page is a union of consecutive whole turns, and every page boundary is a turn start.
     #[test]
     fn turn_paging_groups_short_dialogue_turns() {
         let entries: Vec<(String, String)> = (0..36)
@@ -2467,7 +2345,7 @@ mod tests {
             overflow_ratio: 0.15,
         };
         let plans = assert_turn_aware_pages(&words, &budget);
-        // 12 个 3 词轮次 → 每页 3 个整轮次。
+        // 12 three-word turns → 3 whole turns per page.
         assert_eq!(
             plans
                 .iter()
@@ -2478,7 +2356,7 @@ mod tests {
         assert!(plans.iter().all(|plan| !plan.hard_cut_end));
     }
 
-    /// 长独白：轮次单独超预算，内部按句界切；偏晚的停顿不再抢走页界。
+    /// Long monologue: a turn alone exceeds the budget, so it is split at sentence boundaries internally; a later pause does not steal the page boundary.
     #[test]
     fn turn_paging_splits_a_long_monologue_at_sentence_ends() {
         let mut entries: Vec<(String, String)> = Vec::new();
@@ -2486,7 +2364,7 @@ mod tests {
             entries.push(("s1".to_owned(), "aaaa".to_owned()));
         }
         for index in 0..60 {
-            // 每 6 词一个句末标点。
+            // One sentence-final mark every 6 words.
             let text = if index % 6 == 5 { "aaaa." } else { "aaaa" };
             entries.push(("s2".to_owned(), text.to_owned()));
         }
@@ -2498,8 +2376,7 @@ mod tests {
             .map(|(sp, text)| (sp.as_str(), text.as_str()))
             .collect();
         let mut words = voices(&entries);
-        // 首页窗口尾部塞一个长停顿（rank2，比窗口内的句界更靠后、评分更高）：
-        // 纯 rank 联合评分会选它，轮次内的句界优先不会。
+        // Insert a long pause at the tail of the first page's window (rank 2, later than the sentence boundary within the window, and scoring higher). Pure rank-based joint scoring would choose it, but sentence-boundary priority within the turn would not.
         for word in words.iter_mut().skip(17) {
             word.t0 += 1.2;
             word.t1 += 1.2;
@@ -2525,8 +2402,7 @@ mod tests {
             "长轮次内的页界必须是句界: {cuts:?}"
         );
 
-        // 对照组：同一词流抹掉说话人信息 ⇒ 走词流路径。2026-08 起两条路径
-        // 同样句界优先：停顿(rank2)不再抢走窗口内的句界 15。
+        // Control group: the same word stream with speaker information stripped takes the word-stream path. From 2026-08 both paths likewise use sentence-boundary priority, so a pause (rank 2) no longer steals sentence boundary 15 within the window.
         let flat: Vec<Word> = words
             .iter()
             .cloned()
@@ -2545,8 +2421,7 @@ mod tests {
         );
     }
 
-    /// 一句"嗯"之后接长独白：不为这个短轮次单开一页，页界改落在长轮次内的
-    /// 句界（这页 = 短轮次 + 长轮次的头）。
+    /// A "嗯" (um) followed by a long monologue: no page is opened for this short turn; the page boundary instead falls at a sentence boundary inside the long turn (this page = the short turn + the head of the long turn).
     #[test]
     fn turn_paging_does_not_waste_a_page_on_a_one_word_interjection() {
         let mut entries: Vec<(String, String)> = vec![("s1".to_owned(), "yeah".to_owned())];
@@ -2576,7 +2451,7 @@ mod tests {
         );
     }
 
-    /// 混合：短轮次成组 + 长轮次内部按句界切，两种页界共存。
+    /// Mixed: short turns grouped together plus sentence-boundary splits inside long turns, with both kinds of page boundary coexisting.
     #[test]
     fn turn_paging_mixes_grouped_turns_and_a_split_long_turn() {
         let mut entries: Vec<(String, String)> = Vec::new();
@@ -2626,7 +2501,7 @@ mod tests {
         );
     }
 
-    /// `⏹S2` 只属于 payload：模型抄回来照样被剥除，标签不进段落文本。
+    /// `⏹S2` exists only in the payload: even if the model copies it back, it is stripped, and the label does not enter the paragraph text.
     #[test]
     fn speaker_label_lives_only_in_the_payload() {
         let mut words = stream(&["hello", "there.", "yes", "indeed."]);
@@ -2646,7 +2521,7 @@ mod tests {
             );
             let parsed = parse(&words, &plan, &output);
             assert!(!parsed.diagnostics.has_problems(), "{echoed}");
-            // 剥标记后仍逐字保真 → ⏹ 硬保证就地落位。
+            // After stripping markers, the text is still verbatim → the ⏹ hard guarantee is placed in situ.
             assert_eq!(parsed.paragraphs, vec!["hello there.", "yes indeed."]);
             assert!(
                 parsed
@@ -2667,7 +2542,7 @@ mod tests {
         }
     }
 
-    /// 段落聚合不跨轮次：每个轮次自成正文块，⏹ 硬保证表恰是轮次起点。
+    /// Paragraph aggregation does not cross turns: each turn forms its own body block, and the ⏹ hard-guarantee table is exactly the turn starts.
     #[test]
     fn paragraph_blocks_never_span_a_speaker_turn() {
         let mut words = stream(&["a.", "b.", "c.", "d.", "e."]);
@@ -2722,9 +2597,7 @@ mod tests {
         );
     }
 
-    /// §2.2 栅栏恢复：实测 7 次「哨兵栅栏缺失」里 5 次只是漏写了
-    /// `<<<EDIT-END>>>` 而 `<<<CONTEXT-AFTER>>>` 还在——核心区本身完整，整页
-    /// 重试三轮只是重掷同一份答案。现在按相邻栅栏推断边界并记警告。
+    /// §2.2 fence recovery: measured, among 7 "sentinel fence missing" cases, 5 were only a missing `<<<EDIT-END>>>` while `<<<CONTEXT-AFTER>>>` was still there. The core region was complete, and three whole-page retry rounds merely re-rolled the same answer. Now boundaries are inferred from adjacent fences and a warning is recorded.
     #[test]
     fn missing_edit_end_fence_is_recovered_from_context_after() {
         let words = stream(&["a.", "b."]);
@@ -2747,7 +2620,7 @@ mod tests {
         );
     }
 
-    /// 漏写 `<<<CONTEXT-AFTER>>>`（末页本就没有只读下文）同样可恢复。
+    /// A missing `<<<CONTEXT-AFTER>>>` (the last page has no read-only trailing context anyway) is also recoverable.
     #[test]
     fn missing_context_after_fence_is_recovered_from_edit_end() {
         let words = stream(&["a.", "b."]);
@@ -2763,8 +2636,7 @@ mod tests {
         assert_eq!(parsed.paragraphs, vec!["a. b.".to_owned()]);
     }
 
-    /// 缩进的 `<<<EDIT-BEGIN>>>`：核心区起点由 `CONTEXT-BEFORE` 之后的只读
-    /// 上文区剥离推断，错位的栅栏行本身被当结构行忽略。
+    /// Indented `<<<EDIT-BEGIN>>>`: the core region's start is inferred by stripping the read-only leading region that follows `CONTEXT-BEFORE`; the misplaced fence line itself is ignored as a structure line.
     #[test]
     fn indented_edit_begin_fence_is_recovered() {
         let words = stream(&["a.", "b."]);
@@ -2781,7 +2653,7 @@ mod tests {
         assert_eq!(parsed.paragraphs, vec!["a. b.".to_owned()]);
     }
 
-    /// 两条 EDIT 栅栏都缺、只读栅栏也推不出核心区 ⇒ 仍是 page-fatal。
+    /// Both EDIT fences missing and the read-only fences cannot infer the core region ⇒ still page-fatal.
     #[test]
     fn structureless_answer_still_reports_document_truncated() {
         let words = stream(&["a.", "b."]);
@@ -2791,8 +2663,7 @@ mod tests {
         assert!(parsed.paragraphs.is_empty());
     }
 
-    /// 栅栏顺序错乱时按「首见合法顺序」恢复；恢复出来的核心区为空仍判
-    /// page-fatal（核心区为空 = 正文没了）。
+    /// When fences are out of order, recover by the "first legal order seen"; if the recovered core region is empty it is still page-fatal (an empty core region means the body text is lost).
     #[test]
     fn out_of_order_fences_report_document_truncated() {
         let words = stream(&["a.", "b."]);
@@ -2804,7 +2675,7 @@ mod tests {
         assert!(parsed.diagnostics.has_code(ProblemCode::DocumentTruncated));
     }
 
-    /// §2.2：只读区被改写不再拒页——只读区从不写回真相，核心区另有词流真相门。
+    /// §2.2: a rewritten read-only region no longer rejects the page. The read-only region is never written back to truth, and the core region has its own word-stream truth gate.
     #[test]
     fn modified_readonly_context_is_only_a_warning() {
         let words = stream(&["a.", "b.", "c.", "d.", "e.", "f.", "g.", "h."]);
@@ -2854,8 +2725,7 @@ mod tests {
         );
     }
 
-    /// §2.2：悬垂假句末不再拒页，改为按段落记 `surface-artifact` 警告；引擎
-    /// 映射成句后把它送进 `polish-retry` 的句级补做队列。
+    /// §2.2: dangling false sentence endings no longer reject the page; instead a `surface-artifact` warning is recorded per paragraph, and once the engine maps them into sentences, they are sent to the sentence-level follow-up queue of `polish-retry`.
     #[test]
     fn dangling_sentence_end_becomes_a_surface_artifact_warning() {
         let words = stream(&["就是说当。", "你的 group 数目越多，效果越明显。"]);
@@ -2876,8 +2746,7 @@ mod tests {
         }));
     }
 
-    /// §2.2：冲突相邻标点由代码归一（R2），粘连 Latin 串只记警告；两者都不再
-    /// 让一句的表面瑕疵拒掉整页。
+    /// §2.2: conflicting adjacent punctuation is normalized in code (R2), and glued Latin strings only record a warning. Neither lets one sentence's surface blemish reject the whole page.
     #[test]
     fn conflicting_punctuation_is_repaired_and_collapsed_latin_only_warns() {
         let words = stream(&["所以他说。，呃 purereinforcementlearning 很重要。"]);
@@ -2913,9 +2782,7 @@ mod tests {
         }));
     }
 
-    /// 实测回归（deepseek-v4-flash）：模型顺手修掉只读区里的 ASR 错词
-    /// （"RL don"→"RL'd on"、"the the"→"the"）。表面级改写不再拒页——
-    /// 只读区反正不进正文，核心区另有词流真相门。
+    /// Measured regression (deepseek-v4-flash): the model incidentally fixed ASR errors in the read-only region ("RL don"→"RL'd on", "the the"→"the"). Surface-level rewriting no longer rejects the page: the read-only region is never part of the body anyway, and the core region has its own word-stream truth gate.
     #[test]
     fn cosmetic_readonly_drift_is_ignored_with_a_warning() {
         let words = stream(&[
@@ -2989,8 +2856,7 @@ mod tests {
         assert!(!parsed.paragraphs.is_empty(), "核心区照常解析");
     }
 
-    /// §2.2：只读区被截断（整句消失）同样只记警告——只读区从不写回真相，
-    /// 而截断本身不影响本页正文。旧实现在这里拒页并重掷全部句子。
+    /// §2.2: a truncated read-only region (a whole sentence disappeared) likewise only records a warning. The read-only region is never written back to truth, and the truncation does not affect this page's body. The old implementation rejected the page here and re-rolled all sentences.
     #[test]
     fn truncated_readonly_context_is_only_a_warning() {
         let words = stream(&[
@@ -3129,8 +2995,7 @@ mod tests {
         );
     }
 
-    /// 页缝显式信号：核心区正文之前的空行不产生段落、不记 BlankLinesCollapsed，
-    /// 只置 `starts_new_paragraph`；没有前导空行则为 false。
+    /// Explicit page-seam signal: blank lines before the core region's body produce no paragraph and do not record BlankLinesCollapsed; they only set `starts_new_paragraph`. Without a leading blank line this is false.
     #[test]
     fn leading_blank_line_is_the_new_paragraph_signal() {
         let words = stream(&["a.", "b.", "c."]);
@@ -3184,7 +3049,7 @@ mod tests {
         assert!(parsed.diagnostics.has_code(ProblemCode::DocumentTruncated));
     }
 
-    /// 固定种子 LCG（禁止未播种随机）。
+    /// Fixed-seed LCG (unseeded randomness is forbidden).
     struct Lcg(u64);
 
     impl Lcg {
@@ -3287,7 +3152,7 @@ mod tests {
             let parsed = parse(&words, &plan, &case);
             let _ = parsed.paragraphs.len();
         }
-        // 陈旧计划（区间越界）也不得 panic。
+        // A stale plan (ranges out of bounds) must not panic either.
         let stale = PolishPagePlan {
             id: "p009".to_owned(),
             before: 100..200,
@@ -3301,8 +3166,7 @@ mod tests {
         let _ = parse(&words, &stale, &rendered.text);
     }
 
-    /// 主 polish lint 不再拦单段超限：整页糊成一段的答案照常放行（正文
-    /// 有效即接受），分段退化交给 segment-repair 定向补。
+    /// The main polish lint no longer blocks single-paragraph over-limit: an answer that turns the whole page into one paragraph is still let through as usual (accepted as long as the body is valid); degenerate segmentation is handled by targeted segment-repair.
     #[test]
     fn oversized_paragraph_passes_the_main_polish_lint() {
         let texts: Vec<String> = (0..(MAX_PARAGRAPH_WORDS_LATIN * 2))
@@ -3325,8 +3189,7 @@ mod tests {
         );
     }
 
-    /// 索引契约区间门：缺块、区间不连续、不覆盖、越界都判 RangeInvalid（detail
-    /// 定位到块与缺陷），只挡住对应块。
+    /// Index-contract range gate: a missing block, non-contiguous ranges, non-covering ranges, or out-of-bounds ranges all give RangeInvalid (the detail locates the block and the defect); it only blocks the corresponding block.
     #[test]
     fn segment_repair_rejects_invalid_ranges() {
         let lines: Vec<String> = (0..6).map(|index| format!("sentence {index}.")).collect();
@@ -3374,9 +3237,7 @@ mod tests {
         }
     }
 
-    /// 索引契约分段门：只回一个区间且整块超限判 ParagraphOversize（detail 是
-    /// 定向重试指令，词数按 `word_count` + 语言分档报出、含最少段数）；拆成
-    /// ≥2 个区间即接受——切出的组仍超限由引擎处理。
+    /// Index-contract segmentation gate: a single range covering a whole over-limit block gives ParagraphOversize (the detail is a targeted retry instruction; word counts are reported per `word_count` and language tier, including the minimum paragraph count). Split into two or more ranges, it is accepted; groups still over the limit are handled by the engine.
     #[test]
     fn segment_repair_accepts_progress_and_rejects_untouched_paragraphs() {
         let latin: Vec<String> = (0..MAX_PARAGRAPH_WORDS_LATIN)
@@ -3399,7 +3260,7 @@ mod tests {
             "{payload}"
         );
 
-        // 两块都只回一个区间 ⇒ 都被拒，detail 按各自语言口径。
+        // Both blocks returned only one range ⇒ both rejected; the detail uses each block's own language basis.
         let answer = format!(
             "<<<BLOCK 1>>>\n1-{}\n<<<BLOCK-END>>>\n\n<<<BLOCK 2>>>\n1-{}\n<<<BLOCK-END>>>\n",
             latin.len(),
@@ -3437,8 +3298,7 @@ mod tests {
             oversize[1].detail
         );
 
-        // 拉丁块对半拆：两组各 300 词仍超限，但已取得边界 ⇒ 接受；CJK 块仍
-        // 一个区间 ⇒ 仍拒。
+        // Latin block split in half: two groups of 300 words each are still over the limit, but a boundary was obtained ⇒ accepted; a CJK block still with one range ⇒ still rejected.
         let half = MAX_PARAGRAPH_WORDS_LATIN / 2;
         let answer = format!(
             "<<<BLOCK 1>>>\n1-{half}\n{}-{}\n<<<BLOCK-END>>>\n<<<BLOCK 2>>>\n1-{}\n<<<BLOCK-END>>>\n",
@@ -3465,9 +3325,7 @@ mod tests {
         assert!(parsed.paragraphs[1].is_none());
     }
 
-    /// 索引契约快乐路径（多块载荷）：块乱序、块头丢尖括号、一行多个区间、
-    /// en dash、单行单句、复述带行号句行按空行分组、单块无块头都被宽容处理；
-    /// 一块非法不连累其他块；整块本就不超限时只回一个区间也接受。
+    /// Index-contract happy path (multi-block payload): blocks out of order, block headers missing angle brackets, multiple ranges on one line, en dash, one sentence per line, restated numbered sentence lines grouped by blank lines, and a single block without a header are all tolerated. One illegal block does not implicate other blocks, and a block that is not over the limit is accepted even when it returns only one range.
     #[test]
     fn segment_repair_accepts_range_answers_per_block() {
         let first: Vec<String> = (0..8).map(|index| format!("sentence {index}.")).collect();
@@ -3505,7 +3363,7 @@ mod tests {
             ]
         );
 
-        // 复述带行号句行（按空行分组）也认，只看行号；单块载荷可省块头。
+        // Restated numbered sentence lines (grouped by blank lines) are accepted too, trusting only the line numbers; a single-block payload may omit the block header.
         let payload = render_segment_repair_page(&[first.clone()]);
         let answer =
             "1| sentence 0.\n2| sentence 1.\n\n3| sentence two.\n4| x\n5| y\n\n6| \n7| \n8| \n";
@@ -3520,7 +3378,7 @@ mod tests {
             vec![Some(vec![vec![0, 1], vec![2, 3, 4], vec![5, 6, 7]])]
         );
 
-        // 整块不超限：一个区间盖全块也是合法答案（页缝块"整块同段"）。
+        // A whole block not over the limit: one range covering the whole block is also a legal answer (the seam block's "whole block in one paragraph").
         let answer = "1-8\n";
         let parsed = parse_segment_repair_page(&payload, answer);
         assert!(
@@ -3546,8 +3404,7 @@ mod tests {
         ]
     }
 
-    /// punct-repair 快乐路径：栅栏带 id、句块之间空行；答案只加标点、把 ⏸
-    /// 剥掉、软换行折叠；乱序与丢掉 `min-sentences` 属性都被宽容处理。
+    /// punct-repair happy path: fences carry ids, with blank lines between sentence blocks. The answer only adds punctuation, strips ⏸, and folds soft newlines; out-of-order blocks and dropped `min-sentences` attributes are tolerated.
     #[test]
     fn punct_repair_accepts_punctuation_only_answers_per_sentence() {
         let payload = render_punct_repair_page(&punct_items());
@@ -3576,12 +3433,11 @@ mod tests {
         );
     }
 
-    /// 逐句拒收：改词判 `source-drift`、没加句末判 `sentence-oversize`、缺块判
-    /// `missing-id`、`。，` 判质量闸门；一句被拒不连累其他句。
+    /// Per-sentence rejection: rewritten words give `source-drift`; no sentence-final punctuation added gives `sentence-oversize`; a missing block gives `missing-id`; `。，` is judged by the quality gate. One rejected sentence does not implicate the other sentences.
     #[test]
     fn punct_repair_rejects_word_edits_missing_ends_and_conflicting_marks() {
         let payload = render_punct_repair_page(&punct_items());
-        // s01 改了一个词（“差一些”→“好一些”），s02 原样复述没加任何句末。
+        // s01 changed one word ("差一些"→"好一些"), s02 repeated verbatim without adding any sentence-final punctuation.
         let answer = "<<<SENTENCE-BEGIN id=s01>>>\n我们先看第一个问题。这个模型在训练的时候没有见过这样的数据，所以它的表现会好一些。然后我们再看第二个问题。\n<<<SENTENCE-END id=s01>>>\n<<<SENTENCE-BEGIN id=s02>>>\nso we start with the data, then we train the model and then we evaluate it on the held-out set\n<<<SENTENCE-END id=s02>>>\n";
         let parsed = parse_punct_repair_page(&payload, answer);
         assert_eq!(parsed.sentences, vec![None, None]);
@@ -3609,7 +3465,7 @@ mod tests {
             parsed.diagnostics.problems[1].detail
         );
 
-        // s02 缺失、s01 留下 `。，`：冲突标点由代码归一（R2），s01 照常通过。
+        // s02 missing, s01 left `。，`: the conflicting punctuation is normalized by code (R2), and s01 passes as usual.
         let answer = "<<<SENTENCE-BEGIN id=s01>>>\n我们先看第一个问题。，这个模型在训练的时候没有见过这样的数据，所以它的表现会差一些。然后我们再看第二个问题。\n<<<SENTENCE-END id=s01>>>\n";
         let parsed = parse_punct_repair_page(&payload, answer);
         assert!(parsed.sentences[0].is_some());
@@ -3627,7 +3483,7 @@ mod tests {
                 .any(|w| w.code == WarningCode::PunctuationNormalized)
         );
 
-        // 只坏一句：s02 通过、s01 增了一个词。
+        // Only one sentence is bad: s02 passes, s01 added one word.
         let answer = "<<<SENTENCE-BEGIN id=s01>>>\n我们先看第一个问题。这个模型在训练的时候其实没有见过这样的数据，所以它的表现会差一些。然后我们再看第二个问题。\n<<<SENTENCE-END id=s01>>>\n<<<SENTENCE-BEGIN id=s02>>>\nSo we start with the data. Then we train the model and then we evaluate it on the held-out set.\n<<<SENTENCE-END id=s02>>>\n";
         let parsed = parse_punct_repair_page(&payload, answer);
         assert!(parsed.sentences[0].is_none());

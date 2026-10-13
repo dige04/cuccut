@@ -34,7 +34,7 @@ import {
 } from './timeline-commands.ts';
 import { TIMELINE_RIPPLE_COPY as RIPPLE } from './timeline-ripple-copy.ts';
 
-/** 右键的是哪一件、指针在哪（视口坐标）。 */
+/** Which item was right-clicked, and where the pointer is (viewport coordinates). */
 export interface TimelineMenuTarget {
   itemId: Id;
   x: number;
@@ -42,21 +42,18 @@ export interface TimelineMenuTarget {
 }
 
 /**
- * 时间线片段的右键菜单（原型 timeline-menu.jsx）：片段名做标题；在播放头分割；复制、剪切、粘贴、再制；
- * 停用或启用这一件；删除；从所有轨道删除这一段（⇧Delete，等于框选所有轨道再删）。命令与快捷键是同一份（timeline-commands）。
+ * Right-click menu for timeline clips (prototype timeline-menu.jsx): the clip name as the title; split at the playhead; copy, cut, paste, duplicate; disable or enable this item; delete; delete this range from all tracks (⇧Delete, the same as marquee-selecting all tracks and then deleting). Commands and shortcuts are one set (timeline-commands).
  *
- * 菜单开在指针那一点：用一个 `position: fixed` 的 0 尺寸锚当触发器（时间线是滚动区，浮层挂在片段上会跟着滚、
- * 也会被裁），受控打开。原型只给视频块「在播放头分割」；这里每一类都给，与 S、⌘B 一致，播放头不在这一件里时禁用。
- * 配音块换成块菜单（timeline-dub.tsx `DubBlockMenu`）：听这一句、静音、重新生成、改译文并重配、删除这几句。
- * 「改译文并重配」的对话框也常驻挂在这里（dub-fit-dialog.tsx），块菜单、配音行头与配音组卡都经 `openDubFit` 打开它；
- * 画布工具条「替换视频 / 替换图片」的替换窗口同样挂在这里（item-replace.tsx）。
+ * The menu opens at the pointer point: a 0-size anchor with `position: fixed` is used as the trigger (the timeline is a scroll area, and a floating layer attached to the clip would scroll with it and get clipped). Open state is controlled. The prototype only gives video blocks “split at playhead”; here every kind gets it, consistent with S and ⌘B. It is disabled when the playhead is not within this item.
+ * Dub blocks switch to the block menu (timeline-dub.tsx `DubBlockMenu`): listen to this sentence, mute, regenerate, edit translation and re-dub, delete these sentences.
+ * The “Edit translation and re-dub” dialog is also always mounted here (dub-fit-dialog.tsx); the block menu, the dub track header, and the dub group card all open it through `openDubFit`. The replace window for the canvas toolbar's “Replace video / Replace image” is also mounted here (item-replace.tsx).
  */
 export function TimelineMenu(props: {
   target: TimelineMenuTarget | null;
   sequence: Sequence;
   assets: Record<Id, AssetRecord>;
   documents: Record<Id, DocumentRecord>;
-  /** 时间线上的配音块：右键的是其中一块时弹块菜单。 */
+  /** Dub block on the timeline: when the right-click lands on one of the blocks, the block menu opens. */
   dubBlocks?: ReadonlyMap<Id, DubBlock>;
   onClose(): void;
 }) {
@@ -83,13 +80,13 @@ function TimelineItemMenu({
   sequence: Sequence;
   assets: Record<Id, AssetRecord>;
   documents: Record<Id, DocumentRecord>;
-  /** 时间线上的配音块：右键的是其中一块时弹块菜单。 */
+  /** Dub block on the timeline: when the right-click lands on one of the blocks, the block menu opens. */
   dubBlocks?: ReadonlyMap<Id, DubBlock>;
   onClose(): void;
 }) {
   const actions = useEditorActions();
   const editable = useVideo((s) => canEdit(s.video));
-  // 关上时的淡出还要画上一次的内容。
+  // On close, the fade-out still has to draw the previous content.
   const last = useRef(target);
   if (target) last.current = target;
   const at = last.current;
@@ -99,7 +96,7 @@ function TimelineItemMenu({
   const dub = item ? dubBlocks?.get(item.id) : undefined;
   const enabled = item?.enabled ?? true;
   const canSplit = !!item && canSplitAt(sequence, item.id, useEditor.getState().playhead);
-  // 选中的只有字幕时没有能拿的段（字幕实例铺满整条轨）。
+  // When only subtitles are selected there is no segment to take (subtitle instances fill the whole track).
   const canRemoveSpan = canRemoveSelectionSpan(sequence);
   const disabled = editable
     ? [...(canSplit ? [] : ['split']), ...(canRemoveSpan ? [] : ['removeSpan'])]
@@ -211,5 +208,5 @@ function TimelineItemMenu({
   );
 }
 
-/** 菜单的锚：指针那一点，不占地方、不接指针。 */
+/** The menu anchor: the pointer point. It takes no space and doesn't receive pointer events. */
 const anchor = style({ position: 'fixed', width: 0, height: 0, pointerEvents: 'none', outlineStyle: 'none' });

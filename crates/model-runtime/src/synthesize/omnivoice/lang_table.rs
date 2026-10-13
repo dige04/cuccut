@@ -1,7 +1,7 @@
-//! OmniVoice 支持的语言：小写语言名 → 语言 id（646 种）。
+//! OmniVoice supported languages: lowercase language name → language id (646 entries).
 //!
-//! 由官方 `omnivoice/utils/lang_map.py::LANG_NAME_TO_ID` 机械生成（源自
-//! `docs/lang_id_name_map.tsv`），按 UTF-8 字节序排好以便二分查找；不要手改。
+//! Mechanically generated from upstream `omnivoice/utils/lang_map.py::LANG_NAME_TO_ID` (from
+//! `docs/lang_id_name_map.tsv`), sorted by UTF-8 byte order for binary search; do not edit by hand.
 
 pub(super) const LANG_NAME_TO_ID: [(&str, &str); 646] = [
     ("abadi", "kbt"),

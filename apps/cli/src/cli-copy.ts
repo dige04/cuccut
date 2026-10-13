@@ -15,11 +15,11 @@ import { tr } from './cli-copy.tr.ts';
 import { vi } from './cli-copy.vi.ts';
 
 /**
- * CLI 自己的文字（派生命令、元命令与 Runtime 的归属；英文是键与类型的来源，译文在 `cli-copy.<语言>.ts`）。
- * 工具的标题与说明来自目录（给模型的原文），不在这里。
+ * The CLI's own text (derived commands, meta commands and Runtime ownership; English is the source of the keys and types; translations are in `cli-copy.<lang>.ts`).
+ * Tool titles and descriptions come from the catalog (the original text for the model) and are not here.
  */
 const en = {
-  // 一屏帮助（Agent 面设计 §5.7）
+  // One-screen help (agent-surface design §5.7)
   helpTagline:
     'cuccut — transcribe, translate, edit, dub and export videos with CucCut. Run `cuccut status` first to see what this machine can do.',
   helpFlows: 'Flows (return a job; wait until it finishes by default)',
@@ -48,7 +48,7 @@ const en = {
   helpExamples: 'Examples',
   helpCommonFlags: 'Common flags',
 
-  // 输出
+  // Output
   nextLabel: 'next',
   errorLabel: 'error',
   runtimeStartedNote: '(started a CucCut Runtime in the background; it exits by itself when idle)',
@@ -57,7 +57,7 @@ const en = {
   resultFileWritten:
     'The complete result is in the file at path (JSON) as --result-file asked. coverage lists its top-level keys and array lengths, summary its short fields.',
 
-  // 参数
+  // Arguments
   unknownCommand: (command: string) => `Unknown command: ${command}. Run cuccut --help to see the commands.`,
   unknownFlag: (flag: string, command: string) => `Unknown flag ${flag} for cuccut ${command}. See cuccut help ${command}.`,
   missingValue: (flag: string) => `${flag} needs a value.`,
@@ -90,7 +90,7 @@ const en = {
     `Installing the local model ${bundleId} downloads ${size} from ${source}; nothing was downloaded. Tell the user the size and run it again with --yes once they agree.`,
   sizeEstimated: ' (estimated)',
 
-  // 元命令的帮助（§4.5）
+  // Help for meta commands (§4.5)
   metaHelp: {
     help: "cuccut help [<command>]\n\nWithout a command: the one-screen overview. With one (`help videos`, `help videos inspect`, `help runtime`): its parameters, effect and examples. Uses the running Runtime's catalog when there is one, the offline snapshot otherwise; never starts a Runtime.",
     spec: "cuccut spec [<name>]\n\nThe machine-readable catalog as bare JSON (no envelope), with its interface version. <name> is a tool name (videos_inspect), a dotted name (videos.inspect), a command (videos inspect) or edits.<operation> for one operation of edits apply. Uses the running Runtime's catalog when there is one, the offline snapshot otherwise; never starts a Runtime.",
@@ -112,7 +112,7 @@ const en = {
     ].join('\n'),
   } as Record<'help' | 'spec' | 'version' | 'status' | 'runtime', string>,
 
-  // Runtime 的归属（§5.6）
+  // Runtime ownership (§5.6)
   runtimeNotRunning: (home: string) => `No CucCut Runtime is running for ${home}, and --no-start was given.`,
   runtimeNoEntry:
     'No CucCut Runtime is running and none could be started: install the CucCut app, run from the repository, or set CUCCUT_RUNTIME_ENTRY to the Runtime entry.',
@@ -126,7 +126,7 @@ const en = {
   interfaceMismatch: (cli: string, runtime: string, update: 'cli' | 'runtime') =>
     `This CLI uses tool interface version ${cli}, the Runtime uses ${runtime}. ${update === 'cli' ? 'Update the CLI.' : 'Update the CucCut app (or restart the Runtime from the same checkout as the CLI).'}`,
 
-  // 任务（§5.4）
+  // Tasks (§5.4)
   jobCancelling: (jobId: string) => `Cancelling ${jobId}… (press Ctrl-C again to stop waiting right away)`,
   jobCancelFailed: (reason: string) => `Could not cancel the job: ${reason}`,
   jobEnded: (state: string) => `The job ended: ${state}.`,
@@ -134,7 +134,7 @@ const en = {
     'cuccut status --full lists every provider and model for each capability; for one capability run cuccut models capabilities --capability <capability>, for bundle details cuccut models list.',
   waitTimeout: (seconds: number, jobId: string) => `Stopped waiting after ${seconds} s; job ${jobId} keeps running.`,
 
-  // 管理桶（admin/context.ts）
+  // Admin bucket (admin/context.ts)
   noRuntimeClient: "This command doesn't connect to the Runtime",
 };
 

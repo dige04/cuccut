@@ -1,8 +1,5 @@
-//! 程序化源 `proc`（规范 §6.12）的取样与几何只走 `libm`：与
-//! `confetti_libm_only.rs` 同一道理与同一台扫描器——闭式求值的全部意义在于
-//! 任意机器、任意目标（native / wasm32）同一 `(t, seed)` 同一批字节。
-//! 这里整目录扫描 `src/source/proc/*.rs`，一处 std 超越函数都不许有
-//! （`sqrt` / `floor` / `round` 在 IEEE 754 下逐位确定，不在名单里）。
+//! The sampling and geometry of the procedural source `proc` (spec §6.12) use only `libm`. The reasoning and the scanner are the same as in `confetti_libm_only.rs`: the whole point of closed-form evaluation is that any machine and any target (native / wasm32) produces the same bytes for the same `(t, seed)`.
+//! Here the whole `src/source/proc/*.rs` directory is scanned, and no std transcendental function may appear (`sqrt` / `floor` / `round` are bit-exact under IEEE 754 and are not on the list).
 
 use std::fs;
 use std::path::Path;

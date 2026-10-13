@@ -24,10 +24,9 @@ import { RESOURCE_COPY } from './resource-capacity-copy.ts';
 import { Panel, PanelHeading, RowList, SettingsRow } from './settings-ui.tsx';
 
 /*
- * 设置 → 诊断 →「资源调度」（架构设计 §7.6、§7.7；设计稿没有这一块）：机器的容量与来源、谁在用、谁在等；
- * 内存、GPU 内存与 CPU 线程可以手动设上限（偏好设置 `resources.capacity`，留空为自动）。`jobs.resources` 是请求不是主题，
- * 这一节开着时每 5 秒取一次，任务有进出、改了设置也立即重取。分组与行的样式与设置页的 Group / Row 相同。
- * 浏览器里只读：Web 白名单不含 `settings.set`，上限框与「全部恢复自动」置灰，导语下写一句。
+ * Settings → Diagnostics → “Resource scheduling” (资源调度) (architecture design §7.6, §7.7; the design mockup has no such section): the machine’s capacity and sources, who is using it, and who is waiting.
+ * Memory, GPU memory and CPU threads can be capped manually (preference `resources.capacity`; leave empty for automatic). `jobs.resources` is a request, not a topic: while this section is open it is fetched every 5 seconds, and it is fetched again right away when jobs start or finish or settings change. Groups and rows are styled the same as the Group / Row of the settings page.
+ * Read-only in the browser: the web allowlist does not include `settings.set`, so the cap fields and “Restore all to automatic” (全部恢复自动) are greyed out, with one line written under the intro.
  */
 
 const rowValue = style({ font: 'ui', color: 'gray-800', userSelect: 'text' });
@@ -55,7 +54,7 @@ export function ResourceCapacity() {
     }
   }, [runtime]);
 
-  // 任务有进出时（jobs 镜像变了）、设置变了时立即重取；其余时候按间隔取。
+  // Refetch immediately when jobs come and go (the jobs mirror changed) or when settings change. Otherwise, fetch on an interval.
   const live = jobs
     .filter((j) => j.state === 'running' || j.state === 'queued')
     .map((j) => `${j.jobId}:${j.state}`)

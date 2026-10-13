@@ -3,7 +3,7 @@ import { agentModeLabel, localizeText, refOf, RpcError, setLocale } from '@cuccu
 import { HarnessRuns } from '@cuccut/protocol/messages/harness';
 import { DriverRegistry } from './agent-manager.ts';
 
-/** 界面语言是英文时，Harness 写给人看的错误与会话提示是英文，并带消息引用（界面换语言后能重新生成）。 */
+/** When the UI language is English, the Harness messages written for people, errors and session notices are in English, with message refs (they can be regenerated after the UI language changes). */
 describe('harness 的英文文案', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

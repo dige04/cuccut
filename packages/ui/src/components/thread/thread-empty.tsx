@@ -7,7 +7,7 @@ import { useContextTag } from '../../state/agent-context.ts';
 import { useShell } from '../../state/shell-store.ts';
 import { focusPromptEnd } from '../use-prompt-value.ts';
 
-/** 原型 ui.css `.ath__empty` :2755-2761、spectrum.css `.cc-ai-suggestions` :26。 */
+/** Prototype ui.css `.ath__empty` :2755-2761, spectrum.css `.cc-ai-suggestions` :26. */
 const empty = style({
   boxSizing: 'border-box',
   width: 'full',
@@ -33,14 +33,10 @@ const sub = style({ marginTop: 8, marginBottom: 0, font: 'body', color: 'gray-60
 const suggestions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 });
 
 /**
- * 空会话（原型 agent-thread.jsx `AgentThread` 空态 :461-475）：已有、但还没有一条消息的会话。新会话的起始页（start-page.tsx）
- * 有自己的一套，不在这里。编辑器开着这条会话来源里的视频时，问候带上视频名，建议换成编辑器那一组（原型按
- * `cur.project` 选 `agent.chips.editor` / `agent.chips.home`）。点一条建议把它写进这条会话的草稿（替换原有草稿，同原型
- * `patch({draft})`）并把光标放进输入框末尾。
+ * Empty session (prototype agent-thread.jsx `AgentThread` empty state :461-475): a session that exists but has no messages yet. The start page for new sessions (start-page.tsx) has its own version, which is not here. When the editor has open the video that this session's source refers to, the greeting includes the video's name, and the suggestions switch to the editor group (the prototype picks `agent.chips.editor` / `agent.chips.home` by `cur.project`). Clicking a suggestion writes it into this session's draft (replacing the existing draft, same as the prototype's `patch({draft})`) and puts the cursor at the end of the input box.
  *
- * 原型用 `MessageSuggestionList aria-label="试着问问"`；S2 AI 的 MessageSuggestionList 的 `title` 必填、画成可见的 h3，
- * 原型不显示标题，所以这里用带 `aria-label` 的 group 包 MessageSuggestion，排法同它（换行、间距 8）。
- * `folderOf`：与另一条会话共用工作目录时那条会话的 id，来源按它认。
+ * The prototype uses `MessageSuggestionList aria-label="试着问问"` (“试着问问”, Try asking). S2 AI's MessageSuggestionList requires a `title` and renders it as a visible h3, but the prototype shows no title, so here a group with `aria-label` wraps MessageSuggestion, laid out the same way (wrapping, gap 8).
+ * `folderOf`: the id of another session that shares the working directory with this one; the source is recognised by it.
  */
 export function ThreadEmpty({ conversationId, projectId, folderOf }: { conversationId: Id; projectId: Id | null; folderOf?: Id }) {
   const tag = useContextTag({ conversationId: folderOf ?? conversationId, projectId });

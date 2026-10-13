@@ -70,14 +70,14 @@ describe('SettingsStore', () => {
     const events: SettingsChange[] = [];
     store.onChange((changed) => events.push(changed));
 
-    // 旧值 authorized 按 fullAccess 存。
+    // The old value `authorized` is stored as fullAccess.
     const first = await store.set({ 'agent.defaultAccessMode': 'authorized', 'captions.maxLineLength': { other: 40, cjk: 18 } });
     expect(first.changed).toEqual({ 'agent.defaultAccessMode': 'fullAccess', 'captions.maxLineLength': { cjk: 18, other: 40 } });
     expect(first.snapshot.settings['agent.defaultAccessMode']).toBe('fullAccess');
     expect(store.snapshot(['agent.defaultAccessMode']).sources['agent.defaultAccessMode']).toBe('user');
     expect(JSON.parse(await fs.readFile(file, 'utf8')).values['agent.defaultAccessMode']).toBe('fullAccess');
 
-    // 同样的值再设一次（新写法）：不变，不通知。
+    // Setting the same value again (new notation): unchanged, no notification.
     const again = await store.set({ 'agent.defaultAccessMode': 'fullAccess' });
     expect(again.changed).toEqual({});
 

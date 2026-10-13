@@ -14,12 +14,12 @@ import { pl } from './runtime-copy.pl.ts';
 import { tr } from './runtime-copy.tr.ts';
 import { vi } from './runtime-copy.vi.ts';
 
-/** 界面与 Runtime 的连接层（建视频、打开的视频、媒体缓存）的文案。英文写在这里，译文在 `runtime-copy.zh-Hans.ts`。 */
+/** Copy for the connection layer between the UI and the Runtime (creating videos, open videos, media cache). The English is written here; the translations are in `runtime-copy.zh-Hans.ts`. */
 const en = {
   missingContext: 'RuntimeContext is missing',
   mediaStatus: (status: number) => `The media service returned ${status}`,
   noRootSequence: 'The new video has no main sequence',
-  /** 新建声波实例的名字。 */
+  /** Name for a newly created waveform instance. */
   waveformName: 'Waveform',
   noDuration: 'The video has no length yet, so the waveform wasn’t added',
   noOpenVideo: 'No video is open',

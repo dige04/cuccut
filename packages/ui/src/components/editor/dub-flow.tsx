@@ -74,7 +74,7 @@ import { GlossarySection, useVideoSelection } from './translate-flow.tsx';
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
-/** 一节的小标题（设计稿 SecHead）。 */
+/** A section subheading (design SecHead). */
 const secHead = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
 const secAside = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
@@ -124,16 +124,16 @@ const progressBar = style({ width: 120 });
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** 配音收尾、改绑定时的提示：成功的带「撤销」。 */
+/** A notice when dubbing finishes or bindings change: a success notice has “Undo”. */
 const dubToast: DubDeps['toast'] = (kind, message, undo) =>
   ToastQueue[kind](message, undo ? { timeout: 5000, actionLabel: E.undo, onAction: undo, shouldCloseOnAction: true } : { timeout: 5000 });
 
-/** 文本模型：翻译要结构化输出，不支持的那只列着但标明用不了（Runtime 也会拒；同翻译设置页）。 */
+/** Text model: translation needs structured output; unsupported models are listed but marked as unusable (the Runtime also rejects them; same as the translation settings page). */
 function translateModelOptions(options: ToolModelOption<TextModelInfo>[]): ToolModelOption<TextModelInfo>[] {
   return options.map((o) => (o.usable && o.info.structuredOutput === false ? { ...o, usable: false, why: C.noStructured } : o));
 }
 
-/** 已有译文里过期的句数（标了过期或原句改过）：Runtime 不合成它们。还在算、或不是 `/2` 的译文时 null。 */
+/** The number of stale sentences in the existing translation (marked stale, or the source sentence has changed): the Runtime does not synthesize them. null while still computing, or for a translation that is not `/2`. */
 function useStaleUnits(speechBody: unknown, translation: DocumentRecord | null): number | null {
   const translationBody = useDocumentBody(translation ?? undefined);
   return useMemo(() => {
@@ -146,10 +146,8 @@ function useStaleUnits(speechBody: unknown, translation: DocumentRecord | null):
 }
 
 /**
- * 工具页 › 翻译配音（设计稿 panel-dub-setup.jsx `DubSetup`）：配成哪种语言（用已有译文，或先翻译）、原文、声音模型、
- * 默认音色、各说话人绑定的音色、混音（原声压低 / 静音 / 不动；分离背景首版不可用）、翻译用的模型与风格与术语表，
- * 「配成 X」提交 `pipelines.start`（`dub`）。授权、进度、失败与收据挂在这一页顶上（dub-status.tsx）。
- * 浏览器里打开的 CucCut 没有固定流程，只说明原因。
+ * Tool page › Translated voice-over (design panel-dub-setup.jsx `DubSetup`): which language to dub into (use an existing translation, or translate first), the source, the voice model, the default voice, per-speaker voice bindings, the mix (lower / mute / leave the original; separating the background is not available in the first version), the model used for translation with its style and glossary. “Dub into X” submits `pipelines.start` (`dub`). Authorization, progress, failures and receipts are shown at the top of this page (dub-status.tsx).
+ * In CucCut opened in a browser there is no fixed flow, so only the reason is stated.
  */
 export function DubFlow({
   videoId,
@@ -160,7 +158,7 @@ export function DubFlow({
   videoId: Id;
   documents: Record<Id, DocumentRecord>;
   onBack(): void;
-  /** 提交成功（拿到任务 ID）。 */
+  /** Submitted successfully (a task ID was received). */
   onStarted?(): void;
 }) {
   const runtime = useRuntime();
@@ -203,7 +201,7 @@ function DubSetupPage({
   const granting = useDubRun((s) => s.asks[videoId]?.status === 'granting');
   const busy = !!live || granting;
 
-  // ---- 原文 ----
+  // ---- Source ----
   const speeches = useMemo(() => Object.values(documents).filter((d) => d.kind === 'speech' && !!d.sourceAssetId), [documents]);
   const [speechId, setSpeechId] = useState<Id | null>(null);
   const speech = speeches.find((d) => d.id === speechId) ?? speeches[0] ?? null;
@@ -214,7 +212,7 @@ function DubSetupPage({
   const speakers = useMemo(() => (speechBody === undefined ? [] : speechSpeakers(speechBody)), [speechBody]);
   const speakerNames = useMemo(() => new Map(speakers.map((s) => [s.speakerId, s.name])), [speakers]);
 
-  // ---- 语言 ----
+  // ---- Language ----
   const languages = useMemo(
     () => dubLanguageOptions(sourceLanguage, speech ? existingTranslations(documents, speech.id) : []),
     [sourceLanguage, speech, documents],
@@ -226,7 +224,7 @@ function DubSetupPage({
   const translation = language?.translationId ? (documents[language.translationId] ?? null) : null;
   const staleUnits = useStaleUnits(speechBody, translation);
 
-  // ---- 声音模型与默认音色 ----
+  // ---- Voice model and default voice ----
   const view = useModels((s) => s.capabilities);
   const voiceModels = useMemo(() => (view ? cloudModelOptions(view, 'synthesizeSpeech') : []), [view]);
   const [voiceModelKey, setVoiceModelKey] = useState<string | null>(null);
@@ -249,7 +247,7 @@ function DubSetupPage({
   const voiceChoice = paramChoices.find((c) => c.key === voicePick && !c.disabled) ?? paramChoices.find((c) => !c.disabled) ?? null;
   const paramVoice = voiceChoice?.key === 'custom' ? customVoice.trim() || null : (voiceChoice?.voice ?? null);
 
-  // ---- 翻译 ----
+  // ---- Translation ----
   const textModels = useMemo(() => (view ? translateModelOptions(cloudModelOptions(view, 'generateText')) : []), [view]);
   const [textModelKey, setTextModelKey] = useState<string | null>(null);
   const textModel = findOption(textModels, initialModelKey(textModels, textModelKey, view?.generateText.effective ?? null));
@@ -258,21 +256,21 @@ function DubSetupPage({
   const textSection = useRef<HTMLDivElement>(null);
   const [styleHint, setStyleHint] = useState('');
 
-  // ---- 混音 ----
+  // ---- Mix ----
   const [originalAudio, setOriginalAudio] = useState<DubOriginalAudio>('duck');
   const [duckDb, setDuckDb] = useState(DEFAULT_DUCK_DB);
-  // 分离背景声：没动过时跟着本机有没有可用的分离模型（有就开，同设计稿默认开）。
+  // Separate background sound: when untouched, it follows whether a usable separation model is installed locally (on if so, the design's default-on).
   const separateReady = !!view?.separateAudio.effective;
   const [separatePick, setSeparatePick] = useState<boolean | null>(null);
   const separate = separatePick ?? separateReady;
   const toSeparate = () => go({ tab: 'models', category: 'sep', page: 'local' });
-  // 分离开着、本机还没有分离模型、这台电脑能下载：门卡写要下载哪只，主按钮「下载模型并配成…」先下载再开始（设计稿 panel-dub-setup.jsx）。
+  // Separation is on, the local separation model is not installed, and this computer can download it: the gate card says which model to download, and the primary button “Download model and set up…” downloads it first, then starts (design panel-dub-setup.jsx).
   const bundles = useModels((s) => s.bundles);
   const sepBundle = useMemo(() => (separateReady ? null : separationDownload(bundles)), [separateReady, bundles]);
   const sepDownload = separate && sepBundle ? sepBundle : null;
   const sepView = sepDownload ? downloadView(sepDownload) : null;
   const sepWait = useDubRun((s) => s.installs[videoId] ?? null);
-  // 权重已在、只缺公共组件的分离模型按补齐走（`inlineInstallMode`），打开对话框时定下。
+  // If the weights are present and only the shared components are missing, the separation model goes through a completion install (`inlineInstallMode`), decided when the dialog opens.
   const [sepConfirm, setSepConfirm] = useState<{ params: DubParams; intent: DubIntent; mode: 'install' | 'complete' } | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -300,7 +298,7 @@ function DubSetupPage({
 
   const start = async () => {
     if (!language || busy || submitting || sepWait || !editable) return;
-    // 不灰掉按钮：说清楚差什么，把那一节带到眼前（同翻译设置页）。
+    // Do not gray out the button: say clearly what is missing and bring that section into view (same as the translation settings page).
     if (!voiceReady) {
       voiceSection.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       ToastQueue.neutral(voiceModels.length ? (voiceModel?.why ?? C.ttsMissingTitle) : C.ttsMissingTitle, { timeout: 4000 });
@@ -333,7 +331,7 @@ function DubSetupPage({
     });
     const intent: DubIntent = { videoId, language: language.language, videoName };
     if (sepDownload) {
-      // 已经在下（设置页点的）：等它下完；否则先走安装对话框，提交了下载再等。
+      // Already downloading (started on the settings page): wait for it to finish; otherwise go through the install dialog first, and after submitting the download, wait.
       const jobId = sepView?.state === 'running' ? sepDownload.install?.jobId : null;
       if (jobId) awaitDubInstall(jobId, params, intent);
       else setSepConfirm({ params, intent, mode: inlineInstallMode(sepDownload, bundles) });
@@ -640,7 +638,7 @@ function DubSetupPage({
   );
 }
 
-/** 音色下拉：一项一行，说明写在第二行（库里的音色在这家服务商上能不能用）。 */
+/** Voice dropdown: one item per row, with the explanation on the second line (whether the library voice is usable with this provider). */
 function VoicePicker({
   label,
   choices,
@@ -674,8 +672,7 @@ function VoicePicker({
 }
 
 /**
- * 说话人一节：每位说话人生效的音色（绑定 → 默认音色 → 模型默认）与来源；改绑定写进视频里的 `library-selection`
- * （`library.setVideoSelection`，一笔能撤销的编辑），下次配音照用。绑定在开始配音时冻结，之后改的要重新配音才生效。
+ * Speakers section: the voice in effect for each speaker (binding → default voice → model default) and its source. Changing a binding is written to `library-selection` in the video (`library.setVideoSelection`, one undoable edit), and the next dub uses it. Bindings are frozen when dubbing starts; changes made afterwards take effect only after re-dubbing.
  */
 function SpeakerSection({
   runtime,
@@ -794,7 +791,7 @@ function SpeakerLine({
 }) {
   const binding: SpeakerVoiceBinding | null = r.binding;
   const known = binding ? choiceKeyOf(binding.voice, choices) : 'default';
-  // 绑定的音色不在这只模型的列表里（别家服务商的预置音色、手填的 ID）：照列一项，免得下拉显示空。
+  // A bound voice that is not in this model's list (a preset voice from another provider, or a hand-typed ID) is listed as one item, so the dropdown does not show blank.
   const list: VoiceChoice[] =
     binding && known === null
       ? [{ key: 'bound', label: C.bindingOther(voiceName(binding.voice, info, library)), description: null, voice: binding.voice, disabled: null }, ...choices]

@@ -16,12 +16,10 @@ import { COMMON_COPY, WEB_COPY } from './services-copy.ts';
 import { copyText, toastFailure, useConfigureService, useFlipService } from './use-service-actions.ts';
 
 /*
- * Web 服务详情页（原型 designs/cuccut/app/page-services.jsx `WebServicePage`；架构设计 §4.8、§12.8）。
- * 浏览器要先用一次性的登录链接进来（`services.web.createAccessLink`：代码在 URL fragment 里，2 分钟内有效、只能用一次），
- * 换到会话 cookie 之后 12 小时内直接打开地址就行。所以「在浏览器中打开」每次发一条新链接交给系统浏览器；
- * 「复制地址」复制不带代码的地址（已登录的浏览器用）；另给「复制登录链接」（要在别的浏览器里登录时用）。
- * 与原型的不同：会话行没有「正在看的页面」（Runtime 不记），改写连接数与过期时间，可以让它退出登录；
- * 端口运行中也能改（按新端口重开）；多了「只读」；原型这一页里的「OpenAI 兼容 API」搬到了「模型接口」页。
+ * Web service detail page (prototype designs/cuccut/app/page-services.jsx `WebServicePage`; architecture design §4.8, §12.8).
+ * A browser must first come in through a one-time login link (`services.web.createAccessLink`: the code is in the URL fragment, valid for 2 minutes and usable only once). After it is exchanged for a session cookie, the address can be opened directly for 12 hours. So “Open in browser” sends a new link each time, handed to the system browser.
+ * “Copy address” copies the address without the code (for a browser that is already logged in). “Copy login link” is also offered (for logging in from another browser).
+ * Differences from the prototype: the session row has no “page being viewed” (the Runtime does not record it); instead it shows the connection count and expiry time, and the session can be logged out. The port can be changed while running (it restarts on the new port). “Read-only” is added. The prototype's “OpenAI-compatible API” on this page has moved to the “Model API” page.
  */
 
 const actions = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 12 });
@@ -121,7 +119,7 @@ export function WebServicePage() {
   );
 }
 
-/** 卡片里的三个按钮：在浏览器中打开（发一条新的登录链接交给系统浏览器）、复制地址、复制登录链接。 */
+/** The three buttons on the card: open in browser (sends a new login link to the system browser), copy address, copy login link. */
 function WebActions({ status, disabled }: { status: ServiceStatus; disabled: boolean }) {
   const runtime = useRuntime();
   const [busy, setBusy] = useState<'open' | 'link' | null>(null);
@@ -159,8 +157,7 @@ function WebActions({ status, disabled }: { status: ServiceStatus; disabled: boo
 }
 
 /**
- * 打开的浏览器会话：`services.web.listSessions`。会话没有自己的主题——`services` 主题的 Web 服务状态变了（登录、退出、
- * 连接数变化都会更新 `clients`）就重读一次。
+ * Open browser sessions: `services.web.listSessions`. Sessions have no topic of their own. When the Web service state in the `services` topic changes (login, logout and connection-count changes all update `clients`), it re-reads once.
  */
 function WebSessions({ status, disabled }: { status: ServiceStatus; disabled: boolean }) {
   const runtime = useRuntime();
@@ -219,7 +216,7 @@ function WebSessions({ status, disabled }: { status: ServiceStatus; disabled: bo
   );
 }
 
-/** 只读（`services.configure` 的 `readOnly`，立即生效）。方法白名单（`methods`）这一版不在界面上收紧。 */
+/** Read-only (`readOnly` of `services.configure`, takes effect immediately). The method allowlist (`methods`) is not tightened in the UI in this version. */
 function ReadOnlyRow({ status, disabled }: { status: ServiceStatus; disabled: boolean }) {
   const configure = useConfigureService();
   const readOnly = status.web?.readOnly ?? false;

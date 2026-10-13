@@ -26,43 +26,43 @@ import { readJsonOrQuarantine, type StoreLog } from './store-file.ts';
 import { RuntimeStorageGrants as SG } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 数据外发的授权与预算账本（架构设计 §12.5、§7.8），文件是 `<runtime-home>/store/grants.json`（0600）。
+ * The ledger of outbound data authorizations and budgets (architecture design §12.5, §7.8). The file is `<runtime-home>/store/grants.json` (0600).
  *
- * - 判断与预留都是同步的：同一个事件循环回合里查额度、记下预留，并行的提交不会一起越过上限。写盘在之后串行进行
- *   （写临时文件、fsync、改名、fsync 目录），崩溃时最多丢掉最后几笔预留，对应的任务也没有落盘，重启时按孤儿预留结算。
- * - 「已开始」例外：`start` 等它落盘之后才放行，数据交出之前账本里一定记着这笔预留开始了；重启后它不会被当成没开始而释放。
- * - 金额按百万分之一的整数记，不用浮点数；币种与上限不同的估算视为无法估算。
- * - 结算规则（§7.8）：还没开始执行就结束的预留全部释放；完成的按服务报告的费用计，没有报告时按预留的估算计
- *   （没有估算时只计次数、金额未知）；开始执行之后失败、取消或中断的，服务没有报告时保守地计一次调用并扣下预留的估算。
- * - 任务预算（§3.2、§7.8）：一个任务一条策略（次数与金额上限，跨 Provider 合计）。调用通过授权之后还要通过它，同一笔预留
- *   同时占用两者，开始与结算也是同一次：开始落盘一次，结算时授权与任务的用量一起记、只记一次（重启后孤儿预留同样只结算一次）。
- *   有金额上限时，估算要与上限同币种；已用里有别的币种、金额未知的调用，或预留中有估不出的，都视为无法保证上限。
+ * - Checks and reservations are both synchronous: within the same event-loop turn, the quota is checked and the reservation recorded, so concurrent submissions cannot together pass the limit. Disk writes run serially afterwards
+ *   (write temp file, fsync, rename, fsync directory). On a crash, at most the last few reservations are lost. Their tasks were not written to disk either, and on restart they are settled as orphaned reservations.
+ * - The exception is “started”: `start` waits until it is on disk before letting the call through. Before the data is handed over, the ledger must already record that this reservation has started. After a restart it is not treated as not started and released.
+ * - Amounts are recorded as integers in millionths, not floats. Estimates in a different currency from the grant's cap are treated as impossible to estimate.
+ * - Settlement rules (§7.8): reservations that end before execution starts are all released. Completed ones are charged the fee the service reports; without a report, they are charged the reservation's estimate
+ *   (without an estimate, only the count is charged and the amount is unknown). Calls that fail, are cancelled, or are interrupted after execution started are, if the service reports nothing, conservatively charged as one call with the reservation's estimate deducted.
+ * - Task budget (§3.2, §7.8): one policy per task (count and amount caps, summed across Providers). After a call passes authorization, it must also pass the task budget. The same reservation occupies both,
+ *   and start and settlement are also a single operation: the start is written to disk once, and at settlement the grant's and the task's usage are recorded together, exactly once (orphaned reservations after a restart are likewise settled only once).
+ *   When there is an amount cap, the estimate must be in the cap's currency. A call in another currency or with unknown amount among the used total, or an estimate that cannot be made among the reservations, means the cap cannot be guaranteed.
  */
 
-/** 一次调用要的授权。 */
+/** The authorization one call requires. */
 export interface GrantCall {
   recipient: string;
   dataKinds: readonly GrantDataKind[];
-  /** 外发的数据来自（或结果要放进）哪个视频；没有时 null，只有全部视频的授权覆盖它。 */
+  /** Which video the outbound data comes from (or the result goes into). null when there is none; then only grants covering all videos apply. */
   videoId: Id | null;
-  /** 调用发生在哪个任务里（会话的一次执行）；没有时 null，只属于某个任务的授权不覆盖它。 */
+  /** The task the call happens in (one execution within a session). null when there is none; grants that belong only to a task do not cover it. */
   taskId: Id | null;
-  /** 估算的金额上界；没有价格时 null。 */
+  /** Upper bound of the estimated amount. null when there is no price. */
   estimate: Money | null;
-  /** 只用这条授权（审批时为这一次调用发放的）。 */
+  /** Only this grant is used (it was issued for this one call at approval time). */
   grantId?: Id;
 }
 
 export type GrantEvaluation =
   | { status: 'covered'; grant: Grant }
-  /** 覆盖它的授权额度不够了：次数或金额。 */
+  /** The grant covering it has run out of quota: count or amount. */
   | { status: 'exhausted'; grant: Grant; measure: 'calls' | 'amount' }
-  /** 覆盖它的授权有金额上限，但这次调用估不出金额（模型没有价格、币种不同）。 */
+  /** The grant covering it has an amount cap, but this call's amount cannot be estimated (the model has no price, or the currency differs). */
   | { status: 'unverifiable'; grant: Grant }
-  /** 没有授权覆盖它；`revoked` 是曾经覆盖它、已经撤销或到期的那一条。 */
+  /** No grant covers it. `revoked` is the one that covered it before and has since been revoked or expired. */
   | { status: 'none'; revoked: Grant | null };
 
-/** 一笔预留。 */
+/** One reservation. */
 export interface GrantReservation {
   reservationId: Id;
   grantId: Id;
@@ -71,7 +71,7 @@ export interface GrantReservation {
   amount: Money | null;
 }
 
-/** 任务预算不够（次数或金额），或有金额上限而这次调用估不出同币种的金额。 */
+/** The task budget is insufficient (count or amount), or there is an amount cap and this call's amount cannot be estimated in the same currency. */
 export type TaskBudgetRefusal =
   { status: 'exhausted'; policy: TaskBudgetPolicy; measure: 'calls' | 'amount' } | { status: 'unverifiable'; policy: TaskBudgetPolicy };
 
@@ -80,11 +80,11 @@ export type GrantAdmission =
   | { ok: false; evaluation: GrantEvaluation }
   | { ok: false; task: TaskBudgetRefusal };
 
-/** 结算时的结局：完成（可能带服务报告的费用），或失败、取消、中断。 */
+/** The outcome at settlement: completed (possibly with a fee the service reports), or failed, cancelled, or interrupted. */
 export type GrantOutcome = { kind: 'completed'; reported?: Money | null } | { kind: 'failed' };
 
 export interface GrantIssue extends GrantCreateParams {
-  /** `purpose` 由 Runtime 写成时的文字引用（界面按当前语言重新生成）。 */
+  /** The text reference the Runtime writes for `purpose` (the UI regenerates it in the current language). */
   purposeRef?: MessageRef;
   origin: GrantOrigin;
   once?: boolean;
@@ -93,9 +93,9 @@ export interface GrantIssue extends GrantCreateParams {
 
 export interface GrantStoreOptions {
   now?: () => Date;
-  /** 已经结束（撤销、到期、用完）的授权最多留多少条（默认 200）；还有预留的不淘汰。 */
+  /** How many ended grants (revoked, expired, or used up) are kept at most (default 200). Those with reservations still pending are not evicted. */
   maxEnded?: number;
-  /** 任务预算最多留多少条（默认 1000），超出时淘汰最旧的、没有预留的。 */
+  /** How many task budgets are kept at most (default 1000). When exceeded, the oldest without reservations are evicted. */
   maxTaskBudgets?: number;
   log?: StoreLog;
 }
@@ -116,7 +116,7 @@ interface StoredGrant {
   once: boolean;
   origin: GrantOrigin;
   approvalId: Id | null;
-  /** 启用 Provider 时默认发放的：那次启用的时间（同一次启用只发放一次，撤销之后不再自动补发）。 */
+  /** The grant issued by default when a Provider is enabled: the time of that enabling. One grant is issued per enabling; after revocation it is not re-issued automatically. */
   providerEnabledAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -132,9 +132,9 @@ interface StoredReservation {
   amountMicros: string | null;
   started: boolean;
   createdAt: string;
-  /** 同时占用的任务预算（早先的记录没有）。 */
+  /** The task budget held at the same time (absent in earlier records). */
   taskPolicyId?: Id | null;
-  /** 这次调用的估算（任何币种；没有时 null），结算任务预算用。 */
+  /** The estimate for this call (any currency; null when there is none), used to settle the task budget. */
   taskEstimate?: Money | null;
 }
 
@@ -143,7 +143,7 @@ interface StoredTaskBudget {
   taskId: Id;
   maxCalls: number | null;
   cap: Money | null;
-  /** 已结算的用量：金额按币种分列（百万分之一的整数）。 */
+  /** Settled usage. Amounts are listed by currency (integers in millionths). */
   used: { calls: number; amounts: Record<string, string>; unknownCostCalls: number };
   createdAt: string;
   updatedAt: string;
@@ -153,7 +153,7 @@ interface GrantsFile {
   schemaVersion: 1;
   grants: StoredGrant[];
   reservations: StoredReservation[];
-  /** 任务预算（早先的文件没有）。 */
+  /** Task budget (absent in earlier files). */
   taskBudgets?: StoredTaskBudget[];
 }
 
@@ -163,14 +163,14 @@ export class GrantStore {
   readonly #maxEnded: number;
   readonly #maxTaskBudgets: number;
   readonly #grants = new Map<Id, StoredGrant>();
-  /** 任务预算，按任务。 */
+  /** Task budgets, per task. */
   readonly #taskBudgets = new Map<Id, StoredTaskBudget>();
   readonly #reservations = new Map<Id, StoredReservation>();
   readonly #listeners = new Set<(change: { grant: Grant } | { removed: Id }) => void>();
   #writing: Promise<void> = Promise.resolve();
-  /** 排着、还没开始的那次写：之后的变化都会被它带上。兑现为写盘的错误（成功时 null）。 */
+  /** The queued write that has not started yet: later changes are carried by it. Resolves to the write's error (null on success). */
   #queued: Promise<unknown> | null = null;
-  /** 上一次写盘失败：内存里的账本比磁盘新。 */
+  /** The last disk write failed: the in-memory ledger is newer than the disk. */
   #unsaved = false;
 
   private constructor(file: string, options: GrantStoreOptions) {
@@ -181,8 +181,8 @@ export class GrantStore {
   }
 
   /**
-   * 读账本。文件不是 JSON、认不出或由更新的版本写下时抛出（Runtime 启动失败），文件原样留着：授权与预留不能静默丢掉，
-   * 也不能被这一版覆盖（`store-file.ts` 的 `quarantine: false`）。空文件按没有处理。
+   * Reads the ledger. Throws when the file is not JSON, is not recognized, or was written by a newer version (Runtime startup fails). The file is left as is: authorizations and reservations must not be silently lost,
+   * and this version must not overwrite them (`store-file.ts` with `quarantine: false`). An empty file is treated as absent.
    */
   static async open(file: string, options: GrantStoreOptions = {}): Promise<GrantStore> {
     const store = new GrantStore(file, options);
@@ -202,7 +202,7 @@ export class GrantStore {
     return store;
   }
 
-  // ---- 读取 ----
+  // ---- Reading ----
 
   list(filter: { recipient?: string; videoId?: Id; includeEnded?: boolean } = {}): Grant[] {
     return [...this.#grants.values()]
@@ -218,7 +218,7 @@ export class GrantStore {
     return grant ? this.#view(grant) : null;
   }
 
-  /** 一条授权的预留（还没结算的调用）。 */
+  /** One grant's reservations (calls not yet settled). */
   reservations(grantId: Id): Array<{ reservationId: Id; jobId: Id | null; started: boolean; amount: Money | null }> {
     const grant = this.#grants.get(grantId);
     return [...this.#reservations.values()]
@@ -239,9 +239,9 @@ export class GrantStore {
     return () => this.#listeners.delete(listener);
   }
 
-  // ---- 判断与预留（同步） ----
+  // ---- Checking and reserving (synchronous) ----
 
-  /** 这次调用有没有授权覆盖、额度够不够。不改任何东西。 */
+  /** Whether an authorization covers this call, and whether the quota is enough. Changes nothing. */
   evaluate(call: GrantCall): GrantEvaluation {
     const now = this.#now();
     const candidates = [...this.#grants.values()].filter((g) => this.#matches(g, call));
@@ -260,7 +260,7 @@ export class GrantStore {
     return { status: 'none', revoked: ended ? this.#view(ended) : null };
   }
 
-  /** 这次调用在它的任务预算之内（不改任何东西）。不在任务里、任务没有预算、在预算之内时 null。 */
+  /** Whether this call is within its task budget (changes nothing). Returns null when it is not in a task, the task has no budget, or it is within budget. */
   evaluateTask(call: Pick<GrantCall, 'taskId' | 'estimate'>): TaskBudgetRefusal | null {
     const budget = call.taskId !== null ? this.#taskBudgets.get(call.taskId) : undefined;
     if (!budget) return null;
@@ -271,7 +271,7 @@ export class GrantStore {
       : { status: 'exhausted', policy: this.#taskView(budget), measure: fit };
   }
 
-  /** 判断并预留一次调用，在同一个同步调用里完成（§7.8 的原子预留）：先授权，再任务预算；同一笔预留占用两者。 */
+  /** Checks and reserves one call within the same synchronous call (§7.8 atomic reservation): authorization first, then the task budget. One reservation occupies both. */
   admit(call: GrantCall, options: { jobId?: Id | null } = {}): GrantAdmission {
     const evaluation = this.evaluate(call);
     if (evaluation.status !== 'covered') return { ok: false, evaluation };
@@ -296,9 +296,9 @@ export class GrantStore {
   }
 
   /**
-   * 预留的调用要开始执行（数据即将交出）：授权还有效、代没有变时记为已开始，**落盘之后**才兑现 `ok`（§7.8）。
-   * 授权撤销、到期或被收紧（代变了）时返回那条授权，调用方以 `GRANT_REVOKED` 结束这次调用并释放预留。
-   * 写不进磁盘时撤回「已开始」、返回 `unsaved`：调用方不发请求（否则重启后它会被当成没开始而释放）。
+   * When a reserved call is about to execute (data is about to be handed over), it is recorded as started, provided the authorization is still valid and the generation has not changed. `ok` resolves **only after the write reaches disk** (§7.8).
+   * If the authorization has been revoked, has expired, or was tightened (the generation changed), that grant is returned. The caller ends the call with `GRANT_REVOKED` and releases the reservation.
+   * If the write cannot reach disk, the “started” mark is withdrawn and `unsaved` is returned. The caller does not send the request. Otherwise, after a restart it would be treated as not started and released.
    */
   async start(reservationId: Id): Promise<{ ok: true } | { ok: false; grant: Grant | null; unsaved?: true }> {
     const reservation = this.#reservations.get(reservationId);
@@ -320,18 +320,18 @@ export class GrantStore {
     return { ok: true };
   }
 
-  /** 预留还在、已经记为开始执行。 */
+  /** The reservation still exists and has been recorded as started. */
   started(reservationId: Id): boolean {
     return this.#reservations.get(reservationId)?.started === true;
   }
 
-  /** 预留还在、还没开始执行。 */
+  /** The reservation still exists and has not started executing. */
   pending(reservationId: Id): boolean {
     const reservation = this.#reservations.get(reservationId);
     return reservation !== undefined && !reservation.started;
   }
 
-  /** 结算一笔预留（见文件开头的规则）。已经结算过的返回 null。 */
+  /** Settles one reservation (see the rules at the top of the file). Returns null if it has already been settled. */
   settle(reservationId: Id, outcome: GrantOutcome): JobGrantSettlement | null {
     const reservation = this.#reservations.get(reservationId);
     if (!reservation) return null;
@@ -376,8 +376,8 @@ export class GrantStore {
   }
 
   /**
-   * 结算没有任务认领的预留（Runtime 重启之后：进程内的调用、没来得及落盘的任务）。开始执行过的保守扣除，
-   * 没开始的释放。`keep` 返回 true 的留着。返回结算的笔数。
+   * Settles reservations that no task has claimed (after a Runtime restart: in-process calls, and tasks that were not written to disk in time). Those that started executing are conservatively deducted,
+   * and those that did not start are released. Those for which `keep` returns true are kept. Returns the number of reservations settled.
    */
   settleOrphans(keep: (reservation: { reservationId: Id; jobId: Id | null }) => boolean = () => false): number {
     let count = 0;
@@ -389,7 +389,7 @@ export class GrantStore {
     return count;
   }
 
-  // ---- 发放、修改与撤销 ----
+  // ---- Issuing, changing, and revoking ----
 
   create(input: GrantIssue): Grant {
     const now = this.#now().toISOString();
@@ -430,7 +430,7 @@ export class GrantStore {
     return this.#view(grant);
   }
 
-  /** 改一条授权：给出的字段替换。收紧（数据种类变少、范围变窄、上限降低或新设、到期提前或新设）时代加一。 */
+  /** Changes a grant: the fields given replace the existing ones. A tightening (fewer data kinds, a narrower scope, a lower or newly set cap, an earlier or newly set expiry) increments the generation by one. */
   update(params: GrantUpdateParams): Grant {
     const grant = this.#grants.get(params.grantId);
     if (!grant) throw new RpcError('not-found', SG.grantNotFound());
@@ -472,7 +472,7 @@ export class GrantStore {
     return this.#view(next);
   }
 
-  /** 撤销：之后不再覆盖新的调用；代加一，按旧代预留、还没开始执行的调用在开始时被拒绝。重复撤销不再加代。 */
+  /** Revokes: the grant no longer covers new calls. The generation increments by one, and calls reserved under the old generation that have not started executing are rejected when they start. Repeated revocation does not increment the generation again. */
   revoke(grantId: Id): GrantRevokeResult {
     const grant = this.#grants.get(grantId);
     if (!grant) throw new RpcError('not-found', SG.grantNotFound());
@@ -500,16 +500,16 @@ export class GrantStore {
     };
   }
 
-  // ---- 任务预算（§3.2、§7.8） ----
+  // ---- Task budgets (§3.2, §7.8) ----
 
-  /** 一个任务的预算：没有时 null。 */
+  /** One task's budget. null when there is none. */
   taskBudget(taskId: Id): TaskBudgetPolicy | null {
     const budget = this.#taskBudgets.get(taskId);
     return budget ? this.#taskView(budget) : null;
   }
 
   /**
-   * 建立或修改一个任务的预算上限（`null` 不设这一项）。用量不变：调低到已用之下时，之后的调用被拒绝，已经预留的照常结算。
+   * Creates or changes a task's budget caps (`null` leaves that item unset). Usage is unchanged. If the cap is lowered below what has already been used, later calls are rejected, and reservations already held settle as usual.
    */
   setTaskBudget(taskId: Id, limits: TaskBudgetLimits): TaskBudgetPolicy {
     if (limits.maxCalls !== null && (!Number.isInteger(limits.maxCalls) || limits.maxCalls <= 0)) {
@@ -535,11 +535,11 @@ export class GrantStore {
     return this.#taskView(budget);
   }
 
-  // ---- 启用 Provider 时的默认授权（§6.8 的迁移规则） ----
+  // ---- Default grants when enabling a Provider (migration rule, §6.8) ----
 
   /**
-   * 启用一个在线或智能体 Provider 时发放的默认授权：数据种类由它的能力推出，不设金额上限，按次计、金额未知。
-   * 同一次启用（`enabledAt`）只发放一次：用户撤销之后不再自动补发，重新启用才会。能力变了时补上新的数据种类（放宽，不加代）。
+   * The default grant issued when an online or agent Provider is enabled. Its data kinds are derived from its capabilities. No amount cap is set, and it is counted per call with the amount unknown.
+   * It is issued only once per enabling (`enabledAt`). After the user revokes it, it is not re-issued automatically; re-enabling is what issues it again. When the capabilities change, the new data kinds are added (a widening, not a generation bump).
    */
   ensureProviderGrant(input: { recipient: string; dataKinds: readonly GrantDataKind[]; enabledAt: string; label: string }): Grant | null {
     if (input.dataKinds.length === 0) return null;
@@ -571,7 +571,7 @@ export class GrantStore {
     return this.#view(stored);
   }
 
-  /** 停用或移除一个 Provider：撤销启用时默认发放的授权（用户自己发放的不动）。返回撤销的条数。 */
+  /** When a Provider is disabled or removed, revokes the grants issued by default when it was enabled. Grants the user issued themselves are left alone. Returns the number of grants revoked. */
   revokeProviderGrants(recipient: string): number {
     let count = 0;
     for (const grant of this.#grants.values()) {
@@ -582,13 +582,13 @@ export class GrantStore {
     return count;
   }
 
-  /** 等待写盘完成；上一次写失败时再写一次（还写不进去就算了，不无限重试）。 */
+  /** Waits for the disk write to finish. If the last write failed, writes again (if it still cannot be written, give up; no infinite retries). */
   async flush(): Promise<void> {
     await this.#writing;
     if (this.#unsaved) await this.#schedule();
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #matches(grant: StoredGrant, call: GrantCall): boolean {
     if (call.grantId !== undefined) {
@@ -627,7 +627,7 @@ export class GrantStore {
     return total > moneyToMicros(budget.cap.amount) ? 'amount' : 'ok';
   }
 
-  /** 结算时记进任务预算（与授权的结算同一次）：开始过的计一次调用，金额按报告、估算或保守的估算，都没有时记为金额未知。 */
+  /** Recorded into the task budget at settlement (in the same operation as the grant's settlement). Calls that started are counted once. The amount is the reported one, the estimate, or the conservative estimate; if none exists, it is recorded as amount unknown. */
   #chargeTask(reservation: StoredReservation, outcome: GrantOutcome): void {
     if (!reservation.taskPolicyId || !reservation.started) return;
     const budget = [...this.#taskBudgets.values()].find((b) => b.policyId === reservation.taskPolicyId);
@@ -669,7 +669,7 @@ export class GrantStore {
     } satisfies TaskBudgetPolicy);
   }
 
-  /** 淘汰最旧的任务预算（还有预留的不动）。 */
+  /** Evicts the oldest task budgets (those with pending reservations are left alone). */
   #pruneTaskBudgets(): void {
     if (this.#taskBudgets.size <= this.#maxTaskBudgets) return;
     const busy = new Set([...this.#reservations.values()].map((r) => r.taskPolicyId).filter((id): id is Id => !!id));
@@ -735,7 +735,7 @@ export class GrantStore {
     } satisfies Grant);
   }
 
-  /** 淘汰最旧的已结束授权（还有预留的不动）。 */
+  /** Evicts the oldest ended grants (those with pending reservations are left alone). */
   #prune(): void {
     const ended = [...this.#grants.values()]
       .filter((g) => this.#state(g, 0) !== 'active' && ![...this.#reservations.values()].some((r) => r.grantId === g.grantId))
@@ -752,11 +752,11 @@ export class GrantStore {
     for (const listener of this.#listeners) safe(() => listener({ grant: structuredClone(view) }));
   }
 
-  /** 排一次写盘（已经有一次排着时并进它）。兑现为这次写盘的错误，成功时 null。 */
+  /** Queues a disk write (merged into one already queued). Resolves to this write's error, or null on success. */
   #schedule(): Promise<unknown> {
     if (this.#queued) return this.#queued;
     const write = this.#writing.then(async () => {
-      // 从这里起的变化要再排一次。
+      // Changes from here on must be queued again.
       this.#queued = null;
       const file: GrantsFile = {
         schemaVersion: 1,
@@ -769,7 +769,7 @@ export class GrantStore {
         this.#unsaved = false;
         return null;
       } catch (error) {
-        // 写盘失败时内存里的账本照常生效；下一次变化或 flush 再写。
+        // If the disk write fails, the in-memory ledger still takes effect. The next change or flush writes again.
         this.#unsaved = true;
         return error;
       }
@@ -784,7 +784,7 @@ function expired(grant: StoredGrant, now: Date): boolean {
   return grant.expiresAt !== null && Date.parse(grant.expiresAt) <= now.getTime();
 }
 
-/** 优先用最具体的授权：属于这个任务的，其次只覆盖这个视频的，再次全部视频的；同级新的在前。 */
+/** Prefers the most specific grant: one that belongs to this task first, then one that covers only this video, then one that covers all videos. Among the same level, newer ones come first. */
 function preference(a: StoredGrant, b: StoredGrant): number {
   const rank = (g: StoredGrant) => (g.taskId !== null ? 0 : g.scope.videoId !== null ? 1 : 2);
   return rank(a) - rank(b) || (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0);
@@ -794,7 +794,7 @@ function byUpdatedDesc(a: StoredGrant, b: StoredGrant): number {
   return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0;
 }
 
-/** 收紧：同样的调用在新的授权下可能不再被覆盖。 */
+/** Tightening: the same call may no longer be covered under the new grant. */
 function tightened(before: StoredGrant, after: StoredGrant): boolean {
   if (before.dataKinds.some((k) => !after.dataKinds.includes(k))) return true;
   if (before.scope.videoId !== after.scope.videoId && after.scope.videoId !== null) return true;
@@ -817,6 +817,6 @@ function safe(fn: () => void): void {
   try {
     fn();
   } catch {
-    // 订阅方的错误不影响账本。
+    // Errors from subscribers do not affect the ledger.
   }
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 
-/** BCP 47 语言标签：交给 `Intl.getCanonicalLocales` 判断。单独成模块，免得 `ai-tool-schemas.ts` 与 `schemas.ts` 互相引用。 */
+/** BCP 47 language tags, checked with `Intl.getCanonicalLocales`. Kept in its own module so that `ai-tool-schemas.ts` and `schemas.ts` do not import each other. */
 export const languageTag = z
   .string()
   .min(1)

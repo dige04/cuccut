@@ -14,7 +14,7 @@ import { pl } from './drivers-pi.pl.ts';
 import { tr } from './drivers-pi.tr.ts';
 import { vi } from './drivers-pi.vi.ts';
 
-/** Pi Driver：预设说明、探测结果、RPC 进程与会话的提示和错误。 */
+/** Pi Driver: preset description, probe results, and hints and errors from the RPC process and sessions. */
 const en = {
   plan: 'Model accounts in Pi',
   installHint: 'Install Pi with npm (npm install -g @earendil-works/pi-coding-agent, needs Node.js)',
@@ -22,7 +22,7 @@ const en = {
     "Pi isn't signed in. Run pi in a terminal and enter /login, or set an API key for a model provider (for example ANTHROPIC_API_KEY).",
   rpcFailed: (p: { error: string }) => `Pi's RPC mode failed to start: ${p.error}`,
   processStartFailed: (p: { error: string }) => `The Pi process failed to start: ${p.error}`,
-  /** `tail` 是 stderr 的最后几行，为空时不带。 */
+  /** `tail` is the last few lines of stderr. It is left out when empty. */
   processExited: (p: { code: string; signal: string; tail: string }) =>
     `The Pi process exited (code ${p.code}, signal ${p.signal})${p.tail ? `: ${p.tail}` : ''}`,
   processClosed: 'The Pi process is closed',
@@ -31,7 +31,7 @@ const en = {
   commandFailed: (p: { command: string }) => `Pi's ${p.command} failed`,
   toolFallback: 'Tool',
   sessionFileMissing: 'session file not found',
-  /** 错误后面附上 stderr 的最后几行。 */
+  /** Appends the last few lines of stderr after an error. */
   withStderr: (p: { error: string; tail: string }) => `${p.error} (${p.tail})`,
   mcpNameInvalid: (p: { name: string }) =>
     `The MCP server name ${p.name} has characters Pi doesn't accept (only letters, digits, _ and -), so it can't be used in this session.`,
@@ -44,12 +44,12 @@ const en = {
     `Pi couldn't connect to CucCut's MCP server, so CucCut's tools (reading and writing projects, captions, and so on) aren't available in this session: ${p.error}`,
   extensionError: (p: { error: string }) => `A Pi extension failed: ${p.error}`,
   modelCallFailed: "Pi's model call failed",
-  /** Pi 扩展发来的通知原文，前面标上 Pi。 */
+  /** Raw notification text sent by a Pi extension, prefixed with Pi. */
   notice: (p: { message: string }) => `Pi: ${p.message}`,
-  /** `title` 是扩展提问的标题，为空时不带。 */
+  /** `title` is the title of the question the extension asks. It is left out when empty. */
   extensionAsked: (p: { title: string }) =>
     `A Pi extension wanted to ask you something${p.title ? ` ("${p.title}")` : ''}. CucCut can't pass on this kind of question yet, so it was canceled for you.`,
-  /** `mode` 是「完全访问」模式的名字。 */
+  /** `mode` is the name of the “Full access” mode. */
   fullAccessOnly: (p: { mode: string }) =>
     `Pi has no way to ask before each action, so CucCut can only run it in "${p.mode}" mode: it won't ask you before running commands or changing files.`,
 };

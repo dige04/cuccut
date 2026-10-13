@@ -10,23 +10,22 @@ import { PipelineStepError, type PipelineDefinition, type StepResult } from './p
 import { PipelineRunner } from './pipeline-runner.ts';
 
 /**
- * 固定流程框架（架构设计 §7.9）：用一个只在测试里的三步假流程检查步骤顺序与进度、子任务的提交者与父任务、
- * 失败停在那一步、重试复用之前的产出、取消的屏障、重启之后的状态。
+ * Fixed pipeline framework (architecture design §7.9): uses a three-step fake pipeline that exists only in tests to check step order and progress, the submitter and parent of subtasks, failure stopping at that step, retry reusing earlier outputs, the cancellation barrier, and the state after a restart.
  */
 
 interface FakeParams {
   value: string;
 }
 
-/** 假流程的控制：每一步执行几次、在哪一步失败、在哪一步卡住。 */
+/** The controls of the fake pipeline: how many times each step runs, at which step it fails, and at which step it gets stuck. */
 class FakeControl {
   runs: string[] = [];
   failAt = new Set<string>();
-  /** 卡在这一步，直到 `release`；`honorAbort` 时收到中止就以异常结束。 */
+  /** Stuck at this step until `release`; with `honorAbort`, it ends with an exception when it receives an abort. */
   holdAt: string | null = null;
   honorAbort = true;
   reusable = true;
-  /** 第三步额外开几个子任务。 */
+  /** The third step opens several extra subtasks. */
   fanOut = 0;
   #release: (() => void) | null = null;
   #reached: (() => void) | null = null;
@@ -160,7 +159,7 @@ describe('PipelineRunner', () => {
       pipeline: { name: 'fake', params: { value: 'v' }, current: null, stoppedAt: null, summary: { steps: ['a', 'b', 'c', 'd'] } },
     });
     expect(parent.pipeline!.steps.map((s) => s.status)).toEqual(['completed', 'completed', 'completed', 'skipped']);
-    // 后面的步骤看得到前面的产出。
+    // Later steps can see the outputs of earlier ones.
     expect(parent.pipeline!.steps[2]!.output).toMatchObject({ seen: ['a', 'b'] });
 
     const steps = children(jobId);
@@ -176,7 +175,7 @@ describe('PipelineRunner', () => {
       expect(parent.pipeline!.steps[index]!.jobId).toBe(child.jobId);
     }
 
-    // 父任务的进度一步一步往前走，阶段与调用计数跟着正在执行的那一步。
+    // The parent task's progress moves forward step by step; the stage and call count follow the step being executed.
     const parentEvents = events.filter((e) => e.jobId === jobId);
     const done = [...new Set(parentEvents.map((e) => e.progress?.done))];
     expect(done).toEqual([0, 1, 2, 3, 4]);
@@ -236,7 +235,7 @@ describe('PipelineRunner', () => {
     expect(failed.pipeline!.steps.map((s) => s.status)).toEqual(['completed', 'failed', 'pending', 'pending']);
     const failedChild = jobs.inspect(failed.pipeline!.steps[1]!.jobId!);
     expect(failedChild).toMatchObject({ state: 'failed', error: { code: 'FAKE_FAILED' } });
-    // 失败的流程的 staging 保留供重试。
+    // The staging of a failed pipeline is kept for retry.
     await expect(fs.stat(path.join(dir, 'staging', 'pipelines', jobId))).resolves.toBeTruthy();
 
     control.failAt.clear();
@@ -248,11 +247,11 @@ describe('PipelineRunner', () => {
     expect(retried.pipeline!.steps[0]).toEqual(failed.pipeline!.steps[0]);
     expect(retried.pipeline!.steps[1]).toMatchObject({ status: 'completed', attempts: 2 });
     expect(retried.pipeline!.steps[1]!.jobId).not.toBe(failed.pipeline!.steps[1]!.jobId);
-    // 旧的子任务保留在列表里。
+    // Old subtasks stay in the list.
     expect(jobs.inspect(failedChild.jobId).state).toBe('failed');
     await expect(fs.stat(path.join(dir, 'staging', 'pipelines', jobId))).rejects.toThrow();
 
-    // 完成的流程不能重试。
+    // A completed pipeline cannot be retried.
     await expect(runner.retry(jobId)).rejects.toMatchObject({ code: 'conflict', details: { code: 'JOB_NOT_RETRYABLE' } });
   });
 
@@ -272,21 +271,21 @@ describe('PipelineRunner', () => {
       await finished(jobId);
       done.push(jobId);
     }
-    // 终结的顶层任务：两个失败的流程与三个完成的流程。最新的失败流程另外保留；其余的按结束时间留最新的两条。
+    // Terminated top-level tasks: two failed pipelines and three completed ones. The latest failed pipeline is kept separately; of the rest, the latest two by end time are kept.
     const parents = jobs.list().filter((r) => r.parentJobId == null);
     expect(new Set(parents.map((r) => r.jobId))).toEqual(new Set([failedNew, done[1], done[2]]));
-    // 子任务不计数，跟着父任务：留下的流程的步骤都在，淘汰的流程的步骤一起删了。
+    // Subtasks are not counted; they follow their parent: the steps of the kept pipelines are all still there, and the steps of the evicted pipelines are deleted together with them.
     expect(children(failedNew)).toHaveLength(2);
     expect(children(done[1]!)).toHaveLength(3);
     expect(children(done[2]!)).toHaveLength(3);
     expect(children(failedOld)).toHaveLength(0);
     expect(children(done[0]!)).toHaveLength(0);
     expect(jobs.list()).toHaveLength(3 + 2 + 3 + 3);
-    // 保留下来的失败流程还能重试；淘汰的不能。
+    // A kept failed pipeline can still be retried; an evicted one cannot.
     await expect(runner.retry(failedOld)).rejects.toMatchObject({ code: 'not-found' });
     expect(await runner.retry(failedNew)).toEqual({ jobId: failedNew });
     expect((await finished(failedNew)).state).toBe('completed');
-    // 重试完成后它成了普通的完成记录，按结束时间它最新：淘汰的是更旧的那条完成记录。
+    // After the retry completes, it becomes an ordinary completed record, and by end time it is the newest; the one evicted is the older completed record.
     expect(
       new Set(
         jobs
@@ -378,11 +377,11 @@ describe('PipelineRunner', () => {
   });
 
   it('进程没有正常停止时，重启后没有终结的流程标为中断并记下停在哪一步', async () => {
-    // 第二步永远不结束，也不理会中止：模拟进程直接退出。
+    // The second step never ends and ignores abort: this simulates the process exiting directly.
     control.hold('b', false);
     const { jobId } = await start();
     await control.reached;
-    // 等账本写下「第二步在执行」（落盘带 fsync，时长不定）；旧的 JobManager 与流程就此丢下，不再写账本。
+    // Waits until the ledger records “step 2 is executing” (the write to disk uses fsync, so its duration varies). The old JobManager and pipeline are then abandoned here and no longer write to the ledger.
     await vi.waitFor(
       async () => {
         const ledger = { jobs: await new JobLedger(path.join(dir, 'store', 'jobs.jsonl')).load() };

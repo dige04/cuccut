@@ -51,7 +51,7 @@ describe('Agent 偏好', () => {
     expect(prefs).not.toHaveProperty('defaultDriverId');
     expect(prefs).not.toHaveProperty('lastAccessMode');
     expect(prefs.policy).toEqual({ read: false, ccutro: true, loop: true });
-    // 经 ACP 接入的 Agent（kimi）照常读回；id 写法不对的丢掉。
+    // An Agent connected via ACP (kimi) is still read back as usual; entries with a malformed id are dropped.
     expect(prefs.drivers).toEqual({
       codex: { enabled: false, defaultModel: null, defaultEffort: null, executable: null },
       kimi: { enabled: false, defaultModel: 'kimi-k3', defaultEffort: null, executable: null },

@@ -24,8 +24,7 @@ import { materialText, resolvePipelineEntryInputs, withSpeechMaterial, withTextM
 import { USER_VIEWER, projectOf, listEntries, searchContent, visibleEntry, type SpaceViewer } from './space-queries.ts';
 
 /**
- * Space 目录的派生、增量、筛选、回收站与物理删除、内容检索的完整度与按主体的过滤。来源目录是临时目录；
- * Job Ledger 与视频的只读查询换成假的（真实引擎的端到端见 `space-e2e.test.ts`）。
+ * Space catalog: derivation, incremental updates, filtering, the trash and physical deletion, completeness of content search, and filtering by principal. The source directory is a temporary directory. The Job Ledger and the read-only video queries are replaced with fakes (the end-to-end test with the real engine is in `space-e2e.test.ts`).
  */
 
 class FakeJobs implements SpaceJobsSource {
@@ -49,7 +48,7 @@ class FakeJobs implements SpaceJobsSource {
   }
 }
 
-/** 假的只读查询：视频目录（真实路径）→ 内容。 */
+/** Fake read-only query: video catalog (real path) → content. */
 class FakeReader implements ContentReader {
   readonly videos = new Map<string, ReadContentResult>();
   readonly failing = new Set<string>();
@@ -60,7 +59,7 @@ class FakeReader implements ContentReader {
     return { videoId: found.videoId, name: found.name, revision: found.revision };
   }
 
-  /** 设上时读取要等它放行（模拟慢的引擎）。 */
+  /** When set, reads wait for its release (simulates a slow engine). */
   hold: Promise<void> | null = null;
 
   async readContent(dir: string) {
@@ -114,7 +113,7 @@ function videoContent(
   revision: string,
   opts: { used?: string[]; linked?: string; text?: string; timeline?: { width: number; height: number; frames: number } } = {},
 ): ReadContentResult {
-  // 给了 `timeline` 时根序列是完整的（画布、轨道、实例的区间），否则只带内容所需的字段。
+  // When `timeline` is given, the root sequence is complete (canvas, tracks, clip ranges); otherwise only the fields needed for content are included.
   const span = opts.timeline ? { span: { fromFrame: 0, durationFrames: opts.timeline.frames } } : {};
   return {
     videoId,
@@ -155,7 +154,7 @@ function videoContent(
   };
 }
 
-/** 带一份转写（与可选的译文）的视频内容：工具候选输入要的文稿事实。 */
+/** Video content with a transcript (and an optional translation): the script facts that tool candidate inputs need. */
 function speechContent(videoId: string, revision: string, translationLanguage?: string): ReadContentResult {
   const base = videoContent(videoId, revision);
   const words = [
@@ -235,7 +234,7 @@ describe('Space 目录', () => {
 
   const byName = (catalog: SpaceCatalog, name: string) => catalog.entries().find((e) => e.fileName === name || e.name === name)!;
 
-  /** 内容索引的库里记着的视频数。 */
+  /** Number of videos recorded in the content index database. */
   const storedVideos = (indexDir: string): number => {
     const db = new DatabaseSync(path.join(indexDir, 'index.db'), { readOnly: true });
     try {
@@ -361,7 +360,7 @@ describe('Space 目录', () => {
     expect(catalog.entries().find((e) => e.id === artifactId)).toMatchObject({ createdAt: updatedAt, updatedAt: editedAt });
   });
 
-  /** 一组覆盖各种派生状态的任务。 */
+  /** A set of jobs covering each derived state. */
   async function seedJobs(): Promise<{ applied: string; candidate: string; exported: string }> {
     const art = path.join(tmp, 'artifacts');
     await fs.mkdir(art, { recursive: true });
@@ -469,7 +468,7 @@ describe('Space 目录', () => {
     });
   });
 
-  /** 一次完成的导出：设置、发布的文件（路径）与产物 id。 */
+  /** One completed export: settings, published file (path) and artifact id. */
   function exportJob(settings: object, file: string, artifactId: string, state: JobRecord['state'] = 'completed'): JobRecord {
     return job({
       kind: 'export',
@@ -507,7 +506,7 @@ describe('Space 目录', () => {
     expect(catalog.entries().filter((e) => e.status === 'generating' || e.status === 'failed')).toEqual([]);
     expect(listEntries(catalog, USER_VIEWER, { videoId: 'v1' }).entries.map((e) => e.fileName)).toEqual(['访谈']);
 
-    // 用户后来要了同一份字幕：交付的导出认领这个文件。
+    // The user later asked for the same subtitles: the delivered export claims this file.
     jobs.put(exportJob({ kind: 'subtitles', format: 'srt' }, srt, 'sha256:deliver'));
     await catalog.idle();
     expect(byName(catalog, '访谈.srt')).toMatchObject({ kind: 'subtitle', status: 'published', ref: { artifactId: 'sha256:deliver' } });
@@ -553,7 +552,7 @@ describe('Space 目录', () => {
     expect(catalog.entries().filter((e) => e.status === 'failed')).toEqual([
       expect.objectContaining({ statusDetail: { reason: '模型没有给出图片', code: 'MODEL_OUTPUT_INVALID' } }),
     ]);
-    // 转写的原始结果不是可交付的产物。
+    // The raw result of a transcription is not a deliverable artifact.
     expect(catalog.entries().some((e) => JSON.stringify(e).includes('sha256:raw'))).toBe(false);
 
     await catalog.update({ entryId: 'sha256:aa', favorite: true, displayName: '封面图' });
@@ -569,7 +568,7 @@ describe('Space 目录', () => {
     expect(events.filter((e) => e.type === 'entry.removed')).toEqual([]);
     expect(reader.reads).toBeGreaterThanOrEqual(2);
 
-    // 丢掉内容索引的缓存，从头再建一个目录：同样的结果。
+    // Discard the content index cache and rebuild from a new, empty directory: same result.
     const { catalog: fresh } = await open(path.join(tmp, 'cache', 'other-index'));
     expect(fresh.entries()).toEqual(before);
   });
@@ -600,7 +599,7 @@ describe('Space 目录', () => {
       ]),
     );
 
-    // 视频提交了新版本，时间线用上了这张图：重新索引后变成 applied。
+    // The video submitted a new version and the timeline uses this image: after re-indexing it becomes `applied`.
     events.length = 0;
     reader.videos.set(videoDir, videoContent('v1', 'rev-2', { used: ['asset-new'] }));
     index.touched(videoDir, 'rev-2');
@@ -608,7 +607,7 @@ describe('Space 目录', () => {
     expect(catalog.get('sha256:new').status).toBe('applied');
     expect(events).toContainEqual({ type: 'entry.upsert', entry: expect.objectContaining({ id: 'sha256:new', status: 'applied' }) });
 
-    // 失败的占位：同样的输入后来成功了就不再显示。
+    // Failed placeholder: no longer shown once the same input succeeds later.
     const failed = job({ kind: 'synthesizeSpeech', state: 'failed', inputHash: 'sha256:same' });
     jobs.put(failed);
     await catalog.idle();
@@ -668,11 +667,11 @@ describe('Space 目录', () => {
     expect(listEntries(catalog, USER_VIEWER, { status: ['applied', 'candidate'] }).total).toBe(2);
     expect(listEntries(catalog, USER_VIEWER, { status: 'none' }).entries.every((e) => e.status === null)).toBe(true);
     expect(listEntries(catalog, USER_VIEWER, { favorite: true }).entries.map((e) => e.id)).toEqual(['sha256:bb']);
-    // 来源视频：视频本身，以及由它生成、导出的条目。
+    // Source video: the video itself, and the entries generated and exported from it.
     const fromVideo = listEntries(catalog, USER_VIEWER, { videoId: 'v1' }).entries.map((e) => e.fileName);
     expect(fromVideo).toEqual(expect.arrayContaining(['访谈', '访谈.srt']));
     expect(fromVideo).toHaveLength(5);
-    // 不属于项目的：失败的占位（没有视频，也不是会话里提交的）。
+    // Not part of the project: failed placeholders (no video, and not submitted in the session).
     expect(listEntries(catalog, USER_VIEWER, { projectId: null }).entries.map((e) => e.status)).toEqual(['failed']);
     expect(listEntries(catalog, USER_VIEWER, { projectId: 'p1' }).total).toBe(all.total - 2);
 
@@ -703,7 +702,7 @@ describe('Space 目录', () => {
     const clip = byName(catalog, 'clip.mp4');
     expect(await code(() => catalog.purge(clip.id))).toMatchObject({ code: 'SPACE_NOT_TRASHED' });
 
-    // 视频链接着这个文件：不删，返回引用。
+    // The video links this file: do not delete; return the reference.
     await catalog.update({ entryId: clip.id, trashed: true });
     const blocked = await catalog.purge(clip.id);
     expect(blocked).toEqual({
@@ -713,7 +712,7 @@ describe('Space 目录', () => {
     });
     await expect(fs.stat(path.join(projectDir, 'raw', 'clip.mp4'))).resolves.toBeTruthy();
 
-    // 视频此刻读不了：无法确认，按有引用处理。
+    // The video cannot be read right now: cannot confirm, so treat it as referenced.
     const cover = byName(catalog, 'cover.png');
     await catalog.update({ entryId: cover.id, trashed: true });
     reader.failing.add(videoDir);
@@ -728,21 +727,21 @@ describe('Space 目录', () => {
     await expect(fs.stat(path.join(projectDir, 'cover.png'))).rejects.toThrow();
     expect(() => catalog.get(cover.id)).toThrow(RpcError);
 
-    // 产物：删掉产物库里的文件，之后不以「缺失」出现。
+    // Artifact: deleting the file in the artifact store means it no longer appears as "missing".
     await catalog.update({ entryId: 'sha256:bb', trashed: true });
     expect(await catalog.purge('sha256:bb')).toMatchObject({ status: 'purged' });
     await expect(fs.stat(jobs.files.get('sha256:bb')!)).rejects.toThrow();
     await catalog.rescan();
     expect(() => catalog.get('sha256:bb')).toThrow(RpcError);
 
-    // 导出发布到项目里的文件：删掉之后，导出也不以「缺失」出现。
+    // Export published as a file in the project: after deleting it, the export also no longer appears as "missing".
     const srt = byName(catalog, '访谈.srt');
     await catalog.update({ entryId: srt.id, trashed: true });
     expect(await catalog.purge(srt.id)).toMatchObject({ status: 'purged' });
     await catalog.rescan();
     expect(() => catalog.get('sha256:srt')).toThrow(RpcError);
 
-    // 失败的占位直接清除。
+    // Failed placeholders are cleared directly.
     const failed = catalog.entries().find((e) => e.status === 'failed')!;
     expect(await catalog.purge(failed.id)).toMatchObject({ status: 'purged' });
     expect(() => catalog.get(failed.id)).toThrow(RpcError);
@@ -756,7 +755,7 @@ describe('Space 目录', () => {
     await fs.writeFile(path.join(deckDir, 'slides', 's01.html'), '<slide></slide>');
     await fs.writeFile(path.join(deckDir, 'assets', 'logo.png'), 'png');
     await fs.writeFile(path.join(deckDir, 'notes.md'), '# 讲稿');
-    // deck.json 不合格式的目录照常往里走。
+    // A directory whose deck.json is malformed is still traversed.
     await fs.mkdir(path.join(projectDir, 'draft'), { recursive: true });
     await fs.writeFile(path.join(projectDir, 'draft', 'deck.json'), JSON.stringify({ v: 3, order: [] }));
     const { catalog } = await open();
@@ -786,7 +785,7 @@ describe('Space 目录', () => {
     await fs.writeFile(path.join(canvasDir, 'screens', 'Cart.dc.html'), '<x-dc></x-dc>');
     await fs.writeFile(path.join(canvasDir, 'assets', 'logo.png'), 'png');
     await fs.writeFile(path.join(canvasDir, 'brief.md'), '# 需求');
-    // canvas.json 不合格式的目录照常往里走。
+    // A directory whose canvas.json is malformed is still traversed.
     await fs.mkdir(path.join(projectDir, 'sketch'), { recursive: true });
     await fs.writeFile(path.join(projectDir, 'sketch', 'canvas.json'), JSON.stringify({ v: 2, boards: [] }));
     const { catalog } = await open();
@@ -817,7 +816,7 @@ describe('Space 目录', () => {
     await fs.writeFile(path.join(systemDir, 'README.md'), '# 品牌');
     await fs.writeFile(path.join(systemDir, 'assets', 'Logos', 'mark.svg'), '<svg/>');
     await fs.writeFile(path.join(systemDir, '_blobs', `${'ab'.repeat(16)}.png`), 'png');
-    // 不是 v3 files 的 design-system.json（旧的单文件信封）不算设计系统，目录照常往里走。
+    // A design-system.json that is not v3 files (the old single-file envelope) does not count as a design system; the directory is still traversed.
     await fs.mkdir(path.join(projectDir, 'legacy'), { recursive: true });
     await fs.writeFile(path.join(projectDir, 'legacy', 'design-system.json'), JSON.stringify({ v: 2, content: { files: {} } }));
     const { catalog } = await open();
@@ -860,7 +859,7 @@ describe('Space 目录', () => {
     });
     await expect(catalog.importFile({ projectId: 'nope', file: outside })).rejects.toMatchObject({ code: 'not-found' });
 
-    // 登记的文件不在了：条目留下，状态 missing。
+    // Registered file is gone: the entry is kept, with status `missing`.
     await fs.rm(path.join(projectDir, 'raw', 'note.md'));
     await catalog.rescan();
     expect(catalog.get(inside.entry.id)).toMatchObject({ status: 'missing', name: '拍摄笔记' });
@@ -897,14 +896,14 @@ describe('Space 目录', () => {
       'v1',
     ]);
 
-    // 视频提交了新版本：重读完之前旧的照样能查到，但结果不完整。
+    // The video submitted a new version: until the re-read finishes, the old results can still be queried, but they are incomplete.
     reader.failing.add(videoDir);
     index.touched(videoDir, 'rev-2');
     await catalog.idle();
     result = searchContent(catalog, USER_VIEWER, { query: '剪辑' });
     expect(result).toMatchObject({ complete: false, pendingVideos: 1, hits: [{ indexedRevision: 'rev-1' }] });
 
-    // 重建：全部重读，重读完之前不完整。
+    // Rebuild: everything is re-read; incomplete until the re-read finishes.
     reader.failing.delete(videoDir);
     const reads = reader.reads;
     let release!: () => void;
@@ -952,13 +951,13 @@ describe('Space 目录', () => {
       owns: (r) => r.submitter.kind === 'service' && r.submitter.clientId === 'me',
       jobs: (id) => jobs.records.find((r) => r.jobId === id) ?? null,
     });
-    // 范围是 v1：视频本身与自己提交的任务的产物；别人的产物与导出、项目里的普通文件不可见。
+    // Scope is v1: the video itself and the artifacts of the jobs it submitted. Other people's artifacts and exports, and ordinary files in the project, are not visible.
     const scoped = listEntries(catalog, service(new Set(['v1'])), { trash: 'include' }).entries;
     expect(scoped.map((e) => e.fileName)).toEqual(expect.arrayContaining([expect.stringMatching(/^生成图片-/), '访谈']));
     expect(scoped).toHaveLength(2);
     expect(scoped.find((e) => e.id === 'sha256:mine')).toBeTruthy();
     expect(listEntries(catalog, service(new Set(['v1'])), {}).issues).toEqual([]);
-    // 不属于项目的视频（会话目录里的）对外服务不可见；名单之外的视频不出现在命中里，也不算进待索引。
+    // Videos that do not belong to the project (those in the session directory) are invisible to external services. Videos outside the allowlist do not appear in hits and are not counted as pending indexing.
     const outOfScope = searchContent(catalog, service(new Set(['v1'])), { query: '剪辑' });
     expect(outOfScope.hits.map((h) => h.videoId)).toEqual(['v1']);
     expect(searchContent(catalog, service(new Set(['v2'])), { query: '剪辑' })).toMatchObject({ hits: [], pendingVideos: 0 });
@@ -969,7 +968,7 @@ describe('Space 目录', () => {
     const opened = await open();
     const indexDir = path.join(tmp, 'cache', 'content-index');
     await opened.catalog.close();
-    // 修改时间与版本都没变：库的格式版本不对时不重读就补不上。
+    // Modification time and version both unchanged: when the database's format version is wrong, the entry cannot be filled in without a re-read.
     const raw = new DatabaseSync(path.join(indexDir, 'index.db'));
     raw.exec('PRAGMA user_version = 999');
     raw.close();
@@ -988,7 +987,7 @@ describe('Space 目录', () => {
     catalog.start();
     await catalog.ready;
     const dub = toolDefinition('dub')!;
-    // 重读之前：还不知道 videoId，不能断定没有文稿，照样列出、标没有索引。
+    // Before the re-read: the videoId is not yet known, so it cannot be concluded that there is no script. The video is still listed, marked as not indexed.
     expect(toolCandidates(catalog, USER_VIEWER, dub, {})).toMatchObject({
       complete: false,
       pendingVideos: 1,
@@ -1020,7 +1019,7 @@ describe('Space 目录', () => {
     expect(byName(catalog, '访谈').media).toEqual({ durationSec: 15, width: 1920, height: 1080 });
     await catalog.close();
 
-    // 关着的时候没变：重开不重读，事实从库里读回。
+    // Unchanged while closed: reopening does not re-read; the facts are read back from the database.
     const indexDir = path.join(tmp, 'cache', 'content-index');
     let reads = reader.reads;
     const { catalog: same } = await open(indexDir);
@@ -1028,7 +1027,7 @@ describe('Space 目录', () => {
     expect(byName(same, '访谈').media).toEqual({ durationSec: 15, width: 1920, height: 1080 });
     await same.close();
 
-    // 库整个删掉（它是缓存）：重开时全部重读。
+    // The database is deleted entirely (it is a cache): on reopen, everything is re-read.
     for (const name of await fs.readdir(indexDir)) await fs.rm(path.join(indexDir, name));
     reads = reader.reads;
     const { catalog: reopened, index: reloaded } = await open(indexDir);
@@ -1076,7 +1075,7 @@ describe('Space 目录', () => {
     const names = listEntries(catalog, USER_VIEWER, { videoId: 'v1' }).entries.map((e) => e.fileName);
     expect(names).toEqual(expect.arrayContaining(['访谈', '访谈.srt', '短片一']));
     expect(listEntries(catalog, USER_VIEWER, { videoId: 'v1', kind: 'video' }).entries.map((e) => e.fileName).sort()).toEqual(['短片一', '访谈']);
-    // 子视频自己的筛选只有它自己。
+    // A sub-video's own filter applies only to itself.
     expect(listEntries(catalog, USER_VIEWER, { videoId: 'v_child' }).entries.map((e) => e.fileName)).toEqual(['短片一']);
   });
 
@@ -1096,7 +1095,7 @@ describe('Space 目录', () => {
     reader.hold = new Promise((resolve) => (release = resolve));
     const index = new ContentIndex({ dir: path.join(tmp, 'cache', 'ensure'), reader, log: silentLogger });
     await index.sync(dirs.map((dir) => ({ dir, mtimeMs: 1 })));
-    // 甲正在读（被挡住）：等乙超时，回答手上有的（还没有）；之后丙插到乙前面。
+    // A is reading (blocked): wait for B to time out, then answer with what is on hand (nothing yet). Afterwards C is placed ahead of B.
     expect(await index.ensure(dirs[1]!, 10)).toBeNull();
     expect(await index.ensure(path.join(projectDir, '不在目录里'))).toBeNull();
     const third = index.ensure(dirs[2]!);
@@ -1104,7 +1103,7 @@ describe('Space 目录', () => {
     expect(await third).toMatchObject({ videoId: 'v2', facts: { poster: null } });
     await index.idle();
     expect(order).toEqual(['甲', '丙', '乙']);
-    // 已经有当前索引的不等。
+    // Those that already have a current index do not wait.
     reader.hold = new Promise(() => {});
     expect(await index.ensure(dirs[0]!, 10_000)).toMatchObject({ videoId: 'v0' });
     await index.close();
@@ -1130,7 +1129,7 @@ describe('Space 目录', () => {
     expect(names(all)).toEqual(['没有转写', '访谈', '读不了']);
     expect(all).toMatchObject({ toolId: 'transcribe', total: 3, complete: false, pendingVideos: 1, nextCursor: null });
     expect(all.candidates.find((c) => c.name === '读不了')).toMatchObject({ indexed: false, documents: [] });
-    // 转写不需要文稿：不列文档。
+    // Transcription does not need a script, so no documents are listed.
     expect(all.candidates.find((c) => c.name === '访谈')).toMatchObject({
       videoId: 'v1',
       indexed: true,
@@ -1138,7 +1137,7 @@ describe('Space 目录', () => {
       documents: [],
     });
 
-    // 翻译配音只列有文稿的视频（读不了的不能断定，照样列出）；文稿带语言、逐词时间与已有的译文。
+    // Translation dubbing lists only videos that have a script (videos that cannot be read cannot be judged, so they are still listed). The script carries its language, per-word timing and existing translations.
     const dubbing = toolCandidates(catalog, USER_VIEWER, dub, {});
     expect(names(dubbing)).toEqual(['访谈', '读不了']);
     expect(dubbing.candidates.find((c) => c.name === '访谈')!.documents).toEqual([
@@ -1154,26 +1153,26 @@ describe('Space 目录', () => {
       },
     ]);
 
-    // 分页与项目。
+    // Pagination and projects.
     const first = toolCandidates(catalog, USER_VIEWER, transcribe, { limit: 2 });
     expect(first).toMatchObject({ total: 3, nextCursor: '2' });
     expect(toolCandidates(catalog, USER_VIEWER, transcribe, { limit: 2, cursor: '2' }).candidates).toHaveLength(1);
     expect(toolCandidates(catalog, USER_VIEWER, transcribe, { projectId: 'nope' })).toMatchObject({ total: 0, candidates: [] });
     expect(toolCandidates(catalog, USER_VIEWER, transcribe, { projectId: 'p1' }).total).toBe(3);
 
-    // 主体：会话只看到自己的来源目录；对外服务按视频名单，名单之外、不知道 videoId 的不列。
+    // Principal: a session sees only its own source directory. External services follow the video allowlist; videos outside it, and videos whose videoId is unknown, are not listed.
     const agent: SpaceViewer = { kind: 'source', projectId: null, conversationId: 'c9' };
     expect(toolCandidates(catalog, agent, transcribe, {}).total).toBe(0);
     const service: SpaceViewer = { kind: 'service', videos: new Set(['v2']), owns: () => false, jobs: () => null };
     expect(names(toolCandidates(catalog, service, transcribe, {}))).toEqual(['没有转写']);
     expect(toolCandidates(catalog, service, transcribe, {})).toMatchObject({ pendingVideos: 0 });
 
-    // 回收站里的视频不列。
+    // Videos in the trash are not listed.
     await trashVideo(catalog);
     await catalog.idle();
     expect(names(toolCandidates(catalog, USER_VIEWER, transcribe, {}))).toEqual(['没有转写', '读不了']);
   });
-  /** 照 `VideoTrash` 的顺序删除一个视频：先记下，再把目录移进回收站，再重扫来源。 */
+  /** Deletes a video in the order of `VideoTrash`: record it first, then move the directory into the trash, then rescan the source. */
   async function trashVideo(catalog: SpaceCatalog, trashedAt = new Date().toISOString()) {
     const info = (await catalog.videoEntryAt(videoDir))!;
     const trashRelPath = `.ccut-trash/t1/${path.basename(videoDir)}`;
@@ -1215,7 +1214,7 @@ describe('Space 目录', () => {
     await fs.writeFile(path.join(videoDir, 'video.db-wal'), 'wal');
     await fs.writeFile(path.join(videoDir, '笔记.txt'), '用户放进来的');
 
-    // 直接改标记不能把视频移进回收站（方法层转给 videos.delete）。
+    // Directly changing the marker cannot move a video into the trash (the method layer hands it to `videos.delete`).
     expect(await detailCode(() => catalog.update({ entryId: former.id, trashed: true }))).toBe('SPACE_TRASH_VIDEO');
 
     const { entryId, formerId, to } = await trashVideo(catalog);
@@ -1230,7 +1229,7 @@ describe('Space 目录', () => {
     });
     expect(catalog.get(entryId).user.trashedAt).not.toBeNull();
     expect(() => catalog.get(formerId)).toThrow(RpcError);
-    // 回收站目录不被当成来源目录里的视频扫进来。
+    // The trash directory is not scanned in as a video from the source directory.
     expect(catalog.videos()).toEqual([]);
     expect(listEntries(catalog, USER_VIEWER, { kind: 'video' }).entries).toEqual([]);
     expect(listEntries(catalog, USER_VIEWER, { trash: 'only' }).entries.map((e) => e.id)).toEqual([entryId]);
@@ -1240,7 +1239,7 @@ describe('Space 目录', () => {
     expect(await detailCode(() => catalog.locate(entryId))).toBe('VIDEO_TRASHED');
     expect(await detailCode(() => catalog.update({ entryId, trashed: false }))).toBe('SPACE_TRASH_VIDEO');
 
-    // 目录里有不归视频管理的文件：不删，列出来。
+    // Files in the directory that are not managed by the video: not deleted, but listed.
     expect(await catalog.purge(entryId)).toEqual({
       status: 'blocked',
       entryId,
@@ -1248,7 +1247,7 @@ describe('Space 目录', () => {
     });
     await fs.rm(path.join(to, '笔记.txt'));
 
-    // 结果还等用户决定写不写进这个视频的任务、进行中的任务：不删。
+    // Jobs whose results are waiting for the user to decide whether to write them into this video, and jobs in progress: not deleted.
     const pending = job({ kind: 'generateImage', state: 'needs-reconciliation', videoId: 'v1' });
     jobs.put(pending);
     expect(await catalog.purge(entryId)).toMatchObject({ status: 'blocked', references: [{ kind: 'job', jobId: pending.jobId }] });
@@ -1257,7 +1256,7 @@ describe('Space 目录', () => {
     expect(await catalog.purge(entryId)).toEqual({ status: 'purged', entryId });
     await expect(fs.stat(to)).rejects.toThrow();
     await expect(fs.stat(path.join(projectDir, '.ccut-trash'))).rejects.toThrow();
-    // 链接素材的原文件在视频目录之外，不动。
+    // The original file of a linked asset is outside the video directory: not touched.
     await expect(fs.readFile(path.join(projectDir, 'raw', 'clip.mp4'), 'utf8')).resolves.toBe('mp4');
     expect(() => catalog.get(entryId)).toThrow(RpcError);
     expect(marks.trashedVideos().size).toBe(0);
@@ -1266,7 +1265,7 @@ describe('Space 目录', () => {
   it('删除了的视频：启动时按目录实际在哪里核对记录；回收站保留期到了才物理删除，有引用的留着', async () => {
     const first = await open();
     const info = (await first.catalog.videoEntryAt(videoDir))!;
-    // 记下了、目录没有移过去（删除时崩溃）：重启后记录去掉，视频还在原处，标记回到原来的条目。
+    // Recorded, but the directory was not moved (crash during deletion): after restart the record is removed, the video stays in place, and the marker goes back to the original entry.
     await first.catalog.update({ entryId: info.entry.id, favorite: true });
     await first.catalog.recordTrashedVideo(first.catalog.trashEntryId(info.sourceKey, '.ccut-trash/t0/访谈'), {
       formerEntryId: info.entry.id,
@@ -1285,7 +1284,7 @@ describe('Space 目录', () => {
     expect(marks.trashedVideos().size).toBe(0);
     expect(second.catalog.get(info.entry.id)).toMatchObject({ kind: 'video', user: { favorite: true, trashedAt: null } });
 
-    // 真的移进去了：重启后还在回收站里。
+    // Actually moved in: still in the trash after restart.
     const now = Date.now();
     const { entryId } = await trashVideo(second.catalog, new Date(now - 31 * 86_400_000).toISOString());
     const cover = byName(second.catalog, 'cover.png');
@@ -1296,10 +1295,10 @@ describe('Space 目录', () => {
     const { catalog } = await open();
     expect(catalog.get(entryId).user.trashedAt).not.toBeNull();
 
-    // 保留期 30 天：刚移进来的不删；删除了 31 天的视频删掉。
+    // Retention period is 30 days: a video just moved in is not deleted; a video deleted 31 days ago is deleted.
     expect(await catalog.sweepTrash(30, now)).toEqual({ purged: 1, kept: 0 });
     expect(() => catalog.get(entryId)).toThrow(RpcError);
-    // 到期之后：没有引用的删掉。
+    // After expiry: those with no references are deleted.
     expect(await catalog.sweepTrash(30, now + 31 * 86_400_000)).toEqual({ purged: 2, kept: 0 });
     await expect(fs.stat(path.join(projectDir, 'cover.png'))).rejects.toThrow();
     await expect(fs.stat(path.join(projectDir, 'raw', 'clip.mp4'))).rejects.toThrow();
@@ -1338,7 +1337,7 @@ describe('Space 目录', () => {
     await artifacts.load();
     const baseline = (await open()).catalog.entries().length;
     const first = await open(undefined, artifacts);
-    // 不派生新的目录条目，也不留派生用的事实。
+    // Does not derive new directory entries, and does not keep the facts used for derivation.
     expect(first.catalog.entries()).toHaveLength(baseline);
     expect(first.catalog.entries().some((e) => e.id === audio || e.id === plan)).toBe(false);
     expect(artifacts.list()).toEqual([]);
@@ -1346,7 +1345,7 @@ describe('Space 目录', () => {
     await first.catalog.close();
     await artifacts.flush();
 
-    // Ledger 修剪掉了这次配音：重启之后引用照样在，产物库清扫不删它的音频。
+    // The Ledger pruned this dubbing job: after restart the reference still exists, and the artifact store sweep does not delete its audio.
     jobs.records = [];
     const reloaded = new SpaceArtifactStore(file);
     await reloaded.load();
@@ -1390,7 +1389,7 @@ describe('Space 目录', () => {
     expect(byName(first.catalog, '访谈')).toMatchObject({ kind: 'video', origin });
     await first.catalog.close();
 
-    // Ledger 修剪掉了这次运行：重启之后来源照样在（记录没有产物，也不会被当成清除完了去掉）。
+    // The Ledger pruned this run: after restart the source still exists (the record has no artifacts, so it is not removed as if clearing had completed).
     jobs.records = [];
     const reloaded = new SpaceArtifactStore(file);
     await reloaded.load();
@@ -1409,12 +1408,12 @@ describe('Space 目录', () => {
     const before = first.catalog.get('sha256:aa');
     expect(before).toMatchObject({ status: 'applied', origin: { source: 'generated', videoId: 'v1' } });
     await first.catalog.close();
-    // 记录里只有派生用的事实，没有 Ledger 的其余内容。
+    // The record holds only the facts used for derivation, not the rest of the Ledger's content.
     const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { jobs: Record<string, unknown>[] };
     expect(saved.jobs.map((j) => j.kind).sort()).toEqual(['export', 'generateImage']);
     expect(saved.jobs.every((j) => !('warnings' in j) && !('contentHash' in j))).toBe(true);
 
-    // Ledger 修剪掉了全部任务（不发事件）：重启之后产物与导出照样在，占位不在。
+    // The Ledger pruned all jobs (no event sent): after restart the artifacts and exports still exist, and the placeholders do not.
     jobs.records = [];
     const reloaded = new SpaceArtifactStore(file);
     await reloaded.load();
@@ -1424,7 +1423,7 @@ describe('Space 目录', () => {
     expect(byName(catalog, '访谈.srt')).toMatchObject({ kind: 'subtitle', status: 'published', ref: { artifactId: 'sha256:srt' } });
     expect(catalog.entries().some((e) => e.status === 'generating' || e.status === 'failed')).toBe(false);
 
-    // 一个任务的产物删掉一部分，记录留着；全部删掉之后去掉，清除标记也不再需要。
+    // Some artifacts of one job are deleted and the record is kept; it is removed once all are deleted, and the purge marker is no longer needed.
     for (const id of ['sha256:bb', 'sha256:aa']) {
       await catalog.update({ entryId: id, trashed: true });
       expect(await catalog.purge(id)).toMatchObject({ status: 'purged' });
@@ -1459,7 +1458,7 @@ describe('Space 目录', () => {
       });
     jobs.put(translated('sha256:in', inside, 'srt'));
     jobs.put(translated('sha256:out', outside, 'vtt'));
-    // 下载也是文件产物；项目归属与文件的物理目录独立。
+    // A download is also a file artifact; project ownership and the file's physical directory are independent.
     jobs.put(
       job({
         kind: 'pipeline',
@@ -1487,7 +1486,7 @@ describe('Space 目录', () => {
     expect(projectOf(byName(first.catalog, 'cover.png'))).toBe('assigned-project');
     await first.catalog.close();
 
-    // 产物记录只留流程名；Ledger 修剪掉之后重启，条目照样在。
+    // The artifact record keeps only the workflow name; after the Ledger is pruned and the app restarts, the entry still exists.
     const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { jobs: Array<{ kind: string; pipeline?: unknown }> };
     expect(saved.jobs.map((j) => j.pipeline)).toEqual(expect.arrayContaining([{ name: 'translate-subtitles' }, { name: 'link-import', params: { projectId: 'assigned-project' } }]));
     expect(saved.jobs).toHaveLength(3);
@@ -1531,7 +1530,7 @@ describe('Space 目录', () => {
     expect(first.catalog.locateBytes(artifactId)).toEqual({ root: downloads, file: delivered });
     await first.catalog.close();
 
-    // 不经 Job Ledger：产物记录里的这一条读回来认得，重启之后条目还在。
+    // Not via the Job Ledger: this entry in the artifact record reads back and is recognized; after restart the entry still exists.
     const reloaded = new SpaceArtifactStore(file);
     await reloaded.load();
     expect(reloaded.list().map((facts) => facts.pipeline)).toEqual([{ name: 'downloads-save' }]);
@@ -1544,7 +1543,7 @@ describe('Space 目录', () => {
     await fs.writeFile(subtitle, '1\n00:00:01,000 --> 00:00:02,000\n<i>Hello</i>\n\n2\n00:00:03,000 --> 00:00:04,000\nworld\n');
     await fs.writeFile(path.join(projectDir, 'notes.md'), '# 标题\n正文\n');
     await fs.writeFile(path.join(projectDir, 'brief.pdf'), '%PDF');
-    // 只给文件的转录写到保存位置（来源目录之外）；语音合成另存了副本。
+    // The transcription output is written only to the save location (outside the source directory); speech synthesis saved an extra copy elsewhere.
     const saved = path.join(otherDir, 'clip.txt');
     await fs.writeFile(saved, 'Hello\n');
     const audioCopy = path.join(otherDir, 'Hello.mp3');
@@ -1606,7 +1605,7 @@ describe('Space 目录', () => {
     expect(code(() => catalog.resolveFile(clip.id, ['subtitle']))).toEqual(['invalid-request', 'SPACE_ENTRY_UNSUPPORTED']);
     expect(code(() => catalog.resolveFile('sha256:gone', ['document', 'subtitle']))).toEqual(['conflict', 'SPACE_ENTRY_NO_FILE']);
 
-    // 流程参数：只换 `{ entryId }`，路径与别的字段原样。
+    // Workflow parameters: only `{ entryId }` is replaced; the path and other fields are kept as they are.
     expect(resolvePipelineEntryInputs(catalog, 'transcribe', { file: { entryId: clip.id }, language: 'en' })).toEqual({
       file: path.join(projectDir, 'raw', 'clip.mp4'),
       language: 'en',
@@ -1626,7 +1625,7 @@ describe('Space 目录', () => {
     const untouched = { videoId: 'v1', target: { entryId: 'x' } };
     expect(resolvePipelineEntryInputs(catalog, 'translate', untouched)).toBe(untouched);
 
-    // 素材：字幕去掉时间码与标记，文档原样；PDF 不是文字。
+    // Material: subtitles have timecodes and markup stripped, documents are kept as they are; PDF is not text.
     expect(await materialText(catalog, srt.id)).toEqual({ text: 'Hello\nworld', fileName: 'talk.srt' });
     expect((await materialText(catalog, byName(catalog, 'notes.md').id)).text).toBe('# 标题\n正文\n');
     await expect(materialText(catalog, byName(catalog, 'brief.pdf').id)).rejects.toMatchObject({
@@ -1653,7 +1652,7 @@ describe('Space 目录', () => {
       ],
     });
 
-    // 回收站里的条目。
+    // Entry in the trash.
     await catalog.update({ entryId: srt.id, trashed: true });
     expect(code(() => catalog.resolveFile(srt.id, ['subtitle']))).toEqual(['conflict', 'SPACE_ENTRY_TRASHED']);
   });

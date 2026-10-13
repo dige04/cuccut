@@ -19,7 +19,7 @@ import { formatReconcileResult, formatResources } from './admin/jobs-output.ts';
 import { formatBundleLines, installFailureLines } from './admin/models-output.ts';
 import { renderError } from './envelope.ts';
 
-// 一个只给测试用的目录：Runtime 在中文下写成的文字带着引用，CLI 在英文下按引用重新生成。
+// A directory for tests only: text the Runtime wrote under Chinese carries message references, and the CLI regenerates it in English from those references.
 const R = defineCatalog(
   'cliRefTest',
   {
@@ -62,7 +62,7 @@ describe('CLI shows stored Runtime text in its own language', () => {
     const hint = R.grantHint({ recipient: 'openai' });
     const plain = { remedy: remedy.text, remedyRef: refOf(remedy) };
     const grant = { remedy: { hint: hint.text, hintRef: refOf(hint), commands: ['cuccut grants create --recipient openai'] } };
-    // 失败的信封把错误 details 摊在顶层（cli.ts），补救与它的引用跟着上来。
+    // A failed envelope spreads the error details at the top level (cli.ts), so the remedy and its reference come up with them.
     const lines = (details: object) => renderError({ code: 'X', message: 'm', ...details }).split('\n');
     english();
     expect(lines(plain)[1]).toBe('  Free up some disk space, then try again');

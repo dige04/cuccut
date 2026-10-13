@@ -30,7 +30,7 @@ import { useArtifactUrl, useCancelJob, useDownloadArtifact } from '../tools/use-
 import { ModelTryNote } from './model-check-line.tsx';
 import { MUSIC_LOCAL_COPY as COPY } from './music-local-copy.ts';
 
-/* 与语音合成的试听同一套面板（tts-quick-test.tsx，设计稿 settings-local.css 的 .ttst）。 */
+/* The same panel as the speech synthesis trial (tts-quick-test.tsx; design mock settings-local.css `.ttst`). */
 const panel = style({
   display: 'flex',
   flexDirection: 'column',
@@ -75,17 +75,15 @@ export interface MusicQuickTestProps {
   bundleId: string;
   name: string;
   model: MusicModelInfo;
-  /** 上次检查没通过时面板开头的提醒（model/model-check.ts `tryNotice`）。 */
+  /** Reminder at the top of the panel when the last check did not pass (model/model-check.ts `tryNotice`). */
   notice?: TryNoteView | null;
   canCheck?: boolean;
   onCheck?: (k: 'repair' | 'recheck' | 'check') => void;
 }
 
 /**
- * 音乐生成那一行的「试听」（设计稿 settings-music.jsx `MusicQuickTest`）：只挑风格与形式，固定 10 秒、少几步、不编排，
- * 提交一次真的 `models.generateMusic`（`provider: 'local'`，`model` 是模型包 ID）；试的是「这只模型 + 它的引擎能不能出声」，
- * 不是作品。进度与结果从 `jobs` 主题读；选择与最近的结果按模型留着（state/music-quick-store.ts）。
- * 失败与「上次检查没通过」的提醒走检查那一套说法（`TRY_SUBJECT_MUSIC`），不弹 toast。
+ * The “试听”(Trial listen) on a music generation row (design mock settings-music.jsx `MusicQuickTest`): only style and form are picked, fixed at 10 seconds, with fewer steps and no arrangement. Submitting sends one real `models.generateMusic` (`provider: 'local'`, `model` is the model package ID). What is tested is whether “this model plus its engine” can produce sound, not a piece of work. Progress and results are read from the `jobs` topic. The selection and the latest result are kept per model (state/music-quick-store.ts).
+ * Failures and the “last check did not pass” reminder use the check wording (`TRY_SUBJECT_MUSIC`), and no toast is shown.
  */
 export function MusicQuickTest({ bundleId, name, model, notice = null, canCheck = false, onCheck }: MusicQuickTestProps) {
   const runtime = useRuntime();

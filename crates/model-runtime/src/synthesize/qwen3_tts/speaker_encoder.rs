@@ -1,11 +1,11 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/SpeakerEncoder.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/SpeakerEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! ECAPA-TDNN 说话人编码器（Base 模型音色克隆用），128 维 log-mel → 1024 维音色向量。
+//! ECAPA-TDNN speaker encoder (for voice cloning with the Base model): 128-dim log-mel → 1024-dim voice vector.
 
 use crate::synthesize::tensor::nn::{relu, sigmoid};
 use crate::synthesize::tensor::ops;
@@ -21,7 +21,7 @@ const RES2NET_SCALE: i32 = 8;
 const SE_BOTTLENECK: i32 = 128;
 const ASP_ATTENTION: i32 = 128;
 
-/// 普通（对称补零）Conv1d，输入 `[B, T, C]`，权重 MLX 布局 `[out, k, in]`。
+/// Ordinary (symmetric zero-padded) Conv1d, input `[B, T, C]`, weight in MLX layout `[out, k, in]`.
 struct Conv1d {
     weight: Array,
     bias: Option<Array>,
@@ -30,8 +30,8 @@ struct Conv1d {
 }
 
 impl Conv1d {
-    /// 说话人编码器的导出布局不统一（有的是 MLX `[out,k,in]`，有的是 PyTorch
-    /// `[out,in,k]`），按 `in_channels` 判定后只在 PyTorch 布局时转置。
+    /// The exported layouts of the speaker encoder are not uniform (some are MLX `[out,k,in]`, others PyTorch
+    /// `[out,in,k]`). The layout is determined by `in_channels`, and only the PyTorch layout is transposed.
     fn load(weights: &mut Weights, prefix: &str, in_channels: i32, padding: i32, dilation: i32) -> Result<Self> {
         let raw = weights.take(&format!("{prefix}.weight"))?;
         if raw.ndim() != 3 {
@@ -66,7 +66,7 @@ impl Conv1d {
     }
 }
 
-/// Squeeze-Excitation：时间均值 → conv1 → relu → conv2 → sigmoid → 按通道缩放。
+/// Squeeze-Excitation: temporal mean → conv1 → relu → conv2 → sigmoid → scale per channel.
 struct SeBlock {
     conv1: Conv1d,
     conv2: Conv1d,
@@ -87,7 +87,7 @@ impl SeBlock {
     }
 }
 
-/// Res2Net：通道切成 8 份，第 i 份（i≥1）经 `relu(conv[i-1](chunk (+ 上一输出)))`。
+/// Res2Net: channels are split into 8 chunks. Chunk i (i≥1) goes through `relu(conv[i-1](chunk (+ previous output)))`.
 struct Res2NetBlock {
     convs: Vec<Conv1d>,
 }
@@ -156,7 +156,7 @@ impl EcapaBlock {
     }
 }
 
-/// 注意力统计池化：全局均值/标准差拼接后算注意力，输出加权均值 ‖ 加权标准差 `[B, 2C]`。
+/// Attentive statistics pooling: concatenates the global mean and standard deviation, computes attention, and outputs the attention-weighted mean ‖ attention-weighted standard deviation `[B, 2C]`.
 struct AttentiveStatisticsPooling {
     tdnn: Conv1d,
     conv: Conv1d,
@@ -198,7 +198,7 @@ pub struct SpeakerEncoder {
 }
 
 impl SpeakerEncoder {
-    /// `weights` 已剥掉 `speaker_encoder.` 前缀。
+    /// `weights` already has the `speaker_encoder.` prefix stripped.
     pub fn load(weights: &mut Weights) -> Result<Self> {
         let mut blocks = Vec::with_capacity(3);
         for (index, dilation) in [2, 3, 4].into_iter().enumerate() {

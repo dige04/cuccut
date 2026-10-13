@@ -27,17 +27,15 @@ import { silentNodeLog, type NodeLogger } from './node-logger.ts';
 import { NodesServer as NS } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 节点上的远端任务（节点协议规范 §5–§7）。
+ * Remote tasks on the node (node protocol spec §5–§7).
  *
- * 任务在这里经历 `awaiting-input`（等发起端上传媒体），上传并核对摘要之后才交给 JobManager——与本机任务同一个
- * 模型包队列、同一个 Provider、同样的崩溃重试与输出校验。JobManager 的记录变化映射成 `NodeJob` 并记成带 `seq` 的事件；
- * Worker 崩溃后的自动重试不对外报告 `interrupted`（发起端会把它当作节点重启），只看到 `attempt` 加一。
+ * Here a task passes through `awaiting-input` (waiting for the initiator to upload the media). After the upload and digest check, it is handed to JobManager, which uses the same model-pack queue, the same Provider, the same crash retry and output validation as local tasks. JobManager's record changes are mapped to `NodeJob` and recorded as events with `seq`.
+ * An automatic retry after a Worker crash is not reported externally as `interrupted` (the initiator would take it for a node restart); it only shows as `attempt` incrementing.
  *
- * 文件：`<jobsDir>/<jobId>/input`（上传的媒体，任务终结即删）与 `result.json`（校验过的结果，`DELETE` 或终结后
- * 保留期满即删）。事件与记录在内存里；Runtime 重启后目录整个清掉，JobManager 的账本把未终结的标为 `interrupted`。
+ * Files: `<jobsDir>/<jobId>/input` (the uploaded media, deleted when the task terminates) and `result.json` (the validated result, deleted on `DELETE` or when the retention period after termination ends). Events and records are kept in memory. On Runtime restart the whole directory is cleared, and JobManager's ledger marks unfinished tasks as `interrupted`.
  */
 
-/** NodeJobs 驱动的执行器：JobManager 在结构上满足它。 */
+/** Executor driven by NodeJobs: JobManager satisfies it structurally. */
 export interface NodeJobRunner {
   submitFile(request: FileTranscribeRequest, submitter: JobSubmitter, observer?: FileJobObserver): Promise<{ jobId: Id }>;
   cancel(jobId: Id): Promise<{ state: JobState }>;
@@ -45,26 +43,26 @@ export interface NodeJobRunner {
   list(): JobRecord[];
 }
 
-/** 模型包的状态：ModelCatalog 在结构上满足它。 */
+/** Model pack status: ModelCatalog satisfies it structurally. */
 export interface NodeModels {
   list(): Promise<ModelBundleStatus[]>;
   status(bundleId: string): Promise<ModelBundleStatus | null>;
 }
 
 export interface NodeLimits {
-  /** 每个客户端未终结的任务上限（1 个运行加 8 个排队）。 */
+  /** Maximum number of unfinished tasks per client (1 running plus 8 queued). */
   maxActivePerClient: number;
-  /** 媒体上限（默认 16 GiB）。 */
+  /** Media size limit (default 16 GiB). */
   maxInputBytes: number;
-  /** staging 所在磁盘至少留出的空间（默认 2 GiB）。 */
+  /** Free space to keep at minimum on the disk where staging lives (default 2 GiB). */
   diskReserveBytes: number;
-  /** 创建后多久没完成上传就失败（默认 10 分钟）。 */
+  /** Fail if the upload has not completed this long after creation (default 10 minutes). */
   inputExpiryMs: number;
-  /** 终结后结果与记录保留多久（默认 10 分钟）。 */
+  /** How long results and records are kept after termination (default 10 minutes). */
   resultRetentionMs: number;
-  /** `cancel` 等任务终结的最长时间（默认 15 秒）。 */
+  /** Maximum time for `cancel` to wait for the task to terminate (default 15 seconds). */
   cancelWaitMs: number;
-  /** 记住多少个过期任务，用来对结果请求回 `410`（默认 1000）。 */
+  /** How many expired tasks to remember, so result requests can get `410` (default 1000). */
   tombstones: number;
 }
 
@@ -78,7 +76,7 @@ export const DEFAULT_NODE_LIMITS: NodeLimits = {
   tombstones: 1000,
 };
 
-/** 节点协议的 HTTP 错误：`code` 决定状态码（规范 §8）。 */
+/** Node protocol HTTP error: `code` determines the status code (spec §8). */
 export class NodeHttpError extends Error {
   readonly code: NodeErrorCode;
   readonly status: number;
@@ -108,9 +106,9 @@ interface Entry {
   inputTimer: ReturnType<typeof setTimeout> | null;
   retentionTimer: ReturnType<typeof setTimeout> | null;
   upload: AbortController | null;
-  /** 已经交给 JobManager。 */
+  /** Already handed to JobManager. */
   submitted: boolean;
-  /** Worker 崩溃后自动重试的新尝试序号；这期间 JobManager 报告的 `interrupted` 不对外。 */
+  /** The new attempt number for the automatic retry after a Worker crash; `interrupted` reported by JobManager during this period is not exposed externally. */
   retrying: number | null;
   output: { sha256: string; byteLength: number } | null;
   terminal: Promise<void>;
@@ -122,11 +120,11 @@ export interface NodeJobsOptions {
   dir: string;
   runner: NodeJobRunner;
   models: NodeModels;
-  /** 这种能力此刻是否开放共享（默认全开）。只在创建时查：已经接受的任务不受之后的开关影响。 */
+  /** Whether this capability is currently open for sharing (all on by default). Checked only at creation: tasks already accepted are not affected by later switch changes. */
   capabilityEnabled?: (capability: string) => boolean;
   log?: NodeLogger;
   limits?: Partial<NodeLimits>;
-  /** staging 所在磁盘的可用字节数（默认 `fs.statfs`）。 */
+  /** Free bytes on the disk where staging lives (default `fs.statfs`). */
   freeBytes?: (dir: string) => Promise<number>;
 }
 
@@ -149,7 +147,7 @@ export class NodeJobs {
   readonly #entries = new Map<Id, Entry>();
   /** `<clientId>\n<clientJobId>` → jobId */
   readonly #idempotency = new Map<string, Id>();
-  /** 保留期满删掉的任务：jobId → clientId（结果请求回 `410`）。 */
+  /** Tasks whose retention period has ended and were deleted: jobId → clientId (result requests get `410`). */
   readonly #expired = new Map<Id, string>();
   readonly #unsubscribe: () => void;
 
@@ -164,13 +162,13 @@ export class NodeJobs {
     this.#unsubscribe = this.#runner.onChange((record) => this.#onRecord(record));
   }
 
-  /** Runtime 启动：上次留下的远端任务目录一律删除（它们的任务已不在内存里）。 */
+  /** Runtime startup: delete any remote task directories left over from last time (their tasks are no longer in memory). */
   async sweep(): Promise<void> {
     await fs.rm(this.#dir, { recursive: true, force: true });
     await fs.mkdir(this.#dir, { recursive: true });
   }
 
-  /** 这台节点上的远端任务数（`ShareStatus.jobs`）。 */
+  /** Number of remote tasks on this node (`ShareStatus.jobs`). */
   counts(): { running: number; queued: number } {
     let running = 0;
     let queued = 0;
@@ -181,7 +179,7 @@ export class NodeJobs {
     return { running, queued };
   }
 
-  // ---- §5.1 创建 ----
+  // ---- §5.1 Create ----
 
   async create(clientId: string, body: unknown): Promise<{ created: boolean; job: NodeJob }> {
     const parsed = nodeJobRequestSchema.safeParse(body);
@@ -217,7 +215,7 @@ export class NodeJobs {
       throw new NodeHttpError(NODE_ERROR.DISK_LOW, NS.diskLow().text);
     }
 
-    // 两次 await 之间可能有同一个幂等键的创建，或者别的任务占满了队列。
+    // Between the two awaits, a create with the same idempotency key may have arrived, or other tasks may have filled the queue.
     const raced = this.#idempotent(key, fingerprint);
     if (raced) return { created: false, job: raced };
     this.#checkQueue(clientId);
@@ -271,12 +269,12 @@ export class NodeJobs {
     return { created: true, job: structuredClone(entry.job) };
   }
 
-  // ---- §5.2 上传 ----
+  // ---- §5.2 Upload ----
 
   /**
-   * 把请求体流式写进任务目录并同时算 sha256。`contentLength` 是请求头的值（缺失时调用方先回 400）。
-   * 摘要与长度都相符时交给 JobManager；不符时任务以 `INPUT_HASH_MISMATCH` 失败、媒体立即删除。
-   * 上传途中连接断开：删掉半个文件，任务仍等上传。
+   * Stream the request body into the task directory while computing its sha256. `contentLength` is the request header's value (if it is missing, the caller first returns 400).
+   * If the digest and length both match, hand the task to JobManager. If they do not, the task fails with `INPUT_HASH_MISMATCH` and the media is deleted immediately.
+   * If the connection drops during the upload, delete the partial file; the task still waits for the upload.
    */
   async upload(clientId: string, jobId: Id, contentLength: number, body: Readable): Promise<void> {
     const entry = this.#own(clientId, jobId);
@@ -311,7 +309,7 @@ export class NodeJobs {
       await fs.rm(partial, { force: true }).catch(() => {});
       if (entry.upload === controller) entry.upload = null;
       if (controller.signal.aborted) throw new NodeHttpError(NODE_ERROR.INVALID_STATE, NS.noLongerAwaitingUpload().text, { state: entry.job.state });
-      // 发起端断开：任务仍等上传，可以重传。
+      // The initiator disconnected: the task still waits for upload, and re-upload is allowed.
       this.#log.warn('Remote job upload interrupted', { jobId, clientId });
       throw error;
     }
@@ -330,7 +328,7 @@ export class NodeJobs {
     if (entry.inputTimer) clearTimeout(entry.inputTimer);
     entry.inputTimer = null;
 
-    // 交给 JobManager：记录的第一次变化（queued）在 submitFile 返回之前就会到达，所以先标记。
+    // Handing off to JobManager: the first record change (queued) arrives before submitFile returns, so mark it first.
     entry.submitted = true;
     const options = entry.request.options;
     try {
@@ -368,27 +366,27 @@ export class NodeJobs {
     this.#log.info('Remote job media verified; queued', { jobId, clientId });
   }
 
-  // ---- §5.3 读取、取消、删除 ----
+  // ---- §5.3 Read, cancel, delete ----
 
   get(clientId: string, jobId: Id): NodeJob {
     return structuredClone(this.#own(clientId, jobId).job);
   }
 
-  /** 幂等；运行中的任务等它终结，最长 `cancelWaitMs`，超时返回当前状态。 */
+  /** Idempotent. A running task is waited on until it terminates, for at most `cancelWaitMs`; on timeout, the current state is returned. */
   async cancel(clientId: string, jobId: Id): Promise<NodeJob> {
     const entry = this.#own(clientId, jobId);
     await this.#cancel(entry, this.limits.cancelWaitMs);
     return structuredClone(entry.job);
   }
 
-  /** 未终结的先取消，然后删除媒体、结果、事件与记录。之后这个任务一律 404。 */
+  /** Unfinished tasks are cancelled first, then the media, result, events and record are deleted. After that, this task always returns 404. */
   async remove(clientId: string, jobId: Id): Promise<void> {
     const entry = this.#own(clientId, jobId);
     await this.#cancel(entry, null);
     await this.#drop(entry, false);
   }
 
-  /** 客户端被吊销：它的全部任务取消并删除。 */
+  /** When a client is revoked, all its tasks are cancelled and deleted. */
   async removeClient(clientId: string): Promise<void> {
     const entries = [...this.#entries.values()].filter((e) => e.clientId === clientId);
     await Promise.allSettled(entries.map((e) => this.#cancel(e, null)));
@@ -396,7 +394,7 @@ export class NodeJobs {
     for (const [jobId, owner] of this.#expired) if (owner === clientId) this.#expired.delete(jobId);
   }
 
-  /** 共享关闭或 Runtime 停止：全部远端任务取消并删除。 */
+  /** When sharing is closed or the Runtime stops, all remote tasks are cancelled and deleted. */
   async closeAll(): Promise<void> {
     const entries = [...this.#entries.values()];
     await Promise.allSettled(entries.map((e) => this.#cancel(e, null)));
@@ -405,16 +403,16 @@ export class NodeJobs {
     await fs.rm(this.#dir, { recursive: true, force: true }).catch(() => {});
   }
 
-  /** 不再接收 JobManager 的变化（Runtime 停止的最后一步）。 */
+  /** Stop receiving changes from JobManager (the last step of stopping the Runtime). */
   detach(): void {
     this.#unsubscribe();
   }
 
-  // ---- §6 事件 ----
+  // ---- §6 Events ----
 
   /**
-   * 订阅一个任务的事件：先给出 `seq > since` 的已有事件；任务已经终结时 `done` 为 true（调用方写完就关闭）。
-   * 否则之后的事件逐条交给 `listener`；终结的那条之后、或任务被删除时，`listener(null)` 表示结束。
+   * Subscribe to a task's events. First give the existing events with `seq > since`. If the task has already terminated, `done` is true (the caller closes the stream after writing).
+   * Otherwise, later events are passed to `listener` one by one. After the terminal event, or when the task is deleted, `listener(null)` signals the end.
    */
   subscribe(clientId: string, jobId: Id, since: number, listener: EventListener): { backlog: StoredEvent[]; done: boolean; close(): void } {
     const entry = this.#own(clientId, jobId);
@@ -424,7 +422,7 @@ export class NodeJobs {
     return { backlog, done: false, close: () => entry.listeners.delete(listener) };
   }
 
-  // ---- §7 结果 ----
+  // ---- §7 Result ----
 
   result(clientId: string, jobId: Id): { file: string; sha256: string; byteLength: number } {
     const entry = this.#entries.get(jobId);
@@ -437,11 +435,11 @@ export class NodeJobs {
     return { file: path.join(entry.dir, RESULT_FILE), ...entry.output };
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #own(clientId: string, jobId: Id): Entry {
     const entry = this.#entries.get(jobId);
-    // 别的客户端的任务一律当作不存在。
+    // Other clients' tasks are always treated as nonexistent.
     if (!entry || entry.clientId !== clientId) throw new NodeHttpError(NODE_ERROR.JOB_NOT_FOUND, NS.taskNotFound().text);
     return entry;
   }
@@ -484,22 +482,22 @@ export class NodeJobs {
     };
   }
 
-  /** JobManager 的记录变化 → NodeJob。 */
+  /** JobManager record change → NodeJob. */
   #onRecord(record: JobRecord): void {
     const entry = this.#entries.get(record.jobId);
     if (!entry || !entry.submitted || isNodeJobTerminal(entry.job.state)) return;
-    // 崩溃后的自动重试：这一次标为 interrupted、紧接着回到 running。发起端只看到 attempt 加一。
+    // Automatic retry after a crash: this one is marked interrupted, then immediately goes back to running. The initiator only sees the attempt number increase.
     if (record.state === 'interrupted' && entry.retrying !== null && record.endedAt === null) return;
     if (record.state === 'running' && entry.retrying !== null && record.attempt >= entry.retrying) entry.retrying = null;
     const job = entry.job;
-    // 节点只跑本机转写，不会有外发调用的 `needs-reconciliation`；万一出现按中断处理。
+    // The node runs only local transcription, so no outbound-call `needs-reconciliation` will occur; if one does, treat it as an interruption.
     const state: NodeJobState = record.state === 'needs-reconciliation' ? 'interrupted' : record.state;
     const next: Omit<NodeJob, 'lastSeq'> = {
       jobId: job.jobId,
       clientJobId: job.clientJobId,
       state,
       phase: record.phase,
-      // 节点只跑转写：进度的单位只有秒与段。
+      // The node only transcribes, so progress is measured only in seconds and segments.
       progress:
         record.progress && (record.progress.unit === 'seconds' || record.progress.unit === 'segments')
           ? { done: record.progress.done, total: record.progress.total, unit: record.progress.unit }
@@ -518,7 +516,7 @@ export class NodeJobs {
     if (isNodeJobTerminal(job.state)) void this.#terminated(entry);
   }
 
-  /** 节点自己让任务终结（等待上传时取消、上传不符、上传过期、交不进队列）。 */
+  /** The node itself ends the task (cancelled while waiting for upload, upload mismatch, upload expired, or it could not enter the queue). */
   async #finishLocal(entry: Entry, state: 'failed' | 'cancelled', error: NodeJob['error']): Promise<void> {
     if (isNodeJobTerminal(entry.job.state)) return;
     Object.assign(entry.job, { state, phase: 'done', progress: null, error, output: null } satisfies Partial<NodeJob>);
@@ -530,7 +528,7 @@ export class NodeJobs {
     await this.#finishLocal(entry, 'failed', { code: NODE_JOB_ERROR.INPUT_HASH_MISMATCH, message });
   }
 
-  /** 终结：删上传的媒体（没有结果时整个目录），开始结果的保留期。 */
+  /** On termination: delete the uploaded media (if there is no result, the whole directory), and start the result's retention period. */
   async #terminated(entry: Entry): Promise<void> {
     if (entry.inputTimer) clearTimeout(entry.inputTimer);
     entry.inputTimer = null;
@@ -574,7 +572,7 @@ export class NodeJobs {
     clearTimeout(timer);
   }
 
-  /** 删除一个任务的文件、事件与记录；`expired` 时记一个墓碑，结果请求回 `410`。 */
+  /** Delete a task's files, events and record. On `expired`, leave a tombstone so result requests get `410`. */
   async #drop(entry: Entry, expired: boolean): Promise<void> {
     const { jobId } = entry.job;
     if (this.#entries.get(jobId) !== entry) return;
@@ -598,7 +596,7 @@ export class NodeJobs {
     this.#emit(entry, { type: 'job' });
   }
 
-  /** 记一条事件并交给订阅者。`job` 事件带发出时完整的 NodeJob（`lastSeq` 就是这条的 seq）。 */
+  /** Record an event and pass it to the subscribers. `job` events carry the complete NodeJob as it was emitted (`lastSeq` is that event's seq). */
   #emit(entry: Entry, payload: { type: 'job' } | WithoutSeq<Extract<StoredEvent, { type: 'warning' | 'language' }>>): void {
     const seq = entry.job.lastSeq + 1;
     entry.job.lastSeq = seq;
@@ -620,8 +618,8 @@ function sameJob(current: NodeJob, next: Omit<NodeJob, 'lastSeq'>): boolean {
 }
 
 /**
- * 交给发起端的任务错误：去掉节点本机的诊断（Worker 的 stderr 尾部可能带本机路径），其余原样。
- * 诊断仍留在节点自己的 `jobs` 主题与账本里。
+ * Task error handed to the initiator: the node's local diagnostics are stripped (the Worker's stderr tail may contain local paths); everything else is kept as is.
+ * The diagnostics remain in the node's own `jobs` topic and ledger.
  */
 function remoteError(error: JobRecord['error']): NodeJob['error'] {
   if (!error) return null;

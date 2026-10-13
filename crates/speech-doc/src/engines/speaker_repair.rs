@@ -1,16 +1,8 @@
-//! speaker-repair：polish **前置**的说话人归属语义修复波次（`kind = "speaker-repair"`）。
+//! speaker-repair: the speaker-attribution semantic repair wave that runs **before** polish (`kind = "speaker-repair"`).
 //!
-//! 背景：diarization 偶尔把一个词、半句话判给对面（"打 DOTA 什么 | 的 | 就是宿舍
-//! 里面…"），或把切换点挪前挪后几个词。polish 把 ⏹ 当硬保证（句不得跨、必分
-//! 段），所以只要 `words[].sp` 还错着，主润色就被迫把"的"当独立句加标点。这一
-//! 波在分页之前跑：引擎按时间/形态**确定性筛出候选**（夹心短岛、无停顿无标点
-//! 的切换点），LLM 只做语义判别（"的"是邻句的语法延续 vs "对。"是独立应答），
-//! 答案是**索引契约**——按词编号的窗口 + `a-b LABEL` 区间——改字没有落脚点，
-//! 验收是纯算术（连续、覆盖、标签 ∈ 窗口现有说话人、段数不增）。
+//! Background: diarization occasionally assigns a single word or half a sentence to the other party ("打 DOTA 什么 | 的 | 就是宿舍里面…" ("what DOTA | of | it's dorm…")), or shifts a switch point forward or backward by a few words. Polish treats ⏹ as a hard guarantee (sentences may not cross and a paragraph break must occur). So as long as `words[].sp` is still wrong, the main polish is forced to put punctuation after "的" as an independent sentence. This wave runs before pagination. The engine deterministically selects candidates by time and shape: sandwiched short islands, and switch points with no pause and no punctuation. The LLM only makes the semantic judgment (is "的" a grammatical continuation of the neighboring sentence, or is "对。" an independent reply?). The answer is an **index contract**: word-numbered windows plus `a-b LABEL` ranges. There is nowhere to rewrite text, and validation is pure arithmetic (contiguous, covering, labels among the speakers present in the window, segment count not increased).
 //!
-//! 与其它波次一样：单说话人文档整波跳过（零调用）；定向重润跳过；候选里文本
-//! 全落在应答白名单（嗯/哦/对/OK…）的岛直接判 keep 不送 LLM。所有编辑只改
-//! `words[].sp`（`sp` 不进指纹，不引发阶段重跑）。
+//! As with the other waves: a single-speaker document skips this wave entirely (zero calls), and so does a targeted re-polish. Islands whose text falls entirely within the acknowledgment whitelist (嗯/哦/对/OK… ("mm / oh / yes / OK…")) are judged keep directly and never sent to the LLM. All edits change only `words[].sp`. `sp` does not enter the fingerprint, so no stage is re-run.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -25,33 +17,25 @@ use crate::filepipe::common::{Problem, ProblemCode, ProblemScope};
 use crate::llm::{LlmError, LlmJson, LlmRequest};
 use crate::speaker::{SpeakerLabels, speaker_turns};
 
-/// 夹心短岛的上限：轮次 ≤ 这么多词且 ≤ 这么多秒、两侧同一说话人 ⇒ 候选。
+/// Upper limit for a sandwiched short island: a turn of ≤ this many words and ≤ this many seconds, with the same speaker on both sides, counts as a candidate.
 pub const SPEAKER_REPAIR_ISLAND_MAX_WORDS: usize = 4;
 pub const SPEAKER_REPAIR_ISLAND_MAX_SECONDS: f64 = 1.2;
-/// 不自然切换点：切换处词间隙小于此值且前词无句末标点 ⇒ 候选。原始 ASR 的
-/// 标点分块不稳定（MOSS 同一次转录有的块出标点有的不出），"前词无句末"只是
-/// 负向信号——无标点块里多筛出一些候选只多花调用，不伤正确性。
+/// Unnatural switch point: if the gap between the words at the switch is smaller than this value and the preceding word has no sentence-final punctuation, it is a candidate. Raw ASR punctuation chunking is unstable. For MOSS, within one transcription some chunks have punctuation and some do not. "Preceding word has no sentence-final punctuation" is therefore only a negative signal. Selecting more candidates among unpunctuated chunks only costs extra calls and does not hurt correctness.
 pub const SPEAKER_REPAIR_UNNATURAL_GAP_SECONDS: f64 = 0.25;
-/// 候选两侧各带多少词上下文；相邻窗口合并，但合并后不超过 [`SPEAKER_REPAIR_WINDOW_MAX_WORDS`]。
+/// Each candidate carries this many words of context on either side. Adjacent windows are merged, but a merged window never exceeds [`SPEAKER_REPAIR_WINDOW_MAX_WORDS`].
 pub const SPEAKER_REPAIR_CONTEXT_WORDS: usize = 40;
 pub const SPEAKER_REPAIR_WINDOW_MAX_WORDS: usize = 240;
-/// 一次调用最多装几个窗口。
+/// Maximum number of windows packed into one call.
 pub const SPEAKER_REPAIR_WINDOWS_PER_CALL: usize = 8;
-/// 轮次上限：第一轮发全部窗口，第二轮只重发被拒的（带 `retry_reason`）；耗尽
-/// 后仍被拒的窗口保持原样（与不做修复完全一致）。
+/// Round limit. The first round sends all windows. The second round resends only the rejected ones, with `retry_reason`. Windows still rejected after the rounds run out are left as they are, which is identical to not running repair at all.
 pub const SPEAKER_REPAIR_MAX_ROUNDS: u32 = 2;
-/// 单个窗口里**连续改动**的词串上限（词数 / 时长任一超限即整窗口忽略）。这一波
-/// 只修碎片（岛 ≤4 词）与几个词的边界偏移；一次改判几十个词是在改整段引语的
-/// 归属，那不是 diarization 碎片而是模型的过度合并（实测 flash 把 7h 访谈片头
-/// 里被引用的 38 词嘉宾原声并给了旁白），必须由确定性上限挡住。
+/// Upper limit on a **contiguous run of changed words** within a single window. Exceeding either the word count or the duration causes the whole window to be ignored. This wave only repairs fragments (islands of ≤4 words) and boundary shifts of a few words. Reassigning dozens of words at once would be rewriting the attribution of a whole quoted passage. That is not a diarization fragment but over-merging by the model. In practice, flash assigned 38 words of a guest's quoted original speech in the opening of a 7-hour interview to the narrator. A deterministic cap must block that.
 pub const SPEAKER_REPAIR_MAX_CHANGE_WORDS: usize = 8;
 pub const SPEAKER_REPAIR_MAX_CHANGE_SECONDS: f64 = 2.5;
-/// 单个窗口里改动词的**总数**上限（几个岛并回 + 一处边界偏移的量级）；改判
-/// 被真实应答隔开的多段同样挡在这里。
+/// Upper limit on the **total** number of changed words in a single window (roughly several islands merged back, plus one boundary shift). Reassignments spanning several segments separated by real acknowledgments are blocked here too.
 pub const SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS: usize = 12;
 
-/// 应答白名单：岛的全部词（剥标点、小写）都在表里 ⇒ 真实应答，直接保留、
-/// 不送 LLM。"啊/呃"这类既可能是应答也可能是邻句延续的语气词故意不在表里。
+/// Acknowledgment whitelist: if all of an island's words (punctuation stripped, lowercased) are in the table, it is a real acknowledgment. It is kept directly and not sent to the LLM. Interjections such as "啊/呃" ("ah / uh") can be either an acknowledgment or the continuation of the neighboring sentence, so they are deliberately left out of the table.
 pub const SPEAKER_REPAIR_BACKCHANNEL_LEXICON: &[&str] = &[
     "嗯",
     "嗯嗯",
@@ -96,39 +80,32 @@ pub const SPEAKER_REPAIR_BACKCHANNEL_LEXICON: &[&str] = &[
 pub const FENCE_WINDOW_PREFIX: &str = "<<<WINDOW";
 pub const FENCE_WINDOW_END: &str = "<<<WINDOW-END>>>";
 
-/// speaker-repair 的账目（进 polish 信封 `speakerRepair.wave`）。
+/// Accounting for speaker-repair (goes into the polish envelope as `speakerRepair.wave`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeakerRepairReport {
-    /// 整波跳过的原因：`disabled` / `single-speaker` / `scoped-run` /
-    /// `no-candidates`；`None` 表示真的发了调用（或候选全被白名单接住）。
+    /// Reasons for skipping the whole wave: `disabled` / `single-speaker` / `scoped-run` / `no-candidates`. `None` means the call was actually made, or all candidates were absorbed by the whitelist.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
-    /// 候选：夹心短岛数、其中被应答白名单直接保留数、不自然切换点数。
+    /// Candidates: number of sandwiched short islands, number of those kept directly by the acknowledgment whitelist, and number of unnatural switch points.
     pub islands: u32,
     pub islands_kept_by_lexicon: u32,
     pub unnatural_boundaries: u32,
-    /// 发给模型的窗口数与调用次数（含重试轮）。
+    /// Number of windows sent to the model, and number of calls (including retry rounds).
     pub windows: u32,
     pub calls: u32,
-    /// 结果：改了说话人的词数；答案与现状一致的窗口数；答案改动了归属的窗口数
-    /// （其中段数减少的记 `islands_merged`、段数不变只挪边界的记 `boundaries_moved`）；
-    /// 轮次耗尽仍被拒、保持原样的窗口数。
+    /// Result: number of words whose speaker changed; number of windows whose answer matched the current state; number of windows whose answer changed the attribution. Among the latter, those where the segment count dropped are counted as `islands_merged`, and those where the segment count stayed the same but only the boundary moved are counted as `boundaries_moved`. Also the number of windows still rejected after the rounds ran out, which were left as they were.
     pub relabelled_words: u32,
     pub windows_confirmed: u32,
     pub windows_changed: u32,
     pub islands_merged: u32,
     pub boundaries_moved: u32,
     pub windows_rejected: u32,
-    /// 答案合法但改动超过上限（总数 [`SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS`]，或
-    /// 单串 [`SPEAKER_REPAIR_MAX_CHANGE_WORDS`] / [`SPEAKER_REPAIR_MAX_CHANGE_SECONDS`]）、
-    /// 被引擎整窗口忽略的窗口数
-    /// （成段改判超出这一波的证据范围：实测 flash 会把一整段 38 词的引语并给
-    /// 旁白者）。
+    /// Number of windows whose answer was valid but whose changes exceeded the cap (total [`SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS`], or a single run over [`SPEAKER_REPAIR_MAX_CHANGE_WORDS`] words or [`SPEAKER_REPAIR_MAX_CHANGE_SECONDS`] seconds). These windows were ignored whole by the engine. Segment-level reassignments go beyond this wave's evidence scope: in practice, flash would assign a whole 38-word quoted passage to the narrator.
     pub windows_capped: u32,
 }
 
-/// 候选窗口（全局词下标区间，左闭右开）。
+/// Candidate window (global word index range, half-open).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeakerRepairPlan {
     pub windows: Vec<Range<usize>>,
@@ -152,7 +129,7 @@ fn normalized_island_text(words: &[Word]) -> String {
         .join(" ")
 }
 
-/// 岛文本是否整体落在应答白名单里（CJK 逐字岛拼起来比对；Latin 按空格拼）。
+/// Whether an island's text falls entirely within the acknowledgment whitelist. CJK islands are concatenated character by character for the comparison. Latin islands are joined with spaces.
 pub fn is_backchannel_island(words: &[Word]) -> bool {
     let joined = normalized_island_text(words);
     if joined.is_empty() {
@@ -164,7 +141,7 @@ pub fn is_backchannel_island(words: &[Word]) -> bool {
         .any(|entry| *entry == joined || *entry == compact)
 }
 
-/// 确定性候选筛选 → 窗口。纯函数，不看标点是否存在（只把"前词句末"当负向信号）。
+/// Deterministic candidate selection, producing windows. A pure function. It does not check whether punctuation exists; a sentence-final mark on the preceding word is used only as a negative signal.
 pub fn plan_speaker_repair(words: &[Word]) -> SpeakerRepairPlan {
     let mut plan = SpeakerRepairPlan {
         windows: Vec::new(),
@@ -176,7 +153,7 @@ pub fn plan_speaker_repair(words: &[Word]) -> SpeakerRepairPlan {
     if turns.len() < 2 {
         return plan;
     }
-    // 候选锚点区间（全局词下标）。
+    // Candidate anchor ranges (global word indices).
     let mut anchors: Vec<Range<usize>> = Vec::new();
     for (index, turn) in turns.iter().enumerate() {
         let sandwiched = index > 0
@@ -207,7 +184,7 @@ pub fn plan_speaker_repair(words: &[Word]) -> SpeakerRepairPlan {
         return plan;
     }
     anchors.sort_by_key(|range| (range.start, range.end));
-    // 窗口 = 锚点 ± 上下文，重叠/相邻的合并，合并后超上限则另起。
+    // Window = anchor ± context. Overlapping or adjacent windows are merged. If the merge exceeds the limit, start a new window.
     let mut windows: Vec<Range<usize>> = Vec::new();
     for anchor in anchors {
         let start = anchor.start.saturating_sub(SPEAKER_REPAIR_CONTEXT_WORDS);
@@ -220,7 +197,7 @@ pub fn plan_speaker_repair(words: &[Word]) -> SpeakerRepairPlan {
                 last.end = merged_end;
                 continue;
             }
-            // 装不下：新窗口从上一窗口末尾起（锚点仍在窗内）。
+            // If it does not fit, the new window starts from the end of the previous window (the anchor is still inside the window).
             let fresh_start = anchor
                 .start
                 .saturating_sub(SPEAKER_REPAIR_CONTEXT_WORDS)
@@ -230,13 +207,13 @@ pub fn plan_speaker_repair(words: &[Word]) -> SpeakerRepairPlan {
         }
         windows.push(start..end);
     }
-    // 只有一个说话人的窗口（合并/裁剪后可能出现）没有可判的东西。
+    // A window with only one speaker (possible after merging or trimming) has nothing to judge.
     windows.retain(|window| speaker_turns(&words[window.clone()]).len() > 1);
     plan.windows = windows;
     plan
 }
 
-/// 窗口现状：`(段起始行 1 基, 标签)` 序列。
+/// Current state of a window: a sequence of `(1-based start line of segment, label)`.
 fn current_segments(
     words: &[Word],
     labels: &SpeakerLabels,
@@ -255,7 +232,7 @@ fn current_segments(
         .collect()
 }
 
-/// 渲染一个窗口块（`index` 为块内 1 基序号）。
+/// Renders one window block (`index` is the 1-based number within the block).
 pub fn render_speaker_repair_window(
     words: &[Word],
     labels: &SpeakerLabels,
@@ -297,7 +274,7 @@ pub fn render_speaker_repair_window(
     out
 }
 
-/// 一页 = 若干窗口块，块间空一行。
+/// One page is several window blocks, separated by a blank line.
 pub fn render_speaker_repair_page(
     words: &[Word],
     labels: &SpeakerLabels,
@@ -311,14 +288,14 @@ pub fn render_speaker_repair_page(
         .join("\n")
 }
 
-/// 载荷里一个窗口块的元数据（从块头解析）。
+/// Metadata for one window block in the payload, parsed from the block header.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowMeta {
     pub lines: usize,
     pub speakers: Vec<String>,
-    /// 现状段数。
+    /// Current segment count.
     pub segments: usize,
-    /// 现状 `(起, 止, 标签)`（1 基闭区间）。
+    /// Current `(start, end, label)` (1-based closed range).
     pub current: Vec<(usize, usize, String)>,
 }
 
@@ -359,7 +336,7 @@ fn parse_window_header(line: &str) -> Option<(usize, Option<WindowMeta>)> {
     Some((index, meta))
 }
 
-/// 从载荷解析各窗口元数据（按块序）。
+/// Parses each window's metadata from the payload, in block order.
 pub fn speaker_repair_payload_windows(payload: &str) -> Vec<WindowMeta> {
     payload
         .lines()
@@ -397,17 +374,14 @@ fn parse_range_label(line: &str) -> Option<((usize, usize), String)> {
     Some(((start, end), label))
 }
 
-/// 一次答案的解析结果：每个窗口 `Some(段落)`（`(起, 止, 标签)` 1 基闭区间，
-/// 已合并相邻同标签段）或 `None`（该窗口被拒，理由在 `problems` 里）。
+/// Parse result of one answer: for each window, either `Some(segments)` (`(start, end, label)` 1-based closed ranges, with adjacent same-label segments already merged) or `None` (the window was rejected; the reason is in `problems`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeakerRepairParsed {
     pub problems: Vec<Problem>,
     pub windows: Vec<Option<Vec<(usize, usize, String)>>>,
 }
 
-/// 解析并验收一页答案。宽容：块头可丢 `>>>`、块尾可缺（下一块头或文末即止）、
-/// 单窗口页可省块头；一行多个 `a-b LABEL` 也认。验收：区间从 1 起、首尾相接、
-/// 到末行；标签 ∈ 窗口现有说话人；段数（合并相邻同标签后）≤ 现状段数。
+/// Parses and validates one page's answer. The parser is lenient: a block header may lack `>>>`, a block's tail may be missing (it ends at the next block header or at end of file), and a single-window page may omit the block header. `a-b LABEL` pairs are accepted even when several share a line. Validation: ranges start at 1, are contiguous, and reach the last line; labels must be among the speakers present in the window; the segment count (after merging adjacent same-label segments) must not exceed the current segment count.
 pub fn parse_speaker_repair_page(payload: &str, answer: &str) -> SpeakerRepairParsed {
     let metas = speaker_repair_payload_windows(payload);
     let mut parsed = SpeakerRepairParsed {
@@ -417,7 +391,7 @@ pub fn parse_speaker_repair_page(payload: &str, answer: &str) -> SpeakerRepairPa
     if metas.is_empty() {
         return parsed;
     }
-    // 收集块：块序号 → 原始行。
+    // Collect blocks: block number → raw lines.
     let mut blocks: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let mut current: Option<usize> = None;
     let mut orphan: Vec<String> = Vec::new();
@@ -456,7 +430,7 @@ pub fn parse_speaker_repair_page(payload: &str, answer: &str) -> SpeakerRepairPa
         let mut ranges: Vec<(usize, usize, String)> = Vec::new();
         let mut bad: Option<String> = None;
         for line in lines {
-            // 一行可能有多个 `a-b LABEL`：按「数字开头」切。
+            // A line may hold several `a-b LABEL` pairs. Split them at each point where a number begins.
             let mut pieces: Vec<String> = Vec::new();
             for token in line.split_whitespace() {
                 let starts_range = token.chars().next().is_some_and(|ch| ch.is_ascii_digit());
@@ -541,7 +515,7 @@ fn validate_window_answer(
             expected - 1
         ));
     }
-    // 合并相邻同标签段再数段。
+    // Merge adjacent same-label segments before counting segments.
     let mut merged: Vec<(usize, usize, String)> = Vec::new();
     for (start, end, label) in ranges.drain(..) {
         match merged.last_mut() {
@@ -562,7 +536,7 @@ fn validate_window_answer(
     Ok(())
 }
 
-/// agent 侧 `task submit` 对 speaker-repair 答案的镜像 lint。
+/// Mirror lint on the agent side for speaker-repair answers submitted through `task submit`.
 pub fn lint_agent_answer_speaker_repair(payload: &str, answer: &str) -> Vec<String> {
     parse_speaker_repair_page(payload, answer)
         .problems
@@ -600,12 +574,9 @@ Rules:
     )
 }
 
-/// speaker-repair 波次。返回是否有词被改了说话人（调用方据此知道轮次已变）。
+/// speaker-repair wave. Returns whether any word had its speaker changed. The caller uses this to know that the turns have changed.
 ///
-/// `enabled=false`、单说话人、定向重润（`scoped`）或没有候选时整波跳过、
-/// `report.skipped` 给出原因；否则窗口分页发送（每页 ≤
-/// [`SPEAKER_REPAIR_WINDOWS_PER_CALL`] 个窗口），被拒窗口第二轮带原因重发，
-/// 耗尽后保持原样。窗口之间互不重叠，答案按窗口独立落到 `doc.words[].sp`。
+/// The whole wave is skipped when `enabled=false`, the document has a single speaker, the run is a targeted re-polish (`scoped`), or there are no candidates. `report.skipped` gives the reason. Otherwise windows are paginated and sent (up to [`SPEAKER_REPAIR_WINDOWS_PER_CALL`] windows per call). Rejected windows are resent in round two with the reason. After the rounds run out, they are left as they were. Windows do not overlap one another, and each window's answer is applied independently to `doc.words[].sp`.
 pub fn speaker_repair_wave(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -731,10 +702,7 @@ pub fn speaker_repair_wave(
     }
     report.windows_rejected = pending.len() as u32;
 
-    // 应用：窗口互不重叠，逐窗口把 `a-b LABEL` 落到 sp。先算出改动串再落地：
-    // 任一改动串超过 [`SPEAKER_REPAIR_MAX_CHANGE_WORDS`] / [`SPEAKER_REPAIR_MAX_CHANGE_SECONDS`]
-    // 就整窗口忽略（`windows_capped`）——这一波只修碎片与几个词的边界偏移，
-    // 成段改判超出它的证据范围。
+    // Apply: windows do not overlap, so `a-b LABEL` is applied to sp window by window. Compute the changed runs first, then apply. If any changed run exceeds [`SPEAKER_REPAIR_MAX_CHANGE_WORDS`] or [`SPEAKER_REPAIR_MAX_CHANGE_SECONDS`], the whole window is ignored (`windows_capped`). This wave only repairs fragments and few-word boundary shifts. Segment-level reassignments exceed its evidence scope.
     let mut changed_any = false;
     for (item, window) in plan.windows.iter().enumerate() {
         let Some(answer) = answers[item].as_ref() else {
@@ -778,9 +746,7 @@ pub fn speaker_repair_wave(
     Ok(changed_any)
 }
 
-/// 答案的改动是否超过上限：改动词总数超过 [`SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS`]，
-/// 或任一连续改动串的词数 / 时长超限。
-/// `proposed` 是升序的全局词下标（同一窗口内）。
+/// Whether the answer's changes exceed the cap: the total number of changed words exceeds [`SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS`], or the word count or duration of any contiguous changed run exceeds its limit. `proposed` is the ascending list of global word indices (within the same window).
 fn change_runs_exceed_cap(words: &[Word], proposed: &[(usize, String)]) -> bool {
     if proposed.len() > SPEAKER_REPAIR_MAX_CHANGE_TOTAL_WORDS {
         return true;
@@ -808,12 +774,12 @@ fn change_runs_exceed_cap(words: &[Word], proposed: &[(usize, String)]) -> bool 
     false
 }
 
-/// 词流是否值得跑这一波（供宿主提前判断，例如进度估算）。
+/// Whether the word stream is worth running this wave. Lets the host judge in advance, for example for progress estimates.
 pub fn has_multiple_speakers(words: &[Word]) -> bool {
     speaker_turns(words).len() > 1
 }
 
-/// 供测试与诊断：窗口的现状段描述。
+/// For tests and diagnostics: a description of a window's current segments.
 pub fn describe_current(
     words: &[Word],
     labels: &SpeakerLabels,
@@ -839,7 +805,7 @@ mod tests {
         }
     }
 
-    /// 截图夹具：S2 长句里夹着 S1 的"的""种""吗"，外加一个真实应答"嗯"。
+    /// Screenshot fixture: S2's long sentence with S1's "的", "种" and "吗" mixed in, plus a genuine acknowledgment "嗯".
     fn dialogue() -> TranscriptDoc {
         let mut doc = TranscriptDoc::new(
             DocMedia {
@@ -917,7 +883,7 @@ mod tests {
             doc.words.push(word(&format!("g1.{index}"), t, text, sp));
             t += 0.16;
         }
-        // 提问与回答之间留 0.7s 停顿（自然切换点，payload 里出 ⏸）。
+        // A 0.7s pause between question and answer (a natural switch point, shown as ⏸ in the payload).
         for word in doc.words.iter_mut().skip(7) {
             word.t0 += 0.7;
             word.t1 += 0.7;
@@ -929,12 +895,12 @@ mod tests {
     fn plan_finds_islands_and_unnatural_boundaries_and_skips_backchannels() {
         let doc = dialogue();
         let plan = plan_speaker_repair(&doc.words);
-        // 岛："的""种""吗""嗯"四个夹心单词岛，其中"嗯"被白名单接住。
+        // Islands: the four single-word sandwiched islands "的" "种" "吗" "嗯". "嗯" is absorbed by the whitelist.
         assert_eq!(plan.islands, 4, "{plan:?}");
         assert_eq!(plan.islands_kept_by_lexicon, 1);
-        // 不自然切换点：岛的两侧都是无停顿无标点的切换（每岛 2 个）+ "嗯" 两侧 2 个。
+        // Unnatural switch points: both sides of each island are switches with no pause and no punctuation (2 per island), plus 2 on either side of "嗯".
         assert!(plan.unnatural_boundaries >= 6, "{plan:?}");
-        // 全部候选靠得近，合成一个窗口，盖住全文。
+        // All candidates are close together, so they merge into one window covering the whole text.
         assert_eq!(plan.windows.len(), 1, "{plan:?}");
         assert_eq!(plan.windows[0], 0..doc.words.len());
     }
@@ -947,7 +913,7 @@ mod tests {
         }
         assert!(plan_speaker_repair(&doc.words).windows.is_empty());
 
-        // 干净的对话：切换点都有停顿 ⇒ 无候选。
+        // Clean dialogue: every switch point has a pause, so there are no candidates.
         let mut clean = dialogue();
         for word in &mut clean.words {
             word.sp = if word.t0 < 11.0 { "s1" } else { "s2" }.to_owned();
@@ -985,7 +951,7 @@ mod tests {
         assert_eq!(metas[0].speakers, vec!["S1", "S2"]);
         assert_eq!(metas[0].segments, 10);
 
-        // 规范答案：碎片并回 S2、"嗯"保留。
+        // Canonical answer: fragments merged back into S2, "嗯" kept.
         let answer = "<<<WINDOW 1>>>\n1-7 S1\n8-37 S2\n38-38 S1\n39-45 S2\n<<<WINDOW-END>>>\n";
         let parsed = parse_speaker_repair_page(&payload, answer);
         assert!(parsed.problems.is_empty(), "{:?}", parsed.problems);
@@ -998,7 +964,7 @@ mod tests {
                 (39, 45, "S2".to_owned())
             ]
         );
-        // 宽容形态：无尖括号、en dash、冒号、小写标签、单窗口省块头、相邻同标签合并。
+        // Lenient forms: no angle brackets, en dash, colon, lowercase labels, a single-window page without a block header, and adjacent same-label segments merged.
         let sloppy = "1–7: s1\n8-20 S2\n21-37 S2\n38 S1\n39-45 S2";
         let parsed = parse_speaker_repair_page(&payload, sloppy);
         assert!(parsed.problems.is_empty(), "{:?}", parsed.problems);
@@ -1043,7 +1009,7 @@ mod tests {
         }
     }
 
-    /// 顺序回放的假 LLM：按调用次序返回预设答案。
+    /// Fake LLM that replays preset answers in call order.
     struct Scripted {
         answers: Vec<String>,
         seen: Vec<LlmRequest>,
@@ -1141,12 +1107,12 @@ mod tests {
         );
     }
 
-    /// 合法但改动过大的答案（把 S2 的整段并给 S1）被上限挡住：窗口按原样保留。
+    /// A legal but over-large change (assigning S2's whole passage to S1) is blocked by the cap, and the window is kept as it was.
     #[test]
     fn wave_ignores_answers_that_relabel_more_than_a_fragment() {
         let mut doc = dialogue();
         let before: Vec<String> = doc.words.iter().map(|w| w.sp.clone()).collect();
-        // 段数 4 < 现状 10，契约上合法；但 8-37 里 30 个词连续改判。
+        // 4 segments, below the current 10, so it is legal under the contract. But 30 words within 8–37 are reassigned in a row.
         let mut llm = Scripted {
             answers: vec![
                 "<<<WINDOW 1>>>\n1-37 S1\n38-38 S1\n39-45 S1\n<<<WINDOW-END>>>".to_owned(),

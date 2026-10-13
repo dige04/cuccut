@@ -10,8 +10,8 @@ import { STUDIO_STYLE, type Json, type LineKind } from '../../render/text-style.
 import { opaqueBounds, renderThumb, type ThumbLayer, type ThumbScene } from '../../render/thumbnails.ts';
 
 /**
- * 各种缩略图怎么摆成渲染内核的一帧、再怎么贴进格子。尺寸都是格子的设备像素；返回要贴的几块画面，由组件画到画布上。
- * 与预览、导出同一个内核：格子里看到的就是落到画面上的样子。
+ * How each kind of thumbnail is laid out as a frame of the render kernel, and then pasted into its cell. All sizes are in the cell's device pixels; returns the picture pieces to paste, which the component draws onto the canvas.
+ * Same kernel as preview and export: what you see in the cell is what lands on the picture.
  */
 
 export interface Rect {
@@ -21,14 +21,14 @@ export interface Rect {
   height: number;
 }
 
-/** 把 `image` 的 `source` 区域贴到格子的 `target` 区域（缩放，可以越出格子）。 */
+/** Paste the `source` region of `image` into the `target` region of the cell (scaled; may extend beyond the cell). */
 export interface Blit {
   image: ImageData;
   source: Rect;
   target: Rect;
 }
 
-/** 一张缩略图：要贴的画面与内核画不出来的东西（按层说明原因）。 */
+/** One thumbnail: the picture pieces to paste, and what the kernel cannot draw (with the reason for each layer). */
 export interface ThumbPicture {
   blits: Blit[];
   problems: string[];
@@ -36,17 +36,17 @@ export interface ThumbPicture {
 
 type Size = { width: number; height: number };
 
-/** 一帧最长边（设备像素）：小元素放大到格子时整帧会很大，超过就画小一点再放大贴。 */
+/** Longest side of one frame (device pixels): when a small element is enlarged to fill the cell, the whole frame becomes very large, so if it exceeds the limit, draw it smaller and then scale it up when pasting. */
 export const MAX_SIDE = 1600;
 
-/** 静止的缩略图停在哪一刻：各层长 10 秒，停在第 6 秒（进度六成；入场早已结束）。 */
+/** The moment a still thumbnail freezes on: each layer is 10 seconds long and freezes at 6 seconds (60% progress; the entrance has long finished). */
 const STILL = { seconds: 6, duration: 10 };
 
 let sample: Uint8Array | null = null;
 
 /**
- * 声波格没有声音可听：一份假的频谱（BCS1，帧都一样），频域一排起伏、时域一段正弦，画法照真的样式。频域按缺省的
- * dB 窗（−80 到 +40）给出两到八成五的高度，换算到 BCS1 的 canonical 窗（−120 到 +40）。
+ * The waveform cell has no sound to play: a fake spectrum (BCS1, the same in every frame) with a row of bumps in the frequency domain and a sine segment in the time domain, drawn in the style of the real one. The frequency domain uses the default
+ * dB window (−80 to +40) to give heights from 20% to 85%, converted to the canonical window of BCS1 (−120 to +40).
  */
 export function sampleSpectrum(): Uint8Array {
   if (sample) return sample;
@@ -81,8 +81,8 @@ function whole(image: ImageData): Rect {
 }
 
 /**
- * 新建的一层（元素格）：整帧按框缩到格子的 84%，框的中心对到格子中心；描边、阴影越出框也照样贴上。声波层用
- * [`sampleSpectrum`] 的假频谱。
+ * A newly created layer (element cell): the whole frame is scaled by the box to 84% of the cell, with the box's center aligned to the cell's center; outlines and shadows that extend past the box are pasted as well. The waveform layer uses
+ * the fake spectrum from [`sampleSpectrum`].
  */
 export function layerThumb(planner: RenderPlanner, layer: VisualLayer, canvas: Size, width: number, height: number): ThumbPicture {
   const box = poseOf(layer as unknown as PlacedItem, canvas);
@@ -99,14 +99,13 @@ export function layerThumb(planner: RenderPlanner, layer: VisualLayer, canvas: S
   return { blits: [{ image, source: whole(image), target }], problems };
 }
 
-/** 彩纸格停在哪一刻：四种爆发间隔都已炸过且散开，连续款已进稳态。 */
+/** The moment a confetti cell freezes on: all four burst intervals have already exploded and scattered, and the continuous style has reached steady state. */
 export const CONFETTI_STILL = 4.5;
-/** 悬停时播的那一段循环有多长。 */
+/** How long the loop that plays on hover is. */
 export const CONFETTI_LOOP = 4;
 
 /**
- * 彩纸格：铺满格子的一层粒子，同一枚种子（11）恒得同一幅。格子按短边 / 540 缩放后粒子只剩一两个像素，所以把
- * 「大小」推到上限好认款——只是画格子这一笔，落到画面上的仍是配方原样。
+ * Confetti cell: a layer of particles filling the cell; the same seed (11) always gives the same picture. After the cell is scaled by short side / 540, the particles shrink to one or two pixels, so “大小” (size) is pushed to its maximum to make the style recognizable. This only affects how the cell is drawn; what lands on the picture is still the recipe as is.
  */
 export function confettiThumb(planner: RenderPlanner, styleKey: string, seconds: number, width: number, height: number): ThumbPicture {
   const props = { ...confettiDefaults(styleKey, 11), size: CONFETTI_RANGES.size[1] };
@@ -117,7 +116,7 @@ export function confettiThumb(planner: RenderPlanner, styleKey: string, seconds:
   return { blits: [{ image, source: whole(image), target: whole(image) }], problems };
 }
 
-/** Lottie 文件头里取停帧要的几项。读不懂时为 null。 */
+/** The fields needed from the Lottie file header to determine the freeze frame. null when it cannot be read. */
 export function lottieMeta(bytes: Uint8Array): { seconds: number; width: number; height: number } | null {
   try {
     const value = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
@@ -129,7 +128,7 @@ export function lottieMeta(bytes: Uint8Array): { seconds: number; width: number;
   }
 }
 
-/** 同一个 URL 给同一个素材 ID（内核按素材缓存解好的动画）。 */
+/** The same URL gives the same asset ID (the kernel caches decoded animations per asset). */
 function lottieAsset(key: string, byteLength: number): { ref: VersionRef; record: AssetRecord } {
   let hash = 5381;
   for (let index = 0; index < key.length; index++) hash = ((hash * 33) ^ key.charCodeAt(index)) >>> 0;
@@ -154,8 +153,8 @@ function lottieAsset(key: string, byteLength: number): { ref: VersionRef; record
 }
 
 /**
- * 品牌库的 Lottie 贴纸：铺在格子里（按宽高比装下），停在动画正中那一帧（开头常常还是空的），`elapsed` 秒后接着循环。
- * `key` 是文件的地址，同一个文件只解一次。
+ * Brand-library Lottie sticker: fitted into the cell (keeping its aspect ratio), frozen on the middle frame of the animation (the start is often still empty), and after `elapsed` seconds it resumes looping.
+ * `key` is the file's address; the same file is decoded only once.
  */
 export function lottieThumb(
   planner: RenderPlanner,
@@ -181,12 +180,12 @@ export function lottieThumb(
   return { blits: [{ image, source: whole(image), target: whole(image) }], problems };
 }
 
-/** 场景卡放大的倍数：卡片裁到这一组包围盒的 1.35 倍宽，标题与缩在角落的下三分落到格子里字号同一量级。 */
+/** Zoom factor for scene cards: the card is cropped to 1.35× the width of this group's bounding box, so the title and the lower third shrunk into the corner land in the cell at the same font-size scale. */
 const CROP = 1.35;
 
 /**
- * 文字预设卡。字样卡（`stack`）：各行字单独画，字号正好是预设的 `previewSize`（乘像素密度），排成一列居中，放不下
- * 再整体缩。场景卡：整帧按预设画（16:9），裁到这一组的包围盒。框宽由同一个内核实例量（与新建时同一个量法）。
+ * Text preset cards. Font-style cards (`stack`): each line is drawn separately, with font size exactly the preset's `previewSize` (times pixel density), arranged in a centered column; if it does not fit, the whole thing is scaled down.
+ * Scene cards: the whole frame is drawn from the preset (16:9) and cropped to this group's bounding box. The box width is measured by the same kernel instance (using the same measuring method as when creating).
  */
 export function presetThumb(
   planner: RenderPlanner,
@@ -219,11 +218,11 @@ function stackThumb(
     if (layer.kind !== 'text') continue;
     const style = layer.style ?? {};
     const fontSize = typeof style.fontSize === 'number' ? style.fontSize : 24;
-    // 画布短边取多大，这一行的字号正好是 previewSize。
+    // Set the canvas's short side so that this line's font size is exactly previewSize.
     const short = (540 * (layer.previewSize ?? 12) * ratio) / fontSize;
     const box = measureOn({ width: (short * 16) / 9, height: short })(layer.text ?? '', style, null);
     const canvas = { width: Math.max((short * 16) / 9, box.width * 1.5), height: short };
-    // 框宽留一成余量：量字的画布按整像素取，与画的尺寸差一点舍入时也不折行（画完按不透明的范围裁，框宽不影响摆放）。
+    // Leave 10% slack in the box width: the canvas used for measuring text is sized in whole pixels, so a slight rounding difference from the drawn size will not wrap the line (after drawing, cropping is done by the opaque area, so the box width does not affect placement).
     const w = ((box.width * 1.1) / canvas.width) * 100;
     const text: ThumbLayer = { type: 'text', text: layer.text ?? '', style, place: { x: 50, y: 50, w } };
     const rendered = renderThumb(planner, { canvas, layers: [text], ...STILL }, canvas.width, canvas.height);
@@ -259,7 +258,7 @@ function sceneThumb(
   const layers = presetLayers(preset, canvas, fps, measureOn(canvas)) as unknown as ThumbLayer[];
   const scale = Math.min(1, MAX_SIDE / inner);
   const { image, problems } = renderThumb(planner, { canvas, layers, ...STILL }, canvas.width * scale, canvas.height * scale);
-  // 包围盒的中心对到卡片中心。
+  // Align the bounding box's center to the card's center.
   const target = {
     x: width / 2 - (preset.box.x / 100) * canvas.width,
     y: height / 2 - (preset.box.y / 100) * canvas.height,
@@ -269,16 +268,16 @@ function sceneThumb(
   return { blits: [{ image, source: whole(image), target }], problems };
 }
 
-/** 字幕样张一个词念多久（秒，原型 panel-substyle.jsx 的节拍 620ms）：一个词一拍，念完再停一拍，循环。 */
+/** How long each word of the caption sample is read (seconds; prototype panel-substyle.jsx beat of 620ms): one word per beat, then one extra beat of pause after reading through, then loop. */
 export const CAPTION_BEAT = 0.62;
 
-/** 不动的样张停在哪一刻：第二个词念到三成五（原型 `SAMPLE_ON`），看得出是哪一种逐词动画。 */
+/** The moment a still sample freezes on: the second word is 35% read (prototype `SAMPLE_ON`), which shows which per-word animation it is. */
 const SAMPLE_ON = 0.35;
 
-/** 汉字、假名逐字成词，别的按空白切（内核也把转写里多字的 CJK 词逐字拆开）。 */
+/** Chinese characters and kana each form their own word; everything else is split on whitespace (the kernel also splits multi-character CJK words in the transcript into individual characters). */
 const SAMPLE_WORD = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
 
-/** 样张的词。 */
+/** The sample's words. */
 export function sampleWords(text: string): string[] {
   return text.match(SAMPLE_WORD) ?? [];
 }
@@ -286,7 +285,7 @@ export function sampleWords(text: string): string[] {
 const SAMPLE_SPEECH = 'thumb_speech';
 const speeches = new Map<string, SpeechTranscript[]>();
 
-/** 样张原文那一句的转写：一个词一拍。同一句给同一份（内核里的转写不必每张卡重送）。 */
+/** Transcript of the sample's source sentence: one word per beat. The same sentence always gives the same result (the transcript in the kernel does not need to be re-sent for every card). */
 function sampleSpeech(text: string): SpeechTranscript[] {
   let speech = speeches.get(text);
   if (!speech) {
@@ -303,8 +302,8 @@ function sampleSpeech(text: string): SpeechTranscript[] {
 }
 
 /**
- * 字幕样张的场景：每种行一份字幕文档（一句，从 0 到 `duration` 秒），共用一份样式文档。原文那一句指向样张的转写，
- * 逐词动画按它的词一拍一拍推进；译文没有逐词时间（与画面上一样）。
+ * Scene for the caption sample: one subtitle document per line type (one cue, from 0 to `duration` seconds), sharing one style document. The source cue points to the sample's transcript,
+ * and the per-word animation advances beat by beat along its words; the translation has no per-word timing (same as on the picture).
  */
 function captionScene(style: Json, lines: readonly { kind: LineKind; text: string }[], canvas: Size, duration: number): ThumbScene {
   const original = lines.find((line) => line.kind === 'original');
@@ -333,7 +332,7 @@ function captionScene(style: Json, lines: readonly { kind: LineKind; text: strin
   return { canvas, layers, documents, seconds: 0, duration, ...(original ? { speech: sampleSpeech(original.text) } : {}) };
 }
 
-/** 量好的字幕样张：场景（`seconds` 由取帧时给）、一圈多长（秒，没有原文行时为 0）与不动时停的那一刻。 */
+/** A measured caption sample: the scene (`seconds` is supplied when a frame is captured), the length of one cycle (seconds; 0 when there is no source line), and the moment it freezes on when still. */
 export interface CaptionSample {
   scene: ThumbScene;
   period: number;
@@ -341,9 +340,9 @@ export interface CaptionSample {
 }
 
 /**
- * 字幕样式卡的样张：按这份样式排英中两句，大的那一行 `px` 设备像素。缩略图不折行：先不带动画、在四倍宽的画布上
- * 画一遍量出样张的宽高，放不下就整体缩小；之后每一刻都用这个字号，逐词动画（落入、弹跳……）不会让字号跟着跳。
- * 逐词动画与动效照这份样式自己的（套卡连当前词与动效一起换，卡上动的就是套上去的样子）。
+ * Sample for the caption style card: lays out an English and a Chinese line in this style, with the larger line at `px` device pixels. Thumbnails do not wrap: first draw without animation on a canvas four times as wide to measure the sample's width and height,
+ * and if it does not fit, scale the whole thing down; after that every frame uses this font size, so per-word animation (drop-in, bounce, …) does not make the font size jump.
+ * Per-word animation and motion follow this style's own settings (applying the card swaps in the current word and motion together, so what moves on the card is exactly what gets applied).
  */
 export function captionSample(planner: RenderPlanner, root: Json, kinds: readonly LineKind[], px: number, width: number, height: number): CaptionSample {
   const scene = thumbScene(root, kinds, { width, height }, px);
@@ -352,7 +351,7 @@ export function captionSample(planner: RenderPlanner, root: Json, kinds: readonl
   const period = words ? (words + 1) * CAPTION_BEAT : 0;
   const duration = period || 10;
   const still = words ? (Math.min(1, words - 1) + SAMPLE_ON) * CAPTION_BEAT : duration / 2;
-  // 量宽时不带动画：逐词动画、textMotion 都摘掉（`wordAnimation` 盖过旧键 `anim`，两个都写成「无」）；逐词底块留着，它占宽。
+  // When measuring width, no animation: per-word animation and textMotion are both removed (`wordAnimation` overrides the old key `anim`, and both are set to “无” (none)); the per-word background block stays, since it takes up width.
   const { textMotion: _motion, ...still0 } = scene.root;
   const plain = { ...still0, anim: { name: 'None' }, wordAnimation: wordAnimationPayload('none') };
   const wide = renderThumb(planner, { ...captionScene(plain, scene.lines, { width: width * 4, height }, duration), seconds: still }, width * 4, height);
@@ -362,13 +361,13 @@ export function captionSample(planner: RenderPlanner, root: Json, kinds: readonl
   return { scene: captionScene(sized, scene.lines, { width, height }, duration), period, still };
 }
 
-/** 样张在 `seconds` 那一刻的画面（格子大小，透明底；底色由组件铺）。 */
+/** The sample's picture at the moment `seconds` (cell size, transparent background; the component lays the background color). */
 export function captionFrame(planner: RenderPlanner, sample: CaptionSample, seconds: number, width: number, height: number): ThumbPicture {
   const { image, problems } = renderThumb(planner, { ...sample.scene, seconds }, width, height);
   return { blits: [{ image, source: whole(image), target: whole(image) }], problems };
 }
 
-/** 字幕样式卡不动的那一格（`captionSample` 的 `still` 那一刻）。 */
+/** The still cell of the caption style card (the `still` moment of `captionSample`). */
 export function captionThumb(
   planner: RenderPlanner,
   root: Json,

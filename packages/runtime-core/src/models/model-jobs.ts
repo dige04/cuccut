@@ -81,111 +81,111 @@ import { RcExternalTools, RcModels } from '@cuccut/protocol/messages/runtime-cor
 import { toolsDownloadEndpoint } from '../external-tools/external-tool-service.ts';
 import { runVersionProbe } from '../external-tools/tool-probe.ts';
 
-/** Runtime 自己写入转写结果、导入生成的素材时的行为者（架构设计 §7.3）。 */
+/** The actor when Runtime itself writes transcription results and imports generated assets (architecture design §7.3). */
 export const JOBS_ACTOR: Actor = { kind: 'system', id: 'system:jobs' };
 
-/** 翻译流程外发的数据：视频的文稿。 */
+/** Data sent out by the translation flow: the video's transcript. */
 const TRANSLATE_DATA_KINDS: GrantDataKind[] = ['transcript'];
 
-/** 转录流程外发的数据：素材的音频（与直接提交的 `models.transcribe` 相同）。 */
+/** Data sent out by the transcription flow: the asset's audio (same as a directly submitted `models.transcribe`). */
 const TRANSCRIBE_DATA_KINDS: GrantDataKind[] = ['audio'];
 
-/** 固定流程写视频时的行为者（架构设计 §7.9）。 */
+/** The actor when a fixed flow writes to a video (architecture design §7.9). */
 export const PIPELINE_ACTOR: Actor = { kind: 'system', id: PIPELINE_ACTOR_ID };
 
 export interface ModelJobs {
   catalog: ModelCatalog;
   provider: LocalTranscribeProvider;
-  /** 模型服务：Provider 注册表、配置与选择（§6.1、§6.2）。 */
+  /** Model service: Provider registry, configuration and selection (§6.1, §6.2). */
   services: ModelServices;
   jobs: JobManager;
-  /** 固定流程（§7.9）：父任务与步骤记在 `jobs` 里。 */
+  /** Fixed flows (§7.9): the parent task and its steps are recorded in `jobs`. */
   pipelines: PipelineRunner;
-  /** `jobs` 主题：快照是保留的任务记录与在跑转录的实时段落，事件是一条记录的新状态或转录新识别出的段落。 */
+  /** `jobs` topic: the snapshot is the retained task records plus the live segments of running transcriptions; events are a record's new state or newly recognized segments of a transcription. */
   topic: TopicLog<JobsSnapshot, JobsEvent>;
-  /** `models` 主题：快照是完整的能力视图与模型包状态；事件是新的能力视图，或一个模型包的新状态。 */
+  /** `models` topic: the snapshot is the full capability view and model bundle states; events are a new capability view, or a new state for one model bundle. */
   modelsTopic: TopicLog<ModelsSnapshot, ModelsEvent>;
-  /** 本地模型包的安装、修复、删除与自检（§6.3）。 */
+  /** Installation, repair, deletion and self-test of local model bundles (§6.3). */
   installs: ModelInstallService;
-  /** 模型目录：在哪里、改到哪里（§6.3）。 */
+  /** Model directory: where it is and where it is moved to (§6.3). */
   dir: ModelsDirService;
-  /** 数据外发的授权与预算（§12.5、§7.8）：JobManager 提交外发任务时经它接纳；`grants` 主题。 */
+  /** Authorization and budget for outgoing data (§12.5, §7.8): JobManager admits outgoing tasks through it when they are submitted; the `grants` topic. */
   grants: GrantService;
-  /** 一个在线 Provider 的音色克隆接口（§5.9）；没有克隆接口时 null。 */
+  /** Voice cloning interface of an online Provider (§5.9); null when there is no cloning interface. */
   voiceCloner(providerId: string): VoiceCloner | null;
-  /** 等排队的用量记录（§6.10）与账号的最近使用时间（§6.8）写完；停机时调用。 */
+  /** Waits for queued usage records (§6.10) and the accounts' last-used times (§6.8) to finish writing; called at shutdown. */
   flushUsage(): Promise<void>;
 }
 
 export interface ModelJobsOptions {
   home: RuntimeHome;
-  /** 在线 Provider 各账号的密钥（`provider:<providerId>/<accountId>`），与节点令牌共用一个实例（§6.8）。 */
+  /** Keys for each online Provider account (`provider:<providerId>/<accountId>`), sharing one instance with the node token (§6.8). */
   credentials: CredentialStore;
   videos: VideoService;
   log: Logger;
-  /** Model Worker 的命令；null 表示本地推理不可用。 */
+  /** Command for the Model Worker; null means local inference is unavailable. */
   worker: () => ModelWorkerCommand | null;
-  /** Speech Worker 的命令（翻译与翻译配音的翻译一步，架构设计 §7.9）；不给时按 `resolveSpeechWorkerCommand` 找。null 表示没有构建。 */
+  /** Command for the Speech Worker (the translation step of translation and translated dubbing, architecture design §7.9); when not given, it is found via `resolveSpeechWorkerCommand`. null means it was not built. */
   speechWorker?: () => string | null;
   env: () => Promise<NodeJS.ProcessEnv>;
   /**
-   * 读外部工具覆盖的环境（`CUCCUT_AUDIOCPP_CLI`：音乐引擎的开发者覆盖）；默认 `process.env`。测试给不含真实环境变量的对象。
+   * Environment for reading external tool overrides (`CUCCUT_AUDIOCPP_CLI`: the developer override for the music engine); defaults to `process.env`. Tests pass an object without real environment variables.
    */
   toolOverrides?: NodeJS.ProcessEnv;
   /**
-   * 发布页组件（音乐模型包的 audio.cpp 引擎）的下载镜像：`CUCCUT_TOOLS_ENDPOINT` 或设置 `tools.downloadEndpoint`，做计划时取一次；
-   * 不合法时抛出（`TOOL_DOWNLOAD_SOURCE`）。不给时用官方地址。
+   * Download mirror for the release-page component (the audio.cpp engine of the music model bundle): `CUCCUT_TOOLS_ENDPOINT` or the setting `tools.downloadEndpoint`, read once when the plan is made;
+   * throws if invalid (`TOOL_DOWNLOAD_SOURCE`). When not given, the official address is used.
    */
   toolsEndpoint?: () => string | null;
   idleMs?: number;
-  /** 偏好设置 `resources.capacity`（每次准入时读，改了立即生效）。 */
+  /** Preference `resources.capacity` (read at each admission; changes take effect immediately). */
   resourceCapacity?: () => ResourceCapacitySetting | null;
-  /** 测试注入的机器容量；不给时按本机探测（磁盘按 staging 所在的卷）。 */
+  /** Machine capacity injected by tests; when not given, it is probed on this machine (disk by the volume where staging lives). */
   capacity?: CapacitySource;
-  /** 远端节点（§6.7）的 Provider 来源。没有时 `node:*` 一律 `not-found`。 */
+  /** Provider source for remote nodes (§6.7). When absent, every `node:*` returns `not-found`. */
   remote?: ProviderSource;
-  /** 在线 Provider 准备音频、文件转码（§7.9）用的 ffmpeg。 */
+  /** ffmpeg used by online Providers to prepare audio and transcode files (§7.9). */
   ffmpeg: FfmpegResolver;
-  /** 生成输出（音频、图片）发布前解码校验用的 ffprobe。 */
+  /** ffprobe used to decode-check generated output (audio, images) before publishing. */
   ffprobe: ProbeToolResolver;
-  /** 用户库（架构设计 §5.9）：转写的术语表、合成的 `library:<id>` 音色。 */
+  /** User library (architecture design §5.9): transcription glossaries and synthesis `library:<id>` voices. */
   library?: JobLibrary;
-  /** 视频某一步启用、此刻还在库里的术语表（`LibraryService.enabledGlossaries`）：转录流程据此套用转写术语表。 */
+  /** Glossaries enabled for a step of a video and still in the library at this moment (`LibraryService.enabledGlossaries`): the transcription flow applies the transcription glossary from these. */
   enabledGlossaries?: (videoId: Id, step: 'transcribe') => Promise<{ ids: Id[] }>;
-  /** 在线 Provider 的调节项（测试把内置 Provider 的基址指向本机的假服务、缩短退避）。 */
+  /** Tuning options for online Providers (tests point the built-in Providers' base URLs at a local fake service and shorten backoff). */
   online?: Omit<OnlineSourceOptions, 'store' | 'ffmpeg'>;
-  /** 智能体 Provider（§6.9）用的 Driver 注册表。没有时不列 `agent:*`。 */
+  /** Driver registry used by agent Providers (§6.9). When absent, `agent:*` is not listed. */
   agents?: AgentDrivers;
-  /** 智能体 Provider 的调节项（测试缩短探测缓存与期限）。 */
+  /** Tuning options for agent Providers (tests shorten the probe cache and deadlines). */
   agentProviders?: Omit<AgentSourceOptions, 'store' | 'drivers'>;
-  /** 模型安装用到的设置（下载来源、严格离线）。不给时用默认值。 */
+  /** Settings used for model installation (download source, strict offline). Defaults apply when not given. */
   installSettings?: ModelInstallServiceOptions['settings'];
   /**
-   * 设置 `models.dir` 的读写（§6.3）。环境变量 `CUCCUT_MODELS_DIR`（`home.modelsDir` 不是 `<home>/models`）优先于它。
-   * 不给时只用 `home.modelsDir`，不能改。
+   * Reads and writes the setting `models.dir` (§6.3). The environment variable `CUCCUT_MODELS_DIR` (used when `home.modelsDir` is not `<home>/models`) takes precedence over it.
+   * When not given, only `home.modelsDir` is used, and it cannot be changed.
    */
   modelsDirSetting?: ModelsDirServiceOptions['setting'];
-  /** 测试用：卡住或打断模型目录的移动、假装跨盘。 */
+  /** For tests: stalls or interrupts moving the model directory, and pretends it crosses disks. */
   modelsDirTesting?: ModelsDirTestHooks;
-  /** 模型安装的调节项：测试把下载来源指向本机的假服务、注入可用空间、内置清单与自检样本。 */
+  /** Tuning options for model installation: tests point the download source at a local fake service, and inject available space, a built-in manifest and self-test samples. */
   modelInstall?: Pick<ModelInstallServiceOptions, 'installer' | 'selfTestSample' | 'env'> & {
-    /** 测试用：换掉登记的模型包（例如把音乐引擎的发布换成本机打的假压缩包）。 */
+    /** For tests: replaces a registered model bundle (for example, swaps the music engine's release for a fake archive built locally). */
     bundles?: readonly BundleDefinition[];
   };
   /**
-   * 保存位置（§7.9「保存位置」）：没有视频的流程结果（文件转码、字幕文件的翻译、只给文件的转录）不给 `outDir` 时写在这里，
-   * 提交时读一次并冻结。不给时（只在单测里）写在源文件旁边。
+   * Save location (§7.9 “保存位置” (save location)): results of flows without a video (file transcoding, subtitle file translation, transcription of a file only) are written here when no `outDir` is given;
+   * it is read once at submission and frozen. When not given (in unit tests only), it is written next to the source file.
    */
   saveDirectory?: () => string;
-  /** 流程的视频目标（§7.9）：Space 条目的位置与项目目录。不给时流程只接受已打开的 `videoId`。 */
+  /** The flow's video target (§7.9): the location of the Space entry and the project directory. When not given, the flow accepts only an already open `videoId`. */
   pipelineTargets?: PipelineTargetsOptions;
-  /** 另外登记的固定流程（从链接导入）：拿到任务库、写视频的能力与模型服务之后再建。 */
+  /** Fixed flows registered separately (imported from a link): created after the task store, the video-writing capability and the model service are obtained. */
   extraPipelines?: (context: ExtraPipelineContext) => Array<PipelineDefinition<any, any>>;
-  /** 故障注入（测试用）。 */
+  /** Fault injection (for tests). */
   faults?: JobFaults;
   /**
-   * 智能体任务的合同此刻对一个视频的保护范围（§3.2）：任务下的 Job 与流程步骤把结果应用到视频时带上，引擎照常检查。
-   * Harness 比任务账本晚打开：等它就绪再答；任务已经不在了时空列表。不给时任务里的写入也不带保护。
+   * The protection scope that an agent task's contract currently has over a video (§3.2): Jobs under the task and flow steps carry it when they apply results to the video, and the engine checks as usual.
+   * The Harness opens later than the task ledger: it waits for it to be ready before answering; when the task no longer exists, the list is empty. When not given, writes within the task are not protected either.
    */
   taskProtections?: (taskId: Id, videoId: Id) => Promise<EngineProtection[]>;
 }
@@ -194,28 +194,28 @@ export interface ExtraPipelineContext {
   grants: GrantService;
   jobs: JobManager;
   videos: CaptionVideos & MediaVideos;
-  /** 流程里的转写（复用 `models.transcribe` 的提交）。 */
+  /** Transcription within a flow (reuses the `models.transcribe` submission). */
   transcriber: PipelineTranscriber;
   services: ModelServices;
-  /** 视频目标的打开与新建；没有配置时 null。 */
+  /** Opening and creating video targets; null when not configured. */
   targets: PipelineTargets | null;
-  /** 视频里启用、此刻还在库里的转写术语表（与转录流程相同）；没有接线时没有。 */
+  /** Transcription glossaries enabled in the video and still in the library at this moment (same as the transcription flow); none when not wired up. */
   enabledGlossaries?: (videoId: Id) => Promise<Id[]>;
 }
 
-/** 组装模型目录、Provider 注册表与 JobManager，并把任务变化接到 `jobs` 主题、能力视图的变化接到 `models` 主题上。 */
+/** Assembles the model catalog, Provider registry and JobManager, and wires task changes to the `jobs` topic and capability view changes to the `models` topic. */
 export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJobs> {
   const { home, videos } = options;
   const log = options.log.child('jobs');
   const manifests = options.modelInstall?.installer?.manifests;
-  // 模型目录（§6.3）：`home.modelsDir` 不是 `<home>/models` 时是环境变量给的，只读；否则设置 `models.dir` 优先于缺省位置。
+  // Model directory (§6.3): when `home.modelsDir` is not `<home>/models`, it comes from the environment variable and is read-only; otherwise the setting `models.dir` takes precedence over the default location.
   const defaultModelsDir = path.join(home.root, 'models');
   const envModelsDir = path.resolve(home.modelsDir) !== defaultModelsDir ? path.resolve(home.modelsDir) : null;
   const dirSetting = options.modelsDirSetting ?? { get: () => null, set: async () => {} };
   const configuredDir = dirSetting.get();
   const toolOverrides = options.toolOverrides ?? process.env;
   const { bundles: testBundles, ...modelInstall } = options.modelInstall ?? {};
-  // 音乐模型包的引擎是它的发布页组件（§6.3），装在 Runtime Home 的 `tools/` 下，不随模型目录移动。
+  // The music model bundle's engine is its release-page component (§6.3), installed under `tools/` in the Runtime Home, and does not move with the model directory.
   const catalog = new ModelCatalog({
     root: envModelsDir ?? (configuredDir ? path.resolve(configuredDir) : defaultModelsDir),
     toolsDir: path.join(home.root, 'tools'),
@@ -224,9 +224,9 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     ...(manifests ? { manifests } : {}),
     ...(testBundles ? { bundles: testBundles } : {}),
   });
-  // 每个任务重新找（模型包装好后无需重启）：开发者覆盖 → 装好的引擎组件 → PATH。
+  // Looked up again for each task (no restart needed after the model bundle is installed): developer override → installed engine component → PATH.
   const musicEngine = (bundleId: string) => resolveAudioCppCli(toolOverrides, () => catalog.engineExecutable(bundleId));
-  // 资源调度（§7.6、§7.7）：Model Worker 的进程与所有任务共用一个。
+  // Resource scheduling (§7.6, §7.7): the Model Worker process is shared by all tasks.
   const resources = new ResourceScheduler({
     capacity:
       options.capacity ??
@@ -241,7 +241,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     idleMs: options.idleMs,
     resources,
   });
-  // 本地音乐生成（§6.1）：audio.cpp 引擎每个任务一个进程，不经 Model Worker。
+  // Local music generation (§6.1): the audio.cpp engine uses one process per task, not going through the Model Worker.
   const music = new LocalMusicProvider({
     catalog,
     engine: musicEngine,
@@ -250,7 +250,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     log,
   });
   const store = await ModelServiceStore.open(home, options.credentials, undefined, { log: options.log.child('model-services') });
-  // 用量账本（§6.10）：在线与智能体 Provider 的每次真实调用记一条。
+  // Usage ledger (§6.10): one entry for each real call to an online or agent Provider.
   const usageLog = options.log.child('usage');
   const usage = new UsageLedger(home.usageFile, { warn: (message, data) => usageLog.warn(message, data) });
   const online = new OnlineProviderSource({ ...options.online, store, ffmpeg: options.ffmpeg, usage });
@@ -270,7 +270,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
       ...(options.agents ? [new AgentProviderSource({ ...options.agentProviders, store, drivers: options.agents, usage })] : []),
     ],
   });
-  // 授权账本先于任务账本打开：任务账本对账时要结算上次没结束的预留。
+  // The authorization ledger opens before the task ledger: when the task ledger reconciles, it must settle reservations left unfinished last time.
   const grants = await GrantService.open({ file: home.grantsFile, services, log: options.log });
   const guard = taskGuard(grants, options.taskProtections);
   const jobs = new JobManager({
@@ -309,7 +309,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     stagingDir: home.stagingDir,
     log,
     ...(targets ? { targets } : {}),
-    // 流程用到的库里条目（翻译的术语表）以父任务固定到流程结束（§5.9）。
+    // Library entries used by the flow (the translation glossary) are pinned by the parent task until the flow ends (§5.9).
     ...(options.library ? { library: options.library } : {}),
     definitions: [
       transcodePipeline({
@@ -317,7 +317,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
         ffprobe: options.ffprobe,
         ...(options.saveDirectory ? { saveDirectory: options.saveDirectory } : {}),
       }),
-      // 逐句翻译把文稿交给文本模型：每次调用经授权与预算（§12.5）。
+      // Sentence-by-sentence translation hands the transcript to a text model: each call goes through authorization and budget (§12.5).
       withPipelineGrants(
         translatePipeline({
           videos: pipelineVideos(videos, guard),
@@ -330,7 +330,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
         grants,
         TRANSLATE_DATA_KINDS,
       ),
-      // 字幕文件的翻译：没有视频，字幕文本按 transcript 外发，授权与预算同上。
+      // Subtitle file translation: there is no video, so the subtitle text is sent out as `transcript`; authorization and budget apply as above.
       withPipelineGrants(
         translateSubtitlesPipeline({
           text: grantedTextGenerator(services.textGenerator(), grants, services, TRANSLATE_DATA_KINDS),
@@ -342,7 +342,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
         grants,
         TRANSLATE_DATA_KINDS,
       ),
-      // 翻译配音：缺译文时的翻译与逐句合成各自经授权与预算；启动前两种外发都要判断。被拒时补上配音的下一步指引。
+      // Translated dubbing: the translation (when the translation is missing) and the per-sentence synthesis each go through authorization and budget; both kinds of outgoing data are checked before start. When rejected, the next-step guidance for dubbing is included.
       withDubGrantGuidance(
         withPipelineGrants(
           dubPipeline({
@@ -355,8 +355,8 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
               artifacts: jobs.artifacts,
             },
             speech: dubSpeech({ services, grants, library: options.library }),
-            // 人声与背景分离（`separateAudio`）：启动时按默认值（没设时出厂默认，§6.2）选本机的分离模型包，执行时用冻结的那只；
-            // 没有可用的时要求分离的这一步跳过。
+            // Vocal and background separation (`separateAudio`): at start, the local separation model bundle is chosen by default (the factory default when none is set, §6.2), and the frozen one is used at execution;
+            // if none is available, the separation step is skipped when requested.
             separator: async (model) => {
               let choice;
               try {
@@ -378,8 +378,8 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
           (plan) => dubOutbound(plan.params),
         ),
       ),
-      // 转录：转写 Job 自己把文稿写进视频，流程再建字幕层。转写子任务提交时照常判断授权并预留；这里在启动前先判断，
-      // 缺授权时不新建视频、不导入，在场的用户的拒绝带待批准项（§7.9）。
+      // Transcription: the transcription Job itself writes the transcript into the video, and the flow then creates the subtitle layer. When the transcription subtask is submitted, authorization is checked and reserved as usual; here it is checked before start,
+      // and when authorization is missing, no video is created and nothing is imported; the rejection shown to a present user includes a pending approval item (§7.9).
       withPipelineGrants(
         transcribePipeline({
           videos: pipelineVideos(videos, guard),
@@ -393,8 +393,8 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
         TRANSCRIBE_DATA_KINDS,
         (plan) => [{ capability: 'transcribe', providerId: plan.providerId, modelId: plan.modelId, dataKinds: TRANSCRIBE_DATA_KINDS }],
       ),
-      // 识别说话人：本机的「说话人区分」模型包给已有转写重新区分说话人，结果是提案（`edits.applySpeakers` 应用）。不外发数据，
-      // 不经授权。
+      // Speaker identification: the local “说话人区分” (speaker diarization) model bundle re-diarizes speakers for an existing transcript; the result is a proposal (applied via `edits.applySpeakers`). No data is sent out,
+      // and no authorization is needed.
       speakersPipeline({
         videos: dubVideos(videos, guard),
         pack: async () => (await catalog.list()).find((bundle) => bundle.capability === 'diarize') ?? null,
@@ -420,10 +420,10 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
   jobs.onChange((job) => topic.publish({ type: 'job.updated', job }));
   jobs.onSegments(({ jobId, from, segments }) => topic.publish({ type: 'job.segments', jobId, from, segments }));
   await services.refresh();
-  // 启用着的 Provider 的默认授权（§6.8 的迁移规则）；之后配置变化时再对账。
+  // Default authorizations for enabled Providers (the migration rule in §6.8); reconciled again when configuration later changes.
   grants.reconcile();
   services.onChange(() => grants.reconcile());
-  // 模型包状态的快照：模型目录告知变化后读一次新状态（按变化的先后串行），换进快照并发 `bundle.updated`。
+  // Model bundle state snapshot: after the model catalog reports a change, the new state is read once (serialized in the order of changes), swapped into the snapshot, and `bundle.updated` is emitted.
   const bundles = new Map((await catalog.list()).map((b) => [b.bundleId, b]));
   const modelsTopic = new TopicLog<ModelsSnapshot, ModelsEvent>(
     () => ({ capabilities: services.view(), bundles: [...bundles.values()] }),
@@ -451,7 +451,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     log,
     settings: options.installSettings ?? (() => ({ downloadEndpoint: null, offlineStrict: false })),
     toolsEndpoint: options.toolsEndpoint ?? (() => toolsDownloadEndpoint(toolOverrides, null)),
-    // 引擎组件发布之后跑一次 `--version`，确认能运行、认得出是 audio.cpp。
+    // After the engine component is published, runs `--version` once to confirm it runs and is recognized as audio.cpp.
     probeExecutable: async (executable) => {
       const outcome = await runVersionProbe(executable, ['--version'], await options.env());
       if (!outcome.ok) throw new Error(outcome.reason.text);
@@ -474,12 +474,12 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
     refresh: () => void services.refresh().catch(() => {}),
   });
   await dir.recover();
-  // 任务失败可能让模型包停用（反复崩溃）：重算视图。
+  // A task failure may disable the model bundle (repeated crashes): recompute the view.
   jobs.onChange((job) => {
     if (job.state === 'failed') void services.refresh().catch(() => {});
   });
-  // 恢复矩阵里要等 Provider 与授权就绪的部分（§7.5）：重新排队、补做应用。在后台做，不拖住启动；
-  // 预留要在 `settleOrphans` 之后才建（否则会被当成孤儿结算掉）。
+  // The parts of the recovery matrix that wait for Providers and authorization to be ready (§7.5): re-queueing and redoing apply. Done in the background so startup is not held up;
+  // reservations must be created after `settleOrphans` (otherwise they would be settled as orphans).
   void jobs.recover().catch((error: unknown) => log.error('Recovering tasks failed', { error: String(error) }));
   const voiceCloner = (providerId: string) => online.voiceCloner(providerId);
   const flushUsage = async () => {
@@ -490,8 +490,8 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
 }
 
 /**
- * 任务里的写入（§3.2）：这次执行（`run`，Job 自己或流程的父任务）经提交者找到所在的智能体任务时，带上任务与合同对这个视频的
- * 保护范围；引擎对带 taskId 的非用户写入检查保护。不带 `run` 的写入（用户的 `jobs.reconcile apply`）是用户的决定，不带。
+ * Writes made within a task (§3.2): when this execution (`run`, the Job itself or the flow's parent task) finds its agent task through the submitter, it carries the task and the contract's protection scope over this video;
+ * the engine checks protection for non-user writes that carry a taskId. Writes without `run` (the user's `jobs.reconcile apply`) are the user's decision and carry none.
  */
 type TaskGuard = (videoId: Id, run: EngineRun | undefined) => Promise<{ taskId?: Id; protections?: EngineProtection[] }>;
 
@@ -538,7 +538,7 @@ function videoAdapter(videos: VideoService, guard: TaskGuard): JobVideos {
       if (!location) return 'missing';
       const principal = recoveryPrincipal();
       const opened = await videos.open(location, principal).catch((error: unknown) => {
-        // 目录不见了、不再是视频或已经出了来源目录：目标不在了。别的（被锁、引擎不可用）照常抛出。
+        // The directory is gone, is no longer a video, or has left the source directory: the target no longer exists. Other errors (locked, engine unavailable) are thrown as usual.
         if (error instanceof RpcError && (error.code === 'not-found' || error.code === 'forbidden')) return null;
         throw error;
       });
@@ -547,7 +547,7 @@ function videoAdapter(videos: VideoService, guard: TaskGuard): JobVideos {
         await videos.close(opened.ref.videoId, principal);
         return 'mismatch';
       }
-      // 换成 Runtime 的租约：恢复用的打开者马上离开，视频由租约保持打开。
+      // Replaced with a Runtime lease: the opener used for recovery leaves right away, and the lease keeps the video open.
       videos.retain(videoId);
       await videos.close(videoId, principal);
       return 'opened';
@@ -567,7 +567,7 @@ function videoAdapter(videos: VideoService, guard: TaskGuard): JobVideos {
   };
 }
 
-/** 转录落点 `new-video` 要的原视频事实：名字、所在的项目或会话，与素材当前版本的文件。 */
+/** Source video facts needed by the transcription destination `new-video`: its name, the project or session it is in, and the asset's current version file. */
 function transcribeSources(videos: VideoService): NonNullable<TranscribeDeps['sources']> {
   return {
     video(videoId) {
@@ -590,12 +590,12 @@ function transcribeSources(videos: VideoService): NonNullable<TranscribeDeps['so
   };
 }
 
-/** 重启后补做应用时打开视频的主体（只在打开的一刻用，随即换成租约）。名字按当前语言。 */
+/** The subject used to open the video when redoing apply after restart (used only at the moment of opening, then replaced with a lease). The name is in the current language. */
 function recoveryPrincipal(): TrustedPrincipal {
   return { connectionId: 'system:jobs-recovery', kind: 'cli', name: RcModels.recoveryPrincipalName().text };
 }
 
-/** 固定流程读写视频的能力：写入的行为者是 `system:pipeline`，与转写一样经 Application、受版本校验；智能体启动的流程带任务的保护。 */
+/** Capability for a fixed flow to read and write a video: the writing actor is `system:pipeline`; like transcription, it goes through Application and is version-checked; flows started by an agent carry the task's protection. */
 function pipelineVideos(videos: VideoService, guard: TaskGuard): PipelineVideos & CaptionVideos & MediaVideos {
   return {
     state(videoId) {
@@ -634,7 +634,7 @@ function pipelineVideos(videos: VideoService, guard: TaskGuard): PipelineVideos 
   };
 }
 
-/** 流程里的转写：选定 Provider 与模型、提交 `transcribe` Job（提交者是父任务）、等待与取消。 */
+/** Transcription within a flow: selects the Provider and model, submits a `transcribe` Job (the submitter is the parent task), and handles waiting and cancellation. */
 function pipelineTranscriber(jobs: JobManager, services: ModelServices): PipelineTranscriber {
   return {
     check: async (target) => {
@@ -654,7 +654,7 @@ function pipelineTranscriber(jobs: JobManager, services: ModelServices): Pipelin
   };
 }
 
-/** 翻译配音启动前要判断的外发：逐句合成，加上缺译文时的翻译。 */
+/** Outgoing data to check before translated dubbing starts: per-sentence synthesis, plus translation when the translation is missing. */
 function dubOutbound(params: FrozenDubParams) {
   return [
     {
@@ -676,7 +676,7 @@ function dubOutbound(params: FrozenDubParams) {
   ];
 }
 
-/** 配音读写视频：在翻译的基础上，读序列的实例、文稿在时间线上的位置（引擎的文字计划）与素材的源文件。 */
+/** Dubbing reads and writes the video: on top of translation, it reads the sequence's instances, the transcript's position on the timeline (the engine's text plan), and the asset's source file. */
 function dubVideos(videos: VideoService, guard: TaskGuard): DubVideos {
   return {
     ...pipelineVideos(videos, guard),
@@ -713,9 +713,8 @@ function dubVideos(videos: VideoService, guard: TaskGuard): DubVideos {
 }
 
 /**
- * 找 audio.cpp 引擎（`audiocpp_cli`，Model Worker 协议规范 §4.4）：`CUCCUT_AUDIOCPP_CLI` 给了就只用它（文件不在时找不到）；否则是
- * 模型包装好的引擎组件（`installed`，即 `ModelCatalog.engineExecutable`：`<Runtime Home>/tools/audiocpp/<版本>/`）；最后找 PATH。
- * 只看文件在不在、不执行它。
+ * Finds the audio.cpp engine (`audiocpp_cli`, Model Worker protocol spec §4.4): if `CUCCUT_AUDIOCPP_CLI` is set, only it is used (not found if the file is missing); otherwise it is the engine component installed with the model bundle (`installed`, i.e. `ModelCatalog.engineExecutable`: `<Runtime Home>/tools/audiocpp/<version>/`); finally it looks on PATH.
+ * It only checks whether the file exists; it does not run it.
  */
 export function resolveAudioCppCli(env: NodeJS.ProcessEnv, installed: () => string | null = () => null): string | null {
   const explicit = env[AUDIO_CPP_CLI_ENV];

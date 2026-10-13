@@ -11,8 +11,7 @@ import { ToolError } from './tool-catalog.ts';
 import { toolRisk, type ToolConfirmation, type ToolScope } from './tool-scope.ts';
 
 /**
- * `design_check` 与 `design_import_asset`（docs/design/canvas §7.2）：设计稿必须在会话的来源目录里；没有问题时会话里记一条
- * `design-created`，有问题时不记；导入的图片与字体进设计稿的 `assets/`，返回 `/_blob/<id>`。
+ * `design_check` and `design_import_asset` (docs/design/canvas §7.2): the design must be in the session's source directory. When there are no problems, the session records a `design-created` entry; when there are problems, it does not. Imported images and fonts go into the design's `assets/`, and the tool returns `/_blob/<id>`.
  */
 
 let tmp: string;
@@ -81,7 +80,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   throw new Error('应当拒绝');
 }
 
-/** 工具用到的：授权、确认（记下请求）、来源目录与工作目录、记卡片。 */
+/** What the tools use: authorization, confirmation (records the request), the source and working directories, and card recording. */
 function fakeScope(write = true) {
   const confirmed: ToolConfirmation[] = [];
   const recorded: DesignCreated[] = [];

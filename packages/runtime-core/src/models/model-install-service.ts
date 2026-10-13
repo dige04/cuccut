@@ -74,43 +74,40 @@ import { RcModels } from '@cuccut/protocol/messages/runtime-core';
 import { localizedOf, taskFailure } from '../localized.ts';
 
 /**
- * 本地模型包的安装管理（架构设计 §6.3、§7.9）：`models.install` / `repair` / `cancelInstall` / `remove` / `test`。
+ * Installation management for local model bundles (architecture design §6.3, §7.9): `models.install` / `repair` / `cancelInstall` / `remove` / `test`.
  *
- * - 安装与检查都是普通的任务（`kind: 'modelInstall'` / `'modelTest'`），不属于任何智能体任务：进度在 `jobs` 主题，模型包的
- *   状态（`downloading`、进度、`selfTest`）由模型目录经 `models` 主题的 `bundle.updated` 送出。
- * - 安装是两步：先返回计划与 `confirmBytes`，调用方原样交回才提交任务。安装任务排在一个串行队列里（一次装一个）；检查与
- *   这个模型包的转写排同一个队列（同一个 Worker）。
- * - 取消安装就是取消它的任务：暂存区保留（暂停），再次安装续传；`discard` 时删掉暂存区。
- * - 删除前确认没有任务在用这个模型包（排队或进行中的转写、检查、安装），Worker 空闲时先卸载；删除后没有出厂默认的能力里
- *   指向它的默认值一并清掉。
+ * - Installs and checks are ordinary tasks (`kind: 'modelInstall'` / `'modelTest'`) and do not belong to any agent task: progress goes on the `jobs` topic, and bundle state (`downloading`, progress, `selfTest`) is sent by the model catalog as `bundle.updated` on the `models` topic.
+ * - Installing takes two steps: first it returns the plan and `confirmBytes`, and the caller returns them unchanged before the task is submitted. Install tasks are queued in a serial queue (one install at a time); checks share a queue with transcription for this bundle (same Worker).
+ * - Cancelling an install cancels its task: staging is kept (paused), and installing again resumes it; `discard` deletes staging.
+ * - Before deletion, confirm that no task is using this bundle (queued or running transcription, checks, installs). When the Worker is idle it is unloaded first. After deletion, defaults pointing to it from capabilities without a factory default are cleared too.
  */
 
 const INSTALL_QUEUE = { key: 'models:install', concurrency: 1 };
-/** 下载进度最多每这么久报一次（`jobs` 与 `models` 主题）。 */
+/** Download progress is reported at most this often (on the `jobs` and `models` topics). */
 const PROGRESS_INTERVAL_MS = 250;
 
 export interface ModelInstallServiceOptions {
   catalog: ModelCatalog;
   provider: LocalTranscribeProvider;
-  /** 本地音乐生成的 Provider（audio.cpp 引擎）；音乐模型包的检查经它。 */
+  /** Local music generation Provider (audio.cpp engine); checks for music model bundles go through it. */
   music: LocalMusicProvider;
   jobs: JobManager;
   log: Logger;
-  /** 设置里的下载来源与严格离线。 */
+  /** Download source and strict offline mode from settings. */
   settings: () => { downloadEndpoint: string | null; offlineStrict: boolean };
-  /** 读 `CUCCUT_MODELS_ENDPOINT` 的环境，默认 `process.env`。 */
+  /** Environment to read `CUCCUT_MODELS_ENDPOINT` from; defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
-  /** 发布页组件（音乐引擎）的下载镜像（`CUCCUT_TOOLS_ENDPOINT` / 设置 `tools.downloadEndpoint`）；null 时用官方地址。 */
+  /** Download mirror for release-page components (the music engine) (`CUCCUT_TOOLS_ENDPOINT` / setting `tools.downloadEndpoint`); when null, the official address is used. */
   toolsEndpoint?: () => string | null;
-  /** 发布页组件发布之后确认可执行文件能运行（`--version` 探测）；抛错时安装失败。 */
+  /** After a release-page component is published, confirms the executable runs (`--version` probe); installation fails if it throws. */
   probeExecutable?: (executable: string) => Promise<void>;
-  /** 下载器的调节项（测试注入本机的假服务、可用空间与内置清单）；给了的项优先于上面两项。 */
+  /** Downloader tuning options (tests inject a local fake service, available space and a built-in manifest); options given here take precedence over the two above. */
   installer?: Omit<ModelInstallerOptions, 'catalog' | 'endpoint'>;
-  /** 检查样本（测试可换）。 */
+  /** Check samples (tests can replace them). */
   selfTestSample?: SelfTestSample;
-  /** 模型包变化之后重算能力视图。 */
+  /** Recomputes the capability view after a model bundle changes. */
   refresh: () => void;
-  /** 删除模型包之后清掉没有出厂默认的能力里指向它的默认值（§6.8）。 */
+  /** After a model bundle is deleted, clears defaults that point to it in capabilities without a factory default (§6.8). */
   clearDefaults?: (bundleId: string) => Promise<unknown>;
 }
 
@@ -135,7 +132,7 @@ export class ModelInstallService {
       catalog: options.catalog,
       endpoint: () => this.#endpoint(),
     });
-    // 安装任务结束（含排队时就被取消、Runtime 停止时中断）：回到按文件判断的状态。
+    // Install task ends (including cancelled while queued, or interrupted when Runtime stops): falls back to the state judged from the files.
     options.jobs.onChange((job) => {
       if (job.kind !== 'modelInstall' || !job.bundleId || !isTerminal(job.state)) return;
       if (this.#catalog.installState(job.bundleId)?.jobId === job.jobId) this.#catalog.setInstallState(job.bundleId, null);
@@ -143,7 +140,7 @@ export class ModelInstallService {
     });
   }
 
-  /** 安装或修复：没有 `confirmBytes` 时只返回计划；交回的字节数与计划一致才提交任务。 */
+  /** Install or repair: without `confirmBytes`, only the plan is returned; the task is submitted only if the byte count returned matches the plan. */
   async install(
     params: { bundleId: string; confirmBytes?: number; commandId?: Id },
     submitter: JobSubmitter,
@@ -181,7 +178,7 @@ export class ModelInstallService {
         bundleId: params.bundleId,
         ...(params.commandId ? { commandId: params.commandId } : {}),
         queue: INSTALL_QUEUE,
-        // 峰值需求（§7.7）：还要下载的字节数进 staging。
+        // Peak demand (§7.7): the bytes still to be downloaded go into staging.
         resources: { demand: modelDownloadDemand(detail.plan.confirmBytes) },
         run: (run) => this.#runInstall(run, detail),
       },
@@ -199,7 +196,7 @@ export class ModelInstallService {
     return { plan: detail.plan, jobId };
   }
 
-  /** 停下安装（取消它的任务）；`discard` 时删掉暂存区。 */
+  /** Stops an install (cancels its task); `discard` deletes staging. */
   async cancelInstall(params: { bundleId: string; discard?: boolean }): Promise<{ bundle: ModelBundleStatus }> {
     this.#definition(params.bundleId);
     const active = this.#activeInstall(params.bundleId);
@@ -208,7 +205,7 @@ export class ModelInstallService {
       await this.#jobs.settled(active.jobId).catch(() => {});
     }
     if (params.discard) {
-      // 别的模型包正在安装、共用的组件不删。
+      // Components shared with other model bundles that are being installed are not deleted.
       const busy = new Set(
         this.#jobs
           .list()
@@ -221,14 +218,14 @@ export class ModelInstallService {
     return { bundle: (await this.#catalog.status(params.bundleId))! };
   }
 
-  /** 删除模型包：在用时 `MODEL_IN_USE`；空闲的 Worker 先卸载；删除后清掉没有出厂默认的能力里指向它的默认值。 */
+  /** Deletes a model bundle: `MODEL_IN_USE` while in use; idle Workers are unloaded first; after deletion, clears defaults pointing to it from capabilities without a factory default. */
   async remove(bundleId: string): Promise<ModelRemoveResult> {
     this.#definition(bundleId);
     await this.#guardDir(false);
     const refuse = (jobIds: Id[]) => {
       throw new RpcError('conflict', RcModels.bundleInUse(), { code: 'MODEL_IN_USE', bundleId, jobIds });
     };
-    // 「说话人区分」模型包的组件由用它的识别模型包的 Worker 加载：这些 Worker 也要空闲、先卸载。
+    // Components of the “说话人区分” (speaker diarization) bundle are loaded by the Workers of the recognition bundles that use it: those Workers must also be idle and unloaded first.
     const holders = [bundleId, ...this.#catalog.diarizationUsers(bundleId)];
     const inUse = () => this.#jobs.list().filter((j) => holders.includes(j.bundleId ?? '') && !isTerminal(j.state));
     if (inUse().length > 0) refuse(inUse().map((j) => j.jobId));
@@ -242,9 +239,7 @@ export class ModelInstallService {
   }
 
   /**
-   * 检查：固定样本走一遍完整的 Worker 流程。识别的模型包识别一段固定录音、核对文字；合成的模型包用默认声音合成一句固定的短句，
-   * 核对输出能解码、时长合理、不是静音；文生图的模型包用固定的提示词与 seed 少步数生成一张小图，核对 PNG 能解码、尺寸对、
-   * 不是纯色；分离的模型包把识别用的同一段录音（只有人声）分成两路，核对等长、人声明显比背景响（Model Worker 协议规范 §4.3）。
+   * Check: runs a fixed sample through the full Worker flow. A recognition bundle recognizes a fixed recording and verifies the text; a synthesis bundle synthesizes a fixed short sentence with the default voice and verifies the output decodes, the duration is reasonable, and it is not silent; a text-to-image bundle generates one small image with a fixed prompt and seed in a few steps and verifies the PNG decodes, the dimensions match, and it is not a single solid colour; a separation bundle splits the same recording used for recognition (vocals only) into two tracks and verifies they are the same length and the vocals are clearly louder than the background (Model Worker protocol spec §4.3).
    */
   async test(params: { bundleId: string; commandId?: Id }, submitter: JobSubmitter): Promise<{ jobId: Id }> {
     const def = this.#definition(params.bundleId);
@@ -258,7 +253,7 @@ export class ModelInstallService {
     await this.#guardDir(false);
     const status = (await this.#catalog.status(params.bundleId))!;
     if (!bundleUsable(status)) throw new RpcError('conflict', RcModels.bundleUnavailable(), { code: 'MODEL_UNAVAILABLE', bundle: status });
-    // 随应用分发的输入（识别与分离的样本、合成默认声音的内置音色录音）先在这里读一遍：缺了是安装不完整，以 `APP_FILE_MISSING` 拒绝，不建任务。
+    // Inputs shipped with the app (the recognition and separation samples, and the built-in voice recording used for the default synthesis voice) are read here first: if one is missing the install is incomplete, so it is rejected with `APP_FILE_MISSING` and no task is created.
     let sampleFile: string | null = null;
     let contentHash: string;
     if (def.capability === 'synthesize') {
@@ -274,7 +269,7 @@ export class ModelInstallService {
       if (hex === null) throw appFileMissing(selfTestSampleLabel(), this.#sample.asset, sampleFile);
       contentHash = `sha256:${hex}`;
     }
-    // 识别、分离与 candle 的合成按装好的组件估计 Model Worker 加载后的常驻量；MLX 的合成是 null（固定的需求）；文生图按模型包登记的实测峰值。
+    // For recognition, separation and candle synthesis, the resident size after the Model Worker loads is estimated from the installed components; MLX synthesis is null (a fixed requirement); text-to-image uses the measured peak registered for the model bundle.
     const resources =
       def.capability === 'image'
         ? localImageResources(params.bundleId, this.#catalog.imagePeak(params.bundleId))
@@ -293,9 +288,9 @@ export class ModelInstallService {
         modelId: params.bundleId,
         bundleId: params.bundleId,
         ...(params.commandId ? { commandId: params.commandId } : {}),
-        // 与这个模型包的转写排同一个队列：同一个 Worker，一次一个任务。
+        // Shares a queue with transcription for this model bundle: same Worker, one task at a time.
         queue: { key: params.bundleId, concurrency: 1 },
-        // 用这个模型包的 Model Worker（与转写共用 holder）；用户在界面上等着结果，按交互优先。
+        // Uses this model bundle's Model Worker (shared holder with transcription); the user is waiting for the result in the UI, so it is prioritized as interactive.
         resources: { ...resources, priority: 'interactive' },
         run: (run) =>
           def.capability === 'image'
@@ -312,7 +307,7 @@ export class ModelInstallService {
     );
   }
 
-  /** Runtime 启动时：上次没跑完的安装任务已经标为 `interrupted`，暂存区留着（报告为暂停）。 */
+  /** On Runtime startup: install tasks left unfinished last time are already marked `interrupted`, and staging is kept (reported as paused). */
   activeInstall(bundleId: string): JobRecord | null {
     return this.#activeInstall(bundleId);
   }
@@ -366,7 +361,7 @@ export class ModelInstallService {
       throw taskFailure('MODEL_INSTALL_FAILED', RcModels.installFailed(), { reason: String(error) });
     } finally {
       this.#catalog.setInstallState(bundleId, null);
-      // 新的文件：清掉旧的校验结果与停用记录，重算能力视图。
+      // New files: clears the old verification results and disable records, and recomputes the capability view.
       this.#catalog.enable(bundleId);
       this.#jobs.enable(bundleId);
       this.#options.refresh();
@@ -402,7 +397,7 @@ export class ModelInstallService {
         run.signal,
       );
     } catch (error) {
-      // Worker 读不了随应用分发的样本：安装的问题，不记成模型检查没通过。
+      // The Worker cannot read the samples shipped with the app: an install problem, not recorded as a failed model check.
       if (error instanceof ProviderFailure && error.kind === 'input-unreadable') {
         throw appFileTaskFailure(appFileMissing(selfTestSampleLabel(), this.#sample.asset, sampleFile));
       }
@@ -462,7 +457,7 @@ export class ModelInstallService {
         (done, total) => run.phase('generating', { done, total, unit: 'steps' }),
       );
     } catch (error) {
-      // Worker 读不了随应用分发的样本：安装的问题，不记成模型检查没通过。
+      // The Worker cannot read the samples shipped with the app: an install problem, not recorded as a failed model check.
       if (error instanceof ProviderFailure && error.kind === 'input-unreadable') {
         throw appFileTaskFailure(appFileMissing(selfTestSampleLabel(), this.#sample.asset, sampleFile));
       }
@@ -507,7 +502,7 @@ export class ModelInstallService {
     try {
       input = await this.#speechTestInput(def);
     } catch (error) {
-      // 内置音色的录音在提交之后不见了：与提交时同样是 `APP_FILE_MISSING`，不记成模型检查没通过、也不算内部错误。
+      // The built-in voice recording disappeared after submission: it is `APP_FILE_MISSING`, just as at submission, not recorded as a failed model check, and not counted as an internal error.
       if (error instanceof RpcError && (error.details as { code?: unknown } | undefined)?.code === APP_FILE_MISSING) {
         throw appFileTaskFailure(error);
       }
@@ -530,7 +525,7 @@ export class ModelInstallService {
         run.signal,
       );
     } catch (error) {
-      // 读不了内置音色的录音（本地 Provider 已经按 `APP_FILE_MISSING` 说明）：安装的问题，不记成模型检查没通过。
+      // Cannot read the built-in voice recording (the local Provider has already explained it as `APP_FILE_MISSING`): an install problem, not recorded as a failed model check.
       if (error instanceof ProviderFailure && error.details.code === APP_FILE_MISSING) {
         throw new TaskFailure(APP_FILE_MISSING, error.message, { kind: error.kind, ...error.details, check: APP_FILE_MISSING });
       }
@@ -602,7 +597,7 @@ export class ModelInstallService {
     return { documentId: null, artifactId };
   }
 
-  /** 音乐模型包的检查（Model Worker 协议规范 §4.4）：固定风格、seed、少步数生成几秒纯音乐，判定与合成相同。 */
+  /** Check for music model bundles (Model Worker protocol spec §4.4): generates a few seconds of instrumental music with a fixed style, seed and few steps; the verdict is the same as for synthesis. */
   async #runMusicTest(run: TaskRun, def: BundleDefinition): Promise<NonNullable<JobRecord['result']>> {
     const bundleId = def.bundleId;
     const { record, fail } = this.#verdicts(run, bundleId);
@@ -647,8 +642,7 @@ export class ModelInstallService {
   }
 
   /**
-   * 检查的两种结论：`record` 记下通过；`fail` 记下没通过（`code` 与 `facts` 一并记进模型包的 `selfTest`），任务以
-   * `MODEL_SELF_TEST_FAILED` 失败，`details.check` 是同一个代码（命令与协议规范 §11.3）。
+   * The two verdicts of a check: `record` notes a pass; `fail` notes a failure (`code` and `facts` are recorded together in the model bundle's `selfTest`), and the task fails with `MODEL_SELF_TEST_FAILED`; `details.check` is the same code (command and protocol spec §11.3).
    */
   #verdicts(run: TaskRun, bundleId: string) {
     const save = async (result: ModelSelfTestResult) => {
@@ -674,7 +668,7 @@ export class ModelInstallService {
     return { record, fail };
   }
 
-  /** 合成检查的输入，与正式提交同一条冻结路径：模型的默认声音，内置音色的录音按摘要冻结（读不出来时 `APP_FILE_MISSING`）。 */
+  /** Inputs for the synthesis check, using the same freezing path as a formal submission: the model's default voice, and the built-in voice recording frozen by digest (`APP_FILE_MISSING` if it cannot be read). */
   async #speechTestInput(def: BundleDefinition): Promise<SpeechTestInput> {
     const request = speechSelfTestRequest(def);
     const status = (await this.#catalog.status(def.bundleId))!;
@@ -707,8 +701,7 @@ export class ModelInstallService {
   }
 
   /**
-   * 模型目录在移动时（`models.setDir` 的 `move`）不装、不删、不检查：`MODEL_IN_USE`。要写入时（安装、修复）目录还得在：
-   * 外置盘没接上时不在别处凭空建出同名的目录（`MODELS_DIR_MISSING`）。
+   * While the model directory is being moved (`move` in `models.setDir`), nothing is installed, deleted or checked: `MODEL_IN_USE`. When writing (install, repair), the directory must still exist: if an external drive is not connected, a directory of the same name is not created out of thin air somewhere else (`MODELS_DIR_MISSING`).
    */
   async #guardDir(write: boolean): Promise<void> {
     const move = this.#jobs.list().find((j) => j.kind === 'modelsMove' && !isTerminal(j.state));
@@ -735,9 +728,7 @@ export class ModelInstallService {
   }
 
   /**
-   * 装好、补齐或修好之后，已经加载的 Worker 还是旧的组件：这个模型包自己的（补上的可选组件、换掉的坏文件都没读到），以及用这个「说话人区分」
-   * 模型包的识别模型包（没有它的组件）。空闲的先卸载，下一个任务重新加载时带上。正在跑任务的不打断（按原来的组件跑完，缺「说话人区分」的
-   * 报 `diarization-unavailable`），空闲后照常按超时卸载。
+   * After installing, completing or repairing, Workers that are already loaded still have the old components: this model bundle's own (the optional components just added and the bad files replaced were not read), and the recognition bundles that use this “说话人区分” (speaker diarization) bundle (which lack its components). Idle ones are unloaded first, and the next task loads them with the new components. Running tasks are not interrupted (they finish with the components they started with; those missing “说话人区分” report `diarization-unavailable`), and once idle they unload on timeout as usual.
    */
   #reloadAfterInstall(bundleId: string): void {
     for (const id of [bundleId, ...this.#catalog.diarizationUsers(bundleId)]) {
@@ -754,12 +745,12 @@ export class ModelInstallService {
   }
 }
 
-/** 检查样本在错误里叫什么（给人看，按当前语言）。 */
+/** What the check sample is called in errors (shown to people, in the current language). */
 function selfTestSampleLabel(): string {
   return RcModels.selfTestSampleLabel().text;
 }
 
-/** 检查结论的说明：Runtime 的文案连同引用一起记下，别的（识别出的文字、模型包给的原因）只记文字。 */
+/** Explanation of the check verdict: Runtime's copy is recorded together with its reference; anything else (recognized text, reasons given by the model bundle) is recorded as text only. */
 function detailFields(detail: string | Localized): { detail: string; detailRef?: MessageRef } {
   return typeof detail === 'string' ? { detail } : { detail: detail.text, detailRef: refOf(detail) };
 }
@@ -771,7 +762,7 @@ interface SpeechTestInput {
   reference: FrozenSpeechReference | null;
 }
 
-/** 执行中发现随应用分发的文件读不出来：任务以 `APP_FILE_MISSING` 失败，说明与 `details` 照搬提交时的那句。 */
+/** If a file shipped with the app cannot be read during execution: the task fails with `APP_FILE_MISSING`, and the message and `details` repeat the sentence used at submission. */
 function appFileTaskFailure(error: RpcError): TaskFailure {
   const failure = new TaskFailure(APP_FILE_MISSING, error.message, {
     ...(error.details as Record<string, unknown> | undefined),
@@ -781,8 +772,7 @@ function appFileTaskFailure(error: RpcError): TaskFailure {
 }
 
 /**
- * Worker 那一侧的失败 → 检查没通过的原因：加载时报文件缺失或损坏（`MODEL_NOT_INSTALLED`）是模型文件的问题，报资源不足
- * （`MODEL_RESOURCE`）是内存不够，响应不合协议按输出不对，其余（起不来、中途退出、不支持、被停用）是 Worker 的问题。
+ * Failure on the Worker side → reason the check did not pass: a file missing or corrupt at load time (`MODEL_NOT_INSTALLED`) is a model file problem; insufficient resources (`MODEL_RESOURCE`) means not enough memory; a response that violates the protocol is treated as wrong output; the rest (fails to start, exits midway, unsupported, disabled) are Worker problems.
  */
 export function providerCheckCode(error: ProviderFailure): ModelCheckCode {
   const reason = error.details.reason;
@@ -796,15 +786,14 @@ function providerDetails(error: ProviderFailure): Record<string, unknown> {
   return { kind: error.kind, ...error.details };
 }
 
-/** 技术详情里不放的：进程的 stderr（可能带本机路径）与本机的绝对路径。 */
+/** Not included in technical details: the process's stderr (it may contain local paths) and absolute local paths. */
 const FACT_SKIP = new Set(['stderrTail', 'staging']);
-/** 值里夹着的本机路径：macOS / Linux 的常见根，或 Windows 的盘符路径。 */
+/** Local paths embedded in values: common macOS / Linux roots, or Windows drive-letter paths. */
 const LOCAL_PATH = /(^|[\s"'(])(\/(Users|home|private|var|tmp|Volumes)\/|[A-Za-z]:\\)/;
 const FACT_ORDER = ['kind', 'reason', 'workerCode', 'workerMessage', 'workerDetails', 'expected', 'text', 'problems', 'wav', 'png'];
 
 /**
- * 失败的 `details` → 技术详情的几行（`key: value`）：给反馈问题用，记进安装记录，所以不放 stderr 与本机绝对路径；
- * 对象写成紧凑的 JSON，过长的截断。
+ * Failed `details` → a few lines of technical detail (`key: value`): for use in feedback reports, recorded in the install record, so stderr and absolute local paths are left out; objects are written as compact JSON, and overly long ones are truncated.
  */
 export function checkFacts(details: Record<string, unknown>): string[] {
   const keys = Object.keys(details)

@@ -23,9 +23,9 @@ import {
 } from './translate-run.ts';
 
 /*
- * 字幕翻译的运行态、问题与收据（原型 panel-translate.jsx `TransRunHead`、`SelfRunHead`、`DoneView`，model-trans-run.js）。
- * 进度只读 Runtime 报来的：父任务的步骤、翻译那一步子任务的句数；没有总数时不造百分比。
- * 智能体在会话里自己翻译（`agentTranslate`）没有步骤与百分比：不确定的进度条、一共多少句、去那条会话的入口，不给取消。
+ * Running state, problems and receipt for subtitle translation (prototype panel-translate.jsx `TransRunHead`, `SelfRunHead`, `DoneView`, model-trans-run.js).
+ * Progress is read only from what the Runtime reports: the parent task's steps, and the sentence count of the translation step's subtask. When there is no total, no percentage is shown.
+ * When the agent translates inside the session itself (`agentTranslate`), there are no steps or percentage: an indeterminate progress bar, no total sentence count, an entry point to that session, and no cancel.
  */
 
 const head = style({
@@ -72,16 +72,16 @@ const alertActions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTo
 const alertNote = style({ marginTop: 4, font: 'ui-xs', color: 'gray-700' });
 
 export interface TranslateLive {
-  /** 从这里提交的这一轮；别处发起的为 null。 */
+  /** The run submitted from here; null for runs started elsewhere. */
   run: TranslateRun | null;
-  /** 父任务；刚提交、回执还没到时为 null。 */
+  /** The parent task; null when just submitted and the receipt has not arrived yet. */
   job: JobRecord | null;
   target: string | null;
   source: Id | null;
   progress: TranslateProgress | null;
 }
 
-/** 这个视频正在跑的翻译：从这里提交的那一轮，或别处（智能体、命令行）发起、还活着的。 */
+/** The translation running for this video: either the one submitted from here, or one started elsewhere (by an agent or the command line) that is still alive. */
 export function useTranslateLive(videoId: Id | null): TranslateLive | null {
   const run = useTranslateRun((s) => (videoId ? (s.runs[videoId] ?? null) : null));
   const jobs = useJobs((s) => s.jobs);
@@ -103,7 +103,7 @@ export function useTranslateLive(videoId: Id | null): TranslateLive | null {
   }, [videoId, run, jobs]);
 }
 
-/** 正在翻的那门在轨条上的一枚 chip：名字、百分比（没有时 null）、正在做的那一步。 */
+/** A chip on the track bar for the language being translated: name, percentage (null when absent), and the step in progress. */
 export function liveChip(live: TranslateLive | null): { label: string; percent: number | null; step: string } | null {
   if (!live?.target) return null;
   const label = languageName(live.target);
@@ -116,7 +116,7 @@ export function liveChip(live: TranslateLive | null): { label: string; percent: 
   return { label, percent: null, step: C.submitting };
 }
 
-/** 运行态头（原型 `TransRunHead`）：源 → 目标、百分比、进度条、句数与步骤、步骤阶梯、取消。 */
+/** Running-state header (prototype `TransRunHead`): source → target, percentage, progress bar, sentence count and steps, step ladder, cancel. */
 export function TranslateRunHead({ live, documents }: { live: TranslateLive; documents: Record<Id, DocumentRecord> }) {
   const { run, job, progress } = live;
   if (job && progress?.agent) return <AgentRunHead live={live} job={job} sentences={progress.agent.sentences} documents={documents} />;
@@ -172,8 +172,8 @@ export function TranslateRunHead({ live, documents }: { live: TranslateLive; doc
 }
 
 /**
- * 智能体自己翻译的运行态头（原型 `SelfRunHead`）：源 → 目标、不确定的进度条、一共多少句与做法、哪条会话在译。
- * 没有取消：取消这条记录停不下智能体，译文是那一轮在写；要停就停那条会话，所以给去会话的入口（会话还在目录里时）。
+ * Running-state header for agent self-translation (prototype `SelfRunHead`): source → target, indeterminate progress bar, total sentence count and method, and which session is translating.
+ * No cancel: cancelling this record cannot stop the agent, since the translation is being written by that run. To stop it, stop that session, so a link to the session is given (while the session is still in the directory).
  */
 function AgentRunHead({ live, job, sentences, documents }: { live: TranslateLive; job: JobRecord; sentences: number; documents: Record<Id, DocumentRecord> }) {
   const open = useOpenConversation({ conversationId: job.submitter.kind === 'agent' ? job.submitter.id : null });
@@ -205,7 +205,7 @@ function AgentRunHead({ live, job, sentences, documents }: { live: TranslateLive
 
 const VARIANT = { 'not-configured': 'notice', failed: 'negative', empty: 'informative', pending: 'informative', decide: 'notice' } as const;
 
-/** 翻译没走通：原因、补救的去处；能重试的给「重试」并说清会不会再计费。 */
+/** Translation failed: the reason, and where to go to fix it. Where a retry is possible, offer “重试” (Retry) and state clearly whether it will be billed again. */
 export function TranslateProblemAlert({ videoId, problem }: { videoId: Id; problem: TranslateProblem }) {
   const go = useShell((s) => s.go);
   const busy = useTranslateRun((s) => !!s.runs[videoId]);
@@ -237,7 +237,7 @@ export function TranslateProblemAlert({ videoId, problem }: { videoId: Id; probl
   );
 }
 
-/** 收据（原型 `DoneView`）：翻译放到画面上之后留一个「撤销」的出口；撤销后如实说原文没动、译文还在。 */
+/** Receipt (prototype `DoneView`): after the translation is put on screen, leave an “撤销” (Undo) exit. After undoing, honestly state that the original text was not changed and the translation remains. */
 export function TranslateReceiptCard({ videoId, receipt }: { videoId: Id; receipt: TranslateReceipt }) {
   return (
     <div className={alertBox}>

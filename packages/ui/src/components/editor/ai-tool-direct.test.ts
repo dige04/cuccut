@@ -20,7 +20,7 @@ import type { DocumentRecord } from '@cuccut/protocol';
 import type { PairRow } from '../../model/translation-doc.ts';
 
 const initial = getLocale();
-// 测试进程把 `CUCCUT_LOCALE` 定成中文：换语言要连它一起换。
+// The test process pins `CUCCUT_LOCALE` to Chinese: changing the language means changing it too.
 const use = (locale: Locale) => {
   vi.stubEnv('CUCCUT_LOCALE', locale);
   setLocale(locale);
@@ -193,7 +193,7 @@ describe('刷新过期译文：直接调模型', () => {
     expect(pickTranslation(list, { picked: null, presetLanguage: '日本語' })?.id).toBe('ja');
     expect(pickTranslation(list, { picked: null, presetId: 'ja', presetLanguage: 'English' })?.id).toBe('ja');
     expect(pickTranslation(list, { picked: 'en', presetId: 'ja' })?.id).toBe('en');
-    // 选过的那份没了：退回入口带来的。
+    // The chosen one is gone: fall back to the one the entry point brought.
     expect(pickTranslation(list, { picked: 'gone', presetId: 'ja' })?.id).toBe('ja');
     expect(pickTranslation([], { picked: null, presetId: 'ja' })).toBeNull();
   });

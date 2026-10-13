@@ -24,10 +24,9 @@ import { tr } from './legacy-import-run.tr.ts';
 import { vi } from './legacy-import-run.vi.ts';
 
 /*
- * 旧版项目导入的进度与结果（设计稿 model-legacy-import-run.js；架构设计 §2.7）。纯函数：读 Runtime 推来的
- * `LegacyImportRun`，算出任务页那一行、卡片上的原因与怎么办、详情的分组、Home 顶上那一条与跑完的 toast。
- * 没导入的按原因分组：每块没接上的硬盘一组、文件不在原处一组、项目读不出来一组、导入中途出错一组，
- * 每组带一句原因（why）和一句怎么办（fix），视图不另写。
+ * Progress and result of a legacy project import (design draft model-legacy-import-run.js; architecture design §2.7). Pure functions: they read the `LegacyImportRun` pushed by the Runtime and compute the row on the task page, the reason and what to do on the card, the groups in details, the item at the top of Home, and the toast shown when the run finishes.
+ * Items that were not imported are grouped by reason: one group per disconnected drive, one group for files not at their original location, one group for projects that cannot be read, one group for errors midway through the import.
+ * Each group carries one sentence of reason (why) and one sentence of what to do (fix); views do not write their own.
  */
 
 const en = {
@@ -58,7 +57,7 @@ const en = {
   missingNone: 'Media files can’t be found',
   failedReport: (report: string) => `Import report: ${report}`,
   failedNoReport: 'No import report was written',
-  /** 卡片上那一句：几组的短句连起来。 */
+  /** The sentence on the card: the short sentences of several groups joined together. */
   note: (parts: string[]) => `${parts.join('; ')}.`,
   hintOffline: (name: string) =>
     `Connect “${name}”, then click “Retry all”. If you leave it, CucCut tries again the next time it starts. To handle them one by one, open the details.`,
@@ -117,20 +116,20 @@ export type LegacyImportRunMessages = typeof en;
 
 export const LR = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 任务页里这条导入的 ID：一次启动一条，跟着 Runtime 给的 `runId`。 */
+/** The ID of this import on the task page: one per start, following the `runId` given by the Runtime. */
 export const LEGACY_TASK_PREFIX = 'legacy-import:';
 export const legacyTaskId = (runId: string): Id => `${LEGACY_TASK_PREFIX}${runId}`;
 
 export interface RunCounts {
   imported: number;
-  /** 没导入、等用户处理的（不含跳过的）。 */
+  /** Not imported, waiting for the user to handle (excluding skipped). */
   pending: number;
   skipped: number;
   queued: number;
   importing: number;
-  /** 还没轮到或正在导入的。 */
+  /** Not yet reached, or being imported right now. */
   live: number;
-  /** 这一轮要导入的：已导入、没导入与还在跑的（跳过的不算）。 */
+  /** Items in this run to import: already imported, not imported, and still running (skipped ones are not counted). */
   total: number;
 }
 
@@ -142,13 +141,13 @@ export function runCounts(run: Pick<LegacyImportRun, 'items'> | null): RunCounts
   return { ...c, live, total: c.imported + c.pending + live };
 }
 
-/** 还在导入（含等其他任务）。 */
+/** Still importing (including waiting for other tasks). */
 export const runLive = (run: Pick<LegacyImportRun, 'state'> | null): boolean => !!run && run.state !== 'finished';
 
 export const currentItem = (run: LegacyImportRun | null): LegacyImportItem | null =>
   run?.items.find((it) => it.state === 'importing') ?? null;
 
-/** 0–100，向下取整：没做完不念 100%。 */
+/** 0–100, rounded down: an unfinished import never reads 100%. */
 export function runPercent(run: LegacyImportRun): number {
   const c = runCounts(run);
   if (!c.total) return runLive(run) ? 0 : 100;
@@ -160,13 +159,13 @@ export type ProblemKind = LegacyImportProblem['kind'];
 export interface ProblemGroup {
   key: string;
   kind: ProblemKind;
-  /** 没接上的硬盘（`offline` 才有）。 */
+  /** Disconnected drives (present only when `offline`). */
   volume: { root: string; name: string } | null;
   items: LegacyImportItem[];
   title: string;
   why: string;
   fix: string;
-  /** 卡片上那一句里的一段。 */
+  /** One segment of the sentence on the card. */
   short: string;
 }
 
@@ -190,7 +189,7 @@ function groupText(kind: ProblemKind, n: number, volume: ProblemGroup['volume'])
   return { title: LR.failedTitle, why: LR.failedWhy, fix: LR.failedFix, short: LR.failedShort(n) };
 }
 
-/** 没导入的按原因分组：每块没接上的硬盘一组，其余按原因各一组；顺序是硬盘、文件不在、读不出来、中途出错。 */
+/** Items not imported, grouped by reason: one group per disconnected drive, and the rest one group per reason; the order is drives, files not in place, cannot be read, error midway. */
 export function problemGroups(run: LegacyImportRun | null): ProblemGroup[] {
   const out: Omit<ProblemGroup, 'title' | 'why' | 'fix' | 'short'>[] = [];
   for (const item of run?.items ?? []) {
@@ -209,7 +208,7 @@ export function problemGroups(run: LegacyImportRun | null): ProblemGroup[] {
     .map((g) => ({ ...g, ...groupText(g.kind, g.items.length, g.volume) }));
 }
 
-/** 一行没导入的项目下面那句：缺几个文件、第一个缺的路径；读不出来的写旧项目在哪；中途出错的写导入记录在哪。 */
+/** The sentence under a not-imported project row: how many files are missing and the first missing path; for a project that cannot be read, where the old project is; for an error midway, where the import record is. */
 export function itemNote(item: LegacyImportItem): string {
   const p = item.problem;
   if (!p || p.kind === 'unreadable') return item.path;
@@ -219,7 +218,7 @@ export function itemNote(item: LegacyImportItem): string {
   return p.missingCount > 1 ? LR.missingMany(p.missingCount, first) : LR.missingOne(first);
 }
 
-/** 「在文件夹中显示」显示哪个：中途出错的显示导入记录，读不出来的显示旧项目；缺素材的不给（要处理的是素材）。 */
+/** Which one “Show in folder” shows: for an error midway, the import record; for a project that cannot be read, the old project; none for missing media (the thing to fix there is the media). */
 export function revealTarget(item: LegacyImportItem): string | null {
   const p = item.problem;
   if (p?.kind === 'failed') return p.report ?? item.path;
@@ -227,13 +226,13 @@ export function revealTarget(item: LegacyImportItem): string | null {
   return null;
 }
 
-/** 任务页卡片上的一句原因：`2 个项目的素材在没接上的「Extreme SSD」上，1 个项目的文件读不出来。` */
+/** A reason sentence on the task page card, e.g. `2 个项目的素材在没接上的“Extreme SSD”上，1 个项目的文件读不出来。` (the media of 2 projects is on the disconnected “Extreme SSD”, and the files of 1 project cannot be read). */
 export function cardNote(run: LegacyImportRun | null): string {
   const groups = problemGroups(run);
   return groups.length ? LR.note(groups.map((g) => g.short)) : '';
 }
 
-/** 卡片上紧跟原因的那句怎么办：有没接上的硬盘就先说接上它；其余的去详情逐个看。 */
+/** The what-to-do sentence right after the reason on the card: if a drive is disconnected, say to connect it first; the rest are checked one by one in details. */
 export function cardHint(run: LegacyImportRun | null): string {
   const groups = problemGroups(run);
   if (!groups.length) return '';
@@ -241,7 +240,7 @@ export function cardHint(run: LegacyImportRun | null): string {
   return drive?.volume ? LR.hintOffline(drive.volume.name) : LR.hintOther;
 }
 
-/** 卡片副行：在跑时「已导入 d/t · 导入到 …」，跑完「已导入 d · 待处理 p · 已跳过 s · 导入到 …」。 */
+/** Card subline: while running, “已导入 d/t · 导入到 …” (imported d/t · importing to …); when done, “已导入 d · 待处理 p · 已跳过 s · 导入到 …” (imported d · pending p · skipped s · importing to …). */
 export function runSub(run: LegacyImportRun, platform: string): string {
   const c = runCounts(run);
   const dest = LR.subDest(displayDirectory(run.directory, platform));
@@ -256,7 +255,7 @@ export function runSub(run: LegacyImportRun, platform: string): string {
     .join(' · ');
 }
 
-/** 在跑时的阶段与那一句细节：等其他任务，或正在导入哪个。 */
+/** The stage while running and its detail sentence: waiting for other tasks, or which one is being imported. */
 export function runPhase(run: LegacyImportRun): { phase: string; detail: string | null } {
   if (run.state === 'waiting') return { phase: LR.phaseWaiting, detail: LR.detailWaiting };
   const now = currentItem(run);
@@ -264,8 +263,8 @@ export function runPhase(run: LegacyImportRun): { phase: string; detail: string 
 }
 
 /**
- * 任务页、侧栏共用的那一行。在跑归「进行中」；跑完归历史，留了没导入的念「N 个待处理」、用提醒色。
- * 不能取消（Runtime 的导入不能中途停），不进视频顶栏的任务胶囊（它不属于哪部视频）。
+ * The row shared by the task page and the sidebar. While running it belongs to “in progress”; when done it goes to history, and if items were left not imported it reads “N 个待处理” (N pending) in the warning color.
+ * It cannot be cancelled (the Runtime's import cannot be stopped midway), and it does not go into the task capsule in the video top bar (it does not belong to any video).
  */
 export function legacyTaskRow(run: LegacyImportRun, platform: string): TaskRow {
   const c = runCounts(run);
@@ -304,13 +303,13 @@ export interface RunBanner {
   title: string;
   detail: string;
   pct: number | null;
-  /** 关掉的是哪一次结果：再有新的结果会再出来。 */
+  /** Which result was dismissed: a new result will show again when there is one. */
   key: string;
 }
 
 /**
- * Home 顶上那一条（导入是全局的事，不属于哪部视频）：在跑时报进度与正在导入哪个；跑完留了没导入的报结果与原因；
- * 都导入了不出（toast 已经说过）。
+ * The item at the top of Home (import is global, not part of any one video): while running, it reports progress and which one is being imported; when done with items left not imported, it reports the result and the reason;
+ * when everything was imported, nothing is shown (the toast already said so).
  */
 export function runBanner(run: LegacyImportRun | null, platform: string): RunBanner | null {
   if (!run) return null;
@@ -339,13 +338,13 @@ export function runBanner(run: LegacyImportRun | null, platform: string): RunBan
 export interface FinishToast {
   text: string;
   tone: 'positive' | 'neutral';
-  /** `result` 去任务详情看原因；`open` 去 Space 看导入的项目。 */
+  /** `result` goes to task details for the reasons; `open` goes to Space to see the imported projects. */
   action: 'result' | 'open';
 }
 
 /**
- * 一次导入（或一次重试）跑完时的 toast。`batch` 是这一轮导入过的项目（界面看着它们排队、导入）；
- * 覆盖了整次导入（不算跳过的）就报整体，否则是重试，只报重试的那几个。
+ * The toast shown when one import (or one retry) finishes. `batch` is the projects this round imported (the UI shows them queuing and importing);
+ * if it covered the whole import (excluding skipped), report the whole; otherwise it was a retry, and only the retried ones are reported.
  */
 export function finishToast(run: LegacyImportRun, batch: ReadonlySet<string> | null): FinishToast {
   const scope = run.items.filter((it) => it.state !== 'skipped');
@@ -361,7 +360,7 @@ export function finishToast(run: LegacyImportRun, batch: ReadonlySet<string> | n
   return { text: LR.doneSome(c.imported, c.pending), tone: 'neutral', action: 'result' };
 }
 
-/** 点到的、还没导入的项目（`paths` 缺省 = 全部没导入的）：重试与跳过按它数。 */
+/** The projects clicked that are not yet imported (`paths` defaults to all not-imported ones): retry and skip count by it. */
 export function pendingPaths(run: LegacyImportRun | null, paths?: readonly string[]): string[] {
   return (run?.items ?? [])
     .filter((it) => it.state === 'not-imported' && (!paths || paths.includes(it.path)))

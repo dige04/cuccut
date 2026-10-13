@@ -1,34 +1,26 @@
-//! MP4 写入：BCF 渲染导出的原生编码主路径（WP6b）。
+//! MP4 writing: the main native encoding path for BCF render export (WP6b).
 //!
-//! 与本 crate 的解码侧（[`crate::extract_frame_rgba`] / [`crate::open_frame_stream`]）
-//! 对称：**在不启动 ffmpeg 子进程的前提下，把像素写成 MP4**。消费方式贴合迁移前
-//! `ccut-render::video::FfmpegWriter`——逐帧喂 RGBA、可选一段整片混音 PCM、
-//! [`Mp4Writer::finish`] 收尾。
+//! Symmetric with this crate's decoding side ([`crate::extract_frame_rgba`] / [`crate::open_frame_stream`]): **writes pixels out as MP4 without starting any ffmpeg child process**. Its usage matches the pre-migration `ccut-render::video::FfmpegWriter`: feed RGBA frame by frame, optionally one whole-piece mixed PCM track, and wrap up with [`Mp4Writer::finish`].
 //!
-//! | 平台 | 后端 | 视频 | 音频 |
+//! | Platform | Backend | Video | Audio |
 //! | --- | --- | --- | --- |
-//! | macOS | AVFoundation | `AVAssetWriter` + `AVAssetWriterInputPixelBufferAdaptor`（BGRA 像素缓冲池 → VideoToolbox H.264） | LPCM `CMSampleBuffer` → `AVAssetWriterInput` 的 AAC 输出设置 |
-//! | Windows | Media Foundation | `IMFSinkWriter` + H.264 MFT（NV12 输入，奇数画布退 RGB32） | s16 PCM → AAC MFT |
-//! | 其余（Linux…） | 无 | [`encode_available`] 为 `false`，`open_mp4_writer` 直接 `Err` | 同左 |
+//! | macOS | AVFoundation | `AVAssetWriter` + `AVAssetWriterInputPixelBufferAdaptor` (BGRA pixel buffer pool → VideoToolbox H.264) | LPCM `CMSampleBuffer` → `AVAssetWriterInput` with AAC output settings |
+//! | Windows | Media Foundation | `IMFSinkWriter` + H.264 MFT (NV12 input; odd canvases fall back to RGB32) | s16 PCM → AAC MFT |
+//! | Others (Linux…) | None | [`encode_available`] is `false`, and `open_mp4_writer` returns `Err` directly | Same as left |
 //!
-//! **调用方必须自带 ffmpeg 兜底**（与解码侧同一条规矩）：本模块不发现、不启动
-//! 任何外部二进制，也不承诺写得出每一种几何。原生失败就是失败，回落与否由
-//! 调用方决定（`ccut-render::video::VideoWriter`）。
+//! **The caller must bring its own ffmpeg fallback** (the same rule as the decoding side): this module does not discover or start any external binary, and it does not promise to write every possible geometry. A native failure is simply a failure; whether to fall back is up to the caller (`ccut-render::video::VideoWriter`).
 //!
-//! ## 码率而不是 CRF
+//! ## Bitrate, not CRF
 //!
-//! 迁移前的 ffmpeg 配方是 `libx264 -preset medium -crf 18`，即**质量导向**：
-//! 码率由内容复杂度自己长出来。VideoToolbox 与 Media Foundation 的硬件编码器
-//! 没有 CRF 这类恒定质量档，只能给平均码率，所以质量目标必须翻译成一条按
-//! 分辨率与帧率缩放的码率曲线（[`video_bitrate`]）。
+//! The ffmpeg recipe before the migration was `libx264 -preset medium -crf 18`, which is **quality-oriented**: the bitrate grows out of the content's complexity by itself. The hardware encoders of VideoToolbox and Media Foundation
+//! have no constant-quality mode like CRF and can only be given an average bitrate, so the quality target has to be translated into a bitrate curve that scales with resolution and frame rate ([`video_bitrate`]).
 //!
-//! ## 确定性边界
+//! ## Determinism boundary
 //!
-//! 按 `docs/design/bcf/cuccut-format-spec.md` §15.1，**导出编码的字节不承诺可复现**：同一份
-//! 帧序列经 x264、VideoToolbox、Media Foundation 得到的码流互不相同，同一台机器
-//! 换一版系统也可能不同。验收口径是存在性 / 帧数 / 时长容差 / 尺寸 / 后端标识 /
-//! 语义化颜色谓词 / 音频 RMS，不做像素 golden。合成层（`ccut-render` 的 DrawOp
-//! 与 FramePlan 指纹）仍然逐字节确定，本模块只在它下游。
+//! Per `docs/design/bcf/cuccut-format-spec.md` §15.1, **the bytes of an exported encode are not promised to be reproducible**: the same frame sequence goes through x264, VideoToolbox and Media Foundation and yields different bitstreams,
+//! and the same machine may also produce different output after an OS update. Acceptance is judged on existence, frame count, duration tolerance, size, backend identifier,
+//! semantic colour predicates and audio RMS; there are no pixel golden files. The compositing layer (`ccut-render`'s DrawOp
+//! and FramePlan fingerprint) is still byte-for-byte deterministic; this module sits only downstream of it.
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -36,49 +28,49 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-/// 混音 PCM 的固定格式，与 `ccut-render::audio::mix_audio` 的输出一致：
-/// 48 kHz、立体声、交织 f32（本机字节序）。
+/// Fixed format of the mixed PCM, matching the output of `ccut-render::audio::mix_audio`:
+/// 48 kHz, stereo, interleaved f32 (native byte order).
 pub const AUDIO_SAMPLE_RATE: u32 = 48_000;
-/// 同上：声道数。
+/// As above: the channel count.
 pub const AUDIO_CHANNELS: u32 = 2;
-/// 输出 AAC 码率的缺省值，与迁移前 ffmpeg 路径的 `-b:a 192k` 同值（[`AudioInput::bitrate`] 可以另给）。
+/// Default output AAC bitrate, the same value as the `-b:a 192k` of the pre-migration ffmpeg path ([`AudioInput::bitrate`] can override it).
 pub const AUDIO_BITRATE: u32 = 192_000;
 
-/// 一次交接的音频长度：0.1 秒。够小，视频轨不会因为等音频而长时间被压住就绪位；
-/// 够大，每帧只有个位数次系统调用。
+/// Audio length handed over per step: 0.1 s. Small enough that the video track is not held back from ready for long while waiting on audio;
+/// large enough that each frame needs only a single-digit number of system calls.
 const AUDIO_CHUNK_FRAMES: usize = AUDIO_SAMPLE_RATE as usize / 10;
 
-/// 音频相对视频的**提前量**（秒）。MP4 写入器为保持交织，会在一条轨落后太多时
-/// 压住另一条轨的就绪位；先把音频喂到视频时间点之前一截，视频轨就不会因此停顿。
+/// How far audio runs **ahead** of video (seconds). To keep interleaving, the MP4 writer holds back one track's ready flag when that track falls too far behind;
+/// feeding audio a bit before the video time point means the video track does not stall because of this.
 pub(crate) const AUDIO_LEAD_SECONDS: f64 = 2.0;
 
-/// 当前平台是否有原生 MP4 编码实现。
+/// Whether the current platform has a native MP4 encoding implementation.
 ///
-/// 与解码侧的 [`crate::available`] 同一套系统框架、同一个平台集合，但语义是
-/// 独立的：调用方问的是"值不值得先试原生**写**路径"。
+/// It uses the same system frameworks and the same set of platforms as the decoding side's [`crate::available`], but the meaning is
+/// independent: the caller is asking "is it worth trying the native **write** path first?"
 pub const fn encode_available() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
-/// 当前平台原生编码后端的标识（§15.1「后端必须可观测」）。取值与解码侧同名：
-/// 两边就是同一套系统框架（`avfoundation` / `media-foundation`）。
+/// Identifier of the native encoding backend on the current platform (§15.1 “the backend must be observable”). The values match the decoding side's names:
+/// both sides use the same system frameworks (`avfoundation` / `media-foundation`).
 pub const fn encode_backend() -> &'static str {
     crate::backend()
 }
 
-/// 输出码率（bit/s）：分辨率 × 帧率的线性启发式。
+/// Output bitrate (bit/s): a linear heuristic of resolution × frame rate.
 ///
-/// 取值与 `apps/cli` 的 timeline 中间文件同一条曲线
-/// （`services/timeline_media.rs::intermediate_video_bitrate` 的无源封顶形态）：
-/// 1080p30 基准 8 Mb/s，按像素数与帧率线性缩放，再乘 1.5 的**质量导向余量**，
-/// 最后夹到 4–60 Mb/s。
+/// The values follow the same curve as the timeline intermediate file in `apps/cli`
+/// (the no-source-cap form of `services/timeline_media.rs::intermediate_video_bitrate`):
+/// a 1080p30 baseline of 8 Mb/s, scaled linearly by pixel count and frame rate, then multiplied by a **quality-oriented margin** of 1.5,
+/// finally clamped to 4–60 Mb/s.
 ///
-/// 1.5 倍余量对着的是迁移前的 `-crf 18`：那是"视觉无损"档，而硬件编码器在同等
-/// 码率下压不过 x264，不留余量会在高细节素材上看得出来。夹取上下限的作用是
-/// 两头兜底——极小画布不至于低到出块，4K60 也不至于长成几百兆的产物。
+/// The 1.5× margin is aimed at the pre-migration `-crf 18`, which is the “visually lossless” tier. A hardware encoder at the same
+/// bitrate does not compress as well as x264, so without the margin it would show on high-detail material. The clamp is a safety net at both ends:
+/// a tiny canvas is not pushed so low that it blocks, and 4K60 does not balloon into a file of several hundred megabytes.
 ///
-/// 这里**不做源码率封顶**（`apps/cli` 的导出路径才有）：BCF 渲染的每一帧都是
-/// 合成出来的，根本不存在"源码率"这个量。
+/// There is **no source-bitrate cap** here (that exists only in the `apps/cli` export path): every frame of a BCF render is
+/// synthesised, so there is no such thing as a “source bitrate”.
 pub fn video_bitrate(width: u32, height: u32, fps: f64) -> u32 {
     let scaled = 8_000_000.0
         * (f64::from(width.max(1)) * f64::from(height.max(1)) / (1920.0 * 1080.0))
@@ -87,20 +79,19 @@ pub fn video_bitrate(width: u32, height: u32, fps: f64) -> u32 {
     scaled.round().clamp(4_000_000.0, 60_000_000.0) as u32
 }
 
-/// 质量导向的 CRF → 原生平均码率（bit/s）：[`video_bitrate`] 的曲线按 `2^((18 − crf) / 6)` 缩放，夹到
-/// 1 b/s – 60 Mb/s。
+/// Quality-oriented CRF → native average bitrate (bit/s): the [`video_bitrate`] curve scaled by `2^((18 − crf) / 6)`, clamped to
+/// 1 b/s – 60 Mb/s.
 ///
-/// 硬件编码器没有 CRF，CRF 只能翻译成码率。锚点是曲线本身的口径：[`video_bitrate`] 对着的就是迁移前的 `-crf 18`
-/// （倍数 1.0，与 `render-raster` 的 `EncodeQuality::EXPORT` 同值）；x264 的经验是 CRF 每差 6 码率约差一倍，按这个
-/// 斜率外推。`render-raster` 的预览代理档（`crf 16` 配 2.5 倍）是另一套余量，不在这条曲线上。
+/// Hardware encoders have no CRF, so the CRF can only be translated into a bitrate. The anchor is the curve's own basis: [`video_bitrate`] is aimed at the pre-migration `-crf 18`
+/// (multiplier 1.0, the same value as `EncodeQuality::EXPORT` in `render-raster`). Experience with x264 is that each 6 steps of CRF roughly halves or doubles the bitrate, and this slope is extrapolated.
+/// The preview proxy tier of `render-raster` (`crf 16` with a 2.5× multiplier) is a different margin and is not on this curve.
 pub fn crf_bitrate(width: u32, height: u32, fps: f64, crf: u32) -> u32 {
     let base = f64::from(video_bitrate(width, height, fps));
     let scale = 2_f64.powf((18.0 - f64::from(crf)) / 6.0);
     (base * scale).round().clamp(1.0, 60_000_000.0) as u32
 }
 
-/// NTSC 系与整数系的标准帧率分数。恒定帧率的时间戳必须用分数表示，`29.97` 这种
-/// 十进制近似铺 30 分钟就会漂掉一帧以上。
+/// Standard frame-rate fractions for the NTSC family and the integer family. Timestamps at a constant frame rate must be expressed as fractions: a decimal approximation such as `29.97` would drift by more than a frame over 30 minutes.
 const STANDARD_FRAME_RATES: &[(u32, u32)] = &[
     (24000, 1001),
     (30000, 1001),
@@ -109,14 +100,14 @@ const STANDARD_FRAME_RATES: &[(u32, u32)] = &[
     (120000, 1001),
 ];
 
-/// 帧率吸附容差：29.97 与 30 只差 0.1%，容差必须明显小于它。
+/// Frame-rate snapping tolerance: 29.97 and 30 differ by only 0.1%, so the tolerance must be clearly smaller than that.
 const FRAME_RATE_SNAP_TOLERANCE: f64 = 0.0005;
 
-/// 合成帧率 → 时间戳用的有理数 `(分子, 分母)`。
+/// Rational number `(numerator, denominator)` used for the timestamps of a composited frame rate.
 ///
-/// 整数帧率直接用 `(fps, 1)`；NTSC 系（23.976 / 29.97 / 59.94…）吸附到精确的
-/// `k/1001`；其余按千分之一的时基取整。语义对齐迁移前 ffmpeg 的 `-r {fps}`：
-/// 输出恒定帧率，第 `i` 帧的呈现时间是 `i × 分母 / 分子`。
+/// An integer frame rate uses `(fps, 1)` directly; NTSC-family rates (23.976 / 29.97 / 59.94…) snap to the exact
+/// `k/1001`; anything else is rounded to a timebase of one-thousandth. The semantics match the pre-migration ffmpeg `-r {fps}`:
+/// constant output frame rate, and the presentation time of frame `i` is `i × denominator / numerator`.
 pub fn frame_rate_rational(fps: f64) -> (u32, u32) {
     if !fps.is_finite() || fps <= 0.0 {
         return (30, 1);
@@ -135,66 +126,64 @@ pub fn frame_rate_rational(fps: f64) -> (u32, u32) {
     (((fps * 1000.0).round() as u32).max(1), 1000)
 }
 
-/// 平台写入器的开法：几何、恒定帧率（有理数）、视频码率与可选的音轨。
+/// How to open a platform writer: geometry, constant frame rate (rational), video bitrate, and an optional audio track.
 pub(crate) struct WriterSetup {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) fps_num: u32,
     pub(crate) fps_den: u32,
-    /// 视频平均码率（bit/s）。
+    /// Average video bitrate (bit/s).
     pub(crate) bitrate: u32,
     pub(crate) audio: Option<PcmSource>,
-    /// AAC 码率（bit/s）。
+    /// AAC bitrate (bit/s).
     pub(crate) audio_bitrate: u32,
 }
 
-/// 平台 MP4 写入器。两条平台实现的消费方式一样：按序喂帧、收尾。
+/// Platform MP4 writer. Both platform implementations are used the same way: feed frames in order, then wrap up.
 pub(crate) trait Mp4Sink {
     fn write_frame(&mut self, rgba: &[u8]) -> Result<()>;
     fn finish(self: Box<Self>) -> Result<()>;
 }
 
-/// 原生 MP4 写入器句柄。
+/// Handle to a native MP4 writer.
 ///
-/// 生命周期与迁移前的 `FfmpegWriter` 一致：`open_mp4_writer` → 若干次
-/// [`write_frame`](Self::write_frame) → [`finish`](Self::finish)。中途 drop 会
-/// 让平台写入器取消，产物文件按平台约定被清理或留下半截——调用方本来就在
-/// 临时文件上渲染，不依赖这一点。
+/// Its lifetime matches the pre-migration `FfmpegWriter`: `open_mp4_writer` → any number of
+/// [`write_frame`](Self::write_frame) calls → [`finish`](Self::finish). Dropping midway makes the platform writer cancel, and the output file is either cleaned up or left half-written, per platform convention. The caller was rendering to a temporary file anyway, and does not rely on this.
 pub struct Mp4Writer {
     sink: Box<dyn Mp4Sink>,
 }
 
 impl Mp4Writer {
-    /// 追加一帧：紧密排布（stride = `width * 4`）的 top-down RGBA8。
+    /// Append one frame: top-down RGBA8, tightly packed (stride = `width * 4`).
     ///
-    /// 字节数必须恰为 `width * height * 4`；帧的呈现时间由**调用顺序**决定
-    /// （第 `i` 次调用即第 `i` 帧），与 ffmpeg `-r` 的恒定帧率语义一致。
+    /// The byte count must be exactly `width * height * 4`. The frame's presentation time is determined by **call order**
+    /// (the i-th call is frame i), matching the constant-frame-rate semantics of ffmpeg `-r`.
     pub fn write_frame(&mut self, rgba: &[u8]) -> Result<()> {
         self.sink.write_frame(rgba)
     }
 
-    /// 收尾：喂完剩余音频、收束轨道、等待容器写完。
+    /// Wrap up: feed the remaining audio, wrap up the tracks, and wait for the container to be finished.
     pub fn finish(self) -> Result<()> {
         self.sink.finish()
     }
 
-    /// 实际在用的编码后端（§15.1 可观测条款）。
+    /// The encoding backend actually in use (§15.1 observability clause).
     pub fn backend(&self) -> &'static str {
         encode_backend()
     }
 }
 
-/// 打开一个原生 MP4 写入器。
+/// Open a native MP4 writer.
 ///
-/// - `width` / `height`：输出画布，必须是正偶数（H.264 的 4:2:0 色度要求；
-///   奇数画布判 `unsupported`，让调用方回落 ffmpeg，与迁移前行为一致）。
-/// - `fps`：合成帧率，决定恒定帧率网格。
-/// - `audio_pcm`：整片混音的**裸 f32le 48 kHz 立体声** PCM 文件路径（就是
-///   `ccut-render::audio::mix_audio` 写出的那一份）；`None` = 无音轨。
+/// - `width` / `height`: output canvas; must be positive even numbers (H.264 4:2:0 chroma requirement;
+///   an odd canvas is reported as `unsupported`, so the caller falls back to ffmpeg, matching the pre-migration behaviour).
+/// - `fps`: composited frame rate, which determines the constant-frame-rate grid.
+/// - `audio_pcm`: path to the whole-piece mixed **raw f32le 48 kHz stereo** PCM file (the same one
+///   that `ccut-render::audio::mix_audio` writes out); `None` = no audio track.
 ///
-/// 音频长度与视频长度的关系沿用 ffmpeg 的 `-shortest`：音频只写到视频最后一帧
-/// 结束为止，视频写完之前音频先耗尽就自然收束音轨。BCF 渲染里两者本来就等长
-/// （混音按 `ir.total` 铺满，帧数是 `round(ir.total × fps)`）。
+/// The relation between audio and video length follows ffmpeg's `-shortest`: audio is written only up to the end of the last video frame,
+/// and if audio runs out before the video is finished, the audio track is simply wrapped up. In BCF rendering the two are already equal in length
+/// (the mix spans `ir.total`, and the frame count is `round(ir.total × fps)`).
 pub fn open_mp4_writer(
     out: &Path,
     width: u32,
@@ -205,13 +194,9 @@ pub fn open_mp4_writer(
     open_mp4_writer_with_bitrate(out, width, height, fps, audio_pcm, None)
 }
 
-/// 同 [`open_mp4_writer`]，但可以指定视频码率（bit/s）。
+/// Same as [`open_mp4_writer`], but the video bitrate (bit/s) can be specified.
 ///
-/// `bitrate` 为 `None` 时用 [`video_bitrate`] 的启发式，与 [`open_mp4_writer`]
-/// 完全等价。时间轴装配与智能重构图会显式给值：那里的输入是**用户
-/// 的源素材**而不是合成帧，因此存在「源码率」这个量，可以在启发式档位之上再压
-/// 一层上限（`services/timeline_media.rs::intermediate_video_bitrate`），免得把
-/// 1 Mb/s 的素材重编成十几 Mb/s 的中间文件。
+/// When `bitrate` is `None`, the [`video_bitrate`] heuristic is used, exactly equivalent to [`open_mp4_writer`]. Timeline assembly and smart reframing pass explicit values: there the input is the **user's source material** rather than synthesised frames, so a “source bitrate” exists and can impose a cap on top of the heuristic tier (`services/timeline_media.rs::intermediate_video_bitrate`), so that a 1 Mb/s clip is not re-encoded into an intermediate file of over ten Mb/s.
 pub fn open_mp4_writer_with_bitrate(
     out: &Path,
     width: u32,
@@ -242,46 +227,46 @@ pub fn open_mp4_writer_with_bitrate(
     )
 }
 
-/// 混音 PCM 的容器。
+/// Container of the mixed PCM.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PcmFormat {
-    /// 裸 f32le、48 kHz、立体声交织（`ccut-render::audio::mix_audio` 写出的那一份）。
+    /// Raw f32le, 48 kHz, stereo interleaved (the one that `ccut-render::audio::mix_audio` writes out).
     RawF32,
-    /// WAV（含 `WAVE_FORMAT_EXTENSIBLE`）：48 kHz 立体声，32 位浮点或 16 / 24 / 32 位整数（[`WavLayout::is_native_pcm`]）。
+    /// WAV (including `WAVE_FORMAT_EXTENSIBLE`): 48 kHz stereo, 32-bit float or 16 / 24 / 32-bit integer ([`WavLayout::is_native_pcm`]).
     Wav,
 }
 
-/// 音轨的输入：整段混音与 AAC 码率。
+/// Audio track input: the whole mix and the AAC bitrate.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioInput {
     pub path: PathBuf,
     pub format: PcmFormat,
-    /// AAC 码率（bit/s）。
+    /// AAC bitrate (bit/s).
     pub bitrate: u32,
-    /// 音轨的长度（秒）：给了就补静音或截到正好这么长（对齐 ffmpeg 兜底的 `apad=whole_dur,atrim=end`）；
-    /// `None` = 按 `-shortest` 截到视频末尾、比视频短时到混音末尾为止。
+    /// Length of the audio track (seconds): if given, it is padded with silence or cut to exactly that length (aligned with the ffmpeg fallback's `apad=whole_dur,atrim=end`);
+    /// `None` = cut to the end of the video per `-shortest`, and if shorter than the video, end at the end of the mix.
     pub duration_seconds: Option<f64>,
 }
 
-/// [`open_mp4_writer_with_options`] 的参数。
+/// Parameters of [`open_mp4_writer_with_options`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mp4Options {
-    /// 输出画布，必须是正偶数（H.264 4:2:0）。
+    /// Output canvas; must be positive even numbers (H.264 4:2:0).
     pub width: u32,
     pub height: u32,
-    /// 恒定帧率的有理数（分子、分母），第 `i` 帧的呈现时间是 `i × 分母 / 分子`。调用方手里有精确帧率时直接给，
-    /// 不经浮点再吸附（[`frame_rate_rational`]）。
+    /// Constant frame rate as a rational number (numerator, denominator); the presentation time of frame `i` is `i × denominator / numerator`. If the caller has the exact frame rate, pass it directly,
+    /// without going through floating point and snapping again ([`frame_rate_rational`]).
     pub fps_num: u32,
     pub fps_den: u32,
-    /// 视频平均码率（bit/s）；`None` = [`video_bitrate`] 的启发式。
+    /// Average video bitrate (bit/s); `None` = the [`video_bitrate`] heuristic.
     pub video_bitrate: Option<u32>,
     pub audio: Option<AudioInput>,
 }
 
-/// 同 [`open_mp4_writer`]，参数收成 [`Mp4Options`]：精确的有理帧率、视频码率、音轨的容器（裸 PCM 或 WAV）、
-/// AAC 码率与音轨长度。
+/// Same as [`open_mp4_writer`], with the parameters collected into [`Mp4Options`]: the exact rational frame rate, the video bitrate, the audio track's container (raw PCM or WAV),
+/// the AAC bitrate, and the audio track length.
 ///
-/// 写出的视频流标 BT.709（原色、传递函数与 YCbCr 矩阵），与 ffmpeg 兜底路径的 `-colorspace bt709` 同口径。
+/// The written video stream is tagged BT.709 (primaries, transfer function and YCbCr matrix), on the same basis as the `-colorspace bt709` of the ffmpeg fallback path.
 pub fn open_mp4_writer_with_options(out: &Path, options: &Mp4Options) -> Result<Mp4Writer> {
     let &Mp4Options {
         width,
@@ -351,22 +336,22 @@ pub fn open_mp4_writer_with_options(out: &Path, options: &Mp4Options) -> Result<
     }
 }
 
-/// WAV 文件的格式与数据块位置（[`read_wav_layout`]）。
+/// Format and data-chunk position of a WAV file ([`read_wav_layout`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WavLayout {
     pub sample_rate: u32,
     pub channels: u16,
     pub bits_per_sample: u16,
-    /// IEEE 浮点（格式 3，或 `WAVE_FORMAT_EXTENSIBLE` 的子格式是 3）。
+    /// IEEE float (format 3, or `WAVE_FORMAT_EXTENSIBLE` with sub-format 3).
     pub float: bool,
-    /// 数据块第一个字节在文件里的位置。
+    /// File position of the first byte of the data chunk.
     pub data_offset: u64,
-    /// 数据块的字节数。长度写成 0 或 `0xFFFFFFFF`（流式写出时回填不了）、或比文件长时按到文件末尾算。
+    /// Byte count of the data chunk. If the length is written as 0 or `0xFFFFFFFF` (it cannot be back-filled when streaming out), or is longer than the file, it counts to the end of the file.
     pub data_bytes: u64,
 }
 
 impl WavLayout {
-    /// 是不是写入器吃得下的格式：48 kHz、立体声，样本是 32 位浮点或 16 / 24 / 32 位整数（整数读进来换成浮点）。
+    /// Whether the format is one the writer can take: 48 kHz, stereo, with samples as 32-bit float or 16 / 24 / 32-bit integer (integers are converted to float on read).
     pub fn is_native_pcm(&self) -> bool {
         self.sample_kind().is_some()
             && u32::from(self.channels) == AUDIO_CHANNELS
@@ -384,7 +369,7 @@ impl WavLayout {
     }
 }
 
-/// 混音样本的存储格式。整数样本按 ffmpeg 的口径换成浮点（除以 2^(位数−1)）。
+/// Storage format of the mix samples. Integer samples are converted to float on the ffmpeg basis (divided by 2^(bits−1)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SampleKind {
     F32,
@@ -406,7 +391,7 @@ impl SampleKind {
         match self {
             SampleKind::F32 => f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]),
             SampleKind::I16 => f32::from(i16::from_le_bytes([raw[0], raw[1]])) / 32_768.0,
-            // 24 位放进 i32 的高 24 位再算术右移，符号位自然扩展。
+            // A 24-bit sample is placed in the high 24 bits of an i32 and then arithmetically shifted right, so the sign bit extends naturally.
             SampleKind::I24 => {
                 (i32::from_le_bytes([0, raw[0], raw[1], raw[2]]) >> 8) as f32 / 8_388_608.0
             }
@@ -418,8 +403,8 @@ impl SampleKind {
     }
 }
 
-/// 读 WAV 头：格式块与数据块的位置（规则与 `export-worker` 的母带读 WAV 同一套）。不是 WAV、格式块不完整、
-/// 数据块在格式块之前或没有数据块时报错；格式本身不在这里判（[`WavLayout::is_native_pcm`]）。
+/// Read the WAV header: the positions of the format chunk and the data chunk (same rules as the master WAV reader in `export-worker`). Reports an error if it is not a WAV, the format chunk is incomplete,
+/// or the data chunk comes before the format chunk or is missing; the format itself is not judged here ([`WavLayout::is_native_pcm`]).
 pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
     let mut file =
         File::open(path).with_context(|| format!("打开混音 WAV 失败：{}", path.display()))?;
@@ -449,7 +434,7 @@ pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
                 let channels = u16::from_le_bytes([fmt[2], fmt[3]]);
                 let rate = u32::from_le_bytes([fmt[4], fmt[5], fmt[6], fmt[7]]);
                 let bits = u16::from_le_bytes([fmt[14], fmt[15]]);
-                // 0xFFFE（WAVE_FORMAT_EXTENSIBLE）时子格式 GUID 的前两个字节才是格式号。
+                // Only when it is 0xFFFE (WAVE_FORMAT_EXTENSIBLE) do the first two bytes of the sub-format GUID give the format number.
                 let tag = if tag == 0xFFFE && fmt.len() >= 26 {
                     u16::from_le_bytes([fmt[24], fmt[25]])
                 } else {
@@ -478,40 +463,40 @@ pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
             }
             _ => {}
         }
-        // 块按偶数字节对齐。
+        // Chunks are aligned to even byte boundaries.
         at = body + size + (size & 1);
         file.seek(SeekFrom::Start(at)).context("读混音 WAV 失败")?;
     }
 }
 
-/// 整片混音 PCM 的分块读取器（裸 f32le、48 kHz、立体声交织）。
+/// Chunked reader for the whole-piece mixed PCM (raw f32le, 48 kHz, stereo interleaved).
 ///
-/// 混音整段可以有几百 MB（1 小时 ≈ 1.3 GB），不能整份读进内存；平台写入器要的
-/// 也是"一小块一小块地喂"，所以这里按块流式读，块号即样本帧号。
+/// The whole mix can be several hundred MB (1 hour ≈ 1.3 GB), so it cannot be read into memory in one go; the platform writer also wants
+/// to be "fed a small chunk at a time", so it is read in a streaming fashion by chunk, and the chunk number is the sample frame number.
 pub(crate) struct PcmSource {
     reader: BufReader<File>,
-    /// 已交出的采样帧数，也就是下一块的起始帧号。
+    /// Number of sample frames handed out so far, which is also the starting frame number of the next chunk.
     frames: u64,
-    /// 文件里还没读的采样帧数（WAV 的数据块之后可能还有别的块）；`None` = 读到文件末尾。
+    /// Sample frames in the file not yet read (a WAV may have other chunks after the data chunk); `None` = read to the end of the file.
     remaining: Option<u64>,
-    /// 音轨的总帧数：文件不够就补静音，够了就截在这里；`None` = 文件有多少交多少。
+    /// Total frame count of the audio track: if the file is too short, pad with silence; if it is long enough, cut here; `None` = hand out however many the file has.
     pub(crate) total: Option<u64>,
-    /// 文件已经读完（之后只可能补静音）。
+    /// The file has been fully read (after this, only silence can be added).
     exhausted: bool,
-    /// 样本格式：裸 PCM 恒为 32 位浮点，WAV 按格式块。
+    /// Sample format: raw PCM is always 32-bit float; WAV follows its format chunk.
     kind: SampleKind,
 }
 
-/// 一块交织 PCM。
+/// One block of interleaved PCM.
 pub(crate) struct PcmChunk {
-    /// 这一块第一个采样帧在整片中的帧号。
+    /// Frame number, within the whole piece, of the first sample frame in this block.
     pub(crate) start_frame: u64,
-    /// 交织 f32 样本（长度 = 帧数 × 声道数）。
+    /// Interleaved f32 samples (length = frames × channels).
     pub(crate) samples: Vec<f32>,
 }
 
 impl PcmChunk {
-    /// 这一块的采样帧数。
+    /// Number of sample frames in this block.
     pub(crate) fn frames(&self) -> usize {
         self.samples.len() / AUDIO_CHANNELS as usize
     }
@@ -531,13 +516,13 @@ impl PcmSource {
         })
     }
 
-    /// 一个采样帧（各声道一个样本）的字节数。
+    /// Byte size of one sample frame (one sample per channel).
     fn frame_bytes(&self) -> usize {
         self.kind.bytes() * AUDIO_CHANNELS as usize
     }
 
-    /// 48 kHz 立体声的 WAV（32 位浮点或 16 / 24 / 32 位整数）：从数据块起读，读到数据块末尾。
-    /// 别的格式判 `unsupported`（调用方回落 ffmpeg）。
+    /// 48 kHz stereo WAV (32-bit float or 16 / 24 / 32-bit integer): read from the start of the data chunk, up to its end.
+    /// Other formats are reported as `unsupported` (the caller falls back to ffmpeg).
     fn open_wav(path: &Path) -> Result<Self> {
         let layout = read_wav_layout(path)?;
         let kind = layout.sample_kind();
@@ -560,17 +545,16 @@ impl PcmSource {
         Ok(source)
     }
 
-    /// 已经交出的音频秒数（= 下一块的起始时刻）。
+    /// Audio seconds handed out so far (= the start time of the next block).
     pub(crate) fn position_seconds(&self) -> f64 {
         self.frames as f64 / f64::from(AUDIO_SAMPLE_RATE)
     }
 
-    /// 下一块；`None` = PCM 读完。
+    /// Next block; `None` = PCM fully read.
     ///
-    /// 尾部不足一个完整采样帧的字节直接丢弃：混音一定是整帧写出的，出现半帧
-    /// 只可能是文件被截断，为它多报一个错不如安静收尾（视频轨已经写完了）。
+    /// Trailing bytes that do not make up a complete sample frame are simply dropped: the mix is always written in whole frames, so a half frame can only mean the file was truncated, and reporting an extra error for it is no better than wrapping up quietly (the video track is already finished).
     pub(crate) fn next_chunk(&mut self) -> Result<Option<PcmChunk>> {
-        // 这一块最多多少帧：块长，截到总帧数。
+        // Maximum frames in this block: the block length, cut to the total frame count.
         let mut want = AUDIO_CHUNK_FRAMES as u64;
         if let Some(total) = self.total {
             want = want.min(total.saturating_sub(self.frames));
@@ -578,7 +562,7 @@ impl PcmSource {
         if want == 0 || (self.exhausted && self.total.is_none()) {
             return Ok(None);
         }
-        // 从文件读多少帧：不超过数据块剩下的。
+        // Frames to read from the file: no more than what remains in the data chunk.
         let read_frames = self.remaining.map_or(want, |remaining| want.min(remaining)) as usize;
         let frame_bytes = self.frame_bytes();
         let mut bytes = vec![0_u8; read_frames * frame_bytes];
@@ -598,7 +582,7 @@ impl PcmSource {
                 self.exhausted = true;
             }
         }
-        // 文件不够长：有总帧数时补静音到这一块的长度，没有时交读到的那些。
+        // File too short: if there is a total frame count, pad with silence to this block's length; otherwise hand out what was read.
         let frames = if self.total.is_some() {
             want as usize
         } else {
@@ -630,24 +614,24 @@ mod tests {
 
     #[test]
     fn the_bitrate_curve_scales_with_pixels_and_frame_rate_inside_the_clamp() {
-        // 1080p30 基准：8 Mb/s × 1.5 质量余量。
+        // 1080p30 baseline: 8 Mb/s × 1.5 quality margin.
         assert_eq!(video_bitrate(1920, 1080, 30.0), 12_000_000);
-        // 像素减半 → 码率减半；帧率翻倍 → 码率翻倍。
+        // Pixels halved → bitrate halved; frame rate doubled → bitrate doubled.
         assert_eq!(video_bitrate(1280, 720, 30.0), 5_333_333);
         assert_eq!(video_bitrate(1920, 1080, 60.0), 24_000_000);
-        // 两头夹取：极小画布抬到 4 Mb/s 下限，4K60 压到 60 Mb/s 上限。
+        // Clamp at both ends: a tiny canvas is raised to the 4 Mb/s floor, and 4K60 is capped at the 60 Mb/s ceiling.
         assert_eq!(video_bitrate(320, 180, 30.0), 4_000_000);
         assert_eq!(video_bitrate(3840, 2160, 60.0), 60_000_000);
     }
 
-    /// CRF 18 落在曲线原值上，每差 6 码率差一倍；上限仍是 60 Mb/s。
+    /// CRF 18 sits on the curve's original value; each 6-point difference in CRF is a factor of two in bitrate. The ceiling is still 60 Mb/s.
     #[test]
     fn crf_maps_onto_the_bitrate_curve_doubling_every_six_steps() {
         let base = video_bitrate(1920, 1080, 30.0);
         assert_eq!(crf_bitrate(1920, 1080, 30.0, 18), base);
         assert_eq!(crf_bitrate(1920, 1080, 30.0, 24), base / 2);
         assert_eq!(crf_bitrate(1920, 1080, 30.0, 12), base * 2);
-        // H.264 的缺省 CRF 20：曲线的 2^(-1/3)。
+        // H.264's default CRF of 20: the curve's 2^(-1/3).
         assert_eq!(
             crf_bitrate(1920, 1080, 30.0, 20),
             (f64::from(base) * 2_f64.powf(-2.0 / 6.0)).round() as u32
@@ -656,7 +640,7 @@ mod tests {
         assert!(crf_bitrate(320, 180, 30.0, 51) >= 1);
     }
 
-    /// 按 ffmpeg 写的样子造一个 32 位浮点 WAV（可选 EXTENSIBLE、数据块前有 LIST 块、数据块后有尾块）。
+    /// Build a 32-bit float WAV the way ffmpeg writes one (optionally EXTENSIBLE, with a LIST chunk before the data chunk and a trailer chunk after it).
     fn wav(tag: u16, rate: u32, channels: u16, data_size: u32, samples: &[f32]) -> Vec<u8> {
         let mut fmt = Vec::new();
         fmt.extend_from_slice(&tag.to_le_bytes());
@@ -687,7 +671,7 @@ mod tests {
         bytes
     }
 
-    /// WAV 头：EXTENSIBLE、数据块长度写坏（0xFFFFFFFF）时按到文件末尾算；格式不对时写入器不接（调用方回落 ffmpeg）。
+    /// WAV header: with EXTENSIBLE, or when the data chunk length is corrupt (0xFFFFFFFF), it counts to the end of the file; if the format is wrong the writer does not accept it (the caller falls back to ffmpeg).
     #[test]
     fn wav_headers_locate_the_data_and_report_the_format() {
         let dir = tempfile::tempdir().unwrap();
@@ -708,14 +692,14 @@ mod tests {
         assert!(PcmSource::open_wav(&path).is_err());
         std::fs::write(&path, wav(3, 48_000, 1, 80, &[0.0; 20])).unwrap();
         assert!(!read_wav_layout(&path).unwrap().is_native_pcm());
-        // 32 位整数也收（读进来换成浮点）。
+        // 32-bit integers are accepted too (converted to float on read).
         std::fs::write(&path, wav(1, 48_000, 2, 80, &[0.0; 20])).unwrap();
         assert!(read_wav_layout(&path).unwrap().is_native_pcm());
         std::fs::write(&path, b"not a wav file").unwrap();
         assert!(read_wav_layout(&path).is_err());
     }
 
-    /// WAV 的样本从数据块读起、停在数据块末尾（后面的尾块不当成声音）；给了总帧数时补静音或截到正好那么长。
+    /// WAV samples are read from the start of the data chunk and stop at its end (trailing chunks after it are not treated as sound); if a total frame count is given, pad with silence or cut to exactly that length.
     #[test]
     fn wav_pcm_is_padded_with_silence_or_cut_to_the_track_length() {
         let dir = tempfile::tempdir().unwrap();
@@ -725,13 +709,13 @@ mod tests {
         bytes.extend_from_slice(b"junk\x04\0\0\0\x7f\x7f\x7f\x7f");
         std::fs::write(&path, &bytes).unwrap();
 
-        // 不给总帧数：只交数据块里的 5 帧。
+        // No total frame count given: hand out only the 5 frames in the data chunk.
         let mut source = PcmSource::open_wav(&path).unwrap();
         let chunk = source.next_chunk().unwrap().unwrap();
         assert_eq!(chunk.samples, samples);
         assert!(source.next_chunk().unwrap().is_none());
 
-        // 补静音：数据块 5 帧、总长 1.5 块。
+        // Padding with silence: 5 frames in the data chunk, total length 1.5 blocks.
         let mut source = PcmSource::open_wav(&path).unwrap();
         let total = AUDIO_CHUNK_FRAMES as u64 * 3 / 2;
         source.total = Some(total);
@@ -748,19 +732,19 @@ mod tests {
             total as f64 / f64::from(AUDIO_SAMPLE_RATE)
         );
 
-        // 截断：总长 3 帧。
+        // Truncation: total length 3 frames.
         let mut source = PcmSource::open_wav(&path).unwrap();
         source.total = Some(3);
         assert_eq!(source.next_chunk().unwrap().unwrap().samples, samples[..6]);
         assert!(source.next_chunk().unwrap().is_none());
     }
 
-    /// 整数 WAV（Runtime 的混音是 16 位）：按 ffmpeg 的口径换成浮点（除以 2^(位数−1)），24 位符号扩展。
+    /// Integer WAV (the Runtime's mix is 16-bit): converted to float on the ffmpeg basis (divided by 2^(bits−1)), with 24-bit sign extension.
     #[test]
     fn integer_wav_samples_are_converted_to_float() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mix.wav");
-        // 同一个 32 位浮点头，改成整数格式与位数；数据块按位数重写。
+        // The same 32-bit float header, changed to an integer format and bit depth; the data chunk is rewritten at the new bit depth.
         let build = |bits: u16, data: &[u8]| {
             let mut bytes = wav(1, 48_000, 2, data.len() as u32, &[]);
             let fmt = 12 + 12 + 8;
@@ -781,7 +765,7 @@ mod tests {
         assert_eq!(chunk.samples, [0.0, 0.5, -1.0, 32_767.0 / 32_768.0]);
         assert!(source.next_chunk().unwrap().is_none());
 
-        // 24 位：0x400000 = 0.5，0x800000 = -1.0。
+        // 24-bit: 0x400000 = 0.5, 0x800000 = -1.0.
         let s24 = [0, 0, 0x40, 0, 0, 0x80, 0xFF, 0xFF, 0xFF, 0, 0, 0];
         std::fs::write(&path, build(24, &s24)).unwrap();
         let chunk = PcmSource::open_wav(&path)
@@ -791,7 +775,7 @@ mod tests {
             .unwrap();
         assert_eq!(chunk.samples, [0.5, -1.0, -1.0 / 8_388_608.0, 0.0]);
 
-        // 8 位不收。
+        // 8-bit is not accepted.
         std::fs::write(&path, build(8, &[0; 4])).unwrap();
         assert!(!read_wav_layout(&path).unwrap().is_native_pcm());
         assert!(PcmSource::open_wav(&path).is_err());
@@ -803,7 +787,7 @@ mod tests {
         assert_eq!(frame_rate_rational(24.0), (24, 1));
         assert_eq!(frame_rate_rational(30000.0 / 1001.0), (30000, 1001));
         assert_eq!(frame_rate_rational(24000.0 / 1001.0), (24000, 1001));
-        // 非标准帧率退回千分之一时基；非法值退回 30。
+        // A non-standard frame rate falls back to a one-thousandth timebase; an invalid value falls back to 30.
         assert_eq!(frame_rate_rational(12.5), (12500, 1000));
         assert_eq!(frame_rate_rational(0.0), (30, 1));
         assert_eq!(frame_rate_rational(f64::NAN), (30, 1));
@@ -831,7 +815,7 @@ mod tests {
     #[test]
     fn pcm_chunks_carry_their_own_frame_offset_and_stop_at_eof() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
-        // 1.5 块 + 半个采样帧的尾巴（尾巴应被丢弃）。
+        // A tail of 1.5 blocks plus half a sample frame (the tail should be dropped).
         let frames = AUDIO_CHUNK_FRAMES + AUDIO_CHUNK_FRAMES / 2;
         let mut bytes = Vec::new();
         for frame in 0..frames {

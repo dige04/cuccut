@@ -1,8 +1,6 @@
-//! 合成结果的峰值上限：每只引擎的输出都经 [`PeakLimited`]（[`crate::synthesize::load`] 套的最外层），
-//! 整段峰值高于 [`PEAK_CEILING`]（−1 dBFS）时等比缩小到它。只缩不放：安静的输出原样交出；不做压缩。
+//! Peak ceiling for synthesis results: every engine's output passes through [`PeakLimited`] (the outermost wrapper applied by [`crate::synthesize::load`]); if the peak of the whole clip is above [`PEAK_CEILING`] (−1 dBFS), the whole clip is scaled down proportionally to that ceiling. It only scales down: quiet output is returned unchanged; no compression is applied.
 //!
-//! Qwen3-TTS Base 的 codec 解码器原样输出常到满幅之上（v2 在解码器末尾硬裁到 [-1, 1]，约 3% 的样本削平），
-//! 所以解码器不再裁、由这里按裁之前的峰值整段缩小；分块合成的各块用同一个增益，块与块之间音量不跳。
+//! Qwen3-TTS Base's codec decoder often outputs peaks above full scale (v2 hard-clipped to [-1, 1] at the end of the decoder, flattening about 3% of the samples), so the decoder no longer clips; instead, the whole clip is scaled down here based on the peak before clipping. The chunks of chunked synthesis use the same gain, so the volume does not jump between chunks.
 
 use anyhow::Result;
 
@@ -10,10 +8,10 @@ use super::readings::{Annotated, Rendered};
 use super::types::{TtsAudio, TtsEngineKind, TtsRequest};
 use super::{ProgressSink, TtsEngine};
 
-/// −1 dBFS（满幅为 1）：`10^(−1/20)`。
+/// −1 dBFS (full scale is 1): `10^(−1/20)`.
 pub const PEAK_CEILING: f32 = 0.891_250_9;
 
-/// 把非有限的样本置零，峰值高于 [`PEAK_CEILING`] 时整段等比缩到它。返回乘上去的增益（没缩时 `None`）。
+/// Sets non-finite samples to zero; if the peak is above [`PEAK_CEILING`], scales the whole clip proportionally down to it. Returns the gain applied (`None` if not scaled).
 pub fn limit_peak(samples: &mut [f32]) -> Option<f32> {
     for sample in samples.iter_mut() {
         if !sample.is_finite() {
@@ -31,7 +29,7 @@ pub fn limit_peak(samples: &mut [f32]) -> Option<f32> {
     Some(gain)
 }
 
-/// [`crate::synthesize::load`] 返回的最外层包装：合成结果过一遍 [`limit_peak`]。
+/// Outermost wrapper returned by [`crate::synthesize::load`]: passes the synthesis result through [`limit_peak`].
 pub struct PeakLimited {
     inner: Box<dyn TtsEngine>,
 }
@@ -87,7 +85,7 @@ mod tests {
         let gain = limit_peak(&mut samples).expect("应当缩小");
         assert!((peak(&samples) - PEAK_CEILING).abs() < 1e-6, "峰值 {}", peak(&samples));
         assert!((gain - PEAK_CEILING / peak(&original)).abs() < 1e-6);
-        // 等比缩小：波形形状不变，没有削平。
+        // Proportional scale-down: the waveform shape is unchanged, and nothing is clipped.
         for (out, before) in samples.iter().zip(&original) {
             assert!((out - before * gain).abs() < 1e-6);
         }
@@ -99,7 +97,7 @@ mod tests {
         let original = samples.clone();
         assert_eq!(limit_peak(&mut samples), None);
         assert_eq!(samples, original);
-        // 正好在上限上也不动。
+        // Exactly at the ceiling: left unchanged.
         let mut edge = vec![0.1, -PEAK_CEILING, 0.2];
         assert_eq!(limit_peak(&mut edge), None);
         assert_eq!(edge, vec![0.1, -PEAK_CEILING, 0.2]);

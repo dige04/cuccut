@@ -12,9 +12,7 @@ import { call as mcpCall, type Loose } from '../services/testing/mcp-client.ts';
 import { ToolDriver, tool, until, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * 登记类工具（Agent 面设计 §4.3）：`jobs_wait` / `jobs_list` / `jobs_retry`、`models_list`、`projects_list` / `projects_create`、
- * `skills_list`、`library_list` / `library_show`。三种主体（会话、对外服务、终端）各走一遍可见范围；任务用托管任务直接造，
- * 不需要视频引擎与模型。
+ * Registry-type tools (agent-surface design §4.3): `jobs_wait` / `jobs_list` / `jobs_retry`, `models_list`, `projects_list` / `projects_create`, `skills_list`, `library_list` / `library_show`. Each of the three principals (session, external service, terminal) goes through its visible scope. Jobs are created directly as managed jobs, without the video engine or models.
  */
 
 describe('登记类工具', () => {
@@ -53,7 +51,7 @@ describe('登记类工具', () => {
   });
 
   afterEach(async () => {
-    // 托管任务要由宿主结束，Runtime 才停得下来。
+    // Managed jobs must be ended by the host before the Runtime can stop.
     for (const job of hosted) await job.finish('cancelled');
     client?.close();
     cli?.close();
@@ -72,7 +70,7 @@ describe('登记类工具', () => {
     return connected;
   }
 
-  /** 一个属于 `projectId` 的会话（不给时不属于项目）与它的原生会话。 */
+  /** A session that belongs to `projectId` (not in a project when none is given), and its native session. */
   async function agent(projectId: Id | null = project.id): Promise<{ conversationId: Id; session: ToolSession }> {
     const { conversation } = await client.request('conversations.create', { projectId });
     const before = driver.sessions.length;
@@ -81,7 +79,7 @@ describe('登记类工具', () => {
     return { conversationId: conversation.id, session };
   }
 
-  /** 开着的 MCP 服务与一个客户端令牌。 */
+  /** An open MCP service and a client token. */
   async function openMcp(): Promise<{ url: string; token: string; clientId: string }> {
     await client.request('services.configure', { serviceId: 'mcp', port: 0, level: 'auto' });
     const { service } = await client.request('services.start', { serviceId: 'mcp' });
@@ -99,7 +97,7 @@ describe('登记类工具', () => {
     return outcome.result;
   }
 
-  /** 造一个运行中的托管任务。 */
+  /** Create a running managed job. */
   function hostJob(submitter: JobSubmitter, extra: Partial<JobRecord> = {}): HostedJob {
     const now = new Date().toISOString();
     const record: JobRecord = {
@@ -153,7 +151,7 @@ describe('登记类工具', () => {
       expect(flag).toBe(true);
       expect(rest).toEqual(inspected);
 
-      // 已经结束的任务立刻返回；超过 50 秒的上限是参数错误。
+      // A job that has already finished returns immediately; a wait above the 50-second cap is a parameter error.
       expect((await tool(session, 'jobs_wait', { jobId: job.jobId })).body.settled).toBe(true);
       const tooLong = await tool(session, 'jobs_wait', { jobId: job.jobId, timeoutSec: 51 });
       expect(tooLong.isError).toBe(true);
@@ -240,7 +238,7 @@ describe('登记类工具', () => {
       expect(viaService.body.projects.every((p: Loose) => p.path === undefined)).toBe(true);
       expect(viaService.body.next).toContain('videos_create');
 
-      // 范围之内没有项目：对外服务不能新建项目，next 给出用户那边的出路。
+      // No project within scope: an external service cannot create projects; `next` gives the user's way forward.
       await client.request('services.configure', { serviceId: 'mcp', videos: { ids: [] } });
       const emptyService = await mcpCall(url, token, 'projects_list', {});
       expect(emptyService.body.projects).toEqual([]);
@@ -272,7 +270,7 @@ describe('登记类工具', () => {
       await fs.writeFile(path.join(work, 'note.txt'), 'x');
       expect(await local('projects_create', { path: 'note.txt' }, work)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENTS' } });
 
-      // 对外服务的目录里没有 projects_create。
+      // The external service's catalog has no projects_create.
       const { url, token } = await openMcp();
       expect((await mcpCall(url, token, 'projects_create', { path: target })).isError).toBe(true);
     });

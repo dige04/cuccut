@@ -1,7 +1,7 @@
-//! 闪避（视频格式规范 §3.9）：有人说话时，或触发组里的实例发声时，把目标组压低 `depth` dB。
+//! Ducking (video format spec §3.9): when someone is speaking, or when instances in the trigger group sound, the target group is lowered by `depth` dB.
 //!
-//! 按时间线上的区间算，不看信号电平：结果只取决于时间线，逐帧确定，预览与导出一致。曲线（区间合并、
-//! 四点展开、线性增益插值）取 v2 的 `timeline::duck`；区间与缺省取 `timeline::duck` 的常量。
+//! It is computed from ranges on the timeline and does not look at signal level: the result depends only on the timeline, is determined frame by frame, and preview and export match. The curve (merging ranges,
+//! four-point expansion, linear gain interpolation) comes from v2's `timeline::duck`; the ranges and defaults come from the constants of `timeline::duck`.
 
 use editor_semantics::MediaTime;
 use serde::{Deserialize, Serialize};
@@ -15,30 +15,30 @@ pub struct DuckingRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub enabled: bool,
-    /// 什么时候压低：有人说话时，或这些实例发声时。
+    /// When to lower: when someone is speaking, or when these instances sound.
     pub trigger: DuckingTrigger,
-    /// 被压低的轨道或实例。
+    /// The tracks or instances being lowered.
     pub target: DuckingGroup,
-    /// 压低的 dB，[0, 60]，缺省 10。
+    /// The dB lowered, [0, 60], default 10.
     pub depth: f64,
-    /// 触发开始之前多久开始下降，[0, 5] 秒。
+    /// How long before the trigger starts the drop begins, [0, 5] seconds.
     pub attack: MediaTime,
-    /// 触发结束之后多久恢复，[0, 5] 秒。
+    /// How long after the trigger ends the level recovers, [0, 5] seconds.
     pub release: MediaTime,
 }
 
-/// 闪避的触发。
+/// The ducking trigger.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum DuckingTrigger {
-    /// 按文稿：当前有效词流里每个词在序列上的区间。
+    /// By script: the range on the sequence of each word in the current effective word stream.
     Speech,
-    /// 按实例：组里这些实例发声的区间。
+    /// By instance: the ranges in which these instances in the group sound.
     Items(DuckingGroup),
 }
 
 impl DuckingTrigger {
-    /// 按实例触发时的组；按文稿触发没有。
+    /// The group used when triggering by instance; there is none when triggering by script.
     pub fn group(&self) -> Option<&DuckingGroup> {
         match self {
             DuckingTrigger::Speech => None,
@@ -54,7 +54,7 @@ impl DuckingTrigger {
     }
 }
 
-/// 一组轨道与实例。轨道包括它上面所有的实例；指向已经不存在的轨道或实例时那一项不起作用。
+/// A group of tracks and instances. A track includes all instances on it; an entry pointing to a track or instance that no longer exists has no effect.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuckingGroup {
@@ -69,7 +69,7 @@ impl DuckingGroup {
         self.track_ids.is_empty() && self.item_ids.is_empty()
     }
 
-    /// 实例是否在这一组里：实例本身被点名，或它所在的轨道被点名。
+    /// Whether an instance is in this group: the instance itself is named, or the track it is on is named.
     pub fn contains(&self, item_id: &str, track_id: &str) -> bool {
         self.item_ids.iter().any(|id| id == item_id) || self.track_ids.iter().any(|id| id == track_id)
     }

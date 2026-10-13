@@ -15,11 +15,10 @@ import { tr } from './rc-agent-tools.tr.ts';
 import { vi } from './rc-agent-tools.vi.ts';
 
 /**
- * 智能体工具（agent-tools/）给用户看的文字：审批卡里的摘要、外发授权的用途、写进视频历史的修改说明。工具说明、错误与给智能体的
- * 下一步只给模型看，不在这里。英文是键与类型的来源，译文在 `rc-agent-tools.<语言>.ts`。
+ * User-facing text for agent tools (agent-tools/): summaries on approval cards, purposes of outbound authorization, and edit notes written into video history. Tool descriptions, errors and next steps for the model are for the model only and are not here. English is the source of keys and types; translations are in `rc-agent-tools.<language>.ts`.
  */
 
-/** 导出种类在摘要里的说法。 */
+/** How an export kind is worded in a summary. */
 function exportKindLabel(kind: string): string {
   switch (kind) {
     case 'subtitles':
@@ -39,7 +38,7 @@ function exportKindLabel(kind: string): string {
   }
 }
 
-/** 从链接导入的摘要结尾：下载之后做什么。 */
+/** End of the summary for an import from a link: what to do after downloading. */
 function linkImportAfter(p: { target: string; name: string | null; transcribe: boolean; language: string | null; provider: string | null; model: string | null; captions: boolean }): string {
   const recognition = `${p.language ? `, language ${p.language}` : ''}${p.provider ? ` (${p.provider}${p.model ? ` ${p.model}` : ''})` : ''}`;
   if (p.target === 'create') {
@@ -58,9 +57,9 @@ function plural(count: number, one: string, many: string): string {
 const en = {
   instructionsNotSet: 'Session instructions have not been set: Runtime assembly order is incorrect',
 
-  /** 列表里各项之间的分隔。 */
+  /** Separator between items in a list. */
   listSeparator: ', ',
-  /** 几段说明之间的分隔。 */
+  /** Separator between several explanatory paragraphs. */
   clauseSeparator: '; ',
 
   createVideoSummary: (p: { name: string }) => `Create video "${p.name}"`,
@@ -71,32 +70,32 @@ const en = {
     `${p.label} (${plural(p.count, 'operation', 'operations')}: ${p.types})`,
   captionsSummary: (p: { documentId: string; bilingual: boolean }) =>
     `Add a ${p.bilingual ? 'bilingual ' : ''}subtitle layer for document ${p.documentId}`,
-  /** 建立字幕层这笔修改在视频历史与撤销里的说明。 */
+  /** Note for the edit that creates a caption track, in video history and undo. */
   captionsLabel: 'Add subtitle layer',
   undoSummary: (p: { transactionId: string }) => `Undo edit ${p.transactionId}`,
   undoLatestSummary: 'Undo the latest edit',
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
     `Delete video "${p.name}" (${p.path}): move it to the Trash, where it can be restored in Space for ${plural(p.days, 'day', 'days')}. Original files of linked assets stay where they are`,
   importPackageSummary: (p: { file: string }) => `Open portable package ${p.file}`,
-  /** 打开便携包时给了 name、改视频名这笔修改在视频历史里的说明。 */
+  /** Note in video history for the edit that changes the video name when a portable package is opened with a name given. */
   renameVideoLabel: 'Rename video',
   putDocumentSummary: (p: { documentId: string }) => `Write a new version of document ${p.documentId}`,
   newDocumentSummary: (p: { kind: string }) => `Create a document (${p.kind})`,
-  /** 写文档这笔修改在视频历史与撤销里的说明（智能体没有给 label 时）。 */
+  /** Note for the document-writing edit in video history and undo (when the agent gave no label). */
   updateDocumentLabel: (p: { name: string }) => `Update document "${p.name}"`,
   newDocumentLabel: (p: { name: string }) => `Create document "${p.name}"`,
-  /** 新建译文没有给名字时，说明里用的名字。 */
+  /** Name used in the note when a new translation is created without a name. */
   translationDocumentName: (p: { language: string }) => `${p.language} translation`,
   importAssetSummary: (p: { name: string; place: boolean }) => `Import asset ${p.name}${p.place ? ' and add it to the timeline' : ''}`,
-  /** 导入素材这笔修改在视频历史与撤销里的说明。 */
+  /** Note for the import-media edit in video history and undo. */
   importAssetLabel: (p: { name: string; place: boolean }) => `Import ${p.name}${p.place ? ' and add it to the timeline' : ''}`,
-  /** 原地替换代码画面（`compositions_import` 带 `replace`）：确认摘要与这笔修改在视频历史里的说明。 */
+  /** In-place replacement of a code composition (`compositions_import` with `replace`): the confirmation summary and the note for this edit in video history. */
   replaceCompositionSummary: (p: { name: string; clip: string }) => `Import ${p.name} and swap it into clip ${p.clip} on the timeline`,
   replaceCompositionLabel: (p: { name: string }) => `Replace the motion graphic with ${p.name}`,
-  /** 清理没有引用的素材（`assets_prune` 带 `apply`）：确认摘要与这笔修改在视频历史里的说明。`names` 是素材名的列表。 */
+  /** Cleanup of unreferenced assets (`assets_prune` with `apply`): the confirmation summary and the note for this edit in video history. `names` is the list of asset names. */
   pruneAssetsSummary: (p: { count: number; names: string }) => `Remove unused assets from the video (${p.count}): ${p.names}`,
   pruneAssetsLabel: (p: { count: number }) => `Remove unused assets (${p.count})`,
-  /** 采用来源章节（`chapters_adopt`）：确认摘要与这笔修改在视频历史里的缺省说明。`existing` 是会被替换的现有章节数。 */
+  /** Adopting source chapters (`chapters_adopt`): the confirmation summary and the default note for this edit in video history. `existing` is the number of existing chapters that will be replaced. */
   adoptChaptersSummary: (p: { count: number; existing: number; asset: string }) =>
     `Use the source chapters of ${p.asset} (${p.count})${p.existing ? `, replacing the current chapters (${p.existing})` : ''}`,
   adoptChaptersLabel: 'Adopt source chapters',
@@ -182,17 +181,17 @@ const en = {
   createProjectSummary: (p: { path: string; name: string | null }) => `Create project folder ${p.path}${p.name ? ` (${p.name})` : ''}`,
   adoptSessionSummary: (p: { name: string | null }) =>
     `Create a project ${p.name ? `“${p.name}”` : 'named after the first video'} and move this session’s videos and files into it`,
-  /** 派生子视频（videos_derive）的审批摘要；from、to 是时间线上的 mm:ss。 */
+  /** Approval summary for deriving a child video (`videos_derive`); from and to are mm:ss on the timeline. */
   deriveVideoSummary: (p: { name: string; from: string; to: string }) => `Create a child video "${p.name}" from ${p.from}–${p.to} of this video`,
-  /** 子视频里派生那笔修改在历史与撤销里的说明；name 是父视频名。 */
+  /** Note for the derive edit in history and undo; name is the parent video's name. */
   deriveVideoLabel: (p: { name: string }) => `Derive from "${p.name}"`,
-  /** 子视频里派生来源文档（kind derivation）的名字。 */
+  /** Name of the derivation source document (kind derivation) in a child video. */
   derivationDocumentName: 'Derivation source',
-  /** videos.derive 的错误（错误码 DERIVE_RANGE_EMPTY、DERIVE_UNSUPPORTED_ITEM、DERIVE_PARENT_UNPLACED）。 */
+  /** Errors from `videos.derive` (error codes DERIVE_RANGE_EMPTY, DERIVE_UNSUPPORTED_ITEM, DERIVE_PARENT_UNPLACED). */
   deriveRangeEmpty: 'The range is empty after snapping to frames',
   deriveUnsupportedItem: (p: { kind: string }) => `The range contains a clip that can’t be copied into a child video (${p.kind})`,
   deriveParentUnplaced: 'This video isn’t inside a project or session folder, so a child video can’t be created next to it',
-  /** videos.shots 的错误（错误码 SHOTS_RANGE_EMPTY、SHOTS_RANGE_TOO_LONG）；minutes 是区间长度的上限。 */
+  /** Errors from `videos.shots` (error codes SHOTS_RANGE_EMPTY, SHOTS_RANGE_TOO_LONG); minutes is the upper limit of the range length. */
   shotsRangeEmpty: 'The range is empty after snapping to frames',
   shotsRangeTooLong: (p: { minutes: number }) => `The range is longer than ${p.minutes} minutes; detect shots in shorter pieces`,
 };

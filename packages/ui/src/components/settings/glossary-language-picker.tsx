@@ -2,13 +2,13 @@ import { Picker, PickerItem } from '@react-spectrum/s2';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { languageLabel, languageOptions } from '../../model/library-glossary.ts';
 
-/** 「任意语言」在下拉里的键（语言本身是 null）。 */
+/** The dropdown key for “Any language” (任意语言) (the language itself is null). */
 const ANY = '*';
 
 const picker = style({ width: 192, flexShrink: 0 });
 
 /**
- * 术语表的语言下拉（设计稿 `LangPick`）：常备的几门，加上当前值里不在其中的；`any` 时第一项是「任意语言」（null）。
+ * Language dropdown for glossaries (design mockup `LangPick`): a few commonly used languages, plus the current value if it is not among them. When `any`, the first item is “Any language” (任意语言) (null).
  */
 export function LanguagePicker({
   label,

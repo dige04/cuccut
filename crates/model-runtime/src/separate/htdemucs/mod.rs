@@ -1,18 +1,16 @@
-//! HTDemucs-FT（Demucs v4 hybrid transformer，4 个各专精一个声部的子模型）：MLX 与 candle 两个后端共用一份模型图。
+//! HTDemucs-FT (Demucs v4 hybrid transformer, four sub-models, each specialized for one stem): the MLX and candle backends share one model graph.
 //!
-//! 部分实现移植自 speech-swift（https://github.com/soniqo/speech-swift ，Apache License 2.0，
-//! Copyright 2025 Ivan Digital），有修改：改写为 Rust / mlx-rs，并按本仓库的模型包与错误约定接入。
+//! Parts are ported from speech-swift (https://github.com/soniqo/speech-swift , Apache License 2.0,
+//! Copyright 2025 Ivan Digital), with modifications: rewritten in Rust / mlx-rs and wired up to this repository's model-bundle and error conventions.
 //! SPDX-License-Identifier: Apache-2.0
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 对照 speech-swift `Sources/SourceSeparation/HTDemucs/`：`layers.rs` ↔ `HTDemucsLayers.swift` 与
-//! `DemucsPrimitives.swift`，`transformer.rs` ↔ `HTDemucsTransformer.swift`，`model.rs` ↔
-//! `HTDemucs.swift`，`separator.rs` ↔ `HTDemucsSeparator.swift`（bag 加载、窗口切分、逐声部推理）。
-//! STFT 部分在 `super::stft`（CPU realfft），窗口调度在 `super::segment`。
+//! Cross-reference with speech-swift `Sources/SourceSeparation/HTDemucs/`: `layers.rs` ↔ `HTDemucsLayers.swift` and
+//! `DemucsPrimitives.swift`, `transformer.rs` ↔ `HTDemucsTransformer.swift`, `model.rs` ↔
+//! `HTDemucs.swift`, `separator.rs` ↔ `HTDemucsSeparator.swift` (bag loading, window splitting, per-stem inference).
+//! The STFT is in `super::stft` (CPU realfft), and window scheduling is in `super::segment`.
 //!
-//! 模型图只用一小套张量词汇（`tensor`）。与 v2 一样，同一份图对着两套词汇编译：[`mlx`] 用 mlx-rs，[`candle`] 用
-//! v2 的 candle 适配层（`tensor/candle.rs`，只在卷积边界换布局）。v2 是二选一；这里两个后端可以编进同一个构建
-//! （macOS 上开 `backend-candle`），所以各编一份、互不影响。
+//! The model graph uses only a small set of tensor operations (`tensor`). As in v2, the same graph is compiled against two vocabularies: [`mlx`] uses mlx-rs, and [`candle`] uses v2's candle adapter layer (`tensor/candle.rs`, which only changes layout at the convolution boundary). In v2 one or the other was chosen; here both backends can be built into the same build (with `backend-candle` enabled on macOS), so each is compiled separately and they do not affect each other.
 
 #[cfg(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 pub mod mlx;

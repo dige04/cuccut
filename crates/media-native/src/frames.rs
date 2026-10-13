@@ -1,29 +1,17 @@
-//! 顺序帧流：BCF 渲染管线逐帧解码的原生主路径（WP6a）。
+//! Sequential frame stream: the native main path that the BCF render pipeline uses to decode frames one by one (WP6a).
 //!
-//! 与 [`crate::extract_frame_rgba`] 的取舍**完全相反**：那边是"随机时间点、一次
-//! 一帧"，每次都值得付一次精确 seek 的代价；这里是"一个起点、之后一直往前走"，
-//! 每帧重新 seek 会把整片渲染拖垮。所以两条路径共享平台代码但各有自己的对象：
-//! 单帧用 image generator / seek + 推进，顺序流用 asset reader / source reader
-//! 一路 `ReadSample`。
+//! The trade-off is **the exact opposite** of [`crate::extract_frame_rgba`]. That one takes "random time points, one frame at a time", where each call is worth paying for one precise seek. This one takes "one starting point, then keep moving forward". Re-seeking for every frame would drag the whole render down. So the two paths share platform code but each has its own objects: single frames use an image generator / seek + advance, while sequential streams use an asset reader / source reader and call `ReadSample` all the way through.
 //!
-//! ## 语义对齐迁移前的 `ffmpeg -ss <from> -i <src> -f rawvideo -r <fps> -`
+//! ## Semantic alignment with the pre-migration `ffmpeg -ss <from> -i <src> -f rawvideo -r <fps> -`
 //!
-//! - **起点**：`from` 之后的第一个输出帧是"覆盖 `from` 的那一帧"。平台 seek 只
-//!   保证落到不晚于 `from` 的关键帧，多出来的前置帧由本模块按时间戳丢掉。
-//! - **帧率重采样**：输出帧 `k` 的目标时刻是 `from + k / fps`，取**最后一个
-//!   pts ≤ 目标时刻**的解码帧。源帧率低于合成帧率就重复（dup），高于就跳过
-//!   （drop）——这正是 ffmpeg `-r` 在输出侧做的 CFR 转换。
-//! - **片尾**：末帧按它自己的呈现区间（`pts + duration`）补满网格，越过区间
-//!   右端即 [`FrameStream::next_frame`] 返回 `None`。ffmpeg 的 `-r` 在片尾按
-//!   自己的规则还会多补一两帧，本模块严格停在区间右端；调用方（`ccut-render`
-//!   的 `VideoReader`）在 EOF 上本来就是**冻结末帧**，那一两帧与冻结出来的画面
-//!   逐字节相同，差异不可观测。
-//! - **旋转**：按容器的旋转元数据摆正到显示方向（ffmpeg CLI autorotate 默认开）。
+//! - **Start**: the first output frame at or after `from` is "the frame that covers `from`". The platform seek only guarantees landing on a keyframe no later than `from`, so the extra leading frames are dropped by timestamp in this module.
+//! - **Frame-rate resampling**: output frame `k` has target time `from + k / fps`, and takes the **last decoded frame whose pts ≤ target time**. If the source frame rate is lower than the composition frame rate, frames are repeated (dup). If it is higher, frames are skipped (drop). This is exactly the CFR conversion that ffmpeg `-r` does on the output side.
+//! - **Tail**: the last frame fills the grid according to its own presentation interval (`pts + duration`). Once the target time passes the right end of that interval, [`FrameStream::next_frame`] returns `None`. By its own rules, ffmpeg's `-r` adds one or two more frames at the tail; this module stops strictly at the right end of the interval. The caller (`VideoReader` in `ccut-render`) already **freezes the last frame** at EOF, and those one or two frames would be byte-identical to the frozen picture, so the difference is not observable.
+//! - **Rotation**: the frames are rotated upright to display orientation according to the container's rotation metadata (ffmpeg CLI autorotate is on by default).
 //!
-//! ## 确定性边界
+//! ## Determinism boundary
 //!
-//! 像素属于平台解码器，只承诺语义等价 + 容差（`docs/design/bcf/cuccut-format-spec.md`
-//! §15.1，跨后端灰度 SSIM ≥ 0.95）；"取哪一帧"是硬承诺，由上面的时间戳规则保证。
+//! The pixels belong to the platform decoder. Only semantic equivalence plus tolerance is promised (`docs/design/bcf/cuccut-format-spec.md` §15.1, cross-backend grayscale SSIM ≥ 0.95). "Which frame is taken" is a hard promise, guaranteed by the timestamp rules above.
 
 use std::path::Path;
 
@@ -31,61 +19,47 @@ use anyhow::{Result, bail};
 
 use crate::RgbaFrame;
 
-/// 平台解码器交出的一帧。
+/// One frame handed over by the platform decoder.
 pub(crate) struct DecodedFrame {
-    /// 媒体时间轴上的呈现时间戳（秒）。**绝对值**，不因 seek 归零——帧率重采样
-    /// 的目标时刻也是绝对的，两边必须同一个原点。
+    /// Presentation timestamp on the media timeline, in seconds. **Absolute value**: it is not reset to zero by seeking, because the target times of frame-rate resampling are also absolute, and both sides must share the same origin.
     pub(crate) pts_seconds: f64,
-    /// 这一帧的呈现时长（秒）。`None` = 容器/解码器没给。
+    /// Presentation duration of this frame, in seconds. `None` = not provided by the container or decoder.
     ///
-    /// 只有一个用途：判定**片尾**。没有它就只能"末帧交出一次然后 EOF"，
-    /// 输出帧数会比 ffmpeg 少一到两帧（ffmpeg 把末帧补满它自己的呈现区间）。
-    /// 下游在 EOF 上是冻结末帧，少几帧不改画面，但帧数对不上会让"重采样帧数
-    /// 正确"这类断言没法写死。
+    /// It has one purpose only: detecting the **tail** of the stream. Without it, the only option is "hand out the last frame once, then EOF", and the output frame count would be one or two frames fewer than ffmpeg's (ffmpeg fills the last frame out to its own presentation interval). Downstream, EOF means a frozen last frame, so a few missing frames do not change the picture. But a mismatched frame count would make assertions like "the resampled frame count is correct" impossible to pin down.
     pub(crate) duration_seconds: Option<f64>,
     pub(crate) frame: RgbaFrame,
 }
 
-/// 平台顺序解码器。只负责"按解码顺序交出下一帧 + 它的时间戳"，帧率重采样、
-/// 起点丢帧与 EOF 语义全部收敛在 [`FrameStream`] 里，两个平台不各写一遍。
+/// Platform sequential decoder. It only does "hand out the next frame in decode order, plus its timestamp". Frame-rate resampling, dropping leading frames and EOF semantics are all consolidated in [`FrameStream`], so the two platforms do not each implement them.
 pub(crate) trait FrameSource {
-    /// 摆正后的输出尺寸（整条流恒定）。
+    /// Output size after rotation is applied (constant for the whole stream).
     fn size(&self) -> (u32, u32);
-    /// 下一个解码帧；`None` = 片源解完。
+    /// Next decoded frame; `None` = the source has been fully decoded.
     fn next_decoded(&mut self) -> Result<Option<DecodedFrame>>;
-    /// 在**同一份已解析的片源**上从 `from_seconds` 重新起读。
+    /// Restarts reading from `from_seconds` on **the same already-parsed source**.
     ///
-    /// 随机访问（预览拖 playhead）每次跳转都要换起点；整个重建（重新解析容器、
-    /// 找轨、建 reader）在 macOS 上要 20 ms 上下，其中容器解析与找轨是纯浪费。
-    /// 平台能复用轨道对象的就在这里只换 reader。默认 `Err`：调用方回退到完整
-    /// 重开，语义不变。
+    /// Random access (dragging the playhead in preview) has to change the starting point on every jump. A full rebuild (re-parsing the container, finding tracks, building the reader) takes roughly 20 ms on macOS, and re-parsing the container and finding tracks is pure waste. Where the platform can reuse the track object, only the reader is swapped here. The default is `Err`: the caller falls back to a full reopen, with the same semantics.
     fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         let _ = from_seconds;
         bail!("unsupported: 该平台解码器不支持原地重开")
     }
-    /// `time_seconds` 之前（含）最近一个**完全同步样本**（关键帧）的呈现时刻。
+    /// The presentation time of the nearest **fully sync sample** (keyframe) at or before `time_seconds`.
     ///
-    /// 只给预览拖动用：拖动中把取帧时刻吸到关键帧，跳转就省掉"从关键帧解到
-    /// 目标"那段。`Ok(None)` = 平台答不出来（调用方走精确路径）。
+    /// Only for preview scrubbing: while scrubbing, snapping the frame time to a keyframe saves the part of the jump that decodes from a keyframe to the target. `Ok(None)` = the platform cannot answer; the caller takes the exact path.
     fn sync_sample_at_or_before(&self, time_seconds: f64) -> Result<Option<f64>> {
         let _ = time_seconds;
         Ok(None)
     }
-    /// 直接解出 `time_seconds` 之前（含）最近关键帧那一张画面，连同它的呈现
-    /// 时刻。**不动**顺序流自身的位置：平台用一条独立的常驻解码路径答这个
-    /// 问题，顺序流该在哪还在哪。
+    /// Decodes directly the single frame at or before `time_seconds` (the nearest keyframe), along with its presentation time. **Does not move** the sequential stream's own position: the platform answers this with a separate, resident decoding path, and the sequential stream stays where it is.
     ///
-    /// 只给预览拖动用：拖动中每次跳转都落到一个新 GOP 时，「重开 reader + 解
-    /// 一帧」的价大头是解码会话冷启动，常驻解码器把它省掉。`Ok(None)` = 平台
-    /// 答不出来（调用方回退到重开 + 解一帧），`Err` 只在平台明确失败时出现。
+    /// Only for preview scrubbing: when each drag lands in a new GOP, most of the cost of "reopen the reader + decode one frame" is the cold start of the decode session, which the resident decoder avoids. `Ok(None)` = the platform cannot answer (the caller falls back to reopen + decode one frame). `Err` only appears when the platform fails explicitly.
     fn keyframe_at_or_before(&mut self, time_seconds: f64) -> Result<Option<(f64, RgbaFrame)>> {
         let _ = time_seconds;
         Ok(None)
     }
-    /// 同 [`next_decoded`](Self::next_decoded)，像素写进调用方给的缓冲（长度按帧改），返回时间与实际尺寸。
+    /// Same as [`next_decoded`](Self::next_decoded), but the pixels are written into the caller's buffer (its length changes per frame). Returns the time and the actual size.
     ///
-    /// 给 [`SequentialDecoder`] 用：成片导出逐帧取，缓冲在调用方与读帧线程之间轮换，不逐帧分配。缺省实现
-    /// 换进新分配的像素（语义相同，只是没省掉分配）；平台能直接写进缓冲的覆盖它。
+    /// Used by [`SequentialDecoder`]: when exporting a finished video, frames are fetched one by one, and buffers rotate between the caller and the reader thread, so nothing is allocated per frame. The default implementation swaps in freshly allocated pixels (same semantics, just without saving the allocation). Platforms that can write directly into the buffer override it.
     fn next_decoded_into(&mut self, data: &mut Vec<u8>) -> Result<Option<DecodedInto>> {
         Ok(self.next_decoded()?.map(|decoded| {
             let RgbaFrame {
@@ -104,7 +78,7 @@ pub(crate) trait FrameSource {
     }
 }
 
-/// [`FrameSource::next_decoded_into`] 写进缓冲的那一帧的时间与尺寸。
+/// The time and size of the frame that [`FrameSource::next_decoded_into`] wrote into the buffer.
 pub(crate) struct DecodedInto {
     pub(crate) pts_seconds: f64,
     pub(crate) duration_seconds: Option<f64>,
@@ -112,41 +86,34 @@ pub(crate) struct DecodedInto {
     pub(crate) height: u32,
 }
 
-/// 时间戳比较容差：1 微秒。合成帧率与源帧率都是有理数，f64 换算后的误差远小于
-/// 这个量级；容差太大会在 30fps 对 30fps 时把边界帧多吃一帧。
+/// Timestamp comparison tolerance: 1 microsecond. Both the composition frame rate and the source frame rate are rational numbers, and the error after conversion to f64 is far below this magnitude. A larger tolerance would take one extra frame at the boundary when going from 30 fps to 30 fps.
 const PTS_EPSILON: f64 = 1e-6;
 
-/// 顺序帧流。逐次 [`next_frame`](Self::next_frame) 取合成帧率网格上的下一帧。
+/// Sequential frame stream. Each call to [`next_frame`](Self::next_frame) takes the next frame on the composition frame-rate grid.
 pub struct FrameStream {
     source: Box<dyn FrameSource>,
-    /// 流的起始媒体时刻（秒）。
+    /// Start media time of the stream, in seconds.
     from: f64,
-    /// 合成帧率。
+    /// Composition frame rate.
     fps: f64,
-    /// 下一个待产出的输出帧号（相对 `from`）。
+    /// Next output frame number to produce (relative to `from`).
     next_index: u64,
-    /// 已解出但时间戳还在目标之后的帧（前瞻一帧）。
+    /// A decoded frame whose timestamp is still after the target (one-frame lookahead).
     pending: Option<DecodedFrame>,
-    /// 平台解码器已经报告过 EOF。
+    /// The platform decoder has already reported EOF.
     source_done: bool,
-    /// 当前有效帧（dup 时重复交出它）。
+    /// Current valid frame (repeated when dup).
     current: Option<RgbaFrame>,
-    /// 当前帧呈现区间的**开区间右端**（`pts + duration`）。`None` = 时长未知。
+    /// The right end of the **open interval** of the current frame's presentation interval (`pts + duration`). `None` = duration unknown.
     current_end: Option<f64>,
 }
 
-// SAFETY：流内部持有的平台对象（AVAssetReader / IMFSourceReader）都不是有线程
-// 亲和性的 UI 对象，可以在任意一条线程上使用。契约是**单线程独占**：`ccut-render`
-// 的 `MediaStore` 每个渲染 worker 一份、在自己的线程里建立并用到底，跨线程移动
-// 之后也只由新线程使用。没有这条 impl，`MediaStore` 会从"是 Send"变成"不是
-// Send"——那是既有调用方看得见的 API 回退。
+// SAFETY: the platform objects held inside the stream (AVAssetReader / IMFSourceReader) are not UI objects with thread affinity, so they can be used on any thread. The contract is **exclusive use by one thread**: the `MediaStore` in `ccut-render` has one per render worker, built and used to the end on its own thread. After being moved across threads, it is used only by the new thread. Without this impl, `MediaStore` would go from "is Send" to "is not Send", a regression in the API that existing callers can see.
 unsafe impl Send for FrameStream {}
 
-/// 打开 `path` 从 `from_seconds` 开始、按 `fps` 重采样的顺序帧流。
+/// Opens a sequential frame stream for `path`, starting at `from_seconds` and resampled to `fps`.
 ///
-/// 返回 `Err` 就是"这条片源原生解不了"（容器/编码不支持、平台没有实现、文件
-/// 打不开）。**调用方必须自带 ffmpeg 兜底**——本 crate 不发现也不启动任何外部
-/// 二进制。
+/// Returning `Err` means "this source cannot be decoded natively" (container or codec not supported, no platform implementation, or the file cannot be opened). **The caller must bring its own ffmpeg fallback**. This crate does not discover or start any external binary.
 pub fn open_frame_stream(path: &Path, from_seconds: f64, fps: f64) -> Result<FrameStream> {
     if !fps.is_finite() || fps <= 0.0 {
         bail!("fps 必须是正的有限值，实得 {fps}");
@@ -160,15 +127,13 @@ pub fn open_frame_stream(path: &Path, from_seconds: f64, fps: f64) -> Result<Fra
     Ok(FrameStream::new(source, from, fps))
 }
 
-/// 平台顺序解码器。`size` 是想要的交付尺寸（摆正后的显示方向）：平台能在解码链路上缩放的就让它直接交付这个尺寸
-/// （macOS），不能的交原尺寸，由调用方补一次 CPU 重采样。
+/// Platform sequential decoder. `size` is the desired delivery size (display orientation, after rotation). Where the platform can scale within the decode pipeline, it delivers this size directly (macOS). Where it cannot, it delivers the original size, and the caller does one CPU resample.
 fn open_source(path: &Path, from: f64, size: Option<(u32, u32)>) -> Result<Box<dyn FrameSource>> {
     #[cfg(target_os = "macos")]
     let source = crate::macos::open_frame_source(path, from, size)?;
     #[cfg(target_os = "windows")]
     let source = {
-        // Media Foundation 的 source reader 这里不请求缩放（v2 的导出后端也没有）：交原尺寸，
-        // `SequentialDecoder` 在 CPU 上补重采样。
+        // The Media Foundation source reader does not request scaling here (the v2 export backend has none either). It delivers the original size, and `SequentialDecoder` resamples on the CPU.
         let _ = size;
         crate::windows::open_frame_source(path, from)?
     };
@@ -180,41 +145,37 @@ fn open_source(path: &Path, from: f64, size: Option<(u32, u32)>) -> Result<Box<d
     Ok(source)
 }
 
-/// 按时间戳顺序交帧的原生解码器：不做帧率重采样，每次交出解码顺序上的下一帧与它的呈现时刻。
+/// Native decoder that hands out frames in timestamp order. It does no frame-rate resampling: each call hands out the next frame in decode order, along with its presentation time.
 ///
-/// 给按**任意有理时刻**前进的调用方（成片导出：变速片段的源时刻不落在任何固定网格上）用：「取 pts ≤ 目标时刻的
-/// 最后一帧」由调用方按交出的时刻自己判断。与 [`FrameStream`] 共用平台解码器，差别只在这一层。
+/// For callers that advance by **arbitrary rational times** (exporting a finished video: the source times of variable-speed clips do not fall on any fixed grid). "The last frame with pts ≤ target time" is judged by the caller from the times it receives. It shares the platform decoder with [`FrameStream`]. The only difference is this layer.
 ///
-/// - 像素是紧排的 top-down RGBA8（alpha 恒 255，视频帧没有透明度）。BGRA → RGBA 的换算留在本 crate 里。
-/// - 交付尺寸：打开时给了 `size` 就恒为那个尺寸。平台在解码链路上缩放（macOS 的 `AVAssetReaderTrackOutput`
-///   输出设置带宽高）；平台没照做（Windows 的 source reader 不请求缩放）时在 CPU 上按盒式滤波补一次。
-/// - 时刻是素材时间轴上的**绝对值**（与 [`FrameStream`] 同一个原点）。
+/// - Pixels are tightly packed top-down RGBA8 (alpha is always 255, since video frames have no transparency). The BGRA → RGBA conversion stays in this crate.
+/// - Delivery size: if `size` is given at open time, the delivered size is always that size. The platform scales within the decode pipeline (macOS's `AVAssetReaderTrackOutput` output settings carry the width and height). Where the platform does not do this (Windows' source reader does not request scaling), one box-filter resample is done on the CPU.
+/// - Times are **absolute** values on the source media timeline (same origin as [`FrameStream`]).
 pub struct SequentialDecoder {
     source: Box<dyn FrameSource>,
     size: Option<(u32, u32)>,
-    /// 平台交的尺寸与 `size` 不符时先解进这里，再重采样进调用方的缓冲。
+    /// If the size the platform delivers differs from `size`, decode into this first, then resample into the caller's buffer.
     scratch: Vec<u8>,
 }
 
-// SAFETY：与 `FrameStream` 同一条理由——平台对象（AVAssetReader / IMFSourceReader）没有线程亲和性；契约是单线程独占，
-// 跨线程移动之后只由新线程使用。
+// SAFETY: same reasoning as `FrameStream`. The platform objects (AVAssetReader / IMFSourceReader) have no thread affinity. The contract is exclusive use by one thread: after being moved across threads, it is used only by the new thread.
 unsafe impl Send for SequentialDecoder {}
 
-/// [`SequentialDecoder::next_into`] 交出的一帧的时间与尺寸（像素在调用方的缓冲里）。
+/// The time and size of the frame handed out by [`SequentialDecoder::next_into`] (the pixels are in the caller's buffer).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecodedFrameInfo {
-    /// 素材时间轴上的呈现时刻（秒）。
+    /// Presentation time on the media timeline, in seconds.
     pub pts_seconds: f64,
-    /// 这一帧的呈现时长（秒）；容器与轨道都没给时为 `None`。
+    /// Presentation duration of this frame, in seconds. `None` when neither the container nor the track provides it.
     pub duration_seconds: Option<f64>,
     pub width: u32,
     pub height: u32,
 }
 
-/// 打开 `path` 从 `from_seconds`（素材时间轴，秒）起读的顺序解码器；`size` 是想要的交付尺寸（显示方向）。
+/// Opens a sequential decoder for `path` that reads from `from_seconds` (media timeline, in seconds). `size` is the desired delivery size (display orientation).
 ///
-/// 起点语义同 [`open_frame_stream`]：第一帧是覆盖 `from_seconds` 的那一帧（平台从它之前的关键帧解起，更早的帧
-/// 由平台层或调用方按时刻丢掉）。返回 `Err` 就是这条片源原生解不了，调用方回落 ffmpeg。
+/// The start semantics are the same as [`open_frame_stream`]: the first frame is the one covering `from_seconds`. The platform decodes from the keyframe before it, and earlier frames are dropped by timestamp, either by the platform layer or by the caller. Returning `Err` means this source cannot be decoded natively, and the caller falls back to ffmpeg.
 pub fn open_sequential_decoder(
     path: &Path,
     from_seconds: f64,
@@ -241,12 +202,12 @@ impl SequentialDecoder {
         }
     }
 
-    /// 交付尺寸（显示方向）：打开时给了就是它，否则是平台报的源尺寸。
+    /// Delivery size (display orientation): the given size if one was provided at open time, otherwise the source size reported by the platform.
     pub fn size(&self) -> (u32, u32) {
         self.size.unwrap_or_else(|| self.source.size())
     }
 
-    /// 解码顺序上的下一帧写进 `data`（长度改成一帧）；`None` = 片源解完。
+    /// Writes the next frame in decode order into `data` (its length is changed to one frame). `None` = the source has been fully decoded.
     pub fn next_into(&mut self, data: &mut Vec<u8>) -> Result<Option<DecodedFrameInfo>> {
         let Some((width, height)) = self.size else {
             return Ok(self.source.next_decoded_into(data)?.map(info));
@@ -257,7 +218,7 @@ impl SequentialDecoder {
         if (decoded.width, decoded.height) == (width, height) {
             return Ok(Some(info(decoded)));
         }
-        // 平台没按请求的尺寸交：在 CPU 上补一次重采样（与单帧抽取的收口同一个盒式滤波）。
+        // The platform did not deliver the requested size, so do one resample on the CPU (the same box filter used to finish single-frame extraction).
         std::mem::swap(data, &mut self.scratch);
         let frame = RgbaFrame::new(
             decoded.width,
@@ -274,7 +235,7 @@ impl SequentialDecoder {
         }))
     }
 
-    /// 在同一片源上从 `from_seconds` 重新起读。`Err` = 平台不支持或重开失败，解码器处于未定义状态，调用方丢掉它重开。
+    /// Restarts reading from `from_seconds` on the same source. `Err` = the platform does not support it, or the reopen failed. The decoder is then in an undefined state, and the caller discards it and reopens.
     pub fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         if !from_seconds.is_finite() {
             bail!("from_seconds 必须是有限值，实得 {from_seconds}");
@@ -306,21 +267,19 @@ impl FrameStream {
         }
     }
 
-    /// 输出帧宽（摆正后）。整条流恒定。
+    /// Output frame width (after rotation). Constant for the whole stream.
     pub fn width(&self) -> u32 {
         self.source.size().0
     }
 
-    /// 输出帧高（摆正后）。整条流恒定。
+    /// Output frame height (after rotation). Constant for the whole stream.
     pub fn height(&self) -> u32 {
         self.source.size().1
     }
 
-    /// 在同一片源上从 `from_seconds` 重新起读（重采样网格也重挂到新起点）。
+    /// Restarts reading from `from_seconds` on the same source. The resampling grid is also re-anchored to the new start.
     ///
-    /// 成功后这条流的语义与 `open_frame_stream(path, from_seconds, fps)` 新开的
-    /// 一条完全相同；`Err` 表示平台不支持或重开失败，此时流处于**未定义**状态，
-    /// 调用方应当丢掉它完整重开。
+    /// On success, this stream has exactly the same semantics as one newly opened with `open_frame_stream(path, from_seconds, fps)`. `Err` means the platform does not support it or the reopen failed. In that case the stream is in an **undefined** state, and the caller should discard it and reopen completely.
     pub fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         if !from_seconds.is_finite() {
             bail!("from_seconds 必须是有限值，实得 {from_seconds}");
@@ -336,7 +295,7 @@ impl FrameStream {
         Ok(())
     }
 
-    /// `time_seconds` 之前（含）最近一个关键帧的呈现时刻；`None` = 平台答不出。
+    /// The presentation time of the nearest keyframe at or before `time_seconds`. `None` = the platform cannot tell.
     pub fn sync_sample_at_or_before(&self, time_seconds: f64) -> Result<Option<f64>> {
         if !time_seconds.is_finite() {
             return Ok(None);
@@ -344,9 +303,7 @@ impl FrameStream {
         self.source.sync_sample_at_or_before(time_seconds.max(0.0))
     }
 
-    /// `time_seconds` 之前（含）最近关键帧的画面与呈现时刻，走平台的常驻关键帧
-    /// 解码器，不改变这条流的位置；`None` = 平台答不出（调用方回退到
-    /// [`reopen`](Self::reopen) + [`next_frame`](Self::next_frame)）。
+    /// The picture and presentation time of the nearest keyframe at or before `time_seconds`. It uses the platform's resident keyframe decoder and does not change this stream's position. `None` = the platform cannot answer (the caller falls back to [`reopen`](Self::reopen) + [`next_frame`](Self::next_frame)).
     pub fn keyframe_at_or_before(&mut self, time_seconds: f64) -> Result<Option<(f64, RgbaFrame)>> {
         if !time_seconds.is_finite() {
             return Ok(None);
@@ -354,21 +311,18 @@ impl FrameStream {
         self.source.keyframe_at_or_before(time_seconds.max(0.0))
     }
 
-    /// 合成帧率网格上的下一帧；`None` = 片源已尽（调用方按"冻结末帧"处理）。
+    /// The next frame on the composition frame-rate grid. `None` = the source is exhausted (the caller treats it as a "frozen last frame").
     pub fn next_frame(&mut self) -> Result<Option<RgbaFrame>> {
         if self.next_index == 0
             && let Some(first) = self.peek()?
             && first > self.from + PTS_EPSILON
         {
-            // seek 落点之后的首帧比请求的起点还晚（`from` 落在片源首帧之前，或者
-            // 平台把起点吸附到了更晚的位置）。ffmpeg 在这种情况下把输出时间轴
-            // **对齐到首帧**（`-ss` 之后的第一个解码帧就是输出帧 0），而不是先
-            // 补一串重复帧；这里同样重挂原点。
+            // The first frame after the seek landing point is later than the requested start. Either `from` falls before the source's first frame, or the platform snapped the start to a later position. In this case ffmpeg **aligns the output timeline to the first frame** (the first decoded frame after `-ss` is output frame 0) instead of first padding with repeated frames. Here too, the origin is re-anchored.
             self.from = first;
         }
         let target = self.from + self.next_index as f64 / self.fps;
         let mut advanced = false;
-        // 把所有 pts ≤ 目标时刻的帧吃掉，留下最后一个——drop 就发生在这里。
+        // Consume all frames with pts ≤ target time and keep the last one. The drop happens here.
         while let Some(pts) = self.peek()? {
             if pts > target + PTS_EPSILON {
                 break;
@@ -377,20 +331,17 @@ impl FrameStream {
             advanced = true;
         }
         if self.current.is_none() {
-            // 还没有任何有效帧（重挂原点后的浮点误差、或者时间戳非单调的片源）：
-            // 用手上这一帧顶上，不交空帧。
+            // There is no valid frame yet (floating-point error after re-anchoring the origin, or a source with non-monotonic timestamps). Fill in with the frame in hand, and do not hand out an empty frame.
             if self.pending.is_some() {
                 self.take_pending();
                 advanced = true;
             }
         }
         let Some(frame) = self.current.as_ref() else {
-            return Ok(None); // 片源里一帧都没有
+            return Ok(None); // The source has no frames at all
         };
         if self.source_done {
-            // 片尾判定。目标时刻越过末帧呈现区间的右端就是 EOF；还在区间内就
-            // 按 CFR 再补一份（ffmpeg `-r` 在片尾同样这么补）。时长未知时退回
-            // "末帧只交一次"——比无限 dup 安全。
+            // Tail check. If the target time passes the right end of the last frame's presentation interval, it is EOF. If it is still inside the interval, one more copy is emitted per CFR (ffmpeg `-r` does the same at the tail). If the duration is unknown, fall back to "the last frame is handed out only once", which is safer than an endless dup.
             match self.current_end {
                 Some(end) if target >= end - PTS_EPSILON => return Ok(None),
                 None if !advanced => return Ok(None),
@@ -398,7 +349,7 @@ impl FrameStream {
             }
         }
         self.next_index += 1;
-        // dup 时这里是一次整帧拷贝——与 ffmpeg 往管道里再写一份 rawvideo 同价。
+        // A dup here is one full-frame copy, the same cost as ffmpeg writing one more rawvideo copy into the pipe.
         Ok(Some(frame.clone()))
     }
 
@@ -413,7 +364,7 @@ impl FrameStream {
         Some((self.current.as_ref()?, self.current_end?))
     }
 
-    /// 把前瞻的那一帧提升为当前帧，同时记住它的呈现区间右端。
+    /// Promotes the lookahead frame to the current frame, and remembers the right end of its presentation interval.
     fn take_pending(&mut self) {
         let decoded = self.pending.take().expect("调用前已确认 pending 非空");
         self.current_end = decoded
@@ -423,7 +374,7 @@ impl FrameStream {
         self.current = Some(decoded.frame);
     }
 
-    /// 前瞻一帧的时间戳（必要时先向平台解码器要一帧）。
+    /// The timestamp of the lookahead frame (asks the platform decoder for a frame first if needed).
     fn peek(&mut self) -> Result<Option<f64>> {
         if self.pending.is_none() && !self.source_done {
             match self.source.next_decoded()? {
@@ -435,14 +386,11 @@ impl FrameStream {
     }
 }
 
-/// 预热：打开 `path` 在 `from_seconds` 附近的帧流并解出一帧，然后丢掉。
+/// Warm-up: opens a frame stream for `path` near `from_seconds`, decodes one frame, then discards it.
 ///
-/// 进程里**第一次**打开某个文件要付容器索引解析与解码会话建立的价（1 GB 级
-/// H.264 冷开 ≈ 230 ms，同进程第二次 ≈ 12 ms），首帧解码再付 ≈ 80 ms；这些
-/// 平台层缓存按进程/文件共享，不依赖具体的流对象。调用方在文档装载与计划编译
-/// 还在跑的时候于后台线程调用一次，真正的取帧就落在热路径上。
+/// The **first** time a file is opened in a process, you pay for container index parsing and decode-session setup (a cold open of a 1 GB-class H.264 file takes about 230 ms, and a second open in the same process about 12 ms). The first frame decode costs another 80 ms or so. These platform-layer caches are shared per process and per file, and do not depend on any particular stream object. The caller runs this once on a background thread while the document is loading and the plan is still being compiled, so the real frame fetch lands on a hot path.
 ///
-/// 任何失败都静默：预热只是加速，打不开的片源由正式路径报错。
+/// Any failure is silent. Warm-up only speeds things up, and sources that cannot be opened are reported by the regular path.
 pub fn prewarm_frame_stream(path: &Path, from_seconds: f64, fps: f64) {
     if let Ok(mut stream) = open_frame_stream(path, from_seconds, fps) {
         let _ = stream.next_frame();
@@ -453,7 +401,7 @@ pub fn prewarm_frame_stream(path: &Path, from_seconds: f64, fps: f64) {
 mod tests {
     use super::*;
 
-    /// 预热对不存在的片源静默：它只是加速，报错留给正式路径。
+    /// Warm-up is silent for a source that does not exist. It only speeds things up, and the error is left to the regular path.
     #[test]
     fn prewarm_is_silent_on_missing_media() {
         let dir = std::env::temp_dir().join("ccut-media-native-prewarm-missing");
@@ -461,9 +409,8 @@ mod tests {
         prewarm_frame_stream(&dir.join("missing.mp4"), f64::NAN, 0.0);
     }
 
-    /// 按给定 (pts, 时长, 亮度) 序列吐帧的假解码器：帧率重采样规则可以离线验。
-    /// `script` 是整条片源；`reopen` 模拟平台 seek——从第一个 pts ≤ from 的帧
-    /// 起重吐（没有就从头）。
+    /// A fake decoder that emits frames from a given sequence of (pts, duration, brightness). This lets the frame-rate resampling rules be verified offline.
+    /// `script` is the whole source. `reopen` simulates a platform seek: it re-emits from the first frame with pts ≤ from (or from the start if there is none).
     struct ScriptedSource {
         script: Vec<(f64, Option<f64>, u8)>,
         frames: std::vec::IntoIter<(f64, Option<f64>, u8)>,
@@ -503,7 +450,7 @@ mod tests {
         }
     }
 
-    /// 源帧率 `source_fps` 的等间隔序列，帧值 0,1,2…
+    /// An evenly spaced sequence at source frame rate `source_fps`, with frame values 0, 1, 2…
     fn cfr(count: u8, source_fps: f64) -> Vec<(f64, Option<f64>, u8)> {
         (0..count)
             .map(|i| (f64::from(i) / source_fps, Some(1.0 / source_fps), i))
@@ -514,11 +461,11 @@ mod tests {
         FrameStream::new(Box::new(ScriptedSource::new(frames)), from, fps)
     }
 
-    /// 原地重开 = 新开一条：起点、网格、前瞻帧、EOF 状态全部归零。
+    /// Reopening in place is the same as opening a new one: the start point, grid, lookahead frame and EOF state are all reset.
     #[test]
     fn reopen_matches_a_freshly_opened_stream() {
         let script = cfr(12, 10.0);
-        // 先把一条流读到 EOF（pending 空、source_done 真、current 是末帧）。
+        // First read a stream to EOF (pending is empty, source_done is true, and current is the last frame).
         let mut reused = stream(script.clone(), 0.0, 10.0);
         while reused.next_frame().unwrap().is_some() {}
         reused.reopen(0.55).unwrap();
@@ -526,7 +473,7 @@ mod tests {
         assert_eq!(drain(reused), drain(fresh));
     }
 
-    /// 平台不支持原地重开时 `reopen` 报错，调用方据此完整重开。
+    /// If the platform does not support in-place reopen, `reopen` reports an error, and the caller uses that to do a full reopen.
     #[test]
     fn reopen_without_platform_support_is_an_error() {
         struct Plain;
@@ -551,14 +498,13 @@ mod tests {
         out
     }
 
-    /// 源帧率 = 合成帧率：一帧一帧原样过。
+    /// Source frame rate = composition frame rate: frames pass through one by one, unchanged.
     #[test]
     fn a_matching_frame_rate_passes_every_frame_through_once() {
         assert_eq!(drain(stream(cfr(5, 10.0), 0.0, 10.0)), vec![0, 1, 2, 3, 4]);
     }
 
-    /// 源 10fps、合成 20fps：每帧复制一次（dup），总帧数翻倍——0.3 秒素材在
-    /// 20fps 网格上正好 6 帧，与 ffmpeg `-r 20` 的输出帧数一致。
+    /// Source 10 fps, composition 20 fps: each frame is copied once (dup), so the total frame count doubles. 0.3 seconds of material is exactly 6 frames on the 20 fps grid, which matches the frame count of ffmpeg `-r 20`.
     #[test]
     fn a_slower_source_duplicates_frames_to_fill_the_grid() {
         assert_eq!(
@@ -567,29 +513,27 @@ mod tests {
         );
     }
 
-    /// 源 20fps、合成 10fps：隔一帧丢一帧（drop）。0.3 秒素材在 10fps 网格上
-    /// 是 3 帧——末帧的呈现区间在 0.30s 结束，网格点 0.3 已经越界。
+    /// Source 20 fps, composition 10 fps: every other frame is dropped (drop). 0.3 seconds of material is 3 frames on the 10 fps grid. The last frame's presentation interval ends at 0.30 s, so grid point 0.3 is already out of range.
     #[test]
     fn a_faster_source_drops_frames_to_fit_the_grid() {
         assert_eq!(drain(stream(cfr(6, 20.0), 0.0, 10.0)), vec![0, 2, 4]);
     }
 
-    /// `from` 落在两帧之间：首个输出帧是**覆盖它的那一帧**，不是它之后的第一帧。
+    /// `from` falls between two frames: the first output frame is **the frame that covers it**, not the first frame after it.
     #[test]
     fn the_first_output_frame_covers_the_requested_start() {
-        // 0.25s 落在帧 2（0.2s）的呈现区间内。
+        // 0.25 s falls inside frame 2's (0.2 s) presentation interval.
         assert_eq!(drain(stream(cfr(5, 10.0), 0.25, 10.0)), vec![2, 3, 4]);
     }
 
-    /// 平台把 seek 落点吸附到了目标之后（第一帧就晚于 `from`）：输出时间轴
-    /// 重挂到首帧，不在前面补一串重复帧。
+    /// The platform snapped the seek landing point to after the target (the first frame is already later than `from`). The output timeline is re-anchored to the first frame, and no run of repeated frames is padded in front of it.
     #[test]
     fn a_seek_that_overshoots_rebases_the_output_timeline_onto_the_first_frame() {
         let source = vec![(1.0, Some(0.1), 7), (1.1, Some(0.1), 8)];
         assert_eq!(drain(stream(source, 0.5, 10.0)), vec![7, 8]);
     }
 
-    /// 容器不给帧时长时退回"末帧只交一次"：不会因为算不出呈现区间而无限 dup。
+    /// If the container does not provide frame durations, fall back to "the last frame is handed out only once". That way it never dups endlessly just because the presentation interval cannot be computed.
     #[test]
     fn an_unknown_frame_duration_falls_back_to_emitting_the_last_frame_once() {
         let source = vec![(0.0, None, 0), (0.1, None, 1)];
@@ -623,7 +567,7 @@ mod tests {
         assert_eq!(empty.terminal_frame(), None);
     }
 
-    /// 顺序解码器按解码顺序原样交帧（不重采样），时刻是片源自己的；写进调用方的缓冲。
+    /// The sequential decoder hands out frames unchanged in decode order (no resampling), with the source's own times, written into the caller's buffer.
     #[test]
     fn the_sequential_decoder_passes_frames_in_order_with_their_own_times() {
         let mut decoder = SequentialDecoder::new(Box::new(ScriptedSource::new(cfr(3, 10.0))), None);
@@ -635,7 +579,7 @@ mod tests {
             seen.push((info.pts_seconds, data[0]));
         }
         assert_eq!(seen, vec![(0.0, 0), (0.1, 1), (0.2, 2)]);
-        // 原地重开：从覆盖起点的那一帧起再交。
+        // In-place reopen: hand out again, starting from the frame that covers the starting point.
         decoder.reopen(0.15).unwrap();
         assert_eq!(
             decoder.next_into(&mut data).unwrap().unwrap().pts_seconds,
@@ -643,7 +587,7 @@ mod tests {
         );
     }
 
-    /// 平台没按请求的尺寸交帧时补一次 CPU 重采样：交出的永远是请求的尺寸，字节数对得上。
+    /// When the platform does not deliver frames at the requested size, do one CPU resample. What is handed out is always the requested size, so the byte counts match.
     #[test]
     fn the_sequential_decoder_resamples_when_the_platform_ignores_the_requested_size() {
         let mut decoder =
@@ -659,7 +603,7 @@ mod tests {
         assert!(decoder.next_into(&mut data).unwrap().is_none());
     }
 
-    /// 非法的起点与交付尺寸在碰平台之前就被拒。
+    /// An invalid starting point or delivery size is rejected before touching the platform.
     #[test]
     fn the_sequential_decoder_rejects_bad_arguments_before_touching_the_platform() {
         let path = Path::new("/nonexistent.mp4");
@@ -668,13 +612,13 @@ mod tests {
         assert!(open_sequential_decoder(path, 0.0, None).is_err());
     }
 
-    /// 空片源：一帧都不交，直接 EOF（不是 panic，也不是无限 dup）。
+    /// Empty source: no frames are handed out, and it goes straight to EOF. It is not a panic, and it is not an endless dup.
     #[test]
     fn an_empty_source_ends_immediately() {
         assert_eq!(drain(stream(Vec::new(), 0.0, 30.0)), Vec::<u8>::new());
     }
 
-    /// 非法参数在碰平台之前就被拒。
+    /// Invalid parameters are rejected before touching the platform.
     #[test]
     fn invalid_rates_and_times_are_rejected_before_touching_the_platform() {
         let path = Path::new("/nonexistent.mp4");

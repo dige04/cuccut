@@ -44,27 +44,21 @@ import {
 } from './yt-dlp.ts';
 
 /**
- * 从链接导入（架构设计 §7.9）：解析目标 → 解析链接 → 下载 → 校验 → 发布 →（新建视频时）新建视频 →（给了目标时）导入视频
- * →（可选）转写。
+ * Import from a link (architecture design §7.9): resolve target → resolve link → download → validate → publish → (when creating a video) create the video → (when a target is given) import into the video →
+ * (optional) transcribe.
  *
- * - 参数在提交时校验并冻结：链接规范化、脱敏（`link-url.ts`），原始链接只在 `LinkSources` 里；下载目录在提交时确定。
- * - 下载工具由 `tool()` 给出：每一步之前重新确认它已安装、同意有效（撤回之后，重试也被拒绝）。严格离线时拒绝。
- * - 浏览器 Cookie（`cookieBrowsers`）：解析链接时按顺序逐个用，读不到 Cookie 或网站仍要求登录时换下一个，别的失败不换；
- *   用上的那个记在解析的结果里，下载沿用它，下载失败不再换浏览器。
- * - 下载写进 staging 的固定位置（`<staging>/dl/media.<ext>`）；发布时文件名取自标题（清理过），按真实路径确认落在下载目录里，
- *   不覆盖已有的文件。取消时杀掉进程（整个进程组），staging 随之删除；失败与中断时保留，重试时 yt-dlp 接着 `.part` 续传。
- * - 导入视频是链接素材（文件留在下载目录里），来源（`origin: 'link-import'`）记脱敏的链接、平台的元数据、工具与版本、下载时间。
- * - 目标（`target`）：`{ videoId }`、`{ entryId }`（`PipelineRunner` 在提交时解析）或 `{ create }`。新建视频在发布之后，
- *   名字默认取页面标题，在项目目录或会话的来源目录里新建（与 `videos.create` 同一条路径），流程持有它的租约；导入时同一笔事务把素材放上主轨，
- *   从 0 开始、覆盖整段媒体。新建完成之后重试不再新建。导入已有的视频时，时间线还空着（根序列上没有片段）同样放上主轨，已经有片段
- *   时只导入素材。
- * - 转写（`transcribe`）：语言、Provider 与模型、提示、说话人与转录流程（`transcribe.ts`）的同名参数相同，Provider 与模型在提交时
- *   选定并冻结；转进视频时套用视频里启用的转写术语表（对外服务启动的不套），`captions` 打开时再建字幕层（与转录流程同一步）。
+ * - Parameters are validated and frozen at submission: link normalization and redaction (`link-url.ts`); the original link lives only in `LinkSources`; the download directory is fixed at submission.
+ * - The download tool comes from `tool()`: before each step it re-confirms that the tool is installed and that consent is still valid (after withdrawal, retry is also rejected). Refused in strict offline mode.
+ * - Browser cookies (`cookieBrowsers`): when resolving the link, they are tried in order; if no cookie can be read or the site still asks for login, the next browser is tried; other failures do not switch. The one used is recorded in the resolve result; the download follows it, and a download failure does not switch browsers again.
+ * - The download is written to a fixed place in staging (`<staging>/dl/media.<ext>`). On publish, the file name comes from the title (cleaned) and is checked by real path to fall inside the download directory; existing files are not overwritten. On cancel, the process is killed (the whole process group) and staging is deleted; on failure and interruption it is kept, and on retry yt-dlp resumes from `.part`.
+ * - The imported video is link material (the file stays in the download directory). Its source (`origin: 'link-import'`) records the redacted link, the platform metadata, the tool and its version, and the download time.
+ * - Target (`target`): `{ videoId }`, `{ entryId }` (resolved by `PipelineRunner` at submission), or `{ create }`. A new video is created after publish; its name defaults to the page title, and it is created in the project directory or the session's source directory (same path as `videos.create`); the pipeline holds its lease. On import, the same transaction puts the material on the main track, starting at 0 and covering the whole media. Once creation has finished, a retry does not create again. When importing into an existing video, if its timeline is still empty (no clips on the root sequence) the material is also put on the main track; if it already has clips, only the material is imported.
+ * - Transcription (`transcribe`): language, Provider and model, prompt, speakers and the transcription pipeline (`transcribe.ts`) share the same parameter names. The Provider and model are chosen and frozen at submission. When transcribed into the video, the video's enabled transcription glossary is applied (not applied when started by the external service). When `captions` is on, the caption layer is built too (same step as in the transcription pipeline).
  */
 
 export const LINK_IMPORT_PIPELINE = 'link-import';
 
-/** 媒体与字幕文件能接受的扩展名；别的文件（工具的临时文件）不发布。 */
+/** Extensions accepted for media and subtitle files; other files (the tool's temporary files) are not published. */
 const MEDIA_EXTENSIONS = new Set(['mp4', 'm4v', 'mkv', 'webm', 'mov', 'm4a', 'mp3', 'opus', 'ogg', 'oga', 'wav', 'flac', 'aac']);
 const SUBTITLE_EXTENSIONS = new Set(['vtt', 'srt', 'ass', 'ssa', 'ttml']);
 const MEDIA_TYPES: Record<string, string> = {
@@ -83,11 +77,11 @@ const MEDIA_TYPES: Record<string, string> = {
   aac: 'audio/aac',
 };
 const LANGUAGE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8}){0,3}$/;
-/** 识别提示的上限，与转录流程的 `hint` 相同。 */
+/** Upper limit for recognition hints, same as the `hint` of the transcription pipeline. */
 const HINT_MAX = 1200;
 const PROGRESS_INTERVAL_MS = 250;
 
-/** 流程用的下载工具：已安装、同意有效；否则抛 `RpcError('conflict')`（`details.code` 是 `TOOL_*`）。 */
+/** The download tool used by the pipeline: installed and consent valid; otherwise throws `RpcError('conflict')` (`details.code` is `TOOL_*`). */
 export interface LinkImportTool {
   command: string;
   args?: readonly string[];
@@ -99,59 +93,59 @@ export interface LinkImportTool {
 export interface LinkImportDeps {
   tool(): Promise<LinkImportTool>;
   /**
-   * 下载目录（绝对路径）：默认按设置；`saveTo: 'project'` 时是归属项目里的目录（见 `LinkImportParams.saveTo`）。
-   * 不存在的项目或会话 `not-found`。
+   * Download directory (absolute path): by default from settings; with `saveTo: 'project'` it is the directory inside the owning project (see `LinkImportParams.saveTo`).
+   * A project or session that does not exist gives `not-found`.
    */
   destination(target: { projectId?: Id; conversationId?: Id; videoId?: Id; saveTo?: 'project' }): Promise<string>;
   sources: LinkSources;
-  /** 导入用；`rootSequence` 看导入的已有视频时间线空不空（空的放上主轨）；建字幕层也用它。 */
+  /** For import; `rootSequence` checks whether the existing video's timeline is empty (if so, the material goes on the main track); also used to build the caption layer. */
   videos: MediaVideos & CaptionVideos;
-  /** 新建视频（`target.create`）。没有时 `create` 被拒绝。 */
+  /** New video (`target.create`). When absent, `create` is rejected. */
   targets?: Pick<PipelineTargets, 'reserve' | 'create'>;
   ffprobe: MediaToolResolver;
-  /** 给 yt-dlp 合并音视频用的 ffmpeg（只在明确指定时传）；null 时 yt-dlp 自己在 PATH 里找。 */
+  /** The ffmpeg used by yt-dlp to merge audio and video (passed only when explicitly specified); null means yt-dlp finds it on PATH itself. */
   ffmpegLocation?: () => Promise<string | null>;
   offlineStrict(): boolean;
-  /** 转写：提交前检查配置（`CAPABILITY_NOT_CONFIGURED`）、提交与等待。没有时 `transcribe: true` 被拒绝。 */
+  /** Transcription: config check before submission (`CAPABILITY_NOT_CONFIGURED`), submission and waiting. When absent, `transcribe: true` is rejected. */
   transcribe?: PipelineTranscriber;
-  /** 视频里启用、此刻还在库里的转写术语表（与转录流程相同）；不给时不套术语表。 */
+  /** The transcription glossary enabled in the video and still in the library at this moment (same as the transcription pipeline); when not given, no glossary is applied. */
   enabledGlossaries?: (videoId: Id) => Promise<Id[]>;
   lookup?: HostLookup;
-  /** 发布时先试硬链接（见 `publishFile`）。 */
+  /** On publish, try a hard link first (see `publishFile`). */
   hardLink?: boolean;
 }
 
-/** 冻结的参数：链接已脱敏，下载目录已确定。 */
+/** Frozen parameters: the link is redacted and the download directory is fixed. */
 export interface FrozenLinkImportParams {
   url: string;
-  /** 原始链接在 `LinkSources` 里的引用；规范化没有改变链接时 null。 */
+  /** Reference to the original link in `LinkSources`; null when normalization did not change the link. */
   sourceRef: string | null;
   host: string;
   projectId?: Id;
   conversationId?: Id;
   videoId?: Id;
-  /** 新建视频（`target.create`）：在这个项目或会话的来源目录里，名字不给时取页面标题。 */
+  /** New video (`target.create`): in this project's or session's source directory; when no name is given, the page title is used. */
   create?: PipelineCreateTarget;
-  /** 按顺序尝试的浏览器 Cookie；不用 Cookie 时没有。 */
+  /** Browser cookies to try, in order; none when cookies are not used. */
   cookieBrowsers?: CookieBrowser[];
-  /** 之前的版本冻结的是一个浏览器（等同只有它的 `cookieBrowsers`）。 */
+  /** Earlier versions froze a single browser (equivalent to having only that one as `cookieBrowsers`). */
   cookieBrowser?: CookieBrowser;
   transcription?: { providerId: string; modelId: string };
   audioOnly: boolean;
   subtitleLanguages: string[];
   transcribe: boolean;
-  /** 转写的断言语言、提示与说话人（见 `LinkImportParams`）；之前的版本没有。 */
+  /** The transcription's assertion language, prompt and speakers (see `LinkImportParams`); earlier versions did not have these. */
   language?: string;
   hint?: string;
   diarize?: boolean;
-  /** 转写之后建字幕层；之前的版本没有（不建）。 */
+  /** Builds the caption layer after transcription; earlier versions did not have it (so none was built). */
   captions?: boolean;
-  /** 转进视频时套用视频里启用的转写术语表：启动它的不是对外服务的客户端。之前的版本没有（不套）。 */
+  /** When transcribed into the video, applies the transcription glossary enabled in the video: not applied when the client is started by the external service. Earlier versions did not have it (not applied). */
   videoGlossaries?: boolean;
   outDir: string;
 }
 
-/** 校验过、还没冻结的参数（原始链接还在）。 */
+/** Validated parameters, not yet frozen (the original link is still present). */
 interface CheckedLinkImportParams extends Omit<LinkImportParams, 'target' | 'cookieBrowser'> {
   create?: PipelineCreateTarget;
   raw: string;
@@ -162,7 +156,7 @@ interface CheckedLinkImportParams extends Omit<LinkImportParams, 'target' | 'coo
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for agents)
     url: { type: 'string', description: '视频页面的链接（http/https）' },
     projectId: { type: 'string', description: '归属的项目；不影响下载目录' },
     conversationId: { type: 'string', description: '归属的会话；不影响下载目录' },
@@ -205,7 +199,7 @@ const PARAMS_SCHEMA = {
 interface ResolveOutput extends Record<string, unknown> {
   metadata: LinkMetadata;
   tool: { version: string; source: string };
-  /** 解析成功时用的浏览器 Cookie，匿名时 null；之前的版本没有（按冻结参数的第一个）。 */
+  /** The browser cookie used when resolution succeeded; null when anonymous. Earlier versions did not have it (the first of the frozen parameters was used). */
   cookieBrowser?: CookieBrowser | null;
 }
 
@@ -237,7 +231,7 @@ interface ImportOutput extends Record<string, unknown> {
 
 interface TranscribeOutput extends Record<string, unknown> {
   jobId: Id;
-  /** 转进视频时写入的文稿；之前的版本没有。 */
+  /** The transcript written when transcribed into the video; earlier versions did not have it. */
   documentId?: Id | null;
   files?: string[];
   outputs?: GeneratedOutput[];
@@ -267,7 +261,7 @@ export function linkImportPipeline(deps: LinkImportDeps): PipelineDefinition<Fro
       if (params.transcribe) {
         if (!deps.transcribe) throw new RpcError('conflict', JobsLinkImport.cannotTranscribe(), { code: 'CAPABILITY_NOT_CONFIGURED' });
         if (!params.videoId && !params.create && !deps.transcribe.submitFile) throw new RpcError('conflict', JobsLinkImport.fileTranscribeUnavailable(), { code: 'CAPABILITY_NOT_CONFIGURED' });
-        // 重试时用冻结的选择；第一次提交时用给定的 Provider 与模型（不给时默认值）。
+        // On retry, the frozen selection is used; on first submission, the given Provider and model are used (defaults when not given).
         const frozenSelection = retry ? (params as FrozenLinkImportParams).transcription : undefined;
         const given: { provider?: string; model?: string } = retry ? {} : (params as CheckedLinkImportParams);
         transcription = await deps.transcribe.check(
@@ -320,7 +314,7 @@ export function linkImportPipeline(deps: LinkImportDeps): PipelineDefinition<Fro
           ...(checked.transcribe && submitter?.kind !== 'service' ? { videoGlossaries: true } : {}),
           outDir,
         };
-        // 最后一步才写：前面的检查不过时不留下原始链接。
+        // Written last: if the earlier checks fail, the original link is not left behind.
         if (sourceRef) await deps.sources.put(sourceRef, checked.raw);
       }
       return {
@@ -372,7 +366,7 @@ export function linkImportPipeline(deps: LinkImportDeps): PipelineDefinition<Fro
       {
         name: 'verify',
         label: () => JobsLinkImport.stepVerify(),
-        // 用 ffprobe 读一遍（与引擎导入素材用的同一个）：找不到 ffprobe 时以 `MEDIA_TOOL_UNAVAILABLE` 失败，不跳过校验。
+        // Read once with ffprobe (the same one the engine uses to import material). If ffprobe is not found, it fails with `MEDIA_TOOL_UNAVAILABLE`; the validation is not skipped.
         run: async ({ outputs, signal, progress }) => {
           const downloaded = outputs.download as DownloadOutput;
           progress(null, 'validating');
@@ -532,9 +526,9 @@ export function parseLinkImportParams(raw: Record<string, unknown>): CheckedLink
     if (typeof lang !== 'string' || !LANGUAGE.test(lang)) throw invalid('subtitleLanguages', JobsLinkImport.languageItems());
     return lang;
   });
-  // `{ videoId }` 与 `{ entryId }` 的目标由 PipelineRunner 换成了顶层的 `videoId`；这里只剩新建。
+  // Targets `{ videoId }` and `{ entryId }` were swapped for the top-level `videoId` by PipelineRunner; only creation remains here.
   const create = raw.target === undefined ? undefined : createOf(raw.target);
-  // 转写的参数：只与 transcribe 一起给；说话人与字幕层要有视频。
+  // Transcription parameters: given only together with transcribe; speakers and the caption layer need a video.
   const language = reader.string('language', { max: 35, optional: true });
   if (language !== undefined && !LANGUAGE.test(language)) throw invalid('language', JobsLinkImport.languageTag());
   const provider = reader.string('provider', { max: 200, optional: true });
@@ -552,7 +546,7 @@ export function parseLinkImportParams(raw: Record<string, unknown>): CheckedLink
     if (captions !== undefined) throw invalid('captions', JobsLinkImport.noVideoCaptions());
   }
   if (create && videoId !== undefined) throw invalid('target', JobsParams.createExcludesVideoId());
-  // 新建视频时顶层的项目或会话可以不给；给了要与新视频所在的一致。
+  // When creating a video, the top-level project or session may be omitted; if given, it must match the one the new video is in.
   if (create && projectId !== undefined && projectId !== create.projectId) throw invalid('projectId', JobsLinkImport.projectMismatch());
   if (create && conversationId !== undefined && conversationId !== create.conversationId) {
     throw invalid('conversationId', JobsLinkImport.conversationMismatch());
@@ -581,12 +575,12 @@ export function parseLinkImportParams(raw: Record<string, unknown>): CheckedLink
   };
 }
 
-/** 冻结的参数里按顺序要试的浏览器：之前的版本只有一个 `cookieBrowser`。不用 Cookie 时空。 */
+/** Browsers to try in order, from the frozen parameters. Earlier versions had only one `cookieBrowser`. Empty when cookies are not used. */
 function cookieBrowsersOf(params: FrozenLinkImportParams): CookieBrowser[] {
   return params.cookieBrowsers ?? (params.cookieBrowser ? [params.cookieBrowser] : []);
 }
 
-/** 用上的浏览器：解析的结果里记着；之前的版本没记，按冻结参数的第一个。 */
+/** The browser used: recorded in the resolve result. Earlier versions did not record it, so the first of the frozen parameters is used. */
 function usedCookieBrowser(params: FrozenLinkImportParams, resolved: ResolveOutput): CookieBrowser | null {
   return resolved.cookieBrowser !== undefined ? resolved.cookieBrowser : (cookieBrowsersOf(params)[0] ?? null);
 }
@@ -660,7 +654,7 @@ async function download(
   return { output };
 }
 
-/** staging 里下载得到的文件：只认普通文件（不跟随符号链接）、固定的名字与允许的扩展名，真实路径在 staging 里。 */
+/** The file downloaded into staging: only a regular file is accepted (symbolic links are not followed), with a fixed name and an allowed extension; the real path is inside staging. */
 async function collectDownloads(dir: string): Promise<{ media: string | null; subtitles: DownloadOutput['subtitles'] }> {
   const real = await fs.realpath(dir);
   let media: string | null = null;
@@ -674,7 +668,7 @@ async function collectDownloads(dir: string): Promise<{ media: string | null; su
     if (!match) continue;
     const [, language, ext] = match;
     if (!language && MEDIA_EXTENSIONS.has(ext!)) {
-      // 合并后只剩一个；万一有多个（没有 ffmpeg 合并时），取最大的那个。
+      // After merging only one remains; if there are several (when there was no ffmpeg merge), the largest is taken.
       if (!media || stat.size > (await fs.stat(media)).size) media = file;
     } else if (language && SUBTITLE_EXTENSIONS.has(ext!)) {
       subtitles.push({ file, language, ext: ext! });
@@ -741,7 +735,7 @@ async function publish(
   }
 }
 
-/** 新建视频（`target.create`）：在项目或会话的来源目录里新建、交给流程持有；名字不给时取页面标题，再没有时取下载的文件名。 */
+/** New video (`target.create`): created in the project's or session's source directory and handed to the pipeline to hold. When no name is given, the page title is used; if there is none, the downloaded file name. */
 async function createVideo(deps: LinkImportDeps, context: PipelineStepContext<FrozenLinkImportParams>): Promise<{ output: CreateOutput }> {
   const { params, outputs, progress } = context;
   const create = params.create!;
@@ -757,7 +751,7 @@ async function createVideo(deps: LinkImportDeps, context: PipelineStepContext<Fr
   return { output: { videoId: lease.videoId, place: lease.place } };
 }
 
-/** 导入的视频：给定的（`videoId`），或这次新建的。 */
+/** The video to import into: either the given one (`videoId`) or the one created this time. */
 function targetVideo(params: FrozenLinkImportParams, outputs: PipelineStepContext<FrozenLinkImportParams>['outputs']): Id {
   return params.videoId ?? (outputs.create as CreateOutput).videoId;
 }
@@ -771,8 +765,7 @@ async function importIntoVideo(
   const downloaded = outputs.download as DownloadOutput;
   const published = outputs.publish as PublishOutput;
   progress(null, 'applying');
-  // 新建的视频：同一笔事务把素材放上主轨（第一条同类轨道），从 0 开始、覆盖整段媒体。已有的视频时间线还空着时也放（对外服务
-  // 先 `videos_create` 再下载进去，架构设计 §4.8），已经有片段时只导入素材。
+  // For a newly created video, the same transaction puts the material on the main track (the first track of its kind), starting at 0 and covering the whole media. It is also placed when an existing video's timeline is still empty (the external service calls `videos_create` first and then downloads into it, architecture design §4.8); when it already has clips, only the material is imported.
   const { assetId } = await importMedia(deps.videos, context, {
     videoId: targetVideo(params, outputs),
     file: published.media,
@@ -784,17 +777,17 @@ async function importIntoVideo(
   return { output: { assetId } };
 }
 
-/** 摘要里的简介最多保留的字符数（素材来源里是完整的）。 */
+/** Maximum number of characters of the description kept in the summary (the full one is in the material's source). */
 const SUMMARY_DESCRIPTION_CHARS = 1200;
 
-/** 摘要里的简介：截到 1200 个字符（按码点，截掉时末尾加省略号）；没有时 null。 */
+/** The description in the summary: cut to 1200 characters (counted by code point; an ellipsis is added at the end when cut); null when there is none. */
 function summaryDescription(description: string | null | undefined): string | null {
   if (!description) return null;
   const chars = [...description];
   return chars.length <= SUMMARY_DESCRIPTION_CHARS ? description : `${chars.slice(0, SUMMARY_DESCRIPTION_CHARS).join('')}…`;
 }
 
-/** 下载的素材的来源（视频格式规范 §4.5）：流程自己的导入与之后按产物导入（`linkImportAssetOperation`）记的完全相同。 */
+/** The source of the downloaded material (video format spec §4.5): the pipeline's own import and the import later recorded per artifact (`linkImportAssetOperation`) write exactly the same thing. */
 function linkImportProvenance(
   url: string,
   meta: LinkMetadata,
@@ -812,7 +805,7 @@ function linkImportProvenance(
       uploader: meta.uploader,
       uploadDate: meta.uploadDate,
       durationSec: meta.durationSec,
-      // 简介与平台章节：润色、识别说话人与采用来源章节（`chapters_adopt`）读它们；之前的运行记录里没有，没有时不写。
+      // The description and platform chapters: polishing, speaker recognition and adopting source chapters (`chapters_adopt`) read them. Earlier run records do not have them; when absent, nothing is written.
       ...(meta.description ? { description: meta.description } : {}),
       ...(meta.chapters?.length ? { chapters: meta.chapters } : {}),
       tool: { name: 'yt-dlp', version: downloaded.tool.version, source: downloaded.tool.source },
@@ -823,10 +816,7 @@ function linkImportProvenance(
 }
 
 /**
- * 只下载（没有视频目标）的从链接导入之后，按产物把下载的媒体导入视频的那一个操作（智能体经 `edits_apply` 的
- * `importAsset` + `artifactId`）。bytes 收进视频目录（`managed`），与生成的产物一样：之后用户挪动或删掉下载目录里的文件，
- * 视频不受影响；来源与流程自己导入时相同（`origin: 'link-import'`，带这次运行）。`file` 是核对过内容的文件
- * （`locateArtifact`）。不是这个流程的记录、或产物不是它下载的媒体（例如转写的文稿）时 null。
+ * The single operation that imports downloaded media into a video, per artifact, after a link import that had no video target (download only) (the agent, via `edits_apply`'s `importAsset` + `artifactId`). The bytes are taken into the video directory (`managed`), the same as generated artifacts: afterwards, if the user moves or deletes the file in the download directory, the video is not affected. The source is the same as when the pipeline imports by itself (`origin: 'link-import'`, with this run). `file` is the file whose content was checked (`locateArtifact`). Null when it is not a record of this pipeline, or when the artifact is not media this pipeline downloaded (for example, a transcript).
  */
 export function linkImportAssetOperation(
   record: JobRecord,
@@ -868,7 +858,7 @@ async function transcribe(
   }
   const assetId = (outputs.import as ImportOutput).assetId;
   const videoId = targetVideo(params, outputs);
-  // 视频里启用的转写术语表（§5.9）：与转录流程一样在提交转写时读出，版本由转写 Job 冻结。
+  // The transcription glossary enabled in the video (§5.9): read when transcription is submitted, the same as in the transcription pipeline; the version is frozen by the transcription Job.
   const glossaries = params.videoGlossaries && deps.enabledGlossaries ? await deps.enabledGlossaries(videoId) : [];
   const { jobId, documentId } = await transcribeInVideo(jobs, context, {
     videoId,

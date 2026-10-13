@@ -1,10 +1,9 @@
-//! `ccut-wasm-subtitle` → `ccut-wasm-gpu` 的紧凑 SceneFrame 线格式。
+//! The compact SceneFrame wire format from `ccut-wasm-subtitle` → `ccut-wasm-gpu`.
 //!
-//! 两个 wasm 实例不能共享 Rust `Arc` 或线性内存；浏览器字幕规划器因此把
-//! renderer-neutral scene 编成字节，GPU 会话解回同一组类型后仍由 compositor
-//! 单 canvas / 单 encoder 提交。格式只覆盖字幕当前会产出的
-//! vector/glyph/procedural-rounded-rect/blur 节点；ShaderQuad 属于元素求值，
-//! 不允许从这条边界偷偷绕进来。
+//! Two wasm instances cannot share a Rust `Arc` or linear memory, so the browser subtitle planner encodes the
+//! renderer-neutral scene into bytes; the GPU session decodes it back into the same set of types, after which the compositor still submits
+//! through a single canvas / single encoder. The format only covers the vector/glyph/procedural-rounded-rect/blur nodes that subtitles currently produce;
+//! ShaderQuad belongs to element evaluation and must not be smuggled across this boundary.
 
 use std::sync::Arc;
 
@@ -329,7 +328,7 @@ fn encode_glyph_run(writer: &mut Writer, run: &GlyphRun, version: u32) -> Result
                 GlyphPaint::DilatedStroke { .. } => {
                     bail!("subtitle-scene-glyph-stroke-requires-v8")
                 }
-                // v3/v2 的既有兼容语义：渐变降级为 solid paint。
+                // The existing backward-compatibility semantics of v3/v2: gradients degrade to solid paint.
                 GlyphPaint::RepeatLinearGradient { .. } => {}
                 GlyphPaint::RepeatTexture => {
                     bail!("subtitle-scene-glyph-texture-requires-v9")

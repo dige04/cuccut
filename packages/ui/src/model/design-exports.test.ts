@@ -45,7 +45,7 @@ describe('设计稿运行时的 frame 协议', () => {
 
   it('导出命令照运行时报的给 interactive；bundle 只在 interactive 时带', () => {
     const request = crypto.randomUUID();
-    // 运行时只认 16–64 个字母、数字、_、-（frame-host-bridge.tsx）
+    // The runtime only accepts 16–64 letters, digits, _, - (frame-host-bridge.tsx)
     expect(request).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
     expect(exportCommand({ format: 'html', disabled: false, interactive: false, bundle: false }, request)).toEqual({
       __frame_chrome_cmd: true,

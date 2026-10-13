@@ -1,26 +1,22 @@
-//! macOS 原生 MP4 写入：`AVAssetWriter` + VideoToolbox H.264 + AAC。
+//! Native MP4 writing on macOS: `AVAssetWriter` + VideoToolbox H.264 + AAC.
 //!
-//! 结构与 `core/crates/ccut-kernel/src/services/native_video.rs` 的在产导出后端同源（那是这套栈
-//! 在本仓库的第一处实现），但这里的场景简单得多，因此**没有**照抄它的流水线：
-//! 那边要一边解源码流一边合成字幕，帧的生产成本高，值得单开一条提交线程；这边
-//! 的帧由 `ccut-render` 的 worker 池并行光栅化之后按序送到，写入端只剩"喂给
-//! 编码器"，再加一层线程只会多一次 8 MB 拷贝和一份 SAFETY 论证。背压因此就地
-//! 承担：`isReadyForMoreMediaData` 为假时短睡等待。
+//! The structure is the same as the shipping export backend in `core/crates/ccut-kernel/src/services/native_video.rs` (that was the first implementation of this stack in this repo), but the scenario here is much simpler, so its pipeline was **not** copied:
+//! there, the source stream is decoded while subtitles are composited, frames are expensive to produce, and a separate submit thread is worth it; here
+//! frames are rasterised in parallel by the `ccut-render` worker pool and delivered in order, so the writing side only has to "feed the encoder". An extra thread would only add one more 8 MB copy and another SAFETY argument. Back-pressure is therefore handled in place:
+//! when `isReadyForMoreMediaData` is false, sleep briefly and wait.
 //!
-//! ## 音频是自造的 `CMSampleBuffer`
+//! ## Audio is a hand-built `CMSampleBuffer`
 //!
-//! 导出后端的音频来自 `AVAssetReader`（源文件里现成的样本），这里的音频是
-//! `ccut-render` 混出来的裸 f32le PCM，没有任何容器。所以要自己搭一层：
-//! `CMBlockBuffer`（拷进 PCM 字节）+ `CMAudioFormatDescription`（ASBD 描述
-//! "48 kHz 立体声交织 f32"）→ `CMAudioSampleBufferCreateReadyWithPacketDescriptions`。
-//! 写入端的 `AVAssetWriterInput` 挂的是 AAC 输出设置，转码由 AVFoundation 完成
-//! （与导出后端把源 LPCM 喂进 AAC 输入是同一条路径）。
+//! Audio on the export backend comes from `AVAssetReader` (samples already present in the source file). Here the audio is raw f32le PCM mixed by `ccut-render`, with no container at all. So a layer has to be built by hand:
+//! `CMBlockBuffer` (copies in the PCM bytes) + `CMAudioFormatDescription` (an ASBD describing "48 kHz stereo interleaved f32") → `CMAudioSampleBufferCreateReadyWithPacketDescriptions`.
+//! The writer's `AVAssetWriterInput` is set up with AAC output settings, and AVFoundation does the transcoding
+//! (the same path as the export backend feeding the source LPCM into an AAC input).
 //!
-//! ## 交织
+//! ## Interleaving
 //!
-//! `AVAssetWriter` 为保持轨道交织，会在一条轨落后太多时压住另一条轨的就绪位。
-//! 单线程写两条轨时这一点是死锁面：必须在等视频就绪的**循环里**继续喂音频，
-//! 不能先把视频等到就绪再管音频。见 [`AvWriter::pump_audio`] 的调用点。
+//! To keep the tracks interleaved, `AVAssetWriter` holds back one track's ready flag when the other track falls too far behind.
+//! When one thread writes both tracks this is a deadlock risk: audio must keep being fed **inside the loop** that waits for video to be ready,
+//! not wait for video to be ready first and only then handle audio. See the call site of [`AvWriter::pump_audio`].
 
 #![allow(deprecated)]
 
@@ -65,11 +61,11 @@ use crate::encode::{
     WriterSetup,
 };
 
-/// 编码器背压时的短睡步长；短睡而不是自旋，避免整核空转（与导出后端同值）。
+/// Short sleep step when the encoder applies back-pressure: sleep briefly rather than spin, to avoid burning a whole core (same value as the export backend).
 const BACKPRESSURE_NAP: Duration = Duration::from_micros(500);
 
-/// 关键帧间隔（秒）。硬编默认的 GOP 在本仓库实测能稀到只剩首帧一个关键帧，
-/// 那样的产物拖动预览会很难受；2 秒与导出后端的取值一致。
+/// Keyframe interval (seconds). Measured in this repo, the hardware encoder's default GOP can get so sparse that only the first frame is a keyframe,
+/// and output like that is painful to scrub in preview; 2 seconds matches the export backend.
 const KEYFRAME_INTERVAL_SECONDS: f64 = 2.0;
 
 fn ns_path(path: &Path) -> Retained<NSString> {
@@ -109,10 +105,9 @@ unsafe fn video_output_settings(
             &source_frame_rate,
         ],
     );
-    // BT.709 色彩标记：不给的话 VideoToolbox 写出的码流 primaries / transfer /
-    // matrix 全是 unknown（ffprobe 实测），播放端按 601 猜就会偏色。给了之后
-    // BGRA→YUV 的转换矩阵也随之定为 709，与 ffmpeg 兜底路径的
-    // `-colorspace bt709` 合同一致。
+    // BT.709 colour tags: without them, the bitstream VideoToolbox writes has primaries / transfer /
+    // matrix all unknown (measured with ffprobe), and a player guessing 601 would shift the colours. With them set,
+    // the BGRA→YUV conversion matrix is also fixed to 709, matching the `-colorspace bt709` contract of the ffmpeg fallback path.
     let color = object_dictionary(
         &[
             unsafe { AVVideoColorPrimariesKey }.expect("AVVideoColorPrimariesKey"),
@@ -177,7 +172,7 @@ unsafe fn audio_output_settings(bitrate: u32) -> Retained<NSDictionary<NSString,
     )
 }
 
-/// "48 kHz 立体声交织 f32" 的音频格式描述。混音 PCM 没有容器，格式只能自己声明。
+/// Audio format description for "48 kHz stereo interleaved f32". The mixed PCM has no container, so the format can only be declared by hand.
 fn pcm_format_description() -> Result<CFRetained<CMFormatDescription>> {
     let mut asbd = AudioStreamBasicDescription {
         mSampleRate: f64::from(AUDIO_SAMPLE_RATE),
@@ -212,15 +207,15 @@ fn pcm_format_description() -> Result<CFRetained<CMFormatDescription>> {
     Ok(unsafe { CFRetained::from_raw(pointer) })
 }
 
-/// 一块交织 f32 PCM → 可以直接 append 的 `CMSampleBuffer`。
+/// One block of interleaved f32 PCM → a `CMSampleBuffer` that can be appended directly.
 fn pcm_sample_buffer(
     format: &CMFormatDescription,
     chunk: &PcmChunk,
 ) -> Result<CFRetained<CMSampleBuffer>> {
     let length = std::mem::size_of_val(chunk.samples.as_slice());
     let mut block: *mut CMBlockBuffer = std::ptr::null_mut();
-    // `memory_block` 为空 + `block_allocator` 为空 ⇒ 用默认分配器现分配；
-    // `AssureMemoryNow` 让它当场分配而不是等到第一次访问。
+    // `memory_block` empty and `block_allocator` empty ⇒ allocate now with the default allocator;
+    // `AssureMemoryNow` makes it allocate on the spot instead of waiting for the first access.
     let status = unsafe {
         CMBlockBuffer::create_with_memory_block(
             None,
@@ -269,7 +264,7 @@ struct AudioTrack {
     input: Retained<AVAssetWriterInput>,
     format: CFRetained<CMFormatDescription>,
     source: PcmSource,
-    /// PCM 已读完并且音轨已 `markAsFinished`。
+    /// The PCM has been fully read and the audio track has been `markAsFinished`.
     finished: bool,
 }
 
@@ -283,14 +278,14 @@ pub(crate) struct AvWriter {
     height: u32,
     fps_num: u32,
     fps_den: u32,
-    /// 已追加的视频帧数，也是下一帧的帧号。
+    /// Number of video frames appended so far, which is also the frame number of the next frame.
     frames: u64,
-    /// 写入器已经收束（`finish` 走完）。
+    /// The writer has been wrapped up (`finish` has completed).
     closed: bool,
-    /// AVFoundation 的影子文件目录。`shouldOptimizeForNetworkUse` 为把 moov 前置
-    /// 会写一份接近成片大小的 `.sb-*` 临时文件，不指定目录时 macOS 可能把它放在
-    /// 用户的输出目录旁边。字段顺序即析构顺序：它排在 writer **之后**，writer
-    /// 先释放、AVFoundation 先收束自身文件，TempDir 再兜底清理。
+    /// AVFoundation's shadow-file directory. Setting `shouldOptimizeForNetworkUse` to move moov to the front
+    /// writes a `.sb-*` temporary file nearly the size of the final output, and without a specified directory macOS may put it
+    /// next to the user's output directory. Field order is drop order: it comes **after** the writer, so the writer
+    /// is released first and AVFoundation wraps up its own file first, and TempDir cleans up as a fallback.
     _temporary: tempfile::TempDir,
 }
 
@@ -309,9 +304,8 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
         audio,
         audio_bitrate,
     } = setup;
-    // AVAssetWriter 拒绝已存在的输出路径，而调用方常常先建好临时文件再交给我们
-    // （`ccut-render` 就是 `tempfile_in` 出来的空文件）。ffmpeg 那条路径是 `-y`
-    // 覆盖，语义要一致。
+    // AVAssetWriter refuses an output path that already exists, and callers often create the temporary file first and then hand it to us
+    // (`ccut-render` passes in the empty file from `tempfile_in`). The ffmpeg path overwrites with `-y`, so the semantics must match.
     match std::fs::remove_file(out) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -320,8 +314,8 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
         }
     }
     let exact_fps = f64::from(fps_num) / f64::from(fps_den);
-    // guard 先于 writer 创建，局部变量逆序析构时 writer 先释放：AVFoundation
-    // 收束完自己的影子文件，TempDir 再兜底清理。
+    // The guard is created before the writer; locals are dropped in reverse, so the writer is released first: AVFoundation
+    // wraps up its own shadow file, and TempDir cleans up as a fallback.
     let temporary = tempfile::Builder::new()
         .prefix("ccut-mp4-writer-")
         .tempdir()
@@ -337,7 +331,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
     unsafe {
         let temporary_url = NSURL::fileURLWithPath(&ns_path(temporary.path()));
         writer.setDirectoryForTemporaryFiles(Some(&temporary_url));
-        // 与迁移前 ffmpeg 的 `-movflags +faststart` 对齐：moov 前置。
+        // Matches the ffmpeg `-movflags +faststart` from before the migration: moov at the front.
         writer.setShouldOptimizeForNetworkUse(true);
     }
 
@@ -350,8 +344,8 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
         )
     };
     unsafe { video_input.setExpectsMediaDataInRealTime(false) };
-    // 非整数帧率把媒体时基钉在分子上：缺省 600 会把 29.97 的帧长取整成 20/600，
-    // 读回来就是 30 fps（`ccut-kernel` 的 `pin_media_time_scale` 同一条规则）。
+    // For a non-integer frame rate, pin the media timescale to the numerator: the default 600 would round the 29.97 frame duration to 20/600,
+    // which reads back as 30 fps (the same rule as `pin_media_time_scale` in `ccut-kernel`).
     if fps_den > 1
         && let Ok(scale) = i32::try_from(fps_num)
     {
@@ -422,7 +416,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
 }
 
 impl AvWriter {
-    /// 第 `index` 帧的呈现时间。分数时基（`den/num`），29.97 这类帧率不会漂。
+    /// Presentation time of frame `index`. Fractional timebase (`den/num`), so frame rates like 29.97 do not drift.
     fn timestamp(&self, index: u64) -> CMTime {
         unsafe { CMTime::new(index as i64 * i64::from(self.fps_den), self.fps_num as i32) }
     }
@@ -440,10 +434,10 @@ impl AvWriter {
         Ok(())
     }
 
-    /// 把音频喂到 `limit_seconds`（音频时间轴上的硬上限）。
+    /// Feed audio up to `limit_seconds` (a hard limit on the audio timeline).
     ///
-    /// 返回是否真的推进了。等视频就绪的循环里必须调用它，否则 writer 为保持交织
-    /// 压住视频就绪位、调用方又只等视频，带音轨的渲染会死锁。
+    /// Returns whether it actually advanced. It must be called in the loop that waits for video to be ready; otherwise the writer holds back the video ready flag to keep interleaving,
+    /// and the caller waits only for video, so a render with an audio track would deadlock.
     fn pump_audio(&mut self, limit_seconds: f64) -> Result<bool> {
         let Some(audio) = self.audio.as_mut() else {
             return Ok(false);
@@ -485,7 +479,7 @@ impl AvWriter {
                 rgba.len()
             );
         }
-        // 等视频就绪，同时继续喂音频（交织死锁面，见 `pump_audio`）。
+        // Wait for video to be ready while still feeding audio (the interleaving deadlock risk, see `pump_audio`).
         let limit = self.video_seconds() + AUDIO_LEAD_SECONDS;
         loop {
             self.pump_audio(limit)?;
@@ -510,7 +504,7 @@ impl AvWriter {
         Ok(())
     }
 
-    /// 音频还需不需要继续喂：`video_end` 之前的部分都已交出即算完。
+    /// Whether audio still needs feeding: it is done once everything before `video_end` has been handed out.
     fn audio_drained(&self, video_end: f64) -> bool {
         self.audio
             .as_ref()
@@ -518,12 +512,11 @@ impl AvWriter {
     }
 
     fn close(&mut self) -> Result<()> {
-        // 视频轨**先**收束，再排干音频。顺序不能反：writer 为保持交织可能压住
-        // 音频的就绪位来等更多视频数据，而视频这时已经没有下一帧了——先
-        // `markAsFinished` 才让它知道这一点，下面的排干循环就不会空转到超时。
+        // The video track is wrapped up **first**, then the audio is drained. The order must not be reversed: to keep interleaving, the writer may hold back the audio ready flag to wait for more video data, while video has no next frame at this point. Calling
+        // `markAsFinished` first is what tells it this, so the drain loop below does not spin until it times out.
         unsafe { self.video_input.markAsFinished() };
-        // 剩余音频按 ffmpeg 的 `-shortest` 截到视频末尾。分块粒度是 0.1 秒，
-        // 音频比视频长时最多多出不到一块——BCF 渲染里两者本来等长，不会走到。
+        // The remaining audio is cut at the end of the video, as ffmpeg's `-shortest` does. The chunk granularity is 0.1 s,
+        // so when audio is longer than video it exceeds it by less than one chunk at most. In BCF rendering the two are equal in length to begin with, so this never happens.
         let video_end = self.video_seconds();
         while !self.audio_drained(video_end) {
             if !self.pump_audio(video_end)? {
@@ -537,7 +530,7 @@ impl AvWriter {
             unsafe { audio.input.markAsFinished() };
             audio.finished = true;
         }
-        // 从这里起 writer 交给 `finishWriting`，`Drop` 不得再取消它。
+        // From here on the writer is handed to `finishWriting`, and `Drop` must no longer cancel it.
         self.closed = true;
         let (finished_tx, finished_rx) = std::sync::mpsc::sync_channel(1);
         let completion = RcBlock::new(move || {
@@ -556,7 +549,7 @@ impl AvWriter {
 
 impl Drop for AvWriter {
     fn drop(&mut self) {
-        // 半途丢弃（渲染出错 / 取消）：显式取消，别让编码器在后台把队列跑完。
+        // Dropped midway (render error or cancel): cancel explicitly, so the encoder does not run its queue to completion in the background.
         if !self.closed {
             unsafe { self.writer.cancelWriting() };
         }
@@ -565,8 +558,7 @@ impl Drop for AvWriter {
 
 impl Mp4Sink for AvWriter {
     fn write_frame(&mut self, rgba: &[u8]) -> Result<()> {
-        // AVFoundation 内部大量 autorelease；每帧一个池，长渲染里临时对象不会
-        // 攒到线程退出。
+        // AVFoundation autoreleases a lot internally. One pool per frame means temporary objects do not pile up during a long render until the thread exits.
         objc2::rc::autoreleasepool(|_| self.append_frame(rgba))
     }
 
@@ -586,9 +578,9 @@ fn new_pixel_buffer(pool: &CVPixelBufferPool) -> Result<CFRetained<CVPixelBuffer
     Ok(unsafe { CFRetained::from_raw(pointer) })
 }
 
-/// top-down RGBA8 → 像素缓冲的 32BGRA。
+/// top-down RGBA8 → 32BGRA pixel buffer.
 ///
-/// `bytesPerRow` 带对齐补白（16/64 字节），**不能**当成 `width * 4`。
+/// `bytesPerRow` includes alignment padding (16/64 bytes), so it **must not** be treated as `width * 4`.
 unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32) -> Result<()> {
     let flags = CVPixelBufferLockFlags(0);
     if unsafe { CVPixelBufferLockBaseAddress(buffer, flags) } != 0 {
@@ -614,7 +606,7 @@ unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32
             };
             let source = &rgba[y * buffer_width * 4..(y + 1) * buffer_width * 4];
             for (source, target) in source.chunks_exact(4).zip(row.chunks_exact_mut(4)) {
-                // R,G,B,A → 内存序 B,G,R,A。
+                // R,G,B,A → memory order B,G,R,A.
                 target[0] = source[2];
                 target[1] = source[1];
                 target[2] = source[0];
@@ -623,7 +615,7 @@ unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32
         }
         Ok(())
     })();
-    // 解锁无条件执行，不因上面的错误提前返回而漏掉。
+    // The unlock runs unconditionally, so an early return on the error above cannot skip it.
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     outcome?;
     if unlocked != 0 {

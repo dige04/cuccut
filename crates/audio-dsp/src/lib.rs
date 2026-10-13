@@ -1,28 +1,14 @@
-//! CucCut 离线音频 DSP 原语：配乐 / 音效合成（`ccut-score`）与母带（后续的 `ccut-render`
-//! 混音）共用的一份。
+//! CucCut offline audio DSP primitives, shared by music / sound-effect synthesis (`ccut-score`) and mastering (the later `ccut-render` mix).
 //!
-//! 约定（全 crate 一致）：
+//! Conventions (consistent across the crate):
 //!
-//! - **纯函数、无 I/O**：输入是切片，输出是新的 `Vec<f32>` 或就地改写的 `&mut`。没有隐藏状态、
-//!   没有全局缓存，同一输入两次调用逐位相同。
-//! - **采样率显式传参**（`sr: f64`，CucCut 默认 48 000）。时间参数一律是秒，频率是 Hz，
-//!   电平是 dB（`*_db`）或线性增益（其余）。
-//! - **多声道一律分离（planar）**：立体声是 [`Stereo`]（`l` / `r` 两条等长 `Vec<f32>`），
-//!   通用多声道入口收 `&[&[f32]]`（每声道一条切片）。交错（interleaved）只出现在 WAV 编码那一步
-//!   （`ccut-score::wav`），DSP 内部不出现。
-//! - **样本是 `f32`，内部累加与滤波器状态是 `f64`**：40 Hz 的高通、60 秒的响度积分在 `f32`
-//!   里会漂。
-//! - **确定性、跨平台一致**：超越函数（`sin` / `exp` / `ln` / `pow` / `tan` / `tanh`）只走
-//!   [`libm`]，随机只走播种的 splitmix64（[`rng::Rng`]），FFT 是本 crate 自带的标量基 2 实现
-//!   （旋转因子由 `libm` 算）。四则运算与 `sqrt` 是 IEEE 正确舍入，天然一致。不依赖
-//!   `rustfft` / `realfft`：它们按 CPU 选 SIMD 路径（AVX / NEON），运算顺序随平台变，结果末位就不同；
-//!   母带的响度增益又会把末位差放大到整条音频。代价是卷积慢几倍，离线渲染可以接受。
+//! - **Pure functions, no I/O**: inputs are slices, outputs are new `Vec<f32>` or in-place rewrites via `&mut`. No hidden state, no global cache; the same input gives bit-identical results on repeated calls.
+//! - **Sample rate is passed explicitly** (`sr: f64`, CucCut default 48 000). Time parameters are always seconds, frequencies are Hz, and levels are dB (`*_db`) or linear gain (otherwise).
+//! - **Multichannel is always planar**: stereo is [`Stereo`] (`l` / `r`, two equal-length `Vec<f32>`); the general multichannel entry takes `&[&[f32]]` (one slice per channel). Interleaved only appears in the WAV encoding step (`ccut-score::wav`); it does not appear inside the DSP.
+//! - **Samples are `f32`; internal accumulation and filter state are `f64`**: a 40 Hz high-pass or a 60-second loudness integral would drift in `f32`.
+//! - **Deterministic, consistent across platforms**: transcendental functions (`sin` / `exp` / `ln` / `pow` / `tan` / `tanh`) go only through [`libm`]; randomness goes only through a seeded splitmix64 ([`rng::Rng`]); the FFT is this crate's own scalar radix-2 implementation (twiddle factors computed with `libm`). The four arithmetic operations and `sqrt` are IEEE correctly rounded, so they are consistent by nature. Does not depend on `rustfft` / `realfft`: they pick SIMD paths (AVX / NEON) by CPU, so the order of operations varies by platform and the last-bit results would differ; and mastering's loudness gain would amplify the last-bit difference to the whole audio. The cost is convolution several times slower, which is acceptable for offline rendering.
 //!
-//! 模块一览见各自文档：[`biquad`]（RBJ 双二阶 + Butterworth 级联）、[`tvlp`]（时变低通）、
-//! [`osc`]（polyBLEP 振荡）、[`noise`]（有色噪声）、[`curve`]（关键帧与漂移曲线）、
-//! [`reverb`]（合成脉冲响应 + FFT 分块卷积）、[`dynamics`]（块 RMS 跟随、activity 闪避、glue 压缩）、
-//! [`loudness`]（BS.1770-4 积分响度 / LRA / 短期响度）、[`truepeak`]（4× 过采样真峰值与前瞻限幅）、
-//! [`stereo`]（声像、淡入淡出、归一化）、[`resample`]（整段 sinc 重采样）、[`align`]（延迟与相位对齐）、[`master`]（母带链）。
+//! For the module overview, see each module's docs: [`biquad`] (RBJ biquad + Butterworth cascade), [`tvlp`] (time-varying low-pass), [`osc`] (polyBLEP oscillators), [`noise`] (colored noise), [`curve`] (keyframes and drift curves), [`reverb`] (synthesized impulse response + FFT block convolution), [`dynamics`] (block RMS follower, activity ducking, glue compression), [`loudness`] (BS.1770-4 integrated loudness / LRA / short-term loudness), [`truepeak`] (4× oversampled true peak and lookahead limiter), [`stereo`] (panning, fades, normalization), [`resample`] (whole-segment sinc resampling), [`align`] (delay and phase alignment), [`master`] (mastering chain).
 
 pub mod align;
 pub mod biquad;
@@ -44,5 +30,5 @@ pub mod tvlp;
 pub use rng::Rng;
 pub use stereo::Stereo;
 
-/// CucCut 音频的缺省采样率。
+/// CucCut audio's default sample rate.
 pub const DEFAULT_RATE: f64 = 48_000.0;

@@ -259,7 +259,7 @@ describe('DeckStore', () => {
     const events: DeckChangeEvent[] = [];
     const stop = watchExternalEdits(store, event => events.push(event));
     try {
-      // 先让监听的初始清单读完，再模拟智能体用临时文件替换页面。
+      // First let the watcher's initial manifest read finish, then simulate the agent replacing the page with a temporary file.
       await new Promise(resolve => setTimeout(resolve, 100));
       const file = path.join(root, 'slides/s01.html');
       const temp = path.join(root, 'slides/.s01.tmp');
@@ -321,7 +321,7 @@ describe('DeckStore', () => {
     const errors: unknown[] = [];
     const events: DeckChangeEvent[] = [];
     const handles: { dir: string; listener: fsSync.WatchListener<string>; watcher: fsSync.FSWatcher; deleted: boolean; closed: boolean }[] = [];
-    // 模拟 Linux：删除后旧 handle 不再收到事件；同名新目录可以复用 dev/ino。
+    // Simulates Linux: after deletion the old handle no longer receives events; a new directory with the same name may reuse dev/ino.
     const originalStat = fsSync.lstatSync;
     const statSpy = vi.spyOn(fsSync, 'lstatSync').mockImplementation(((...args: Parameters<typeof fsSync.lstatSync>) =>
       Object.assign(originalStat(...args)!, { dev: 1, ino: 1 })) as typeof fsSync.lstatSync);

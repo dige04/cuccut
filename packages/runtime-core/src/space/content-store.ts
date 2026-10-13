@@ -6,18 +6,17 @@ import type { ContentSegment, VideoFacts } from './content-extract.ts';
 import { normalizeText } from './content-search.ts';
 
 /**
- * 内容索引的存储（架构设计 §5.11）：`<cache>/content-index/index.db`，一个 SQLite 库（Node 内置的 `node:sqlite`）。
- * 派生缓存：整个文件可以删掉重建；格式版本记在 `user_version`，对不上就删库重建，不迁移。
+ * Storage for the content index (architecture design §5.11): `<cache>/content-index/index.db`, one SQLite database (Node's built-in `node:sqlite`).
+ * A derived cache: the whole file can be deleted and rebuilt. The format version is recorded in `user_version`; on a mismatch the database is deleted and rebuilt, not migrated.
  *
- * - `videos`：每个视频一行（目录的真实路径为主键），记下索引时的版本、修改时间与视频事实（JSON）。
- * - `segment_rows`：可检索的段落（原文、规范化之后的正文与时间、种类、说话人），按目录建索引，换掉一个视频的段落不扫全表。
- * - `segments`：`segment_rows.body` 上的 FTS5 外部内容表（trigram 分词），由触发器同步。三个字符以上的词走 MATCH，
- *   更短的词（常见的两字中文）trigram 用不上，退回 `instr` 子串过滤。候选段落最后都由 `matchTerms` 再核对一遍。
+ * - `videos`: one row per video (keyed by the real path of the directory), recording the version, modification time and video facts (JSON) at indexing time.
+ * - `segment_rows`: searchable segments (original text, normalized body and time, kind, speaker), indexed by directory, so replacing one video's segments does not scan the whole table.
+ * - `segments`: an FTS5 external-content table (trigram tokenizer) over `segment_rows.body`, kept in sync by triggers. Words of three or more characters use MATCH. Shorter words (such as common two-character Chinese words) cannot use the trigram index and fall back to `instr` substring filtering. Candidate segments are always re-checked by `matchTerms` at the end.
  *
- * `DatabaseSync` 是同步的：事务里只做写库，读视频与抽取段落都在事务之外。
+ * `DatabaseSync` is synchronous: inside a transaction only database writes happen; reading videos and extracting segments happens outside the transaction.
  */
 
-/** 库的格式版本（`PRAGMA user_version`）。2：视频事实加了派生来源（`origin`）。 */
+/** Format version of the database (`PRAGMA user_version`). 2: video facts gained the derived source (`origin`). */
 export const STORE_VERSION = 2;
 
 export const STORE_FILE = 'index.db';
@@ -34,7 +33,7 @@ export interface StoredVideo {
 }
 
 export interface SegmentRow extends ContentSegment {
-  /** 写入顺序：同一个视频里时间与种类都相同的段落按它排。 */
+  /** Write order: segments in the same video with the same time and kind are sorted by this. */
   id: number;
   dir: string;
 }
@@ -42,14 +41,14 @@ export interface SegmentRow extends ContentSegment {
 export interface CandidateFilter {
   terms: readonly string[];
   kinds: readonly SpaceSearchDocumentKind[] | null;
-  /** 规范化之后的说话人片段。 */
+  /** Normalized speaker segments. */
   speaker: string | null;
 }
 
-/** 另一个 Runtime（开发态的应用与 CLI 起的 Runtime 共用一个主目录）正在写时等多久。 */
+/** How long to wait while another Runtime (the dev-mode app and the CLI share one home directory) is writing. */
 const BUSY_TIMEOUT_MS = 2_000;
 
-/** trigram 的 MATCH 要求每个词至少三个字符（按码点计）。 */
+/** trigram MATCH requires each word to have at least three characters (counted by code points). */
 const TRIGRAM_MIN = 3;
 
 const SCHEMA = `
@@ -88,8 +87,8 @@ const SCHEMA = `
 `;
 
 /**
- * 词变成 SQL 条件：三个码点以上的合成一个 MATCH 表达式（每个词一个带引号的短语，AND），更短的各用一个 `instr`。
- * 正文与词都已规范化（NFKC、小写），`instr` 就是精确的子串匹配。
+ * Turns words into SQL conditions: words of three or more code points are combined into one MATCH expression (each word a quoted phrase, joined with AND); shorter ones each use an `instr`.
+ * Both the text and the words are already normalized (NFKC, lowercase), so `instr` is an exact substring match.
  */
 export function termClauses(terms: readonly string[]): { match: string | null; short: string[] } {
   const long: string[] = [];
@@ -106,7 +105,7 @@ export class ContentStore {
   #db: DatabaseSync;
   #statements = new Map<string, StatementSync>();
 
-  /** 打开（必要时新建）`<dir>/index.db`；坏掉的、版本不对的库删掉重建。 */
+  /** Opens (creating it if needed) `<dir>/index.db`; a corrupt or wrong-version database is deleted and rebuilt. */
   constructor(dir: string) {
     fs.mkdirSync(dir, { recursive: true });
     this.#file = path.join(dir, STORE_FILE);
@@ -125,11 +124,11 @@ export class ContentStore {
           return db;
         }
       } catch {
-        // 不是 SQLite 库、库损坏：删掉重建。
+        // Not a SQLite database, or the database is corrupt: delete and rebuild.
       }
       db.close();
     } catch {
-      // 打不开：删掉重建。
+      // Cannot open: delete and rebuild.
     }
     removeStore(this.#file);
     const db = new DatabaseSync(this.#file, { timeout: BUSY_TIMEOUT_MS });
@@ -147,7 +146,7 @@ export class ContentStore {
     return statement;
   }
 
-  /** 全部视频的记录；事实或问题的 JSON 读不回的行当作没有（会被重读覆盖）。 */
+  /** Records for all videos. Rows whose facts or problems JSON cannot be read back are treated as absent (and are overwritten by a re-read). */
   videos(): StoredVideo[] {
     const rows = this.#prepare('SELECT * FROM videos').all() as {
       dir: string;
@@ -173,13 +172,13 @@ export class ContentStore {
           problems: JSON.parse(row.problems) as StoredVideo['problems'],
         });
       } catch {
-        // 格式不对：重读时覆盖。
+        // Wrong format: overwrite on re-read.
       }
     }
     return videos;
   }
 
-  /** 换掉一个视频的记录与全部段落（一个事务）。 */
+  /** Replaces one video's record and all its segments (one transaction). */
   replace(video: StoredVideo, segments: readonly ContentSegment[]): void {
     const rows = segments.map((segment) => ({
       segment,
@@ -223,12 +222,12 @@ export class ContentStore {
     });
   }
 
-  /** 版本没变：只记下新的修改时间与名字。 */
+  /** Version unchanged: only records the new modification time and name. */
   touch(dir: string, mtimeMs: number, name: string): void {
     this.#prepare('UPDATE videos SET mtime_ms = ?, name = ? WHERE dir = ?').run(mtimeMs, name, dir);
   }
 
-  /** 删掉这些视频的记录与段落（一个事务）。 */
+  /** Deletes the records and segments of these videos (one transaction). */
   remove(dirs: readonly string[]): void {
     if (dirs.length === 0) return;
     this.#transaction(() => {
@@ -240,8 +239,7 @@ export class ContentStore {
   }
 
   /**
-   * 可能命中的段落：词经 FTS（三个字符以上）或 `instr`（更短的）过滤，再按种类与说话人过滤。结果还要由调用方用
-   * `matchTerms` 核对（trigram 的大小写折叠与 JS 的小写不完全相同，这里只负责缩小范围）。
+   * Possibly matching segments: words are filtered via FTS (three or more characters) or `instr` (shorter ones), then filtered by kind and speaker. The caller must still check the results with `matchTerms`, because trigram case folding is not exactly the same as JS lowercasing; here we only narrow the set.
    */
   candidates(filter: CandidateFilter): SegmentRow[] {
     const { match, short } = termClauses(filter.terms);
@@ -265,7 +263,7 @@ export class ContentStore {
     }
     const sql = `SELECT r.id, r.dir, r.kind, r.document_id, r.language, r.clock, r.start, r."end", r.text, r.speaker
       FROM segment_rows r ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}`;
-    // 条件随查询变化：不进语句缓存。
+    // The conditions vary with the query, so they are not kept in the statement cache.
     const rows = this.#db.prepare(sql).all(...params) as {
       id: number;
       dir: string;
@@ -309,7 +307,7 @@ export class ContentStore {
   }
 }
 
-/** 删掉库文件与 WAL 旁文件（连接要先关上）。 */
+/** Deletes the database file and its WAL side files (the connection must be closed first). */
 export function removeStore(file: string): void {
   for (const suffix of ['', '-wal', '-shm', '-journal']) fs.rmSync(`${file}${suffix}`, { force: true });
 }

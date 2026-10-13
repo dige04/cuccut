@@ -3,38 +3,38 @@ import { applicationOpen } from './job-application.ts';
 import { isTerminal, type StoredJob } from './job-ledger.ts';
 
 /**
- * 重启时的恢复矩阵（架构设计 §7.5）：读账本时按每个任务停在哪里决定怎么处理。这里只做判断，执行在 JobManager。
+ * Recovery matrix at restart (architecture design §7.5): when the ledger is read, each job is handled according to where it stopped. This only decides; execution is in JobManager.
  *
- * | 停在哪里 | 处理 |
+ * | Where it stopped | Handling |
  * | --- | --- |
- * | 排队，还没有被领取（连接、Runtime 或对外服务提交的转写与生成） | 旧的预留释放；重新排队之前重新校验（视频与素材、Provider、授权与预算） |
- * | 排队，智能体提交 | `interrupted`：它的 Run 已经随重启结束，不执行已停止的旧 Run |
- * | 本机或节点在跑，没有恢复能力 | `interrupted`，允许新的尝试（`jobs.reconcile retry` 或重新提交） |
- * | 在线或智能体 Provider 在跑，有可查询的远端任务 ID | 查询远端（`RemoteTaskQuery`）；目前没有 Provider 支持 |
- * | 在线或智能体 Provider 在跑，结果未知、不可查询 | `needs-reconciliation`，预算按保守规则扣，从不自动重发 |
- * | 产物已经发布，应用没有结束 | 复用产物：先按记下的 `commandId` 查回执，没有提交过才重新校验并应用 |
- * | 固定流程的父任务与步骤 | `interrupted`，由 PipelineRunner 自己对账 |
- * | 不经模型的任务（导出、模型安装）、远端节点代执行的、没有视频的转写 | `interrupted`（执行函数或输入文件只在内存里） |
+ * | Queued, not yet claimed (transcription and generation submitted by the connection, the Runtime, or an external service) | The old reservation is released; validate again before re-queuing (video and material, Provider, authorization and budget) |
+ * | Queued, submitted by an agent | `interrupted`: its Run ended with the restart, and an already-stopped old Run is not executed |
+ * | Running on this machine or a node, no recovery capability | `interrupted`, a new attempt allowed (`jobs.reconcile retry` or resubmit) |
+ * | Running on an online or agent Provider, with a queryable remote task ID | Query the remote (`RemoteTaskQuery`); no Provider supports this yet |
+ * | Running on an online or agent Provider, result unknown and not queryable | `needs-reconciliation`, budget deducted under the conservative rule, never automatically re-sent |
+ * | Output published, apply not finished | Reuse the output: look up the receipt by the recorded `commandId` first; only if nothing was committed, validate again and apply |
+ * | Parent job and steps of a fixed pipeline | `interrupted`, reconciled by PipelineRunner itself |
+ * | Jobs not going through a model (export, model install), executed on behalf of a remote node, transcription without video | `interrupted` (the execution function or input file exists only in memory) |
  */
 
 export type RecoveryAction =
-  /** 已经终结，不动。 */
+  /** Already terminal; left alone. */
   | { kind: 'keep' }
-  /** 标为 `interrupted`。 */
+  /** Mark as `interrupted`. */
   | { kind: 'interrupt' }
-  /** 释放旧的预留，校验后重新排队。 */
+  /** Release the old reservation, validate, then re-queue. */
   | { kind: 'requeue' }
-  /** 标为 `needs-reconciliation`。 */
+  /** Mark as `needs-reconciliation`. */
   | { kind: 'reconcile' }
-  /** 查询远端任务。 */
+  /** Query the remote task. */
   | { kind: 'query-remote'; remoteTaskId: string }
-  /** 复用已经发布的产物，补做应用。 */
+  /** Reuse the published output and complete the apply. */
   | { kind: 'resume-application' };
 
 /**
- * 可查询的远端任务（§7.5「云端已提交，有任务 ID」）：Provider 提交之后给出远端任务 ID、记进账本，重启后按它查询。
- * 现有的在线适配器都是一次同步的 HTTP 请求，没有远端任务 ID，也没有实现这个接口；查到 `pending`、`running` 或
- * `succeeded` 时怎样取回结果（续跑）没有定义，这些情况一律转为 `needs-reconciliation`（架构设计 §14）。
+ * A queryable remote task (§7.5 “submitted to the cloud, has a task ID”): after the Provider submits, it returns a remote task ID, which is recorded in the ledger; after restart it is queried by that ID.
+ * The existing online adapters are all single synchronous HTTP requests with no remote task ID, and they do not implement this interface. When the query returns `pending`, `running` or
+ * `succeeded`, how to retrieve the result (resuming) is not defined, so all of these are converted to `needs-reconciliation` (architecture design §14).
  */
 export interface RemoteTaskQuery {
   supports(providerId: string): boolean;
@@ -42,15 +42,15 @@ export interface RemoteTaskQuery {
 }
 
 export type RemoteTaskStatus =
-  /** 远端没有这个任务：请求没有到达。 */
+  /** The remote has no such task: the request never arrived. */
   { status: 'not-found' } | { status: 'failed'; message: string } | { status: 'pending' | 'running' | 'succeeded' };
 
-/** 在线或智能体 Provider（数据外发、可能计费）；本机与节点不是。 */
+/** An online or agent Provider (data leaves the machine, may be billed); local and node are not. */
 export function isExternalProvider(providerId: string): boolean {
   return providerId !== 'local' && !providerId.startsWith('node:');
 }
 
-/** 能不能由 Runtime 重新排队（重启时）或由用户重试（`jobs.reconcile retry`）：有视频的转写与生成任务。 */
+/** Whether the Runtime can re-queue it (at restart) or the user can retry it (`jobs.reconcile retry`): transcription and generation jobs with video. */
 export function retryable(job: StoredJob): boolean {
   const { record, spec } = job;
   if (record.parentJobId != null) return false;
@@ -69,19 +69,19 @@ export function recoveryAction(job: StoredJob, latest: ApplicationRecord | undef
     const agent = record.submitter.kind === 'agent';
     return retryable(job) && !agent ? { kind: 'requeue' } : { kind: 'interrupt' };
   }
-  // 本机与节点的计算没有恢复能力；不能由用户重试的（固定流程的步骤、没有视频的转写、不经模型的任务）也只是中断：
-  // 预算照样按开始与否结算，标成 `needs-reconciliation` 只会留下一条只能放弃的记录。
+  // Local and node computation has no recovery capability. Those the user cannot retry (fixed-pipeline steps, transcription without video, tasks that do not go through a model) are also only interrupted:
+  // budget is still settled by whether they started; marking them `needs-reconciliation` would only leave a record that can only be abandoned.
   if (!isExternalProvider(record.providerId) || !retryable(job)) return { kind: 'interrupt' };
   if (job.remoteTaskId && remote?.supports(record.providerId)) return { kind: 'query-remote', remoteTaskId: job.remoteTaskId };
   return { kind: 'reconcile' };
 }
 
 /**
- * 取消或放弃时的三件事实（§7.4）。`stage`：
- * - `queued`：还没有开始，什么都没有发出；
- * - `running`：正在执行时被停下（`confirmed`：执行者确认停下了，节点会这样回复）；
- * - `after-result`：结果已经拿到、只是没有应用（停止屏障拦下了自动应用）；
- * - `unknown`：放弃一个结果不明的外发调用（`jobs.reconcile discard`）。
+ * The three facts when cancelling or abandoning (§7.4). `stage`:
+ * - `queued`: not started yet, nothing was sent;
+ * - `running`: stopped while executing (`confirmed`: the executor confirmed the stop; a node replies this way);
+ * - `after-result`: the result was obtained but not applied (the stop barrier blocked auto-apply);
+ * - `unknown`: abandoning an outbound call with an unknown result (`jobs.reconcile discard`).
  */
 export function cancellationFacts(
   record: Pick<JobRecord, 'providerId'>,
@@ -100,7 +100,7 @@ export function cancellationFacts(
       break;
     case 'running':
       if (external) {
-        // 断开 HTTP 请求不等于供应商停下：请求可能仍在远端完成并计费。
+        // Dropping the HTTP request does not mean the vendor has stopped: the request may still complete remotely and be billed.
         remote = 'cancel-unsupported';
         cost = 'possible';
       } else remote = node ? (options.confirmed ? 'cancelled' : 'unknown') : 'not-applicable';

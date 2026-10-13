@@ -1,17 +1,15 @@
-// 预览播放的端到端基准（`npm run bench:preview`，开发流程 §2 的可选检查）：真正的界面（渲染进程的生产构建，`file://`）
-// 在 Electron 的隐藏窗口里连上隔离的 Runtime，打开视频，停着时拖几下播放头，再按「播放」放一段，报出画上去的帧率、
-// 掉了的帧、长任务、每个 tick 的主线程时间、媒体元素与计划的偏差、首次播放与拖动的响应。
+// End-to-end benchmark for preview playback (`npm run bench:preview`, an optional check in development flow §2): the real UI (the renderer's production build, `file://`)
+// connects in an Electron hidden window to an isolated Runtime, opens a video, drags the playhead a few times while stopped, then presses Play and plays a stretch, reporting the displayed frame rate, dropped frames, long tasks, main-thread time per tick, the deviation of the media elements from the schedule, and the response time of first play and of scrubbing.
 //
-// 同一个文件两种身份：用 node 运行时准备临时目录（Home、项目、下载、Electron 数据），起隔离的 Runtime
-// （`preview-bench-runtime.mts`：不注册智能体、不碰钥匙串、不发现局域网节点），启动 Electron 并看住总时限；
-// Electron 以它为主进程时开隐藏窗口跑基准。页面只放行 file:、data:、blob: 与回环地址上的 Runtime，其余请求一律拦下（不联网）。
+// The same file has two roles. Run with node, it prepares the temp directories (Home, projects, downloads, Electron data), starts the isolated Runtime
+// (`preview-bench-runtime.mts`: no agents registered, no keychain access, no LAN node discovery), launches Electron and enforces an overall time limit. When Electron runs it as the main process, it opens the hidden window and runs the benchmark. The page only allows file:, data:, blob: and the Runtime on loopback addresses; all other requests are blocked (no network).
 //
-// 场景：缺省是 ffmpeg 生成的合成素材（1080p 30 fps、1080p 60 fps、竖屏 9:16，各带中英两条字幕）；
-// `--video <视频目录>`（可多次）量本机的视频：复制一份进临时的项目目录再开，链接的素材只读。
-// 用法：node apps/desktop/tools/preview-bench.mjs [--video <目录>]... [--at <秒>] [--seconds 10] [--window 1440x900]
-//       [--dpr 2] [--json <输出文件>] [--screenshots <目录>]（每个场景放完截一张窗口，核对预览的大小与画面）
-// 环境：CUCCUT_ENGINE_HOST（缺省是 CARGO_TARGET_DIR 或仓库 target 下的 debug/engine-host），CUCCUT_FFMPEG / CUCCUT_FFPROBE。
-// 退出码：0 跑完，1 有场景失败，2 超时或起不来。
+// Scenarios: by default, ffmpeg-generated synthetic media (1080p 30 fps, 1080p 60 fps, portrait 9:16, each with Chinese and English captions);
+// `--video <video directory>` (repeatable) measures local videos: it copies one into a temp project directory before opening it; linked media is read-only.
+// Usage: node apps/desktop/tools/preview-bench.mjs [--video <dir>]... [--at <seconds>] [--seconds 10] [--window 1440x900]
+//        [--dpr 2] [--json <output file>] [--screenshots <dir>] (screenshots the window after each scenario to check the preview's size and picture)
+// Environment: CUCCUT_ENGINE_HOST (defaults to CARGO_TARGET_DIR, or debug/engine-host under the repo's target), CUCCUT_FFMPEG / CUCCUT_FFPROBE.
+// Exit codes: 0 finished, 1 a scenario failed, 2 timed out or failed to start.
 
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, loadavg, tmpdir } from 'node:os';
@@ -21,11 +19,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '../out');
 const ROOT = resolve(HERE, '../../..');
-/** 每个场景（打开、拖动、播放）在 Electron 里的时限；外面按场景数再多给一些。 */
+/** The time limit for each scenario (open, scrub, play) in Electron; the outer limit allows some extra time on top of the number of scenarios. */
 const SCENE_TIMEOUT_MS = 120_000;
 const OPEN_TIMEOUT_MS = 60_000;
 
-// 不在顶层 await：ESM 的主进程模块求值完之前 Electron 不发 ready，在顶层等 ready 会卡死。
+// No top-level await: Electron does not emit ready until the ESM main-process module has finished evaluating, so waiting for ready at the top level would deadlock.
 (process.versions.electron ? bench() : launch()).catch((error) => {
   console.error(error);
   process.exit(2);
@@ -49,14 +47,14 @@ function parseOptions(argv) {
   return options;
 }
 
-/** 合成素材：测试图案 + 正弦音，12 秒。 */
+/** Synthetic media: a test pattern plus a sine tone, 12 seconds. */
 const SYNTHETIC = [
   { name: '合成 1080p30 + 双语字幕', width: 1920, height: 1080, fps: 30 },
   { name: '合成 1080p60 + 双语字幕', width: 1920, height: 1080, fps: 60 },
   { name: '合成 9比16 + 双语字幕', width: 1080, height: 1920, fps: 30 },
 ];
 
-/** node 一侧：临时目录、素材、隔离的 Runtime，启动 Electron，超时就杀掉，结束后停 Runtime、删掉临时目录。 */
+/** Node side: the temp directories, the media, and the isolated Runtime; starts Electron, kills it on timeout, and after finishing stops the Runtime and deletes the temp directories. */
 async function launch() {
   const options = parseOptions(process.argv.slice(2));
   for (const file of ['renderer/index.html', 'preload/index.js']) {
@@ -84,7 +82,7 @@ async function launch() {
   const project = join(dirs.projects, 'bench');
   mkdirSync(project);
 
-  // 本机的视频复制一份进项目目录（视频目录只有数据库与小文件，链接的素材只读、不复制）。
+  // A local video is copied once into the project directory (the video directory holds only a database and small files; linked media is read-only and is not copied).
   const copied = options.videos.map((dir) => {
     cpSync(dir, join(project, basename(dir)), { recursive: true });
     return { name: basename(dir), path: basename(dir) };
@@ -109,7 +107,7 @@ async function launch() {
     CUCCUT_PROJECTS_DIR: dirs.projects,
     CUCCUT_DOWNLOADS_DIR: dirs.downloads,
     CUCCUT_ENGINE_HOST: engineHost,
-    // 不经登录 shell 找 PATH（不跑 shell 配置）：ffprobe / ffmpeg 用当前 PATH 或 CUCCUT_FFPROBE / CUCCUT_FFMPEG。
+    // Find PATH without a login shell (shell config is not run): ffprobe / ffmpeg use the current PATH or CUCCUT_FFPROBE / CUCCUT_FFMPEG.
     SHELL: '/usr/bin/false',
   };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -131,13 +129,13 @@ async function launch() {
           done(message);
         }
       } catch {
-        // 不是就绪消息，忽略。
+        // Not the ready message; ignore it.
       }
     });
   });
   const cleanup = () => {
     runtime.kill('SIGTERM');
-    // Runtime 收到信号之后还会写几下：删到一半目录又不空，过一会儿再删。
+    // The Runtime still writes a few more things after receiving a signal: the directory is not empty yet after deleting, so delete it again a little later.
     rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   };
   if (!ready) {
@@ -180,7 +178,7 @@ async function launch() {
   process.exit(code);
 }
 
-/** Electron 一侧：隐藏窗口以 file:// 打开产物，答 Runtime 的连接，逐个场景调基准入口。 */
+/** Electron side: the hidden window opens the build output via file://, answers the Runtime's connection, and calls the benchmark entry for each scenario in turn. */
 async function bench() {
   const { app, BrowserWindow, ipcMain, session } = await import('electron');
   const temp = process.argv.find((arg) => arg.startsWith('--cuccut-temp='))?.slice('--cuccut-temp='.length);
@@ -210,7 +208,7 @@ async function bench() {
     if (!local) blocked.push(details.url);
     callback({ cancel: !local });
   });
-  // Runtime 的连接从隔离 Home 的发现文件读（与桌面端主进程同一个来源）；不查更新。
+  // The Runtime connection is read from the discovery file in the isolated Home (the same source as the desktop main process); updates are not checked.
   ipcMain.handle('cuccut:connection', () => {
     const discovery = JSON.parse(readFileSync(join(job.home, 'runtime.json'), 'utf8'));
     return { endpoint: discovery.endpoint, token: discovery.token };

@@ -14,7 +14,7 @@ import { pl } from './inspector-copy.pl.ts';
 import { tr } from './inspector-copy.tr.ts';
 import { vi } from './inspector-copy.vi.ts';
 
-/** 属性页（检查器）的文案：元素页、彩纸、文字样式、片段页公共几节、转场与控件。译文在 `inspector-copy.zh-Hans.ts`。 */
+/** Copy for the properties page (inspector): element page, confetti, text style, the shared sections of the clip page, transition and controls. Translations are in `inspector-copy.zh-Hans.ts`. */
 const en = {
   text: 'Text',
   style: 'Style',

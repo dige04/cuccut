@@ -3,13 +3,12 @@ import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { bundledPackageDirs, thirdPartyLicenses } from './licenses.mjs';
 
-/** build.mjs 第 1 步的产物（packages/design-runtime/src/generated/）。 */
+/** Output of build.mjs step 1 (packages/design-runtime/src/generated/). */
 const generated = resolve(import.meta.dirname, '../../packages/design-runtime/src/generated');
 
 /**
- * 画板运行时与快速编辑 Worker 按原页面的布局放在 artifact-type/ 下，页面模板的 dc-runtime-file / fast-edit-worker-file
- * 指向这里（相对页面地址）。运行时把 artifact-type/ 下的路径当作编辑器自己的文件，不当作设计稿的文件。
- * Babel standalone 也放在这里（dc-babel-file，CucCut 加的）：原版从 CDN 按需加载，CucCut 的 CSP 不放行 CDN。
+ * The canvas runtime and the fast-edit Worker are placed under artifact-type/ following the original page's layout; the page template's dc-runtime-file / fast-edit-worker-file point here (relative to the page URL). The runtime treats paths under artifact-type/ as the editor's own files, not the design's files.
+ * Babel standalone is also placed here (dc-babel-file, added by CucCut): the original loads it on demand from a CDN, and CucCut's CSP does not allow the CDN.
  */
 function designRuntimeFiles(): Plugin {
   return {
@@ -23,7 +22,7 @@ function designRuntimeFiles(): Plugin {
   };
 }
 
-/** 页面与上面两个文件打进去的第三方代码的原始许可，放在产物根目录的 third-party-licenses.txt。 */
+/** Original licenses for the third-party code bundled into the page and the two files above, placed in third-party-licenses.txt at the output root. */
 function editorLicenses(): Plugin {
   return {
     name: 'cuccut-design-editor-licenses',
@@ -37,8 +36,8 @@ function editorLicenses(): Plugin {
 }
 
 /**
- * 设计稿编辑器页面（docs/design/canvas §3、§5）：由 Runtime 在 `/design/<grant>/` 下提供，所以资源用相对地址。
- * 运行时是工作区里的 @cuccut/design-runtime，页面模板是本目录的 index.html。
+ * Design editor page (docs/design/canvas §3, §5): served by the Runtime under `/design/<grant>/`, so resources use relative URLs.
+ * The runtime is @cuccut/design-runtime in the workspace; the page template is index.html in this directory.
  */
 export default defineConfig({
   root: import.meta.dirname,
@@ -48,10 +47,10 @@ export default defineConfig({
     target: 'es2022',
     outDir: resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
-    // 运行时本身就是一个大包（React、画布与属性编辑、导出），还以文本内嵌了画板运行时与注入脚本
+    // The runtime is itself one large bundle (React, the canvas and property editing, export), and it also embeds the canvas runtime and the injected script as text
     chunkSizeWarningLimit: 16000,
     rollupOptions: {
-      // @base-ui 等依赖带 "use client" 指令，打成单包时 Rollup 会逐个警告，这里没有意义。
+      // Dependencies such as @base-ui carry a "use client" directive, so Rollup warns about each one when bundling into a single package; those warnings are meaningless here.
       onwarn(warning, warn) {
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE') return;
         warn(warning);

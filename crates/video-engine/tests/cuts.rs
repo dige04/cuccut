@@ -1,5 +1,5 @@
-//! 口播剪口（视频格式规范 §6.6、§6.7、§3.16）：`addCuts` 改剪口集合并按新的保留区间重排实例，`follow-cuts` 的实例
-//! 跟着移动、缩短或删掉；`restoreCut` 是新的事务，在接缝处放回。数值取 §6.6 的复算例：12 秒、30 fps，删去源 [4, 6)。
+//! Spoken-word cuts (video format spec §6.6, §6.7, §3.16): `addCuts` changes the cut set and rearranges the instances against the new kept intervals; instances with `follow-cuts` move, shorten, or get deleted with them;
+//! `restoreCut` is a new transaction that puts the material back at the seam. The figures are the recalculated example from §6.6: 12 seconds, 30 fps, with source [4, 6) removed.
 
 #![allow(clippy::result_large_err)]
 
@@ -66,7 +66,7 @@ fn track(video: &Video, name: &str) -> String {
         .unwrap()
 }
 
-/// 12 秒 30 fps 的视频，没有声音（音频实例照样可以引用它：引擎只核对素材种类）。
+/// A 12-second, 30 fps video with no sound (audio instances can still reference it: the engine checks only the asset kind).
 fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
     let dir = tempfile::tempdir().ok()?;
     let path = dir.path().join("talk.mp4");
@@ -92,7 +92,7 @@ fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
     Some((dir, path))
 }
 
-/// 序列上的帧区间 `[from, to)`。
+/// A frame interval `[from, to)` on the sequence.
 fn frames_of(video: &Video, id: &str) -> (i64, i64) {
     let s = &video.state().root_sequence_id;
     let (a, b) = video.state().item_range(&video.state().items[id].value, s).unwrap();
@@ -114,7 +114,7 @@ fn source_in(video: &Video, id: &str) -> f64 {
     source_in.to_ratio("sourceIn").unwrap().to_f64()
 }
 
-/// 序列上播放素材的实例，按起点、轨道排。
+/// Instances on the sequence that play assets, sorted by start and track.
 fn asset_items(video: &Video, asset: &str) -> Vec<(String, String, (i64, i64))> {
     let mut out: Vec<(String, String, (i64, i64))> = video
         .state()
@@ -146,15 +146,15 @@ struct Setup {
     asset: String,
     picture: String,
     sound: String,
-    /// 片头，`sequence-fixed`：[0, 30)。
+    /// The intro, `sequence-fixed`: [0, 30).
     title: String,
-    /// 跨过剪口：[90, 210)。
+    /// Crosses a cut: [90, 210).
     spanning: String,
-    /// 整个落在剪口里：[130, 170)。
+    /// Entirely inside a cut: [130, 170).
     inside: String,
-    /// 起点落在剪口里：[150, 240)。
+    /// Starts inside a cut: [150, 240).
     pushed: String,
-    /// 源 [8.2, 9.0)：[246, 270)。
+    /// Source [8.2, 9.0): [246, 270).
     after: String,
     _media: tempfile::TempDir,
     _dir: tempfile::TempDir,
@@ -276,7 +276,7 @@ fn cutting_relays_the_scope_and_moves_followers() {
     assert_eq!(impact.removed_by_cuts, vec![t.inside.clone()]);
     assert!(committed.receipt.deleted_ids.contains(&t.inside));
 
-    // 剪口集合的实例：音画都在 4 秒处拆开，右段从源 6 秒开始。
+    // An instance in the cut set: audio and picture are both split at 4 seconds, and the right segment starts at source 6 seconds.
     let items = asset_items(&t.video, &t.asset);
     let ranges: Vec<(i64, i64)> = items.iter().map(|i| i.2).collect();
     assert_eq!(ranges, vec![(0, 120), (0, 120), (120, 300), (120, 300)]);
@@ -288,11 +288,11 @@ fn cutting_relays_the_scope_and_moves_followers() {
         }
     }
 
-    // follow-cuts：源 [8.2, 9.0) 落到 [6.2, 7.0) = 帧 [186, 210)；跨过的只缩短；起点落进去的推到剪口终点再前移。
+    // follow-cuts: source [8.2, 9.0) maps to [6.2, 7.0) = frames [186, 210); those that cross are only shortened; those whose start falls inside are pushed to the cut's end and then shifted earlier.
     assert_eq!(frames_of(&t.video, &t.after), (186, 210));
     assert_eq!(frames_of(&t.video, &t.spanning), (90, 150));
     assert_eq!(frames_of(&t.video, &t.pushed), (120, 180));
-    // sequence-fixed 不动。
+    // sequence-fixed does not move.
     assert_eq!(frames_of(&t.video, &t.title), (0, 30));
 
     let (_, revision, body) = cut_set(&t.video, &t.asset).unwrap();
@@ -309,7 +309,7 @@ fn cutting_relays_the_scope_and_moves_followers() {
     assert_eq!(scope.len(), 4);
     assert!(scope.iter().all(|id| t.video.state().items.contains_key(id)));
 
-    // 新建的、按时刻放置的实例缺省 follow-cuts（有没有剪口集合都一样）。
+    // A newly created, time-placed instance defaults to follow-cuts (whether or not there is a cut set).
     let s = t.video.state().root_sequence_id.clone();
     let g2 = t
         .video
@@ -340,7 +340,7 @@ fn items_default_to_following_cuts_before_any_cut_exists() {
     let Some(mut t) = setup() else { return };
     let s = t.video.state().root_sequence_id.clone();
     let g2 = t.video.state().items[&t.inside].value.base().track_id.clone();
-    // 还没有剪口集合：不写 followPolicy 的实例缺省 follow-cuts；显式改成 sequence-fixed 的不跟。
+    // No cut set yet: instances without a followPolicy default to follow-cuts; one explicitly changed to sequence-fixed does not follow.
     let added = apply(
         &mut t.video,
         "cmd_new",
@@ -380,7 +380,7 @@ fn items_default_to_following_cuts_before_any_cut_exists() {
     assert_eq!(frames_of(&t.video, &follower), (186, 210));
     assert_eq!(frames_of(&t.video, &fixed), (300, 330));
 
-    // 跟随策略的写法照常核对。
+    // The way the follow policy is written is still checked as usual.
     let err = apply(
         &mut t.video,
         "cmd_bad",
@@ -403,16 +403,16 @@ fn restoring_is_a_new_transaction_that_puts_the_range_back() {
     assert_eq!((impact.old_duration_frames, impact.new_duration_frames), (300, 360));
     assert!(impact.cuts_not_relaid.is_empty());
 
-    // 两段接回原来的一段（留下靠前那件的 ID）。
+    // Two pieces rejoined into the original one (the ID of the earlier piece is kept).
     let ranges: Vec<(String, (i64, i64))> = asset_items(&t.video, &t.asset).into_iter().map(|i| (i.1, i.2)).collect();
     assert_eq!(ranges.len(), 2);
     assert!(ranges.contains(&(t.picture.clone(), (0, 360))));
     assert!(ranges.contains(&(t.sound.clone(), (0, 360))));
-    // follow-cuts 按恢复之后的时间线：之后的后移回原处；跨过接缝的延长；起点正在接缝上的后移。
+    // follow-cuts uses the timeline after the restore: later instances move back to their original places; one that crosses the seam is extended; one whose start is on the seam moves back.
     assert_eq!(frames_of(&t.video, &t.after), (246, 270));
     assert_eq!(frames_of(&t.video, &t.spanning), (90, 210));
     assert_eq!(frames_of(&t.video, &t.pushed), (180, 240));
-    // 被剪口删掉的实例不从旧快照里回来。
+    // An instance deleted by a cut does not come back from the old snapshot.
     assert!(!t.video.state().items.contains_key(&t.inside));
 
     let (same_doc, revision, body) = cut_set(&t.video, &t.asset).unwrap();
@@ -421,7 +421,7 @@ fn restoring_is_a_new_transaction_that_puts_the_range_back() {
     let scope: Vec<String> = serde_json::from_value(body["scopeItemIds"].clone()).unwrap();
     assert_eq!(scope.len(), 2);
 
-    // 剪口已经恢复过：再恢复一次找不到。
+    // The cut has already been restored: restoring it again finds nothing.
     let err = restore(&mut t.video, "cmd_again", &t.asset, &cut_id).unwrap_err();
     assert_eq!(err.code, "ENTITY_NOT_FOUND");
 }
@@ -431,7 +431,7 @@ fn close_cuts_merge_keeping_the_earlier_id_and_exact_ticks() {
     let Some(mut t) = setup() else { return };
     add_cuts(&mut t.video, "cmd_first", &t.asset, json!([{ "from": "4", "to": "6", "ref": "a" }])).unwrap();
     let first = cut_set(&t.video, &t.asset).unwrap().2["cuts"][0]["id"].clone();
-    // 间隔恰好 0.02 秒：在精确时刻上比较，并成一个。
+    // A gap of exactly 0.02 seconds: compared at exact times and merged into one.
     let merged = add_cuts(
         &mut t.video,
         "cmd_second",
@@ -448,10 +448,10 @@ fn close_cuts_merge_keeping_the_earlier_id_and_exact_ticks() {
         (&cuts[0]["t0"], &cuts[0]["t1"], &body["timescale"]),
         (&json!("4"), &json!("7"), &json!(1))
     );
-    // 这次只删掉新的源区间 [6, 7)：一秒。
+    // This time only the new source interval [6, 7) is deleted: one second.
     assert_eq!(merged.receipt.impact.new_duration_frames, 270);
 
-    // timescale 取能精确表示全部剪口的值。
+    // The timescale is chosen so that it can represent all the cuts exactly.
     add_cuts(&mut t.video, "cmd_third", &t.asset, json!([{ "from": "0.5", "to": "1.25" }])).unwrap();
     let body = cut_set(&t.video, &t.asset).unwrap().2;
     assert_eq!(body["timescale"], 4);
@@ -482,7 +482,7 @@ fn cuts_are_rejected_whole_and_change_nothing() {
             err.code
         );
     }
-    // 要跟着移动的实例锁着：整笔拒绝，不跳过。
+    // An instance that must move along is locked: the whole transaction is rejected, not skipped.
     let s = t.video.state().root_sequence_id.clone();
     apply(
         &mut t.video,
@@ -501,7 +501,7 @@ fn cuts_are_rejected_whole_and_change_nothing() {
     let err = restore(&mut t.video, "cmd_no_set", &t.asset, "cut_missing").unwrap_err();
     assert_eq!(err.code, "ENTITY_NOT_FOUND");
 
-    // putDocument 写剪口集合时同样核对：重叠的剪口拒绝。
+    // putDocument checks the cut set when writing it too: overlapping cuts are rejected.
     let body = json!({ "schema": "cuccut.cut-set/1", "timescale": 1, "clock": "source-asset", "scopeItemIds": [],
                        "cuts": [{ "id": "a", "t0": "1", "t1": "3" }, { "id": "b", "t0": "2", "t1": "4" }] });
     let err = apply(
@@ -516,7 +516,7 @@ fn cuts_are_rejected_whole_and_change_nothing() {
 #[test]
 fn misaligned_sound_and_picture_are_rejected() {
     let Some(mut t) = setup() else { return };
-    // 声音比画面晚半秒：同一个剪口在两条轨道上映射成部分重叠的区间。
+    // Audio is half a second later than picture: the same cut maps to partly overlapping intervals on the two tracks.
     let s = t.video.state().root_sequence_id.clone();
     apply(
         &mut t.video,
@@ -550,7 +550,7 @@ fn undo_reverts_the_layout_and_the_next_revision_is_fresh() {
         vec![(0, 120), (0, 120), (120, 300), (120, 300)]
     );
     assert_eq!(frames_of(&t.video, &t.after), (186, 210));
-    // 撤销掉的版本号不复用。
+    // Undone version numbers are not reused.
     add_cuts(&mut t.video, "cmd_third", &t.asset, json!([{ "from": "10", "to": "11" }])).unwrap();
     assert_eq!(cut_set(&t.video, &t.asset).unwrap().1, "3");
 }
@@ -571,11 +571,11 @@ fn restoring_at_an_item_edge_extends_it_to_the_cut_boundary() {
         vec![(0, 240), (0, 240)]
     );
     assert_eq!(source_in(&t.video, &t.picture), 2.0);
-    // 剪口在实例开头：放回时实例往前延长到剪口起点，之后的内容后移。
+    // A cut at the start of an instance: when restored, the instance is extended forward to the cut's start, and the content after it shifts back.
     restore(&mut t.video, "cmd_head", &t.asset, cuts[0]["id"].as_str().unwrap()).unwrap();
     assert_eq!(frames_of(&t.video, &t.picture), (0, 300));
     assert_eq!(source_in(&t.video, &t.picture), 0.0);
-    // 剪口在实例末尾：往后延长到剪口终点。
+    // A cut at the end of an instance: extended back to the cut's end.
     restore(&mut t.video, "cmd_tail", &t.asset, cuts[1]["id"].as_str().unwrap()).unwrap();
     assert_eq!(frames_of(&t.video, &t.picture), (0, 360));
     assert_eq!(frames_of(&t.video, &t.sound), (0, 360));
@@ -604,7 +604,7 @@ fn a_cut_without_a_seam_is_restored_in_the_set_only() {
     assert!(cut_set(&t.video, &t.asset).unwrap().2["cuts"].as_array().unwrap().is_empty());
 }
 
-// ---- 章节（§3.13 的例外、§6.7）：应用与恢复剪口时跟着内容走 ----
+// ---- Chapters (an exception to §3.13, §6.7): move with the content when cuts are applied and restored ----
 
 fn set_chapters(video: &mut Video, starts: &[(&str, i64)]) {
     let s = video.state().root_sequence_id.clone();
@@ -620,7 +620,7 @@ fn set_chapters(video: &mut Video, starts: &[(&str, i64)]) {
     .unwrap();
 }
 
-/// 章节的标题与开始帧，按帧排。
+/// Chapter titles and start frames, sorted by frame.
 fn chapters(video: &Video) -> Vec<(String, i64)> {
     let mut out: Vec<(String, i64)> = video
         .state()
@@ -651,8 +651,8 @@ fn chapters_follow_cuts_and_restores() {
     let Some(mut t) = setup() else { return };
     let start = [("开场", 0), ("一", 120), ("二", 150), ("三", 200), ("四", 250), ("五", 300)];
     set_chapters(&mut t.video, &start);
-    // 源 [4, 6) 与 [8, 9) 落在帧 [120, 180) 与 [240, 270)：段后的章前移；「一」「二」都落到段首，留起点最晚的「二」，
-    // 整章都剪掉的「一」删掉；段里的「四」回到段首。
+    // Source [4, 6) and [8, 9) fall at frames [120, 180) and [240, 270): the chapter after the segment moves forward; “One” and “Two” both fall to the start of the segment, keeping “Two”, the one that starts latest;
+    // “One”, whose whole chapter is cut, is deleted; “Four”, inside the segment, returns to the start of the segment.
     let cut = add_cuts(
         &mut t.video,
         "cmd_cut",
@@ -662,7 +662,7 @@ fn chapters_follow_cuts_and_restores() {
     .unwrap();
     let after_cut = owned(&[("开场", 0), ("二", 120), ("三", 140), ("四", 180), ("五", 210)]);
     assert_eq!(chapters(&t.video), after_cut);
-    // 一步撤销：章节与实例一起回去。
+    // One-step undo: the chapters and instances come back together.
     undo(&mut t.video, "cmd_undo", &cut);
     assert_eq!(chapters(&t.video), owned(&start));
 
@@ -675,7 +675,7 @@ fn chapters_follow_cuts_and_restores() {
     .unwrap();
     assert_eq!(chapters(&t.video), after_cut);
     let ids = cut_ids(&t.video, &t.asset);
-    // 恢复：接缝之后的章后移；正在接缝上的不动（原来在段里的「四」「二」回不到段里）。
+    // Restore: chapters after the seam move back; those on the seam itself do not move (“Four” and “Two”, which were inside the segment, do not return inside it).
     restore(&mut t.video, "cmd_restore_late", &t.asset, &ids[1]).unwrap();
     assert_eq!(
         chapters(&t.video),
@@ -705,7 +705,7 @@ fn retiming_a_cut_moves_chapters_by_the_difference() {
     set_chapters(&mut t.video, &[("开场", 0), ("正文", 240)]);
     add_cuts(&mut t.video, "cmd_cut", &t.asset, json!([{ "from": "4", "to": "6" }])).unwrap();
     assert_eq!(chapters(&t.video), owned(&[("开场", 0), ("正文", 180)]));
-    // 文稿里拖短剪口：一笔事务里先恢复、再剪新的范围，章只差剪短的那 30 帧。
+    // Shortening a cut in the script: within one transaction, restore first, then cut the new range; the chapter differs only by the 30 frames that are cut shorter.
     let id = cut_ids(&t.video, &t.asset).remove(0);
     let s = t.video.state().root_sequence_id.clone();
     apply(
@@ -720,9 +720,9 @@ fn retiming_a_cut_moves_chapters_by_the_difference() {
     assert_eq!(chapters(&t.video), owned(&[("开场", 0), ("正文", 210)]));
 }
 
-// ---- 语义锚（§3.16 的 speech-anchor）：按与按文稿闪避相同的词投影求值，剪口之后重新摆放 ----
+// ---- Semantic anchors (§3.16 speech-anchor): evaluated by projecting the same words used for script-driven ducking, and placed again after cuts ----
 
-/// 素材的转写：毫秒刻度。w2 在剪口 [4, 6) 里，w3、w4 在剪口之后，句子 s1 是 w3–w4。返回文档与一条新的画面轨道。
+/// The asset's transcript, in milliseconds. w2 is inside cut [4, 6); w3 and w4 are after the cut; sentence s1 is w3–w4. Returns the document and a new picture track.
 fn speech(t: &mut Setup) -> (String, String) {
     let body = json!({
         "schema": "cuccut.speech/1", "clock": "source-asset", "timescale": 1000, "engine": null, "speakers": [],
@@ -768,7 +768,7 @@ fn anchored(t: &mut Setup, command_id: &str, track: &str, span: (i64, i64), poli
 fn speech_anchors_follow_the_words_through_cuts_and_restores() {
     let Some(mut t) = setup() else { return };
     let (doc, g4) = speech(&mut t);
-    // 写入时就按锚点摆放：w3 是源 [7.0, 7.6) = 帧 [210, 228)；给的区间不算数。
+    // Placed by the anchor at write time: w3 is source [7.0, 7.6) = frames [210, 228); the interval given does not count.
     let created = anchored(
         &mut t,
         "cmd_anchor",
@@ -781,19 +781,19 @@ fn speech_anchors_follow_the_words_through_cuts_and_restores() {
     assert_eq!(frames_of(&t.video, &text), (210, 228));
     assert!(created.receipt.impact.orphaned_anchors.is_empty());
 
-    // 剪掉源 [4, 6)：词前移 2 秒。
+    // Cut source [4, 6): the words move forward 2 seconds.
     let cut = add_cuts(&mut t.video, "cmd_cut", &t.asset, json!([{ "from": "4", "to": "6" }])).unwrap();
     assert_eq!(frames_of(&t.video, &text), (150, 168));
     assert!(cut.receipt.impact.orphaned_anchors.is_empty());
     assert!(t.video.orphaned_anchors().unwrap().is_empty());
 
-    // 恢复：回到原处。
+    // Restore: back to the original place.
     let (_, _, body) = cut_set(&t.video, &t.asset).unwrap();
     let cut_id = body["cuts"][0]["id"].as_str().unwrap().to_string();
     let restored = restore(&mut t.video, "cmd_restore", &t.asset, &cut_id).unwrap();
     assert_eq!(frames_of(&t.video, &text), (210, 228));
 
-    // 撤销恢复与剪口：位置跟着时间线回去。
+    // Undo the restore and the cut: the positions go back along with the timeline.
     undo(&mut t.video, "cmd_undo_restore", &restored);
     assert_eq!(frames_of(&t.video, &text), (150, 168));
     undo(&mut t.video, "cmd_undo_cut", &cut);
@@ -804,7 +804,7 @@ fn speech_anchors_follow_the_words_through_cuts_and_restores() {
 fn a_cut_away_word_orphans_the_item_in_place() {
     let Some(mut t) = setup() else { return };
     let (doc, g4) = speech(&mut t);
-    // w2 是源 [4.5, 5.0) = 帧 [135, 150)。
+    // w2 is source [4.5, 5.0) = frames [135, 150).
     let created = anchored(
         &mut t,
         "cmd_anchor",
@@ -817,7 +817,7 @@ fn a_cut_away_word_orphans_the_item_in_place() {
     assert_eq!(frames_of(&t.video, &gone), (135, 150));
 
     let cut = add_cuts(&mut t.video, "cmd_cut", &t.asset, json!([{ "from": "4", "to": "6" }])).unwrap();
-    // 留在原来的位置，列为 orphaned：回执与现算的状态。
+    // Stays at its original position and is listed as orphaned: the receipt and the state computed now.
     assert_eq!(frames_of(&t.video, &gone), (135, 150));
     assert_eq!(cut.receipt.impact.orphaned_anchors, vec![gone.clone()]);
     let orphaned = t.video.orphaned_anchors().unwrap();
@@ -826,7 +826,7 @@ fn a_cut_away_word_orphans_the_item_in_place() {
         (orphaned[0].item_id.as_str(), orphaned[0].reason.as_str()),
         (gone.as_str(), "word-anchor-cut")
     );
-    // 之后无关的编辑照常提交，实例仍列为 orphaned。
+    // Later unrelated edits are committed as usual; the instance is still listed as orphaned.
     let s = t.video.state().root_sequence_id.clone();
     let later = apply(
         &mut t.video,
@@ -843,7 +843,7 @@ fn a_word_played_twice_needs_an_occurrence() {
     let Some(mut t) = setup() else { return };
     let (doc, g4) = speech(&mut t);
     let policy = json!({ "kind": "speech-anchor", "start": word(&doc, "w3", "start"), "end": word(&doc, "w3", "end") });
-    // 先写下的锚点：之后时间线上出现第二处，只列为 orphaned，不拒绝那笔编辑。
+    // An anchor written earlier: a second occurrence appears on the timeline later; it is only listed as orphaned, and that edit is not rejected.
     let first = anchored(&mut t, "cmd_first", &g4, (0, 10), policy.clone())
         .unwrap()
         .receipt
@@ -865,12 +865,12 @@ fn a_word_played_twice_needs_an_occurrence() {
     assert_eq!(again.receipt.impact.orphaned_anchors, vec![first.clone()]);
     assert_eq!(frames_of(&t.video, &first), (210, 228));
 
-    // 这笔事务里写下的锚点有歧义：整笔拒绝。
+    // An anchor written in this transaction is ambiguous: the whole transaction is rejected.
     let err = anchored(&mut t, "cmd_ambiguous", &g4, (300, 310), policy).unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
     assert_eq!(err.details["rule"], "word-anchor-ambiguous");
 
-    // occurrenceId 指明第二处：摆到 360 + 210。
+    // occurrenceId names the second occurrence: placed at 360 + 210.
     let mut start = word(&doc, "w3", "start");
     start["occurrenceId"] = json!(second);
     let mut end = word(&doc, "w3", "end");
@@ -890,7 +890,7 @@ fn a_word_played_twice_needs_an_occurrence() {
 fn one_sided_sentence_offset_and_blocked_anchors() {
     let Some(mut t) = setup() else { return };
     let (doc, g4) = speech(&mut t);
-    // 只有终点：起点不动，终点是 w3 的结尾（帧 228）。
+    // Only an end: the start does not move; the end is the end of w3 (frame 228).
     let end_only = anchored(
         &mut t,
         "cmd_end",
@@ -904,7 +904,7 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
         .clone();
     assert_eq!(frames_of(&t.video, &end_only), (200, 228));
 
-    // 句子锚点与带偏移的词锚点（-0.5 秒）。
+    // A sentence anchor and a word anchor with an offset (−0.5 seconds).
     let sentence = json!({ "kind": "sentence", "speechRef": { "id": doc, "revision": "1" }, "sentenceId": "s1", "edge": "end" });
     let mut early = word(&doc, "w1", "start");
     early["offset"] = json!({ "ticks": "-1", "timescale": 2 });
@@ -929,10 +929,10 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
     .receipt
     .created_ids[0]
         .clone();
-    // w1 起点 1.0 − 0.5 = 0.5 秒（帧 15）；s1 的终点是 w4 的结尾 8.4 秒（帧 252）。
+    // w1 starts at 1.0 − 0.5 = 0.5 seconds (frame 15); the end of s1 is the end of w4 at 8.4 seconds (frame 252).
     assert_eq!(frames_of(&t.video, &by_sentence), (15, 252));
 
-    // 只有起点：保持长度。
+    // Only a start: the length is kept.
     let start_only = anchored(
         &mut t,
         "cmd_start",
@@ -946,7 +946,7 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
         .clone();
     assert_eq!(frames_of(&t.video, &start_only), (252, 264));
 
-    // 摆不下：w4 是帧 [240, 252)，同一轨道上有 [245, 300) 的实例。
+    // It does not fit: w4 is frames [240, 252), and there is an instance at [245, 300) on the same track.
     let blocker = apply(
         &mut t.video,
         "cmd_blocker",
@@ -975,7 +975,7 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
         .map(|o| (o.item_id, o.reason))
         .collect();
     assert_eq!(reasons, vec![(id.clone(), "anchor-blocked".to_string())]);
-    // 挡住的实例删掉之后，下一笔事务把它摆回锚点上。
+    // After the blocking instance is deleted, the next transaction places it back on its anchor.
     apply(
         &mut t.video,
         "cmd_unblock",
@@ -986,7 +986,7 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
     assert!(t.video.orphaned_anchors().unwrap().is_empty());
 }
 
-// ---- item-local（§3.16）：跟着目标实例移动；拆开时跟锚点所在的一段，起点修剪越过锚点时到新起点，目标删掉时一起删 ----
+// ---- item-local (§3.16): moves along with the target instance; when split, it goes with the segment that holds the anchor; when a start trim crosses the anchor, it moves to the new start; when the target is deleted, it is deleted too ----
 
 fn follows(video: &Video, id: &str) -> String {
     match &video.state().items[id].value.base().follow_policy {
@@ -1024,12 +1024,12 @@ fn follower(t: &mut Setup, command_id: &str, track: &str, span: (i64, i64), targ
 fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
     let Some(mut t) = setup() else { return };
     let g = new_tracks(&mut t, &["f1"]);
-    // 锚点是源 5 秒（帧 150）。
+    // The anchor is source 5 seconds (frame 150).
     let picture = t.picture.clone();
     let f = follower(&mut t, "cmd_follower", &g[0], (150, 180), &picture);
     let s = t.video.state().root_sequence_id.clone();
 
-    // 在帧 120 拆开：跟着锚点所在的右半，位置不变。
+    // Split at frame 120: it goes with the right half, which holds the anchor; its position does not change.
     let split = apply(
         &mut t.video,
         "cmd_split",
@@ -1044,7 +1044,7 @@ fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
     assert_eq!(frames_of(&t.video, &f), (150, 180));
     assert_eq!(follows(&t.video, &f), right);
 
-    // 右半的起点修剪到帧 160，越过锚点：移到新起点。
+    // The right half's start is trimmed to frame 160, crossing the anchor: it moves to the new start.
     apply(
         &mut t.video,
         "cmd_trim",
@@ -1053,7 +1053,7 @@ fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
     .unwrap();
     assert_eq!(frames_of(&t.video, &f), (160, 190));
 
-    // 目标整体移动：跟着移动。
+    // The target is moved as a whole: it moves along.
     apply(
         &mut t.video,
         "cmd_move",
@@ -1063,7 +1063,7 @@ fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
     assert_eq!(frames_of(&t.video, &right).0, 190);
     assert_eq!(frames_of(&t.video, &f), (190, 220));
 
-    // 目标删掉：一起删掉并列在回执里。
+    // The target is deleted: it is deleted too and listed in the receipt.
     let deleted = apply(
         &mut t.video,
         "cmd_delete",
@@ -1073,7 +1073,7 @@ fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
     assert_eq!(deleted.receipt.impact.removed_with_target, vec![f.clone()]);
     assert!(deleted.receipt.deleted_ids.contains(&f));
     assert!(!t.video.state().items.contains_key(&f));
-    // 撤销：两件都回来。
+    // Undo: both come back.
     undo(&mut t.video, "cmd_undo_delete", &deleted);
     assert_eq!(frames_of(&t.video, &f), (190, 220));
 }
@@ -1082,7 +1082,7 @@ fn item_local_follows_splits_trims_moves_and_deletion_of_a_clip() {
 fn item_local_follows_its_clip_through_cuts_and_joins() {
     let Some(mut t) = setup() else { return };
     let g = new_tracks(&mut t, &["f1", "f2"]);
-    // 源 6.5 秒（帧 195）在剪口之后；源 5 秒（帧 150）在剪口里。
+    // Source 6.5 seconds (frame 195) is after the cut; source 5 seconds (frame 150) is inside the cut.
     let picture = t.picture.clone();
     let after = follower(&mut t, "cmd_after", &g[0], (195, 205), &picture);
     let inside = follower(&mut t, "cmd_inside", &g[1], (150, 160), &picture);
@@ -1093,13 +1093,13 @@ fn item_local_follows_its_clip_through_cuts_and_joins() {
         .find(|(track_id, _, range)| *track_id == track(&t.video, "V1") && range.0 == 120)
         .unwrap()
         .1;
-    // 源 6.5 秒在右段上是帧 135；剪掉的源 5 秒移到右段的起点。
+    // On the right segment, source 6.5 seconds is frame 135; the removed source 5 seconds moves to the start of the right segment.
     assert_eq!(frames_of(&t.video, &after), (135, 145));
     assert_eq!(follows(&t.video, &after), right);
     assert_eq!(frames_of(&t.video, &inside), (120, 130));
     assert_eq!(follows(&t.video, &inside), right);
 
-    // 拆开再合并：跟着留下的那件，位置不变。
+    // Split and then merged again: it goes with the piece that is kept; its position does not change.
     let s = t.video.state().root_sequence_id.clone();
     let split = apply(
         &mut t.video,
@@ -1134,7 +1134,7 @@ fn item_local_follows_a_static_item() {
     .created_ids[0]
         .clone();
     let f = follower(&mut t, "cmd_f", &g[1], (60, 70), &host);
-    // 跟随者在目标起点之前：保持到目标起点的距离。
+    // A follower before the target's start keeps its distance to the target's start.
     let before = follower(&mut t, "cmd_before", &g[2], (20, 25), &host);
 
     let split = apply(
@@ -1148,7 +1148,7 @@ fn item_local_follows_a_static_item() {
     assert_eq!(follows(&t.video, &before), host);
     assert_eq!(frames_of(&t.video, &f), (60, 70));
 
-    // 只改起点、没越过锚点：不动；越过：到新起点。
+    // Only the start changed, without crossing the anchor: no move; if it crosses, it moves to the new start.
     let trim = |video: &mut Video, id: &str, at: i64, n: &str| {
         apply(
             video,
@@ -1162,7 +1162,7 @@ fn item_local_follows_a_static_item() {
     trim(&mut t.video, &right, 65, "cmd_trim_b");
     assert_eq!(frames_of(&t.video, &f), (65, 75));
 
-    // 整体移动左半：在它起点之前的跟随者跟着移动。
+    // Moving the left half as a whole: followers before its start move along.
     apply(
         &mut t.video,
         "cmd_move",
@@ -1171,7 +1171,7 @@ fn item_local_follows_a_static_item() {
     .unwrap();
     assert_eq!(frames_of(&t.video, &before), (10, 15));
 
-    // 指向别的序列或不存在的目标：写入时拒绝。
+    // A target in another sequence or a nonexistent target: rejected at write time.
     let s2 = t.video.state().root_sequence_id.clone();
     let err = apply(
         &mut t.video,
@@ -1186,9 +1186,9 @@ fn item_local_follows_a_static_item() {
     assert_eq!(err.code, "INVALID_OPERATION");
 }
 
-// ---- 剪辑提案（§6.2）：proposeCuts 检测口癖与停顿写成提案，acceptCutSuggestions 编译成带 ref 的剪口 ----
+// ---- Cut proposals (§6.2): proposeCuts detects filler words and pauses and writes them as proposals; acceptCutSuggestions compiles them into cuts that carry refs ----
 
-/// 带口癖的转写：w2「um」是口癖 [1.4, 1.7)；w4 以句号结尾，与 w5 之间停顿 1.6 秒，压缩到 0.4 秒剪掉 [2.6, 3.8)。
+/// A transcript with filler words: w2 “um” is a filler word [1.4, 1.7); w4 ends with a period, and the pause before w5 is 1.6 seconds, compressed to 0.4 seconds, cutting [2.6, 3.8).
 fn filler_speech(t: &mut Setup) -> String {
     let body = json!({
         "schema": "cuccut.speech/1", "clock": "source-asset", "timescale": 1000, "engine": null, "speakers": [],
@@ -1271,10 +1271,10 @@ fn proposed_fillers_and_pauses_are_accepted_as_cuts_with_their_ids() {
         (Some("cut-sl-w4"), Some("pause"), Some("2600"), Some("3800"), Some("w4"))
     );
     assert_eq!(s.as_array().unwrap().len(), 2);
-    // 提出建议不改时间线。
+    // Proposing suggestions does not change the timeline.
     assert!(cut_set(&t.video, &t.asset).is_none());
 
-    // 接受停顿：剪口的 ref 是建议的 ID，区间是建议的区间；提案里标成 accepted。
+    // Accepting the pause: the cut's ref is the suggestion's ID, and its interval is the suggestion's interval; it is marked accepted in the proposal.
     let accepted = accept(&mut t.video, "cmd_accept", &id, &["cut-sl-w4"]).unwrap();
     let (_, _, cuts) = cut_set(&t.video, &t.asset).unwrap();
     assert_eq!(cuts["cuts"].as_array().unwrap().len(), 1);
@@ -1288,7 +1288,7 @@ fn proposed_fillers_and_pauses_are_accepted_as_cuts_with_their_ids() {
         vec![("cut-fl-w2".into(), "pending".into()), ("cut-sl-w4".into(), "accepted".into())]
     );
 
-    // 撤销：剪口与提案的状态一起回去。
+    // Undo: the cut and the proposal's state go back together.
     undo(&mut t.video, "cmd_undo_accept", &accepted);
     assert!(cut_set(&t.video, &t.asset).is_none_or(|(_, _, b)| b["cuts"].as_array().unwrap().is_empty()));
     assert_eq!(
@@ -1296,7 +1296,7 @@ fn proposed_fillers_and_pauses_are_accepted_as_cuts_with_their_ids() {
         vec![("cut-fl-w2".into(), "pending".into()), ("cut-sl-w4".into(), "pending".into())]
     );
 
-    // 再接受，然后重新提出：已经剪掉的停顿不再提出，提案还是同一份文档。
+    // Accept again, then propose again: pauses that have already been cut are not proposed again; the proposal is still the same document.
     accept(&mut t.video, "cmd_accept_again", &id, &["cut-sl-w4"]).unwrap();
     let again = apply(
         &mut t.video,
@@ -1320,11 +1320,11 @@ fn stale_unknown_and_malformed_proposals_are_rejected() {
     .unwrap();
     let (id, body) = proposal(&t.video);
 
-    // 不认识的建议：整笔拒绝。
+    // An unknown suggestion: the whole transaction is rejected.
     let err = accept(&mut t.video, "cmd_unknown", &id, &["cut-fl-nope"]).unwrap_err();
     assert_eq!(err.code, "ENTITY_NOT_FOUND");
 
-    // 检测参数按旧版的规则核对。
+    // Detection parameters are checked against the rules of the old version.
     let err = apply(
         &mut t.video,
         "cmd_bad_detect",
@@ -1333,7 +1333,7 @@ fn stale_unknown_and_malformed_proposals_are_rejected() {
     .unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
 
-    // 只检测口癖：没有停顿建议。
+    // Only filler words are detected: no pause suggestions.
     apply(
         &mut t.video,
         "cmd_fillers_only",
@@ -1342,7 +1342,7 @@ fn stale_unknown_and_malformed_proposals_are_rejected() {
     .unwrap();
     assert_eq!(statuses(&proposal(&t.video).1), vec![("cut-fl-w2".into(), "pending".into())]);
 
-    // 正文不合 §6.2 的提案写不进去。
+    // A proposal whose body does not meet §6.2 cannot be written.
     let mut bad = body.clone();
     bad["suggestions"][0]["t1"] = json!("1000");
     let err = apply(
@@ -1353,7 +1353,7 @@ fn stale_unknown_and_malformed_proposals_are_rejected() {
     .unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
 
-    // 转写改过之后，建议过期：拒绝接受，须重新提出。
+    // After the transcript is edited, the suggestion is stale: accepting it is rejected, and it must be proposed again.
     let mut changed = t.video.document(&speech, None).unwrap().body;
     changed["words"][0]["text"] = json!("so,");
     apply(

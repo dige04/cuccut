@@ -1,8 +1,8 @@
-//! MLX 后端（Apple Silicon + Metal）：Silero VAD、Qwen3-ASR、Whisper、MOSS-Transcribe-Diarize、Qwen3-ForcedAligner、WeSpeaker、Pyannote，
-//! 以及本地语音合成的引擎（[`crate::synthesize`]）与本地文生图的引擎（[`crate::image`]）。
+//! MLX backend (Apple Silicon + Metal): Silero VAD, Qwen3-ASR, Whisper, MOSS-Transcribe-Diarize, Qwen3-ForcedAligner, WeSpeaker, Pyannote,
+//! plus the local speech synthesis engine ([`crate::synthesize`]) and the local text-to-image engine ([`crate::image`]).
 //!
-//! MLX 的数组不是 `Send`：加载出来的 [`MlxModel`] 与合成引擎只能留在加载它的线程上。进 MLX 之前一律先过
-//! [`runtime::ensure_metal_device`]，否则没有 Metal 设备时 MLX 会在 C++ 里抛异常、整个进程 abort。
+//! MLX arrays are not `Send`: a loaded [`MlxModel`] and the synthesis engine can only stay on the thread that loaded them. Before entering MLX, always go through
+//! [`runtime::ensure_metal_device`]; otherwise, without a Metal device, MLX throws an exception in C++ and aborts the whole process.
 
 pub mod aligner;
 pub mod moss;
@@ -39,7 +39,7 @@ use silero::SileroVad;
 use wespeaker::WeSpeakerEmbedder;
 use whisper::{WhisperFiles, WhisperMlx};
 
-/// MLX 认的设备名。
+/// Device name that MLX accepts.
 pub const DEVICE: &str = "metal";
 
 pub struct MlxBackend;
@@ -74,7 +74,7 @@ impl Backend for MlxBackend {
     ) -> Result<LoadedSynthesis, ErrorBody> {
         check_device(bundle)?;
         let Some(model) = &bundle.tts else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs a tts component"));
         };
         let files = EngineFiles {
@@ -84,7 +84,7 @@ impl Backend for MlxBackend {
         };
         phase(ModelPhase::LoadingWeights, Some(kind.family()));
         let started = Instant::now();
-        // 引擎自己先核对清单（缺文件是 MODEL_NOT_INSTALLED），再确认 Metal、配置缓存、读权重。
+        // The engine checks the manifest itself first (a missing file is MODEL_NOT_INSTALLED), then confirms Metal, the config cache, and reads the weights.
         let engine = synthesize::load(kind, files).map_err(|error| load_failed("tts", &error))?;
         let load_ms = started.elapsed().as_millis() as u64;
         Ok(LoadedSynthesis {
@@ -99,7 +99,7 @@ impl Backend for MlxBackend {
     fn load_separation(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedSeparation, ErrorBody> {
         check_device(bundle)?;
         let Some(files) = &bundle.separator else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs a separator component"));
         };
         phase(ModelPhase::LoadingWeights, Some(files.family.as_str()));
@@ -114,11 +114,11 @@ impl Backend for MlxBackend {
         })
     }
 
-    /// 说话人区分单独加载（协议规范 §2.5.5）：Pyannote 分段与 WeSpeaker 声纹在这里一起读进来，常驻到卸载。
+    /// Speaker diarization is loaded separately (protocol spec §2.5.5): the Pyannote segmentation and the WeSpeaker voice embedding are read in together here and stay resident until unload.
     fn load_diarization(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedDiarization, ErrorBody> {
         check_device(bundle)?;
         let (Some(segmentation), Some(speaker)) = (&bundle.segmentation, &bundle.speaker) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(
                 codes::MODEL_UNSUPPORTED,
                 "the bundle needs segmentation and speaker components",
@@ -141,12 +141,12 @@ impl Backend for MlxBackend {
     fn load_image(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedImage, ErrorBody> {
         check_device(bundle)?;
         let Some(files) = &bundle.image else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs an image component"));
         };
         phase(ModelPhase::LoadingWeights, Some(files.family.as_str()));
         let started = Instant::now();
-        // 引擎先核对清单（缺文件是 MODEL_NOT_INSTALLED），再确认 Metal；三段权重留到生成时按阶段读。
+        // The engine checks the manifest first (a missing file is MODEL_NOT_INSTALLED), then confirms Metal; the three weight sets are read per stage at generation time.
         let engine = crate::image::load(files).map_err(|error| load_failed("image", &error))?;
         Ok(LoadedImage {
             engine,
@@ -164,7 +164,7 @@ impl Backend for MlxBackend {
             return load_moss(bundle, asr_files, phase);
         }
         let (Some(asr_files), Some(vad_files)) = (&bundle.asr, &bundle.vad) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs asr and vad components"));
         };
         if asr_files.family == FAMILY_WHISPER_MLX {
@@ -174,7 +174,7 @@ impl Backend for MlxBackend {
             return Err(transcription_not_wired(Some(&asr_files.family)));
         }
 
-        // 权重之外的文件先读、先核对：配置不对时不必读几百 MB 的权重。
+        // Read and check the files other than the weights first: if the config is wrong, there is no need to read hundreds of MB of weights.
         let config = read_json(asr_files, "config.json")?;
         let config = Qwen3Config::parse(&config).map_err(|message| {
             eprintln!("[model-worker] {message}");
@@ -188,9 +188,9 @@ impl Backend for MlxBackend {
         };
         let asr_weights = asr_files.require_extension("safetensors")?;
         let vad_weights = vad_files.require_extension("safetensors")?;
-        // 对齐器是可选组件：模型包带了才加载，缺文件同样报 MODEL_NOT_INSTALLED（不悄悄退回估计的词时间）。
+        // The aligner is an optional component: it is loaded only if the model pack includes it. A missing file likewise reports MODEL_NOT_INSTALLED (no silent fallback to estimated word timings).
         check_aligner_files(bundle)?;
-        // 说话人区分同样可选：只核对文件，任务里要用时才加载。
+        // Speaker diarization is also optional: only its files are checked here; it is loaded when a task needs it.
         let diarizer = DiarizerSlot::new(bundle)?;
 
         runtime::configure_memory_cache().map_err(|error| load_failed("asr", &error))?;
@@ -216,8 +216,8 @@ impl Backend for MlxBackend {
     }
 }
 
-/// Whisper（MLX）模型包：`asr` 是 mlx-community 的 fp16 转换（`config.json` + safetensors），`tokenizer` 组件给
-/// `tokenizer.json` 与 `generation_config.json`；VAD、可选的对齐器与说话人区分与 Qwen3-ASR 相同。
+/// Whisper (MLX) model pack: `asr` is mlx-community's fp16 conversion (`config.json` + safetensors); the `tokenizer` component provides
+/// `tokenizer.json` and `generation_config.json`. VAD, the optional aligner and speaker diarization are the same as for Qwen3-ASR.
 fn load_whisper(
     bundle: &VerifiedBundle,
     asr_files: &VerifiedFiles,
@@ -225,10 +225,10 @@ fn load_whisper(
     phase: &mut PhaseCallback<'_>,
 ) -> Result<Box<dyn LoadedModel>, ErrorBody> {
     let Some(tokenizer_files) = &bundle.tokenizer else {
-        // backend::load 已经检查过；这里只为类型。
+        // backend::load has already checked this; this is only for the type.
         return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs a tokenizer component"));
     };
-    // 权重之外的文件先核对：配置不对时不必读 1.6–3 GB 的权重。
+    // Check the non-weight files first: if the config is wrong, there is no need to read the 1.6–3 GB of weights.
     let config = read_json(asr_files, "config.json")?;
     whisper::WhisperConfig::parse(&config).map_err(|message| {
         eprintln!("[model-worker] {message}");
@@ -271,7 +271,7 @@ fn load_whisper(
     }))
 }
 
-/// 可选的对齐器：模型包带了才加载。
+/// Optional aligner: loaded only if the model pack includes it.
 fn load_aligner(bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<Option<ForcedAligner>, ErrorBody> {
     match &bundle.aligner {
         Some(aligner_files) => {
@@ -284,10 +284,10 @@ fn load_aligner(bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Resul
     }
 }
 
-/// MOSS 模型包：MOSS 引擎在这里加载；可选的对齐器与说话人模型只核对文件，任务里要用时才加载、任务结束放掉（同 v2：
-/// 三份权重不常驻在一起）。MOSS 没有预热（v2 也没有），`warmupMs` 是 0。
+/// MOSS model pack: the MOSS engine is loaded here. The optional aligner and speaker models only have their files checked; they are loaded when a task needs them and released when the task ends (as in v2,
+/// the three weight sets are not resident together). MOSS has no warm-up (v2 had none either), so `warmupMs` is 0.
 fn load_moss(bundle: &VerifiedBundle, asr_files: &VerifiedFiles, phase: &mut PhaseCallback<'_>) -> Result<Box<dyn LoadedModel>, ErrorBody> {
-    // 可选组件缺文件同样是 MODEL_NOT_INSTALLED：不悄悄退回估计的词时间或不合并的说话人。
+    // A missing file in an optional component is likewise MODEL_NOT_INSTALLED: no silent fallback to estimated word timings or to unmerged speakers.
     check_aligner_files(bundle)?;
     if let Some(speaker_files) = &bundle.speaker {
         speaker_files.require_extension_in("", "safetensors")?;
@@ -316,7 +316,7 @@ fn check_aligner_files(bundle: &VerifiedBundle) -> Result<(), ErrorBody> {
     Ok(())
 }
 
-/// 设备必须是 `metal`，且本机真有 Metal 设备（否则 MLX 会在 C++ 里抛异常、整个进程 abort）。
+/// The device must be `metal`, and this machine must actually have a Metal device (otherwise MLX throws an exception in C++ and aborts the whole process).
 fn check_device(bundle: &VerifiedBundle) -> Result<(), ErrorBody> {
     if bundle.device != DEVICE {
         return Err(
@@ -354,10 +354,10 @@ fn read_json(files: &VerifiedFiles, relative: &str) -> Result<Value, ErrorBody> 
         })
 }
 
-/// 权重形状不对、文件损坏之类的加载失败。细节（可能含路径）只写 stderr。
+/// Load failures such as wrong weight shapes or corrupt files. Details (which may include paths) are written to stderr only.
 fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
     eprintln!("[model-worker] loading {component} failed: {error:#}");
-    // 引擎按文件清单取文件时报的错（缺文件是 MODEL_NOT_INSTALLED）原样透传，不改报成加载失败。
+    // Errors the engine returns when fetching files from the manifest (a missing file is MODEL_NOT_INSTALLED) are passed through unchanged, not rewrapped as load failures.
     if let Some(body) = error.downcast_ref::<ErrorBody>() {
         return body.clone();
     }
@@ -365,8 +365,8 @@ fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
         .with_details(json!({ "component": component, "reason": "load-failed" }))
 }
 
-/// 加载好的 VAD + ASR（Qwen3-ASR 或 Whisper，+ 可选的对齐器、按需加载的说话人区分）。字段按声明顺序析构，各自的守卫在
-/// 权重释放后清缓存。
+/// A loaded VAD + ASR (Qwen3-ASR or Whisper, plus the optional aligner and speaker diarization loaded on demand). Fields are dropped in declaration order; each guard clears the cache
+/// after its weights are released.
 pub struct MlxModel {
     vad: SileroVad,
     asr: Box<dyn SpeechRecognizer>,
@@ -415,9 +415,9 @@ impl LoadedModel for MlxModel {
     }
 }
 
-/// 加载好的 MOSS 模型包。MOSS 引擎常驻；对齐器与说话人模型按需加载（[`LoadedModel::aligner`]、
-/// [`LoadedModel::speaker_embedder`]），一次只留一个，任务结束（[`LoadedModel::finish_job`]）放掉。装它们之前系统有内存
-/// 压力时先卸掉 MOSS 引擎（同 v2 的常驻执行器），下一条任务开始时重装。
+/// A loaded MOSS model pack. The MOSS engine stays resident; the aligner and speaker models are loaded on demand ([`LoadedModel::aligner`],
+/// [`LoadedModel::speaker_embedder`]), only one at a time, and released when the task ends ([`LoadedModel::finish_job`]). If the system is under memory pressure before they are loaded,
+/// the MOSS engine is unloaded first (as with v2's resident executor) and reloaded when the next task starts.
 pub struct MossModel {
     engine: Option<MossTranscribeDiarize>,
     asr_files: VerifiedFiles,
@@ -425,13 +425,13 @@ pub struct MossModel {
     speaker_files: Option<VerifiedFiles>,
     aligner: Option<ForcedAligner>,
     speaker: Option<WeSpeakerEmbedder>,
-    /// 这个任务里对齐器、说话人模型加载失败过：同一任务不再重试。
+    /// In this task, loading the aligner or the speaker model has failed before: no retry within the same task.
     helper_failed: (bool, bool),
     resident_bytes: u64,
 }
 
 impl MossModel {
-    /// 要装辅助模型了：系统有内存压力时先卸掉 MOSS 引擎。
+    /// About to load the auxiliary models: if the system is under memory pressure, unload the MOSS engine first.
     fn yield_engine_under_pressure(&mut self) {
         if self.engine.is_none() {
             return;
@@ -453,7 +453,7 @@ impl SegmentingRecognizer for MossModel {
         callbacks: &mut SegmentingCallbacks<'_>,
     ) -> anyhow::Result<SegmentedTranscription> {
         if self.engine.is_none() {
-            // 上一条任务在内存压力下卸掉了它。
+            // The previous task unloaded it under memory pressure.
             self.engine = Some(MossTranscribeDiarize::load(&self.asr_files)?);
         }
         let Some(engine) = self.engine.as_mut() else {

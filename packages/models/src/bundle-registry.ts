@@ -16,9 +16,9 @@ import { SPEECH_BUNDLES } from './speech-bundles.ts';
 import type { BundleComponent, ModelFamily } from './worker-contract.ts';
 
 /**
- * 模型包登记（架构设计 §6.3、§6.5）。P0 写死在这里；下载器与多 backend 选择（P1）接上之后改为从目录读取。
+ * Model bundle registry (architecture design §6.3, §6.5). Hardcoded here in P0. Once the downloader and multi-backend selection (P1) are wired in, it switches to reading from the catalog.
  *
- * 每个组件指向模型目录里的一个上游仓库：`<models-root>/<owner>/<repo>/`，`revision` 固定为上游的提交。
+ * Each component points at one upstream repository in the model catalog: `<models-root>/<owner>/<repo>/`, with `revision` pinned to the upstream commit.
  */
 
 export interface BundleComponentSource {
@@ -27,54 +27,50 @@ export interface BundleComponentSource {
   repo: string;
   revision: string;
   /**
-   * 可选的组件：安装与修复照样下载它，但缺它时模型包仍算装好（不是 `incomplete`），交给 Worker 时略去。
-   * 用于几个模型包共用、后来才加进来的组件（对齐器、说话人模型），已装好的模型包不因此变得不完整。
+   * Optional component. Installation and repair still download it, but when it is missing the model bundle still counts as installed (not `incomplete`), and it is omitted when handed to the Worker.
+   * Used for components that several bundles share and that were added later (the aligner, the speaker model), so that already-installed bundles do not become incomplete because of them.
    */
   optional?: true;
-  /** 与主模型许可不同的组件自己的许可（对齐器、说话人模型）。 */
+  /** The component's own license, when it differs from the main model's license (the aligner, the speaker model). */
   license?: ModelLicense;
   /**
-   * 组件在仓库里的子目录（`/` 分隔，不带首尾斜杠）。安装、校验与装没装好照旧按整个仓库算；交给 Worker 时组件的目录是
-   * 这个子目录，只带其下的文件，路径相对它（`argmaxinc/whisperkit-coreml` 一个仓库放着多个 Whisper 变体）。
+   * The component's subdirectory in the repository (`/`-separated, no leading or trailing slash). Installation, verification and the installed check are still done for the whole repository. When handed to the Worker, the component's directory is this subdirectory, carrying only the files beneath it, with paths relative to it (`argmaxinc/whisperkit-coreml` holds several Whisper variants in one repository).
    */
   subdir?: string;
   /**
-   * 权重主体的存储位宽：MLX 仿射量化的 4 / 8，bf16 的 16，f32 的 32。量化包里常有不量化的部分（音频塔、范数，以 bf16 / f16
-   * 存），所以只在不知道 `parameters` 时用来估计 candle 的常驻量（`candleResidentBytes`）。
+   * Storage bit width of the weight bodies: 4 or 8 for MLX affine quantization, 16 for bf16, 32 for f32. Quantized bundles often have unquantized parts (the audio tower and norms, stored as bf16 / f16), so this is only used to estimate candle's resident size (`candleResidentBytes`) when `parameters` is unknown.
    */
   weightBits?: 4 | 8 | 16 | 32;
   /**
-   * 反量化之后的参数个数（按 safetensors 头里各张量的形状数出来，量化张量按位宽展开，不计 `scales` / `biases`）。candle 后端
-   * 加载时把权重都换成计算精度，常驻量约为参数个数 × 每个参数的字节数（CPU 的 f32 是 4，CUDA 的半精度是 2）。
+   * Parameter count after dequantization (counted from the shape of each tensor in the safetensors header; quantized tensors are expanded by bit width, not counting `scales` / `biases`). The candle backend converts all weights to the compute precision when it loads, so the resident size is roughly parameter count × bytes per parameter (f32 on CPU is 4, half precision on CUDA is 2).
    */
   parameters?: number;
   /**
-   * 来自 GitHub 发布页、而不是模型仓库的组件（audio.cpp 引擎，架构设计 §6.3）。它是平台专属的：模型目录按 Runtime 所在主机的
-   * 平台键（`<process.platform>-<process.arch>`）取一个压缩包，下载、核对、解开到 `<toolsDir>/<name>/<version>/`，不在模型目录里。
-   * `repo` 与 `revision` 仍要填（合成的 `<owner>/<repo>` 与上游标签），持有者、共用与安装记录照旧按 `repo@revision` 算。
+   * A component that comes from a GitHub release page rather than a model repository (the audio.cpp engine, architecture design §6.3). It is platform-specific: the model catalog takes one archive keyed by the Runtime host's platform key (`<process.platform>-<process.arch>`), downloads and verifies it, and extracts it to `<toolsDir>/<name>/<version>/`. It does not live in the model catalog.
+   * `repo` and `revision` must still be filled in (a synthetic `<owner>/<repo>` and the upstream tag). The owner, sharing and install records are still computed as `repo@revision`.
    */
   release?: ComponentRelease;
 }
 
-/** GitHub 发布页上一个平台的压缩包（`BundleComponentSource.release`）。 */
+/** One platform's archive on a GitHub release page (`BundleComponentSource.release`). */
 export interface ComponentReleaseAsset {
   fileName: string;
   size: number;
   sha256: string;
-  /** 压缩包的格式与解开时略过的文件（包根目录里同包的其他工具）。只解开包根目录里的普通文件。 */
+  /** Archive format, and the files skipped on extraction (other tools of the same package at the archive root). Only regular files at the archive root are extracted. */
   archive: { format: 'tar.gz' | 'zip'; skip: readonly string[] };
-  /** 解开之后必须有的可执行文件（相对组件目录）。 */
+  /** Executables that must exist after extraction (relative to the component directory). */
   executable: string;
 }
 
-/** 发布页组件的登记：固定版本，各平台一个压缩包。 */
+/** Registration of a release-page component: pinned version, one archive per platform. */
 export interface ComponentRelease {
-  /** 组件目录与镜像路径里的名字：`<toolsDir>/<name>/<version>/`、`<镜像>/<name>/<version>/<文件名>`。 */
+  /** The name used in the component directory and mirror paths: `<toolsDir>/<name>/<version>/`, `<mirror>/<name>/<version>/<filename>`. */
   name: string;
   version: string;
-  /** 官方下载地址的模板：`{version}`、`{file}` 换成版本与文件名。 */
+  /** Template for the official download URL: `{version}` and `{file}` are replaced with the version and the file name. */
   urlTemplate: string;
-  /** 平台键（`darwin-arm64`、`darwin-x64`、`linux-x64`、`win32-x64`……）→ 压缩包；没有的平台不支持。 */
+  /** Platform key (`darwin-arm64`, `darwin-x64`, `linux-x64`, `win32-x64`, …) → archive. Platforms not listed are unsupported. */
   assets: Readonly<Partial<Record<string, ComponentReleaseAsset>>>;
 }
 
@@ -84,97 +80,91 @@ export interface BundleDefinition {
   backend: ModelBackend;
   device: string;
   components: Partial<Record<BundleComponent, BundleComponentSource>>;
-  /** 给人看的名字（必填）：同一个模型换后端（MLX / candle、Core ML / GGML）名字不变（架构设计 §6.5）。 */
+  /** Human-readable name (required). The same model keeps its name when the backend is swapped (MLX / candle, Core ML / GGML) (architecture design §6.5). */
   label: string;
-  /** 权重的许可（下载前给人看）。 */
+  /** The weights' license (shown to the user before download). */
   license?: ModelLicense;
-  /** `synthesize` 模型包的特性：`local` Provider 据此描述 `synthesizeSpeech` 模型、在提交时检查请求。 */
+  /** Features of a `synthesize` model bundle. The `local` Provider uses them to describe the `synthesizeSpeech` model and to check requests at submission. */
   speech?: SpeechBundleProfile;
-  /** `image` 模型包的特性：`local` Provider 据此描述 `generateImage` 模型、资源调度据此计 Model Worker 的峰值。 */
+  /** Features of an `image` model bundle. The `local` Provider uses them to describe the `generateImage` model, and resource scheduling uses them to compute the Model Worker's peak. */
   image?: ImageBundleProfile;
-  /** `music` 模型包的特性：`local` Provider 据此描述 `generateMusic` 模型、在提交时检查请求、资源调度据此计引擎进程的峰值。 */
+  /** Features of a `music` model bundle. The `local` Provider uses them to describe the `generateMusic` model and to check requests at submission. Resource scheduling uses them to compute the engine process's peak. */
   music?: MusicBundleProfile;
   /**
-   * 识别模型包用哪个「说话人区分」模型包（`capability: 'diarize'`，架构设计 §6.6）：它装好了，交给 Worker 的模型包带上它的组件
-   * （`segmentation` 与 `speaker`），转写要说话人时识别完成后区分。没装时不带，要说话人只报 `diarization-unavailable`。
+   * The “speaker diarization” bundle (`capability: 'diarize'`, architecture design §6.6) that a recognition bundle uses. When it is installed, the bundle handed to the Worker carries its components (`segmentation` and `speaker`), and diarization runs after recognition when speakers are requested. If it is not installed, it is not carried, and requesting speakers only reports `diarization-unavailable`.
    */
   diarization?: string;
 }
 
-/** 一个本地文生图模型包能做什么（架构设计 §6.1、§6.3）。一次一张、只出 PNG、不收参考图、接受 seed。 */
+/** What a local text-to-image model bundle can do (architecture design §6.1, §6.3). One image at a time, PNG output only, no reference images, accepts a seed. */
 export interface ImageBundleProfile {
   family: string;
-  /** 宽高比与它的像素尺寸；第一个是默认尺寸。 */
+  /** Aspect ratios and their pixel sizes. The first is the default size. */
   aspects: ReadonlyArray<{ ratio: string; size: string }>;
-  /** 另外接受、不进画幅菜单的尺寸（`WIDTHxHEIGHT`）：设置页「试画」的小图。 */
+  /** Other accepted sizes that are not in the aspect ratio menu (`WIDTHxHEIGHT`): the small images for the settings page's trial render. */
   extraSizes: readonly string[];
-  /** 提示词上限（Unicode 码点）。 */
+  /** Prompt length limit (Unicode code points). */
   maxPromptChars: number;
-  /** 请求能给的去噪步数；`default` 是不指定时的步数（Worker 用同一个默认值）。 */
+  /** Denoising step counts a request may use. `default` is the step count when none is given (the Worker uses the same default). */
   steps: SpeechKnobRange;
   /**
-   * Model Worker 进程的峰值内存（字节，实测后取整留余量）：三段权重逐层流式读入、从不同时驻留，峰值与权重总量无关，
-   * 资源调度按它计 Model Worker 的需求。这是登记的设备上的值；candle 模型包在 Worker 报告的设备与登记的不同时（CUDA）
-   * 用 `devicePeakBytes` 里那个设备的值。
+   * Peak memory of the Model Worker process (bytes, rounded up after measurement with headroom). The three weight segments are streamed in layer by layer and are never resident at the same time, so the peak is independent of the total weight size. Resource scheduling uses it to compute the Model Worker's needs. This is the value for the registered device. For a candle bundle, when the device the Worker reports differs from the registered one (CUDA), use the value for that device in `devicePeakBytes`.
    */
   peakBytes: number;
-  /** candle 模型包按 Worker 报告的设备覆盖 `peakBytes`（键是设备，如 `cuda`）。没有的设备用 `peakBytes`。 */
+  /** For candle bundles, overrides `peakBytes` by the device the Worker reports (keys are devices, such as `cuda`). Devices not listed use `peakBytes`. */
   devicePeakBytes?: Readonly<Record<string, number>>;
-  /** 在这台机器上一张要几分钟到十几分钟：界面提示耗时。 */
+  /** On this machine one image takes several to over ten minutes. The UI shows the time cost. */
   slow: boolean;
 }
 
 /**
- * 一个本地音乐生成模型包能做什么（架构设计 §6.1、§6.3）。权重由 audio.cpp 引擎（`engine`，模型包的 `audiocpp-engine` 组件，或由
- * `CUCCUT_AUDIOCPP_CLI` 指定）直接读取，不经 Model Worker；一次一段、只出 WAV、接受 seed。
+ * What a local music generation model bundle can do (architecture design §6.1, §6.3). The weights are read directly by the audio.cpp engine (`engine`: the bundle's `audiocpp-engine` component, or the path given by `CUCCUT_AUDIOCPP_CLI`) and do not go through the Model Worker. One clip at a time, WAV output only, accepts a seed.
  */
 export interface MusicBundleProfile {
   family: string;
-  /** 引擎可执行文件名（不带后缀）。 */
+  /** Engine executable name (without suffix). */
   engine: string;
-  /** 能做歌曲（有歌词）还是纯音乐，或两者。 */
+  /** Whether it can make songs (with lyrics), instrumentals, or both. */
   modes: MusicMode[];
-  /** 风格描述与歌词的上限（Unicode 码点）。 */
+  /** Limits on the style description and the lyrics (Unicode code points). */
   maxStyleChars: number;
   maxLyricsChars: number;
-  /** 一段最长几秒（引擎按语义帧率换算成 token 上限），与不指定时的时长。 */
+  /** Maximum length of one clip in seconds (the engine converts this to a token cap using its semantic frame rate), and the duration used when none is given. */
   maxDurationSec: number;
   defaultDurationSec: number;
-  /** 引擎的语义 token 帧率（每秒几个 token）：`maxDurationSec` × 它 = 引擎的 `semantic_max_tokens`。 */
+  /** The engine's semantic token frame rate (tokens per second). `maxDurationSec` × this = the engine's `semantic_max_tokens`. */
   semanticTokensPerSec: number;
-  /** 输出的采样率。 */
+  /** Output sample rate. */
   sampleRate: number;
-  /** 编排（引擎的 `cot`）：先想整体结构再写（`full`）、只想旋律（`melody`）或不想（`off`）。 */
+  /** Orchestration (the engine's `cot`): think about the overall structure before writing (`full`), only think about the melody (`melody`), or do not think (`off`). */
   planning: { options: MusicPlanning[]; default: MusicPlanning };
-  /** 请求能给的扩散步数；`default` 是不指定时的步数（引擎用同一个默认值）。 */
+  /** Diffusion step counts a request may use. `default` is the step count when none is given (the engine uses the same default). */
   steps: SpeechKnobRange;
-  /** 歌词支持的语言（BCP 47 主语言）；上游没有逐个核对过时 `unverified`。 */
+  /** Languages the lyrics support (BCP 47 primary language). `unverified` when upstream has not checked each one. */
   lyricLanguages: string[] | 'unverified';
-  /** 引擎要的权重文件（相对仓库目录）：主模型与 VAE 的 GGUF。 */
+  /** Weight files the engine needs (relative to the repository directory): the GGUF files for the main model and the VAE. */
   files: { model: string; vae: string };
   /**
-   * 引擎进程的峰值内存（字节）。上游只在一块 32 GB 的 NVIDIA 卡上实测过（Q8 主模型加 F16 VAE 约 8.9 GB 显存），没有在这个仓库
-   * 里重新测量：资源调度按它计，`peakEstimated` 标明是估计。
+   * Peak memory of the engine process (bytes). Upstream measured it only once, on a 32 GB NVIDIA card (Q8 main model plus F16 VAE, about 8.9 GB of VRAM). It was not re-measured in this repository. Resource scheduling uses it, and `peakEstimated` marks it as an estimate.
    */
   peakBytes: number;
   peakEstimated: true;
-  /** 在这台机器上一段要几分钟：界面提示耗时。 */
+  /** On this machine one clip takes several minutes. The UI shows the time cost. */
   slow: boolean;
 }
 
 /**
- * 一个本地语音合成模型包能做什么（架构设计 §6.1、§6.3）。
+ * What a local speech synthesis model bundle can do (architecture design §6.1, §6.3).
  *
- * - `presets`：预设音色从哪来。`model` 是模型自带的说话人（`speakers`）；`builtin-reference` 是内置音色（随应用分发的
- *   参考录音，选它即用那段录音克隆）；`builtin-description` 是内置音色的英文声音描述（按描述造声的模型）。
- * - `voiceModes` 只列 `preset` / `clone` / `describe`：本地模型没有供应商账号里的音色（`custom`）。
+ * - `presets`: where the preset voices come from. `model` means the model's own speakers (`speakers`). `builtin-reference` means built-in voices: reference recordings shipped with the app, where choosing one clones from that recording. `builtin-description` means the built-in voices' English voice descriptions, for models that generate a voice from a description.
+ * - `voiceModes` lists only `preset` / `clone` / `describe`. Local models have no provider-account voices (`custom`).
  */
 export interface SpeechBundleProfile {
   family: string;
   languages: 'any' | string[];
   voiceModes: Exclude<VoiceMode, 'custom'>[];
   presets: 'model' | 'builtin-reference' | 'builtin-description' | 'none';
-  /** `presets: 'model'` 时模型自带的说话人。 */
+  /** When `presets: 'model'`, the model's own speakers. */
   speakers?: string[];
   reference: { recommendedSeconds: [number, number]; withTranscriptSeconds: [number, number] | null; acceptsTranscript: boolean } | null;
   voiceDescription: SpeechVoiceDescription | null;
@@ -188,16 +178,16 @@ export interface SpeechBundleProfile {
   slow: boolean;
 }
 
-/** Apple Silicon 上的默认转写模型包（MOSS Transcribe）。按平台取默认用 `defaultTranscribeBundle`。 */
+/** Default transcription bundle on Apple Silicon (MOSS Transcribe). Use `defaultTranscribeBundle` to get the platform default. */
 export const DEFAULT_TRANSCRIBE_BUNDLE = 'moss-transcribe-diarize@mlx-8bit';
-/** 别的平台（Windows、Linux、Intel Mac）上的默认转写模型包：同一份权重，candle 后端。 */
+/** Default transcription bundle on other platforms (Windows, Linux, Intel Mac): the same weights, candle backend. */
 export const DEFAULT_CANDLE_TRANSCRIBE_BUNDLE = 'moss-transcribe-diarize@candle';
-/** Qwen3-ASR 0.6B 的 MLX 模型包（下载最小的识别模型包）。 */
+/** Qwen3-ASR 0.6B's MLX bundle (the smallest recognition bundle to download). */
 export const QWEN3_ASR_0_6B_BUNDLE = 'qwen3-asr-0.6b@mlx-4bit';
-/** 各平台的默认转写模型包（不知道对方平台时，例如远端节点还没回报模型包，按这个顺序找）。 */
+/** Default transcription bundles per platform. When the other side's platform is unknown (for example, a remote node that has not reported its bundles), look in this order. */
 export const DEFAULT_TRANSCRIBE_BUNDLES: readonly string[] = [DEFAULT_TRANSCRIBE_BUNDLE, DEFAULT_CANDLE_TRANSCRIBE_BUNDLE];
 
-/** 识别模型包共用的 Silero VAD。 */
+/** Silero VAD, shared by the recognition bundles. */
 const SILERO_VAD: BundleComponentSource = {
   family: 'silero-vad',
   repo: 'aufklarer/Silero-VAD-v6.2.1-MLX',
@@ -210,15 +200,14 @@ const QWEN3_ASR_LICENSE: ModelLicense = {
   name: 'Apache-2.0',
   url: 'https://huggingface.co/Qwen/Qwen3-ASR-1.7B',
   commercialUse: true,
-  // 许可摘要给人看：用 getter，读的时候（列出状态、序列化过线）按当前语言生成。
+  // The license summary is for display. It is a getter, so it is generated in the current language when read (when listing status, or when serialized over the wire).
   get summary() {
     return M.qwen3AsrLicense().text;
   },
 };
 
 /**
- * 识别模型包（Qwen3-ASR、Whisper、MOSS）共用的强制对齐器（可选）：装了，本地识别的词时间是对齐出来的（`aligned`；MOSS 只对齐
- * 长于 5 秒的行），并提供 `align` 能力；没装时按字符长度估计（架构设计 §6.6）。
+ * The forced aligner shared by the recognition bundles (Qwen3-ASR, Whisper, MOSS), optional. When installed, the word timings of local recognition are aligned (`aligned`; MOSS aligns only lines longer than 5 seconds), and it provides the `align` capability. When not installed, timings are estimated from character length (architecture design §6.6).
  */
 export const QWEN3_FORCED_ALIGNER: BundleComponentSource = {
   family: 'qwen3-forced-aligner',
@@ -238,10 +227,8 @@ export const QWEN3_FORCED_ALIGNER: BundleComponentSource = {
 };
 
 /**
- * WeSpeaker ResNet34-LM 说话人嵌入（可选），给自分段模型（MOSS）合并跨块的说话人；Qwen3-ASR 与 Whisper 的模型包不带，
- * 由「说话人区分」模型包带（必需，与 Pyannote 分段一起用）。
- * MLX 转换包的模型卡标 MIT，但权重来自 pyannote 的 WeSpeaker 转换，上游按 CC-BY-4.0 发布，以上游为准。CC-BY-4.0 要署名，
- * 署名（作品、作者、许可与改动）写在许可的 `summary` 里；模型包状态的组件带上这份许可，供界面在模型详情的许可行列出（架构设计 §6.3）。
+ * WeSpeaker ResNet34-LM speaker embedding, optional. It is used to merge speakers across chunks for the self-segmenting model (MOSS). The Qwen3-ASR and Whisper bundles do not carry it; the “speaker diarization” bundle carries it (required, used together with Pyannote segmentation).
+ * The MLX conversion bundle's model card says MIT, but the weights come from pyannote's WeSpeaker conversion, which upstream publishes under CC-BY-4.0, and the upstream license governs. CC-BY-4.0 requires attribution. The attribution (work, author, license and modifications) is written in the license's `summary`. The model bundle status's component carries this license so the UI can list it in the model details' license row (architecture design §6.3).
  */
 export const WESPEAKER: BundleComponentSource = {
   family: 'wespeaker',
@@ -261,7 +248,7 @@ export const WESPEAKER: BundleComponentSource = {
 };
 
 /**
- * Pyannote segmentation-3.0 的 MLX 转换包：「说话人区分」模型包的分段模型（滑窗逐帧判断谁在说话），candle 读同一个仓库。
+ * The MLX conversion bundle of Pyannote segmentation-3.0: the segmentation model of the “speaker diarization” bundle (it judges frame by frame who is speaking over sliding windows). candle reads the same repository.
  */
 const PYANNOTE_SEGMENTATION: BundleComponentSource = {
   family: 'pyannote-segmentation',
@@ -273,15 +260,14 @@ const PYANNOTE_SEGMENTATION: BundleComponentSource = {
 
 const { optional: _optional, ...WESPEAKER_REQUIRED } = WESPEAKER;
 
-/** Apple Silicon 上的「说话人区分」模型包（MLX）；Core ML 的 Whisper 同样用它（Worker 里是 MLX 的 Pyannote 与 WeSpeaker）。 */
+/** The “speaker diarization” bundle on Apple Silicon (MLX). Core ML Whisper also uses it (in the Worker it is MLX's Pyannote and WeSpeaker). */
 export const SPEAKER_DIARIZATION_BUNDLE = 'speaker-diarization@mlx';
-/** 别的平台上的「说话人区分」模型包（candle，同一批仓库）；GGML 的 Whisper 同样用它。 */
+/** The “speaker diarization” bundle on other platforms (candle, same set of repositories). GGML Whisper also uses it. */
 export const SPEAKER_DIARIZATION_CANDLE_BUNDLE = 'speaker-diarization@candle';
 
 /**
- * 「说话人区分」模型包（架构设计 §6.6）：Pyannote 分段 + WeSpeaker 声纹聚类，给不自带区分的识别模型包（Qwen3-ASR、Whisper）
- * 在转写之后标说话人；AI 工具「识别说话人」给已有转写重新区分时，它单独加载进 Model Worker（`job.run` 的 `diarize`）。
- * MOSS 自己区分，不用它。WeSpeaker 与 MOSS 的说话人模型是同一个仓库，装一份共用。
+ * The “speaker diarization” bundle (architecture design §6.6): Pyannote segmentation plus WeSpeaker voiceprint clustering. It labels speakers after transcription for recognition bundles that do not diarize themselves (Qwen3-ASR, Whisper). When the AI tool “identify speakers” re-diarizes an existing transcript, it is loaded separately into the Model Worker (`diarize` in `job.run`).
+ * MOSS diarizes on its own and does not use it. WeSpeaker and MOSS's speaker model are in the same repository; one copy is installed and shared.
  */
 const SPEAKER_DIARIZATION: BundleDefinition = {
   bundleId: SPEAKER_DIARIZATION_BUNDLE,
@@ -303,10 +289,7 @@ const SPEAKER_DIARIZATION: BundleDefinition = {
 };
 
 /**
- * Whisper 的分词器（`tokenizer.json` 等），large-v3 与 turbo 共用，取自 `openai/whisper-large-v3`，是单独的组件。旧版只把
- * `tokenizer.json` 叠放进权重仓库目录，那份不算装好：从旧版升级的安装要补下这约 4 MB。MLX 包的 `generation_config.json`
- * 也取自这里（mlx-community 的仓库没有它）；它是后加进清单的：装没装好按磁盘上的清单判断，早先装好的分词器组件
- * 照样算装好（Core ML 不受影响），但没有这个文件，交给 MLX 包时 Worker 报 `MODEL_NOT_INSTALLED`。列出 MLX 包之前要让旧安装补下它。
+ * Whisper's tokenizer (`tokenizer.json` and so on), shared by large-v3 and turbo, taken from `openai/whisper-large-v3`, as a separate component. The old layout stacked only `tokenizer.json` into the weights repository directory. That does not count as installed: installs upgraded from the old layout need to download about 4 MB more. The MLX bundle's `generation_config.json` is also taken from here (mlx-community's repository does not have it). It was added to the manifest later, so the installed check follows the manifest on disk: a tokenizer component installed earlier still counts as installed (Core ML is unaffected), but without this file, handing it to an MLX bundle makes the Worker report `MODEL_NOT_INSTALLED`. Before the MLX bundles are listed, an old install must be made to download it.
  */
 const WHISPER_TOKENIZER: BundleComponentSource = {
   family: 'whisper-tokenizer',
@@ -332,7 +315,7 @@ const WHISPER_TURBO_LICENSE: ModelLicense = {
   },
 };
 
-/** 同一份权重的 MLX 转换（mlx-community 的 fp16 仓库）另标 Apache-2.0。 */
+/** The MLX conversion of the same weights (mlx-community's fp16 repository) is separately marked Apache-2.0. */
 const WHISPER_LARGE_V3_MLX_LICENSE: ModelLicense = {
   name: 'Apache-2.0',
   url: 'https://huggingface.co/openai/whisper-large-v3',
@@ -351,7 +334,7 @@ const WHISPER_TURBO_MLX_LICENSE: ModelLicense = {
   },
 };
 
-/** 人声分离：HTDemucs-FT 的 MLX 转换包（架构设计 §6.1 `separateAudio`）；candle 读同一个仓库（fp16 权重加载时升成 f32）。 */
+/** Vocal separation: the MLX conversion bundle of HTDemucs-FT (architecture design §6.1 `separateAudio`). candle reads the same repository (fp16 weights are upcast to f32 on load). */
 const HTDEMUCS_FT_LICENSE: ModelLicense = {
   name: 'MIT',
   url: 'https://github.com/facebookresearch/demucs/blob/main/LICENSE',
@@ -361,7 +344,7 @@ const HTDEMUCS_FT_LICENSE: ModelLicense = {
   },
 };
 
-/** 同一份权重的 GGML 转换（whisper.cpp 仓库）另标 MIT。 */
+/** The GGML conversion of the same weights (whisper.cpp repository) is separately marked MIT. */
 const WHISPER_LARGE_V3_GGML_LICENSE: ModelLicense = {
   name: 'Apache-2.0',
   url: 'https://huggingface.co/openai/whisper-large-v3',
@@ -381,13 +364,11 @@ const WHISPER_TURBO_GGML_LICENSE: ModelLicense = {
 };
 
 /**
- * whisper.cpp 的单文件 GGML 权重（词表内嵌，不要分词器组件）。两个模型包的文件在同一个上游仓库的同一版本里：large-v3
- * 登记在兄弟目录 `ggerganov/whisper.cpp-large-v3` 名下（下载仍取自 `ggerganov/whisper.cpp`，见仓库清单的 `sourceRepo`），
- * 两个模型包各装各删，装一个不连带下载另一个。
+ * whisper.cpp's single-file GGML weights (vocabulary embedded, so no tokenizer component is needed). The files of the two bundles are in the same version of the same upstream repository. large-v3 is registered under the sibling directory `ggerganov/whisper.cpp-large-v3` (downloads still come from `ggerganov/whisper.cpp`; see the repository manifest's `sourceRepo`). Each of the two bundles is installed and removed separately; installing one does not pull down the other.
  */
 const WHISPER_GGML_REVISION = '5359861c739e955e79d9a303bcbc70fb988958b1';
 
-// Whisper 的 MLX、Core ML 与 GGML 三个后端共用同一个名字（架构设计 §6.5），界面不露 bundleId。
+// Whisper's MLX, Core ML and GGML backends share one name (architecture design §6.5), and the UI does not expose bundleId.
 const WHISPER_LARGE_V3_LABEL = 'Whisper large-v3';
 const WHISPER_TURBO_LABEL = 'Whisper large-v3 turbo';
 
@@ -440,7 +421,7 @@ const QWEN3_ASR_1_7B: BundleDefinition = {
   diarization: SPEAKER_DIARIZATION_BUNDLE,
 };
 
-// 自己切段、自带说话人（没有 VAD）；装了说话人模型时用它合并跨块的说话人，装了对齐器时长行的词时间对齐出来。
+// Segments itself and carries speakers (no VAD). When the speaker model is installed, it is used to merge speakers across chunks. When the aligner is installed, word timing for long lines is aligned.
 const MOSS_TRANSCRIBE_DIARIZE: BundleDefinition = {
   bundleId: DEFAULT_TRANSCRIBE_BUNDLE,
   capability: 'transcribe',
@@ -469,11 +450,10 @@ const MOSS_TRANSCRIBE_DIARIZE: BundleDefinition = {
 };
 
 /**
- * candle 后端的同一个模型包：仓库、组件、许可与名字都不变，只换后端（架构设计 §6.5）。登记的设备是 `cpu`；Worker 握手报告了
- * CUDA 时 Runtime 改用 Worker 报告的设备。用的「说话人区分」模型包同样换成 candle 的。
+ * The candle backend's version of the same model bundle. Repository, components, license and name are unchanged; only the backend changes (architecture design §6.5). The registered device is `cpu`. When the Worker handshake reports CUDA, the Runtime uses the device the Worker reports. The “speaker diarization” bundle used alongside is also swapped for candle's.
  */
 function onCandle(def: BundleDefinition, bundleId: string): BundleDefinition {
-  // 按属性描述符复制：名字是 getter 的（「说话人区分」）照样在读的时候按当前语言生成，展开运算会在这里就把它求值定死。
+  // Copied by property descriptors. A name that is a getter (“speaker diarization”) is still generated in the current language when read. A spread expression would evaluate it here and freeze it.
   const copy = Object.defineProperties({}, Object.getOwnPropertyDescriptors(def)) as BundleDefinition;
   return Object.assign(copy, {
     bundleId,
@@ -537,7 +517,7 @@ export const BUNDLES: readonly BundleDefinition[] = [
     license: WHISPER_TURBO_LICENSE,
     diarization: SPEAKER_DIARIZATION_BUNDLE,
   },
-  // MLX 的 Whisper（mlx-community 的 fp16 转换）：解码配置与分词器同在 openai/whisper-large-v3 的分词器组件里。
+  // MLX Whisper (mlx-community's fp16 conversion): the decoding config and the tokenizer are in the tokenizer component from openai/whisper-large-v3.
   {
     bundleId: 'whisper-large-v3@mlx',
     capability: 'transcribe',
@@ -578,7 +558,7 @@ export const BUNDLES: readonly BundleDefinition[] = [
   onCandle(MOSS_TRANSCRIBE_DIARIZE, DEFAULT_CANDLE_TRANSCRIBE_BUNDLE),
   SPEAKER_DIARIZATION,
   onCandle(SPEAKER_DIARIZATION, SPEAKER_DIARIZATION_CANDLE_BUNDLE),
-  // whisper.cpp 的 Whisper：登记的设备是 `cpu`；Worker 握手报告了 GPU 时 Runtime 改用它（`cuda` 或 `vulkan`，与 candle 同一做法）。
+  // whisper.cpp Whisper: the registered device is `cpu`. When the Worker handshake reports a GPU, the Runtime switches to it (`cuda` or `vulkan`, same approach as candle).
   {
     bundleId: 'whisper-large-v3@ggml',
     capability: 'transcribe',
@@ -615,8 +595,7 @@ export const BUNDLES: readonly BundleDefinition[] = [
 ];
 
 /**
- * backend 能不能在这台机器上用：`mlx` 与 `coreml` 只有 Apple Silicon 的 macOS；`candle` 与 `ggml` 全平台（CPU）；`audio-cpp` 全平台
- * （引擎按构建选 Metal、CUDA、Vulkan 或 CPU；引擎是模型包的 `audiocpp-engine` 组件，主机平台没有它的压缩包时模型目录另报 `unsupported`）。
+ * Whether a backend can be used on this machine. `mlx` and `coreml` only on Apple Silicon macOS; `candle` and `ggml` on all platforms (CPU); `audio-cpp` on all platforms (the engine is built with Metal, CUDA, Vulkan or CPU. The engine is the bundle's `audiocpp-engine` component. When the host platform has no archive for it, the model catalog separately reports `unsupported`).
  */
 export function backendSupported(backend: ModelBackend, platform: NodeJS.Platform, arch: string): boolean {
   if (backend === 'mlx' || backend === 'coreml') return platform === 'darwin' && arch === 'arm64';
@@ -628,15 +607,12 @@ function appleSilicon(platform: NodeJS.Platform, arch: string): boolean {
 }
 
 /**
- * 登记了、能加载，但不列出的模型包：同一个模型在一个平台上只列一种（架构设计 §6.5）。Whisper 在 Apple Silicon 上列 Core ML 的；
- * MLX 的（`whisper-mlx`）识别整段长音频与 Core ML 一样快，但按 VAD 切成短段时每段都要跑满 30 秒的编码器，转写流水线慢约 1.3 倍，
- * 换不换由 §14 的待评审事项决定。
+ * Registered and loadable, but not listed. Only one variant of a model is listed per platform (architecture design §6.5). On Apple Silicon, Whisper lists the Core ML one. MLX's (`whisper-mlx`) recognizes a whole long audio as fast as Core ML does, but when VAD cuts it into short segments, each segment runs the 30-second encoder to completion, making the transcription pipeline about 1.3 times slower. Whether to switch is decided by the open review item in §14.
  */
 const UNLISTED_BUNDLES: ReadonlySet<string> = new Set(['whisper-large-v3@mlx', 'whisper-large-v3-turbo@mlx']);
 
 /**
- * 这台机器上列出的模型包（架构设计 §6.5）：Apple Silicon 只列 MLX 与 Core ML 的（同样的模型在 candle、GGML 上更慢，不给人选）；
- * 别的平台只列 candle 与 GGML 的（MLX、Core ML 用不了）。[`UNLISTED_BUNDLES`] 在哪里都不列。
+ * Bundles listed on this machine (architecture design §6.5). Apple Silicon lists only the MLX and Core ML ones (the same models are slower on candle and GGML, so they are not offered). Other platforms list only the candle and GGML ones (MLX and Core ML cannot run there). [`UNLISTED_BUNDLES`] is listed nowhere.
  */
 export function platformBundles(
   platform: NodeJS.Platform,
@@ -650,15 +626,13 @@ export function platformBundles(
   );
 }
 
-/** 这台机器上的默认转写模型包：Apple Silicon 用 MLX 的，别的平台用 candle 的。 */
+/** The default transcription bundle on this machine: MLX on Apple Silicon, candle on other platforms. */
 export function defaultTranscribeBundle(platform: NodeJS.Platform, arch: string): string {
   return appleSilicon(platform, arch) ? DEFAULT_TRANSCRIBE_BUNDLE : DEFAULT_CANDLE_TRANSCRIBE_BUNDLE;
 }
 
 /**
- * candle 模型包的 Model Worker 加载后约常驻多少（字节，架构设计 §6.5）。candle 把权重都换成计算精度：CPU 上是 f32，CUDA 上是
- * 半精度。每个组件按参数个数 × 4（CPU）或 × 2（CUDA）；没有 `parameters` 时按存储字节 × 计算位宽 / `weightBits`（全量化时
- * 4 位约 8 倍、8 位约 4 倍，有不量化的部分时偏大）；两样都没有时按存储字节。
+ * Approximate resident size (bytes) of a candle bundle's Model Worker after loading (architecture design §6.5). candle converts weights to the compute precision: f32 on CPU, half precision on CUDA. Each component is parameter count × 4 (CPU) or × 2 (CUDA). Without `parameters`, it is stored bytes × compute bit width / `weightBits` (for fully quantized weights, about 8× at 4 bits and 4× at 8 bits; larger when some parts are unquantized). With neither, it is stored bytes.
  */
 export function candleResidentBytes(
   device: string,
@@ -670,7 +644,7 @@ export function candleResidentBytes(
   return Math.round(components.reduce((sum, c) => sum + resident(c), 0));
 }
 
-/** 模型包的必需组件（不含 `optional` 的）：它们都装好，模型包就算装好。 */
+/** A bundle's required components (excluding `optional` ones). When all of them are installed, the bundle counts as installed. */
 export function requiredSources(def: Pick<BundleDefinition, 'components'>): BundleComponentSource[] {
   return Object.values(def.components).filter((s): s is BundleComponentSource => s !== undefined && !s.optional);
 }

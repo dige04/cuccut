@@ -1,28 +1,26 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2RuntimeConfig.swift`。
+//! Parts of this are adapted from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2RuntimeConfig.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! IndexTTS2 运行时配置：对照 speech-swift `IndexTTS2RuntimeConfig.swift` 移植。
+//! IndexTTS2 runtime configuration: ported from speech-swift `IndexTTS2RuntimeConfig.swift`.
 //!
-//! `config.yaml` 只用一个极简的缩进扁平化解析器读取（不引入 YAML 依赖），
-//! 缺失字段全部回退到 IndexTTS2 v2.0 官方默认值。
+//! `config.yaml` is read by a minimal indentation-based flattening parser (no YAML dependency is introduced), and any missing field falls back to the official IndexTTS2 v2.0 defaults.
 
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// 扁平化后的 YAML：`a.b.c` → 原始值字符串。
+/// Flattened YAML: `a.b.c` → raw value string.
 #[derive(Debug, Default, Clone)]
 pub struct FlatYaml {
     values: BTreeMap<String, String>,
 }
 
 impl FlatYaml {
-    /// 按缩进层级把 YAML 拍平；只支持 `key: value`、嵌套映射与标量短横线列表
-    /// （2.5 的 `emo_num:` 换行 `- 3`，拍平成 `[3, 17, …]`），遇到无冒号行报错。
+    /// Flattens YAML by indentation level. Only `key: value`, nested mappings and scalar dash lists are supported (in 2.5, `emo_num:` followed by the line `- 3` is flattened to `[3, 17, …]`). A line with no colon is an error.
     pub fn parse(text: &str) -> Result<Self> {
         let mut values = BTreeMap::new();
         let mut lists: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -38,7 +36,7 @@ impl FlatYaml {
             let indent = line.len() - line.trim_start_matches(' ').len();
             let content = line.trim();
             if content == "-" || content.starts_with("- ") {
-                // 列表项可以与所属键同缩进，只弹出更深的层级。
+                // List items may be at the same indentation as their parent key; only deeper levels are popped.
                 while stack.last().is_some_and(|(depth, _)| *depth > indent) {
                     stack.pop();
                 }
@@ -75,7 +73,7 @@ impl FlatYaml {
         self.values.get(path).map(String::as_str)
     }
 
-    /// 去掉成对引号的字符串值。
+    /// Strips matching quotes from a string value.
     pub fn string(&self, path: &str) -> Option<String> {
         self.get(path).map(unquote)
     }
@@ -165,7 +163,7 @@ pub struct S2MelConfig {
     pub dit_content_dim: usize,
 }
 
-/// 与 speech-swift `IndexTTS2RuntimeConfig` 对应的运行时配置。
+/// Runtime configuration corresponding to speech-swift's `IndexTTS2RuntimeConfig`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeConfig {
     pub dataset_sample_rate: u32,
@@ -176,12 +174,12 @@ pub struct RuntimeConfig {
     pub emo_num: Vec<usize>,
     pub qwen_emo_path: String,
     pub version: String,
-    /// `dataset.tokenizer_type`：2.0 缺省为 SentencePiece，2.5 为 `tiktoken`。
+    /// `dataset.tokenizer_type`: defaults to SentencePiece in 2.0, and is `tiktoken` in 2.5.
     pub tokenizer_type: String,
 }
 
 impl RuntimeConfig {
-    /// IndexTTS2 v2.0 官方默认值（config.yaml 缺项时的回退）。
+    /// Official IndexTTS2 v2.0 defaults (the fallback when config.yaml is missing an entry).
     pub fn fallback() -> Self {
         Self {
             dataset_sample_rate: 24_000,
@@ -228,12 +226,12 @@ impl RuntimeConfig {
         }
     }
 
-    /// IndexTTS 2.5 权重：tiktoken 多语言词表 + CAMPPlus 音色投影 + 语言嵌入。
+    /// IndexTTS 2.5 weights: tiktoken multilingual vocabulary + CAMPPlus speaker projection + language embedding.
     pub fn is_v25(&self) -> bool {
         self.version.trim().starts_with("2.5") || self.tokenizer_type == "tiktoken"
     }
 
-    /// 从 config.yaml 文本解析；缺项回退默认值。
+    /// Parses from config.yaml text; missing entries fall back to defaults.
     pub fn parse(text: &str) -> Result<Self> {
         let yaml = FlatYaml::parse(text)?;
         let base = Self::fallback();
@@ -300,7 +298,7 @@ impl RuntimeConfig {
         })
     }
 
-    /// 读取模型包里的 `config.yaml`；清单没列出它（`None`）时使用默认值。
+    /// Reads `config.yaml` from the model package; when the manifest does not list it (`None`), the defaults are used.
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let Some(path) = path else {
             return Ok(Self::fallback());
@@ -309,7 +307,7 @@ impl RuntimeConfig {
         Self::parse(&text).with_context(|| format!("解析 {} 失败", path.display()))
     }
 
-    /// 输出采样率 = S2Mel / BigVGAN 采样率。
+    /// Output sample rate = the S2Mel / BigVGAN sample rate.
     pub fn output_sample_rate(&self) -> u32 {
         self.s2mel.sample_rate
     }

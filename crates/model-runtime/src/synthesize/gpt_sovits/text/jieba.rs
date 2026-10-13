@@ -1,10 +1,9 @@
-//! jieba 分词：复刻上游实际调用的 `jieba_fast`（默认词典、`HMM=True`、精确模式）。
+//! jieba word segmentation: a port of the `jieba_fast` build that upstream actually calls (default dictionary, `HMM=True`, precise mode).
 //!
-//! - [`posseg`]：`jieba_fast.posseg.lcut(text)`，chinese2 的 G2P 分词。DAG 路由后把词典外的连续单字交给
-//!   「词性 HMM」重新切分；jieba-rs 的 `tag` 是先普通 HMM 切词再猜词性，结果不同（如「胡同儿里」）。
-//! - [`cut_for_search`]：`jieba_fast.cut_for_search(word)`，tone_sandhi 的 `_split_word`。
+//! - [`posseg`]: `jieba_fast.posseg.lcut(text)`, the word segmentation used by chinese2's G2P. After DAG routing, runs of single characters outside the dictionary are re-segmented by the "part-of-speech HMM". jieba-rs's `tag` first segments with the plain HMM and then guesses parts of speech, so the results differ (e.g. 胡同儿里).
+//! - [`cut_for_search`]: `jieba_fast.cut_for_search(word)`, tone_sandhi's `_split_word`.
 //!
-//! 词典与两套 HMM 表由 v2 仓库（`cuccut-app`）的 `scripts/dev/gpt-sovits-text/gen_jieba.py` 从 jieba_fast 导出（jieba 词典与模型，MIT）。
+//! The dictionary and the two HMM tables are exported from jieba_fast by `scripts/dev/gpt-sovits-text/gen_jieba.py` in the v2 repository (`cuccut-app`) (the jieba dictionary and model, MIT).
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -22,7 +21,7 @@ struct Entry {
     tag: u16,
 }
 
-/// `Tokenizer.FREQ`（只存非零词频的词条，前缀用排序后的二分判定）+ `POSTokenizer.word_tag_tab`。
+/// `Tokenizer.FREQ` (only entries with a non-zero word frequency are stored; prefixes are checked by binary search over the sorted list) + `POSTokenizer.word_tag_tab`.
 struct Dict {
     words: String,
     entries: Vec<Entry>,
@@ -42,13 +41,13 @@ impl Dict {
             .map(|i| &self.entries[i])
     }
 
-    /// `frag in FREQ`：是词条或词条的前缀（`gen_pfdict` 给前缀记 0 频）。
+    /// `frag in FREQ`: is either an entry or a prefix of one (`gen_pfdict` records prefixes with frequency 0).
     fn has_prefix(&self, frag: &str) -> bool {
         let i = self.entries.partition_point(|entry| self.word(entry) < frag);
         self.entries.get(i).is_some_and(|entry| self.word(entry).starts_with(frag))
     }
 
-    /// `FREQ.get(word)` 为真值时的词频。
+    /// Word frequency when `FREQ.get(word)` is truthy.
     fn freq(&self, word: &str) -> Option<u32> {
         self.find(word).map(|entry| entry.freq)
     }
@@ -133,7 +132,7 @@ impl Reader<'_> {
     }
 }
 
-/// `emit_p[state].get(ch, MIN_FLOAT)`，表按字符排序。
+/// `emit_p[state].get(ch, MIN_FLOAT)`; the table is sorted by character.
 fn emit(table: &[(u16, f64)], ch: char) -> f64 {
     let Ok(code) = u16::try_from(ch as u32) else {
         return MIN_FLOAT;
@@ -141,23 +140,23 @@ fn emit(table: &[(u16, f64)], ch: char) -> f64 {
     table.binary_search_by_key(&code, |&(c, _)| c).map_or(MIN_FLOAT, |i| table[i].1)
 }
 
-// ---------------------------------------------------------------- 词典路由
+// ---------------------------------------------------------------- dictionary routing
 
 fn char_offsets(text: &str) -> Vec<usize> {
     text.char_indices().map(|(i, _)| i).chain([text.len()]).collect()
 }
 
-/// DAG 路由的两套实现：jieba_fast 的 `Tokenizer.__cut_DAG` 走 C 版 `_get_DAG_and_calc`，
-/// `POSTokenizer.__cut_DAG` 走 Python 版 `get_DAG` + `calc`，平分规则不同。
+/// Two DAG-routing implementations: jieba_fast's `Tokenizer.__cut_DAG` goes through the C `_get_DAG_and_calc`, while
+/// `POSTokenizer.__cut_DAG` goes through the Python `get_DAG` + `calc`; their tie-breaking rules differ.
 #[derive(Clone, Copy, PartialEq)]
 enum Calc {
-    /// 元组 `max`：平分取较大终点。
+    /// Tuple `max`: on a tie, take the larger end index.
     Python,
-    /// 每字最多 12 个终点；初值 `INT_MIN`、严格 `>`：平分取较小终点。
+    /// At most 12 end positions per character; initial value `INT_MIN` and strict `>`: on a tie, take the smaller end index.
     C,
 }
 
-/// 每个字起点的最佳词终点（含）。
+/// Best word end position (inclusive) for each start position.
 fn route(text: &str, offsets: &[usize], calc: Calc) -> Vec<usize> {
     let dict = &*DICT;
     let n = offsets.len() - 1;
@@ -204,7 +203,7 @@ fn route(text: &str, offsets: &[usize], calc: Calc) -> Vec<usize> {
     best[..n].iter().map(|&(_, end)| end).collect()
 }
 
-/// 按字符类切出最大连续段：`re.split("([class]+)")` 的非空块及其是否属于该类。
+/// Splits into maximal runs by character class: the non-empty blocks of `re.split("([class]+)")` and whether each belongs to the class.
 fn runs(text: &str, class: fn(char) -> bool) -> Vec<(&str, bool)> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -237,7 +236,7 @@ fn is_han_internal(ch: char) -> bool {
     is_han(ch) || ch.is_ascii_alphanumeric() || matches!(ch, '+' | '#' | '&' | '.' | '_')
 }
 
-/// 非汉字块：`re.split("(\r\n|\s)")` 后空白整段、其余逐字，合起来就是「`\r\n` 成对，其余逐字」。
+/// Non-Han blocks: after `re.split("(\r\n|\s)")`, whitespace runs are kept whole and everything else is split per character; together this means “`\r\n` is kept as a pair, everything else is per character”.
 fn skip_pieces(block: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut iter = block.char_indices().peekable();
@@ -252,7 +251,7 @@ fn skip_pieces(block: &str) -> Vec<&str> {
     out
 }
 
-/// `re.split("(pattern)")` 的非空片段。
+/// Non-empty pieces from `re.split("(pattern)")`.
 fn regex_pieces<'a>(re: &Regex, text: &'a str) -> Vec<&'a str> {
     let mut out = Vec::new();
     let mut last = 0;
@@ -269,7 +268,7 @@ fn regex_pieces<'a>(re: &Regex, text: &'a str) -> Vec<&'a str> {
     out
 }
 
-// ---------------------------------------------------------------- finalseg（Tokenizer.cut 的 HMM）
+// ---------------------------------------------------------------- finalseg (the HMM used by Tokenizer.cut)
 
 struct FinalSeg {
     start: [f64; 4],
@@ -304,11 +303,10 @@ fn finalseg_cut(text: &str, out: &mut Vec<String>) {
     }
 }
 
-/// `finalseg.__cut`：调的是 C 版 `_viterbi`，与 `finalseg.viterbi` 的 Python 版不同——每步从 `MIN_FLOAT`
-/// 起按严格 `>` 取前驱，两个前驱都不超过 `MIN_FLOAT` 时概率钉在 `MIN_FLOAT`、前驱取字母序较大者；
-/// 末字 `S` 严格大于 `E` 才选 `S`。发射表外的连续生僻字因此连成一个词。
+/// `finalseg.__cut`: calls the C `_viterbi`, which differs from the Python `finalseg.viterbi`. At each step it starts from `MIN_FLOAT` and takes the predecessor with strict `>`. When neither predecessor exceeds `MIN_FLOAT`, the probability is pinned to `MIN_FLOAT` and the predecessor with the larger state letter (in alphabetical order) is taken.
+/// The last character takes `S` only if `S` is strictly greater than `E`. As a result, consecutive rare characters outside the emission table are joined into one word.
 fn finalseg_hmm(text: &str, out: &mut Vec<String>) {
-    // C 源码的 `PrevStatus` 次序，及两前驱都落空时的兜底
+    // Order of `PrevStatus` as in the C source, and the fallback when both predecessors miss
     const PREV: [[usize; 2]; 4] = [[E, S], [B, M], [M, B], [S, E]];
     const FALLBACK: [usize; 4] = [S, M, M, S];
     let model = &*FINALSEG;
@@ -326,7 +324,7 @@ fn finalseg_hmm(text: &str, out: &mut Vec<String>) {
             let em = emit(&model.emit[y], ch);
             let (mut top, mut best) = (MIN_FLOAT, None);
             for &y0 in &PREV[y] {
-                // 加法次序同 C：`em + V[i-1][y0] + trans`
+                // Addition order is the same as in C: `em + V[i-1][y0] + trans`
                 let score = em + prev[y0] + model.trans[y0][y];
                 if score > top {
                     top = score;
@@ -402,7 +400,7 @@ fn cut_dag(text: &str, out: &mut Vec<String>) {
     }
 }
 
-/// `jieba_fast.lcut(text)`（精确模式，`HMM=True`）。
+/// `jieba_fast.lcut(text)` (precise mode, `HMM=True`).
 pub fn cut(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     for (block, han) in runs(text, is_han_default) {
@@ -439,7 +437,7 @@ pub fn cut_for_search(text: &str) -> Vec<String> {
 
 // ---------------------------------------------------------------- posseg
 
-/// posseg HMM：状态按 `(位置, 词性)` 元组排序，下标序即 Python 的元组比较序。
+/// posseg HMM: states are sorted as `(position, part-of-speech)` tuples, so index order is the same as Python's tuple comparison order.
 struct PosSeg {
     states: Vec<(char, String)>,
     start: Vec<f64>,
@@ -497,7 +495,7 @@ static POSSEG: LazyLock<PosSeg> = LazyLock::new(|| {
     }
 });
 
-/// `posseg.viterbi.viterbi`：返回逐字状态下标。
+/// `posseg.viterbi.viterbi`: returns the state index for each character.
 fn posseg_viterbi(model: &PosSeg, obs: &[char]) -> Vec<usize> {
     let n = model.states.len();
     let candidates = |ch: char| -> Vec<usize> { model.char_states.get(&ch).cloned().unwrap_or_else(|| (0..n).collect()) };
@@ -596,7 +594,7 @@ fn posseg_detail(text: &str, out: &mut Vec<(String, String)>) {
             continue;
         }
         for piece in regex_pieces(&RE_SKIP_DETAIL, block) {
-            // 片段要么整段匹配 `[.0-9]+` / `[a-zA-Z0-9]+`，要么不含这些字符，看首字即可
+            // A piece either matches `[.0-9]+` / `[a-zA-Z0-9]+` in full or contains none of those characters, so checking the first character is enough.
             let tag = match piece.chars().next() {
                 Some('.' | '0'..='9') => "m",
                 Some(c) if c.is_ascii_alphanumeric() => "eng",
@@ -643,14 +641,14 @@ fn posseg_dag(text: &str, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// `jieba_fast.posseg.lcut(text)`（`HMM=True`），返回 `(词, 词性)`。
+/// `jieba_fast.posseg.lcut(text)` (`HMM=True`), returns `(word, part of speech)` pairs.
 pub fn posseg(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (block, han) in runs(text, is_han_internal) {
         if han {
             posseg_dag(block, &mut out);
         } else {
-            // 非汉字块不含 `[.0-9a-zA-Z]`，逐字（`\r\n` 成对）都记 x
+            // Non-Han blocks contain no `[.0-9a-zA-Z]`; every character (with `\r\n` as a pair) is tagged x.
             out.extend(skip_pieces(block).into_iter().map(|piece| (piece.to_owned(), "x".to_owned())));
         }
     }

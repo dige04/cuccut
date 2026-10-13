@@ -23,7 +23,7 @@ function newGateway(): Gateway {
   return new Gateway({ token: 'token', runtime, handlers: {} as RpcHandlers, log: silentLogger });
 }
 
-/** 期限内没落定就算失败：修复前监听失败时 Promise 永远挂着。 */
+/** Not settled within the deadline counts as a failure: before the fix, a listen failure left the Promise pending forever. */
 function within<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -34,13 +34,13 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 type HandleCounts = { servers: number; timers: number };
 
-/** 本进程里活着的监听端口与定时器个数。 */
+/** Number of live listening ports and timers in this process. */
 function handleCounts(): HandleCounts {
   const info = process.getActiveResourcesInfo();
   return { servers: info.filter((t) => t === 'TCPServerWrap').length, timers: info.filter((t) => t === 'Timeout').length };
 }
 
-/** 句柄关闭要到下一轮事件循环才生效：等到个数对上，或者期限到了报出最后一次的个数。 */
+/** Closing a handle takes effect only on the next turn of the event loop: wait until the counts match, or if the deadline passes, report the last count. */
 async function settledCounts(expected: HandleCounts, ms = 1_000): Promise<HandleCounts> {
   const deadline = Date.now() + ms;
   for (;;) {
@@ -94,7 +94,7 @@ describe('网关', () => {
       expect(error).toMatchObject({ code: 'EADDRINUSE' });
       expect(error?.message).toContain(String(taken));
       expect(await settledCounts(before)).toEqual(before);
-      // 失败后 close 也安全。
+      // close is also safe after a failure.
       await gateway.close();
     } finally {
       await new Promise((resolve) => blocker.close(resolve));

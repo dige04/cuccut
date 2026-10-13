@@ -19,9 +19,9 @@ import { PAGE, type Candidates } from './use-candidates.ts';
 export { useCandidates, type Candidates } from './use-candidates.ts';
 
 /*
- * 工具的 Space 选择器（产品设计 §2.7「页面」第 1 条，设计稿 tool-space-picker.jsx 与 tool-video-picker.jsx、tools.css `.tvp*`）：
- * 只列这个工具收的种类（model/tool-space-input.ts），回收站里的不列；视频来自 `tools.candidates`（标出已有的文稿、译文与
- * 配音），别的条目来自 Space 目录。这里只画：搜索框 + 单选列表，不能选的置灰并写清原因。
+ * The Space picker for tools (product design §2.7 “Pages”, item 1; design files tool-space-picker.jsx and tool-video-picker.jsx, tools.css `.tvp*`):
+ * lists only the kinds this tool accepts (model/tool-space-input.ts), and items in the trash are not listed; videos come from `tools.candidates` (marking existing transcripts, translations and
+ * dubbings), and other entries come from the Space directory. This only draws: a search box plus a single-select list, where items that cannot be selected are greyed out with the reason written out.
  */
 
 const box = style({
@@ -81,7 +81,7 @@ const why = style({
 });
 const foot = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, minWidth: 0 });
 
-/** 这个工具的全部候选（不带搜索词）：页面用它找选中的那一行。`data` 是视频候选，不收视频的工具给 null。 */
+/** All candidates for this tool (without a search term): the page uses it to find the selected row. `data` is the video candidates; tools that do not accept videos pass null. */
 export function useSpaceRows(tool: ToolId, data: Candidates | null): SpaceRow[] {
   const entries = useSpace((s) => s.entries);
   const videos = data?.rows;
@@ -89,8 +89,8 @@ export function useSpaceRows(tool: ToolId, data: Candidates | null): SpaceRow[] 
 }
 
 /**
- * 行里第二行：视频是「项目名 · N 分钟」（时长取 Space 条目里的媒体信息，候选里没有）；别的条目是「种类 · 大小 · 时长或尺寸 · 项目 · 状态」，
- * 时长按 m:ss 写（几秒的音频不写成「1 分钟」）。
+ * The second line of a row: for a video it is “项目名 · N 分钟” (project name · N min); the duration comes from the media info of the Space entry, which the candidates do not have. For other entries it is “种类 · 大小 · 时长或尺寸 · 项目 · 状态” (kind · size · duration or dimensions · project · status).
+ * Durations are written as m:ss (a few-second audio clip is not written as “1 分钟” (1 min)).
  */
 function useRowDetails(): (r: SpaceRow) => string {
   const projects = useDirectory((s) => s.projects);
@@ -107,7 +107,7 @@ function useRowDetails(): (r: SpaceRow) => string {
   };
 }
 
-/** Space 选择器：搜索框 + 单选列表；能选的在前，不能选的置灰并写原因。`data` 是视频候选（不收视频的工具给 null）。 */
+/** Space picker: a search box plus a single-select list; selectable items come first, and items that cannot be selected are greyed out with the reason. `data` is the video candidates (tools that do not accept videos pass null). */
 export function SpacePicker({
   tool,
   data,

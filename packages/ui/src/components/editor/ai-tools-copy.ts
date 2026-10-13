@@ -14,11 +14,11 @@ import { pl } from './ai-tools-copy.pl.ts';
 import { tr } from './ai-tools-copy.tr.ts';
 import { vi } from './ai-tools-copy.vi.ts';
 
-/** 编辑器里工具页的文案（原型 panel-aitools.jsx、panel-aitools-flows.jsx `RunCta`、tool-setup.jsx、panel-aitools-write.jsx）。译文在 `ai-tools-copy.zh-Hans.ts`。 */
+/** Tool page copy in the editor (prototype panel-aitools.jsx, panel-aitools-flows.jsx `RunCta`, tool-setup.jsx, panel-aitools-write.jsx). The translation is in `ai-tools-copy.zh-Hans.ts`. */
 const en = {
   back: 'Back',
 
-  // 设置态
+  // Settings state
   who: 'Use',
   whoAgent: 'Hand off to the Agent',
   whoModel: 'Call a model directly',
@@ -32,7 +32,7 @@ const en = {
   noConversation: 'This video isn’t in any project or session, so it can’t be handed off to the Agent.',
   createFailed: (message: string) => `Couldn’t create a session: ${message}`,
 
-  // 勾选项与自定义
+  // Checkboxes and custom
   prePolish: 'Polish first (auto paragraphs)',
   prePolishOn: 'Chapters are grouped by paragraph',
   prePolishOff: 'An unpolished transcript has only 1 paragraph, so chapters will be coarse',
@@ -46,10 +46,10 @@ const en = {
   staleNone: 'Check at least one',
   staleOnly: (language: string) => `Only the ${language} translation`,
   retranscribeModel: 'The Agent picks a speech model from those installed on this computer; to choose one, say so in the instructions below.',
-  /** 重新转录「更多选项」开着识别说话人、要由「说话人区分」来做时，加进发给 Agent 的那句话（设计稿 panel-aitools.jsx）。 */
+  /** The sentence added to the message sent to the Agent when 「识别说话人」 (Identify speakers) is on under re-transcribe's 「更多选项」 (More options) and speaker diarization is meant to do it (design draft panel-aitools.jsx). */
   retranscribeSpeakers: 'Identify speakers after transcribing',
 
-  // 写作与发布
+  // Writing and publishing
   platform: 'Where to post',
   platformPlaceholder: 'The platform to post on (optional); it follows that platform’s rules and reminds you to check',
   titleCount: 'Candidates',
@@ -61,7 +61,7 @@ const en = {
   coverRatioProject: 'Same as the video canvas',
   coverText: 'Cover text',
 
-  // 剪成短视频（原型 panel-aitools-shorts.jsx）
+  // Cut into a short video (prototype panel-aitools-shorts.jsx)
   shortsShape: 'What to cut',
   shortsCount: 'How many',
   shortsLength: 'Length',
@@ -80,11 +80,11 @@ const en = {
   shortsSkipDoneOff: 'Looks everywhere; may overlap shorts already cut',
   shortsHint: 'Starts a new session to find the segments and create the videos; the original video and its timeline stay as they are.',
 
-  // 还做不了的
+  // Not yet possible
   soon: 'Coming soon',
   chaptersPolishFirst: 'Polish and split into paragraphs first, then generate chapters',
 
-  // AI 工具 Tab：列表页、提示词框与交出去
+  // AI tools tab: list page, prompt box and handoff
   session: 'Session',
   promptLabel: 'What to tell the Agent',
   promptPlaceholder: 'What to do and how; use @ to reference chapters or speakers',
@@ -95,7 +95,7 @@ const en = {
   sentNew: 'Handed off to the Agent · new session',
   sentCurrent: 'Handed off to the Agent · continuing the current session',
 
-  // 留在原地的工具页（找可剪的口、刷新过期译文）交给 Agent 后的进度卡
+  // Progress card left on the in-place tool page (finding cut points, refreshing stale translations) after handing off to the Agent
   agentChip: 'Agent in progress',
   agentHanded: (agent: string) => `Handed off to ${agent} in a session`,
   agentStarting: 'Starting the session…',
@@ -122,8 +122,8 @@ const en = {
   agentCardNew: (agent: string) => `Starts a new session with this video as context; runs in ${agent} on this computer and asks before writing →`,
   stateChapters: (count: number) => (count === 1 ? '1 chapter' : `${count} chapters`),
 
-  // 直接调模型（产品设计 §5.10「直接调模型」，原型 tool-prompt.jsx、model-ai-prompt.js `contextPack` / `contextLine` / `hint`）
-  /** 「用」一行里直接调模型做不了、只能交给 Agent 的工具各自的原因。 */
+  // Calling a model directly (product design §5.10 「直接调模型」, prototype tool-prompt.jsx, model-ai-prompt.js `contextPack` / `contextLine` / `hint`)
+  /** The reason, for each tool that cannot call a model directly and can only be handed to the Agent, shown on the 「用」 (Use) row. */
   whyRetranscribe: 'Needs a speech model, and the Runtime’s transcription adds a whole new transcript instead of replacing a range, so only the Agent can do it',
   whyCleanup: 'Finding cuts means weighing each spot in context, so only the Agent can do it',
   whyCover: 'A cover means generating and composing images, so only the Agent can do it',
@@ -153,13 +153,13 @@ const en = {
   ctaTitle: 'Suggest titles',
   ctaDesc: 'Write description',
   noTextModel: 'Connect a text model first',
-  // 刷新过期译文直接调模型：走 `translate` 就地刷新，没有提示词框（ai-tool-stale-direct.tsx）
+  // Refreshing stale translations by calling the model directly: runs the in-place refresh of `translate`; there is no prompt box (ai-tool-stale-direct.tsx)
   staleDirectSetup:
     'Retranslates, in place, the sentences marked out of date, the ones whose source you edited, and the ones not yet translated: the same translation gets a new version, and only those subtitle lines change.',
   staleTranslation: 'Translation',
   staleNoTranslation: 'This video has no translation yet. Translate it in the Subtitles panel first.',
   staleReading: 'Reading the translation…',
-  /** `parts`：「3 out of date · 2 not translated」，用翻译文案的短计数拼。 */
+  /** `parts`: 「3 out of date · 2 not translated」, assembled from the short counts in the translation copy. */
   staleCounts: (parts: string) => `To retranslate: ${parts}`,
   staleNothing: 'Nothing in this translation is out of date or untranslated',
   staleCutNeedsAgent: 'Sentences cut from the original need retranslating from the cut source, which only the Agent can do.',
@@ -168,7 +168,7 @@ const en = {
   staleGateBody: 'This tool sends the sentences to retranslate, with their source, to a text model.',
   ctaStale: (n: number) => (n === 0 ? 'Retranslate' : n === 1 ? 'Retranslate 1 sentence' : `Retranslate ${n} sentences`),
 
-  // 直接调模型：运行、结果与收据
+  // Calling the model directly: run, result and receipt
   runSubmitting: 'Starting…',
   runQueued: 'Queued',
   runRunning: (model: string) => `${model} is working on it`,
@@ -203,7 +203,7 @@ const en = {
   statePending: (count: number) => `${count} pending`,
   stateStale: (count: number) => `${count} stale`,
   stateLast: (when: string) => `Last · ${when}`,
-  // 生成配乐做好后铺上音乐轨（soundtrack-bed.tsx）的吐司；这笔编辑的名字在协议的 `editLabel.addSoundtrack`
+  // The toast shown once a generated soundtrack is ready and laid down as a music track (soundtrack-bed.tsx); the name of this edit is `editLabel.addSoundtrack` in the protocol
   soundtrackAdded: (name: string, summary: string) => `Added “${name}” to the music track · ${summary}`,
 };
 

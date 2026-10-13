@@ -549,9 +549,7 @@ fn replay(
     Ok(())
 }
 
-/// 文稿的读法转储：存盘的版式下派生的字幕行 / 段落 / 句子，再加一遍重新求解
-/// 版式后的字幕行。两个版本的程序对同一份 transcript.json 各跑一遍，逐行比较，
-/// 用来证明读法没变（或看清变在哪）。
+/// Dump of how the script is segmented: the subtitle lines / paragraphs / sentences derived under the saved layout, plus the subtitle lines after re-solving the layout. Two versions of the program each run on the same transcript.json, and the output is compared line by line, to prove the segmentation is unchanged (or to see exactly where it changed).
 fn project(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     use speech_doc::cue::{derive_cues, derive_paras};
     use speech_doc::doc::TranscriptDoc;

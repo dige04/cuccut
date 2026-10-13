@@ -299,8 +299,8 @@ impl ScreenTextQueue {
     }
 }
 
-/// Lowercase 后移除 Unicode 空白、标点和符号；与 VoiceInk
-/// `ScreenTextSimilarity.normalize` 的字符域一致。
+/// After lowercasing, removes Unicode whitespace, punctuation and symbols; the character set matches VoiceInk
+/// `ScreenTextSimilarity.normalize`.
 pub fn normalize_screen_text(text: &str) -> String {
     text.to_lowercase()
         .chars()
@@ -324,8 +324,8 @@ pub fn normalize_screen_text(text: &str) -> String {
         .collect()
 }
 
-/// 字符 bigram Sørensen–Dice + containment；对应 VoiceInk
-/// `ScreenTextSimilarity.ratio`，适用于无空格的 CJK 与渐显的部分 OCR。
+/// Character-bigram Sørensen–Dice + containment; corresponds to VoiceInk
+/// `ScreenTextSimilarity.ratio`, for space-less CJK text and partially revealed OCR text.
 pub fn screen_text_similarity(left: &str, right: &str) -> f64 {
     let left = normalize_screen_text(left);
     let right = normalize_screen_text(right);
@@ -402,7 +402,7 @@ struct TrackedScreenText {
     out_block: usize,
 }
 
-/// VoiceInk `ScreenTextScanFold.foldResult` 的纯 Rust 对等物。
+/// Pure Rust equivalent of VoiceInk `ScreenTextScanFold.foldResult`.
 pub fn fold_screen_text_scan(
     samples: &[ScreenTextQueueFrame],
     existing: &[ScreenTextQueueFrame],
@@ -856,9 +856,9 @@ fn same_timing(element: &Element, span: &ScreenTextSpan) -> bool {
     })
 }
 
-/// VoiceInk `ScreenTextElementBuilder.shouldPreserveExistingTiming` 的纯 Rust 对等物。
-/// 默认重应用保留人工/requested 时间或已偏离上次 auto 基线的时间；显式
-/// `--duration` 始终覆盖。
+/// Pure Rust equivalent of VoiceInk `ScreenTextElementBuilder.shouldPreserveExistingTiming`.
+/// By default, reapplying keeps timing that was set manually or requested, or that has drifted from the last auto baseline; an explicit
+/// `--duration` always overrides.
 pub fn should_preserve_screen_text_timing(
     existing: &Element,
     source_span: &ScreenTextSpan,
@@ -939,8 +939,8 @@ pub fn build_screen_text_element(
             rot: Some(block.rot),
             ..Place::default()
         }),
-        // 缺席 = center = 这条链路一直以来的行为。`place.y` 来自识别出的 bbox
-        // 中心，重应用时和 place 一起从新的 bbox 重新推导，所以这里不落值。
+        // Absent = center, which is what this path has always done. `place.y` comes from the center of the recognized bbox;
+        // when reapplying, it is re-derived together with place from the new bbox, so no value is stored here.
         vertical_align: None,
         src_id: None,
         src_start: None,

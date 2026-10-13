@@ -16,18 +16,18 @@ import { tr } from './tools-copy.tr.ts';
 import { vi } from './tools-copy.vi.ts';
 
 /**
- * 工具页的文案（设计稿 page-tools.jsx、tool-transcribe.jsx、tool-tts.jsx、tool-image.jsx、image-gen.jsx、tool-llm.jsx 原文；
- * 设计稿里演示用的话——「交互原型：…」「交互演示播放的是示例音频」——不搬）。与模型页的 models-copy.ts 一样单独放一份，
- * 不往 copy.ts 里挤。
+ * Copy for the tool pages (taken verbatim from design files page-tools.jsx, tool-transcribe.jsx, tool-tts.jsx, tool-image.jsx, image-gen.jsx and tool-llm.jsx;
+ * the demo lines in the design files, such as “交互原型：…” (Interactive prototype: …) and “交互演示播放的是示例音频” (The interactive demo plays a sample audio), are not carried over). Like models-copy.ts for the models page, it is kept in a separate file
+ * and not crowded into copy.ts.
  *
- * 英文写在这里（键与类型的来源），译文在 `tools-copy.<语言>.ts`。每一组仍按原来的具名导出（`GALLERY_COPY` 等）给出，
- * 读属性时取当前语言。
+ * The English is written here (the source of the keys and types); the translations are in `tools-copy.<language>.ts`. Each group is still given as the named export it was before (`GALLERY_COPY` etc.),
+ * and the current language is picked when a property is read.
  */
 const en = {
   gallery: {
     title: 'Tools',
     lede: 'Give it a file or some text and a model processes it directly; results are saved to the Library. No Agent connection needed.',
-    /** 生成任务的结果由 Runtime 自动列进 Space（runtime-core space/space-derive.ts），也能下载另存。 */
+    /** Results of generation jobs are listed automatically in the Space by the Runtime (runtime-core space/space-derive.ts), and can also be downloaded and saved elsewhere. */
     ledeNote: 'Results are listed in the Library automatically (stored on this computer), and you can download a copy too.',
     planned: 'Coming soon',
     foot: 'More tools are on the way: format conversion, audio extraction, clipping, batch subtitles and more.',
@@ -46,12 +46,12 @@ const en = {
     back: 'Back to all tools',
   },
 
-  /** 记录栏头上「在 Space 中查看」：去 Space 里这一类。 */
+  /** “在 Space 中查看” (View in Space) in the record column header: goes to this kind in the Space. */
   save: {
     view: 'View in the Library',
   },
 
-  /** 产物行（设计稿 tool-frame.jsx `ToolOutputRow` / `ToolOutputs`）：结果页、任务详情、生成记录共用。 */
+  /** Output row (design file tool-frame.jsx `ToolOutputRow` / `ToolOutputs`): shared by the result page, job details and generation records. */
   output: {
     title: 'Outputs',
     savedIn: (dir: string) => `Saved in ${dir}`,
@@ -78,7 +78,7 @@ const en = {
     newMovieFailed: (message: string) => `Couldn't create the video: ${message}`,
   },
 
-  /** Space 查看框里与工具有关的几样（设计稿 space-viewer.jsx）：用工具处理…、做出它的工具、再做一次、所在位置。 */
+  /** The tool-related items in the Space viewer (design file space-viewer.jsx): process with a tool…, the tool that made it, do it again, and location. */
   entryTool: {
     menu: 'Process with a tool…',
     menuLabel: (name: string) => `Process “${name}” with a tool`,
@@ -106,7 +106,7 @@ const en = {
     retried: 'Resubmitted',
     reconcile: 'Resolve',
     reconcileNote: 'The outcome of this one is unknown: decide whether to try again or give up. It can’t be deleted until then.',
-    // Runtime 还没说在等什么时的估计（并发上限在模型页可调，这里不写死几条）。
+    // The estimate used when the Runtime has not yet said what it is waiting for (the concurrency limit can be adjusted on the models page, so the number of items is not hard-coded here).
     ahead: (n: number) => (n ? `Queued · ${n} ahead` : 'Queued'),
     download: (ext: string) => `Download ${ext}`,
     downloadFailed: (message: string) => `Download failed: ${message}`,
@@ -115,10 +115,10 @@ const en = {
     noFile: 'No file was generated',
     live: (n: number) => `${n} in progress`,
     count: (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`,
-    /** 进行中那条进度条的无障碍名：哪一条、到了哪一步。 */
+    /** Accessible name of the progress bar for an item in progress: which item and which step it has reached. */
     progressLabel: (title: string, phase: string) => `“${title}” ${phase}`,
     play: (title: string) => `Play “${title}”`,
-    /** 结果不明的一条：失败原因后接「要你决定」。 */
+    /** For an item with an unknown result: “要你决定” (Needs your decision) follows the failure reason. */
     unsettled: (failure: string) =>
       `${failure}. The outcome of this one is unknown: decide whether to try again or give up. It can’t be deleted until then.`,
   },
@@ -169,7 +169,7 @@ const en = {
     submitFailed: (message: string) => `Didn't start: ${message}`,
   },
 
-  /** 工具页统一骨架的几行（设计稿 tool-frame.jsx）。 */
+  /** The rows of the common tool page skeleton (design file tool-frame.jsx). */
   frame: {
     model: 'Model',
     goSettings: 'Go to Settings',
@@ -185,7 +185,7 @@ const en = {
     pickTitle: 'Choose a save location for this run',
     pickFailed: (message: string) => `Couldn't choose a folder: ${message}`,
     saveNote: 'Results appear as Library items and the files are saved in this folder; name clashes get a number and existing files are never overwritten.',
-    /** 保存位置下面那句：说明（缺省 `saveNote`）、只改这一次时的提醒、默认位置在哪儿改。 */
+    /** The sentence below the save location: a note (default `saveNote`), a reminder when changing it for this time only, and where to change the default location. */
     saveFoot: (note: string, once: boolean) =>
       `${note} ${once ? 'This applies to this run only; change' : 'Change'} the default location in Settings › General.`,
   },
@@ -200,7 +200,7 @@ const en = {
       'Downloading doesn’t use the task queue; once installed, this page’s main button works. Generation shares one heavy-work slot with local speech models, so only one runs at a time.',
     downloadButton: 'Download…',
     downloading: (pct: number | null) => (pct === null ? 'Downloading…' : `Downloading · ${pct}%`),
-    /** 下载停在一半时的门卡说明：`downloadBody` 再加一句续传。 */
+    /** Gate-card note when a download has stopped halfway: `downloadBody` plus one more sentence about resuming. */
     downloadBodyPaused:
       'Downloading doesn’t use the task queue; once installed, this page’s main button works. Generation shares one heavy-work slot with local speech models, so only one runs at a time. The download stopped partway; resuming continues from there.',
     resume: 'Resume download…',
@@ -217,11 +217,11 @@ const en = {
     unavailable: (provider: string) => `${provider} isn't available right now`,
     goConnect: 'Connect',
     switchTo: (name: string) => `Switch to ${name}`,
-    /** 门卡上的下载按钮带大小（设计稿 tool-tts.jsx、image-gen.jsx 的「下载 {size}」）。 */
+    /** The download button on a gate card includes the size (“下载 {size}” (Download {size}) in design files tool-tts.jsx and image-gen.jsx). */
     downloadSize: (size: string) => `Download ${size}`,
-    /** 选中的本机语音模型没装时换用装好的那只（设计稿 tool-tts.jsx「换用已装的 X」）。 */
+    /** When the selected local speech model is not installed, switch to one that is installed (design file tool-tts.jsx “换用已装的 X” (Switch to installed X)). */
     switchToInstalled: (name: string) => `Switch to installed ${name}`,
-    /** 语音合成页的下载卡说明（设计稿 panel-tts.jsx `TtsModelGate`）；`Paused` 再加一句续传。 */
+    /** Download-card note for the speech synthesis page (design file panel-tts.jsx `TtsModelGate`); `Paused` adds one more sentence about resuming. */
     ttsDownloadBody: 'Downloading doesn’t use the task queue; once installed, this page’s main button works.',
     ttsDownloadBodyPaused:
       'Downloading doesn’t use the task queue; once installed, this page’s main button works. The download stopped partway; resuming continues from there.',
@@ -270,16 +270,16 @@ const en = {
     cancelled: 'Cancelled',
     submitted: 'Generation started',
     submitFailed: (message: string) => `Didn't start: ${message}`,
-    /** 提示词框下的字数（有上限时写上限）。 */
+    /** Character count below the prompt box (the limit is shown when there is one). */
     chars: (n: number, max: number | null) => {
       const count = n.toLocaleString(intlLocale());
       return max ? `${count} / ${max.toLocaleString(intlLocale())} characters` : `${count} ${n === 1 ? 'character' : 'characters'}`;
     },
-    /** 生成图片的替代文字：文件名与提示词。 */
+    /** Alt text of a generated image: the file name and the prompt. */
     alt: (name: string, prompt: string) => `${name}: ${prompt}`,
   },
 
-  /** 文本生成（设计稿 tool-llm.jsx `LlmToolPage kind='text'` 原文；「交互原型：…」「示例 · 已保存到 Space」这类演示用语不搬）。 */
+  /** Text generation (taken verbatim from design file tool-llm.jsx `LlmToolPage kind='text'`; demo phrasing such as “交互原型：…” (Interactive prototype: …) and “示例 · 已保存到 Space” (Example · saved to Space) is not carried over). */
   text: {
     title: 'Text generation',
     submit: 'Generate text',
@@ -324,7 +324,7 @@ const en = {
   transcribe: {
     title: 'Transcribe',
     submit: 'Start transcribing',
-    /** 设计稿后半句是「完成后自动保存在 Space。」——这一版还不能直接转录文件，不写做不到的事。 */
+    /** The second half of the design sentence is 「完成后自动保存在 Space。」 (Saved automatically in Space when done). This version cannot transcribe files directly yet, so it does not state things it cannot do. */
     lede: 'Turn video or audio into an editable transcript and subtitles.',
     drop: 'Drop video or audio here',
     pick: 'Choose file',
@@ -342,19 +342,19 @@ const en = {
     manageCloud: 'Manage API connections',
     side: 'Transcription history',
     empty: 'No transcripts yet',
-    /** 设计稿是「选一份素材开始，完成后可以继续创建视频。」——这一版既不能提交也不能创建视频，换成实话。 */
+    /** The design says 「选一份素材开始，完成后可以继续创建视频。」 (Choose a material to start; when complete, you can go on to create a video). This version can neither submit nor create a video, so the plain truth is written instead. */
     emptyBody: 'Once files can be transcribed directly, results will be listed here.',
   },
 
   /**
-   * 压缩视频与合并视频（设计稿 tool-video.jsx、tool-video-merge.jsx）。设计稿里 Runtime 做不到的（按体积、帧率、显卡编码、
-   * 去掉音轨、装 / 升 ffmpeg、提交前的兼容性横幅、快速 / 重新编码二选一、播放、加到视频）不写；说明照实际行为写。
+   * Compress video and merge video (design files tool-video.jsx and tool-video-merge.jsx). Items in the design that the Runtime cannot do (by size, frame rate, GPU encoding,
+   * removing the audio track, installing / upgrading ffmpeg, the compatibility banner before submission, choosing between fast and re-encode, playback, adding to a video) are not written; the notes describe the actual behavior.
    */
   transcode: {
     compressTitle: 'Compress video',
     mergeTitle: 'Merge videos',
     extractTitle: 'Extract audio',
-    /** 页顶切换（设计稿 tool-video.jsx `ACTIONS`）：三个工具共用一页，切换就是换路由。 */
+    /** The switcher at the top of the page (design file tool-video.jsx `ACTIONS`): the three tools share one page, and switching is a route change. */
     switchLabel: 'Video file tools',
     switchCompress: 'Compress',
     switchMerge: 'Merge',
@@ -449,9 +449,9 @@ const en = {
     noOutput: 'No output file',
   },
 
-  // ---- 视频工具（产品设计 §2.7；设计稿 page-tools.jsx、tool-video-picker.jsx、tool-run-view.jsx，2026-10-03） ----
+  // ---- Video tools (product design §2.7; design files page-tools.jsx, tool-video-picker.jsx, tool-run-view.jsx, 2026-10-03) ----
 
-  /** 目录页：按处理的对象分三组（语音与字幕、文字与图片、视频文件），每张卡多一行「结果」。 */
+  /** Catalog page: grouped into three by the object processed (speech and subtitles, text and images, video files); each card has one more row, “结果” (Results). */
   toolsHome: {
     lede: 'Do one specific thing directly, without a session or an Agent connection. Results are saved to the default save location and appear as Library items, ready for another tool, a new video, or handing off to Agent.',
     foot: 'Library items can go straight into a tool too: open an item in the Library and choose “Process with a tool…”.',
@@ -487,7 +487,7 @@ const en = {
     noneBody: 'A new video needs a project, and there isn’t one yet. Create one on Home first, then come back.',
   },
 
-  /** 当场授权卡（§2.7「授权在当场完成」）。授权由 Runtime 记下，在设置 › 隐私里能看到、收回。 */
+  /** On-the-spot authorization card (§2.7, “授权在当场完成” (authorization is completed on the spot)). The Runtime records the authorization, which can be viewed and revoked in Settings › Privacy. */
   grant: {
     label: 'Confirm before sending to an online service',
     title: 'This sends data to an online service',
@@ -500,7 +500,7 @@ const en = {
     hintCloud: 'If you’d rather not send it, skip this for now: only an online service can do this step.',
   },
 
-  /** 运行与结果页、运行记录。 */
+  /** Run and result page, run records. */
   run: {
     run: 'Run',
     side: 'Run history',
@@ -535,7 +535,7 @@ const en = {
     useAsset: 'Start again with this asset',
   },
 
-  /** 表单底下那一行为什么按不了（四个视频工具共用）。 */
+  /** The line under the form that explains why the button cannot be pressed (shared by the four video tools). */
   form: {
     loading: 'Loading tool status…',
     needFile: 'Choose a video or audio file first',
@@ -550,11 +550,11 @@ const en = {
     needGrant: 'Confirm the data to send below first',
     ready: 'Ready',
     noPicker: 'This environment can’t open a file dialog; drag the file in instead.',
-    /** `tools.list` 里没有这个工具（Runtime 版本较旧）。 */
+    /** This tool is not in `tools.list` (the Runtime version is older). */
     notInRuntime: 'This version of Runtime doesn’t include this tool, so it can’t be used yet',
   },
 
-  /** 工具 › 转录（设计稿 tool-transcribe.jsx）。原来的 `TRANSCRIBE_COPY` 里写着「还不能直接转录」的几句不再用。 */
+  /** Tools › Transcribe (design file tool-transcribe.jsx). The sentences in the old `TRANSCRIBE_COPY` that said 「还不能直接转录」 (cannot transcribe directly yet) are no longer used. */
   transcribeTool: {
     lede: 'Turn video or audio into a transcript and subtitles. By default you get one transcript and one subtitle file in the save location; you can also create a new video, or write into an existing video in the Library.',
     targetTitle: 'Result',
@@ -562,7 +562,7 @@ const en = {
       'The transcript (.txt) and subtitles (.srt) are saved to the location below, each as a Library item you can later translate, turn into speech, or make into a new video.',
     createFile:
       'Assets stay where they are; the video links to them instead of copying files. The result is a new video in this project, with a transcript and an editable subtitle layer.',
-    /** 下载视频带转写时不建字幕层（远端 §14 记为未实现），不承诺。 */
+    /** Downloading a video with transcription does not create a subtitle layer (the remote §14 records it as not implemented), so it is not promised. */
     createLink:
       'The media is downloaded to the save location and the video links to it instead of copying it again. The result is a new video in this project, named after the page title, with a transcript.',
     linkNote:
@@ -589,11 +589,11 @@ const en = {
     needSpeakers: 'Download “Speaker diarization” first, or turn off “Identify speakers”',
     submit: 'Start transcribing',
     submitLink: 'Download and transcribe',
-    /** 语言下拉里的「自动」一项。 */
+    /** The “自动” (Auto) item in the language dropdown. */
     autoDetect: 'Auto-detect',
   },
 
-  /** 工具 › 翻译字幕（设计稿 tool-translate.jsx）。 */
+  /** Tools › Translate subtitles (design file tool-translate.jsx). */
   translate: {
     title: 'Translate subtitles',
     ledeVideo: 'Add a translation and a subtitle layer in the target language to a transcribed video; the original stays as it is.',
@@ -614,13 +614,13 @@ const en = {
     manageModels: 'Manage text models',
     grantHint: 'Translation only works with online text models; if you’d rather not send it, skip translating and the content stays on this computer.',
     submit: 'Start translating',
-    /** 选择文件对话框里的类型名。 */
+    /** The type name in the file-picker dialog. */
     subtitleFiles: 'Subtitle files',
-    /** 文稿下拉里每一项的副行：哪种语言的文稿。 */
+    /** The secondary line of each item in the transcript dropdown: which language the transcript is in. */
     docLang: (lang: string) => `${lang} transcript`,
   },
 
-  /** 工具 › 翻译配音（设计稿 tool-dub.jsx）。 */
+  /** Tools › Translate and dub (design file tool-dub.jsx). */
   dub: {
     title: 'Translated voice-over',
     lede: 'Give a transcribed video a new set of voices from a translation. The result is written into this video; existing voice-overs are kept.',
@@ -635,19 +635,19 @@ const en = {
     manageEngines: 'Manage voice-over engines',
     original: 'Original audio',
     originalOptions: { duck: 'Lower original audio', mute: 'Mute original audio', keep: 'Keep original audio' },
-    /** 这一版配音引擎只列在线服务（同编辑器里的翻译配音）。 */
+    /** In this version the dubbing engine lists only online services (as with translate-and-dub in the editor). */
     grantHint: 'If you’d rather not send it, skip the voice-over for now; in this version both the voice-over engine and the translation text model are online services.',
     submit: 'Start voice-over',
   },
 
-  /** 工具 › 下载视频（设计稿 tool-link.jsx）。 */
+  /** Tools › Download video (design file tool-link.jsx). */
   linkTool: {
     title: 'Download video',
     lede: 'Paste a video link to download it to this computer. If you need a transcript, it can be transcribed automatically once the download finishes.',
     sourceNote: 'Supports single video pages and direct media links. Download progress and results stay in Background tasks.',
     submit: 'Start download',
     submitTranscribe: 'Download and transcribe',
-    /** 「网站登录」：读哪些浏览器的 Cookie。 */
+    /** “网站登录” (Website sign-in): which browsers' cookies to read. */
     cookies: 'Website sign-in',
     detecting: 'Detecting…',
     redetect: 'Detect browsers again',
@@ -663,17 +663,17 @@ const en = {
     project: 'Add transcript to project (optional)',
     noProject: 'Don’t add to a project',
     projectNote: 'Only linked to the project; files are still saved in the folder above.',
-    /** 下载出问题停住时，回到表单改链接或 Cookie。 */
+    /** When a download stops because of a problem, go back to the form to change the link or cookies. */
     editLink: 'Change link or cookie settings',
   },
 
-  /** 后台任务详情里的视频工具运行（设计稿 tool-run-view.jsx `ToolTaskPanel`）。 */
+  /** A video tool run in the background task details (design file tool-run-view.jsx `ToolTaskPanel`). */
   taskRun: {
     stopped: 'Run stopped',
     viewResult: 'View result',
     backToTool: 'Back to tool',
   },
-  /** 重新转录（产品设计 §5.11、§4.4；设计稿 tool-transcribe.jsx `RetargetField` / `ReplaceImpact` / `RetryAlert`）。 */
+  /** Re-transcription (product design §5.11, §4.4; design file tool-transcribe.jsx `RetargetField` / `ReplaceImpact` / `RetryAlert`). */
   retranscribe: {
     destTitle: 'Destination',
     destLabel: 'Where to write the transcription',

@@ -38,13 +38,12 @@ const icon = style({ display: 'flex', flexShrink: 0, color: 'blue-900' });
 const text = style({ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 
 /**
- * 子视频编辑器内容区顶上的一条（原型 shorts-source.jsx `ShortsChildBanner`，产品设计 §5.10）：它从哪部视频切出来、进文稿调起止的那一格、
- * 「回到原片」。桌面端那一轮的结果页还在，「回到原片」时右侧落在 AI 工具 Tab 的结果页；网页没有 AI 工具 Tab，只回来源视频。
- * 来源视频不在视频库里（删了）时不给「回到原片」。不是子视频（没有派生来源文档）时不画。
+ * A strip at the top of the child-video editor's content area (prototype shorts-source.jsx `ShortsChildBanner`, product design §5.10): which video it was cut from, the cell for adjusting the cut's start and end in the script, and
+ * “回到原片”(back to source). On desktop the result page from that round still exists, and “回到原片” lands the right side on the result page in the AI Tools tab. The web has no AI Tools tab, so it only goes back to the source video.
+ * When the source video is no longer in the video library (deleted), “回到原片” is not offered. When the video is not a child video (no derived source document), nothing is drawn.
  *
- * 那一格看右栏在哪（`cutEntryAction`）：不在文稿（或面板收着）是「去文稿调整」——切到文稿、剪辑打开、滚到片段前面那条剪缝，
- * 记下来处（shorts-entry.ts）；从别的面板跳进文稿的换成「回到结果页」/「回到<那个面板>」；直接落在文稿的，桌面端这一轮
- * 有结果页时给「看结果页」，否则不摆。
+ * The cell depends on where the right column is (`cutEntryAction`). When the script is not open (or its panel is collapsed) it is “去文稿调整”(adjust in script): switch to the script, open the cut, scroll to the cut seam in front of the clip, and
+ * record where it came from (shorts-entry.ts). When the script was reached from another panel, it becomes “回到结果页”(back to result) or “回到<那个面板>”(back to <that panel>). When the script is already open, on desktop with a result page from this round it shows “看结果页”(view result); otherwise nothing is shown.
  */
 export function ShortsChildBanner({ videoId, documents }: { videoId: Id; documents: Record<Id, DocumentRecord> }) {
   const web = useRuntime().host.platform === 'web';

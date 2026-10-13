@@ -60,9 +60,9 @@ const reply = style({
 });
 
 /**
- * 测试对话框（设计稿 settings-cloud.jsx:348-382）：合成一句话、画一张图，或让文本模型回一句「Reply with OK.」，看服务商能不能返回。
- * 提交的是真的 `models.synthesizeSpeech` / `models.generateImage` / `models.generateText` 任务（服务商可能计费），状态从 `jobs` 主题读；
- * 关掉对话框不撤回请求，这次测试也出现在后台任务里。语音识别还不能单独测试（转录只认视频里的素材），不会打开这里。
+ * Test dialog (design mock settings-cloud.jsx:348-382): synthesizes one sentence, draws one image, or has a text model reply “Reply with OK.”, to see whether the provider can return results.
+ * It submits real `models.synthesizeSpeech` / `models.generateImage` / `models.generateText` tasks (the provider may charge for them), and the status is read from the `jobs` topic.
+ * Closing the dialog does not cancel the request; the test also appears in the background tasks. Speech recognition cannot be tested on its own yet (transcription only accepts material from a video), so it does not open this dialog.
  */
 export function ProbeDialog({
   capability,

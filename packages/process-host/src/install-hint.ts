@@ -1,10 +1,9 @@
 /**
- * 找不到 ffmpeg 时给用户的那句修法，按 Runtime 所在的平台给（缺工具的是 Runtime 这台机器，不是看界面的那台）。
+ * The one-line fix shown to the user when ffmpeg is not found, given for the platform the Runtime runs on (the machine missing the tool is the Runtime's machine, not the one showing the interface).
  *
- * 命令与设计稿 `model-video.js` 的 `installCommand` / `manualInstall` 一致：macOS 用 Homebrew，Windows 用 winget，
- * 都给不出命令的平台给官网下载页。Linux 的发行版各有各的包管理器，举 Debian / Ubuntu 的 apt 为例。
+ * The commands match `installCommand` / `manualInstall` in the design draft `model-video.js`: macOS uses Homebrew, Windows uses winget, and platforms with no command give the official download page. Each Linux distribution has its own package manager; the apt of Debian / Ubuntu is used as the example.
  *
- * Windows 上装好之后要重新打开 CucCut：PATH 在进程启动时就定了，winget 改的是新进程才读得到的那一份。
+ * On Windows, CucCut must be reopened after installation: PATH is fixed when the process starts, and winget's change is only seen by new processes.
  */
 
 import type { Localized } from '@cuccut/protocol';
@@ -12,7 +11,7 @@ import { ProcessHostTools as T } from '@cuccut/protocol/messages/process-host';
 
 export const FFMPEG_DOWNLOAD_URL = 'https://ffmpeg.org/download.html';
 
-/** 这个平台上安装 ffmpeg 的一句提示（不含「安装 ffmpeg」本身），例如「例如 brew install ffmpeg」。 */
+/** A hint for installing ffmpeg on this platform (excluding the words “安装 ffmpeg” (install ffmpeg) themselves), e.g. “例如 brew install ffmpeg” (for example: brew install ffmpeg). */
 export function ffmpegInstallHint(platform: string = process.platform): string {
   return installHintMessage(platform).text;
 }
@@ -31,13 +30,13 @@ function installHintMessage(platform: string): Localized {
 }
 
 /**
- * 找不到 ffmpeg 时的完整修法。`ffprobe` 为 true 时连 ffprobe 一起说（导出、确认媒体要用它；它随 ffmpeg 一起装）。
+ * The full fix when ffmpeg is not found. When `ffprobe` is true, ffprobe is mentioned too (export and media checks use it; it is installed together with ffmpeg).
  */
 export function ffmpegMissingRemedy(options: { ffprobe?: boolean; platform?: string } = {}): string {
   return ffmpegMissingRemedyMessage(options).text;
 }
 
-/** 同 `ffmpegMissingRemedy`，带消息引用：嵌进别的 `Localized` 的参数里时，读者那边能按自己的语言重新显示。 */
+/** Same as `ffmpegMissingRemedy`, with a message reference: when it is embedded as an argument of another `Localized`, the reader's side can re-display it in their own language. */
 export function ffmpegMissingRemedyMessage(options: { ffprobe?: boolean; platform?: string } = {}): Localized {
   const hint = installHintMessage(options.platform ?? process.platform);
   return options.ffprobe ? T.remedyWithProbe({ hint }) : T.remedy({ hint });

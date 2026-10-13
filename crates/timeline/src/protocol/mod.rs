@@ -1,9 +1,6 @@
-//! 从 v2 `ccut-protocol` 收进来的线上形状。
+//! Wire shapes carried over from v2 `ccut-protocol`.
 //!
-//! v2 的 `ccut-timeline` 依赖整个协议 crate，实际只用到三块：模板层文档的形状与校验
-//! （[`template`]）、水印换算要读的品牌类型（[`brand`]）与 `timeline.json` 的版本常量
-//! （[`versions`]）。本 crate 不移植 `ccut-protocol`，这三块原样收成内部模块，路径保持
-//! `protocol::<模块>::<名字>` 与 v2 的 `ccut_protocol::<模块>::<名字>` 一一对应。
+//! v2's `ccut-timeline` depends on the whole protocol crate, but actually uses only three parts: the shape and validation of the template layer document ([`template`]), the brand types that watermark conversion reads ([`brand`]), and the version constants of `timeline.json` ([`versions`]). This crate does not port `ccut-protocol`; these three parts are taken over as internal modules as-is, with paths kept one-to-one: `protocol::<module>::<name>` corresponds to v2's `ccut_protocol::<module>::<name>`.
 
 pub mod brand;
 pub mod template;

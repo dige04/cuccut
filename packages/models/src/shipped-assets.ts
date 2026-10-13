@@ -1,6 +1,5 @@
 /**
- * 随应用分发、按路径读的模型数据的窄入口（`@cuccut/models/assets`）：解析函数、自测样本、内置音色目录与人脸检测模型，不带模型包的其余模块。
- * 桌面端构建产物的检查入口（`apps/desktop/src/main/model-assets-check.ts`）只引这一处，免得把整个模型包挪进共享 chunk。
+ * Narrow entry point for model data shipped with the app and read by path (`@cuccut/models/assets`): resolution functions, the self-test sample, the built-in voice catalogue and the face detection model, without the rest of the model package modules. The desktop build's check entry (`apps/desktop/src/main/model-assets-check.ts`) imports only this, so the whole model package does not get pulled into a shared chunk.
  */
 export { MODEL_ASSETS_ENV, modelAssetPath, resolveModelAssetsDir } from './model-assets.ts';
 export { TRANSCRIBE_SELF_TEST, selfTestSampleFile, type SelfTestSample } from './self-test-sample.ts';

@@ -1,4 +1,4 @@
-//! 输出合同 `cuccut.asr-result/v1`（协议规范 §6）：类型、写出前的自检、`segments.jsonl` 与 `result.json`。
+//! Output contract `cuccut.asr-result/v1` (protocol spec §6): types, self-checks before writing, `segments.jsonl` and `result.json`.
 
 use std::collections::HashSet;
 use std::fs::File;
@@ -84,8 +84,7 @@ pub struct Word {
     pub text: String,
     pub confidence: Option<f64>,
     pub timing_quality: TimingQuality,
-    /// 词级说话人（`speakers[]` 的 id）。说话人区分（§6.6）按词投影，一段里可以换人；段的 `speakerId` 是段里说话时长
-    /// 最多的那个。没有说话人区分时省略。
+    /// Word-level speaker (the id in `speakers[]`). Speaker diarization (§6.6) is projected per word, so the speaker can change within a segment; a segment's `speakerId` is the speaker with the most speaking time in that segment. Omitted when there is no speaker diarization.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker_id: Option<String>,
 }
@@ -111,9 +110,9 @@ pub enum WarningCode {
     DiarizationUnavailable,
     SegmentDegenerate,
     RangeClamped,
-    /// 模型没有识别提示的通道（MOSS），请求里的 `hint` 没有交给模型。
+    /// The model has no channel for recognition hints (MOSS), so the `hint` in the request is not passed to the model.
     HintIgnored,
-    /// 模型有一段没写完整（MOSS 一块生成到上限或陷入重复、又切不开）：已保留识别出的部分，之后可能缺字。
+    /// The model left a segment incomplete (MOSS generated a chunk up to the limit or fell into repetition and could not be split): the recognized part is kept, and characters may be missing afterwards.
     SegmentIncomplete,
 }
 
@@ -163,7 +162,7 @@ pub struct ModelRefs {
     pub aligner: Option<ModelRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker: Option<ModelRef>,
-    /// 说话人区分用到的 Pyannote 分段模型（§6.6）。
+    /// The Pyannote segmentation model used for speaker diarization (§6.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segmentation: Option<ModelRef>,
 }
@@ -181,8 +180,8 @@ pub struct Provenance {
     pub run_generation: u64,
 }
 
-/// 词时间的单调修正（架构设计 §6.6 第 6 步）：词在段内、起止不倒挂、后一个词不早于前一个词结束。
-/// 被修正的词保留原来的 `timingQuality`；`missing` 的词固定在段起点。返回是否改动过有时间的词。
+/// Monotonic correction of word timing (architecture design §6.6, step 6): words lie within the segment, their start and end are not inverted, and each word does not end before the previous one.
+/// Corrected words keep their original `timingQuality`; words marked `missing` are pinned to the segment start. Returns whether any timed word was changed.
 pub fn fix_word_times(segment: &mut Segment) -> bool {
     let (start, end) = (segment.start, segment.end);
     let mut adjusted = false;
@@ -205,7 +204,7 @@ pub fn fix_word_times(segment: &mut Segment) -> bool {
     adjusted
 }
 
-/// 写出前的自检（§6 的校验规则）。`asserted` 是请求里断言的语言。
+/// Self-check before writing (the validation rules of §6). `asserted` is the language asserted in the request.
 pub fn validate(result: &AsrResult, asserted: Option<&str>) -> Result<(), String> {
     if result.schema != SCHEMA {
         return Err(format!("schema 应为 {SCHEMA}"));
@@ -291,7 +290,7 @@ pub fn validate(result: &AsrResult, asserted: Option<&str>) -> Result<(), String
     Ok(())
 }
 
-/// BCP 47 的形状检查：主语言 2–3 或 5–8 个字母，之后每段 1–8 个字母数字。
+/// BCP 47 shape check: the primary language is 2–3 or 5–8 letters, followed by segments of 1–8 alphanumeric characters each.
 pub fn is_bcp47(tag: &str) -> bool {
     let mut parts = tag.split('-');
     let Some(language) = parts.next() else { return false };
@@ -299,7 +298,7 @@ pub fn is_bcp47(tag: &str) -> bool {
     language_ok && parts.all(|part| (1..=8).contains(&part.len()) && part.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
-/// `segments.jsonl`：首行是头，之后每行一个段，每行写完 flush（§5）。
+/// `segments.jsonl`: the first line is the header, followed by one segment per line, flushed after each line is written (§5).
 pub struct SegmentsWriter {
     path: PathBuf,
     out: BufWriter<File>,
@@ -346,7 +345,7 @@ pub struct SegmentsHeader<'a> {
     pub timescale: u64,
 }
 
-/// 一次性写出 `result.json`：先写临时文件再重命名。返回路径、bytes 的 sha256（小写十六进制）与长度。
+/// Writes `result.json` in one go: writes a temporary file first, then renames it. Returns the path, the sha256 of the bytes (lowercase hex), and the length.
 pub fn write_result(staging: &Path, result: &AsrResult) -> std::io::Result<OutputFile> {
     let bytes = serde_json::to_vec(result).map_err(std::io::Error::other)?;
     let path = staging.join(RESULT_FILE);
@@ -453,7 +452,7 @@ mod tests {
             label: None,
         });
         assert_eq!(validate(&speaker, None), Ok(()));
-        // 词级说话人同样要在 speakers[] 里。
+        // Word-level speakers must likewise appear in speakers[].
         let mut word_speaker = result(vec![segment(
             "seg-0001",
             0,

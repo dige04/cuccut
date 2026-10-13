@@ -14,8 +14,8 @@ import {
 } from './discovery.ts';
 
 /**
- * 解析器对着在 macOS 上抓取的 `dns-sd` 输出样本；`DnsSdDiscoverer` 对着一个回放这些样本、之后一直不退出的假命令
- * （真实的 `dns-sd` 也不会自己退出），不碰真实的 mDNS。
+ * The parser runs against `dns-sd` output samples captured on macOS. `DnsSdDiscoverer` runs against a fake command that replays these samples and then never exits
+ * (the real `dns-sd` does not exit on its own either), without touching the real mDNS.
  */
 
 const BROWSE_SAMPLE = `Browsing for _cuccut-node._tcp.local
@@ -59,9 +59,9 @@ describe('dns-sd 输出的解析', () => {
 
   it('解析实例：主机去掉末尾的点，端口，TXT 的 id 与 v', () => {
     expect(parseLookupOutput(LOOKUP_SAMPLE)).toEqual({ host: 'Junmins-Mac-mini.local', port: 47999, txt: { id: 'node_probe', v: '1' } });
-    // 还没有输出到那一行
+    // Output has not reached that line yet
     expect(parseLookupOutput(LOOKUP_SAMPLE.split('\n').slice(0, 3).join('\n'))).toBeNull();
-    // TXT 还没到：先给出主机与端口
+    // TXT not received yet: provide the host and port first
     expect(parseLookupOutput(LOOKUP_SAMPLE.split('\n').slice(0, 4).join('\n'))).toEqual({
       host: 'Junmins-Mac-mini.local',
       port: 47999,
@@ -93,7 +93,7 @@ describe('DnsSdDiscoverer', () => {
     for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 假的 dns-sd：按参数回放样本，然后不退出；每个进程把 pid 记到目录里。 */
+  /** Fake dns-sd: replays the samples according to its arguments, then does not exit. Each process records its pid in the directory. */
   async function fakeDnsSd(): Promise<{ command: string; pids: () => Promise<number[]> }> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-dnssd-'));
     dirs.push(dir);

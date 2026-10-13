@@ -124,7 +124,7 @@ describe('译文 → 字幕条', () => {
     expect(words.words.length).toBeGreaterThan(1);
     const ids = ['g1'];
     const cues = translationCues(words, [unit('t-s-a', ids, 'One long paragraph.'), unit('t-s-gone', ['nope'], 'Gone.')]);
-    // 8 秒一句：超过一条 7 秒的上限，切成两条。
+    // One 8-second sentence: over the 7-second per-cue limit, so it is split into two cues.
     expect(cues.every((c) => c.id.startsWith('q-t-s-a'))).toBe(true);
     expect([cues[0]!.start, cues.at(-1)!.end]).toEqual([1, 9]);
     expect(cues.map((c) => c.text).join(' ')).toBe('One long paragraph.');
@@ -192,7 +192,7 @@ describe('放到画面上的事务', () => {
 
   it('双语、原文没有样式：新建一份默认样式，原文与译文一起用上；新轨、文档、实例在同一笔里', () => {
     const seq = sequence([caption('srt-1', 's2', 'srt'), caption('o1', 's1', 'orig'), caption('o2', 's1', 'orig')], tracks);
-    // 时间线上没有取用这个素材的实例：不写作用实例，区间盖住第一条到最后一条。
+    // No instance on the timeline uses this asset: no target instance is written, and the range covers from the first cue to the last.
     const chips = captionChips(seq, documents);
     const paired = pairedOriginal(chips, documents, 'speech');
     expect(paired?.documentId).toBe('orig');

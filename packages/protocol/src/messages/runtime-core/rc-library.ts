@@ -14,9 +14,9 @@ import { pl } from './rc-library.pl.ts';
 import { tr } from './rc-library.tr.ts';
 import { vi } from './rc-library.vi.ts';
 
-/** 用户库与音色克隆（library/）的错误。英文是键与类型的来源，译文在 `rc-library.<语言>.ts`。 */
+/** Errors for the user library and voice cloning (library/). English is the source of keys and types; translations are in `rc-library.<language>.ts`. */
 const en = {
-  // 用户库（library-service）
+  // User library (library-service)
   problemSeparator: '; ',
   referenceUndecodable: (p: { problems: string }) => `The reference recording can't be decoded: ${p.problems}`,
   clonesNotReady: "Voice cloning isn't ready yet",
@@ -44,7 +44,7 @@ const en = {
   outputNotFound: "The output doesn't exist",
   pathNotAbsolute: 'The file path must be absolute',
 
-  // 音色克隆（voice-clone-service）
+  // Voice cloning (voice-clone-service)
   serviceClientNoLibraryVoice: "Clients of external services can't use voices from the library",
   clonerNotConfigured: (p: { label: string }) => `${p.label} isn't turned on or has no key, so voices can't be cloned`,
   cloneExists: (p: { name: string; label: string }) => `Voice "${p.name}" already has a valid clone on ${p.label}`,

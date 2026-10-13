@@ -11,8 +11,7 @@ import { ToolError } from './tool-catalog.ts';
 import { toolRisk, type ToolConfirmation, type ToolScope } from './tool-scope.ts';
 
 /**
- * `design_system_check` 与 `design_system_import_asset`（docs/design/canvas §10.5）：设计系统必须在会话的来源目录里；没有问题时
- * 会话里记一条 `design-system-created`，有问题时不记；导入的素材进设计系统的 `_blobs/`，返回 `/_blob/<id>` 与索引记录。
+ * `design_system_check` and `design_system_import_asset` (docs/design/canvas §10.5): the design system must be in the session's source directory. When there are no problems, the session records a `design-system-created` entry; when there are problems, it does not. Imported assets go into the design system's `_blobs/`, and the tool returns `/_blob/<id>` and the index record.
  */
 
 let tmp: string;
@@ -58,7 +57,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   throw new Error('应当拒绝');
 }
 
-/** 工具用到的：授权、确认（记下请求）、来源目录与工作目录、记卡片。 */
+/** What the tools use: authorization, confirmation (records the request), the source directory and working directory, and card recording. */
 function fakeScope(write = true) {
   const confirmed: ToolConfirmation[] = [];
   const recorded: DesignSystemCreated[] = [];
@@ -153,11 +152,11 @@ describe('design_system_import_asset', () => {
     const again = (await set.dispatch('design_system_import_asset', { system: 'acme', path: 'brand/logo.png', group: 'Logos' }, principal)) as Record<string, unknown>;
     expect(again.src).toBe(first.src);
 
-    // 组名里有空格：键按原版编码
+    // The group name contains spaces: the key is encoded as in the original.
     const spaced = (await set.dispatch('design_system_import_asset', { system: 'acme', path: 'brand/logo.png', group: 'My Icons' }, principal)) as Record<string, unknown>;
     expect(spaced).toMatchObject({ groupKey: 'My~20Icons', restoredAs: 'assets/My Icons/logo.png', indexPath: ['assetGroups', 'My~20Icons', 'files', 'logo.png'] });
 
-    // 不给组：字体还原到 fonts/，其余到 assets/
+    // No group: fonts are restored to fonts/, the rest to assets/.
     await fs.writeFile(path.join(root, 'Brand Sans.woff2'), 'wOF2-font');
     const font = (await set.dispatch('design_system_import_asset', { system: 'acme', path: 'Brand Sans.woff2' }, principal)) as Record<string, unknown>;
     expect(font).toMatchObject({ key: 'fonts/Brand~20Sans.woff2', restoredAs: 'fonts/Brand Sans.woff2', contentType: 'font/woff2' });

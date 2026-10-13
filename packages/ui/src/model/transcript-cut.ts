@@ -26,15 +26,15 @@ import {
 } from './speech-cues.ts';
 
 /**
- * 文稿：口播转写按段落和词摆出来，加上文字驱动剪辑里手动的那部分（产品设计 §5.7、S03；验收 AT-08、AT-09）。
+ * Transcript: spoken-word transcript laid out by paragraph and word, plus the manual part of text-driven editing (product design §5.7, S03; acceptance AT-08, AT-09).
  *
- * - 文稿按转写文档里的次序（素材次序）列词，每个词一处；剪没剪从时间线推导（`projectSpeech` 投不到序列上的词就是剪掉了），
- *   不另存剪辑表。同一段素材在时间线上用了两次时，一个词有两处落点：定位跳到第一处，剪掉时两处都剪。
- * - 「剪辑音画」：选中的词换成素材时钟上的区间，编成一笔 `addCuts`（视频格式规范 §6.7）：引擎把剪口记进素材的剪口集合，
- *   在播放这个素材的实例所在的轨道上波纹删除，其余实例按各自的 `followPolicy` 移动（§3.16）。
- * - 「恢复」是新的一笔事务，不是撤销：找到盖住选中的词（或时间线上那处接缝）的剪口，编成 `restoreCut`，整个剪口放回。
- *   不是剪口剪掉的（拖片段边缘裁掉的、剪口集合出现之前剪的）照实拒绝。
- * - 「改原文」：按词 ID 改转写正文（写回语音文档，产生新版本），不动时间线；删除只把词标成 `hidden`，各处读取方都跳过隐藏的词。
+ * - The transcript lists words in the order of the transcription document (clip order), one entry per word. Whether a word was cut is derived from the timeline (a word that `projectSpeech` cannot map onto the sequence has been cut),
+ *   and no separate cut list is stored. When the same clip is used twice on the timeline, one word has two placements: locating jumps to the first, and cutting cuts both.
+ * - 「剪辑音画」 (Cut audio and video): the selected words are turned into intervals on the clip clock and compiled into one `addCuts` (video format spec §6.7). The engine records the cuts in the clip's cut set,
+ *   ripple-deletes on the track where the instance playing this clip sits, and other instances move according to their own `followPolicy` (§3.16).
+ * - 「恢复」 (Restore) is a new transaction, not an undo: it finds the cut covering the selected words (or the seam on the timeline) and compiles `restoreCut`, putting the whole cut back.
+ *   Anything not cut by a cut (trimmed by dragging a clip edge, or cut before the cut set existed) is rejected as is.
+ * - 「改原文」 (Edit source text): changes the transcript text by word ID (written back to the speech document, creating a new version) without touching the timeline. Deleting only marks the word `hidden`, and every reader skips hidden words.
  */
 
 type Json = Record<string, unknown>;
@@ -42,29 +42,29 @@ type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 const EPS = 1e-6;
 
-// ---- 文稿里的词 ----
+// ---- Words in the transcript ----
 
-/** 词在时间线上的状态：全在、只剩一部分（剪口落在词中间）、整个剪掉。 */
+/** A word's state on the timeline: fully present, partly left (a cut falls in the middle of the word), or fully cut. */
 export type WordState = 'kept' | 'partial' | 'cut';
 
 export interface TranscriptWord extends SpeechWord {
-  /** 在文稿里的次序（素材次序）。 */
+  /** Order in the transcript (clip order). */
   index: number;
-  /** 投到序列上的各处（秒，按先后）。 */
+  /** Its placements on the sequence (seconds, in order). */
   placements: PlacedWord[];
   state: WordState;
-  /** 和前一个词之间要不要空一格（拼词规则同 `joinWords`）。 */
+  /** Whether to put a space before the previous word (the joining rule is the same as `joinWords`). */
   spaced: boolean;
 }
 
 /**
- * 词有多少落在某个实例里时算「全在」：剪口按帧取整，词边上差一点不算剪到。反过来，时间线上只剩不到 `1 - KEPT_SHARE`
- * 的（剪口取整后留下的一丝）算整个剪掉，那一丝也不再当作落点。
+ * How much of a word must fall within an instance for it to count as 「全在」 (fully present): cuts are rounded to frames, so being a little off at the word edge does not count as cut. Conversely, what is left on the timeline below `1 - KEPT_SHARE`
+ * (a sliver left after cut rounding) counts as fully cut, and that sliver is no longer treated as a placement.
  */
 const KEPT_SHARE = 0.9;
 
 /**
- * 某个素材的转写词（素材时钟）配上它们在序列上的落点与状态。词按开始时刻排（稳定排序，转写里同时开始的保持原次序）。
+ * The transcribed words of a clip (on the clip clock), paired with their placements and states on the sequence. Words are sorted by start time (a stable sort, so words that start at the same time in the transcript keep their original order).
  */
 export function transcriptWords(sequence: Sequence, assetId: Id, source: readonly SpeechWord[]): TranscriptWord[] {
   const words = source
@@ -86,7 +86,7 @@ export function transcriptWords(sequence: Sequence, assetId: Id, source: readonl
   const leading = words.some((word) => /^\s/.test(word.text));
   return words.map((word, index) => {
     const found = byWord.get(word.id) ?? [];
-    // 每个实例各自盖住这个词的多少（素材秒），取最多的那个。
+    // How much of this word each instance covers (clip seconds); take the largest.
     const covered = new Map<Id, number>();
     for (const place of found) {
       covered.set(
@@ -108,16 +108,16 @@ export function transcriptWords(sequence: Sequence, assetId: Id, source: readonl
 }
 
 export interface TranscriptParagraph {
-  /** 首词 ID。 */
+  /** First word ID. */
   key: string;
   speaker?: string;
   words: TranscriptWord[];
 }
 
-/** 段落划分：标了段首、换了说话人、停顿两秒以上时断；句末处够长了（或停顿稍长且不太短）也断。文稿导出用同一套（`TRANSCRIPT_PARAGRAPH`）。 */
+/** Paragraph splitting: breaks at a marked paragraph start, a change of speaker, or a pause of two seconds or more; also breaks at a sentence end once it is long enough (or at a somewhat longer pause that is not too short). Transcript export uses the same rules (`TRANSCRIPT_PARAGRAPH`). */
 export const PARAGRAPH = TRANSCRIPT_PARAGRAPH;
 
-/** 按段落分组（转写多半没有存句子，`sentences: null`，所以按说话人、停顿与句末标点分）。宽度按字符数估，不必精确。 */
+/** Groups into paragraphs (transcriptions mostly do not store sentences, `sentences: null`, so it splits by speaker, pauses and end-of-sentence punctuation). Width is estimated by character count and need not be exact. */
 export function transcriptParagraphs(words: readonly TranscriptWord[]): TranscriptParagraph[] {
   const paragraphs: TranscriptParagraph[] = [];
   let current: TranscriptWord[] = [];
@@ -150,7 +150,7 @@ export function transcriptParagraphs(words: readonly TranscriptWord[]): Transcri
   return paragraphs;
 }
 
-/** 落点按序列时刻排好的索引，播放头找词用。 */
+/** Index of placements sorted by sequence time, used by the playhead to find words. */
 export interface PlacementIndex {
   starts: number[];
   ends: number[];
@@ -163,7 +163,7 @@ export function placementIndex(words: readonly TranscriptWord[]): PlacementIndex
   return { starts: all.map((p) => p.start), ends: all.map((p) => p.end), words: all.map((p) => p.index) };
 }
 
-/** 播放头落在哪个词上（词的下标）；落在词与词之间的停顿里时没有。 */
+/** Which word the playhead is on (word index); none when it is in a pause between words. */
 export function wordAt(index: PlacementIndex, seconds: number): number | null {
   let lo = 0;
   let hi = index.starts.length - 1;
@@ -179,11 +179,11 @@ export function wordAt(index: PlacementIndex, seconds: number): number | null {
   return seconds < index.ends[found]! - EPS ? index.words[found]! : null;
 }
 
-// ---- 播放跟随：已读的词 ----
+// ---- Playback follow: words already read ----
 
 /**
- * 词在序列上最早那处落点的结尾（秒）；剪掉的词（没有落点）没有。播放头走过它就算「已读」：序列时间上的先后，
- * 不是素材次序——同一段素材用了两次时，播完第一处就算读过。
+ * The end (in seconds) of the earliest placement of the word on the sequence; cut words (with no placement) have none. The playhead passing it counts as 「已读」 (read). This is order in sequence time,
+ * not clip order: when the same clip is used twice, having played through the first placement counts as read.
  */
 export function playedEnd(word: TranscriptWord): number | undefined {
   if (!word.placements.length) return undefined;
@@ -198,7 +198,7 @@ export function playedEnd(word: TranscriptWord): number | undefined {
   return end;
 }
 
-/** 各词 `playedEnd` 从小到大排好，求已读游标用。 */
+/** Each word's `playedEnd`, sorted ascending, used to find the read cursor. */
 export function playedIndex(words: readonly TranscriptWord[]): number[] {
   return words
     .flatMap((word) => {
@@ -209,9 +209,9 @@ export function playedIndex(words: readonly TranscriptWord[]): number[] {
 }
 
 /**
- * 已读游标：不晚于播放头的最大的 `playedEnd`（一个词也没读完时 `-Infinity`）。`playedEnd <= 游标` 的词都已读，
- * 与 `playedEnd <= 播放头` 等价；游标只在播放头跨过词尾时变，播放头在词里走、在停顿里走都不变——订阅它不会每帧重渲。
- * 容差同 `wordAt`：词尾差一丝也算播完，所以一处落点不会既是当前词又算读过。
+ * Read cursor: the largest `playedEnd` that is not later than the playhead (`-Infinity` when no word has been fully read). Words with `playedEnd <= cursor` have been read,
+ * which is equivalent to `playedEnd <= playhead`. The cursor changes only when the playhead crosses a word's end, and stays the same while the playhead moves within a word or within a pause, so subscribing to it does not re-render every frame.
+ * Tolerance is the same as `wordAt`: being a sliver short of a word's end still counts as played, so one placement can never be both the current word and already read.
  */
 export function playedUntil(ends: readonly number[], seconds: number): number {
   let lo = 0;
@@ -227,7 +227,7 @@ export function playedUntil(ends: readonly number[], seconds: number): number {
   return found < 0 ? -Infinity : ends[found]!;
 }
 
-/** 一段里各词 `playedEnd` 的最小与最大值；整段剪掉（没有落点）时 null。 */
+/** The minimum and maximum `playedEnd` of the words in a paragraph; null when the whole paragraph is cut (no placements). */
 export function paragraphPlayedSpan(words: readonly TranscriptWord[]): [number, number] | null {
   let first = Infinity;
   let last = -Infinity;
@@ -241,8 +241,8 @@ export function paragraphPlayedSpan(words: readonly TranscriptWord[]): [number, 
 }
 
 /**
- * 一段的已读阈值（`span` 见 `paragraphPlayedSpan`）：整段读完时 `Infinity`、一个词也没读时 `-Infinity`（都是常量，段落卡
- * 不必跟着游标重渲），只有读到一半的段才拿游标本身。`playedEnd <= 阈值` 的词已读。整段剪掉的段永远是 `-Infinity`。
+ * The read threshold for a paragraph (`span` is in `paragraphPlayedSpan`): `Infinity` when the whole paragraph has been read, `-Infinity` when no word has been read (both are constants, so the paragraph card
+ * does not need to re-render with the cursor), and only a paragraph read halfway uses the cursor itself. Words with `playedEnd <= threshold` have been read. A fully cut paragraph is always `-Infinity`.
  */
 export function paragraphPlayed(span: readonly [number, number] | null, until: number): number {
   if (!span || until < span[0]) return -Infinity;
@@ -250,8 +250,8 @@ export function paragraphPlayed(span: readonly [number, number] | null, until: n
 }
 
 /**
- * 把一个元素滚到滚动容器垂直中间的 `scrollTop`：`elTop` / `elHeight` 是它在容器内容坐标里的位置与高度。
- * 夹在 `[0, scrollHeight - clientHeight]`；内容比视口矮时为 0。
+ * The `scrollTop` that centers an element vertically in the scroll container: `elTop` / `elHeight` are its position and height in the container's content coordinates.
+ * Clamped to `[0, scrollHeight - clientHeight]`; 0 when the content is shorter than the viewport.
  */
 export function centerScrollTop(scrollHeight: number, clientHeight: number, elTop: number, elHeight: number): number {
   const max = Math.max(0, scrollHeight - clientHeight);
@@ -259,11 +259,11 @@ export function centerScrollTop(scrollHeight: number, clientHeight: number, elTo
   return Math.max(0, Math.min(max, Math.round(want)));
 }
 
-// ---- 声明的轨道 ----
+// ---- Declared tracks ----
 
 /**
- * 剪与恢复要声明的轨道（按轨道次序）：取用这个素材的实例所在的轨道、与它们链接（同一 `linkGroupId`）的实例所在的轨道、
- * 作用实例指向它们的字幕所在的字幕轨。别的轨道（背景音乐、补充画面等）不动。
+ * The tracks that cutting and restoring must declare (in track order): the tracks where the instances using this clip sit, the tracks where instances linked to them (same `linkGroupId`) sit,
+ * and the subtitle track where the subtitles that the effect instances point to sit. Other tracks (background music, supplementary footage, etc.) are left alone.
  */
 export function cutTrackIds(sequence: Sequence, assetId: Id): Id[] {
   const instances = projectableItems(sequence, assetId);
@@ -285,9 +285,9 @@ export function cutTrackIds(sequence: Sequence, assetId: Id): Id[] {
     .map((track) => track.id);
 }
 
-// ---- 剪掉 ----
+// ---- Cut ----
 
-/** 素材时钟上的一段（秒，左闭右开）。 */
+/** A segment on the clip clock (seconds, left-closed and right-open). */
 export interface SourceRange {
   from: number;
   to: number;
@@ -297,23 +297,23 @@ export type CutPlan =
   | {
       ok: true;
       operations: EditOperation[];
-      /** 剪掉的素材区间（秒），按先后。 */
+      /** The clip intervals cut (seconds), in order. */
       ranges: SourceRange[];
-      /** 序列上会删掉多少帧（估算：落点量化到帧之后的总和）。 */
+      /** How many frames will be removed from the sequence (estimate: the sum after placements are quantized to frames). */
       frames: number;
       words: number;
     }
-  /** `nothing`：选中的词都已经不在时间线上；`too-short`：每一段都不足一帧。 */
+  /** `nothing`: the selected words are all already off the timeline; `too-short`: every segment is less than one frame. */
   | { ok: false; reason: 'nothing' | 'too-short' };
 
-/** 秒写成 `addCuts` 的十进制秒：保留到微秒，去掉末尾的 0；不写成指数，负数按 0。 */
+/** Seconds written as decimal seconds for `addCuts`: kept to microseconds, trailing zeros removed; not written in exponent form, and negatives treated as 0. */
 export function decimalSeconds(value: number): string {
   return Math.max(0, value)
     .toFixed(6)
     .replace(/\.?0+$/, '');
 }
 
-/** 素材当前版本的时长（秒）；不知道时没有。剪口不能超出它。 */
+/** Duration of the clip's current version (seconds); absent when unknown. A cut cannot extend beyond it. */
 export function assetDuration(assets: Record<Id, AssetRecord>, assetId: Id): number | undefined {
   const asset = assets[assetId];
   const duration = asset?.revisions[asset.currentRevision]?.duration;
@@ -321,9 +321,9 @@ export function assetDuration(assets: Record<Id, AssetRecord>, assetId: Id): num
 }
 
 /**
- * 选中的词 → 一笔 `addCuts`。选中的、还在时间线上的词连成一串（中间夹着没选中的已剪词不打断，夹着没选中的留着的词就断开），
- * 每串剪素材里第一个词的开头到最后一个词的结尾（词间的停顿一起剪掉）。落点量化到帧之后不足一帧的串不剪。
- * 同一段素材在时间线上用了几次时，引擎在每一处都剪。`selected` 是词的下标。
+ * Selected words → one `addCuts`. The selected words that are still on the timeline are joined into runs (an unselected word that is already cut in between does not break a run, while an unselected word that is kept does break it),
+ * and each run cuts from the start of its first word to the end of its last word in the clip (pauses between words are cut too). A run shorter than one frame after placements are quantized is not cut.
+ * When the same clip is used several times on the timeline, the engine cuts at every placement. `selected` holds word indexes.
  */
 export function cutOperations(
   sequence: Sequence,
@@ -387,16 +387,16 @@ export function cutOperations(
   return { ok: true, operations: [operation], ranges, frames, words: count };
 }
 
-// ---- 恢复 ----
+// ---- Restore ----
 
 type MediaItem = VideoItem | AudioItem;
 
 export interface MediaSpan {
   item: MediaItem;
-  /** 序列上的区间（帧，音频可以有小数）。 */
+  /** An interval on the sequence (frames; audio may have fractions). */
   start: number;
   end: number;
-  /** 素材时钟（秒）。 */
+  /** Clip clock (seconds). */
   sourceIn: number;
   sourceOut: number;
   rate: number;
@@ -409,7 +409,7 @@ function linear(item: SequenceItem): { sourceIn: number; rate: number } | null {
   return rate > 0 ? { sourceIn: mediaTimeToSeconds(item.timeMap.sourceIn), rate } : null;
 }
 
-/** 时间线上取用这个素材的视频与音频实例（线性映射）。 */
+/** The video and audio instances on the timeline that use this clip (linear mapping). */
 export function mediaSpans(sequence: Sequence, assetId?: Id): MediaSpan[] {
   const out: MediaSpan[] = [];
   for (const item of sequence.items) {
@@ -431,7 +431,7 @@ export function mediaSpans(sequence: Sequence, assetId?: Id): MediaSpan[] {
   return out;
 }
 
-/** 剪口集合里的一个剪口（素材秒）。 */
+/** One cut in the cut set (clip seconds). */
 export interface TrackedCut {
   id: Id;
   from: number;
@@ -439,7 +439,7 @@ export interface TrackedCut {
   ref?: Id;
 }
 
-/** 素材的剪口集合文档（至多一份；同引擎，有几份时取 ID 最小的）。 */
+/** The clip's cut-set document (at most one; same engine, and when there are several, the one with the smallest ID is used). */
 export function cutSetRecord(documents: Record<Id, DocumentRecord>, assetId: Id): DocumentRecord | undefined {
   let found: DocumentRecord | undefined;
   for (const record of Object.values(documents)) {
@@ -449,7 +449,7 @@ export function cutSetRecord(documents: Record<Id, DocumentRecord>, assetId: Id)
   return found;
 }
 
-/** 剪口集合的正文 → 剪口（素材秒，按先后）。不是 `cuccut.cut-set/1` 时返回 null。 */
+/** Body of a cut set → cuts (clip seconds, in order). Returns null when it is not `cuccut.cut-set/1`. */
 export function readCutSet(body: unknown): TrackedCut[] | null {
   if (!isObject(body) || body.schema !== 'cuccut.cut-set/1' || !Array.isArray(body.cuts)) return null;
   const { timescale, cuts } = body as unknown as CutSetBody;
@@ -465,32 +465,32 @@ export function readCutSet(body: unknown): TrackedCut[] | null {
     .sort((a, b) => a.from - b.from);
 }
 
-/** 剪口集合之外剪掉的：`untracked`——没有剪口盖住要恢复的内容（拖片段边缘裁掉的、剪口集合出现之前剪的）。 */
+/** A cut outside the cut set: `untracked`, meaning no cut covers the content to be restored (trimmed by dragging a clip edge, or cut before the cut set existed). */
 export type RestoreRefusal = 'untracked' | 'partial';
 
 export type RestorePlan =
   | {
       ok: true;
       operations: EditOperation[];
-      /** 放回的剪口。 */
+      /** A cut being put back. */
       cutIds: Id[];
-      /** 放回多少秒（序列时间，按素材的速度换算）。 */
+      /** How many seconds are put back (sequence time, converted by the clip's speed). */
       seconds: number;
     }
   | { ok: false; reason: RestoreRefusal };
 
-/** 素材在时间线上的速度（素材秒 / 序列秒）：取第一个取用它的实例，没有时按 1。 */
+/** The clip's speed on the timeline (clip seconds / sequence seconds): taken from the first instance that uses it; 1 when there is none. */
 export function assetRate(sequence: Sequence, assetId: Id): number {
   return mediaSpans(sequence, assetId)[0]?.rate ?? 1;
 }
 
-/** 和这些素材区间相交（容差 `tolerance` 秒）的剪口。 */
+/** Cuts that intersect these clip intervals (tolerance `tolerance` seconds). */
 export function cutsWithin(cuts: readonly TrackedCut[], ranges: readonly SourceRange[], tolerance = EPS): TrackedCut[] {
   return cuts.filter((cut) => ranges.some((range) => cut.from < range.to - tolerance && cut.to > range.from + tolerance));
 }
 
 /**
- * 恢复盖住这些素材区间的剪口 → 一笔事务里的 `restoreCut`（每个剪口一个，整个放回）。没有剪口盖住时照实拒绝（`untracked`）。
+ * Cuts covering these clip intervals → `restoreCut` entries in one transaction (one per cut, the whole cut put back). When no cut covers them, it is rejected as is (`untracked`).
  */
 export function restoreOperations(
   sequence: Sequence,
@@ -510,29 +510,29 @@ export function restoreOperations(
   };
 }
 
-/** 文稿里选中的、不全在时间线上的词 → 要恢复的素材区间（每个词一段）。 */
+/** Selected transcript words that are not fully on the timeline → clip intervals to restore (one per word). */
 export function restoreRanges(words: readonly TranscriptWord[], selected: ReadonlySet<number>): SourceRange[] {
   return words.filter((w) => selected.has(w.index) && w.state !== 'kept').map((w) => ({ from: w.start, to: w.end }));
 }
 
-// ---- 时间线上的剪口 ----
+// ---- Cuts on the timeline ----
 
-/** 同一轨道上首尾相接、取用同一素材、素材里中间空了一段的两个实例之间：剪过的地方。 */
+/** Between two instances on the same track that are back to back, use the same clip, and have a gap in the middle of the clip: a place that was cut. */
 export interface CutSeam {
   key: string;
   trackId: Id;
   assetId: Id;
   leftId: Id;
   rightId: Id;
-  /** 剪口在序列上的位置（帧，音频可以有小数）。 */
+  /** The cut's position on the sequence (frames; audio may have fractions). */
   frame: number;
-  /** 剪掉了多少素材（秒，素材时钟）。 */
+  /** How much clip was cut (seconds, clip clock). */
   gap: number;
-  /** 恢复时要露到的素材时刻（右实例的入点）。 */
+  /** The clip time to reveal on restore (the right instance's in-point). */
   to: number;
 }
 
-/** 时间线上的剪口：同一轨道上首尾相接（差不到百万分之一帧）、同一种类、同一素材、速度一样、素材空了至少一帧的相邻两个实例。 */
+/** A cut on the timeline: two adjacent instances on the same track that are back to back (within one millionth of a frame), of the same kind, the same clip, the same speed, with at least one frame of the clip skipped. */
 export function cutSeams(sequence: Sequence): CutSeam[] {
   const perSecond = sequence.fps.num / sequence.fps.den;
   const byTrack = new Map<Id, MediaSpan[]>();
@@ -566,22 +566,22 @@ export function cutSeams(sequence: Sequence): CutSeam[] {
   return seams;
 }
 
-// ---- 改原文 ----
+// ---- Edit source text ----
 
-/** 拆开的未计时段的一块（`w-000007~3`）→ 转写里原本那个词的 ID。 */
+/** A piece of an untimed segment that was split (`w-000007~3`) → the ID of the word it originally was in the transcript. */
 export function rawWordId(id: string): string {
   return id.replace(/~\d+$/, '');
 }
 
 const pieceNumber = (id: string): number => Number(/~(\d+)$/.exec(id)?.[1] ?? '1');
 
-/** 和 `readSpeechWords` 一样判断：没有词时间的整段、或文字中间有空白的词，读的时候会拆成几块。 */
+/** Judged the same way as `readSpeechWords`: a whole segment with no word timing, or a word with whitespace inside its text, is split into several pieces when read. */
 function untimed(word: Json): boolean {
   const value = typeof word.text === 'string' ? word.text : '';
   return word.timingQuality === 'missing' || /\S\s+\S/.test(value.trim());
 }
 
-/** 未计时段拆出来的各块在原文里的位置（左闭右开的字符下标）。拆不开时只有一块，盖住整段（去掉首尾空白）。 */
+/** The positions in the original text of the pieces split from an untimed segment (character indexes, left-closed and right-open). When it cannot be split, there is only one piece, covering the whole segment (surrounding whitespace removed). */
 function pieceSpans(value: string): Array<[number, number]> {
   const pieces = splitUntimed(value, 0, 1, CUE_PARAMS.maxChars);
   const spans: Array<[number, number]> = [];
@@ -596,7 +596,7 @@ function pieceSpans(value: string): Array<[number, number]> {
   return spans;
 }
 
-/** 把 `value` 里的 `[from, to)` 换成 `text`；换成空时连带吃掉一侧的空白，免得留下两个空格。 */
+/** Replaces `[from, to)` in `value` with `text`; when replaced with empty, it also consumes whitespace on one side, so two spaces are not left behind. */
 function splice(value: string, [from, to]: [number, number], text: string): string {
   if (text) return value.slice(0, from) + text + value.slice(to);
   let a = from;
@@ -617,8 +617,8 @@ function speechWords(body: unknown): { body: Json; words: Json[]; index: Map<str
 }
 
 /**
- * 改一个词的文字（`id` 是文稿里的词 ID，可以是拆开的一块）。计时的词保留原来的前导空白；拆开的一块只换它在原文里的那一段。
- * 改成空的等于删掉（见 `hideWords`）。不是转写正文、找不到这个词或没有变化时返回 null。
+ * Changes the text of one word (`id` is the word ID in the transcript; it can be one piece of a split word). A timed word keeps its original leading whitespace; for a split piece, only that piece's span in the original text is replaced.
+ * Changing it to empty is the same as deleting it (see `hideWords`). Returns null when it is not the transcript body, the word is not found, or nothing changed.
  */
 export function editWordText(body: unknown, id: string, text: string): Json | null {
   const next = text.trim();
@@ -642,8 +642,8 @@ export function editWordText(body: unknown, id: string, text: string): Json | nu
 }
 
 /**
- * 删掉一些词的文字（不动时间线）：计时的词标成 `hidden: true`；拆开的未计时段只删掉选中的那几块，整段都删了才标隐藏。
- * 不是转写正文或什么都没变时返回 null。
+ * Deletes the text of some words (timeline untouched): timed words are marked `hidden: true`; for split untimed segments, only the selected pieces are deleted, and the segment is marked hidden only when all of it is deleted.
+ * Returns null when it is not the transcript body or nothing changed.
  */
 export function hideWords(body: unknown, ids: readonly string[]): Json | null {
   const doc = speechWords(body);
@@ -676,8 +676,8 @@ export function hideWords(body: unknown, ids: readonly string[]): Json | null {
 }
 
 /**
- * 由这份转写生成、但生成时用的转写版本不是现在这版的字幕（只看时间线上的字幕实例用到的）：改原文之后它们过期了，
- * 不自动重新生成。
+ * Subtitles generated from this transcript where the transcript version used at generation is not the current one (only those used by subtitle instances on the timeline are considered): after the source text is edited they are stale,
+ * and they are not regenerated automatically.
  */
 export function staleCaptions(sequence: Sequence, documents: Record<Id, DocumentRecord>, speech: DocumentRecord): DocumentRecord[] {
   const used = new Set(sequence.items.flatMap((item) => (item.type === 'caption' ? [item.documentId] : [])));

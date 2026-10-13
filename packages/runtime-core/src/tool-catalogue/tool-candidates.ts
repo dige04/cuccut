@@ -11,14 +11,13 @@ import type { VideoFacts } from '../space/content-extract.ts';
 import { visibleVideo, type SpaceViewer } from '../space/space-queries.ts';
 
 /**
- * 工具的候选输入（`tools.candidates`，架构设计 §7.9）：可选的视频条目与每个条目里可选的文档。事实来自 Space 目录（§5.7）
- * 与内容索引（§5.11），不打开视频。
+ * Candidate inputs for tools (`tools.candidates`, architecture design §7.9): optional video entries and, within each entry, optional documents. The facts come from the Space directory (§5.7)
+ * and the content index (§5.11); no video is opened.
  *
- * - 范围与 `space.list` / `space.search` 相同：按主体过滤（`SpaceViewer`），可以按项目筛；回收站里的视频不列。
- * - `videos`：全部视频；`videos-with-transcript`：有文稿的视频，每个视频列出它的文稿与已有的译文、配音组。
- * - 还没有索引、排队重读（旧版本的缓存、视频改过）、读失败的视频照样列出，标 `indexed: false`：有文稿才列的工具也列出它，
- *   因为不能断定没有文稿；这时 `complete` 为 false。旧的索引有文稿时照用旧的。
- * - 对外服务只在范围是全部视频时把没有索引的视频算进来（与 `space.search` 一样，名单之外的视频不能从结果里露出来）。
+ * - Scope is the same as `space.list` / `space.search`: filtered by subject (`SpaceViewer`), and can be filtered by project; videos in the trash are not listed.
+ * - `videos`: all videos; `videos-with-transcript`: videos that have a transcript, each listing its transcript, existing translations and dubbing groups.
+ * - Videos not yet indexed, queued for re-reading (cache from an older version, video changed), or failing to read are still listed, marked `indexed: false`. Tools that list only videos with a transcript also list them, because it cannot be concluded that there is no transcript; in that case `complete` is false. An old index with a transcript is used as before.
+ * - For external services, unindexed videos are counted only when the scope is all videos (as with `space.search`; videos outside the list must not show up in the results).
  */
 
 const DEFAULT_LIMIT = 100;
@@ -41,13 +40,13 @@ export function toolCandidates(
       const indexed = index?.at(video.dir) ?? null;
       const videoId = indexed?.videoId ?? video.videoId;
       if (viewer.kind === 'service' && viewer.videos !== 'all') {
-        // 名单范围：不知道 videoId 的视频不列（不能判断在不在名单上）。
+        // List scope: videos whose videoId is unknown are not listed (it cannot be judged whether they are on the list).
         if (!videoId || !viewer.videos.has(videoId)) continue;
       }
       const current = index !== null && indexed !== null && index.current(video.dir);
       if (!current) pending++;
       const documents = tool.candidates === 'videos-with-transcript' && indexed ? transcriptChoices(indexed.facts) : [];
-      // 有文稿才列的工具：索引是当前的、而且确实没有文稿时才不列。
+      // Tools that list only videos with a transcript: the index is current and really has no transcript is the only case left out.
       if (tool.candidates === 'videos-with-transcript' && current && documents.length === 0) continue;
       matched.push({
         entryId: video.entryId,
@@ -76,7 +75,7 @@ export function toolCandidates(
   };
 }
 
-/** 视频里可选的文稿，带上译自它的译文与用它的配音组。 */
+/** The transcript optionally available in a video, with the translation derived from it and the dubbing groups that use it. */
 function transcriptChoices(facts: VideoFacts): ToolCandidateDocument[] {
   const transcripts = facts.transcripts ?? [];
   const translations = facts.translations ?? [];

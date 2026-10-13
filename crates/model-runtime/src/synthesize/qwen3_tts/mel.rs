@@ -1,14 +1,14 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/SpeakerEncoder.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/SpeakerEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! Speaker Encoder 的输入 log-mel：
-//! 24 kHz、n_fft 1024、hop 256、周期 Hann 窗、128 个 HTK mel（0–12 kHz，
-//! 三角滤波器不做 slaney 归一化）、反射填充 n_fft/2、幅度谱（非功率谱）、
-//! `ln(max(mel, 1e-5))`。纯 Rust（realfft），全平台编译。
+//! Input log-mel for the Speaker Encoder:
+//! 24 kHz, n_fft 1024, hop 256, periodic Hann window, 128 HTK mel bins (0–12 kHz,
+//! triangular filters without slaney normalization), reflection padding of n_fft/2, magnitude spectrum (not power spectrum),
+//! `ln(max(mel, 1e-5))`. Pure Rust (realfft), compiles on all platforms.
 
 use realfft::RealFftPlanner;
 use realfft::num_complex::Complex;
@@ -34,7 +34,7 @@ fn mel_to_hz(mel: f32) -> f32 {
     700.0 * (10f32.powf(mel / 2595.0) - 1.0)
 }
 
-/// `[num_bins, N_MELS]` 行主序的三角 mel 滤波器组。
+/// Triangular mel filterbank, row-major `[num_bins, N_MELS]`.
 pub fn mel_filterbank() -> Vec<f32> {
     let num_bins = N_FFT / 2 + 1;
     let mel_min = hz_to_mel(F_MIN);
@@ -65,7 +65,7 @@ fn hann_window() -> Vec<f32> {
         .collect()
 }
 
-/// 反射填充（与参考实现逐样本一致）。
+/// Reflection padding (matches the reference implementation sample for sample).
 fn reflect_pad(samples: &[f32]) -> Vec<f32> {
     let pad = N_FFT / 2;
     let n = samples.len();
@@ -80,7 +80,7 @@ fn reflect_pad(samples: &[f32]) -> Vec<f32> {
     padded
 }
 
-/// 计算 24 kHz 单声道音频的 log-mel。输入至少 1 个样本。
+/// Computes the log-mel of 24 kHz mono audio. Input must contain at least 1 sample.
 pub fn compute(samples_24k: &[f32]) -> LogMel {
     if samples_24k.is_empty() {
         return LogMel {
@@ -141,7 +141,7 @@ mod tests {
     fn filterbank_shape_and_peaks() {
         let fb = mel_filterbank();
         assert_eq!(fb.len(), (N_FFT / 2 + 1) * N_MELS);
-        // 每个滤波器峰值 ≤ 1，且都非空
+        // Each filter's peak is ≤ 1, and none is empty
         for m in 0..N_MELS {
             let max = (0..(N_FFT / 2 + 1)).map(|k| fb[k * N_MELS + m]).fold(0f32, f32::max);
             assert!(max > 0.0 && max <= 1.0, "mel {m} max {max}");
@@ -155,7 +155,7 @@ mod tests {
         let expected = (24_000 + N_FFT - N_FFT) / HOP + 1;
         assert_eq!(mel.frames, expected);
         assert_eq!(mel.data.len(), expected * N_MELS);
-        // 静音 → ln(1e-5)
+        // Silence → ln(1e-5)
         assert!((mel.data[0] - (1e-5f32).ln()).abs() < 1e-6);
     }
 
@@ -169,7 +169,7 @@ mod tests {
         let frame = 40;
         let row = &mel.data[frame * N_MELS..(frame + 1) * N_MELS];
         let argmax = row.iter().enumerate().fold(0, |b, (i, v)| if *v > row[b] { i } else { b });
-        // 1 kHz 在 HTK mel 轴上约位于 1000 mel / (3823 mel 总跨度) ≈ 34% 处
+        // 1 kHz lies at about 1000 mel / (3823 mel total span) ≈ 34% along the HTK mel axis
         assert!((30..60).contains(&argmax), "argmax {argmax}");
         assert!(row[argmax] > 0.0);
     }

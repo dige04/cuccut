@@ -14,7 +14,7 @@ import { pl } from './agent-tool-steps.pl.ts';
 import { tr } from './agent-tool-steps.tr.ts';
 import { vi } from './agent-tool-steps.vi.ts';
 
-/** 步骤行的文案（英文是键与类型的来源，译文在 `agent-tool-steps.zh-Hans.ts`）。 */
+/** Copy for the step rows (the English is the source of keys and types; translations are in `agent-tool-steps.zh-Hans.ts`). */
 const en = {
   label: {
     translate: 'Translate',
@@ -75,16 +75,15 @@ export type AgentToolStepsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 会话线程里 CucCut 自己的工具（Runtime 的 MCP 工具通道，服务名 `cuccut`）在步骤行上怎么念（产品设计 §3.2.2，
- * 原型 model-agent-tools.js）：不写「其他工具」，而是这一类自己的名字加一句摘要（「转录 · large-v3」「生成图片 · 4 张」）。
+ * How CucCut's own tools in the session thread (the Runtime's MCP tool channel, service name `cuccut`) are named on step rows (product design §3.2.2, prototype model-agent-tools.js). Instead of “other tools”, each category uses its own name plus a one-line summary, e.g. “转录 (transcribe) · large-v3”, “生成图片 (generate images) · 4 张 (4 images)”.
  *
- * 工具名以 Runtime 的工具目录为准（packages/runtime-core/src/agent-tools）；摘要只取参数里现成的字段，没有就只给类别名。
- * 原型里有、参数里没有的（转录的时长、翻译的句数、剪辑的原因）不写。
+ * Tool names follow the Runtime's tool catalog (packages/runtime-core/src/agent-tools). The summary takes only fields that are already in the arguments; if there are none, only the category name is given.
+ * Items that are in the prototype but not in the arguments (transcription duration, translation sentence count, cut reason) are not written.
  */
 
 type ToolCall = Extract<TimelineItem, { kind: 'tool-call' }>;
 
-/** 步骤行的类别键：图标按它取；`stepsSummary` 仍按「调用了工具」归纳。 */
+/** The category key for the step row: the icon is looked up by it; `stepsSummary` still summarizes by “tool called”. */
 export type CucCutStepKind =
   | 'video-list'
   | 'video-create'
@@ -129,7 +128,7 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 const join = (...parts: (string | null | undefined)[]) => parts.filter((p) => p != null && p !== '').join(' · ');
 const base = (p: unknown) => (str(p) ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
 
-/** 链接的站点：`https://www.youtube.com/watch?…` → `youtube.com`。 */
+/** The site of a link: `https://www.youtube.com/watch?…` → `youtube.com`. */
 function host(url: unknown): string | null {
   const m = /^https?:\/\/([^/?#]+)/i.exec(str(url) ?? '');
   return m ? m[1]!.replace(/^www\./i, '') : null;
@@ -139,7 +138,7 @@ const EXPORT_KIND: Record<string, string> = live(() => M.exportKind);
 
 const CUT_OPS = new Set(['removeRange', 'addCuts', 'deleteItems']);
 
-/** `edits_apply`：按操作分类别。写一份译文是「翻译」，删区间与加剪口是「剪辑」，导入素材是「导入素材」，其余是「修改视频」。 */
+/** `edits_apply`: categorized by operation. Writing a translation is “translate”, deleting a range and adding cuts is “edit”, importing media is “import media”, and everything else is “modify video”. */
 function editStep(a: Args): CucCutStep {
   const ops = Array.isArray(a.operations) ? (a.operations as Args[]) : [];
   const translation = ops.find((op) => op?.type === 'putDocument' && op.kind === 'translation');
@@ -198,13 +197,13 @@ const CATALOG: Record<string, (a: Args) => CucCutStep> = {
   tasks_contract: () => ({ kind: 'contract', label: M.label.readContract, summary: '' }),
   tasks_update_contract: () => ({ kind: 'contract', label: M.label.refineContract, summary: '' }),
   tasks_record_check: (a) => ({ kind: 'contract', label: M.label.recordCheck, summary: str(a.checkId) ?? '' }),
-  // 幻灯片（docs/design/slides §7.2）：摘要是 deck 目录名与图片文件名。
+  // Slides (docs/design/slides §7.2): the summary is the deck directory name and the image file names.
   slides_check: (a) => ({ kind: 'slides', label: M.label.checkSlides, summary: base(a.path) }),
   slides_import_asset: (a) => ({ kind: 'slides', label: M.label.importSlideAsset, summary: base(a.path) }),
-  // 设计稿（docs/design/canvas §7.2）：摘要是设计稿目录名与素材文件名。
+  // Design drafts (docs/design/canvas §7.2): the summary is the design directory name and the asset file names.
   design_check: (a) => ({ kind: 'design', label: M.label.checkDesign, summary: base(a.path) }),
   design_import_asset: (a) => ({ kind: 'design', label: M.label.importDesignAsset, summary: base(a.path) }),
-  // 设计系统（docs/design/canvas §10.5）：摘要是设计系统目录名，导入素材的是文件名与素材组。
+  // Design systems (docs/design/canvas §10.5): the summary is the design system directory name; importing assets gives the file name and asset group.
   design_system_check: (a) => ({ kind: 'design-system', label: M.label.checkDesignSystem, summary: base(a.path) }),
   design_system_import_asset: (a) => ({
     kind: 'design-system',
@@ -213,13 +212,13 @@ const CATALOG: Record<string, (a: Args) => CucCutStep> = {
   }),
 };
 
-/** 工具名：MCP 的 `cuccut.<tool>`；不是 CucCut 的工具返回 null。 */
+/** Tool name: `cuccut.<tool>` over MCP; returns null for tools that are not CucCut's. */
 export function cuccutToolName(item: Pick<ToolCall, 'tool' | 'title'>): string | null {
   if (item.tool !== 'mcp' || !item.title.startsWith('cuccut.')) return null;
   return item.title.slice('cuccut.'.length);
 }
 
-/** 一次 CucCut 工具调用在步骤行上的类别名与摘要；不认得的工具返回 null（照原来的写法）。 */
+/** The category name and summary of one CucCut tool call on a step row; returns null for an unrecognized tool (keeps the original form). */
 export function cuccutStep(item: Pick<ToolCall, 'tool' | 'title' | 'detail'>): CucCutStep | null {
   const name = cuccutToolName(item);
   const describe = name ? CATALOG[name] : undefined;

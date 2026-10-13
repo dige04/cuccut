@@ -1,4 +1,4 @@
-//! 检查字体文件（下载之后核对用）与列出族名：用打包的字体，不依赖这台机器装了什么字体。
+//! Inspect font files (to verify after download) and list family names. Uses the bundled fonts, so it does not depend on what fonts this machine has installed.
 
 use std::path::{Path, PathBuf};
 
@@ -28,7 +28,7 @@ fn files_that_are_not_fonts_or_too_large_are_rejected() {
     let html = dir.path().join("page.ttf");
     std::fs::write(&html, b"<!DOCTYPE html><html>not a font</html>").unwrap();
     assert!(inspect_file(&html, 1024 * 1024).is_err());
-    // 表目录指到文件之外：截断的下载。
+    // Table directory points past the end of the file: a truncated download.
     let bytes = std::fs::read(bundled("PermanentMarker-Regular.ttf")).unwrap();
     let cut = dir.path().join("cut.ttf");
     std::fs::write(&cut, &bytes[..bytes.len() / 2]).unwrap();

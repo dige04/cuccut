@@ -18,26 +18,26 @@ import { RemoteNodeProvider, type RemoteTiming } from './remote-provider.ts';
 import { NodesClient as NC } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 发起端（架构设计 §6.7；节点协议规范 §9–§12）：已配对节点的存储、远端节点 Provider，以及本机网关上
- * `nodes.discover`、`nodes.pair`、`nodes.list`、`nodes.remove` 的实现。Runtime 只做装配。
+ * Initiator (architecture design §6.7; node protocol spec §9–§12): storage for paired nodes, the remote node Provider, and the implementation of
+ * `nodes.discover`, `nodes.pair`, `nodes.list` and `nodes.remove` on the local gateway. The Runtime only wires these up.
  *
- * 网关错误：配对失败与远端任务一样用 `REMOTE_NODE_REJECTED` / `REMOTE_NODE_LOST`，放在 `RpcError.details.code`，
- * `details.reason` 给出原因（`RpcError.code` 是 `conflict`，同 `MODEL_UNAVAILABLE` 的做法）。
+ * Gateway errors: pairing failures use `REMOTE_NODE_REJECTED` / `REMOTE_NODE_LOST`, as remote tasks do, in `RpcError.details.code`,
+ * and `details.reason` gives the cause (`RpcError.code` is `conflict`, the same approach as `MODEL_UNAVAILABLE`).
  */
 
 export interface NodeInitiatorOptions {
   /** `<home>/store/nodes.json`。 */
   file: string;
-  /** 令牌的存放（`node:<nodeId>`，架构设计 §6.8）。 */
+  /** Token storage (`node:<nodeId>`, architecture design §6.8). */
   credentials: CredentialStore;
   log?: NodeLogger;
   discoverer?: Discoverer;
   timing?: Partial<RemoteTiming>;
-  /** 配对时告诉节点的客户端名字；默认主机名。 */
+  /** Client name told to the node at pairing; defaults to the hostname. */
   clientName?: string;
-  /** `nodes.list` 每个节点的探测期限（规范：2 秒）。 */
+  /** Probe deadline per node for `nodes.list` (spec: 2 seconds). */
   probeTimeoutMs?: number;
-  /** `nodes.pair` 每个请求的期限。 */
+  /** Deadline for each `nodes.pair` request. */
   pairTimeoutMs?: number;
 }
 
@@ -45,7 +45,7 @@ const DEFAULT_DISCOVER_MS = 2_000;
 const MAX_DISCOVER_MS = 10_000;
 const DEFAULT_PROBE_MS = 2_000;
 const DEFAULT_PAIR_MS = 10_000;
-/** `nodes.list` 判断令牌是否还有效：读一个不存在的任务，401 是已吊销，404 是有效（节点上没有新端点）。 */
+/** `nodes.list` checks whether the token is still valid by reading a nonexistent task: 401 means revoked, 404 means valid (the node has no new endpoint). */
 const PROBE_JOB_ID = 'job_probe';
 
 export class NodeInitiator {
@@ -75,12 +75,12 @@ export class NodeInitiator {
     return this.store.clientId;
   }
 
-  /** `nodeId` 或别名 → `nodeId`；没有这个节点时 null（JobManager 据此以 `not-found` 拒绝）。 */
+  /** `nodeId` or alias → `nodeId`; null when there is no such node (JobManager rejects with `not-found` on this basis). */
   resolve(ref: string): string | null {
     return this.store.resolve(ref)?.nodeId ?? null;
   }
 
-  /** 浏览局域网里的节点；`excludeNodeId` 是这台机器自己的节点。 */
+  /** Browse nodes on the LAN; `excludeNodeId` is this machine's own node. */
   async discover(timeoutMs: number = DEFAULT_DISCOVER_MS, excludeNodeId: string | null = null): Promise<DiscoveredNode[]> {
     const bounded = Math.min(Math.max(timeoutMs, 1), MAX_DISCOVER_MS);
     const nodes = await this.#discoverer.discover(bounded).catch((error: unknown) => {
@@ -90,7 +90,7 @@ export class NodeInitiator {
     return nodes.filter((node) => !excludeNodeId || node.nodeId !== excludeNodeId);
   }
 
-  /** 配对（规范 §4、§10）：先看健康（可达与版本），再用配对码换令牌；同一个节点再次配对替换原来的记录。 */
+  /** Pairing (spec §4, §10): check health first (reachability and version), then exchange the pairing code for a token. Pairing the same node again replaces the existing record. */
   async pair(params: { host: string; port: number; code: string; alias?: string }): Promise<PairedNode> {
     const client = new NodeClient(params.host.trim(), params.port);
     let health: NodeHealth;
@@ -102,7 +102,7 @@ export class NodeInitiator {
     if (!health || typeof health.nodeId !== 'string' || !versionCompatible(health)) {
       throw rejectedRpc('version', NC.labelVersionIncompatible({ label: client.label }));
     }
-    // 别名在用掉配对码之前检查。
+    // The alias is checked before the pairing code is used up.
     if (params.alias !== undefined) this.store.checkAlias(params.alias.trim(), health.nodeId);
     let response: { nodeId?: unknown; name?: unknown; token?: unknown };
     try {
@@ -135,18 +135,18 @@ export class NodeInitiator {
     return paired(record, nodeId === health.nodeId ? health : null, null);
   }
 
-  /** 已配对的节点，各带一次实时探测（并行，每个 2 秒）。 */
+  /** Paired nodes, each with one live probe (in parallel, 2 seconds each). */
   async list(): Promise<PairedNode[]> {
     return Promise.all(this.store.list().map((record) => this.#probe(record)));
   }
 
-  /** 探测一个已配对的节点（至多 2 秒）；没有这个节点时 null。 */
+  /** Probe one paired node (at most 2 seconds); null when there is no such node. */
   async probe(nodeId: string): Promise<PairedNode | null> {
     const record = this.store.get(nodeId);
     return record ? this.#probe(record) : null;
   }
 
-  /** 只删本机的记录与令牌；节点那边的配对由节点的用户吊销。 */
+  /** Deletes only this machine's record and token; the pairing on the node side is revoked by the node's user. */
   async remove(nodeId: string): Promise<void> {
     if (!(await this.store.remove(nodeId))) throw new RpcError('not-found', NC.pairedNodeNotFound({ id: nodeId }));
     this.#log.info('Removed node', { node: nodeId });
@@ -164,12 +164,12 @@ export class NodeInitiator {
     try {
       health = await client.health({ timeoutMs: this.#probeTimeoutMs });
     } catch {
-      // 连不上、超时、来源地址被拒（403）都算连不上。
+      // Cannot connect, timeout, and a source address rejected (403) all count as unreachable.
       return paired(record, null, 'unreachable');
     }
     if (!health || typeof health !== 'object' || !versionCompatible(health)) return paired(record, health ?? null, 'version');
     if (health.nodeId !== record.nodeId) return paired(record, health, 'unpaired');
-    // 本机读不到令牌（没有或凭据存储不可用）也算不再配对：这次配对在本机用不了。原因由 `store.credentialProblem()` 报告。
+    // If the token cannot be read locally (missing, or the credential store is unavailable), this also counts as no longer paired: the pairing is unusable on this machine. The cause is reported by `store.credentialProblem()`.
     const token = await this.store.token(record.nodeId).catch(() => null);
     if (!token) return paired(record, health, 'unpaired');
     try {

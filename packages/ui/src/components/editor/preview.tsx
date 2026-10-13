@@ -87,7 +87,7 @@ const surface = style({
   width: "full",
   height: "full",
 });
-/** 源元素不显示，只给画布供帧。不用 display: none，免得浏览器不给它解码。 */
+/** Source element is not shown; it only supplies frames to the canvas. Not display: none, so the browser still decodes it. */
 const sources = style({
   position: "absolute",
   top: 0,
@@ -119,9 +119,9 @@ const PADDING = 16;
 const ROW_HEIGHT = 52;
 
 /**
- * 音频实例的源元素：每个 `<audio>` 都是一个媒体播放器，浏览器有上限，上千个（逐句配音）会把页面卡死。不多于
- * `AUDIO_ALL` 个时全挂；多了只挂播放头附近的（往回 `AUDIO_BEHIND`、往前 `AUDIO_AHEAD` 秒，播放头每走 `AUDIO_STEP` 秒挪一次窗口），
- * 播到之前早已挂上、载入好了；离得远的定位过去时新挂的元素载入好了引擎再把它对上。
+ * Source elements for audio instances: each `<audio>` is a media player, and browsers cap how many there can be; thousands (one per sentence of dubbing) would freeze the page. When there are no more than
+ * `AUDIO_ALL`, all of them are mounted. When there are more, only those near the playhead are mounted (`AUDIO_BEHIND` seconds back and `AUDIO_AHEAD` seconds ahead, and the window shifts every `AUDIO_STEP` seconds as the playhead moves).
+ * Anything played past has already been mounted and loaded. After a seek a long way away, the engine syncs a newly mounted element once it has loaded.
  */
 const AUDIO_ALL = 32;
 const AUDIO_STEP = 10;
@@ -129,8 +129,8 @@ const AUDIO_BEHIND = 10;
 const AUDIO_AHEAD = 30;
 
 /**
- * 预览：按帧计划把各层合成到画布上（WASM 求计划并画成一帧，与导出同一个渲染内核），按画布比例摆在舞台中间。
- * 画面下沿是舞台工具条（stage-bar.tsx）。全屏播放（F 或工具条右端那枚钮）时舞台整格进浏览器的全屏：画面贴边、不画舞台点选层，盖上全屏播放器（fullscreen-player.tsx）。
+ * Preview: composites each layer onto the canvas according to the frame plan (WASM computes the plan and draws one frame, using the same render kernel as export), centered on the stage at the canvas's aspect ratio.
+ * The stage toolbar (stage-bar.tsx) sits along the bottom edge of the picture. In fullscreen playback (F, or the button at the right end of the toolbar), the whole stage goes into browser fullscreen: the picture is flush to the edges, the stage's pick layer is not drawn, and the fullscreen player (fullscreen-player.tsx) covers it.
  */
 export function Preview({
   videoId,
@@ -154,9 +154,9 @@ export function Preview({
   const [box, setBox] = useState({ width: 0, height: 0 });
   const [toolbarRow, setToolbarRow] = useState<HTMLDivElement | null>(null);
   const picked = useEditor((s) => s.selection.length > 0);
-  // 主媒体放不出来：画面正中的常驻卡；找回之后按素材重挂源元素，重新取地址。
+  // Main media cannot be played: a persistent card in the middle of the picture. Once it recovers, the source elements are remounted per asset and the address is fetched again.
   const stageMedia = useStageMedia(videoId, sequence);
-  // 预览卡住时的「重试」（产品设计 §5.1）：引擎重新接渲染内核、重新交视频；这部视频的媒体地址丢掉重新要，源元素全部重挂。
+  // “Retry” when preview is stuck (product design §5.1): the engine reconnects to the render kernel and resubmits the video; this video's media addresses are discarded and requested again, and all source elements are remounted.
   const mediaUrls = useRuntime().videos.mediaUrls;
   const [reload, setReload] = useState(0);
   const retry = useCallback(() => {
@@ -166,14 +166,14 @@ export function Preview({
   }, [engine, mediaUrls, videoId]);
 
   useEffect(() => engine.onStatus(setStatus), [engine]);
-  // 倍速与字幕显隐是这个窗口的观看态（editor-store），只在这里交给引擎：舞台工具条与全屏播放器都只改 store。
-  // 全屏里的字幕档位归全屏播放器管，退出全屏再按舞台的显隐还原。
+  // Playback speed and caption visibility are this window's viewing state (editor-store); they are passed to the engine only here. The stage toolbar and the fullscreen player only change the store.
+  // The caption level in fullscreen is owned by the fullscreen player; on exit, it is restored from the stage's visibility setting.
   useEffect(() => engine.setRate(rate), [engine, rate]);
   useEffect(() => {
     if (!fullscreen) engine.setCaptionView(captionsHidden ? "off" : null);
   }, [engine, fullscreen, captionsHidden]);
-  // 全屏以浏览器的 `fullscreenchange` 为准：浏览器自己的 Esc 退出不经过我们的键盘层。
-  // 预览卸下（换视频、离开编辑器）时舞台还在全屏就退出来，不留一个没有播放器的全屏。
+  // Fullscreen state follows the browser's `fullscreenchange`: the browser's own Esc exit does not pass through our keyboard layer.
+  // When the preview is unmounted (switching video, leaving the editor) while the stage is still fullscreen, exit fullscreen so no fullscreen is left without a player.
   useEffect(() => {
     const element = stageRef.current;
     const { setFullscreen } = useEditor.getState();
@@ -215,11 +215,11 @@ export function Preview({
   );
   const fw = Math.floor(cw * scale);
   const fh = Math.floor(ch * scale);
-  // 画布按显示尺寸（乘设备像素比）画，不超过序列画布本身。
+  // The canvas is drawn at its display size (times the device pixel ratio), never larger than the sequence canvas itself.
   const pixelScale = Math.min(1, scale * (window.devicePixelRatio || 1));
   useEffect(() => engine.setScale(pixelScale), [engine, pixelScale]);
 
-  // 视频按素材分槽（同一时刻用到几处就几个元素）；图片按素材一个；音频轨道上的实例各一个（多了只挂播放头附近的）。
+  // Video elements are allocated per asset (as many elements as there are places using it at the same moment); one per asset for images; one per instance on audio tracks (when there are many, only those near the playhead are mounted).
   const visuals = useMemo(() => {
     const videos = videoSlots(sequence).flatMap(({ asset, count }) =>
       Array.from({ length: count }, (_, slot) => ({
@@ -260,12 +260,12 @@ export function Preview({
     width: fw,
     height: fh,
   };
-  // 舞台上的提示卡；全屏时夹在播放器的画面点击层与控件之间（点不到卡下面的画面，卡上的钮照常点）。
+  // Hint card on the stage. In fullscreen it sits between the player's picture click layer and its controls (the picture under the card cannot be clicked, but the card's buttons still work).
   const notices =
     fw > 0 && fh > 0 ? (
       <>
         <StageMediaNotice media={stageMedia} frame={frameRect} />
-        {/* 载入与卡住盖在画面与舞台点选层之上，接住指针。 */}
+        {/* Loading and stuck overlays sit above the picture and the stage's pick layer, and capture the pointer. */}
         <StageLoadNotice
           engine={engine}
           videoId={videoId}
@@ -379,7 +379,7 @@ export function Preview({
   );
 }
 
-/** 这一帧有画不出来的东西：画面照常出，在这里说明哪些没画、为什么（视频格式规范 §3.7）。 */
+/** Some things in this frame cannot be drawn. The picture still renders as usual; this explains what was not drawn and why (video format spec §3.7). */
 function Problems({ problems }: { problems: string[] }) {
   return (
     <span className={problemsAt}>
@@ -401,8 +401,8 @@ function Problems({ problems }: { problems: string[] }) {
 }
 
 /**
- * 一个隐藏的源元素，交给预览引擎驱动。取帧要过 CORS（媒体通道按来源放行），画布才不会被「污染」。
- * 地址失效（Runtime 重启）时报错，重新取一次。视频、音频的载入结果报给舞台提示（取不到地址、解不了码）。
+ * A hidden source element, driven by the preview engine. Reading frames goes through CORS (the media channel allows the origin), so the canvas is not “tainted”.
+ * When the address has expired (Runtime restart), it reports an error and fetches a new one. Video and audio load results are reported to the stage hints (address cannot be obtained, decoding fails).
  */
 function MediaSource({
   kind,

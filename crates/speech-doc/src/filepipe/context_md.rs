@@ -1,8 +1,6 @@
-//! context.md 载体（§5）：`ai/context.md` 与 `ai/context.<lang>.md` 的渲染与解析。
+//! context.md carrier (§5): rendering and parsing of `ai/context.md` and `ai/context.<lang>.md`.
 //!
-//! 两份文档都是「frontmatter + 小节 + Lock/Origin 表格」结构。表头固定用英文
-//! （机器契约），`Category` 是闭集。**术语表解析失败时返回 `context: None`**，
-//! 调用方必须保留旧的已验证上下文，绝不以空表覆盖（§5.1 重建规则）。
+//! Both documents are "frontmatter + sections + Lock/Origin table" structures. The header row is fixed in English (a machine contract), and `Category` is a closed set. **When glossary parsing fails, `context: None` is returned**, and the caller must keep the old verified context and must never overwrite it with an empty table (§5.1 rebuild rule).
 
 use std::collections::BTreeMap;
 
@@ -13,41 +11,30 @@ use super::common::{
     normalize_llm_output, sanitize_inline_text, sanitize_payload_text,
 };
 
-/// `Canonical Terms` 表的表头（逐字校验）。
+/// Header of the `Canonical Terms` table (verified verbatim).
 const CANONICAL_HEADER: [&str; 6] = ["Source", "Category", "Variants", "Note", "Lock", "Origin"];
-/// `Bilingual Glossary` 表的表头（逐字校验）。
+/// Header of the `Bilingual Glossary` table (verified verbatim).
 const BILINGUAL_HEADER: [&str; 5] = ["Source", "Target", "Note", "Lock", "Origin"];
 
-/// 单页 `Canonical Terms` 保留的最大行数（重试策略重设计 §2.1）。
+/// Maximum number of rows retained for `Canonical Terms` on a single page (retry strategy redesign §2.1).
 ///
-/// 实测 deepseek-v4-flash 会把「论文/学习/嗯/啊」都写成术语行，一页交回
-/// 500–1000 行。行数上限是确定性截断，不是拒收理由：超出部分记
-/// [`WarningCode::ContentIgnored`] 并带丢弃计数。
+/// Measured: deepseek-v4-flash also writes 论文 (paper), 学习 (study), 嗯 and 啊 (filler words) as term rows, returning 500–1000 rows per page. The row cap is a deterministic truncation, not a reason to reject: the excess is recorded as [`WarningCode::ContentIgnored`] with a dropped count.
 pub const ANALYSIS_MAX_TERMS_PER_PAGE: usize = 150;
-/// 全文归并后 `Canonical Terms` 的最大行数（见
-/// [`ANALYSIS_MAX_TERMS_PER_PAGE`]；排序口径见
-/// `crate::engines::brief::merge_partial_terms`）。
+/// Maximum number of rows in `Canonical Terms` after full-text merging (see [`ANALYSIS_MAX_TERMS_PER_PAGE`]; for the sort basis see `crate::engines::brief::merge_partial_terms`).
 pub const ANALYSIS_MAX_TERMS: usize = 400;
 
-/// 解析模式（重试策略重设计 §2.1）。
+/// Parse mode (retry strategy redesign §2.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseMode {
-    /// 用户手写 `ai/context.md` / `context.<lang>.md`：任何结构或取值缺陷都判败，
-    /// 调用方保留旧的已验证上下文，绝不以半张表覆盖。
+    /// User-written `ai/context.md` or `context.<lang>.md`: any structural or value defect fails it. The caller keeps the old verified context and must never overwrite it with a half-table.
     Strict,
-    /// 模型答案：能用代码消解的一律消解（R2 代码先修）——重复 Source 合并、
-    /// 列数补齐/并回、未知 Category 归 `other`、Lock/Origin 降级、表头放宽、
-    /// 垃圾行丢弃、行数截断，全部只记 Warning。只剩「既没有术语表小节也没有
-    /// 任何可解析行」与「超体积硬顶」两种 page-fatal。
+    /// Model answer: whatever can be resolved in code is resolved (R2 code-first fix). This covers merging duplicate Sources, padding or merging columns, downgrading an unknown Category to `other`, downgrading Lock/Origin, relaxing the header, dropping garbage rows, and truncating row count. All of these only record Warnings. Only two page-fatal cases remain: "neither a glossary section nor any parseable row", and "hard ceiling on size exceeded".
     Model,
 }
 
-/// 术语归并键：小写并去掉空白与 ASCII 标点，`Yann LeCun` / `yann lecun` /
-/// `Yann-LeCun` 归到同一组；CJK 与其他字符原样保留。
+/// Term merge key: lowercase, with whitespace and ASCII punctuation stripped, so `Yann LeCun`, `yann lecun`, and `Yann-LeCun` fall into the same group. CJK and other characters are kept as is.
 ///
-/// 页内去重（[`ParseMode::Model`]）与跨页归并
-/// （`crate::engines::brief::merge_partial_terms`）共用这一个键，页内合并过的行
-/// 因此不会在跨页阶段被当成两组。
+/// Within-page dedup ([`ParseMode::Model`]) and cross-page merging (`crate::engines::brief::merge_partial_terms`) share this single key, so rows already merged within a page are not treated as two groups in the cross-page stage.
 pub fn term_merge_key(source: &str) -> String {
     source
         .chars()
@@ -56,11 +43,9 @@ pub fn term_merge_key(source: &str) -> String {
         .collect()
 }
 
-/// 垃圾术语行判据（[`ParseMode::Model`] 的确定性过滤）。
+/// Junk term-row criterion (deterministic filter for [`ParseMode::Model`]).
 ///
-/// ASR 纠错用的术语表只服务于「容易识别错的专名」；单个 CJK 字、纯标点、纯
-/// 数字与应答语气词（复用 speaker-repair 的白名单）没有任何纠错价值，却在实测
-/// 里占据成百上千行。它们被丢弃而不是拒页。
+/// The ASR-correction glossary serves only proper nouns that are easy to misrecognize. Single CJK characters, pure punctuation, pure digits, and response interjections (reusing the speaker-repair whitelist) have no correction value, yet in measurements they take up hundreds or thousands of rows. They are dropped rather than used to reject the page.
 pub fn is_junk_term_source(source: &str) -> bool {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -71,7 +56,7 @@ pub fn is_junk_term_source(source: &str) -> bool {
         .filter(|ch| ch.is_alphanumeric() || *ch == '\u{200D}')
         .collect();
     if meaningful.is_empty() {
-        // 纯标点/符号。
+        // Pure punctuation and symbols.
         return true;
     }
     if meaningful.iter().all(|ch| ch.is_numeric()) {
@@ -97,23 +82,23 @@ pub fn is_junk_term_source(source: &str) -> bool {
         .any(|entry| *entry == normalized || *entry == compact)
 }
 
-/// 术语类别（闭集；未知类别即 lint 失败）。
+/// Term category (closed set; an unknown category fails lint).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermCategory {
-    /// 产品名。
+    /// Product name.
     Product,
-    /// 人名。
+    /// Person name.
     Person,
-    /// 技术术语。
+    /// Technical term.
     Tech,
-    /// 其他专名。
+    /// Other proper noun.
     Proper,
-    /// 其他。
+    /// Other.
     Other,
 }
 
 impl TermCategory {
-    /// 表格里的字面量。
+    /// Literal in the table.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Product => "product",
@@ -124,7 +109,7 @@ impl TermCategory {
         }
     }
 
-    /// 从表格字面量解析（大小写敏感，闭集外一律失败）。
+    /// Parsed from a table literal (case-sensitive; anything outside the closed set fails).
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "product" => Some(Self::Product),
@@ -137,17 +122,17 @@ impl TermCategory {
     }
 }
 
-/// 术语来源：决定优先级 `user+lock > user > analyzed`。
+/// Term source: determines priority `user+lock > user > analyzed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermOrigin {
-    /// 用户条目：analysis 重跑时逐条保留，禁止删除或改写。
+    /// User entry: retained one by one on analysis rerun; deleting or rewriting is forbidden.
     User,
-    /// 模型条目：analysis 重跑整表覆盖。
+    /// Model entry: the whole table is overwritten on analysis rerun.
     Analyzed,
 }
 
 impl TermOrigin {
-    /// 表格里的字面量。
+    /// Literal in the table.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::User => "user",
@@ -155,7 +140,7 @@ impl TermOrigin {
         }
     }
 
-    /// 从表格字面量解析。
+    /// Parsed from a table literal.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "user" => Some(Self::User),
@@ -165,25 +150,25 @@ impl TermOrigin {
     }
 }
 
-/// `Canonical Terms` 的一行。
+/// One row of `Canonical Terms`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalTerm {
-    /// 规范形（同时是行主键）。
+    /// Canonical form (also the row's primary key).
     pub source: String,
-    /// 类别。
+    /// Category.
     pub category: TermCategory,
-    /// 正文里真实出现过的误识别变体（禁止编造）。
+    /// Misrecognized variants that actually appeared in the body text (fabrication forbidden).
     pub variants: Vec<String>,
-    /// 备注。
+    /// Note.
     pub note: String,
-    /// 是否锁定。
+    /// Whether locked.
     pub locked: bool,
-    /// 来源。
+    /// Source.
     pub origin: TermOrigin,
 }
 
 impl CanonicalTerm {
-    /// 优先级：`user+lock` 3 > `user` 2 > `analyzed` 1。
+    /// Priority: `user+lock` 3 > `user` 2 > `analyzed` 1.
     pub fn priority(&self) -> u8 {
         match (self.origin, self.locked) {
             (TermOrigin::User, true) => 3,
@@ -193,24 +178,23 @@ impl CanonicalTerm {
     }
 }
 
-/// `Bilingual Glossary` 的一行。
+/// One row of `Bilingual Glossary`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BilingualTerm {
-    /// 源语规范形（行主键）。
+    /// Source-language canonical form (row primary key).
     pub source: String,
-    /// 目标语译名。
+    /// Target-language rendering.
     pub target: String,
-    /// 备注。
+    /// Note.
     pub note: String,
-    /// 是否锁定；`true` 即编译进 required targets（§5.2）。
+    /// Whether locked. `true` means it is compiled into the required targets (§5.2).
     pub locked: bool,
-    /// 来源。
+    /// Source.
     pub origin: TermOrigin,
 }
 
 impl BilingualTerm {
-    /// 优先级：`user+lock` 3 > `user` 2 > `analyzed` 1（与
-    /// [`CanonicalTerm::priority`] 同口径，§5.1）。
+    /// Priority: `user+lock` 3 > `user` 2 > `analyzed` 1 (same basis as [`CanonicalTerm::priority`], §5.1).
     pub fn priority(&self) -> u8 {
         match (self.origin, self.locked) {
             (TermOrigin::User, true) => 3,
@@ -220,48 +204,48 @@ impl BilingualTerm {
     }
 }
 
-/// `ai/context.md`（源语上下文）。
+/// `ai/context.md` (source-language context).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SourceContext {
-    /// 词指纹。
+    /// Vocabulary fingerprint.
     pub fingerprint: String,
-    /// 用户参考资料指纹。
+    /// User reference material fingerprint.
     pub reference_fingerprint: Option<String>,
-    /// 整体摘要。
+    /// Overall summary.
     pub summary: String,
-    /// 规范术语表。
+    /// Canonical glossary.
     pub terms: Vec<CanonicalTerm>,
 }
 
-/// `ai/context.<lang>.md`（目标语上下文）。
+/// `ai/context.<lang>.md` (target-language context).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TargetContext {
-    /// 目标语标签。
+    /// Target language tag.
     pub target_lang: String,
-    /// 词指纹。
+    /// Vocabulary fingerprint.
     pub fingerprint: String,
-    /// 上游 analysis 指纹。
+    /// Upstream analysis fingerprint.
     pub analysis_fingerprint: Option<String>,
-    /// 用户指令指纹。
+    /// User instruction fingerprint.
     pub instructions_fingerprint: Option<String>,
-    /// 翻译语气（闭集枚举，进 frontmatter 以求逐字往返）。
+    /// Translation tone (closed enum; stored in the frontmatter for verbatim round-trip).
     pub tone: Option<TranslationTone>,
-    /// 译文摘要。
+    /// Translation summary.
     pub summary: String,
-    /// 双语术语表。
+    /// Bilingual glossary.
     pub glossary: Vec<BilingualTerm>,
-    /// 文风要求。
+    /// Style requirements.
     pub style: String,
-    /// 难点说明。
+    /// Difficulty notes.
     pub difficulties: Vec<String>,
 }
 
-/// 解析结果：`context` 为 `None` 时调用方必须保留旧的已验证上下文。
+/// Parse result: when `context` is `None`, the caller must keep the old verified context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextParsed<T> {
-    /// 解析成功的文档；结构或表格非法时为 `None`。
+    /// Successfully parsed document; `None` when the structure or table is invalid.
     pub context: Option<T>,
-    /// 诊断。
+    /// Diagnostics.
     pub diagnostics: Diagnostics,
 }
 
@@ -274,9 +258,9 @@ impl<T> ContextParsed<T> {
     }
 }
 
-// --- 渲染 ---
+// --- Rendering ---
 
-/// Markdown 表格单元格转义：`|` 与 `\` 需要转义，换行折成空格。
+/// Markdown table cell escaping: `|` and `\` must be escaped, and newlines are folded into spaces.
 fn escape_cell(text: &str) -> String {
     let inline = sanitize_inline_text(text);
     let mut out = String::with_capacity(inline.len());
@@ -290,7 +274,7 @@ fn escape_cell(text: &str) -> String {
     out
 }
 
-/// 单元格反转义。
+/// Cell unescaping.
 fn unescape_cell(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
@@ -312,13 +296,13 @@ fn unescape_cell(text: &str) -> String {
     out.trim().to_owned()
 }
 
-/// frontmatter 值转义（双引号包裹）。
+/// Frontmatter value escaping (wrapped in double quotes).
 fn escape_front(text: &str) -> String {
     let inline = sanitize_inline_text(text);
     format!("\"{}\"", inline.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// frontmatter 值反转义（可带可不带双引号）。
+/// Frontmatter value unescaping (quotes optional).
 fn unescape_front(text: &str) -> String {
     let trimmed = text.trim();
     let inner = match (
@@ -359,7 +343,7 @@ fn render_header(header: &[&str]) -> String {
     out
 }
 
-/// 渲染 `ai/context.md`（§5.1）。
+/// Render `ai/context.md` (§5.1).
 pub fn render_source_context(context: &SourceContext) -> String {
     let mut out = String::from("---\n");
     out.push_str(&format!("format: {}\n", escape_front(CONTEXT_DOC_FORMAT)));
@@ -390,7 +374,7 @@ pub fn render_source_context(context: &SourceContext) -> String {
     out
 }
 
-/// 渲染 `ai/context.<lang>.md`（§5.1）。
+/// Render `ai/context.<lang>.md` (§5.1).
 pub fn render_target_context(context: &TargetContext) -> String {
     let mut out = String::from("---\n");
     out.push_str(&format!("format: {}\n", escape_front(CONTEXT_DOC_FORMAT)));
@@ -440,7 +424,7 @@ pub fn render_target_context(context: &TargetContext) -> String {
     out
 }
 
-/// 正文小节渲染：清洗控制字符，保证以换行收尾。
+/// Body section rendering: sanitizes control characters and guarantees it ends with a newline.
 fn render_body(text: &str) -> String {
     let cleaned = sanitize_payload_text(text);
     let trimmed = cleaned.trim();
@@ -450,7 +434,7 @@ fn render_body(text: &str) -> String {
     format!("{trimmed}\n")
 }
 
-// --- 解析 ---
+// --- Parsing ---
 
 struct Document {
     front: BTreeMap<String, String>,
@@ -465,7 +449,7 @@ impl Document {
             .map(|(_, lines)| lines.as_slice())
     }
 
-    /// 大小写/空白不敏感的小节查找（[`ParseMode::Model`]）。
+    /// Section lookup insensitive to case and whitespace ([`ParseMode::Model`]).
     fn section_lenient(&self, name: &str) -> Option<&[String]> {
         self.sections
             .iter()
@@ -473,14 +457,14 @@ impl Document {
             .map(|(_, lines)| lines.as_slice())
     }
 
-    /// 大小写不敏感的正文取值（[`ParseMode::Model`]）。
+    /// Case-insensitive body value lookup ([`ParseMode::Model`]).
     fn body_lenient(&self, name: &str) -> String {
         self.section_lenient(name)
             .map(|lines| lines.join("\n").trim().to_owned())
             .unwrap_or_default()
     }
 
-    /// 全文所有小节里的表格行（缺小节标题时的兜底扫描）。
+    /// Table rows across all sections in the full text (fallback scan when section headings are missing).
     fn all_lines(&self) -> Vec<String> {
         self.sections
             .iter()
@@ -495,7 +479,7 @@ impl Document {
     }
 }
 
-/// 拆 frontmatter 与 `# ` 小节。frontmatter 缺失时返回 `None`。
+/// Split frontmatter and `# ` sections. Returns `None` when the frontmatter is missing.
 fn split_document(text: &str) -> Option<Document> {
     let mut lines = text.lines();
     if lines.next()?.trim() != "---" {
@@ -526,11 +510,9 @@ fn split_document(text: &str) -> Option<Document> {
     Some(Document { front, sections })
 }
 
-/// [`ParseMode::Model`] 的文档切分：缺 frontmatter 照样切小节，指纹由引擎盖。
+/// Document splitting for [`ParseMode::Model`]: sections are still split when the frontmatter is missing; the fingerprint is stamped by the engine.
 ///
-/// 小节标题匹配同样放宽：`# `、`## `、`###` 任一层级都算小节头（模型常把
-/// `# Canonical Terms` 写成 `## Canonical Terms`），标题按 trim 保存，
-/// [`Document::section`] 侧做大小写不敏感比对。
+/// Section heading matching is also relaxed: `# `, `## `, and `###` at any level all count as section headers (the model often writes `# Canonical Terms` as `## Canonical Terms`). Headings are saved after trim, and [`Document::section`] does a case-insensitive comparison.
 fn split_document_lenient(text: &str) -> Document {
     if let Some(document) = split_document(text) {
         return document;
@@ -538,7 +520,7 @@ fn split_document_lenient(text: &str) -> Document {
     let mut front = BTreeMap::new();
     let mut sections: Vec<(String, Vec<String>)> = Vec::new();
     let mut lines = text.lines().peekable();
-    // 没有闭合的 frontmatter 时，开头若仍写了 `key: value` 行，照样收下。
+    // If the frontmatter is not closed, `key: value` lines at the top are still accepted.
     while let Some(line) = lines.peek() {
         let trimmed = line.trim();
         if trimmed == "---" {
@@ -556,7 +538,7 @@ fn split_document_lenient(text: &str) -> Document {
             _ => break,
         }
     }
-    // 小节头之前的散行归入一个匿名小节，表格扫描才能兜到它们。
+    // Loose lines before the first section heading are grouped into an anonymous section, so the table scan can still find them.
     sections.push((String::new(), Vec::new()));
     for line in lines {
         let trimmed = line.trim_start();
@@ -573,7 +555,7 @@ fn split_document_lenient(text: &str) -> Document {
     Document { front, sections }
 }
 
-/// 从小节正文里抽表格行（不含表头与分隔行）；返回 `None` 表示表头不符。
+/// Extract table rows from a section body (excluding the header and separator rows); returns `None` when the header does not match.
 fn table_rows(lines: &[String], header: &[&str]) -> Option<Vec<Vec<String>>> {
     let mut rows = Vec::new();
     let mut seen_header = false;
@@ -614,11 +596,9 @@ fn table_rows(lines: &[String], header: &[&str]) -> Option<Vec<Vec<String>>> {
     }
 }
 
-/// [`ParseMode::Model`] 的表格行抽取：表头与分隔行按形状识别并跳过，其余
-/// `|` 行一律当数据行（列数错乱交给行级修复）。
+/// Table row extraction for [`ParseMode::Model`]: header and separator rows are recognized by shape and skipped; all other `|` rows are treated as data rows (mis-sized columns are left to row-level repair).
 ///
-/// 表头判据放宽为「首格 trim + 大小写不敏感等于 `Source`」——模型偶尔会漏写、
-/// 多写或改写后面几个表头名，而表头本身不承载任何数据。
+/// The header criterion is relaxed to "first cell trimmed and case-insensitively equal to `Source`". The model occasionally omits, adds, or rewrites the header names after that, and the header itself carries no data.
 fn table_rows_lenient(lines: &[String]) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut seen_header = false;
@@ -647,15 +627,13 @@ fn table_rows_lenient(lines: &[String]) -> Vec<Vec<String>> {
     rows
 }
 
-/// [`ParseMode::Model`] 的列数修复：把任意列数的行拉回固定 `width` 列。
+/// Column-count repair for [`ParseMode::Model`]: pulls rows of any column count back to a fixed `width` columns.
 ///
-/// - `> width`：中间列（`[2..len-2]` 之后的多余部分）并回备注列，模型把一句
-///   备注里的 `|` 忘了转义时行还能用；
-/// - `< width` 且 ≥2：缺失列按默认补空（Lock/Origin 随后由取值解析降级）；
-/// - 只有 1 列：返回 `None`，该行丢弃。
+/// - `> width`: the middle columns (the extra part after `[2..len-2]`) are merged back into the note column, so a row still works when the model forgot to escape a `|` in a note;
+/// - `< width` and ≥2: missing columns are padded with blanks by default (Lock and Origin are then downgraded by value parsing);
+/// - only 1 column: returns `None`, and the row is dropped.
 ///
-/// `note_at` 是备注列下标（canonical 表 3，双语表 2）；`width` 之后的两列固定
-/// 是 `Lock` / `Origin`，因此多出来的部分只并入备注。
+/// `note_at` is the note column index (canonical table: 3, bilingual table: 2). The two columns after `width` are always `Lock` and `Origin`, so the extra part is merged only into the note.
 fn repair_row_width(cells: &[String], width: usize, note_at: usize) -> Option<Vec<String>> {
     if cells.len() == width {
         return Some(cells.to_vec());
@@ -683,7 +661,7 @@ fn repair_row_width(cells: &[String], width: usize, note_at: usize) -> Option<Ve
     Some(repaired)
 }
 
-/// 按未转义的 `|` 切分一行。
+/// Split a line on unescaped `|`.
 fn split_row(line: &str) -> Vec<String> {
     let inner = line
         .trim()
@@ -730,7 +708,7 @@ fn parse_variants(value: &str) -> Vec<String> {
         .collect()
 }
 
-/// 前置归一化 + 体积护栏；`Err` 表示已经可以直接判败。
+/// Pre-normalization and size guard; `Err` means it can be rejected outright.
 fn prepare(input: Option<&str>, output: &str) -> Result<(String, Diagnostics), Diagnostics> {
     let mut diagnostics = Diagnostics::new();
     let normalized = normalize_llm_output(output);
@@ -746,18 +724,16 @@ fn prepare(input: Option<&str>, output: &str) -> Result<(String, Diagnostics), D
     Ok((normalized.text, diagnostics))
 }
 
-/// 解析 `ai/context.md`（[`ParseMode::Strict`]，用户手写文档口径）。
+/// Parse `ai/context.md` ([`ParseMode::Strict`], the user-written document standard).
 ///
-/// `input` 是当初实际发给模型的那份渲染文本（可选），仅用作 §16 体积护栏的基准；
-/// 传 `None` 表示跳过体积护栏（例如解析用户手写的 context.md）。
+/// `input` is the rendered text actually sent to the model (optional), used only as the baseline for the §16 size guard. Passing `None` skips the size guard, for example when parsing a user-written context.md.
 pub fn parse_source_context(input: Option<&str>, output: &str) -> ContextParsed<SourceContext> {
     parse_source_context_with_mode(input, output, ParseMode::Strict)
 }
 
-/// 解析模型交回的 `ai/context.md`（[`ParseMode::Model`]，宽松口径）。
+/// Parse `ai/context.md` returned by the model ([`ParseMode::Model`], lenient standard).
 ///
-/// 引擎与 agent 镜像 lint 共用这个入口；[`ParseMode::Model`] 的全部修复只记
-/// Warning，因此镜像 lint 不会因为可代码消解的缺陷把答案判 `rejected`。
+/// The engine and the agent mirror lint share this entry point. All repairs of [`ParseMode::Model`] only record Warnings, so the mirror lint will not mark an answer `rejected` for defects that can be resolved in code.
 pub fn parse_model_source_context(
     input: Option<&str>,
     output: &str,
@@ -765,7 +741,7 @@ pub fn parse_model_source_context(
     parse_source_context_with_mode(input, output, ParseMode::Model)
 }
 
-/// [`parse_source_context`] / [`parse_model_source_context`] 的共同实现。
+/// Shared implementation of [`parse_source_context`] and [`parse_model_source_context`].
 pub fn parse_source_context_with_mode(
     input: Option<&str>,
     output: &str,
@@ -883,18 +859,16 @@ pub fn parse_source_context_with_mode(
     }
 }
 
-/// [`ParseMode::Model`] 的 `ai/context.md` 解析（重试策略重设计 §2.1）。
+/// `ai/context.md` parsing for [`ParseMode::Model`] (retry strategy redesign §2.1).
 ///
-/// page-fatal 只剩两种：超体积硬顶、既没有 `# Canonical Terms` 小节也扫不到
-/// 任何表格行。其余一律代码消解并记 Warning：
+/// Only two page-fatal cases remain: exceeding the hard size ceiling, and having neither a `# Canonical Terms` section nor any table row. Everything else is resolved in code and recorded as a Warning:
 ///
-/// - 缺 frontmatter → 照常解析（指纹由引擎盖）；表头按首格放宽；
-/// - 列数错乱 → [`repair_row_width`]；未知 Category → `other`；
-///   Lock/Origin 非法 → 降级（模型行本来就要被降级）；
-/// - 垃圾行（[`is_junk_term_source`]）丢弃；
-/// - 同一 Source（按 [`term_merge_key`]）多行 → 合并（Variants 并集、Note 取最长、
-///   Category 取先见）；
-/// - 超过 [`ANALYSIS_MAX_TERMS_PER_PAGE`] 行 → 截断并带丢弃计数。
+/// - missing frontmatter → parse as usual (fingerprint stamped by the engine); header matching relaxed to the first cell;
+/// - mis-sized columns → [`repair_row_width`]; unknown Category → `other`;
+///   illegal Lock or Origin → downgrade (model rows are downgraded anyway);
+/// - junk rows ([`is_junk_term_source`]) dropped;
+/// - multiple rows for the same Source (by [`term_merge_key`]) → merged (Variants union, Note longest, Category first-seen);
+/// - beyond [`ANALYSIS_MAX_TERMS_PER_PAGE`] rows → truncated with a dropped count.
 fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParsed<SourceContext> {
     let (text, mut diagnostics) = match prepare(input, output) {
         Ok(value) => value,
@@ -947,7 +921,7 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
             demoted += 1;
             TermCategory::Other
         });
-        // Lock/Origin 是用户通道：模型行无论写什么都要降级，非法取值只是同一件事。
+        // Lock and Origin are the user channel: model rows are downgraded whatever they write, and illegal values are the same thing.
         if parse_lock(row[4].trim()).is_none() || TermOrigin::parse(row[5].trim()).is_none() {
             demoted += 1;
         }
@@ -1039,14 +1013,14 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
     }
 }
 
-/// 解析 `ai/context.<lang>.md`（[`ParseMode::Strict`]）。
+/// Parse `ai/context.<lang>.md` ([`ParseMode::Strict`]).
 ///
-/// `input` 语义同 [`parse_source_context`]：发给模型的渲染文本，仅用于体积护栏。
+/// `input` has the same meaning as in [`parse_source_context`]: the rendered text sent to the model, used only for the size guard.
 pub fn parse_target_context(input: Option<&str>, output: &str) -> ContextParsed<TargetContext> {
     parse_target_context_with_mode(input, output, ParseMode::Strict)
 }
 
-/// 解析模型交回的 `ai/context.<lang>.md`（[`ParseMode::Model`]）。
+/// Parse `ai/context.<lang>.md` returned by the model ([`ParseMode::Model`]).
 pub fn parse_model_target_context(
     input: Option<&str>,
     output: &str,
@@ -1054,7 +1028,7 @@ pub fn parse_model_target_context(
     parse_target_context_with_mode(input, output, ParseMode::Model)
 }
 
-/// [`parse_target_context`] / [`parse_model_target_context`] 的共同实现。
+/// Shared implementation of [`parse_target_context`] and [`parse_model_target_context`].
 pub fn parse_target_context_with_mode(
     input: Option<&str>,
     output: &str,
@@ -1130,8 +1104,7 @@ pub fn parse_target_context_with_mode(
             return ContextParsed::failed(diagnostics);
         }
         if row[1].is_empty() {
-            // 尚未翻译的行是合法中间态（translate-brief 只翻译无 Target 的行），
-            // 但锁定行必须有 Target，否则无法编译 required targets。
+            // Rows not yet translated are a legal intermediate state (translate-brief only translates rows without a Target), but locked rows must have a Target, otherwise required targets cannot be compiled.
             if locked {
                 diagnostics.push_problem(Problem::sentence(
                     ProblemCode::EmptyTranslation,
@@ -1195,12 +1168,9 @@ pub fn parse_target_context_with_mode(
     }
 }
 
-/// [`ParseMode::Model`] 的 `ai/context.<lang>.md` 解析。
+/// `ai/context.<lang>.md` parsing for [`ParseMode::Model`].
 ///
-/// 与 [`parse_source_context_model`] 同一套 R2 修复：缺 frontmatter / 表头错乱 /
-/// 列数错乱 / Lock/Origin 非法 / 重复 Source 全部代码消解。锁定行缺 `Target`
-/// 也不再拒页——模型行本来就要被降级为 `Origin=analyzed, Lock=no`，引擎随后用
-/// 种子表恢复用户通道。page-fatal 只剩超硬顶与「既无术语表小节也无表格行」。
+/// Same R2 repairs as [`parse_source_context_model`]: missing frontmatter, mismatched header, mis-sized columns, illegal Lock or Origin, and duplicate Source are all resolved in code. A locked row missing `Target` no longer rejects the page either: model rows are downgraded to `Origin=analyzed, Lock=no` anyway, and the engine then restores the user channel from the seed table. Page-fatal remains only: exceeding the hard ceiling, and "neither a glossary section nor any table row".
 fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParsed<TargetContext> {
     let (text, mut diagnostics) = match prepare(input, output) {
         Ok(value) => value,
@@ -1266,7 +1236,7 @@ fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParse
                     source,
                     target,
                     note,
-                    // 模型行的 Lock/Origin 一律降级，引擎侧再用种子表恢复用户通道。
+                    // Model rows' Lock and Origin are always downgraded; the engine then restores the user channel from the seed table.
                     locked: false,
                     origin: TermOrigin::Analyzed,
                 });
@@ -1292,7 +1262,7 @@ fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParse
         ));
     }
 
-    // 语气非法只降级为「未指定」：它是提示背景，不值得拒一份完整译表。
+    // An illegal tone is downgraded only to "unspecified": it is background hint, not worth rejecting a complete translation table.
     let tone = document
         .front
         .get("tone")
@@ -1340,10 +1310,9 @@ fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParse
     }
 }
 
-/// §5.1 重建规则：analysis 重跑整表覆盖 `Origin=analyzed`，`Origin=user` 行逐条保留。
+/// §5.1 rebuild rule: analysis rerun overwrites the whole table for `Origin=analyzed`, while `Origin=user` rows are retained one by one.
 ///
-/// 同一 Source 冲突时按 [`CanonicalTerm::priority`] 取胜者；结果按 Source 排序，
-/// 保证确定性。
+/// On a conflict for the same Source, the winner is chosen by [`CanonicalTerm::priority`]. Results are sorted by Source to ensure determinism.
 pub fn merge_canonical_terms(
     existing: &[CanonicalTerm],
     regenerated: &[CanonicalTerm],
@@ -1364,10 +1333,9 @@ pub fn merge_canonical_terms(
     merged.into_values().collect()
 }
 
-/// [`merge_canonical_terms`] 的双语表对应物（§5.1 重建规则的目标语一侧）。
+/// The bilingual-table counterpart of [`merge_canonical_terms`] (the target-language side of the §5.1 rebuild rule).
 ///
-/// `Origin=user` 行逐条保留；重生成表只能覆盖优先级更低的行——用户锁定的译名
-/// 因此不会被 translate-brief 重跑冲掉。结果按 Source 排序，保证确定性。
+/// `Origin=user` rows are retained one by one. A regenerated table can only overwrite rows of lower priority, so user-locked renderings cannot be wiped out by a translate-brief rerun. Results are sorted by Source to ensure determinism.
 pub fn merge_bilingual_terms(
     existing: &[BilingualTerm],
     regenerated: &[BilingualTerm],
@@ -1628,9 +1596,9 @@ mod tests {
         assert_eq!(kv.variants, vec!["KV 缓存".to_owned()]);
     }
 
-    // --- ParseMode::Model（重试策略重设计 §2.1 的 R2 代码先修）---
+    // --- ParseMode::Model (retry strategy redesign §2.1, R2 code-first fixes) ---
 
-    /// Model 模式的最小可用文档（表头齐全，行随调用者给）。
+    /// Minimal usable document for Model mode (header complete; rows supplied by the caller).
     fn model_doc(rows: &str) -> String {
         format!(
             "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\n一段摘要。\n\n\
@@ -1639,8 +1607,7 @@ mod tests {
         )
     }
 
-    /// 实测最高频的失败：同一 Source 在一页里重复 6–11 行。旧解析整页拒并
-    /// 重试三轮；现在合并成一行（Variants 并集、Note 取最长）并只记 Warning。
+    /// The most frequent failure measured: the same Source repeated 6–11 times within one page. The old parser rejected the whole page and retried three rounds. Now they are merged into one row (Variants union, Note longest) and only a Warning is recorded.
     #[test]
     fn model_mode_merges_duplicate_sources_instead_of_rejecting() {
         let rows = "| ResNeXt | tech | res next | | no | analyzed |\n\
@@ -1656,7 +1623,7 @@ mod tests {
         let context = parsed.context.expect("model mode accepts duplicates");
         assert_eq!(context.terms.len(), 2);
         assert_eq!(context.terms[0].source, "ResNeXt");
-        // Category 取先见，Note 取最长，Variants 取并集。
+        // Category takes first-seen, Note takes longest, Variants takes union.
         assert_eq!(context.terms[0].category, TermCategory::Tech);
         assert_eq!(context.terms[0].note, "更长的备注说明");
         assert_eq!(
@@ -1670,7 +1637,7 @@ mod tests {
                 .iter()
                 .any(|warning| warning.code == WarningCode::DuplicateId)
         );
-        // 严格模式（用户手写文档）仍然整份判败——那里的重复是真的冲突。
+        // Strict mode (user-written documents) still fails the whole document, because there duplicates are real conflicts.
         let strict = parse_source_context(
             None,
             &model_doc(
@@ -1682,7 +1649,7 @@ mod tests {
         assert!(strict.diagnostics.has_code(ProblemCode::DuplicateId));
     }
 
-    /// 列数错乱、未知 Category、非法 Lock/Origin：全部代码修复，不拒页。
+    /// Mis-sized columns, unknown Category, and illegal Lock or Origin: all fixed in code, no page rejection.
     #[test]
     fn model_mode_repairs_row_shape_and_illegal_values() {
         let rows = "| CucCut | brand | bao cut | 备注 | 也许 | 模型自封 |\n\
@@ -1697,14 +1664,14 @@ mod tests {
         );
         let context = parsed.context.expect("model mode repairs rows");
         assert_eq!(context.terms.len(), 3);
-        // 未知 Category → other；Lock/Origin 非法 → 降级（模型行本就要降级）。
+        // Unknown Category → other; illegal Lock or Origin → downgrade (model rows are downgraded anyway).
         assert_eq!(context.terms[0].category, TermCategory::Other);
         assert!(!context.terms[0].locked);
         assert_eq!(context.terms[0].origin, TermOrigin::Analyzed);
-        // 少列按默认补齐。
+        // Missing columns padded with defaults.
         assert_eq!(context.terms[1].source, "KV cache");
         assert!(context.terms[1].note.is_empty());
-        // 多列把中间部分并回 Note。
+        // Extra columns: middle part merged back into Note.
         assert_eq!(context.terms[2].note, "前半 | 后半 | 再来");
         assert!(
             parsed
@@ -1715,7 +1682,7 @@ mod tests {
         );
     }
 
-    /// 垃圾行确定性过滤：单个 CJK 字、纯标点、纯数字、应答语气词。
+    /// Deterministic filtering of junk rows: single CJK characters, pure punctuation, pure digits, response interjections.
     #[test]
     fn model_mode_drops_junk_term_rows() {
         let rows = "| 嗯 | other | | | no | analyzed |\n\
@@ -1743,7 +1710,7 @@ mod tests {
         assert!(!is_junk_term_source("KV cache"));
     }
 
-    /// 表头放宽（trim + 大小写不敏感 + 只认首格）、缺 frontmatter 仍接受。
+    /// Relaxed header (trim, case-insensitive, first cell only); still accepted when the frontmatter is missing.
     #[test]
     fn model_mode_relaxes_header_and_frontmatter() {
         let text = "## Canonical Terms\n| source | CATEGORY | variants | note | lock | origin |\n\
@@ -1758,11 +1725,11 @@ mod tests {
         let context = parsed.context.expect("relaxed header is accepted");
         assert_eq!(context.terms.len(), 1);
         assert_eq!(context.terms[0].source, "CucCut");
-        // 严格模式仍然要求逐字表头与 frontmatter。
+        // Strict mode still requires an exact header and frontmatter.
         assert!(parse_source_context(None, text).context.is_none());
     }
 
-    /// 单页行数上限：截断 + 计数警告，绝不拒页（实测 flash 交回 500–1000 行）。
+    /// Per-page row cap: truncation with a counted warning, never rejects the page (measured: flash returns 500–1000 rows).
     #[test]
     fn model_mode_truncates_oversized_term_tables() {
         let rows: String = (0..1000)
@@ -1786,14 +1753,14 @@ mod tests {
         );
     }
 
-    /// page-fatal 只剩两种：超硬顶、既无术语表小节也无任何表格行。
+    /// Page-fatal remains only two: exceeding the hard ceiling, and having neither a glossary section nor any table row.
     #[test]
     fn model_mode_page_fatal_is_only_shape_free_or_over_cap() {
         let parsed = parse_model_source_context(None, "完全不是一份文档");
         assert!(parsed.context.is_none());
         assert!(parsed.diagnostics.has_code(ProblemCode::ContextInvalid));
 
-        // 没有小节标题但有表格行 ⇒ 仍然接受。
+        // No section heading but table rows present ⇒ still accepted.
         let loose = "| Source | Category | Variants | Note | Lock | Origin |\n\
                      |---|---|---|---|---|---|\n\
                      | CucCut | product | | | no | analyzed |\n";
@@ -1807,7 +1774,7 @@ mod tests {
             1
         );
 
-        // 超硬顶（8× 输入）仍然 page-fatal。
+        // Exceeding the hard ceiling (8× input) is still page-fatal.
         let rendered = render_source_context(&sample_source());
         let bloat =
             "啊".repeat(super::super::common::max_output_chars(rendered.chars().count()) + 1);
@@ -1816,8 +1783,7 @@ mod tests {
         assert!(parsed.diagnostics.has_code(ProblemCode::DocumentOversize));
     }
 
-    /// 目标语文档的 Model 模式：锁定行缺 Target 不再拒页（模型行随后被降级），
-    /// 重复 Source 合并。
+    /// Model mode for the target-language document: a locked row missing Target no longer rejects the page (the model row is downgraded later), and duplicate Sources are merged.
     #[test]
     fn model_mode_target_context_is_lenient() {
         let text = "---\ntargetLang: \"zh-Hans\"\n---\n# Translated Summary\n摘要\n\n\
@@ -1837,11 +1803,11 @@ mod tests {
         assert_eq!(context.glossary[0].note, "补上的备注");
         assert!(!context.glossary[0].locked);
         assert_eq!(context.glossary[0].origin, TermOrigin::Analyzed);
-        // 严格模式仍然拒（用户手写文档里的锁定行必须有 Target）。
+        // Strict mode still rejects (in a user-written document, locked rows must have a Target).
         assert!(parse_target_context(None, text).context.is_none());
     }
 
-    // --- property 测试：固定种子 LCG，禁止未播种随机 ---
+    // --- property tests: fixed-seed LCG, unseeded randomness forbidden ---
 
     struct Lcg(u64);
 

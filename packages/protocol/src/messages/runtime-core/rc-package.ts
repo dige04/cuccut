@@ -17,9 +17,9 @@ import { vi } from './rc-package.vi.ts';
 const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** 便携包（exports/package-*、portable-export）：打包与读包的错误与警告。英文是键与类型的来源，译文在 `rc-package.<语言>.ts`。 */
+/** Portable packages (exports/package-*, portable-export): errors and warnings for packing and reading packages. English is the source of keys and types; translations are in `rc-package.<language>.ts`. */
 const en = {
-  // 打包：预检、写包与核对
+  // Packing: preflight, writing the package and verifying it
   localPathPlaceholder: '<local path removed>',
   assetsUnreadable: (p: { count: number }) =>
     `${p.count} asset ${s(p.count, "revision can't", "revisions can't")} be read, so the package would be incomplete; find or relink them, or choose to skip missing assets`,
@@ -43,7 +43,7 @@ const en = {
   packageVerifyFailed: (p: { error: string }) => `The written package failed verification: ${p.error}`,
   manifestReadBackMismatch: 'The manifest read back from the written package differs from what was written',
 
-  // tar 归档
+  // tar archive
   tarFileTooLarge: "A single file can't exceed 8 GiB (larger files need pax extended headers, which this version doesn't support)",
   tarPathTooLong: (p: { max: number }) => `A path in the package is too long (max ${p.max} bytes)`,
   archivePathTooLong: (p: { path: string }) => `A path in the package is too long: ${p.path}`,
@@ -60,7 +60,7 @@ const en = {
   duplicateEntry: (p: { path: string }) => `${p.path} appears twice in the package`,
   entryTooLarge: (p: { path: string }) => `${p.path} is too large`,
 
-  // 读包：清单与文件的核对
+  // Reading packages: checking the manifest against the files
   manifestNotJson: "The package manifest isn't JSON",
   notCuccutPackage: 'Not a CucCut portable package',
   invalidPackageVersion: 'The package version is invalid',

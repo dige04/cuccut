@@ -1,15 +1,11 @@
-//! 文档顶层 `events[]`（规范 §4.2）：画面 → 音频的事件表。
+//! Top-level `events[]` of the document (spec §4.2): the event table from picture to audio.
 //!
-//! 事件是给配乐 / 音效看的时刻，**渲染不读**。`ccut lint` 在这里校验（`t` 可解析、
-//! `id` 唯一、`phase` 表达式合法），`ccut events` 用同一份求值导出按时间排序的行。
+//! Events are moments for the score and sound effects; **rendering does not read them**. `ccut lint` validates them here (`t` parses, `id` is unique, `phase` expression is valid), and `ccut events` uses the same evaluation to export rows sorted by time.
 //!
-//! - `t` / `until` 是 TimeExpr，在 `resolve()` 之后用 [`Resolver::eval_t_exact`] 求值：
-//!   不对齐帧网格，结果按毫秒取整。
-//! - `phase` 是 `u`（从 `t` 起算的秒）的表达式字符串，只许 `+ - * / ( )`、数字与
-//!   `sin` / `cos` / `pow` / `floor`（`libm`，各目标逐位一致）。在 `[t, until]` 上按 1 ms
-//!   扫描，相位每次**向上首次**越过 `k + 0.25` 出一行 `id#k`。
+//! - `t` / `until` are TimeExpr, evaluated with [`Resolver::eval_t_exact`] after `resolve()`: not aligned to the frame grid, results rounded to milliseconds.
+//! - `phase` is an expression string over `u` (seconds from `t`); only `+ - * / ( )`, numbers, and `sin` / `cos` / `pow` / `floor` (`libm`, bit-identical across targets) are allowed. Over `[t, until]` it is scanned in 1 ms steps; each time the phase **first crosses upward** `k + 0.25`, one row `id#k` is emitted.
 //!
-//! 纯函数，不做 I/O。
+//! Pure functions, no I/O.
 
 use serde_json::{Map, Value, json};
 
@@ -17,16 +13,16 @@ use crate::json::JsonExt;
 use crate::lint::Severity;
 use crate::resolve::Resolver;
 
-/// 相位越过 `k + PHASE_CROSSING` 时出一行（扇翅的下拍在周期的四分之一处）。
+/// Emits one row each time the phase crosses `k + PHASE_CROSSING` (the downstroke of a flapping wing is at the quarter point of the cycle).
 pub const PHASE_CROSSING: f64 = 0.25;
-/// 相位扫描步长（毫秒）。
+/// Phase scan step (milliseconds).
 pub const PHASE_STEP_MS: u64 = 1;
-/// 单个相位事件 `[t, until]` 的跨度上限（秒）：1 ms 一步，一小时是 360 万次求值。
+/// Upper bound on the span (seconds) of a single phase event `[t, until]`: 1 ms steps, so one hour is 3.6 million evaluations.
 pub const PHASE_MAX_SPAN: f64 = 3600.0;
-/// 单个相位事件最多展开的行数。
+/// Maximum number of rows a single phase event may expand to.
 pub const PHASE_MAX_ROWS: usize = 10_000;
 
-/// 事件保留键：其余字段原样带进输出行。
+/// Reserved event keys: other fields are carried through to the output row as-is.
 const RESERVED: &[&str] = &["id", "t", "until", "phase"];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +33,7 @@ pub struct EventIssue {
     pub message: String,
 }
 
-/// 求值后的事件表。`rows` 已按 `(t, id)` 排序。
+/// The evaluated event table. `rows` is already sorted by `(t, id)`.
 #[derive(Debug, Clone, Default)]
 pub struct EventTable {
     pub rows: Vec<Value>,
@@ -52,12 +48,12 @@ impl EventTable {
     }
 }
 
-/// 毫秒取整。
+/// Round to milliseconds.
 pub fn round_ms(t: f64) -> f64 {
     (t * 1000.0).round() / 1000.0
 }
 
-/// 时刻落在哪个场景：`[start, end)`，片尾那一刻归最后一个场景。
+/// Which scene a moment falls in: `[start, end)`; the final moment of the film belongs to the last scene.
 pub fn scene_at(scenes: &[(String, f64, f64)], t: f64) -> Option<(&str, f64)> {
     const EPS: f64 = 1e-9;
     scenes
@@ -71,7 +67,7 @@ pub fn scene_at(scenes: &[(String, f64, f64)], t: f64) -> Option<(&str, f64)> {
         .map(|(id, start, _)| (id.as_str(), round_ms(t - start)))
 }
 
-/// 一行事件的公共外形：`t` / `id` / `scene` / `sceneT` 加自由字段。
+/// Common shape of an event row: `t` / `id` / `scene` / `sceneT` plus free-form fields.
 pub fn event_row(
     t: f64,
     id: &str,
@@ -98,7 +94,7 @@ pub fn event_row(
     row
 }
 
-/// 按 `(t, id)` 排序，时刻相同按 id 定序，输出稳定。
+/// Sorted by `(t, id)`; equal times are ordered by id so the output is stable.
 pub fn sort_rows(rows: &mut [Value]) {
     rows.sort_by(|a, b| {
         let ta = a.get("t").and_then(Value::as_f64).unwrap_or(0.0);
@@ -113,13 +109,13 @@ pub fn sort_rows(rows: &mut [Value]) {
     });
 }
 
-/// 文档有没有写 `events`（写了空数组也算：作者声明了「事件由文档说了算」）。
+/// Whether the document writes `events` (an empty array counts too: the author declares "events are defined by the document").
 pub fn declares_events(doc: &Value) -> bool {
     doc.get_("events").is_some_and(|value| !value.is_null())
 }
 
-/// 求值整张事件表。`scenes` 是 IR 的 `(id, start, end)`，`total` 是全片时长。
-/// 须在 `resolver.resolve()` 之后调用（`#clip` / `~word` 要窗口与转录）。
+/// Evaluates the whole event table. `scenes` is the IR's `(id, start, end)`, `total` is the full duration.
+/// Must be called after `resolver.resolve()` (`#clip` / `~word` need the window and transcript).
 pub fn resolve_events(
     resolver: &Resolver,
     scenes: &[(String, f64, f64)],
@@ -318,8 +314,8 @@ pub fn resolve_events(
     table
 }
 
-/// 在 `u ∈ (0, span]` 上按 1 ms 扫描，返回每次向上首次越过 `k + 0.25` 的 `(u, k)`。
-/// 同一毫秒越过几个整数就出几行；相位回落后再升回来不重复出（只数新高）。
+/// Scans `u ∈ (0, span]` in 1 ms steps, returning each `(u, k)` where the phase first crosses `k + 0.25` upward.
+/// If several integers are crossed within the same millisecond, that many rows are emitted; after the phase falls back and rises again, nothing is repeated (only new highs count).
 pub fn phase_crossings(expr: &PhaseExpr, span: f64) -> Result<Vec<(f64, i64)>, String> {
     if !(span >= 0.0) || span > PHASE_MAX_SPAN {
         return Err(format!("扫描跨度 {span:.3}s 超出 0–{PHASE_MAX_SPAN}s"));
@@ -348,7 +344,7 @@ pub fn phase_crossings(expr: &PhaseExpr, span: f64) -> Result<Vec<(f64, i64)>, S
     Ok(out)
 }
 
-/// `phase` 表达式：`u` 的算术式，编译期解析一次、扫描时反复求值。
+/// `phase` expression: an arithmetic expression in `u`, parsed once at compile time and evaluated repeatedly during the scan.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PhaseExpr {
     Num(f64),
@@ -586,7 +582,7 @@ mod tests {
         }
     }
 
-    /// 相位 `u*2.6+0.2` 在 u = (k + 0.05)/2.6 越过 k+0.25：1 ms 扫描落在其后第一个毫秒。
+    /// Phase `u*2.6+0.2` crosses k+0.25 at u = (k + 0.05)/2.6: the scan picks up the first millisecond after that.
     #[test]
     fn crossings_are_found_on_the_millisecond_grid() {
         let expr = PhaseExpr::parse("u*2.6+0.2").unwrap();
@@ -603,7 +599,7 @@ mod tests {
             assert_eq!(k, ek);
             assert!((u - eu).abs() < 1e-9, "{u} vs {eu}");
         }
-        // 回落再升回来不重复出行
+        // After falling back and rising again, no repeated rows.
         let wobble = PhaseExpr::parse("sin(u*6.283185307179586)").unwrap();
         assert_eq!(phase_crossings(&wobble, 3.0).unwrap().len(), 1);
     }

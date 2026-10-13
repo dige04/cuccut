@@ -211,7 +211,7 @@ impl Array {
             sq.sum_axis(a, keep)?.0.affine(1.0 / (n - ddof.into().unwrap_or(0)) as f64, 0.)?,
         ))
     }
-    /// MLX `max_axis`：沿 `a` 取最大值，`keep` 缺省为不保留维度。
+    /// MLX `max_axis`: takes the maximum along `a`; `keep` defaults to not keeping the dimension.
     pub fn max_axis(&self, a: i32, keep: impl Into<Option<bool>>) -> Result<Self> {
         let a = axis(a, self.ndim());
         Ok(Self(if keep.into().unwrap_or(false) {
@@ -324,7 +324,7 @@ impl std::ops::Neg for &Array {
 pub mod host {
     use super::*;
     pub use crate::backend::speech_timing_enabled;
-    /// candle 没有 MLX 那样的分配器缓存，守卫只为与 MLX 宿主同形。
+    /// candle has no allocator cache like MLX's; the guard exists only to match the shape of the MLX host.
     pub struct ModelMemoryCacheGuard;
     pub fn ensure_device() -> Result<()> {
         eprintln!(
@@ -339,7 +339,7 @@ pub mod host {
     pub fn clear_memory_cache() -> Result<()> {
         Ok(())
     }
-    /// 读取若干 safetensors 分片并合并成一张表；重复的张量名直接报错。
+    /// Reads several safetensors shards and merges them into one table; duplicate tensor names raise an error immediately.
     pub fn load_safetensors(files: &[&Path]) -> Result<HashMap<String, Array>> {
         let mut out = HashMap::new();
         for path in files {
@@ -354,7 +354,7 @@ pub mod host {
         }
         Ok(out)
     }
-    /// candle 的单测与 MLX 一样串行跑：真实权重的用例峰值内存大。
+    /// Like the MLX ones, the candle unit tests run serially: cases with real weights have high peak memory.
     #[cfg(test)]
     pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }

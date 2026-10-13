@@ -1,11 +1,9 @@
-//! MOSS Transcribe Diarize 的真权重测试（移植自 v2 `ccut-speech` 的 e2e）：识别完释放音频前端（Whisper 编码器与
-//! 适配器）不改变输出——文字、行、说话人区间与生成的 token 数都与不释放时相同。
+//! MOSS Transcribe Diarize real-weight test (ported from v2 `ccut-speech`'s e2e): after recognition, releasing the audio frontend (Whisper encoder and adapter) does not change the output. The text, lines, speaker spans, and generated token count are all the same as without the release.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test moss_mlx -- --ignored --test-threads=1 --nocapture
 //!
-//! `CCUT_MOSS_TEST_AUDIO` 可换一段对拍音频。权重不在（没设 `CUCCUT_TEST_MODELS_DIR` 或没有 `.ccut-manifest.json`）
-//! 时打印原因后跳过。
+//! `CCUT_MOSS_TEST_AUDIO` can swap in another parity clip. If the weights are absent (no `CUCCUT_TEST_MODELS_DIR` or no `.ccut-manifest.json`), the reason is printed and the test is skipped.
 
 #![cfg(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 
@@ -19,7 +17,7 @@ use serde_json::{Value, json};
 
 const MOSS_REPO: &str = "OpenMOSS-Team/MOSS-Transcribe-Diarize";
 
-/// 按 `<models-root>/<repo>/.ccut-manifest.json` 核对出 `asr` 组件的文件；权重不在时给 `None` 并打印原因。
+/// Resolves the files of the `asr` component from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn moss_files() -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");

@@ -1,31 +1,16 @@
-//! `snake-v1`：`snake` / `snake_spin`（设计 §7.4）。
+//! `snake-v1`: `snake` / `snake_spin` (design §7.4).
 //!
-//! 参考实现（`progress_snake.frag` / `progress_snake_spin.frag`）的 `circleRing()`
-//! 是一个**逐度循环**：自 `startAngleDeg` 起，每 `angleIncrementDeg` 放一个半径
-//! `dotRadius` 的软边小圆，把它们的 alpha 累加再 `min(…, 1)`；圈数由
-//! `round(进度 × 一整圈的步数)` 决定，上限 `maxIterations`。底环用进度 1 画一次
-//! （副色），进度环用当前进度画一次（主色），再 `mix` 叠上去。
+//! The reference implementations (`progress_snake.frag` / `progress_snake_spin.frag`): `circleRing()` is a **per-degree loop**. Starting at `startAngleDeg`, every `angleIncrementDeg` it places a soft-edged circle of radius `dotRadius`, accumulates their alphas, and applies `min(…, 1)`. The number of turns is set by `round(progress × the number of steps in one full turn)`, capped at `maxIterations`. The base ring is drawn once at progress 1 (secondary color), the progress ring once at the current progress (primary color), and then they are `mix`ed together.
 //!
-//! ## 逐度循环 → 扫掠并集（P4 定案）
+//! ## Per-degree loop → swept union (settled in P4)
 //!
-//! 圆心间距（0.4 半径上的 1° ≈ 0.007）只有圆半径（0.1）的十四分之一，叠加场在
-//! 并集内部**早就饱和**，半覆盖等值线于是就是并集的边界本身。而"圆盘沿圆弧扫过
-//! 的并集"有闭式（[`swept_arc_subpath`]），逐度循环因此只剩**定圈数**这一件事。
-//! `maxIterations` / `angleIncrementDeg` / `startAngleDeg` 仍是数据真相，一个都
-//! 没搬进 Rust；换来的是"圈数 360 时也只有一条 path"而不是 360 个子路径。
+//! The spacing between circle centers (1° at a radius of 0.4 ≈ 0.007) is only one fourteenth of the circle radius (0.1). So the overlap field is **already saturated** inside the union, and the half-coverage contour is then exactly the boundary of the union itself. "The union of a disc swept along an arc" has a closed form ([`swept_arc_subpath`]), so the per-degree loop reduces to just **a fixed number of turns**. `maxIterations` / `angleIncrementDeg` / `startAngleDeg` remain the source of truth in the data, and none of them was moved into Rust. The gain is that even at 360 turns there is one path, not 360 subpaths.
 //!
-//! **`smoothing` 与 `boostSteps` 不读**（P3 记录第 2 条那一类：纯 alpha 过渡带宽）。
-//! 密集叠加下并集的边界正是 `dotRadius` 本身，`smoothing` 退化成边缘的抗锯齿；
-//! `boostSteps`（圈数 < 1 / < 2 时把 alpha 乘 3 / 2）存在的意义是"圆太少时让它更
-//! 显眼"，矢量侧那一两个圆本来就是实心满半径，比参考实现还显眼。P5 的 WGSL 会
-//! 逐字用上这两个参数。
+//! **`smoothing` and `boostSteps` are not read.** This is the second category recorded in P3: pure alpha transition bandwidth. In dense overlap the boundary of the union is `dotRadius` itself, so `smoothing` degenerates into edge antialiasing. `boostSteps` (multiplying alpha by 3 / 2 when there are fewer than 1 / 2 turns) exists to "make a few circles more prominent". On the vector side, those one or two circles are already solid at full radius, which is more prominent than in the reference implementation. P5's WGSL will use these two parameters verbatim.
 //!
-//! ## 角度换算
+//! ## Angle conversion
 //!
-//! 参考实现在 v 向上的 `texCoord` 里算 `pos + (cos a, sin a) · dist`，圆心因此在
-//! `0.5 − dist · (cos a, sin a)`；而 [`polar`] 的零角在正上方、顺时针为正。两者的
-//! 换算是 `phi = −(π/2 + a)`：`a = 270°` ⇒ `phi = 0`（正上方），`a` 每减 1° ⇒
-//! `phi` 加 1°（顺时针）。那个 π/2 是坐标系零角的差，不是样式参数。
+//! The reference implementation computes `pos + (cos a, sin a) · dist` in a v-up `texCoord`, so the circle center is at `0.5 − dist · (cos a, sin a)`. [`polar`]'s zero angle, however, is straight up, with clockwise positive. The conversion between the two is `phi = −(π/2 + a)`: `a = 270°` ⇒ `phi = 0` (straight up), and each decrease of `a` by 1° ⇒ `phi` increases by 1° (clockwise). That π/2 is the difference between the two coordinate systems' zero angles, not a style parameter.
 
 use motion::preset_registry::ProgressBody;
 
@@ -61,7 +46,7 @@ pub(crate) fn draw(
     else {
         return 0;
     };
-    // `colorMode.kind` 按 tag 分派而不是按 id 列黑名单（与 `frame-v1` 同一规矩）。
+    // `colorMode.kind` dispatches by tag rather than by a blocklist of ids (the same rule as `frame-v1`).
     let rainbow = color_mode.get("kind").and_then(serde_json::Value::as_str) == Some("rainbow");
     let track_color = match color_mode
         .get("trackColor")
@@ -70,8 +55,7 @@ pub(crate) fn draw(
         Some("main") => params.main_color,
         _ => params.secondary_color,
     };
-    // `aspect: "square"` 已经在 `progress_frame` 里取过内切正方形；参考实现的
-    // 长度全在归一化 `texCoord` 里，因此以边长为单位。
+    // `aspect: "square"` has already been applied in `progress_frame` (the inscribed square). The reference implementation's lengths are all in normalized `texCoord`, so they are in units of side length.
     let side = bbox.w.min(bbox.h);
     let (center, orbit, dot) = (bbox.center(), orbit_ratio * side, dot_ratio * side);
     if !(dot > 0.0) {
@@ -81,7 +65,7 @@ pub(crate) fn draw(
     if increment == 0.0 {
         return 0;
     }
-    // 自转：`offset = −mod(t · speed, 360°)` 加在 `a` 上（底环与进度环同一个偏移）。
+    // Rotation: `offset = −mod(t · speed, 360°)` is added to `a` (the base ring and the progress ring share the same offset).
     let spin = recipe
         .object("spin")
         .and_then(|object| object.get("speedDegPerSec"))
@@ -91,11 +75,11 @@ pub(crate) fn draw(
             -(time * speed).rem_euclid(turn)
         })
         .unwrap_or(0.0);
-    // `phi = −(π/2 + a)`（见模块文档）。
+    // `phi = −(π/2 + a)` (see the module docs).
     let phi_start = -(std::f64::consts::FRAC_PI_2 + (start_angle + spin).to_radians());
 
     let before = builder.frame.ops.len();
-    // 底环（进度 1）在下，进度环在上——参考实现的 `mix(bot, top, top.a)`。
+    // The base ring (progress 1) is below, the progress ring on top, as in the reference implementation's `mix(bot, top, top.a)`.
     let push_arc = |builder: &mut FrameBuilder, from: f64, to: f64, color: Color4| {
         let mut path = Vec::new();
         swept_arc_subpath(&mut path, center, orbit, dot, from, to);
@@ -116,13 +100,7 @@ pub(crate) fn draw(
     let dots = dot_count(progress, increment, max_iterations);
     let phi_end = phi_start - (dots - 1) as f64 * increment;
     if rainbow {
-        // ── `visual` 档的近似（§8.7）。参考实现的彩虹是**逐片元**的
-        //    `hue = 该点的极角 / 2π + ½`、`saturation = 该点的半径 × 2`——
-        //    颜色属于**像素的位置**，不属于哪一颗小圆。矢量侧因此：
-        //    ① 把整条进度弧压成一层 `ClipPath`；② 在里面铺一张
-        //    `hueSteps × radialSteps` 的极坐标色块网格，每块取自己中心那一色。
-        //    这样 hue 与 saturation 都跟着**片元的位置**走，与参考实现同构；
-        //    像素真相仍在 WGSL。
+        // ── Approximation at the `visual` tier (§8.7). The reference implementation's rainbow is **per fragment**: `hue = the polar angle of this point / 2π + ½`, `saturation = the radius of this point × 2`. The color belongs to **the pixel's position**, not to any particular small circle. So on the vector side: ① the whole progress arc is pushed as one `ClipPath` layer; ② inside it, a `hueSteps × radialSteps` polar grid of color blocks is filled, each block taking the color at its own center. This way hue and saturation both follow **the fragment's position**, matching the reference implementation. The authoritative pixel output is still in WGSL.
         let steps = |key: &str, fallback: u64| {
             color_mode
                 .get(key)
@@ -147,7 +125,7 @@ pub(crate) fn draw(
         if !clip.is_empty() {
             let clip = builder.path_id(PathData(clip));
             builder.push(DrawOp::ClipPath { path: clip, tf });
-            // 网格只铺到进度弧的角向范围（两端各留一个小圆的张角）。
+            // The grid covers only the angular range of the progress arc (leaving the angle of one small circle at each end).
             let cap = (dot / orbit).clamp(-1.0, 1.0).asin();
             let (lo, hi) = if phi_end >= phi_start {
                 (phi_start - cap, phi_end + cap)
@@ -155,11 +133,7 @@ pub(crate) fn draw(
                 (phi_end - cap, phi_start + cap)
             };
             let wedges = ((hi - lo) / std::f64::consts::TAU * hue_steps as f64).ceil() as u64;
-            // **相邻色块要叠半个像素**：各自一条 `FillPath` 的话，贴着的两条边
-            // 会被光栅器各算一次抗锯齿再 alpha-over（`a + a(1−a) = 0.75`），
-            // 一张网格上于是布满暗接缝。叠上去让后画的那块盖住交界，误差从
-            // "四分之一的暗线"降成"半个像素的颜色偏移"。（柱状族那边因为整场
-            // 同色，用的是"压进同一条 path 求并集"那条更干净的手法。）
+            // **Adjacent blocks must overlap by half a pixel.** If each were its own `FillPath`, the rasterizer would antialias each shared edge separately and alpha-over them (`a + a(1−a) = 0.75`), and the grid would be covered in dark seams. Overlapping lets the block drawn later cover the boundary, so the error drops from a quarter-strength dark line to a half-pixel color offset. (On the bar family, the whole field is one color, so the cleaner approach of "pressing into the same path to take the union" is used.)
             let bleed = 0.5;
             for wedge in 0..wedges.max(1) {
                 let from = lo + (hi - lo) * wedge as f64 / wedges.max(1) as f64;
@@ -200,11 +174,9 @@ pub(crate) fn draw(
     builder.frame.ops.len() - before
 }
 
-/// 旋转彩虹环上一点的颜色。
+/// The color of one point on the rotating rainbow ring.
 ///
-/// 参考实现算的是 `hsb2rgb(vec3(atan2(y, x) / 2π + ½, |p| · 2, 1))`，其中 `p` 已经
-/// 被 `rotate2d(radians(t · speed))` 转过一次。极角 `phi` 是"自正上方顺时针"，
-/// 换到那套"自 +x 轴逆时针"的坐标是 `π/2 − phi`，再加上旋转量。
+/// The reference implementation computes `hsb2rgb(vec3(atan2(y, x) / 2π + ½, |p| · 2, 1))`, where `p` has already been rotated once by `rotate2d(radians(t · speed))`. The polar angle `phi` is "clockwise from straight up". Converting it to that formula's "counterclockwise from the +x axis" coordinates gives `π/2 − phi`, plus the rotation amount.
 fn rainbow_color(phi: f64, time: f64, speed_deg: f64, saturation: f64, alpha: f32) -> Color4 {
     let angle = std::f64::consts::FRAC_PI_2 - phi + (time * speed_deg).to_radians();
     let hue = angle / std::f64::consts::TAU + 0.5;
@@ -212,23 +184,21 @@ fn rainbow_color(phi: f64, time: f64, speed_deg: f64, saturation: f64, alpha: f3
     [rgb[0] as f32, rgb[1] as f32, rgb[2] as f32, alpha]
 }
 
-/// 参考实现的 `hsb2rgb`（brightness 恒为 1）。
+/// The reference implementation's `hsb2rgb` (brightness is always 1).
 fn hsb_to_rgb(hue: f64, saturation: f64) -> [f64; 3] {
     let channel = |offset: f64| {
         let raw = ((hue * 6.0 + offset).rem_euclid(6.0) - 3.0).abs() - 1.0;
         let clamped = raw.clamp(0.0, 1.0);
-        // 参考实现的 `rgb * rgb * (3 − 2 rgb)`：一次 smoothstep 收边。
+        // The reference implementation's `rgb * rgb * (3 − 2 rgb)`: a single smoothstep to sharpen the edges.
         let smooth = clamped * clamped * (3.0 - 2.0 * clamped);
         1.0 + (smooth - 1.0) * saturation
     };
     [channel(0.0), channel(4.0), channel(2.0)]
 }
 
-/// 参考实现那个循环真正跑了多少圈。
+/// How many turns the reference implementation's loop actually ran.
 ///
-/// `angleTotal = round(progress × 一整圈的步数)`，循环体在 `i >= angleTotal` 时
-/// **画完这一圈才 break**，因此圈数是 `angleTotal + 1`，上限 `maxIterations`。
-/// 进度 0 也有一个圆（参考实现如此，起点上永远留着一颗），这条必须照搬。
+/// `angleTotal = round(progress × the number of steps in one full turn)`. When `i >= angleTotal`, the loop body **finishes the current turn before it breaks**, so the number of turns is `angleTotal + 1`, capped at `maxIterations`. At progress 0 there is still one circle (as in the reference implementation, one dot always remains at the start point). This must be reproduced.
 fn dot_count(progress: f64, increment: f64, max_iterations: u64) -> u64 {
     let steps_per_turn = std::f64::consts::TAU / increment.abs();
     let total = (progress.clamp(0.0, 1.0) * steps_per_turn).round();
@@ -239,7 +209,7 @@ fn dot_count(progress: f64, increment: f64, max_iterations: u64) -> u64 {
 mod tests {
     use super::*;
 
-    /// 圈数逐字复现参考实现的 `round(360·p)` + "画完再 break" + 上限。
+    /// The turn count reproduces the reference implementation exactly: `round(360·p)`, "finish the turn, then break", and the cap.
     #[test]
     fn the_dot_count_matches_the_reference_loop() {
         let degree = (-1.0f64).to_radians();
@@ -247,7 +217,7 @@ mod tests {
         assert_eq!(dot_count(1.0 / 360.0, degree, 360), 2);
         assert_eq!(dot_count(0.5, degree, 360), 181);
         assert_eq!(dot_count(1.0, degree, 360), 360, "上限压住 361");
-        // 半度以内四舍五入到同一圈数（`roundf` 是 `floor(x + 0.5)`）。
+        // Within half a degree, rounding gives the same turn count (`roundf` is `floor(x + 0.5)`).
         assert_eq!(dot_count(0.4 / 360.0, degree, 360), 1);
         assert_eq!(dot_count(0.6 / 360.0, degree, 360), 2);
     }

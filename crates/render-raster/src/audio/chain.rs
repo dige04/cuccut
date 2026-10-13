@@ -1,14 +1,14 @@
-//! 混音链（规范 §4 `audio`、§8.4 的 `fadeIn` / `fadeOut` / `pan` / `bus` / `muted`）：
-//! clip 增益与 `volume` 关键帧 → 淡入淡出 → 声像 → 按总线求和 → 闪避 → 总线增益 → 求和 → 母带
-//! （响度归一与真峰值限幅交替三轮，最后按真峰值静态兜底）。
+//! Mixing chain (spec §4 `audio`, and `fadeIn` / `fadeOut` / `pan` / `bus` / `muted` in §8.4):
+//! clip gain and `volume` keyframes → fade in/out → pan → sum per bus → ducking → bus gain → sum → master
+//! (loudness normalization and true-peak limiting alternate for three rounds, with a static true-peak fallback at the end).
 //!
-//! 整条链按固定长度的窗口流式跑，内存与片长无关：闪避先整片扫一遍 `from` 总线的块 RMS
-//! （10 ms 一块，窗口长是块长的整数倍，所以分窗与整条一次算逐位相同）；母带的响度计是
-//! 跨窗延续状态的 [`Meter`]，限幅器每侧带 [`limiter_context`] 个采样的上下文——窗内结果
-//! 与 `ccut-audio-dsp` 对整条信号的 `normalize_to_lufs` + `limit` 逐位相同（本文件测试对拍）。
+//! The whole chain runs as a stream over fixed-length windows, so memory does not depend on clip length. Ducking first scans the block RMS of the `from` bus over the whole clip
+//! (10 ms blocks; the window length is an integer multiple of the block length, so windowed and whole-signal computation are bit-identical). The master's loudness meter is a
+//! [`Meter`] whose state carries across windows, and the limiter has a context of [`limiter_context`] samples on each side, so in-window results
+//! are bit-identical to `normalize_to_lufs` + `limit` from `ccut-audio-dsp` run over the whole signal (checked against each other by this file's tests).
 //!
-//! 文档没写 `audio`、也没有 clip 用到淡入淡出 / 声像时不进这里：`audio.rs` 的旧路径
-//! 原样混音，输出与旧版逐位相同。
+//! When the document does not specify `audio`, and no clip uses fades or pan, this path is skipped: the legacy path in `audio.rs`
+//! mixes unchanged, and its output is bit-identical to the old version.
 
 use super::{CHANNELS, SAMPLE_RATE};
 use anyhow::{Context, Result};
@@ -29,12 +29,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 
-/// 窗口长（帧）：4 s，是 10 ms 块（480 帧）的整数倍。
+/// Window length in frames: 4 s, an integer multiple of the 10 ms block (480 frames).
 pub(crate) const WINDOW: u64 = 4 * SAMPLE_RATE as u64;
-/// 归一 + 限幅的轮数。
+/// Number of normalize + limit rounds.
 const PASSES: usize = 3;
 
-/// 一条解好码的 clip PCM（48 kHz 交错立体声 f32）。
+/// One decoded clip PCM (48 kHz interleaved stereo f32).
 pub(crate) enum ClipPcm {
     Mem(Vec<f32>),
     File(tempfile::TempPath),
@@ -43,16 +43,16 @@ pub(crate) enum ClipPcm {
 pub(crate) struct ChainClip<'a> {
     pub clip: &'a AudioClip,
     pub pcm: ClipPcm,
-    /// PCM 帧数。
+    /// Number of PCM frames.
     pub frames: u64,
-    /// 片内起点帧。
+    /// Start frame within the clip.
     pub start: u64,
-    /// `false` = 只给闪避量活跃度，不进输出（时间轴另放的旁白）。
+    /// `false` = only supplies the ducking activity level, not output (narration placed separately on the timeline).
     pub audible: bool,
 }
 
 impl ChainClip<'_> {
-    /// 片内帧 `[a, b)` 与本 clip 的交集，交出（交集起点，交错样本）。
+    /// Intersection of the in-clip frame range `[a, b)` with this clip; yields (intersection start, interleaved samples).
     fn read(&self, a: u64, b: u64) -> Result<Option<(u64, Cow<'_, [f32]>)>> {
         let a = a.max(self.start);
         let b = b.min(self.start.saturating_add(self.frames));
@@ -81,16 +81,16 @@ fn read_f32(path: &std::path::Path, a: u64, b: u64) -> Result<Vec<f32>> {
         .collect())
 }
 
-/// 母带实测。
+/// Mastering measurements.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MasterMeasure {
-    /// 母带前的积分响度（LUFS）。
+    /// Integrated loudness (LUFS) before mastering.
     pub input_lufs: f64,
-    /// 母带后的积分响度（LUFS）。
+    /// Integrated loudness (LUFS) after mastering.
     pub lufs: f64,
-    /// 母带后的真峰值（dBTP）。
+    /// True peak (dBTP) after mastering.
     pub true_peak: f64,
-    /// 各轮响度归一的静态增益之和（dB）。
+    /// Sum of the static gains (dB) from each loudness normalization round.
     pub static_gain_db: f64,
 }
 
@@ -98,7 +98,7 @@ pub(crate) struct ChainReport {
     pub master: Option<MasterMeasure>,
 }
 
-/// 把 `clip` 在 `[begin, end)` 里的声音（增益、淡入淡出、声像）叠进 `bus`（交错立体声，长 `end − begin` 帧）。
+/// Overlays the sound of `clip` within `[begin, end)` (gain, fades, pan) onto `bus` (interleaved stereo, `end − begin` frames long).
 fn add_clip(c: &ChainClip<'_>, begin: u64, end: u64, bus: &mut [f32]) -> Result<()> {
     let Some((a, samples)) = c.read(begin, end)? else {
         return Ok(());
@@ -114,7 +114,7 @@ fn add_clip(c: &ChainClip<'_>, begin: u64, end: u64, bus: &mut [f32]) -> Result<
     let n = samples.len() / CHANNELS;
     let mut offset = 0usize;
     while offset < n {
-        // 音量包络与旧路径同口径：64 帧一块、块首采样。
+        // The volume envelope uses the same convention as the legacy path: 64-frame blocks, sampled at the block start.
         let local = a - c.start + offset as u64;
         let block_start = local / 64 * 64;
         let vol = if clip.volume.is_empty() {
@@ -141,7 +141,7 @@ fn add_clip(c: &ChainClip<'_>, begin: u64, end: u64, bus: &mut [f32]) -> Result<
     Ok(())
 }
 
-/// 中间整片 PCM：内存或临时文件（交错立体声 f32）。
+/// Intermediate full-clip PCM, held in memory or a temporary file (interleaved stereo f32).
 enum Store {
     Mem(Vec<f32>),
     File(tempfile::NamedTempFile, u64),
@@ -192,9 +192,9 @@ fn interleave(s: &Stereo) -> Vec<f32> {
     out
 }
 
-/// 跑整条混音链，逐窗交给 `out`（交错立体声，已夹到 [−1, 1]）。
+/// Runs the whole mixing chain, handing it to `out` window by window (interleaved stereo, clamped to [−1, 1]).
 ///
-/// `master` 为 `None` 时不做母带（调用方没要、或部分 clip 被时间轴另放）。
+/// When `master` is `None`, no mastering is done (the caller did not ask for it, or some clips are placed separately on the timeline).
 pub(crate) fn run(
     total_frames: u64,
     clips: &[ChainClip<'_>],
@@ -212,7 +212,7 @@ pub(crate) fn run(
             .map(move |a| (a, (a + window).min(total_frames)))
     };
 
-    // 第 0 遍：闪避源总线的整片块 RMS → 每条规则的活跃度块序列。
+    // Pass 0: block RMS of the whole ducking source bus → block-level activity sequence for each rule.
     let sources: BTreeSet<&str> = doc
         .duck
         .iter()
@@ -249,7 +249,7 @@ pub(crate) fn run(
         })
         .collect();
 
-    // 第 1 遍：逐窗按总线求和 → 闪避 → 总线增益 → 求和。
+    // Pass 1: per window, sum by bus → ducking → bus gain → sum.
     let buses: BTreeSet<&str> = clips
         .iter()
         .filter(|c| c.audible)
@@ -302,7 +302,7 @@ pub(crate) fn run(
     })
 }
 
-/// 分窗母带：与对整条信号跑 `(normalize_to_lufs → limit) × 3 → trim_to_ceiling` 逐位相同。
+/// Windowed mastering: bit-identical to running `(normalize_to_lufs → limit) × 3 → trim_to_ceiling` over the whole signal.
 fn master_store(
     mut cur: Store,
     frames: u64,
@@ -337,7 +337,7 @@ fn master_store(
     for _ in 0..PASSES {
         let now = measure(&cur, checkpoint)?;
         input_lufs.get_or_insert(now);
-        // 与 normalize_to_lufs 同：静音或不足 400 ms 不动。
+        // Same as normalize_to_lufs: silence or less than 400 ms is left unchanged.
         let gain = (now > SILENCE_LUFS).then(|| target.lufs - now);
         static_gain_db += gain.unwrap_or(0.0);
         let mut next = Store::new(streamed)?;
@@ -360,7 +360,7 @@ fn master_store(
         }
         cur = next;
     }
-    // 静态兜底：整片真峰值（每侧带过采样上下文）。
+    // Static fallback: true peak of the whole clip (with an oversampled context on each side).
     let mut peak = 0.0f64;
     let pc = PEAK_CONTEXT as u64;
     for (a, b) in windows() {
@@ -426,7 +426,7 @@ mod tests {
             true_peak: -1.2,
         };
         let pre = interleave(&s);
-        // 参考：整条信号一次算。
+        // Reference: computed over the whole signal at once.
         let lim = Limiter {
             ceiling_db: target.true_peak - 0.1,
             ..Limiter::default()

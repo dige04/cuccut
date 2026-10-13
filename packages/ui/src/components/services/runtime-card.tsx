@@ -6,9 +6,8 @@ import { runtimeStateLabel } from '../../model/services.ts';
 import { useConnection } from '../../state/connection-store.ts';
 
 /*
- * CucCut Runtime 卡：Runtime 的连接状态、版本、进程、启动时间与数据目录。原来是服务总览的第一张卡；
- * 服务页改成三项对外服务后它不再属于「服务」，抽成独立组件，由设置 › 诊断挂载（这次不改设置页）。
- * 不依赖页面布局，放进任何一栏都行。
+ * CucCut Runtime card: the Runtime's connection status, version, process, start time and data directory. It was originally the first card on the services overview. Once the services page became three external services, it no longer belongs under “Services”, so it is extracted into a standalone component, mounted by Settings › Diagnostics (this change does not modify the settings page).
+ * It does not depend on the page layout and can be placed in any column.
  */
 
 const card = style({

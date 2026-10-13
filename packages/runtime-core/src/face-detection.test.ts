@@ -9,8 +9,7 @@ import { withFaces } from './agent-tools/video-frames.ts';
 import { createFaceDetector, resolveFaceDetectCommand, type FaceDetector } from './face-detection.ts';
 
 /**
- * 人脸检测（`videos_frames` 的 `faces`）：不可用时退回 null、不报错；有 `face-detect` 构建产物（`npm run build:engine`）时
- * 用随附的 YuNet 模型真跑一遍。有脸的样本不入库：给 `CUCCUT_FACE_FIXTURE`（一张有人脸的 PNG / JPEG）时才测「找得到脸」。
+ * Face detection (`faces` of `videos_frames`): falls back to null without raising an error when unavailable. When the `face-detect` build artifact is present (`npm run build:engine`), it runs for real against the bundled YuNet model. Samples containing faces are not committed to the repository: the “找得到脸” (finds a face) test runs only when `CUCCUT_FACE_FIXTURE` (a PNG or JPEG with a face) is set.
  */
 
 function recordingLogger(): Logger & { lines: Array<{ level: string; message: string; fields?: Record<string, unknown> }> } {

@@ -5,7 +5,7 @@ import { isPannable, panCrop, sourceSize, type PannableVideo } from './stage-pos
 import { applyFramingToAll, framingPieces, shotSeconds, showsShotChip } from './stage-shots.ts';
 import { patchItem } from './item-draft.ts';
 
-/** 9:16 的子视频画布，16:9 的源：裁剪窗口正好是 9:16（宽 0.3164），按 cover 铺满。 */
+/** 9:16 sub-video canvas, 16:9 source: the crop window is exactly 9:16 (width 0.3164), filling the canvas with `cover`. */
 const canvas = { width: 1080, height: 1920 };
 const window916 = (left: number): Crop => ({ left, top: 0, right: +(1 - 0.3164 - left).toFixed(4), bottom: 0 });
 const assets = {
@@ -43,13 +43,13 @@ describe('平移取景', () => {
 
   it('水平拖动只挪窗口：左右之和不变，往右拖窗口往左挪', () => {
     const crop = window916(0.3);
-    // 窗口 0.3164 × 1920 = 607.5 源像素铺满 1080 画布像素：拖 108 画布像素合 60.75 源像素，即源宽的 0.0316。
+    // Window 0.3164 × 1920 = 607.5 source pixels fill 1080 canvas pixels: dragging 108 canvas pixels is 60.75 source pixels, i.e. 0.0316 of the source width.
     const moved = panCrop(crop, 108, 0, canvas, { width: 1920, height: 1080 });
     expect(moved.left).toBeCloseTo(0.3 - 0.0316, 4);
     expect(moved.left + moved.right).toBeCloseTo(crop.left + crop.right, 4);
     expect(moved.top).toBe(0);
     expect(moved.bottom).toBe(0);
-    // 不知道源尺寸时按窗口正好铺满画布算，结果一样。
+    // When the source size is unknown, it is computed as if the window exactly fills the canvas; the result is the same.
     expect(panCrop(crop, 108, 0, canvas, null).left).toBeCloseTo(moved.left, 4);
   });
 
@@ -83,7 +83,7 @@ describe('平移取景', () => {
     expect(patchItem(item, { crop: frame.crop! })).toMatchObject({ crop: frame.crop });
     expect(cropOperations('s1', item, frame.crop!)).toEqual([{ type: 'setStyle', sequenceId: 's1', itemId: 'a', crop: frame.crop }]);
     expect(cropOperations('s1', item, item.crop)).toEqual([]);
-    // 铺满的视频没有可挪的框：通用的移动手势写不出东西。
+    // A full-frame video has no movable box: the generic move gesture cannot write anything.
     expect(gestureOperations('s1', [g.member], frame.poses, 1, canvas)).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ describe('captionBox', () => {
 });
 
 describe('stepCaptionMove', () => {
-  // 横向居中、底边钉在 86% 的锚线上：框 560–1360 × 868.8–928.8，中心 (960, 898.8)。
+  // Horizontally centered, bottom edge pinned to the 86% anchor line: box 560–1360 × 868.8–928.8, center (960, 898.8).
   const move = { box: { x: 560, y: 868.8, w: 800, h: 60 }, x0: 50, y0: 86, p0: { x: 960, y: 900 } };
 
   it('上下左右一起动：位移折成水平中心与锚线的增量', () => {
@@ -33,7 +33,7 @@ describe('stepCaptionMove', () => {
   });
 
   it('框的中心吸到画面中线（±1.5%），两个方向各出一条线；⌥ 不吸', () => {
-    // 中心到 (965, 548.8)：离竖中线 5px（< 1920 × 1.5%），离横中线 8.8px（< 1080 × 1.5%）。
+    // Center moved to (965, 548.8): 5px from the vertical midline (< 1920 × 1.5%), 8.8px from the horizontal midline (< 1080 × 1.5%).
     const p = { x: 965, y: 900 - 350 };
     const r = stepCaptionMove(move, p, free, env);
     expect(r.x).toBe(50);
@@ -45,11 +45,11 @@ describe('stepCaptionMove', () => {
   });
 
   it('框边吸到别的对象的边（6px）', () => {
-    // 框顶本来落在 703.8，吸到对象底边 700。
+    // The box top would have landed at 703.8; it snaps to the object's bottom edge at 700.
     const below = stepCaptionMove(move, { x: 960, y: 900 - 165 }, free, { ...env, others: [{ x: 100, y: 600, w: 200, h: 100 }] });
     expect(below.dy).toBeCloseTo(700 - 868.8, 0);
     expect(below.guides).toContainEqual({ axis: 'y', at: 700 });
-    // 框右边本来落在 1397，吸到对象左边 1400。
+    // The box's right edge would have landed at 1397; it snaps to the object's left edge at 1400.
     const beside = stepCaptionMove(move, { x: 960 + 37, y: 900 }, free, { ...env, others: [{ x: 1400, y: 100, w: 100, h: 100 }] });
     expect(beside.x).toBe(52.1);
     expect(beside.guides).toContainEqual({ axis: 'x', at: 1400 });
@@ -67,7 +67,7 @@ describe('stepCaptionMove', () => {
   it('框比画面还宽就不左右动；起手已经出画的不跳，只能往回拖', () => {
     const wide = { ...move, box: { x: -40, y: 868.8, w: 2000, h: 60 }, x0: 50.04 };
     expect(stepCaptionMove(wide, { x: 960 + 300, y: 900 }, loose, env).x).toBe(50.04);
-    // 框 1300–2100，右边已经出画 180px。
+    // Box 1300–2100; the right edge is already 180px off the frame.
     const out = { ...move, box: { x: 1300, y: 868.8, w: 800, h: 60 }, x0: 88.5 };
     expect(stepCaptionMove(out, { x: 960 + 100, y: 900 }, loose, env).x).toBe(88.5);
     expect(stepCaptionMove(out, { x: 960 - 192, y: 900 }, loose, env).x).toBe(78.5);
@@ -102,10 +102,10 @@ describe('movedCaptionStyle', () => {
 
 describe('lineMoveStart', () => {
   it('还在堆栈里的行按画出来的框量：框的中心折成百分比（一位小数），不读根样式的 x', () => {
-    // 框 560–1360 × 868.8–928.8：中心 (960, 898.8) → (50, 83.2)。
+    // Box 560–1360 × 868.8–928.8: center (960, 898.8) → (50, 83.2).
     const box = { x: 560, y: 868.8, w: 800, h: 60 };
     expect(lineMoveStart({ x: 30, y: 86 }, 'translation', box, canvas)).toEqual({ x0: 50, y0: 83.2, detached: false });
-    // 覆盖里只有 y（或只有字号）不算单独摆。
+    // An override that only has y (or only a font size) does not count as positioned separately.
     expect(lineMoveStart({ transStyle: { y: 40, fontSize: 20 } }, 'translation', box, canvas).detached).toBe(false);
   });
 
@@ -151,7 +151,7 @@ describe('movedLineStyle', () => {
 });
 
 describe('restackedRootY', () => {
-  // 另一行（原文）此刻画在 838.8–898.8：中心 868.8 → 80.4%。
+  // The other line (the original text) is currently drawn at 838.8–898.8: center 868.8 → 80.4%.
   const rest = [{ ...hit(868.8, 60), itemId: 'o' }];
 
   it('块锚点是 center（或没写）时，根样式锚线换成另一行此刻的中心', () => {
@@ -165,7 +165,7 @@ describe('restackedRootY', () => {
     expect(restackedRootY({}, 'translation', [], canvas)).toBeNull();
     expect(restackedRootY({}, 'translation', [...rest, { ...hit(500, 60), itemId: 'p' }], canvas)).toBeNull();
     expect(restackedRootY({ origStyle: { x: 50, y: 30 } }, 'translation', rest, canvas)).toBeNull();
-    // 只有 y 的覆盖还在堆栈里。
+    // The override that only has y is still in the stack.
     expect(restackedRootY({ origStyle: { y: 30 } }, 'translation', rest, canvas)).toBe(80.4);
   });
 });

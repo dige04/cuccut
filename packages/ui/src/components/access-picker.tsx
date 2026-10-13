@@ -11,7 +11,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { S } from './shell-copy.ts';
 import { ACCESS_MODE_HINT, ACCESS_MODE_LABEL } from '../copy.ts';
 
-/** 四档的图标（原型 data.js `agent.modes`：lock / edit / sparkle / unlock）；「先给方案」原型没画，用 visibility。 */
+/** Icons for the four levels (prototype data.js `agent.modes`: lock / edit / sparkle / unlock); the prototype did not draw “先给方案” (plan first), so it uses visibility. */
 export const MODE_ICON: Record<AgentMode, ComponentType> = {
   plan: Visibility,
   ask: Lock,
@@ -20,16 +20,16 @@ export const MODE_ICON: Record<AgentMode, ComponentType> = {
   fullAccess: LockOpen,
 };
 
-/** 菜单宽 288，说明整段折行（原型 agent-thread.jsx `AccessPicker`）。 */
+/** Menu width 288; the description wraps as a whole block (prototype agent-thread.jsx `AccessPicker`). */
 const menu = style({ width: 288, maxWidth: '[calc(100vw - 32px)]' });
-/** 箭头放在文字后面：放进 Text 里，不占 ActionButton 前面的图标位。 */
+/** The arrow sits after the text: it is placed inside Text, so it does not take the icon slot in front of ActionButton. */
 const label = style({ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' });
 
 /**
- * 访问模式（架构设计 §3.12，原型 agent-thread.jsx `AccessPicker`）：四档永远全部可选，切档不弹确认框。
- * 收起时是图标加档名；输入区窄的时候（`compact`，产品设计 §3.2.3）只剩图标和箭头，档名留在无障碍标签与提示里。
- * 菜单每行是图标、档名、一句说明，当前档打勾。
- * 「先给方案」只在当前就是它时列出，切走之后不再出现（原型只有四档）。
+ * Access modes (architecture design §3.12, prototype agent-thread.jsx `AccessPicker`): all four levels are always selectable, and switching levels shows no confirmation dialog.
+ * When collapsed it shows the icon plus the level name; when the input area is narrow (`compact`, product design §3.2.3) only the icon and arrow remain, and the level name stays in the accessibility label and tooltip.
+ * Each menu row is an icon, the level name and one sentence of description, with a check on the current level.
+ * “先给方案” (plan first) is listed only while it is the current level, and does not appear once you switch away (the prototype has only four levels).
  */
 export function AccessPicker({ value, compact, onChange }: { value: AgentMode; compact?: boolean; onChange(mode: AgentMode): void }) {
   const Icon = MODE_ICON[value];

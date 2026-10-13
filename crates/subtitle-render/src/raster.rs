@@ -2,8 +2,7 @@ pub fn draw_fit_pixmap(destination: &mut Pixmap, source: &Pixmap, fit: Fit, opac
     draw_fit_pixmap_at(destination, source, fit, opacity, 0.5);
 }
 
-/// 同 [`draw_fit_pixmap`]，但水平余量按 `anchor_x` 分配：0 贴左、0.5 居中、1 贴右；
-/// 竖直方向照旧居中（模板台标层的 `align`）。
+/// Same as [`draw_fit_pixmap`], but the horizontal slack is distributed according to `anchor_x`: 0 sticks to the left, 0.5 centers, 1 sticks to the right. Vertically it is still centered (the `align` of the template logo layer).
 pub fn draw_fit_pixmap_at(
     destination: &mut Pixmap,
     source: &Pixmap,
@@ -39,12 +38,9 @@ pub fn draw_fit_pixmap_at(
     );
 }
 
-/// Timeline 0.1 的 `fx {grayscale, blur, brightness}`。
+/// Timeline 0.1 `fx {grayscale, blur, brightness}`.
 ///
-/// 实现已迁到 `render_raster::effects`（`filter.colorAdjust@1` + `filter.blur@1`
-/// 的 strict CPU reference）——这里只剩把持久字段翻成效果栈再执行。
-/// `reference_scale = 画布短边 / 540`，与 lowering 的 `canvasShortEdge` 基准
-/// 互为倒数，因此传给效果的短边是 `reference_scale * 540`。
+/// The implementation has moved to `render_raster::effects` (the strict CPU reference for `filter.colorAdjust@1` + `filter.blur@1`). What remains here is turning the persisted fields into an effect stack and executing it. `reference_scale = canvas short edge / 540`, which is the reciprocal of the `canvasShortEdge` baseline in lowering. So the short edge passed to the effect is `reference_scale * 540`.
 pub fn apply_media_effects(pixmap: &mut Pixmap, fx: Option<&Fx>, reference_scale: f64) {
     let Some(fx) = fx else {
         return;
@@ -61,16 +57,14 @@ pub fn apply_media_effects(pixmap: &mut Pixmap, fx: Option<&Fx>, reference_scale
     }
 }
 
-/// 只加亮度（全屏 `fit: contain` 的模糊背景板压暗）。
+/// Brightens only (darkens the blurred background plate of a full-screen `fit: contain`).
 pub fn adjust_brightness(data: &mut [u8], amount: f64) {
     render_raster::effects::filters::color_adjust::brightness_only(data, amount);
 }
 
-/// premultiplied RGBA → straight alpha，就地。
+/// Premultiplied RGBA → straight alpha, in place.
 ///
-/// 取整规则借 tiny-skia 的 `PremultipliedColorU8::demultiply()`——`render_png`
-/// 走的 `Pixmap::encode_png` 用的也是它，所以全仓只有一条解乘规则。通道大于
-/// alpha 的像素不是合法预乘值，保持原样而不是猜一个。
+/// The rounding rule borrows tiny-skia's `PremultipliedColorU8::demultiply()`. `render_png` goes through `Pixmap::encode_png`, which also uses it, so there is only one un-premultiply rule in the whole repo. A pixel whose channel is greater than its alpha is not a valid premultiplied value. It is left as is rather than guessed at.
 pub fn demultiply_rgba_in_place(data: &mut [u8]) {
     for pixel in data.chunks_exact_mut(4) {
         let Some(premultiplied) =
@@ -94,8 +88,7 @@ pub fn multiply_pixel_coverage(pixel: &mut [u8], coverage: f64) {
     render_raster::effects::multiply_pixel_coverage(pixel, coverage);
 }
 
-/// 一条视觉行在自身排版盒里的左缘。CPU 光栅、GPU retained scene、底板与动画
-/// 命中都走这一处，避免 `textAlign` 只在某一种输出后端生效。
+/// The left edge of one visual line within its own typesetting box. The CPU raster, the GPU retained scene, the backplate and animation hit-testing all go through this one place, so `textAlign` does not take effect in only one output backend.
 pub fn line_start_x(layout: &LineLayout, line_width: f64, center_x: f64) -> f64 {
     let align_width = layout.align_width.max(line_width);
     let box_left = center_x - align_width / 2.0;
@@ -106,12 +99,9 @@ pub fn line_start_x(layout: &LineLayout, line_width: f64, center_x: f64) -> f64 
     }
 }
 
-/// 圆角矩形 / 椭圆的 SDF 覆盖率遮罩（`mask.shape@1` 的 CPU reference）。
+/// SDF coverage mask for rounded rectangles and ellipses (the CPU reference for `mask.shape@1`).
 ///
-/// 这里的 `radius` / `feather` 已经是**画布像素**，直接调内核；走 manifest 的
-/// uniform 路径要先换算成「短边比例」（`mask.shape` 的取值范围是比例，
-/// 把像素值塞进去会被 `resolve_uniforms` 夹到 0.5）。带 basis 的入口在
-/// `render_media_element`，由 `lower_element_effects` 供参数。
+/// Here `radius` and `feather` are already **canvas pixels** and go straight to the kernel. The uniform path through the manifest must first convert them to short-edge ratios (the value range of `mask.shape` is a ratio, and plugging in pixel values would be clamped to 0.5 by `resolve_uniforms`). The entry point with a basis is `render_media_element`, where `lower_element_effects` supplies the parameters.
 pub fn apply_local_clip(pixmap: &mut Pixmap, radius: f64, ellipse: bool, feather: f64) {
     let (width, height) = (pixmap.width(), pixmap.height());
     render_raster::effects::filters::mask_shape::mask_shape(
@@ -124,14 +114,11 @@ pub fn apply_local_clip(pixmap: &mut Pixmap, radius: f64, ellipse: bool, feather
     );
 }
 
-/// 主画面层是否恒等于「一张不透明纯黑底」：`place.opacity == 0` 且背景是黑底。
+/// Whether the main picture layer is identically “one opaque pure-black base”: `place.opacity == 0` and the background is black.
 ///
-/// 成立时源画面一个像素都到不了输出，结果与源帧内容完全无关。`place` 不随时间
-/// 变化，所以整段导出只用判一次——[`OverlayRenderPlan::base_frame_is_uniform_black`]
-/// 就是拿它给平台导出循环和合成器做整条通路的短路依据。
+/// When this holds, not a single pixel of the source picture reaches the output, and the result is independent of the source frame's content. `place` does not change over time, so this only needs to be judged once for a whole export. [`OverlayRenderPlan::base_frame_is_uniform_black`] gives it to the platform export loop and the compositor as the basis for short-circuiting the whole path.
 ///
-/// 这里是这个判据的**唯一一份**：下面 [`apply_main_transform_bgra`] 的按行填黑
-/// 快路也走它，两边不会漂。
+/// This is the **only** copy of this criterion. The row-by-row black-fill fast path in [`apply_main_transform_bgra`] below also goes through it, so the two cannot drift.
 pub fn main_transform_is_uniform_black(main: Option<&Main>) -> bool {
     let Some(main) = main else {
         return false;
@@ -149,9 +136,7 @@ pub fn main_transform_is_uniform_black(main: Option<&Main>) -> bool {
         )
 }
 
-/// 主画面层整段是一张不透明纯色底时给出那个颜色（RGB）：`opacity == 0` 且
-/// 背景是黑（缺省）或 0.12 的 `#RRGGBB`。黑底与 [`main_transform_is_uniform_black`]
-/// 同真；模糊底要真的算，返回 `None`。
+/// When the main picture layer is a single opaque solid-colour base throughout, gives that colour (RGB). That is `opacity == 0` with a background that is black (the default) or `#RRGGBB` at 0.12. The black case is equally true for [`main_transform_is_uniform_black`]. A blurred base has to be computed for real, so it returns `None`.
 pub fn main_transform_uniform_fill(main: Option<&Main>) -> Option<[u8; 3]> {
     let main = main?;
     let opacity = main
@@ -166,7 +151,7 @@ pub fn main_transform_uniform_fill(main: Option<&Main>) -> Option<[u8; 3]> {
     main.background.unwrap_or(Background::Black).solid_rgb()
 }
 
-/// 水平进度擦除（`mask.progress@1` 的 CPU reference）。
+/// Horizontal progress wipe (the CPU reference for `mask.progress@1`).
 pub fn apply_horizontal_reveal(pixmap: &mut Pixmap, reveal: f64) {
     let (width, height) = (pixmap.width(), pixmap.height());
     render_raster::effects::filters::reveal::horizontal_reveal(
@@ -231,21 +216,15 @@ pub fn apply_main_transform_bgra(
         .unwrap_or(1.0)
         .clamp(0.0, 1.0);
 
-    // `opacity == 0`：源画面一个像素都到不了输出，结果**完全由 background 决定**。
+    // `opacity == 0`: not a single pixel of the source picture reaches the output, so the result is **determined entirely by background**.
     //
-    // 这不是罕见分支——媒体被「元素化」搬到时间轴之后（`main.detached`），main 层
-    // 正是靠 `place.opacity = 0` 隐藏的，画面改由时间轴元素经合成器画。也就是说
-    // 普通项目导出的**每一帧**都会走到这里。
+    // This is not a rare branch. After media is "elementized" and moved onto the timeline (`main.detached`), the main layer is hidden precisely through `place.opacity = 0`, and the picture is drawn instead by timeline elements through the compositor. In other words, **every frame** of an ordinary project export passes through here.
     //
-    // 走下面那条通路的话，每帧要：两次 width×height×4 的堆分配、一趟逐像素
-    // BGRA→RGBA swizzle、一次 `draw_pixmap`（透明度 0，画了等于没画）、再一趟
-    // 逐像素 swizzle 写回——1799 帧 720p 实测 **249 ms/帧**，占整段「字幕合成」的
-    // 69%，全部用来产出一张纯黑底。黑底那一档直接按行填就够了。
+    // Taking the path below, each frame would need two width×height×4 heap allocations, one per-pixel BGRA→RGBA swizzle pass, one `draw_pixmap` (at opacity 0, drawing it is the same as not drawing it), and another per-pixel swizzle pass to write back. Measured on 1799 frames of 720p, that is **249 ms per frame**, which is 69% of the whole "subtitle compositing" stage, all spent producing a pure black base. The black-base tier can simply fill row by row.
     //
-    // 模糊底那一档仍要真的算：它的内容就是源画面的模糊版，跳不过去；但可以省掉
-    // 那次必然无效的 `draw_pixmap`（见下面 `opacity > 0` 的判断）。
+    // The blurred-base tier still has to be computed for real. Its content is a blurred copy of the source picture, so it cannot be skipped. But the `draw_pixmap` that is necessarily a no-op can be omitted (see the `opacity > 0` check below).
     if let Some([r, g, b]) = main_transform_uniform_fill(Some(main)) {
-        // 纯色底（黑，或 0.12 的 `#RRGGBB`）同一条按行填的快路；缓冲区是 BGRA。
+        // A solid-colour base (black, or `#RRGGBB` at 0.12) uses the same row-fill fast path. The buffer is BGRA.
         for row in 0..height_usize {
             let target = &mut pixels[row * stride..row * stride + width_usize * 4];
             for pixel in target.chunks_exact_mut(4) {
@@ -291,9 +270,7 @@ pub fn apply_main_transform_bgra(
         .post_scale(scale_x as f32, scale_y as f32)
         .post_rotate(rotation as f32)
         .post_translate(x as f32, y as f32);
-    // 透明度 0 时这一笔是恒等操作（SourceOver 一个不透明度为 0 的源）。上面已经
-    // 把黑底那一档整条短路掉，这里挡的是模糊底那一档——省下 1080p 一次带双线性
-    // 采样的全画面 blit。
+    // At opacity 0 this stroke is an identity operation (SourceOver of a source with 0 opacity). The black-base tier above is already short-circuited entirely. This guards the blurred-base tier, saving one full-frame blit with bilinear sampling at 1080p.
     if opacity > f64::EPSILON {
         destination.draw_pixmap(
             0,
@@ -321,7 +298,7 @@ pub fn apply_main_transform_bgra(
     Ok(())
 }
 
-/// 文字元素与字幕共用的排版：按 Unicode 词边界贪心折行。
+/// Typesetting shared by text elements and subtitles: greedy line breaking at Unicode word boundaries.
 pub fn layout_text(
     text_engine: &mut TextEngine,
     item: &TimedItem,
@@ -332,9 +309,7 @@ pub fn layout_text(
     layout_text_with(text_engine, item, style, wrap_width, part_ranges, false)
 }
 
-/// 字幕行的排版：与 [`layout_text`] 同一套分片与字形，只是含中日文的行不再贪心填满，
-/// 改由 [`cjk_line_breaks`] 选断点（行数不多于贪心，按禁则、数字连单位、标点 / 空格处优先与
-/// 各行均衡挑位置）。不含中日文的行与 [`layout_text`] 逐字节相同。
+/// Subtitle line typesetting. It uses the same segmentation and glyphs as [`layout_text`], except that lines containing CJK text no longer fill greedily. Break points are chosen by [`cjk_line_breaks`] instead (no more lines than greedy, preferring positions by kinsoku rules, numbers joined to their units, and punctuation or spaces, while balancing the lines). Lines without CJK text are byte-for-byte identical to [`layout_text`].
 pub fn layout_subtitle_text(
     text_engine: &mut TextEngine,
     item: &TimedItem,
@@ -360,8 +335,7 @@ fn layout_text_with(
 ) -> (Vec<LayoutLine>, f64) {
     let mut tokens = Vec::new();
     for run in timed_runs(&item.text, &item.words, &style.text_transform) {
-        // `emphasisLook`：强调词换字族 / 字重 / 斜体并按 scale 放大字号，宽度随
-        // shaping 一起变，邻词不会叠上。非强调词沿用行样式，逐位不变。
+        // `emphasisLook`: emphasized words switch font family, weight and italic, and scale the font size by `scale`. The width changes together with shaping, so neighbouring words do not overlap. Non-emphasized words keep the line style and stay bit-for-bit unchanged.
         let variant = run
             .word
             .and_then(|index| item.words.get(index))
@@ -376,7 +350,7 @@ fn layout_text_with(
         } else {
             style.font_size
         };
-        // 字距不随强调缩放：绘制端逐字形按行样式的 `letter_spacing` 落位。
+        // Letter spacing does not scale with emphasis. The drawing side places each glyph according to the line style's `letter_spacing`.
         let letter_spacing = style.letter_spacing;
         let weight = match variant.as_ref().and_then(|variant| variant.bold) {
             Some(true) => style.font_weight.max(700),
@@ -389,9 +363,8 @@ fn layout_text_with(
             .unwrap_or(style.italic);
         let shaped_italic = style.shaped_italic && italic;
         let color = variant.as_ref().and_then(|variant| variant.color);
-        // 时间跨度不是不可折行的词：译片可能把整句作为一个带时间的 run。
-        // 先按 Unicode 词边界排版，超宽单词再按字形簇兜底；每片保留原 word
-        // 和字节偏移，让逐词动效与分片高亮仍引用原来的时间跨度。
+        // A time span is not necessarily an unbreakable word. A translated track may put a whole sentence in one timed run.
+        // First typeset at Unicode word boundaries. Overlong words fall back to grapheme clusters. Each piece keeps its original word and byte offset, so per-word animation and piece highlighting still reference the original time span.
         let mut pieces = Vec::new();
         let run_width = text_engine
             .shape_styled(&run.text, font_name, font_size, weight, shaped_italic)
@@ -402,10 +375,10 @@ fn layout_text_with(
             && !run.text.contains(['\n', '\r'])
             && !(style.text_motion.is_some() && run.text.chars().any(char::is_whitespace))
         {
-            // 正常长度的时间词保留整词 shaping（连字、字距与动效几何不变）。
+            // Normal-length timed words keep whole-word shaping (ligatures, letter spacing and animation geometry unchanged).
             vec![(0, run.text.as_str())]
         } else if run.word.is_none() && part_ranges.is_some() {
-            // 文字元素的无时间分片可落在词内，保留原有逐字形的 part 映射。
+            // Untimed pieces of a text element may fall inside a word, and keep the original per-glyph part mapping.
             run.text.grapheme_indices(true).collect::<Vec<_>>()
         } else {
             run.text.split_word_bound_indices().collect::<Vec<_>>()
@@ -485,7 +458,7 @@ fn layout_text_with(
             lines.push(LayoutLine::default());
         }
         let line = lines.last_mut().expect("layout line");
-        // 行首/行尾空白不参与宽度与对齐，词间空白仍保留时间和字形信息。
+        // Leading and trailing whitespace does not take part in width or alignment. Whitespace between words still keeps its time and glyph information.
         for space in spaces.drain(..) {
             line.width += space.width;
             line.chunks.push(space);
@@ -504,7 +477,7 @@ fn layout_text_with(
     (lines, width)
 }
 
-/// 中日文（汉字、假名、全角标点）。谚文按空格分词，走原来的贪心折行。
+/// CJK text (Han characters, kana, full-width punctuation). Hangul is split into words by spaces and goes through the original greedy line breaking.
 fn is_cjk_char(c: char) -> bool {
     matches!(c,
         '\u{3000}'..='\u{303F}'
@@ -522,38 +495,34 @@ fn is_han(c: char) -> bool {
             | '\u{20000}'..='\u{2FA1F}')
 }
 
-/// 不能落在行首的字（禁则）：句读、闭括号、闭引号、省略号与破折号、百分号、小假名。
+/// Characters that must not start a line (kinsoku): sentence punctuation, closing brackets, closing quotes, ellipses and dashes, percent sign, small kana.
 fn cannot_start_line(c: char) -> bool {
     "，。、；：？！）］｝」』】〉》〕…‥—・ー％‰℃,.;:?!)]}%”’".contains(c)
         || "ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ々ゝゞヽヾ".contains(c)
 }
 
-/// 不能落在行尾的字：开括号与开引号。
+/// Characters that must not end a line: opening brackets and opening quotes.
 fn cannot_end_line(c: char) -> bool {
     "（［｛「『【〈《〔“‘([{".contains(c)
 }
 
-/// 在它后面断行是自然的停顿。
+/// A natural pause: breaking after this character is natural.
 fn is_pause_punct(c: char) -> bool {
     "，。、；：？！…）」』,.;:?!)".contains(c)
 }
 
-/// 含中日文的一段字幕怎么折：返回「从这个 token 起另起一行」的下标。
+/// How a subtitle containing CJK text is wrapped. Returns the index of the token from which a new line starts.
 ///
-/// 贪心填满每一行会把词拆在行尾（利/益、10/亿）、把「？：、」推到行首、在末行留一个孤字。
-/// 这里在最少行数里挑断点（有标点悬挂，可能比贪心还少一行），代价从重到轻：
+/// Greedily filling every line breaks words at line ends (利/益, 10/亿), pushes “？：、” to the start of a line, and leaves a lone character on the last line. Here the break point is chosen with the fewest lines (hanging punctuation can sometimes save one line over greedy). Costs run from heavy to light:
 ///
-/// 1. 行数（每行 1e9）——不为了好看多折一行；
-/// 2. 禁则、数字与后面的量词 / 单位（10亿、10 亿、1870年代）、紧挨着的拉丁串（GPT-4）被拆开，
-///    以及只剩一个字的行（每处 1e6）；
-/// 3. 各行留白的平方和——行宽尽量相等；
-/// 4. 断在空格（隐藏标点留下的空位、中英文之间）或停顿标点之后，减 `8 × 字号²`，
-///    约等于换来两个字以内的不均衡。
+/// 1. Number of lines (1e9 each). Do not add a line just to look nicer.
+/// 2. Kinsoku, numbers split from their following measure word or unit (10亿, 10 亿, 1870年代), and adjacent Latin runs (GPT-4) being split, along with a line consisting of a single character (1e6 each).
+/// 3. The sum of squared blank space across the lines. Line widths should be as equal as possible.
+/// 4. Breaking at a space (the gap left by hidden punctuation, or between Chinese and English) or after a pause punctuation mark gets a bonus of `8 × font size²`. This roughly trades for an imbalance of up to two characters.
 ///
-/// 行尾的句读可以悬挂在行宽外（每处 1e5）：只在不悬挂就得把它挤到下一行行首时才用，
-/// 所以这时返回的行宽可能比 `wrap_width` 多出一个标点。
+/// Sentence punctuation at the end of a line may hang outside the line width (1e5 each). It is used only when not hanging would force it to the start of the next line. In that case the returned line width may exceed `wrap_width` by one punctuation mark.
 ///
-/// 中文没有分词器，词内断行（利/益）只能靠均衡与标点优先间接避开，不保证。
+/// Chinese has no word segmenter, so breaking inside a word (利/益) can only be avoided indirectly, through balancing and punctuation priority. This is not guaranteed.
 fn cjk_line_breaks(tokens: &[LayoutToken], wrap_width: f64, font_size: f64) -> Vec<usize> {
     struct Item<'a> {
         token: usize,
@@ -590,7 +559,7 @@ fn cjk_line_breaks(tokens: &[LayoutToken], wrap_width: f64, font_size: f64) -> V
             let prev_last = prev.text.chars().next_back().unwrap_or(' ');
             let next_first = next.text.chars().next().unwrap_or(' ');
             let joined = next.gap <= 0.0;
-            // 数字连单位不看中间有没有空格：译文常写成「10 亿」，那个空格不是停顿。
+            // A number followed by a unit is not affected by whether there is a space between them. Translations often write “10 亿”, and that space is not a pause.
             let forbidden = cannot_start_line(next_first)
                 || cannot_end_line(prev_last)
                 || (prev_last.is_ascii_digit() && is_han(next_first))
@@ -605,7 +574,7 @@ fn cjk_line_breaks(tokens: &[LayoutToken], wrap_width: f64, font_size: f64) -> V
         let mut from = vec![0usize; n + 1];
         best[0] = 0.0;
         for end in 1..=n {
-            // 标点悬挂：行尾的句读可以探出行宽，免得它被挤到下一行行首。
+            // Punctuation hanging: sentence punctuation at the end of a line may protrude beyond the line width, so that it is not pushed to the start of the next line.
             let last = &paragraph[end - 1];
             let hang = if last
                 .text
@@ -1103,33 +1072,29 @@ pub fn layout_caption_text(
     (lines, width)
 }
 
-/// 一行参与摆放所需的全部几何输入。
+/// All the geometric inputs needed to place one line.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineBox {
-    /// 折行后的实际内容高度（`行数 × font_size × line_height`）。
+    /// Actual content height after wrapping (`number of lines × font_size × line_height`).
     pub height: f64,
-    /// 单行参考高度（`font_size × line_height`，不含折行）——槽位高度的来源。
+    /// Reference height of one line (`font_size × line_height`, not counting wrapping). This is the source of the slot height.
     pub reference: f64,
-    /// 本行自己的纵向内边距（`pad_h / PLATE_PAD_ASPECT`）。
+    /// The line's own vertical padding (`pad_h / PLATE_PAD_ASPECT`).
     ///
-    /// 逐行底板模式下它撑开这一行的槽位与实际盒；共享底板模式下行盒保持裸字形，
-    /// 由 [`StackPlate::Shared`] 在整栈外面统一套一圈。
+    /// In per-line backplate mode it stretches this line's slot and actual box. In shared-backplate mode the line box stays as bare glyphs, and [`StackPlate::Shared`] wraps one padding ring around the whole stack.
     pub pad_v: f64,
-    /// 行级位置覆盖：`(x%, y%)` 是这一行文本块中心的帧百分比。
+    /// Per-line position override: `(x%, y%)` is the frame percentage of the centre of this line's text block.
     pub over: Option<(f64, f64)>,
-    /// 行级垂直锚点；缺席时由接缝规则（堆栈内）或 center（脱离行）补齐。
+    /// Per-line vertical anchor. When absent, it is filled in by the seam rule (inside a stack) or by center (for a detached line).
     pub align: Option<VerticalAlign>,
 }
 
 impl LineBox {
-    /// 槽位高度：堆栈里有两行以上时用参考高度，否则用实际高度；`padded` 时各加 `2 × pad_v`。
+    /// Slot height: when the stack has two or more lines, the reference height is used. Otherwise the actual height is used. When `padded`, `2 × pad_v` is added to each.
     ///
-    /// 两行以上必须用参考高度，接缝才钉得住：上行折行只能向上长，不能把下行推走。
-    /// 只剩一行时没有接缝可钉，槽位退回实际高度，「块居中于锚点」的老语义才成立
-    /// ——否则单语折行字幕会整体偏 `font_size × line_height / 2`。
+    /// Two or more lines must use the reference height for the seam to hold. A wrapped upper line can only grow upward, and it must not push the lower line away. With only one line there is no seam to hold, so the slot falls back to the actual height. The old meaning, “block centred on the anchor”, then holds. Otherwise a single-language wrapped subtitle would shift as a whole by `font_size × line_height / 2`.
     ///
-    /// 等价于 Mac `PreparedContent.slotHeight(padded:padV:)`：`padded` 时槽位量的是
-    /// 含底板内边距的盒子，逐行底板之间的缝才是视觉上的缝。
+    /// Equivalent to Mac `PreparedContent.slotHeight(padded:padV:)`. When `padded`, the slot measures the box including the backplate padding, so the gap between per-line backplates is the visual gap.
     pub fn slot(&self, stacked: usize, padded: bool) -> f64 {
         let bare = if stacked >= 2 {
             self.reference
@@ -1140,25 +1105,24 @@ impl LineBox {
     }
 }
 
-/// 堆栈的底板形态——决定内边距记在每行身上还是整栈外面。
+/// The backplate form of the stack. It decides whether the padding is recorded on each line or around the whole stack.
 ///
-/// 镜像 Mac `prepareStack` 的 `mode`：只看 `backgroundMode` 与堆栈行数，**不看**背景开没开。
-/// 底板关掉的 shared 栈仍按共享槽位摆放，否则同一份文档两端会错位。
+/// Mirrors the `mode` of Mac `prepareStack`. It looks only at `backgroundMode` and the number of stack lines, **not** at whether the background is on. A shared stack with the backplate switched off is still laid out with shared slots. Otherwise the same document would be misaligned at the two ends.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StackPlate {
-    /// 逐行底板：每行的槽位与实际盒都含自己的 `pad_v`，缝落在两块底板之间。
+    /// Per-line backplate: each line's slot and actual box include its own `pad_v`, and the seam falls between two backplates.
     Separate,
-    /// 共享底板：槽位保持裸字形、缝保持在字形之间，整栈外面套一圈板内边距。
+    /// Shared backplate: slots keep bare glyphs and the seams stay between glyphs. One board padding ring wraps the whole stack from the outside.
     Shared { pad_v: f64 },
 }
 
 impl StackPlate {
-    /// 行盒是否自带内边距。
+    /// Whether the line box carries its own padding.
     pub fn padded(self) -> bool {
         matches!(self, Self::Separate)
     }
 
-    /// 整栈外面那圈纵向板内边距（Mac 的 `platePadV`）。
+    /// Vertical board padding around the whole stack (Mac's `platePadV`).
     pub fn plate_pad_v(self) -> f64 {
         match self {
             Self::Separate => 0.0,
@@ -1167,13 +1131,11 @@ impl StackPlate {
     }
 }
 
-/// 参与锚点堆栈的行数与它们的总高（含行间 gap 与底板内边距）。
+/// The number of lines taking part in the anchored stack, and their total height (including the gap between lines and the backplate padding).
 ///
-/// 脱离堆栈（有行级位置覆盖）的行不计入：堆栈只对剩下的行居中，剩一行时结果就是
-/// 单行居中于锚点，与本来就只有一行的数学完全一致。
+/// Lines outside the stack (those with a per-line position override) are not counted. The stack is centred only on the remaining lines. When one line remains, the result is that line centred on the anchor, which matches the arithmetic of a document that only had one line exactly.
 ///
-/// `total_height` 就是块级 `verticalAlign` 钉住的那个盒子——等价于 Mac 的
-/// `slotBoxHeight = platePadV × 2 + Σ slot + gap × (n - 1)`。
+/// `total_height` is the box that block-level `verticalAlign` pins. It is equivalent to Mac's `slotBoxHeight = platePadV × 2 + Σ slot + gap × (n - 1)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StackExtent {
     pub count: usize,
@@ -1195,7 +1157,7 @@ pub fn stacked_extent(lines: &[LineBox], gap: f64, plate: StackPlate) -> StackEx
     }
 }
 
-/// 槽位内把 `height` 高的内容贴到 `[slot_top, slot_top + slot]` 上，返回顶边。
+/// Within the slot, places `height`-tall content onto `[slot_top, slot_top + slot]`, and returns its top edge.
 pub fn align_within(slot_top: f64, slot: f64, height: f64, align: VerticalAlign) -> f64 {
     match align {
         VerticalAlign::Top => slot_top,
@@ -1204,18 +1166,17 @@ pub fn align_within(slot_top: f64, slot: f64, height: f64, align: VerticalAlign)
     }
 }
 
-/// 把 `height` 高的块挂到一条锚线上，返回顶边：
-/// top → 顶边压线；center → 中心压线（现状）；bottom → 底边压线。
+/// Hangs a block of `height` onto an anchor line and returns its top edge.
+/// top → top edge sits on the line. center → centre sits on the line (current behaviour). bottom → bottom edge sits on the line.
 ///
-/// 就是槽高为 0 的 [`align_within`]：锚线是零高度的槽。
+/// This is [`align_within`] with a slot height of 0. The anchor line is a zero-height slot.
 pub fn anchor_block(anchor: f64, height: f64, align: VerticalAlign) -> f64 {
     align_within(anchor, 0.0, height, align)
 }
 
-/// 堆栈内第 `rank`（共 `count` 行）行缺省的槽内对齐：接缝钉死。
+/// Default in-slot alignment for line `rank` (out of `count` lines) inside a stack. The seam is pinned.
 ///
-/// 上行贴槽底向上长、下行贴槽顶向下长，两行之间那道缝（gap）因此永远不动。
-/// 只有一行时槽位等于实际高度，三种对齐都是恒等变换，取 center 即可。
+/// The upper line grows upward from the slot bottom, and the lower line grows downward from the slot top. The gap between them therefore never moves. With only one line the slot equals the actual height, so all three alignments are identity transforms, and center is used.
 pub fn seam_align(rank: usize, count: usize) -> VerticalAlign {
     if count < 2 {
         VerticalAlign::Center
@@ -1228,16 +1189,12 @@ pub fn seam_align(rank: usize, count: usize) -> VerticalAlign {
     }
 }
 
-/// 逐行求 `(文本块中心 x, 字形顶边 y)`，输出与输入同序（绘制次序不受位置影响）。
+/// For each line, computes `(text block centre x, glyph top edge y)`. The output has the same order as the input, so drawing order is unaffected by position.
 ///
-/// - 有覆盖的行：`(x%, y%)` 是自身**含内边距**文本盒的锚点，按行级 `align`（缺席 =
-///   center）摆放，不参与堆栈游标。脱离行永远画自己的底板，所以永远按 separate 算。
-/// - 无覆盖的行：整栈按 `block` 锚点（缺席 = center）落在 `anchor_y` 上，钉住的是
-///   含底板的整块（[`StackExtent::total_height`]）；栈内逐行分配槽位，行盒按行级
-///   `align`（缺席 = 接缝规则）贴进自己的槽位。
+/// - Lines with coverage: `(x%, y%)` is the anchor of their own text box **including padding**. They are placed according to the line-level `align` (absent = center) and do not take part in the stack cursor. Detached lines always draw their own backplate, so they are always computed as separate.
+/// - Lines without coverage: the whole stack is placed on `anchor_y` according to the `block` anchor (absent = center). What is pinned is the whole block including the backplate ([`StackExtent::total_height`]). Within the stack, each line gets a slot, and its line box is placed inside its slot according to the line-level `align` (absent = seam rule).
 ///
-/// 返回的永远是**字形**顶边（含内边距的盒顶再进 `pad_v`），调用方的绘制算术不变；
-/// `pad_v == 0` 时逐比特等于加内边距之前的实现，老文档零回归。
+/// The return value is always the **glyph** top edge (the box top plus `pad_v` again), so the caller's drawing arithmetic is unchanged. With `pad_v == 0` it is bit-for-bit identical to the implementation before padding was added, so old documents show zero regressions.
 pub fn place_lines(
     lines: &[LineBox],
     anchor: (f64, f64),
@@ -1250,7 +1207,7 @@ pub fn place_lines(
     let (frame_width, frame_height) = frame;
     let stack = stacked_extent(lines, gap, plate);
     let padded = plate.padded();
-    // 共享底板时游标从「板顶 + 板内边距」起步，槽位本身仍量裸字形。
+    // With a shared backplate, the cursor starts at “board top + board padding”. The slot itself still measures bare glyphs.
     let mut cursor = anchor_block(
         anchor_y,
         stack.total_height,
@@ -1281,12 +1238,11 @@ pub fn place_lines(
         .collect()
 }
 
-/// 堆栈内所有行摆放之后的**字形**纵向范围 `(顶边, 底边)`，共享底板据此外扩 `pad_v` 画。
+/// The **glyph** vertical extent `(top edge, bottom edge)` after every line in the stack has been placed. The shared backplate expands outward by `pad_v` from this.
 ///
-/// 对应 Mac `stackedLayout` 里 `insetBy(dx: -padH, dy: -padV)` 之前的 `extent`。
+/// This corresponds to the `extent` in Mac `stackedLayout` before `insetBy(dx: -padH, dy: -padV)`.
 ///
-/// 槽位只钉接缝，折行的内容会长出自己的槽位，所以底板不能从 `total_height` 反推。
-/// 每行都只占 1 行时结果恰好是 `(锚点 - 总高/2, 锚点 + 总高/2)`，逐比特还原现状。
+/// Slots only pin the seams, and wrapped content grows its own slot. So the backplate cannot be derived back from `total_height`. When every line occupies exactly 1 line, the result is `(anchor - total/2, anchor + total/2)`, which restores the current behaviour bit for bit.
 pub fn stacked_span(placements: &[(f64, f64)], lines: &[LineBox]) -> Option<(f64, f64)> {
     placements
         .iter()
@@ -1389,17 +1345,15 @@ pub fn word_transform_for_motion(
     transform
 }
 
-/// CPU raster 与 R2 glyph scene 共用的基线口径。
+/// The baseline convention shared by the CPU raster and the R2 glyph scene.
 pub fn glyph_baseline(line_top: f64, line_height: f64, chunk: &GlyphChunk, bounce: f64) -> f64 {
-    // 放大的强调词按未缩放度量定位：与同行其余词共用基线。除以 1.0 在 IEEE 下
-    // 是恒等且运算顺序与旧式相同，普通片的基线逐位不变。
+    // An enlarged emphasized word is positioned by its unscaled metrics, sharing the baseline with the other words on its line. Dividing by 1.0 is an identity under IEEE, and the order of operations is the same as the old form, so the baselines of ordinary pieces stay bit-for-bit unchanged.
     let scale = chunk.metric_scale;
     line_top + (line_height + chunk.shaped.ascent / scale - chunk.shaped.descent / scale) / 2.0
         - bounce
 }
 
-/// CPU raster 与 R2 glyph scene 共用的单字形画布变换。先在字形局部应用合成
-/// italic，再落到基线，之后依次接配方 pose 与整组 pose。
+/// The single-glyph canvas transform shared by the CPU raster and the R2 glyph scene. First the synthetic italic is applied in the glyph's local space, then it is placed on the baseline. After that come the recipe pose and then the whole-group pose.
 pub fn glyph_canvas_transform(
     chunk: &GlyphChunk,
     glyph_x: f64,
@@ -1558,9 +1512,8 @@ pub struct CaptionRepeatLinearGradient {
     pub middle: SubtitleColor,
 }
 
-/// CPU tiny-skia 与 retained glyph scene 共用的 Designed Caption 渐变参数。
-/// 相位先量化到 31 段，保持历史 recipe 的确定性；坐标属于单个字形的本地轮廓，
-/// 后续由各执行器与字形 transform 一起映射到画布。
+/// The Designed Caption gradient parameters shared by CPU tiny-skia and the retained glyph scene.
+/// The phase is first quantized into 31 steps to keep the historical recipe deterministic. The coordinates belong to the glyph's local outline. Each executor maps them to the canvas together with the glyph transform.
 pub fn caption_recipe_repeat_linear_gradient(
     animation: &WordAnimation,
     visual: &WordVisual,
@@ -1609,8 +1562,7 @@ pub fn caption_recipe_texture(
     caption_recipe_textures().get(filename)
 }
 
-/// Designed Caption 选择的规范纹理文件名。CPU reference 与 retained scene
-/// 必须共用这条默认/override 解析，不能各自猜第一张资产。
+/// The canonical texture filename selected by Designed Caption. The CPU reference and the retained scene must share this default and override resolution. Neither may guess the first asset on its own.
 pub fn caption_recipe_texture_filename<'a>(
     descriptor: &'a CaptionRecipeDescriptor,
     design: &DesignedCaption,
@@ -1651,9 +1603,7 @@ pub fn caption_recipe_glyph_texture_available(animation: &WordAnimation) -> bool
     })
 }
 
-/// CPU 已解码的规范纹理 → renderer-neutral premultiplied RGBA8 资源。内容 key
-/// 截取 SHA-256 的前 128 bit；六张内置图案只在首次命中时复制一次，后续 scene
-/// 与 compositor 都复用同一个 `Arc`。
+/// Turns the canonical texture already decoded on the CPU into a renderer-neutral premultiplied RGBA8 resource. The content key takes the first 128 bits of SHA-256. The six built-in patterns are copied only once, on first hit. Later scenes and the compositor all reuse the same `Arc`.
 pub fn caption_recipe_glyph_texture(
     animation: &WordAnimation,
 ) -> Option<Arc<element_draw::GlyphTexture>> {
@@ -1721,7 +1671,7 @@ pub fn caption_recipe_glyph_paint(
             Transform::identity(),
         )?;
     } else if descriptor.layers.iter().any(|layer| layer == "textureFill") {
-        // 与 Mac 一致：缺失的规范材质是显式渲染失败，不能静默退化成平涂。
+        // Consistent with Mac: a missing canonical material is an explicit render failure. It must not silently degrade to a flat fill.
         let texture = caption_recipe_texture(descriptor, design)?;
         value.shader = Pattern::new(
             texture.as_ref(),
@@ -1734,9 +1684,7 @@ pub fn caption_recipe_glyph_paint(
     Some(value)
 }
 
-/// Designed Caption `glyphDuplicate` 的单层参数。偏移仍在字形局部坐标中，
-/// 因而 CPU 可以在完整 glyph transform 之前应用；retained scene 会先把它经过
-/// synthetic italic 的线性部分，再写入 run uniform，得到同一画布位置。
+/// The single-layer parameters for Designed Caption `glyphDuplicate`. The offset is still in glyph-local coordinates, so the CPU can apply it before the full glyph transform. The retained scene first passes it through the linear part of synthetic italic, then writes it into the run uniform, which gives the same canvas position.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaptionRecipeGlyphDuplicate {
     pub dx: f64,
@@ -1762,9 +1710,7 @@ pub fn caption_recipe_glyph_duplicate_layer_count(animation: &WordAnimation) -> 
     descriptor.glyph_duplicate_layers.unwrap_or(1).max(1)
 }
 
-/// `glyphDuplicate` 也被少数配方用作视觉分层元数据；只有描述子真的声明 `echo`
-/// channel 时，CPU/GPU 才需要额外字形 pass。比如 editorial-emphasis 的尾置
-/// `glyphDuplicate` 只通过 `colorMix` 改正文颜色，不能为它提交一层全透明字形。
+/// A few recipes also use `glyphDuplicate` as visual layering metadata. The CPU/GPU only need an extra glyph pass when the descriptor actually declares an `echo` channel. For example, the trailing `glyphDuplicate` of editorial-emphasis only changes the body colour through `colorMix`, and must not submit a fully transparent glyph layer for it.
 pub fn caption_recipe_echo_duplicate_layer_count(animation: &WordAnimation) -> usize {
     let has_echo = animation
         .caption
@@ -1800,15 +1746,13 @@ fn caption_recipe_rgb_split_duplicate_layer_count(animation: &WordAnimation) -> 
         .unwrap_or(0)
 }
 
-/// retained scene 为所有可能出现的字形副本预留固定 run 数。当前 echo 使用描述子
-/// 声明的层数，RGB split 精确对应 CPU 的 red/cyan 两层；透明阶段仍保留节点。
+/// The retained scene reserves a fixed number of runs for every glyph copy that may appear. The current echo uses the layer count declared by the descriptor. RGB split corresponds exactly to the CPU's red and cyan layers. Transparent stages still keep their nodes.
 pub fn caption_recipe_retained_duplicate_layer_count(animation: &WordAnimation) -> usize {
     caption_recipe_echo_duplicate_layer_count(animation)
         + caption_recipe_rgb_split_duplicate_layer_count(animation)
 }
 
-/// CPU reference 与 retained glyph scene 共用的 echo 层参数。即使当前 echo 为零也
-/// 返回描述子声明的固定层数；scene 因此能保住节点/Arc 身份，只把透明度写成零。
+/// The echo layer parameters shared by the CPU reference and the retained glyph scene. Even when the current echo is zero, it returns the fixed layer count declared by the descriptor. The scene can therefore keep node and Arc identity, and only write opacity as zero.
 pub fn caption_recipe_glyph_duplicate_layers(
     layout: &LineLayout,
     animation: &WordAnimation,
@@ -1884,8 +1828,7 @@ pub fn caption_recipe_retained_glyph_duplicate_layers(
     layers
 }
 
-/// CPU 把 duplicate translation 放在 synthetic italic 之前；GPU 的稳定 geometry
-/// 已经包含 italic，所以要把局部向量先乘其线性部分，再作为 run translation。
+/// The CPU applies the duplicate translation before synthetic italic. The GPU's stable geometry already includes italic, so the local vector must first be multiplied by its linear part, and then used as the run translation.
 pub fn glyph_duplicate_canvas_offset(
     chunk: &GlyphChunk,
     duplicate: CaptionRecipeGlyphDuplicate,
@@ -1897,9 +1840,7 @@ pub fn glyph_duplicate_canvas_offset(
     }
 }
 
-/// Designed Caption 在正文 outline/fill 之前追加的程序化字形描边。CPU reference
-/// 直接 stroke 原始轮廓；retained scene 用同一组 width/color/opacity 驱动稳定
-/// alpha mask 的 dilation shader，避免逐帧重建字形 mask。
+/// The programmatic glyph stroke that Designed Caption appends before the body outline and fill. The CPU reference strokes the original outline directly. The retained scene uses the same width, colour and opacity to drive a dilation shader on a stable alpha mask, which avoids rebuilding the glyph mask every frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaptionRecipeGlyphStroke {
     pub width: f64,
@@ -1930,8 +1871,7 @@ pub fn caption_recipe_retained_stroke_layer_count(animation: &WordAnimation) -> 
     glow + weight
 }
 
-/// 描述子在任意 keyframe 可能要求的最大完整 stroke width。能力门在取得 GPU
-/// ownership 前先用它核对固定扩边预算，避免播放到峰值阶段才临时回退。
+/// The maximum full stroke width that the descriptor may require at any keyframe. The capability gate checks the fixed outset budget against it before taking GPU ownership, so playback does not have to fall back temporarily at the peak stage.
 pub fn caption_recipe_max_stroke_width(animation: &WordAnimation, font_size: f64) -> f64 {
     let Some(descriptor) = animation
         .caption
@@ -1954,9 +1894,7 @@ pub fn caption_recipe_max_stroke_width(animation: &WordAnimation, font_size: f64
     glow.max(weight)
 }
 
-/// CPU 与 retained scene 共用 neon/weight 的逐层描边参数。`retain_transparent`
-/// 为真时返回描述子声明的固定层数；效果未活动的层只把 opacity/width 置零，
-/// 让跨帧节点、glyph Arc 与 atlas placement 保持不变。
+/// The per-layer stroke parameters for neon and weight, shared by the CPU and the retained scene. When `retain_transparent` is true, it returns the fixed layer count declared by the descriptor. Layers whose effect is inactive only have opacity and width set to zero. That keeps the cross-frame nodes, glyph Arcs and atlas placements unchanged.
 pub fn caption_recipe_glyph_stroke_layers(
     layout: &LineLayout,
     animation: &WordAnimation,
@@ -2013,8 +1951,7 @@ pub fn caption_recipe_glyph_stroke_layers(
     strokes
 }
 
-/// 粒子与扫描线在 CPU reference / retained scene 间共享的逻辑几何。圆形用
-/// `radius == min(width,height)/2` 表达，GPU 仍只提交固定 quad。
+/// The logical geometry shared by particles and scan lines between the CPU reference and the retained scene. A circle is expressed as `radius == min(width,height)/2`. The GPU still submits only a fixed quad.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaptionRecipeRoundedDecoration {
     pub rect: [f64; 4],
@@ -2369,8 +2306,7 @@ pub fn draw_line_effect(
                 });
             let shaped = replacement.as_ref().unwrap_or(&chunk.shaped);
             for (glyph_index, glyph) in shaped.glyphs.iter().enumerate() {
-                // 彩色位图字形（emoji）没有可投影的轮廓：效果层直接跳过，位图本身
-                // 仍由 draw_line_layout 画出来。
+                // Colour bitmap glyphs (emoji) have no outline to project, so the effect layer skips them. The bitmap itself is still drawn by draw_line_layout.
                 let GlyphRender::Outline(path) = text_engine.glyph_render(glyph.cache_key) else {
                     continue;
                 };
@@ -2388,15 +2324,10 @@ pub fn draw_line_effect(
                     layout.style.effect_y as f32,
                 )
                 .post_concat(local);
-                // Mac `SubtitleFrameDrawing` 的 paint-order 是「带阴影的描边在下、
-                // 干净的填充在上」，也就是阴影/发光是**描边后**的轮廓投出来的。
-                // 效果层只 fill 的话，开描边时阴影会比预览细一圈甚至看不见。
+                // Mac `SubtitleFrameDrawing` paint order is “the stroked shadow goes below, the clean fill goes on top”. That means the shadow or glow is cast from the **post-stroke** outline.
+                // If the effect layer only fills, then with a stroke enabled the shadow would be thinner than the preview, or not visible at all.
                 //
-                // 这里不区分发光和阴影是有意的：`SubtitleFrameDrawing.swift:544-551`
-                // 的发光轮次跑在 :565 把 `.strokeWidth` 翻正之前，属性此刻仍是负值
-                // （AppKit 语义＝描边＋填充一起画），所以发光同样是从描边后的轮廓
-                // 糊出来的。两种效果在 `resolve_line_style` 里本来也共用一个
-                // effect 槽位（那里有对应的缺口说明）。
+                // Not distinguishing glow from shadow here is intentional. The glow pass in `SubtitleFrameDrawing.swift:544-551` runs before :565 flips `.strokeWidth` positive, so the property is still negative at that point. AppKit semantics (stroke and fill drawn together) therefore make the glow likewise blur out of the post-stroke outline. In `resolve_line_style` the two effects also share one effect slot (the gap note there covers this).
                 if layout.style.outline_on && layout.style.outline_width > 0.0 {
                     let stroke = Stroke {
                         width: layout.style.outline_width as f32,
@@ -2480,9 +2411,7 @@ pub fn caption_recipe_pill_state(
         .max_by(|(_, left), (_, right)| left.plate_x.total_cmp(&right.plate_x))
 }
 
-/// Designed Caption 的程序化底板。这里保存的是画布坐标和**不含 scene/group**
-/// 的 alpha；CPU reference 在绘制时叠 `opacity`，retained scene 则把同一份值写进
-/// rounded-rect uniform，再由 node pose 叠 group opacity。
+/// The programmatic backplate of Designed Caption. What is stored here is canvas coordinates and alpha **without the scene or group**. The CPU reference applies `opacity` when drawing. The retained scene writes the same value into the rounded-rect uniform, and then the node pose applies the group opacity.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaptionRecipePlate {
     pub x: f64,
@@ -2719,18 +2648,9 @@ pub fn draw_line_layout(
             } else if visual.recipe.is_none()
                 && let Some(background) = visual.background
             {
-                // 经典逐词动画（Highlight / Custom）没有 recipe：底板是常量矩形，
-                // 不走 plate 时间通道。几何口径与 Studio `canvas-stage.jsx` 的
-                // highlight Rect 逐字段同源（0.14em 左右外扩、0.04em 上外扩、
-                // 1.08em 高、borderRadiusEm 默认 0.25），对应 Mac
-                // `SubtitleFrameAttribution` 的 `WordBox`。几何与 alpha 都走
-                // `classic_word_box` / `classic_word_box_alpha`，与 GPU 场景侧
-                // 同一份口径；有 `boxScale`/`boxOpacity` 轨时块按矩形中心胀缩、
-                // alpha 与词自身的 opacity 分开（借用词 opacity 会把字一起淡掉）。
+                // The classic per-word animation (Highlight / Custom) has no recipe. Its backplate is a constant rectangle and does not go through the plate time channel. Its geometry follows the Studio `canvas-stage.jsx` highlight Rect field by field (0.14em outset on the left and right, 0.04em outset on top, 1.08em height, borderRadiusEm default 0.25), which corresponds to the `WordBox` of Mac `SubtitleFrameAttribution`. Geometry and alpha both go through `classic_word_box` / `classic_word_box_alpha`, sharing one definition with the GPU scene side. When there are `boxScale` / `boxOpacity` tracks, the block scales around the rectangle's centre. Its alpha is separate from the word's own opacity, because borrowing the word's opacity would fade the glyphs along with it.
                 //
-                // 这条分支不能并进上面的 recipe 分支：`visual.recipe` 缺席时
-                // plate 通道无从取值，一旦要求 recipe 存在，Highlight 的高亮块
-                // 就完全不画。
+                // This branch must not be merged into the recipe branch above. When `visual.recipe` is absent, the plate channel has no value to read. Requiring the recipe to exist would stop Highlight's highlight block from being drawn at all.
                 let box_rect = classic_word_box(
                     layout.style.font_size,
                     cursor,
@@ -2854,10 +2774,7 @@ pub fn draw_line_layout(
                         }
                         if layout.style.outline_on {
                             let stroke = Stroke {
-                                // tiny-skia 与 Konva 的描边都跨轮廓居中；持久化的
-                                // `textOutline.width` 百分比描述的是**可见外扩量**，
-                                // `resolve_line_style` 已经把它折算成整条居中线宽
-                                // （w/100·fontSize·0.5），这里直接用。
+                                // tiny-skia and Konva strokes are both centred across the outline. The persisted `textOutline.width` percentage describes the **visible outset**. `resolve_line_style` has already converted it into the full centred stroke width (w/100·fontSize·0.5), and that value is used directly here.
                                 width: layout.style.outline_width as f32,
                                 ..Stroke::default()
                             };
@@ -2900,9 +2817,7 @@ pub fn draw_line_layout(
                     } => {
                         let bitmap = PixmapRef::from_bytes(&rgba, width, height)
                             .expect("彩色字形 RGBA 尺寸已由 TextEngine 验证");
-                        // 位图字形不参与描边，也不吃字色。placement 偏移在字形局部
-                        // 空间里，必须叠在 `local` 之下才能跟随 group_transform
-                        // （camera zoom / pop scale）一起走。
+                        // Bitmap glyphs take no part in stroking and do not take the text colour. The placement offset is in glyph-local space and must be applied beneath `local`, so that it follows group_transform (camera zoom, pop scale).
                         let placement =
                             Transform::from_translate(left as f32, -top as f32).post_concat(local);
                         pixmap.draw_pixmap(
@@ -2957,23 +2872,16 @@ pub fn chunk_part_delta(layout: &LineLayout, chunk: &GlyphChunk) -> (f64, f64, f
     )
 }
 
-/// 一次字幕绘制落笔到的画布区域（非零像素的**超集**）。
+/// The canvas area that one subtitle draw lands on. It is a **superset** of the non-zero pixels.
 ///
-/// 每次落笔都把该次绘制的**路径控制点盒**（`Path::bounds()`，本身已是曲线的
-/// 超集）按描边外扩后，经与绘制**完全相同**的变换映射到画布坐标再取并集。
-/// tiny-skia 的 blitter 只写被覆盖的像素，所以这个并集必然是非零像素的超集
-/// ——正好满足 `alpha_bbox_within` 的窗口契约，于是求包围盒不必再扫整幅
-/// 8.3MB（1080p 透明 overlay 上这是导出的头号计算热点）。
+/// Each draw takes the **path control-point box** (`Path::bounds()`, which is itself a superset of the curves), expands it by the stroke outset, maps it to canvas coordinates through the **exact same** transform used for drawing, and then takes the union. The tiny-skia blitter only writes the pixels it covers, so this union is necessarily a superset of the non-zero pixels. That satisfies the window contract of `alpha_bbox_within`, so computing the bounding box does not have to scan the whole 8.3 MB frame. (On a 1080p transparent overlay this was the biggest computational hotspot in export.)
 ///
-/// 为什么不用「行盒 + 固定边距」直接估：`caption_recipe_transform` 会按配方
-/// 对单个词做缩放/旋转/位移，粒子、emoji、echo、rgbSplit、glow 描边又各有
-/// 自己的外扩量，任何固定边距都会在某条配方上估漏——估漏就是把内容裁掉。
-/// 跟着落笔走则不会。
+/// Why not estimate with “line box plus a fixed margin”? `caption_recipe_transform` scales, rotates and translates individual words according to the recipe. Particles, emoji, echo, rgbSplit and glow strokes each have their own outset. Any fixed margin will under-estimate on some recipe, and under-estimating means clipping content. Following the actual strokes avoids that.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DrawBounds {
-    /// `[left, top, right, bottom]`，画布坐标；`None` = 一笔未落。
+    /// `[left, top, right, bottom]`, in canvas coordinates. `None` = no stroke landed.
     pub rect: Option<[f64; 4]>,
-    /// 变换算出非有限值等无法界定的落笔：退回整幅，宁可多扫也不能扫漏。
+    /// When a transform yields non-finite values or otherwise an unbounded result: fall back to the whole frame. Scanning too much is better than missing pixels.
     pub unbounded: bool,
 }
 
@@ -2989,7 +2897,7 @@ impl DrawBounds {
         });
     }
 
-    /// `expand` 是**路径空间**里的外扩量，跟着路径一起过变换。
+    /// `expand` is the outset **in path space**. It passes through the transform along with the path.
     pub fn add_path(&mut self, path: &tiny_skia::Path, transform: Transform, expand: f64) {
         let bounds = path.bounds();
         let expand = expand.max(0.0) as f32;
@@ -3018,8 +2926,7 @@ impl DrawBounds {
         self.add_path(path, transform, 0.0);
     }
 
-    /// 描边：miter 拼接最远把轮廓推到 `miter_limit × width / 2`，tiny-skia 的
-    /// 默认 `miter_limit` 是 4，因此 `2 × width` 是安全上界。
+    /// Stroke: a miter join pushes the outline out to at most `miter_limit × width / 2`. tiny-skia's default `miter_limit` is 4, so `2 × width` is a safe upper bound.
     pub fn add_stroked(&mut self, path: &tiny_skia::Path, transform: Transform, stroke_width: f32) {
         self.add_path(path, transform, f64::from(stroke_width.max(0.0)) * 2.0);
     }
@@ -3048,7 +2955,7 @@ impl DrawBounds {
         }
     }
 
-    /// 并进一个已经定案的整数包围盒（例如效果层模糊后合成进来的那块）。
+    /// Merges in an already-finalized integer bounding box, such as the one that results when an effect layer is blurred and composited in.
     pub fn merge_content_box(&mut self, bounds: &ContentBox) {
         self.union(
             bounds.cols.start as f64,
@@ -3058,8 +2965,7 @@ impl DrawBounds {
         );
     }
 
-    /// 收成画布内的整数窗口。向外各留 1px：反走样会糊到相邻像素上。
-    /// `None` = 一笔未落，调用方可以直接判定整幅透明。
+    /// Collapses to an integer window inside the canvas, padded by 1px outward on each side, because anti-aliasing bleeds onto neighbouring pixels. `None` = no stroke landed, so the caller can conclude the whole frame is transparent.
     pub fn window(self, width: usize, height: usize) -> Option<ContentBox> {
         if self.unbounded {
             return Some(ContentBox {
@@ -3075,7 +2981,7 @@ impl DrawBounds {
     }
 }
 
-/// 预乘 RGBA 的整数 source-over（实现在 `render_raster::effects`）。
+/// Integer source-over for premultiplied RGBA (implemented in `render_raster::effects`).
 pub fn composite_premultiplied_rgba(
     destination: &mut [u8],
     source: &[u8],
@@ -3085,12 +2991,12 @@ pub fn composite_premultiplied_rgba(
     render_raster::effects::composite_premultiplied_rgba(destination, source, width, bounds);
 }
 
-/// 把 `bounds` 覆盖的像素清零（缓冲复用）。
+/// Clears the pixels covered by `bounds` to zero (for buffer reuse).
 pub fn clear_content_box(data: &mut [u8], width: usize, bounds: &ContentBox) {
     render_raster::effects::clear_content_box(data, width, bounds);
 }
 
-/// 只在非零内容包围盒的邻域内做 box blur，输出与整帧模糊逐字节一致。
+/// Box blur confined to the neighbourhood of the non-zero content bounding box. The output is byte-for-byte identical to a full-frame blur.
 pub fn box_blur_rgba_content(
     data: &mut [u8],
     width: u32,
@@ -3100,7 +3006,7 @@ pub fn box_blur_rgba_content(
     render_raster::effects::box_blur_content(data, width, height, radius)
 }
 
-/// [`box_blur_rgba_content`] 的已知包围盒版本。
+/// The known-bounding-box version of [`box_blur_rgba_content`].
 pub fn box_blur_rgba_bounded(
     data: &mut [u8],
     width: u32,
@@ -3111,21 +3017,18 @@ pub fn box_blur_rgba_bounded(
     render_raster::effects::box_blur_bounded(data, width, height, radius, content)
 }
 
-/// 模糊半径的结构性上限（`render_raster::effects` 的同名常量）。
+/// The structural upper bound on the blur radius (the same-named constant in `render_raster::effects`).
 #[allow(dead_code)]
 pub const MAX_BLUR_RADIUS: usize = render_raster::effects::MAX_BLUR_RADIUS;
 
-/// 整幅预乘 RGBA 的单遍可分离 box blur。
+/// A single-pass separable box blur over a whole premultiplied RGBA frame.
 pub fn box_blur_rgba(data: &mut [u8], width: u32, height: u32, radius: usize) {
     render_raster::effects::box_blur_premul_u8(data, width, height, radius);
 }
 
-/// 等比降采样到 `width × height`（只缩不放）。
+/// Proportionally downsamples to `width × height` (shrinks only, never enlarges).
 ///
-/// 先按 2×2 均值连续减半、再做最后一步双线性：直接一步双线性缩 2.5 倍只会在
-/// 每个目标像素上取四个源像素，线稿那样的细笔画会整条掉进采样缝里消失。减半
-/// 这一步在预乘 RGBA 上做均值是对的——预乘值本身就是"颜色 × 覆盖率"，均值即
-/// 面积加权。
+/// First halve repeatedly by 2×2 averaging, then do one final bilinear step. A single bilinear step of 2.5× would take only four source pixels for each target pixel, and thin strokes such as line art would fall entirely into the sampling gaps and disappear. Averaging in the halving step on premultiplied RGBA is correct. The premultiplied value is already “colour × coverage”, so the average is area-weighted.
 pub fn downscaled_pixmap(source: &Pixmap, width: u32, height: u32) -> Pixmap {
     let width = width.max(1);
     let height = height.max(1);
@@ -3152,7 +3055,7 @@ pub fn downscaled_pixmap(source: &Pixmap, width: u32, height: u32) -> Pixmap {
     destination
 }
 
-/// 2×2 均值减半；奇数边按整除截掉最后一行/列（下一轮双线性会补回精确尺寸）。
+/// 2×2 averaging halving. For odd edges, the last row or column is truncated by integer division. The next bilinear round restores the exact size.
 fn halve_pixmap(source: &Pixmap) -> Option<Pixmap> {
     let width = source.width() / 2;
     let height = source.height() / 2;

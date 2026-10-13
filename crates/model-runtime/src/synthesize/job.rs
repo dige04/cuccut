@@ -1,14 +1,9 @@
-//! `job.run`（capability `synthesize`）的编排（Model Worker 协议规范 §2.5.2）：冻结参数 → [`TtsRequest`] →
-//! 引擎合成 → `speech.wav`（`cuccut.speech-wav/v1`）。
+//! Orchestration of `job.run` (capability `synthesize`) (Model Worker protocol spec §2.5.2): frozen parameters → [`TtsRequest`] → engine synthesis → `speech.wav` (`cuccut.speech-wav/v1`).
 //!
-//! 阶段：`preparing-reference`（只在 `clone` 时；先把参考录音解一遍，读不出就是 `INPUT_UNREADABLE`）→
-//! `synthesizing`（`job.progress` 的 `steps` 是文本块：开始时报 `0/n`，每完成一块报 `i+1/n`）→ `encoding`。
-//! 取消：引擎的每个进度回调（含逐 token）都看一次取消标志，回 `false` 让引擎在下一个安全点返回；之后结果是
-//! `outcome: 'cancelled'`，不写输出。
+//! Phases: `preparing-reference` (only for `clone`; decodes the reference recording first, and if it cannot be read, it is `INPUT_UNREADABLE`) → `synthesizing` (`steps` in `job.progress` counts text chunks: at the start report `0/n`, and after each chunk completes report `i+1/n`) → `encoding`.
+//! Cancellation: every engine progress callback (including per token) checks the cancel flag; returning `false` makes the engine return at the next safe point; the result is then `outcome: 'cancelled'`, and no output is written.
 //!
-//! 模型做不到的声音方式与旋钮在开跑前报 `MODEL_UNSUPPORTED`（`details.reason`），不换成别的声音、不忽略参数；
-//! Runtime 在提交时已经按模型的描述拒绝过，这里是同一条规则在 Worker 一侧的兜底。引擎内部的其余失败是
-//! `INFERENCE_FAILED`（细节只写 stderr，消息里不带路径）；`speech.wav` 写不进 staging 是 `OUTPUT_WRITE_FAILED`。
+//! Voice styles and knobs the model cannot support are reported as `MODEL_UNSUPPORTED` (`details.reason`) before the run starts; they are not swapped for another voice or silently ignored. The Runtime already rejects them at submission according to the model's description; this is the same rule applied as a fallback on the Worker side. Other failures inside the engine are `INFERENCE_FAILED` (details are written only to stderr; the message contains no paths); failing to write `speech.wav` into staging is `OUTPUT_WRITE_FAILED`.
 
 use std::fs::File;
 use std::io::Write;
@@ -28,10 +23,10 @@ use crate::protocol::{
 };
 use crate::transcribe::JobSink;
 
-/// 参考录音只为确认读得出来（与量时长）而解码；采样率与引擎无关。
+/// The reference recording is decoded only to confirm it can be read (and to measure its duration); the sample rate does not matter to the engine.
 const REFERENCE_PROBE_RATE: u32 = 16_000;
 
-/// 跑一个合成任务。返回的错误就是该请求的错误响应。
+/// Runs one synthesis job. The returned error is the error response for that request.
 pub fn run(
     engine: &mut dyn TtsEngine,
     params: &SynthesizeRunParams,
@@ -76,7 +71,7 @@ pub fn run(
                 return false;
             }
             match progress {
-                // 第一块开始时报 `0/n`；之后每块完成报一次（下一块的开始与上一块的完成是同一个数）。
+                // At the start of the first chunk, report `0/n`; after each chunk completes, report once (the start of the next chunk and the completion of the previous one are the same number).
                 TtsProgress::ChunkStarted { index, count } => {
                     chunks = count;
                     if index == 0 {
@@ -123,7 +118,7 @@ pub fn run(
     })
 }
 
-/// 冻结参数 → 引擎请求。模型做不到的声音方式与旋钮在这里报 `MODEL_UNSUPPORTED`。
+/// Frozen parameters → engine request. Voice styles and knobs the model cannot support are reported here as `MODEL_UNSUPPORTED`.
 pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Result<TtsRequest, ErrorBody> {
     let kind = engine.kind();
     let options = &params.options;
@@ -161,7 +156,7 @@ pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Resu
     {
         return Err(ErrorBody::invalid_params("options.cfg must be a non-negative number"));
     }
-    // VoxCPM2 的引导强度必须大于 0（引擎在合成时才查，到那时就成了推理失败）；OmniVoice 的 0 是「不做引导」。
+    // VoxCPM2's guidance strength must be greater than 0 (the engine only checks it at synthesis time, where it would become an inference failure); OmniVoice's 0 means “no guidance”.
     if kind == TtsEngineKind::VoxCpm2 && options.cfg == Some(0.0) {
         return Err(ErrorBody::invalid_params("options.cfg must be positive for VoxCPM2"));
     }
@@ -171,7 +166,7 @@ pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Resu
 
     let (voice, instruct) = match (&options.voice, &params.input) {
         (SynthesizeVoice::Preset { id }, _) => {
-            // 与 v2 同一条规矩：说话人名不分大小写（`Uncle_Fu`），内置音色 id 一律放行（CustomVoice 就近换成最像的那位）。
+            // Same rule as v2: speaker names are case-insensitive (`Uncle_Fu`), and built-in voice ids are always allowed (for CustomVoice, the closest matching speaker is substituted).
             if voices::unknown_preset(id, &engine.preset_speakers()) {
                 return Err(unsupported("unknown-voice", json!({ "voice": id })));
             }
@@ -195,7 +190,7 @@ pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Resu
             if !accepts_description(kind) {
                 return Err(unsupported("unsupported-voice-mode", json!({ "voiceMode": "describe" })));
             }
-            // 描述与语气说明在引擎里是同一个 `instruct`：两个都给时做不到，不替调用方合并。
+            // The description and the style instruction are the same `instruct` in the engine; giving both cannot be done, so they are not merged on the caller's behalf.
             if instructions.is_some() {
                 return Err(unsupported(
                     "unsupported-option",
@@ -206,7 +201,7 @@ pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Resu
             if description.is_empty() {
                 return Err(ErrorBody::invalid_params("options.voice.description must not be empty"));
             }
-            // OmniVoice 只认封闭词表：词表外的描述在这里报参数错，不拖到合成时成为推理失败。
+            // OmniVoice only accepts a closed vocabulary: descriptions outside the vocabulary are rejected here as a parameter error, rather than becoming an inference failure at synthesis time.
             if kind == TtsEngineKind::OmniVoice
                 && let Err(error) = omnivoice::instruct::resolve_instruct(Some(description), has_han(&options.text))
             {
@@ -241,32 +236,32 @@ pub fn request_for(engine: &dyn TtsEngine, params: &SynthesizeRunParams) -> Resu
     })
 }
 
-/// 语气说明（风格指令）：Qwen3-TTS（CustomVoice）与 VoxCPM2。
+/// Style instruction (tone directive): Qwen3-TTS (CustomVoice) and VoxCPM2.
 fn accepts_instructions(kind: TtsEngineKind) -> bool {
     matches!(kind, TtsEngineKind::Qwen3Tts | TtsEngineKind::VoxCpm2)
 }
 
-/// 按描述造声：Qwen3-TTS（VoiceDesign）与 OmniVoice。
+/// Voice design from a description: Qwen3-TTS (VoiceDesign) and OmniVoice.
 fn accepts_description(kind: TtsEngineKind) -> bool {
     matches!(kind, TtsEngineKind::Qwen3Tts | TtsEngineKind::OmniVoice)
 }
 
-/// 语速倍率：OmniVoice 与 IndexTTS 2.5。
+/// Speaking-rate multiplier: OmniVoice and IndexTTS 2.5.
 fn accepts_speed(kind: TtsEngineKind) -> bool {
     matches!(kind, TtsEngineKind::OmniVoice | TtsEngineKind::IndexTts25)
 }
 
-/// 无分类器引导强度与扩散步数：VoxCPM2 与 OmniVoice。
+/// Classifier-free guidance strength and diffusion step count: VoxCPM2 and OmniVoice.
 fn accepts_diffusion_knobs(kind: TtsEngineKind) -> bool {
     matches!(kind, TtsEngineKind::VoxCpm2 | TtsEngineKind::OmniVoice)
 }
 
-/// 合成文本含汉字（OmniVoice 据此挑中文或英文的描述词）。
+/// The synthesized text contains Han characters (OmniVoice uses this to choose the Chinese or English description words).
 fn has_han(text: &str) -> bool {
     text.chars().any(|ch| ('\u{4e00}'..='\u{9fff}').contains(&ch))
 }
 
-/// GPT-SoVITS 给了原文时只接受 3–10 秒的参考录音（官方限制）；超出时在合成之前报 `MODEL_UNSUPPORTED`。
+/// GPT-SoVITS, when the reference text is given, accepts only a 3–10 second reference recording (official limit); if the recording is outside that range, `MODEL_UNSUPPORTED` is reported before synthesis.
 fn check_reference_length(kind: TtsEngineKind, request: &TtsRequest, seconds: f64) -> Result<(), ErrorBody> {
     let VoiceSpec::Clone {
         reference_text: Some(_), ..
@@ -293,7 +288,7 @@ fn check_reference_length(kind: TtsEngineKind, request: &TtsRequest, seconds: f6
     })))
 }
 
-/// 参考录音读不出来（不存在、解不开、没有声音）是 `INPUT_UNREADABLE`。返回它的时长（秒）。
+/// A reference recording that cannot be read (missing, fails to decode, or has no sound) is `INPUT_UNREADABLE`. Returns its duration in seconds.
 fn probe_reference(file: &Path) -> Result<f64, ErrorBody> {
     let unreadable = |detail: String| {
         eprintln!("[model-worker] the reference audio is unreadable: {detail}");
@@ -316,7 +311,7 @@ fn inference_failed(kind: TtsEngineKind, error: &anyhow::Error) -> ErrorBody {
         .with_details(json!({ "engine": kind.as_str(), "reason": "synthesis-failed" }))
 }
 
-/// `speech.wav`：先写临时文件再重命名。路径是绝对路径（staging 是绝对路径）。
+/// `speech.wav`: written to a temporary file first, then renamed. The path is absolute (staging is an absolute path).
 fn write_output(staging: &Path, bytes: &[u8]) -> std::io::Result<OutputFile> {
     let path = staging.join(SPEECH_OUTPUT_FILE);
     let temporary = staging.join(format!("{SPEECH_OUTPUT_FILE}.tmp"));
@@ -351,7 +346,7 @@ mod tests {
     use crate::synthesize::{ProgressSink, TtsAudio};
     use anyhow::bail;
 
-    /// 假引擎：每块生成 `tokens` 个 token，每块 0.1 秒 440 Hz；`cancel_at` 时在那一块里把取消标志置上。
+    /// Fake engine: each chunk generates `tokens` tokens, 0.1 s of 440 Hz per chunk; `cancel_at` sets the cancel flag during that chunk.
     struct FakeEngine {
         kind: TtsEngineKind,
         speakers: Vec<String>,
@@ -596,7 +591,7 @@ mod tests {
         assert_eq!(events.phases(), ["synthesizing"], "no encoding after a cancel");
         assert!(!staging.path().join(SPEECH_OUTPUT_FILE).exists());
 
-        // 开跑前就取消：不碰引擎。
+        // Cancelled before starting: the engine is not touched.
         let mut engine = FakeEngine::new(TtsEngineKind::Qwen3Tts);
         let result = run(
             &mut engine,
@@ -690,7 +685,7 @@ mod tests {
         });
         assert_eq!(details["option"], "instructions");
 
-        // 形状对、值不对的旋钮是参数错。
+        // A knob with the right shape but a wrong value is a parameter error.
         let engine = FakeEngine::new(TtsEngineKind::OmniVoice);
         let mut run_params = params(staging.path(), preset("zh-female"), None);
         run_params.options.speed = Some(0.0);
@@ -704,7 +699,7 @@ mod tests {
     fn preset_names_ignore_case_and_builtin_ids_reach_the_engine() {
         let staging = tempfile::tempdir().unwrap();
         let mut engine = FakeEngine::new(TtsEngineKind::Qwen3Tts);
-        // CustomVoice 的说话人表来自小写键（`uncle_fu` → `Uncle_fu`），目录写的是 `Uncle_Fu`。
+        // CustomVoice's speaker table comes from lowercase keys (`uncle_fu` → `Uncle_fu`), while the catalog writes `Uncle_Fu`.
         engine.speakers = vec!["Vivian".into(), "Uncle_fu".into(), "Ono_anna".into()];
         for id in ["Uncle_Fu", "ono_anna", "VIVIAN", "zh-female", "ja-male"] {
             let request = request_for(&engine, &params(staging.path(), preset(id), None)).unwrap();
@@ -718,7 +713,7 @@ mod tests {
     #[test]
     fn knob_values_and_descriptions_the_engine_rejects_are_invalid_params() {
         let staging = tempfile::tempdir().unwrap();
-        // VoxCPM2 的引导强度要大于 0；OmniVoice 的 0 是不做引导。
+        // VoxCPM2's guidance strength must be greater than 0; OmniVoice's 0 means no guidance.
         let mut run_params = params(staging.path(), preset("zh-female"), None);
         run_params.options.cfg = Some(0.0);
         let error = request_for(&FakeEngine::new(TtsEngineKind::VoxCpm2), &run_params).unwrap_err();
@@ -731,7 +726,7 @@ mod tests {
             Some(0.0)
         );
 
-        // OmniVoice 的描述只认词表（中文文本时中英文词都认）。
+        // OmniVoice's descriptions are checked only against the vocabulary (for Chinese text, both Chinese and English words are accepted).
         let describe = |description: &str| {
             params(
                 staging.path(),
@@ -747,7 +742,7 @@ mod tests {
         let error = request_for(&engine, &describe("温柔的播音腔")).unwrap_err();
         assert_eq!(error.code, codes::INVALID_PARAMS);
         assert_eq!(error.details.unwrap()["reason"], "description-vocabulary");
-        // 自由描述的模型不查词表。
+        // Models that take free-form descriptions do not check the vocabulary.
         assert!(request_for(&FakeEngine::new(TtsEngineKind::Qwen3Tts), &describe("温柔的播音腔")).is_ok());
     }
 
@@ -788,7 +783,7 @@ mod tests {
             (&json!("reference-duration"), &json!(1.5))
         );
         assert!(!ran, "the engine never runs on a reference it would reject");
-        // 不给原文时不限时长；其他引擎不受这条限制。
+        // No duration limit when the reference text is not given; other engines are not subject to this rule.
         assert!(attempt(TtsEngineKind::GptSovits, clone(None), &short).0.is_ok());
         assert!(attempt(TtsEngineKind::GptSovits, clone(Some("参考原文")), &fine).0.is_ok());
         assert!(attempt(TtsEngineKind::VoxCpm2, clone(Some("参考原文")), &short).0.is_ok());

@@ -22,12 +22,10 @@ export type ToolRerunMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /*
- * 工具与 Space 条目、后台任务之间的来回（产品设计 §2.7「页面」「进度与失败」、§4.5；设计稿 model-space-tools.js、
- * model-task-outputs.js）：一个条目能用哪些工具处理，工具做出来的条目（任务）是哪个工具的，「再做一次 / 重试」怎么回去，
- * 条目落在哪个目录。
+ * Back-and-forth between tools, Space items, and background tasks (product design §2.7 “pages” and “progress and failures”, §4.5; design file model-space-tools.js, model-task-outputs.js): which tools can process an item, which tool a task that a tool created belongs to, how “Run again / Retry” goes back, and where an item is located.
  */
 
-/** 工具页的直接任务：任务种类 → 工具。 */
+/** Direct tasks from the tool page: task kind → tool. */
 const DIRECT: Partial<Record<JobKind, ToolId>> = {
   synthesizeSpeech: 'synthesize-speech',
   generateImage: 'generate-image',
@@ -36,8 +34,7 @@ const DIRECT: Partial<Record<JobKind, ToolId>> = {
 };
 
 /**
- * 工具页发起的任务是哪个工具的；不是工具页发起的返回 null。Agent 发起的（「再做一次」属于会话）、编辑器面板发起的
- * 直接任务（带视频，比如配音面板的生成语音）、固定流程里的一步都不回工具页。
+ * Which tool a task started from the tool page belongs to; null for tasks not started from the tool page. Tasks started by the Agent (“Run again” belongs to the session), direct tasks started from an editor panel (with a video, e.g. generating speech in the dubbing panel), and steps inside a fixed flow do not go back to the tool page.
  */
 export function toolOfTask(job: Pick<JobRecord, 'kind' | 'pipeline' | 'submitter' | 'videoId'>): ToolId | null {
   if (job.submitter.kind !== 'connection') return null;
@@ -49,8 +46,7 @@ export function toolOfTask(job: Pick<JobRecord, 'kind' | 'pipeline' | 'submitter
 const PIPELINE_TOOLS: readonly string[] = ['transcribe', 'translate-subtitles', 'dub', 'link-import'];
 
 /**
- * 只有条目的来源（`origin.capability`，任务已经修剪掉）时推断工具：直接任务按任务种类，固定流程按流程名；文件转码分不出
- * 是哪一个工具（要看参数），导出与 Agent 做出来的不算。
+ * When only the item’s source is known (`origin.capability`; the task has already been pruned), infer the tool: direct tasks by task kind, fixed flows by flow name. File transcoding cannot tell which tool it came from (that depends on the parameters), so exports and things made by the Agent are excluded.
  */
 export function toolOfOrigin(origin: Pick<NonNullable<SpaceEntry['origin']>, 'capability' | 'conversationId'> | undefined): ToolId | null {
   const capability = origin?.capability;
@@ -62,13 +58,13 @@ export interface Rerun {
   tool: ToolId;
   label: string;
   /**
-   * `refill`：回到参数已经填好的工具页（直接任务与文件转码，表单照这次的参数填好，改不改由用户）；
-   * `view`：视频工具打开这次运行（步骤、从那一步重试、「再做一次」回到表单都在运行页）。
+   * `refill`: go back to the tool page with its parameters already filled in (direct tasks and file transcoding; the form is filled with this run’s parameters; whether to change them is up to the user).
+   * `view`: a video tool opens this run (steps, retry from that step, and “Run again” back to the form are all on the run page).
    */
   mode: 'refill' | 'view';
 }
 
-/** 任务的「重试 / 再做一次」；还在跑、排队、等对账的，以及不是工具页发起的不给。 */
+/** “Retry / Run again” for a task. Not given for tasks still running, queued, or awaiting reconciliation, or for tasks not started from the tool page. */
 export function rerunOf(job: Pick<JobRecord, 'kind' | 'pipeline' | 'submitter' | 'videoId' | 'state'>): Rerun | null {
   const tool = toolOfTask(job);
   if (!tool || !toolById(tool)) return null;
@@ -79,8 +75,7 @@ export function rerunOf(job: Pick<JobRecord, 'kind' | 'pipeline' | 'submitter' |
 }
 
 /**
- * 「用工具处理…」列哪些工具：收这种条目的工具（与工具页的 Space 输入一致）。回收站里的、生成中、失败的占位与找不到文件的
- * 不列。
+ * Which tools are listed under “Process with tool…”: the tools that accept this kind of item (consistent with the Space input on the tool page). Trashed items, placeholders that are generating or failed, and items whose file cannot be found are not listed.
  */
 export function toolsForEntry(entry: Pick<SpaceEntry, 'kind' | 'status' | 'user'>): ToolInfo[] {
   if (entry.user.trashedAt || entry.status === 'generating' || entry.status === 'failed' || entry.status === 'missing') return [];
@@ -91,7 +86,7 @@ function fold(path: string): string {
   return path.replace(/[\\/]+$/, '');
 }
 
-/** 条目所在的目录与它是不是默认保存位置；不知道文件在哪、或是视频条目时 null。 */
+/** The directory the item is in, and whether it is the default save location. null when the file’s location is unknown or it is a video item. */
 export function entryLocation(
   entry: Pick<SpaceEntry, 'kind' | 'file'>,
   saveDirectory: string | null,

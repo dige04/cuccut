@@ -1,37 +1,37 @@
 import path from 'node:path';
 
 /**
- * 打包后的应用里，Runtime 与 Worker 按路径读的东西在 `<resources>`（Electron 的 `process.resourcesPath`，asar 外面）的哪里。
- * 主进程、打包脚本（`tools/package-desktop.mjs`）与产物检查（`tools/check-packaged-app.mjs`）都从这一份取，不各写一遍。
+ * Where, inside `<resources>` (Electron's `process.resourcesPath`, outside the asar), the files that the Runtime and Workers read by path live in a packaged app.
+ * The main process, the packaging script (`tools/package-desktop.mjs`) and the artifact check (`tools/check-packaged-app.mjs`) all take them from this one place, rather than each keeping its own copy.
  *
- * Runtime 以 Node 方式运行（`ELECTRON_RUN_AS_NODE`）时不一定拿得到 `process.resourcesPath`，所以主进程把这些位置经环境变量告诉它；
- * 开发时不给，Runtime 自己从仓库里找（仓库约定 §2「随应用分发的数据文件不按模块相对路径找」）。
+ * When the Runtime runs in Node mode (`ELECTRON_RUN_AS_NODE`), it may not have `process.resourcesPath`, so the main process tells it these locations through environment variables.
+ * In development these are not given, and the Runtime finds them itself in the repository (repository convention §2: “data files shipped with the app are not located by module-relative paths”).
  */
 
-/** `<resources>` 下的子目录。 */
+/** Subdirectories under `<resources>`. */
 export const RESOURCE_DIRS = {
-  /** 原生可执行文件：Worker、凭据助手，以及它们要的 DLL（Windows 的 CUDA 运行库放在 Model Worker 旁边）。 */
+  /** Native executables: the Worker, the credential helper, and the DLLs they need (on Windows, the CUDA runtime libraries sit next to the Model Worker). */
   bin: 'bin',
-  /** 内置创作模板（仓库根的 `templates/`）。 */
+  /** Built-in authoring templates (`templates/` at the repository root). */
   templates: 'templates',
   /**
-   * 仓库根的 `skills/`：`cuccut/` 是给 Agent 的说明书（`cuccut skill install` 渲染后装进宿主），`cuccut/built-in-skills/`
-   * 是内置 Agent skill。
+   * `skills/` at the repository root: `cuccut/` is the instruction manual for agents (rendered by `cuccut skill install` and installed into the host), and `cuccut/built-in-skills/`
+   * holds the built-in agent skills.
    */
   skills: 'skills',
-  /** 自测样本与内置音色的录音（`packages/models/assets`）。 */
+  /** Self-test samples and recordings of the built-in voices (`packages/models/assets`). */
   modelAssets: 'model-assets',
-  /** Web 客户端的构建产物（`apps/web/dist`）。 */
+  /** Build output of the web client (`apps/web/dist`). */
   web: 'web',
-  /** 幻灯片编辑器的构建产物（`apps/slides-editor/dist`）：编辑器页面与 slides_check 用的编译器。 */
+  /** Build output of the slide editor (`apps/slides-editor/dist`): the editor page and the compiler used by slides_check. */
   slidesEditor: 'slides-editor',
-  /** 设计稿编辑器的构建产物（`apps/design-editor/dist`）：编辑器页面、画板运行时与快速编辑 Worker。 */
+  /** Build output of the design editor (`apps/design-editor/dist`): the editor page, the canvas runtime and the quick-edit Worker. */
   designEditor: 'design-editor',
-  /** 设计系统编辑器的构建产物（`apps/design-system-editor/dist`）：编辑器页面、预览页 run.html 与预览用的 React UMD。 */
+  /** Build output of the design system editor (`apps/design-system-editor/dist`): the editor page, the preview page run.html, and the React UMD build used for previews. */
   designSystemEditor: 'design-system-editor',
 } as const;
 
-/** `bin/` 里的原生程序（不带后缀）：同一次 cargo 构建出来的 Worker、凭据助手与人脸检测（`face-detect`）。 */
+/** Native programs in `bin/` (no file extension): the Worker, the credential helper and face detection (`face-detect`), all produced by the same cargo build. */
 export const BUNDLED_EXECUTABLES = ['engine-host', 'export-worker', 'model-worker', 'speech-worker', 'credential-helper', 'face-detect'] as const;
 
 export interface PackagedResources {
@@ -46,7 +46,7 @@ export interface PackagedResources {
   designSystemEditorDist: string;
 }
 
-/** 由资源目录算出各个位置。`pathApi` 让检查脚本在别的平台上按 Windows 的写法算。 */
+/** Computes each location from the resources directory. `pathApi` lets the check script compute paths using Windows conventions when running on another platform. */
 export function packagedResources(resourcesPath: string, pathApi: path.PlatformPath = path): PackagedResources {
   return {
     binDir: pathApi.join(resourcesPath, RESOURCE_DIRS.bin),
@@ -61,7 +61,7 @@ export function packagedResources(resourcesPath: string, pathApi: path.PlatformP
   };
 }
 
-/** 交给 Runtime 的环境变量（Runtime 各自的解析函数第一个看的就是它们）。 */
+/** Environment variables passed to the Runtime (each of the Runtime's resolution functions checks these first). */
 export function packagedResourceEnv(resources: PackagedResources, platform: NodeJS.Platform = process.platform): Record<string, string> {
   return {
     CUCCUT_BIN_DIR: resources.binDir,

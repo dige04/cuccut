@@ -4,8 +4,7 @@ import type { Json, LineKind } from '../../render/text-style.ts';
 import { CaptionThumb } from './caption-thumb.tsx';
 
 /**
- * 属性页「当前词」「动效」两段的格子（原型 `.angrid` / `.ancell`）：每格一张缩略图，画的是这一行套上这一格之后的样子
- * （同画廊的 `CaptionThumb`，跟共用时钟一拍一个词地念），下面是名字。
+ * The cells for the “Current word” and “Motion” sections of the properties page (prototype `.angrid` / `.ancell`): each cell has a thumbnail that draws what this line looks like with that cell applied (same as `CaptionThumb` in the gallery, sharing its clock, one word per beat), with the name below.
  */
 export interface StyleCell {
   key: string;

@@ -23,22 +23,20 @@ import { methodParamSchemas } from '@cuccut/protocol/schemas';
 import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Space 条目作为工具的输入（架构设计 §7.9「Space 条目作为输入」）：`{ entryId }` 在方法层按 Space 目录换成条目的文件
- * 或文字，流程与任务只看到路径和文本，冻结的参数里没有条目 id。条目的拒绝（不在、回收站、种类不合、没有文件）由
- * `SpaceCatalog.resolveFile` 给出，都在提交时、不建任务。
+ * Space entries as tool inputs (architecture design §7.9, "Space entries as inputs"). `{ entryId }` is replaced at the method layer with the entry's file or text, looked up in the Space catalog. Workflows and jobs see only paths and text, and the frozen parameters contain no entry id. Rejections of an entry (not found, in the trash, wrong kind, no file) are given by `SpaceCatalog.resolveFile`, all at submission time, without creating a job.
  */
 export interface SpaceFileResolver {
   resolveFile(entryId: Id, kinds: readonly SpaceEntryKind[]): { entry: SpaceEntry; file: string };
 }
 
-/** 要媒体文件的输入（转录的 `file`、转码的 `inputs`）：视频文件、成片与音频。 */
+/** Inputs that need a media file (`file` of transcription, `inputs` of transcoding): video files, rendered cuts and audio. */
 export const MEDIA_ENTRY_KINDS: readonly SpaceEntryKind[] = ['video-file', 'export', 'audio'];
-/** 字幕文件的翻译的 `input`。 */
+/** The `input` of subtitle file translation. */
 export const SUBTITLE_ENTRY_KINDS: readonly SpaceEntryKind[] = ['subtitle'];
-/** 语音合成与文本生成的素材：文档与字幕。 */
+/** Material for speech synthesis and text generation: documents and subtitles. */
 export const MATERIAL_ENTRY_KINDS: readonly SpaceEntryKind[] = ['document', 'subtitle'];
 
-/** 当文字读的文档扩展名；别的文档（PDF、Word 等）不是纯文字，不收。 */
+/** Document extensions read as text. Other documents (PDF, Word, etc.) are not plain text and are not accepted. */
 const TEXT_DOCUMENT_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
 
 function entryIdOf(value: unknown): Id | null {
@@ -48,8 +46,7 @@ function entryIdOf(value: unknown): Id | null {
 }
 
 /**
- * `pipelines.start` 的参数里换掉 Space 条目：`transcribe` 的 `file`、`transcode` 的 `inputs[]`、`translate-subtitles`
- * 的 `input`。别的流程与别的字段原样返回；不是 `{ entryId }` 的值留给流程自己的参数检查。
+ * Replaces Space entries in the parameters of `pipelines.start`: `file` of `transcribe`, `inputs[]` of `transcode`, and `input` of `translate-subtitles`. Other workflows and other fields are returned unchanged. Values that are not `{ entryId }` are left to the workflow's own parameter checks.
  */
 export function resolvePipelineEntryInputs(
   space: SpaceFileResolver,
@@ -73,8 +70,7 @@ export function resolvePipelineEntryInputs(
 }
 
 /**
- * 素材条目的文字：文档（.txt、.md）按文字解码；字幕（.srt、.vtt）去掉时间码与标记，每条一行。别的格式（PDF、ASS 等）
- * `SPACE_ENTRY_UNSUPPORTED`；超过 4 MiB 或字幕读不准时 `invalid-request`（字幕带它的错误码）。
+ * Text of a material entry: documents (.txt, .md) are decoded as text; subtitles (.srt, .vtt) have timecodes and markup stripped, one line per cue. Other formats (PDF, ASS, etc.) give `SPACE_ENTRY_UNSUPPORTED`. Over 4 MiB, or subtitles that cannot be parsed reliably, give `invalid-request` (subtitles carry their own error code).
  */
 export async function materialText(space: SpaceFileResolver, entryId: Id): Promise<{ text: string; fileName: string }> {
   const { entry, file } = space.resolveFile(entryId, MATERIAL_ENTRY_KINDS);
@@ -103,7 +99,7 @@ export async function materialText(space: SpaceFileResolver, entryId: Id): Promi
   }
 }
 
-/** 按方法的参数规则再检查一次填好素材之后的请求（长度上限、不能为空），不合时 `invalid-request`。 */
+/** Re-checks the request after the material is filled in, per the method's parameter rules (length limit, must not be empty). `invalid-request` if it does not comply. */
 function recheck<T>(method: 'models.synthesizeSpeech' | 'models.generateText', request: T): T {
   const parsed = methodParamSchemas[method].safeParse(request);
   if (!parsed.success) {
@@ -113,7 +109,7 @@ function recheck<T>(method: 'models.synthesizeSpeech' | 'models.generateText', r
   return request;
 }
 
-/** `models.synthesizeSpeech` 的素材：条目的文字当 `text`。不给素材时原样返回。 */
+/** Material for `models.synthesizeSpeech`: the entry's text is used as `text`. Returned unchanged if no material is given. */
 export async function withSpeechMaterial(space: SpaceFileResolver, request: SynthesizeSpeechRequest): Promise<SynthesizeSpeechRequest> {
   if (!request.material) return request;
   const { material, ...rest } = request;
@@ -121,7 +117,7 @@ export async function withSpeechMaterial(space: SpaceFileResolver, request: Synt
   return recheck('models.synthesizeSpeech', { ...rest, text: text.trim() });
 }
 
-/** `models.generateText` 的素材：条目的文字接在最后一条用户消息后面（空一行，先写文件名）。不给素材时原样返回。 */
+/** Material for `models.generateText`: the entry's text is appended after the last user message (a blank line first, then the file name). Returned unchanged if no material is given. */
 export async function withTextMaterial(space: SpaceFileResolver, request: GenerateTextRequest): Promise<GenerateTextRequest> {
   if (!request.material) return request;
   const { material, ...rest } = request;

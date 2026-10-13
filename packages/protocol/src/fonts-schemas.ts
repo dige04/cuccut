@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { FONT_CATEGORIES, FONT_SCRIPTS, type FontCategory, type FontScript } from './fonts.ts';
 
-/** `fonts.*` 的入站校验（架构设计 §9.1），由 `schemas.ts` 并进方法表。 */
+/** Inbound validation for `fonts.*` (architecture design §9.1), merged into the method table by `schemas.ts`. */
 
 const id = z.string().min(1).max(200);
 const family = z.string().trim().min(1).max(200);

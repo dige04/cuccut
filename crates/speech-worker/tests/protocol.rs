@@ -1,4 +1,4 @@
-//! 协议测试：起真的 speech-worker 进程，扮演 Runtime 回答 `llm.request`（假的模型：按载体结构回中文，不联网）。
+//! Protocol tests: start a real speech-worker process and play the Runtime, answering `llm.request` (a fake model: it replies in Chinese according to the carrier's structure, with no networking).
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -65,7 +65,7 @@ impl Worker {
         }
     }
 
-    /// 等 `id` 的响应；途中的事件收进 `events`，模型请求交给 `on_request` 决定怎么答。
+    /// Waits for the response with `id`. Events received along the way are collected into `events`, and model requests are handed to `on_request` to decide how to answer.
     fn drive(&mut self, id: u64, events: &mut Vec<Value>, on_request: &mut dyn FnMut(&Value, &mut Worker) -> Answer) -> Value {
         loop {
             let message = self.recv();
@@ -73,7 +73,7 @@ impl Worker {
                 return message;
             }
             if message.get("id").is_some() {
-                // 对 llm.reply / cancel 的回执。
+                // Acknowledgement for llm.reply / cancel.
                 assert!(message.get("result").is_some(), "回执应当成功：{message}");
                 continue;
             }
@@ -135,8 +135,8 @@ enum Answer {
     Close,
 }
 
-/// 假的模型：translate 的页按句回中文，带 `data-align-groups` 的句子按组写行 span（与 rows 契约相符）；
-/// 别的 kind（简报、对齐）回一个不合格的答案，让核心走自己的降级与兜底。
+/// Fake model: for translate pages it replies in Chinese sentence by sentence, and sentences carrying `data-align-groups` write line spans group by group (matching the rows contract).
+/// Other kinds (brief, alignment) return an invalid answer, so the core takes its own degradation and fallback path.
 fn fake_answer(params: &Value) -> String {
     let kind = params["kind"].as_str().unwrap();
     let user = params["user"].as_str().unwrap();
@@ -202,7 +202,7 @@ fn attr(open: &str, name: &str) -> Option<String> {
     Some(open[start..end].replace("&quot;", "\"").replace("&amp;", "&"))
 }
 
-/// 被翻译的句子：请求里所有可编辑的 `<p>` 的 id。
+/// The sentences to translate: the ids of all editable `<p>` elements in the request.
 fn requested_sentences(params: &Value) -> Vec<String> {
     if params["kind"] != "translate" {
         return Vec::new();
@@ -224,7 +224,7 @@ struct Job {
     duration_us: i64,
 }
 
-/// 合成一份英文转写：`sentences` 句，每句 `words` 个词，句末有标点，句间停顿 0.4 秒。
+/// Synthesizes an English transcript: `sentences` sentences, `words` words each, with punctuation at the end of each sentence and a 0.4-second pause between sentences.
 fn job(sentences: usize, words: usize) -> Job {
     let mut list = Vec::new();
     let mut clock = 0_i64;
@@ -270,7 +270,7 @@ fn job(sentences: usize, words: usize) -> Job {
     }
 }
 
-/// 核心派生的句子 ID（与 Worker 写出的单元一一对应）。
+/// Sentence IDs derived by the core (one-to-one with the units the Worker writes out).
 fn crate_sentence_ids(job: &Job) -> Vec<String> {
     let speech: SpeechBody = serde_json::from_value(job.speech.clone()).unwrap();
     let media = MediaFacts {
@@ -323,7 +323,7 @@ fn translates_a_speech_body_into_a_translation_body_and_target_cues() {
     let result = &reply["result"];
     assert_eq!(result["translation"], "translation.json");
 
-    // 每个 llm.request 都是文件契约的整形：内联输入信封、输出上限。
+    // Every llm.request is shaped by the file contract: the inline input envelope and the output cap.
     let requests = events_named(&events, "llm.request");
     assert!(!requests.is_empty());
     for request in &requests {
@@ -332,7 +332,7 @@ fn translates_a_speech_body_into_a_translation_body_and_target_cues() {
         assert!(params["maxOutputTokens"].as_u64().unwrap() >= 4096);
         assert!(params["system"].as_str().unwrap().len() > 100);
     }
-    // 单页：跳过简报，第一个请求就是翻译页。
+    // Single page: skip the brief. The first request is the translate page.
     assert_eq!(requests[0]["params"]["kind"], "translate");
     assert!(!events_named(&events, "checkpoint").is_empty());
     assert!(!events_named(&events, "progress").is_empty());
@@ -353,7 +353,7 @@ fn translates_a_speech_body_into_a_translation_body_and_target_cues() {
     for unit in &body.units {
         assert_eq!(unit.id, format!("t-{}", unit.source_sentence_id));
         assert!(!unit.natural_text.trim().is_empty());
-        // 核心的指纹：`<词数>:<首词>:<末词>:<摘要>`（视频格式规范 §5.3）。
+        // The core's fingerprint: `<word count>:<first word>:<last word>:<digest>` (video format spec §5.3).
         assert_eq!(unit.source_fingerprint.split(':').count(), 4, "{}", unit.source_fingerprint);
     }
 
@@ -378,7 +378,7 @@ fn translates_a_speech_body_into_a_translation_body_and_target_cues() {
 
 #[test]
 fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
-    // 两页以上：每句 12 词，100 句 = 1200 词，超过翻译页预算（800 词）。
+    // More than two pages: 12 words per sentence, 100 sentences = 1200 words, which exceeds the translation page budget (800 words).
     let job = job(100, 12);
     let mut worker = Worker::start();
     let mut events = Vec::new();
@@ -400,7 +400,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     assert!(done > 0 && done == translated_first.len(), "{reply}");
     assert!(job.staging.join("checkpoint.json").exists());
     assert!(!job.staging.join("translation.json").exists(), "没有半份译文");
-    // 终止性失败不重试：第二页只发了一次。
+    // Terminal failures are not retried: the second page was sent only once.
     let second_page_requests = events_named(&events, "llm.request")
         .iter()
         .filter(|request| request["params"]["kind"] == "translate")
@@ -408,7 +408,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     assert_eq!(second_page_requests, 2);
     drop(worker);
 
-    // 重新起一个进程续跑：先报 resumed，已完成的句子不再送翻。
+    // Start a new process to resume: it reports `resumed` first, and sentences already finished are not sent for translation again.
     let mut worker = Worker::start();
     let mut events = Vec::new();
     let mut translated_second: Vec<String> = Vec::new();
@@ -424,7 +424,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     for id in &translated_second {
         assert!(!translated_first.contains(id), "已完成的句子 {id} 又送翻了");
     }
-    // 简报在第一次就定下了，续跑不再请求。
+    // The brief was settled the first time, so resumed runs make no further request for it.
     assert!(
         events_named(&events, "llm.request")
             .iter()
@@ -437,17 +437,17 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
 
 #[test]
 fn a_refresh_retranslates_only_the_named_sentence_onto_the_existing_translation() {
-    // 先整篇翻译一次，作为底稿。
+    // First translate the whole thing once, as the base draft.
     let first = job(6, 6);
     let mut worker = Worker::start();
     let reply = worker.translate(&first, &mut Vec::new(), &mut |params, _| Answer::Text(fake_answer(params)));
     assert!(reply.get("error").is_none(), "{reply}");
     drop(worker);
     let mut base = read(&first.staging.join("translation.json"));
-    // 第一句标为已审：刷新别的句子时它保持原样。
+    // The first sentence is marked as reviewed: it stays as it is when other sentences are refreshed.
     base["units"][0]["status"] = json!("reviewed");
 
-    // 改第三句的一个词（指纹变了），只重译这一句。
+    // Change one word in the third sentence (the fingerprint changes), so only this sentence is re-translated.
     let second = job(6, 6);
     let mut input = read(&second.input);
     let words = input["speech"]["words"].as_array_mut().unwrap();
@@ -505,7 +505,7 @@ fn a_refresh_translates_a_sentence_that_has_no_unit_yet() {
     drop(worker);
     let base = read(&first.staging.join("translation.json"));
 
-    // 隐藏第三句的首词：这一句的 ID 换成 `s-w-2-1`，底稿里没有它的单元。
+    // Hide the first word of the third sentence: this sentence's ID becomes `s-w-2-1`, and the base draft has no unit for it.
     let second = job(6, 6);
     let mut input = read(&second.input);
     let words = input["speech"]["words"].as_array_mut().unwrap();
@@ -548,7 +548,7 @@ fn long_sentences_come_back_as_aligned_rows() {
     let reply = worker.translate(&job, &mut events, &mut |params, _| Answer::Text(fake_answer(params)));
     assert!(reply.get("error").is_none(), "{reply}");
     let report = read(&job.staging.join("report.json"));
-    // 翻译页顺带交回的行分区草稿直接验收，不另发对齐请求。
+    // The line-partition draft returned along with the translate page is accepted directly, without sending a separate alignment request.
     assert_eq!(report["align"]["prealignedSentences"], 6);
     assert_eq!(report["llmCalls"], 1);
     let body: TranslationBody = serde_json::from_value(read(&job.staging.join("translation.json"))).unwrap();
@@ -611,7 +611,7 @@ fn cancel_ends_the_job_and_keeps_the_checkpoint() {
     assert!(reply["error"]["details"]["translatedSentences"].as_u64().unwrap() > 0);
     let checkpoint = read(&job.staging.join("checkpoint.json"));
     assert_eq!(checkpoint["custom"]["phase"], "translating");
-    // 取消之后进程还在，可以接着用；关 stdin 后退出。
+    // After a cancel the process is still alive and can keep being used. It exits after stdin is closed.
     let id = worker.send("hello", json!({}));
     assert_eq!(worker.recv()["id"], id);
     drop(worker.stdin.take());

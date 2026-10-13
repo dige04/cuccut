@@ -11,19 +11,19 @@ import {
 import { M } from './templates-copy.ts';
 
 /**
- * `cuccut templates` 的输出（模板包规范 §6）。从 main.ts 分出来，单独可测。
+ * Output of `cuccut templates` (template package spec §6). Split out of main.ts so it can be tested on its own.
  */
 
 const KIND_LABELS: Readonly<Record<TemplateSummary['manifest']['kind'], string>> = live(() => M.kindLabels);
 const ORIGIN_LABELS: Readonly<Record<TemplateSummary['origin'], string>> = live(() => M.originLabels);
 
-/** 「16:9 · 60 秒」；没定的写「自动」。 */
+/** “16:9 · 60 seconds”; when not set, write “auto”. */
 function spec(template: TemplateSummary): string {
   const { ratio, durationSeconds } = template.manifest;
   return M.spec(ratio ?? null, durationSeconds || null);
 }
 
-/** 列表里的一行：`<id>  <种类>  <来源>  <画幅 · 时长>  <标题>：<一句话>`。 */
+/** One row in the list: `<id>  <kind>  <source>  <aspect · duration>  <title>: <one-line summary>`. */
 export function describeTemplate(template: TemplateSummary): string {
   const { manifest } = template;
   return `${manifest.id}  ${KIND_LABELS[manifest.kind]}  ${ORIGIN_LABELS[template.origin]}  ${spec(template)}  ${M.summaryLine(manifest.title, manifest.summary)}`;
@@ -34,7 +34,7 @@ export function describeDiagnostic(diagnostic: TemplateDiagnostic): string {
   return [head, ...diagnostic.issues.map((issue) => `  - ${issue}`), M.folder(diagnostic.path)].join('\n');
 }
 
-/** `cuccut templates`：先场景模板后作品示例，各按 id；跳过的模板在最后。 */
+/** `cuccut templates`: scene templates first, then work examples, each sorted by id; skipped templates are at the end. */
 export function formatTemplateList(result: TemplateListResult): string[] {
   const order = (t: TemplateSummary) => (t.manifest.kind === 'scene' ? 0 : 1);
   const sorted = [...result.templates].sort((a, b) => order(a) - order(b) || a.manifest.id.localeCompare(b.manifest.id));
@@ -45,7 +45,7 @@ export function formatTemplateList(result: TemplateListResult): string[] {
   return lines;
 }
 
-/** `cuccut templates show <id>`：清单要点与 `prompt.md` 全文。 */
+/** `cuccut templates show <id>`: the key points of the manifest and the full text of `prompt.md`. */
 export function formatTemplateDetail(detail: TemplateDetail): string[] {
   const { manifest, origin, files } = detail.template;
   const lines = [
@@ -78,8 +78,8 @@ export function formatTemplateDetail(detail: TemplateDetail): string[] {
 }
 
 /**
- * `cuccut chat --template <id>`：发送时挂的场景模板（模板包规范 §5.2）。只带 id，版本与素材交给 Runtime 按目录里当前的模板决定；
- * id 不是 kebab-case 时在本地就拒绝。作品示例能不能挂由 Runtime 判断（`TEMPLATE_NOT_SCENE`）。
+ * `cuccut chat --template <id>`: the scene template attached when sending (template package spec §5.2). Only the id is carried; the version and assets are decided by the Runtime according to the template currently in the catalog;
+ * an id that is not kebab-case is rejected locally. Whether a work example can be attached is decided by the Runtime (`TEMPLATE_NOT_SCENE`).
  */
 export function parseChatTemplate(value: string | undefined): TemplateSendRef | undefined {
   if (value === undefined) return undefined;

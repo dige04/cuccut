@@ -1,6 +1,6 @@
 /**
- * 按文件头认出库里文件的类型（架构设计 §5.9：只看内容，不看扩展名）。扩展名由类型决定，
- * 文件按 `<摘要>.<扩展名>` 存放：引擎导入素材时按扩展名认媒体种类。
+ * Identifies a library file's type from its file header (architecture design §5.9: content only, not the extension). The extension is determined by the type,
+ * and the file is stored as `<digest>.<extension>`. The engine identifies the media kind by extension when it imports assets.
  */
 
 export type SniffCategory = 'image' | 'video' | 'audio' | 'font';
@@ -11,7 +11,7 @@ export interface SniffedType {
   category: SniffCategory;
 }
 
-/** 认类型要读的文件头长度。 */
+/** Length of the file header read to identify the type. */
 export const SNIFF_HEAD_BYTES = 4096;
 
 export function sniffBytes(head: Uint8Array): SniffedType | null {
@@ -42,12 +42,12 @@ export function sniffBytes(head: Uint8Array): SniffedType | null {
   }
   if (ascii(0, 'wOF2')) return type('font/woff2', 'woff2', 'font');
   if (ascii(0, 'wOFF')) return type('font/woff', 'woff', 'font');
-  // MPEG 音频帧同步字：11 个 1（放在最后，免得把别的格式认成 mp3）。
+  // MPEG audio frame sync word: eleven 1 bits (placed last, so other formats are not identified as mp3).
   if (head.length >= 2 && head[0] === 0xff && (head[1]! & 0xe0) === 0xe0) return type('audio/mpeg', 'mp3', 'audio');
   return null;
 }
 
-/** 库里文件的扩展名，按媒体类型。 */
+/** Extensions of library files, by media type. */
 const EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -66,7 +66,7 @@ const EXTENSIONS: Record<string, string> = {
   'font/ttf': 'ttf',
   'font/woff2': 'woff2',
   'application/json': 'json',
-  // `.lottie` 压缩包：引擎导入素材时按 `.lottie` 认成 Lottie。
+  // `.lottie` archive: the engine identifies it as Lottie when importing assets, based on `.lottie`.
   'application/zip': 'lottie',
 };
 
@@ -74,13 +74,13 @@ export function extensionOf(mediaType: string): string {
   return EXTENSIONS[mediaType] ?? 'bin';
 }
 
-/** 参考录音收的格式：克隆与合成的供应商普遍接受，ffprobe 能按格式解码。 */
+/** Formats accepted for reference recordings: widely accepted by cloning and synthesis vendors, and decodable by ffprobe by format. */
 export const VOICE_AUDIO_TYPES: readonly string[] = ['audio/wav', 'audio/mpeg', 'audio/flac'];
 
-/** 引擎认得的字体（`woff` 不在内）。 */
+/** Fonts the engine recognizes (`woff` is not included). */
 export const FONT_TYPES: readonly string[] = ['font/ttf', 'font/otf', 'font/woff2'];
 
-/** Lottie 动画的 JSON：贴纸可以是它。只看必需的几个字段。 */
+/** Lottie animation JSON: a sticker can be this. Checks only the required fields. */
 export function isLottie(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
@@ -93,22 +93,22 @@ export function isLottie(value: unknown): boolean {
   );
 }
 
-/** `.lottie` 压缩包的媒体类型。 */
+/** Media type of a `.lottie` archive. */
 export const DOTLOTTIE_MEDIA_TYPE = 'application/zip';
 
-/** 文件头是不是 zip（本地文件头 `PK\x03\x04`）。 */
+/** Whether the file header is a zip (local file header `PK\x03\x04`). */
 export function looksLikeZip(head: Uint8Array): boolean {
   return head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
 }
 
 /**
- * `.lottie` 压缩包（dotLottie）：zip 的中央目录里有 `animations/<id>.json`（第 2 版是 `a/<id>.json`）。
- * 只看条目名字；动画读不读得开由引擎导入时用内核判断。读不出中央目录的不算。
+ * `.lottie` archive (dotLottie): the zip's central directory contains `animations/<id>.json` (version 2 uses `a/<id>.json`).
+ * Only entry names are checked. Whether the animation can be opened is judged by the engine's core at import time. Archives whose central directory cannot be read do not count.
  */
 export function isDotLottie(bytes: Uint8Array): boolean {
   if (!looksLikeZip(bytes)) return false;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  // 中央目录结尾记录：22 字节，后面至多 65535 字节的注释。
+  // End-of-central-directory record: 22 bytes, followed by a comment of at most 65535 bytes.
   let end = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
     if (view.getUint32(i, true) === 0x06054b50) {
@@ -131,7 +131,7 @@ export function isDotLottie(bytes: Uint8Array): boolean {
   return false;
 }
 
-/** 去掉 UTF-8 BOM 与开头的空白之后的第一个字符；全是空白时 null。 */
+/** The first character after removing the UTF-8 BOM and leading whitespace. null if all whitespace. */
 export function firstTextChar(head: Uint8Array): string | null {
   let i = 0;
   if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) i = 3;

@@ -23,9 +23,7 @@ import { TOOL_RISK } from './tool-scope.ts';
 import type { Loose } from './testing/fake-agent.ts';
 
 /**
- * 代码画面工具端到端（架构设计 §8，代码包规范 §6、§7）：`compositions_import` 经终端的 `catalog.call` 验证、烘焙、导入并放置
- * 一个透明叠加层，`compositions_preview` 按局部时间取帧，错误码按验证项给出；最后真的导出成片，叠加层盖在底下的画面上。
- * 需要 engine-host、Render Worker、ffmpeg 与 Electron，缺了就跳过。
+ * End-to-end code-visual tool (architecture §8, code-package spec §6, §7): `compositions_import` through the terminal's `catalog.call` validates, bakes, imports and places a transparent overlay; `compositions_preview` fetches a frame at a local time, with error codes given per validation item; finally a real export to a video, with the overlay covering the footage underneath. Needs engine-host, Render Worker, ffmpeg and Electron; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -45,7 +43,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const W = 1280;
 const H = 720;
 
-/** 自己写的 HyperFrames 合同的最小合成：透明背景上一个品红方块，x 随时间线性移动（t 秒时左边在 100 + 400t）。 */
+/** A minimal composition written by hand against the HyperFrames contract: a magenta square on a transparent background, whose x moves linearly over the timeline (at t seconds, the left edge is at 100 + 400t). */
 function overlayHtml(options: { root?: boolean; scene?: string; extraHead?: string } = {}): string {
   const rootAttrs =
     options.root === false
@@ -166,7 +164,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
       bundle: { width: W, height: H, durationFrames: 60, synthesizedManifest: true, compositionId: 'main' },
       prerender: { frames: 60, hasAlpha: true, encoding: { alpha: true } },
     });
-    // 叠加层不和底下的片段挤在同一条轨上。
+    // The overlay does not share a track with the clips beneath it.
     expect(imported.trackId).not.toBe(snapshot().sequences[snapshot().rootSequenceId]!.items.find((i) => i.id === clip.itemId)!.trackId);
 
     const video = snapshot();
@@ -212,7 +210,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     expect(frames[0]!.clamped).toBe(false);
     expect(frames[3]!.clamped).toBe(true);
 
-    // 导入之前也能看：内联文件。
+    // Viewable before import as well: inline file.
     const inline = await ok('compositions_preview', {
       video: videoId,
       files: [{ path: 'index.html', content: overlayHtml() }],
@@ -250,7 +248,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
       ],
     });
     expect(random.code).toBe('COMPOSITION_NONDETERMINISTIC');
-    // 都没有写进视频。
+    // Neither is written into the video.
     expect(snapshot().revision).toBe(revision);
 
     expect((await failure('compositions_import', { video: videoId })).code).toBe('INVALID_ARGUMENTS');
@@ -259,7 +257,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     );
   }, 180_000);
 
-  /** 导出成片 t = 1 s 的一帧（rgb24），给下面两条用。 */
+  /** Export one frame of the finished video at t = 1 s (rgb24), for the two checks below. */
   let exportedFrame: Buffer | undefined;
 
   it('导出成片：时长对、预渲染里的方块画在该在的位置', async () => {
@@ -275,7 +273,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     );
     expect(Math.abs(duration - 3)).toBeLessThan(0.15);
 
-    // t = 1 s：方块的左边在 500 px（500–700 × 260–460）。
+    // t = 1 s: the square's left edge is at 500 px (500–700 × 260–460).
     const raw = execFileSync(
       'ffmpeg',
       ['-v', 'error', '-ss', '1', '-i', out, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
@@ -300,7 +298,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     exportedFrame = raw;
   }, 240_000);
 
-  // 合成实例的替身没有背景板（frame-render 的 element.rs 给合成 `bg: None`）：透明预渲染直接盖在底下的画面上。
+  // The stand-in for the composition instance has no background plate (frame-render's element.rs sets `bg: None` for compositions): the transparent pre-render goes directly over the footage underneath.
   it('导出成片：方块以外透出底下的画面', () => {
     const raw = exportedFrame;
     expect(raw).toBeDefined();
@@ -309,7 +307,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
       const i = (y * W + x) * 3;
       return raw[i]! > 180 && raw[i + 1]! < 90 && raw[i + 2]! > 180;
     };
-    // 方块以外是底下的 testsrc：不是品红，也不是一片黑。
+    // Outside the square is the testsrc footage underneath: not magenta, not a solid black field.
     let outsideMagenta = 0;
     let outsideLit = 0;
     let outsideTotal = 0;
@@ -340,7 +338,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     const old = before.items.find((i) => i.id === itemId) as CompositionItem;
     const count = before.items.length;
 
-    // 混用 place 或指向不是合成的片段都拒绝，而且不写进视频。
+    // Mixing with place, or pointing at a clip that is not a composition, is rejected, and nothing is written into the video.
     const revision = snapshot().revision;
     const green = [{ path: 'index.html', content: overlayHtml({ extraHead: '<style>#box { background: #00ff00; }</style>' }) }];
     const clipId = before.items.find((i) => i.type === 'video')!.id;
@@ -381,14 +379,14 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
       source: { kind: 'bundle', assetRef: { id: replaced.bundle.assetId, revision: replaced.bundle.revision } },
       prerender: { id: replaced.prerender.assetId, revision: replaced.prerender.revision },
     });
-    // 历史里这一笔写的是替换。
+    // In the history, this entry is recorded as a replacement.
     const history = await ok('videos_history', { video: videoId });
     expect(JSON.stringify(history)).toContain('绿方块');
   }, 240_000);
 
-  // 编辑操作建不出第二个序列（嵌套序列不在类型集合里，视频格式规范 §3.4），便携包能带进来：引擎打开包时收下快照里的每个序列。
+  // Edit operations cannot create a second sequence (nested sequences are not in the type set, video format spec §3.4), but a portable package can carry one in: the engine accepts every sequence in the snapshot when it opens the package.
   it('compositions_import 带 replace：片段在帧率不同的另一个序列里时，按那个序列的帧率烘焙与换算', async () => {
-    // 导出便携包，在快照里加一个 24 fps 的序列，放一个合成片段（沿用根序列里那个片段的代码包与预渲染），重新打包。
+    // Export a portable package, add a 24 fps sequence to the snapshot, place a composition clip in it (reusing the code package and pre-render of the clip in the root sequence), and repack.
     const submitted = await ok('export', { video: videoId, kind: 'portable', format: 'cuccut' });
     let job: Loose = await ok('jobs_wait', { jobId: submitted.jobId, timeoutSec: 50 });
     for (let i = 0; i < 4 && !job.settled; i++) job = await ok('jobs_wait', { jobId: submitted.jobId, timeoutSec: 50 });
@@ -444,7 +442,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     });
     if (!outcome.ok) throw new Error(`compositions_import 失败：${JSON.stringify(outcome.error)}`);
     const replaced = outcome.result as Loose;
-    // 2 秒的合成：按 24 fps 烘焙出 48 帧，换算到所在序列也是 48 帧、到 2 秒结束。
+    // A 2 s composition: baked at 24 fps into 48 frames; converted into its containing sequence, it is also 48 frames and ends at 2 s.
     expect(replaced).toMatchObject({
       itemId,
       trackId,
@@ -460,7 +458,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     });
     const prerender = after.assets[replaced.prerender.assetId]!.revisions[replaced.prerender.revision]!;
     expect(prerender.video?.frameRate).toEqual({ kind: 'cfr', rate: { num: 24, den: 1 } });
-    // 根序列里那个片段不动。
+    // The clip in the root sequence is unchanged.
     expect(after.sequences[after.rootSequenceId]!.items.find((i) => i.id === imported.itemId)).toMatchObject({ span: source.span });
   }, 240_000);
 });

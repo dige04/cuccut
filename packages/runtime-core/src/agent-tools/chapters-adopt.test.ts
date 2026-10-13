@@ -13,8 +13,7 @@ import { TOOL_RISK } from './tool-scope.ts';
 import type { Loose } from './testing/fake-agent.ts';
 
 /**
- * `chapters_adopt` 端到端（架构设计 §7.9）：链接导入的素材在来源里带着平台章节，经终端的 `catalog.call` 吸附到转写、
- * 投影到时间线、编译成一个 `setChapters` 落到真实的引擎里。需要 engine-host、ffmpeg 与构建好的 editor-wasm，缺了就跳过。
+ * End-to-end `chapters_adopt` (architecture §7.9): chapters that a link-imported asset carries in its source are snapped to the transcript through the terminal's `catalog.call`, projected onto the timeline, and compiled into one `setChapters` that lands in the real engine. Needs engine-host, ffmpeg and a built editor-wasm; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -27,7 +26,7 @@ const ffmpeg = (() => {
   }
 })();
 
-/** 30 秒的转写：0 秒起 a 两句；10 秒起 b 一句；20 秒 a、21 秒 b 各一句（同一秒窗里两个段落起点）。 */
+/** 30-second transcript: from 0 s, speaker a has two sentences; from 10 s, b has one sentence; at 20 s a and at 21 s b, one sentence each (two paragraph starts in the same one-second window). */
 const speech = {
   schema: 'cuccut.speech/1',
   clock: 'source-asset',
@@ -51,7 +50,7 @@ const speech = {
   chapters: [],
 };
 
-/** 平台给的章节：Demo 写早了一秒，Outro 附近没有话。 */
+/** Platform-supplied chapters: "Demo" is written one second early; there is no speech near "Outro". */
 const source = {
   url: 'https://example.com/watch?v=1',
   webpageUrl: 'https://example.com/watch?v=1',
@@ -137,7 +136,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
       .sequences[video(videoId).rootSequenceId]!.markers.filter((marker) => marker.kind === 'chapter')
       .map((marker) => ({ frame: marker.frame, label: marker.label }));
 
-  /** 新建视频，导入 talk.mp4（`provenance` 给了时记成那样的来源）；`place` 时放到 0 秒；`transcript` 时写上转写。 */
+  /** Create a new video and import talk.mp4 (if `provenance` is given, it is recorded as the source); with `place`, put it at 0 s; with `transcript`, write the transcript. */
   async function talkVideo(options: {
     provenance?: unknown;
     place?: boolean;
@@ -185,7 +184,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
     expect(plan.sourceChapters).toMatchObject({ entries: 4, matched: 2, ambiguous: 1, snapped: 0, unanchored: 1 });
     const [intro, demo, qa, outro] = plan.sourceChapters.rows as Loose[];
     expect(intro).toMatchObject({ title: 'Intro', at: 0, sourceAt: 0, status: 'matched', anchor: { tier: 'paragraph' } });
-    // 作者写的 9 秒吸到 10 秒的段落起点。
+    // The 9 s the author wrote snaps to the 10 s paragraph start.
     expect(demo).toMatchObject({ title: 'Demo', at: 10, sourceAt: 10, status: 'matched', anchor: { tier: 'paragraph' } });
     expect(demo.anchor.snippet).toMatch(/^Now the demo\./);
     expect(qa).toMatchObject({ title: 'Q&A', at: 20, status: 'ambiguous', anchor: { tier: 'paragraph' } });
@@ -201,7 +200,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
       { frame: 810, label: 'Outro' },
     ]);
 
-    // 再采用一次是整个替换（不叠加），说明可以自己给。
+    // Adopting again replaces the whole set (no merging), showing that the caller can supply chapters itself.
     await ok('chapters_adopt', { video: videoId, outline: [{ at: 0, title: 'Only' }], label: '只留一章' });
     expect(chapters(videoId)).toEqual([{ frame: 0, label: 'Only' }]);
   });

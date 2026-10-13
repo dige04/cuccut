@@ -2,10 +2,9 @@ import { RpcError, refOf, type JobError, type Localized, type MessageRef } from 
 import { RcModelApi } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 模型接口服务的错误（架构设计 §4.8）：OpenAI 的错误体 `{ error: { message, type, code } }` 与 HTTP 状态。`code` 是
- * CucCut 的封闭错误码（命令与协议规范 §11.3 的模型接口服务一节），`type` 按状态取 OpenAI 的写法。
- * 只带错误码与一句说明：不带 `details`（里面可能有原因串与路径，§12.8）。说明是发出时当前语言的文字；错误体没有引用字段，
- * 引用只留在 `messageRef` 上。
+ * Errors of the model API service (architecture design §4.8): OpenAI's error body `{ error: { message, type, code } }` and the HTTP status. `code` is
+ * CucCut's closed set of error codes (the model API service section of the command and protocol spec §11.3); `type` takes OpenAI's wording for the status.
+ * Carries only an error code and one sentence of explanation: no `details` (they may contain cause strings and paths, §12.8). The explanation is text in the language current at the time it is emitted; the error body has no reference field, so the reference stays only on `messageRef`.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -47,7 +46,7 @@ export function errorType(status: number): string {
   }
 }
 
-/** 提交时的 `RpcError`（选择、参数检查）→ HTTP。 */
+/** `RpcError` at submission (selection, argument check) → HTTP. */
 export function fromRpcError(error: RpcError): ApiError {
   const details = (error.details ?? {}) as { code?: unknown };
   const code = typeof details.code === 'string' ? details.code : null;
@@ -58,7 +57,7 @@ export function fromRpcError(error: RpcError): ApiError {
       return new ApiError(404, 'MODEL_NOT_FOUND', error.message);
     case 'busy':
       return new ApiError(503, 'RUNTIME_BUSY', error.message);
-    // 数据外发的授权（§12.5）：没有授权、授权已撤销是 403；预算用完、金额无法核算是 409。
+    // Authorization for sending data out (§12.5): no authorization, or a revoked one, is 403; budget used up or an amount that cannot be computed is 409.
     case 'forbidden':
       if (code === 'GRANT_REQUIRED' || code === 'GRANT_REVOKED') return new ApiError(403, code, error.message);
       return new ApiError(403, 'FORBIDDEN', error.message);
@@ -70,7 +69,7 @@ export function fromRpcError(error: RpcError): ApiError {
   }
 }
 
-/** 任务失败（Job 的错误码）→ HTTP。限流时把供应商给的 `Retry-After` 转给调用方。 */
+/** Job failure (the Job's error code) → HTTP. On rate limiting, the provider's `Retry-After` is passed on to the caller. */
 export function fromJobError(error: JobError | null): ApiError {
   if (!error) return new ApiError(500, 'INTERNAL', RcModelApi.jobNotCompleted());
   const details = (error.details ?? {}) as { retryAfterSec?: unknown };
@@ -91,7 +90,7 @@ export function fromJobError(error: JobError | null): ApiError {
       return new ApiError(502, error.code, error.message);
     case 'JOB_INTERRUPTED':
       return new ApiError(503, error.code, error.message);
-    // 开始之前授权被撤销、自动重试时预算不够（§12.5、§7.8）。
+    // Authorization revoked before the start; budget insufficient at automatic retry (§12.5, §7.8).
     case 'GRANT_REVOKED':
     case 'GRANT_REQUIRED':
       return new ApiError(403, error.code, error.message);

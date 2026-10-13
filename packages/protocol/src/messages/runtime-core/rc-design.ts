@@ -14,7 +14,7 @@ import { pl } from './rc-design.pl.ts';
 import { tr } from './rc-design.tr.ts';
 import { vi } from './rc-design.vi.ts';
 
-/** 会话里的设计稿（docs/design/canvas）。英文是键与类型的来源，译文在 `rc-design.<语言>.ts`。 */
+/** Design drafts in a session (docs/design/canvas). English is the source of keys and types; translations are in `rc-design.<language>.ts`. */
 const en = {
   notACanvas: "This folder isn't a design: it has no valid canvas.json",
 };

@@ -24,8 +24,8 @@ import { DRIVER_ID_PATTERN, isBuiltinDriverId } from './domain.ts';
 import { ATTACHMENT_UPLOAD_MIME_TYPES, ATTACHMENT_MIME_TYPES, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_MESSAGE, MAX_PROJECT_FILES_LIMIT, PLAYBACK_CODECS } from './limits.ts';
 
 /**
- * 入站校验（Runtime 侧）。单独的子路径导出，界面打包不带上 zod。
- * 只校验客户端能发来的东西；出站 DTO 由类型约束。
+ * Inbound validation (Runtime side). A separate subpath export, so the UI bundle does not include zod.
+ * Only validates what clients can send; outbound DTOs are constrained by types.
  */
 
 const id = z.string().min(1).max(200);
@@ -47,10 +47,10 @@ const topic = z.union([
   z.string().regex(/^video:[A-Za-z0-9_-]+$/),
 ]);
 const empty = z.object({}).strict();
-/** 访问模式：新值与仍被接受的旧值（架构设计 §3.12）。换成新值由收到的一方做（`normalizeAgentMode`）。 */
+/** Access mode: the new values and the old values that are still accepted (architecture design §3.12). Converting to a new value is done by the receiving side (`normalizeAgentMode`). */
 const agentMode = z.enum([...AGENT_MODES, ...LEGACY_AGENT_MODES]);
 const serviceId = z.enum(SERVICE_IDS);
-/** 模型接口服务的别名：外部程序用的模型名，不含 `/`（`<providerId>/<modelId>` 是规范写法）。 */
+/** Alias for a model API service: the model name used by external programs, without `/` (`<providerId>/<modelId>` is the canonical form). */
 export const modelApiAlias = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const filePath = z.string().min(1).max(4096);
 const fileTarget = z.union([
@@ -65,8 +65,8 @@ const localFileTarget = z.object({ localPath: filePath }).strict();
 const mediaTarget = z.union([fileTarget, attachmentTarget, z.object(assetTarget).strict(), localFileTarget]);
 const positiveInt = z.number().int().positive();
 /**
- * 调用方给的文字旁边的消息引用（message-ref.ts）：键是 `<区域>.<名字>`，参数是标量或一层嵌套的引用。收下的引用原样存下、
- * 由读者展开，这里只限外形与长度。
+ * Message references next to caller-supplied text (message-ref.ts): keys are `<area>.<name>`, parameters are scalars or one level of nested references. Accepted references are stored as they are and
+ * expanded by the reader; this only checks the shape and length.
  */
 const messageKey = z.string().max(200).regex(/^[A-Za-z][\w-]*\.[\w.-]+$/);
 const messageParamName = z.string().min(1).max(100);
@@ -75,23 +75,23 @@ const nestedMessageRef = z
   .object({ key: messageKey, params: z.record(messageParamName, messageScalar).optional(), text: z.string().max(1000).optional() })
   .strict();
 const messageRef = z.object({ key: messageKey, params: z.record(messageParamName, z.union([messageScalar, nestedMessageRef])).optional() }).strict();
-/** 分段取景（`videos.derive` 的 `crops`）按 from 排好之后互不重叠。 */
+/** Segment crops (`crops` of `videos.derive`) do not overlap once sorted by from. */
 const cropsDisjoint = (crops: { from: number; to: number }[]) =>
   [...crops].sort((a, b) => a.from - b.from).every((c, n, all) => n === 0 || c.from >= all[n - 1]!.to);
 /**
- * 编辑操作只在这里查外形；字段与语义由引擎校验（架构设计 §13.2：单源定义），
- * 引擎拒绝未知字段并按操作序号报错。
+ * Edit operations only check the shape here; fields and semantics are validated by the engine (architecture design §13.2: single source of definition).
+ * The engine rejects unknown fields and reports errors by operation index.
  */
 const editOperation = z.looseObject({ type: z.string().min(1).max(50) });
 const undoTarget = z.union([z.enum(['undo', 'redo']), z.object({ transaction: id }).strict()]);
 const bundleId = z.string().min(1).max(200);
-/** Provider：`local`、`node:<nodeId 或别名>`、`openai`、`google`、`custom:<slug>`；认不认识由 Runtime 判断。 */
+/** Provider: `local`, `node:<nodeId or alias>`, `openai`, `google`, `custom:<slug>`; whether an id is recognized is decided by the Runtime. */
 const providerId = z.string().trim().min(1).max(300);
 const modelId = z.string().trim().min(1).max(200);
 const serviceCapability = z.enum(['transcribe', 'synthesizeSpeech', 'generateImage', 'generateText', 'separateAudio', 'generateMusic']);
-/** 有在线 Provider 的能力（`ONLINE_CAPABILITIES`）：自建服务商声明的模型与模型接口的别名只能是这几种。 */
+/** Capabilities with an online provider (`ONLINE_CAPABILITIES`): models declared by self-hosted providers, and aliases for model APIs, may only be one of these kinds. */
 const onlineCapability = z.enum(['transcribe', 'synthesizeSpeech', 'generateImage', 'generateText']);
-/** 数据外发的授权（架构设计 §12.5）。金额是十进制字符串，不用浮点数。 */
+/** Authorization for sending data off the device (architecture design §12.5). Amounts are decimal strings, not floats. */
 const money = z
   .object({
     amount: z.string().regex(/^\d{1,12}(\.\d{1,6})?$/, { error: () => V.amountInvalid().text }),
@@ -118,7 +118,7 @@ const approvalGrantChoice = z.discriminatedUnion('persist', [
     })
     .strict(),
 ]);
-/** 任务合同（架构设计 §3.2）。数组都有上限：合同交给智能体，不能无限长。 */
+/** Task contract (architecture design §3.2). The arrays all have upper bounds: the contract is handed to an agent and cannot be unbounded. */
 const contractScope = z
   .object({
     videoId: id.nullable(),
@@ -206,7 +206,7 @@ const contractInput = z
   })
   .strict();
 const contractPatch = contractInput.extend({ autonomy: agentMode.optional() }).strict();
-/** 任务合同的修改（`tasks.updateContract` 的 `patch`；智能体的 `tasks_update_contract` 工具也按它校验）。 */
+/** Changes to a task contract (the `patch` of `tasks.updateContract`; the agent's `tasks_update_contract` tool validates against it too). */
 export const taskContractPatchSchema = contractPatch;
 const editorContext = z
   .object({
@@ -221,8 +221,8 @@ const editorContext = z
   .strict();
 
 const textEffort = z.enum(['minimal', 'low', 'medium', 'high']);
-/** 文本消息：只有文本。单条与总长的上限按模型的上下文在供应商那里检查（`INPUT_TOO_LONG`），这里只挡住明显过大的请求。 */
-/** Space 里的一个条目作为输入（§7.9）：Runtime 在方法层换成文件或文字。 */
+/** Text message: text only. Per-message and total length limits are checked by the provider against the model's context (`INPUT_TOO_LONG`); here we only block obviously oversized requests. */
+/** An entry in a Space used as input (§7.9): the Runtime turns it into a file or text at the method layer. */
 const spaceEntryInput = z.object({ entryId: id }).strict();
 const textMessage = z
   .object({
@@ -230,7 +230,7 @@ const textMessage = z
     content: z.string().max(2_000_000),
   })
   .strict();
-/** JSON Schema 本身在提交时编译检查（不合法的是 `invalid-request`）；这里只要求是对象。 */
+/** The JSON Schema itself is compiled and checked on submit (invalid ones are `invalid-request`); here it only requires an object. */
 const textResponseFormat = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text') }).strict(),
   z
@@ -244,12 +244,12 @@ const textResponseFormat = z.discriminatedUnion('type', [
     })
     .strict(),
 ]);
-/** API key：只允许可见的 ASCII（不含空白与换行），进请求头前不必再转义。 */
+/** API key: only visible ASCII is allowed (no whitespace or newlines), so it needs no further escaping before going into a request header. */
 const credential = z
   .string()
   .max(4096)
   .regex(/^[\x21-\x7e]+$/, { error: () => V.secretChars().text });
-/** 账号（架构设计 §6.8）：随机的短 id，名字可选，region 是目录里预设的地区名。 */
+/** Account (architecture design §6.8): a random short id, an optional name; region is a preset region name from the catalog. */
 const accountId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { error: () => V.accountIdChars().text });
 const accountLabel = z.string().trim().min(1).max(100);
 const accountRegion = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, { error: () => V.regionChars().text });
@@ -268,12 +268,12 @@ const speechFormat = z.enum(['mp3', 'wav', 'flac']);
 const imageFormat = z.enum(['png', 'jpeg', 'webp']);
 /** `WIDTHxHEIGHT`。 */
 const imageSize = z.string().regex(/^[1-9]\d{1,4}x[1-9]\d{1,4}$/, { error: () => V.imageSize().text });
-/** `WIDTHxHEIGHT` 或宽高比 `W:H`。 */
+/** `WIDTHxHEIGHT` or an aspect ratio `W:H`. */
 const imageSizeOrRatio = z.string().regex(/^(?:[1-9]\d{1,4}x[1-9]\d{1,4}|[1-9]\d{0,2}:[1-9]\d{0,2})$/, { error: () => V.imageSizeOrRatio().text });
 const voiceId = z.string().trim().min(1).max(200);
-/** 供应商的 seed 都在 32 位无符号整数之内。 */
+/** Provider seeds all fit within 32-bit unsigned integers. */
 const seed = z.number().int().min(0).max(4_294_967_295);
-// ---- 用户库（架构设计 §5.9）：这里只查外形；规范化与语义检查（空术语、重复、文件内容）在库里做 ----
+// ---- User library (architecture design §5.9): only the shape is checked here; normalization and semantic checks (empty terms, duplicates, file contents) are done in the library ----
 const libraryName = z.enum(['glossaries', 'voices', 'brand']);
 const libraryId = z.string().regex(/^[A-Za-z0-9_-]{1,100}$/, { error: () => V.libraryIdChars().text });
 const libraryVersion = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
@@ -329,7 +329,7 @@ const brandContentInput = z.union([
       style: z.looseObject({ schema: z.string().trim().min(1).max(200) }),
     })
     .strict(),
-  // 保留的种类：收下外形，由 Runtime 带着说明拒绝（LIBRARY_KIND_RESERVED）。
+  // Reserved kinds: the shape is accepted, and the Runtime rejects them with an explanation (LIBRARY_KIND_RESERVED).
   z.looseObject({ name: libraryEntryName, kind: z.literal('overlayTemplate') }),
 ]);
 const librarySource = z.union([
@@ -363,21 +363,21 @@ const declaredModel = z
     structuredOutput: z.boolean().optional(),
   })
   .strict();
-/** 节点协议的客户端标识：令牌是 `<clientId>.<secret>`，所以不能含 `.`。 */
+/** Node protocol client id: the token is `<clientId>.<secret>`, so it cannot contain `.`. */
 const nodeClientId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
-/** 本机给已配对节点起的别名：`models.transcribe` 的 `node` 与 CLI 用它指代节点。 */
+/** Local alias for a paired node: used as the `node` in `models.transcribe`, and by the CLI to refer to the node. */
 const nodeAlias = z.string().trim().min(1).max(63);
-/** Driver id 只校验写法：是否注册了由 Runtime 判断（没注册的以 `driver-unavailable` 拒绝）。 */
+/** Driver id: only the spelling is validated. Whether it is registered is decided by the Runtime (unregistered ones are rejected with `driver-unavailable`). */
 const driverId = z.string().regex(DRIVER_ID_PATTERN, { error: () => V.driverIdStart().text });
-/** 用户添加的 ACP 智能体（`agents.addProvider`）：不得与内置的重名。 */
+/** User-added ACP agent (`agents.addProvider`): must not share a name with a built-in one. */
 const customDriverId = driverId.refine((id) => !isBuiltinDriverId(id), { error: () => V.driverIdBuiltin().text });
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/, { error: () => V.envNameChars().text });
 const installKind = z.enum(['script', 'brew', 'npm']);
-/** 模型与强度 id 由 Agent 给出，这里只限长度；null = 用 Agent 的默认。 */
+/** Model and effort ids are given by the Agent; only the length is limited here. null = the Agent's default. */
 const agentModel = z.string().trim().min(1).max(200).nullable();
 const agentEffort = z.string().trim().min(1).max(50).nullable();
 const attachmentIds = z.array(id).max(MAX_ATTACHMENTS_PER_MESSAGE);
-/** 幻灯片标注（docs/design/slides §9）。锚点、位置与定位描述的长度与编辑器消息（`@cuccut/slides/editor-messages`）一致。 */
+/** Slide annotations (docs/design/slides §9). The lengths of anchors, positions and location descriptions match the editor messages (`@cuccut/slides/editor-messages`). */
 const slideAnnotation = z
   .object({
     deck: fileTarget,
@@ -390,7 +390,7 @@ const slideAnnotation = z
   })
   .strict();
 const slideAnnotations = z.array(slideAnnotation).max(SLIDE_ANNOTATION_LIMITS.perMessage);
-/** 设计稿标注（docs/design/canvas §9）。长度与幻灯片标注相同；`board` 是相对设计稿目录的画板文件。 */
+/** Canvas annotations (docs/design/canvas §9). Lengths are the same as slide annotations; `board` is the board file, relative to the design directory. */
 const designAnnotation = z
   .object({
     canvas: fileTarget,
@@ -403,7 +403,7 @@ const designAnnotation = z
   })
   .strict();
 const designAnnotations = z.array(designAnnotation).max(DESIGN_ANNOTATION_LIMITS.perMessage);
-/** 设计系统标注（docs/design/canvas §10.6）。长度与设计稿标注相同；`section` 与编辑器消息里的章节同一个上限。 */
+/** Design system annotations (docs/design/canvas §10.6). Lengths are the same as canvas annotations; `section` uses the same limit as sections in the editor messages. */
 const designSystemAnnotation = z
   .object({
     system: fileTarget,
@@ -421,15 +421,15 @@ const languageOption = z.union([
 ]);
 const tick = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
-/** 本机的绝对路径：POSIX 路径、Windows 盘符或 UNC 共享路径。不含 NUL。 */
+/** Absolute local path: a POSIX path, a Windows drive letter, or a UNC share path. No NUL. */
 const absolutePath = z
   .string()
   .max(4096)
   .regex(/^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\/\0]+[\\/][^\\/\0]+(?:[\\/]|$))[^\0]*$/, { error: () => V.absolutePath().text });
 
 /**
- * 偏好设置每个键的取值（架构设计 §5.10）。键、类型、默认值与说明见 `settings.ts`；这里只管校验。
- * 写入与读取（文件里的旧值）都过这一份：不合的值不保存，读到时按默认值处理。
+ * The value of each preference key (architecture design §5.10). Keys, types, defaults and descriptions are in `settings.ts`; this file only validates.
+ * Writes and reads (old values in the file) both go through this one check: invalid values are not saved, and when read they are treated as the default.
  */
 export const settingValueSchemas = {
   'agent.defaultDriver': z
@@ -441,7 +441,7 @@ export const settingValueSchemas = {
     .string()
     .regex(/^[a-z][a-z0-9-]{0,31}$/, { error: () => V.effortChars().text })
     .nullable(),
-  // 旧值（controlled、authorized）照样接受，存成新值；文件里留下的旧值读入时同样换成新值。
+  // Old values (controlled, authorized) are still accepted and stored as the new values; old values left in the file are likewise converted to new ones on read.
   'agent.defaultAccessMode': agentMode.transform(normalizeAgentMode),
   'ui.language': z.enum(LANGUAGE_PREFERENCES),
   'captions.maxLineLength': z.object({ cjk: z.number().int().min(4).max(60), other: z.number().int().min(10).max(120) }).strict(),
@@ -496,7 +496,7 @@ export const settingValueSchemas = {
   'offline.strict': z.boolean(),
 } satisfies { [K in SettingKey]: z.ZodType<SettingValues[K]> };
 
-/** 模型下载来源的基址：`http(s)://`，不带凭据、查询参数与片段（凭据不得出现在 URL 里）。 */
+/** Base URL for model download sources: `http(s)://`, with no credentials, query parameters or fragment (credentials must not appear in a URL). */
 function isDownloadEndpoint(value: string): boolean {
   let url: URL;
   try {
@@ -507,12 +507,12 @@ function isDownloadEndpoint(value: string): boolean {
   return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password && !url.search && !url.hash;
 }
 
-/** 字体下载来源的基址：只认 `https://`（字体文件按字体解析之后直接进渲染器，不经明文连接取），其余同上。 */
+/** Base URL for font download sources: only `https://` is accepted (font files go straight into the renderer after being parsed as fonts, so they are not fetched over a plaintext connection). Otherwise as above. */
 export function isHttpsEndpoint(value: string): boolean {
   return isDownloadEndpoint(value) && new URL(value).protocol === 'https:';
 }
 
-/** `settings.set` 的 `values`：只接受注册过的键；`null` 表示恢复默认值。 */
+/** `values` of `settings.set`: only registered keys are accepted; `null` restores the default value. */
 export const settingsPatchSchema = z
   .object(
     Object.fromEntries(SETTING_KEYS.map((key) => [key, z.union([z.null(), settingValueSchemas[key]]).optional()])) as {
@@ -521,7 +521,7 @@ export const settingsPatchSchema = z
   )
   .strict();
 
-// ---- 导出（架构设计 §9.13） ----
+// ---- Export (architecture design §9.13) ----
 
 const exportSeconds = z.number().finite().min(0).max(1_000_000);
 const exportRange = z
@@ -542,7 +542,7 @@ const textExportOptions = {
   timestamps: z.boolean().optional(),
   scopeItemIds: z.array(id).min(1).max(1000).optional(),
 };
-/** 文稿独有的选项（`TranscriptExportOptions`）：字幕不认，给了以 `invalid-request` 拒绝。 */
+/** Options specific to transcripts (`TranscriptExportOptions`): subtitles do not accept them; if given, they are rejected with `invalid-request`. */
 const transcriptExportOptions = {
   frontmatter: z.boolean().optional(),
   chapters: z.boolean().optional(),
@@ -562,7 +562,7 @@ const audioExportOptions = {
     .nullable()
     .optional(),
 };
-/** 声音来源（音频与成片导出）：混音、只要原声，或只要一组配音。 */
+/** Audio source (audio and final-render export): mixed audio, original sound only, or a set of dubbed tracks. */
 const audioExportSource = z.union([z.enum(['mix', 'original']), z.object({ dubGroupId: z.string().min(1).max(128) }).strict()]);
 const oneRange = (s: { range?: unknown; ranges?: unknown }) => s.range === undefined || s.ranges === undefined;
 const subtitleExportSettings = z
@@ -579,7 +579,7 @@ const transcriptExportSettings = z
   })
   .strict()
   .refine(oneRange, { error: () => V.rangeOrRanges().text });
-/** `exports.renderText` 只排字幕与文稿：别的种类在这里就以 `invalid-request` 拒绝。 */
+/** `exports.renderText` only renders subtitles and transcripts; other kinds are rejected here with `invalid-request`. */
 const textExportSettings = z.union([subtitleExportSettings, transcriptExportSettings]);
 const exportSettings = z.union([
   subtitleExportSettings,
@@ -661,7 +661,7 @@ export const requestFrameSchema = z.object({
   params: z.unknown(),
 });
 
-/** `projects.files.create` 写入的文本上限（UTF-16 码元数，约 1 MiB）：起始页新建的是一份网页骨架，不是上传通道。 */
+/** Text limit for `projects.files.create` writes (UTF-16 code units, about 1 MiB): the start page creates a web page skeleton; this is not an upload channel. */
 const MAX_PROJECT_FILE_CREATE_CHARS = 1024 * 1024;
 const projectFileCreate = {
   name: z.string().min(1).max(255),
@@ -694,7 +694,7 @@ export const methodParamSchemas = {
     .object({
       id: customDriverId,
       name: z.string().trim().min(1).max(100),
-      // 第一个元素是可执行文件，其余是参数（架构设计 §3.11）。
+      // The first element is the executable, the rest are arguments (architecture design §3.11).
       command: z.array(z.string().min(1).max(4096).refine((a) => !a.includes('\0'), { error: () => V.noNul().text })).min(1).max(64),
       env: z.record(envName, z.string().max(8192).refine((v) => !v.includes('\0'), { error: () => V.noNul().text })).optional(),
       commandId: id.optional(),
@@ -712,7 +712,7 @@ export const methodParamSchemas = {
     decision: z.enum(['accept', 'accept-for-session', 'accept-always', 'decline']),
   }),
   'agents.interrupt': z.object({ conversationId: id }),
-  // 参数里不收命令：命令由 Runtime 从探测结果里取（架构设计 §12.9）。多给的字段直接拒绝。
+  // Arguments do not accept a command: the command is taken by the Runtime from the probe results (architecture design §12.9). Extra fields are rejected.
   'agents.runSetup': z
     .object({ driverId, action: z.enum(['install', 'upgrade']), kind: installKind, commandId: id })
     .strict(),
@@ -1006,8 +1006,8 @@ export const methodParamSchemas = {
     .strict(),
   'models.synthesizeSpeech': z
     .object({
-      // 上限按模型在提交时检查（`maxInputChars`）；这里只挡住明显过大的请求。
-      // 给了 `material` 时 `text` 是空字符串，由 Runtime 换成条目的文字（见下面的整体检查）。
+      // Limits are checked per model on submit (`maxInputChars`); here we only block obviously oversized requests.
+      // When `material` is given, `text` is an empty string, and the Runtime replaces it with the entry's text (see the overall check below).
       text: z.string().max(200_000),
       voice: voiceId.optional(),
       provider: providerId.optional(),
@@ -1017,7 +1017,7 @@ export const methodParamSchemas = {
       instructions: z.string().max(4096).optional(),
       speed: z.number().min(0.1).max(10).optional(),
       seed: seed.optional(),
-      // 本地模型的声音方式（§6.1）：参考录音加原文、一句描述；三种给法互斥，模型是否接受在提交时按描述检查。
+      // Voice modes of local models (§6.1): a reference recording plus the transcript, or a one-sentence description. The three ways are mutually exclusive; whether the model accepts one is checked against the description on submit.
       reference: z
         .object({ file: absolutePath, transcript: z.string().max(4096).optional() })
         .strict()
@@ -1031,9 +1031,9 @@ export const methodParamSchemas = {
       steps: z.number().int().min(1).max(1000).optional(),
       videoId: id.optional(),
       name: z.string().trim().min(1).max(200).optional(),
-      // 保存位置（§7.9）：结果另存一份可读名字的副本。
+      // Save location (§7.9): the result is saved as an extra copy with a readable name.
       saveDir: absolutePath.optional(),
-      // Space 条目作为素材（§7.9）：文档或字幕条目的文字当 `text`。
+      // Space entries as material (§7.9): the text of a document or subtitle entry is used as `text`.
       material: spaceEntryInput.optional(),
       commandId: id.optional(),
     })
@@ -1060,7 +1060,7 @@ export const methodParamSchemas = {
       model: modelId.optional(),
       videoId: id.optional(),
       name: z.string().trim().min(1).max(200).optional(),
-      // 保存位置（§7.9）：结果另存一份可读名字的副本。
+      // Save location (§7.9): the result is saved as an extra copy with a readable name.
       saveDir: absolutePath.optional(),
       commandId: id.optional(),
     })
@@ -1087,7 +1087,7 @@ export const methodParamSchemas = {
       commandId: id.optional(),
     })
     .strict()
-    // 歌曲要有歌词；配乐不收歌词（不拿说明文字凑数）。
+    // Songs need lyrics; background music does not take lyrics (do not pad it with descriptive text).
     .refine((r) => (r.mode === 'song' ? (r.lyrics ?? '').trim().length > 0 : r.lyrics === undefined), {
       error: () => V.musicLyricsMode().text,
       path: ['lyrics'],
@@ -1109,9 +1109,9 @@ export const methodParamSchemas = {
       seed: seed.optional(),
       provider: providerId.optional(),
       model: modelId.optional(),
-      // 保存位置（§7.9）：结果另存一份可读名字的副本。
+      // Save location (§7.9): the result is saved as an extra copy with a readable name.
       saveDir: absolutePath.optional(),
-      // Space 条目作为素材（§7.9）：文字接在最后一条用户消息后面。
+      // Space entries as material (§7.9): the text is appended after the last user message.
       material: spaceEntryInput.optional(),
       commandId: id.optional(),
     })
@@ -1190,7 +1190,7 @@ export const methodParamSchemas = {
   'pipelines.retry': z.object({ jobId: id }).strict(),
   'catalog.list': z.object({}).strict(),
   'catalog.agentSkill': z.object({}).strict(),
-  // `project` 只收绝对路径：`--project` 的相对路径由 CLI 按 cwd 解析好再发。
+  // `project` accepts only absolute paths: a relative path from `--project` is resolved against the cwd by the CLI before sending.
   'catalog.call': z
     .object({ name: z.string().min(1).max(100), args: z.unknown(), cwd: absolutePath, project: absolutePath.nullable().optional() })
     .strict(),
@@ -1258,7 +1258,7 @@ export const methodParamSchemas = {
     .strict(),
   'nodes.share.start': z
     .object({
-      // 0 表示由系统挑一个空闲端口（测试与诊断用）。
+      // 0 means the system picks a free port (for tests and diagnostics).
       port: z.number().int().min(0).max(65_535).optional(),
       name: z.string().trim().min(1).max(63).optional(),
       allowAnySource: z.boolean().optional(),
@@ -1268,7 +1268,7 @@ export const methodParamSchemas = {
   'nodes.share.status': empty,
   'nodes.share.pairingCode': empty,
   'nodes.share.revoke': z.object({ clientId: nodeClientId }).strict(),
-  // 认不认识这种能力由节点服务判断（同样是 invalid-request，说明里列出可共享的能力）。
+  // Whether a capability is recognized is decided by the node service (also invalid-request, with the description listing the shareable capabilities).
   'nodes.share.setCapability': z.object({ capability: z.string().trim().min(1).max(64), enabled: z.boolean() }).strict(),
   'nodes.discover': z.object({ timeoutMs: z.number().int().min(100).max(10_000).optional() }).strict(),
   'nodes.pair': z
@@ -1288,7 +1288,7 @@ export const methodParamSchemas = {
     .object({
       serviceId,
       autostart: z.boolean().optional(),
-      // 0 表示由系统挑一个空闲端口（测试与诊断用）。
+      // 0 means the system picks a free port (for tests and diagnostics).
       port: z.number().int().min(0).max(65_535).optional(),
       level: z.enum(SERVICE_LEVELS).optional(),
       videos: z.union([z.literal('all'), z.object({ ids: z.array(id).max(1000) }).strict()]).optional(),
@@ -1328,9 +1328,9 @@ export const methodParamSchemas = {
   unsubscribe: z.object({ topic }),
 } satisfies Record<RpcMethod, z.ZodType>;
 
-// ---- 节点协议（节点协议规范 §4、§5）：节点服务校验请求体，发起端也可以拿来自检 ----
+// ---- Node protocol (node protocol spec §4, §5): the node service validates request bodies; the initiating side can also use them for self-checks ----
 
-/** `POST /v1/pair` 的请求体。 */
+/** Request body of `POST /v1/pair`. */
 export const nodePairRequestSchema = z
   .object({
     code: z.string().max(32),
@@ -1339,7 +1339,7 @@ export const nodePairRequestSchema = z
   })
   .strict();
 
-/** `POST /v1/jobs` 的请求体（`NodeJobRequest`）。媒体上限与磁盘空间是准入检查，不在这里。 */
+/** Request body of `POST /v1/jobs` (`NodeJobRequest`). The media limits and disk space are admission checks and are not here. */
 export const nodeJobRequestSchema = z
   .object({
     clientJobId: z.string().min(1).max(200),

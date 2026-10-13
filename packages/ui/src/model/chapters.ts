@@ -14,7 +14,7 @@ import { pl } from './chapters.pl.ts';
 import { tr } from './chapters.tr.ts';
 import { vi } from './chapters.vi.ts';
 
-/** 章节的文案（英文是键与类型的来源，译文在 `chapters.zh-Hans.ts`）。 */
+/** Copy for chapters (the English is the source of keys and types; the translations live in `chapters.zh-Hans.ts`). */
 const en = {
   chapterN: (n: number) => `Chapter ${n}`,
 };
@@ -22,36 +22,36 @@ export type ChaptersMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 章节（视频格式规范 §3.13）：序列上 `kind: 'chapter'` 的标记，固定在序列帧上，不跟着实例移动（应用与恢复剪口时由引擎跟着内容挪，
- * §6.7）；一章从它的起点到下一章的起点，最后一章到序列结尾（标记自己带时长时到时长为止，与导出页 `chapterPieces` 同一口径）。
+ * Chapters (video format spec §3.13): markers with `kind: 'chapter'` on the sequence, fixed to sequence frames and not moving with instances (when cuts are applied or restored, the engine moves them with the content,
+ * §6.7). A chapter runs from its start to the next chapter's start, and the last one runs to the end of the sequence (when the marker carries its own duration, it runs for that duration; same rule as `chapterPieces` on the export page).
  *
- * 这里是编辑器里章节的纯模型：时间线章节条的分段（设计稿 model-timeline.js `playbackSpans`）、播放头在哪一章、上一章 / 下一章
- * （`prevChapterStart` / `nextChapterStart`，0.05 秒容差）、拖起点的帧范围、文稿按章分组（model-chapters.js `chapterOfPara`
- * 取段中点），以及加、改名、挪起点、删除对应的编辑操作（`upsertChapter` / `removeChapter`，按帧提交，`exact-frame`）。
+ * This is the pure model of chapters in the editor: the segmentation of the timeline chapter strip (design draft model-timeline.js `playbackSpans`), which chapter the playhead is in, previous / next chapter
+ * (`prevChapterStart` / `nextChapterStart`, 0.05 s tolerance), the frame range for dragging a start, grouping the transcript by chapter (model-chapters.js `chapterOfPara`,
+ * which uses the segment midpoint), and the edit operations for adding, renaming, moving a start and deleting (`upsertChapter` / `removeChapter`, committed by frame, `exact-frame`).
  */
 
-/** 引擎收的章节标题长度上限（chapters.rs `MAX_TITLE_CHARS`）。 */
+/** Maximum chapter title length the engine accepts (`MAX_TITLE_CHARS` in chapters.rs). */
 export const CHAPTER_TITLE_MAX = 200;
 
-/** 上一章 / 下一章的容差（秒）：离章起点不到这么近时算已经在起点上（设计稿 §12.3）。 */
+/** Tolerance in seconds for previous / next chapter: within this distance of a chapter's start, the playhead counts as already on that start (design draft §12.3). */
 const NEAR = 0.05;
 
 export interface ChapterSpan {
   id: Id;
-  /** 按起点排的次序（从 0 起）。 */
+  /** Order by start time (0-based). */
   index: number;
-  /** 标记上的原名（可能是空白）。 */
+  /** The raw name on the marker (may be blank). */
   label: string;
-  /** 显示用：原名去空白，空的写「第 N 章」。 */
+  /** For display: the raw name trimmed; an empty name shows “第 N 章” (chapter N). */
   title: string;
   startFrame: number;
   endFrame: number;
-  /** 秒。 */
+  /** Seconds. */
   start: number;
   end: number;
 }
 
-/** 序列上的章节，按起点排。起点在片尾或更后的也在里面，长度为 0（条上画不出来，但还在序列上）。 */
+/** Chapters on the sequence, sorted by start. Chapters starting at or after the tail end of the sequence are included too, with length 0 (they cannot be drawn on the strip, but they remain on the sequence). */
 export function sequenceChapters(sequence: Sequence): ChapterSpan[] {
   const total = sequenceDurationFrames(sequence);
   const markers = sequence.markers.filter((m) => m.kind === 'chapter').sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
@@ -72,12 +72,12 @@ export function sequenceChapters(sequence: Sequence): ChapterSpan[] {
   });
 }
 
-/** 有长度的章（条上画得出来的）。 */
+/** Chapters with a length (the ones that can be drawn on the strip). */
 export function visibleChapters(chapters: readonly ChapterSpan[]): ChapterSpan[] {
   return chapters.filter((c) => c.endFrame > c.startFrame);
 }
 
-/** 播放头在哪一章（`chapters` 里的下标）；不在任何一章里时 -1。最后一章含片尾那一刻。 */
+/** Which chapter the playhead is in (index into `chapters`); -1 when it is in no chapter. The last chapter includes the tail-end moment. */
 export function chapterAt(chapters: readonly ChapterSpan[], seconds: number): number {
   let last = -1;
   for (let i = 0; i < chapters.length; i++) if (chapters[i]!.endFrame > chapters[i]!.startFrame) last = i;
@@ -89,21 +89,21 @@ export function chapterAt(chapters: readonly ChapterSpan[], seconds: number): nu
   return -1;
 }
 
-/** 上一章：播放头前面最近的章起点（离当前章起点不到 0.05 秒时再往前一章）；前面没有章时回到 0。 */
+/** Previous chapter: the nearest chapter start before the playhead (if it is less than 0.05 s from the current chapter's start, go one chapter further back); returns 0 when there is no chapter before it. */
 export function prevChapterStart(chapters: readonly ChapterSpan[], seconds: number): number {
   let best = 0;
   for (const c of visibleChapters(chapters)) if (c.start < seconds - NEAR) best = c.start;
   return best;
 }
 
-/** 下一章：播放头后面最近的章起点；后面没有章时到最后一章的结尾（片尾）。没有章时原地不动。 */
+/** Next chapter: the nearest chapter start after the playhead; when there is no chapter after it, goes to the end of the last chapter (the tail end). With no chapters, stays where it is. */
 export function nextChapterStart(chapters: readonly ChapterSpan[], seconds: number): number {
   const shown = visibleChapters(chapters);
   for (const c of shown) if (c.start > seconds + NEAR) return c.start;
   return shown.length ? shown[shown.length - 1]!.end : seconds;
 }
 
-/** 章节条上的一段：一章，或章与章之间（第一章之前）没有章的空当；没有章时是整条播放进度。 */
+/** A segment on the chapter strip: either a chapter, or a gap with no chapter between chapters (before the first chapter); with no chapters, it is the whole playback progress. */
 export interface BandSegment {
   key: string;
   chapter: ChapterSpan | null;
@@ -111,7 +111,7 @@ export interface BandSegment {
   end: number;
 }
 
-/** 章节条按时间铺满 [0, 片长]：章节之间的空当补成没有章的段（点它按位置定位）。 */
+/** The chapter strip covers [0, duration] by time: gaps between chapters are filled in as segments without a chapter (click one to seek to that position). */
 export function bandSegments(chapters: readonly ChapterSpan[], duration: number): BandSegment[] {
   if (!(duration > 0)) return [];
   const out: BandSegment[] = [];
@@ -126,8 +126,8 @@ export function bandSegments(chapters: readonly ChapterSpan[], duration: number)
 }
 
 /**
- * 拖一章的起点能到哪些帧：晚于上一章起点、早于下一章起点（引擎只拒同一帧，不拒越过邻居——保住先后次序靠这里），
- * 也不出片尾。第一章最早到 0。
+ * Which frames a chapter's start can be dragged to: later than the previous chapter's start and earlier than the next chapter's start (the engine only rejects the same frame, not jumping past a neighbour; keeping the order is done here),
+ * and not past the tail end. The first chapter can go back as far as 0.
  */
 export function startBounds(chapters: readonly ChapterSpan[], index: number, totalFrames: number): { min: number; max: number } {
   const prev = chapters[index - 1];
@@ -137,14 +137,14 @@ export function startBounds(chapters: readonly ChapterSpan[], index: number, tot
   return { min, max: Math.max(min, max) };
 }
 
-/** 加一章时预填的名字：落在第几章就叫「第 N 章」。 */
+/** Name pre-filled when adding a chapter: it is called “第 N 章” (chapter N) for whatever chapter position it lands in. */
 export function defaultChapterTitle(chapters: readonly ChapterSpan[], frame: number): string {
   return M.chapterN(chapters.filter((c) => c.startFrame < frame).length + 1);
 }
 
 export type AddChapterRefusal = 'exists' | 'beyond' | 'blank';
 
-/** 某一帧加不加得了章（还没起名，只看位置）：落在片尾或更后（长度为 0）、那一帧已经有一章时不行；加得了时 null。 */
+/** Whether a chapter can be added at a given frame (no name yet; only the position is checked): not allowed at or after the tail end (length 0), or where a chapter already exists at that frame; null when it can be added. */
 export function addChapterRefusal(sequence: Sequence, chapters: readonly ChapterSpan[], frame: number): Exclude<AddChapterRefusal, 'blank'> | null {
   const at = Math.max(0, Math.round(frame));
   if (at >= sequenceDurationFrames(sequence)) return 'beyond';
@@ -152,7 +152,7 @@ export function addChapterRefusal(sequence: Sequence, chapters: readonly Chapter
   return null;
 }
 
-/** 在某一帧加一章。名字是空白、位置不行（`addChapterRefusal`）时不成立。 */
+/** Adds a chapter at a given frame. Does not apply when the name is blank or the position is refused (`addChapterRefusal`). */
 export function addChapterOperation(
   sequence: Sequence,
   chapters: readonly ChapterSpan[],
@@ -176,14 +176,14 @@ export function addChapterOperation(
   };
 }
 
-/** 改名：去掉首尾空白；空白或与原名相同时不写（null）。 */
+/** Rename: trims leading and trailing whitespace; writes nothing (null) when the result is blank or the same as the current name. */
 export function renameChapterOperation(sequenceId: Id, chapter: ChapterSpan, title: string): EditOperation | null {
   const name = title.trim().slice(0, CHAPTER_TITLE_MAX);
   if (!name || name === chapter.label.trim()) return null;
   return { type: 'upsertChapter', sequenceId, chapterId: chapter.id, title: name };
 }
 
-/** 挪起点到某一帧（调用方已按 `startBounds` 夹好）；没动时不写（null）。 */
+/** Moves the start to a given frame (the caller has already clamped it with `startBounds`); writes nothing (null) when it has not moved. */
 export function moveChapterOperation(sequenceId: Id, chapter: ChapterSpan, frame: number): EditOperation | null {
   const at = Math.max(0, Math.round(frame));
   if (at === chapter.startFrame) return null;
@@ -194,10 +194,10 @@ export function removeChapterOperation(sequenceId: Id, chapter: ChapterSpan): Ed
   return { type: 'removeChapter', sequenceId, chapterId: chapter.id };
 }
 
-/** 文稿里一段在序列上的区间（秒）；整段都剪掉了时是 null。 */
+/** The range on the sequence (seconds) of a segment in the transcript; null when the whole segment has been cut. */
 export type ParagraphSpan = { start: number; end: number } | null;
 
-/** 一段的区间：首个还在时间线上的词的起点，到末个的终点（词投到几处时各取第一处，与段头的时间同一口径）。 */
+/** The range of a segment: from the start of the first word still on the timeline to the end of the last one (when a word is placed in several spots, each takes its first spot, same basis as the segment header time). */
 export function paragraphSpan(words: readonly { placements: readonly { start: number; end: number }[] }[]): ParagraphSpan {
   let first: { start: number; end: number } | undefined;
   let last: { start: number; end: number } | undefined;
@@ -210,10 +210,10 @@ export function paragraphSpan(words: readonly { placements: readonly { start: nu
   return first && last ? { start: first.start, end: Math.max(first.start, last.end) } : null;
 }
 
-/** 文稿按章分组后的一行：章节头行（后面跟着 `count` 段），或第 `index` 段。`chapter` 为 null 的头行是「第一章之前」。 */
+/** A row after grouping the transcript by chapter: either a chapter header row (followed by `count` segments), or segment number `index`. A header row with `chapter` null is “before chapter one”. */
 export type ChapterRow = { kind: 'chapter'; chapter: ChapterSpan | null; count: number } | { kind: 'paragraph'; index: number };
 
-/** 一段归哪一章：取段中点（段可能跨边界，用中点免得两边都算）；落在第一章之前时 -1。 */
+/** Which chapter a segment belongs to: uses the segment midpoint (a segment may cross a boundary, so the midpoint avoids counting it for both sides); -1 when it falls before the first chapter. */
 function chapterOfSpan(chapters: readonly ChapterSpan[], span: { start: number; end: number }): number {
   const mid = (span.start + span.end) / 2;
   let hit = -1;
@@ -222,15 +222,15 @@ function chapterOfSpan(chapters: readonly ChapterSpan[], span: { start: number; 
 }
 
 /**
- * 文稿按章分组（设计稿 panels.jsx 的 `.tsec` / `.chead`）：段落按文稿的次序走，所属的章变了就插一行章节头。
- * 整段剪掉的段跟着前一段（开头的跟着后一段）。`withEmpty` 时把跳过的、开头之前与结尾之后没有段落的章也列出来
- * （设计稿：空章节照样出头行）——只有一份转写时这样做，几份转写各自分组时空章会重复出现，不列。没有章时不插头行。
+ * Groups the transcript by chapter (design draft panels.jsx `.tsec` / `.chead`): paragraphs are walked in transcript order, and a chapter header row is inserted whenever the owning chapter changes.
+ * A fully cut segment follows the previous segment (leading ones follow the next). With `withEmpty`, chapters that were skipped, or that have no paragraphs before the start or after the end, are listed too
+ * (design draft: empty chapters still get a header row). This is done only when there is one transcript; when several transcripts are grouped separately, empty chapters would repeat, so they are not listed. No header rows are inserted when there are no chapters.
  */
 export function chapterRows(chapters: readonly ChapterSpan[], paragraphs: readonly ParagraphSpan[], withEmpty: boolean): ChapterRow[] {
   const shown = visibleChapters(chapters);
   if (!shown.length) return paragraphs.map((_, index) => ({ kind: 'paragraph', index }));
   const own = paragraphs.map((span) => (span ? chapterOfSpan(shown, span) : null));
-  // 整段剪掉的：先跟前一段，开头那几段跟后一段。
+  // Fully cut segments follow the previous segment; the leading ones follow the next one.
   let last: number | null = null;
   const filled = own.map((c) => (c === null ? last : (last = c)));
   const first = filled.find((c) => c !== null) ?? null;
@@ -239,7 +239,7 @@ export function chapterRows(chapters: readonly ChapterSpan[], paragraphs: readon
   const rows: ChapterRow[] = [];
   const used = new Set(of);
   let current: number | null = null;
-  // 走到过的最后一章：空章按它补，片段挪过、章号往回跳时不重复补。
+  // The last chapter reached: empty chapters are filled in from it, and not filled in twice when a clip has been moved and the chapter number jumps back.
   let reached = -1;
   let head: { kind: 'chapter'; chapter: ChapterSpan | null; count: number } | null = null;
   const empty = (to: number) => {
@@ -249,7 +249,7 @@ export function chapterRows(chapters: readonly ChapterSpan[], paragraphs: readon
   of.forEach((c, index) => {
     if (c !== current) {
       if (c > reached) empty(c);
-      // 开头那几段在第一章之前：不插头行；之后又回到第一章之前（片段被挪过）才插「第一章之前」。
+      // Leading segments before chapter one get no header row; a “before chapter one” header is inserted only when the sequence later goes back before chapter one (a clip was moved).
       if (c >= 0 || current !== null) {
         head = { kind: 'chapter', chapter: c >= 0 ? shown[c]! : null, count: 0 };
         rows.push(head);
@@ -263,25 +263,25 @@ export function chapterRows(chapters: readonly ChapterSpan[], paragraphs: readon
   return rows;
 }
 
-// ---- 文稿里按章、按段的操作（设计稿 model-chapters.js `movePlan`，panels.jsx 段落行的 ↑ ↓ 与章节头「这一章…」） ----
+// ---- Per-chapter and per-segment operations in the transcript (design draft model-chapters.js `movePlan`; the ↑ ↓ on paragraph rows in panels.jsx and “这一章…” (this chapter…) on chapter headers) ----
 
-/** 把一段挪到相邻章的做法：挪的是哪一章的起点、挪到哪一帧，连带几段一起走。 */
+/** How a segment moves to an adjacent chapter: which chapter's start moves, to which frame, and how many segments move along with it. */
 export interface ParagraphMove {
-  /** 这一段现在所在的章。 */
+  /** The chapter this segment is currently in. */
   from: ChapterSpan;
-  /** 挪到的章。 */
+  /** The chapter moved to. */
   to: ChapterSpan;
   frame: number;
   operation: EditOperation;
-  /** 跟着换章的段数（含这一段）。 */
+  /** Number of segments that change chapter along with it (including this one). */
   moved: number;
 }
 
 /**
- * 把第 `index` 段挪到上一章（-1）或下一章（+1）。章节是连续的时间区间，只挪被跨过的那一条边界，所以同侧的邻居一起走：
- * 往前挪时这一章的起点挪到同章下一段的开头，往后挪时下一章的起点挪到这一段的开头（向下取整到帧）。
- * 本章至少留一段（把自己的章掏空只会得到一个零长的章，设计稿同样不成立）；第一章之前的段、整段剪掉的段、
- * 挪过去会越过邻章起点或出片尾的，都不成立（null）。段按中点归章，与 `chapterRows` 同一口径。
+ * Moves segment `index` to the previous chapter (-1) or the next chapter (+1). Chapters are contiguous time ranges, so only the one boundary being crossed moves, and neighbours on the same side move along with it:
+ * when moving earlier, this chapter's start moves to the start of the next segment in the same chapter; when moving later, the next chapter's start moves to the start of this segment (rounded down to a frame).
+ * This chapter must keep at least one segment (emptying it would only leave a zero-length chapter, which the design draft also does not allow). Not valid (null) for segments before chapter one, fully cut segments,
+ * or moves that would jump past the neighbouring chapter's start or past the tail end. Segments are assigned to chapters by midpoint, the same basis as `chapterRows`.
  */
 export function moveParagraphPlan(
   sequence: Sequence,
@@ -324,13 +324,13 @@ export function moveParagraphPlan(
   return operation ? { from, to, frame, operation, moved: mine.length - at } : null;
 }
 
-/** 剪掉一章不成立的原因：这一章没有长度、它就是整个视频、没有要剪的轨道。 */
+/** Reasons removing a chapter is not valid: the chapter has no length, it is the whole video, or there are no tracks to cut. */
 export type ChapterCutRefusal = 'empty' | 'whole' | 'no-tracks';
 
 /**
- * 剪掉一章（一笔事务）：`removeRange` 删掉这一章的区间（声明的轨道由调用方给，与文稿里剪一段同一套），删掉这一章的标记，
- * 后面各章的起点按升序前移这一章的长度——引擎的 `removeRange` 只挪实例、不挪标记，不跟着挪的话后面的章会错位。
- * 按升序逐章挪，每一步落到的帧都空着（前一章已经挪走或删掉），不会撞上同一帧。
+ * Cuts out a chapter (one transaction): `removeRange` deletes the chapter's range (the declared tracks come from the caller, same as cutting a segment in the transcript), deletes the chapter's marker,
+ * and moves the starts of later chapters earlier by this chapter's length in ascending order. The engine's `removeRange` only moves instances, not markers, so without moving them the later chapters would be out of place.
+ * Chapters are moved one by one in ascending order; each target frame is empty at that step (the previous chapter has already been moved or deleted), so no two collide on the same frame.
  */
 export function cutChapterOperations(
   sequence: Sequence,

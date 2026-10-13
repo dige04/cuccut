@@ -4,7 +4,7 @@ import { readEditorMessage, readHostMessage, SUGGESTED_PROMPT_MAX } from '../edi
 import type { CommentAnchorHandlers } from './slides-host.ts';
 import { createCommentsBridge, domPinLayer, type ParentLink, type PinLayer } from './comments-bridge.ts';
 
-/** 假的父窗口通道：记下 iframe 发出的消息，`deliver` 模拟父窗口发来的消息。 */
+/** Fake parent-window channel: records messages sent by the iframe; `deliver` simulates messages sent from the parent window. */
 function fakeLink() {
   const sent: EditorToHostMessage[] = [];
   const listeners = new Set<(message: HostToEditorMessage) => void>();
@@ -219,7 +219,7 @@ describe('postMessage 校验', () => {
 });
 
 describe('domPinLayer', () => {
-  /** 只有 domPinLayer 用到的那几样 DOM。 */
+  /** Only the DOM pieces that domPinLayer uses. */
   function fakeDocument() {
     type Node = { textContent: string; style: { cssText: string }; children: Node[]; isConnected: boolean; setAttribute(): void; replaceChildren(...nodes: Node[]): void };
     const node = (): Node => ({

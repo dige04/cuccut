@@ -1,8 +1,8 @@
-//! 通用 preset manifest（设计 §5.4.1、规范 §7.4 / 附录 B）。
+//! Generic preset manifest (design §5.4.1, spec §7.4 / appendix B).
 //!
-//! 这是**第五种**配方形状，与 `frozen.rs` 的四种冻结形状并存而不是取代它们
-//! （ADR-M08：`timeline.*@1` / `bcf.*@1` 已发布，解析路径不得改写）。
-//! 形状：
+//! This is the **fifth** recipe shape. It coexists with the four frozen shapes in `frozen.rs` rather than replacing them
+//! (ADR-M08: `timeline.*@1` / `bcf.*@1` are already published, so their parse paths must not be rewritten).
+//! Shape:
 //!
 //! ```jsonc
 //! { "id": "motion.backIn", "version": 1, "domain": "motion", "family": "backIn",
@@ -10,7 +10,7 @@
 //!   "params": { "direction": { "type": "enum", "options": ["left","right","up","down"],
 //!                              "default": "up" } },
 //!   "compose": [ { "preset": "motion.moveIn", "params": { "direction": "{direction}" } } ],
-//!   // 或叶子：
+//!   // or leaf:
 //!   "tracks": [ { "prop": "y", "composite": "add", "order": 0,
 //!                 "frames": [ { "t": "0%", "v": "{distance}" },
 //!                             { "t": "100%", "v": 0, "ease": "easeOutCubic" } ] } ],
@@ -18,8 +18,8 @@
 //!   "determinism": "strict", "capabilities": [], "fallback": "bcf.fadeIn" }
 //! ```
 //!
-//! `tracks` 与 `compose` 互斥。帧值 / 参数值里的 `"{param}"` 是唯一的替换语法
-//! （`substitute.rs`），只替换不算术。
+//! `tracks` and `compose` are mutually exclusive. The `"{param}"` in frame values and parameter values is the only substitution syntax
+//! (`substitute.rs`); it only substitutes and does no arithmetic.
 
 use std::collections::BTreeMap;
 
@@ -49,7 +49,7 @@ impl ManifestDomain {
     }
 }
 
-/// 确定性等级（规范 §14.6）。
+/// Determinism level (spec §14.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Determinism {
     Strict,
@@ -76,11 +76,9 @@ impl Determinism {
     }
 }
 
-/// 配方对哪些**表面**开放（计划 §0.2）。
+/// Which **surfaces** a recipe is open to (plan §0.2).
 ///
-/// 刻意不复用 `SlotRecipe::available` —— 那是「GPUI/Mac 动画面板里能不能选到」的
-/// 目录开关，语义已经被两个客户端消费。新 family 需要表达的是「Timeline 0.1 枚举
-/// 与 Mac 舞台都不开放，只对 BCF 开放」，是另一个维度。
+/// Deliberately does not reuse `SlotRecipe::available`. That is the catalogue switch for "can it be selected in the GPUI/Mac animation panel", whose meaning is already consumed by both clients. A new family needs to express "neither the Timeline 0.1 enum nor the Mac stage opens it; only BCF does", which is a different dimension.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Surface {
     Timeline,
@@ -113,16 +111,16 @@ pub enum ParamType {
         min: Option<f64>,
         max: Option<f64>,
     },
-    /// 裸数字（basis=absolute）或 `{value, basis, offset}`（规范 §7.8）。
+    /// A bare number (basis=absolute) or `{value, basis, offset}` (spec §7.8).
     Length,
     Enum {
         options: Vec<String>,
     },
     Bool,
     Text,
-    /// 曲线名（规范 §7.6 的封闭名称）。
+    /// Curve name (closed names from spec §7.6).
     Curve,
-    /// u64，缺省 0（规范 §7.3）。
+    /// u64, default 0 (spec §7.3).
     Seed,
 }
 
@@ -139,7 +137,7 @@ impl ParamType {
         }
     }
 
-    /// 类型校验。值必须已经过 `substitute`（不再含 `"{param}"`）。
+    /// Type validation. Values must already have gone through `substitute` (no longer containing `"{param}"`).
     pub fn check(&self, id: &str, key: &str, value: &Value) -> Result<(), MotionError> {
         let bad = |detail: String| {
             Err(MotionError::PresetParamUnknown(format!(
@@ -197,7 +195,7 @@ impl ParamType {
     }
 }
 
-/// 长度值 → `RelativeLength`：裸数字视为 `absolute`（规范 §7.8）。
+/// Length value → `RelativeLength`: a bare number is treated as `absolute` (spec §7.8).
 pub fn parse_length_value(value: &Value) -> Option<RelativeLength> {
     if let Some(n) = value.as_f64() {
         return Some(RelativeLength::absolute(n));
@@ -218,7 +216,7 @@ pub fn parse_length_value(value: &Value) -> Option<RelativeLength> {
     })
 }
 
-/// `{value, basis, …}` 形状（未求值的相对长度）。
+/// `{value, basis, …}` shape (unevaluated relative length).
 pub fn is_relative_length_object(value: &Value) -> bool {
     value
         .as_object()
@@ -228,12 +226,12 @@ pub fn is_relative_length_object(value: &Value) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParamSpec {
     pub ty: ParamType,
-    /// `None` = 必填（缺失时报 `preset-param-missing`）。
+    /// `None` = required (reports `preset-param-missing` when missing).
     pub default: Option<Value>,
     pub doc: Option<String>,
 }
 
-/// manifest 里的帧时间只有两种：窗口百分比与相对秒。TimeExpr 不进配方。
+/// Frame times in manifests come in only two forms: window percentages and relative seconds. TimeExpr does not enter recipes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FrameTime {
     Pct(f64),
@@ -249,7 +247,7 @@ impl FrameTime {
     }
 }
 
-/// 一帧。`v` / `ease` 是**原文 JSON**，可能含 `"{param}"`，展开期才替换。
+/// One frame. `v` / `ease` are **raw JSON text** that may contain `"{param}"`, substituted only at expansion time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrameSpec {
     pub t: FrameTime,
@@ -257,37 +255,37 @@ pub struct FrameSpec {
     pub ease: Option<Value>,
 }
 
-/// 叶子配方的一条轨。
+/// One track of a leaf recipe.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackSpec {
     pub prop: String,
-    /// `None` = 用 `defaults.composite`，再没有就用 `composite::default_mode(prop)`。
+    /// `None` = use `defaults.composite`; if there is none either, use `composite::default_mode(prop)`.
     pub composite: Option<CompositeMode>,
     pub order: u32,
-    /// 整轨缺省曲线（逐帧 `ease` 优先）。
+    /// Default curve for the whole track (a per-frame `ease` takes priority).
     pub curve: Option<Value>,
     pub frames: Vec<FrameSpec>,
 }
 
-/// `compose[]` 的一步。
+/// One step of `compose[]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ComposeStep {
     pub preset: String,
-    /// 缺省 = 被引用 id 的最低已发布版本（规范 §7.4，**不静默取最新**）。
+    /// Default = the lowest published version of the referenced id (spec §7.4, **never silently takes the latest**).
     pub version: Option<u32>,
     pub params: Map<String, Value>,
-    /// 相对起点（秒），缺省 0。
+    /// Relative start (seconds), default 0.
     pub at: f64,
-    /// 时长倍率，缺省 1。
+    /// Duration multiplier, default 1.
     pub dur_scale: f64,
-    /// 条件步：`true` / `false` / `"{boolParam}"` 三种形态之一（不引入表达式，ADR）。
+    /// Conditional step: one of three forms, `true` / `false` / `"{boolParam}"` (no expressions are introduced, per ADR).
     pub when: Option<Value>,
 }
 
-/// 配方作用域（阶段 3）：元素整体，还是文字 part（规范 §7.9）。
+/// Recipe scope (phase 3): the element as a whole, or a text part (spec §7.9).
 ///
-/// 只影响**词汇预算的统计口径**（`families()` / `part_families()`）——
-/// 求值路径是同一条：part 轨与元素轨都写 `x` / `y` / `scale` / `opacity`。
+/// It only affects the **counting basis of the vocabulary budget** (`families()` / `part_families()`).
+/// The evaluation path is the same: part tracks and element tracks both write `x` / `y` / `scale` / `opacity`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AppliesTo {
     #[default]
@@ -316,12 +314,12 @@ impl AppliesTo {
 pub enum PresetBody {
     Leaf(Vec<TrackSpec>),
     Compose(Vec<ComposeStep>),
-    /// MotionGraph 片段（阶段 3）：`shake` / `drift` / `seededJitter` 的真身是
-    /// `oscillate` / `noise` op，写不成定长关键帧表。展开时先做 `"{param}"` 替换，
-    /// 再经 `flow::parse_flow` + `graph::compile_flow` 铺成关键帧。
+    /// MotionGraph fragment (phase 3): the real form of `shake` / `drift` / `seededJitter` is the
+    /// `oscillate` / `noise` ops, which cannot be written as a fixed-length keyframe table. On expansion, `"{param}"` substitution happens first,
+    /// then `flow::parse_flow` + `graph::compile_flow` lay it out into keyframes.
     ///
-    /// **不接受 `preset` op**（解析期拒绝）：ops 体的展开会重入 `expand()`，
-    /// 而 `expand()` 的环检测栈不跨这一层；禁掉引用就没有环可成。
+    /// **`preset` ops are not accepted** (rejected at parse time). Expanding an ops body would re-enter `expand()`, and
+    /// `expand()`'s cycle-detection stack does not extend across this layer. Forbidding references means no cycle can form.
     Ops(Vec<Value>),
 }
 
@@ -337,7 +335,7 @@ pub struct PresetManifest {
     pub id: String,
     pub version: u32,
     pub domain: ManifestDomain,
-    /// UI 家族。内部积木为 `None`——家族预算与 `preset-sprawl` 只数 `Some`。
+    /// UI family. The internal building blocks are `None`: the family budget and `preset-sprawl` count only `Some`.
     pub family: Option<String>,
     pub aliases: Vec<String>,
     pub params: BTreeMap<String, ParamSpec>,
@@ -651,7 +649,7 @@ pub fn parse_manifest(
     })
 }
 
-/// ops 体里禁止 `preset` op（见 [`PresetBody::Ops`]）。递归查 `items` / `item`。
+/// `preset` ops are forbidden inside ops bodies (see [`PresetBody::Ops`]). Recursively checks `items` / `item`.
 fn reject_preset_ops(file: &str, op: &Value) -> Result<(), MotionError> {
     let Some(map) = op.as_object() else {
         return Err(MotionError::ManifestInvalid(format!(

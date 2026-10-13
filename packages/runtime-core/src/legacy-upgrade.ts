@@ -45,13 +45,13 @@ interface SourceState {
   nodeIds?: string[];
   credentials: string[];
   projects: Record<string, { target: string; videoDirectory?: true; complete?: true }>;
-  /** 用户跳过的旧项目（真实路径；目录已经不在的是发现时的路径）：以后不再自动导入。 */
+  /** Old projects the user skipped (real path; for a directory that no longer exists, the path at discovery). Not imported automatically in future. */
   skipped?: string[];
   complete?: true;
   pending: string[];
   unsupported: string[];
 }
-/** 用户对项目导入的回答（§2.7）：`import` 带导入后的项目目录。更早的版本写的标记没有它。 */
+/** The user's answer to a project import (§2.7). `import` carries the project directory after import. Markers written by earlier versions lack it. */
 type ProjectDecision = { decision: 'import'; directory: string } | { decision: 'never' };
 interface UpgradeState {
   schemaVersion: 1;
@@ -88,26 +88,24 @@ export interface LegacyUpgradeDeps {
   isBusy?: () => boolean;
   env: () => Promise<NodeJS.ProcessEnv>;
 }
-/** 旧版的导入报告（`import-report.json`）里这里读的几项。 */
+/** The few fields read here from a legacy import report (`import-report.json`). */
 interface ImportReport {
   name?: string;
   assets?: { missing?: string[] };
 }
-/** 没导入的原因里列出的缺失文件个数（总数另给）。 */
+/** Number of missing files listed in the reason a project was not imported (the total is given separately). */
 const MISSING_SHOWN = 5;
 const key = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
 
 /**
- * 导入询问的默认目录：系统「文稿 / 文档」文件夹下的 `CucCut`。桌面端经 `CUCCUT_DOCUMENTS_DIR` 给出主机的已知文件夹
- * （Windows 可能被 OneDrive 之类重定向，不硬拼 `%USERPROFILE%\Documents`）；没有时是主目录下的 `Documents`。
+ * Default directory for the import prompt: a `CucCut` folder under the system “文稿 / 文档” (Documents) folder. The desktop app supplies the host's known folder through `CUCCUT_DOCUMENTS_DIR`. Windows may redirect it (for example to OneDrive), so the path is not built by hand from `%USERPROFILE%\Documents`. Without it, the `Documents` folder under the home directory is used.
  */
 export function defaultLegacyImportDirectory(env: NodeJS.ProcessEnv = process.env, userHome = os.homedir()): string {
   return path.join(env.CUCCUT_DOCUMENTS_DIR || path.join(userHome, 'Documents'), 'CucCut');
 }
 
 /**
- * 文件所在的可移除卷（外接硬盘、网络卷）的挂载点：macOS 的 `/Volumes/<名字>`，Linux 的 `/media/<用户>/<名字>`、
- * `/run/media/<用户>/<名字>` 与 `/mnt/<名字>`，Windows 的盘符根与 `\\服务器\共享`。挂载点不在，就是这块盘没接上。
+ * Mount points of removable volumes that hold files (external drives, network volumes): macOS `/Volumes/<name>`, Linux `/media/<user>/<name>`, `/run/media/<user>/<name>` and `/mnt/<name>`, and Windows drive roots and `\\服务器\共享` (server\share). If the mount point is absent, the disk is not connected.
  */
 export function legacyVolumeOf(file: string, platform: NodeJS.Platform): { root: string; name: string } | null {
   if (platform === 'win32') {
@@ -124,15 +122,15 @@ export function legacyVolumeOf(file: string, platform: NodeJS.Platform): { root:
 }
 
 /**
- * 导入的视频沿用旧项目的最近活动（§2.7）：Space 的最近活动取 `video.db` 与它 WAL 的修改时间，不改的话导入那一刻就成了每个视频的最近活动。
- * 导入进程退出时引擎已关库，之后才改；改不了不影响导入。
+ * Imported videos keep the old project's recent activity (§2.7). Space's recent activity takes the modification time of `video.db` and its WAL. If that were not changed, the import moment would become every video's recent activity.
+ * The engine has closed the database by the time the import process exits, so changes made after that may fail. Failing to change them does not affect the import.
  */
 async function keepLegacyActivity(videoDir: string, at: Date | null): Promise<void> {
   if (!at) return;
   for (const name of ['video.db', 'video.db-wal']) await fs.utimes(path.join(videoDir, name), at, at).catch(() => {});
 }
 
-/** `dir` 是 `root` 本身或在它里面。 */
+/** `dir` is `root` itself or lies inside it. */
 function within(root: string, dir: string): boolean {
   const rel = path.relative(root, dir);
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
@@ -148,46 +146,46 @@ export class LegacyUpgrade {
   #primaryRoot: string | null = null;
   #abort = new AbortController();
   #running: Promise<void> | null = null;
-  /** 等用户回答的导入询问（`legacy-import` 主题）与回答之后继续的去处。 */
+  /** The import prompt waiting for the user's answer (`legacy-import` topic), and where to continue after the answer. */
   #prompt: LegacyImportPrompt | null = null;
   #answered: ((decision: ProjectDecision) => void) | null = null;
   #answering = false;
-  /** 启动时的这一轮在迁移（等回答时不算）。 */
+  /** The current round at startup is migrating (not counted while waiting for an answer). */
   #migrating = false;
   #deps: LegacyUpgradeDeps | null = null;
-  /** 这次启动里的项目导入（`legacy-import` 主题的 `run`）。 */
+  /** This startup's project import (the `run` of the `legacy-import` topic). */
   #importRun: LegacyImportRun | null = null;
-  /** 导入里每一项（按 `item.path`）的来历：属于哪个来源、发现时的路径（`project:<路径>` 待办用它）、旧项目条目。 */
+  /** For each item in the import (by `item.path`): which source it belongs to, the path at discovery (used by the `project:<path>` pending entry), and the legacy project entry. */
   readonly #entries = new Map<string, { root: string; found: string; entry: LegacyObject }>();
-  /** 这次导入涉及的来源：跑完时逐个看能不能记完成。 */
+  /** Sources involved in this import. When it finishes, each one is checked to see whether it can be marked complete. */
   readonly #runRoots = new Set<string>();
-  /** 排队等导入的项目（`item.path`）。只有一个循环在取：`#draining` 在循环里同步清掉，重试不会漏掉，也不会多开一个。 */
+  /** Projects queued for import (`item.path`). Only one loop takes from the queue. `#draining` is cleared synchronously inside the loop, so a retry is not missed and a second loop is not started. */
   readonly #queue: string[] = [];
   #draining = false;
   #drained: Promise<void> = Promise.resolve();
-  /** 事件带完整的导入状态，缓冲不用留太多：落后太多的订阅者改收快照。 */
+  /** Events carry the full import state, so the buffer need not hold much. Subscribers that fall too far behind receive a snapshot instead. */
   readonly topic = new TopicLog<LegacyImportSnapshot, LegacyImportEvent>(() => ({ prompt: this.#prompt, run: this.run() }), '0', 64);
   constructor(options: LegacyUpgradeOptions) {
     this.#options = options;
     this.#file = path.join(options.home.root, 'store', 'legacy-upgrade.json');
   }
 
-  /** 在迁移或导入（算作后台任务，CLI 拉起的 Runtime 不空闲退出）；等回答时不算。 */
+  /** Migration or import counts as a background task (so a CLI-launched Runtime does not exit when idle). Waiting for an answer does not count. */
   get active(): boolean {
     return this.#migrating || this.#draining;
   }
 
-  /** 此刻等回答的导入询问（`legacyImport.get`）。 */
+  /** The import prompt currently waiting for an answer (`legacyImport.get`). */
   prompt(): LegacyImportPrompt | null {
     return this.#prompt;
   }
 
-  /** 这次启动里的项目导入（`legacyImport.get`）；没有要导入的时为 null。 */
+  /** This startup's project import (`legacyImport.get`). null when there is nothing to import. */
   run(): LegacyImportRun | null {
     return this.#importRun && structuredClone(this.#importRun);
   }
 
-  /** `legacyImport.answer`：先校验并记下回答，再让等着的这一轮继续。 */
+  /** `legacyImport.answer`: validates and records the answer first, then lets the waiting round continue. */
   async answer(answer: LegacyImportAnswer): Promise<void> {
     const resolve = this.#answered;
     if (!this.#prompt || this.#prompt.promptId !== answer.promptId || !resolve || this.#answering) {
@@ -205,7 +203,7 @@ export class LegacyUpgrade {
         throw error;
       }
       this.#options.log.info('Legacy project import answered', { decision: decision.decision });
-      // 这一轮接着跑完（导入，或者只是记完成）才算结束。
+      // This round continues until it finishes (imports, or just marks things complete) before it ends.
       this.#migrating = true;
       this.#answered = null;
       this.#setPrompt(null);
@@ -215,7 +213,7 @@ export class LegacyUpgrade {
     }
   }
 
-  /** 导入目录：绝对路径，不在 Runtime Home 与旧版数据目录里；不存在时建好，并且要能写。 */
+  /** Import directory: an absolute path, not inside the Runtime Home or the legacy data directory. Created if missing, and must be writable. */
   async #importDirectory(directory: string): Promise<string> {
     if (!path.isAbsolute(directory)) throw new RpcError('invalid-request', RcRuntime.folderPathInvalid());
     const dir = path.resolve(directory);
@@ -236,7 +234,7 @@ export class LegacyUpgrade {
     this.topic.publish({ type: 'prompt.updated', prompt });
   }
 
-  /** 发出询问并等回答；Runtime 停下时不记任何决定（下次启动再问），返回 null。等的时候不算后台任务。 */
+  /** Issues the prompt and waits for an answer. If the Runtime stops, no decision is recorded (it asks again at the next startup), and null is returned. Waiting does not count as a background task. */
   #ask(projects: LegacyProjectSummary[]): Promise<ProjectDecision | null> {
     if (this.#abort.signal.aborted) return Promise.resolve(null);
     this.#migrating = false;
@@ -481,7 +479,7 @@ export class LegacyUpgrade {
         await this.#save();
         continue;
       }
-      // 说过不再提醒：不再发现、不再导入项目，其余迁完就算完成。
+      // Said not to remind again: no more discovery or project import. The rest completes once migration is done.
       if (this.#state.projectImport?.decision === 'never') {
         await this.#finishPass(source.root, state);
         continue;
@@ -506,7 +504,7 @@ export class LegacyUpgrade {
       discovered.push(source);
     }
     if (!discovered.length) return;
-    // 项目先问再导入（§2.7）：所有来源的发现合成一次询问。更早的版本已经自动导入过（有项目记录）时沿用原来的放置，不再问。
+    // Projects are asked about before import (§2.7). Discoveries from all sources are combined into one prompt. If an earlier version already imported them automatically (project records exist), keep the existing placement and do not ask again.
     let decision = this.#state.projectImport ?? null;
     if (!decision && Object.values(this.#state.sources).some((s) => Object.keys(s.projects).length)) {
       decision = this.#state.projectImport = { decision: 'import', directory: path.join(this.#options.home.projectsDir, 'Imported') };
@@ -527,13 +525,13 @@ export class LegacyUpgrade {
     if (this.#abort.signal.aborted) return;
     for (const source of discovered) {
       const state = this.#state.sources[source.root]!;
-      // 还没有回答（询问之后才出现的项目）：不建新记录，留到下次。
+      // No answer yet (projects that appeared after the prompt): no new record is created. Handled next time.
       if (!decision) state.pending.push(...(await this.#unsettled([source])).map((p) => `project:${p.found}`));
       await this.#finishPass(source.root, state);
     }
   }
 
-  /** 已经导入完成的旧项目（各来源合在一起，按真实路径）。 */
+  /** Old projects already fully imported (sources combined, by real path). */
   #completedProjects(): Set<string> {
     return new Set(
       Object.values(this.#state.sources).flatMap((s) =>
@@ -544,13 +542,13 @@ export class LegacyUpgrade {
     );
   }
 
-  /** 用户跳过的旧项目（各来源合在一起）。 */
+  /** Old projects the user skipped (sources combined). */
   #skippedProjects(): Set<string> {
     return new Set(Object.values(this.#state.sources).flatMap((s) => s.skipped ?? []));
   }
 
   /**
-   * 还没导入完成的旧项目：跨来源按真实路径去重。`id` 是真实路径；目录已经不在（`exists: false`）的是发现时的路径。
+   * Old projects not yet fully imported. Deduplicated across sources by real path. `id` is the real path. For a directory that no longer exists (`exists: false`), it is the path at discovery.
    */
   async #unsettled(sources: LegacySource[]): Promise<{ root: string; found: string; id: string; exists: boolean; entry: LegacyObject }[]> {
     const completed = this.#completedProjects();
@@ -570,7 +568,7 @@ export class LegacyUpgrade {
     return out;
   }
 
-  /** 询问里列出的：还在、还没导入、也没跳过的旧项目，跨来源按真实路径去重，最近编辑的在前。 */
+  /** Listed in the prompt: still present, not yet imported, and not skipped. Deduplicated across sources by real path, most recently edited first. */
   async #pendingProjects(sources: LegacySource[]): Promise<LegacyProjectSummary[]> {
     const skipped = this.#skippedProjects();
     const projects: LegacyProjectSummary[] = [];
@@ -582,8 +580,8 @@ export class LegacyUpgrade {
   }
 
   /**
-   * 这次启动的导入：列出还没导入完成的项目（跳过的照列，不排队），没跳过的全部排队。没有要导入的返回 false。
-   * `directory` 是回答里的导入目录；已有记录的沿用原来的目标。
+   * This startup's import. Lists projects not yet fully imported (skipped ones are listed but not queued), and queues every one that is not skipped. Returns false when there is nothing to import.
+   * `directory` is the import directory from the answer. Existing records keep their original target.
    */
   async #startRun(sources: LegacySource[], directory: string): Promise<boolean> {
     const skipped = this.#skippedProjects();
@@ -615,7 +613,7 @@ export class LegacyUpgrade {
     return this.#importRun?.items.find((item) => item.path === id);
   }
 
-  /** 有排队的就开始取；已经在取时什么也不做（新排的会被正在跑的循环取到）。 */
+  /** If there is something queued, start taking from it. If already taking, do nothing (newly queued items are picked up by the running loop). */
   #ensureDrain(): void {
     if (this.#draining || !this.#queue.length || !this.#deps) return;
     this.#draining = true;
@@ -640,7 +638,7 @@ export class LegacyUpgrade {
             skipped: run.items.filter((item) => item.state === 'skipped').length,
           });
           for (const root of this.#runRoots) await this.#finishPass(root, this.#state.sources[root]!);
-          // 收尾时又有重试排进来：接着取。
+          // Retries were queued again while winding down: keep taking.
           if (this.#queue.length) continue;
           return;
         }
@@ -666,7 +664,7 @@ export class LegacyUpgrade {
     }
   }
 
-  /** 导入一个项目：导入了 `problem` 为 null，没导入的带原因（并记成待办，下次启动再试）。Runtime 停下时返回 null。 */
+  /** Import one project. When imported, `problem` is null. When not, the reason is given (and it is recorded as pending for a retry at the next startup). Returns null if the Runtime stops. */
   async #importOne(id: string, directory: string, deps: LegacyUpgradeDeps): Promise<{ problem: LegacyImportProblem | null } | null> {
     const { root, found, entry } = this.#entries.get(id)!;
     const state = this.#state.sources[root]!;
@@ -703,7 +701,7 @@ export class LegacyUpgrade {
           else await runProjectImport(request, await deps.env(), this.#abort.signal);
         } catch {
           if (this.#abort.signal.aborted) return null;
-          // 导入进程没写报告：旧项目文件读不出来（或这个平台不支持它的版本）。写了的看缺不缺素材。
+          // The import process wrote no report: the old project file could not be read, or this platform does not support its version. If a report was written, check whether any materials are missing.
           const after = await report();
           const missing = await this.#stillMissing(after?.assets?.missing);
           if (missing.length) return await deferred(await this.#missingProblem(missing));
@@ -729,7 +727,7 @@ export class LegacyUpgrade {
     }
   }
 
-  /** 这些文件里现在还读不到的。 */
+  /** Among these files, the ones still unreadable now. */
   async #stillMissing(files: string[] | undefined): Promise<string[]> {
     const missing: string[] = [];
     for (const file of files ?? []) {
@@ -742,7 +740,7 @@ export class LegacyUpgrade {
     return missing;
   }
 
-  /** 缺文件的原因：缺的文件所在的外接硬盘或网络卷没接上，还是文件不在原处。 */
+  /** Reason for missing files: the external drive or network volume holding them is not connected, or the files are no longer at their original location. */
   async #missingProblem(missing: string[]): Promise<LegacyImportProblem> {
     const platform = this.#options.platform ?? process.platform;
     const shown = { missing: missing.slice(0, MISSING_SHOWN), missingCount: missing.length };
@@ -761,8 +759,8 @@ export class LegacyUpgrade {
   }
 
   /**
-   * `legacyImport.retry`：没导入的（`paths` 缺省 = 全部）重新排队；点名的跳过项也重新导入，清掉跳过的记录。
-   * 其他任务在跑时排着等。返回重新排队的个数。
+   * `legacyImport.retry`: requeues the projects not imported (`paths` defaults to all). Named items that were skipped are also re-imported, and their skip record is cleared.
+   * If other tasks are running, they wait in the queue. Returns the number requeued.
    */
   async retry(paths?: string[]): Promise<number> {
     const run = this.#importRun;
@@ -784,8 +782,7 @@ export class LegacyUpgrade {
   }
 
   /**
-   * `legacyImport.setSkipped`：跳过没导入的（记下，以后不再自动导入），或撤销跳过（放回跳过前的原因；
-   * 更早的启动里跳过的没有原因，重新导入）。返回改了的个数。
+   * `legacyImport.setSkipped`: skips projects not imported (recorded, not imported automatically later), or undoes a skip (restores the reason from before the skip). Items skipped in earlier startups have no reason, so they are re-imported. Returns the number changed.
    */
   async setSkipped(paths: string[], skipped: boolean): Promise<number> {
     const run = this.#importRun;
@@ -815,7 +812,7 @@ export class LegacyUpgrade {
     if (requeue.length) this.#requeue(requeue);
     else this.#publishRun();
     this.#options.log.info(skipped ? 'Legacy projects skipped' : 'Legacy projects unskipped', { projects: picked.length });
-    // 跳过之后这个来源可能没有待办了：没有在导入、排队的项目时算一次完成。
+    // After a skip, this source may have no pending items left. If no project is importing or queued, count it as complete once.
     const touched = new Set(picked.map((item) => this.#entries.get(item.path)!.root));
     for (const root of touched) {
       const live = run.items.some(
@@ -828,7 +825,7 @@ export class LegacyUpgrade {
     return picked.length;
   }
 
-  /** 清掉一个项目的跳过记录；它的来源不再算完成。 */
+  /** Clears one project's skip record. Its source no longer counts as complete. */
   #forgetSkip(id: string): void {
     const { root, found } = this.#entries.get(id)!;
     const state = this.#state.sources[root]!;
@@ -837,7 +834,7 @@ export class LegacyUpgrade {
     delete state.complete;
   }
 
-  /** 这几项已经是 `queued`：排进队列，跑完了的导入重新算开始。 */
+  /** These items are already `queued`. They are put in the queue, and a finished import counts as started again. */
   #requeue(ids: string[]): void {
     const run = this.#importRun!;
     this.#queue.push(...ids);

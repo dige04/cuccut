@@ -14,7 +14,7 @@ import { pl } from './process-host-tools.pl.ts';
 import { tr } from './process-host-tools.tr.ts';
 import { vi } from './process-host-tools.vi.ts';
 
-/** 缺 ffmpeg 时的修法，与系统终端里先打印的那一行（`packages/process-host`）。 */
+/** The fix when ffmpeg is missing, matching the line printed first in the system terminal (`packages/process-host`). */
 const en = {
   hintMac: 'for example, brew install ffmpeg',
   hintWindows: 'for example, winget install --id Gyan.FFmpeg -e, then reopen CucCut',

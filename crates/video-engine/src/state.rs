@@ -1,5 +1,4 @@
-//! 视频的工作态：按实体保存（视频、序列、轨道、实例、转场、标记、闪避规则、素材、文档头、检查点、保护），
-//! 快照时按顺序组装。事务在副本上执行，提交前与原状态逐实体比较得到变更集。
+//! The working state of a video is stored per entity (video, sequences, tracks, instances, transitions, markers, ducking rules, assets, document headers, checkpoints, protections) and assembled in order when a snapshot is taken. A transaction runs on a copy; before commit, it is compared entity by entity with the original state to get the change set.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,7 +12,7 @@ use crate::model::*;
 #[derive(Clone, Debug, PartialEq)]
 pub struct SequenceEntity {
     pub header: SequenceHeader,
-    /// 序列内任何实体（自身、轨道、实例）最后一次变化时的视频版本。
+    /// The video version at which any entity inside the sequence (the sequence itself, its tracks, its instances) last changed.
     pub revision: i64,
 }
 
@@ -93,7 +92,7 @@ impl EntityKind {
     }
 }
 
-/// 存储里的一行实体。`parent` 是轨道、实例、转场、标记与闪避规则所属的序列。
+/// One stored row of an entity. `parent` is the sequence that tracks, instances, transitions, markers and ducking rules belong to.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityRow {
@@ -103,7 +102,7 @@ pub struct EntityRow {
     pub body: Value,
 }
 
-/// 一个实体在一笔事务里的前后状态。撤销用它做补偿（命令与协议规范 §8.3）。
+/// The before and after state of one entity in a transaction. Undo uses it as compensation (command and protocol spec §8.3).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityChange {
@@ -130,7 +129,7 @@ fn from_value<T: for<'de> Deserialize<'de>>(kind: EntityKind, id: &str, value: V
 }
 
 impl VideoState {
-    /// 所有实体的存储形式。视频自身也是一个实体（名字、根序列）。
+    /// The storage form of all entities. The video itself is also an entity (its name and root sequence).
     pub fn entities(&self) -> BTreeMap<Id, EntityRow> {
         let mut rows = BTreeMap::new();
         rows.insert(
@@ -230,7 +229,7 @@ impl VideoState {
         rows
     }
 
-    /// 写入或删除一个实体（加载存储与执行补偿时用）。
+    /// Write or delete one entity (used when loading storage and running compensation).
     pub fn put(&mut self, id: &str, kind: EntityKind, parent: Option<&str>, body: Option<Value>) -> EngineResult<()> {
         let parent_id = || -> EngineResult<Id> {
             parent
@@ -352,7 +351,7 @@ impl VideoState {
         Ok(())
     }
 
-    /// 两个状态之间的变更集，按实体 ID 排序。
+    /// The change set between two states, sorted by entity ID.
     pub fn diff(before: &VideoState, after: &VideoState) -> Vec<EntityChange> {
         let a = before.entities();
         let b = after.entities();
@@ -375,7 +374,7 @@ impl VideoState {
             .collect()
     }
 
-    /// 变更涉及的序列：序列自身，以及轨道、实例、转场、标记与闪避规则变化前后所属的序列。
+    /// The sequences a change involves: the sequence itself, plus the sequences that tracks, instances, transitions, markers and ducking rules belonged to before and after the change.
     pub fn touched_sequences(before: &VideoState, after: &VideoState, changes: &[EntityChange]) -> BTreeSet<Id> {
         let mut touched = BTreeSet::new();
         for change in changes {
@@ -421,13 +420,13 @@ impl VideoState {
         tracks
     }
 
-    /// 实例在序列上的精确起点与终点（秒）。
+    /// The exact start and end of an instance on the sequence (seconds).
     pub fn item_range(&self, item: &TimelineItem, sequence_id: &str) -> EngineResult<(Ratio, Ratio)> {
         let fps = self.sequence(sequence_id)?.header.fps;
         item_range(item, fps)
     }
 
-    /// 根序列的长度（帧）：所有实例精确终点的最大值向上取整（视频格式规范 §3.2 `derived`）。
+    /// The length of the root sequence (frames): the maximum of all instances' exact ends, rounded up (video format spec §3.2 `derived`).
     pub fn duration_frames(&self, sequence_id: &str) -> EngineResult<i64> {
         let fps = self.sequence(sequence_id)?.header.fps;
         let mut max = 0i64;
@@ -494,14 +493,14 @@ impl VideoState {
     }
 }
 
-/// 属于序列的实体的存储行：`(id, 所属序列, body)`。
+/// The storage row of an entity belonging to a sequence: `(id, owning sequence, body)`.
 fn placed_rows<T: Serialize>(map: &BTreeMap<Id, Placed<T>>) -> Vec<(Id, Id, Value)> {
     map.iter()
         .map(|(id, placed)| (id.clone(), placed.sequence_id.clone(), to_value(&placed.value)))
         .collect()
 }
 
-/// 某个序列的实体，按 ID 排序。
+/// The entities of one sequence, sorted by ID.
 pub fn placed_in<'a, T>(map: &'a BTreeMap<Id, Placed<T>>, sequence_id: &'a str) -> impl Iterator<Item = &'a T> + 'a {
     map.values().filter(move |p| p.sequence_id == sequence_id).map(|p| &p.value)
 }
@@ -510,7 +509,7 @@ fn overflow(field: &str) -> editor_semantics::TimeError {
     editor_semantics::TimeError::Overflow { field: field.to_string() }
 }
 
-/// 实例的精确区间 [start, end)（秒）。视觉实例在帧网格上；音频实例是粗帧 + 余数 + 播放长度。
+/// The exact range [start, end) of an instance (seconds). Visual instances are on the frame grid; audio instances are coarse frames + remainder + playback length.
 pub fn item_range(item: &TimelineItem, fps: editor_semantics::Rate) -> EngineResult<(Ratio, Ratio)> {
     let err = || ErrorBody::time(overflow("item"));
     match item {

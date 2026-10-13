@@ -17,7 +17,7 @@ const messages = rustMessages(root);
 const RUST_AREAS = { engine: engineMessages, engineHost: engineHostMessages, videoModel: videoModelMessages, time: timeMessages, list: listMessages };
 const MISSING = '\u0000missing';
 
-/** 把每个占位符原样作为参数：渲染出来的英文应当与模板一字不差。 */
+/** Passes each placeholder through as its own argument: the rendered English should match the template word for word. */
 function selfParams(template: string): Record<string, MessageParam> {
   return Object.fromEntries(placeholders(template).map((name) => [name, `{${name}}`]));
 }
@@ -91,7 +91,7 @@ describe('messagesIn', () => {
 });
 
 describe('引擎错误的引用', () => {
-  // 与 `crates/video-engine/src/error.rs` 的单测同一个形状：实体种类是嵌套的引用。
+  // Same shape as the unit tests in `crates/video-engine/src/error.rs`: entity kinds are nested references.
   const body = {
     code: 'ENTITY_NOT_FOUND',
     message: 'Clip item_1 does not exist',

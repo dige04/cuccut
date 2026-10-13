@@ -3,16 +3,15 @@ import type { EditOperation, Localized, TransactionReceipt, UndoTarget } from '@
 import type { PreviewEngine } from './preview-engine.ts';
 
 /**
- * 编辑器各部分共用的动作：播放与定位走预览引擎，修改走视频控制器（命令排队、带最新版本号）。
- * 视频内容与选区等状态在 store 里，各部分按需订阅。
+ * Actions shared by the parts of the editor: playback and seeking go through the preview engine; edits go through the video controller (commands are queued and carry the latest version number). Video content, selection and other state live in the store, and each part subscribes to what it needs.
  */
 export interface EditorActions {
   engine: PreviewEngine;
-  /** 定位播放头（秒）。播放中定位后接着播。 */
+  /** Seek the playhead (seconds). If playing, playback continues after the seek. */
   seek(seconds: number): void;
   togglePlay(): void;
   pause(): void;
-  /** 提交一笔修改。修改名取自 `editLabel` 目录（带引用，读者按自己的语言显示）。失败时错误由编辑器统一提示，这里返回 null。 */
+  /** Submit one edit. The edit name is taken from the `editLabel` catalog (with references, so readers display it in their own language). On failure the editor shows the error uniformly; here it returns null. */
   apply(operations: EditOperation[], label?: Localized): Promise<TransactionReceipt | null>;
   undo(target: UndoTarget): Promise<TransactionReceipt | null>;
 }
@@ -21,6 +20,6 @@ export const EditorContext = createContext<EditorActions | null>(null);
 
 export function useEditorActions(): EditorActions {
   const actions = useContext(EditorContext);
-  if (!actions) throw new Error('EditorContext 缺失'); // i18n-ignore: 开发期断言，不给用户看
+  if (!actions) throw new Error('EditorContext 缺失'); // i18n-ignore: development-time assertion, not shown to users
   return actions;
 }

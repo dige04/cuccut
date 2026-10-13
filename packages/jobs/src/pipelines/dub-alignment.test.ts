@@ -5,7 +5,7 @@ describe('alignDub', () => {
   it('不比时间窗长：从原句起点放，不变速', () => {
     const a = alignDub({ start: 2, end: 5, limit: 6 }, 2.5);
     expect(a).toEqual({ fit: 'fit', start: 2, tempo: 1, duration: 2.5, end: 4.5, overflow: 0 });
-    // 刚好一样长也不变速。
+    // Exactly the same length also means no speed change.
     expect(alignDub({ start: 2, end: 5, limit: 5 }, 3).fit).toBe('fit');
   });
 

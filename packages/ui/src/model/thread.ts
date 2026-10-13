@@ -7,8 +7,8 @@ import { M } from './thread-copy.ts';
 type Item<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 /**
- * 一组连续的执行过程（推理、工具调用与视频修改的回执），默认折叠成一行摘要（产品设计 §3.2.2）。
- * `undone`：这个会话里之后被撤销了的那些修改的事务 id（回执行据此写「已撤销」）。
+ * A group of consecutive execution steps (reasoning, tool calls, and receipts for video edits), folded by default into a one-line summary (product design §3.2.2).
+ * `undone`: the transaction ids of those edits in this session that were later undone (receipts use this to show “已撤销” (“Undone”)).
  */
 export interface StepsBlock {
   type: 'steps';
@@ -23,12 +23,12 @@ export type ThreadBlock =
   | StepsBlock
   | { type: 'approval'; id: Id; item: Item<'approval'> }
   | { type: 'notice'; id: Id; item: Item<'notice'> }
-  /** 任务的状态行：放在这个任务的最后，写「已工作 X」或停止、失败的原因。 */
+  /** Status line of a task: placed at the end of the task, it reads “已工作 X” (“Worked for X”) or gives the reason it stopped or failed. */
   | { type: 'task'; id: Id; item: Item<'task'> };
 
 /**
- * 把条目排成线程块。按出现顺序；连续的步骤合并成一组；任务条目移到它的最后一个条目之后。
- * 视频修改的回执（产品设计 §6.5 变更卡）也是过程，与步骤收进同一组：两段文字之间只有一行摘要，回执在展开后按先后排。
+ * Arranges entries into thread blocks, in order of appearance; consecutive steps are merged into one group; a task entry is moved after its last entry.
+ * Receipts for video edits (product design §6.5 change card) are also part of the process and are folded into the same group as the steps: between two passages of text there is only one summary line, and the receipts are ordered by time once expanded.
  */
 export function buildThread(items: readonly TimelineItem[]): ThreadBlock[] {
   const tasks = new Map<Id, Item<'task'>>();
@@ -49,8 +49,8 @@ export function buildThread(items: readonly TimelineItem[]): ThreadBlock[] {
   };
 
   items.forEach((item, i) => {
-    // 新建视频、幻灯片、设计稿与设计系统的记录不占一行、也不打断步骤组：视频卡由 video-cards.ts 挂在这一轮最后引用它的那一行后面，
-    // 幻灯片、设计稿与设计系统卡片同理。
+    // Records for newly created videos, slides, designs and design systems take no row and do not break a step group: the video card is attached by video-cards.ts after the row in this round that last references it,
+    // and slide, design and design-system cards work the same way.
     if (item.kind === 'video-created' || item.kind === 'slides-created' || item.kind === 'design-created' || item.kind === 'design-system-created') {
       flushTasksEndingAt(i);
       return;
@@ -72,7 +72,7 @@ export function buildThread(items: readonly TimelineItem[]): ThreadBlock[] {
           blocks.push({ type: 'user', id: item.id, item });
           break;
         case 'agent-message':
-          // 流式中还没有字的回复不占一行：这一轮在不在跑由回合页脚表达。
+          // A reply that is still streaming and has no text yet takes no row: whether this round is still running is shown by the turn footer.
           if (item.text.trim()) blocks.push({ type: 'agent', id: item.id, item });
           break;
         case 'approval':
@@ -90,14 +90,14 @@ export function buildThread(items: readonly TimelineItem[]): ThreadBlock[] {
   return blocks;
 }
 
-/** CucCut 自己的视频工具（Runtime 的 MCP 工具通道，服务名 `cuccut`）。 */
+/** CucCut's own video tools (the Runtime's MCP tool channel, server name `cuccut`). */
 
 function videoTool(item: Item<'tool-call'>): string | null {
   if (item.tool !== 'mcp' || !item.title.startsWith('cuccut.')) return null;
   return item.title.slice('cuccut.'.length);
 }
 
-/** 步骤行的标题：视频工具写成动作（`M.videoTools`），修改带上它的说明；其余照原样。 */
+/** Title of a step row: video tools are written as actions (`M.videoTools`), with edits carrying their description; everything else is kept as is. */
 export function toolTitle(item: Item<'tool-call'>): string {
   const name = videoTool(item);
   const action = name && Object.hasOwn(M.videoTools, name) ? M.videoTools[name] : undefined;
@@ -111,19 +111,19 @@ export function toolTitle(item: Item<'tool-call'>): string {
   return typeof label === 'string' && label ? M.toolTitle(action, label) : action;
 }
 
-/** 步骤行的类别（产品设计 §3.2.2）：协议的工具种类没有「读取」，读取与搜索由 `(tool, title)` 推出来。 */
+/** Category of a step row (product design §3.2.2): the protocol's tool kinds have no “读取” (“Read”), so reads and searches are derived from `(tool, title)`. */
 export type StepKind = 'command' | 'read' | 'edit' | 'search' | 'other';
 
 export const STEP_LABELS: Record<StepKind, string> = live(() => M.steps);
 
 /**
- * Claude Driver 把读、搜一类的自带工具记成 `other`，标题是「<工具名> <简述>」（agent-drivers 的 claude-items）：
- * `Read <路径>`，`Grep <模式> · <路径>`，`Glob <模式> · <路径>`。
+ * The Claude Driver records its built-in read and search tools as `other`, with titles of the form “<tool name> <short description>” (claude-items in agent-drivers):
+ * `Read <路径>`, `Grep <模式> · <路径>`, `Glob <模式> · <路径>`.
  */
 const READ_TITLE = /^Read(?:\s+(.*))?$/;
 const SEARCH_TITLE = /^(?:Grep|Glob)(?:\s+(.*))?$/;
 
-/** 路径相对会话工作目录（工作目录下的绝对路径去掉前缀，`./` 去掉）。 */
+/** Paths are relative to the session working directory (absolute paths under the working directory have the prefix removed, and `./` is removed). */
 export function relativePath(path: string, cwd?: string | null): string {
   if (path.startsWith('./')) return path.slice(2);
   if (cwd && path.startsWith('/')) {
@@ -133,7 +133,7 @@ export function relativePath(path: string, cwd?: string | null): string {
   return path;
 }
 
-/** 改动步骤涉及的文件（含删除）：Codex 每行「<类型> <路径>」，Claude 是「<工具名> <路径>」；都没有就取标题。 */
+/** Files involved in an edit step (including deletions): Codex writes each line as “<type> <path>”, Claude as “<tool name> <path>”; if neither is present, the title is used. */
 function editPaths(item: Item<'tool-call'>): string[] {
   const fromDetail = (item.detail ?? '').split('\n').flatMap((line) => {
     const space = line.indexOf(' ');
@@ -148,8 +148,8 @@ function editPaths(item: Item<'tool-call'>): string[] {
 }
 
 /**
- * 一次工具调用的类别、固定类别名与次级摘要（命令本身、相对路径、查询词）。CucCut 自己的工具念它自己的类别名与参数摘要
- * （agent-tool-steps.ts），`tool` 是它的类别键（图标按它取），组头摘要仍算「调用了工具」。
+ * The category, fixed category name and secondary summary of one tool call (the command itself, relative path, query terms). CucCut's own tools show their own category name and argument summary
+ * (agent-tool-steps.ts); `tool` is their category key (the icon is taken from it), and the group header summary still counts them as “调用了工具” (“Called a tool”).
  */
 export function toolStep(
   item: Item<'tool-call'>,
@@ -183,7 +183,7 @@ export function toolStep(
   }
 }
 
-/** 文件计数用的路径：读取取摘要里的路径，修改取改动涉及的每个文件。 */
+/** Paths used for file counting: reads take the path in the summary, and edits take every file the change involves. */
 function stepPaths(item: Item<'tool-call'>, kind: StepKind, cwd?: string | null): string[] {
   if (kind === 'edit') return editPaths(item).map((p) => relativePath(p, cwd));
   if (kind === 'read') return [toolStep(item, cwd).summary];
@@ -191,11 +191,11 @@ function stepPaths(item: Item<'tool-call'>, kind: StepKind, cwd?: string | null)
 }
 
 /**
- * 一组步骤的一句话摘要：按种类首次出现的顺序归纳，读取与修改按去重后的路径计数，
- * 视频修改按回执计笔数（「读取了 2 个文件、运行了命令」）。只有思考时写「思考」。
+ * One-sentence summary of a group of steps: grouped in order of each kind's first appearance; reads and edits are counted by deduplicated path,
+ * and video edits are counted by receipt (“读取了 2 个文件、运行了命令” (“Read 2 files, ran a command”)). When there is only thinking, it reads “思考” (“Thinking”).
  *
- * 笔数只数回执：提交视频修改的工具在调用里放回执（`edits_apply` 之外，转写、翻译这些也会提交），
- * 一次成功的 `edits_apply` 既是一次工具调用又有一张回执，按调用数会重复，失败的调用又没有提交。
+ * Only receipts are counted: tools that submit video edits put a receipt in the call (apart from `edits_apply`, transcription and translation also submit them),
+ * and one successful `edits_apply` is both a tool call and a receipt, so counting by calls would double-count, while failed calls submit nothing.
  */
 export function stepsSummary(items: StepsBlock['items'], cwd?: string | null): string {
   type Key = Exclude<StepKind, 'other'> | 'video' | 'tool';
@@ -228,8 +228,8 @@ export function stepsSummary(items: StepsBlock['items'], cwd?: string | null): s
 }
 
 /**
- * 文件改动步骤里改了哪些文件。Codex Driver 把每个改动写成一行「<类型> <路径>」（agent-drivers 的 map-item）。
- * 删掉的文件不给打开。
+ * Which files were changed in a file-change step. The Codex Driver writes each change as a line “<type> <path>” (map-item in agent-drivers).
+ * Deleted files cannot be opened.
  */
 export function changedFiles(item: Item<'tool-call'>): { path: string; change: string }[] {
   if (item.tool !== 'file-change' || !item.detail) return [];
@@ -242,11 +242,11 @@ export function changedFiles(item: Item<'tool-call'>): { path: string; change: s
   });
 }
 
-// ---- 审批卡 ----
+// ---- Approval card ----
 
 /**
- * 审批卡的标题、动作种类、显示的输入摘要与复制用的全文（原型 agent-thread.jsx `PermissionMsg`）。
- * 工具调用的输入是工具名加目标；参数摘要在 `reason` 里，卡片另起一行写。`risk` 取时间线条目上的（旧记录没有）。
+ * Title, action kind, displayed input summary, and full text for copying, of the approval card (prototype agent-thread.jsx `PermissionMsg`).
+ * The input of a tool call is the tool name plus its target; the argument summary is in `reason`, and the card writes it on its own line. `risk` is taken from the timeline entry (older records do not have it).
  */
 export function approvalSummary(
   request: ApprovalRequest,
@@ -273,12 +273,12 @@ export function approvalSummary(
 }
 
 /**
- * 决定过的审批收成一行时写什么（原型 `PermissionMsg` 的 `label`）。规则或访问模式自动允许的，写原型
- * `autoAllowLabel` 那一行；用户点的「总是允许」写「之后 <规则> 不再问」。
+ * What is written when a decided approval collapses into one line (the `label` of the prototype `PermissionMsg`). For approvals auto-allowed by a rule or access mode, the prototype's
+ * `autoAllowLabel` line is written; for “总是允许” (“Always allow”) clicked by the user, “之后 <规则> 不再问” (“Stop asking about <rule> from now on”) is written.
  *
- * 用户点的答案取时间线上的 `decision`；早先的记录没有它，退回 `chosen`（这个窗口里刚点过的答案），
- * 两样都没有就写「已允许」。
- * 原型还分「编辑」「应答环」两种自动允许；`decidedBy: 'auto'` 分不出是哪一档放行的，一律写「访问模式」。
+ * The answer the user clicked is taken from the timeline's `decision`; earlier records do not have it, so it falls back to `chosen` (the answer clicked in this window),
+ * and if neither exists, “已允许” (“Allowed”) is written.
+ * The prototype also distinguishes two auto-allow kinds, “编辑” (“Edit”) and “应答环” (“Reply loop”); `decidedBy: 'auto'` cannot tell which tier let it through, so “访问模式” (“Access mode”) is always written.
  */
 export function approvalDecidedLabel(item: Item<'approval'>, chosen: ApprovalDecision | undefined): string {
   const rule = item.request.rule ?? null;
@@ -296,24 +296,24 @@ export function approvalDecidedLabel(item: Item<'approval'>, chosen: ApprovalDec
   }
 }
 
-// ---- 变更卡的撤销与恢复 ----
+// ---- Undo and restore of change cards ----
 
-/** 这个窗口里对这张卡做过的最后一个动作：撤销（得到补偿事务 U），或恢复（撤销 U，得到 R）。 */
+/** The last action taken on this card in this window: undo (yielding compensating transaction U), or restore (undoing U, yielding R). */
 export type LocalUndoAction = { kind: 'undo'; transactionId: Id } | { kind: 'restore'; transactionId: Id };
 
 export type ChangeUndoState =
   | { state: 'applied' }
-  /** `restore`：能恢复时是要撤销的那笔补偿事务（撤销它就是把这一步放回去），否则为 null。 */
+  /** `restore`: when restoring is possible, the compensating transaction to undo (undoing it puts this step back); otherwise null. */
   | { state: 'undone'; restore: Id | null };
 
 /**
- * 变更卡是「已撤销」还是仍然生效，以及能不能「恢复」。
+ * Whether a change card is “已撤销” (“Undone”) or still in effect, and whether it can be “恢复” (“Restored”).
  *
- * - 编辑器开着这个视频时有历史（`history`）：从这一笔起顺着 `undoneBy` 走，被撤销奇数次就是已撤销，
- *   链上最后一笔（奇数层的撤销）是恢复时要撤销的那一笔。
- * - 没有历史（视频没开着），或历史还没包含本窗口刚做的动作：按本窗口的动作，再不然按会话里记下的撤销（`undoneInThread`）。
- * - 只有那一笔正是当前连接的「重做」栈顶（`redo`，来自 edits.undoState）时才给恢复。撤销是补偿事务：
- *   不是栈顶时（你之后又改过这个视频，或撤销是 Agent 做的）没法可靠地判断撤销它等于把这一步放回去，不画「恢复」。
+ * - When the editor has this video open, there is history (`history`): starting from this entry, follow `undoneBy`; being undone an odd number of times means undone,
+ *   and the last entry on the chain (an undo at an odd level) is the one to undo when restoring.
+ * - With no history (the video is not open), or when the history does not yet include the action just taken in this window: use the action in this window, and failing that, the undo recorded in the session (`undoneInThread`).
+ * - Restore is offered only when that entry is exactly the top of the current connection's “重做” (“Redo”) stack (`redo`, from edits.undoState). An undo is a compensating transaction:
+ *   when it is not the top of the stack (you have edited this video since, or the undo was done by the Agent), it cannot reliably be judged that undoing it puts this step back, so “恢复” (“Restore”) is not drawn.
  */
 export function changeUndoState(input: {
   transactionId: Id;

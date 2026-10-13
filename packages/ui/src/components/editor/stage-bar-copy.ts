@@ -15,13 +15,13 @@ import { tr } from './stage-bar-copy.tr.ts';
 import { vi } from './stage-bar-copy.vi.ts';
 
 /**
- * 舞台下沿工具条（stage-bar.tsx）的文案。静音、音量用媒体播放器的那份（player-copy），字幕、全屏用全屏播放器的那份。
- * 英文写在这里，译文在 `stage-bar-copy.zh-Hans.ts` 等。
+ * Copy for the stage bottom toolbar (stage-bar.tsx). Mute and volume use the media player's copy (player-copy); captions and fullscreen use the fullscreen player's copy.
+ * English is written here; translations are in `stage-bar-copy.zh-Hans.ts` and others.
  */
 const en = {
   ratio: 'Aspect ratio',
   ratioReadOnly: 'Aspect ratio · the video is read-only',
-  /** 自定义画幅应用之后的提示。 */
+  /** Notice shown after applying a custom aspect ratio. */
   ratioApplied: (ratio: string) => `Aspect ratio changed to ${ratio}`,
   original: 'Original',
   originalHint: (ratio: string) => `Matches the video file · ${ratio}`,
@@ -37,7 +37,7 @@ const en = {
   safeArea: 'Platform safe area',
   safeAreaHint: 'Marks where the platform’s buttons and text cover the picture',
   safeAreaPortraitOnly: 'Only portrait frames have platform buttons in the way',
-  /** 安全区蒙层上三块遮挡区的标签。 */
+  /** Labels for the three obscured areas on the safe-area overlay. */
   safeZones: { top: 'Status bar', right: 'Like · comment · share', bottom: 'Account · caption · comments' },
   showCaptions: 'Show subtitles',
   hideCaptions: 'Hide subtitles',

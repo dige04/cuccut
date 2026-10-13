@@ -1,10 +1,8 @@
 /**
- * 标注位置标签里的词（docs/design/slides §8.2）：运行时拼 `label` 时向宿主要（`slidesHost.commentLabels`），跟随 CucCut 的界面语言。
- * `label` 给人看（批注框、输入框上的标注、发出的消息），`detail` 给智能体定位，保持运行时的英文，不经这里。
+ * Words in annotation position labels (docs/design/slides §8.2). When the runtime builds `label`, it asks the host for them (`slidesHost.commentLabels`), following CucCut's UI language.
+ * `label` is for people (the comment box, the annotation on the input box, sent messages); `detail` is for the agent to locate, stays in the runtime's English, and does not go through here.
  *
- * 键对应运行时里的闭集：文字角色（model/deck.ts 的 textRoleLabels）、节点种类、形状变体（shapeVariantLabels）、
- * 区域方位（comments/area-geometry.ts 的 describeCommentBoxPart，用它返回的英文短语当键）。英文与运行时原文逐字一致，
- * 所以界面是英文时标签不变；表里没有的键运行时自己用英文。
+ * The keys correspond to closed sets in the runtime: text roles (textRoleLabels in model/deck.ts), node kinds, shape variants (shapeVariantLabels), and region positions (describeCommentBoxPart in comments/area-geometry.ts, using the English phrase it returns as the key). The English matches the runtime's original text word for word, so the labels are unchanged when the UI is in English. Keys not in the table are shown in English by the runtime itself.
  */
 import { DEFAULT_LOCALE, defineMessages, localeOfTag, setLocale, type Locale } from '@cuccut/protocol/i18n';
 import { EDITOR_LOCALE_PARAM } from '../editor-messages.ts';
@@ -25,9 +23,9 @@ import { tr } from './comment-labels.tr.ts';
 import { vi } from './comment-labels.vi.ts';
 
 const en = {
-  /** 标签开头的页号。 */
+  /** The page number at the start of a label. */
   slide: (n: number) => `Slide ${n}`,
-  /** 文字角色。只在文字没套用幻灯片或设计系统自己命名的样式时用。 */
+  /** Text role. Only used when the text does not apply a style that a slide or design system names itself. */
   textRoles: {
     display: 'Display',
     h1: 'Heading 1',
@@ -38,7 +36,7 @@ const en = {
     body: 'Body',
     caption: 'Caption',
   } as Readonly<Record<string, string>>,
-  /** 其他节点的种类。 */
+  /** Kinds of other nodes. */
   elements: {
     img: 'Image',
     icon: 'Icon',
@@ -48,7 +46,7 @@ const en = {
     html: 'Web embed',
     spacer: 'Spacer',
   } as Readonly<Record<string, string>>,
-  /** 形状按变体。 */
+  /** Shapes, by variant. */
   shapes: {
     rect: 'Rectangle',
     rounded: 'Rounded rectangle',
@@ -62,7 +60,7 @@ const en = {
     connector: 'Connector',
   } as Readonly<Record<string, string>>,
   table: (rows: number, cols: number) => `Table ${rows}×${cols}`,
-  /** 框选区域在元素或页面里的方位：键是运行时的英文短语，值含前面的空格与括号。 */
+  /** Position of a box-selected region within an element or the page. Keys are the runtime's English phrases; values include the leading space and the parentheses. */
   areaParts: {
     'left edge': ' (left edge)',
     'right edge': ' (right edge)',
@@ -85,7 +83,7 @@ const en = {
     centre: ' (centre)',
     part: ' (part)',
   } as Readonly<Record<string, string>>,
-  /** 框选区域还盖住了几个元素，含前面的分隔符。 */
+  /** How many other elements the box-selected region also covers, including the leading separator. */
   covered: (n: number) => (n === 1 ? ' · 1 element' : ` · ${n} elements`),
 };
 
@@ -93,13 +91,13 @@ export type CommentLabelMessages = typeof en;
 
 const LABELS = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 从编辑器地址的查询参数取界面语言；没带或认不出时是 null（标签保持英文）。 */
+/** Reads the UI language from the editor address's query parameter; null when it is absent or not recognized (labels stay in English). */
 export function localeFromSearch(search: string): Locale | null {
   const tag = new URLSearchParams(search).get(EDITOR_LOCALE_PARAM);
   return tag ? localeOfTag(tag) : null;
 }
 
-/** 按界面语言给运行时的标签词；`locale` 为 null 时用英文。页面里只有一个编辑器，直接设整页的当前语言。 */
+/** Gives the runtime's label words in the UI language; English is used when `locale` is null. There is only one editor on the page, so it sets the current language for the whole page directly. */
 export function createCommentLabels(locale: Locale | null): HostCommentLabels {
   setLocale(locale ?? DEFAULT_LOCALE);
   return {

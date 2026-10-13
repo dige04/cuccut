@@ -1,22 +1,16 @@
-//! Windows 原生 MP4 写入：Media Foundation `IMFSinkWriter` + H.264 MFT + AAC MFT。
+//! Native MP4 writing on Windows: Media Foundation `IMFSinkWriter` + H.264 MFT + AAC MFT.
 //!
-//! 与 `core/crates/ccut-kernel/src/services/native_video/platform.rs` 的在产导出后端同源（媒体
-//! 类型协商、NV12 输入优先、GOP 显式给死、faststart 能力探测），但场景简单得多：
-//! 那边要一边解源码流一边合成字幕并按 CFR 网格铺帧，这边的帧由 `ccut-render`
-//! 按序送到，写入端只剩"喂给编码器"。
+//! The structure is the same as the shipping export backend in `core/crates/ccut-kernel/src/services/native_video/platform.rs` (media type negotiation, NV12 input preferred, GOP set explicitly, faststart capability probing), but the scenario is much simpler:
+//! there, the source stream is decoded while subtitles are composited and frames are laid out on a CFR grid; here the frames are delivered in order by `ccut-render`, and the writing side only has to "feed the encoder".
 //!
-//! ## 输入格式优先 NV12
+//! ## NV12 input preferred
 //!
-//! 硬件 H.264 MFT 注册的输入是 NV12 系；直接对上可以免掉 MF 插进来的
-//! RGB32→YUV 软件转换 MFT，也让硬件编码器真正被选中。4:2:0 要求宽高为偶数，
-//! 而 [`crate::open_mp4_writer`] 已经在门口挡掉奇数画布，所以这里 NV12 一定
-//! 谈得上号；谈判仍然可能因为本机没有 NV12 输入的编码器而失败，那时退回 RGB32。
+//! The hardware H.264 MFT registers an NV12-family input. Matching it directly avoids the RGB32→YUV software conversion MFT that MF would otherwise insert, and lets the hardware encoder actually get selected. 4:2:0 requires even width and height,
+//! and [`crate::open_mp4_writer`] already rejects odd canvases at the door, so NV12 can always be negotiated here. Negotiation can still fail if the machine has no encoder with NV12 input, and then it falls back to RGB32.
 //!
-//! ## 音频是 16 位 PCM
+//! ## Audio is 16-bit PCM
 //!
-//! 混音是 f32，AAC MFT 的输入类型却是 16 位 PCM（`MFAudioFormat_PCM` 在 MF 里
-//! 就只谈整数）。转换在这里做：夹到 [-1, 1] 之后按 32767 定标，与 ffmpeg
-//! `-c:a aac` 前那一步 `f32 → s16` 的口径一致。
+//! The mix is f32, but the AAC MFT's input type is 16-bit PCM (`MFAudioFormat_PCM` in MF only negotiates integers). The conversion is done here: clamp to [-1, 1], then scale by 32767, matching the `f32 → s16` step that ffmpeg performs before `-c:a aac`.
 
 use std::path::{Path, PathBuf};
 
@@ -32,14 +26,14 @@ use crate::windows::{Runtime, media_feature_error, pack_ratio, wide_path};
 
 const HNS_PER_SECOND: i64 = 10_000_000;
 
-/// 关键帧间隔（秒）。编码器默认的 GOP 在本仓库实测能稀到只剩首帧一个关键帧，
-/// 拖动预览会很难受；2 秒与导出后端的取值一致。
+/// Keyframe interval (seconds). Measured in this repo, the encoder's default GOP can get so sparse that only the first frame is a keyframe,
+/// and scrubbing the preview is painful; 2 seconds matches the export backend.
 const KEYFRAME_INTERVAL_SECONDS: f64 = 2.0;
 
-// ── BT.709 limited range 定点系数（缩放 1<<16），顺序为 R、G、B。
+// ── BT.709 limited range fixed-point coefficients (scaled by 1<<16), in order R, G, B.
 //
-// 与 `apps/cli` 导出后端逐位同值：色度两组系数各自求和为 0，亮度组求和为 219/255
-// 的定点值，纯黑严格落在 Y=16/UV=128、纯白严格落在 Y=235/UV=128，不靠夹取兜底。
+// Bit-for-bit identical to the `apps/cli` export backend: each of the two chroma coefficient sets sums to 0, and the luma set sums to the fixed-point value of 219/255.
+// Pure black lands exactly on Y=16/UV=128, and pure white exactly on Y=235/UV=128, without relying on clamping as a fallback.
 const BT709_LUMA: [i32; 3] = [11966, 40254, 4064];
 const BT709_CHROMA_BLUE: [i32; 3] = [-6596, -22189, 28785];
 const BT709_CHROMA_RED: [i32; 3] = [28785, -26145, -2640];
@@ -58,16 +52,15 @@ fn bt709_chroma(coefficients: [i32; 3], red: i32, green: i32, blue: i32) -> u8 {
     (128 + ((value + 32768) >> 16)).clamp(0, 255) as u8
 }
 
-/// 2x2 块内四个分量的四舍五入均值。
+/// Rounded average of the four components in a 2x2 block.
 #[inline]
 fn average4(first: u8, second: u8, third: u8, fourth: u8) -> i32 {
     (i32::from(first) + i32::from(second) + i32::from(third) + i32::from(fourth) + 2) >> 2
 }
 
-/// top-down RGBA8 → NV12（BT.709 limited range，Y 平面后紧跟交错的 UV 平面）。
+/// top-down RGBA8 → NV12 (BT.709 limited range; the Y plane is followed directly by the interleaved UV plane).
 ///
-/// 前置条件：`width`、`height` 均为偶数，两个平面的行距都等于 `width`。色度按
-/// 4:2:0 先求 2x2 块的 RGB 均值再转换，亮度仍逐像素独立。
+/// Preconditions: `width` and `height` are both even, and both planes have a row stride equal to `width`. Chroma is 4:2:0: the RGB is averaged over each 2x2 block first and then converted; luma is still computed independently per pixel.
 fn rgba_to_nv12(rgba: &[u8], width: usize, height: usize, nv12: &mut [u8]) {
     debug_assert_eq!(width % 2, 0);
     debug_assert_eq!(height % 2, 0);
@@ -139,9 +132,9 @@ unsafe fn pcm_type() -> Result<IMFMediaType> {
     Ok(media_type)
 }
 
-/// AAC-LC 输出类型。MF 的 AAC 编码器只接受 96/128/160/192 kbps 四档
-/// （`MF_MT_AUDIO_AVG_BYTES_PER_SECOND` 取 12000/16000/20000/24000），
-/// 其余请求就近取档。
+/// AAC-LC output type. MF's AAC encoder accepts only four tiers: 96/128/160/192 kbps
+/// (`MF_MT_AUDIO_AVG_BYTES_PER_SECOND` takes 12000/16000/20000/24000);
+/// other requests snap to the nearest tier.
 unsafe fn aac_type(bitrate: u32) -> Result<IMFMediaType> {
     let bytes_per_second = [12_000u32, 16_000, 20_000, 24_000]
         .into_iter()
@@ -163,7 +156,7 @@ unsafe fn aac_type(bitrate: u32) -> Result<IMFMediaType> {
     Ok(media_type)
 }
 
-/// 一块像素字节 → 带时间戳的 `IMFSample`。
+/// One block of pixel bytes → an `IMFSample` with a timestamp.
 unsafe fn sample_from_bytes(pixels: &[u8], time: i64, duration: i64) -> Result<IMFSample> {
     let length: u32 = pixels
         .len()
@@ -186,8 +179,7 @@ unsafe fn sample_from_bytes(pixels: &[u8], time: i64, duration: i64) -> Result<I
     Ok(sample)
 }
 
-/// faststart 探测用的临时文件：与真实输出同目录（同卷同文件系统），名字带独有
-/// 后缀，绝不与真实输出路径撞名。
+/// Temporary file for the faststart probe: in the same directory as the real output (same volume and filesystem), with a unique suffix so it never collides with the real output path.
 fn faststart_probe_path(output: &Path) -> PathBuf {
     let mut name = output
         .file_name()
@@ -197,8 +189,8 @@ fn faststart_probe_path(output: &Path) -> PathBuf {
     output.with_file_name(name)
 }
 
-/// 往临时文件写一段 96x64 的黑帧并 Finalize，验证本机 MP4 sink 能否重写出前置
-/// moov。硬件转换显式关掉：moov 布局是 sink 侧行为，与哪个编码器 MFT 喂它无关。
+/// Write a 96x64 black frame to the temporary file and Finalize, to check whether the local MP4 sink can rewrite the moov to the front.
+/// Hardware conversion is explicitly turned off: the moov layout is a sink-side behaviour and has nothing to do with which encoder MFT feeds it.
 unsafe fn faststart_probe(path: &Path) -> Result<()> {
     const WIDTH: u32 = 96;
     const HEIGHT: u32 = 64;
@@ -233,16 +225,13 @@ unsafe fn faststart_probe(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 本机 MP4 sink 是否支持 moov 前置。
+/// Whether the local MP4 sink supports moov at the front.
 ///
-/// 部分 Windows 版本上 `MF_MPEG4SINK_MOOV_BEFORE_MDAT=1` 会让 Finalize 直接返回
-/// `E_ACCESSDENIED`，整个渲染白跑；同一份代码在别的机器上又是好的。所以按「本机
-/// 能力」开工前探一次。探测本身出任何意外都算不支持：探测坏了绝不能拖垮一次本来
-/// 能成的渲染。
+/// On some Windows versions, `MF_MPEG4SINK_MOOV_BEFORE_MDAT=1` makes Finalize return `E_ACCESSDENIED` right away, and the whole render is wasted; the same code works on other machines. So it is probed once, before starting, per “this machine’s capability”. Any unexpected problem in the probe itself counts as unsupported: a broken probe must never sink a render that would otherwise have succeeded.
 fn faststart_finalize_works(output: &Path) -> bool {
     let path = faststart_probe_path(output);
     let outcome = unsafe { faststart_probe(&path) };
-    // COM 对象已随 `faststart_probe` 返回全部释放，无论成败都清掉临时文件。
+    // The COM objects have all been released when `faststart_probe` returns; the temporary file is removed whether it succeeded or failed.
     let _ = std::fs::remove_file(&path);
     outcome.is_ok()
 }
@@ -250,13 +239,13 @@ fn faststart_finalize_works(output: &Path) -> bool {
 struct AudioTrack {
     stream: u32,
     source: PcmSource,
-    /// PCM 已读完。
+    /// The PCM has been fully read.
     finished: bool,
 }
 
 pub(crate) struct SinkWriter {
-    /// COM + Media Foundation 的生命周期跟着写入器走（`Drop` 里 `MFShutdown`）。
-    /// 字段顺序即析构顺序：writer 先释放，runtime 后关。
+    /// The COM and Media Foundation lifetime follows the writer (`MFShutdown` in `Drop`).
+    /// Field order is drop order: the writer is released first, and the runtime is shut down after.
     writer: IMFSinkWriter,
     video_stream: u32,
     audio: Option<AudioTrack>,
@@ -264,9 +253,9 @@ pub(crate) struct SinkWriter {
     height: usize,
     fps_num: u32,
     fps_den: u32,
-    /// 编码器输入用 NV12（否则 RGB32）。
+    /// Encoder input uses NV12 (otherwise RGB32).
     nv12: bool,
-    /// 跨帧复用的输入缓冲，只在第一帧分配。
+    /// Input buffer reused across frames; allocated only on the first frame.
     staging: Vec<u8>,
     frames: u64,
     _runtime: Runtime,
@@ -315,14 +304,14 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
     unsafe {
         encoded_video.SetUINT32(&MF_MT_AVG_BITRATE, bitrate)?;
         encoded_video.SetUINT32(&MF_MT_MPEG2_PROFILE, 100)?;
-        // BT.709 色彩标记写在输出类型上，H.264 MFT 据此填 VUI（primaries /
-        // transfer / matrix）。是否真的进了码流尚未在 Windows 上 ffprobe 核验。
+        // BT.709 colour tags are set on the output type, and the H.264 MFT fills the VUI from them (primaries /
+        // transfer / matrix). Whether they actually end up in the bitstream has not yet been verified with ffprobe on Windows.
         encoded_video.SetUINT32(&MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709.0 as u32)?;
         encoded_video.SetUINT32(&MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709.0 as u32)?;
         encoded_video.SetUINT32(&MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709.0 as u32)?;
         encoded_video.SetUINT32(&MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235.0 as u32)?;
-        // GOP 必须显式给死：编码器默认的关键帧间隔在本仓库实测能稀到只剩首帧
-        // 一个关键帧。GOP 长度不进 avcC/序列头，不影响格式描述的相等性判定。
+        // The GOP must be set explicitly: measured in this repo, the encoder's default keyframe interval can get so sparse that only the first frame
+        // is a keyframe. The GOP length does not go into avcC or the sequence header, so it does not affect the equality check on the format description.
         encoded_video.SetUINT32(
             &MF_MT_MAX_KEYFRAME_SPACING,
             ((exact_fps * KEYFRAME_INTERVAL_SECONDS).round() as u32).max(1),
@@ -335,15 +324,15 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
         )
     })?;
 
-    // NV12 优先（硬件 MFT 的原生输入）；谈不成退回 RGB32。奇数画布已被
-    // `open_mp4_writer` 挡在门外，这里不必再判偶数。
+    // NV12 first (the hardware MFT's native input); if negotiation fails, fall back to RGB32. Odd canvases are already rejected at the door by
+    // `open_mp4_writer`, so there is no need to check for evenness here.
     let nv12 = {
         let media_type =
             unsafe { video_type(&MFVideoFormat_NV12, width, height, fps_num, fps_den)? };
         unsafe {
             media_type.SetUINT32(&MF_MT_DEFAULT_STRIDE, width)?;
-            // 显式标注矩阵与量化范围：不标的话编码器可能按 BT.601 打标记，
-            // 播放端就会偏色。
+            // Explicitly tag the matrix and quantisation range: without the tag, the encoder may label it as BT.601,
+            // and the player would shift the colours.
             media_type.SetUINT32(&MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709.0 as u32)?;
             media_type.SetUINT32(&MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235.0 as u32)?;
             writer
@@ -401,10 +390,10 @@ impl SinkWriter {
         self.frames as f64 * f64::from(self.fps_den) / f64::from(self.fps_num)
     }
 
-    /// 把音频喂到 `limit_seconds`（音频时间轴上的硬上限）。
+    /// Feed audio up to `limit_seconds` (a hard limit on the audio timeline).
     ///
-    /// `IMFSinkWriter::WriteSample` 自己做交织与背压（内部队列），不像
-    /// AVFoundation 那样要外部轮询就绪位，所以这里是纯粹的"按需推进"。
+    /// `IMFSinkWriter::WriteSample` handles interleaving and back-pressure itself (through its internal queue). Unlike
+    /// AVFoundation, it does not need external polling of ready flags, so here audio is purely "advance on demand".
     fn pump_audio(&mut self, limit_seconds: f64) -> Result<()> {
         let Some(audio) = self.audio.as_mut() else {
             return Ok(());
@@ -422,7 +411,7 @@ impl SinkWriter {
     }
 }
 
-/// 一块交织 f32 PCM → 16 位 PCM 的 `IMFSample`。
+/// One block of interleaved f32 PCM → a 16-bit PCM `IMFSample`.
 unsafe fn pcm_sample(chunk: &PcmChunk) -> Result<IMFSample> {
     let mut bytes = Vec::with_capacity(chunk.samples.len() * 2);
     for sample in &chunk.samples {
@@ -452,7 +441,7 @@ impl Mp4Sink for SinkWriter {
             self.staging.resize(width * height * 3 / 2, 0);
             rgba_to_nv12(rgba, width, height, &mut self.staging);
         } else {
-            // RGB32 的连续缓冲是 bottom-up，内存序 B,G,R,X。
+            // The contiguous RGB32 buffer is bottom-up, with memory order B,G,R,X.
             self.staging.resize(width * height * 4, 0);
             for y in 0..height {
                 let source = &rgba[y * width * 4..(y + 1) * width * 4];
@@ -477,11 +466,11 @@ impl Mp4Sink for SinkWriter {
     }
 
     fn finish(mut self: Box<Self>) -> Result<()> {
-        // 剩余音频按 ffmpeg 的 `-shortest` 截到视频末尾。
+        // The remaining audio is cut at the end of the video, as ffmpeg's `-shortest` does.
         let video_end = self.video_seconds();
         self.pump_audio(video_end)?;
-        // 半途丢弃（渲染出错 / 取消）不调 `Finalize`：sink 释放时留下一份没有
-        // moov 的半截文件，调用方本来就在临时文件上渲染，直接删掉即可。
+        // Dropped midway (render error or cancel) without calling `Finalize`: when the sink is released it leaves a half-written file with no
+        // moov. The caller was rendering to a temporary file anyway, so it can simply be deleted.
         unsafe { self.writer.Finalize() }
             .map_err(|error| anyhow!("Media Foundation 完成 MP4 失败：{error}"))?;
         Ok(())
@@ -492,8 +481,8 @@ impl Mp4Sink for SinkWriter {
 mod tests {
     use super::*;
 
-    /// 纯色块的 NV12 换算与 `apps/cli` 导出后端逐位同值（同一组定点系数）：
-    /// 纯黑落在 Y=16/UV=128，纯白落在 Y=235/UV=128。
+    /// The NV12 conversion of solid colour blocks is bit-for-bit identical to the `apps/cli` export backend (same set of fixed-point coefficients):
+    /// pure black lands on Y=16/UV=128, and pure white on Y=235/UV=128.
     #[test]
     fn solid_colours_land_on_the_limited_range_anchors() {
         let mut nv12 = vec![0_u8; 2 * 2 * 3 / 2];

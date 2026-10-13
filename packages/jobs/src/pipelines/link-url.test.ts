@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { FileLinkSources } from './link-sources.ts';
 import { checkLink, checkResolvedHost, isPrivateAddress, redactUrl, redactUrlsInText } from './link-url.ts';
 
-/** 从链接导入的链接检查、脱敏与原始链接的暂存（架构设计 §7.9）。 */
+/** Link checks, redaction and staging of the original link for link import (architecture design §7.9). */
 
 describe('链接检查', () => {
   it('只接受公网的 http(s) 链接，不接受以 - 开头、带凭据与本地的', () => {

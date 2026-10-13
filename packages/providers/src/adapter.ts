@@ -13,38 +13,36 @@ import type { ChunkFormat } from './audio/audio-prep.ts';
 import type { ProviderHttpOptions } from './http/provider-fetch.ts';
 
 /**
- * 在线转写适配器（架构设计 §6.4）：一个供应商的请求与响应形状。音频准备、切片、拼接、结果组装都在
- * `OnlineTranscriber` 里，适配器只管把一块音频发出去、把响应读成 `ChunkTranscript`。
+ * Online transcription adapter (architecture design §6.4): one provider's request and response shapes. Audio preparation, chunking, concatenation and result assembly are all in `OnlineTranscriber`. The adapter only sends one chunk of audio out and reads the response into a `ChunkTranscript`.
  *
- * `synthesizeSpeech` / `generateImage` 的适配器（`SpeechAdapter`、`ImageAdapter`）同样只管请求与响应的形状：
- * 一次合成或一次生成，把响应读成字节。写文件、算摘要在 `OnlineGenerator` 里，校验与发布在 JobManager 里。
+ * The adapters for `synthesizeSpeech` / `generateImage` (`SpeechAdapter`, `ImageAdapter`) likewise only handle request and response shapes: one synthesis or one generation, with the response read into bytes. Writing files and computing digests are in `OnlineGenerator`. Validation and publishing are in JobManager.
  */
 
-/** 一个在线 Provider 此刻的配置（来自配置存储）。密钥只交给适配器放进请求头。 */
+/** The current configuration of an online provider (from the config store). The key is handed to the adapter only so it can be put into request headers. */
 export interface AdapterConfig {
   providerId: string;
-  /** 不带结尾斜杠的基址。 */
+  /** Base URL without a trailing slash. */
   baseUrl: string;
   credential: string | null;
-  /** 密钥属于哪个账号（§6.8，执行时取密钥时定下）；没有账号或只是描述时不给。用量记录与账号状态用它。 */
+  /** Which account the key belongs to (§6.8; determined when the key is fetched at execution time). Not given when there is no account or it is only a description. Usage records and account status use it. */
   accountId?: string | null;
-  /** 自定义端点声明的模型。 */
+  /** Models declared by a custom endpoint. */
   declared: readonly DeclaredModel[];
 }
 
-/** 适配器发请求时的调节项（测试注入更短的退避与期限）。 */
+/** Tuning options for the adapter's requests (tests inject shorter backoff and deadlines). */
 export interface AdapterHttp {
   backoffMs?: ProviderHttpOptions['backoffMs'];
-  /** 单次请求的期限（毫秒）；不给时按音频时长估。 */
+  /** Deadline for a single request (milliseconds). When not given, it is estimated from the audio duration. */
   timeoutMs?: number;
-  /** 一共试几次（默认 3）。 */
+  /** Total number of attempts (default 3). */
   attempts?: number;
 }
 
 export interface ChunkRequest {
   config: AdapterConfig;
   model: TranscribeModelInfo;
-  /** 编码好的一块音频（staging 里的绝对路径）。 */
+  /** One encoded chunk of audio (absolute path in staging). */
   file: string;
   byteLength: number;
   format: ChunkFormat;
@@ -55,46 +53,46 @@ export interface ChunkRequest {
   http: AdapterHttp;
 }
 
-/** 一块音频的转写。时间是相对这一块起点的秒。 */
+/** The transcription of one chunk of audio. Times are seconds relative to the start of this chunk. */
 export interface ChunkTranscript {
   text: string;
   segments?: Array<{ start: number; end: number; text: string }>;
-  /** 供应商给出的词级时间。 */
+  /** Word-level timing given by the provider. */
   words?: Array<{ start: number; end: number; text: string; confidence?: number | null }>;
-  /** 供应商识别出的语言（BCP 47；认不出时 null）。 */
+  /** Language recognized by the provider (BCP 47; null when it is not recognized). */
   language?: string | null;
-  /** 供应商原样报告的用量。 */
+  /** Usage as reported verbatim by the provider. */
   usage?: unknown;
 }
 
 export interface TranscribeAdapter {
-  /** 写进结果 `provenance.workerVersion` 的版本。 */
+  /** Version written into the result's `provenance.workerVersion`. */
   readonly version: string;
-  /** 这个 Provider 的模型。自定义端点按声明给出。 */
+  /** The model of this provider. Custom endpoints give it as declared. */
   models(config: AdapterConfig): TranscribeModelInfo[];
-  /** 切片用什么编码。 */
+  /** The encoding used for chunks. */
   chunkFormat(model: TranscribeModelInfo): ChunkFormat;
-  /** 比限制更短的偏好块长（秒），例如不返回时间的模型切短些让插值不太粗；null 为按限制切。 */
+  /** Preferred chunk length (seconds), shorter than the limit. For example, models that do not return times get shorter chunks so that interpolation is not too coarse. null means cut at the limit. */
   preferredChunkSec(model: TranscribeModelInfo): number | null;
   transcribeChunk(request: ChunkRequest): Promise<ChunkTranscript>;
-  /** 用这份配置向供应商发一个只读请求，验证密钥与端点。只在 `models.configure` 带 `verify: true` 时调用。 */
+  /** Sends one read-only request to the provider with this configuration, to verify the key and endpoint. Called only when `models.configure` carries `verify: true`. */
   validateCredential(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp): Promise<void>;
 }
 
-/** 按音频时长估单次请求的期限：至少 2 分钟，每分钟音频再加 1 分钟，最多 30 分钟。 */
+/** Estimates the deadline for a single request from the audio duration: at least 2 minutes, plus 1 minute per minute of audio, at most 30 minutes. */
 export function requestTimeoutMs(durationSec: number, http: AdapterHttp): number {
   if (http.timeoutMs !== undefined) return http.timeoutMs;
   return Math.min(30 * 60_000, 120_000 + Math.ceil(durationSec / 60) * 60_000);
 }
 
-/** 断言的语言给供应商时只用主语言子标签（`zh-Hans` → `zh`）。 */
+/** When the asserted language is given to the provider, only its primary language subtag is used (`zh-Hans` → `zh`). */
 export function primaryLanguage(tag: string): string {
   return tag.split('-')[0]!.toLowerCase();
 }
 
-// ---- 生成类能力 ----
+// ---- Generation capabilities ----
 
-/** 媒体格式的扩展名与媒体类型。 */
+/** Extensions and media types of media formats. */
 export const SPEECH_MEDIA: Record<SpeechFormat, { extension: string; mediaType: string }> = {
   mp3: { extension: 'mp3', mediaType: 'audio/mpeg' },
   wav: { extension: 'wav', mediaType: 'audio/wav' },
@@ -106,7 +104,7 @@ export const IMAGE_MEDIA: Record<ImageFormat, { extension: string; mediaType: st
   webp: { extension: 'webp', mediaType: 'image/webp' },
 };
 
-/** 生成请求的期限：合成与生图都可能要几十秒到几分钟。测试注入更短的。 */
+/** Deadline for generation requests: both speech synthesis and image generation can take tens of seconds to several minutes. Tests inject shorter ones. */
 export function generationTimeoutMs(http: AdapterHttp): number {
   return http.timeoutMs ?? 5 * 60_000;
 }
@@ -121,14 +119,14 @@ export interface SpeechRequest {
 
 export interface SpeechOutput {
   bytes: Buffer;
-  /** 用量（供应商原样报告的；纯音频响应没有）。 */
+  /** Usage (as reported verbatim by the provider; pure-audio responses have none). */
   usage?: unknown;
 }
 
 export interface SpeechAdapter {
   readonly version: string;
   models(config: AdapterConfig): SpeechModelInfo[];
-  /** 合成一次：返回请求格式（`parameters.format`）的音频字节。 */
+  /** One synthesis: returns audio bytes in the requested format (`parameters.format`). */
   synthesize(request: SpeechRequest): Promise<SpeechOutput>;
 }
 
@@ -138,12 +136,12 @@ export interface ImageRequest {
   parameters: ImageParameters;
   signal: AbortSignal;
   http: AdapterHttp;
-  /** 已经拿到第几张（多次请求凑齐张数的适配器报告进度用）。 */
+  /** How many images have been received so far (used by adapters that gather the count over several requests to report progress). */
   progress(done: number): void;
 }
 
 export interface ImageOutput {
-  /** 恰好 `parameters.count` 张，格式是 `parameters.format`。 */
+  /** Exactly `parameters.count` images, in the format `parameters.format`. */
   images: Buffer[];
   usage?: unknown;
 }
@@ -154,9 +152,9 @@ export interface ImageAdapter {
   generate(request: ImageRequest): Promise<ImageOutput>;
 }
 
-// ---- 文本模型 ----
+// ---- Text models ----
 
-/** 文本请求的期限：长输出与高推理强度可能要几分钟。测试注入更短的。 */
+/** Deadline for text requests: long outputs and high reasoning effort can take minutes. Tests inject shorter ones. */
 export function textTimeoutMs(http: AdapterHttp): number {
   return http.timeoutMs ?? 10 * 60_000;
 }
@@ -167,46 +165,46 @@ export interface TextRequest {
   parameters: TextParameters;
   signal: AbortSignal;
   http: AdapterHttp;
-  /** HTTP 层每退避重试一次调用一次。 */
+  /** The HTTP layer makes one call per backoff retry. */
   onRetry(): void;
 }
 
 export interface TextAdapter {
   readonly version: string;
   models(config: AdapterConfig): TextModelInfo[];
-  /** 一次调用：把冻结的参数换成供应商的写法，读出文本、结束原因、用量与模型版本。检查在 `finishText` 里。 */
+  /** One call: converts the frozen parameters into the provider's format, and reads out the text, the finish reason, the usage and the model version. The checks are in `finishText`. */
   generate(request: TextRequest): Promise<TextReply>;
 }
 
-// ---- 模型列表 ----
+// ---- Model list ----
 
-/** 向供应商取到的列表：模型 ID 与（有的话）账号里的音色。 */
+/** The list fetched from the provider: model IDs and, if any, the voices in the account. */
 export interface ProviderListing {
   models: string[];
   voices?: SpeechVoice[];
 }
 
 export interface ModelLister {
-  /** 只读请求；失败抛 `ProviderFailure`（文本不含密钥）。 */
+  /** Read-only request. On failure it throws `ProviderFailure` (the text does not contain the key). */
   listModels(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp): Promise<ProviderListing>;
 }
 
-// ---- 音色克隆 ----
+// ---- Voice cloning ----
 
-/** 克隆请求的期限：上传一段参考录音、等供应商建好音色。测试注入更短的。 */
+/** Deadline for cloning requests: uploading a reference recording and waiting for the provider to build the voice. Tests inject shorter ones. */
 export function voiceCloneTimeoutMs(http: AdapterHttp): number {
   return http.timeoutMs ?? 2 * 60_000;
 }
 
 export interface VoiceCloneRequest {
   config: AdapterConfig;
-  /** 克隆在供应商那边的名字。 */
+  /** The clone's name on the provider's side. */
   name: string;
-  /** 参考录音（绝对路径），整个上传。 */
+  /** Reference recording (absolute path), uploaded in full. */
   file: string;
   fileName: string;
   mediaType: string;
-  /** 附在克隆上的说明（供应商接受时）；没有时 null。 */
+  /** Note attached to the clone (when the provider accepts it). null when there is none. */
   description: string | null;
   signal: AbortSignal;
   http: AdapterHttp;
@@ -220,8 +218,7 @@ export interface VoiceCloneDeleteRequest {
 }
 
 /**
- * 音色克隆（架构设计 §5.9）：只有真的提供克隆接口的供应商才有这个适配器。创建把参考录音上传、返回供应商的音色 ID；
- * 删除请求删掉远端的克隆，供应商那边已经没有时返回 `not-found`（不算失败）。
+ * Voice cloning (architecture design §5.9): only providers that actually offer a cloning interface have this adapter. Create uploads the reference recording and returns the provider's voice ID. Delete removes the remote clone, and returns `not-found` when the provider no longer has it (not counted as a failure).
  */
 export interface VoiceCloneAdapter {
   readonly version: string;

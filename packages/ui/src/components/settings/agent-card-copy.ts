@@ -16,13 +16,13 @@ import { tr } from './agent-card-copy.tr.ts';
 import { vi } from './agent-card-copy.vi.ts';
 
 /**
- * 设置 › Agent 提供方里每一家的卡片（agent-provider-card.tsx；设计稿 settings-agent-provider.jsx）的文案。
- * 英文是键与类型的来源，译文在 `agent-card-copy.<语言>.ts`。用户添加的那一家的专用文案在 `agent-copy.ts` 的 `added`。
+ * Copy for each provider card under Settings › Agent providers (agent-provider-card.tsx; design mock settings-agent-provider.jsx).
+ * English is the source of keys and types; translations are in `agent-card-copy.<language>.ts`. The copy specific to a provider the user added is in `added` in `agent-copy.ts`.
  */
 const en = {
   runFailed: (message: string) => `Couldn't run: ${message}`,
   stopFailed: (message: string) => `Couldn't stop: ${message}`,
-  /** 复制按钮与「已复制」提示里的那个名词。 */
+  /** The noun in the copy button and the “Copied” hint. */
   loginCommand: 'login command',
   installCommand: 'install command',
   upgradeCommand: 'upgrade command',
@@ -90,7 +90,7 @@ const en = {
   setDefault: 'Make default',
   runChecks: 'Run checks',
 
-  /** 升级说明的最后一句：认出了来源就点名，否则请用户用当初的方式。 */
+  /** The last sentence of the upgrade note: if the source is recognized, it names it; otherwise it asks the user to use the same method as before. */
   sourceKnown: (label: string) =>
     `This copy was installed with “${label}”, so upgrade it the same way. Other methods can't reach this copy; they only install another one.`,
   sourceUnknown: 'Upgrade it the same way you installed it.',
@@ -108,7 +108,7 @@ const en = {
     `${name} is a command-line AI assistant installed on your own computer, signed in with the ${plan} you already have. CucCut just calls it: no extra charge, and no API key to enter in CucCut.`,
   stepInstall: 'Install it on this computer',
   stepInstallOfficial: 'Install it on this computer following the official instructions',
-  /** `command` 是排成代码样式的命令名。 */
+  /** `command` is the command name, formatted as code. */
   installOfficialBody: (command: ReactNode): ReactNode =>
     createElement(Fragment, null, 'Install it following its official instructions. Once installed, ', command, ' should run in a terminal.'),
   stepLogin: 'Sign in to your account',

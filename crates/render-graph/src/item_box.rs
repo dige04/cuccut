@@ -1,6 +1,5 @@
-//! 画面实例在画布上的框（格式规范 §3.5）。帧计划画层、舞台的选中框与命中框、属性面板的位置与尺寸都从这里取，
-//! 只有这一份：`place`（画幅百分比）→ 像素框是 [`item_box`]，舞台把框改了之后写回 `place` 是 [`place_from_box`]。
-//! 高与缺省按种类，见 `timeline::geometry`。
+//! A visual instance's box on the canvas (format spec §3.5). The frame plan's layers, the stage's selection and hit boxes, and the property panel's position and size all take it from here; there is only one copy: `place` (percent of the frame) → pixel box is [`item_box`], and after the stage changes the box it is written back to `place` via [`place_from_box`].
+//! The height and defaults depend on the kind; see `timeline::geometry`.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +11,7 @@ use video_model::{AssetKind, AssetRecord, Crop, Id, Place, ShapeProps, StickerPr
 
 use crate::{PixelBox, clean};
 
-/// 有框的实例种类（`TimelineItem` 里有 `place` 的那些）。
+/// Instance kinds that have a box (those whose `TimelineItem` has `place`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum VisualKind {
@@ -30,7 +29,7 @@ pub enum VisualKind {
     Composition,
 }
 
-/// 实例引用的素材里与框有关的部分：种类，与源的显示尺寸（[`display_size`]，不知道时 `None`）。
+/// The part of the referenced material that concerns the box: the kind, and the source's display size ([`display_size`], `None` if unknown).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AssetFacts {
     pub kind: AssetKind,
@@ -38,7 +37,7 @@ pub struct AssetFacts {
 }
 
 impl AssetFacts {
-    /// 从素材表里查：素材不在表里时为 `None`。
+    /// Looked up from the material table: `None` if the material is not in the table.
     pub fn lookup(assets: &BTreeMap<Id, AssetRecord>, asset: &VersionRef) -> Option<AssetFacts> {
         let record = assets.get(&asset.id)?;
         Some(AssetFacts {
@@ -48,8 +47,7 @@ impl AssetFacts {
     }
 }
 
-/// 推框要看的那几样：种类、`place`、视觉媒体的 `mode`（合成没有）、图形与贴纸的属性（高按它们定）、
-/// 裁剪（留下的区域的宽高比定框高），以及引用的素材（合成是预渲染）。
+/// The fields that box-pushing needs: kind, `place`, the visual media's `mode` (compositions have none), the properties of shapes and stickers (height is determined by them), cropping (the aspect ratio of the remaining region determines the box height), and the referenced material (compositions are pre-rendered).
 #[derive(Clone, Copy, Debug)]
 pub struct ItemGeometry<'a> {
     pub kind: VisualKind,
@@ -58,11 +56,11 @@ pub struct ItemGeometry<'a> {
     pub shape: Option<&'a ShapeProps>,
     pub sticker: Option<&'a StickerProps>,
     pub crop: Option<&'a Crop>,
-    /// 没有引用或素材表里查不到时为 `None`。
+    /// `None` when there is no reference or the material is not found in the table.
     pub asset: Option<AssetFacts>,
 }
 
-/// 时间线实例的推框输入；音频与字幕没有框。
+/// Box-pushing input for timeline instances; audio and captions have no box.
 pub fn item_geometry<'a>(item: &'a TimelineItem, assets: &BTreeMap<Id, AssetRecord>) -> Option<ItemGeometry<'a>> {
     let facts = |asset: Option<&VersionRef>| asset.and_then(|a| AssetFacts::lookup(assets, a));
     let base = |kind, place| ItemGeometry {
@@ -120,7 +118,7 @@ pub fn item_geometry<'a>(item: &'a TimelineItem, assets: &BTreeMap<Id, AssetReco
     })
 }
 
-/// 实例的框：中心、未旋转的宽高（像素，左上原点）、绕中心顺时针的角度（度）与翻转。
+/// An instance's box: center, unrotated width and height (pixels, origin at top-left), angle clockwise about the center (degrees), and flip.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemBox {
@@ -131,11 +129,11 @@ pub struct ItemBox {
     pub rotation: f64,
     pub flip_x: bool,
     pub flip_y: bool,
-    /// 铺满画布（铺满模式的视觉媒体、没写位置与宽的合成）：框不看 `place` 的位置、宽与缩放，只能转。
+    /// Fills the canvas (visual media in fill mode, compositions with no position and width given): the box ignores `place`'s position, width and scale, and can only rotate.
     pub fullscreen: bool,
 }
 
-/// 框怎么推：媒体框按源的宽高比定高，静态盒按种类定高。
+/// How the box is pushed: media boxes take height from the source's aspect ratio; static boxes take height from their kind.
 enum Frame<'a> {
     Media {
         kind: ElementKind,
@@ -160,7 +158,7 @@ fn frame_of<'a>(item: &ItemGeometry<'a>) -> Frame<'a> {
         kind,
         geometry: ElementGeometry::default(),
     };
-    // 贴纸与占位框只在素材是图片或视频时按媒体摆。
+    // Stickers and placeholder boxes are positioned like media only when the material is an image or video.
     let visual_asset = matches!(item.asset.map(|a| a.kind), Some(AssetKind::Image | AssetKind::Video));
     match item.kind {
         VisualKind::Video => media(ElementKind::Video, cropped_size(display, item.crop)),
@@ -176,7 +174,7 @@ fn frame_of<'a>(item: &ItemGeometry<'a>) -> Frame<'a> {
         },
         VisualKind::Placeholder if visual_asset => media(ElementKind::Placeholder, display),
         VisualKind::Placeholder => plain(ElementKind::Placeholder),
-        // 合成没有 `mode`：`place` 没写位置与宽时铺满，否则按画中画摆。
+        // Compositions have no `mode`: when `place` gives no position and width, they fill the canvas; otherwise they are positioned as picture-in-picture.
         VisualKind::Composition => Frame::Media {
             kind: ElementKind::Video,
             fullscreen: item.place.x.is_none() && item.place.y.is_none() && item.place.w.is_none(),
@@ -197,7 +195,7 @@ fn frame_of<'a>(item: &ItemGeometry<'a>) -> Frame<'a> {
     }
 }
 
-/// 实例在画布上的框（帧计划按它画）。
+/// The instance's box on the canvas (the frame plan draws with it).
 pub fn item_box(item: &ItemGeometry<'_>, canvas: (f64, f64)) -> ItemBox {
     let (pixel, fullscreen) = pixel_box(item, canvas);
     ItemBox {
@@ -219,8 +217,7 @@ pub(crate) fn pixel_box(item: &ItemGeometry<'_>, canvas: (f64, f64)) -> (PixelBo
     }
 }
 
-/// 种类的缺省落位：`place` 一个字段都不写时框落在哪（中心 `x`、`y`，画幅百分比；宽 `w`，宽度基准的百分比）。
-/// 新建实例写 `place` 时照它填，画出来就是这个种类本来的框。按没有素材、画中画算；合成例外，写了位置就不再铺满。
+/// The kind's default placement: where the box falls when `place` has no fields at all (center `x`, `y` as percentages of the frame; width `w` as a percentage of the width basis). When creating a new instance, `place` is filled from this, so the drawn result is the kind's natural box. Computed with no material, as picture-in-picture; compositions are the exception: once a position is given they no longer fill the canvas.
 pub fn place_defaults(kind: VisualKind) -> Place {
     let empty = Place::default();
     let item = ItemGeometry {
@@ -247,7 +244,7 @@ pub fn place_defaults(kind: VisualKind) -> Place {
     }
 }
 
-/// 舞台给出的框（中心、未旋转的宽高，像素；角度，度）。
+/// The box given by the stage (center, unrotated width and height in pixels; angle in degrees).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoxPose {
@@ -258,7 +255,7 @@ pub struct BoxPose {
     pub rotation: f64,
 }
 
-/// 写回 `place` 的字段：只有取整后与此刻不同的才有。
+/// The fields to write back to `place`: only those that differ from the current value after rounding.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaceChange {
@@ -274,7 +271,7 @@ pub struct PlaceChange {
     pub rot: Option<f64>,
 }
 
-/// 算出来的值算不算改了：与此刻的值有差，取整之后也还有差。
+/// Whether the computed value counts as changed: it differs from the current value, and still differs after rounding.
 const CHANGE_EPS: f64 = 1e-6;
 
 fn round_to(value: f64, k: f64) -> f64 {
@@ -285,7 +282,7 @@ fn differs(value: f64, current: f64, k: f64) -> bool {
     (value - current).abs() > CHANGE_EPS && (round_to(value, k) - current).abs() > CHANGE_EPS
 }
 
-/// 角度折回 (−180, 180]；不是有限数时为 0。
+/// Angle wrapped into (−180, 180]; 0 if not a finite number.
 pub fn wrap_rotation(degrees: f64) -> f64 {
     if !degrees.is_finite() {
         return 0.0;
@@ -294,8 +291,7 @@ pub fn wrap_rotation(degrees: f64) -> f64 {
     if r == -180.0 { 180.0 } else { clean(r) }
 }
 
-/// 框 → `place`（[`item_box`] 的反函数）。`scale` 不动，框宽折成 `w`；框高写进 `scaleY`（高 ÷ 按落盘的宽推出的
-/// 自然高，于是换回来的框高就是给的高）。百分比与角度取一位小数，`scaleY` 取三位；铺满画布的只写角度。
+/// Box → `place` (the inverse of [`item_box`]). `scale` is untouched; the box width is converted to `w`; the box height is written to `scaleY` (height ÷ the natural height inferred from the width as saved, so converting back gives the given height). Percentages and angles keep one decimal place, `scaleY` keeps three; for a fill-canvas item only the angle is written.
 pub fn place_from_box(item: &ItemGeometry<'_>, pose: BoxPose, canvas: (f64, f64)) -> PlaceChange {
     let place = item.place;
     let mut out = PlaceChange::default();
@@ -307,7 +303,7 @@ pub fn place_from_box(item: &ItemGeometry<'_>, pose: BoxPose, canvas: (f64, f64)
     if !(width > 0.0 && height > 0.0) {
         return out;
     }
-    // 没写时的缺省与 `w` 量的是哪条边，按框的推法分。
+    // The default when omitted, and which edge `w` measures, depend on how the box is derived.
     let (default_w, default_y, basis) = match frame_of(item) {
         Frame::Media { fullscreen: true, .. } => return out,
         Frame::Media { kind, .. } => (media_default_w(kind), 50.0, width),
@@ -329,7 +325,7 @@ pub fn place_from_box(item: &ItemGeometry<'_>, pose: BoxPose, canvas: (f64, f64)
     if differs(w, place.w.unwrap_or(default_w), 10.0) {
         out.w = Some(round_to(w, 10.0));
     }
-    // 自然高按落盘的那个宽推：同一个函数换回来的框高与这里的一致。
+    // The natural height is inferred from the width as saved: the same function converting back yields a box height consistent with this.
     let stored = Place {
         w: out.w.or(place.w),
         scale_y: None,
@@ -343,13 +339,13 @@ pub fn place_from_box(item: &ItemGeometry<'_>, pose: BoxPose, canvas: (f64, f64)
     out
 }
 
-/// 源的显示尺寸：已按旋转元数据交换宽高，并乘上像素宽高比。不知道时按布局框处理（铺满）。
+/// The source's display size: width and height already swapped for rotation metadata, multiplied by the pixel aspect ratio. When unknown, it is handled as the layout box (fill).
 pub fn display_size(assets: &BTreeMap<Id, AssetRecord>, asset: &VersionRef) -> Option<(f64, f64)> {
     let video = assets.get(&asset.id)?.revisions.get(&asset.revision)?.video.as_ref()?;
     display_dims(video.display_width, video.display_height, video.pixel_aspect_ratio)
 }
 
-/// [`display_size`] 的算法本身：显示宽高（已按旋转交换）乘上像素宽高比。
+/// The algorithm of [`display_size`] itself: display width and height (already swapped for rotation), multiplied by the pixel aspect ratio.
 pub fn display_dims(display_width: u32, display_height: u32, par: Rate) -> Option<(f64, f64)> {
     par.validate("pixelAspectRatio").ok()?;
     let width = display_width as f64 * par.num as f64 / par.den as f64;
@@ -357,20 +353,19 @@ pub fn display_dims(display_width: u32, display_height: u32, par: Rate) -> Optio
     (width > 0.0 && height > 0.0).then_some((width, height))
 }
 
-/// 非媒体元素的框：`timeline::geometry::static_box`（含 `scale`、`scaleY`；正方款按短边量宽）。
+/// The box of a non-media element: `timeline::geometry::static_box` (includes `scale` and `scaleY`; square variants measure width by the short side).
 fn element_box(kind: ElementKind, geometry: ElementGeometry<'_>, place: &Place, canvas: (f64, f64)) -> PixelBox {
     let v2 = place.to_timeline();
     PixelBox::new(place, static_box(kind, &geometry, Some(&v2), canvas))
 }
 
-/// 裁剪之后留下的源尺寸（格式规范 §3.5：留下的区域的宽高比参与框的高与 `fit`）。
+/// The source size remaining after cropping (format spec §3.5: the aspect ratio of the remaining region participates in the box height and `fit`).
 fn cropped_size(dims: Option<(f64, f64)>, crop: Option<&Crop>) -> Option<(f64, f64)> {
     let [cl, ct, cr, cb] = crop.filter(|c| c.is_valid()).map_or([0.0, 0.0, 1.0, 1.0], Crop::rect);
     dims.map(|(w, h)| (w * (cr - cl), h * (cb - ct)))
 }
 
-/// 媒体元素的框：铺满是整张画布（不看 `place` 的位置与宽），画中画按源的宽高比（不知道时按画布的）定高，
-/// 再乘 `scale`、`scaleY`。
+/// A media element's box: fill is the entire canvas (ignoring `place`'s position and width); picture-in-picture takes its height from the source's aspect ratio (or the canvas's when unknown), then multiplied by `scale` and `scaleY`.
 fn media_pixel_box(kind: ElementKind, fullscreen: bool, place: &Place, natural: Option<(f64, f64)>, canvas: (f64, f64)) -> PixelBox {
     let v2 = place.to_timeline();
     let (mut width, mut height, cx, cy) = media_box(kind, fullscreen, &v2, natural.unwrap_or(canvas), canvas);
@@ -446,7 +441,7 @@ mod tests {
             rotation: 45.0,
         };
         assert_eq!(place_from_box(&video, moved, CANVAS), change(None, None, None, None, Some(45.0)));
-        // 合成没写位置与宽时铺满。
+        // Compositions fill when no position and width are given.
         let empty = Place::default();
         assert!(item_box(&geometry(VisualKind::Composition, &empty), CANVAS).fullscreen);
     }
@@ -466,7 +461,7 @@ mod tests {
         let b = item_box(&video, CANVAS);
         assert_eq!((b.cx, b.cy, b.width, b.fullscreen), (480.0, 540.0, 576.0, false));
         assert!((b.height - 1024.0).abs() < 1e-9);
-        // 不知道源的尺寸时按画布的宽高比。
+        // When the source size is unknown, the canvas aspect ratio is used.
         assert!((item_box(&geometry(VisualKind::Video, &place), CANVAS).height - 324.0).abs() < 1e-9);
         let target = BoxPose {
             cx: 576.0,
@@ -522,7 +517,7 @@ mod tests {
         let b = item_box(&sticker, CANVAS);
         assert_eq!(b.width, 384.0);
         assert!((b.height - 384.0 * 1920.0 / 1080.0).abs() < 1e-9);
-        // 模板贴纸是静态盒：模板 box 的高是宽的 0.62。
+        // Template stickers are static boxes: the template box's height is 0.62 times its width.
         let mut boxed = StickerProps::new("template");
         boxed.template_id = Some("box".into());
         let template = ItemGeometry {
@@ -607,7 +602,7 @@ mod tests {
         assert_eq!(place_from_box(&wave, turned, CANVAS), change(None, None, None, None, Some(10.0)));
         assert_eq!(wrap_rotation(-180.0), 180.0);
         assert_eq!(wrap_rotation(f64::NAN), 0.0);
-        // 占位框有图片素材时按媒体摆：宽是缺省的 42%，高是画幅高的 24%。
+        // A placeholder box with image material is positioned like media: width defaults to 42%, height is 24% of the frame height.
         let holder = ItemGeometry {
             asset: Some(AssetFacts {
                 kind: AssetKind::Image,

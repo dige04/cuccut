@@ -5,7 +5,7 @@ import type { ResourceReserves } from './resource-profiles.ts';
 import { ResourceExceedsCapacity, ResourceScheduler, type ResourceLease, type ResourceRequest } from './resource-scheduler.ts';
 
 /**
- * 资源调度（架构设计 §7.6、§7.7）：容量与预留都是注入的假值，准入是同步的，不需要等待。
+ * Resource scheduling (architecture design §7.6, §7.7): capacity and reserves are injected fake values, and admission is synchronous, so no waiting is needed.
  */
 
 const GiB = 1024 * 1024 * 1024;
@@ -31,13 +31,13 @@ class FakeCapacity implements CapacitySource {
   }
 }
 
-/** 系统预留 4 GiB、交互预留 2 GiB：后台最多 10 GiB，交互最多 12 GiB。 */
+/** System reserves 4 GiB, interactive reserves 2 GiB: background at most 10 GiB, interactive at most 12 GiB. */
 const RESERVES = (capacity: ResourceCapacity): ResourceReserves => ({
   system: { memory: 4 * GiB, gpuMemory: capacity.gpuMemory === null ? null : 0, cpuThreads: 0, scratchDisk: 0 },
   interactive: { memory: 2 * GiB, gpuMemory: capacity.gpuMemory === null ? null : 1 * GiB, cpuThreads: 0, scratchDisk: 0 },
 });
 
-/** 记下准入、拒绝与等待的请求者。 */
+/** Records the requesters that were admitted, rejected, and waiting. */
 class Probe {
   lease: ResourceLease | null = null;
   rejected: ResourceExceedsCapacity | null = null;
@@ -84,7 +84,7 @@ describe('ResourceScheduler', () => {
     expect(b.lease).toBeNull();
     expect(b.wait).toMatchObject({ reason: 'concurrency', ahead: 0 });
     expect(c.wait).toMatchObject({ reason: 'concurrency', ahead: 1 });
-    // 别的队列不受影响。
+    // Other queues are unaffected.
     expect(request({ owner: 'd', queue: { key: 'other', concurrency: 1 } }).lease).not.toBeNull();
     a.lease!.release();
     expect(b.lease).not.toBeNull();
@@ -120,7 +120,7 @@ describe('ResourceScheduler', () => {
     expect(error).toBeInstanceOf(ResourceExceedsCapacity);
     expect(error!.code).toBe('RESOURCE_ADMISSION_UNSATISFIABLE');
     expect(error!.dimensions).toEqual([{ dimension: 'memory', demand: 11 * GiB, limit: 10 * GiB }]);
-    // 交互能用交互预留：11 GiB 放得下。
+    // Interactive can use the interactive reserve: 11 GiB fits.
     expect(scheduler.check({ ...huge, priority: 'interactive' })).toBeNull();
     const x = request({ owner: 'x', demand: { memory: 11 * GiB } });
     expect(x.rejected?.code).toBe('RESOURCE_ADMISSION_UNSATISFIABLE');
@@ -132,16 +132,16 @@ describe('ResourceScheduler', () => {
     const { request } = setup();
     const a = request({ owner: 'a', demand: { memory: 6 * GiB } });
     const b = request({ owner: 'b', demand: { memory: 6 * GiB } });
-    // 3 GiB 本来放得下，但 b 在等内存：排在 b 后面。
+    // 3 GiB would fit on its own, but b is waiting for memory, so it queues behind b.
     const c = request({ owner: 'c', demand: { memory: 3 * GiB } });
     expect(c.lease).toBeNull();
     expect(c.wait).toMatchObject({ reason: 'resources', dimensions: ['memory'], ahead: 1 });
     expect(c.wait!.detail).toContain('前面的任务在等');
-    // 只要 CPU 的、没有需求的（在线 Provider 的调用）照常开始。
+    // CPU-only work with no demand (calls to online providers) starts as usual.
     expect(request({ owner: 'd', demand: { cpuThreads: 2 } }).lease).not.toBeNull();
     expect(request({ owner: 'e' }).lease).not.toBeNull();
     a.lease!.release();
-    // b 与 c 一共 9 GiB，都放得下。
+    // b and c total 9 GiB; both fit.
     expect(b.lease).not.toBeNull();
     expect(c.lease).not.toBeNull();
   });
@@ -154,10 +154,10 @@ describe('ResourceScheduler', () => {
     const releaseProcess = scheduler.retain(holder.id)!;
     expect(scheduler.snapshot().leased.memory).toBe(4 * GiB);
     a.lease!.release();
-    // 任务结束，进程还在：holder 照样计入。
+    // The task has finished but the process is still alive: the holder is still counted.
     expect(scheduler.snapshot().holders).toMatchObject([{ holder: holder.id, users: 0, processes: 1 }]);
     expect(scheduler.snapshot().leased.memory).toBe(3 * GiB);
-    // 挡住一个大的，再来一个用同一个 holder、只要 1 GiB 的：holder 不再计，只算自己的。
+    // A large one is blocked; then another that uses the same holder and needs only 1 GiB: the holder is no longer counted, only its own amount is.
     const big = request({ owner: 'big', demand: { memory: 8 * GiB } });
     expect(big.wait).toMatchObject({ reason: 'resources' });
     const reuse = request({ owner: 'reuse', holder, demand: { cpuThreads: 1 } });
@@ -187,7 +187,7 @@ describe('ResourceScheduler', () => {
     const waiting = request({ owner: 'export', demand: { memory: 4 * GiB } });
     expect(waiting.lease).toBeNull();
     expect(evicted).toEqual(['model-worker:old']);
-    // 只是发出了请求：进程还没退出，量还没归还。
+    // Only the request has been sent: the process has not exited yet, so the amount has not been returned.
     expect(waiting.lease).toBeNull();
     releases.get('model-worker:old')!();
     expect(waiting.lease).not.toBeNull();
@@ -200,11 +200,11 @@ describe('ResourceScheduler', () => {
     expect(a.lease).not.toBeNull();
     const background = request({ owner: 'bg', demand: { memory: 2 * GiB } });
     expect(background.lease).toBeNull();
-    // 同样 2 GiB 的交互操作用交互预留，马上开始。
+    // An interactive operation of the same 2 GiB uses the interactive reserve and starts immediately.
     const interactive = request({ owner: 'ui', demand: { memory: 2 * GiB }, priority: 'interactive' });
     expect(interactive.lease).not.toBeNull();
     interactive.lease!.release();
-    // 交互的等待排在先来的后台前面。
+    // Interactive waiters go ahead of background work that arrived earlier.
     const ui2 = request({ owner: 'ui2', demand: { memory: 3 * GiB + 512 * MiB }, priority: 'interactive' });
     expect(ui2.lease).toBeNull();
     a.lease!.release();
@@ -242,7 +242,7 @@ describe('ResourceScheduler', () => {
     });
     const a = request({ owner: 'a', demand: { scratchDisk: 8 * GiB } });
     expect(a.lease).not.toBeNull();
-    // 写了一部分，可用空间变少：12 GiB 的需求在 a 归还之后（可用 6 + 8）放得下，等着，不拒绝。
+    // Part was written, so free space decreased: the 12 GiB demand fits after a returns (6 free + 8), so it waits rather than being rejected.
     capacity.value = { ...capacity.value, scratchDisk: 6 * GiB };
     const b = request({ owner: 'b', demand: { scratchDisk: 12 * GiB } });
     expect(b.rejected).toBeNull();
@@ -268,7 +268,7 @@ describe('ResourceScheduler', () => {
     expect(c.lease).toBeNull();
     controller.abort(new Error('cancelled'));
     await expect(pending).rejects.toThrow('cancelled');
-    // b 撤回之后 c 不再排在它后面。
+    // After b withdraws, c no longer queues behind it.
     expect(c.lease).not.toBeNull();
     a.lease!.release();
     c.lease!.release();

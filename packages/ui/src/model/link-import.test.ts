@@ -97,7 +97,7 @@ describe('认出与读出', () => {
     expect(linkSummary(job())).toBeNull();
     expect(linkSummary(job({ summary: SUMMARY }))?.files.media).toBe('/Users/me/p/downloads/访谈第一集.mp4');
     expect(linkSummary(job({ summary: { title: 'x' } }))).toBeNull();
-    // 用上的浏览器：之前的版本没有这一项，不认得的取值当作匿名。
+    // Browser used: earlier versions did not have this item; an unrecognized value is treated as anonymous.
     expect(linkSummary(job({ summary: SUMMARY }))?.cookieBrowser).toBeNull();
     expect(linkSummary(job({ summary: { ...SUMMARY, cookieBrowser: 'edge' } }))?.cookieBrowser).toBe('edge');
     expect(linkSummary(job({ summary: { ...SUMMARY, cookieBrowser: 'netscape' } }))?.cookieBrowser).toBeNull();
@@ -166,7 +166,7 @@ describe('三步', () => {
     expect(states(done, { video: 'done', subs: 'running' })).toEqual(['done', 'done', 'current']);
     expect(states(done, { video: 'done', subs: 'skipped' })).toEqual(['done', 'done', 'skipped']);
     expect(states(done, { video: 'failed', subs: 'pending' })).toEqual(['done', 'failed', 'pending']);
-    // 没有跟进记录（应用重启过、或别处起的）：等用户自己建视频。
+    // No follow-up record (the app was restarted, or it was started elsewhere): wait for the user to create the video themselves.
     expect(states(done, null)).toEqual(['done', 'current', 'pending']);
   });
 

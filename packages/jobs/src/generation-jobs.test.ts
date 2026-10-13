@@ -18,8 +18,8 @@ import { JobManager, type JobVideos, type TranscribeRouter } from './job-manager
 import type { MediaProbe } from './media-probe.ts';
 
 /**
- * 生成任务在 JobManager 里的生命周期（架构设计 §7.1、§7.3）：冻结参数、校验、发布、导入视频与各种失败。
- * Provider 与解码校验都是假的；真实的适配器与 ffprobe 在 runtime-core 的端到端测试里。
+ * Lifecycle of a generation task in the JobManager (architecture design §7.1, §7.3): freezing parameters, validation, publishing, importing into the video, and the various failures.
+ * The Provider and decode validation are fakes. The real adapters and ffprobe are in the end-to-end tests in runtime-core.
  */
 
 const MODEL: SpeechModelInfo = {
@@ -39,7 +39,7 @@ const MODEL: SpeechModelInfo = {
   cost: 'unknown',
 };
 
-/** 按 `next` 的脚本执行；默认在 staging 里写一个以 ID3 开头的「mp3」。 */
+/** Runs according to the script in `next`. By default writes an “mp3” starting with ID3 into staging. */
 class FakeGenerator implements GenerationProvider {
   readonly id = 'fake';
   readonly runs: GenerationRun[] = [];
@@ -180,7 +180,7 @@ describe('生成任务（JobManager）', () => {
     expect((await fs.readFile(path.join(paths.artifactsDir, `${hex}.mp3`))).subarray(0, 3).toString()).toBe('ID3');
     expect(videos.applied).toHaveLength(0);
     expect(job.contentHash).toBe(`sha256:${crypto.createHash('sha256').update('你好').digest('hex')}`);
-    // 同样的参数是同样的输入摘要。
+    // The same parameters give the same input digest.
     expect((await speak()).inputHash).toBe(job.inputHash);
   });
 
@@ -188,7 +188,7 @@ describe('生成任务（JobManager）', () => {
     videos.failNext.push(new RpcError('conflict', '版本冲突'));
     const job = await speak({ videoId: 'mov_1', name: '旁白' });
     expect(job.state).toBe('completed');
-    // 执行与应用是两条记录（§7.2）：每次提交换一个命令，应用记下最后那次的命令与回执。
+    // Execution and application are two records (§7.2): each submission uses a new command, and the application records the last command and its receipt.
     const [app] = job.applications!;
     expect(videos.applied.map((a) => a.commandId)).toEqual([`cmd_${app!.applicationId}_1`, `cmd_${app!.applicationId}_2`]);
     expect(app).toMatchObject({
@@ -198,7 +198,7 @@ describe('生成任务（JobManager）', () => {
       receipt: { refs: { output1: 'ast_1' } },
     });
     const [op] = videos.applied[1]!.operations as Array<EditOperation & { name: string; provenance: { source: Record<string, unknown> } }>;
-    // 导入默认是链接；产物库里的文件不是用户的原文件，生成结果总是显式收进视频（绝对路径，managed）。
+    // Import defaults to a link. A file in the artifact store is not the user's original file, so generation results are always explicitly copied into the video (absolute path, managed).
     expect(op).toMatchObject({ type: 'importAsset', name: '旁白', storage: 'managed', provenance: { origin: 'generated' } });
     expect(path.isAbsolute((op as { path: string }).path)).toBe(true);
     expect(op!.provenance.source).not.toHaveProperty('parameters.text');
@@ -235,12 +235,12 @@ describe('生成任务（JobManager）', () => {
     expect(job.warnings).toEqual([]);
     const artifact = await manager.artifacts.locate(job.result!.artifactId);
     expect(await fs.readFile(copy)).toEqual(await fs.readFile(artifact!));
-    // 不是硬链接：改副本不动产物。
+    // Not a hard link: modifying the copy does not change the artifact.
     expect((await fs.stat(copy)).ino).not.toBe((await fs.stat(artifact!)).ino);
     const again = await speak({ text, saveDir });
     expect(again.result!.outputs![0]!.path).toBe(path.join(saveDir, 'Hello world 第二行-2.mp3'));
     expect(again.inputHash).toBe((await speak({ text })).inputHash);
-    // 没给保存位置：不写副本。
+    // No save location given: no copy is written.
     expect((await speak({ text })).result!.outputs![0]!.path).toBeUndefined();
   });
 
@@ -252,7 +252,7 @@ describe('生成任务（JobManager）', () => {
     ).rejects.toMatchObject({ code: 'conflict', details: { code: 'OUTPUT_DESTINATION_UNAVAILABLE' } });
     expect(manager.list()).toHaveLength(0);
 
-    // 提交之后保存位置被换成了一个文件。
+    // After submission, the save location was replaced with a file.
     const saveDir = path.join(dir, 'later');
     const original = generator.next;
     generator.next = async (run, sink, signal) => {

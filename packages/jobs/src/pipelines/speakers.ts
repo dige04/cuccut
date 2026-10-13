@@ -16,22 +16,20 @@ import { pickSource, type PipelineVideos } from './translate.ts';
 import { readArtifact } from './translation-batches.ts';
 
 /**
- * 识别说话人（架构设计 §6.6；AI 工具「识别说话人」的后端）：给视频里已有的一份转写按声纹重新区分说话人，不重新转写。
+ * Speaker recognition (architecture design §6.6; the backend of the AI tool “Recognize speakers”): re-separates the speakers of an existing transcript of a video by voiceprint, without transcribing again.
  *
- * 1. 区分：本机的「说话人区分」模型包单独加载（Pyannote 分段 + WeSpeaker 声纹），整条音轨与转写的词时间交给 Model Worker
- *    （`job.run` 的 `diarize`，Model Worker 协议规范 §2.5.5），它把说话人投影到每个词上（`speakers.json`，存成产物）。
- * 2. 整理：词上的聚类按重叠时长复用已有的说话人（保留 ID 与名字，库里的音色绑定、配音的说话人绑定不断），复用不上的新建；
- *    同时试算一次应用，得出每位说话人的句数、试听片段与会重切的译文条数（字幕与翻译核心经 `@cuccut/editor-wasm`）。提案存成
- *    产物，摘要给界面的确认页。
+ * 1. Diarization: the “speaker diarization” model package on this machine is loaded separately (Pyannote segmentation plus WeSpeaker voiceprints). The whole audio track and the word timings of the transcript are handed to the Model Worker (`job.run`'s `diarize`, Model Worker protocol spec §2.5.5), which projects the speakers onto each word (`speakers.json`, stored as an artifact).
+ * 2. Consolidation: the clusters on the words reuse existing speakers by overlap duration (keeping their IDs and names, so the voice bindings in the library and the speaker bindings for dubbing stay intact). Clusters that cannot be matched to an existing speaker are created as new ones.
+ *    At the same time, a trial application is computed once, giving each speaker's sentence count, preview clips, and the number of translation entries that would be re-cut (for subtitles and the translation core, via `@cuccut/editor-wasm`). The proposal is stored as an artifact, and a summary goes to the confirmation page in the UI.
  *
- * 流程不改视频：用户在确认页确认（可以改名）后由 `edits.applySpeakers` 应用（`applySpeakerProposal`），一笔可撤销的编辑。
+ * The pipeline does not change the video. After the user confirms on the confirmation page (renaming is allowed), `edits.applySpeakers` applies it (`applySpeakerProposal`) as a single undoable edit.
  */
 
 export const SPEAKERS_PIPELINE = 'speakers';
-/** 提案产物的格式。 */
+/** The format of the proposal artifact. */
 export const SPEAKER_PROPOSAL_SCHEMA = 'cuccut.speaker-proposal/1';
 
-/** 冻结的参数：文稿与版本、素材、模型包与它的 Worker 估计都已确定。 */
+/** Frozen parameters: the transcript and its version, the media, the model package and its Worker estimate are all settled. */
 export interface FrozenSpeakersParams extends SpeakersParams {
   documentId: Id;
   revision: string;
@@ -40,16 +38,16 @@ export interface FrozenSpeakersParams extends SpeakersParams {
   footprint: WorkerFootprint | null;
 }
 
-/** 识别说话人读视频的能力：在翻译的基础上，多了素材的源文件。 */
+/** The capability to read the video for speaker recognition: on top of translation, it adds the source file of the media. */
 export interface SpeakersVideos extends PipelineVideos {
   assetFile(videoId: Id, assetId: Id): Promise<{ file: string; revision: string } | null>;
 }
 
 export interface SpeakersDeps {
   videos: SpeakersVideos;
-  /** 这台机器上的「说话人区分」模型包此刻的状态；没有登记时 null。 */
+  /** The state of this machine's “speaker diarization” model package at this moment; null when it is not registered. */
   pack(): Promise<ModelBundleStatus | null>;
-  /** 它的 Model Worker 加载后约常驻多少（`ModelCatalog.workerFootprint`）。 */
+  /** Roughly how much stays resident after its Model Worker loads (`ModelCatalog.workerFootprint`). */
   footprint(bundleId: string): Promise<WorkerFootprint | null>;
   diarizer: {
     diarize(
@@ -60,13 +58,13 @@ export interface SpeakersDeps {
   };
 }
 
-/** 提案产物：应用时读它，核对文稿与译文还是识别时的版本。 */
+/** The proposal artifact. When it is applied, it is read to check that the transcript and translations are still at the version used during recognition. */
 export interface SpeakerProposalFile extends SpeakerProposal {
   schema: typeof SPEAKER_PROPOSAL_SCHEMA;
   videoId: Id;
   documentId: Id;
   revision: string;
-  /** 参与试算的译文（`cuccut.translation/2`）与它们的版本。 */
+  /** The translations (`cuccut.translation/2`) that take part in the trial computation, and their versions. */
   translations: Array<{ documentId: Id; revision: string }>;
   skippedTranslations: number;
   timescale: number;
@@ -85,7 +83,7 @@ interface ProposeOutput extends Record<string, unknown> {
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for agents)
     videoId: { type: 'string', description: '已打开的视频' },
     documentId: { type: 'string', description: '要区分说话人的 speech 文档；视频里只有一份时可以不给' },
     // i18n-ignore-end
@@ -94,7 +92,7 @@ const PARAMS_SCHEMA = {
   additionalProperties: false,
 };
 
-/** 本机模型包能不能用（装好、没停用、这台机器支持）。 */
+/** Whether this machine's local model package can be used: installed, not disabled, and supported on this machine. */
 function usable(status: ModelBundleStatus): boolean {
   return status.state === 'installed' || status.state === 'loading' || status.state === 'ready' || status.state === 'busy';
 }
@@ -122,7 +120,7 @@ export function speakersPipeline(deps: SpeakersDeps): PipelineDefinition<FrozenS
       if (!usable(pack)) {
         throw new RpcError('conflict', J.modelNotInstalled(), { code: 'MODEL_UNAVAILABLE', bundle: pack });
       }
-      // 重试照用冻结的文稿版本（应用时还要核对它）；第一次启动时取当前版本。
+      // A retry keeps the frozen transcript version (applying still checks it); on the first start, the current version is taken.
       const frozen = params as Partial<FrozenSpeakersParams>;
       const revision = frozen.revision ?? record.currentRevision;
       const next: FrozenSpeakersParams = {
@@ -145,7 +143,7 @@ export function speakersPipeline(deps: SpeakersDeps): PipelineDefinition<FrozenS
       {
         name: 'diarize',
         label: () => J.stepDiarize(),
-        // Worker 进程按模型包估计（同一个模型包的任务共用），这一步自己的是解出的音频。
+        // The Worker process is estimated per model package (tasks with the same model package share it); this step's own part is the decoded audio.
         resources: (params) => localTranscribeResources(params.bundleId, params.footprint),
         run: (context) => diarize(deps, context),
         reusable: async (output, { artifacts }) => (await artifacts.locate((output as DiarizeOutput).artifactId)) !== null,
@@ -184,7 +182,7 @@ interface SpeechWordLike {
   end?: number;
 }
 
-/** 文稿正文里的词与刻度；读不懂时 `PipelineStepError`。 */
+/** The words and timings in the transcript body. `PipelineStepError` when they cannot be read. */
 function speechWords(body: unknown, documentId: Id): { words: SpeechWordLike[]; timescale: number } {
   const b = body as { schema?: unknown; timescale?: unknown; words?: unknown } | null;
   if (!b || b.schema !== 'cuccut.speech/1' || !Array.isArray(b.words)) {
@@ -293,7 +291,7 @@ async function propose(videos: PipelineVideos, context: PipelineStepContext<Froz
   return { output: { artifactId } satisfies ProposeOutput, result: { documentId: null, artifactId } };
 }
 
-/** 这份转写的译文（当前版本）：当前格式的参与重切，旧格式的跳过（只计数）。 */
+/** The translations of this transcript (current version): current-format ones take part in re-cutting; old-format ones are skipped (only counted). */
 export async function translationsOf(
   videos: Pick<PipelineVideos, 'document'>,
   videoId: Id,
@@ -316,25 +314,23 @@ export async function translationsOf(
   return { bodies, refs, skipped };
 }
 
-/** 读提案产物；不在了时 `ARTIFACT_NOT_FOUND`。 */
+/** Reads the proposal artifact. `ARTIFACT_NOT_FOUND` if it is gone. */
 export function readSpeakerProposal(artifacts: ArtifactStore, artifactId: string): Promise<SpeakerProposalFile> {
   return readArtifact<SpeakerProposalFile>(artifacts, artifactId);
 }
 
-/** 应用识别说话人的事务标签（写进视频的编辑历史，按当前语言生成）。 */
+/** The transaction label for applying speaker recognition (written into the video's edit history, generated in the current language). */
 export function speakersApplyLabel(): string {
   return J.label().text;
 }
 
-/** 名字的长度上限（与说话人改名的界面一致）。 */
+/** The upper limit on the length of a name (consistent with the speaker rename UI). */
 const NAME_MAX = 100;
 
 /**
- * 把提案变成一笔编辑事务的操作（`edits.applySpeakers`）：转写写新版本（词上的说话人、说话人表与名字、按新边界切开的句子），
- * 有变化的译文各写新版本（按新边界重切，不重译）；概要沿用原来的，更新说话人数。
+ * The operation that turns the proposal into one edit transaction (`edits.applySpeakers`). The transcript gets a new version (the speakers on the words, the speaker table and names, and the sentences split along the new boundaries). Translations that changed each get a new version (re-cut along the new boundaries, not re-translated). The summary is kept from the original, with the speaker count updated.
  *
- * 文稿或参与试算的译文在识别之后改过（版本不同、译文增删）时以 `conflict`（`STALE_JOB_INPUT`）拒绝；`names` 里有提案之外的
- * 说话人或空名字时 `invalid-request`。
+ * If the transcript or the translations that took part in the trial were changed after recognition (the version differs, or translations were added or removed), it is rejected with `conflict` (`STALE_JOB_INPUT`). When `names` contains a speaker that is not in the proposal, or an empty name, it is `invalid-request`.
  */
 export async function speakerApplyOperations(
   videos: Pick<PipelineVideos, 'state' | 'document'>,
@@ -395,7 +391,7 @@ export async function speakerApplyOperations(
   applied.translations.forEach((body, index) => {
     if (!body) return;
     const documentId = refs[index]!.documentId;
-    // 概要里的单元数跟着重切更新（翻译写入时记的是 `unitCount`）。
+    // The unit count in the summary is updated along with the re-cut (translation writing recorded `unitCount`).
     const previous = summaryOf(documentId);
     const units = Array.isArray(body.units) ? body.units.length : null;
     const summary =

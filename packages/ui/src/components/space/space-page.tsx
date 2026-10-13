@@ -210,12 +210,12 @@ function SpaceRail({ category, projectId }: { category: SpaceCategory; projectId
   return <PageRail label={COPY.sidebarLabel} groups={groups} footer={COPY.sidebarNote} className="cc-scroll md:-mr-2 md:min-h-0 md:overflow-y-auto md:pr-2 md:[&>div]:static" />;
 }
 
-/** 动作失败时的一句话（Runtime 的拒绝原因原样带上）。 */
+/** One sentence when an action fails (the Runtime's rejection reason is passed through as is). */
 const failed = (what: string) => (error: Error) => ToastQueue.negative(COPY.failed(what, error.message), { timeout: 6000 });
 
 /**
- * 把便携包打开成新视频并进编辑器（架构设计 §5.8）：包里带着全部素材，解开要一会儿，先挂一条进行中的提示。
- * 校验不过时 Runtime 拒绝、不留下视频目录，原样报给用户。成功时返回 true。
+ * Open a portable package as a new video and enter the editor (architecture design §5.8): the package carries all media, so unpacking takes a while; an in-progress notice is shown first.
+ * If validation fails, the Runtime rejects it without leaving a video directory, and the reason is reported to the user as is. Returns true on success.
  */
 async function openPackageAs(runtime: RuntimeSession, scope: { projectId: Id } | { conversationId: Id }, path: string): Promise<boolean> {
   const name = videoNameOf(path);
@@ -248,7 +248,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   const [infoId, setInfoId] = useState<Id | null>(null);
   const [dialog, setDialog] = useState<SpaceDialogState | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
-  // 从工具结果、任务详情的「在 Space 中查看」来：条目到了就打开它的查看器。
+  // From tool results or the task detail's “在 Space 中查看” (View in Space): once the item arrives, open its viewer.
   const focus = useSpaceFocus((s) => s.focus);
   useEffect(() => {
     const id = takeSpaceFocus((id) => entries.some((e) => e.id === id));
@@ -262,7 +262,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
     () => viewEntries(entries, { category, projectId, search: query, sort, status, from }),
     [entries, category, projectId, query, sort, status, from],
   );
-  // 父视频卡片 / 行上的「N 支短视频」。
+  // “N 支短视频” (N shorts) on a parent video card / row.
   const shorts = useMemo(() => {
     const counts = new Map<Id, number>();
     for (const entry of entries) {
@@ -283,10 +283,10 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   const label = SPACE_CATEGORIES.find((c) => c.key === category)?.label ?? COPY.all;
   const viewing = viewingId ? (entries.find((e) => e.id === viewingId) ?? null) : null;
   const info = infoId ? (entries.find((e) => e.id === infoId) ?? null) : null;
-  // 视频的查看框列出名下的文件，文件的查看框能回到所属的视频（§4.3）：从哪个分类、哪里打开都一样，所以按全部条目算。
+  // A video's viewer lists its files, and a file's viewer can return to the video it belongs to (§4.3). This is the same whichever category or place it is opened from, so it is computed over all items.
   const viewingFiles = useMemo(() => (viewing?.kind === 'video' ? filesOf(entries, viewing.id) : []), [entries, viewing]);
   const viewingHost = useMemo(() => (viewing ? hostVideoOf(entries, viewing) : null), [entries, viewing]);
-  // 视频的查看框列出它切出的短视频，短视频的查看框能回到父视频（§4.5）。
+  // A video's viewer lists the shorts cut from it; a short's viewer can return to the parent video (§4.5).
   const viewingShorts = useMemo(() => {
     const videoId = viewing?.kind === 'video' ? videoIdOf(viewing) : null;
     return videoId ? madeShorts(entries, videoId) : [];
@@ -297,7 +297,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   const viewingConversation = viewingConversationId ? conversations.find((c) => c.id === viewingConversationId) : undefined;
   const filtered = query.trim() !== '' || projectId !== null || status !== 'any' || !!from;
   const fromName = from ? (videoNames.get(from) ?? untitled()) : null;
-  // 内容命中只在视频与「全部」里找（架构设计 §5.11：内容索引只建在视频上）。
+  // Content hits are searched only within videos and “全部” (All) (architecture design §5.11: the content index is built only on videos).
   const searchContent = query.trim() !== '' && (category === 'all' || category === 'video');
 
   const sourceOf = (entry: SpaceEntry) => sourceLabel(entry, dirs, untitled(), videoNames);
@@ -311,7 +311,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
 
   const setTrashed = (entry: SpaceEntry, trashed: boolean) => runtime.updateSpaceEntry(entry.id, { trashed });
 
-  // 带「撤销」的提示不会自己消失（S2 有动作的 Toast 不计时）；条目从回收站恢复后收起它，免得留一个过时的撤销。
+  // A notice with “撤销” (Undo) does not disappear on its own (Spectrum toasts with actions do not time out); when the item is restored from the trash, close it so no stale undo is left behind.
   const undoToasts = useRef(new Map<Id, () => void>());
   const closeUndo = (id: Id) => {
     undoToasts.current.get(id)?.();
@@ -333,7 +333,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
       })
       .catch(failed(COPY.trash));
 
-  /** 删除视频（产品设计 §4.9）：由它导出、生成的条目不随视频删除；有这样的条目时先列出来确认。 */
+  /** Delete video (product design §4.9): items exported or generated from it are not deleted with it; when such items exist, list them first for confirmation. */
   const trash = (entry: SpaceEntry) => {
     const videoId = entry.kind === 'video' ? videoIdOf(entry) : null;
     const related = videoId ? relatedEntries(entries, videoId) : [];
@@ -352,7 +352,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
       })
       .catch(failed(COPY.restore));
 
-  /** 彻底删除与清除失败的占位（架构设计 §5.5）：仍被引用时 Runtime 什么也不删，列出谁在用。 */
+  /** Permanent delete and clearing failed placeholders (architecture design §5.5): if the item is still referenced, the Runtime deletes nothing and lists who is using it. */
   const purgeNow = (entry: SpaceEntry) => {
     const clearing = isFailedPlaceholder(entry);
     runtime
@@ -371,8 +371,8 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   };
 
   /**
-   * 在会话中继续（架构设计 §5.7）：Runtime 只建会话（或回到条目原来的会话）并附上引用，不启动任务；
-   * 引用随用户下一次发送一起交给智能体。
+   * Continue in session (architecture design §5.7): the Runtime only creates a session (or returns to the item's original session) and attaches the reference; it does not start a task;
+   * the reference goes to the agent together with the user's next send.
    */
   const continueIn = (entry: SpaceEntry) => {
     runtime
@@ -385,7 +385,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
       .catch(failed(COPY.continue));
   };
 
-  /** 打开 `space.openForEdit` 给的视频条目：Space 里有它时按来源目录打开（与列表一致），否则按条目 id。 */
+  /** Open the video item given by `space.openForEdit`: if it is in Space, open it from its source directory (consistent with the list); otherwise by item id. */
   const openEntry = (target: { entryId: Id }) => {
     const known = entries.find((e) => e.id === target.entryId);
     setViewingId(null);
@@ -393,8 +393,8 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   };
 
   /**
-   * 二次编辑（产品设计 §4.6；架构设计 §5.7「从成片回到视频」）：去哪里由 `space.openForEdit` 回答。
-   * 回到来源视频：来源已经改过时先说明差异；以它为素材新建视频：新建空视频再导入这个文件放上主序列。
+   * Second-pass editing (product design §4.6; architecture design §5.7 “从成片回到视频” (back from the finished cut to the video)): where to go is answered by `space.openForEdit`.
+   * Back to the source video: if the source has changed, explain the differences first; create a video from it: create a new blank video, then import this file and place it on the main sequence.
    */
   const edit = async (entry: SpaceEntry) => {
     let result;
@@ -422,7 +422,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
       ToastQueue.neutral(editBlock(entry, null) ?? COPY.sourceGone, { timeout: 5000 });
       return;
     }
-    // 视频与音频（有项目时）到那个项目的起始页，挂成交给 Agent 的素材，在输入框里说怎么处理（原型 space-viewer.jsx `newProject({entry: 'media', file})`）。
+    // Video and audio (when a project is set): go to that project's start page, attached as material for the agent, with how to handle it written in the input box (prototype space-viewer.jsx `newProject({entry: 'media', file})`).
     if (result.projectId && mediaKindOf(path) !== 'other') {
       setViewingId(null);
       openHome(result.projectId, { materials: [path] });
@@ -445,14 +445,14 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
     ToastQueue.positive(COPY.renamed, { timeout: 3000 });
   };
 
-  // 视频条目的转录动作（§4.4）：有没有文稿读候选，转录中 / 排队 / 上次失败从 `jobs` 推。
+  // Transcription action for video items (§4.4): whether a transcript exists is read from the candidates; in-progress / queued / last-failed states are derived from `jobs`.
   const transcribed = useTranscribedEntries();
   const jobs = useJobs((s) => s.jobs);
   const transcribeAction = (entry: SpaceEntry): SpaceTranscribeAction | null => {
     if (entry.kind !== 'video' || entry.user.trashedAt || entry.status === 'generating' || entry.status === 'failed') return null;
     return spaceTranscribeAction(transcribeState(videoIdOf(entry), jobs), transcribed(entry.id), entry.status === 'missing');
   };
-  /** 进转录工具页、预选这部视频；「重试转录…」带上失败的那次（预填参数、说明原因）。 */
+  /** Open the transcription tool page with this video preselected; “重试转录…” (Retry transcription…) carries the failed run (prefilled parameters, and explains the reason). */
   const openTranscribe = (entry: SpaceEntry) => {
     const failedJob = transcribeAction(entry) === 'retry' ? failedTranscribeJob(videoIdOf(entry), jobs) : null;
     const tools = useVideoTools.getState();
@@ -462,8 +462,8 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   };
 
   /**
-   * 幻灯片、设计稿与设计系统在做它的那条会话（项目里的在项目起始页）的功能区里开各自的标签
-   * （docs/design/slides §8.1、docs/design/canvas §8.1、§10）。`videoTargetOf` 只是按来源目录与相对路径给定位，这几种目录同样适用。
+   * Slides, design drafts and design systems each open in their own tab in the feature area of the session that is building them (for projects, on the project's start page)
+   * (docs/design/slides §8.1, docs/design/canvas §8.1, §10). `videoTargetOf` only gives the location by source directory and relative path; these directory types apply equally.
    */
   const openEditorTab = (kind: EditorKind, entry: SpaceEntry) => {
     const { projectId, conversationId } = entry.source;
@@ -881,12 +881,12 @@ function SpaceVideo({ video, category, projectId, from }: { video: FileTarget; c
 }
 
 /**
- * 「新建」（产品设计 §4 用户修订；原型 page-space.jsx 的新建菜单）：
- * - 新建空视频：不转录、不排队，立即可用；
- * - 从文件新建视频：新建空视频，导入选的文件放上主序列，再进编辑器（不自动转录：转录是另一个要排队的任务）；
- * - 从便携包新建视频：选一个 .cuccut，在项目里建成新视频（`videos.importPackage`，只在桌面端）；
- * - 导入素材：登记为项目的素材，不放进任何视频（导入框里选项目）。
- * 视频是项目目录下的一个子目录：筛了项目时直接建在那里，否则先选项目。
+ * “New” (product design §4, user revision; prototype page-space.jsx's new menu):
+ * - New blank video: no transcription, no queue; ready immediately;
+ * - New video from file: create a blank video, import the chosen file onto the main sequence, then enter the editor (no automatic transcription: transcription is a separate task to queue);
+ * - New video from portable package: choose a .cuccut and create it as a new video in the project (`videos.importPackage`, desktop only);
+ * - Import media: register as project media, not placed in any video (choose the project in the import dialog).
+ * A video is a subdirectory under the project directory: when filtered to a project, it is created there directly; otherwise choose a project first.
  */
 function NewMenu({ projectId, onImport }: { projectId: Id | null; onImport: () => void }) {
   const runtime = useRuntime();
@@ -894,8 +894,8 @@ function NewMenu({ projectId, onImport }: { projectId: Id | null; onImport: () =
   const connected = useConnection((s) => s.state.status === 'connected');
   const open = useProject(projectId);
   const owner = open && !open.archived ? open : undefined;
-  // 空视频直接建（16:9）并打开（原型 page-space.jsx `newProject({entry: 'blank', dir})`）；视频、音频文件到那个项目的起始页挂成素材，
-  // 在输入框里说怎么处理（加字幕、音频转视频、翻译…）。图片照旧直接建视频放上时间线。
+  // A blank video is created directly (16:9) and opened (prototype page-space.jsx `newProject({entry: 'blank', dir})`); video and audio files are attached as material to that project's start page,
+  // where how to handle them is written in the input box (add subtitles, audio to video, translate…). Images are still created directly as a video and placed on the timeline.
   const createBlank = (projectId: Id) => createBlankVideo(runtime, projectId, '16:9');
   const createFromFile = async (projectId: Id) => {
     const [path] = await runtime.host.pickMediaFiles();
@@ -913,7 +913,7 @@ function NewMenu({ projectId, onImport }: { projectId: Id | null; onImport: () =
       failed(COPY.newVideo)(error as Error);
     }
   };
-  // 别处导出的便携包：桌面端用系统的打开对话框选 .cuccut（网页宿主没有，菜单里不列）。
+  // Portable packages exported elsewhere: on desktop, choose a .cuccut with the system open dialog (the web host has none, so it is not listed in the menu).
   const pickFiles = runtime.host.pickFiles;
   const createFromPackage = async (projectId: Id) => {
     if (!pickFiles) return;
@@ -926,7 +926,7 @@ function NewMenu({ projectId, onImport }: { projectId: Id | null; onImport: () =
   };
   const choices = projects.filter((p) => !p.archived).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
-  /** 没筛项目时，「新建空视频」「从文件新建视频」「从便携包新建视频」各带一个选项目的子菜单。 */
+  /** When no project is filtered, “新建空视频”, “从文件新建视频” and “从便携包新建视频” (New blank video, New video from file, New video from portable package) each get a project-selection submenu. */
   const projectMenu = (id: 'blank' | 'file' | 'package', Icon: ComponentType, label: string, hint: string, run: (projectId: Id) => unknown) =>
     owner ? (
       <MenuItem id={id} textValue={label}>

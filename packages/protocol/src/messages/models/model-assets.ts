@@ -14,7 +14,7 @@ import { pl } from './model-assets.pl.ts';
 import { tr } from './model-assets.tr.ts';
 import { vi } from './model-assets.vi.ts';
 
-/** `packages/models/src/model-assets.ts` 给人看的文字：随应用分发的文件缺失。 */
+/** `packages/models/src/model-assets.ts`: text shown to people for a file that ships with the app and is missing. */
 const en = {
   appFileMissing: (p: { what: string }) => `The ${p.what} that comes with the app is missing or unreadable, so CucCut is not fully installed. Reinstall CucCut`,
 };

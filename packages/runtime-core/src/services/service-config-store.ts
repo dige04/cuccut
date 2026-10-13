@@ -25,15 +25,15 @@ import { modelApiAlias } from '@cuccut/protocol/schemas';
 import { readJson, writeJsonAtomic } from '@cuccut/runtime-storage';
 
 /**
- * 对外服务的配置（架构设计 §4.8）：`store/services.json`，权限 0600，原子写。Runtime 启动时读入，服务按 `autostart` 恢复。
+ * Config for external services (architecture design §4.8): `store/services.json`, permission 0600, atomic write. It is read in when the Runtime starts, and services are restored according to `autostart`.
  *
- * - 每个服务：是否随 Runtime 启动、端口、访问策略、已发放的客户端。节点服务的配置在 `node-share.json`，不在这里。
- * - 模型接口服务另有路由开关、别名表与每客户端的并发上限（`modelApi`）；没有存过时由服务取默认值。
- * - 客户端令牌是 `<clientId>.<secret>`，`secret` 是 32 字节随机数的 base64url；只保存盐与 `sha256(盐 ‖ secret)`，
- *   比较用 `crypto.timingSafeEqual`。明文只在发放时返回一次。
+ * - Per service: whether it starts with the Runtime, the port, the access policy, and the issued clients. The node service's config is in `node-share.json`, not here.
+ * - The model API service has its own routing switches, alias table, and per-client concurrency limit (`modelApi`); when never stored, the service uses defaults.
+ * - A client token is `<clientId>.<secret>`, where `secret` is 32 random bytes in base64url. Only the salt and `sha256(salt ‖ secret)` are stored,
+ *   and comparison uses `crypto.timingSafeEqual`. Plaintext is returned only once, at issuance.
  */
 
-/** 有自己配置的服务（节点服务除外）。 */
+/** Services that have their own config (excluding the node service). */
 export type ConfigurableServiceId = Exclude<ServiceId, 'node'>;
 
 export interface StoredClient extends ServiceClient {
@@ -41,7 +41,7 @@ export interface StoredClient extends ServiceClient {
   hash: string;
 }
 
-/** 模型接口服务自己的配置（§4.8）。 */
+/** The model API service's own config (§4.8). */
 export interface ModelApiConfig {
   routing: ModelApiRouting;
   aliases: ModelApiAlias[];
@@ -53,9 +53,9 @@ export interface ServiceConfig {
   port: number;
   policy: ServicePolicy;
   clients: StoredClient[];
-  /** 只有模型接口服务有；没有存过时为 undefined。 */
+  /** Only the model API service has this; undefined when never stored. */
   modelApi?: ModelApiConfig;
-  /** 只有 Web 服务用：只读与方法白名单（不给时只读关、默认集合）。 */
+  /** Only the Web service uses this: the read-only switch and method allowlist (if not given, read-only is off and the default set applies). */
   web?: WebServiceAccess;
 }
 
@@ -126,7 +126,7 @@ export class ServiceConfigStore {
     this.#file = file;
   }
 
-  /** 读入配置。文件不存在时全部取默认值；不是合法的配置时抛出（不覆盖，免得丢掉已发放的客户端）。 */
+  /** Reads the config. If the file does not exist, all values take defaults. Throws if it is not a valid config (not overwritten, so issued clients are not lost). */
   async load(): Promise<void> {
     const raw = await readJson<unknown>(this.#file);
     this.#configs.clear();
@@ -147,20 +147,20 @@ export class ServiceConfigStore {
     }
   }
 
-  /** 一个服务的配置（副本）。 */
+  /** One service's config (a copy). */
   get(serviceId: ConfigurableServiceId): ServiceConfig {
     return structuredClone(this.#configs.get(serviceId) ?? defaults(serviceId));
   }
 
-  /** 改配置并落盘；落盘失败时内存里的配置不变。 */
+  /** Changes the config and persists it; if persisting fails, the in-memory config is unchanged. */
   async update(serviceId: ConfigurableServiceId, patch: Partial<Omit<ServiceConfig, 'clients'>>): Promise<ServiceConfig> {
     await this.#mutate(serviceId, (config) => ({ ...config, ...structuredClone(patch) }));
     return this.get(serviceId);
   }
 
   /**
-   * 把一个视频加进服务的视频名单（服务自己新建的视频）。在写入队列里按当时的配置改，并发的新建不会互相覆盖；
-   * 策略是全部视频或名单里已经有它时不改。返回是否改了。
+   * Adds a video to the service's video list (a video the service itself created). It is modified according to the config at that time, inside the write queue, so concurrent creations do not overwrite each other.
+   * If the policy is all videos, or the list already contains it, nothing changes. Returns whether it changed.
    */
   async allowVideo(serviceId: ConfigurableServiceId, videoId: Id): Promise<boolean> {
     let changed = false;
@@ -173,7 +173,7 @@ export class ServiceConfigStore {
     return changed;
   }
 
-  /** 发放一个客户端：令牌明文只在这里返回。 */
+  /** Issues a client: the plaintext token is returned only here. */
   async createClient(serviceId: ConfigurableServiceId, name: string): Promise<{ client: ServiceClient; token: string }> {
     const clientId = newId('mcl');
     const secret = crypto.randomBytes(SECRET_BYTES);
@@ -190,7 +190,7 @@ export class ServiceConfigStore {
     return { client: publicClient(stored), token: `${clientId}.${secret.toString('base64url')}` };
   }
 
-  /** 吊销一个客户端。没有这个客户端时返回 false。 */
+  /** Revokes a client. Returns false if there is no such client. */
   async revokeClient(serviceId: ConfigurableServiceId, clientId: string): Promise<boolean> {
     let found = false;
     await this.#mutate(serviceId, (config) => {
@@ -205,7 +205,7 @@ export class ServiceConfigStore {
     return (this.#configs.get(serviceId)?.clients ?? []).map(publicClient);
   }
 
-  /** `Bearer` 之后的令牌 → 客户端；不认识、已吊销或写法不规范时为空。只在内存里记下最近使用的时间。 */
+  /** The token after `Bearer` → client; empty if unrecognized, revoked, or malformed. Only the most recent use time is recorded, in memory. */
   verify(serviceId: ConfigurableServiceId, token: string): ServiceClient | null {
     const dot = token.indexOf('.');
     if (dot <= 0) return null;
@@ -213,7 +213,7 @@ export class ServiceConfigStore {
     const text = token.slice(dot + 1);
     const client = this.#configs.get(serviceId)?.clients.find((c) => c.clientId === clientId);
     const secret = Buffer.from(text, 'base64url');
-    // 只接受规范的 base64url：同一串字节只有一种写法。
+    // Accept only canonical base64url: a given sequence of bytes has only one spelling.
     if (!client || secret.length !== SECRET_BYTES || secret.toString('base64url') !== text) return null;
     const expected = Buffer.from(client.hash, 'hex');
     const actual = digest(Buffer.from(client.salt, 'base64'), secret);
@@ -222,19 +222,19 @@ export class ServiceConfigStore {
     return publicClient(client);
   }
 
-  /** 把内存里的最近使用时间写回（服务停止时）。 */
+  /** Writes the in-memory last-used times back (when the service stops). */
   async flush(serviceId: ConfigurableServiceId): Promise<void> {
     if (this.#configs.has(serviceId)) await this.#mutate(serviceId, (config) => config);
   }
 
-  /** 写入排队：每一次改动都基于前一次落盘之后的配置，并发的改动不会互相覆盖。 */
+  /** Write queue: each change is based on the config as persisted after the previous write, so concurrent changes do not overwrite each other. */
   async #mutate(serviceId: ConfigurableServiceId, change: (config: ServiceConfig) => ServiceConfig): Promise<void> {
     const run = this.#writing.then(async () => {
       const config = change(this.get(serviceId));
       const all = new Map(this.#configs);
       all.set(serviceId, config);
       await writeJsonAtomic(this.#file, { version: 1, services: Object.fromEntries(all) }, { mode: 0o600 });
-      // 已经存在的文件 rename 之后权限取临时文件的；这里再确认一次。
+      // For a file that already exists, the permissions after rename are taken from the temp file; confirm them again here.
       await fs.chmod(this.#file, 0o600);
       this.#configs.set(serviceId, config);
     });

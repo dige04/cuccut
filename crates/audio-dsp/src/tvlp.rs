@@ -1,8 +1,7 @@
-//! 时变低通：一组固定截止（90 Hz–15 kHz 按对数等分 16 档，每档二阶 Butterworth）加一档直通，
-//! 按逐采样的截止频率在相邻两档之间线性交叉淡化（参考工程 `tv_lp`）。
+//! Time-varying low-pass: a set of fixed cutoffs (90 Hz–15 kHz, 16 logarithmically spaced steps, each a second-order Butterworth) plus one bypass step.
+//! Based on the per-sample cutoff frequency, it cross-fades linearly between adjacent steps (the reference project's `tv_lp`).
 //!
-//! 比逐采样重算系数稳：没有系数突变的咔嗒，也没有时变 IIR 的不稳定；代价是截止只能在档间
-//! 线性混合（半个八度一档，耳朵听不出）。
+//! More stable than recomputing coefficients per sample: there are no clicks from sudden coefficient changes, and no instability from a time-varying IIR; the cost is that the cutoff can only be mixed linearly between steps (one step per half octave, which the ear cannot hear).
 
 use crate::biquad::Cascade;
 
@@ -18,7 +17,7 @@ fn bank() -> Vec<f64> {
         .collect()
 }
 
-/// 截止频率 → 档位（`0..=16` 的小数；16 是直通）。
+/// Cutoff frequency → step position (a fraction in `0..=16`; 16 is bypass).
 fn position(fc: f64, edges: &[f64]) -> f64 {
     let v = libm::log(fc.clamp(BANK_LO, TOP));
     if v <= edges[0] {
@@ -32,7 +31,7 @@ fn position(fc: f64, edges: &[f64]) -> f64 {
     (edges.len() - 1) as f64
 }
 
-/// 逐采样截止的低通。`fc.len()` 必须等于 `x.len()`（常数截止用 [`tv_lowpass_const`]）。
+/// Low-pass with a per-sample cutoff. `fc.len()` must equal `x.len()` (for a constant cutoff use [`tv_lowpass_const`]).
 pub fn tv_lowpass(x: &[f32], sr: f64, fc: &[f32]) -> Vec<f32> {
     assert_eq!(
         x.len(),
@@ -46,7 +45,7 @@ pub fn tv_lowpass(x: &[f32], sr: f64, fc: &[f32]) -> Vec<f32> {
     let pos: Vec<f64> = fc.iter().map(|f| position(*f as f64, &edges)).collect();
     let mut out = vec![0.0f32; n];
     for k in 0..edges.len() {
-        // 这一档在哪一段有权重；滤波从那一段前 4096 个采样起跑，让滤波器先进入稳态。
+        // Where this step has weight; filtering starts 4096 samples before that section, so the filter settles into steady state first.
         let weight = |i: usize| (1.0 - (pos[i] - k as f64).abs()).clamp(0.0, 1.0);
         let Some(first) = (0..n).find(|i| weight(*i) > 0.0) else {
             continue;
@@ -68,7 +67,7 @@ pub fn tv_lowpass(x: &[f32], sr: f64, fc: &[f32]) -> Vec<f32> {
     out
 }
 
-/// 常数截止的时变低通（等价于落在两档之间的固定滤波器）。
+/// Time-varying low-pass for a constant cutoff (equivalent to a fixed filter lying between two steps).
 pub fn tv_lowpass_const(x: &[f32], sr: f64, fc: f64) -> Vec<f32> {
     tv_lowpass(x, sr, &vec![fc as f32; x.len()])
 }
@@ -90,7 +89,7 @@ mod tests {
         let x: Vec<f32> = (0..n)
             .map(|i| libm::sin(TAU * 5000.0 * i as f64 / SR) as f32)
             .collect();
-        // 前 0.8 s 停在 300 Hz，0.8–1.2 s 扫到 19 kHz，之后保持。
+        // The first 0.8 s hold at 300 Hz, 0.8–1.2 s sweep up to 19 kHz, then hold.
         let fc: Vec<f32> = (0..n)
             .map(|i| {
                 crate::curve::keys_smooth(&[(0.8, 300.0), (1.2, 19_000.0)], i as f64 / SR) as f32

@@ -28,15 +28,15 @@ import {
 import { isIgnoredName } from './space-catalog.ts';
 
 /**
- * 会话里的幻灯片、设计稿与设计系统（docs/design/slides §6、docs/design/canvas §6、§10.4）：`slides.open` / `design.open` /
- * `designSystem.open` 发编辑器地址，`/slides/<grant>/…`、`/design/<grant>/…`、`/design-system/<grant>/…` 与 `/_blob/<id>` 由
- * `@cuccut/slides` 的 SlidesServer 处理（设计稿按 `@cuccut/design` 的 `CANVAS_LAYOUT`，设计系统按 `@cuccut/design-system` 的
- * `DESIGN_SYSTEM_LAYOUT`）。网关与 Web 服务共用一个 SlidesServer：同一个目录只有一个存储（发布串行）。
+ * Slides, design canvases and design systems in a session (docs/design/slides §6, docs/design/canvas §6, §10.4): `slides.open`, `design.open` and
+ * `designSystem.open` send the editor address, and `/slides/<grant>/…`, `/design/<grant>/…`, `/design-system/<grant>/…` and `/_blob/<id>` are handled by
+ * the SlidesServer in `@cuccut/slides` (design canvases follow `CANVAS_LAYOUT` from `@cuccut/design`, design systems follow
+ * `DESIGN_SYSTEM_LAYOUT` from `@cuccut/design-system`). The gateway and the Web service share one SlidesServer: there is only one store per directory (publishing is serialized).
  */
 
-/** 处理函数用的入口：地址的基址各不相同（网关是 `http://127.0.0.1:<端口>`，Web 服务是同源的相对地址）。 */
+/** Entry point for the handler functions: the base address differs (the gateway is `http://127.0.0.1:<port>`, the Web service is a same-origin relative address). */
 export interface SlidesOpener {
-  /** 打开来源目录 `root` 里的 deck 目录 `rel`。 */
+  /** Opens the deck directory `rel` inside the source directory `root`. */
   open(root: string, rel: string): Promise<SlidesOpenResult>;
 }
 
@@ -46,19 +46,19 @@ function isInside(rootReal: string, target: string): boolean {
   return target.startsWith(prefix);
 }
 
-/** 打开设计稿的入口，地址的基址同 `SlidesOpener`。 */
+/** Entry point for opening a design canvas; the address base is the same as `SlidesOpener`. */
 export interface DesignOpener {
-  /** 打开来源目录 `root` 里的设计稿目录 `rel`。 */
+  /** Opens the design canvas directory `rel` inside the source directory `root`. */
   open(root: string, rel: string): Promise<DesignOpenResult>;
 }
 
-/** 打开设计系统的入口，地址的基址同 `SlidesOpener`。 */
+/** Entry point for opening a design system; the address base is the same as `SlidesOpener`. */
 export interface DesignSystemOpener {
-  /** 打开来源目录 `root` 里的设计系统目录 `rel`。 */
+  /** Opens the design system directory `rel` inside the source directory `root`. */
   open(root: string, rel: string): Promise<DesignSystemOpenResult>;
 }
 
-/** 来源目录里的 deck 目录：防越界（按真实路径）、不进隐藏与依赖目录、必须是有合法 deck.json 的目录。返回真实路径。 */
+/** The deck directory inside the source directory: guards against escaping it (checked by real path), excludes hidden and dependency directories, and must be a directory with a valid deck.json. Returns the real path. */
 export async function resolveDeckDir(root: string, rel: string): Promise<string> {
   if (rel.includes('\0')) throw new RpcError('invalid-request', RcRuntime.folderPathInvalid());
   if (path.isAbsolute(rel)) throw new RpcError('invalid-request', RcRuntime.folderPathMustBeRelative());
@@ -83,9 +83,9 @@ export async function resolveDeckDir(root: string, rel: string): Promise<string>
 }
 
 /**
- * 消息带的幻灯片标注（docs/design/slides §9）：每条的 deck 换成相对会话工作目录的路径（`/` 分隔、以 `/` 结尾），
- * 交给 Harness 拼给智能体。不在工作目录里（例如另一个项目的 Space 条目）时用绝对路径。
- * deck 的位置找不到（Space 条目、项目已不在）时由 `locate` 抛 `not-found`。没有标注时为 undefined。
+ * Slide annotations carried by a message (docs/design/slides §9): each deck is replaced with a path relative to the session's working directory (`/`-separated, ending in `/`),
+ * handed to the Harness to pass to the agent. When it is not inside the working directory (for example, a Space entry from another project), the absolute path is used.
+ * If the deck's location cannot be found (Space entry, project no longer present), `locate` throws `not-found`. Returns undefined when there are no annotations.
  */
 export function resolveSlideAnnotations(
   annotations: readonly SlideAnnotation[] | undefined,
@@ -97,8 +97,8 @@ export function resolveSlideAnnotations(
 }
 
 /**
- * 消息带的设计稿标注（docs/design/canvas §9）：与幻灯片标注相同，每条的设计稿换成相对会话工作目录的路径
- * （`/` 分隔、以 `/` 结尾，工作目录外是绝对路径）；找不到时由 `locate` 抛 `not-found`。没有标注时为 undefined。
+ * Design canvas annotations carried by a message (docs/design/canvas §9): the same as slide annotations, each design canvas is replaced with a path relative to the session's working directory
+ * (`/`-separated, ending in `/`; an absolute path when outside the working directory). If not found, `locate` throws `not-found`. Returns undefined when there are no annotations.
  */
 export function resolveDesignAnnotations(
   annotations: readonly DesignAnnotation[] | undefined,
@@ -110,8 +110,8 @@ export function resolveDesignAnnotations(
 }
 
 /**
- * 消息带的设计系统标注（docs/design/canvas §10.6）：与设计稿标注相同，每条的设计系统换成相对会话工作目录的路径；
- * 找不到时由 `locate` 抛 `not-found`。没有标注时为 undefined。
+ * Design system annotations carried by a message (docs/design/canvas §10.6): the same as design canvas annotations, each design system is replaced with a path relative to the session's working directory.
+ * If not found, `locate` throws `not-found`. Returns undefined when there are no annotations.
  */
 export function resolveDesignSystemAnnotations(
   annotations: readonly DesignSystemAnnotation[] | undefined,
@@ -122,7 +122,7 @@ export function resolveDesignSystemAnnotations(
   return annotations.map((annotation) => ({ annotation, systemPath: dirPathFor(locate(annotation.system), cwd) }));
 }
 
-/** 目录相对会话工作目录的写法：`/` 分隔、以 `/` 结尾；不在工作目录里时是绝对路径；就是工作目录时是 `./`。 */
+/** How a directory is written relative to the session's working directory: `/`-separated, ending in `/`; an absolute path when outside the working directory; `./` when it is the working directory itself. */
 function dirPathFor({ root, file }: { root: string; file: string }, cwd: string): string {
   const dir = path.resolve(root, file);
   const rel = path.relative(cwd, dir);
@@ -143,7 +143,7 @@ export class SlidesService {
     editorDist?: () => string | null;
     designEditorDist?: () => string | null;
     designSystemEditorDist?: () => string | null;
-    /** 设计系统编辑器的 `user.name()`（`__deck/session.userName`）；默认取本机账户名。 */
+    /** `user.name()` for the design system editor (`__deck/session.userName`); defaults to the local machine's account name. */
     userName?: () => string | undefined;
   }) {
     const log = options.log.child('slides');
@@ -159,17 +159,17 @@ export class SlidesService {
     });
   }
 
-  /** 网关的 HTTP 基址（监听之后才知道端口）。 */
+  /** The gateway's HTTP base address (the port is only known after listening). */
   setBaseUrl(url: string): void {
     this.#baseUrl = url;
   }
 
-  /** 网关上的路由：桌面界面与 CLI 一侧，能编辑；grant 本身就是凭证（同 `/media/`），桌面界面是 file:// 页面，不限制嵌入。 */
+  /** Routes on the gateway, for the desktop UI and CLI side: editing is allowed. The grant is itself the credential (same as `/media/`). The desktop UI is a file:// page, so embedding is not restricted. */
   handle(request: IncomingMessage, response: ServerResponse): boolean {
     return this.server.handle(request, response, { canEdit: true });
   }
 
-  /** 给处理函数用的入口。`baseUrl` 不给时用网关的基址。 */
+  /** Entry point for the handler functions. Uses the gateway's base address when `baseUrl` is not given. */
   opener(baseUrl: () => string = () => this.#baseUrl): SlidesOpener {
     return {
       open: async (root, rel) => {
@@ -182,7 +182,7 @@ export class SlidesService {
     };
   }
 
-  /** 设计稿的入口（docs/design/canvas §6.1）：校验同 `slides.open`，认不出设计稿时 `DESIGN_NOT_A_CANVAS`。`baseUrl` 同 `opener`。 */
+  /** Entry point for design canvases (docs/design/canvas §6.1): validation is the same as `slides.open`; `DESIGN_NOT_A_CANVAS` when the directory is not recognized as a design canvas. `baseUrl` is the same as `opener`. */
   designOpener(baseUrl: () => string = () => this.#baseUrl): DesignOpener {
     return {
       open: async (root, rel) => {
@@ -196,8 +196,8 @@ export class SlidesService {
   }
 
   /**
-   * 设计系统的入口（docs/design/canvas §10.4）：校验同 `slides.open`，认不出设计系统（`design-system.json` 的认法见
-   * docs/design/canvas §10.1）时 `DESIGN_SYSTEM_NOT_A_SYSTEM`。`baseUrl` 同 `opener`。
+   * Entry point for design systems (docs/design/canvas §10.4): validation is the same as `slides.open`; `DESIGN_SYSTEM_NOT_A_SYSTEM` when the directory is not recognized as a design system (for how `design-system.json` is recognized, see
+   * docs/design/canvas §10.1). `baseUrl` is the same as `opener`.
    */
   designSystemOpener(baseUrl: () => string = () => this.#baseUrl): DesignSystemOpener {
     return {
@@ -211,23 +211,23 @@ export class SlidesService {
     };
   }
 
-  /** `slides_check` 用的编译器（编辑器构建里的 node/compiler.cjs）；没有构建时 null。 */
+  /** The compiler used by `slides_check` (node/compiler.cjs in the editor build); null when there is no build. */
   compiler(): SlidesRuntime | null {
     const dist = this.#editorDist();
     return compilerAvailable(dist) ? loadSlidesCompiler(dist) : null;
   }
 
-  /** deck 目录（真实路径）的存储：编辑器开着这份 deck 时用它那一个，素材登记与发布串行；否则新建一个。 */
+  /** Store for a deck directory (real path): when the editor has this deck open, that one is used, and asset registration and publishing are serialized; otherwise a new one is created. */
   store(dir: string): DeckStore {
     return this.server.storeOf(dir) ?? new DeckStore(dir);
   }
 
-  /** 设计稿目录（真实路径）的存储，规则同 `store`，布局按设计稿。 */
+  /** Store for a design canvas directory (real path); same rules as `store`, with the layout for design canvases. */
   designStore(dir: string): DeckStore {
     return this.server.storeOf(dir, 'design') ?? this.server.createStore(dir, 'design');
   }
 
-  /** 设计系统目录（真实路径）的存储，规则同 `store`，布局按设计系统（上传写进 `_blobs/`）。 */
+  /** Store for a design system directory (real path); same rules as `store`, with the layout for design systems (uploads are written into `_blobs/`). */
   designSystemStore(dir: string): DeckStore {
     return this.server.storeOf(dir, 'design-system') ?? this.server.createStore(dir, 'design-system');
   }

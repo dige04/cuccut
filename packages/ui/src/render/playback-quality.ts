@@ -1,14 +1,12 @@
 /**
- * 预览的画质（架构设计 §9.4）：停住时按画布像素画内核的原帧（与导出同一份）；播放中按像素预算降分辨率，画的内容不变，
- * 由画布的 CSS 尺寸放大到显示大小。
+ * Preview quality (architecture design §9.4): when stopped, the render kernel's original frame is drawn at canvas pixel size (the same as export). During playback, the resolution is reduced to fit the pixel budget; the content drawn is unchanged, and the canvas's CSS size scales it up to the display size.
  */
 
-/** 停住时画原尺寸；播放中画降过分辨率的。 */
+/** Drawn at full size when stopped; drawn at reduced resolution during playback. */
 export type PaintQuality = 'exact' | 'playback';
 
 /**
- * 播放中一帧最多画多少像素（960×540）。WASM 内核在主线程上大约每像素 40 ns（送画面加画，1314×739 一帧约 40 ms），
- * 这个预算一帧约 20 ms，加上对元素与界面更新放得进两个 60 Hz 刷新，30 fps 的视频能逐帧画上去。
+ * Maximum pixels drawn per frame during playback (960×540). The WASM kernel on the main thread takes about 40 ns per pixel (feeding the picture plus drawing; a 1314×739 frame takes about 40 ms). This budget is about 20 ms per frame, which, plus element and UI updates, fits within two 60 Hz refresh intervals, so 30 fps video can be drawn frame by frame.
  */
 export const PLAYBACK_PIXELS = 960 * 540;
 
@@ -18,8 +16,7 @@ export interface PaintSize {
 }
 
 /**
- * 这一帧画多大：序列画布乘 `scale`（画布像素相对序列画布的比例）取整。播放中超过 `PLAYBACK_PIXELS` 的按同一比例
- * 缩到预算之内（不比停住时大）。
+ * Size of this frame: the sequence canvas multiplied by `scale` (canvas pixels relative to the sequence canvas), rounded. During playback, anything above `PLAYBACK_PIXELS` is scaled down by the same ratio to fit the budget (never larger than when stopped).
  */
 export function paintSize(canvas: PaintSize, scale: number, quality: PaintQuality): PaintSize {
   const pixels = canvas.width * scale * canvas.height * scale;

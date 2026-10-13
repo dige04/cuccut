@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { memoryOf, useHomeMemory } from './home-memory-store.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载；预先放一份存下的记忆。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module. Pre-load one saved memory.
 const data = vi.hoisted(() => {
   const map = new Map<string, string>([['cuccut.homeMemory', JSON.stringify({ state: { project: 'proj_a', target: ' 日文 ' }, version: 1 })]]);
   Object.defineProperty(globalThis, 'localStorage', {

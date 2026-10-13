@@ -1,6 +1,6 @@
-//! Model Worker 的 stdio 协议（协议规范 §1–§3、§7）：请求参数、响应、事件与错误。
+//! The stdio protocol of the Model Worker (protocol specification §1–§3, §7): request parameters, responses, events and errors.
 //!
-//! 参数一律 `camelCase` 且拒绝未知字段；形状不合就是 `INVALID_PARAMS`。
+//! Parameters are always `camelCase` and unknown fields are rejected; a wrong shape is `INVALID_PARAMS`.
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -9,16 +9,16 @@ use serde_json::{Value, json};
 use crate::bundle::ModelBundle;
 use crate::synthesize::readings::Reading;
 
-/// 一行超过这么多字节视为协议错误，Worker 退出（§1）。
+/// A line longer than this many bytes is a protocol error, and the Worker exits (§1).
 pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
-/// 唯一的输出合同。
+/// The only output contract.
 pub const OUTPUT_CONTRACT: &str = "cuccut.asr-result/v1";
-/// `TranscribeOptions.hint` 的上限（字符）。
+/// Upper limit (in characters) for `TranscribeOptions.hint`.
 pub const HINT_MAX_CHARS: usize = 1_200;
-/// `TranscribeOptions.timescale` 的默认值。
+/// Default value of `TranscribeOptions.timescale`.
 pub const DEFAULT_TIMESCALE: u64 = 1_000_000;
 
-/// 错误码（§7）。
+/// Error codes (§7).
 pub mod codes {
     pub const CONTRACT_MISMATCH: &str = "CONTRACT_MISMATCH";
     pub const INVALID_PARAMS: &str = "INVALID_PARAMS";
@@ -32,12 +32,12 @@ pub mod codes {
     pub const INPUT_UNREADABLE: &str = "INPUT_UNREADABLE";
     pub const DECODE_FAILED: &str = "DECODE_FAILED";
     pub const INFERENCE_FAILED: &str = "INFERENCE_FAILED";
-    /// 输出文件写不进 staging（磁盘满、权限）：与模型无关，不算模型包的失败。
+    /// The output file cannot be written to staging (disk full, permissions). This is unrelated to the model, so it does not count as a failure of the model bundle.
     pub const OUTPUT_WRITE_FAILED: &str = "OUTPUT_WRITE_FAILED";
     pub const WORKER_PANIC: &str = "WORKER_PANIC";
 }
 
-/// `ErrorBody`（§7）。`message` 不含本机绝对路径。
+/// `ErrorBody` (§7). `message` does not contain absolute local paths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErrorBody {
     pub code: String,
@@ -48,7 +48,7 @@ pub struct ErrorBody {
 }
 
 impl ErrorBody {
-    /// `retryable` 由错误码决定（§7 的表）。
+    /// `retryable` is determined by the error code (the table in §7).
     pub fn new(code: &str, message: impl Into<String>) -> Self {
         let retryable = matches!(
             code,
@@ -72,7 +72,7 @@ impl ErrorBody {
     }
 }
 
-/// 让 `ErrorBody` 能经 `?` 进 `anyhow::Error`（移植来的引擎代码按文件清单取文件时用），再在后端边界原样取回。
+/// Lets `ErrorBody` pass through `?` into `anyhow::Error` (used when ported engine code fetches files from a file list), and then gets it back unchanged at the backend boundary.
 impl std::fmt::Display for ErrorBody {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}: {}", self.code, self.message)
@@ -81,17 +81,17 @@ impl std::fmt::Display for ErrorBody {
 
 impl std::error::Error for ErrorBody {}
 
-/// 把 `params` 解析成 `T`；不合形状就是 `INVALID_PARAMS`。
+/// Parses `params` into `T`; a wrong shape is `INVALID_PARAMS`.
 pub fn parse_params<T: DeserializeOwned>(params: Value) -> Result<T, ErrorBody> {
     serde_json::from_value(params).map_err(|e| ErrorBody::invalid_params(format!("参数不合法：{e}")))
 }
 
-/// 一条推送：`{ "event", "params" }`。
+/// A push message: `{ "event", "params" }`.
 pub fn event(name: &str, params: Value) -> Value {
     json!({ "event": name, "params": params })
 }
 
-// ---- 请求参数 -------------------------------------------------------------------------------
+// ---- Request parameters -------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -105,7 +105,7 @@ pub struct LoadParams {
     pub bundle: ModelBundle,
 }
 
-/// `model.unload` / `worker.status` 的空参数。
+/// Empty parameters for `model.unload` / `worker.status`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmptyParams {}
@@ -121,13 +121,13 @@ pub struct CancelParams {
 pub enum Capability {
     Transcribe,
     Align,
-    /// 本地语音合成（§2.5.2）：参数是 [`SynthesizeRunParams`]，不经 [`JobRunParams`]。
+    /// Local speech synthesis (§2.5.2): the parameters are [`SynthesizeRunParams`], not [`JobRunParams`].
     Synthesize,
-    /// 人声与伴奏分离（§2.5.4）：参数是 [`SeparateRunParams`]，不经 [`JobRunParams`]。
+    /// Vocal and accompaniment separation (§2.5.4): the parameters are [`SeparateRunParams`], not [`JobRunParams`].
     Separate,
-    /// 本地文生图（§2.5.3）：参数是 [`ImageRunParams`]，不经 [`JobRunParams`]。
+    /// Local text-to-image (§2.5.3): the parameters are [`ImageRunParams`], not [`JobRunParams`].
     Image,
-    /// 给已有转写的词区分说话人（§2.5.5）：参数是 [`DiarizeRunParams`]，不经 [`JobRunParams`]。
+    /// Speaker diarization of the words of an existing transcript (§2.5.5): the parameters are [`DiarizeRunParams`], not [`JobRunParams`].
     Diarize,
 }
 
@@ -138,7 +138,7 @@ pub struct JobRunParams {
     pub run_generation: u64,
     pub capability: Capability,
     pub input: JobInput,
-    /// 按 `capability` 再解析：`transcribe` 是 [`TranscribeOptions`]，`align` 是 [`AlignOptions`]。
+    /// Further parsed by `capability`: `transcribe` is [`TranscribeOptions`], `align` is [`AlignOptions`].
     pub options: Value,
     pub staging: String,
     pub output_contract: String,
@@ -155,7 +155,7 @@ pub struct JobInput {
     pub range: Option<TickRange>,
 }
 
-/// 素材时间上的一段 `[start, end)`，单位是 `timescale` 的 tick。
+/// A segment `[start, end)` on the source-material timeline, in ticks of `timescale`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TickRange {
@@ -176,11 +176,11 @@ pub struct TranscribeOptions {
     pub timescale: u64,
 }
 
-/// `capability: 'align'` 的选项（§2.5.1）：已知文本 + 断言的语言，Worker 自己分词、对齐、分段。
+/// Options for `capability: 'align'` (§2.5.1): known text plus an asserted language. The Worker itself tokenizes, aligns and segments.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AlignOptions {
-    /// 只接受断言（`mode: 'assert'`）。
+    /// Only accepts an assertion (`mode: 'assert'`).
     pub language: LanguageRequest,
     pub text: String,
     #[serde(default = "default_timescale")]
@@ -191,7 +191,7 @@ fn default_timescale() -> u64 {
     DEFAULT_TIMESCALE
 }
 
-/// 断言：用户指定，模型不得更改；偏好：自动检测，`tag` 只在检测不出时作为结果的语言。
+/// Assert: specified by the user, and the model must not change it. Prefer: auto-detect, where `tag` is the result language only when detection fails.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "mode", rename_all = "lowercase", deny_unknown_fields)]
 pub enum LanguageRequest {
@@ -199,9 +199,9 @@ pub enum LanguageRequest {
     Prefer { tag: Option<String> },
 }
 
-// ---- 响应 -----------------------------------------------------------------------------------
+// ---- Responses -----------------------------------------------------------------------------------
 
-/// `worker.hello` 里的一个后端。
+/// A backend in `worker.hello`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendStatus {
@@ -212,7 +212,7 @@ pub struct BackendStatus {
     pub devices: Vec<String>,
 }
 
-/// 后端报告的内存（字节）。
+/// Memory reported by the backend (bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemorySnapshot {
     pub active: u64,
@@ -220,7 +220,7 @@ pub struct MemorySnapshot {
     pub peak: u64,
 }
 
-/// staging 里写好的结果文件。`sha256` 是小写十六进制，不带 `sha256:` 前缀。
+/// A result file written to staging. `sha256` is lowercase hex, without the `sha256:` prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputFile {
@@ -255,19 +255,19 @@ pub struct JobRunResult {
     pub stats: JobStats,
 }
 
-// ---- 本地语音合成（§2.5.2）-------------------------------------------------------------------
+// ---- Local speech synthesis (§2.5.2) ----------------------------------------------------------------
 
-/// 合成的输出合同：staging 里的一个 PCM WAV（单声道或立体声，采样率是模型的原生采样率）。
+/// Output contract of synthesis: one PCM WAV in staging (mono or stereo; the sample rate is the model's native sample rate).
 pub const SPEECH_OUTPUT_CONTRACT: &str = "cuccut.speech-wav/v1";
-/// 合成结果在 staging 里的文件名。
+/// File name of the synthesis result in staging.
 pub const SPEECH_OUTPUT_FILE: &str = "speech.wav";
 
-/// `job.run` 的 `capability` 字段：决定参数按 [`JobRunParams`] 还是 [`SynthesizeRunParams`] 解析。
+/// The `capability` field of `job.run`: decides whether the parameters are parsed as [`JobRunParams`] or [`SynthesizeRunParams`].
 pub fn run_capability(params: &Value) -> Option<&str> {
     params.get("capability").and_then(Value::as_str)
 }
 
-/// `job.run`（`capability: "synthesize"`）的参数。`input` 只在 `clone` 时给出（参考录音，整段、轨 0）。
+/// Parameters of `job.run` (`capability: "synthesize"`). `input` is given only for `clone` (the reference recording, whole, track 0).
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SynthesizeRunParams {
@@ -281,7 +281,7 @@ pub struct SynthesizeRunParams {
     pub output_contract: String,
 }
 
-/// 克隆的参考录音：与 [`JobInput`] 同名的字段，不接受 `range`（参考录音整段使用）。
+/// The reference recording for cloning: a field with the same name as in [`JobInput`], which does not accept `range` (the reference recording is used whole).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpeechReference {
@@ -291,12 +291,12 @@ pub struct SpeechReference {
     pub track: u32,
 }
 
-/// 冻结的合成参数。文本原样交来，读音标注由引擎换成自己的写法；`null` 的旋钮用模型的默认值。
+/// Frozen synthesis parameters. The text is passed in as is; pronunciation annotations are converted by the engine into its own notation. Knobs that are `null` use the model's default values.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SynthesizeOptions {
     pub text: String,
-    /// BCP 47；`null` 时由引擎按文本判断。
+    /// BCP 47; when `null`, the engine determines it from the text.
     #[serde(default)]
     pub language: Option<String>,
     pub voice: SynthesizeVoice,
@@ -312,8 +312,8 @@ pub struct SynthesizeOptions {
     pub seed: Option<u64>,
 }
 
-/// 声音：`preset` 是模型的说话人；`clone` 用 `input` 的参考录音（`transcript` 是它的原文）；`describe` 是一句描述。
-/// 模型做不到时报错，不换成别的声音。
+/// Voice: `preset` is the model's speaker; `clone` uses the reference recording in `input` (`transcript` is its original text); `describe` is a one-sentence description.
+/// If the model cannot do it, it reports an error rather than substituting another voice.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "mode", rename_all = "lowercase", deny_unknown_fields)]
 pub enum SynthesizeVoice {
@@ -323,7 +323,7 @@ pub enum SynthesizeVoice {
 }
 
 impl SynthesizeRunParams {
-    /// 形状之外的检查（都是 `INVALID_PARAMS`）：能力与合同、绝对路径、非空文本、参考录音只跟 `clone` 一起出现。
+    /// Checks beyond shape (all `INVALID_PARAMS`): capability and contract, absolute paths, non-empty text, and a reference recording only together with `clone`.
     pub fn validate(&self) -> Result<(), ErrorBody> {
         if self.capability != Capability::Synthesize {
             return Err(ErrorBody::invalid_params("capability must be synthesize"));
@@ -352,7 +352,7 @@ impl SynthesizeRunParams {
     }
 }
 
-/// 合成出的音频的事实。
+/// Facts about the synthesized audio.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynthesizedAudio {
@@ -369,7 +369,7 @@ pub struct SynthesizeStats {
     pub encode_ms: u64,
 }
 
-/// `job.run`（`synthesize`）的结果：`output` 是 staging 里的 [`SPEECH_OUTPUT_FILE`]。
+/// Result of `job.run` (`synthesize`): `output` is [`SPEECH_OUTPUT_FILE`] in staging.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynthesizeRunResult {
@@ -377,25 +377,25 @@ pub struct SynthesizeRunResult {
     pub output: Option<OutputFile>,
     pub audio: Option<SynthesizedAudio>,
     pub stats: SynthesizeStats,
-    /// 文字里没能按注记念出来的读音（引擎不认读音、注记畸形等），偏移落在去注记后的文字上；
-    /// 是警告不是失败——音频照常产出，Runtime 把它如实转给调用方，不静默丢弃。取消时为空。
+    /// Text that could not be spoken with its pronunciation annotation (the engine does not recognize the pronunciation, the annotation is malformed, etc.). Offsets fall on the text after annotations are stripped.
+    /// This is a warning, not a failure: the audio is still produced, and the Runtime passes it on to the caller faithfully rather than silently dropping it. Empty when cancelled.
     #[serde(default)]
     pub readings_dropped: Vec<Reading>,
 }
 
-// ---- 人声与伴奏分离（§2.5.4）-----------------------------------------------------------------
+// ---- Vocal and accompaniment separation (§2.5.4) -----------------------------------------------------
 
-/// 分离的输出合同：staging 里人声与背景两个 16-bit PCM 立体声 WAV，采样率是请求的 `sampleRate`，长度与输入相同。
+/// Output contract of separation: in staging, a vocal and a background 16-bit PCM stereo WAV. The sample rate is the requested `sampleRate`, and the length is the same as the input.
 pub const STEMS_OUTPUT_CONTRACT: &str = "cuccut.stems-wav/v1";
-/// 人声在 staging 里的文件名。
+/// File name of the vocals in staging.
 pub const VOCALS_OUTPUT_FILE: &str = "vocals.wav";
-/// 背景声（鼓、贝斯与其他之和）在 staging 里的文件名。
+/// File name of the background (drums, bass and the others, summed) in staging.
 pub const BACKGROUND_OUTPUT_FILE: &str = "background.wav";
-/// `options.sampleRate` 的上下限（Hz）。
+/// Lower and upper bounds of `options.sampleRate` (Hz).
 pub const SEPARATE_MIN_SAMPLE_RATE: u32 = 8_000;
 pub const SEPARATE_MAX_SAMPLE_RATE: u32 = 192_000;
 
-/// `job.run`（`capability: "separate"`）的参数：整段输入（不接受 `range`）。
+/// Parameters of `job.run` (`capability: "separate"`): the whole input (does not accept `range`).
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeparateRunParams {
@@ -408,7 +408,7 @@ pub struct SeparateRunParams {
     pub output_contract: String,
 }
 
-/// 分离的输入：与 [`JobInput`] 同名的字段，不接受 `range`。
+/// Input of separation: a field with the same name as in [`JobInput`], which does not accept `range`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeparateInput {
@@ -421,14 +421,14 @@ pub struct SeparateInput {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeparateOptions {
-    /// 输出的采样率；`null` 时用模型的工作采样率（HTDemucs 为 44.1 kHz）。Runtime 传输入音轨的采样率，
-    /// 让两路输出与输入同采样率（架构设计 §6.1 的输出约定）。
+    /// Output sample rate. When `null`, the model's working sample rate is used (44.1 kHz for HTDemucs). The Runtime passes the input track's sample rate so that both outputs match the input sample rate
+    /// (the output convention in architecture design §6.1).
     #[serde(default)]
     pub sample_rate: Option<u32>,
 }
 
 impl SeparateRunParams {
-    /// 形状之外的检查（都是 `INVALID_PARAMS`）：能力与合同、绝对路径、采样率范围。
+    /// Checks beyond shape (all `INVALID_PARAMS`): capability and contract, absolute paths, sample-rate range.
     pub fn validate(&self) -> Result<(), ErrorBody> {
         if self.capability != Capability::Separate {
             return Err(ErrorBody::invalid_params("capability must be separate"));
@@ -453,7 +453,7 @@ impl SeparateRunParams {
     }
 }
 
-/// 两路输出的文件。
+/// Files for the two outputs.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeparatedFiles {
@@ -461,7 +461,7 @@ pub struct SeparatedFiles {
     pub background: OutputFile,
 }
 
-/// 两路输出共同的音频事实。
+/// Audio facts common to both outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeparatedAudio {
@@ -478,7 +478,7 @@ pub struct SeparateStats {
     pub encode_ms: u64,
 }
 
-/// `job.run`（`separate`）的结果：`stems` 是 staging 里的 [`VOCALS_OUTPUT_FILE`] 与 [`BACKGROUND_OUTPUT_FILE`]，取消时为 `null`。
+/// Result of `job.run` (`separate`): `stems` are [`VOCALS_OUTPUT_FILE`] and [`BACKGROUND_OUTPUT_FILE`] in staging; `null` when cancelled.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeparateRunResult {
@@ -488,16 +488,16 @@ pub struct SeparateRunResult {
     pub stats: SeparateStats,
 }
 
-// ---- 已有转写的说话人区分（§2.5.5）--------------------------------------------------------------
+// ---- Speaker diarization of existing transcripts (§2.5.5) --------------------------------------------
 
-/// 说话人区分的输出合同：staging 里的 [`SPEAKERS_OUTPUT_FILE`]（JSON），形状见协议规范 §2.5.5。
+/// Output contract of diarization: [`SPEAKERS_OUTPUT_FILE`] in staging (JSON); the shape is in protocol specification §2.5.5.
 pub const SPEAKERS_OUTPUT_CONTRACT: &str = "cuccut.speakers/v1";
-/// 说话人区分的结果在 staging 里的文件名。
+/// File name of the diarization result in staging.
 pub const SPEAKERS_OUTPUT_FILE: &str = "speakers.json";
-/// `options.words` 的上限（一份转写的词数远小于它）。
+/// Upper limit on `options.words` (the number of words in a transcript is far below it).
 pub const DIARIZE_MAX_WORDS: usize = 2_000_000;
 
-/// `job.run`（`capability: "diarize"`）的参数：一段素材音频与落在其中的词（素材时间的 tick）。
+/// Parameters of `job.run` (`capability: "diarize"`): one piece of source audio and the words that fall within it (ticks on the source timeline).
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiarizeRunParams {
@@ -510,7 +510,7 @@ pub struct DiarizeRunParams {
     pub output_contract: String,
 }
 
-/// 说话人区分的输入：与 [`JobInput`] 同名的字段；`range` 是要解码的一段（不给时整条音轨）。
+/// Input of diarization: a field with the same name as in [`JobInput`]. `range` is the segment to decode (the whole track when not given).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiarizeInput {
@@ -522,7 +522,7 @@ pub struct DiarizeInput {
     pub range: Option<DiarizeRange>,
 }
 
-/// 与 [`TickRange`] 同形（可序列化）。
+/// Same shape as [`TickRange`] (serializable).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiarizeRange {
@@ -534,15 +534,15 @@ pub struct DiarizeRange {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiarizeOptions {
-    /// `words` 与结果里时间的刻度。
+    /// The tick scale of `words` and of the times in the result.
     #[serde(default = "default_timescale")]
     pub timescale: u64,
-    /// 转写的词：`[start, end]`，素材时间的 tick，按转写里的次序。结果的 `words` 与它一一对应。
+    /// Transcript words: `[start, end]`, ticks on the source timeline, in transcript order. The result's `words` correspond to them one to one.
     pub words: Vec<[u64; 2]>,
 }
 
 impl DiarizeRunParams {
-    /// 形状之外的检查（都是 `INVALID_PARAMS`）：能力与合同、绝对路径、刻度、range 与词的起止。
+    /// Checks beyond shape (all `INVALID_PARAMS`): capability and contract, absolute paths, tick scale, range, and word start/end.
     pub fn validate(&self) -> Result<(), ErrorBody> {
         if self.capability != Capability::Diarize {
             return Err(ErrorBody::invalid_params("capability must be diarize"));
@@ -587,18 +587,18 @@ pub struct DiarizeStats {
     pub diarize_ms: u64,
 }
 
-/// `job.run`（`diarize`）的结果：`output` 是 staging 里的 [`SPEAKERS_OUTPUT_FILE`]，取消时为 `null`。
+/// Result of `job.run` (`diarize`): `output` is [`SPEAKERS_OUTPUT_FILE`] in staging; `null` when cancelled.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiarizeRunResult {
     pub outcome: JobOutcome,
     pub output: Option<OutputFile>,
-    /// 区分出的说话人数（取消时 0）。
+    /// Number of speakers identified (0 when cancelled).
     pub speakers: usize,
     pub stats: DiarizeStats,
 }
 
-/// 这个构建没有某个合成模型族的引擎时 `model.load` 的回答：`MODEL_UNSUPPORTED`，`details.reason` 为 `not-wired`。
+/// The answer of `model.load` when this build has no engine for a given speech-synthesis model family: `MODEL_UNSUPPORTED`, with `details.reason` set to `not-wired`.
 pub fn synthesis_not_wired(family: Option<&str>) -> ErrorBody {
     let mut details = json!({ "capability": "synthesize", "reason": "not-wired" });
     if let Some(family) = family {
@@ -611,8 +611,7 @@ pub fn synthesis_not_wired(family: Option<&str>) -> ErrorBody {
     .with_details(details)
 }
 
-/// 这个构建没有分离的后端时 `model.load` 的回答：`MODEL_UNSUPPORTED`，`details.reason` 为 `not-wired`。Runtime 按
-/// `worker.hello` 的 `separateFamilies` 本不会发来。
+/// The answer of `model.load` when this build has no separation backend: `MODEL_UNSUPPORTED`, with `details.reason` set to `not-wired`. The Runtime would not send this in the first place, based on `separateFamilies` in `worker.hello`.
 pub fn separation_not_wired(family: Option<&str>) -> ErrorBody {
     let mut details = json!({ "capability": "separate", "reason": "not-wired" });
     if let Some(family) = family {
@@ -621,8 +620,8 @@ pub fn separation_not_wired(family: Option<&str>) -> ErrorBody {
     ErrorBody::new(codes::MODEL_UNSUPPORTED, "local audio separation is not available in this worker").with_details(details)
 }
 
-/// 这个构建没有某个识别主模型族的加载器时 `model.load` 的回答：`MODEL_UNSUPPORTED`，`details.reason` 为
-/// `not-wired`。Runtime 按 `worker.hello` 的 `transcribeFamilies` 本不会发来。
+/// The answer of `model.load` when this build has no loader for a given transcription main model family: `MODEL_UNSUPPORTED`, with `details.reason` set to
+/// `not-wired`. The Runtime would not send this in the first place, based on `transcribeFamilies` in `worker.hello`.
 pub fn transcription_not_wired(family: Option<&str>) -> ErrorBody {
     let mut details = json!({ "capability": "transcribe", "reason": "not-wired" });
     if let Some(family) = family {
@@ -635,14 +634,14 @@ pub fn transcription_not_wired(family: Option<&str>) -> ErrorBody {
     .with_details(details)
 }
 
-// ---- 本地文生图（§2.5.3）---------------------------------------------------------------------
+// ---- Local text-to-image (§2.5.3) ---------------------------------------------------------------------
 
-/// 文生图的输出合同：staging 里的一张 8 位 RGBA PNG，宽高就是请求的宽高。
+/// Output contract of text-to-image: one 8-bit RGBA PNG in staging, whose width and height are the requested ones.
 pub const IMAGE_OUTPUT_CONTRACT: &str = "cuccut.image-png/v1";
-/// 文生图结果在 staging 里的文件名。
+/// File name of the text-to-image result in staging.
 pub const IMAGE_OUTPUT_FILE: &str = "image.png";
 
-/// `job.run`（`capability: "image"`）的参数。没有输入文件：提示词就是全部输入。
+/// Parameters of `job.run` (`capability: "image"`). There is no input file: the prompt is the entire input.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImageRunParams {
@@ -654,22 +653,22 @@ pub struct ImageRunParams {
     pub output_contract: String,
 }
 
-/// 冻结的文生图参数。`seed` 由 Runtime 在提交时定下（请求没给就随机取一个），重跑得到同一张图。
+/// Frozen text-to-image parameters. `seed` is fixed by the Runtime at submission (a random one is drawn if the request does not give one), so rerunning produces the same image.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImageOptions {
     pub prompt: String,
     pub width: u32,
     pub height: u32,
-    /// 去噪步数；`null` 用模型的默认值。
+    /// Number of denoising steps; `null` uses the model's default.
     #[serde(default)]
     pub steps: Option<u32>,
     pub seed: u64,
 }
 
 impl ImageRunParams {
-    /// 形状之外的检查（都是 `INVALID_PARAMS`）：能力与合同、绝对路径、非空提示词、正的宽高与步数。模型自己的尺寸规则
-    /// （Qwen-Image 要 32 的倍数）由引擎在开跑前检查。
+    /// Checks beyond shape (all `INVALID_PARAMS`): capability and contract, absolute paths, non-empty prompt, positive width/height and steps. The model's own size rules
+    /// (Qwen-Image requires multiples of 32) are checked by the engine before it starts.
     pub fn validate(&self) -> Result<(), ErrorBody> {
         if self.capability != Capability::Image {
             return Err(ErrorBody::invalid_params("capability must be image"));
@@ -693,7 +692,7 @@ impl ImageRunParams {
     }
 }
 
-/// 生成出的图片的事实。
+/// Facts about the generated image.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeneratedImage {
@@ -711,7 +710,7 @@ pub struct ImageStats {
     pub encode_ms: u64,
 }
 
-/// `job.run`（`image`）的结果：`output` 是 staging 里的 [`IMAGE_OUTPUT_FILE`]。
+/// Result of `job.run` (`image`): `output` is [`IMAGE_OUTPUT_FILE`] in staging.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageRunResult {
@@ -721,8 +720,8 @@ pub struct ImageRunResult {
     pub stats: ImageStats,
 }
 
-/// 这个构建没有说话人区分时 `model.load` 的回答：`MODEL_UNSUPPORTED`，`details.reason` 为 `not-wired`。Runtime 按
-/// `worker.hello` 的 `capabilities` 本不会发来。
+/// The answer of `model.load` when this build has no speaker diarization: `MODEL_UNSUPPORTED`, with `details.reason` set to `not-wired`. The Runtime would not send this in the first place,
+/// based on `capabilities` in `worker.hello`.
 pub fn diarization_not_wired() -> ErrorBody {
     ErrorBody::new(
         codes::MODEL_UNSUPPORTED,
@@ -731,7 +730,7 @@ pub fn diarization_not_wired() -> ErrorBody {
     .with_details(json!({ "capability": "diarize", "reason": "not-wired" }))
 }
 
-/// 这个构建没有某个文生图模型族的引擎时 `model.load` 的回答：`MODEL_UNSUPPORTED`，`details.reason` 为 `not-wired`。
+/// The answer of `model.load` when this build has no engine for a given text-to-image model family: `MODEL_UNSUPPORTED`, with `details.reason` set to `not-wired`.
 pub fn image_not_wired(family: Option<&str>) -> ErrorBody {
     let mut details = json!({ "capability": "image", "reason": "not-wired" });
     if let Some(family) = family {
@@ -744,7 +743,7 @@ pub fn image_not_wired(family: Option<&str>) -> ErrorBody {
 mod tests {
     use super::*;
 
-    /// 与 TS 侧 `SynthesizeRunParams`（packages/models/src/worker-contract.ts）逐字相同的一次请求。
+    /// One request, identical word for word to the TS-side `SynthesizeRunParams` (packages/models/src/worker-contract.ts).
     fn synthesize_params(voice: Value, input: Value) -> Value {
         json!({
             "jobId": "job_1",
@@ -781,7 +780,7 @@ mod tests {
             parsed.validate().unwrap();
             assert_eq!(serde_json::to_value(&parsed).unwrap(), value, "serializes back to the same JSON");
         }
-        // 可选字段（input 与旋钮）缺省为 null。
+        // Optional fields (input and knobs) default to null.
         let minimal: SynthesizeRunParams = serde_json::from_value(json!({
             "jobId": "j", "runGeneration": 1, "capability": "synthesize",
             "options": { "text": "hi", "voice": { "mode": "preset", "id": "a" } },
@@ -894,7 +893,7 @@ mod tests {
         );
     }
 
-    /// 与 TS 侧 `SeparateRunParams`（packages/models/src/worker-contract.ts）逐字相同的一次请求。
+    /// One request, identical word for word to the TS-side `SeparateRunParams` (packages/models/src/worker-contract.ts).
     fn separate_params() -> Value {
         json!({
             "jobId": "job_s",
@@ -954,7 +953,7 @@ mod tests {
         assert!(!ErrorBody::new(codes::INVALID_PARAMS, "x").retryable);
     }
 
-    /// 与 TS 侧 `ImageRunParams`（packages/models/src/worker-contract.ts）逐字相同的一次请求。
+    /// One request, identical word for word to the TS-side `ImageRunParams` (packages/models/src/worker-contract.ts).
     #[test]
     fn image_params_round_trip_and_validate() {
         let value = json!({
@@ -991,7 +990,7 @@ mod tests {
         );
         assert_eq!(invalid(&|p| p.capability = Capability::Synthesize), codes::INVALID_PARAMS);
 
-        // 没有 seed、多出字段：形状错误。
+        // No seed, and extra fields: shape error.
         let mut missing_seed = value.clone();
         missing_seed["options"].as_object_mut().unwrap().remove("seed");
         assert!(serde_json::from_value::<ImageRunParams>(missing_seed).is_err());

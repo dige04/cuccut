@@ -16,7 +16,7 @@ import { pl } from './agent-turn.pl.ts';
 import { tr } from './agent-turn.tr.ts';
 import { vi } from './agent-turn.vi.ts';
 
-/** 会话线程里回合页脚与步骤的文案（英文是键与类型的来源，译文在 `agent-turn.zh-Hans.ts`）。 */
+/** Copy for the turn footer and steps in the session thread (the English is the source of keys and types; translations are in `agent-turn.zh-Hans.ts`). */
 const en = {
   waiting: 'Waiting for your approval',
   working: 'Working',
@@ -38,15 +38,15 @@ export type AgentTurnMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * Agent 会话线程里「算出来的东西」（产品设计 §3.2.2）：行间距、回合与页脚、步骤输出的 diff、正文里的文件路径。
- * 纯函数；工具步骤的类别与组头摘要在 thread.ts（`toolStep` / `stepsSummary`）。
+ * The “computed things” in the Agent session thread (product design §3.2.2): row spacing, turns and footers, diffs of step output, and file paths in the body text.
+ * Pure functions; the tool step categories and group header summaries are in thread.ts (`toolStep` / `stepsSummary`).
  */
 
 type Task = Extract<TimelineItem, { kind: 'task' }>;
 
-// ---- 间距 ----
+// ---- Spacing ----
 
-/** 线程里一行的种类。`block` 是同一条回复里的 Markdown 块，`footer` 是回合页脚。 */
+/** The kind of a row in the thread. `block` is a Markdown block in the same reply; `footer` is the turn footer. */
 export type RowKind = 'user' | 'assistant' | 'tool' | 'approval' | 'notice' | 'block' | 'footer';
 
 const GAPS: Partial<Record<`${RowKind}>${RowKind}`, number>> = {
@@ -59,7 +59,7 @@ const GAPS: Partial<Record<`${RowKind}>${RowKind}`, number>> = {
   'block>block': 12,
 };
 
-/** 相邻两行的间距：卡片后留 24，任何行到页脚是 4，第一行是 0，其余按种类查表。 */
+/** The spacing between adjacent rows: 24 after a card, 4 from any row to the footer, 0 for the first row, and the rest looked up by kind. */
 export function gapBetween(prev: RowKind | null, next: RowKind, prevHasCards = false): number {
   if (!prev) return 0;
   if (next === 'footer') return 4;
@@ -67,7 +67,7 @@ export function gapBetween(prev: RowKind | null, next: RowKind, prevHasCards = f
   return GAPS[`${prev}>${next}`] ?? 16;
 }
 
-/** 线程块的行种类：步骤组算 tool，任务状态行算页脚。 */
+/** The row kind for thread blocks: a tool-step group counts as tool; a task status row counts as footer. */
 export function rowKind(block: ThreadBlock): RowKind {
   switch (block.type) {
     case 'user':
@@ -83,24 +83,24 @@ export function rowKind(block: ThreadBlock): RowKind {
   }
 }
 
-// ---- 回合 ----
+// ---- Turns ----
 
 export interface Turn {
-  /** 回合第一块与最后一个内容块（不含任务状态行）在线程块里的下标；页脚挂在 `end` 之后。 */
+  /** The indexes in the thread blocks of the first block of a turn and of the last content block (task status rows excluded); the footer attaches after `end`. */
   start: number;
   end: number;
   hasUser: boolean;
-  /** 有用户消息以外的内容。 */
+  /** Has content other than the user's message. */
   replied: boolean;
-  /** 这一轮 assistant 正文（Markdown 源码，空行连接），不含工具与思考。 */
+  /** The assistant's body text for this turn (Markdown source, joined by blank lines), excluding tools and thinking. */
   text: string;
-  /** 这一轮的任务（有几个取最后一个）。 */
+  /** The tasks in this turn (if there are several, the last one is taken). */
   task: Task | null;
-  /** 有还在等决定的审批。 */
+  /** Has approvals still awaiting a decision. */
   waiting: boolean;
 }
 
-/** 把线程块切成回合：从一条用户消息到下一条之前。任务状态行不算内容，只记成这一轮的任务。 */
+/** Splits thread blocks into turns: from one user message up to just before the next. Task status rows are not content; they are only recorded as this turn's task. */
 export function turns(blocks: readonly ThreadBlock[]): Turn[] {
   const out: (Turn & { texts: string[] })[] = [];
   let cur: (Turn & { texts: string[] }) | null = null;
@@ -121,19 +121,19 @@ export function turns(blocks: readonly ThreadBlock[]): Turn[] {
   return out.map(({ texts, ...turn }) => ({ ...turn, text: texts.join('\n\n') }));
 }
 
-/** 页脚要不要出：进行中总出；否则要有用户消息，并且有回复，或者这一轮停下、失败了（状态要交代）。 */
+/** Whether the footer appears: it always appears while in progress. Otherwise there must be a user message, and either a reply, or the turn stopped or failed (the status has to be explained). */
 export function showFooter(turn: Turn, live: boolean): boolean {
   if (live) return true;
   if (!turn.hasUser) return false;
   return turn.replied || turn.task?.status === 'stopped' || turn.task?.status === 'failed';
 }
 
-/** 时长：0:42、1:03、1:02:05。 */
+/** Duration: 0:42, 1:03, 1:02:05. */
 export function elapsedLabel(ms: number): string {
   return formatClock(Math.max(0, ms) / 1000);
 }
 
-/** 结束时刻：本地 24 小时制 14:32。 */
+/** End time: local 24-hour clock, e.g. 14:32. */
 export function clockLabel(ts: number): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
@@ -141,8 +141,8 @@ export function clockLabel(ts: number): string {
 }
 
 /**
- * 页脚文案。进行中「正在工作 · 0:42」，停下来等允许时「等你允许 · 0:42」；完成「已工作 1:03」；
- * 停止与失败照任务事件写。没有任务（还没开始）时进行中只写「正在工作」。
+ * Footer copy. In progress: “正在工作 (working) · 0:42”; stopped and waiting for permission: “等你允许 (waiting for your permission) · 0:42”; done: “已工作 (worked) 1:03”.
+ * Stop and failure follow the task event. With no task yet (not started), in progress only says “正在工作 (working)”.
  */
 export function footerLabel(input: {
   status: TaskStatus | null;
@@ -170,11 +170,11 @@ export function footerLabel(input: {
   }
 }
 
-// ---- 工具输出 ----
+// ---- Tool output ----
 
 export type DiffLineType = 'add' | 'del' | 'hunk' | 'meta' | 'ctx';
 
-/** unified diff 的每一行归类。 */
+/** The classification of each line of a unified diff. */
 export function diffLines(text: string): { type: DiffLineType; text: string }[] {
   return text
     .replace(/\n$/, '')
@@ -189,14 +189,14 @@ export function diffLines(text: string): { type: DiffLineType; text: string }[] 
     });
 }
 
-/** 输出是不是一段 unified diff：有 `@@` 块头，或成对的 `---` / `+++` 文件头。 */
+/** Whether the output is a unified diff: it has `@@` hunk headers, or paired `---` / `+++` file headers. */
 export function looksLikeDiff(text: string): boolean {
   return /^@@ .* @@/m.test(text) || (/^--- \S/m.test(text) && /^\+\+\+ \S/m.test(text));
 }
 
 type ToolCall = Extract<TimelineItem, { kind: 'tool-call' }>;
 
-/** 步骤耗时：0.4s、12s、1:03。 */
+/** Step duration: 0.4s, 12s, 1:03. */
 export function durationLabel(ms: number): string {
   if (ms < 10_000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
@@ -205,7 +205,7 @@ export function durationLabel(ms: number): string {
 
 const STATUS_META: Partial<Record<ToolCall['status'], string>> = liveMessages(() => M.stepStatus);
 
-/** 折叠行右侧的元数据：被拒绝 / 中断、非零退出码（`code`，失败时标红）、耗时。`status` 是界面上锁存后的状态。 */
+/** The metadata on the right of a collapsed row: rejected or interrupted, a non-zero exit code (`code`, shown in red on failure), and duration. `status` is the status latched in the UI. */
 export function stepMeta(item: ToolCall, status: ToolCall['status']): { text: string; code?: boolean }[] {
   const out: { text: string; code?: boolean }[] = [];
   const word = STATUS_META[status];
@@ -215,21 +215,21 @@ export function stepMeta(item: ToolCall, status: ToolCall['status']): { text: st
   return out;
 }
 
-/** 失败与被拒绝的步骤展开后「错误」一段的文字。 */
+/** The text of the “error” section shown when a failed or rejected step is expanded. */
 export function stepError(item: ToolCall, status: ToolCall['status']): string {
   if (status === 'declined') return M.stepDeclined;
   if (item.exitCode !== null && item.exitCode !== 0) return M.commandExited(item.exitCode);
   return M.stepIncomplete;
 }
 
-/** 工具状态的更新：一旦失败，不再被之后的更新改回。 */
+/** Tool status update: once it has failed, it is not changed back by later updates. */
 export function nextToolStatus<S extends string>(prev: S | null, next: S): S {
   return prev === 'failed' ? prev : next;
 }
 
-// ---- 正文里的文件路径 ----
+// ---- File paths in the body text ----
 
-/** 认作文件路径的扩展名。 */
+/** File extensions recognized as file paths. */
 export const FILE_EXT = [
   'pdf', 'html', 'htm', 'csv', 'tsv', 'txt', 'markdown', 'xml', 'sql',
   'ts',
@@ -264,8 +264,8 @@ export interface PathToken {
 }
 
 /**
- * 行内代码像不像文件路径：有目录前缀（`./` `../` `~/` `/`），或多段路径且最后一段是已知扩展名；
- * 可带 `:行`、`:起-止`、`:行:列`。纯文件名、网址、带空白或查询串的不算。
+ * Whether inline code looks like a file path: it has a directory prefix (`./` `../` `~/` `/`), or it is a multi-segment path whose last segment is a known extension.
+ * It may carry `:line`, `:start-end`, or `:line:column`. Bare file names, URLs, and anything with whitespace or a query string do not count.
  */
 export function parsePathToken(text: string): PathToken | null {
   const raw = text.trim();
@@ -285,7 +285,7 @@ export function parsePathToken(text: string): PathToken | null {
   return { path, line: num(m[2]), lineEnd: num(m[3]), col: num(m[4]) };
 }
 
-/** tooltip 的文字：相对路径与行范围。 */
+/** The tooltip text: the relative path and the line range. */
 export function pathTip(p: PathToken, cwd?: string | null): string {
   const path = relativePath(p.path, cwd);
   if (p.line == null) return path;

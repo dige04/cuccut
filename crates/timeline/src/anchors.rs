@@ -79,7 +79,7 @@ fn is_id_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-')
 }
 
-/// `\d+(\.\d+)?` 或 `\.\d+`，只认 ASCII 数字。
+/// `\d+(\.\d+)?` or `\.\d+`; only ASCII digits are recognized.
 fn is_offset_number(raw: &str) -> bool {
     let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
     match raw.split_once('.') {
@@ -88,9 +88,7 @@ fn is_offset_number(raw: &str) -> bool {
     }
 }
 
-/// 词锚点的封闭文法：`~<source>:<word>`，后面可选 `:start` / `:end`（各自可再带 `+n` / `-n`）
-/// 或直接 `+n`；id 只含 `[A-Za-z0-9_.-]`。手写而不用正则：时间轴校验会进浏览器 wasm，
-/// 这一处是 CPU / GPU 两份产物里唯一拉进 regex 引擎的地方。
+/// The closed grammar of word anchors: `~<source>:<word>`, optionally followed by `:start` / `:end` (each of which may carry `+n` / `-n` again) or directly `+n`; the id contains only `[A-Za-z0-9_.-]`. It is hand-written rather than using a regex: timeline validation runs in the browser wasm, and this is the only place in both the CPU and GPU artifacts that pulls in a regex engine.
 pub(crate) fn is_word_anchor(raw: &str) -> bool {
     let Some((source, rest)) = raw.strip_prefix('~').and_then(|body| body.split_once(':')) else {
         return false;
@@ -98,7 +96,7 @@ pub(crate) fn is_word_anchor(raw: &str) -> bool {
     if source.is_empty() || !source.bytes().all(is_id_byte) {
         return false;
     }
-    // `:` 与 `+` 都不是 id 字符，所以词 id 就是最长的那段 id 字符。
+    // `:` and `+` are not id characters, so the word id is the longest run of id characters.
     let word_len = rest
         .bytes()
         .position(|b| !is_id_byte(b))
@@ -178,8 +176,7 @@ pub fn resolve_word_anchor(
         AnchorBoundary::Start => word.t0,
         AnchorBoundary::End => word.t1,
     };
-    // 词保留但端点恰落在 cut 内（cut 只削掉词头/词尾）：向词身所在的 kept 侧吸附，
-    // 与 §2.3 clip 端点落 cut 的吸附语义一致。
+    // The word is kept but its endpoint falls exactly inside the cut (a cut only trims the word's head/tail): snap to the kept side where the word body lies, consistent with the snapping semantics of §2.3, where clip endpoints fall inside a cut.
     if let Some(source) = projection.source(&anchor.source_id)
         && source.contains_cut(source_time)
     {
@@ -274,7 +271,7 @@ mod tests {
         (projection, words)
     }
 
-    /// 手写文法与原来的正则逐条对拍（ASCII 输入上两者等价）。
+    /// The hand-written grammar is checked case by case against the original regex (the two are equivalent on ASCII input).
     #[test]
     fn grammar_matches_the_former_regex() {
         let pattern = regex::Regex::new(
@@ -285,7 +282,7 @@ mod tests {
             "~", ":", "+", "-", ".", "main", "g42.0", "w-1", "src_a", "start", "end", ":start",
             ":end", "0.4", "5", ".5", "5.", "x", "calc(1)", " ", "\n", "Start", "~a",
         ];
-        // 确定性的线性同余序列，免依赖随机数 crate。
+        // A deterministic linear congruential sequence, avoiding a dependency on a random-number crate.
         let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
         let mut checked = 0;
         let mut positives = 0;
@@ -304,7 +301,7 @@ mod tests {
             positives += usize::from(accepted);
             checked += 1;
         }
-        // 序列里要有足够多的合法锚点，否则对拍只测到了「都拒绝」那一面（实测 222 条）。
+        // The sequence must contain enough valid anchors; otherwise the cross-check only exercises the “all rejected” side (measured: 222 cases).
         assert!(positives > 100, "only {positives} accepted");
         for raw in [
             "~main:g42.0",
@@ -328,8 +325,7 @@ mod tests {
         assert!(checked > 60_000);
     }
 
-    /// 正则的 `\d` 是 Unicode 数字，手写版只认 ASCII：全角 / 阿拉伯-印度数字的偏移
-    /// 以前过了校验却解析不出数，现在直接判非法。
+    /// The regex `\d` matches Unicode digits, whereas the hand-written version only accepts ASCII. Offsets using full-width or Arabic-Indic digits used to pass validation but could not be parsed into a number; they are now rejected outright as invalid.
     #[test]
     fn offsets_take_ascii_digits_only() {
         assert!(!is_word_anchor("~main:w1+\u{0663}"));
@@ -373,7 +369,7 @@ mod tests {
 
     #[test]
     fn partially_cut_words_follow_the_midpoint_rule_and_snap_boundaries() {
-        // cut 2.0-3.0：w-head 词头被削（中点 3.1 保留），w-gone 中点 2.45 落 cut 内。
+        // cut 2.0-3.0: the head of w-head is trimmed (midpoint 3.1 kept), and w-gone's midpoint 2.45 falls inside the cut.
         let (projection, _) = fixture(false);
         let words = BTreeMap::from([(
             "main".to_owned(),
@@ -392,7 +388,7 @@ mod tests {
                 },
             ],
         )]);
-        // 视图时间：源 3.0 折叠为 2.0（cut 前保留 [0,2)）。词头端点吸附到 cut.t1=3.0。
+        // View time: source 3.0 collapses to 2.0 (the part before the cut keeps [0,2)). The word-head endpoint snaps to cut.t1=3.0.
         assert_eq!(
             resolve_word_anchor("~main:w-head:start", &projection, &words).unwrap(),
             2.0

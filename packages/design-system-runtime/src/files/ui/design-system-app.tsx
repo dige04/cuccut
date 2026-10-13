@@ -3451,9 +3451,8 @@ export function installFilesUiDesignSystemApp(
       setSaveState(document2.saveState());
       return value;
     }, [document2]);
-    // CucCut: 标注跳回一处（docs/design/canvas §10.6）：宿主的标注层（packages/design-system/src/editor/comment-targets.ts）
-    // 派发 `cuccut:reveal-comment-target`，这里与搜索里选中一条走同一条路——索引里有这个目标就照它（素材另展开那一张），
-    // 没有时按给的章节去等它出现
+    // CucCut: jump back to an annotation (docs/design/canvas §10.6). The host's annotation layer (packages/design-system/src/editor/comment-targets.ts)
+    // dispatches `cuccut:reveal-comment-target`; this takes the same path as selecting an entry in search. If the target is in the index, go by it (expanding that asset separately); if not, wait for it to appear in the given section.
     let commentRevealRef = runtime.reactArtifactRoot.useRef({
       index: searchIndex,
       pick: navigationSearch?.onPick,

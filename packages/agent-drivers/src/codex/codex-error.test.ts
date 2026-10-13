@@ -51,7 +51,7 @@ describe('classifyCodexErrorText', () => {
     expect(classifyCodexErrorText('HTTP 401')).toBe('AGENT_AUTH_REQUIRED');
     expect(classifyCodexErrorText('permission denied: author.txt')).toBeNull();
     expect(classifyCodexErrorText('403 Forbidden')).toBeNull();
-    // 401 只认独立的数字。
+    // 401 only matches a standalone number.
     expect(classifyCodexErrorText('wrote 14012 bytes')).toBeNull();
   });
 

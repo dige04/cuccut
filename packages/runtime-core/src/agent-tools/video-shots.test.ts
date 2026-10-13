@@ -91,7 +91,7 @@ function video(items: SequenceItem[]): VideoSnapshot {
   } as unknown as VideoSnapshot;
 }
 
-/** 假的分析：记下每次的源区间，按给定的源时刻回切换点。 */
+/** Fake analysis: records each source range and returns the cut points for the given source times. */
 function fakeAnalysis(sceneAt: SceneCut[]) {
   const calls: { fromSec: number; durSec: number; threshold: number }[] = [];
   const analysis = {
@@ -118,7 +118,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
   });
 
   it('场景切换按片段的时间映射换回时间线（源起点不为 0、时间线起点不为 0），对到帧', async () => {
-    // 时间线 2–6s 播源 10–14s；源 11.5s 与 13.0s 处有切换 → 时间线 3.5s、5s。
+    // Timeline 2–6 s plays source 10–14 s; cuts at source 11.5 s and 13.0 s → timeline 3.5 s and 5 s.
     const v = video([clip('a', 60, 120, 10)]);
     const { calls, deps } = fakeAnalysis([
       { at: 11.5, score: 0.6 },
@@ -135,12 +135,12 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
       [3.5, 5],
       [5, 6],
     ]);
-    // 取帧时刻在帧的正中：镜头 [2, 3.5) 的 20%、50%、80%。
+    // Frame times sit in the middle of each frame: 20%, 50% and 80% of the shot [2, 3.5).
     expect(result.shots[0]!.sampleAt).toEqual(['2.3167', '2.75', '3.2167']);
   });
 
   it('换了片段、源画面接不上的地方是 edit；同一素材源时间接续的拆分不算切换', async () => {
-    // a：0–2s 播源 0–2s；b：2–4s 播源 2–4s（接续）；c：4–6s 播源 30–32s（跳）。
+    // a: 0–2 s plays source 0–2 s; b: 2–4 s plays source 2–4 s (continuing); c: 4–6 s plays source 30–32 s (a jump).
     const v = video([clip('a', 0, 60, 0), clip('b', 60, 60, 2), clip('c', 120, 60, 30)]);
     const { deps } = fakeAnalysis([]);
     const result = await detectShots(deps, v, {});
@@ -160,7 +160,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
       [2, 'edit'],
       [3, 'edit'],
     ]);
-    // 每段各自检测：a 的两截各一次，pip 一次。
+    // Each segment is detected separately: a's two parts once each, pip once.
     expect(calls.map((c) => [c.fromSec, c.durSec])).toEqual([
       [0, 2],
       [50, 1],
@@ -177,7 +177,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
       { at: 8, score: 0.5 },
     ]);
     const result = await detectShots(deps, v, { minShot: 0.8 });
-    // [0, 0.3) 太短并进后一个（去掉 0.3）；[4, 4.5) 太短并进前一个（去掉 4）。
+    // [0, 0.3) is too short and is merged into the following one (drop 0.3); [4, 4.5) is too short and is merged into the preceding one (drop 4).
     expect(result.cuts.map((c) => c.at)).toEqual([4.5, 8]);
     expect((await detectShots(deps, v, { minShot: 0 })).cuts.map((c) => c.at)).toEqual([0.3, 4, 4.5, 8]);
   });
@@ -198,7 +198,7 @@ describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
 
   beforeAll(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-shots-'));
-    // testsrc 2s + 纯红 1.5s + 彩条 2s：切换点在源 2s 与 3.5s。关键帧间隔 300，跳转要从头解码到目标附近。
+    // testsrc 2 s + pure red 1.5 s + colour bars 2 s: cuts at source 2 s and 3.5 s. Keyframe interval 300; a seek has to decode from the start to near the target.
     execFileSync('ffmpeg', [
       ...['-v', 'error', '-y'],
       ...['-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=30:duration=2'],
@@ -228,9 +228,9 @@ describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
   });
 
   it('时间线起点不为 0、源从 1s 起播：切换点 ±1 帧，镜头与取帧时刻落在各自镜头里', async () => {
-    // 时间线 3–7.5s 播源 1–5.5s：源 2s、3.5s 的切换 → 时间线 4s、5.5s。
+    // Timeline 3–7.5 s plays source 1–5.5 s: cuts at source 2 s and 3.5 s → timeline 4 s and 5.5 s.
     const v = video([clip('a', 90, 135, 1)]);
-    // 前 3 秒是空的：从空到有画面也是一处 edit。
+    // The first 3 s are empty: going from nothing to footage also counts as an edit.
     expect((await detectShots(deps(), v, {})).cuts.map((c) => [c.at, c.kind])[0]).toEqual([3, 'edit']);
     const result = await detectShots(deps(), v, { start: 3 });
     expect(result.cuts.map((c) => c.kind)).toEqual(['scene', 'scene']);
@@ -247,7 +247,7 @@ describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
   });
 
   it('两个片段剪在一起：接口处是 edit，各段里的场景切换照常', async () => {
-    // a：0–3s 播源 0–3s（含 2s 的切换）；b：3–5s 播源 3.5–5.5s（彩条）。接口处源从 3s 跳到 3.5s。
+    // a: 0–3 s plays source 0–3 s (including the cut at 2 s); b: 3–5 s plays source 3.5–5.5 s (colour bars). At the join, the source jumps from 3 s to 3.5 s.
     const v = video([clip('a', 0, 90, 0), clip('b', 90, 60, 3.5)]);
     const result = await detectShots(deps(), v, {});
     expect(result.cuts.map((c) => [Math.round(c.at * 30), c.kind])).toEqual([

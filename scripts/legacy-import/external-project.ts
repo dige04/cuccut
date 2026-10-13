@@ -1,9 +1,9 @@
-// 外部视频项目目录（`project.json` + `runtime-media/` + `projects/<id>/assets/hyperframes/`）→ 视频计划。
+// External video project directory (`project.json` + `runtime-media/` + `projects/<id>/assets/hyperframes/`) → video plan.
 //
-// 这种项目的时间已经在帧网格上（`from` / `durationInFrames` / `sourceStart`，帧率 30），所以换算是精确的：
-// - `hyperframes` 实例（代码合成）不导入：这种项目不记代码包的渲染结果，合成都没有预渲染替身，代码包也不登记；
-// - `audio` 实例 → 音频实例，dB 换成线性倍数，音量关键帧 → 包络；
-// - `subtitle` 实例（每句一个，各自带样式）→ 一份字幕文档 + 一份样式文档 + 一个字幕实例。
+// Times in this kind of project are already on the frame grid (`from` / `durationInFrames` / `sourceStart`, at 30 fps), so the conversion is exact:
+// - `hyperframes` instances (code compositions) are not imported: this kind of project does not record render results of code packages, compositions have no pre-rendered stand-ins, and code packages are not registered either;
+// - `audio` instance → audio instance, dB converted to linear multiplier, volume keyframes → envelope;
+// - `subtitle` instances (one per sentence, each with its own style) → one subtitle document + one style document + one subtitle instance.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -47,7 +47,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
   const legacyItems = project.timeline.items as Obj[];
   const legacyTracks = [...(project.timeline.tracks as Obj[])];
 
-  // ── 素材：媒体按授权目录里的原路径链接，代码包按「包 / 版本」目录链接，只收时间线用到的版本 ──
+  // ── Assets: media linked by its original path in the authorized directory; code packages linked by “package / version” directory, collecting only the versions the timeline uses ──
   const assets: AssetPlan[] = [];
   for (const mediaId of new Set(legacyItems.map((item) => item.mediaId).filter((id): id is string => typeof id === 'string'))) {
     const info = readJson(path.join(dir, 'runtime-media', mediaId, 'metadata.json'));
@@ -73,7 +73,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
     });
   }
   report.assets.planned = assets.length;
-  // 代码包按「包 / 版本」目录存放；合成不导入，哪个版本都不登记。
+  // Code packages are stored by “package / version” directory; compositions are not imported, and no version is registered.
   const bundleRoot = path.join(dir, 'projects', String(project.id), 'assets', 'hyperframes');
   if (existsSync(bundleRoot)) {
     let revisions = 0;
@@ -109,7 +109,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       count(report.dropped, label, by);
       report.warnings.push(note);
     };
-    /** 字幕样式文档里的定位框保持像素（`cuccut.boxed-caption-style` 的写法）。 */
+    /** The positioning box in the subtitle style document keeps pixels (the `cuccut.boxed-caption-style` form). */
     const boxOf = (t: Obj | undefined): Json => ({
       x: t?.x ?? 0,
       y: t?.y ?? 0,
@@ -118,11 +118,11 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       anchor: [0.5, 0.5],
       rotation: t?.rotation ?? 0,
     });
-    /** dB → 线性倍数，夹到新格式的 [0, 4]。 */
+    /** dB → linear multiplier, clamped to the new format's [0, 4]. */
     const volumeOf = (db: unknown, label: string): number => clampTo(report, label, linearOfDb(typeof db === 'number' ? db : 0), 0, 4);
 
-    // 轨道：外部项目的 `order` 小的在上面。新格式里画面轨靠后的在上层，音频轨按建立顺序从上往下排。
-    // 只放代码合成的轨道不建：合成不导入，轨道是空的。
+    // Tracks: in the external project, a lower `order` is on top. In the new format, picture tracks further back are on the upper layer; audio tracks are arranged top to bottom in creation order.
+    // Tracks holding only code compositions are not created: compositions are not imported, so the track would be empty.
     const usedTracks = legacyTracks.filter((track) => legacyItems.some((item) => item.trackId === track.id && item.type !== 'hyperframes'));
     const isSubtitle = (track: Obj): boolean =>
       legacyItems.filter((item) => item.trackId === track.id).every((item) => item.type === 'subtitle');
@@ -164,7 +164,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       };
       switch (item.type) {
         case 'hyperframes':
-          // 新格式的代码合成要有预渲染替身（与 `.ccut` 代码项目同一条规则）；外部项目不记代码包的渲染结果。
+          // A new-format code composition needs a pre-rendered stand-in (same rule as `.ccut` code projects); external projects do not record code-package render results.
           drop(
             '没有预渲染替身的代码合成',
             `项目「${name}」的代码合成 ${id}（代码包 ${String(item.bundleId)}）没有预渲染替身：新格式的代码合成要有替身，没有导入，代码包也没有登记`,
@@ -176,7 +176,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
             report.warnings.push(`音频 ${id} 的媒体 ${item.mediaId} 没有登记成素材，没有导入`);
             break;
           }
-          // 源区间不能超出素材：外部项目的 sourceEnd 按帧取整，可能比文件长出不到一帧。
+          // The source range cannot exceed the material: the external project's sourceEnd is rounded to frames, so it may exceed the file length by less than one frame.
           let playUs = (BigInt(item.durationInFrames) * 1_000_000n * BigInt(fps.den)) / BigInt(fps.num);
           let playDuration = frames(item.durationInFrames * fps.den, fps.num);
           if (info.durationUs != null) {
@@ -193,8 +193,8 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
             report.warnings.push(`音频 ${id} 的源区间在素材之外，没有导入`);
             break;
           }
-          // 外部项目的缓动记在一段的起点（左边的关键帧管到下一帧），包络的 `ease` 记在终点：第 i 个点取第 i−1 帧的缓动，
-          // 最后一帧的缓动不管任何一段。
+          // In the external project, easing is recorded at the start of a segment (the keyframe on the left governs up to the next frame); the envelope's `ease` is recorded at the end point: the i-th point takes the easing of frame i−1,
+          // and the easing of the last frame governs no segment.
           const volumeFrames = (keyframes.get(id) ?? []).slice(0, 256);
           const envelope = volumeFrames.map((k, i) => {
             const easing = i > 0 ? volumeFrames[i - 1]!.easing : undefined;
@@ -218,7 +218,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
               playDuration,
               timeMap,
               mix: {
-                // 有音量关键帧时，关键帧的值就是绝对音量：包络取代静态音量。
+                // When there are volume keyframes, the keyframe value is the absolute volume: the envelope replaces the static volume.
                 volume: envelope.length > 0 ? 1 : volumeOf(item.volume, 'volume'),
                 ...fade(item.audioFadeIn, 'fadeIn'),
                 ...fade(item.audioFadeOut, 'fadeOut'),
@@ -238,7 +238,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       }
     }
 
-    // ── 字幕：外部项目每句一个实例、每个实例各带一份样式；这里合成一份字幕文档 + 一份样式 ──
+    // ── Subtitles: the external project has one instance per sentence, each carrying its own style; here one subtitle document + one style document are composed ──
     if (subtitles.length > 0) {
       subtitles.sort((a, b) => a.from - b.from);
       const STYLE_KEYS = [
@@ -268,7 +268,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
         Object.fromEntries(STYLE_KEYS.filter((key) => item[key] !== undefined).map((key) => [key, item[key]]));
       const shared = styleOf(subtitles[0]);
       const sharedText = JSON.stringify(shared);
-      // 外部项目的字幕动画预设不带过来：它的预设名不说明逐词动画的画法，成片里也没有逐词效果（按不动画导入）。
+      // Subtitle animation presets of the external project are not carried over: its preset names do not say how per-word animation is drawn, and the output has no per-word effect (imported without animation).
       const presets = new Map<string, number>();
       for (const item of subtitles) {
         if (item.animationPresetId != null)
@@ -282,7 +282,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
         const endUs = usPerFrame(item.from + item.durationInFrames);
         return ((item.cues ?? []) as Obj[]).map((cue) => ({
           id: String(cue.id),
-          // 句内时间是相对实例起点的秒；实例的帧区间是权威，句尾收在实例之内。
+          // In-sentence times are seconds relative to the instance start; the instance's frame range is authoritative, and the sentence end is kept within the instance.
           start: startUs + Number(micros(cue.startSeconds ?? 0)),
           end: Math.min(endUs, startUs + Number(micros(cue.endSeconds ?? 0))),
           text: String(cue.text ?? ''),
@@ -335,7 +335,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       });
     }
 
-    // ── 导出记录 ──
+    // ── Export records ──
     const exportsDir = path.join(dir, 'exports');
     const files: string[] = [];
     if (existsSync(exportsDir)) {

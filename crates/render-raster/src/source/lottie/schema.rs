@@ -1,14 +1,13 @@
-//! bodymovin 子集的解析（ADR-M11 的子集边界，见 `core/fixtures/lottie/README.md`）。
+//! Parsing of the bodymovin subset (subset boundary per ADR-M11, see `core/fixtures/lottie/README.md`).
 //!
-//! **为什么不是 `#[derive(Deserialize)]` 一把梭**：bodymovin 是十来个导出器版本
-//! 累积出来的格式，同一个键在不同 `ty` 下类型不同（`fl` 的 `r` 是填充规则整数，
-//! `rc` 的 `r` 是圆角属性对象；`st` 的 `d` 是虚线数组，`sh` 的 `d` 是方向整数；
-//! `bm` 有时是整数、有时是属性对象）。用一棵 `serde_json::Value` 按 `ty` 分派，
-//! 比给每个变体写一套 `#[serde(untagged)]` 更短、更好报错，也更不容易在遇到
-//! 没见过的导出器时**静默取到 0**。
+//! **Why not a single `#[derive(Deserialize)]`**: bodymovin is a format that has accumulated over a dozen exporter versions, and the same key has different types under different `ty` values (`fl`'s `r` is an integer fill rule,
+//! while `rc`'s `r` is a rounded-corner property object; `st`'s `d` is a dash array, while `sh`'s `d` is an integer direction;
+//! `bm` is sometimes an integer and sometimes a property object). Dispatching on `ty` over a `serde_json::Value` tree is
+//! shorter than writing a set of `#[serde(untagged)]` variants, gives better errors, and is less likely to **silently read 0** when it meets
+//! an exporter it has never seen.
 //!
-//! 解析期就是子集守门人：不支持的特性在这里变成 `lottie-unsupported-feature`
-//! 硬错误或 warn 诊断，**不静默降级**。
+//! Parsing is the subset gatekeeper: unsupported features become a `lottie-unsupported-feature`
+//! hard error or a warn diagnostic here, **with no silent degradation**.
 
 use super::geometry::{Affine, Contour};
 use super::value::{self, Animated, Ease};
@@ -19,7 +18,7 @@ use motion::effect::BlendMode;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// 解析期的诊断收集器。warn 级进这里，fail 级直接走 `Err`。
+/// Diagnostics collector used during parsing. Warn-level items go here; fail-level items return `Err` directly.
 #[derive(Debug, Default)]
 pub struct Diagnostics {
     items: Vec<PreflightDiagnostic>,
@@ -31,8 +30,8 @@ impl Diagnostics {
             rule: super::LOTTIE_RULE,
             message,
         };
-        // 同一条警告只留一份：一个文档里几十个图层挂同一组表达式控制器时，
-        // 逐个报会把有用的诊断淹掉。
+        // Keep only one copy of the same warning: when dozens of layers in one document attach the same set of expression controllers,
+        // reporting each one would drown out the useful diagnostics.
         if !self.items.contains(&item) {
             self.items.push(item);
         }
@@ -49,12 +48,12 @@ macro_rules! unsupported {
     };
 }
 
-// ── 顶层文档 ───────────────────────────────────────────────────────
+// ── Top-level document ───────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct Animation {
     pub version: String,
-    /// 合成帧率
+    /// Composition frame rate
     pub fr: f64,
     pub ip: f64,
     pub op: f64,
@@ -71,16 +70,16 @@ pub struct ImageAsset {
     pub id: String,
     pub width: f64,
     pub height: f64,
-    /// 相对文档目录的路径（`u` + `p`）。内嵌资源（`e: 1`）为 `None`。
+    /// Path relative to the document directory (`u` + `p`). Embedded assets (`e: 1`) are `None`.
     pub path: Option<String>,
-    /// 内嵌的 data URI 字节（`e: 1`）。
+    /// Embedded data URI bytes (`e: 1`).
     pub embedded: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Marker {
     pub name: String,
-    /// 帧号
+    /// Frame number
     pub time: f64,
     pub duration: f64,
 }
@@ -91,21 +90,21 @@ pub struct Layer {
     pub name: String,
     pub kind: LayerKind,
     pub parent: Option<i64>,
-    /// `sr`：时间伸缩
+    /// `sr`: time stretch
     pub stretch: f64,
     pub transform: LayerTransform,
     pub in_point: f64,
     pub out_point: f64,
-    /// `st`：图层在合成时间轴上的起点
+    /// `st`: the layer's start point on the composition timeline
     pub start: f64,
     pub blend: BlendMode,
-    /// `tt`：本图层被上方的遮罩源图层遮罩
+    /// `tt`: this layer is masked by the matte source layer above it
     pub matte: Option<MatteMode>,
-    /// `td`：本图层是下方图层的遮罩源
+    /// `td`: this layer is the matte source for the layer below it
     pub is_matte_source: bool,
     pub hidden: bool,
     pub masks: Vec<Mask>,
-    /// `tm`：预合成的时间重映射（秒）
+    /// `tm`: time remapping of the precomposition (seconds)
     pub time_remap: Option<Animated>,
 }
 
@@ -146,7 +145,7 @@ pub enum Position {
 }
 
 impl LayerTransform {
-    /// 该时刻的仿射矩阵（不含不透明度）。
+    /// Affine matrix at this moment (excluding opacity).
     pub fn matrix(&self, frame: f64) -> Affine {
         let anchor = self.anchor.value(frame);
         let (ax, ay) = (
@@ -200,7 +199,7 @@ pub struct Mask {
     pub inverted: bool,
 }
 
-// ── 形状树 ─────────────────────────────────────────────────────────
+// ── Shape tree ─────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum ShapeItem {
@@ -262,8 +261,8 @@ pub enum ShapeItem {
     RoundCorners {
         radius: Animated,
     },
-    /// `mm: 1`（纯拼接）。本实现的填充本来就把组内路径拼起来当一条画，
-    /// 因此它是 no-op；布尔模式在解析期就被拒了。
+    /// `mm: 1` (plain merge). This implementation's fill already concatenates the paths in a group and draws them as one,
+    /// so it is a no-op; boolean modes are already rejected at parse time.
     MergeAppend,
 }
 
@@ -305,12 +304,12 @@ impl ShapeTransform {
 #[derive(Debug)]
 pub struct StrokeStyle {
     pub width: Animated,
-    /// 0=butt 1=round 2=square（DrawOp 编码）
+    /// 0=butt 1=round 2=square (DrawOp encoding)
     pub cap: u8,
     /// 0=miter 1=round 2=bevel
     pub join: u8,
     pub miter: f64,
-    /// 虚线序列（dash / gap 交替）与偏移
+    /// Dash sequence (alternating dash / gap) and offset
     pub dashes: Vec<Animated>,
     pub dash_offset: Option<Animated>,
 }
@@ -320,17 +319,17 @@ pub struct Gradient {
     pub start: Animated,
     pub end: Animated,
     pub radial: bool,
-    /// 径向渐变的高光（`h` 百分比 / `a` 角度）
+    /// Radial gradient highlight (`h` percentage / `a` angle)
     pub highlight_length: Animated,
     pub highlight_angle: Animated,
-    /// 色标数
+    /// Number of color stops
     pub stop_count: usize,
-    /// 扁平色标数组：前 `stop_count * 4` 项是 (offset, r, g, b)，
-    /// 之后（若有）是 (offset, alpha) 对。
+    /// Flattened color-stop array: the first `stop_count * 4` entries are (offset, r, g, b),
+    /// followed by (offset, alpha) pairs, if any.
     pub stops: Animated,
 }
 
-/// 形状属性（`sh` 的 `ks` 与遮罩的 `pt`）。
+/// Shape property (`ks` of `sh` and `pt` of masks).
 #[derive(Debug)]
 pub enum AnimatedShape {
     Static(Contour),
@@ -367,8 +366,8 @@ impl AnimatedShape {
                 }
                 let last = &frames[frames.len() - 1];
                 if frame >= last.t {
-                    // 与 `value::tail_value` 同一条理由与同一套优先级：老格式
-                    // 的末项是纯终止符（只有 `t`），终值在前一帧的 `e` 里
+                    // Same reasoning and same priority as `value::tail_value`: in the old format
+                    // the last entry is a pure terminator (only `t`), and the end value sits in the `e` of the previous frame
                     if !last.start.v.is_empty() {
                         return last.start.clone();
                     }
@@ -411,8 +410,8 @@ impl AnimatedShape {
     }
 }
 
-/// 顶点数一致时逐点插值；不一致时保持段首形状——AE 不会导出顶点数不同的
-/// 可插值形状，真遇到了宁可"卡住"也不要画出一堆错位的控制点。
+/// Interpolates point by point when vertex counts match; when they differ, holds the segment-start shape. AE does not export
+/// interpolatable shapes with different vertex counts, and if one ever shows up it is better to "freeze" than to draw a pile of misaligned control points.
 fn lerp_contour(a: &Contour, b: &Contour, t: f64) -> Contour {
     if a.v.len() != b.v.len() {
         return a.clone();
@@ -431,7 +430,7 @@ fn lerp_contour(a: &Contour, b: &Contour, t: f64) -> Contour {
     }
 }
 
-// ── 解析 ───────────────────────────────────────────────────────────
+// ── Parsing ───────────────────────────────────────────────────────────
 
 fn obj<'a>(value: &'a Value, path: &str) -> Result<&'a serde_json::Map<String, Value>> {
     value
@@ -464,9 +463,9 @@ fn prop(
     value::parse_property_or(&format!("{path}.{key}"), map.get(key), default)
 }
 
-/// `ef` 里哪些 `ty` 是**表达式控制器**（Slider / Angle / Color / Point /
-/// Checkbox / Group / Layer / Dropdown）。没有表达式时它们是死数据——
-/// 忽略 + 警告，不 fail（普查 2026-08-20：语料里 13 个文件命中）。
+/// Which `ty` values in `ef` are **expression controllers** (Slider / Angle / Color / Point /
+/// Checkbox / Group / Layer / Dropdown). Without expressions they are dead data —
+/// ignore and warn, do not fail (survey 2026-08-20: 13 files in the corpus hit this).
 const EXPRESSION_CONTROL_TYPES: [i64; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
 
 pub fn parse(src: &str, doc: &Value, diagnostics: &mut Diagnostics) -> Result<Animation> {
@@ -765,7 +764,7 @@ fn parse_mask(path: &str, value: &Value, layer: &str) -> Result<Option<Mask>> {
             "{path}（图层 \"{layer}\"）：遮罩模式 \"{other}\"；首版只做 add（\"a\"）与 none（\"n\"）"
         ),
     }
-    // 羽化需要一条模糊 pass，首版的遮罩是纯几何合成
+    // Feathering needs a blur pass; the first-release masks are pure geometric compositing
     let feather = value::parse_property_or(&format!("{path}.x"), map.get("x"), &[0.0])?;
     if !feather.is_static() || feather.scalar(0.0) != 0.0 {
         unsupported!("{path}（图层 \"{layer}\"）：遮罩羽化（x ≠ 0）；首版不支持");
@@ -780,7 +779,7 @@ fn parse_mask(path: &str, value: &Value, layer: &str) -> Result<Option<Mask>> {
     }))
 }
 
-/// `sh` 的 `ks` / 遮罩的 `pt`：值是 `{i, o, v, c}` 而不是数组。
+/// `ks` of `sh` / `pt` of masks: the value is `{i, o, v, c}`, not an array.
 pub fn parse_shape_property(path: &str, value: &Value) -> Result<AnimatedShape> {
     let Some(map) = value.as_object() else {
         bail!("lottie-parse: {path} 的形状属性不是对象");
@@ -790,10 +789,10 @@ pub fn parse_shape_property(path: &str, value: &Value) -> Result<AnimatedShape> 
     {
         unsupported!("{path} 带表达式（\"x\"）；与 BCF 的确定性承诺冲突");
     }
-    // 与 `value::parse_property` 同一条规则：**按结构判定，不看 `a` 标志**。
-    // 形状属性的常量形态是 `{i, o, v, c}` 对象，关键帧形态是数组——判据因此
-    // 更直白：`k` 是数组就是关键帧。若继续信 `a`，缺 `a` 标志的素材会走进
-    // `parse_contour`，而它对数组返回**空轮廓**，形状直接从画面上消失。
+    // Same rule as `value::parse_property`: **judged by structure, not by the `a` flag**.
+    // The constant form of a shape property is an `{i, o, v, c}` object, and the keyframe form is an array — so the criterion is more direct:
+    // if `k` is an array, it is keyframes. If we kept trusting `a`, assets missing the `a` flag would go into
+    // `parse_contour`, which returns an **empty contour** for an array, and the shape would vanish from the picture.
     let k = map.get("k").unwrap_or(&Value::Null);
     let Some(items) = k.as_array() else {
         return Ok(AnimatedShape::Static(parse_contour(path, k)?));
@@ -1054,7 +1053,7 @@ fn parse_gradient(path: &str, map: &serde_json::Map<String, Value>) -> Result<Gr
     })
 }
 
-/// `#rrggbb` → 0..1 三分量。
+/// `#rrggbb` → three components in 0..1.
 fn parse_hex_color(text: &str) -> [f64; 3] {
     let hex = text.trim_start_matches('#');
     let byte = |i: usize| -> f64 {
@@ -1066,8 +1065,8 @@ fn parse_hex_color(text: &str) -> [f64; 3] {
     [byte(0), byte(2), byte(4)]
 }
 
-/// `data:image/png;base64,....` → 字节。自带 base64 解码，不为一个内嵌图
-/// 资源加一条依赖。不带 `;base64` 的（常见于 `data:image/svg+xml;utf8,<svg…>`）按 URL 百分号编码解。
+/// `data:image/png;base64,....` → bytes. Includes its own base64 decoder, so that one embedded image asset does not add a dependency.
+/// Data URIs without `;base64` (common with `data:image/svg+xml;utf8,<svg…>`) are decoded as URL percent-encoding.
 fn decode_data_uri(path: &str, uri: &str) -> Result<Vec<u8>> {
     let Some((header, payload)) = uri.split_once(',') else {
         bail!("lottie-parse: {path} 声明为内嵌资源（e = 1），但 p 不是 data URI");
@@ -1101,7 +1100,7 @@ fn decode_data_uri(path: &str, uri: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// data URI 的百分号编码：`%XX` 换成那个字节，其余原样。
+/// Percent-decoding of a data URI: `%XX` is replaced by that byte, everything else is kept as is.
 fn percent_decode(path: &str, payload: &str) -> Result<Vec<u8>> {
     let bytes = payload.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -1124,7 +1123,7 @@ fn percent_decode(path: &str, payload: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// 颜色属性求值：Lottie 用 0..1，很老的导出器用 0..255。
+/// Color property evaluation: Lottie uses 0..1, very old exporters use 0..255.
 pub fn color_at(color: &Animated, frame: f64) -> [f64; 3] {
     let v = color.value(frame);
     let mut rgb = [
@@ -1246,7 +1245,7 @@ mod tests {
             let doc = minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {}, "bm": code}]));
             assert_eq!(parse_ok(&doc).0.layers[0].blend, expected);
         }
-        // 属性对象形态的 bm 也认
+        // Also accepts a `bm` in property-object form
         let doc = minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {}, "bm": {"a": 0, "k": 5}}]));
         assert_eq!(parse_ok(&doc).0.layers[0].blend, BlendMode::Lighten);
         let doc = minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {}, "bm": 9}]));
@@ -1292,8 +1291,8 @@ mod tests {
     fn an_animated_shape_needs_no_a_flag_either() {
         let contour =
             |x: f64| json!({"v": [[x, 0.0]], "i": [[0.0, 0.0]], "o": [[0.0, 0.0]], "c": true});
-        // 没有 `a`：仍按关键帧解析（信 `a` 会走进 parse_contour 得到空轮廓，
-        // 形状直接从画面上消失）
+        // No `a`: still parsed as keyframes (trusting `a` would route it into parse_contour, get an empty contour,
+        // and the shape would vanish from the picture)
         let shape = parse_shape_property(
             "t",
             &json!({"k": [
@@ -1305,7 +1304,7 @@ mod tests {
         .unwrap();
         assert!(!shape.is_static());
         assert!((shape.value(5.0).v[0][0] - 5.0).abs() < 1e-9);
-        // 老格式的纯终止符末项：终值回到前一帧的 `e`
+        // The pure-terminator last entry of the old format: the end value comes from the `e` of the previous frame
         let legacy = parse_shape_property(
             "t",
             &json!({"a": 1, "k": [

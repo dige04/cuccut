@@ -1,12 +1,12 @@
-//! `animate.flow` / `animate.parts` 的 JSON 编码 → [`MotionGraph`]（规范 §7.5）。
+//! JSON encoding of `animate.flow` / `animate.parts` → [`MotionGraph`] (spec §7.5).
 //!
-//! **纯 JSON 解析，不认识 TimeExpr**：`at` 与 `repeat.until` 必须在进来之前
-//! 已经被调用方求值成绝对秒。`ccut-core::resolve` 负责那一步（它才有 cue 表、
-//! clip 窗口与定点迭代），并顺带把规范 §7.5 的两个保留串 `"clip.start"` /
-//! `"clip.end"` 映射成窗口两端——`ccut-motion` 不依赖 `ccut-core`（ADR-M01）。
+//! **Pure JSON parsing; it does not understand TimeExpr**: `at` and `repeat.until` must already have been evaluated to absolute
+//! seconds by the caller before they arrive. `ccut-core::resolve` does that step (it has the cue table, the clip window and the
+//! fixed-point iteration), and it also maps the two reserved strings `"clip.start"` / `"clip.end"` from spec §7.5 to the two ends
+//! of the window. `ccut-motion` does not depend on `ccut-core` (ADR-M01).
 //!
-//! 键集是**封闭**的：每个 op 只接受下表里的键，多写一个键就是硬错误。
-//! 这样「BCF 里不残留可执行代码」不是靠约定，而是靠解析器（ADR-M07）。
+//! The key set is **closed**: each op accepts only the keys in the table below, and one extra key is a hard error. That “no
+//! executable code remains in BCF” is guaranteed by the parser, not by convention (ADR-M07).
 
 use serde_json::{Map, Value};
 
@@ -20,12 +20,12 @@ use crate::program::TargetId;
 use crate::text_parts::StaggerFrom;
 use crate::value::PropertyId;
 
-/// 解析上下文。
+/// Parse context.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FlowParseCtx {
-    /// `animate.parts` 的 part 数；`stagger.parts = true` 用它展开 target 表。
+    /// Number of parts for `animate.parts`; `stagger.parts = true` uses it to expand the target table.
     pub part_count: usize,
-    /// 规范 §7.3：省略 seed 时写死的默认值（0）。
+    /// Spec §7.3: the hard-coded default when seed is omitted (0).
     pub default_seed: u64,
 }
 
@@ -49,7 +49,7 @@ fn optional_number(map: &Map<String, Value>, key: &str, fallback: f64) -> f64 {
     map.get(key).and_then(Value::as_f64).unwrap_or(fallback)
 }
 
-/// 每个 op 的封闭键集。`op` / `target` / `at` 是公共键。
+/// Closed key set for each op. `op` / `target` / `at` are the common keys.
 const COMMON_KEYS: &[&str] = &["op", "target", "at"];
 
 fn check_keys(
@@ -62,7 +62,7 @@ fn check_keys(
         if COMMON_KEYS.contains(&key.as_str()) || own.contains(&key.as_str()) {
             continue;
         }
-        // 缓动在 keyframes 帧里叫 `ease`，在 flow 的 op 里叫 `curve`：照帧的写法类推最常见。
+        // The easing is called `ease` in keyframe frames and `curve` in flow ops. Going by the frame syntax is the most common case.
         let ease_hint = if matches!(key.as_str(), "ease" | "easing") && own.contains(&"curve") {
             "；缓动键叫 curve（keyframes 的帧里才叫 ease）"
         } else {
@@ -86,8 +86,7 @@ fn parse_target(map: &Map<String, Value>, path: &str) -> Result<TargetId, Motion
         None => Ok(TargetId::SELF),
         Some(Value::String(name)) if name == "self" => Ok(TargetId::SELF),
         Some(Value::String(name)) if name.starts_with('#') => {
-            // 跨元素 target 需要把编译产物分发到同一 clip 的其它节点，
-            // 阶段 3 未实现（§15 已知缺口）。
+            // Cross-element targets need the compiled output distributed to other nodes of the same clip. Not implemented in stage 3 (known gap in §15).
             let _ = name;
             Err(MotionError::Unsupported("flow-target-cross-element"))
         }
@@ -130,7 +129,7 @@ fn parse_composite(
     }
 }
 
-/// 规范 §7.6：名称字符串或结构化对象。
+/// Spec §7.6: a name string or a structured object.
 pub fn parse_curve(value: Option<&Value>, path: &str) -> Result<CurveSpec, MotionError> {
     let Some(value) = value else {
         return Ok(CurveSpec::Default);
@@ -191,15 +190,15 @@ fn parse_interpolator(
     }
 }
 
-/// `animate.flow` 的根。
+/// Root of `animate.flow`.
 pub fn parse_flow(flow: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, MotionError> {
     Ok(MotionGraph {
         root: parse_op(flow, "/animate/flow", ctx)?,
     })
 }
 
-/// `animate.parts` 的根：不是 `stagger` 时补一层 `gap = 0` 的 stagger，
-/// 让「一个 op 作用于全部 part」与「逐 part 级联」走同一条编译路径（计划 §3.3.6）。
+/// Root of `animate.parts`. When the root is not a `stagger`, a `stagger` layer with `gap = 0` is added, so that “one op applied
+/// to all parts” and “a per-part cascade” take the same compile path (plan §3.3.6).
 pub fn parse_parts(parts: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, MotionError> {
     let map = object(parts, "/animate/parts")?;
     if map.contains_key("target") {
@@ -208,8 +207,8 @@ pub fn parse_parts(parts: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, Mot
         ));
     }
     let root = parse_op(parts, "/animate/parts", ctx)?;
-    // `parts: true` 的 stagger 只能在**根**上（`at` / `delay` 包装之内不算嵌套）：
-    // 嵌套两层会让每个 part 再展开一次全体 part，产出 n² 份重复轨。
+    // `parts: true` stagger may only sit at the **root** (wrapping by `at` / `delay` does not count as nesting). Nesting two levels
+    // would expand all parts again for each part, producing n² duplicate tracks.
     if count_staggers(&root) > 1 || (count_staggers(&root) == 1 && !root_is_stagger(&root)) {
         return Err(invalid(
             "/animate/parts: parts 级联的 stagger 只能出现在根上（§7.9）",
@@ -228,7 +227,7 @@ pub fn parse_parts(parts: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, Mot
     Ok(MotionGraph { root })
 }
 
-/// 剥掉 `at` / `delay` 包装后是不是 `stagger`。
+/// Whether the node, after stripping the `at` / `delay` wrappers, is a `stagger`.
 fn root_is_stagger(op: &MotionOp) -> bool {
     match op {
         MotionOp::Stagger { .. } => true,
@@ -396,7 +395,7 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 return Err(invalid(format!("{path}: targets 与 parts 互斥（§7.5）")));
             }
             if has_targets {
-                // 跨元素 target 表同样属于阶段 3 未实现的范围。
+                // Cross-element target tables likewise fall within the stage 3 not-implemented scope.
                 return Err(MotionError::Unsupported("flow-target-cross-element"));
             }
             if !has_parts {
@@ -518,7 +517,7 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 target: parse_target(map, path)?,
                 amplitude: amplitude(map, path)?,
                 period: number(map, "period", path)?,
-                // 规范 §7.3：省略 seed ⇒ 编译期写死默认值（0），不取随机源。
+                // Spec §7.3: an omitted seed ⇒ the compile-time hard-coded default (0); it does not take a random source.
                 seed: map
                     .get("seed")
                     .map(|value| {
@@ -584,8 +583,8 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
     wrap_at(map, path, node)
 }
 
-/// `sampled` 的居中滑动平均：窗口 `round(smooth × fps)` 个采样，两端按实有的样本数收窄。
-/// 窗口不到 2 个采样时原样返回。只用加除，wasm 与 native 逐位一致。
+/// Centered moving average for `sampled`: window `round(smooth × fps)` samples, narrowing at both ends to the samples actually
+/// present. Returned as-is when the window is under 2 samples. Uses only addition and division, so wasm and native are bit-for-bit identical.
 fn smooth_samples(values: &[f64], fps: f64, smooth: f64) -> Vec<f64> {
     let window = (smooth * fps).round() as usize;
     if window < 2 {
@@ -603,7 +602,7 @@ fn smooth_samples(values: &[f64], fps: f64, smooth: f64) -> Vec<f64> {
         .collect()
 }
 
-/// 采样序列在序列内秒 `at` 处的线性插值（越界夹到两端）。
+/// Linear interpolation of the sample sequence at `at` seconds within the sequence (clamped to the ends when out of range).
 fn sample_at(values: &[f64], fps: f64, at: f64) -> f64 {
     let position = at * fps;
     let last = values.len() - 1;
@@ -618,9 +617,10 @@ fn sample_at(values: &[f64], fps: f64, at: f64) -> f64 {
     values[index] + (values[index + 1] - values[index]) * frac
 }
 
-/// `sampled` 解糖成既有算子（设计 §13 的变体预算不动）：一串首尾相接的线性 `tween`，
-/// 断点就是采样点，所以关键帧投影与逐帧线性插值是同一个函数。`from` 是 op 起点
-/// 对应的序列内秒——第一段从那里的插值起步。只有一个点可走时退成 `set`。
+/// `sampled` is desugared into existing operators (the variant budget of design §13 stays unchanged): a chain of end-to-end
+/// linear `tween`s whose breakpoints are the sample points, so the keyframe projection and the per-frame linear interpolation
+/// are the same function. `from` is the in-sequence seconds corresponding to the op's start; the first segment starts from the
+/// interpolated value there. When only one point is available, it degrades to `set`.
 fn sampled_op(
     target: TargetId,
     property: PropertyId,
@@ -638,7 +638,7 @@ fn sampled_op(
         )));
     }
     let first = sample_at(values, fps, from);
-    // 第一个严格落在 `from` 之后的采样点（贴着网格的 `from` 不再多出一段零长 tween）。
+    // The first sample point strictly after `from` (a `from` that sits on the grid does not add an extra zero-length tween).
     let start = ((from * fps + 1e-9).floor() as usize + 1).min(last + 1);
     if start > last {
         return Ok(MotionOp::Set {
@@ -696,8 +696,8 @@ mod tests {
 
     #[test]
     fn the_spec_example_parses_and_compiles() {
-        // 规范 §7.5 的例子（去掉阶段 3 未实现的 targets 那一段），
-        // `at` / `until` 已由调用方求值成绝对秒。
+        // Example from spec §7.5 (without the `targets` part, which stage 3 does not implement).
+        // `at` / `until` have already been evaluated to absolute seconds by the caller.
         let flow = json!({
             "op": "sequence", "at": 1.2,
             "items": [
@@ -716,14 +716,14 @@ mod tests {
         let graph = parse_flow(&flow, &ctx()).unwrap();
         let compiled = compile_flow(&graph, &CompileCtx::default()).unwrap();
         assert!(!compiled.tracks.is_empty());
-        // 第一帧落在 at = 1.2
+        // First frame lands at at = 1.2
         let opacity = compiled
             .tracks
             .iter()
             .find(|t| t.prop == "opacity")
             .unwrap();
         assert_eq!(opacity.frames[0].t, 1.2);
-        // 相对长度原文保留（布局之后才求值）
+        // Relative lengths are kept as written (evaluated after layout)
         let y_add = compiled
             .tracks
             .iter()
@@ -831,7 +831,7 @@ mod tests {
         let parts = json!({"op": "stagger", "gap": 0.05, "parts": true, "at": 2.0,
                            "item": {"op": "preset", "preset": "motion.fadeIn"}});
         let graph = parse_parts(&parts, &ctx).unwrap();
-        // 外层不得再包一层 stagger（那会让每个 part 再展开一次全体 part）
+        // The outer layer must not wrap another stagger (that would expand all parts once more for each part)
         let MotionOp::At { child, .. } = &graph.root else {
             panic!("expected at wrapper, got {:?}", graph.root);
         };
@@ -858,7 +858,7 @@ mod tests {
     fn stagger_with_parts_needs_the_parts_scope() {
         let flow = json!({"op": "stagger", "gap": 0.05, "parts": true,
                           "item": {"op": "preset", "preset": "motion.fadeIn"}});
-        // animate.flow（part_count = 0）里写 parts: true 是错的
+        // Writing `parts: true` in `animate.flow` (part_count = 0) is wrong
         assert!(matches!(
             parse_flow(&flow, &ctx()),
             Err(MotionError::FlowInvalid(_))
@@ -870,7 +870,7 @@ mod tests {
         assert!(parse_parts(&flow, &ctx).is_ok());
     }
 
-    /// `sampled` 解糖成首尾相接的线性 tween：关键帧 = 采样点，`from` 处插值起步。
+    /// `sampled` desugars into an end-to-end chain of linear tweens: keyframes = sample points, interpolation starts at `from`.
     #[test]
     fn sampled_lowers_to_linear_keyframes_on_the_sample_grid() {
         let flow = json!({"op": "sampled", "prop": "opacity", "at": 2.0,
@@ -902,7 +902,7 @@ mod tests {
             smooth_samples(&[0.0, 3.0, 0.0, 3.0], 10.0, 0.3),
             vec![1.5, 1.0, 2.0, 1.5]
         );
-        // 窗口不到 2 个采样：原样
+        // Window under 2 samples: returned as-is
         assert_eq!(smooth_samples(&[1.0, 2.0], 10.0, 0.1), vec![1.0, 2.0]);
     }
 
@@ -920,7 +920,7 @@ mod tests {
                 "{flow}"
             );
         }
-        // 只剩一个点：退成 set
+        // Only one point left: degrade to `set`
         let single = json!({"op": "sampled", "prop": "opacity", "values": [0.4], "fps": 30});
         assert!(matches!(
             parse_flow(&single, &ctx()).unwrap().root,

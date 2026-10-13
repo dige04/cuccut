@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chunkLimitSec, parseSilences, planChunks, type PlannedChunk } from './chunk-plan.ts';
 
-/** 每块都不超过上限、首尾相接、覆盖整段。 */
+/** Every chunk is no larger than the cap, the chunks are contiguous end to end, and they cover the whole span. */
 function expectValid(chunks: PlannedChunk[], duration: number, max: number) {
   expect(chunks[0]!.start).toBe(0);
   expect(chunks.at(-1)!.end).toBe(duration);
@@ -33,7 +33,7 @@ describe('planChunks', () => {
       durationSec: 180,
       maxChunkSec: 100,
       silences: [
-        { start: 30, end: 31 }, // 窗口（50–100）之前，不用
+        { start: 30, end: 31 }, // Before the window (50–100); not used
         { start: 60, end: 62 },
         { start: 80, end: 84 },
         { start: 140, end: 141 },
@@ -46,9 +46,9 @@ describe('planChunks', () => {
   });
 
   it('跨在窗口边上的静音取夹进窗口的点', () => {
-    // 静音 95–110 的中点 102.5 在窗口外，夹到窗口末端 100。
+    // The midpoint 102.5 of silence 95–110 is outside the window, so it is clamped to the window end, 100.
     expect(planChunks({ durationSec: 150, maxChunkSec: 100, silences: [{ start: 95, end: 110 }] })[0]).toEqual({ start: 0, end: 100 });
-    // 静音 40–52 的中点 46 在窗口前，夹到窗口起点 50。
+    // The midpoint 46 of silence 40–52 is before the window, so it is clamped to the window start, 50.
     expect(planChunks({ durationSec: 150, maxChunkSec: 100, silences: [{ start: 40, end: 52 }] })[0]).toEqual({ start: 0, end: 50 });
   });
 
@@ -79,7 +79,7 @@ describe('planChunks', () => {
     const silences = Array.from({ length: 400 }, (_, i) => ({ start: i * 9.3, end: i * 9.3 + 0.5 }));
     const chunks = planChunks({ durationSec: 3600, maxChunkSec: 540, silences });
     expectValid(chunks, 3600, 540);
-    // 每个切点都落在某段静音里。
+    // Every cut point falls within some silence.
     for (const c of chunks.slice(0, -1)) expect(silences.some((s) => s.start <= c.end && c.end <= s.end)).toBe(true);
   });
 

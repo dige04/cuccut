@@ -3,18 +3,18 @@ import type { EditorThread } from '@cuccut/slides/editor-messages';
 import { targetKey } from './workspace.ts';
 
 /**
- * 会话里的设计系统标注（docs/design/canvas §10.6）：草稿的增删、编辑器里的编号标记与发送时交出去的那一份。
- * 移植自原型 designs/cuccut/app/model-home-design-system-notes.js（`add`、`remove`、`pins`），与设计稿标注（design-annotations.ts）
- * 同一套规则。纯函数，无 React、无 DOM。编号是在这个会话的设计系统标注草稿里的序号；幻灯片、设计稿标注各自编号。
+ * Design-system annotations in a session (docs/design/canvas §10.6): adding and removing drafts, the numbered markers in the editor, and the set handed over when sending.
+ * Ported from the prototype designs/cuccut/app/model-home-design-system-notes.js (`add`, `remove`, `pins`), with the same rules as the design annotations (design-annotations.ts).
+ * Pure functions, no React, no DOM. A number is the position in this session's design-system annotation draft. Slides and design annotations are numbered separately.
  */
 
-/** 草稿里的一条：协议的 `DesignSystemAnnotation` 加一个只在界面里用的 id（删除、编辑器的编号标记、跳转用）。 */
+/** One item in the draft: the protocol's `DesignSystemAnnotation` plus an id that only the UI uses (for delete, the editor's number markers, and jumping). */
 export type DraftDesignSystemAnnotation = DesignSystemAnnotation & { id: string };
 
-/** 加不进去的原因：空的、超长的、超过条数的。 */
+/** Reasons it cannot be added: empty, too long, or over the item limit. */
 export type DesignSystemAnnotationError = 'empty' | 'too-long' | 'too-many';
 
-/** 新加一条：批注去掉首尾空白；空的、超长的、超过条数的都不收。 */
+/** Add one: trim the note's leading and trailing whitespace. Empty, too long, or over the item limit are not accepted. */
 export function addDesignSystemAnnotation(
   list: readonly DraftDesignSystemAnnotation[],
   note: DraftDesignSystemAnnotation,
@@ -30,7 +30,7 @@ export function removeDesignSystemAnnotation(list: readonly DraftDesignSystemAnn
   return list.some((n) => n.id === id) ? list.filter((n) => n.id !== id) : list;
 }
 
-/** 编辑器里这套设计系统的编号标记：编号是在整份草稿里的序号，与 composer 列表一致；带上章节，跳回去时先到那一章。 */
+/** The number marker for this design system in the editor: the number is the position in the whole draft, matching the composer list. It includes the section, so jumping back goes to that section first. */
 export function systemThreads(list: readonly DraftDesignSystemAnnotation[], system: FileTarget): EditorThread[] {
   const key = targetKey(system);
   return list.flatMap((n, i) =>
@@ -38,7 +38,7 @@ export function systemThreads(list: readonly DraftDesignSystemAnnotation[], syst
   );
 }
 
-/** 随消息交出去的那一份：去掉界面里的 id，字段按协议排。 */
+/** The set handed over with the message: UI ids removed, fields in protocol order. */
 export function sentDesignSystemAnnotations(list: readonly DraftDesignSystemAnnotation[]): DesignSystemAnnotation[] {
   return list.map(({ system, anchor, section, label, detail, text }) => ({
     system,

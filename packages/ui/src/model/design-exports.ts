@@ -1,19 +1,16 @@
 /**
- * 设计稿整份导出（docs/design/canvas §8.3）：设计稿运行时自己的 frame 协议（packages/design-runtime/src/platform/frame-host-bridge.tsx）。
+ * Full export of a design draft (docs/design/canvas §8.3): the design runtime's own frame protocol (packages/design-runtime/src/platform/frame-host-bridge.tsx).
  *
- * 运行时启动后向父窗口发 `__frame_chrome_hello`；父窗口回 `__frame_chrome_poke`（`rows: false`：保存状态仍由编辑器自己画），
- * 运行时记下父窗口，之后每次能导出的格式变了都发 `__frame_chrome_report`。父窗口在菜单里选一种，发 `__frame_chrome_cmd`
- * 的 `export`，运行时做出文件后经 `downloads` 交回父窗口保存（`editor:save-file`）。导出失败、取消时运行时自己提示，
- * 父窗口不另外提示，所以不读 `__frame_chrome_decline`。
+ * After it starts, the runtime posts `__frame_chrome_hello` to the parent window. The parent replies `__frame_chrome_poke` (`rows: false`: saving state is still drawn by the editor itself). The runtime records the parent window and posts `__frame_chrome_report` every time the set of exportable formats changes. The parent picks one format in its menu and posts `export` in `__frame_chrome_cmd`. After making the file, the runtime hands it back to the parent through `downloads` for saving (`editor:save-file`). On failure or cancel, the runtime shows its own notice, and the parent shows nothing extra, so it does not read `__frame_chrome_decline`.
  *
- * 这里只认 CucCut 菜单里有的格式；字段类型都核对，不信任 iframe。
+ * This only accepts the formats in the CucCut menu. All field types are checked; the iframe is not trusted.
  */
 
-/** 菜单里的格式，按这个顺序列。 */
+/** The formats in the menu, listed in this order. */
 export const DESIGN_EXPORT_FORMATS = ['html', 'pdf', 'png'] as const;
 export type DesignExportFormat = (typeof DESIGN_EXPORT_FORMATS)[number];
 
-/** 运行时报的一种可导出格式。`interactive`：画板不止一个时，运行时先在编辑器里让用户挑画板；`bundle`：可以一次导出多个画板（压缩包）。 */
+/** One exportable format reported by the runtime. `interactive`: when there is more than one artboard, the runtime first lets the user pick an artboard in the editor. `bundle`: several artboards can be exported at once (archive). */
 export interface DesignExportOption {
   format: DesignExportFormat;
   disabled: boolean;
@@ -21,16 +18,16 @@ export interface DesignExportOption {
   bundle: boolean;
 }
 
-/** 编辑器 iframe 发来的 frame 协议消息里，父窗口要的那两种。 */
+/** Of the messages in the frame protocol sent by the editor iframe, the two kinds the parent wants. */
 export type FrameChromeMessage = { kind: 'hello' } | { kind: 'report'; exports: DesignExportOption[] };
 
-/** 回 hello、编辑器载入后发的那一条。 */
+/** The message sent after replying to hello, once the editor has loaded. */
 export const FRAME_CHROME_POKE = { __frame_chrome_poke: true, rows: false } as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const FORMATS = new Set<string>(DESIGN_EXPORT_FORMATS);
 
-/** 父窗口收到的数据是不是运行时 frame 协议里的 hello 或 report；别的（含编辑器消息）返回 null。 */
+/** Whether the data the parent receives is a hello or report in the runtime frame protocol. Anything else (including editor messages) returns null. */
 export function readFrameChromeMessage(data: unknown): FrameChromeMessage | null {
   if (!isRecord(data)) return null;
   if (data.__frame_chrome_hello === true) return { kind: 'hello' };
@@ -55,8 +52,8 @@ export function readFrameChromeMessage(data: unknown): FrameChromeMessage | null
 }
 
 /**
- * 要运行时导出一种格式。`request` 是这一次的编号（运行时只认 16–64 个字母、数字、`_`、`-`）；
- * `interactive` 与 `bundle` 照运行时报的给，多画板时它会在编辑器里让用户挑。
+ * Ask the runtime to export one format. `request` is the number of this call (the runtime only accepts 16–64 letters, digits, `_`, `-`).
+ * `interactive` and `bundle` are passed as the runtime reported them. With several artboards, it lets the user pick one in the editor.
  */
 export function exportCommand(option: DesignExportOption, request: string) {
   return {

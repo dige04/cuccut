@@ -11,8 +11,8 @@ import { PipelineRunner } from './pipeline-runner.ts';
 import { extractAudioDecision, mergeDecision, outputName, parseTranscodeParams, transcodePipeline } from './transcode.ts';
 
 /**
- * 文件转码（架构设计 §7.9）：真实的 ffmpeg 处理测试里现做的短片。压缩的编码与分辨率、一致的片段流复制、
- * 不一致的片段重新编码并说明原因、不覆盖已有的文件、取消不留下半成品；没有 ffmpeg 时跳过。
+ * File transcoding (architecture design §7.9): short clips made on the spot in the real ffmpeg processing tests. Checks compressed codec and resolution, stream copy for consistent segments,
+ * re-encoding of inconsistent segments with the reason stated, no overwriting of existing files, and that cancellation leaves no half-finished output; skipped when ffmpeg is not available.
  */
 
 const hasFfmpeg = (() => {
@@ -50,7 +50,7 @@ describe('转码参数', () => {
       { inputs: ['/a.mp4'], action: 'compress', outDir: 'rel' },
       { inputs: ['/a.mp4'], action: 'compress', extra: 1 },
       { inputs: ['/a.mp4'], action: 'extract' },
-      // Space 条目由 Runtime 在 pipelines.start 换成路径；没换掉的到流程这里拒绝。
+      // The Runtime replaces Space entries with paths in pipelines.start; any that were not replaced are rejected here in the flow.
       { inputs: [{ entryId: 'ent_1' }], action: 'compress' },
     ]) {
       expect(() => parseTranscodeParams(bad)).toThrow(expect.objectContaining({ code: 'invalid-request' }));
@@ -67,7 +67,7 @@ describe('转码参数', () => {
     const pcm = extractAudioDecision(audio('pcm_s16le'));
     expect(pcm).toMatchObject({ copy: false, ext: '.m4a', mediaType: 'audio/mp4' });
     expect(pcm.reason).toContain('pcm_s16le');
-    // 名字：提取音频不加后缀，扩展名随容器；压缩、合并照旧。
+    // Names: audio extraction adds no suffix, and the extension follows the container; compression and merging are unchanged.
     expect(outputName('extract-audio', '访谈', extractAudioDecision(audio('opus')))).toEqual({ name: '访谈', ext: '.ogg', mediaType: 'audio/ogg' });
     expect(outputName('compress', 'a', undefined)).toEqual({ name: 'a-compressed', ext: '.mp4', mediaType: 'video/mp4' });
     expect(outputName('merge', 'a', undefined)).toEqual({ name: 'a-merged', ext: '.mp4', mediaType: 'video/mp4' });
@@ -190,7 +190,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(command).toContain('a.mp4');
     expect(command).toContain('libx264');
     expect(command.join(' ')).not.toContain(clips);
-    // 输出是最终的文件名，不是 staging 里的临时名字。
+    // The output is the final file name, not the temporary name in staging.
     expect(command.at(-1)).toBe('a-compressed.mp4');
     expect(command.join(' ')).not.toMatch(/compressed-1\.mp4|staging/);
     const probed = await probeMedia(ffprobe, out);
@@ -204,7 +204,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
       }),
     ]);
     expect(record.result!.outputs![0]!.byteLength).toBe((await fs.stat(out)).size);
-    // 编码的子任务按秒报告进度。
+    // The encoding subtask reports progress in seconds.
     const encode = jobs.inspect(record.pipeline!.steps[1]!.jobId!);
     expect(encode.progress).toMatchObject({ unit: 'seconds', total: expect.closeTo(2, 1) });
   }, 60_000);
@@ -276,7 +276,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
       { pipeline: 'transcode', params: { inputs: [long], action: 'compress', codec: 'hevc', outDir: path.join(dir, 'out') } },
       { kind: 'connection', id: 'c' },
     );
-    // 等编码开始并写出一点进度。
+    // Wait until encoding starts and has written some progress.
     await new Promise<void>((resolve) => {
       const off = jobs.onChange((job) => {
         if (job.parentJobId === jobId && job.step?.name === 'encode' && (job.progress?.done ?? 0) > 0) {
@@ -307,7 +307,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(record.result!.outputs).toEqual([
       expect.objectContaining({ path: out, mediaType: 'audio/mp4', media: expect.objectContaining({ kind: 'audio', channels: 2 }) }),
     ]);
-    // 同名的已有文件不覆盖：再提取一次加序号。
+    // An existing file with the same name is not overwritten: extracting again adds a number.
     const again = await transcode({ inputs: [clipA], action: 'extract-audio' });
     expect(summaryOf(again).files).toEqual([path.join(dir, 'out', 'a-2.m4a')]);
   }, 60_000);

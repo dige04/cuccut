@@ -1,33 +1,32 @@
-//! wgpu 后端的 `ShaderQuad` 执行器（元素方案 ADR-E06 / §10 P5）。
+//! `ShaderQuad` executor for the wgpu backend (element plan ADR-E06 / §10 P5).
 //!
-//! **CPU tiny-skia 是 strict reference，本执行器只是加速器**（ADR-M05）：起不来、
-//! 编不过、过不了 conformance，一律记进 [`GpuBackendReport`] 并回退 CPU，画面
-//! 不受影响。整个模块挂在 `gpu` feature 上，默认关闭。
+//! **The CPU tiny-skia path is the strict reference; this executor is only an accelerator** (ADR-M05). If it fails to start,
+//! fails to compile, or fails conformance, the failure is recorded in [`GpuBackendReport`] and the CPU path is used, so the picture
+//! is unaffected. The whole module is gated behind the `gpu` feature, which is off by default.
 //!
-//! ## 与 `PassExecutor` 的关系
+//! ## Relationship to `PassExecutor`
 //!
-//! motion 阶段 4 的 [`super::PassExecutor`]（`draw` / `filter` / `transition` /
-//! `composite`）**已经落地**。`ShaderQuad` 不是那四条里的任何一条，而 §10 P5
-//! 明写"P5 不得单方面改 BCOP / DrawOp v3 是阶段 4 的决定"——给 `RenderPass`
-//! 加第五个变体会连带动 `FRAME_PLAN_VERSION` 与计划编码。因此 P5a 的做法是：
-//! [`GpuExecutor`] 是一个**独立的 quad 执行器**，与 `PassExecutor` 并存不冲突；
-//! 两条线合流时，把 [`GpuExecutor::render_quad`] 挂成第五条 pass 方法即可。
+//! The motion stage 4 [`super::PassExecutor`] (`draw` / `filter` / `transition` / `composite`) has **already landed**. `ShaderQuad` is
+//! none of those four, and §10 P5 states explicitly that “P5 must not unilaterally change BCOP / DrawOp v3; that is a stage 4 decision”.
+//! Adding a fifth variant to `RenderPass` would also affect `FRAME_PLAN_VERSION` and the plan encoding. So P5a takes this approach:
+//! [`GpuExecutor`] is a **separate quad executor** that coexists with `PassExecutor` without conflict; when the two lines merge,
+//! [`GpuExecutor::render_quad`] just needs to be attached as a fifth pass method.
 //!
-//! ## 一次 quad 的执行路径（§8.1 / §8.3 / §8.5）
+//! ## Execution path of one quad (§8.1 / §8.3 / §8.5)
 //!
-//! 1. 单 quad（4 顶点、triangle strip），几何全部在 fragment 里程序化生成；
-//! 2. 顶点着色器做 **y-flip**，纹理坐标原点左上；
-//! 3. 音频数据以 `R8Unorm`、`w × 2`、**row 0 = 时域 / row 1 = 频域、无 flip**
-//!    的纹理上传；采样器 linear + clamp-to-edge；
-//! 4. `@group(1)` 按 §8.2 的冻结顺序逐 binding 发独立 uniform buffer；
-//! 5. 输出 **premultiplied alpha**，渲染目标是 `Rgba8Unorm`（**非 sRGB**：
-//!    §8.5 说 uniform 与输出均为 linear RGBA，而 tiny-skia 的 `Pixmap` 也是
-//!    linear 预乘字节，两边因此是同一个数域，回读不做任何色彩变换）。
+//! 1. A single quad (4 vertices, triangle strip); all geometry is generated procedurally in the fragment shader;
+//! 2. The vertex shader performs a **y-flip**, so texture coordinates have their origin at the top-left;
+//! 3. Audio data is uploaded as a texture of `R8Unorm`, `w × 2`, **row 0 = time domain / row 1 = frequency domain, no flip**;
+//!    sampler is linear + clamp-to-edge;
+//! 4. `@group(1)` sends a separate uniform buffer per binding, in the frozen order of §8.2;
+//! 5. Output is **premultiplied alpha**, render target is `Rgba8Unorm` (**not sRGB**: §8.5 says uniforms and output are both linear RGBA,
+//!    and tiny-skia's `Pixmap` is also linear premultiplied bytes, so both sides share the same number domain and readback applies no
+//!    colour transform).
 
 use std::collections::HashMap;
 
 use anyhow::{Result, bail};
-// 只有 naga 校验（与带它的 native `gpu`）用得到。
+// Only needed for naga validation (and for the native `gpu` build that uses it).
 #[cfg(feature = "wgsl-validate")]
 use anyhow::{Context, anyhow};
 #[cfg(feature = "gpu")]
@@ -41,24 +40,24 @@ use super::shader_quad::QuadUniforms;
 use super::shader_quad::{AudioTexture, ShaderQuad, UniformBinding};
 use super::shader_source::{FRAGMENT_ENTRY, ShaderDomain, ShaderSource, VERTEX_ENTRY};
 
-/// 回读缓冲的行对齐（wgpu 的硬要求）。
+/// Row alignment of the readback buffer (a hard wgpu requirement).
 #[cfg(feature = "gpu")]
 const COPY_ALIGN: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
-/// 单 quad 的顶点：`(pos.xy, uv.xy)`。
+/// Vertices of a single quad: `(pos.xy, uv.xy)`.
 ///
-/// `pos` 已经在 NDC 里（`u_transform` 是单位阵），**并且预先按顶点着色器那句
-/// `-pos.y` 反了一次**——于是 `uv.y == 0` 落在画面顶边，纹理坐标原点左上
-/// （§8.1）。§8.1 冻结的是那句 y-flip，配它的顶点数据就是这四个。
+/// `pos` is already in NDC (`u_transform` is the identity matrix), **and it has been pre-negated in y to cancel the vertex shader's
+/// `-pos.y`** — so `uv.y == 0` lands on the top edge of the frame, with the texture origin at the top-left (§8.1). §8.1 freezes that
+/// y-flip, and these four vertices are the data that goes with it.
 #[rustfmt::skip]
 const QUAD_VERTICES: [f32; 16] = [
-    -1.0, -1.0, 0.0, 0.0, // 左上
-     1.0, -1.0, 1.0, 0.0, // 右上
-    -1.0,  1.0, 0.0, 1.0, // 左下
-     1.0,  1.0, 1.0, 1.0, // 右下
+    -1.0, -1.0, 0.0, 0.0, // Top-left
+     1.0, -1.0, 1.0, 0.0, // Top-right
+    -1.0,  1.0, 0.0, 1.0, // Bottom-left
+     1.0,  1.0, 1.0, 1.0, // Bottom-right
 ];
 
-/// wgpu 设备 + 管线缓存。
+/// wgpu device + pipeline cache.
 pub struct GpuExecutor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -123,26 +122,23 @@ struct LiveBindingPayload<'a> {
 }
 
 impl GpuExecutor {
-    /// 初始化设备。**每个平台先探它自己的原生后端**，拿不到再退别的；
-    /// 一个都没有就是 `Err`，调用方回退 CPU。
+    /// Initializes the device. **Each platform first probes its own native backend**, and falls back to others only if that fails;
+    /// if none is available, it returns `Err` and the caller falls back to CPU.
     ///
-    /// 顺序不只是「哪个快一点」——它决定了平台直达编码路径能不能用：
+    /// The order is about more than "which is slightly faster": it decides whether the platform's direct encoding path can be used:
     ///
-    /// - **Windows**：Media Foundation 的直达编码（`ccut-kernel` 的
-    ///   `studio_export/video_windows.rs`：D3D11On12 ＋ `IMFDXGIDeviceManager`）
-    ///   只能从 **DX12** 的 wgpu device 借出 `ID3D12Device` / `ID3D12CommandQueue`。
-    ///   挑中 Vulkan 时那边的 `raw_dx12()` 当场失败、整条直达路径静默作废，导出
-    ///   于是退回「每帧 GPU 合成 → 回读 8 MB 到 CPU → CPU 转 NV12 → 内存样本」。
-    ///   代价没有单独拆出来过（`CCUT_EXPORT_PROFILE` 把回读算在「GPU 合成+回读」
-    ///   里），能确定的是它每帧多一次全画面回读加一次 CPU NV12 转换——后者在
-    ///   720p / 1799 帧 / RTX 3060 上实测 1.1 ms/帧。
-    ///   而 Windows 上 Vulkan **总是**先于 DX12 命中（NVIDIA/AMD 驱动都带
-    ///   Vulkan），所以原来的固定顺序等于让那条路永远走不到。
-    /// - **macOS**：先只开 Metal 探一次。`Backends::all()` 在 macOS 上也可能挑到
-    ///   别的后端（例如经 MoltenVK 的 Vulkan），而我们要的是原生那条。
+    /// - **Windows**: Media Foundation direct encoding (`ccut-kernel`'s `studio_export/video_windows.rs`: D3D11On12 + `IMFDXGIDeviceManager`)
+    ///   can only borrow `ID3D12Device` / `ID3D12CommandQueue` from a **DX12** wgpu device. When Vulkan was picked, `raw_dx12()` on that
+    ///   side failed on the spot, the whole direct path was silently disabled, and export fell back to "per-frame GPU composite → read
+    ///   back 8 MB to CPU → convert to NV12 on CPU → memory samples". The cost was never measured on its own (`CCUT_EXPORT_PROFILE` counts
+    ///   the readback in "GPU composite + readback"), but what is certain is that it adds one full-frame readback and one CPU NV12
+    ///   conversion per frame — the latter measured at 1.1 ms/frame at 720p / 1799 frames on an RTX 3060. On Windows, Vulkan **always**
+    ///   matched before DX12 (NVIDIA and AMD drivers both ship Vulkan), so the original fixed order meant that path could never be reached.
+    /// - **macOS**: probe Metal only, once. `Backends::all()` may also pick another backend on macOS (for example Vulkan via MoltenVK),
+    ///   but we want the native one.
     ///
-    /// 探不到的档会立刻失败并落到下一个，所以每个平台把不存在的后端留在列表里
-    /// 是无害的；这样三条分支形状一致，也不会漏掉「新机器上只有某一个」的情况。
+    /// A tier that cannot be probed fails immediately and moves on to the next, so leaving nonexistent backends in the list on each
+    /// platform is harmless; this keeps the three branches the same shape and does not miss the case of "only one is present on a new machine".
     #[cfg(feature = "gpu")]
     pub fn new() -> Result<GpuExecutor> {
         let order = if cfg!(target_os = "macos") {
@@ -192,22 +188,21 @@ impl GpuExecutor {
         if info.device_type == wgpu::DeviceType::Cpu {
             bail!("gpu-backend-unavailable: software adapter {}", info.name);
         }
-        // **取 adapter 的实际限值**而不是 `downlevel_defaults()`：后者的
-        // `max_texture_dimension_2d` 只有 2048，连 1080p 的横条元素（1920 宽）
-        // 都刚好卡在门槛上，超采样更是直接越界。本执行器的资源就是"一张
-        // 目标纹理 + 一张 w×2 的音频纹理 + 十来个小 uniform buffer"，用不着
-        // 靠限值来约束自己；真正要挡住的是"目标比设备能画的还大"，那一条在
-        // [`Self::render_quad_at`] 里显式检查并回退，见那里的注释。
+        // **Take the adapter's actual limits** rather than `downlevel_defaults()`: the latter's `max_texture_dimension_2d` is only 2048,
+        // so even a 1080p horizontal bar element (1920 wide) barely hits the cap, and supersampling would go out of bounds outright.
+        // This executor's resources are just "one target texture + one w×2 audio texture + a dozen small uniform buffers", so it does not
+        // need limits to constrain itself; what really has to be blocked is "the target is larger than the device can draw", and that is
+        // checked explicitly and falls back in [`Self::render_quad_at`]; see the comment there.
         //
-        // P6 的 WebGL2 路径限值更严（那条线上要重新评估这里的取值），不在 P5a。
+        // The WebGL2 path in P6 has stricter limits (these values must be re-evaluated on that line), and it is not part of P5a.
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("ccut-render.gpu"),
             required_limits: adapter.limits(),
             ..Default::default()
         }))
         .map_err(|error| anyhow!("request_device 失败：{error}"))?;
-        // 自建 device 的校验失败不该 panic 掉整个进程——回退 CPU 是既定策略。
-        // 注入的宿主 device 则保留宿主自己的 uncaptured-error handler。
+        // A validation failure on a self-created device should not panic the whole process; falling back to CPU is the established policy.
+        // An injected host device keeps the host's own uncaptured-error handler.
         device.on_uncaptured_error(std::sync::Arc::new(|error| {
             eprintln!("ccut-render gpu: 未捕获的 wgpu 错误：{error}");
         }));
@@ -220,9 +215,9 @@ impl GpuExecutor {
         ))
     }
 
-    /// 复用宿主已经创建的 wgpu device/queue。实时合成器必须与目标纹理属于
-    /// 同一设备；另起一个 adapter/device 会让 IOSurface/共享纹理无法直接作为
-    /// render attachment。headless conformance 仍走 [`Self::new`]。
+    /// Reuses the wgpu device/queue already created by the host. The real-time compositor must be on the same device as the target
+    /// texture; creating a separate adapter/device would prevent IOSurface/shared textures from being used directly as render attachments.
+    /// Headless conformance still goes through [`Self::new`].
     pub fn from_device(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -231,8 +226,7 @@ impl GpuExecutor {
     ) -> GpuExecutor {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("ccut.audio.sampler"),
-            // §8.1：linear 采样 + clamp-to-edge。CPU 参照的
-            // `kernel::sample_row_linear` 就是这一对的等价实现。
+            // §8.1: linear sampling + clamp-to-edge. The CPU reference `kernel::sample_row_linear` is the equivalent implementation of this pair.
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -282,8 +276,8 @@ impl GpuExecutor {
                 },
             ],
         });
-        // progress 没有 `@group(2)`，但 `@group(3)` 要求布局数组是连续的：
-        // 中间补一个空布局（对应一个空 bind group）。
+        // progress has no `@group(2)`, but `@group(3)` requires the layout array to be contiguous: insert an empty layout in between
+        // (corresponding to an empty bind group).
         let group2_empty = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ccut.group2.empty"),
             entries: &[],
@@ -309,47 +303,46 @@ impl GpuExecutor {
         }
     }
 
-    /// 合成器的目标纹理与 executor 必须来自这只 device。
+    /// The compositor's target texture and the executor must come from this device.
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 
-    /// 提交实时合成命令的队列。
+    /// The queue that submits real-time composite commands.
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }
 
-    /// 实际拿到的后端标识（`"metal"` / `"vulkan"` / `"dx12"`）。
+    /// Identifier of the backend actually obtained (`"metal"` / `"vulkan"` / `"dx12"`).
     pub fn backend(&self) -> &str {
         &self.backend
     }
 
-    /// adapter 名字。**不承诺跨设备逐位一致**（ADR-E06），报告里带上它是为了
-    /// 让 conformance 的实测数字有归属。
+    /// Adapter name. **Bit-for-bit consistency across devices is not promised** (ADR-E06); it is included in the report so that
+    /// conformance measurements can be attributed to a device.
     pub fn adapter_name(&self) -> &str {
         &self.adapter_name
     }
 
-    /// 本次会话的回退报告。
+    /// Fallback report for this session.
     pub fn report(&self) -> GpuBackendReport {
         let mut report = self.report.clone();
         report.backend = Some(self.backend.clone());
         report
     }
 
-    /// 执行一个 `ShaderQuad`，返回该 quad 自己那块画面（premultiplied RGBA8）。
+    /// Executes one `ShaderQuad` and returns that quad's own region of the frame (premultiplied RGBA8).
     #[cfg(feature = "gpu")]
     pub fn render_quad(&mut self, quad: &ShaderQuad) -> Result<Pixmap> {
         self.render_quad_at(quad, 1)
     }
 
-    /// 超采样版：渲染目标放大 `factor` 倍，再做**盒式**降采样。
+    /// Supersampled version: the render target is enlarged by `factor`, then **box**-downsampled.
     ///
-    /// 为什么需要它：CPU 参照是矢量路径 + 光栅器解析抗锯齿，而参考 shader 在
-    /// 若干处是**硬阶跃**（`bars-v1` 的 `yFactor` 就是 `select(0,1,·)`），1× 渲染
-    /// 出来的柱顶是锯齿边。要拿两边的边缘做逐通道比较，就得先让 GPU 侧也有
-    /// 一条可比的抗锯齿。`factor == 1` 时这条路径与 [`Self::render_quad`] 逐字
-    /// 相同（不多一次分配）。
+    /// Why it is needed: the CPU reference is a vector path with the rasterizer's analytic anti-aliasing, while the reference shader has
+    /// **hard steps** in several places (`bars-v1`'s `yFactor` is `select(0,1,·)`), so at 1x the bar tops render with jagged edges. To
+    /// compare edges channel by channel, the GPU side also needs comparable anti-aliasing first. When `factor == 1`, this path is
+    /// identical to [`Self::render_quad`] (with no extra allocation).
     #[cfg(feature = "gpu")]
     pub fn render_quad_at(&mut self, quad: &ShaderQuad, factor: u32) -> Result<Pixmap> {
         let factor = factor.max(1);
@@ -357,10 +350,10 @@ impl GpuExecutor {
         let height = quad.target.height.max(1);
         let (rw, rh) = (width * factor, height * factor);
 
-        // 越界要变成一条**可读的 `Err`**（调用方据此回退 CPU），而不是一条
-        // "TextureView is invalid" 的未捕获校验错误——后者会让整帧静默变黑，
-        // 是本阶段实测踩到过的坑：超采样把 1920 宽的横条元素放大到 7680，
-        // 一举越过了当时用的 `downlevel_defaults()` 那 2048 的上限。
+        // An out-of-bounds size must become a **readable `Err`** (the caller falls back to CPU on it), not an uncaptured validation error
+        // like "TextureView is invalid" — the latter silently blacks out the whole frame. This was a pitfall hit during testing at this
+        // stage: supersampling enlarged a 1920-wide horizontal bar element to 7680, which at once exceeded the 2048 limit of the
+        // `downlevel_defaults()` then in use.
         let max = self.device.limits().max_texture_dimension_2d;
         if rw > max || rh > max {
             bail!("gpu-execution-failed: 渲染目标 {rw}x{rh}（{factor}× 超采样）超出设备上限 {max}");
@@ -401,7 +394,7 @@ impl GpuExecutor {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            // 非 sRGB：§8.5 的 linear RGBA，与 tiny-skia 的字节同一个数域。
+            // Not sRGB: §8.5's linear RGBA, in the same number domain as tiny-skia's bytes.
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
@@ -429,7 +422,7 @@ impl GpuExecutor {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        // 透明底：quad 只画自己，合成交给调用方。
+                        // Transparent background: the quad draws only itself; compositing is left to the caller.
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         store: wgpu::StoreOp::Store,
                     },
@@ -501,10 +494,10 @@ impl GpuExecutor {
         into_pixmap(rgba, width, height)
     }
 
-    /// 把一个 quad 直接画进调用方的 render target。实时路径只走这条：不创建
-    /// readback buffer、不调用 `map_async`，输出始终留在 GPU。
+    /// Draws one quad directly into the caller's render target. The real-time path goes only through this: it does not create a
+    /// readback buffer or call `map_async`, so output stays on the GPU.
     ///
-    /// `clear = true` 清透明底；否则保留目标并以 premultiplied source-over 合成。
+    /// `clear = true` clears to a transparent background; otherwise the target is kept and composited with premultiplied source-over.
     pub fn render_quad_to_view(
         &mut self,
         quad: &ShaderQuad,
@@ -523,9 +516,8 @@ impl GpuExecutor {
         Ok(())
     }
 
-    /// 把 quad pass 追加到调用方的 command encoder。共享合成器用这条把整帧
-    /// 的矢量与 shader node 合进一次 queue submit；目标与 encoder 必须来自
-    /// 创建本 executor 的同一只 device。
+    /// Appends the quad pass to the caller's command encoder. The shared compositor uses this to combine the vector and shader nodes of
+    /// a whole frame into a single queue submit; the target and encoder must come from the same device that created this executor.
     pub fn encode_quad_to_view(
         &mut self,
         slot: usize,
@@ -571,13 +563,13 @@ impl GpuExecutor {
         Ok(())
     }
 
-    /// 丢弃这一帧没再用到的尾部槽位。稳定场景的 Vec 与每个槽位内的
-    /// buffer/bind group 跨帧保留；节点数缩小时资源会随尾部截断释放。
+    /// Discards the trailing slots not used in this frame. For stable scenes, the Vec and each slot's buffer/bind group are kept across
+    /// frames; when the node count shrinks, resources are released as the tail is truncated.
     pub fn finish_live_frame(&mut self, used_quad_slots: usize) {
         self.live_bindings.truncate(used_quad_slots);
     }
 
-    /// 从 executor 创建以来累计重建了多少个实时绑定槽位，供合成器性能门禁使用。
+    /// The cumulative number of real-time binding slots rebuilt since the executor was created, used by the compositor's performance gate.
     pub fn live_binding_rebuilds(&self) -> u64 {
         self.live_binding_rebuilds
     }
@@ -675,10 +667,10 @@ impl GpuExecutor {
             return Ok(pipeline.clone());
         }
         let wgsl = source.assemble();
-        // 先过 naga：源码错误在这里变成一条可读的 `Err`，而不是 wgpu 内部的
-        // 未捕获校验错误（那条路会打日志然后给出一个不可用的管线）。Web 的
-        // WebGPU 产物不开 `wgsl-validate`：shader 都是内置源码、native 测试逐个
-        // 校验过，浏览器自己的校验错误经 uncaptured error 让宿主回落 CPU。
+        // Run naga first: a source error becomes a readable `Err` here, rather than wgpu's internal uncaptured validation error (that path
+        // logs and then yields an unusable pipeline). The Web WebGPU build does not enable `wgsl-validate`: the shaders are built-in source
+        // and each one is validated by native tests; the browser's own validation errors reach the host via the uncaptured error and make
+        // it fall back to CPU.
         #[cfg(feature = "wgsl-validate")]
         validate_wgsl(&wgsl).with_context(|| format!("{key} 的 WGSL 校验失败"))?;
         let module = self
@@ -707,9 +699,8 @@ impl GpuExecutor {
                 ],
                 immediate_size: 0,
             });
-        // native conformance 需要同步收集 pipeline 校验错误；浏览器实时
-        // 路径不能用 pollster 阻塞 JS event loop，由 device 的 uncaptured
-        // error handler 记录并让 host 回退 CPU。
+        // Native conformance needs to collect pipeline validation errors synchronously; the browser real-time path cannot block the JS
+        // event loop with pollster, so the device's uncaptured error handler records them and the host falls back to CPU.
         #[cfg(feature = "gpu")]
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let pipeline = self
@@ -751,8 +742,8 @@ impl GpuExecutor {
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
-                        // 输出已经是 premultiplied；离线对拍覆写透明 target，
-                        // 实时合成路径则在既有 target 上做 source-over。
+                        // The output is already premultiplied; offline comparison overwrites a transparent target, while the real-time compositing path
+                        // does source-over onto the existing target.
                         blend: alpha_over.then_some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -808,7 +799,7 @@ impl GpuExecutor {
         })
     }
 
-    /// §8.3：`R8Unorm`、`w × 2`、row 0 = 时域 / row 1 = 频域、**无 flip**。
+    /// §8.3: `R8Unorm`, `w × 2`, row 0 = time domain / row 1 = frequency domain, **no flip**.
     #[cfg(feature = "gpu")]
     fn bind_audio(&self, audio: &super::shader_quad::AudioTexture) -> wgpu::BindGroup {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -1030,8 +1021,8 @@ impl LiveBindings {
     }
 }
 
-/// `write_texture` 的 `bytes_per_row` 就是 `width`：数据是行主序、逐行紧排，
-/// **上传顺序即行号**，没有任何翻转。
+/// The `bytes_per_row` for `write_texture` is just `width`: the data is row-major and tightly packed row by row, **upload order is
+/// the row number**, with no flipping at all.
 fn write_audio_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, audio: &AudioTexture) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -1078,9 +1069,9 @@ fn uniform_layout(
     })
 }
 
-/// naga 静态校验：`wgsl-in` 解析 + `Validator` 全量能力。
+/// naga static validation: `wgsl-in` parsing + the full capabilities of `Validator`.
 ///
-/// 与 `tests/shader_wgsl.rs` 是同一条路径——测试里多跑一遍 GLSL ES 300 转译。
+/// This is the same path as `tests/shader_wgsl.rs`; the test additionally runs a GLSL ES 300 translation pass.
 #[cfg(feature = "wgsl-validate")]
 pub fn validate_wgsl(source: &str) -> Result<naga::Module> {
     let module = naga::front::wgsl::parse_str(source)
@@ -1101,8 +1092,8 @@ fn padded_bytes_per_row(width: u32) -> u32 {
     unpadded.div_ceil(COPY_ALIGN) * COPY_ALIGN
 }
 
-/// 盒式降采样。**在 premultiplied 数域里做平均**才是对的：非预乘平均会把
-/// 透明像素的颜色算进来。
+/// Box downsampling. Averaging **in the premultiplied number domain** is the correct approach: averaging non-premultiplied values
+/// would bring the colours of transparent pixels into the result.
 #[cfg(feature = "gpu")]
 fn box_downsample(rgba: &[u8], width: u32, height: u32, factor: u32) -> Vec<u8> {
     let (out_w, out_h) = (width / factor, height / factor);
@@ -1131,8 +1122,8 @@ fn box_downsample(rgba: &[u8], width: u32, height: u32, factor: u32) -> Vec<u8> 
 
 #[cfg(feature = "gpu")]
 fn into_pixmap(mut rgba: Vec<u8>, width: u32, height: u32) -> Result<Pixmap> {
-    // 防御：premultiplied 不变式是 `rgb ≤ a`。着色器的输出天然满足它，
-    // 但降采样的舍入可能让某个通道多出 1，`Pixmap::from_vec` 会因此拒收。
+    // Defensive: the premultiplied invariant is `rgb ≤ a`. Shader output satisfies it naturally, but rounding during downsampling may
+    // push a channel up by 1, and `Pixmap::from_vec` would then reject it.
     for pixel in rgba.chunks_exact_mut(4) {
         let alpha = pixel[3];
         for channel in &mut pixel[..3] {
@@ -1144,10 +1135,9 @@ fn into_pixmap(mut rgba: Vec<u8>, width: u32, height: u32) -> Result<Pixmap> {
     Pixmap::from_vec(rgba, size).ok_or_else(|| anyhow!("回读字节无法构成 Pixmap"))
 }
 
-/// `&[f32]` → `&[u8]`（小端）。为了一个四顶点的常量数组拉一条 bytemuck
-/// 依赖不值当。
+/// `&[f32]` → `&[u8]` (little-endian). Pulling in a bytemuck dependency just for a constant array of four vertices is not worth it.
 fn bytemuck_cast(values: &[f32]) -> &[u8] {
-    // SAFETY: `f32` 没有 padding、没有不变式，任意位模式都是合法的 `u8`。
+    // SAFETY: `f32` has no padding and no invariants; any bit pattern is a valid `u8`.
     unsafe {
         std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
     }
@@ -1166,7 +1156,7 @@ mod tests {
 
     #[test]
     fn the_box_downsample_averages_in_the_premultiplied_domain() {
-        // 2×2 → 1×1：三个全透明 + 一个不透明白，平均正好是 1/4 覆盖。
+        // 2×2 → 1×1: three fully transparent pixels plus one opaque white; the average is exactly 1/4 coverage.
         let rgba = vec![
             0, 0, 0, 0, 255, 255, 255, 255, //
             0, 0, 0, 0, 0, 0, 0, 0,

@@ -17,12 +17,9 @@ impl TransitionPose {
     };
 }
 
-/// 字幕入场姿态（`transition.caption.*@1`）。
+/// Caption entry pose (`transition.caption.*@1`).
 ///
-/// 阶段 5 起这里只做**取用**：贝塞尔控制点、求解器、相位量化与派生通道全部
-/// 在 `core/presets/builtin/transition/caption.*.json` 里，由
-/// `motion::preset_registry::caption_transition` 按持久化的历史 id
-/// （`magic-fade` / `magic-pop` / `magic-flip`）查出。配方之外没有第二份数字。
+/// Since stage 5 this file only consumes: the Bézier control points, the solver, phase quantization and the derived channels all live in `core/presets/builtin/transition/caption.*.json`, and `motion::preset_registry::caption_transition` looks them up by the persisted legacy ids (`magic-fade` / `magic-pop` / `magic-flip`). There is no second set of numbers outside the recipe.
 pub fn transition_pose(
     style: &Value,
     display_start: f64,
@@ -64,7 +61,7 @@ pub fn transition_pose(
             "scaleX" => pose.scale_x = value,
             "scaleY" => pose.scale_y = value,
             "blur" => pose.blur = value,
-            // 通道名是配方解析期的封闭集合，走不到这里。
+            // Channel names are a closed set fixed at recipe parse time, so this code is never reached.
             _ => {}
         }
     }
@@ -87,39 +84,31 @@ pub struct CachedFrame {
     pub key: String,
     pub rgba: Arc<Vec<u8>>,
     pub next_change: Option<f64>,
-    /// 渲染时求得的非零 alpha 包围盒；`None` = 整帧透明。缓存它让
-    /// `ensure_composited` 不必对复用的帧再扫描一次整幅缓冲。
+    /// Non-zero alpha bounding box computed at render time; `None` means the whole frame is transparent. Caching it means `ensure_composited` does not have to scan the entire buffer again for reused frames.
     pub bounds: Option<ContentBox>,
     pub composite: CaptionCompositeMode,
 }
 
 pub struct OverlayFrame {
-    /// 本帧**字幕层**的内容键（`RenderedSubtitleFrame::key`）。几何侧车
-    /// [`OverlayRenderPlan::subtitle_layout`] 在同一时刻算出逐字相同的值，
-    /// `X-Ccut-Overlay-Key` 就是它加上计划前缀的哈希——两端同源靠的是这个字段，
-    /// 不是整图指纹（侧车不光栅化，拿不到也不该拿 DrawOp 指纹）。
+    /// Content key of this frame's **subtitle layer** (`RenderedSubtitleFrame::key`). The geometry sidecar [`OverlayRenderPlan::subtitle_layout`] computes an identical value at the same moment, and `X-Ccut-Overlay-Key` is that value hashed with the plan prefix. The two ends share a source through this field, not through a whole-image fingerprint (the sidecar does not rasterize, so it cannot and should not use the DrawOp fingerprint).
     pub subtitle_key: String,
-    /// 整幅 overlay（字幕层 + timeline 元素）的像素身份。「这张图变没变」只能问它。
+    /// Pixel identity of the whole overlay (subtitle layer + timeline elements). "Did this image change?" can only be asked of it.
     pub draw_op_fingerprint: u64,
     pub png: Vec<u8>,
     pub next_change: Option<f64>,
 }
 
-/// 一帧 overlay 的 premultiplied RGBA 与它的两个身份。
+/// Premultiplied RGBA of one overlay frame, and its two identities.
 ///
-/// 与 [`OverlayFrame`] 是同一次渲染的两种交付形态：serve 的 HTTP 端点要 PNG，
-/// App v2 的进程内预览要可直接上传的像素。**两个身份不可互相顶替**——
-/// `subtitle_key` 只认字幕层内容（几何侧车不光栅化也能算出同一个值），
-/// `draw_op_fingerprint` 才是「这张图变没变」；只看前者会让「字幕没变、
-/// 只有 timeline 元素在动」的帧被整段吞掉，画面钉死。
+/// This and [`OverlayFrame`] are two delivery forms of the same render: the serve HTTP endpoint needs PNG, while the in-process preview in App v2 needs pixels it can upload directly. **The two identities cannot stand in for each other**: `subtitle_key` only covers the subtitle layer's content (the geometry sidecar, which does not rasterize, can compute the same value), while `draw_op_fingerprint` is what answers "did this image change?". If only the former were checked, frames where "the subtitles did not change but only timeline elements are moving" would be swallowed whole, and the picture would freeze.
 pub struct OverlayRgbaFrame {
     pub width: u32,
     pub height: u32,
-    /// 本帧字幕层的内容键，与 `X-Ccut-Overlay-Key` 同源。
+    /// Content key of this frame's subtitle layer, from the same source as `X-Ccut-Overlay-Key`.
     pub subtitle_key: String,
-    /// 整幅 overlay（字幕层 + timeline 元素）的像素身份。
+    /// Pixel identity of the whole overlay (subtitle layer + timeline elements).
     pub draw_op_fingerprint: u64,
-    /// premultiplied RGBA，长度 = `width * height * 4`。
+    /// premultiplied RGBA, length = `width * height * 4`.
     pub rgba: Vec<u8>,
     pub next_change: Option<f64>,
 }
@@ -128,45 +117,38 @@ pub struct RenderedSubtitleFrame {
     pub key: String,
     pub rgba: Arc<Vec<u8>>,
     pub next_change: Option<f64>,
-    /// 非零 alpha 包围盒，`None` = 整帧透明。字幕层永远知道自己的包围盒。
+    /// Non-zero alpha bounding box, `None` = whole frame transparent. The subtitle layer always knows its own bounding box.
     pub bounds: Option<ContentBox>,
     pub composite: CaptionCompositeMode,
 }
 
-/// 浏览器字幕层的交付形态：[`RenderedSubtitleFrame`] 的非零 alpha 子矩形，
-/// 且**已解预乘**。
+/// Delivery form of the subtitle layer for the browser: the non-zero-alpha sub-rectangle of [`RenderedSubtitleFrame`], and **already un-premultiplied**.
 ///
-/// 两点都不是优化而是正确性：Canvas2D 的 `putImageData` 只接受 straight
-/// alpha，把预乘字节直接喂进去会给每个抗锯齿字形边缘描一道暗边；整幅画布每帧
-/// 过一次 JS 边界在 1080p 是 8.3 MB，而字幕永远只占画面下缘一条。
+/// Both points are about correctness, not optimization. Canvas2D's `putImageData` only accepts straight alpha, so feeding it premultiplied bytes would draw a dark fringe along every anti-aliased glyph edge. Also, passing the whole canvas across the JS boundary every frame is 8.3 MB at 1080p, while the subtitles only ever occupy a strip along the bottom of the frame.
 ///
-/// 什么时候用它：glyph scene 报 [`SubtitleSceneFallback`] 时宿主必须显式回退整幅
-/// CPU 字幕 overlay，这就是浏览器侧那条回退口。`width == 0` 表示整帧透明。
+/// When to use it: when the glyph scene reports [`SubtitleSceneFallback`], the host must explicitly fall back to the whole CPU subtitle overlay. This is the fallback route on the browser side. `width == 0` means the whole frame is transparent.
 #[derive(Debug, Clone)]
 pub struct SubtitleRasterLayer {
-    /// 与 [`RenderedSubtitleFrame::key`] 同一个内容键：宿主据此判断能不能留着
-    /// 上一帧的位图不重画。
+    /// Same content key as [`RenderedSubtitleFrame::key`]; the host uses it to decide whether the previous frame's bitmap can be kept instead of redrawn.
     pub key: String,
     pub x: u32,
     pub y: u32,
     pub width: u32,
     pub height: u32,
-    /// straight-alpha RGBA，长度 = `width * height * 4`。
+    /// straight-alpha RGBA, length = `width * height * 4`.
     pub rgba: Vec<u8>,
     pub next_change: Option<f64>,
     pub composite: CaptionCompositeMode,
 }
 
-/// R2 的字幕 GPU 场景交付形态。`key` 仍由现有 OverlayRenderPlan 内容键产生；
-/// scene 只换执行层，不另造排版身份。
+/// Delivery form of the GPU subtitle scene for R2. `key` is still produced by the existing OverlayRenderPlan content key; the scene only swaps the execution layer and does not invent a separate layout identity.
 #[derive(Debug, Clone)]
 pub struct SubtitleSceneFrame {
     pub key: String,
     pub scene: element_draw::SceneFrame,
 }
 
-/// 当前 glyph scene 尚未覆盖的样式必须显式回退整幅 CPU overlay。每加一种 GPU
-/// 效果 pass 就删掉对应分支；禁止以“接近”名义静默漏画。
+/// Styles the current glyph scene does not yet cover must explicitly fall back to the whole CPU overlay. Each time a GPU effect pass is added, delete the matching branch. Never silently drop content under the excuse of being "close enough".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubtitleSceneFallback {
     CompositeMode,
@@ -197,25 +179,22 @@ pub enum CaptionCompositeMode {
     Screen,
 }
 
-/// overlay 像素的非零区域。DrawOp 全路径（timeline 元素）不跟踪包围盒，
-/// 用 `Unknown` 交给调用方扫描。
+/// Non-zero region of the overlay pixels. The full DrawOp path (timeline elements) does not track a bounding box, so it uses `Unknown` and leaves the scan to the caller.
 pub enum OverlayContent {
     Unknown,
     Empty,
     Bounds(ContentBox),
 }
 
-/// 导出路径的帧级合成缓存：`[start, end)` 区间内 overlay 像素完全一致
-/// （由 `next_change` 契约保证），区间内的帧直接复用合成结果，跳过排版、
-/// 光栅化与整帧拷贝。
+/// Frame-level compositing cache for the export path: within the `[start, end)` interval the overlay pixels are identical (guaranteed by the `next_change` contract), so frames inside the interval reuse the composited result directly, skipping layout, rasterization and the full-frame copy.
 pub struct CompositedOverlay {
     pub start: f64,
     pub end: f64,
-    /// 字幕层在下、timeline 元素层在上。空数组表示整帧透明。
+    /// The subtitle layer is below and the timeline element layer is above. An empty array means the whole frame is transparent.
     pub frames: Vec<CompositedFrame>,
 }
 
-/// 一份可复用的 overlay 像素与其非零 alpha 包围盒；混合只遍历包围盒。
+/// One reusable overlay pixel buffer and its non-zero alpha bounding box; blending only walks the bounding box.
 pub struct CompositedFrame {
     pub rgba: Arc<Vec<u8>>,
     pub bounds: ContentBox,
@@ -228,19 +207,17 @@ pub struct ExportOverlayLayer {
     pub composite: CaptionCompositeMode,
 }
 
-/// 非零内容的行/列包围盒（半开区间）。定义已迁到 `render_raster::effects`
-/// （模糊 / 合成的参考实现都按它切子区），这里只保留本模块的名字。
+/// Row/column bounding box of non-zero content (half-open interval). The definition has moved to `render_raster::effects` (the reference implementations for blur and compositing both slice sub-regions with it); only this module's name is kept here.
 use render_raster::effects::ContentBox;
 
-/// 按 `(层, 行 id)` 缓存 shaping 结果：字幕行显示期间文本与样式不变，
-/// 排版与逐词状态无关，同一行只 shaping 一次。
+/// Caches shaping results by `(layer, line id)`. The text and style of a subtitle line do not change while it is displayed, and layout is independent of the per-word state, so each line is shaped only once.
 pub struct CachedLayout {
     pub lines: Arc<[LayoutLine]>,
     pub width: f64,
 }
 
 pub struct RenderedOverlayFrame {
-    /// 本帧字幕层的内容键；`None` = 这一帧根本没有字幕层（导出的元素独立层）。
+    /// Content key of this frame's subtitle layer; `None` = this frame has no subtitle layer at all (the exported element-only layer).
     pub subtitle_key: Option<String>,
     pub draw_op_fingerprint: u64,
     pub rgba: Vec<u8>,
@@ -262,8 +239,7 @@ pub struct TimelineVisualElement {
     pub audio_fade_out: f64,
     pub mode: VisualMode,
     pub fit: Fit,
-    /// 全屏 + contain 时留边的底。`None` 不预填底板：合成实例的预渲染替身（视频格式规范 §3.7）没有
-    /// `bg`，透明区域要露出下层。
+    /// Backdrop for the margins in full-screen + contain mode. `None` does not pre-fill a backdrop: the pre-rendered stand-in for a composite instance (video format spec §3.7) has no `bg`, so transparent areas must reveal the layer below.
     pub bg: Option<Background>,
     pub text: Option<String>,
     pub counter: Option<CounterProps>,
@@ -273,27 +249,22 @@ pub struct TimelineVisualElement {
     pub fx: Option<Fx>,
     pub animation: Option<Animation>,
     pub transitions: Option<timeline::video_transitions::VideoTransitions>,
-    /// 0.12 的逐属性关键帧（设计 G6）。画面属性的取样值在每帧开头**替换**
-    /// 静态 `place` 成为基础姿态（[`Self::keyframe_place`]），入场 / 退场 /
-    /// 循环槽照旧叠在上面；`volume` 关键帧只进混音，不在这里用。
+    /// Per-property keyframes from 0.12 (design G6). At the start of each frame, the sampled values of visual properties **replace** the static `place` and become the base pose ([`Self::keyframe_place`]). The entry / exit / loop slots still stack on top as before. `volume` keyframes only feed the mix and are not used here.
     pub keyframes: Option<timeline::keyframes::Keyframes>,
-    /// 0.2 转正的四组元素 props（设计 §5.2）。互斥由 `Element::validate`
-    /// 的 `element-props-mismatch` 保证，这里原样带过来即可。
+    /// The four element prop groups promoted to stable in 0.2 (design §5.2). Mutual exclusion is guaranteed by `element-props-mismatch` in `Element::validate`, so they are carried over here unchanged.
     pub shape: Option<ShapeProps>,
     pub sticker: Option<StickerProps>,
     pub visualizer: Option<VisualizerProps>,
     pub progress: Option<ProgressProps>,
     pub draw: Option<DrawProps>,
     pub placeholder: Option<PlaceholderProps>,
-    /// 0.6 的彩纸参数（`kind: "confetti"`）。
+    /// 0.6 confetti parameters (`kind: "confetti"`).
     pub confetti: Option<ConfettiProps>,
     pub whiteboard: Option<WhiteboardProps>,
 }
 
 impl TimelineVisualElement {
-    /// 把 `time`（元素所在的钟）的关键帧取样代入 `place`。没有画面关键帧时
-    /// 不动，老文档逐位不变。每帧求值开头调用一次，之后所有读 `place` 的地方
-    /// （盒、变换、效果、指纹）看到的都是这一刻的基础姿态。
+    /// Substitutes the keyframe sample at `time` (the clock the element lives on) into `place`. With no visual keyframes it leaves `place` alone, so old documents stay bit-for-bit identical. Called once at the start of each frame's evaluation; after that, every place that reads `place` (box, transform, effects, fingerprint) sees this moment's base pose.
     pub fn keyframe_place(&mut self, time: f64) {
         if let Some(place) = timeline::keyframes::place_at(
             Some(&self.place),
@@ -305,23 +276,18 @@ impl TimelineVisualElement {
         }
     }
 
-    /// 带画面关键帧：基础姿态逐帧在变，调度要逐帧推进。
+    /// Has visual keyframes: the base pose changes frame by frame, so scheduling has to advance per frame.
     pub fn has_visual_keyframes(&self) -> bool {
         self.keyframes
             .as_ref()
             .is_some_and(timeline::keyframes::Keyframes::has_visual)
     }
 
-    /// 只给「舞台彩纸试穿」用的合成件：素材库网格悬停一格时，时间轴里根本没有
-    /// 对应的元素，就地补丁无处落笔（第 236 轮）。
+    /// A composite piece made only for the "stage confetti try-on": when a cell in the asset library grid is hovered, there is no matching element in the timeline, so an in-place patch has nowhere to land (round 236).
     ///
-    /// **敢凭空造一件，是因为彩纸是闭式运动核算出来的**：没有 `src_id`、没有
-    /// 字体、没有位图，画它不需要 media store 里存在任何东西。贴纸 / 视频 /
-    /// 文字 / 声波都不成立——它们要么要素材装载，要么要 shaping，照抄这个构造器
-    /// 只会得到一件永远画不出来的空壳。
+    /// **It is safe to conjure one from nothing because confetti is motion computed in closed form**: there is no `src_id`, no font, no bitmap, so drawing it requires nothing in the media store. Stickers, video, text and waveforms do not qualify: they need asset loading or shaping, and copying this constructor for them would only yield an empty shell that can never be drawn.
     ///
-    /// 它只进 App 的**预览**计划：不写文档、不进历史、不进导出。`start` / `end`
-    /// 就是这一次试穿的窗口，采样时刻由既有的 `element_sample_time` 通道推。
+    /// It only enters the App's **preview** plan: it is not written to the document, does not enter history, and is not exported. `start` / `end` are the window of this one try-on, and sample times are driven by the existing `element_sample_time` channel.
     pub fn confetti_preview(
         id: impl Into<String>,
         props: ConfettiProps,
@@ -370,13 +336,11 @@ pub struct OverlayFrameMedia {
     #[cfg(not(feature = "host"))]
     pub base: InjectedMediaStore,
     pub dynamic: HashMap<String, Arc<Pixmap>>,
-    /// v3：宿主按 id 注入的源画面（`frame-render` 把解码好的视频帧、图片与 Lottie 帧放在这里），
-    /// 取源时先于 `base`。与 `dynamic` 不同，它不在每帧组装指令流时清空，由宿主自己换。
+    /// v3: source frames injected by the host by id (`frame-render` puts decoded video frames, images and Lottie frames here). Source lookup checks it before `base`. Unlike `dynamic`, it is not cleared each time the instruction stream is assembled per frame; the host replaces it itself.
     pub injected: HashMap<String, Arc<Pixmap>>,
 }
 
-/// wasm-safe 字幕 scene 不读取媒体；这个空 store 只让共享 CPU effect 代码保留
-/// 同一个 [`FrameMedia`] 边界。若错误地把媒体 DrawOp 送进浏览器计划，会显式报错。
+/// The wasm-safe subtitle scene does not read media; this empty store only lets the shared CPU effect code keep the same [`FrameMedia`] boundary. If a media DrawOp is mistakenly sent into the browser plan, it reports an explicit error.
 #[cfg(not(feature = "host"))]
 pub struct InjectedMediaStore;
 
@@ -419,11 +383,9 @@ impl FrameMedia for InjectedMediaStore {
 }
 
 impl OverlayFrameMedia {
-    /// 这个 id 手上是否已有一份可取帧的素材：静态图，或 Lottie（含换色变体）。
+    /// Whether this id currently has an asset whose frames can be fetched: a static image, or Lottie (including recolored variants).
     ///
-    /// 素材贴纸换色变体的存在性判据（见 `sticker_fill_variant_id`）：变体是
-    /// 预载期按需生成的，取帧前必须先问一句，否则 `frame()` 会对着没备货的 id
-    /// 报错，把「不换色」变成「画不出来」。
+    /// The existence test for a sticker's recolor variant (see `sticker_fill_variant_id`): variants are generated on demand during preload, so this must be asked before fetching a frame. Otherwise `frame()` would error on an id that was never prepared, turning "no recolor" into "cannot be drawn at all".
     pub fn has_image(&self, id: &str) -> bool {
         if self.dynamic.contains_key(id) || self.injected.contains_key(id) {
             return true;
@@ -452,7 +414,7 @@ impl OverlayFrameMedia {
         }
     }
 
-    /// v3：媒体元素取源画面——宿主注入的优先，其次是装载的素材。
+    /// v3: fetch the source frame for a media element. The host-injected one takes priority, followed by the loaded asset.
     pub fn source_frame(&mut self, id: &str, media_ms: i64) -> Result<Arc<Pixmap>> {
         if let Some(pixmap) = self.injected.get(id) {
             return Ok(pixmap.clone());
@@ -475,9 +437,7 @@ pub fn overlay_document_with_live_timeline(project: &Path, document: &Value) -> 
     overlay_document_with_live_timeline_owned(project, document.clone())
 }
 
-/// [`overlay_document_with_live_timeline`] 的拿走所有权版本：投影直接改在
-/// 传入的正文上，不再深拷一份。已带 `_overlayTimelineFingerprint` 的正文原样
-/// 返回（与借用版本的早退语义一致）。
+/// The owned-value version of [`overlay_document_with_live_timeline`]: the projection is applied directly to the body passed in, with no further deep copy. A body that already carries `_overlayTimelineFingerprint` is returned as is (matching the early-return semantics of the borrowing version).
 #[cfg(feature = "host")]
 pub fn overlay_document_with_live_timeline_owned(
     project: &Path,
@@ -554,7 +514,7 @@ pub fn mapped_item_words(item: &mut Value, mapped: &timeline::MappedEvent) {
     if let Some(object) = item.as_object_mut() {
         if !projected.is_empty() {
             let text = speech_doc::atomize::join_word_texts(
-                // 词上的「贴前」标记随投影带过来（稀疏，缺省 false）。
+                // The word-level flag “贴前” (place in front) is carried over with the projection (sparse, default false).
                 projected.iter().filter_map(|word| {
                     let glue = word.get("glue").and_then(Value::as_bool).unwrap_or(false);
                     Some((word.get("text").and_then(Value::as_str)?, glue))
@@ -723,10 +683,9 @@ pub fn source_path(
     Ok(path)
 }
 
-/// 一次舞台彩纸试穿（第 236 轮）。
+/// One stage confetti try-on (round 236).
 ///
-/// `window` 只在计划里没有 `id` 这一件、要凭空补一件幽灵时用得上；试穿的是
-/// 已有元素时那一件自带 `[start, end)`，这里的窗口不参与。
+/// `window` is only used when the plan has no element with this `id` and a ghost piece must be conjured from nothing. When the try-on targets an existing element, that element carries its own `[start, end)`, and this window does not apply.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConfettiPeek {
     pub id: String,
@@ -734,45 +693,36 @@ pub struct ConfettiPeek {
     pub window: (f64, f64),
 }
 
-/// 一次彩纸试穿撤回时要做什么（第 236 轮）。
+/// What to do when a confetti try-on is reverted (round 236).
 ///
-/// 就地补丁是**破坏性**的：写进 `element.confetti` 之后，原配方在计划里就没有
-/// 第二份副本了。所以装的那一刻必须把撤回动作一起记下来，否则鼠标离开只能靠
-/// `plan = None` 整份重编译把原值「找回来」——那正是这条通道要省掉的开销。
+/// The in-place patch is **destructive**: once written into `element.confetti`, the original recipe no longer has a second copy in the plan. So the revert action must be recorded at the moment of applying. Otherwise, when the mouse leaves, the only way to "recover" the original value is to recompile the whole plan via `plan = None`, which is exactly the cost this channel is meant to avoid.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConfettiPeekUndo {
-    /// 试穿的是计划里本来就有的一件：把原配方写回去。
+    /// The try-on was of an element already in the plan: write the original recipe back.
     Restore(Option<ConfettiProps>),
-    /// 试穿的是凭空补的幽灵件（素材库网格）：整件摘掉。
+    /// The try-on was of a ghost piece conjured from nothing (asset library grid): remove the whole piece.
     Remove,
 }
 
 pub struct OverlayRenderPlan {
-    /// 动态栅格的资源名取法，见 [`DynamicAssetNames`]。
+    /// How the dynamic raster asset name is derived, see [`DynamicAssetNames`].
     pub dynamic_asset_names: DynamicAssetNames,
-    /// 媒体元素用完注入的源画面就从 `media.injected` 里拿走（见
-    /// [`OverlayRenderPlan::set_consume_injected_sources`]）。
+    /// Once a media element has used its injected source frame, that frame is removed from `media.injected` (see [`OverlayRenderPlan::set_consume_injected_sources`]).
     pub consume_injected_sources: bool,
-    /// 分层文字动画（`textMotion` / `wordBackground`）的逐条编译期量，与
-    /// [`Self::cues`] / [`Self::translations`] 下标一一对应；`None` = 这一条的
-    /// 最终样式（整条轨叠逐条覆盖）不带新动画。是否走 CPU 光栅按帧看这里，
-    /// 不再有整片静态位。
+    /// Per-entry compile-time quantities for layered text animation (`textMotion` / `wordBackground`), index-aligned with [`Self::cues`] / [`Self::translations`]. `None` = this entry's final style (the track-level style overridden per entry) carries no new animation. Whether to take the CPU raster path is decided per frame from here, not from a single static flag for the whole track.
     text_motion_cues: Vec<Option<TextMotionItem>>,
     text_motion_translations: Vec<Option<TextMotionItem>>,
     /// Ephemeral editor audition clock. Never serialized into the project.
     pub element_sample_time: Option<(String, f64)>,
-    /// 舞台彩纸试穿。只活在 App 的预览计划里，从不落盘、从不进导出。
+    /// Stage confetti try-on. Lives only in the App's preview plan; never saved to disk, never enters export.
     pub confetti_peek: Option<ConfettiPeek>,
-    /// 撤回上一次试穿的动作，与 [`Self::confetti_peek`] 同生同死。
+    /// Reverts the last try-on action; lives and dies together with [`Self::confetti_peek`].
     pub confetti_peek_undo: Option<ConfettiPeekUndo>,
-    /// 白板手绘元素的分析记忆（ADR-WB02）：`源 id | 源尺寸 | 参数` → 时间场。
-    /// 分析只取决于源图像素与 props，不落盘；换源或改 props 自然换键。
+    /// Analysis memo for whiteboard hand-drawn elements (ADR-WB02): `source id | source size | parameters` → time field. The analysis depends only on the source image pixels and props, and is not persisted to disk; switching the source or changing props naturally changes the key.
     pub whiteboard_cache: HashMap<String, Arc<render_raster::source::WhiteboardAnalysis>>,
-    /// 白板源图按元素盒降采样后的备份：`(源 id, 目标宽, 目标高)` → 像素。
+    /// Backup of the whiteboard source image downsampled to the element box: `(source id, target width, target height)` → pixels.
     ///
-    /// 揭示场是逐帧算的、成本跟着**源图有多少像素**走，而那张图最后只会被画进
-    /// 元素盒里。源比盒大就先缩一次再揭示——缩这一下本身也只做一次，不然等于把
-    /// 逐帧的账从揭示挪到重采样。
+    /// The reveal field is computed per frame, and its cost scales with **how many pixels the source image has**, while that image is ultimately only drawn into the element box. If the source is larger than the box, shrink it once first and then reveal. The shrink itself also happens only once; otherwise it would just move the per-frame cost from the reveal into resampling.
     pub whiteboard_sources: HashMap<(String, u32, u32), Arc<Pixmap>>,
     pub definition_key: String,
     pub style: Value,
@@ -782,28 +732,23 @@ pub struct OverlayRenderPlan {
     pub translations: Vec<TimedItem>,
     pub original_style: LineStyle,
     pub translation_style: LineStyle,
-    /// 原文行的逐词动画，**编译期定案一次**。`style` 在编译之后不再变动，所以
-    /// `word_animation(merged_line_style(style, Original))` 是个常量——以前每帧
-    /// 要重算三四遍，每遍都深拷一份根样式 Map 再解析一轮 CSS 颜色。
-    /// 用 `Arc` 持有是为了让 `&mut self` 的方法能廉价取一份不借用 `self` 的句柄。
+    /// Per-word animation for the original-text line, **fixed once at compile time**. `style` does not change after compilation, so `word_animation(merged_line_style(style, Original))` is a constant. Previously it was recomputed three or four times per frame, each time deep-copying the root style Map and parsing the CSS colors again.
+    /// Held in an `Arc` so that `&mut self` methods can cheaply obtain a handle that does not borrow `self`.
     pub original_animation: Arc<WordAnimation>,
-    /// `original_animation.caption` 对应的配方描述符（同样是编译期常量）。
+    /// The recipe descriptor for `original_animation.caption` (also a compile-time constant).
     pub caption_descriptor: Option<&'static CaptionRecipeDescriptor>,
-    /// 样式是否带 Designed Caption（`designed_caption_active` 的常量形态）。
+    /// Whether the style carries a Designed Caption (the constant form of `designed_caption_active`).
     pub designed_caption: bool,
-    /// 经典逐词高亮块是否带非恒定的时间轨（`word_box_animated` 的常量形态）。
-    /// 有轨时字幕层必须逐帧出图：块在词的窗口里胀缩，`(cue, 当前词)` 已经不足
-    /// 以标识一帧。
+    /// Whether the classic per-word highlight block has a non-constant time track (the constant form of `word_box_animated`). When there is a track, the subtitle layer must render every frame: the block swells and shrinks within the word's window, so `(cue, current word)` is no longer enough to identify a frame.
     pub word_box_animated: bool,
-    /// Designed Caption 的复合模式（`caption_recipe_composite_mode` 的常量形态）。
+    /// Composite mode of the Designed Caption (the constant form of `caption_recipe_composite_mode`).
     pub caption_composite: CaptionCompositeMode,
-    /// 配方是否要求整组居中（`stack_layout` 的锚点分支）。
+    /// Whether the recipe requires the whole group to be centered (the anchor branch of `stack_layout`).
     pub centered_caption: bool,
-    /// 整条轨的原文长相（上面五个字段的打包形态），没有逐条覆盖的字幕都用它。
-    /// `designed_caption` / `word_box_animated` 两个字段是全片口径（任一条带就算），
-    /// 这里的同名字段只说整条轨。
+    /// The original-text look for the whole track (the packed form of the five fields above), used by every subtitle without a per-entry override.
+    /// The `designed_caption` and `word_box_animated` fields are whole-project scope (they count if any entry has them); the same-named fields here describe only this track.
     pub track_look: CaptionLook,
-    /// 逐条样式（`style.cueStyles`），按 [`TimedItem::id`] 索引，编译期定案。
+    /// Per-entry styles (`style.cueStyles`), indexed by [`TimedItem::id`], fixed at compile time.
     pub cue_original: HashMap<String, Arc<CueOverride>>,
     pub cue_translation: HashMap<String, Arc<CueOverride>>,
     pub width: u32,
@@ -811,91 +756,61 @@ pub struct OverlayRenderPlan {
     pub duration: f64,
     pub fps: f64,
     pub text: TextEngine,
-    /// 实际交给 [`TextEngine`] 的字体份数（内嵌 studio 字体 ＋ 用户字体库）。
+    /// Number of font faces actually handed to [`TextEngine`] (embedded studio fonts plus the user font library).
     ///
-    /// 存下来而不是让调用方重算 `bundled_studio_fonts().len() + ...`：
-    /// 重算出来的数字跟这份计划真正加载的可以不一致（用户字体库随时在变），
-    /// 那样的日志比没有更坏。App v2 的 `overlay: plan compiled … fonts=N`
-    /// 钩子读的就是这个字段。
+    /// Stored rather than having callers recompute `bundled_studio_fonts().len() + ...`: a recomputed number may not match what this plan actually loaded (the user font library changes at any time), and a log like that is worse than no log. The `overlay: plan compiled … fonts=N` hook in App v2 reads exactly this field.
     pub fonts_loaded: usize,
-    /// 本次导出保留哪几类叠加内容；[`OverlayRenderPlan::load_timeline_elements`]
-    /// 按它筛掉整类元素。
+    /// Which kinds of overlay content this export keeps; [`OverlayRenderPlan::load_timeline_elements`] uses it to filter out whole kinds of elements.
     pub includes: OverlayIncludes,
     pub main: Option<Main>,
     pub elements: Vec<TimelineVisualElement>,
-    /// 每个 visualizer 元素的整轨频谱，key 是**元素 id**。
+    /// Full-track spectrum for each visualizer element, keyed by **element id**.
     ///
-    /// 元素方案 ADR-E04 数据流的第 3 步：host 在 preflight 读 BCS1、按该元素的
-    /// `minDb` / `maxDb` / `smoothing` / `gain` 派生完整 `VizTrack`，渲染期只
-    /// `sample(t)`。与 `HostInputs` 注入 `MediaMeta` / `CoreWord` 同构——host
-    /// 探测、core 消费，渲染期不再有任何 I/O。
+    /// Step 3 of the element-scheme ADR-E04 data flow: during preflight the host reads BCS1 and derives a complete `VizTrack` from that element's `minDb` / `maxDb` / `smoothing` / `gain`; at render time it only calls `sample(t)`. This is isomorphic to how `HostInputs` injects `MediaMeta` / `CoreWord`: the host probes, the core consumes, and there is no I/O at render time.
     ///
-    /// 按元素 id 而不是按音频源存：同一条音轨可以被两个参数不同的 visualizer
-    /// 引用，那是两条轨。相同 `(源, 参数)` 的元素共享同一个 `Arc`。
+    /// Keyed by element id rather than by audio source: the same audio track can be referenced by two visualizers with different parameters, and those are two tracks. Elements with the same `(source, parameters)` share one `Arc`.
     pub viz_tracks: HashMap<String, Arc<render_raster::source::VizTrack>>,
-    /// 输出时刻 → 源媒体时刻的折算（`audio: "project"` 的采样时刻，P3 定案）。
+    /// Conversion from output time to source media time (the sample time for `audio: "project"`, settled in P3).
     ///
-    /// visualizer 反映的是**输出时刻观众实际听到的声音**：剪切过的项目里输出
-    /// 第 7 秒可能对应源媒体的第 12 秒，而 BCS1 是按**整条源媒体**算的，因此
-    /// 采样前必须过一次 `TimelineProjection::timeline_to_source`。
+    /// A visualizer reflects **the sound the audience actually hears at the output time**. In an edited project, output second 7 may correspond to source media second 12, while BCS1 is computed over **the whole source media**, so `TimelineProjection::timeline_to_source` must be applied once before sampling.
     ///
-    /// `None` = 这份计划没经过 `compile_project`（单测的 `compile_with`），
-    /// 或项目里没有 visualizer 元素——此时退化为"输出时刻即源时刻"。
+    /// `None` = this plan did not go through `compile_project` (the `compile_with` used in unit tests), or the project has no visualizer element. In that case it falls back to "output time is source time".
     pub viz_projection: Option<timeline::TimelineProjection>,
     pub media: OverlayFrameMedia,
     pub cache: VecDeque<CachedFrame>,
-    /// 全部字幕边界（display_start/display_end/word.end）升序排列，
-    /// `next_change_after` 用二分而不是每帧线性扫描全片词表。
+    /// All subtitle boundaries (display_start / display_end / word.end) sorted ascending; `next_change_after` uses binary search instead of scanning the whole word table linearly on every frame.
     pub change_points: Vec<f64>,
     pub layout_cache: VecDeque<(String, Arc<CachedLayout>)>,
-    /// 非 Designed Caption 的 glyph scene 稳定几何。逐词状态与入场姿态不进 key；
-    /// 命中后只重建小型 run uniform 数组。条目数与 layout cache 同样固定限容，
-    /// 避免 Arc mask 因长视频遍历而无界驻留。
+    /// Stable geometry of non-Designed-Caption glyph scenes. Per-word state and the entry pose are not part of the key; on a hit, only the small run uniform array is rebuilt. The entry count, like the layout cache, is capped at a fixed size, so that Arc masks do not stay resident without bound while iterating over long videos.
     pub glyph_geometry_cache: VecDeque<(String, Arc<[element_draw::GlyphInstance]>)>,
-    /// 与正文几何分开驻留的描边 atlas quad；颜色/逐词透明度仍是小型 uniform，
-    /// 线宽已经进入 `definition_key`，不会把不同样式错配到同一组 mask。
-    /// 该键只服务计划内部缓存与 retained scene 身份，不得写入 DrawOp 动态资产名。
+    /// Stroke atlas quads kept resident separately from the body geometry. Color and per-word opacity are still small uniforms, and line width already enters `definition_key`, so different styles are never matched to the same set of masks. This key only serves the plan's internal cache and the retained scene identity, and must not be written into a DrawOp dynamic asset name.
     pub glyph_outline_geometry_cache: VecDeque<(String, Arc<[element_draw::GlyphInstance]>)>,
-    /// Designed Caption 的 emoji / 用户 emoji 覆盖共用的独立稳定字形层。正文词态
-    /// 变化只更新透明度；emoji mask/RGBA bitmap 与基线 placement 不重复光栅。
+    /// A stable, separate glyph layer shared by the Designed Caption emoji and the user emoji overrides. Changes to the body word state only update opacity; the emoji mask / RGBA bitmap and the baseline placement are not rasterized again.
     pub glyph_decoration_geometry_cache: VecDeque<(String, Arc<[element_draw::GlyphInstance]>)>,
-    /// 底板/下划线为保持 CPU z 序而切开的 glyph run。segment key 包含基础几何
-    /// 身份、fill/outline 层与 uniform index 集；逐帧只重建 uniform，不能因分段
-    /// 让 compositor 误判为一批新 atlas quad。
+    /// Glyph runs split apart to keep CPU z-order for the backplate / underline. The segment key includes the base geometry identity, the fill / outline layers, and the set of uniform indices. Per frame only the uniforms are rebuilt; splitting into segments must not cause the compositor to mistake them for a new batch of atlas quads.
     pub glyph_segment_geometry_cache: VecDeque<(String, Arc<[element_draw::GlyphInstance]>)>,
-    /// 每个可见字幕行各自一组 effect fill quad。effect 在 CPU reference 中逐行
-    /// 独立模糊后再合成，不能把不同半径的行先并到一张中间层。
+    /// Each visible subtitle line gets its own set of effect fill quads. The effect is blurred independently per line in the CPU reference and then composited, so different radii must not be merged into one intermediate layer first.
     pub glyph_effect_geometry_cache: VecDeque<(String, Arc<[Arc<[element_draw::GlyphInstance]>]>)>,
-    /// effect 的描边 source 与正文 source 在模糊前合成；单独驻留避免每次词边界
-    /// 再生成带 effect 位移的 stroke quad。
+    /// The effect's stroke source and body source are composited before blurring. They are kept resident separately, so that a stroke quad with the effect offset does not have to be regenerated at every word boundary.
     pub glyph_effect_outline_geometry_cache:
         VecDeque<(String, Arc<[Arc<[element_draw::GlyphInstance]>]>)>,
     pub composited: Option<CompositedOverlay>,
     pub blank_frame: Option<Arc<Vec<u8>>>,
-    /// 字幕效果层的可复用整幅缓冲。用完按包围盒清零后归还，保证下次取出时
-    /// 仍是全零——省掉 4K 下每行效果 33MB 的分配。
+    /// Reusable full-size buffer for the subtitle effect layer. After use it is zeroed within its bounding box and returned, so the buffer is still all zeros the next time it is taken out. This saves the 33 MB allocation per line of effect at 4K.
     pub effect_scratch: Option<Pixmap>,
-    /// S14：把字幕入场转场压成单位姿态。渲染计划本身与压制无关（同一份排版、
-    /// 同一批字形），所以它是**逐次渲染**的开关而不是编译期属性——切一次选中态
-    /// 不该重编译整份计划。默认 `false`：导出与老客户端一律保持原行为。
+    /// S14: collapses the subtitle entry transition to the unit pose. The render plan itself is unrelated to export (same layout, same glyphs), so this is a **per-render** switch rather than a compile-time property: toggling the selection state once should not recompile the whole plan. Defaults to `false`: export and older clients always keep the original behavior.
     pub suppress_transition: bool,
-    /// FramePlan 的 CPU 执行器与它的能力档案指纹。overlay 的每一帧都是一张
-    /// **折叠计划**（单个 Draw pass），执行器对它直接调 `rasterize_with_media`。
+    /// CPU executor for FramePlan and its capability-profile fingerprint. Each overlay frame is a **folded plan** (a single Draw pass), and the executor calls `rasterize_with_media` on it directly.
     pub executor: render_raster::CpuExecutor,
     pub capability: u64,
-    /// 元素效果栈的 preflight 报告（设计 §6.5）。overlay 的效果全部由
-    /// `timeline::lower_element_effects` 产出，因此这就是那一组引用在
-    /// 当前后端上的可用性结论；`fallbacks[]` 经 serve 的任务信封透出。
+    /// Preflight report for the element effect stack (design §6.5). All overlay effects are produced by `timeline::lower_element_effects`, so this is the availability verdict for that set of references on the current backend; `fallbacks[]` is exposed through serve's task envelope.
     pub preflight: render_raster::PreflightReport,
     pub warnings: Vec<String>,
-    /// 项目套用的模板层（`None` = 没套，或本计划没经过 `compile_project` 且没注入）。
+    /// The template layer applied to the project (`None` = not applied, or this plan did not go through `compile_project` and nothing was injected).
     pub chrome: Option<TemplateLayer>,
-    /// 装饰层**装载失败**的原因。合成失败不该让整幅 overlay 黑掉——字幕与元素
-    /// 照画，装饰层缺席并把话说出口（App 在模板属性页显示，`serve` 走
-    /// `X-Ccut-Template-Error`）。
+    /// Reason the decoration layer **failed to load**. A composition failure should not black out the whole overlay: subtitles and elements are still drawn, the decoration layer is simply absent, and the failure is reported explicitly (the App shows it on the template attribute page, and `serve` surfaces it as `X-Ccut-Template-Error`).
     pub chrome_error: Option<String>,
-    /// 倒鸭子（跨句序列配方）：编译期只定「开不开」与字体口径，计划本身首帧懒建。
-    /// `None` = 这份计划不走序列路，所有字幕仍按 cue 级排版。
+    /// 倒鸭子 (the cross-sentence sequence recipe): at compile time only decide whether it is on and the font basis; the plan itself is built lazily on the first frame. `None` = this plan does not take the sequence path, and all subtitles are still laid out per cue.
     pub sequence: Option<SequenceState>,
 }
 
@@ -911,11 +826,9 @@ pub struct GlyphChunk {
     pub font_weight: u16,
     pub italic: bool,
     pub shaped: render_raster::fonts::ShapedLine,
-    /// 这一片自己的填充色（`emphasisLook` 强调词）。逐词动画的颜色仍优先，
-    /// `None` 落回行样式的 `color`。
+    /// This segment's own fill color (the `emphasisLook` emphasized word). The per-word animation color still takes priority; `None` falls back to the line style's `color`.
     pub color: Option<SubtitleColor>,
-    /// 相对行字号的缩放（`emphasisLook.scale`）。基线按未缩放的字形度量定位，
-    /// 放大的词绕基线长高而不是整体下沉；1.0 时与旧口径逐位一致。
+    /// Scale relative to the line font size (`emphasisLook.scale`). The baseline is positioned by the unscaled glyph metrics, so an enlarged word grows taller around the baseline instead of sinking as a whole. At 1.0 it is bit-for-bit identical to the old basis.
     pub metric_scale: f64,
 }
 
@@ -927,8 +840,7 @@ pub struct LayoutLine {
     pub gap_after: f64,
 }
 
-/// 字幕及文字元素的水平对齐，供 CPU/GPU 共用布局消费。
-/// 字幕读取根样式与行级覆盖的 `align`，文字元素也接受 `style.textAlign`。
+/// Horizontal alignment of subtitles and text elements, consumed by the shared CPU / GPU layout. Subtitles read `align` from the root style and from line-level overrides; text elements also accept `style.textAlign`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LineTextAlign {
     Left,
@@ -951,12 +863,10 @@ impl LineTextAlign {
     }
 }
 
-/// 字幕根样式的键：为 `true` 时各行在折行宽度（`width`）里对齐，而不是在字幕块自己的宽里——块不再总是居中在锚点上，
-/// 左对齐贴折行区域的左边、右对齐贴右边，与文字元素一样。Studio 样式不写它（行在块宽里对齐，与 v2 一致）；定位框样式
-/// 换算成 Studio 样式时写上，左右对齐才贴得到框边。
+/// Root-style key for subtitles: when `true`, each line is aligned within the wrap width (`width`) rather than within the subtitle block's own width. The block is no longer always centered on the anchor: left alignment hugs the left edge of the wrap area and right alignment the right edge, the same as text elements. Studio styles do not write it (lines align within the block width, consistent with v2). When a positioned-box style is converted to a Studio style, this key is written so that left and right alignment can reach the box edges.
 pub const ALIGN_WITHIN_WRAP_KEY: &str = "alignWithinWrap";
 
-/// 这份（合并后的）行样式是否按折行宽度对齐，见 [`ALIGN_WITHIN_WRAP_KEY`]。
+/// Whether this (merged) line style aligns within the wrap width; see [`ALIGN_WITHIN_WRAP_KEY`].
 pub fn aligns_within_wrap(style: &Value) -> bool {
     style.get(ALIGN_WITHIN_WRAP_KEY).and_then(Value::as_bool) == Some(true)
 }
@@ -969,8 +879,7 @@ pub struct LineLayout {
     pub lines: Arc<[LayoutLine]>,
     pub width: f64,
     pub height: f64,
-    /// 各视觉行在这段宽度里按 [`LineTextAlign`] 摆放。字幕等于 `width`（根样式带
-    /// [`ALIGN_WITHIN_WRAP_KEY`] 时是折行宽度）；文字元素等于 `place.w` 折算后的实际像素宽。
+    /// Each visual line is placed within this width according to [`LineTextAlign`]. For subtitles it equals `width` (or the wrap width when the root style carries [`ALIGN_WITHIN_WRAP_KEY`]); for text elements it equals the actual pixel width converted from `place.w`.
     pub align_width: f64,
     pub text_align: LineTextAlign,
     pub current_word: usize,
@@ -978,31 +887,24 @@ pub struct LineLayout {
     pub render_fps: f64,
     pub animation_parts: Vec<timeline::AnimationPartPose>,
     pub animation_short_edge: f64,
-    /// KTV 双行排版里预告的下一句（`textMotion.karaoke.nextLine`）：只画底色，
-    /// 不采样动效、不扫字、不进缓存键。
+    /// The next line previewed in KTV two-line layout (`textMotion.karaoke.nextLine`): only its base color is drawn. It does not sample animation, does not sweep words, and is not part of the cache key.
     pub preview: bool,
-    /// 译文行 KTV 扫字借用的原文真实词 `(起, 止)`（项目秒）；原文行为 `None`，
-    /// 它读自己的 `item.words`。
+    /// For the translated line's KTV word sweep, the real source-word `(start, end)` borrowed from the original text (project seconds). For an original-text line this is `None`, and it reads its own `item.words`.
     pub karaoke_words: Option<Arc<[(f64, f64)]>>,
-    /// 引导点画在行下方而不是上方：双语叠放时上面还有一行，点不压它的字。
+    /// Lead-in dots are drawn below the line rather than above it: with bilingual stacking there is another line above, and the dots must not cover its text.
     pub guide_below: bool,
 }
 
-/// 这一行是不是真的画得出一块底板——镜像 Mac `StyleFX.bgOn(style) && !isTransparent(bgColor)`。
+/// Whether this line can actually draw a background plate. This mirrors Mac `StyleFX.bgOn(style) && !isTransparent(bgColor)`.
 ///
-/// `VKColor.isTransparent` 的阈值是 alpha ≤ 0.01，落到 u8 就是 ≤ 2。
-/// 共享底板选哪一行的 padding 靠它裁决，所以判据必须与 Mac 逐字对齐。
+/// The `VKColor.isTransparent` threshold is alpha ≤ 0.01, which becomes ≤ 2 when mapped to u8. This test decides which line's padding the shared plate uses, so the criterion must match Mac exactly.
 pub fn has_real_background(line: &LineLayout) -> bool {
     line.style.background_on && line.style.background_color.a > 2
 }
 
-/// 共享底板跟哪一行的 spec 走——镜像 Mac `sharedBackgroundSpec`：
-/// `!源行有真背景 && 译文行有真背景 ? 译文行 : 源行`。
+/// Which line's spec the shared plate follows. This mirrors Mac `sharedBackgroundSpec`: `!source line has real background && translation line has real background ? translation line : source line`.
 ///
-/// 改用译文行有**两个**前提，译文行自己得画得出板；两行都没真背景时仍然取源行。
-/// 这不是可以随便选的退化情形：shared 的 plate pad 参与字形落位
-/// （`StackPlate::Shared` 的 `plate_pad_v`），板不画照样撑开槽位，
-/// 所以两行 backgroundPadding 不同时选错行就是实打实的几何分叉。
+/// Choosing the translation line has **two** preconditions: the translation line itself must be able to draw a plate. When neither line has a real background, the source line is still used. This is not a degenerate case that can be chosen freely: the shared plate's pad takes part in glyph placement (`StackPlate::Shared`'s `plate_pad_v`), so even when the plate is not drawn it still sets the slot size. When the two lines have different backgroundPadding, choosing the wrong line creates a real geometric divergence.
 pub fn shared_plate_line<T: Copy>(
     source: Option<T>,
     trans: Option<T>,

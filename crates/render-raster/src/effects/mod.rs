@@ -1,10 +1,6 @@
-//! Strict CPU reference 效果实现（ADR-M05 / 设计 §6.3）。
+//! Strict CPU reference effect implementations (ADR-M05 / design §6.3).
 //!
-//! 分工：**manifest 住在 `ccut-motion`**（纯函数层，`ccut-core::lint` 与
-//! `ccut-timeline` 都要读效果版本表而不能依赖 host 层），`ccut-render` 只持有
-//! 像素实现。两边靠 manifest 的**具名内核** `kernel` 对接：
-//! [`kernel_is_implemented`] 保证每个 strict manifest 都有 CPU reference——
-//! 这条不变量由 `tests/effects_conformance.rs` 逐条守。
+//! Division of labor: **the manifests live in `ccut-motion`**. It is the pure function layer, and `ccut-core::lint` and `ccut-timeline` both need to read the effect version table without depending on the host layer. `ccut-render` holds only the pixel implementations. The two sides are connected by the manifest's **named kernel** `kernel`. [`kernel_is_implemented`] guarantees that every strict manifest has a CPU reference. `tests/effects_conformance.rs` checks this invariant entry by entry.
 
 pub mod composite;
 pub mod filters;
@@ -24,15 +20,14 @@ pub use pixel_format::{
 };
 pub use transitions::Direction;
 
-/// 效果词汇的转出口：host 侧（`apps/cli`）只依赖 `ccut-render`，不必为了两个
-/// 值类型再连一条 `ccut-motion` 的边。
+/// Re-export point for the effect vocabulary. The host side (`apps/cli`) depends only on `ccut-render`, so it does not need an edge to `ccut-motion` just for two value types.
 pub use motion::effect::{EffectRef, UniformMap, UniformValue};
 
 use anyhow::{Result, anyhow, bail};
 use motion::effect::lookup;
 use tiny_skia::Pixmap;
 
-/// 已实现的内核名。加一个 strict manifest 就必须在这里加一条实现。
+/// Names of implemented kernels. Adding a strict manifest requires adding an implementation entry here.
 pub const IMPLEMENTED_KERNELS: &[&str] = &[
     "box-1pass-integer",
     "brightness-unpremul-f64",
@@ -74,11 +69,9 @@ pub fn kernel_is_implemented(kernel: &str) -> bool {
     IMPLEMENTED_KERNELS.contains(&kernel)
 }
 
-/// 执行一条单输入滤镜。`uniforms` 必须已经过
-/// [`motion::effect::EffectManifest::resolve_uniforms`]（补默认、夹范围）。
+/// Runs a single-input filter. `uniforms` must already have passed through [`motion::effect::EffectManifest::resolve_uniforms`] (defaults filled in, ranges clamped).
 ///
-/// 双输入的 `mask.image` / `mask.luma` 不走这里——它们需要第二张 surface，
-/// 由 `Composite` pass 的 mask 输入提供（阶段 4B）。
+/// The dual-input `mask.image` / `mask.luma` do not go through here. They need a second surface, which the mask input of the `Composite` pass provides (stage 4B).
 pub fn apply_filter(
     effect: &EffectRef,
     uniforms: &UniformMap,
@@ -90,8 +83,7 @@ pub fn apply_filter(
     Ok(out)
 }
 
-/// [`apply_filter`] 的原地形态。效果栈是一串就地变换，串起来时不该每一步都
-/// 复制一张 4K 缓冲。
+/// The in-place form of [`apply_filter`]. A filter stack is a chain of in-place transforms, so chaining them should not copy a 4K buffer at every step.
 pub fn apply_filter_in_place(
     effect: &EffectRef,
     uniforms: &UniformMap,
@@ -112,7 +104,7 @@ pub fn apply_filter_in_place(
     let width = pixmap.width();
     let height = pixmap.height();
     let data = pixmap.data_mut();
-    // `length` 参数以画布短边为基准换算，`quantize: round-to-int` 再取整。
+    // `length` is converted relative to the canvas short side. `quantize: round-to-int` then rounds it.
     let length = |key: &str| -> f64 {
         let raw = uniforms.scalar(key).unwrap_or(0.0);
         match manifest
@@ -165,8 +157,7 @@ pub fn apply_filter_in_place(
             color("color"),
         ),
         "box-1pass-integer" => {
-            // 走**包围盒**版本：它与整幅版本逐字节相同（证明见 `blur.rs` 的
-            // 注释），但透明区大的 overlay 帧上能省掉整幅两遍扫描。
+            // Uses the **bounding-box** version. It is byte-for-byte identical to the full-frame version (the proof is in the comment in `blur.rs`), but on overlay frames with large transparent areas it skips two full-frame scans.
             filters::blur::box_blur_content(
                 data,
                 width,
@@ -342,12 +333,11 @@ pub fn apply_filter_in_place(
     Ok(())
 }
 
-/// 执行一条**双画面转场**（`transition.*@1`，规范 §9）。
+/// Runs a **dual-picture transition** (`transition.*@1`, spec §9).
 ///
-/// `progress` 是闭区间 `[0, 1]`：`0` 的输出与 `from` 逐字节相同、`1` 与 `to`
-/// 逐字节相同。这不是"约等于"——`tests/effects_conformance.rs` 逐字节比。
+/// `progress` is the closed interval `[0, 1]`. The output at `0` is byte-for-byte equal to `from`, and at `1` it is byte-for-byte equal to `to`. This is exact, not approximate. `tests/effects_conformance.rs` compares the bytes.
 ///
-/// 两张输入必须同尺寸（manifest 的 `resizeMode: same-as-input`）。
+/// The two inputs must have the same size (the manifest's `resizeMode: same-as-input`).
 pub fn apply_transition(
     effect: &EffectRef,
     uniforms: &UniformMap,
@@ -508,7 +498,7 @@ pub fn apply_transition(
     Ok(out)
 }
 
-/// 双输入遮罩（`mask.image@1` / `mask.luma@1`）。
+/// Dual-input mask (`mask.image@1` / `mask.luma@1`).
 pub fn apply_image_mask(
     effect: &EffectRef,
     uniforms: &UniformMap,
@@ -525,8 +515,7 @@ pub fn apply_image_mask(
         other => bail!("effect-capability-unsupported: 内核 {other} 不是图像遮罩"),
     };
     let mut out = input.clone();
-    // 遮罩只读：`out` 与 `mask` 是两张不同的 Pixmap，借用不会冲突，没有理由
-    // 为了过借用检查先把整幅遮罩复制一份。
+    // The mask is read-only. `out` and `mask` are two different Pixmaps, so the borrows do not conflict. There is no reason to copy the whole mask just to get past the borrow checker.
     filters::mask_image::image_mask(
         out.data_mut(),
         mask.data(),

@@ -1,13 +1,13 @@
-//! Confetti 算法粒子元素的绘制内核（`docs/design/elements/ccut-confetti-element-design.md` §4–§5）。
+//! Drawing kernel for the confetti particle element, an algorithmic element (design doc `docs/design/elements/ccut-confetti-element-design.md` §4–§5).
 //!
-//! 三个子模块各守一件事：
+//! Three submodules each own one thing:
 //!
-//! * [`kernel`]——`confetti-v1` 闭式运动核：参数 → 粒子表，纯函数、无状态；
-//! * [`shapes`]——十二种单位形的路径；
-//! * [`draw`]——[`draw::confetti_frame`]：把粒子表压成 `ClipPath + FillPath × N + PopClip`。
+//! * [`kernel`]: the `confetti-v1` closed-form motion kernel, parameters → particle table, a pure function with no state;
+//! * [`shapes`]: paths for the twelve unit shapes;
+//! * [`draw`]: [`draw::confetti_frame`], which compresses the particle table into `ClipPath + FillPath × N + PopClip`.
 //!
-//! 与 visualizer / progress 同一条纪律：**一个样式参数都不自带**，十款配方的
-//! 数字住在 `core/presets/builtin/confetti/*.json`。
+//! Same discipline as visualizer and progress: **carries no style parameters of its own**. The numbers for the ten recipes live in
+//! `core/presets/builtin/confetti/*.json`.
 
 pub mod draw;
 pub mod kernel;

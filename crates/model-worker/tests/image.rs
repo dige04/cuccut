@@ -1,13 +1,11 @@
-//! 端到端：真实的文生图模型包，`worker.hello` → `model.load` → `job.run`（`image`）→ `image.png`。需要本机装好的模型，
-//! 默认忽略：
+//! End-to-end: a real text-to-image bundle, `worker.hello` → `model.load` → `job.run` (`image`) → `image.png`. It needs models installed on this machine and is ignored by default:
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-worker --test image -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! 生成的 PNG 留在 `CUCCUT_TEST_OUTPUT_DIR`（不给时是系统临时目录下的 `cuccut-image-e2e/`），供人眼复核。
-//! 模型目录只读：测试不写、不修模型包。
+//! The generated PNG is left in `CUCCUT_TEST_OUTPUT_DIR` (if not set, `cuccut-image-e2e/` under the system temp directory) for visual review. The model directory is read-only: the test neither writes nor repairs the bundle.
 
 mod support;
 
@@ -57,7 +55,7 @@ fn decode_png(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
     (info.width, info.height, pixels)
 }
 
-/// 跑一张，核对事件与结果，返回 PNG 字节。
+/// Run one image, check the events and the result, and return the PNG bytes.
 fn generate(worker: &mut WorkerProcess, job_id: &str, seed: u64) -> Vec<u8> {
     let staging = tempfile::tempdir().unwrap();
     let started = Instant::now();
@@ -130,13 +128,13 @@ fn qwen_image_writes_a_deterministic_png() {
     assert_eq!((width, height), (256, 256));
     let rgb = |i: usize| &pixels[i * 4..i * 4 + 3];
     assert!((1..256 * 256).any(|i| rgb(i) != rgb(0)), "the image must not be one flat colour");
-    // Qwen-Image-2.1 的 VAE 出四个通道，第四个是模型自己给的 alpha（原样写进 PNG，与旧版一致）：只报告范围。
+    // Qwen-Image-2.1's VAE outputs four channels. The fourth is an alpha channel produced by the model itself, written into the PNG as-is (same as the older version). Only its range is reported.
     let alpha = pixels.chunks_exact(4).map(|px| px[3]);
     let (lo, hi) = alpha.fold((255u8, 0u8), |(lo, hi), a| (lo.min(a), hi.max(a)));
     eprintln!("alpha range {lo}..={hi}");
     std::fs::write(output_dir().join("qwen-image-256-seed7.png"), &first).unwrap();
 
-    // 同一 seed、同一机器：同一张图（逐字节）。
+    // Same seed, same machine: the same image, byte for byte.
     let second = generate(&mut worker, "job-image-2", 7);
     assert_eq!(first, second, "a fixed seed must reproduce the same PNG");
 

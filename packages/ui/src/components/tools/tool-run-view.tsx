@@ -69,12 +69,12 @@ import { useCancelJob } from './use-tool-records.ts';
 import { useRunRetry, useToolStart, useVideoTools } from './use-video-tools.ts';
 
 /*
- * 视频工具共用的几块（产品设计 §2.7，设计稿 tool-run-view.jsx 与 tools.css `.tsteps` `.tgrant` `.trun*` `.trec`）：
- * 步骤进度、当场授权卡、来源切换、项目选择、运行与结果页、本工具的运行记录，以及把它们拼起来的页面骨架。
- * 运行的步骤、进度、失败停在哪一步都读 `jobs` 主题里的流程父任务（model/tool-runs.ts）。
+ * Blocks shared by the video tools (product design §2.7; design file tool-run-view.jsx and tools.css `.tsteps` `.tgrant` `.trun*` `.trec`):
+ * step progress, the on-the-spot authorization card, source switching, project selection, the run and result page, this tool's run records, and the page skeleton that puts them together.
+ * A run's steps, progress, and the step where a failure stopped are all read from the parent flow job in the `jobs` topic (model/tool-runs.ts).
  */
 
-// ---- 步骤 ----
+// ---- Steps ----
 
 const steps = style({ display: 'flex', flexDirection: 'column', gap: 4, margin: 0, padding: 0, listStyleType: 'none' });
 const stepRow = style({
@@ -104,7 +104,7 @@ const stepMark = style({
 const stepLabel = style({ flexGrow: 1, minWidth: 0 });
 const stepState = style({ flexShrink: 0, font: 'ui-xs' });
 
-/** 步骤表：做完的打勾、在跑的写百分比、停住的标红，没到的只写序号。跳过的步骤不列（model/tool-runs.ts）。 */
+/** Step table: finished steps get a check mark, running steps show a percentage, stopped steps are marked red, and steps not yet reached show only their number. Skipped steps are not listed (model/tool-runs.ts). */
 export function ToolSteps({ list }: { list: readonly RunStep[] }) {
   return (
     <ol className={steps} aria-label={RUN_COPY.steps}>
@@ -124,7 +124,7 @@ export function ToolSteps({ list }: { list: readonly RunStep[] }) {
   );
 }
 
-// ---- 当场授权 ----
+// ---- On-the-spot authorization ----
 
 const grantBox = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const grantList = style({ display: 'flex', flexDirection: 'column', gap: 8, margin: 0, marginBottom: 8, padding: 0, listStyleType: 'none' });
@@ -132,8 +132,8 @@ const grantItem = style({ display: 'flex', flexDirection: 'column', gap: 2 });
 const grantActions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
 /**
- * 当场授权（§2.7「授权在当场完成」）：Runtime 拒绝启动时给的待批准项——要发什么、发给谁、预计多少钱；「同意并继续」
- * 逐项发放授权，再用同一次提交重提。`hint`：不想发送时的去处。
+ * On-the-spot authorization (§2.7, “授权在当场完成” (authorization is completed on the spot)): the pending approval items the Runtime gives when it refuses to start — what will be sent, to whom, and the estimated cost. “同意并继续” (Agree and continue)
+ * grants authorization item by item, then resubmits with the same submission. `hint`: where to go if the user does not want to send.
  */
 export function GrantCard({
   items,
@@ -175,9 +175,9 @@ export function GrantCard({
   );
 }
 
-// ---- 来源与项目 ----
+// ---- Source and project ----
 
-/** 输入来源切换：选项来自工具目录声明的输入（model/tool-catalog.ts）。 */
+/** Input source switch: the options come from the inputs declared in the tool catalog (model/tool-catalog.ts). */
 export function ToolSourceSwitch<K extends ToolSourceKind>({ tool, value, onChange }: { tool: ToolId; value: K; onChange: (key: K) => void }) {
   const options = inputOptions(tool);
   return (
@@ -193,7 +193,7 @@ export function ToolSourceSwitch<K extends ToolSourceKind>({ tool, value, onChan
 
 const field = style({ width: 'full' });
 
-/** 新建的视频放进哪个项目。没有项目时说先建一个。 */
+/** The project the new video is placed in. When there is no project, it says to create one first. */
 export function ProjectPicker({ value, onChange }: { value: Id | null; onChange: (projectId: Id) => void }) {
   const projects = useDirectory((s) => s.projects);
   if (!projects.length) return <span className={detail}>{PROJECT_COPY.noneBody}</span>;
@@ -204,15 +204,15 @@ export function ProjectPicker({ value, onChange }: { value: Id | null; onChange:
   );
 }
 
-// ---- 运行页 ----
+// ---- Run page ----
 
-/** Space 里写着这个视频的条目（「打开编辑」「接着做」用）。 */
+/** Entries in the Space that refer to this video (used by “打开编辑” (Open in editor) and “接着做” (Continue)). */
 export function entryOfVideo(entries: readonly SpaceEntry[], videoId: Id | null): SpaceEntry | null {
   if (!videoId) return null;
   return entries.find((e) => e.kind === 'video' && e.ref && 'videoId' in e.ref && e.ref.videoId === videoId && !e.user.trashedAt) ?? null;
 }
 
-/** 一次运行的标题与本机记录：有本机记录时用它，否则从冻结参数推。 */
+/** The title and local record of one run: the local record is used when present, otherwise it is derived from the frozen parameters. */
 export function useRunTitle(job: JobRecord): { title: string; meta: RunMeta | null; entry: SpaceEntry | null } {
   const meta = useVideoTools((s) => s.meta[job.jobId] ?? null);
   const entries = useSpace((s) => s.entries);
@@ -243,14 +243,14 @@ const line = style({ display: 'flex', alignItems: 'start', gap: 8, overflowWrap:
 const lineIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, color: 'green-1000', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
 const buttons = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
-/** 一次运行的视图：转录由「说话人区分」区分说话人时单列「识别说话人」一步（model/transcribe-speakers.ts `diarizeStepOf`）。 */
+/** The view of one run: when transcription uses “说话人区分” (speaker diarization) to tell speakers apart, “识别说话人” (Identify speakers) is listed as a separate step (model/transcribe-speakers.ts `diarizeStepOf`). */
 export function useRunView(job: JobRecord): RunView | null {
   const jobs = useJobs((s) => s.jobs);
   const view = useModels((s) => s.capabilities);
   return runView(job, jobs, { diarizeStep: diarizeStepOf(job, jobs, view) });
 }
 
-/** 运行与结果页：进度、步骤、失败时从那一步重试；完成后「打开编辑」与能接着做的工具。 */
+/** Run and result page: progress, steps, and on failure a retry from that step; after completion, “打开编辑” (Open in editor) and the tools that can continue the work. */
 export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: VideoToolId; onBack: () => void }) {
   const go = useShell((s) => s.go);
   const outputs = useJobOutputs([job.jobId]);
@@ -267,7 +267,7 @@ export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: Video
   const opts = meta?.target ? { target: meta.target, transcribe: meta.transcribe } : runOpts(job);
   const ownTool = (toolOfJob(job) ?? tool) as VideoToolId;
   const intoMovie = opensMovie(ownTool, input, opts);
-  // 下载时一起转写的视频按转录给下一步（翻译字幕、翻译配音）。
+  // A video transcribed together with its download gets next steps based on the transcription (translate subtitles, translate and dub).
   const fromTool = ownTool === 'link-import' && opts.transcribe ? 'transcribe' : ownTool;
   const assets = ambiguousAssets(job);
   const keepsVideo = run.steps.some((s) => s.name === 'create' && s.status === 'done');
@@ -346,15 +346,15 @@ export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: Video
   );
 }
 
-/** 编辑器此刻占着这个视频（正在打开或已经开着）：后台撤销完不替它关（同 change-card）。 */
+/** The editor is holding this video right now (opening or already open): after a background undo finishes, it does not close the video on its behalf (same as change-card). */
 function editorHolds(target: FileTarget, videoId: Id): boolean {
   const video = useVideo.getState().video;
   return video !== null && (video.videoId === videoId || sameTarget(video.target, target));
 }
 
 /**
- * 换用了文稿之后（产品设计 §5.11，设计稿 tool-specs.jsx 转录结果的动作）：「刷新过期译文」打开视频、进编辑器的那个工具页；
- * 「撤销」按事务撤销换用那一笔（编辑器开着这个视频时走编辑器，否则在后台打开撤销再关，同变更卡）。
+ * After swapping in a transcript (product design §5.11, the action on the transcription result in design file tool-specs.jsx): “刷新过期译文” (Refresh outdated translation) opens the video and the tool page in the editor;
+ * “撤销” (Undo) reverts that swap as one transaction (when the editor has this video open, it goes through the editor; otherwise it opens the video in the background, undoes, and closes it again, as in the change card).
  */
 function SwitchActions({ job, entry }: { job: JobRecord; entry: SpaceEntry | null }) {
   const runtime = useRuntime();
@@ -420,8 +420,8 @@ function SwitchActions({ job, entry }: { job: JobRecord; entry: SpaceEntry | nul
 }
 
 /**
- * 转录停在「视频主轨上有几个素材」（`TRANSCRIBE_ASSET_AMBIGUOUS`）：让用户选一个，带 `assetId` 重新开始（新的一次运行）。
- * 合同只给素材 ID，没有名字。
+ * Transcription stops at “how many assets are on the video's main track” (`TRANSCRIBE_ASSET_AMBIGUOUS`): the user picks one, and it restarts with `assetId` (a new run).
+ * The contract gives only the asset ID, with no name.
  */
 function AmbiguousAssets({ job, ids, title }: { job: JobRecord; ids: readonly Id[]; title: string }) {
   const [pick, setPick] = useState<Id | null>(ids[0] ?? null);
@@ -457,7 +457,7 @@ function AmbiguousAssets({ job, ids, title }: { job: JobRecord; ids: readonly Id
   );
 }
 
-// ---- 运行记录 ----
+// ---- Run records ----
 
 const recordItem = style({
   display: 'flex',
@@ -495,7 +495,7 @@ function RunRecord({ job, current }: { job: JobRecord; current: boolean }) {
   );
 }
 
-/** 右栏：这个工具的运行记录（新的在前），点一条看它的进度与结果。 */
+/** Right column: this tool's run records (newest first); click one to see its progress and result. */
 export function ToolRunList({ tool, current, onOpen }: { tool: VideoToolId; current: Id | null; onOpen: (jobId: Id) => void }) {
   const ready = useJobs((s) => s.ready);
   const jobs = useJobs((s) => s.jobs);
@@ -524,11 +524,11 @@ export function ToolRunList({ tool, current, onOpen }: { tool: VideoToolId; curr
   );
 }
 
-// ---- 页面骨架 ----
+// ---- Page skeleton ----
 
 const waiting = style({ display: 'flex', flexDirection: 'column', alignItems: 'start', gap: 8 });
 
-/** 视频工具页的骨架：左边表单或运行页，右边运行记录；看运行页时页头不放提交按钮。 */
+/** Skeleton of the video tool page: the form or run page on the left, run records on the right; while viewing the run page, the header has no submit button. */
 export function ToolFrame({
   tool,
   title,

@@ -1,18 +1,16 @@
-//! T2S 语义 token 采样：对照 `GPT_SoVITS/AR/models/utils.py` 的 `logits_to_probs`
-//! 与 `multinomial_sample_one_no_sync`。词表只有 1025 项，在 CPU 上做完即可，
-//! 两个后端共用同一份实现（也就不依赖张量库的 topk / sort）。
+//! T2S semantic token sampling: matches `logits_to_probs` and `multinomial_sample_one_no_sync` in `GPT_SoVITS/AR/models/utils.py`. The vocabulary has only 1025 entries, so it is fine to run on the CPU; both backends share one implementation (so it does not depend on the tensor library's topk / sort).
 
 use crate::synthesize::qwen3_tts::sampling::Rng;
 use crate::synthesize::types::SamplingOptions;
 use anyhow::{Result, ensure};
 
-/// 官方 WebUI 的默认值（`top_k=15, top_p=1, temperature=1`；
-/// `infer_panel_naive` 的 `repetition_penalty=1.35`）。
+/// The official WebUI defaults (`top_k=15, top_p=1, temperature=1`;
+/// `repetition_penalty=1.35` for `infer_panel_naive`).
 pub const DEFAULT_TOP_K: usize = 15;
 pub const DEFAULT_TOP_P: f32 = 1.0;
 pub const DEFAULT_TEMPERATURE: f32 = 1.0;
 pub const DEFAULT_REPETITION_PENALTY: f32 = 1.35;
-/// 每句最多生成的语义 token（25 Hz，一分钟）；`SamplingOptions::max_tokens` 只能调小。
+/// Maximum semantic tokens generated per sentence (25 Hz, one minute); `SamplingOptions::max_tokens` can only lower it.
 pub const DEFAULT_MAX_TOKENS: usize = 1500;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -57,12 +55,12 @@ impl SamplingParams {
     }
 }
 
-/// 采样一个 token。与上游一样**就地**施加重复惩罚（`logits.scatter_`），
-/// 所以调用方随后对同一个 `logits` 取 argmax 判断 EOS 时看到的是惩罚后的分数。
+/// Samples one token. As upstream does, the repetition penalty is applied **in place** (`logits.scatter_`),
+/// so when the caller then takes the argmax over the same `logits` to check for EOS, it sees the penalized scores.
 pub fn sample(logits: &mut [f32], previous: &[u32], params: &SamplingParams, rng: &mut Rng) -> usize {
     let vocab = logits.len();
     if params.repetition_penalty != 1.0 {
-        // gather 读原值、scatter 写回：同一 token 出现多次也只惩罚一次。
+        // gather reads the original values and scatter writes them back: a token that appears several times is penalized only once.
         let mut seen = vec![false; vocab];
         for &token in previous {
             let token = token as usize;
@@ -87,7 +85,7 @@ pub fn sample(logits: &mut [f32], previous: &[u32], params: &SamplingParams, rng
         let mut cumulative = 0.0f32;
         for (rank, &index) in order.iter().enumerate() {
             cumulative += probs[rank];
-            // `cum_probs > top_p` 的位置被移除，但第一名永远保留。
+            // Positions where `cum_probs > top_p` are removed, but the top-ranked token is always kept.
             if rank > 0 && cumulative > params.top_p {
                 scores[index] = f32::NEG_INFINITY;
             }
@@ -112,7 +110,7 @@ pub fn sample(logits: &mut [f32], previous: &[u32], params: &SamplingParams, rng
     }
 
     let probs = softmax(&scores);
-    // `argmax(probs / Exp(1))` 等价于按 probs 做一次多项式采样；并列时取第一个。
+    // `argmax(probs / Exp(1))` is equivalent to one multinomial sample by probs; on ties, the first is taken.
     let mut best = 0usize;
     let mut best_value = f64::NEG_INFINITY;
     for (index, &p) in probs.iter().enumerate() {
@@ -127,7 +125,7 @@ pub fn sample(logits: &mut [f32], previous: &[u32], params: &SamplingParams, rng
     best
 }
 
-/// 首个最大值的下标（`torch.argmax` 的并列规则）。
+/// Index of the first maximum (the tie rule of `torch.argmax`).
 pub fn argmax(values: &[f32]) -> usize {
     let mut best = 0usize;
     for (index, value) in values.iter().enumerate() {
@@ -171,7 +169,7 @@ mod tests {
         let mut rng = Rng::new(1);
         sample(&mut logits, &[0, 0, 1], &params(3, 1.0, 2.0), &mut rng);
         assert_eq!(logits, vec![1.0, -2.0, 1.0]);
-        // 惩罚后 0 与 2 并列，argmax 取第一个。
+        // After penalties, 0 and 2 are tied, so argmax takes the first.
         assert_eq!(argmax(&logits), 0);
     }
 

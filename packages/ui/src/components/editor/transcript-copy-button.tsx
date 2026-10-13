@@ -45,24 +45,22 @@ import { copyToClipboard } from './transcript-actions.ts';
 import { TRANSCRIPT_TOOLS_COPY as T } from './transcript-copy.ts';
 
 /**
- * 文稿面板的复制（设计稿 transcript-copy.jsx，产品设计 §5.7）：面板头上挨着的两枚钮——复制钮一点就按记住的组合复制全文
- * （`useTranscriptCopyPrefs`），下拉打开「复制设置」：格式、与导出「文稿」页同一组五个开关、正文预览与复制按钮，改了就记住。
- * 复制后的提示写清带了什么，带一个「复制设置」回到弹层。段落、章节的菜单（这一段 / 这一章）用 `useScopeCopy` 与 `copyScope`。
+ * Copy controls for the transcript panel (design mock transcript-copy.jsx, product design §5.7): two buttons side by side in the panel header. The copy button copies the full text in one click using the remembered combination (`useTranscriptCopyPrefs`). The dropdown opens “Copy settings”: format, the same five toggles as the “Transcript” page of export, a body preview and a copy button. Changes are remembered. The post-copy notice states what was included, with a “Copy settings” button back to the popover. The paragraph and chapter menus (this paragraph / this chapter) use `useScopeCopy` and `copyScope`.
  *
- * 全文走 `exports.renderText`，与同样设置导出的文件逐字节相同（面板里几份转写时各排一份接起来，文首只写在第一份）。
- * 只看译文时 Runtime 排不了（主文档不收译文），由面板按同一写法排（`writeTranscript`）：不写文首，剪掉的部分不出现。
- * 节选也由面板排：范围导出的时间从范围起点算，这里要的是序列上的时刻。
+ * The full text goes through `exports.renderText`, so it is byte-identical to a file exported with the same settings. When the panel has several transcripts, each is rendered and they are joined, with the header written only at the top of the first.
+ * When only the translation is shown, Runtime cannot render (the main document does not hold translations), so the panel renders it with the same format (`writeTranscript`): no header, and cut parts do not appear.
+ * Excerpts are also rendered by the panel: the time of a range export counts from the start of the range, but here we need the moment on the sequence.
  */
 
 const pair = style({ display: 'inline-flex', alignItems: 'center' });
-/** 下拉只有 16px 宽，少占面板头的地方（设计稿 `.txc__chev`）。 */
+/** The dropdown is only 16px wide, to take less room in the panel header (design mock `.txc__chev`). */
 const chevron = style({ width: 16, minWidth: 16 });
 const pop = style({ display: 'flex', flexDirection: 'column', gap: 12, width: 360, maxWidth: '[calc(100vw - 32px)]', boxSizing: 'border-box' });
 const popTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const formatRow = style({ display: 'flex', alignItems: 'center', gap: 8 });
 const formatLabel = style({ font: 'ui-sm', color: 'gray-700' });
 const note = style({ margin: 0, font: 'ui-xs', color: 'gray-600' });
-/** 预览框与导出页同一种只读等宽正文（`export-transcript.tsx`），矮一些。 */
+/** The preview box uses the same read-only monospace body as the export page (`export-transcript.tsx`), but a bit shorter. */
 const previewText = style({
   font: 'code-xs',
   color: { default: 'gray-800', isStale: 'gray-500' },
@@ -84,18 +82,17 @@ const previewText = style({
 const foot = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 });
 const receiptText = style({ font: 'ui-xs', color: 'gray-600', minWidth: 0 });
 
-/** 改了开关之后等这么久再排预览：连着点几个只排最后一次（同导出页）。 */
+/** After a toggle changes, wait this long before rendering the preview: rapid clicks render only the last one (same as the export page). */
 const DEBOUNCE_MS = 150;
 
-/** 组合写成一串零件（复制钮的提示、复制后的回执、范围菜单的副题）：格式，再列这个范围实际带上的项。 */
+/** The combination is built from parts (the copy button's hint, the post-copy receipt, the range menu's subtitle): the format, then the items this scope actually includes. */
 export function copyParts(eff: TranscriptCopyPrefs, scope: CopyScope): string[] {
   const format = TRANSCRIPT_FORMATS.find((f) => f.key === eff.format) ?? TRANSCRIPT_FORMATS[0]!;
   return [format.label, ...copyIncludes(eff, scope).map((key) => (key === 'keepCut' ? T.keepCut : EXPORT_COPY[key]))];
 }
 
 /**
- * 节选（这一章、这一段）的菜单项怎么摆：按复制设置写出来与只要文字一样时（`plain`）只留一项「复制文字」，否则两项，
- * 「按复制设置」的副题是 `summary`。章节头行只在视频有章节时才有，所以按有章节算。
+ * How the excerpt menu items (this chapter, this paragraph) are laid out. If the output with the settings is the same as text only (`plain`), only one “Copy text” item is shown. Otherwise there are two items, and the subtitle of “Per copy settings” is `summary`. Chapter header rows only exist when the video has chapters, so this is computed as having chapters.
  */
 export function useScopeCopy(scope: Exclude<CopyScope, 'all'>): { plain: boolean; summary: string } {
   const prefs = useTranscriptCopyPrefs(useShallow(copyPrefsOf));
@@ -103,7 +100,7 @@ export function useScopeCopy(scope: Exclude<CopyScope, 'all'>): { plain: boolean
   return { plain: scopeIsPlain(eff, scope), summary: copyParts(eff, scope).join(' · ') };
 }
 
-/** 范围菜单（这一段、这一章）里的复制项：`copy-set` 按复制设置、`copy` 只要文字；两者一样时只有一项「复制文字」。 */
+/** Copy items in the scope menus (this paragraph, this chapter): `copy-set` per the copy settings, `copy` text only. When the two are the same, there is only one “Copy text” item. */
 export function scopeCopyItems(copy: { plain: boolean; summary: string }) {
   if (copy.plain)
     return [
@@ -126,8 +123,8 @@ export function scopeCopyItems(copy: { plain: boolean; summary: string }) {
 }
 
 /**
- * 复制一个节选：`withSettings` 时按记住的组合由面板排（不写标题与文首；这一章照开关写章节标题），否则是当前视图的纯文字。
- * 正文取自面板，剪掉的部分本来就不在里面。`label` 是回执里的范围名。
+ * Copies one excerpt. With `withSettings`, the panel renders it using the remembered combination (no title or header; for this chapter the chapter heading follows the toggles). Otherwise it is the plain text of the current view.
+ * The body text comes from the panel, and cut parts are not in it to begin with. `label` is the scope name shown in the receipt.
  */
 export function copyScope(input: {
   scope: Exclude<CopyScope, 'all'>;
@@ -148,23 +145,23 @@ export function copyScope(input: {
   return copyToClipboard(text, T.copied(input.label, [...copyParts(eff, scope), receipt].join(' · ')));
 }
 
-/** 面板交给复制钮的东西。 */
+/** What the panel hands to the copy button. */
 export interface TranscriptCopyInput {
   videoId: Id | null;
-  /** 已追平、能请 Runtime 排正文。 */
+  /** Caught up, so Runtime can be asked to render the body. */
   ready: boolean;
-  /** 序列与正文取自的文档的版本：变了预览重排。 */
+  /** Version of the document the sequence and body come from: when it changes, the preview is re-rendered. */
   revision: string;
-  /** 面板里的每份转写，双语与只看译文时配上同一门语言的译文。 */
+  /** Each transcript in the panel; in bilingual or translation-only view, paired with a translation in the same language. */
   sources: readonly { documentId: Id; translationId: Id | null }[];
   view: TranscriptView;
-  /** 语言钮上的那个名字（「English」「中文 + English」）。 */
+  /** The name shown on the language button (“English”, or “中文 + English” meaning Chinese + English). */
   viewLabel: string;
   hasChapters: boolean;
   chapters: readonly { title: string; start: number }[];
-  /** 视频名：只看译文、Markdown 时由面板写的一级标题（与 Runtime 写的同一个）。 */
+  /** Video name: when rendering translation only or Markdown, the level-1 heading the panel writes (the same one Runtime writes). */
   title: string | null;
-  /** 面板的全部段落（只看译文时由面板排）；用到时才算。 */
+  /** All paragraphs of the panel (rendered by the panel when translation only); computed only when needed. */
   paragraphs(): readonly CopyParagraph[];
   documents: Record<Id, DocumentRecord>;
   disabled: boolean;
@@ -175,7 +172,7 @@ interface Produced {
   receipt: string;
 }
 
-/** 按生效的组合排出全文：只看译文时面板排，其余交给 Runtime（几份转写各排一份、接起来）。 */
+/** Renders the full text with the effective combination: when translation only, the panel renders it; otherwise Runtime does (each transcript is rendered separately, then they are joined). */
 async function produceAll(runtime: RuntimeSession, input: TranscriptCopyInput, eff: TranscriptCopyPrefs): Promise<Produced> {
   if (input.view === 'translation') {
     const paras = input.paragraphs().filter((p) => p.translation.trim());
@@ -187,7 +184,7 @@ async function produceAll(runtime: RuntimeSession, input: TranscriptCopyInput, e
       timestamps: eff.timestamps,
       title: eff.format === 'md' ? input.title : null,
     });
-    // 与 Runtime 排出的文件一样以换行结尾。
+    // Ends with a newline, like the file Runtime renders.
     return { text: body ? `${body}\n` : '', receipt: copyReceipt(paras, 'translation') };
   }
   if (!input.videoId) return { text: '', receipt: '' };
@@ -202,7 +199,7 @@ function copyFailed(error: unknown, documents: Record<Id, DocumentRecord>) {
   ToastQueue.negative(explainExportError(error, { kind: 'transcript', stage: 'rejected', documents }).title, { timeout: 6000 });
 }
 
-/** 面板头上的复制钮与「复制设置」下拉。 */
+/** The copy button and the “Copy settings” dropdown in the panel header. */
 export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) {
   const runtime = useRuntime();
   const prefs = useTranscriptCopyPrefs(useShallow(copyPrefsOf));
@@ -213,7 +210,7 @@ export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) 
   const parts = copyParts(eff, 'all');
   const summary = parts.join(' · ');
 
-  // 弹层开着、已追平时排预览：组合、视图、版本变了重排，晚到的旧结果丢掉。
+  // When the popover is open and caught up, render the preview. Re-render when the combination, view, or version changes, and discard late results from older renders.
   const key = open && input.ready ? JSON.stringify([eff, input.view, input.revision, input.sources]) : null;
   const [preview, setPreview] = useState<{ key: string; produced: Produced | null; problem: string | null } | null>(null);
   useEffect(() => {
@@ -235,7 +232,7 @@ export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) 
       live = false;
       clearTimeout(timer);
     };
-    // `key` 已经包含组合与版本；段落取到了（`paragraphs` 换了）也重排。`input` 每次渲染都是新对象，不进依赖。
+    // `key` already includes the combination and version; also re-render when the paragraphs change (`paragraphs` changed). `input` is a new object on every render, so it is not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, key, input.paragraphs]);
   const fresh = !!preview && preview.key === key;
@@ -253,7 +250,7 @@ export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) 
 
   const copy = (fromSettings: boolean) => {
     setOpen(false);
-    // 预览已经排好的就直接用它：剪贴板写在这一下点击里（Safari 不认等过异步之后再写）。
+    // If the preview is already rendered, use it directly: the clipboard write must happen inside this click (Safari rejects a write that comes after an async wait).
     if (fromSettings && fresh && preview.produced) {
       void finish(preview.produced, true);
       return;
@@ -306,7 +303,7 @@ export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) 
             {fresh && preview.problem ? (
               <p className={note}>{preview.problem}</p>
             ) : (
-              // 可滚动的区域要能用键盘到达（tabIndex），读屏按「预览」念出。
+              // A scrollable region must be reachable by keyboard (tabIndex); screen readers announce it as “预览” (Preview).
               <pre className={previewText({ isStale: !fresh })} tabIndex={0} aria-label={EXPORT_COPY.preview} aria-busy={!fresh}>
                 {shown ? shown.text || T.copyEmpty : EXPORT_COPY.previewLoading}
               </pre>

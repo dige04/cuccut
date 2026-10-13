@@ -61,7 +61,7 @@ describe('压低原声', () => {
   });
 
   it('「压在」的选项：别的、有发声片段的轨道', () => {
-    // 视频自带的声音关着，画面轨道不算。
+    // The video's own sound is off. The picture track does not count.
     expect(triggerOptions(sequence(), music).map((o) => o.key)).toEqual(['a1']);
     expect(triggerOptions(sequence(), video).map((o) => o.key)).toEqual(['a1', 'a2']);
   });
@@ -88,7 +88,7 @@ describe('压低原声', () => {
     expect(isDefault({ ...rule, depth: 18 })).toBe(false);
     expect(singleTrigger(rule)).toBe('a1');
     expect(singleTrigger({ ...rule, trigger: { kind: 'items', trackIds: ['a1'], itemIds: ['x'] } })).toBeNull();
-    // 按说话触发的规则不对应任何一条轨道。
+    // A rule triggered by speech does not correspond to any track.
     expect(singleTrigger({ ...rule, trigger: { kind: 'speech' } })).toBeNull();
     expect(changeOperation(sequence([rule]), rule, { trigger: 'v1', release: 1.2 })).toEqual({
       type: 'setDucking',

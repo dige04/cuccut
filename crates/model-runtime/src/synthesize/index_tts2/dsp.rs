@@ -1,29 +1,29 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SpeechRestoration/SeamlessM4TFrontEnd.swift`。
+//! Parts of this are adapted from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SpeechRestoration/SeamlessM4TFrontEnd.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! IndexTTS2 的三条 CPU 前端 DSP（全部纯 Rust + realfft，不依赖 MLX）：
+//! The three CPU front-end DSP routines for IndexTTS2 (all pure Rust + realfft, no dependency on MLX):
 //!
-//! - [`seamless_input_features`]：w2v-BERT 2.0 的 SeamlessM4T log-mel 前端，
-//!   对照 speech-swift `SpeechRestoration/SeamlessM4TFrontEnd.swift`。
-//! - [`campplus_fbank`]：CAM++ 的 80 维 fbank，对照官方
-//!   `torchaudio.compliance.kaldi.fbank(num_mel_bins=80, dither=0)`（三角在 mel 域，
-//!   与 Seamless 前端共用 [`kaldi_mel_filterbank`]）。
-//! - [`torchaudio_resample`]：`torchaudio.transforms.Resample` 的默认 sinc-Hann 重采样，
-//!   官方把 22050 Hz 的音色参考降到 16 kHz 就用它；[`librosa_resample`] 是同一套核换成
-//!   Kaiser 窗、拟合 `librosa.load` 缺省 soxr_hq 的版本，读参考音频时用。
-//! - [`slaney_mel`]：librosa `norm='slaney'` 的 mel 频谱，对照
-//!   `MLXCommon/SlaneyMel.swift`；S2Mel 的 prompt mel 用它。
+//! - [`seamless_input_features`]: the SeamlessM4T log-mel front end for w2v-BERT 2.0,
+//!   matching speech-swift `SpeechRestoration/SeamlessM4TFrontEnd.swift`.
+//! - [`campplus_fbank`]: the 80-dim fbank for CAM++, matching the official
+//!   `torchaudio.compliance.kaldi.fbank(num_mel_bins=80, dither=0)` (triangles in the mel domain;
+//!   shares [`kaldi_mel_filterbank`] with the Seamless front end).
+//! - [`torchaudio_resample`]: the default sinc-Hann resampling of `torchaudio.transforms.Resample`;
+//!   the official code uses it to downsample the 22050 Hz speaker reference to 16 kHz. [`librosa_resample`] is the same kernel with a Kaiser window,
+//!   fitted to match `librosa.load`'s default soxr_hq; it is used when reading reference audio.
+//! - [`slaney_mel`]: the mel spectrogram with librosa's `norm='slaney'`, matching
+//!   `MLXCommon/SlaneyMel.swift`; S2Mel's prompt mel uses it.
 //!
-//! 三者都返回行主序 `[frames, bins]` 的 `Vec<f32>`。
+//! All three return a row-major `[frames, bins]` `Vec<f32>`.
 
 use realfft::RealFftPlanner;
 use realfft::num_complex::Complex;
 
-/// 对一批已加窗、已零填充到 `n_fft` 的帧做 rfft，返回每帧的复数谱 `[frames, n_fft/2+1]`。
+/// Runs rfft on a batch of frames that are already windowed and zero-padded to `n_fft`, returning the complex spectrum of each frame `[frames, n_fft/2+1]`.
 fn rfft_frames(framed: &[f32], frames: usize, n_fft: usize) -> Vec<Complex<f32>> {
     let n_bins = n_fft / 2 + 1;
     let mut planner = RealFftPlanner::<f32>::new();
@@ -39,7 +39,7 @@ fn rfft_frames(framed: &[f32], frames: usize, n_fft: usize) -> Vec<Complex<f32>>
     spectrum
 }
 
-/// Povey 窗：`(0.5 - 0.5*cos(2πn/(N-1)))^0.85`（对称 Hann 的 0.85 次幂）。
+/// Povey window: `(0.5 - 0.5*cos(2πn/(N-1)))^0.85` (the 0.85 power of a symmetric Hann window).
 fn povey_window(length: usize) -> Vec<f32> {
     let denom = (length - 1) as f32;
     (0..length)
@@ -69,10 +69,10 @@ fn hz_to_mel_kaldi(hz: f32) -> f32 {
     1127.0 * (1.0 + hz / 700.0).ln()
 }
 
-/// `[257, 80]` 行主序的 Kaldi 尺度三角 mel 滤波器组，对应
+/// Kaldi-scale triangular mel filterbank, row-major `[257, 80]`, corresponding to
 /// `mel_filter_bank(num_frequency_bins=256, num_mel_filters=80, min=20, max=8000,
 /// sr=16000, norm=None, mel_scale="kaldi", triangularize_in_mel_space=True)`
-/// 再 `np.pad(((0,1),(0,0)))`：第 256 行全零。
+/// followed by `np.pad(((0,1),(0,0)))`: row 256 is all zeros.
 fn kaldi_mel_filterbank() -> Vec<f32> {
     let num_fft_freqs = 256usize;
     let n_mel = SEAMLESS_NUM_MEL_BINS;
@@ -100,11 +100,11 @@ fn kaldi_mel_filterbank() -> Vec<f32> {
     fb
 }
 
-/// 16 kHz 单声道 → `input_features`（行主序 `[frames, 160]`）。输入不足一帧时返回 `(空, 0)`。
+/// 16 kHz mono → `input_features` (row-major `[frames, 160]`). When the input is shorter than one frame, returns `(empty, 0)`.
 ///
-/// 步骤：×2^15 → 分帧（400/160，不居中）→ 每帧去直流、预加重、Povey 窗、512 点 rfft、
-/// 功率谱 → Kaldi mel（floor 后取自然对数）→ 每个 mel bin 沿时间做 ddof=1 标准化 →
-/// 步长 2 堆叠。
+/// Steps: ×2^15 → framing (400/160, not centered) → per frame: remove DC, pre-emphasis, Povey window, 512-point rfft,
+/// power spectrum → Kaldi mel (floored, then natural log) → normalize each mel bin over time with ddof=1 →
+/// stack with a stride of 2.
 pub fn seamless_input_features(audio: &[f32]) -> (Vec<f32>, usize) {
     if audio.len() < SEAMLESS_FRAME_LENGTH {
         return (Vec::new(), 0);
@@ -129,7 +129,7 @@ pub fn seamless_input_features(audio: &[f32]) -> (Vec<f32>, usize) {
         for value in frame.iter_mut() {
             *value -= mean;
         }
-        // 预加重：从高到低走，保证读到的是更新前的邻居。
+        // Pre-emphasis: iterate from high to low index, so each neighbor read is still the value before the update.
         for i in (1..SEAMLESS_FRAME_LENGTH).rev() {
             frame[i] -= SEAMLESS_PREEMPHASIS * frame[i - 1];
         }
@@ -171,11 +171,11 @@ pub fn seamless_input_features(audio: &[f32]) -> (Vec<f32>, usize) {
     (out, stacked)
 }
 
-/// 每个 mel bin 沿时间轴零均值 / 单位方差（样本方差 ddof=1），原地修改。
+/// Normalizes each mel bin along the time axis to zero mean and unit variance (sample variance, ddof=1), in place.
 fn normalize_per_mel_bin(x: &mut [f32], frames: usize, n_mel: usize) {
     if frames <= 1 {
         if frames == 1 {
-            // 单帧时 ddof=1 的方差无定义；提取器会除以 sqrt(1e-7)，结果为 0。
+            // With a single frame, the ddof=1 variance is undefined; the extractor divides by sqrt(1e-7), so the result is 0.
             for value in x.iter_mut().take(n_mel) {
                 *value = 0.0;
             }
@@ -208,12 +208,11 @@ const CAMPPLUS_N_FFT: usize = 512;
 const CAMPPLUS_PREEMPH: f32 = 0.97;
 const CAMPPLUS_LOG_FLOOR: f32 = 1.192_092_9e-7;
 
-/// CAM++ 的 log-mel 特征，行主序 `[frames, 80]`；输入不足一帧时补零、至少一帧。
+/// CAM++ log-mel features, row-major `[frames, 80]`; input shorter than one frame is zero-padded to at least one frame.
 ///
-/// 对照 `kaldi.fbank` 缺省参数：25 ms / 10 ms、去直流、预加重 0.97（`frame[0]` 与自身
-/// 相减）、Povey 窗、512 点功率谱、20 Hz–Nyquist 的 Kaldi mel 三角（Nyquist bin 权重 0）、
-/// `log(max(x, eps))`。与 Seamless 前端的差别：不乘 2^15、无时间轴标准化（调用方在
-/// 整段上减均值）。
+/// Matches the `kaldi.fbank` defaults: 25 ms / 10 ms, DC removal, pre-emphasis 0.97 (`frame[0]` minus itself), Povey window,
+/// 512-point power spectrum, Kaldi mel triangles from 20 Hz to Nyquist (Nyquist bin weight 0), `log(max(x, eps))`.
+/// Differences from the Seamless front end: no ×2^15, and no time-axis normalization (the caller subtracts the mean over the whole segment).
 pub fn campplus_fbank(audio: &[f32]) -> (Vec<f32>, usize) {
     let n_bins = CAMPPLUS_N_FFT / 2 + 1;
     let signal_len = audio.len();
@@ -237,7 +236,7 @@ pub fn campplus_fbank(audio: &[f32]) -> (Vec<f32>, usize) {
         for value in frame.iter_mut() {
             *value -= mean;
         }
-        // kaldi 用 replicate 填充做预加重：`frame[0]` 减去 0.97 × 自身。
+        // Kaldi's pre-emphasis pads by replication: `frame[0]` minus 0.97 × itself.
         let mut prev = frame[0];
         for value in frame.iter_mut() {
             let cur = *value;
@@ -256,7 +255,7 @@ pub fn campplus_fbank(audio: &[f32]) -> (Vec<f32>, usize) {
     for t in 0..num_frames {
         for (b, value) in power.iter_mut().enumerate() {
             let c = spectrum[t * n_bins + b];
-            // 参考实现是 abs(spec) * abs(spec)，与 norm_sqr 相同。
+            // The reference implementation uses abs(spec) * abs(spec), which is the same as norm_sqr.
             *value = c.norm_sqr();
         }
         for m in 0..CAMPPLUS_NUM_MEL_BINS {
@@ -270,22 +269,18 @@ pub fn campplus_fbank(audio: &[f32]) -> (Vec<f32>, usize) {
     (out, num_frames)
 }
 
-// MARK: - torchaudio 重采样
+// MARK: - torchaudio resampling
 
-/// `torchaudio.transforms.Resample(orig, new)` 的缺省配置（`sinc_interp_hann`、
-/// `lowpass_filter_width = 6`、`rolloff = 0.99`）：先按最大公约数约分，核在 f64 里算好再
-/// 转 f32，输入两侧补零后按步长 `orig` 卷积，输出截到 `ceil(new × len / orig)`。
-/// 两个采样率相同时原样返回。
+/// Default configuration of `torchaudio.transforms.Resample(orig, new)` (`sinc_interp_hann`,
+/// `lowpass_filter_width = 6`, `rolloff = 0.99`): first reduces by the greatest common divisor, computes the kernel in f64 and converts it to f32,
+/// zero-pads both sides of the input, convolves with stride `orig`, and truncates the output to `ceil(new × len / orig)`.
+/// When the two sample rates are equal, the input is returned unchanged.
 pub fn torchaudio_resample(samples: &[f32], orig_freq: u32, new_freq: u32) -> Vec<f32> {
     sinc_resample(samples, orig_freq, new_freq, SincWindow::Hann, 6.0, 0.99)
 }
 
-/// 官方读参考音频用的 `librosa.load(path, sr=…)` 重采样（librosa 缺省 `soxr_hq`）的近似：
-/// torchaudio 的 `sinc_interp_kaiser`（`lowpass_filter_width = 64`、`rolloff = 0.957`、
-/// `beta = 6`）。参数按 soxr_hq 的实测频响拟合（线性相位、零延迟、-3 dB 在 0.95 倍
-/// Nyquist 附近）：16k→22050、44.1k/48k→22050、24k/44.1k→16k 的白噪声相对误差都在
-/// 0.15% 以内。CAM++ 风格向量对 7–8 kHz 过渡带很敏感，用普通 sinc 时与官方只有
-/// cos 0.9975，足以让情感矩阵选到另一行；换成这个之后是 0.99999+。
+/// Approximation of the resampling the official code uses when reading reference audio, `librosa.load(path, sr=…)` (librosa's default is `soxr_hq`):
+/// torchaudio's `sinc_interp_kaiser` (`lowpass_filter_width = 64`, `rolloff = 0.957`, `beta = 6`). The parameters are fitted to soxr_hq's measured frequency response (linear phase, zero delay, -3 dB near 0.95× Nyquist). The relative error on white noise is within 0.15% for 16k→22050, 44.1k/48k→22050, and 24k/44.1k→16k. CAM++-style vectors are very sensitive to the 7–8 kHz transition band: with a plain sinc, the cosine similarity to the official output is only 0.9975, which is enough to make the emotion matrix pick a different row; with this version it is 0.99999+.
 pub fn librosa_resample(samples: &[f32], orig_freq: u32, new_freq: u32) -> Vec<f32> {
     sinc_resample(samples, orig_freq, new_freq, SincWindow::Kaiser { beta: 6.0 }, 64.0, 0.957)
 }
@@ -296,7 +291,7 @@ enum SincWindow {
     Kaiser { beta: f64 },
 }
 
-/// torchaudio `_get_sinc_resample_kernel` + `_apply_sinc_resample_kernel` 的逐点复刻。
+/// Point-by-point replica of torchaudio's `_get_sinc_resample_kernel` + `_apply_sinc_resample_kernel`.
 fn sinc_resample(samples: &[f32], orig_freq: u32, new_freq: u32, window: SincWindow, lowpass_filter_width: f64, rolloff: f64) -> Vec<f32> {
     if orig_freq == new_freq || samples.is_empty() {
         return samples.to_vec();
@@ -313,7 +308,7 @@ fn sinc_resample(samples: &[f32], orig_freq: u32, new_freq: u32, window: SincWin
     let scale = base_freq / orig as f64;
     let mut kernels = vec![0f32; new * taps];
     for j in 0..new {
-        // torch.arange(0, -new, -1) / new 是整数张量做真除，结果是 f32。
+        // `torch.arange(0, -new, -1) / new` is true division on an integer tensor, and the result is f32.
         let phase = (-(j as f32) / new as f32) as f64;
         for k in 0..taps {
             let idx = (k as f64 - width as f64) / orig as f64;
@@ -350,7 +345,7 @@ fn sinc_resample(samples: &[f32], orig_freq: u32, new_freq: u32, window: SincWin
     out
 }
 
-/// 第一类零阶修正贝塞尔函数 `I0(x)`（幂级数，收敛到相对 1e-17）。
+/// Modified Bessel function of the first kind, order zero, `I0(x)` (power series, converging to relative error 1e-17).
 fn bessel_i0(x: f64) -> f64 {
     let quarter_sq = x * x / 4.0;
     let mut term = 1.0;
@@ -376,14 +371,14 @@ pub struct SlaneyMelConfig {
     pub n_mels: usize,
     pub fmin: f32,
     pub fmax: f32,
-    /// mel 投影前对 STFT 幅度施加的指数（1.0 幅度谱，2.0 功率谱）。
+    /// Exponent applied to the STFT magnitude before the mel projection (1.0 for a magnitude spectrum, 2.0 for a power spectrum).
     pub power: f32,
-    /// 为 true 时投影后取 `log(max(mel, log_floor))`。
+    /// When true, takes `log(max(mel, log_floor))` after projection.
     pub log_mel: bool,
     pub log_floor: f32,
-    /// 为 true 时两侧各 reflect 填充 `n_fft/2`（librosa `center=True`）。
+    /// When true, pads `n_fft/2` by reflection on each side (librosa `center=True`).
     pub center_pad: bool,
-    /// 为 true 时用 PyTorch 默认的周期 Hann 窗。
+    /// When true, uses PyTorch's default periodic Hann window.
     pub periodic_hann: bool,
 }
 
@@ -396,7 +391,7 @@ fn hann_window(length: usize, n_fft: usize, periodic: bool) -> Vec<f32> {
     w
 }
 
-/// numpy `mode='reflect'` 填充（不含边界样本）。
+/// numpy `mode='reflect'` padding (does not include the boundary sample).
 fn reflect_pad_1d(row: &[f32], pad: usize) -> Vec<f32> {
     let mut out = vec![0f32; pad + row.len() + pad];
     out[pad..pad + row.len()].copy_from_slice(row);
@@ -434,7 +429,7 @@ fn mel_to_hz_slaney(mel: f32) -> f32 {
     }
 }
 
-/// Slaney 归一化的 mel 滤波器组，行主序 `(n_mels, n_fft/2 + 1)`。
+/// Slaney-normalized mel filterbank, row-major `(n_mels, n_fft/2 + 1)`.
 pub fn slaney_filterbank(sr: u32, n_fft: usize, n_mels: usize, fmin: f32, fmax: f32) -> Vec<f32> {
     let n_bins = n_fft / 2 + 1;
     let f = sr as f32;
@@ -467,7 +462,7 @@ pub fn slaney_filterbank(sr: u32, n_fft: usize, n_mels: usize, fmin: f32, fmax: 
     fb
 }
 
-/// mel 频谱 `(frames, n_mels)`，行主序。
+/// Mel spectrogram `(frames, n_mels)`, row-major.
 pub fn slaney_mel(samples: &[f32], c: &SlaneyMelConfig) -> (Vec<f32>, usize) {
     let n_bins = c.n_fft / 2 + 1;
     let padded;
@@ -513,8 +508,8 @@ pub fn slaney_mel(samples: &[f32], c: &SlaneyMelConfig) -> (Vec<f32>, usize) {
     (mel, frames)
 }
 
-/// IndexTTS2 prompt mel 用的自定义 reflect 填充（对照 `IndexTTS2ReferenceConditioning.reflectPad`）：
-/// 左侧 `out[i] = s[clamp(pad - i, 0, n-1)]`，右侧 `out[pad+n+i] = s[max(last-1-i, 0)]`。
+/// Custom reflect padding for the IndexTTS2 prompt mel (matches `IndexTTS2ReferenceConditioning.reflectPad`):
+/// left side `out[i] = s[clamp(pad - i, 0, n-1)]`, right side `out[pad+n+i] = s[max(last-1-i, 0)]`.
 pub fn prompt_reflect_pad(samples: &[f32], pad: usize) -> Vec<f32> {
     if pad == 0 || samples.len() <= 1 {
         return samples.to_vec();
@@ -549,10 +544,10 @@ mod tests {
     fn seamless_feature_shape_and_normalization() {
         let audio = sine(16_000, 1.0, 440.0);
         let (features, frames) = seamless_input_features(&audio);
-        // 1 s：(16000-400)/160+1 = 98 帧 → 堆叠 49。
+        // 1 s: (16000-400)/160+1 = 98 frames → 49 after stacking.
         assert_eq!(frames, 49);
         assert_eq!(features.len(), 49 * 160);
-        // 标准化后每个 mel bin 沿时间均值近似 0（堆叠前）；这里检查整体有限且非零。
+        // After normalization, each mel bin's mean over time is approximately 0 (before stacking); here we check that the whole output is finite and non-zero.
         assert!(features.iter().all(|v| v.is_finite()));
         assert!(features.iter().any(|v| v.abs() > 0.1));
         assert_eq!(seamless_input_features(&audio[..300]).1, 0);
@@ -563,7 +558,7 @@ mod tests {
         let fb = kaldi_mel_filterbank();
         assert_eq!(fb.len(), 257 * 80);
         assert!(fb[256 * 80..].iter().all(|v| *v == 0.0));
-        // 每个滤波器峰值为 1（三角形在中心达到 1，离散采样时略小）。
+        // Each filter peaks at 1 (the triangle reaches 1 at its center; with discrete sampling the peak is slightly lower).
         for m in 0..80 {
             let peak = (0..256).map(|k| fb[k * 80 + m]).fold(0f32, f32::max);
             assert!(peak > 0.3 && peak <= 1.0 + 1e-6, "mel {m} peak {peak}");
@@ -572,11 +567,11 @@ mod tests {
 
     #[test]
     fn torchaudio_resample_length_and_passband() {
-        // 22050 → 16000 约分为 441 → 320，输出 ceil(320 × len / 441)。
+        // 22050 → 16000 reduces to 441 → 320, output ceil(320 × len / 441).
         let audio = sine(22_050, 1.0, 440.0);
         let out = torchaudio_resample(&audio, 22_050, 16_000);
         assert_eq!(out.len(), 16_000);
-        // 通带内的正弦幅度基本不变，且与 16 kHz 直接合成的正弦对得上（跳过边缘）。
+        // Sine amplitudes in the passband are essentially unchanged, and they match a sine synthesized directly at 16 kHz (edges skipped).
         let expected = sine(16_000, 1.0, 440.0);
         let max_err = out[200..15_800]
             .iter()
@@ -588,7 +583,7 @@ mod tests {
         assert_eq!(torchaudio_resample(&audio, 16_000, 16_000), audio);
     }
 
-    /// 与 `torchaudio.transforms.Resample(22050, 16000)` 逐点对拍（值由官方 venv 算出）。
+    /// Point-by-point parity check against `torchaudio.transforms.Resample(22050, 16000)` (the values were computed in the official venv).
     #[test]
     fn torchaudio_resample_matches_torchaudio() {
         let sr = 22_050f32;
@@ -613,7 +608,7 @@ mod tests {
         for (at, value) in expected {
             assert!((out[at] - value).abs() < 2e-5, "out[{at}] = {} ≠ {value}", out[at]);
         }
-        // 9 kHz 高于新 Nyquist：torchaudio 同样只压到约 0.043（幅度 0.3 的正弦）。
+        // 9 kHz is above the new Nyquist: torchaudio also only attenuates it to about 0.043 (a sine of amplitude 0.3).
         let high = sine(22_050, 1.0, 9_000.0);
         let peak = torchaudio_resample(&high, 22_050, 16_000)[200..15_800]
             .iter()
@@ -621,8 +616,8 @@ mod tests {
         assert!((peak - 0.0434).abs() < 2e-3, "peak = {peak}");
     }
 
-    /// 对拍 torchaudio `resample(…, "sinc_interp_kaiser", lowpass_filter_width=64,
-    /// rolloff=0.957, beta=6.0)` 的实测值（440 Hz + 7.7 kHz 两个正弦，400 个样本）。
+    /// Parity check against measured values from torchaudio `resample(…, "sinc_interp_kaiser", lowpass_filter_width=64,
+    /// rolloff=0.957, beta=6.0)` (two sines at 440 Hz and 7.7 kHz, 400 samples).
     #[test]
     fn librosa_resample_matches_torchaudio_kaiser() {
         for (orig, new, len, expected) in [
@@ -656,7 +651,7 @@ mod tests {
         assert_eq!(frames, (8000 - 400) / 160 + 1);
         assert_eq!(features.len(), frames * 80);
         assert!(features.iter().all(|v| v.is_finite()));
-        // 过短输入至少一帧。
+        // Input that is too short still gets at least one frame.
         assert_eq!(campplus_fbank(&audio[..100]).1, 1);
     }
 
@@ -681,14 +676,14 @@ mod tests {
         let (mel, frames) = slaney_mel(&padded, &config);
         assert_eq!(frames, (padded.len() - 1024) / 256 + 1);
         assert_eq!(mel.len(), frames * 80);
-        // 1 kHz 正弦的能量应集中在 mel 轴中段的某个 bin。
+        // The energy of a 1 kHz sine should concentrate in one bin in the middle part of the mel axis.
         let frame = &mel[10 * 80..11 * 80];
         let (peak, _) = frame
             .iter()
             .enumerate()
             .fold((0usize, f32::MIN), |acc, (i, v)| if *v > acc.1 { (i, *v) } else { acc });
         assert!((20..50).contains(&peak), "peak bin {peak}");
-        // 滤波器组按 `[n_mels, n_fft/2 + 1]` 平铺。
+        // The filterbank is laid out flat as `[n_mels, n_fft/2 + 1]`.
         let ours = slaney_filterbank(22_050, 1024, 80, 0.0, 11_025.0);
         assert_eq!(ours.len(), 80 * 513);
     }

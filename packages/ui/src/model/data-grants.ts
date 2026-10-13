@@ -16,7 +16,7 @@ import { vi } from './data-grants.vi.ts';
 
 const times = (n: number) => (n === 1 ? '1 call' : `${n} calls`);
 
-/** 数据外发授权的文案（英文是键与类型的来源，译文在 `data-grants.zh-Hans.ts`）。 */
+/** Copy for data export grants (the English is the source of keys and types; the translations live in `data-grants.zh-Hans.ts`). */
 const en = {
   state: { active: 'Active', expired: 'Expired', revoked: 'Revoked', exhausted: 'Limit reached' } as Record<GrantState, string>,
   kindList: (kinds: readonly string[]) => kinds.join(', '),
@@ -62,8 +62,8 @@ export type DataGrantsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 设置 → 隐私里的「数据外发授权」（架构设计 §12.5）：读 `grants` 主题里的每条授权，说清给了谁、哪些数据、多大范围、
- * 预算与用量；撤销之后已经交出的数据与费用照实说，无法抹除。设计稿没有这一块，样式沿用设置页的分组与行。
+ * The “数据外发授权” (data export grants) in Settings → Privacy (architecture design §12.5): reads each grant in the `grants` topic and states who it went to, which data, what scope,
+ * the budget and usage; after revocation, the data and costs already handed over are stated as they are and cannot be erased. The design draft has no such section, so the styling follows the settings page's groups and rows.
  */
 
 const STATE_LABEL: Record<GrantState, string> = live(() => M.state);
@@ -72,19 +72,19 @@ export function grantStateLabel(state: GrantState): string {
   return STATE_LABEL[state];
 }
 
-/** 有效的在前，同一组里新发放的在前。`includeEnded` 为 false 时只列有效的。 */
+/** Active ones first; within the same group, newly issued ones first. When `includeEnded` is false, only active ones are listed. */
 export function listedGrants(grants: readonly Grant[], includeEnded: boolean): Grant[] {
   return grants
     .filter((g) => includeEnded || g.state === 'active')
     .sort((a, b) => Number(b.state === 'active') - Number(a.state === 'active') || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** 已结束（到期、撤销、用完）的条数：「显示已结束的」旁边的数。 */
+/** Number of ended grants (expired, revoked, used up): the count next to “显示已结束的” (show ended). */
 export function endedCount(grants: readonly Grant[]): number {
   return grants.filter((g) => g.state !== 'active').length;
 }
 
-/** 接收方的名字：服务商在模型视图里的名字；没有时 `custom:名字` 取名字、`agent:codex` 写 Codex，其余照写 ID。 */
+/** Recipient's name: the provider's name in the model view; when absent, `custom:name` uses the name, `agent:codex` is written as Codex, and anything else is written as its ID. */
 export function recipientName(recipient: string, labels: ReadonlyMap<string, string>): string {
   const known = labels.get(recipient);
   if (known) return known;
@@ -96,7 +96,7 @@ export function recipientName(recipient: string, labels: ReadonlyMap<string, str
   return recipient;
 }
 
-/** 「OpenAI · 文稿与译文、文本与提示词」。 */
+/** "OpenAI · Transcripts and translations, text and prompts". */
 export function grantTitle(grant: Pick<Grant, 'recipient' | 'dataKinds'>, labels: ReadonlyMap<string, string>): string {
   const kinds = M.kindList(grant.dataKinds.map((k) => GRANT_DATA_KIND_LABELS[k]));
   return `${recipientName(grant.recipient, labels)} · ${kinds || M.noKinds}`;
@@ -106,7 +106,7 @@ const money = (m: Money) => `${m.amount} ${m.currency}`;
 
 const ORIGIN_LABEL: Record<Grant['origin'], string> = live(() => M.origin);
 
-/** 日期写到天（本地时区）：「2026-10-05」。 */
+/** Dates are written to the day (local time zone): “2026-10-05”. */
 function day(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -114,8 +114,8 @@ function day(iso: string): string {
 }
 
 /**
- * 说明行：范围、预算、次数、用量、来源、到期，按顺序用「·」连起来。
- * `videoName` 是范围里那个视频的名字（Space 里找不到时 null，写「一个视频」）。
+ * Description line: scope, budget, count, usage, source and expiry, joined in that order with “·”.
+ * `videoName` is the name of the video in the scope (null when it cannot be found in Space; then “一个视频” (a video) is written).
  */
 export function grantFacts(grant: Grant, videoName: string | null): string {
   const facts: string[] = [];
@@ -131,7 +131,7 @@ export function grantFacts(grant: Grant, videoName: string | null): string {
   return facts.join(' · ');
 }
 
-/** 用量：「已用 3 次（0.42 USD）」「还没用过」；预留中的、金额未知的也照写。 */
+/** Usage: “已用 3 次（0.42 USD）” (used 3 times, 0.42 USD) or “还没用过” (not used yet); reserved amounts and amounts of unknown value are written the same way. */
 export function usageLine(grant: Pick<Grant, 'usage' | 'budgetCap'>): string {
   const u = grant.usage;
   const currency = grant.budgetCap?.currency ?? '';
@@ -144,12 +144,12 @@ export function usageLine(grant: Pick<Grant, 'usage' | 'budgetCap'>): string {
   return parts.join(M.usageSeparator);
 }
 
-/** 撤销前的确认：撤销拦得住什么、拦不住什么。 */
+/** Confirmation before revoking: what revoking can stop and what it cannot. */
 export function revokeConfirmText(grant: Pick<Grant, 'usage'>): string {
   return M.revokeConfirm(grant.usage.reservedCalls, grant.usage.calls);
 }
 
-/** 撤销之后的一句：Runtime 报的已交出部分与还在跑的任务。 */
+/** A line shown after revoking: the part already handed over and the tasks still running, as reported by the Runtime. */
 export function revokeResultLine(result: GrantRevokeResult): string {
   const { calls, amount, unknownCostCalls } = result.alreadySent;
   const parts = [M.revoked];

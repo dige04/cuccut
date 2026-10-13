@@ -2,23 +2,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findCargoBinary } from './cargo-target.ts';
 
-/** 随应用分发的原生可执行文件所在目录的环境变量：桌面应用打包后由主进程给出 `<resources>/bin`。 */
+/** Environment variable for the directory of native executables distributed with the app: after the desktop app is packaged, the main process provides `<resources>/bin`. */
 export const BIN_DIR_ENV = 'CUCCUT_BIN_DIR';
 
-/** 打包后的资源目录里放原生可执行文件的子目录（Worker、凭据助手，以及它们要的 DLL）。 */
+/** Subdirectory of the packaged resources directory that holds native executables (the Workers, the credential helper, and the DLLs they need). */
 export const RESOURCES_BIN_DIR = 'bin';
 
-/** 可执行文件名：Windows 上补 `.exe`。 */
+/** Executable name: `.exe` is appended on Windows. */
 export function executableName(name: string, platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? `${name}.exe` : name;
 }
 
 /**
- * 找随 CucCut 构建的原生可执行文件（`engine-host`、`model-worker` 这些 Worker 与 `credential-helper`），`name` 不带后缀。
- * 各工具自己的环境变量（`CUCCUT_ENGINE_HOST` 等）由调用方先看；这里按次序找：
- * 1. `CUCCUT_BIN_DIR`：给了就只在那里找，没有就是没有，不换别的来源；
- * 2. 打包后的 `<resources>/bin`（`process.resourcesPath`；Runtime 以 Node 方式运行时不一定有，所以主进程经 1 告诉它）；
- * 3. 从 `startDir` 往上找 cargo 产物目录里的 `{release,debug}/<name>`（开发时由 `npm run build:engine` 构建）。
+ * Finds the native executables built with CucCut (the `engine-host` and `model-worker` Workers, and `credential-helper`); `name` has no suffix.
+ * The caller first checks each tool's own environment variable (`CUCCUT_ENGINE_HOST` and so on); here the search order is:
+ * 1. `CUCCUT_BIN_DIR`: if it is set, search only there; if nothing is found, there is nothing, and no other source is tried;
+ * 2. the packaged `<resources>/bin` (`process.resourcesPath`; the Runtime, when run as Node, may not have it, so the main process passes it through 1);
+ * 3. walking up from `startDir`, `{release,debug}/<name>` in the cargo output directory (in development, built by `npm run build:engine`).
  */
 export function findBundledBinary(
   name: string,

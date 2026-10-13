@@ -214,7 +214,7 @@ describe('开始配音与授权', () => {
       refusal: { recipient: 'elevenlabs', hint: '数据外发要用户授权' },
     });
     expect(useDubRun.getState().runs.vid).toBeUndefined();
-    // 还没确认：没有发授权。
+    // Not confirmed yet: no authorization is sent.
     expect(calls.map(([m]) => m)).toEqual(['pipelines.start']);
 
     expect(await confirmGrant('vid')).toBe('p1');

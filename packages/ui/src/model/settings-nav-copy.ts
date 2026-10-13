@@ -14,7 +14,7 @@ import { pl } from './settings-nav-copy.pl.ts';
 import { tr } from './settings-nav-copy.tr.ts';
 import { vi } from './settings-nav-copy.vi.ts';
 
-/** 设置分节表的文案（model/settings-nav.ts；译文在 `settings-nav-copy.<语言>.ts`）。 */
+/** Copy for the settings section table (model/settings-nav.ts; translations are in `settings-nav-copy.<language>.ts`). */
 const en = {
   category: {
     asr: { label: 'Speech recognition', description: 'Turn speech into transcripts and subtitles, and tell speakers apart.' },

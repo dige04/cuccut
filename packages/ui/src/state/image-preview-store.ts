@@ -19,7 +19,7 @@ interface ImagePreviewState {
   save(key: string): void;
   remove(key: string, id: string): void;
 }
-/** 图片批注与未完成草稿按资源定位保留，换标签或候选不会丢失；不回写原文件。 */
+/** Image annotations and unfinished drafts are kept by resource location, so they survive switching tabs or candidates. The original file is not written back. */
 export const useImagePreview = create<ImagePreviewState>()((set, get) => ({
   views:{}, view(key,patch){set(s=>({views:{...s.views,[key]:{...EMPTY_IMAGE_VIEW,...s.views[key],...patch}}}));},
   notes: {}, groups: {}, activeGroups: {},

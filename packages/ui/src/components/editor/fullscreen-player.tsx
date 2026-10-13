@@ -70,26 +70,21 @@ import { FULLSCREEN_PLAYER_COPY as F } from './fullscreen-player-copy.ts';
 import './fullscreen-player.css';
 
 /**
- * 编辑器的全屏播放器（原型 player.jsx、model-player.js；判据在 model/player.ts）。预览舞台进了全屏（preview.tsx）时盖在画面上：
+ * The editor's fullscreen player (prototype player.jsx and model-player.js; the criteria are in model/player.ts). When the preview stage goes fullscreen (preview.tsx), it is laid over the picture:
  *
- * - 画面不重画：还是预览引擎那一份，只是字幕按档位过滤（`engine.setCaptionView`）、倍速乘在时钟上（`engine.setRate`）。
- *   这两样都是这个窗口的视图态，不进视频、不进撤销、不影响导出。字幕档位只管这一次全屏，退出时回到舞台的字幕显隐；
- *   倍速与舞台工具条共用一份（editor-store），退出全屏后照旧。
- * - 控件：进度条（章节刻痕、悬停气泡里一格画面 + 时码 + 章节名、拖动）· 播放 · 上一章 / 下一章 · 音量（悬停展开滑杆）·
- *   时码 · 字幕四档 · 倍速 · 键表 · 退出全屏。在播且鼠标 3 秒不动时连同指针一起收起（`chromeHidden`）。
- * - 键盘：全屏时播放器独占（捕获阶段接、编辑器的快捷键让位，见 video-editor 的 `useEditorKeys`），键表是 `PLAYER_KEYS`。
- *   浏览器给了键盘锁定（Chromium / Electron）时 Esc 归播放器：开着键表先关表，再按一次退出；没给时 Esc 由浏览器直接退出全屏。
- * - 画面上单击 = 播放 / 暂停，双击 = 退出全屏。
+ * - The picture is not redrawn: it is still the preview engine's single instance. Only the captions are filtered by level (`engine.setCaptionView`), and the playback rate is multiplied into the clock (`engine.setRate`). Both are view state of this window: they do not enter the video, undo, or affect export. The caption level applies only to this fullscreen session; on exit it returns to the stage's caption visibility. The playback rate is shared with the stage toolbar (editor-store), and stays as set after exiting fullscreen.
+ * - Controls: progress bar (chapter ticks; on hover, a bubble with one frame of picture, the timecode and the chapter name; dragging), play, previous / next chapter, volume (the slider expands on hover), timecode, four caption levels, playback rate, key table, exit fullscreen. While playing and the mouse has not moved for 3 seconds, the controls hide together with the pointer (`chromeHidden`).
+ * - Keyboard: in fullscreen the player has exclusive use (it captures in the capture phase, and the editor's shortcuts yield; see `useEditorKeys` in video-editor). The key table is `PLAYER_KEYS`. When the browser grants keyboard lock (Chromium / Electron), Esc goes to the player: with the key table open, Esc closes the table first, and a second press exits. Without the lock, Esc is handled by the browser and exits fullscreen directly.
+ * - A single click on the picture = play / pause; a double click = exit fullscreen.
  *
- * 这一层贴在视频上，底下的亮度谁也不知道，所以不随明暗主题翻转：控件用 S2 的 `staticColor="white"`，控件条下垫渐变遮罩，
- * 菜单、提示与滑杆走深色（嵌一层 `Provider colorScheme="dark"`）。弹层挂进全屏的舞台里（全屏时只有它的子树看得见）。
+ * This layer sits on top of the video and cannot know the brightness underneath, so it does not flip with the light or dark theme. Controls use S2's `staticColor="white"`, a gradient mask sits under the control bar, and menus, tooltips and sliders use the dark scheme (wrapped in a `Provider colorScheme="dark"`). Popovers are mounted inside the fullscreen stage, since only its subtree is visible while fullscreen.
  */
 
 const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
 const PLAY_ICON = { play: Play, pause: Pause, replay: Refresh } satisfies Record<PlayButtonState, unknown>;
 
 const root = style({ position: 'absolute', inset: 0, outlineStyle: 'none' });
-/** 画面上点、双击的那一层：盖满舞台，舞台上的提示卡（`children`）与控件都在它上面。 */
+/** The layer on the picture that takes clicks and double clicks: covers the whole stage. The hint card on the stage (`children`) and the controls sit above it. */
 const surface = style({ position: 'absolute', inset: 0 });
 const title = style({ font: 'title', color: 'white', truncate: true });
 const subtitle = style({ font: 'ui-sm', color: 'transparent-white-800', truncate: true });
@@ -107,10 +102,10 @@ const seekFill = style({ backgroundColor: 'accent' });
 const bubbleTime = style({ font: 'code-xs', color: 'white' });
 const bubbleChapter = style({ font: 'ui-xs', color: 'transparent-white-800', maxWidth: 220, truncate: true });
 
-/** 浏览器的键盘锁定（Keyboard Lock API，只在全屏里能锁 Esc）；Safari 与 Firefox 没有。 */
+/** The browser's keyboard lock (Keyboard Lock API; it can lock Esc only in fullscreen). Safari and Firefox do not have it. */
 type KeyboardLock = { lock?(keys?: string[]): Promise<void>; unlock?(): void };
 
-/** 预览舞台进全屏（F 与预览顶上的入口钮）：要在用户手势的这一拍里调用，浏览器只认瞬时激活；要不到时提示一句。 */
+/** Put the preview stage into fullscreen (F, and the entry button at the top of the preview). It must be called within the user gesture, because browsers only accept transient activation. If it cannot be entered, show a hint saying so. */
 export function enterPreviewFullscreen(stage: HTMLElement | null): void {
   const failed = () => ToastQueue.neutral(PREVIEW_KEYS_COPY.fullscreenFailed, { timeout: 5000 });
   if (!stage?.requestFullscreen) return void failed();
@@ -128,12 +123,12 @@ export function FullscreenPlayer({
   documents,
   children,
 }: {
-  /** 全屏的那个元素（预览舞台）：弹层挂进它里面。 */
+  /** The element that goes fullscreen (the preview stage): popovers are mounted inside it. */
   stage: RefObject<HTMLElement | null>;
   sequence: Sequence;
   assets: Record<Id, AssetRecord>;
   documents: Record<Id, DocumentRecord>;
-  /** 舞台上的提示卡（主媒体放不出来、载入与卡住）：夹在画面点击层与控件之间。 */
+  /** Hint card on the stage (the main media cannot play, loading and stalling): sits between the click layer on the picture and the controls. */
   children?: ReactNode;
 }) {
   const { engine, seek, togglePlay } = useEditorActions();
@@ -146,25 +141,25 @@ export function FullscreenPlayer({
   const chapter = chapters[chapterAt(chapters, playhead)] ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // 音量跟着引擎（编辑器里 ↑/↓、M 调的是同一份监听音量）。
+  // Volume follows the engine (↑/↓ and M in the editor adjust the same volume listener).
   const [level, setLevelState] = useState<MonitorLevel>(() => monitorLevel(engine.monitor));
   useEffect(() => engine.onMonitor((gain) => setLevelState(monitorLevel(gain))), [engine]);
   const setLevel = useCallback((next: MonitorLevel) => engine.setMonitor(monitorGain(next)), [engine]);
 
-  // 倍速与舞台工具条共用一份（editor-store），交给引擎的是 preview.tsx。
+  // Playback rate is shared with the stage toolbar (editor-store); preview.tsx hands it to the engine.
   const rate = useEditor((s) => s.rate);
   const setRate = useEditor((s) => s.setRate);
 
-  // 字幕档位：选过的档还在就用它，否则按画面上实有的字幕取默认档；舞台上隐藏了字幕时从「关闭」起步。
+  // Caption level: if the level chosen before is still available, use it; otherwise take the default according to the captions actually on screen. If captions are hidden on the stage, start from “关闭” (Off).
   const [picked, setPicked] = useState<CaptionMode | null>(() => (useEditor.getState().captionsHidden ? 'off' : null));
   const { hasSource, hasTranslation } = useMemo(() => captionAvailability(sequence, documents), [sequence, documents]);
   const mode = effectiveCaptionMode(picked, hasSource, hasTranslation);
   const modes = captionModes(hasSource, hasTranslation);
   const languages = useMemo(() => captionLanguages(sequence, documents), [sequence, documents]);
-  // 退出全屏后由 preview.tsx 按舞台的字幕显隐还原。
+  // After exiting fullscreen, preview.tsx restores it according to the stage's caption visibility.
   useEffect(() => engine.setCaptionView(mode), [engine, mode]);
 
-  // ---- 收起 ----
+  // ---- Auto-hide ----
   const [popup, setPopup] = useState<'captions' | 'rate' | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -177,7 +172,7 @@ export function FullscreenPlayer({
     setIdleMs(0);
   }, []);
   useEffect(() => {
-    // 只在可能收起的时候起表：暂停时判据恒为 false。
+    // Start the timer only when hiding is possible: while paused, the condition is always false.
     if (!playing) return;
     const timer = setInterval(() => setIdleMs(performance.now() - lastPoke.current), 250);
     return () => clearInterval(timer);
@@ -185,10 +180,10 @@ export function FullscreenPlayer({
   const holding = holdingVisible({ scrubbing, popup: popup !== null || keysOpen, volumeDragging });
   const hidden = chromeHidden({ playing, hovering, holding, idleMs });
 
-  // 焦点挪进全屏的子树：留在外面的话 Tab 会走到看不见的编辑器控件上。
+  // Move focus into the fullscreen subtree. If it stayed outside, Tab would land on editor controls that are not visible.
   useEffect(() => rootRef.current?.focus({ preventScroll: true }), []);
 
-  // Esc 归播放器：只在全屏里锁得住；锁住了键表才写「按 Esc 关掉这张表」。
+  // Esc goes to the player: this only works when the lock is held in fullscreen. The key table says “按 Esc 关掉这张表” (press Esc to close this table) only when the lock is held.
   const [escOwned, setEscOwned] = useState(false);
   useEffect(() => {
     const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
@@ -206,7 +201,7 @@ export function FullscreenPlayer({
 
   const playState = playButtonState({ playing, playhead, duration });
   const playPause = () => {
-    // 停在片尾：从头再播。
+    // Stopped at the end: play again from the start.
     if (playButtonState({ playing: engine.playing, playhead: useEditor.getState().playhead, duration }) === 'replay') seek(0);
     togglePlay();
   };
@@ -217,7 +212,7 @@ export function FullscreenPlayer({
       case 'keys':
         return setKeysOpen((open) => !open);
       case 'exit':
-        // 开着键表时先关表：开着一张表按 Esc，期待的是关掉这张表，不是连片子一起退出。
+        // Close the key table first when it is open: with a table open, pressing Esc means closing that table, not exiting the video as well.
         if (keysOpen) return setKeysOpen(false);
         return exitPreviewFullscreen();
       case 'play':
@@ -252,7 +247,7 @@ export function FullscreenPlayer({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
-      // 菜单开着时方向键、回车、Esc 归菜单。
+      // While a menu is open, the arrow keys, Enter and Esc go to the menu.
       if (latest.current.popup) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]')) return;
@@ -357,7 +352,7 @@ export function FullscreenPlayer({
                   <ChevronDoubleRight />
                 </ActionButton>
               </Tip>
-              {/* 音量：钮常驻，滑杆悬停、聚焦或拖动时展开——控件行不为一条平时用不到的杆常年占 80px。 */}
+              {/* Volume: the button is always shown; the slider expands on hover, focus or drag. The control row should not permanently take 80px for a bar that is rarely needed. */}
               <div className="cc-fsp-volume" data-dragging={volumeDragging || undefined}>
                 <Tip label={level.muted ? P.unmuteTip : P.muteTip}>
                   <ActionButton isQuiet staticColor="white" aria-label={level.muted ? P.unmute : P.mute} onPress={() => setLevel(toggleMute(level))}>
@@ -455,8 +450,7 @@ export function FullscreenPlayer({
 }
 
 /**
- * 进度条（react-aria 的 Slider：拖动、键盘与读屏都是它的）。上面画章节刻痕；悬停或拖动时冒一个气泡——一格画面、松手会落到的时码、
- * 那一刻在哪一章。气泡跟着指针走，不跟着播放头：它是「松手会落到哪一帧」的预告。
+ * Progress bar (react-aria's Slider: dragging, keyboard and screen reader all come from it). Chapter ticks are drawn on top. On hover or drag, a bubble pops up with one frame of picture, the timecode you would land on if you released, and the chapter at that point. The bubble follows the pointer, not the playhead: it previews which frame releasing would land on.
  */
 function SeekBar({
   sequence,
@@ -567,7 +561,7 @@ function SeekBubble({
   );
 }
 
-/** 字幕档位下面那行小字：原文与译文各是哪种语言（项目里可能有好几门译文，只写「译文」得切过去才知道是哪一门）。 */
+/** Small line under the caption-level options: which language the original and the translation are in. The project may have several translation languages, and writing only “译文” (translation) would require switching to find out which one it is. */
 function captionLanguages(sequence: Sequence, documents: Record<Id, DocumentRecord>): { original: string | null; translation: string | null } {
   const names = { original: new Set<string>(), translation: new Set<string>() };
   for (const chip of captionChips(sequence, documents)) {

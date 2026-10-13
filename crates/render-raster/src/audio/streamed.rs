@@ -9,9 +9,9 @@ use tempfile::NamedTempFile;
 pub struct FileAudioMix {
     pub wav: NamedTempFile,
     pub clips: Vec<ClipDecodeRecord>,
-    /// 文档写了 `audio.master` 且施加了时的母带实测。
+    /// Mastering measurements, taken when the document specifies `audio.master` and it was applied.
     pub master: Option<super::MasterMeasure>,
-    /// 混音链的提醒（如：部分 clip 由时间轴另放，整片母带没有施加）。
+    /// Warning for the mixing chain (e.g. some clips are placed separately by the timeline, so the whole-track master was not applied).
     pub warnings: Vec<String>,
 }
 

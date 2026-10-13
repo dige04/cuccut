@@ -18,15 +18,14 @@ import {
 } from './translation-glossary.ts';
 
 /**
- * 逐批翻译（架构设计 §7.9）：`translate`（视频里的文稿）与 `translate-subtitles`（字幕文件）共用的部分——分批、带前文、
- * 每批只带相关的术语、结构化输出按 ID 一一核对、不合时有限次重发、并发与调用计数；以及术语表参数的校验、冻结与读取。
- * 两个流程各自决定原文从哪来、译文写到哪去。
+ * Batch translation (architecture design §7.9): the part shared by `translate` (a script inside a video) and `translate-subtitles` (subtitle files). It covers batching, carrying preceding context, carrying only the relevant terms in each batch, checking structured output one-to-one by ID, a limited number of resends when the output does not match, concurrency and call counting, and also validation, freezing and reading of the glossary parameters.
+ * Each of the two pipelines decides where its source comes from and where its translation is written.
  */
 
-/** 每批带几句前文作参考。 */
+/** How many preceding sentences each batch carries as reference. */
 const CONTEXT_SENTENCES = 3;
 
-/** `glossary` 参数：调用时直接给的术语。 */
+/** The `glossary` parameter: terms passed directly in the call. */
 export const GLOSSARY_SCHEMA = {
   type: 'array',
   maxItems: 500,
@@ -38,11 +37,11 @@ export const GLOSSARY_SCHEMA = {
   },
 };
 
-/** `glossaries` 参数（翻译、翻译配音与字幕文件的翻译共用）。 */
+/** The `glossaries` parameter (shared by translation, translated dubbing and subtitle-file translation). */
 export const GLOSSARIES_SCHEMA = {
   type: 'array',
   maxItems: MAX_LIBRARY_GLOSSARIES,
-  // i18n-ignore: 参数说明（给智能体的 JSON Schema）
+  // i18n-ignore: parameter descriptions (JSON Schema for the agent)
   description: '用户库里翻译用术语表的 ID（可以指定版本）；与视频里启用的合在一起用',
   items: {
     type: 'object',
@@ -52,7 +51,7 @@ export const GLOSSARIES_SCHEMA = {
   },
 };
 
-/** `glossary`：每一项要有非空的原文与译法。 */
+/** `glossary`: each entry must have a non-empty source term and translation. */
 export function parseInlineGlossary(raw: unknown[] | undefined): GlossaryEntry[] | undefined {
   if (raw === undefined) return undefined;
   return raw.map((entry) => {
@@ -65,7 +64,7 @@ export function parseInlineGlossary(raw: unknown[] | undefined): GlossaryEntry[]
   });
 }
 
-/** `glossaries`：库里术语表的 ID 与可选的版本。 */
+/** `glossaries`: the IDs of library glossaries, with an optional version. */
 export function parseGlossaryRefs(raw: unknown[] | undefined): Array<{ id: Id; version?: number }> | undefined {
   if (raw === undefined) return undefined;
   return raw.map((item) => {
@@ -82,23 +81,22 @@ export function parseGlossaryRefs(raw: unknown[] | undefined): Array<{ id: Id; v
   });
 }
 
-/** 冻结的术语表：库里的条目与版本、视频启用而没用的，以及内容的产物。 */
+/** Frozen glossary: library entries and versions, glossaries the video enables but this run does not use, and the artifacts holding their contents. */
 export interface FrozenGlossaryUse {
   entries: FrozenGlossary[];
   skipped: Array<{ id: Id; reason: 'removed' | 'language' }>;
-  /** `GlossarySnapshot` 的产物；没有库里的条目时 null（只用调用时给的术语）。 */
+  /** The artifact for a `GlossarySnapshot`. null when there are no library entries (only terms passed in the call are used). */
   artifactId: string | null;
 }
 
-/** 冻结的参数里与术语有关的两项。 */
+/** The two term-related items in the frozen parameters. */
 export interface GlossaryParams {
   glossary?: GlossaryEntry[];
   glossaryUse?: FrozenGlossaryUse;
 }
 
 /**
- * 启动时解析库里的术语表：调用时给的（`explicit`）与视频里启用的（`enabled`，没有视频时为空）；用到库里的条目时把内容
- * 写成产物，之后的步骤只读产物。都没有时 undefined。
+ * Resolves library glossaries at startup: the ones passed in the call (`explicit`) and the ones enabled in the video (`enabled`, empty when there is no video). When library entries are used, their contents are written as artifacts, and later steps read only those artifacts. undefined when there are none.
  */
 export async function freezeGlossaryUse(
   deps: { library?: GlossaryLibrary; artifacts?: Pick<ArtifactStore, 'put'> },
@@ -115,20 +113,20 @@ export async function freezeGlossaryUse(
   let artifactId: string | null = null;
   if (resolved.entries.length > 0) {
     if (!deps.artifacts) throw new RpcError('invalid-request', J.cannotFreezeGlossaries());
-    // 解析之后立即读出冻结的版本，写成产物；之后的步骤只读产物。
+    // Immediately after resolution, read out the frozen versions and write them as artifacts. Later steps read only the artifacts.
     const snapshot = glossarySnapshot(deps.library, [], resolved.entries);
     artifactId = (await deps.artifacts.put(Buffer.from(JSON.stringify(snapshot)), 'json')).artifactId;
   }
   return { entries: resolved.entries, skipped: resolved.skipped, artifactId };
 }
 
-/** 这次翻译用的术语：调用时直接给的，加上冻结的库里术语表的内容。 */
+/** Terms used for this translation: those passed directly in the call, plus the contents of the frozen library glossaries. */
 export async function loadGlossaries(artifacts: ArtifactStore, params: GlossaryParams): Promise<GlossarySnapshot> {
   const stored = params.glossaryUse?.artifactId ? await readArtifact<GlossarySnapshot>(artifacts, params.glossaryUse.artifactId) : null;
   return { inline: params.glossary ?? [], entries: stored?.entries ?? [] };
 }
 
-/** 摘要里的术语表：调用时没给、视频里也没启用时 undefined。 */
+/** Glossary in the summary: undefined when none was passed in the call and the video does not enable one. */
 export function glossarySummary(
   params: GlossaryParams,
   translated: { glossaryTerms?: number; cappedBatches?: number } | null | undefined,
@@ -149,7 +147,7 @@ export async function readArtifact<T>(artifacts: ArtifactStore, artifactId: stri
   return JSON.parse(await fs.readFile(file, 'utf8')) as T;
 }
 
-/** 一次逐批翻译的输入：原文（按 ID）、语言、风格、冻结的模型与批大小，以及去重之后的术语。 */
+/** Input for one batch translation: the source (by ID), languages, style, frozen model and batch size, and the terms after deduplication. */
 export interface BatchTranslationInput {
   sentences: Array<{ id: Id; text: string }>;
   targetLanguage: string;
@@ -162,26 +160,26 @@ export interface BatchTranslationInput {
 }
 
 export interface BatchTranslationOptions {
-  /** 一批的输出不合约定时再发几次。 */
+  /** How many more times to resend a batch when its output does not match the contract. */
   retries: number;
-  /** 同时在途的批数。 */
+  /** Number of batches in flight at the same time. */
   concurrency: number;
   signal: AbortSignal;
   progress: ProgressReporter;
-  /** 原文的一项是什么（错误信息里用）：文稿是句子（缺省），字幕文件是一条字幕。 */
+  /** What one source item is (used in error messages): a sentence for a script (the default), a single cue for a subtitle file. */
   unit?: 'sentence' | 'cue';
 }
 
 export interface BatchTranslationResult {
-  /** 与输入一一对应、顺序相同。 */
+  /** One-to-one with the input, in the same order. */
   translations: Array<{ id: Id; text: string }>;
   calls: JobCallCounts;
   modelVersion: string | null;
-  /** 相关术语超过上限的批数。 */
+  /** Number of batches where the relevant terms exceeded the limit. */
   cappedBatches: number;
 }
 
-/** 按句分批翻译。每批的输出必须与这一批一一对应；不合时重发，仍不合则抛出（不留半份译文）。 */
+/** Translates sentence by sentence in batches. Each batch's output must correspond one-to-one with that batch. If it does not match, resend; if it still does not match, throw (no half-finished translation is kept). */
 export async function translateInBatches(
   text: Pick<TextGenerator, 'generate'>,
   input: BatchTranslationInput,
@@ -200,7 +198,7 @@ export async function translateInBatches(
   const report = () => progress({ done: texts.size, total: sentences.length, unit: 'units', calls: counter.snapshot() }, 'generating');
   report();
 
-  // 一批失败时停下其余的批。
+  // When one batch fails, stop the remaining batches.
   const local = new AbortController();
   const stop = () => local.abort();
   signal.addEventListener('abort', stop, { once: true });
@@ -215,7 +213,7 @@ export async function translateInBatches(
     const items = sentences.slice(start, end).map((s) => ({ id: s.id, text: s.text }));
     const ids = items.map((i) => i.id);
     const context = sentences.slice(Math.max(0, start - CONTEXT_SENTENCES), start).map((s) => s.text);
-    // 术语：每批只带相关的，有上限（见 translation-glossary.ts）。
+    // Terms: each batch carries only the relevant ones, and the count is capped (see translation-glossary.ts).
     const selected = selectTerms(terms, [...context, ...items.map((i) => i.text)].join('\n'));
     if (selected.capped > 0) cappedBatches++;
     const instructions = {
@@ -297,7 +295,7 @@ export async function translateInBatches(
   };
 }
 
-/** 核对一批的输出：与输入同样多、ID 一一对应、文本非空。 */
+/** Checks a batch's output: same count as the input, IDs one-to-one, text non-empty. */
 export function checkBatch(json: unknown, ids: Id[]): Array<{ id: Id; text: string }> | { problem: string } {
   const list = (json as { translations?: unknown } | null)?.translations;
   if (!Array.isArray(list)) return { problem: J.outputNoTranslations().text };

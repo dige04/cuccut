@@ -20,8 +20,8 @@ import { MyVoices } from './models/my-voices.tsx';
 /** Page tab icons: on this computer, in the cloud, my voices. */
 const PAGE_ICON: Record<ModelPage, LucideIcon> = { local: Laptop, cloud: Cloud, voices: Mic };
 
-/** 设置中的模型配置（产品设计 §2.1、§7.6），共用设置导航与滚动容器。
- * 模型类记住本地 / 云端 / 我的声音的最后一页；切换页签不增加历史记录。
+/** Model settings in Settings (product design §2.1, §7.6), sharing the settings navigation and scroll container.
+ * The model category remembers the last page of Local / Cloud / My voice; switching tabs does not add history entries.
  */
 export function ModelSettings({ category, page: requested }: { category: ModelCategory; page?: ModelPage }) {
   const replace = useShell((s) => s.replace);

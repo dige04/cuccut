@@ -1,12 +1,11 @@
 import { asObject, isObject, type Json } from '../render/text-style.ts';
 
 /**
- * 当前词（`activeWord`）与逐词动画目录（Studio 样式的 `wordAnimation`）之间的查表（字幕样式模型设计 §4）。
+ * Lookup between the current word (`activeWord`) and the per-word animation catalogue (`wordAnimation` in Studio styles) (caption style model design §4).
  *
- * 内核的目录（`crates/subtitle-render/src/word_animation_catalog.rs`）不变：19 格，每格一个 `catalogId` 与一个内核分支名。
- * 这里镜像它的 `word_animation_payload`，再把当前词的颜色、底块、上抬与「念过 / 没念到」两根小轴写成三态覆盖
- * （`spoken` / `active` / `unspoken`，内核按 `merge_visual` 叠在分支默认值上）。目录没有的组合（比如变色 + 没念到的变淡）
- * 也能写：分支给底子，三态覆盖补差。
+ * The kernel catalogue (`crates/subtitle-render/src/word_animation_catalog.rs`) is unchanged: 19 cells, each with a `catalogId` and a kernel branch name.
+ * This mirrors its `word_animation_payload`, and writes the current word's colour, background box, lift, and the two small axes “spoken / unspoken” (已念过 / 没念到) as a three-state override
+ * (`spoken` / `active` / `unspoken`; the kernel layers them over the branch defaults with `merge_visual`). Combinations the catalogue does not have (for example colour change plus fade for unspoken words) can still be written: the branch provides the base, and the three-state override fills in the difference.
  */
 
 export type ActiveMode = 'none' | 'color' | 'box' | 'scale' | 'lift' | 'underline' | 'sweep';
@@ -21,9 +20,9 @@ export interface Sweep {
 
 export interface ActiveWord {
   mode: ActiveMode;
-  /** color / underline / sweep / lift 的目标色；box 的字色。 */
+  /** Target colour for color / underline / sweep / lift; text colour for box. */
   color?: string;
-  /** 当前词放大倍数（1 = 不放大）。 */
+  /** Scale factor for the current word (1 = no scaling). */
   scale?: number;
   box?: { color: string; radius: number; padding: [number, number] };
   lift?: number;
@@ -33,7 +32,7 @@ export interface ActiveWord {
   unspoken: UnspokenMode;
   spokenColor?: string;
   dimOpacity?: number;
-  /** 目录里 `rotate*` 那几格的「随机旋转位」（往返查表用）。 */
+  /** The “random rotation” slot of the `rotate*` cells in the catalogue (used for lookups in both directions). */
   tilt?: boolean;
 }
 
@@ -44,7 +43,7 @@ export const UNSPOKEN_MODES: readonly UnspokenMode[] = ['keep', 'dim', 'hidden']
 export const ACTIVE_DURATION = 0.16;
 export const DIM_OPACITY = 0.5;
 
-/** 补齐默认值：读的人不必每次判空。扫色本身就是染过（§5），与 `spoken: 'tint'` 互斥。 */
+/** Fills in defaults so readers do not have to null-check every time. The colour sweep already is a tint (§5), so it is mutually exclusive with `spoken: 'tint'`. */
 export function normalizeActive(aw: Partial<ActiveWord> | null | undefined): ActiveWord {
   const out: ActiveWord = { spoken: 'keep', unspoken: 'keep', durationSeconds: ACTIVE_DURATION, dimOpacity: DIM_OPACITY, ...aw, mode: aw?.mode ?? 'none' };
   if (!ACTIVE_MODES.includes(out.mode)) out.mode = 'none';
@@ -57,9 +56,9 @@ export function normalizeActive(aw: Partial<ActiveWord> | null | undefined): Act
   return out;
 }
 
-/* ---------- 内核目录（word_animation_catalog.rs 的镜像） ---------- */
+/* ---------- Kernel catalogue (mirror of word_animation_catalog.rs) ---------- */
 
-/** 目录 id → 内核分支名（同序）。 */
+/** Catalogue id → kernel branch name (same order). */
 export const WORD_ANIMATIONS: readonly (readonly [string, string])[] = [
   ['none', 'None'],
   ['boxHighlight', 'Highlight'],
@@ -85,7 +84,7 @@ export const WORD_ANIMATIONS: readonly (readonly [string, string])[] = [
 const kernelOf = (catalogId: string): string => WORD_ANIMATIONS.find(([id]) => id === catalogId)?.[1] ?? catalogId;
 const catalogOf = (name: string): string => WORD_ANIMATIONS.find(([id, kernel]) => id === name || kernel === name)?.[0] ?? name;
 
-/** 选中一格时写进样式根的载荷（`word_animation_payload`）。 */
+/** Payload written to the style root when a cell is selected (`word_animation_payload`). */
 export function wordAnimationPayload(name: string): Json {
   const catalogId = catalogOf(name);
   const kernel = kernelOf(catalogId);
@@ -126,9 +125,9 @@ export function wordAnimationPayload(name: string): Json {
   return { animationId: kernel === 'None' ? 'none' : 'magic-wbw', animationName: kernel, catalogId, spoken, active, unspoken };
 }
 
-/* ---------- 19 格 ↔ activeWord + 念到时的入场（§4 那张表） ---------- */
+/* ---------- 19 cells ↔ activeWord + entrance when spoken (the table in §4) ---------- */
 
-/** 念到时入场（`trigger: 'spoken'`）的动效名，内核由目录格的连续轨画。 */
+/** Name of the animation for the entrance when spoken (`trigger: 'spoken'`); the kernel draws it from the continuous track of the catalogue cell. */
 export const SPOKEN_PRESETS = ['drop-in', 'float-in-top', 'float-in-bottom', 'scale-in', 'impact', 'flip', 'stomp', 'stack'] as const;
 export type SpokenPreset = (typeof SPOKEN_PRESETS)[number];
 
@@ -163,7 +162,7 @@ export const CELLS: Record<string, Cell> = {
 };
 export const CELL_KEYS = Object.keys(CELLS);
 
-/** 念到时入场的那一段（只看决定格子的几位）。 */
+/** The part of the spoken-entrance value that matters (only the digits that determine the cell are read). */
 export interface SpokenEntrance {
   preset: string;
   intensity?: number;
@@ -179,7 +178,7 @@ const SPOKEN_CELL: Record<string, string> = {
   stack: 'stack',
 };
 
-/** activeWord + 念到时的入场 → 最近的目录格；目录没有这个组合时是 null（`wordAnimationOf` 另拼）。 */
+/** activeWord + spoken entrance → nearest catalogue cell; null when the catalogue has no such combination (`wordAnimationOf` builds it separately). */
 export function toCell(activeWord: Partial<ActiveWord>, entrance: SpokenEntrance | null): string | null {
   const aw = normalizeActive(activeWord);
   const plain = aw.spoken === 'keep' && aw.unspoken === 'keep';
@@ -201,7 +200,7 @@ export function toCell(activeWord: Partial<ActiveWord>, entrance: SpokenEntrance
   return null;
 }
 
-/** 一格目录 → activeWord ＋ 念到时的入场（不含颜色；颜色由三态覆盖给）。 */
+/** Catalogue cell → activeWord + spoken entrance (no colour; colour comes from the three-state override). */
 export function fromCell(cell: string): { activeWord: ActiveWord; entrance: SpokenEntrance | null } {
   const row = CELLS[cell === 'bgHighlight' ? 'stack' : cell] ?? CELLS.none!;
   const aw = normalizeActive(row.aw);
@@ -210,7 +209,7 @@ export function fromCell(cell: string): { activeWord: ActiveWord; entrance: Spok
   return { activeWord: aw, entrance };
 }
 
-/** 底子格：目录没有这个组合时，按当前词模式（念到时的入场优先）挑一格，再用三态覆盖补差。 */
+/** Base cell: when the catalogue has no such combination, picks a cell by the current-word mode (the spoken entrance takes priority), then fills the difference with the three-state override. */
 function baseCell(aw: ActiveWord, entrance: SpokenEntrance | null): string {
   if (entrance) {
     if (entrance.preset === 'impact') return (entrance.intensity ?? 1) >= 1.2 ? 'impactPop' : 'impact';
@@ -227,7 +226,7 @@ const LIFT = 0.22;
 const UNDERLINE_OFFSET = 0.18;
 const PAINT_COLOR = '#FFD43B';
 
-/** 当前词 ＋ 念到时的入场 → Studio 的 `wordAnimation`（目录格 ＋ 三态覆盖）。 */
+/** Current word + spoken entrance → Studio's `wordAnimation` (catalogue cell + three-state override). */
 export function wordAnimationOf(activeWord: Partial<ActiveWord>, entrance: SpokenEntrance | null): Json {
   const aw = normalizeActive(activeWord);
   const cell = toCell(aw, entrance) ?? baseCell(aw, entrance);
@@ -262,8 +261,8 @@ export function wordAnimationOf(activeWord: Partial<ActiveWord>, entrance: Spoke
 }
 
 /**
- * Studio 的 `wordAnimation`（或旧键 `anim`）→ 当前词 ＋ 念到时的入场（尽力；`wordAnimationOf` 的反向）。
- * 都没有时照内核：`Color`，当前词色取 `karaokeColor`，再退回 `#8CAAFF`。
+ * Studio's `wordAnimation` (or the legacy key `anim`) → current word + spoken entrance (best effort; the inverse of `wordAnimationOf`).
+ * When neither is present, follow the kernel: `Color`, with the current-word colour taken from `karaokeColor`, falling back to `#8CAAFF`.
  */
 export function parseWordAnimation(root: Json): { activeWord: ActiveWord; entrance: SpokenEntrance | null } {
   const value = root.wordAnimation ?? root.anim;
@@ -291,7 +290,7 @@ export function parseWordAnimation(root: Json): { activeWord: ActiveWord; entran
   if (aw.mode === 'lift' && typeof active.bottomEm === 'number') aw.lift = active.bottomEm;
   if (aw.mode === 'color' && active.underline === true) aw.mode = 'underline';
   if (aw.mode === 'none' && typeof active.color === 'string') {
-    // 没有底子分支、只有覆盖色的（念到时入场那几格不带颜色时是 none）：当成变色。
+    // Entries with no base branch and only an override colour (when the spoken-entrance cells carry no colour, it is none) are treated as colour change.
     aw.mode = 'color';
     aw.color = active.color;
   }
@@ -311,7 +310,7 @@ export function parseWordAnimation(root: Json): { activeWord: ActiveWord; entran
   return { activeWord: normalizeActive(aw), entrance };
 }
 
-/** `wordAnimation` 带不带倒鸭子这类设计字幕的 `caption`。 */
+/** Whether `wordAnimation` carries a design-caption `caption` such as 倒鸭子 (the name of a caption style). */
 export function designedCaptionOf(root: Json): Json | null {
   const caption = asObject(root.wordAnimation).caption;
   if (!isObject(caption)) return null;
@@ -319,7 +318,7 @@ export function designedCaptionOf(root: Json): Json | null {
   return typeof id === 'string' && id.startsWith('caption-') ? caption : null;
 }
 
-/** 底块上的字用黑还是白（按底块亮度）。 */
+/** Whether the text on the background box is black or white (based on the box's brightness). */
 export function inkOn(color: string): string {
   const hex = /^#([0-9a-f]{6})/i.exec(color)?.[1];
   if (!hex) return '#FFFFFF';
@@ -328,8 +327,8 @@ export function inkOn(color: string): string {
 }
 
 /**
- * 换到某个当前词模式：补齐那个模式必需的参数（原型 panel-subactive.jsx `modeDefaults`），颜色取这一行现有的当前词色，
- * 退回 `fallback`（文字色）。念过 / 没念到两根小轴与过渡照旧。
+ * Switch to a given current-word mode: fills in the parameters that mode requires (prototype `modeDefaults` in panel-subactive.jsx). The colour is taken from the line's existing current-word colour,
+ * falling back to `fallback` (the text colour). The two small axes, already spoken / unspoken, and the transitions stay as they are.
  */
 export function activeForMode(mode: ActiveMode, activeWord: Partial<ActiveWord>, fallback: string): ActiveWord {
   const a = normalizeActive(activeWord);

@@ -18,10 +18,10 @@ const techModels = style({ margin: 0, font: 'ui-sm', color: 'gray-600', overflow
 const hint = style({ marginTop: 0, marginBottom: 16, font: 'ui-sm', color: 'gray-700' });
 const fields = style({ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 8 });
 const subtitle = style({ marginStart: 8, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
-/** 浏览器里为什么自动更新与位置改不了：`agents.updatePreferences` / `agents.configure` 不在 Web 白名单里；技术信息照样能看能复制。 */
+/** Why auto-update and location cannot be changed in the browser: `agents.updatePreferences` and `agents.configure` are not on the Web allowlist. Technical info can still be viewed and copied. */
 const webNote = style({ marginTop: 0, marginBottom: 12, font: 'ui-sm', color: 'gray-800' });
 
-/** 高级与排障（page-settings-agent.jsx:167-183，接在 Agent 提供方页底）：模型表自动更新、技术信息与诊断、手动指定位置。 */
+/** Advanced and troubleshooting (page-settings-agent.jsx:167-183, attached at the bottom of the Agent provider page): model table auto-update, technical info and diagnostics, and manual location setting. */
 export function AgentAdvanced() {
   const runtime = useRuntime();
   const web = runtime.host.platform === 'web';

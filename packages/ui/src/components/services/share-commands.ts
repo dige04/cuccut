@@ -4,11 +4,11 @@ import { useConnection } from '../../state/connection-store.ts';
 import { useShare } from '../../state/share-store.ts';
 
 /**
- * 远端算力的命令（`nodes.share.*` 与 `nodes.*`）。每条改动都返回完整的 `ShareStatus`，拿到就整份写回镜像，
- * 界面不在本地改共享状态。失败原样抛给调用方提示。
+ * Remote compute commands (`nodes.share.*` and `nodes.*`). Each change returns the complete `ShareStatus`; once received, it is written back whole to the mirror,
+ * and the UI does not change shared state locally. Failures are thrown to the caller as they are, to be shown as a hint.
  *
- * 轮询与改动会交错：一次 status 读在改动之前发出、之后才回来，会把改动的结果盖回旧值。所以每次改动写回时
- * 把代数加一，轮询回来时代数变了就丢掉这次结果。
+ * Polling and changes interleave: a status read sent before a change may return after it and overwrite the change's result with the old value. So each time a change writes back,
+ * the generation counter is incremented. When a poll returns and the generation has changed, that result is discarded.
  */
 let generation = 0;
 
@@ -18,7 +18,7 @@ function write(status: ShareStatus): ShareStatus {
   return status;
 }
 
-/** 读一次共享状态写进镜像；没连上或读失败时不改（不打扰，下一次轮询再读）。 */
+/** Reads the shared state once into the mirror. If not connected or the read fails, it does not change (no disturbance; the next poll reads it). */
 export async function refreshShare(session: RuntimeSession): Promise<ShareStatus | null> {
   if (useConnection.getState().state.status !== 'connected') return null;
   const before = generation;
@@ -32,7 +32,7 @@ export async function refreshShare(session: RuntimeSession): Promise<ShareStatus
   }
 }
 
-/** 开始或停止共享：那一两秒亮「正在…」，结果整份写回；起停中再按不重复发。 */
+/** Starts or stops sharing: for those one or two seconds it shows “In progress…”, and the result is written back whole. Pressing again during a start or stop does not send a duplicate. */
 export async function flipShare(session: RuntimeSession, on: boolean): Promise<ShareStatus | null> {
   const store = useShare.getState();
   if (store.phase) return null;
@@ -56,11 +56,11 @@ export async function setShareCapability(session: RuntimeSession, capability: st
   return write(await session.setShareCapability(capability, enabled));
 }
 
-// ---- 使用其他电脑 ----
+// ---- Use other computers ----
 
 let nodesGeneration = 0;
 
-/** 读一次已配对的节点（每个带 2 秒的实时探测）；失败时不改。 */
+/** Reads the paired nodes once (each with a live probe of 2 seconds). On failure, no change. */
 export async function refreshNodes(session: RuntimeSession): Promise<PairedNode[] | null> {
   if (useConnection.getState().state.status !== 'connected') return null;
   const before = nodesGeneration;
@@ -74,7 +74,7 @@ export async function refreshNodes(session: RuntimeSession): Promise<PairedNode[
   }
 }
 
-/** 配对成功后把这台节点放进列表（同一个 nodeId 再次配对替换原来的那条）。 */
+/** After successful pairing, puts that node into the list (pairing the same nodeId again replaces the existing entry). */
 export async function pairNode(
   session: RuntimeSession,
   params: { host: string; port: number; code: string },
@@ -86,7 +86,7 @@ export async function pairNode(
   return node;
 }
 
-/** 取消配对：只删本机的记录与令牌。 */
+/** Unpairing: only deletes this machine's record and token. */
 export async function unpairNode(session: RuntimeSession, nodeId: string): Promise<void> {
   await session.removeNode(nodeId);
   nodesGeneration += 1;

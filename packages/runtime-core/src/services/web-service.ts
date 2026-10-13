@@ -32,25 +32,23 @@ import { WebSessions, type WebSessionsOptions } from './web-sessions.ts';
 import { resolveWebDist, sendLoginPage, sendLoginScript, sendStatic, setSecurityHeaders } from './web-static.ts';
 
 /**
- * Web 服务（架构设计 §4.8、§12.8）：本机浏览器里的客户端。一个回环端口上提供三样东西：
+ * Web service (architecture design §4.8, §12.8): the client in a local browser. One loopback port serves three things:
  *
- * - Web 客户端的静态文件（构建产物；没有构建时服务进入 `error`，不影响 Runtime）；
- * - 网关入口 `/ws`：与桌面界面同一套协议与处理函数，但连接在升级时按会话 cookie 认证，方法与主题按白名单过滤；
- *   主体是 `{ kind: 'web', sessionId }`，写入的操作者是用户本人（`user_local`）；
- * - 媒体通道 `/media/…`：这个服务自己的句柄表（同源的相对地址），取内容还要会话 cookie；不暴露桌面网关的端口与令牌。
- * - 幻灯片编辑器 `/slides/<grant>/…` 与素材 `/_blob/<id>`（docs/design/slides §6.2）：与网关共用一个 SlidesServer，要会话 cookie；
- *   只读配置下发布与上传被拒（`not_writer`）；只能嵌在这个服务自己的页面里（`frame-ancestors 'self'`）。
- * - 设计稿编辑器 `/design/<grant>/…`（docs/design/canvas §6.2）与设计系统编辑器 `/design-system/<grant>/…`（§10.4）：Web 客户端
- *   把它们放在另一个回环主机名上，那里没有会话 cookie，所以只认 grant；白名单里要有 `design.open` / `designSystem.open`，只读配置下
- *   发布与上传被拒。不带会话的 `/_blob/<id>` 只在白名单开放的那几种（设计稿、设计系统）里找。
+ * - Static files of the web client (build output; without a build, the service enters `error`, which does not affect the Runtime);
+ * - The gateway entry `/ws`: the same protocol and handlers as the desktop UI, but the connection is authenticated by session cookie at upgrade time, and methods and topics are filtered by the allowlist.
+ *   The body is `{ kind: 'web', sessionId }`, and the writing operator is the user themselves (`user_local`).
+ * - Media channel `/media/…`: this service's own handle table (same-origin relative addresses). Fetching content still requires the session cookie. The desktop gateway's port and token are not exposed.
+ * - Slide editor `/slides/<grant>/…` and assets `/_blob/<id>` (docs/design/slides §6.2): they share one SlidesServer with the gateway and require the session cookie.
+ *   Under read-only configuration, publishing and uploading are rejected (`not_writer`). They can only be embedded in this service's own pages (`frame-ancestors 'self'`).
+ * - Design draft editor `/design/<grant>/…` (docs/design/canvas §6.2) and design system editor `/design-system/<grant>/…` (§10.4): the web client puts them on another loopback hostname, where there is no session cookie, so they accept only the grant. The allowlist must include `design.open` / `designSystem.open`. Under read-only configuration, publishing and uploading are rejected.
+ *   A `/_blob/<id>` without a session is looked up only in the kinds allowed by the allowlist (design drafts and design systems).
  *
- * 登录：`createAccessLink` 发一个一次性代码，放在链接的 fragment 里（或由用户粘进登录页的输入框）；
- * 登录页的脚本用它 `POST /_auth/session` 换一个 HttpOnly、SameSite=Strict 的会话 cookie。选 cookie 而不是页面内存里的令牌：`<video>`、`<img>` 不能带请求头，
- * 只有 cookie 能让媒体请求与 WebSocket 用同一个会话认证、吊销时一起失效，令牌也不进 URL；HttpOnly 让页面脚本读不到它。
- * 回环地址上的 cookie 不按端口隔离（本机其他端口的服务也会收到），所以名字带端口，WebSocket 与登录另外要求 Origin 是自己。
+ * Login: `createAccessLink` issues a one-time code, placed in the link's fragment (or pasted by the user into the login page's input box). The login page's script uses it to `POST /_auth/session` and exchange it for an HttpOnly, SameSite=Strict session cookie. A cookie was chosen over an in-page memory token: `<video>` and `<img>` cannot carry request headers.
+ * Only a cookie lets media requests and WebSockets authenticate with the same session and fail together on revocation, and the token does not go into URLs. HttpOnly keeps page scripts from reading it.
+ * Cookies on loopback addresses are not isolated by port (other local services on other ports also receive them), so the name includes the port. WebSocket and login additionally require the Origin to be its own.
  *
- * 来源检查：`Host` 必须是 `127.0.0.1:<端口>` 或 `localhost:<端口>`（DNS 重绑定）；带 `Origin` 的请求只接受这两个来源，
- * WebSocket 与登录必须带；浏览器给了 `Sec-Fetch-Site` 时，需要会话的请求只接受 `same-origin` 与 `none`。
+ * Origin checks: `Host` must be `127.0.0.1:<port>` or `localhost:<port>` (DNS rebinding). Requests with `Origin` accept only these two origins,
+ * and WebSocket and login must send it. When the browser provides `Sec-Fetch-Site`, requests that need a session accept only `same-origin` and `none`.
  */
 
 const HOST = '127.0.0.1';
@@ -62,9 +60,9 @@ export interface WebServiceDeps {
   harness: Harness;
   videos: VideoService;
   log: Logger;
-  /** 会话或最近的请求变了：送一条 `service.updated`。 */
+  /** The session or the recent requests changed: sends one `service.updated`. */
   onChange: () => void;
-  /** 构建产物目录。不给时按 `resolveWebDist()` 找；null 表示没有（服务开启时进入 `error`）。 */
+  /** The build-output directory. When not given, it is found via `resolveWebDist()`. null means none (the service enters `error` when started). */
   dist?: string | null;
   sessions?: WebSessionsOptions;
 }
@@ -75,7 +73,7 @@ export class WebService implements ManagedService {
     return RcWeb.serviceLabel().text;
   }
   readonly available = true;
-  /** 浏览器用的媒体句柄：同源的相对地址，只在这个服务的端口上、带会话时可取。 */
+  /** The media handle used by the browser: a same-origin relative address, fetchable only on this service's port and with a session. */
   readonly media: MediaRegistry;
   readonly #deps: WebServiceDeps;
   readonly #log: Logger;
@@ -96,7 +94,7 @@ export class WebService implements ManagedService {
     this.media = new MediaRegistry({ log: deps.log, originAllowed: (origin) => origin !== undefined && this.#origins().includes(origin) });
   }
 
-  /** Runtime 装配好网关之后交给它处理函数（用这个服务的媒体句柄表构造的那一组）。在这之前不能开启。 */
+  /** Handed to the gateway's handler after the Runtime assembles the gateway (built with this service's media handle table). The service cannot be started before this. */
   bind(binding: { handlers: RpcHandlers; runtime: RuntimeInfo; slides?: SlidesServer }): void {
     this.#slides = binding.slides ?? null;
     this.#binding = {
@@ -125,7 +123,7 @@ export class WebService implements ManagedService {
     }
     const port = this.#deps.store.get('web').port;
     const gateway = new Gateway({
-      // 浏览器连接在升级时就认证过；这个令牌从不发出，只是让没有会话的连接无论如何过不了 hello。
+      // The browser connection was authenticated at upgrade time. This token is never issued; it only ensures that a connection without a session fails hello in any case.
       token: crypto.randomBytes(32).toString('base64url'),
       runtime: this.#binding.runtime,
       handlers: this.#binding.handlers,
@@ -161,7 +159,7 @@ export class WebService implements ManagedService {
     this.#server = null;
     this.#gateway = null;
     this.#port = null;
-    // 会话与代码随服务作废（§12.8：令牌在服务每次启动时重新生成）。
+    // Sessions and codes are invalidated with the service (§12.8: the token is regenerated on each service start).
     this.#sessions.clear();
     await gateway?.close();
     if (server) {
@@ -209,14 +207,14 @@ export class WebService implements ManagedService {
       ...(params.port !== undefined ? { port: params.port } : {}),
       web: next,
     });
-    // 能力集合变了：断开已有的浏览器连接，让它们按新的白名单重新订阅（已订阅的主题可能不再允许）。
+    // The capability set changed: existing browser connections are dropped so they re-subscribe under the new allowlist, since subscribed topics may no longer be allowed.
     if (JSON.stringify(next) !== JSON.stringify(access)) this.#gateway?.disconnectWhere(() => true, 'access changed');
     return params.port !== undefined && params.port !== before.port;
   }
 
-  // ---- 访问链接与会话 ----
+  // ---- Access links and sessions ----
 
-  /** `href` 是链接的路径与查询（`webVideoHref` 的结果，以 `/` 开头）；不给时是根路径。代码只在 fragment 里。 */
+  /** `href` is the link's path and query (the result of `webVideoHref`, starting with `/`). When not given, it is the root path. The code is only in the fragment. */
   createAccessLink(href = '/'): WebAccessLink {
     if (!this.#server || this.#port === null) {
       throw new RpcError('conflict', RcWeb.notRunning(), {
@@ -242,7 +240,7 @@ export class WebService implements ManagedService {
     return this.listSessions();
   }
 
-  // ---- 请求 ----
+  // ---- Requests ----
 
   #access(): WebServiceAccess {
     return this.#deps.store.get('web').web ?? { readOnly: false, methods: null };
@@ -256,7 +254,7 @@ export class WebService implements ManagedService {
     return this.#port !== null && (host === `127.0.0.1:${this.#port}` || host === `localhost:${this.#port}`);
   }
 
-  /** 请求带的会话（cookie）；没有或无效时为 null。 */
+  /** The session carried by the request (cookie). Null when absent or invalid. */
   #session(request: IncomingMessage): string | null {
     const token = readCookie(request.headers.cookie, cookieName(this.#port));
     return token ? this.#sessions.verify(token) : null;
@@ -264,7 +262,7 @@ export class WebService implements ManagedService {
 
   #authorize(method: RpcMethod, params: unknown, principal: TrustedPrincipal): RpcError | null {
     if (!principal.sessionId || !this.#sessions.alive(principal.sessionId)) {
-      // 先回答这个请求（说明会话失效），再断开连接。
+      // Answer this request first (saying the session has expired), then disconnect.
       setImmediate(() => this.#gateway?.disconnectWhere((p) => p.connectionId === principal.connectionId, 'session expired'));
       return new RpcError('unauthenticated', RcWeb.sessionExpired());
     }
@@ -280,7 +278,7 @@ export class WebService implements ManagedService {
     if (!gateway) return refuse(503, 'Service Unavailable');
     const { pathname } = new URL(request.url ?? '/', 'http://localhost');
     if (pathname !== '/ws') return refuse(404, 'Not Found');
-    // WebSocket 不受同源策略限制：来源必须带、必须是自己。
+    // WebSocket is not restricted by the same-origin policy: the origin must be present and must be its own.
     const origin = request.headers.origin;
     if (!this.#hostAllowed(request.headers.host) || origin === undefined || !this.#origins().includes(origin)) {
       this.#log.warn('Refused WebSocket origin', { origin });
@@ -348,11 +346,11 @@ export class WebService implements ManagedService {
     }
     if (pathname === '/_auth/login.js') return sendLoginScript(request, response);
 
-    // 需要会话的内容：别的站点（含本机其他端口）发起的请求不给。
+    // Content that needs a session is not served to requests initiated by other sites (including other local ports).
     const site = request.headers['sec-fetch-site'];
     const sameOrigin = site === undefined || site === 'same-origin' || site === 'none';
     const session = sameOrigin ? this.#session(request) : null;
-    // 界面内链接（`/home?video=…` 这类，没有扩展名）与根路径一样：没登录给登录页，登录了给客户端页面，由客户端按路径与查询去对应的界面。
+    // In-UI links (`/home?video=…`-style, without an extension) are treated like the root path. Not logged in gives the login page, and logged in gives the client page, which maps the path and query to the UI.
     const page = pathname === '/' || pathname === '/index.html' || isAppRoute(pathname);
     if (page) {
       if (!session) return sendLoginPage(request, response);
@@ -370,15 +368,15 @@ export class WebService implements ManagedService {
   }
 
   /**
-   * 幻灯片编辑器的路由：要会话（同源请求带的 cookie），白名单里要有 `slides.open`。发布与上传在只读配置下被拒；
-   * 这组路由自己给 CSP，嵌入只放行这个服务自己的页面（替换掉每个响应都带的 `X-Frame-Options: DENY`）。
+   * Routes for the slide editor: they require a session (the cookie carried by same-origin requests), and `slides.open` must be in the allowlist. Publishing and uploading are rejected under read-only configuration.
+   * This group of routes sets its own CSP and allows embedding only from this service's own pages, replacing the `X-Frame-Options: DENY` carried by every response.
    */
   #slidesRequest(request: IncomingMessage, response: ServerResponse): void {
     const deny = (status: number, text: string) => response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }).end(text);
     const site = request.headers['sec-fetch-site'];
     const sameOrigin = site === undefined || site === 'same-origin' || site === 'none';
     const session = sameOrigin ? this.#session(request) : null;
-    // 不带会话的根级素材请求来自另一个主机名上的设计稿或设计系统编辑器（docs/design/canvas §6.2、§10.4）：只在这两种里找。
+    // A root-level asset request without a session comes from a design draft or design system editor on another hostname (docs/design/canvas §6.2, §10.4). It is looked up only in those two.
     if (sameOrigin && !session && request.url?.startsWith('/_blob/')) return this.#designRequest(request, response, null);
     if (!sameOrigin || !session) return void deny(sameOrigin ? 401 : 403, RcWeb.loginRequired().text);
     const access = this.#access();
@@ -390,11 +388,11 @@ export class WebService implements ManagedService {
   }
 
   /**
-   * 设计稿与设计系统编辑器的路由（docs/design/canvas §6.2、§10.4）：Web 客户端把 `design.open` / `designSystem.open` 给的相对地址
-   * 换到这个服务的另一个回环主机名，那里不带会话 cookie（画板与预览脚本即使连 `/ws` 也过不了认证），所以只认 grant，不要会话；
-   * 白名单里要有对应的方法。请求要同源，只有放进 iframe 或新窗口的那次导航可以来自另一个主机名（那时 `Sec-Fetch-Site` 是
-   * cross-site）；写请求另外要 `Origin` 与 `Host` 一致（SlidesServer 查）。`kind` 为 null 是根级 `/_blob/<id>`：只在白名单开放的
-   * 设计稿与设计系统里找。嵌入只放行这个服务的两个回环源（设计系统编辑器里还嵌着同源的 `artifact-type/run.html`，两层都要在列表里）。
+   * Routes for the design draft and design system editors (docs/design/canvas §6.2, §10.4). The web client rewrites the relative addresses given by `design.open` / `designSystem.open`
+   * to another loopback hostname of this service, where there is no session cookie (the canvas and preview scripts cannot authenticate even when connecting to `/ws`). So these routes accept only the grant and do not require a session.
+   * The corresponding method must be in the allowlist. Requests must be same-origin. Only the one navigation loaded into an iframe or new window may come from another hostname (then `Sec-Fetch-Site` is
+   * cross-site). Write requests additionally require `Origin` and `Host` to match (checked by SlidesServer). `kind` null means root-level `/_blob/<id>`: it is looked up only in the design drafts and design systems that are allowed.
+   * Embedding allows only the service's two loopback origins. The design system editor also embeds the same-origin `artifact-type/run.html`, so both layers must be in the list.
    */
   #designRequest(request: IncomingMessage, response: ServerResponse, kind: 'design' | 'design-system' | null): void {
     const deny = (status: number, text: string) => response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }).end(text);
@@ -407,7 +405,7 @@ export class WebService implements ManagedService {
     const access = this.#access();
     const designVerdict = kind === 'design-system' ? null : webAuthorize('design.open', {}, access);
     const systemVerdict = kind === 'design' ? null : webAuthorize('designSystem.open', {}, access);
-    // 根级素材：两种都被拒才拒；否则只在开放的那几种里找
+    // Root-level assets: rejected only when both kinds reject. Otherwise, looked up only in the allowed kinds.
     const verdict = kind === 'design' ? designVerdict : kind === 'design-system' ? systemVerdict : designVerdict && systemVerdict;
     if (verdict || !this.#slides) return void deny(403, verdict?.message ?? RcWeb.fileNotFound().text);
     const blobScope = kind ?? (designVerdict ? 'design-system' : systemVerdict ? 'design' : 'isolated');
@@ -421,7 +419,7 @@ export class WebService implements ManagedService {
     if (!handled) deny(404, RcWeb.fileNotFound().text);
   }
 
-  /** `POST /_auth/session { code }`：代码换会话 cookie。来源必须带、必须是自己。 */
+  /** `POST /_auth/session { code }`: exchanges the code for a session cookie. The origin must be present and must be its own. */
   async #login(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader('Cache-Control', 'no-store');
     if (request.method !== 'POST') return void response.writeHead(405, { Allow: 'POST' }).end();
@@ -466,8 +464,8 @@ export class WebService implements ManagedService {
 }
 
 /**
- * 客户端的界面内链接（`/home`、`/c/<会话>`、`/space/<分类>` 这类，`packages/ui` 的 `hrefFor`）：最后一段没有扩展名，
- * 不在媒体、登录与构建产物的路径下。它们没有对应的文件，一律给客户端页面（`index.html`）。
+ * The client's in-UI links (`/home`, `/c/<session>`, `/space/<category>`-style, from `hrefFor` in `packages/ui`): the last segment has no extension,
+ * and they are not under the media, login or build-output paths. They have no corresponding file, so they are always served the client page (`index.html`).
  */
 function isAppRoute(pathname: string): boolean {
   const parts = pathname.split('/').filter(Boolean);
@@ -475,7 +473,7 @@ function isAppRoute(pathname: string): boolean {
   return parts.every((part) => !part.startsWith('.')) && !parts[parts.length - 1]!.includes('.');
 }
 
-/** cookie 的名字带端口：回环地址上的 cookie 不按端口隔离，不同端口（不同 Runtime Home）的会话不互相覆盖。 */
+/** The cookie name includes the port. Cookies on loopback addresses are not isolated by port, so sessions on different ports (different Runtime Homes) do not overwrite each other. */
 function cookieName(port: number | null): string {
   return `cuccut_web_${port ?? 0}`;
 }
@@ -489,7 +487,7 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null;
 }
 
-/** 配置的白名单项是否在默认集合之内：方法名要被默认集合覆盖，`x.*` 要落在默认集合的某个 `y.*` 之内。 */
+/** Whether a configured allowlist entry is within the default set: a method name must be covered by the default set, and `x.*` must fall within some `y.*` of the default set. */
 function withinDefault(pattern: string): boolean {
   if (!pattern.endsWith('.*')) return WEB_DEFAULT_METHODS.some((p) => methodMatches(p, pattern));
   return WEB_DEFAULT_METHODS.some((p) => p.endsWith('.*') && pattern.startsWith(p.slice(0, -1)));

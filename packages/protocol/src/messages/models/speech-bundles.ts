@@ -14,7 +14,7 @@ import { pl } from './speech-bundles.pl.ts';
 import { tr } from './speech-bundles.tr.ts';
 import { vi } from './speech-bundles.vi.ts';
 
-/** `packages/models/src/speech-bundles.ts` 给人看的文字：语音合成模型包的许可摘要（模型名、许可证名、厂商名不翻译）。 */
+/** Human-facing text for `packages/models/src/speech-bundles.ts`: license summaries for speech synthesis model bundles (model names, license names and vendor names are not translated). */
 const en = {
   qwen3TtsLicense: 'The upstream Qwen3-TTS model card says Apache-2.0, commercial use allowed; the MLX conversion keeps the same license',
   indexTts2License: 'Commercial use allowed, but entities with more than 100 million monthly active users last month or more than 1 billion RMB in revenue last year must apply to bilibili separately; redistribution must include the full agreement; it may not be used to improve commercial models other than IndexTTS',

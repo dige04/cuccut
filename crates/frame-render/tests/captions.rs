@@ -1,5 +1,4 @@
-//! 字幕：字幕实例按字幕文档与样式文档交给内核排版、画出来。字形来自随内核发布的字体，像素位置不按字身逐个算，
-//! 核对的是摆放（锚点、框、上下顺序）、显示时机、颜色与画不出来时的说法。
+//! Captions: caption instances are handed to the kernel with the caption document and style document for typesetting and drawing. Glyphs come from the fonts shipped with the kernel, and pixel positions are not computed per glyph body. The tests check placement (anchor, box, top/bottom order), display timing, color, and the wording used when something cannot be drawn.
 
 mod common;
 
@@ -9,7 +8,7 @@ use serde_json::{Value, json};
 
 const STUDIO: &str = "cuccut.legacy-studio-style/0.1";
 
-/// 字幕文档：`cues` 是（开始秒，结束秒，文字）。
+/// Caption document: `cues` are (start seconds, end seconds, text).
 fn caption_doc(id: &str, clock: &str, cues: &[(f64, f64, &str)], line_kind: &str) -> FrozenDocument {
     serde_json::from_value(json!({
         "documentId": id, "kind": "caption", "schema": "cuccut.caption/1", "lineKind": line_kind,
@@ -34,7 +33,7 @@ fn studio(style: Value) -> Value {
     json!({ "schema": STUDIO, "style": style })
 }
 
-/// 字幕实例：字幕轨上从第 0 帧起 `frames` 帧。
+/// Caption instance: on the caption track, from frame 0 for `frames` frames.
 fn caption(id: &str, document: &str, style: Option<&str>, frames: i64, scopes: &[&str]) -> Value {
     let mut value = item(
         id,
@@ -59,7 +58,7 @@ fn draw(documents: Vec<FrozenDocument>, items: Vec<Value>, seconds: f64) -> Vec<
     )
 }
 
-/// 满足 `pick` 的像素的 `(个数, 平均 x, 平均 y)`。
+/// `(count, average x, average y)` of the pixels that satisfy `pick`.
 fn centroid(frame: &[u8], pick: impl Fn([u8; 4]) -> bool) -> (usize, f64, f64) {
     let (mut n, mut sx, mut sy) = (0usize, 0.0, 0.0);
     for y in 0..H {
@@ -116,20 +115,20 @@ fn studio_caption_draws_the_active_cue_at_the_anchor() {
         ]
     };
     let items = || vec![caption("cap", "doc", Some("style"), 240, &[])];
-    // 缺省锚点 (50%, 86%)：字落在画布下部、水平居中。
+    // Default anchor (50%, 86%): the text sits in the lower part of the canvas, horizontally centered.
     let frame = draw(documents(), items(), 1.5);
     let (n, x, y) = centroid(&frame, whiteish);
     assert!(n > 20, "{n}");
     assert!((x - 80.0).abs() < 6.0, "{x}");
     assert!((y - 0.86 * 90.0).abs() < 6.0, "{y}");
-    // 显示时机：前留 0.5 秒、后留 1 秒。
+    // Display timing: 0.5 seconds kept before, 1 second kept after.
     assert!(painted(&draw(documents(), items(), 0.6)) > 0);
     assert!(painted(&draw(documents(), items(), 2.9)) > 0);
     assert_eq!(painted(&draw(documents(), items(), 0.4)), 0);
     assert_eq!(painted(&draw(documents(), items(), 3.1)), 0);
-    // 交付写法去掉标点后什么都不剩的句子不画。
+    // A sentence that has nothing left after removing punctuation under the delivery style is not drawn.
     assert_eq!(painted(&draw(documents(), items(), 5.5)), 0);
-    // 不烧字幕时字幕层不画，也不报画不出来。
+    // When captions are not burned in, the caption layer is not drawn and nothing is reported as undrawable.
     let video = video(items(), vec![], json!({}));
     let mut off = frame_render::FrameRenderer::new(
         frame_render::RenderOptions {
@@ -146,8 +145,8 @@ fn studio_caption_draws_the_active_cue_at_the_anchor() {
     assert!(off.skipped().is_empty());
 }
 
-/// 没有样式文档的字幕按默认预设画（规范 §5.6「默认预设」）：普通逗号、句号换成空格，白字带黑色描边，白底上也看得见。
-/// 有样式文档的照它画：`{}` 仍是内核的兜底（标点换成空格、没有描边）。
+/// A caption without a style document is drawn with the default preset (spec §5.6 'default preset'): ordinary commas and full stops are replaced by spaces, white text with a black outline, visible even on a white background.
+/// One with a style document is drawn as that style says. `{}` is still the kernel's fallback (punctuation replaced by spaces, no outline).
 #[test]
 fn unstyled_captions_draw_the_default_preset() {
     let draw_on = |background: &str, text: &str, style: Option<Value>| {
@@ -164,7 +163,7 @@ fn unstyled_captions_draw_the_default_preset() {
         render_with(&mut renderer(false, Documents::new(documents)), &video, 1.0, &mut Media::default())
     };
     let plain = || Some(json!({ "anim": { "name": "None" } }));
-    // 默认投影不画只有逗号、句号的句子；显式关闭时保留，问号与叹号始终保留。
+    // The default shadow is not drawn on sentences that have only commas and full stops. When explicitly turned off, it is kept. Question marks and exclamation marks are always kept.
     for punctuation in ["，", "。", "，。"] {
         assert_eq!(painted(&draw_on("#000000", punctuation, None)), 0);
         assert!(painted(&draw_on("#000000", punctuation, Some(json!({"punct": false})))) > 0);
@@ -175,7 +174,7 @@ fn unstyled_captions_draw_the_default_preset() {
     let projected = span(&draw_on("#000000", "其实，宇航员。", None));
     let spaces = span(&draw_on("#000000", "其实 宇航员", None));
     assert_eq!(projected, spaces, "projected width vs spaces");
-    // 描边：白底上的白字靠描边看得见；没有描边的样式在白底上几乎没有深色像素。
+    // Outline: white text on a white background stays visible thanks to the outline. A style without an outline has almost no dark pixels on a white background.
     let dark = |frame: &[u8]| centroid(frame, |p| p[0] < 160 && p[1] < 160 && p[2] < 160).0;
     let outlined = dark(&draw_on("#FFFFFF", "微重力环境", None));
     let bare = dark(&draw_on("#FFFFFF", "微重力环境", plain()));
@@ -205,7 +204,7 @@ fn bilingual_captions_stack_once_per_style_group_in_order() {
             caption("b", "trans", Some("style"), 60, &[]),
         ]
     };
-    // 同一样式文档的两层是一组：译文在上（缺省）时红字在白字上面，原文在上时反过来；两行都在画布中线附近。
+    // Two layers of the same style document form a group: when the translation is on top (default), the red text sits above the white text; when the original is on top, it is the other way round. Both lines are near the canvas midline.
     let frame = draw(documents("trans"), items(), 1.0);
     let ((reds, _, red_y), (whites, _, white_y)) = (centroid(&frame, reddish), centroid(&frame, whiteish));
     assert!(reds > 10 && whites > 10, "{reds} {whites}");
@@ -214,7 +213,7 @@ fn bilingual_captions_stack_once_per_style_group_in_order() {
     let frame = draw(documents("orig"), items(), 1.0);
     let ((_, _, red_y), (_, _, white_y)) = (centroid(&frame, reddish), centroid(&frame, whiteish));
     assert!(white_y < red_y, "{red_y} {white_y}");
-    // 没有样式文档的字幕各自一组：按缺省样式（逐词变色）单独画在锚点上。
+    // Captions without a style document each form their own group: drawn separately at the anchor with the default style (word-by-word color change).
     let frame = draw(
         vec![caption_doc("trans", "sequence", &[(0.0, 2.0, "一二")], "original")],
         vec![caption("a", "trans", None, 60, &[])],
@@ -234,7 +233,7 @@ fn source_clock_captions_follow_the_scope_item() {
             ),
         ]
     };
-    // 作用实例从源的第 10 秒起播：序列 0.5 秒是源 10.5 秒，正好在句子里。
+    // The instance plays from source second 10: sequence 0.5 s is source 10.5 s, which is right inside the sentence.
     let clip = || {
         video_item(
             "clip",
@@ -255,14 +254,13 @@ fn source_clock_captions_follow_the_scope_item() {
         )
     };
     assert!(centroid(&render_at(&["clip"]), whiteish).0 > 10);
-    // 没有作用实例时源时刻无从说起：这一刻不画。
+    // Without an instance there is no source time to speak of, so nothing is drawn at this moment.
     assert_eq!(painted(&render_at(&[])), 0);
 }
 
 #[test]
 fn boxed_captions_sit_in_their_box() {
-    // 样式画布 320×180 是输出的两倍：框中心在画布中心上方 60（输出 30）、宽 240 高 40（输出 120×20），
-    // 所以输出上的框是 x 20–140、y 5–25。
+    // The style canvas 320×180 is twice the output. The box center is 60 above the canvas center (30 on the output), width 240 and height 40 (120×20 on the output). So on the output, the box is x 20–140, y 5–25.
     let boxed = |align: &str, extra: Value| {
         let mut style = json!({ "fontSize": 24, "color": "#00FF00", "verticalAlign": align });
         if let (Some(style), Value::Object(extra)) = (style.as_object_mut(), extra) {
@@ -296,7 +294,7 @@ fn boxed_captions_sit_in_their_box() {
         }
         b.expect("画出了字")
     };
-    // 靠上贴框顶，靠下贴框底，居中在框心（y 15）；都在框里、水平居中。
+    // Top-aligned sticks to the top of the box, bottom-aligned to the bottom, and centered on the box center (y 15). All are inside the box and horizontally centered.
     let top = bounds(&frame_with("AB", boxed("top", json!({}))));
     let bottom = bounds(&frame_with("AB", boxed("bottom", json!({}))));
     let center = bounds(&frame_with("AB", boxed("center", json!({}))));
@@ -307,11 +305,11 @@ fn boxed_captions_sit_in_their_box() {
     for (x0, _, x1, _) in [top, bottom, center] {
         assert!(x0 >= 20 && x1 <= 140 && ((x0 + x1) as f64 / 2.0 - 80.0).abs() < 3.0, "{x0} {x1}");
     }
-    // 定位框样式不做交付写法：句号照画。
+    // Positioned-box styles do not use the delivery style, so the full stop is still drawn.
     let plain = centroid(&frame_with("AB", boxed("top", json!({}))), greenish).0;
     let dotted = centroid(&frame_with("AB.", boxed("top", json!({}))), greenish).0;
     assert!(dotted > plain, "{plain} {dotted}");
-    // 不透明度作用在整句上；底板铺在文字周围。
+    // Opacity applies to the whole sentence, and the backing plate is laid under the text.
     let faded = frame_with("AB", boxed("top", json!({ "opacity": 0.5 })));
     let brightest = faded.chunks_exact(4).map(|p| p[1]).max().unwrap();
     assert!((110..=140).contains(&brightest), "{brightest}");
@@ -321,7 +319,7 @@ fn boxed_captions_sit_in_their_box() {
 
 #[test]
 fn boxed_caption_alignment_hugs_the_box_edges() {
-    // 输出上的框是 x 20–140（见上一个测试）；留白 8 在输出上是 4：文字离框边一个留白，底板正好铺到框边。
+    // On the output the box is x 20–140 (see the previous test). Padding 8 becomes 4 on the output, so the text sits one padding away from the box edge and the backing plate reaches exactly to the box edge.
     let frame = |align: &str| {
         draw(
             vec![
@@ -356,14 +354,13 @@ fn boxed_caption_alignment_hugs_the_box_edges() {
     assert!(lp.0.abs_diff(20) <= 1, "左对齐的底板贴框的左边：{lp:?}");
     assert!(rp.1.abs_diff(139) <= 1, "右对齐的底板贴框的右边：{rp:?}");
     assert!((f64::from(cp.0 + cp.1) / 2.0 - 80.0).abs() <= 1.5, "居中照旧：{cp:?}");
-    // 同一句话，三种对齐只是平移（边上的抗锯齿差一像素以内）。
+    // The same sentence in three alignments differs only by translation (anti-aliasing differences within one pixel).
     assert!((lp.1 - lp.0).abs_diff(cp.1 - cp.0) <= 1, "{lp:?} {cp:?}");
     assert!((rp.1 - rp.0).abs_diff(cp.1 - cp.0) <= 1, "{rp:?} {cp:?}");
     assert!(lt.0 >= 24 && lt.0 < ct.0 && ct.0 < rt.0 && rt.1 <= 136, "{lt:?} {ct:?} {rt:?}");
 }
 
-/// 定位框样式选了逐字显现（`animationPresetId: reveal`）：没有词时间的句子按空白切成词、按字数分摊时长，没念到的词不画，
-/// 念到一个就整个亮出来；全念到之后与不动画的同一句逐像素相同。
+/// The positioned-box style chose word-by-word reveal (`animationPresetId: reveal`). A sentence without word timings is split into words at whitespace, and its duration is divided by character count. Words not yet spoken are not drawn, and each word is revealed in full once spoken. After all words are spoken, it is pixel-identical to the same sentence without animation.
 #[test]
 fn boxed_reveal_shows_words_as_they_are_reached() {
     let boxed = |preset: Option<&str>| {
@@ -381,7 +378,7 @@ fn boxed_reveal_shows_words_as_they_are_reached() {
             }),
         )
     };
-    // 三个一样长的词各占一秒：[0, 1)、[1, 2)、[2, 3)。
+    // Three equally long words, each taking one second: [0, 1), [1, 2), [2, 3).
     let frame = |text: &str, preset: Option<&str>, seconds: f64| {
         draw(
             vec![caption_doc("doc", "sequence", &[(0.0, 3.0, text)], "original"), boxed(preset)],
@@ -400,12 +397,12 @@ fn boxed_reveal_shows_words_as_they_are_reached() {
     let phases: Vec<Vec<u8>> = [0.5, 1.5, 2.5].iter().map(|&t| frame(text, Some("reveal"), t)).collect();
     let counts: Vec<usize> = phases.iter().map(|f| centroid(f, greenish).0).collect();
     let edges: Vec<u32> = phases.iter().map(|f| right_edge(f).expect("念到的词画出来了")).collect();
-    // 一个、两个、三个词：字越来越多，右边一个比一个靠右（行在框里居中排好，没念到的词占着位置）。
+    // One, two, then three words: more and more characters appear, each word further right (the line is laid out centered in the box, and unspoken words still hold their space).
     assert!(counts[0] > 10 && counts[0] < counts[1] && counts[1] < counts[2], "{counts:?}");
     assert!(edges[0] < edges[1] && edges[1] < edges[2], "{edges:?}");
-    // 起点那一刻第一个词还没亮：整句什么都不画。
+    // At the starting moment the first word is not yet lit, so nothing of the sentence is drawn.
     assert_eq!(centroid(&frame(text, Some("reveal"), 0.0), greenish).0, 0);
-    // 左边第一个词的像素位置不随后面的词亮起而移动。
+    // The pixel position of the first word on the left does not move as later words light up.
     let first_word = |f: &[u8]| {
         (0..H)
             .flat_map(|y| (0..W).map(move |x| (x, y)))
@@ -413,9 +410,9 @@ fn boxed_reveal_shows_words_as_they_are_reached() {
             .count()
     };
     assert_eq!(first_word(&phases[0]), first_word(&phases[2]));
-    // 全念到时与不动画的同一句相同；不认识目录 id 之外的写法时（这里不写）也不动画。
+    // Once fully spoken, it matches the sentence without animation. A form other than the catalog ID that it does not recognize (not written here) is not animated either.
     assert_eq!(phases[2], frame(text, None, 2.5));
-    // 没有空白的中文句是一个词：一开头就整句亮出来，与不动画的相同。
+    // A Chinese sentence without whitespace is one word: it is revealed in full from the start, the same as without animation.
     assert_eq!(frame("一处切换", Some("reveal"), 0.2), frame("一处切换", None, 0.2));
     assert!(centroid(&frame("一处切换", Some("reveal"), 0.2), greenish).0 > 10);
 }
@@ -442,7 +439,7 @@ fn unreadable_captions_are_refused_or_skipped() {
         ),
         "caption-unknown-style"
     );
-    // 跳过时只少这一组字幕。
+    // Skipping drops only this one caption group.
     let video = video(vec![caption("cap", "doc", Some("style"), 60, &[])], vec![], json!({}));
     let mut skipping = renderer(true, Documents::new(vec![good()]));
     assert_eq!(painted(&render_with(&mut skipping, &video, 1.0, &mut Media::default())), 0);
@@ -451,7 +448,7 @@ fn unreadable_captions_are_refused_or_skipped() {
 
 #[test]
 fn renderers_reused_across_sizes_and_documents_match_fresh_ones() {
-    // 换尺寸、换文档时排版引擎拆下来接着用：画出来的与新建的渲染器一模一样。
+    // When the size or the document changes, the typesetting engine is taken apart and reused. What is drawn is identical to a newly created renderer.
     let documents = || {
         vec![
             caption_doc("doc", "sequence", &[(0.0, 2.0, "AB")], "original"),
@@ -490,7 +487,7 @@ fn renderers_reused_across_sizes_and_documents_match_fresh_ones() {
     assert_eq!(render_with(&mut reused, &video, 1.0, &mut Media::default()), first);
 }
 
-/// 转写文档：`words` 是（ID，文字，开始秒，结束秒），`hidden` 里的词隐藏。
+/// Transcript document: `words` are (ID, text, start seconds, end seconds); words in `hidden` are hidden.
 fn speech_doc(id: &str, asset: &str, words: &[(&str, &str, f64, f64)], hidden: &[&str]) -> FrozenDocument {
     serde_json::from_value(json!({
         "documentId": id, "kind": "speech", "schema": "cuccut.speech/1", "sourceAssetId": asset,
@@ -508,7 +505,7 @@ fn speech_doc(id: &str, asset: &str, words: &[(&str, &str, f64, f64)], hidden: &
     .unwrap()
 }
 
-/// 源素材时钟上的字幕文档，一句指向转写的 `first`–`last`。`speech` 为 `None` 时文档头不写 `sourceDocumentId`。
+/// Caption document on the source clock, with one sentence pointing at transcript `first`–`last`. When `speech` is `None`, the document header does not write `sourceDocumentId`.
 fn worded_caption_doc(id: &str, speech: Option<&str>, cue: (f64, f64, &str), words: (&str, &str)) -> FrozenDocument {
     let mut value = json!({
         "documentId": id, "kind": "caption", "schema": "cuccut.caption/1", "lineKind": "original",
@@ -524,7 +521,7 @@ fn worded_caption_doc(id: &str, speech: Option<&str>, cue: (f64, f64, &str), wor
     serde_json::from_value(value).unwrap()
 }
 
-/// 从源的 `source_in` 秒起播 `frames` 帧、放在序列第 `from` 帧的视频实例（素材 `a_clip`）。
+/// Video instance that plays `frames` frames from the source's `source_in` seconds, placed at sequence frame `from` (asset `a_clip`).
 fn clip_at(id: &str, from: i64, frames: i64, source_in: f64) -> Value {
     video_item(
         id,
@@ -536,7 +533,7 @@ fn clip_at(id: &str, from: i64, frames: i64, source_in: f64) -> Value {
     )
 }
 
-/// 逐词变色（`#FFD43B`）的黄色像素。
+/// Yellow pixels of the word-by-word color change (`#FFD43B`).
 fn karaoke_yellow(p: [u8; 4]) -> bool {
     p[0] > 180 && p[1] > 150 && p[2] < 120
 }
@@ -576,7 +573,7 @@ fn spaceless_chinese_lines_advance_per_character_from_the_transcript() {
             &mut Media::default(),
         )
     };
-    // 拿到转写的逐字时间：第一个字说的时候只有它变色，第四个字说的时候变色的跑到右边。
+    // Get the per-character timings from the transcript: when the first character is spoken, only it changes color; when the fourth character is spoken, the colored part has moved to the right.
     let first = draw_at(Some("sp"), 0.25);
     let last = draw_at(Some("sp"), 1.75);
     let (yellow_first, x_first, _) = centroid(&first, karaoke_yellow);
@@ -588,7 +585,7 @@ fn spaceless_chinese_lines_advance_per_character_from_the_transcript() {
         "其余三个字还是白的：白 {white_first}，黄 {yellow_first}"
     );
     assert!(x_last - x_first > 30.0, "变色的字从左跑到右：{x_first} → {x_last}");
-    // 没有转写可取（文档头不写 sourceDocumentId）时整行是一个「词」，一起变色。
+    // Without a transcript to draw from (the document header has no sourceDocumentId), the whole line is one 'word' and changes color together.
     let whole = draw_at(None, 0.25);
     let (yellow_whole, ..) = centroid(&whole, karaoke_yellow);
     let (white_whole, ..) = centroid(&whole, whiteish);
@@ -620,7 +617,7 @@ fn cut_and_hidden_words_leave_the_caption_line() {
     };
     let whole = || vec![clip_at("clip", 0, 60, 10.0), caption("cap", "doc", Some("style"), 60, &["clip"])];
     let four = width(whole(), &[], 0.25);
-    // 剪掉「的」（源 10.5–11.0）：前一段放源 10.0–10.5，后一段从序列第 15 帧起放源 11.0–12.0。
+    // Cut out “的” (the particle “de”, source 10.5–11.0): the earlier segment plays source 10.0–10.5, and the later segment plays source 11.0–12.0 starting at sequence frame 15.
     let cut = vec![
         clip_at("left", 0, 15, 10.0),
         clip_at("right", 15, 30, 11.0),
@@ -629,14 +626,14 @@ fn cut_and_hidden_words_leave_the_caption_line() {
     let three = width(cut, &[], 1.0);
     let char_width = four / 4.0;
     assert!((four - three - char_width).abs() < char_width * 0.4, "少了一个字：{four} → {three}");
-    // 隐藏的词同样不画。
+    // Hidden words are not drawn either.
     let hidden = width(whole(), &["w2"], 0.25);
     assert!((hidden - three).abs() < 2.0, "{hidden} ≠ {three}");
-    // 预览里同一个渲染器跟着剪辑走：剪了之后字幕重编。
+    // In preview, the same renderer follows the edit: after a cut, the captions are re-timed.
     let mut shared = renderer(false, Documents::new(documents(&[])));
     let mut bounds = |items: Vec<Value>, seconds: f64| {
         let video = video(items, vec![video_asset("a_clip", 16, 9)], json!({}));
-        // 预览送进新的视频快照时告诉渲染器序列变了（preview-wasm 的 `set_video`）。
+        // When preview sends a new video snapshot, it tells the renderer that the sequence has changed (preview-wasm's `set_video`).
         shared.sequence_changed();
         let (x0, _, x1, _) = painted_bounds(&render_with(&mut shared, &video, seconds, &mut Media::default())).unwrap();
         f64::from(x1 - x0)
@@ -650,7 +647,7 @@ fn cut_and_hidden_words_leave_the_caption_line() {
     assert_eq!(bounds(cut, 1.0), three);
 }
 
-/// 设计字幕强调色（`#FF00AA`，入场时压在黑底上）的像素。
+/// Pixels of the design caption's emphasis color (`#FF00AA`, which sits on a black background on entry).
 fn emphasis_magenta(p: [u8; 4]) -> bool {
     p[0] > 90 && p[1] < 50 && p[2] > 45 && p[0] > p[2]
 }
@@ -688,11 +685,10 @@ fn designed_caption_emphasis_lands_on_transcript_words() {
         )
     };
     let hero = |id: &str| json!({ id: { "anchorText": "", "role": "hero", "color": "#FF00AA" } });
-    // 强调按转写的词 ID 写：「的」画成强调色。
+    // Emphasis is keyed by the transcript word ID: “的” (the particle “de”) is drawn in the emphasis color.
     let (single, x_single, ..) = draw(Some("sp"), hero("w2"));
     assert!(single > 5, "强调的字画成强调色：{single}");
-    // 写在多字词「说了」（拆成 `w3`、`w3~1`）上的强调落到拆出来的每个字上：右边一直到「了」的右边，
-    // 左边在「了」的左边（「说」也是强调色）。
+    // Emphasis written on the multi-character word “说了” (split into `w3` and `w3~1`) lands on every split character: the right edge reaches the right side of “了”, and the left edge is on the left of “了” (“说” is in the emphasis color too).
     let (split, x_split, left, right) = draw(Some("sp"), hero("w3"));
     let (last, _, last_left, last_right) = draw(Some("sp"), hero("w3~1"));
     assert!(split > 5 && last > 5, "{split} {last}");
@@ -701,14 +697,14 @@ fn designed_caption_emphasis_lands_on_transcript_words() {
         right + 1 >= last_right && left + 4 < last_left,
         "「说了」两个字都是强调色：{left}–{right}，「了」{last_left}–{last_right}"
     );
-    // 没有转写可取时词按空白切分推算，没有这个 ID，强调不落。
+    // Without a transcript to draw from, words are derived by splitting on whitespace. Without this ID, emphasis does not land.
     let (none, ..) = draw(None, hero("w2"));
     assert_eq!(none, 0, "取不到词时不冒充强调");
 }
 
 #[test]
 fn cue_styles_follow_the_document_cue_id_in_every_member() {
-    // 同一样式组里两份字幕文档的句子 ID 撞了：交给内核时第二句补了后缀，逐句样式仍按文档里的 ID 落到两句上。
+    // Two caption documents in the same style group have colliding sentence IDs. When handed to the kernel, the second sentence gets a suffix appended, and per-sentence styles still land on the two sentences by the IDs in the document.
     let documents = vec![
         caption_doc("one", "sequence", &[(0.0, 1.0, "AB")], "original"),
         caption_doc("two", "sequence", &[(2.0, 3.0, "CD")], "original"),
@@ -739,7 +735,7 @@ fn cue_styles_follow_the_document_cue_id_in_every_member() {
 
 #[test]
 fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
-    // 字幕底边贴着锚线（`verticalAlign: bottom`），缺省锚线在 86%。
+    // The bottom edge of the caption sits on the anchor line (`verticalAlign: bottom`), and the default anchor line is at 86%.
     let documents = || {
         vec![
             caption_doc("doc", "sequence", &[(0.0, 2.0, "AB")], "original"),
@@ -750,7 +746,7 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
             ),
         ]
     };
-    // y = 80% 起、整宽的进度线：避让时锚线抬到 100 − 80 + 2 = 22% 之上，即 78%。
+    // A full-width progress line starting at y = 80%. When avoiding it, the anchor line is raised above it by 100 − 80 + 2 = 22%, so it sits at 78%.
     let template = |subs_avoid: bool, accent: &str, track: &str| {
         json!({ "durationPolicy": { "kind": "fixed", "frames": 60 }, "template": { "id": "tpl", "name": "条", "subsAvoid": subs_avoid, "layers": [
             { "id": "bar", "box": { "x": 0, "y": 80, "w": 100, "h": 20 }, "kind": "progress", "accent": accent, "track": track }
@@ -776,7 +772,7 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
             .expect("字幕画出来了")
     };
     let strip_top = (f64::from(H) * 0.8) as u32;
-    // 透明的横条：只看字幕摆在哪。
+    // Transparent bar: only to see where the caption sits.
     let clear = |avoid: bool| template(avoid, "#FF000000", "#0000FF00");
     let plain = draw(json!({}), true);
     let lifted = draw(clear(true), true);
@@ -784,14 +780,14 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
     assert!(bottom(&plain) >= strip_top, "没有模板时字幕底边在 86% 附近：{}", bottom(&plain));
     assert!(bottom(&lifted) < strip_top, "底部横条把字幕抬到条的上沿之上：{}", bottom(&lifted));
     assert_eq!(off, plain, "关掉 subsAvoid 不抬");
-    // 字幕长相不变：白字的像素数差不多。
+    // The caption's appearance is unchanged: the white text has about the same pixel count.
     let (white_plain, ..) = centroid(&plain, whiteish);
     let (white_lifted, ..) = centroid(&lifted, whiteish);
     assert!(
         white_plain.abs_diff(white_lifted) * 10 < white_plain,
         "{white_plain} vs {white_lifted}"
     );
-    // 字幕层只画字幕：不透明的横条那一片与只有模板时逐像素一样（模板不被字幕层再画一遍），字幕照样抬在上面。
+    // The caption layer draws only captions. The opaque bar's region is pixel-identical to when only the template is present (the template is not drawn again by the caption layer), and the caption is still lifted above it.
     let opaque = template(true, "#FF0000", "#0000FF");
     let over = draw(opaque.clone(), true);
     let bare = draw(opaque, false);
@@ -816,7 +812,7 @@ fn caption_font_notes_stand_on_every_frame() {
     let video = video(vec![caption("cap", "doc", Some("style"), 60, &[])], vec![], json!({}));
     let note = "cap：字体 \"Nowhere Sans\" 在当前字体库中不可用，将使用 Noto Sans SC fallback";
     let mut renderer = renderer(false, Documents::new(documents));
-    // 预览每帧先清掉报告；字幕的缺字体提示每一帧都在（以前只有编译的那一帧报）。
+    // Preview clears the reports on every frame. The missing-font hint for captions is shown on every frame (previously it was reported only on the frame that compiled).
     for seconds in [0.5, 1.0, 1.5] {
         renderer.clear_reports();
         render_with(&mut renderer, &video, seconds, &mut Media::default());
@@ -858,7 +854,7 @@ fn preview_hits_follow_rendered_bilingual_lines_and_clear_between_frames() {
         assert!(hit.w > 0.0 && hit.h > 0.0);
     }
     assert_ne!(hits[0].cy, hits[1].cy);
-    // 没有句子的帧不能留下上一次的命中框；不烧字幕时也不能命中。
+    // A frame with no sentences must not keep the previous hit box, and nothing can be hit when captions are not burned in.
     render_with(&mut renderer, &video, 3.5, &mut Media::default());
     assert!(renderer.caption_hits().is_empty());
     renderer.set_captions(false);

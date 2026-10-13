@@ -81,19 +81,19 @@ describe('字体库', () => {
     const fontJob = (patch: Parameters<typeof job>[0]) => job({ kind: 'fontDownload', modelId: 'Lobster', ...patch });
     const since = '2026-10-04T00:00:00Z';
     const states = {
-      // 刚提交、同一刻就开始的任务先发一条不带 `wait` 的 queued。
+      // A task that is submitted and starts at the same moment first sends one queued without `wait`.
       submitted: liveRow(status('Lobster'), fontJob({ jobId: 'j1', state: 'queued', phase: 'queued' })),
-      // 开始了：Runtime 先报 0 字节、不知道总大小（还在取样式表）。
+      // Started: the Runtime first reports 0 bytes and does not know the total size (it is still fetching the stylesheet).
       started: liveRow(
         status('Lobster'),
         fontJob({ jobId: 'j1', phase: 'downloading', progress: { done: 0, total: null, unit: 'bytes' } }),
       ),
-      // 排在上限后面（同时下两个）。
+      // Queued behind the limit (two are downloaded at once).
       waiting: liveRow(
         status('Lobster'),
         fontJob({ jobId: 'j3', state: 'queued', phase: 'queued', wait: { reason: 'concurrency', ahead: 0, detail: '前面有 2 个', since } }),
       ),
-      // `fonts.download` 的回应先到、任务记录还没到：状态是下载中，没有字节。
+      // The `fonts.download` response arrives before the job record: status is downloading, with no bytes.
       statusOnly: liveRow(status('Lobster', { state: 'downloading', job: { jobId: 'j1', doneBytes: 0, totalBytes: null } }), undefined),
     };
     expect(Object.fromEntries(Object.entries(states).map(([k, r]) => [k, [r.state, r.waiting, rowEnd(r)]]))).toEqual({
@@ -102,10 +102,10 @@ describe('字体库', () => {
       waiting: ['downloading', true, { kind: 'progress', label: '等待中', value: null }],
       statusOnly: ['downloading', false, { kind: 'progress', label: '下载中', value: null }],
     });
-    // 详情的状态行不重复念「下载中」；等待中照念。
+    // The details status line does not repeat “下载中” (downloading); “等待中” (waiting) is still read out.
     expect(detailRows(states.started)[0]).toEqual(['状态', '下载中']);
     expect(detailRows(states.waiting)[0]).toEqual(['状态', '下载中 · 等待中']);
-    // 字体条：当前这一个马上开始时念「下载中」，排着的念「等待中」。
+    // Font bar: the one that is starting right now reads “下载中” (downloading); queued ones read “等待中” (waiting).
     const batch: FontBatch = { videoId: 'v1', families: ['Lobster'], mode: 'auto', skipped: [], dismissed: false };
     const bar = (r: FontRow) => fontBar(batch, byName([r]), () => 'Noto Sans SC');
     expect(bar(states.submitted)).toMatchObject({ kind: 'running', progress: '下载中', value: null });
@@ -144,7 +144,7 @@ describe('字体库', () => {
       row('PingFang SC', { state: 'installed', source: 'local', category: null, scripts: [] }),
     ];
     const frozen = orderKey(rows);
-    // 下载完的 Lobster 不在光标底下挪到前面：仍按打开时的次序。
+    // A Lobster download that finishes under the cursor does not move to the front: it keeps the order from when it was opened.
     const later = [row('Lobster', { state: 'downloaded' }), ...rows.filter((r) => r.family !== 'Lobster')];
     const secs = fontSections(later, { inVideo: ['ma shan zheng', 'Nowhere'], recent: ['Lobster', 'Inter'], frozen });
     expect(secs.map((s) => [s.key, s.title, s.rows.map((r) => r.family)])).toEqual([
@@ -327,7 +327,7 @@ describe('字体库', () => {
       ]),
     ).toBe('「Lobster」用「Noto Sans SC」代替 · 下载失败：连不上；「Abel」400：自动下载字体已关闭，照回退字体画');
     expect(exportFontFallbacks([])).toBeNull();
-    // 其余提醒：内核对已列出的族报的缺字体提示不再重复，别的族照留。
+    // Other reminders: the kernel's missing-font notices for families already listed are not repeated; other families are kept as they are.
     const note = (family: string) => ({
       code: 'EXPORT_RENDER_NOTE',
       detail: `item_a：字体 "${family}" 在当前字体库中不可用，将使用 Noto Sans SC fallback`,

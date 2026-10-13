@@ -11,7 +11,7 @@ import { imageRunOf, localImageModelInfo, localImageSeed } from './local-image.t
 import { ModelCatalog } from './model-catalog.ts';
 import { repoManifestFor } from './repo-manifests.ts';
 
-/** 本地文生图的模型包登记、模型描述、冻结参数的换算与自检判定（架构设计 §6.1、§6.3；Model Worker 协议规范 §2.5.3、§4.3）。 */
+/** Tests for local text-to-image bundle registration, model descriptions, the conversion of frozen parameters, and the self-check verdict (architecture design §6.1, §6.3; Model Worker protocol spec §2.5.3, §4.3). */
 
 type ImageParameters = Extract<GenerationParameters, { capability: 'generateImage' }>;
 const QWEN = IMAGE_BUNDLES[0]!;
@@ -126,7 +126,7 @@ describe('本地文生图模型包的登记', () => {
     it('Worker 的峰值按登记的 peakBytes 与设备取池：MLX 计 GPU 内存，candle 的 CPU 计内存、CUDA 计 GPU 内存', async () => {
       const mac = new ModelCatalog({ root: dir, platform: 'darwin', arch: 'arm64', workerAvailable: () => true });
       mac.setWorkerDevice('candle', 'cuda');
-      // 识别用的常驻量估计（含 candle 的按设备换算）不算文生图模型包。
+      // Resident-size estimates for recognition (including candle's per-device conversion) do not apply to text-to-image bundles.
       expect(await mac.workerFootprint(QWEN.bundleId)).toBeNull();
       expect(await mac.workerWeightBytes(QWEN.bundleId)).toBeNull();
       expect(mac.definition(QWEN.bundleId)!.image!.peakBytes).toBe(2 * GiB);
@@ -167,7 +167,7 @@ describe('模型描述与冻结参数', () => {
       available: true,
     });
     expect(info.notes).toContain('20 步');
-    // 试画的 512² 另外接受，不进宽高比；步数的范围随模型描述给出。
+    // The 512² trial size is accepted in addition and is not part of the aspect ratios. The step range is given by the model description.
     expect(info.sizes).toContain('512x512');
     expect(info.aspectRatios.map((a) => a.size)).not.toContain('512x512');
     expect(info.local).toEqual({ steps: { min: 8, max: 40, step: 4, default: 20 } });
@@ -210,14 +210,14 @@ describe('模型描述与冻结参数', () => {
       steps: 4,
       seed: 7,
     });
-    // 冻结了步数时用冻结的。
+    // When steps are frozen, the frozen value is used.
     expect(imageRunOf({ ...parameters, steps: 12 })).toMatchObject({ steps: 12 });
     expect(() => imageRunOf({ ...parameters, size: null })).toThrow();
     expect(() => imageRunOf({ ...parameters, seed: null })).toThrow();
   });
 });
 
-/** 按给定的行过滤类型编出 8 位 PNG。 */
+/** Encodes an 8-bit PNG using the given per-row filter type. */
 function png(width: number, height: number, channels: 3 | 4, pixel: (x: number, y: number) => number[], filters: number[]): Buffer {
   const stride = width * channels;
   const rows: number[][] = [];

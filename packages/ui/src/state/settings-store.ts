@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { applySettingsEvent } from '@cuccut/client';
 import type { SettingValues, SettingsEvent, SettingsSnapshot } from '@cuccut/protocol';
 
-/** 偏好设置的镜像（`settings` 主题）：全部键的有效值与默认值；没连上之前是 null。 */
+/** Mirror of preferences (`settings` topic): effective values and defaults for all keys; null until connected. */
 export interface SettingsStore {
   snapshot: SettingsSnapshot | null;
   replace(snapshot: SettingsSnapshot): void;
@@ -15,7 +15,7 @@ export const useSettings = create<SettingsStore>()((set) => ({
   apply: (event) => set((s) => (s.snapshot ? { snapshot: applySettingsEvent(s.snapshot, event) } : s)),
 }));
 
-/** 一个键的有效值；快照没到时 null。 */
+/** Effective value of one key; null when the snapshot has not arrived. */
 export function useSetting<K extends keyof SettingValues>(key: K): SettingValues[K] | null {
   return useSettings((s) => s.snapshot?.settings[key] ?? null);
 }

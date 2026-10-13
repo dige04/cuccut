@@ -1,8 +1,6 @@
-//! IndexTTS2 纯逻辑冒烟测试（移植自 v2 `ccut-tts/tests/index_tts2_smoke.rs` 的前半部分）：
-//! 切段、采样缺省值、情感向量校验、缺省配置、数字规范化与前端特征。全平台都能跑。
+//! IndexTTS2 pure-logic smoke tests (ported from the first half of v2 `ccut-tts/tests/index_tts2_smoke.rs`): segmentation, sampling defaults, emotion-vector validation, default config, number normalization, and frontend features. Runs on all platforms.
 //!
-//! `real_vocabulary_pinyin_pieces_tokenize` 只读真 `bpe.model`、不装权重：设了
-//! `CUCCUT_TEST_MODELS_DIR` 且其下装有 IndexTTS2 时才跑，否则跳过。
+//! `real_vocabulary_pinyin_pieces_tokenize` reads only the real `bpe.model` and does not load weights. It runs only when `CUCCUT_TEST_MODELS_DIR` is set and IndexTTS2 is installed under it; otherwise it is skipped.
 
 use model_runtime::synthesize::index_tts2::config::RuntimeConfig;
 use model_runtime::synthesize::index_tts2::dsp;
@@ -20,8 +18,7 @@ fn token(id: usize, piece: &str) -> Token {
     }
 }
 
-/// 真 `bpe.model` 的拼音片：注音渲染出的哨兵包住的片整片进分词、数字照常规范化；`render_inline_pinyin`
-/// 按真词表换片或报 dropped。
+/// Pinyin pieces from the real `bpe.model`: a whole piece wrapped in the sentinels produced by pinyin annotation rendering goes into tokenization as one unit, and numbers are normalized as usual. `render_inline_pinyin` swaps pieces against the real vocabulary or reports them as dropped.
 #[test]
 fn real_vocabulary_pinyin_pieces_tokenize() {
     let Some(model) = std::env::var_os("CUCCUT_TEST_MODELS_DIR")
@@ -36,7 +33,7 @@ fn real_vocabulary_pinyin_pieces_tokenize() {
     let has = |p: &str| pieces.contains(p);
     assert!(pieces.len() > 1000, "{}", pieces.len());
     assert!(has("XING2") && has("HANG2") && has("ZHONG4") && has("LVE4"));
-    // ü：j / q / x 后词表写 V（`JV4`），y 后写 U（`YU2`）。
+    // ü: after j / q / x the vocabulary entry is written V (`JV4`); after y it is written U (`YU2`).
     assert!(has("JV4") && !has("JU4") && has("YU2"));
 
     let text = format!("他在这一{PIECE_OPEN}HANG2{PIECE_CLOSE}做了3年，才{PIECE_OPEN}XING2{PIECE_CLOSE}");
@@ -48,7 +45,7 @@ fn real_vocabulary_pinyin_pieces_tokenize() {
     assert_eq!(texts.iter().filter(|p| p.ends_with("XING2")).count(), 1, "{texts:?}");
     assert!(texts.contains(&"三"), "数字照常规范化：{texts:?}");
 
-    // 注音渲染走真词表：`ju4` 换成 `JV4`；词表没有 `LU4` 时 `lu4` 进 dropped。
+    // Annotation rendering uses the real vocabulary: `ju4` is swapped for `JV4`; when the vocabulary has no `LU4`, `lu4` goes to dropped.
     let annotated = parse("他在这一<行|hang2>做了3年，才<行|xing2>，<绿|lu4>灯，<句|ju4>");
     let rendered = render_inline_pinyin(&annotated, Some(pieces));
     let tokens = tokenizer.tokenize(&rendered.text).unwrap();
@@ -66,7 +63,7 @@ fn real_vocabulary_pinyin_pieces_tokenize() {
 
 #[test]
 fn segmenter_splits_long_text_under_budget() {
-    // 三句话，每句 5 个 token，预算 8：应切成三段而不是塞进一段。
+    // Three sentences of 5 tokens each, budget 8: they should be split into three segments rather than packed into one.
     let mut tokens = Vec::new();
     for sentence in 0..3 {
         for word in 0..4 {
@@ -105,10 +102,10 @@ fn generation_defaults_match_speech_swift() {
 
 #[test]
 fn emotion_control_validation() {
-    // 官方网页：calm 偏置 0.5625，未超 0.8 不缩；alpha = 1 不截断。
+    // Official web UI: calm bias 0.5625, not scaled because it does not exceed 0.8; alpha = 1, no truncation.
     let ok = EmotionControl::from_sliders([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8], 1.0).unwrap();
     assert!((ok.weight_sum() - 0.45).abs() < 1e-6);
-    // 合计超 0.8 照官方缩放，不报错；越出 0–1 的滑块才报错。
+    // A total above 0.8 is scaled per the official rule without error; only sliders outside 0–1 produce an error.
     let capped = EmotionControl::from_sliders([0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0).unwrap();
     assert!((capped.weight_sum() - 0.8).abs() < 1e-6);
     assert!(EmotionControl::from_sliders([1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0).is_err());
@@ -123,7 +120,7 @@ fn runtime_config_fallback_is_index_tts2_v2() {
     assert_eq!(config.gpt.condition_type, "conformer_perceiver");
     assert_eq!(config.semantic_codec.codebook_size, 8192);
     assert!(!config.is_v25());
-    // 清单没列 config.yaml 时用的就是它。
+    // This is what is used when the manifest does not list config.yaml.
     assert!(!RuntimeConfig::load(None).unwrap().is_v25());
 }
 

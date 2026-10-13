@@ -5,33 +5,29 @@ import type { VideoFacts } from './content-extract.ts';
 import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Space 目录的派生（架构设计 §5.7）：从来源目录的扫描、`space.import` 的登记、Job Ledger 与内容索引里的视频事实，
- * 算出全部条目。纯函数：同样的输入得到同样的结果，所以删掉目录重建与增量更新的结果一致（`user.*` 在 Runtime Store 里）。
+ * Derivation of the Space catalog (architecture design §5.7). From the scan of the source directories, the registrations of `space.import`, and the video facts in the Job Ledger and the content index, it computes all entries. A pure function: the same inputs give the same result, so deleting the directory and rebuilding gives the same result as incremental updates (`user.*` lives in the Runtime Store).
  *
- * - 扫描到的文件与视频目录是基础条目；视频目录在内容索引里有记录时带上 `ref.videoId`，与根序列的时长、画布尺寸（`media`）。
- * - 导出发布到来源目录里的文件，与扫描到的那个文件合成一个条目：带上导出的来源与 `published` / `source-changed`。
- *   无项目会话放进项目之前发布在它工作目录里的（`DeriveSource.formerRoots`），按搬进项目之后的位置认。
- *   智能体内部检查用的导出（`purpose: 'preview'`）不成条，发布的文件扫描到了也不列。
- *   发布到来源目录之外的导出单独成条，`id` 是 artifactId。文件到文件的流程（文件转码、字幕文件的翻译，§7.9）发布的文件同样处理，
- *   来源是 `generated`，`capability` 是流程名，带执行者。智能体用 `downloads_save` 交出的文件（§3.5）同样处理，`capability`
- *   是 `downloads-save`，不带服务商。
- * - 生成的图片、音频与文本是产物条目（`id` 为 artifactId）：导入了视频的是 `candidate`，时间线用上了是 `applied`。
- * - 排队与运行中的生成、导出是 `generating` 占位；失败的是 `failed` 占位，用户清除或同样的输入后来成功了就不再显示。
- * - 转写的原始结果与导出的冻结快照不是可交付的产物，不进目录；代理、缩略图、波形本来就不在 Artifact Store 里。
- * - 删除了的视频（`videos.delete`）是回收站里的视频条目，`id` 由来源与它在回收站里的位置决定，不是视频目录（`videoDir` 为空）。
- * - 任务的输入是 Job Ledger 与 Space 自己的产物记录的并集（`SpaceJobFacts`，Ledger 里有的以 Ledger 为准）。
+ * - Scanned files and video directories are base entries. A video directory that has a record in the content index carries `ref.videoId`, along with the root sequence's duration and canvas size (`media`).
+ * - An export published to a file in a source directory is merged with that scanned file into one entry: it carries the export's source and `published` / `source-changed`.
+ *   Files published in a no-project session's work directory before it was moved into a project (`DeriveSource.formerRoots`) are recognized by their position after the move into the project.
+ *   Exports made for the agent's internal checks (`purpose: 'preview'`) do not become entries; published files of them are not listed even if they are scanned.
+ *   Exports published outside the source directory form their own entries, with `id` as the artifactId. Files published by file-to-file workflows (file transcoding, subtitle file translation, §7.9) are handled the same way: their source is `generated`, `capability` is the workflow name, and the executor is attached. Files handed over by the agent with `downloads_save` (§3.5) are handled the same way, with `capability` `downloads-save` and no provider.
+ * - Generated images, audio and text are artifact entries (`id` is the artifactId). If imported into a video they are `candidate`; if the timeline uses them they are `applied`.
+ * - Queued and running generations and exports are `generating` placeholders. Failed ones are `failed` placeholders, which disappear when the user clears them or when the same input later succeeds.
+ * - The raw transcription result and the frozen snapshots of exports are not deliverable artifacts and do not enter the catalog. Proxies, thumbnails and waveforms were never in the Artifact Store to begin with.
+ * - A deleted video (`videos.delete`) is a video entry in the trash. Its `id` is determined by the source and its position in the trash, not by the video directory (`videoDir` is empty).
+ * - The task inputs are the union of the Job Ledger and Space's own artifact records (`SpaceJobFacts`); where the Ledger has an entry, the Ledger wins.
  */
 
 export interface DeriveSource {
   key: string;
   root: string;
-  /** 来源目录的真实路径（导出记下的发布路径是真实路径）；还没解析时与 `root` 相同。 */
+  /** Real path of the source directory (the publish path recorded by an export is a real path). Same as `root` until it is resolved. */
   realRoot: string;
   projectId: Id | null;
   conversationId: Id | null;
   /**
-   * 项目来源：放进这个项目的无项目会话原来的工作目录（架构设计 §3.10）。绑定前发布在那里的导出记着旧路径，东西已经按相对路径
-   * 原样搬进项目，按这里换算回项目里的那个文件。
+   * Project source: the original work directory of a no-project session that was moved into this project (architecture design §3.10). Exports published there before binding recorded the old path. The files were moved into the project as-is by relative path, so this maps them back to the file in the project.
    */
   formerRoots?: readonly string[];
 }
@@ -42,11 +38,11 @@ export interface ScannedFile {
   size: number;
   mtimeMs: number;
   birthtimeMs?: number;
-  /** 幻灯片条目（deck 目录）：deck.json 里的标题与页数。 */
+  /** Deck entry (deck directory): the title and slide count from deck.json. */
   deck?: { title: string; slideCount: number };
-  /** 设计稿条目（设计稿目录）：canvas.json 里的标题与画板数。 */
+  /** Design entry (design directory): the title and artboard count from canvas.json. */
   canvas?: { title: string; boardCount: number };
-  /** 设计系统条目（设计系统目录）：design-system.json 里的标题（没有时是目录名）。 */
+  /** Design system entry (design system directory): the title from design-system.json (the directory name if absent). */
   designSystem?: { title: string };
 }
 
@@ -55,7 +51,7 @@ export interface ScannedItem {
   file: ScannedFile;
 }
 
-/** 内容索引里的一个视频。 */
+/** One video in the content index. */
 export interface KnownVideo {
   videoId: Id;
   name: string;
@@ -70,19 +66,19 @@ export interface FileStat {
   birthtimeMs?: number;
 }
 
-/** 条目的 bytes 在哪里（媒体通道与物理删除用）。 */
+/** Where the entry's bytes are (used by the media channel and physical deletion). */
 export type EntryLocation =
   | { kind: 'source'; sourceKey: string; relPath: string }
   | { kind: 'artifact'; artifactId: string; path: string }
   | { kind: 'file'; path: string }
-  /** 删除了的视频：来源目录里 `.ccut-trash/` 下的视频目录。 */
+  /** Deleted video: the video directory under `.ccut-trash/` in the source directory. */
   | { kind: 'trash'; sourceKey: string; relPath: string }
   | { kind: 'none' };
 
 export interface DerivedEntry {
   entry: SpaceEntry;
   location: EntryLocation;
-  /** 视频条目：视频目录的绝对路径。 */
+  /** Video entry: absolute path of the video directory. */
   videoDir?: string;
 }
 
@@ -91,21 +87,21 @@ export interface DeriveInput {
   files: ReadonlyMap<Id, ScannedItem>;
   mark: (id: Id) => SpaceMark;
   imports: ReadonlyMap<Id, SpaceImport>;
-  /** 删除了的视频，键是回收站里的条目 id。 */
+  /** Deleted video, keyed by its entry id in the trash. */
   trashedVideos: ReadonlyMap<Id, TrashedVideo>;
   jobs: readonly SpaceJobFacts[];
-  /** 视频目录（绝对路径）在内容索引里的记录。 */
+  /** Record in the content index for the video directory (absolute path). */
   videoAt: (dir: string) => KnownVideo | null;
   projectOfConversation: (conversationId: Id) => Id | null;
-  /** 产物文件：`undefined` 是还没查过（按存在处理），`null` 是不在了。 */
+  /** Artifact file: `undefined` means not yet checked (treated as existing); `null` means it is gone. */
   artifactFile: (artifactId: string) => FileStat | null | undefined;
-  /** 来源目录之外的发布路径，同上。 */
+  /** Publish path outside the source directory, same as above. */
   pathStat: (file: string) => FileStat | null | undefined;
   entryIdOf: (sourceKey: string, relPath: string) => Id;
   classify: (fileName: string) => SpaceEntryKind | null;
 }
 
-/** 产物条目按能力起的名字（派生时按当前语言，不写进磁盘）；不产出条目的任务种类给 `null`。 */
+/** Name of an artifact entry, given by capability (derived in the current language, not written to disk). `null` for job kinds that produce no entry. */
 function labelOf(kind: string): string | null {
   switch (kind) {
     case 'synthesizeSpeech':
@@ -126,10 +122,10 @@ function labelOf(kind: string): string | null {
 export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
   const out = new Map<Id, DerivedEntry>();
   const videos = new Map<Id, { entryId: Id; source: DeriveSource; known: KnownVideo }>();
-  // 内部检查用的导出发布在来源目录里的文件：等任务都过完，没有被交付的导出认领的才去掉。
+  // An export published as a file in the source directory for internal checks: wait until all jobs have finished, then remove those not claimed by a delivered export.
   const previews = new Set<Id>();
 
-  // 1. 扫描到的文件与视频目录。
+  // 1. Scanned files and video directories.
   for (const [id, item] of input.files) {
     const source = input.sources.get(item.sourceKey);
     if (!source) continue;
@@ -165,10 +161,10 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
       if (known) {
         if (known.name.trim()) entry.name = known.name;
         entry.ref = { videoId: known.videoId };
-        // 「时长或尺寸」一列：工作稿根序列的时长与画布尺寸（索引读到之后；快照不全时没有）。
+        // The "duration or size" column: the working-draft root sequence's duration and canvas size (once the index is read; absent when the snapshot is incomplete).
         const timeline = known.facts.timeline;
         if (timeline) entry.media = { durationSec: timeline.durationSec, width: timeline.width, height: timeline.height };
-        // 派生的子视频（`videos.derive`）：来源是父视频、派生时它的版本与取的区间。
+        // Derived sub-videos (`videos.derive`): the source is the parent video, with its version at derivation time and the range taken.
         const derivedFrom = known.facts.origin;
         if (derivedFrom) {
           entry.origin = {
@@ -186,7 +182,7 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
     out.set(id, derived);
   }
 
-  // 2. `space.import` 登记的项目文件。
+  // 2. Project files registered by `space.import`.
   for (const [id, record] of input.imports) {
     const existing = out.get(id);
     const origin: SpaceEntryOrigin = { source: 'imported', projectId: record.projectId };
@@ -216,14 +212,14 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
     });
   }
 
-  // 3. Job Ledger：先旧后新，同一个产物以后来的任务为准。
+  // 3. Job Ledger: older first, newer later. For the same artifact, the later job wins.
   const jobs = [...input.jobs].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
   const succeededLater = new Map<string, string>();
   for (const job of jobs) {
     if (job.state === 'completed') succeededLater.set(`${job.kind}\0${job.inputHash}`, job.createdAt);
   }
   for (const job of jobs) {
-    // 流程新建的视频（§7.9）：视频条目的来源是这次运行。
+    // A video created by a workflow (§7.9): the video entry's source is this run.
     if (job.kind === 'pipeline') {
       const created = createdVideoOf(job);
       const video = created ? videos.get(created) : undefined;
@@ -239,10 +235,10 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
           capability: job.pipeline!.name,
         };
       }
-      // 文件到文件的流程：完成时发布的文件，与导出一样合进扫描到的文件或单独成条。
+      // File-to-file workflow: the file published on completion is merged with the scanned file, or forms its own entry, like exports.
       if (isFilePipelineJob(job) && job.state === 'completed' && job.result) {
         const origin: SpaceEntryOrigin = { ...originOf(job, null, input), capability: job.pipeline!.name };
-        // `downloads_save` 交出的文件（§3.5）：智能体自己复制的，没有服务商与模型。
+        // Files handed over by `downloads_save` (§3.5): copied by the agent itself, with no provider or model.
         if (job.pipeline!.name === 'downloads-save') delete origin.provider;
         for (const output of job.result.outputs ?? []) {
           const download = job.pipeline?.name === 'link-import';
@@ -254,7 +250,7 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
       continue;
     }
     if (job.kind === 'transcribe' || labelOf(job.kind) === null) continue;
-    // 内部检查用的导出：排队、失败与完成都不成条。
+    // Exports for internal checks: queued, failed and completed ones do not become entries.
     if (job.kind === 'export' && job.export?.settings.purpose === 'preview') {
       for (const output of job.result?.outputs ?? []) hidePreview(previews, input, output);
       continue;
@@ -271,7 +267,7 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
         out.set(job.jobId, placeholder(job, 'failed', origin));
       }
     }
-    // 产物已经发布、应用没有提交（目标不在了、被拒绝、停止之后不再自动应用，§7.3）：产物照样列出，是候选。
+    // The artifact has been published but the app did not commit it (target gone, rejected, or no automatic apply after stop, §7.3): the artifact is still listed, as a candidate.
     const latest = job.applications?.at(-1);
     const unapplied = latest !== undefined && latest.state !== 'committed' && (job.state === 'failed' || job.state === 'cancelled');
     if (job.state !== 'completed' && !(job.kind === 'export' && job.result) && !unapplied) continue;
@@ -314,10 +310,10 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
     }
   }
 
-  // 内部检查用的导出发布的文件：没有被交付的导出认领（同一路径后来又交付过）、也不是视频目录的，不列。
+  // Files published by an internal-check export: not listed unless a delivered export claims them (the same path was delivered later) or they are in a video directory.
   for (const id of previews) if (!out.get(id)?.entry.ref) out.delete(id);
 
-  // 4. 删除了的视频：在回收站里，直到恢复或物理删除。来源不在了（项目被移除）时没有位置，只能看、不能恢复。
+  // 4. Deleted videos: in the trash until restored or physically deleted. When the source is gone (project removed) there is no location, so they can only be viewed, not restored.
   for (const [id, record] of input.trashedVideos) {
     const fileName = record.relPath.slice(record.relPath.lastIndexOf('/') + 1);
     out.set(id, {
@@ -342,7 +338,7 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
     });
   }
 
-  // 5. 用户标记。清除过的产物、导出与占位（`space.purge`）不再出现；扫描到的文件只看文件在不在。
+  // 5. User markers. Purged artifacts, exports and placeholders (`space.purge`) no longer appear. Scanned files only check whether the file exists.
   for (const [id, { entry, location }] of out) {
     const mark = input.mark(entry.id);
     if (mark.dismissedAt && location.kind !== 'source') {
@@ -355,7 +351,7 @@ export function deriveEntries(input: DeriveInput): Map<Id, DerivedEntry> {
   return out;
 }
 
-/** 流程新建的视频（完成了的 `create` 步骤的产出）；没有时 null。 */
+/** The video created by a completed `create` step of a workflow; null if none. */
 function createdVideoOf(job: SpaceJobFacts): Id | null {
   const step = job.pipeline?.steps?.find((s) => s.name === 'create' && s.status === 'completed');
   const videoId = step?.output?.videoId;
@@ -407,7 +403,7 @@ function placeholder(job: SpaceJobFacts, status: 'generating' | 'failed', origin
   };
 }
 
-/** 直接任务另存在保存位置的副本（§7.9）：还在时记进条目的 `file`。 */
+/** Copy saved to the save location by a direct task (§7.9): recorded in the entry's `file` while it still exists. */
 function savedCopy(derived: DerivedEntry, input: DeriveInput, file: string | undefined): void {
   if (file && input.pathStat(file) !== null) derived.entry.file = { path: file };
 }
@@ -460,7 +456,7 @@ function addExport(
     video && frozen !== null && video.revision !== frozen
       ? { status: 'source-changed', statusDetail: { currentRevision: video.revision } }
       : { status: 'published' };
-  // 发布到某个来源目录里：与扫描到的那个文件是同一个条目。
+  // Published into a source directory: the same entry as the scanned file.
   for (const source of input.sources.values()) {
     const inside = relativeInside(source, output.path);
     if (inside === null) continue;
@@ -478,7 +474,7 @@ function addExport(
       });
       return;
     }
-    // 扫描里没有：被删掉了，或在扫描不进的目录里。
+    // Not in the scan: deleted, or in a directory the scan does not reach.
     const stat = input.pathStat(output.path);
     if (stat === null) {
       out.set(
@@ -535,7 +531,7 @@ function exportEntry(
   };
 }
 
-/** 文件在来源目录里时，相对它的路径（`/` 分隔）；`former`：按放进项目之前的旧工作目录认出来的。 */
+/** When the file is in the source directory, its path relative to it (`/` separated). `former`: recognized via the old work directory from before it was moved into the project. */
 function relativeInside(source: DeriveSource, file: string): { rel: string; former: boolean } | null {
   const current = new Set([source.realRoot, source.root]);
   for (const root of [...current, ...(source.formerRoots ?? [])]) {
@@ -545,7 +541,7 @@ function relativeInside(source: DeriveSource, file: string): { rel: string; form
   return null;
 }
 
-/** 内部检查用的导出（`purpose: 'preview'`，架构设计 §9.13）：不成条；发布在来源目录里的文件记下来，不作普通文件列出。 */
+/** Internal-check export (`purpose: 'preview'`, architecture design §9.13): no entry. Files it published in the source directory are recorded but not listed as ordinary files. */
 function hidePreview(previews: Set<Id>, input: DeriveInput, output: GeneratedOutput): void {
   if (!output.path) return;
   for (const source of input.sources.values()) {
@@ -598,7 +594,7 @@ function extensionOf(output: GeneratedOutput, file: FileStat | null | undefined)
   return sub === 'mpeg' ? 'mp3' : sub === 'jpeg' ? 'jpg' : sub.replace(/^x-/, '');
 }
 
-/** 产物条目的文件名：能力与完成时间（不用提示词或原文：生成参数只在 Job 记录里）。 */
+/** File name of an artifact entry: capability and completion time (not the prompt or source text, since generation parameters live only in the Job record). */
 function fileNameOf(job: SpaceJobFacts, ext: string, index: number | null): string {
   const at = (job.endedAt ?? job.createdAt)
     .replace(/\.\d+Z$/, '')
@@ -607,7 +603,7 @@ function fileNameOf(job: SpaceJobFacts, ext: string, index: number | null): stri
   return `${labelOf(job.kind)}-${at}${index !== null ? `-${index}` : ''}.${ext}`;
 }
 
-/** birthtime 不可用时不以 ctime 或修改时间冒充创建时间。 */
+/** When birthtime is unavailable, do not pass off ctime or mtime as the creation time. */
 function birthTime(stat: { birthtimeMs?: number } | null): string | null {
   const at = stat?.birthtimeMs;
   return at !== undefined && Number.isFinite(at) && at > 0 ? new Date(at).toISOString() : null;

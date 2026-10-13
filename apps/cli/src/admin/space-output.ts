@@ -2,8 +2,8 @@ import type { Id, SpacePurgeResult, SpaceContinueResult, VideoDeleteResult } fro
 import { M } from './space-copy.ts';
 
 /**
- * `cuccut space` 管理命令的参数与输出（架构设计 §5.7、§5.11）。列出与检索是派生命令（`space list|search`）。
- * 参数是否合法最终由 Runtime 判断；这里只把命令行整理成 `space.*` 的参数，给出可读的用法错误。
+ * Arguments and output of the `cuccut space` admin command (architecture design §5.7, §5.11). Listing and searching are derived commands (`space list|search`).
+ * Whether the arguments are valid is ultimately decided by the Runtime; here we only turn the command line into `space.*` arguments and give readable usage errors.
  */
 
 export interface SpaceFlags {
@@ -51,14 +51,14 @@ export function formatSpacePurge(result: SpacePurgeResult): string[] {
   return [M.notPurged(result.entryId), ...result.references.map((r) => `  ${r.detail}`)];
 }
 
-/** 删除视频：回收站里的新条目 id，以及由它导出、生成而留在原处的条目数。 */
+/** Delete video: the new trash entry id, and the number of entries that were exported or generated from it and left in place. */
 export function formatVideoDelete(result: VideoDeleteResult, retentionDays: number | null): string[] {
   const lines = [M.videoTrashed(result.name, result.entryId, retentionDays)];
   if (result.related.length > 0) lines.push(M.relatedKept(result.related.length));
   return lines;
 }
 
-/** 从条目继续会话：会话 id 与工作目录；引用随下一条消息带上。 */
+/** Continue from an entry: session id and working directory; the reference is sent with the next message. */
 export function formatSpaceContinue(result: SpaceContinueResult): string[] {
   return [
     M.continued(result.created, result.conversation.id, result.conversation.cwd),

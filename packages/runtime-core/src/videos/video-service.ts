@@ -36,23 +36,23 @@ import { hostPath } from './host-path.ts';
 import { RcCommon, RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 已打开视频的会话（架构设计 §2.3、§4.4）：Runtime 这边只做路由、镜像与生命周期，视频的语义都在引擎里。
+ * A session for an opened video (architecture design §2.3, §4.4). On the Runtime side it does only routing, mirroring and lifecycle; the semantics of the video all live in the engine.
  *
- * - 一个视频在 Runtime 里只打开一次；打开它的连接各记一次，最后一个离开后关闭，释放写入锁。
- *   连接断开后留一段宽限期，界面重连后重新打开就能接上。
- * - 镜像只由引擎推来的事件更新（共享的 `applyVideoEvent`），按视频自己的事件序号去重；序号接不上时取快照整体替换。
- * - 每个视频的主题在 Runtime 生命周期里只有一个，关闭再打开也沿用它，客户端的游标不会落到另一份日志上。
- * - 引擎进程意外退出时重启它、重新打开视频，并在主题上发 `video.replaced`。
+ * - A video is opened only once in the Runtime. Each connection that opened it is counted once; after the last one leaves, it is closed and the write lock is released.
+ *   After a connection drops, a grace period is kept so that the UI can reconnect and reopen to pick up the session.
+ * - The mirror is updated only by events pushed from the engine (the shared `applyVideoEvent`), deduplicated by the video's own event sequence number. When the sequence does not line up, the snapshot replaces everything.
+ * - Each video has one topic for its whole lifetime in the Runtime. Closing and reopening keeps it, so a client's cursor never lands on another log.
+ * - If the engine process exits unexpectedly, it is restarted, the video is reopened, and `video.replaced` is published on the topic.
  */
 
-/** 交给引擎的任务保护（引擎在提交前检查，`TASK_PROTECTED`）。 */
-/** 引擎 `fonts.resolve` 的结果：找到的 face 带所在文件的绝对路径（Runtime 换成读取句柄给界面，导出冻结时记下）。 */
+/** Task protection handed to the engine (the engine checks it before submission, `TASK_PROTECTED`). */
+/** The result of the engine's `fonts.resolve`: a face found carries the absolute path of its file (the Runtime turns it into a read handle for the UI; recorded when export is frozen). */
 export interface LocalFontFaces {
   faces: (FontFaceQuery & FontFaceLayout & { source: 'local' | 'downloaded'; path: string })[];
   missing: FontsResolveResult['missing'];
 }
 
-/** 引擎 `fonts.inspect` 的结果：字体文件里的 face。 */
+/** The result of the engine's `fonts.inspect`: the faces in a font file. */
 export interface InspectedFontFace {
   index: number;
   families: string[];
@@ -63,36 +63,36 @@ export interface InspectedFontFace {
 
 export type EngineProtection = Pick<ProtectionRef, 'protectionId' | 'target'>;
 
-/** 任务与流水线写入所属的执行（架构设计 §7.4）：`runGeneration` 是十进制整数字符串，重试换代时递增。 */
+/** The execution that task and pipeline writes belong to (architecture design §7.4): `runGeneration` is a decimal integer string, incremented when a retry starts a new generation. */
 export interface EngineRun {
   runId: Id;
   runGeneration: string;
 }
 
 export interface VideoLocation {
-  /** 来源目录（项目目录或会话工作目录）。视频目录必须在它里面。 */
+  /** The source directory (project directory or session working directory). The video directory must be inside it. */
   root: string;
-  /** 视频目录或其中的 `video.db`，绝对路径或相对 `root`。 */
+  /** The video directory, or the `video.db` inside it; an absolute path, or relative to `root`. */
   file: string;
   scope: { projectId: Id } | { conversationId: Id };
 }
 
 export interface VideoServiceOptions {
   log: Logger;
-  /** 找到引擎可执行文件；没有时返回 null（界面提示先构建引擎）。 */
+  /** Finds the engine executable; returns null if there is none (the UI tells the user to build the engine first). */
   resolveCommand: () => string | null;
-  /** 引擎进程的环境变量（PATH 里要能找到 ffprobe）。 */
+  /** Environment variables for the engine process (ffprobe must be findable on PATH). */
   env: () => Promise<NodeJS.ProcessEnv>;
-  /** 连接断开后多久关闭它打开的视频。 */
+  /** How long after a connection drops before the videos it opened are closed. */
   graceMs?: number;
-  /** 下载的字体所在的目录（`<home>/fonts/files`）：本机没有的族由引擎再到这里挑（架构设计 §9.1）。 */
+  /** The directory of downloaded fonts (`<home>/fonts/files`): families not present on this machine are picked from here by the engine (architecture design §9.1). */
   fontCacheDir?: string;
 }
 
 interface Session {
   ref: VideoRef;
   openers: Set<string>;
-  /** Runtime 内部的租约（如进行中的转写任务）：有租约时不因打开者走光而关闭。 */
+  /** Runtime-internal leases (e.g. a transcription task in progress): while a lease exists, the video is not closed just because its openers have left. */
   leases: number;
   closeTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -101,11 +101,11 @@ interface Channel {
   log: TopicLog<VideoTopicSnapshot, VideoTopicEvent>;
   mirror: VideoTopicSnapshot;
   session: Session | null;
-  /** 正在取快照补齐：期间到达的事件等快照到了再说。 */
+  /** A snapshot catch-up is in progress: events that arrive meanwhile wait until the snapshot is in. */
   resyncing: boolean;
 }
 
-/** `assets.blobPath` 的结果：素材的一个版本此刻在哪里。 */
+/** The result of `assets.blobPath`: where one version of an asset is right now. */
 interface ResolvedAsset {
   path: string;
   storage: 'managed' | 'linked';
@@ -125,13 +125,13 @@ const DEFAULT_GRACE_MS = 15_000;
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 60_000;
 const DB_FILE = 'video.db';
-/** 改名之前的数据库文件名：引擎打开时就地升级成 `video.db`。 */
+/** The database file name before the rename: the engine upgrades it in place to `video.db` when it opens. */
 const LEGACY_DB_FILE = 'movie.db';
 
 /**
- * 公共请求不带操作者；操作者由连接身份构造（架构设计 §4.2）。对外服务的请求记为 `external:<serviceId>`（§4.8）：
- * 引擎的操作者种类只有 user、agent、system，外部智能体归在 `agent` 下，由 ID 区分。
- * Web 服务的浏览器会话是用户本人在操作，与桌面界面一样记为 `user_local`（撤销栈也与桌面共用）。
+ * Public requests carry no operator; the operator is built from the connection identity (architecture design §4.2). Requests from external services are recorded as `external:<serviceId>` (§4.8).
+ * The engine's operator kinds are only user, agent and system, so external agents fall under `agent` and are told apart by ID.
+ * The Web service's browser session is the user acting in person, recorded as `user_local` as the desktop UI records it (the undo stack is also shared with the desktop).
  */
 export function actorOf(principal: TrustedPrincipal): Actor {
   if (principal.kind === 'service') return { kind: 'agent', id: `external:${principal.name}` };
@@ -139,7 +139,7 @@ export function actorOf(principal: TrustedPrincipal): Actor {
   return principal.kind === 'agent' ? { kind: 'agent', id: `agent:${principal.name}` } : { kind: 'user', id: 'user_local' };
 }
 
-/** 视频目录名：去掉路径里不能用的字符。 */
+/** Video directory name: characters that cannot be used in paths are removed. */
 export function videoDirName(name: string): string {
   const cleaned = name
     .replace(/[\\/:*?"<>|\p{Cc}]/gu, '-')
@@ -150,8 +150,7 @@ export function videoDirName(name: string): string {
 }
 
 /**
- * 在来源目录里占下一个新视频的目录（与 `VideoService.create` 同样按名字挑一个还不存在的，建成空目录），返回相对来源目录的
- * 名字。占下之后 `create` 挑目录时会跳过它。
+ * Reserves a directory for a new video in the source directory (picks a name that does not exist yet, as `VideoService.create` does, and creates it as an empty directory), and returns its name relative to the source directory. Once reserved, `create` skips it when picking a directory.
  */
 export async function reserveVideoDir(root: string, name: string): Promise<string> {
   const rootReal = await fs.realpath(root).catch(() => {
@@ -160,7 +159,7 @@ export async function reserveVideoDir(root: string, name: string): Promise<strin
   const base = videoDirName(name.trim() || RcVideo.untitledVideo().text);
   for (let n = 1; ; n++) {
     const file = n === 1 ? base : `${base} ${n}`;
-    // 不递归建：已经存在（别处同时占下或新建）时换下一个名字。
+    // Not created recursively: if it already exists (reserved or created elsewhere at the same time), take the next name.
     const made = await fs.mkdir(path.join(rootReal, file)).then(
       () => true,
       (error: NodeJS.ErrnoException) => {
@@ -172,7 +171,7 @@ export async function reserveVideoDir(root: string, name: string): Promise<strin
   }
 }
 
-/** 目录里有视频的数据库（含改名之前的）。 */
+/** A directory containing a video database (including one from before the rename). */
 export async function hasVideoDb(dir: string): Promise<boolean> {
   return (await exists(path.join(dir, DB_FILE))) || (await exists(path.join(dir, LEGACY_DB_FILE)));
 }
@@ -197,11 +196,10 @@ export class VideoService {
     this.#graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   }
 
-  // ---- 打开与关闭 ----
+  // ---- Open and close ----
 
   /**
-   * 新建视频：在来源目录里按名字挑一个还不存在的目录。`reserved` 是 `reserveVideoDir` 事先占下的空目录（固定流程的新建，
-   * `pipeline-targets.ts`）：建在那里，不再挑。
+   * Creates a new video: in the source directory, picks a directory name that does not exist yet. `reserved` is the empty directory that `reserveVideoDir` reserved beforehand (creation in a fixed flow, `pipeline-targets.ts`): it is created there, and no name is picked.
    */
   async create(
     params: RpcParams<'videos.create'>,
@@ -240,7 +238,7 @@ export class VideoService {
       this.#log.info('Video created', { videoId: opened.videoId });
       const result = this.#register(opened, rootReal, scope, principal);
       if (!this.#afterCreate) return result;
-      // 新视频的初始内容（采用用户库里默认启用的条目，§5.9）：失败不影响新建，只记日志。
+      // The new video's initial content (adopting the entries enabled by default in the user library, §5.9). A failure does not affect creation; it is only logged.
       await this.#afterCreate(opened.videoId, principal).catch((error: unknown) =>
         this.#log.warn('Setup after creating the video did not finish', { videoId: opened.videoId, error: String(error) }),
       );
@@ -255,8 +253,8 @@ export class VideoService {
   }
 
   /**
-   * 新建视频（`create`，不含打开便携包）之后、返回之前做的事：写进新视频的初始内容，由 Runtime 接上（用户库的默认启用）。
-   * 返回的快照是做完之后的。
+   * Work done after a new video is created (`create`, not including opening a portable package) and before returning: writes the initial content into the new video, connected by the Runtime (the user library's default-enabled entries).
+   * The returned snapshot is taken after this work is done.
    */
   onCreated(fn: (videoId: Id, principal: TrustedPrincipal) => Promise<void>): void {
     this.#afterCreate = fn;
@@ -265,22 +263,20 @@ export class VideoService {
   async open(location: VideoLocation, principal: TrustedPrincipal): Promise<VideoOpenResult> {
     const { rootReal, dir } = await locateVideoDir(location);
     const host = await this.#ensureHost();
-    // 带上所属项目：视频里记的项目不同（副本）时引擎先换标识，同一个 videoId 不会指向两个目录（架构设计 §5.1）。
+    // Passes the owning project. When the video records a different project (a copy), the engine first swaps the identity, so one videoId does not point to two directories (architecture design §5.1).
     const opened = await host.request<HostOpened>('videos.open', { path: dir, ...projectOf(location.scope) });
     if (hostPath(opened.path) !== dir) {
-      // 同一个 videoId 出现在两个目录（不属于项目、无从区分的副本，或打开期间被移动）：保留先打开的那一个。
+      // The same videoId appears in two directories (copies that cannot be told apart and do not belong to a project, or a video moved while open): the one opened first is kept.
       this.#log.warn('Two folders hold the same video; kept the open one', { videoId: opened.videoId });
     }
     return this.#register(opened, rootReal, location.scope, principal);
   }
 
   /**
-   * 打开项目时的预处理（架构设计 §5.1）：项目里的视频记的所属项目与它不同（副本）或没有记（升级前的视频）时，
-   * 先由引擎换标识或采用，再被打开。只处理这个已登记项目目录里的视频；正被打开的跳过（打开时已经认领过），
-   * 被别处锁着的留到下次（打开时还会再认领）。每个视频只短暂地取一次写锁。没有视频时不启动引擎。
+   * Pre-processing when a project is opened (architecture design §5.1): when a video in the project records an owning project different from this one (a copy), or records none (a video from before the upgrade), the engine first swaps or adopts its identity, and only then is it opened. Only videos in this registered project directory are handled; a video being opened is skipped (it was already claimed when opened); one locked elsewhere is left for next time (opening will claim it again). Each video takes the write lock only briefly, once. The engine is not started when there are no videos.
    */
   claimProjectVideos(project: { id: Id; path: string }): Promise<{ reassigned: number; skipped: number }> {
-    // 同一个项目的预处理同时只跑一趟：重复打开项目时接上进行中的那一趟。
+    // Only one pass of pre-processing for the same project runs at a time: when the project is opened again, it attaches to the pass in progress.
     const running = this.#claims.get(project.id);
     if (running) return running;
     const run = this.#claimProjectVideos(project).finally(() => this.#claims.delete(project.id));
@@ -312,7 +308,7 @@ export class VideoService {
     return result;
   }
 
-  /** 这条连接不再需要这个视频。没有其他打开者时立即关闭。 */
+  /** This connection no longer needs this video. Closes immediately if there are no other openers. */
   async close(videoId: Id, principal: TrustedPrincipal): Promise<{ closed: boolean }> {
     const channel = this.#channels.get(videoId);
     const session = channel?.session;
@@ -323,25 +319,24 @@ export class VideoService {
     return { closed: true };
   }
 
-  /** 视频此刻在 Runtime 里怎么被用着（删除视频前查）：打开它的连接与内部租约。没有打开时 null。 */
+  /** How the video is being used in the Runtime right now (checked before a video is deleted): the connections that opened it and internal leases. null if it is not open. */
   usage(videoId: Id): { openers: string[]; leases: number } | null {
     const session = this.#channels.get(videoId)?.session;
     return session ? { openers: [...session.openers], leases: session.leases } : null;
   }
 
-  /** 视频被删除了：关闭它，订阅的客户端收到 `video.closed`（`reason: 'deleted'`）。 */
+  /** The video was deleted: closes it; subscribed clients receive `video.closed` (`reason: 'deleted'`). */
   async closeDeleted(videoId: Id): Promise<void> {
     await this.#closeSession(videoId, 'deleted');
   }
 
   /**
-   * 取得一个没有打开的视频目录的写锁，在持有期间执行 `fn`（删除视频时移动目录），然后放下（§5.5）。锁跟着打开的文件走，
-   * 目录改名不影响它。别的进程锁着时以 `VIDEO_LOCKED` 拒绝；同一个视频在另一个目录里开着时以 `VIDEO_IN_USE` 拒绝。
+   * Takes the write lock on a video directory that is not open, runs `fn` while holding it (used to move the directory when a video is deleted), then releases it (§5.5). The lock follows the open file, so renaming the directory does not affect it. When another process holds the lock it is rejected with `VIDEO_LOCKED`; when the same video is open in another directory it is rejected with `VIDEO_IN_USE`.
    */
   async withWriteLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
     const host = await this.#ensureHost();
     const opened = await host.request<HostOpened>('videos.open', { path: dir });
-    // 引擎里已经开着的（会话里的，或同一个视频在另一个目录里开着）不是这次取到的锁，不能替它放下。
+    // A video already open in the engine (in a session, or the same video open in another directory) is not the lock taken this time, so it cannot be released on its behalf.
     const owned = !this.#channels.get(opened.videoId)?.session && hostPath(opened.path) === dir;
     try {
       if (!owned) throw new RpcError('conflict', RcVideo.videoInUse(), { code: 'VIDEO_IN_USE', videoId: opened.videoId });
@@ -355,7 +350,7 @@ export class VideoService {
     }
   }
 
-  /** Runtime 内部持有一个已打开的视频（后台任务用），直到 `release`。视频没有打开时报 not-found。 */
+  /** The Runtime holds an open video internally (for background tasks) until `release`. Reports not-found if the video is not open. */
   retain(videoId: Id): void {
     const session = this.#channels.get(videoId)?.session;
     if (!session) throw new RpcError('not-found', RcCommon.videoNotOpen());
@@ -366,7 +361,7 @@ export class VideoService {
     }
   }
 
-  /** 放下 `retain` 的租约。最后一个租约放下且没有打开者时，按宽限期关闭。 */
+  /** Releases a `retain` lease. When the last lease is released and there are no openers, the video is closed after the grace period. */
   release(videoId: Id): void {
     const channel = this.#channels.get(videoId);
     const session = channel?.session;
@@ -375,7 +370,7 @@ export class VideoService {
     this.#scheduleIdleClose(videoId, channel);
   }
 
-  /** 连接断开：它打开的视频在宽限期后关闭（期间重新打开就取消）。 */
+  /** Connection dropped: the videos it opened are closed after the grace period (reopening during that time cancels the close). */
   connectionClosed(connectionId: string): void {
     for (const [videoId, channel] of this.#channels) {
       if (!channel.session?.openers.delete(connectionId)) continue;
@@ -384,8 +379,7 @@ export class VideoService {
   }
 
   /**
-   * 目录 `dir` 里没有打开者、没有租约、只在宽限期里等着关的视频：现在就关。搬视频目录之前用（无项目会话放进项目、删会话，
-   * 架构设计 §3.10）：会话的智能体刚放下的视频不必等宽限期过去。
+   * Closes now any video in directory `dir` that has no openers and no leases and is only waiting out its grace period. Used before moving a video directory (when a session without a project is moved into a project, or a session is deleted, architecture design §3.10): a video its session's agent has just released does not need to wait out the grace period.
    */
   async closeIdleIn(dir: string): Promise<void> {
     const root = path.resolve(dir);
@@ -408,11 +402,10 @@ export class VideoService {
     session.closeTimer.unref?.();
   }
 
-  // ---- 编辑 ----
+  // ---- Editing ----
 
   /**
-   * `provenance.taskId` 由 Runtime 按调用者当前的任务填入，公共请求不能自己声明（命令与协议规范 §2.2）。
-   * `provenance.protections` 是这个任务合同的保护范围（架构设计 §3.2）：智能体带任务的提交由引擎对照检查。
+   * `provenance.taskId` is filled in by the Runtime from the caller's current task; public requests cannot declare it themselves (command and protocol spec §2.2). `provenance.protections` is the protection scope of this task's contract (architecture design §3.2): submissions from agents working under a task are checked against it by the engine.
    */
   async apply(
     params: RpcParams<'edits.apply'>,
@@ -423,8 +416,8 @@ export class VideoService {
   }
 
   /**
-   * 以给定的行为者编辑：Runtime 自己的写入（如转写结果，`{ kind: 'system' }`）走这里。
-   * `provenance.run` 是任务与流水线写入所属的执行（架构设计 §7.4）：引擎据此执行停止屏障；只由 Runtime 填，公共请求带不进来。
+   * Edits as the given actor. The Runtime's own writes (e.g. transcription results, `{ kind: 'system' }`) go through here.
+   * `provenance.run` is the execution that task and pipeline writes belong to (architecture design §7.4): the engine applies the stop barrier based on it. Only the Runtime fills it in; public requests cannot pass it in.
    */
   async applyAs(
     params: RpcParams<'edits.apply'>,
@@ -447,9 +440,7 @@ export class VideoService {
   }
 
   /**
-   * 停止屏障（架构设计 §7.4）：让引擎拒绝这个执行这一代及更早的提交。请求在调用时同步写给引擎，
-   * 之后发出的同一执行的提交一定排在它后面、被拒；resolve 时，在它之前写给引擎的提交都已经有了结果。
-   * 视频没有打开、引擎不在或正在重启时 resolve false：这时只有 Node 侧的屏障。
+   * Stop barrier (architecture design §7.4): has the engine reject submissions from this execution's current generation and earlier ones. The request is written to the engine synchronously at call time, so later submissions from the same execution are guaranteed to queue behind it and be rejected. On resolve, submissions written to the engine before it have all received results. Resolves false when the video is not open, the engine is absent, or it is restarting; then only the Node-side barrier applies.
    */
   invalidateRun(videoId: Id, run: EngineRun): Promise<boolean> {
     const host = this.#host;
@@ -464,7 +455,7 @@ export class VideoService {
   }
 
   /**
-   * 按 `commandId` 查一笔已经提交的事务的回执（崩溃或回执响应丢失之后，架构设计 §7.3）；没有时 null。视频要已经打开。
+   * Looks up the receipt of an already-committed transaction by `commandId` (after a crash, or when the receipt response was lost, architecture design §7.3); null if there is none. The video must already be open.
    */
   async receiptFor(videoId: Id, commandId: Id): Promise<TransactionReceipt | null> {
     const host = await this.#hostFor(videoId);
@@ -472,7 +463,7 @@ export class VideoService {
     return receipt;
   }
 
-  /** `guard.protections`：智能体撤销时同样不能触碰它任务的保护范围（§3.2）。 */
+  /** `guard.protections`: an agent's undo likewise must not touch its task's protection scope (§3.2). */
   async undo(
     params: RpcParams<'edits.undo'>,
     principal: TrustedPrincipal,
@@ -496,15 +487,14 @@ export class VideoService {
     return host.request<{ entries: HistoryEntry[] }>('history.list', { videoId, ...(limit ? { limit } : {}) });
   }
 
-  /** 此刻读不到的素材版本：由引擎逐个核对文件在不在、长度对不对（`videos.assetStatus`）。 */
+  /** Asset versions that cannot be read right now: the engine checks file by file whether each exists and has the right length (`videos.assetStatus`). */
   async assetStatus(videoId: Id): Promise<{ missing: MissingAsset[] }> {
     const host = await this.#hostFor(videoId);
     return host.request<{ missing: MissingAsset[] }>('videos.assetStatus', { videoId });
   }
 
   /**
-   * 没有任何引用的素材（引擎按实例与替身、章节缩略图、文档来源核对，所有序列都算）：`assets_prune` 的预检清单，
-   * 也就是 `removeAssets` 能删的那些。只读。
+   * Assets with no references at all (the engine checks against instances and proxies, chapter thumbnails and document sources, across all sequences): the preflight list for `assets_prune`, that is, what `removeAssets` can delete. Read-only.
    */
   async unusedAssets(videoId: Id): Promise<{ unused: UnusedAsset[] }> {
     const host = await this.#hostFor(videoId);
@@ -517,8 +507,7 @@ export class VideoService {
   }
 
   /**
-   * 不打开、不取写入锁地读一个视频目录的身份与概况（引擎只读打开，已经打开的直接用）。对外服务用它按 videoId 判断范围，
-   * 范围之外的视频不会因此被打开。`dir` 是视频目录的绝对路径。
+   * Reads the identity and summary of a video directory without opening it or taking the write lock (the engine opens it read-only; an already-open video is used directly). The external service uses this to judge scope by videoId, so videos outside the scope are not opened by the check. `dir` is the absolute path of the video directory.
    */
   async peek(dir: string): Promise<{ videoId: Id; name: string; revision: string }> {
     const host = await this.#ensureHost();
@@ -526,9 +515,8 @@ export class VideoService {
   }
 
   /**
-   * 本机字体（架构设计 §9.1）：引擎按「族名、字重、斜体」挑 face（与排版引擎同一套匹配），给出所在文件的路径、
-   * 文件里第几个与抽成单独字体的做法。预览与导出冻结用的都是这一份。不涉及哪个视频；第一次要扫一遍本机字体的名字表。
-   * 本机没有的族再到下载缓存里挑（`source: 'downloaded'`）。
+   * Local fonts (architecture design §9.1): the engine picks a face by family name, weight and italic (using the same matching as the typesetting engine), and gives the path of the file it lives in, its face index within that file, and whether it is extracted as a standalone font. Preview and export freezing both use this same result. It does not involve any particular video. The first call scans the name table of the local fonts.
+   * Families not present locally are then looked up in the download cache (`source: 'downloaded'`).
    */
   async fontFaces(faces: FontFaceQuery[]): Promise<LocalFontFaces> {
     const host = await this.#ensureHost();
@@ -536,14 +524,14 @@ export class VideoService {
     return host.request('fonts.resolve', { faces, ...(cacheDir ? { cacheDir } : {}) });
   }
 
-  /** 本机已装的字体的族名（引擎扫的那一份，只有名字）。 */
+  /** The family names of locally installed fonts (the set the engine scanned; names only). */
   async fontFamilies(): Promise<string[]> {
     const host = await this.#ensureHost();
     const { families } = await host.request<{ families: string[] }>('fonts.families', {});
     return families;
   }
 
-  /** 检查一个字体文件（下载之后核对）：按渲染用的同一套解析读出的 face；不是能用的字体时引擎以 `FONT_INVALID` 拒绝。 */
+  /** Checks a font file (after download): reads the face with the same parsing used for rendering. The engine rejects it with `FONT_INVALID` if it is not a usable font. */
   async inspectFont(file: string): Promise<InspectedFontFace[]> {
     const host = await this.#ensureHost();
     const { faces } = await host.request<{ faces: InspectedFontFace[] }>('fonts.inspect', { path: file });
@@ -551,8 +539,7 @@ export class VideoService {
   }
 
   /**
-   * 导出的冻结（架构设计 §9.11）：引擎在一次请求里按同一个视频版本求出声音的区间计划或文档在时间线上的投影，
-   * 连同素材位置与文档版本（`exports.plan`）。之后的编辑不影响这份结果。
+   * Freezing for export (architecture design §9.11): in one request, the engine computes for the same video version the interval plan of the audio, or the projection of a document onto the timeline, together with the asset locations and document versions (`exports.plan`). Later edits do not affect this result.
    */
   async exportPlan<T>(videoId: Id, params: Record<string, unknown>): Promise<T> {
     const host = await this.#hostFor(videoId);
@@ -560,8 +547,7 @@ export class VideoService {
   }
 
   /**
-   * 便携包的冻结（视频格式规范 §8）：引擎在一次请求里给出当前的快照、每个文档版本存下的正文原文与每个素材版本的位置
-   * （`exports.package`）。之后的编辑不影响这份结果。
+   * Freezing a portable package (video format spec §8): in one request, the engine gives the current snapshot, the original body text stored for each document version, and the location of each asset version (`exports.package`). Later edits do not affect this result.
    */
   async freezePackage<T>(videoId: Id): Promise<T> {
     const host = await this.#hostFor(videoId);
@@ -569,8 +555,7 @@ export class VideoService {
   }
 
   /**
-   * 便携包导入（`package-import.ts`）：引擎把解开、校验过的包建成 `dir` 里的新视频（`videos.importPackage`），
-   * 这里把它登记为打开的视频。`dir` 在 `rootReal` 里、还不存在。
+   * Portable package import (`package-import.ts`): the engine builds the unpacked and validated package into a new video in `dir` (`videos.importPackage`), and here it is registered as an open video. `dir` is inside `rootReal` and does not exist yet.
    */
   async createFromPackage(
     dir: string,
@@ -586,9 +571,8 @@ export class VideoService {
   }
 
   /**
-   * 素材 bytes 的位置，交给媒体通道发句柄。收纳的素材在视频目录里。链接的素材（导入的默认）留在它原来的位置：
-   * 放行的正是视频登记的那一个文件（路径来自引擎里的素材记录，不来自调用方），不放行它所在目录里别的东西；
-   * 而且只放行预览用得到的类型（见 `servableLinked`），免得一个别处拿来的视频把本机的任意文件登记成「素材」再读出来。
+   * The location of asset bytes, handed to the media channel to issue a handle. Collected assets are in the video directory. Linked assets (the default for imports) stay where they originally were. Only the one file the video registered is allowed (the path comes from the asset record in the engine, not from the caller), not other things in its directory.
+   * Only the types needed for preview are allowed (see `servableLinked`), so that a video brought in from elsewhere cannot register an arbitrary local file as an “asset” and read it back out.
    */
   async assetFile(videoId: Id, assetId: Id, revision?: string): Promise<{ root: string; file: string; name: string }> {
     const host = await this.#hostFor(videoId);
@@ -597,15 +581,15 @@ export class VideoService {
       assetId,
       ...(revision ? { revision } : {}),
     });
-    // 等引擎回话期间视频可能已经关了（没人打开时的空闲关闭、别处关闭）：按没有打开回绝，不去读已经清掉的会话。
+    // While waiting for the engine to reply, the video may have been closed (idle close when no one has it open, or closed elsewhere). Reject it as not open, and do not go on to read the session that was already cleared.
     const session = this.#channels.get(videoId)?.session;
     if (!session) throw new RpcError('not-found', RcVideo.videoNotOpenOpenFirst(), { code: 'VIDEO_NOT_OPEN' });
     return servableAsset(blob, session.ref.path);
   }
 
   /**
-   * 同 `assetFile`，但按视频目录找、不要求视频已经打开（引擎的只读查询 `videos.resolveAsset`，不取写锁；打开着的用打开的那一份）。
-   * Space 的视频封面用（架构设计 §5.7）。`dir` 是视频目录的绝对路径，来自 Space 目录，不来自调用方。
+   * Same as `assetFile`, but finds the file by video directory and does not require the video to be open (the engine's read-only query `videos.resolveAsset` takes no write lock; an open video uses the open copy).
+   * Used for Space's video covers (architecture design §5.7). `dir` is the absolute path of the video directory, taken from the Space directory, not from the caller.
    */
   async assetFileAt(dir: string, assetId: Id, revision?: string): Promise<{ root: string; file: string; name: string }> {
     const host = await this.#ensureHost();
@@ -614,8 +598,7 @@ export class VideoService {
   }
 
   /**
-   * 媒体分析（波形、缩略图）的输入：素材版本的记录（内容摘要、媒体类型、探测出来的流）与文件位置。
-   * 记录取自镜像，文件按 `assetFile` 的规则放行；能不能分析由媒体分析按媒体类型再判断。
+   * Input for media analysis (waveforms, thumbnails): the record of an asset version (content digest, media type, probed streams) and the file location. The record is taken from the mirror; the file is allowed by the same rules as `assetFile`. Whether it can be analyzed is decided by media analysis per media type.
    */
   async mediaSource(videoId: Id, assetId: Id, revision?: string): Promise<{ root: string; file: string; record: AssetRevision }> {
     await this.#hostFor(videoId);
@@ -626,7 +609,7 @@ export class VideoService {
     return { root, file, record };
   }
 
-  // ---- 主题 ----
+  // ---- Topic ----
 
   subscribe(
     videoId: Id,
@@ -641,23 +624,23 @@ export class VideoService {
     >;
   }
 
-  /** 已打开视频的位置与身份；没有打开时为空。 */
+  /** The location and identity of open videos; empty when none is open. */
   ref(videoId: Id): VideoRef | null {
     const channel = this.#channels.get(videoId);
     return channel?.session ? { ...channel.session.ref, name: channel.mirror.video.name } : null;
   }
 
-  /** 当前打开的所有视频。 */
+  /** All videos currently open. */
   openRefs(): VideoRef[] {
     return [...this.#channels.keys()].flatMap((videoId) => this.ref(videoId) ?? []);
   }
 
-  /** 测试与诊断：引擎进程号。 */
+  /** For tests and diagnostics: the engine process ID. */
   get enginePid(): number | null {
     return this.#host?.pid ?? null;
   }
 
-  /** 测试与诊断：Runtime 里的镜像。 */
+  /** For tests and diagnostics: the mirror in the Runtime. */
   mirror(videoId: Id): VideoTopicSnapshot | null {
     return this.#channels.get(videoId)?.session ? this.#channels.get(videoId)!.mirror : null;
   }
@@ -674,7 +657,7 @@ export class VideoService {
     await host?.close();
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #register(opened: HostOpened, rootReal: string, scope: VideoLocation['scope'], principal: TrustedPrincipal): VideoOpenResult {
     opened = { ...opened, path: hostPath(opened.path) };
@@ -689,7 +672,7 @@ export class VideoService {
       channel = holder;
       this.#channels.set(opened.videoId, channel);
     } else if (!channel.session) {
-      // 关闭之后重新打开：沿用同一个主题，发一条整体替换。
+      // After closing and reopening, keep the same topic and publish one whole-replacement.
       channel.mirror = { video: opened.snapshot, eventSeq: opened.eventSeq };
       channel.log.publish({ type: 'video.replaced', snapshot: channel.mirror });
     }
@@ -730,8 +713,7 @@ export class VideoService {
     this.#log.info('Video closed', { videoId, reason });
     const host = this.#host;
     if (!host?.alive) return;
-    // 放下写锁之前清理 `blobs/`（架构设计 §5.2、§5.5）：只在正常关闭（打开者走光或空闲）且没有任务租约时做；
-    // 被删除的视频正在搬走、引擎出错的不做。便携包导入在登记会话之前完成，走不到这里。失败只记日志，照常关闭。
+    // Before releasing the write lock, clean up `blobs/` (architecture design §5.2, §5.5). This is done only on a normal close (openers all left, or idle) with no task lease. It is not done for a deleted video that is being moved away, or when the engine has errored. Portable package import completes before the session is registered, so it never reaches here. Failures are only logged; the close proceeds as usual.
     if ((reason === 'closed' || reason === 'idle') && leases === 0)
       await host.request('videos.gcBlobs', { path }).catch((error) => this.#log.warn('Cleaning up video blobs failed', { error: String(error) }));
     await host.request('videos.close', { videoId }).catch((error) => this.#log.warn('Closing the video failed', { error: String(error) }));
@@ -781,8 +763,7 @@ export class VideoService {
   }
 
   /**
-   * 已打开视频的版本变化（提交、补齐之后）。Space 的派生索引（架构设计 §5.7、§5.11）靠它增量更新；
-   * 没有打开的视频由 Space 按目录变化发现。返回取消订阅的函数。
+   * Version changes of an open video (after commits and catch-ups). Space's derived index (architecture design §5.7, §5.11) updates incrementally from them; videos that are not open are discovered by Space through directory changes. Returns a function that unsubscribes.
    */
   onChange(listener: (change: { videoId: Id; path: string; revision: string }) => void): () => void {
     this.#changeListeners.add(listener);
@@ -803,8 +784,7 @@ export class VideoService {
   }
 
   /**
-   * 内容索引用的只读查询（架构设计 §5.11，引擎的 `videos.readContent`）：快照与文字类文档的正文和时间线投影。
-   * 与 `peek` 一样不打开视频、不取写入锁；已经打开的视频用打开的那一份。`dir` 是视频目录的绝对路径。
+   * Read-only query for the content index (architecture design §5.11, the engine's `videos.readContent`): the snapshot, and the body text and timeline projection of text-type documents. Like `peek`, it does not open the video or take the write lock; an already-open video uses the open copy. `dir` is the absolute path of the video directory.
    */
   async readContent<T>(dir: string): Promise<T> {
     const host = await this.#ensureHost();
@@ -866,7 +846,7 @@ export class VideoService {
   }
 }
 
-/** 视频所属的项目：在项目目录里的视频带上项目的 id，会话工作目录里的不带。 */
+/** The project a video belongs to: a video in the project directory carries the project's id; one in a session working directory does not. */
 function projectOf(scope: VideoLocation['scope']): { projectId?: Id } {
   return 'projectId' in scope ? { projectId: scope.projectId } : {};
 }
@@ -878,7 +858,7 @@ async function exists(file: string): Promise<boolean> {
   );
 }
 
-/** 取视频目录的真实路径，并确认它在来源目录之内、里面有 `video.db`。 */
+/** Gets the real path of the video directory, and confirms that it is inside the source directory and contains `video.db`. */
 async function locateVideoDir(location: VideoLocation): Promise<{ rootReal: string; dir: string }> {
   let rootReal: string;
   let real: string;
@@ -891,7 +871,7 @@ async function locateVideoDir(location: VideoLocation): Promise<{ rootReal: stri
   if (path.basename(real) === DB_FILE || path.basename(real) === LEGACY_DB_FILE) real = path.dirname(real);
   const prefix = rootReal.endsWith(path.sep) ? rootReal : rootReal + path.sep;
   if (real !== rootReal && !real.startsWith(prefix)) throw new RpcError('forbidden', RcVideo.onlyWorkspaceVideos());
-  // 删除了的视频在来源目录的回收站里（§5.7）：先恢复再打开。
+  // A deleted video sits in the source directory's trash (§5.7): restore it before opening.
   if (path.relative(rootReal, real).split(path.sep).includes(TRASH_DIR)) {
     throw new RpcError('conflict', RcVideo.videoDeletedRestoreFromTrash(), { code: 'VIDEO_TRASHED' });
   }
@@ -901,12 +881,12 @@ async function locateVideoDir(location: VideoLocation): Promise<{ rootReal: stri
   return { rootReal, dir: real };
 }
 
-/** Lottie 文件的大小上限：再大就不是贴纸动画了。 */
+/** The size limit for Lottie files: any bigger and it is no longer a sticker animation. */
 const LOTTIE_MAX_BYTES = 32 * 2 ** 20;
 
 /**
- * 链接素材可以经媒体通道给出去的扩展名，及其应有的媒体类型的大类（与引擎按扩展名认媒体类型的表一致）。
- * 视频容器里只有声音时引擎按音频处理，所以音视频算一类。
+ * The extensions of linked assets that may be handed out through the media channel, and the major category of media type each should have (consistent with the engine's table that identifies media types by extension).
+ * In a video container that holds only sound, the engine treats it as audio, so audio and video count as one category.
  */
 type ServableGroup = 'av' | 'image' | 'font' | 'json' | 'dotlottie';
 const LINKED_SERVABLE: Record<string, ServableGroup> = {};
@@ -930,13 +910,12 @@ function servableGroup(mediaType: string): ServableGroup | null {
 }
 
 /**
- * 引擎给出的素材位置 → 媒体通道放行的来源目录与文件。收纳的素材在视频目录（`videoDir`）里；链接的只放行登记的那一个文件，
- * 而且只放行预览用得到的类型（`servableLinked`）。
+ * The asset location given by the engine → the source directory and file the media channel allows. Collected assets are in the video directory (`videoDir`). For linked assets, only the one registered file is allowed,
+ * and only types needed for preview (`servableLinked`).
  */
 async function servableAsset(blob: ResolvedAsset, videoDir: string): Promise<{ root: string; file: string; name: string }> {
   if (blob.storage === 'linked') {
-    // 登记的路径可能是符号链接：按它指向的真实文件判断与放行（类型看真实文件的扩展名，免得借一个
-    // 叫 clip.mp4 的符号链接读出别的文件），媒体通道也才不会把它当成所在目录之外的文件。
+    // The registered path may be a symbolic link: it is judged and allowed by the real file it points to. The type is judged by the real file's extension, so a symlink named clip.mp4 cannot be used to read another file. The media channel also then does not treat it as a file outside its directory.
     const real = await fs.realpath(blob.path).catch(() => blob.path);
     if (!(await servableLinked({ ...blob, path: real }))) {
       throw new RpcError('forbidden', RcVideo.linkedPreviewUnsupported());
@@ -947,14 +926,12 @@ async function servableAsset(blob: ResolvedAsset, videoDir: string): Promise<{ r
 }
 
 /**
- * 链接素材能不能经媒体通道给出去。界面与预览会请求的是图片、音视频（播放、波形、缩略图、转写）、字体与 Lottie 动画：
+ * Whether a linked asset may be handed out through the media channel. What the UI and preview ask for are images, audio and video (playback, waveforms, thumbnails, transcription), fonts and Lottie animations:
  *
- * - 登记的媒体类型与文件实际的扩展名必须是同一大类。媒体类型来自视频里的记录，别处拿来的视频可以随便写；
- *   再要求文件本身叫 `*.mp4`、`*.png`、`*.ttf` 之类，登记成「图片」的 `~/.ssh/id_rsa` 就读不出来。
- * - JSON 只放行读出来确实是 Lottie 动画的（有版本、尺寸、帧率、帧范围与图层），本机别的 JSON（配置、凭据）登记成素材也读不出来；
- *   `.lottie` 只放行 zip 中央目录里确实有 `animations/*.json` 的压缩包。
- * - 不放行字幕文件（`srt`、`vtt`、`ass`）：内容是任意文本，没法像媒体那样按类型确认，预览也不经媒体通道读它们
- *   （字幕是视频里的文档）。不放行目录（代码包）：媒体通道只给单个文件，代码包合成的预览用预渲染的视频。
+ * - The registered media type and the file's actual extension must be the same major category. The media type comes from the record in the video, and a video from elsewhere can write anything. Requiring the file itself to be named `*.mp4`, `*.png`, `*.ttf` and so on means that a `~/.ssh/id_rsa` registered as an “image” cannot be read.
+ * - JSON is allowed only if it actually reads as a Lottie animation (has a version, size, frame rate, frame range and layers), so other JSON on this machine (config, credentials) registered as an asset cannot be read either.
+ *   `.lottie` is allowed only for archives whose zip central directory really contains `animations/*.json`.
+ * - Subtitle files (`srt`, `vtt`, `ass`) are not allowed: their content is arbitrary text, which cannot be confirmed by type the way media can, and preview does not read them through the media channel either (subtitles are documents inside the video). Directories are not allowed (code packages): the media channel gives out only single files, and previews of code-package compositions use pre-rendered video.
  */
 async function servableLinked(blob: ResolvedAsset): Promise<boolean> {
   const group = servableGroup(blob.mediaType);

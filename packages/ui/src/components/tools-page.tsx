@@ -13,8 +13,8 @@ import { TranslateTool } from './tools/translate-tool.tsx';
 import { TtsTool } from './tools/tts-tool.tsx';
 
 /**
- * 工具（产品设计 §2.1、§2.7，设计稿 page-tools.jsx）：没带工具时是总览；每个工具一页工作台（压缩、合并、提取音频共用一页，
- * 页顶切换）；还没有后端的工具深链进来时说「即将推出」和原因。
+ * Tools (product design §2.1, §2.7; design file page-tools.jsx): without a tool specified, it shows the overview; each tool has its own workbench page (compress, merge and extract audio share one page,
+ * switched from the top of the page). A tool that has no backend yet says “即将推出” (Coming soon) and the reason when deep-linked to.
  */
 export function ToolsPage({ tool }: { tool?: ToolId }) {
   const info = toolById(tool);

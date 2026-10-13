@@ -12,14 +12,13 @@ import type {
 } from '@cuccut/protocol';
 
 /**
- * 外发调用的接纳（架构设计 §12.5、§7.8）：JobManager 在创建记录之前、开始执行之前、自动重试之前与结束时调用它。
- * 判断授权与预留预算由实现（Runtime 的授权服务）负责；JobManager 只在这些时刻调用、把结果记在任务记录的 `grant` 上。
+ * Admission of outbound calls (architecture design §12.5, §7.8). The JobManager calls it before creating the record, before starting execution, before automatic retries, and at the end. Judging authorization and reserving budget is the responsibility of the implementation (the Runtime's authorization service). The JobManager only calls it at these moments and records the result on the task record's `grant`.
  *
- * - `admit` 是同步的：判断与预留在同一个事件循环回合里完成，紧接着创建记录，并行的提交不会一起越过上限。
- * - 本机（`local`）与节点（`node`）的调用不经过这里：本机不外发，节点是用户配对过的设备。
+ * - `admit` is synchronous: the check and the reservation complete in the same event-loop turn, immediately followed by creating the record, so concurrent submissions cannot together cross the limit.
+ * - Local (`local`) and node (`node`) calls do not go through here: local does not leave the machine, and a node is a device the user has paired.
  */
 
-/** 调用方对这次调用的说明：用哪条授权（审批时为这一次发放的）、外发哪些数据（不给时按能力推出）。 */
+/** The caller's description of this call: which grant to use (for approval, one issued for this call), and which data goes out (inferred from the capability when not given). */
 export interface JobGrantHint {
   grantId?: Id;
   dataKinds?: GrantDataKind[];
@@ -30,31 +29,30 @@ export interface JobAdmissionRequest {
   capability: ModelServiceCapability;
   providerId: string;
   providerKind: ProviderKind;
-  /** Provider 的显示名（错误信息用）。 */
+  /** Display name of the Provider (used in error messages). */
   label: string;
-  /** 选定的模型（带单价时可以估算金额）。 */
+  /** The chosen model (when it has a price, the amount can be estimated). */
   model: ModelInfoBase;
   modelId: string;
   videoId: Id | null;
   submitter: JobSubmitter;
   hint?: JobGrantHint;
-  /** 估算金额用的输入量：图片张数、合成文本的字符数。 */
+  /** Input quantities for estimating the amount: number of images, number of characters of synthesized text. */
   quantity: { count?: number; chars?: number };
 }
 
 export interface JobAdmission {
-  /** 判断并预留（同步）。不需要授权时返回 null；没有授权、额度不够时抛 `RpcError`（`GRANT_REQUIRED`、`BUDGET_EXCEEDED`……）。 */
+  /** Judges and reserves (synchronous). Returns null when no authorization is needed. Throws `RpcError` when there is no grant or the quota is insufficient (`GRANT_REQUIRED`, `BUDGET_EXCEEDED`…). */
   admit(request: JobAdmissionRequest): JobGrantUse | null;
   /**
-   * 开始执行（数据即将交出）之前：授权还有效时把预留记为已开始，**落盘之后**兑现 null（§7.8：重启后不会把已经发出的
-   * 调用当成没开始而释放）；撤销、到期或被收紧时兑现任务错误（`GRANT_REVOKED`），写不进磁盘时兑现 `INTERNAL`。
+   * Before execution starts (the data is about to be handed out): if the grant is still valid, marks the reservation as started and resolves to null **after the write is persisted** (§7.8: after a restart, a call that was already sent must not be treated as not started and released). If it has been revoked, has expired or was narrowed, resolves to a task error (`GRANT_REVOKED`). If the write cannot reach disk, resolves to `INTERNAL`.
    */
   start(use: JobGrantUse): Promise<JobError | null>;
-  /** 这笔预留已经记为开始（重启时：排队的任务若已开始过，说明请求可能已经发出，不能重新排队）。 */
+  /** This reservation has been marked as started. On restart: if a queued task had already started, the request may have gone out, so it must not be re-queued. */
   begun?(use: JobGrantUse): boolean;
-  /** 自动重试：结算上一次尝试并再预留一次。额度不够时返回任务错误（`BUDGET_EXCEEDED`）。 */
+  /** Automatic retry: settles the previous attempt and reserves again. When the quota is insufficient, returns a task error (`BUDGET_EXCEEDED`). */
   retry(use: JobGrantUse, call: { providerId: string; videoId: Id | null; submitter: JobSubmitter }): JobGrantUse | JobError;
-  /** 任务结束时结算。 */
+  /** Settles when the task ends. */
   settle(use: JobGrantUse, outcome: { state: JobState; reported?: Money | null }): JobGrantUse;
 }
 

@@ -1,22 +1,20 @@
-//! 内置音色：随包的八段参考录音，让不自带说话人表的引擎也有「默认音色」。
+//! Built-in voices: eight reference recordings shipped with the package, so engines that do not come with a speaker table also have a “default voice”.
 //!
-//! 各引擎对「默认音色」的底子各不相同，这里把它们收成同一张表、同一组 id：
+//! The base for “default voice” differs from engine to engine; here they are collected into one table with one set of ids:
 //!
-//! | 引擎 | 模型自带什么 | 内置音色怎么落地 |
+//! | Engine | What the model comes with | How the built-in voice is realized |
 //! | --- | --- | --- |
-//! | IndexTTS2 / IndexTTS 2.5 / GPT-SoVITS / VoxCPM2 / OmniVoice | 只能零样本克隆，没有说话人表 | 随包录音当参考音频（[`reference_for`]） |
-//! | Qwen3-TTS Base | 能克隆；不给参考就是一把没条件的「裸声」，每次不一定一样 | 同上：默认音色 = 用内置录音算 x-vector |
-//! | Qwen3-TTS CustomVoice | 模型自带 9 只说话人 | 用模型自己的，默认那只按语言挑 |
-//! | Qwen3-TTS VoiceDesign | 只会按一句话描述造声，不能克隆 | 随包的一句声音描述当指令（[`style_for`]） |
+//! | IndexTTS2 / IndexTTS 2.5 / GPT-SoVITS / VoxCPM2 / OmniVoice | Zero-shot cloning only, no speaker table | The bundled recording is used as reference audio ([`reference_for`]) |
+//! | Qwen3-TTS Base | Can clone; without a reference it is an unconditioned “bare voice” that may differ each time | Same as above: default voice = x-vector computed from the built-in recording |
+//! | Qwen3-TTS CustomVoice | The model comes with 9 speakers | Uses the model's own; the default one is picked by language |
+//! | Qwen3-TTS VoiceDesign | Can only generate a voice from a one-sentence description; cannot clone | A bundled one-sentence voice description is used as the instruction ([`style_for`]) |
 //!
-//! 八只命名音色（zh / en / ja / es × 男女）各带一段参考录音、一段原文和一句
-//! 描述：[`VoiceSpec::Preset`] 按 id 取、[`VoiceSpec::Default`] 按语言取，取到
-//! 之后走的是各引擎自己那条路（克隆 / 描述）。
+//! Eight named voices (zh / en / ja / es × male/female) each come with a reference recording, an original text, and a one-sentence
+//! description: [`VoiceSpec::Preset`] fetches by id, [`VoiceSpec::Default`] fetches by language; once fetched, they follow each engine's own path (cloning / description).
 //!
-//! 录音随 crate 放在 `assets/voices/`，出处、许可与修改说明见同目录的 `COPYING.txt`。录音不落盘：
-//! 引擎要样本时经 [`ReferenceAudio::samples`] 在内存里解码（Worker 只在 staging 里写文件）。
-//! 跨语言克隆是这几只引擎都支持的：英语参考念中文没问题，听的是音色不是口音，所以八只音色
-//! 在任何语言上都能选。
+//! Recordings ship with the crate in `assets/voices/`; their provenance, license and modification notes are in `COPYING.txt` in the same directory. Recordings are not written to disk:
+//! when an engine needs samples, they are decoded in memory via [`ReferenceAudio::samples`] (the Worker writes files only in staging). Cross-language cloning is supported by all of these engines: an English reference reading Chinese works fine, since what is heard is the timbre rather than the accent, so all eight voices
+//! can be selected for any language.
 
 use super::resample::resample;
 use super::types::{TtsRequest, VoiceSpec};
@@ -24,32 +22,32 @@ use super::wav::decode_wav_pcm16;
 use anyhow::{Context, Result, bail, ensure};
 use std::path::PathBuf;
 
-/// 一只内置音色的元数据。随包录音（16 kHz 16-bit 单声道 PCM）由 [`wav`] 取。
+/// Metadata for one built-in voice. The bundled recording (16 kHz 16-bit mono PCM) is obtained via [`wav`].
 #[derive(Debug)]
 pub struct BuiltinVoice {
-    /// `zh-female` 这样的稳定 id：`<语言>-<female|male>`，进 CLI `--speaker`、
-    /// App 表单与持久化，改不得。
+    /// Stable ids such as `zh-female`: `<language>-<female|male>`; they go into the CLI `--speaker`,
+    /// the App form and persistence, and must not be changed.
     pub id: &'static str,
-    /// 录音本身的语言（BCP-47 主语种）。不限制这只音色能念什么。
+    /// The language of the recording itself (BCP-47 primary language). This does not limit what this voice can read.
     pub lang: &'static str,
     pub female: bool,
     pub seconds: f32,
-    /// 录音念的原文。GPT-SoVITS 带参考文本时更像，所以内置音色一律把它带上。
+    /// The original text read in the recording. GPT-SoVITS sounds closer when given reference text, so built-in voices always include it.
     pub text: &'static str,
-    /// 出处（语料 · 选段），随结果与「关于」页展示。
+    /// Source (corpus · excerpt), shown with the result and on the “About” page.
     pub credit: &'static str,
-    /// 同一只音色的「说出来是什么样」：只会按描述造声的引擎（Qwen3-TTS VoiceDesign）拿它当
-    /// 音色描述。用英文写，英文提示最稳。
+    /// What this same voice “sounds like” when described: engines that generate voices only from descriptions (Qwen3-TTS VoiceDesign) use it as
+    /// the voice description. It is written in English, since English prompts are the most reliable.
     pub describe: &'static str,
 }
 
-/// Qwen3-TTS CustomVoice 的 9 只说话人（官方 `config.json` 的 `spk_id` 键，大小写按官方）。
-/// 只用来**告诉**调用方有哪几只可选；合成时以装好的模型自带的说话人表为准。
+/// The 9 speakers of Qwen3-TTS CustomVoice (the `spk_id` keys in the official `config.json`, with casing as in the official source).
+/// Used only to **tell** callers which ones are available; during synthesis, the speaker table that comes with the installed model takes precedence.
 pub const CUSTOM_VOICE_SPEAKERS: [&str; 9] = [
     "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee",
 ];
 
-/// 八只内置音色，次序即 UI 次序：中、英、日、西，各女先男后。
+/// The eight built-in voices; their order is the UI order: Chinese, English, Japanese, Spanish, each with female before male.
 pub const BUILTIN_VOICES: &[BuiltinVoice] = &[
     BuiltinVoice {
         id: "zh-female",
@@ -125,16 +123,16 @@ pub const BUILTIN_VOICES: &[BuiltinVoice] = &[
     },
 ];
 
-/// 两段英文念的原句（CMU ARCTIC 的 a0001 + a0002）。
+/// Two English sentences read in the recording (CMU ARCTIC a0001 + a0002).
 const EN_TEXT: &str = "Author of the danger trail, Philip Steels, etc. Not at this particular case, Tom, apologized Whittemore.";
 
-/// 2026-09-13 到 2026-09-21 之间 App 用过的两个旧 id，持久化里可能还留着。
+/// Two old ids the App used between 2026-09-13 and 2026-09-21, which may still remain in persisted data.
 const ALIASES: &[(&str, &str)] = &[("ref-male", "en-male"), ("ref-female", "en-female")];
 
-/// 没给语言、文本也看不出语言时落到这只。
+/// Falls back to this voice when no language is given and the text does not reveal one.
 const FALLBACK: &str = "zh-female";
 
-/// 按 id 找一只内置音色；不区分大小写，认两个旧 id。
+/// Finds a built-in voice by id; case-insensitive, and recognizes the two old ids.
 pub fn find(id: &str) -> Option<&'static BuiltinVoice> {
     let id = id.trim();
     let id = ALIASES
@@ -144,30 +142,30 @@ pub fn find(id: &str) -> Option<&'static BuiltinVoice> {
     BUILTIN_VOICES.iter().find(|voice| voice.id.eq_ignore_ascii_case(id))
 }
 
-/// 全部 id，按 [`BUILTIN_VOICES`] 的次序。错误信息与 `preset_speakers()` 都用它。
+/// All ids, in the order of [`BUILTIN_VOICES`]. Both error messages and `preset_speakers()` use it.
 pub fn ids() -> Vec<String> {
     BUILTIN_VOICES.iter().map(|voice| voice.id.to_owned()).collect()
 }
 
-/// 这个 `--speaker` 该不该在装权重之前就被拦下。
+/// Whether this `--speaker` should be rejected before the weights are loaded.
 ///
-/// 内置音色 id 一律放行——模型自带说话人表的引擎（Qwen3-TTS CustomVoice）会自己就近
-/// 换成最像的那位并在 stderr 说一句，用户在两个变体之间切换时音色名不该成为路障。
-/// 引擎没有说话人表（`presets` 为空）时也不拦：那种引擎的 `Preset` 走的是内置音色那条路。
+/// Built-in voice ids are always allowed through: engines whose model comes with a speaker table (Qwen3-TTS CustomVoice) will themselves switch to the closest match
+/// and say so once on stderr; when the user switches between two variants, the voice name should not become a roadblock.
+/// Also not rejected when the engine has no speaker table (`presets` is empty): for such engines, `Preset` takes the built-in-voice path.
 pub fn unknown_preset(speaker: &str, presets: &[String]) -> bool {
     find(speaker).is_none() && !presets.is_empty() && !presets.iter().any(|name| name.eq_ignore_ascii_case(speaker))
 }
 
-/// 这门语言的内置音色（女声在前）。语言码按主语种比，`zh-Hans` / `zh-CN` 都算 `zh`。
+/// Built-in voices for this language (female first). Language codes are compared by primary language; `zh-Hans` / `zh-CN` both count as `zh`.
 pub fn for_language(lang: &str) -> Vec<&'static BuiltinVoice> {
     let main = main_language(lang);
     BUILTIN_VOICES.iter().filter(|voice| voice.lang == main).collect()
 }
 
-/// 「默认音色」取哪只：先看请求里的语言，再看文本用的字，都认不出落到中文女声。
+/// Which voice the “default voice” picks: first look at the language in the request, then at the script used by the text; if neither is recognized, fall back to the Chinese female voice.
 ///
-/// 文本只按字形粗判（假名 → 日语、汉字 → 中文），西班牙语与英语同用拉丁字母、
-/// 不猜，只认显式语言码。
+/// Text is judged roughly by script only (kana → Japanese, Han characters → Chinese). Spanish and English both use the Latin alphabet,
+/// so no guess is made; only an explicit language code is recognized.
 pub fn default_for(language: Option<&str>, text: &str) -> &'static BuiltinVoice {
     let code = language
         .map(main_language)
@@ -180,7 +178,7 @@ pub fn default_for(language: Option<&str>, text: &str) -> &'static BuiltinVoice 
         .unwrap_or_else(|| find(FALLBACK).expect("内置音色表里有 zh-female"))
 }
 
-/// `zh-Hans` / `zh_CN` / `ZH` → `zh`；认不出的原样小写返回。
+/// `zh-Hans` / `zh_CN` / `ZH` → `zh`; unrecognized input is returned lowercased as-is.
 fn main_language(lang: &str) -> &'static str {
     let head = lang.trim().split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
     match head.as_str() {
@@ -192,7 +190,7 @@ fn main_language(lang: &str) -> &'static str {
     }
 }
 
-/// 文本字形 → 语言：假名 → 日语，汉字 → 中文，其余英语。
+/// Text script → language: kana → Japanese, Han characters → Chinese, otherwise English.
 fn script_language(text: &str) -> &'static str {
     let mut han = false;
     for ch in text.chars() {
@@ -205,7 +203,7 @@ fn script_language(text: &str) -> &'static str {
     if han { "zh" } else { "en" }
 }
 
-/// 请求里的音色 → 哪一只内置音色。`Clone` 不走内置音色，给 `None`。
+/// Voice in the request → which built-in voice. `Clone` does not use a built-in voice, so it returns `None`.
 pub fn builtin_for(request: &TtsRequest, engine: &str) -> Result<Option<&'static BuiltinVoice>> {
     match &request.voice {
         VoiceSpec::Clone { .. } => Ok(None),
@@ -219,10 +217,10 @@ pub fn builtin_for(request: &TtsRequest, engine: &str) -> Result<Option<&'static
     }
 }
 
-/// 只会按描述造声的引擎（Qwen3-TTS VoiceDesign）解析音色：内置音色给出它那句描述，调用方
-/// 自己给的指令接在描述后面（两者都有就都说）。
+/// Resolves the voice for engines that generate voices only from descriptions (Qwen3-TTS VoiceDesign): a built-in voice provides its one-sentence description, and the instruction the caller provides
+/// is appended after the description (if both exist, both are spoken).
 ///
-/// `Clone` 在这条路上无解——描述造声接不了参考音频，交给调用方报错。
+/// `Clone` has no solution on this path: description-based generation cannot take reference audio, so it is left to the caller to report an error.
 pub fn style_for(request: &TtsRequest, engine: &str) -> Result<Style> {
     let voice = builtin_for(request, engine)?;
     let described = voice.map(|voice| voice.describe);
@@ -238,16 +236,16 @@ pub fn style_for(request: &TtsRequest, engine: &str) -> Result<Style> {
     })
 }
 
-/// 一次「按描述造声」要用的风格指令。
+/// The style instruction used for one “generate by description” call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Style {
-    /// 交给引擎的整句指令；两边都空时为 `None`（引擎用自己的裸默认）。
+    /// The full instruction sentence passed to the engine; `None` when both sides are empty (the engine uses its own bare default).
     pub instruct: Option<String>,
-    /// `Some(id)` = 描述来自这只内置音色。
+    /// `Some(id)` = the description comes from this built-in voice.
     pub builtin: Option<&'static str>,
 }
 
-/// 随包录音。次序与 [`BUILTIN_VOICES`] 一致；两张表逐 id 对拍（见测试）。
+/// Bundled recordings. The order matches [`BUILTIN_VOICES`]; the two tables are cross-checked id by id (see tests).
 const WAVS: &[(&str, &[u8])] = &[
     ("zh-female", include_bytes!("../../assets/voices/zh-female.wav")),
     ("zh-male", include_bytes!("../../assets/voices/zh-male.wav")),
@@ -259,7 +257,7 @@ const WAVS: &[(&str, &[u8])] = &[
     ("es-male", include_bytes!("../../assets/voices/es-male.wav")),
 ];
 
-/// 这只内置音色的录音字节（16 kHz 16-bit 单声道 PCM WAV）。
+/// The recording bytes for this built-in voice (16 kHz 16-bit mono PCM WAV).
 pub fn wav(voice: &BuiltinVoice) -> &'static [u8] {
     WAVS.iter()
         .find(|(id, _)| *id == voice.id)
@@ -267,7 +265,7 @@ pub fn wav(voice: &BuiltinVoice) -> &'static [u8] {
         .expect("每只内置音色都有随包录音")
 }
 
-/// 参考音频从哪里来：调用方给的文件，或一只内置音色的随包录音。
+/// Where the reference audio comes from: a file provided by the caller, or the bundled recording of a built-in voice.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceAudio {
     File(PathBuf),
@@ -275,8 +273,8 @@ pub enum ReferenceAudio {
 }
 
 impl ReferenceAudio {
-    /// 解成 `sample_rate` 的单声道 f32。文件走 [`crate::audio::decode_mono`]；内置录音在内存里
-    /// 解码，再用带限插值重采样到目标采样率。
+    /// Decodes to mono f32 at `sample_rate`. Files go through [`crate::audio::decode_mono`]; built-in recordings are decoded in memory,
+    /// then resampled to the target sample rate using band-limited interpolation.
     pub fn samples(&self, sample_rate: u32) -> Result<Vec<f32>> {
         match self {
             Self::File(path) => crate::audio::decode_mono(path, sample_rate).with_context(|| format!("解码参考音频 {}", path.display())),
@@ -289,18 +287,18 @@ impl ReferenceAudio {
     }
 }
 
-/// 一次合成要用的参考音频与它的原文。
+/// The reference audio used for one synthesis, and its original text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference {
     pub audio: ReferenceAudio,
-    /// 参考音频念的原文；带原文的克隆更像，不用的引擎忽略。
+    /// The original text read in the reference audio; cloning with the original text sounds closer; engines that do not use it ignore it.
     pub text: Option<String>,
-    /// `Some(id)` = 用的是内置音色；进度与结果要写出是哪一只。
+    /// `Some(id)` = a built-in voice is used; progress and results must record which one.
     pub builtin: Option<&'static str>,
 }
 
-/// 只能克隆的引擎解析音色：`Clone` 用调用方给的文件，`Preset` 按 id 取内置音色，
-/// `Default` 按语言取内置音色。各引擎走同一份判断，谁都不许自己再判一次「有没有默认音色」。
+/// Resolves the voice for engines that can only clone: `Clone` uses the file provided by the caller, `Preset` fetches a built-in voice by id,
+/// and `Default` fetches a built-in voice by language. All engines use the same judgment; none may re-check “is there a default voice” on its own.
 pub fn reference_for(request: &TtsRequest, engine: &str) -> Result<Reference> {
     if let VoiceSpec::Clone {
         reference_audio,
@@ -320,7 +318,7 @@ pub fn reference_for(request: &TtsRequest, engine: &str) -> Result<Reference> {
     Ok(builtin(voice))
 }
 
-/// 一只内置音色作为参考。
+/// A built-in voice used as the reference.
 pub fn builtin(voice: &'static BuiltinVoice) -> Reference {
     Reference {
         audio: ReferenceAudio::Builtin(voice.id),
@@ -359,25 +357,25 @@ mod tests {
     fn default_follows_the_declared_language_then_the_script() {
         assert_eq!(default_for(Some("zh-Hans"), "hello").id, "zh-female");
         assert_eq!(default_for(Some("es-419"), "hello").id, "es-female");
-        // 没给语言：看字形
+        // No language given: check the script
         assert_eq!(default_for(None, "今天天气不错").id, "zh-female");
         assert_eq!(default_for(None, "こんにちは、今日はいい天気").id, "ja-female");
         assert_eq!(default_for(None, "good morning").id, "en-female");
-        // 认不出的语言码退回按字形判，不硬塞第一只
+        // An unrecognized language code falls back to judging by script, rather than forcing the first voice
         assert_eq!(default_for(Some("kk"), "こんにちは").id, "ja-female");
     }
 
     #[test]
     fn builtin_ids_walk_through_the_preset_gate() {
         let presets: Vec<String> = ["Vivian", "Serena", "Ono_anna"].iter().map(|name| (*name).to_owned()).collect();
-        // 模型自己的说话人：放行，大小写不计
+        // The model's own speaker: allowed through, case-insensitive
         assert!(!unknown_preset("vivian", &presets));
-        // 内置音色 id（含旧别名）：也放行，交给引擎就近换成最像的那位
+        // Built-in voice ids (including old aliases): also allowed through; the engine switches to the closest match
         assert!(!unknown_preset("zh-female", &presets));
         assert!(!unknown_preset("ref-female", &presets));
-        // 两张表都不认的名字：这才该在装权重之前拦下
+        // Names that neither table recognizes: these are the ones that should be rejected before the weights are loaded
         assert!(unknown_preset("nobody", &presets));
-        // 没有说话人表的引擎不拦——那条路走的是内置音色
+        // Engines without a speaker table are not blocked: that path uses the built-in voices
         assert!(!unknown_preset("nobody", &[]));
     }
 
@@ -388,20 +386,20 @@ mod tests {
         assert_eq!(style.builtin, Some("zh-female"));
         assert_eq!(style.instruct.as_deref(), Some(find("zh-female").unwrap().describe));
 
-        // 自己给的指令接在音色描述后面，两句都说
+        // The caller's own instruction is appended after the voice description; both are spoken
         request.instruct = Some("  用兴奋的语气  ".to_owned());
         let style = style_for(&request, "Qwen3-TTS VoiceDesign").unwrap();
         let instruct = style.instruct.unwrap();
         assert!(instruct.starts_with(find("zh-female").unwrap().describe), "{instruct}");
         assert!(instruct.ends_with("用兴奋的语气"), "{instruct}");
 
-        // 指名一只内置音色
+        // A specific built-in voice is named
         request.voice = VoiceSpec::Preset {
             speaker: "ja-male".to_owned(),
         };
         assert_eq!(style_for(&request, "Qwen3-TTS VoiceDesign").unwrap().builtin, Some("ja-male"));
 
-        // 克隆走不到这条路：描述留着，内置音色为空（调用方自己报错）
+        // Cloning cannot reach this path: the description is kept, and the built-in voice is empty (the caller reports the error itself)
         request.voice = VoiceSpec::Clone {
             reference_audio: PathBuf::from("/nope.wav"),
             reference_text: None,
@@ -454,7 +452,7 @@ mod tests {
         assert_eq!(reference.audio, ReferenceAudio::Builtin("zh-female"));
         assert_eq!(reference.builtin, Some("zh-female"));
         assert!(reference.text.is_some());
-        // 内存里解码并重采样到 24 kHz：时长不变。
+        // Decoded in memory and resampled to 24 kHz: duration unchanged.
         let samples = reference.audio.samples(24_000).unwrap();
         let seconds = samples.len() as f32 / 24_000.0;
         assert!((seconds - find("zh-female").unwrap().seconds).abs() < 0.05, "{seconds}");

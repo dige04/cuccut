@@ -1,52 +1,51 @@
-//! GPU 后端的回退报告（元素方案 §8.7 最后一行 / ADR-M05）。
+//! Fallback report for the GPU backend (element plan §8.7, last line / ADR-M05).
 //!
-//! 规矩只有一条：**GPU 只是加速器，跑不动就回退 CPU**。跑不动的形态有五种，
-//! 全部在这里变成结构化记录，而不是一句 `eprintln!`。
+//! There is only one rule: **the GPU is only an accelerator; if it cannot run, fall back to CPU**. There are five forms of failing to
+//! run, and all of them become structured records here rather than a single `eprintln!`.
 //!
-//! ## 为什么它现在不进 `PreflightReport`
+//! ## Why it does not go into `PreflightReport` for now
 //!
-//! motion 文档 §6.5 的 `fallbacks[]` **信封**（`ccut render --json` / serve 任务
-//! 信封的对外字段）尚不存在，而 [`super::PreflightDiagnostic`] 的 `rule` 字段
-//! 按定义是"规范 §16 的码，与 `ccut lint` 同一张表"——往那里塞一个新码就触发
-//! `ccut-core/src/lint.rs` 的 `LINT_RULES` 与 format-spec §16 的登记义务，
-//! 顺带把 `docs/design/cli/ccut-cli-server-reference.md` 拉进来。P5a 的范围里**不动 CLI
-//! 契约面**，因此本模块是 **crate 内部**的报告结构：
+//! The `fallbacks[]` **envelope** of motion document §6.5 (the externally visible fields of `ccut render --json` and the serve task
+//! envelope) does not exist yet, and the `rule` field of [`super::PreflightDiagnostic`] is by definition “a code from spec §16, in the
+//! same table as `ccut lint`”. Adding a new code there would trigger the `LINT_RULES` in `ccut-core/src/lint.rs` and the registration
+//! obligation in format-spec §16, and would also pull in `docs/design/cli/ccut-cli-server-reference.md`. P5a's scope does **not touch
+//! the CLI contract surface**, so this module is a report structure **internal to the crate**:
 //!
-//! * 现在：`GpuExecutor` 建不起来 / 样式没 WGSL / 编译失败 ⇒ 记一条，调用方
-//!   照常走 CPU 路径，画面不受影响；
-//! * P5b 或 motion 阶段 4 合流时：把 [`GpuBackendReport::records`] 映到
-//!   `PreflightReport.fallbacks[]` 与对外 `fallbacks[]`，**同任务**登记诊断码
-//!   并同步 CLI 参考文档 + `serve/contract.rs` + 契约测试（CLAUDE.md 硬规则）。
+//! * For now: `GpuExecutor` fails to start / the style has no WGSL / compilation fails ⇒ record one entry; the caller proceeds on the
+//!   CPU path as usual, and the picture is unaffected;
+//! * When P5b or motion stage 4 merges: map [`GpuBackendReport::records`] to `PreflightReport.fallbacks[]` and the external
+//!   `fallbacks[]`, **in the same task** register the diagnostic code and update the CLI reference doc, `serve/contract.rs` and the
+//!   contract tests (a hard rule in CLAUDE.md).
 //!
-//! 本模块不挂 `gpu` feature：没开 feature 的构建同样要能表达"本次渲染没有走
-//! GPU，原因是编译时就没带这个后端"。
+//! This module is not gated behind the `gpu` feature: even builds without the feature must be able to express “this render did not
+//! use the GPU, because the backend was not compiled in”.
 
 use std::fmt;
 
 use super::shader_source::ShaderDomain;
 
-/// 一次回退的原因。
+/// The reason for one fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuFallbackReason {
-    /// 二进制根本没编进 `gpu` feature。
+    /// The binary was not built with the `gpu` feature at all.
     FeatureDisabled,
-    /// 有 feature，但这台机器上拿不到 adapter / device。
+    /// The feature is present, but no adapter / device is available on this machine.
     BackendUnavailable,
-    /// 样式没有 WGSL 实现（visualizer 10 款全部是 CPU 矢量配方，恒走这条）。
+    /// The style has no WGSL implementation (all 10 visualizer styles are CPU vector recipes, so they always take this path).
     ShaderMissing,
-    /// WGSL 编译或管线创建失败。
+    /// WGSL compilation or pipeline creation failed.
     ShaderCompile,
-    /// 配方参数打包还没落地（算法臂是 P5b 的）。
+    /// Packing of recipe parameters has not landed yet (the algorithm arm belongs to P5b).
     RecipeUnsupported,
-    /// 过不了 §8.7 的 conformance 容差。
+    /// Fails the conformance tolerance of §8.7.
     Conformance,
-    /// 执行期出错（分配、回读、设备丢失…）。
+    /// Error at execution time (allocation, readback, device loss…).
     Execution,
 }
 
 impl GpuFallbackReason {
-    /// 稳定的原因码。**crate 内部**标识，不是 §16 的 lint 码，也不进任何对外
-    /// 信封——见模块文档。
+    /// Stable reason code. An **internal crate** identifier, not a §16 lint code, and it does not go into any external envelope — see
+    /// the module docs.
     pub fn code(self) -> &'static str {
         match self {
             GpuFallbackReason::FeatureDisabled => "gpu-feature-disabled",
@@ -66,7 +65,7 @@ impl fmt::Display for GpuFallbackReason {
     }
 }
 
-/// 一条回退记录。`target` 为 `None` = 整个后端不可用（不针对某个样式）。
+/// One fallback record. `target` of `None` = the whole backend is unavailable (not specific to a style).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpuFallbackRecord {
     pub target: Option<(ShaderDomain, String)>,
@@ -89,16 +88,16 @@ impl fmt::Display for GpuFallbackRecord {
     }
 }
 
-/// 一次渲染的 GPU 后端报告。
+/// GPU backend report for one render.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GpuBackendReport {
-    /// 实际拿到的后端标识（`"metal"` / `"vulkan"` …）；`None` = 没起来。
+    /// Identifier of the backend actually obtained (`"metal"` / `"vulkan"` …); `None` = did not start.
     pub backend: Option<String>,
     pub records: Vec<GpuFallbackRecord>,
 }
 
 impl GpuBackendReport {
-    /// 编译期就没带 GPU 后端时的报告。
+    /// Report for when the GPU backend was not compiled in.
     pub fn feature_disabled() -> GpuBackendReport {
         GpuBackendReport {
             backend: None,
@@ -110,7 +109,7 @@ impl GpuBackendReport {
         }
     }
 
-    /// 后端起来了、且**没有任何**样式回退。
+    /// The backend started, and **no** style fell back.
     pub fn is_fully_accelerated(&self) -> bool {
         self.backend.is_some() && self.records.is_empty()
     }
@@ -128,7 +127,7 @@ impl GpuBackendReport {
         });
     }
 
-    /// 人读的一行一条；给 host 打日志用（**不是**对外信封）。
+    /// One human-readable line per entry; for the host to log (**not** the external envelope).
     pub fn lines(&self) -> Vec<String> {
         self.records
             .iter()

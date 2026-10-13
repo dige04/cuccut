@@ -1,11 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/AudioCommon/Tokenizer.swift`。
+//! Partly implemented with reference to speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/AudioCommon/Tokenizer.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packages and transcription interface; the original upstream source attribution is retained.
+//! Full text of the original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` at the repository root.
 //!
-//! Qwen3 的 byte-level BPE 分词器。
+//! The byte-level BPE tokenizer for Qwen3.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -20,8 +20,7 @@ struct BpePair {
     second: String,
 }
 
-/// Qwen3 使用的最小 byte-level BPE 实现（`vocab.json` + `merges.txt` + `tokenizer_config.json`
-/// 的 added tokens）。
+/// A minimal byte-level BPE implementation used by Qwen3 (`vocab.json` + `merges.txt` + the added tokens from `tokenizer_config.json`).
 #[derive(Debug, Clone)]
 pub struct Qwen3Tokenizer {
     id_to_token: HashMap<i32, String>,
@@ -55,10 +54,9 @@ impl Qwen3Tokenizer {
         }
     }
 
-    /// 从已经在内存里的词表与 merge 表建一只（调用方自己读文件 / JSON）。
-    /// merge 表按给定顺序定 rank，第一条最优先——与 `merges.txt` 的行序同义。
+    /// Builds one from a vocabulary and a merge table already in memory (the caller reads the files / JSON). The merge table fixes ranks in the given order, and the first entry has the highest priority, the same as the line order of `merges.txt`.
     ///
-    /// Whisper 的词表是同一族（GPT-2 byte-level BPE），v2 的 CoreML Whisper 借这只给 initial prompt 做编码。
+    /// Whisper's vocabulary is from the same family (GPT-2 byte-level BPE), and v2's CoreML Whisper uses this to encode its initial prompt.
     pub fn from_vocab_and_merges<V, M>(vocab: V, merges: M) -> Self
     where
         V: IntoIterator<Item = (String, i32)>,
@@ -74,7 +72,7 @@ impl Qwen3Tokenizer {
         tokenizer
     }
 
-    /// 从模型包列出的文件加载。路径由调用方给出：不从词表路径推算同目录的其他文件。
+    /// Loads from the files listed in the model package. The caller supplies the paths; other files in the same directory are not derived from the vocabulary path.
     pub fn load(vocabulary: &Path, merges: Option<&Path>, config: Option<&Path>) -> Result<Self> {
         let data = std::fs::read(vocabulary).context("读取 vocab.json")?;
         let vocabulary: HashMap<String, i32> = serde_json::from_slice(&data).context("vocab.json 应为 {token: id} 字典")?;
@@ -99,10 +97,9 @@ impl Qwen3Tokenizer {
         self.id_to_token.is_empty()
     }
 
-    /// 按字面量取单个 token 的 id（不经 BPE）。
+    /// Gets the id of a single token by its literal text (not via BPE).
     ///
-    /// 供需要直接拼接特殊 token 的调用方使用（`<|im_start|>` 等聊天模板标记
-    /// 走 [`Self::encode`] 会被 byte-level BPE 拆成普通片段，拿不到特殊 id）。
+    /// For callers that need to splice special tokens in directly. Chat-template markers such as `<|im_start|>` passed through [`Self::encode`] would be split by byte-level BPE into ordinary fragments, so no special id could be obtained.
     pub fn token_id(&self, token: &str) -> Option<i32> {
         self.token_to_id.get(token).copied()
     }
@@ -138,7 +135,7 @@ impl Qwen3Tokenizer {
         String::from_utf8_lossy(&self.decode_bytes(tokens)).trim().to_string()
     }
 
-    /// 解码为原始字节，不做 trim 或 lossy 替换，供增量流式解码逐段拼接。
+    /// Decodes to raw bytes, with no trimming or lossy replacement, so that incremental streaming decode can concatenate the pieces.
     pub fn decode_bytes(&self, tokens: &[i32]) -> Vec<u8> {
         let table = byte_to_unicode();
         let mut buffer = Vec::with_capacity(tokens.len() * 2);
@@ -317,11 +314,11 @@ mod tests {
         let (_dir, tokenizer) = tokenizer();
         assert_eq!(tokenizer.encode("hi hi"), vec![2, 4]);
         assert_eq!(tokenizer.decode(&[2, 4]), "hi hi");
-        // `<|...|>` 是控制 token，解码时略过；`<asr_text>` 原样保留，供调用方切分。
+        // `<|...|>` are control tokens and are skipped when decoding; `<asr_text>` is kept as is so that callers can split on it.
         assert_eq!(tokenizer.decode(&[9, 10, 2]), "<asr_text>hi");
     }
 
-    // ---- 以下移植自 v2 `ccut-speech-core/tests/core.rs` ----
+    // ---- The following is ported from v2 `ccut-speech-core/tests/core.rs` ----
 
     fn tokenizer_fixture(vocabulary: serde_json::Value, merges: Option<&str>, added: Option<serde_json::Value>) -> tempfile::TempDir {
         let directory = tempfile::tempdir().unwrap();
@@ -335,7 +332,7 @@ mod tests {
         directory
     }
 
-    /// v2 的 `load(vocab.json)` 自己去同目录找另外两个文件；v3 由调用方列出，这里按夹具里有的文件传。
+    /// v2's `load(vocab.json)` finds the other two files in the same directory by itself. In v3 the caller lists them, and here they are passed according to the files the fixture has.
     fn load_fixture(directory: &Path) -> Result<Qwen3Tokenizer> {
         let merges = directory.join("merges.txt");
         let config = directory.join("tokenizer_config.json");
@@ -396,11 +393,11 @@ mod tests {
         ]));
         let tokens = [4, 5, 1, 2, 3, 6, 4];
         let bytes = tokenizer.decode_bytes(&tokens);
-        // decode 只是 decode_bytes 的 lossy + trim 投影。
+        // decode is just decode_bytes followed by a lossy + trim projection.
         assert_eq!(bytes, b" h\xe4\xb8\xad ".to_vec());
         assert_eq!(tokenizer.decode(&tokens), String::from_utf8_lossy(&bytes).trim());
 
-        // 任意切点分批解码再拼接必须与一次性解码逐字节一致。
+        // Decoding in batches cut at arbitrary points and then concatenating must match one-shot decoding byte for byte.
         for split in 0..=tokens.len() {
             let mut joined = tokenizer.decode_bytes(&tokens[..split]);
             joined.extend(tokenizer.decode_bytes(&tokens[split..]));

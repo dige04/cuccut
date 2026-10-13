@@ -1,5 +1,4 @@
-//! Qwen-Image-2.1 单流 DiT 的 candle 流式实现（移植自 v2 `ccut-image-local::candle::dit`）。每个投影在用到时从映射的
-//! MLX checkpoint 反量化；主机内存与 CUDA 显存里都不留整个模型的 dense 副本，同一时刻只留一层的矩阵。
+//! Streaming candle implementation of the Qwen-Image-2.1 single-stream DiT (ported from v2 `ccut-image-local::candle::dit`). Each projection is dequantized from the mapped MLX checkpoint when it is used. Neither host memory nor CUDA VRAM keeps a dense copy of the whole model; only one layer's matrices are held at a time.
 
 use anyhow::{Result, anyhow, bail};
 use candle_core::{DType, Device, Tensor};
@@ -18,7 +17,7 @@ const HEAD_DIM: usize = 128;
 const LAYERS: usize = 32;
 const EPS: f64 = 1e-6;
 
-/// CUDA 的矩阵乘不收转置过的 q（不连续布局），先拷成连续的。
+/// CUDA matmul does not accept a transposed q (non-contiguous layout), so it is first copied to a contiguous buffer.
 fn attend(q: &Tensor, k: &Tensor, v: &Tensor, mask: Option<&Tensor>) -> Result<Tensor> {
     scaled_dot_product_attention(
         &q.contiguous()?,
@@ -58,7 +57,7 @@ fn modulate(x: &Tensor, scale: &Tensor) -> Result<Tensor> {
     Ok(norm(x)?.broadcast_mul(&(scale + 1.0)?)?)
 }
 
-/// 相邻两个通道是一对实部、虚部（与 MLX 实现一致），不是半分裂。
+/// Adjacent channels form a real/imaginary pair (consistent with the MLX implementation), not a half-split.
 fn apply_rope(x: &Tensor, cos: &Tensor, sin: &Tensor) -> Result<Tensor> {
     let (batch, seq, heads, width) = x.dims4()?;
     if batch != 1 || heads != HEADS || width != HEAD_DIM {
@@ -100,7 +99,7 @@ struct TextPending {
     sin: Tensor,
 }
 
-/// 文本流每层的 K、V：文本只在第一步算一遍，之后各步复用。
+/// Per-layer K and V of the text stream: text is computed only on the first step and reused in later steps.
 pub struct TextCache {
     kv: Vec<(Tensor, Tensor)>,
     text_len: usize,
@@ -111,12 +110,12 @@ pub struct Dit {
     weights: ShardedWeights,
     device: Device,
     dtype: DType,
-    /// 一层的文本块与图像块都算完之前留着这层反量化出的矩阵；进下一层前清掉，CUDA 显存因此有界。
+    /// The dequantized matrices of a layer are kept until both its text and image blocks are computed. They are cleared before moving to the next layer, so CUDA VRAM stays bounded.
     layer_matrices: RefCell<HashMap<String, Tensor>>,
 }
 
 impl Dit {
-    /// `files` 是 `transformer/` 下按清单取出的 safetensors。
+    /// `files` are the safetensors under `transformer/`, fetched by manifest.
     pub fn load(files: &[&Path], device: &Device, dtype: DType) -> Result<Self> {
         let weights = ShardedWeights::open(files)?;
         for i in 0..LAYERS {
@@ -251,7 +250,7 @@ impl Dit {
         Ok((k, v))
     }
 
-    /// 一步去噪，返回速度场。图像 token 按 `chunk` 个一块算 q 与输出；每层之前看一次 `cancel`。
+    /// One denoising step, returning the velocity field. Image tokens are processed in blocks of `chunk` tokens for q and output. `cancel` is checked before each layer.
     #[allow(clippy::too_many_arguments)]
     pub fn step(
         &self,
@@ -319,7 +318,7 @@ impl Dit {
     }
 }
 
-/// f32 舍入到 bf16 的精度（就近、偶数优先），仍以 f32 返回：时间步嵌入要与参考管线的 bf16 时间步逐值一致。
+/// Rounds f32 to bf16 precision (round to nearest, ties to even) but still returns f32, because the timestep embedding must match the reference pipeline's bf16 timesteps value by value.
 pub fn bf16_round(value: f32) -> f32 {
     let bits = value.to_bits();
     let lsb = (bits >> 16) & 1;
@@ -371,7 +370,7 @@ mod tests {
     #[test]
     fn bf16_rounding_keeps_the_upper_half_and_rounds_to_nearest_even() {
         assert_eq!(bf16_round(1.0), 1.0);
-        // 1 + 2^-8 恰在两个 bf16 之间：偶数优先，回到 1.0；再大一点就进位到 1 + 2^-7。
+        // 1 + 2^-8 lies exactly between two bf16 values: ties to even, back to 1.0. A bit larger rounds up to 1 + 2^-7.
         assert_eq!(bf16_round(1.0 + 2f32.powi(-8)), 1.0);
         assert_eq!(bf16_round(1.0 + 2f32.powi(-8) + 2f32.powi(-12)), 1.0 + 2f32.powi(-7));
         assert_eq!(bf16_round(0.3).to_bits() & 0xffff, 0);

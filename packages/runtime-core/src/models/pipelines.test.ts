@@ -12,10 +12,8 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 固定流程（架构设计 §7.9）经网关端到端：`pipelines.list`、`pipelines.start`、`jobs.list` 折叠子任务，翻译流程对着
- * 本机回环地址上的假 OpenAI 写进真实引擎里的视频（行为者 `system:pipeline`）：翻译在真的 Speech Worker 里，每次模型调用
- * 经 Runtime 的授权与账本发给假 OpenAI；截断的答案重发、一直不合时视频不变，没有配置文本模型时拒绝；文件转码经网关执行。
- * 测试只连假供应商，密钥是测试里编的字符串。
+ * Fixed pipelines (architecture design §7.9) end to end through the gateway: `pipelines.list`, `pipelines.start`, and `jobs.list` collapsing subtasks. The translation pipeline writes into a real engine video, calling a fake OpenAI on a loopback address (actor `system:pipeline`). Translation runs in the real Speech Worker, and every model call goes through the Runtime's authorization and ledger to the fake OpenAI. A truncated answer is re-sent; if it never comes out valid, the video is unchanged; with no text model configured, it is rejected. File transcoding runs through the gateway.
+ * The test connects only to the fake provider; the keys are made-up strings in the test.
  */
 
 const engine = resolveEngineHostCommand();
@@ -96,8 +94,7 @@ async function stopSide(side: Side | undefined): Promise<void> {
 }
 
 /**
- * 假 OpenAI：按 Speech Worker 的请求答（`fakeSpeechAnswer`）；`broken` 次数内翻译页回一个被截断的答案
- * （`finish_reason: length`），`garbage` 时翻译页一直回空文档。
+ * Fake OpenAI: answers according to the Speech Worker's request (`fakeSpeechAnswer`). Within `broken` attempts, the translation page returns a truncated answer (`finish_reason: length`). With `garbage`, the translation page always returns an empty document.
  */
 function translator(state: { broken: number; garbage: boolean; calls: number }): FakeHandler {
   return (request) => {
@@ -193,7 +190,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
       ['link-import', ['target', 'resolve', 'download', 'verify', 'publish', 'create', 'import', 'transcribe', 'captions']],
       ['ai-tool', ['context', 'generate', 'apply']],
     ]);
-    // 视频由 videoId 或 target 给出：videoId 不再必填。
+    // The video is given by videoId or target; videoId is no longer required.
     expect(pipelines[1]!.paramsSchema).toMatchObject({
       required: ['targetLanguage'],
       properties: { target: { oneOf: expect.any(Array) } },
@@ -238,7 +235,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
       const { jobId } = await start();
       const done = await settled(jobId);
       expect(done.state, JSON.stringify(done.error)).toBe('completed');
-      // Speech Worker 的每一次模型调用都经 Runtime 的授权与账本：账本里的次数与假供应商收到的一致。
+      // Every model call from the Speech Worker goes through the Runtime's authorization and ledger: the count in the ledger matches what the fake provider received.
       expect(state.calls).toBeGreaterThan(0);
       const { grant: used } = await side!.client.request('grants.usage', { grantId: grant.grantId });
       expect(used.usage).toMatchObject({ calls: state.calls, reservedCalls: 0 });
@@ -274,7 +271,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
         units: Array<{ sourceSentenceId: string; sourceFingerprint: string; naturalText: string }>;
       };
       expect(body.schema).toBe(TRANSLATION_SCHEMA);
-      // 句子与指纹是字幕与翻译核心的规则：与 `sourceSentences`（经 editor-wasm）得出的逐句相同。
+      // Sentences and fingerprints are the rules of the subtitle and translation core: they match the per-sentence results from `sourceSentences` (via editor-wasm).
       const read = sourceSentences(SPEECH);
       const sentences = 'sentences' in read ? read.sentences : [];
       expect(body.units.map((u) => [u.sourceSentenceId, u.sourceFingerprint])).toEqual(sentences.map((s) => [s.id, s.fingerprint]));
@@ -292,10 +289,10 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
       const progress = steps.find((s) => s.step!.name === 'translate')!.progress!;
       expect(progress).toMatchObject({ done: 3, total: 3, unit: 'units' });
       expect(progress.calls!.failures).toBeGreaterThanOrEqual(1);
-      // 步骤的变化同样经 jobs 主题送达。
+      // Step changes are also delivered over the jobs topic.
       expect(side!.jobs()!.jobs.filter((j) => j.parentJobId === jobId)).toHaveLength(4);
 
-      // 同一个 commandId 只启动一次；密钥不出现在任何记录里。
+      // The same commandId starts only once; the key appears in no record.
       expect(
         (
           await side!.client.request('pipelines.start', {
@@ -346,7 +343,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     const opened = await side!.client.request('videos.create', { projectId: project.id, name: '双语' });
     const videoId = opened.ref.videoId;
     const sequenceId = opened.snapshot.video.rootSequenceId;
-    // 第一句里有 1.2 秒的停顿：流程的切句规则（字幕与翻译核心，≥ 1.8 秒才断）不断，导出不能按自己的停顿规则把它拆开。
+    // The first sentence has a 1.2-second pause. The pipeline's sentence-splitting rule (subtitle and translation core, splits only at ≥ 1.8 seconds) does not split it, and export must not split it by its own pause rule.
     const words = [
       { id: 'w1', text: '大家好', start: 0, end: 500 },
       { id: 'w2', text: '，', start: 500, end: 550 },
@@ -430,7 +427,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     });
     const job = await settled(jobId);
     expect(job).toMatchObject({ state: 'completed', videoId: null, providerId: 'ffmpeg' });
-    // 不给 outDir：写到保存位置（§7.9；测试里的下载文件夹是 CUCCUT_DOWNLOADS_DIR 指的临时目录）。
+    // No outDir: writes to the save location (§7.9; in the test, the downloads folder is the temp directory given by CUCCUT_DOWNLOADS_DIR).
     expect(job.result!.outputs).toEqual([
       expect.objectContaining({
         path: path.join(process.env.CUCCUT_DOWNLOADS_DIR!, 'clip-compressed.mp4'),

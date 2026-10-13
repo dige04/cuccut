@@ -93,11 +93,9 @@ const foot = style({ margin: 0, paddingX: 4, font: 'ui-xs', color: 'gray-600', l
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
 
 /**
- * 父视频视频面板顶上的「切出的短视频」（原型 shorts-source.jsx `ShortsMadeGroup`，产品设计 §5.10）：从这部视频切出、
- * 没移进回收站的子视频收成一组，可以收起；新建的排在最上面，默认露出 `MADE_SHOWN` 行，多的收起，「还有 N 支」展开、
- * 「收起」收回。每行名字、在原片上的区间与时长，点一行在同一个编辑器里打开那一支。
- * 子视频按 Space 里的派生来源（`derivedFrom`）反查，父视频自己不记。这是普通的编辑动作，桌面端与 Web 共用；
- * 去往剪成短视频流程的「再切几支」只在有 AI 工具 Tab 的桌面端。
+ * The “切出的短视频”(shorts cut from this video) group at the top of the parent video's panel (prototype shorts-source.jsx `ShortsMadeGroup`, product design §5.10): child videos cut from this video that have not been moved to the trash are grouped together and can be collapsed. Newly created ones are at the top; by default `MADE_SHOWN` rows are shown and the rest are collapsed. “还有 N 支”(N more) expands the group, and “收起”(collapse) collapses it again. Each row shows its name, its range on the original and its duration; clicking a row opens that one in the same editor.
+ * Child videos are looked up by their derived source in Space (`derivedFrom`); the parent video does not record them itself. This is an ordinary editing action, shared by desktop and web.
+ * “再切几支”(cut a few more), which leads into the cut-into-shorts flow, is only on desktop, where the AI Tools tab exists.
  */
 export function ShortsMadeGroup({ videoId }: { videoId: Id }) {
   const runtime = useRuntime();

@@ -1,12 +1,12 @@
 /*!
- * ccut-motion —— CucCut 的共享动画内核（ADR-M01，设计 §5）。
+ * ccut-motion — CucCut's shared animation kernel (ADR-M01, design §5).
  *
- * 纯函数、无 I/O、无时钟、无随机：manifest 经 `include_str!` 嵌入，
- * 采样是 `(program, t)` 的纯函数，随机效果一律显式播种。
- * `ccut-core`（BCF 域）与 `ccut-timeline`（产品剪辑域）都经 lowering 进来，
- * 两者不互相依赖。
+ * Pure functions, no I/O, no clock, no randomness: manifests are embedded via `include_str!`, sampling is a pure function of
+ * `(program, t)`, and random effects always take an explicitly seeded source.
+ * `ccut-core` (the BCF domain) and `ccut-timeline` (the product editing domain) both come in through lowering, and neither
+ * depends on the other.
  *
- * 禁止在本 crate 引入 `std::fs`、`std::time`、`rand`、网络或线程本地可变状态。
+ * Do not introduce `std::fs`, `std::time`, `rand`, networking, or thread-local mutable state into this crate.
  */
 
 #![forbid(unsafe_code)]
@@ -68,8 +68,8 @@ pub use value::{
     is_animatable, property_kind,
 };
 
-/// 诊断词汇（设计 §5.4.2）。调用方保留自己的错误类型：`ccut-core` 用 `anyhow!`，
-/// `ccut-timeline` 用 `TimelineError`，本 crate 不引入 `anyhow`。
+/// Diagnostic vocabulary (design §5.4.2). Callers keep their own error types: `ccut-core` uses `anyhow!` and `ccut-timeline` uses
+/// `TimelineError`. This crate does not bring in `anyhow`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MotionError {
     PresetUnknown(String),
@@ -77,17 +77,16 @@ pub enum MotionError {
     PresetParamMissing(String),
     PresetVersionUnknown(String),
     ManifestInvalid(String),
-    /// preset `compose` 递归成环（规范 §7.4 / §16）。
+    /// A preset `compose` recursion forms a cycle (spec §7.4 / §16).
     PresetComposeCycle(String),
-    /// 相对长度写在了不允许的属性上（规范 §7.8）。
+    /// A relative length was written on a property that does not allow it (spec §7.8).
     RelativeNotAllowed(String),
-    /// `selfWidth`/`parentWidth` 等需要静态布局的基准（规范 §7.8）。
+    /// Bases such as `selfWidth` / `parentWidth` that require static layout (spec §7.8).
     LayoutRequired(&'static str),
-    /// `animate.flow` / `animate.parts` 的结构违规（规范 §7.5 / §7.9）。
-    /// 键集与操作符都是封闭的，多一个键就是硬错误——「BCF 里没有可执行代码」
-    /// 靠解析器保证而不是靠约定（ADR-M07）。
+    /// Structural violation of `animate.flow` / `animate.parts` (spec §7.5 / §7.9). The key set and the operators are both closed, and one
+    /// extra key is a hard error. “BCF contains no executable code” is guaranteed by the parser, not by convention (ADR-M07).
     FlowInvalid(String),
-    /// 已声明但阶段 1 未实现的能力。
+    /// Capability declared but not implemented in stage 1.
     Unsupported(&'static str),
 }
 

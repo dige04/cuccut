@@ -7,9 +7,9 @@ import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro'
 import type { CheckAction, CheckLineView, TryAction, TryNoteView } from '../../model/model-check.ts';
 import { CHECK_LABEL } from '../../model/model-check-copy.ts';
 
-/* 设计稿 settings-local.css 的 .lmchk / .lmtry：行上一条状态（缩进到名字那一列），试用面板里一块浅红的提醒。 */
+/* Design mock settings-local.css .lmchk / .lmtry: one line of status on the row (indented to the name column), and a light red reminder block in the trial panel. */
 const lineBox = style({ marginTop: 8, marginStart: { default: 0, sm: 32 }, minWidth: 0 });
-// 图标单独一列；文字与按钮按行内排：长句换行时按钮跟在句子后面，不另起一行把图标孤立在上面。
+// The icon sits in its own column; text and buttons flow inline, so when a long sentence wraps, the button follows the sentence rather than sitting on its own line and leaving the icon alone above.
 const lineRow = style({ display: 'flex', alignItems: 'start', gap: 8, minHeight: 24, font: 'ui-sm', color: 'gray-700' });
 const iconBox = style({ display: 'flex', alignItems: 'center', height: 24, flexShrink: 0 });
 const lineBody = style({ flexGrow: 1, minWidth: 0, paddingY: 2 });
@@ -83,8 +83,7 @@ function Actions<K extends string>({
 }
 
 /**
- * 行上那一条检查状态（设计稿 settings-model-check.jsx `ModelCheckLine`）：检查中（阶段 + 进度 + 取消）/ N 分钟前检查通过 /
- * 没通过（红色一句 + 修复… / 重新检查 / 技术详情）。技术详情在这里展开，能复制；其余动作交回给行。
+ * The single check status line on a row (design mock settings-model-check.jsx `ModelCheckLine`): checking (stage + progress + cancel) / passed N minutes ago / not passed (a red sentence + Repair… / Re-check / technical details). Technical details expand here and can be copied; other actions are handed back to the row.
  */
 export function ModelCheckLine({
   view,
@@ -93,9 +92,9 @@ export function ModelCheckLine({
   onAction,
 }: {
   view: CheckLineView | null;
-  /** 技术详情的几行（没通过时）。 */
+  /** The lines of technical details (when the check did not pass). */
   detailLines: readonly string[];
-  /** 进度条的无障碍名。 */
+  /** Accessible name of the progress bar. */
   label: string;
   onAction: (k: Exclude<CheckAction['k'], 'details'>) => void;
 }) {
@@ -169,7 +168,7 @@ function copyDetails(lines: readonly string[]): void {
   );
 }
 
-/** 试用面板里的一块（设计稿 `ModelTryNote`）：上次检查没通过的提醒，或这次试用自己的失败。 */
+/** One block in the trial panel (design mock `ModelTryNote`): the reminder that the last check did not pass, or this trial's own failure. */
 export function ModelTryNote({ view, onAction }: { view: TryNoteView | null; onAction: (k: TryAction['k']) => void }) {
   if (!view) return null;
   return (

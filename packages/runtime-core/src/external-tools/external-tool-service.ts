@@ -30,33 +30,28 @@ import { RcExternalTools } from '@cuccut/protocol/messages/runtime-core';
 import { remedyOf, taskFailure } from '../localized.ts';
 
 /**
- * 受管外部工具的状态与动作（架构设计 §12.9）：探测、同意、指定路径、下载与删除受管副本。
+ * Status and actions for managed external tools (architecture design §12.9): probing, consent, specifying a path, downloading and deleting the managed copy.
  *
- * - 解析顺序：环境变量（ffmpeg 的 `CUCCUT_FFMPEG`）→ 用户指定的路径 → 受管副本 → 系统 PATH（Runtime 的工具环境，即登录 shell 的 PATH；测试注入一个空目录）。用户指定的路径不能运行时
- *   报告为不可用，不悄悄换成别的。
- * - 同意与用户路径、受管副本的登记存在 `<home>/store/external-tools.json`；受管副本在 `<home>/tools/<工具>/<版本>/`，
- *   下载中的文件在 `<home>/tools/.staging/`（取消时保留，下次续传）。
- * - 下载是一个任务（`kind: 'toolInstall'`）：提交前查严格离线、清单与同意，任务里下载、核对 sha256 与大小、设可执行位、
- *   原子地改名发布，再执行一次 `--version` 确认能运行。清单把发布文件登记为压缩包（`archive`）时，核对之后先解开到 staging
- *   目录（只取包根目录的普通文件，`@cuccut/models` 的 `extractToolArchive`），整个目录改名发布；内置的工具目前都是单个文件。
- *   （音乐生成的 audio.cpp 引擎不是受管外部工具，是音乐模型包的组件，随模型包安装，见架构设计 §6.3。）
- * - 系统里自己装的那一份按原安装方式更新（`tool-update-plan.ts` 判断办法）：也是一个任务（`kind: 'toolUpdate'`），提交前
- *   要调用方交回用户确认过的那条命令；任务里不经 shell 执行，输出逐段写进任务记录的 `command`，结束后重新探测。
- *   不提权：要管理员权限的只给命令。更新进行中用它的流程拒绝启动（`TOOL_UPDATING`），反过来有流程在用时不更新。
+ * - Resolution order: environment variable (ffmpeg's `CUCCUT_FFMPEG`) → user-specified path → managed copy → system PATH (the Runtime's tool environment, i.e. the login shell's PATH; tests inject an empty directory). A user-specified path that cannot run is reported as unavailable and is not quietly swapped for something else.
+ * - Consent and the records of the user path and managed copies are stored in `<home>/store/external-tools.json`. Managed copies live in `<home>/tools/<tool>/<version>/`; files being downloaded live in `<home>/tools/.staging/` (kept on cancel, so the download resumes next time).
+ * - A download is a task (`kind: 'toolInstall'`): before submitting, check strict offline mode, the manifest, and consent. Inside the task: download, verify sha256 and size, set the executable bit, publish with an atomic rename, then run `--version` once more to confirm it works. When the manifest registers the published file as an archive (`archive`), extract it into the staging directory after verification (only regular files at the package root, via `extractToolArchive` in `@cuccut/models`), then publish the whole directory with a rename. The built-in tools are all single files for now.
+ *   (The audio.cpp engine for music generation is not a managed external tool. It is a component of the music model package and is installed with that package; see architecture design §6.3.)
+ * - A copy installed on the system by the user is updated using the original install method (`tool-update-plan.ts` decides how). This is also a task (`kind: 'toolUpdate'`). Before submitting, the caller must hand back the command the user confirmed. Inside the task, the command is not run through a shell; its output is written segment by segment into the task record's `command`, and the tool is probed again when it ends.
+ *   No privilege escalation: anything that needs admin rights only gets a command. While an update is running, flows that use the tool refuse to start (`TOOL_UPDATING`), and conversely an update does not start while a flow is using the tool.
  */
 
 export const TOOL_INSTALL_PIPELINE_USERS = ['link-import'] as const;
 
 const STORE_VERSION = 1;
-/** 一次只装或更新一个工具（文件不大，避免并发写同一个目录）。 */
+/** Install or update one tool at a time (the files are small; this avoids concurrent writes to the same directory). */
 const INSTALL_QUEUE = { key: 'tool-install', concurrency: 1 };
 const PROGRESS_INTERVAL_MS = 250;
-/** 更新命令的时限：Homebrew 可能先更新自己、从源码装的还要编译。 */
+/** Time limit for update commands: Homebrew may update itself first, and tools installed from source may need to be compiled. */
 const UPDATE_TIMEOUT_MS = 15 * 60_000;
-/** 任务记录里留的输出末尾，与结果产物里留的全文上限（字符）。 */
+/** Character limits: the end of the output kept in the task record, and the full output kept in the result artifact. */
 const UPDATE_OUTPUT_TAIL = 32_000;
 const UPDATE_OUTPUT_FULL = 1_000_000;
-/** 执行更新命令时补上的环境：不要颜色与提示、不问问题、Python 不缓冲输出。 */
+/** Environment added when running update commands: no colors or prompts, no questions asked, Python output unbuffered. */
 const UPDATE_ENV: NodeJS.ProcessEnv = {
   HOMEBREW_NO_ENV_HINTS: '1',
   HOMEBREW_NO_COLOR: '1',
@@ -79,7 +74,7 @@ interface StoreFile {
 }
 
 export interface ExternalToolSettings {
-  /** 设置 `tools.downloadEndpoint`。 */
+  /** Sets `tools.downloadEndpoint`. */
   downloadEndpoint: string | null;
   offlineStrict: boolean;
 }
@@ -91,18 +86,18 @@ export interface ExternalToolServiceOptions {
   storeFile: string;
   jobs: JobManager;
   log: Logger;
-  /** 探测与执行工具用的环境：`PATH` 是系统 PATH 的搜索路径。 */
+  /** Environment for probing and running tools: `PATH` is the search path from the system PATH. */
   env: () => Promise<NodeJS.ProcessEnv>;
   settings: () => ExternalToolSettings;
-  /** 读环境变量覆盖（`CUCCUT_TOOLS_ENDPOINT`、`CUCCUT_FFMPEG`）的地方；默认 `process.env`。 */
+  /** Where the environment-variable overrides are read (`CUCCUT_TOOLS_ENDPOINT`, `CUCCUT_FFMPEG`); defaults to `process.env`. */
   overrides?: NodeJS.ProcessEnv;
-  /** 测试注入的清单（例如带已知摘要的假工具）。 */
+  /** Manifest injected by tests (for example, a fake tool with a known digest). */
   manifests?: readonly ToolManifest[];
   platform?: string;
   download?: ToolDownloadOptions;
 }
 
-/** 流程要用一个工具时拿到的：可执行文件、版本与来源。 */
+/** What a flow gets when it needs a tool: the executable, its version, and its source. */
 export interface ResolvedTool {
   name: string;
   command: string;
@@ -112,12 +107,10 @@ export interface ResolvedTool {
 }
 
 /**
- * 按一次探测的状态判断工具此刻能不能用（流程启动时与工具目录共用）：正在更新、没有安装、不能运行、版本过旧、要同意而没有
- * 同意时给出错误码（`TOOL_UPDATING`、`TOOL_NOT_INSTALLED`、`TOOL_UNAVAILABLE`、`TOOL_OUTDATED`、`TOOL_CONSENT_REQUIRED`）、
- * 说明与补救；能用时 null。
+ * Decides from a probe's status whether a tool can be used right now (shared by flow start and the tool catalog). Returns an error code when the tool is updating, not installed, cannot run, is too old, or needs consent that has not been given (`TOOL_UPDATING`, `TOOL_NOT_INSTALLED`, `TOOL_UNAVAILABLE`, `TOOL_OUTDATED`, `TOOL_CONSENT_REQUIRED`), with an explanation and a remedy; null when it is usable.
  */
 export function toolUseProblem(status: ExternalToolStatus): { code: string; message: Localized; remedy: Localized | string } | null {
-  // 状态里存的原因与补救带着引用：嵌进这里的文案，读者按自己的语言展开。
+  // The reason and remedy stored in status carry references: the text embedded here is expanded by each reader in their own language.
   const reason = withRef(status.reason ?? '', status.reasonRef);
   const remedy = withRef(status.remedy ?? '', status.remedyRef);
   if (status.updateJobId) {
@@ -147,12 +140,12 @@ export function toolUseProblem(status: ExternalToolStatus): { code: string; mess
   return null;
 }
 
-/** 问题里的补救放进 `details` 或 `ToolProblem`：文字连同引用（存下的文字没有引用时只给文字）。 */
+/** A remedy in the problem goes into `details` or `ToolProblem`: the text together with its reference (when the stored text has no reference, only the text). */
 export function problemRemedy(remedy: Localized | string): { remedy: string; remedyRef?: MessageRef } {
   return typeof remedy === 'string' ? { remedy } : remedyOf(remedy);
 }
 
-/** 状态里的原因与补救：文字连同引用（界面按自己的语言重新生成）。 */
+/** The reason and remedy in status: the text together with its reference (the UI regenerates them in its own language). */
 function said(reason: Localized, remedy: Localized): Pick<ExternalToolStatus, 'reason' | 'reasonRef' | 'remedy' | 'remedyRef'> {
   return { reason: reason.text, reasonRef: refOf(reason), ...remedyOf(remedy) };
 }
@@ -163,7 +156,7 @@ export class ExternalToolService {
   readonly #platform: string;
   readonly #status = new Map<string, ExternalToolStatus>();
   #store: StoreFile | null = null;
-  /** 记录文件是更新的版本写下的：不覆盖它。 */
+  /** The record file was written by a newer version: do not overwrite it. */
   #readOnly = false;
   #writes: Promise<void> = Promise.resolve();
 
@@ -177,7 +170,7 @@ export class ExternalToolService {
     return this.#options.overrides ?? process.env;
   }
 
-  /** 上次探测的结果；还没探测过的先探测。 */
+  /** The last probe's result; probe first if the tool has not been probed yet. */
   async list(): Promise<ExternalToolStatus[]> {
     for (const name of this.#manifests.keys()) if (!this.#status.has(name)) await this.#detectOne(name);
     return [...this.#manifests.keys()].map((name) => this.#decorate(this.#status.get(name)!));
@@ -189,12 +182,12 @@ export class ExternalToolService {
     return this.list();
   }
 
-  /** 一个工具此刻的状态（重新探测）。 */
+  /** A tool's status right now (re-probes). */
   async status(name: string): Promise<ExternalToolStatus> {
     return this.#decorate(await this.#detectOne(this.#manifest(name).name));
   }
 
-  /** 记下或撤回同意。 */
+  /** Records or withdraws consent. */
   async consent(params: { name: string; grant: boolean; via?: ExternalToolConsentVia }): Promise<{ tool: ExternalToolStatus }> {
     const manifest = this.#managedManifest(params.name);
     const consent: ExternalToolConsent = { state: params.grant ? 'granted' : 'revoked', at: nowIso(), via: params.via ?? 'app' };
@@ -203,7 +196,7 @@ export class ExternalToolService {
     return { tool: await this.status(manifest.name) };
   }
 
-  /** 用户同意过、此刻还有效。 */
+  /** The user has consented, and it is still valid. */
   async consented(name: string): Promise<boolean> {
     const manifest = this.#manifest(name);
     if (!manifest.consentRequired) return true;
@@ -237,7 +230,7 @@ export class ExternalToolService {
     return { tool: await this.status(manifest.name) };
   }
 
-  /** 删除受管副本。 */
+  /** Deletes the managed copy. */
   async remove(params: { name: string }): Promise<{ tool: ExternalToolStatus }> {
     const manifest = this.#managedManifest(params.name);
     const busy = this.#busyJobs(manifest.name);
@@ -253,8 +246,7 @@ export class ExternalToolService {
   }
 
   /**
-   * 下载受管副本：两步。没有 `consent: true` 时以 `TOOL_CONSENT_REQUIRED` 拒绝并交出来源、版本、大小与许可；给了就记下同意、
-   * 提交任务。
+   * Downloads the managed copy in two steps. Without `consent: true`, it rejects with `TOOL_CONSENT_REQUIRED` and hands back the source, version, size, and license. If consent is given, it records the consent and submits the task.
    */
   async install(
     params: { name: string; consent?: boolean; via?: ExternalToolConsentVia; commandId?: string },
@@ -320,8 +312,7 @@ export class ExternalToolService {
   }
 
   /**
-   * 按原安装方式更新系统里的那一份（`status.update`）：两步。没给 `command`、或与此刻的办法不同时以
-   * `TOOL_UPDATE_CONFIRM_REQUIRED` 拒绝并交出办法（完整命令）；交回用户确认过的同一条命令才提交任务。
+   * Updates the copy on the system in its original install method (`status.update`), in two steps. If no `command` is given, or it differs from the current method, it rejects with `TOOL_UPDATE_CONFIRM_REQUIRED` and hands back the method (the full command). The task is submitted only when the same command the user confirmed is handed back.
    */
   async update(params: { name: string; command?: string; commandId?: string }, submitter: JobSubmitter): Promise<ExternalToolUpdateResult> {
     const manifest = this.#manifest(params.name);
@@ -396,8 +387,7 @@ export class ExternalToolService {
   }
 
   /**
-   * 流程要用一个工具：重新探测，要已安装、版本够、同意有效、不在更新，否则以 `conflict` 拒绝（`TOOL_NOT_INSTALLED`、
-   * `TOOL_OUTDATED`、`TOOL_UNAVAILABLE`、`TOOL_CONSENT_REQUIRED`、`TOOL_UPDATING`），`details.remedy` 说怎么补救。
+   * A flow wants to use a tool: re-probe it. It must be installed, new enough, with valid consent, and not updating; otherwise reject with `conflict` (`TOOL_NOT_INSTALLED`, `TOOL_OUTDATED`, `TOOL_UNAVAILABLE`, `TOOL_CONSENT_REQUIRED`, `TOOL_UPDATING`), with `details.remedy` saying how to fix it.
    */
   async resolveForUse(name: string): Promise<ResolvedTool> {
     const status = await this.status(name);
@@ -414,7 +404,7 @@ export class ExternalToolService {
     return { name: status.name, command: status.path!, version: status.version!, source: status.source!, env: await this.#options.env() };
   }
 
-  // ---- 探测 ----
+  // ---- Probing ----
 
   async #detectOne(name: string): Promise<ExternalToolStatus> {
     const manifest = this.#manifest(name);
@@ -458,7 +448,7 @@ export class ExternalToolService {
         };
         break;
       }
-      // Windows：.cmd、.bat 要经 cmd.exe 才能跑，CucCut 不经命令行解释器执行工具（参数里有链接）。
+      // Windows: .cmd and .bat files must run through cmd.exe. CucCut does not run tools through a command-line interpreter, because the arguments include links.
       const script = platform === 'win32' ? windowsScriptKind(candidate.file) : null;
       if (script) {
         status = {
@@ -543,7 +533,7 @@ export class ExternalToolService {
     };
   }
 
-  /** 交出之前补上随时会变的部分：下载说明（来源随设置变）、正在进行的安装。 */
+  /** Fills in the parts that change at any time before handing back: the download instructions (the source changes with settings) and any install in progress. */
   #decorate(status: ExternalToolStatus): ExternalToolStatus {
     const manifest = this.#manifest(status.name);
     let offer = null;
@@ -560,7 +550,7 @@ export class ExternalToolService {
     };
   }
 
-  // ---- 安装任务 ----
+  // ---- Install task ----
 
   async #runInstall(
     run: TaskRun,
@@ -608,7 +598,7 @@ export class ExternalToolService {
     const dir = path.dirname(final);
     let files: string[] = [path.basename(final)];
     if (expected.archive) {
-      // 压缩包：解开到 staging 里的目录，确认可执行文件在里面，再整个目录改名发布；坏包删掉（下次从头下）。
+      // Archive: extract into a directory in staging, confirm the executable is inside, then publish the whole directory by renaming it. Delete a bad archive (the next download starts from scratch).
       const unpacked = `${part}.dir`;
       await fs.rm(unpacked, { recursive: true, force: true });
       await fs.mkdir(unpacked, { recursive: true });
@@ -647,7 +637,7 @@ export class ExternalToolService {
     }
     const installedAt = nowIso();
     await this.#update(manifest.name, (record) => ({ ...record, managed: { version, sha256: expected.sha256, installedAt } }));
-    // 旧版本的受管副本：新的装好之后删掉。
+    // Old-version managed copies: delete them after the new one is installed.
     for (const entry of await fs.readdir(path.join(this.#options.toolsDir, manifest.name)).catch(() => [] as string[])) {
       if (entry !== version) await fs.rm(path.join(this.#options.toolsDir, manifest.name, entry), { recursive: true, force: true });
     }
@@ -671,12 +661,11 @@ export class ExternalToolService {
     return { documentId: null, artifactId };
   }
 
-  // ---- 更新任务 ----
+  // ---- Update task ----
 
   /**
-   * 执行更新命令：输出按 250 ms 节流写进任务记录（`command`），结束后不管结果都重新探测（停下来的命令也可能改了一部分）。
-   * 退出码不是 0（winget 没有可升级的版本时的 0x8A15002B 算成功）、超时、不能启动时失败（`TOOL_UPDATE_FAILED`），
-   * 原来的那一份由安装它的工具负责，CucCut 不动。
+   * Runs the update command. Output is written to the task record (`command`), throttled to every 250 ms. When it ends, the tool is probed again regardless of the result, because a command that stopped may still have changed part of the tool.
+   * Fails (`TOOL_UPDATE_FAILED`) on a non-zero exit code, a timeout, or a failure to start. winget's 0x8A15002B (no upgradable version) counts as success. The original copy is handled by the tool that installed it; CucCut does not touch it.
    */
   async #runUpdate(
     run: TaskRun,
@@ -688,7 +677,7 @@ export class ExternalToolService {
     const full = new CommandOutput(UPDATE_OUTPUT_FULL);
     const report = (exitCode: number | null) =>
       run.command({ line: plan.command, output: tail.text, lines: tail.lines, truncated: tail.truncated, exitCode });
-    // 节流：间隔内到的输出攒着，间隔一到补发一次（命令接着安静很久时也看得到最后几行）。
+    // Throttling: output that arrives within the interval is held, and sent once the interval ends (so the last few lines are visible even when the command stays quiet for a long time).
     let last = 0;
     let pending: NodeJS.Timeout | null = null;
     const flush = () => {
@@ -770,7 +759,7 @@ export class ExternalToolService {
     );
   }
 
-  // ---- 记录 ----
+  // ---- Records ----
 
   #manifest(name: string): ToolManifest {
     const manifest = this.#manifests.get(name);
@@ -778,7 +767,7 @@ export class ExternalToolService {
     return manifest;
   }
 
-  /** 由登记表解析路径、要同意的工具；ffmpeg 照旧由 `CUCCUT_FFMPEG` 与 PATH 决定，只报告状态。 */
+  /** The tool whose path is resolved from the registry and which needs consent. ffmpeg is still decided by `CUCCUT_FFMPEG` and PATH as before; only its status is reported. */
   #managedManifest(name: string): ToolManifest {
     const manifest = this.#manifest(name);
     if (!manifest.release) {
@@ -811,7 +800,7 @@ export class ExternalToolService {
     return this.#options.jobs.list().find((j) => j.kind === 'toolUpdate' && j.providerId === name && !isTerminal(j.state)) ?? null;
   }
 
-  /** 正在安装或更新它、或正在用它的流程。 */
+  /** Flows that are installing or updating the tool, or are using it right now. */
   #busyJobs(name: string): string[] {
     const usedBy = this.#manifests.get(name)?.usedByJobKinds ?? [];
     return this.#options.jobs
@@ -829,7 +818,7 @@ export class ExternalToolService {
 
   async #load(): Promise<StoreFile> {
     if (this.#store) return this.#store;
-    // 不是 JSON 或认不出时改名保留、从空开始；更新版本写下的不改名（`store-file.ts`）。读不了时照旧从空开始。
+    // If the file is not JSON or is not recognized, rename it to keep it and start from empty. A file written by a newer version is not renamed (`store-file.ts`). If it cannot be read, start from empty as before.
     const read = await readJsonOrQuarantine<StoreFile>(this.#options.storeFile, {
       log: this.#options.log,
       version: { key: 'version', known: STORE_VERSION },
@@ -850,7 +839,7 @@ export class ExternalToolService {
     const write = this.#writes.then(async () => {
       const store = await this.#load();
       store.tools[name] = change(store.tools[name] ?? { userPath: null, consent: null, managed: null });
-      // 更新版本写下的文件不覆盖：改动只留在内存里。
+      // A file written by a newer version is not overwritten: changes stay in memory only.
       if (!this.#readOnly) await writeJsonAtomic(this.#options.storeFile, store, { mode: 0o600 });
     });
     this.#writes = write.catch(() => {});
@@ -859,8 +848,8 @@ export class ExternalToolService {
 }
 
 /**
- * 外部工具与发布页组件（音乐模型包的引擎）的下载镜像：环境变量 `CUCCUT_TOOLS_ENDPOINT` 优先于设置 `tools.downloadEndpoint`；
- * 都没有时 null（官方地址）。不合法时 `invalid-request`（`TOOL_DOWNLOAD_SOURCE`）。
+ * Download mirror for external tools and the release-page component (the music model package's engine): the environment variable `CUCCUT_TOOLS_ENDPOINT` takes precedence over the setting `tools.downloadEndpoint`.
+ * Null when neither is set (the official address). An invalid value gives `invalid-request` (`TOOL_DOWNLOAD_SOURCE`).
  */
 export function toolsDownloadEndpoint(overrides: NodeJS.ProcessEnv, setting: string | null): string | null {
   const fromEnv = overrides.CUCCUT_TOOLS_ENDPOINT?.trim();

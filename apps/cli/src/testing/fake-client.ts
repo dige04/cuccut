@@ -4,8 +4,7 @@ import type { CatalogCallResult, JobRecord, JobsEvent, JobsSnapshot } from '@cuc
 import { Output } from '../envelope.ts';
 
 /**
- * 测试用的 `CucCutClient` 替身：只有 CLI 等任务与调工具用到的几样（`request`、`subscribeJobs`、`onState`、`state`）。
- * 网关方法与目录里的工具各自按名字给处理函数；`jobs` 主题的快照与事件由用例推。
+ * Test stand-in for `CucCutClient`: only the few members the CLI's task and tool-calling code uses (`request`, `subscribeJobs`, `onState`, `state`). Gateway methods and catalog tools each get their handler by name; snapshots and events for the `jobs` topic are pushed by the test cases.
  */
 export class FakeClient {
   state: { status: string; reason?: string } = { status: 'connected' };
@@ -31,7 +30,7 @@ export class FakeClient {
     return handler(params);
   }
 
-  /** 调过的工具名（`catalog.call`）。 */
+  /** Names of the tools called (`catalog.call`). */
   toolCalls(): string[] {
     return this.calls.filter((call) => call.method === 'catalog.call').map((call) => call.params.name as string);
   }
@@ -66,7 +65,7 @@ export class FakeClient {
   }
 }
 
-/** 一条任务记录：只填 CLI 读的字段，其余给空值。 */
+/** One task record: only the fields the CLI reads are filled in; the rest are given empty values. */
 export function jobRecord(partial: Partial<JobRecord> & { jobId: string }): JobRecord {
   return {
     kind: 'pipeline',
@@ -94,7 +93,7 @@ export function jobRecord(partial: Partial<JobRecord> & { jobId: string }): JobR
   } as JobRecord;
 }
 
-/** 收下 stdout / stderr 的输出（JSON 信封或给人读的文字）。 */
+/** Collects the stdout / stderr output (a JSON envelope or human-readable text). */
 export function captureOutput(json = true) {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
@@ -108,7 +107,7 @@ export function captureOutput(json = true) {
     stderr,
     out: () => out,
     err: () => err,
-    /** stdout 上最后一个 JSON 信封。 */
+    /** The last JSON envelope on stdout. */
     envelope: () => JSON.parse(out.trim().split('\n').at(-1) ?? '{}') as Record<string, any>,
   };
 }

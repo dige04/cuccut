@@ -1,16 +1,10 @@
-// Anthropic 的文本模型（`generateText`，架构设计 §6.4）：Messages 原生适配器。2026-09-25 读过的文档：
+// Anthropic text model (`generateText`, architecture design §6.4): native Messages adapter. Documents read on 2026-09-25:
 //   https://platform.claude.com/docs/en/api/messages
 //   https://platform.claude.com/docs/en/about-claude/models/overview
 //   https://platform.claude.com/docs/en/about-claude/pricing
-// 文档确认的：`POST {base}/v1/messages`（JSON；`x-api-key` 与 `anthropic-version: 2023-06-01` 请求头）；系统消息放顶层
-// `system`；`max_tokens` 必须给出；结构化输出是 `output_config.format: { type: 'json_schema', schema }`，推理强度是
-// `output_config.effort`（low / medium / high）；响应的 `content[]` 里 `text` 块是正文、`thinking` 块跳过；`stop_reason`
-// 为 end_turn / stop_sequence / max_tokens / refusal；`usage.input_tokens` 不含缓存命中，另有 `cache_read_input_tokens`；
-// 错误体 `{ error: { type, message } }`；`GET {base}/v1/models` 返回 `data[].id`。
-// 模型：claude-opus-5-5 与 claude-sonnet-5-5 上下文 1M、单次输出至多 128K，不接受采样参数（temperature 等），推理强度默认
-// 分别是 medium 与 high；claude-haiku-4-5 上下文 200K、输出 64K，不能调推理强度，接受 temperature。没有 `seed`。
-// 取舍：请求不用流式，单次输出按 64K 声明（更长的输出不流式容易超过请求的期限）；不开 extended thinking。默认模型选均衡的
-// claude-sonnet-5-5。模型 ID 不带日期后缀。
+// Confirmed by the docs: `POST {base}/v1/messages` (JSON; `x-api-key` and `anthropic-version: 2023-06-01` request headers). The system message goes in the top-level `system`. `max_tokens` must be given. Structured output is `output_config.format: { type: 'json_schema', schema }`, and reasoning effort is `output_config.effort` (low / medium / high). In the response's `content[]`, `text` blocks are the body and `thinking` blocks are skipped. `stop_reason` is end_turn / stop_sequence / max_tokens / refusal. `usage.input_tokens` excludes cache hits, and `cache_read_input_tokens` is separate. The error body is `{ error: { type, message } }`. `GET {base}/v1/models` returns `data[].id`.
+// Models: claude-opus-5-5 and claude-sonnet-5-5 have a 1M context and at most 128K output per call, do not accept sampling parameters (temperature etc.), and their default reasoning efforts are medium and high respectively. claude-haiku-4-5 has a 200K context and 64K output, cannot adjust reasoning effort, and accepts temperature. There is no `seed`.
+// Trade-offs: requests are not streamed, and single output is declared at 64K (longer output without streaming easily exceeds the request deadline). Extended thinking is not turned on. The default model is the balanced claude-sonnet-5-5. Model IDs have no date suffix.
 import { ProviderFailure, type TextReply } from '@cuccut/models';
 import type { TextFinishReason, TextModelInfo } from '@cuccut/protocol';
 import { textTimeoutMs, type AdapterConfig, type AdapterHttp, type ModelLister, type ProviderListing, type TextAdapter, type TextRequest } from '../adapter.ts';
@@ -68,7 +62,7 @@ export class AnthropicTextAdapter implements TextAdapter, ModelLister {
     return parseAnthropicMessage(response.json(), this.version);
   }
 
-  /** `GET {base}/v1/models`：`data[].id`。也用来验证密钥。 */
+  /** `GET {base}/v1/models`: `data[].id`. Also used to verify the key. */
   async listModels(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp): Promise<ProviderListing> {
     const response = await providerFetch(httpOptions(LABEL, config, { ...http, attempts: 1 }), {
       method: 'GET',
@@ -131,7 +125,7 @@ export function parseAnthropicMessage(value: unknown, version: string): TextRepl
   };
 }
 
-/** 输入换成「总数含缓存」：`input_tokens` 不含缓存的读与写。 */
+/** Input becomes “total including cache”: `input_tokens` excludes cache reads and writes. */
 function usageOf(usage: Record<string, unknown>): NonNullable<TextReply['usage']> {
   const input = countOf(usage.input_tokens);
   const cacheRead = countOf(usage.cache_read_input_tokens) ?? 0;
@@ -150,7 +144,7 @@ function finishOf(value: unknown): TextFinishReason {
   throw new ProviderFailure('protocol', PH.unexpectedFinish({ label: LABEL, reason: String(value).slice(0, 40) }).text);
 }
 
-/** 错误体 `{ error: { type, message } }`：提示过长 → `INPUT_TOO_LONG`；余额不足 → 额度用尽；模型不存在 → `model-not-found`。 */
+/** Error body `{ error: { type, message } }`: prompt too long → `INPUT_TOO_LONG`; insufficient balance → quota exhausted; model not found → `model-not-found`. */
 export function classifyAnthropic(status: number, body: string): { code: RejectionCode; reason?: string } | null {
   let type: string | null = null;
   let message = '';
@@ -159,7 +153,7 @@ export function classifyAnthropic(status: number, body: string): { code: Rejecti
     type = typeof parsed.error?.type === 'string' ? parsed.error.type : null;
     message = typeof parsed.error?.message === 'string' ? parsed.error.message : '';
   } catch {
-    // 不是 JSON：按状态码。
+    // Not JSON: classify by status code.
   }
   if (type === 'authentication_error' || type === 'permission_error') return { code: 'PROVIDER_AUTH_FAILED' };
   if (/credit balance|billing/i.test(message)) return { code: 'PROVIDER_QUOTA_EXCEEDED', reason: 'insufficient-quota' };

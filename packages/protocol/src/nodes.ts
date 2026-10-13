@@ -1,37 +1,36 @@
 /**
- * 局域网节点（架构设计 §6.7；节点协议规范）：一台机器把本地模型能力共享给局域网里的其他机器。
+ * LAN node (architecture design §6.7; node protocol spec): one machine shares its local model capabilities with other machines on the LAN.
  *
- * 本文件有两部分：
- * - 节点服务的 HTTP 合同（`/v1/...`）：健康、配对、任务、事件与错误。这是两台 Runtime 之间的线上格式，
- *   与本机网关的 RPC 分开。
- * - 本机网关上的 `nodes` 方法的参数与结果（规范 §10），登记在 `RpcMethods`。
+ * This file has two parts:
+ * - The HTTP contract of the node service (`/v1/...`): health, pairing, tasks, events and errors. This is the wire format between two Runtimes, separate from the local gateway RPC.
+ * - The parameters and results of the `nodes` methods on the local gateway (spec §10), registered in `RpcMethods`.
  */
 
-/** 节点协议版本（规范 §1）。 */
+/** Node protocol version (spec §1). */
 export const NODE_PROTOCOL_VERSION = 1;
-/** 节点接受的最低协议版本；低于它的请求以 `426 PROTOCOL_VERSION_UNSUPPORTED` 拒绝。 */
+/** The lowest protocol version a node accepts; requests below it are rejected with `426 PROTOCOL_VERSION_UNSUPPORTED`. */
 export const NODE_MIN_PROTOCOL_VERSION = 1;
-/** 版本门的请求头（规范 §2）。 */
+/** Request header for the version gate (spec §2). */
 export const NODE_PROTOCOL_HEADER = 'X-CucCut-Node-Protocol';
-/** 节点服务的默认端口。 */
+/** Default port of the node service. */
 export const NODE_DEFAULT_PORT = 47610;
-/** mDNS 服务类型（规范 §12）。 */
+/** mDNS service type (spec §12). */
 export const NODE_SERVICE_TYPE = '_cuccut-node._tcp';
 export const NODE_HEALTH_SCHEMA = 'cuccut.node-health/v1';
 /**
- * 节点支持共享的模型能力（规范 §10、§11）：`nodes.share.setCapability` 只接受这些，`ShareStatus.capabilities` 每种一项。
- * 将来加进来的能力对已经开启过共享的节点默认关闭，由主人打开。
+ * Model capabilities a node can share (spec §10, §11): `nodes.share.setCapability` accepts only these, and `ShareStatus.capabilities` has one entry for each.
+ * Capabilities added later default to off for nodes that have already turned sharing on; the owner turns them on.
  */
 export const NODE_SHAREABLE_CAPABILITIES = ['transcribe'] as const;
 export type NodeShareableCapability = (typeof NODE_SHAREABLE_CAPABILITIES)[number];
 
-// ---- §3 健康 ----
+// ---- §3 Health ----
 
 export interface NodeHealth {
   schema: typeof NODE_HEALTH_SCHEMA;
-  /** 节点第一次开启共享时生成，之后不变。 */
+  /** Generated the first time the node turns sharing on; unchanged afterwards. */
   nodeId: string;
-  /** 给人看的名字，默认主机名。 */
+  /** Human-readable name; defaults to the hostname. */
   name: string;
   nodeProtocolVersion: number;
   minNodeProtocolVersion: number;
@@ -40,20 +39,20 @@ export interface NodeHealth {
   capabilities: {
     transcribe: {
       enabled: boolean;
-      /** `state` 同 `models.list`。 */
+      /** `state`, same as `models.list`. */
       bundles: Array<{ bundleId: string; backend: string; device: string; state: string }>;
-      /** 正在执行的任务数（含本机任务）。 */
+      /** Number of tasks running (including local tasks). */
       running: number;
       queued: number;
     };
   };
 }
 
-// ---- §4 配对 ----
+// ---- §4 Pairing ----
 
 export interface NodePairRequest {
   code: string;
-  /** 发起端 Runtime Home 里持久的随机标识；不含 `.`。 */
+  /** Random identifier kept persistently in the initiating side's Runtime Home; does not contain `.`. */
   clientId: string;
   clientName: string;
 }
@@ -61,34 +60,34 @@ export interface NodePairRequest {
 export interface NodePairResponse {
   nodeId: string;
   name: string;
-  /** `<clientId>.<secret>`，`secret` 是 32 字节随机数的 base64url。 */
+  /** `<clientId>.<secret>`, where `secret` is 32 random bytes encoded as base64url. */
   token: string;
 }
 
-// ---- §5 任务 ----
+// ---- §5 Tasks ----
 
-/** 与 Model Worker 协议规范 §2.5 的 `TranscribeOptions` 同形，原样传给 Worker。 */
+/** Same shape as `TranscribeOptions` in Model Worker protocol spec §2.5; passed to the Worker unchanged. */
 export interface NodeTranscribeOptions {
   language: { mode: 'assert'; tag: string } | { mode: 'prefer'; tag: string | null };
   diarize: boolean;
-  /** 术语与上下文，≤ 1200 字符。 */
+  /** Terms and context, ≤ 1200 characters. */
   hint?: string;
-  /** 输出的 tick 单位，默认 1_000_000。 */
+  /** Tick unit of the output, default 1_000_000. */
   timescale: number;
 }
 
 export interface NodeJobRequest {
-  /** 幂等键：发起端的 jobId 加尝试序号。 */
+  /** Idempotency key: the initiator's jobId plus the attempt number. */
   clientJobId: string;
   kind: 'transcribe';
   bundleId: string;
   input: {
-    /** `sha256:<hex>`，媒体文件的内容摘要。 */
+    /** `sha256:<hex>`, the content digest of the media file. */
     contentHash: string;
     byteLength: number;
     mediaType: string;
     track: number;
-    /** tick（`options.timescale`），同 Model Worker 协议。 */
+    /** Tick (`options.timescale`), same as the Model Worker protocol. */
     range: { start: number; end: number } | null;
   };
   options: NodeTranscribeOptions;
@@ -100,17 +99,17 @@ export interface NodeJob {
   jobId: string;
   clientJobId: string;
   state: NodeJobState;
-  /** 同 `jobs` 主题的 phase；等待上传时为 `awaiting-input`。 */
+  /** Same phase as the `jobs` topic; `awaiting-input` while waiting for an upload. */
   phase: string;
   progress: { done: number; total: number | null; unit: 'seconds' | 'segments' } | null;
   attempt: number;
   error: { code: string; message: string; details?: unknown } | null;
-  /** completed 时给出；sha256 是小写十六进制。 */
+  /** Given when completed; sha256 is lowercase hex. */
   output: { sha256: string; byteLength: number } | null;
   lastSeq: number;
 }
 
-// ---- §6 事件流 ----
+// ---- §6 Event stream ----
 
 export type NodeJobEvent =
   | { seq: number; type: 'job'; job: NodeJob }
@@ -118,7 +117,7 @@ export type NodeJobEvent =
   | { seq: number; type: 'language'; tag: string; confidence: number | null }
   | { type: 'heartbeat' };
 
-// ---- §8 错误 ----
+// ---- §8 Errors ----
 
 export const NODE_ERROR = {
   INVALID_REQUEST: 'INVALID_REQUEST',
@@ -141,7 +140,7 @@ export const NODE_ERROR = {
 
 export type NodeErrorCode = (typeof NODE_ERROR)[keyof typeof NODE_ERROR];
 
-/** 每个错误码对应的 HTTP 状态（规范 §8）。 */
+/** HTTP status for each error code (spec §8). */
 export const NODE_ERROR_STATUS: Record<NodeErrorCode, number> = {
   INVALID_REQUEST: 400,
   UNAUTHORIZED: 401,
@@ -161,38 +160,38 @@ export const NODE_ERROR_STATUS: Record<NodeErrorCode, number> = {
   DISK_LOW: 507,
 };
 
-/** 任务自身失败（`NodeJob.error`）时节点特有的两个错误码；其余沿用模型类错误码。 */
+/** The two node-specific error codes for when the task itself fails (`NodeJob.error`); the rest reuse the model error codes. */
 export const NODE_JOB_ERROR = {
   INPUT_HASH_MISMATCH: 'INPUT_HASH_MISMATCH',
   INPUT_EXPIRED: 'INPUT_EXPIRED',
 } as const;
 
-/** 非 2xx 响应体。 */
+/** Body of a non-2xx response. */
 export interface NodeErrorBody {
   error: { code: NodeErrorCode; message: string; details?: Record<string, unknown> };
 }
 
-// ---- §10 本机网关的 nodes 方法 ----
+// ---- §10 nodes methods on the local gateway ----
 
 export interface ShareStatus {
-  /** 用户的开关，持久。 */
+  /** The user's switch; persistent. */
   enabled: boolean;
-  /** 节点服务此刻是否在监听。 */
+  /** Whether the node service is listening right now. */
   listening: boolean;
-  /** 开着却没有监听的原因（例如端口被占用）。 */
+  /** Why it is on but not listening (e.g. the port is in use). */
   error: string | null;
   nodeId: string | null;
   name: string;
-  /** 监听时为实际绑定的端口，否则为设置的端口。 */
+  /** The port actually bound while listening; otherwise the configured port. */
   port: number;
-  /** 此刻能连上的地址：监听所有接口时为本机非回环的 IPv4 地址，绑定具体地址时只有它，没在监听时为空。 */
+  /** Addresses reachable right now: when listening on all interfaces, the machine's non-loopback IPv4 addresses; when bound to one specific address, only that one; empty when not listening. */
   addresses: string[];
   allowAnySource: boolean;
-  /** 每种可共享的模型能力一项（`NODE_SHAREABLE_CAPABILITIES`）；持久。关闭的能力新任务以 `403 CAPABILITY_DISABLED` 拒绝。 */
+  /** One entry for each shareable model capability (`NODE_SHAREABLE_CAPABILITIES`); persistent. A disabled capability rejects new tasks with `403 CAPABILITY_DISABLED`. */
   capabilities: Record<string, { enabled: boolean }>;
   pairing: { code: string; expiresAt: string } | { lockedUntil: string } | null;
   clients: Array<{ clientId: string; name: string; pairedAt: string; lastSeenAt: string | null }>;
-  /** 这台节点上的远端任务。 */
+  /** Remote tasks on this node. */
   jobs: { running: number; queued: number };
 }
 
@@ -211,30 +210,29 @@ export interface DiscoveredNode {
 
 export interface PairedNode {
   nodeId: string;
-  /** 本机唯一；默认取节点的 name，冲突时加序号。 */
+  /** Unique on this machine; defaults to the node's name, with a sequence number added on conflict. */
   alias: string;
   name: string;
   host: string;
   port: number;
   pairedAt: string;
-  /** 探测不到时为 null。 */
+  /** null when it cannot be probed. */
   health: NodeHealth | null;
   /**
-   * `unreachable`：连不上、超时或来源地址被拒；`version`：协议版本不兼容；`unpaired`：令牌已被吊销、
-   * 本机读不到它的令牌（凭据存储不可用），或这个地址上已经是另一台节点（`nodeId` 不同）。
+   * `unreachable`: cannot connect, timed out, or the source address was rejected; `version`: protocol version incompatible; `unpaired`: the token was revoked, this machine cannot read its token (credential store unavailable), or another node is already at this address (different `nodeId`).
    */
   problem: 'unreachable' | 'version' | 'unpaired' | null;
 }
 
-// ---- §9 发起端的任务错误 ----
+// ---- §9 Task errors on the initiating side ----
 
-/** 发起端的错误码（命令与协议规范 §11.3）：任务的 `error.code`，或 `nodes.pair` 失败时 `RpcError.details.code`。 */
+/** Error codes on the initiating side (command and protocol spec §11.3): a task's `error.code`, or `RpcError.details.code` when `nodes.pair` fails. */
 export const REMOTE_NODE_ERROR = {
   LOST: 'REMOTE_NODE_LOST',
   REJECTED: 'REMOTE_NODE_REJECTED',
 } as const;
 
-/** `REMOTE_NODE_REJECTED` 的 `details.reason`：任务的预检与请求用前八个，`nodes.pair` 用后两个与 `version`、`source-not-allowed`。 */
+/** `details.reason` of `REMOTE_NODE_REJECTED`: the first eight are used for task pre-checks and requests; `nodes.pair` uses the last two, `version` and `source-not-allowed`. */
 export type RemoteNodeRejectReason =
   | 'unpaired'
   | 'version'
@@ -247,5 +245,5 @@ export type RemoteNodeRejectReason =
   | 'pairing-code-invalid'
   | 'pairing-locked';
 
-/** `REMOTE_NODE_LOST` 的 `details.reason`。 */
+/** `details.reason` of `REMOTE_NODE_LOST`. */
 export type RemoteNodeLostReason = 'unreachable' | 'stream-lost' | 'node-restarted';

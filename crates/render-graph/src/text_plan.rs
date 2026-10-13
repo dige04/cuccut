@@ -1,15 +1,11 @@
-//! 文字的时间线投影（架构设计 §9.13 的字幕与文稿导出，格式规范 §5.7 EditedSpeechView）：字幕文档的句子、转写文档的词
-//! 在剪辑之后的序列上出现在哪里。规则与预览画字幕一致（[`plan_frame`](super::plan_frame) 的字幕分支）：
+//! Timeline projection of text (architecture design §9.13 subtitle and transcript export, format spec §5.7 EditedSpeechView): where the caption sentences and transcript words appear on the sequence after editing. The rules match preview's caption drawing (the caption branch of [`plan_frame`](super::plan_frame)):
 //!
-//! - 文档在源素材时钟上时，经过作用实例的时间映射投到序列上：`seq = itemStart + (src − sourceIn) / rate`；
-//!   落在所有作用实例取用的源区间之外的（剪掉的话）不出现，跨过剪点的裁到实例的边上。
-//! - 几个作用实例同时覆盖一刻时，逐帧计划用列表里第一个覆盖着的实例；这里按同样的先后，后面的实例只投它没被前面
-//!   覆盖的那部分。同一段源被用了两次（两个实例），句子出现两次（两个 occurrence）。
-//! - 定格的实例（速度 0）与没有源素材的合成不能投影。
-//! - 文档时间已经是序列时间（`clock: 'sequence'`）时不经映射，只裁到字幕实例的区间。
+//! - When the document is on the source-asset clock, it is projected onto the sequence through the time mapping of the active item instance: `seq = itemStart + (src − sourceIn) / rate`. Parts outside the source ranges used by all active instances (cut away) do not appear, and parts spanning a cut point are trimmed to the instance's edges.
+//! - When several active instances cover the same moment, the per-frame plan uses the first covering instance in the list; here the same precedence applies, so a later instance only projects the part not already covered by earlier ones. When the same source is used twice (two instances), a sentence appears twice (two occurrences).
+//! - Freeze-frame instances (speed 0) and compositions without source material cannot be projected.
+//! - When the document time is already sequence time (`clock: 'sequence'`), no mapping is applied; it is only trimmed to the caption instance's span.
 //!
-//! 作用范围按这个顺序确定：调用方明确给的实例；显示这份文档的字幕实例（各自的作用实例与区间）；文档描述的素材在
-//! 时间线上的所有实例。全部用精确的有理数算，到序列化时才变成秒。
+//! The scope of active instances is determined in this order: the instances the caller explicitly passes; the caption instances that display this document (each with its own active instances and span); all instances on the timeline of the document's source asset. Everything is computed with exact rational numbers and only converted to seconds at serialization.
 
 use editor_semantics::{MediaTime, Ratio, TimeMap, map_time};
 use serde::Serialize;
@@ -19,40 +15,39 @@ use video_model::{CompositionSource, DocumentRecord, FrameSpan, Id, Sequence, Ti
 use super::{PlanError, VideoView, audio_bounds, checked_fps, span_bounds};
 use crate::audio_plan::{PlanRange, resolve_range};
 
-/// 投影的依据：用了哪些作用实例。
+/// Basis of the projection: which active instances were used.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextScope {
-    /// `explicit`（调用方给的）、`caption-items`（显示这份文档的字幕实例）、`asset-items`（文档素材的实例）、`sequence`（不经映射）。
+    /// `explicit` (passed by the caller), `caption-items` (caption instances displaying this document), `asset-items` (instances of the document's asset), `sequence` (no mapping applied).
     pub basis: String,
     pub caption_item_ids: Vec<Id>,
     pub scope_item_ids: Vec<Id>,
 }
 
-/// 投到序列上的一句字幕或一个词。
+/// A caption sentence or a word projected onto the sequence.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextEntry {
-    /// occurrence：`<作用实例>:<文档里的 ID>`；同一段源用了两次时各一条。不经映射时就是文档里的 ID。
+    /// occurrence: `<active instance>:<ID in the document>`; one entry each time the same source is used. Without mapping, it is the ID in the document.
     pub key: String,
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_item_id: Option<Id>,
-    /// 秒，相对导出范围的起点。
+    /// Seconds, relative to the start of the export range.
     pub start: f64,
     pub end: f64,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
-    /// 转写文档的句子 ID（文档有句子切分时）。
+    /// Sentence ID of a transcript word, when the document has sentence segmentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentence_id: Option<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub paragraph_start: bool,
-    /// 时间是这个词自己的（对齐或服务商给的）。整段文字作为一个「词」、或按字符长度插值出来的词为 false：
-    /// 它们只能当整段的时间用，不能冒充逐词同步（验收 AT-05）。字幕句子始终为 false（句级）。
+    /// The timing belongs to this word itself (from alignment or provided by the service). A whole passage written as one “word”, or a word interpolated by character length, is false: those can only be used as the timing of the whole passage and must not pass for word-by-word sync (acceptance AT-05). Caption sentences are always false (sentence level).
     pub word_timing: bool,
-    /// 被剪点或导出范围裁过。
+    /// Trimmed by a cut point or the export range.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub clipped: bool,
 }
@@ -62,19 +57,19 @@ pub struct TextEntry {
 pub struct TextPlan {
     pub sequence_id: Id,
     pub document_id: Id,
-    /// `caption`（句子）或 `speech`（词）。
+    /// `caption` (sentence) or `speech` (word).
     pub unit: String,
     pub clock: String,
     pub scope: TextScope,
     pub range: PlanRange,
-    /// 按开始时刻排，同一刻按 occurrence。
+    /// Sorted by start time; at the same moment, by occurrence.
     pub entries: Vec<TextEntry>,
-    /// 文档里的条目数与投影之后完全不出现的条目数（剪掉的、范围之外的）。
+    /// The number of entries in the document, and the number of entries that do not appear at all after projection (cut, or outside the range).
     pub source_count: usize,
     pub omitted_count: usize,
 }
 
-/// 文档里的一条：源时间（或序列时间）区间与文字。
+/// One entry in the document: its source (or sequence) time span and text.
 struct SourceEntry {
     id: String,
     start: Ratio,
@@ -86,10 +81,10 @@ struct SourceEntry {
     word_timing: bool,
 }
 
-/// 一个作用实例能投影的部分：映射与它独占的序列区间（已经扣掉前面的实例、裁到字幕区间与导出范围）。
+/// The part one active instance can project: its mapping and the sequence span it exclusively owns (after subtracting earlier instances, trimmed to the caption span and export range).
 struct Projector {
     item_id: Option<Id>,
-    /// `None` 表示不经映射（文档时间就是序列时间）。
+    /// `None` means no mapping (document time is sequence time).
     map: Option<(Ratio, TimeMapRef)>,
     windows: Vec<(Ratio, Ratio)>,
 }
@@ -101,13 +96,13 @@ struct TimeMapRef {
 }
 
 impl TimeMapRef {
-    /// 源时刻 → 序列时刻（`item_start + (src − sourceIn) / rate`）。
+    /// Source time → sequence time (`item_start + (src − sourceIn) / rate`).
     fn to_sequence(self, item_start: Ratio, source: Ratio) -> Option<Ratio> {
         item_start.checked_add(source.checked_sub(self.source_in)?.checked_div(self.rate)?)
     }
 }
 
-/// 投影 `document` 的正文。`scope_item_ids` 不为空时只用这些实例。
+/// Project the body of `document`. When `scope_item_ids` is not empty, only these instances are used.
 pub fn plan_text(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -119,7 +114,7 @@ pub fn plan_text(
     plan_text_scan(video, sequence_id, document, body, scope_item_ids, range, false)
 }
 
-/// `full_scan` 时每一条都与每个作用实例试一遍（测试拿它对照）；否则只试源区间可能落进实例窗口的条目。
+/// With `full_scan`, every entry is tried against every active instance (tests use this as a reference); otherwise only entries whose source span may fall into the instance's window are tried.
 fn plan_text_scan(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -148,9 +143,8 @@ fn plan_text_scan(
     let clock = body.get("clock").and_then(Value::as_str).unwrap_or("source-asset").to_string();
     let (scope, projectors) = projectors(sequence, document, &clock, scope_item_ids, (range_start, range_end))?;
 
-    // 上千个实例 × 上千个词逐对算精确的有理数映射要几十秒（长时间线打开时预览的说话人与字幕、内容索引都卡在这里）：
-    // 每个实例只试开始时刻可能落进它窗口的条目（按开始时刻排好后二分），再按原来的（条目，实例）先后逐对投影，
-    // 结果与逐对试完全一样。
+    // Computing exact rational mappings pairwise for thousands of instances × thousands of words takes tens of seconds (on long timelines, the speaker and caption preview and the content index get stuck here):
+    // each instance only tries entries whose start time may fall in its window (sorted by start time, then binary search), then projects pair by pair in the original (entry, instance) order. The result is exactly the same as trying every pair.
     let (count, scopes) = (entries.len(), projectors.len());
     let pairs: Box<dyn Iterator<Item = (usize, usize)>> = match (!full_scan).then(|| candidate_pairs(&entries, &projectors)).flatten() {
         Some(pairs) => Box::new(pairs.into_iter()),
@@ -211,9 +205,8 @@ fn plan_text_scan(
     })
 }
 
-/// 要逐对投影的（条目，实例），按条目、再按实例的先后。实例窗口在源时钟上是 `[lo, hi)`（映射单调递增：速度为正），
-/// 条目能投进去必须 `start < hi` 且 `end > lo`；条目最长 `longest`，所以只要看开始时刻落在 `(lo − longest, hi)` 的。
-/// 窗口全被前面的实例占了的实例不投任何东西，直接略过。有理数溢出算不出界时返回 `None`，退回逐对试。
+/// The (entry, instance) pairs to project pairwise, ordered by entry, then by instance. The instance window on the source clock is `[lo, hi)` (the mapping is monotonically increasing: speed is positive). An entry can project into it only if `start < hi` and `end > lo`; entries last at most `longest`, so only those whose start falls in `(lo − longest, hi)` need checking.
+/// An instance whose window is fully taken by earlier instances projects nothing and is skipped. When rational overflow makes the bounds impossible to compute, returns `None` and falls back to pairwise trial.
 fn candidate_pairs(entries: &[SourceEntry], projectors: &[Projector]) -> Option<Vec<(usize, usize)>> {
     let mut order: Vec<usize> = (0..entries.len()).collect();
     order.sort_by(|&x, &y| entries[x].start.cmp(&entries[y].start));
@@ -235,7 +228,7 @@ fn candidate_pairs(entries: &[SourceEntry], projectors: &[Projector]) -> Option<
     Some(pairs)
 }
 
-/// 实例窗口的并集在源时钟上的外沿 `[lo, hi)`：`src = sourceIn + (seq − itemStart) × rate`。没有窗口时 `Some(None)`。
+/// The outer edge `[lo, hi)` on the source clock of the union of the instance windows: `src = sourceIn + (seq − itemStart) × rate`. With no windows, `Some(None)`.
 fn source_window(projector: &Projector) -> Option<Option<(Ratio, Ratio)>> {
     let (Some(from), Some(to)) = (
         projector.windows.iter().map(|w| w.0).min(),
@@ -250,7 +243,7 @@ fn source_window(projector: &Projector) -> Option<Option<(Ratio, Ratio)>> {
     Some(Some((back(from)?, back(to)?)))
 }
 
-/// 作用实例与各自独占的区间。
+/// Active instances and the span each one exclusively owns.
 fn projectors(
     sequence: &Sequence,
     document: &DocumentRecord,
@@ -260,7 +253,7 @@ fn projectors(
 ) -> Result<(TextScope, Vec<Projector>), PlanError> {
     let fps = checked_fps(sequence)?;
     let whole = range;
-    // 每个候选：作用实例（None 表示不经映射）与限定它的区间（字幕实例的 span；没有字幕实例时不限）。
+    // Each candidate: an active instance (None means no mapping) and the span limiting it (the caption instance's span; unlimited when there is no caption instance).
     let mut candidates: Vec<(Option<&TimelineItem>, (Ratio, Ratio))> = Vec::new();
     let mut caption_item_ids: Vec<Id> = Vec::new();
     let basis;
@@ -368,7 +361,7 @@ fn projectors(
     ))
 }
 
-/// 显示这份文档的字幕实例（启用的），按区间的起点排。
+/// Caption instances that display this document (enabled), sorted by span start.
 fn displaying<'a>(sequence: &'a Sequence, document_id: &Id) -> Vec<(&'a Id, FrameSpan)> {
     let mut found: Vec<(&Id, FrameSpan)> = sequence
         .items
@@ -382,7 +375,7 @@ fn displaying<'a>(sequence: &'a Sequence, document_id: &Id) -> Vec<(&'a Id, Fram
     found
 }
 
-/// 实例取用的素材：视频与音频的素材，合成的预渲染替身（没有时是代码包）。与逐帧计划的 `scope_at` 相同。
+/// Assets used by the instance: video and audio assets, the pre-rendered substitute of a composition (or the code package if none). Same as `scope_at` in the per-frame plan.
 fn source_asset(item: &TimelineItem) -> Option<Id> {
     match item {
         TimelineItem::Video(v) => Some(v.asset_ref.id.clone()),
@@ -395,7 +388,7 @@ fn source_asset(item: &TimelineItem) -> Option<Id> {
     }
 }
 
-/// 能投影的实例的线性映射；定格、速度不为正、没有源的实例返回 `None`。
+/// Linear mapping of a projectable instance. Freeze-frame, non-positive speed, or sourceless instances return `None`.
 fn linear_map(item: &TimelineItem) -> Result<Option<TimeMapRef>, PlanError> {
     if source_asset(item).is_none() {
         return Ok(None);
@@ -414,7 +407,7 @@ fn linear_map(item: &TimelineItem) -> Result<Option<TimeMapRef>, PlanError> {
             if rate <= Ratio::ZERO {
                 return Ok(None);
             }
-            // 与逐帧计划共用 `map_time`：确认 sourceIn 合法。
+            // Shares `map_time` with the per-frame plan: confirms that sourceIn is valid.
             map_time(time_map, Ratio::ZERO, Ratio::ZERO)?;
             Ok(Some(TimeMapRef {
                 source_in: source_in.to_ratio("sourceIn")?,
@@ -424,7 +417,7 @@ fn linear_map(item: &TimelineItem) -> Result<Option<TimeMapRef>, PlanError> {
     }
 }
 
-/// 实例在序列上占的区间：音频实例在采样级，其他按帧。
+/// The span an instance occupies on the sequence: audio instances at sample level, others at frame level.
 fn item_bounds(item: &TimelineItem, fps: editor_semantics::Rate) -> Result<(Ratio, Ratio), PlanError> {
     match item {
         TimelineItem::Audio(a) => audio_bounds(a, fps),
@@ -432,14 +425,12 @@ fn item_bounds(item: &TimelineItem, fps: editor_semantics::Rate) -> Result<(Rati
     }
 }
 
-/// 前面的候选已经占去的区间。上千个实例时逐对扣是平方级，这里记成按起点排好、互不相接（前一段的终点严格小于后一段的
-/// 起点）的并集，扣与并都二分。`explicit` 与 `caption-items` 的候选不按起点排，所以并入时一般地找出重叠或相接的那几段。
+/// Spans already taken by earlier candidates. With thousands of instances, subtracting pairwise is quadratic, so the taken spans are kept as a union sorted by start, with segments that neither overlap nor touch (the end of one segment is strictly less than the start of the next); both subtraction and union use binary search. The `explicit` and `caption-items` candidates are not sorted by start, so merging finds the segments that overlap or touch in general.
 #[derive(Default)]
 struct Taken(Vec<(Ratio, Ratio)>);
 
 impl Taken {
-    /// `interval` 扣掉已占的区间之后剩下的部分（按先后）。与逐对扣（测试里的 `subtract_pairwise`）相同：都是 `interval`
-    /// 去掉这些开区间之后长度不为零的段，端点取自同样的值（`Ratio` 总是约分，相等就是同一个值）。
+    /// The part of `interval` left after subtracting the taken spans (in order). Same as pairwise subtraction (`subtract_pairwise` in the tests): the non-zero-length pieces of `interval` after removing these open intervals, with endpoints taken from the same values (`Ratio` is always reduced, so equal means the same value).
     fn subtract(&self, (start, end): (Ratio, Ratio)) -> Vec<(Ratio, Ratio)> {
         let mut parts = Vec::new();
         let mut cur = start;
@@ -457,7 +448,7 @@ impl Taken {
     }
 
     fn add(&mut self, (start, end): (Ratio, Ratio)) {
-        // 与它重叠或相接的是 `first..last`；整个落在一段里时换上的还是那一段。
+        // The ones that overlap or touch it are `first..last`; if it falls entirely within one segment, the replacement is that segment.
         let first = self.0.partition_point(|&(_, b)| b < start);
         let last = self.0.partition_point(|&(a, _)| a <= end);
         let (mut lo, mut hi) = (start, end);
@@ -469,7 +460,7 @@ impl Taken {
     }
 }
 
-/// `interval` 扣掉 `taken` 里的区间之后剩下的部分（按先后）：逐对扣，测试拿它与 `Taken` 对照。
+/// The part of `interval` left after subtracting the spans in `taken` (in order). Pairwise subtraction; the tests compare `Taken` against it.
 #[cfg(test)]
 fn subtract_pairwise(interval: (Ratio, Ratio), taken: &[(Ratio, Ratio)]) -> Vec<(Ratio, Ratio)> {
     let mut parts = vec![interval];
@@ -492,7 +483,7 @@ fn subtract_pairwise(interval: (Ratio, Ratio), taken: &[(Ratio, Ratio)]) -> Vec<
     parts
 }
 
-// ---- 文档正文 ----
+// ---- Document body ----
 
 fn timescale(body: &Value) -> Result<i64, PlanError> {
     match body.get("timescale").and_then(Value::as_i64) {
@@ -520,7 +511,7 @@ fn string_field(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_string)
 }
 
-/// 字幕文档的句子：空白的句子不显示（与时间线一致），时间反了的报错。
+/// Caption document sentences: blank sentences are not shown (consistent with the timeline); reversed times are an error.
 fn caption_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
     let timescale = timescale(body)?;
     let cues = body
@@ -552,8 +543,7 @@ fn caption_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
     Ok(entries)
 }
 
-/// 零时长的词在后面的空隙里占的一段：到下一个词（隐藏的也算，它的时间还在）的起点为止、至多一个对齐格（0.08 秒）；
-/// 后面没有词时补一格；下一个词就从这里开始（没有空隙）时 `None`。与字幕层的 `caption-cues.ts` 同一条规则。
+/// The span a zero-duration word takes in the gap after it: up to the start of the next word (hidden ones count too, since their timing still exists), at most one alignment step (0.08 s). When there is no following word, one step is added. Returns `None` when the next word starts right here (no gap). Same rule as `caption-cues.ts` in the caption layer.
 fn zero_duration_slot(start: Ratio, next_start: Option<Ratio>) -> Option<Ratio> {
     let nominal = start.checked_add(Ratio::new(2, 25)?)?;
     match next_start {
@@ -563,12 +553,9 @@ fn zero_duration_slot(start: Ratio, next_start: Option<Ratio>) -> Option<Ratio> 
     }
 }
 
-/// 转写文档的词。隐藏的词不导出。零时长的词占后面的空隙（`zero_duration_slot`），没有空隙的略过。
-/// 句子切分在文档里时给每个词记上句子与段首。
+/// Words of a transcript document. Hidden words are not exported. A zero-duration word takes the gap after it (`zero_duration_slot`); words with no gap are skipped. When the document has sentence segmentation, each word is tagged with its sentence and whether it starts a paragraph.
 ///
-/// 不是逐词时间的词按两条规则认出来：词上写着 `timingQuality: 'estimated' | 'missing'`（插值的、或整段写成一个词的，
-/// 见 `speech-document.ts`），或者词的文字中间有空白（真正的词不含空白；旧文档没有 `timingQuality`）。
-/// 它们只给整段的时间，不冒充逐词同步（验收 AT-05）。
+/// Words that do not have word-level timing are recognized by two rules: the word has `timingQuality: 'estimated' | 'missing'` (interpolated, or a whole passage written as one word; see `speech-document.ts`), or the word's text contains a space (real words contain no whitespace; old documents have no `timingQuality`). They are given only the timing of the whole passage and do not pass for word-by-word sync (acceptance AT-05).
 fn speech_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
     let timescale = timescale(body)?;
     let words = body
@@ -580,7 +567,7 @@ fn speech_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
         .enumerate()
         .filter_map(|(i, w)| w.get("id").and_then(Value::as_str).map(|id| (id, i)))
         .collect();
-    // 词序号 → (句子 ID, 是否段首)。
+    // Word index → (sentence ID, whether it starts a paragraph).
     let mut sentence_of: Vec<Option<(String, bool)>> = vec![None; words.len()];
     if let Some(sentences) = body.get("sentences").and_then(Value::as_array) {
         for sentence in sentences {
@@ -615,7 +602,7 @@ fn speech_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
         let start = ticks(word.get("start"), timescale, "words[].start")?;
         let mut end = ticks(word.get("end"), timescale, "words[].end")?;
         if end <= start {
-            // 零时长的词（转写给的词时间塌成一点）：后面有空隙就占一小段，下一个词就从这里开始时才略过。
+            // Zero-duration words (word timing from transcription collapsed to a point): if there is a gap after, they take a small slot; they are skipped only when the next word starts right here.
             let next_start = words[i + 1..]
                 .iter()
                 .find_map(|next| ticks(next.get("start"), timescale, "words[].start").ok());
@@ -651,7 +638,7 @@ mod tests {
 
     use super::{Ratio, Taken, VideoView, plan_text_scan, subtract_pairwise};
 
-    /// 夹具视频换成一堆同素材的实例：两条视频轨上前后交错、变速、重复取用同一段源，再加一个音频实例和一个字幕实例。
+    /// The fixture video turned into many instances of the same source: two video tracks alternating front and back, with speed changes, repeatedly reusing the same source span, plus one audio instance and one caption instance.
     fn video(clips: usize) -> VideoSnapshot {
         let mut value: Value = serde_json::from_str(include_str!("../tests/fixtures/video.json")).expect("夹具");
         value["assets"] = json!({ "asset_a": { "id": "asset_a", "kind": "video", "name": "a", "currentRevision": "r1", "revisions": { "r1": {
@@ -728,7 +715,7 @@ mod tests {
         .expect("文档头")
     }
 
-    /// 词与句：大多是短的，夹着跨过剪点的长句、重叠的句子和重复的 ID。
+    /// Words and sentences: mostly short, mixed with long sentences crossing cut points, overlapping sentences, and duplicate IDs.
     fn body(schema: &str, clock: &str) -> Value {
         let mut list = Vec::new();
         for k in 0..400i64 {
@@ -767,7 +754,7 @@ mod tests {
         }
     }
 
-    /// 已占区间并起来扣与逐对扣相同：候选不按起点来（`explicit`、`caption-items`），有交叠、相接、嵌套、同一区间、盖住前面几段的。
+    /// Subtracting the union of taken spans gives the same result as pairwise subtraction. The candidates are not sorted by start (`explicit`, `caption-items`): they overlap, touch, nest, share the same span, or cover several earlier segments.
     #[test]
     fn merged_taken_matches_pairwise_subtract() {
         let mut seed: u64 = 3;
@@ -788,17 +775,17 @@ mod tests {
                 let (start, end) = match raw.get(next(raw.len().max(1) as i128) as usize).copied() {
                     None => fresh(&mut next),
                     Some((a, b)) => match next(6) {
-                        // 接在某段后面或前面
+                        // Adjacent to a segment, after or before it
                         0 => (b, b.checked_add(q(1 + next(30), den)).unwrap()),
                         1 => (a.checked_sub(q(1 + next(30), den)).unwrap(), a),
-                        // 嵌在某段里或与它同一区间
+                        // Nested inside a segment, or the same span as it
                         2 => {
                             let length = b.checked_sub(a).unwrap();
                             let inner = |k: i128| a.checked_add(length.checked_mul(q(k, 8)).unwrap()).unwrap();
                             let from = next(8);
                             (inner(from), inner(from + 1 + next(8 - from)))
                         }
-                        // 盖住某段
+                        // Covers a segment
                         3 => (a.checked_sub(q(next(20), den)).unwrap(), b.checked_add(q(next(20), den)).unwrap()),
                         _ => fresh(&mut next),
                     },

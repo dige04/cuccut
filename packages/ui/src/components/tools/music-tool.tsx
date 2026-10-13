@@ -66,15 +66,15 @@ import type { ToolPreset } from './use-video-tools.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * 设计稿 tool-music.jsx `MusicToolPage`：形式 → 风格（英文描述，芯片可填）→ 歌词（带唱时）→ 时长（目标与上限）→ 规划 → 模型与种子 → 保存位置，
- * 右边生成记录。只用本机模型（音乐生成没有云端服务商）。字段与 Runtime 的 GenerateMusicRequest 同名（model/tools-music.ts）。
- * 从编辑器 AI 工具「生成配乐」进来时（`ToolPreset.soundtrack`）时长按那部视频预填（比模型的单次上限长时预填上限、横幅写明循环铺满），
- * 提交带 `videoId`，做好后 Runtime 把它导入那部视频的素材，编辑器再铺上音乐轨（editor/soundtrack-bed.tsx）。
+ * Design file tool-music.jsx `MusicToolPage`: form → style (an English description, chips can be filled) → lyrics (when sung) → duration (target and maximum) → plan → model and seed → save location,
+ * with the generation records on the right. Only local models are used (music generation has no cloud provider). The fields have the same names as the Runtime's GenerateMusicRequest (model/tools-music.ts).
+ * When entered from the editor's AI tool “生成配乐” (Generate soundtrack) (`ToolPreset.soundtrack`), the duration is pre-filled from that video (if it is longer than the model's single-run maximum, the maximum is pre-filled and the banner states that it will loop to fill),
+ * and the submission carries `videoId`. When done, the Runtime imports it into that video's assets, and the editor then lays the music track down (editor/soundtrack-bed.tsx).
  */
 
 const chips = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 });
 const slider = style({ flexGrow: 1, minWidth: 160 });
-/** 滑块自带的读数写成本地化的「30 秒 / 30 sec」；上限不吃 5 秒步长，跟着目标的「多两成」（如 36）要能原样显示。 */
+/** The slider's built-in readout is localized, e.g. 「30 秒 / 30 sec」. The maximum does not snap to the 5-second step; it follows the target plus “多两成” (20% more), e.g. 36, and must display that value exactly. */
 const SECONDS: Intl.NumberFormatOptions = { style: 'unit', unit: 'second', unitDisplay: 'short' };
 const seedField = style({ width: 140 });
 const card = style({
@@ -94,7 +94,7 @@ const cardTitle = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
 
 type Soundtrack = NonNullable<ToolPreset['soundtrack']>;
 
-/** 生成音乐（本机）。提交走 `models.generateMusic`，记录是 `jobs` 主题里这类任务。 */
+/** Generate music (local). Submission goes through `models.generateMusic`; the records are jobs of this kind in the `jobs` topic. */
 export function MusicTool() {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
@@ -110,7 +110,7 @@ export function MusicTool() {
   const submitFailed = useSubmitFailed('generateMusic', COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
-  // 「生成配乐」带来的那部视频；只活在这一页，提交一次后清掉。
+  // The video brought in by “生成配乐” (Generate soundtrack); it lives only on this page and is cleared after one submission.
   const [soundtrack, setSoundtrack] = useState<Soundtrack | null>(null);
 
   const options = useMemo(() => (view ? musicModelOptions(view) : []), [view]);
@@ -123,7 +123,7 @@ export function MusicTool() {
     setSoundtrack(preset.soundtrack);
     patch(setTarget(draft, soundtrackFor(preset.soundtrack.videoSec, limit).targetDurationSec));
   });
-  // 视频比选中模型的单次上限长：横幅写明会生成上限长度并循环铺满（换了模型按它的上限重新判断）。
+  // The video is longer than the selected model's single-run maximum: the banner states that the maximum length will be generated and looped to fill (switching models re-evaluates against that model's maximum).
   const soundtrackLoop = soundtrack ? soundtrackFor(soundtrack.videoSec, limit).loop : false;
 
   const reason = view ? modelReason(options, option, COPY.noun) : null;
@@ -148,7 +148,7 @@ export function MusicTool() {
           ToastQueue.positive(COPY.submitted, { timeout: 3000 });
           return;
         }
-        // 带视频的任务不进这一页的记录（工具记录只列不带视频的），给一个去后台任务的按钮。
+        // Jobs with a video are not listed in this page's records (tool records list only jobs without a video); a button to go to background jobs is shown instead.
         setSoundtrack(null);
         ToastQueue.positive(COPY.submittedFor(target.videoName), {
           actionLabel: COPY.viewTask,

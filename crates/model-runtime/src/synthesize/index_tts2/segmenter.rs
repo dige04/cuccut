@@ -1,19 +1,18 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2TextSegmenter.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2TextSegmenter.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 长文本切段：对照 speech-swift `IndexTTS2TextSegmenter.swift` 移植。
+//! Long-text segmentation: ported from speech-swift `IndexTTS2TextSegmenter.swift`.
 //!
-//! 与上游 `TextTokenizer.split_segments` 同思路：在句末标点、逗号与连字符后
-//! 切开，再把相邻片段合并回去直到装不下 `max_tokens`。每段独立生成，长文本
-//! 不会超过 GPT 的文本窗口或 mel 预算。
+//! Same approach as upstream `TextTokenizer.split_segments`: split after sentence-final punctuation, commas and hyphens,
+//! then merge adjacent pieces back together until they no longer fit within `max_tokens`. Each segment is generated independently, so long text
+//! never exceeds the GPT text window or the mel budget.
 //!
-//! 一处有意差异：上游把没有标点的长片段在上限处硬切、余下的当独立一段，
-//! 可能只剩一个 token（甚至孤零零的 `▁`）合成出噪声；这里改成尽量在词边界
-//! 上均匀切分。
+//! One deliberate difference: upstream hard-cuts a long piece without punctuation at the limit and treats the remainder as a separate segment,
+//! which may leave only a single token (or even a lone `▁`) that synthesizes as noise; here, the cut is made as evenly as possible across word boundaries instead.
 
 use super::tokenizer::Token;
 
@@ -45,7 +44,7 @@ impl TextSegmenter {
             if Self::COMMA_PIECES.contains(&piece) || Self::HYPHEN_PIECES.contains(&piece) {
                 runs.push(std::mem::take(&mut current));
             } else if Self::SENTENCE_END_PIECES.contains(&piece) && current.len() > 2 {
-                // 句末的撇号跟着它所结束的句子走。
+                // An apostrophe at the end of a sentence stays with the sentence it ends.
                 if index < tokens.len() && Self::APOSTROPHE_PIECES.contains(&tokens[index].piece.as_str()) {
                     current.push(tokens[index].clone());
                     index += 1;
@@ -69,8 +68,8 @@ impl TextSegmenter {
         merged
     }
 
-    /// 把超过 `limit` 的片段切成近似等长的块；每个切点尽量回退到最近的
-    /// 词首（`▁` 前缀 piece），只要块仍不少于目标长度的一半。
+    /// Splits pieces longer than `limit` into chunks of roughly equal length; each cut point backs off to the nearest
+    /// word start (a piece with the `▁` prefix), as long as the chunk is still at least half the target length.
     fn chunk_evenly(run: Vec<Token>, limit: usize) -> Vec<Vec<Token>> {
         if run.len() <= limit {
             return vec![run];
@@ -142,7 +141,7 @@ mod tests {
     fn short_sentence_end_does_not_split() {
         let tokens = toks(&["▁A", ".", "▁B", "▁C", "▁D", "."]);
         let segments = TextSegmenter::split(&tokens, 3);
-        // 「▁A .」只有 2 个 token，不在句号处切；整段 6 个再均匀切成两块。
+        // “▁A .” has only 2 tokens, so it is not cut at the period; a whole segment of 6 tokens is split evenly into two blocks.
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].len() + segments[1].len(), 6);
     }

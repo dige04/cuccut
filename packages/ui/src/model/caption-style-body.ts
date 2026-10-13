@@ -11,13 +11,11 @@ import {
 } from './caption-word-animation.ts';
 
 /**
- * 字幕样式的新正文（字幕样式模型设计 `docs/design/subtitle/caption-style-model-design.md` §3–§6）与它到 Studio 样式
- * （`cuccut.legacy-studio-style/0.1` 的根对象，渲染内核读的那一份）的编译（§8）。
+ * The new body for caption style (caption style model design `docs/design/subtitle/caption-style-model-design.md` §3–§6) and its compilation to Studio style
+ * (the root object of `cuccut.legacy-studio-style/0.1`, the one the rendering kernel reads) (§8).
  *
- * 落盘的仍是 Studio 样式：属性页与画廊先把根对象解成正文（`parseStudioStyle`），改一个维度，再编译回去
- * （`compileCaptionStyle`）。解析是「尽力」的：正文表达不了的键原样留在 `legacy.keys`；编译结果与原值对不上的映射键
- * 记进 `legacy.overrides`（原值 ＋ 当时编译出的值），只要正文没改到那一键，编译时原样写回——所以
- * `compile(parse(root))` 与 `root` 逐键相等，改一个维度也只动那个维度派生的键。
+ * What is stored on disk is still Studio style: the properties page and the gallery first parse the root object into a body (`parseStudioStyle`), change one dimension, and compile back (`compileCaptionStyle`). Parsing is best-effort: keys the body cannot express are kept as they are in `legacy.keys`; mapped keys whose compiled value does not match the original are recorded in `legacy.overrides` (the original value plus the value compiled at the time). As long as the body does not change that key, it is written back as it was on compile — so
+ * `compile(parse(root))` equals `root` key for key, and changing one dimension only touches the keys derived from that dimension.
  */
 
 export const CAPTION_STYLE_SCHEMA = 'cuccut.caption-style/1';
@@ -32,10 +30,10 @@ export interface Typography {
   fontFamily: string;
   fontWeight: number;
   italic: boolean;
-  /** 字号占画布短边的比例（参考短边 540）。 */
+  /** Font size as a proportion of the canvas short side (reference short side 540). */
   size: number;
   lineHeight: number;
-  /** em，可为负。 */
+  /** em; may be negative. */
   letterSpacing: number;
   casing: Casing;
   align: Align;
@@ -43,9 +41,9 @@ export interface Typography {
 
 export interface Surface {
   color: string;
-  /** `width` 为 em。 */
+  /** `width` is in em. */
   stroke?: { color: string; width: number };
-  /** em；`opacity`（0–1）是对设计稿的补充：Studio 的阴影色与不透明度分开存。 */
+  /** em; `opacity` (0–1) is an addition to the design spec: Studio stores a shadow's colour and its opacity separately. */
   shadow?: { color: string; offset: [number, number]; blur: number; opacity?: number };
   glow?: { color: string; intensity: number; range: number };
   plate?: { mode: 'line' | 'block'; color: string; opacity: number; padding: [number, number]; radius: number };
@@ -89,9 +87,9 @@ export interface EmphasisLook {
 }
 
 export interface CaptionStyleLegacy {
-  /** 正文不认识的根键，原样回写。 */
+  /** Root keys the body does not recognise are written back as they are. */
   keys: Json;
-  /** 映射键里编译不出原值的：`value` 是原值（没有这个属性 = 原来没有这一键），`derived` 是当时编译出的值。 */
+  /** Mapped keys whose original value compilation cannot reproduce: `value` is the original value (no such property = the key was absent originally), `derived` is the value compiled at the time. */
   overrides: Record<string, { value?: unknown; derived?: unknown }>;
 }
 
@@ -113,7 +111,7 @@ export interface CompileContext {
   canvas?: { w: number; h: number };
 }
 
-/* ---------- 动效目录（§3.5） ---------- */
+/* ---------- Motion catalogue (§3.5) ---------- */
 
 export interface MotionPresetInfo {
   key: string;
@@ -131,7 +129,7 @@ const P = (key: string, trigger: MotionTrigger, unit: MotionUnit, durationSecond
   staggerSeconds,
 });
 
-/** 每一阶段可选的动效与它们的默认触发、单位与时长（原型 `MOTION_PRESETS`）。 */
+/** The motions available for each stage, with their default triggers, units and durations (prototype `MOTION_PRESETS`). */
 export const MOTION_PRESETS: Record<MotionStage, readonly MotionPresetInfo[]> = {
   in: [
     P('typewriter', 'enter', 'grapheme', 0.04, 0.04),
@@ -157,13 +155,13 @@ export const MOTION_PRESETS: Record<MotionStage, readonly MotionPresetInfo[]> = 
 export const MOTION_STAGES: readonly MotionStage[] = ['in', 'out', 'loop'];
 export const MOTION_UNITS: readonly MotionUnit[] = ['cue', 'line', 'word', 'grapheme'];
 
-/** 内核 `textMotion` 认的预设（`crates/motion/src/text_motion.rs` 的 ENTRANCES / EXITS / CYCLES）。 */
+/** Presets recognised by the kernel's `textMotion` (ENTRANCES / EXITS / CYCLES in `crates/motion/src/text_motion.rs`). */
 const TEXT_PRESETS: Record<MotionStage, readonly string[]> = {
   in: ['typewriter', 'fade-up', 'rise', 'cascade', 'pop', 'blur-in', 'slide-mask', 'wave-in'],
   out: ['fade-down', 'sink', 'pop-out', 'blur-out', 'typewriter-erase'],
   loop: ['pulse', 'wave', 'shimmer', 'swing'],
 };
-/** 内核的缓动名（`crates/motion/src/curve.rs` 的 EASE_NAMES）。 */
+/** The kernel's easing names (EASE_NAMES in `crates/motion/src/curve.rs`). */
 const EASE_NAMES = new Set([
   'linear',
   'easeInQuad',
@@ -191,7 +189,7 @@ export function motionPreset(stage: MotionStage, key: string): MotionPresetInfo 
   return MOTION_PRESETS[stage].find((p) => p.key === key) ?? null;
 }
 
-/** 一条动效的完整值：缺的键由那条预设的默认补齐。 */
+/** The full value of one motion: missing keys are filled from that preset's defaults. */
 export function motionEffect(stage: MotionStage, key: string, over?: Partial<MotionEffect>): MotionEffect | null {
   const p = motionPreset(stage, key);
   if (!p) return null;
@@ -202,16 +200,15 @@ export function hasMotion(motion: Motion | null | undefined): motion is Motion {
   return !!motion && MOTION_STAGES.some((stage) => !!motion[stage]);
 }
 
-/** 念到时入场、内核由逐词动画目录画的那几条。 */
+/** The entries for entrance when spoken, which the kernel draws from the per-word animation catalogue. */
 export function isSpokenPreset(preset: string): boolean {
   return (SPOKEN_PRESETS as readonly string[]).includes(preset);
 }
 
-/* ---------- 键表 ---------- */
+/* ---------- Key tables ---------- */
 
 /**
- * 涂装键：Studio 样式里字体与外观的那一组，包括渲染器认的旧别名（`align`、`bgOn`、`fontStyle`、`outline`），
- * 套卡时先清掉——不清的话旧值会盖过新涂装。
+ * Paint keys: the group of font and appearance keys in Studio style, including the old aliases the renderer recognises (`align`, `bgOn`, `fontStyle`, `outline`), which are cleared first when applying a card — otherwise the old values would override the new paint.
  */
 export const PAINT_KEYS: readonly string[] = [
   'fontFamily',
@@ -239,38 +236,38 @@ export const PAINT_KEYS: readonly string[] = [
   'glow',
 ];
 
-/** 当前词、动效、逐词底块、强调词外观与来源卡：由正文派生、套卡时整组替换的键（旧键 `anim` / `karaokeColor` 一起清）。 */
+/** Current word, motion, per-word backing block, emphasis-word look and source card: keys derived from the body that are replaced as a group when a card is applied (the old keys `anim` / `karaokeColor` are cleared too). */
 export const WORD_KEYS: readonly string[] = ['wordAnimation', 'anim', 'karaokeColor', 'textMotion', 'wordBackground', 'emphasisLook', 'stylePreset'];
 
-/** 落位：编译写、套卡不动。 */
+/** Placement: written on compile, not changed when applying a card. */
 export const LAYOUT_KEYS: readonly string[] = ['fontSize', 'verticalAlign', 'y', 'width'];
 
 const MAPPED_KEYS: readonly string[] = [...PAINT_KEYS, ...WORD_KEYS, ...LAYOUT_KEYS];
 
-/** 预设来源记在根上的键（只做选中态与「还原」，渲染器不读）。 */
+/** Keys that record the preset source on the root (used only for the selected state and 「还原」 (Revert); the renderer does not read them). */
 export const PRESET_KEY = 'stylePreset';
 
-/* ---------- 小算术 ---------- */
+/* ---------- Small arithmetic ---------- */
 
 const REFERENCE_SHORT_EDGE = 540;
 const REFERENCE_FONT_SIZE = 30;
 const r4 = (value: number) => Math.round(value * 1e4) / 1e4;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-/** 颜色拆成 `#RRGGBB` 与 alpha；认不出时用黑。 */
+/** Splits a colour into `#RRGGBB` and alpha; falls back to black if it cannot be parsed. */
 function split(color: unknown): { hex: string; alpha: number } {
   const c = parseColor(color) ?? { r: 0, g: 0, b: 0, a: 1 };
   const byte = (n: number) => Math.round(clamp(n, 0, 255)).toString(16).padStart(2, '0').toUpperCase();
   return { hex: `#${byte(c.r)}${byte(c.g)}${byte(c.b)}`, alpha: c.a };
 }
 
-/** `#RRGGBB` ＋ 不透明度 → `#RRGGBBAA`（总带 alpha，同旧版涂装的写法）。 */
+/** `#RRGGBB` + opacity → `#RRGGBBAA` (always includes alpha, as the old paint format did). */
 function withAlpha(color: string, alpha: number): string {
   const a = Math.round(clamp(alpha, 0, 1) * 255);
   return `${split(color).hex}${a.toString(16).padStart(2, '0').toUpperCase()}`;
 }
 
-/** 内核 `textMotion` 只认 `#RRGGBB` / `#RRGGBBAA`。 */
+/** The kernel's `textMotion` only accepts `#RRGGBB` / `#RRGGBBAA`. */
 function hexColor(color: unknown, fallback: string): string {
   const c = parseColor(color);
   if (!c) return fallback;
@@ -289,12 +286,12 @@ function same(a: unknown, b: unknown, eps = 1e-9): boolean {
   return a === b;
 }
 
-/** 两份根对象在这一键上相等（都没有也算）。 */
+/** The two root objects are equal on this key (both lacking it also counts). */
 function sameKey(a: Json, b: Json, key: string, eps?: number): boolean {
   return key in a === key in b && (!(key in a) || same(a[key], b[key], eps));
 }
 
-/* ---------- 字体 ＋ 涂装 ---------- */
+/* ---------- Font + paint ---------- */
 
 const CASING_OUT: Record<Casing, string> = { none: 'none', upper: 'uppercase', lower: 'lowercase', title: 'title' };
 
@@ -342,7 +339,7 @@ function compilePaint(t: Typography, s: Surface): Json {
   return out;
 }
 
-/** 渲染器的口径（`resolveLineStyle`）读涂装：开着的才进正文。 */
+/** The renderer's rule (`resolveLineStyle`) reads paint: only enabled paint goes into the body. */
 function parsePaint(root: Json): { typography: Typography; surface: Surface } {
   let weight = Math.round(clamp(weightOf(root.fontWeight), 100, 900));
   if (root.bold === true) weight = Math.max(weight, 700);
@@ -397,7 +394,7 @@ function parsePaint(root: Json): { typography: Typography; surface: Surface } {
   return { typography, surface };
 }
 
-/* ---------- 落位 ---------- */
+/* ---------- Placement ---------- */
 
 function compileLayout(layout: Layout, typography: Typography): Json {
   return {
@@ -413,9 +410,9 @@ function parseLayout(root: Json): Layout {
   return { mode: 'line', anchor: v === 'top' || v === 'bottom' ? v : 'center', y: num(root.y, 86) / 100, width: num(root.width, 80) / 100, maxLines: 2 };
 }
 
-/* ---------- 当前词 ＋ 动效 ---------- */
+/* ---------- Current word + motion ---------- */
 
-/** 译文 / 没有词级时间的轨：当前词恒 none；念到时触发的入场改成出现时（内核目录那几格没有「念到」可言，丢掉）。 */
+/** Translation / tracks without word-level timing: the current word is always none; an entrance triggered 「念到」 (when spoken) becomes on-appearance (the kernel catalogue entries have no when-spoken trigger, so they are dropped). */
 export function forRole(body: Pick<CaptionStyleBody, 'activeWord' | 'motion'>, ctx: CompileContext): { activeWord: ActiveWord; motion: Motion | null } {
   const timed = ctx.role === 'source' && ctx.hasWordTiming;
   if (timed) return { activeWord: normalizeActive(body.activeWord), motion: hasMotion(body.motion) ? body.motion : null };
@@ -445,7 +442,7 @@ function textEffect(e: MotionEffect): Json {
   return out;
 }
 
-/** 当前词色落不落到 `textMotion.emphasis`：走 textMotion 时内核不读 `wordAnimation`，当前词只能靠它上色、放大。 */
+/** Whether the current-word colour lands on `textMotion.emphasis`: when textMotion is used, the kernel does not read `wordAnimation`, so the current word can only be coloured and enlarged through it. */
 const EMPHASIS_MODES = new Set(['color', 'box', 'lift', 'underline', 'scale']);
 
 function compileWord(body: CaptionStyleBody, ctx: CompileContext): Json {
@@ -457,7 +454,7 @@ function compileWord(body: CaptionStyleBody, ctx: CompileContext): Json {
       ...(e.fontFamily ? { fontFamily: e.fontFamily } : {}),
       ...(e.bold !== undefined ? { bold: e.bold } : {}),
       ...(e.italic !== undefined ? { italic: e.italic } : {}),
-      // 内核夹在 0.8–1.6（主角词内核自己再 ×1.15，这里不乘）。
+      // The kernel clamps to 0.8–1.6 (the hero word gets a further ×1.15 inside the kernel; it is not multiplied here).
       scale: clamp(num(e.scale, 1), 0.8, 1.6),
     };
   }
@@ -596,15 +593,15 @@ function parseWord(root: Json, surface: Surface): { activeWord: ActiveWord; moti
   return out;
 }
 
-/* ---------- 编译与解析 ---------- */
+/* ---------- Compilation and parsing ---------- */
 
 function compileFresh(body: CaptionStyleBody, ctx: CompileContext): Json {
   return { ...compileLayout(body.layout, body.typography), ...compilePaint(body.typography, body.surface), ...compileWord(body, ctx) };
 }
 
 /**
- * 新正文 → Studio 根样式（§8）。确定、无副作用：同一份正文在画廊、画布与导出得到同一份样式。
- * `ctx.role` 是这份样式落在哪一种行上（译文与没有词级时间的轨，当前词恒 none、不扫色）。
+ * New body → Studio root style (§8). Deterministic, no side effects: the same body gives the same style in the gallery, on the canvas and on export.
+ * `ctx.role` is which kind of line this style lands on (translations and tracks without word-level timing always have a current word of none and no colour sweep).
  */
 export function compileCaptionStyle(body: CaptionStyleBody, ctx: CompileContext): Json {
   const fresh = compileFresh(body, ctx);
@@ -623,7 +620,7 @@ export function compileCaptionStyle(body: CaptionStyleBody, ctx: CompileContext)
   return out;
 }
 
-/** Studio 根样式 → 新正文（尽力）：解析不出的键进 `legacy`，编译回去逐键相等。 */
+/** Studio root style → new body (best effort): keys that cannot be parsed go into `legacy`, and compiling back gives equality key by key. */
 export function parseStudioStyle(root: Json): CaptionStyleBody {
   const { typography, surface } = parsePaint(root);
   const word = parseWord(root, surface);
@@ -647,7 +644,7 @@ export function parseStudioStyle(root: Json): CaptionStyleBody {
   return body;
 }
 
-/** 正文里只留某几类映射键的旧值（预设：只留涂装的，当前词与落位由预设自己给）。 */
+/** Keeps only certain categories of mapped keys' old values in the body (for presets: only the paint ones; the current word and placement come from the preset itself). */
 export function keepOverrides(body: CaptionStyleBody, keys: readonly string[]): CaptionStyleBody {
   if (!body.legacy) return body;
   const overrides: CaptionStyleLegacy['overrides'] = {};
@@ -655,17 +652,17 @@ export function keepOverrides(body: CaptionStyleBody, keys: readonly string[]): 
   return { ...body, legacy: { keys: body.legacy.keys, overrides } };
 }
 
-/** 一份根样式的 Studio 正文（同 `patchCaptionStyle` 的外壳）。 */
+/** A Studio body for one root style (same wrapper as `patchCaptionStyle`). */
 export function studioDocument(root: Json): Json {
   return { schema: STUDIO_STYLE, style: root };
 }
 
-/** 两份根样式在这些键上相等（数值容差 1e-6）。 */
+/** Two root styles are equal on these keys (numeric tolerance 1e-6). */
 export function sameKeys(a: Json, b: Json, keys: readonly string[]): boolean {
   return keys.every((key) => sameKey(a, b, key, 1e-6));
 }
 
-/** 编辑一个维度：解析 → 改 → 编译回根样式（`role` 默认源语言）。 */
+/** Edit one dimension: parse → change → compile back to the root style (`role` defaults to the source language). */
 export function editCaptionStyle(root: Json, edit: (body: CaptionStyleBody) => CaptionStyleBody, ctx: CompileContext = { role: 'source', hasWordTiming: true }): Json {
   return compileCaptionStyle(edit(parseStudioStyle(root)), ctx);
 }

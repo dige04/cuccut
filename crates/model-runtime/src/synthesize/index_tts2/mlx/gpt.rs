@@ -1,29 +1,25 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift`。
+//! Parts of the implementation are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources see `THIRD_PARTY_NOTICES.md` at the root.
 //!
-//! 语义 GPT（对照 speech-swift `IndexTTS2SemanticGPT.swift`）。
+//! Semantic GPT (corresponds to speech-swift `IndexTTS2SemanticGPT.swift`).
 //!
-//! 组成：
-//! - 说话人条件：Conformer 编码器（`conditioning_encoder`，8 头 / FF 2048）→
-//!   Perceiver 重采样（`perceiver_encoder`，32 个潜变量）→ `[1, 32, 1280]`；
-//! - 情感向量：Conformer（`emo_conditioning_encoder`，4 头 / FF 1024）→ Perceiver
-//!   （1 个潜变量，dim 1024）→ `emovec_layer` → `emo_layer` → `[1, 1280]`；
-//! - 24 层 GPT-2（conv1D 布局线性层 `x @ W + b`），带分块预分配的 f32 KV 缓存；
-//! - 采样：单束 Gumbel-max、束采样（默认宽 3）、贪心束搜索（宿主端纯逻辑在
-//!   `index_tts2::sampling`）；
-//! - `latent_for_s2mel`：整段无缓存前向，取梅尔段隐状态过 `final_norm`。
+//! Composition:
+//! - Speaker conditioning: Conformer encoder (`conditioning_encoder`, 8 heads / FF 2048) → Perceiver resampler (`perceiver_encoder`, 32 latents) → `[1, 32, 1280]`;
+//! - Emotion vector: Conformer (`emo_conditioning_encoder`, 4 heads / FF 1024) → Perceiver (1 latent, dim 1024) → `emovec_layer` → `emo_layer` → `[1, 1280]`;
+//! - 24-layer GPT-2 (conv1D-layout linear layers `x @ W + b`), with a chunk-preallocated f32 KV cache;
+//! - Sampling: single-beam Gumbel-max, beam sampling (default width 3), greedy beam search (the host-side pure logic is in `index_tts2::sampling`);
+//! - `latent_for_s2mel`: a full forward pass without cache; takes the hidden states of the mel segment through `final_norm`.
 //!
-//! IndexTTS 2.5（`load_v25`）共用同一个 GPT-2 与情感分支，但没有说话人
-//! Conformer / Perceiver 与语速嵌入：条件是 `spk_emb_proj(CAM++ 风格) + 情感向量`
-//! 加两个零位置，每个文本位置另加 `lang_embedding[语言 id]`。
+//! IndexTTS 2.5 (`load_v25`) shares the same GPT-2 and emotion branch, but has no speaker Conformer / Perceiver and no speed embedding: the conditioning is
+//! `spk_emb_proj(CAM++ style) + emotion vector` plus two zero positions, and each text position additionally adds `lang_embedding[language id]`.
 //!
-//! dtype 策略与 Swift 一致：权重按 safetensors 的 f16 驻留，前向时转成输入 dtype。
-//! 说话人 / 情感隐状态是 f32，因此条件编码、预填充与整段前向都在 f32 上跑；
-//! 逐 token 解码的输入是 f16 嵌入，块内在 f16 上跑，KV 历史与注意力在 f32 上。
+//! The dtype policy matches Swift: weights are kept as the safetensors' f16 and cast to the input dtype during the forward pass. Speaker / emotion hidden states
+//! are f32, so conditioning encoding, prefill, and full forward passes all run in f32; the per-token decode input is an f16 embedding and runs in f16 within a
+//! chunk, while the KV history and attention are in f32.
 
 use super::layers::{Conv1d, Conv2d, LayerNorm, Linear, act, ids_1d};
 use super::v25_weights;
@@ -38,7 +34,7 @@ use crate::synthesize::tensor::ops::indexing::{IndexMutOp, IndexOp};
 use crate::synthesize::tensor::{Array, Dtype, ops};
 use anyhow::{Result, bail, ensure};
 
-/// 调用方返回 false 取消生成时的错误信息。
+/// Error message used when the caller returns false to cancel generation.
 pub const ABORT_MESSAGE: &str = "IndexTTS2 合成已被调用方取消";
 
 const LN_EPS: f32 = 1e-5;
@@ -46,7 +42,7 @@ const SUBSAMPLE_CHANNELS: i32 = 512;
 const PERCEIVER_DIM_HEAD: i32 = 64;
 const KV_CHUNK: i32 = 256;
 
-/// 保持输入 dtype 的 LayerNorm（Swift `layerNorm` 把仿射参数转成 `x.dtype`）。
+/// LayerNorm that keeps the input dtype (Swift `layerNorm` casts the affine parameters to `x.dtype`).
 fn layer_norm(x: &Array, ln: &LayerNorm) -> Result<Array> {
     let dtype = x.dtype();
     let weight = match &ln.weight {
@@ -64,7 +60,7 @@ fn transpose_0213(x: &Array) -> Result<Array> {
     Ok(x.transpose_axes(&[0, 2, 1, 3])?)
 }
 
-/// GPT-2 conv1D 布局的线性层：`y = x @ W + b`，权重 `[in, out]`。
+/// GPT-2 conv1D-layout linear layer: `y = x @ W + b`, weights `[in, out]`.
 struct ConvLinear {
     weight: Array,
     bias: Option<Array>,
@@ -93,7 +89,7 @@ impl ConvLinear {
 }
 
 // ---------------------------------------------------------------------------
-// Conformer 条件编码器
+// Conformer conditioning encoder
 // ---------------------------------------------------------------------------
 
 struct RelPosAttention {
@@ -121,7 +117,7 @@ impl RelPosAttention {
         })
     }
 
-    /// `x [B, T, D]`，`pos [1, T, D]`。掩码在 Swift 里恒为全 1（整段有效），故省略。
+    /// `x [B, T, D]`, `pos [1, T, D]`. The mask is always all ones in Swift (the whole sequence is valid), so it is omitted.
     fn forward(&self, x: &Array, pos: &Array) -> Result<Array> {
         let b = x.dim(0);
         let t = x.dim(1);
@@ -164,7 +160,7 @@ impl ConvolutionModule {
         })
     }
 
-    /// `[B, T, C]` 进出（Swift 在 NCL 上做，等价）。
+    /// `[B, T, C]` in and out (Swift works on NCL; equivalent).
     fn forward(&self, x: &Array) -> Result<Array> {
         let h = self.pointwise_conv1.forward_nlc(x)?;
         let parts = ops::split(&h, 2, -1)?;
@@ -235,7 +231,7 @@ impl ConformerEncoder {
 
     /// `hidden [B, T, 1024]` → `[B, T', 512]`（T' = (T-3)/2+1）。
     fn forward(&self, hidden: &Array) -> Result<Array> {
-        // Swift：NCHW `[B, 1, T, C]` 做 3×3/步长 2 卷积；这里用 NHWC `[B, T, C, 1]`。
+        // Swift: 3×3 stride-2 convolution on NCHW `[B, 1, T, C]`; here NHWC `[B, T, C, 1]` is used.
         let x = hidden.expand_dims(-1)?;
         let h = self.subsample_conv.forward_nhwc(&x)?; // [B, T', C', 512]
         let h = ops::maximum(&h, Array::from_f32(0.0))?;
@@ -243,7 +239,7 @@ impl ConformerEncoder {
         let t = h.dim(1);
         let f = h.dim(2);
         let c = h.dim(3);
-        // NCHW 的 transposed(0,2,1,3).reshaped([b, t, c*f]) 等价于 NHWC 交换后两轴再展平。
+        // Swapping the last two axes in NHWC and then flattening is equivalent to NCHW's transposed(0,2,1,3).reshaped([b, t, c*f]).
         let h = h.swap_axes(2, 3)?.reshape(&[b, t, c * f])?;
         let mut h = self.subsample_out.forward(&h)? * (SUBSAMPLE_CHANNELS as f32).sqrt();
         ensure!(
@@ -262,7 +258,7 @@ impl ConformerEncoder {
 }
 
 // ---------------------------------------------------------------------------
-// Perceiver 重采样
+// Perceiver resampler
 // ---------------------------------------------------------------------------
 
 struct PerceiverLayer {
@@ -362,17 +358,17 @@ impl Perceiver {
 }
 
 // ---------------------------------------------------------------------------
-// KV 缓存
+// KV cache
 // ---------------------------------------------------------------------------
 
 trait KvCache {
-    /// 追加本层本步的 `[B, heads, T, headDim]` 键值，返回可注意的全部历史（f32）。
+    /// Appends this layer's `[B, heads, T, headDim]` keys and values for this step, and returns the full history that can be attended to (f32).
     fn update(&mut self, layer: usize, keys: Array, values: Array) -> Result<(Array, Array)>;
-    /// 每次前向结束后推进偏移。
+    /// Advances the offset after each forward pass finishes.
     fn commit(&mut self, tokens: i32);
 }
 
-/// 逐步拼接的缓存（值语义，可克隆分叉），用于贪心束搜索。
+/// Incrementally concatenated cache (value semantics, cloneable so it can fork), used for greedy beam search.
 #[derive(Clone)]
 struct ConcatKvCache {
     layers: Vec<Option<(Array, Array)>>,
@@ -401,8 +397,8 @@ impl KvCache for ConcatKvCache {
     fn commit(&mut self, _tokens: i32) {}
 }
 
-/// 批量采样路径的缓存：按 256 步分块预分配、原地写入；`reorder_rows` 按父束重排行。
-/// 历史与注意力都在 f32 上（与 Swift 一致）。
+/// Cache for the batched sampling path: preallocated in chunks of 256 steps and written in place; `reorder_rows` reorders rows by parent beam.
+/// History and attention are both in f32 (consistent with Swift).
 struct BatchedKvCache {
     buffers: Vec<Option<(Array, Array)>>,
     offset: i32,
@@ -463,7 +459,7 @@ impl KvCache for BatchedKvCache {
 }
 
 // ---------------------------------------------------------------------------
-// GPT-2 块
+// GPT-2 block
 // ---------------------------------------------------------------------------
 
 struct GptBlock {
@@ -492,7 +488,7 @@ impl GptBlock {
     }
 }
 
-/// 语义 GPT 及其条件编码器。
+/// The semantic GPT and its conditioning encoders.
 pub struct SemanticGpt {
     layers: usize,
     heads: i32,
@@ -503,7 +499,7 @@ pub struct SemanticGpt {
     stop_mel_token: i32,
     start_text_token: i32,
     stop_text_token: i32,
-    /// 说话人 Conformer / Perceiver 与语速嵌入：只有 2.0 检查点有。
+    /// Speaker Conformer / Perceiver and speed embedding: present only in the 2.0 checkpoint.
     conditioning_encoder: Option<ConformerEncoder>,
     perceiver: Option<Perceiver>,
     emo_conditioning_encoder: ConformerEncoder,
@@ -519,18 +515,18 @@ pub struct SemanticGpt {
     text_embedding: Array,
     text_pos_embedding: Array,
     speed_emb: Option<Array>,
-    /// CAM++ 风格 192 → 1280 投影与语言嵌入表：只有 2.5 检查点有。
+    /// CAM++ style 192 → 1280 projection and language embedding table: present only in the 2.5 checkpoint.
     spk_emb_proj: Option<Linear>,
     lang_embedding: Option<Array>,
 }
 
 impl SemanticGpt {
-    /// IndexTTS2 检查点（`aufklarer/IndexTTS2-MLX-fp16`）。
+    /// IndexTTS2 checkpoint (`aufklarer/IndexTTS2-MLX-fp16`).
     pub fn load(w: WeightMap, config: &GptConfig, codebook_size: usize) -> Result<Self> {
         Self::load_checkpoint(w, config, codebook_size, false)
     }
 
-    /// IndexTTS 2.5 检查点（`mlx-community/IndexTTS-2.5-fp16`）：先重映射到 2.0 布局。
+    /// IndexTTS 2.5 checkpoint (`mlx-community/IndexTTS-2.5-fp16`): remapped to the 2.0 layout first.
     pub fn load_v25(mut w: WeightMap, config: &GptConfig, codebook_size: usize) -> Result<Self> {
         v25_weights::remap_gpt(&mut w)?;
         Self::load_checkpoint(w, config, codebook_size, true)
@@ -592,9 +588,9 @@ impl SemanticGpt {
         })
     }
 
-    // ---- 条件 ------------------------------------------------------------
+    // ---- Conditioning ------------------------------------------------------------
 
-    /// 说话人语义隐状态 `[1, T, 1024]` → 潜变量 `[1, 32, 1280]`。
+    /// Speaker semantic hidden states `[1, T, 1024]` → latent `[1, 32, 1280]`.
     pub fn speaker_conditioning(&self, hidden: &Array) -> Result<Array> {
         let (Some(encoder), Some(perceiver)) = (&self.conditioning_encoder, &self.perceiver) else {
             bail!("IndexTTS 2.5 GPT 没有说话人 Conformer 条件");
@@ -605,7 +601,7 @@ impl SemanticGpt {
         Ok(latent)
     }
 
-    /// 情感语义隐状态 `[1, T, 1024]` → 情感向量 `[1, 1280]`。
+    /// Emotion semantic hidden states `[1, T, 1024]` → emotion vector `[1, 1280]`.
     pub fn emotion_vector(&self, hidden: &Array) -> Result<Array> {
         let encoded = self.emo_conditioning_encoder.forward(hidden)?;
         let latent = self.emo_perceiver.forward(&encoded)?.squeeze_axes(&[1])?;
@@ -614,7 +610,7 @@ impl SemanticGpt {
         Ok(vector)
     }
 
-    /// 合并显式情感向量：`override + (1 − weightSum) · base`（官方 `infer()` 原式，不夹取）。
+    /// Merges the explicit emotion vector: `override + (1 − weightSum) · base` (the official `infer()` formula as is, not clamped).
     pub fn resolved_emotion_vector(base: &Array, override_vector: Option<&Array>, weight_sum: f32) -> Result<Array> {
         match override_vector {
             Some(v) => {
@@ -637,8 +633,8 @@ impl SemanticGpt {
         Ok(ops::concatenate_axis(&[&conditioned, &fast_speed, &slow_speed], 1)?)
     }
 
-    /// 2.5 条件（官方 `UnifiedVoice.inference_speech`）：
-    /// `[spk_emb_proj(style) + emotion, 0, 0]` → `[1, 3, 1280]`。
+    /// 2.5 conditioning (official `UnifiedVoice.inference_speech`):
+    /// `[spk_emb_proj(style) + emotion, 0, 0]` → `[1, 3, 1280]`.
     fn style_conditioning(&self, style: &Array, emotion: &Array) -> Result<Array> {
         let Some(projection) = &self.spk_emb_proj else {
             bail!("GPT 检查点没有 spk_emb_proj，不是 IndexTTS 2.5");
@@ -650,7 +646,7 @@ impl SemanticGpt {
         Ok(ops::concatenate_axis(&[&conditioned, &padding], 1)?)
     }
 
-    /// 2.5 文本嵌入：token + 位置 + 该段语言的 `lang_embedding` 行（加到每个文本位置）。
+    /// 2.5 text embedding: token + position + the segment language's `lang_embedding` row (added at each text position).
     fn text_embeddings_v25(&self, ids: &[i32], language_id: usize) -> Result<Array> {
         let Some(table) = &self.lang_embedding else {
             bail!("GPT 检查点没有 lang_embedding，不是 IndexTTS 2.5");
@@ -690,7 +686,7 @@ impl SemanticGpt {
         Self::embeddings_with_positions(&self.mel_embedding, &self.mel_pos_embedding, ids)
     }
 
-    /// 生成期的梅尔位置：索引 0 → 位置 0，其后 `melIndex + 1`。
+    /// Mel position during generation: index 0 → position 0, after that `melIndex + 1`.
     fn mel_position_embedding(&self, mel_index: i32, dtype: Dtype) -> Result<Array> {
         let position = if mel_index == 0 { 0 } else { mel_index + 1 };
         ensure!(
@@ -711,7 +707,7 @@ impl SemanticGpt {
         Ok(tok + pos)
     }
 
-    // ---- GPT 前向 ----------------------------------------------------------
+    // ---- GPT forward pass --------------------------------------------------------
 
     fn attention_cached<C: KvCache>(&self, block: &GptBlock, x: &Array, layer: usize, cache: &mut C) -> Result<Array> {
         let b = x.dim(0);
@@ -722,7 +718,7 @@ impl SemanticGpt {
         let k = transpose_0213(&parts[1].reshape(&[b, t, self.heads, self.head_dim])?)?;
         let v = transpose_0213(&parts[2].reshape(&[b, t, self.heads, self.head_dim])?)?;
         let (k, v) = cache.update(layer, k, v)?;
-        // 预填充是空缓存上的方阵因果掩码；单 token 步注意全部历史。
+        // Prefill is a square causal mask over an empty cache; a single-token step attends to the full history.
         let mask = if t > 1 { Some(ScaledDotProductAttentionMask::Causal) } else { None };
         let out = fast::scaled_dot_product_attention(q.as_dtype(k.dtype())?, &k, &v, 1.0 / (self.head_dim as f32).sqrt(), mask, None)?;
         let merged = transpose_0213(&out.as_dtype(x.dtype())?)?.reshape(&[b, t, self.model_dim])?;
@@ -761,7 +757,7 @@ impl SemanticGpt {
         block.c_proj.forward(&merged)
     }
 
-    /// 整段无缓存前向。
+    /// Full forward pass without cache.
     fn forward_full(&self, embeddings: &Array) -> Result<Array> {
         let mut h = embeddings.clone();
         for block in &self.blocks {
@@ -773,7 +769,7 @@ impl SemanticGpt {
         layer_norm(&h, &self.ln_f)
     }
 
-    /// 最后一个位置的隐状态 → `final_norm` → `mel_head` → `[B, 8194]`。
+    /// Hidden state at the last position → `final_norm` → `mel_head` → `[B, 8194]`.
     fn mel_logits(&self, hidden: &Array) -> Result<Array> {
         let t = hidden.dim(1);
         let last = hidden.index((.., (t - 1)..t, ..));
@@ -792,7 +788,7 @@ impl SemanticGpt {
         self.mel_logits(&hidden)
     }
 
-    /// 每束一个 token（同一梅尔索引）批量前向，返回 `[beams, vocab]`。
+    /// One token per beam (same mel index), forwarded in a batch; returns `[beams, vocab]`.
     fn batched_step_mel_logits(&self, tokens: &[i32], mel_index: i32, cache: &mut BatchedKvCache) -> Result<Array> {
         let tok = Self::embed(&self.mel_embedding, tokens)?.transpose_axes(&[1, 0, 2])?;
         let pos = self.mel_position_embedding(mel_index, tok.dtype())?;
@@ -806,9 +802,9 @@ impl SemanticGpt {
         Ok(values.as_slice::<f32>().to_vec())
     }
 
-    // ---- 生成 --------------------------------------------------------------
+    // ---- Generation --------------------------------------------------------------
 
-    /// 生成语义码（`generateSemanticCodes`）。`progress(已生成 token 数)` 返回 false 则取消。
+    /// Generates semantic codes (`generateSemanticCodes`). `progress(tokens generated so far)` returning false cancels.
     pub fn generate_semantic_codes(
         &self,
         text_tokens: &[i32],
@@ -824,8 +820,8 @@ impl SemanticGpt {
         self.generate_from_prefix(&prefix_text, options, progress)
     }
 
-    /// IndexTTS 2.5 生成语义码。`text_tokens` 是 tiktoken 输出（含 `<|lang|> ` 前缀，
-    /// 可带起止 token）；与官方一致先剔除起止 token 再补 `[start, …, stop]`。
+    /// IndexTTS 2.5 semantic code generation. `text_tokens` is the tiktoken output (with the `<|lang|> ` prefix, may include start and stop tokens);
+    /// consistent with the official code, the start and stop tokens are stripped first and then `[start, …, stop]` is added.
     pub fn generate_semantic_codes_v25(
         &self,
         text_tokens: &[i32],
@@ -890,7 +886,7 @@ impl SemanticGpt {
         Ok(generated)
     }
 
-    /// 束采样（默认路径）：所有活跃束共享一个批量缓存，按父束重排行。
+    /// Beam sampling (default path): all active beams share one batched cache, with rows reordered by parent beam.
     fn beam_sample_semantic_codes(
         &self,
         prefix_text: &Array,
@@ -1011,7 +1007,7 @@ impl SemanticGpt {
         Ok(best.into_iter().next().map(|b| b.tokens).unwrap_or_default())
     }
 
-    /// 贪心束搜索（`greedy && beamWidth > 1`）：每束各自持有可分叉的拼接缓存。
+    /// Greedy beam search (`greedy && beamWidth > 1`): each beam holds its own forkable concatenation cache.
     fn beam_search_semantic_codes(
         &self,
         prefix_text: &Array,
@@ -1127,7 +1123,7 @@ impl SemanticGpt {
         Ok(best.into_iter().next().map(|b| b.tokens).unwrap_or_default())
     }
 
-    /// 生成码对应的 GPT 潜变量 `[1, N, 1280]`（`latentForS2Mel`）。
+    /// GPT latent `[1, N, 1280]` for the generated codes (`latentForS2Mel`).
     pub fn latent_for_s2mel(&self, text_tokens: &[i32], codes: &[i32], speaker_latent: &Array, emotion: &Array) -> Result<Array> {
         let prefix = self.prefix_conditioning(speaker_latent, emotion)?;
         let text_emb = self.text_embeddings(&self.text_input(text_tokens))?;

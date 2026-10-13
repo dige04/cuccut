@@ -13,12 +13,11 @@ import type { SearchableVideo } from './content-search.ts';
 import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Space 的查询（`space.list`、`space.search`，以及智能体工具 `space_list`、`space_search`）与按主体的过滤（架构设计 §4.8）。
+ * Queries for Space (`space.list`, `space.search`, and the agent tools `space_list` and `space_search`) and filtering by principal (architecture design §4.8).
  *
- * - `user`：界面、CLI、Web（用户本人）：全部条目。
- * - `source`：会话里的智能体：会话的来源目录（所属项目，或会话自己的工作目录）里的条目，以及归属同一来源的产物。
- * - `service`：对外服务的客户端：只有范围之内（已登记项目里、在 videoId 名单上）的视频，以及由这些视频生成、导出的条目；
- *   任务的产物与占位只看自己提交的。没有来源视频的文件（项目里的图片、文档）不可见。看不到的与不存在的一样回答。
+ * - `user`: the UI, CLI and Web (the user themselves): all entries.
+ * - `source`: the agent in a session: entries in the session's source directory (its project, or the session's own work directory), plus artifacts belonging to the same source.
+ * - `service`: external service clients: only videos within scope (in a registered project, on the videoId allowlist), and entries generated or exported from those videos. Artifacts and placeholders of tasks are visible only to the submitter. Files without a source video (images and documents in the project) are invisible. Things that are not visible are answered the same as things that do not exist.
  */
 export type SpaceViewer =
   | { kind: 'user' }
@@ -34,13 +33,13 @@ export function projectOf(entry: SpaceEntry): Id | null {
   return (entry.origin?.capability === 'link-import' ? entry.origin.projectId : entry.source.projectId ?? entry.origin?.projectId) ?? null;
 }
 
-/** 条目关联的视频：视频本身，或生成、导出它的视频。 */
+/** Entries' related video: the video itself, or the video that generated or exported it. */
 export function videoOf(entry: SpaceEntry): Id | null {
   if (entry.ref && 'videoId' in entry.ref) return entry.ref.videoId;
   return entry.origin?.videoId ?? null;
 }
 
-/** 按视频筛（`space.list` 的 `videoId`）：视频本身、它生成或导出的条目，以及由它派生的子视频（短片）。 */
+/** Filter by video (`videoId` of `space.list`): the video itself, the entries it generated or exported, and the sub-videos derived from it (short clips). */
 function relatedTo(entry: SpaceEntry, videoId: Id): boolean {
   return videoOf(entry) === videoId || (entry.origin?.source === 'derived' && entry.origin.videoId === videoId);
 }
@@ -67,7 +66,7 @@ export function visibleTo(viewer: SpaceViewer, entry: SpaceEntry): boolean {
   }
 }
 
-/** 看不到的与不存在的一样回答。 */
+/** Things that are not visible are answered the same as things that do not exist. */
 export function visibleEntry(catalog: SpaceCatalog, viewer: SpaceViewer, entryId: Id): SpaceEntry {
   const entry = catalog.get(entryId);
   if (!visibleTo(viewer, entry)) throw new RpcError('not-found', RcSpace.entryGone());
@@ -98,15 +97,14 @@ export function listEntries(catalog: SpaceCatalog, viewer: SpaceViewer, params: 
     entries: page,
     total: matched.length,
     nextCursor: next < matched.length ? String(next) : null,
-    // 来源目录的扫描问题会说出目录：只给用户本人。
+    // Scan problems of a source directory name the directory, so they are given only to the user themselves.
     issues: viewer.kind === 'user' ? catalog.issues() : [],
     scanning: catalog.scanning,
   };
 }
 
 /**
- * 跨视频检索（§5.11）。范围是来源目录里的视频（按主体过滤之后）；还没有索引、正在重建、索引落后于当前版本的视频
- * 计入 `pendingVideos`，有它们时 `complete` 为 false。落后的视频照样用旧的索引检索。
+ * Cross-video search (§5.11). Scope is the videos in the source directory, after filtering by principal. Videos that are not yet indexed, are being rebuilt, or whose index lags the current version count into `pendingVideos`; when there are any, `complete` is false. Lagging videos are still searched using the old index.
  */
 export function searchContent(catalog: SpaceCatalog, viewer: SpaceViewer, params: SpaceSearchParams): SpaceSearchResult {
   const index = catalog.index;
@@ -118,8 +116,8 @@ export function searchContent(catalog: SpaceCatalog, viewer: SpaceViewer, params
     if (!visibleVideo(viewer, video)) continue;
     const indexed = index?.at(video.dir) ?? null;
     if (!indexed) {
-      // 还不知道它的 videoId：按 videoId 筛时也算进待索引（无法判断，结果宁可标成不完整）。对外服务只在范围是全部视频时算，
-      // 名单范围之外的视频不能从计数里露出来。
+      // Its videoId is not yet known: when filtering by videoId it also counts as pending indexing (it cannot be judged, so the result is better marked incomplete). For external services this counts only when the scope is all videos.
+      // Videos outside the allowlist must not show up in the count.
       if (viewer.kind !== 'service' || viewer.videos === 'all') pending++;
       continue;
     }
@@ -144,7 +142,7 @@ export function searchContent(catalog: SpaceCatalog, viewer: SpaceViewer, params
   return { hits, complete: pending === 0 && !catalog.scanning && index !== null, pendingVideos: pending, truncated };
 }
 
-/** 视频按主体的初筛（检索与工具的候选输入共用）；对外服务的 videoId 名单要等拿到 videoId 之后再查。 */
+/** Initial filter of videos by principal (shared by search and the tool candidate input). For external services, the videoId allowlist is checked only after the videoIds are obtained. */
 export function visibleVideo(viewer: SpaceViewer, video: { projectId: Id | null; conversationId: Id | null }): boolean {
   switch (viewer.kind) {
     case 'user':
@@ -152,7 +150,7 @@ export function visibleVideo(viewer: SpaceViewer, video: { projectId: Id | null;
     case 'source':
       return viewer.projectId ? video.projectId === viewer.projectId : video.conversationId === viewer.conversationId;
     case 'service':
-      // 只有已登记项目里的视频；名单在拿到 videoId 之后再查。
+      // Only videos in registered projects; the allowlist is checked after the videoIds are obtained.
       return video.projectId !== null;
   }
 }

@@ -254,7 +254,7 @@ describe('conversationOutputs', () => {
     ];
     const entries = [
       entry('brand', { kind: 'design-system', name: '旧标题', source, relPath: 'systems/brand' }),
-      // 同一路径上的设计稿条目不算这套设计系统
+      // A design draft entry on the same path does not count as this design system.
       entry('canvas', { kind: 'design', name: '落地页', source, relPath: 'systems/untitled', canvas: { boardCount: 1 } }),
       entry('kit', { kind: 'design-system', name: '组件库', source, relPath: 'kit', lastActivityAt: '2026-10-01T00:00:00.000Z' }),
     ];

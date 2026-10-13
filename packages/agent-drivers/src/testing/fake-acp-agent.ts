@@ -6,8 +6,8 @@ import readline from 'node:readline';
 import type { FakeAcpLogEntry, FakeAcpScenario } from './fake-acp.ts';
 
 /**
- * 假 ACP 智能体的进程入口（见 `fake-acp.ts`）。由 node 直接运行，只用 Node 自带的模块，不用 ACP 的 SDK：
- * 线上的形状照协议手写，免得测试与实现共用同一份理解。
+ * Process entry point of the fake ACP agent (see `fake-acp.ts`). Run directly by node, using only Node's built-in modules, not the ACP SDK.
+ * The on-wire shapes are hand-written from the protocol, so the tests and the implementation do not share one understanding.
  */
 
 const dir = process.env.FAKE_ACP_DIR;
@@ -27,8 +27,7 @@ if (args[0] === '--version') {
   process.stdout.write(`fake-acp ${scenario.version}\n`);
   process.exit(0);
 }
-// 像 cursor-agent 为 @ 文件建索引跑的 rg：在智能体的进程组里，不理会 SIGTERM。装好信号处理之后才说 ready，免得请停来得太早、
-// 它照常被 SIGTERM 结束，测不到强杀。
+// Like the rg that cursor-agent runs to index @ files: in the agent's process group, it ignores SIGTERM. It says ready only after the signal handler is installed, so a stop request that arrives too early does not simply end it through SIGTERM, which would leave the forced kill untested.
 const HELPER = "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000);";
 const helper = scenario.helper ? spawn(process.execPath, ['-e', HELPER], { stdio: ['ignore', 'pipe', 'ignore'] }) : null;
 if (helper) await once(helper.stdout, 'data');
@@ -52,7 +51,7 @@ type Message = {
 function send(message: Message): void {
   process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
 }
-// 混进一行不是 JSON 的日志：CucCut 应该忽略它。
+// A non-JSON log line is mixed in: CucCut should ignore it.
 process.stdout.write('fake-acp: starting up\n');
 
 let nextId = 5000;
@@ -172,7 +171,7 @@ async function handleRequest(message: Message): Promise<void> {
     case 'session/load': {
       if (!scenario.loggedIn) return fail(AUTH_REQUIRED);
       if (scenario.loadFails) return fail({ code: -32603, message: 'session not found' });
-      // 回放历史：CucCut 不应把它当成新内容。
+      // Replays history: CucCut should not treat it as new content.
       update(String(params.sessionId), { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OLD HISTORY' } });
       return reply(sessionState());
     }

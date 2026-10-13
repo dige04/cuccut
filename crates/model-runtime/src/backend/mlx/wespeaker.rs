@@ -1,11 +1,8 @@
-//! WeSpeaker ResNet34-LM 声纹嵌入（Apple Silicon / MLX）。移植自 v2 `ccut-speech` 的 `wespeaker.rs`。
+//! WeSpeaker ResNet34-LM speaker embedding (Apple Silicon / MLX). Ported from v2 `ccut-speech`'s `wespeaker.rs`.
 //!
-//! fbank 前端、网络形状常量与余弦距离都在 [`crate::speech::wespeaker_fbank`]，各后端共用；这里只有 MLX 的
-//! ResNet34 主干与权重加载。v3 只改边界：权重按模型包清单取（[`VerifiedFiles`]），不扫描目录。
+//! The fbank front end, network shape constants and cosine distance live in [`crate::speech::wespeaker_fbank`] and are shared by all backends; this file only holds the MLX ResNet34 backbone and weight loading. In v3 only the boundary changes: weights are taken from the model bundle manifest ([`VerifiedFiles`]) instead of scanning a directory.
 //!
-//! 网络是 BN 已折叠进卷积的 ResNet34：conv1 + [3,4,6,3] BasicBlock +
-//! 统计池化（mean‖std）+ Linear(5120→256) + L2 归一化。权重按 mlx-rs Conv2d
-//! 原生 NHWC 布局 `[O, kH, kW, Cin]` 存放，加载时无需转置。
+//! The network is a ResNet34 with BN folded into the convolutions: conv1 + [3,4,6,3] BasicBlocks + statistics pooling (mean‖std) + Linear(5120→256) + L2 normalization. Weights are stored in mlx-rs's native NHWC Conv2d layout `[O, kH, kW, Cin]`, so no transpose is needed on load.
 
 use std::collections::HashMap;
 
@@ -23,11 +20,10 @@ pub use crate::speech::wespeaker_fbank::{
 };
 
 // ---------------------------------------------------------------------------
-// ResNet34 网络
+// ResNet34 network
 // ---------------------------------------------------------------------------
 
-/// BN 已折叠进卷积的 ResNet BasicBlock：两个带 bias 的 3×3 卷积，
-/// stride≠1 或通道变化时 residual 走 1×1 shortcut 卷积（同样带 bias）。
+/// ResNet BasicBlock with BN folded into the convolutions: two 3×3 convolutions with bias. When stride≠1 or the channel count changes, the residual goes through a 1×1 shortcut convolution (also with bias).
 struct BasicBlock {
     conv1: Conv2d,
     conv2: Conv2d,
@@ -108,10 +104,9 @@ impl WeSpeakerNetwork {
         })
     }
 
-    /// `mel`：`[1, T, 80, 1]`；返回 `[1, 256]` 的 L2 归一化嵌入。
+    /// `mel`: `[1, T, 80, 1]`; returns the L2-normalized embedding `[1, 256]`.
     fn forward(&mut self, mel: &Array) -> Result<Array> {
-        // Python WeSpeaker 的输入编排是 (B,T,F) → (B,F,T) → (B,1,F,T)（NCHW）；
-        // MLX 的 NHWC 对应 [B, F, T, C]，所以这里把频率换到 H、时间换到 W。
+        // The input layout in Python WeSpeaker is (B,T,F) → (B,F,T) → (B,1,F,T) (NCHW); the NHWC equivalent in MLX is [B, F, T, C], so frequency goes to H and time goes to W here.
         let mut x = mel.transpose_axes(&[0, 2, 1, 3])?;
         x = relu(self.conv1.forward(&x)?)?;
         for layer in self.layers.iter_mut() {
@@ -119,7 +114,7 @@ impl WeSpeakerNetwork {
                 x = block.forward(&x)?;
             }
         }
-        // x: [B, F'=10, T'=T/8, C=256]（NHWC），对应 Python 的 [B, 256, 10, T']。
+        // x: [B, F'=10, T'=T/8, C=256] (NHWC), corresponding to Python's [B, 256, 10, T'].
         let shape = x.shape().to_vec();
         if shape.len() != 4 || shape[1] != POOLED_FREQUENCY as i32 {
             bail!("WeSpeaker 主干输出形状异常：{shape:?}");
@@ -129,10 +124,10 @@ impl WeSpeakerNetwork {
         if time < 1 {
             bail!("WeSpeaker 池化前时间轴为空");
         }
-        // 展平顺序必须是 C·F（Python reshape [B,256,10,T'] → [B,2560,T']）。
+        // The flatten order must be C·F (Python reshape [B,256,10,T'] → [B,2560,T']).
         x = x.transpose_axes(&[0, 2, 3, 1])?.reshape(&[batch, time, -1])?;
 
-        // 统计池化（沿时间轴）。mlx-rs 没有 variance 绑定，手算 E[x²]-E[x]² 并夹到 ≥0。
+        // Statistics pooling (along the time axis). mlx-rs has no variance binding, so compute E[x²]-E[x]² by hand and clamp it to ≥0.
         let mean = x.mean_axis(1, false)?;
         let mean_square = ops::square(&x)?.mean_axis(1, false)?;
         let variance = ops::maximum(ops::subtract(&mean_square, &ops::square(&mean)?)?, Array::from_f32(0.0))?;
@@ -146,10 +141,10 @@ impl WeSpeakerNetwork {
 }
 
 // ---------------------------------------------------------------------------
-// 公开 API
+// Public API
 // ---------------------------------------------------------------------------
 
-/// WeSpeaker ResNet34-LM 声纹嵌入器。
+/// WeSpeaker ResNet34-LM speaker embedder.
 pub struct WeSpeakerEmbedder {
     fbank: WeSpeakerFbank,
     network: WeSpeakerNetwork,
@@ -158,7 +153,7 @@ pub struct WeSpeakerEmbedder {
 }
 
 impl WeSpeakerEmbedder {
-    /// 从 `speaker` 组件的文件加载权重（组件顶层列出的全部 safetensors 分片）。
+    /// Loads weights from the files of the `speaker` component (all safetensors shards listed at the component's top level).
     pub fn load(files: &VerifiedFiles) -> Result<Self> {
         runtime::ensure_metal_device()?;
         let shards = files.require_extension_in("", "safetensors")?;
@@ -178,14 +173,14 @@ impl WeSpeakerEmbedder {
         })
     }
 
-    /// fbank 前端（测试与诊断用）。
+    /// fbank front end (for tests and diagnostics).
     pub fn fbank(&self) -> &WeSpeakerFbank {
         &self.fbank
     }
 
-    /// 对 16 kHz 单声道样本求 256 维 L2 归一化嵌入。
+    /// Computes the 256-dimensional L2-normalized embedding for 16 kHz mono samples.
     ///
-    /// 少于 0.5 秒直接报错——统计池化在这种长度上没有意义，调用方应先过滤。
+    /// Anything shorter than 0.5 s is an error: statistics pooling is meaningless at that length, so callers should filter first.
     pub fn embed(&mut self, samples: &[f32]) -> Result<Vec<f32>> {
         if samples.len() < MINIMUM_SAMPLES {
             bail!("WeSpeaker 需要至少 {MINIMUM_SAMPLES} 个样本（0.5 秒），实际 {}", samples.len());
@@ -211,7 +206,7 @@ impl SpeakerEmbedding for WeSpeakerEmbedder {
 }
 
 // ---------------------------------------------------------------------------
-// 权重提取
+// Weight extraction
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]

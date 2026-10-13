@@ -5,8 +5,8 @@ import Copy from '@react-spectrum/s2/icons/Copy';
 import { T } from './thread-copy.ts';
 
 /**
- * 复制按钮：默认只有图标，`label` 写在 tooltip 与读屏名里；`showLabel` 时文字也画出来（回合页脚的「复制」）。
- * 复制后两秒内显示「已复制」。
+ * Copy button: by default only the icon is shown, and `label` is used for the tooltip and the screen reader name. With `showLabel`, the text is also drawn (the “复制” (Copy) in the turn footer).
+ * For two seconds after copying, it shows “已复制” (Copied).
  */
 export function CopyButton({ text, label, showLabel = false }: { text: string; label?: string; showLabel?: boolean }) {
   const [copied, setCopied] = useState(false);

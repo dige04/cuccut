@@ -46,11 +46,11 @@ import { TemplateCover, TemplateKindBadge } from './template-cover.tsx';
 import { useTemplateCatalogLoader, useTemplateFileUrl, useTemplatePrompt } from './use-templates.ts';
 import { ST } from './start-copy.ts';
 
-// 两栏的几何（含窄窗口叠成上下）在 app.css 的 .cc-tpl-library；这里只有各块自己的样子与分隔线的颜色。
+// The two-column geometry (including stacking into rows in narrow windows) is in .cc-tpl-library in app.css; here there is only each block's own look and the divider colour.
 const libraryVars = style({ '--cc-tpl-divider': { type: 'backgroundColor', value: 'gray-100' } });
 const bar = style({ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' });
 const search = style({ flexGrow: 1, flexBasis: 160, minWidth: 0 });
-// 类型与来源是一组：放不下时整组换到搜索框下面一行，不把来源单独挤下去。
+// Type and source form one group: when they don't fit, the whole group moves to a line below the search box, rather than squeezing the source out on its own.
 const filters = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
 const sourcePicker = style({ width: 112 });
 const cats = style({ display: 'flex', flexWrap: 'wrap', gap: 4 });
@@ -113,7 +113,7 @@ const spacer = style({ flexGrow: 1 });
 const skippedList = style({ margin: 0, paddingStart: 16, maxHeight: 96, overflowY: 'auto', font: 'ui-sm', color: 'gray-700' });
 const skippedPath = style({ color: 'gray-600', overflowWrap: 'anywhere' });
 
-// 右栏：内容自己滚，「使用」固定在栏底。
+// Right column: the content scrolls on its own; the “使用” (Use) button stays fixed at the bottom of the column.
 const fixed = style({ flexShrink: 0 });
 const controls = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 });
 const track = style({ flexGrow: 1, height: 4, borderRadius: 'full', backgroundColor: 'gray-200', overflow: 'hidden' });
@@ -145,12 +145,12 @@ const prompt = style({
   lineHeight: '[1.6]',
   whiteSpace: 'pre-wrap',
 });
-// 「需要你补充」：占位标记 + 一句说明（规范 §5.5）。
+// “需要你补充” (Needs your input): a placeholder marker plus one sentence of explanation (spec §5.5).
 const fieldList = style({ display: 'flex', flexDirection: 'column', gap: '[6px]', margin: 0, padding: 0, listStyleType: 'none' });
 const fieldItem = style({ display: 'flex', alignItems: 'baseline', gap: 8, font: 'ui-sm', lineHeight: '[1.5]' });
 const fieldHint = style({ minWidth: 0, color: 'gray-700' });
-// 占位标记：与输入框里 S2 占位 token 同一外观（虚线描边），提示词预览与「需要你补充」共用（原型 `.pslot-mark`）。
-// 用 outline 画虚线：S2 宏会丢掉逐边的 border 样式，outline 是整圈的，不受影响。
+// Placeholder marker: same look as the S2 placeholder token in the input box (dashed outline). The prompt preview and “需要你补充” share it (prototype `.pslot-mark`).
+// Draw the dashed line with outline: the S2 macro drops per-side border styles, while outline goes all the way round and is unaffected.
 const slotMark = style({
   display: 'inline',
   paddingX: 4,
@@ -178,7 +178,7 @@ const asset = style({
 });
 const actions = style({ display: 'flex', justifyContent: 'end', flexShrink: 0 });
 
-/** 预览「播放」：每隔一会儿换一幕；关掉就停在当前这一幕。 */
+/** Preview “播放” (Play): switches to the next scene every so often; turning it off stays on the current scene. */
 function useSlides(on: boolean): number {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -189,7 +189,7 @@ function useSlides(on: boolean): number {
   return index;
 }
 
-/** 左栏的一张卡：点一下，右栏换成它的预览与提示词。作品示例在标题旁带「示例」。 */
+/** A card in the left column: click it and the right column switches to its preview and prompt. Work examples show “示例” (Example) next to the title. */
 function Card({ template, current, picked, onOpen }: { template: HomeTemplate; current: boolean; picked: boolean; onOpen(): void }) {
   return (
     <button
@@ -216,8 +216,8 @@ function Card({ template, current, picked, onOpen }: { template: HomeTemplate; c
 }
 
 /**
- * 详情顶上的预览：有预览视频（`preview.file`）时放视频，取不到或没有时按分幕轮播占位画面（规范 §3.3）。
- * 播放 / 暂停与进度条对两种都管用。
+ * The preview at the top of the detail view: plays the preview video (`preview.file`) when there is one; when it can't be loaded or doesn't exist, it cycles through placeholder frames by scene (spec §3.3).
+ * Play/pause and the progress bar work for both.
  */
 function Preview({ template }: { template: HomeTemplate }) {
   const [playing, setPlaying] = useState(true);
@@ -276,7 +276,7 @@ function Preview({ template }: { template: HomeTemplate }) {
   );
 }
 
-/** 提示词里的 `{{label}}` 画成与输入框里占位 token 同一外观的标记（规范 §5.5）。 */
+/** `{{label}}` in the prompt is drawn as a marker with the same look as the placeholder token in the input box (spec §5.5). */
 function SlotText({ text }: { text: string }) {
   return slotParts(text).map((x, i) =>
     x.type === 'slot' ? (
@@ -289,7 +289,7 @@ function SlotText({ text }: { text: string }) {
   );
 }
 
-/** 提示词（`templates.get` 取回来的 `prompt.md` 全文）：加载中、失败可重试。 */
+/** The prompt (the full text of `prompt.md` returned by `templates.get`): shows loading, and can retry on failure. */
 function PromptBody({ template }: { template: HomeTemplate }) {
   const body = useTemplatePrompt(template);
   if (body.state === 'ready')
@@ -310,9 +310,9 @@ function PromptBody({ template }: { template: HomeTemplate }) {
 }
 
 /**
- * 右栏：正在看的那个模板。预览自动播，下面是介绍、画幅时长、提示词、素材与使用。
- * 场景模板多一句「先确认简报」的说明、「需要你补充」与「可以这样说」；作品示例的按钮是把提示词放进输入框。
- * 清单写了 `skills` 时多一行「做法：…」（技能已经取到时显示名称，否则显示标识）。
+ * Right column: the template being viewed. The preview plays automatically, and below it are the description, aspect ratio and duration, the prompt, the assets, and Use.
+ * Scene templates add a note “先确认简报” (confirm the brief first), plus “需要你补充” (Needs your input) and “可以这样说” (you can say this). For work examples, the button puts the prompt into the input box.
+ * When the manifest sets `skills`, an extra line “做法：…” (approach: …) is shown. Once the skill has been loaded, its display name is shown; otherwise its identifier is shown.
  */
 function Detail({ template, picked, onUse }: { template: HomeTemplate; picked: boolean; onUse(template: HomeTemplate): void }) {
   const example = isExample(template);
@@ -375,7 +375,7 @@ function Detail({ template, picked, onUse }: { template: HomeTemplate; picked: b
   );
 }
 
-/** 弹窗底部：有模板没能加载时一行克制的说明，展开看是哪个目录、为什么。 */
+/** At the bottom of the dialog: when some template failed to load, a single restrained line of explanation; expand it to see which directory and why. */
 function Skipped({ diagnostics }: { diagnostics: readonly TemplateDiagnostic[] }) {
   if (!diagnostics.length) return null;
   return (
@@ -398,9 +398,9 @@ function Skipped({ diagnostics }: { diagnostics: readonly TemplateDiagnostic[] }
 }
 
 /**
- * 左右两栏：左边找（搜索、类型、来源、分类、分页的封面格子），右边看（当前这个的预览与提示词）。
- * 右栏不空着：没点过就看已选的那个；它不在的话看这一页的第一个。
- * 挂上时取一次目录（弹窗每次打开都重新挂上）；没取到过时显示加载中或失败（可重试），目录为空时如实说。
+ * Two columns: the left is for finding (the cover grid with search, type, source, category and paging), the right is for viewing (the preview and prompt of the current template).
+ * The right column is never empty: if nothing has been clicked, it shows the selected one; if that isn't on the page, it shows the first one on this page.
+ * The catalog is fetched once on mount (the dialog remounts each time it opens). Until it has been fetched, loading or failure is shown (with retry); if the catalog is empty, that is stated plainly.
  */
 function Library({ picked, onUse }: { picked: string | null; onUse(template: HomeTemplate): void }) {
   const catalog = useTemplateCatalogLoader();
@@ -412,7 +412,7 @@ function Library({ picked, onUse }: { picked: string | null; onUse(template: Hom
   const [open, setOpen] = useState<string | null>(picked);
   const templates = catalog.templates;
   const sources = templateSources(templates);
-  // 来源控件不在了（目录里只剩一种来源）时，之前选的来源不再生效。
+  // When the source control is gone (the catalog has only one source left), a previously chosen source no longer takes effect.
   const sourceFilter = sources.some((s) => s.key === source) ? source : 'all';
   const view = pageOf(findTemplates(templates, query, { kind, source: sourceFilter, category }), page);
   const detail = templateOf(templates, open) ?? view.items[0] ?? null;
@@ -525,8 +525,8 @@ function Library({ picked, onUse }: { picked: string | null; onUse(template: Hom
 }
 
 /**
- * 「全部模板」弹窗（产品设计 §3.2.1；原型 home-templates.jsx `HomeTemplateLibrary`）。
- * 关掉再打开，从第一页重新开始（Library 的状态跟着内容一起卸载）。
+ * The “全部模板” (All templates) dialog (product design §3.2.1; prototype home-templates.jsx `HomeTemplateLibrary`).
+ * Closing and reopening starts again from the first page (the Library's state is unmounted along with its content).
  */
 export function TemplateLibrary({
   open,

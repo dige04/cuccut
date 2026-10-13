@@ -1,12 +1,8 @@
-//! candle 跨平台推理后端（CPU 全平台，可选 CUDA），从 v2 `ccut-speech` 的 `candle_backend` 移植。
+//! candle cross-platform inference backend (CPU on all platforms, optional CUDA), ported from the `candle_backend` of v2 `ccut-speech`.
 //!
-//! 与 `mlx` 后端加载同一批模型仓库：MLX 仿射量化权重在加载时反量化（数值与 MLX `quantized_matmul` 所用的权重
-//! 完全一致）。CPU 上统一按 f32 计算；CUDA 上沿用 checkpoint 自身的半精度（bf16/f16）。模型实现 [`crate::speech`]
-//! 的 trait，识别流水线（[`crate::transcribe`]）不感知后端。
+//! Loads the same model repositories as the `mlx` backend: MLX affine-quantized weights are dequantized at load time (numerically identical to the weights used by MLX `quantized_matmul`). On CPU, everything computes in f32; on CUDA, the checkpoint's own half precision (bf16/f16) is used. The models implement the trait of [`crate::speech`], and the recognition pipeline ([`crate::transcribe`]) is unaware of the backend.
 //!
-//! 设备：`cuda` feature 编译进来且 `CUCCUT_GPU` 没关掉 GPU 时用 CUDA 0 号卡，初始化失败回退 CPU 并在 stderr 提示
-//! 一次；否则 CPU。`worker.hello` 报 `devices`：能用 CUDA 时 `["cuda", "cpu"]`，否则 `["cpu"]`。模型包的 `device`
-//! 是 `cpu` 时一律跑 CPU。Silero VAD 总在 CPU 上跑（逐 32 ms 小块，搬上 GPU 只会更慢）。
+//! Device: when the `cuda` feature is compiled in and `CUCCUT_GPU` has not turned off the GPU, CUDA device 0 is used; if initialization fails, it falls back to CPU and prints a notice to stderr once; otherwise CPU. `worker.hello` reports `devices`: `["cuda", "cpu"]` when CUDA is usable, otherwise `["cpu"]`. When a model pack's `device` is `cpu`, it always runs on CPU. Silero VAD always runs on CPU (in 32 ms chunks, moving it to the GPU would only be slower).
 
 pub mod aligner;
 pub mod audio_encoder;
@@ -43,12 +39,11 @@ pub use qwen3::Qwen3Asr;
 pub use silero::SileroVad;
 pub use wespeaker::WeSpeakerEmbedder;
 
-/// candle 认的设备名。
+/// Device names recognized by candle.
 pub const DEVICE_CPU: &str = "cpu";
 pub const DEVICE_CUDA: &str = "cuda";
 
-/// 本进程的默认推理设备，只解析一次：开启 `cuda` feature、`CUCCUT_GPU` 没关掉 GPU、且 CUDA 初始化成功时用 CUDA 0
-/// 号卡，否则 CPU。编译进了 CUDA 却初始化失败时在 stderr 提示一次，避免静默退化成 CPU 后难以定位。
+/// The default inference device of this process, resolved only once: CUDA device 0 when the `cuda` feature is enabled, `CUCCUT_GPU` has not turned off the GPU, and CUDA initialization succeeds; otherwise CPU. If CUDA was compiled in but initialization fails, a notice is printed once to stderr, to avoid silently degrading to CPU, which would be hard to diagnose.
 pub fn default_device() -> Device {
     static DEVICE: OnceLock<Device> = OnceLock::new();
     DEVICE.get_or_init(resolve_device).clone()
@@ -73,12 +68,12 @@ fn resolve_device() -> Device {
     Device::Cpu
 }
 
-/// 设备的协议名（`cpu` / `cuda`）。
+/// The protocol name of the device (`cpu` / `cuda`).
 pub fn device_label(device: &Device) -> &'static str {
     if device.is_cuda() { DEVICE_CUDA } else { DEVICE_CPU }
 }
 
-/// 把底层的 CUDA 显存不足报错补上可操作的提示。
+/// Adds an actionable hint to the underlying CUDA out-of-memory error.
 pub(crate) fn annotate_out_of_memory(error: anyhow::Error) -> anyhow::Error {
     let text = format!("{error:#}");
     if text.contains("OUT_OF_MEMORY") || text.contains("out of memory") {
@@ -88,7 +83,7 @@ pub(crate) fn annotate_out_of_memory(error: anyhow::Error) -> anyhow::Error {
     }
 }
 
-/// 触发一个最小计算，验证 candle 运行时在默认设备上能算；返回设备的协议名。
+/// Triggers a minimal computation to verify that the candle runtime can compute on the default device; returns the device's protocol name.
 pub fn compute_probe() -> anyhow::Result<&'static str> {
     let device = default_device();
     let values = Tensor::from_slice(&[1.0_f32, 2.0, 3.0, 4.0], (2, 2), &device)?;
@@ -129,14 +124,14 @@ impl Backend for CandleBackend {
             return load_moss(bundle, asr_files, device, phase);
         }
         let (Some(asr_files), Some(vad_files)) = (&bundle.asr, &bundle.vad) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs asr and vad components"));
         };
         if asr_files.family != FAMILY_QWEN3_ASR {
             return Err(transcription_not_wired(Some(&asr_files.family)));
         }
 
-        // 权重之外的文件先读、先核对：配置不对时不必读几百 MB 的权重。
+        // Files other than the weights are read and verified first: if the configuration is wrong, there is no need to read hundreds of MB of weights.
         let config = read_json(asr_files, "config.json")?;
         let config = Qwen3Config::parse(&config).map_err(|message| {
             eprintln!("[model-worker] {message}");
@@ -150,9 +145,9 @@ impl Backend for CandleBackend {
         };
         let asr_weights = asr_files.require_extension("safetensors")?;
         let vad_weights = vad_files.require_extension("safetensors")?;
-        // 对齐器是可选组件：模型包带了才加载，缺文件同样报 MODEL_NOT_INSTALLED（不悄悄退回估计的词时间）。
+        // The aligner is an optional component: it is loaded only when the model pack includes it; missing files likewise report MODEL_NOT_INSTALLED (rather than silently falling back to estimated word timing).
         check_aligner_files(bundle)?;
-        // 说话人区分同样可选：只核对文件，任务里要用时才加载。
+        // Speaker diarization is likewise optional: only its files are verified, and it is loaded when a task needs it.
         let diarizer = DiarizerSlot::new(bundle, &device)?;
 
         phase(ModelPhase::LoadingWeights, Some("vad"));
@@ -181,11 +176,11 @@ impl Backend for CandleBackend {
         }))
     }
 
-    /// 文生图（Qwen-Image）：引擎先核对清单与配置、读分词表与调度器配置；三段权重留到生成时按阶段读（同 MLX 后端）。
+    /// Text-to-image (Qwen-Image): the engine first verifies the manifest and configuration, and reads the tokenizer and scheduler configuration; the three weight segments are deferred and read stage by stage at generation time (same as the MLX backend).
     fn load_image(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedImage, ErrorBody> {
         let device = check_device(bundle)?;
         let Some(files) = &bundle.image else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs an image component"));
         };
         phase(ModelPhase::LoadingWeights, Some(files.family.as_str()));
@@ -199,9 +194,8 @@ impl Backend for CandleBackend {
         })
     }
 
-    /// 本地语音合成：引擎经 `synthesize::tensor` 门面跑在 candle 上（v2 同一份适配层），张量固定落在本进程的默认设备，
-    /// 所以模型包的设备必须就是默认设备（Runtime 按 `worker.hello` 报告的首选设备下发，正常不会不同）。
-    /// Apple Silicon 上同时编进 MLX 时门面是 MLX，candle 的合成模型包在这里拒绝。
+    /// Local speech synthesis: the engine runs on candle through the `synthesize::tensor` facade (the same adaptation layer as v2); tensors are pinned to this process's default device, so a model pack's device must be the default device (the Runtime dispatches according to the preferred device reported by `worker.hello`, so normally they do not differ).
+    /// On Apple Silicon, when MLX is also compiled in, the facade is MLX, and candle's synthesis model packs are rejected here.
     fn load_synthesis(
         &self,
         bundle: &VerifiedBundle,
@@ -228,7 +222,7 @@ impl Backend for CandleBackend {
                 .with_details(json!({ "backend": "candle", "device": bundle.device, "reason": "unsupported-device" })));
             }
             let Some(model) = &bundle.tts else {
-                // backend::load 已经检查过；这里只为类型。
+                // backend::load has already checked this; this is only for the type.
                 return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs a tts component"));
             };
             let files = crate::synthesize::EngineFiles {
@@ -249,11 +243,11 @@ impl Backend for CandleBackend {
         }
     }
 
-    /// 说话人区分单独加载（协议规范 §2.5.5）：与 MLX 读同一批 Pyannote 分段与 WeSpeaker 权重，常驻到卸载。
+    /// Speaker diarization is loaded separately (protocol spec §2.5.5): it reads the same Pyannote segmentation and WeSpeaker weights as MLX, and stays resident until unloaded.
     fn load_diarization(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedDiarization, ErrorBody> {
         let device = check_device(bundle)?;
         let (Some(segmentation), Some(speaker)) = (&bundle.segmentation, &bundle.speaker) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(
                 codes::MODEL_UNSUPPORTED,
                 "the bundle needs segmentation and speaker components",
@@ -273,11 +267,11 @@ impl Backend for CandleBackend {
         })
     }
 
-    /// 人声分离（HTDemucs-FT）：与 MLX 读同一个仓库，四个子模型的权重加载时升成 f32 常驻（CPU 与 CUDA 都是，同 v2）。
+    /// Vocal separation (HTDemucs-FT): reads the same repository as MLX; the weights of its four sub-models are upcast to f32 and kept resident at load time (on both CPU and CUDA, as in v2).
     fn load_separation(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<LoadedSeparation, ErrorBody> {
         let device = check_device(bundle)?;
         let Some(files) = &bundle.separator else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs a separator component"));
         };
         phase(ModelPhase::LoadingWeights, Some(files.family.as_str()));
@@ -293,8 +287,7 @@ impl Backend for CandleBackend {
     }
 }
 
-/// MOSS 模型包：MOSS 引擎在这里加载；可选的对齐器与说话人模型只核对文件，任务里要用时才加载、任务结束放掉（同 MLX
-/// 后端与 v2：三份权重不常驻在一起）。MOSS 没有预热，`warmupMs` 是 0。
+/// MOSS model pack: the MOSS engine is loaded here; the optional aligner and speaker model only have their files verified, and are loaded when a task needs them and released when the task ends (as in the MLX backend and v2: the three sets of weights are not kept resident together). MOSS has no warmup, so `warmupMs` is 0.
 fn load_moss(
     bundle: &VerifiedBundle,
     asr_files: &VerifiedFiles,
@@ -328,7 +321,7 @@ pub(crate) fn check_aligner_files(bundle: &VerifiedBundle) -> Result<(), ErrorBo
     Ok(())
 }
 
-/// 模型包的设备：`cpu` 总能跑；`cuda` 要求本进程真的拿到了 CUDA 设备（`cuda` feature、`CUCCUT_GPU` 没关、初始化成功）。
+/// The model pack's device: `cpu` can always run; `cuda` requires that this process actually obtained a CUDA device (the `cuda` feature, `CUCCUT_GPU` not turned off, and successful initialization).
 fn check_device(bundle: &VerifiedBundle) -> Result<Device, ErrorBody> {
     match bundle.device.as_str() {
         DEVICE_CPU => Ok(Device::Cpu),
@@ -356,7 +349,7 @@ fn read_json(files: &VerifiedFiles, relative: &str) -> Result<Value, ErrorBody> 
         })
 }
 
-/// 权重形状不对、文件损坏之类的加载失败。细节（可能含路径）只写 stderr；按清单取文件的错误原样透传。
+/// Load failures such as wrong weight shapes or corrupted files. Details (which may include paths) are written only to stderr; errors from fetching files per the manifest are passed through unchanged.
 pub(crate) fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
     eprintln!("[model-worker] loading {component} failed: {error:#}");
     if let Some(body) = error.downcast_ref::<ErrorBody>() {
@@ -366,8 +359,8 @@ pub(crate) fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
         .with_details(json!({ "component": component, "reason": "load-failed" }))
 }
 
-/// candle 没有 MLX 那样的分配器统计：`active` 报整个 Worker 进程此刻的常驻内存，`peak` 报进程的常驻峰值，`cache` 是 0。
-/// CUDA 显存不在其中。拿不到进程内存的平台（Windows）报 `None`。
+/// candle has no allocator statistics like MLX's: `active` reports the resident memory of the whole Worker process at this moment, `peak` reports the process's peak resident memory, and `cache` is 0.
+/// CUDA device memory is not included. On platforms where process memory cannot be obtained (Windows), `None` is reported.
 pub(crate) fn memory() -> Option<MemorySnapshot> {
     let active = process_resident_bytes()?;
     Some(MemorySnapshot {
@@ -377,12 +370,12 @@ pub(crate) fn memory() -> Option<MemorySnapshot> {
     })
 }
 
-/// 进程此刻的常驻内存（字节）。
+/// The process's resident memory at this moment (bytes).
 #[cfg(target_os = "macos")]
 pub(crate) fn process_resident_bytes() -> Option<u64> {
     let mut info: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
-    // SAFETY: `info` 是足够大、按 C 布局的缓冲区；proc_pidinfo 只写入其中 `size` 字节。
+    // SAFETY: `info` is a sufficiently large buffer with C layout; proc_pidinfo writes only `size` bytes into it.
     let written = unsafe {
         libc::proc_pidinfo(
             libc::getpid(),
@@ -395,12 +388,12 @@ pub(crate) fn process_resident_bytes() -> Option<u64> {
     (written == size).then_some(info.pti_resident_size)
 }
 
-/// 进程此刻的常驻内存（字节）：`/proc/self/statm` 的第二列是常驻页数。
+/// The process's resident memory at this moment (bytes): the second column of `/proc/self/statm` is the number of resident pages.
 #[cfg(target_os = "linux")]
 pub(crate) fn process_resident_bytes() -> Option<u64> {
     let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
     let pages = statm.split_whitespace().nth(1)?.parse::<u64>().ok()?;
-    // SAFETY: sysconf 只读系统常量。
+    // SAFETY: sysconf only reads a system constant.
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     (page_size > 0).then(|| pages * page_size as u64)
 }
@@ -410,11 +403,11 @@ pub(crate) fn process_resident_bytes() -> Option<u64> {
     None
 }
 
-/// 进程的常驻峰值（字节）。`ru_maxrss` 在 macOS 上是字节，在 Linux 上是 KiB。
+/// The process's peak resident memory (bytes). `ru_maxrss` is in bytes on macOS and in KiB on Linux.
 #[cfg(unix)]
 fn process_peak_resident_bytes() -> Option<u64> {
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    // SAFETY: `usage` 是按 C 布局的输出缓冲区。
+    // SAFETY: `usage` is an output buffer with C layout.
     if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 {
         return None;
     }
@@ -427,7 +420,7 @@ fn process_peak_resident_bytes() -> Option<u64> {
     None
 }
 
-/// 加载好的 VAD + ASR（+ 可选的对齐器、按需加载的说话人区分）。
+/// The loaded VAD + ASR (plus the optional aligner and on-demand speaker diarization).
 pub struct CandleModel {
     vad: SileroVad,
     asr: Qwen3Asr,
@@ -474,8 +467,7 @@ impl LoadedModel for CandleModel {
     }
 }
 
-/// 加载好的 MOSS 模型包，与 MLX 后端的 `MossModel` 同一套规则：MOSS 引擎常驻；对齐器与说话人模型按需加载，一次只留
-/// 一个，任务结束放掉；装它们之前系统有内存压力时先卸掉 MOSS 引擎，下一条任务开始时重装。
+/// The loaded MOSS model pack, following the same rules as `MossModel` in the MLX backend: the MOSS engine stays resident; the aligner and speaker model are loaded on demand, keeping only one at a time, and released when the task ends; if the system is under memory pressure before loading them, the MOSS engine is unloaded first and reloaded when the next task starts.
 pub struct CandleMossModel {
     engine: Option<MossTranscribeDiarize>,
     asr_files: VerifiedFiles,
@@ -483,7 +475,7 @@ pub struct CandleMossModel {
     speaker_files: Option<VerifiedFiles>,
     aligner: Option<ForcedAligner>,
     speaker: Option<WeSpeakerEmbedder>,
-    /// 这个任务里对齐器、说话人模型加载失败过：同一任务不再重试。
+    /// The aligner or speaker model failed to load during this task: it is not retried within the same task.
     helper_failed: (bool, bool),
     resident_bytes: Option<u64>,
     device: Device,
@@ -510,7 +502,7 @@ impl SegmentingRecognizer for CandleMossModel {
         callbacks: &mut SegmentingCallbacks<'_>,
     ) -> anyhow::Result<SegmentedTranscription> {
         if self.engine.is_none() {
-            // 上一条任务在内存压力下卸掉了它。
+            // The previous task unloaded it under memory pressure.
             self.engine = Some(MossTranscribeDiarize::load(&self.asr_files, &self.device)?);
         }
         let Some(engine) = self.engine.as_mut() else {

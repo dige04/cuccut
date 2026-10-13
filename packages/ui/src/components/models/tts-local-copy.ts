@@ -15,29 +15,29 @@ import { tr } from './tts-local-copy.tr.ts';
 import { vi } from './tts-local-copy.vi.ts';
 
 /**
- * 设置 › 模型 › 语音合成的本地模型页与「试听」用到的文字（设计稿 settings-local.jsx、settings-tts.jsx、panel-tts-local.jsx）。
- * 本地页共用的文字在 models-copy.ts 的 `LOCAL_COPY`，下载管理在 local-models-copy.ts。
- * 英文是键与类型的来源，译文在 `tts-local-copy.<语言>.ts`。
+ * Text for the local model page of Settings › Models › Speech synthesis and for “试听”(Trial listen) (design mocks settings-local.jsx, settings-tts.jsx, panel-tts-local.jsx).
+ * Text shared by the local pages is in `LOCAL_COPY` in models-copy.ts; install management is in local-models-copy.ts.
+ * English is the source of keys and types; translations are in `tts-local-copy.<语言>.ts`.
  */
 const en = {
   ttsLocal: {
-    // 默认模型（语音合成没有出厂默认，菜单里没有「自动选择」）
+    // Default model (speech synthesis has no factory default; the menu has no “自动选择”(Auto select))
     unset: 'Not set',
     defaultDesc: 'Preselected for new synthesis tasks. Without a default you pick a model each time; a manual choice always wins.',
     cloudDefault: (name: string) =>
       `The default is a cloud model (${name}); change it in Settings › Cloud models. Choosing a local model switches to it.`,
     noInstalled: 'No speech synthesis model is installed yet. Download one below first.',
-    // 行
+    // Row
     audition: 'Preview',
     hideAudition: 'Hide preview',
     engine: 'Engine',
     license: 'License',
     components: 'Components',
-    // 下载前的许可确认（设计稿 withModelLicense）
+    // License confirmation before download (design mock withModelLicense)
     licenseTitle: 'License',
     licenseUse: 'Speech made with it may only be used in non-commercial content; for videos you plan to use commercially, pick another speech model.',
     licenseConfirm: (size: string) => `I understand, download ${size}`,
-    // 试听面板
+    // Trial panel
     voice: 'Voice',
     tone: 'Tone',
     say: 'What to say',
@@ -58,7 +58,7 @@ const en = {
       models
         ? `This model only has its built-in speakers · try “My voices” on a model that can clone: ${models} (the preview on each one’s row)`
         : 'This model only has its built-in speakers · to try “My voices”, download a model that can clone first',
-    /** `presetOnly` 里列出的模型名。 */
+    /** Model names listed in `presetOnly`. */
     nameList: (names: readonly string[]) => names.join(', '),
     cloneHint: 'Give it 5–15 seconds of clean speech: one person talking, no background music. WAV, MP3, M4A, FLAC or a video file all work.',
     yourFile: (name: string) => `Your recording · ${name}`,
@@ -88,7 +88,7 @@ const en = {
     audioFailed: (message: string) => `Couldn't load the audio: ${message}`,
     downloadFailed: (message: string) => `Couldn't download: ${message}`,
     fileName: (name: string) => `${name.replace(/[^\w.-]+/g, '-')}-preview.wav`,
-    // 「我的声音」那一侧：`name` 是发起克隆的那只本地模型的名字
+    // The “我的声音”(My Voices) side: `name` is the name of the local model that started the clone
     handoffFrom: (name: string) => `From the “${name}” preview · record one or take it from a video; you’ll go back once it’s saved`,
     handoffSaved: (name: string) => `Saved · go back to the “${name}” preview, where this voice will be selected`,
     handoffBack: 'Go back and use it',

@@ -28,18 +28,17 @@ const cliCatalog = new ToolCatalog(allToolSets(), silentLogger, { surface: 'cli'
 const agentCatalog = new ToolCatalog(allToolSets(), silentLogger, { surface: 'agent' });
 const CLI = { tools: cliCatalog.list() };
 const AGENT = { tools: agentCatalog.list() };
-/** 复合工具名（`a_b`）：终端目录里的与只在会话里有的（`downloads_save` 这类），CLI 面渲染后都不该再出现。 */
+/** Compound tool names (`a_b`): those in the terminal directory, and those that exist only in the session (such as `downloads_save`), should no longer appear after CLI-side rendering. */
 const CLI_COMPOUND = [...new Set([...CLI.tools, ...AGENT.tools].map((tool) => tool.name))].filter((name) => name.includes('_'));
 
 /**
- * 只属于工具桥面（会话内智能体）的说法：审批与停止的错误码、编辑器上下文、工具桥本身、访问模式。CLI 面里出现就是漏标了 surface。
- * `skills_read` 的「现取」在 CLI 面渲染成 `cuccut skills read`，所以 `skills_read` 本身也不该出现。不分大小写比较。
+ * Wording that belongs only to the tool-bridge surface (the in-session agent): the approval and stop error codes, editor context, the tool bridge itself, and access modes. Its appearance on the CLI surface means `surface` was missed.
+ * `skills_read`'s “on-demand fetch” is rendered as `cuccut skills read` on the CLI surface, so `skills_read` itself should not appear either. Comparison is case-insensitive.
  */
 const BRIDGE_ONLY_TERMS = ['APPROVAL_DENIED', 'APPROVAL_CANCELLED', 'TASK_STOPPED', '<cuccut-editor-context>', 'tool bridge', 'access mode'];
 
 /**
- * §8.6 的第一条：CLI 面里不出现 `a_b` 形式的工具名，也不出现 `skills_read` 的「现取」说法以外的工具桥用语。mcp.md 整页与
- * tool-map 块豁免（那里本来就是 MCP 工具名的对照表）。
+ * Point 1 of §8.6: the CLI surface does not show tool names in the `a_b` form, and does not show tool-bridge wording other than the “on-demand fetch” wording of `skills_read`. The whole mcp.md page and the tool-map block are exempt, since they are by nature a comparison table of MCP tool names.
  */
 function bridgeNamesInCliFace(files: AgentSkillFiles): string[] {
   const hits: string[] = [];
@@ -54,7 +53,7 @@ function bridgeNamesInCliFace(files: AgentSkillFiles): string[] {
   return hits;
 }
 
-/** §8.6 的第二条：工具桥面里不出现 `cuccut <命令>`、`--yes` 与别的旗标、退出码。 */
+/** Point 2 of §8.6: the tool-bridge surface does not show `cuccut <command>`, `--yes` or other flags, or exit codes. */
 function cliTracesInAgentFace(files: AgentSkillFiles): string[] {
   const hits: string[] = [];
   for (const [file, text] of files) {
@@ -76,17 +75,17 @@ describe('说明书的渲染器', () => {
     expect(skill).toContain('first `cuccut documents read`, then write the translation back with `cuccut documents put`');
     expect(skill).toContain('then submit with the new `--revision` (the field is written `--expected-revision`)');
     expect(skill).toContain('For how to polish, see [demo-polish](references/craft/demo-polish.md).');
-    // 代码块里不套反引号。
+    // No extra backticks are added inside code blocks.
     expect(skill).toContain('```text\ncuccut edits apply --expected-revision 12\n```');
-    // 另一面的段落连同标记行删掉；页面链接原样。
+    // The paragraph meant for the other surface, together with its marker line, is removed. Page links are kept as-is.
     expect(skill).toContain('Details in [start](references/start.md); for MCP see [mcp](references/mcp.md).');
     expect(skill).not.toContain('The tools are already connected');
     expect(skill).not.toMatch(/<!-- \/?surface/);
-    // 从 references/ 下的页面引用 craft 时按该页计算相对路径。
+    // When citing craft from a page under references/, the relative path is computed from that page.
     expect(cli.get('references/catalog/editing.md')).toContain('For how to cut a talking head, see [demo-polish](../craft/demo-polish.md).');
     expect(cli.get('references/workflows.md')).toContain('Polish it following [demo-polish](craft/demo-polish.md)');
     expect(cli.get('references/workflows.md')).toContain('write the translation with `--source-document`');
-    // 生成块的标记行保留，里面的占位符照样渲染。
+    // Marker lines of generated blocks are kept. Placeholders inside them are still rendered.
     expect(cli.get('references/conventions.md')).toContain('<!-- generated: error-codes -->');
     expect(cli.get('references/conventions.md')).toContain('| Error code | Exit code | Next step |');
     expect(cli.get('references/conventions.md')).not.toContain('{{');
@@ -108,14 +107,14 @@ describe('说明书的渲染器', () => {
     expect(skill).toContain('```text\nedits_apply expectedRevision 12\n```');
     expect(skill).toContain('The tools are already connected: read one catalog page for the task.');
     expect(skill).toContain('| editing (read `cuccut-catalog-editing` with `skills_read`) | Changes on the timeline |');
-    // 锚点去掉；工具桥面没有的页（start.md）退成纯文字。
+    // Anchors are removed. Pages that the tool-bridge surface does not have (start.md) degrade to plain text.
     expect(skill).toContain(
       'End-to-end recipes are in workflows (read `cuccut-workflows` with `skills_read`), how to handle errors is in conventions ' +
         '(read `cuccut-conventions` with `skills_read`), and start-up details are in start.',
     );
     expect(agent.get('references/catalog/media.md')).toContain('to cut, go to editing (read `cuccut-catalog-editing` with `skills_read`)');
     expect(agent.get('references/conventions.md')).toContain('| Error code | Next step |');
-    // craft 副本是给外部 Agent 的，工具桥面不输出。
+    // The craft copy is for external agents, so the tool-bridge surface does not output it.
     expect([...agent.keys()].some((file) => file.startsWith('references/craft/'))).toBe(false);
     expect(cliTracesInAgentFace(agent)).toEqual([]);
   });
@@ -179,7 +178,7 @@ describe('只给 CLI 面的目录页', () => {
     const { pages } = renderAgentGuidance(files, AGENT);
     expect(pages.map((page) => page.id)).not.toContain('cuccut-catalog-web');
     expect(pages.map((page) => page.id)).toContain('cuccut-catalog-media');
-    // 标题在 cli 块外面也一样：只有标题不算正文。
+    // Headings outside cli blocks are handled the same way: only headings do not count as body text.
     const titled = cliOnly.replace('<!-- surface: cli -->\n# 网页', '# 网页\n\n<!-- surface: cli -->');
     expect(renderAgentGuidance(withPage({ 'references/catalog/web.md': titled }), AGENT).pages.map((p) => p.id)).not.toContain(
       'cuccut-catalog-web',
@@ -224,7 +223,7 @@ describe('工具桥面的 craft 引用读起来通顺', () => {
     expect(agent('1. Read {{skill:talking-head-cut}}.')).toBe('1. Use `skills_read` to read `talking-head-cut`.');
     expect(agent('Before starting, read {{skill:shorts-segments}}.')).toBe('Before starting, use `skills_read` to read `shorts-segments`.');
     expect(agent('Thread {{skill:video-blog}} in.')).toBe('Thread `video-blog` (read it with `skills_read`) in.');
-    // 别的占位符前面的 read 原样留下；CLI 面的 read 也留着。
+    // A `read` before other placeholders is kept as-is. The `read` on the CLI surface is kept too.
     expect(agent('Read {{tool:documents_read}} results')).toBe('Read `documents_read` results');
     expect(cli('1. Read {{skill:talking-head-cut}}.')).toBe('1. Read [talking-head-cut](craft/talking-head-cut.md).');
     expect(cli('Read {{tool:documents_read}} results')).toBe('Read `cuccut documents read` results');
@@ -237,18 +236,18 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
   const PATH_TOLD = SESSION_ONLY_TOOLS.downloads_save!.replacement;
 
   it('downloads_save 在终端里没有命令：常见的整句换成「把路径告诉用户」，其余地方换成兜底说法，都不提工具名', () => {
-    // craft 里的原句（skills/translate-subtitles 等）。
+    // Original sentences from craft (skills/translate-subtitles, etc.).
     expect(
       cli('Write it as a new file in the working directory, then put it in the downloads directory with downloads_save and tell the user the path it returns.'),
     ).toBe(`Write it as a new file in the working directory, then ${PATH_TOLD}.`);
     expect(PATH_TOLD).toBe("tell the user the file's path (the terminal has no downloads directory step: the file is where you wrote it)");
     expect(cli('At delivery, put the notes in the downloads directory with `downloads_save`.')).toBe(`At delivery, ${PATH_TOLD}.`);
-    // 说明书里写成占位符也一样（不按终端的目录核对、不报「目录里没有」）。
+    // Placeholders written in the instructions behave the same way: they are not checked against the terminal's directory, and no “not in directory” error is reported.
     expect(cli('Finally {{tool:downloads_save}}.')).toBe("Finally hand the file to the user (in the terminal, tell the user the file's path).");
     expect(renderSessionOnlyTools('see downloads_saved and my_downloads_save')).toBe('see downloads_saved and my_downloads_save');
-    // 代码块里不动。
+    // Code blocks are left untouched.
     expect(cli('```text\ndownloads_save\n```')).toBe('```text\ndownloads_save\n```');
-    // 工具桥面原样。
+    // Tool-bridge surface kept as-is.
     expect(agent('Then put it in the downloads directory with {{tool:downloads_save}}.')).toBe(
       'Then put it in the downloads directory with `downloads_save`.',
     );
@@ -256,7 +255,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
 
   it('slides_check 与 slides_import_asset：craft 里的那一步从 Call / import 起整行换掉，其余地方换成兜底说法', () => {
     const fallback = SESSION_ONLY_TOOLS.slides_import_asset!;
-    // skills/slides 的第 6 步与第 4 步。
+    // Step 6 and step 4 of skills/slides.
     expect(
       cli('6. **Validate**. Call `slides_check` on the whole deck (parameter `path` is the deck directory), fix each problem it lists.'),
     ).toBe(`6. **Validate**. ${SESSION_ONLY_TOOLS.slides_check!.replacement}`);
@@ -271,12 +270,12 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
     expect(cli('Images come in through slides_import_asset.')).toBe(
       'Images come in through importing images and fonts (only in CucCut sessions).',
     );
-    // 工具桥面原样。
+    // Tool-bridge surface kept as-is.
     expect(agent('Call {{tool:slides_check}} to validate.')).toBe('Call `slides_check` to validate.');
   });
 
   it('design_check 与 design_import_asset：skills/design 的校验句与导入句整句换掉，其余地方换成兜底说法', () => {
-    // skills/design「New」的第 6 步与第 3 步。
+    // Step 6 and step 3 of skills/design “New”.
     expect(
       cli(
         '6. The rest. Then run design_check on the design, fix every problem it lists, and run it again until it lists none: only then does the design card appear in the thread. Then say one line.',
@@ -291,7 +290,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
       '4. Then the design check (only in CucCut sessions) until it lists no problems.',
     );
     expect(cli('Importing (design_import_asset) is only for fonts')).toBe('Importing (importing assets (only in CucCut sessions)) is only for fonts');
-    // 工具桥面原样。
+    // Tool-bridge surface kept as-is.
     expect(agent('Then {{tool:design_check}}.')).toBe('Then `design_check`.');
   });
 
@@ -335,7 +334,7 @@ describe('说明书的标记法报错', () => {
     expect(errorOf(() => render('一\n二 {{tool:Bad Name}}'))).toBe('references/x.md:2：工具名不合规：{{tool:Bad Name}}');
     expect(errorOf(() => render('{{thing:x}}'))).toContain('references/x.md:1：不认识的占位符 {{thing:x}}');
     expect(errorOf(() => render('甲\n乙\n{{tool:documents_read'))).toBe('references/x.md:3：占位符没有闭合（有 {{ 没有对应的 }}）');
-    // 代码里不带 kind: 的是模板洞（skills/design 讲 Design Component 的写法），原样保留；正文里的、带了不认识 kind: 的照样报错。
+    // In code, template holes are the ones without `kind:` (skills/design explains how to write Design Components). They are kept as-is. Those in the body with an unrecognized `kind:` still raise errors.
     expect(render('洞写成 `{{ item.x }}`，属性 `x="{{hole}}"`；{{tool:documents_read}}')).toBe(
       '洞写成 `{{ item.x }}`，属性 `x="{{hole}}"`；`cuccut documents read`',
     );
@@ -393,7 +392,7 @@ describe('说明书的位置', () => {
 describe('仓库里的说明书', () => {
   const dir = path.join(findRepoDir('skills')!, 'cuccut');
 
-  // §8.6 的三条测试，对仓库里真实的说明书与真实的工具目录（Runtime 的工具组，按面取视图）。
+  // The three §8.6 tests run against the real instructions in the repository and the real tool catalog (the Runtime's tool group, with the view chosen by surface).
   const source = readAgentSkillDir(dir);
   const cli = renderAgentSkill(source, { face: 'cli', catalog: CLI });
   const agent = renderAgentSkill(source, { face: 'agent', catalog: AGENT });
@@ -459,7 +458,7 @@ describe('仓库里的说明书', () => {
       expect([...page.description].length, page.id).toBeLessThanOrEqual(300);
       expect(page.body, page.id).not.toMatch(/<!--|\{\{|^---/);
     }
-    // 指导里引用的页面 id 都在。
+    // The page IDs referenced by the guidance all exist.
     const ids = new Set(guidance.pages.map((page) => page.id));
     for (const match of guidance.guidance.matchAll(/`(cuccut-[a-z-]+)`/g)) expect(ids.has(match[1]!), match[1]).toBe(true);
   });

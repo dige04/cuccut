@@ -10,8 +10,8 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 
 /**
- * 用户库经 Runtime（架构设计 §5.9）：`library.*` 方法、`library` 主题、重启之后的数据、不进 Space；
- * 音色包用 ffmpeg 现场生成的 wav（没有 ffmpeg 时跳过），拷进视频用真实的引擎（没有构建时跳过）。
+ * The user library through the Runtime (architecture design §5.9): the `library.*` methods, the `library` topic, data after a restart, and that it does not enter Space.
+ * Voice packs use a wav generated on the spot by ffmpeg (skipped without ffmpeg). Copying into a video uses the real engine (skipped without a build).
  */
 
 const engine = resolveEngineHostCommand();
@@ -118,12 +118,12 @@ describe('用户库（Runtime）', () => {
     expect(events[2]).toMatchObject({ type: 'entry.upsert', entry: { id: g.id, version: 2, name: '术语 2', termCount: 1 } });
     expect(events[3]).toEqual({ type: 'entry.removed', library: 'brand', id: image.id });
 
-    // 入站校验：未知的库、坏的颜色
+    // Inbound validation: unknown library, bad color
     expect((await rejection(client.request('library.list', { library: 'fonts' as never }))).code).toBe('invalid-request');
     expect(
       (await rejection(client.request('library.put', { library: 'brand', content: { name: 'x', kind: 'color', value: 'red' } }))).code,
     ).toBe('invalid-request');
-    // 叠加模板只保留种类
+    // An overlay template keeps only its kind
     const reserved = await rejection(
       client.request('library.put', { library: 'brand', content: { name: '片头', kind: 'overlayTemplate' } }),
     );
@@ -149,7 +149,7 @@ describe('用户库（Runtime）', () => {
     expect(space).not.toContain(path.join(home.root, 'library'));
     expect(runtime.space.snapshot().entries.every((e) => e.source.projectId === project.id || e.source.projectId === null)).toBe(true);
 
-    // 产物库里的文件当来源（例如生成的图片）。
+    // A file in the output library as a source (for example, a generated image).
     const artifact = await runtime.models.jobs.artifacts.put(PNG, 'png');
     const fromArtifact = await client.request('library.put', {
       library: 'brand',
@@ -191,7 +191,7 @@ describe('用户库（Runtime）', () => {
       const out = path.join(files, 'voice.bcvoice');
       const exported = await client.request('library.export', { entry: { library: 'voices', id: voice.id }, path: out });
       expect(exported).toMatchObject({ format: 'voice-package', entry: { id: voice.id, version: 1, contentHash: voice.contentHash } });
-      // 扩展名无关：换个名字导入
+      // Extension does not matter: import under a different name
       const renamed = path.join(files, 'voice.txt');
       await fs.rename(out, renamed);
       const { entry: back } = await client.request('library.import', { path: renamed });
@@ -199,12 +199,12 @@ describe('用户库（Runtime）', () => {
       expect(back.id).not.toBe(voice.id);
       expect(back.contentHash).toBe(voice.contentHash);
 
-      // 文件头是 WAV，但内容解码不出来
+      // The file header is WAV, but the content cannot be decoded
       const broken = path.join(files, 'broken.wav');
       await fs.writeFile(broken, Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVEfmt ', 'latin1'), Buffer.alloc(200, 7)]));
       const error = await rejection(client.request('library.put', { library: 'voices', content, source: { path: broken } }));
       expect(error.details).toMatchObject({ code: 'LIBRARY_FORMAT_INVALID' });
-      // 坏的录音没有留下条目
+      // A bad recording leaves no entry behind
       expect((await client.request('library.list', { library: 'voices' })).entries).toHaveLength(2);
     });
   });
@@ -254,7 +254,7 @@ describe('用户库（Runtime）', () => {
       });
       const original = await fs.readFile(image);
 
-      // 删掉库里的条目：视频里的素材还在，bytes 在视频目录里。
+      // Delete the entry from the library: the material in the video remains, and its bytes are in the video directory.
       await client.request('library.remove', { library: 'brand', id: entry.id });
       await expect(fs.stat(path.join(home.root, 'library', 'brand', entry.id))).rejects.toThrow();
       const located = await runtime.videos.assetFile(videoId, assetId);
@@ -279,7 +279,7 @@ describe('用户库（Runtime）', () => {
       const content = await client.request('documents.read', { videoId, documentId });
       expect(content.body).toEqual(style);
 
-      // 之后改库里的样式，视频里的文档不变。
+      // Later changes to the styles in the library do not change the document in the video.
       await client.request('library.put', {
         library: 'brand',
         id: entry.id,
@@ -340,7 +340,7 @@ describe('用户库（Runtime）', () => {
       const read = await client.request('library.getVideoSelection', { videoId });
       expect(read.selection.glossaries).toEqual({ transcribe: [t.id], translate: [x.id] });
       expect(runtime.videos.mirror(videoId)!.video.documents[read.documentId!]).toMatchObject({ kind: 'library-selection' });
-      // 创建结果里的快照已经带着这份文档
+      // The snapshot in the create result already carries this document
       expect(opened.snapshot.video.documents[read.documentId!]).toBeTruthy();
       expect((await client.request('edits.undoState', { videoId })).undo).toBeUndefined();
     });
@@ -410,7 +410,7 @@ describe('用户库（Runtime）', () => {
         ],
       });
       expect(set.receipt.actor).toEqual({ kind: 'user', id: 'user_local' });
-      // 只给一步时其余照旧
+      // When only one step is given, the others stay as they were
       await client.request('library.setVideoSelection', { videoId, commandId: newId('cmd'), glossaries: { translate: [] } });
       const read = await client.request('library.getVideoSelection', { videoId });
       expect(read.documentId).toBe(set.documentId);
@@ -424,7 +424,7 @@ describe('用户库（Runtime）', () => {
       await client.request('edits.undo', { videoId, commandId: newId('cmd'), target: 'undo' });
       expect((await client.request('library.getVideoSelection', { videoId })).selection.glossaries.translate).toEqual([x.id]);
 
-      // 删掉库里的条目：启用记录照旧，读启用的术语表时跳过它
+      // Delete the entry from the library: the enable record stays, and when enabled glossaries are read, it is skipped
       await client.request('library.remove', { library: 'glossaries', id: t.id });
       expect((await client.request('library.getVideoSelection', { videoId })).selection.glossaries.transcribe).toEqual([t.id]);
       expect(await runtime.library.enabledGlossaries(videoId, 'transcribe')).toEqual({ ids: [], skipped: [t.id] });

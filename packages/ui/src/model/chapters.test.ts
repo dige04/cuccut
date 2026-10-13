@@ -22,7 +22,7 @@ import {
   type ChapterRow,
 } from './chapters.ts';
 
-// 60 秒的片子（30 fps）；三章：0、20、45 秒，第三章没起名。
+// A 60-second clip (30 fps); three chapters at 0, 20 and 45 seconds; the third chapter has no name.
 const seq = sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 1800)], {
   markers: [chapter('m3', 1350, '  '), chapter('m1', 0, '开场'), chapter('m2', 600, '正文'), { id: 'n1', frame: 300, label: '备注', kind: 'note' }],
 });
@@ -206,7 +206,7 @@ describe('文稿按章分组', () => {
 });
 
 describe('文稿里换章、剪章', () => {
-  // 第一章两段，第二章两段，第三章一段。
+  // Chapter one has two segments, chapter two has two, chapter three has one.
   const paras = [
     { start: 0, end: 8 },
     { start: 8.5, end: 18 },

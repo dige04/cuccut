@@ -1,4 +1,4 @@
-//! 两级校验（规范 §16）：Schema 层（结构合法，封闭枚举）→ Lint 层（语义与品味）。
+//! Two-tier validation (spec §16): Schema tier (structurally valid, closed enums) → Lint tier (semantics and taste).
 
 use crate::assets::{self, AssetKind, HostInputs};
 use crate::ease::EASE_NAMES;
@@ -34,19 +34,15 @@ pub struct Diagnostic {
     pub message: String,
 }
 
-/// 可动画属性 allowlist（规范 §6.4）。唯一实现在 `motion::value`。
+/// Animatable property allowlist (spec §6.4). The only implementation is in `motion::value`.
 pub use motion::value::ANIM_PROPS;
 
-/// 场景数上限（规范 §5.1 / §16 Schema 层，`1..MAX_SCENES`）。`1.244.0` 从 50 提到 400：
-/// 一场一个镜头的长片（逐拍切镜的 MV、十分钟讲解）50 场不够用，而场景表只是时间锚点，
-/// resolve 与 lint 的开销都随 clip 数线性走，400 场实测不构成瓶颈。
+/// Scene count cap (spec §5.1 / §16 Schema tier, `1..MAX_SCENES`). Raised from 50 to 400 in `1.244.0`: long films with one shot per scene (MVs cut on every beat, ten-minute explainers) do not fit in 50 scenes, and the scene table is only a time anchor; the cost of resolve and lint scales linearly with the clip count, and 400 scenes have been measured not to be a bottleneck.
 pub const MAX_SCENES: usize = 400;
 
-/// `resolve()` 失败时的错误消息前缀 → lint 码（规范 §16）。
+/// Mapping from error-message prefixes of `resolve()` failures to lint codes (spec §16).
 ///
-/// 顺序即匹配优先级：靠前的前缀先命中。`"component-"` 是**故意的宽前缀**——
-/// 实际消息有 `component-cycle:` 与 `component-unknown:` 两种，旧实现把两者
-/// 都归到 `component-cycle`，收窄会改变现有 lint 输出。
+/// Order is match priority: earlier prefixes match first. `"component-"` is a **deliberately broad prefix**: the actual messages are `component-cycle:` and `component-unknown:`; the old implementation mapped both to `component-cycle`, and narrowing it would change existing lint output.
 pub const RESOLVE_ERROR_CODES: &[(&str, &str)] = &[
     ("time-ref-cycle", "time-ref-cycle"),
     ("time-ref-unknown", "time-ref-unknown"),
@@ -65,11 +61,10 @@ pub const RESOLVE_ERROR_CODES: &[(&str, &str)] = &[
     ("relative-basis-unresolved", "relative-basis-unresolved"),
     ("motion-legacy-and-flow", "motion-legacy-and-flow"),
     ("split-line-unsupported", "split-line-unsupported"),
-    // 规范 §16 没有为「flow 结构违规」定独立码（它是 schema 层的事），
-    // `motion-unsupported` 同理（阶段 3 未实现的能力）。
+    // Spec §16 has no separate code for "flow structure violation" (it is a schema-tier matter), and likewise `motion-unsupported` (capabilities not yet implemented in stage 3).
     ("motion-flow-invalid", "schema"),
     ("motion-unsupported", "schema"),
-    // 规范 §16 没有为「相对长度写在不允许的属性上」定独立码，归 schema。
+    // Spec §16 has no separate code for "relative length written on a disallowed property"; it falls under schema.
     ("relative-not-allowed", "schema"),
     ("manifest-invalid", "schema"),
     ("word-anchor-unmapped", "word-anchor-unmapped"),
@@ -82,7 +77,7 @@ pub const RESOLVE_ERROR_CODES: &[(&str, &str)] = &[
     ("mask-source-unknown", "mask-source-unknown"),
 ];
 
-/// 本实现会产出的全部 lint 码。`tests/lint_codes.rs` 拿它对规范 §16 的表逐条 grep。
+/// All lint codes this implementation can produce. `tests/lint_codes.rs` greps each one against the spec §16 table.
 pub const LINT_RULES: &[(&str, Severity)] = &[
     ("schema", Severity::Error),
     ("resolve-error", Severity::Error),
@@ -122,7 +117,7 @@ pub const LINT_RULES: &[(&str, Severity)] = &[
     ("sketch-mixed-finish", Severity::Warn),
     ("sketch-color-off-palette", Severity::Warn),
     ("sketch-text-outside-signoff", Severity::Warn),
-    // host 侧产出（`ccut lint --sheet` 渲染抽帧）：core 只登记词表
+    // Produced host-side (`ccut lint --sheet` render extracts frames): core only registers the vocabulary.
     ("sketch-blank-frame", Severity::Warn),
     ("preset-unknown", Severity::Error),
     ("preset-version-unknown", Severity::Error),
@@ -135,24 +130,17 @@ pub const LINT_RULES: &[(&str, Severity)] = &[
     ("split-line-unsupported", Severity::Error),
     ("bcf-version-unsupported", Severity::Error),
     ("effect-capability-unsupported", Severity::Error),
-    // 两级码：fail（子集之外，见 §6.5.2）在资源加载期就是硬错误；warn
-    // （无表达式的 `ef ty=5` 控制器组）经 preflight 报告透出。表里记较强的
-    // 那一级——`ccut lint` 本身不产出它（lint 无 I/O，读不到素材字节）。
+    // Two-level codes: fail (outside the subset, see §6.5.2) is a hard error at resource loading time; warn (a `ef ty=5` controller group without an expression) is surfaced through preflight reporting. The table records the stronger level — `ccut lint` itself does not produce it (lint has no I/O and cannot read asset bytes).
     ("lottie-unsupported-feature", Severity::Error),
-    // `program` 资产声明（§6.5.3）：尺寸 / 帧率 / 帧数 / imports / files / props 的形态；
-    // `ccut lint` 的模块图检查也用它报 files 里不合法的路径。
+    // Shape of the `program` asset declaration (§6.5.3): size / frame rate / frame count / imports / files / props; `ccut lint`'s module-graph check also uses it to report invalid paths in files.
     ("program-invalid", Severity::Error),
-    // `program` 的 src / imports / files 用 `..` 越出文档所在目录（§6.5.3）。本模块查静态看得到
-    // 的这三处；模块里的相对 import 由 `ccut lint` 的模块图检查（ccut-compile
-    // `program::graph`，读盘、不求值）与资源加载期报同一个码，`asset()` 只有加载期查得到。
+    // A `program`'s src / imports / files using `..` to escape the directory containing the document (§6.5.3). This module checks the three places visible statically; relative imports inside modules are reported by `ccut lint`'s module-graph check (ccut-compile `program::graph`, reads disk, does not evaluate) and at resource-loading time with the same code; only loading time can see `asset()`.
     ("program-path-escape", Severity::Error),
-    // 下面三条本模块不产出（纯函数无 I/O）：`ccut lint` 在宿主层读盘扫静态导入时报，
-    // 资源加载期报同一个码（§6.5.3）。`1.244.0` 起进 lint。
+    // The following three are not produced by this module (pure function, no I/O): `ccut lint` reports them when the host layer reads disk and scans static imports; resource loading reports the same code (§6.5.3). Added to lint as of `1.244.0`.
     ("program-module-not-found", Severity::Error),
     ("program-compile-failed", Severity::Error),
     ("program-file-missing", Severity::Error),
-    // 程序用了渲染器画不出的写法（不支持的 CSS 属性等），降级后照常出帧；由资源
-    // 加载期试渲首帧收集，经 preflight 报告透出，`ccut lint` 不产出它。
+    // The program uses constructs the renderer cannot draw (unsupported CSS properties etc.); it degrades and still renders frames. Collected by a trial render of the first frame at resource-loading time and surfaced through preflight reporting; `ccut lint` does not produce it.
     ("program-degraded", Severity::Warn),
     ("event-id-missing", Severity::Error),
     ("event-id-duplicate", Severity::Error),
@@ -160,7 +148,7 @@ pub const LINT_RULES: &[(&str, Severity)] = &[
     ("event-phase-invalid", Severity::Error),
     ("event-outside-doc", Severity::Warn),
     ("element-id-missing", Severity::Warn),
-    // clip 根元素的 style.x / style.y 不生效（根节点从画布原点布局，§6.4）。`1.244.0` 起。
+    // style.x / style.y on the clip root element have no effect (the root node is laid out from the canvas origin, §6.4). Since `1.244.0`.
     ("clip-root-xy-ignored", Severity::Warn),
     ("dead-air", Severity::Warn),
     ("narration-idle", Severity::Warn),
@@ -182,7 +170,7 @@ pub const LINT_RULES: &[(&str, Severity)] = &[
     ("abs-time-used", Severity::Info),
 ];
 
-/// 零文本度量：lint 与模板归一化只需要盒子几何，不需要字体。
+/// Zero-measure text: lint and template normalization only need box geometry, not fonts.
 pub(crate) struct ZeroMeasure;
 impl crate::layout::TextMeasure for ZeroMeasure {
     fn measure(
@@ -200,7 +188,7 @@ impl crate::layout::TextMeasure for ZeroMeasure {
     }
 }
 
-/// 错误消息 → lint 码。`resolve-error` 是兜底。
+/// Error message → lint code. `resolve-error` is the fallback.
 pub fn resolve_error_code(msg: &str) -> &'static str {
     RESOLVE_ERROR_CODES
         .iter()
@@ -209,7 +197,7 @@ pub fn resolve_error_code(msg: &str) -> &'static str {
         .unwrap_or("resolve-error")
 }
 
-/// 样式子集（规范 §6.3，封闭枚举）
+/// Style subset (spec §6.3, closed enum)
 pub const STYLE_KEYS: &[&str] = &[
     "width",
     "height",
@@ -249,7 +237,7 @@ pub const STYLE_KEYS: &[&str] = &[
     "z",
 ];
 
-/// `style.blendMode` 的封闭枚举（§6.6）。唯一实现在 `motion::effect::BlendMode`。
+/// Closed enum for `style.blendMode` (§6.6). The only implementation is `motion::effect::BlendMode`.
 pub fn blend_modes() -> [&'static str; 9] {
     motion::effect::BlendMode::ALL.map(motion::effect::BlendMode::as_str)
 }
@@ -271,7 +259,7 @@ pub const NODE_TYPES: &[&str] = &[
     "use",
 ];
 
-/// variables[].type 封闭枚举（§11.1；asset 为 v0.3 新增）
+/// variables[].type closed enum (§11.1; asset is new in v0.3)
 pub const VAR_TYPES: &[&str] = &[
     "string", "number", "color", "boolean", "enum", "json", "asset",
 ];
@@ -287,12 +275,10 @@ macro_rules! diag {
     };
 }
 
-/// `program` 资产静态看得到的路径（`src`、`imports` 的值、`files` 的每一项）用 `..` 越出文档
-/// 所在目录 → `program-path-escape`（§6.5.3），指针落到具体那一项。形态错误（不是字符串等）
-/// 归 `program-invalid`，这里只看拿得到的字符串。
+/// Paths statically visible for a `program` asset (the value of `src`, the values in `imports`, each entry of `files`) that use `..` to escape the document's directory → `program-path-escape` (§6.5.3), with the pointer landing on the specific entry. A malformed shape (not a string, etc.) belongs to `program-invalid`; this only looks at the strings it can get.
 fn lint_program_paths(out: &mut Vec<Diagnostic>, id: &str, ptr: &str, entry: &Value) {
     use crate::program_path::{PATH_ESCAPE, escape_message, escapes};
-    // RFC 6901：键里的 `~` / `/` 转义
+    // RFC 6901: escaping of `~` / `/` in keys
     let token = |name: &str| name.replace('~', "~0").replace('/', "~1");
     let mut escape = |pointer: String, subject: String, path: &str| {
         diag!(
@@ -336,18 +322,16 @@ fn lint_program_paths(out: &mut Vec<Diagnostic>, id: &str, ptr: &str, entry: &Va
     }
 }
 
-/// 校验剖面（ADR-M12）。
+/// Validation profile (ADR-M12).
 ///
-/// * `Document` —— 作者的项目文档。`visual` / `backend` 等级的效果只发 info
-///   （`effect-determinism-visual`）：作者自己知道自己在换什么。
+/// * `Document` — the author's project document. Effects at `visual` / `backend` level only emit info (`effect-determinism-visual`): the author knows what they are swapping.
 ///
-/// 旧 `DistributableTemplate`（`.bctpl` 可分发模板，`template-effect-determinism`
-/// 报 error）已随 `.bctpl` 体系删除。
+/// The old `DistributableTemplate` (`.bctpl` distributable template, which reported `template-effect-determinism` as an error) was removed along with the `.bctpl` system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LintProfile {
     #[default]
     Document,
-    /// 手绘风格的美术纪律（规范 §16）：在 `document` 之上加 `sketch-*` 规则。
+    /// Art discipline for the hand-drawn style (spec §16): adds `sketch-*` rules on top of `document`.
     Sketch,
 }
 
@@ -377,13 +361,12 @@ pub fn lint(doc: &Value) -> Vec<Diagnostic> {
     lint_with_inputs(doc, None)
 }
 
-/// 带 host 注入的完整校验：`inputs` 提供词级转录（`~` 锚点求值）与媒体元数据
-/// （`video-window-overrun` 需要 duration）。纯文档场景传 None。
+/// Full validation with host injection: `inputs` provides the word-level transcript (for `~` anchor evaluation) and media metadata (`video-window-overrun` needs the duration). Pass None for pure-document scenes.
 pub fn lint_with_inputs(doc: &Value, inputs: Option<&HostInputs>) -> Vec<Diagnostic> {
     lint_with_options(doc, inputs, LintOptions::default())
 }
 
-/// [`lint_with_inputs`] 的完整形态：额外指定校验剖面（ADR-M12）。
+/// Full form of [`lint_with_inputs`]: additionally specifies the validation profile (ADR-M12).
 pub fn lint_with_options(
     doc: &Value,
     inputs: Option<&HostInputs>,
@@ -392,8 +375,7 @@ pub fn lint_with_options(
     let profile = options.profile;
     let mut out: Vec<Diagnostic> = Vec::new();
 
-    // 顶层版本键（ADR-M13）。缺键按 0.1 读（warn），未知版本是硬错误——
-    // 「未知更高版本不得静默降级」。0.1 永远可读。
+    // Top-level version key (ADR-M13). A missing key is read as 0.1 (warn); an unknown version is a hard error — "an unknown higher version must never be silently downgraded". 0.1 is always readable.
     let declared = doc.gstr("ccut");
     if declared.is_none() {
         diag!(
@@ -418,12 +400,12 @@ pub fn lint_with_options(
             )
         );
     }
-    // ADR-M13：实验字段只在 0.1 文档上发 info；升 `ccut: "0.2"` 后它们转正式。
+    // ADR-M13: experimental fields only emit info on 0.1 documents; after upgrading to `ccut: "0.2"` they become formal.
     let experimental_fields_apply = crate::migrate::doc_version(doc) == "0.1";
-    // BCF 是纯数据：shader / 脚本 / 表达式在**整篇文档**里都不允许（ADR-M07）。
+    // BCF is pure data: shaders / scripts / expressions are not allowed anywhere in the **whole document** (ADR-M07).
     lint_executable_content(doc, "", &mut out);
 
-    // ── meta / scenes（Schema 层） ──
+    // ── meta / scenes (Schema tier) ──
     match doc.get_("meta") {
         None => diag!(
             out,
@@ -485,7 +467,7 @@ pub fn lint_with_options(
                                 format!("场景 id \"{id}\" 重复")
                             );
                         }
-                        // `doc` 是 @doc 保留锚点（§3.3），不能作为用户场景 id
+                        // `doc` is the @doc reserved anchor (§3.3) and cannot be used as a user scene id
                         if id == "doc" {
                             diag!(
                                 out,
@@ -507,9 +489,7 @@ pub fn lint_with_options(
                     ),
                     Some(v) => {
                         if let Some(d) = v.as_f64() {
-                            // dur 必须为正是硬约束；300s 上限是品味提示（§5.1）——
-                            // §20.9 的隐式宿主投影把整片投成单场景，长字幕项目
-                            // 天然超过 300s，不能因此判死。
+                            // dur must be positive is a hard constraint; the 300 s cap is a taste hint (§5.1) — the implicit host projection of §20.9 projects the whole film into a single scene, and long subtitled projects naturally exceed 300 s, so they must not be failed for that.
                             if d <= 0.0 {
                                 diag!(
                                     out,
@@ -530,7 +510,7 @@ pub fn lint_with_options(
                                 );
                             }
                         } else if !v.as_str().is_some_and(|s| s.starts_with("$vars.")) {
-                            // number 或 "$vars.x"（§5.1）；实际数值在 resolve 期落定
+                            // number or "$vars.x" (§5.1); the actual value is settled at resolve time
                             diag!(
                                 out,
                                 "schema",
@@ -554,7 +534,7 @@ pub fn lint_with_options(
         }
     }
 
-    // ── variables 表（§11.1）：type 封闭枚举；asset 类型值形态 ──
+    // ── variables table (§11.1): closed type enum; asset-type value shape ──
     let mut var_types: HashMap<String, String> = HashMap::new();
     for (vi, v) in doc
         .get_("variables")
@@ -623,7 +603,7 @@ pub fn lint_with_options(
         }
     }
 
-    // ── assets 表（§11.2）：type 封闭枚举、src|media|var 三选一、hash 格式 ──
+    // ── assets table (§11.2): closed type enum; exactly one of src|media|var; hash format ──
     let mut asset_kinds: HashMap<String, AssetKind> = HashMap::new();
     if let Some(entries) = doc.get_("assets").and_then(Value::as_object) {
         for (id, entry) in entries {
@@ -732,7 +712,7 @@ pub fn lint_with_options(
         }
     }
 
-    // ── tracks：kind 枚举、camera/captions 至多一条、TimeExpr 语法、abs-time ──
+    // ── tracks: kind enum, camera/captions at most one each, TimeExpr syntax, abs-time ──
     let mut camera_tracks = 0;
     let mut caption_tracks = 0;
     let tracks = doc
@@ -801,8 +781,7 @@ pub fn lint_with_options(
                         profile,
                         &mut out,
                     );
-                    // 稳定 id 纪律（直接编辑回写方案 §4.3-1）：舞台编辑的地址
-                    // 是元素路径，没有 id 的节点只能退化成下标段，作者一重排就失配。
+                    // Stable id discipline (direct-edit write-back scheme §4.3-1): the address for stage editing is the element path; a node without an id can only degrade to an index segment, and it would mismatch as soon as the author reorders.
                     lint_element_ids(el, &format!("{ptr}/element"), &mut out);
                     lint_clip_root_xy(c, el, &format!("{ptr}/element"), &mut out);
                 }
@@ -833,7 +812,7 @@ pub fn lint_with_options(
         );
     }
 
-    // ── 项目级 preset：可动画属性 / ease 枚举 ──
+    // ── project-level presets: animatable properties / ease enum ──
     if let Some(presets) = doc.get_("presets").and_then(Value::as_object) {
         for (name, def) in presets {
             for (ki, ch) in def
@@ -889,7 +868,7 @@ pub fn lint_with_options(
             let root = def.get_("root").unwrap_or(&Value::Null);
             collect_uses(root, &mut used);
             edges.insert(name.clone(), used);
-            // 组件根是自己的路径空间（方案 §4.3：组件内节点的 authored 从根起算）
+            // A component root is its own path space (scheme §4.3: authored paths of nodes inside a component are counted from the root)
             if root.is_object() {
                 lint_element_ids(root, &format!("/components/{name}/root"), &mut out);
             }
@@ -921,14 +900,14 @@ pub fn lint_with_options(
 
     lint_preset_vocabulary(doc, &mut out);
     let unknown_presets = lint_preset_refs_known(doc, &mut out);
-    // resolve 快速失败：它报的 `preset-unknown` 若已在引用处静态报过，就不再在 `/` 重复一条。
+    // resolve fails fast: if the `preset-unknown` it reports has already been reported statically at the reference site, it is not repeated again at `/`.
     let already_reported = |msg: &str| {
         msg.strip_prefix("preset-unknown: \"")
             .and_then(|rest| rest.strip_suffix('"'))
             .is_some_and(|name| unknown_presets.contains(name))
     };
 
-    // ── 需要窗口求值的检查：track-overlap / time-ref-* / clip-outside-scenes ──
+    // ── checks that need window evaluation: track-overlap / time-ref-* / clip-outside-scenes ──
     match Resolver::new(doc.clone(), None) {
         Ok(mut r) => {
             if let Some(inputs) = inputs {
@@ -936,10 +915,7 @@ pub fn lint_with_options(
             }
             match r.resolve() {
                 Ok(mut ir) => {
-                    // 阶段 2：lint 不跑真实布局，但要跑一次**零度量**布局，
-                    // 好让相对长度的求值（以及 `relative-basis-unresolved`）
-                    // 在 lint 期就发生。零宽盒仍然是盒——该码的语义是
-                    // 「目标没有布局盒」。
+                    // Stage 2: lint does not run real layout, but it does run one **zero-measure** layout, so that relative-length evaluation (and `relative-basis-unresolved`) happens at lint time. A zero-width box is still a box — the meaning of that code is "the target has no layout box".
                     let (cw, ch) = (ir.w, ir.h);
                     for clip in &mut ir.visual_clips {
                         crate::layout::layout_tree(&mut clip.tree, cw, ch, &mut ZeroMeasure);
@@ -955,8 +931,7 @@ pub fn lint_with_options(
                         );
                     }
                     for vc in &ir.visual_clips {
-                        // IR 的 clip 已经跨轨排序过，回不到原始 `/tracks/{i}/clips/{j}`；
-                        // 用 clip id 定位，作者仍然能一眼找到出问题的片段。
+                        // IR clips are already sorted across tracks and cannot be traced back to the original `/tracks/{i}/clips/{j}`; locate them by clip id, so the author can still see the offending segment at a glance.
                         lint_replace_overlap(
                             &vc.tree,
                             &format!("/clips/{}/element", vc.id),
@@ -989,7 +964,7 @@ pub fn lint_with_options(
                         }
                         wins.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
                         for w in wins.windows(2) {
-                            // 声明窗口重叠（转场交叠是编译器物化的，不看 render 窗口）
+                            // Declared window overlap (transition overlaps are materialized by the compiler and do not look at the render window)
                             if w[0].2 - w[1].1 > 1e-6 {
                                 diag!(
                                     out,
@@ -1004,13 +979,13 @@ pub fn lint_with_options(
                             }
                         }
                     }
-                    // video 引用窗口越界（§16）：需要 host 探测的 duration
+                    // video reference window overrun (§16): needs a host-probed duration
                     for vc in &ir.visual_clips {
                         lint_video_overrun(&vc.tree, vc, &mut out);
                     }
                     lint_cadence(doc, &ir, &mut out);
                     lint_narration_idle(doc, &ir, &mut out);
-                    // 顶层 `events[]`（§4.2）：渲染不读，但 `t` 解不出 / id 重复是文档错误
+                    // Top-level `events[]` (§4.2): not read by rendering, but an undecodable `t` or a duplicate id is a document error
                     for issue in crate::events::resolve_events(&r, &ir.scenes, ir.total).issues {
                         out.push(Diagnostic {
                             rule: issue.rule,
@@ -1055,12 +1030,9 @@ pub fn lint_with_options(
     out
 }
 
-/// `motion-replace-overlap`（warn，规范 §7.7 / §16）：同一属性有多条时间重叠的
-/// `replace` 通道，后者按 `order` 覆盖前者。
+/// `motion-replace-overlap` (warn, spec §7.7 / §16): multiple `replace` channels for the same property whose times overlap; the later one overrides the earlier by `order`.
 ///
-/// 判定直接在 `RNode::channels` 上做，而不是绕 `MotionProgram`——通道的
-/// `(composite, order)` 就是 `lower_bcf` 会原样搬过去的那两个字段，
-/// 中间多一层转换只会让 pointer 丢失。
+/// The check is done directly on `RNode::channels`, not by going around `MotionProgram` — a channel's `(composite, order)` is exactly the two fields `lower_bcf` carries over unchanged; an extra conversion layer in between would only lose the pointer.
 fn lint_replace_overlap(node: &RNode, ptr: &str, out: &mut Vec<Diagnostic>) {
     use motion::CompositeMode;
 
@@ -1104,7 +1076,7 @@ fn lint_replace_overlap(node: &RNode, ptr: &str, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// 文档里出现的全部 preset 引用：`(id, pointer)`。
+/// All preset references appearing in the document: `(id, pointer)`.
 fn collect_preset_refs(el: &Value, ptr: &str, out: &mut Vec<(String, String)>) {
     if let Some(a) = el.get_("animate") {
         for slot in ["enter", "exit"] {
@@ -1135,8 +1107,7 @@ fn collect_preset_refs(el: &Value, ptr: &str, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// `animate.flow` / `animate.parts` 里 `op: "preset"` 条目的引用：`(id, pointer)`。
-/// 沿 `item` / `items[]` 走完整棵 op 树（§7.5 / §7.9）。
+/// References from `op: "preset"` entries in `animate.flow` / `animate.parts`: `(id, pointer)`. Walks the full op tree along `item` / `items[]` (§7.5 / §7.9).
 fn collect_op_preset_refs(el: &Value, ptr: &str, out: &mut Vec<(String, String)>) {
     fn walk(op: &Value, ptr: &str, out: &mut Vec<(String, String)>) {
         let Some(map) = op.as_object() else { return };
@@ -1176,17 +1147,14 @@ fn collect_op_preset_refs(el: &Value, ptr: &str, out: &mut Vec<(String, String)>
     }
 }
 
-/// `preset-unknown`（error，§7.4 / §16）的静态检查：在引用处报，不等 resolve。
+/// Static check for `preset-unknown` (error, §7.4 / §16): reported at the reference site, without waiting for resolve.
 ///
-/// resolve 快速失败，只要文档里有更早的错误（例如 `motion-unsupported`），写错的 preset
-/// 就一直看不见；这里按两条查找路径各自判定，与 resolve 的判定逐条对应：
+/// resolve fails fast, so as long as there is an earlier error in the document (e.g. `motion-unsupported`), a misspelled preset stays invisible; here each of the two lookup paths is judged separately, corresponding one-to-one with resolve's judgments:
 ///
-/// - `enter` / `exit` / `emphasis[i]`：项目级 `presets` → 通用 manifest（含 alias）→
-///   冻结的 `bcf.*@1` 配方（`Resolver::slot_channels`）；
-/// - flow / parts 的 `op: "preset"`：只查注册表（manifest 与冻结配方），**不读**项目级
-///   `presets`（`motion::graph` 直接调 `preset_registry::expand`）。
+/// - `enter` / `exit` / `emphasis[i]`: project-level `presets` → generic manifest (including aliases) → frozen `bcf.*@1` recipes (`Resolver::slot_channels`);
+/// - `op: "preset"` in flow / parts: only the registry is consulted (manifest and frozen recipes), **not** the project-level `presets` (`motion::graph` calls `preset_registry::expand` directly).
 ///
-/// 值以 `$` 开头的（变量引用）留给 resolve。返回报过的名字，供 resolve 那条去重。
+/// Values beginning with `$` (variable references) are left for resolve. Returns the names already reported, so that resolve's entry can deduplicate.
 fn lint_preset_refs_known(doc: &Value, out: &mut Vec<Diagnostic>) -> HashSet<String> {
     use motion::preset_registry::{bcf_preset, canonical_id, manifest};
     let registry_known = |id: &str| {
@@ -1254,19 +1222,13 @@ fn lint_preset_refs_known(doc: &Value, out: &mut Vec<Diagnostic>) -> HashSet<Str
     reported
 }
 
-/// 规范 §16：项目级 preset 使用超过 ~4 种入场/强调词汇（`preset-sprawl`，warn）
-/// 与 `preset-alias-used`（info）。
+/// Spec §16: project-level presets using more than ~4 entrance/emphasis terms (`preset-sprawl`, warn) and `preset-alias-used` (info).
 ///
-/// 统计口径（两条）：
+/// Counting rules (two):
 ///
-/// 1. **归一到 canonical family**：`Back In Left` 与 `Back In Right` 都是 `backIn`，
-///    只算一种词汇——这正是设计 §5.4.3「UI 词汇与 canonical family 分离」的收益。
-///    项目级 `presets` 里的 id 各自算一个 family。
-/// 2. **冻结的 `bcf.*@1` 功能配方不计入**（`countUp` / `barFill` / `kenBurns` /
-///    `fadeIn` / `fadeOut`）。规则量的是「入场/强调**词汇**」这一风格维度；
-///    数字滚动与进度条填充是功能而不是风格，把它们算进去会让
-///    `core/runtime/starter` 那种「全片只用 rise / draw / pop」
-///    的模范文档也报警。
+/// 1. **Normalize to canonical family**: `Back In Left` and `Back In Right` are both `backIn` and count as one term — this is exactly the benefit of the design's §5.4.3 "UI vocabulary separated from canonical family".
+///    Each id in project-level `presets` counts as its own family.
+/// 2. **Frozen `bcf.*@1` functional recipes are not counted** (`countUp` / `barFill` / `kenBurns` / `fadeIn` / `fadeOut`). The rule measures the **vocabulary** of entrances and emphasis, a style dimension; number rolling and progress-bar fill are functions, not style, and counting them would make an exemplary document like `core/runtime/starter`, which uses only rise / draw / pop for the whole film, trigger the warning.
 const PRESET_SPRAWL_THRESHOLD: usize = 4;
 
 fn lint_preset_vocabulary(doc: &Value, out: &mut Vec<Diagnostic>) {
@@ -1330,9 +1292,8 @@ fn lint_preset_vocabulary(doc: &Value, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// `video-window-overrun`（warn）：clip 窗口按 playbackRate 换算的媒体需求
-/// 超出 segment / 源时长且未开 loop（§16）。duration 未探测（=0）时跳过。
-/// `animatedImage` / `lottie` / `program` 同理——采样公式与 §6.5 同构，越界也是冻结末帧。
+/// `video-window-overrun` (warn): the media requirement of a clip window, converted by playbackRate, exceeds the segment / source duration without loop enabled (§16). Skipped when duration is not probed (=0).
+/// `animatedImage` / `lottie` / `program` are the same — the sampling formula is isomorphic to §6.5, and overrun also freezes the last frame.
 fn lint_video_overrun(node: &RNode, vc: &VisualClip, out: &mut Vec<Diagnostic>) {
     lint_video_overrun_window(node, vc, vc.end - vc.start, out);
 }
@@ -1408,7 +1369,7 @@ fn collect_uses(node: &Value, out: &mut Vec<String>) {
     }
 }
 
-/// media src：必须 $assets.* 且已声明、kind 匹配（把"渲染期未知路径"拦在编译期，§15）
+/// media src: must be $assets.* and declared, with a matching kind (catches "path unknown at render time" at compile time, §15)
 fn lint_media_src(
     src: Option<&Value>,
     want: AssetKind,
@@ -1454,12 +1415,11 @@ fn lint_media_src(
     }
 }
 
-// ── 元素级检查（可复用）───────────────────────────────────────────────
+// ── Element-level checks (reusable) ───────────────────────────────────────────────
 //
-// 下面三个函数按节点类型白名单 / 样式子集 / animate 结构分别检查，`types` 与
-// `rule` 参数化（文档 lint 传 `NODE_TYPES` + `"schema"`），诊断留在各自的规则族内。
+// The three functions below check respectively against the node-type allowlist / style subset / animate structure; `types` and `rule` are parameterized (document lint passes `NODE_TYPES` and `"schema"`), and diagnostics stay within their own rule families.
 
-/// 节点 `type` 必须在白名单内（§6.1）。
+/// Node `type` must be within the allowlist (§6.1).
 pub(crate) fn lint_node_type(
     el: &Value,
     ptr: &str,
@@ -1479,7 +1439,7 @@ pub(crate) fn lint_node_type(
     }
 }
 
-/// `style` 键必须在封闭子集内（§6.3）。
+/// `style` keys must be within the closed subset (§6.3).
 pub(crate) fn lint_style_keys(
     el: &Value,
     ptr: &str,
@@ -1508,9 +1468,7 @@ pub(crate) fn lint_style_keys(
     }
 }
 
-/// 效果参数通道 `effects[N].<param>`（§6.6）必须指向本元素 `effects[]` 里真实存在的
-/// 条目与**数值**参数（number / length）。越界下标、未知参数、布尔 / 颜色 / 枚举参数
-/// 都是 error——渲染期找不到对应条目的通道只会被静默忽略，这里是唯一的拦截点。
+/// Effect parameter channels `effects[N].<param>` (§6.6) must point to a real entry in this element's `effects[]` and a **numeric** parameter (number / length). Out-of-range indices, unknown parameters, and boolean / color / enum parameters are all errors — a channel whose target entry cannot be found at render time is silently ignored, so this is the only interception point.
 fn lint_effect_channel(
     el: &Value,
     prop: &str,
@@ -1537,14 +1495,14 @@ fn lint_effect_channel(
         return;
     };
     let Some(id) = item.gstr("preset") else {
-        return; // 缺 preset 已由 lint_effects 报过
+        return; // Missing preset is already reported by lint_effects
     };
     let version = item
         .get_("presetVersion")
         .and_then(Value::as_u64)
         .unwrap_or(1) as u32;
     let Ok(manifest) = lookup(id, version) else {
-        return; // 未知效果已由 lint_effects 报过
+        return; // Unknown effect is already reported by lint_effects
     };
     match manifest.params.get(param).map(|spec| spec.kind) {
         Some(ParamKind::Number | ParamKind::Length) => {}
@@ -1572,7 +1530,7 @@ fn lint_effect_channel(
     }
 }
 
-/// `animate.flow` 里任意层级的 `{ prop }` 都按 [`lint_effect_channel`] 查一遍。
+/// `{ prop }` at any level in `animate.flow` is checked with [`lint_effect_channel`].
 fn lint_flow_effect_channels(
     el: &Value,
     node: &Value,
@@ -1598,7 +1556,7 @@ fn lint_flow_effect_channels(
     }
 }
 
-/// `animate.keyframes[].prop` 在 allowlist 内（§6.4），`frames[].ease` 在封闭枚举内。
+/// `animate.keyframes[].prop` is within the allowlist (§6.4), and `frames[].ease` is within the closed enum.
 pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut Vec<Diagnostic>) {
     if let Some(flow) = el.get_("animate").and_then(|a| a.get_("flow")) {
         lint_flow_effect_channels(el, flow, &format!("{ptr}/animate/flow"), rule, out);
@@ -1650,8 +1608,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
                         );
                     }
                 }
-                // `clipPath` 通道的每个取值必须是可解析的参数化形状（§6.3）；
-                // 录制期没有 `Result`，非法值只能在这里拦。
+                // Each value of a `clipPath` channel must be a parseable parameterized shape (§6.3); there is no `Result` at recording time, so illegal values can only be caught here.
                 if ch.gstr("prop") == Some("clipPath")
                     && let Some(v) = f.get_("v")
                     && let Err(error) = crate::resolve::ClipShape::parse(v)
@@ -1669,8 +1626,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
                         msg
                     );
                 }
-                // 规范 §7.8：相对长度只用于 transform、blur 与效果参数。
-                // 规范 §16 没有为这个情形定独立码，沿用调用方的 schema 码。
+                // Spec §7.8: relative lengths are only used for transform, blur, and effect parameters. Spec §16 has no separate code for this case; the caller's schema code is reused.
                 if let (Some(prop), Some(v)) = (ch.gstr("prop"), f.get_("v")) {
                     if motion::preset_registry::manifest::is_relative_length_object(v)
                         && !motion::RELATIVE_LENGTH_PROPS.contains(&prop)
@@ -1692,7 +1648,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
     }
 }
 
-/// 值里还有 `$theme.*` / `$vars.*` 引用 ⇒ 形态校验留给 resolve（它先解引用）。
+/// If a value still contains `$theme.*` / `$vars.*` references ⇒ shape validation is left to resolve (it dereferences first).
 fn has_dollar_ref(value: &Value) -> bool {
     match value {
         Value::String(s) => s.starts_with('$'),
@@ -1702,10 +1658,8 @@ fn has_dollar_ref(value: &Value) -> bool {
     }
 }
 
-/// `style.background`（渐变对象）、`style.shadow`、`style.fontStyle`、`style.mask`
-/// 的形态校验（§6.3）。这些键此前只在 `STYLE_KEYS` 里放行，值却没人看：作者写
-/// `linear-gradient(...)` 或 CSS 阴影字串时 lint 沉默、渲染没画，这里把口子堵上。
-/// 存在性（`mask.source` 指向的元素）由 resolve 报 `mask-source-unknown`。
+/// Shape validation of `style.background` (gradient object), `style.shadow`, `style.fontStyle`, and `style.mask` (§6.3). These keys were previously only allowed through in `STYLE_KEYS`, and nobody checked their values: when an author wrote `linear-gradient(...)` or a CSS shadow string, lint stayed silent and rendering drew nothing; this closes that gap.
+/// Existence (the element that `mask.source` points to) is reported by resolve as `mask-source-unknown`.
 pub(crate) fn lint_style_values(
     el: &Value,
     ptr: &str,
@@ -1729,7 +1683,7 @@ pub(crate) fn lint_style_values(
         }
     }
     if let Some(bg) = style.get("background").filter(|v| !v.is_null()) {
-        // 字串形态：即使是 `$theme.x` 也不该含 `gradient(`；对象形态有引用则交给 resolve。
+        // String form: even `$theme.x` should not contain `gradient(`; for the object form, references are left to resolve.
         let check = match bg {
             Value::String(s) => s.contains("gradient(") || !s.starts_with('$'),
             _ => !has_dollar_ref(bg),
@@ -1794,10 +1748,9 @@ pub(crate) fn lint_style_values(
     }
 }
 
-/// `effects[]`（§6.6）、`style.blendMode`、`style.clipPath` 的语义校验。
+/// Semantic validation of `effects[]` (§6.6), `style.blendMode`, and `style.clipPath`.
 ///
-/// 词汇表来自 `motion::effect` 的内置注册表——lint 与渲染读的是同一份
-/// manifest，不存在「lint 放行、渲染报错」的第二事实来源。
+/// The vocabulary comes from the built-in registry of `motion::effect` — lint and rendering read the same manifest, so there is no second source of truth where "lint accepts, rendering errors".
 pub(crate) fn lint_effects(
     el: &Value,
     ptr: &str,
@@ -1828,7 +1781,7 @@ pub(crate) fn lint_effects(
         .and_then(|s| s.get_("clipPath"))
         .filter(|v| !v.is_null())
         && let Err(error) = match crate::resolve::ClipPoly::parse(clip) {
-            // `path` 形状只在静态 style 上合法（§6.3）
+            // The `path` shape is only legal on static style (§6.3)
             Ok(Some(_)) => Ok(()),
             Ok(None) => crate::resolve::ClipShape::parse(clip).map(|_| ()),
             Err(error) => Err(error),
@@ -1900,7 +1853,7 @@ pub(crate) fn lint_effects(
                     continue;
                 }
             };
-            // 单输入滤镜之外的域（双输入遮罩、composite 表）不能直接挂在元素上。
+            // Domains beyond single-input filters (dual-input masks, composite tables) cannot be attached directly to an element.
             if manifest.inputs != 1 || (field == "backdropEffects" && !id.starts_with("filter.")) {
                 diag!(
                     out,
@@ -1915,7 +1868,7 @@ pub(crate) fn lint_effects(
                 );
                 continue;
             }
-            // `visual` / `backend` 等级不承诺逐位一致，导出前必须可见（§14.6）。
+            // `visual` / `backend` levels do not promise bit-identical output; they must be made visible before export (§14.6).
             if manifest.determinism != motion::effect::Determinism::Strict {
                 match profile {
                     LintProfile::Document | LintProfile::Sketch => diag!(
@@ -1939,8 +1892,7 @@ pub(crate) fn lint_effects(
     }
 }
 
-/// 规范 §16 / ADR-M13：0.1 文档使用「实验」字段时发 info。
-/// 升 `ccut: "0.2"` 后这些字段转正式，本条静音。
+/// Spec §16 / ADR-M13: 0.1 documents using "experimental" fields emit info. After upgrading to `ccut: "0.2"` these fields become formal, and this rule goes silent.
 const EXPERIMENTAL_FIELDS: &[(&str, &str)] = &[
     ("/animate/flow", "animate.flow（§7.5）"),
     ("/animate/parts", "animate.parts（§7.9）"),
@@ -1952,8 +1904,7 @@ const EXPERIMENTAL_FIELDS: &[(&str, &str)] = &[
     ("/layoutStates", "layoutStates（§7.9）"),
 ];
 
-/// 文档里绝不允许出现的可执行内容键（规范 §16 `motion-shader-inline`、ADR-M07）。
-/// BCF 是纯数据：没有 shader 源码、没有脚本、没有表达式语言。
+/// Executable content keys that must never appear in a document (spec §16 `motion-shader-inline`, ADR-M07). BCF is pure data: there is no shader source, no script, and no expression language.
 const EXECUTABLE_KEYS: &[&str] = &[
     "shader",
     "glsl",
@@ -1969,7 +1920,7 @@ fn json_pointer_of(field: &str) -> &str {
     field.rsplit('/').next().unwrap_or(field)
 }
 
-/// `experimental-field`（info）+ 曲线对象。只在 `ccut == "0.1"` 时调用。
+/// `experimental-field` (info) + curve objects. Only called when `ccut == "0.1"`.
 fn lint_experimental_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     for (field, label) in EXPERIMENTAL_FIELDS {
         let present = match field.rsplit_once('/') {
@@ -1990,7 +1941,7 @@ fn lint_experimental_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
             );
         }
     }
-    // 曲线对象（§7.6）同样是实验形态：0.1 的封闭枚举只有名称。
+    // Curve objects (§7.6) are likewise an experimental shape: the 0.1 closed enum only has names.
     if let Some(animate) = el.get_("animate") {
         if has_curve_object(animate) {
             diag!(
@@ -2020,7 +1971,7 @@ fn has_curve_object(value: &Value) -> bool {
     }
 }
 
-/// `motion-shader-inline`（error）：文档内出现 shader 源码或其它可执行定义。
+/// `motion-shader-inline` (error): shader source or other executable definitions appear within the document.
 fn lint_executable_content(value: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     match value {
         Value::Object(map) => {
@@ -2048,7 +1999,7 @@ fn lint_executable_content(value: &Value, ptr: &str, out: &mut Vec<Diagnostic>) 
     }
 }
 
-/// `motion-legacy-and-flow`（error）与 `split-line-unsupported`（error）。
+/// `motion-legacy-and-flow` (error) and `split-line-unsupported` (error).
 fn lint_flow_structure(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     if let Some(animate) = el.get_("animate") {
         let has_flow = animate.get_("flow").is_some_and(|v| !v.is_null());
@@ -2090,9 +2041,7 @@ fn lint_flow_structure(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// clip 根元素的 `style.x` / `style.y` 不生效：`layout::layout_tree` 把根节点的框固定在画布
-/// 原点，`x` / `y` 只在父节点摆放子节点时读（§7）。只看静态写死的值——写 0、`$` 引用（值只有
-/// resolve 才知道）不报；`animate` 里的位移是另一条通道，也不在这里管。
+/// `style.x` / `style.y` on the clip root element have no effect: `layout::layout_tree` pins the root node's box at the canvas origin, and `x` / `y` are only read when a parent places its children (§7). Only the statically written value is checked — writing 0 or a `$` reference (whose value only resolve knows) is not reported; displacement in `animate` is another channel and is not handled here.
 fn lint_clip_root_xy(clip: &Value, root: &Value, root_ptr: &str, out: &mut Vec<Diagnostic>) {
     let Some(style) = root.get_("style").and_then(Value::as_object) else {
         return;
@@ -2136,10 +2085,9 @@ fn lint_clip_root_xy(clip: &Value, root: &Value, root_ptr: &str, out: &mut Vec<D
     );
 }
 
-/// 元素 id 纪律：一棵树内 id 唯一（error），可寻址元素都该有 id（warn）。
+/// Element id discipline: ids are unique within one tree (error), and addressable elements should have ids (warn).
 ///
-/// 作用域是**单棵元素树**（一个 clip 的 `element`，或一个组件的 `root`）——
-/// 元素路径本来就是 clip 根起算的，跨 clip 重名不会让路径歧义。
+/// The scope is a **single element tree** (one clip's `element`, or one component's `root`) — element paths are already counted from the clip root, so same-named ids across clips do not make paths ambiguous.
 fn lint_element_ids(root: &Value, root_ptr: &str, out: &mut Vec<Diagnostic>) {
     let mut seen: HashMap<String, String> = HashMap::new();
     walk_element_ids(root, root_ptr, &mut seen, out);
@@ -2168,7 +2116,7 @@ fn walk_element_ids(
             }
         }
         None => {
-            // 容器与纯装饰节点没有 id 也能渲染，只是不可寻址：报 warn 不挡导出。
+            // Containers and purely decorative nodes can render without ids; they are just not addressable: report warn and do not block export.
             diag!(
                 out,
                 "element-id-missing",
@@ -2228,7 +2176,7 @@ fn lint_element(
         lint_video_fields(el, ptr, out);
     }
     if matches!(t, "animatedImage" | "lottie" | "program") {
-        // 三者都没有音轨：`withAudio` / `volume` 在这里是写错了，不是无声生效
+        // None of the three has an audio track: `withAudio` / `volume` here are written wrong, not silently effective
         for key in ["withAudio", "volume"] {
             if el.get_(key).is_some_and(|v| !v.is_null()) {
                 diag!(
@@ -2257,7 +2205,7 @@ fn lint_element(
         lint_experimental_fields(el, ptr, out);
     }
     if t != "svg" {
-        // path 的几何在 Svg 的 viewBox 里解析；放在别处不会被画出来。
+        // The geometry of a path is resolved in the Svg's viewBox; placed elsewhere, it will not be drawn.
         for (i, c) in el
             .get_("children")
             .and_then(Value::as_array)
@@ -2277,8 +2225,7 @@ fn lint_element(
             }
         }
     } else {
-        // svg 的子节点限 path（§6.2）：布局只给 path 换算 viewBox、不量别的节点，
-        // 预览是真 <svg>，里面的 HTML 节点也不画。`use` 展开后才知道是什么，不报。
+        // svg children are limited to path (§6.2): layout only converts the viewBox for path and does not measure other nodes; the preview is a real <svg>, and HTML nodes inside it are not drawn. What `use` expands to is not known, so it is not reported.
         for (i, c) in el
             .get_("children")
             .and_then(Value::as_array)
@@ -2318,9 +2265,7 @@ fn lint_element(
     }
 }
 
-/// `align` / `justify` 只在 `layout: "row" | "column" | "grid"` 下生效（§6.3）。缺省的绝对布局把没写
-/// `x` / `y` 的子节点一律放在盒的左上角，两个键写了也被静默丢掉——「圆角卡片里的字贴在左上角」就是
-/// 这么来的，渲染端与预览壳都这样画，lint 之前也不吭声。`$` 引用的 `layout` 要等 resolve 才知道值，不查。
+/// `align` / `justify` only take effect under `layout: "row" | "column" | "grid"` (§6.3). The default absolute layout places children without `x` / `y` at the top-left of the box, and if those two keys are written they are silently dropped — this is where "text on a rounded card sticks to the top-left corner" comes from; the rendering side and the preview shell both draw it this way, and lint said nothing before. A `layout` given as a `$` reference is not checked, since its value is only known at resolve.
 fn lint_layout_align(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     let Some(style) = el.get_("style").filter(|style| style.is_object()) else {
         return;
@@ -2328,7 +2273,7 @@ fn lint_layout_align(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     match style.get("layout").filter(|layout| !layout.is_null()) {
         None => {}
         Some(Value::String(mode)) if mode == "absolute" => {}
-        // row / column / grid 生效；`$` 引用与非法值（schema 另报）不在这里猜
+        // Effective under row / column / grid; `$` references and invalid values (reported by schema separately) are not guessed here
         Some(_) => return,
     }
     let keys: Vec<&str> = ["align", "justify"]
@@ -2350,19 +2295,15 @@ fn lint_layout_align(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     );
 }
 
-/// text 是单行（§6.2）：`\n` 不换行，`textAlign` 也不生效（旧单行路径恒居中）。
-/// 彩色 emoji 由彩色字体画成位图（§14.4 `DrawBitmap`），只在 strict 字体模式
-/// （文档声明了 `font` 资产，§11.2）下报：那时系统 emoji 字体不参与回退，文档没带
-/// 彩色 emoji 字体就是缺字。lint 看不到字体字节，已声明彩色字体的文档照样会收到这条。
-/// `$` 引用的内容要等 resolve 才知道，不查内容；`textAlign` 与内容无关，照查。
+/// Text is single-line (§6.2): `\n` does not wrap, and `textAlign` also has no effect (the legacy single-line path always centers). Color emoji are rasterized by color fonts into bitmaps (§14.4 `DrawBitmap`), and are only reported in strict font mode (the document declares a `font` asset, §11.2): in that mode the system emoji font does not participate in fallback, and a document without a color emoji font has missing glyphs. Lint cannot see font bytes, so documents that have declared a color font still receive this.
+/// Content of `$` references is only known at resolve, so it is not checked; `textAlign` is independent of content and is checked.
 fn lint_text_content(
     el: &Value,
     ptr: &str,
     asset_kinds: &HashMap<String, AssetKind>,
     out: &mut Vec<Diagnostic>,
 ) {
-    // 显式 `style.textWrap` 或 `split.by: "line"` 启用多行排版（§6.2.2）：`\n` 是硬换行，
-    // `textAlign` 生效。两条都只在没启用时报。
+    // Explicit `style.textWrap` or `split.by: "line"` enables multi-line typesetting (§6.2.2): `\n` is a hard break, and `textAlign` takes effect. Both are only reported when not enabled.
     let paragraph = el
         .get_("style")
         .and_then(|style| style.get("textWrap"))
@@ -2371,8 +2312,7 @@ fn lint_text_content(
             .get_("split")
             .and_then(|split| split.gstr("by"))
             .is_some_and(|by| by == "line");
-    // 旧单行路径把整行居中在元素盒里、不读 textAlign，连取值都不校验；`$` 引用要等
-    // resolve 才知道值，不查。
+    // The legacy single-line path centers the whole line within the element box and does not read textAlign; even its values are not validated. `$` references need resolve to know their value, so they are not checked.
     let align = el
         .get_("style")
         .and_then(|style| style.get("textAlign"))
@@ -2423,8 +2363,7 @@ fn lint_text_content(
     }
 }
 
-/// 彩色 emoji 的码位猜测：主要图形区段、区域指示符、彩色圆 / 方块、🀄 🃏，
-/// 以及后跟 U+FE0F（emoji 呈现选择符）的字符。
+/// Codepoint guess for color emoji: main pictographic ranges, regional indicators, colored circles / squares, 🀄 🃏, plus characters followed by U+FE0F (emoji presentation selector).
 fn looks_like_color_emoji(c: char, next: Option<char>) -> bool {
     matches!(
         u32::from(c),
@@ -2438,8 +2377,7 @@ fn looks_like_color_emoji(c: char, next: Option<char>) -> bool {
     ) || next == Some('\u{FE0F}')
 }
 
-/// path 的 `d`（§6.2.1）：不认识的命令整条报错——旧实现静默跳过，画出来的形状
-/// 会缺一块而没有任何提示。
+/// `d` of a path (§6.2.1): an unrecognized command makes the whole thing an error — the old implementation skipped it silently, so the drawn shape would be missing a piece without any hint.
 fn lint_path(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     let Some(d) = el.gstr("d") else { return };
     let parsed = if d.starts_with('$') {
@@ -2461,8 +2399,7 @@ fn lint_path(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
             )
         );
     }
-    // `pathMorph` 通道没有 `morphTo` 可插值时是空转（§6.2.1）。只看 keyframes 槽：
-    // preset / flow 展开后的通道由渲染端同样按「无目标 = 原形状」处理。
+    // A `pathMorph` channel is a no-op when there is no `morphTo` to interpolate to (§6.2.1). Only the keyframes slot is looked at: channels expanded from preset / flow are handled by the rendering side the same way, "no target = original shape".
     let writes_morph = el
         .get_("animate")
         .and_then(|a| a.get_("keyframes"))
@@ -2479,7 +2416,7 @@ fn lint_path(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// `cadence` 采样域的三条美术纪律（规范 §7.10 / §16）。文档没有任何 clip 处在采样域里时一条都不触发。
+/// Three art-discipline rules for the `cadence` sampling domain (spec §7.10 / §16). None fire when no clip in the document is in the sampling domain.
 fn lint_cadence(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) {
     let mut mismatch_reported = false;
     for vc in &ir.visual_clips {
@@ -2560,26 +2497,18 @@ fn lint_cadence(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>)
     }
 }
 
-/// `narration-idle`：旁白空档的判定阈值（秒）。旁白在说、画面却连续这么久一处都没变，
-/// 观众会觉得画面「卡住了」；4 s 大约是一句中等长度的中文台词。
+/// `narration-idle`: the threshold (seconds) for narration dead air. If narration is speaking but the picture has not changed anywhere for this long, viewers feel the picture has "frozen"; 4 s is roughly a medium-length Chinese line of dialogue.
 const NARRATION_IDLE_GAP: f64 = 4.0;
-/// 短于它的旁白 clip 不查：一两句的串场白里停一拍是正常的。
+/// Narration clips shorter than this are not checked: pausing for a beat in a one- or two-line transitional remark is normal.
 const NARRATION_IDLE_MIN_CLIP: f64 = 6.0;
-/// 每份文档至多报几条；多出来的在最后一条里给总数。
+/// At most this many reports per document; the total count is given in the last one.
 const NARRATION_IDLE_MAX_REPORTS: usize = 8;
 
-/// `narration-idle`（warn，规范 §16）：旁白 clip 播放期间画面连续 >4 s 没有任何变化。
+/// `narration-idle` (warn, spec §16): during narration clip playback, the picture has not changed at all for more than 4 s.
 ///
-/// 只查**旁白**：audio clip 的素材 `src` 落在 `assets/vo/` 下（skill 的项目约定：旁白进
-/// `<项目>/assets/vo/`）；音乐床等其它音频不查，音乐先行的片子不误报。「画面在变」的来源：
-/// visual clip 的起止瞬间、每个节点关键帧通道（含逐字 part 通道与节点 camera）相邻两帧值
-/// 不同的区间、转场（`wrap_channels` 与 Surface Transition 窗口）、camera 轨。通道只在它所在
-/// clip 的渲染窗口里算数；单帧通道算一个瞬间。字幕轨不算——它跟着旁白走，算进来就永远报不出。
-/// 窗口是旁白**真正在说**的区间：从 clip 起点到音频实长用完为止
-/// （`start + (media_duration − media_start) / rate`，再不超过 clip 声明的终点）。旧项目常用
-/// `@scene.end` 收尾，旁白说完后的定格不算空档。实长由 host 探测经 `HostInputs` 回填
-/// （`ccut lint` 会探测音频素材）；拿不到实长（没探测、文件缺失或解不开）时退回 clip 声明窗口。
-/// 6 s 门槛也按这个有效窗口算。
+/// Only **narration** is checked: an audio clip whose asset `src` lies under `assets/vo/` (the skill's project convention: narration goes into `<project>/assets/vo/`); other audio such as music beds is not checked, so music-first films do not trigger false reports. Sources of "the picture is changing": the start and end instants of visual clips, intervals where a per-node keyframe channel (including per-character part channels and node camera) has different values in adjacent frames, transitions (`wrap_channels` and Surface Transition windows), and the camera track. Channels only count within the render window of the clip they belong to; a single-frame channel counts as one instant. The caption track is not counted — it follows the narration, and counting it would mean the warning could never fire.
+/// The window is the interval where narration is **actually speaking**: from clip start until the audio's real length is used up (`start + (media_duration − media_start) / rate`, and not beyond the end declared by the clip). Older projects often close with `@scene.end`, and a freeze after narration has finished is not counted as dead air. The real length is backfilled by host probing via `HostInputs` (`ccut lint` probes audio assets); when no real length is available (not probed, file missing, or cannot be decoded), it falls back to the clip's declared window.
+/// The 6 s threshold is also computed against this effective window.
 fn lint_narration_idle(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) {
     use crate::sample::{Channel, Kf};
 
@@ -2650,7 +2579,7 @@ fn lint_narration_idle(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagn
         }
     }
 
-    // 全片的「变化」区间一次收齐，按起点排序；前缀最大终点让每个旁白窗口二分定位。
+    // All "change" intervals for the whole film are collected at once and sorted by start; the prefix-maximum end lets each narration window be located by binary search.
     let mut spans: Vec<(f64, f64)> = Vec::new();
     for vc in &ir.visual_clips {
         let (lo, hi) = (vc.render_start, vc.render_end);
@@ -2725,8 +2654,7 @@ fn lint_narration_idle(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagn
     }
 }
 
-/// `sketch` 剖面（规范 §16）：本风格的美术纪律，不是引擎限制。只看 resolve 后的
-/// 节点树——`$theme` 已经落成颜色，`bind: "literal"` 与 `bind: "theme"` 同口径。
+/// `sketch` profile (spec §16): the art discipline of this style, not an engine limitation. Only looks at the post-resolve node tree — `$theme` has already become colors, and `bind: "literal"` and `bind: "theme"` are treated the same.
 fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) {
     use crate::pathstyle::Finish;
 
@@ -2768,7 +2696,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
                 Finish::Riso => Some("riso"),
                 Finish::Wash => Some("wash"),
                 Finish::Paint => Some("paint"),
-                // flat 什么都不画、grain 是纸面颗粒：都不算一种「上色手法」
+                // flat draws nothing and grain is paper grain: neither counts as a "coloring technique"
                 _ => None,
             };
             if let Some(name) = name
@@ -2793,7 +2721,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
     if let Some(theme) = doc.get_("theme") {
         palette_of(theme, &mut palette);
     }
-    // 收尾场景 = 声明序最后一个 scene；只有它可以出现文字（sign-off）。
+    // Closing scene = the last scene in declaration order; only it may contain text (sign-off).
     let signoff_from = ir.scenes.last().map(|(_, start, _)| *start);
 
     for vc in &ir.visual_clips {
@@ -2847,7 +2775,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
     }
 }
 
-/// `style.clipPath` 的 `path` 形状（§6.3）：裁剪只有 nonzero 语义。
+/// `path` shape of `style.clipPath` (§6.3): clipping only has nonzero semantics.
 fn lint_clip_path_shape(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     let Some(clip) = el.get_("style").and_then(|s| s.get_("clipPath")) else {
         return;
@@ -2864,7 +2792,7 @@ fn lint_clip_path_shape(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// video 元素媒体字段（§6.5）：playbackRate / segment / loop / fit / withAudio / volume
+/// video element media fields (§6.5): playbackRate / segment / loop / fit / withAudio / volume
 fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     if let Some(r) = el.get_("playbackRate").filter(|v| !v.is_null()) {
         match r.as_f64() {

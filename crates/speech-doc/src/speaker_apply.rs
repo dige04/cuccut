@@ -1,9 +1,6 @@
-//! 说话人整篇提案的确定性应用。
+//! Deterministic application of a whole-document speaker proposal.
 //!
-//! `ccut speakers reidentify --review` 只生成 `wordSp` 与候选说话人表；本层把
-//! 它们一次性落进 [`TranscriptDoc`]，并在新增说话人边界切开句子时按目标语
-//! 自然缝重分配已有译文。I/O、项目锁、history 与提案文件生命周期由 CLI host
-//! 负责。
+//! `ccut speakers reidentify --review` only generates `wordSp` and a candidate speaker table. This layer writes them into [`TranscriptDoc`] in one step. When new speaker boundaries split a sentence, it reassigns existing translations along natural seams in the target language. I/O, the project lock, history, and the proposal file lifecycle are handled by the CLI host.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,8 +21,7 @@ pub struct SpeakerApplyReport {
     pub translations_split: BTreeMap<String, Vec<String>>,
 }
 
-/// 应用一次整篇说话人提案。纯改名/纯 relabel 且相邻说话人等价关系未变时，
-/// 译文、对齐与结构覆盖表保持逐字段不变。
+/// Apply a whole-document speaker proposal once. For a pure rename or pure relabel, where the equivalence relation between adjacent speakers is unchanged, translations, alignment, and the structural override table stay field-for-field identical.
 pub fn apply_speaker_proposal(
     doc: &mut TranscriptDoc,
     word_sp: &BTreeMap<String, String>,
@@ -59,8 +55,7 @@ pub fn apply_speaker_proposal(
                 != (new_speakers[index] != new_speakers[index + 1])
         });
 
-    // v0.3 没有独立 transBreaks；若一次 merge 会吞掉已有的翻译句界，使用
-    // paraBreaks 钉住同一词边界。已经完成语义分段的文档也必须保留旧段界。
+    // v0.3 has no separate transBreaks. If one merge would swallow an existing translation sentence boundary, pin the same word boundary with paraBreaks. Documents that are already semantically segmented must also keep their old segment boundaries.
     if boundary_changed {
         let sentence_by_word = sentence_index_by_word(old_doc.words.len(), &old_sentences);
         for index in 0..old_doc.words.len().saturating_sub(1) {
@@ -196,8 +191,7 @@ fn sentence_index_by_word(word_count: usize, sentences: &[Sentence]) -> Vec<Opti
     lookup
 }
 
-/// 按目标长度比例选择最近的自然缝；标点优先，其次空白/CJK 边界，并保证
-/// glossary 词不被切开。输出长度恒等于 `weights.len()`。
+/// Choose the nearest natural seam in proportion to the target length. Punctuation comes first, then whitespace or CJK boundaries, and glossary words are never split. The output length always equals `weights.len()`.
 pub fn split_translation_text(
     input: &str,
     weights: &[f64],
@@ -239,7 +233,7 @@ pub fn split_translation_text(
         }
         let left = chars[cut - 1];
         let right = chars[cut];
-        // 汉字 / 假名之间哪里都能切；别的文字（含谚文）只在空白处切。
+        // Breaks are allowed anywhere between Han characters / kana. Other scripts (including Hangul) break only at whitespace.
         let latin = |value: char| value.is_alphanumeric() && !is_unspaced_cjk_char(value);
         if openers.contains(&left) || closers.contains(&right) || (latin(left) && latin(right)) {
             return None;
@@ -338,7 +332,7 @@ mod tests {
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
         assert_eq!(sentences.len(), 2);
-        // 用一个无句末标点的 fixture 句覆盖 speaker 新边界拆译文。
+        // Covers speaker-boundary translation splitting with a fixture sentence that has no sentence-final punctuation.
         doc.words[1].text = "句，".to_owned();
         doc.trans
             .entry("zh".to_owned())
@@ -404,7 +398,7 @@ mod tests {
         assert!(!pieces.iter().any(|piece| piece == "skill"));
     }
 
-    /// 韩文译文只在空白处切，不切进어절。
+    /// Korean translations break only at whitespace, never inside an 어절 (eojeol).
     #[test]
     fn korean_translation_splits_at_spaces_only() {
         let text = "저는 내일 아이폰을 샀습니다";

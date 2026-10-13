@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * 找出源码里还没进文案目录的中文（仓库约定 §5）：注释与正则字面量以外的 CJK 字符都算。
+ * Finds Chinese text in the source that has not yet entered the copy catalogs (repo convention §5): CJK characters outside comments and regex literals all count.
  *
- * 豁免：
- * - 译文文件 `*.<语言>.ts`（例如 `foo-copy.zh-Hans.ts`）、测试（`*.test.*`）与 `testing/` 目录；
- * - 该行或上一行有 `i18n-ignore`（写明理由，例如「语言的自称」「给模型的提示词」「解析中文标点」）；
- * - `i18n-ignore-start` 与 `i18n-ignore-end` 之间的行；
- * - 文件前 20 行里有 `i18n-ignore-file` 的整个文件。
+ * Exempt:
+ * - translation files `*.<语言>.ts` (for example `foo-copy.zh-Hans.ts`), tests (`*.test.*`), and the `testing/` directory;
+ * - lines where `i18n-ignore` appears on the same line or the line above, with the reason stated (for example “语言的自称” (the language's self-name), “给模型的提示词” (prompt text for the model), “解析中文标点” (parsing Chinese punctuation));
+ * - lines between `i18n-ignore-start` and `i18n-ignore-end`;
+ * - the whole file, if `i18n-ignore-file` appears in its first 20 lines.
  *
- * 用法：`node tools/i18n-scan.mjs [目录或文件…]`，不给时扫 `SCAN_ROOTS`。有残留时退出码 1。
+ * Usage: `node tools/i18n-scan.mjs [directory or file…]`; with no arguments, it scans `SCAN_ROOTS`. Exits with code 1 when leftovers remain.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,16 +19,16 @@ const SKIP_DIRS = new Set(['node_modules', 'generated', 'testing', 'out', 'dist'
 const TRANSLATION_FILE = /\.(zh-Hans|zh-Hant|ja|ko|es|fr|de|nl|pt-BR|it|ru|pl|tr|vi)\.tsx?$/;
 const CJK = /[　-〿぀-ヿ㐀-䶿一-鿿가-힯＀-￯]/;
 
-/** 源文件里每个落在代码、字符串、模板或 JSX 文本里的 CJK 字符所在的行号（从 1 起，去重）。注释与正则字面量不算。 */
+/** The line numbers (1-based, de-duplicated) of every CJK character in a source file that falls in code, strings, templates, or JSX text. Comments and regex literals do not count. */
 export function cjkLines(source) {
   const lines = new Set();
   let line = 1;
   let i = 0;
   const n = source.length;
-  // 模板字符串里 `${` 的嵌套：栈里记每层模板开始时的花括号深度。
+  // Nesting of `${` in template strings: the stack records, for each template level, the brace depth at which that template began.
   const templates = [];
   let braces = 0;
-  let prev = ''; // 上一个有意义的代码字符，用来区分除号与正则
+  let prev = ''; // The last meaningful code character, used to tell division apart from a regex
   const hit = (ch) => {
     if (CJK.test(ch)) lines.add(line);
   };
@@ -80,7 +80,7 @@ export function cjkLines(source) {
       continue;
     }
     if (ch === '/' && regexAllowed()) {
-      // 正则字面量：跳到不在字符类里的下一个 `/`。
+      // Regex literal: skip to the next `/` that is not inside a character class.
       i++;
       let inClass = false;
       while (i < n && source[i] !== '\n') {
@@ -109,7 +109,7 @@ export function cjkLines(source) {
       braces--;
       if (templates.length && braces === templates[templates.length - 1]) {
         templates.pop();
-        // 回到外层模板字符串里继续读。
+        // Return to reading the outer template string.
         i++;
         readString('`', true);
         prev = 'a';
@@ -123,7 +123,7 @@ export function cjkLines(source) {
   return [...lines].sort((a, b) => a - b);
 }
 
-/** 去掉豁免后剩下的行：`[{ line, text }]`。 */
+/** The lines left after exemptions: `[{ line, text }]`. */
 export function findings(source) {
   const rows = source.split('\n');
   if (rows.slice(0, 20).some((r) => r.includes('i18n-ignore-file'))) return [];
@@ -159,7 +159,7 @@ export function* walk(target) {
   }
 }
 
-/** 扫一组路径，返回 `[{ file, line, text }]`。`apps/*` 与 `packages/*` 只看各自的 `src/`。 */
+/** Scans a set of paths and returns `[{ file, line, text }]`. `apps/*` and `packages/*` only check their own `src/`. */
 export function scan(targets, root = process.cwd()) {
   const out = [];
   for (const target of targets) {

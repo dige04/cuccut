@@ -15,7 +15,7 @@ const ERROR_TEXT: Record<DesignAnnotationError, () => string> = {
   'too-many': () => DESIGN.tooMany(DESIGN_ANNOTATION_LIMITS.perMessage),
 };
 
-/** 设计稿标签的那几样：`design.open`、「N 个画板」、设计稿标注的草稿、导出（docs/design/canvas §8）。 */
+/** The items for the design tab: `design.open`, “N 个画板” (N artboards), the design annotation draft, and export (docs/design/canvas §8). */
 const DESIGN_PANE: EditorPaneKind = {
   kind: 'design',
   icon: <Shapes styles={headIcon} />,
@@ -27,11 +27,11 @@ const DESIGN_PANE: EditorPaneKind = {
   entryCount: (entry) => entry.canvas?.boardCount ?? null,
   countText: (n) => DESIGN.boards(n),
   frameUrl: (address) => designFrameUrl(address, window.location),
-  // 取值时才读文案：跟着当前的界面语言。
+  // Copy is read when used: it follows the current UI language.
   get blocked() {
     return { title: DESIGN.hostBlockedTitle, body: DESIGN.hostBlockedBody };
   },
-  // 整份导出与编辑器里的导出都经 CucCut 保存（§8.3）
+  // The whole-document export and the export in the editor both go through CucCut's save (§8.3)
   exports: DESIGN,
   annotations: {
     copy: DESIGN,
@@ -56,8 +56,8 @@ const DESIGN_PANE: EditorPaneKind = {
 };
 
 /**
- * 功能区的设计稿标签（docs/design/canvas §8.1）：设计稿编辑器的 iframe 加标注（§8.2）。
- * 标签的通用部分（打开、消息往来、发送前保存、跳转、批注框）在 `EditorPane`。
+ * The design tab in the feature pane (docs/design/canvas §8.1): the design editor's iframe with annotations (§8.2).
+ * The generic parts of the tab (opening, message exchange, saving before sending, jumping, note box) are in `EditorPane`.
  */
 export function DesignPane({ target, conversationId, active }: { target: FileTarget; conversationId: Id | null; active: boolean }) {
   return <EditorPane spec={DESIGN_PANE} target={target} conversationId={conversationId} active={active} />;

@@ -55,12 +55,12 @@ const pipeline = (name: string): PipelineInfo => ({ name, label: name, descripti
 describe('工具总览的现状行', () => {
   it('目录里没有「即将推出」的工具；压缩、合并与提取音频确认能用时写在哪儿做', () => {
     expect(TOOLS.filter((t) => plannedReason(t.id)).map((t) => t.id)).toEqual([]);
-    // 不看云端能力视图：视图没到时也写在哪儿做；tools.list 还没到时不写。
+    // Doesn't look at the cloud capability view: if the view hasn't arrived, the status is still written here; not written before tools.list arrives.
     expect(toolCardStatus('compress-video', null, null)).toEqual({ on: true, text: transcodeCardStatus() });
     expect(toolCardStatus('merge-video', null, null)).toEqual({ on: true, text: transcodeCardStatus() });
     expect(toolCardStatus('extract-audio', null, null)).toEqual({ on: true, text: transcodeCardStatus() });
     expect(toolCardStatus('compress-video', null)).toBeNull();
-    // Web 上的原因（固定流程不开放、保存位置在项目目录之外）由 tools.list 给，照写。
+    // On the Web, the reasons (fixed flow not open, save location outside the project directory) come from tools.list; keep them as written.
     const web = 'Web 服务上不能调用 pipelines.start';
     expect(toolCardStatus('extract-audio', null, web)).toEqual({ on: false, text: web });
   });
@@ -111,19 +111,19 @@ describe('工具总览的现状行', () => {
   });
 
   it('文本生成按能用的云端服务商计数', () => {
-    // OpenAI 连上了；Google 没连。
+    // OpenAI is connected; Google is not.
     expect(usableCloudCount(textView(), 'generateText')).toBe(1);
     expect(toolCardStatus('generate-text', textView())).toEqual({ on: true, text: '1 家云端已连接' });
-    // 没有任何文本服务商（Runtime 还没列出来）时也说清楚。
+    // Also state it clearly when there is no text provider at all (the Runtime hasn't listed any yet).
     expect(toolCardStatus('generate-text', fixtureView())).toEqual({ on: false, text: '还没有可用的文本模型' });
   });
 
   it('语音与生图按能用的云端服务商计数：连上了、这一档也可用', () => {
     const view = fixtureView();
-    // OpenAI 与声明了语音合成模型的 TTS Box；ASR Box 连上了但这一档没有模型，不算。
+    // OpenAI, and a TTS Box that declares a speech synthesis model; an ASR Box that is connected but has no model at this tier doesn't count.
     expect(usableCloudCount(view, 'synthesizeSpeech')).toBe(2);
     expect(toolCardStatus('synthesize-speech', view)).toEqual({ on: true, text: '2 家云端已连接' });
-    // Codex 画图是智能体 Provider，不算云端。
+    // Codex image generation is an agent provider, so it doesn't count as cloud.
     expect(toolCardStatus('generate-image', view)).toEqual({ on: true, text: '1 家云端已连接' });
   });
 

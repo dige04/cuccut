@@ -1,14 +1,14 @@
-//! 词时间的确定性收尾（逐字对拍 voice-ink `WordTimingNormalization` /
-//! `WordTimingRepair`）。
+//! Deterministic cleanup of word timings (checked word for word against voice-ink's `WordTimingNormalization` /
+//! `WordTimingRepair`).
 //!
-//! 修复是纯时间操作，不触碰任何阶段戳——文本指纹只含 text 与端点 id，
-//! 时间修复随时可跑、不会误伤润色/翻译的新鲜度。
+//! Repair is pure timing work and does not touch any stage stamp: the text fingerprint covers only the text and endpoint ids,
+//! so timing repair can run at any time without disturbing the freshness of polish or translation.
 
 use crate::asr_rows::WordIn;
 
 use crate::doc::Word;
 
-/// 厘秒取整（`TranscriptModel.r2`）：half-away-from-zero。
+/// Round to centiseconds (`TranscriptModel.r2`): half-away-from-zero.
 pub fn r2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
@@ -17,9 +17,9 @@ fn cs(x: f64) -> i64 {
     (r2(x) * 100.0).round() as i64
 }
 
-/// 归一化一段词时间：健康则原样返回 `None`；不健康则整体重标——每词保底
-/// 1 tick、严格递增、不越窗。窗口放不下每词 1 tick（`span < count`）时
-/// 也原样返回（由修复层扩窗后重试）。
+/// Normalizes one run of word timings: returns `None` unchanged when the run is healthy. When it is not, the whole run is re-stamped,
+/// with every word guaranteed at least 1 tick, strictly increasing, and inside the window. When the window cannot fit 1 tick per word (`span < count`),
+/// it also returns unchanged (the repair layer widens the window and retries).
 fn normalized_slots(
     times: &[(f64, f64)],
     range_start: f64,
@@ -54,7 +54,7 @@ fn normalized_slots(
         return None;
     }
     let available = span - count;
-    // 整数除法是刻意的（voice-ink test-locked）。
+    // Integer division is deliberate (locked by voice-ink tests).
     let scaled = |absolute_tick: i64| -> i64 {
         if span > 0 {
             ((absolute_tick - lo).clamp(0, span) * available) / span
@@ -76,7 +76,7 @@ fn normalized_slots(
     )
 }
 
-/// 行内词时间归一化（WordIn 版，供 build 使用）。
+/// Normalizes word timings within a line (the WordIn variant, used by build).
 pub fn normalized_word_timings(words: &mut [WordIn], range_start: f64, range_end: f64) {
     let times: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
     if let Some(fixed) = normalized_slots(&times, range_start, range_end) {
@@ -87,7 +87,7 @@ pub fn normalized_word_timings(words: &mut [WordIn], range_start: f64, range_end
     }
 }
 
-/// 词原子版归一化（rebind/repair 收尾使用）。
+/// Word-atom variant of the normalization (used to finish rebind/repair).
 pub fn normalize_doc_words(words: &mut [Word], range_start: f64, range_end: f64) {
     let times: Vec<(f64, f64)> = words.iter().map(|word| (word.t0, word.t1)).collect();
     if let Some(fixed) = normalized_slots(&times, range_start, range_end) {
@@ -98,7 +98,7 @@ pub fn normalize_doc_words(words: &mut [Word], range_start: f64, range_end: f64)
     }
 }
 
-/// 病症分类（检测顺序即优先级）。
+/// Defect classes (detection order is priority).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimingSymptom {
     NonFinite,
@@ -133,9 +133,9 @@ pub fn issue_kind(words: &[Word], index: usize) -> Option<TimingSymptom> {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct RepairReport {
-    /// 被重排的词 id。
+    /// IDs of the words that were reordered.
     pub repaired: Vec<String>,
-    /// 扩张到极限仍放不下的词 id——不硬塞坏 tick，原样保留并上报。
+    /// IDs of words that still do not fit after expanding to the limit. No bad ticks are forced in; they are kept as-is and reported.
     pub unrepairable: Vec<String>,
 }
 
@@ -157,8 +157,8 @@ fn ceil_time(t: f64, floor: f64) -> f64 {
     }
 }
 
-/// 五种病症检测 + 坏段修复：连续坏段锚定两侧健康邻居重排，tick 预算不足时
-/// 向邻居扩张（把健康邻居并入待重排段），仍不行记 `unrepairable`。
+/// Detection of the five defect classes plus bad-segment repair: a run of bad words is anchored to the healthy neighbours on both sides and reordered.
+/// When the tick budget is short it expands into the neighbours (absorbing healthy neighbours into the run to reorder); if that still fails it records `unrepairable`.
 pub fn word_timing_repair(words: &mut [Word]) -> RepairReport {
     let mut report = RepairReport::default();
     let count = words.len();
@@ -198,14 +198,14 @@ pub fn word_timing_repair(words: &mut [Word]) -> RepairReport {
                 if end_index == count - 1 && start_index == 0 {
                     range_end = range_start + (end_index - start_index + 1) as f64 / 100.0 + 0.01;
                 } else {
-                    // 中间段被两侧健康邻居夹死：把窗口顶进邻居会制造新的
-                    // 交叠，改为并入邻居扩张（走下面的扩张分支）。
+                    // The middle run is boxed in by healthy neighbours on both sides: pushing the window into a neighbour would create new
+                    // overlaps, so it expands into the neighbour instead (taking the expansion branch below).
                     range_end = range_start;
                 }
             }
             let need = (end_index - start_index + 1) as i64;
             if cs(range_end) - cs(range_start) >= need || guard >= count {
-                // 预算够（或扩无可扩）：重排切片。
+                // Budget is enough (or nothing is left to expand): reorder the slice.
                 let slice_times: Vec<(f64, f64)> = words[start_index..=end_index]
                     .iter()
                     .map(|word| (word.t0, word.t1))
@@ -220,8 +220,8 @@ pub fn word_timing_repair(words: &mut [Word]) -> RepairReport {
                         }
                     }
                     None => {
-                        // 归一化 no-op（扩到极限 span 仍 < count，或切片碰巧
-                        // "健康"却修不动）——如实上报，绝不静默成功。
+                        // Normalization is a no-op (expanded to the limit and span is still < count, or the slice happens to look "healthy"
+                        // yet cannot be fixed). Report it honestly; never succeed silently.
                         for word in &words[start_index..=end_index] {
                             report.unrepairable.push(word.id.clone());
                         }
@@ -229,7 +229,7 @@ pub fn word_timing_repair(words: &mut [Word]) -> RepairReport {
                 }
                 break;
             }
-            // 扩张：优先向前吸收健康邻居，其次向后。
+            // Expand: absorb healthy neighbours forward first, then backward.
             guard += 1;
             if start_index > 0 {
                 start_index -= 1;
@@ -324,7 +324,7 @@ mod tests {
     fn repair_expands_into_neighbors_when_gap_too_small() {
         let mut words = vec![
             doc_word("a", 0.0, 1.0),
-            doc_word("b", 1.0, 0.5), // 负时长且与邻居零间隙
+            doc_word("b", 1.0, 0.5), // Negative duration with zero gap to its neighbour
             doc_word("c", 1.0, 4.0),
         ];
         let report = word_timing_repair(&mut words);

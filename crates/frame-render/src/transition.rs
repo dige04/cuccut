@@ -1,17 +1,15 @@
-//! 转场的画法（格式规范 §3.9）。
+//! Transition drawing (format spec §3.9).
 //!
-//! 每一侧先由内核画成一张与输出等大的透明层（已含自己的几何、遮罩、效果、元素动画与不透明度），再在这里按转场合起来。
-//! 入场的画法作用在 B 上，以 B 自己的框、旋转与镜像为准（与 v2 媒体元素的入场转场同一套语义）：
+//! The kernel first draws each side into a transparent layer the same size as the output (already including its own geometry, mask, effects, element animation and opacity). The layers are then combined here according to the transition.
+//! Entry drawing acts on B, using B's own box, rotation and mirroring (same semantics as the entry transition of v2 media elements):
 //!
-//! - `dissolve`：不透明度 × e；
-//! - `wipe`：从框的局部左边揭开到 e；
-//! - `slide`：沿框的 x 轴平移 (e − 1) × 框宽，不透明度 × e；
-//! - `zoom`：绕框中心缩放 0.75 + 0.25e，不透明度 × e；
-//! - `iris`：半径 e × 半对角线的圆。
+//! - `dissolve`: opacity × e;
+//! - `wipe`: reveals from the box's local left edge to e;
+//! - `slide`: translates along the box's x axis by (e − 1) × box width, opacity × e;
+//! - `zoom`: scales around the box center by 0.75 + 0.25e, opacity × e;
+//! - `iris`: a circle with radius e × half-diagonal.
 //!
-//! 两侧转场先画满 A，再按入场画法画 B；`dip-to-color` 前半程 A 渐变到颜色、后半程颜色渐变到 B；`push` 按运动方向
-//! 整画布推：B 还差 (1 − e) 个画布宽（高），A 已经走了 e。单侧转场缺的一侧是透明的；出场按同一种画法的逆过程，
-//! 进度换成 e′ = easing(1 − p)。混合在 sRGB 编码值上做（与 Canvas 2D 一致）。
+//! For two-sided transitions, A is drawn fully first, then B is drawn with the entry method. `dip-to-color` fades A to the color during the first half and from the color to B during the second half. `push` pushes the whole canvas along the motion direction: B is short by (1 − e) canvas widths (heights), and A has moved by e. One-sided transitions use a transparent other side. An exit is the reverse of the same method, with progress replaced by e′ = easing(1 − p). Blending is done on sRGB-encoded values (consistent with Canvas 2D).
 
 use render_graph::{LayerTransition, TransitionRole};
 use serde_json::{Map, Value};
@@ -21,7 +19,7 @@ use tiny_skia::{BlendMode, Color, FilterQuality, Pixmap, PixmapPaint, Transform}
 
 use crate::effects::hex_rgba;
 
-/// 一侧的框（输出像素）：中心、宽高、旋转（度，顺时针）与镜像。
+/// A side's box (output pixels): center, width and height, rotation (degrees, clockwise) and mirroring.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoxGeom {
     pub cx: f64,
@@ -34,8 +32,7 @@ pub struct BoxGeom {
 }
 
 impl BoxGeom {
-    /// 元素在 `size` 输出上的框。`element` 已代入这一刻的关键帧；`natural` 是外部媒体（含 Lottie）源画面的像素尺寸，
-    /// 有它时按媒体框算（铺满模式且不平铺时是整张画布），否则按元素的静态框算。
+    /// The element's box on `size` output. `element` already has this moment's keyframes substituted. `natural` is the pixel size of an external media source (including Lottie); when present, the box is computed from the media (the whole canvas in fill mode without tiling), otherwise from the element's static box.
     pub fn of(element: &TimelineVisualElement, natural: Option<(f64, f64)>, size: (f64, f64)) -> BoxGeom {
         let place = &element.place;
         let (cx, cy, w, h) = match natural {
@@ -79,7 +76,7 @@ impl BoxGeom {
         }
     }
 
-    /// 输出像素中心 `(x, y)` 在框的局部坐标里离框（内容方向的）左边的距离，以及离中心的距离。
+    /// The distance from output pixel center `(x, y)` to the box's left edge (in the content direction) in the box's local coordinates, and its distance from the center.
     fn local_u(&self, x: f64, y: f64) -> f64 {
         let (sin, cos) = self.rotation.to_radians().sin_cos();
         let (px, py) = (x - self.cx, y - self.cy);
@@ -88,7 +85,7 @@ impl BoxGeom {
         lx + self.w / 2.0
     }
 
-    /// 框的 x 轴（内容方向）在输出上的单位向量。
+    /// The unit vector of the box's x axis (content direction) on the output.
     fn axis(&self) -> (f64, f64) {
         let (sin, cos) = self.rotation.to_radians().sin_cos();
         let sign = if self.flip_x { -1.0 } else { 1.0 };
@@ -96,7 +93,7 @@ impl BoxGeom {
     }
 }
 
-/// 这一侧在转场里该用的进度：入场与两侧转场是 `eased`，单侧出场是 easing(1 − p)。
+/// The progress this side uses in the transition: entry and two-sided transitions use `eased`; one-sided exit uses easing(1 − p).
 pub fn effective_progress(transition: &LayerTransition, two_sided: bool) -> f64 {
     match (transition.role, two_sided) {
         (TransitionRole::Outgoing, false) => transition.easing.apply(1.0 - transition.progress),
@@ -105,7 +102,7 @@ pub fn effective_progress(transition: &LayerTransition, two_sided: bool) -> f64 
     .clamp(0.0, 1.0)
 }
 
-/// 把 A、B 按 `kind` 在进度 `e` 合到 `out`（调用方给一张清空的透明画布）。`b_box` 是 B 的框。
+/// Combines A and B into `out` according to `kind` at progress `e` (the caller provides a cleared transparent canvas). `b_box` is B's box.
 pub fn compose(
     kind: &str,
     params: &Map<String, Value>,
@@ -124,7 +121,7 @@ pub fn compose(
                 .and_then(Value::as_str)
                 .and_then(hex_rgba)
                 .unwrap_or([0, 0, 0, 255]);
-            // 前半程 A → 颜色（比例 2e），后半程颜色 → B（比例 2e − 1）。
+            // First half: A → color (ratio 2e). Second half: color → B (ratio 2e − 1).
             let (side, colour_weight) = if e < 0.5 { (a, 2.0 * e) } else { (b, 1.0 - (2.0 * e - 1.0)) };
             lerp_to_colour(out, side, [r, g, bl], colour_weight);
         }
@@ -135,7 +132,7 @@ pub fn compose(
                 Some("down") => (0.0, -h),
                 _ => (w, 0.0),
             };
-            // 运动方向朝左时 B 从右边进来：B 还差 (1 − e)，A 已经朝左走了 e。
+            // When moving left, B enters from the right: B is short by (1 − e), and A has moved left by e.
             blit(out, a, 1.0, Transform::from_translate((-vx * e) as f32, (-vy * e) as f32));
             blit(
                 out,
@@ -161,7 +158,7 @@ pub fn compose(
     }
 }
 
-/// B 按入场画法画到 `out` 上。认不出的种类按硬切（调用方已报出来），只画 B。
+/// Draws B onto `out` with the entry method. An unrecognized kind becomes a hard cut (the caller has already reported it), and only B is drawn.
 fn incoming(kind: &str, b: &Pixmap, geom: BoxGeom, e: f64, out: &mut Pixmap) {
     match kind {
         "dissolve" => blit(out, Some(b), e, Transform::identity()),
@@ -216,7 +213,7 @@ fn is_integer_translate(t: Transform) -> bool {
     t.sx == 1.0 && t.sy == 1.0 && t.kx == 0.0 && t.ky == 0.0 && t.tx.fract() == 0.0 && t.ty.fract() == 0.0
 }
 
-/// `side` 乘上逐像素的覆盖率盖到 `out` 上（预乘的 SourceOver）。
+/// Applies `side` with per-pixel coverage onto `out` (premultiplied SourceOver).
 fn over_with_coverage(out: &mut Pixmap, side: &Pixmap, coverage: impl Fn(f64, f64) -> f64) {
     let width = out.width() as usize;
     if side.width() != out.width() || side.height() != out.height() {
@@ -241,7 +238,7 @@ fn over_with_coverage(out: &mut Pixmap, side: &Pixmap, coverage: impl Fn(f64, f6
     }
 }
 
-/// `out = side × (1 − k) + 不透明的颜色 × k`（预乘值上的线性插值；缺的一侧是透明）。
+/// `out = side × (1 − k) + opaque color × k` (linear interpolation on premultiplied values; a missing side is transparent).
 fn lerp_to_colour(out: &mut Pixmap, side: Option<&Pixmap>, [r, g, b]: [u8; 3], k: f64) {
     let k = k.clamp(0.0, 1.0);
     out.fill(Color::TRANSPARENT);

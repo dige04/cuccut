@@ -14,7 +14,7 @@ import { pl } from './resource-capacity-copy.pl.ts';
 import { tr } from './resource-capacity-copy.tr.ts';
 import { vi } from './resource-capacity-copy.vi.ts';
 
-/** 设置 › 诊断「资源调度」的文案：容量来源、维度名、用量说法与覆盖框占位（译文在 `resource-capacity-copy.<语言>.ts`）。 */
+/** Copy for Settings › Diagnostics “Resource scheduling”: capacity source, dimension names, usage wording, and the placeholder in the override box (translations are in `resource-capacity-copy.<language>.ts`). */
 const en = {
   sources: {
     system: 'Detected by system',

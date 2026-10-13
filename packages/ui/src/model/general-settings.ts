@@ -14,7 +14,7 @@ import { pl } from './general-settings.pl.ts';
 import { tr } from './general-settings.tr.ts';
 import { vi } from './general-settings.vi.ts';
 
-/** 设置 › 通用模型层的文案（英文是键与类型的来源，译文在 `general-settings.zh-Hans.ts`）。 */
+/** Copy for the General settings model layer (the English is the source of keys and types; translations are in `general-settings.zh-Hans.ts`). */
 const en = {
   lineShort: 'Short',
   lineMedium: 'Medium',
@@ -59,18 +59,18 @@ export type GeneralSettingsModelMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /*
- * 设置 › 通用（设计稿 page-settings.jsx `GeneralSection`、settings-update.jsx `AppUpdateAutoRow`、import-panel.jsx
- * `DownloaderSettings`）的纯逻辑：字幕行长的三档、下载来源的校验、下载目录与回收站天数的说法、视频下载工具的一行。
- * 取值的形状与范围照合同（packages/protocol/src/settings.ts、schemas.ts），组件只管画。
+ * Pure logic for Settings › General (design mockup page-settings.jsx `GeneralSection`, settings-update.jsx `AppUpdateAutoRow`, import-panel.jsx
+ * `DownloaderSettings`): the three caption line-length levels, validation of download sources, wording for the download folder and trash retention days, and the one-line video download tool entry.
+ * Value shapes and ranges follow the contract (packages/protocol/src/settings.ts, schemas.ts); components only handle drawing.
  */
 
-// ---- 字幕行长（`captions.maxLineLength`） ----
+// ---- Caption line length (`captions.maxLineLength`) ----
 
 export type LineLengthKey = 'short' | 'medium' | 'long';
 
 /**
- * 设计稿的「短 / 中 / 长」三档。「中」就是合同的默认值；「短」「长」各差 4 个中日韩字、10 个其他字符（设计稿没给数，
- * 这里定的），都在合同的范围里（cjk 4–60，other 10–120）。
+ * The design mockup's three levels “短 / 中 / 长” (short / medium / long). “中” (medium) is the contract's default; “短” (short) and “长” (long) each differ by 4 CJK characters and 10 other characters (the mockup gives no numbers; they are set here).
+ * All are within the contract's range (cjk 4–60, other 10–120).
  */
 export const LINE_LENGTH_PRESETS: readonly { key: LineLengthKey; label: string; value: CaptionLineLength }[] = [
   { key: 'short', get label() { return M.lineShort; }, value: { cjk: 12, other: 32 } },
@@ -78,30 +78,29 @@ export const LINE_LENGTH_PRESETS: readonly { key: LineLengthKey; label: string; 
   { key: 'long', get label() { return M.lineLong; }, value: { cjk: 20, other: 52 } },
 ];
 
-/** 存着的行长落在哪一档；命令行设过别的数时不落在任何一档（null）。 */
+/** Which level the stored line length falls into; when a different number was set from the command line, it falls into no level (null). */
 export function lineLengthKey(value: CaptionLineLength | null): LineLengthKey | null {
   if (!value) return null;
   return LINE_LENGTH_PRESETS.find((p) => p.value.cjk === value.cjk && p.value.other === value.other)?.key ?? null;
 }
 
-/** 一句话写出存着的行长：「中日韩文字每行 16 字 · 其他文字每行 42 个字符」。 */
+/** One line describing the stored line length: “中日韩文字每行 16 字 · 其他文字每行 42 个字符” (16 CJK characters per line · 42 other characters per line). */
 export function lineLengthText(value: CaptionLineLength): string {
   return M.lineLength(value.cjk, value.other);
 }
 
-// ---- 下载来源（`models.downloadEndpoint`、`tools.downloadEndpoint`） ----
+// ---- Download sources (`models.downloadEndpoint`, `tools.downloadEndpoint`) ----
 
 export const ENDPOINT_MAX_LENGTH = 500;
 
-/** 输入框里的字 → 要存的值：去掉首尾空白，空的是 null（恢复默认来源）。 */
+/** Input text → value to store: trims leading and trailing whitespace; empty becomes null (restores the default source). */
 export function endpointValue(text: string): string | null {
   const value = text.trim();
   return value === '' ? null : value;
 }
 
 /**
- * 下载来源哪里不对；能存（包括留空）时 null。规则与合同的校验（schemas.ts `isDownloadEndpoint`）相同：`http(s)://` 开头的基址，
- * 不带用户名、密码、查询参数与片段（凭据不得出现在网址里），最长 500 个字符。
+ * What is wrong with the download source; null when it can be saved (including when left empty). The rules match the contract's validation (schemas.ts `isDownloadEndpoint`): a base address starting with `http(s)://`, with no username, password, query parameters or fragment (credentials must not appear in the URL), at most 500 characters long.
  */
 export function endpointProblem(text: string): string | null {
   const value = endpointValue(text);
@@ -120,46 +119,46 @@ export function endpointProblem(text: string): string | null {
   return null;
 }
 
-// ---- 默认保存位置（`downloads.directory`，键名不改） ----
+// ---- Default save location (`downloads.directory`, key name unchanged) ----
 
 /**
- * 设置 › 通用 › 默认保存位置（产品设计 §2.7「页面」末段；架构设计 §5.10、§7.9「保存位置」；设计稿 page-settings.jsx `SaveDirRow`）：
- * 工具没有视频的结果、下载的视频与 Agent 交出的文件都放这里；没设时是运行 Runtime 那台电脑的系统下载文件夹。工具页的「更改…」只改那一次。
+ * Settings › General › Default save location (product design §2.7, last paragraph of the “页面” (Pages) section; architecture design §5.10 and §7.9 “保存位置” (Save location); design mockup page-settings.jsx `SaveDirRow`):
+ * results of tools without a video, downloaded videos and files handed over by the Agent are all saved here; when unset, it is the system Downloads folder of the computer running the Runtime. The tool page's “更改…” (Change…) changes only that one time.
  */
 export const SAVE_DIR_ROW: GeneralSettingsModelMessages['saveDir'] = live(() => M.saveDir);
 
-// ---- 自动更新（`updates.autoCheck`、`updates.autoDownload`） ----
+// ---- Auto-update (`updates.autoCheck`, `updates.autoDownload`) ----
 
-/** 设计稿只有一行「自动检查并下载更新」，合同是两个键：两个都开着才算开。快照没到时按默认值。 */
+/** The design mockup has a single row “自动检查并下载更新” (Automatically check and download updates); the contract has two keys, and the feature counts as on only when both are on. Defaults apply when the snapshot has not arrived. */
 export function autoUpdateOn(check: boolean | null, download: boolean | null): boolean {
   return (check ?? SETTING_DEFAULTS['updates.autoCheck']) && (download ?? SETTING_DEFAULTS['updates.autoDownload']);
 }
 
-// ---- 回收站保留天数（`space.trashRetentionDays`） ----
+// ---- Trash retention days (`space.trashRetentionDays`) ----
 
 export const TRASH_DAYS = { min: 1, max: 3650 } as const;
 
-/** 数字框的值 → 要存的值：清空（NaN）是 null（恢复默认 30 天）；其余取整并收进 1–3650。 */
+/** Number field value → value to store: cleared (NaN) becomes null (restores the default of 30 days); otherwise the value is rounded to an integer and clamped to 1–3650. */
 export function trashDaysValue(input: number): number | null {
   if (!Number.isFinite(input)) return null;
   return Math.min(TRASH_DAYS.max, Math.max(TRASH_DAYS.min, Math.round(input)));
 }
 
-// ---- 视频下载工具（`externalTools.list` 的 yt-dlp 一项） ----
+// ---- Video download tool (the yt-dlp entry in `externalTools.list`) ----
 
 const SOURCE_LABEL: Record<ExternalToolSource, string> = live(() => M.source);
 
 export interface DownloaderLine {
-  /** 行尾的状态词。 */
+  /** The status word at the end of the row. */
   status: string;
   tone: 'positive' | 'notice' | 'negative' | 'neutral';
-  /** 行下的说明：版本与来源，不能用时是原因与补救。 */
+  /** The note under the row: version and source; when it is unusable, the reason and the remedy. */
   desc: string;
 }
 
 /**
- * yt-dlp 这一行怎么写（设计稿 `DownloaderSettings` 的状态 chip 与「yt-dlp · 版本 · 来源」）。登记表里没有它（null）时照未安装写。
- * 设计稿的安装、更新与「安装范围」在这里不做：CucCut 只在 Agent 从链接导入、请你同意之后才下载它（link-import-tools.ts）。
+ * How the yt-dlp row is written (the design mockup `DownloaderSettings` status chip and “yt-dlp · 版本 · 来源” (yt-dlp · version · source)). When it is missing from the registry (null), it is written as not installed.
+ * The mockup's install, update and “安装范围” (install scope) are not implemented here: CucCut downloads it only after the Agent imports from a link and you agree (link-import-tools.ts).
  */
 export function downloaderLine(probed: ExternalToolStatus | null): DownloaderLine {
   const status = probed && localizeToolStatus(probed);

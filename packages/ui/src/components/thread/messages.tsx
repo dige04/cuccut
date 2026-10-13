@@ -26,7 +26,7 @@ import { AnnotationsToken } from '../annotations-token.tsx';
 type Item<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 const userRow = style({ display: 'flex', flexDirection: 'column', alignItems: 'end', gap: 4 });
-/** 已发送的图片排在正文上方（原型 spectrum.css `.cc-ai-sent-attachments` :53-54）。 */
+/** Sent images are placed above the body text (prototype spectrum.css `.cc-ai-sent-attachments` :53-54). */
 const sentAttachments = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 });
 const sentPreview = style({ display: 'block', width: 80, height: 64, objectFit: 'cover' });
 const sentPlaceholder = style({
@@ -38,7 +38,7 @@ const sentPlaceholder = style({
   backgroundColor: 'gray-75',
   color: 'gray-600',
 });
-/** 用户消息的气泡是 S2 AI 的 UserMessage（原型 9bd7f6f）；正文保留换行，可以选中复制。 */
+/** The user message bubble is S2 AI's UserMessage (prototype 9bd7f6f); line breaks in the body are kept, and the text can be selected and copied. */
 const userText = style({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', userSelect: 'text' });
 const contextLine = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-xs', color: 'gray-600', maxWidth: '[75%]' });
 const agentRow = style({ display: 'flex', alignItems: 'start' });
@@ -58,8 +58,8 @@ const notice = style({
 const noticeIcon = style({ flexShrink: 0, marginTop: 2 });
 
 /**
- * 已发送图片的只读句柄，按「会话:附件」记住（`media.resolve` 的附件定位），离过期不到一分钟就重新要。
- * 线程重画、来回切会话时不用每次都去要。
+ * Read-only handles for sent images, remembered by “会话:附件” (session:attachment) (the attachment locator for `media.resolve`); a new one is requested when less than a minute remains before expiry.
+ * When the thread is redrawn or the user switches sessions back and forth, there is no need to request them every time.
  */
 const attachmentHandles = new Map<string, MediaHandle>();
 
@@ -91,7 +91,7 @@ function useAttachmentUrl(conversationId: Id, attachmentId: Id): { url: string |
   return { url: current.url, failed: current.failed };
 }
 
-/** 已发送的一张图（原型 `UserMsg` :45-50）：S2 Card S，上面是图，下面是文件名。图取不到时画图片图标。 */
+/** One sent image (prototype `UserMsg` :45-50): S2 Card S, with the image on top and the file name below. When the image can't be obtained, an image icon is drawn. */
 function SentAttachment({ conversationId, attachment, attachments }: { conversationId: Id; attachment: AttachmentRef; attachments: AttachmentRef[] }) {
   const [preview,setPreview]=useState(false);
   const isImage=(a:AttachmentRef)=>a.kind==='image'||/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(a.fileName);
@@ -144,21 +144,21 @@ export const UserMessage = memo(function UserMessage({ item, conversationId }: {
         </div>
       ) : null}
       {item.template ? (
-        // 发送时挂着的场景模板（模板包规范 §5.2）：只是标记，模板正文与简报引导交给了智能体，不在正文里。
+        // The scene template attached at send time (template pack spec §5.2): it is only a marker; the template body and the brief guidance are handed to the agent and are not in the message body.
         <div className={contextLine}>
           <ViewGrid />
           <span>{HOME_COPY.templateToken(item.template.title)}</span>
         </div>
       ) : null}
       {messageSkills(item).map((skill) => (
-        // 发送时点选的 skill（产品设计 §6.9），按挂上的顺序各一行：只是标记，SKILL.md 正文交给了智能体，不在正文里。
+        // Skills selected at send time (product design §6.9), one row each in the order they were attached: only markers; the SKILL.md body is handed to the agent and is not in the message body.
         <div key={skill.id} className={contextLine} title={skill.id}>
           <Code />
           <span>{SKILL_COPY.token(skill.name)}</span>
         </div>
       ))}
       {item.slideAnnotations?.length ? (
-        // 随这条消息交出去的幻灯片标注（docs/design/slides §8.2）：点开看各条，点一条打开那份幻灯片跳到那一页。
+        // Slide annotations handed over with this message (docs/design/slides §8.2): expand to see each one; clicking one opens that slide and jumps to its page.
         <div className={contextLine}>
           <AnnotationsToken
             kind="slides"
@@ -167,7 +167,7 @@ export const UserMessage = memo(function UserMessage({ item, conversationId }: {
         </div>
       ) : null}
       {item.designAnnotations?.length ? (
-        // 随这条消息交出去的设计稿标注（docs/design/canvas §8.2）：点一条打开那份设计稿，定位到那个元素或区域。
+        // Design-draft annotations handed over with this message (docs/design/canvas §8.2): clicking one opens that design and positions it on that element or area.
         <div className={contextLine}>
           <AnnotationsToken
             kind="design"
@@ -176,7 +176,7 @@ export const UserMessage = memo(function UserMessage({ item, conversationId }: {
         </div>
       ) : null}
       {item.designSystemAnnotations?.length ? (
-        // 随这条消息交出去的设计系统标注（docs/design/canvas §10.6）：点一条打开那套设计系统，展开那一节定位到那个目标。
+        // Design-system annotations handed over with this message (docs/design/canvas §10.6): clicking one opens that design system, expands that section and positions it on the target.
         <div className={contextLine}>
           <AnnotationsToken
             kind="design-system"

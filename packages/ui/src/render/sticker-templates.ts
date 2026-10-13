@@ -1,6 +1,5 @@
 /**
- * 贴纸生成器（`cuccut.sticker`）的模板目录，照旧版 `core/presets/builtin/sticker/*.json` 搬来。几何在单位正方形里（左上原点、
- * y 向下），路径用 SVG 的 M / L / C / Z 写；`strokeWidth` 是元素框短边的比例（缺省 0.03），颜色是 `#RRGGBB[AA]`。
+ * Template catalog for sticker generators (`cuccut.sticker`), carried over from the old `core/presets/builtin/sticker/*.json`. Geometry is in a unit square (top-left origin, y pointing down); paths are written with SVG M / L / C / Z. `strokeWidth` is a fraction of the element box's short side (default 0.03); colors are `#RRGGBB[AA]`.
  */
 export interface StickerLayer {
   path: string;

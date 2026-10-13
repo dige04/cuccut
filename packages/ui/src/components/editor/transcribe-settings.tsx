@@ -62,11 +62,11 @@ import { TRANSCRIBE_SETUP_COPY as C } from './transcribe-copy.ts';
 import { patchSetup, useSubtitleRun } from './transcribe-run.ts';
 
 const disclosure = style({ width: 'full' });
-/** 标题按钮里的内容是横排的：标题与摘要包成竖排的一块，摘要另起一行。 */
+/** Content of the title button is laid out horizontally; the title and summary are wrapped into a vertical block, with the summary on its own line. */
 const titleStack = style({ display: 'flex', flexDirection: 'column', alignItems: 'start', minWidth: 0, textAlign: 'start' });
 const summary = style({ marginTop: 2, font: 'ui-xs', fontWeight: 'normal', color: 'gray-600' });
 const panelBody = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
-/** 一节的小标题（与翻译设置页同一个样子）。 */
+/** Subheading of a section (same look as the translation settings page). */
 const secHead = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 8 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
 const hint = style({ margin: 0, marginTop: '[6px]', font: 'ui-xs', color: { default: 'gray-600', isWarn: 'orange-1000' }, lineHeight: '[1.5]' });
@@ -80,7 +80,7 @@ const glossaryMeta = style({ paddingStart: 24, font: 'ui-xs', color: { default: 
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** 这个视频的转录设置（没动过时是默认值）与这次会用的模型。 */
+/** This video's transcription settings (defaults if untouched) and the model that will be used this time. */
 function useSetup(videoId: Id) {
   const view = useModels((s) => s.capabilities);
   const setup = useSubtitleRun((s) => s.setups[videoId]) ?? DEFAULT_TRANSCRIBE_SETUP;
@@ -89,13 +89,13 @@ function useSetup(videoId: Id) {
   return { view, setup, options, picked };
 }
 
-/** 「生成字幕」交给 `models.transcribe` 的选项：没动过设置时是空的，与以前一样全用默认值。 */
+/** Options given to `models.transcribe` by “Generate subtitles”. Empty when the settings are untouched, so all defaults are used, as before. */
 export function useTranscribeRequest(videoId: Id): TranscribeOptions {
   const { setup, picked } = useSetup(videoId);
   return transcribeRequestOptions(setup, picked);
 }
 
-/** 库里转录术语表的内容（摘要里没有语言与写法）：按版本读（`library-commands` 有缓存）；换版本时先留着上一份。 */
+/** Contents of the library's transcription glossary (the summary has no language or spelling). Read per version (`library-commands` caches it); when the version changes, the previous one is kept meanwhile. */
 function useGlossaryContents(runtime: RuntimeSession, summaries: readonly LibraryEntrySummary[]): Record<Id, GlossaryContentState> {
   const list = useMemo(() => summaries.filter((s) => s.kind === 'transcription'), [summaries]);
   const signature = list.map(entryKey).join('|');
@@ -116,14 +116,13 @@ function useGlossaryContents(runtime: RuntimeSession, summaries: readonly Librar
     return () => {
       live = false;
     };
-    // signature 概括了 list。
+    // signature summarizes the list.
   }, [runtime, signature]);
   return contents;
 }
 
 /**
- * 视频里启用的条目（`library.getVideoSelection`）：跟着视频里那份 `library-selection` 文档的版本重读，撤销、别处改了都
- * 跟得上（与翻译设置页同一个做法）。换了版本、新的还没读回来时先用上一份，免得勾选框闪一下。
+ * Entries enabled in the video (`library.getVideoSelection`). Re-read following the version of the `library-selection` document in the video, so undo and changes made elsewhere are picked up (same approach as the translation settings page). When the version changes and the new one hasn't been read back yet, the previous one is used, so the checkboxes don't flicker.
  */
 function useVideoSelection(runtime: RuntimeSession, videoId: Id, documents: Record<Id, DocumentRecord>) {
   const doc = Object.values(documents).find((d) => d.kind === 'library-selection');
@@ -148,14 +147,14 @@ interface ProviderGroup {
   items: TranscribeModelOption[];
 }
 
-/** 能就地下载的模型包怎么下：「下载 {大小}」，停在一半时「继续下载…」，在下时写进度。 */
+/** How a downloadable model pack is downloaded in place: “Download {size}”, “Continue download…” if stopped halfway, and progress while downloading. */
 function downloadAction(bundle: ModelBundleStatus): string {
   const view = downloadView(bundle);
   if (view.state === 'running') return GATE_COPY.downloading(view.percent);
   return view.state === 'paused' ? GATE_COPY.resume : view.size ? GATE_COPY.downloadSize(view.size) : GATE_COPY.downloadButton;
 }
 
-/** 菜单里一项下面那行：还没装、这台电脑能下载的在原因后面写怎么下；其余写原因。 */
+/** The line under an item in the menu. If it isn't installed yet and can be downloaded on this computer, it says how to download after the reason; otherwise it gives the reason. */
 function itemNote(o: TranscribeModelOption, bundle: ModelBundleStatus | null): string | null {
   if (!bundle) return o.why;
   return o.why ? `${o.why} · ${downloadAction(bundle)}` : downloadAction(bundle);
@@ -172,9 +171,9 @@ function groups(options: readonly TranscribeModelOption[]): ProviderGroup[] {
 }
 
 /**
- * 字幕面板「生成字幕」的转录设置（原型 tool-transcribe.jsx 的语音模型与语言、glossary-tool.jsx `AsrHintBlock`）：
- * 折起来时只有一行摘要，不动它直接点「生成字幕」就是默认值。设置按视频记在 `useSubtitleRun.setups`；
- * 术语表的勾选写进视频（`library.setVideoSelection`，一笔能撤销的编辑），以后每次转录都用。
+ * Transcription settings for “Generate subtitles” in the subtitle panel (prototype tool-transcribe.jsx: speech model and language; glossary-tool.jsx `AsrHintBlock`):
+ * when collapsed, only one summary line shows. Clicking “Generate subtitles” without touching it uses the defaults. The settings are kept per video in `useSubtitleRun.setups`.
+ * Glossary checkboxes are written to the video (`library.setVideoSelection`, a reversible edit) and used in every future transcription.
  */
 export function TranscribeSettings({ videoId, documents, editable }: { videoId: Id; documents: Record<Id, DocumentRecord>; editable: boolean }) {
   const runtime = useRuntime();
@@ -199,14 +198,14 @@ export function TranscribeSettings({ videoId, documents, editable }: { videoId: 
   const usedContents = used.map((r) => contents[r.id]).filter((c): c is NonNullable<GlossaryContentState> => !!c);
   const budget = hintBudget(setup.prompt, usedContents);
 
-  // 没装的本机模型不置灰（设计稿 panel-aitools.jsx）：点它先走安装对话框，下完自动选中；在下的点了就只等着。
-  // 选中的那只没装时，下拉下面给「下载 {大小}」（在下时给进度），下完不用再选。
+  // A local model that isn't installed is not greyed out (design draft panel-aitools.jsx). Clicking it first goes through the install dialog, and it is selected automatically once downloaded; if it is already downloading, clicking just waits.
+  // When the selected one isn't installed, a “Download {size}” line appears below the dropdown (with progress while downloading), and no reselecting is needed after the download.
   const bundles = useModels((s) => s.bundles);
   const jobs = useJobs((s) => s.jobs);
   const [installing, setInstalling] = useState<{
     option: TranscribeModelOption;
     bundle: ModelBundleStatus;
-    /** 权重已在、只缺公共组件的按补齐走（`inlineInstallMode`），打开时定下。 */
+    /** Weights are already present and only the shared components are missing: the fill-in is done by completing the install (`inlineInstallMode`), decided when opened. */
     mode: 'install' | 'complete';
   } | null>(null);
   const [pending, setPending] = useState<{ key: string; jobId: Id | null } | null>(null);
@@ -220,7 +219,7 @@ export function TranscribeSettings({ videoId, documents, editable }: { videoId: 
       setPending(null);
       if (pendingOption.key !== option?.key) patch({ model: pendingOption.key, language: effectiveLanguage(setup.language, pendingOption) });
     } else if (!pendingOption || pendingFailed) setPending(null);
-    // 只跟着等的那只能不能用、下载有没有失败走；patch 每次渲染都是新的。
+    // Only follows whether the model being waited on is usable, or whether its download failed; the patch is new on every render.
   }, [pending, pendingOption?.usable, pendingFailed]);
   const download = (o: TranscribeModelOption, bundle: ModelBundleStatus) => {
     if (downloadView(bundle).state !== 'running') setInstalling({ option: o, bundle, mode: inlineInstallMode(bundle, bundles) });
@@ -288,7 +287,7 @@ export function TranscribeSettings({ videoId, documents, editable }: { videoId: 
                   const bundle = downloadableBundle(bundles, next);
                   if (bundle) download(next, bundle);
                   else {
-                    // 手动换了一只能用的：不再等着下完自动选中（下载照常继续）。
+                    // A usable one was switched to manually: no longer waits to auto-select after the download (the download still continues).
                     setPending(null);
                     patch({ model: next.key, language: effectiveLanguage(setup.language, next) });
                   }
@@ -351,7 +350,7 @@ export function TranscribeSettings({ videoId, documents, editable }: { videoId: 
                   license={installing.bundle.license ?? null}
                   mode={installing.mode}
                   onClose={() => setInstalling(null)}
-                  // 下的是已经选中的那只时不用等着选，照常提示「开始下载」。
+                  // When downloading the one already selected, there is no need to wait to select it; the “Start download” hint shows as usual.
                   {...(installing.option.key === option?.key
                     ? {}
                     : {

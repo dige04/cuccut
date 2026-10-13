@@ -1,11 +1,6 @@
-//! 恒等媒体元素的直通快路径（`render_media_element`）。
+//! Pass-through fast path for identity media elements (`render_media_element`).
 //!
-//! `detach_main_video` 把主画面归一化成一个全长的 `mode:"pip"` / `place.w:100`
-//! overlay 视频元素后，导出的每一帧都要走 `render_media_element`，而它在这种
-//! 恒等形态下原本要做三次满幅 8.3 MB 分配、两次满幅 Bilinear 重采样和一次满幅
-//! alpha 扫描——全部是恒等运算。快路径把它们省掉，前提是这几步在恒等参数下
-//! **逐字节不改画面**；下面头两个测试就是这个前提的实测，第三个测试盯住整条
-//! `render_media_element` 的输出仍等于源图，第四个盯住非恒等形态没被误判。
+//! After `detach_main_video` normalizes the main picture into a full-length `mode:"pip"` / `place.w:100` overlay video element, every exported frame goes through `render_media_element`. In this identity form it would otherwise do three full-size 8.3 MB allocations, two full-size Bilinear resamples and one full-size alpha scan, all of them identity operations. The fast path skips them, on the premise that under identity parameters these steps **do not change the picture byte for byte**. The first two tests below measure that premise. The third checks that the full `render_media_element` output still equals the source image, and the fourth checks that non-identity forms are not misclassified as pass-through.
 use serde_json::{Value, json};
 use std::sync::Arc;
 use subtitle_render::{OverlayRenderPlan, draw_fit_pixmap};
@@ -15,7 +10,7 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 360;
 
-/// 确定性噪声，premultiplied：每个通道都不超过 alpha，避免造出非法像素。
+/// Deterministic noise, premultiplied: every channel is at most alpha, so no illegal pixels are produced.
 fn noise(width: u32, height: u32) -> Pixmap {
     let mut pixmap = Pixmap::new(width, height).unwrap();
     let mut state: u32 = 0x1234_5678;
@@ -84,7 +79,7 @@ fn studio_document() -> Value {
     })
 }
 
-/// `place.w` 百分比 → 是否把源图原样透出。
+/// `place.w` percentage → whether the source image is passed through unchanged.
 fn render_pip(width_percent: f64) -> Pixmap {
     let mut assets = render_raster::LoadedAssets::default();
     assets
@@ -108,8 +103,8 @@ fn render_pip(width_percent: f64) -> Pixmap {
         .expect("媒体元素必须出图")
 }
 
-/// 恒等 PIP（盒子等于画布、无 fx/mask/tile/变换、满不透明）必须逐字节透出源图。
-/// 这既是快路径的正确性，也正好是快路径生效的判据。
+/// An identity PIP (box equal to the canvas, no fx/mask/tile/transform, fully opaque) must pass the source image through byte for byte.
+/// This is both the correctness of the fast path and exactly the criterion for when the fast path applies.
 #[test]
 fn identity_pip_element_passes_the_source_through_unchanged() {
     let expected = noise(WIDTH, HEIGHT);
@@ -119,7 +114,7 @@ fn identity_pip_element_passes_the_source_through_unchanged() {
     assert_eq!(rendered.data(), expected.data());
 }
 
-/// 非恒等形态不得被误判进直通：半宽 PIP 仍要真重采样并落在画布中央。
+/// A non-identity form must not be misjudged as pass-through: a half-width PIP must still be truly resampled and sit centered on the canvas.
 #[test]
 fn scaled_pip_element_still_resamples() {
     let source = noise(WIDTH, HEIGHT);
@@ -127,11 +122,11 @@ fn scaled_pip_element_still_resamples() {
     assert_eq!(rendered.width(), WIDTH);
     assert_eq!(rendered.height(), HEIGHT);
     assert_ne!(rendered.data(), source.data());
-    // 缩到一半后画布四角必须是空的，证明走的是真变换而不是直通。
+    // After shrinking to half size, the canvas corners must be empty. This proves a real transform ran rather than pass-through.
     assert_eq!(&rendered.data()[..4], &[0, 0, 0, 0]);
 }
 
-/// 不透明噪声：在 `noise` 基础上把 alpha 拉满（premultiplied 下颜色通道仍 ≤ alpha）。
+/// Opaque noise: on top of `noise`, alpha is pushed to full (under premultiplied, color channels stay ≤ alpha).
 fn opaque_noise(width: u32, height: u32) -> Pixmap {
     let mut pixmap = noise(width, height);
     for chunk in pixmap.data_mut().chunks_exact_mut(4) {
@@ -140,7 +135,7 @@ fn opaque_noise(width: u32, height: u32) -> Pixmap {
     pixmap
 }
 
-/// 全屏 + contain + `bg` 的元素在画布上渲染一次。
+/// A fullscreen + contain + `bg` element is rendered once on the canvas.
 fn render_fullscreen(source: Pixmap, bg: &str) -> Pixmap {
     let mut assets = render_raster::LoadedAssets::default();
     assets.images.insert("probe".to_owned(), Arc::new(source));
@@ -161,7 +156,7 @@ fn render_fullscreen(source: Pixmap, bg: &str) -> Pixmap {
         .expect("媒体元素必须出图")
 }
 
-/// 旧背景板路径的参考结果：画布铺底色，再 contain 贴源图。
+/// Reference result of the old background-plate path: fill the canvas with the base color, then contain-paste the source image.
 fn backdrop_reference(source: &Pixmap, color: tiny_skia::Color) -> Pixmap {
     let mut local = Pixmap::new(WIDTH, HEIGHT).unwrap();
     local.fill(color);
@@ -169,7 +164,7 @@ fn backdrop_reference(source: &Pixmap, color: tiny_skia::Color) -> Pixmap {
     local
 }
 
-/// 同尺寸不透明源 + 黑底：背景板完全被盖住，输出逐字节等于源图，也等于旧路径。
+/// Same-size opaque source with black background: the background plate is completely covered, and the output equals the source image byte for byte, and also equals the old path.
 #[test]
 fn opaque_fullscreen_contain_with_black_bg_passes_the_source_through() {
     let source = opaque_noise(WIDTH, HEIGHT);
@@ -184,7 +179,7 @@ fn opaque_fullscreen_contain_with_black_bg_passes_the_source_through() {
     assert_eq!(rendered.data(), reference.data());
 }
 
-/// 只要有一个半透明像素，就必须仍走背景板：黑底从该像素透出来。
+/// As long as there is one semi-transparent pixel, it must still take the background-plate path: the black background shows through at that pixel.
 #[test]
 fn translucent_fullscreen_contain_with_black_bg_keeps_the_backdrop() {
     let mut source = opaque_noise(WIDTH, HEIGHT);
@@ -202,7 +197,7 @@ fn translucent_fullscreen_contain_with_black_bg_keeps_the_backdrop() {
     );
 }
 
-/// 纯色底同样被不透明源完全遮住。
+/// A solid-color background is likewise completely covered by an opaque source.
 #[test]
 fn opaque_fullscreen_contain_with_color_bg_passes_the_source_through() {
     let source = opaque_noise(WIDTH, HEIGHT);
@@ -213,7 +208,7 @@ fn opaque_fullscreen_contain_with_color_bg_passes_the_source_through() {
     assert_eq!(rendered.data(), reference.data());
 }
 
-/// 尺寸不同（需要缩放与留边）时仍走背景板：结果等于旧路径的 letterbox 参考。
+/// With different sizes (requiring scaling and margins) it still takes the background-plate path: the result equals the old path's letterbox reference.
 #[test]
 fn smaller_fullscreen_contain_with_bg_still_letterboxes() {
     let source = opaque_noise(WIDTH / 2, HEIGHT / 2 - 20);
@@ -223,6 +218,6 @@ fn smaller_fullscreen_contain_with_bg_still_letterboxes() {
     assert_eq!(rendered.width(), WIDTH);
     assert_eq!(rendered.height(), HEIGHT);
     assert_eq!(rendered.data(), reference.data());
-    // 左上角是留边，露出底色。
+    // The top-left corner is margin, exposing the background color.
     assert_eq!(&rendered.data()[..4], &[0x33, 0x66, 0x99, 255]);
 }

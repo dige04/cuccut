@@ -13,13 +13,12 @@ import { COMMON_COPY, MODEL_API_COPY } from './services-copy.ts';
 import { toastFailure } from './use-service-actions.ts';
 
 /*
- * 模型接口 › 别名（原型 designs/cuccut/app/page-services-api-map.jsx `ApiModelMap`；架构设计 §4.8）。
- * Runtime 的别名是「一个名字 → 一种能力下的一个 Provider 与模型（或它的默认模型）」，原型是「一个名字 → 几只模型，每一类取第一只
- * 已下载的」。所以这里一行一个目标，没有目标 chip 的排序与多选；改目标就删掉再加。下面一行写这个名字此刻能不能用、为什么。
- * 「恢复预置」换回 Runtime 的预置（whisper-1 → 本机默认的转录模型）。
+ * Model API › Aliases (prototype designs/cuccut/app/page-services-api-map.jsx `ApiModelMap`; architecture design §4.8).
+ * A Runtime alias is “one name → one Provider and model under one capability (or its default model)”. The prototype's is “one name → several models, taking the first downloaded one in each category”. So here each row is one target, with no sorting or multi-select of target chips; to change the target, delete it and add it again. The line below says whether this name can be used right now, and why.
+ * “Restore presets” switches back to the Runtime presets (whisper-1 → this machine's default transcription model).
  */
 
-/** Runtime 的预置别名（runtime-core DEFAULT_MODEL_API_ALIASES）。 */
+/** The Runtime's preset aliases (runtime-core DEFAULT_MODEL_API_ALIASES). */
 const PRESET: ModelApiAlias = { alias: 'whisper-1', capability: 'transcribe', providerId: 'local', modelId: null };
 
 const row = style({

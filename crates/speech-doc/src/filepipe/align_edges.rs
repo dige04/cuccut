@@ -1,12 +1,8 @@
-//! align 缺省载体 `align-edges/1` 与单调化改写窄任务 `align-rewrite/1` 的
-//! HTML 表格编解码器（对齐块设计 §6.1 / §6.3）。
+//! The HTML table codec for the align default carrier `align-edges/1` and the narrow monotonic-rewrite task `align-rewrite/1` (alignment block design §6.1 / §6.3).
 //!
-//! 与 [`super::align_table`] 的两列切分表不同，这里模型**不切源、不切译、不
-//! 解决交叉**：它只把译文划成尽量小的语义块，并列出每块对应的源词序号
-//! （可乱序、可不连续、可为空）。块合并、安全边界、双语 DP 与时间分配全部是
-//! [`crate::align_block`] 的确定性代码。
+//! Unlike the two-column split table of [`super::align_table`], here the model **does not split the source, does not split the translation, and does not resolve crossings**. It only divides the translation into semantic blocks as small as possible, and lists for each block the corresponding source word ordinals (these may be out of order, non-contiguous, or empty). Block merging, safe boundaries, bilingual DP and time allocation are all deterministic code in [`crate::align_block`].
 //!
-//! 载荷形态（标签名不进协议，定位一律走 `data-*` / `class`）：
+//! Payload shape (tag names are not part of the protocol; location always goes through `data-*` / `class`):
 //!
 //! ```html
 //! <table data-lang="zh" data-fit="16" data-soft="14" data-hard="20" data-ccut-format="align-edges/1">
@@ -18,16 +14,9 @@
 //! </table>
 //! ```
 //!
-//! 模型只能改写 `td.tgt` 的内容，把它变成一串
-//! `<span data-src="4-7">因为我病了，</span><span data-src="1 2 3">所以没去。</span>`：
-//! `data-src` 是空白/逗号分隔的 1-based 序号与区间列表，可为空（省译/功能块）；
-//! 每个序号在一句内至多归属一块；span 文本按 [`normalize_chars`] 口径拼接后必须
-//! 等于译文（与切分表的拼接不变式同一容忍度）。`align-rewrite/1` 用同一张表，
-//! 但 `td.tgt` 允许被**改写**（单调化），并同时带 span 标注；改写幅度受
-//! [`reordered_rewrite_exceeds`] 护栏、硬锚点（数字/URL/原样 Latin）不得丢失。
+//! The model may only change the content of `td.tgt`, turning it into a series of `<span data-src="4-7">因为我病了，</span><span data-src="1 2 3">所以没去。</span>`. `data-src` is a whitespace- or comma-separated list of 1-based ordinals and ranges, and may be empty (an omitted translation or a function block). Each ordinal belongs to at most one block within a sentence. The span text, concatenated under the [`normalize_chars`] convention, must equal the translation (the same tolerance as the concatenation invariant of the split table). `align-rewrite/1` uses the same table, but `td.tgt` is allowed to be **rewritten** (monotonized), and spans are annotated at the same time. The magnitude of the rewrite is guarded by [`reordered_rewrite_exceeds`], and hard anchors (numbers, URLs, verbatim Latin) must not be lost.
 //!
-//! 本模块是这两个 kind 的**唯一字符串级校验**：引擎与 agent 提交期 lint 都调
-//! [`parse_align_edges`]。零 I/O、零时钟、零随机。
+//! This module is the **only string-level validator** for these two kinds: the engine and the agent's submit-time lint both call [`parse_align_edges`]. Zero I/O, zero clock, zero randomness.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -42,25 +31,24 @@ use super::common::{
 };
 use super::html::{Element, Node, escape_attr, escape_text, parse_html, parse_html_in_table};
 
-/// LLM 块对齐边的软边权重（对齐块设计 §4.2：块级归属，未被锚点佐证）。
+/// Soft edge weight for LLM block alignment (alignment block design §4.2: block-level attribution, not corroborated by anchors).
 pub const CHUNK_EDGE_WEIGHT: f32 = 0.75;
 
-/// 一句在表里的渲染输入。
+/// Render input for one sentence in the table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlignEdgesSentenceInput {
-    /// 句 id（`data-sid`，逐字节精确匹配）。
+    /// Sentence id (`data-sid`, exact byte-for-byte match).
     pub id: String,
-    /// 句内锚定词，顺序即序号（一词一序号；CJK 源按 `words[]` 原子计）。
+    /// Anchored words within the sentence; order is the ordinal (one word per ordinal; CJK sources are counted atomically per `words[]`).
     pub source_words: Vec<String>,
-    /// `align-edges/1`：自然译句真相；`align-rewrite/1`：改写基准（自然译句）。
+    /// `align-edges/1`: the natural translation sentence is the ground truth. `align-rewrite/1`: the rewrite baseline is the natural translation sentence.
     pub translation: String,
-    /// `align-rewrite/1` 的超限块提示（`data-over-hard`），只带相对预算，
-    /// 如 `chunk 1 (words 1-9): 27 units > hard 20`；edges 模式恒为 `None`。
+    /// The over-hard block hint (`data-over-hard`) for `align-rewrite/1`. It carries only relative budgets, e.g. `chunk 1 (words 1-9): 27 units > hard 20`; in edges mode it is always `None`.
     pub over_hard: Option<String>,
 }
 
 impl AlignEdgesSentenceInput {
-    /// 构造一句渲染输入（edges 模式）。
+    /// Constructs a render input for one sentence (edges mode).
     pub fn new(
         id: impl Into<String>,
         source_words: Vec<String>,
@@ -75,20 +63,20 @@ impl AlignEdgesSentenceInput {
     }
 }
 
-/// 一整张表的渲染输入，同时是解析时的对账基准。
+/// The render input for a whole table, which is also the reconciliation baseline at parse time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlignEdgesInput {
-    /// 目标语言标签（`data-lang`）。
+    /// Target language tag (`data-lang`).
     pub lang: String,
-    /// 目标语三阈值（`data-fit` / `data-soft` / `data-hard`）。
+    /// Target-language thresholds (`data-fit` / `data-soft` / `data-hard`).
     pub params: TransParams,
-    /// `true` ⇒ `align-rewrite/1`（允许改写 tgt），否则 `align-edges/1`。
+    /// `true` ⇒ `align-rewrite/1` (rewriting tgt is allowed); otherwise `align-edges/1`.
     pub rewrite: bool,
     pub sentences: Vec<AlignEdgesSentenceInput>,
 }
 
 impl AlignEdgesInput {
-    /// 构造一张 edges 表输入（参数取目标语规范缺省）。
+    /// Constructs an edges-table input (parameters take the target language's canonical defaults).
     pub fn new(lang: impl Into<String>, sentences: Vec<AlignEdgesSentenceInput>) -> Self {
         let lang = lang.into();
         let params = TransParams::for_lang(&lang);
@@ -109,24 +97,24 @@ impl AlignEdgesInput {
     }
 }
 
-/// 模型标注的一个译文语义块：文本 + 归属的源词序号（**0-based**）。
+/// One semantic block of the translation annotated by the model: text + the source word ordinals it is attributed to (**0-based**).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignChunk {
     pub text: String,
     pub ordinals: Vec<usize>,
 }
 
-/// 一句解析出来的分组。
+/// The parsed group for one sentence.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignEdgesGroup {
     pub id: String,
-    /// 按出现顺序的语义块；空 = tgt 未标注（引擎按"无对齐边"处理）。
+    /// Semantic blocks in order of appearance; empty = tgt not annotated (the engine treats this as "no alignment edges").
     pub chunks: Vec<AlignChunk>,
-    /// tgt 单元格的归一化全文（rewrite 模式即改写后的整句）。
+    /// The normalized full text of the tgt cell (in rewrite mode, the rewritten full sentence).
     pub text: String,
 }
 
-/// 一次解析的结果。
+/// The result of one parse.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignEdgesParsed {
     pub groups: Vec<AlignEdgesGroup>,
@@ -134,18 +122,17 @@ pub struct AlignEdgesParsed {
 }
 
 impl AlignEdgesParsed {
-    /// 按 id 取分组。
+    /// Gets a group by id.
     pub fn group(&self, id: &str) -> Option<&AlignEdgesGroup> {
         self.groups.iter().find(|group| group.id == id)
     }
 }
 
 // ---------------------------------------------------------------------------
-// 序号词串
+// Ordinal word string
 // ---------------------------------------------------------------------------
 
-/// `[1]I [2]didn't [3]go` —— 每个锚定词前缀 1-based 序号。词文本先过
-/// [`sanitize_inline_text`]；渲染方负责 HTML 转义。
+/// `[1]I [2]didn't [3]go`: each anchored word is prefixed with its 1-based ordinal. Word text first goes through [`sanitize_inline_text`]; the renderer is responsible for HTML escaping.
 pub fn render_ordinal_words(words: &[String]) -> String {
     words
         .iter()
@@ -155,11 +142,10 @@ pub fn render_ordinal_words(words: &[String]) -> String {
         .join(" ")
 }
 
-/// [`render_ordinal_words`] 的逆：按 `[N]` 标记切回词表（词内空白保留、首尾
-/// 修剪）。不是序号词串时返回空表。
+/// The inverse of [`render_ordinal_words`]: splits back into the word table by `[N]` markers (whitespace inside a word is kept, leading and trailing whitespace trimmed). Returns an empty table when the input is not an ordinal word string.
 pub fn parse_ordinal_words(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
-    // 每个标记的 (起点, 词起点)。
+    // (start, word start) of each marker.
     let mut markers: Vec<(usize, usize)> = Vec::new();
     let mut index = 0usize;
     while index < chars.len() {
@@ -189,10 +175,10 @@ pub fn parse_ordinal_words(text: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 渲染
+// Rendering
 // ---------------------------------------------------------------------------
 
-/// 渲染一张 edges / rewrite 表。输出确定性：属性顺序、缩进、行序固定。
+/// Renders an edges / rewrite table. Output is deterministic: attribute order, indentation and row order are fixed.
 pub fn render_align_edges(input: &AlignEdgesInput) -> String {
     let mut output = String::new();
     output.push_str(&format!(
@@ -233,24 +219,20 @@ fn cell_text(text: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 解析
+// Parsing
 // ---------------------------------------------------------------------------
 
-/// 解析模型回来的表（引擎与提交期 lint 共用的唯一字符串级校验）。
+/// Parses the table returned by the model (the only string-level validation shared by the engine and the submit-time lint).
 ///
-/// `input` 是当初实际发出的渲染文本，只作体积护栏基准；`None` 跳过护栏。
+/// `input` is the render text that was actually sent; it is used only as the baseline for the size guard. `None` skips the guard.
 ///
-/// 判据（逐句 Problem，互不阻断其它句）：
-/// - `data-src` 序号不可解析 / 越界 / 跨块重复 ⇒ [`ProblemCode::AlignEdgeOrdinal`]；
-/// - edges 模式 span 文本拼接（[`normalize_chars`] 口径）≠ 译文 ⇒
-///   [`ProblemCode::AlignEdgeText`]；
-/// - rewrite 模式改写为空 ⇒ [`ProblemCode::EmptyTranslation`]；幅度超
-///   [`reordered_rewrite_exceeds`] 或丢失数字/URL/原样 Latin 硬锚 ⇒
-///   [`ProblemCode::AlignContentDrift`]；
-/// - tgt 单元格没有任何 span ⇒ 只记 [`WarningCode::ContentIgnored`]，分组按
-///   `chunks: []` 返回（引擎回落无对齐边）。
+/// Criteria (per-sentence Problems, which do not block other sentences):
+/// - `data-src` ordinal that is unparseable / out of range / duplicated across blocks ⇒ [`ProblemCode::AlignEdgeOrdinal`];
+/// - in edges mode, the concatenated span text (under the [`normalize_chars`] convention) ≠ the translation ⇒ [`ProblemCode::AlignEdgeText`];
+/// - in rewrite mode, the rewritten text is empty ⇒ [`ProblemCode::EmptyTranslation`]; the magnitude exceeds [`reordered_rewrite_exceeds`], or a numeric / URL / verbatim Latin hard anchor is lost ⇒ [`ProblemCode::AlignContentDrift`];
+/// - a tgt cell with no spans at all ⇒ only [`WarningCode::ContentIgnored`] is recorded, and the group is returned with `chunks: []` (the engine falls back to no alignment edges).
 ///
-/// 截断 vs 散点缺失、裸 `<tbody>` 恢复与 [`super::align_table`] 同口径。
+/// Truncation vs. scattered missing ids, and bare `<tbody>` recovery, follow the same conventions as [`super::align_table`].
 pub fn parse_align_edges(
     input: &AlignEdgesInput,
     payload: Option<&str>,
@@ -337,10 +319,9 @@ pub fn parse_align_edges(
     }
 }
 
-/// 从**当初发出的载荷 HTML** 反解出 [`AlignEdgesInput`]（提交期 lint）。
+/// Recovers an [`AlignEdgesInput`] from the **originally emitted payload HTML** (submit-time lint).
 ///
-/// 必须是 [`render_align_edges`] 的严格逆（`render → parse_input → render`
-/// 逐字节相等由单测钉死）。不是 edges / rewrite 表时返回 `None`。
+/// It must be the strict inverse of [`render_align_edges`]: `render → parse_input → render` byte-for-byte equality is pinned by a unit test. Returns `None` when the table is neither edges nor rewrite.
 pub fn parse_align_edges_input(payload: &str) -> Option<AlignEdgesInput> {
     let tree = parse_html(payload);
     let table = tree.elements().into_iter().find(|element| {
@@ -397,7 +378,7 @@ fn attr_usize(element: &Element, name: &str) -> Option<usize> {
     element.attr(name)?.trim().parse().ok()
 }
 
-/// 递归收集带 `data-sid` 的分组；命中后不再下钻。
+/// Recursively collects groups that carry `data-sid`; does not descend further after a match.
 fn walk_groups<'a>(nodes: &'a [Node], out: &mut Vec<&'a Element>) {
     for node in nodes {
         let Node::Element(element) = node else {
@@ -411,7 +392,7 @@ fn walk_groups<'a>(nodes: &'a [Node], out: &mut Vec<&'a Element>) {
     }
 }
 
-/// 分组内第一个带指定 class 的后代单元格。
+/// The first descendant cell with the given class inside the group.
 fn find_cell<'a>(group: &'a Element, class: &str) -> Option<&'a Element> {
     group
         .descendants()
@@ -419,7 +400,7 @@ fn find_cell<'a>(group: &'a Element, class: &str) -> Option<&'a Element> {
         .find(|element| element.has_class(class))
 }
 
-/// 定位 tgt 单元格：优先 `class="tgt"`；否则取首行剔除 id 列后的最后一格。
+/// Locates the tgt cell: prefer `class="tgt"`; otherwise take the last cell of the first row after removing the id column.
 fn locate_target_cell<'a>(group: &'a Element, sid: &str) -> Option<&'a Element> {
     if let Some(cell) = find_cell(group, "tgt") {
         return Some(cell);
@@ -441,11 +422,9 @@ fn locate_target_cell<'a>(group: &'a Element, sid: &str) -> Option<&'a Element> 
     None
 }
 
-/// 从一个容器元素的直接子节点里抽取语义块（`<span data-src>` 为块；容器
-/// 直属文本或无 `data-src` 的子元素按空归属块计）。返回 `None` 表示容器里
-/// 没有任何 `data-src` 标注。
+/// Extracts semantic blocks from the direct children of a container element (a `<span data-src>` is a block; text directly inside the container, or child elements without `data-src`, count as blocks with an empty attribution). Returns `None` when the container has no `data-src` annotations at all.
 ///
-/// translate 融合通道（`<p>` 内的 span）与本载体共用这一函数。
+/// The translate fusion channel (spans inside `<p>`) shares this function with this carrier.
 pub fn chunks_from_element(container: &Element) -> Option<Vec<(String, Option<String>)>> {
     let mut chunks: Vec<(String, Option<String>)> = Vec::new();
     let mut annotated = false;
@@ -476,8 +455,7 @@ pub fn chunks_from_element(container: &Element) -> Option<Vec<(String, Option<St
     annotated.then_some(chunks)
 }
 
-/// 解析 `data-src`：空白/逗号分隔的 1-based 序号或 `a-b` 区间 ⇒ 0-based 序号
-/// 列表（保持出现顺序，去重）。
+/// Parses `data-src`: whitespace- or comma-separated 1-based ordinals, or `a-b` ranges, ⇒ a list of 0-based ordinals (order of appearance kept, duplicates removed).
 pub fn parse_ordinals(raw: &str, word_count: usize) -> Result<Vec<usize>, String> {
     let mut ordinals: Vec<usize> = Vec::new();
     for token in raw
@@ -517,10 +495,7 @@ fn parse_ordinal(token: &str) -> Result<usize, String> {
     Ok(value)
 }
 
-/// 语义块 → 对齐边：按 [`normalize_chars`] 口径在 `target` 上顺序定位每块
-/// （空白/标点/大小写容忍），每个归属序号产出一条软边（权重
-/// [`CHUNK_EDGE_WEIGHT`]），目标区间为该块首尾有效字符的字符下标半开区间。
-/// 任一块定位失败 ⇒ 返回空（无证据优于错证据）。
+/// Semantic blocks → alignment edges: each block is located in order on `target` under the [`normalize_chars`] convention (tolerant of whitespace, punctuation and case). Each attributed ordinal yields one soft edge (weight [`CHUNK_EDGE_WEIGHT`]), whose target interval is the half-open character-index range from the block's first to last valid character. If any block fails to locate, returns empty: no evidence is better than wrong evidence.
 pub fn chunks_to_edges(chunks: &[AlignChunk], target: &str) -> Vec<AlignEdge> {
     let Some(ranges) = chunk_char_ranges(chunks, target) else {
         return Vec::new();
@@ -553,9 +528,7 @@ pub fn chunks_to_endpoint_edges(chunks: &[AlignChunk], target: &str) -> Vec<Alig
     edges
 }
 
-/// 每个语义块在 `target` 上的字符区间（与 [`chunks_to_edges`] 完全同一口径的
-/// 顺序定位）。任一块定位失败 ⇒ `None`。行分区模式需要块本身的目标坐标来判
-/// 定"行边界是否落在块边界上"，因此把定位单独暴露出来。
+/// The character interval of each semantic block on `target` (ordered location with exactly the same convention as [`chunks_to_edges`]). If any block fails to locate, returns `None`. Line-partition mode needs the blocks' own target coordinates to decide whether a line boundary falls on a block boundary, so the location is exposed separately.
 pub fn chunk_char_ranges(chunks: &[AlignChunk], target: &str) -> Option<Vec<Range<usize>>> {
     let target_chars: Vec<char> = target.chars().collect();
     let mut cursor = 0usize;
@@ -566,8 +539,7 @@ pub fn chunk_char_ranges(chunks: &[AlignChunk], target: &str) -> Option<Vec<Rang
     Some(ranges)
 }
 
-/// 从 `cursor` 起在 `target` 里匹配块的有效字符序列；成功则推进 `cursor`。
-/// 块无有效字符（纯标点）时返回空区间而不推进。
+/// Starting from `cursor`, matches the block's valid character sequence within `target`; on success advances `cursor`. A block with no valid characters (pure punctuation) returns an empty interval without advancing.
 fn locate_chunk(target: &[char], cursor: &mut usize, text: &str) -> Option<Range<usize>> {
     let want: Vec<char> = normalize_chars(text).chars().collect();
     if want.is_empty() {
@@ -605,7 +577,7 @@ fn locate_chunk(target: &[char], cursor: &mut usize, text: &str) -> Option<Range
     Some(first.unwrap_or(*cursor)..last + 1)
 }
 
-/// 解析一句分组并跑句级验收。
+/// Parses one sentence group and runs the sentence-level acceptance checks.
 fn parse_group(
     element: &Element,
     sentence: &AlignEdgesSentenceInput,
@@ -700,7 +672,7 @@ fn parse_group(
     }
 }
 
-/// rewrite 模式的字符串级验收：非空、幅度护栏、硬锚保留。
+/// String-level acceptance for rewrite mode: non-empty, magnitude guard, hard anchors preserved.
 fn check_rewrite(
     rewritten: &str,
     sentence: &AlignEdgesSentenceInput,
@@ -743,7 +715,7 @@ fn check_rewrite(
     }
 }
 
-/// 自然译句里能被 [`AnchorAligner`] 唯一锚定、而改写后找不到的源词。
+/// A source word that [`AnchorAligner`] can uniquely anchor in the natural translation sentence, but that cannot be found in the rewritten text.
 pub fn dropped_hard_anchors(
     source_words: &[String],
     translation: &str,
@@ -777,7 +749,7 @@ pub fn dropped_hard_anchors(
         .collect()
 }
 
-/// 缺失 id 判定：连续后缀整体缺失 ⇒ 截断；否则逐句 `missing-id`。
+/// Missing-id determination: a consecutive suffix missing as a whole ⇒ truncation; otherwise, per-sentence `missing-id`.
 fn report_missing(input: &AlignEdgesInput, seen: &BTreeSet<String>, diagnostics: &mut Diagnostics) {
     let missing: Vec<&str> = input
         .sentences
@@ -849,7 +821,7 @@ mod tests {
         )
     }
 
-    /// 测试侧的「模型回答」渲染器：刻意与生产渲染器分开。
+    /// Test-side "model answer" renderer: deliberately kept separate from the production renderer.
     fn answer(groups: &[(&str, &[(&str, &str)])]) -> String {
         let mut out = String::from("<table>\n");
         for (sid, spans) in groups {
@@ -934,7 +906,7 @@ mod tests {
                 .iter()
                 .any(|warning| warning.code == WarningCode::ContentIgnored)
         );
-        // 未标注块不产边；chunks_to_edges 仍能越过它顺序定位。
+        // Unannotated blocks produce no edges; chunks_to_edges can still locate past them in order.
         let edges = chunks_to_edges(&group.chunks, "因为我病了，所以没去。");
         assert_eq!(edges.len(), 6);
         assert_eq!(edges[0].tgt, 2..5);
@@ -982,7 +954,7 @@ mod tests {
             .detail;
         assert!(detail.contains("超出源词数 3"), "{detail}");
         assert!(detail.contains("重复引用源词 2"), "{detail}");
-        // 有问题的句不影响另一句被正常解析。
+        // A problematic sentence does not stop another sentence from being parsed normally.
         assert_eq!(parsed.groups.len(), 2);
     }
 
@@ -997,7 +969,7 @@ mod tests {
         let parsed = parse_align_edges(&input, None, &only_second);
         assert!(parsed.diagnostics.has_code(ProblemCode::MissingId));
         assert!(!parsed.diagnostics.has_code(ProblemCode::DocumentTruncated));
-        // 裸 <tbody>（无 <table> 外壳）仍能恢复。
+        // A bare <tbody> (without the <table> wrapper) can still be recovered.
         let bare = "<tbody data-sid=\"s-g1.0\"><tr><td class=\"src\">x</td><td class=\"tgt\"><span data-src=\"4-7\">因为我病了，</span><span data-src=\"1-3\">所以没去。</span></td></tr></tbody><tbody data-sid=\"s-g2.0\"><tr><td class=\"src\">x</td><td class=\"tgt\"><span data-src=\"1-3\">我们今天发布。</span></td></tr></tbody>";
         let parsed = parse_align_edges(&input, None, bare);
         assert!(
@@ -1107,13 +1079,13 @@ mod tests {
                 ordinals: vec![3, 4],
             },
         ];
-        // 提交后经 AutoCorrect：CJK/Latin 混排加空格、逗号改全角。
+        // After submission it passes through AutoCorrect: spaces are added between CJK and Latin text, and commas are changed to full-width.
         let target = "Revenue grew 40 %，in 2025.";
         let edges = chunks_to_edges(&chunks, target);
         assert_eq!(edges.len(), 5);
         assert_eq!(edges[0].tgt, 0..15);
         assert_eq!(edges[3].tgt, 18..25);
-        // 文本对不上 ⇒ 空。
+        // Text does not match ⇒ empty.
         assert!(chunks_to_edges(&chunks, "Something else").is_empty());
     }
 
@@ -1158,7 +1130,7 @@ mod tests {
 
     #[test]
     fn self_roundtrip_of_rendered_payload_has_no_problems() {
-        // 把渲染出的载荷（未标注 span）当作回答喂回去：只有 ContentIgnored 警告。
+        // Feeding the rendered payload (with unannotated spans) back in as an answer: only the ContentIgnored warning.
         let input = causal_input();
         let rendered = render_align_edges(&input);
         let parsed = parse_align_edges(&input, Some(&rendered), &rendered);

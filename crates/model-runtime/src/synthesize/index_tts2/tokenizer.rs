@@ -1,23 +1,23 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2Tokenizer.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2Tokenizer.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! IndexTTS2 `bpe.model` 的 SentencePiece Unigram 分词器。
+//! SentencePiece Unigram tokenizer for the IndexTTS2 `bpe.model`.
 //!
-//! 对照 speech-swift `IndexTTS2Tokenizer.swift` 移植。进格子前先复刻上游
-//! 文本前端（`indextts/utils/front.py`）：
+//! Ported from speech-swift `IndexTTS2Tokenizer.swift`. Before entering the lattice, the upstream
+//! text frontend (`indextts/utils/front.py`) is replicated:
 //!
-//! 1. `char_rep_map` 标点改写（`。`→`.`、`，`→`,`、引号括号→`'`、`:`/`;`→`,`…），
-//!    词表里没有这些原始标点的 piece。
-//! 2. `tokenize_by_CJK_char`：每个 CJK 字符前后加词边界，让格子在每个汉字前
-//!    单独吐出 `▁`——GPT 训练时看到的形状；词表里没有 `▁` 前缀的 CJK piece。
-//! 3. 非 CJK 文本大写化。
+//! 1. `char_rep_map` punctuation rewriting (`。`→`.`, `，`→`,`, quotes and brackets→`'`, `:`/`;`→`,` …),
+//!    since the vocabulary has no pieces for these original punctuation marks.
+//! 2. `tokenize_by_CJK_char`: adds word boundaries before and after each CJK character, so the lattice emits a separate `▁` before every Han character —
+//!    the shape GPT saw during training; the vocabulary has no CJK pieces with the `▁` prefix.
+//! 3. Uppercases non-CJK text.
 //!
-//! 数字读法由 [`super::normalizer::TextNormalizer`] 在这些步骤之前处理。没有
-//! piece 的字符落到 `<unk>`，连续的 `<unk>` 合并，与 SentencePiece 一致。
+//! Number reading is handled by [`super::normalizer::TextNormalizer`] before these steps. Characters without
+//! a piece fall through to `<unk>`; consecutive `<unk>` are merged, consistent with SentencePiece.
 
 use super::normalizer::TextNormalizer;
 use super::sentencepiece::{Piece, PieceType, SentencePieceModel};
@@ -38,16 +38,16 @@ pub struct Tokenizer {
     single_scalar_pieces: HashSet<char>,
     max_piece_scalars: usize,
     unknown_score: f32,
-    /// `<unk>` piece 的 id；模型没有时为 None。
+    /// Id of the `<unk>` piece; None if the model has none.
     pub unknown_token_id: Option<usize>,
-    /// 词表里的拼音片（`XING2`、`LVE4`，去掉前导 `▁`）：上游「Pinyin control」合法音节的等价物
-    /// （模型目录不带 `pinyin.vocab`），注音渲染只在这里有片时才把字换成拼音。
+    /// Pinyin pieces in the vocabulary (`XING2`, `LVE4`, with the leading `▁` removed): the equivalent of upstream's “Pinyin control” legal syllables
+    /// (the model directory does not include `pinyin.vocab`); zhuyin rendering only swaps a character for pinyin when a piece exists here.
     pinyin_pieces: HashSet<String>,
 }
 
 impl Tokenizer {
     pub const MAX_INPUT_SCALARS: usize = 2048;
-    /// SentencePiece 的 `kUnkPenalty`：`<unk>` 节点得分为 `minScore - 10`。
+    /// SentencePiece's `kUnkPenalty`: the `<unk>` node's score is `minScore - 10`.
     const UNKNOWN_PENALTY: f32 = 10.0;
 
     pub fn load(model_path: &Path) -> Result<Self> {
@@ -99,7 +99,7 @@ impl Tokenizer {
         })
     }
 
-    /// 词表里的拼音片集合（大写、无 `▁`）。
+    /// Set of pinyin pieces in the vocabulary (uppercase, without `▁`).
     pub fn pinyin_pieces(&self) -> &HashSet<String> {
         &self.pinyin_pieces
     }
@@ -155,7 +155,7 @@ impl Tokenizer {
                     back_pointer[end] = Some((start, id));
                 }
             }
-            // SentencePiece 在没有单字符 piece 覆盖的位置补一个单字符 `<unk>` 节点。
+            // Where no single-character piece covers a position, SentencePiece adds a single-character `<unk>` node.
             if let Some(unknown_id) = self.unknown_token_id {
                 if !self.single_scalar_pieces.contains(&scalars[start]) {
                     let score = best_scores[start] + self.unknown_score;
@@ -177,7 +177,7 @@ impl Tokenizer {
             let Some((start, id)) = back_pointer[cursor] else {
                 break;
             };
-            // 连续的 `<unk>` 折叠成一个，与 SentencePiece 一致。
+            // Consecutive `<unk>` are collapsed into one, consistent with SentencePiece.
             if Some(id) != self.unknown_token_id || ids.last().copied() != self.unknown_token_id {
                 ids.push(id);
             }
@@ -187,7 +187,7 @@ impl Tokenizer {
         Ok(ids)
     }
 
-    /// 把 piece 拼回文本，撤销逐字 CJK 空格：拉丁词之间保留空格，CJK 旁边的空格去掉。
+    /// Joins pieces back into text, undoing the per-character CJK spaces: spaces between Latin words are kept, and spaces next to CJK characters are removed.
     pub fn decode(&self, ids: &[usize]) -> String {
         let surface: String = ids
             .iter()
@@ -212,7 +212,7 @@ impl Tokenizer {
         output.trim().to_string()
     }
 
-    // MARK: - 上游文本前端
+    // MARK: - Upstream text frontend
 
     fn normalized_piece_text(&self, text: &str) -> String {
         let rewritten = rewrite_punctuation(&TextNormalizer::normalize(text));
@@ -234,7 +234,7 @@ impl Tokenizer {
     }
 }
 
-/// `[A-Z]+[1-5]`：大写拼音 + 声调。
+/// `[A-Z]+[1-5]`: uppercase pinyin + tone.
 fn is_pinyin_piece(text: &str) -> bool {
     let Some((tone, body)) = text.as_bytes().split_last() else {
         return false;
@@ -242,8 +242,8 @@ fn is_pinyin_piece(text: &str) -> bool {
     (b'1'..=b'5').contains(tone) && !body.is_empty() && body.iter().all(u8::is_ascii_uppercase)
 }
 
-/// 上游 `char_rep_map`，保持原始顺序：每个位置按序尝试、首个命中生效，
-/// 与上游正则的 alternation 行为一致。
+/// Upstream `char_rep_map`, kept in its original order: at each position the entries are tried in sequence and the first match applies,
+/// matching the alternation behaviour of the upstream regex.
 pub(crate) const PUNCTUATION_REWRITES: &[(&str, &str)] = &[
     ("：", ","),
     ("；", ","),
@@ -282,7 +282,7 @@ pub(crate) const PUNCTUATION_REWRITES: &[(&str, &str)] = &[
     (":", ","),
 ];
 
-/// 上游 `zh_char_rep_map`：中文路径额外把 `$` 读成 `.`。
+/// Upstream `zh_char_rep_map`: the Chinese path additionally reads `$` as `.`.
 const CHINESE_EXTRA_REWRITES: &[(&str, &str)] = &[("$", ".")];
 
 pub(crate) fn rewrite_punctuation(text: &str) -> String {
@@ -305,7 +305,7 @@ pub(crate) fn rewrite_punctuation(text: &str) -> String {
     output
 }
 
-/// 上游 `tokenize_by_CJK_char`：每个 CJK 字符独立成一个空白分隔的词。
+/// Upstream `tokenize_by_CJK_char`: each CJK character becomes its own whitespace-separated word.
 fn separate_cjk_characters(text: &str) -> String {
     let mut output = String::with_capacity(text.len() * 2);
     for c in text.chars() {
@@ -320,7 +320,7 @@ fn separate_cjk_characters(text: &str) -> String {
     output
 }
 
-/// 上游切分用的 CJK 区间（`CJK_RANGE_PATTERN`）。
+/// The CJK ranges used by upstream segmentation (`CJK_RANGE_PATTERN`).
 pub fn is_cjk(c: char) -> bool {
     matches!(
         c as u32,
@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(found, ["HANG2", "XING2"]);
 
         let rendered = render_inline_pinyin(&parse("觉得<行|xing2><绿|lu4>"), Some(t.pinyin_pieces()));
-        // 词表没有 LU4：原字照送，报 dropped。
+        // The vocabulary has no LU4: the original text is passed through, and it is reported as dropped.
         assert_eq!(rendered.dropped.len(), 1);
         assert_eq!(rendered.dropped[0].reading, "lu4");
         let pieces: Vec<String> = t.tokenize(&rendered.text).unwrap().into_iter().map(|token| token.piece).collect();

@@ -1,14 +1,13 @@
-//! 流式 VAD：模型按固定块（Silero 是 512 个样本）给出语音概率，[`StreamingVadProcessor`] 用滞回状态机把概率
-//! 变成语音区间；[`speech_spans`] 以 60 秒为一块驱动整段音频，块与块之间可以取消。
+//! Streaming VAD: the model gives a speech probability for each fixed block (Silero: 512 samples). [`StreamingVadProcessor`] uses a hysteresis state machine to turn the probabilities into speech spans; [`speech_spans`] drives a whole audio clip in 60-second blocks, and processing can be cancelled between blocks.
 
 use anyhow::{Result, bail};
 
 use super::segmenter::{self, SpeechSpan, VAD_CONFIG};
 
-/// 一块驱动多少秒音频：进度与取消的粒度。
+/// How many seconds of audio one block covers: the granularity of progress and cancellation.
 pub const BLOCK_SECONDS: usize = 60;
 
-/// 滞回参数（秒 / 概率）。
+/// Hysteresis parameters (seconds / probability).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VadConfig {
     pub onset: f32,
@@ -19,7 +18,7 @@ pub struct VadConfig {
     pub step_ratio: f32,
 }
 
-/// 固定块大小、带内部循环状态的流式 VAD。
+/// Streaming VAD with a fixed block size and internal loop state.
 pub trait StreamingVad {
     fn input_sample_rate(&self) -> u32 {
         16_000
@@ -31,14 +30,14 @@ pub trait StreamingVad {
 
     fn process_chunk(&mut self, samples: &[f32]) -> Result<f32>;
 
-    /// 批量处理若干完整块（`samples.len()` 必须是 `chunk_size()` 的整数倍），返回逐块概率。默认逐块调用
-    /// [`Self::process_chunk`]；实现可以覆写以摊薄每块的加速器同步开销。
+    /// Processes several complete blocks in one batch (`samples.len()` must be an integer multiple of `chunk_size()`) and returns the probabilities per block. By default it calls
+    /// [`Self::process_chunk`] block by block; implementations may override this to amortize the per-block accelerator synchronization overhead.
     fn process_chunks(&mut self, samples: &[f32]) -> Result<Vec<f32>> {
         let chunk_size = self.chunk_size();
         samples.chunks(chunk_size).map(|chunk| self.process_chunk(chunk)).collect()
     }
 
-    /// 清空 LSTM 状态与上下文：每条新音频流都从这里开始。
+    /// Clears the LSTM state and context. Every new audio stream starts from here.
     fn reset_state(&mut self);
 }
 
@@ -50,7 +49,7 @@ enum State {
     PendingSilence { speech_start: f32, silence_start: f32 },
 }
 
-/// 概率 → 语音区间的滞回状态机。
+/// Hysteresis state machine that turns probabilities into speech spans.
 pub struct StreamingVadProcessor<'a> {
     model: &'a mut dyn StreamingVad,
     config: VadConfig,
@@ -68,7 +67,7 @@ impl<'a> StreamingVadProcessor<'a> {
         if sample_rate == 0 || chunk_size == 0 {
             bail!("streaming VAD sample rate and chunk size must be non-zero");
         }
-        // 已加载的模型会被多个任务复用；每条新流都必须从空 LSTM/context 开始。
+        // A loaded model is reused by several tasks, and every new stream must start from an empty LSTM/context.
         model.reset_state();
         Ok(Self {
             model,
@@ -81,7 +80,7 @@ impl<'a> StreamingVadProcessor<'a> {
         })
     }
 
-    /// 喂一段样本，返回其中结束的语音区间。
+    /// Feeds in a run of samples and returns the speech spans that end within it.
     pub fn process(&mut self, samples: &[f32]) -> Result<Vec<SpeechSpan>> {
         self.buffer.extend_from_slice(samples);
         let mut spans = Vec::new();
@@ -97,8 +96,7 @@ impl<'a> StreamingVadProcessor<'a> {
         Ok(spans)
     }
 
-    /// 流结束：补零跑完最后不满一块的样本，收尾仍在进行的语音。`audio_end` 是真实音频长度（秒），
-    /// 补零的那一块不能把区间推到音频之外。
+    /// End of stream: pads the final partial block with zeros and runs it, which closes any speech still in progress. `audio_end` is the real audio length (seconds); the zero-padded block must not push a span beyond the audio.
     pub fn flush(&mut self, audio_end: f32) -> Result<Vec<SpeechSpan>> {
         let mut spans = Vec::new();
         if !self.buffer.is_empty() {
@@ -171,15 +169,15 @@ fn span(start: f32, end: f32) -> SpeechSpan {
     }
 }
 
-/// [`speech_spans`] 的结局。
+/// The result of [`speech_spans`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpanScan {
-    /// 已按 [`segmenter::split`] 切到不超过 `MAX_SPAN` 的语音区间（未补边）。
+    /// Speech spans already cut by [`segmenter::split`] to no more than `MAX_SPAN` (not padded).
     Spans(Vec<SpeechSpan>),
     Cancelled,
 }
 
-/// 以 60 秒为一块跑完整段音频的 VAD。每块开始前问一次 `should_cancel`，每块结束报一次进度（0–1）。
+/// Runs VAD over the whole audio in 60-second blocks. Before each block it asks `should_cancel` once; at the end of each block it reports progress once (0–1).
 pub fn speech_spans(
     samples: &[f32],
     sample_rate: u32,
@@ -216,7 +214,7 @@ pub fn speech_spans(
 mod tests {
     use super::*;
 
-    /// 样本绝对值就是“概率”：用来精确摆出语音与静音。
+    /// The absolute value of a sample is the “probability”: it is used to set speech and silence precisely.
     struct Amplitude {
         resets: usize,
     }
@@ -247,7 +245,7 @@ mod tests {
 
     #[test]
     fn finds_speech_with_hysteresis_and_minimum_durations() {
-        // 0.1 s 的短促声音不够 min_speech；0.2 s 的停顿不够 min_silence，不会把语音切开。
+        // A 0.1 s burst is not enough for min_speech, and a 0.2 s pause is not enough for min_silence, so speech is not cut.
         let samples = signal(&[(1.0, 0.0), (0.1, 0.9), (1.0, 0.0), (2.0, 0.9), (0.2, 0.0), (1.0, 0.9), (2.0, 0.0)]);
         let mut vad = Amplitude { resets: 0 };
         let spans = spans_of(&samples, &mut vad);
@@ -287,7 +285,7 @@ mod tests {
         );
     }
 
-    /// 按脚本逐块吐概率：1 kHz、每块 100 个样本（0.1 秒）。
+    /// Emits probabilities block by block from a script: 1 kHz, 100 samples per block (0.1 seconds).
     struct Scripted {
         probabilities: Vec<f32>,
         index: usize,
@@ -314,9 +312,8 @@ mod tests {
         }
     }
 
-    // 移植自 v2 `ccut-speech-core/tests/core.rs` 的 `streaming_vad_covers_state_machine_flush_and_buffer_boundaries`。
-    // v3 的处理器只在语音结束时吐区间（没有 SpeechStarted 事件），也没有 reset / current_time；
-    // 改为数模型实际跑了几块来守住不满一块的样本留在缓冲里这条边界。
+    // Ported from the `streaming_vad_covers_state_machine_flush_and_buffer_boundaries` test in v2 `ccut-speech-core/tests/core.rs`.
+    // v3's processor emits spans only when speech ends (there is no SpeechStarted event), and it has no reset / current_time. Instead, this counts the blocks the model actually ran, to guard the boundary where samples short of a full block stay in the buffer.
     #[test]
     fn partial_chunks_wait_in_the_buffer_and_speech_ends_after_min_silence() {
         let mut vad = Scripted {
@@ -332,16 +329,16 @@ mod tests {
             step_ratio: 1.0,
         };
         let mut processor = StreamingVadProcessor::new(&mut vad, config).unwrap();
-        // 99 个样本不满一块，留在缓冲里。
+        // 99 samples do not fill a block, so they stay in the buffer.
         assert!(processor.process(&[0.0; 99]).unwrap().is_empty());
-        // 再来 201 个凑满三块：语音开始了，但区间要等结束才吐。
+        // Another 201 make three full blocks: speech has started, but the span is emitted only when it ends.
         assert!(processor.process(&[0.0; 201]).unwrap().is_empty());
         let ended = processor.process(&[0.0; 200]).unwrap();
         assert_eq!(ended.len(), 1, "{ended:?}");
         assert_eq!(ended[0].start, 0.0);
-        // 时间按 f32 累积再转 f64，与 0.3 只差舍入。
+        // Time is accumulated as f32 and then converted to f64; it differs from 0.3 only by rounding.
         assert!((ended[0].end - 0.3).abs() < 1e-6, "{ended:?}");
-        // 缓冲正好清空、状态回到静音：收尾不再补块，也没有区间。
+        // The buffer is exactly empty and the state is back to silence: no block is padded at the end, and there are no spans.
         assert!(processor.flush(0.5).unwrap().is_empty());
         drop(processor);
         assert_eq!(vad.index, 5);

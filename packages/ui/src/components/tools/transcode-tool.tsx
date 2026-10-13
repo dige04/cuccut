@@ -43,11 +43,9 @@ import { blockOf, useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * 设计稿 tool-video.jsx `VideoToolShell`、tool-video-compress.jsx、tool-video-merge.jsx 与 tool-video-extract.jsx：压缩、合并、
- * 提取音频共用一页，页顶切换（切换就是换路由，各自保留工具 ID 与草稿）；左边选文件与设置，右边「处理记录」。
- * 提交走 Runtime 的 `transcode` 固定流程（`pipelines.start`）：读取输入 → 编码 → 校验输出 → 发布到保存位置（「更改…」只改这一次）。
- * Runtime 做不到的设计稿选项（帧率、硬件编码、去掉音轨、按目标体积、合并时强制流复制或重新编码）不画，
- * 偏差见提交说明。
+ * Design mockup tool-video.jsx `VideoToolShell`, tool-video-compress.jsx, tool-video-merge.jsx and tool-video-extract.jsx: compress, merge and extract audio share one page; a switch at the top switches the route, and each keeps its tool ID and draft; files and settings on the left, “处理记录” (processing records) on the right.
+ * Submission goes through the Runtime's fixed `transcode` flow (`pipelines.start`): read input → encode → verify output → publish to the save location (“更改…” (change…) only changes it this once).
+ * Options in the mockup that the Runtime cannot do (frame rate, hardware encoding, removing the audio track, targeting a file size, forcing stream copy or re-encoding when merging) are not drawn; the differences are described in the commit message.
  */
 
 const lede = style({ margin: 0, font: 'ui-sm', color: 'gray-700' });
@@ -55,22 +53,22 @@ const kbpsField = style({ width: 160 });
 const subHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24, marginTop: 8 });
 const subTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
 
-/** 压缩视频。 */
+/** Compress video. */
 export function CompressTool() {
   return <TranscodeTool action="compress" />;
 }
 
-/** 合并视频。 */
+/** Merge videos. */
 export function MergeTool() {
   return <TranscodeTool action="merge" />;
 }
 
-/** 提取音频。 */
+/** Extract audio. */
 export function ExtractAudioTool() {
   return <TranscodeTool action="extract-audio" />;
 }
 
-/** 每个动作的工具 ID 与几处文案（文案在渲染时读）。 */
+/** Tool ID for each action and several UI strings (strings are read at render time). */
 type ActionText = { title: string; lede: string; submit: string; files: string; drop: string; dropSub: string };
 const ACTIONS: Record<TranscodeAction, { tool: FileVideoToolId; text: () => ActionText }> = {
   compress: {
@@ -108,7 +106,7 @@ const ACTIONS: Record<TranscodeAction, { tool: FileVideoToolId; text: () => Acti
   },
 };
 
-/** 页顶的切换：压缩 / 合并 / 提取音频，切换就是换路由。 */
+/** The switch at the top of the page: compress / merge / extract audio; switching changes the route. */
 function ActionSwitch({ action }: { action: TranscodeAction }) {
   const go = useShell((s) => s.go);
   return (
@@ -125,7 +123,7 @@ function ActionSwitch({ action }: { action: TranscodeAction }) {
   );
 }
 
-/** 页头那行现状：`tools.list` 说不能用（Web 上的原因也在这里）、ffmpeg 的检测、提交前的问题，或者选了几个文件与设置。 */
+/** The status line in the page header: `tools.list` says the tool cannot be used (the Web reason is also shown here), the ffmpeg detection, a problem before submitting, or how many files and settings have been chosen. */
 function barLine(
   block: string | null | undefined,
   ffmpeg: FfmpegState,
@@ -155,24 +153,23 @@ function TranscodeTool({ action }: { action: TranscodeAction }) {
   const patchMerge = useTools((s) => s.patchMerge);
   const patchExtract = useTools((s) => s.patchExtract);
   const patch = merge ? patchMerge : extract ? patchExtract : patchCompress;
-  // 能不能用以 `tools.list` 为准：Web 服务上固定流程默认不开放（`WEB_METHOD_NOT_ALLOWED`），保存位置在项目目录之外时
-  // 只写到保存位置的流程不可用（`PATH_OUTSIDE_PROJECT`）；表单照画，按钮不能按，原因写在页头与页内。
+  // Availability is decided by `tools.list`: on the Web service the fixed flow is not allowed by default (`WEB_METHOD_NOT_ALLOWED`), and when the save location is outside the project directory, the flow that writes only to the save location is unavailable (`PATH_OUTSIDE_PROJECT`); the form is still drawn, the buttons are disabled, and the reason is written in the header and on the page.
   const tools = useToolStatus();
   const block = blockOf(tools, meta.tool, 'file');
-  // 浏览器里不检测外部工具（Runtime 不对网页开放 `externalTools.*`）。
+  // External tools are not detected in the browser (the Runtime does not expose `externalTools.*` to web pages).
   const web = runtime.host.platform === 'web';
   const ffmpeg = useFfmpeg(!web);
   const [tried, setTried] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  // 「从 Space 添加…」打开的选择器；从 Space 查看器带来的条目直接加进列表。
+  // The picker opened by “从 Space 添加…” (Add from Space…); entries brought from the Space viewer are added to the list directly.
   const [fromSpace, setFromSpace] = useState(false);
   const nameOf = useInputName();
   usePreset(meta.tool, (entryId) => {
     patch({ inputs: addEntryInput(draft.inputs, entryId) });
     setFromSpace(true);
   });
-  // 「再做一次 / 重试」（Space 查看器、后台任务详情）：照这条任务的文件与设置填好。
+  // “再做一次 / 重试” (Do again / Retry) from the Space viewer or background job details: fill in with this job's files and settings.
   useRerun(meta.tool, (job) => {
     const next = againTranscodeDraft(job, merge ? BLANK_MERGE : extract ? BLANK_EXTRACT : BLANK_COMPRESS);
     if (!next) return;
@@ -291,7 +288,7 @@ function TranscodeTool({ action }: { action: TranscodeAction }) {
 
 type Patch = (patch: Partial<TranscodeDraft>) => void;
 
-/** 按画质 / 按码率（设计稿的「按体积」要源文件时长，界面读不到，换成码率）。 */
+/** By quality or by bitrate (the mockup's “按体积” (by size) needs the source duration, which the UI cannot read, so bitrate is used instead). */
 function RateSwitch({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   return (
     <SegmentedControl aria-label={TRANSCODE_COPY.rateTitle} selectedKey={draft.rate} onSelectionChange={(key) => patch({ rate: key as TranscodeRate })}>
@@ -301,7 +298,7 @@ function RateSwitch({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   );
 }
 
-/** 画质三档（设计稿是三张 `.vcard`，这里用分段控件，档名后面写 CRF 与用途）或视频码率。 */
+/** Three quality levels (the mockup uses three `.vcard` cards; here a segmented control is used, with the CRF and use case written after each level name), or a video bitrate. */
 function RateBody({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   if (draft.rate === 'bitrate') {
     return (
@@ -337,7 +334,7 @@ function RateBody({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   );
 }
 
-/** 「更多设置」展开后的几行：分辨率、编码、音频；合并时画质也在这里（只在需要重新编码时生效）。 */
+/** The few rows shown when “更多设置” (more settings) is expanded: resolution, codec, audio; when merging, quality is here too (it only takes effect when re-encoding is needed). */
 function MoreRows({ draft, patch, withRate }: { draft: TranscodeDraft; patch: Patch; withRate: boolean }) {
   return (
     <>
@@ -377,7 +374,7 @@ function MoreRows({ draft, patch, withRate }: { draft: TranscodeDraft; patch: Pa
   );
 }
 
-/** 音频码率一行（AAC）。 */
+/** Audio bitrate row (AAC). */
 function AudioRow({ draft, patch, hint }: { draft: TranscodeDraft; patch: Patch; hint: string }) {
   return (
     <Row label={TRANSCODE_COPY.audio}>

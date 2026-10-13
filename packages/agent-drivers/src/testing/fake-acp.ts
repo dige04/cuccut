@@ -5,68 +5,66 @@ import { fileURLToPath } from 'node:url';
 import type { AcpInstall } from '../acp/acp-binary.ts';
 
 /**
- * 测试用的假 ACP 智能体：一个可执行文件，回答 `--version`，带别的参数时在 stdio 上说 ACP（JSON 行上的 JSON-RPC）。
- * 它不联网、不碰本机真实的智能体；收到的每条消息记进 `log.jsonl`，测试据此核对会话参数（工作目录、MCP 服务、模式、模型、
- * 输入）与审批的答复。
+ * Fake ACP agent for tests: an executable that answers `--version`, and when given other arguments speaks ACP on stdio (JSON-RPC over JSON lines).
+ * It does not touch the network or the machine's real agents. Every message received is recorded in `log.jsonl`, and the tests use it to check session parameters (working directory, MCP services, mode, model, input) and the replies to approvals.
  *
- * 用法：`createFakeAcp(dir)` 得到 `locate`，交给 `new AcpDriver('gemini', log, { locate })`；`scenario()` 改下一次的行为
- * （每个进程启动时读一次）。
+ * Usage: `createFakeAcp(dir)` gives `locate`, which is passed to `new AcpDriver('gemini', log, { locate })`. `scenario()` changes the next run's behaviour (read once when each process starts).
  */
 
-/** 一个回合里智能体做什么。 */
+/** What the agent does in one turn. */
 export interface FakeAcpTurn {
-  /** 先发的思考。 */
+  /** Thinking sent first. */
   thought?: string;
-  /** 计划条目。 */
+  /** Plan entries. */
   plan?: string[];
-  /** 一次工具调用。 */
+  /** One tool call. */
   tool?: {
     kind: string;
     title: string;
     rawInput?: unknown;
     locations?: string[];
     output?: string;
-    /** `tool_call` 带的 `diff` 内容块（claude-code-acp 这样给：完成的更新里不再带内容）。 */
+    /** The `diff` content block carried by `tool_call` (claude-code-acp sends it this way: completed updates no longer carry content). */
     diffs?: Array<{ path: string; oldText: string | null; newText: string }>;
   };
-  /** 工具执行之前来问几次（同一类工具连续几次，用来测「本会话放行」）；0 不问。 */
+  /** Asks several times before tool execution (consecutive calls of the same kind of tool, used to test “allow for this session”). 0 means never ask. */
   ask?: number;
-  /** 文字回复（分两段发）。 */
+  /** Text reply (sent in two parts). */
   reply?: string;
-  /** 一直不结束，直到收到 `session/cancel`。 */
+  /** Never ends until `session/cancel` is received. */
   hang?: boolean;
-  /** `session/prompt` 回这个错误。 */
+  /** `session/prompt` returns this error. */
   error?: { code: number; message: string };
 }
 
 export interface FakeAcpScenario {
-  /** false：`locate` 返回 null（没有安装）。 */
+  /** false: `locate` returns null (not installed). */
   installed: boolean;
   version: string;
-  /** false：`session/new` 与 `session/load` 回 -32000（需要登录）。 */
+  /** false: `session/new` and `session/load` return -32000 (login required). */
   loggedIn: boolean;
   loadSession: boolean;
   /** `sessionCapabilities.resume`。 */
   resume: boolean;
-  /** `session/load` 回错误。 */
+  /** `session/load` returns an error. */
   loadFails: boolean;
   mcpHttp: boolean;
   image: boolean;
-  /** 会话模式；null 不给 `modes`。`config`：改用分类为 mode 的配置项。 */
+  /** Session mode. null omits `modes`. `config`: use a config option classified as mode instead. */
   modes: string[] | null;
   modesVia: 'modes' | 'config';
-  /** 给一个 Copilot 那样的「全部放行」配置项（`allow_all`，on / off，初始 off）。 */
+  /** Gives a Copilot-style “allow all” config option (`allow_all`, on / off, initially off). */
   allowAll: boolean;
-  /** 模型表的来源：旧版 `models`、分类为 model 的配置项，或没有。 */
+  /** Source of the model table: the legacy `models`, a config option classified as model, or none. */
   models: 'legacy' | 'config' | 'none';
-  /** 回答 `cursor/list_available_models`。 */
+  /** Answers `cursor/list_available_models`. */
   cursorModels: boolean;
   /**
-   * 启动时派生一个一直运行、不理会 SIGTERM 的子进程（像 cursor-agent 启动时为 @ 文件建索引跑的 `rg`），自己退出时不管它。
-   * 进程号记在 `start` 日志的 `helper` 里。
+   * At startup, spawns a long-running child process that ignores SIGTERM (like the `rg` cursor-agent runs at startup to index @ files), and does not manage it when it exits itself.
+   * The process id is recorded in the `helper` field of the `start` log.
    */
   helper: boolean;
-  /** 收到 `initialize` 时不应答，直接以退出码 1 退出。 */
+  /** On receiving `initialize`, does not reply and exits directly with exit code 1. */
   exitOnInitialize: boolean;
   turn: FakeAcpTurn;
 }
@@ -78,7 +76,7 @@ export interface FakeAcpLogEntry {
   cwd?: string;
   args?: string[];
   env?: Record<string, string | undefined>;
-  /** `helper` 场景里派生的子进程。 */
+  /** The child process spawned in the `helper` scenario. */
   helper?: number;
   msg?: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: unknown };
 }
@@ -88,9 +86,9 @@ export interface FakeAcp {
   locate: () => Promise<AcpInstall | null>;
   scenario(patch: Partial<FakeAcpScenario>): void;
   log(): FakeAcpLogEntry[];
-  /** 收到的某个方法的请求或通知参数，按到达顺序。 */
+  /** Parameters of a request or notification received for a given method, in arrival order. */
   requests(method: string): Array<{ pid: number; params: Record<string, unknown> }>;
-  /** CucCut 对审批请求的答复（`outcome`），按到达顺序。 */
+  /** CucCut's replies to approval requests (`outcome`), in arrival order. */
   permissionAnswers(): Array<{ outcome: string; optionId?: string }>;
 }
 
@@ -118,7 +116,7 @@ const ENTRY = fileURLToPath(new URL('./fake-acp-agent.ts', import.meta.url));
 export async function createFakeAcp(dir: string, scenario: Partial<FakeAcpScenario> = {}): Promise<FakeAcp> {
   await fs.mkdir(dir, { recursive: true });
   const command = path.join(dir, 'fake-acp');
-  // 假智能体是 .ts：22.18 之前的 Node 要显式打开类型剥离；环境被收窄过，不能靠 NODE_OPTIONS。
+  // The fake agent is .ts: Node before 22.18 needs type stripping explicitly turned on. The environment has been restricted, so NODE_OPTIONS cannot be relied on.
   await fs.writeFile(command, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types --no-warnings "${ENTRY}" "$@"\n`, {
     mode: 0o755,
   });

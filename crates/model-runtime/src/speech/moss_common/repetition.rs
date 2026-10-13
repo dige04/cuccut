@@ -1,15 +1,15 @@
-//! 在线检查生成循环；只看模型输出，不依赖语言、音频后端或墙钟时间。
+//! Online check for generation loops. It looks only at model output and does not depend on language, the audio backend or wall-clock time.
 
 use std::collections::{HashSet, VecDeque};
 
 use crate::speech::moss_parse::MossOutputSegment;
 
-/// 沿用原来的 token 退化检查，并让两个后端共用同一判据。
+/// Keeps the original token degeneration check, and lets both backends share the same criterion.
 pub(crate) fn repetitive_token_tail(tokens: &[i32]) -> bool {
     tokens.len() >= 24 && tokens[tokens.len() - 24..].iter().collect::<HashSet<_>>().len() <= 3
 }
 
-/// 有时间戳的整段循环通常含有远多于三种 token，需在解析后检查。
+/// A whole-segment loop with timestamps usually contains far more than three kinds of tokens, so it must be checked after parsing.
 #[derive(Default)]
 pub(super) struct RepetitionGuard {
     recent: VecDeque<MossOutputSegment>,
@@ -17,9 +17,7 @@ pub(super) struct RepetitionGuard {
 }
 
 impl RepetitionGuard {
-    /// 最近八段形成周期不超过四段的重复，且终点高水位相比窗口第一段最多
-    /// 推进 0.5 s，才判为循环。覆盖 0.01 s 爬行、原地和倒退循环；正常随时间
-    /// 推进的重复词句、歌词、音乐标签保持原样。保留说话人身份以免混同重叠对话。
+    /// A repetition is judged a loop only when the most recent eight segments form a repetition with a period of at most four segments, and the end-point high-water mark advances at most 0.5 s compared with the first segment in the window. This covers 0.01 s crawling, in-place and backward loops; normally repeated words, sentences, lyrics and music tags that advance with time are left alone. Speaker identity is kept so overlapping dialogue is not conflated.
     pub(super) fn observe(&mut self, segment: &MossOutputSegment) -> bool {
         const WINDOW: usize = 8;
         const MAX_ADVANCE_SECONDS: f64 = 0.5;
@@ -96,7 +94,7 @@ mod tests {
         for step in [1, 7, 16, 64, output.len()] {
             let mut decoder = MossStreamDecoder::default();
             let mut guard = RepetitionGuard::default();
-            // 第八段直到 finish 才完整交付；两个推理后端也检查最终这次 flush。
+            // The eighth segment is not delivered in full until finish; both inference backends also check this final flush.
             for bytes in output.as_bytes().chunks(step) {
                 for segment in decoder.push(bytes) {
                     assert!(!guard.observe(&segment), "step {step}");

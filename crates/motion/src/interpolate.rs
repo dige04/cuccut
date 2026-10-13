@@ -1,4 +1,4 @@
-//! 插值器（设计 §5.1）。阶段 1 只有 `Linear` 与 `Step` 真的被 lowering 用到。
+//! Interpolators (design §5.1). In stage 1, only `Linear` and `Step` are actually used by lowering.
 
 use crate::value::MotionValue;
 
@@ -23,9 +23,8 @@ pub enum InterpolatorSpec {
     Color { space: ColorSpace },
 }
 
-/// `Linear` 在标量上**必须**写成 `from + (to - from) * u`：
-/// `sample_slot` 的 `far + (identity - far) * e` 依赖这个表达式形状逐位相等
-/// （计划 §2.2）。不要"化简"成 `lerp(to, from, 1 - u)`。
+/// `Linear` on scalars **must** be written as `from + (to - from) * u`. The `far + (identity - far) * e` in `sample_slot` depends
+/// on this expression shape being bit-for-bit equal (plan §2.2). Do not “simplify” it to `lerp(to, from, 1 - u)`.
 pub fn mix(from: &MotionValue, to: &MotionValue, u: f64, spec: InterpolatorSpec) -> MotionValue {
     match spec {
         InterpolatorSpec::Step => step(from, to, u),
@@ -53,12 +52,12 @@ pub fn mix(from: &MotionValue, to: &MotionValue, u: f64, spec: InterpolatorSpec)
             }
             _ => step(from, to, u),
         },
-        // 阶段 2 与 `Rgba` 一起落地（计划 §1.2）。
+        // Lands in stage 2 together with `Rgba` (plan §1.2).
         InterpolatorSpec::Color { .. } => step(from, to, u),
     }
 }
 
-/// 镜像 `scene_primitives::sample::mix_value` 的阶跃分支。
+/// Mirrors the step branch of `scene_primitives::sample::mix_value`.
 fn step(from: &MotionValue, to: &MotionValue, u: f64) -> MotionValue {
     if u < 1.0 { from.clone() } else { to.clone() }
 }

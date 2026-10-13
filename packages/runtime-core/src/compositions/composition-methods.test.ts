@@ -13,9 +13,8 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * `compositions.preview` / `compositions.import` 经 RPC（架构设计 §8）：界面不经过智能体，用技能里的下三分之一样例
- * （lower-third/16x9.html）当内联文件预览、导入；帧回媒体句柄，导入带 `conversationId` 时会话里放变更卡，错误码在 `details`。
- * 需要 engine-host、Render Worker、ffmpeg 与 Electron，缺了就跳过。
+ * `compositions.preview` / `compositions.import` over RPC (architecture §8). The UI does not go through the agent: it previews and imports the lower-third sample from the skill (lower-third/16x9.html) as an inline file. The frame returns a media handle. When an import carries `conversationId`, a change card is placed in the session. Error codes are in `details`.
+ * Needs engine-host, Render Worker, ffmpeg and Electron; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -145,7 +144,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面 RPC（
 
     const { items } = await client.request('conversations.get', { conversationId });
     const changes = items.filter((i) => i.kind === 'video-change');
-    // 两笔提交（导入素材、放置片段），两张卡。
+    // Two commits (importing the asset, placing the clip), two cards.
     expect(changes).toHaveLength(2);
     for (const change of changes) expect(change).toMatchObject({ taskId: null, videoId });
   }, 600_000);

@@ -1,5 +1,5 @@
-//! 到序列末尾（视频格式规范 §3.16）：`untilSequenceEnd` 的实例的终点由引擎在每笔编辑事务的最后按当前的时间线求出来，
-//! 不看实例自己存的长度；同轨后面有实例时截到它的起点，至少 1 帧，带源时钟的不超出素材。
+//! Until sequence end (video format spec §3.16): the end point of an instance with `untilSequenceEnd` is computed by the engine at the end of every edit transaction from the current timeline,
+//! not from the length the instance itself stores; when there is an instance later on the same track, it is cut at that instance's start, at least 1 frame, and instances with a source clock do not extend past the material.
 
 #![allow(clippy::result_large_err)]
 
@@ -72,9 +72,9 @@ fn trim_end(video: &mut Video, command_id: &str, item: &str, frame: i64) -> Resu
 
 struct Fixture {
     video: Video,
-    /// 三条画面轨道：主内容在 g1，到序列末尾的在 g2、g3。
+    /// Three picture tracks: the main content is on g1, and the until-sequence-end instances are on g2 and g3.
     tracks: [String; 3],
-    /// g1 上的 [0, 300)。
+    /// [0, 300) on g1.
     main: String,
     _dir: tempfile::TempDir,
 }
@@ -131,7 +131,7 @@ fn the_open_end_follows_the_latest_other_item() {
         main,
         _dir,
     } = fixture();
-    // 写入时给的长度不算数：同一笔事务里就求成序列末尾。两件到序列末尾的实例互不计入对方的终点。
+    // The length given at write time does not count: within the same transaction it is computed to the sequence end. Two until-sequence-end instances do not count toward each other's end points.
     let mut open = insert(
         &mut video,
         "cmd_open",
@@ -150,11 +150,11 @@ fn the_open_end_follows_the_latest_other_item() {
     trim_end(&mut video, "cmd_long", &main, 240).unwrap();
     assert_eq!(frames_of(&video, &open[0]), (0, 240));
 
-    // 直接改它的终点也会被求回序列末尾：它没有自己的终点。
+    // Even directly editing its end point gets recomputed back to the sequence end: it has no end point of its own.
     trim_end(&mut video, "cmd_self", &open[0], 60).unwrap();
     assert_eq!(frames_of(&video, &open[0]), (0, 240));
 
-    // 撤销回到上一笔事务之后的长度。
+    // Undo returns to the length after the previous transaction.
     let last = trim_end(&mut video, "cmd_again", &main, 120).unwrap();
     assert_eq!(frames_of(&video, &open[0]), (0, 120));
     video
@@ -229,11 +229,11 @@ fn locked_open_items_still_follow_and_task_guards_still_apply() {
         ],
     )
     .unwrap();
-    // 终点是求出来的，不是对它的编辑：锁着也照样更新。
+    // The end point is computed, not an edit to it: it updates even when locked.
     trim_end(&mut video, "cmd_short", &main, 150).unwrap();
     assert_eq!(frames_of(&video, &open[0]), (0, 150));
 
-    // 任务保护按改动核对：改主内容会连带改到受保护的实例，整笔拒绝，什么都不写。
+    // Task protection is checked against the change: changing the main content would also change a protected instance, so the whole edit is rejected and nothing is written.
     let guard: Vec<TaskProtection> =
         serde_json::from_value(json!([{ "protectionId": "prot_e", "target": { "kind": "entity", "entityId": open[0] } }])).unwrap();
     let revision = video.revision();
@@ -248,7 +248,7 @@ fn locked_open_items_still_follow_and_task_guards_still_apply() {
     assert_eq!(error.code, "TASK_PROTECTED");
     assert_eq!(video.revision(), revision);
     assert_eq!(frames_of(&video, &main), (0, 150));
-    // 不改序列末尾的编辑照常通过。
+    // Edits that do not change the sequence end pass as usual.
     apply_guarded(
         &mut video,
         "cmd_guarded_ok",
@@ -258,7 +258,7 @@ fn locked_open_items_still_follow_and_task_guards_still_apply() {
     .unwrap();
 }
 
-/// 12 秒 30 fps 的视频。
+/// A video of 12 seconds at 30 fps.
 fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
     let dir = tempfile::tempdir().ok()?;
     let path = dir.path().join("talk.mp4");
@@ -311,7 +311,7 @@ fn an_open_video_stops_at_the_end_of_its_source() {
         .find(|id| matches!(video.state().items.get(*id).map(|p| &p.value), Some(TimelineItem::Video(_))))
         .unwrap()
         .clone();
-    // 同一个素材的副本，从源 2 秒开始、到序列末尾：最多播到源的结尾，即 10 秒 = 300 帧。
+    // A copy of the same material, starting at source second 2 and running to the sequence end: it plays at most to the end of the source, i.e. 10 seconds = 300 frames.
     let mut copy = serde_json::to_value(&video.state().items[&picture].value).unwrap();
     let fields = copy.as_object_mut().unwrap();
     fields.remove("id");
@@ -354,7 +354,7 @@ fn an_open_follower_tracks_the_end_through_a_cut_and_its_restore() {
     item["followPolicy"] = json!({ "kind": "follow-cuts" });
     let open = insert(&mut video, "cmd_open", vec![item]);
     assert_eq!(frames_of(&video, &open[0]), (30, 360));
-    // 剪掉源 [4, 6)：序列短 60 帧，跟随剪口的起点不动（在剪口之前），终点仍是序列末尾。
+    // Cut source [4, 6): the sequence is 60 frames shorter, the start point that follows the cut does not move (it is before the cut), and the end point is still the sequence end.
     apply(
         &mut video,
         "cmd_cut",

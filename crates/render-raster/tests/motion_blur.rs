@@ -1,5 +1,5 @@
-//! 运动模糊（`ccut render --motion-blur N`，规范 §15.2）：N = 1 与不开时逐字节、
-//! 逐指纹相同；动的内容被子帧平均抹开；静止内容平均后仍逐字节相同，只有指纹换口径。
+//! Motion blur (`ccut render --motion-blur N`, spec §15.2): with N = 1 and with it off, output is byte-for-byte and
+//! fingerprint-for-fingerprint identical; moving content is smeared out by sub-frame averaging; static content stays byte-identical after averaging, and only the fingerprint is computed differently.
 #![cfg(feature = "media")]
 
 use render_raster::motion_blur::render_frame;
@@ -41,7 +41,7 @@ fn ir_of(doc: &Value) -> Ir {
     Resolver::new(doc.clone(), None).unwrap().resolve().unwrap()
 }
 
-/// 不经运动模糊的参照：planner → FramePlan → CPU 执行。
+/// Reference without motion blur: planner → FramePlan → CPU execution.
 fn plain(doc: &Value, t: f64) -> (Vec<u8>, u64) {
     let mut ir = ir_of(doc);
     let mut engine = TextEngine::new();
@@ -73,7 +73,7 @@ fn blurred(doc: &Value, t: f64, samples: u32) -> anyhow::Result<(Vec<u8>, u64)> 
     Ok((pixmap.data().to_vec(), fp))
 }
 
-/// 既不全黑也不全白的红通道像素数：被子帧平均抹开的边。
+/// Number of red-channel pixels that are neither fully black nor fully white: the edges smeared out by sub-frame averaging.
 fn partial(data: &[u8]) -> usize {
     data.chunks_exact(4)
         .filter(|p| p[0] > 8 && p[0] < 247)
@@ -95,7 +95,7 @@ fn moving_content_is_smeared_and_fingerprint_changes() {
     assert_ne!(sharp_fp, two_fp);
     assert_ne!(two_fp, four_fp, "N 进帧指纹");
     assert_ne!(sharp, two);
-    // 600 px/s、30 fps、180° 快门 → 子帧跨 10 px：边缘出现半透明过渡带。
+    // 600 px/s, 30 fps, 180° shutter → sub-frames span 10 px: a semi-transparent transition band appears at the edge.
     assert!(
         partial(&two) > partial(&sharp) + 100,
         "{} vs {}",
@@ -103,11 +103,11 @@ fn moving_content_is_smeared_and_fingerprint_changes() {
         partial(&sharp)
     );
     assert!(partial(&four) > partial(&two), "子帧越多过渡越细");
-    // 快门向后开：本帧时刻的位置（x = 120）仍被完整覆盖，左侧不会出现提前的拖影。
+    // Shutter open backwards: the position at this frame's time (x = 120) is still fully covered; no early smear appears on the left side.
     let at = |data: &[u8], x: u32| data[((80 * W + x) * 4) as usize];
     assert_eq!(at(&two, 125), 255);
     assert_eq!(at(&two, 110), 0);
-    // 同一时刻重渲逐字节相同。
+    // Re-rendering at the same time is byte-identical.
     assert_eq!(blurred(&d, 0.2, 2).unwrap(), (two, two_fp));
 }
 

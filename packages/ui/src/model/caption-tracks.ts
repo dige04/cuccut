@@ -14,7 +14,7 @@ import { pl } from './caption-tracks.pl.ts';
 import { tr } from './caption-tracks.tr.ts';
 import { vi } from './caption-tracks.vi.ts';
 
-/** 字幕轨条的文案（英文是键与类型的来源，译文在 `caption-tracks.zh-Hans.ts`）。 */
+/** Copy for the caption track strip (the English is the source of keys and types; the translations live in `caption-tracks.zh-Hans.ts`). */
 const en = {
   translation: 'Translation',
   original: 'Original',
@@ -24,52 +24,51 @@ export type CaptionTracksMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 字幕面板顶上的轨条（原型 panel-substrip.jsx 的 `SubTrackStrip` 与 subtrack.jsx 的 `useSubTrackOps`）：
- * 画面上有哪几份字幕，各一枚 chip；× 把它从画面上拿下（`updateItem enabled: false`，不删数据），
- * 拿下的成了虚线幽灵 chip，点它放回。拿下时最后一条拒绝，放回时第三条起问一次。
+ * The track strip at the top of the caption panel (prototype `SubTrackStrip` in panel-substrip.jsx and `useSubTrackOps` in subtrack.jsx):
+ * which caption documents are on screen, one chip each. × takes one off screen (`updateItem enabled: false`, data is not deleted).
+ * A removed one becomes a dashed ghost chip, and clicking it puts it back. Removing the last one on screen is refused; putting one back asks for confirmation once there are already two or more on screen.
  *
- * 一枚 chip 是「一条字幕轨上的一份字幕文档」：通常就是一个字幕实例；字幕实例被切开成几段时，这几段算同一枚，
- * 拿下、放回一起动。
+ * A chip is "one caption document on one caption track": usually that is one caption instance. When a caption instance is split into several segments, those segments count as one chip, and removing or restoring them happens together.
  */
 
 export type ChipState =
-  /** 在画面上。 */
+  /** On screen. */
   | 'on'
-  /** 在画面上，但所在的字幕轨在时间轴行头被停用了（`visible: false`）。 */
+  /** On screen, but its caption track is disabled in the timeline track header (`visible: false`). */
   | 'off'
-  /** 拿下来了（实例 `enabled: false`）。 */
+  /** Taken off screen (instance `enabled: false`). */
   | 'shelved';
 
 export interface CaptionChip {
   key: string;
   documentId: Id;
   trackId: Id;
-  /** 按开始时刻排好；第一个是选中时的编辑对象。 */
+  /** Sorted by start time; the first one is the edit target when selected. */
   itemIds: Id[];
   kind: 'original' | 'translation';
-  /** chip 上的字：原文写「原文」，译文写语言名（用这门语言自己的写法）。 */
+  /** Label on the chip: the source text is written “原文” (source), and a translation is written as its language name, in that language's own spelling. */
   label: string;
-  /** 提示里用的全名（文档名）。 */
+  /** Full name used in hints (the document name). */
   name: string;
   state: ChipState;
-  /** 实例或所在轨道锁住了：拿下、放回都会被引擎拒绝。 */
+  /** The instance or its track is locked: the engine rejects both removing and restoring. */
   locked: boolean;
   styleDocumentId?: Id;
 }
 
-/** 字幕行是原文还是译文：看字幕文档派生自哪种文档（与预览、属性页同一个判法）。 */
+/** Whether a caption line is source or translation: decided by which kind of document the caption document derives from (same check as the preview and the properties page). */
 export function captionKind(documentId: Id, documents: Record<Id, DocumentRecord>): 'original' | 'translation' {
   const record = documents[documentId];
   const parent = record?.sourceDocumentId ? documents[record.sourceDocumentId] : undefined;
   return parent?.kind === 'translation' ? 'translation' : 'original';
 }
 
-/** 原文 / 译文的叫法（时间线字幕行头的悬停说明）。 */
+/** Labels for source and translation (hover text on the timeline caption track headers). */
 export function captionKindLabel(kind: 'original' | 'translation'): string {
   return kind === 'translation' ? M.translation : M.original;
 }
 
-/** 语言标签 → 这门语言自己的叫法（`en` → English，`ja` → 日本語）；认不出时原样返回。 */
+/** Language tag → the language's own name (`en` → English, `ja` → 日本語); returns the input unchanged when the tag is not recognised. */
 export function languageName(tag: string): string {
   try {
     const name = new Intl.DisplayNames([tag], { type: 'language' }).of(tag);
@@ -79,7 +78,7 @@ export function languageName(tag: string): string {
   }
 }
 
-/** 序列上的字幕：按轨道次序、再按开始时刻排。 */
+/** Captions on the sequence: sorted by track order, then by start time. */
 export function captionChips(sequence: Sequence, documents: Record<Id, DocumentRecord>): CaptionChip[] {
   const tracks = new Map(sequence.tracks.map((track) => [track.id, track]));
   const items = sequence.items
@@ -110,7 +109,7 @@ export function captionChips(sequence: Sequence, documents: Record<Id, DocumentR
       ...(style ? { styleDocumentId: style } : {}),
     };
   });
-  // 同名的补上文档名；还分不开的按次序编号。
+  // Same-named ones get the document name added; ones that still cannot be told apart are numbered in order.
   const counts = (list: readonly CaptionChip[]) => {
     const map = new Map<string, number>();
     for (const chip of list) map.set(chip.label, (map.get(chip.label) ?? 0) + 1);
@@ -128,7 +127,7 @@ export function captionChips(sequence: Sequence, documents: Record<Id, DocumentR
   });
 }
 
-/** 还在画面上的（含所在轨被停用的）。 */
+/** Still on screen (including those whose track is disabled). */
 export function onScreen(chips: readonly CaptionChip[]): CaptionChip[] {
   return chips.filter((chip) => chip.state !== 'shelved');
 }
@@ -136,21 +135,21 @@ export function onScreen(chips: readonly CaptionChip[]): CaptionChip[] {
 const toggle = (sequence: Sequence, chip: CaptionChip, enabled: boolean): EditOperation[] =>
   chip.itemIds.map((itemId) => ({ type: 'updateItem', sequenceId: sequence.id, itemId, enabled }));
 
-/** 拿下：画面上只剩这一条时拒绝（一条都不显示是「隐藏字幕」的事，不是这里）。 */
+/** Removing: refused when this is the only one left on screen (hiding all captions is “隐藏字幕” (hide captions), handled elsewhere, not here). */
 export function dropOperations(sequence: Sequence, chips: readonly CaptionChip[], chip: CaptionChip): { refused: 'last' } | { operations: EditOperation[] } {
   if (onScreen(chips).filter((other) => other.key !== chip.key).length === 0) return { refused: 'last' };
   return { operations: toggle(sequence, chip, false) };
 }
 
-/** 放回：画面上已有两条以上时要先问一次（`confirm` 是放回之后的条数）。 */
+/** Restoring: asks for confirmation first when two or more are already on screen (`confirm` is the count after restoring). */
 export function putBackOperations(sequence: Sequence, chips: readonly CaptionChip[], chip: CaptionChip): { confirm: number | null; operations: EditOperation[] } {
   const showing = onScreen(chips).filter((other) => other.key !== chip.key).length;
   return { confirm: showing >= 2 ? showing + 1 : null, operations: toggle(sequence, chip, true) };
 }
 
 /**
- * 「倒转 ⇅」能动的样式文档：画面上原文与译文叠在同一份样式里（预览按样式文档分组叠行）时，倒转就是改这份样式的
- * `order`（译文在上 / 原文在上，与属性页的「双语次序」同一个字段）。没有这样一组时返回 null。
+ * The style document that “倒转 ⇅” (invert) acts on: when the source and translation are stacked in the same style on screen (the preview groups and stacks lines by style document), invert changes that style's
+ * `order` (translation on top / source on top, the same field as “双语次序” (bilingual order) on the properties page). Returns null when there is no such group.
  */
 export function flipTarget(chips: readonly CaptionChip[]): Id | null {
   const byStyle = new Map<Id, Set<CaptionChip['kind']>>();

@@ -21,8 +21,8 @@ import type { PairedNodeRecord } from './node-store.ts';
 import { RemoteNodeProvider, type RemoteTiming } from './remote-provider.ts';
 
 /**
- * 远端节点 Provider 对着真实的测试节点（回环 HTTP、真的 JobManager、假的 Model Worker）跑；网络故障由回环 TCP 代理模拟。
- * 期限都缩短到毫秒级。
+ * The remote node Provider runs against a real test node (loopback HTTP, a real JobManager, a fake Model Worker); network failures are simulated by a loopback TCP proxy.
+ * Deadlines are shortened to the millisecond range.
  */
 
 const CLIENT_ID = 'c_provider_test';
@@ -58,7 +58,7 @@ function recorder(): { sink: TranscribeSink; seen: Recorded } {
   return { sink, seen };
 }
 
-/** 只有一个节点、令牌固定的配对表。 */
+/** A pairing table with only one node and a fixed token. */
 function fixedNode(record: PairedNodeRecord, token = 'c.x') {
   return { get: () => record, token: async () => token, credentialProblem: () => null };
 }
@@ -124,7 +124,7 @@ describe('RemoteNodeProvider', () => {
     return { node, proxy, provider, record, records, token, run };
   }
 
-  /** 失败时的 ProviderFailure（成功或取消就让测试失败）。 */
+  /** The ProviderFailure on failure (success or cancellation makes the test fail). */
   async function failureOf(promise: Promise<TranscribeAttempt>): Promise<ProviderFailure> {
     const error = await promise.then(
       (attempt) => {
@@ -136,7 +136,7 @@ describe('RemoteNodeProvider', () => {
     return error as ProviderFailure;
   }
 
-  /** 节点上这个客户端的任务都已删除。 */
+  /** All of this client's tasks on the node have been deleted. */
   const nodeJobsGone = (node: TestNode) => node.service.jobs.counts().running + node.service.jobs.counts().queued === 0;
 
   it('完成：结果在 staging 里且核对过，阶段与进度转给 sink，节点上的任务已删除', async () => {
@@ -152,7 +152,7 @@ describe('RemoteNodeProvider', () => {
     expect(seen.events).toEqual(expect.arrayContaining(['loading', 'decoding', 'transcribing', 'finalizing']));
     expect(seen.progress.length).toBeGreaterThan(0);
     expect(seen.languages).toEqual(['en']);
-    // 删除：节点上已经没有任务记录。
+    // Deleted: the node no longer has a task record.
     const listed = node.manager.list().filter((j) => j.submitter.kind === 'node');
     expect(listed).toHaveLength(1);
     expect(await fs.readdir(node.home.nodeJobsDir).catch(() => [])).toEqual([]);
@@ -193,7 +193,7 @@ describe('RemoteNodeProvider', () => {
       kind: 'node-rejected',
       details: { reason: 'capability-disabled', node: disabled.record.nodeId, capability: 'transcribe' },
     });
-    // 说明点名节点并给出补救，而不是泛泛的失败。
+    // The message names the node and gives a remedy, rather than a generic failure.
     expect(failure.message).toContain('test-node');
     expect(failure.message).toContain('cuccut share capability transcribe on');
 
@@ -203,7 +203,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure.message).not.toContain('not-a-real-secret');
     expect(JSON.stringify(failure.details)).not.toContain('not-a-real-secret');
 
-    // 本机记的是 node_other，这个地址上却是另一台节点。
+    // The local record says node_other, but the address now points to a different node.
     const swapped = await setup();
     swapped.records.set('node_other', { ...swapped.record, nodeId: 'node_other' });
     failure = await failureOf(
@@ -211,7 +211,7 @@ describe('RemoteNodeProvider', () => {
     );
     expect(failure).toMatchObject({ kind: 'node-rejected', details: { reason: 'unpaired', node: 'node_other' } });
 
-    // 不在配对列表里的节点
+    // Node not in the pairing list
     failure = await failureOf(
       swapped.provider.transcribe(await swapped.run(undefined, { node: 'node_gone' }), recorder().sink, new AbortController().signal),
     );
@@ -297,7 +297,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure.message).toContain('钥匙串被锁');
     expect(requests).toBe(0);
 
-    // 凭据存储里没有令牌：按不再配对处理。
+    // No token in the credential store: treated as no longer paired.
     const missing = new RemoteNodeProvider({ nodes: { ...fixedNode(record), token: async () => null }, timing: FAST });
     const unpaired = await failureOf(
       missing.transcribe(await run(undefined, { node: 'node_locked' }), recorder().sink, new AbortController().signal),
@@ -380,7 +380,7 @@ describe('RemoteNodeProvider', () => {
   });
 
   it('心跳超时也算断开：重连后照常完成', async () => {
-    // 节点每 300 毫秒才有一条进度、心跳 15 秒：100 毫秒没有数据就断开重连。
+    // The node emits progress only every 300 ms and a heartbeat every 15 seconds: with no data for 100 ms, disconnect and reconnect.
     const { provider, proxy, run } = await setup({ proxy: true, timing: { heartbeatTimeoutMs: 100, lostAfterMs: 5_000 } });
     const attempt = await provider.transcribe(await run(`${TEST_NODE_BUNDLE}#slow`), recorder().sink, new AbortController().signal);
     expect(attempt.outcome).toBe('completed');
@@ -390,7 +390,7 @@ describe('RemoteNodeProvider', () => {
   it('节点失联：重连期限到了 node-lost / stream-lost', async () => {
     const { provider, proxy, run, record } = await setup({ proxy: true });
     const { sink, seen } = recorder();
-    // 先挂上处理：失败可能发生在下面的 await 期间。
+    // Attach the handler first: the failure may happen during the awaits below.
     const failing = failureOf(provider.transcribe(await run(`${TEST_NODE_BUNDLE}#slow`), sink, new AbortController().signal));
     await until(() => seen.progress.length > 0);
     proxy!.down();
@@ -401,7 +401,7 @@ describe('RemoteNodeProvider', () => {
   it('节点重启：重连时任务已不存在，node-lost / node-restarted', async () => {
     const { node, provider, proxy, run } = await setup({ proxy: true, timing: { lostAfterMs: 10_000 } });
     const { sink, seen } = recorder();
-    // 先挂上处理：失败可能发生在下面的 await 期间。
+    // Attach the handler first: the failure may happen during the awaits below.
     const failing = failureOf(provider.transcribe(await run(`${TEST_NODE_BUNDLE}#slow`), sink, new AbortController().signal));
     await until(() => seen.progress.length > 0);
     proxy!.down();
@@ -417,7 +417,7 @@ describe('RemoteNodeProvider', () => {
   it('节点停止共享：任务被节点取消（不是我们取消的），node-lost / node-restarted', async () => {
     const { node, provider, run } = await setup();
     const { sink, seen } = recorder();
-    // 先挂上处理：失败可能发生在下面的 await 期间。
+    // Attach the handler first: the failure may happen during the awaits below.
     const failing = failureOf(provider.transcribe(await run(`${TEST_NODE_BUNDLE}#slow`), sink, new AbortController().signal));
     await until(() => seen.progress.length > 0);
     await node.service.stop();

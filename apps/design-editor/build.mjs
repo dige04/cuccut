@@ -1,15 +1,14 @@
-// 构建设计稿编辑器（docs/design/canvas §3），产物都在 dist/：
-//   index.html、assets/**              编辑器页面，Runtime 在 /design/<grant>/ 下提供
-//   artifact-type/dc-runtime.js        画板运行时（内含 React 18.3.1）；画板不能用 blob: 脚本时从这里加载
-//   artifact-type/babel.min.js         Babel standalone 原文件（与原版 CDN 上的逐字节相同）：画板 x-import 了 JSX 时才加载，导出时内嵌
-//   artifact-type/fast-edit-worker.js  快速编辑的 Worker。CucCut 不提供 sample，快速编辑关着，照原样产出
-//   third-party-licenses.txt           打进去的第三方代码的原始许可
+// Builds the design editor (docs/design/canvas §3). Outputs all go to dist/:
+//   index.html, assets/**              Editor page, served by the Runtime under /design/<grant>/
+//   artifact-type/dc-runtime.js        Canvas runtime (bundles React 18.3.1); loaded from here when the canvas cannot use blob: scripts
+//   artifact-type/babel.min.js         Original Babel standalone file (byte-identical to the original CDN copy): loaded only when a canvas x-imports JSX, and embedded on export
+//   artifact-type/fast-edit-worker.js  Worker for fast edit. CucCut does not provide a sample, so fast edit stays off; output is produced as is
+//   third-party-licenses.txt           Original licenses for the third-party code bundled in
 //
-// 1. esbuild 把画板运行时、注入脚本与 Worker 打成脚本文本，连同 React 18 的 UMD 文件与 Babel standalone 放进
-//    packages/design-runtime/src/generated/（不进 git；dependencies.tsx 以 `?raw` 导入其中一部分）。
-//    选项与原工程的 tools/build-assets.mjs 相同；原工程用 runtime/ 下单独安装的 React 18，这里用 npm 别名 react-18 / react-dom-18。
-// 2. Vite 打编辑器页面，并把 dc-runtime.js、babel.min.js 与 fast-edit-worker.js 放到页面模板的 meta 指向的位置（vite.config.ts）。
-// 输入没变时跳过，--force 强制重建。
+// 1. esbuild bundles the canvas runtime, the injected script and the Worker into script text, and puts them in packages/design-runtime/src/generated/ together with React 18's UMD files and Babel standalone (not committed to git; dependencies.tsx imports some of them with `?raw`).
+//    The options are the same as the original project's tools/build-assets.mjs; the original project uses React 18 installed separately under runtime/, here npm aliases react-18 / react-dom-18 are used.
+// 2. Vite builds the editor page and puts dc-runtime.js, babel.min.js and fast-edit-worker.js where the page template's meta tags point (vite.config.ts).
+// Skipped when the inputs have not changed; --force rebuilds.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -24,7 +23,7 @@ const generated = join(srcDir, 'generated');
 const dist = join(appDir, 'dist');
 const outputs = ['index.html', 'artifact-type/dc-runtime.js', 'artifact-type/babel.min.js', 'artifact-type/fast-edit-worker.js'].map(file => join(dist, file));
 
-/** 目录里最新的修改时间（跳过 node_modules、dist、generated 与以点开头的）。 */
+/** The latest modification time in the directory (skipping node_modules, dist, generated and dot-prefixed entries). */
 function newest(target) {
   if (!existsSync(target)) return 0;
   const info = statSync(target);
@@ -56,7 +55,7 @@ if (!process.argv.includes('--force') && outputs.every(file => existsSync(file))
   }
 }
 
-/** 按 Node 的查找方式，从本目录往上找一个包装在哪（npm 别名包没有可解析的入口，不能用 require.resolve）。 */
+/** Finds where a package is installed by walking up from this directory the way Node looks things up (npm alias packages have no resolvable entry, so require.resolve cannot be used). */
 function packageDir(name) {
   for (let dir = appDir; ; dir = dirname(dir)) {
     const candidate = join(dir, 'node_modules', name);
@@ -65,11 +64,11 @@ function packageDir(name) {
   }
 }
 
-// 1. 画板运行时、注入脚本与 Worker
+// 1. Canvas runtime, injected script and Worker
 rmSync(generated, { recursive: true, force: true });
 mkdirSync(generated, { recursive: true });
 const esbuild = await import('esbuild');
-/** 打进脚本文本里的源文件，Vite 的许可插件据此找出第三方包（licenses.mjs）。 */
+/** Source files bundled into the script text; Vite's license plugin uses them to find the third-party packages (licenses.mjs). */
 const bundled = new Set();
 async function bundle(entry, filename, options = {}) {
   const result = await esbuild.build({
@@ -96,20 +95,20 @@ await bundle('runtime/support-entry.ts', 'support.js');
 for (const [name, file] of [
   ['react', join(packageDir('react-18'), 'umd', 'react.production.min.js')],
   ['react-dom', join(packageDir('react-dom-18'), 'umd', 'react-dom.production.min.js')],
-  // 画板运行时按需加载，不打进去（docs/design/canvas §3）
+  // The canvas runtime is loaded on demand and not bundled in (docs/design/canvas §3)
   ['babel.min', join(packageDir('@babel/standalone'), 'babel.min.js')],
 ]) {
   copyFileSync(file, join(generated, `${name}.js`));
   bundled.add(file);
 }
-// 画板运行时自带 React 18：编辑器界面用工作区的 React 19，两者不混用（docs/design/canvas §3）
+// The canvas runtime ships its own React 18: the editor UI uses the workspace's React 19, and the two are not mixed (docs/design/canvas §3)
 await bundle('runtime/index.tsx', 'dc-runtime.js', {
   alias: { react: packageDir('react-18'), 'react-dom': packageDir('react-dom-18') },
 });
 await bundle('worker/sandbox.ts', 'fast-edit-worker.js', { plugins: [workerBrowserPlugin()] });
 writeFileSync(join(generated, 'bundled-inputs.json'), JSON.stringify([...bundled].sort(), null, 2) + '\n');
 
-// 2. 编辑器页面
+// 2. Editor page
 const { build } = await import('vite');
 await build({ configFile: join(appDir, 'vite.config.ts'), logLevel: 'warn' });
 console.log(`Design editor built: ${dist}`);

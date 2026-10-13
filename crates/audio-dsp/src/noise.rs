@@ -1,15 +1,15 @@
-//! 噪声：白噪声（正态）与频域塑形的有色噪声（功率 ∝ f^−slope：0 白、1 粉、2 褐）。
+//! Noise: white noise (Gaussian) and colored noise shaped in the frequency domain (power ∝ f^−slope: 0 white, 1 pink, 2 brown).
 
 use crate::fft::{Fft, next_pow2};
 use crate::rng::Rng;
 
-/// `n` 个标准正态样本。
+/// `n` standard normal samples.
 pub fn white(n: usize, rng: &mut Rng) -> Vec<f32> {
     rng.normals(n)
 }
 
-/// 有色噪声，单位 RMS。在长度补到 2 的幂的频域里乘 `f^(−slope/2)`，18 Hz 以下再按 `(f/18)²`
-/// 压掉（不让褐噪声的直流漂移吃掉动态），逆变换后截回 `n`。
+/// Colored noise, normalized to unit RMS. In the frequency domain, zero-padded to a power-of-two length, multiply by `f^(−slope/2)`, and below 18 Hz further attenuate by `(f/18)²`
+/// (so brown noise's DC drift does not eat the dynamic range). After the inverse transform, truncate back to `n`.
 pub fn colored(n: usize, sr: f64, slope: f64, rng: &mut Rng) -> Vec<f32> {
     if n == 0 {
         return Vec::new();

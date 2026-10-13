@@ -30,9 +30,8 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 翻译配音（架构设计 §7.9）经网关端到端：真实引擎里的视频，翻译在真的 Speech Worker 里（模型是假 OpenAI），假 ElevenLabs 逐句返回能解码的 WAV
- * （长度按句子定，覆盖原样、加速、占用之后的静音与超长）；授权的调用次数小于句数时停在合成并说明，放宽之后重试只合成剩下的；
- * 已有译文过期的句子不合成；应用之后的配音轨、实例、配音计划与原声的压低或静音。测试只连假供应商，密钥是测试里编的字符串。
+ * Translated dubbing (architecture design §7.9), end to end through the gateway: a video in the real engine; translation runs in the real Speech Worker (the model is a fake OpenAI); a fake ElevenLabs returns a decodable WAV per sentence (length set by the sentence, covering pass-through, speed-up, silence after occupancy, and overlong). When the number of authorized calls is less than the number of sentences, it stops at synthesis and explains; after loosening the authorization, a retry synthesizes only what is left.
+ * Sentences whose translation is stale are not synthesized. After applying, the dub track, instances, dub plan and the lowering or muting of the original audio are checked. The test connects only to fake providers; the keys are strings made up in the test.
  */
 
 const engine = resolveEngineHostCommand();
@@ -51,7 +50,7 @@ if (!engine || !speechWorker || !ffmpeg) console.warn('跳过翻译配音的端�
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-dub-0123456789';
 const ELEVENLABS_KEY = 'xi-test-ONLY-FOR-TESTS-dub-0123456789';
 const VOICE = 'voice_abc123';
-/** 视频里绑定给说话人的另一个 Provider 音色。 */
+/** Another Provider voice in the video, bound to a speaker. */
 const VOICE2 = 'voice_def456';
 
 async function until<T>(read: () => T | undefined | null | false | Promise<T | undefined | null | false>, timeoutMs = 30_000): Promise<T> {
@@ -64,7 +63,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 每句的英文译文（按句子 ID）；合成的长度按译文里的这几句认（`LENGTHS`）。 */
+/** English translation of each sentence (keyed by sentence ID); synthesized lengths are taken from these translated sentences (`LENGTHS`). */
 const ENGLISH: Record<string, string> = {
   's-w1': 'Hello everyone.',
   's-w3': 'Today we talk about editing.',
@@ -72,7 +71,7 @@ const ENGLISH: Record<string, string> = {
   's-w7': 'This is the fourth one.',
 };
 
-/** 假 OpenAI：按 Speech Worker 的请求答（`fakeSpeechAnswer`），每句回 `ENGLISH` 里的那句。 */
+/** Fake OpenAI: answers the Speech Worker's requests (`fakeSpeechAnswer`), returning the matching sentence from `ENGLISH` for each one. */
 const translator: FakeHandler = (request) => {
   if (request.method === 'GET' && request.path.endsWith('/models')) return { status: 200, json: { object: 'list', data: [] } };
   if (request.method !== 'POST' || !request.path.endsWith('/chat/completions'))
@@ -86,9 +85,8 @@ const translator: FakeHandler = (request) => {
 };
 
 /**
- * 每句合成的长度（秒）：按原文（直接合成时）或它的英文译文定，对着下面的时间窗覆盖对齐的每个分支。
- * 第 1 句窗 1.1 秒放 0.6 秒（原样）；第 2 句窗 1.1 秒放 1.3 秒（加速）；第 3 句窗 0.9 秒放 1.25 秒（加速到上限仍超，占用之后的静音）；
- * 第 4 句窗 0.6 秒、到序列终点 1.5 秒，放 3 秒（超长）。
+ * Length of each synthesized sentence in seconds, set by the original text (when synthesized directly) or its English translation. Checked against the time windows below, covering each alignment branch.
+ * Sentence 1: window 1.1 s, plays 0.6 s (as is); sentence 2: window 1.1 s, plays 1.3 s (sped up); sentence 3: window 0.9 s, plays 1.25 s (still too long at the speed-up limit, so silence after occupancy); sentence 4: window 0.6 s, to the sequence end at 1.5 s, plays 3 s (overlong).
  */
 const LENGTHS: Array<[string, string, number]> = [
   ['大家好', 'Hello everyone', 0.6],
@@ -97,7 +95,7 @@ const LENGTHS: Array<[string, string, number]> = [
   ['第四句', 'fourth one', 3],
 ];
 
-/** 合成的音频：880 Hz、振幅 0.5 的正弦（比原声的 lavfi 正弦响得多，导出里一测音量就分得出来）。 */
+/** The synthesized audio: a 880 Hz sine at amplitude 0.5 (much louder than the original's lavfi sine, so the level is easy to tell apart in the export). */
 function toneWav(seconds: number, sampleRate = 24_000): Buffer {
   const wav = wavFixture(seconds, sampleRate);
   for (let i = 0; 44 + i * 2 < wav.length; i++)
@@ -105,7 +103,7 @@ function toneWav(seconds: number, sampleRate = 24_000): Buffer {
   return wav;
 }
 
-/** 一段音频的均方根（dBFS）：用 ffmpeg 解成单声道浮点。 */
+/** RMS level of an audio clip (dBFS): decoded to mono float with ffmpeg. */
 function rmsDb(file: string, start: number, end: number): number {
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(start), '-to', String(end), '-i', file, '-f', 'f32le', '-ac', '1', '-']);
   const samples = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 4));
@@ -114,7 +112,7 @@ function rmsDb(file: string, start: number, end: number): number {
   return samples.length === 0 || sum === 0 ? -Infinity : 10 * Math.log10(sum / samples.length);
 }
 
-/** `voices` 记下每次合成用的音色，`seeds` 记下请求里的种子（没有时 undefined）。 */
+/** `voices` records the voice used for each synthesis, and `seeds` records the seed in the request (undefined when absent). */
 function elevenlabs(texts: string[], voices: string[] = [], seeds: unknown[] = []): FakeHandler {
   return (request) => {
     const url = new URL(request.path, 'http://fake');
@@ -156,7 +154,7 @@ const speechBody = (words: typeof WORDS) => ({
   chapters: [],
 });
 
-/** 人声分离的模型包（MLX 的，只在 Apple Silicon 的 macOS 上装得上）：从本机回环地址上的假模型来源装合成的权重，分离走假的 Model Worker。 */
+/** Vocal separation model bundle (MLX, installable only on macOS with Apple Silicon): the synthetic weights are installed from a fake model source on the loopback address, and separation runs through a fake Model Worker. */
 const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
 const SEPARATE_BUNDLE = 'htdemucs-ft@mlx';
 const separator = BUNDLES.find((b) => b.bundleId === SEPARATE_BUNDLE)!.components.separator!;
@@ -194,7 +192,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     tts = await startFakeProviderServer(elevenlabs(texts, voices, seeds));
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-dub-e2e-'));
     const home = resolveRuntimeHome({ CUCCUT_HOME: dir });
-    // 假 Model Worker 只做人声分离；分离模型包只在要它的测试里从假模型来源装（装进临时 Home 的模型目录）。
+    // The fake Model Worker only does vocal separation; the separation model bundle is installed from the fake model source only in tests that need it (into the model directory of a temporary Home).
     const control = path.join(dir, 'fake-worker-control.json');
     await fs.writeFile(control, JSON.stringify({ capabilities: ['separate'] }));
     const runtime = await startRuntime({
@@ -251,7 +249,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     return (await side.client.request('videos.open', { projectId, path: relPath })).snapshot.video;
   }
 
-  /** 6 秒的音频放在 0 秒，转写挂在它上面；`split` 在给出的秒数处把实例切开。 */
+  /** A 6-second audio clip placed at 0 s, with the transcript attached to it; `split` cuts the instance at the given seconds. */
   async function videoWithSpeech(split?: number, words: Array<(typeof WORDS)[number] & { speaker?: string }> = WORDS) {
     const { project } = await side.client.request('projects.create', { name: '配音' });
     const audio = path.join(project.path, 'media', 'a.wav');
@@ -323,7 +321,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       .request('pipelines.start', { pipeline: 'dub', params: { videoId, targetLanguage: 'en', voice: VOICE } })
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'forbidden', details: { recipient: 'elevenlabs', dataKinds: ['transcript'] } });
-    // 默认授权不放宽（不含文字稿）：拒绝里说清楚要发哪一条授权，之后重新执行。
+    // The default authorization is not loosened (it excludes transcripts): the rejection states which authorization to issue, and the operation is run again afterwards.
     expect(error).toMatchObject({
       details: {
         code: 'GRANT_REQUIRED',
@@ -342,7 +340,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
 
   it('工具页的当场授权：一次拒绝列出翻译与合成两项待批准的外发，逐项发放之后用同一个 commandId 重新提交即启动；命令行不带待批准项', async () => {
     const { videoId } = await videoWithSpeech();
-    // 用户撤销了 OpenAI 的默认授权（撤销后不补发）：翻译与合成都要当场授权。
+    // The user revoked OpenAI's default authorization (it is not reissued after revocation): both translation and synthesis need authorization on the spot.
     const openaiDefault = (await side.client.request('grants.list', { recipient: 'openai' })).grants.find(
       (g) => g.origin === 'provider-enable',
     )!;
@@ -365,16 +363,16 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       }),
       expect.objectContaining({ capability: 'generateText', recipient: 'openai', dataKinds: ['transcript'], videoId, reason: 'revoked' }),
     ]);
-    // 命令的补救照旧，两项都在。
+    // The command remedies are unchanged; both are present.
     expect((refused.details.remedy as { commands: string[] }).commands).toEqual([
       expect.stringContaining('--recipient elevenlabs --data transcript'),
       expect.stringContaining('--recipient openai --data transcript'),
     ]);
-    // 拒绝本身不发放、不放宽任何授权，也不建任务。
+    // The rejection itself issues no authorization, loosens none, and creates no task.
     expect((await side.client.request('grants.list', { includeEnded: true })).grants).toHaveLength(before);
     expect(await side.client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
 
-    // 命令行（不在场）照旧只有拒绝与命令提示。
+    // The command line (no user present) still gets only the rejection and the command hint.
     const cli = new CucCutClient({
       resolve: async () => side.runtime.discovery,
       client: { kind: 'cli', name: 'test', version: '0' },
@@ -433,12 +431,12 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     await side.client.request('grants.create', grantCreateParamsFor(pending[0]!));
     const { jobId } = await submit();
     expect((await settled(jobId)).state).toBe('completed');
-    // 同一个 commandId 再交一次：同一个任务。
+    // Submitting the same commandId again returns the same task.
     expect((await submit()).jobId).toBe(jobId);
   });
 
   it('按说话人选音色：视频里的绑定优先、其次参数；库里的音色没有克隆时那位说话人的句子不合成、逐句报告，不换成别的音色', async () => {
-    // 第 1、3 句是 S1，第 2 句是 S2，第 4 句没有说话人。
+    // Sentences 1 and 3 are S1, sentence 2 is S2, sentence 4 has no speaker.
     const speakerOf: Record<string, string> = { w1: 'S1', w2: 'S1', w3: 'S2', w4: 'S2', w5: 'S1', w6: 'S1' };
     const words = WORDS.map((w) => (speakerOf[w.id] ? { ...w, speaker: speakerOf[w.id]! } : w));
     const { videoId, sequenceId, projectId, relPath, speechId } = await videoWithSpeech(undefined, words);
@@ -475,7 +473,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       { speakerId: null, voice: VOICE, voiceSource: 'params', available: true, units: 1 },
     ]);
     expect(job.warnings.map((w) => w.code)).toContain('DUB_VOICE_UNAVAILABLE');
-    // S2 的句子没有发出去，也没有换成参数的音色。
+    // S2's sentence was not sent out, and was not switched to the parameter voice.
     expect(texts.some((t) => t.includes('剪辑'))).toBe(false);
     expect([...voices].sort()).toEqual([VOICE, VOICE2, VOICE2]);
 
@@ -501,7 +499,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       speakerBindingId: null,
       extensions: { [DUB_EXTENSION]: { voice: VOICE, voiceSource: 'params' } },
     });
-    // 原声：S2 的句子与别的句子在同一个实例里，一起静音了，如实提醒。
+    // Original audio: S2's sentence shares an instance with other sentences, so they were muted together; this is reported honestly.
     expect(job.warnings.map((w) => w.code)).toContain('DUB_MUTED_UNVOICED');
     const sequence = (await read(projectId, relPath)).sequences[sequenceId]!;
     expect(dubItems(sequence)).toHaveLength(2);
@@ -542,7 +540,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       terms: [{ source: '剪辑' }, { source: '第三句' }],
     });
 
-    // 改「剪辑」的译法：只有第 2 句过期。
+    // Editing the translation in “剪辑” (clip): only sentence 2 becomes stale.
     await side.client.request('library.put', {
       library: 'glossaries',
       id: glossary.id,
@@ -572,7 +570,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
   });
 
   it('翻译 → 逐句合成 → 对齐 → 一笔事务应用：配音轨、实例、配音计划与压低原声；超长的句子不放、如实报告', async () => {
-    // 第 2 句被切成两段（前后相连）：只配一次。
+    // Sentence 2 is split into two adjacent pieces: dubbed only once.
     const { videoId, sequenceId, projectId, relPath } = await videoWithSpeech(2);
     await grantTranscript();
     const { jobId } = await side.client.request('pipelines.start', {
@@ -613,7 +611,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(items).toHaveLength(3);
     expect(items.every((i) => i.trackId === track.id && i.type === 'audio')).toBe(true);
     for (const item of items) expect(extensionOf(item)).toMatchObject({ groupId: summary.groupId, language: 'en' });
-    // 配音从原句的起点开始：0 秒、1.5 秒、3 秒。
+    // Dubbing starts at the start of the original sentence: 0 s, 1.5 s, 3 s.
     const fps = sequence.fps.num / sequence.fps.den;
     const starts = items.map((i) => Math.round(((i as { fromFrame: number }).fromFrame / fps) * 10) / 10).sort((a, b) => a - b);
     expect(starts).toEqual([0, 1.5, 3]);
@@ -623,7 +621,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
         revisions: { '1': { storage: { mode: 'managed' }, provenance: { origin: 'generated' } } },
       });
     }
-    // 原声：两段原句实例都被压低，触发是配音轨。
+    // Original audio: both instances of the original sentence are lowered; the trigger is the dub track.
     const originals = sequence.items.filter((i) => i.trackId !== track.id);
     expect(originals).toHaveLength(2);
     expect(sequence.ducking).toHaveLength(1);
@@ -641,7 +639,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     const history = await side.client.request('videos.history', { videoId });
     expect(history.entries[0]).toMatchObject({ actor: { kind: 'system', id: 'system:pipeline' } });
 
-    // 密钥只在认证头里。
+    // The key appears only in the auth header.
     for (const file of [side.home.jobsFile, path.join(side.home.logsDir, 'runtime.log')]) {
       const text = await fs.readFile(file, 'utf8').catch(() => '');
       expect(text).not.toContain(ELEVENLABS_KEY);
@@ -665,7 +663,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     const old1 = itemOf(before, 't-s-w1') as Sequence['items'][number] & { assetRef: { id: Id; revision: string } };
     const callsBefore = texts.length;
 
-    // 授权撤销之后与配音一样拒绝，带待批准的合成一项（不翻译，没有文本模型那一项），不建任务。
+    // After authorization is revoked, it is rejected as dubbing is, with one pending synthesis item (no translation, so no text model item), and no task is created.
     await side.client.request('grants.revoke', { grantId });
     const refused = (await side.client
       .request('pipelines.start', { pipeline: 'dub', params: { videoId, regroup: { groupId: dubbed.groupId, units: ['t-s-w1'] } } })
@@ -674,7 +672,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect((refused.details.pendingGrants as GrantRequestItem[]).map((g) => g.capability)).toEqual(['synthesizeSpeech']);
     await grantTranscript();
 
-    // 不在这一组里的句子、不存在的组：提交时拒绝。
+    // Sentences outside this group, or a group that does not exist: rejected at submission.
     await expect(
       side.client.request('pipelines.start', { pipeline: 'dub', params: { videoId, regroup: { groupId: 'dub_nope', units: ['t-s-w1'] } } }),
     ).rejects.toMatchObject({ code: 'invalid-request', details: { code: 'DUB_GROUP_NOT_FOUND' } });
@@ -685,7 +683,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       }),
     ).rejects.toMatchObject({ code: 'invalid-request', details: { missing: ['t-nope'] } });
 
-    // 改第 1 句的译文（与界面的改译文同一条路：译文文档的新版本），再只重配这一句，种子给定。
+    // Change sentence 1's translation (the same path as editing a translation in the UI: a new version of the translation document), then re-dub only this sentence with a given seed.
     const translationId = dubbed.translation.documentId;
     const translation = await side.client.request('documents.read', { videoId, documentId: translationId });
     const tBody = structuredClone(translation.body) as { units: Array<{ id: string; naturalText: string }> };
@@ -702,7 +700,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     });
     const job = await settled(jobId);
     expect(job.state, JSON.stringify(job.error)).toBe('completed');
-    // 冻结的参数里有这一组与这几句（界面据此画排队）。
+    // The frozen parameters include this group and these sentences (the UI uses them to draw the queue).
     expect(job.pipeline!.params.regroup).toEqual({
       groupId: dubbed.groupId,
       units: ['t-s-w1'],
@@ -710,7 +708,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       trackId: dubbed.trackId,
       seed: 42,
     });
-    // 只合成这一句，用的是改过的译文与种子。
+    // Only this sentence is synthesized, using the edited translation and seed.
     expect(texts.slice(callsBefore)).toEqual(['[en] Hello again.']);
     expect(seeds.slice(callsBefore)).toEqual([42]);
     const summary = job.pipeline!.summary as unknown as DubSummary;
@@ -728,7 +726,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     const items = dubItems(after);
     expect(items).toHaveLength(3);
     expect(items.every((i) => i.trackId === dubbed.trackId)).toBe(true);
-    // 别的句子不动；这一句换成新的实例与素材，带版本与种子。
+    // Other sentences are untouched; this sentence is replaced with a new instance and asset, carrying the version and seed.
     for (const unitId of ['t-s-w3', 't-s-w5']) expect(itemOf(after, unitId).id).toBe(itemOf(before, unitId).id);
     const new1 = itemOf(after, 't-s-w1') as typeof old1;
     expect(new1.id).not.toBe(old1.id);
@@ -736,7 +734,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(extensionOf(new1)).toEqual({ groupId: dubbed.groupId, language: 'en', unitId: 't-s-w1', take: 2, seed: 42 });
     expect(after.ducking).toHaveLength(1);
 
-    // 同一份计划的新版本：第 1 版补记了旧的素材，第 2 版是当前版本。
+    // New versions of the same plan: version 1 backfilled the old asset, and version 2 is the current version.
     const plan = await side.client.request('documents.read', { videoId, documentId: dubbed.planDocumentId });
     expect(plan.revision).not.toBe('1');
     expect(plan.document.revisions[plan.document.currentRevision]!.summary).toMatchObject({ groupId: dubbed.groupId, placed: 3 });
@@ -750,7 +748,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       expect.objectContaining({ k: 2, seed: 42, text: '[en] Hello again.', jobId, fit: 'fit' }),
     ]);
 
-    // 两句一起重配，第 3 句改得太长放不下：第 1 句换上第 3 版，第 3 句留着旧的一版，计划里记下没放上的那一版；种子随机取一个。
+    // Two sentences re-dubbed together; sentence 3 was edited too long to fit: sentence 1 takes version 3, sentence 3 keeps its old version, and the plan records the version that did not fit; the seed is picked at random.
     const tBody2 = structuredClone(tBody);
     tBody2.units.find((u) => u.id === 't-s-w5')!.naturalText = 'This is the fourth one, too long.';
     await side.client.request('edits.apply', {
@@ -788,7 +786,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       expect.objectContaining({ k: 2, seed: random, fit: null, samples: null, overflowSeconds: expect.any(Number) }),
     ]);
 
-    // 切回第 1 句的第 1 版：删掉当前实例、用那一版的素材放回原处、计划改成第 1 版——一笔编辑，撤销一次全部回去。
+    // Switch sentence 1 back to version 1: delete the current instance, put that version's asset back in place, and change the plan to version 1. It is one edit, so one undo reverts everything.
     const current = itemOf(late, 't-s-w1') as typeof old1 & { fromFrame: number; subframeOffset: unknown; playDuration: unknown };
     const planUnits = structuredClone((plan2.body as { units: PlanUnit[] }).units);
     const target = planUnits.find((u) => u.id === 'd-t-s-w1')!;
@@ -863,7 +861,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     const summary = retried.pipeline!.summary as unknown as DubSummary;
     expect(summary.synthesis).toMatchObject({ reused: 2, calls: 2 });
     expect(texts).toHaveLength(4);
-    // 要求了分离但没有配置：这一步跳过，如实报告。
+    // Separation was requested but is not configured: this step is skipped and reported as such.
     expect(summary.separation).toBe('not-configured');
     expect(retried.warnings.map((w) => w.code)).toContain('DUB_SEPARATION_NOT_CONFIGURED');
     expect(retried.pipeline!.steps.find((s) => s.name === 'separate')!.status).toBe('skipped');
@@ -879,7 +877,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     });
     const translated = await settled(translateJob);
     const translationId = translated.result!.documentId!;
-    // 改第 2 句的原文：译文的这一句过期。
+    // Editing sentence 2's original text: its translation becomes stale.
     const current = await read(projectId, relPath);
     await side.client.request('edits.apply', {
       videoId,
@@ -927,7 +925,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(plan.units.find((u) => u.status === 'stale')).toMatchObject({ script: null, sourceSentenceIds: ['s-w3'] });
   });
 
-  /** 从假模型来源装上人声分离的模型包（只装进临时 Home 的模型目录），等它成为 `separateAudio` 的生效执行者。 */
+  /** Installs the vocal separation model bundle from the fake model source (into the model directory of a temporary Home only), and waits for it to become the effective executor of `separateAudio`. */
   async function installSeparator(): Promise<void> {
     const { path: modelsDir } = await side.client.request('models.getDir', {});
     expect(path.relative(side.dir, modelsDir).startsWith('..')).toBe(false);
@@ -981,7 +979,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       expect(plan.backgroundPolicy).toBe('separate-stems');
       expect(plan.extensions[DUB_EXTENSION]!.mutedItemIds).toEqual([original.id]);
 
-      // 一键撤销：撤掉应用配音的那一笔，轨道、实例、闪避与原声的静音一起还原。
+      // One-step undo: reverts the edit that applied the dub; the track, instances, ducking and the original audio's muting are all restored together.
       const history = await side.client.request('videos.history', { videoId });
       await side.client.request('edits.undo', {
         videoId,
@@ -1041,7 +1039,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       expect(exported.state, JSON.stringify(exported.error)).toBe('completed');
       return exported.result!.outputs![0]!.path!;
     };
-    // 0–0.5 秒有第 1 句配音；5.2 秒之后没有配音，只有原声。
+    // 0–0.5 s has the sentence 1 dub; after 5.2 s there is no dub, only the original audio.
     const mix = await exportAudio();
     expect(rmsDb(mix, 0.05, 0.5)).toBeGreaterThan(-15);
     expect(rmsDb(mix, 5.3, 5.9)).toBeLessThan(-60);
@@ -1066,7 +1064,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
         settings: { kind: 'audio', format: 'wav', source: { dubGroupId: 'dub_nope' } } as never,
       }),
     ).rejects.toMatchObject({ code: 'invalid-request', details: { code: 'DUB_GROUP_NOT_FOUND' } });
-    // 成片接受同样的来源：只换声音，视频本身不变。
+    // The final cut accepts the same source: only the audio changes; the video itself stays the same.
     const revision = side.runtime.videos.mirror(videoId)!.video.revision;
     const film = await exportAudio('original', 'video');
     const filmDb = rmsDb(film, 0.05, 0.5);
@@ -1081,6 +1079,6 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
         settings: { kind: 'subtitles', format: 'srt', source: 'original' } as never,
       }),
     ).rejects.toMatchObject({ code: 'invalid-request' });
-    // 两次成片要真的画面与编码：全量并行时比缺省的 15 秒慢。
+    // Both final renders must produce real frames and encoding: with full parallelism it is slower than the default 15 seconds.
   }, 60_000);
 });

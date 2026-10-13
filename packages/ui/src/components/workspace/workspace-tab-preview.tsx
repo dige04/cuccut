@@ -16,9 +16,7 @@ const titleText = 'block truncate px-2 pt-2 text-xs font-medium';
 const pathText = 'block truncate px-2 pt-0.5 pb-1.5 text-[11px] text-muted-foreground';
 
 /**
- * 页签悬停缩略卡（产品设计 §3.3「页签条」；原型 home-shell-chrome.jsx `WorkspaceTabPreview`）：把该页签的面板克隆成
- * 不可交互的副本，按比例缩进卡片；网页框、音视频与脚本去掉，画布逐像素复制。面板找不到就留白；内嵌的原生网页视图
- * 不在 DOM 里，截不到，那一块同样留白。卡片显示期间网页视图让开（`workspace-overlay.ts`），否则卡片会被它盖住。
+ * Tab hover thumbnail card (product design §3.3 “tab strip”; prototype home-shell-chrome.jsx `WorkspaceTabPreview`): clones the tab's panel into a non-interactive copy and scales it down proportionally into the card. Web frames, audio/video and scripts are removed; canvases are copied pixel by pixel. If the panel cannot be found, the card is left blank. The embedded native web view is not in the DOM and cannot be captured, so that area is also left blank. While the card is shown, the web view makes way (`workspace-overlay.ts`); otherwise it would cover the card.
  */
 export function WorkspaceTabPreview({
   panelId,
@@ -33,7 +31,7 @@ export function WorkspaceTabPreview({
 }) {
   const target = useRef<HTMLDivElement>(null);
   const [empty, setEmpty] = useState(false);
-  // 挂载期间（悬停 500 ms 之后）登记为覆盖层：Electron 的内嵌网页视图暂时隐藏，像菜单一样。
+  // While mounted (after 500 ms of hover), register as an overlay: the Electron embedded web view is hidden for now, the same as for a menu.
   useWorkspaceOverlay(true);
   useLayoutEffect(() => {
     const pane = document.getElementById(panelId);
@@ -64,7 +62,7 @@ export function WorkspaceTabPreview({
         el.height = source.height;
         el.getContext('2d')?.drawImage(source, 0, 0);
       } catch {
-        // 画布被跨域内容污染或没有 2D 上下文：这一块留白。
+        // The canvas is tainted by cross-origin content or has no 2D context: this area is left blank.
       }
     });
     host.replaceChildren(copy);

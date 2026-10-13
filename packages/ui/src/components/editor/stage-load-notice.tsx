@@ -12,8 +12,8 @@ import { SPINNER_DELAY_MS, preparePercent, stallDetail, stallTopic, waitedSecond
 import type { StallReport } from './preview-watch.ts';
 
 /**
- * 盖住整块画面、接住指针（设计稿 `.stageload`）：此刻画布上什么都没有，点在黑块上不能选中、框选底下看不见的元素。
- * 画面背后总是黑的，面板与卡也总是深色：不随明暗主题翻转。
+ * Covers the whole picture and captures the pointer (design draft `.stageload`). At this moment there is nothing on the canvas, so clicks on the black block cannot select, and marquee selection cannot reach hidden elements below.
+ * The area behind the picture is always black, and panels and cards are always dark: they do not flip with the light/dark theme.
  */
 const layer = style({
   position: 'absolute',
@@ -28,7 +28,7 @@ const layer = style({
   cursor: 'default',
 });
 const busy = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'transparent-white-700' });
-/** 转换中（设计稿 `.stageload__prep`）：不是卡片，标题、进度条、在转哪个媒体、只转一次居中一列，文字层级与卡片相同。 */
+/** Converting (design draft `.stageload__prep`): not a card. A title, a progress bar, and which media is being converted, shown once in a centered column. The text hierarchy is the same as a card's. */
 const prep = style({
   display: 'flex',
   flexDirection: 'column',
@@ -41,10 +41,10 @@ const prep = style({
   overflowWrap: 'anywhere',
 });
 const prepTitle = style({ font: 'title-sm', color: 'white' });
-/** 百分比走动时标题不跳宽（style macro 没有 `font-variant-numeric`）。 */
+/** The title does not jump in width as the percentage changes (the style macro has no `font-variant-numeric`). */
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
 const bar = style({ width: 240, maxWidth: 'full' });
-/** 与「主媒体放不出来」那张（stage-media-notice.tsx）同一个样子，多一行按钮。 */
+/** Looks the same as the “主媒体放不出来”(main media cannot be played) card (stage-media-notice.tsx), with one extra row for a button. */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -55,7 +55,7 @@ const card = style({
   paddingY: 12,
   borderRadius: 'lg',
   backgroundColor: 'transparent-white-100',
-  // `font` 简写自带颜色，颜色要写在它后面。
+  // The `font` shorthand sets a color of its own, so the color must be written after it.
   font: 'ui-sm',
   color: 'transparent-white-800',
   overflowWrap: 'anywhere',
@@ -64,15 +64,15 @@ const title = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'titl
 const step = style({ color: 'transparent-white-900' });
 const action = style({ marginTop: 4 });
 
-/** 按下、点击、双击、右键都不再往上冒（舞台与编辑器的点选、清选）；卡上的「重试」先于这里处理，照常可点。 */
+/** Pointer down, click, double-click and right-click no longer bubble up (this stops stage and editor selection and deselection). The “重试”(retry) button on the card is handled before this and remains clickable as usual. */
 const swallow = (event: SyntheticEvent) => event.stopPropagation();
 const block = { onPointerDown: swallow, onMouseDown: swallow, onClick: swallow, onDoubleClick: swallow, onContextMenu: swallow };
 
 /**
- * 预览载入与卡住（产品设计 §5.1，设计稿 stage-load.jsx）：画面出来之前（渲染内核还在载入，或这一刻的媒体还没齐）是一块
- * 不透明的深色面板，不露出等着媒体时的黑帧；满 `SPINNER_DELAY_MS` 才露出转圈。媒体要先转换才能播放（Runtime 在准备兼容
- * 副本）时换成「正在准备预览 · N%」与进度条，点名在转哪个媒体。卡住（预览引擎的卡住诊断报出、页面可见）时画面正中一张卡，
- * 说卡在哪一步、已经等了几秒，带「重试」。`suppressed`：主媒体放不出来已有专门的卡，不再叠一张，也不再盖着等画面。
+ * Preview loading and stuck state (product design §5.1, design draft stage-load.jsx). Until the picture appears (the render kernel is still loading, or the media for this moment is not ready yet), it is an opaque dark panel that does not show the black frames of waiting for media; the spinner appears only after `SPINNER_DELAY_MS`.
+ * When media must be converted before it can play (the Runtime is preparing a compatible copy), it switches to “正在准备预览 · N%”(preparing preview · N%) with a progress bar, naming which media is being converted.
+ * When stuck (the preview engine's stuck diagnostic reports it and the page is visible), a card appears in the middle of the picture, saying which step it is stuck on and how many seconds it has waited, with a “重试”(retry) button.
+ * `suppressed`: when main media cannot be played there is already a dedicated card, so no second card is stacked, and the wait no longer covers the picture.
  */
 export function StageLoadNotice({
   engine,
@@ -93,7 +93,7 @@ export function StageLoadNotice({
   const pictured = usePictured(engine);
   const preparing = usePreparing(videoId);
   const waiting = status.kind === 'loading' || (status.kind === 'ready' && !pictured && !suppressed);
-  // 头一小会儿只是安静的深色面板：很快就好的打开（包括很快就转好的短片）不闪出转圈或进度条。
+  // For the first brief moment it is just a quiet dark panel: openings that finish quickly (including short clips that convert quickly) do not flash a spinner or progress bar.
   const shown = useDelayed(waiting, SPINNER_DELAY_MS);
   if (stall && !suppressed) return <StallCard stall={stall} frame={frame} onRetry={onRetry} />;
   if (!waiting) return null;
@@ -111,7 +111,7 @@ export function StageLoadNotice({
   );
 }
 
-/** 转换中：百分比向下取整、封顶 99；Runtime 还不知道进度时只有标题、进度条不定。 */
+/** Converting: the percentage is rounded down and capped at 99. While the Runtime does not yet know the progress, only the title shows and the progress bar is indeterminate. */
 function PreparingPanel({ preparation, frame }: { preparation: MediaPreparation; frame: { left: number; top: number; width: number; height: number } }) {
   const name = useVideo((s) => s.video?.state?.video?.assets[preparation.assetId]?.name?.trim() || null);
   const percent = preparePercent(preparation.progress);
@@ -140,7 +140,7 @@ function PreparingPanel({ preparation, frame }: { preparation: MediaPreparation;
 function StallCard({ stall, frame, onRetry }: { stall: StallReport; frame: { left: number; top: number; width: number; height: number }; onRetry(): void }) {
   const video = useVideo((s) => s.video?.state?.video ?? null);
   const [now, setNow] = useState(() => performance.now());
-  // 「已经等了 N 秒」逐秒更新。
+  // “已经等了 N 秒”(waited N seconds) updates every second.
   useEffect(() => {
     const timer = setInterval(() => setNow(performance.now()), 1000);
     return () => clearInterval(timer);
@@ -168,7 +168,7 @@ function StallCard({ stall, frame, onRetry }: { stall: StallReport; frame: { lef
   );
 }
 
-/** 还卡着的那一段（预览引擎的卡住诊断）；页面隐藏时不显示（诊断回来之后重新计时）。 */
+/** The stuck segment (the preview engine's stuck diagnostic). Not shown while the page is hidden (the timer restarts after the diagnostic comes back). */
 function usePreviewStall(engine: PreviewEngine): StallReport | null {
   const [stall, setStall] = useState<StallReport | null>(() => engine.stall);
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
@@ -181,14 +181,14 @@ function usePreviewStall(engine: PreviewEngine): StallReport | null {
   return visible ? stall : null;
 }
 
-/** 画面出来过没有（预览引擎的 `pictured`）。 */
+/** Whether the picture has ever appeared (the preview engine's `pictured`). */
 function usePictured(engine: PreviewEngine): boolean {
   const [pictured, setPictured] = useState(() => engine.pictured);
   useEffect(() => engine.onPicture(setPictured), [engine]);
   return pictured;
 }
 
-/** 这部视频在等兼容副本的媒体（Runtime 在转换），按开始的先后；进度变了跟着变。 */
+/** The media this video is waiting on for compatible copies (the Runtime is converting), ordered by when conversion started; progress updates as it changes. */
 function usePreparing(videoId: Id | null): MediaPreparation[] {
   const mediaUrls = useRuntime().videos.mediaUrls;
   const [preparing, setPreparing] = useState<MediaPreparation[]>(() => (videoId ? mediaUrls.preparing(videoId) : []));
@@ -200,7 +200,7 @@ function usePreparing(videoId: Id | null): MediaPreparation[] {
   return preparing;
 }
 
-/** `on` 连续为真满 `ms` 之后才为真（快的载入不闪）。 */
+/** `on` only becomes true after it has stayed true continuously for `ms` (fast loads do not flicker). */
 function useDelayed(on: boolean, ms: number): boolean {
   const [late, setLate] = useState(false);
   useEffect(() => {

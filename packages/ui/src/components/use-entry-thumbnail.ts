@@ -3,7 +3,7 @@ import type { SpaceEntry } from '@cuccut/protocol';
 import { thumbnailVersion, wantsThumbnail, type Thumbnail } from '../model/space-thumbnail.ts';
 import { useRuntime } from '../runtime/context.tsx';
 
-/** Space 与会话卡共用缩略图缓存；挂上时按版本取，不必在编辑器里打开视频。 */
+/** The thumbnail cache shared by Space and session cards; fetched by version on mount, so the video does not need to be opened in the editor. */
 export function useEntryThumbnail(entry: SpaceEntry | null): Thumbnail | null {
   const cache = useRuntime().spaceThumbnails;
   const wanted = entry !== null && wantsThumbnail(entry);

@@ -1,13 +1,10 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer`
+//! (the BCF document rendering path and the host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! Surface Transition（规范 §9 第二类，设计 §6.4 / 阶段 5）。
+//! Surface Transition (spec §9 category two, design §6.4 / stage 5).
 //!
-//! 与 `transitions.rs` 的 Motion 版分工清楚：这里的每个剪辑点都长出
-//! `Draw(from) → Draw(to) → Transition → Composite`，两侧画面**不动**，
-//! 由 `progress` 驱动的双输入效果合成。没有 Surface Transition 的文档一个
-//! pass 都不多——那条不变量由 `transitions.rs` 与 `frame_plan.rs` 守。
+//! The division of labor with the Motion version in `transitions.rs` is clear: each cut point here grows `Draw(from) → Draw(to) → Transition → Composite`. The two sides' pictures **do not move**, and a dual-input effect driven by `progress` composites them. A document without a Surface Transition gets not a single extra pass, and that invariant is guarded by `transitions.rs` and `frame_plan.rs`.
 
 use render_raster::plan::{
     CapabilityProfile, CpuExecutor, FramePlanner, RenderPass, SurfaceLifetime, execute_plan,
@@ -53,7 +50,7 @@ fn ir_of(document: Value) -> Ir {
     Resolver::new(document, None).unwrap().resolve().unwrap()
 }
 
-/// `Ir` 没有 `Debug`，`unwrap_err()` 用不了。
+/// `Ir` has no `Debug`, so `unwrap_err()` cannot be used.
 fn resolve_error(document: Value) -> String {
     match Resolver::new(document, None).unwrap().resolve() {
         Ok(_) => panic!("应当报错"),
@@ -91,10 +88,9 @@ fn px(data: &[u8], x: u32, y: u32) -> [u8; 4] {
     [data[i], data[i + 1], data[i + 2], data[i + 3]]
 }
 
-// ── 计划形状 ─────────────────────────────────────────────────────────
+// ── Plan shape ────────────────────────────────────────────────────────────
 
-/// 一个 Surface Transition 剪辑点 = 两张离屏 surface + 一个 `Transition` pass，
-/// 结果合成回累积画面。`ccut ops` 看到的就是这张图。
+/// One Surface Transition cut point = two offscreen surfaces + one `Transition` pass, with the result composited back into the accumulated picture. This is what `ccut ops` shows.
 #[test]
 fn a_surface_transition_grows_a_transition_pass() {
     let frame = render(doc(circle_crop()), T0);
@@ -105,8 +101,7 @@ fn a_surface_transition_grows_a_transition_pass() {
     );
 }
 
-/// 窗口之外没有第二张画面，计划照旧**折叠成单个 Draw pass**——声明一条
-/// Surface Transition 不该让整片都付离屏的钱。
+/// Outside the window there is no second picture, so the plan still **folds into a single Draw pass**. Declaring a Surface Transition should not make the whole timeline pay for offscreen rendering.
 #[test]
 fn outside_the_window_the_plan_still_folds() {
     for t in [0.3, 0.5, 1.5, 1.8] {
@@ -115,12 +110,11 @@ fn outside_the_window_the_plan_still_folds() {
     }
 }
 
-/// 两侧画面跨帧不变时声明成 `Static`（设计 §6.6：静态 surface 可跨帧留存）。
-/// 判据保守——挂了动画的一侧退回 `PerFrame`。
+/// When both sides' pictures are unchanged across frames, declare them `Static` (design §6.6: static surfaces may persist across frames). The criterion is conservative: a side with an animation attached falls back to `PerFrame`.
 #[test]
 fn static_sides_are_declared_static() {
     let frame = render(doc(circle_crop()), T0);
-    // 背景层 / 两侧 / 转场输出 / 合成输出。两侧是纯色板 ⇒ Static。
+    // Background layer, two sides, transition output, composite output. The two sides are solid color boards, so Static.
     assert_eq!(
         frame.lifetimes,
         [
@@ -132,7 +126,7 @@ fn static_sides_are_declared_static() {
         ]
     );
 
-    // 给离场那块板挂一条动画，它那侧就不再是静态的。
+    // Attach an animation to the outgoing board, and its side is no longer static.
     let mut animated = doc(circle_crop());
     animated["tracks"][0]["clips"][0]["element"]["animate"] =
         json!({"enter": {"preset": "fadeIn", "dur": 0.3}});
@@ -141,10 +135,10 @@ fn static_sides_are_declared_static() {
     assert_eq!(frame.lifetimes[2], SurfaceLifetime::Static);
 }
 
-// ── 像素语义 ─────────────────────────────────────────────────────────
+// ── Pixel semantics ───────────────────────────────────────────────────────
 
-/// 端点：窗口起点整幅是离场画面，终点整幅是入场画面。
-/// 这是 `progress = 0 ⇒ from` / `= 1 ⇒ to` 在**整条链路**上的形态。
+/// Endpoints: at the start of the window the whole frame is the outgoing picture, and at the end the whole frame is the incoming picture.
+/// This is the shape of `progress = 0 ⇒ from` and `= 1 ⇒ to` across the **whole chain**.
 #[test]
 fn the_window_endpoints_are_the_two_shots() {
     let start = render(doc(circle_crop()), T0 - DUR / 2.0);
@@ -157,7 +151,7 @@ fn the_window_endpoints_are_the_two_shots() {
     }
 }
 
-/// 中点：圆心附近已经是入场画面，四角还是离场画面——圆**在张开**。
+/// Midpoint: near the circle's center is already the incoming picture, while the four corners are still the outgoing picture. The circle is **opening up**.
 #[test]
 fn the_circle_opens_from_the_centre() {
     let mid = render(doc(circle_crop()), T0);
@@ -166,11 +160,7 @@ fn the_circle_opens_from_the_centre() {
     assert_eq!(px(&mid.data, W - 2, H - 2), RED, "右下角");
 }
 
-/// 整帧正好落在窗口终点时仍是转场的最后一帧（`progress = 1`），出镜画面不再露出。
-/// 用实片里回闪的那组数：剪辑点 `2493/30` s、`dur` 0.8 s，终点是第 2505 帧；
-/// 窗口终点曾按 `(t0 − half) + 2·half` 算成 `83.49999999999999`，比这一帧早一个 ulp，
-/// 而出镜 clip 的渲染窗口到 `t0 + half = 83.5`，于是这一帧照常画出了出镜画面。
-/// 入场画面只占左上一小块，别处透明，出镜画面多画一帧就会从右下角露出来。
+/// When the frame falls exactly on the end of the window, it is still the last frame of the transition (`progress = 1`), and the outgoing picture no longer shows. This uses the numbers from a real flashback in the footage: cut point `2493/30` s, `dur` 0.8 s, and the end is frame 2505. The window end was once computed as `(t0 − half) + 2·half`, giving `83.49999999999999`, which is one ulp earlier than this frame, while the render window of the outgoing clip extends to `t0 + half = 83.5`, so this frame still drew the outgoing picture. The incoming picture only occupies a small patch at the top-left and is transparent elsewhere, so drawing the outgoing picture one extra frame would expose it at the bottom-right corner.
 #[test]
 fn the_last_frame_of_the_window_does_not_flash_back() {
     let cut = 2493.0 / 30.0;
@@ -197,7 +187,7 @@ fn the_last_frame_of_the_window_does_not_flash_back() {
     );
 }
 
-/// `params` 真的进了 uniform：把圆心挪到左上角，右下角最后才被吃掉。
+/// `params` really enter the uniform: moving the circle center to the top-left, the bottom-right corner is consumed last.
 #[test]
 fn params_reach_the_effect_uniforms() {
     let mut spec = circle_crop();
@@ -207,29 +197,26 @@ fn params_reach_the_effect_uniforms() {
     assert_eq!(px(&mid.data, W - 2, H - 2), RED, "对角最后才换");
 }
 
-/// 平坦路径（`FrameRenderer::record`，`ccut ops` 打印的那条流）画不出双输入
-/// 合成，因此**降级**成剪辑点的 Motion fallback 而不是静默丢掉转场。
-/// 缺省 fallback 是 `crossfade`：窗口起点仍然只剩离场画面。
+/// The flat path (`FrameRenderer::record`, the stream `ccut ops` prints) cannot draw a dual-input composite, so it **degrades** to the Motion fallback of the cut point rather than silently dropping the transition. The default fallback is `crossfade`: the start of the window still shows only the outgoing picture.
 #[test]
 fn the_flat_path_degrades_to_the_motion_fallback() {
     let mut ir = ir_of(doc(circle_crop()));
     let mut engine = TextEngine::new();
     let renderer = FrameRenderer::new(&mut ir, &mut engine).unwrap();
     let mut media = MediaStore::new(Arc::new(LoadedAssets::default()), ir.fps);
-    // 起点：crossfade 的 in 通道 opacity = 0 ⇒ 入场画面整块不出画。
+    // Start: crossfade's in-channel opacity = 0, so the incoming picture is entirely invisible.
     let start = renderer
         .draw(&ir, &mut engine, &mut media, T0 - DUR / 2.0)
         .unwrap();
     assert_eq!(px(start.data(), W / 2, H / 2), RED);
-    // 中点：两张板叠着，颜色既不是纯红也不是纯蓝。
+    // Midpoint: the two boards overlap, and the color is neither pure red nor pure blue.
     let mid = renderer.draw(&ir, &mut engine, &mut media, T0).unwrap();
     let centre = px(mid.data(), W / 2, H / 2);
     assert_ne!(centre, RED);
     assert_ne!(centre, BLUE);
 }
 
-/// 声明的 `fallback` 必须是一条 Motion 配方——降级的落点是属性轨道，不可能是
-/// 另一条同样跑不动的 Surface 效果。
+/// The declared `fallback` must be a Motion recipe. The degradation target is a property track, and it cannot be another Surface effect that equally fails to run.
 #[test]
 fn an_unknown_fallback_is_refused() {
     let mut spec = circle_crop();
@@ -238,7 +225,7 @@ fn an_unknown_fallback_is_refused() {
     assert!(error.contains("transition-unknown"), "{error}");
 }
 
-/// 未知的 `transition.*` 名字与未知版本必须给出**不同**的诊断。
+/// An unknown `transition.*` name and an unknown version must give **different** diagnostics.
 #[test]
 fn unknown_names_and_unknown_versions_are_different_diagnostics() {
     let mut nope = circle_crop();
@@ -252,7 +239,7 @@ fn unknown_names_and_unknown_versions_are_different_diagnostics() {
     assert!(error.contains("preset-version-unknown"), "{error}");
 }
 
-/// 参数校验走的是与 `effects[]` 同一条 manifest 路径。
+/// Parameter validation takes the same manifest path as `effects[]`.
 #[test]
 fn unknown_params_are_refused() {
     let mut spec = circle_crop();
@@ -261,8 +248,7 @@ fn unknown_params_are_refused() {
     assert!(error.contains("preset-param-unknown"), "{error}");
 }
 
-/// 转场两侧是**单层**离屏画面：那两个 clip 的子树里不许再有效果栈，
-/// preflight 直接拒绝而不是静默丢掉 `effects[]`。
+/// Both sides of a transition are **single-layer** offscreen pictures, so no effect stack may appear in the subtrees of those two clips. Preflight rejects this directly rather than silently dropping `effects[]`.
 #[test]
 fn an_effect_stack_inside_a_transition_side_is_rendered() {
     let mut document = doc(circle_crop());
@@ -274,8 +260,7 @@ fn an_effect_stack_inside_a_transition_side_is_rendered() {
     assert_eq!(px(&frame.data, W / 2, H / 2), BLUE);
 }
 
-/// CPU reference 上四条内置转场都能跑：降级名单为空，`fallbacks[]` 里没有
-/// 转场记录。
+/// All four built-in transitions can run on the CPU reference: the degradation list is empty, and `fallbacks[]` has no transition record.
 #[test]
 fn the_cpu_reference_never_falls_back() {
     let ir = ir_of(doc(circle_crop()));
@@ -291,10 +276,9 @@ fn the_cpu_reference_never_falls_back() {
     );
 }
 
-/// 后端跑不动这条转场时**退回 Motion 通道**，而不是报错或画不出东西。
+/// When a backend cannot run this transition, **fall back to the Motion channel** rather than erroring or drawing nothing.
 ///
-/// 内置的四条都是 strict 且有 CPU reference，因此这条路在 CPU 后端上永远不
-/// 触发——测试把 IR 里的效果引用换成一个未注册的版本来走同一条判定。
+/// The four built-ins are all strict and have a CPU reference, so this path never fires on the CPU backend. The test swaps the effect reference in the IR for an unregistered version to go through the same decision.
 #[test]
 fn a_backend_that_cannot_run_the_effect_falls_back_to_motion() {
     let mut ir = ir_of(doc(circle_crop()));
@@ -304,7 +288,7 @@ fn a_backend_that_cannot_run_the_effect_falls_back_to_motion() {
     let renderer = FrameRenderer::new(&mut ir, &mut engine).unwrap();
     let planner = FramePlanner::cpu(&ir).unwrap();
 
-    // 降级名单按 `from_clip` 记；`fallbacks[]` 带出落点是哪条 Motion 配方。
+    // The degradation list is recorded by `from_clip`; `fallbacks[]` carries which Motion recipe the target is.
     assert_eq!(
         planner.transition_fallbacks().iter().collect::<Vec<_>>(),
         ["a"]
@@ -317,17 +301,17 @@ fn a_backend_that_cannot_run_the_effect_falls_back_to_motion() {
         .expect("应当记一条转场降级");
     assert_eq!(record.applied_preset.as_deref(), Some("crossfade"));
     assert!(record.applied.is_none(), "转场的落点不是另一条效果");
-    // 「有降级可用」不算硬错误：整片照常出片。
+    // "A degradation is available" is not a hard error: the whole timeline still renders as usual.
     assert!(planner.report().is_ok());
 
-    // 计划里没有 Transition pass 了——它退成了两侧的属性轨道，因此折叠。
+    // The plan has no Transition pass any more. It degraded into property tracks on both sides, so it folds.
     let plan = planner.plan(&renderer, &ir, &mut engine, T0);
     assert_eq!(
         plan.passes.iter().map(RenderPass::kind).collect::<Vec<_>>(),
         ["draw"]
     );
 
-    // crossfade 的窗口起点：入场画面 opacity = 0，整幅仍是离场画面。
+    // crossfade's window start: the incoming picture has opacity = 0, so the whole frame is still the outgoing picture.
     let mut media = MediaStore::new(Arc::new(LoadedAssets::default()), ir.fps);
     let mut executor = CpuExecutor::new(CapabilityProfile::cpu_reference());
     let start = planner.plan(&renderer, &ir, &mut engine, T0 - DUR / 2.0);
@@ -335,7 +319,7 @@ fn a_backend_that_cannot_run_the_effect_falls_back_to_motion() {
     assert_eq!(px(pixmap.data(), W / 2, H / 2), RED);
 }
 
-// ── shatter / glitch（§9 实现状态）───────────────────────────────────
+// ── shatter / glitch (§9 implementation status) ───────────────────────────
 
 fn shatter(dur: f64, params: Value) -> Value {
     json!({"preset": "transition.shatter", "presetVersion": 1, "dur": dur, "params": params})
@@ -345,8 +329,7 @@ fn glitch(dur: f64, params: Value) -> Value {
     json!({"preset": "transition.glitch", "presetVersion": 1, "dur": dur, "params": params})
 }
 
-/// 两条新转场在整条链路上都守端点：窗口起点整幅离场、终点整幅入场，
-/// 中间两种颜色都在，而且同一时刻重渲逐字节相同（可 seek）。
+/// Both new transitions hold their endpoints across the whole chain: at the window start the whole frame is outgoing, and at the end the whole frame is incoming. Both colors are present in between, and re-rendering at the same moment gives byte-identical output (seekable).
 #[test]
 fn shatter_and_glitch_keep_the_endpoints_and_are_seekable() {
     let dur = 0.8;
@@ -373,7 +356,7 @@ fn shatter_and_glitch_keep_the_endpoints_and_are_seekable() {
             .collect();
         assert!(colors.contains(&BLUE), "{name} 中段应露出入场画面");
         assert!(colors.contains(&RED), "{name} 中段应还有离场画面");
-        // 倒着 seek 回来：与第一次逐字节相同。
+        // Seek back backwards: byte-identical to the first time.
         let _ = render(doc(spec.clone()), T0 + dur / 2.0 - 0.01);
         assert_eq!(
             render(doc(spec), T0 + 0.05).data,
@@ -383,8 +366,7 @@ fn shatter_and_glitch_keep_the_endpoints_and_are_seekable() {
     }
 }
 
-/// shatter 的碎片由 seed 定形：换 seed 画面不同，同 seed 相同；
-/// 爆心附近先碎，四角最后才起飞。
+/// The shatter fragments are shaped by the seed: a different seed gives a different picture, and the same seed gives the same one. Fragments near the explosion center break first, and the four corners lift off last.
 #[test]
 fn shatter_is_shaped_by_its_seed_and_breaks_from_the_impact() {
     let dur = 1.0;
@@ -394,12 +376,12 @@ fn shatter_is_shaped_by_its_seed_and_breaks_from_the_impact() {
     let a2 = render(doc(shatter(dur, json!({"seed": 1}))), early).data;
     assert_eq!(a, a2);
     assert_ne!(a, b);
-    // p = 0.12：离爆心最远的角还没起飞（delay ≥ 0.3 × 近 1），仍是离场画面。
+    // p = 0.12: the corner farthest from the explosion center has not yet lifted off (delay ≥ 0.3 × near 1), so it is still the outgoing picture.
     assert_eq!(px(&a, 0, 0), RED);
     assert_eq!(px(&a, W - 1, H - 1), RED);
 }
 
-/// glitch 的外观由 seed 与方向决定：换 seed、换方向画面都不同，同参数相同。
+/// The look of glitch is determined by the seed and the direction: a different seed or direction gives a different picture, and the same parameters give the same one.
 #[test]
 fn glitch_is_shaped_by_seed_and_direction() {
     let dur = 0.4;

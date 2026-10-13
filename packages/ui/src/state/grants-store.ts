@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Grant, GrantsEvent, GrantsSnapshot } from '@cuccut/protocol';
 
-/** 数据外发授权的镜像（`grants` 主题，架构设计 §12.5）：快照连已结束的（撤销、到期、用完）一起给。 */
+/** Mirror of data-egress grants (`grants` topic, architecture design §12.5). The snapshot includes ones that have already ended (revoked, expired, used up). */
 export interface GrantsStore {
   ready: boolean;
   grants: Grant[];

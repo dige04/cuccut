@@ -22,12 +22,12 @@ import { preparePlaybackMedia } from './media-playback.ts';
 import { RT } from './runtime-copy.ts';
 
 /**
- * 编辑器与视频之间的通道（架构设计 §11）：打开、订阅、提交命令、撤销。
+ * The channel between the editor and the video (architecture design §11): open, subscribe, submit commands, undo.
  *
- * - 同一时间只打开一个视频（一个窗口一个编辑器）。
- * - 命令排队一个一个发：每个命令都带上发出时最新的版本号，前一个的事件总在它的回执之前到达。
- * - 引擎暂时不可用时用同一个 commandId 重试；重复提交由引擎去重。
- * - 连接恢复（包括 Runtime 重启）后重新打开视频、重新订阅，从快照接上。
+ * - Only one video is open at a time (one editor per window).
+ * - Commands are queued and sent one at a time: each command carries the latest version number at the time it is sent, so the previous command's events always arrive before its receipt.
+ * - When the engine is temporarily unavailable, retry with the same commandId; the engine de-duplicates repeated submissions.
+ * - After the connection recovers (including a Runtime restart), reopen the video and resubscribe, resuming from the snapshot.
  */
 export class VideoController {
   readonly #client: CucCutClient;
@@ -35,13 +35,13 @@ export class VideoController {
   #queue: Promise<unknown> = Promise.resolve();
   #wasConnected = false;
   #generation = 0;
-  /** 当前视频的文档正文（字幕的句子与样式），预览与时间线共用。 */
+  /** The current video's document body (subtitle sentences and styles), shared by the preview and the timeline. */
   readonly documents: DocumentCache;
-  /** 当前视频的素材内容（Lottie 动画、声音的频谱），预览用。 */
+  /** The current video's asset content (Lottie animations, audio spectrum), for the preview. */
   readonly assets: AssetCache;
-  /** 当前视频素材的分析结果（波形峰值、缩略图），时间线用。 */
+  /** Analysis results for the current video's assets (waveform peaks, thumbnails), for the timeline. */
   readonly media: MediaAnalysisCache;
-  /** 当前视频素材的媒体地址（`media.resolve` 的句柄），预览与素材面板的媒体元素共用。 */
+  /** Media URL of the current video's asset (the handle from `media.resolve`), shared by the preview and the media element in the assets panel. */
   readonly mediaUrls: MediaUrlCache;
 
   constructor(client: CucCutClient) {
@@ -73,7 +73,7 @@ export class VideoController {
     });
   }
 
-  /** 连接状态变化（由会话转来）。断开时标成未追平；重新连上后丢掉旧的媒体地址（Runtime 重启后句柄失效），重新打开。 */
+  /** Connection state change (relayed from the session). On disconnect, mark as not caught up; after reconnecting, drop the old media URLs (handles are invalid after a Runtime restart) and reopen. */
   onConnection(state: ConnectionState): void {
     const connected = state.status === 'connected';
     const video = useVideo.getState().video;
@@ -83,7 +83,7 @@ export class VideoController {
     this.#wasConnected = connected;
   }
 
-  /** 打开一个视频。已经打开同一个定位时不重复打开。 */
+  /** Open a video. Does not reopen if the same location is already open. */
   open(target: FileTarget): void {
     const current = useVideo.getState().video;
     if (current && sameTarget(current.target, target) && current.status !== 'error') return;
@@ -92,7 +92,7 @@ export class VideoController {
     void this.#open(target);
   }
 
-  /** 新建视频并打开。返回打开它用的定位（放进路由）。 */
+  /** Create a new video and open it. Returns the location used to open it (to put into the route). */
   async create(scope: { projectId?: Id; conversationId?: Id }, name?: string): Promise<FileTarget> {
     const { ref } = await this.#client.request('videos.create', { ...scope, ...(name ? { name } : {}), commandId: newId('cmd') });
     return targetOf(ref);
@@ -112,8 +112,8 @@ export class VideoController {
   }
 
   /**
-   * 提交一笔编辑事务。成功返回回执；失败时错误记在 store 里（界面显示），返回 null。修改名带着目录引用一起存下
-   * （命令与协议规范 §3.1），历史与撤销提示按读者的语言显示；不给时由引擎起名。
+   * Submit an edit transaction. On success, returns the receipt; on failure, the error is recorded in the store (shown in the UI) and null is returned. The changed name is stored together with its catalog reference
+   * (command and protocol spec §3.1); history and undo hints are shown in the reader's language. If none is given, the engine names it.
    */
   apply(operations: EditOperation[], label?: Localized): Promise<TransactionReceipt | null> {
     return this.#enqueue((videoId, revision) =>
@@ -131,14 +131,14 @@ export class VideoController {
     return this.#enqueue((videoId) => this.#client.request('edits.undo', { videoId, commandId: newId('cmd'), target }));
   }
 
-  /** 应用一次识别说话人的提案（`edits.applySpeakers`，一笔事务）；`names` 是确认页改过的名字。失败同 `apply`。 */
+  /** Apply one speaker-recognition proposal (`edits.applySpeakers`, one transaction); `names` are the names edited on the confirmation page. Failure is handled the same as `apply`. */
   applySpeakers(jobId: Id, names?: Record<Id, string>): Promise<TransactionReceipt | null> {
     return this.#enqueue((videoId) =>
       this.#client.request('edits.applySpeakers', { videoId, jobId, commandId: newId('cmd'), ...(names ? { names } : {}) }),
     );
   }
 
-  /** 已经发出的命令都有了结果（发送前同步，产品设计 §3.2.4）：之后读到的版本包含用户刚做的修改。 */
+  /** Every command already sent has a result (synchronously before sending, product design §3.2.4): a version read afterwards includes the changes the user just made. */
   settled(): Promise<void> {
     return this.#queue.then(
       () => {},
@@ -157,7 +157,7 @@ export class VideoController {
     useVideo.getState().update({ commandError: null });
   }
 
-  // ---- 内部 ----
+  // ---- internal ----
 
   async #open(target: FileTarget): Promise<void> {
     const generation = ++this.#generation;
@@ -188,7 +188,7 @@ export class VideoController {
         if (!video?.state) return;
         const next = applyVideoTopicEvent(video.state, event);
         if (next === null) {
-          // 视频在 Runtime 里关闭了（例如引擎多次崩溃）：保留最后的画面，重新打开。
+          // The video was closed in the Runtime (for example, the engine crashed several times): keep the last frame and reopen.
           useVideo.getState().update({ status: 'stale' });
           void this.#open(video.target);
           return;
@@ -214,7 +214,7 @@ export class VideoController {
       const undo = await this.#client.request('edits.undoState', { videoId });
       if (useVideo.getState().video?.videoId === videoId) useVideo.getState().update({ undo });
     } catch {
-      // 断线时在重新打开后再取。
+      // On disconnect, fetch again after reopening.
     }
   }
 
@@ -262,12 +262,12 @@ export class VideoController {
   }
 }
 
-/** `edits.apply` 的修改名字段：当前语言的文字与它的目录引用（命令与协议规范 §3.1）。 */
+/** The name field of `edits.apply`: the text in the current language and its catalog reference (command and protocol spec §3.1). */
 export function transactionLabel(label: Localized): { label: string; labelRef: MessageRef } {
   return { label: label.text, labelRef: refOf(label) };
 }
 
-/** 视频的定位：所在来源目录里的相对路径。 */
+/** The video's location: its relative path within the source directory it is in. */
 export function targetOf(ref: VideoRef): FileTarget {
   return ref.source.projectId
     ? { projectId: ref.source.projectId, path: ref.relPath }

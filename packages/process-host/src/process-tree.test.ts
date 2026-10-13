@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { killProcessTree, taskkillPath } from './process-tree.ts';
 import type { SpawnProcess } from './system-terminal.ts';
 
-/** Windows 分支用注入的 spawn 与平台，不真的调 taskkill；POSIX 分支用真的 `sh` 进程组。 */
+/** The Windows branch uses an injected spawn and platform and does not really call taskkill; the POSIX branch uses a real `sh` process group. */
 
 function fakeChild(pid: number | undefined) {
   const kills: NodeJS.Signals[] = [];

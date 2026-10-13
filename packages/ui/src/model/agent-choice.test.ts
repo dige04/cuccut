@@ -194,10 +194,10 @@ describe('新会话草稿', () => {
 
   it('读回持久化的选择：id 写法不对的 Agent 与类型不对的字段丢掉', () => {
     expect(parseAgentChoice({ driverId: 'Not Valid', model: 3, effort: 'low' })).toEqual({ effort: 'low' });
-    // id 是开放的：内置的（opencode）与用户添加的照样认。
+    // The id is open: the built-in one (opencode) and user-added ones are both recognized.
     for (const driverId of ['opencode', 'my-agent']) expect(parseAgentChoice({ driverId })).toEqual({ driverId });
     expect(parseAgentChoice({ driverId: 'codex', model: null })).toEqual({ driverId: 'codex', model: null });
-    // 经 ACP 接入的 Agent 也认。
+    // Agents connected via ACP are recognized too.
     for (const driverId of ['gemini', 'cursor', 'grok', 'kimi']) expect(parseAgentChoice({ driverId })).toEqual({ driverId });
     expect(parseAgentChoice({ driverId: 'X' })).toBeNull();
     expect(parseAgentChoice('claude')).toBeNull();
@@ -220,7 +220,7 @@ describe('新会话草稿', () => {
       ['Gemini 3 Flash', 'Flash'],
       ['Grok 4.5', 'Grok'],
       ['Kimi K3', 'Kimi'],
-      // Driver 拿不到模型表时的精简表本来就只有级别名。
+      // The reduced table used when the Driver cannot provide a model table only has tier names to begin with.
       ['Opus', 'Opus'],
       ['Sonnet', 'Sonnet'],
       ['Haiku', 'Haiku'],
@@ -247,7 +247,7 @@ describe('新会话草稿', () => {
     expect(compactHarnessLabel(d, 'sonnet')).toBe('Sonnet');
     expect(compactHarnessLabel(d, 'gpt-6.1-sol')).toBe('Sol');
     expect(compactHarnessLabel(d, null)).toBe(AGENT_PICKER.defaultMark);
-    // 不在模型表里的模型：显示 id；id 认不出级别就原样。
+    // Models not in the model table: show the id; if the id cannot be mapped to a tier, show it as is.
     expect(compactHarnessLabel(d, 'corp-proxy-7')).toBe('corp-proxy-7');
     expect(compactHarnessLabel(null, null)).toBe(AGENT_PICKER.detecting);
   });
@@ -258,7 +258,7 @@ describe('新会话草稿', () => {
     expect(agentIcon({ id: 'codex', name: 'Codex' })).toEqual({ kind: 'vendor', file: 'codex', mono: false });
     expect(agentIcon({ id: 'gemini', name: 'Gemini CLI' })).toEqual({ kind: 'vendor', file: 'google', mono: false });
     expect(agentIcon({ id: 'my-agent', name: 'goose', source: 'custom' })).toEqual({ kind: 'letter', letter: 'G' });
-    // 用户添加的就算 id 与内置的写法相近，也不借内置的图标。
+    // A user-added agent does not borrow the built-in icon, even if its id looks similar to a built-in one.
     expect(agentIcon({ id: 'claude', name: 'claude fork', source: 'custom' })).toEqual({ kind: 'letter', letter: 'C' });
     expect(agentIcon({ id: 'x', name: '  ' })).toEqual({ kind: 'letter', letter: 'X' });
   });

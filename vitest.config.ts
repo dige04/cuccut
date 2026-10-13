@@ -4,24 +4,24 @@ import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  // 与两个客户端相同：PDF 资源按静态字节导入，不作为 JS 或原生 WASM 执行。
+  // As in both clients: PDF assets are imported as static bytes, not executed as JS or native WASM.
   assetsInclude: ['**/*.bcmap', '**/*.pfb', '**/*.wasm'],
   test: {
-    // designs/ 下是原型自己的测试，不在这里跑。
+    // The tests under designs/ belong to the prototypes themselves; they are not run here.
     include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.ts', 'tools/*.test.ts'],
     environment: 'node',
     setupFiles: ['tools/vitest-storage.setup.ts'],
     // Runtime tests also spawn native workers, ffmpeg and Electron processes.
     maxWorkers: Math.min(4, os.availableParallelism()),
-    // CLI 的离线目录快照（apps/cli/src/generated/catalog.json，不进 git）：测试前按当前的工具目录写一份。
+    // The CLI's offline catalog snapshot (apps/cli/src/generated/catalog.json, not in git): before the tests, write one from the current tool catalog.
     globalSetup: ['tools/catalog-snapshot.setup.ts'],
     testTimeout: 15_000,
-    // 没有设置下载目录时流程落到主机的 Downloads：测试一律指到每次运行新建的临时目录。
-    // 按需下载字体（§9.1）默认不碰网络：没注入字体目录的 Runtime 没有可下载的族。
+    // When no download directory is set, the flow falls back to the host's Downloads, so tests always point to a temp directory created fresh for each run.
+    // On-demand font download (§9.1) does not touch the network by default: a Runtime that was not given a font directory has no families to download.
     env: {
       CUCCUT_DOWNLOADS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-test-downloads-')),
       CUCCUT_FONT_DOWNLOADS: 'off',
-      // 断言按简体中文的文案写：测试进程与它拉起的 Runtime 都钉在简体中文（@cuccut/protocol i18n）。要测英文的用 vi.stubEnv 换掉。
+      // Assertions are written against Simplified Chinese copy: the test process and the Runtime it launches are both pinned to Simplified Chinese (@cuccut/protocol i18n). To test English, swap it out with vi.stubEnv.
       CUCCUT_LOCALE: 'zh-Hans',
     },
   },

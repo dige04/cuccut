@@ -13,10 +13,8 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { ToolDriver, tool, until, type ToolSession } from '../agent-tools/testing/fake-agent.ts';
 
 /**
- * 智能体启动的流程计入任务预算（架构设计 §3.2、§7.8）：假智能体经真实的 MCP 端点调用 `download`（假 yt-dlp，
- * 不联网），流程把下载的媒体导入真实引擎里的视频，再提交转写；转写走本机回环地址上的假 OpenAI。流程与它的子任务经提交者
- * 找到智能体任务，外发算进任务预算；超出时流程停在转写一步、错误码是 `TASK_BUDGET_EXCEEDED`，供应商没有收到请求。
- * 崩溃后重启：转写的预留只结算一次，再重启也不变。没有 engine-host 或 ffprobe 时跳过。
+ * Pipelines started by an agent count toward the task budget (architecture design §3.2, §7.8). A fake agent calls `download` through the real MCP endpoint (a fake yt-dlp, no network). The pipeline imports the downloaded media into a video in the real engine, then submits transcription. Transcription goes to a fake OpenAI on the local loopback address. The pipeline and its subtasks find the agent task through the submitter, and outbound calls are charged to that task's budget. When the budget is exceeded, the pipeline stops at the transcription step with error code `TASK_BUDGET_EXCEEDED`, and the provider receives no request.
+ * After a crash and restart, the transcription reservation is settled only once, and stays that way after another restart. Skipped when there is no engine-host or ffprobe.
  */
 
 const engine = resolveEngineHostCommand();
@@ -33,7 +31,7 @@ if (!engine || !ffprobe) console.warn('跳过流程的任务预算端到端测�
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-pipeline-budget-0123456789';
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'needs-reconciliation']);
 
-/** 一个 Runtime 进程的一生：同一个 home 上可以关掉再启动（模拟崩溃后的重启）。 */
+/** The lifetime of one Runtime process. The same home can be shut down and started again (simulating a restart after a crash). */
 class Life {
   readonly dir: string;
   readonly home: RuntimeHome;
@@ -43,7 +41,7 @@ class Life {
   runtime!: RunningRuntime;
   client!: CucCutClient;
   driver!: ToolDriver;
-  /** 在转写任务的这个时刻模拟一次崩溃（触发后清空）。 */
+  /** Simulate a crash at this point in the transcription task (cleared once triggered). */
   crashAt: JobFaultPoint | null = null;
   crashed = false;
 
@@ -66,7 +64,7 @@ class Life {
       modelWorker: null,
       jobIdleMs: 60_000,
       online: { baseUrls: { openai: `${this.openai.origin}/v1` }, http: { backoffMs: () => 10 } },
-      // PATH 只有一个空目录、不读真实环境里的覆盖：用到的 yt-dlp 只有测试指定的假工具。
+      // PATH holds only an empty directory and does not read overrides from the real environment, so the yt-dlp in use is only the fake tool the test provides.
       externalTools: { env: async () => ({ PATH: this.emptyPath }), overrides: {}, lookup: async () => ['93.184.216.34'] },
       jobFaults: (point, context) => {
         if (this.crashAt !== point || this.runtime.models.jobs.inspect(context.jobId).kind !== 'transcribe') return;
@@ -95,7 +93,7 @@ class Life {
     await this.runtime.close();
   }
 
-  /** 流程（与它提交的转写）结束。 */
+  /** The pipeline (and the transcription it submitted) has finished. */
   async settled(jobId: Id): Promise<JobRecord> {
     return until(async () => {
       const job = this.runtime.models.jobs.inspect(jobId);
@@ -105,7 +103,7 @@ class Life {
     }, 30_000);
   }
 
-  /** 流程提交的转写任务。 */
+  /** The transcription task submitted by the pipeline. */
   transcribeOf(pipelineJobId: Id): JobRecord | undefined {
     return this.runtime.models.jobs
       .list()
@@ -153,7 +151,7 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     await fs.rm(life.dir, { recursive: true, force: true });
   });
 
-  /** 建一个带调用次数上限的智能体任务，等假智能体的回合开始。 */
+  /** Create an agent task with a cap on call count, and wait for the fake agent's turn to start. */
   async function agentTask(maxCalls: number): Promise<{ taskId: Id; session: ToolSession }> {
     const { taskId } = await life.client.request('tasks.create', {
       conversationId,
@@ -189,11 +187,11 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     expect(await life.usage(taskId)).toEqual({ calls: 1, reservedCalls: 0 });
     expect(life.transcriptions()).toBe(1);
 
-    // 第二次：下载与导入照常（不外发），转写在接纳时被任务预算拒绝；流程失败、停在转写一步，说明是任务预算。
+    // Second run: download and import proceed as usual (nothing sent out), and transcription is rejected at admission by the task budget. The pipeline fails and stops at the transcription step, which shows the cause is the task budget.
     const second = await life.settled(await startImport(session, 'two'));
     expect(second.state).toBe('failed');
     expect(second.error).toMatchObject({ code: 'TASK_BUDGET_EXCEEDED' });
-    // 转写之后还有建字幕层一步（这次没打开），停在转写时它没有执行。
+    // A subtitle-layer build step follows transcription (not enabled this time). Since the pipeline stopped at transcription, it did not run.
     const steps = second.pipeline!.steps.map((s) => [s.name, s.status]);
     const failedAt = steps.findIndex(([name]) => name === 'transcribe');
     expect(steps.slice(0, failedAt).every(([, status]) => status === 'completed' || status === 'skipped')).toBe(true);
@@ -206,11 +204,11 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     expect(life.transcriptions()).toBe(1);
     expect(await life.usage(taskId)).toEqual({ calls: 1, reservedCalls: 0 });
 
-    // 智能体从任务里查得到失败的原因。
+    // The agent can read the reason for the failure from the task.
     const inspected = await tool(session, 'jobs_inspect', { jobId: second.jobId });
     expect(JSON.stringify(inspected.body)).toContain('TASK_BUDGET_EXCEEDED');
 
-    // 界面直接启动的流程不在任务里：照常转写，任务的用量不变。
+    // Pipelines started directly from the UI are not part of a task: transcription proceeds as usual and the task's usage does not change.
     const { jobId: userJob } = await life.client.request('pipelines.start', {
       pipeline: 'link-import',
       params: { url: 'https://video.example.com/watch?v=three', videoId, transcribe: true },
@@ -235,7 +233,7 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     expect(transcribed).toMatchObject({ state: 'completed', applications: [{ state: 'committed' }], grant: { settled: { calls: 1 } } });
     expect(await life.usage(taskId)).toEqual({ calls: 1, reservedCalls: 0 });
     expect(life.transcriptions()).toBe(1);
-    // 流程本身停在转写一步（中断），可以重试。
+    // The pipeline itself stops at the transcription step (interrupted) and can be retried.
     expect(life.runtime.models.jobs.inspect(pipelineJobId).state).toBe('interrupted');
 
     await life.restart();

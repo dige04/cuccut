@@ -2,12 +2,12 @@ import type { HostBridge } from '@cuccut/ui';
 import { M } from './web-host-copy.ts';
 
 /**
- * 浏览器里的宿主能力（架构设计 §4.8）。桌面的预加载脚本给的是原生能力；浏览器拿不到本机路径，这些能力退化成
- * 「不可用」并给出说明，界面照常工作：
+ * Host capabilities in the browser (architecture design §4.8). The desktop preload script provides native capabilities; the browser cannot get local paths, so these capabilities degrade to
+ * "unavailable" with an explanation, and the UI otherwise works as normal:
  *
- * - 连接：同源的 `/ws`。登录状态在 HttpOnly cookie 里，页面拿不到也不需要令牌（握手里的令牌是空的，服务不看它）。
- * - 选目录、选素材文件、拖入文件：浏览器给不出文件在磁盘上的路径，按路径导入不可用；会话文件通过独立的同源附件上传通道处理。
- * - 在文件夹中显示：不可用。
+ * - Connection: same-origin `/ws`. The login state is in an HttpOnly cookie; the page cannot read it and does not need a token (the token in the handshake is empty, and the service does not check it).
+ * - Choosing a folder, choosing media files, dropping files in: the browser cannot give a file's path on disk, so importing by path is unavailable; session files are handled through a separate same-origin attachment upload channel.
+ * - Show in folder: unavailable.
  */
 
 const NOTICE_ID = 'cuccut-web-notice';
@@ -15,7 +15,7 @@ const NOTICE_MS = 6000;
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-/** 页面底部的一条提示，几秒后消失。不依赖界面包的组件：界面包不知道自己跑在浏览器里。 */
+/** A hint at the bottom of the page that disappears after a few seconds. It does not depend on components from the UI package, because the UI package does not know it is running in a browser. */
 function notice(text: string): void {
   let node = document.getElementById(NOTICE_ID);
   if (!node) {

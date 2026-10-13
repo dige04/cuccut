@@ -1,20 +1,15 @@
-//! 分章节载体（file-v1）：`chapters-source/1`（页输入）、`chapters-outline/1`
-//! （Reduce 输入）与两者共用的输出解析。
+//! Chapter carrier (file-v1): `chapters-source/1` (page input), `chapters-outline/1`
+//! (Reduce input), and the output parsing shared by both.
 //!
-//! 输入是段落级 HTML（`<p id data-at>全文</p>`），输出只写代码推不出的东西：
+//! The input is paragraph-level HTML (`<p id data-at>full text</p>`). The output carries only what the code cannot infer:
 //!
 //! ```html
-//! <h2>章节标题</h2>
-//! <p class="summary">一句话概要</p>
-//! <p id="p-g1203.0">该段开头十几个字…</p>
+//! <h2>Chapter title</h2>
+//! <p class="summary">One-sentence summary</p>
+//! <p id="p-g1203.0">The first dozen or so characters of the paragraph…</p>
 //! ```
 //!
-//! 解析按「标题 → 概要 → 首段锚」的顺序状态机走，标签名不进协议：h1–h6 或
-//! `class="title"` 视为标题；带 `id` 的元素视为锚；标题与锚之间的无 id 文本块
-//! 视为概要。锚 id 由模型抄写，`p-g1203.0` 抄成 `p-g1230.0` 是最常见的静默
-//! 丢章，因此锚上的开头片段是 id 的兜底：id 未知但片段能唯一命中某段开头即
-//! 按片段修复（`anchor-repaired` 诊断），都命不中才丢行（`unknown-id`）。
-//! 章节 `end` 由下一章 `start` 确定性回填，尾锚不进协议、多余的锚一律忽略。
+//! Parsing is a state machine that runs in the order title → summary → opening anchor. Tag names are not part of the protocol: h1–h6 or `class="title"` count as a title; an element with an `id` counts as an anchor; a text block without an id between the title and the anchor counts as the summary. The model copies the anchor id, and writing `p-g1203.0` as `p-g1230.0` is the most common silent chapter drop. So the opening snippet on the anchor is the fallback for the id: if the id is unknown but the snippet uniquely matches the start of one paragraph, repair by snippet (`anchor-repaired` diagnostic); if nothing matches, drop the line (`unknown-id`). A chapter's `end` is backfilled deterministically from the next chapter's `start`; the trailing anchor is not part of the protocol, and extra anchors are always ignored.
 
 use std::collections::BTreeMap;
 
@@ -24,86 +19,86 @@ use super::common::{
 };
 use super::html::{Element, Node, escape_attr, escape_text, normalize_html_text, parse_html};
 
-/// 页输入载体的 `data-ccut-format` 值。
+/// Value of `data-ccut-format` for the page input carrier.
 pub const CHAPTERS_SOURCE_FORMAT: &str = "chapters-source/1";
-/// Reduce（全局大纲）输入载体的 `data-ccut-format` 值。
+/// Value of `data-ccut-format` for the Reduce (global outline) input carrier.
 pub const CHAPTERS_OUTLINE_FORMAT: &str = "chapters-outline/1";
 
-/// 首段片段长度（字符）：既要能唯一定位段落开头，又不能诱导模型抄整段。
+/// Snippet length of the first paragraph (in characters): long enough to locate a paragraph's opening uniquely, but not so long that it tempts the model to copy the whole paragraph.
 pub const SNIPPET_CHARS: usize = 40;
-/// 片段修复 / 校验时参与比较的最少字符数；片段短于此不做修复。
+/// Minimum number of characters compared during snippet repair / validation; snippets shorter than this are not repaired.
 const SNIPPET_MATCH_MIN_CHARS: usize = 4;
-/// 片段比较最多取前多少个归一化字符（模型常在片段末尾自行截断或加省略号）。
+/// Maximum number of normalized characters compared from a snippet (the model often truncates the snippet itself or adds an ellipsis at the end).
 const SNIPPET_MATCH_MAX_CHARS: usize = 16;
 
-/// 一个可作为章节起点的锚：段落（Map 页）或话题单元（Reduce 大纲）。
+/// An anchor that can serve as a chapter start: a paragraph (Map page) or a topic unit (Reduce outline).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChapterAnchor {
-    /// 段 id（`p-<首词id>`）。
+    /// Segment id (`p-<first word id>`).
     pub id: String,
-    /// 起始秒（相对媒体起点）。
+    /// Start time in seconds (relative to the media start).
     pub start: f64,
-    /// 段落全文（页输入）或开头片段（大纲输入）。
+    /// Full paragraph text (page input) or opening snippet (outline input).
     pub text: String,
 }
 
-/// 一页 Map 输入。
+/// One Map page of input.
 #[derive(Debug, Clone)]
 pub struct ChaptersPageInput<'a> {
-    /// 0 基页序。
+    /// Zero-based page index.
     pub part_index: usize,
-    /// 总页数。
+    /// Total page count.
     pub part_count: usize,
-    /// 本页段落（全文）。
+    /// Paragraphs on this page (full text).
     pub segments: &'a [ChapterAnchor],
-    /// 本页时间范围（起始秒, 结束秒）。
+    /// Time range of this page (start seconds, end seconds).
     pub range: (f64, f64),
-    /// 媒体总时长（秒）。
+    /// Total media duration (seconds).
     pub total_duration: f64,
-    /// 本页期望的话题单元数（进 `data-aim`；契约文件按 kind 唯一，页级差异只能进载体）。
+    /// Expected number of topic units for this page (goes into `data-aim`; the contract file is unique per kind, so per-page differences can only go into the carrier).
     pub aim: usize,
-    /// 转录语言（进根节点 `lang`，标题/概要默认用它）。
+    /// Transcription language (goes into the root `lang`; titles and summaries use it by default).
     pub lang: &'a str,
-    /// 项目词指纹（审计锚点，不参与协议）。
+    /// Project vocabulary fingerprint (audit anchor, not part of the protocol).
     pub project_fingerprint: &'a str,
 }
 
-/// Reduce 大纲里的一个话题单元（Map 阶段的产出）。
+/// A topic unit in the Reduce outline (the output of the Map stage).
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutlineUnit {
-    /// 锚：id + 起始秒 + 开头片段。
+    /// Anchor: id + start seconds + opening snippet.
     pub anchor: ChapterAnchor,
-    /// 单元标题；`None` 表示该页 Map 失败后的占位单元（无标题、无概要）。
+    /// Unit title; `None` means a placeholder unit for a page whose Map failed (no title, no summary).
     pub title: Option<String>,
-    /// 单元概要。
+    /// Unit summary.
     pub summary: Option<String>,
-    /// 来自第几页（0 基）；相邻单元页序不同处渲染页缝标记。
+    /// Zero-based index of the page the unit came from; a page-seam marker is rendered where adjacent units come from different pages.
     pub part_index: usize,
 }
 
-/// 解析出的一行章节。
+/// One parsed chapter line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedChapterRow {
-    /// 标题（已归一化空白，非空）。
+    /// Title (whitespace normalized, non-empty).
     pub title: String,
-    /// 解析/修复后的锚 id，必然存在于输入锚集合。
+    /// Anchor id after parsing or repair; guaranteed to exist in the input anchor set.
     pub anchor_id: String,
-    /// 概要（可缺）。
+    /// Summary (may be missing).
     pub summary: Option<String>,
-    /// 锚 id 是否经片段修复得到。
+    /// Whether the anchor id was obtained by snippet repair.
     pub repaired: bool,
 }
 
-/// 一次输出解析的结果。
+/// Result of parsing one output.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ChaptersParsed {
-    /// 按文档顺序保留的章节行（未按时间排序、未去重——由引擎的确定性清洗负责）。
+    /// Chapter lines kept in document order (not sorted by time, not deduplicated; the engine's deterministic cleanup handles that).
     pub rows: Vec<ParsedChapterRow>,
-    /// 诊断。
+    /// Diagnostics.
     pub diagnostics: Diagnostics,
 }
 
-/// mm:ss，过小时 HH:mm:ss（对拍 voice-ink `fmtTime`，秒向下取整）。
+/// mm:ss, or HH:mm:ss once past an hour (aligned with voice-ink `fmtTime`; seconds are rounded down).
 pub fn fmt_clock(time: f64) -> String {
     let seconds = time.max(0.0) as u64;
     let hours = seconds / 3600;
@@ -116,7 +111,7 @@ pub fn fmt_clock(time: f64) -> String {
     }
 }
 
-/// 段落开头片段：前 [`SNIPPET_CHARS`] 个字符（单行归一化后），截断处加省略号。
+/// Opening snippet of a paragraph: the first [`SNIPPET_CHARS`] characters (after single-line normalization), with an ellipsis added where truncated.
 pub fn snippet(text: &str) -> String {
     let cleaned = sanitize_inline_text(text);
     let mut chars = cleaned.chars();
@@ -128,7 +123,7 @@ pub fn snippet(text: &str) -> String {
     }
 }
 
-/// 渲染一页 Map 输入。
+/// Render one Map page of input.
 pub fn render_chapters_source(input: &ChaptersPageInput<'_>) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -155,7 +150,7 @@ pub fn render_chapters_source(input: &ChaptersPageInput<'_>) -> String {
     out
 }
 
-/// 渲染 Reduce 大纲输入：Map 各页的话题单元按序拼接，页缝处插 `<hr data-seam>`。
+/// Render the Reduce outline input: the topic units of each Map page are concatenated in order, with `<hr data-seam>` inserted at page seams.
 pub fn render_chapters_outline(
     units: &[OutlineUnit],
     part_count: usize,
@@ -222,9 +217,9 @@ pub fn render_chapters_outline(
     out
 }
 
-/// 从输入载体（页或大纲）反解锚集合：所有带 `id` 的 `<p>`，`data-at` 有则取起始秒。
+/// Recover the anchor set from an input carrier (page or outline): all `<p>` with an `id`; take the start seconds from `data-at` if present.
 ///
-/// agent 提交期 lint 只有载荷没有文档，靠这个函数拿到与引擎同一份锚集合。
+/// The agent's submit-time lint only has the payload and no document, so it uses this function to get the same anchor set as the engine.
 pub fn parse_chapters_source(input: &str) -> Option<Vec<ChapterAnchor>> {
     let tree = parse_html(input);
     let format = tree
@@ -249,7 +244,7 @@ pub fn parse_chapters_source(input: &str) -> Option<Vec<ChapterAnchor>> {
     (!anchors.is_empty()).then_some(anchors)
 }
 
-/// 大纲载荷（`chapters-outline/1`）的行数上限：按根节点 `data-aim` 推；页载荷不设上限。
+/// Row count limit for an outline payload (`chapters-outline/1`): derived from the root `data-aim`; page payloads have no limit.
 pub fn outline_row_limit(payload: &str) -> Option<usize> {
     let tree = parse_html(payload);
     let root = tree
@@ -276,7 +271,7 @@ fn parse_clock(text: &str) -> Option<f64> {
     }
 }
 
-/// 中间表示：把 DOM 拍平成「标题 / 锚 / 文本」三种块。
+/// Intermediate representation: flattens the DOM into three kinds of blocks: heading, anchor, and text.
 #[derive(Debug)]
 enum Block {
     Heading { title: String, id: Option<String> },
@@ -312,8 +307,7 @@ fn flatten(nodes: &[Node], out: &mut Vec<Block>) {
                     });
                 } else if let Some(id) = element.id().filter(|id| !id.is_empty()) {
                     if contains_heading(element) {
-                        // `<section id="p-…"><h2>…</h2>…</section>`：容器写法。先展开
-                        // 内容，再把容器 id 作为锚补在后面（行里已有锚时被忽略）。
+                        // `<section id="p-…"><h2>…</h2>…</section>`: container form. Expand the content first, then append the container id as an anchor (ignored if the line already has an anchor).
                         flatten(&element.children, out);
                         out.push(Block::Anchor {
                             id: id.to_owned(),
@@ -338,7 +332,7 @@ fn flatten(nodes: &[Node], out: &mut Vec<Block>) {
     }
 }
 
-/// 归一化片段用于比较：单行归一化 → 去尾部省略号 → 去全部空白 → 小写。
+/// Normalize a snippet for comparison: single-line normalization → strip trailing ellipsis → remove all whitespace → lowercase.
 fn normalize_snippet(text: &str) -> String {
     let normalized = normalize_html_text(text);
     let trimmed = normalized.trim_end_matches(['…', '.', ' ']);
@@ -356,7 +350,7 @@ fn snippet_head(text: &str) -> String {
         .collect()
 }
 
-/// 片段是否命中某段开头。
+/// Whether a snippet matches the start of a paragraph.
 fn snippet_matches(anchor_text: &str, snippet: &str) -> bool {
     let head = snippet_head(snippet);
     if head.chars().count() < SNIPPET_MATCH_MIN_CHARS {
@@ -371,18 +365,17 @@ struct Draft {
     summary: Option<String>,
 }
 
-/// 章节数上限护栏（Reduce）：允许超出 `aim` 两成或 2 章（取大者）。
+/// Chapter count ceiling guard (Reduce): allows exceeding `aim` by 20% or 2 chapters, whichever is larger.
 pub fn max_rows_for_aim(aim: usize) -> usize {
     aim + (aim / 5).max(2)
 }
 
-/// 解析模型输出（Map 页或 Reduce 大纲共用），`anchors` 是本次调用允许的锚集合。
+/// Parse model output (shared by Map pages and the Reduce outline); `anchors` is the set of anchors allowed for this call.
 pub fn parse_chapters_output(anchors: &[ChapterAnchor], raw: &str) -> ChaptersParsed {
     parse_chapters_output_with_limit(anchors, raw, None)
 }
 
-/// 同 [`parse_chapters_output`]，另可给出行数上限：超出即 `chapter-overflow`
-/// 问题（Reduce 只照抄大纲、不合并时触发重试；行本身仍全部保留供降级采用）。
+/// Same as [`parse_chapters_output`], but can also take a row-count limit: exceeding it raises a `chapter-overflow` issue (Reduce only copies the outline without merging, which triggers a retry; all rows are still kept for fallback use).
 pub fn parse_chapters_output_with_limit(
     anchors: &[ChapterAnchor],
     raw: &str,
@@ -486,9 +479,7 @@ pub fn parse_chapters_output_with_limit(
                     ));
                     (anchor.id.clone(), true)
                 }
-                // 不可修复的锚：**丢该行**并记 Warning（重试策略重设计 §2.4）。
-                // 其余章节行完全可用，为一行幻觉锚重掷整页只是烧 token；剩余
-                // 0 行才在下面判 page-fatal。
+                // Unrepairable anchor: **drop that line** and record a Warning (retry strategy redesign §2.4). The other chapter lines are fully usable; re-rolling the whole page for one hallucinated anchor only burns tokens. Only when 0 lines remain is it judged page-fatal below.
                 _ => {
                     parsed.diagnostics.push_warning(Warning::sentence(
                         WarningCode::ContentIgnored,
@@ -501,7 +492,7 @@ pub fn parse_chapters_output_with_limit(
                 }
             }
         };
-        // 空标题同样是行级丢弃（§2.4）：一个没写标题的章节不该拖累整页。
+        // An empty title is likewise a line-level drop (§2.4): a chapter without a title should not drag down the whole page.
         if title.is_empty() {
             parsed.diagnostics.push_warning(Warning::sentence(
                 WarningCode::ContentIgnored,
@@ -548,7 +539,7 @@ pub fn parse_chapters_output_with_limit(
     parsed
 }
 
-/// agent 提交期 lint：与引擎共用同一份解析器（载荷 = 页/大纲输入，答案 = 模型输出）。
+/// Agent submit-time lint: shares the same parser as the engine (payload = page or outline input, answer = model output).
 pub fn lint_chapters_answer(payload: &str, answer: &str) -> Vec<String> {
     let Some(anchors) = parse_chapters_source(payload) else {
         return Vec::new();
@@ -731,8 +722,7 @@ mod tests {
     }
 
     #[test]
-    /// §2.4：不可修复的锚与空标题都是**行级丢弃 + Warning**；只有「没有锚」
-    /// 这种连行都拼不出来的形状仍是 problem（`missing-id`）。
+    /// §2.4: unrepairable anchors and empty titles are both **line-level drops plus a Warning**; only the shape where no anchors exist at all, so no lines can be formed, remains a problem (`missing-id`).
     fn output_parse_drops_unknown_and_empty_rows_but_reports_missing_anchor() {
         let raw = "<h2>幽灵</h2><p id=\"p-ghost\">完全不存在的开头</p><h2></h2><p id=\"p-g1.0\">大家好</p><h2>没锚</h2><h2>正常</h2><p id=\"p-g40.0\">Now let's</p><p id=\"p-g20.0\">多余</p>";
         let parsed = parse_chapters_output(&anchors(), raw);
@@ -757,7 +747,7 @@ mod tests {
                 .iter()
                 .any(|w| w.code == WarningCode::ContentIgnored)
         );
-        // 片段与 id 不符：以 id 为准并留诊断。
+        // Snippet does not match the id: the id takes precedence, and a diagnostic is kept.
         let mismatch = parse_chapters_output(
             &anchors(),
             "<h2>A</h2><p id=\"p-g1.0\">Now let's talk about</p>",
@@ -770,7 +760,7 @@ mod tests {
                 .iter()
                 .any(|w| w.code == WarningCode::AnchorTextMismatch)
         );
-        // 空输出：文档级 missing-id。
+        // Empty output: document-level missing-id.
         let empty = parse_chapters_output(&anchors(), "Sure, here are the chapters.");
         assert!(empty.rows.is_empty());
         assert!(empty.diagnostics.has_code(ProblemCode::MissingId));
@@ -824,7 +814,7 @@ mod tests {
         assert!(
             lint_chapters_answer(&payload, "<h2>开场</h2><p id=\"p-g1.0\">大家好</p>").is_empty()
         );
-        // 不可修复的锚只丢那一行；剩余 0 行才报 `missing-id`。
+        // An unrepairable anchor drops only that line; only when 0 lines remain is `missing-id` reported.
         let problems = lint_chapters_answer(&payload, "<h2>开场</h2><p id=\"p-zzz\">谁知道</p>");
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(problems[0].starts_with("[missing-id]"));

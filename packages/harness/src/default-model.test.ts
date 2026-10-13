@@ -20,8 +20,7 @@ import { Harness } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
 /**
- * 新会话的默认模型（架构设计 §3.11，2026-09-29 用户裁决）：没设过时用推荐模型——Claude Code 的 Sonnet、Codex 的 `-sol`，
- * 不按 CLI 配置落到最贵的模型上；只有明确选了「Agent 默认模型」才不传模型。Driver 是假的，模型表照两家 CLI 的次序摆。
+ * Default model for a new session (architecture design §3.11, user decision of 2026-09-29): if never set, use the recommended model: Claude Code's Sonnet, Codex's `-sol`, rather than falling to the most expensive model per CLI configuration; only when "Agent default model" is explicitly chosen is no model passed. Drivers are fakes; the model table follows the order of the two CLIs.
  */
 
 const model = (id: string, patch: Partial<DriverModel> = {}): DriverModel => ({
@@ -35,14 +34,14 @@ const model = (id: string, patch: Partial<DriverModel> = {}): DriverModel => ({
   ...patch,
 });
 
-/** Claude Code 的表：CLI 标的默认是 Opus，Fable 排在 Sonnet 前面。 */
+/** Claude Code's table: the CLI's default is Opus, with Fable ahead of Sonnet. */
 const CLAUDE_MODELS = [
   model('opus', { tier: 'max', isDefault: true }),
   model('claude-fable-5-1[1m]', { tier: 'max' }),
   model('sonnet', { tier: 'balanced' }),
   model('haiku', { tier: 'fast' }),
 ];
-/** Codex 的表：新版的 `-sol` 在前，默认标在最强的那一档上。 */
+/** Codex's table: the newer `-sol` comes first, with the default marked on the strongest tier. */
 const CODEX_MODELS = [
   model('gpt-6-astra', { tier: 'max', isDefault: true }),
   model('gpt-6-sol', { tier: 'balanced' }),
@@ -119,7 +118,7 @@ async function open(drivers: ModelsDriver[]): Promise<Harness> {
       },
     },
   });
-  // 先让探测落进缓存：会话创建读的是缓存里的模型表。
+  // Get the probe into the cache first: session creation reads the model table from the cache.
   await harness.agents();
   return harness;
 }
@@ -173,7 +172,7 @@ describe('新会话的默认模型', () => {
     expect(view.preferences.drivers.claude?.defaultModel).toBe(AGENT_DEFAULT_MODEL);
     expect(view.drivers[0]!.defaultModel).toBeNull();
     expect((await h.createConversation({ driverId: 'claude' })).model).toBeNull();
-    // 只改强度：仍是 Agent 默认模型。
+    // Only effort changed: still the Agent default model.
     await h.configureAgent({ driverId: 'claude', defaultEffort: null });
     expect(defaultOf(h, 'claude')).toBeNull();
 

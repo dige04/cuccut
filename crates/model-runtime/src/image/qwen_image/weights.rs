@@ -1,14 +1,11 @@
-//! 惰性权重：`Array::load_safetensors` 只解析文件头，每个数组在第一次求值时才从文件读入
-//! （MLX 的 `Load` 只在 CPU stream 上实现，GPU 算子通过事件等它）。
+//! Lazy weights: `Array::load_safetensors` only parses the file header, and each array is read from the file on first evaluation
+//! (MLX's `Load` is only implemented on the CPU stream; GPU ops wait for it via events).
 //!
-//! 不经过 [`crate::backend::mlx::runtime`] 的加载器：那条路（`load_safetensors_impl`）每次进来都先
-//! `configure_memory_cache()`，把 MLX 缓存上限重置回 min(2 GiB, 物理内存 / 8)。本机生图按阶段
-//! 定上限（DiT 256 MB、VAE 0，见 [`super::engine::CacheLimit`]），文本编码器与 DiT 又是每层
-//! 重开惰性表——走那条加载器，阶段上限会在每一层被悄悄改回 2 GiB，footprint 多出整整 2 GB。
-//! `qwen3` 的 `WeightStore::from_arrays` / `TextDecoder::load_with_prefix` 不碰缓存上限。
+//! This does not go through the loader in [`crate::backend::mlx::runtime`]. That path (`load_safetensors_impl`) calls `configure_memory_cache()` on every entry, resetting the MLX cache limit to min(2 GiB, physical memory / 8).
+//! Local image generation sets the limit per stage (DiT 256 MB, VAE 0; see [`super::engine::CacheLimit`]), and the text encoder and DiT reopen the lazy table for every layer.
+//! Going through that loader would quietly reset the stage limit to 2 GiB at every layer, adding a full 2 GB to the footprint. `qwen3`'s `WeightStore::from_arrays` / `TextDecoder::load_with_prefix` do not touch the cache limit.
 //!
-//! 与 v2 唯一的不同：v2 按目录扫 `*.safetensors`，这里读调用方按清单取出的文件
-//! （[`crate::bundle::VerifiedFiles::require_extension_in`]）。
+//! The only difference from v2: v2 scans `*.safetensors` in a directory, whereas here the files are the ones the caller takes from the manifest ([`crate::bundle::VerifiedFiles::require_extension_in`]).
 
 use anyhow::{Context, Result, bail};
 use mlx_rs::Array;
@@ -17,7 +14,7 @@ use std::path::PathBuf;
 
 use crate::backend::mlx::qwen3::WeightStore;
 
-/// 打开给定的 safetensors 分片，只留 `keep` 选中的张量，都不求值。
+/// Opens the given safetensors shards, keeping only the tensors selected by `keep`, and evaluates none of them.
 pub fn lazy(files: &[PathBuf], keep: impl Fn(&str) -> bool) -> Result<HashMap<String, Array>> {
     if files.is_empty() {
         bail!("没有 safetensors 文件");
@@ -34,12 +31,12 @@ pub fn lazy(files: &[PathBuf], keep: impl Fn(&str) -> bool) -> Result<HashMap<St
     Ok(map)
 }
 
-/// 常驻加载：逐张量求值（每个 command buffer 都短，避开 GPU 看门狗）。
+/// Resident load: evaluates tensor by tensor (each command buffer is kept short to avoid the GPU watchdog).
 pub fn resident(files: &[PathBuf], keep: impl Fn(&str) -> bool) -> Result<WeightStore> {
     into_resident(lazy(files, keep)?)
 }
 
-/// 把 [`lazy`] 打开的表逐张量求值后装进 `WeightStore`。
+/// Evaluates the table opened by [`lazy`] tensor by tensor, then packs it into a `WeightStore`.
 pub fn into_resident(map: HashMap<String, Array>) -> Result<WeightStore> {
     let mut keys: Vec<&String> = map.keys().collect();
     keys.sort();

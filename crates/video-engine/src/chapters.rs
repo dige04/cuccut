@@ -1,8 +1,8 @@
-//! 章节（视频格式规范 §3.13）：序列上 `kind: 'chapter'` 的标记。
+//! Chapters (video format spec §3.13): markers with `kind: 'chapter'` on the sequence.
 //!
-//! 章节固定在序列帧上，不跟着实例移动、裁剪或删除；一章从它的开始帧持续到下一章的开始帧，最后一章到序列结尾。
-//! 例外是剪口（§6.7）：应用与恢复剪口时章节跟着内容走（[`close_spans`]、[`open_gap`]）。
-//! 章节不受轨道与实例的锁定约束。
+//! Chapters are fixed to sequence frames; they do not move, trim or delete with instances. A chapter lasts from its start frame until the start frame of the next chapter; the last chapter lasts to the end of the sequence.
+//! The exception is cuts (§6.7): when cuts are applied and restored, chapters move with the content ([`close_spans`], [`open_gap`]).
+//! Chapters are not subject to track and instance locks.
 
 use std::collections::BTreeMap;
 
@@ -16,7 +16,7 @@ use crate::model::*;
 use crate::ops::{AssetTarget, EditContext, require_sequence, resolve_asset};
 use crate::state::{Placed, VideoState};
 
-/// 一个序列最多这么多章。
+/// A sequence may have at most this many chapters.
 pub const MAX_CHAPTERS: usize = 1000;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_SUMMARY_CHARS: usize = 2000;
@@ -24,7 +24,7 @@ const MAX_SUMMARY_CHARS: usize = 2000;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChapterInput {
-    /// 沿用已有章节的 ID；不给时新建。
+    /// Keeps the ID of an existing chapter; a new one is created when none is given.
     #[serde(default)]
     pub chapter_id: Option<Id>,
     pub at: TimelineTimeInput,
@@ -35,12 +35,12 @@ pub struct ChapterInput {
     pub thumbnail: Option<AssetTarget>,
 }
 
-/// 区分「没给」（`None`）与「给了 null」（`Some(None)`）。
+/// Distinguishes “not given” (`None`) from “given as null” (`Some(None)`).
 pub(crate) fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(d).map(Some)
 }
 
-/// 整个替换序列的章节（其他标记不动）。开始帧在量化之后须严格递增。
+/// Replaces the chapters of the whole sequence (other markers untouched). Start frames must be strictly increasing after quantization.
 pub(crate) fn set_chapters(
     state: &mut VideoState,
     sequence_id: &str,
@@ -120,7 +120,7 @@ pub(crate) struct UpsertChapter<'a> {
     pub thumbnail: Option<Option<&'a AssetTarget>>,
 }
 
-/// 新建或修改一章。新建要有 `at` 与 `title`；修改只改给出的字段，`summary`、`thumbnail` 给 null 去掉。
+/// Creates or modifies a chapter. Creating requires `at` and `title`; modifying changes only the fields given, and `summary` and `thumbnail` set to null remove them.
 pub(crate) fn upsert_chapter(state: &mut VideoState, input: UpsertChapter<'_>, ctx: &mut EditContext<'_>) -> EngineResult<()> {
     let (sequence_id, fps, seq_revision) = require_sequence(state, Some(input.sequence_id))?;
     let sequence_id = sequence_id.to_string();
@@ -244,7 +244,7 @@ fn clean_summary(summary: Option<&str>) -> EngineResult<Option<String>> {
     }
 }
 
-/// 缩略图：图片素材的当前版本。
+/// Thumbnail: the current version of an image asset.
 fn thumbnail(state: &VideoState, target: &AssetTarget, ctx: &EditContext<'_>) -> EngineResult<VersionRef> {
     let asset_id = resolve_asset(target, ctx)?;
     let asset = state.assets.get(&asset_id).ok_or_else(|| ErrorBody::not_found(kinds::asset(), &asset_id))?;
@@ -257,9 +257,7 @@ fn thumbnail(state: &VideoState, target: &AssetTarget, ctx: &EditContext<'_>) ->
     })
 }
 
-/// 应用剪口时序列上拿掉了几段帧（§6.7 重排）：章节跟着内容走——段后的章前移，落在段里的回到段首。几章落到同一帧时只留
-/// 原来起点最晚的那一章（它的内容还在，前面几章整章都剪掉了），其余删掉。`spans` 是拿掉之前的帧区间 `[f0, f1)`，按起点排好、
-/// 互不重叠。
+/// When cuts are applied, some frame spans are removed from the sequence (§6.7 reflow). Chapters move with the content: a chapter after a span moves forward, and one that falls inside a span returns to the start of the span. When several chapters land on the same frame, only the one that started latest is kept (its content survives, the earlier chapters have been cut entirely), and the others are deleted. `spans` are the removed frame ranges `[f0, f1)` before removal, sorted by start, non-overlapping.
 pub(crate) fn close_spans(state: &mut VideoState, sequence_id: &str, spans: &[(i64, i64)]) {
     let shifted = |frame: i64| {
         spans.iter().rev().fold(frame, |at, &(f0, f1)| {
@@ -292,8 +290,7 @@ pub(crate) fn close_spans(state: &mut VideoState, sequence_id: &str, spans: &[(i
     }
 }
 
-/// 恢复剪口时在序列的 `frame` 处放回 `count` 帧（§6.7 恢复的接缝）：这一帧之后的章节后移；正在这一帧上的不动——它可能是
-/// 剪掉开头的那一章，也可能是剪口之后被挪到接缝上的那一章，留在原地不会让序列开头没有章。
+/// When a cut is restored, `count` frames are put back at `frame` on the sequence (§6.7 restore seam): chapters after this frame move back; the one exactly on this frame stays put. It may be the chapter that was cut from the start, or the one that was moved onto the seam after the cut. Leaving it in place means the sequence start does not lose its chapter.
 pub(crate) fn open_gap(state: &mut VideoState, sequence_id: &str, frame: i64, count: i64) {
     for placed in state.markers.values_mut() {
         if placed.sequence_id == sequence_id && placed.value.is_chapter() && placed.value.frame > frame {

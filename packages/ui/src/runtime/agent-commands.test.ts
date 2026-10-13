@@ -13,7 +13,7 @@ import {
 } from './agent-commands.ts';
 import type { RuntimeSession } from './session.ts';
 
-/** `watchAgentSetup` 与镜像：假的会话，只有订阅与 `agents.list`。 */
+/** `watchAgentSetup` and its mirror: a fake session, with only subscription and `agents.list`. */
 
 function setupRun(patch: Partial<AgentSetupRun> = {}): AgentSetupRun {
   return {
@@ -48,7 +48,7 @@ function fakeSession() {
       request: async (method: string, params: { driverId?: string; kind?: string }) => {
         calls.push(method);
         if (method === 'agents.list') {
-          // 先挡住（只挡一次）列表，核对它回来之前终态不会进镜像，后到的事件也不抢先。
+          // Hold back the list first (only once), and check that before it returns, the terminal state does not enter the mirror, and that later events do not jump ahead.
           if (hold) {
             hold = false;
             await new Promise<void>((resolve) => (release = resolve));
@@ -86,7 +86,7 @@ describe('watchAgentSetup', () => {
     await flush();
     expect(useAgentSetup.getState()).toMatchObject({ ready: true });
     expect(useAgentSetup.getState().runs.map((r) => r.runId)).toEqual(['setup_1', 'old']);
-    // 之前跑完的不显示；这次订阅里见过运行中的显示。
+    // Runs that finished before are not shown; runs seen running in this subscription are shown.
     expect([...useAgentSetup.getState().shown]).toEqual(['setup_1']);
 
     fake.hold();

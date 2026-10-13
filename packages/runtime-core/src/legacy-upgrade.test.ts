@@ -22,8 +22,8 @@ afterEach(async () => {
 });
 const secret = 'sk-fixture-legacy-key-123456';
 /**
- * 旧版数据、新 Home 与模型目录。`decided`（缺省）预先记下「导入到 `imported`」，迁移机制的用例不必每次回答询问；
- * 询问本身的用例传 false。
+ * Legacy data, a new Home and the model catalog. `decided` (the default) records in advance “import to `imported`”, so migration-mechanism test cases need not answer the prompt each time.
+ * Prompt test cases pass false.
  */
 async function setup({ decided = true }: { decided?: boolean } = {}) {
   const root = path.join(dir, 'legacy');
@@ -509,7 +509,7 @@ it("keeps each imported video's last activity from the legacy project instead of
     await fs.utimes(path.join(dir, 'project.json'), at, at);
   }
   await fs.utimes(path.join(s.root, 'projects', 'old', 'doc.json'), longAgo, longAgo);
-  // 上次打开晚于项目文件的修改：取上次打开（v2 索引记 Unix 秒，v1 归档记 `modifiedAt`）；不在索引里的取项目文件的修改时间。
+  // Last opened is later than the project file's modification: use last-opened (v2 index records Unix seconds, v1 archive records `modifiedAt`). A project not in the index uses the project file's modification time.
   await writeJsonAtomic(path.join(s.root, 'projects.json'), { projects: [{ id: 'opened', path: opened, lastOpenedAt: 1780000000 }] });
   await writeJsonAtomic(path.join(s.root, 'archive', 'projects.json'), [{ id: 'old', modifiedAt: '2026-05-06T07:08:09Z' }]);
   const importProject = vi.fn(async (request: { target: string }) => {
@@ -615,7 +615,7 @@ describe('legacy project import prompt', () => {
     first.topic.subscribe(undefined, (sequenced) => events.push(sequenced.event));
     first.start(s.deps);
     const prompt = await prompted(first);
-    // 设置与云凭据不等回答；等回答不算后台任务（CLI 拉起的 Runtime 照常空闲退出）。
+    // An unanswered settings or cloud credentials prompt does not count. Waiting for an answer is not a background task (a CLI-launched Runtime still exits when idle).
     expect(await s.models.credential('openai')).toBe(secret);
     expect(first.active).toBe(false);
     expect(importProject).not.toHaveBeenCalled();
@@ -789,7 +789,7 @@ describe('legacy project import prompt', () => {
       await vi.waitFor(async () => expect((await readJson<any>(markerOf(s))).complete).toBe(true));
       expect((await readJson<any>(markerOf(s))).projectImport).toEqual({ decision: 'never' });
       expect(runtime.harness.listProjects()).toEqual([]);
-      // 重试与跳过同样只给桌面界面与 CLI；不导入时没有这次的导入，什么也不排。
+      // Retry and skip are also offered only to the desktop UI and the CLI. When not imported, there is no import this time, so nothing is queued.
       expect(await desktop.request('legacyImport.get', {})).toEqual({ prompt: null, run: null });
       expect(await desktop.request('legacyImport.retry', {})).toEqual({ queued: 0 });
       expect(await desktop.request('legacyImport.setSkipped', { paths: ['/old/project'], skipped: true })).toEqual({ changed: 0 });
@@ -806,7 +806,7 @@ describe('legacy project import prompt', () => {
 
 describe('legacy project import progress', () => {
   const markerOf = (s: { home: { root: string } }) => path.join(s.home.root, 'store', 'legacy-upgrade.json');
-  /** 旧版的 v2 项目：目录名就是标题。 */
+  /** Legacy v2 project: the directory name is the title. */
   const v2 = (s: { root: string }, name: string) => writeJsonAtomic(path.join(s.root, 'projects', name, 'project.json'), { title: name });
   const byTitle = (upgrade: LegacyUpgrade) => Object.fromEntries(upgrade.run()!.items.map((item) => [item.title, item]));
   const report = (request: { target: string }, body: object) => writeJsonAtomic(path.join(request.target, 'import-report.json'), body);
@@ -850,7 +850,7 @@ describe('legacy project import progress', () => {
     upgrade.start(s.deps);
     await finish(upgrade);
 
-    // 每个项目开始导入、有了结果都报一次；最后一次是跑完。
+    // Each project reports once when its import starts and once when it has a result. The last report is when the run finishes.
     expect(runs[0]!.items.every((item) => item.state === 'queued')).toBe(true);
     expect(runs.some((run) => run.items.some((item) => item.title === 'ok' && item.state === 'importing'))).toBe(true);
     expect(runs.at(-1)!.state).toBe('finished');
@@ -869,7 +869,7 @@ describe('legacy project import progress', () => {
     expect(items.broken!.problem).toEqual({ kind: 'unreadable' });
     const failedTarget = importProject.mock.calls.find(([request]) => path.basename(request.source) === 'failed')![0].target;
     expect(items.failed!.problem).toEqual({ kind: 'failed', report: path.join(failedTarget, 'import-report.json') });
-    // 没导入的记成待办，下次启动再试；这个来源还没完成。
+    // Projects not imported are recorded as pending and retried at the next startup. This source is not yet complete.
     const marker = await readJson<any>(markerOf(s));
     expect(marker.sources[s.root].pending.filter((todo: string) => todo.startsWith('project:'))).toHaveLength(4);
     expect(marker.sources[s.root].complete).toBeUndefined();
@@ -895,7 +895,7 @@ describe('legacy project import progress', () => {
     const { moved, broken } = byTitle(upgrade);
     expect([moved!.state, broken!.state]).toEqual(['not-imported', 'not-imported']);
 
-    // 文件还没放回：重试还是没导入，原因不变。点名的路径之外不动。
+    // Files still not put back: retry still does not import, and the reason is unchanged. Nothing outside the named paths is touched.
     expect(await upgrade.retry([moved!.path])).toBe(1);
     expect(byTitle(upgrade).moved!.state).not.toBe('not-imported');
     expect(byTitle(upgrade).broken!.state).toBe('not-imported');
@@ -904,7 +904,7 @@ describe('legacy project import progress', () => {
     expect(byTitle(upgrade).moved!.problem).toEqual({ kind: 'missing', missing: [media], missingCount: 1 });
     expect(upgrade.run()!.state).toBe('finished');
 
-    // 放回之后重试：导入了，待办里没有它了。
+    // After the files are put back and a retry runs: imported, and it is no longer pending.
     await fs.writeFile(media, 'restored');
     expect(await upgrade.retry()).toBe(2);
     await finish(upgrade);
@@ -912,7 +912,7 @@ describe('legacy project import progress', () => {
     expect(byTitle(upgrade).broken!.state).toBe('not-imported');
     expect(await upgrade.retry([moved!.path])).toBe(0);
 
-    // 跳过读不出来的：记下，不再是待办，来源算完成。
+    // Unreadable items that were skipped are recorded, are no longer pending, and their source counts as complete.
     expect(await upgrade.setSkipped([broken!.path], true)).toBe(1);
     expect(byTitle(upgrade).broken).toMatchObject({ state: 'skipped', problem: { kind: 'unreadable' } });
     let marker = await readJson<any>(markerOf(s));
@@ -920,7 +920,7 @@ describe('legacy project import progress', () => {
     expect(marker.sources[s.root].pending).toEqual([]);
     expect(marker.complete).toBe(true);
 
-    // 撤销跳过：放回原来的原因，又是待办，不自动重新导入。
+    // Undo the skip: restore the reason from before the skip. It is pending again, and is not imported automatically.
     const calls = importProject.mock.calls.length;
     expect(await upgrade.setSkipped([broken!.path], false)).toBe(1);
     expect(byTitle(upgrade).broken).toMatchObject({ state: 'not-imported', problem: { kind: 'unreadable' } });
@@ -929,7 +929,7 @@ describe('legacy project import progress', () => {
     expect(marker.sources[s.root].skipped).toBeUndefined();
     expect(marker.complete).toBeUndefined();
 
-    // 再跳过，下次启动不再导入它，也没有要导入的。
+    // Skipped again: the next startup does not import it, and nothing is queued for import.
     await upgrade.setSkipped([broken!.path], true);
     await upgrade.stop();
     const again = new LegacyUpgrade(options);
@@ -959,7 +959,7 @@ describe('legacy project import progress', () => {
     await finish(upgrade);
     expect(byTitle(upgrade).skipped).toEqual(expect.objectContaining({ state: 'skipped', problem: null }));
     expect(importProject.mock.calls.map(([request]) => path.basename(request.source)).sort()).toEqual(['later', 'old']);
-    // 更早跳过的没有原因：撤销跳过就重新导入。
+    // Items skipped earlier have no recorded reason, so undoing the skip re-imports them.
     expect(await upgrade.setSkipped([skippedPath], false)).toBe(1);
     await finish(upgrade);
     expect(byTitle(upgrade).skipped!.state).toBe('imported');

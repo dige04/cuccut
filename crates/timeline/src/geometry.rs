@@ -1,32 +1,31 @@
-//! 元素几何的**单一来源**（ADR-E01）。
+//! The **single source** of element geometry (ADR-E01).
 //!
-//! 这些数字以前在三个地方各写一遍：`apps/mac/.../StageElementHost.swift:144`
-//! 的 `width*0.28` / `width*0.62`、`apps/gpui/src/adapters/stage_pose.rs:231-245`
-//! 的同一套分支，以及 `skills/cuccut/templates/studio` 的 `element-geometry.js`。
-//! 高度公式是**契约的一部分**——舞台上的选中框、命中框与导出像素必须画在同一个
-//! 盒子里——所以它只能有一个来源，客户端从这里读。
+//! These numbers used to be written out in three places: `width*0.28` / `width*0.62` at `apps/mac/.../StageElementHost.swift:144`,
+//! the same set of branches at `apps/gpui/src/adapters/stage_pose.rs:231-245`, and `element-geometry.js` in `skills/cuccut/templates/studio`.
+//! The height formula is **part of the contract**: the selection frame, hit box on stage and exported pixels must be drawn in the same
+//! box, so it can have only one source, and clients read it from here.
 //!
-//! 坐标语义沿用 `Place`：`x`/`y` 是画布百分比中心点，`w` 是画幅宽百分比，
-//! 不引入第二套单位。**唯一的例外**是 `aspect == Square` 的声波与进度条：
-//! 它们的 `w%` 量的是画幅**短边**（[`width_basis`]）——见那个函数的说明。
+//! Coordinate semantics follow `Place`: `x`/`y` are the centre point as a canvas percentage, `w` is the frame-width percentage, and
+//! no second unit system is introduced. **The only exception** is the sound wave and progress bar of `aspect == Square`:
+//! their `w%` measures the frame's **short edge** ([`width_basis`]) — see the explanation on that function.
 
 use crate::schema::{ElementKind, Place, ShapeProps, StickerProps, Tile};
 
-/// 元素宽度百分比缺省（Mac `el.w ?? 20`）。
+/// Default element width percentage (Mac `el.w ?? 20`).
 pub const DEFAULT_ELEMENT_W: f64 = 20.0;
-/// 元素中心百分比缺省。
+/// Default element centre percentage.
 pub const DEFAULT_ELEMENT_X: f64 = 50.0;
 pub const DEFAULT_ELEMENT_Y: f64 = 50.0;
 
-/// `template == "box"` 贴纸的高宽比（原 `stage_pose.rs:240-243` 的 `width*0.62`）。
+/// Height/width ratio of a sticker with `template == "box"` (the `width*0.62` of the original `stage_pose.rs:240-243`).
 pub const STICKER_BOX_HEIGHT_RATIO: f64 = 0.62;
-/// 贴纸模板 id：唯一一个不按正方处理的模板。
+/// Sticker template id: the only template not treated as square.
 pub const STICKER_BOX_TEMPLATE: &str = "box";
 
-/// 平铺媒体/文字的确定性 stamp 中心点。
+/// Deterministic stamp centre points for tiled media/text.
 ///
-/// 点位以画布中心为原点；调用方再统一应用元素缩放、旋转与动画位移。CPU strict、
-/// Web GPU 与 native compositor 必须共用这份网格，不能各自根据可见区裁一套点。
+/// Points are measured with the canvas centre as origin; the caller then applies element scale, rotation and animation displacement uniformly. The CPU strict path,
+/// Web GPU and the native compositor must share this grid, and must not each cut their own set of points based on the visible area.
 pub fn tile_stamp_points(
     frame_width: u32,
     frame_height: u32,
@@ -60,59 +59,58 @@ pub fn tile_stamp_points(
     points
 }
 
-/// visualizer 横条类默认几何（`1.0 × 0.2`，贴底）。
+/// Default geometry for the visualizer horizontal-bar class (`1.0 × 0.2`, pinned to the bottom).
 pub const VISUALIZER_BAR_W: f64 = 100.0;
 pub const VISUALIZER_BAR_H: f64 = 20.0;
 pub const VISUALIZER_BAR_Y: f64 = 85.0;
-/// visualizer 圆形类（`ring_bars` / `ring_wave` / `pulse_rings`）**强制**正方，UI 锁比例。
+/// The visualizer circular class (`ring_bars` / `ring_wave` / `pulse_rings`) is **forced** to square, and the UI locks the ratio.
 ///
-/// 这个百分比量的是**画幅短边**而不是画幅宽——见 [`width_basis`]。
+/// This percentage measures the **frame's short edge**, not the frame's width — see [`width_basis`].
 pub const VISUALIZER_SQUARE_W: f64 = 30.0;
 
-/// progress 横条类（`normal` / `rounded`）默认几何。
+/// Default geometry for the progress horizontal-bar class (`normal` / `rounded`).
 pub const PROGRESS_BAR_W: f64 = 80.0;
 pub const PROGRESS_BAR_H: f64 = 5.0;
-/// progress 圆形类（`circle` / `donut` / `snake*`）。量的也是**画幅短边**
-/// （[`width_basis`]）。
+/// The progress circular class (`circle` / `donut` / `snake*`). It also measures the **frame's short edge**
+/// ([`width_basis`]).
 pub const PROGRESS_SQUARE_W: f64 = 30.0;
-/// progress `*border` 类：跟随画布比铺满边框。
+/// The progress `*border` class: fills the frame, following the canvas ratio.
 pub const PROGRESS_FRAME_W: f64 = 100.0;
 pub const PROGRESS_FRAME_H: f64 = 100.0;
 
-/// 目录型配方声明的纵横比（配方字段 `aspect`，ADR-E05 / §7.2）。
+/// The aspect ratio declared by a catalog-type recipe (recipe field `aspect`, ADR-E05 / §7.2).
 ///
-/// P0 只登记了 shape 目录，visualizer / progress 的配方在 P2 才进注册表；
-/// 在那之前调用方给 `None`，本模块按各自的横条类默认兜底。
+/// P0 registered only the shape catalog; the visualizer / progress recipes enter the registry in P2.
+/// Until then, callers pass `None`, and this module falls back to each class's horizontal-bar default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementAspect {
-    /// 自由比例（visualizer 横条类）。
+    /// Free ratio (visualizer horizontal-bar class).
     Free,
-    /// 强制正方（visualizer / progress 的圆形类）。
+    /// Forced square (visualizer / progress circular class).
     Square,
-    /// 细横条（progress 的 `normal` / `rounded`）。
+    /// Thin bar (progress `normal` / `rounded`).
     Bar,
-    /// 铺满边框（progress 的 `*border`）。
+    /// Fills the frame border (progress `*border`).
     Frame,
 }
 
-/// 一种 kind + aspect 组合的默认落位（帧百分比）。
+/// Default placement for a kind + aspect combination (frame percentages).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaceDefaults {
-    /// 宽度（画幅宽 %）。
+    /// Width (percentage of frame width).
     pub w: f64,
-    /// 高度（画幅高 %）；`None` = 正方形（像素上取宽度）。
+    /// Height (percentage of frame height); `None` = square (in pixels, take the width).
     pub h: Option<f64>,
-    /// 中心 y（画幅高 %）。
+    /// Centre y (percentage of frame height).
     pub y: f64,
 }
 
-/// ADR-E01 的默认几何表。新建元素用它填 `Place`，属性面板用它做"恢复默认"。
+/// The default geometry table of ADR-E01. New elements are filled with it to produce a `Place`, and the property panel uses it for "restore default".
 pub fn default_place(kind: ElementKind, aspect: Option<ElementAspect>) -> PlaceDefaults {
     match kind {
         ElementKind::Visualizer => match aspect.unwrap_or(ElementAspect::Free) {
-            // `h: None` = 像素正方（高取宽度）。**不是** `Some(30)`：那样在
-            // 16:9 上是 576×324 的横盒，而配方是内切正方形画的，选中框与画出来
-            // 的东西差了一圈（第 213 轮）。
+            // `h: None` = pixel square (height takes the width). **Not** `Some(30)`: on a
+            // 16:9 frame that would be a 576×324 landscape box, while the recipe draws an inscribed square, so the selection frame and the drawn output would differ by a ring (round 213).
             ElementAspect::Square => PlaceDefaults {
                 w: VISUALIZER_SQUARE_W,
                 h: None,
@@ -146,8 +144,8 @@ pub fn default_place(kind: ElementKind, aspect: Option<ElementAspect>) -> PlaceD
             h: Some(100.0),
             y: DEFAULT_ELEMENT_Y,
         },
-        // confetti 铺满画幅（aspect `frame`）：粒子在盒内生成并被盒裁切，
-        // 缩小 place 就是「一柱纸屑」（设计稿 §3.1）。
+        // Confetti fills the frame (aspect `frame`): particles are generated inside the box and clipped by it;
+        // shrinking the place gives "a column of confetti" (design draft §3.1).
         ElementKind::Confetti => PlaceDefaults {
             w: PROGRESS_FRAME_W,
             h: Some(PROGRESS_FRAME_H),
@@ -166,29 +164,28 @@ pub fn default_place(kind: ElementKind, aspect: Option<ElementAspect>) -> PlaceD
     }
 }
 
-/// 一个元素的几何输入：`kind` + **该 kind 对应的那一组** props，其余为 `None`
-/// （互斥规则见 `schema.rs` 的 `element-props-mismatch`）。
+/// Geometry input for one element: `kind` + **the one group of props for that kind**, the rest `None`
+/// (the mutual-exclusion rule is in `element-props-mismatch` in `schema.rs`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ElementGeometry<'a> {
     pub shape: Option<&'a ShapeProps>,
     pub sticker: Option<&'a StickerProps>,
-    /// visualizer / progress 的纵横比，来自目录型配方的 `aspect` 字段。
+    /// Aspect ratio of a visualizer / progress, from the `aspect` field of a catalog-type recipe.
     pub aspect: Option<ElementAspect>,
 }
 
-/// 元素盒宽度（像素）：`basis * w% * scale`。
+/// Element box width (pixels): `basis * w% * scale`.
 ///
-/// `basis` 常规就是画幅宽；正方款要传 [`width_basis`] 给的短边。
+/// `basis` is normally the frame width; the square variant must pass the short edge given by [`width_basis`].
 pub fn element_width(place: Option<&Place>, frame_w: f64, scale: f64) -> f64 {
     let percent = place.and_then(|place| place.w).unwrap_or(DEFAULT_ELEMENT_W);
     frame_w * percent / 100.0 * scale
 }
 
-/// 这一款是不是**像素正方**（盒子的高恒等于宽）。
+/// Whether this variant is a **pixel square** (the box height equals its width).
 ///
-/// 判据就是 [`default_place`] 那张表里的 `h == None`——不另立一张表，否则
-/// 两处迟早说两套话。shape / sticker 的正方走各自的分支，这里只认按 `aspect`
-/// 定高的那三类。
+/// The criterion is `h == None` in the [`default_place`] table — no separate table is set up, otherwise
+/// the two would eventually tell two different stories. Shape / sticker squares go through their own branches; this only recognises the three classes whose height is set by `aspect`.
 pub fn is_pixel_square(kind: ElementKind, geometry: &ElementGeometry<'_>) -> bool {
     matches!(
         kind,
@@ -199,16 +196,13 @@ pub fn is_pixel_square(kind: ElementKind, geometry: &ElementGeometry<'_>) -> boo
     ) && default_place(kind, geometry.aspect).h.is_none()
 }
 
-/// `place.w` 这个百分比量的是哪条边（像素）。
+/// Which edge (in pixels) the percentage `place.w` measures.
 ///
-/// 常规是画幅宽。**正方款量的是短边**：若尺寸存成 `{width, height}` 两个画布分数，
-/// 正方款的 `{0.3, 0.3}` 要把长边那一维按画布比压回去，落在 16:9 上就是
-/// `{0.16875, 0.3}`——也就是「短边的 30%」。
+/// Normally the frame width. **Square variants measure the short edge**: if the size is stored as two canvas fractions `{width, height}`, the long-edge dimension of a square
+/// `{0.3, 0.3}` must be scaled back by the canvas ratio, which on 16:9 gives `{0.16875, 0.3}` — that is, "30% of the short edge".
 ///
-/// CucCut 的 `place` 只有 `w` 一个尺寸字段（裁决 D2 不加 `h`），所以这一次换算
-/// 不能落在**建元素**那一刻（那样要把画布比一路穿进 `new_element` 与 wasm 接口，
-/// 还会在换画布比之后把正方拉扁）；把它放在读几何这一层，正方就永远是正方，
-/// 换分辨率也不歪。
+/// CucCut's `place` has only one size field, `w` (decision D2 does not add `h`), so this conversion cannot happen at **element creation** (that would require passing the canvas ratio all the way through `new_element` and the wasm interface,
+/// and would also stretch the square flat after the canvas ratio changes). It is placed at the geometry-reading layer instead, so a square is always a square and does not skew when the resolution changes.
 pub fn width_basis(kind: ElementKind, geometry: &ElementGeometry<'_>, frame: (f64, f64)) -> f64 {
     if is_pixel_square(kind, geometry) {
         frame.0.min(frame.1)
@@ -217,15 +211,15 @@ pub fn width_basis(kind: ElementKind, geometry: &ElementGeometry<'_>, frame: (f6
     }
 }
 
-/// 元素盒高度（像素）。**唯一实现**，三端从这里读（ADR-E01 表）。
+/// Element box height (pixels). **The only implementation**; all three ends read from here (ADR-E01 table).
 ///
-/// - Shape：`h` 显式给出用 `frame_h * h/100 * scale`；缺省为正方形（= 像素宽度）。
-/// - Sticker：`template == "box"` 用 `width * 0.62`；其余正方。
-///   历史上的 `type == "waveform"`（`width * 0.28`）**已废弃**——波形迁出为
-///   独立的 [`ElementKind::Visualizer`]，高度改由配方 `aspect` 决定（§5.4）。
-/// - Visualizer / Progress：没有显式 `h` 字段，高度来自 `aspect` 的默认表，
-///   与 shape 的 `h` 同单位（画幅高 %）。
-/// - 其余 kind：正方（沿用 Mac `elementHeight` 的兜底分支）。
+/// - Shape: when `h` is given explicitly, use `frame_h * h/100 * scale`; by default it is square (= pixel width).
+/// - Sticker: `template == "box"` uses `width * 0.62`; otherwise square.
+///   The historical `type == "waveform"` (`width * 0.28`) is **deprecated**: the waveform has been moved out to a
+///   standalone [`ElementKind::Visualizer`], and its height is now decided by the recipe's `aspect` (§5.4).
+/// - Visualizer / Progress: there is no explicit `h` field; the height comes from the `aspect` default table,
+///   in the same unit as the shape's `h` (percentage of frame height).
+/// - Other kinds: square (following the fallback branch of Mac `elementHeight`).
 pub fn element_height(
     kind: ElementKind,
     geometry: &ElementGeometry<'_>,
@@ -260,15 +254,12 @@ pub fn element_height(
     }
 }
 
-/// 元素的静态盒 `(x, y, w, h)`，左上原点、像素单位——舞台选中框、命中框与
-/// 导出几何共用同一个函数，避免"环画在一处、像素画在另一处"。
+/// The static box `(x, y, w, h)` of an element, with the top-left origin in pixel units. The stage selection frame, hit box and
+/// export geometry all share this one function, to avoid "the ring drawn in one place, the pixels in another".
 ///
-/// `place.scale_y` 是**纵向倍率**（第 122 轮裁决 D2）：没有 `place.h` 这个字段，
-/// 四边缩放拉出来的高度一律落在这里，公式是 `h = w% × aspect × scaleY`——
-/// `aspect` 那一段就是上面 [`element_height`] 给的「自然高」（已含 `scale`），
-/// `scale_y` 再乘一次。缺席 = 1（不是回落到 `scale`：那样 `scaleY = 1` 会在
-/// `scale ≠ 1` 时把元素压扁，而写回路径 `stage_drag::place_resize` 正是把
-/// 「原样不动」算成 1 的）。
+/// `place.scale_y` is the **vertical scale factor** (round 122 decision D2): there is no `place.h` field, and the height produced by four-edge scaling is always set here, with the formula `h = w% × aspect × scaleY` —
+/// the `aspect` part is the "natural height" given by [`element_height`] above (already including `scale`), and `scale_y` multiplies once more.
+/// When absent = 1 (not a fallback to `scale`: that would squash the element when `scale ≠ 1` if `scaleY = 1`, while the write-back path `stage_drag::place_resize` treats "left unchanged" as 1).
 pub fn static_box(
     kind: ElementKind,
     geometry: &ElementGeometry<'_>,
@@ -296,10 +287,10 @@ pub fn static_box(
     )
 }
 
-/// 图片 / 视频 / 占位 / 素材贴纸的媒体盒缺省宽度（画幅宽 %；贴纸与占位走各自的表）。
+/// Default media box width for image / video / placeholder / asset sticker (percentage of frame width; stickers and placeholders use their own tables).
 pub const MEDIA_DEFAULT_W: f64 = 34.0;
 
-/// 媒体盒没写 `place.w` 时的宽（画幅宽 %）：素材贴纸同正方款，占位框按它的缺省落位，其余是 [`MEDIA_DEFAULT_W`]。
+/// Width (frame width %) used when a media box has no `place.w`: asset stickers follow the same square variant, placeholders take their default placement from their own default, and everything else is [`MEDIA_DEFAULT_W`].
 pub fn media_default_w(kind: ElementKind) -> f64 {
     match kind {
         ElementKind::Sticker => DEFAULT_ELEMENT_W,
@@ -308,12 +299,11 @@ pub fn media_default_w(kind: ElementKind) -> f64 {
     }
 }
 
-/// 外部媒体元素（image / video / placeholder / asset sticker）在画布上的盒：
-/// `(宽, 高, 中心 x, 中心 y)`，像素，未含 `scale` / 旋转 / 动画。**唯一实现**：
-/// GPU 纹理场景（`ccut-timeline-render::media`）与关键帧露底判定都从这里取。
+/// The box of an external media element (image / video / placeholder / asset sticker) on the canvas:
+/// `(width, height, centre x, centre y)`, in pixels, not including `scale` / rotation / animation. **The only implementation**: the GPU texture scene (`ccut-timeline-render::media`) and the keyframe letterbox check both take it from here.
 ///
-/// `fullscreen` = 铺满模式且没有平铺：盒就是整张画布，`place.x/y/w` 不参与。
-/// `natural` 是媒体的像素尺寸（宽高比决定 pip 盒的高）。
+/// `fullscreen` = fill mode and no tiling: the box is the whole canvas, and `place.x/y/w` do not participate.
+/// `natural` is the media's pixel size (the aspect ratio determines the height of the pip box).
 pub fn media_box(
     kind: ElementKind,
     fullscreen: bool,
@@ -344,8 +334,8 @@ pub fn media_box(
     )
 }
 
-/// 一个经 `scale` / `scaleY` / `rot` 变换后的媒体盒，最多差多少像素才盖满画布：
-/// 画布四角落在盒外的最远距离（盒的局部坐标里量），`0` = 盖满。
+/// For a media box transformed by `scale` / `scaleY` / `rot`: the maximum number of pixels by which it fails to cover the canvas,
+/// i.e. the farthest distance from the canvas corners outside the box (measured in the box's local coordinates); `0` = fully covered.
 pub fn media_box_uncovered_gap(
     place: &Place,
     media_box: (f64, f64, f64, f64),
@@ -366,7 +356,7 @@ pub fn media_box_uncovered_gap(
     ] {
         let dx = corner_x - center_x;
         let dy = corner_y - center_y;
-        // 逆旋转到盒的局部坐标。
+        // Inverse-rotate into the box's local coordinates.
         let local_x = dx * cos + dy * sin;
         let local_y = -dx * sin + dy * cos;
         gap = gap.max(local_x.abs() - half_w).max(local_y.abs() - half_h);
@@ -374,9 +364,9 @@ pub fn media_box_uncovered_gap(
     gap.max(0.0)
 }
 
-/// `progress = clamp((t - start) / (end - start), 0, 1)`（ADR-E04）。
+/// `progress = clamp((t - start) / (end - start), 0, 1)` (ADR-E04).
 ///
-/// progress 元素**不需要** `VisualSource`：它的内容完全由播放头推导，是纯函数。
+/// A progress element **does not need** a `VisualSource`: its content is derived entirely from the playhead, making it a pure function.
 pub fn progress_at(time: f64, start: f64, end: f64) -> f64 {
     if !(end > start) {
         return 0.0;
@@ -396,7 +386,7 @@ mod tests {
         }
     }
 
-    /// ADR-E01 的高度表逐行对照。改这张表就是改契约。
+    /// Line-by-line reference for the ADR-E01 height table. Changing this table means changing the contract.
     #[test]
     fn the_height_table_is_the_single_source_of_truth() {
         let frame_h = 1080.0;
@@ -459,7 +449,7 @@ mod tests {
                 1.0,
                 1080.0 * 0.20,
             ),
-            // 正方款：高恒等于**已经按短边算出来的**宽度，不再乘画幅高。
+            // Square variant: the height is **exactly the width already computed from the short edge**; the frame height is no longer multiplied.
             (
                 ElementKind::Visualizer,
                 ElementGeometry {
@@ -514,7 +504,7 @@ mod tests {
         }
     }
 
-    /// 收编前 gpui 与 Mac 各写一遍的公式：宽度用 `w ?? 20`，`scale` 同时进宽高。
+    /// The formula that the gpui and Mac versions each wrote before consolidation: width uses `w ?? 20`, and `scale` applies to both width and height.
     #[test]
     fn the_static_box_matches_the_two_client_formulas() {
         let frame = (1920.0, 1080.0);
@@ -535,7 +525,7 @@ mod tests {
         assert_eq!(h, w);
     }
 
-    /// 第 122 轮 D2：`place.scaleY` 只改高、不改宽，且是**乘在自然高上**的倍率。
+    /// Round 122 D2: `place.scaleY` changes only the height, not the width, and it is a multiplier **applied to the natural height**.
     #[test]
     fn scale_y_stretches_the_static_box_vertically_only() {
         let frame = (1920.0, 1080.0);
@@ -551,14 +541,14 @@ mod tests {
             ..Place::default()
         };
         let (_, y, w, h) = static_box(ElementKind::Shape, &geometry, Some(&stretched), frame);
-        // 宽不动：`scaleY` 不参与宽度那一路。
+        // Width unchanged: `scaleY` does not participate in the width path.
         assert_eq!(w, 1920.0 * 0.5 * 2.0);
-        // 高 = 自然高（正方 = 像素宽，已含 scale）× scaleY。
+        // Height = natural height (square = pixel width, already including scale) × scaleY.
         assert_eq!(h, w * 1.6);
-        // 中心不动，盒子从中心往两边长。
+        // The centre stays put; the box grows out to both sides from the centre.
         assert_eq!(y, 1080.0 / 2.0 - h / 2.0);
 
-        // 缺席 = 1，不是回落到 `scale`。
+        // Absent = 1, not a fallback to `scale`.
         let plain = Place {
             w: Some(50.0),
             scale: Some(2.0),
@@ -568,7 +558,7 @@ mod tests {
         assert_eq!(plain_h, w);
     }
 
-    /// visualizer 横条贴底：缺省 y 走配方默认表，不是画面正中。
+    /// The visualizer horizontal bar is pinned to the bottom: the default y comes from the recipe's default table, not the vertical centre of the frame.
     #[test]
     fn the_visualizer_bar_defaults_to_the_bottom_of_the_frame() {
         let defaults = default_place(ElementKind::Visualizer, None);
@@ -586,8 +576,7 @@ mod tests {
         assert_eq!(y, 1080.0 * 0.85 - h / 2.0);
     }
 
-    /// 第 213 轮：正方款的盒子必须**是一只像素正方**，而且它的边长
-    /// 量在画幅短边上——横画幅、竖画幅各量一次，出来的边长一样。
+    /// Round 213: the box of a square variant must **be a pixel square**, and its side length is measured on the frame's short edge — measured once for a landscape frame and once for a portrait frame, the resulting side length is the same.
     #[test]
     fn the_square_aspect_box_is_a_true_pixel_square_on_the_short_side() {
         let geometry = ElementGeometry {
@@ -597,12 +586,12 @@ mod tests {
         for frame in [(1920.0, 1080.0), (1080.0, 1920.0), (1080.0, 1080.0)] {
             let (x, y, w, h) = static_box(ElementKind::Visualizer, &geometry, None, frame);
             assert_eq!(w, h, "{frame:?} 不是正方");
-            // 正方款默认边长 = 短边的 30%。
+            // Default side length of the square variant = 30% of the short edge.
             assert_eq!(w, frame.0.min(frame.1) * 0.30, "{frame:?} 边长");
             assert_eq!(x, frame.0 / 2.0 - w / 2.0);
             assert_eq!(y, frame.1 / 2.0 - h / 2.0);
         }
-        // 横条款不吃这条：仍然量画幅宽。
+        // The horizontal-bar variant does not follow this: it still measures the frame width.
         let (_, _, w, h) = static_box(
             ElementKind::Visualizer,
             &ElementGeometry::default(),

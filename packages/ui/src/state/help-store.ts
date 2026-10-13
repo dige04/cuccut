@@ -1,17 +1,17 @@
 import { create } from 'zustand';
 
 /**
- * 帮助中心的开合（原型 shell.jsx:210-231）：只活在外壳里，标题栏问号、F1 与设置左栏的「帮助」都经这里打开。
- * 打开前的焦点记在 `origin`：S2 弹层关闭时自己会把焦点还回去，这里只在它没还成时兜底（见 help-center）。
+ * Opening and closing the help center (prototype shell.jsx:210-231). It lives only in the shell. The title-bar question mark, F1, and "Help" in the settings left column all open it through here.
+ * The focus before opening is recorded in `origin`. When an S2 popover closes, it returns focus by itself, so here it is only a fallback for when that did not happen (see help-center).
  *
- * 原型打开时还会暂停编辑器的播放、收起编辑器的弹层。这里没做暂停：编辑器的 pause 只在 VideoEditor 的
- * EditorContext 里，外壳拿不到（editor-store 的 `playing` 只是显示用，改它不会停预览引擎）。帮助开着时
- * 编辑器的按键已被 `[role="dialog"]` 挡住，只是画面会继续播。编辑器的弹层都是对话框或菜单，开着时 F1 不响应、
- * 标题栏按钮也点不到，不用另收。
+ * The prototype also pauses the editor's playback and collapses the editor's popovers when opened. Pausing is not done here: the editor's pause exists only in VideoEditor's
+ * EditorContext, which the shell cannot reach (`playing` in editor-store is display-only, and changing it does not stop the preview engine). While help is open,
+ * the editor's keys are already blocked by `[role="dialog"]`, but the picture keeps playing. The editor's popovers are all dialogs or menus. While they are open, F1 does not respond and
+ * the title-bar button cannot be clicked, so no separate handling is needed.
  */
 export interface HelpStore {
   isOpen: boolean;
-  /** 第几次打开：每次打开都从快速上手重新开始（原型关闭时整个卸掉），帮助中心按它换 key。 */
+  /** Which opening this is. Each opening starts again from the quick start (the prototype unmounts it on close), and the help center changes its key with it. */
   session: number;
   origin: HTMLElement | null;
   open(origin?: Element | null): void;

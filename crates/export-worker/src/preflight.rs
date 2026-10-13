@@ -1,6 +1,6 @@
-//! 预检（架构设计 §9.13）：范围里画不出来的东西逐项列出，素材能不能解出画面，编码走原生还是 ffmpeg、走 ffmpeg 时
-//! 本机 ffmpeg 有没有要用的编码器。素材探测仍然经 ffprobe。
-//! 导出启动时跑一次（不过就不创建任务），执行时再跑一次（拿到每个素材的画面尺寸，并确认冻结之后没有变）。
+//! Preflight (architecture design §9.13): lists item by item what cannot be drawn in the range, whether assets can decode a picture, and whether encoding goes native or ffmpeg. When ffmpeg is used, it checks whether the local ffmpeg has the encoders needed.
+//! Asset probing still goes through ffprobe.
+//! Runs once at export start (if it fails, no task is created), and again at execution (to get each asset's picture size and to confirm nothing changed after freezing).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,18 +24,18 @@ pub struct Warning {
     pub detail: String,
 }
 
-/// 解得出画面的素材：位置与显示尺寸。`svg` 的图片由帧光栅自己按 `width`×`height` 光栅（不经 ffmpeg）。
+/// Assets whose picture can be decoded: position and display size. For `svg` images, the frame raster rasterizes them itself at `width`×`height` (not via ffmpeg).
 #[derive(Clone, Debug)]
 pub struct AssetPicture {
     pub path: std::path::PathBuf,
     pub width: u32,
     pub height: u32,
     pub svg: bool,
-    /// 解出来的画面可能带透明（[`media_core::probe::PictureInfo::alpha`]）；不带时视频帧不用逐像素预乘。
+    /// A decoded picture may carry transparency ([`media_core::probe::PictureInfo::alpha`]); when it does not, video frames are not premultiplied per pixel.
     pub alpha: bool,
 }
 
-/// SVG 图片光栅的长边：画面（输出里按画布画的那一块）的长边（画中画放大到整屏时也不糊）。
+/// SVG image rasterization long side: the long side of the picture (the block drawn to the canvas within the output), so that a picture-in-picture enlarged to full screen is not blurry.
 pub fn svg_long_edge(input: &Input) -> u32 {
     let picture = input.output.picture();
     picture.width.max(picture.height)
@@ -45,16 +45,16 @@ pub struct Preflight {
     pub frames: u64,
     pub items: Vec<UnsupportedItem>,
     pub warnings: Vec<Warning>,
-    /// 要用的编码器里本机 ffmpeg 缺的那些（走原生写入器时为空）。
+    /// Encoders needed that the local ffmpeg lacks (empty when using the native writer).
     pub missing_encoders: Vec<String>,
-    /// 改走 ffmpeg 时缺的编码器（原生打不开、回落时用来报 `EXPORT_TOOL_MISSING`）。
+    /// Encoders missing when switching to ffmpeg (used to report `EXPORT_TOOL_MISSING` when native fails to open and falls back).
     pub ffmpeg_missing: Vec<String>,
-    /// 编码走原生还是 ffmpeg（[`native::choose_encoder`]）。
+    /// Whether encoding goes native or ffmpeg ([`native::choose_encoder`]).
     pub encoder: EncoderPlan,
     pub pictures: HashMap<(String, String), AssetPicture>,
 }
 
-/// 一个素材版本的探测结果：解得出画面，或画不出来的原因与说明。
+/// Probe result for one asset version: a picture can be decoded, or the reason and description why it cannot be drawn.
 type Probed = Result<AssetPicture, (&'static str, String)>;
 
 pub fn documents(input: &Input) -> Documents {
@@ -113,7 +113,7 @@ pub fn run(input: &Input, tools: &Tools) -> Result<Preflight, Failure> {
                     Err(e) => Err(("asset-undecodable", format!("SVG 图片解不开：{e}"))),
                 };
             }
-            // GIF 由帧光栅从素材字节解（动图按时刻取帧），这里用同一个函数判断解不解得开。
+            // GIF is decoded by the frame raster from the asset bytes (animated images take frames by time). Here the same function is used to judge whether it can be decoded.
             if media_type.eq_ignore_ascii_case(frame_render::GIF_MEDIA_TYPE) {
                 let gif = std::fs::read(&entry.path)
                     .map_err(|e| e.to_string())
@@ -199,7 +199,7 @@ pub fn run(input: &Input, tools: &Tools) -> Result<Preflight, Failure> {
             ffmpeg_missing.push(name.to_string());
         }
     }
-    // 走原生写入器时不用 ffmpeg 的编码器，缺了也不拦；原生执行时打不开再回落 ffmpeg 时才要它们。
+    // When using the native writer, the ffmpeg encoders are not needed, so missing them does not block. They are needed only when native fails at execution and falls back to ffmpeg.
     let encoder = native::choose_encoder(&settings);
     let missing_encoders = match encoder {
         EncoderPlan::Native(_) => Vec::new(),
@@ -218,9 +218,7 @@ pub fn run(input: &Input, tools: &Tools) -> Result<Preflight, Failure> {
     })
 }
 
-/// 成片要用到的本机字体 face（架构设计 §9.11 的「字体」）：范围里出现的每个画面层用随内核发布的字体排一遍字
-/// （[`frame_render::font_census`]），点了名、随内核的字体里没有的族的「族名、字重、斜体」。Runtime 按它在本机字体里
-/// 挑好 face、记下文件与摘要冻结进快照；只在预检命令里求（执行时按冻结的装）。
+/// Local font faces the output needs (architecture design §9.11 “fonts”): each picture layer in the range is laid out with the fonts shipped with the kernel ([`frame_render::font_census`]), and for each family named that is not among the kernel's fonts, its “family name, weight, italic”. The Runtime uses this to pick faces from the local fonts, records the files and digests, and freezes them into the snapshot. It is computed only in the preflight command; at execution, the frozen faces are installed.
 pub fn font_faces(input: &Input) -> Result<Vec<FaceUse>, Failure> {
     let usage = font_usage(input)?;
     Ok(usage
@@ -230,8 +228,7 @@ pub fn font_faces(input: &Input) -> Result<Vec<FaceUse>, Failure> {
         .collect())
 }
 
-/// 视频用到的字体（`fonts.usage`，架构设计 §9.1）：与 [`font_faces`] 同一遍排字，点了名的 face 全部给出（随内核的族也在），
-/// 另给出随内核没有的族。不查素材、不查编码器：只排字。
+/// Fonts the video uses (`fonts.usage`, architecture design §9.1): same text-layout pass as [`font_faces`]. All faces named are given (including families shipped with the kernel), and families not shipped with the kernel are given separately. Does not check assets or encoders; it only lays out text.
 pub fn font_usage(input: &Input) -> Result<frame_render::FontUsage, Failure> {
     let range = input.range()?;
     let view = input.document.view();
@@ -250,7 +247,7 @@ pub fn font_usage(input: &Input) -> Result<frame_render::FontUsage, Failure> {
     .map_err(|e| Failure::new(&e.code, e.message))
 }
 
-/// Lottie 贴纸的素材有没有冻结、解不解得开（与合成时同一个解析）。
+/// Whether Lottie sticker assets are frozen and can be decoded (same parsing as during composition).
 fn check_lottie(input: &Input, layer: &VisualLayer) -> Option<UnsupportedItem> {
     let Some(LayerContent::Generator { generator, parameters, .. }) = &layer.content else {
         return None;

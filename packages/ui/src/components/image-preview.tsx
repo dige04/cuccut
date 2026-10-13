@@ -93,7 +93,7 @@ const commentStyle = style({
 const notice = style({ padding: 12, font: 'ui-sm', color: 'gray-600' });
 const actions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 
-/** 原型 media-preview.jsx 的图片面板；作用域与媒体句柄仍由 Runtime 校验。 */
+/** Image panel for the prototype's media-preview.jsx; the scope and media handles are still validated by the Runtime. */
 export function ImagePreview({
   target,
   handle,

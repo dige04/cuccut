@@ -4,12 +4,11 @@ import { refOf, type FontDownloadErrorCode, type Localized, type MessageRef } fr
 import { RcFonts } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 字体的 HTTP 下载（架构设计 §9.1）：CSS 与字体文件都按大小上限读，连不上、5xx、429 与读到一半断开按有界的退避重试，
- * 别的 HTTP 状态不重试；不跟随重定向（文件只从配置的文件主机取）。错误信息与日志里不带地址（地址里有查询参数）。
- * 取消（信号中止）立即停下。
+ * HTTP download of fonts (architecture design §9.1): both the CSS and the font files are read with a size limit. Connection failures, 5xx, 429, and disconnects midway are retried with bounded backoff; other HTTP statuses are not retried. Redirects are not followed (files come only from the configured file host). Error messages and logs do not include the URL, since it carries query parameters.
+ * Cancellation (abort signal) stops immediately.
  */
 
-/** 每个错误码的补救（按当前语言）。 */
+/** Remedy for each error code (in the current language). */
 export function fontDownloadRemedy(code: FontDownloadErrorCode): Localized {
   switch (code) {
     case 'FONT_DOWNLOAD_NETWORK':
@@ -23,7 +22,7 @@ export function fontDownloadRemedy(code: FontDownloadErrorCode): Localized {
   }
 }
 
-/** 补救文字表（读取时按当前语言取）。 */
+/** Remedy text table (picked by the current language when read). */
 export const FONT_DOWNLOAD_REMEDIES: Readonly<Record<FontDownloadErrorCode, string>> = {
   get FONT_DOWNLOAD_NETWORK() {
     return fontDownloadRemedy('FONT_DOWNLOAD_NETWORK').text;
@@ -60,10 +59,10 @@ export class FontDownloadError extends Error {
 
 export interface FontDownloadOptions {
   fetch?: typeof fetch;
-  /** 连续失败几次后放弃（默认 3）。 */
+  /** Gives up after this many consecutive failures (default 3). */
   retries?: number;
   backoffMs?: (attempt: number) => number;
-  /** 多久没有收到字节算停滞（默认 30 秒）。 */
+  /** How long without receiving bytes counts as a stall (default 30 seconds). */
   stallMs?: number;
 }
 
@@ -81,14 +80,14 @@ class Retryable extends Error {
 interface Request {
   url: string;
   headers?: Record<string, string>;
-  /** 给人看的名字（错误信息用，不是地址）。 */
+  /** Human-readable name (for error messages; not the URL). */
   what: string | Localized;
   maxBytes: number;
   signal: AbortSignal;
   onBytes?: (received: number, total: number | null) => void;
 }
 
-/** 取一段文字（CSS）。 */
+/** Fetches a text body (CSS). */
 export async function fetchFontText(request: Request, options: FontDownloadOptions = {}): Promise<string> {
   const chunks: Buffer[] = [];
   await withRetries(request, options, async (response, onChunk) => {
@@ -100,7 +99,7 @@ export async function fetchFontText(request: Request, options: FontDownloadOptio
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** 取一个文件写到 `file`（覆盖），返回字节数与 sha256（十六进制）。 */
+/** Fetches a file and writes it to `file` (overwriting); returns the byte count and the sha256 (hex). */
 export async function fetchFontFile(
   request: Request,
   file: string,
@@ -198,7 +197,7 @@ async function withRetries(
   }
 }
 
-/** 按上限读回应的正文；每收到一块调一次 `onChunk`（停滞重新计时）。 */
+/** Reads the response body up to the limit; calls `onChunk` for each chunk received (the stall timer restarts). */
 async function readBody(
   response: Response,
   request: Request,

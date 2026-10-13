@@ -1,7 +1,6 @@
-//! 元素的样式目录：声波、进度条与彩纸的款式、次序、默认颜色、dB 窗与发射参数，读 `motion` 的内置配方，渲染画的是同一份。
+//! The element style catalogue: the styles, their order, default colors, dB windows and emission parameters for the waveform, progress bar and confetti, read from the built-in recipes in `motion`; rendering draws from the same set.
 //!
-//! 只解析这三类目录（`motion::preset_registry::parse_builtin_catalogue`），别的内置配方不进这个 WASM。只给界面新建与属性页
-//! 要读的字段；画法（配方的其余参数）只在渲染内核里用。款名与色板标题是界面的文案，留在界面。
+//! Only these three catalogues are parsed (`motion::preset_registry::parse_builtin_catalogue`); other built-in recipes do not enter this WASM. Only the fields the UI needs for creating new elements and for the property page are exposed; drawing (the rest of the recipe parameters) is used only in the render core. Style names and palette titles are UI copy and stay in the UI.
 
 use motion::MotionError;
 use motion::preset_registry::{
@@ -18,12 +17,12 @@ use crate::EntryError;
 struct Presets {
     progress: Vec<ProgressPreset>,
     visualizer: Vec<VisualizerPreset>,
-    /// 声波旧 style id → 当前目录的款（老项目照常打开、照常画）。
+    /// The old waveform style id → a style in the current catalogue (old projects still open and draw as before).
     visualizer_aliases: Map<String, Value>,
     confetti: Vec<ConfettiPreset>,
 }
 
-/// 进度条的一款。`aspect`：`bar` 用整个框、`square` 在框里取内切正方形、`frame` 铺满画幅的边框。
+/// One progress bar style. `aspect`: `bar` uses the whole box, `square` takes the inscribed square within the box, and `frame` is a border covering the full frame.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressPreset {
@@ -31,11 +30,11 @@ struct ProgressPreset {
     aspect: &'static str,
     main_color: String,
     secondary_color: String,
-    /// 属性页出几个色板（0–2）。
+    /// The number of palettes the property page offers (0–2).
     num_colors: u8,
 }
 
-/// 声波的一款。`hasControl` 为 false 的款读时域，dB 窗、平滑与增益对它不起作用。
+/// One waveform style. Styles whose `hasControl` is false read the time domain; the dB window, smoothing and gain have no effect on them.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VisualizerPreset {
@@ -49,21 +48,21 @@ struct VisualizerPreset {
     num_colors: u8,
 }
 
-/// 彩纸的一款：色板、形状混合与缺省的发射参数（属性页的「跟配方」回落到这些值）。
+/// One confetti style: its palette, shape mix and default emission parameters (the property page's “follow recipe” falls back to these values).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConfettiPreset {
     id: String,
     colors: Vec<String>,
     shapes: Vec<String>,
-    /// 改编来源的 id（`库名/部件`），属性页标注出处。
+    /// The source id of the adapted work (`library/part`), which the property page shows for attribution.
     sources: Vec<String>,
     has_emitter_control: bool,
     emit: ConfettiEmit,
     emitters: Vec<ConfettiEmitter>,
-    /// 发射方向（度，90 向下、−90 向上）。
+    /// Emission direction (degrees; 90 is down, −90 is up).
     angle: f64,
-    /// 发射扇面（度）。
+    /// Emission fan angle (degrees).
     spread: f64,
 }
 
@@ -76,7 +75,7 @@ struct ConfettiEmit {
     interval: f64,
 }
 
-/// 发射器：盒内 % 的中心，可以自带方向。
+/// Emitter: the center in % of the box; it may carry its own direction.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConfettiEmitter {
@@ -168,7 +167,7 @@ fn confetti(recipe: &CatalogueRecipe, body: &ConfettiBody) -> Result<ConfettiPre
     })
 }
 
-/// 输入不看（约定传 `{}`），结果是三类目录（目录次序）与声波的旧名表。内置配方解析不了时 `PRESET_CATALOGUE_INVALID`。
+/// The input is not read (by convention pass `{}`); the result is the three catalogues (in catalogue order) and the old-name table for the waveform. `PRESET_CATALOGUE_INVALID` if the built-in recipes cannot be parsed.
 pub fn element_presets(_input: &[u8]) -> Result<String, EntryError> {
     let presets = Presets {
         progress: catalogue(CatalogueKind::Progress)?

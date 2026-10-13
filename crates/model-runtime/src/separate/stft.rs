@@ -1,19 +1,17 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucsSpec.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucsSpec.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-bundle interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! HTDemucs 的 STFT / iSTFT 与 demucs `_spec` / `_ispec` 的 pad / 裁剪算术（CPU，realfft）。
+//! HTDemucs's STFT / iSTFT and demucs `_spec` / `_ispec` pad / crop arithmetic (CPU, realfft).
 //!
-//! 对照 speech-swift `HTDemucsSpec.swift`：模型会用自身输入的 mean/std 归一化幅度谱，
-//! 所以整条流水线对 STFT 的全局比例不敏感，只要正逆变换是一对可完美重建的
-//! 变换（COLA 周期 Hann，hop = nfft/4），再配上 demucs 精确的 pad / 裁剪，
-//! 频域分支与时域分支的长度就能对齐。约定跟随 `torch.stft(center=True,
-//! pad_mode="reflect")`，比例差由归一化抵消。
+//! Cross-referenced with speech-swift `HTDemucsSpec.swift`: the model normalizes the magnitude spectrum with the mean/std of its own input, so the whole pipeline is insensitive to the global scale of the STFT, as long as the forward and inverse transforms are a pair that reconstructs perfectly
+//! (COLA periodic Hann, hop = nfft/4). With demucs' exact pad / crop, the lengths of the frequency branch and the time branch line up. The convention follows `torch.stft(center=True,
+//! pad_mode="reflect")`; the scale difference is cancelled by the normalization.
 //!
-//! 复数谱的布局统一为频率优先 `[freqs][frames]`（与模型的 `[C, Fr, T]` 一致）。
+//! The layout of complex spectra is uniformly frequency-first `[freqs][frames]` (matching the model's `[C, Fr, T]`).
 
 use anyhow::{Result, bail};
 use realfft::num_complex::Complex;
@@ -22,7 +20,7 @@ use std::sync::Arc;
 
 pub type Complex32 = Complex<f32>;
 
-/// 单声道 STFT 计划：窗、正逆 FFT 与 demucs 的 pad 参数。
+/// Mono STFT plan: the window, forward and inverse FFT, and demucs' pad parameters.
 pub struct Spectrogram {
     nfft: usize,
     hop: usize,
@@ -31,7 +29,7 @@ pub struct Spectrogram {
     inverse: Arc<dyn ComplexToReal<f32>>,
 }
 
-/// `spec` 的输出：`nfft/2` 个频率 bin × `frames` 帧，频率优先。
+/// Output of `spec`: `nfft/2` frequency bins × `frames` frames, frequency-first.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spectrum {
     pub bins: usize,
@@ -59,7 +57,7 @@ impl Spectrogram {
         if nfft == 0 || hop == 0 || !nfft.is_multiple_of(hop) || !nfft.is_multiple_of(2) {
             bail!("STFT 参数无效：nfft {nfft} hop {hop}（要求 nfft 为偶数且是 hop 的倍数）");
         }
-        // 周期 Hann（torch.hann_window 默认 periodic=True）。
+        // Periodic Hann (torch.hann_window default, periodic=True).
         let window = (0..nfft)
             .map(|i| (0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / nfft as f64).cos()) as f32)
             .collect();
@@ -81,12 +79,12 @@ impl Spectrogram {
         self.hop
     }
 
-    /// demucs `_spec` 输出的帧数：`ceil(T / hop)`。
+    /// Number of frames output by demucs `_spec`: `ceil(T / hop)`.
     pub fn frames_for(&self, length: usize) -> usize {
         length.div_ceil(self.hop)
     }
 
-    /// torch "reflect" 填充：左侧取 `x[left..=1]`，右侧取 `x[L-2..=L-1-right]`，不重复边缘样本。
+    /// torch "reflect" padding: on the left it takes `x[left..=1]`, on the right it takes `x[L-2..=L-1-right]`, without repeating edge samples.
     pub fn reflect_pad(x: &[f32], left: usize, right: usize) -> Result<Vec<f32>> {
         let len = x.len();
         if len < 2 || left >= len || right >= len {
@@ -99,8 +97,8 @@ impl Spectrogram {
         Ok(out)
     }
 
-    /// `torch.stft` 等价：实数序列 → 复数谱 `[nfft/2+1][frames]`，
-    /// center=True（两侧 reflect 填充 nfft/2），周期 Hann。
+    /// Equivalent to `torch.stft`: real sequence → complex spectrum `[nfft/2+1][frames]`,
+    /// center=True (reflect padding of nfft/2 on both sides), periodic Hann.
     pub fn stft(&self, x: &[f32]) -> Result<Spectrum> {
         let pad = self.nfft / 2;
         let xp = Self::reflect_pad(x, pad, pad)?;
@@ -125,8 +123,8 @@ impl Spectrogram {
         Ok(out)
     }
 
-    /// `stft` 的逆：复数谱 `[nfft/2+1][frames]` → 长度 `length` 的实数序列。
-    /// 逐帧 irfft × 窗后 overlap-add，再除以窗² 的 overlap-add（下限 1e-8），最后裁掉 center 填充。
+    /// Inverse of `stft`: complex spectrum `[nfft/2+1][frames]` → real sequence of length `length`.
+    /// Per-frame irfft × window, then overlap-add, then divided by the overlap-add of window² (floor 1e-8), and finally the center padding is cropped off.
     pub fn istft(&self, z: &Spectrum, length: usize) -> Result<Vec<f32>> {
         let bins = self.nfft / 2 + 1;
         if z.bins != bins {
@@ -144,7 +142,7 @@ impl Spectrogram {
             for (k, v) in spectrum.iter_mut().enumerate() {
                 *v = z.data[k * frames + f];
             }
-            // 与 torch.irfft 一样忽略直流与 Nyquist 的虚部（realfft 会对此报错）。
+            // As with torch.irfft, the imaginary parts of DC and Nyquist are ignored (realfft would raise an error for them).
             spectrum[0].im = 0.0;
             spectrum[bins - 1].im = 0.0;
             self.inverse
@@ -164,9 +162,9 @@ impl Spectrogram {
         Ok((pad..pad + length).map(|i| accum[i] / win_sum[i].max(1e-8)).collect())
     }
 
-    /// `htdemucs._spec`：实数序列 → `[nfft/2][le]`，`le = ceil(T/hop)`。
-    /// 额外 reflect 填充 + 去掉最高频 bin + 两侧各裁 2 帧，保证 `out_size == in_size/hop`
-    /// 并与时域分支对齐。
+    /// `htdemucs._spec`: real sequence → `[nfft/2][le]`, `le = ceil(T/hop)`.
+    /// Extra reflect padding, plus dropping the highest-frequency bin and cropping 2 frames on each side, ensuring `out_size == in_size/hop`
+    /// and aligning with the time-domain branch.
     pub fn spec(&self, x: &[f32]) -> Result<Spectrum> {
         let len = x.len();
         let le = self.frames_for(len);
@@ -185,14 +183,14 @@ impl Spectrogram {
         Ok(out)
     }
 
-    /// `htdemucs._ispec`：`[nfft/2][le]` → 长度 `length` 的实数序列。
+    /// `htdemucs._ispec`: `[nfft/2][le]` → real sequence of length `length`.
     pub fn ispec(&self, z: &Spectrum, length: usize) -> Result<Vec<f32>> {
         let bins = self.nfft / 2;
         if z.bins != bins {
             bail!("ispec 期望 {bins} 个频率 bin，实际 {}", z.bins);
         }
         let le = z.frames;
-        // 补零：频率 nfft/2 → nfft/2+1，帧两侧各补 2 帧。
+        // Zero-pad: frequency nfft/2 → nfft/2+1, and 2 frames are padded on each side.
         let mut zp = Spectrum::zeros(bins + 1, le + 4);
         for k in 0..bins {
             zp.data[k * (le + 4) + 2..k * (le + 4) + 2 + le].copy_from_slice(&z.data[k * le..(k + 1) * le]);
@@ -208,8 +206,8 @@ impl Spectrogram {
 mod tests {
     use super::*;
 
-    /// 确定性测试信号：多频正弦叠加，`noise` 为真时再加白噪声
-    /// （白噪声在 Nyquist bin 有能量，只能用于不丢 bin 的纯 stft/istft 往返）。
+    /// Deterministic test signal: a sum of multi-frequency sines; when `noise` is true, white noise is added as well
+    /// (white noise has energy in the Nyquist bin, so it can only be used for pure stft/istft round trips that do not drop bins).
     fn test_signal(len: usize, seed: u32, noise: bool) -> Vec<f32> {
         let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
         let freqs = [440.0f32, 1_234.5, 5_000.0, 9_876.0, 15_000.0];
@@ -261,10 +259,9 @@ mod tests {
             assert_eq!(z.frames, len.div_ceil(1024));
             let y = spec.ispec(&z, len).unwrap();
             assert_eq!(y.len(), len);
-            // demucs 的 `_spec` 丢掉首尾各 2 帧，而 `_ispec` 的窗归一化仍按全部帧计算，
-            // 所以两端约 1536 + hop 个样本会被衰减（首样本约 0.5 倍）——这是原模型的
-            // 固有行为，模型端到端训练时已适应。这里只校验内部区间的精确重建，
-            // 并确认边缘衰减确实存在（否则说明帧裁剪算术与 demucs 不同）。
+            // demucs' `_spec` drops 2 frames at each end, while `_ispec`'s window normalization still counts all frames,
+            // so about 1536 + hop samples at both ends are attenuated (the first sample at about 0.5×). This is inherent to the original model, which was already adapted to during end-to-end training. Here we only verify exact reconstruction in the interior,
+            // and confirm that the edge attenuation really exists (otherwise the frame-cropping arithmetic would differ from demucs).
             let edge = 3 * 1024;
             let err = max_abs_diff(&x[edge..len - edge], &y[edge..len - edge]);
             assert!(err < 1e-3, "长度 {len} 内部重建误差 {err}");

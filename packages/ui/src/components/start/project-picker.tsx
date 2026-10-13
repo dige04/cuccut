@@ -40,16 +40,16 @@ const row = style({
 });
 const device = style({ display: 'inline-flex', alignItems: 'center', gap: 4, font: 'ui-sm', color: 'gray-700', whiteSpace: 'nowrap' });
 const path = style({ font: 'ui-sm', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 });
-// 窄的时候先省略路径，项目名尽量完整；名字特别长也只占一半宽。
+// When narrow, truncate the path first and keep the project name as complete as possible; even a very long name takes only half the width.
 const picker = style({ flexShrink: 0, maxWidth: '[50%]' });
 
-/** 菜单里「不用项目」那一项的键（项目的键是项目 id）。 */
+/** Key of the “不用项目” (No project) item in the menu (project keys are project IDs). */
 const NONE = 'none';
 
 /**
- * 起始页输入框下沿的项目托盘（产品设计 §2.3、§3.2.1；原型 new-agent.jsx `HomeProjectPicker`）：「这台电脑」、项目菜单、项目路径。
- * 会话可以不属于任何项目，所以菜单第一项是「不用项目」，其余是项目（按最近活动排）与「新建项目…」；不用项目时路径处说明视频放在哪儿。
- * 选了哪一项由起始页记在这台电脑上（state/home-memory-store.ts）。`noneDisabled`：编辑器开着某个项目里的视频，新会话只能建在那个项目里（会话要能改这部视频）。
+ * The project tray along the bottom edge of the start page's input box (product design §2.3, §3.2.1; prototype new-agent.jsx `HomeProjectPicker`): “这台电脑” (This computer), the project menu, and the project path.
+ * A session does not have to belong to any project, so the first menu item is “不用项目” (No project), followed by the projects (sorted by recent activity) and “新建项目…” (New project…). When “不用项目” is selected, the path line explains where the video will be saved.
+ * The start page remembers which item was chosen on this computer (state/home-memory-store.ts). `noneDisabled`: the editor has a video from some project open, so a new session can only be created in that project (the session must be able to edit this video).
  */
 export function ProjectPicker({
   project,
@@ -57,7 +57,7 @@ export function ProjectPicker({
   noneDisabled = false,
   onSelect,
 }: {
-  /** 新会话会建在哪个项目里；null = 不用项目（视频放在会话自己的文件夹里）。 */
+  /** The project a new session is created in; null = no project (the video is kept in the session's own folder). */
   project: Project | null;
   projects: readonly Project[];
   noneDisabled?: boolean;
@@ -149,9 +149,9 @@ const pathNote = style({ margin: 0, font: 'ui-sm', color: 'gray-600', overflowWr
 const actions = style({ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 });
 
 /**
- * 创建项目（原型 new-agent.jsx `CreateProjectDialog`）。Runtime 的 `projects.create` 只收名称，
- * 目录建在项目根目录（`RuntimeInfo.projectsDir`）下、重名时自动加编号；所以保存文件夹只读显示，
- * 设计稿里选父目录的菜单与自定义路径要等合同支持（缺口 §2.10）。
+ * Create project (prototype new-agent.jsx `CreateProjectDialog`). The Runtime's `projects.create` only takes a name.
+ * The directory is created under the project root (`RuntimeInfo.projectsDir`), with a number appended automatically when the name is taken. So the save folder is shown read-only.
+ * The parent-folder menu and custom path in the design draft must wait until the contract supports them (gap §2.10).
  */
 function CreateProjectDialog({ onClose, onCreated }: { onClose(): void; onCreated(project: Project): void }) {
   const runtime = useRuntime();
@@ -162,7 +162,7 @@ function CreateProjectDialog({ onClose, onCreated }: { onClose(): void; onCreate
   const titleId = useId();
   const error = projectNameError(name);
   const parent = projectsDir ? shortenPath(projectsDir).replace(/[\\/]+$/, '') : null;
-  // Windows 的目录只用 `\`，预览里的新目录照样用它接。
+  // Windows directories use only `\`; the new directory in the preview is joined with it in the same way.
   const sep = parent?.includes('\\') && !parent.includes('/') ? '\\' : '/';
 
   const create = async (close: () => void) => {

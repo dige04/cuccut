@@ -1,9 +1,6 @@
-//! MOSS-Transcribe-Diarize（candle），镜像 mlx 后端 `moss.rs`，从 v2 `ccut-speech` 原样移植。
+//! MOSS-Transcribe-Diarize (candle). Mirrors the mlx backend `moss.rs` and is ported unchanged from v2 `ccut-speech`.
 //!
-//! 模型自己产生 `[start][Sxx]text[end]` 时间戳与说话人标签，因此本后端绕过外部 VAD；跨块的说话人合并与长行的
-//! 词时间精修在 `job.run` 的编排里做（[`crate::transcribe`]）。与 mlx 后端的差异：不做加载期量化，权重直接沿用
-//! checkpoint 精度（CPU 上转 f32，CUDA 上保持半精度）；CPU 上自回归解码明显慢于 Apple Silicon/Metal，NVIDIA
-//! 用户用 `cuda` feature。v3 只改边界：文件一律按 `asr` 组件的清单取，不扫描目录。
+//! The model produces `[start][Sxx]text[end]` timestamps and speaker labels itself, so this backend bypasses the external VAD. Merging speakers across chunks and refining word timing on long lines are done in the orchestration of `job.run` ([`crate::transcribe`]). Differences from the mlx backend: no quantization at load time, and the weights keep the checkpoint precision as-is (upcast to f32 on CPU, kept in half precision on CUDA). On CPU, autoregressive decoding is much slower than on Apple Silicon/Metal, so NVIDIA users should use the `cuda` feature. v3 only changes the boundary: files are always taken from the `asr` component's manifest, and the directory is not scanned.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -44,8 +41,7 @@ pub struct MossTranscribeDiarize {
 }
 
 impl MossTranscribeDiarize {
-    /// 从 `asr` 组件的文件加载（`config.json`、`vocab.json`、`*.safetensors` 必需，`processor_config.json`、
-    /// `merges.txt`、`tokenizer_config.json` 列出了才读）。缺文件是 `MODEL_NOT_INSTALLED`。
+    /// Loads from the `asr` component's files (`config.json`, `vocab.json` and `*.safetensors` are required; `processor_config.json`, `merges.txt` and `tokenizer_config.json` are read only if listed). A missing file is `MODEL_NOT_INSTALLED`.
     pub fn load(files: &VerifiedFiles, device: &Device) -> Result<Self> {
         Self::load_inner(files, device).map_err(super::annotate_out_of_memory)
     }
@@ -90,7 +86,7 @@ impl MossTranscribeDiarize {
                 Ok((digit, encoded[0]))
             })
             .collect::<Result<HashMap<_, _>>>()?;
-        // lm_head（tied embedding 模式）及索引元数据不参与推理。
+        // lm_head (in tied-embedding mode) and the index metadata do not take part in inference.
         let _unused_checkpoint_metadata = store.remaining();
         if speech_timing_enabled() {
             eprintln!(
@@ -140,7 +136,7 @@ impl MossTranscribeDiarize {
             return Ok(MossTranscription::default());
         }
         let total_duration = audio.len() as f64 / SAMPLE_RATE as f64;
-        // 实验旋钮：与 mlx 后端一致，缩短分块可换取更短的注意力上下文。
+        // Experimental knob, same as the mlx backend: shorter chunks trade for a shorter attention context.
         let chunk_seconds = MossGenerationPlan::chunk_duration_from_env(std::env::var("CCUT_MOSS_CHUNK_SECONDS").ok().as_deref());
         let plan = MossGenerationPlan::make_with_chunk_duration(total_duration, chunk_seconds);
         let chunks = split_audio_at_low_energy(audio, plan.chunk_duration, 5.0, 0.1);
@@ -182,7 +178,7 @@ impl MossTranscribeDiarize {
 
         let generation_started = Instant::now();
         let mut generated = Vec::with_capacity(maximum_tokens.min(4_096));
-        // 增量解析供实时预览与循环检测使用；最终文本仍从完整 token 串解码。
+        // Incremental parsing feeds live preview and loop detection; the final text is still decoded from the full token sequence.
         let mut decoder = MossStreamDecoder::default();
         let mut streamed = 0_usize;
         let mut stop_reason = GenerationStopReason::TokenLimit;
@@ -259,7 +255,7 @@ impl MossTranscribeDiarize {
             mel_values.extend(features.data);
             feature_lengths.push(self.compute_audio_token_length(chunk.len().max(1)));
         }
-        // 时间主序 [chunks, 3000, mel] → candle 卷积需要 NCL [chunks, mel, 3000]。
+        // Time-major [chunks, 3000, mel] → candle convolution needs NCL [chunks, mel, 3000].
         let input_features = Tensor::from_vec(mel_values, (chunks.len(), 3_000, self.config.mel_bins), &self.device)?
             .to_dtype(self.dtype)?
             .transpose(1, 2)?
@@ -341,7 +337,7 @@ impl MossTranscribeDiarize {
     }
 }
 
-/// 常驻 Worker 保留整模型，下一条任务直接复用。
+/// The resident Worker keeps the whole model, so the next job reuses it directly.
 impl SegmentingRecognizer for MossTranscribeDiarize {
     fn transcribe(
         &mut self,
@@ -401,7 +397,7 @@ impl WhisperAttention {
         let (batch, sequence, hidden) = input.dims3()?;
         let head_dim = hidden / self.heads;
         let shape = (batch, sequence, self.heads, head_dim);
-        // SDPA 直接把张量交给 gemm，编码器这里没有 KV cache 视图，需自行连续化。
+        // SDPA hands the tensor straight to gemm, and the encoder has no KV-cache view here, so it has to make the tensor contiguous itself.
         let query = self.q.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
         let key = self.k.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
         let value = self.v.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
@@ -488,11 +484,11 @@ impl WhisperEncoder {
         })
     }
 
-    /// 输入 NCL [chunks, mel, 3000]，输出 [chunks, 1500, d_model]。
+    /// Input NCL [chunks, mel, 3000], output [chunks, 1500, d_model].
     fn forward(&self, input: &Tensor) -> Result<Tensor> {
         let mut hidden = gelu(&self.conv1.forward(input)?)?;
         hidden = gelu(&self.conv2.forward(&hidden)?)?;
-        // NCL → NLC，之后与位置编码/注意力保持序列在中间的布局。
+        // NCL → NLC; afterwards the sequence stays in the middle layout, matching positional encoding and attention.
         hidden = hidden.transpose(1, 2)?.contiguous()?;
         let sequence = hidden.dim(1)?;
         hidden = hidden.broadcast_add(&self.positions.narrow(0, 0, sequence)?)?;
@@ -504,7 +500,7 @@ impl WhisperEncoder {
 }
 
 fn load_conv1d(store: &mut WeightStore, prefix: &str, stride: usize) -> Result<Conv1d> {
-    // 官方 checkpoint 是 PyTorch [out, in, kernel]，与 candle 布局一致。
+    // The official checkpoint is PyTorch [out, in, kernel], which matches the candle layout.
     let weight = store.take_compute(&format!("{prefix}.weight"))?;
     Ok(Conv1d {
         weight,
@@ -526,8 +522,7 @@ fn inject_audio_embeddings(prompt_ids: &[i32], text_embeddings: &Tensor, audio_e
             audio_embeddings.dim(1)?
         );
     }
-    // 音频 token 通常成段出现（只被时间标记数字打断），按连续段拼接而不是
-    // 逐 token 切片，可把 cat 的分片数从数千降到几十。
+    // Audio tokens usually appear in runs (interrupted only by timestamp-marker numbers). Concatenating contiguous runs rather than slicing token by token cuts the number of `cat` pieces from thousands to a few dozen.
     let mut pieces = Vec::new();
     let mut cursor = 0;
     let mut audio_index = 0;

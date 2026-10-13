@@ -11,8 +11,8 @@ import { ClaudeDriver } from './claude-driver.ts';
 import { ASK_USER_QUESTION_DENIAL, ClaudeSession, approvalRequest, claudeMcpServers, claudePermissionMode } from './claude-session.ts';
 
 /**
- * Claude 会话对着假 Query（`testing/fake-claude.ts`）：不起 claude 进程、不联网、不花额度。
- * 与真实 CLI 的差别（消息的确切形状、中断后是否一定发 result 等）见 claude-session.ts 里标「未验证」的注释。
+ * The Claude session runs against a fake Query (`testing/fake-claude.ts`): it starts no claude process, uses no network, and spends no quota.
+ * For differences from the real CLI (the exact shape of messages, whether a result is always sent after an interruption, etc.), see the comments marked “unverified” in claude-session.ts.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_000): Promise<T> {
@@ -48,7 +48,7 @@ function open(fake: FakeClaude, options: Partial<CreateSessionOptions> = {}, log
     events,
     of,
     completed: (turnId: string) => until(() => of('turn.completed').find((e) => e.turnId === turnId)),
-    /** 第 n 个（从 0 起）审批请求。 */
+    /** The nth (0-based) approval request. */
     approval: (n = 0) => until(() => of('approval.requested')[n]),
     items: () => of('item.completed').map((e) => e.item),
   };
@@ -98,7 +98,7 @@ describe('ClaudeSession：回合与条目', () => {
     expect(query.options).toMatchObject({
       pathToClaudeCodeExecutable: '/fake/bin/claude',
       cwd: '/work',
-      // 只加载 user 层；hooks 关掉，user 层的权限规则不生效（见 claudeSettingsOptions）。
+      // Only the user layer is loaded; hooks are turned off, and the user layer's permission rules do not take effect (see claudeSettingsOptions).
       settingSources: ['user'],
       settings: { disableAllHooks: true },
       managedSettings: { allowManagedPermissionRulesOnly: true },
@@ -107,7 +107,7 @@ describe('ClaudeSession：回合与条目', () => {
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
     });
-    // 子进程的环境就是 install.env（agentEnv() 的结果，去掉了宿主 Claude Code 的会话变量）。
+    // The child process environment is install.env (the result of agentEnv(), with the host Claude Code session variables removed).
     expect(query.options.env).toBe(INSTALL.env);
     for (const key of ['model', 'effort', 'resume', 'mcpServers', 'allowedTools', 'sandbox']) expect(query.options).not.toHaveProperty(key);
     expect(query.inputs[0]).toMatchObject({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'text', text: '你好' }] } });
@@ -157,7 +157,7 @@ describe('ClaudeSession：回合与条目', () => {
       [started[0]!.id, 'completed', 0, 'all passed'],
       [started[1]!.id, 'failed', 2, 'Exit code 2\nboom'],
       [started[2]!.id, 'completed', null, '文件内容'],
-      // 改文件的工具：output 是从输入合成的 diff，路径相对会话的 cwd。
+      // File-editing tool: output is a diff synthesized from the input, with paths relative to the session's cwd.
       [started[3]!.id, 'completed', null, '--- a/a.ts\n+++ b/a.ts\n@@ -0,0 +0,0 @@\n-a\n+b'],
     ]);
     expect(done.every((i) => typeof i.durationMs === 'number')).toBe(true);
@@ -184,7 +184,7 @@ describe('ClaudeSession：回合与条目', () => {
 });
 
 describe('ClaudeSession：审批', () => {
-  /** 每次 ask 的答复按顺序记下。 */
+  /** Records each ask's answer in order. */
   function asking(commands: Array<{ name: string; input: Record<string, unknown> }>) {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({
@@ -226,7 +226,7 @@ describe('ClaudeSession：审批', () => {
     expect(answers[1]).not.toHaveProperty('interrupt');
     const declined = s.items()[1] as ToolItem;
     expect([declined.status, declined.exitCode]).toEqual(['declined', null]);
-    // 同一个审批答两次：第二次无效。
+    // Answering the same approval twice: the second answer is invalid.
     await s.session.respondToApproval(again.approvalId, { decision: 'accept' });
   });
 
@@ -329,18 +329,18 @@ describe('ClaudeSession：审批', () => {
     const first = await s.approval(0);
     expect(first.request).toEqual({ kind: 'tool', tool: 'ExitPlanMode', server: null, reason: plan, files: [], rule: null });
     await s.session.respondToApproval(first.approvalId, { decision: 'accept-for-session' });
-    // 会话级放行对它不生效：下一个计划照样要问。
+    // Session-level allow does not apply to it: the next plan still asks.
     const second = await s.approval(1);
     await s.session.respondToApproval(second.approvalId, { decision: 'decline' });
     await s.completed(turnId);
     expect(answers.map((a) => a?.behavior)).toEqual(['allow', 'deny']);
     expect(s.of('session.warning')).toHaveLength(1);
     expect(s.of('session.warning')[0]!.message).toMatch(/退出计划模式.*「先给方案」.*「自动接受修改」/);
-    // 时间线上那一步的 detail 是计划全文。
+    // The detail of that step on the timeline is the full plan text.
     const steps = s.items().filter((i): i is ToolItem => i.kind === 'tool-call');
     expect(steps[0]).toMatchObject({ detail: plan, status: 'completed' });
 
-    // 会话不在先给方案（Claude 自己进过计划模式）时批准不提示。
+    // When the session is not in plan-first mode (Claude itself entered plan mode), approval does not prompt.
     const other = createFakeClaude({
       turn: async (t) => {
         const id = t.toolUse('ExitPlanMode', { plan });
@@ -363,7 +363,7 @@ describe('ClaudeSession：审批', () => {
     ).toEqual({ request: { kind: 'file-change', reason: '路径在工作目录之外', files: ['/work/a.ts', '/etc/hosts'], rule: null }, grantKey: 'file-change' });
     const compound = approvalRequest('Bash', { command: 'npm install > log.txt' }, { signal, toolUseID: 't', requestId: 'r' }, '/work');
     if (compound.request.kind !== 'command') throw new Error('应是命令');
-    // 规则算法归 approval-rule.ts：认不出规则时，「本会话允许」只放行一模一样的命令。
+    // The rule algorithm lives in approval-rule.ts: when a rule cannot be recognized, “allow for this session” only permits the exact same command.
     expect(compound.grantKey).toBe(`command:${compound.request.rule ?? 'npm install > log.txt'}`);
   });
 
@@ -535,7 +535,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     const query = fake.last();
     expect(query.options.allowDangerouslySkipPermissions).toBe(true);
     if (mode === 'auto') {
-      // auto 先按 default 起，问过模型支持 auto 再切过去。
+      // auto starts as default first, and switches to auto after checking that the model supports it.
       expect(query.options.permissionMode).toBe('default');
       expect(query.callsOf('setPermissionMode')).toEqual([['auto']]);
       expect(query.callsOf('supportedModels')).toHaveLength(1);
@@ -723,7 +723,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     const exited = await until(() => s.of('session.exited')[0]);
     expect(exited.error).toBe('Claude Code process exited with code 1');
     expect(s.of('approval.resolved').map((e) => e.approvalId)).toEqual([request.approvalId]);
-    // 进程退出即会话结束：之后的 close() 不再发第二条 session.exited，也不能再开回合。
+    // Process exit ends the session: a later close() does not send a second session.exited, and no new turn can be started.
     await s.session.close();
     expect(s.of('session.exited')).toHaveLength(1);
     await expect(s.session.startTurn({ text: 'go' }, settings())).rejects.toThrow(/已关闭/);

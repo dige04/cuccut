@@ -1,23 +1,17 @@
-//! 颜色类滤镜的 CPU 参考实现。
+//! CPU reference implementation of color filters.
 //!
-//! [`color_adjust`] 与 [`brightness_only`] **逐行搬自**
-//! `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs` 的 `apply_media_effects`（颜色段）
-//! 与 `adjust_brightness`；其余（contrast / saturation / sepia / hueRotate）
-//! 是本次新增，沿用同一套约定：**反预乘到 f64 → 在 0..255 域运算 → clamp →
-//! 乘回 alpha 并 `round()`**，alpha 通道从不改动。
+//! [`color_adjust`] and [`brightness_only`] are **moved line by line from** `apply_media_effects` (the color section) and `adjust_brightness` in `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs`. The rest (contrast / saturation / sepia / hueRotate) is new in this change and follows the same conventions: **un-premultiply to f64 → operate in the 0..255 domain → clamp → multiply back by alpha and `round()`**. The alpha channel is never changed.
 //!
-//! 为什么 `color_adjust` 是一个配方而不是 `grayscale ∘ brightness`：原实现在
-//! **同一趟循环**里先插值到灰再加亮度偏移，只 clamp 一次、只 round 一次。
-//! 拆成两条串联的 filter 会多一次 u8 round-trip，像素不同。
+//! Why `color_adjust` is one recipe rather than `grayscale ∘ brightness`: the original implementation, **in the same loop**, first interpolated toward gray and then added the brightness offset, clamping once and rounding once. Splitting it into two chained filters would add an extra u8 round-trip, which produces different pixels.
 
-/// Rec.709 亮度权重。
+/// Rec.709 luma weights.
 pub const LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
 fn luma(r: f64, g: f64, b: f64) -> f64 {
     r * LUMA[0] + g * LUMA[1] + b * LUMA[2]
 }
 
-/// 反预乘 → `f(r, g, b)` → clamp → 重新预乘并四舍五入。alpha 不变。
+/// Un-premultiply → `f(r, g, b)` → clamp → re-premultiply and round. Alpha is unchanged.
 fn map_unpremultiplied(data: &mut [u8], mut f: impl FnMut(f64, f64, f64) -> (f64, f64, f64)) {
     for pixel in data.chunks_exact_mut(4) {
         let alpha = f64::from(pixel[3]) / 255.0;
@@ -34,8 +28,7 @@ fn map_unpremultiplied(data: &mut [u8], mut f: impl FnMut(f64, f64, f64) -> (f64
     }
 }
 
-/// Timeline 0.1 的 `fx {grayscale, brightness}`（`filter.colorAdjust@1`）。
-/// 位精确来源：`studio_export/raster.rs::apply_media_effects` 的颜色段。
+/// Timeline 0.1's `fx {grayscale, brightness}` (`filter.colorAdjust@1`). Bit-exact source: the color section of `studio_export/raster.rs::apply_media_effects`.
 pub fn color_adjust(data: &mut [u8], grayscale: f64, brightness: f64) {
     let grayscale = grayscale.clamp(0.0, 1.0);
     let brightness = brightness.clamp(-1.0, 1.0);
@@ -60,7 +53,7 @@ pub fn color_adjust(data: &mut [u8], grayscale: f64, brightness: f64) {
     }
 }
 
-/// 只加亮度（`filter.brightness@1`）。位精确来源：`adjust_brightness`。
+/// Brightness only (`filter.brightness@1`). Bit-exact source: `adjust_brightness`.
 pub fn brightness_only(data: &mut [u8], amount: f64) {
     for pixel in data.chunks_exact_mut(4) {
         let alpha = f64::from(pixel[3]) / 255.0;
@@ -74,7 +67,7 @@ pub fn brightness_only(data: &mut [u8], amount: f64) {
     }
 }
 
-/// 向 Rec.709 亮度插值（`filter.grayscale@1`）。
+/// Interpolates toward Rec.709 luma (`filter.grayscale@1`).
 pub fn grayscale(data: &mut [u8], amount: f64) {
     let amount = amount.clamp(0.0, 1.0);
     map_unpremultiplied(data, |r, g, b| {
@@ -87,7 +80,7 @@ pub fn grayscale(data: &mut [u8], amount: f64) {
     });
 }
 
-/// 围绕 127.5 缩放（`filter.contrast@1`）。
+/// Scales around 127.5 (`filter.contrast@1`).
 pub fn contrast(data: &mut [u8], amount: f64) {
     let factor = 1.0 + amount.clamp(-1.0, 1.0);
     map_unpremultiplied(data, |r, g, b| {
@@ -99,7 +92,7 @@ pub fn contrast(data: &mut [u8], amount: f64) {
     });
 }
 
-/// 以亮度为锚做线性插值（`filter.saturation@1`）。`amount = 1` 是恒等。
+/// Linear interpolation anchored on luminance (`filter.saturation@1`). `amount = 1` is the identity.
 pub fn saturation(data: &mut [u8], amount: f64) {
     map_unpremultiplied(data, |r, g, b| {
         let gray = luma(r, g, b);
@@ -111,7 +104,7 @@ pub fn saturation(data: &mut [u8], amount: f64) {
     });
 }
 
-/// 3×3 颜色矩阵（行优先，作用在 0..255 域），与恒等矩阵按 `amount` 插值。
+/// 3×3 color matrix (row-major, operating in the 0..255 domain), interpolated with the identity matrix by `amount`.
 fn apply_matrix(data: &mut [u8], matrix: [f64; 9], amount: f64) {
     let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     let mut m = [0.0f64; 9];
@@ -127,7 +120,7 @@ fn apply_matrix(data: &mut [u8], matrix: [f64; 9], amount: f64) {
     });
 }
 
-/// W3C filter-effects 的 sepia 矩阵（`filter.sepia@1`）。
+/// W3C filter-effects sepia matrix (`filter.sepia@1`).
 pub fn sepia(data: &mut [u8], amount: f64) {
     apply_matrix(
         data,
@@ -140,7 +133,7 @@ pub fn sepia(data: &mut [u8], amount: f64) {
     );
 }
 
-/// W3C filter-effects 的 hue-rotate 矩阵（`filter.hueRotate@1`）。
+/// W3C filter-effects hue-rotate matrix (`filter.hueRotate@1`).
 pub fn hue_rotate(data: &mut [u8], degrees: f64) {
     let radians = degrees.to_radians();
     let (sin, cos) = radians.sin_cos();
@@ -158,7 +151,7 @@ pub fn hue_rotate(data: &mut [u8], degrees: f64) {
     apply_matrix(data, matrix, 1.0);
 }
 
-/// 反色，与恒等色按 `amount` 插值；在反预乘颜色域运算，alpha 不变。
+/// Invert, interpolated with the identity color by `amount`. Computed in the un-premultiplied color domain; alpha is unchanged.
 pub fn invert(data: &mut [u8], amount: f64) {
     let amount = amount.clamp(0.0, 1.0);
     map_unpremultiplied(data, |r, g, b| {

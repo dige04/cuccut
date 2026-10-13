@@ -1,11 +1,8 @@
-//! WeSpeaker ResNet34-LM 的后端无关部分：fbank 前端、网络形状常量、余弦距离。移植自 v2 `ccut-speech`。
+//! The backend-independent parts of WeSpeaker ResNet34-LM: the fbank front end, the network shape constants and the cosine distance. Ported from v2 `ccut-speech`.
 //!
-//! 与 `mel.rs` 的 Whisper 前端不同，说话人嵌入用的是 Kaldi 风格 fbank：
-//! 预加重 0.97、Hamming 窗、HTK mel 刻度（fmin=20Hz）、自然对数、并在时间轴上
-//! 做 CMN（逐 mel bin 减均值）。CMN 不可省——缺它会让所有嵌入互相塌缩。
+//! Unlike the Whisper front end in `mel.rs`, the speaker embedding uses Kaldi-style fbank: pre-emphasis 0.97, a Hamming window, the HTK mel scale (fmin=20 Hz), natural log, and CMN along the time axis (subtracting the mean of each mel bin). CMN cannot be omitted; without it all the embeddings collapse onto each other.
 //!
-//! 这里全是纯 CPU f32 计算：MLX 后端（`backend::mlx::wespeaker`）用它，以后接上的其他后端共用同一份实现，
-//! 避免前端参数在各后端各自漂移。
+//! All of this is pure CPU f32 computation. The MLX backend (`backend::mlx::wespeaker`) uses it, and later backends share the same implementation, so the front-end parameters do not drift apart across backends.
 
 use std::sync::Arc;
 
@@ -14,38 +11,37 @@ use realfft::{RealFftPlanner, RealToComplex};
 
 use super::mel::TimeMajorMelFeatures;
 
-/// 模型只接受 16 kHz 单声道输入。
+/// The model accepts only 16 kHz mono input.
 pub const SAMPLE_RATE: u32 = 16_000;
-/// 嵌入维度。
+/// Embedding dimension.
 pub const EMBEDDING_DIM: usize = 256;
-/// 少于 0.5 秒的音频不做嵌入——统计池化在这种长度上不稳定。
+/// Audio shorter than 0.5 seconds is not embedded, because statistical pooling is unstable at that length.
 pub const MINIMUM_SAMPLES: usize = 8_000;
 
-/// fbank 帧长（样本）。
+/// fbank frame length (samples).
 pub const N_FFT: usize = 400;
-/// fbank 帧移（样本）。
+/// fbank frame shift (samples).
 pub const HOP_LENGTH: usize = 160;
-/// fbank mel 通道数。
+/// Number of fbank mel channels.
 pub const N_MELS: usize = 80;
 
-/// 统计池化（mean‖std）的输出维度：256 通道 × 10 频率 × 2。
+/// Output dimension of statistical pooling (mean‖std): 256 channels × 10 frequency bins × 2.
 pub const POOLING_OUTPUT_DIM: usize = 5_120;
-/// 经过三次 stride=2 后频率轴 80 → 10。
+/// After three stride-2 stages, the frequency axis goes from 80 to 10.
 pub const POOLED_FREQUENCY: usize = 10;
 
 const PADDED_FFT: usize = 512;
 const FREQUENCY_BINS: usize = PADDED_FFT / 2 + 1;
 const MEL_MINIMUM_HERTZ: f32 = 20.0;
 const PRE_EMPHASIS: f32 = 0.97;
-/// vDSP 的 `vDSP_fft_zrip` 输出是标准 DFT 的两倍，功率因此差 4 倍。CMN 会把
-/// 这个常数完全消掉，保留它只是为了和 Swift 参考实现逐值一致。
+/// vDSP's `vDSP_fft_zrip` output is twice the standard DFT, so the power is 4 times larger. CMN cancels this constant entirely; it is kept only so that values match the Swift reference implementation exactly.
 const VDSP_POWER_SCALE: f32 = 4.0;
 const LOG_FLOOR: f32 = 1e-10;
 
-/// WeSpeaker 的 80 维 log-mel fbank 前端（CPU，f32）。
+/// The WeSpeaker 80-dimensional log-mel fbank front end (CPU, f32).
 pub struct WeSpeakerFbank {
     window: Vec<f32>,
-    /// `[FREQUENCY_BINS * N_MELS]`，bin 主序，便于逐帧累加。
+    /// `[FREQUENCY_BINS * N_MELS]`, bin-major, so that per-frame accumulation is easy.
     filterbank: Vec<f32>,
     fft: Arc<dyn RealToComplex<f32>>,
 }
@@ -69,8 +65,7 @@ impl Default for WeSpeakerFbank {
 
 impl WeSpeakerFbank {
     pub fn new() -> Self {
-        // 对称 Hamming（分母 n_fft-1），与 pyannote/wespeaker 推理管线一致；
-        // 不是 Kaldi 默认的 Povey 窗。
+        // Symmetric Hamming (denominator n_fft-1), consistent with the pyannote/wespeaker inference pipeline; it is not Kaldi's default Povey window.
         let window = (0..N_FFT)
             .map(|index| 0.54 - 0.46 * (2.0 * std::f32::consts::PI * index as f32 / (N_FFT - 1) as f32).cos())
             .collect();
@@ -81,17 +76,17 @@ impl WeSpeakerFbank {
         }
     }
 
-    /// 分析窗（用于测试与诊断）。
+    /// Analysis window (for tests and diagnostics).
     pub fn window(&self) -> &[f32] {
         &self.window
     }
 
-    /// HTK/Slaney 归一化滤波器组，`[bin][mel]` 行主序。
+    /// HTK/Slaney-normalized filter bank, row-major `[bin][mel]`.
     pub fn filterbank(&self) -> &[f32] {
         &self.filterbank
     }
 
-    /// 给定样本数下的帧数：反射填充两侧各 `n_fft/2` 后不丢最后一帧。
+    /// Number of frames for a given sample count. With reflection padding of `n_fft/2` on each side, the last frame is not dropped.
     pub fn frame_count(sample_count: usize) -> usize {
         if sample_count == 0 {
             return 0;
@@ -99,7 +94,7 @@ impl WeSpeakerFbank {
         sample_count / HOP_LENGTH + 1
     }
 
-    /// 提取 `[T, 80]` 时间主序特征（已做 CMN）。
+    /// Extracts `[T, 80]` time-major features (CMN already applied).
     pub fn extract(&self, audio: &[f32]) -> Result<TimeMajorMelFeatures> {
         if audio.is_empty() {
             return Ok(TimeMajorMelFeatures {
@@ -110,14 +105,14 @@ impl WeSpeakerFbank {
         }
         let count = audio.len();
 
-        // 1. 预加重 y[n] = x[n] - 0.97 * x[n-1]，首样本直通（照 Swift 参考）。
+        // 1. Pre-emphasis y[n] = x[n] - 0.97 * x[n-1]; the first sample passes through unchanged (following the Swift reference).
         let mut emphasized = vec![0.0_f32; count];
         emphasized[0] = audio[0];
         for index in 1..count {
             emphasized[index] = audio[index] - PRE_EMPHASIS * audio[index - 1];
         }
 
-        // 2. 两侧各 n_fft/2 的反射填充。
+        // 2. Reflection padding of n_fft/2 on each side.
         let pad_length = N_FFT / 2;
         let mut padded = vec![0.0_f32; pad_length + count + pad_length];
         for (index, target) in padded[..pad_length].iter_mut().enumerate() {
@@ -128,7 +123,7 @@ impl WeSpeakerFbank {
             padded[pad_length + count + index] = emphasized[count.saturating_sub(2 + index)];
         }
 
-        // 3~5. 帧化 → 加窗 → 补零到 512 做 rFFT → 功率谱。
+        // 3–5. Framing → windowing → zero-padding to 512 for the rFFT → power spectrum.
         let frame_count = (padded.len() - N_FFT) / HOP_LENGTH + 1;
         debug_assert_eq!(frame_count, Self::frame_count(count));
         let mut padded_frame = vec![0.0_f32; PADDED_FFT];
@@ -146,7 +141,7 @@ impl WeSpeakerFbank {
                 .process_with_scratch(&mut padded_frame, &mut spectrum, &mut scratch)
                 .context("执行 WeSpeaker 512 点 real FFT")?;
 
-            // 6. 三角滤波器组投影。
+            // 6. Projection onto the triangular filter bank.
             let output_row = &mut mel[frame * N_MELS..(frame + 1) * N_MELS];
             for (bin, value) in spectrum.iter().enumerate() {
                 let power = VDSP_POWER_SCALE * (value.re * value.re + value.im * value.im);
@@ -157,12 +152,12 @@ impl WeSpeakerFbank {
             }
         }
 
-        // 7. 自然对数（不是 Whisper 的 log10）。
+        // 7. Natural log (not Whisper's log10).
         for value in mel.iter_mut() {
             *value = value.max(LOG_FLOOR).ln();
         }
 
-        // 8. CMN：逐 mel bin 减去时间轴均值。
+        // 8. CMN: subtract the time-axis mean of each mel bin.
         cepstral_mean_normalize(&mut mel, frame_count, N_MELS);
 
         Ok(TimeMajorMelFeatures {
@@ -173,8 +168,7 @@ impl WeSpeakerFbank {
     }
 }
 
-/// HTK mel 刻度（2595·log10(1+hz/700)）、fmin=20Hz、fmax=8000Hz 的三角滤波器组，
-/// 带 Slaney 面积归一 `2/(f[m+2]-f[m])`。
+/// Triangular filter bank with the HTK mel scale (2595·log10(1+hz/700)), fmin=20 Hz, fmax=8000 Hz, with Slaney area normalization `2/(f[m+2]-f[m])`.
 fn make_htk_filterbank() -> Vec<f32> {
     let hertz_to_mel = |hertz: f32| 2_595.0 * (1.0 + hertz / 700.0).log10();
     let mel_to_hertz = |mel: f32| 700.0 * (10.0_f32.powf(mel / 2_595.0) - 1.0);
@@ -223,11 +217,11 @@ fn cepstral_mean_normalize(features: &mut [f32], frame_count: usize, bin_count: 
     }
 }
 
-/// ResNet34 主干的层规划：`(层号, 输入通道, 输出通道, BasicBlock 数)`。
-/// 每层第一个 block 在通道变化时 stride=2，同时下采样频率与时间轴。
+/// Layer plan of the ResNet34 backbone: `(layer number, input channels, output channels, number of BasicBlocks)`.
+/// The first block of each layer uses stride 2 when the channel count changes, downsampling both the frequency and time axes.
 pub const RESNET_PLAN: [(usize, usize, usize, usize); 4] = [(1, 32, 32, 3), (2, 32, 64, 4), (3, 64, 128, 6), (4, 128, 256, 3)];
 
-/// 余弦距离 `1 - cos(a, b)`。长度不符、为空或范数过小时返回 2.0（最大距离）。
+/// Cosine distance `1 - cos(a, b)`. Returns 2.0 (the maximum distance) when the lengths differ, when either vector is empty, or when a norm is too small.
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 2.0;
@@ -267,13 +261,13 @@ mod tests {
         assert!((cosine_distance(&[1.0, 0.0], &[-1.0, 0.0]) - 2.0).abs() < 1e-6);
     }
 
-    // ---- 以下两个移植自 v2 `ccut-speech/tests/frontend.rs` ----
+    // ---- The following two are ported from v2 `ccut-speech/tests/frontend.rs` ----
 
     fn assert_close(actual: f32, expected: f32, tolerance: f32) {
         assert!((actual - expected).abs() <= tolerance, "{actual} != {expected} ± {tolerance}");
     }
 
-    /// 确定性伪随机测试音频（线性同余），与 golden 参考脚本逐位一致。
+    /// Deterministic pseudo-random test audio (linear congruential generator), bit-identical to the golden reference script.
     fn pseudo_random_audio(count: usize) -> Vec<f32> {
         let mut state = 12_345_u32;
         (0..count)
@@ -288,7 +282,7 @@ mod tests {
     fn wespeaker_fbank_matches_kaldi_reference() -> Result<()> {
         let fbank = WeSpeakerFbank::new();
 
-        // 对称 Hamming（分母 399）：端点 0.08，中点接近 1。
+        // Symmetric Hamming (denominator 399): the endpoints are 0.08, and the midpoint is close to 1.
         let window = fbank.window();
         assert_eq!(window.len(), 400);
         assert_close(window[0], 0.08, 1e-6);
@@ -299,19 +293,19 @@ mod tests {
         assert_close(audio[0], -0.959_194_66, 1e-6);
 
         let features = fbank.extract(&audio)?;
-        // 反射填充两侧各 200 后不丢最后一帧：(16000+400-400)/160+1 = 101。
+        // With reflection padding of 200 on each side the last frame is not dropped: (16000+400-400)/160+1 = 101.
         assert_eq!(features.time_frames, 101);
         assert_eq!(features.mel_bins, 80);
         assert_eq!(features.data.len(), 101 * 80);
         assert_eq!(WeSpeakerFbank::frame_count(16_000), 101);
 
-        // CMN 之后每个 mel bin 在时间轴上的均值必须为 0。
+        // After CMN, the mean of each mel bin along the time axis must be 0.
         for bin in 0..80 {
             let mean = (0..features.time_frames).map(|frame| features.data[frame * 80 + bin]).sum::<f32>() / features.time_frames as f32;
             assert!(mean.abs() < 1e-4, "bin {bin} 的 CMN 残余均值 {mean}");
         }
 
-        // NumPy 独立参考实现（预加重 0.97 / Hamming / HTK mel fmin=20 / ln / CMN）。
+        // NumPy independent reference implementation (pre-emphasis 0.97 / Hamming / HTK mel fmin=20 / ln / CMN).
         let times = [0_usize, 1, 5, 50, 100];
         let bins = [0_usize, 1, 7, 20, 40, 79];
         let expected = [

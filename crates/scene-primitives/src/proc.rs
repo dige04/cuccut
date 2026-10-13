@@ -1,84 +1,81 @@
-//! 程序化画面源 `proc`（规范 §6.2 / §6.12）：雨、溅落、夜空。
+//! Procedural picture source `proc` (spec §6.2 / §6.12): rain, splashes, night sky.
 //!
-//! 与 confetti 同一纪律——**没有逐帧状态**：每一帧都是 `(局部秒, seed, 参数)` 的
-//! 闭式函数，任意时刻可直接跳到。本模块只做**解析与校验**（封闭键集、范围、
-//! 缺省），几何与像素在 `ccut-render::source::proc`。
+//! Same discipline as confetti: **no per-frame state**. Each frame is a closed-form function of `(local seconds, seed, params)`, so any moment can be jumped to directly. This module only **parses and validates** (closed key set, ranges, defaults). Geometry and pixels live in `ccut-render::source::proc`.
 //!
-//! 所有长度都是**元素盒的比例**（x 按盒宽、y 按盒高、半径按盒短边），同一份
-//! 文档在任何画幅下画出同一构图。
+//! All lengths are **proportions of the element box** (x by box width, y by box height, radii by the box's short side), so the same document draws the same composition at any frame size.
 use crate::Rgba;
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Map, Value};
 
-/// 程序化源的种类（`proc` 字段）。
+/// Kind of procedural source (the `proc` field).
 pub const PROC_KINDS: &[&str] = &["rain", "splash", "sky"];
 
-/// 单个元素内的粒子上限：挡住病态参数，不是画面预算。
+/// Per-element particle cap: guards against pathological parameters. It is not a frame budget.
 pub const MAX_DROPS: usize = 6_000;
 pub const MAX_STARS: usize = 4_000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rain {
-    /// 0..1：1080p 盒上约 `density × 1400` 条雨丝，按盒面积线性缩放。
+    /// 0..1: on a 1080p box, about `density × 1400` rain streaks, scaled linearly by box area.
     pub density: f64,
-    /// 相对竖直的倾角（度），正值向右下落。
+    /// Tilt from vertical, in degrees. Positive values fall toward the lower right.
     pub angle: f64,
-    /// 下落速度：盒高 / 秒（最近一层；远层按深度减速）。
+    /// Fall speed: box heights per second (nearest layer; far layers slow down with depth).
     pub speed: f64,
-    /// 雨丝长度：盒高的比例（最近一层；远层按深度缩短）。
+    /// Rain streak length: proportion of box height (nearest layer; far layers shorten with depth).
     pub length: f64,
-    /// 阵风：倾角随时间 ±`wind × 20°` 摆动（`0` = 恒定倾角）。
+    /// Gusts: tilt swings ±`wind × 20°` over time (`0` = constant tilt).
     pub wind: f64,
-    /// 线宽（px，最近一层）。
+    /// Line width (px, nearest layer).
     pub width: f64,
     pub color: Rgba,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Splash {
-    /// 触发时刻（元素局部秒）。
+    /// Trigger time (element-local seconds).
     pub at: f64,
-    /// 落点：盒宽 / 盒高的比例。
+    /// Landing point: proportion of box width / box height.
     pub x: f64,
     pub y: f64,
     pub count: usize,
-    /// 重力：盒高 / 秒²。
+    /// Gravity: box heights per second².
     pub gravity: f64,
-    /// 初速上限：盒高 / 秒。
+    /// Upper limit on initial velocity: box heights per second.
     pub speed: f64,
-    /// 水珠半径（px）。
+    /// Droplet radius (px).
     pub size: f64,
-    /// 存续秒数：之后一条 op 都不画。
+    /// Lifetime in seconds: after this, an op draws nothing.
     pub life: f64,
     pub color: Rgba,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Moon {
-    /// 圆心：盒宽 / 盒高的比例。
+    /// Centre: proportion of box width / box height.
     pub x: f64,
     pub y: f64,
-    /// 半径：盒短边的比例。
+    /// Radius: proportion of the box's short side.
     pub r: f64,
-    /// 光晕强度 0..1。
+    /// Glow intensity, 0..1.
     pub glow: f64,
     pub color: Rgba,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sky {
-    /// 0..1：1080p 盒上约 `stars × 900` 颗，按盒面积线性缩放。
+    /// 0..1: on a 1080p box, about `stars × 900` stars, scaled linearly by box area.
     pub stars: f64,
-    /// 银河强度 0..1（0 = 不画）。
+    /// Milky Way intensity, 0..1 (0 = don't draw).
     pub milky_way: f64,
-    /// 云的不透明度 0..1（0 = 不画）。
+    /// Cloud opacity, 0..1 (0 = don't draw).
     pub cloud: f64,
-    /// 云量 0..1：噪声场里被云覆盖的比例。
+    /// Cloud cover, 0..1: the fraction of the noise field covered by cloud.
     pub cover: f64,
-    /// 云的漂移：盒宽 / 秒。
+    /// Cloud drift: box widths per second.
     pub drift: f64,
     pub cloud_color: Rgba,
-    /// 背景竖向渐变；两端都透明时不画背景。
+    /// Vertical gradient for the background. If both ends are transparent, no background is drawn.
     pub top: Rgba,
     pub bottom: Rgba,
     pub moon: Option<Moon>,
@@ -95,11 +92,11 @@ pub enum ProcKind {
 pub struct ProcSource {
     pub seed: u64,
     pub kind: ProcKind,
-    /// 作者原文（`proc` / `seed` / `params`），只读舞台投影用。
+    /// Original author source (`proc` / `seed` / `params`), read-only, for the stage projection.
     pub source: Value,
 }
 
-/// 节点允许的键（封闭）。
+/// Keys allowed on the node (closed set).
 const NODE_KEYS: &[&str] = &[
     "type",
     "id",
@@ -163,7 +160,7 @@ impl Params<'_> {
 }
 
 impl ProcSource {
-    /// 从已解引用（`$vars` / `$theme`）的节点 JSON 解析。
+    /// Parse from a node JSON whose references (`$vars` / `$theme`) are already resolved.
     pub fn parse(node: &Value) -> Result<Self> {
         let object = node
             .as_object()

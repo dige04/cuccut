@@ -11,8 +11,7 @@ import { PipelineRunner } from './pipeline-runner.ts';
 import { readVideoTarget, targetStep, type PipelineTargets, type VideoLease } from './video-target.ts';
 
 /**
- * 视频工具的目标（架构设计 §7.9）：`target` 的形状与和 `videoId` 的冲突；`PipelineRunner` 在提交时解析 `entryId`
- * 并以租约打开、记成第一步、结束时放下；锁冲突不建任务；新建视频的步骤重试时不重做。
+ * Targets for video tools (architecture design §7.9): the shape of `target` and its conflict with `videoId`. `PipelineRunner` resolves `entryId` on submit, opens the video under a lease, records it as the first step, and releases it at the end. A lock conflict creates no job. A video-creation step is not redone on retry.
  */
 
 describe('readVideoTarget', () => {
@@ -36,7 +35,7 @@ describe('readVideoTarget', () => {
     expect(readVideoTarget({ target: { create: { projectId: 'p1', name: ' 新视频 ' } } }, both)).toEqual({
       create: { projectId: 'p1', name: '新视频' },
     });
-    // 新建在会话的来源目录里（不属于项目的会话）。
+    // Created in the session's source directory (a session that does not belong to a project).
     expect(readVideoTarget({ target: { create: { conversationId: 'c1' } } }, both)).toEqual({ create: { conversationId: 'c1' } });
   });
 
@@ -45,13 +44,13 @@ describe('readVideoTarget', () => {
     expect(rejects({ target: 'v1' })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: { path: '/x' } })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: { entryId: '' } })).toMatchObject({ code: 'invalid-request' });
-    // 顶层 videoId 与 target 指的不是同一个视频。
+    // The top-level videoId and target refer to different videos.
     expect(rejects({ videoId: 'v1', target: { videoId: 'v2' } })).toMatchObject({
       code: 'invalid-request',
       message: expect.stringContaining('target'),
     });
     expect(rejects({ videoId: 'v1', target: { create: { projectId: 'p1' } } })).toMatchObject({ code: 'invalid-request' });
-    // 新建：projectId 与 conversationId 给且只给一个；这个流程不收 media。
+    // Creation: exactly one of projectId and conversationId is given. This pipeline does not accept media.
     expect(rejects({ target: { create: {} } })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: { create: { projectId: 'p1', conversationId: 'c1' } } })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: { create: { conversationId: '' } } })).toMatchObject({ code: 'invalid-request' });
@@ -59,7 +58,7 @@ describe('readVideoTarget', () => {
       code: 'invalid-request',
       message: expect.stringContaining('media'),
     });
-    // 不接受新建的流程（翻译、配音）。
+    // Pipelines that do not accept creation (translation, dubbing).
     expect(rejects({ target: { create: { projectId: 'p1' } } }, { create: false })).toMatchObject({
       code: 'invalid-request',
       details: { code: 'PIPELINE_TARGET_UNSUPPORTED' },
@@ -78,7 +77,7 @@ interface TargetParams {
   create?: PipelineCreateTarget;
 }
 
-/** 假的 Runtime 目标：位置的 `file` 就是视频 id；锁着的位置抛 `VIDEO_LOCKED`；记下持有中的租约。 */
+/** Fake Runtime target: a location's `file` is the video id. A locked location throws `VIDEO_LOCKED`. Records the leases currently held. */
 class FakeTargets implements PipelineTargets {
   entries = new Map<Id, VideoPlace | 'trashed' | 'not-video'>();
   locked = new Set<string>();
@@ -133,7 +132,7 @@ describe('PipelineRunner 的视频目标', () => {
   let jobs: JobManager;
   let runner: PipelineRunner;
   let targets: FakeTargets;
-  /** JobManager 的视频租约（父任务与步骤的 `leaseVideo`）。 */
+  /** Video leases of the JobManager (`leaseVideo` for parent jobs and steps). */
   let retained: Map<Id, number>;
   let failWork: boolean;
   let seen: Array<Id | undefined>;

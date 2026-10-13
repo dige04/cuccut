@@ -23,14 +23,14 @@ const cueBlock = style({
 });
 const cueText = style({ truncate: true, minWidth: 0 });
 
-/** 句子块窄于这个宽度就不写字（同旧版网页时间线）。 */
+/** Sentence blocks narrower than this width do not show text (same as the old web timeline). */
 const LABEL_MIN_PX = 45;
-/** 相邻两句之间留的缝。 */
+/** Gap left between adjacent cues. */
 const GAP_PX = 2;
 
 /**
- * 字幕片段里的句子（照旧版网页时间线）：一句一块，块里写句子的文字，窄了就只留色块。只画看得见的部分；
- * 文档还没取到或没有句子时画 `fallback`（片段名）。
+ * Cues inside a subtitle clip (following the old web timeline): one block per cue, with the cue's text written inside; when narrow, only the colored block is kept. Only the visible part is drawn;
+ * when the document has not been fetched yet or has no cues, `fallback` (the clip name) is drawn.
  */
 export function CaptionCues({
   item,
@@ -46,9 +46,9 @@ export function CaptionCues({
   item: CaptionItem;
   sequence: Sequence;
   record: DocumentRecord | undefined;
-  /** 片段左边在轨道内容里的位置。 */
+  /** The clip's left edge position within the track content. */
   clipLeft: number;
-  /** 序列时间（秒）→ 轨道内容里的横坐标。 */
+  /** Sequence time (seconds) → horizontal coordinate within the track content. */
   xOf(seconds: number): number;
   scrollRef: RefObject<HTMLDivElement | null>;
   head: number;

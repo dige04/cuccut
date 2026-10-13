@@ -19,16 +19,14 @@ import { M } from '../cli-copy.ts';
 import { CliError } from '../envelope.ts';
 
 /**
- * CLI 与 Runtime 的连接（Agent 面设计 §5.6；架构设计 §2.2）：按 `CUCCUT_HOME` 的发现文件找正在跑的 Runtime，找不到时
- * 默认在后台拉起一个（脱离终端，输出写到 `<CUCCUT_HOME>/logs/cli-runtime.log`），等它写出发现文件再连。拉起时带
- * `--launched-by cli --idle-exit`：`runtime stop` 只停这样的，空闲满 `runtime.idleExitMinutes` 它自己退出。
+ * The CLI's connection to the Runtime (Agent-facing design §5.6; architecture design §2.2). It finds the running Runtime through the discovery file in `CUCCUT_HOME`. If none is found, it starts one by default in the background (detached from the terminal, output written to `<CUCCUT_HOME>/logs/cli-runtime.log`) and waits for it to write the discovery file before connecting. It starts with `--launched-by cli --idle-exit`: `runtime stop` only stops such instances, and one that has been idle for `runtime.idleExitMinutes` exits by itself.
  *
- * 连上之后的版本门：`catalog.list` 的接口版本与 CLI 的 `MCP_INTERFACE_VERSION` 不同时以退出码 3 拒绝，不按旧参数解释。
+ * The version gate after connecting: if the interface version from `catalog.list` differs from the CLI's `MCP_INTERFACE_VERSION`, it is rejected with exit code 3 rather than interpreted with the old parameters.
  */
 
-/** 一次请求的上限：工具调用（取帧、读大文档）可能久；等任务走 `jobs` 主题，不占请求。 */
+/** Upper bound for one request: tool calls (fetching frames, reading large documents) may take long; tasks that wait go through the `jobs` topic and do not hold the request. */
 const REQUEST_TIMEOUT_MS = 30 * 60_000;
-/** 拉起之后等发现文件的上限。 */
+/** Upper bound for waiting for the discovery file after starting the Runtime. */
 const START_TIMEOUT_MS = 60_000;
 const POLL_MS = 100;
 
@@ -40,12 +38,12 @@ export function discoveryFile(home: string): string {
   return path.join(home, 'runtime.json');
 }
 
-/** 实例锁（`@cuccut/runtime-storage`）：活着的 Runtime 持有它，停完才放开。 */
+/** Instance lock (`@cuccut/runtime-storage`): a live Runtime holds it and releases it only after it has stopped. */
 export function lockFile(home: string): string {
   return path.join(home, 'runtime.lock');
 }
 
-/** 实例锁的持有者还活着（锁文件不在或读不了时 false）。 */
+/** Whether the instance lock's holder is still alive (false when the lock file is missing or unreadable). */
 export function lockHolderAlive(home: string): boolean {
   try {
     const { pid } = JSON.parse(fs.readFileSync(lockFile(home), 'utf8')) as { pid?: unknown };
@@ -76,13 +74,13 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-/** 正在跑的 Runtime 的发现信息；没有发现文件或进程已经不在时 null。 */
+/** Discovery information for the running Runtime; null when there is no discovery file or the process is already gone. */
 export function findRuntime(home: string): RuntimeDiscovery | null {
   const discovery = readDiscovery(home);
   return discovery && isProcessAlive(discovery.pid) ? discovery : null;
 }
 
-/** 怎么启动 Runtime。 */
+/** How to start the Runtime. */
 export interface LaunchSpec {
   command: string;
   args: string[];
@@ -91,8 +89,7 @@ export interface LaunchSpec {
 }
 
 /**
- * Runtime 的入口，依次找：`CUCCUT_RUNTIME_ENTRY`（`.ts` / `.js` 用当前的 Node 跑，否则当可执行文件）→ 装好的 CucCut 应用
- * （以 Node 方式运行它带的 Runtime，资源位置照桌面端的 `packagedResourceEnv`）→ 仓库里的 `apps/runtime/src/main.ts`。
+ * Finds the Runtime entry in this order: `CUCCUT_RUNTIME_ENTRY` (`.ts` / `.js` are run with the current Node, otherwise it is treated as an executable) → the installed CucCut app (its bundled Runtime is run in Node mode, with resource locations as in the desktop's `packagedResourceEnv`) → `apps/runtime/src/main.ts` in the repository.
  */
 export function resolveRuntimeLaunch(
   env: NodeJS.ProcessEnv = process.env,
@@ -122,7 +119,7 @@ export function resolveRuntimeLaunch(
   return null;
 }
 
-/** 装好的 CucCut 应用可能在的位置（Windows 的 NSIS 按用户安装、macOS 的 Applications）。 */
+/** Where an installed CucCut app may be (per-user NSIS install on Windows, Applications on macOS). */
 export function packagedApps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): { executable: string; resources: string }[] {
   if (platform === 'win32') {
     const roots = [
@@ -143,8 +140,7 @@ export function packagedApps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform):
 }
 
 /**
- * 打包后的 Runtime 按路径读的东西：与桌面端 `apps/desktop/src/main/packaged-resources.ts` 的 `packagedResourceEnv` 相同
- * （CLI 不依赖桌面端的包；`connection.test.ts` 核对两边一致）。
+ * What the packaged Runtime reads by path: the same as `packagedResourceEnv` in the desktop's `apps/desktop/src/main/packaged-resources.ts` (the CLI does not depend on the desktop package; `connection.test.ts` checks that the two match).
  */
 export function packagedResourceEnv(resources: string, platform: NodeJS.Platform = process.platform): Record<string, string> {
   return {
@@ -162,9 +158,8 @@ export function packagedResourceEnv(resources: string, platform: NodeJS.Platform
 }
 
 /**
- * 说明书的根目录（里面是 `cuccut/`），给不连 Runtime 的 `cuccut skill path` 用：与 Runtime 的 `resolveBuiltinAgentSkillsDir`
- * 同一个顺序——`CUCCUT_AGENT_SKILLS_DIR` → 装好的 CucCut 应用的 `<resources>/skills` → 仓库根的 `skills/`。
- * 都没有时 null。
+ * The root directory of the manuals (it contains `cuccut/`), used by `cuccut skill path`, which does not connect to the Runtime. It uses the same order as the Runtime's `resolveBuiltinAgentSkillsDir`: `CUCCUT_AGENT_SKILLS_DIR` → the installed CucCut app's `<resources>/skills` → `skills/` at the repository root.
+ * Null when none of them exists.
  */
 export function resolveAgentSkillsDir(
   env: NodeJS.ProcessEnv = process.env,
@@ -181,23 +176,23 @@ export function resolveAgentSkillsDir(
   return dir && fs.existsSync(dir) ? dir : null;
 }
 
-/** 往上找仓库根（`package.json` 的 name 是 `cuccut`）。 */
+/** Searches upward for the repository root (the `package.json` whose name is `cuccut`). */
 function repoRoot(from: string): string | null {
   for (let dir = from; ; dir = path.dirname(dir)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as { name?: unknown };
       if (pkg.name === 'cuccut') return dir;
     } catch {
-      // 继续往上。
+      // Keep going up.
     }
     if (path.dirname(dir) === dir) return null;
   }
 }
 
 /**
- * 在后台拉起 Runtime 并等它写出发现文件。另一个进程抢先拉起时（子进程以退出码 3 退出：实例锁被占）用那一个，`started` 为 false。
+ * Starts the Runtime in the background and waits for it to write the discovery file. If another process starts it first (the child exits with code 3: the instance lock is held), it uses that one, and `started` is false.
  *
- * 锁被占着却一直没有发现文件，是那个实例正在空闲退出（它先删发现文件再停，架构设计 §2.2）：等它放开锁再拉起一次，只重来一次。
+ * If the lock is held but no discovery file ever appears, that instance is exiting because it is idle (it deletes the discovery file before stopping, architecture design §2.2): wait for it to release the lock and start once more, retrying only once.
  */
 export async function launchRuntime(
   home: string,
@@ -230,7 +225,7 @@ export async function launchRuntime(
 
 interface SpawnedRuntime {
   pid: number | undefined;
-  /** 退出时的退出码；还在跑时 undefined。 */
+  /** The exit code on exit; undefined while still running. */
   exitCode: number | null | undefined;
   error: Error | null;
 }
@@ -265,12 +260,12 @@ function tail(file: string, lines = 20): string[] {
 }
 
 export interface EnsureOptions {
-  /** 找不到时拉起（`--no-start` 关掉）。 */
+  /** Start the Runtime when none is found (turned off by `--no-start`). */
   start: boolean;
   env?: NodeJS.ProcessEnv;
 }
 
-/** 找到或拉起 Runtime。 */
+/** Find or start the Runtime. */
 export async function ensureRuntime(home: string, options: EnsureOptions): Promise<{ discovery: RuntimeDiscovery; started: boolean }> {
   const running = findRuntime(home);
   if (running) return { discovery: running, started: false };
@@ -280,7 +275,7 @@ export async function ensureRuntime(home: string, options: EnsureOptions): Promi
   return launchRuntime(home, spec);
 }
 
-/** 连上一个已知的 Runtime（一次性连接，不重连）。 */
+/** Connects to a known Runtime (a one-time connection; no reconnecting). */
 export async function openClient(
   discovery: RuntimeDiscovery,
   options: { readLanguage?: boolean } = {},
@@ -306,8 +301,7 @@ export async function openClient(
 }
 
 /**
- * 连上之后按 Runtime 的 `ui.language` 定输出语言（`system` 时仍按本进程的系统语言）。读不到（旧 Runtime、权限不够、值不认识）
- * 时保持启动时的系统语言，不报错。CUCCUT_LOCALE 仍然优先。
+ * After connecting, the output language is set from the Runtime's `ui.language` (when it is `system`, the system language of this process is still used). If it cannot be read (an old Runtime, insufficient permission, an unrecognized value), the system language from startup is kept and no error is raised. CUCCUT_LOCALE still takes precedence.
  */
 async function applyRuntimeLanguage(client: CucCutClient): Promise<void> {
   try {
@@ -315,22 +309,21 @@ async function applyRuntimeLanguage(client: CucCutClient): Promise<void> {
     const preference = view.settings['ui.language'] ?? view.defaults['ui.language'];
     if (isLanguagePreference(preference)) setLocale(resolveLanguage(preference, processLanguageTags()));
   } catch {
-    // 忽略：保持系统语言。
+    // Ignored: keep the system language.
   }
 }
 
 export interface Session {
   client: CucCutClient;
   info: RuntimeInfo;
-  /** 这次自动拉起的。 */
+  /** Whether this run started it automatically. */
   started: boolean;
-  /** 连上的 Runtime 的目录（执行命令以它为准）。 */
+  /** The directory of the connected Runtime (commands are executed against it). */
   catalog: CatalogListResult;
 }
 
 /**
- * 找到或拉起 Runtime、连上、取目录并过版本门。连接失败而那个 Runtime 随后不在了（进程退出，或撤掉了发现文件：空闲退出与这次
- * 连接撞上）时，再找或拉起一次，只重来一次。
+ * Finds or starts the Runtime, connects, fetches the directory and passes the version gate. If the connection fails and that Runtime is then gone (the process exited, or its discovery file was removed: an idle exit collided with this connection), it finds or starts one more time, retrying only once.
  */
 export async function connectRuntime(options: { home: string; start: boolean }): Promise<Session> {
   const first = await ensureRuntime(options.home, { start: options.start });
@@ -360,12 +353,12 @@ async function openSession({ discovery, started }: { discovery: RuntimeDiscovery
   }
 }
 
-/** 这个 Runtime 已经不在，或正在退出（发现文件不再指向它）。 */
+/** This Runtime is gone, or is exiting (the discovery file no longer points to it). */
 export function withdrawn(home: string, discovery: RuntimeDiscovery): boolean {
   return !isProcessAlive(discovery.pid) || readDiscovery(home)?.instanceId !== discovery.instanceId;
 }
 
-/** 接口版本门（§5.6）：说明哪一边要更新。 */
+/** Interface version gate (§5.6): states which side needs updating. */
 export function checkInterfaceVersion(runtimeVersion: string, cliVersion: string = MCP_INTERFACE_VERSION): void {
   if (runtimeVersion === cliVersion) return;
   const update = Number(runtimeVersion) > Number(cliVersion) ? 'cli' : 'runtime';

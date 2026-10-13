@@ -1,9 +1,7 @@
-//! 转场（视频格式规范 §3.9）：同一轨道上首尾相接的两个视觉实例之间，或单个实例的入场、出场。
-//! 单侧转场生效的长度随实例变短（[`Transition::effective_frames`]），种类与时长区间取 v2 的
-//! `timeline::video_transitions`。
+//! Transitions (video format spec §3.9): between two visual instances that touch end to end on the same track, or at an instance's entry or exit.
+//! The effective length of a one-sided transition shrinks as the instance gets shorter ([`Transition::effective_frames`]). The kinds and duration ranges are taken from v2's `timeline::video_transitions`.
 //!
-//! 转场只用实例的 handles（源素材在实例区间之外的部分），不让实例重叠：同一轨道的实例本来就不重叠（§3.4），
-//! 所以没有「真实重叠」这一种。种类是闭集；读到不认识的种类原样保留，计划里当作硬切并报告（§1.4）。
+//! Transitions only use the instance's handles (the parts of the source material outside the instance's range) and never make instances overlap. Instances on the same track never overlap to begin with (§3.4), so there is no “real overlap” kind. The kinds form a closed set; an unrecognized kind is kept as-is, treated as a hard cut in the plan, and reported (§1.4).
 
 use message_ref::{Text, msg};
 use serde::{Deserialize, Serialize};
@@ -15,42 +13,42 @@ use crate::{FrameSpan, Id};
 #[serde(try_from = "RawTransition", into = "RawTransition")]
 pub struct Transition {
     pub id: Id,
-    /// 画面从它离开（出场的一侧）。只有它时是这个实例的出场转场。
+    /// The picture leaves it (the outgoing side). When this is the only side, it is the instance's exit transition.
     pub left_item_id: Option<Id>,
-    /// 画面进入它（入场的一侧）。只有它时是这个实例的入场转场。
+    /// The picture enters it (the incoming side). When this is the only side, it is the instance's entry transition.
     pub right_item_id: Option<Id>,
     pub kind: TransitionKind,
     pub duration_frames: i64,
     pub easing: Easing,
     pub placement: TransitionPlacement,
-    /// 两侧实例自带的声音同时做等功率交叉淡化。
+    /// The audio of both instances is crossfaded at the same time, using equal-power curves.
     pub audio_crossfade: bool,
 }
 
-/// 转场的种类与它的参数（§3.9）。前五种可以单侧也可以两侧，`dip-to-color`、`push` 只用于两侧。
+/// The transition kind and its parameters (§3.9). The first five kinds can be one-sided or two-sided; `dip-to-color` and `push` are two-sided only.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TransitionKind {
-    /// 不透明度乘进度。
+    /// Opacity multiplied by progress.
     Dissolve,
-    /// 从框的左边起露出进度那么多。
+    /// Reveals progress amount from the left edge of the box.
     Wipe,
-    /// 沿框自己的横轴从左边移入，同时淡入。
+    /// Slides in from the left along the box's own horizontal axis, while fading in.
     Slide,
-    /// 以框中心缩放 0.75 + 0.25 × 进度，同时淡入。
+    /// Scales around the box center from 0.75 + 0.25 × progress, while fading in.
     Zoom,
-    /// 以框中心为圆心的圆形揭示。
+    /// Circular reveal centered on the box center.
     Iris,
-    /// 先混向一种颜色，再从这种颜色混向新画面。只用于两侧。
+    /// Blends first toward a color, then from that color into the new picture. Two-sided only.
     DipToColor { color: String },
-    /// 新画面沿 `direction` 推入，同时把旧画面推出去。只用于两侧。
+    /// The new picture is pushed in along `direction`, pushing the old picture out. Two-sided only.
     Push { direction: Direction },
-    /// 这个版本不认识的种类（或认识但参数读不懂）：原样保留，渲染成硬切并报告。
+    /// A kind this version does not recognize (or recognizes but whose parameters cannot be read): kept as-is, rendered as a hard cut, and reported.
     Unsupported { kind: String, params: Map<String, Value> },
 }
 
-/// 可以单侧也可以两侧的种类，与 `timeline::video_transitions::PRESETS`（去掉 `none`）一致。
+/// Kinds that can be one-sided or two-sided, matching `timeline::video_transitions::PRESETS` (with `none` removed).
 pub const SINGLE_SIDED_KINDS: &[&str] = &["dissolve", "wipe", "slide", "zoom", "iris"];
-/// 只用于两侧的种类。
+/// Kinds that are two-sided only.
 pub const TWO_SIDED_ONLY_KINDS: &[&str] = &["dip-to-color", "push"];
 
 impl TransitionKind {
@@ -67,7 +65,7 @@ impl TransitionKind {
         }
     }
 
-    /// 只用于两侧的种类。
+    /// Kinds that are two-sided only.
     pub fn two_sided_only(&self) -> bool {
         matches!(self, TransitionKind::DipToColor { .. } | TransitionKind::Push { .. })
     }
@@ -87,7 +85,7 @@ impl TransitionKind {
         map
     }
 
-    /// 按名字与参数构造。名字不认识时返回 `None`；参数不合法时返回错误说明。
+    /// Constructs from a name and parameters. Returns `None` when the name is not recognized; returns an error description when the parameters are invalid.
     pub fn parse(kind: &str, params: &Map<String, Value>) -> Option<Result<TransitionKind, Text>> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -128,7 +126,7 @@ impl TransitionKind {
     }
 }
 
-/// 运动的方向：画面或边沿朝哪边走。
+/// Direction of motion: which way the picture or edge travels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
@@ -138,7 +136,7 @@ pub enum Direction {
     Down,
 }
 
-/// 缓动曲线（与音量包络共用一个词表，§3.9）：把线性进度 `p ∈ [0, 1]` 映成缓动后的进度。
+/// Easing curve (shares one vocabulary with the volume envelope, §3.9): maps the linear progress `p ∈ [0, 1]` to eased progress.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Easing {
@@ -165,22 +163,22 @@ impl Easing {
     }
 }
 
-/// 两侧转场的窗口相对剪切点放在哪里。单边转场总在实例之内，不看它。
+/// Where the window of a two-sided transition sits relative to the cut point. A one-sided transition always lies within the instance, so this does not apply to it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TransitionPlacement {
-    /// 以剪切点为中心：`[cut − ⌊D/2⌋, cut − ⌊D/2⌋ + D)`。
+    /// Centered on the cut point: `[cut − ⌊D/2⌋, cut − ⌊D/2⌋ + D)`.
     #[default]
     Center,
-    /// 从剪切点开始：`[cut, cut + D)`，用左侧实例尾部的 handles。
+    /// Starts at the cut point: `[cut, cut + D)`, using the handles at the tail of the left-hand instance.
     StartAtCut,
-    /// 在剪切点结束：`[cut − D, cut)`，用右侧实例头部的 handles。
+    /// Ends at the cut point: `[cut − D, cut)`, using the handles at the head of the right-hand instance.
     EndAtCut,
 }
 
 impl Transition {
-    /// 转场在序列上占的帧区间 `[start, end)`。两侧转场的剪切点是左侧实例的终点；
-    /// 两侧是否首尾相接由调用方检查。两侧都没有时为 `None`。
+    /// The frame range `[start, end)` the transition occupies on the sequence. For a two-sided transition the cut point is the end of the left-hand instance;
+    /// the caller checks whether the two sides touch end to end. `None` when neither side is present.
     pub fn window(&self, left: Option<FrameSpan>, right: Option<FrameSpan>) -> Option<(i64, i64)> {
         let d = self.effective_frames(left, right);
         let start = match (left, right) {
@@ -199,13 +197,12 @@ impl Transition {
         Some((start, start + d))
     }
 
-    /// 是否单侧（入场或出场）。
+    /// Whether it is one-sided (entry or exit).
     pub fn is_single_sided(&self) -> bool {
         self.left_item_id.is_none() || self.right_item_id.is_none()
     }
 
-    /// 生效的长度（帧）。两侧转场是写入的长度；单侧转场是 min(D, ⌊L / 2⌋)，L 是实例的帧数（§3.9），
-    /// 实例变短时随之变短；为 0 时这一头按硬切画。
+    /// Effective length (frames). For a two-sided transition it is the length as written; for a one-sided transition it is min(D, ⌊L / 2⌋), where L is the instance's frame count (§3.9), so it shortens as the instance shortens. At 0 this side is drawn as a hard cut.
     pub fn effective_frames(&self, left: Option<FrameSpan>, right: Option<FrameSpan>) -> i64 {
         match (left, right) {
             (Some(_), Some(_)) => self.duration_frames,
@@ -214,7 +211,7 @@ impl Transition {
         }
     }
 
-    /// 转场涉及的实例。
+    /// The instances the transition involves.
     pub fn item_ids(&self) -> impl Iterator<Item = &Id> {
         self.left_item_id.iter().chain(&self.right_item_id)
     }
@@ -228,7 +225,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// 存储与交换的形式：`kind` 是字符串，参数放在 `params` 里。
+/// Storage and exchange form: `kind` is a string, parameters are in `params`.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawTransition {
@@ -258,7 +255,7 @@ impl TryFrom<RawTransition> for Transition {
         }
         let kind = match TransitionKind::parse(&raw.kind, &raw.params) {
             Some(Ok(kind)) => kind,
-            // 不认识的种类与读不懂的参数都原样保留（§1.4）。
+            // Unrecognized kinds and unreadable parameters are kept as-is (§1.4).
             _ => TransitionKind::Unsupported {
                 kind: raw.kind,
                 params: raw.params,
@@ -317,7 +314,7 @@ mod tests {
         let t: Transition = serde_json::from_value(future.clone()).unwrap();
         assert!(matches!(&t.kind, TransitionKind::Unsupported { kind, .. } if kind == "spiral"));
         assert_eq!(serde_json::to_value(&t).unwrap(), future);
-        // 认识的种类带了读不懂的参数，同样原样保留。
+        // A recognized kind with unreadable parameters is likewise kept as-is.
         let odd = json!({ "id": "tr_3", "rightItemId": "b", "kind": "wipe", "params": { "direction": "left" }, "durationFrames": 5, "easing": "linear", "placement": "center" });
         let t: Transition = serde_json::from_value(odd.clone()).unwrap();
         assert!(matches!(&t.kind, TransitionKind::Unsupported { kind, .. } if kind == "wipe"));
@@ -351,7 +348,7 @@ mod tests {
         assert_eq!(t.window(Some(left), Some(right)), Some((75, 90)));
         assert_eq!(t.window(None, Some(right)), Some((90, 105)));
         assert_eq!(t.window(Some(left), None), Some((75, 90)));
-        // 单侧转场生效的长度不超过实例的一半。
+        // The effective length of a one-sided transition does not exceed half the instance.
         let short = FrameSpan {
             from_frame: 90,
             duration_frames: 20,

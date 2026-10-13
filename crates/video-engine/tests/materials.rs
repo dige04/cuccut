@@ -1,5 +1,5 @@
-//! 素材的存放方式、文档与图文实例：链接与收纳、代码包目录、文档版本、按精确字段写入实例。
-//! 需要探测的测试用手写的 wav；没有 ffprobe 时跳过并打印原因。
+//! Material storage modes, documents and image-and-text instances: linking and collecting, code package directories, document versions, writing instances by exact field.
+//! Hand-written wav files for the tests that probe; skipped with a printed reason when ffprobe is not available.
 
 #![allow(clippy::result_large_err)]
 
@@ -24,7 +24,7 @@ fn has_ffprobe() -> bool {
     ok
 }
 
-/// 8 kHz 单声道 16 位的静音 wav。
+/// A silent wav at 8 kHz, mono, 16-bit.
 fn write_wav(path: &Path, seconds: u32) {
     let samples = 8000 * seconds;
     let data_len = samples * 2;
@@ -97,7 +97,7 @@ fn only_asset(video: &Video) -> String {
     video.state().assets.keys().next().unwrap().clone()
 }
 
-/// 元素模型的位置（百分比）：居中，宽占画布一半。
+/// Element model position (percent): centered, width half the canvas.
 fn place() -> Value {
     json!({ "x": 50, "y": 50, "w": 50 })
 }
@@ -124,7 +124,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     let AssetStorage::Linked { locator, frozen } = &revision.storage else {
         panic!("应是链接素材")
     };
-    // 文件在项目目录里（没有项目标记时是视频目录的父目录）：记相对视频目录的路径。
+    // The file is inside the project directory (without a project marker, that is the parent of the video directory): record the path relative to the video directory.
     assert_eq!(locator.path, "../外部/logo.svg");
     assert!(!frozen && locator.modified_at.is_some());
     assert_eq!(revision.provenance.source, Some(json!({ "url": "https://example.com/logo" })));
@@ -137,7 +137,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     let resolved = video.resolve_asset(&asset_id, None).unwrap();
     assert_eq!((resolved.path.as_path(), resolved.storage), (source.as_path(), "linked"));
 
-    // 文件换了内容（长度变了）：不拿别的 bytes 顶替。
+    // The file's content has changed (its length changed): do not substitute other bytes for it.
     fs::write(&source, "<svg/>").unwrap();
     let changed = video.resolve_asset(&asset_id, None).unwrap_err();
     assert_eq!(
@@ -152,7 +152,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     assert_eq!(refused.unwrap_err().code, "ASSET_MISSING");
     fs::write(&source, "<svg xmlns='http://www.w3.org/2000/svg'/>").unwrap();
 
-    // 收纳：复制进 blobs/，素材版本不变。
+    // Collect: copy into blobs/; the material version does not change.
     let before = (asset.current_revision.clone(), revision.content_hash.clone());
     let collected = apply(
         &mut video,
@@ -169,7 +169,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     fs::remove_file(&source).unwrap();
     assert!(video.resolve_asset(&asset_id, None).is_ok(), "原文件删掉也不影响");
 
-    // 撤销收纳：回到链接；原文件不在了，如实报告缺失。
+    // Undo collect: back to the link; the original file is gone, so report the missing file as it is.
     video
         .undo(&UndoRequest {
             command_id: "cmd_undo".into(),
@@ -182,7 +182,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     assert_eq!(missing.details["reason"], json!("missing"));
 }
 
-/// `blobs/` 里除了 `.staging` 之外的条目：复制进来的 bytes。
+/// Entries in `blobs/` other than `.staging`: the copied-in bytes.
 fn collected_blobs(dir: &Path) -> Vec<String> {
     fs::read_dir(dir.join("blobs"))
         .map(|entries| {
@@ -204,7 +204,7 @@ fn a_file_is_linked_by_default_and_copied_only_when_asked() {
     let dir = root.path().join("m");
     let mut video = new_video(&dir);
 
-    // 不指定存放方式：留在原处，blobs/ 下没有新 bytes。
+    // No storage mode given: stays where it is; no new bytes under blobs/.
     let linked = apply(
         &mut video,
         "cmd_default",
@@ -220,7 +220,7 @@ fn a_file_is_linked_by_default_and_copied_only_when_asked() {
     assert!(collected_blobs(&dir).is_empty(), "默认导入不复制 bytes");
     assert_eq!(video.resolve_asset(&logo_id, None).unwrap().storage, "linked");
 
-    // 显式 managed：复制进 blobs/，原文件删掉也不影响。
+    // Explicit managed: copied into blobs/; deleting the original file afterwards does not affect it.
     let managed = apply(
         &mut video,
         "cmd_managed",
@@ -245,7 +245,7 @@ fn a_directory_is_collected_by_default() {
     let dir = root.path().join("m");
     let mut video = new_video(&dir);
 
-    // 相对路径的目录按默认要收进来，而收进来要绝对路径：拒绝，并提示可以显式链接。
+    // A directory given by relative path is collected by default, but collecting requires an absolute path: reject, and suggest an explicit link.
     let relative = apply(
         &mut video,
         "cmd_relative",
@@ -254,7 +254,7 @@ fn a_directory_is_collected_by_default() {
     assert_eq!(relative.unwrap_err().code, "INVALID_OPERATION");
     assert!(collected_blobs(&dir).is_empty());
 
-    // 代码包没有原文件可以指向：不指定时收进视频。
+    // A code package has no original file to point to: when unspecified, it is collected into the video.
     apply(&mut video, "cmd_bundle", vec![json!({ "type": "importAsset", "path": bundle })]).unwrap();
     let asset_id = only_asset(&video);
     let asset = &video.state().assets[&asset_id];
@@ -263,7 +263,7 @@ fn a_directory_is_collected_by_default() {
     let hex = revision.content_hash.strip_prefix("sha256:").unwrap();
     assert!(dir.join("blobs").join(hex).join("index.html").is_file());
 
-    // 显式链接的目录可以给相对路径。
+    // An explicitly linked directory may be given as a relative path.
     let other = root.path().join("other");
     fs::create_dir_all(&other).unwrap();
     fs::write(other.join("index.html"), "<html>2</html>").unwrap();
@@ -303,7 +303,7 @@ fn a_video_opens_even_when_a_linked_asset_is_missing() {
     let before = video.snapshot();
     drop(video);
 
-    // 链接的文件不见了：视频照常打开，快照不变；这个素材标为缺失，别的素材不受影响，视频照样能编辑。
+    // The linked file is gone: the video still opens, the snapshot is unchanged; this material is marked as missing, other materials are unaffected, and the video can still be edited.
     fs::remove_file(&away).unwrap();
     let mut video = Video::open(&dir, OpenMode::Write, &ffprobe()).expect("缺了链接素材也能打开");
     assert_eq!(video.snapshot(), before);
@@ -314,7 +314,7 @@ fn a_video_opens_even_when_a_linked_asset_is_missing() {
     );
     assert_eq!(missing.details["path"], json!("../away.json"));
     assert_eq!(video.resolve_asset(&kept_id, None).unwrap().storage, "managed");
-    // 缺失的素材不必等到取用时才知道：状态里列出它，收进视频的不在其中。
+    // Missing material does not have to wait until it is used to be known: it is listed in the state; collected material is not in that list.
     let status = video.missing_assets();
     assert_eq!(status.len(), 1);
     assert_eq!(
@@ -367,14 +367,14 @@ fn a_path_relative_to_the_video_survives_moving_the_project() {
     fs::create_dir_all(project.join("media")).unwrap();
     fs::write(project.join("media/data.json"), "{}").unwrap();
     let mut video = new_video(&project.join("片子"));
-    // 显式复制进视频必须给绝对路径；相对路径只用于链接。
+    // Explicitly copying into the video requires an absolute path; relative paths are only for links.
     let managed = apply(
         &mut video,
         "cmd_managed",
         vec![json!({ "type": "importAsset", "path": "../media/data.json", "storage": "managed" })],
     );
     assert_eq!(managed.unwrap_err().code, "INVALID_OPERATION");
-    // 不指定存放方式：文件默认链接，相对路径走链接，定位原样记下。
+    // No storage mode given: files link by default, relative paths go through the link, and the location is recorded as given.
     apply(
         &mut video,
         "cmd_link",
@@ -399,7 +399,7 @@ fn a_path_relative_to_the_video_survives_moving_the_project() {
     );
 }
 
-/// 给目录写上项目标记，让它成为项目目录（引擎只看标记在不在）。
+/// Writes a project marker into the directory so that it becomes a project directory (the engine only checks whether the marker exists).
 fn mark_project(dir: &Path) {
     fs::create_dir_all(dir.join(".ccut")).unwrap();
     fs::write(dir.join(".ccut/project.json"), r#"{"format":"cuccut.project"}"#).unwrap();
@@ -423,7 +423,7 @@ fn files_in_the_project_are_linked_relative_and_survive_moving_the_whole_project
     fs::write(project.join("素材/a.json"), r#"{"v":"a"}"#).unwrap();
     let outside = elsewhere.path().join("b.json");
     fs::write(&outside, r#"{"v":"b"}"#).unwrap();
-    // 视频在项目的子目录里：项目目录是父目录链上带标记的那一层，不是视频目录的父目录。
+    // The video is in a subdirectory of the project: the project directory is the level with the marker on the parent-directory chain, not the parent of the video directory.
     let video_dir = project.join("视频").join("片子");
     let mut video = new_video(&video_dir);
     let committed = apply(
@@ -440,7 +440,7 @@ fn files_in_the_project_are_linked_relative_and_survive_moving_the_whole_project
     assert_eq!(linked_path(&video, &b), outside.to_string_lossy(), "项目外的文件记绝对路径");
     drop(video);
 
-    // 整个项目目录搬走并改名：项目内的链接照样解析，项目外的绝对路径不受影响。
+    // The whole project directory is moved and renamed: links inside the project still resolve; absolute paths outside the project are unaffected.
     let moved = root.path().join("搬走的项目");
     fs::rename(&project, &moved).unwrap();
     let video = Video::open(&moved.join("视频").join("片子"), OpenMode::Write, &ffprobe()).unwrap();
@@ -452,7 +452,7 @@ fn files_in_the_project_are_linked_relative_and_survive_moving_the_whole_project
 #[test]
 fn a_file_given_through_another_spelling_of_the_project_is_still_relative() {
     let root = tempfile::tempdir().unwrap();
-    // 视频按真实路径打开（Runtime 就是这样），文件按另一种写法给出（macOS 的临时目录在 /var → /private/var 之下）。
+    // The video is opened by its real path (as the Runtime does), and the file is given in another form (on macOS the temp directory sits under /var → /private/var).
     let real_root = fs::canonicalize(root.path()).unwrap();
     fs::write(root.path().join("c.json"), "{}").unwrap();
     let mut video = new_video(&real_root.join("m"));
@@ -482,8 +482,8 @@ fn a_relative_locator_that_leaves_the_project_is_refused() {
     assert_eq!(linked_path(&video, &asset_id), "../../a.json");
     drop(video);
 
-    // 只把视频目录拿到别处（没有项目标记，项目目录退为视频目录的父目录）：`../../a.json` 落到项目之外，
-    // 即使那里恰好有一个同样内容的文件也不读。视频照常打开，状态里报告这个素材。
+    // Only the video directory is moved elsewhere (without a project marker, the project directory falls back to the parent of the video directory): `../../a.json` lands outside the project,
+    // and is not read even if a file with the same content happens to be there. The video still opens, and the state reports this material.
     let away = root.path().join("别处").join("x").join("y");
     fs::create_dir_all(&away).unwrap();
     fs::rename(project.join("sub").join("片子"), away.join("片子")).unwrap();
@@ -499,7 +499,7 @@ fn a_relative_locator_that_leaves_the_project_is_refused() {
         status.iter().map(|m| (m.asset_id.as_str(), m.reason.as_str())).collect::<Vec<_>>(),
         vec![(asset_id.as_str(), "outside-project")]
     );
-    // 收进视频同样不读项目外的文件。
+    // Collecting into the video likewise does not read files outside the project.
     let collect = apply(
         &mut video,
         "cmd_collect",
@@ -508,7 +508,7 @@ fn a_relative_locator_that_leaves_the_project_is_refused() {
     assert_eq!(collect.unwrap_err().details["reason"], json!("outside-project"));
     assert!(collected_blobs(&away.join("片子")).is_empty());
 
-    // 显式重新链接到项目外的那个文件：记成绝对路径，可以解析（绝对路径的链接素材由媒体通道按类型把关）。
+    // Explicitly relinked to that file outside the project: recorded as an absolute path, which resolves (linked material with absolute paths is vetted by type by the media channel).
     apply(
         &mut video,
         "cmd_relink",
@@ -534,7 +534,7 @@ fn relinking_normalizes_the_locator_like_importing() {
     let asset_id = only_asset(&video);
     assert_eq!(linked_path(&video, &asset_id), outside.to_string_lossy());
 
-    // 文件挪进了项目：给绝对路径重新链接，记成相对视频目录的路径。
+    // The file was moved into the project: relink with an absolute path, recorded as a path relative to the video directory.
     fs::create_dir_all(project.join("media")).unwrap();
     let inside = project.join("media/d.json");
     fs::rename(&outside, &inside).unwrap();
@@ -546,7 +546,7 @@ fn relinking_normalizes_the_locator_like_importing() {
     )
     .unwrap();
     assert_eq!(linked_path(&video, &asset_id), "../media/d.json");
-    // 绕路的相对写法同样规范化。
+    // Indirect relative forms are normalized in the same way.
     apply(
         &mut video,
         "cmd_relink_again",
@@ -604,7 +604,7 @@ fn a_directory_becomes_a_bundle_asset_used_by_a_composition_item() {
         vec![json!({ "type": "insertItems", "sequenceId": s, "items": [item] })],
     )
     .unwrap();
-    // 内置合成已去掉：进度条是独立的 progress 实例，不需要代码包。
+    // The built-in composition has been removed: the progress bar is a standalone `progress` instance and needs no code package.
     let progress = json!({
         "type": "progress", "trackId": track(&video, "V1"), "span": { "fromFrame": 90, "durationFrames": 30 },
         "place": { "y": 95, "w": 100 }, "progress": { "style": "bar" },
@@ -617,7 +617,7 @@ fn a_directory_becomes_a_bundle_asset_used_by_a_composition_item() {
     .unwrap();
     assert_eq!(video.state().items.len(), 2);
 
-    // 目录内容不变时收纳成功，按内容地址放进 blobs/<sha256>/。
+    // When the directory contents are unchanged, collecting succeeds and the content is stored under its content address in blobs/<sha256>/.
     apply(
         &mut video,
         "cmd_collect",
@@ -660,7 +660,7 @@ fn documents_are_versioned_and_their_bodies_stay_out_of_the_snapshot() {
     assert_eq!(translation.source_document_id.as_deref(), Some(speech_id.as_str()));
     assert_eq!(video.document(&speech_id, None).unwrap().body, body);
 
-    // 内容没变不产生新版本；改了才有版本 2，旧版本仍然读得到。
+    // Unchanged content creates no new version; only a change produces version 2, and the old version can still be read.
     let same = json!({ "type": "putDocument", "documentId": speech_id, "kind": "speech", "body": body });
     let unchanged = apply(&mut video, "cmd_same", vec![same]).unwrap();
     assert!(unchanged.receipt.updated_ids.is_empty());
@@ -676,7 +676,7 @@ fn documents_are_versioned_and_their_bodies_stay_out_of_the_snapshot() {
         "INVALID_OPERATION"
     );
 
-    // 撤销改字：当前版本回到 1。重新打开之后文档仍在。
+    // Undo the text edit: the current version goes back to 1. The document is still there after reopening.
     video
         .undo(&UndoRequest {
             command_id: "cmd_undo".into(),
@@ -687,7 +687,7 @@ fn documents_are_versioned_and_their_bodies_stay_out_of_the_snapshot() {
         .unwrap();
     assert_eq!(video.document(&speech_id, None).unwrap().body, body);
 
-    // 撤销后再改：撤销掉的版本 2 正文还在库里，新版本编成 3，不复用 2（否则读出来是撤销前的旧正文）。
+    // Edit again after undo: the body of the undone version 2 is still in the store, so the new version is numbered 3 and does not reuse 2 (otherwise reading it would return the old body from before the undo).
     let again = json!({ "timescale": 1000, "words": [{ "id": "w1", "text": "大家好", "start": 0, "end": 400 }] });
     let redo_edit = json!({ "type": "putDocument", "documentId": speech_id, "kind": "speech", "body": again });
     apply(&mut video, "cmd_again", vec![redo_edit]).unwrap();
@@ -753,7 +753,7 @@ fn speech_and_translation_bodies_check_the_added_fields() {
     .unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
 
-    // 不认得的 schema 与没有 schema 的正文照旧不校验。
+    // Bodies with an unrecognized schema, and bodies with no schema, are still not validated, as before.
     let loose = json!({ "schema": "cuccut.speech/9", "userBreaks": 3 });
     apply(
         &mut video,
@@ -802,7 +802,7 @@ fn text_shape_and_caption_items_are_stored_and_edited_on_the_frame_grid() {
     assert_eq!(text_item.base().extensions["cuccut.import"], json!({ "sourceId": "el-5" }));
     let text_id = text_item.base().id.clone();
 
-    // 写入的实例与原生实例一样可以拆分与裁切。
+    // Written instances can be split and trimmed, just like native instances.
     apply(
         &mut video,
         "cmd_split",
@@ -812,7 +812,7 @@ fn text_shape_and_caption_items_are_stored_and_edited_on_the_frame_grid() {
     assert_eq!(video.state().items[&text_id].value.span().unwrap().duration_frames, 20);
     assert_eq!(video.state().items.len(), 4);
 
-    // 不认识的字段、不存在的文档、错的轨道、重叠、自带 ID、与种类不搭配的 role（v2 的 overlay 只给图片、视频、贴纸）都拒绝，视频不变。
+    // Unknown fields, nonexistent documents, wrong tracks, overlaps, a self-supplied ID, and a role that does not fit the kind (v2's overlay is only for images, videos and stickers) are all rejected; the video is unchanged.
     let before = video.revision();
     let cases = [
         json!({ "type": "text", "trackId": v1, "span": { "fromFrame": 200, "durationFrames": 10 }, "place": place(),
@@ -888,7 +888,7 @@ fn inserted_media_items_keep_exact_source_ranges_and_mix_settings() {
     );
     assert_eq!(video.snapshot().sequences[&s].items.len(), 1);
 
-    // 预渲染替身必须是视频素材：音频不行。
+    // A pre-rendered stand-in must be a video material: audio is not allowed.
     let bundle = root.path().join("scene");
     fs::create_dir_all(&bundle).unwrap();
     fs::write(bundle.join("index.html"), "<html></html>").unwrap();
@@ -911,7 +911,7 @@ fn inserted_media_items_keep_exact_source_ranges_and_mix_settings() {
         "INVALID_OPERATION"
     );
 
-    // 源区间超出素材（2 秒）：不默默截断。
+    // Source range exceeds the material (2 seconds): do not truncate silently.
     let past_end = json!({ "type": "insertItems", "sequenceId": s, "items": [audio(120, "1500", "1200")] });
     assert_eq!(
         apply(&mut video, "cmd_past", vec![past_end]).unwrap_err().code,
@@ -919,8 +919,7 @@ fn inserted_media_items_keep_exact_source_ranges_and_mix_settings() {
     );
 }
 
-/// 音画联动组（规范 §3.7「声音」）：组里的音频实例是合成声音单独放的一份，合成自己的声音必须关着；插入、打开声音、
-/// 把音频放进组都核对，不在组里的音频不受影响。
+/// Audio-video linked group (spec §3.7 “声音” (sound)): the audio instance in the group is a separate copy of the composition's sound, and the composition's own sound must be off. Insertion, turning sound on, and putting audio into the group are all checked; audio outside the group is unaffected.
 #[test]
 fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
     if !has_ffprobe() {
@@ -967,7 +966,7 @@ fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
     };
     let insert = |items: Vec<Value>| json!({ "type": "insertItems", "sequenceId": s, "items": items });
 
-    // 合成出声、组里又放了配音：两处同时出声，整笔拒绝。
+    // The composition plays sound and the group also contains voice-over: both would sound at once, so the whole edit is rejected.
     let refused = apply(
         &mut video,
         "cmd_both",
@@ -978,7 +977,7 @@ fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
     assert!(refused.message.contains("narration"), "{}", refused.message);
     assert!(video.state().items.is_empty());
 
-    // 合成的声音关着：组里的配音照常写入，联动组原样保存。
+    // The composition's sound is off: the voice-over in the group is written as usual, and the linked group is saved unchanged.
     apply(
         &mut video,
         "cmd_linked",
@@ -1008,7 +1007,7 @@ fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
         assert_eq!(placed.value.base().link_group_id.as_deref(), Some("narration"));
     }
 
-    // 把合成的声音打开：拒绝，点名这个合成。
+    // Turning on the composition's sound: rejected, naming this composition.
     let unmute = json!({ "type": "setAudioMix", "sequenceId": s, "itemId": composition_id, "muted": false });
     let refused = apply(&mut video, "cmd_unmute", vec![unmute]).unwrap_err();
     assert_eq!(
@@ -1016,7 +1015,7 @@ fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
         ("INVALID_OPERATION", vec![composition_id.clone()])
     );
 
-    // 不在组里的音频（音乐、音效）不受影响；别的组也不受影响。
+    // Audio outside the group (music, sound effects) is unaffected; other groups are unaffected too.
     apply(
         &mut video,
         "cmd_free",
@@ -1059,7 +1058,7 @@ fn new_tracks_and_documents_are_referenced_within_one_transaction() {
     assert_eq!(text_item.base().track_id, refs["top"]);
     assert_eq!(video.state().tracks[&refs["top"]].value.name.as_deref(), Some("文字"));
 
-    // 没有这个 ref、ID 与 ref 一起给、同一笔修改里重名，都拒绝。
+    // A missing ref, an ID given together with a ref, or a duplicate name within the same edit: all rejected.
     let unknown = json!({ "type": "text", "trackRef": "nope", "span": { "fromFrame": 0, "durationFrames": 30 }, "place": place(),
         "text": "x", "style": {} });
     let err = apply(
@@ -1136,7 +1135,7 @@ fn imported_assets_and_new_tracks_are_referenced_by_audio_items_and_ducking_in_o
     assert_eq!(rule.trigger.group().unwrap().track_ids, vec![refs["dub"].clone()]);
     assert_eq!(rule.target.track_ids, vec![a1.clone()]);
 
-    // 没有这个导入、assetRef 与 assetImportRef 一起给、没有这个轨道的 ref：都拒绝，视频不变。
+    // A nonexistent import, assetRef given together with assetImportRef, or a ref to a nonexistent track: all rejected; the video is unchanged.
     let mut both = audio("dub", "u1");
     both["assetRef"] = json!({ "id": refs["u1"], "revision": "1" });
     let before = video.revision();

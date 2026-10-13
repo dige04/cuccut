@@ -1,16 +1,12 @@
-//! 本地文生图：请求与结果类型、引擎 trait、PNG 编码与 `job.run`（capability `image`）的编排。
+//! Local text-to-image: request and result types, the engine trait, PNG encoding, and the orchestration of `job.run` (capability `image`).
 //!
-//! 移植自 v2 的 `ccut-image-local`（Qwen-Image-2.1 的 MLX 与 candle 后端）与 `ccut-image::local` 里纯的一半（任务、阶段、
-//! 原始像素）。与 v2 不同的只有边界：v2 按「模型目录 + 相对路径」找文件、在调用方进程里跑；这里经
-//! [`crate::bundle::VerifiedFiles`] 按清单取文件（缺文件 `MODEL_NOT_INSTALLED`），跑在 Model Worker 里，
-//! 结果写成 staging 里的 `image.png`（`cuccut.image-png/v1`）。
+//! Ported from v2's `ccut-image-local` (the MLX and candle backends for Qwen-Image-2.1) and the pure half of `ccut-image::local` (task, stages, raw pixels). The only difference from v2 is the boundary: v2 finds files by “model directory + relative path” and runs in the caller's process. Here files are fetched by manifest via [`crate::bundle::VerifiedFiles`] (a missing file gives `MODEL_NOT_INSTALLED`), it runs inside the Model Worker, and the result is written as `image.png` in staging (`cuccut.image-png/v1`).
 //!
-//! - [`qwen_image`]：Qwen-Image-2.1。调度器与 RoPE 表是纯逻辑、全平台编译；MLX 的模型图只在 `backend-mlx` + macOS
-//!   Apple Silicon 上编译，candle 的随 `backend-candle` 编译（由 candle 后端加载，不经 [`load`]）。
-//! - [`job`]：一次 `job.run` 的阶段、进度、取消与写出。
-//! - [`png`]：RGBA → PNG。
+//! - [`qwen_image`]: Qwen-Image-2.1. The scheduler and RoPE table are pure logic and compile on all platforms. The MLX model graph compiles only with `backend-mlx` on macOS Apple Silicon; the candle one compiles with `backend-candle` (it is loaded by the candle backend, not via [`load`]).
+//! - [`job`]: the stages, progress, cancellation and writing of one `job.run`.
+//! - [`png`]: RGBA → PNG.
 //!
-//! 引擎实例持有设备句柄，不是 `Send`：在哪个线程加载就在哪个线程生成。
+//! An engine instance holds a device handle and is not `Send`: it generates on the thread where it was loaded.
 
 pub mod job;
 pub mod png;
@@ -22,7 +18,7 @@ use serde_json::json;
 use crate::bundle::{FAMILY_QWEN_IMAGE, VerifiedFiles};
 use crate::protocol::{ErrorBody, codes};
 
-/// 一次生成：提示词、像素宽高、去噪步数与随机种子（同一 seed、同一机器得到同一张图）。
+/// One generation: prompt, pixel width and height, number of denoising steps, and random seed (the same seed on the same machine gives the same image).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRequest {
     pub prompt: String,
@@ -32,7 +28,7 @@ pub struct ImageRequest {
     pub seed: u64,
 }
 
-/// 生成的进度：编码提示词 → 去噪（`done/total` 步，开始时报 `0/total`）→ 解码。
+/// Generation progress: encoding the prompt → denoising (`done/total` steps; reports `0/total` at the start) → decoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageProgress {
     EncodingPrompt,
@@ -40,7 +36,7 @@ pub enum ImageProgress {
     Decoding,
 }
 
-/// 8 位 RGBA，行主序，`pixels.len() == width * height * 4`。
+/// 8-bit RGBA, row-major, `pixels.len() == width * height * 4`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawImage {
     pub width: u32,
@@ -48,7 +44,7 @@ pub struct RawImage {
     pub pixels: Vec<u8>,
 }
 
-/// 引擎在步间看到取消标志后返回的错误。
+/// Error returned by the engine after it sees the cancel flag between steps.
 #[derive(Debug)]
 pub struct Cancelled;
 
@@ -60,22 +56,22 @@ impl std::fmt::Display for Cancelled {
 
 impl std::error::Error for Cancelled {}
 
-/// 一个已加载的本地文生图模型。
+/// A loaded local text-to-image model.
 pub trait ImageEngine {
-    /// 模型族（`components.image.family`）。
+    /// Model family (`components.image.family`).
     fn family(&self) -> &'static str;
 
-    /// 请求没给步数时用的步数。
+    /// Number of steps used when the request gives none.
     fn default_steps(&self) -> u32;
 
-    /// 这只模型能不能出这个尺寸；不能是 `MODEL_UNSUPPORTED`（`details.reason: 'unsupported-size'`）。不碰设备。
+    /// Whether this model can produce this size. If not, `MODEL_UNSUPPORTED` (`details.reason: 'unsupported-size'`). Does not touch the device.
     fn check_size(&self, width: u32, height: u32) -> Result<(), ErrorBody>;
 
-    /// 生成一张。`cancel` 在步间查看，返回真时实现返回 [`Cancelled`]。
+    /// Generates one image. `cancel` is checked between steps; when it returns true, the implementation returns [`Cancelled`].
     fn generate(&mut self, request: &ImageRequest, progress: &mut dyn FnMut(ImageProgress), cancel: &dyn Fn() -> bool) -> Result<RawImage>;
 }
 
-/// 这个构建能不能加载 Qwen-Image：MLX（Apple Silicon）或 candle（任何平台）编进来了就能。
+/// Whether this build can load Qwen-Image: it can if MLX (Apple Silicon) or candle (any platform) is compiled in.
 pub const fn qwen_image_available() -> bool {
     cfg!(any(
         all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"),
@@ -83,10 +79,10 @@ pub const fn qwen_image_available() -> bool {
     ))
 }
 
-/// 本构建认识的文生图 family（`components.image.family`）。
+/// Text-to-image families this build recognizes (`components.image.family`).
 pub const IMAGE_FAMILIES: [&str; 1] = [FAMILY_QWEN_IMAGE];
 
-/// 这个 family 在这个构建里能不能加载。
+/// Whether this family can be loaded in this build.
 pub fn family_available(family: &str) -> bool {
     match family {
         FAMILY_QWEN_IMAGE => qwen_image_available(),
@@ -94,15 +90,14 @@ pub fn family_available(family: &str) -> bool {
     }
 }
 
-/// 这个构建能加载的文生图 family。`worker.hello` 的 `imageFamilies` 就是它；非空时才声明 `image` 能力（协议规范 §2.1）。
+/// Text-to-image families this build can load. This is `imageFamilies` in `worker.hello`; the `image` capability is declared only when it is non-empty (protocol spec §2.1).
 pub fn available_families() -> Vec<&'static str> {
     IMAGE_FAMILIES.into_iter().filter(|family| family_available(family)).collect()
 }
 
-/// 加载一只 MLX 引擎（candle 后端另用 `qwen_image::candle::QwenImage::load`，带上设备）。调用前不需要自己确认 Metal：
-/// 实现会先核对清单（缺文件是 `MODEL_NOT_INSTALLED`），再确认设备。
+/// Loads an MLX engine. (The candle backend uses `qwen_image::candle::QwenImage::load` instead, with the device.) No need to confirm Metal before calling: the implementation first checks the manifest (a missing file is `MODEL_NOT_INSTALLED`), then confirms the device.
 ///
-/// 错误里的 [`ErrorBody`] 可以 `downcast_ref` 出来原样上报；其余是加载失败。
+/// An [`ErrorBody`] in the error can be recovered with `downcast_ref` and reported as is; anything else is a load failure.
 pub fn load(files: &VerifiedFiles) -> Result<Box<dyn ImageEngine>> {
     if !family_available(&files.family) {
         return Err(crate::protocol::image_not_wired(Some(&files.family)).into());
@@ -120,7 +115,7 @@ fn load_available(files: &VerifiedFiles) -> Result<Box<dyn ImageEngine>> {
     Err(crate::protocol::image_not_wired(Some(&files.family)).into())
 }
 
-/// 尺寸做不到：`MODEL_UNSUPPORTED`，带上请求的宽高与模型的规则。
+/// Size not possible: `MODEL_UNSUPPORTED`, with the requested width and height and the model's rules.
 pub fn unsupported_size(family: &str, width: u32, height: u32, rule: &str) -> ErrorBody {
     ErrorBody::new(
         codes::MODEL_UNSUPPORTED,

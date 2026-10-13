@@ -1,8 +1,8 @@
-//! 立体声容器（planar）、等功率声像、淡入淡出、峰值 / RMS 归一化、去直流。
+//! Stereo container (planar), constant-power panning, fades, peak / RMS normalization, DC removal.
 
 use crate::math::samples;
 
-/// 平面立体声：两条等长的声道。所有 DSP 都按声道分开处理；需要交错时在编码处自行拼。
+/// Planar stereo: two channels of equal length. All DSP processes each channel separately; interleaving, when needed, is done by the caller at encode time.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Stereo {
     pub l: Vec<f32>,
@@ -10,7 +10,7 @@ pub struct Stereo {
 }
 
 impl Stereo {
-    /// `n` 个采样的静音。
+    /// Silence of `n` samples.
     pub fn zeros(n: usize) -> Self {
         Self {
             l: vec![0.0; n],
@@ -18,7 +18,7 @@ impl Stereo {
         }
     }
 
-    /// 两声道都是 `x`（不做声像补偿）。
+    /// Both channels are `x` (no panning compensation).
     pub fn dual_mono(x: &[f32]) -> Self {
         Self {
             l: x.to_vec(),
@@ -26,7 +26,7 @@ impl Stereo {
         }
     }
 
-    /// 从交错的 `[l0, r0, l1, r1, …]` 拆开。
+    /// Splits interleaved `[l0, r0, l1, r1, …]`.
     pub fn from_interleaved(x: &[f32]) -> Self {
         Self {
             l: x.iter().step_by(2).copied().collect(),
@@ -34,7 +34,7 @@ impl Stereo {
         }
     }
 
-    /// 交错成 `[l0, r0, l1, r1, …]`。
+    /// Interleaves into `[l0, r0, l1, r1, …]`.
     pub fn interleaved(&self) -> Vec<f32> {
         self.l
             .iter()
@@ -51,20 +51,20 @@ impl Stereo {
         self.l.is_empty()
     }
 
-    /// 截断或补零到 `n`。
+    /// Truncates or zero-pads to `n`.
     pub fn resize(&mut self, n: usize) {
         self.l.resize(n, 0.0);
         self.r.resize(n, 0.0);
     }
 
-    /// 两声道都乘 `g`。
+    /// Multiplies both channels by `g`.
     pub fn scale(&mut self, g: f64) {
         for v in self.l.iter_mut().chain(self.r.iter_mut()) {
             *v = (*v as f64 * g) as f32;
         }
     }
 
-    /// 两声道逐采样乘增益曲线 `g`（长度须相同）。
+    /// Multiplies both channels sample by sample by the gain curve `g` (lengths must match).
     pub fn apply_gain(&mut self, g: &[f32]) {
         assert_eq!(g.len(), self.len(), "gain curve length");
         for ((l, r), g) in self.l.iter_mut().zip(self.r.iter_mut()).zip(g) {
@@ -73,13 +73,13 @@ impl Stereo {
         }
     }
 
-    /// 把 `other × gain` 叠到 `offset` 起（`offset` 可为负，越界部分丢弃）。
+    /// Mixes `other × gain` in starting at `offset` (`offset` may be negative; out-of-range parts are dropped).
     pub fn add_at(&mut self, other: &Stereo, offset: isize, gain: f64) {
         add_into(&mut self.l, &other.l, offset, gain);
         add_into(&mut self.r, &other.r, offset, gain);
     }
 
-    /// 样本峰值（线性，两声道取大）。
+    /// Sample peak (linear, the larger of the two channels).
     pub fn peak(&self) -> f64 {
         peak(&self.l).max(peak(&self.r))
     }
@@ -93,13 +93,13 @@ impl Stereo {
             .collect()
     }
 
-    /// 两声道的切片视图，给多声道入口用。
+    /// Slice view of the two channels, for the multi-channel entry point.
     pub fn channels(&self) -> [&[f32]; 2] {
         [&self.l, &self.r]
     }
 }
 
-/// `dst[offset..] += src × gain`，越界截断。
+/// `dst[offset..] += src × gain`, truncated at the bounds.
 pub fn add_into(dst: &mut [f32], src: &[f32], offset: isize, gain: f64) {
     let n = dst.len() as isize;
     let a = offset.max(0);
@@ -110,12 +110,12 @@ pub fn add_into(dst: &mut [f32], src: &[f32], offset: isize, gain: f64) {
     }
 }
 
-/// 样本峰值（线性）。
+/// Sample peak (linear).
 pub fn peak(x: &[f32]) -> f64 {
     x.iter().fold(0.0f64, |m, v| m.max((*v as f64).abs()))
 }
 
-/// RMS（线性）。
+/// RMS (linear).
 pub fn rms(x: &[f32]) -> f64 {
     if x.is_empty() {
         return 0.0;
@@ -123,15 +123,15 @@ pub fn rms(x: &[f32]) -> f64 {
     libm::sqrt(x.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>() / x.len() as f64)
 }
 
-/// 等功率声像的左右增益：`p ∈ [−1, 1]`，θ = (p+1)·π/4，`(cos θ, sin θ)·√2`（居中时两边都是 1，
-/// 与参考工程 `pan2` 同口径：单声道放中间不掉电平）。
+/// Left and right gains for constant-power panning: `p ∈ [−1, 1]`, θ = (p+1)·π/4, `(cos θ, sin θ)·√2` (both sides are 1 when centered,
+/// the same convention as the reference project's `pan2`: a mono signal placed in the middle does not lose level).
 pub fn pan_gains(p: f64) -> (f64, f64) {
     let a = (p.clamp(-1.0, 1.0) + 1.0) * core::f64::consts::FRAC_PI_4;
     let (s, c) = libm::sincos(a);
     (c * core::f64::consts::SQRT_2, s * core::f64::consts::SQRT_2)
 }
 
-/// 单声道 → 立体声（等功率声像）。
+/// Mono → stereo (constant-power panning).
 pub fn pan_mono(x: &[f32], p: f64) -> Stereo {
     let (gl, gr) = pan_gains(p);
     Stereo {
@@ -140,7 +140,7 @@ pub fn pan_mono(x: &[f32], p: f64) -> Stereo {
     }
 }
 
-/// 立体声整体偏移：左右各乘 [`pan_gains`]（`p = 0` 不变）。
+/// Stereo pan as a whole: multiplies left and right each by [`pan_gains`] (unchanged at `p = 0`).
 pub fn pan_stereo(x: &mut Stereo, p: f64) {
     if p == 0.0 {
         return;
@@ -154,8 +154,8 @@ pub fn pan_stereo(x: &mut Stereo, p: f64) {
     }
 }
 
-/// 线性淡入 `a` 秒、淡出 `b` 秒（就地）。淡入包络 `linspace(0, 1, na)`，淡出 `linspace(1, 0, nb)`，
-/// 与参考工程 `fade` 相同。
+/// Linear fade-in over `a` seconds and fade-out over `b` seconds (in place). Fade-in envelope `linspace(0, 1, na)`, fade-out `linspace(1, 0, nb)`,
+/// the same as the reference project's `fade`.
 pub fn fade(x: &mut [f32], sr: f64, a: f64, b: f64) {
     let n = x.len();
     let na = samples(a, sr).min(n);
@@ -176,13 +176,13 @@ pub fn fade(x: &mut [f32], sr: f64, a: f64, b: f64) {
     }
 }
 
-/// 立体声两声道同一淡入淡出。
+/// Same fade-in and fade-out applied to both stereo channels.
 pub fn fade_stereo(x: &mut Stereo, sr: f64, a: f64, b: f64) {
     fade(&mut x.l, sr, a, b);
     fade(&mut x.r, sr, a, b);
 }
 
-/// 峰值归一到 `v`（线性）。
+/// Normalizes to peak `v` (linear).
 pub fn peak_normalize(x: &mut [f32], v: f64) {
     let g = v / (peak(x) + 1e-12);
     for s in x.iter_mut() {
@@ -190,7 +190,7 @@ pub fn peak_normalize(x: &mut [f32], v: f64) {
     }
 }
 
-/// RMS 归一到 `v`（线性）。
+/// Normalizes to RMS `v` (linear).
 pub fn rms_normalize(x: &mut [f32], v: f64) {
     let g = v / (rms(x) + 1e-12);
     for s in x.iter_mut() {
@@ -198,7 +198,7 @@ pub fn rms_normalize(x: &mut [f32], v: f64) {
     }
 }
 
-/// 减去整条均值（去直流）。
+/// Subtracts the mean of the whole signal (DC removal).
 pub fn remove_dc(x: &mut [f32]) {
     if x.is_empty() {
         return;

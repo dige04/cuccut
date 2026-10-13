@@ -14,7 +14,7 @@ import { pl } from './format.pl.ts';
 import { tr } from './format.tr.ts';
 import { vi } from './format.vi.ts';
 
-/** 时长与相对时间的文案（英文是键与类型的来源，译文在 `format.zh-Hans.ts`）。 */
+/** Copy for durations and relative times (the English is the source of keys and types; translations are in `format.zh-Hans.ts`). */
 const en = {
   hoursMinutes: (h: number, m: number) => `${h} hr ${m} min`,
   hours: (h: number) => `${h} hr`,
@@ -31,7 +31,7 @@ const en = {
 export type FormatMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 时长：「8 秒」「1 分 5 秒」「1 小时 2 分」（英文「8 sec」「1 min 5 sec」「1 hr 2 min」）。 */
+/** Durations: “8 秒” (8 seconds), “1 分 5 秒” (1 min 5 sec), “1 小时 2 分” (1 hr 2 min) (English: “8 sec”, “1 min 5 sec”, “1 hr 2 min”). */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(total / 3600);
@@ -42,7 +42,7 @@ export function formatDuration(ms: number): string {
   return M.seconds(s);
 }
 
-/** 多久前：「刚刚」「5 分钟前」「3 小时前」「昨天」「9月30日」。 */
+/** Relative times: “刚刚” (just now), “5 分钟前” (5 minutes ago), “3 小时前” (3 hours ago), “昨天” (yesterday), “9月30日” (September 30). */
 export function agoLabel(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);
   const diff = Math.max(0, now - t);
@@ -59,8 +59,8 @@ export function agoLabel(iso: string, now = Date.now()): string {
 }
 
 /**
- * 把用户主目录缩写成 ~：macOS 的 `/Users/<名字>`、Linux 的 `/home/<名字>`、Windows 的 `C:\Users\<名字>`（任意盘符，不分大小写）。
- * 后面的部分连同分隔符原样保留（`~\CucCut\models`）。
+ * Abbreviates the user's home directory to ~: macOS `/Users/<name>`, Linux `/home/<name>`, Windows `C:\Users\<name>` (any drive letter, case-insensitive).
+ * The rest of the path, including separators, is kept as is (`~\CucCut\models`).
  */
 export function shortenPath(path: string): string {
   const match = /^\/(?:Users|home)\/[^/]+/.exec(path) ?? /^[A-Za-z]:[\\/]Users[\\/][^\\/]+/i.exec(path);
@@ -68,8 +68,8 @@ export function shortenPath(path: string): string {
 }
 
 /**
- * 播放器里的时间：「0:07」「1:05」「1:02:03」；`tenths` 时带一位小数「1:05.3」，`hours` 时不到一小时也写小时位。
- * 向下截断，不显示还没播到的时间；截断只影响呈现（产品设计 §5.8）。
+ * Time in the player: “0:07”, “1:05”, “1:02:03”; with `tenths`, one decimal place is shown, e.g. “1:05.3”; with `hours`, the hour field is written even when under an hour.
+ * Truncates downward, so times not yet played are not shown; truncation only affects presentation (product design §5.8).
  */
 export function formatClock(seconds: number, options: { tenths?: boolean; hours?: boolean } = {}): string {
   const tenthsTotal = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds * 10 + 1e-6) : 0;
@@ -82,9 +82,9 @@ export function formatClock(seconds: number, options: { tenths?: boolean; hours?
 }
 
 /**
- * 走带的时码：「00:16.1」「03:26.0」，满一小时进位「1:02:03.5」；`decimals: 0` 去掉小数位（原型 model-time.js `timecode`）。
- * 先按输出精度四舍五入再拆时、分、秒，否则 9.999999 会写成「00:010.0」、59.99 写成「00:60.0」——
- * 两个浮点秒相减（22.4 − 12.4）就会落到这种值上。
+ * Transport timecode: “00:16.1”, “03:26.0”, rolling over to “1:02:03.5” at one hour; `decimals: 0` drops the decimal places (prototype model-time.js `timecode`).
+ * Round to the output precision first, then split into hours, minutes and seconds; otherwise 9.999999 would be written as “00:010.0” and 59.99 as “00:60.0” —
+ * which is what subtracting two float seconds (22.4 − 12.4) can produce.
  */
 export function formatTenths(seconds: number, { decimals = 1 }: { decimals?: 0 | 1 } = {}): string {
   const negative = seconds < 0;

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error 纯 JS 的仓库脚本，没有类型声明
+// @ts-expect-error a pure-JS repo script with no type declarations
 import { cjkLines, findings, isScannedFile, scan, SCAN_ROOTS } from './i18n-scan.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,7 +41,7 @@ describe('i18n scan', () => {
     expect(isScannedFile('packages/ui/src/foo-copy.ts')).toBe(true);
   });
 
-  // 完成门：界面、Runtime 与 CLI 给人看的文字都进了文案目录（仓库约定 §5）。
+  // Completion gate: the text shown to people by the UI, the Runtime and the CLI is all in the copy catalogs (repo convention §5).
   it('leaves no untranslated CJK text in packages/*/src and apps/*/src', () => {
     const found: { file: string; line: number; text: string }[] = scan(SCAN_ROOTS, root);
     expect(found.map((f) => `${f.file}:${f.line}: ${f.text}`)).toEqual([]);

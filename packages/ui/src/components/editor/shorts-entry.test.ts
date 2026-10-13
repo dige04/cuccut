@@ -5,7 +5,7 @@ import { SHORTS_COPY as S } from './shorts-copy.ts';
 import { clearCutOrigin, closeCutEntry, consumeCutJump, openCutEntry, useCutEntry } from './shorts-entry.ts';
 import { useTranscriptMode } from './transcript-mode.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: provide an in-memory version for persistence, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {

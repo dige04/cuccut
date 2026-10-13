@@ -7,7 +7,7 @@ import { configureAgent } from '../../runtime/agent-commands.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { useShell } from '../../state/shell-store.ts';
 
-/** 指引上的那个动作：装好了只是停用就直接启用它（写回 Agent 列表后指引自己消失）；其余去设置 › Agent。 */
+/** The action on the guidance: if the Agent is installed but only disabled, enable it directly (once written back to the Agent list, the guidance disappears by itself); otherwise go to Settings › Agent. */
 export function useGateFix(guide: GateGuide): { busy: boolean; fix(): Promise<void> } {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
@@ -30,7 +30,7 @@ export function useGateFix(guide: GateGuide): { busy: boolean; fix(): Promise<vo
 }
 
 /**
- * Agent 用不了时起始页下面的指引卡（原型 new-options.jsx `GateCard`）：a solid card in agentcut's style, with the one
+ * Guidance card below the start page when the Agent is unusable (prototype new-options.jsx `GateCard`): a solid card in agentcut's style, with the one
  * action that fixes it (the send button is disabled meanwhile, so this is the view's primary action).
  */
 export function GateCard({ guide }: { guide: GateGuide }) {

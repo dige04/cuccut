@@ -10,7 +10,7 @@ describe('无项目会话的工作目录（架构设计 §3.10）', () => {
     const explicit = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, '.cuccut') }, 'darwin', user);
     expect(implicit.scratchDir).toBe(path.join(user, 'Library', 'Application Support', 'CucCut', 'Sessions'));
     expect(explicit.scratchDir).toBe(implicit.scratchDir);
-    // 旧版本放在 Home 里：启动时搬过来。
+    // The old version kept it in Home: moved at startup.
     expect(implicit.legacyScratchDir).toBe(path.join(user, '.cuccut', 'scratch'));
   });
 

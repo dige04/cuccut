@@ -2,9 +2,9 @@ import { refOf, type DriverInstallOption, type Localized, type MessageRef } from
 import { DriversCommon } from '@cuccut/protocol/messages/agent-drivers';
 
 /**
- * Driver 发出的给人看的文字：CucCut 自己写的是 `Localized`（当前语言的文字 + 消息引用，message-ref.ts），
- * Agent 或第三方 CLI 的原话是字符串。发事件、写探测结果时文字照旧放在 `message` / `error` / `detail` 里，
- * 是 `Localized` 的另外带上 `xxxRef`，界面按自己的语言重新生成。
+ * Human-facing text emitted by the Driver: text CucCut writes itself is a `Localized` (the text in the current language plus a message reference, message-ref.ts);
+ * text from the Agent or a third-party CLI is a plain string. When emitting events or writing probe results, the text still goes in `message` / `error` / `detail`;
+ * an additional `xxxRef` alongside it lets the UI regenerate it in its own language.
  */
 export type DriverText = Localized | string;
 
@@ -12,25 +12,25 @@ export function isLocalized(value: unknown): value is Localized {
   return typeof value === 'object' && value !== null && typeof (value as Localized).key === 'string';
 }
 
-/** 文字本身（当前语言）。 */
+/** The text itself (in the current language). */
 export function textOf(value: DriverText): string;
 export function textOf(value: DriverText | null | undefined): string | null;
 export function textOf(value: DriverText | null | undefined): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
-/** `{ [key]: 引用 }`；不是 `Localized`（原话、空）时是空对象，展开后不留 `undefined` 的键。 */
+/** `{ [key]: ref }`; when the value is not `Localized` (raw text, or empty), it is an empty object, so spreading it leaves no `undefined` keys. */
 export function refField<K extends string>(key: K, value: DriverText | null | undefined): { [P in K]?: MessageRef } {
   return isLocalized(value) ? ({ [key]: refOf(value) } as { [P in K]?: MessageRef }) : {};
 }
 
-/** 官方脚本的安装方式：名字是 CucCut 写的文字，同时给 `labelRef`。用的时候再调，不存进模块顶层的常量。 */
+/** Install method for the official script: the name is text written by CucCut, and `labelRef` is given alongside it. Call it when needed rather than storing it as a module-level constant. */
 export function officialScript(command: string, upgrade: string): DriverInstallOption {
   const label = DriversCommon.officialScript();
   return { kind: 'script', label: String(label), labelRef: refOf(label), needs: null, command, upgrade };
 }
 
-/** 带消息引用的 Error：CucCut 写的原因（例如进程退出），之后作为事件的 `error` / `message` 发出时带上引用。 */
+/** An Error carrying a message reference: a reason written by CucCut (for example, process exit); when later emitted as an event's `error` / `message`, the reference goes with it. */
 export class LocalizedError extends Error {
   readonly messageRef: MessageRef;
 
@@ -41,7 +41,7 @@ export class LocalizedError extends Error {
   }
 }
 
-/** 错误的引用字段：`LocalizedError` 带引用，别的（Agent 的原话）是空对象。 */
+/** The reference field of errors: `LocalizedError` carries a reference; others (the Agent's raw text) are empty objects. */
 export function errorRefField<K extends string>(key: K, error: unknown): { [P in K]?: MessageRef } {
   return error instanceof LocalizedError ? ({ [key]: error.messageRef } as { [P in K]?: MessageRef }) : {};
 }

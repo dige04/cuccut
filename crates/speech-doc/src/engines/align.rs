@@ -1,21 +1,11 @@
-//! 阶段五：展示切分与字幕对齐（§9 / v0.3 §5）——把句级译文切成展示片，
-//! 落 `transAlign` 覆盖层。译句真相（`trans`）由 translate 引擎负责，本引擎
-//! 只写切法。
+//! Stage 5: display segmentation and subtitle alignment (§9 / v0.3 §5). Splits sentence-level translations into display pieces and writes the `transAlign` overlay. The translated sentence itself (`trans`) is owned by the translate engine; this engine only decides how to split it.
 //!
-//! 三种策略（v0.3 §5，项目级默认 manyToOne，句级可覆盖）：
-//! - `independent`：目标语切分器（`split::split_independent`），零 LLM；
-//! - `manyToOne`：所有超出单行容量的长句进入 LLM。缺省载体是块对齐边
-//!   （[`AlignCarrier::Edges`]，对齐块设计 §4/§6）：translate 融合草稿或
-//!   dedicated `align-edges/1` 只给出"译文语义块 → 源词序号"，块合并、安全
-//!   边界、双语 DP 全在 [`crate::align_block`]；某块超 hard 时经
-//!   `align-rewrite/1` 单调化改写写入 `transDisplay`；再不行整句对应；
-//!   dedicated 失败共享一次全局修复，仍失败先试纯锚点块对齐，最后降级目标语
-//!   切 + 词锚定。审阅/修复载体 [`AlignCarrier::Table`]（`align-table/1`）
-//!   保留原两列切分表协议（连续全覆盖 + 确定性对账 + 双语长度计划 + 缝 lint）；
-//! - `oneToOne`：旧版源 Cue 对齐模式，只读兼容，不再生成。
+//! Three strategies (v0.3 §5; the project-level default is manyToOne, overridable per sentence):
+//! - `independent`: target-language splitter (`split::split_independent`), no LLM;
+//! - `manyToOne`: every long sentence that exceeds single-line capacity goes to the LLM. The default carrier is block-alignment edges ([`AlignCarrier::Edges`], block-alignment design §4/§6). Either the translate fused draft or the dedicated `align-edges/1` call only supplies "translation semantic block → source word index". Block merging, safe boundaries and the bilingual DP all live in [`crate::align_block`]. If a block is still over hard, it is rewritten monotonically via `align-rewrite/1` and written to `transDisplay`; if that fails too, the whole sentence is aligned as one piece. When the dedicated call fails, one global repair is shared; if that still fails, try pure-anchor block alignment first, and finally fall back to target-language splitting with word anchoring. The review/repair carrier [`AlignCarrier::Table`] (`align-table/1`) keeps the original two-column split-table protocol (continuous full coverage, deterministic reconciliation, bilingual length plan, seam lint);
+//! - `oneToOne`: legacy source-Cue alignment mode, read-only for compatibility, no longer generated.
 //!
-//! 增量语义：已有同 mode 有效条目的句跳过；`force` 重切。不需要条目的句
-//! （≤ fit 且 ≤ hard 的短译句）清掉既有条目。
+//! Incremental semantics: a sentence that already has a valid entry in the same mode is skipped; `force` re-splits. Sentences that need no entry (short translations that are ≤ fit and ≤ hard) have any existing entry cleared.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -59,90 +49,61 @@ use crate::split::{
     target_required_seconds,
 };
 
-/// LLM 块对齐 + 确定性锚点合并后的来源标识（写入 `TransAlign.aligner`）。
+/// Source identifier for LLM block alignment plus deterministic anchor merging (written to `TransAlign.aligner`).
 pub const LLM_CHUNK_ALIGNER_TAG: &str = "llm-chunk+anchor/1";
-/// translate 融合**行分区**草稿直落条目的来源标识：模型给的显示行边界被冻结
-/// 成块边界（块与片一一对应），源词区间与时间分配仍由确定性核算出。
+/// Source identifier for entries written directly from a translate-fused **row-partition** draft. The display-row boundaries the model gave are frozen as block boundaries (blocks and pieces map one to one); source word ranges and time allocation are still computed deterministically.
 pub const LLM_ROWS_ALIGNER_TAG: &str = "llm-rows+anchor/1";
-/// translate 行文本载体（`lines/1`）草稿直落条目的来源标识：块由首尾源词
-/// 引用联合定位成源区间证据，再与确定性锚点一起进块核。
+/// Source identifier for entries written directly from a translate line-text carrier (`lines/1`) draft. Each block is located as a source interval by jointly anchoring its first and last source-word references, then enters block checking together with the deterministic anchors.
 pub const LLM_LINES_ALIGNER_TAG: &str = "llm-lines+anchor/1";
-/// 行文本草稿的切点都放行、某块仍超 hard、在块内按 lint 干净的目标缝再切
-/// 一刀落成的条目（[`crate::align_block::plan_sentence_splitting_over_hard`]）：
-/// 被切的块内源时间按比例，其余块仍是模型证据。单独成一个标识，统计时不与
-/// 全证据条目混在一起。
+/// Entries produced when every cut point of a line-text draft is accepted, a block is still over hard, and one more cut is made inside the block at a target seam that is clean under lint ([`crate::align_block::plan_sentence_splitting_over_hard`]). Source times inside the split block are apportioned proportionally; the other blocks remain model evidence. This has its own identifier so that statistics do not mix it with entries backed by full evidence.
 pub const LLM_LINES_SPLIT_ALIGNER_TAG: &str = "llm-lines+split/1";
-/// 表格载体（`align-table/1`）条目的来源标识。
+/// Source identifier for entries from the table carrier (`align-table/1`).
 pub const TABLE_ALIGNER_TAG: &str = "llm-table/1";
-/// 单调化显示改写写入 `transDisplay.basis` 的标识。
+/// Identifier written to `transDisplay.basis` by monotonic display rewriting.
 pub const MONOTONIC_REWRITE_BASIS: &str = "monotonic-rewrite";
-/// 表格载体 `data-reordered` 改写写入 `transDisplay.basis` 的标识。
+/// Identifier written to `transDisplay.basis` by a table-carrier `data-reordered` rewrite.
 pub const TABLE_REORDER_BASIS: &str = "table-reorder";
 
-/// 所有首轮批次共享的修复调用预算。失败句聚合后只重发一次，仍不合格则使用
-/// 已验证的确定性草稿，避免单个顽固句拖出无界调用链。
+/// Repair-call budget shared by all first-round batches. Failed sentences are aggregated and resent only once; if they still fail, the verified deterministic draft is used, so that one stubborn sentence cannot drive an unbounded chain of calls.
 const GLOBAL_REPAIR_CALLS: usize = 1;
-/// Agent/provider 对齐页的句数硬上限。源文词数无法表达逐句语义切分成本：
-/// fCHe 基准只有 1567 源文词，却在一页中承载 55 个 HTML 分组并让单 worker
-/// 工作 8 分钟以上。40 句上限让这类短词数/高句数页面自然拆成两页并行，
-/// 同时保留足够的跨句语境。
+/// Hard cap of 40 sentences per page for agent/provider alignment pages. Source word count cannot express the cost of semantic per-sentence splitting: the fCHe benchmark has only 1567 source words, yet one page carried 55 HTML groups and kept a single worker busy for over 8 minutes. A 40-sentence cap splits such pages (few words, many sentences) into two pages that run in parallel, while still keeping enough cross-sentence context.
 const ALIGN_MAX_ITEMS_PER_PAGE: usize = 40;
-/// 对齐载体的估算复杂度预算。不同于 `page_budget` 的源文词数，它近似 HTML
-/// 输入体积、目标语切分量、术语/锚点约束和建议片数；两者取更严格的页数。
-/// 预算只决定页形，不参与验收语义。
+/// Estimated complexity budget for an alignment carrier. Unlike the source word count used by `page_budget`, it approximates HTML input size, target-language splitting volume, terminology/anchor constraints and the suggested piece count; whichever gives the stricter page count wins. The budget only determines page shape and plays no part in acceptance.
 const ALIGN_PAGE_COMPLEXITY_BUDGET: usize = 16_000;
-/// 片间宽度均衡容差（阅读单位）：超出且最宽片仍有内部小句缝时回炉重切。
+/// Width-balancing tolerance between pieces (reading units): when exceeded and the widest piece still has an internal minor clause seam, re-split it.
 const BALANCE_SPREAD: usize = 8;
-/// 译文整句上屏的停留时长护栏（秒）。译句一行放得下时不再因为源语长就强制
-/// 拆分（多对一是默认形态：几条短源短语共享一条译文）；只有整句时窗长到
-/// 单条字幕会"钉"在屏幕上时才入队请 LLM 切分。
+/// Guardrail for how long a whole translated sentence stays on screen (seconds). When the translation fits on one line, do not force a split just because the source is long (many-to-one is the default shape: several short source phrases share one translation). Only queue for LLM splitting when the whole-sentence time window is long enough that a single subtitle would stay pinned on screen.
 pub(crate) const LONG_DWELL_SECONDS: f64 = 7.0;
-/// 一条译文行覆盖多条源字幕时，达到该驻留时长即视为黏结。
+/// When one translation line covers several source subtitles, reaching this dwell duration counts as sticking.
 pub const ROW_DEFICIT_DWELL_SECONDS: f64 = 5.0;
-/// 整句对应至少覆盖这么多源行时，即使未达到驻留阈值也进入复核。
+/// When sentence-level correspondence covers at least this many source rows, send it to review even if the dwell threshold is not reached.
 pub const ROW_DEFICIT_SENTENCE_SOURCE_ROWS: usize = 3;
-/// 源 Cue 段"碎渣"合并阈值（词）：短于它的段并入邻段后才算作一条用户可见的
-/// 源行。[`source_cue_runs`] + [`merge_short_runs`] 的唯一调用口径，三个产品
-/// 表面的 `mergeShortRuns` 镜像必须用同一个数。
+/// Threshold in words for merging source Cue "fragments": a segment shorter than this must be merged into a neighbouring segment before it counts as one user-visible source row. The only call site of [`source_cue_runs`] + [`merge_short_runs`]; the `mergeShortRuns` mirrors on the three product surfaces must use the same number.
 pub const ROW_RUN_MERGE_MIN_WORDS: usize = 3;
-/// 片级时间预算 advisory 的触发缺口（秒）：某片所需阅读时长超出其源语音
-/// 时窗这么多、且相邻片有等量富余时，提示移界。
+/// Trigger gap (seconds) for the per-piece time-budget advisory: when the reading time a piece needs exceeds its source speech window by this much, and adjacent pieces have an equal surplus, suggest moving the boundary.
 const TIME_DEFICIT_SECONDS: f64 = 1.0;
-/// 双语成对审阅中，一条源语跨度超过这一时长、且对应目标片自身已有完整
-/// 小句/并列动作缝时，要求沿目标语自然缝再拆。源语长本身仍不制造目标切点。
+/// In bilingual paired review, when a source-row span exceeds this duration and the corresponding target piece already has a complete clause or parallel-action seam of its own, require re-splitting at a natural target-language seam. The length of the source alone does not create a target cut point.
 pub(crate) const PAIRED_SOURCE_MAX_SECONDS: f64 = 4.0;
-/// 双语成对审阅的源行硬上限（秒）。软档要求目标片自身已有自然缝；硬档针对
-/// 的是"源行长到读不完、而目标片一条缝都没有"的形态——那类行必须退而求其次
-/// 在次优边界切开。
+/// Hard cap on source-row duration (seconds) in bilingual paired review. The soft tier requires the target piece to have a natural seam of its own. The hard tier targets the shape where a source row is too long to read and the target piece has no seam at all; such rows must settle for a second-best boundary.
 pub(crate) const PAIRED_SOURCE_HARD_SECONDS: f64 = 6.0;
-/// 硬档只在目标片本身还有足够阅读体量时触发：目标片短于这个阅读单位数时，
-/// 再切只会产出闪现碎行，宁可让源行长。
+/// The hard tier fires only when the target piece itself has enough reading volume. If the target piece is shorter than this many reading units, cutting it further would only produce flashing fragments, so it is better to leave the source row long.
 const PAIRED_TARGET_MIN_UNITS: usize = 10;
-/// 硬档要求源行至少这么多词，才存在"次优边界"可言；3 词以内的源行没有
-/// 可用切点。
+/// The hard tier requires a source row to have at least this many words before a "second-best boundary" is meaningful. Source rows of three words or fewer have no usable cut point.
 const PAIRED_MIN_SOURCE_WORDS: usize = 4;
-/// 退化配对行：源区间词数下限。低于这个词数、又挂着足够宽的译文片时，逐字
-/// 高亮会停在一两个源词上而字幕整行推进（R2 基准 `s-g29.0` 的 `have` 1 词挂
-/// 9u 中文）。
+/// Degenerate paired row: lower bound on source-span word count. Below this word count, and attached to a sufficiently wide translation piece, word-by-word highlighting stalls on one or two source words while the subtitle line advances as a whole (R2 benchmark `s-g29.0`: `have`, 1 word, attached to 9 units of Chinese).
 ///
-/// 刻意**不**复用 `PAIRED_MIN_SOURCE_WORDS = 4`：那是 `source_ceiling_issues`
-/// 的**抑制**阈值（源行再宽也不报），且已以 `paired_min_words` 出现在契约文本
-/// 里；这里是**拒绝**阈值。两个数字含义相反，不得合并。
+/// Deliberately **not** reusing `PAIRED_MIN_SOURCE_WORDS = 4`. That is the **suppression** threshold of `source_ceiling_issues` (no report even if the source row is wider), and it already appears in contract text as `paired_min_words`. This one is a **rejection** threshold. The two numbers have opposite meanings and must not be merged.
 const DEGENERATE_MIN_SOURCE_WORDS: usize = 3;
-/// 退化配对行：目标片宽度下限。窄译文片配少量源词是正常的多对一形态。
+/// Degenerate paired row: lower bound on target-piece width. A narrow translation piece paired with a few source words is a normal many-to-one shape.
 const DEGENERATE_TARGET_MIN_UNITS: usize = 8;
-/// 碎片配对行：源侧词数上限。只挂到这么多（含）源词的片，才可能是"碎渣"。
+/// Fragment paired row: upper bound on source-side word count. Only a piece attached to this many source words or fewer (inclusive) can be a "fragment".
 ///
-/// 与上面两个阈值同样**不得**合并：`PAIRED_MIN_SOURCE_WORDS` 是源行**过宽**
-/// 通道的抑制阈值，`DEGENERATE_MIN_SOURCE_WORDS` 是"窄源配宽译"的拒绝阈值，
-/// 这里是源行**过窄**通道的触发阈值。三者分属三个象限。
+/// Like the two thresholds above, this must **not** be merged. `PAIRED_MIN_SOURCE_WORDS` is the suppression threshold for the source-row **too wide** channel, `DEGENERATE_MIN_SOURCE_WORDS` is the rejection threshold for "narrow source paired with wide translation", and this is the trigger threshold for the source-row **too narrow** channel. The three belong to three different quadrants.
 const FRAGMENT_MAX_SOURCE_WORDS: usize = 2;
-/// 碎片配对行：整句规模门槛。整句源词数不足 `片数 × 该值` 时不报——句子本身
-/// 就没有足够的词让每片都达到最小宽度，再报只会把不可满足的要求打回 worker。
-/// 与 `degenerate_paired_row` 用同一条算术豁免。
+/// Fragment paired row: whole-sentence scale gate. If the sentence has fewer source words than `pieces × this value`, do not report it. The sentence simply does not have enough words for every piece to reach the minimum width, and reporting it would only send an unsatisfiable requirement back to the worker. It uses the same arithmetic exemption as `degenerate_paired_row`.
 const FRAGMENT_MIN_SENTENCE_WORDS: usize = 3;
 
-/// 连续相同源 Cue 归属形成一段；找不到 Cue 的词并入前一段，保持单调降级。
+/// Consecutive runs with the same source-Cue attribution form one segment. Words with no Cue are merged into the previous segment, keeping the degradation monotonic.
 pub fn source_cue_runs(
     words: &[&Word],
     cue_id_by_word: &BTreeMap<String, String>,
@@ -152,9 +113,7 @@ pub fn source_cue_runs(
     })
 }
 
-/// [`source_cue_runs`] 的同一条规则，只认词 id 与一个归属查询。手上只有 id、
-/// 或归属表是借用索引的调用方（编辑器的整稿派生）走这里，不必为每句造一批词、
-/// 也不必把整张词表的 id 拷进一棵有序树。
+/// Same rule as [`source_cue_runs`], but operating only on word ids and one attribution lookup. Callers that hold only ids, or whose attribution table is a borrowed index (the editor's whole-document derivation), use this, so they need not build a batch of words for each sentence or copy the ids of the whole word table into an ordered tree.
 pub fn source_cue_runs_by<'a, K: PartialEq>(
     word_ids: impl IntoIterator<Item = &'a str>,
     cue_of: impl Fn(&str) -> Option<K>,
@@ -162,8 +121,7 @@ pub fn source_cue_runs_by<'a, K: PartialEq>(
     source_cue_runs_by_keys(word_ids.into_iter().map(cue_of))
 }
 
-/// [`source_cue_runs`] 的同一条规则，直接吃逐词的源 Cue 归属（`None` = 找不到
-/// Cue，并入前一段）。双语 DP 只拿得到句内词序，走这里。
+/// Same rule as [`source_cue_runs`], operating directly on per-word source-Cue attribution (`None` = no Cue found, merged into the previous segment). The bilingual DP only has word order within the sentence, so it goes through here.
 pub fn source_cue_runs_by_keys<K: PartialEq>(
     keys: impl IntoIterator<Item = Option<K>>,
 ) -> Vec<std::ops::Range<usize>> {
@@ -184,8 +142,7 @@ pub fn source_cue_runs_by_keys<K: PartialEq>(
     runs
 }
 
-/// 吸收短于 `min_words` 的孤儿源 Cue 段。首段向后、尾段向前、中段并入
-/// 更短邻段（平局向前）；合并后原位复查，因此会级联合并。
+/// Absorbs orphan source-Cue segments shorter than `min_words`. The first segment merges forward, the last merges backward, and middle segments merge into the shorter neighbour (ties go forward). After a merge, the result is re-checked in place, so merges cascade.
 pub fn merge_short_runs(
     mut runs: Vec<std::ops::Range<usize>>,
     min_words: usize,
@@ -215,9 +172,7 @@ pub fn merge_short_runs(
     runs
 }
 
-/// 句内词序闭区间 `[from, to]` 覆盖的用户可见源行数：与 [`row_deficit_stats`]
-/// 逐 cue 计 `covered_rows` 同一口径（区间内重新成段、再吸收碎段）。`keys`
-/// 是句内每个词的源 Cue 归属；区间越界返回 0。
+/// Number of user-visible source rows covered by the closed in-sentence word-order interval `[from, to]`. It uses the same counting basis as `covered_rows` per cue in [`row_deficit_stats`] (re-segment within the interval, then absorb short fragments). `keys` is each word's source-Cue attribution within the sentence; an out-of-range interval returns 0.
 pub fn covered_source_rows<K: PartialEq>(keys: &[Option<K>], from: usize, to: usize) -> usize {
     if from > to {
         return 0;
@@ -232,9 +187,7 @@ pub fn covered_source_rows<K: PartialEq>(keys: &[Option<K>], from: usize, to: us
     .len()
 }
 
-/// `align-row-deficit` 的驻留谓词：一条译文行驻留 ≥
-/// [`ROW_DEFICIT_DWELL_SECONDS`] 且覆盖 ≥2 条源行。check 的判据与对齐引擎的
-/// 行规划 / paired 验收共用这一处，不各自复制阈值。
+/// Dwell predicate for `align-row-deficit`: a translation row dwells for ≥ [`ROW_DEFICIT_DWELL_SECONDS`] and covers ≥2 source rows. The check's criterion, the alignment engine's row planning and the paired acceptance all share this one place rather than each copying the thresholds.
 pub fn row_dwell_deficit(dwell_sec: f64, covered_rows: usize) -> bool {
     dwell_sec >= ROW_DEFICIT_DWELL_SECONDS && covered_rows >= 2
 }
@@ -246,7 +199,7 @@ pub enum RowDeficitReason {
     SentenceLevel,
 }
 
-/// 每句的源/译行驻留统计；`reason == Some` 即命中 `align-row-deficit`。
+/// Per-sentence source/translation row dwell statistics. `reason == Some` means `align-row-deficit` is hit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RowDeficitStats {
     pub sentence: String,
@@ -289,8 +242,7 @@ fn source_rows_for_indices(
     merge_short_runs(source_cue_runs(&words, &by_id), ROW_RUN_MERGE_MIN_WORDS).len()
 }
 
-/// 计算全部已翻译句的源/译行驻留统计。源行段规则与三产品表面的
-/// `mergeShortRuns` 镜像逐条一致；阈值只在本模块存在。
+/// Computes source/translation row dwell statistics for all translated sentences. The source-row segmentation rule matches the `mergeShortRuns` mirrors on the three product surfaces entry for entry; the thresholds exist only in this module.
 pub fn row_deficit_stats(
     doc: &TranscriptDoc,
     sentences: &[Sentence],
@@ -311,9 +263,7 @@ pub fn row_deficit_stats(
     sentences
         .iter()
         .filter(|sentence| {
-            // 与 `align_sentences` 同口径：空/纯空白译文在对齐侧是显式跳过的
-            // （"empty translation — skipped"），判据也不能把它算成已翻译句，
-            // 否则会对一句根本没有译文的句子报黏结。
+            // Same basis as `align_sentences`: an empty or whitespace-only translation is explicitly skipped on the alignment side ("empty translation — skipped"). This criterion must not count it as a translated sentence either, otherwise it would report sticking for a sentence that has no translation at all.
             doc.trans
                 .get(lang)
                 .and_then(|table| table.get(&sentence.id))
@@ -380,7 +330,7 @@ pub fn row_deficit_stats(
         .collect()
 }
 
-/// `align-row-deficit` 的唯一谓词入口。
+/// The sole predicate entry point for `align-row-deficit`.
 pub fn row_deficit_issues(
     doc: &TranscriptDoc,
     sentences: &[Sentence],
@@ -405,14 +355,12 @@ pub fn row_deficit_issues(
         .collect()
 }
 
-/// paired 结果的纯算术最小片数：既不超过用户实际看到的源行数，也不要求
-/// 一条短译文被切成不可读碎片；入选句至少尝试两片。
+/// Pure-arithmetic minimum piece count for a paired result. It must not exceed the number of source rows the user actually sees, and must not require a short translation to be cut into unreadable fragments. An accepted sentence is attempted with at least two pieces.
 pub fn paired_min_piece_count(source_rows: usize, target_units: usize) -> usize {
     source_rows.min(2usize.max(target_units.div_ceil(crate::align_block::ROW_MIN_UNITS)))
 }
 
-/// 一个 paired 候选句的片数要求，连同算出它的两个度量一起留着——被拒时要能
-/// 回答「这句是切不动，还是压根没那么多字可切」。
+/// The piece-count requirement for a paired candidate sentence, kept together with the two metrics it was computed from. When a candidate is rejected, it must be possible to answer whether the sentence cannot be cut, or simply does not have that many words to cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PairedRequirement {
     pub source_rows: usize,
@@ -452,23 +400,21 @@ impl PairedRequirement {
     }
 }
 
-/// 一句译文行的驻留形态，按 `align-row-deficit` 同一谓词算出。paired 验收
-/// 用它比较「新切法」与「原状」：消除黏结即接受；仍黏结但严格更好也接受。
+/// The dwell shape of a sentence's translation rows, computed with the same predicate as `align-row-deficit`. Paired acceptance uses it to compare the new split with the original: accept if sticking is eliminated; also accept if it still sticks but is strictly better.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DwellShape {
-    /// 命中 `align-row-deficit`（片数少于源行数，且有黏结行）。
+    /// Hits `align-row-deficit` (fewer pieces than source rows, and at least one sticking row).
     deficit: bool,
-    /// 黏结行条数。
+    /// Number of sticking rows.
     offending: usize,
-    /// 黏结行里最长的驻留（秒）；无黏结行时 0。
+    /// Longest dwell (seconds) among sticking rows; 0 when there are none.
     worst_dwell: f64,
-    /// 黏结行里覆盖最多的源行数；无黏结行时 0。
+    /// Largest number of source rows covered by a sticking row; 0 when there are none.
     worst_rows: usize,
 }
 
 impl DwellShape {
-    /// `pieces` 是句内词序闭区间（相对 `anchor_indices`）；`sentence_level` =
-    /// 整句对应条目（源行 ≥3 时即使驻留不足也算黏结，与 check 同口径）。
+    /// `pieces` is a closed in-sentence word-order interval (relative to `anchor_indices`). `sentence_level` marks a whole-sentence correspondence entry (with 3 or more source rows, it counts as sticking even if the dwell is insufficient, the same basis as check).
     fn of(
         doc: &TranscriptDoc,
         anchor_indices: &[usize],
@@ -534,15 +480,14 @@ impl DwellShape {
         )
     }
 
-    /// 每一项都不比 `before` 差。
+    /// Every item is no worse than `before`.
     fn not_worse_than(&self, before: &Self) -> bool {
         self.offending <= before.offending
             && self.worst_rows <= before.worst_rows
             && self.worst_dwell <= before.worst_dwell + 1e-6
     }
 
-    /// 不比 `before` 差，且黏结行更少 / 驻留更短 / 覆盖源行更少至少一项严格
-    /// 改善。
+    /// No worse than `before`, and at least one of these strictly improves: fewer sticking rows, a shorter dwell, or fewer covered source rows.
     fn strictly_better_than(&self, before: &Self) -> bool {
         self.not_worse_than(before)
             && (self.offending < before.offending
@@ -551,22 +496,18 @@ impl DwellShape {
     }
 }
 
-/// paired 候选句在本轮开始时的驻留基线。
+/// Dwell baseline of a paired candidate sentence at the start of this round.
 struct PairedBaseline {
     anchor_indices: Vec<usize>,
     source_cue_keys: Vec<Option<String>>,
     before: DwellShape,
-    /// 原条目缺失或已失效（例如译文已改）：保留原状只会留下一条整句兜底
-    /// cue，所以新结果只要不更差就接受。
+    /// The original entry is missing or no longer valid (for example, the translation has changed). Keeping the original would only leave a whole-sentence fallback cue, so the new result is accepted as long as it is not worse.
     stale: bool,
-    /// 原条目的 `aligner`（有效条目才记）。paired 是「请模型重切」：修复调用
-    /// 没拿到可用答案时落下的模型缺席切法（`deterministic/1` 等宽切、`anchor/1`
-    /// 纯锚点）不得顶掉模型给过的对齐，见 [`model_backed_aligner`]。
+    /// The original entry's `aligner` (recorded only for valid entries). Paired means "ask the model to re-split." Model-absent splits left by a repair call that got no usable answer (`deterministic/1` equal-width splitting, `anchor/1` pure anchoring) must not replace an alignment the model had given. See [`model_backed_aligner`].
     previous_aligner: Option<String>,
 }
 
-/// `aligner` 标签是否出自模型答案（`llm-*`）。`deterministic/1`、`anchor/1`
-/// 与没有标签的旧条目都算模型缺席。
+/// Whether an `aligner` tag came from a model answer (`llm-*`). `deterministic/1`, `anchor/1` and old entries with no tag all count as model-absent.
 fn model_backed_aligner(aligner: Option<&str>) -> bool {
     aligner.is_some_and(|tag| tag.starts_with("llm-"))
 }
@@ -587,9 +528,7 @@ fn paired_prompt_instructions(
         .map(|(id, requirement)| format!("{id}: aim for about {} blocks", requirement.required))
         .collect::<Vec<_>>()
         .join("; ");
-    // 载体是块对齐边（`align-edges/1`）：模型标的是**块**，显示行数由确定性
-    // DP 决定，模型控制不了。因此这里只能对块粒度提要求——"至少 N 条目标行"
-    // 是模型照做不了的指令。
+    // The carrier is block-alignment edges (`align-edges/1`). The model labels **blocks**; the number of display rows is decided by the deterministic DP, which the model cannot control. So requirements can only be imposed at block granularity. "At least N target rows" is an instruction the model cannot follow.
     parts.push(format!(
         "Paired row repair applies ONLY to these sentences ({rows}). For each of them, annotate MORE and FINER alignment blocks: walk the adjacent source ranges in order and give each one its own block whenever the translation has a matching stretch, instead of collapsing the whole sentence into a single block. Short blocks are fine — the engine decides the final row count and merges anything that would read too fast. The block counts above are guidance, not a quota: the result is accepted once no translation row would stay on screen for {dwell} seconds or more while spanning two or more source rows. Keep the translation text exactly as it is: never rewrite, retranslate, reorder or drop any of it; you are only marking where the existing translation lines up with the source.",
         dwell = ROW_DEFICIT_DWELL_SECONDS,
@@ -597,17 +536,15 @@ fn paired_prompt_instructions(
     Some(parts.join("\n\n"))
 }
 
-/// 在片文本内部找一个两侧都不产生闪片的小句缝，返回缝左侧收尾片段作提示。
+/// Finds a minor clause seam inside the piece text where neither side produces a flashing piece, and returns the fragment ending the left side as a hint.
 fn internal_clause_seam(text: &str, lang: &str) -> Option<String> {
     let chars: Vec<char> = text.chars().collect();
     for (index, ch) in chars.iter().enumerate() {
-        // 顿号通常连接一个不可拆的并列结构（“说服、取胜”）；不能仅为
-        // 数字均衡把它当作可安全重切的证据。破折号（——）是合法小句缝：
-        // G1 验证中 "完全属于你——这意味着…" 因缺它漏过 fit 一轮到位。
+        // The enumeration comma (、) usually joins an inseparable parallel structure (“说服、取胜” (persuade, win)). It must not be treated as safely re-splittable evidence merely to balance numbers. The dash (——) is a legitimate clause seam: in G1 verification, "完全属于你——这意味着…" ("entirely yours — this means…") passed the fit round in one go only because the dash was recognised as a seam.
         if !matches!(ch, '，' | '；' | '：' | '—' | ',' | ';' | ':') {
             continue;
         }
-        // 连续破折号（——）取最后一个 — 之后作缝，不切在两个破折号中间。
+        // For consecutive dashes (——), the seam goes after the last —, never between two dashes.
         if *ch == '—' && chars.get(index + 1) == Some(&'—') {
             continue;
         }
@@ -625,52 +562,39 @@ fn internal_clause_seam(text: &str, lang: &str) -> Option<String> {
 
 #[derive(Debug, Clone)]
 pub struct AlignOptions {
-    /// 目标语言（`doc.trans` / `doc.transAlign` 的键）。
+    /// Target language (the key of `doc.trans` / `doc.transAlign`).
     pub lang: String,
     pub mode: AlignMode,
-    /// 阈值覆盖；`None` 按目标语言派生（[`TransParams::for_lang`]）。
+    /// Threshold override. `None` derives the thresholds from the target language ([`TransParams::for_lang`]).
     pub params: Option<TransParams>,
-    /// `Some` 时只处理指定句（`--align-only --sentences …`）。
+    /// `Some`: process only the specified sentences (`--align-only --sentences …`).
     pub sentences: Option<BTreeSet<String>>,
-    /// 用户定向重切（`--sentences` 显式点名）。保留为审计工件的运行模式；
-    /// 首轮与定点修复现在共用同一三重约束分页算法和预算。
+    /// User-directed re-split (sentences named explicitly with `--sentences`). Kept as a run mode for audit artifacts. The first round and targeted repair now share the same triple-constraint paging algorithm and budget.
     pub targeted: bool,
-    /// 已有有效条目也重切。
+    /// Re-split even when a valid entry already exists.
     pub force: bool,
-    /// 显式用户指令，附加在 align 契约末尾。定向 refine 的关键通道：check
-    /// 只描述"哪些句"，这里描述"为什么/怎么切"（G3 基线实测该通道缺失时
-    /// worker 会原样保留语病切分）。
+    /// Explicit user instruction, appended to the end of the align contract. It is the key channel for targeted refine: check only describes "which sentences", while this describes "why and how to split". (The G3 baseline measured that without this channel, workers keep the faulty splits as they are.)
     pub instructions: Option<String>,
-    /// 可逐字上屏且不得从中间切开的 glossary target。
+    /// A glossary target that must be shown word-for-word and must not be cut in the middle.
     pub protected_terms: Vec<String>,
-    /// 双语 glossary 语义锚。当 source/target 在本句各唯一命中时，
-    /// 它们必须落在同一个配对片；这与 protected_terms 的“不能切词内”
-    /// 是两个独立不变量。
+    /// Semantic anchor of a bilingual glossary. When the source and target each have a unique hit in this sentence, they must fall in the same paired piece. This is a separate invariant from protected_terms' "must not be cut inside a word".
     pub bilingual_anchors: Vec<BilingualAnchor>,
-    /// 执行侧并发槽数（agent worker 数 / provider 泳道数）。保留给宿主规划
-    /// worker；分页看源文词数、句数与确定性载体复杂度，不随槽数改变。
+    /// Concurrency slot count on the execution side (agent worker count / provider lane count). Reserved for the host to plan workers. Paging looks at the source word count, the sentence count and the deterministic carrier complexity, and does not change with the slot count.
     pub worker_slots: Option<usize>,
-    /// 页预算的源文词数维度（口径见 [`word_count`]）：首轮、`--sentences`
-    /// 定点修复与全局修复轮共用；引擎同时施加 40 项硬上限与确定性复杂度预算，
-    /// 但不按 worker 槽位改变页形。宿主按执行器取
-    /// [`crate::paging::PageExecutor::align_words`]。
+    /// Source-word-count dimension of the page budget (counted per [`word_count`]). Shared by the first round, the `--sentences` targeted repair and the global repair rounds. The engine applies a hard cap of 40 items plus the deterministic complexity budget, but worker slots do not change the page shape. The host takes [`crate::paging::PageExecutor::align_words`] from its executor.
     pub page_budget: usize,
-    /// 本次引擎调用可消费的全局修复轮数。普通 translate/align 使用 1；auto
-    /// 收尾 refine 使用 0，因为主对齐已经拥有全阶段唯一的修复预算，不能让每
-    /// 个 `align-only` 子调用重新获得一轮。
+    /// Number of global repair rounds this engine call may consume. Ordinary translate/align uses 1. The auto closing refine uses 0, because the main alignment already owns the one repair budget for the whole stage, and no `align-only` sub-call may regain a round.
     pub repair_calls: usize,
-    /// manyToOne 的 LLM 载体（缺省块对齐边）。
+    /// LLM carrier for manyToOne (block-alignment edges by default).
     pub carrier: AlignCarrier,
-    /// 展示行密度；缺省 `Auto` 完全保持既有多对一行为。
+    /// Display-row density. The default `Auto` keeps the existing many-to-one behaviour entirely.
     pub density: AlignDensity,
-    /// `density == Paired` 时，仅对这些句应用 paired；为空表示作用于本轮
-    /// 全部定向句。供 `refine-align` 在混合热点批次中只修黏结句。
+    /// When `density == Paired`, paired is applied only to these sentences. Empty means all targeted sentences in this round. Used by `refine-align` to fix only sticking sentences within a mixed hot-spot batch.
     pub density_sentences: BTreeSet<String>,
 }
 
 impl Default for AlignOptions {
-    /// `lang` 与 `mode` 没有有意义的缺省——调用方必须显式给。其余字段就是
-    /// 今天的生产缺省，因此 `..AlignOptions::default()` 可以安全地补齐新增字段。
+    /// `lang` and `mode` have no meaningful default, so callers must supply them explicitly. The other fields are today's production defaults, so `..AlignOptions::default()` can safely fill in newly added fields.
     fn default() -> Self {
         Self {
             lang: String::new(),
@@ -704,18 +628,18 @@ impl AlignOptions {
     }
 }
 
-/// manyToOne 的 LLM 对齐载体（对齐块设计 §6）。
+/// LLM alignment carrier for manyToOne (block-alignment design §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignCarrier {
-    /// 块对齐边：`align-edges/1` + `align-rewrite/1`（缺省）。
+    /// Block-alignment edges: `align-edges/1` + `align-rewrite/1` (default).
     #[default]
     Edges,
-    /// 两列切分表 `align-table/1`：审阅与定向修复载体。
+    /// Two-column split table `align-table/1`: the carrier for review and targeted repair.
     Table,
 }
 
 impl AlignCarrier {
-    /// CLI 值（`edges` / `table`）。
+    /// CLI values (`edges` / `table`).
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "edges" | "edge" | "align-edges" => Some(Self::Edges),
@@ -741,27 +665,25 @@ pub struct BilingualAnchor {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlignOutcome {
-    /// 本次写入 `transAlign` 的句数。
+    /// Number of sentences written to `transAlign` in this run.
     pub aligned_sentences: usize,
-    /// 其中未消耗任何 align LLM 调用就落库的句数：translate 融合草稿直接验收。
+    /// Of those, the number stored without consuming any align LLM call: translate-fused drafts accepted directly.
     pub prealigned_sentences: usize,
-    /// 无需条目或已有有效条目而跳过的句数。
+    /// Number of sentences skipped because they need no entry or already have a valid entry.
     pub skipped_sentences: usize,
-    /// manyToOne 全局修复预算耗尽后按目标语确定性切分 + 源词比例锚定兜底的句数。
+    /// Number of sentences that, after the manyToOne global repair budget ran out, fell back to deterministic target-language splitting with source-word-proportional anchoring.
     pub fallback_sentences: usize,
-    /// 已弃用的兼容字段；长句统一经过批量 LLM，因此恒为 0。
+    /// Deprecated compatibility field. Long sentences now all go through batched LLM calls, so this is always 0.
     pub local_sentences: usize,
-    /// 经单调化显示改写（`transDisplay`，`text_basis: display`）落库的句数。
+    /// Number of sentences stored after monotonic display rewriting (`transDisplay`, `text_basis: display`).
     pub rewritten_sentences: usize,
-    /// 降级为整句对应（`correspondence: sentence`）的句数。
+    /// Number of sentences degraded to sentence-level correspondence (`correspondence: sentence`).
     pub sentence_level_sentences: usize,
-    /// rows 直通路径上被确定性后处理合并掉的显示行数（见
-    /// [`crate::align_block::merge_short_rows`] 的判据）。模型实测基本按源侧
-    /// 分组一对一切行，这个数就是引擎替它收口的量。
+    /// Number of display rows merged away by deterministic post-processing on the rows pass-through path (see the criterion in [`crate::align_block::merge_short_rows`]). In practice the model mostly splits rows one-to-one along source groupings; this number is what the engine consolidates on its behalf.
     pub rows_merged: usize,
-    /// paired 二次校正记账。
+    /// Bookkeeping for the paired secondary correction.
     pub row_repair: RowRepairOutcome,
-    /// advisory 违例，不阻塞。
+    /// Advisory violation; does not block.
     pub violations: Vec<String>,
 }
 
@@ -782,8 +704,7 @@ impl Default for AlignOutcome {
     }
 }
 
-/// 单轮 `--json` 里最多逐句展开多少个被拒句。定向轮的句集由调用方给定，
-/// 可以很长；JSONL 一行不能随句数无界增长，超出的只记条数。
+/// A single round's `--json` expands at most this many rejected sentences one by one. A targeted round's sentence set is supplied by the caller and can be very long, but a JSONL line must not grow without bound with the sentence count, so beyond the cap only the count is recorded.
 pub const ROW_REPAIR_REJECTION_DETAILS: usize = 40;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -793,53 +714,43 @@ pub struct RowRepairOutcome {
     pub repaired: usize,
     pub rejected: usize,
     pub capped: usize,
-    /// 被拒句的逐句明细，最多 [`ROW_REPAIR_REJECTION_DETAILS`] 条。只有计数时
-    /// 「38 候选 → 38 拒 → 0 修」无从判断是验收式过严还是这批句在目标语下本就
-    /// 切不出那么多片；把算出下限的两个度量一并写下来才能事后定责。
+    /// Itemised details of rejected sentences, at most [`ROW_REPAIR_REJECTION_DETAILS`]. Counts alone cannot tell "38 candidates → 38 rejected → 0 repaired" apart: either acceptance was overly strict, or the batch simply cannot be cut into that many pieces in the target language. Recording the two metrics that give the lower bound makes it possible to assign responsibility afterwards.
     pub rejections: Vec<RowRepairRejection>,
-    /// 因上限被省略的被拒句数（`rejections` 之外的部分）。
+    /// Number of rejected sentences omitted because of the cap (the part beyond `rejections`).
     pub rejections_truncated: usize,
 }
 
-/// 一条 paired 补行轮的拒绝明细。
+/// Rejection details for one paired supplementary-row round.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RowRepairRejection {
     pub sentence: String,
-    /// 闭集：`no-write`（本轮没产出写入）| `rewritten-basis`（结果基于改写后的
-    /// `transDisplay`）| `model-free`（修复调用没拿到可用答案，预算尾巴的模型
-    /// 缺席切法要顶掉的是模型给过的对齐）| `not-improved`（新切法仍命中
-    /// `align-row-deficit` 的驻留谓词，且没有比原状严格更好）。
+    /// Closed set: `no-write` (this round produced no write) | `rewritten-basis` (the result is based on the rewritten `transDisplay`) | `model-free` (the repair call got no usable answer, so the model-absent split in the budget tail would displace the model's alignment) | `not-improved` (the new split still hits the dwell predicate of `align-row-deficit`, and is not strictly better than the original).
     pub reason: &'static str,
-    /// 该句当前占用的源字幕行数。
+    /// Number of source subtitle rows this sentence currently occupies.
     pub source_rows: usize,
-    /// 译文的显示单位数（中日韩按全角计）。
+    /// Display-unit count of the translation (CJK counted as full-width).
     pub target_units: usize,
-    /// 契约提示里建议的片数，见 [`paired_min_piece_count`]。只是指导语：验收
-    /// 看驻留谓词，不看片数。
+    /// Suggested piece count in the contract hint, see [`paired_min_piece_count`]. This is guidance only: acceptance looks at the dwell predicate, not the piece count.
     pub required: usize,
-    /// 本轮实际交付的片数；没有产出写入时是 0。
+    /// Number of pieces actually delivered in this round; 0 when no output was written.
     pub delivered: usize,
-    /// `targetUnits / sourceRows`，两位小数。明显低于
-    /// [`crate::align_block::ROW_MIN_UNITS`] 时说明译文根本没有足够字数铺满源行，
-    /// 这类句无论提示怎么写都修不出行来。
+    /// `targetUnits / sourceRows`, two decimals. A value clearly below [`crate::align_block::ROW_MIN_UNITS`] means the translation does not have enough characters to fill the source rows. Such sentences cannot be repaired into rows however the hint is worded.
     pub units_per_row: f64,
 }
 
-/// 一条 `transAlign` 写入记在哪些计数器上。写入与记账必须成对发生
-/// （[`push_write`] 是唯一入口），否则丢弃写入时无法知道该退哪个计数器——
-/// 早期版本无条件 `aligned_sentences -= rejected`，会偷走别的句的计数。
+/// Which counters a `transAlign` write is recorded on. Writing and bookkeeping must happen in pairs ([`push_write`] is the only entry point). Otherwise, when a write is discarded, there is no way to know which counter to roll back. An early version unconditionally did `aligned_sentences -= rejected`, which stole another sentence's count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriteCredit {
-    /// 常规落库：只记 `aligned_sentences`。
+    /// Regular storage: records only `aligned_sentences`.
     Aligned,
-    /// 融合草稿直落：`aligned_sentences` + `prealigned_sentences`。
+    /// Fused draft stored directly: `aligned_sentences` + `prealigned_sentences`.
     Prealigned,
-    /// 单调化显示改写：`aligned_sentences` + `rewritten_sentences`。
+    /// Monotonic display rewrite: `aligned_sentences` + `rewritten_sentences`.
     Rewritten,
-    /// 降级整句对应：`aligned_sentences` + `sentence_level_sentences`。
+    /// Degraded sentence-level correspondence: `aligned_sentences` + `sentence_level_sentences`.
     SentenceLevel,
-    /// 修复预算耗尽后的确定性兜底：只记 `fallback_sentences`。
+    /// Deterministic fallback after the repair budget is exhausted: records only `fallback_sentences`.
     Fallback,
 }
 
@@ -863,8 +774,7 @@ impl WriteCredit {
         }
     }
 
-    /// 丢弃一条写入时退回它自己加过的计数。`saturating_sub` 只是防御：
-    /// 每条 revert 都对应一次 [`WriteCredit::apply`]，计数器不会为负。
+    /// Rolls back the counters a write itself added when the write is discarded. `saturating_sub` is only defensive: every revert corresponds to one [`WriteCredit::apply`], so counters never go negative.
     fn revert(self, outcome: &mut AlignOutcome) {
         match self {
             Self::Aligned => {
@@ -890,8 +800,7 @@ impl WriteCredit {
     }
 }
 
-/// 本轮为某句产出的一条 `transAlign` 写入。同一句可能被写多次（后写覆盖
-/// 先写，与 `table.insert` 的语义一致）。
+/// One `transAlign` write produced for a sentence in this round. The same sentence may be written more than once; a later write overrides an earlier one, consistent with `table.insert` semantics.
 #[derive(Debug, Clone)]
 struct AlignWrite {
     id: String,
@@ -899,7 +808,7 @@ struct AlignWrite {
     credit: WriteCredit,
 }
 
-/// 写入 + 记账的唯一入口。
+/// The sole entry point for a write plus its bookkeeping.
 fn push_write(
     writes: &mut Vec<AlignWrite>,
     outcome: &mut AlignOutcome,
@@ -917,24 +826,20 @@ struct Pending<'a> {
     /// this is the complete sentence; a final-timeline route may supply an
     /// ordered visible-word subset after cuts.
     anchor_indices: Vec<usize>,
-    /// 句内源词原子；文件载体直接从时间戳导出停顿提示。
+    /// Source-word atoms within a sentence. The file carrier derives pause hints directly from timestamps.
     words: Vec<PendingWord>,
     translation: String,
-    /// 当前已接受的 manyToOne 切分（refine / force 重切时非空）。作为载荷
-    /// draft 的基准，避免重算的确定性草稿把已修好的句子退回坏切分。
+    /// The currently accepted manyToOne split (non-empty during refine or force re-split). It serves as the baseline for the payload draft, so that a recomputed deterministic draft does not revert an already-fixed sentence to a bad split.
     existing: Option<ExistingAlign>,
-    /// 融合草稿的目标片已通过目标侧验收、但源锚失败时保留下来。后续
-    /// dedicated align 只能重选源切点，不得改动这些片边界或文本。
+    /// Kept when a fused draft's target pieces have passed target-side acceptance but the source anchor failed. The subsequent dedicated align may only re-choose source cut points and must not change these piece boundaries or text.
     frozen_target: Option<Vec<String>>,
     protected_terms: Vec<String>,
     bilingual_anchors: Vec<BilingualAnchor>,
-    /// 与 `anchor_indices` 逐位对应的源 Cue 归属（Cue id）。双语 DP 用它按
-    /// `align-row-deficit` 同一驻留谓词判断一片是否会黏结；空 = 不知道，
-    /// 谓词关闭（单元测试直接构造的 Pending）。
+    /// Source-Cue attribution (Cue id) at each position matching `anchor_indices`. The bilingual DP uses it to judge, with the same dwell predicate as `align-row-deficit`, whether a piece would stick. Empty means unknown, and the predicate is off (Pending constructed directly in unit tests).
     source_cue_keys: Vec<Option<String>>,
 }
 
-/// 已接受切分的载荷种子：片文本 + 句内词序区间。
+/// Payload seed for an accepted split: piece text + in-sentence word-order interval.
 struct ExistingAlign {
     texts: Vec<String>,
     ranges: Vec<(usize, usize)>,
@@ -942,18 +847,17 @@ struct ExistingAlign {
 
 struct PendingWord {
     text: String,
-    /// 文稿里的「贴前」标记：拼源文时与前一个词之间不加空格。
+    /// "Attach to previous" marker in the script: no space is inserted between this word and the preceding word when the source text is concatenated.
     glue: bool,
-    // 文件载体从时间戳重新导出停顿提示；这个缓存档位只供单元测试里的源文
-    // 渲染与边界诊断使用，不参与分页，也不进任何载体。
+    // The file carrier re-derives pause hints from timestamps. This cache tier is used only by unit tests for source rendering and boundary diagnostics; it does not take part in paging and does not enter any carrier.
     #[cfg_attr(not(test), allow(dead_code))]
     pause_before: u8,
-    /// 语音起止（秒）：片级时间预算（草稿秒数、时长 advisory）依赖它。
+    /// Speech start and end (seconds). The per-piece time budget (draft seconds, duration advisory) depends on these.
     t0: f64,
     t1: f64,
 }
 
-/// 一句锚定词的「贴前」标记；都没有时给空表。
+/// The "attach to previous" markers for anchored words in a sentence; an empty table when there are none.
 fn source_glue(words: &[PendingWord]) -> Vec<bool> {
     if words.iter().any(|word| word.glue) {
         words.iter().map(|word| word.glue).collect()
@@ -971,65 +875,57 @@ impl JoinWord for PendingWord {
     }
 }
 
-/// translate 调用顺带产出的块对齐草稿（对齐块设计 §6.1）：译文语义块 →
-/// 源词序号（0-based，与 `TransAlign.words` 同下标）。引擎把它展开成对齐边
-/// 后走与 dedicated `align-edges` 完全相同的确定性块合并 / 双语 DP；任何
-/// 失败只让该句回落 dedicated 调用。
+/// Block-alignment draft produced alongside the translate call (block-alignment design §6.1): translation semantic block → source word index (0-based, same indices as `TransAlign.words`). The engine expands it into alignment edges and then follows exactly the same deterministic block merging and bilingual DP as the dedicated `align-edges`. Any failure merely makes this sentence fall back to the dedicated call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FusionDraft {
     pub chunks: Vec<AlignChunk>,
-    /// 草稿构成合格的**行分区**（每块序号连续递增、块间首尾相接、覆盖
-    /// `1..N`）：引擎可以直接把它当显示行落库，跳过 align 调用。
+    /// A draft that forms a qualifying **row partition** (each block's ordinals are consecutive and increasing, blocks abut head to tail, and together they cover `1..N`). The engine can store it directly as display rows, skipping the align call.
     pub rows: bool,
-    /// 行边界全部落在载体给出的确定性分组边界上。不满足**不影响接受**，
-    /// 只用于计数观测（分组只是提示，不是硬契约）。
+    /// All row boundaries fall on the deterministic group boundaries supplied by the carrier. Failing this does **not** affect acceptance; it is used only for counting observations, since grouping is a hint, not a hard contract.
     pub on_groups: bool,
-    /// 行文本载体（`lines/1`）的草稿：块用首尾源词引用标出对应，由引擎
-    /// [`crate::filepipe::lines::evidence_with_pieces`] 联合定位。`Some` 时
-    /// `chunks` 为空、`rows` 为假。
+    /// Draft for the line-text carrier (`lines/1`): blocks are marked by first and last source-word references, which the engine jointly locates via [`crate::filepipe::lines::evidence_with_pieces`]. When `Some`, `chunks` is empty and `rows` is false.
     pub lines: Option<crate::filepipe::TranslateLinesDraft>,
 }
 
 pub type FusionDrafts = BTreeMap<String, FusionDraft>;
 
-/// 一个确定性源侧分组：句内 0-based 词序号闭区间 + 相对句首的时间窗。
+/// A deterministic source-side group: a closed 0-based in-sentence word-index interval plus a time window relative to the sentence start.
 ///
-/// 时间用**分秒**（0.1 秒）存放而不是 `f64`：载体属性只渲染一位小数，整数
-/// 表示让渲染、解析与结构相等三者完全同源。
+/// Times are stored as **tenths of a second** (0.1 s) rather than `f64`. The carrier attribute renders only one decimal place, so integer storage keeps rendering, parsing and structural equality all on the same source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FusionGroup {
     pub from: usize,
     pub to: usize,
-    /// 组起点相对句首的偏移，单位 0.1 秒。
+    /// Offset of the group start relative to the sentence start, in units of 0.1 s.
     pub t0_ds: u32,
-    /// 组终点相对句首的偏移，单位 0.1 秒。
+    /// Offset of the group end relative to the sentence start, in units of 0.1 s.
     pub t1_ds: u32,
 }
 
-/// 翻译载体的一句融合提示。
+/// A fusion hint for the translation carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FusionLineInfo {
-    /// 句内锚定词，顺序即序号（一词一序号，与 `TransAlign.words` 同口径）。
+    /// Anchored words within the sentence. Order is the index: one word per index, on the same basis as `TransAlign.words`.
     pub source_words: Vec<String>,
-    /// 与 `source_words` 同下标的「贴前」标记；空 = 都没有。
+    /// "Attach to previous" markers at the same indices as `source_words`; empty means none.
     pub source_glue: Vec<bool>,
     pub needs_split: bool,
-    /// 确定性源侧分组（rows 模式才渲染）。空表示不带分组提示。
+    /// Deterministic source-side groups (rendered only in rows mode). Empty means no grouping hint is included.
     pub groups: Vec<FusionGroup>,
 }
 
-/// 分组再切的时长上限（秒）。
+/// Duration upper bound (seconds) for re-splitting a group.
 const FUSION_GROUP_MAX_SECONDS: f64 = 5.0;
-/// 分组再切的词数上限。
+/// Word-count upper bound for re-splitting a group.
 const FUSION_GROUP_MAX_WORDS: usize = 14;
-/// 小组并入相邻组的门槛（词数）。
+/// Word-count threshold (words) below which a small group merges into an adjacent group.
 const FUSION_GROUP_MIN_WORDS: usize = 3;
-/// 小组并入相邻组的门槛（秒）。
+/// Duration threshold (seconds) below which a small group merges into an adjacent group.
 const FUSION_GROUP_MIN_SECONDS: f64 = 0.8;
-/// 分组切点的最小词间静音（秒）。
+/// Minimum silence between words (seconds) for a group cut point.
 const FUSION_GROUP_GAP_SEC: f64 = 0.35;
 
-/// 词尾从句标点：切在该词之后是一个自然的源侧分组缝。
+/// A word that ends a clause with punctuation: cutting after this word is a natural source-side group seam.
 fn ends_group_punctuation(text: &str) -> bool {
     matches!(
         text.trim_end().chars().last(),
@@ -1037,16 +933,12 @@ fn ends_group_punctuation(text: &str) -> bool {
     )
 }
 
-/// 确定性源侧分组（rows 模式的载体提示）。零 LLM、零随机：
+/// Deterministic source-side grouping (the carrier hint for rows mode). Zero LLM, zero randomness.
 ///
-/// - 种子边界优先复用**源侧已有的行切分**（`seeds` 即句内源字幕 Cue 的起始
-///   词序，由 [`crate::cue::derive_cues`] 从 `breaks`/`autoBreaks` 派生）；
-/// - 再补两条本地规则：前一词以从句标点收尾、或词间静音 ≥
-///   [`FUSION_GROUP_GAP_SEC`]；
-/// - 小组（< [`FUSION_GROUP_MIN_WORDS`] 词且 < [`FUSION_GROUP_MIN_SECONDS`] 秒）
-///   并入相邻组；
-/// - 大组（> [`FUSION_GROUP_MAX_SECONDS`] 秒或 > [`FUSION_GROUP_MAX_WORDS`] 词）
-///   在最大内部停顿处递归再切（两侧各留 ≥ 2 词）。
+/// - Seed boundaries preferentially reuse the **source-side line splits that already exist** (`seeds` are the start word indices of each source subtitle Cue within the sentence, derived from `breaks`/`autoBreaks` by [`crate::cue::derive_cues`]).
+/// - Two local rules are added on top: the preceding word ends with a clause-level punctuation mark, or the silence between words is ≥ [`FUSION_GROUP_GAP_SEC`].
+/// - Small groups (< [`FUSION_GROUP_MIN_WORDS`] words and < [`FUSION_GROUP_MIN_SECONDS`] seconds) merge into adjacent groups.
+/// - Large groups (> [`FUSION_GROUP_MAX_SECONDS`] seconds or > [`FUSION_GROUP_MAX_WORDS`] words) are re-split recursively at the largest internal pause, keeping at least 2 words on each side.
 fn fusion_groups(words: &[PendingWord], seeds: &BTreeSet<usize>) -> Vec<FusionGroup> {
     if words.is_empty() {
         return Vec::new();
@@ -1066,7 +958,7 @@ fn fusion_groups(words: &[PendingWord], seeds: &BTreeSet<usize>) -> Vec<FusionGr
         spans.push((start, end));
     }
 
-    // 小组并入：优先并入左邻，句首组并入右邻。合并只会减少组数，必然收敛。
+    // Small-group merging: prefer merging into the left neighbour; a group at the start of the sentence merges into the right neighbour. Merging only ever reduces the number of groups, so it always converges.
     let small = |span: &(usize, usize)| -> bool {
         let count = span.1 - span.0 + 1;
         let seconds = words[span.1].t1 - words[span.0].t0;
@@ -1085,7 +977,7 @@ fn fusion_groups(words: &[PendingWord], seeds: &BTreeSet<usize>) -> Vec<FusionGr
         }
     }
 
-    // 大组再切：在最大内部停顿处切开，两侧各留 ≥ 2 词。
+    // Large-group re-split: cut at the largest internal pause, keeping at least 2 words on each side.
     let mut queue = spans;
     let mut out: Vec<(usize, usize)> = Vec::with_capacity(queue.len());
     while !queue.is_empty() {
@@ -1122,8 +1014,7 @@ fn fusion_groups(words: &[PendingWord], seeds: &BTreeSet<usize>) -> Vec<FusionGr
         .collect()
 }
 
-/// 为 translate `file-v1` 载体构造融合提示：序号词表、"源侧已需拆分"判据，
-/// 以及（`with_groups` 时）确定性源侧分组。
+/// Builds the fusion hint for the translate `file-v1` carrier: the ordinal word list, the "source side already needs splitting" criterion, and (when `with_groups`) the deterministic source-side grouping.
 pub fn fusion_line_info(
     doc: &TranscriptDoc,
     cues: &[crate::cue::Cue],
@@ -1142,7 +1033,7 @@ pub fn fusion_line_info(
         })
         .collect::<Vec<_>>();
     let (source_fit, _) = source_piece_budgets(&doc.lang);
-    // 源侧行边界：句内每个源字幕 Cue 的首词在句内的序号。
+    // Source-side row boundaries: the in-sentence index of the first word of each source subtitle Cue.
     let seeds: BTreeSet<usize> = if with_groups {
         let position: BTreeMap<usize, usize> = sentence
             .word_indices
@@ -1174,7 +1065,7 @@ pub fn fusion_line_info(
     }
 }
 
-/// 句（或其可见词子集）的语音停留时长：末词止 − 首词起。
+/// Speech dwell duration of a sentence (or of its visible word subset): end of the last word minus start of the first word.
 fn words_dwell_seconds(words: &[PendingWord]) -> f64 {
     match (words.first(), words.last()) {
         (Some(first), Some(last)) => (last.t1 - first.t0).max(0.0),
@@ -1189,7 +1080,7 @@ fn words_dwell_seconds_for_indices(doc: &TranscriptDoc, indices: &[usize]) -> f6
     }
 }
 
-/// 词间停顿档位：≥1.2s → 3，≥0.6s → 2，≥0.25s → 1，否则 0。
+/// Inter-word pause tiers: ≥1.2s → 3, ≥0.6s → 2, ≥0.25s → 1, otherwise 0.
 fn pause_tier(gap: f64) -> u8 {
     if gap >= 1.2 {
         3
@@ -1202,7 +1093,7 @@ fn pause_tier(gap: f64) -> u8 {
     }
 }
 
-/// 展示切分与对齐。确定性模式零 LLM；manyToOne 走批量 pieces 协议。
+/// Display segmentation and alignment. Deterministic mode uses zero LLM; manyToOne uses the batched pieces protocol.
 pub fn run_align(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -1220,11 +1111,10 @@ pub fn run_align(
     )
 }
 
-/// 批级尝试（`ai/align/<lang>/vNNN/`，§4/§11）。`page_id` 是批号
-/// （`b001`…；修复轮为 `r001`…）。
+/// Batch-level attempt (`ai/align/<lang>/vNNN/`, §4/§11). `page_id` is the batch number (`b001`…; repair rounds use `r001`…).
 pub type AlignBatchAttempt<'a> = PageAttempt<'a>;
 
-/// 同 [`run_align`]，另把批级尝试递给宿主落盘（`ai/align/<lang>/vNNN/`，§4/§11）。
+/// Same as [`run_align`], but also hands the batch-level attempts to the host for persisting (`ai/align/<lang>/vNNN/`, §4/§11).
 pub fn run_align_with_artifacts(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -1243,8 +1133,7 @@ pub fn run_align_with_artifacts(
     )
 }
 
-/// 同 [`run_align_with_artifacts`]，但先按完全相同的验收核尝试 translate
-/// 顺带给出的融合草稿；通过的句子不生成 dedicated align 调用。
+/// Same as [`run_align_with_artifacts`], but first checks the fused drafts that translate provided, using exactly the same acceptance check. Sentences that pass generate no dedicated align call.
 pub fn run_align_with_drafts_and_artifacts(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -1287,9 +1176,7 @@ fn run_align_with_projection(
     on_attempt: &mut dyn FnMut(&AlignBatchAttempt<'_>),
     _sleep: &mut dyn FnMut(f64),
 ) -> Result<AlignOutcome, LlmError> {
-    // translate 正常路径已在逐页落盘时格式化。align-only 也可能读取旧的、
-    // 未格式化译文，因此在派生 pieces 前补同一个幂等 hook；这保证最终整句
-    // 与对齐片共享完全相同的字符流。
+    // The normal translate path already formats the text when each page is persisted. align-only may also read older, unformatted translations, so the same idempotent hook is applied before pieces are derived; this guarantees the final sentence and the aligned pieces share exactly the same character stream.
     if let Some(table) = doc.trans.get_mut(&options.lang) {
         format_translation_map(
             table,
@@ -1318,12 +1205,10 @@ fn run_align_with_projection(
     let mut paired_requirements: BTreeMap<String, PairedRequirement> = BTreeMap::new();
     let mut paired_baselines: BTreeMap<String, PairedBaseline> = BTreeMap::new();
 
-    // display-stale：`trans` 已变的句先删掉过期的 `transDisplay` 与其 display
-    // 基准条目（对齐块设计 §5），再进入常规增量判定。
+    // display-stale: for sentences whose `trans` has changed, first delete the stale `transDisplay` and its display-basis entry (block-alignment design §5), then enter the normal incremental decision.
     purge_stale_display(doc, &options.lang, &sentences);
 
-    // 孤儿清理：条目的句 id 已不在当前派生中 ⇒ 移除（译句真相 trans 保留，
-    // 由 check 报孤儿；切法没有宿主可言，留着只会误导展示端）。
+    // Orphan cleanup: if an entry's sentence id is no longer in the current derivation, remove the entry. The translated truth `trans` is kept, and check reports orphans. A split has no meaning for the host, and keeping it would only mislead the display side.
     let valid_ids: BTreeSet<&str> = sentences.iter().map(|s| s.id.as_str()).collect();
     if let Some(table) = doc.trans_align.get_mut(&options.lang) {
         table.retain(|id, _| valid_ids.contains(id.as_str()));
@@ -1331,8 +1216,7 @@ fn run_align_with_projection(
 
     let mut pending: Vec<Pending> = Vec::new();
     let mut writes: Vec<AlignWrite> = Vec::new();
-    // 显示改写回写：句 id → `transDisplay`（自然译句 `trans` 不动；条目以
-    // `text_basis: display` 声明基准，与对齐条目同批原子落库）。
+    // Display-rewrite write-back: sentence id → `transDisplay`. The natural translation `trans` is left untouched; the entry declares its basis as `text_basis: display`, and is committed atomically in the same batch as the alignment entries.
     let mut display_writes: Vec<(String, TransDisplay)> = Vec::new();
     let mut removals: Vec<String> = Vec::new();
 
@@ -1348,7 +1232,7 @@ fn run_align_with_projection(
             .and_then(|table| table.get(&sentence.id))
             .map(|text| text.trim().to_owned())
         else {
-            continue; // 未翻译句不对齐。
+            continue; // Untranslated sentences are not aligned.
         };
         if translation.is_empty() {
             outcome
@@ -1395,8 +1279,7 @@ fn run_align_with_projection(
                     false,
                 ),
             };
-            // 原状是「失效」而不是「本来就不需要条目」：有条目但已失效，或没有
-            // 条目而整句放不进一行（展示端只能落一条 align-stale 兜底 cue）。
+            // The original state is "invalid", not "no entry needed": either an entry exists but is no longer valid, or there is no entry and the whole sentence cannot fit on one row (the display side can then only place a single align-stale fallback cue).
             let had_entry = doc
                 .trans_align
                 .get(&options.lang)
@@ -1418,18 +1301,11 @@ fn run_align_with_projection(
             outcome.row_repair.candidates += 1;
         }
 
-        // 该句在当前 mode 下是否根本不需要条目。
-        // CucCut 的两阶段模型：Phase 1 永远整句翻译；Phase 2 处理超过
-        // 一行 fit 或 hard 的译句。多对一是默认形态：译文一行放得下时，
-        // 几条短源短语共享这一条译文即可，不因源语长就强制拆分译文。
-        // 唯一的例外是时间护栏——整句时窗超过 LONG_DWELL_SECONDS 时单条
-        // 字幕会"钉"在屏幕上，仍入队请 LLM 切分。
-        // fit 是视觉单行触发，hard 是交付硬上限；hard 仍必须显式校验，
-        // 确保参数覆盖时也不会跳过超限句。
-        // 第二个例外是源侧护栏——整句上屏本身就是一条配对行，源行超过配对
-        // 硬上限时双语行读不完，即便译文一行放得下也必须入队请 LLM 沿目标语
-        // 自然缝切分。判据与 `ccut check` 的 align-source-ceiling 共用同一
-        // 谓词，不在此处复制阈值。
+        // Whether this sentence needs no entry at all under the current mode.
+        // CucCut's two-phase model: Phase 1 always translates the whole sentence; Phase 2 handles translations that exceed one-line fit or hard. Many-to-one is the default shape: when the translation fits on one line, several short source phrases can share that one translation, and the translation is not forced to split just because the source is long.
+        // The only exception is the time guardrail: when the whole-sentence time window exceeds LONG_DWELL_SECONDS, a single subtitle would stay pinned on screen, so the sentence is still queued for LLM splitting.
+        // fit is the visual one-line trigger; hard is the delivery hard cap. hard must still be checked explicitly, so that even when parameters are overridden, no sentence over the limit is skipped.
+        // The second exception is the source-side guardrail: displaying the whole sentence is itself a paired row. When a source row exceeds the paired hard cap, the bilingual row cannot be read in full, so even if the translation fits on one line, it must be queued for LLM splitting at a natural target-language seam. The criterion shares one predicate with `ccut check`'s align-source-ceiling; the threshold is not copied here.
         let dwell = words_dwell_seconds_for_indices(doc, &anchor_indices);
         let source_ceiling = {
             let anchor_words = anchor_indices
@@ -1487,7 +1363,7 @@ fn run_align_with_projection(
             continue;
         }
 
-        // 已有同 mode 有效条目：非 force 跳过。
+        // A valid entry in the same mode already exists: skip unless `force`.
         if !options.force
             && let Some(entry) = doc
                 .trans_align
@@ -1534,7 +1410,7 @@ fn run_align_with_projection(
                             WriteCredit::Aligned,
                         );
                     } else {
-                        // 切分器判定整句保留（无安全缝的 soft..hard 区间等）。
+                        // The splitter decided to keep the whole sentence (for example, a soft..hard interval with no safe seam).
                         removals.push(sentence.id.clone());
                         outcome.skipped_sentences += 1;
                     }
@@ -1560,8 +1436,7 @@ fn run_align_with_projection(
                 );
             }
             AlignMode::ManyToOne => {
-                // 短句已在 no_entry_needed 分支结束；所有需要展示拆分的长句
-                // 必须进入下面的批量 LLM，不再用本地比例锚定冒充语义对齐。
+                // Short sentences already finished in the no_entry_needed branch. Every long sentence that needs display splitting must go into the batched LLM below, and must not use local proportional anchoring to pass as semantic alignment.
                 let words: Vec<PendingWord> = sentence
                     .word_indices
                     .iter()
@@ -1580,8 +1455,7 @@ fn run_align_with_projection(
                         t1: doc.words[index].t1,
                     })
                     .collect();
-                // force 重切（refine 路径）时把当前有效切分作为载荷 draft 的
-                // 基准；片区间是句内词序数。
+                // On a force re-split (refine path), the current valid split is used as the baseline for the payload draft. Piece intervals are in-sentence word-order indices.
                 let existing = doc
                     .trans_align
                     .get(&options.lang)
@@ -1652,8 +1526,7 @@ fn run_align_with_projection(
     let mut execution_options = options.clone();
     execution_options.instructions =
         paired_prompt_instructions(options.instructions.as_deref(), &paired_requirements);
-    // 只有 paired 轮才有"被本轮上限截掉、留给下一轮"的概念；auto 轮
-    // `density_sentences` 不参与逐句判定，capped 必须恒为 0。
+    // Only paired rounds have the concept of "cut off by this round's cap, left for the next round". The auto round's `density_sentences` does not take part in per-sentence judgment, so `capped` must always be 0.
     outcome.row_repair.capped = if options.density == AlignDensity::Paired {
         options
             .density_sentences
@@ -1663,7 +1536,7 @@ fn run_align_with_projection(
         0
     };
 
-    // 融合草稿（载体无关）：translate 顺带标注的块对齐边先走确定性块核。
+    // Fused draft (carrier-agnostic): block-alignment edges annotated by translate go through the deterministic block check first.
     let verdicts = accept_fused_drafts(
         doc,
         &execution_options,
@@ -1699,7 +1572,7 @@ fn run_align_with_projection(
             )?;
         }
         AlignCarrier::Table => {
-            // 表格载体自带 reorder/crossing 政策：需要改写的句一并进表格轮。
+            // The table carrier has its own reorder/crossing policy: sentences that need rewriting go into the table round together.
             let pending: Vec<Pending> = remaining
                 .into_iter()
                 .chain(rewrites.into_iter().map(|(item, _)| item))
@@ -1719,19 +1592,16 @@ fn run_align_with_projection(
         }
     }
 
-    // Paired 是展示层重切，不允许借机写 `transDisplay`；结果按 `align-row-deficit`
-    // 的驻留谓词验收（见下方逐句判定）。被拒时丢弃本轮写入，保留原条目/原状。
+    // Paired is a display-level re-split and is not allowed to write `transDisplay` as a side effect. Results are accepted against the dwell predicate of `align-row-deficit` (see the per-sentence judgment below). If rejected, this round's writes are discarded and the original entry or state is kept.
     //
-    // 判定按**每句最后一条写入**：同一句可能被写多次（改写轮之后又被兜底轮
-    // 覆盖），而落库时 `table.insert` 是后写覆盖先写，验收必须用同一口径。
+    // The judgment is made on **each sentence's last write**. The same sentence may be written several times (a rewrite round may be followed by a fallback round that overrides it), and since `table.insert` on storage lets a later write override an earlier one, acceptance must use the same basis.
     let mut paired_last_write: BTreeMap<&str, usize> = BTreeMap::new();
     for (index, write) in writes.iter().enumerate() {
         if paired_requirements.contains_key(&write.id) {
             paired_last_write.insert(write.id.as_str(), index);
         }
     }
-    // 每个被拒句的实际形态（没产出写入 / 改写基准 / 未改善），以及「部分修复
-    // 已接受」的提示；violation 文案必须写实。
+    // The actual shape of each rejected sentence (no write produced / rewritten basis / not improved), plus the "partial repair accepted" hint. The violation text must describe what actually happened.
     let mut rejection_reasons: Vec<(String, String)> = Vec::new();
     let mut rejections: Vec<RowRepairRejection> = Vec::new();
     let mut paired_accepted: BTreeSet<String> = BTreeSet::new();
@@ -1754,16 +1624,9 @@ fn run_align_with_projection(
             ));
             continue;
         }
-        // 验收按 `align-row-deficit` 的驻留谓词，不按片数：片数下限只是契约里
-        // 的指导语（「aim for N」）。消除黏结即接受；仍黏结但严格更好（黏结行
-        // 更少 / 驻留更短 / 覆盖源行更少）也接受，并保留一条告警；原条目已失效
-        // 时不比兜底整句更差即可接受。
+        // Acceptance is judged by the dwell predicate of `align-row-deficit`, not by piece count. The piece-count floor is only guidance in the contract ("aim for N"). Accept if sticking is eliminated. Also accept if it still sticks but is strictly better (fewer sticking rows, shorter dwell, or fewer covered source rows), keeping a warning. If the original entry is already invalid, accept as long as it is no worse than the whole-sentence fallback.
         let baseline = &paired_baselines[id];
-        // 修复调用没拿到可用答案时，预算尾巴落下的是模型缺席切法（等宽切 /
-        // 纯锚点）。它清掉黏结行只是因为切得更碎，不是更对的对应；原条目是
-        // 模型给的就保留原状，与「本轮没产出写入」同一待遇（现场：stanford
-        // 一批 `align-edge-ordinal` 拒收把同批 4 句 `llm-lines` 对齐换成了
-        // `deterministic/1` / `anchor/1`，其中一句驻留只从 6.8s 缩到 6.5s）。
+        // When the repair call gets no usable answer, the budget tail falls back to model-absent splits (equal-width or pure anchoring). Clearing sticking rows only because the split got finer is not a more correct correspondence. If the original entry came from the model, keep it as it is, the same treatment as "this round produced no write". (Scene: in one stanford batch, `align-edge-ordinal` rejections replaced the `llm-lines` alignments of 4 sentences from the same batch with `deterministic/1` / `anchor/1`, and one sentence's dwell only shrank from 6.8s to 6.5s.)
         if !baseline.stale
             && model_backed_aligner(baseline.previous_aligner.as_deref())
             && !model_backed_aligner(entry.aligner.as_deref())
@@ -1826,9 +1689,7 @@ fn run_align_with_projection(
 
     display_writes.retain(|(id, _)| !paired_requirements.contains_key(id));
     removals.retain(|id| !paired_requirements.contains_key(id));
-    // 丢弃一条写入时，**只**退回它自己加过的计数器（见 [`WriteCredit`]）；
-    // 被拒句可能走的是 fallback 或压根没写入，无条件扣 `aligned_sentences`
-    // 会偷走别的句的计数。
+    // When a write is discarded, roll back **only** the counters it itself added (see [`WriteCredit`]). A rejected sentence may have taken the fallback path or not written at all, and unconditionally subtracting `aligned_sentences` would steal another sentence's count.
     let mut write_index = 0usize;
     writes.retain(|write| {
         let index = write_index;
@@ -1853,17 +1714,14 @@ fn run_align_with_projection(
         outcome.violations.push(format!("{id}: {reason}"));
     }
 
-    // 显示改写先于对齐条目落库：`text_basis: display` 的条目以它为基准文本，
-    // 两者同批更新才能维持「片拼接 == 基准译文」不变量；`trans` 不动。
+    // The display rewrite is stored before the alignment entries: an entry with `text_basis: display` uses it as its basis text. The two must be updated in the same batch to keep the invariant "piece concatenation == basis translation". `trans` is untouched.
     if !display_writes.is_empty() {
         let table = doc.trans_display.entry(options.lang.clone()).or_default();
         for (id, display) in display_writes {
             table.insert(id, display);
         }
     }
-    // paired 接受的新条目一律以 `trans` 为基准（验收器已保证）。该句若还留着
-    // 上一轮的 `transDisplay` 条目，它就成了没有任何条目引用的孤儿，还会让
-    // 下游按显示文本而不是自然译文渲染——随新条目一并清掉。
+    // Entries newly accepted by paired always use `trans` as the basis (the validator guarantees this). If the sentence still holds a `transDisplay` entry from the previous round, it becomes an orphan that no entry refers to, and downstream would render by display text rather than the natural translation, so it is cleared together with the new entry.
     if !paired_accepted.is_empty()
         && let Some(table) = doc.trans_display.get_mut(&options.lang)
     {
@@ -1887,21 +1745,17 @@ fn run_align_with_projection(
     Ok(outcome)
 }
 
-// ---- 块对齐边载体（对齐块设计 §4 / §6） -----------------------------------
+// ---- Block-alignment-edges carrier (block-alignment design §4 / §6) -----------------------------------
 
-/// 融合草稿的逐句裁决。
+/// Per-sentence verdict for a fused draft.
 enum FusedVerdict<'a> {
-    /// 无草稿、草稿无证据或只够整句对应：进 dedicated 轮。
+    /// No draft, the draft has no evidence, or the evidence only supports sentence-level correspondence: goes to the dedicated round.
     Pending(Pending<'a>),
-    /// 草稿对齐后某块超 hard：进单调化改写轮（表格载体则进表格轮）。带
-    /// `data-over-hard` 提示文案。
+    /// After draft alignment, a block is over hard: goes to the monotonic rewrite round (or the table round for the table carrier). Carries the `data-over-hard` hint text.
     NeedsRewrite(Pending<'a>, String),
 }
 
-/// translate 融合草稿逐句走确定性块核（对齐块设计 §4.5）：`Aligned` 直接
-/// 落库（不消耗任何 align 调用）；`NeedsRewrite` 进改写轮；融合草稿的
-/// `SentenceLevel` **不**直接接受——它只是"草稿证据不足"，交给 dedicated 轮
-/// 再拿一次块标注。
+/// Translate fused drafts go through the deterministic block check sentence by sentence (block-alignment design §4.5). `Aligned` is stored directly, consuming no align call. `NeedsRewrite` goes to the rewrite round. A `SentenceLevel` from a fused draft is **not** accepted directly: it only means "the draft evidence is insufficient", so it goes to the dedicated round to get a second block annotation.
 fn accept_fused_drafts<'a>(
     doc: &TranscriptDoc,
     options: &AlignOptions,
@@ -1920,9 +1774,7 @@ fn accept_fused_drafts<'a>(
             verdicts.push(FusedVerdict::Pending(item));
             continue;
         };
-        // 行文本载体的草稿：块的源区间由首尾引用联合定位（分片边界优先），
-        // 目标切点只取证据允许的那些，再与锚点边一起进块核。证据不足即整句
-        // 进 dedicated 轮；某块超 hard 进改写轮——与 HTML 块草稿同一裁决。
+        // Draft for the line-text carrier: each block's source interval is located jointly from its first and last references (shard boundaries take priority). Target cut points are taken only from those the evidence allows, then enter the block check together with the anchor edges. Insufficient evidence sends the whole sentence to the dedicated round. A block over hard goes to the rewrite round, the same verdict as for HTML block drafts.
         if let Some(lines) = &draft.lines {
             let source_words: Vec<&str> =
                 item.words.iter().map(|word| word.text.as_str()).collect();
@@ -1932,8 +1784,7 @@ fn accept_fused_drafts<'a>(
                 .map(String::as_str)
                 .ne(source_words.iter().copied())
             {
-                // 载体看到的词表与本轮的锚定词（最终时间线裁剪后的可见子集）
-                // 不同：引用无从定位，按无草稿处理。
+                // The word table the carrier sees differs from this round's anchored words (the visible subset after final timeline trimming). References cannot be located, so this is treated as no draft.
                 outcome.violations.push(format!(
                     "{}: lines draft dropped — its {} source words differ from the {} anchoring words; dedicated align",
                     item.sentence.id,
@@ -1953,7 +1804,7 @@ fn accept_fused_drafts<'a>(
                 TextBasis::Trans,
                 LLM_LINES_ALIGNER_TAG,
             );
-            // 词表已核对与 `item.words` 逐词相同；传带「贴前」标记的那份。
+            // The word table has been verified identical word-for-word to `item.words`; pass the version carrying the "attach to previous" markers.
             let evidence = crate::filepipe::lines::evidence_with_pieces(
                 &lines.record,
                 &item.words,
@@ -1981,7 +1832,7 @@ fn accept_fused_drafts<'a>(
                 .collect();
             let strict =
                 crate::align_block::plan_sentence_at_cuts(&evidence.edges, &input, &allowed);
-            // 模型自己的切点提示：lint 否掉的块边界、抄进译文的片标。
+            // The model's own cut-point hints: block boundaries rejected by lint, and piece markers copied into the translation.
             let hints = crate::filepipe::lines::cut_hints(&lines.record);
             let hinted = crate::align_block::hinted_cut_candidates(
                 &input.target,
@@ -1990,13 +1841,7 @@ fn accept_fused_drafts<'a>(
                 &input.protected_terms,
                 &hints,
             );
-            // 切点都放行、某块仍超 hard：先在块内按目标缝再切一刀（干净的有依托
-            // 缝与干净的提示 > 带悬垂尾的提示 > 被 lint 拒了的提示 > 逐字；其余
-            // 模型切点原样保留，块内源断点在按比例的落点附近吸附到源侧断点），
-            // 落成 `llm-lines+split/1`；一刀不够、没有候选或切完仍不安全（语序
-            // 交叉）才进改写轮。模型给了提示就进梯子（提示本身被 lint 拒了也进，
-            // 干净缝照样可用，只是不用没放行的缝：被拒的提示与逐字缝）；既没有
-            // 切点放行、模型也没给提示的句子没有可保留的证据，仍按原路走。
+            // Every cut point is allowed, but a block is still over hard: first make one more cut inside the block at a target seam. Clean seams with anchors are preferred, then dangling-tail hints, then hints rejected by lint, then character-level seams. Other model cut points are kept as they are, and the source breakpoint inside the block snaps to the nearest source-side breakpoint near the proportional position. This yields `llm-lines+split/1`. If one cut is not enough, there are no candidates, or the result is still unsafe after splitting (crossed word order), the sentence goes to the rewrite round. If the model gave a hint, the ladder is used (a hint rejected by lint is still used; clean seams remain usable, just not the unallowed seams: rejected hints and character-level seams). A sentence with no allowed cut point and no model hint has no evidence to keep, and still follows the original path.
             let strict = match strict {
                 PlanOutcome::NeedsRewrite { .. } if !allowed.is_empty() || !hints.is_empty() => {
                     match crate::align_block::plan_sentence_splitting_over_hard(
@@ -2086,8 +1931,7 @@ fn accept_fused_drafts<'a>(
             }
             continue;
         }
-        // 行分区草稿：模型已按源词顺序给出显示行，行边界直接冻结成块边界，
-        // 不再派 align-edges / align-rewrite。任何一步不成立就落回常规路径。
+        // Row-partition draft: the model has already given display rows in source-word order, so row boundaries are frozen directly as block boundaries, and `align-edges` / `align-rewrite` are no longer dispatched. If any step does not hold, fall back to the regular path.
         if draft.rows {
             let input = plan_input(
                 doc,
@@ -2168,7 +2012,7 @@ fn accept_fused_drafts<'a>(
     verdicts
 }
 
-/// `data-over-hard` 提示：只带相对预算（块序、源词序号区间、阅读单位），不带秒数。
+/// `data-over-hard` hint: carries only relative budgets (block order, source word index range, reading units), not seconds.
 fn over_hard_hint(
     blocks: &[crate::doc::AlignBlock],
     over_hard_block: usize,
@@ -2189,8 +2033,7 @@ fn over_hard_hint(
     )
 }
 
-/// 一句的双语 DP 输入：句内锚定词、目标文本、阈值、锁定术语与缺省
-/// [`LayoutProfile`] 的时长界。
+/// Input to the bilingual DP for one sentence: in-sentence anchored words, the target text, thresholds, locked terms, and the duration bounds from the default [`LayoutProfile`].
 fn plan_input(
     doc: &TranscriptDoc,
     options: &AlignOptions,
@@ -2215,7 +2058,7 @@ fn plan_input(
     input
 }
 
-/// 句内锚定词（id + 文本 + 时间）：双语 DP 与本地语义评分器共用同一份口径。
+/// In-sentence anchored words (id + text + time). The bilingual DP and the local semantic scorer share this same basis.
 fn anchor_words(doc: &TranscriptDoc, item: &Pending) -> Vec<AnchorWord> {
     item.anchor_indices
         .iter()
@@ -2244,7 +2087,7 @@ fn align_ctx(item: &Pending, source_lang: &str, target_lang: &str) -> AlignCtx {
     }
 }
 
-/// 确定性锚点边（数字/URL/原样 Latin/双语术语）。
+/// Deterministic anchor edges (digits, URLs, verbatim Latin, bilingual terms).
 fn anchor_edges(
     item: &Pending,
     source_lang: &str,
@@ -2255,7 +2098,7 @@ fn anchor_edges(
     AnchorAligner.align(&refs, target, &align_ctx(item, source_lang, target_lang))
 }
 
-/// 当前落库的自然译句指纹（`transDisplay.transFingerprint`）。
+/// Fingerprint of the natural translation currently stored (`transDisplay.transFingerprint`).
 fn trans_fingerprint_for(doc: &TranscriptDoc, lang: &str, id: &str, fallback: &str) -> String {
     let text = doc
         .trans
@@ -2266,7 +2109,7 @@ fn trans_fingerprint_for(doc: &TranscriptDoc, lang: &str, id: &str, fallback: &s
     trans_text_fingerprint(text)
 }
 
-/// 一批 `Pending` → `align-edges/1` / `align-rewrite/1` 表输入。
+/// Table input for `align-edges/1` / `align-rewrite/1` from one batch of `Pending` sentences.
 fn edges_input(
     batch: &[(&Pending, Option<&str>)],
     params: &TransParams,
@@ -2289,7 +2132,7 @@ fn edges_input(
     }
 }
 
-/// 按首轮同一套三重约束（词数 / 句数 / 复杂度）切页。
+/// Pages are cut under the same triple constraint as the first round (word count / sentence count / complexity).
 fn edges_batches<'b, 'a>(
     items: &[(&'b Pending<'a>, Option<&'b str>)],
     params: &TransParams,
@@ -2307,8 +2150,7 @@ fn edges_batches<'b, 'a>(
     batches
 }
 
-/// `align-edges/1` 契约（对齐块设计 §6.1）。模型只标注块归属，不切源、不切
-/// 译、不解决交叉。
+/// `align-edges/1` contract (block-alignment design §6.1). The model only labels which block each word belongs to. It does not cut the source, cut the translation, or resolve crossings.
 fn align_edges_system_prompt(
     params: &TransParams,
     instructions: Option<&str>,
@@ -2346,7 +2188,7 @@ Before emitting the table, silently verify: every sentence present, every `td.tg
     prompt
 }
 
-/// `align-rewrite/1` 契约（对齐块设计 §6.3）：单调化显示改写 + 块标注一次给出。
+/// `align-rewrite/1` contract (block-alignment design §6.3): monotonic display rewrite and block labels, given in one pass.
 fn align_rewrite_system_prompt(
     params: &TransParams,
     instructions: Option<&str>,
@@ -2408,8 +2250,7 @@ fn edges_request(
     }
 }
 
-/// 一句块标注 → 决策树落地（对齐块设计 §4.5）。`Aligned` / `SentenceLevel`
-/// 直接落库；`NeedsRewrite` 交回调用方（改写轮），返回 `data-over-hard` 提示。
+/// Decision-tree handling of one sentence's block labels (block-alignment design §4.5). `Aligned` and `SentenceLevel` are stored directly. `NeedsRewrite` is handed back to the caller (the rewrite round) together with the `data-over-hard` hint.
 #[allow(clippy::too_many_arguments)]
 fn settle_edges_plan(
     doc: &TranscriptDoc,
@@ -2462,11 +2303,7 @@ fn settle_edges_plan(
     }
 }
 
-/// 降级路径的 hard 护栏：整句一片的文本超过 hard 时不许原样落库（那会是一条
-/// 放不下的单行）。先用 `align-overfit` 给出 seamLeft / seamRight 的同一个缝
-/// 切分器（[`crate::seam::preferred_target_split`]）切两片，两片都 ≤ hard 才用；
-/// 否则走确定性目标切分（[`fallback_word_entry`] 同一套）。源时间按片长比例
-/// 分配。返回 `None` = 文本本来就 ≤ hard，不需要切。
+/// Hard guardrail on the degraded path: a single-piece whole sentence whose text exceeds hard must not be stored as is, since it would be an unshowable single row. First split it into two pieces at the seam chosen by the same seam splitter as `align-overfit` ([`crate::seam::preferred_target_split`]), using them only if both are ≤ hard. Otherwise use the deterministic target split (same as [`fallback_word_entry`]). Source times are apportioned by piece length. Returns `None` when the text is already ≤ hard and needs no split.
 fn split_over_hard_degrade(
     doc: &TranscriptDoc,
     item: &Pending,
@@ -2533,8 +2370,7 @@ fn write_sentence_level(
         .push(format!("{id}: sentence-level correspondence — {reason}"));
 }
 
-/// 一次 `align-edges/1` 批调用的验收：字符串级问题句 / 缺句 / 无标注句进
-/// `failed`（附原因），其余逐句走块核；工件无论结论都落。
+/// Acceptance of one `align-edges/1` batch call: sentences with string-level problems, missing sentences, or sentences without annotation go into `failed` (with reasons). The rest go through the block check one by one. The artifact is written regardless of the outcome.
 #[allow(clippy::too_many_arguments)]
 fn edges_attempt<'b, 'a>(
     doc: &TranscriptDoc,
@@ -2612,10 +2448,7 @@ fn edges_attempt<'b, 'a>(
     });
 }
 
-/// 单调化改写的验收（对齐块设计 §6.3）：目标 AutoCorrect → 锁定术语与双语锚
-/// 目标必须仍在 → 硬锚（数字/URL/原样 Latin/术语）不得丢失 → 在改写文本上
-/// 重新跑 edges → blocks → DP，只有 `Aligned` 才算通过。改写文本与入库译文
-/// 完全相同（模型只把块切细了）时不产出 `transDisplay`：没有改写就不记改写。
+/// Acceptance of a monotonic rewrite (block-alignment design §6.3): AutoCorrect on the target → locked terms and bilingual anchor targets must still be present → hard anchors (digits, URLs, verbatim Latin, terms) must not be lost → re-run edges → blocks → DP on the rewritten text. Only `Aligned` counts as a pass. When the rewritten text is identical to the stored translation (the model only split the blocks finer), no `transDisplay` is produced, because a rewrite that changed nothing is not recorded.
 fn accept_rewrite(
     doc: &TranscriptDoc,
     options: &AlignOptions,
@@ -2713,8 +2546,7 @@ fn accept_rewrite(
     }
 }
 
-/// 块对齐边载体主流程：dedicated `align-edges/1` 首轮 → 一次全局修复 →
-/// 改写轮（`align-rewrite/1`，无修复）→ 纯锚点块对齐 → 确定性兜底。
+/// Main flow of the block-alignment-edges carrier: dedicated `align-edges/1` first round → one global repair → rewrite round (`align-rewrite/1`, no repair) → pure-anchor block alignment → deterministic fallback.
 #[allow(clippy::too_many_arguments)]
 fn run_edges_carrier<'a>(
     doc: &TranscriptDoc,
@@ -2742,7 +2574,7 @@ fn run_edges_carrier<'a>(
         terms
     };
 
-    // 改写队列：融合草稿判定的 + dedicated 轮判定的。
+    // Rewrite queue: sentences flagged by fused drafts plus those flagged by the dedicated round.
     let mut rewrite_hints: Vec<(&Pending, String)> = fused_rewrites
         .iter()
         .map(|(item, hint)| (item, hint.clone()))
@@ -2891,7 +2723,7 @@ fn run_edges_carrier<'a>(
         repair_reasons = next_reasons;
     }
 
-    // 改写轮：一次批调用，无修复；未通过一律整句对应（自然译句）。
+    // Rewrite round: one batch call, no repair. Anything that does not pass becomes sentence-level correspondence (the natural translation).
     if !rewrite_hints.is_empty() {
         let items: Vec<(&Pending, Option<&str>)> = rewrite_hints
             .iter()
@@ -2989,8 +2821,7 @@ fn run_edges_carrier<'a>(
                         ));
                     }
                     Ok((None, entry)) => {
-                        // 文本一字未改，只是块切细到能进 DP：按常规对齐入库，
-                        // 不写 transDisplay，也不让用户去核对不存在的改写。
+                        // The text is unchanged at all; only the blocks got finer, enough to enter the DP. Store as a regular alignment, do not write transDisplay, and do not ask the user to check a rewrite that does not exist.
                         push_write(writes, outcome, id.to_owned(), entry, WriteCredit::Aligned);
                         outcome.violations.push(format!(
                             "{id}: rewrite turn kept the text unchanged; accepted from its finer chunks"
@@ -3032,7 +2863,7 @@ fn run_edges_carrier<'a>(
         }
     }
 
-    // 修复预算耗尽：先试纯锚点块对齐，再落确定性目标语切分。
+    // Repair budget exhausted: try pure-anchor block alignment first, then fall back to deterministic target-language splitting.
     if !failed.is_empty() {
         let detail = repair_reasons.join("; ");
         for item in failed {
@@ -3070,7 +2901,7 @@ fn run_edges_carrier<'a>(
     Ok(())
 }
 
-// ---- 表格载体（`align-table/1`，审阅/修复） ---------------------------------
+// ---- Table carrier (`align-table/1`, review/repair) ---------------------------------
 
 /// Put the same paired constraint into both the payload and final acceptance.
 /// Previously the prompt could demand 8 rows while the table advertised max=4.
@@ -3089,7 +2920,7 @@ fn prepare_table_constraints(
     crate::filepipe::align_table::validate_input_constraints(table).map_err(LlmError::Terminal)
 }
 
-/// 两列切分表载体主流程：首轮批调用 → 一次全局修复 → 救回答案 / 确定性兜底。
+/// Main flow of the two-column split-table carrier: batched first round → one global repair → rescue the answer, or fall back deterministically.
 #[allow(clippy::too_many_arguments)]
 fn run_table_carrier<'a>(
     doc: &TranscriptDoc,
@@ -3104,16 +2935,10 @@ fn run_table_carrier<'a>(
     outcome: &mut AlignOutcome,
 ) -> Result<(), LlmError> {
     let params = *params;
-    // manyToOne：所有首轮批次一次性经 `complete_batch` 挂出（agent 执行器
-    // 会同时落盘全部请求，供多个 worker 并行认领）；失败句跨批聚合后共享
-    // 一次修复调用，避免"每批重试 × 二分"的乘法放大。
-    // 任务级术语并集：见 `task_protected_terms` —— 契约文件按 (kind, attempt)
-    // 共享，system prompt 必须与批次组成无关。
+    // manyToOne: all first-round batches are emitted at once through `complete_batch` (the agent executor writes out every request together so several workers can claim them in parallel). Failed sentences are aggregated across batches and share one repair call, avoiding the multiplicative blow-up of "retries per batch × bisection".
+    // Task-level union of terminology: see `task_protected_terms`. The contract file is shared by (kind, attempt), so the system prompt must not depend on batch composition.
     let protected_terms = task_protected_terms(&pending);
-    // paired 补行轮的候选句：这一轮的全部工作就是重选源文切点，改写译文帮不上忙。
-    // 不写进载体的话，`data-reordered="true"` 就是一条校验认账、验收不认的岔路：
-    // 校验按重排的宽阈值放行，而 paired 验收只按原始 `trans` 度量数行，于是整批
-    // 答案在提交后被逐句拒掉（实测 38 个候选 → 38 拒 → 0 修）。
+    // Candidate sentences of a paired supplementary-row round: the whole job of this round is to re-choose source cut points, and rewriting the translation cannot help. If it is not written into the carrier, `data-reordered="true"` becomes a fork that validation accepts but acceptance rejects. Validation passes it under the wider reordering threshold, while paired acceptance counts rows only against the original `trans`, so the whole batch of answers was rejected sentence by sentence after submission (measured: 38 candidates → 38 rejected → 0 repaired).
     let no_rewrite: BTreeSet<String> = pending
         .iter()
         .filter(|item| options.density_for(&item.sentence.id) == AlignDensity::Paired)
@@ -3133,8 +2958,7 @@ fn run_table_carrier<'a>(
         batches.push(pending_refs[cursor..cursor + size].to_vec());
         cursor += size;
     }
-    // file-v1：渲染输入必须保留下来——`parse_align_table` 拿它做对账基准与
-    // §16 体积护栏基准，工件也要落这一份「实际发出去的文本」。
+    // file-v1: the rendering input must be kept. `parse_align_table` uses it as the baseline for reconciliation and for the §16 size guardrail, and the artifact must record this exact text that was actually sent.
     let mut declared_unsplittable: BTreeSet<String> = BTreeSet::new();
     let mut file_tables: Vec<AlignTableInput> = batches
         .iter()
@@ -3168,8 +2992,7 @@ fn run_table_carrier<'a>(
         .collect();
     let mut failed: Vec<&Pending> = Vec::new();
     let mut repair_reasons: Vec<String> = Vec::new();
-    // 跨批、跨轮聚合的"结构完好但没过验收"答案。后一轮同 id 覆盖前一轮
-    //（`extend` 语义 + 批与句的遍历顺序都是确定的），落库前才被消费。
+    // Answers aggregated across batches and rounds that are structurally sound but failed acceptance. A later round's answer with the same id overrides an earlier one (`extend` semantics; the traversal order of batches and sentences is deterministic). They are consumed only just before storage.
     let mut salvage: std::collections::BTreeMap<String, AcceptedPieces> =
         std::collections::BTreeMap::new();
     let results = llm.complete_batch(&requests);
@@ -3227,10 +3050,7 @@ fn run_table_carrier<'a>(
             break;
         }
         let repair_batch = std::mem::take(&mut failed);
-        // 修复轮按首轮同一套口径切批。`GLOBAL_REPAIR_CALLS` 限的是"重发几轮"
-        // 而不是"一轮几个调用"：跨批聚合避免的是"每批重试 × 二分"的乘法
-        // 放大；失败集合仍按同一套词数、句数和复杂度约束切成并行调用，轮数
-        // 与最终的确定性草稿兜底都不变。
+        // Repair rounds are split into batches on the same basis as the first round. `GLOBAL_REPAIR_CALLS` limits "how many rounds are re-sent", not "how many calls per round". Aggregating across batches avoids the multiplicative blow-up of "retries per batch × bisection". The failure set is still split into parallel calls under the same word-count, sentence-count and complexity constraints, so the number of rounds and the final deterministic-draft fallback do not change.
         let mut repair_batches: Vec<Vec<&Pending>> = Vec::new();
         let mut repair_cursor = 0_usize;
         for size in align_page_sizes(
@@ -3260,9 +3080,7 @@ fn run_table_carrier<'a>(
         for table in &mut repair_tables {
             prepare_table_constraints(table, paired_requirements)?;
         }
-        // problems 是本轮全体失败句的聚合清单，而每个修复调用的载体只含
-        // 自己批次的句子。逐批过滤：只带本载体句子的问题 + 不指名句子的
-        // 全局问题，其余按条数在 retryReason 里注明由并行修复调用处理。
+        // `problems` is the aggregated list of all failed sentences in this round, while each repair call's carrier contains only the sentences of its own batch. Filter per batch: include the problems for this carrier's sentences plus global problems that name no sentence. The rest is noted in retryReason as a count, handled by the parallel repair calls.
         let round_ids: Vec<&str> = repair_batch
             .iter()
             .map(|item| item.sentence.id.as_str())
@@ -3358,10 +3176,7 @@ fn run_table_carrier<'a>(
     if !failed.is_empty() {
         let detail = repair_reasons.join("; ");
         for item in failed {
-            // 修复预算耗尽。落 `fallback_word_entry` 的纯长度确定性切分之前
-            // 先看有没有救回的 worker 答案——那是模型自己产出的、结构完好的
-            // 切分，比 `reanchor_texts` 的等宽切严格更优（现场：兜底切分与
-            // 载荷里的 draftTarget 逐字节相同，等于这一整轮 LLM 白跑）。
+            // Repair budget exhausted. Before falling back to the purely length-based deterministic split of `fallback_word_entry`, check whether any rescued worker answer exists. It is a structurally sound split produced by the model itself, and is strictly better than the equal-width split of `reanchor_texts`. (Scene: the fallback split was byte-for-byte identical to the draftTarget in the payload, so the entire LLM round was wasted.)
             if let Some(pieces) = salvage.remove(&item.sentence.id) {
                 if let Some(text) = &pieces.revised_target {
                     display_writes.push((
@@ -3401,7 +3216,7 @@ fn run_table_carrier<'a>(
     Ok(())
 }
 
-/// 表格载体 `data-reordered` 改写 → `transDisplay`（自然译句 `trans` 不动）。
+/// Table-carrier `data-reordered` rewrite → `transDisplay` (the natural translation `trans` is untouched).
 fn table_reorder_display(
     doc: &TranscriptDoc,
     lang: &str,
@@ -3459,8 +3274,7 @@ fn alignment_anchors_match(entry: &TransAlign, anchor_ids: &[String], projected:
     }
 }
 
-/// manyToOne 的最后兜底：目标语先确定性切分，缝 lint 修复后再按片长比例
-/// 锚到连续源词。不复用源 Cue 边界，避免兜底重新制造“一 Cue 一片”的错位。
+/// Final fallback for manyToOne: first split the target language deterministically, fix seam lint, then anchor to consecutive source words in proportion to piece length. It does not reuse source Cue boundaries, so the fallback does not re-create a "one Cue per piece" misalignment.
 fn fallback_word_entry(
     doc: &TranscriptDoc,
     item: &Pending,
@@ -3479,7 +3293,7 @@ fn fallback_word_entry(
     word_entry_from_texts(doc, item, texts, lang)
 }
 
-/// 目标片已定，按片长比例锚到连续源词（片多于源词时落 independent）。
+/// Target pieces are fixed; anchor to consecutive source words in proportion to piece length (when there are more pieces than source words, fall back to independent).
 fn word_entry_from_texts(
     doc: &TranscriptDoc,
     item: &Pending,
@@ -3562,12 +3376,7 @@ fn many_to_one_entry(doc: &TranscriptDoc, item: &Pending, pieces: &AcceptedPiece
         .iter()
         .map(|&index| doc.words[index].id.clone())
         .collect();
-    // 模型自报的语序交叉（`data-crossing`）按 best-effort 接受：保留 worker 给
-    // 的行切分与源切点，照常落块级条目。早先这里落整句对应（一块一片），
-    // paired 补行轮因此把一份 4 行答案压成一片而被拒，屏幕上只剩旧条目失效后
-    // 超 hard 的整句兜底行；按对齐块设计
-    // §4.5 修订，交叉只让逐行对应「近似」，不再让整句降级。条目不写旧只读
-    // 字段 `crossing`。
+    // Crossings self-reported by the model (`data-crossing`) are accepted on a best-effort basis: keep the line splits and source cut points the worker gave, and store block-level entries as usual. Earlier this degraded to sentence-level correspondence (one block per piece), so the paired repair round rejected a four-row answer that had been flattened into one piece. On screen, only the whole-sentence fallback row remained, which appears after the old entry becomes invalid and exceeds hard. Per the revision of block-alignment design §4.5, a crossing only makes row-level correspondence approximate; it no longer degrades the sentence to sentence level. The entry does not write the old read-only field `crossing`.
     let mut entry = TransAlign::new(
         AlignMode::ManyToOne,
         words,
@@ -3582,7 +3391,7 @@ fn many_to_one_entry(doc: &TranscriptDoc, item: &Pending, pieces: &AcceptedPiece
             })
             .collect(),
     );
-    // `data-reordered` 改写只进 `transDisplay`，条目以 display 为基准。
+    // `data-reordered` rewrites go only into `transDisplay`, and the entry takes display as its basis.
     entry.text_basis = if pieces.revised_target.is_some() {
         TextBasis::Display
     } else {
@@ -3592,7 +3401,7 @@ fn many_to_one_entry(doc: &TranscriptDoc, item: &Pending, pieces: &AcceptedPiece
     entry
 }
 
-/// 自报交叉的句按 best-effort 落了逐行条目：留一条可见说明，行级对应只是近似。
+/// A sentence that self-reports a crossing and got best-effort row-level entries: leave a visible note that row-level correspondence is only approximate.
 fn note_declared_crossing(item: &Pending, pieces: &AcceptedPieces, outcome: &mut AlignOutcome) {
     if pieces.crossing && pieces.texts.len() > 1 {
         outcome.violations.push(format!(
@@ -3642,9 +3451,9 @@ fn accept_resolved(
 struct AcceptedPieces {
     texts: Vec<String>,
     anchor: AcceptedAnchor,
-    /// 模型自报的语序交叉；仅 ManyToOne 词锚条目落库。
+    /// Crossings self-reported by the model. Only ManyToOne word-anchored entries are stored.
     crossing: bool,
-    /// 重排验收后的完整译句（已格式化）：非 None 时回写句级译文真相。
+    /// The full translated sentence after reorder validation (already formatted). When non-None, it is written back as the sentence-level translation truth.
     revised_target: Option<String>,
     advisories: Vec<String>,
 }
@@ -3652,7 +3461,7 @@ struct AcceptedPieces {
 #[derive(Debug, Clone)]
 enum AcceptedAnchor {
     WordRanges(Vec<(usize, usize)>),
-    /// 目标片多于源词时不再伪造逐片双语对应；展示时间在整句时窗内按长度分配。
+    /// When there are more target pieces than source words, do not fabricate per-piece bilingual correspondence. Display times are apportioned by length within the whole-sentence time window.
     Independent,
 }
 
@@ -3660,13 +3469,10 @@ enum BatchAttempt {
     Accepted(std::collections::BTreeMap<String, AcceptedPieces>),
     Partial {
         accepted: std::collections::BTreeMap<String, AcceptedPieces>,
-        /// 没通过验收、但结构上完好到足以比确定性兜底切分更优的答案。
-        /// 不直接落库（还要给修复轮一次机会），只在修复预算耗尽时顶替
-        /// `fallback_word_entry`。
+        /// An answer that failed acceptance but is structurally sound enough to be better than the deterministic fallback split. It is not stored directly (the repair round still gets its chance). It replaces `fallback_word_entry` only when the repair budget is exhausted.
         salvaged: std::collections::BTreeMap<String, AcceptedPieces>,
         failed_keys: Vec<String>,
-        /// 逐条保留（不预先 join）：修复轮要把**每一条**失败原样复述给
-        /// worker，join 成一行后既无法逐句归因，也读不出"还有几条要一起改"。
+        /// Kept entry by entry (not pre-joined). The repair round must restate **each** failure to the worker verbatim. Joining them into one line would make it impossible to attribute failures to individual sentences, or to tell how many more need to change together.
         problems: Vec<String>,
     },
     AllFailed {
@@ -3708,11 +3514,9 @@ impl BatchAttempt {
     }
 }
 
-/// 一条 problem 文案是否指名了句 `id`。
+/// Whether a problem text names sentence `id`.
 ///
-/// 失败文案没有统一结构（`"{id}: …"`、`"Alignment missing sentence: {id}"`、
-/// 传输错误串……），只能按子串匹配；句 id 含点号且互为前缀（`s-g6.1` 是
-/// `s-g6.18` 的前缀），命中处的后一个字符必须不是字母数字或点号才算词边界。
+/// Failure texts have no uniform structure (`"{id}: …"`, `"Alignment missing sentence: {id}"`, transport error strings…), so this can only match by substring. Sentence ids contain dots and can be prefixes of one another (`s-g6.1` is a prefix of `s-g6.18`), so the character after a match must not be a letter, digit or dot for it to count as a word boundary.
 fn problem_mentions_id(problem: &str, id: &str) -> bool {
     let mut start = 0usize;
     while let Some(pos) = problem[start..].find(id) {
@@ -3734,11 +3538,7 @@ fn problem_mentions_id(problem: &str, id: &str) -> bool {
     false
 }
 
-/// 修复轮 retryReason。两件事必须同时带上，否则 worker 只会盯着最后一条
-/// 失败改，改完撞上别的判据再来一轮（而全局只有 [`GLOBAL_REPAIR_CALLS`]
-/// 轮）：上一轮的逐条校验失败（不在本表的问题按条数注明，避免 worker 对着
-/// 找不到的句子空转），以及预算与建议片数的复述——修复轮载荷是重新渲染的
-/// 表格，约束复述用 `data-budget` 的口径（每行阈值 + 建议片数）。
+/// The repair-round retryReason. Two things must be included together, otherwise the worker fixes only the last failure, then hits another criterion and needs another round (and there is only [`GLOBAL_REPAIR_CALLS`] round in total). These are: the per-entry validation failures of the previous round (problems not in this table are counted by number, so the worker does not spin on sentences it cannot find), and a restatement of the budget and the suggested piece count. The repair-round payload is a re-rendered table, so the constraints are restated on the `data-budget` basis (per-row thresholds plus suggested piece count).
 fn repair_reason_file(
     batch: &[&Pending],
     params: &TransParams,
@@ -3782,12 +3582,7 @@ fn repair_reason_file(
     reason
 }
 
-/// 任务级受保护术语并集。system prompt（= agent 模式落盘的
-/// `contracts/align*.md`）必须对同一任务的所有批次、所有轮次逐字节一致：
-/// 契约文件按 `(kind, attempt)` 共享一份，逐批派生术语会让后写的批次覆盖
-/// 先写批次的清单（worker 读到的契约缺自己批次的术语），修复轮的失败句
-/// 子集还会让 `align-2.md` 整节丢失。术语对不含它的句子是无害的 no-op，
-/// 全集换稳定性划算。
+/// Task-level union of protected terms. The system prompt (the `contracts/align*.md` written in agent mode) must be byte-for-byte identical across all batches and all rounds of the same task. The contract file is shared per `(kind, attempt)`. Deriving terms per batch would let a later batch overwrite an earlier batch's list, so the worker would read a contract missing its own batch's terms. The failing-sentence subset of a repair round would also make the whole `align-2.md` section disappear. A term is a harmless no-op for sentences that do not contain it, so the full set is worth the stability.
 fn task_protected_terms(pending: &[Pending]) -> Vec<String> {
     let mut protected_terms = pending
         .iter()
@@ -3798,14 +3593,11 @@ fn task_protected_terms(pending: &[Pending]) -> Vec<String> {
     protected_terms
 }
 
-// ---- file-v1 载体（HTML 表格，设计 §8） -----------------------------------
+// ---- file-v1 carrier (HTML table, design §8) -----------------------------------
 
-/// 文件契约载体里的源文标记串。
+/// Source-text marker string in the file-contract carrier.
 ///
-/// 停顿档位按 [`crate::engines::markers::pause_marks`]（0.6 / 1.0 / 1.8 秒），
-/// 与 polish / translate 载体同一套阈值。align.rs 私有的 [`pause_tier`]
-/// （1.2 / 0.6 / 0.25）服务确定性草稿与边界提示，**不得**跨进文件载体——
-/// 两套阈值混用会让同一段音频在不同阶段的文档里显示不同的停顿提示。
+/// Pause tiers follow [`crate::engines::markers::pause_marks`] (0.6 / 1.0 / 1.8 seconds), the same thresholds as the polish and translate carriers. The private [`pause_tier`] in align.rs (1.2 / 0.6 / 0.25) serves the deterministic draft and boundary hints, and **must not** cross into the file carrier. Mixing the two threshold sets would make the same audio show different pause hints in documents at different stages.
 fn file_source_marked(words: &[PendingWord]) -> String {
     let mut out = String::new();
     for (index, word) in words.iter().enumerate() {
@@ -3827,12 +3619,11 @@ fn file_source_marked(words: &[PendingWord]) -> String {
     out
 }
 
-/// 一批 `Pending` → align 表渲染输入（§8.2）。
+/// Rendering input for the align table, one batch of `Pending` sentences (§8.2).
 ///
-/// 建议片数取 [`length_plan`] 的 `min..max`。
-/// 秒数、word id、源 Cue 边界与绝对时间戳一律不进载体。
-/// `unsplittable` 是**回带**字段：首轮 worker 自述「这句没有合法切点」时，
-/// 修复轮要把这个自述带回去复核，而不是当作没说过（§8.2）。首轮传空集。
+/// The suggested piece count uses `min..max` from [`length_plan`].
+/// Seconds, word ids, source Cue boundaries and absolute timestamps never enter the carrier.
+/// `unsplittable` is a **returned** field. When the first-round worker self-reports that a sentence has no legal cut point, the repair round must carry that self-report back for review rather than treating it as never said (§8.2). The first round passes an empty set.
 fn align_table_input(
     batch: &[&Pending],
     params: &TransParams,
@@ -3872,7 +3663,7 @@ fn align_table_input(
     }
 }
 
-/// 文件契约的一次批调用请求（首轮与修复共用）。
+/// One batch-call request for the file contract (shared by the first round and repair).
 fn align_request_file(
     table: &AlignTableInput,
     params: &TransParams,
@@ -3891,11 +3682,9 @@ fn align_request_file(
     }
 }
 
-/// 表格响应 → 批结果，并把这次尝试报给宿主（`ai/align/<lang>/vNNN`）。
+/// Table response → batch result, and reports this attempt to the host (`ai/align/<lang>/vNNN`).
 ///
-/// 三步严格分层：`parse_align_table` 只做字符串/结构级判据（**唯一**一份，
-/// 提交期 lint 走的是同一个函数），[`file_answers_from_parsed`] 把行片映射成
-/// 句内词区间，[`accept_answers`] 是与 json-v0 共用的唯一验收核心。
+/// Three strictly layered steps. `parse_align_table` performs only string and structure-level checks (the **only** copy; the submission-time lint goes through the same function). [`file_answers_from_parsed`] maps row pieces to in-sentence word intervals. [`accept_answers`] is the single acceptance core, shared with json-v0.
 #[allow(clippy::too_many_arguments)]
 fn align_attempt_from_file(
     batch: &[&Pending],
@@ -3911,7 +3700,7 @@ fn align_attempt_from_file(
     on_attempt: &mut dyn FnMut(&AlignBatchAttempt<'_>),
 ) -> Result<BatchAttempt, LlmError> {
     let parsed = parse_align_table(table, Some(payload), raw);
-    // worker 的 data-unsplittable 自述回带给修复轮复核（§8.2）。
+    // The worker's data-unsplittable self-report is carried back to the repair round for review (§8.2).
     unsplittable.extend(
         parsed
             .groups
@@ -3950,8 +3739,7 @@ fn align_attempt_from_file(
             }
         }
     });
-    // 无论验收结论如何都要出工件：审计与「这一轮到底发了什么」的取证价值
-    // 恰恰在失败时最高。
+    // Artifacts are produced regardless of the acceptance outcome. The forensic value of auditing and of "what exactly was sent this round" is highest precisely when a round fails.
     on_attempt(&PageAttempt {
         page_id,
         attempt: attempt_index,
@@ -3963,18 +3751,9 @@ fn align_attempt_from_file(
     attempt
 }
 
-/// 句级 Problem 是否应当挡住这一句进入验收核心。
+/// Whether a sentence-level Problem should block that sentence from entering the acceptance core.
 ///
-/// [`crate::filepipe::align_table`] 的字符串级 lint 同时报两类码：
-/// **结构性不可用**（源文被改、译文为空、id 缺失/重复、拼接漂移……），这类
-/// 答案没法当作有效切分读，必须挡在验收之外；以及**质量问题**
-/// （[`ProblemCode::AlignOverHard`]、[`ProblemCode::AlignIllegalSeam`]）——
-/// 这两码在 json-v0 里从来不是拒收理由：超 hard 的片走
-/// `build_recut_candidate` → `enforce_target_hard_limit` → `repair_over_fit_pieces`
-/// 确定性重切，坏接缝走 Recut/KeepWhole/Salvage 三档。若 file-v1 把它们
-/// 也挡下，等于新载体比 json-v0 更严，还会白烧掉唯一一轮
-/// [`GLOBAL_REPAIR_CALLS`] 并跌到只按长度切的兜底。故此处只挡结构码，
-/// 质量码降级成 advisory 随答案进入同一份验收核心。
+/// The string-level lint of [`crate::filepipe::align_table`] reports two classes of codes. **Structural unusability** (the source was altered, the translation is empty, ids are missing or duplicated, concatenation drift…): such an answer cannot be read as a valid split, so it must be kept out of acceptance. **Quality problems** ([`ProblemCode::AlignOverHard`], [`ProblemCode::AlignIllegalSeam`]): in json-v0 these two codes were never grounds for rejection. Over-hard pieces go through `build_recut_candidate` → `enforce_target_hard_limit` → `repair_over_fit_pieces` for deterministic re-splitting, and bad seams go through the Recut / KeepWhole / Salvage tiers. If file-v1 also blocked them, the new carrier would be stricter than json-v0, would burn the only [`GLOBAL_REPAIR_CALLS`] round, and would fall back to length-only splitting. So only the structural codes block here, and the quality codes are demoted to advisories that enter the same acceptance core with the answer.
 fn problem_blocks_acceptance(code: ProblemCode) -> bool {
     !matches!(
         code,
@@ -3982,12 +3761,9 @@ fn problem_blocks_acceptance(code: ProblemCode) -> bool {
     )
 }
 
-/// 解析结果 → 载体无关的答案 IR + 逐句失败明细。
+/// Parsed result → carrier-agnostic answer IR, plus per-sentence failure details.
 ///
-/// 结构性不可用的句子（[`problem_blocks_acceptance`]）直接判失败、不进验收：
-/// 它们已经被 `parse_align_table` 判过一次，再送进 [`accept_answers`] 只会得到
-/// 第二条描述同一件事的失败文案。质量码则降级成该句的 advisory，交给验收核心
-/// 的 Recut/KeepWhole/Salvage 三档处理，与 json-v0 同口径。
+/// Sentences with structural unusability ([`problem_blocks_acceptance`]) are judged failed directly and do not enter acceptance. `parse_align_table` has already judged them once, and sending them into [`accept_answers`] would only yield a second failure text describing the same thing. Quality codes are demoted to advisories for that sentence and handled by the Recut / KeepWhole / Salvage tiers of the acceptance core, on the same basis as json-v0.
 fn file_answers_from_parsed(
     batch: &[&Pending],
     parsed: &AlignParsed,
@@ -4058,14 +3834,9 @@ fn file_answers_from_parsed(
     (answers, failures)
 }
 
-/// 表格源列 → 句内词序区间。
+/// Table source column → in-sentence word-order interval.
 ///
-/// 先试逐字匹配（[`source_segments_to_ranges`]）；失败
-/// 再退到归一化前缀吸附。[`normalize_chars`] 会抹掉标点、空白与 ⏸ 停顿标记
-/// （`⏸` 的 Unicode 类目是 `OtherSymbol`，落在 `is_punctuation_or_symbol`
-/// 里），所以模型顺手补写的标点不会让整句白白判失败，也不需要额外
-/// `strip_markers`。切点吸到最近的词边界并留 advisory；段文本一律由词真相
-/// 重建（`AnswerSource::Ranges` 分支），模型重抄的字符串永远不当锚。
+/// First try exact character matching ([`source_segments_to_ranges`]). On failure, fall back to normalized-prefix snapping. [`normalize_chars`] strips punctuation, whitespace and ⏸ pause markers (the Unicode category of `⏸` is `OtherSymbol`, which falls under `is_punctuation_or_symbol`), so punctuation the model adds by habit does not make the whole sentence fail, and no separate `strip_markers` is needed. Cut points snap to the nearest word boundary and leave an advisory. Segment text is always rebuilt from word truth (the `AnswerSource::Ranges` branch); a string the model retyped is never used as an anchor.
 fn file_source_ranges(
     key: &str,
     segments: &[String],
@@ -4087,7 +3858,7 @@ fn file_source_ranges(
             words.len()
         ));
     }
-    // 词边界 i 处的归一化字符累计长度（bounds[0] == 0，bounds[n] == 总长）。
+    // Cumulative normalized character length at word boundary i (bounds[0] == 0, bounds[n] == total length).
     let mut bounds = Vec::with_capacity(words.len() + 1);
     let mut total = 0usize;
     bounds.push(0usize);
@@ -4115,7 +3886,7 @@ fn file_source_ranges(
         let end_word = if index + 1 == segments.len() {
             words.len()
         } else {
-            // 后面还有 `remaining` 行，每行至少要留一个词。
+            // `remaining` more rows follow, and each of them must keep at least one word.
             let remaining = segments.len() - index - 1;
             nearest_word_boundary(
                 &bounds,
@@ -4141,8 +3912,7 @@ fn file_source_ranges(
     Ok((ranges, advisories))
 }
 
-/// 在 `[low, high]` 这段词边界下标里，取累计长度最接近 `target` 的一个。
-/// 并列时取靠前的，保证映射是确定性的。
+/// Within the boundary indices `[low, high]`, pick the one whose cumulative length is closest to `target`. On a tie, take the earlier one, so the mapping is deterministic.
 fn nearest_word_boundary(bounds: &[usize], target: usize, low: usize, high: usize) -> usize {
     let mut best = low;
     let mut best_delta = bounds[low].abs_diff(target);
@@ -4156,13 +3926,11 @@ fn nearest_word_boundary(bounds: &[usize], target: usize, low: usize, high: usiz
     best
 }
 
-// ---- 请求构造 -------------------------------------------------------------
+// ---- Request construction -------------------------------------------------------------
 
-/// align 契约（`file-v1`）：载体是 HTML 表格，输入没有任何草稿。
+/// align contract (`file-v1`): the carrier is an HTML table, and the input contains no drafts at all.
 ///
-/// 切分证据是「把源文剪进 src 单元格」，没有 `useDraft` / `sourceBreaks`
-/// 之类的协议字段可以引用。判据侧不存在第二份：所有拒收标准都由
-/// `parse_align_table` + [`accept_answers`] 这一条链执行。
+/// The split evidence is "cutting the source text into src cells". There are no protocol fields such as `useDraft` or `sourceBreaks` to reference. There is no second copy of the criteria: every rejection rule is enforced by the one chain `parse_align_table` + [`accept_answers`].
 fn align_system_prompt_file(
     params: &TransParams,
     source_lang: &str,
@@ -4257,10 +4025,7 @@ struct LengthPlanJson {
     target_hard_display_units: usize,
 }
 
-/// 所有语言统一按字符度量长度；zh 是阅读单位（CJK=1、两个半角≈1，即
-/// 半角格宽 ÷ 2），其余语言按非空白字符计。词数/어절数口径已废弃——
-/// 词数低估视觉宽度（13 个长英文词可以宽过 100 半角格），是长片漏网的
-/// 直接原因。切分原子性不受度量影响：切点协议仍是词边界（bN）。
+/// All languages measure length uniformly in characters. zh uses reading units (CJK = 1, two half-width characters ≈ 1, i.e. half-width cell width ÷ 2); other languages count non-whitespace characters. The word-count (and eojeol-count) basis has been abandoned: word counts underestimate visual width (13 long English words can be wider than 100 half-width cells), which was the direct reason long pieces slipped through. The atomicity of splitting is unaffected by the measure: the cut-point protocol is still word boundaries (bN).
 fn length_unit_name(lang: &str) -> &'static str {
     if matches!(primary_subtag(lang).as_str(), "zh" | "ja" | "th") {
         "readingCharacter"
@@ -4278,9 +4043,7 @@ fn source_length_units(words: &[PendingWord], lang: &str) -> usize {
     target_cps_chars(&joined, lang)
 }
 
-/// 源语侧"超过单行"触发阈值与建议片宽（与目标语同口径的字符单位）。只用于
-/// 长句判定（fusion needs_split）与载荷建议，不参与片数下限——片数由译文
-/// 阅读需求驱动（多对一默认形态）。42 与源 Cue 派生的单行上限一致。
+/// The threshold for "exceeds one line" on the source side, and the suggested piece width, in character units on the same basis as the target language. Used only for long-sentence judgment (fusion needs_split) and payload suggestions. It does not take part in the piece-count floor, which is driven by the translation's reading needs (the many-to-one default shape). 42 matches the single-line limit derived from source Cues.
 pub(crate) fn source_piece_budgets(lang: &str) -> (usize, usize) {
     match primary_subtag(lang).as_str() {
         "zh" | "ja" | "th" => (16, 14),
@@ -4322,9 +4085,7 @@ fn source_range_is_dense(
         || source_range_seconds(ends_sec, from, to) > PAIRED_SOURCE_MAX_SECONDS
 }
 
-/// 顿号两侧必须各自带有高置信动作谓词，才可能视为可独立展示的并列动作。
-/// 这层词法护栏刻意保守：宁可把不确定结构继续当普通列表，也不能把
-/// `GitLab、CircleCI`、`控制器、执行器` 一类名词枚举误切开。
+/// Both sides of an enumeration comma (、) must each carry a high-confidence action predicate to be considered independently displayable parallel actions. This lexical guard is deliberately conservative: it is better to keep an uncertain structure as an ordinary list than to wrongly split noun enumerations such as `GitLab、CircleCI` or `控制器、执行器` (controller, actuator).
 fn contains_parallel_action(text: &str) -> bool {
     const ACTION_MARKERS: &[&str] = &[
         "关闭",
@@ -4396,9 +4157,7 @@ fn contains_cjk_clause_predicate(text: &str) -> bool {
     contains_parallel_action(text) || PREDICATE_MARKERS.iter().any(|marker| text.contains(marker))
 }
 
-/// 配对密度护栏比一般的 fit 切分更保守：中文逗号左侧必须带有高置信谓词，
-/// 避免把「实际操作中，| 因为…」这类状语前置片误当成完整小句。冒号、
-/// 分号和破折号仍是自足的强语义缝。
+/// The paired-density guard is more conservative than general fit splitting. The left side of a Chinese comma must carry a high-confidence predicate, to avoid mistaking an adverbial fronted fragment such as「实际操作中，| 因为…」("in actual operation, | because…") for a complete clause. Colons, semicolons and dashes remain self-sufficient, strong semantic seams.
 fn paired_clause_seam(text: &str, lang: &str) -> Option<String> {
     let chars: Vec<char> = text.chars().collect();
     for (index, ch) in chars.iter().enumerate() {
@@ -4427,9 +4186,7 @@ fn paired_clause_seam(text: &str, lang: &str) -> Option<String> {
     None
 }
 
-/// 双语配对模式允许使用的目标语自然缝。普通小句标点沿用既有规则；顿号只在
-/// 两侧都是可独立阅读的完整并列动作时作为候选，最终仍由源跨度护栏决定是否
-/// 真的保留该切点。
+/// Natural target-language seams allowed in bilingual pairing mode. Ordinary clause punctuation follows the existing rules. An enumeration comma is a candidate only when both sides are complete, independently readable parallel actions. Whether the cut point is actually kept is still decided by the source-span guard.
 fn paired_balance_seam(text: &str, lang: &str) -> Option<String> {
     if let Some(seam) = paired_clause_seam(text, lang) {
         return Some(seam);
@@ -4483,18 +4240,14 @@ fn allowed_balanced_list_seams(
     allowed
 }
 
-/// 「并列动作顿号缝」的词法半边：左片以 `、` 收尾，且两片都带高置信动作词。
-/// 源跨度那半边由各调用方按手里的口径（词区间 / 源行文本）补上。
+/// The lexical half of the "parallel-action enumeration-comma seam": the left piece ends with `、` and both pieces carry high-confidence action words. Each caller supplies the source-span half from whatever basis it holds (word interval or source row text).
 fn is_parallel_action_list_seam(left: &str, right: &str) -> bool {
     left.trim_end().ends_with('、')
         && contains_parallel_action(left)
         && contains_parallel_action(right)
 }
 
-/// align-table 载体（file-v1）的同一豁免：载荷不带词时间，只有每行源文，
-/// 因此源跨度只取宽度半边——相邻两行源文合计（去停顿标记、空白不计）超过
-/// 源语单行预算 `source_fit`。与 [`allowed_balanced_list_seams`] 共用词法与
-/// 阈值，返回的是左片下标（与 `SeamLintIssue::piece_index` 同基）。
+/// The same exemption for the align-table carrier (file-v1): the payload carries no word times, only the source text of each row, so the source span is taken only from the width half. The combined source text of two adjacent rows (pause markers removed, whitespace not counted) exceeds the single-row source budget `source_fit`. It shares its lexical rules and thresholds with [`allowed_balanced_list_seams`], and returns left-piece indices (same base as `SeamLintIssue::piece_index`).
 pub(crate) fn allowed_list_seam_indices_for_source_rows(
     targets: &[&str],
     sources: &[&str],
@@ -4509,8 +4262,7 @@ pub(crate) fn allowed_list_seam_indices_for_source_rows(
         .collect()
 }
 
-/// 已落库 manyToOne 条目中可以保留的“并列动作顿号缝”。`ccut check` 与
-/// provider/Agent 验收共用同一动作词法和源跨度条件；普通名词列表返回空集。
+/// Enumeration-comma "parallel-action seams" that may be kept among stored manyToOne entries. `ccut check` and the provider/Agent acceptance share the same action lexicon and source-span conditions. Ordinary noun lists return an empty set.
 pub fn allowed_list_seam_indices_for_ranges(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4528,14 +4280,12 @@ pub fn allowed_list_seam_indices_for_ranges(
     )
 }
 
-/// 源行硬上限（阅读单位）：单行预算的 1.5 倍。软档（`source_fit`）之上还留
-/// 半行余量，是为了不把"略微超行但目标无缝"的正常多对一形态也拖进重切。
+/// Hard cap on source-row width (reading units): 1.5 times the single-row budget. The soft tier (`source_fit`) leaves an extra half row above it, so that the normal many-to-one shape, which slightly exceeds the row while the target has no seam, is not dragged into re-splitting.
 fn source_piece_hard(source_fit: usize) -> usize {
     source_fit * 3 / 2
 }
 
-/// 超出硬上限的源行诊断结果。`index` 是目标片下标，其余字段供 CLI 出具
-/// 可读理由，不参与判定。
+/// Diagnostic result for a source row over the hard cap. `index` is the target-piece index. The other fields let the CLI give a readable reason; they take no part in judgment.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceCeilingIssue {
     pub index: usize,
@@ -4583,15 +4333,12 @@ fn source_ceiling_issues(
         .collect()
 }
 
-/// 源行宽度下限（阅读单位）：单行预算的四分之一。en 42→10、zh/ja/th 16→4、
-/// ko 18→4。与 [`source_piece_hard`] 同样从 `source_piece_budgets` 派生，不
-/// 另立口径。
+/// Lower bound on source-row width (reading units): a quarter of the single-row budget. en 42→10, zh/ja/th 16→4, ko 18→4. It is derived from `source_piece_budgets` together with [`source_piece_hard`], not from a separate basis.
 fn source_fragment_floor(source_fit: usize) -> usize {
     source_fit / 4
 }
 
-/// 源行过窄（碎片配对行）的诊断结果。`index` 是目标片下标，其余字段供 CLI
-/// 出具可读理由，不参与判定。
+/// Diagnostic result for a source row that is too narrow (a fragment paired row). `index` is the target-piece index. The other fields let the CLI give a readable reason; they take no part in judgment.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFragmentIssue {
     pub index: usize,
@@ -4600,20 +4347,12 @@ pub struct SourceFragmentIssue {
     pub target_units: usize,
 }
 
-/// 碎片配对行：某片只挂到 ≤ [`FRAGMENT_MAX_SOURCE_WORDS`] 个源词，且这些词的
-/// 显示宽度不足 [`source_fragment_floor`]。补的是 `source_ceiling_issues` 的
-/// **双豁免盲区**——那里 `words < PAIRED_MIN_SOURCE_WORDS` 或
-/// `target_units < PAIRED_TARGET_MIN_UNITS` 直接返回 None，源侧只有上限没有
-/// 下限，于是 "of a" / "then." / "and the" 一类碎渣永远无人认领。
+/// Fragment paired row: a piece is attached to ≤ [`FRAGMENT_MAX_SOURCE_WORDS`] source words, and their display width is below [`source_fragment_floor`]. It fills the **double-exemption blind spot** of `source_ceiling_issues`. There, `words < PAIRED_MIN_SOURCE_WORDS` or `target_units < PAIRED_TARGET_MIN_UNITS` directly returns None. So the source side has an upper bound but no lower bound, and fragments such as "of a" / "then." / "and the" were never claimed by anyone.
 ///
-/// 三道豁免（收窄而非删除既有豁免；短句仍不报）：
-/// 1. 单片句不报：整句只有一片时，那片就是整句，谈不上碎片；
-/// 2. 整句源词数不足 `片数 × FRAGMENT_MIN_SENTENCE_WORDS` 时不报（同
-///    `degenerate_paired_row` 的算术豁免）；
-/// 3. 目标片宽度 ≥ [`DEGENERATE_TARGET_MIN_UNITS`] 时不报——那是
-///    `degenerate_paired_row` 的辖区（宽译文配窄源直接拒绝，且它对 ≥2 词区间
-///    有一条经过审计的 40% 宽度豁免）。两条通道不得在同一片上重叠发声，否则
-///    等于悄悄推翻那条豁免。
+/// Three exemptions (existing exemptions are narrowed, not removed; short sentences are still not reported):
+/// 1. A single-piece sentence is not reported: when the sentence is one piece, that piece is the whole sentence, so there is no fragment.
+/// 2. Not reported when the sentence has fewer source words than `pieces × FRAGMENT_MIN_SENTENCE_WORDS` (the same arithmetic exemption as `degenerate_paired_row`).
+/// 3. Not reported when the target piece width is ≥ [`DEGENERATE_TARGET_MIN_UNITS`]. That is the territory of `degenerate_paired_row` (a wide translation paired with a narrow source is rejected outright, and it has an audited 40% width exemption for intervals of two or more words). The two channels must not both fire on the same piece, or the exemption there would be quietly overturned.
 fn source_fragment_issues(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4655,11 +4394,9 @@ fn source_fragment_issues(
         .collect()
 }
 
-/// 最坏配对源行的原始几何：`(最大源行阅读单位, 最大源行时窗秒)`。
+/// Raw geometry of the worst paired source row: `(largest source row in reading units, largest source row time window in seconds)`.
 ///
-/// 刻意**不**套 `source_ceiling_issues` 的资格过滤（`PAIRED_MIN_SOURCE_WORDS`
-/// / `PAIRED_TARGET_MIN_UNITS`）：这是护栏比较用的 incumbent 基线，取值越宽
-/// 松越不容易误拒，方向上永远偏放行。
+/// Deliberately does **not** apply `source_ceiling_issues`' eligibility filter (`PAIRED_MIN_SOURCE_WORDS` / `PAIRED_TARGET_MIN_UNITS`). This is the incumbent baseline for the guardrail comparison, and a looser value means fewer false rejections; the direction is always to lean toward accepting.
 fn worst_source_row(
     ranges: &[(usize, usize)],
     source_units: &[usize],
@@ -4676,25 +4413,17 @@ fn worst_source_row(
         })
 }
 
-/// 时窗比较容差：源词结束时刻按 0.1s 取整，浮点相等不能用裸 `>`。
+/// Tolerance for comparing time windows. Source word end times are rounded to 0.1 s, so floating-point equality must not use a bare `>`.
 const SOURCE_SECONDS_EPS: f64 = 1e-6;
 
-/// 非回退护栏：定向修复轮交回的答案，不得把「越过配对源行上限」的最坏行做得
-/// 比 incumbent 草稿更差。
+/// Non-regression guardrail: an answer returned by a targeted repair round must not make the worst row that exceeds the paired source-row cap worse than the incumbent draft.
 ///
-/// 现场（Jeff Dean 项目 t-msr6a4xn / s-g123.0）：worker 为了凑
-/// `pieceCount.min` 在句首加了最省事的一刀，最坏源行从草稿的 70 单位 /5.6s
-/// 恶化到 110 单位 /8.6s，而引擎验收与 submit lint 都没有任何 incumbent 比较，
-/// 这次净倒退就这么静默落库了。
+/// Scene (Jeff Dean project t-msr6a4xn / s-g123.0): to meet `pieceCount.min`, the worker added the cheapest cut at the start of the sentence, which worsened the worst source row from the draft's 70 units / 5.6s to 110 units / 8.6s. Neither the engine's acceptance nor the submit lint had any incumbent comparison, so this net regression was silently stored.
 ///
-/// 三条克制，保证只治倒退、不治「保持原样」：
-/// 1. 只看答案里**仍然越档**的行；答案完全不越档时护栏结构性不触发（这保住
-///    了 `source_ceiling_blocks_the_draft_but_never_rejects_the_answer` 之外
-///    的所有普通答案）。
-/// 2. 只在 incumbent 自身已越档的维度上生效：草稿在该维度是干净的，说明这轮
-///    根本不是为该维度派出的定向修，没有据此拒绝的授权。
-/// 3. 严格大于才拒；等宽（含 `sourceBreaks` 与草稿完全相同的空转答案）与改善
-///    一律放行——空转是 `refine-align` 的续轮职责，不是验收门的。
+/// Three restraints ensure that it only prevents regression and does not forbid leaving things as they are:
+/// 1. Only rows in the answer that **still exceed the limit** are examined. When the answer does not exceed the limit at all, the guardrail is structurally not triggered (this preserves every ordinary answer other than the one covered by `source_ceiling_blocks_the_draft_but_never_rejects_the_answer`).
+/// 2. It applies only on dimensions where the incumbent itself already exceeds the limit. If the draft is clean on that dimension, this round was not dispatched for that dimension, and there is no authority to reject on that basis.
+/// 3. Reject only when strictly greater. Equal width (including an idle answer whose `sourceBreaks` match the draft exactly) and improvements both pass. Idling is the job of `refine-align`'s follow-up rounds, not of the acceptance gate.
 fn source_ceiling_regression(
     issues: &[SourceCeilingIssue],
     draft_worst_units: usize,
@@ -4723,16 +4452,11 @@ fn source_ceiling_regression(
     })
 }
 
-/// 退化配对行：某条目标片宽度 ≥ [`DEGENERATE_TARGET_MIN_UNITS`] 却只配到
-/// 少于 [`DEGENERATE_MIN_SOURCE_WORDS`] 个源词。返回首条违规行的
-/// `(1 基片号, 源词数, 目标宽度)`。
+/// Degenerate paired row: a target piece with width ≥ [`DEGENERATE_TARGET_MIN_UNITS`] is paired with fewer than [`DEGENERATE_MIN_SOURCE_WORDS`] source words. Returns the first violating row as `(1-based piece number, source word count, target width)`.
 ///
-/// 两道豁免，避免把不可满足的要求反复打回 worker：
-/// 1. 整句源词数不足以让每片都拿到词数下限时不报（frozen 句片数已冻结，
-///    再拒也只能落到 `fallback_word_entry` 的等比锚定）；
-/// 2. 源区间有 ≥2 个词且自身显示宽度已达目标片的 40%（长标识符/长单词），说明
-///    配对行在视觉上并不失衡——这是审计给出的两条判据里的第二条。宽度豁免不
-///    覆盖单词区间：高亮按词推进，一个词无论多宽都只有一步。
+/// Two exemptions, so that unsatisfiable requirements are not sent back to the worker over and over:
+/// 1. Not reported when the sentence's source word count is not enough for every piece to reach the word-count floor. (The sentence's piece count is already frozen, and rejecting again would only fall back to the proportional anchoring of `fallback_word_entry`.)
+/// 2. When the source interval has ≥2 words and its own display width has reached 40% of the target piece (long identifiers or long words), the paired row is not visually unbalanced. This is the second of the two criteria the audit gave. The width exemption does not cover single-word intervals: highlighting advances word by word, and a single word takes one step however wide it is.
 pub fn degenerate_paired_row(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4761,16 +4485,13 @@ pub fn degenerate_paired_row(
             if target_units < DEGENERATE_TARGET_MIN_UNITS {
                 return None;
             }
-            // 宽度豁免只适用于 ≥2 词的区间：逐字高亮按词推进，单词区间无论
-            // 渲染多宽都只有一步，正是审计描述的观感断裂。
+            // The width exemption applies only to intervals of two or more words. Word-by-word highlighting advances per word, so a single-word interval is one step however wide it renders. That is exactly the visual break the audit describes.
             let units = source_units[from..=to].iter().sum::<usize>();
             (words < 2 || units * 5 < target_units * 2).then_some((index + 1, words, target_units))
         })
 }
 
-/// 已落库 manyToOne 条目的源行硬上限诊断；`ccut check` 与草稿门共用，避免
-/// CLI 复制阈值。硬档只做"报出并驱动定向重对齐"，不参与引擎验收拒绝——
-/// 见 `evaluate_candidate` 处的说明。
+/// Diagnostic for the source-row hard cap on stored manyToOne entries. Shared by `ccut check` and the draft gate, so the CLI does not copy the thresholds. The hard tier only reports the problem and drives targeted re-alignment; it does not take part in rejection by engine acceptance (see the note at `evaluate_candidate`).
 pub fn source_ceiling_issues_for_ranges(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4790,11 +4511,9 @@ pub fn source_ceiling_issues_for_ranges(
     )
 }
 
-/// 已落库 manyToOne 条目的源行宽度下限诊断；`ccut check` 与草稿门共用，避免
-/// CLI 复制阈值。与硬上限同进同退：只"报出并驱动定向重对齐"，不参与引擎验收
-/// 拒绝——见 `evaluate_candidate` 处的说明。
+/// Diagnostic for the source-row width floor on stored manyToOne entries. Shared by `ccut check` and the draft gate, so the CLI does not copy the thresholds. Like the hard cap, it only reports the problem and drives targeted re-alignment; it does not take part in rejection by engine acceptance (see the note at `evaluate_candidate`).
 ///
-/// 整句上屏的降级路径**不**调用本函数：整句只有一片，按定义豁免。
+/// The whole-sentence-display degraded path does **not** call this function. A whole sentence is a single piece, and is exempt by definition.
 pub fn source_fragment_issues_for_ranges(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4806,14 +4525,9 @@ pub fn source_fragment_issues_for_ranges(
     source_fragment_issues(texts, ranges, source_word_units, source_fit, target_lang)
 }
 
-/// 整句上屏形态的源行硬上限诊断。整句上屏本身就是一条“配对行”（源=整句词
-/// 区间、目标=整句译文），必须服从与 manyToOne 单片完全相同的硬上限，因此
-/// 直接复用 `source_ceiling_issues`：把整句当作唯一目标片、把整个词区间当作
-/// 唯一源跨度。align 引擎的 `no_entry_needed` 门与 `ccut check` 的降级路径共
-/// 用本函数，任何一侧都不得复制阈值。
+/// Hard source-row cap diagnostic for the whole-sentence display shape. Displaying the whole sentence is itself a paired row (source = the whole sentence's word interval, target = the whole sentence's translation), so it must obey the same hard cap as a single manyToOne piece. It therefore reuses `source_ceiling_issues` directly: the whole sentence is treated as the only target piece, and the whole word interval as the only source span. The align engine's `no_entry_needed` gate and the degraded path of `ccut check` both use this function, and neither side may copy the threshold.
 ///
-/// 源侧 units 用与 `ccut check` 完全一致的口径逐词计算，`ends_sec` 相对首词
-/// `t0` 归零并保留厘秒精度。
+/// Source-side units are computed word by word with exactly the same basis as `ccut check`, and `ends_sec` is zeroed relative to the first word's `t0`, keeping centisecond precision.
 pub fn whole_sentence_source_ceiling_issue(
     source_words: &[&Word],
     translation: &str,
@@ -4861,8 +4575,7 @@ fn paired_density_issue(
         })
 }
 
-/// 已落库 manyToOne 条目的双语配对密度诊断；`ccut check` 与引擎验收共用，
-/// 避免 CLI 复制阈值或目标缝算法。返回首个需要定向重对齐的目标片及缝提示。
+/// Diagnostic of bilingual paired density for stored manyToOne entries. Shared by `ccut check` and the engine's acceptance, so the CLI does not copy thresholds or the target-seam algorithm. Returns the first target piece that needs targeted re-alignment, together with its seam hint.
 pub fn paired_density_issue_for_ranges(
     texts: &[String],
     ranges: &[(usize, usize)],
@@ -4884,7 +4597,7 @@ pub fn paired_density_issue_for_ranges(
 
 fn preferred_piece_units(total: usize, pieces: usize) -> [usize; 2] {
     let pieces = pieces.max(1);
-    // 目标均值上下各留 25%：这是给语义切点腾挪的建议区间，不是硬切线。
+    // Keep 25% above and below the target mean. This is an advisory range for shifting semantic cut points, not a hard cutting line.
     let min = (total.saturating_mul(3) / pieces.saturating_mul(4)).max(1);
     let max = total
         .saturating_mul(5)
@@ -4902,16 +4615,12 @@ fn length_plan(
     let target_display_units = target_cps_chars(&item.translation, target_lang);
     let source_piece_capacity = item.words.len().max(1);
     let source_total = source_length_units(&item.words, source_lang);
-    // 片数完全由译文阅读需求驱动（多对一默认形态）：源语长度不再抬高
-    // min/recommended，否则源长译短的句子会把紧凑译文剁成闪现碎行。
-    // min..max 延续 fit..soft 的可行范围；recommended 用四舍五入而非一律
-    // ceil，避免 57/14 这类接近 4 片的句子被机械推成 5 片。
+    // Piece count is driven entirely by the translation's reading needs (the many-to-one default shape). Source length no longer raises min or recommended; otherwise a compact translation for a long source would be chopped into flashing fragments. min..max continues the feasible range of fit..soft. recommended uses rounding rather than always ceil, so that sentences near 4 pieces, such as 57/14, are not mechanically pushed to 5.
     let target_min = target_display_units.div_ceil(params.fit.max(1)).max(1);
     let target_max = target_display_units
         .div_ceil(params.soft.max(1))
         .max(target_min);
-    // 校验对每个入队长句都要求 ≥2 片（时长护栏入队的紧凑译句
-    // target_min 会算出 1），载荷不得宣称 min=1 让 worker 与契约打架。
+    // Validation requires ≥2 pieces for every queued long sentence (a compact translation queued by the duration guardrail would otherwise compute target_min = 1). The payload must not claim min=1, which would conflict with the contract.
     let min = target_min.min(source_piece_capacity).max(2);
     let max = target_max.max(min).min(source_piece_capacity).max(min);
     let target_recommended = (target_display_units + params.soft.max(1) / 2) / params.soft.max(1);
@@ -4940,7 +4649,7 @@ fn length_plan(
     }
 }
 
-/// 单测辅助：把源词渲染成带停顿标记的整句文本（CJK 词间不加空格）。
+/// Unit-test helper: renders source words as a whole-sentence text with pause markers (no spaces between CJK words).
 #[cfg(test)]
 fn render_source(words: &[PendingWord]) -> String {
     let mut out = String::new();
@@ -4974,20 +4683,17 @@ fn needs_space_between(left: Option<char>, right: Option<char>) -> bool {
 }
 
 struct DraftMarked {
-    // 下列三个字段保留给草稿验收回归测试观测；运行时护栏只需要后面的最坏
-    // 源行几何，不再把草稿本身序列化为分页成本投影。
+    // The next three fields are kept for regression-test observation of draft acceptance. The runtime guardrail needs only the worst source-row geometry below, and no longer serialises the draft itself as a paging-cost projection.
     #[allow(dead_code)]
     widths: Vec<usize>,
     #[allow(dead_code)]
     ready: bool,
-    /// `ready == false` 的逐条原因，供草稿验收回归测试精确定位失败缝。
+    /// The per-item reason for `ready == false`, so the draft-acceptance regression tests can pinpoint the failing seam.
     #[allow(dead_code)]
     blockers: Vec<String>,
-    /// 最坏配对源行的原始几何（阅读单位）。护栏的 incumbent 基线，
-    /// 与 `worst_source_seconds` 一起作为提交期非回退基线。
+    /// Raw geometry (reading units) of the worst paired source row. This is the incumbent baseline of the guardrail; together with `worst_source_seconds` it serves as the non-regression baseline at submission time.
     worst_source_units: usize,
-    /// 最坏配对源行的时窗（秒），必须用硬档同款的
-    /// `source_range_seconds` 口径。
+    /// Time window (seconds) of the worst paired source row. It must use the same `source_range_seconds` basis as the hard tier.
     worst_source_seconds: f64,
 }
 
@@ -4995,9 +4701,7 @@ fn source_boundary_issue_is_blocking(reason: &str) -> bool {
     reason.starts_with("source infinitive complement ")
 }
 
-/// 接受前修复超 fit 片（纯文本侧，independent 行无源区间可同步）：片超一行
-/// 且存在自由缝时按该缝切开。无自由缝的片保持整片——它们归
-/// translation-unsplittable 通道，强切只会制造悬垂尾。
+/// Before acceptance, repair over-fit pieces on the text side only (independent rows have no source interval to keep in sync): if a piece exceeds one row and has a free seam, cut it along that seam. Pieces without a free seam stay whole. They belong to the translation-unsplittable channel, and forcing a cut would only create dangling tails.
 fn repair_over_fit_pieces(texts: Vec<String>, lang: &str, params: &TransParams) -> Vec<String> {
     let mut repaired = Vec::with_capacity(texts.len() + 1);
     for text in texts {
@@ -5012,11 +4716,7 @@ fn repair_over_fit_pieces(texts: Vec<String>, lang: &str, params: &TransParams) 
     repaired
 }
 
-/// 接受前修复超 fit 片（配对行，文本 + 源区间同步）：与闪现碎片修复同规——
-/// 这类机械修复不该消耗全局唯一的修复调用（`GLOBAL_REPAIR_CALLS=1`，抢的
-/// 是别的句子的机会），而 `free_seam` 已经把切点连同两侧文本一起算好了。
-/// 源区间切不干净（只有一个词、或找不到非风险词界）时保持整片，退回
-/// advisory —— 那种情况真正要动的是源侧映射，不是译文切分。
+/// Before acceptance, repair over-fit pieces in paired rows, keeping text and source interval in sync. This is the same reasoning as flash-fragment repair: this kind of mechanical repair should not consume the single global repair call (`GLOBAL_REPAIR_CALLS=1`, which other sentences also need), and `free_seam` has already computed the cut point together with the text on both sides. If the source interval cannot be cut cleanly (only one word, or no non-risky word boundary can be found), keep the piece whole and fall back to an advisory. In that case what needs changing is the source-side mapping, not the translation split.
 fn repair_over_fit_pieces_with_ranges(
     pieces: Vec<(String, (usize, usize))>,
     source_words: &[&str],
@@ -5049,7 +4749,7 @@ fn free_seam_for_over_fit(
         .flatten()
 }
 
-/// 在 `from..=to` 内挑一个与译文宽度比例最接近、且本身不是风险边界的源词界。
+/// Within `from..=to`, picks the source word boundary whose ratio is closest to the translation's width ratio and which is not itself a risky boundary.
 fn clean_source_cut(
     source_words: &[&str],
     from: usize,
@@ -5077,13 +4777,9 @@ fn clean_source_cut(
         .min_by_key(|boundary| (boundary.abs_diff(ideal), *boundary))
 }
 
-// CJK 词内切边界判定的唯一定义在 [`crate::seam`]（确定性 draft 门与
-// `free_seam` 自由缝判据必须同源，否则两侧会对同一个缝给出相反结论）。
+// The sole definition of CJK intra-word cut detection lives in [`crate::seam`]. The deterministic draft gate and the `free_seam` free-seam criterion must share one source; otherwise the two would reach opposite conclusions about the same seam.
 
-/// 为模型提供一份零 LLM、完整可回锚的候选。多数句只需返回 `useDraft:true`；
-/// `draftReady` 拦四类问题：交付硬约束/阻塞缝/源语残片、疑似 CJK 词内切、
-/// 以及"超 fit 且片内存在小句缝"（fit 一轮到位，消除 check→refine 二轮）。
-/// 无缝的超 fit 灰带与 preferred 范围仍是审阅提示，不强迫重抄。
+/// Offers the model a zero-LLM candidate that is complete and can always be anchored back. Most sentences only need to return `useDraft:true`. `draftReady` blocks four classes of problems: delivery hard constraints, blocking seams and source-side fragments; suspected CJK intra-word cuts; and "over fit with a clause seam inside the piece" (fit is achieved in one round, removing the second check→refine round). Over-fit pieces with no seam, and the preferred range, are still review hints and do not force a re-transcription.
 fn deterministic_draft(
     item: &Pending,
     params: &TransParams,
@@ -5092,8 +4788,7 @@ fn deterministic_draft(
 ) -> DraftMarked {
     debug_assert!(!item.words.is_empty());
     let source_words_all: Vec<&str> = item.words.iter().map(|word| word.text.as_str()).collect();
-    // refine / force 重切：当前已接受切分就是最好的草稿基准；重算的确定性
-    // 草稿反而会把已修好的句子退回坏切分（G1 实测陷阱）。
+    // refine / force re-split: the currently accepted split is the best baseline for the draft. A recomputed deterministic draft would revert already-fixed sentences to the bad split (a trap measured in G1).
     if let Some(existing) = &item.existing
         && existing
             .ranges
@@ -5143,7 +4838,7 @@ fn deterministic_draft(
     )
 }
 
-/// 片列表（文本 + 句内词序区间）→ 标记串草稿与 ready 判定。
+/// Piece list (text + in-sentence word-order interval) → marker-string draft and the ready judgment.
 fn draft_from_pieces(
     item: &Pending,
     pieces: Vec<(String, (usize, usize))>,
@@ -5156,9 +4851,7 @@ fn draft_from_pieces(
         .iter()
         .map(|(text, _)| crate::split::piece_display_units(text, target_lang))
         .collect();
-    // ready 各分量的失败原因逐条收集：p850 二轮复测实测 worker 面对无原因
-    // 的 draftReady=false 只能整句显式重抄（5 句原样重交即通过）；给出
-    // blocker 让模型只修被点名的缝。
+    // The reasons for each component of ready are collected one by one. p850's second-round measurements showed that when a worker faces draftReady=false with no reason, its only option is to re-transcribe the whole sentence explicitly (five sentences resubmitted unchanged passed). Giving the blockers lets the model fix only the seams it is told about.
     let mut blockers: Vec<String> = Vec::new();
     for (index, width) in widths.iter().enumerate() {
         if *width > params.hard {
@@ -5180,8 +4873,7 @@ fn draft_from_pieces(
             pieces.len(), plan.piece_count.min, params.fit
         ));
     }
-    // 单源词片检查按词位而非字符：字符口径下 >1 恒真，会放跑
-    // “一个词孤悬一片”的草稿（除非该词自身足够宽、可独立成片）。
+    // The single-source-word piece check is by word position, not by character. On the character basis, >1 is always true, which would let through a draft that isolates one word in its own piece (unless that word is itself wide enough to stand as a piece).
     for (index, (_, (from, to))) in pieces.iter().enumerate() {
         if to - from + 1 < 2 && source_length_units(&item.words[*from..=*to], source_lang) < 4 {
             blockers.push(format!(
@@ -5214,7 +4906,7 @@ fn draft_from_pieces(
     ) {
         blockers.push(reason);
     }
-    // 疑似 CJK 词内切：相邻片缝两侧都是表意字符且无标点。
+    // Suspected CJK intra-word cut: both sides of the seam between adjacent pieces are ideographic characters, with no punctuation.
     for (index, pair) in refs.windows(2).enumerate() {
         if cjk_midword_boundary(pair[0], pair[1]) {
             blockers.push(format!(
@@ -5225,15 +4917,7 @@ fn draft_from_pieces(
             ));
         }
     }
-    // fit 一轮到位：超 fit 且片内有**自由缝**（切开后两侧都不再超 fit、都不
-    // 是闪现碎片、且不触发任何客观阻塞缝 lint）⇒ 本轮就修，不留给 refine。
-    // 必须用与 check 相同的视觉单行口径（exceeds_one_line_fit）：投影把
-    // 隐藏的逗号/句号换成空格，含句中逗号、恰好 fit 字的片视觉上仍超一行；
-    // 若这里按 target_cps_chars 判定，此类片会在 align/check 之间永远打转
-    //（G1 基线的 "无解残留" 实为该度量错位）。
-    // 判据用 free_seam 而非 internal_clause_seam：后者只问"有没有小句缝"，
-    // 会对"切了照样超 fit"或"切开就悬垂"的片提要求，worker 怎么答都被拒；
-    // 无自由缝的超 fit 片保持现状，归 translation-unsplittable 通道。
+    // Fit in one round: a piece over fit that has a **free seam** inside it (after cutting, neither side is over fit, neither is a flashing fragment, and no objective blocking-seam lint is triggered) is fixed in this round, not left to refine. It must use the same visual one-line basis as check (exceeds_one_line_fit). The projection replaces hidden commas and full stops with spaces, so a piece with an in-sentence comma that is exactly fit characters long still visually exceeds one line. If it were judged by target_cps_chars here, such pieces would bounce between align and check forever. (The G1 baseline's "unsolvable residue" was actually a measurement mismatch.) The criterion uses free_seam rather than internal_clause_seam. The latter only asks "is there a clause seam", and would demand a seam even when cutting still leaves a piece over fit or leaves a dangling piece, so no worker answer could ever pass. Over-fit pieces with no free seam stay as they are and fall into the translation-unsplittable channel.
     for (index, text) in refs.iter().enumerate() {
         if !exceeds_one_line_fit(text, target_lang, params.fit) {
             continue;
@@ -5275,9 +4959,7 @@ fn draft_from_pieces(
             seam
         ));
     }
-    // 硬档：源行超出单行预算 1.5 倍（或 6s）且目标片自身无缝。这里只否掉
-    // useDraft、把片号交给模型，不进引擎验收拒绝——模型若判定无合法切点，
-    // 保持整行是契约允许的答案，拒绝它只会换来确定性回退（更差）。
+    // Hard tier: the source row exceeds 1.5 times the single-row budget (or 6s), and the target piece itself has no seam. Here it only disqualifies useDraft and hands the piece number to the model. It does not enter engine acceptance rejection: if the model judges there is no legal cut point, keeping the row whole is an answer the contract allows, and rejecting it would only lead to a deterministic fallback, which is worse.
     for issue in source_ceiling_issues(
         &target_texts,
         &ranges,
@@ -5296,10 +4978,7 @@ fn draft_from_pieces(
             PAIRED_SOURCE_HARD_SECONDS
         ));
     }
-    // 下限：源行窄到只剩一两个词的碎渣。与硬上限同一形态（只否 useDraft、
-    // 点名片号，不进引擎验收拒绝），补的是 source_ceiling_issues 双豁免留下
-    // 的盲区。与上面"单源词片"那条 blocker 互补而非重复：那条只管 1 词且
-    // <4 单位（不看译文宽度），这条管 ≤2 词且译文自身也短的碎片。
+    // Lower bound: a source row narrowed to a fragment of only one or two words. It has the same shape as the hard cap (it only disqualifies useDraft and names the piece number, without entering engine acceptance rejection), and fills the blind spot that the double exemption of source_ceiling_issues leaves. It complements the "single-source-word piece" blocker above rather than duplicating it: that one covers only one word and fewer than 4 units, without looking at translation width, while this one covers at most two words where the translation itself is also short.
     for issue in source_fragment_issues(
         &target_texts,
         &ranges,
@@ -5327,8 +5006,7 @@ fn draft_from_pieces(
     }
 }
 
-/// 每个源词结束时刻（相对句首累计秒，0.1s 取整）。无时间戳（全零）时返回
-/// 空表，序列化省略。
+/// The end time of each source word (cumulative seconds relative to the sentence start, rounded to 0.1 s). Returns an empty table when there are no timestamps (all zeros), and serialisation omits it.
 fn source_word_ends_sec(words: &[PendingWord]) -> Vec<f64> {
     let start = words.first().map(|word| word.t0).unwrap_or_default();
     let ends: Vec<f64> = words
@@ -5341,9 +5019,7 @@ fn source_word_ends_sec(words: &[PendingWord]) -> Vec<f64> {
     ends
 }
 
-/// 对齐分页的源文词数维度。Transcript 的一个 `Word` 仍可能包含 CJK 连写或
-/// 多个 Latin token，因此逐项复用 [`word_count`]，而不是把 `words.len()`
-/// 当成跨语言等价量。
+/// Source-word-count dimension for alignment paging. One `Word` in a transcript may still contain CJK run-together text or several Latin tokens, so [`word_count`] is applied per item. `words.len()` is not treated as a cross-language equivalent.
 fn align_item_word_count(item: &Pending) -> usize {
     item.words
         .iter()
@@ -5351,9 +5027,7 @@ fn align_item_word_count(item: &Pending) -> usize {
         .sum()
 }
 
-/// 一句对齐请求的近似工作量。固定 HTML/推理开销保证“许多短句”不会伪装成
-/// 一条便宜长句；源/目标正文、建议片数、受保护术语和双语锚点再按实际字符
-/// 叠加。该值只用于连续页均衡，确定且与 worker 数无关。
+/// Approximate workload of one alignment request. A fixed HTML and inference overhead ensures that "many short sentences" cannot pass as one cheap long sentence. The source and target bodies, suggested piece count, protected terms and bilingual anchors are then added on top by their actual character counts. The value is used only to balance contiguous pages; it is deterministic and independent of the worker count.
 fn align_item_complexity_cost(
     item: &Pending,
     params: &TransParams,
@@ -5381,9 +5055,7 @@ fn align_item_complexity_cost(
         .saturating_add(constraints)
 }
 
-/// 对齐分页同时受源文词数、句数和载体复杂度约束。页数取三者最大值，再用
-/// 复杂度成本最小化最重连续页；因此增加 worker 只消费已经存在的页，不会让
-/// 同一输入随机器并发槽变化而产生不同分页。
+/// Alignment paging is constrained by source word count, sentence count and carrier complexity at once. The page count is the maximum of the three, and then the heaviest contiguous page is minimised by complexity cost. So adding workers only consumes pages that already exist, and the same input never gets different paging when the machine's concurrency slots change.
 fn align_page_sizes(
     items: &[&Pending<'_>],
     params: &TransParams,
@@ -5410,7 +5082,7 @@ fn align_page_sizes(
     crate::paging::balanced_page_sizes_for_count(&costs, pages, ALIGN_MAX_ITEMS_PER_PAGE)
 }
 
-// ---- 响应校验 -------------------------------------------------------------
+// ---- Response validation ----
 
 #[derive(Debug, Clone, Deserialize)]
 struct PieceJson {
@@ -5437,11 +5109,7 @@ enum HardLimitEnforcement {
     },
 }
 
-/// LLM 负责首轮语义拆分；若它仍留下超 hard 目标片，就在同一次响应内继续按
-/// 目标语自然缝确定性拆分，并尽量按长度重新锚定全部源词。目标片多于源词、
-/// 或比例锚定会切进源语绑定短语时改用独立展示，不伪造逐片双语对应。这样
-/// hard 始终是绝对交付上限，同时语序交叉和极短源文都不会额外消耗一次
-/// LLM 修复调用。
+/// The LLM handles the first-round semantic split. If it still leaves a piece over hard, then within the same response the piece is split deterministically at the target language's natural seams, and all source words are re-anchored by length as far as possible. When there are more target pieces than source words, or when proportional anchoring would cut through a source-bound short phrase, the pieces are displayed independently instead, without fabricating per-piece bilingual correspondence. Hard therefore stays an absolute delivery cap, while crossings and very short source text do not cost an extra LLM repair call.
 fn enforce_target_hard_limit(
     target_segments: &[String],
     input: &Pending,
@@ -5519,8 +5187,7 @@ fn enforce_target_hard_limit(
     }))
 }
 
-/// 标记串 → 段列表：按 `|`/`｜` 切分并 trim；段内 ⏸ 剥除（旧 json 形状答案
-/// 的测试薄壳专用）。
+/// Marker string → segment list: split on `|` / `｜` and trim. Strips ⏸ inside segments (only for the test shim of the legacy json-shape answer).
 #[cfg(test)]
 fn split_marked(text: &str) -> Vec<String> {
     text.split(['|', '｜'])
@@ -5528,28 +5195,19 @@ fn split_marked(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 锚点词同段校验：源/译文里都出现的拉丁/数字 token（产品名、缩写、数字、
-/// 标识符），两侧的段号集合必须有交集——完全不相交说明切点切进了语序交叉区，
-/// 锚定必然错位（TeachFX/ELD 实测样本）。
+/// Same-segment check for anchor words. Latin and digit tokens that appear on both the source and target sides (product names, abbreviations, numbers, identifiers) must have a non-empty intersection of their segment-number sets on the two sides. Completely disjoint sets mean the cut point went into a crossing zone, so anchoring is bound to be misaligned (measured on TeachFX / ELD samples).
 ///
-/// 口径两处放宽（R2 基准 §4.4：`s-g33.0` 的 `KV`、`s-g96.0` 的 `AI`、`s-g3.0`
-/// 里重复出现的 `token` 三处交叉都被旧口径漏过）：
-/// 1. token 不再要求含拉丁字母，纯数字（`2048`、`999`）同样是锚点；
-/// 2. 不再要求两侧各只出现一次，改判「段号集合是否不相交」，重复出现的 token
-///    也能命中。
+/// Two relaxations of the basis (R2 benchmark §4.4: the crossings at `s-g33.0` `KV`, `s-g96.0` `AI`, and the repeated `token` in `s-g3.0` were all missed by the old basis):
+/// 1. A token no longer has to contain Latin letters; pure digits (`2048`, `999`) also count as anchors.
+/// 2. It no longer requires each token to appear exactly once on each side. The criterion is whether the segment-number sets are disjoint, so repeated tokens can also be hit.
 ///
-/// 仍是 advisory 口径：命中只进 advisories，不阻塞、不改写模型自报的
-/// `crossing`（`crossing` 会反过来关掉 [`bilingual_anchor_issue_for_ranges`]
-/// 的阻塞校验，自动置位会永久压掉真正的术语错位拒绝）。
+/// It remains an advisory: a hit goes only into advisories, does not block, and does not rewrite the model's self-reported `crossing`. (Setting `crossing` would switch off the blocking check of [`bilingual_anchor_issue_for_ranges`], and automatic setting would permanently suppress real terminology-misalignment rejections.)
 fn anchor_token_colocation(
     key: &str,
     source_segments: &[String],
     target_segments: &[String],
 ) -> Result<(), String> {
-    // `.`/`-`/`_` 是 token 的**内部**字符：切在它们上会把 `0.8`、`v0.3` 打成
-    // `0`/`8`，再被 `len >= 2` 滤干净——配置类内容里这类数值恰恰是最可靠的
-    // 锚点。首尾的连字符/句点仍剥掉（`--speculative-model` → `speculative-model`，
-    // 句末 `tokens.` → `tokens`）。
+    // `.`, `-` and `_` are **internal** characters of a token. Cutting on them would break `0.8` or `v0.3` into `0` / `8`, which are then removed by `len >= 2`, and in configuration-type content such numbers are exactly the most reliable anchors. Leading and trailing hyphens or periods are still stripped (`--speculative-model` → `speculative-model`, and the final period in `tokens.` → `tokens`).
     fn tokens(text: &str) -> Vec<String> {
         text.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_')))
             .map(|tok| tok.trim_matches(['.', '-', '_']))
@@ -5570,7 +5228,7 @@ fn anchor_token_colocation(
             tgt_seen.entry(tok).or_default().push(index);
         }
     }
-    // BTreeMap 保证遍历顺序确定：同一句多处命中时报告的 token 稳定。
+    // BTreeMap guarantees a deterministic traversal order, so when the same sentence has several hits, the reported tokens are stable.
     for (tok, src_at) in &src_seen {
         let Some(tgt_at) = tgt_seen.get(tok) else {
             continue;
@@ -5587,9 +5245,7 @@ fn anchor_token_colocation(
     Ok(())
 }
 
-/// [`anchor_token_colocation`] 的词区间入口：供 `ccut check` 在已落库的
-/// `transAlign` 上复算同一判据（引擎侧是 advisory，落库后仍值得可见）。
-/// `crossing=true` 的句由调用方跳过。
+/// Word-interval entry point for [`anchor_token_colocation`]. It lets `ccut check` recompute the same criterion on a stored `transAlign` (the engine side is advisory, but it is still worth making visible after storage). Sentences with `crossing=true` are skipped by the caller.
 pub fn anchor_colocation_issue_for_ranges<W: JoinWord>(
     source_words: &[W],
     target_segments: &[String],
@@ -5652,11 +5308,7 @@ struct AnchorBinding<'a> {
     target_piece: usize,
 }
 
-/// 收集源词组与目标字面串在整句各唯一命中的锚绑定，并做源区间重叠
-/// 消歧：字面唯一不等于语义唯一——"skills" 唯一命中的可能是
-/// "Agent Skills" 里的 "Skills"，真正对应的 "skill" 在句中别处
-///（skills-video s-g72.16 实测误报形状）。重叠时长词组胜出，短词组
-/// 弃权；等长且约束不同的重叠双双弃权，交给 LLM 语义审阅。
+/// Collects the anchor bindings whose source word groups and target literal strings each have a unique hit across the whole sentence, and disambiguates overlapping source intervals. Unique as a literal is not unique semantically: "skills" may uniquely match the "Skills" inside "Agent Skills", while the "skill" it actually corresponds to appears elsewhere in the sentence (the false-positive shape measured on skills-video s-g72.16). When they overlap, the longer word group wins and the shorter one abstains. Equal-length overlapping groups with different constraints both abstain and are left for LLM semantic review.
 fn unique_anchor_bindings<'a>(
     source_words: &[&str],
     target_segments: &[String],
@@ -5678,7 +5330,7 @@ fn unique_anchor_bindings<'a>(
         }
         let source_span = source_matches[0];
         let target_piece = target_matches[0];
-        // 完全等价的绑定（同区间同目标片）只是重复条目，保留一份即可。
+        // Fully equivalent bindings (same interval, same target piece) are only duplicate entries; keeping one is enough.
         if bindings.iter().any(|existing| {
             existing.source_span == source_span && existing.target_piece == target_piece
         }) {
@@ -5714,9 +5366,7 @@ fn unique_anchor_bindings<'a>(
     bindings
 }
 
-/// 显式双语 glossary 锚同段校验。只在源词组与目标字面串在
-/// 整句各唯一命中时才下结论；多次出现或源区间重叠时无法确定
-/// 对应关系，交给 LLM 语义审阅，避免确定性 lint 误报。
+/// Same-segment check for explicit bilingual glossary anchors. A conclusion is drawn only when the source word group and the target literal string each have a unique hit across the whole sentence. With several occurrences, or overlapping source intervals, the correspondence cannot be determined, so it is left for LLM semantic review, which avoids false positives from the deterministic lint.
 pub fn bilingual_anchor_issue_for_ranges(
     source_words: &[&str],
     target_segments: &[String],
@@ -5750,7 +5400,7 @@ pub fn bilingual_anchor_issue_for_ranges(
     None
 }
 
-/// 源段落回锚词区间：忽略空白逐字符匹配，段边界必须恰好落在词边界。
+/// Maps source segments back to word intervals: matches character by character while ignoring whitespace, and segment boundaries must fall exactly on word boundaries.
 fn source_segments_to_ranges(
     key: &str,
     segments: &[String],
@@ -5798,8 +5448,7 @@ fn source_segments_to_ranges(
     Ok(ranges)
 }
 
-/// 源语侧的形状检查。冠词/修饰语悬空与连接词悬垂是客观坏缝，必须进入
-/// 全局 repair；长度失衡可能来自自然语序交叉或译文压缩，仍只记 advisory。
+/// Shape check on the source side. Dangling articles or modifiers and dangling conjunctions are objective bad seams and must enter the global repair. Length imbalance may come from natural word-order crossing or from translation compression, so it is still recorded only as an advisory.
 fn validate_source_shape(
     key: &str,
     source_segments: &[String],
@@ -5817,8 +5466,7 @@ fn validate_source_shape(
         .enumerate()
     {
         let boundary = to + 1;
-        // risky 与小句缝同界时放行：缝上的 bound-phrase 检测多为误报，且
-        // 提交期 lint 同规放行——引擎再拒会把答案推进聚合 repair 批。
+        // A risky boundary that shares its position with a clause seam is allowed. The bound-phrase detection on such a seam is mostly a false positive, and the submission-time lint allows it under the same rule. If the engine rejected it, the answer would be pushed into the aggregated repair batch.
         if let Some(reason) = source_boundary_issue(&word_refs, boundary)
             && (source_boundary_issue_is_blocking(&reason)
                 || source_boundary_strength(&word_refs, boundary) == 0)
@@ -5877,8 +5525,7 @@ fn validate_source_shape(
     Ok(advisories)
 }
 
-/// 一份待验收的对齐答案（源分段 / 源词区间 / 目标片）。同一句可能有两份：
-/// 引擎重切后的版本，和 worker 原样提交的版本。
+/// One answer awaiting acceptance (source segmentation / source word intervals / target pieces). The same sentence may have two of these: the version after the engine's re-split, and the version the worker submitted unchanged.
 #[derive(Clone)]
 struct CandidateAnswer {
     source_segments: Vec<String>,
@@ -5889,8 +5536,7 @@ struct CandidateAnswer {
 }
 
 impl CandidateAnswer {
-    /// 重切是否真的改动了答案。没改动就没有"引擎自己造成的失败"可言，
-    /// 不必重复验一遍同一份内容。
+    /// Whether the re-split actually changed the answer. If it did not, there is no "failure caused by the engine itself", and there is no need to validate the same content twice.
     fn differs_from(&self, other: &Self) -> bool {
         self.independent != other.independent
             || self.target_segments != other.target_segments
@@ -5898,19 +5544,14 @@ impl CandidateAnswer {
     }
 }
 
-/// 验收宽严档位。三档只在两件事上不同：是否容忍超 hard 片、源行形状问题是否
-/// 阻塞。其余判据（拼接一致、区间覆盖、保护术语、客观缝语病、退化配对行、
-/// 锚点交叉、密度）三档一致——放宽这些会让 submit lint 与引擎验收脱钩。
+/// Acceptance strictness levels. The three levels differ in only two respects: whether over-hard pieces are tolerated, and whether source-row shape problems block. Every other criterion (concatenation consistency, interval coverage, protected terms, objective seam defects, degenerate paired rows, anchor crossings, density) is the same across all three. Loosening them would decouple the submit lint from engine acceptance.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AcceptanceMode {
-    /// 引擎重切后的常规验收：超 hard 片必须已被消除。
+    /// Regular acceptance after an engine re-split: over-hard pieces must already have been eliminated.
     Recut,
-    /// 重切被放弃、改验 worker 原始答案：允许保留超 hard 片（over_hard 时
-    /// 豁免 `< 2 段`，与提交期 lint 同判）。
+    /// The re-split was abandoned and the worker's original answer is validated instead. Over-hard pieces may remain (when over_hard is set, the `< 2 pieces` check is waived, the same judgment as the submit-time lint).
     KeepWhole,
-    /// 兜底救回：与 `KeepWhole` 同宽松，且源行形状问题降级为 advisory——
-    /// 它要比的对手是 `fallback_word_entry` 的纯长度确定性切分，那条路
-    /// 本来就不过任何源形状检查，过了 submit lint 的 worker 答案严格更优。
+    /// Rescue at the fallback: as lenient as `KeepWhole`, and source-row shape problems are demoted to advisories. The rival it competes with is the purely length-based deterministic split of `fallback_word_entry`, which passes no source-shape check at all, so a worker answer that passed the submit lint is strictly better.
     Salvage,
 }
 
@@ -5924,7 +5565,7 @@ impl AcceptanceMode {
     }
 }
 
-/// 候选 A：对 worker 答案依次施加 hard 上限强制、闪现碎片修复、超 fit 修复。
+/// Candidate A: apply to the worker's answer, in order, the hard-cap enforcement, flash-fragment repair, and over-fit repair.
 fn build_recut_candidate(
     input: &Pending,
     params: &TransParams,
@@ -5955,9 +5596,7 @@ fn build_recut_candidate(
             }
             None => false,
         };
-    // 接受前修复闪现碎片：worker 交回的 ≤3 字片若可安全并入邻片，直接
-    // 确定性合并（文本+源区间同步），与草稿侧 repair_lint_pieces 同规。
-    // 拒绝回炉对这类机械修复是浪费一轮；无法安全合并的仍走 advisory。
+    // Pre-acceptance repair of flash fragments: a worker-submitted piece of ≤3 characters that can safely merge into a neighbouring piece is merged deterministically at once, keeping text and source interval in sync, on the same basis as repair_lint_pieces on the draft side. Sending it back for another round would waste a round on a mechanical fix. Those that cannot be merged safely still go out as advisories.
     if !independent && target_segments.len() == ranges.len() {
         let repaired = repair_flash_pieces_with_ranges(
             target_segments
@@ -5974,9 +5613,7 @@ fn build_recut_candidate(
             source_segments = source_segments_from_ranges(&ranges, &input.words);
         }
     }
-    // 接受前修复超 fit 片：超一行且有自由缝的片按该缝切开。与闪现修复
-    // 同理由——切点、两侧文本都是确定的，回炉一轮既慢又抢别句的修复
-    // 名额。
+    // Pre-acceptance repair of over-fit pieces: a piece that exceeds one row and has a free seam is cut along that seam. The reasoning is the same as for flash-fragment repair: the cut point and the text on both sides are deterministic, so sending it back for a round would be slow and would compete with other sentences for repair slots.
     if independent {
         target_segments = repair_over_fit_pieces(target_segments, target_lang, params);
     } else if target_segments.len() == ranges.len() {
@@ -6006,8 +5643,7 @@ fn build_recut_candidate(
     })
 }
 
-/// 单个候选答案的全部验收判据。抽出来是为了能对同一句评估两次（引擎重切版 /
-/// worker 原版），失败原因不串味。
+/// All acceptance criteria for a single candidate answer. Extracted so that one sentence can be evaluated twice (the engine re-split version and the worker's original version) without the failure reasons getting mixed up.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_candidate(
     key: &str,
@@ -6019,8 +5655,7 @@ fn evaluate_candidate(
     reference_translation: &str,
     declared_crossing: bool,
     mode: AcceptanceMode,
-    // incumbent 草稿的最坏配对源行 `(单位, 秒)`，由调用方一次性从
-    // `deterministic_draft` 取出（与载荷 `draftWorstSource*` 同源同值）。
+    // The worst paired source row `(units, seconds)` of the incumbent draft, taken once by the caller from `deterministic_draft` (same source and value as the payload's `draftWorstSource*`).
     draft_worst_source: (usize, f64),
 ) -> Result<(Vec<String>, AcceptedAnchor), LlmError> {
     let CandidateAnswer {
@@ -6035,17 +5670,14 @@ fn evaluate_candidate(
         .iter()
         .any(|text| crate::split::piece_display_units(text, target_lang) > params.hard);
     let keep_over_hard = mode.allows_over_hard() && over_hard;
-    // 与提交期 lint 同判：留有超 hard 片时 `<2 段` 不是错误
-    //（该片要么被续拆、要么在 KeepWhole 下整片保留），只有全部片 ≤ hard
-    // 才要求 ≥2 段。`Recut` 档下 `keep_over_hard` 为假，等价于旧行为。
+    // Consistent with the submit-time lint: when over-hard pieces remain, `<2 pieces` is not an error (the piece will either be re-split further, or kept whole under KeepWhole). Only when every piece is ≤ hard is ≥2 pieces required. Under the `Recut` tier, `keep_over_hard` is false, which is equivalent to the old behaviour.
     if target_segments.len() < 2 && !keep_over_hard {
         return Err(LlmError::Malformed(format!(
             "{key}: every requested long sentence must be split into at least two paired segments"
         )));
     }
     let plan = length_plan(input, params, source_lang, target_lang);
-    // 含超 hard 片的答案豁免 pieceCount.min（`all(<= hard)` 条件即
-    // `!over_hard`），与 submit lint 的 `!over_hard` 门同判。
+    // An answer that contains over-hard pieces is exempt from pieceCount.min (the `all(<= hard)` condition is equivalent to `!over_hard`), the same judgment as the `!over_hard` gate of the submit lint.
     if target_segments.len() < plan.piece_count.min
         && target_segments
             .iter()
@@ -6071,13 +5703,7 @@ fn evaluate_candidate(
         &source_ends_sec,
         source_fit,
     );
-    // 注意：源行硬上限（`source_ceiling_issues`）刻意**不**在此拒绝，
-    // 与提交期 lint 保持同判（两处同进同退是 submit-lint 与
-    // 引擎验收不打架的前提）。理由：契约允许模型在无合法切点时保持整
-    // 行；在此拒绝会吃掉全局共享的唯一修复调用（GLOBAL_REPAIR_CALLS=1，
-    // 抢的是别的句子的修复机会），最终落到 `fallback_word_entry` 的
-    // 确定性长度切分（reanchor_texts，不看语义），比模型答案更差。硬档
-    // 由草稿门（draftBlockers）+ `ccut check` → `refine-align` 定向轮承担。
+    // Note: the source-row hard cap (`source_ceiling_issues`) is deliberately **not** rejected here, to stay consistent with the submit-time lint. The two sites rising and falling together is what keeps the submit lint and engine acceptance from fighting. Reason: the contract allows the model to keep a row whole when there is no legal cut point. Rejecting it here would consume the globally shared, only repair call (GLOBAL_REPAIR_CALLS=1, which other sentences also need), and would end in the deterministic length-based split of `fallback_word_entry` (reanchor_texts, which ignores semantics), which is worse than the model's answer. The hard tier is instead carried by the draft gate (draftBlockers) plus `ccut check` → the `refine-align` targeted round.
     if !independent
         && !forced_hard_split
         && let Some((index, seam)) = paired_density_issue(
@@ -6096,11 +5722,7 @@ fn evaluate_candidate(
             seam
         )));
     }
-    // 硬档本身仍不拒（见上），但**净倒退**要拒：定向修复轮把最坏越档源行做得
-    // 更差时放行，等于让 refine-align 反向工作。顺序刻意排在密度检查之后，
-    // 密度这类既有判据继续优先出具理由。`Salvage` 豁免（`source_shape_blocks`
-    // 同款）：那一档只与 `fallback_word_entry` 的纯长度切分竞争，在此拒绝只会
-    // 扩大确定性兜底的暴露面。
+    // The hard tier itself still does not reject (see above), but **net regression** must be rejected. A targeted repair round that makes the worst over-limit source row worse must not be let through, since that would mean refine-align working in reverse. The order is deliberately placed after the density check, so that existing criteria such as density still give their reasons first. The `Salvage` exemption (same as `source_shape_blocks`): that tier competes only with the purely length-based split of `fallback_word_entry`, and rejecting it here would only widen the exposure of the deterministic fallback.
     if mode.source_shape_blocks()
         && let Some(detail) = source_ceiling_regression(
             &source_ceiling_issues(
@@ -6138,8 +5760,7 @@ fn evaluate_candidate(
             (advisories, AcceptedAnchor::Independent)
         });
     }
-    // 退化配对行：宽译文片只挂到一两个源词，逐字高亮会与字幕推进脱节。
-    // 与提交期 lint 同判（submit lint 与引擎验收必须同进同退）。
+    // Degenerate paired row: a wide translation piece attached to only one or two source words, so word-by-word highlighting falls out of step with the subtitle advancing. Same judgment as the submit lint (the submit lint and engine acceptance must rise and fall together).
     if let Some((piece, words, units)) =
         degenerate_paired_row(target_segments, ranges, &source_units, target_lang)
     {
@@ -6147,8 +5768,7 @@ fn evaluate_candidate(
             "{key}: piece {piece} maps {units} display characters onto only {words} source word(s) — give it at least {DEGENERATE_MIN_SOURCE_WORDS} source words, or let the neighbouring short phrases share one piece"
         )));
     }
-    // 模型已自报 crossing 时，锚点词同段检查必然告警（切点就在交叉
-    // 区），不再重复输出。
+    // When the model has self-reported a crossing, the same-segment anchor check will necessarily warn (the cut point sits in the crossing zone), so it is not output again.
     if !declared_crossing {
         let source_refs = input
             .words
@@ -6223,36 +5843,31 @@ fn evaluate_candidate(
     })
 }
 
-/// 一批的验收产物：`(accepted, salvaged, failed_keys)`。`salvaged` 是"译文片
-/// 合法但源侧映射不达标"的答案，只在修复预算耗尽后顶替确定性兜底切分。
+/// The acceptance output of one batch: `(accepted, salvaged, failed_keys)`. `salvaged` is an answer whose "translation pieces are legal but the source-side mapping does not meet the bar". It replaces the deterministic fallback split only after the repair budget is exhausted.
 type BatchVerdict = (
     std::collections::BTreeMap<String, AcceptedPieces>,
     std::collections::BTreeMap<String, AcceptedPieces>,
     Vec<String>,
 );
 
-/// 载体无关的单句答案中间表示。
+/// Carrier-agnostic intermediate representation of a single-sentence answer.
 ///
-/// 双校验合一的落点（文件契约设计 §2）：[`file_answers_from_parsed`] 解出
-/// 答案后，**只有一份** [`accept_answers`] 做验收，验收判据不存在第二份
-/// 可以漂移的副本。
+/// This is where the dual validation is merged (file-contract design §2). After [`file_answers_from_parsed`] extracts the answer, **only one** [`accept_answers`] performs acceptance, so there is no second copy of the criteria that could drift.
 struct SentenceAnswer {
     key: String,
-    /// 句内词序区间：表格行的源列经容错吸附得出。
+    /// In-sentence word-order interval: the source column of a table row, obtained through tolerant snapping.
     ranges: Vec<(usize, usize)>,
-    /// 目标片。
+    /// Target piece.
     target_segments: Vec<String>,
     reordered: bool,
     crossing: bool,
-    /// worker 自述「源文没有合法切点」（`data-unsplittable`）：此时超 hard 片
-    /// 整片保留是契约兑现，不再回炉定向补切。
+    /// The worker self-reports that the source text "has no legal cut point" (`data-unsplittable`). In this case keeping an over-hard piece whole is the contract being fulfilled, and it is no longer sent back for a targeted supplementary split.
     unsplittable: bool,
-    /// 解码阶段已经产生的 advisory（词边界吸附告警等）。
+    /// Advisories already produced during decoding (word-boundary snapping warnings, etc.).
     advisories: Vec<String>,
 }
 
-/// **唯一**的验收核心。`pre_failures` 是解码阶段已经产生的逐句失败
-/// （结构级诊断），与验收失败合并成同一份 problems。
+/// **The only** acceptance core. `pre_failures` are the per-sentence failures already produced during decoding (structure-level diagnostics). They are merged with acceptance failures into a single problems list.
 fn accept_answers(
     batch: &[&Pending],
     params: &TransParams,
@@ -6279,11 +5894,10 @@ fn accept_answers(
             advisories: decode_advisories,
         } = answer;
         let Some(input) = inputs.get(key.as_str()) else {
-            // 解码器已保证键在批内；防御性跳过而不是伪造失败。
+            // The decoder has already guaranteed that the keys are within the batch. Skip defensively rather than fabricating a failure.
             continue;
         };
-        // 源列的可信部分只是「切在哪」，段文本由词真相重建，绝不拿模型
-        // 重抄的字符串当锚。
+        // The trustworthy part of the source column is only "where to cut". Segment text is rebuilt from word truth, and a string the model retyped is never used as an anchor.
         let source_segments = source_segments_from_ranges(&ranges, &input.words);
         let mut target_segments = answer_targets;
         if target_segments.len() != source_segments.len() {
@@ -6308,11 +5922,7 @@ fn accept_answers(
                 continue;
             }
         }
-        // 重排验收：worker 自身具备语言能力，允许它在不改变语义的前提下重排
-        // 译句小句顺序来消除交叉。逐字对账对重排失效，改用两道确定性护栏——
-        // 逐片过目标语格式化（与 trans 同一字符流口径），以及长度带宽（重排
-        // 只调语序和必要的连接词/助词，阅读单位不该有大漂移；漂移过大按改写
-        // 拒收，防止顺手压缩/丢内容）。通过后回写句级译文真相。
+        // Reorder acceptance: the worker has its own language ability, so it may reorder the clauses of the translation to remove crossings, provided the meaning does not change. Character-by-character reconciliation does not work for reordering, so two deterministic guardrails are used instead. The first runs each piece through the target-language formatter (same character-stream basis as `trans`). The second is a length band: reordering should only adjust word order and necessary connectives or particles, so reading units should not drift much. Excessive drift is rejected as a rewrite, which prevents content being quietly compressed or dropped. After it passes, the sentence-level translation truth is written back.
         let revised_target = if reordered {
             target_segments = target_segments
                 .iter()
@@ -6328,8 +5938,7 @@ fn accept_answers(
             let new_text = join_word_texts(target_segments.iter().map(String::as_str));
             let old_units = target_cps_chars(&input.translation, target_lang);
             let new_units = target_cps_chars(&new_text, target_lang);
-            // 与 `filepipe::align_table::check_rows` 共用同一份护栏算术
-            //（设计 §2「校验只有一份」——这条护栏曾是三份逐字复制）。
+            // Shares the same guardrail arithmetic as `filepipe::align_table::check_rows` (the design §2 rule that validation exists in only one place; this guardrail used to be three character-for-character copies).
             if reordered_rewrite_exceeds(old_units, new_units) {
                 failures.push(format!(
                     "{key}: reordered target rewrites too much ({old_units} → {new_units} reading units) — reorder clauses without adding, dropping, or compressing content, or use crossing instead"
@@ -6343,16 +5952,7 @@ fn accept_answers(
         let reference_translation = revised_target
             .clone()
             .unwrap_or_else(|| input.translation.clone());
-        // 两个候选：A = 引擎重切（hard 上限强制 → 闪现修复 → 超 fit 修复），
-        // B = worker 原始答案。重切是引擎单方面的改写，它自己引入的锚点/缝/
-        // 密度失败不该记在 worker 头上（现场：worker 交 3 片、引擎重切成 4 片
-        // 后按"segment 4 锚点错位"回炉，问题描述指向 worker 根本没提交过的
-        // 片）。A 不过验收且重切确实改动过答案时改验 B；B 过则整片保留超 hard
-        // 片——这正是契约里"没有合法切点就保持整行"的引擎侧兑现，该片随后由
-        // `ccut check` 的 translation-unsplittable / align-source-ceiling 通道
-        // 暴露，而不是烧掉全局唯一的修复调用再落一个更差的机械切分。
-        // incumbent 基线只算一次并直接复用 `deterministic_draft`，因此引擎侧
-        // 与提交期 lint 拿到的是同一个数，不存在两套独立计算漂移的空间。
+        // Two candidates: A is the engine's re-split (hard-cap enforcement → flash-fragment repair → over-fit repair), B is the worker's original answer. The re-split is a one-sided rewrite by the engine, and failures it introduces itself (anchors, seams, density) should not be charged to the worker. (Scene: the worker submitted 3 pieces, the engine re-split them into 4, and then sent them back for "segment 4 anchor misaligned", a problem pointing at a piece the worker never submitted.) If A fails acceptance and the re-split really changed the answer, B is validated instead. If B passes, the over-hard piece is kept whole. This is the engine side of the contract's "if there is no legal cut point, keep the row whole". The piece is then exposed by the `translation-unsplittable` / `align-source-ceiling` channels of `ccut check`, rather than burning the single global repair call to land on a worse mechanical split. The incumbent baseline is computed once and reuses `deterministic_draft` directly, so the engine and the submit-time lint get the same number, with no room for two independently computed copies to drift.
         let draft_worst_source = {
             let draft = deterministic_draft(input, params, source_lang, target_lang);
             (draft.worst_source_units, draft.worst_source_seconds)
@@ -6422,10 +6022,7 @@ fn accept_answers(
             via_keep_whole = true;
         }
         let Some((candidate, mut advisories, anchor)) = outcome else {
-            // 两个候选都没过验收：再用最宽松的 `Salvage` 档试一次，过了就
-            // 存进 `salvaged`，留给修复预算耗尽后的兜底顶替
-            // `fallback_word_entry` 的纯长度切分。重排答案不救——救回意味着
-            // 跳过 `trans` 回写路径的一致性前提，宁可走确定性兜底。
+            // Neither candidate passed acceptance. Try once more with the most lenient `Salvage` tier. If it passes, store it in `salvaged`, to stand in for the purely length-based split of `fallback_word_entry` once the repair budget is exhausted. Reordered answers are not rescued: rescue would mean skipping the consistency premise of the `trans` write-back path, so it is better to take the deterministic fallback.
             if revised_target.is_none()
                 && let Ok((mut salvage_advisories, salvage_anchor)) = evaluate_candidate(
                     &key,
@@ -6465,16 +6062,9 @@ fn accept_answers(
             continue;
         };
         let crossing = declared_crossing && matches!(anchor, AcceptedAnchor::WordRanges(_));
-        // 解码阶段的 advisory（file-v1 的词边界吸附、data-unsplittable 自述）
-        // 与验收 advisory 同一个通道，最终都落进 `AlignOutcome.violations`。
+        // Decoding-stage advisories (the file-v1 word-boundary snapping and the data-unsplittable self-report) go through the same channel as acceptance advisories, and both end up in `AlignOutcome.violations`.
         advisories.extend(decode_advisories);
-        // KeepWhole 收下的答案若仍带超 hard 片：这不是引擎自己造成的缺陷，
-        // 而是 worker 交的片本来就超限、引擎又找不到合法重切。按"先接受、
-        // 再定向补"的口径，不当场落库，而是存进 `salvaged`（修复预算耗尽时
-        // 原样顶上，结果不比直接接受更差）并只把**这一句**连同定向说明送进
-        // 修复轮，让 worker 自己挪切点。worker 已自述 data-unsplittable 或
-        // 重排回写的答案不再回炉——前者是契约兑现，后者救回意味着跳过
-        // `trans` 回写一致性前提。
+        // If an answer accepted under KeepWhole still contains over-hard pieces, the defect was not caused by the engine. The worker's pieces were over the limit to begin with, and the engine could not find a legal re-split. Following "accept first, then targeted supplement", it is not stored on the spot. Instead it goes into `salvaged` (used as-is when the repair budget runs out, so the result is no worse than direct acceptance), and only **this one sentence**, with targeted instructions, is sent into the repair round so the worker can move its own cut points. Answers the worker has already self-reported as data-unsplittable, or that were reordered and written back, are not sent back. The former is the contract being fulfilled. Rescuing the latter would mean skipping the consistency premise of the `trans` write-back.
         if via_keep_whole && revised_target.is_none() && !unsplittable {
             let over_hard: Vec<(usize, usize)> = candidate
                 .target_segments
@@ -6538,13 +6128,9 @@ fn accept_answers(
     Ok((accepted, salvaged, failures))
 }
 
-/// 确定性校验（§9.2 + v0.3 hard 上限）：只有覆盖、空片、区间和 hard ceiling
-/// 等结构不变量会触发重试；缝质量与均衡问题返回 advisory，避免为主观样式
-/// 偏好额外调用 LLM。
+/// Deterministic validation (§9.2 plus the v0.3 hard cap). Only structural invariants such as coverage, empty pieces, intervals and the hard ceiling trigger retries. Seam quality and balance problems return advisories, so that no extra LLM call is spent on subjective stylistic preferences.
 ///
-/// `allow_over_hard`：只有在引擎放弃自己的重切、改验 worker 原始答案时才为
-/// true——此时"超 hard 必须再切"已被证明会切出更差的结果，契约允许保持整片，
-/// 该片改由 `ccut check` 的超档通道暴露。常规路径恒为 false。
+/// `allow_over_hard`: true only when the engine has abandoned its own re-split and is validating the worker's original answer. At that point "over hard must be re-split" has been shown to produce a worse result, and the contract permits keeping the piece whole. That piece is then exposed by the over-limit channel of `ccut check`. On the regular path it is always false.
 #[allow(clippy::too_many_arguments)]
 fn validate_target_texts_with_allowed_list_seams(
     key: &str,
@@ -6562,7 +6148,7 @@ fn validate_target_texts_with_allowed_list_seams(
         )));
     }
     for (index, text) in texts.iter().enumerate() {
-        // piece 序号 1 基（与 seam lint / validate_source_shape 同基）。
+        // Piece index is 1-based (same basis as the seam lint and validate_source_shape).
         let ordinal = index + 1;
         let total = texts.len();
         if text.trim().is_empty() {
@@ -6591,9 +6177,7 @@ fn validate_target_texts_with_allowed_list_seams(
     }
     let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let lint = lint_pieces(&text_refs, lang, params);
-    // 悬垂尾/粘着首是客观语病（「拆分给 |」「类似 | 于…」），G3 基线实测
-    // 会被弱 worker 稳定产出并落库——升级为回炉，problems 带具体片文本。
-    // 闪现/aim-band/均衡仍只提示：长度取舍经常没有客观唯一解。
+    // Dangling tails and clinging heads are objective defects (“拆分给 |” ("split off to |"), “类似 | 于…” ("similar to | …")). The G3 baseline measured that weak workers reliably produce them and that they get stored, so they are upgraded to a send-back, with the concrete piece text in the problems. Flashing fragments, aim-band and balance remain hints only, because trade-offs in length often have no objective unique solution.
     let allowed_balanced_list = |issue: &&crate::seam::SeamLintIssue| {
         issue.class == SeamLintClass::ListSeparator
             && allowed_list_seams.contains(&issue.piece_index)
@@ -6639,10 +6223,7 @@ fn validate_target_texts_with_allowed_list_seams(
     Ok(advisories)
 }
 
-/// 片级时间预算 advisory（非阻塞）：展示排程可在句内挪时间（smoothing），
-/// 因此不按片语音时窗硬卡；只在两类可行动信号上提示——整句阅读需求超过
-/// 整句时窗（唯有减片/压缩译文可解，片数越多 1s 展示下限叠加越多），以及
-/// 某片缺口大到相邻片的富余能填（移界即可解，"短源配长译"的典型形态）。
+/// Per-piece time-budget advisory (non-blocking). Display scheduling can shift time within a sentence (smoothing), so it is not hard-capped against each piece's speech window. It hints only on two actionable signals: the reading requirement of the whole sentence exceeds the sentence's time window (solvable only by reducing the piece count or compressing the translation, since the more pieces, the more the 1-second display minimum accumulates), and a piece whose shortfall is large enough that the surplus of adjacent pieces can fill it (solvable by moving a boundary; the typical shape of a short source with a long translation).
 fn time_budget_advisories(
     item: &Pending,
     texts: &[String],
@@ -6663,14 +6244,14 @@ fn time_budget_advisories(
         .collect();
     let available = words_dwell_seconds(&item.words);
     if available <= f64::EPSILON {
-        return advisories; // 无可用时间信息（如合成词表）不做时间判断。
+        return advisories; // Without usable time information (such as a synthetic word table), no time judgment is made.
     }
     let total_required: f64 = required.iter().sum();
     if total_required > available + 0.25 {
         advisories.push(format!(
             "pieces need {total_required:.1}s of reading time but the sentence speech lasts {available:.1}s — fewer pieces (each has a ~1s display floor) or a tighter translation would fit better"
         ));
-        return advisories; // 全局超载时逐片提示只是噪声。
+        return advisories; // Under global overload, per-piece hints are just noise.
     }
     for index in 0..required.len() {
         let deficit = required[index] - spans[index];
@@ -6817,19 +6398,13 @@ fn split_protected_term(texts: &[String], protected_terms: &[String]) -> Option<
 
 // ---- agent submit lint ----------------------------------------------------
 
-/// file-v1 align 应答的提交期语义 lint（§10.3）。
+/// Submission-time semantic lint for file-v1 align responses (§10.3).
 ///
-/// 与引擎 provider 路径**共用同一份**字符串级校验：两边都只调
-/// [`parse_align_table`]，判据（id 对账、截断、源文漂移、拼接不变式、
-/// hard 上限、客观坏缝、reordered ±25% 改写幅度）全在 filepipe 里，
-/// 这里只把诊断格式化成人读文本。设计 §2「校验只有一份」在 file-v1 上
-/// 由此结构性成立——不存在第二份可以漂移的副本。
+/// It shares **one copy** of the string-level validation with the engine's provider path: both only call [`parse_align_table`]. The criteria (id reconciliation, truncation, source drift, the concatenation invariant, the hard cap, objective bad seams, the ±25% magnitude check on reordered text) all live in filepipe. Here the diagnostics are only formatted as human-readable text. This is how the design §2 rule "validation exists in only one place" holds structurally on file-v1; there is no second copy that could drift.
 ///
-/// 需要 `words[]` 真相的判据（源词区间映射、配对密度、退化/碎片行、双语锚、
-/// 源行非回退）留在引擎闭包里：提交进程没有 `TranscriptDoc`，复算不可能，
-/// 抄一份近似值只会制造第二套标准。
+/// Criteria that need the `words[]` truth (source word-interval mapping, paired density, degenerate and fragment rows, bilingual anchors, source-row non-regression) stay inside the engine closure. The submitting process has no `TranscriptDoc`, so recomputation is impossible, and copying an approximation would create a second standard.
 ///
-/// 载荷读不出（旧任务目录、别的 kind）⇒ 返回空：不挡引擎能收的答案。
+/// If the payload cannot be read (an old task directory, or a different kind), return empty: do not block answers the engine can accept.
 pub fn lint_agent_answer_file(payload: &str, answer: &str) -> Vec<String> {
     let Some(table) = parse_align_table_input(payload) else {
         return Vec::new();
@@ -6838,9 +6413,7 @@ pub fn lint_agent_answer_file(payload: &str, answer: &str) -> Vec<String> {
     format_lint_problems(&parsed.diagnostics.problems)
 }
 
-/// `align-edges/1` 提交期 lint：与引擎共用 [`parse_align_edges`] 这一份字符串
-/// 级校验（序号合法性、跨块重复、span 拼接不变式、截断/缺句）。需要
-/// `words[]` 真相的块合并与 DP 留在引擎。载荷读不出 ⇒ 返回空（不挡）。
+/// `align-edges/1` submission-time lint. It shares with the engine the single string-level validation in [`parse_align_edges`] (ordinal legality, duplicates across blocks, the span concatenation invariant, truncation and missing sentences). The block merging and DP that need the `words[]` truth stay in the engine. If the payload cannot be read, return empty (do not block).
 pub fn lint_agent_answer_edges(payload: &str, answer: &str) -> Vec<String> {
     let Some(table) = parse_align_edges_input(payload) else {
         return Vec::new();
@@ -6849,8 +6422,7 @@ pub fn lint_agent_answer_edges(payload: &str, answer: &str) -> Vec<String> {
     format_lint_problems(&parsed.diagnostics.problems)
 }
 
-/// `align-rewrite/1` 提交期 lint：同一解析器（表的 `data-ccut-format` 决定
-/// rewrite 模式，附带幅度护栏与硬锚保留检查）。
+/// `align-rewrite/1` submission-time lint. The same parser is used (the table's `data-ccut-format` decides the rewrite mode, along with the magnitude guardrail and the hard-anchor retention check).
 pub fn lint_agent_answer_rewrite(payload: &str, answer: &str) -> Vec<String> {
     lint_agent_answer_edges(payload, answer)
 }
@@ -6918,7 +6490,7 @@ mod tests {
             "Alignment missing sentence: s-g61.11",
             "s-g61.11"
         ));
-        // 互为前缀的 id 不得误命中。
+        // IDs that are prefixes of one another must not be matched by mistake.
         assert!(!problem_mentions_id(
             "s-g6.18: piece 2/3 is over hard",
             "s-g6.1"
@@ -6930,8 +6502,7 @@ mod tests {
         ));
     }
 
-    /// 契约文件按 `(kind, attempt)` 共享一份：system prompt 必须只由任务级
-    /// 输入决定，首轮与修复轮逐字节一致，受保护术语节不随批次组成消失。
+    /// The contract file is shared per `(kind, attempt)`. The system prompt must be determined solely by task-level input, byte-for-byte identical across the first round and repair rounds, and the protected-terms section must not disappear depending on batch composition.
     #[test]
     fn align_file_contract_is_stable_across_rounds() {
         let params = TransParams::for_lang("zh-Hans");
@@ -7226,19 +6797,15 @@ mod tests {
                 .expect("zh")
                 .insert("s-g1.0".to_owned(), text.to_owned());
             let (cues, sentences, trans) = row_repair_inputs(&doc);
-            // 判据与 align 侧的 "empty translation — skipped" 同口径：空译文
-            // 既不产出统计行，也不可能报黏结。
+            // The criterion uses the same basis as "empty translation — skipped" on the align side: an empty translation produces neither a statistics row nor a sticking report.
             assert!(row_deficit_stats(&doc, &sentences, "zh", &cues, &trans).is_empty());
             assert!(row_deficit_issues(&doc, &sentences, "zh", &cues, &trans).is_empty());
         }
     }
 
-    /// 混合轮的 `rowRepair` 四计数 + 计数器回退口径。
+    /// Counters for the four-count `rowRepair` of a mixed round, and the basis for rolling counters back.
     ///
-    /// 每次调用只返回空表 ⇒ 全部句走确定性兜底（`fallback_sentences`），
-    /// 因此"被拒句该退哪个计数器"这件事必须逐句判定：早期版本无条件
-    /// `aligned_sentences -= rejected`，会在 `aligned_sentences == 0` 时把
-    /// 别的句的计数扣成不一致。
+    /// A call that returns only an empty table sends every sentence to the deterministic fallback (`fallback_sentences`). So which counter a rejected sentence should roll back must be decided per sentence. An early version unconditionally did `aligned_sentences -= rejected`, which, when `aligned_sentences == 0`, would subtract another sentence's count and leave the counts inconsistent.
     struct EmptyTableLlm {
         calls: usize,
     }
@@ -7253,8 +6820,7 @@ mod tests {
     fn short_translation_doc() -> TranscriptDoc {
         let mut doc = two_sentence_doc();
         let table = doc.trans.entry("zh".to_owned()).or_default();
-        // 句1：2 条源行（`echo,` 处断行）+ 短译文 ⇒ 最小片数 2，兜底只给 1 片
-        // ⇒ 被拒。句2：单源行 ⇒ 最小片数 1 ⇒ 接受。
+        // Sentence 1: two source rows (broken at `echo,`) plus a short translation ⇒ minimum piece count 2, but the fallback gives only 1 piece ⇒ rejected. Sentence 2: a single source row ⇒ minimum piece count 1 ⇒ accepted.
         table.insert("s-g1.0".to_owned(), "短译文。".to_owned());
         table.insert("s-g2.0".to_owned(), "完成。".to_owned());
         doc
@@ -7277,8 +6843,7 @@ mod tests {
         options
     }
 
-    /// [`short_translation_doc`] 的慢速版：句1 的 8 个词拉长到 6.4s，整句一片
-    /// 会命中 `align-row-deficit` 的驻留谓词（≥5s 且覆盖 2 条源行）。
+    /// The slow version of [`short_translation_doc`]: sentence 1's 8 words are stretched to 6.4s, so as a whole-sentence single piece it would hit the dwell predicate of `align-row-deficit` (≥5s and covering 2 source rows).
     fn slow_short_translation_doc() -> TranscriptDoc {
         let mut doc = short_translation_doc();
         for word in &mut doc.words {
@@ -7291,7 +6856,7 @@ mod tests {
     #[test]
     fn row_repair_counts_candidates_repaired_rejected_and_capped_in_one_round() {
         let mut doc = slow_short_translation_doc();
-        // 第三个 key 在本轮的 `sentences` 之外也不存在于文档 ⇒ 记 capped。
+        // The third key does not exist in the document either, and lies outside this round's `sentences` ⇒ recorded as capped.
         let mut options = paired_counter_options(&["s-g1.0", "s-g2.0"]);
         options.density_sentences.insert("s-g9.9".to_owned());
         let mut llm = EmptyTableLlm { calls: 0 };
@@ -7301,11 +6866,10 @@ mod tests {
         assert_eq!(outcome.row_repair.repaired, 1);
         assert_eq!(outcome.row_repair.rejected, 1);
         assert_eq!(outcome.row_repair.capped, 1);
-        // 被拒句退的是它自己加过的 `fallback_sentences`，不是别人的
-        // `aligned_sentences`。
+        // A rejected sentence rolls back its own `fallback_sentences`, not someone else's `aligned_sentences`.
         assert_eq!(outcome.aligned_sentences, 0);
         assert_eq!(outcome.fallback_sentences, 1);
-        // 被拒句保留原状（本来就没有条目）；接受句落库。
+        // Rejected sentences keep their original state (they had no entry to begin with). Accepted sentences are stored.
         assert_eq!(
             doc.trans_align["zh"].keys().collect::<Vec<_>>(),
             vec!["s-g2.0"]
@@ -7317,8 +6881,7 @@ mod tests {
             "{:?}",
             outcome.violations
         );
-        // 逐句明细：光看「1 候选 → 1 拒」判断不了是验收式过严还是这句本就没那么
-        // 多字可切，度量必须跟着拒绝一起出来。
+        // Itemised detail. Looking only at "1 candidate → 1 rejected" cannot tell whether acceptance was overly strict or the sentence simply does not have that many words to cut. The metrics must be output together with the rejection.
         assert_eq!(outcome.row_repair.rejections_truncated, 0);
         assert_eq!(outcome.row_repair.rejections.len(), 1);
         let rejection = &outcome.row_repair.rejections[0];
@@ -7338,7 +6901,7 @@ mod tests {
     fn row_repair_counters_are_all_zero_on_an_auto_round() {
         let mut doc = short_translation_doc();
         let mut options = opts(AlignMode::ManyToOne);
-        // auto 轮即使携带了黏结 key（refine 的旧行为），capped 也必须恒为 0。
+        // Even if an auto round carries sticking keys (refine's old behaviour), `capped` must always be 0.
         options.density_sentences = ["s-g1.0", "s-g2.0", "s-g9.9"]
             .into_iter()
             .map(str::to_owned)
@@ -7348,12 +6911,11 @@ mod tests {
         let outcome = run_align(&mut doc, &mut llm, &options, &mut |_| {}).unwrap();
         assert_eq!(outcome.row_repair, RowRepairOutcome::default());
         assert_eq!(outcome.row_repair.capped, 0);
-        // 两句短译文在 auto 下都不需要条目。
+        // Two short translations under auto do not need entries.
         assert_eq!(llm.calls, 0);
     }
 
-    /// paired 接受后，该句上一轮留下的 `transDisplay` 条目必须一并清掉：
-    /// 新条目以 `trans` 为基准，旧显示文本会变成没人引用的孤儿。
+    /// After paired acceptance, any `transDisplay` entry this sentence left from the previous round must be cleared along with it. The new entry uses `trans` as its basis, so the old display text would become an orphan that nothing refers to.
     #[test]
     fn accepted_paired_repair_clears_the_stale_trans_display_entry() {
         let mut doc = short_translation_doc();
@@ -7379,7 +6941,7 @@ mod tests {
         );
     }
 
-    /// 句1 = 两 Cue（q-g1.0 / q-g1.5）；句2 = 单 Cue（q-g2.0）。
+    /// Sentence 1 = two Cues (q-g1.0 / q-g1.5); sentence 2 = a single Cue (q-g2.0).
     fn two_sentence_doc() -> TranscriptDoc {
         doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha"),
@@ -7462,7 +7024,7 @@ mod tests {
             worker_slots: None,
             page_budget: crate::paging::budgets::ALIGN_PROVIDER_WORDS,
             repair_calls: GLOBAL_REPAIR_CALLS,
-            // 既有表格协议测试沿用审阅载体；块对齐边测试用 [`opts_edges`]。
+            // Existing table-protocol tests use the review carrier; block-alignment-edges tests use [`opts_edges`].
             carrier: AlignCarrier::Table,
             ..AlignOptions::default()
         }
@@ -7475,8 +7037,7 @@ mod tests {
         }
     }
 
-    /// 测试侧薄壳：把旧 json 形状的答案脚本翻成载体无关的
-    /// [`SentenceAnswer`]，再进唯一的 [`accept_answers`] 验收核。
+    /// Test-side shim: translates a legacy json-shaped answer script into carrier-agnostic [`SentenceAnswer`]s, then feeds them into the single acceptance core [`accept_answers`].
     fn validate_batch_partial(
         batch: &[&Pending],
         params: &TransParams,
@@ -7537,7 +7098,7 @@ mod tests {
         ranges
     }
 
-    /// 与 [`good_align_table`] 完全相同的静态版本，供 `FakeLlm::ok` 使用。
+    /// Static version identical to [`good_align_table`], for use by `FakeLlm::ok`.
     const GOOD_ALIGN_RESPONSE: &str = "<table>\n  <tbody data-sid=\"s-g1.0\">\n    <tr><td class=\"src\">alpha bravo charlie delta echo,</td><td class=\"tgt\">第一段译文需要自然对应，</td></tr>\n    <tr><td class=\"src\">foxtrot golf hotel.</td><td class=\"tgt\">第二段译文负责完整收尾。</td></tr>\n  </tbody>\n</table>\n";
 
     struct DraftReviewLlm {
@@ -7585,7 +7146,7 @@ mod tests {
         let mut llm = FakeLlm::ok([GOOD_ALIGN_RESPONSE]);
         let outcome =
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
-        // 句2 单 Cue 零条目；句1 走 LLM。
+        // Sentence 2: a single Cue, zero entries; sentence 1 goes to the LLM.
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.skipped_sentences, 1);
@@ -7605,7 +7166,7 @@ mod tests {
         assert!(system.contains('⏸'));
         assert!(!user.contains("s-g2.0"));
 
-        // 幂等：再跑零调用零改动。
+        // Idempotent: running again makes zero calls and zero changes.
         let mut llm = FakeLlm::ok(std::iter::empty::<&'static str>());
         let outcome =
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
@@ -7614,8 +7175,7 @@ mod tests {
         assert_eq!(outcome.skipped_sentences, 2);
     }
 
-    /// 源行超长但译文一行放得下：整句上屏也是一条配对行，必须入队请 LLM
-    /// 切分；同 doc 里源行合规的句仍然零条目跳过（反向断言，防止误报泛滥）。
+    /// The source row is over-long but the translation fits on one row. Displaying the whole sentence is also a paired row, so it must be queued for LLM splitting. Sentences in the same doc whose source rows are compliant still get zero entries and are skipped (a negative assertion, to prevent a flood of false positives).
     fn one_line_translation_doc() -> TranscriptDoc {
         let long = [
             "Everyone",
@@ -7653,8 +7213,7 @@ mod tests {
         }
         let mut doc = doc_with_words(words);
         let table = doc.trans.entry("zh".to_owned()).or_default();
-        // 两句译文都 ≤ fit(16) 且 ≥ PAIRED_TARGET_MIN_UNITS(10)，硬档的目标侧
-        // 前置过滤对两句同样放行，差别只在源行宽度。
+        // Both translations are ≤ fit (16) and ≥ PAIRED_TARGET_MIN_UNITS (10). The target-side pre-filter of the hard tier lets both sentences through equally, so the only difference is the source-row width.
         table.insert("s-g1.0".to_owned(), "他们保留上下文，互不干扰。".to_owned());
         table.insert("s-g2.0".to_owned(), "这里不会再发生别的事。".to_owned());
         doc
@@ -7680,12 +7239,11 @@ mod tests {
         let outcome =
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
 
-        // 源行 100 阅读单位 > source_piece_hard(42)=63 ⇒ 不再被 no_entry_needed
-        // 跳过，必须出现在 LLM 载荷里。
+        // A source row of 100 reading units exceeds source_piece_hard (42) = 63, so it is no longer skipped by no_entry_needed and must appear in the LLM payload.
         assert_eq!(llm.calls.len(), 1, "{:?}", llm.calls);
         let user = &llm.calls[0].2;
         assert!(user.contains("data-sid=\"s-g1.0\""), "{user}");
-        // 反向：源行合规的短句仍然零条目、走 skipped 分支。
+        // The reverse: short sentences whose source rows are compliant still get zero entries and take the skipped branch.
         assert!(!user.contains("s-g2.0"), "{user}");
         assert!(!doc.trans_align["zh"].contains_key("s-g2.0"));
         assert_eq!(outcome.skipped_sentences, 1);
@@ -7800,7 +7358,7 @@ mod tests {
             source_text: source.to_owned(),
             src_fingerprint: "test".to_owned(),
         };
-        // 前 2 词 0.8s 内说完（短源片），其余词铺满约 4.5s。
+        // The first two words are spoken within 0.8s (a short source piece), and the remaining words fill about 4.5s.
         let timed_words = |scale: f64| -> Vec<PendingWord> {
             source_words
                 .iter()
@@ -7841,13 +7399,13 @@ mod tests {
         ];
         let ranges = vec![(0usize, 1usize), (2usize, source_words.len() - 1)];
 
-        // 图二形态：短源片配长译片，相邻片有富余 ⇒ 提示移界。
+        // The shape of Figure 2: a short source piece paired with a long translation piece, and adjacent pieces have surplus ⇒ hint to move the boundary.
         let advisories = time_budget_advisories(&pending, &texts, &ranges, "zh");
         assert_eq!(advisories.len(), 1, "{advisories:?}");
         assert!(advisories[0].contains("move the cut"), "{advisories:?}");
         assert!(advisories[0].contains("next"), "{advisories:?}");
 
-        // 整句过密（时窗压到 1/4）：只报句级"减片/压缩"提示，不再逐片刷屏。
+        // The whole sentence is too dense (window compressed to 1/4): only a sentence-level hint to reduce pieces or compress is reported, not a per-piece flood.
         let dense = Pending {
             sentence: &sentence,
             anchor_indices: sentence.word_indices.clone(),
@@ -7863,7 +7421,7 @@ mod tests {
         assert_eq!(advisories.len(), 1, "{advisories:?}");
         assert!(advisories[0].contains("fewer pieces"), "{advisories:?}");
 
-        // 无时间信息（全零）不做时间判断。
+        // No time information (all zeros), so no time judgment.
         let untimed = Pending {
             sentence: &sentence,
             anchor_indices: sentence.word_indices.clone(),
@@ -7889,7 +7447,7 @@ mod tests {
 
     #[test]
     fn draft_ready_rejects_cjk_midword_and_seam_bearing_overfit_pieces() {
-        // 词内切：缝两侧都是表意字符且无标点。
+        // Intra-word cut: both sides of the seam are ideographic characters, with no punctuation.
         assert!(cjk_midword_boundary(
             "而在于欧拉如何把这个问题简",
             "化成了简单概念。"
@@ -7903,7 +7461,7 @@ mod tests {
             "为我之前的研究"
         ));
 
-        // fit 一轮到位：超 fit 且片内有小句缝 ⇒ ready=false；由 LLM 本轮修。
+        // Fit in one round: a piece over fit with a clause seam inside ⇒ ready=false; the LLM fixes it in this round.
         let source_words: Vec<&str> =
             "Euler agreed but the key point is not that this was impossible at all here"
                 .split_whitespace()
@@ -7953,8 +7511,7 @@ mod tests {
             "an over-fit piece with an internal clause seam must force revision"
         );
 
-        // 度量口径：恰好 fit 个阅读字符但含句中逗号的片，投影后逗号变空格、
-        // 视觉超一行——必须与 check 同口径判为可修（G1 "无解残留" 根因）。
+        // Measurement basis: a piece that is exactly fit reading characters but contains an in-sentence comma becomes visually over one line once the comma turns into a space in the projection. It must be judged fixable on the same basis as check (the root cause of the G1 "unsolvable residue").
         let visual_pieces = vec![
             (
                 "也许你可以从这里出发，试着这样过桥，".to_owned(),
@@ -8007,11 +7564,9 @@ mod tests {
         };
         let draft = deterministic_draft(&pending, &TransParams::for_lang("zh"), "en", "zh");
 
-        // 3 个源词切 ≥2 片必然出现单词源行，ready 必须拦下。
+        // Three source words cut into two or more pieces must produce a single-word source row, so ready has to block it.
         assert!(!draft.ready);
-        // 不 ready 必须带逐条原因，且进载荷 draftBlockers（p850 二轮复测：
-        // 无原因时 worker 只能整句显式重抄）。此 fixture 实际触发的分量是
-        // 词内切（单源词片因锚定回退未触发），断言只要求原因非空。
+        // When not ready there must be a reason for each item, and it must enter the payload's draftBlockers (p850 second-round measurement: without a reason, the worker can only re-transcribe the whole sentence explicitly). The component this fixture actually triggers is intra-word cut (the single-source-word piece was not triggered because of the anchor fallback), so the assertion only requires the reason to be non-empty.
         assert!(!draft.blockers.is_empty());
     }
 
@@ -8026,8 +7581,7 @@ mod tests {
         };
         let outcome =
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
-        // 该 fixture 总源文远低于词预算，但 127 条复杂对齐项按 40 条/页与
-        // 复杂度预算稳定拆成 5 个首轮页；只有失败的首个页进入唯一修复轮。
+        // This fixture's total source is far below the word budget, but 127 complex alignment items split steadily into 5 first-round pages under the 40-items-per-page and complexity budgets. Only the first failing page enters the single repair round.
         assert_eq!(llm.calls, 6);
         assert_eq!(outcome.aligned_sentences, sentence_count);
         assert_eq!(outcome.fallback_sentences, 0);
@@ -8044,9 +7598,7 @@ mod tests {
             request_item_counts: Vec::new(),
         };
         run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
-        // request_item_counts 不记首个（被 fail_first 提前返回的）批次；其余
-        // 4 个首轮页加 1 个修复页仍服从同一 40 条上限。接受页与修复页的总数
-        // 恰好覆盖全体 127 句，证明失败集合没有被整篇重发。
+        // request_item_counts does not record the first batch (it was returned early by fail_first). The other four first-round pages plus one repair page still obey the same 40-item cap. The totals of accepted and repair pages exactly cover all 127 sentences, proving the failure set was not resent for the whole document.
         assert_eq!(llm.request_item_counts.len(), 5);
         assert_eq!(
             llm.request_item_counts.iter().sum::<usize>(),
@@ -8113,9 +7665,7 @@ mod tests {
 
     #[test]
     fn long_dwell_sentence_uses_llm_even_when_target_fits() {
-        // 译文一行放得下，但整句语音时窗 8s 超过停留护栏——单条字幕会
-        // "钉"在屏幕上，仍须入队切分。（源语宽度本身不再触发拆分：多对一
-        // 是默认形态。）
+        // The translation fits on one row, but the whole-sentence time window of 8s exceeds the dwell guardrail. A single subtitle would stay pinned on screen, so it must still be queued for splitting. (The source width alone no longer triggers splitting, because many-to-one is the default shape.)
         let mut words = Vec::new();
         for index in 0..16 {
             words.push(w(
@@ -8158,7 +7708,7 @@ mod tests {
         assert_eq!(entry.pieces.len(), 2);
         assert_eq!(entry.pieces[0].text, "这是第一部分，");
         assert_eq!(entry.pieces[1].text, "也是第二部分。");
-        // 模型未自报交叉 ⇒ crossing 保持 false。
+        // The model did not self-report a crossing ⇒ crossing stays false.
         assert!(!entry.crossing);
     }
 
@@ -8196,8 +7746,7 @@ mod tests {
         assert_eq!(outcome.aligned_sentences, 1);
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.mode, AlignMode::ManyToOne);
-        // 旧 `crossing` 字段只读。模型自报交叉按 best-effort 接受：保留 worker
-        // 的两行与源切点，不再降级成整句一片（对齐块设计 §4.5 修订）。
+        // The legacy `crossing` field is read-only. A crossing self-reported by the model is accepted on a best-effort basis: keep the worker's two rows and source cut points, and do not degrade to one whole-sentence piece (block-alignment design §4.5 revision).
         assert!(!entry.crossing, "crossing is a legacy read-only field");
         assert_ne!(entry.correspondence(), Correspondence::Sentence);
         assert_eq!(entry.aligner.as_deref(), Some(TABLE_ALIGNER_TAG));
@@ -8223,7 +7772,7 @@ mod tests {
             "{:?}",
             outcome.violations
         );
-        // best-effort 条目是合法的词锚条目。
+        // A best-effort entry is a legal word-anchored entry.
         assert!(
             crate::split::align_entry_valid(
                 &doc,
@@ -8237,8 +7786,7 @@ mod tests {
 
     #[test]
     fn reordered_target_is_accepted_and_written_to_trans_display() {
-        // 原译文语序与源交叉（后半句前置）；worker 自身具备语言能力，直接
-        // 重排译句消除交叉，验收后写 `transDisplay`，自然译句 `trans` 不动。
+        // The original translation's word order crosses the source (the second half is fronted). The worker has its own language ability, so it reorders the translation directly to remove the crossing. After validation the result is written to `transDisplay`, and the natural translation `trans` is untouched.
         let mut words = Vec::new();
         for index in 0..16 {
             words.push(w(
@@ -8270,7 +7818,7 @@ mod tests {
 
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.fallback_sentences, 0);
-        // 自然译句真相不动；重排结果进 `transDisplay`（对齐块设计 §6.2）。
+        // The natural translation truth is untouched. The reordered result goes into `transDisplay` (block-alignment design §6.2).
         assert_eq!(doc.trans["zh"]["s-g1.0"], "也是第二部分，这是第一部分。");
         let display = &doc.trans_display["zh"]["s-g1.0"];
         assert_eq!(display.text, "这是第一部分，也是第二部分。");
@@ -8286,7 +7834,7 @@ mod tests {
         assert_eq!(entry.text_basis, TextBasis::Display);
         assert_eq!(entry.pieces[0].text, "这是第一部分，");
         assert_eq!(entry.pieces[1].text, "也是第二部分。");
-        // 条目以 display 为基准：对 `transDisplay` 有效，对自然译句无效。
+        // The entry takes display as its basis: valid for `transDisplay`, invalid for the natural translation.
         let sentences = derive_sentences(&doc, &derive_cues(&doc, &CueParams::default()));
         assert!(align_entry_valid_for_lang(&doc, &sentences[0], "zh", entry));
         assert!(!crate::split::align_entry_valid(
@@ -8343,7 +7891,7 @@ mod tests {
         };
         let params = TransParams::for_lang("zh");
 
-        // 大幅压缩的“重排”按改写拒收。
+        // A "reordering" that compresses heavily is rejected as a rewrite.
         let drift = r#"{"sentences":[{"key":"s-reorder","sourceBreaks":["b5"],"target":"第一部分。 | 完。","reordered":true}]}"#;
         let (accepted, _salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", drift).unwrap();
@@ -8410,7 +7958,7 @@ mod tests {
         assert!(entry.pieces.len() >= 2);
         assert!(entry.pieces.iter().all(|piece| piece.from.is_none()));
 
-        // ≤ fit 的短句：清条目不切。
+        // Short sentences ≤ fit: clear the entries and do not split.
         doc.trans
             .get_mut("zh")
             .unwrap()
@@ -8475,7 +8023,7 @@ mod tests {
         assert_eq!(outcome.aligned_sentences, 0);
         assert_eq!(outcome.fallback_sentences, 1);
         assert!(outcome.violations.iter().any(|v| v.contains("fell back")));
-        // 兜底仍是目标语优先 + 源词锚定，拼接不变量保持。
+        // The fallback is still target-language-first with source-word anchoring, and the concatenation invariant holds.
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.mode, AlignMode::ManyToOne);
         assert_eq!(entry.words.len(), 8);
@@ -8492,7 +8040,7 @@ mod tests {
 
     #[test]
     fn partial_batch_keeps_good_sentence_and_falls_back_bad_one() {
-        // 两句都超 fit，一批返回：句1 合格，句2 拼接错误 → 只兜底句2。
+        // Both sentences exceed fit, returned in one batch: sentence 1 is acceptable, sentence 2 has a concatenation error ⇒ only sentence 2 falls back.
         let mut doc = doc_with_words(vec![
             w("a0", 0.0, 0.3, "one"),
             w("a1", 0.3, 0.6, "two"),
@@ -8564,14 +8112,13 @@ mod tests {
         );
     }
 
-    /// E2：兜底硬切必须吸附到窗口内的标点缝，而不是按等宽裸切。
-    /// 旧实现按 per=13 裸切成「…需要展示，接着」+「是第二…」。
+    /// E2: a fallback hard cut must snap to a punctuation seam within the window, rather than cutting at equal widths. The old implementation cut bare at per=13, producing "…需要展示，接着" ("…needs to show, then") + "是第二…" ("is the second…").
     #[test]
     fn oversize_hard_cut_snaps_to_a_punctuation_seam() {
         let params = TransParams::for_lang("zh");
         let text = "这是第一小句需要展示，接着是第二小句继续展示内容。";
         assert!(target_cps_chars(text, "zh") > params.hard);
-        // max_pieces=1 直通 `oversize_hard_cut`（源词少于目标片时的真实入口）。
+        // max_pieces=1 goes straight through `oversize_hard_cut` (the real entry point when there are fewer source words than target pieces).
         let pieces = crate::split::split_independent_for_lang(text, &params, 1, "zh");
         assert_eq!(
             pieces,
@@ -8583,8 +8130,7 @@ mod tests {
         );
     }
 
-    /// E2：窗口内没有缝时也不得切进 CJK 词内——只要还存在合法词边界（这里是
-    /// 拉丁词两侧），就必须放宽窗口吸附过去。
+    /// E2: even when there is no seam within the window, it must not cut inside a CJK word. As long as a legal word boundary still exists (here, between Latin words on either side), the window must be widened to snap to it.
     #[test]
     fn oversize_hard_cut_avoids_cjk_midword_when_a_word_boundary_exists() {
         let params = TransParams::for_lang("zh");
@@ -8600,8 +8146,7 @@ mod tests {
         }
     }
 
-    /// E2 的护栏：缝吸附不得把任何一片顶过 hard——`enforce_target_hard_limit`
-    /// 会把"仍有超 hard 片"直接判成不可表示并拒收整句。
+    /// E2's guardrail: seam snapping must not push any piece over hard. `enforce_target_hard_limit` would judge "a piece still over hard" as unrepresentable and reject the whole sentence.
     #[test]
     fn oversize_hard_cut_keeps_every_piece_under_hard() {
         let params = TransParams::for_lang("zh");
@@ -8651,13 +8196,7 @@ mod tests {
         }
     }
 
-    /// E1(a)：worker 交回的两片答案尾片超 hard，引擎自己的确定性重切把
-    /// 「可以」从中间切开、撞上客观缝语病。引擎不得把这个失败记在 worker
-    /// 头上——重切作废，原答案整片保留（KeepWhole）。但整片仍超 hard 是
-    /// worker 交的片本来就超限：按"先接受、再定向补"的口径，首轮不当场落库，
-    /// 而是存进 salvage、只把这一句连同定向说明送回修复轮；修复预算耗尽时
-    /// salvage 原样顶上（结果不比直接接受更差）。worker 自述 unsplittable
-    /// 则视为契约兑现，直接接受。
+    /// E1(a): in the worker's two-piece answer the tail piece exceeds hard, and the engine's own deterministic re-split cuts "可以" ("can") in the middle, colliding with an objective seam defect. The engine must not record this failure against the worker: the re-split is discarded and the original answer is kept whole (KeepWhole). But keeping the whole piece still exceeds hard, meaning the worker's piece was over the limit to begin with. Following "accept first, then targeted supplement", it is not stored on the first round. It goes into salvage, and only this one sentence, with targeted instructions, is sent back to the repair round. When the repair budget runs out, salvage is used as-is (the result is no worse than direct acceptance). If the worker self-reports unsplittable, that is taken as the contract being fulfilled and it is accepted directly.
     #[test]
     fn engine_keeps_worker_segmentation_when_its_own_recut_breaks_acceptance() {
         let params = TransParams::for_lang("zh");
@@ -8716,7 +8255,7 @@ mod tests {
             "boundary must stay at the natural comma seam: {:?}",
             result.texts
         );
-        // 「可以」必须整词落在同一片里，永远不能被切开。
+        // "可以" ("can") must fall wholly within the same piece and must never be cut apart.
         assert!(
             result.texts.iter().any(|text| text.contains("可以")),
             "{:?}",
@@ -8745,7 +8284,7 @@ mod tests {
             result.advisories
         );
 
-        // 同一答案自述 unsplittable ⇒ 契约兑现，直接接受，不再回炉。
+        // The same answer self-reports unsplittable ⇒ the contract is fulfilled; accept directly, no send-back.
         let declared = raw.replace(r#""sourceBreaks""#, r#""unsplittable":true,"sourceBreaks""#);
         let (accepted, salvaged, failures) =
             validate_batch_partial(&batch, &params, "en", "zh", &declared).unwrap();
@@ -8772,9 +8311,7 @@ mod tests {
         doc
     }
 
-    /// E1(b)：修复预算耗尽后，结构完好的 worker 答案顶替
-    /// `fallback_word_entry` 的纯长度确定性切分。这里两轮都因源侧形状（切在
-    /// 悬垂连词 "and" 之后）被拒，但译文片本身完全合法。
+    /// E1(b): after the repair budget is exhausted, a structurally sound worker answer stands in for the purely length-based deterministic split of `fallback_word_entry`. Here both rounds were rejected for source-side shape (cut after the dangling conjunction "and"), yet the translation pieces themselves are fully legal.
     #[test]
     fn salvaged_worker_answer_replaces_the_deterministic_fallback() {
         let mut doc = dangling_source_doc();
@@ -8822,8 +8359,7 @@ mod tests {
         );
     }
 
-    /// E3：修复轮的 retryReason 必须复述**全部**失败（不止最后一条），外加
-    /// pieceCount 约束与预算，否则 worker 只盯着一条改、下一轮再撞别的判据。
+    /// E3: the repair round's retryReason must restate **all** failures (not just the last one), plus the pieceCount constraint and the budget. Otherwise the worker fixes only one item, and the next round hits another criterion.
     #[test]
     fn repair_round_reason_carries_every_problem_and_the_piece_count_plan() {
         let mut doc = doc_with_words(vec![
@@ -8853,7 +8389,7 @@ mod tests {
             "s-b0".to_owned(),
             "另一句也需要切分展示，否则会超过单行容量。".to_owned(),
         );
-        // 两句都改写了译文（拼接不符）。
+        // Both sentences had their translations rewritten (concatenation mismatch).
         let bad = ttable(&[
             tgroup(
                 "s-a0",
@@ -8880,11 +8416,11 @@ mod tests {
             reason.contains("Every validation problem from the previous round"),
             "{reason}"
         );
-        // 两句的失败都必须在场，不能只留最后一条。
+        // The failures of both sentences must both be present, not just the last one.
         assert!(reason.contains("s-a0"), "{reason}");
         assert!(reason.contains("s-b0"), "{reason}");
         assert!(reason.contains("[align-content-drift]"), "{reason}");
-        // pieceCount 与预算复述。
+        // Restatement of pieceCount and the budget.
         assert!(reason.contains("rows min="), "{reason}");
         assert!(reason.contains("recommended="), "{reason}");
         assert!(reason.contains("budgets fit="), "{reason}");
@@ -8930,7 +8466,7 @@ mod tests {
             validate_batch_partial(&batch, &TransParams::for_lang("zh"), "en", "zh", &raw).unwrap();
         assert!(failures.is_empty(), "{failures:?}");
         let result = &accepted["s-hard"];
-        // 强拆出的「尾。」碎片随后被 flash 修复并入邻片：3 → 2。
+        // The "tail。" fragment forcibly split off is later merged into its neighbouring piece by flash-fragment repair: 3 → 2.
         assert_eq!(result.texts.len(), 2);
         assert!(
             result
@@ -9240,8 +8776,7 @@ mod tests {
         );
     }
 
-    /// `doing this |`、`reach for this |`：this 是及物动词/介词的宾语代词，
-    /// 不是悬空限定词；这类边界曾被 BOUND_MODIFIERS 全量误报。
+    /// `doing this |`, `reach for this |`: "this" is the object pronoun of a transitive verb or preposition, not a dangling determiner. Boundaries like this were once falsely reported in full by BOUND_MODIFIERS.
     #[test]
     fn source_boundary_allows_pronoun_object_this() {
         let words: Vec<&str> = "the reason for doing this is that it scales"
@@ -9260,7 +8795,7 @@ mod tests {
             None,
             "介词宾语代词 this 不是悬空修饰语"
         );
-        // 真限定词用法仍必须提示：下一片以名词中心语开头。
+        // A genuine determiner usage must still be hinted: the next piece starts with a noun head.
         let words: Vec<&str> = "we are going to use this model for everything"
             .split_whitespace()
             .collect();
@@ -9410,8 +8945,7 @@ mod tests {
             vec![5, 13, 12, 7]
         );
 
-        // 旧比例锚定的欠佳切点 b27 正好落在 `a new | AI-assisted...`。
-        // 这是客观坏缝，必须进入全局 repair，而不是留到 done 后再精修。
+        // The poor cut point b27 from the old proportional anchoring falls exactly on `a new | AI-assisted...`. This is an objective bad seam, and it must enter the global repair rather than wait until done to be refined.
         let bad = format!(
             r#"{{"sentences":[{{"key":"s-g1.0","sourceBreaks":["b5","b18","b27"],"target":"{target}"}}]}}"#
         );
@@ -9426,9 +8960,7 @@ mod tests {
         );
     }
 
-    /// P0-a 回归：超一行且有自由缝的片在接受期就地切开（文本 + 源区间同
-    /// 步），不回炉。回炉要吃全局唯一的修复调用（抢的是别句的机会），而
-    /// `free_seam` 已经把切点连同两侧文本一起算好了——和闪现碎片修复同理。
+    /// P0-a regression: a piece that exceeds one row and has a free seam is cut in place at acceptance time, keeping text and source interval in sync, and is not sent back. Sending it back would consume the single global repair call (which other sentences need), while `free_seam` has already computed the cut point together with the text on both sides. The reasoning is the same as for flash-fragment repair.
     #[test]
     fn over_fit_answer_piece_is_repaired_at_its_free_seam() {
         let source = "Your GPU has idle compute between memory reads, so speculative decoding gives you free tokens.";
@@ -9501,8 +9033,7 @@ mod tests {
 
     #[test]
     fn seam_backed_risky_boundary_is_accepted() {
-        // 小句缝（逗号）与 risky 标注同界：缝上的 bound-phrase 检测多为
-        // 误报，引擎与提交期 lint 都放行（p850 基准 3 次拒绝全是此类）。
+        // A clause seam (comma) coinciding with a risky annotation: bound-phrase detection on a seam is mostly a false positive, and both the engine and the submit-time lint allow it (all three rejections in the p850 benchmark were of this kind).
         let source = "You can find value in that, but the rest is noise.";
         let source_words: Vec<&str> = source.split_whitespace().collect();
         let sentence = Sentence {
@@ -9537,8 +9068,7 @@ mod tests {
             source_cue_keys: Vec::new(),
         };
         let batch = vec![&pending];
-        // b6 = after "that,"：ends_clause_punct ⇒ seam3，同时 tail "that"
-        // 命中 BOUND_MODIFIERS ⇒ risky。
+        // b6 = after "that,": ends_clause_punct ⇒ seam3, and the tail "that" also hits BOUND_MODIFIERS ⇒ risky.
         let answer = r#"{"sentences":[{"key":"s-r1","sourceBreaks":["b6"],"target":"你能在其中找到不少价值， | 但其余的部分都是噪音。"}]}"#;
         let (accepted, _salvaged, failures) =
             validate_batch_partial(&batch, &TransParams::for_lang("zh"), "en", "zh", answer)
@@ -9646,21 +9176,20 @@ mod tests {
 
     #[test]
     fn anchor_token_must_share_segment_index() {
-        // 实测样本:"from TeachFX" 在中文里前置为 "TeachFX 里…",切点切进
-        // 交叉区后 TeachFX 两侧段号不一致 → 必须打回。
+        // Measured sample: "from TeachFX" is fronted in Chinese as "TeachFX 里…". Once the cut point falls into the crossing zone, TeachFX's segment numbers on the two sides disagree ⇒ it must be sent back.
         let src =
             split_marked("\"Pull | my latest second-grade ELA lesson from TeachFX, tell me more.");
         let tgt = split_marked("“调取 TeachFX | 里我最新的二年级 ELA 课,再多告诉我一些。");
         let err = anchor_token_colocation("s-x", &src, &tgt).unwrap_err();
         assert!(err.contains("teachfx"), "{err}");
-        // 同段则通过(整段保留交叉区)。
+        // Same segment ⇒ passes (the crossing zone is kept whole).
         let src_ok =
             split_marked("\"Pull my latest second-grade ELA lesson from TeachFX, | tell me more.");
         let tgt_ok = split_marked("“调取 TeachFX 里我最新的二年级 ELA 课, | 再多告诉我一些。");
         assert!(anchor_token_colocation("s-x", &src_ok, &tgt_ok).is_ok());
     }
 
-    /// 退化配对行（R2 基准 `s-g29.0`：`have` 1 词挂 9u 中文）。
+    /// Degenerate paired row (R2 benchmark `s-g29.0`: `have`, 1 word, attached to 9 units of Chinese).
     #[test]
     fn degenerate_paired_row_rejects_crumb_source_ranges() {
         let texts = vec![
@@ -9668,57 +9197,56 @@ mod tests {
             "对之前所有的 token".to_owned(),
             "重新计算一遍注意力。".to_owned(),
         ];
-        // 源侧 12 词：前两片各 2 / 1 词，第三片吃掉其余。
+        // The source side has 12 words: the first two pieces have 2 and 1 words, and the third piece takes the rest.
         let units = vec![2; 12];
         let ranges = [(0, 1), (2, 2), (3, 11)];
         let (piece, words, target_units) =
             degenerate_paired_row(&texts, &ranges, &units, "zh-Hans").unwrap();
         assert_eq!((piece, words), (2, 1), "{target_units}");
 
-        // 每片都拿到 ≥3 词时不报。
+        // Not reported when every piece gets at least 3 words.
         let even = [(0, 2), (3, 6), (7, 11)];
         assert!(degenerate_paired_row(&texts, &even, &units, "zh-Hans").is_none());
 
-        // 整句词数不够分配时豁免（否则要求不可满足，只会空转回炉）。
+        // Exempt when the sentence's total word count is insufficient to allocate (otherwise the requirement cannot be met, and it would only loop).
         let scarce = vec![2; 5];
         let tight = [(0, 1), (2, 2), (3, 4)];
         assert!(degenerate_paired_row(&texts, &tight, &scarce, "zh-Hans").is_none());
 
-        // 源区间自身够宽（长标识符）且有 2 个词时不算失衡：40% 判据放行。
+        // When the source interval is itself wide enough (long identifiers) and has two words, it is not treated as unbalanced: the 40% criterion lets it pass.
         let mut wide = vec![2; 12];
         wide[1] = 12;
         wide[2] = 12;
         let wide_pair = [(0, 0), (1, 2), (3, 11)];
         assert!(degenerate_paired_row(&texts, &wide_pair, &wide, "zh-Hans").is_none());
 
-        // 但单词区间不吃宽度豁免：逐字高亮只走一步，观感断裂照旧。
+        // But single-word intervals get no width exemption: word-by-word highlighting takes only one step, so the visual break remains.
         let mut lone = vec![2; 12];
         lone[2] = 24;
         let (piece, words, _) = degenerate_paired_row(&texts, &ranges, &lone, "zh-Hans").unwrap();
         assert_eq!((piece, words), (2, 1));
     }
 
-    /// 交叉检测扩口径：纯数字 token 与重复出现的 token 都参与，判据是
-    /// 「段号集合不相交」（R2 基准 §4.4 两处未检出 advisory 的模式）。
+    /// Crossing detection with an expanded basis: pure-digit tokens and repeated tokens both take part, and the criterion is "the segment-number sets are disjoint" (the two patterns that R2 benchmark §4.4 showed were not detected by advisories).
     #[test]
     fn anchor_colocation_detects_numeric_and_repeated_tokens() {
-        // 纯数字锚点（旧口径要求含拉丁字母，整类漏过）。
+        // Pure-digit anchors (the old basis required Latin letters, so this whole class was missed).
         let src = split_marked("Set it to 2048 | and the scheduler stops thrashing.");
         let tgt = split_marked("调度器就不再抖动， | 只要把它设为 2048。");
         let err = anchor_token_colocation("s-n", &src, &tgt).unwrap_err();
         assert!(err.contains("2048"), "{err}");
 
-        // 重复出现的 token：两侧各出现两次，但段号集合不相交。
+        // Repeated tokens: each side appears twice, but the segment-number sets are disjoint.
         let repeated_src = split_marked("token by token | we store each token.");
         let repeated_tgt = split_marked("我们逐 token 存储 | 每一个 token。");
         assert!(anchor_token_colocation("s-r", &repeated_src, &repeated_tgt).is_ok());
-        // 同一段内重复出现（旧口径按 len != 1 直接跳过）而译文落在另一段。
+        // Repeated within the same segment (the old basis skipped anything with len != 1), while the translation lands in another segment.
         let crossed_src = split_marked("token by token we store | it in the paged cache.");
         let crossed_tgt = split_marked("我们把它放进分页缓存里， | 逐 token 地存。");
         let err = anchor_token_colocation("s-c", &crossed_src, &crossed_tgt).unwrap_err();
         assert!(err.contains("token"), "{err}");
 
-        // 词区间入口（check 复算）与直接调用同判据。
+        // The word-interval entry point (used by check's recomputation) applies the same criterion as direct calls.
         let words = ["Set", "it", "to", "2048", "and", "it", "stops"];
         let targets = vec![
             "调度器就不再抖动，".to_owned(),
@@ -9726,14 +9254,13 @@ mod tests {
         ];
         let issue = anchor_colocation_issue_for_ranges(&words, &targets, &[(0, 3), (4, 6)]);
         assert!(issue.is_some_and(|reason| reason.contains("2048")));
-        // 段号错位以外不报；越界区间安全返回 None。
+        // Nothing is reported beyond segment-number misalignment; out-of-range intervals safely return None.
         assert!(anchor_colocation_issue_for_ranges(&words, &targets, &[(0, 3), (4, 99)]).is_none());
     }
 
-    /// P1-a 修法二：小数/版本号/带连字符的标识符要保住整形。
+    /// P1-a fix two: decimals, version numbers and hyphenated identifiers must keep their shape intact.
     ///
-    /// 旧切分按 `[^0-9A-Za-z]+` 切，`0.8` 会被拆成 `0`/`8`，再被 `len >= 2`
-    /// 滤干净——配置类内容里这类数值恰恰是最可靠的锚点，整类漏检。
+    /// The old splitting cut on `[^0-9A-Za-z]+`, so `0.8` was broken into `0` and `8`, which `len >= 2` then removed. In configuration-type content such values are exactly the most reliable anchors, and this whole class went undetected.
     #[test]
     fn anchor_colocation_keeps_decimal_and_flag_token_shapes() {
         let src = split_marked("Set gpu_memory_utilization to 0.8 | before you serve the model.");
@@ -9741,7 +9268,7 @@ mod tests {
         let err = anchor_token_colocation("s-d", &src, &tgt).unwrap_err();
         assert!(err.contains("0.8"), "{err}");
 
-        // CLI flag 与版本号同理：前导连字符剥掉，标识符本身不被打碎。
+        // CLI flags work the same way: leading hyphens are stripped, and the identifier itself is not broken apart.
         let flag_src = split_marked("Pass --speculative-model v0.3 | to the server.");
         let flag_tgt = split_marked("传给服务端， | 用 --speculative-model v0.3。");
         let err = anchor_token_colocation("s-f", &flag_src, &flag_tgt).unwrap_err();
@@ -9750,7 +9277,7 @@ mod tests {
             "{err}"
         );
 
-        // 同段命中仍然不报（句末句点不该把 token 变成另一个 token）。
+        // A match within the same segment is still not reported (a sentence-final period should not turn one token into another token).
         let same_src = split_marked("We set it to 0.8 | and moved on.");
         let same_tgt = split_marked("我们把它设为 0.8 | 然后继续。");
         assert!(anchor_token_colocation("s-s", &same_src, &same_tgt).is_ok());
@@ -9851,12 +9378,11 @@ mod tests {
             source_cue_keys: Vec::new(),
         };
         let plan = length_plan(&item, &TransParams::for_lang("zh"), "en", "zh");
-        // 片数由译文阅读需求驱动：57 阅读单位 / fit16..soft14 ⇒ 4..5 片。
+        // The piece count is driven by translation reading needs: 57 reading units with fit 16 to soft 14 ⇒ 4 to 5 pieces.
         assert_eq!(plan.piece_count.min, 4);
         assert_eq!(plan.piece_count.max, 5);
         assert_eq!(plan.piece_count.recommended, 4);
-        // 源侧统一字符口径：36×"word" + "ending"（交付投影剥句末标点）
-        // = 150 非空白字符。
+        // Unified character basis on the source side: 36 × "word" plus "ending" (the delivery projection strips the final punctuation) = 150 non-whitespace characters.
         assert_eq!(plan.source.unit, "character");
         assert_eq!(plan.source.total, 150);
         assert_eq!(plan.source.preferred_per_piece, [28, 47]);
@@ -9867,8 +9393,7 @@ mod tests {
         assert_eq!(length_unit_name("ko"), "character");
         assert_eq!(length_unit_name("en-US"), "character");
 
-        // 多对一默认形态：源再长，紧凑译文也只按自身需求给最低 2 片，
-        // 源侧长度不再抬高片数下限。
+        // Many-to-one default shape: however long the source is, a compact translation still requires only at least 2 pieces by its own needs. The source length no longer raises the piece-count floor.
         let compact = Pending {
             sentence: item.sentence,
             anchor_indices: item.anchor_indices.clone(),
@@ -9917,8 +9442,7 @@ mod tests {
 
     #[test]
     fn length_plan_never_advertises_fewer_than_two_pieces() {
-        // 校验对每个入队长句都要求 ≥2 片；旧算法在“视觉超一行但阅读单位
-        // ≤ fit”的句子上给出 min=1，载荷与契约硬规则打架。
+        // Validation requires at least 2 pieces for every queued long sentence. The old algorithm gave min=1 for sentences that "visually exceed one line but whose reading units are ≤ fit", so the payload conflicted with the contract's hard rules.
         let doc = pending_doc(5);
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
@@ -9952,7 +9476,7 @@ mod tests {
         );
     }
 
-    /// 引擎拒绝规则（AI 管线设计 §10.3）：合规双段收下；单段与译文漂移拒。
+    /// Engine rejection rules (AI pipeline design §10.3): a compliant two-piece answer is accepted; a single piece, or a translation that has drifted, is rejected.
     #[test]
     fn engine_rejection_rules_accept_shape_and_reject_drift() {
         let doc = pending_doc(8);
@@ -9989,7 +9513,7 @@ mod tests {
             failures.is_empty() && accepted.contains_key(key)
         };
 
-        // 合规双段：lint 通过，引擎收下。
+        // Compliant two pieces: the lint passes and the engine accepts.
         let good = format!(
             r#"{{"sentences":[{{"key":"{key}","sourceBreaks":["b4"],"target":"{} | {}"}}]}}"#,
             "中".repeat(6),
@@ -9997,22 +9521,21 @@ mod tests {
         );
         assert!(engine_accepts(&good));
 
-        // 全部片 ≤ hard 的单段：契约硬规则“至少两段”，lint 与引擎都拒。
+        // A single piece where all pieces are ≤ hard: the contract's hard rule is "at least two pieces", so both the lint and the engine reject it.
         let one_piece = format!(
             r#"{{"sentences":[{{"key":"{key}","sourceBreaks":[],"target":"{}"}}]}}"#,
             "中".repeat(12)
         );
         assert!(!engine_accepts(&one_piece));
 
-        // 译文漂移：拒。
+        // Translation drift: rejected.
         let drifted = format!(
             r#"{{"sentences":[{{"key":"{key}","sourceBreaks":["b4"],"target":"改 | 写"}}]}}"#
         );
         assert!(!engine_accepts(&drifted));
     }
 
-    /// 设计 §9.2 降级：LLM 留下的超 hard 目标片在同次响应内确定性续拆，
-    /// 不触发修复调用。
+    /// Design §9.2 degradation: over-hard target pieces left by the LLM are split deterministically again within the same response, without triggering a repair call.
     #[test]
     fn over_hard_pieces_are_deterministically_resplit_on_acceptance() {
         let doc = pending_doc(8);
@@ -10152,7 +9675,7 @@ mod tests {
 
     #[test]
     fn seam_lint_rejects_cut_inside_paired_delimiter() {
-        // s-g4.16 回归：片尾停在未闭合的开引号上必须回炉，不能只当 advisory。
+        // s-g4.16 regression: a piece ending in an unclosed opening quote must go back for repair, not be treated as a mere advisory.
         let translation = "包含名为“PluginDataJSON”的清单。";
         let pieces = vec![
             PieceJson {
@@ -10181,7 +9704,7 @@ mod tests {
         assert!(detail.contains("paired delimiter"), "{detail}");
         assert!(detail.contains("包含名为“"), "{detail}");
 
-        // 引号完整落在一片里的答案必须通过。
+        // An answer whose quotes are complete within one piece must pass.
         let good = vec![
             PieceJson {
                 from: 0,
@@ -10207,8 +9730,7 @@ mod tests {
 
     #[test]
     fn seam_lint_rejects_dangling_connective_with_piece_text() {
-        // G3 基线教训：悬垂尾/粘着首是客观语病，advisory 会被弱 worker
-        // 稳定落库——必须回炉，problems 带具体片文本。
+        // G3 baseline lesson: dangling tails and clinging heads are objective defects. As advisories, weak workers would reliably store them, so they must go back for repair, with the concrete piece text in the problems.
         let pieces = vec![
             PieceJson {
                 from: 0,
@@ -10239,8 +9761,7 @@ mod tests {
 
     #[test]
     fn worker_flash_fragment_is_merged_deterministically_with_ranges() {
-        // 2 字碎片「真的」可安全并入邻片：确定性合并（3→2 片），源区间
-        // 同步 union；≤2 片时不再合并（保持切分承诺）。
+        // A two-character fragment "really" can safely merge into a neighbour: a deterministic merge (3 → 2 pieces), with the source intervals synchronised by union. No further merging when there are ≤2 pieces, to keep the split commitment.
         let pieces = vec![
             ("真的".to_owned(), (0_usize, 1_usize)),
             ("我们的交互经常".to_owned(), (2, 4)),
@@ -10316,7 +9837,7 @@ mod tests {
 
     #[test]
     fn seam_lint_rejects_bound_head_and_bigram_tail() {
-        // 「类似 | 于…」双向命中：前片 bigram 尾 + 后片粘着首。
+        // "类似 | 于…" ("similar to | …") matches in both directions: the bigram tail of the front piece plus the clinging head of the back piece.
         let pieces = vec![
             PieceJson {
                 from: 0,
@@ -10339,7 +9860,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, LlmError::Malformed(_)), "{error:?}");
-        // 「于是」开头是合法连词，不得误伤。
+        // "于是" ("so, therefore") at the start is a legal conjunction and must not be falsely flagged.
         let ok = vec![
             PieceJson {
                 from: 0,
@@ -10365,8 +9886,7 @@ mod tests {
 
     #[test]
     fn balance_lint_does_not_split_parallel_items_at_list_separator() {
-        // 7/16:最宽片只有顿号并列项可切；“说服、取胜”是完整并列结构，
-        // 不能为了数字配平制造 `说服、|取胜`。
+        // 7/16: the widest piece only has enumeration-comma parallel items that can be cut. “说服、取胜” ("persuade, win") is a complete parallel structure, and `说服、|取胜` must not be manufactured just to balance numbers.
         let translation = "我们常常被教导，要带着说服、取胜的心态去对话，真的。";
         let pieces = vec![
             PieceJson {
@@ -10393,7 +9913,7 @@ mod tests {
 
     #[test]
     fn balance_lint_passes_when_wide_piece_has_no_internal_seam() {
-        // 宽片无内部小句缝(语序交叉/整块短语)时不强拆。
+        // A wide piece with no internal minor clause seam (word-order crossing or a whole block phrase) is not forcibly split.
         let translation = "你想想看，这相当于每天抽十五支烟对健康的损害总和。";
         let pieces = vec![
             PieceJson {
@@ -10470,9 +9990,9 @@ mod tests {
         let outcome = run_align(&mut doc, &mut llm, &options, &mut |_| {}).unwrap();
         assert!(llm.calls.is_empty());
         assert_eq!(outcome.aligned_sentences, 0);
-        assert_eq!(outcome.skipped_sentences, 1); // 单 Cue 句
+        assert_eq!(outcome.skipped_sentences, 1); // Single-Cue sentence
 
-        // force：已有有效条目也重切；independent 不依赖源 Cue 或 LLM。
+        // force: re-split even when a valid entry exists; independent depends on neither source Cues nor the LLM.
         let mut llm = FakeLlm::ok(std::iter::empty::<&'static str>());
         let mut options = opts(AlignMode::Independent);
         run_align(&mut doc, &mut llm, &options, &mut |_| {}).unwrap();
@@ -10523,8 +10043,7 @@ mod tests {
         assert!(llm.calls.is_empty());
     }
 
-    /// translate → align 全链路：句级真相落盘、切法覆盖、投影可展开、
-    /// 编辑后只有该句变脏。
+    /// Full translate → align chain: sentence-level truth is persisted, the split overlay covers it, the projection can be expanded, and after an edit only the edited sentence becomes dirty.
     #[test]
     fn translate_then_align_round_trip() {
         let mut doc = two_sentence_doc();
@@ -10565,12 +10084,11 @@ mod tests {
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
         let stream = derive_trans_cues(&doc, &sentences, "zh");
-        assert_eq!(stream.len(), 3); // 句1 两片 + 句2 整句
+        assert_eq!(stream.len(), 3); // Sentence 1 has two pieces; sentence 2 is a whole sentence.
         assert!(stream.iter().all(|cue| !cue.fallback));
         assert!(crate::sentence::stale_sentences(&doc, "zh", &sentences).is_empty());
 
-        // 编辑句1 一个词 ⇒ 只句1 stale；transAlign 条目因结构快照仍同、
-        // 拼接不变量仍立而继续有效（译文过期由 transSrc 把关）。
+        // Editing one word in sentence 1 ⇒ only sentence 1 becomes stale. The transAlign entry stays valid, because the structure snapshot is unchanged and the concatenation invariant still holds (staleness of the translation is guarded by transSrc).
         doc.words[2].text = "charlee".to_owned();
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
@@ -10653,8 +10171,7 @@ mod tests {
         );
     }
 
-    /// 构造单片场景：`words` 个源词各占 `per_word_units` 单位，整行固定
-    /// 跨 `span` 秒，便于把宽度档与时长档分开钉。
+    /// Constructs a single-piece scenario: `words` source words each take `per_word_units` units, and the row spans a fixed `span` seconds, so that the width tier and the duration tier can be pinned separately.
     fn ceiling_case(
         target: &str,
         words: usize,
@@ -10677,30 +10194,30 @@ mod tests {
     #[test]
     fn source_ceiling_fires_only_past_one_and_a_half_lines() {
         let target = "这条译文足够长可以再切一刀";
-        // 无缝超宽源行（95 单位）必须报出。
+        // An unseamed, over-wide source row (95 units) must be reported.
         let issues = ceiling_case(target, 95, 1, 5.0);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert_eq!(issues[0].index, 0);
         assert_eq!(issues[0].units, 95);
-        // 边界贴身：source_piece_hard(42) = 63，64 报、63 不报。系数被钉死。
+        // Boundary check: source_piece_hard(42) = 63. 64 is reported, 63 is not. The coefficient is pinned down.
         assert_eq!(ceiling_case(target, 64, 1, 5.0).len(), 1, "64 单位应过硬档");
         assert!(
             ceiling_case(target, 63, 1, 5.0).is_empty(),
             "63 单位恰好不过硬档"
         );
-        // 时长档独立于宽度：40 单位（合规）跨 8s 仍报，跨 5s 不报。
+        // The duration tier is independent of width: 40 units (compliant) spanning 8s is still reported, but spanning 5s is not.
         assert!(
             ceiling_case(target, 40, 1, 5.0).is_empty(),
             "40 单位 5.0s 不应报"
         );
         let slow = ceiling_case(target, 40, 1, 8.0);
         assert_eq!(slow.len(), 1, "40 单位 8.0s 应过时长硬档");
-        // 目标片太短（9 单位）：再切只会产出碎行，不报。
+        // The target piece is too short (9 units): further splitting would only produce fragmented lines, so nothing is reported.
         assert!(
             ceiling_case("这条译文偏短了一点", 95, 1, 5.0).is_empty(),
             "目标片 < 10 单位不应触发硬档"
         );
-        // 源词数不足 4：没有可用切点，不报。
+        // Fewer than 4 source words: no usable cut point, so nothing is reported.
         assert!(
             ceiling_case(target, 3, 30, 5.0).is_empty(),
             "源词 < 4 不应触发硬档"
@@ -10730,8 +10247,7 @@ mod tests {
                 glue: false,
             })
             .collect();
-        // 译文两片都无内部小句缝：软档（paired_density_issue）必然不命中，
-        // 命中的只可能是新增硬档。
+        // Neither of the two translation pieces has an internal minor clause seam: the soft tier (paired_density_issue) necessarily does not hit. Only the newly added hard tier can.
         let translation = "每个工程师整周都保留自己的独立上下文，谁也不会碰到别人正在做的工作。";
         let pending = Pending {
             sentence: &sentence,
@@ -10745,8 +10261,7 @@ mod tests {
             source_cue_keys: Vec::new(),
         };
         let params = TransParams::for_lang("zh");
-        // b15：源词 "week" 之后、连词 "and" 之前的自然缝。左片 15 词 ×0.5s
-        // = 7.5s，越过 6.0s 硬档（宽度同样越线）。
+        // b15: the natural seam after the source word "week" and before the conjunction "and". The left piece has 15 words × 0.5s = 7.5s, crossing the 6.0s hard tier (its width is over the line too).
         let cut = 15usize;
         let pieces = vec![
             (
@@ -10769,8 +10284,7 @@ mod tests {
         );
         assert!(!draft.ready);
 
-        // 同一份切分作为模型答案提交时，引擎验收与提交期 lint 必须一致放行：
-        // 契约允许"无合法切点则保持整行"，在这两处拒绝只会换来确定性回退。
+        // When the same split is submitted as a model answer, the engine acceptance and the submit-time lint must both pass it. The contract allows "keep the row whole if there is no legal cut point", and rejecting it at either place would only trade for a deterministic fallback.
         let answer = format!(
             r#"{{"sentences":[{{"key":"s-wide","sourceBreaks":["b{cut}"],"target":"每个工程师整周都保留自己的独立上下文， | 谁也不会碰到别人正在做的工作。"}}]}}"#
         );
@@ -10778,7 +10292,7 @@ mod tests {
             validate_batch_partial(&[&pending], &params, "en", "zh", &answer).unwrap();
         assert!(failures.is_empty(), "引擎验收不得因硬档拒绝：{failures:?}");
         assert!(accepted.contains_key("s-wide"));
-        // 事后 check 走的公开包装：同一条目仍应报出，交给 refine-align 定向修。
+        // The public wrapper used by the post-hoc check: the same entry should still be reported, so that refine-align can fix it in a targeted way.
         let units = source_word_units(&pending.words, "en");
         let ends = source_word_ends_sec(&pending.words);
         let issues = source_ceiling_issues_for_ranges(
@@ -10795,9 +10309,7 @@ mod tests {
         assert!(!issues.is_empty(), "check 侧公开包装必须报出同一条目");
     }
 
-    /// 碎片钉子测试：源行**过窄**与源行过宽同进同退——草稿门报、check 公开
-    /// 包装报、引擎验收与提交期 lint 一律放行。素材取自 Jeff Dean 实测形态
-    /// （译文片挂在 "batch jobs" 一类两词碎渣上）。
+    /// Fragment trap test: source rows that are **too narrow** rise and fall together with those that are too wide. The draft gate reports them, the public check wrapper reports them, and engine acceptance and the submit-time lint let them pass. The material comes from the measured Jeff Dean shape (a translation piece attached to two-word fragments such as "batch jobs").
     #[test]
     fn source_fragment_blocks_the_draft_but_never_rejects_the_answer() {
         let source = "I mean, we ended up building a completely separate scheduler";
@@ -10834,9 +10346,7 @@ mod tests {
             source_cue_keys: Vec::new(),
         };
         let params = TransParams::for_lang("zh");
-        // 首片只挂 "I mean," 两个源词（5 显示单位，低于 en 下限 10），
-        // 且译文片自身只有 5 单位——正落在 source_ceiling_issues 的双豁免
-        // 盲区里（<4 源词、<10 目标单位），硬上限通道永远看不见它。
+        // The first piece is attached only to the two source words "I mean," (5 display units, below the en floor of 10), and the translation piece itself has only 5 units. It falls exactly into the double-exemption blind spot of source_ceiling_issues (fewer than 4 source words, fewer than 10 target units), where the hard-cap channel can never see it.
         let cut = 2usize;
         let texts = [
             "我的意思是，".to_owned(),
@@ -10855,9 +10365,7 @@ mod tests {
         );
         assert!(!draft.ready);
 
-        // 同一份切分作为模型答案提交时，引擎验收与提交期 lint 必须一致放行：
-        // 碎片与硬上限同属"报出并驱动定向重对齐"，在这两处拒绝只会烧掉唯一
-        // 一次全局修复调用、换来语义盲的确定性回退。
+        // When the same split is submitted as a model answer, the engine acceptance and the submit-time lint must both pass it. Fragments share the same nature as the hard cap, "report and drive targeted re-alignment". Rejecting them at either place would only burn the single global repair call and trade it for a semantically blind deterministic fallback.
         let answer = format!(
             r#"{{"sentences":[{{"key":"s-crumb","sourceBreaks":["b{cut}"],"target":"我的意思是， | 我们最终单独搭了一套调度器。"}}]}}"#
         );
@@ -10865,7 +10373,7 @@ mod tests {
             validate_batch_partial(&[&pending], &params, "en", "zh", &answer).unwrap();
         assert!(failures.is_empty(), "引擎验收不得因碎片拒绝：{failures:?}");
         assert!(accepted.contains_key("s-crumb"));
-        // 事后 check 走的公开包装：同一条目仍应报出，交给 refine-align 定向修。
+        // The public wrapper used by the post-hoc check: the same entry should still be reported, so that refine-align can fix it in a targeted way.
         let units = source_word_units(&pending.words, "en");
         let issues = source_fragment_issues_for_ranges(&texts, &ranges, &units, "en", "zh");
         assert_eq!(issues.len(), 1, "check 侧公开包装必须报出同一条目");
@@ -10873,8 +10381,7 @@ mod tests {
         assert_eq!(issues[0].words, 2);
     }
 
-    /// 豁免只收窄、不删除：单片句、整句词数不够、源片本身够宽、以及退化
-    /// 通道（宽译文配窄源）辖区内的片都不得报出。
+    /// Exemptions are narrowed, never deleted: single-piece sentences, sentences whose word count is too small for allocation, source pieces that are wide enough in themselves, and pieces within the territory of the degenerate channel (wide translation paired with narrow source) must not be reported.
     #[test]
     fn source_fragment_exemptions_stay_narrow_but_present() {
         let units_of = |words: &[&str]| -> Vec<usize> {
@@ -10886,7 +10393,7 @@ mod tests {
         let (source_fit, _) = source_piece_budgets("en");
         assert_eq!(source_fragment_floor(source_fit), 10);
 
-        // 1. 单片句：那一片就是整句，谈不上碎片。
+        // 1. A single-piece sentence: that piece is the whole sentence, so there is no fragment.
         let words = ["We", "ended", "up", "here"];
         assert!(
             source_fragment_issues(
@@ -10899,7 +10406,7 @@ mod tests {
             .is_empty()
         );
 
-        // 2. 整句源词数不足 片数×3：再报也只能落到确定性兜底。
+        // 2. Sentence source word count below pieces × 3: reporting it would only fall back to the deterministic fallback.
         let short = ["So", "we", "left", "it"];
         assert!(
             source_fragment_issues(
@@ -10913,7 +10420,7 @@ mod tests {
             "整句只有 4 词、2 片时不得报"
         );
 
-        // 3. 源片够宽：两词但 15 单位的 "high performance." 是正常多对一。
+        // 3. A wide enough source piece: "high performance." (two words, 15 units) is a normal many-to-one.
         let wide = [
             "It",
             "was",
@@ -10937,8 +10444,7 @@ mod tests {
             "两词但显示宽度达标的源片不是碎片"
         );
 
-        // 4. 目标片 ≥ DEGENERATE_TARGET_MIN_UNITS：那是 degenerate_paired_row
-        //    的辖区（含它经过审计的 40% 宽度豁免），两条通道不得重叠发声。
+        // 4. Target piece ≥ DEGENERATE_TARGET_MIN_UNITS: that is the territory of degenerate_paired_row (including its audited 40% width exemption), and the two channels must not both report the same piece.
         let crumb = [
             "And", "again", "thanks", "so", "much", "for", "coming", "in", "today",
         ];
@@ -10957,7 +10463,7 @@ mod tests {
             .is_empty(),
             "宽译文片配窄源属退化通道，碎片通道不得抢辖区"
         );
-        // 同素材换成窄译文片，碎片通道就必须认领。
+        // With the same material but a narrow translation piece, the fragment channel must claim it.
         let owned = ["再来一次，".to_owned(), "非常感谢你今天过来。".to_owned()];
         let issues = source_fragment_issues(
             &owned,
@@ -10970,8 +10476,7 @@ mod tests {
         assert_eq!(issues[0].index, 0);
     }
 
-    /// 契约文本必须与检测阈值同源：`align_system_prompt_file` 里的源侧下限
-    /// 由 `source_fragment_floor` 直接渲染，不得写死。
+    /// The contract text must share a source with the detection threshold: the source-side floor in `align_system_prompt_file` is rendered directly from `source_fragment_floor` and must not be hard-coded.
     #[test]
     fn align_prompt_states_source_role_and_floor() {
         let params = TransParams::for_lang("zh");
@@ -10992,15 +10497,12 @@ mod tests {
             ),
             "{prompt}"
         );
-        // zh 源用 16 的四分之一，阈值随语言预算走。
+        // For zh source, use a quarter of 16. The threshold follows the language budget.
         let zh = align_system_prompt_file(&params, "zh", None, &[]);
         assert!(zh.contains("under 4 source characters"), "{zh}");
     }
 
-    /// 与 `source_ceiling_blocks_the_draft_but_never_rejects_the_answer` 同一
-    /// 素材：源行硬上限本身不拒，但把最坏越档行做得更差要拒。构造出的
-    /// `Pending` 的确定性草稿就是 b15（最坏源行 78 单位 /7.5s），与该钉子测试
-    /// 的载荷一致。
+    /// Same material as `source_ceiling_blocks_the_draft_but_never_rejects_the_answer`: the source-row hard cap itself does not reject, but making the worst over-limit row worse must be rejected. The deterministic draft constructed for `Pending` is b15 (worst source row 78 units / 7.5s), consistent with the payload of that pinning test.
     fn ceiling_regression_pending() -> (Sentence, Vec<PendingWord>, &'static str) {
         let source = "Every engineer on the platform team keeps their own separate working context around all week and nobody ever ends up stepping on anyone else's ongoing work at all";
         let source_words = source.split_whitespace().collect::<Vec<_>>();
@@ -11030,8 +10532,7 @@ mod tests {
         )
     }
 
-    /// 现场 s-g123.0 的形态：worker 在句首加一刀凑片数，把最坏配对源行从草稿的
-    /// 78 单位 /7.5s 恶化到 122 单位 /13.0s。引擎验收必须拒绝。
+    /// The live case s-g123.0: the worker adds a cut at the start of the sentence to meet the piece count, worsening the worst paired source row from the draft's 78 units / 7.5s to 122 units / 13.0s. Engine acceptance must reject it.
     #[test]
     fn source_ceiling_net_regression_is_rejected_by_the_engine() {
         let (sentence, words, translation) = ceiling_regression_pending();
@@ -11047,8 +10548,7 @@ mod tests {
             source_cue_keys: Vec::new(),
         };
         let params = TransParams::for_lang("zh");
-        // b2 是载荷里标注 seam1 的合法切点：拒绝理由只可能是净倒退，
-        // 不会被 risky 切点或密度软档抢先。
+        // b2 is a legal cut point labelled seam1 in the payload. The only possible reason for rejection is net regression, and it will not be pre-empted by a risky cut point or the density soft tier.
         let answer = r#"{"sentences":[{"key":"s-wide","sourceBreaks":["b2"],"target":"每个工程师整周都保留自己的独立上下文， | 谁也不会碰到别人正在做的工作。"}]}"#;
         let (accepted, salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", answer).unwrap();
@@ -11059,16 +10559,14 @@ mod tests {
                 .any(|failure| failure.contains("worse than the incoming draft's worst row")),
             "{failures:?}"
         );
-        // Salvage 档豁免：兜底通道仍能顶替 `fallback_word_entry`，
-        // 护栏不得扩大确定性回退的暴露面。
+        // Salvage tier exemption: the rescue channel can still stand in for `fallback_word_entry`, and the guardrail must not widen the exposure of the deterministic fallback.
         assert!(
             salvaged.contains_key("s-wide"),
             "Salvage 档必须仍然收下该答案：{salvaged:?}"
         );
     }
 
-    /// 护栏只治倒退，不治空转：与草稿等宽（此处 `sourceBreaks` 与草稿完全相同）
-    /// 的答案必须放行。
+    /// The guardrail prevents regression only, not idling: an answer that is equal in width to the draft (here `sourceBreaks` identical to the draft) must pass.
     #[test]
     fn source_ceiling_guardrail_passes_equal_width_answers() {
         let (sentence, words, translation) = ceiling_regression_pending();
@@ -11091,7 +10589,7 @@ mod tests {
         assert!(accepted.contains_key("s-wide"));
     }
 
-    /// 判据本身的边界：只在 incumbent 已越档的维度上生效，且严格大于才拒。
+    /// The boundary of the criterion itself: it takes effect only on the dimension where the incumbent already exceeds the limit, and rejects only when strictly greater.
     #[test]
     fn source_ceiling_regression_only_fires_on_dimensions_the_draft_already_broke() {
         let issue = |units: usize, seconds: f64| SourceCeilingIssue {
@@ -11101,23 +10599,23 @@ mod tests {
             target_units: 20,
             words: 10,
         };
-        // 草稿宽度已越档（70 > 63），答案更宽 ⇒ 拒。
+        // Draft width already over the limit (70 > 63), answer wider ⇒ rejected.
         assert!(source_ceiling_regression(&[issue(110, 8.6)], 70, 5.6, 42, 3).is_some());
-        // 等宽 ⇒ 放行。
+        // Equal width ⇒ passes.
         assert!(source_ceiling_regression(&[issue(70, 5.6)], 70, 5.6, 42, 3).is_none());
-        // 草稿宽度干净（60 < 63）：这轮不是为宽度维度派出的，答案再宽也不拒。
+        // Draft width is clean (60 < 63): this round was not dispatched for the width dimension, so even a wider answer is not rejected.
         assert!(source_ceiling_regression(&[issue(120, 5.0)], 60, 5.0, 42, 3).is_none());
-        // 时长维度独立：草稿 7.0s 已越 6.0s，答案 9.0s ⇒ 拒。
+        // The duration dimension is independent: the draft's 7.0s already exceeds 6.0s, and an answer of 9.0s ⇒ rejected.
         assert!(source_ceiling_regression(&[issue(50, 9.0)], 50, 7.0, 42, 3).is_some());
-        // 答案不越档时 `source_ceiling_issues` 为空 ⇒ 结构性不触发。
+        // When the answer does not exceed the limit, `source_ceiling_issues` is empty ⇒ structurally not triggered.
         assert!(source_ceiling_regression(&[], 70, 5.6, 42, 3).is_none());
     }
 
     // -----------------------------------------------------------------
-    // file-v1（HTML 表格载体）端到端
+    // file-v1 (HTML table carrier) end to end
     // -----------------------------------------------------------------
 
-    /// 一个 `<tbody data-sid>` 分组；`attrs` 直接拼在开标签上。
+    /// One `<tbody data-sid>` group; `attrs` are concatenated directly onto the opening tag.
     fn tgroup(sid: &str, attrs: &str, rows: &[(&str, &str)]) -> String {
         let mut out = format!("  <tbody data-sid=\"{sid}\"{attrs}>\n");
         for (source, target) in rows {
@@ -11133,7 +10631,7 @@ mod tests {
         format!("<table>\n{}</table>\n", groups.concat())
     }
 
-    /// s-g1.0 的「好答案」：两行，源侧恰落在 echo,^foxtrot 缝上。
+    /// s-g1.0's "good answer": two rows, with the source side falling exactly on the echo,^foxtrot seam.
     fn good_align_table() -> String {
         ttable(&[tgroup(
             "s-g1.0",
@@ -11152,7 +10650,7 @@ mod tests {
         FakeLlm::new(script.into_iter().map(Ok))
     }
 
-    /// 收集 `on_attempt` 工件的 (page_id, attempt, accepted, 问题码数)。
+    /// Collects (page_id, attempt, accepted, number of problem codes) from the `on_attempt` artifacts.
     #[derive(Debug, Default)]
     struct Artifacts {
         pages: Vec<(String, u32, bool, usize)>,
@@ -11171,7 +10669,7 @@ mod tests {
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.fallback_sentences, 0);
 
-        // 载体是 HTML 表，不是 JSON 载荷。
+        // The carrier is an HTML table, not a JSON payload.
         let (kind, system, user, _) = &llm.calls[0];
         assert_eq!(kind, "align");
         assert!(user.starts_with("<table data-lang=\"zh\""), "{user}");
@@ -11180,8 +10678,7 @@ mod tests {
         assert!(user.contains(
             "<td class=\"src\">alpha bravo charlie delta echo, foxtrot golf hotel.</td>"
         ));
-        // 秒数、源 Cue 边界与绝对时间戳都不进载体（§8.2）；句 id 之外没有
-        // 任何 word id（源列就是纯可见文本）。
+        // Seconds, source Cue boundaries and absolute timestamps do not enter the carrier (§8.2). Apart from the sentence id there are no word ids at all (the source column is plain visible text).
         assert!(!user.contains("q-g1."), "{user}");
         assert!(!user.contains("sourceWords"), "{user}");
         assert!(!user.contains("seconds"), "{user}");
@@ -11190,7 +10687,7 @@ mod tests {
         assert!(system.contains("return the SAME table"));
         assert!(!system.contains("sourceBreaks"));
 
-        // 语义层与 json-v0 等价：同样的两片、同样的词区间。
+        // Semantically equivalent to json-v0: the same two pieces and the same word intervals.
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.mode, AlignMode::ManyToOne);
         assert_eq!(entry.pieces.len(), 2);
@@ -11203,7 +10700,7 @@ mod tests {
         assert_eq!(entry.words.first().map(String::as_str), Some("g1.0"));
         assert_eq!(entry.words.last().map(String::as_str), Some("g1.7"));
 
-        // 最终不变式（§2）：拼接 == 句级译文真相，区间连续覆盖。
+        // Final invariant (§2): concatenation equals the sentence-level translation truth, and the intervals cover continuously.
         let cues = derive_cues(&doc, &CueParams::default());
         let sentence = derive_sentences(&doc, &cues)
             .into_iter()
@@ -11241,7 +10738,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(artifacts.pages, vec![("b001".to_owned(), 1, true, 0)]);
-        // 工件里的 input 就是实际发出去的那一份载荷文本。
+        // The input in the artifact is exactly the payload text that was actually sent.
         assert_eq!(artifacts.inputs[0], llm.calls[0].2);
         assert_eq!(artifacts.outputs[0], good_align_table());
     }
@@ -11249,7 +10746,7 @@ mod tests {
     #[test]
     fn file_contract_repairs_source_drift_and_emits_a_repair_artifact() {
         let mut doc = with_translations(two_sentence_doc());
-        // 源文列是只读的：改词 ⇒ source-drift ⇒ 整句不进验收，走修复轮。
+        // The source column is read-only: changing a word ⇒ source-drift ⇒ the whole sentence does not enter acceptance and goes to a repair round.
         let drifted = ttable(&[tgroup(
             "s-g1.0",
             "",
@@ -11283,7 +10780,7 @@ mod tests {
             pages,
             vec![("b001".to_owned(), 1, false), ("r001".to_owned(), 2, true)]
         );
-        // 修复轮的 retry_reason 用表格词汇复述问题，不提 JSON 字段。
+        // The repair round's retry_reason restates the problems in table vocabulary, without mentioning JSON fields.
         let reason = llm.calls[1].3.as_deref().expect("retry reason");
         assert!(reason.contains("source-drift"), "{reason}");
         assert!(reason.contains("rows min="), "{reason}");
@@ -11305,9 +10802,7 @@ mod tests {
 
     #[test]
     fn file_contract_over_hard_row_is_recut_instead_of_rejected() {
-        // 关键契约：over-hard 与坏接缝是**质量码**，不是拒收码。json-v0 里
-        // 它们走确定性重切 / Recut-KeepWhole-Salvage 三档；file-v1 必须同口径，
-        // 否则新载体比旧载体更严，还会白烧掉唯一一轮全局修复。
+        // Key contract: over-hard pieces and bad seams are **quality codes**, not rejection codes. In json-v0 they go through deterministic re-splitting and the Recut / KeepWhole / Salvage tiers. file-v1 must follow the same basis. Otherwise the new carrier would be stricter than the old one and would also burn the only global repair round.
         let mut doc = with_translations(two_sentence_doc());
         let whole = ttable(&[tgroup(
             "s-g1.0",
@@ -11321,7 +10816,7 @@ mod tests {
         let outcome =
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
 
-        // 只有首轮那一个调用：没有触发修复轮。
+        // Only that first-round call: no repair round was triggered.
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.fallback_sentences, 0);
@@ -11339,9 +10834,7 @@ mod tests {
 
     #[test]
     fn file_contract_illegal_seam_is_judged_by_the_shared_acceptance_core() {
-        // `problem_blocks_acceptance` 的另一半：坏接缝在载体层是**质量码**，
-        // 不在 parse 层拒收；判决权归 `accept_answers` 这一份共享验收核，
-        // 悬垂连词「和」的打回理由由它给出，载体层不复判。
+        // The other half of `problem_blocks_acceptance`: at the carrier level, a bad seam is a **quality code** and is not rejected at parse time. The verdict belongs to the single shared acceptance core `accept_answers`, which gives the rejection reason for the dangling conjunction 「和」("and"). The carrier level does not re-judge it.
         fn dangling_doc() -> TranscriptDoc {
             let mut doc = two_sentence_doc();
             doc.trans.entry("zh".to_owned()).or_default().insert(
@@ -11369,11 +10862,11 @@ mod tests {
         )
         .unwrap();
 
-        // 修复轮理由来自共享验收核。
+        // The repair-round reason comes from the shared acceptance core.
         assert_eq!(file_llm_calls.calls.len(), 2);
         let file_reason = file_llm_calls.calls[1].3.as_deref().expect("file reason");
         assert!(file_reason.contains(SEAM_VERDICT), "{file_reason}");
-        // 载体层没有额外再报一次 align-illegal-seam。
+        // The carrier level did not report align-illegal-seam a second time.
         assert_eq!(
             file_reason.matches(SEAM_VERDICT).count(),
             1,
@@ -11385,8 +10878,7 @@ mod tests {
     #[test]
     fn file_contract_rejects_reordered_rewrite_beyond_the_drift_guard() {
         let mut doc = with_translations(two_sentence_doc());
-        // data-reordered 允许改写译文，但改写幅度受 ±max(25%, 4) 单位护栏
-        // （与 `split::reordered_rewrite_exceeds` 同一份算术）约束。
+        // data-reordered allows the translation to be rewritten, but the rewrite magnitude is constrained by the ±max(25%, 4) unit guardrail (the same arithmetic as `split::reordered_rewrite_exceeds`).
         let bloated = ttable(&[tgroup(
             "s-g1.0",
             " data-reordered=\"true\"",
@@ -11408,7 +10900,7 @@ mod tests {
         let reason = llm.calls[1].3.as_deref().expect("retry reason");
         assert!(reason.contains("align-content-drift"), "{reason}");
         assert_eq!(outcome.aligned_sentences, 1);
-        // 落库的是修复轮那份未改写的译文。
+        // What is stored is the unrewritten translation from the repair round.
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.pieces[1].text, "第二段译文负责完整收尾。");
     }
@@ -11432,8 +10924,7 @@ mod tests {
             run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(outcome.aligned_sentences, 1);
-        // 自报交叉 ⇒ best-effort 保留模型的两行与源切点（对齐块设计 §4.5 修订），
-        // 不再降级成整句一片。
+        // A self-reported crossing ⇒ best-effort: keep the model's two rows and source cut points (block-alignment design §4.5 revision), and do not degrade to one whole-sentence piece.
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.pieces.len(), 2);
         assert_ne!(entry.correspondence(), Correspondence::Sentence);
@@ -11442,7 +10933,7 @@ mod tests {
     #[test]
     fn file_contract_carries_unsplittable_back_into_the_repair_round() {
         let mut doc = with_translations(two_sentence_doc());
-        // 首轮：自述 unsplittable，同时改了源文 ⇒ 判失败进修复轮。
+        // First round: self-reports unsplittable but also changed the source text ⇒ judged a failure, goes into the repair round.
         let declared = ttable(&[tgroup(
             "s-g1.0",
             " data-unsplittable=\"true\"",
@@ -11464,8 +10955,7 @@ mod tests {
 
     #[test]
     fn file_contract_shares_the_bilingual_anchor_gate() {
-        // P1 根因修复（重叠锚点消歧）与双语锚同段校验都住在唯一的验收核心里，
-        // 因此 file-v1 走的是同一份判据：源侧切在锚词中间 ⇒ 拒。
+        // The P1 root-cause fix (overlapping-anchor disambiguation) and the bilingual anchor same-segment check both live in the single acceptance core, so file-v1 uses the same criteria: a source cut in the middle of an anchor word ⇒ rejected.
         let mut doc = with_translations(two_sentence_doc());
         let mut options = opts(AlignMode::ManyToOne);
         options.bilingual_anchors = vec![
@@ -11473,7 +10963,7 @@ mod tests {
                 source: "delta echo,".to_owned(),
                 target: "自然对应".to_owned(),
             },
-            // 重叠的短锚：与上面的源区间相交且更短 ⇒ 被消歧弃权，不参与判定。
+            // An overlapping short anchor: intersects the source interval above and is shorter ⇒ disambiguated and abstains, so it does not take part in judgment.
             BilingualAnchor {
                 source: "echo,".to_owned(),
                 target: "完整收尾".to_owned(),
@@ -11481,8 +10971,7 @@ mod tests {
         ];
         let mut llm = file_llm([good_align_table()]);
         let outcome = run_align(&mut doc, &mut llm, &options, &mut |_| {}).unwrap();
-        // 短锚若未被弃权，它会把 "完整收尾"（第 2 片）钉到源第 1 片上而误报
-        // mispair；消歧生效后本答案干净通过，一次调用即可。
+        // If the short anchor had not abstained, it would pin the "complete ending" (piece 2) onto source piece 1 and falsely report a mispair. Once disambiguation takes effect, this answer passes cleanly in one call.
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(doc.trans_align["zh"]["s-g1.0"].pieces.len(), 2);
@@ -11490,8 +10979,7 @@ mod tests {
 
     #[test]
     fn file_contract_pins_the_piece_count_budget_from_the_length_plan() {
-        // P2：frozen 句的片数由 `length_plan` 钉死，两种载体同源。file 载体
-        // 把它写进 `data-budget`，且**不带**秒数与融合草稿。
+        // P2: the piece count of frozen sentences is pinned by `length_plan`, and both carriers share the same source. The file carrier writes it into `data-budget`, and does **not** carry seconds or the fused draft.
         let mut doc = with_translations(two_sentence_doc());
         let mut llm = file_llm([good_align_table()]);
         run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
@@ -11505,15 +10993,14 @@ mod tests {
 
     #[test]
     fn file_contract_source_column_uses_the_shared_marker_thresholds() {
-        // 停顿分档必须来自 `engines::markers`（0.6/1.0/1.8），不是 align.rs
-        // 内部服务于 json-v0 载荷的私有阈值。
+        // Pause tiers must come from `engines::markers` (0.6 / 1.0 / 1.8), not from the private thresholds in align.rs that serve the json-v0 payload.
         let mut doc = doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha"),
             w("g1.1", 0.4, 0.8, "bravo"),
             w("g1.2", 0.8, 1.2, "charlie"),
             w("g1.3", 1.2, 1.6, "delta"),
             w("g1.4", 1.6, 2.0, "echo,"),
-            // 0.7s 停顿 ⇒ 一级；markers 的一级阈值是 0.6。
+            // A 0.7s pause ⇒ tier one; the tier-one threshold in markers is 0.6.
             w("g1.5", 2.7, 3.1, "foxtrot"),
             w("g1.6", 3.1, 3.5, "golf"),
             w("g1.7", 3.5, 3.9, "hotel."),
@@ -11525,15 +11012,13 @@ mod tests {
         let user = &llm.calls[0].2;
         assert!(user.contains("echo, ⏸ foxtrot"), "{user}");
         assert!(!user.contains("⏸⏸"), "{user}");
-        // ⏸ 的 Unicode 类目是 OtherSymbol，`normalize_chars` 会抹掉它，
-        // 所以模型回来的不带标记的源文段照样对得上，无需 strip_markers。
+        // The Unicode category of ⏸ is OtherSymbol, and `normalize_chars` strips it. So source segments the model returns without markers still match, and strip_markers is not needed.
         assert_eq!(doc.trans_align["zh"]["s-g1.0"].pieces.len(), 2);
     }
 
     #[test]
     fn file_contract_lint_and_engine_share_one_string_level_checker() {
-        // §2「校验只有一份」：提交期 lint 从载荷 HTML 反解回 AlignTableInput，
-        // 再调与引擎完全相同的 `parse_align_table`。
+        // §2 "validation exists in only one place": the submit-time lint parses AlignTableInput back out of the payload HTML, then calls exactly the same `parse_align_table` as the engine.
         let mut doc = with_translations(two_sentence_doc());
         let mut llm = file_llm([good_align_table()]);
         run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
@@ -11555,12 +11040,11 @@ mod tests {
             problems.iter().any(|item| item.contains("source-drift")),
             "{problems:?}"
         );
-        // 不是 align 表的载荷（旧任务目录/别的 kind）一律不挡。
+        // Payloads that are not align tables (old task directories, or a different kind) are never blocked.
         assert!(lint_agent_answer_file("{\"sentences\":[]}", &drifted).is_empty());
     }
 
-    /// file-v1 端到端：translate（HTML `section>p`）→ align（HTML 表）——
-    /// `trans` 真相、`transAlign` 切法与词区间、派生投影一路成立。
+    /// file-v1 end to end: translate (HTML `section>p`) → align (HTML table). The `trans` truth, the `transAlign` split and word intervals, and the derived projection all hold together.
     #[test]
     fn file_contract_translate_then_align_end_to_end() {
         let mut doc = two_sentence_doc();
@@ -11600,7 +11084,7 @@ mod tests {
         assert_eq!(outcome.fallback_sentences, 0);
         assert!(!doc.trans_align["zh"].contains_key("s-g2.0"));
 
-        // 派生投影成立（`transAlign` 是覆盖层，Cue 由它展开）。
+        // The derived projection holds (`transAlign` is an overlay, and Cues are expanded from it).
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
         let stream = derive_trans_cues(&doc, &sentences, "zh");
@@ -11662,7 +11146,7 @@ mod tests {
             user.contains("data-align-words=\"[1]alpha [2]bravo"),
             "{user}"
         );
-        // span 对译文透明：入库的是完整自然译句。
+        // Span is transparent to the translation: what is stored is the complete natural translated sentence.
         assert_eq!(
             doc.trans["zh"]["s-g1.0"],
             "第一段译文需要自然对应，第二段译文负责完整收尾。"
@@ -11689,13 +11173,12 @@ mod tests {
         assert!(entry.blocks.len() >= 2, "{entry:#?}");
     }
 
-    // ---- 融合行分区（`--align-fusion rows`） -------------------------------
+    // ---- Fused row partition (`--align-fusion rows`) -------------------------------
 
-    /// 确定性分组：源侧 Cue 行边界 + 从句标点 + ≥ 0.35s 停顿切；小组并入相邻
-    /// 组；> 5s 或 > 14 词的组在最大内部停顿处再切。零 LLM、零随机。
+    /// Deterministic grouping: source-side Cue row boundaries, plus clause punctuation, plus cuts at pauses of ≥ 0.35s. Small groups merge into adjacent groups. Groups of more than 5s or more than 14 words are re-split at their largest internal pause. Zero LLM, zero randomness.
     #[test]
     fn fusion_groups_reuse_source_rows_then_apply_local_rules() {
-        // 16 词一句：index 4 以逗号收尾、index 8 前有 0.6s 停顿。
+        // A 16-word sentence: index 4 ends with a comma, and index 8 is preceded by a 0.6s pause.
         let mut words = Vec::new();
         let mut clock = 0.0f64;
         for index in 0..16 {
@@ -11717,7 +11200,7 @@ mod tests {
 
         let info = fusion_line_info(&doc, &cues, sentence, true);
         assert_eq!(info.source_words.len(), 16);
-        // 分组连续、无缝、恰好覆盖整句。
+        // The groups are contiguous, seamless, and cover the whole sentence exactly.
         let mut expected = 0usize;
         for group in &info.groups {
             assert_eq!(group.from, expected, "{:?}", info.groups);
@@ -11726,14 +11209,14 @@ mod tests {
             expected = group.to + 1;
         }
         assert_eq!(expected, 16);
-        // 逗号缝与停顿缝都成为组边界。
+        // Comma seams and pause seams both become group boundaries.
         let starts: Vec<usize> = info.groups.iter().map(|group| group.from).collect();
         assert!(starts.contains(&5), "{starts:?}");
         assert!(starts.contains(&8), "{starts:?}");
-        // 第一组从句首起、时间相对句首归零。
+        // The first group starts at the sentence head, and its times are zeroed relative to the sentence start.
         assert_eq!(info.groups[0].t0_ds, 0);
 
-        // `with_groups=false`（`on` 模式）完全不算分组。
+        // With `with_groups=false` (`on` mode), no grouping is computed at all.
         assert!(
             fusion_line_info(&doc, &cues, sentence, false)
                 .groups
@@ -11769,9 +11252,7 @@ mod tests {
         doc
     }
 
-    /// rows 端到端：翻译提示挂行分区契约 + `data-align-groups`，回答给出合格
-    /// 行分区 ⇒ align 一次调用都不派，条目走 `llm-rows+anchor/1`，片文本逐行
-    /// 等于 span 文本。
+    /// rows end to end: the translate hint carries the row-partition contract plus `data-align-groups`. When the answer gives a qualifying row partition, no align call is dispatched at all. Entries take `llm-rows+anchor/1`, and each piece's text equals its span text row by row.
     #[test]
     fn file_contract_fused_row_draft_skips_the_align_call() {
         let mut doc = rows_doc();
@@ -11794,8 +11275,7 @@ mod tests {
         let (_, system, user, _) = &llm.calls[0];
         assert!(system.contains("Fused display rows"), "{system}");
         assert!(!system.contains("Fused block alignment"), "{system}");
-        // 第二轮 A/B 的调优：偏向合并（行切太碎会把 cps>6 比例推高），读速量化。
-        // zh 的 TransParams 是 fit 16 / hard 20。
+        // Tuning from the second round of A/B testing: favour merging, since rows cut too finely push the cps>6 ratio up. Reading speed is quantified. The zh TransParams are fit 16 / hard 20.
         assert!(
             system.contains("AIM FOR 10 to 16 display units per row"),
             "{system}"
@@ -11807,7 +11287,7 @@ mod tests {
         );
         assert!(system.contains("NEVER above 20"), "{system}");
         assert!(user.contains("data-align-groups=\""), "{user}");
-        // 载荷末尾的提醒：长文档上 system 契约会被稀释（实测 59 句只标了 3 句）。
+        // A reminder at the end of the payload: on long documents the system contract gets diluted (measured: of 59 sentences, only 3 were annotated).
         assert!(user.contains("Reminder: answer with"), "{user}");
         assert!(user.trim_end().ends_with("display rows."), "{user}");
         assert_eq!(translated.alignment_drafts.len(), 1);
@@ -11855,9 +11335,7 @@ mod tests {
         ));
     }
 
-    /// lines 草稿的第二块 30 字超 hard 20、切点已放行 ⇒ 不派改写轮，在块内按
-    /// lint 干净的缝再切一刀落成 `llm-lines+split/1`：三片、第一片与模型切点
-    /// 原样保留、align 一次调用都不派。
+    /// The second block of a lines draft is 30 characters, over hard 20, while its cut points are allowed ⇒ no rewrite round is dispatched. Instead, one more cut is made inside the block at a seam that is clean under lint, producing `llm-lines+split/1`: three pieces, with the first piece and the model's cut points kept as they are, and no align call at all.
     #[test]
     fn file_contract_lines_draft_splits_an_over_hard_block_in_place() {
         let mut doc = rows_doc();
@@ -11916,10 +11394,7 @@ mod tests {
         );
     }
 
-    /// lines 端到端：翻译页是 `lines/1` 纯文本（kind `translate-lines`）、
-    /// system prompt 末尾挂载体语法而不挂 HTML 融合段；回答的首尾引用被联合
-    /// 定位成块证据 ⇒ align 一次调用都不派，条目走 `llm-lines+anchor/1`，片
-    /// 文本逐块等于回答的块文本。
+    /// lines end to end: the translation page is `lines/1` plain text (kind `translate-lines`), and the end of the system prompt carries the carrier syntax rather than the HTML fusion section. The first and last references of the answer are jointly located as block evidence ⇒ no align call is dispatched, entries take `llm-lines+anchor/1`, and each piece's text equals the answer's block text block by block.
     #[test]
     fn file_contract_lines_draft_skips_the_align_call() {
         let mut doc = rows_doc();
@@ -11997,8 +11472,7 @@ mod tests {
         assert_eq!(entry.pieces[1].to, Some(7));
     }
 
-    /// lines 草稿只在载体看到的词表与本轮锚定词一致时生效；对不上（最终时间线
-    /// 裁掉了词）就按无草稿处理，句子照常进 dedicated 轮。
+    /// A lines draft takes effect only when the word table the carrier sees matches this round's anchored words. If they differ (the final timeline trimmed words), it is treated as no draft, and the sentence goes to a dedicated round as usual.
     #[test]
     fn a_lines_draft_whose_words_do_not_match_falls_back_to_pending() {
         let mut doc = rows_doc();
@@ -12028,17 +11502,15 @@ mod tests {
             &mut |_| {},
             &mut |_| {},
         );
-        // FakeLlm 脚本已耗尽：dedicated 轮被真的派出去了（并因此失败）。
+        // The FakeLlm script is exhausted: the dedicated round was actually dispatched (and failed as a result).
         assert!(outcome.is_err());
         assert_eq!(llm.calls.len(), 2);
     }
 
-    /// 合并只在句内发生：两句各自带同样的三行草稿，各自合并各自的短行，
-    /// 片的源区间绝不跨句（`plan_sentence_rows` 逐句调用，句间零共享状态）。
+    /// Merging happens only within a sentence. Two sentences each carry the same three-row draft, and each merges only its own short rows. Piece source intervals never cross sentences (`plan_sentence_rows` is called per sentence, with no shared state between sentences).
     #[test]
     fn short_row_merging_never_crosses_a_sentence_boundary() {
-        // 每句 6 词、译文 17 单位（> fit 16，因此必然入队）；行 [2/0.5s]、
-        // [5/1.0s]、[10/2.0s]，首行触发合并且合并后 7 单位 / 1.5s 合法。
+        // Each sentence has 6 words and a translation of 17 units (> fit 16, so it is necessarily queued). Rows are [2 / 0.5s], [5 / 1.0s], [10 / 2.0s]. The first row triggers a merge, and 7 units / 1.5s after merging is legal.
         let spans = [
             (0.0, 0.5),
             (0.5, 1.0),
@@ -12104,7 +11576,7 @@ mod tests {
         .unwrap();
         assert_eq!(llm.calls.len(), 0, "两句都走行直通，不该派 align 调用");
         assert_eq!(outcome.prealigned_sentences, 2);
-        // 两句各自的首行都被合并一次；合并计数是逐句累加的。
+        // The first row of each sentence is merged once, and the merge count accumulates per sentence.
         assert_eq!(outcome.rows_merged, 2);
 
         let cues = derive_cues(&doc, &CueParams::default());
@@ -12113,7 +11585,7 @@ mod tests {
         for sentence in &sentences {
             let entry = &doc.trans_align["zh"][&sentence.id];
             assert_eq!(entry.aligner.as_deref(), Some(LLM_ROWS_ALIGNER_TAG));
-            // 三行合成两片，且片的源区间只覆盖本句的 6 个词。
+            // Three rows merge into two pieces, and the piece source intervals cover only this sentence's 6 words.
             assert_eq!(
                 entry
                     .pieces
@@ -12129,7 +11601,7 @@ mod tests {
             assert_eq!(entry.pieces[1].from, Some(3));
             assert_eq!(entry.pieces[1].to, Some(5));
             assert_eq!(entry.words.len(), sentence.word_indices.len());
-            // 块层仍是模型给的三行对应。
+            // At the block level it is still the model's three-row correspondence.
             assert_eq!(entry.blocks.len(), 3);
             assert!(crate::align_block::validate_blocks(
                 entry,
@@ -12138,8 +11610,7 @@ mod tests {
         }
     }
 
-    /// 行分区不合格（序号有缺口）⇒ 不走行直通：草稿降级成普通块草稿，仍按
-    /// `on` 模式那条确定性核验收，条目落 `llm-chunk+anchor/1`。
+    /// If the row partition does not qualify (gaps in the ordinals), there is no direct row pass-through. The draft is downgraded to an ordinary block draft, still accepted by the deterministic check of `on` mode, and the entry takes `llm-chunk+anchor/1`.
     #[test]
     fn a_malformed_row_draft_falls_back_to_the_plain_chunk_path() {
         let mut doc = rows_doc();
@@ -12177,7 +11648,7 @@ mod tests {
         );
     }
 
-    /// rows 模式下模型压根没给行标注 ⇒ 没有草稿，该句照常派 `align-edges` 轮。
+    /// In rows mode, if the model gave no row annotation at all, there is no draft, and that sentence dispatches an `align-edges` round as usual.
     #[test]
     fn a_rows_answer_without_spans_still_dispatches_the_align_call() {
         let mut doc = rows_doc();
@@ -12223,10 +11694,9 @@ mod tests {
         );
     }
 
-    // ---- 块对齐边载体（align-edges/1 / align-rewrite/1） --------------------
+    // ---- Block-alignment-edges carrier (align-edges/1 / align-rewrite/1) --------------------
 
-    /// 两句：句 1 因果倒装（译文语序交叉，dwell > 7s 迫使入队），句 2 单调三小句
-    ///（译文超 fit）。
+    /// Two sentences: sentence 1 has a causal inversion (translation word order crosses; dwell over 7s forces it into the queue). Sentence 2 is monotonic with three clauses (translation over fit).
     fn edges_doc() -> TranscriptDoc {
         let mut words = Vec::new();
         for (index, text) in ["I", "didn't", "go", "because", "I", "was", "sick."]
@@ -12327,7 +11797,7 @@ mod tests {
         assert_eq!(outcome.sentence_level_sentences, 0);
         assert_eq!(outcome.rewritten_sentences, 0);
 
-        // 交叉句：整句一块、一片，仍是块级对应（不伪造逐行对应）。
+        // A crossed sentence: the whole sentence is one block and one piece, still a block-level correspondence (no fabricated row-level correspondence).
         let crossing = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(crossing.mode, AlignMode::ManyToOne);
         assert_eq!(crossing.pieces.len(), 1);
@@ -12342,7 +11812,7 @@ mod tests {
         assert_eq!(crossing.aligner.as_deref(), Some(LLM_CHUNK_ALIGNER_TAG));
         assert!(!crossing.crossing);
 
-        // 单调句：多块多片，片边界只落在块边界上。
+        // A monotonic sentence: several blocks and several pieces, with piece boundaries falling only on block boundaries.
         let monotone = &doc.trans_align["zh"]["s-g2.0"];
         assert!(monotone.pieces.len() >= 2, "{monotone:#?}");
         assert!(monotone.blocks.len() >= 3, "{monotone:#?}");
@@ -12362,8 +11832,7 @@ mod tests {
     #[test]
     fn edges_carrier_bad_answers_get_one_repair_round_then_anchor_or_fallback() {
         let mut doc = edges_doc();
-        // 首轮：句 1 序号越界（[align-edge-ordinal]），句 2 未标注 span；
-        // 修复轮：句 1 修好，句 2 仍缺 ⇒ 纯锚点无证据 ⇒ 确定性兜底。
+        // First round: sentence 1's ordinal is out of range ([align-edge-ordinal]), and sentence 2 has no span annotation. Repair round: sentence 1 is fixed, sentence 2 is still missing ⇒ pure anchoring has no evidence ⇒ deterministic fallback.
         let bad = ttable(&[
             egroup("s-g1.0", &[("4-9", "因为我病了，"), ("1 2 3", "所以没去。")]),
             "  <tbody data-sid=\"s-g2.0\"><tr><td class=\"src\">x</td><td class=\"tgt\">我们先分析数据，然后训练模型，最后部署服务。</td></tr></tbody>\n".to_owned(),
@@ -12402,7 +11871,7 @@ mod tests {
         );
     }
 
-    /// 单块超 hard 的因果倒装句（对齐块设计 §4.5 第三分支）。
+    /// A causal-inversion sentence where a single block exceeds hard (block-alignment design §4.5, third branch).
     fn rewrite_doc() -> TranscriptDoc {
         let mut words = Vec::new();
         for (index, text) in [
@@ -12490,7 +11959,7 @@ mod tests {
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.rewritten_sentences, 1);
         assert_eq!(outcome.sentence_level_sentences, 0);
-        // 自然译句不动；改写进 transDisplay；条目以 display 为基准。
+        // The natural translation is untouched; the rewrite goes into transDisplay; the entry takes display as its basis.
         assert_eq!(doc.trans["zh"]["s-g1.0"], natural);
         let display = &doc.trans_display["zh"]["s-g1.0"];
         assert_eq!(
@@ -12517,8 +11986,7 @@ mod tests {
             outcome.violations
         );
 
-        // 增量：display 基准条目有效 ⇒ 再跑一次不再调用；改译文 ⇒ display-stale
-        // 连带删除，重新入队。
+        // Incremental: if the display-basis entry is valid, running again makes no call. If the translation changes, display-stale removes it together, and it is queued again.
         let mut idle = file_llm([]);
         let again = run_align(
             &mut doc,
@@ -12553,8 +12021,7 @@ mod tests {
         assert!(!doc.trans_display.contains_key("zh"));
     }
 
-    /// 改写轮交回的文本与入库译文一字不差、只是块切细到能进 DP：按常规对齐
-    /// 入库，不写 transDisplay、不记改写、不让用户去核对不存在的改写。
+    /// A text returned by the rewrite round that is identical to the stored translation, merely with the blocks split finely enough to enter the DP. It is stored as an ordinary alignment, does not write transDisplay, does not record a rewrite, and does not ask the user to check a rewrite that does not exist.
     #[test]
     fn edges_carrier_rewrite_with_unchanged_text_is_plain_aligned() {
         let mut doc = rewrite_doc();
@@ -12563,7 +12030,7 @@ mod tests {
             .get_mut("zh")
             .unwrap()
             .insert("s-g1.0".to_owned(), natural.clone());
-        // dedicated 轮把序号标反 ⇒ 交叉 ⇒ 整句一块超 hard ⇒ 改写轮。
+        // The dedicated round labelled the ordinals backwards ⇒ crossing ⇒ a single block over hard for the whole sentence ⇒ rewrite round.
         let dedicated = ttable(&[egroup(
             "s-g1.0",
             &[
@@ -12618,8 +12085,7 @@ mod tests {
     fn edges_carrier_rejected_rewrite_degrades_without_an_over_hard_row() {
         let mut doc = rewrite_doc();
         let natural = doc.trans["zh"]["s-g1.0"].clone();
-        // 改写压缩内容（24 → 8 单位）⇒ 幅度护栏拒收 ⇒ 降级。自然译句超 hard，
-        // 整句一片会是一条放不下的单行 ⇒ 在确定性目标缝上切开、源时间按比例分配。
+        // The rewrite compressed content (24 → 8 units) ⇒ the magnitude guardrail rejects it ⇒ downgrade. The natural translation is over hard, and a whole sentence as one piece would be an unshowable single row ⇒ split at deterministic target-language seams, with source times apportioned proportionally.
         let mut llm = rewrite_llm(ttable(&[egroup(
             "s-g1.0",
             &[("1-3", "我没去，"), ("4-9", "因为病了。")],
@@ -12670,7 +12136,7 @@ mod tests {
 
     #[test]
     fn edges_lint_shares_the_engine_string_checker() {
-        // 提交期 lint 与引擎解析同一份载荷：同样的问题码、同样的句 id。
+        // The submit-time lint and the engine parse the same payload: same problem codes, same sentence ids.
         let doc = edges_doc();
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
@@ -12701,10 +12167,10 @@ mod tests {
             engine.diagnostics.problems[0].code,
             ProblemCode::AlignEdgeText
         );
-        // 载荷不是 edges 表 ⇒ 不挡。
+        // The payload is not an edges table ⇒ not blocked.
         assert!(lint_agent_answer_edges("<p>nope</p>", &drifted).is_empty());
 
-        // rewrite 载荷走同一入口：格式属性决定 rewrite 模式，幅度护栏生效。
+        // rewrite payloads go through the same entry point: the format attribute decides the rewrite mode, and the magnitude guardrail takes effect.
         let mut rewrite = table.clone();
         rewrite.rewrite = true;
         let payload = render_align_edges(&rewrite);
@@ -12722,10 +12188,9 @@ mod tests {
         assert!(lint_agent_answer_rewrite(&payload, &natural).is_empty());
     }
 
-    // ---- s-g9.0 回归（Sundar Pichai 项目，fr → zh-Hans，四轮对齐证据） ----
+    // ---- s-g9.0 regression (Sundar Pichai project, fr → zh-Hans, four rounds of alignment evidence) ----
 
-    /// 真实项目 s-g9.0 的 25 个源词（含 polish 插入的 `à`）与真实词时间；
-    /// `faire` 前有自动断行，派生出 4 条用户可见源行。
+    /// The 25 source words of the real project s-g9.0 (including `à` inserted by polish) with their real word times. An automatic break before `faire` derives four user-visible source rows.
     fn sg9_doc(translation: &str) -> TranscriptDoc {
         let raw: [(&str, f64, f64, &str); 25] = [
             ("g9.0", 36.32, 36.64, "Mais"),
@@ -12777,8 +12242,7 @@ mod tests {
         row_deficit_stats(doc, &sentences, "zh-Hans", &cues, &trans)
     }
 
-    /// 用户项目里那份 translate 融合 rows 草稿落下的两片（第二片 5.38s、跨 3
-    /// 条源行 ⇒ `align-row-deficit`）。
+    /// The two pieces produced by the translate fused rows draft in the user's project (the second piece is 5.38s, spanning 3 source rows ⇒ `align-row-deficit`).
     fn sg9_rows_entry(doc: &TranscriptDoc) -> TransAlign {
         let mut entry = TransAlign::new(
             AlignMode::ManyToOne,
@@ -12810,7 +12274,7 @@ mod tests {
         doc
     }
 
-    /// paired 收尾轮（`run_row_repair_tail` 同一组选项）。
+    /// Paired tail round (same set of options as `run_row_repair_tail`).
     fn sg9_paired_options(carrier: AlignCarrier) -> AlignOptions {
         let mut options = opts(AlignMode::ManyToOne);
         options.carrier = carrier;
@@ -12824,7 +12288,7 @@ mod tests {
         options
     }
 
-    /// 第 1 轮 worker 答案（c0002）：7 个语义块，尾部 16-18 / 21-25 / 19-20 交叉。
+    /// Round 1 worker answer (c0002): 7 semantic blocks, with the tail crossings 16-18 / 21-25 / 19-20.
     fn sg9_c0002_answer() -> String {
         ttable(&[egroup(
             "s-g9.0",
@@ -12885,7 +12349,7 @@ mod tests {
                 glue: false,
             })
             .collect();
-        // c0002 的 7 个块（0-based 序号，与 `sg9_c0002_answer` 的 1-based 一致）。
+        // c0002's 7 blocks (0-based ordinals, consistent with the 1-based `sg9_c0002_answer`).
         let chunks: Vec<AlignChunk> = [
             (0..=0, "但"),
             (1..=5, "如果你是科学家，"),
@@ -12912,8 +12376,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             other => panic!("{other:?}"),
         };
-        // 不知道源行时只看宽度 fit：7 个块被 DP 压成两片，第二片 5.38s、跨 3 条
-        // 源行——正是用户项目里 c0002 被拒的形态。
+        // When source rows are unknown and only the width fit is considered, the 7 blocks are compressed by the DP into two pieces, the second piece 5.38s and spanning 3 source rows. This is exactly the shape of c0002's rejection in the user's project.
         let blind = pieces(&input);
         assert_eq!(blind, [(0, 5), (6, 24)]);
         input.source_cue_keys = keys.clone();
@@ -12955,7 +12418,7 @@ mod tests {
 
     #[test]
     fn sg9_paired_accepts_a_deficit_free_answer_below_the_hinted_count() {
-        // 第 2 轮形态：3 行，少于提示的 4 块，但没有任何一行黏结 ⇒ 接受。
+        // Round 2 shape: 3 rows, fewer than the 4 hinted blocks, but no single row is sticking ⇒ accepted.
         let mut doc = sg9_with_entry(SG9_R1, sg9_rows_entry);
         let answer = ttable(&[tgroup(
             "s-g9.0",
@@ -12985,8 +12448,7 @@ mod tests {
 
     #[test]
     fn sg9_paired_accepts_a_strictly_better_partial_fix_with_a_warning() {
-        // 原状：整句一片（7.56s、4 条源行）。新答案两行，第二行仍黏结但更短、
-        // 覆盖更少源行 ⇒ 接受并保留告警。
+        // The original state: the whole sentence as one piece (7.56s, 4 source rows). The new answer has two rows; the second is still sticking but shorter, covering fewer source rows ⇒ accepted, with the warning kept.
         let whole = |doc: &TranscriptDoc| {
             TransAlign::new(
                 AlignMode::ManyToOne,
@@ -13031,9 +12493,7 @@ mod tests {
         assert_eq!(sg9_stats(&doc)[0].reason, Some(RowDeficitReason::Dwell));
     }
 
-    /// 修复调用整批失败（可重试错误、预算 0）⇒ 预算尾巴只剩模型缺席的等宽切。
-    /// 原条目是模型给的 ⇒ 保留原状（`model-free`），哪怕等宽切能清掉黏结行；
-    /// 原条目本身就是 `deterministic/1` ⇒ 等宽切照常按驻留谓词验收。
+    /// The whole repair call batch failed (retryable error, budget 0) ⇒ the budget tail has only the model-absent equal-width split left. The original entry came from the model ⇒ keep the original (`model-free`), even if equal-width splitting could clear the sticking rows. If the original entry is itself `deterministic/1` ⇒ equal-width splitting is validated as usual by the dwell predicate.
     #[test]
     fn sg9_paired_model_free_fallback_never_replaces_a_model_backed_entry() {
         let mut doc = sg9_with_entry(SG9_R1, sg9_rows_entry);
@@ -13064,7 +12524,7 @@ mod tests {
         );
         assert_eq!(doc.trans_align["zh-Hans"]["s-g9.0"], previous);
 
-        // 原条目是模型缺席的等宽切：同一失败换来的新等宽切按驻留谓词验收。
+        // The original entry is a model-absent equal-width split: the new equal-width split from the same failure is validated by the dwell predicate.
         let deterministic = |doc: &TranscriptDoc| {
             let mut entry = sg9_rows_entry(doc);
             entry.aligner = Some("deterministic/1".to_owned());
@@ -13119,8 +12579,7 @@ mod tests {
 
     #[test]
     fn sg9_round3_crossing_answer_keeps_the_four_worker_rows() {
-        // 第 3 轮：译文已改（旧条目随之失效），worker 交 4 行并自报 crossing。
-        // 早先整句降级成一条 28 单位的超 hard 单行；现在 best-effort 保留 4 行。
+        // Round 3: the translation has changed (the old entry becomes invalid), and the worker submitted 4 rows and self-reported a crossing. Earlier the whole sentence was degraded to a single 28-unit over-hard row; now the best-effort retention keeps the 4 rows.
         const R3: &str = "但如果你是科学家，你就愿意直面挑战；沿途遇到问题，也愿意解决。";
         let mut doc = sg9_with_entry(R3, sg9_rows_entry);
         let answer = ttable(&[tgroup(

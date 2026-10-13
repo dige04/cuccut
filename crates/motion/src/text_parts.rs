@@ -1,7 +1,6 @@
-//! 文字 part 切分与级联顺序（设计 §5.6）。
+//! Text part splitting and cascade order (design §5.6).
 //!
-//! 函数体逐式来自 `ccut-timeline/src/motion.rs:688-700`、`:712-781`，
-//! 与 VoiceInk `AnimParts.split` 同语义。
+//! Function bodies are taken verbatim from `ccut-timeline/src/motion.rs:688-700` and `:712-781`, with the same semantics as VoiceInk's `AnimParts.split`.
 
 use std::ops::Range;
 
@@ -14,8 +13,8 @@ pub enum PartUnit {
     Line,
 }
 
-/// 级联参数。`unit`/`part_dur`/`stagger` 是配方数据；
-/// `0.5`（总跨度上限）与 `0.01`（part 时长下限）是内核策略常量，不进 manifest。
+/// Cascade parameters. `unit`/`part_dur`/`stagger` are recipe data.
+/// `0.5` (total span cap) and `0.01` (part duration floor) are kernel policy constants and do not go into the manifest.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaggerPlan {
     pub unit: PartUnit,
@@ -23,13 +22,13 @@ pub struct StaggerPlan {
     pub stagger: f64,
 }
 
-/// 级联跨度上限（`motion.rs:652`）。
+/// Cascade span cap (`motion.rs:652`).
 pub const CASCADE_SPREAD_CAP: f64 = 0.5;
-/// 单 part 时长下限（`motion.rs:646`）。
+/// Per-part duration floor (`motion.rs:646`).
 pub const PART_DURATION_FLOOR: f64 = 0.01;
 
-/// 按 VoiceInk `AnimParts.split` 的规则切分 `text`。
-/// 返回的区间是 UTF-8 字节偏移，且恰好覆盖整串。
+/// Splits `text` by the rules of VoiceInk's `AnimParts.split`.
+/// The returned ranges are UTF-8 byte offsets and cover the whole string exactly.
 pub fn split_animation_parts(text: &str, unit: PartUnit) -> Vec<Range<usize>> {
     if text.is_empty() {
         return Vec::new();
@@ -93,13 +92,10 @@ pub fn split_animation_parts(text: &str, unit: PartUnit) -> Vec<Range<usize>> {
         .collect()
 }
 
-/// 稳定 part map（设计 §5.6 / §13「文字 part id 漂移」风险行）。
+/// Stable part map (design §5.6 / §13 "text part id drift" risk row).
 ///
-/// part id = **稳定索引 + 内容指纹**：`ranges` 恰好覆盖整串，`fingerprint` 覆盖
-/// `unit`、原串与每个 part 的字节区间。字体或折行变化让 map 重建时，指纹随之变化，
-/// 调用方据此判定「逐词动画是否漂移」（`split-part-unstable`）。
-/// word part 在**字幕**场景另有更强的 id（transcript word id，规范 §18）；
-/// BCF `text` 节点没有转录，只能用这一层。
+/// part id = **stable index + content fingerprint**: `ranges` exactly cover the whole string, and `fingerprint` covers `unit`, the original string, and each part's byte range. When a font or line-wrap change rebuilds the map, the fingerprint changes with it, and the caller uses this to judge whether "per-word animation has drifted" (`split-part-unstable`).
+/// Word parts in **subtitle** scenes have an even stronger id (transcript word id, spec §18). A BCF `text` node has no transcript, so only this layer is available.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartMap {
     pub unit: PartUnit,
@@ -144,16 +140,15 @@ impl PartMap {
         self.ranges.is_empty()
     }
 
-    /// 源串字节偏移 → part 序号。
+    /// Source-string byte offset → part index.
     ///
-    /// 连字（ligature）会让一个字形的 cluster 跨越 part 边界；规则是**取
-    /// `cluster.start` 所属的 part**（计划 §3.3.3），因此这里只按起点判定。
+    /// A ligature can make one glyph cluster span a part boundary. The rule is to **take the part that `cluster.start` belongs to** (plan §3.3.3), so only the start is used for the decision here.
     pub fn part_of(&self, byte_offset: usize) -> Option<usize> {
         self.ranges
             .iter()
             .position(|range| range.contains(&byte_offset))
             .or_else(|| {
-                // 越界只可能来自最后一个 part 的右端点（含尾随空白）。
+                // An out-of-range value can only come from the right endpoint of the last part (including trailing whitespace).
                 self.ranges
                     .last()
                     .filter(|last| byte_offset >= last.end)
@@ -183,7 +178,7 @@ pub fn is_ideograph(grapheme: &str) -> bool {
     )
 }
 
-/// 级联起点（Timeline 0.1 的 `staggerFrom`、规范 §7.5 `stagger.order`）。
+/// Cascade start point (Timeline 0.1's `staggerFrom`, spec §7.5 `stagger.order`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StaggerFrom {
     #[default]
@@ -211,15 +206,14 @@ impl StaggerFrom {
     }
 }
 
-/// 字符串版（Timeline 侧的 `AnimationSlot::stagger_from` 仍是 `Option<String>`）。
-/// 未知名字回落 `Start`，与旧实现一致。
+/// String version (`AnimationSlot::stagger_from` on the Timeline side is still `Option<String>`).
+/// Unknown names fall back to `Start`, consistent with the old implementation.
 pub fn stagger_order(index: usize, count: usize, from: Option<&str>) -> usize {
     let from = from.and_then(StaggerFrom::parse).unwrap_or_default();
     stagger_order_from(index, count, from)
 }
 
-/// 强类型版。`order` 是 `0..count` 的一个**置换**——三种起点只改顺序，
-/// 不改「最大 order = count-1」这条时长规则（设计 §5.2）。
+/// Strongly typed version. `order` is a **permutation** of `0..count`. The three start points only change the order and do not change the duration rule that "max order = count-1" (design §5.2).
 pub fn stagger_order_from(index: usize, count: usize, from: StaggerFrom) -> usize {
     if count <= 1 {
         return 0;
@@ -234,7 +228,7 @@ pub fn stagger_order_from(index: usize, count: usize, from: StaggerFrom) -> usiz
     }
 }
 
-/// 配方的级联段（`timeline.enter.<id>.json` 的 `parts`）。
+/// The cascade section of the recipe (`parts` in `timeline.enter.<id>.json`).
 pub fn stagger_plan(preset: &str) -> Option<StaggerPlan> {
     crate::preset_registry::timeline_enter(preset).and_then(|recipe| recipe.parts)
 }
@@ -306,13 +300,13 @@ mod tests {
         assert_eq!(map.len(), 4);
         assert_eq!(map.ranges.first().unwrap().start, 0);
         assert_eq!(map.ranges.last().unwrap().end, "CucCut 剪辑 v2".len());
-        // 每个字节都落在恰好一个 part 里
+        // Every byte falls in exactly one part
         for offset in 0.."CucCut 剪辑 v2".len() {
             assert!(map.part_of(offset).is_some(), "offset={offset}");
         }
         assert_eq!(map.part_of(0), Some(0));
         assert_eq!(map.part_of(7), Some(1));
-        // 文本、单位任一变化 ⇒ 指纹变化
+        // Any change in text or unit ⇒ fingerprint changes
         assert_ne!(
             map.fingerprint,
             PartMap::build("CucCut 剪辑 v3", PartUnit::Word).fingerprint

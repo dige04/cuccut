@@ -1,4 +1,4 @@
-/** 浏览器和 Node 都能用的字节小工具（Web Crypto、btoa/atob）。 */
+/** Byte helpers usable in both the browser and Node (Web Crypto, btoa/atob). */
 import type { Sha256 } from '../file-protocol.ts';
 
 export async function bytesOf(content: string | Blob): Promise<Uint8Array> {
@@ -7,7 +7,7 @@ export async function bytesOf(content: string | Blob): Promise<Uint8Array> {
 
 export function toBase64(bytes: Uint8Array): string {
   let s = '';
-  // 分块转，避免大文件时 String.fromCharCode 的参数个数超限
+  // Convert in chunks, to avoid exceeding the argument count limit of String.fromCharCode on large files
   for (let i = 0; i < bytes.length; i += 0x8000) {
     s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
@@ -19,7 +19,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<Sha256> {
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** 拷一份独立的 ArrayBuffer（Uint8Array 可能只是更大缓冲区的一段）。 */
+/** Copies an independent ArrayBuffer (a Uint8Array may be just a slice of a larger buffer). */
 export function ownBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.slice().buffer as ArrayBuffer;
 }

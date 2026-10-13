@@ -11,10 +11,9 @@ import { FileRows, Lane, Lanes, Note, PlaceRow, Quick, QuickField, Sec, SumRow, 
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 「字幕」页（设计稿 export.jsx 的 `SubsPage`）：导哪几条、格式、多轨怎么出、摘要。
+ * The "Subtitles" page (design mockup export.jsx `SubsPage`): which tracks to export, the format, how multiple tracks are output, and the summary.
  *
- * 一次导出只出一份字幕文件（`documentId`，两条时加 `bilingual` 合成双语，排在前面的是主文）。设计稿的
- * 「各出一份」与一次三条以上 Runtime 做不了，置灰并说明分几次导。导出整条序列（设计稿这一页没有范围）。
+ * One export produces one subtitle file (`documentId`; with two tracks, `bilingual` merges them into bilingual, with the first one as the main text). The mockup's "one file each" and three or more tracks at once cannot be done by the Runtime, so they are disabled, with a note to export in several rounds. The whole sequence is exported (this page in the mockup has no range).
  */
 
 const row = style({ marginTop: 12 });

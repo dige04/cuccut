@@ -3,14 +3,14 @@ import type { TemplateDiagnostic, TemplateListResult } from '@cuccut/protocol';
 import { templateCatalogOf, type HomeTemplate } from '../model/home-templates.ts';
 
 /**
- * Runtime 的模板目录（`templates.list`，模板包规范 §6）在界面里的一份：起始页与「全部模板」弹窗共用。
- * Runtime 不缓存目录、也不推送变化，所以由界面在起始页挂上、弹窗打开、重新连上时各取一次（runtime/template-commands.ts）。
- * 取过一次之后再取时旧的列表照常显示，取失败也不清掉，只有从没取到过时才显示加载中或失败。
+ * The UI copy of the Runtime's template catalog (`templates.list`, template pack spec §6): shared by the start page and the "All templates" dialog.
+ * The Runtime neither caches the catalog nor pushes changes, so the UI fetches it once each when the start page mounts, when the dialog opens, and on reconnect (runtime/template-commands.ts).
+ * Once fetched, the old list keeps showing on later fetches, and a failed fetch does not clear it; loading or failed is shown only if it has never been fetched.
  */
 export interface TemplateCatalogStore {
-  /** `loading`：正在取（不管之前有没有）；`failed`：最近一次没取到。 */
+  /** `loading`: fetching now (whether or not there was data before); `failed`: the latest fetch did not succeed. */
   status: 'idle' | 'loading' | 'ready' | 'failed';
-  /** 取到过至少一次。 */
+  /** Has been fetched at least once. */
   loaded: boolean;
   templates: HomeTemplate[];
   diagnostics: TemplateDiagnostic[];
@@ -20,7 +20,7 @@ export interface TemplateCatalogStore {
   fail(message: string): void;
 }
 
-/** 还没取过时的样子（测试里也用它复位）。 */
+/** The state before any fetch (also used to reset in tests). */
 export function emptyTemplateCatalog(): Pick<TemplateCatalogStore, 'status' | 'loaded' | 'templates' | 'diagnostics' | 'error'> {
   return { status: 'idle', loaded: false, templates: [], diagnostics: [], error: null };
 }

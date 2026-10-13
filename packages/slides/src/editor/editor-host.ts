@@ -1,24 +1,24 @@
 /**
- * 编辑器页面里的宿主 shim：在页面上装一个 globalThis.slidesHost，给 Slides 运行时提供文件、素材、用户与标注能力
- * （类型见 slides-host.ts，docs/design/slides §4、§5）。
+ * Host shim in the editor page: installs globalThis.slidesHost on the page, giving the Slides runtime file, asset, user and annotation capabilities
+ * (types in slides-host.ts; docs/design/slides §4, §5).
  *
- * 文件、素材、外部改动走同源 HTTP（Runtime 的幻灯片路由，deck-routes.ts），不经父窗口；
- * 标注要 CucCut 界面，经 postMessage 交给父窗口（comments-bridge.ts）。
- * 评论线程、协作、智能体会话留空，运行时按「没有这项能力」走自己的降级路径。
+ * Files, assets and external changes go over same-origin HTTP (the runtime's slide routes, deck-routes.ts), not through the parent window;
+ * annotations need the CucCut UI, so they are handed to the parent window via postMessage (comments-bridge.ts).
+ * Comment threads, collaboration and agent sessions are left empty, so the runtime takes its own fallback path for “没有这项能力” (no such capability).
  */
 import { DECK_ROUTES, isPublishError, isWriteEntry, type PublishBatch, type PublishError, type PublishResult, type UploadOptions, type UploadResult, type WirePublishRequest } from '../file-protocol.ts';
 import { bytesOf, toBase64 } from './bytes.ts';
 import type { HostChatCapability, HostCommentLabels, HostCommentsCapability, SlidesHost } from './slides-host.ts';
 
-/** 宿主能力背后的存储。 */
+/** Storage behind the host capabilities. */
 export interface Backend {
   publish(batch: PublishBatch): Promise<PublishResult>;
   upload(file: Blob, options?: UploadOptions): Promise<UploadResult>;
-  /** 还没回来的发布与上传都结束（成功或失败）后兑现。 */
+  /** Settles once all pending publishes and uploads have finished (succeeded or failed). */
   idle(): Promise<void>;
 }
 
-/** publish 的批次转成 HTTP 能传的 JSON：内容一律 base64。 */
+/** Converts a publish batch into JSON that can be sent over HTTP: content is always base64. */
 export async function encodeWireBatch(batch: PublishBatch): Promise<WirePublishRequest> {
   const files: WirePublishRequest['files'] = {};
   for (const [p, entry] of Object.entries(batch)) {
@@ -33,7 +33,7 @@ function upstreamError(message: string): PublishError {
   return { code: 'upstream_error', message };
 }
 
-/** 转发给 Runtime 的幻灯片路由（base 是编辑器页面的地址，以 / 结尾）。失败时抛路由返回的 PublishError。 */
+/** Forwards to the runtime's slide routes (base is the editor page's address, ending in /). On failure, throws the PublishError returned by the route. */
 export function createHttpBackend(base: string, fetchImpl: typeof fetch = (...args) => fetch(...args)): Backend {
   const pending = new Set<Promise<unknown>>();
   const track = <T>(work: Promise<T>): Promise<T> => {
@@ -75,19 +75,19 @@ export function createHttpBackend(base: string, fetchImpl: typeof fetch = (...ar
   };
 }
 
-/** CucCut 里只有一个用户（§4）。名字只在运行时自己的协作界面里出现，CucCut 不提供协作，所以不进文案目录。 */
+/** CucCut has only one user (§4). The name appears only in the runtime's own collaboration UI; CucCut does not provide collaboration, so it is not put in the copy catalog. */
 export const LOCAL_USER = { id: 'user_local', name: 'You' } as const;
 
 export interface EditorHostOptions {
   user?: { id: string; name: string };
-  /** 能不能编辑；Web 服务的只读模式下为 false，发布也会被路由拒绝。 */
+  /** Whether editing is allowed; false in the web service's read-only mode, where publishes are also rejected by the route. */
   canEdit?: () => Promise<boolean>;
   comments?: HostCommentsCapability;
   chat?: HostChatCapability;
   commentLabels?: HostCommentLabels;
 }
 
-/** 把一个 Backend 包成运行时要的宿主对象。 */
+/** Wraps a Backend as the host object the runtime expects. */
 export function createEditorHost(backend: Backend, options: EditorHostOptions = {}): SlidesHost {
   const user = options.user ?? LOCAL_USER;
   const canEdit = options.canEdit ?? (async () => true);
@@ -108,7 +108,7 @@ export function createEditorHost(backend: Backend, options: EditorHostOptions = 
   };
 }
 
-/** `__deck/session`：这次打开能不能编辑。读不到时按能编辑处理，真正的拦截在路由的发布上。 */
+/** `__deck/session`: whether this open can be edited. If it cannot be read, it is treated as editable; the real block is on the route's publish. */
 export function readSessionCanEdit(base: string, fetchImpl: typeof fetch = (...args) => fetch(...args)): () => Promise<boolean> {
   let answer: Promise<boolean> | undefined;
   return () =>

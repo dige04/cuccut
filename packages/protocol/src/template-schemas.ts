@@ -29,7 +29,7 @@ import {
   type TemplateTranslation,
 } from './template.ts';
 
-/** 模板清单 `template.json` 的校验（模板包规范 §2–§4）。未知字段一律拒绝。 */
+/** Validation of the template manifest `template.json` (template package spec §2–§4). Unknown fields are always rejected. */
 
 const text = (max: number) =>
   z
@@ -43,7 +43,7 @@ const relativePath = z.string().superRefine((path, ctx) => {
   if (problem) ctx.addIssue({ code: 'custom', message: problem });
 });
 
-/** 根目录下的 `<stem>.<ext>`，扩展名在允许的集合里。 */
+/** `<stem>.<ext>` in the root directory, with the extension in the allowed set. */
 const rootFile = (stem: string, extensions: readonly string[]) =>
   relativePath.refine(
     (path) => !path.includes('/') && path.slice(0, path.lastIndexOf('.')) === stem && extensions.includes(templateFileExtension(path)),
@@ -69,7 +69,7 @@ const asset = z
       });
   });
 
-/** 待填项（规范 §3.1）：label 不含花括号与换行，才能写成 `{{label}}`。 */
+/** Fill-in slot (spec §3.1). The label must not contain braces or newlines so that it can be written as `{{label}}`. */
 const field = z
   .object({
     label: text(TEMPLATE_LIMITS.fieldLabel).refine((s) => !/[{}\r\n]/.test(s), { error: () => V.templateFieldLabelChars().text }),
@@ -78,7 +78,7 @@ const field = z
   })
   .strict();
 
-/** BCP 47 语言标签（清单的 `language`，`templates.*` 与发送时的 `language`）。 */
+/** BCP 47 language tag (the manifest's `language`, and the `language` of `templates.*` and of sends). */
 const languageTag = z
   .string()
   .max(35)
@@ -101,7 +101,7 @@ const material = z
   })
   .strict();
 
-/** 验证记录（规范 §3.5）。 */
+/** Verification record (spec §3.5). */
 const verification = z
   .object({
     date: isoDate,
@@ -186,7 +186,7 @@ export const templateManifestSchema = z
     if (m.kind === 'scene') {
       for (const key of ['ratio', 'durationSeconds', 'brief'] as const)
         if (m[key] == null) ctx.addIssue({ code: 'custom', path: [key], message: V.sceneTemplateRequired().text });
-      // scene 的待填项写在 brief 里；example 的写在 prompt.md 里，由读目录的一方（测试与 Runtime 加载器）对照正文检查。
+      // Scene fill-in slots are written in the brief; example slots are written in prompt.md. The side that reads the directory (the tests and the Runtime loader) checks them against the body.
       if (m.brief != null)
         for (const message of templateSlotProblems(m.brief, m.fields ?? [])) ctx.addIssue({ code: 'custom', path: ['brief'], message });
     } else if (m.brief != null) {
@@ -202,12 +202,12 @@ export const templateManifestSchema = z
     if (new Set(paths).size !== paths.length) ctx.addIssue({ code: 'custom', path: ['assets'], message: V.assetPathsDuplicate().text });
   });
 
-/** 编译期核对：schema 推出的类型与 `TemplateManifest` 一致。 */
+/** Compile-time check: the type inferred from the schema matches `TemplateManifest`. */
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const manifestTypeMatches: Same<z.infer<typeof templateManifestSchema>, TemplateManifest> = true;
 void manifestTypeMatches;
 
-/** 一种语言的译文 `locales/<语言>.json`（规范 §3.6）：只有文案，未知字段一律拒绝。与 `template.json` 的对照在 `parseTemplateTranslation`。 */
+/** Translation for one language, `locales/<language>.json` (spec §3.6). Copy only; unknown fields are always rejected. The comparison with `template.json` is in `parseTemplateTranslation`. */
 export const templateTranslationSchema = z
   .object({
     title: text(TEMPLATE_LIMITS.title),
@@ -242,9 +242,8 @@ void translationTypeMatches;
 export type TemplateTranslationResult = { ok: true; translation: TemplateTranslation } | { ok: false; issues: string[] };
 
 /**
- * 读一份译文（已经 JSON.parse 过的值），对照它所属的 `template.json`（规范 §3.6）：scene 必须给 `brief` 且占位符与译文的
- * `fields` 对得上，example 不得有 `brief`；`fields` 与 `beats` 的项数与清单相同；素材只能是清单登记过的。
- * example 的提示词与 `fields` 的对照由读目录的一方查（同 `template.json`）。
+ * Reads a translation (a value already run through JSON.parse) and checks it against the `template.json` it belongs to (spec §3.6): a scene must give `brief`, and its placeholders must match the translation's `fields`; an example must not have `brief`; the number of items in `fields` and `beats` must match the manifest; materials must be ones the manifest registers.
+ * The check of an example's prompt against `fields` is done by the side that reads the directory (same as for `template.json`).
  */
 export function parseTemplateTranslation(value: unknown, manifest: TemplateManifest): TemplateTranslationResult {
   const result = templateTranslationSchema.safeParse(value);
@@ -271,8 +270,7 @@ export type TemplateManifestResult =
   { ok: true; manifest: TemplateManifest } | { ok: false; reason: 'unsupported-schema' | 'invalid'; issues: string[] };
 
 /**
- * 读一份清单（已经 JSON.parse 过的值）。`schema` 不认识时返回 `unsupported-schema`：调用方跳过这个模板并记诊断，
- * 不让整个目录失败。`dirName` 给出时还要求 id 等于目录名。
+ * Reads a manifest (a value already run through JSON.parse). When `schema` is not recognized, returns `unsupported-schema`: the caller skips this template and records a diagnostic, without failing the whole directory. When `dirName` is given, it also requires the id to equal the directory name.
  */
 export function parseTemplateManifest(value: unknown, dirName?: string): TemplateManifestResult {
   const schema = value && typeof value === 'object' ? (value as { schema?: unknown }).schema : undefined;
@@ -286,11 +284,11 @@ export function parseTemplateManifest(value: unknown, dirName?: string): Templat
   return { ok: true, manifest: result.data };
 }
 
-// ---- `templates.*` 与发送时挂的模板：入站校验，由 `schemas.ts` 并进方法表 ----
+// ---- `templates.*` and the template attached at send time: inbound validation, merged into the method table by `schemas.ts` ----
 
 const templateId = z.string().max(TEMPLATE_LIMITS.id).regex(TEMPLATE_ID_PATTERN, { error: () => V.templateIdKebab().text });
 
-/** `conversations.send` 的 `template`（规范 §5.2）。 */
+/** `template` of `conversations.send` (spec §5.2). */
 export const templateSendRefSchema = z
   .object({
     id: templateId,

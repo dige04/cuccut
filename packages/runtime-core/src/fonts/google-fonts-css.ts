@@ -1,16 +1,15 @@
 import type { FontFaceStyle } from '@cuccut/protocol';
 
 /**
- * Google Fonts 的公开 CSS 接口（`/css2`，不要 API key）：请求只带族名与字重、斜体；回应是一组 `@font-face`，
- * 用非浏览器的 User-Agent 请求时每个 face 一个完整的 TrueType 文件（`format('truetype')`，中日韩字体也是一个文件）。
+ * Google Fonts' public CSS endpoint (`/css2`, no API key needed): the request carries only the family name, weight, and italic; the response is a set of `@font-face` rules. With a non-browser User-Agent, each face is one complete TrueType file (`format('truetype')`; CJK fonts are also a single file).
  */
 
 export const DEFAULT_CSS_ENDPOINT = 'https://fonts.googleapis.com';
 export const DEFAULT_FILE_ENDPOINT = 'https://fonts.gstatic.com';
-/** 请求 CSS 的 User-Agent：不像浏览器，接口就给 TrueType 文件（不给 WOFF2 与按字符切开的分片）。 */
+/** User-Agent for CSS requests: not a browser, so the endpoint serves TrueType files (no WOFF2 and no per-character slices). */
 export const CSS_USER_AGENT = 'CucCut';
 
-/** `<基址>/css2?family=<族名>:<轴>@<取值>`：族名的空格写成 `+`；取值按（斜体、字重）升序，接口不接受乱序。 */
+/** `<base>/css2?family=<family name>:<axis>@<values>`: spaces in the family name become `+`; values are sorted ascending by (italic, weight), since the endpoint does not accept unsorted values. */
 export function cssUrl(endpoint: string, family: string, faces: readonly FontFaceStyle[]): string {
   const name = family
     .trim()
@@ -25,7 +24,7 @@ export function cssUrl(endpoint: string, family: string, faces: readonly FontFac
   return `${endpoint.replace(/\/+$/, '')}/css2?family=${name}:${axes}`;
 }
 
-/** 回应里的一个 `@font-face`：族名、字重（可变字体是一个范围）、斜体、文件地址与是否只覆盖一部分字符（`unicode-range`）。 */
+/** One `@font-face` in the response: family name, weight (a variable font is a range), italic, file URL, and whether it covers only some characters (`unicode-range`). */
 export interface CssFontFace {
   family: string;
   weight: [number, number];
@@ -35,7 +34,7 @@ export interface CssFontFace {
   partial: boolean;
 }
 
-/** 解析回应里的 `@font-face`：读不出族名、字重或地址的块跳过。 */
+/** Parses the `@font-face` rules in the response: blocks without a readable family name, weight, or URL are skipped. */
 export function parseFontFaceCss(css: string): CssFontFace[] {
   const faces: CssFontFace[] = [];
   for (const match of css.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
@@ -62,7 +61,7 @@ export function parseFontFaceCss(css: string): CssFontFace[] {
   return faces;
 }
 
-/** 文件地址是不是在文件基址下面（`https`、同一个源、路径在基址的路径之下）。 */
+/** Whether the file URL is under the file base (`https`, same origin, and a path under the base's path). */
 export function underEndpoint(url: string, endpoint: string): boolean {
   let file: URL;
   let base: URL;

@@ -1,8 +1,6 @@
-//! MOSS 跨块说话人合并：MOSS 按块生成，`S01` 只是「本块内的第一个人」，不同块之间同名标签毫无关系。这里用说话人
-//! 嵌入（WeSpeaker）把各块的局部聚类合并成全局说话人，并把全局标签写回 `row.speaker`。从 v2 `ccut-transcribe` 的
-//! `merge_moss_speakers` 一族原样移植；嵌入模型由调用方给（[`SpeakerEmbedding`]），不在这里找文件。
+//! Cross-chunk speaker merging for MOSS. MOSS generates chunk by chunk, and `S01` only means 'the first person in this chunk'; same-named labels across chunks have no relation. Here speaker embeddings (WeSpeaker) are used to merge each chunk's local clusters into global speakers, and the global labels are written back to `row.speaker`. Ported verbatim from the `merge_moss_speakers` family in v2 `ccut-transcribe`; the embedding model is provided by the caller ([`SpeakerEmbedding`]), and files are not looked up here.
 //!
-//! 任何一步不成立都保留原始的分块标签并原样返回——合并绝不能作废一次已完成的转录。
+//! If any step does not hold, the original per-chunk labels are kept and returned as-is: merging must never discard a completed transcription.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -10,26 +8,25 @@ use super::speaker_cluster::{DEFAULT_MERGE_THRESHOLD, SpeakerUnit, merge_speaker
 use super::{RowIn, SpeakerEmbedding, SpeakerRange};
 use crate::SAMPLE_RATE;
 
-/// 每个合并单元最多取这么多秒音频求嵌入。
+/// Each merge unit takes at most this many seconds of audio for its embedding.
 pub const SPEAKER_UNIT_MAX_SECONDS: f64 = 30.0;
-/// 少于这么多样本（0.5 秒）的单元不求嵌入，独占一个说话人。
+/// Units with fewer than this many samples (0.5 seconds) do not get an embedding and each occupy their own speaker.
 pub const SPEAKER_UNIT_MIN_SAMPLES: usize = 8_000;
 
-/// 一次合并的结果（给调用方决定要不要报警告、记 provenance）。
+/// Result of one merge (lets the caller decide whether to raise a warning or record provenance).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpeakerMerge {
-    /// 没有说话人区间，无事可做。
+    /// No speaker intervals; nothing to do.
     Nothing,
-    /// 带说话人的行与区间对不上：保留分块标签。
+    /// Speaker-labelled rows do not line up with the intervals: keep the chunk labels.
     Mismatched,
-    /// 没有可用的嵌入模型：保留分块标签。
+    /// No usable embedding model: keep the chunk labels.
     EmbedderUnavailable,
-    /// 合并完成：单元数、求出嵌入的单元数、合并后的说话人数。
+    /// Merge complete: number of units, number of units that got an embedding, and number of speakers after merging.
     Merged { units: usize, embedded: usize, speakers: usize },
 }
 
-/// 把 `speaker_ranges` 按嵌入合并、写回 `rows[].speaker`（`S01`、`S02`……）。`embedder` 为 `None` 表示嵌入模型
-/// 整体不可用（本步降级）。不传人数上限：v2 的人数只是提示，引擎不替它做硬截断。
+/// Merges `speaker_ranges` by embedding and writes back `rows[].speaker` (`S01`, `S02`, …). `embedder` being `None` means the embedding model is entirely unavailable (this step degrades). No speaker-count cap is passed: in v2 the count was only a hint, and the engine does not hard-truncate it.
 pub fn merge_moss_speakers(
     rows: &mut [RowIn],
     speaker_ranges: &mut [SpeakerRange],
@@ -41,8 +38,7 @@ pub fn merge_moss_speakers(
     if speaker_ranges.is_empty() {
         return SpeakerMerge::Nothing;
     }
-    // MOSS 路径上「带说话人的行」与 speaker_ranges 是 adapt_output 同一轮循环里成对 push 的，因此同序等长；这是写回
-    // 标签的唯一依据，先验证再动手。
+    // On the MOSS path, the speaker-labelled rows and speaker_ranges are pushed in pairs in the same loop of adapt_output, so they have the same order and length. This is the only basis for writing back labels, so validate first before acting.
     let Some(paired) = paired_speaker_rows(rows, speaker_ranges) else {
         return SpeakerMerge::Mismatched;
     };
@@ -78,9 +74,9 @@ pub fn merge_moss_speakers(
     }
 }
 
-/// 校验「带说话人的行」与 `speaker_ranges` 的配对不变量，返回配对行下标。
+/// Validates the pairing invariant between the speaker-labelled rows and `speaker_ranges`, and returns the indices of the paired rows.
 ///
-/// 长度不等，或任一对的起点偏差超过 0.5 秒，都判定为不变量被破坏（返回 `None`）。
+/// If the lengths differ, or if any pair's start offset deviates by more than 0.5 seconds, the invariant is considered broken (returns `None`).
 pub fn paired_speaker_rows(rows: &[RowIn], speaker_ranges: &[SpeakerRange]) -> Option<Vec<usize>> {
     let paired = rows
         .iter()
@@ -101,10 +97,10 @@ pub fn paired_speaker_rows(rows: &[RowIn], speaker_ranges: &[SpeakerRange]) -> O
     Some(paired)
 }
 
-/// 把 `speaker_ranges` 按局部聚类归组成合并单元，并为每个单元拼出限长音频。
+/// Groups `speaker_ranges` into merge units by local clustering, and assembles length-limited audio for each unit.
 pub fn build_speaker_units(speaker_ranges: &[SpeakerRange], samples: &[f32]) -> (Vec<SpeakerUnit>, Vec<Vec<f32>>) {
     let cap = (SPEAKER_UNIT_MAX_SECONDS * f64::from(SAMPLE_RATE)) as usize;
-    // BTreeMap 保证单元顺序只由聚类号决定，与 HashMap 的随机遍历无关。
+    // BTreeMap ensures the unit order is determined only by the cluster number, independent of HashMap's random iteration.
     let mut order = BTreeMap::new();
     let mut units: Vec<SpeakerUnit> = Vec::new();
     let mut audio: Vec<Vec<f32>> = Vec::new();
@@ -131,7 +127,7 @@ pub fn build_speaker_units(speaker_ranges: &[SpeakerRange], samples: &[f32]) -> 
     (units, audio)
 }
 
-/// 合并阈值：`CCUT_SPEAKER_MERGE_THRESHOLD` 覆盖（诊断用），非法或越界时回落默认值。
+/// Merge threshold: overridable via `CCUT_SPEAKER_MERGE_THRESHOLD` (for diagnostics); invalid or out-of-range values fall back to the default.
 pub fn speaker_merge_threshold() -> f32 {
     std::env::var("CCUT_SPEAKER_MERGE_THRESHOLD")
         .ok()
@@ -140,13 +136,12 @@ pub fn speaker_merge_threshold() -> f32 {
         .unwrap_or(DEFAULT_MERGE_THRESHOLD)
 }
 
-/// 用所选阈值合并跨块声纹，并在有安全合并余地时尽量收敛到人数上限。同一块内已经被模型判为不同人的单元仍不会强行
-/// 合并，因此人数上限是安全目标而不是破坏分离证据的硬截断（上限语义只有一处实现：`merge_speaker_units_capped`）。
+/// Merges cross-chunk voiceprints using the chosen threshold, and where there is safe room to merge, tries to converge to the speaker-count cap. Units that the model has already judged to be different people within the same chunk are still not forced together, so the cap is a safety target rather than a hard truncation that destroys separation evidence (the cap semantics are implemented in exactly one place: `merge_speaker_units_capped`).
 pub fn speaker_assignments(units: &[SpeakerUnit], threshold: f32, max_speakers: Option<usize>) -> Vec<usize> {
     merge_speaker_units_capped(units, threshold.clamp(0.01, 1.99), max_speakers.filter(|count| *count > 0))
 }
 
-/// 逐单元提取声纹嵌入。单个单元失败（例如音频过短）只置 `None`，该单元独占一个说话人。
+/// Extracts a voiceprint embedding unit by unit. If a single unit fails (for example, audio too short), it is set to `None`, and that unit occupies its own speaker.
 fn embed_speaker_units(embedder: &mut dyn SpeakerEmbedding, audio: &[Vec<f32>]) -> Vec<Option<Vec<f32>>> {
     audio
         .iter()
@@ -178,7 +173,7 @@ mod tests {
         row
     }
 
-    /// 按单元音频的首个样本值给出嵌入：值相同的单元是同一个人。
+    /// Gives embeddings based on the first sample value of each unit's audio: units with the same value are the same person.
     struct ByFirstSample;
 
     impl SpeakerEmbedding for ByFirstSample {
@@ -187,12 +182,12 @@ mod tests {
         }
     }
 
-    /// 两块，每块两个人；第二块的 S01 其实是第一块的 S02。合并后全局只剩两个人，标签按全局编号写回。
+    /// Two chunks, two people each; the second chunk's S01 is actually the first chunk's S02. After merging there are only two people globally, and labels are written back with global numbering.
     #[test]
     fn merges_local_clusters_across_chunks() {
         let rate = SAMPLE_RATE as usize;
         let mut samples = vec![0.0_f32; 40 * rate];
-        // 0–10 s 与 30–40 s 是 A（正值），10–30 s 是 B（负值）。
+        // 0–10 s and 30–40 s are A (positive values), 10–30 s is B (negative values).
         samples[..10 * rate].fill(0.5);
         samples[10 * rate..30 * rate].fill(-0.5);
         samples[30 * rate..].fill(0.5);
@@ -265,7 +260,7 @@ mod tests {
         assert!(rows.iter().all(|row| row.speaker.as_deref() == Some("S01")));
     }
 
-    /// 单元音频按聚类号归组、限长；太短的单元不求嵌入。
+    /// Unit audio is grouped by cluster number and length-limited; units that are too short do not get an embedding.
     #[test]
     fn speaker_units_group_by_cluster_and_cap_audio() {
         let rate = SAMPLE_RATE as usize;

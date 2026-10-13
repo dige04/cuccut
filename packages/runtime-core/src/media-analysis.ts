@@ -8,26 +8,22 @@ import { resolveInside } from './media.ts';
 import { RcRuntime } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 素材分析（时间线的波形与胶片条）与 Space 的缩略图：Runtime 调 ffmpeg 算出来，缓存在 Runtime Home 里
- * （素材按内容摘要，Space 里的文件按真实路径、大小与修改时间）。界面不自己解码：素材常有几百 MB，大的有几 GB。
+ * Material analysis (the timeline's waveforms and filmstrips) and Space thumbnails. The Runtime runs ffmpeg to compute them, and caches the results in the Runtime Home. Materials are keyed by content digest, and Space files by real path, size and modification time. The UI does not decode anything itself, since materials are often hundreds of MB and some are several GB.
  *
- * 安全，与媒体通道同一个口径：
- * - 输入只能是视频里的素材版本，文件位置来自引擎的素材记录，链接素材按媒体通道的规则放行
- *   （`VideoService.mediaSource`、`VideoService.assetFileAt`），或 Space 目录给出的条目文件（`SpaceCatalog.locateBytes`）；
- *   都再取真实路径确认在来源目录之内；
- * - 只分析音视频与常见图片：素材的媒体类型要在 `DEMUXERS` 里，Space 里的文件的扩展名要在 `FILE_FRAMES` 里，ffmpeg 只许用
- *   对应的解复用器、只许读本地文件，改了扩展名的播放列表、拼接清单之类读不进来，也不会顺着它去读别的文件或网络；
- * - ffmpeg 不经 shell 启动；每个进程有时限与输出上限，同时运行的进程数有上限；
- * - 缓存目录名取内容摘要的十六进制，摘要格式不对就拒绝；日志里不写路径。
+ * Security follows the same rules as the media channel:
+ * - Input can only be a material version in the video. The file location comes from the engine's material record, and linked materials pass under the media channel's rules (`VideoService.mediaSource`, `VideoService.assetFileAt`). Or it is a Space entry's file given by the Space directory (`SpaceCatalog.locateBytes`). In both cases the real path is resolved again to confirm it lies inside the source directory.
+ * - Only audio, video and common images are analyzed. A material's media type must be in `DEMUXERS`, and a Space file's extension must be in `FILE_FRAMES`. ffmpeg may use only the matching demuxer and may read only local files. Playlists and concat lists with a changed extension cannot be read, and ffmpeg does not follow them to other files or to the network.
+ * - ffmpeg is started without a shell. Each process has a time limit and an output cap, and the number of processes running at once is capped.
+ * - The cache directory name is the hex of the content digest. A malformed digest is rejected. Paths are not written to logs.
  */
 
-/** 每种媒体类型（引擎 `media_type_of` 的封闭集合）可以用的解复用器。不在表里的不分析。 */
+/** The demuxers allowed for each media type (the closed set from the engine's `media_type_of`). Types not in the table are not analyzed. */
 const DEMUXERS: Record<string, string> = {
   'video/mp4': 'mov',
   'video/quicktime': 'mov',
   'video/webm': 'matroska',
   'video/x-matroska': 'matroska',
-  // `.m4a` 是 MP4 容器，`.aac` 是裸的 ADTS 流。
+  // `.m4a` is an MP4 container, and `.aac` is a raw ADTS stream.
   'audio/mp4': 'mov,aac',
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
@@ -36,9 +32,8 @@ const DEMUXERS: Record<string, string> = {
 };
 
 /**
- * Space 的缩略图按文件取帧（`fileFrame`）：扩展名 → 解复用器。视频与素材分析同一套，另加 AVI。图片只用读单张图的解复用器，
- * 并且用 `-f` 指定（不让 ffmpeg 按扩展名挑到 `image2`：它会把文件名里的 `%d` 当成序列去读别的文件）；能带透明的输出 PNG。
- * 不在表里的不取：SVG ffmpeg 解不了；HEIC、AVIF 常按分块存放，手头的 ffmpeg 只解出第一块，画面不对，不如不画。
+ * Space thumbnails take a frame from a file (`fileFrame`): extension → demuxer. The same set as video and material analysis, plus AVI. For images, only the demuxer that reads a single image is used, and it is specified with `-f`. Otherwise ffmpeg would pick `image2` from the extension, which reads `%d` in a filename as a sequence and reads other files. The output is PNG, which can carry transparency.
+ * Not taken: SVG (ffmpeg cannot decode it). HEIC and AVIF are often stored in tiles, and the ffmpeg at hand decodes only the first tile, so the picture would be wrong. Better to draw nothing than a wrong picture.
  */
 const FILE_FRAMES: Record<string, { demuxers: string; still?: true; alpha?: true }> = {
   mp4: { demuxers: 'mov' },
@@ -55,47 +50,47 @@ const FILE_FRAMES: Record<string, { demuxers: string; still?: true; alpha?: true
   bmp: { demuxers: 'bmp_pipe', still: true },
 };
 
-/** 峰值的默认密度：每秒 50 格（同旧版的 BCW1）。 */
+/** Default peak density: 50 bins per second (the same as the old BCW1). */
 export const PEAKS_PER_SECOND = 50;
-/** 峰值最多这么多格（base64 之后约 700 KB）。素材太长时降低密度。 */
+/** Peaks are capped at this many bins (about 700 KB after base64). For long materials, lower the density. */
 export const MAX_PEAKS = 2 ** 19;
-/** 解码成单声道 8 kHz 再取峰值：只为画波形，够用。 */
+/** Decoded to mono 8 kHz before peaks are taken. Only used for drawing waveforms, which is enough for that. */
 const PEAKS_SAMPLE_RATE = 8000;
-/** 缩略图的宽（像素），高按画面比例。 */
+/** Width of thumbnails in pixels. The height follows the picture's aspect ratio. */
 export const THUMBNAIL_WIDTH = 160;
-/** 缩略图的时间按这个粒度（毫秒）取整，缓存才用得上。 */
+/** Thumbnail times are rounded to this granularity (milliseconds), so the cache is effective. */
 export const THUMBNAIL_STEP_MS = 100;
 
-/** 按文件取帧时高度的上限：很长的图片按比例缩到这么高（宽随之变窄），输出不至于太大。 */
+/** Height limit when taking a frame from a file. A very tall image is scaled down proportionally to this height (its width narrows accordingly), so the output does not get too large. */
 const FRAME_MAX_HEIGHT_RATIO = 3;
-/** Space 里的文件的缩略图缓存在媒体缓存下的这个目录（不会与 64 位十六进制的素材目录重名）。 */
+/** Thumbnails for Space files are cached in this directory under the media cache, so they never share a name with the 64-character hex material directories. */
 const FILE_FRAMES_DIR = 'files';
 
 const PEAKS_FILE = 'peaks-v1.json';
 const THUMBNAIL_TIMEOUT_MS = 20_000;
 const THUMBNAIL_MAX_BYTES = 1024 * 1024;
-/** 给智能体看的整幅帧（`videoFrame`）的上限：长边 1920 的 PNG 也放得下。 */
+/** Limit for a whole frame given to the agent (`videoFrame`). A PNG with a 1920 long edge fits. */
 const FRAME_MAX_BYTES = 16 * 1024 * 1024;
 const PEAKS_RETRY_MS = 1000;
-/** 分析失败之后这么久之内再问，直接回同一个错误，不再启动 ffmpeg。 */
+/** After an analysis failure, requests within this time return the same error without starting ffmpeg again. */
 const FAILURE_TTL_MS = 60_000;
-/** 镜头切换的 ffmpeg 输出上限（字节）：阈值很低时每帧一行，超了就停。 */
+/** ffmpeg output cap for shot cuts (bytes). With a very low threshold there is one line per frame, so stop when it is exceeded. */
 const SCENE_OUTPUT_MAX_BYTES = 8 * 1024 * 1024;
-/** 探测 WebM 的编码与时长（`media.playback`）：时限与输出上限。 */
+/** Probing WebM codec and duration (`media.playback`): time limit and output cap. */
 const PROBE_TIMEOUT_MS = 20_000;
 const PROBE_MAX_BYTES = 64 * 1024;
-/** 记住这么多个文件的探测结果，多了整个清掉重来。 */
+/** Remember probe results for this many files. When there are more, clear everything and start over. */
 const PROBE_CACHE_SIZE = 256;
-/** 兼容副本编码完之后还要校验、发布：编码进度最多报到这里。 */
+/** After a compatibility copy finishes encoding, it still has to be verified and published. Encoding progress is reported only up to here. */
 const PLAYBACK_PROGRESS_CAP = 0.99;
 
-/** `media.playback` 的结果：`original` 是客户端能直接放原文件，不做兼容副本。 */
+/** Result of `media.playback`. `original` means the client can play the original file directly, with no compatibility copy. */
 export type PlaybackPreparation =
   | { status: 'original' }
   | { status: 'pending'; retryAfterMs: number; progress?: number }
   | { status: 'ready'; root: string; file: string };
 
-/** WebM 源文件的首条画面与声音的编码（ffprobe 的 `codec_name`，没有这条流是 null）与时长（秒）。 */
+/** Codec of the WebM source's first video and audio streams (ffprobe `codec_name`; null when there is no such stream), and its duration in seconds. */
 interface PlaybackSource {
   video: string | null;
   audio: string | null;
@@ -103,27 +98,27 @@ interface PlaybackSource {
 }
 
 export interface MediaSource {
-  /** 来源目录与其中的文件（相对或绝对路径），同媒体通道的句柄。 */
+  /** A source directory and a file in it (relative or absolute path), the same handle as the media channel. */
   root: string;
   file: string;
-  /** 素材版本的记录：内容摘要、媒体类型与探测出来的流。 */
+  /** Record of a material version: content digest, media type and probed streams. */
   record: AssetRevision;
 }
 
-/** 素材版本里取帧要用的那几项（Space 的视频封面只有内容索引里的这些，不必读出整条记录）。 */
+/** The fields needed to take a frame from a material version. A Space video cover has only these from the content index, so the whole record need not be read. */
 export interface FrameAsset {
   contentHash: string;
   mediaType: string;
   durationSec: number | null;
 }
 
-/** 一处场景切换：源时钟上的秒与场景分数（0–1）。 */
+/** One scene cut: seconds on the source clock, and the scene score (0–1). */
 export interface SceneCut {
   at: number;
   score: number;
 }
 
-/** 缩小之后的一帧：编码后的 bytes 与实际的像素尺寸。 */
+/** One frame after scaling down: encoded bytes and the actual pixel size. */
 export interface MediaFrame {
   mimeType: 'image/jpeg' | 'image/png';
   data: Buffer;
@@ -131,39 +126,39 @@ export interface MediaFrame {
   height: number;
 }
 
-/** ffmpeg 的输出：缩放滤镜与编码。 */
+/** ffmpeg output: the scaling filter and the encoding. */
 interface FrameOutput {
   filter: string;
   format: 'jpeg' | 'png';
-  /** 编码后的上限（字节），缺省 `THUMBNAIL_MAX_BYTES`。 */
+  /** Byte limit after encoding. Defaults to `THUMBNAIL_MAX_BYTES`. */
   maxBytes?: number;
 }
 
 export interface MediaAnalysisOptions {
-  /** 缓存目录：`<home>/cache/media`。 */
+  /** Cache directory: `<home>/cache/media`. */
   cacheDir: string;
   log: Logger;
-  /** ffmpeg 可执行文件与它的环境（PATH 里要能找到它）。 */
+  /** The ffmpeg executable and its environment (PATH must be able to find it). */
   ffmpeg: () => Promise<{ command: string; env: NodeJS.ProcessEnv }>;
   /**
-   * ffprobe（同上）：探测 WebM 的编码与时长，判断能不能直接放原文件、算兼容副本的进度。
-   * 没有时一律做兼容副本，也不报进度。
+   * ffprobe (as above). It probes the WebM codec and duration to decide whether the original file can be played directly, and to compute the progress of a compatibility copy.
+   * When it is absent, a compatibility copy is always made, and no progress is reported.
    */
   ffprobe?: () => Promise<{ command: string; env: NodeJS.ProcessEnv }>;
-  /** 峰值没算完时等这么久再回 `pending`：短素材一次就能拿到结果。 */
+  /** When peaks are not finished, wait this long before returning `pending`, so short materials get a result in one go. */
   peaksWaitMs?: number;
-  /** 同时运行的 ffmpeg：峰值要解码整段声音，缩略图只解一帧。 */
+  /** Concurrent ffmpeg runs: peaks decode the whole audio track, while thumbnails decode only one frame. */
   peakSlots?: number;
   thumbnailSlots?: number;
 }
 
-/** 按素材时长选峰值密度：总格数不超过 `MAX_PEAKS`。 */
+/** Choose the peak density from the material's duration, so the total number of bins does not exceed `MAX_PEAKS`. */
 export function peaksRate(durationSeconds: number | null): number {
   if (!durationSeconds || !(durationSeconds > 0)) return PEAKS_PER_SECOND;
   return Math.max(1, Math.min(PEAKS_PER_SECOND, Math.floor(MAX_PEAKS / durationSeconds)));
 }
 
-/** 缩略图实际取帧的时间：按 `THUMBNAIL_STEP` 取整，留在素材时长之内（到了结尾就取不到帧）。返回毫秒。 */
+/** The time a thumbnail's frame is actually taken: rounded to `THUMBNAIL_STEP` and kept within the material's duration (past the end there is no frame). Returns milliseconds. */
 export function thumbnailMillis(at: number, durationSeconds: number | null): number {
   const steps = Math.round((Math.max(0, at) * 1000) / THUMBNAIL_STEP_MS);
   const last =
@@ -171,14 +166,14 @@ export function thumbnailMillis(at: number, durationSeconds: number | null): num
   return Math.min(steps, last) * THUMBNAIL_STEP_MS;
 }
 
-/** 给智能体看的帧实际取的时间：按毫秒取整，留在素材时长之内（到了结尾就取不到帧）。返回毫秒。 */
+/** The time the frame for the agent is actually taken: rounded to milliseconds and kept within the material's duration (past the end there is no frame). Returns milliseconds. */
 export function frameMillis(at: number, durationSeconds: number | null): number {
   const millis = Math.round(Math.max(0, at) * 1000);
   const last = durationSeconds && durationSeconds > 0 ? Math.max(0, Math.floor((durationSeconds - 0.05) * 1000)) : Infinity;
   return Math.min(millis, last);
 }
 
-/** 缓存目录名：内容摘要的十六进制。摘要来自视频里的素材记录，格式不对就拒绝，免得拼出别的路径。 */
+/** Cache directory name: the hex of the content digest. The digest comes from the video's material record. A malformed digest is rejected, so no other path can be built from it. */
 export function cacheKeyOf(contentHash: string): string {
   const match = /^sha256:([0-9a-f]{64})$/.exec(contentHash);
   if (!match) throw new RpcError('invalid-request', RcRuntime.assetHashInvalid());
@@ -186,8 +181,8 @@ export function cacheKeyOf(contentHash: string): string {
 }
 
 /**
- * 把单声道 f32le 采样流归成峰值：第 `i` 格是源时间 `[i, i+1) / binsPerSecond` 里的最大绝对振幅，0–255 对应 0 到满幅。
- * 采样可以按任意字节切成几块喂进来。
+ * Folds a mono f32le sample stream into peaks. Bin `i` is the maximum absolute amplitude within the source time `[i, i+1) / binsPerSecond`. 0–255 maps to 0 through full scale.
+ * Samples may be fed in as chunks, cut at any byte boundary.
  */
 export class PeakReducer {
   readonly #sampleRate: number;
@@ -232,10 +227,10 @@ export class PeakReducer {
   }
 }
 
-/** ffmpeg 以非零状态退出（区别于超时、没装与输出超限）。对外仍是一般的 `internal` 错误。 */
+/** ffmpeg exited with a non-zero status (distinct from timeouts, not installed, and output overflow). Externally it is still a general `internal` error. */
 class FfmpegExit extends RpcError {}
 
-/** 同时最多运行几个任务，其余排队。 */
+/** At most this many tasks run at once. The rest queue. */
 class Slots {
   readonly #limit: number;
   #running = 0;
@@ -264,9 +259,9 @@ export class MediaAnalysis {
   readonly #thumbnailSlots: Slots;
   readonly #playbackSlots = new Slots(1);
   readonly #playbackJobs = new Map<string, Promise<void>>();
-  /** 按源文件的身份（同兼容副本的缓存键）记住的探测；探测失败记 null。 */
+  /** Probe results remembered by source file identity (the same as the cache key for compatibility copies). A failed probe records null. */
   readonly #playbackSources = new Map<string, Promise<PlaybackSource | null>>();
-  /** 正在编码的兼容副本编到了几成（0–1），键是副本文件。 */
+  /** How far (0–1) a compatibility copy being encoded has got, keyed by the copy file. */
   readonly #playbackProgress = new Map<string, number>();
   readonly #peakJobs = new Map<string, Promise<MediaPeaks>>();
   readonly #thumbnailJobs = new Map<string, Promise<Buffer>>();
@@ -283,8 +278,7 @@ export class MediaAnalysis {
   }
 
   /**
-   * WebM 的播放地址（架构设计 §4.5）。首条画面与声音的编码都在 `playable`（客户端能原生解码的编码）里时回 `original`，
-   * 直接放原文件；否则用 Runtime 自己的 H.264/AAC 兼容副本缓存，编码中回 `pending` 与进度。不写项目与原文件。
+   * The playback URL for WebM (architecture design §4.5). When the codecs of the first video and audio streams are both in `playable` (codecs the client can decode natively), it returns `original`, and the original file is played directly. Otherwise it uses the Runtime's own H.264/AAC compatibility copy cache, returning `pending` and the progress while encoding. It writes neither the project nor the original file.
    */
   async playback(realPath: string, playable: readonly string[] = []): Promise<PlaybackPreparation> {
     if (this.#closed) throw new RpcError('internal', RcRuntime.runtimeStopping());
@@ -308,7 +302,7 @@ export class MediaAnalysis {
         if (await identity() !== key) throw new RpcError('not-found', RcRuntime.fileNotFound());
         await fs.mkdir(root, { recursive: true });
         const temporary = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp.mp4`;
-        // 进度按 `-progress` 报的输出时刻除以源时长（时长探测不到就不报）。
+        // Progress is the output time reported by `-progress`, divided by the source duration. It is not reported when the duration cannot be probed.
         const total = (await this.#playbackSource(realPath, key))?.durationSec ?? null;
         let carry = '';
         try {
@@ -325,7 +319,7 @@ export class MediaAnalysis {
               const lines = (carry + chunk.toString('latin1')).split('\n');
               carry = lines.pop() ?? '';
               for (const line of lines) {
-                // `out_time_ms` 名不副实，也是微秒；较新的 ffmpeg 另有 `out_time_us`。
+                // `out_time_ms` is misnamed: it is also in microseconds. Newer ffmpeg also has `out_time_us`.
                 const micros = /^out_time_(?:us|ms)=(\d+)\s*$/.exec(line)?.[1];
                 if (micros) this.#playbackProgress.set(file, Math.min(PLAYBACK_PROGRESS_CAP, Number(micros) / 1e6 / total));
               }
@@ -353,12 +347,12 @@ export class MediaAnalysis {
     return { status: 'pending', retryAfterMs: 250, ...(progress !== undefined ? { progress } : {}) };
   }
 
-  /** 源文件的编码与时长（按身份记住，同时的请求共用一次探测）。没有 ffprobe、探测失败或认不出时 null。 */
+  /** The codec and duration of the source file, remembered by identity. Concurrent requests share one probe. null when there is no ffprobe, the probe fails, or the result is not recognized. */
   #playbackSource(realPath: string, key: string): Promise<PlaybackSource | null> {
     let probe = this.#playbackSources.get(key);
     if (!probe) {
       probe = this.#probeWebm(realPath).catch((error: unknown) => {
-        // 不写路径：错误信息里可能带着它。
+        // Paths are not written, since error messages may contain them.
         this.#log.warn('ffprobe failed', { error: (error as NodeJS.ErrnoException)?.code ?? (error as Error)?.name ?? 'Error' });
         return null;
       });
@@ -368,7 +362,7 @@ export class MediaAnalysis {
     return probe;
   }
 
-  /** 跑一次 ffprobe：不经 shell，只许读本地文件、只许用 Matroska / WebM 解复用器。 */
+  /** Runs one ffprobe: no shell, reads local files only, and uses only the Matroska / WebM demuxer. */
   async #probeWebm(realPath: string): Promise<PlaybackSource | null> {
     if (!this.#options.ffprobe || this.#closed) return null;
     const { command, env } = await this.#options.ffprobe();
@@ -393,7 +387,7 @@ export class MediaAnalysis {
     return { video: first('video'), audio: first('audio'), durationSec: Number.isFinite(duration) && duration > 0 ? duration : null };
   }
 
-  /** 素材声音的峰值。没有缓存时启动分析，等一小会儿；还没做完就回 `pending`。 */
+  /** Peaks of a material's audio. With no cache, starts the analysis and waits a short while. If it is not finished, returns `pending`. */
   async peaks(source: MediaSource): Promise<MediaPeaks> {
     const { record } = source;
     const demuxers = demuxersOf(record);
@@ -420,7 +414,7 @@ export class MediaAnalysis {
     }
   }
 
-  /** 视频素材在源时间 `at` 的一帧，缩成小 JPEG。 */
+  /** One frame of a video material at source time `at`, scaled down to a small JPEG. */
   async thumbnail(source: MediaSource, at: number): Promise<MediaThumbnail> {
     const { record } = source;
     const demuxers = demuxersOf(record);
@@ -441,8 +435,7 @@ export class MediaAnalysis {
   }
 
   /**
-   * 视频素材在源时间 `at` 的一帧，缩到不超过 `width` 宽（Space 的视频封面）。按内容摘要缓存（`thumb-<毫秒>-w<宽>.jpg`，
-   * 与胶片条的分开）；缓存里有时不调 `locate`，不必去找文件。找文件与 ffmpeg 一起占缩略图的并发名额。
+   * One frame of a video material at source time `at`, scaled to at most `width` wide (the Space video cover). Cached by content digest (`thumb-<ms>-w<width>.jpg`, kept apart from the filmstrip's). When the cache has it, `locate` is not called, so the file need not be found. Finding the file and running ffmpeg share the thumbnail concurrency slots.
    */
   async assetFrame(
     asset: FrameAsset,
@@ -470,9 +463,7 @@ export class MediaAnalysis {
   }
 
   /**
-   * 视频素材在源时间 `at` 的一帧，供智能体看画面（`videos_frames`）：缩到宽不超过 `box.width`、高不超过 `box.height`（不放大），
-   * 编码成 PNG 或 JPEG。时间按毫秒取（不按胶片条的 100 毫秒粒度），留在素材时长之内。按内容摘要缓存（`frame-<毫秒>-<宽>x<高>.<格式>`，
-   * 与缩略图的分开）；缓存里有时不调 `locate`。输出上限比缩略图大（整幅 PNG 常超过 1 MB）。
+   * One frame of a video material at source time `at`, for the agent to look at (`videos_frames`). It is scaled to at most `box.width` wide and `box.height` high (never enlarged), and encoded as PNG or JPEG. Time is in milliseconds (not the filmstrip's 100 ms granularity), kept within the material's duration. Cached by content digest (`frame-<ms>-<width>x<height>.<format>`, kept apart from thumbnails). When cached, `locate` is not called. The output cap is larger than for thumbnails, since a full PNG often exceeds 1 MB.
    */
   async videoFrame(
     asset: FrameAsset,
@@ -506,10 +497,7 @@ export class MediaAnalysis {
   }
 
   /**
-   * 视频素材源时钟 `[fromSec, fromSec + durSec)` 里的镜头切换（`videos_shots`）：ffmpeg 把画面缩到 160 宽，
-   * 用 `select='gt(scene,T)'` 挑出场景分数超过 `threshold` 的帧，`metadata=print` 把时刻与分数写到 stdout。
-   * 输入端 `-ss` 之后 pts 从 0 起算，返回的 `at` 已加回 `fromSec`（源时钟上的秒）。要解码整段，与波形峰值共用并发名额，
-   * 超时按时长放宽；结果按内容摘要、区间与阈值缓存。`select` 与 `scene` 很早的 ffmpeg 就有（不用 4.4 才有的 `scdet`）。
+   * Shot cuts (`videos_shots`) within `[fromSec, fromSec + durSec)` on the source clock of a video material. ffmpeg scales the picture to 160 wide and uses `select='gt(scene,T)'` to pick the frames whose scene score exceeds `threshold`. `metadata=print` writes the time and score to stdout. After the input-side `-ss`, pts starts from 0, so the returned `at` has `fromSec` added back (seconds on the source clock). Decoding the whole range shares concurrency slots with waveform peaks, and the timeout is extended with the duration. Results are cached by content digest, range and threshold. `select` and `scene` exist in early ffmpeg versions; `scdet`, which needs 4.4, is not used.
    */
   async sceneCuts(
     asset: FrameAsset,
@@ -538,8 +526,7 @@ export class MediaAnalysis {
   }
 
   /**
-   * Space 里的一个视频或图片文件的一帧，缩到不超过 `width` 宽（不放大）。视频取 `at` 秒（取不到时，比如视频比它短，
-   * 退回第一帧），图片取第一帧。缓存键是真实路径、大小、修改时间、宽与时间：文件被覆盖之后重新取。
+   * One frame of a video or image file in Space, scaled to at most `width` wide (never enlarged). A video takes the frame at `at` seconds. If that is unavailable (for example, the video is shorter), it falls back to the first frame. An image takes its first frame. The cache key is the real path, size, modification time, width and time, so the frame is taken again after the file is overwritten.
    */
   async fileFrame(target: { root: string; file: string }, options: { at: number; width: number }): Promise<MediaFrame> {
     const { realPath } = await resolveInside(target.root, target.file);
@@ -564,7 +551,7 @@ export class MediaAnalysis {
         try {
           return await this.#computeFrame({ ...input, seekMs: millis }, output, file);
         } catch (error) {
-          // 视频比要的时间短：退回第一帧。跳过结尾时 ffmpeg 要么什么也不写、要么以编码器打不开退出；超时不再试。
+          // If the video is shorter than the requested time, fall back to the first frame. When seeking past the end, ffmpeg either writes nothing or exits because the encoder cannot open. No retry after a timeout.
           const pastEnd = error instanceof FfmpegExit || (error instanceof RpcError && error.code === 'not-found');
           if (!millis || !pastEnd) throw error;
           return this.#computeFrame({ ...input, seekMs: 0 }, output, file);
@@ -575,7 +562,7 @@ export class MediaAnalysis {
     return frameOf(await job);
   }
 
-  /** Runtime 停止：结束还在运行的 ffmpeg。 */
+  /** Runtime stop: ends the ffmpeg processes still running. */
   close(): void {
     this.#closed = true;
     for (const child of this.#children) child.kill('SIGKILL');
@@ -591,7 +578,7 @@ export class MediaAnalysis {
       { realPath, demuxers },
       ['-map', '0:a:0', '-vn', '-sn', '-dn', '-ac', '1', '-ar', String(PEAKS_SAMPLE_RATE), '-f', 'f32le', 'pipe:1'],
       {
-        // 解码声音通常比实时快一百倍以上；给足余量，长素材按时长放宽。
+        // Audio decoding is usually more than 100 times faster than real time, so leave ample margin. Long materials get a longer time limit.
         timeoutMs: 120_000 + (duration ?? 0) * 200,
         onData: (chunk) => reducer.push(chunk),
       },
@@ -629,7 +616,7 @@ export class MediaAnalysis {
       }
     };
     await this.#ffmpeg(
-      // `-ss`、`-t` 放在输入之前：按索引跳到附近的关键帧再解码，只读这一段。
+      // `-ss` and `-t` go before the input, so it seeks to a nearby keyframe through the index and decodes only that segment.
       { realPath, demuxers, before: ['-ss', range.from.toFixed(6), '-t', range.dur.toFixed(6)] },
       [
         ...['-map', '0:v:0', '-an', '-sn', '-dn'],
@@ -637,7 +624,7 @@ export class MediaAnalysis {
         ...['-f', 'null', '-'],
       ],
       {
-        // 解码画面比解码声音慢得多：按时长放宽到每秒 1 秒（缩小之后通常快十倍以上）。
+        // Video decoding is much slower than audio, so the time limit is extended to 1 second per second of duration. After scaling down it is usually more than 10 times faster.
         timeoutMs: 60_000 + range.dur * 1000,
         onData: (chunk) => {
           size += chunk.length;
@@ -654,7 +641,7 @@ export class MediaAnalysis {
     return cuts;
   }
 
-  /** 取一帧，编码成 JPEG 或 PNG，写进缓存。`seekMs` 为 null 时不跳（图片）。 */
+  /** Takes one frame, encodes it as JPEG or PNG, and writes it to the cache. When `seekMs` is null, there is no seek (images). */
   async #computeFrame(
     input: { realPath: string; demuxers: string; force?: boolean; seekMs: number | null },
     output: FrameOutput,
@@ -663,7 +650,7 @@ export class MediaAnalysis {
     const chunks: Buffer[] = [];
     let size = 0;
     const before = [
-      // `-ss` 放在输入之前：按索引跳到附近的关键帧再解到那一帧，几 GB 的文件也不用从头读。
+      // `-ss` goes before the input, so it seeks to the nearby keyframe through the index and decodes up to that frame. Multi-GB files are not read from the start.
       ...(input.seekMs !== null ? ['-ss', (input.seekMs / 1000).toFixed(3)] : []),
       ...(input.force ? ['-f', input.demuxers] : []),
     ];
@@ -686,7 +673,7 @@ export class MediaAnalysis {
     return bytes;
   }
 
-  /** 运行一次 ffmpeg：不经 shell，只许读本地文件、只许用指定的解复用器。输出交给 `onData`，它抛错就结束进程。 */
+  /** Runs one ffmpeg: no shell, reads local files only, and uses only the given demuxer. Output goes to `onData`. If it throws, the process ends. */
   #ffmpeg(
     input: { realPath: string; demuxers: string; before?: string[] },
     output: string[],
@@ -745,7 +732,7 @@ export class MediaAnalysis {
             this.#children.delete(child);
             if (failure) return reject(failure);
             if (code === 0) return resolve();
-            // stderr 里有输入文件的路径：日志与错误里都换掉。
+            // stderr contains the input file's path, so it is replaced in logs and errors.
             const detail = stderr.split(input.realPath).join('<asset>').trim().split('\n').at(-1) ?? '';
             this.#log.warn('ffmpeg failed', { code, detail });
             reject(new FfmpegExit('internal', RcRuntime.ffmpegCannotRead()));
@@ -754,7 +741,7 @@ export class MediaAnalysis {
     );
   }
 
-  /** 登记一个进行中的任务：做完从表里拿掉，失败记一阵。 */
+  /** Registers an in-progress task. It is removed from the table when done. Failures are remembered for a while. */
   #remember<T>(key: string, started: Promise<T>, jobs: Map<string, Promise<T>>): Promise<T> {
     const job = started.finally(() => jobs.delete(key));
     job.catch((error: unknown) => {
@@ -773,7 +760,7 @@ export class MediaAnalysis {
   }
 }
 
-/** 缩到不超过 `width` 宽、`width * FRAME_MAX_HEIGHT_RATIO` 高，保持比例，不放大，宽高取偶数。 */
+/** Scales to at most `width` wide and `width * FRAME_MAX_HEIGHT_RATIO` high, keeping the proportions. No enlargement. Width and height are rounded to even numbers. */
 function boxedOutput(width: number, format: FrameOutput['format']): FrameOutput {
   const height = width * FRAME_MAX_HEIGHT_RATIO;
   return {
@@ -788,13 +775,13 @@ function frameOf(bytes: Buffer): MediaFrame {
   return { mimeType: size.mimeType, data: bytes, ...size.dims };
 }
 
-/** PNG 或 JPEG 的像素尺寸（读文件头，不解码）；认不出时 null。 */
+/** Pixel size of a PNG or JPEG (reads the file header, no decoding). null if it is not recognized. */
 export function imageSize(bytes: Buffer): { mimeType: MediaFrame['mimeType']; dims: { width: number; height: number } } | null {
   if (bytes.length >= 24 && bytes.readUInt32BE(0) === 0x89504e47 && bytes.toString('latin1', 12, 16) === 'IHDR') {
     return { mimeType: 'image/png', dims: { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) } };
   }
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
-  // 逐段找帧头（SOF0–SOF15，除去 DHT、JPG、DAC）。
+  // Searches for the frame header segment by segment (SOF0–SOF15, excluding DHT, JPG and DAC).
   let offset = 2;
   while (offset + 9 <= bytes.length) {
     if (bytes[offset] !== 0xff) return null;
@@ -843,7 +830,7 @@ async function readPeaks(file: string): Promise<MediaPeaks | null> {
   }
 }
 
-/** 先写临时文件再改名：读的一方要么看到完整的文件，要么看不到。 */
+/** Writes to a temporary file first, then renames it, so a reader sees either the complete file or none. */
 async function writeAtomic(file: string, data: string | Buffer): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;

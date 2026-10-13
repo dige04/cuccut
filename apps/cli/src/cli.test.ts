@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminBucket } from './admin/index.ts';
 import { runCli } from './cli.ts';
 
-/** 进程内跑 `runCli`：临时的 CUCCUT_HOME，Runtime 入口指向不存在的路径（万一要拉起也拉不起）。 */
+/** Runs `runCli` in-process: temporary CUCCUT_HOME, and the Runtime entry point is a path that does not exist (so that even if it tries to start, it cannot). */
 let home: string;
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-cli-home-'));

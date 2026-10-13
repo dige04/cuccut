@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RpcError, TEMPLATE_FILE_MAX_BYTES, LOCALES, getLocale, type TemplateManifest } from '@cuccut/protocol';
 import { TemplateCatalog, resolveBuiltinTemplatesDir, scanTemplateDir } from './template-catalog.ts';
 
-/** 仓库根的 `templates/`：从本文件往上四级（packages/runtime-core/src/templates）。 */
+/** The `templates/` at the repository root: four levels up from this file (packages/runtime-core/src/templates). */
 const REPO_TEMPLATES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../templates');
-/** 仓库根的 `skills/cuccut/built-in-skills/`：内置模板 `skills` 里写的 craft 都要在这里。 */
+/** The `skills/cuccut/built-in-skills/` at the repository root: the crafts named by the built-in template `skills` must all be here. */
 const REPO_SKILLS = path.resolve(REPO_TEMPLATES, '../skills/cuccut/built-in-skills');
 
 const manifest = (id: string, extra: Partial<TemplateManifest> = {}): TemplateManifest => ({
@@ -45,7 +45,7 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
-/** 在 `dir` 下写一个模板：清单（可以是任意值）、提示词与别的文件。 */
+/** Writes a template under `dir`: a manifest (any value), a prompt and other files. */
 async function writeTemplate(dir: string, name: string, value: unknown, files: Record<string, string | Buffer> = {}) {
   const at = path.join(dir, name);
   await fs.mkdir(at, { recursive: true });

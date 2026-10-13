@@ -1,14 +1,11 @@
-//! 中英混排分段：复刻 GPT-SoVITS `LangSegmenter.getTexts`（split-lang 2.1 的
-//! `LangSplitter.split_by_lang`，`merge_across_digit=False`）与推理端 zh 模式的中英两段合并。
+//! Mixed Chinese/English segmentation: a port of GPT-SoVITS `LangSegmenter.getTexts` (split-lang 2.1's `LangSplitter.split_by_lang`, `merge_across_digit=False`), plus the merge of the Chinese and English segments in the inference side's zh mode.
 //!
-//! 上游用 fast_langdetect（fastText 模型）判语种，这里换成确定性的「规则 C」：中日汉字段一律判
-//! zh；其余块含拉丁字母判 en，否则判 zh。这条规则下 budoux 切出的中日小块全部同语种、会被原样
-//! 拼回，所以不需要 budoux 模型；`x`（未知语种）也不会出现，只处理 `x` 的分支一并省略。
+//! Upstream detects the language with fast_langdetect (a fastText model). Here it is replaced by a deterministic "rule C": a Han-character block is always zh; other blocks are en if they contain Latin letters, otherwise zh. Under this rule, the small CJK blocks cut out by budoux are all in the same language and are joined back unchanged, so the budoux model is not needed. `x` (unknown language) never occurs, so the branch that handles `x` is omitted too.
 
 use super::error::PyError;
 use super::pychar;
 
-/// split-lang 与 LangSegmenter 的语种标签。
+/// Language labels used by split-lang and LangSegmenter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lang {
     Zh,
@@ -20,7 +17,7 @@ pub enum Lang {
     Newline,
 }
 
-/// zh 模式的最终分段只分中文与英文。
+/// In zh mode, the final segments are only Chinese or English.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SegLang {
     Zh,
@@ -47,7 +44,7 @@ enum Kind {
     Others,
 }
 
-/// `SubString`；`len` 是码点数（上游 `length` 恒等于 `len(text)`）。
+/// `SubString`; `len` is the number of code points (upstream `length` is always equal to `len(text)`).
 #[derive(Clone)]
 struct Sub {
     lang: Lang,
@@ -85,7 +82,7 @@ fn is_hangul(c: char) -> bool {
     matches!(c, '\u{AC00}'..='\u{D7AF}')
 }
 
-/// `contains_ja_kana`，也是规则 C 的 KANA。
+/// `contains_ja_kana`; also the KANA class of rule C.
 fn is_kana(c: char) -> bool {
     matches!(c, '\u{3040}'..='\u{30FF}' | '々')
 }
@@ -102,12 +99,12 @@ fn has_kana(text: &str) -> bool {
     text.chars().any(is_kana)
 }
 
-/// 规则 C 的 `detect_lang_combined`（非中日汉字段）。
+/// Rule C's `detect_lang_combined` (for blocks that are not Han characters).
 fn detect(text: &str) -> Lang {
     if text.chars().any(is_latin) { Lang::En } else { Lang::Zh }
 }
 
-/// 规则 C 的 `possible_detection_list` 恒为单元素列表，返回其中的语种。
+/// Rule C's `possible_detection_list` is always a single-element list; returns that language.
 fn possible(text: &str) -> Lang {
     if text.chars().any(|c| is_kana(c) || is_cjk(c)) {
         Lang::Zh
@@ -123,7 +120,7 @@ fn push_merged(list: &mut Vec<Sub>, item: Sub) {
     }
 }
 
-/// `_merge_substrings`，也是 LangSegmenter 的 `merge_lang` 逐项累积。
+/// `_merge_substrings`; also what LangSegmenter's `merge_lang` accumulates item by item.
 fn merge_same(subs: Vec<Sub>) -> Vec<Sub> {
     let mut out = Vec::with_capacity(subs.len());
     for sub in subs {
@@ -145,7 +142,7 @@ fn pre_split(text: &str) -> Vec<(Kind, String)> {
     let mut current = Kind::Others;
     let mut buf = String::new();
     for (index, &c) in chars.iter().enumerate() {
-        // (新段类型, 是否无条件另起一段)
+        // (new segment type, whether it always starts a new segment)
         let switch = if is_zh_ja(c) {
             Some((Kind::ZhJa, false))
         } else if is_hangul(c) {
@@ -153,7 +150,7 @@ fn pre_split(text: &str) -> Vec<(Kind, String)> {
         } else if pychar::is_digit(c) {
             Some((Kind::Digit, false))
         } else if PUNCTUATION.contains(c) {
-            // 紧跟非空白的 `'` 算英文词的一部分，留在当前段
+            // A `'` directly followed by non-whitespace counts as part of an English word and stays in the current segment.
             let in_word = c == '\'' && index > 0 && !pychar::is_space(chars[index - 1]);
             (!in_word).then_some((Kind::Punctuation, true))
         } else if pychar::is_space(c) {
@@ -173,7 +170,7 @@ fn pre_split(text: &str) -> Vec<(Kind, String)> {
     sections
 }
 
-/// `_parse_without_zh_ja`：按空白切词，空白跟在前一个词后面。
+/// `_parse_without_zh_ja`: splits words on whitespace; the whitespace stays attached to the preceding word.
 fn split_words(text: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
@@ -193,7 +190,7 @@ fn split_words(text: &str) -> Vec<String> {
     words
 }
 
-/// `_merge_middle_substr_to_two_side`（原地逐个改写，后面的判断看得到前面的改写）。
+/// `_merge_middle_substr_to_two_side` (rewrites in place, one item at a time, so later checks see the earlier rewrites).
 fn merge_middle(subs: &mut [Sub]) {
     if subs.len() <= 2 {
         return;
@@ -229,7 +226,7 @@ fn nearest(subs: &[Sub], index: usize, search_left: bool) -> Lang {
     found.map_or(subs[index].lang, |sub| sub.lang)
 }
 
-/// `_merge_side_substr_to_near`：单块时两侧条件都不成立。
+/// `_merge_side_substr_to_near`: with a single block, neither side condition holds.
 fn merge_sides(subs: &mut [Sub]) {
     let n = subs.len();
     if n < 2 {
@@ -244,7 +241,7 @@ fn merge_sides(subs: &mut [Sub]) {
     }
 }
 
-/// `_smart_merge`（`_get_languages` 只算不写、`_fill_unknown_language` 只处理 x，均为空操作）。
+/// `_smart_merge` (`_get_languages` only computes and does not write, and `_fill_unknown_language` only handles x; both are no-ops).
 fn smart_merge(subs: Vec<Sub>) -> Vec<Sub> {
     let mut subs = merge_same(subs);
     merge_middle(&mut subs);
@@ -267,7 +264,7 @@ fn split(text: &str) -> Vec<Section> {
                 Kind::Digit => vec![Sub::new(Lang::Digit, text)],
                 Kind::Newline => vec![Sub::new(Lang::Newline, text)],
                 Kind::Ko => vec![Sub::new(Lang::Ko, text)],
-                // budoux 小块在规则 C 下全判 zh，smart merge 后原样拼回
+                // Under rule C, the budoux small blocks are all judged zh and are joined back unchanged after smart merge
                 Kind::ZhJa => vec![Sub::new(Lang::Zh, text)],
                 Kind::Others => smart_merge(split_words(&text).into_iter().map(|word| Sub::new(detect(&word), word)).collect()),
             };
@@ -276,7 +273,7 @@ fn split(text: &str) -> Vec<Section> {
         .collect()
 }
 
-/// 相邻同类型 section 合并子串列表。
+/// Merges adjacent sections of the same type into a substring list.
 fn merge_same_kind(sections: Vec<Section>) -> Vec<Section> {
     let mut out: Vec<Section> = Vec::with_capacity(sections.len());
     for section in sections {
@@ -288,8 +285,8 @@ fn merge_same_kind(sections: Vec<Section>) -> Vec<Section> {
     out
 }
 
-/// `_merge_substrings_across_punctuation` / `_merge_substrings_across_newline`：`last_lang` 是上一个
-/// 输入块的语种，不是已合并块的语种。
+/// `_merge_substrings_across_punctuation` / `_merge_substrings_across_newline`: `last_lang` is the language of the previous
+/// input block, not of the previously merged block.
 fn merge_across(subs: Vec<Sub>, marker: Lang) -> Vec<Sub> {
     let mut out: Vec<Sub> = Vec::with_capacity(subs.len());
     let mut last_lang: Option<Lang> = None;
@@ -378,7 +375,7 @@ fn special_merge_zh_ja(subs: Vec<Sub>) -> Result<Vec<Sub>, PyError> {
             Lang::Zh => zh += current.len,
             Lang::Ja => ja += current.len,
             Lang::Digit | Lang::Punctuation | Lang::Newline => {}
-            // 上游的计数表没有 en / ko 键
+            // Upstream's count table has no en / ko keys
             Lang::En | Lang::Ko => return Err(PyError::Key),
         }
         if index == 0 {
@@ -443,8 +440,8 @@ fn split_by_lang(text: &str) -> Result<Vec<Sub>, PyError> {
     Ok(subs)
 }
 
-/// `full_en`：`^(?=.*[A-Za-z])[A-Za-z0-9\s -~ -⁯　-〿＀-￯]+$`，
-/// 先行断言里的 `.` 不跨换行。
+/// `full_en`: `^(?=.*[A-Za-z])[A-Za-z0-9\s -~ -⁯　-〿＀-￯]+$`,
+/// the `.` in the lookahead does not match across newlines.
 fn full_en(text: &str) -> bool {
     let allowed = |c: char| {
         pychar::is_space(c)
@@ -454,7 +451,7 @@ fn full_en(text: &str) -> bool {
     !text.is_empty() && text.chars().all(allowed) && first_line.chars().any(|c| c.is_ascii_alphabetic())
 }
 
-/// `split_jako`：把假名（或谚文）连同其间的数字、标点、空格切成 `tag` 段。
+/// `split_jako`: splits Kana (or Hangul) together with the digits, punctuation and spaces between them into `tag` segments.
 fn split_jako(tag: Lang, item: &Sub) -> Vec<Sub> {
     let in_script = |c: char| match tag {
         Lang::Ja => {
@@ -493,7 +490,7 @@ fn split_jako(tag: Lang, item: &Sub) -> Vec<Sub> {
     out
 }
 
-/// `getTexts` 的「有数字」阶段：数字块按前后块定语种。
+/// The "has digits" stage of `getTexts`: a digit block takes its language from the blocks around it.
 fn resolve_digits(items: Vec<Sub>) -> Vec<Sub> {
     const STOPS: [char; 8] = [',', '.', '!', '?', '，', '。', '！', '？'];
     let n = items.len();
@@ -550,7 +547,7 @@ pub fn get_texts(text: &str) -> Result<Vec<(Lang, String)>, PyError> {
         if ja_list.is_empty() {
             ja_list.push(item.clone());
         }
-        // 上游 ko_list 不随循环重置：ko 块沿用上一块的切分结果
+        // Upstream's ko_list is not reset per loop iteration: a ko block reuses the split result of the previous block
         let mut ko_list: Vec<Sub> = Vec::new();
         let mut temp: Vec<Sub> = Vec::new();
         for ko_item in &ja_list {
@@ -564,7 +561,7 @@ pub fn get_texts(text: &str) -> Result<Vec<(Lang, String)>, PyError> {
             }
         }
         if temp.len() == 1 {
-            // 只切出一块时并入的是原块（整块假名也保持原语种）
+            // When only one block is cut out, the block merged in is the original block (a block that is all Kana also keeps its original language)
             push_merged(&mut list, item);
             continue;
         }
@@ -592,7 +589,7 @@ pub fn collapse_spaces(text: &str) -> String {
     out
 }
 
-/// 推理端 zh 模式：压缩连续空格后 `getTexts`，相邻段按「英文 / 非英文」合并。
+/// Inference-side zh mode: collapses consecutive spaces, runs `getTexts`, then merges adjacent segments by "English / non-English".
 pub fn zh_segments(text: &str) -> Result<Vec<(SegLang, String)>, PyError> {
     let mut out: Vec<(SegLang, String)> = Vec::new();
     for (lang, text) in get_texts(&collapse_spaces(text))? {

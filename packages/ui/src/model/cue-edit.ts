@@ -16,7 +16,7 @@ import { pl } from './cue-edit.pl.ts';
 import { tr } from './cue-edit.tr.ts';
 import { vi } from './cue-edit.vi.ts';
 
-/** 字幕写入的文案（英文是键与类型的来源，译文在 `cue-edit.zh-Hans.ts`）：新建字幕轨的名字取建轨那一刻的界面语言。 */
+/** Copy for caption writes (the English is the source of keys and types; the translations live in `cue-edit.zh-Hans.ts`): the name of a newly created caption track is taken from the UI language at the moment the track is created. */
 const en = {
   subtitleTrack: 'Subtitles',
 };
@@ -24,23 +24,23 @@ export type CueEditMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 字幕面板的写入（照原型 `model-cueops.js` 与旧版 `cue_edit.rs`）：一次动作改字幕文档的正文、写一个新版本。
- * 正文是 `cuccut.caption/1`：整数刻度的时间，句子上别的字段（说话人、段首、所属译文单元……）原样带走；
- * 文字一改，词级时间（`words`）就对不上了，扔掉。
+ * Writes from the caption panel (following the prototype `model-cueops.js` and the older `cue_edit.rs`): one action changes the body of the caption document and writes a new version.
+ * The body is `cuccut.caption/1`: times are integer ticks, and other fields on a cue (speaker, segment start, the translation unit it belongs to, and so on) are carried over as they are;
+ * once the text changes, the word-level timings (`words`) no longer match, so they are dropped.
  */
 
 type Json = Record<string, unknown>;
 
 export const CAPTION_SCHEMA = 'cuccut.caption/1';
 
-/** 拆开的两边各不短于这么多秒（太短的句子对半分）。 */
+/** Each side of a split is at least this many seconds long (sentences too short for that are split down the middle). */
 const MIN_PIECE = 0.3;
 const CJK = /[　-〿぀-ヿ㐀-鿿가-힯豈-﫿＀-￯]/;
 
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 const ticksOf = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
-/** 列表里的一句：按开始时刻排好，时间是文档时钟上的秒。 */
+/** A cue in the list: sorted by start time, with times in seconds on the document clock. */
 export interface ListCue {
   id: string;
   start: number;
@@ -54,7 +54,7 @@ export interface CueList {
   cues: ListCue[];
 }
 
-/** 正文里的句子，没有 ID 的补上（按原来的下标，与 `readCaptions` 的口径一致），之后的写入都按 ID 找。 */
+/** Cues in the body; cues without an ID get one (based on their original index, consistent with `readCaptions`), and later writes find them by ID. */
 function rawCues(body: Json): Json[] {
   const cues = Array.isArray(body.cues) ? body.cues : [];
   return cues.filter(isObject).map((cue, index) => (typeof cue.id === 'string' ? cue : { ...cue, id: `cue-${index}` }));
@@ -68,7 +68,7 @@ export function isCaptionBody(body: unknown): body is Json {
   return isObject(body) && body.schema === CAPTION_SCHEMA && Array.isArray(body.cues);
 }
 
-/** 列表看的样子：按开始时刻排序（同一刻按结束）。不是 `cuccut.caption/1` 时返回 null。 */
+/** The list view: sorted by start time (ties broken by end time). Returns null when it is not `cuccut.caption/1`. */
 export function listCues(body: unknown): CueList | null {
   if (!isCaptionBody(body)) return null;
   const scale = timescaleOf(body);
@@ -97,7 +97,7 @@ function retext(cue: Json, text: string): Json {
   return { ...rest, text };
 }
 
-/** 改几句的文字（`id → 新文字`）。返回新正文与真正改了的句数。 */
+/** Changes the text of several cues (`id → new text`). Returns the new body and the number of cues actually changed. */
 export function setCueTexts(body: Json, texts: ReadonlyMap<string, string>): { body: Json; changed: number } {
   let changed = 0;
   const cues = rawCues(body).map((cue) => {
@@ -109,7 +109,7 @@ export function setCueTexts(body: Json, texts: ReadonlyMap<string, string>): { b
   return { body: changed ? withCues(body, cues) : body, changed };
 }
 
-/** 两段文字相接时中间放什么：中日韩文（或本来就带空白）直接相接，其余补一个空格。 */
+/** What goes between two joined text pieces: CJK text (or text that already has whitespace) is joined directly; otherwise a single space is added. */
 export function joiner(a: string, b: string): string {
   if (!a || !b) return '';
   const last = a[a.length - 1]!;
@@ -117,7 +117,7 @@ export function joiner(a: string, b: string): string {
   return CJK.test(last) || CJK.test(first) || /\s/.test(last) || /\s/.test(first) ? '' : ' ';
 }
 
-/** 在 `at` 处切文字；任一边切空就不算拆（光标在两端）。 */
+/** Splits the text at `at`; it does not count as a split if either side would be empty (cursor at an end). */
 export function cutText(text: string, at: number): { left: string; right: string } | null {
   const index = Math.max(0, Math.min(text.length, Math.trunc(at)));
   const left = text.slice(0, index).trim();
@@ -125,7 +125,7 @@ export function cutText(text: string, at: number): { left: string; right: string
   return left && right ? { left, right } : null;
 }
 
-/** 拆分点（刻度）：按两边的字数比例分，各不短于 0.3 秒，落在 0.01 秒上；太短的句子取中点。 */
+/** Split point (tick): divided in proportion to the character counts on each side, each side at least 0.3 s, placed on a 0.01 s step; a sentence too short for that takes its midpoint. */
 export function splitTicks(start: number, end: number, leftLength: number, rightLength: number, timescale: number): number {
   const duration = end - start;
   const min = MIN_PIECE * timescale;
@@ -144,7 +144,7 @@ function freshId(cues: readonly Json[], base: string): string {
   return `${base}-${n}`;
 }
 
-/** 在光标处把一句拆成两句。`text` 是编辑框里这一刻的文字（没提交也算）。光标在两端时返回 null。 */
+/** Splits a cue into two at the cursor. `text` is the text in the edit box at this moment (uncommitted text counts). Returns null when the cursor is at an end. */
 export function splitCue(body: Json, id: string, text: string, at: number): { body: Json; id: string } | null {
   const cues = rawCues(body);
   const index = cues.findIndex((cue) => cue.id === id);
@@ -164,8 +164,8 @@ export function splitCue(body: Json, id: string, text: string, at: number): { bo
 export type MergeRefusal = 'edge' | 'speaker';
 
 /**
- * 把一句并进相邻那句（`direction` −1 上 / +1 下，按列表次序）：同说话人才并，时间接上。
- * 返回并后那句的 ID 与接缝在新文字里的位置。
+ * Merges a cue into the adjacent one (`direction` −1 for above / +1 for below, in list order): only merged when they have the same speaker, and the times are joined.
+ * Returns the ID of the merged cue and the position of the seam in the new text.
  */
 export function mergeCue(
   body: Json,
@@ -200,7 +200,7 @@ export function mergeCue(
 
 export type ReadingLevel = 'none' | 'ok' | 'warn' | 'bad';
 
-/** 阅读速度（每秒字数，不数空白）：中日韩泰超过 9 偏快、13 太快，其余 17 与 21。 */
+/** Reading speed (characters per second, not counting whitespace): for CJK and Thai, over 9 counts as fast and 13 as too fast; for the rest, 17 and 21. */
 export function readingSpeed(text: string, seconds: number, language: string | undefined): { value: number; level: ReadingLevel } {
   const count = Array.from(text).filter((char) => !/\s/u.test(char)).length;
   const raw = count / Math.max(0.1, seconds || 0);
@@ -208,7 +208,7 @@ export function readingSpeed(text: string, seconds: number, language: string | u
   return { value: Math.round(raw * 10) / 10, level: !count ? 'none' : raw > bad ? 'bad' : raw > warn ? 'warn' : 'ok' };
 }
 
-/** 文档没写语言时按字猜：假名 → ja，谚文 → ko，汉字占多 → zh；猜不出返回 undefined。 */
+/** When the document does not state its language, guesses from the characters: kana → ja, hangul → ko, mostly Han characters → zh; returns undefined when it cannot guess. */
 export function guessLanguage(text: string): string | undefined {
   const chars = Array.from(text).filter((char) => !/[\s\p{P}\p{N}]/u.test(char));
   if (!chars.length) return undefined;
@@ -219,7 +219,7 @@ export function guessLanguage(text: string): string | undefined {
   return undefined;
 }
 
-/** 字幕文件 → 字幕文档的正文：序列时钟、毫秒刻度。 */
+/** Caption file → body of a caption document: sequence clock, millisecond ticks. */
 export function captionBodyOf(cues: readonly FileCue[]): Json {
   return {
     schema: CAPTION_SCHEMA,
@@ -238,8 +238,8 @@ const IMPORTED = 'imported-caption';
 const NEW_TRACK = 'new-subtitle-track';
 
 /**
- * 导入一份字幕文件的事务：写文档、放一个字幕实例（从 0 到最后一句结束）。字幕轨里有空着、没锁的就放进去
- * （从下往上找），没有就新建一条。
+ * Transaction for importing a caption file: writes the document and places one caption instance (from 0 to the end of the last cue). It goes onto a caption track with free space that is not locked
+ * (searching from the bottom up); if there is none, a new track is created.
  */
 export function importCaptionOperations(
   sequence: Sequence,

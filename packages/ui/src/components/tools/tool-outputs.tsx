@@ -22,21 +22,21 @@ import { ProjectPicker } from './tool-run-view.tsx';
 import { useVideoTools } from './use-video-tools.ts';
 
 /*
- * 产物行（产品设计 §2.7「结果与下一步」，设计稿 tool-frame.jsx `ToolOutputRow` / `ToolOutputs`）：一次运行发布进 Space 的
- * 每个条目一行——名字、种类、大小或时长、所在目录；在 Space 中查看、在文件夹中显示（Web 没有，浏览器打不开本机文件夹）、
- * 交给 Agent（`space.continueInConversation` 带上引用，预填一句可改写的话，不自动发送），以及接着用哪个工具。
- * 结果页、任务详情、生成记录共用。接着做什么见 model/tool-outputs.ts。
+ * Output row (product design §2.7 “结果与下一步” (Results and next steps), design file tool-frame.jsx `ToolOutputRow` / `ToolOutputs`): one row for each entry a run published to the Space —
+ * name, kind, size or duration, and folder; View in Space, Show in folder (not on the web, since the browser cannot open local folders),
+ * Hand to Agent (`space.continueInConversation` carries the reference and pre-fills a sentence that can be edited, without sending it automatically), and which tool to use next.
+ * Shared by the result page, the job details and the generation records. For what to do next, see model/tool-outputs.ts.
  */
 
-/** 这几个任务发布进 Space 的产物（`origin.jobId`）。 */
+/** The outputs these jobs published to the Space (`origin.jobId`). */
 export function useJobOutputs(jobIds: readonly Id[]): SpaceEntry[] {
   const entries = useSpace((s) => s.entries);
   const key = jobIds.join('\n');
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 按 ID 串比较，调用方每次给新数组也不重算
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- compares by the joined ID string, so the result is not recomputed when the caller passes a new array each time
   return useMemo(() => entriesOfJob(entries, jobIds), [entries, key]);
 }
 
-/** 一个产物的几样动作；`openEntry` 之外都不关心是哪一页调用。 */
+/** The actions for one output; apart from `openEntry`, none of them care which page invoked them. */
 export function useOutputActions() {
   const runtime = useRuntime();
   const projects = useDirectory((s) => s.projects);
@@ -105,7 +105,7 @@ const nextRow = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap',
 const nextLabel = style({ font: 'ui-xs', color: 'gray-700' });
 const pickBox = style({ display: 'flex', flexDirection: 'column', gap: 8, width: 'full' });
 
-/** 「以此新建视频」：音频、图片、视频文件选一个项目后直接成为新视频的素材；文稿与字幕写明为什么不行。 */
+/** “以此新建视频” (Create video from this): for audio, image and video files, after picking a project they become the assets of a new video directly; for documents and subtitles, the reason it is not possible is stated. */
 function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
   const actions = useOutputActions();
   const [open, setOpen] = useState(false);
@@ -151,7 +151,7 @@ function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
 }
 
 /**
- * 产物行；`fromTool` 是产出它的工具（写进视频的结果按它给下一步）；`compact` 是记录卡里的窄版。
+ * The output row; `fromTool` is the tool that produced it (a result written into a video gets its next step from it); `compact` is the narrow version in a record card.
  * `primary`: this row's "Open in editor" is the view's one yellow; rows are repeated, so it defaults to neutral.
  */
 export function ToolOutputRow({
@@ -236,7 +236,7 @@ const listTitle = style({
   color: { default: 'gray-700', isPanel: 'gray-900' },
 });
 
-/** 一次运行的全部产物；`saveDir` 给了就在头上写保存位置。没有产物时什么也不画。 */
+/** All outputs of one run; if `saveDir` is given, the save location is written in the header. Nothing is drawn when there are no outputs. */
 export function ToolOutputs({
   entries,
   fromTool,

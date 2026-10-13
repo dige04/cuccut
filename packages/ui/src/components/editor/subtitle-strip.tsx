@@ -38,7 +38,7 @@ const home = style({
   borderStyle: 'solid',
   borderColor: 'gray-200',
 });
-/** 样式入口卡（原型 .substyle-entry）：左边一块按当下涂装画的缩略图（原型 `SubThumb` fz 10），右边是样式名与提示。 */
+/** Style entry card (prototype .substyle-entry): on the left, a thumbnail drawn in the current styling (prototype `SubThumb`, fz 10); on the right, the style name and a hint. */
 const entry = style({
   display: 'flex',
   alignItems: 'center',
@@ -67,7 +67,7 @@ const entryHint = style({ font: 'ui-xs', color: 'blue-900' });
 const entryChevron = style({ display: 'flex', flexShrink: 0, '--iconPrimary': { type: 'fill', value: 'gray-600' } });
 const strip = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '[6px]' });
 const stripLabel = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
-/** 一枚 chip（原型 .subtrk）：名字与 × 各是一颗钮，外层是 span（钮里不能套钮）。 */
+/** One chip (prototype .subtrk): the name and the × are each a button, and the outer element is a span (buttons cannot be nested inside buttons). */
 const chip = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -117,7 +117,7 @@ const chipClose = style({
   outlineOffset: -2,
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** 虚线的幽灵 chip（原型 .subtrk--ghost）：拿下的放回、翻译成…。 */
+/** A dashed ghost chip (prototype .subtrk--ghost): a removed one can be put back, or translate into… */
 const ghost = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -142,7 +142,7 @@ const ghost = style({
   outlineWidth: 2,
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** 「倒转 ⇅」（原型 .stlink）。 */
+/** “倒转 ⇅” (swap; prototype .stlink). */
 const link = style({
   flexShrink: 0,
   padding: 0,
@@ -158,7 +158,7 @@ const link = style({
   outlineColor: 'focus-ring',
   outlineWidth: 2,
 });
-/** 正在翻的那门（原型 model-sublist.js 的「翻译中」候选）：还没落轨，只是一枚带进度的 chip。 */
+/** The language being translated (the “翻译中” candidate in prototype model-sublist.js): not yet on a track, just a chip with progress. */
 const runningChip = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -177,7 +177,7 @@ const runningChip = style({
   outlineWidth: 2,
 });
 
-/** 还不能用的入口：看得见、聚焦得到、悬停说原因，按了不动（S2 的禁用按钮不出提示）。 */
+/** Entry points that cannot be used yet: visible, focusable, and hovering explains why; pressing does nothing (S2's disabled buttons show no tooltip). */
 function SoftDisabled({ className, tip, children }: { className: string; tip: string; children: ReactNode }) {
   return (
     <TooltipTrigger delay={300}>
@@ -192,8 +192,8 @@ function SoftDisabled({ className, tip, children }: { className: string; tip: st
 }
 
 /**
- * 字幕 Tab 主页顶上那一块（原型 panel-substrip.jsx `SubStyleEntry` + `SubTrackStrip`，拿下 / 放回的规矩见 subtrack.jsx）：
- * 样式入口卡与「画面上」的字幕轨条。轨条是这一页唯一的「编辑哪一份字幕」选择器。
+ * The block at the top of the subtitle tab's main page (prototype panel-substrip.jsx `SubStyleEntry` + `SubTrackStrip`; for the rules on removing / putting back, see subtrack.jsx):
+ * the style entry card and the track strip for “画面上” (on the picture). The track strip is the only “编辑哪一份字幕” (which subtitle to edit) picker on this page.
  */
 export function SubtitleStrip({
   sequence,
@@ -208,14 +208,14 @@ export function SubtitleStrip({
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
   chips: CaptionChip[];
-  /** 当下的编辑对象（chip 的 key）。 */
+  /** The current edit target (the chip's key). */
   selected: string | null;
   onSelect(key: string): void;
-  /** 「＋ 翻译成…」：推进翻译设置页；不给时这颗钮看得见、按了不动。 */
+  /** “＋ 翻译成…” (add translation): pushes the translation settings page; when not provided, the button is still visible but does nothing when pressed. */
   onTranslate?: () => void;
-  /** 正在翻的那门：语言名、百分比（Runtime 没报总数时 null）、正在做的那一步。 */
+  /** The language being translated: language name, percentage (null when the Runtime reports no total), and the step in progress. */
   running?: { label: string; percent: number | null; step: string } | null;
-  /** 画廊页头下面那一条：只要轨条，不要入口卡与「更换样式」。 */
+  /** The strip under the gallery page header: only the track strip, without the entry card or “更换样式” (change style). */
   noCard?: boolean;
 }) {
   const { apply, undo } = useEditorActions();
@@ -228,7 +228,7 @@ export function SubtitleStrip({
   const styleRecord = current?.styleDocumentId ? documents[current.styleDocumentId] : undefined;
   const videoId = useVideo((s) => s.video?.videoId ?? null);
 
-  // 入口卡的缩略图与名字：当下这条用的样式，画它管的几行（共用这份样式、在画面上的）。
+  // The entry card's thumbnail and name: the style this track currently uses, drawing the lines it governs (the ones sharing this style that are on the picture).
   const styleLoaded = useDocumentBody(styleRecord);
   const draft = useEditor((s) => s.documentDraft);
   const styleBody = styleRecord ? draftedBody(draft, styleRecord.id, styleRecord.currentRevision, styleLoaded) : DEFAULT_CAPTION_STYLE;
@@ -239,7 +239,7 @@ export function SubtitleStrip({
   const styleKinds = (['original', 'translation'] as const).filter((kind): kind is LineKind => sharing.has(kind));
   const styleName = (styleRoot && currentPreset(styleRoot, styleKinds)?.name) ?? styleRecord?.name ?? C.defaultStyle;
 
-  // 倒转：原文与译文共用的那份样式文档（没有时传 undefined，hook 照常调用）。
+  // Swap: the style document shared by source and translation (passes undefined when there is none; the hook is still called as usual).
   const flipId = flipTarget(chips);
   const flipRecord = flipId ? documents[flipId] : undefined;
   const flipBody = useDocumentBody(flipRecord);
@@ -281,7 +281,7 @@ export function SubtitleStrip({
       toastUndo(C.flipped(!translationFirst), receipt);
     }
   };
-  /** 入口卡：选中当下这条字幕的实例，检查器随之显示它的属性（字幕样式）。 */
+  /** Entry card: selects the instance of the subtitle currently in use, and the inspector shows its properties (subtitle style) accordingly. */
   const openStyle = () => {
     const itemId = current?.itemIds[0];
     if (!itemId) return;
@@ -323,7 +323,7 @@ export function SubtitleStrip({
                 </RACButton>
                 <Tooltip>{isOff ? C.chipOff : c.locked ? C.chipLocked : C.chipPick}</Tooltip>
               </TooltipTrigger>
-              {/* 只剩一条时不给 ×（设计稿 `last`）；锁住的拿不下来。 */}
+              {/* No × when only one remains (design `last`); locked ones cannot be removed. */}
               {showing.length < 2 || c.locked ? null : (
                 <TooltipTrigger delay={500}>
                   <RACButton

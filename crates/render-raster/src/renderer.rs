@@ -1,7 +1,7 @@
-//! sample(t) 驱动的帧录制（DrawOp IR）：与 swift-renderer Renderer.swift 逐函数对应，
-//! visual clip（含转场 wrap 通道）→ camera → 媒体节点 → captions，
-//! 但产出与后端无关的指令流；光栅化见 raster::rasterize。
-//! record 是 (ir, t) 的纯函数 ⇒ 同帧字节相同（指纹缓存与跨端比对的前提）。
+//! Frame recording driven by sample(t) (DrawOp IR): function-for-function counterpart of swift-renderer Renderer.swift,
+//! visual clip (including the transition wrap channel) → camera → media nodes → captions,
+//! but producing a backend-independent instruction stream; rasterization is in raster::rasterize.
+//! record is a pure function of (ir, t) ⇒ identical bytes for the same frame (the premise for fingerprint caching and cross-platform comparison).
 
 #[cfg(feature = "media")]
 use crate::assets::LoadedAssets;
@@ -30,7 +30,7 @@ use std::sync::Arc;
 use tiny_skia::Pixmap;
 use tiny_skia::{PathBuilder, Transform};
 
-/// 组合两个仿射变换：先 inner 后 outer（CG 的 translateBy/scaleBy 调用序语义）。
+/// Compose two affine transforms: apply inner first, then outer (the call-order semantics of CG's translateBy/scaleBy).
 fn compose(o: Transform, i: Transform) -> Transform {
     Transform::from_row(
         o.sx * i.sx + o.kx * i.ky,
@@ -54,11 +54,9 @@ fn mat(tf: Transform) -> Mat6 {
     [tf.sx, tf.ky, tf.kx, tf.sy, tf.tx, tf.ty]
 }
 
-/// 彩色字形位图的超采样倍率：取变换的较大轴缩放，向上取到 2 的幂，夹在 ¼–4×。
+/// Supersampling factor for color glyph bitmaps: takes the larger axis scale of the transform, rounds up to a power of 2, clamped to ¼–4×.
 ///
-/// 取幂档让连续缩放动画只在少数几个字号上重光栅化（字形缓存与位图侧表都能
-/// 复用）；向上取保证位图在画面上只会被缩小（至多 2×），不会被放大到发软。
-/// 容差 0.01（log2 域）挡住 1.0 附近的浮点抖动，不让静止文字翻到 2×。
+/// Power-of-two steps let continuous scale animations re-rasterize only at a few font sizes (the glyph cache and the bitmap side table can both be reused); rounding up guarantees the bitmap is only ever shrunk on screen (by at most 2×), never enlarged and softened. Tolerance 0.01 (log2 domain) suppresses floating-point jitter near 1.0 so static text does not flip to 2×.
 fn bitmap_oversample(tf: Transform) -> f32 {
     let scale = f64::from(tf.sx.hypot(tf.ky)).max(f64::from(tf.kx.hypot(tf.sy)));
     if !scale.is_finite() || scale <= 0.0 {
@@ -68,11 +66,9 @@ fn bitmap_oversample(tf: Transform) -> f32 {
     2f64.powi(exp as i32) as f32
 }
 
-/// 彩色字形（emoji 等 `sbix` / `CBDT` / `COLR`）→ 一条 `DrawBitmap`。
+/// Color glyph (emoji etc., `sbix` / `CBDT` / `COLR`) → one `DrawBitmap`.
 ///
-/// `gt` 是字形原点（基线左端）到 surface 的变换。返回 `false` = 这不是彩色
-/// 字形，调用方照旧走轮廓；单色 face 不会触发任何光栅化（见
-/// [`TextEngine::color_glyph`]）。位图不吃文字颜色，只吃它的 alpha。
+/// `gt` is the transform from the glyph origin (left end of the baseline) to the surface. Returns `false` = this is not a color glyph; the caller proceeds with the outline as usual. Monochrome faces never trigger any rasterization (see [`TextEngine::color_glyph`]). The bitmap ignores the text color and uses only its alpha.
 fn record_color_glyph(
     key: cosmic_text::CacheKey,
     gt: Transform,
@@ -84,8 +80,8 @@ fn record_color_glyph(
     let Some(image) = engine.color_glyph(key, oversample) else {
         return false;
     };
-    // 位图像素 → 字形本地：先按 placement 平移（`top` 以 y 向上为正），
-    // 再缩回布局字号。
+    // Bitmap pixel → glyph-local: first translate by placement (`top` is positive with y up),
+    // then scale back to the layout font size.
     let inv = 1.0 / f64::from(oversample);
     let place = compose(
         scale_xy(inv, inv),
@@ -113,16 +109,14 @@ fn col(c: &Rgba, alpha: f64) -> [f32; 4] {
     ]
 }
 
-/// 节点采样时钟（规范 §7.10）。`real` 是项目真实时间；`t` 是本节点所在
-/// `cadence` 采样域量化后的时间，没有域时两者相等。
+/// Node sampling clock (spec §7.10). `real` is the project's real time; `t` is this node's time quantized by its `cadence` sampling domain; when there is no domain the two are equal.
 #[derive(Clone, Copy)]
 struct Clock {
     real: f64,
     t: f64,
-    /// 当前域的绘制频率；`None` = 不在任何域里。
+    /// Draw frequency of the current domain; `None` = not in any domain.
     fps: Option<f64>,
-    /// 宿主 clip 的起点：量化不得把时间拉到 clip 开始之前（起点不在格上的
-    /// clip，首个绘制帧按 clip 起点采样）。
+    /// Start of the host clip: quantization must not pull the time before the clip start (for a clip whose start is not on the grid, the first drawn frame samples at the clip start).
     floor: f64,
 }
 
@@ -136,7 +130,7 @@ impl Clock {
         }
     }
 
-    /// 进入一个 `cadence` 声明。继承同一域时原样返回——父子不重复量化。
+    /// Enter a `cadence` declaration. When inheriting the same domain, return as-is — parent and child do not quantize twice.
     fn enter(self, cadence: Cadence) -> Clock {
         match cadence {
             Cadence::Inherit => self,
@@ -154,23 +148,21 @@ impl Clock {
     }
 }
 
-/// 一帧的**分层**录制结果（设计 §6.3）。
+/// **Layered** recording result for one frame (design §6.3).
 ///
-/// 没有效果的文档只会得到一个 [`FrameLayer::Ops`]——planner 把它折叠成单个
-/// Draw pass，与 [`FrameRenderer::record`] 之后原样光栅化逐字节相同。
+/// A document with no effects yields only one [`FrameLayer::Ops`] — the planner folds it into a single Draw pass, byte-identical to rasterizing right after [`FrameRenderer::record`].
 #[derive(Debug)]
 pub enum FrameLayer {
-    /// 直接画进累积画面的指令流。
+    /// Instruction stream drawn directly into the accumulated picture.
     Ops(FrameOps),
-    /// 需要独立离屏 surface 的元素：`ops` 画进一张透明画布，逐条跑 `Filter`
-    /// pass，再按 `blend` / `opacity` 合成回累积画面（规范 §6.6）。
+    /// Elements that need an independent offscreen surface: `ops` are drawn onto a transparent canvas, each `Filter` pass runs in turn, then it is composited back into the accumulated picture per `blend` / `opacity` (spec §6.6).
     Effect {
         ops: FrameOps,
         effects: Vec<ResolvedEffect>,
         blend: BlendMode,
         opacity: f32,
     },
-    /// 子树先合成，再依次裁剪/遮罩、滤镜，最后施加组透明度和混合。
+    /// The subtree is composited first, then clipped/masked, filtered, and finally group opacity and blend are applied.
     Group {
         layers: Vec<FrameLayer>,
         masks: Vec<(Vec<FrameLayer>, MatteMode)>,
@@ -195,17 +187,14 @@ pub enum FrameLayer {
         effects: Vec<ResolvedEffect>,
         opacity: f32,
     },
-    /// Surface Transition（规范 §9）：两侧各画进一张透明离屏 surface，再由
-    /// `progress` 驱动的双输入效果合成，结果整块贴回累积画面。
+    /// Surface Transition (spec §9): each side is drawn into its own transparent offscreen surface, then composited by a two-input effect driven by `progress`; the result is pasted back as a whole into the accumulated picture.
     ///
-    /// `from_static` / `to_static` 说的是「这一侧的画面跨帧不变」——两侧因此
-    /// 可以声明成 [`crate::plan::SurfaceLifetime::Static`]。判据是保守的：
-    /// 子树里一条通道都没有、也不含视频（见 `clip_is_static`）。
+    /// `from_static` / `to_static` mean "this side's picture does not change across frames" — so both sides can declare [`crate::plan::SurfaceLifetime::Static`]. The criterion is conservative: no channel anywhere in the subtree, and no video (see `clip_is_static`).
     Transition {
         from: Vec<FrameLayer>,
         to: Vec<FrameLayer>,
         effect: motion::effect::EffectRef,
-        /// 闭区间 `[0, 1]`。
+        /// Closed interval `[0, 1]`.
         progress: f32,
         uniforms: motion::effect::UniformMap,
         from_static: bool,
@@ -213,43 +202,41 @@ pub enum FrameLayer {
     },
 }
 
-/// [`FrameRenderer::record_layered`] 的产物。
+/// Product of [`FrameRenderer::record_layered`].
 #[derive(Debug, Default)]
 pub struct RecordedFrame {
     pub layers: Vec<FrameLayer>,
 }
 
 impl RecordedFrame {
-    /// 恰好一层普通指令流 ⇒ 可折叠成单 Draw pass。
+    /// Exactly one layer of ordinary instruction stream ⇒ can be folded into a single Draw pass.
     pub fn is_folded(&self) -> bool {
         matches!(self.layers.as_slice(), [FrameLayer::Ops(_)])
     }
 }
 
-/// 录制模式。平坦路径画不出 `Transition` pass，因此 Surface Transition 在
-/// 那条路上一律降级成它的 Motion fallback（规范 §9）。
+/// Recording mode. The flat path cannot draw a `Transition` pass, so on that path Surface Transitions always degrade to their Motion fallback (spec §9).
 #[derive(Clone, Copy)]
 enum RecordMode<'a> {
     Flat,
-    /// 分层录制 + planner 给出的降级名单（按 `from_clip` 的 id）。
+    /// Layered recording + the degradation list given by the planner (by the id of `from_clip`).
     Layered(&'a BTreeSet<String>),
 }
 
-/// [`FrameRenderer::wrap_clip_path`] 的三态：不裁 / 裁空（本刻不出画）/ 路径。
+/// Three states of [`FrameRenderer::wrap_clip_path`]: no clip / clipped to empty (nothing drawn at this tick) / path.
 enum WrapClip {
     None,
     Empty,
     Path(PathData),
 }
 
-/// 单 Draw 流的层/裁剪栈；离屏组只在完整作用域边界创建。
+/// Layer/clip stack of a single Draw stream; offscreen groups are only created at complete scope boundaries.
 enum Open {
     Layer,
     Clip,
 }
 
-/// 分层录制器。`split = false` 时行为与 4A 的单 `FrameBuilder` 完全一致
-/// （效果节点原样内联，不产生第二层）——`record()` 走的就是这条路。
+/// Layered recorder. With `split = false` its behaviour is exactly the same as the single `FrameBuilder` of 4A (effect nodes are inlined as-is, producing no second layer) — this is the path `record()` takes.
 struct Recorder {
     split: bool,
     layers: Vec<FrameLayer>,
@@ -299,9 +286,7 @@ impl Recorder {
         self.layers.push(layer);
     }
 
-    /// 收下一个 Surface Transition 层。调用点在 clip 循环的**顶层**，
-    /// 此时层 / 裁剪栈必然是空的（每个 clip 自己开自己收），因此不需要
-    /// 拆开任何祖先作用域。
+    /// Accepts the next Surface Transition layer. The call site is at the **top level** of the clip loop; at this point the layer / clip stack is necessarily empty (each clip opens and closes its own), so no ancestor scope needs to be split apart.
     #[allow(clippy::too_many_arguments)]
     fn push_transition(
         &mut self,
@@ -341,8 +326,7 @@ impl Recorder {
     }
 }
 
-/// 一个 clip 的录制上下文：clip 根、根处的时钟与变换。`style.mask` 的遮罩源要从
-/// 根沿祖先链重算变换，所以每个节点都带着它往下走（`Copy`，只是三个借用 / 值）。
+/// Recording context for one clip: clip root, clock and transform at the root. Computing the mask source of `style.mask` requires recomputing transforms from the root along the ancestor chain, so every node carries it down (`Copy`, just three borrows / values).
 #[derive(Clone, Copy)]
 struct ClipCtx<'a> {
     root: &'a RNode,
@@ -352,7 +336,7 @@ struct ClipCtx<'a> {
     end: f64,
 }
 
-/// [`FrameRenderer::node_pose`] 的产物：本刻的时钟、局部→画布变换与采样结果。
+/// Product of [`FrameRenderer::node_pose`]: this tick's clock, the local→canvas transform, and the sampling result.
 struct NodePose {
     clock: Clock,
     tf: Transform,
@@ -361,7 +345,7 @@ struct NodePose {
     pose: scene_primitives::sample::SampledPose,
 }
 
-/// 从 `root` 到 id 为 `id` 的节点的路径（含两端）。找到返回 true。
+/// Path from `root` to the node with id `id` (both ends included). Returns true if found.
 fn find_node_chain<'a>(root: &'a RNode, id: &str, chain: &mut Vec<&'a RNode>) -> bool {
     chain.push(root);
     if root.id == id {
@@ -380,10 +364,8 @@ fn find_node_chain<'a>(root: &'a RNode, id: &str, chain: &mut Vec<&'a RNode>) ->
     false
 }
 
-/// [`FrameRenderer::record_text_parts`] 的逐 part 预计算结果：同一 part 的所有
-/// 字形共享同一份 delta 与同一个水平锚点，采一次即可复用。
-/// [`PartPose::IDENTITY`] 是「没有 part 覆盖」的中性值，与逐字形版本的
-/// `(1, 0, 0, 1)` 逐位一致（此时 `scale == 1.0`，`anchor` 不参与运算）。
+/// Per-part precomputed result for [`FrameRenderer::record_text_parts`]: all glyphs of the same part share one delta and one horizontal anchor, sampled once and reused.
+/// [`PartPose::IDENTITY`] is the neutral value for "no part override", bitwise identical to the per-glyph version's `(1, 0, 0, 1)` (here `scale == 1.0`, and `anchor` does not take part in the computation).
 #[derive(Clone, Copy)]
 struct PartPose {
     opacity: f64,
@@ -393,8 +375,7 @@ struct PartPose {
     anchor: f64,
     color: Option<Rgba>,
     reveal_end: usize,
-    /// part 的 `blur` 通道（px，≥ 0）。> 0 的 part 画进按半径分桶的离屏层，
-    /// 由 [`FrameRenderer::flush_part_blur`] 各施一次 `filter.blur`。
+    /// The `blur` channel of a part (px, ≥ 0). Parts with > 0 are drawn into offscreen layers bucketed by radius, and [`FrameRenderer::flush_part_blur`] applies `filter.blur` once to each.
     blur: f64,
 }
 
@@ -411,8 +392,7 @@ impl PartPose {
     };
 }
 
-/// 分词模糊的分桶：同一半径的 part 共用一张离屏层（还没开始的 part 半径相同，
-/// 自然落进同一桶）。键是半径的位模式——只合并**逐位相同**的半径，不量化。
+/// Buckets for word blur: parts with the same radius share one offscreen layer (parts not yet started have the same radius and naturally fall into the same bucket). The key is the bit pattern of the radius — only bitwise-identical radii are merged, no quantization.
 type PartBlurBuckets = Vec<(u64, FrameBuilder)>;
 
 fn part_blur_bucket(buckets: &mut PartBlurBuckets, blur: f64) -> &mut FrameBuilder {
@@ -498,33 +478,28 @@ impl GridGeometryCache {
 pub struct FrameRenderer {
     pub width: u32,
     pub height: u32,
-    /// Lottie 源（asset id → 已解析的文档）。
+    /// Lottie source (asset id → parsed document).
     ///
-    /// 位图媒体在光栅化阶段才进场（`MediaStore`），Lottie 不行——它**在录制期
-    /// 就要变成 DrawOp**，所以录制器必须持有它。由 [`FrameRenderer::new_with_lotties`]
-    /// 装上，缺资源在那一步就是硬错误，不留"画面里少一块"的静默口子。
+    /// Bitmap media enters only at the rasterization stage (`MediaStore`), but Lottie does not — it **must become DrawOps at recording time**, so the recorder must hold it. Installed by [`FrameRenderer::new_with_lotties`]; a missing asset is a hard error at that step, leaving no silent gap where "part of the picture is missing."
     lotties: std::collections::HashMap<String, Arc<Lottie>>,
-    /// 纹理填充的几何缓存（`source::texture`）。命中与否不影响输出。
+    /// Geometry cache for texture fills (`source::texture`). Hit or miss does not affect output.
     textures: Arc<crate::source::texture::TextureCache>,
-    /// `brush.kind: "paint"` 描边笔触的几何缓存（`source::paint`）。命中与否不影响输出。
+    /// Geometry cache for `brush.kind: "paint"` stroke brushes (`source::paint`). Hit or miss does not affect output.
     paints: Arc<crate::source::paint::PaintCache>,
     grid_cache: Arc<GridGeometryCache>,
 }
 
 impl FrameRenderer {
-    /// 顺序是**契约**：布局 → `build_channels_after_layout`（相对长度求值）→ 录制。
-    /// `selfWidth` / `parentWidth` 这类基准要静态布局盒才有值（设计 §5.5）。
+    /// The order is a **contract**: layout → `build_channels_after_layout` (evaluating relative lengths) → recording. Bases such as `selfWidth` / `parentWidth` only have values once a static layout box exists (design §5.5).
     ///
-    /// 文档里有 `lottie` 元素时必须用 [`FrameRenderer::new_with_lotties`]。
+    /// A document containing a `lottie` element must use [`FrameRenderer::new_with_lotties`].
     pub fn new(ir: &mut Ir, engine: &mut TextEngine) -> Result<Self> {
         Self::new_with_lotties(ir, engine, &Default::default())
     }
 
-    /// [`FrameRenderer::new`] 加上 host 侧已加载的矢量源。
+    /// [`FrameRenderer::new`] plus the vector sources already loaded by the host.
     ///
-    /// 这里会核对每个 `lottie` 元素的资产都在 `assets.lotties` 里——录制期
-    /// 发现不了这种缺失（`record` 是纯函数、没有返回错误的地方），只能在
-    /// 装配期 fail-fast。
+    /// This checks that every `lottie` element's asset is present in `assets.lotties` — such missing assets cannot be detected at recording time (`record` is a pure function with nowhere to return an error), so they must fail fast at assembly time.
     #[cfg(feature = "media")]
     pub fn new_with_assets(
         ir: &mut Ir,
@@ -534,8 +509,7 @@ impl FrameRenderer {
         Self::new_with_lotties(ir, engine, &assets.lotties)
     }
 
-    /// 用宿主已解析的矢量源准备录制器。与资源加载、文件系统和媒体解码无关，
-    /// native 与 WASM 使用同一条布局和动画编译路径。
+    /// Prepare the recorder with vector sources resolved by the host. Independent of resource loading, filesystem and media decoding; native and WASM use the same layout and animation compilation path.
     pub fn new_with_lotties(
         ir: &mut Ir,
         engine: &mut TextEngine,
@@ -560,11 +534,9 @@ impl FrameRenderer {
         })
     }
 
-    /// 录制 t 时刻的完整帧指令（纯函数；不触碰媒体字节）。
+    /// Full frame instructions for time t (pure function; does not touch media bytes).
     ///
-    /// **平坦形态**：效果栈不在这里生效（效果是 `Filter` pass，不是 DrawOp
-    /// 原语，规范 §14.5）；`clipPath` 与 `blendMode` 是单 surface 语义，照常
-    /// 进指令流。`ccut ops` 打印的就是这条流。
+    /// **Flat form**: the effect stack does not take effect here (effects are `Filter` passes, not DrawOp primitives, spec §14.5); `clipPath` and `blendMode` have single-surface semantics and go into the instruction stream as usual. What `ccut ops` prints is this stream.
     pub fn record(&self, ir: &Ir, engine: &mut TextEngine, t: f64) -> FrameOps {
         let mut frame = self.record_into(ir, engine, t, RecordMode::Flat);
         match frame.layers.pop() {
@@ -573,16 +545,12 @@ impl FrameRenderer {
         }
     }
 
-    /// 分层录制：带效果栈的元素各自成层，其余仍是一条指令流（设计 §6.3）。
-    /// 没有效果的文档得到的 `layers` 恰好是 `[Ops(record(t))]`。
+    /// Layered recording: elements with an effect stack each form a layer; the rest remains one instruction stream (design §6.3). A document with no effects gets `layers` exactly equal to `[Ops(record(t))]`.
     pub fn record_layered(&self, ir: &Ir, engine: &mut TextEngine, t: f64) -> RecordedFrame {
         self.record_layered_with(ir, engine, t, &BTreeSet::new())
     }
 
-    /// [`FrameRenderer::record_layered`] 加一张**降级名单**：名单里的
-    /// Surface Transition（按 `from_clip` 的 id 记）改用它的 Motion fallback
-    /// 通道，不起 `Transition` 层。名单由 planner 的 preflight 给出——
-    /// 后端能不能跑一条效果是 capability 的事，录制器自己不知道。
+    /// [`FrameRenderer::record_layered`] plus a **degradation list**: a Surface Transition named in the list (by the id of `from_clip`) uses its Motion fallback channel instead and starts no `Transition` layer. The list is given by the planner's preflight — whether a backend can run an effect is a capability matter, which the recorder itself does not know.
     pub fn record_layered_with(
         &self,
         ir: &Ir,
@@ -606,7 +574,7 @@ impl FrameRenderer {
         b.push(DrawOp::Clear {
             color: col(&ir.bg, 1.0),
         });
-        // `meta.background.texture`：铺满画布，在相机之外（纸不跟着镜头走）。
+        // `meta.background.texture`: fills the canvas, outside the camera (the paper does not follow the lens).
         if let Some(texture) = &ir.bg_texture {
             self.record_texture(
                 (0.0, 0.0, ir.w, ir.h),
@@ -617,8 +585,7 @@ impl FrameRenderer {
                 Transform::identity(),
                 b,
             );
-            // 背景纸与时间无关：像素只由（纹理参数, 底色, 画布尺寸）决定，交给光栅器
-            // 按这个键缓存整段前缀（`Clear` + 纹理），不必每帧重画几万粒颗粒。
+            // The background paper is time-independent: its pixels are determined only by (texture parameters, base color, canvas size), so the rasterizer caches the whole prefix (`Clear` + texture) by that key, instead of redrawing tens of thousands of grains each frame.
             let key = crate::drawop::fnv1a64(
                 format!("bg-texture/1 {texture:?} {:?} {} {}", ir.bg, ir.w, ir.h).as_bytes(),
             );
@@ -628,12 +595,10 @@ impl FrameRenderer {
             });
         }
 
-        // camera（作用于全部 visual clip；字幕在相机之外）
+        // camera (applies to all visual clips; captions are outside the camera)
         let cam_t = self.camera_transform(ir, t);
 
-        // Surface Transition（规范 §9）：本刻活跃的剪辑点。名单里的走 Motion
-        // 降级，平坦路径（`record`）一律走降级——单 surface 的指令流表达不了
-        // 双输入合成，静默丢掉才是错的。
+        // Surface Transition (spec §9): the cut points active at this tick. Those in the list take the Motion degradation; the flat path (`record`) always degrades — a single-surface instruction stream cannot express two-input compositing, and silently dropping it would be wrong.
         let mut consumed: Vec<&str> = Vec::new();
         for clip in &ir.visual_clips {
             if consumed.contains(&clip.id.as_str()) {
@@ -676,12 +641,9 @@ impl FrameRenderer {
         r.finish()
     }
 
-    /// 录制 + 光栅化的**平坦**单帧入口。
+    /// Flat single-frame entry point for recording + rasterization.
     ///
-    /// 只画 DrawOp 原语：效果栈是 `Filter` pass（规范 §14.5），不在指令流里，
-    /// 因此这条路径**不施加 `effects[]` 与 `blur`**。产品路径请用
-    /// [`crate::plan::FramePlanner::render`]；这里保留给「只关心指令流」的
-    /// 测试与对拍。
+    /// Draws only DrawOp primitives: the effect stack is `Filter` passes (spec §14.5), not in the instruction stream, so this path **does not apply `effects[]` or `blur`**. For the product path use [`crate::plan::FramePlanner::render`]; this is kept for tests and cross-checks that only care about the instruction stream.
     #[cfg(feature = "media")]
     pub fn draw(
         &self,
@@ -694,10 +656,9 @@ impl FrameRenderer {
         crate::raster::rasterize(&frame, self.width, self.height, media)
     }
 
-    /// 本刻该给这个 clip 补哪些**降级**转场通道。
+    /// Which **degraded** transition channels to fill in for this clip at this tick.
     ///
-    /// 平坦路径永远补（它画不出 `Transition` pass）；分层路径只在 planner 把
-    /// 这个剪辑点列进降级名单时补。返回的是借用，不复制通道。
+    /// The flat path always fills them (it cannot draw a `Transition` pass); the layered path fills them only when the planner has listed this cut point in the degradation list. Returns a borrow, not a copy of the channels.
     fn fallback_channels<'a>(
         ir: &'a Ir,
         clip: &VisualClip,
@@ -717,7 +678,7 @@ impl FrameRenderer {
                 RecordMode::Flat => true,
                 RecordMode::Layered(fallbacks) => fallbacks.contains(&entry.from_clip),
             };
-            // 窗口外也要补：转场通道在窗口外取端点值（可见性的延长段靠它归位）。
+            // Must also fill outside the window: the transition channel takes endpoint values outside the window (the extended-visibility segment relies on it to settle).
             let _ = t;
             if degraded {
                 out.extend(side.iter());
@@ -726,10 +687,9 @@ impl FrameRenderer {
         out
     }
 
-    /// 这个 clip 的画面**跨帧不变**吗——转场两侧因此可以声明成 `Static`。
+    /// Is this clip's picture **unchanged across frames** — so both sides of a transition can declare `Static`.
     ///
-    /// 判据刻意保守：子树里一条通道都没有、没有文字 part 动画、没有视频 / 动图
-    /// 节点，clip 自己也没有 wrap 通道。判错方向只会少一次缓存复用，不会画错。
+    /// The criterion is deliberately conservative: no channel anywhere in the subtree, no text part animation, no video / animated image node, and the clip itself has no wrap channel. A wrong judgment in this direction only costs a cache reuse; it never draws incorrectly.
     fn clip_is_static(clip: &VisualClip) -> bool {
         fn node_is_static(node: &RNode) -> bool {
             node.channels.is_empty()
@@ -750,10 +710,9 @@ impl FrameRenderer {
         clip.wrap_channels.is_empty() && node_is_static(&clip.tree)
     }
 
-    /// 把一个 clip 单独录到一条**透明**指令流上（转场的一侧）。
+    /// Records one clip alone onto a **transparent** instruction stream (one side of a transition).
     ///
-    /// 没有 `Clear`：两侧画面之外是透明的，画布背景由累积层负责。
-    /// 每侧递归录制自己的滤镜、遮罩与混合。
+    /// No `Clear`: outside the two pictures the surface is transparent; the canvas background is handled by the accumulation layer. Each side recursively records its own filters, masks and blends.
     fn record_clip_isolated(
         &self,
         ir: &Ir,
@@ -767,7 +726,7 @@ impl FrameRenderer {
         side.finish().layers
     }
 
-    /// 一个 visual clip 的录制：转场 wrap 通道 → 组不透明度 / 擦除裁剪 → 子树。
+    /// Recording of one visual clip: transition wrap channel → group opacity / wipe clip → subtree.
     #[allow(clippy::too_many_arguments)]
     fn record_visual_clip(
         &self,
@@ -784,18 +743,13 @@ impl FrameRenderer {
         } else {
             cam_t
         };
-        // 转场 wrap 通道**不走 §7.7 的折叠**：一个 clip 可能同时挂着左边界的
-        // "in" 与右边界的 "out"，两者的位移在这里是**逐条累加**的（各自在
-        // 窗口外取端点值 0）。改成 replace 折叠会让 "out" 的端点 0 把 "in"
-        // 的动画顶掉。转场配方是封闭的内置集合，不接受作者 composite。
+        // The transition wrap channel **does not go through §7.7's folding**: one clip may carry both an "in" on its left edge and an "out" on its right edge, and their offsets here are **accumulated one by one** (each taking endpoint value 0 outside its window). Changing it to replace folding would let the "out" endpoint 0 override the "in" animation. The transition recipes are a closed built-in set and do not accept author composites.
         //
-        // 各通道的累加规则（恒等元即"窗口外的端点值"）：
-        // `x`/`y` 逐条相加，`scale` 逐条相乘（恒等 1），`clipInset*` 逐条取
-        // 大（恒等 0，两端的擦除因此取交集）。`opacity` 仍是 **replace**
-        // ——那是阶段 1 起的语义，改成相乘会动已发布文档的像素。
+        // Accumulation rule per channel (the identity element is the "endpoint value outside the window"):
+        // `x`/`y` are added one by one, `scale` is multiplied one by one (identity 1), `clipInset*` take the max one by one (identity 0, so the wipes at both ends take the intersection). `opacity` is still **replace** — that is the semantics since stage 1; changing it to multiplication would alter pixels of already-published documents.
         let mut wrap_alpha = 1.0f64;
         let mut wrap_scale = 1.0f64;
-        // 顺序：left, top, right, bottom（画布尺寸的比例）。
+        // Order: left, top, right, bottom (proportions of canvas size).
         let mut wrap_inset = [0.0f64; 4];
         for ch in clip.wrap_channels.iter().chain(extra_channels) {
             let v = sample_frames(&ch.frames, t);
@@ -814,7 +768,7 @@ impl FrameRenderer {
         if wrap_alpha <= 0.001 {
             return;
         }
-        // 缩放以**画布中心**为锚点：转场是整幅画面的事，不是某个元素盒的事。
+        // Scaling is anchored at the **canvas center**: a transition is a matter for the whole picture, not for an element box.
         if wrap_scale != 1.0 {
             if wrap_scale.abs() < 0.0005 {
                 return;
@@ -828,7 +782,7 @@ impl FrameRenderer {
         if matches!(wrap_clip, WrapClip::Empty) {
             return;
         }
-        // 外层裁剪/透明度包住整个 clip，不在子效果处分裂。
+        // The outer clip/opacity wraps the whole clip and is not split at child effects.
         let isolate = r.split
             && Self::subtree_has_effect(&clip.tree)
             && (wrap_alpha < 0.999 || matches!(wrap_clip, WrapClip::Path(_)));
@@ -842,8 +796,7 @@ impl FrameRenderer {
         if layered {
             target.push_layer(wrap_alpha as f32, BlendMode::Normal);
         }
-        // `cadence`（规范 §7.10）只量化节点采样时钟：clip 激活、转场窗口、相机与
-        // 字幕都走真实时间。文档级缺省 → clip 级 → 节点级，逐级覆盖。
+        // `cadence` (spec §7.10) quantizes only the node sampling clock: clip activation, transition windows, camera and captions all use real time. Document-level default → clip-level → node-level, each overriding in turn.
         let mut clock = Clock::new(t, clip.render_start);
         if let Some(fps) = ir.cadence_fps {
             clock = clock.enter(Cadence::Fps(fps));
@@ -881,7 +834,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 转场擦除通道（`clipInset*`，画布尺寸的比例）→ 画布空间矩形路径。
+    /// Transition wipe channel (`clipInset*`, proportions of canvas size) → canvas-space rectangle path.
     fn wrap_clip_path(ir: &Ir, inset: [f64; 4]) -> WrapClip {
         if inset.iter().all(|value| *value <= 0.0) {
             return WrapClip::None;
@@ -931,7 +884,7 @@ impl FrameRenderer {
         tf
     }
 
-    // ── 元素 ──
+    // ── Elements ──
     fn record_node(
         &self,
         node: &RNode,
@@ -941,23 +894,20 @@ impl FrameRenderer {
         r: &mut Recorder,
         engine: &mut TextEngine,
     ) {
-        // 被 `style.mask.source` 点名的元素是遮罩定义，不在正常流里出画
-        // （规范 §6.3）；只有 `record_mask_source` 会把它画进遮罩层。
+        // An element named by `style.mask.source` is a mask definition and does not appear in the normal flow (spec §6.3); only `record_mask_source` draws it into the mask layer.
         if node.mask_source {
             return;
         }
         self.record_node_inner(node, clock, parent, ctx, r, engine);
     }
 
-    /// 元素本刻的采样时钟与局部→画布变换。`None` = 本刻不出画（不透明度或缩放归零）。
+    /// Element's sampling clock and local→canvas transform at this tick. `None` = not drawn at this tick (opacity or scale is zero).
     ///
-    /// 与 [`Self::record_node_inner`] 共用：遮罩源的祖先链只需要变换，不需要出画。
+    /// Shared with [`Self::record_node_inner`]: the mask source's ancestor chain only needs the transform, not drawing.
     fn node_pose(&self, node: &RNode, clock: Clock, parent: Transform) -> Option<NodePose> {
         let clock = clock.enter(node.cadence);
         let t = clock.t;
-        // 规范 §7.7 的固定序：base → replace（order 大者胜）→ add 求和 →
-        // multiply 求积 → 属性归一。没有 add / multiply 参与时 `scalar()` 原样
-        // 返回 replace 值 ⇒ legacy 四槽逐位不变（「最后一条通道赢」）。
+        // Fixed order of spec §7.7: base → replace (larger order wins) → add summed → multiply product → attribute normalization. When neither add nor multiply participates, `scalar()` returns the replace value unchanged ⇒ the legacy four slots are bitwise unchanged ("the last channel wins").
         let pose = sample_channels(&node.channels, t);
         let tx = pose.scalar("x", 0.0);
         let ty = pose.scalar("y", 0.0);
@@ -965,7 +915,7 @@ impl FrameRenderer {
         let sx = pose.scalar("scaleX", node.base_scale_x.unwrap_or(1.0)) * s_base;
         let sy = pose.scalar("scaleY", node.base_scale_y.unwrap_or(1.0)) * s_base;
         let rot = pose.scalar("rotation", node.base_rotation);
-        // `skewX` / `skewY`（§6.4）：CSS 口径的角度，x' = x + tan(skewX)·y。
+        // `skewX` / `skewY` (§6.4): CSS-convention angles, x' = x + tan(skewX)·y.
         let skx = pose.scalar("skewX", 0.0);
         let sky = pose.scalar("skewY", 0.0);
         let opacity = pose.scalar("opacity", node.base_opacity);
@@ -1188,7 +1138,7 @@ impl FrameRenderer {
         if node.composition.is_some() && (node.frame.w <= 0.0 || node.frame.h <= 0.0) {
             return;
         }
-        // 只读投影：借用即可，别为每节点每帧再深拷贝一张 map。
+        // Read-only projection: borrowing is enough; do not deep-copy a map per node per frame.
         let count_meta = pose.count_meta.as_ref();
         let mut text_values = None;
         if node.ntype == "text"
@@ -1241,13 +1191,11 @@ impl FrameRenderer {
             });
         }
 
-        // ── 效果栈（规范 §6.6）：本元素及其子树先画进一张离屏 surface ──
+        // ── Effect stack (spec §6.6): this element and its subtree are first drawn into an offscreen surface ──
         //
-        // `blur` 通道等价于效果栈末尾隐式追加一个 `filter.blur`，与显式条目
-        // 同时存在时相加（§6.6 的 `add` 合成）。半径以画布短边为基准换算成
-        // 比例，与 manifest 的 `basis: canvasShortEdge` 同一口径。
+        // The `blur` channel is equivalent to implicitly appending a `filter.blur` at the end of the effect stack; when it coexists with explicit entries they add (the `add` composition of §6.6). The radius is converted to a ratio against the canvas short edge, in the same convention as the manifest's `basis: canvasShortEdge`.
         let effects = self.effect_stack(node, blur, &pose);
-        // 本元素自己的分词模糊同样要求离屏组内录制（层 / 裁剪栈为空）。
+        // This element's own word blur likewise requires recording inside an offscreen group (layer / clip stack empty).
         let descendants_fx =
             node.children.iter().any(Self::subtree_has_effect) || Self::has_part_blur(node);
         let mask_fx = node.mask.as_ref().is_some_and(|mask| {
@@ -1296,9 +1244,7 @@ impl FrameRenderer {
             return;
         }
 
-        // 组不透明度 / 混合模式：层合成。`blendMode ≠ normal` 即使全不透明也要
-        // 起层——混合是「这一层怎么合成回父画面」的语义。`style.mask` 也要起层：
-        // 遮罩折进的是「这一层」的 alpha。
+        // Group opacity / blend mode: layer compositing. `blendMode ≠ normal` requires a layer even when fully opaque — blending is the semantics of "how this layer composites back onto the parent picture." `style.mask` also requires a layer: the mask folds in the alpha of "this layer."
         let layered = opacity < 0.999 || node.blend != BlendMode::Normal || node.mask.is_some();
         if layered {
             r.push_layer(opacity as f32, node.blend);
@@ -1309,8 +1255,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 元素本体：裁剪 → 内容与子树 → （`style.mask`）遮罩层。调用方保证已处在
-    /// 一个 `PushLayer` 之内（带 mask 时）。
+    /// The element itself: clip → content and subtree → (`style.mask`) mask layer. The caller guarantees it is already inside a `PushLayer` (when masked).
     #[allow(clippy::too_many_arguments)]
     fn record_body(
         &self,
@@ -1335,8 +1280,7 @@ impl FrameRenderer {
             r.pop_clip();
         }
         if let Some(mask) = &node.mask {
-            // 规范 §6.3：`PushMatte` → 遮罩源子树 → `PopMatte{mode}`，
-            // 折进本层 alpha。裁剪已在上面配对收掉，不跨层边界。
+            // Spec §6.3: `PushMatte` → mask source subtree → `PopMatte{mode}`, folded into this layer's alpha. The clip has already been paired and closed above and does not cross the layer boundary.
             r.b.push(DrawOp::PushMatte);
             self.record_mask_source(&mask.source, ctx, r, engine);
             let mode = match (mask.luma, mask.invert) {
@@ -1349,12 +1293,9 @@ impl FrameRenderer {
         }
     }
 
-    /// 把 `style.mask.source` 指向的元素画进当前（遮罩）层。
+    /// Draws the element pointed to by `style.mask.source` into the current (mask) layer.
     ///
-    /// 遮罩源按**自己的布局位置与祖先变换**渲染：从 clip 根沿祖先链把每一级的
-    /// 本刻变换与时钟算下来，祖先的不透明度、裁剪与混合不参与（遮罩只取 alpha /
-    /// 亮度）。祖先链上任何一级本刻不出画 ⇒ 遮罩为空。
-    /// 源子树使用调用方同样的分层方式，允许滤镜。
+    /// The mask source is rendered with **its own layout position and ancestor transforms**: from the clip root along the ancestor chain, compute each level's transform and clock at this tick; ancestors' opacity, clip and blend do not participate (the mask takes only alpha / luminance). If any level in the ancestor chain draws nothing at this tick, the mask is empty. The source subtree uses the same layered approach as the caller, allowing filters.
     fn record_mask_source(
         &self,
         source: &str,
@@ -1401,7 +1342,7 @@ impl FrameRenderer {
             || node.children.iter().any(Self::subtree_has_effect)
     }
 
-    /// `animate.parts` 里有 `blur` 通道（§6.4 分词模糊）。
+    /// `animate.parts` has a `blur` channel (§6.4 word blur).
     fn has_part_blur(node: &RNode) -> bool {
         node.part_motion.as_ref().is_some_and(|parts| {
             parts
@@ -1412,8 +1353,7 @@ impl FrameRenderer {
         })
     }
 
-    /// 把分词模糊的各桶收成离屏层：每桶一层 `filter.blur`（半径按画布短边换成
-    /// 比例，与元素级 `blur` 通道同一口径），按首次出现的顺序叠在元素内容之上。
+    /// Collapses the word-blur buckets into offscreen layers: one `filter.blur` layer per bucket (radius converted to a ratio against the canvas short edge, the same convention as the element-level `blur` channel), stacked over element content in order of first appearance.
     fn flush_part_blur(&self, buckets: PartBlurBuckets, r: &mut Recorder) {
         use motion::effect::{EffectRef, UniformMap, UniformValue};
         let short_edge = f64::from(self.width.min(self.height)).max(1.0);
@@ -1457,7 +1397,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 本刻生效的效果栈。空 ⇒ 不需要离屏 surface。
+    /// Effect stack effective at this tick. Empty ⇒ no offscreen surface needed.
     fn effect_stack(
         &self,
         node: &RNode,
@@ -1475,9 +1415,7 @@ impl FrameRenderer {
             return Vec::new();
         }
         let mut stack = node.effects.clone();
-        // 效果参数通道 `effects[N].<param>`（§6.6）：本刻采样值覆盖静态参数，再按
-        // manifest 的 min/max 夹取。覆盖后的 uniform 进入 Filter pass，因而也进入
-        // 帧指纹——动画帧不会被 FrameCache 当成同一帧去重。
+        // Effect parameter channel `effects[N].<param>` (§6.6): the sampled value at this tick overrides the static parameter, then is clamped by the manifest's min/max. The overridden uniform enters the Filter pass and therefore also enters the frame fingerprint — animated frames are not deduplicated by FrameCache as the same frame.
         for channel in &node.channels {
             let Some((index, param)) = motion::value::effect_param_channel(&channel.prop) else {
                 continue;
@@ -1515,7 +1453,7 @@ impl FrameRenderer {
                 .iter_mut()
                 .find(|item| item.effect.id == "filter.blur")
             {
-                // 同时存在 ⇒ 相加（§6.6）。
+                // When they coexist ⇒ add (§6.6).
                 Some(existing) => {
                     let base = existing.uniforms.scalar("radius").unwrap_or(0.0);
                     existing
@@ -1532,8 +1470,7 @@ impl FrameRenderer {
         stack
     }
 
-    /// `clipPath`（规范 §6.3）：静态 `style.clipPath` 由本刻的 `clipPath` 通道
-    /// 覆盖。发 `ClipPath` 时返回 true，调用方负责配对的 `PopClip`。
+    /// `clipPath` (spec §6.3): the static `style.clipPath` is overridden by this tick's `clipPath` channel. Returns true when it emits `ClipPath`; the caller is responsible for the paired `PopClip`.
     fn record_clip(
         &self,
         node: &RNode,
@@ -1541,8 +1478,7 @@ impl FrameRenderer {
         tf: Transform,
         r: &mut Recorder,
     ) -> bool {
-        // 通道优先：`clipPath` 通道本刻有值就用它；否则静态 `path` 形状、再否则
-        // 静态参数化形状。
+        // Channel takes precedence: if the `clipPath` channel has a value at this tick, use it; otherwise the static `path` shape; otherwise the static parameterized shape.
         let channel_live = p.get("clipPath").is_some_and(|value| !value.is_null());
         if !channel_live
             && let Some(poly) = &node.clip_poly
@@ -1561,10 +1497,9 @@ impl FrameRenderer {
         true
     }
 
-    /// `path` 形状（元素盒比例的折线）→ 局部坐标路径。
+    /// `path` shape (polyline in proportion to the element box) → local-coordinate path.
     ///
-    /// `DrawOp::ClipPath` 只有 nonzero 语义；even-odd 在这里不可表达，解析期
-    /// 已接受该键是为了与 `fillRule` 同形，录制期按 nonzero 处理并由 lint 提示。
+    /// `DrawOp::ClipPath` only has nonzero semantics; even-odd cannot be expressed here. The key is accepted at parse time to match the shape of `fillRule`; at recording time it is treated as nonzero, and lint warns.
     fn clip_poly_data(node: &RNode, poly: &ClipPoly) -> Option<PathData> {
         let (w, h) = (node.frame.w, node.frame.h);
         if w <= 0.0 || h <= 0.0 {
@@ -1583,8 +1518,7 @@ impl FrameRenderer {
 
     fn clip_shape_at(node: &RNode, p: &Map<String, Value>) -> Option<ClipShape> {
         match p.get("clipPath") {
-            // 通道值非法在 lint 期已是 error（`schema` / `effect-capability-unsupported`）；
-            // 录制期没有 Result，退回静态形状而不是画错。
+            // An invalid channel value is already an error at lint time (`schema` / `effect-capability-unsupported`); recording has no Result, so it falls back to the static shape rather than drawing incorrectly.
             Some(value) if !value.is_null() => {
                 ClipShape::parse(value).ok().flatten().or(node.clip_shape)
             }
@@ -1592,7 +1526,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 形状（元素盒比例）→ 局部坐标路径。恒等裁剪返回 `None`。
+    /// Shape (proportional to element box) → local-coordinate path. An identity clip returns `None`.
     fn clip_path_data(node: &RNode, shape: ClipShape) -> Option<PathData> {
         if shape.is_identity() {
             return None;
@@ -1616,14 +1550,13 @@ impl FrameRenderer {
                 let x1 = (w - right * w).min(w);
                 let y1 = (h - bottom * h).min(h);
                 if x1 <= x0 || y1 <= y0 {
-                    // 完全裁空：给一条零面积路径，元素本刻不出画。
+                    // Fully clipped away: give a zero-area path; the element draws nothing at this tick.
                     pb.push_rect(tiny_skia::Rect::from_xywh(0.0, 0.0, 0.0, 0.0)?);
                     return Some(path_from_skia(&pb.finish()?));
                 }
                 let r = radius * short;
                 if r > 0.0 {
-                    // 圆角矩形与 `FillRect{radius}` 共用同一条路径构造，
-                    // 免得裁剪边与背景边差半个像素。
+                    // The rounded rectangle shares the same path construction as `FillRect{radius}`, so the clip edge and the background edge do not differ by half a pixel.
                     let path = crate::raster::rounded_rect_path(x0, y0, x1 - x0, y1 - y0, r)?;
                     return Some(path_from_skia(&path));
                 }
@@ -1677,9 +1610,7 @@ impl FrameRenderer {
                 tf: mat(tf),
             });
         } else if let Some(gradient) = &node.bg_gradient {
-            // 渐变背景（规范 §6.3）：圆角矩形路径 + paint 侧表，与 `FillRect` 共用
-            // 同一条路径构造，圆角边与纯色背景差不到半个像素。`backgroundColor`
-            // 通道本刻有值时上面那支已经画了纯色——通道压过静态渐变。
+            // Gradient background (spec §6.3): rounded-rectangle path + paint side table, sharing the same path construction as `FillRect`, so the rounded edge does not differ from a solid background by half a pixel. When the `backgroundColor` channel has a value at this tick, the branch above has already drawn a solid color — the channel overrides the static gradient.
             Self::record_gradient_background(node, gradient, radius, tf, b);
         }
         if let Some(border) = &node.border {
@@ -1687,8 +1618,7 @@ impl FrameRenderer {
         }
     }
 
-    /// `style.border`（§6.3）：外圈是元素盒的圆角矩形、内圈向里收 `width`，even-odd 填出一圈；
-    /// 内圆角 = 外圆角（按盒短边的一半封顶后）− width。描边宽过盒的一半时整块填满。
+    /// `style.border` (§6.3): the outer ring is the element box's rounded rectangle, the inner ring is inset by `width`, and even-odd fills a ring; inner radius = outer radius (after capping at half the box's short edge) − width. When the stroke width exceeds half the box, the whole block is filled.
     fn record_border(
         node: &RNode,
         border: &BoxBorder,
@@ -1813,9 +1743,7 @@ impl FrameRenderer {
             });
             return;
         }
-        // 分词模糊（§6.4）：只有分层录制、且没有未收的祖先层 / 裁剪时才能起离屏组；
-        // 调用方（`record_node_without_echo` 的 Group 判据）保证带 part blur 的元素
-        // 与其祖先在需要时已经改走离屏组，这里的栈是空的。
+        // Word blur (§6.4): an offscreen group can only be started when recording is layered and there are no unclosed ancestor layers / clips; the caller (the Group criterion of `record_node_without_echo`) guarantees that an element with part blur and its ancestors have already switched to offscreen groups where needed, so the stack here is empty.
         let mut part_blur =
             (r.split && r.stack.is_empty() && Self::has_part_blur(node)).then(PartBlurBuckets::new);
         let b = &mut r.b;
@@ -1827,7 +1755,7 @@ impl FrameRenderer {
             "charGrid" => {
                 self.record_char_grid(node, (t - node.media_win_start).max(0.0), tf, b, engine)
             }
-            // 程序化源（§6.12）：局部秒闭式求值，受 `cadence` 量化（与 charGrid 同）。
+            // Procedural source (§6.12): closed-form evaluation in local seconds, quantized by `cadence` (same as charGrid).
             "proc" => {
                 if let Some(proc) = &node.proc {
                     crate::source::proc::record_proc(
@@ -1841,7 +1769,7 @@ impl FrameRenderer {
                 }
             }
             "path" => self.record_path(node, p, clock, tf, b),
-            // 媒体自带时间轴：不受 `cadence` 量化（规范 §7.10）。
+            // Media with its own timeline: not quantized by `cadence` (spec §7.10).
             "image" | "animatedImage" | "program" | "video" => {
                 self.record_media(node, clock.real, p, tf, b)
             }
@@ -2039,7 +1967,7 @@ impl FrameRenderer {
         }
     }
 
-    // ── 媒体节点（image / video）：只录引用，字节在光栅化阶段进入 ──
+    // ── Media nodes (image / video): only the reference is recorded; the bytes enter at the rasterization stage ──
     fn record_media(
         &self,
         node: &RNode,
@@ -2050,7 +1978,7 @@ impl FrameRenderer {
     ) {
         let Some(id) = &node.asset_id else { return };
         if node.nat_w <= 0.0 || node.nat_h <= 0.0 {
-            return; // 元数据未注入（lint/加载阶段已报错，这里防御）
+            return; // Metadata not injected (already reported at lint/load stage; defensive here)
         }
         let mut bounds = [
             f64::INFINITY,
@@ -2082,11 +2010,11 @@ impl FrameRenderer {
         }
         let media_ms: i64 = match node.ntype.as_str() {
             "video" => (Self::video_src_time(node, t) * 1000.0).round() as i64,
-            // `program`（§6.5.3）与动图同一套帧表语义：帧起点毫秒按声明的 fps 生成。
+            // `program` (§6.5.3) shares the same frame-table semantics as animated images: frame start ms generated from the declared fps.
             "animatedImage" | "program" => Self::animated_src_ms(node, t),
             _ => -1,
         };
-        // 天然尺寸 → 布局盒（§6.5 fit；image 保持既有拉伸语义 = fill）
+        // Natural size → layout box (§6.5 fit; image keeps its existing stretch semantics = fill)
         let framing = node.media_crop.is_some()
             || node.media_focal.is_some()
             || ["crop", "focalX", "focalY"]
@@ -2111,8 +2039,7 @@ impl FrameRenderer {
         });
     }
 
-    /// §6.5 帧精确采样：srcTime = mediaStart + (t − clip.start) × rate，
-    /// segment/loop 折叠后按源帧率量化到帧起点；越界 clamp 至末帧（冻结）。
+    /// §6.5 frame-accurate sampling: srcTime = mediaStart + (t − clip.start) × rate, after segment/loop folding quantized to the frame start at the source frame rate; out-of-range clamped to the last frame (frozen).
     fn video_src_time(node: &RNode, t: f64) -> f64 {
         let mut src = node.time_map.as_ref().map_or_else(
             || node.media_start + (t - node.media_win_start) * node.playback_rate,
@@ -2122,14 +2049,14 @@ impl FrameRenderer {
             if node.loop_media && s1 > s0 {
                 src = s0 + (src - s0).rem_euclid(s1 - s0);
             } else {
-                src = src.min(s1); // 片段尽头冻结
+                src = src.min(s1); // Freezes at the end of the segment
             }
         } else if node.loop_media && node.media_duration > 0.0 {
             src = src.rem_euclid(node.media_duration);
         }
         src = src.max(0.0);
         if node.media_fps > 0.0 {
-            // frameIndex = clamp(floor(srcTime × fps + ε), 0, N−1)，N 未知时不设上限
+            // frameIndex = clamp(floor(srcTime × fps + ε), 0, N−1); no upper bound when N is unknown
             let mut idx = (src * node.media_fps + 1e-9).floor();
             if node.media_duration > 0.0 {
                 let n = (node.media_duration * node.media_fps).round().max(1.0);
@@ -2144,17 +2071,14 @@ impl FrameRenderer {
         src
     }
 
-    /// §6.5.1 动图采样：源时间公式与视频同构
-    /// （`srcTime = mediaStart + (t − clip.start) × rate`），只是把"按源帧率
-    /// 量化"换成"按逐帧时长表量化"，并且循环按**播放遍数**折叠。
+    /// §6.5.1 animated image sampling: the source time formula is isomorphic to video (`srcTime = mediaStart + (t − clip.start) × rate`), except that "quantize by source frame rate" becomes "quantize by per-frame duration table," and looping folds by **number of playback passes**.
     ///
-    /// 返回的是该帧的**起点毫秒**：同一帧窗口内的所有时刻因此发出逐字节相同的
-    /// `DrawMedia`，静止帧缓存与帧指纹才命中得了。
+    /// Returns the **frame start ms** of that frame: all moments within the same frame window therefore emit byte-identical `DrawMedia`, so the still-frame cache and frame fingerprint can hit.
     fn animated_src_ms(node: &RNode, t: f64) -> i64 {
         let table = &node.frame_starts_ms;
         let n = table.len().saturating_sub(1);
         if n == 0 {
-            return 0; // 元数据未注入（加载阶段已报错，这里防御）
+            return 0; // Metadata not injected (already reported at load stage; defensive here)
         }
         let total = table[n] as f64 / 1000.0;
         let (s0, s1) = match node.segment {
@@ -2168,31 +2092,25 @@ impl FrameRenderer {
         let span = s1 - s0;
         let elapsed = src - s0;
         if node.time_map.is_none() && span > 0.0 && elapsed >= 0.0 {
-            // plays = 0 → 无限循环；否则放完 plays 遍就冻结在片段末尾
+            // plays = 0 → infinite loop; otherwise after playing `plays` passes, freeze at the end of the segment
             if node.media_plays == 0 || elapsed < span * f64::from(node.media_plays) {
                 src = s0 + elapsed.rem_euclid(span);
             } else {
                 src = s1;
             }
         }
-        // 帧表按 `round(k·1000/fps)` 建，起点可能恰在半毫秒上（29.97 fps 的第 15 帧是
-        // 500.5 ms、48 fps 的第 3 帧是 62.5 ms）；clip 不从 0 开始时 `t - start` 的浮点
-        // 误差会让它落在 500.4999… 而舍到上一帧。加 1 ns 的容差吸收这类误差。
+        // The frame table is built as `round(k·1000/fps)`, so starts may land exactly on half-milliseconds (frame 15 at 29.97 fps is 500.5 ms, frame 3 at 48 fps is 62.5 ms); when the clip does not start at 0, floating-point error in `t - start` can put it at 500.4999… and round down to the previous frame. A tolerance of 1 ns absorbs this kind of error.
         let ms = (src.clamp(0.0, total) * 1000.0 + 1e-6).round() as i64;
         crate::source::frame_start_ms(table, ms)
     }
 
-    /// 矢量源（`lottie`，§6.5.2）：不发 `DrawMedia`，把子集渲染器的指令**内联**
-    /// 进本帧的指令流。矢量内容因此跟着元素盒缩放，而不是先烤成素材原尺寸的
-    /// 位图再拉伸。
+    /// Vector source (`lottie`, §6.5.2): does not emit `DrawMedia`; instead **inlines** the subset renderer's instructions into this frame's instruction stream. Vector content therefore scales with the element box, rather than being baked into a bitmap at the asset's native size and then stretched.
     ///
-    /// 源时间语义与动图逐字相同（`animated_src_ms`）：`loop` / `segment` /
-    /// `playbackRate` 折叠后按合成帧表量化到帧起点，同一帧窗口发出逐字节相同
-    /// 的指令，静止帧缓存照常命中。
+    /// Source time semantics are identical to animated images (`animated_src_ms`): after `loop` / `segment` / `playbackRate` folding, quantized to the frame start on the composition frame table; within the same frame window identical byte instructions are emitted, so the still-frame cache hits as usual.
     fn record_lottie(&self, node: &RNode, t: f64, tf: Transform, b: &mut FrameBuilder) {
         let Some(id) = &node.asset_id else { return };
         let Some(lottie) = self.lotties.get(id) else {
-            return; // `new_with_assets` 已 fail-fast，这里只是防御
+            return; // `new_with_assets` already fails fast; this is only defensive
         };
         if node.nat_w <= 0.0 || node.nat_h <= 0.0 {
             return;
@@ -2201,21 +2119,20 @@ impl FrameRenderer {
         let (fit, clip_to_box) = Self::vector_fit(node);
         let inner = compose(tf, fit);
         if clip_to_box {
-            // cover 的画面比盒子大：矢量没有"源裁剪矩形"可用，改裁盒子本身
+            // For cover, the picture is larger than the box: a vector has no "source crop rectangle" to use, so crop the box itself instead
             let path = b.path_id(box_path(node.frame.w, node.frame.h));
             b.push(DrawOp::ClipPath { path, tf: mat(tf) });
         }
-        // `record` 只在子资源缺失时才会失败，而那在 `load_assets` 已经拦过了
+        // `record` only fails when a child resource is missing, and `load_assets` has already caught that
         let _ = lottie.record(MediaTime::from_millis(ms), inner, b);
         if clip_to_box {
             b.push(DrawOp::PopClip);
         }
     }
 
-    /// 矢量源的 §6.5 fit。返回 (变换, 是否需要把画面裁回元素盒)。
+    /// Fit (§6.5) for vector sources. Returns (transform, whether the picture must be cropped back to the element box).
     ///
-    /// 与 [`FrameRenderer::fit_transform`] 的差别只在 `cover`：位图那条路把
-    /// 溢出部分从**源像素**里裁掉，矢量没有源像素，只能居中之后裁盒子。
+    /// Differs from [`FrameRenderer::fit_transform`] only in `cover`: the bitmap path crops the overflow from the **source pixels**; a vector has no source pixels, so it can only center and then crop the box.
     fn vector_fit(node: &RNode) -> (Transform, bool) {
         let (nw, nh) = (node.nat_w, node.nat_h);
         let (bw, bh) = (node.frame.w, node.frame.h);
@@ -2293,7 +2210,7 @@ impl FrameRenderer {
         }
     }
 
-    /// §6.5 fit：天然尺寸到布局盒的变换 + cover 的源裁剪矩形。
+    /// §6.5 fit: transform from natural size to layout box + the source crop rectangle for cover.
     fn fit_transform(node: &RNode) -> (Transform, [f32; 4]) {
         let (nw, nh) = (node.nat_w, node.nat_h);
         let (bw, bh) = (node.frame.w, node.frame.h);
@@ -2309,7 +2226,7 @@ impl FrameRenderer {
             }
             scene_primitives::Fit::Cover => {
                 let s = (bw / nw).max(bh / nh);
-                // 源侧裁掉盒外区域：可见源区 = 盒尺寸 / s，居中
+                // Crop the out-of-box area on the source side: visible source area = box size / s, centered
                 let (vw, vh) = (bw / s, bh / s);
                 let (sx, sy) = ((nw - vw) / 2.0, (nh - vh) / 2.0);
                 let src = [sx as f32, sy as f32, vw as f32, vh as f32];
@@ -2318,7 +2235,7 @@ impl FrameRenderer {
         }
     }
 
-    // ── 文本（含 countUp 数字滚动、文字 part 动画） ──
+    // ── Text (including countUp number rolling, text part animation) ──
     #[allow(clippy::too_many_arguments)]
     fn record_text(
         &self,
@@ -2457,12 +2374,11 @@ impl FrameRenderer {
                 .unwrap_or(0.0),
         );
         let reveal_end = text_reveal_end(&string, node.split, reveal, None);
-        // 水平居中于布局盒（countUp 文本变宽时保持居中，与 DOM 行为一致）
+        // Horizontally centered on the layout box (stays centered when a countUp text widens, consistent with DOM behaviour)
         let x = (node.frame.w - shaped.width) / 2.0;
         let box_h = node.frame.h;
         let baseline = (box_h - (shaped.ascent + shaped.descent)) / 2.0 + shaped.ascent;
-        // part 动画的 part map 是按 `node.text` 切的；`countUp` 换掉了整串时
-        // 那张 map 不再成立，退回整串绘制。
+        // The part map for part animation is cut by `node.text`; when `countUp` replaces the entire string that map no longer holds, so it falls back to drawing the whole string.
         match &node.part_motion {
             Some(part_motion) if node.text.as_deref() == Some(string.as_str()) => self
                 .record_text_parts(
@@ -2504,16 +2420,12 @@ impl FrameRenderer {
         }
     }
 
-    /// 逐 part 采样并绘制（规范 §7.9、设计 §5.6）。
+    /// Per-part sampling and drawing (spec §7.9, design §5.6).
     ///
-    /// 与 `studio_export/raster.rs::chunk_part_delta` **同语义**：part 的
-    /// `opacity` 夹到 `[0,1]`、`x`/`y` 是位移、缺席的 part 取 `(1, 0, 0)`。
-    /// 两处的差别只有两点，都写在设计 §15 阶段 3：
-    /// ① studio_export 按 chunk 施加 delta，这里按字形（同 part 的字形拿同一个
-    ///    delta，等价）；② studio_export 逐 piece 单独 shape，这里整串一次
-    ///    shape ⇒ 保留了跨 part 的字距与连字。
+    /// **Same semantics** as `studio_export/raster.rs::chunk_part_delta`: part `opacity` is clamped to `[0,1]`, `x`/`y` are offsets, and absent parts take `(1, 0, 0)`.
+    /// The differences between the two are only two, both written in design §15 stage 3: ① studio_export applies the delta per chunk, here per glyph (glyphs of the same part take the same delta, so it is equivalent); ② studio_export shapes each piece separately, here the whole string is shaped once ⇒ cross-part kerning and ligatures are preserved.
     ///
-    /// **不改变布局**：只加 translate / scale / alpha，`node.frame` 不参与。
+    /// **Does not change layout**: it only adds translate / scale / alpha; `node.frame` does not participate.
     #[allow(clippy::too_many_arguments)]
     fn record_text_parts(
         &self,
@@ -2532,9 +2444,7 @@ impl FrameRenderer {
         engine: &mut TextEngine,
     ) {
         let count = part_motion.map_or(0, |parts| parts.map.len());
-        // part 的水平锚点：本 part 首字形的 x 到下一个 part 首字形的 x 的中点。
-        // `ShapedGlyph` 不带 advance，用「下一个 part 的起点」是既不需要新度量、
-        // 又对 scale 视觉正确的取法（末 part 取整行宽）。
+        // The part's horizontal anchor: the midpoint between the x of this part's first glyph and the x of the next part's first glyph. `ShapedGlyph` carries no advance, so using "the start of the next part" needs no new metrics and is visually correct for scale (the last part uses the full line width).
         let mut left: Vec<Option<f64>> = vec![None; count];
         for glyph in &shaped.glyphs {
             if let Some(part) = part_motion.and_then(|parts| parts.map.part_of(glyph.cluster.start))
@@ -2545,12 +2455,9 @@ impl FrameRenderer {
                 }
             }
         }
-        // 同一 part 的所有字形共享同一个 delta 与同一个锚点 ⇒ 逐 part 预计算一次，
-        // 字形循环只查表：既省掉每字形一次 `sample_channels`，也省掉 `anchor` 的
-        // 线性右扫。只为「本行真有字形落进去」的 part 采样（`left[i].is_some()`
-        // 与字形循环里 `part_of` 命中的集合逐一对应），采样集合与逐字形版本相同。
+        // All glyphs of the same part share one delta and one anchor ⇒ precomputed once per part; the glyph loop only does table lookups. This saves both one `sample_channels` per glyph and the linear right-scan of `anchor`. Sampling happens only for parts where glyphs of this line actually fall (`left[i].is_some()` corresponds one-to-one with the set hit by `part_of` in the glyph loop), so the sampled set is identical to the per-glyph version.
         //
-        // `end` = `left[i + 1..]` 里第一个 `Some`，否则整行宽 ⇒ 从右往左单趟递推。
+        // `end` = the first `Some` in `left[i + 1..]`, otherwise the full line width ⇒ a single right-to-left pass recurrence.
         let mut table: Vec<Option<PartPose>> = vec![None; count];
         let mut next_left = shaped.width;
         for index in (0..count).rev() {
@@ -2607,8 +2514,7 @@ impl FrameRenderer {
                 if opacity <= 0.001 || scale.abs() < 0.0005 {
                     continue;
                 }
-                // 模糊中的 part 画进自己半径的桶；没有桶（平坦录制 / 祖先作用域
-                // 未收）时原样内联，退化为不模糊。
+                // A blurring part is drawn into the bucket of its own radius; with no bucket (flat recording, or ancestor scope not yet collapsed) it is inlined as-is, degrading to no blur.
                 let b: &mut FrameBuilder = match blurred.as_deref_mut() {
                     Some(buckets) if blur > 0.0 => part_blur_bucket(buckets, blur),
                     _ => &mut *b,
@@ -2621,7 +2527,7 @@ impl FrameRenderer {
                     gt = compose(gt, translate(-ax, -baseline));
                 }
                 if paint_passes == 2 && paint_pass == 0 {
-                    // 描边只描轮廓：彩色字形（emoji 位图）没有轮廓，这一遍跳过。
+                    // Stroke only the outline: color glyphs (emoji bitmaps) have no outline, so this pass is skipped.
                     if let Some(stroke) = node
                         .text_stroke
                         .as_ref()
@@ -2710,7 +2616,7 @@ impl FrameRenderer {
         }
     }
 
-    // ── path：填充 → 纹理 → 描边（规范 §6.2.1） ──
+    // ── path: fill → texture → stroke (spec §6.2.1) ──
     fn record_path(
         &self,
         node: &RNode,
@@ -2721,7 +2627,7 @@ impl FrameRenderer {
     ) {
         let progress = p.get("pathDraw").and_then(Value::as_f64).unwrap_or(1.0);
         let morph = p.get("pathMorph").and_then(Value::as_f64).unwrap_or(0.0);
-        // `pathMorph`（规范 §6.2.1）：填充、纹理、描边与 `pathDraw` 的长度口径都跟着插值后的形状走。
+        // `pathMorph` (spec §6.2.1): fill, texture, stroke, and the length basis of `pathDraw` all follow the interpolated shape.
         let morphed = morph_subpaths(node, morph);
         let base: &Vec<Vec<(f64, f64)>> = morphed.as_ref().unwrap_or(&node.subpaths);
         let total_len = if morphed.is_some() {
@@ -2729,7 +2635,7 @@ impl FrameRenderer {
         } else {
             node.total_len
         };
-        // 填充与纹理按完整闭合几何画；`pathDraw` 只管描边进度，不隐式改变填充。
+        // Fill and texture are drawn over the complete closed geometry; `pathDraw` only governs stroke progress and does not implicitly change the fill.
         self.record_path_fill(node, base, tf, b);
         let Some(stroke_color) = node.stroke else {
             return;
@@ -2737,15 +2643,14 @@ impl FrameRenderer {
         if total_len <= 0.0 {
             return;
         }
-        // 描边抖动：逐顶点按 (seed, 顶点序号) 取偏移；填充不抖 ⇒ 填充与轮廓错位。
-        // boil 的重播种按所在 cadence 域的绘制帧计。
+        // Stroke wobble: per-vertex offset taken by (seed, vertex index); fill does not wobble, otherwise fill and outline would misalign. The boil re-seeding is counted in draw frames of the cadence domain it belongs to.
         let wobbled = wobble_paths(node, base, clock);
         let subpaths: &Vec<Vec<(f64, f64)>> = wobbled.as_ref().unwrap_or(base);
         let prog = clamp(progress, 0.0, 1.0);
         if prog <= 0.0 {
             return;
         }
-        // 1. 按进度截断（长度口径用未抖动的 `total_len`，与既有 golden 同）
+        // 1. Truncate by progress (the length basis uses the un-wobbled `total_len`, same as the existing golden)
         let mut remain = total_len * prog;
         let mut drawn: Vec<Vec<(f64, f64)>> = Vec::new();
         'outer: for poly in subpaths {
@@ -2772,7 +2677,7 @@ impl FrameRenderer {
             let (start, end) = path_interval(node, p);
             drawn = scene_primitives::svgpath::slice(subpaths, total_len * start, total_len * end);
         }
-        // 2. 虚线：逐子路径从相位 0 起切（SVG 语义）
+        // 2. Dashed: each subpath is cut starting from phase 0 (SVG semantics)
         if !node.dash.is_empty() {
             let pattern: Vec<f64> = node.dash.iter().map(|v| v * node.svg_scale).collect();
             drawn = drawn
@@ -2792,8 +2697,7 @@ impl FrameRenderer {
         if let Some(brush) = node.stroke_brush
             && brush.kind == pathstyle::BrushKind::Paint
         {
-            // 整笔 + 可见区间：宽度曲线按整笔算，画到一半的前沿是一排圆头鬃毛。
-            // 虚线则每一段各算一整笔。
+            // Whole stroke + visible interval: the width curve is computed over the whole stroke, so the leading edge of a half-drawn stroke is a row of round-capped bristles. Dashed lines compute one whole stroke per segment.
             let (strokes, vis) = if node.dash.is_empty() {
                 let vis = if node.path_trim.is_some()
                     || p.contains_key("pathStart")
@@ -2859,7 +2763,7 @@ impl FrameRenderer {
                 compose(tf, translate(dx, dy))
             };
             if node.line_cap == LineCap::Round && node.line_join == LineJoin::Round {
-                // 缺省线帽 / 接头走 v3 的 `StrokePath`（恒 Round/Round）：既有文档逐字节不变。
+                // Default line caps / joins go through v3's `StrokePath` (always Round/Round): existing documents stay byte-identical.
                 b.push(DrawOp::StrokePath {
                     path: id,
                     color: col(&stroke_color, alpha),
@@ -2881,8 +2785,7 @@ impl FrameRenderer {
         }
     }
 
-    /// `brush.kind: "paint"` 的描边（规范 §6.9）：按明暗 / 含色分桶，一桶一次填充。
-    /// 描边色带 alpha 时整笔进一个离屏层，鬃毛带之间的重叠不会叠深。
+    /// `brush.kind: "paint"` stroke (spec §6.9): bucketed by lightness / color content, one fill per bucket. When the stroke color has alpha, the whole stroke goes into one offscreen layer, so overlaps between bristle bands do not darken.
     #[allow(clippy::too_many_arguments)]
     fn record_paint_stroke(
         &self,
@@ -2944,7 +2847,7 @@ impl FrameRenderer {
         }
     }
 
-    /// path 填充 + 渲染期纹理。局部坐标；形状不 morph 时无时间依赖。
+    /// Path fill + render-time texture. Local coordinates; no time dependence when the shape is not morphed.
     fn record_path_fill(
         &self,
         node: &RNode,
@@ -3006,11 +2909,9 @@ impl FrameRenderer {
         }
     }
 
-    /// `style.background` 的渐变形态（规范 §6.3）→ `FillPathPaint`。
+    /// Gradient form of `style.background` (spec §6.3) → `FillPathPaint`.
     ///
-    /// 几何在元素局部坐标里：线性渐变按 CSS 角度口径取盒的两端点（0° 从下到上、
-    /// 90° 从左到右），长度是盒在该方向上的投影，与浏览器同一条公式；径向渐变的
-    /// 圆心是盒比例、半径以盒短边为基准。
+    /// Geometry is in element-local coordinates: a linear gradient takes the box's two endpoints per the CSS angle convention (0° bottom to top, 90° left to right), with length equal to the box's projection in that direction, using the same formula as browsers; a radial gradient's center is in box proportions, and its radius is based on the box short edge.
     fn record_gradient_background(
         node: &RNode,
         gradient: &BgGradient,
@@ -3056,7 +2957,7 @@ impl FrameRenderer {
             BgGradient::Linear { angle, stops: st } => {
                 let theta = angle.to_radians();
                 let (dx, dy) = (theta.sin(), -theta.cos());
-                // CSS：渐变线长度 = |w·sinθ| + |h·cosθ|，经过盒中心。
+                // CSS: gradient line length = |w·sinθ| + |h·cosθ|, passing through the box center.
                 let len = (w * dx).abs() + (h * dy).abs();
                 let (cx, cy) = (w / 2.0, h / 2.0);
                 PaintData::Linear {
@@ -3082,8 +2983,8 @@ impl FrameRenderer {
         }
     }
 
-    /// 把一份纹理裁剪进 `shape` 画出来。`bbox` 与 `shape` 同在局部坐标。
-    /// `fill` 是 `paint` finish 的底色（缺席时取纹理 `color`）。
+    /// Draws a texture clipped into `shape`. `bbox` and `shape` are both in local coordinates.
+    /// `fill` is the base color for the `paint` finish (when absent, the texture `color` is used).
     #[allow(clippy::too_many_arguments)]
     fn record_texture(
         &self,
@@ -3167,7 +3068,7 @@ impl FrameRenderer {
         b.push(DrawOp::PopClip);
     }
 
-    // ── 字幕（流式 / 双语 lane / 词高亮 / 贴字背景） ──
+    // ── Captions (streaming / bilingual lane / word highlight / background behind text) ──
     fn record_captions(&self, ir: &Ir, engine: &mut TextEngine, t: f64, b: &mut FrameBuilder) {
         let mut active: Option<(&CaptionClip, &CapItem)> = None;
         for c in &ir.caption_clips {
@@ -3182,17 +3083,17 @@ impl FrameRenderer {
             }
         }
         let Some((cap, item)) = active else { return };
-        // 没声明 exit 的 lane 按 clip 的 fade 整块淡出；声明了的走自己的 exit 通道（§8.4）
+        // A lane with no declared exit fades out as a whole per the clip's fade; one that declares its own uses its own exit channel (§8.4)
         let block_alpha = clamp((item.until_abs - t) / cap.fade, 0.0, 1.0);
 
-        // 行盒由 core（layout::layout_captions）排定，渲染端只画（§8.4）
+        // Line boxes are laid out by core (layout::layout_captions); the render side only draws (§8.4)
         let rel = t - item.at_abs;
         for lane in &cap.lanes {
             let Some(line) = item.lines.get(&lane.id) else {
                 continue;
             };
             let Some(boxes) = &line.boxes else { continue };
-            // lane 入场通道（锚定本条 at_abs）
+            // Lane entry channel (anchored to this entry's at_abs)
             let mut lane_alpha = 1.0f64;
             let mut y_off = 0.0f64;
             let chs: Vec<Channel> = scene_primitives::resolve::lay_static(
@@ -3209,7 +3110,7 @@ impl FrameRenderer {
                     y_off = v.as_f64().unwrap_or(0.0);
                 }
             }
-            // lane 退场通道（锚定本条 until_abs）
+            // Lane exit channel (anchored to this entry's until_abs)
             let mut exit_alpha = block_alpha;
             if !lane.exit_kfs.is_empty() {
                 exit_alpha = 1.0;
@@ -3308,8 +3209,8 @@ impl FrameRenderer {
     }
 }
 
-/// 元素盒的矩形路径（矢量源 `cover` 的裁剪框）。
-/// 把一条折线按 `pattern`（[画, 空, …]，偶数项、总长为正）切成若干「画」段。
+/// Rectangle path of the element box (the clip box for a vector source's `cover`).
+/// Cuts a polyline into several "draw" segments per `pattern` ([on, off, …], even count, total length positive).
 fn wobble_paths(
     node: &RNode,
     base: &[Vec<(f64, f64)>],
@@ -3484,8 +3385,7 @@ fn box_path(w: f64, h: f64) -> PathData {
     }
 }
 
-/// 每个 `lottie` 元素的资产都装上了吗（装配期 fail-fast，见
-/// [`FrameRenderer::new_with_lotties`]）。
+/// Whether every `lottie` element's asset has been installed (assembly-time fail-fast, see [`FrameRenderer::new_with_lotties`]).
 fn check_lottie_sources(
     node: &RNode,
     lotties: &std::collections::HashMap<String, Arc<Lottie>>,
@@ -3517,8 +3417,7 @@ fn polyline_len(subpaths: &[Vec<(f64, f64)>]) -> f64 {
     len
 }
 
-/// `pathMorph` 通道值 `v ∈ [0, N]`（`N` = `morphTo` 个数）：形状序列 `[d, morphTo…]` 上的
-/// 分段线性插值，逐顶点 lerp。没有目标或 `v <= 0` 时返回 `None`（走 `d` 原几何，既有文档逐字节不变）。
+/// `pathMorph` channel value `v ∈ [0, N]` (`N` = number of `morphTo`): piecewise-linear interpolation over the shape sequence `[d, morphTo…]`, lerp per vertex. Returns `None` when there is no target or `v <= 0` (uses the original `d` geometry; existing documents stay byte-identical).
 fn morph_subpaths(node: &RNode, v: f64) -> Option<Vec<Vec<(f64, f64)>>> {
     let n = node.morph_shapes.len();
     if n == 0 || !(v > 0.0) {

@@ -1,4 +1,4 @@
-//! serde_json::Value 的便捷访问扩展（对应 Swift 原型的 JSON enum 辅助方法）。
+//! Convenience access extensions for serde_json::Value (corresponding to the JSON enum helper methods in the Swift prototype).
 
 use serde_json::{Map, Value};
 
@@ -8,9 +8,9 @@ pub trait JsonExt {
     fn arr_(&self) -> Option<&Vec<Value>>;
     fn obj_(&self) -> Option<&Map<String, Value>>;
     fn get_(&self, key: &str) -> Option<&Value>;
-    /// obj[key] 的字符串
+    /// String at obj[key]
     fn gstr(&self, key: &str) -> Option<&str>;
-    /// obj[key] 的数字
+    /// Number at obj[key]
     fn gf64(&self, key: &str) -> Option<f64>;
 }
 

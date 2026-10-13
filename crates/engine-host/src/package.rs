@@ -1,7 +1,7 @@
-//! 便携包（视频格式规范 §8）：导出时的冻结（`exports.package`）与把解开的包建成新视频（`videos.importPackage`）。
+//! Portable package (video format spec §8): freezing at export (`exports.package`) and building an unpacked package into a new video (`videos.importPackage`).
 //!
-//! 冻结在一次请求里读出当前的快照、每个文档版本存下的正文原文与每个素材版本此刻的位置；引擎宿主按顺序处理请求，
-//! 所以它们对应同一个视频版本。文档版本与收进视频的 blob 不再改变，之后的编辑不影响已经冻结的导出。
+//! Freezing reads, in one request, the current snapshot, the original text of the body stored for each document version, and the current location of each asset version. The engine host processes requests in order,
+//! so they correspond to the same video version. Document versions and blobs taken into the video no longer change; later edits do not affect an already frozen export.
 
 use std::path::PathBuf;
 
@@ -16,15 +16,15 @@ use video_engine::{ErrorBody, Retryability, Video};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportParams {
-    /// 新视频的目录（绝对路径，还不存在）。
+    /// Directory of the new video (absolute path, does not exist yet).
     pub path: String,
-    /// 解开、校验过清单的包所在的目录（绝对路径）。
+    /// Directory where the unpacked, manifest-verified package is (absolute path).
     pub package_dir: String,
     #[serde(default)]
     pub project_id: Option<Id>,
 }
 
-/// 冻结一个打开的视频，供 Runtime 写便携包。素材版本读不到时不报错，逐项带上 `missing`，由 Runtime 决定拒绝还是如实标注。
+/// Freezes an open video, for the Runtime to write a portable package. When an asset version cannot be read, no error is raised; each item carries `missing`, and the Runtime decides whether to reject or to annotate it honestly.
 pub fn freeze(video: &Video) -> Result<Value, ErrorBody> {
     let snapshot = video.snapshot();
     let mut documents = Vec::new();
@@ -87,7 +87,7 @@ pub fn freeze(video: &Video) -> Result<Value, ErrorBody> {
     }))
 }
 
-/// 把解开的包建成新视频，返回与 `videos.create` 相同的结构（由调用方登记为打开的视频）。
+/// Builds the unpacked package into a new video, returning the same structure as `videos.create` (the caller registers it as an open video).
 pub fn import(params: ImportParams, ffprobe: &std::path::Path) -> Result<Video, ErrorBody> {
     let dir = PathBuf::from(&params.path);
     let package_dir = PathBuf::from(&params.package_dir);

@@ -14,7 +14,7 @@ import { pl } from './legacy-import-copy.pl.ts';
 import { tr } from './legacy-import-copy.tr.ts';
 import { vi } from './legacy-import-copy.vi.ts';
 
-/** 启动时旧版项目导入询问的文案（英文是键与类型的来源，译文在 `legacy-import-copy.<语言>.ts`）。 */
+/** Copy for the startup prompt to import legacy projects (English is the source of the keys and types; translations are in `legacy-import-copy.<lang>.ts`). */
 const en = {
   title: 'Import projects from an earlier version?',
   lead: (n: number) =>

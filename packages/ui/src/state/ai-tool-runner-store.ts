@@ -2,9 +2,9 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 /**
- * AI 工具页「用」一行按工具记住的选择（原型 tool-setup.jsx `useRunner` 的 `runnerBy[tool]`）：交给 Agent 还是直接调模型，
- * 直接调模型时用哪只文本模型（`providerId/modelId`）。只是界面的偏好，跨会话记在本机（Web 也能用），不进 Runtime 的设置。
- * 交给 Agent 时用哪家 · 哪个模型不在这里：那是新会话的默认（与输入框底栏的 chip 同一份）。
+ * The choice remembered per tool on the AI tools page's "use" row (prototype tool-setup.jsx `useRunner`'s `runnerBy[tool]`): hand off to the Agent or call the model directly,
+ * and, when calling directly, which text model to use (`providerId/modelId`). It is only a UI preference, stored on this machine across sessions (also available on the Web), and not in the Runtime's settings.
+ * Which provider · model to use when handing off to the Agent is not here: that is the default for new sessions (the same single source as the chip in the input bar's footer).
  */
 export type AiToolRunner = 'agent' | 'model';
 

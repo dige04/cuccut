@@ -1,6 +1,6 @@
-// PptxGenJS 3.12.0 的应用扩展（渐变、平铺填充、图片圆角、占位符继承、自定义主题与母版等 25 处，见 README.md）。
-// 不改 node_modules：构建时按 pptxgenjs-3.12.0.json 改写读进来的发行文件，apps/slides-editor 的 Vite 与 esbuild 插件调用它。
-// 发行文件的 SHA-256 与版本对不上时直接报错，不对错的代码打补丁。
+// Application extensions to PptxGenJS 3.12.0 (gradients, tiled fill, rounded image corners, placeholder inheritance, custom themes and masters, etc.; 25 changes in total, see README.md).
+// Does not modify node_modules: at build time it rewrites the distribution file it reads, according to pptxgenjs-3.12.0.json. The Vite and esbuild plugins of apps/slides-editor call it.
+// If the distribution file's SHA-256 does not match the version, it fails immediately instead of patching the wrong code.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -15,19 +15,19 @@ const manifest = JSON.parse(manifestBytes);
 const digest = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const marker = `// CucCut slides runtime PptxGenJS extensions: ${digest(manifestBytes)}`;
 
-/** 装好的 pptxgenjs 目录（按 slides-runtime 包解析，工作区提升到根 node_modules 时也找得到）。 */
+/** Installed pptxgenjs directory (resolved from the slides-runtime package, so it is also found when the workspace is hoisted to the root node_modules). */
 export function pptxgenjsDir() {
   const require = createRequire(new URL('../package.json', import.meta.url));
   return path.dirname(require.resolve('pptxgenjs/package.json'));
 }
 
-/** 要打补丁的发行文件名（`pptxgen.es.js`、`pptxgen.cjs.js`）；别的文件返回 null。 */
+/** Names of the distribution files to patch (`pptxgen.es.js`, `pptxgen.cjs.js`); returns null for other files. */
 export function pptxgenjsDistFile(id) {
   const match = /[\\/]pptxgenjs[\\/]dist[\\/]([^\\/?]+)(?:\?.*)?$/.exec(id);
   return match && Object.hasOwn(manifest.upstreamFiles, match[1]) ? match[1] : null;
 }
 
-/** 给一个发行文件打补丁，返回改写后的源码；已经打过的原样返回。 */
+/** Patches one distribution file and returns the rewritten source; a file that is already patched is returned unchanged. */
 export function patchPptxgenjs(source, file) {
   if (source.endsWith(marker + '\n')) return source;
   const expected = manifest.upstreamFiles[file];
@@ -88,5 +88,5 @@ export function patchPptxgenjs(source, file) {
   return patched;
 }
 
-/** 扩展的条数，测试与构建日志用。 */
+/** Number of extensions, for tests and build logs. */
 export const PPTXGENJS_EXTENSION_COUNT = manifest.records.length;

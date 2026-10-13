@@ -2,16 +2,12 @@ import { live, TOOL_CATEGORIES, type SpaceEntryKind, type ToolCategory, type Too
 import { M } from './tool-catalog-copy.ts';
 
 /**
- * 工具目录（产品设计 §2.1、§2.7，设计稿 model-tools.js `GROUPS`）：不依附项目的独立能力入口，不进 Agent 回合。
- * 工具按处理的对象分三组（`tools.list` 的 `category`）：语音与字幕、文字与图片、视频文件。结果缺省是 Space 里的条目，
- * 保存到保存位置；只有选了 Space 里可编辑的视频（或改选「新建视频」）时，结果才是一个视频。
+ * Tool catalog (product design §2.1, §2.7; design file model-tools.js `GROUPS`): standalone capability entry points not attached to a project; they do not enter agent turns.
+ * Tools are grouped by what they process (`category` in `tools.list`): speech and captions, text and images, video files. By default a result is an item in Space, saved to the save location. A result is a video only when an editable video in Space is selected (or “New video” is chosen).
  *
- * 每个工具声明它收哪几种输入（`inputs`，各自的结果 `output`）与缺省的结果（`output`；`artifacts` 是从文件、链接、文字开始时
- * 产出的条目种类）。目录卡、侧栏、输入来源的切换都从这份声明派生，组件里不另写。`needs`：视频输入要求视频已有的东西
- * （`transcript` 转录过）；`accept`：文件输入收的扩展名；`targets`：结果落在哪的几种选法，第一项是缺省。
+ * Each tool declares which kinds of input it accepts (`inputs`, each with its result `output`) and its default result (`output`; `artifacts` are the kinds of items produced when starting from a file, link, or text). The catalog cards, the sidebar, and the input-source switch are all derived from this declaration; components do not write their own. `needs`: what a video input requires the video to already have (`transcript`, i.e. transcribed). `accept`: the file extensions a file input accepts. `targets`: the ways to choose where the result lands; the first is the default.
  *
- * ID 用 Runtime 工具注册表（`tools.list`）的 ID；旧版界面的短名（`translate`、`tts`……）经 `toolIdOf` 落到新 ID，
- * 旧链接与存下来的路由照样打得开。顺序就是页面与侧栏上的顺序。此刻能不能用不在这里：以 `tools.list` 为准。
+ * IDs use the Runtime tool registry IDs (`tools.list`). Short names from the old UI (`translate`, `tts`, …) map to the new IDs via `toolIdOf`, so old links and stored routes still open. The order is the order on the page and the sidebar. Whether a tool can be used right now is not decided here: `tools.list` is authoritative.
  */
 
 export const TOOL_IDS = [
@@ -30,13 +26,12 @@ export const TOOL_IDS = [
 export type ToolId = (typeof TOOL_IDS)[number];
 
 /**
- * 视频工具（转录、翻译字幕、翻译配音、下载视频）：共用视频选择器、运行页与当场授权。这是页面机制上的一类，与目录的分组
- * （`group`）无关。
+ * Video tools (transcribe, translate captions, translate dubbing, download video): they share the video picker, the run page, and in-place authorization. This is a class defined by page mechanism; it is independent of the catalog grouping (`group`).
  */
 export const VIDEO_TOOL_IDS = ['transcribe', 'translate-subtitles', 'dub', 'link-import'] as const;
 export type VideoToolId = (typeof VIDEO_TOOL_IDS)[number];
 
-/** 压缩、合并与提取音频：共用一页（页顶切换），各自保留工具 ID。 */
+/** Compress, merge, and extract audio: they share one page (toggle at the top of the page), and each keeps its own tool ID. */
 export const FILE_VIDEO_TOOL_IDS = ['compress-video', 'merge-video', 'extract-audio'] as const;
 export type FileVideoToolId = (typeof FILE_VIDEO_TOOL_IDS)[number];
 
@@ -47,24 +42,23 @@ export type ToolArtifact = 'audio' | 'image' | 'doc' | 'final' | 'subtitle';
 export type ToolTargetKey = 'create' | 'video' | 'none';
 
 /**
- * 界面上的输入来源：目录（`tools.list`）的输入种类，加上 `space`——从 Space 选一个条目，提交时按条目换成 `video`（可编辑的
- * 视频）、`file`（文件条目，参数给 `{ entryId }`）或 `document`（直接任务的素材），见 model/tool-space-input.ts `inputKindOf`。
+ * Input sources in the UI: the input kinds from the catalog (`tools.list`), plus `space`, which means picking an item from Space. On submit, an item is converted by its kind to `video` (an editable video), `file` (a file item, with parameters `{ entryId }`), or `document` (material for a direct task). See `inputKindOf` in model/tool-space-input.ts.
  */
 export type ToolSourceKind = ToolInputKind | 'space';
 
 export interface ToolInput {
   kind: ToolSourceKind;
-  /** `space` 收的条目种类（`video` 是可编辑的视频）；`video` 输入只收视频。 */
+  /** The item kinds `space` accepts (`video` is an editable video); a `video` input accepts only videos. */
   kinds?: readonly SpaceEntryKind[];
-  /** 附加的素材（文本生成附上文档或字幕），不是来源切换里的一项。 */
+  /** Attached material (text generation attaches a document or captions); not one of the source-switch options. */
   attach?: boolean;
   output: ToolOutput;
-  /** 这个工具里另起的名字（翻译字幕的文件输入叫「字幕文件」）；不给时用 `INPUT_LABELS`。 */
+  /** A separate name for this input within this tool (the file input of translate captions is called “caption file”); when not given, `INPUT_LABELS` is used. */
   label?: string;
   accept?: readonly string[];
   needs?: 'transcript';
   fallback?: ToolOutput;
-  /** 这种输入由另一个工具的流程执行（可用性也看那个工具的 `tools.list` 状态）。 */
+  /** This kind of input is run by another tool’s flow (its availability also depends on that tool’s status in `tools.list`). */
   via?: ToolId;
 }
 
@@ -80,13 +74,13 @@ export interface ToolInfo {
   name: string;
   icon: ToolIcon;
   desc: string;
-  /** 缺省的结果：`video` 只写进你选的视频（翻译配音），`artifact` 是 Space 里的条目。 */
+  /** Default result: `video` writes only into the video you chose (dubbing translation); `artifact` is an item in Space. */
   output: ToolOutput;
-  /** 从文件、链接、文字开始时产出的条目种类（转录是文档与字幕两条）；只写进视频的工具为空。 */
+  /** The kinds of items produced when starting from a file, link, or text (transcription gives two: document and caption). Empty for tools that only write into a video. */
   artifacts: readonly ToolArtifact[];
   inputs: readonly ToolInput[];
   targets?: readonly ToolTarget[];
-  /** 还没做、卡片置灰「即将推出」。现在目录里没有。 */
+  /** Not built yet; the card is greyed out with “Coming soon”. None are in the catalog at the moment. */
   planned?: boolean;
 }
 
@@ -103,7 +97,7 @@ export const ARTIFACT_LABELS: Record<ToolArtifact, string> = live(() => M.artifa
 
 type ToolDecl = Omit<ToolInfo, 'group'>;
 
-/** 名字与说明在读的时候按当前语言取。 */
+/** Names and descriptions are read in the current language at read time. */
 function tool(decl: Omit<ToolDecl, 'name' | 'desc'>): ToolDecl {
   return Object.defineProperties(decl as ToolDecl, {
     name: { enumerable: true, get: () => M.tools[decl.id].name },
@@ -117,7 +111,7 @@ const SPEECH_TOOLS: readonly ToolDecl[] = [
     icon: 'transcript',
     output: 'artifact',
     artifacts: ['doc', 'subtitle'],
-    // Space 里的媒体按文件转（`file` 给 `{ entryId }`），可编辑的视频写进它；链接来源由「下载视频」的流程执行（带 `transcribe: true`）。
+    // Media in Space is converted as a file (`file` with `{ entryId }`), and editable videos are written into it. Link sources are run by the “download video” flow (with `transcribe: true`).
     inputs: [
       { kind: 'file', output: 'artifact' },
       { kind: 'space', kinds: ['video', 'video-file', 'export', 'audio'], output: 'artifact' },
@@ -247,7 +241,7 @@ const VIDEO_FILE_TOOLS: readonly ToolDecl[] = [
   }),
 ];
 
-/** 三组里各有哪些工具（设计稿 model-tools.js `GROUPS`）；顺序照 `TOOL_CATEGORIES`，名字与说明在文案目录里。 */
+/** Which tools are in each of the three groups (design file model-tools.js `GROUPS`). Order follows `TOOL_CATEGORIES`; names and descriptions are in the copy catalog. */
 const GROUP_TOOLS: Record<ToolGroupKey, readonly ToolDecl[]> = {
   speech: SPEECH_TOOLS,
   'text-image': TEXT_IMAGE_TOOLS,
@@ -263,13 +257,13 @@ export const TOOL_GROUPS: readonly ToolGroup[] = TOOL_CATEGORIES.map((key) => ({
   get desc() {
     return M.groups[key].desc;
   },
-  // 不展开（展开会把名字与说明冻结在加载时的语言里）：照抄属性描述，名字与说明仍是读时取。
+  // Not expanded (expanding would freeze the names and descriptions in the language loaded at that time): copy the property descriptions as they are; names and descriptions are still read at read time.
   tools: GROUP_TOOLS[key].map((t) => Object.defineProperties({ group: key }, Object.getOwnPropertyDescriptors(t)) as ToolInfo),
 }));
 
 export const TOOLS: readonly ToolInfo[] = TOOL_GROUPS.flatMap((g) => g.tools);
 
-/** 旧版界面的工具短名 → 注册表 ID（旧链接、存下来的路由、首页按钮）。 */
+/** Old-UI tool short names → registry IDs (old links, stored routes, home-page buttons). */
 const LEGACY_IDS: Record<string, ToolId> = {
   translate: 'translate-subtitles',
   link: 'link-import',
@@ -286,7 +280,7 @@ export function isToolId(value: string | undefined): value is ToolId {
   return (TOOL_IDS as readonly string[]).includes(value ?? '');
 }
 
-/** 路由里的工具名 → 工具 ID：注册表 ID 原样，旧短名换成新的；认不出时 null。 */
+/** Route tool name → tool ID: registry IDs pass through unchanged; old short names are swapped for the new ones. null when not recognized. */
 export function toolIdOf(value: string | undefined | null): ToolId | null {
   if (!value) return null;
   if (isToolId(value)) return value;
@@ -306,7 +300,7 @@ export function isFileVideoTool(id: ToolId): id is FileVideoToolId {
   return (FILE_VIDEO_TOOL_IDS as readonly string[]).includes(id);
 }
 
-/** 路由里的工具 → 能打开的工具；未知或未推出的回到目录（null）。 */
+/** Route tool → a tool that can be opened. Unknown or not-yet-shipped tools fall back to the catalog (null). */
 export function openable(id: string | undefined | null): ToolInfo | null {
   const t = toolById(id);
   return t && !t.planned ? t : null;
@@ -318,11 +312,11 @@ export interface InputOption {
   output: ToolOutput;
   needs: 'transcript' | null;
   accept: readonly string[] | null;
-  /** 由哪个工具执行；就是这个工具时 null。 */
+  /** The tool that executes it; null when it is this tool itself. */
   via: ToolId | null;
 }
 
-/** 输入来源的选项（界面的来源切换），按声明的顺序；附加的素材不算来源。 */
+/** Options for the input source (the source switch in the UI), in declared order. Attached material does not count as a source. */
 export function inputOptions(id: string | undefined | null): InputOption[] {
   const t = toolById(id);
   return t
@@ -337,30 +331,30 @@ export function inputOptions(id: string | undefined | null): InputOption[] {
     : [];
 }
 
-/** 结果落在哪的选项（下载视频：新建 / 加进已有 / 只下载），第一项是缺省；没有这一问的工具是空的。 */
+/** Options for where the result lands (download video: new / add to existing / download only). The first is the default. Empty for tools without this question. */
 export function targetOptions(id: string | undefined | null): ToolTarget[] {
   const t = toolById(id);
   return t?.targets ? t.targets.map((x) => ({ ...x })) : [];
 }
 
-/** 这个工具从这种输入开始时结果是什么；不收这种输入时 null。 */
+/** What the result is when this tool starts from this kind of input. null when it does not accept this kind of input. */
 export function outputOf(id: string | undefined | null, kind: ToolSourceKind): ToolOutput | null {
   return toolById(id)?.inputs.find((i) => i.kind === kind)?.output ?? null;
 }
 
-/** 产出条目的说法：「文档与字幕条目」「音频条目」。 */
+/** How output items are named: “document and caption items”, “audio items”. */
 export function artifactText(artifacts: readonly ToolArtifact[]): string {
   return M.artifactItems(artifacts);
 }
 
-/** 这个工具从 Space 收哪几种条目（来源与附加的素材都算），按声明的顺序；不收时空。 */
+/** The kinds of items this tool accepts from Space (both the source and the attached material count), in declared order. Empty if none. */
 export function spaceKindsOf(id: string | undefined | null): SpaceEntryKind[] {
   const kinds: SpaceEntryKind[] = [];
   for (const i of toolById(id)?.inputs ?? []) for (const k of i.kinds ?? []) if (!kinds.includes(k)) kinds.push(k);
   return kinds;
 }
 
-/** 卡片上「结果」那一句（设计稿 `resultLine`）：缺省产出什么条目；能改选新建视频、能写进你选的视频的另说一句。 */
+/** The “result” line on a card (design file `resultLine`): what items the tool produces by default. A tool that can switch to a new video, or write into the chosen video, gets a separate sentence for that. */
 export function resultLine(id: string | undefined | null): string {
   const t = toolById(id);
   if (!t) return '';

@@ -14,7 +14,7 @@ import { pl } from './harness-runs.pl.ts';
 import { tr } from './harness-runs.tr.ts';
 import { vi } from './harness-runs.vi.ts';
 
-/** 会话里任务运行时的提示与任务失败原因（`packages/harness`）。`agent` 是 Agent 的显示名。 */
+/** Hints during task runs in a session, and task failure reasons (`packages/harness`). `agent` is the agent's display name. */
 const en = {
   retrying: (p: { message: string }) => `${p.message} (retrying)`,
   modeChanged: (p: { to: string; from: string }) => `Access mode changed to "${p.to}" (was "${p.from}"). Applies to later actions.`,
@@ -38,7 +38,7 @@ const en = {
   turnFailed: 'The turn failed',
   processExited: (p: { agent: string; error: string }) => `${p.agent} process ended unexpectedly: ${p.error}`,
   noErrorMessage: 'no error message',
-  /** 文件修改审批没有说明时的摘要。 */
+  /** Summary for file-change approvals when no description is given. */
   fileChangeSummary: 'Edit files',
 };
 

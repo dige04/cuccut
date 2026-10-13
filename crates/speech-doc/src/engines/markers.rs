@@ -1,14 +1,11 @@
-//! 停顿/说话人软标记（对拍 voice-ink `OrganizeEngine` 的 ⏸/⏹ 机制）。
+//! Pause and speaker soft markers (mirrors the ⏸/⏹ mechanism of voice-ink `OrganizeEngine`).
 //!
-//! 标记只进 payload 副本，是元数据，禁止进入 LLM 输出；返回侧用
-//! [`strip_markers`] / [`sanitize_corrected`] 清洗。
+//! Markers go only into a copy of the payload. They are metadata and must not appear in LLM output. On the return side they are cleaned by [`strip_markers`] / [`sanitize_corrected`].
 //!
-//! 说话人标记有两种形态，返回侧都必须剥掉：
+//! Speaker markers come in two forms, and the return side must strip both:
 //!
-//! - 裸 `⏹`：无说话人标签表时的历史形态，仍然被识别（兼容）；
-//! - 带标签 `⏹S2`：标签来自 [`SpeakerLabels`]，指**标记右侧**开始说话的人。
-//!   标签让模型看懂对话结构（谁在答谁、"嗯/对"属于哪一方），不含时间，
-//!   同一说话人在全篇所有页里的标签一致。
+//! - A bare `⏹`: the historical form used when there is no speaker label table. It is still recognized (compatibility).
+//! - A labeled `⏹S2`: the label comes from [`SpeakerLabels`] and refers to the speaker who starts speaking **to the right of the marker**. The label lets the model understand the conversation structure (who is answering whom, which side 嗯/对 ("um"/"yeah" filler) belongs to). It carries no time, and the same speaker has the same label on every page of the full text.
 
 use crate::atomize::{JoinWord, is_legacy_glued, legacy_unspaced_pair, unspaced_pair, word_sep};
 use crate::doc::Word;
@@ -21,7 +18,7 @@ const PAUSE_GAP_SECONDS: f64 = 0.6;
 const PAUSE_MED_SECONDS: f64 = 1.0;
 const PAUSE_LONG_SECONDS: f64 = 1.8;
 
-/// gap → "⏸"/"⏸⏸"/"⏸⏸⏸"（<0.6s 为空）。
+/// gap → "⏸" / "⏸⏸" / "⏸⏸⏸" (under 0.6s gives empty).
 pub fn pause_marks(gap: f64) -> String {
     if gap < PAUSE_GAP_SECONDS {
         return String::new();
@@ -36,7 +33,7 @@ pub fn pause_marks(gap: f64) -> String {
     std::iter::repeat_n(PAUSE_MARKER, count).collect()
 }
 
-/// 说话人切换标记：无标签表时是裸 `⏹`，有标签时是 `⏹S2`（标签指右侧说话人）。
+/// Speaker-switch marker: a bare `⏹` when there is no label table, and `⏹S2` when labeled (the label refers to the speaker on the right).
 pub fn speaker_marker(next_speaker: &str, labels: Option<&SpeakerLabels>) -> String {
     let mut marker = String::from(SPEAKER_MARKER);
     if let Some(label) = labels.and_then(|labels| labels.label(next_speaker)) {
@@ -45,12 +42,12 @@ pub fn speaker_marker(next_speaker: &str, labels: Option<&SpeakerLabels>) -> Str
     marker
 }
 
-/// 词后缀标记：`" ⏸⏸"` +（说话人切换时）`" ⏹"`。
+/// Word suffix marker: `" ⏸⏸"`, plus (at a speaker switch) `" ⏹"`.
 pub fn boundary_marker_suffix(word: &Word, next: &Word) -> String {
     boundary_marker_suffix_labeled(word, next, None)
 }
 
-/// [`boundary_marker_suffix`] 的带标签形态：说话人切换处写 `" ⏹S2"`。
+/// The labeled form of [`boundary_marker_suffix`]: at a speaker switch, write `" ⏹S2"`.
 pub fn boundary_marker_suffix_labeled(
     word: &Word,
     next: &Word,
@@ -69,12 +66,12 @@ pub fn boundary_marker_suffix_labeled(
     suffix
 }
 
-/// 一段词渲染为带标记的 payload 文本（词间隔按 CJK 邻接规则）。
+/// Renders a run of words as payload text with markers (spacing between words follows CJK adjacency rules).
 pub fn marked_text(words: &[Word]) -> String {
     marked_text_labeled(words, None)
 }
 
-/// [`marked_text`] 的带标签形态（说话人切换处写 `⏹S2`）。
+/// The labeled form of [`marked_text`] (at a speaker switch, write `⏹S2`).
 pub fn marked_text_labeled(words: &[Word], labels: Option<&SpeakerLabels>) -> String {
     let mut output = String::new();
     for (index, word) in words.iter().enumerate() {
@@ -89,11 +86,9 @@ pub fn marked_text_labeled(words: &[Word], labels: Option<&SpeakerLabels>) -> St
     output
 }
 
-/// 剥除标记（含尾随 U+FE0F 变体选择符与 `⏹` 后的说话人标签），按标记切分再以
-/// 空格重接，折叠连续空白。
+/// Strips markers (including the trailing U+FE0F variation selector and the speaker label after `⏹`), splits on the markers, rejoins with spaces, and collapses consecutive whitespace.
 ///
-/// 裸 `⏹` 与带标签 `⏹S2` 都被识别：标签是标记的一部分，绝不能作为正文
-/// 残留在输出里（否则 `S2` 会被当成一个词进 atom-LCS 与逐字保真比对）。
+/// Both a bare `⏹` and a labeled `⏹S2` are recognized. The label is part of the marker, and it must never remain in the output as body text. Otherwise `S2` would be treated as a word in the atom-LCS and in the verbatim-fidelity comparison.
 pub fn strip_markers(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut cleaned = String::with_capacity(text.len());
@@ -114,10 +109,9 @@ pub fn strip_markers(text: &str) -> String {
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// `⏹` 之后紧跟的说话人标签长度（字符数），没有标签时为 0。
+/// Length (in characters) of the speaker label after `⏹`, or 0 when there is no label.
 ///
-/// 容忍模型抄写时插入的空格与变体选择符（`⏹ S2`），但要求标签完整——
-/// `S` + 至少一位数字，且数字后不能再接字母数字，避免吃掉正文里的 `S2nd`。
+/// It tolerates spaces and variation selectors that the model inserts when copying (`⏹ S2`), but it requires the label to be complete: `S` followed by at least one digit, and the digits must not be followed by letters or digits. This avoids eating `S2nd` in the body text.
 fn speaker_label_len(rest: &[char]) -> usize {
     let mut cursor = 0usize;
     while rest
@@ -139,17 +133,12 @@ fn speaker_label_len(rest: &[char]) -> usize {
     end
 }
 
-/// 折叠不写空格的字符之间的空格（汉字、假名、全角标点之间；口径同
-/// [`crate::atomize::sep_len`] 第 1 条）。韩文的空格是词界，原样保留。
+/// Collapses spaces between characters that are not separated by spaces (between Han characters, kana and full-width punctuation). The basis is the same as item 1 of [`crate::atomize::sep_len`]. Spaces in Korean are word boundaries and are kept as they are.
 pub fn collapse_cjk_spaces(text: &str) -> String {
     collapse_spaces_between(text, unspaced_pair)
 }
 
-/// 按 `words` 的粒度折叠空格：区间里有 0.5 之前逐音节韩文的「贴前」词
-/// （[`is_legacy_glued`]，词缝没有空格）时，谚文之间的空格也折掉——那样的区间
-/// 里模型写回的空格落不进文稿，拿它和原文比只会把每一句都判成改过。泰文一类
-/// 按词切开的「贴前」词不在此列：那里的空格是短语停顿，原样比较。否则同
-/// [`collapse_cjk_spaces`]。
+/// Collapses spaces according to the granularity of `words`. When the interval contains per-syllable Korean "attached-before" words from before 0.5 ([`is_legacy_glued`], with no space at the word seam), the spaces between Hangul syllables are collapsed too. In such an interval, spaces the model writes back cannot land in the manuscript, and comparing them with the original would mark every sentence as changed. Thai-style "attached-before" words that are split by word are not included: there the spaces are phrase pauses, and they are compared as they are. Otherwise, same as [`collapse_cjk_spaces`].
 pub fn collapse_cjk_spaces_like<W: JoinWord>(words: &[W], text: &str) -> String {
     if words.iter().any(is_legacy_glued) {
         collapse_spaces_between(text, legacy_unspaced_pair)
@@ -176,7 +165,7 @@ fn collapse_spaces_between(text: &str, unspaced: fn(char, char) -> bool) -> Stri
     output
 }
 
-/// LLM 返回文本的统一清洗：剥标记 + 折叠汉字 / 假名之间的空格。
+/// Unified cleaning of LLM return text: strips the markers and collapses spaces between Han characters and kana.
 pub fn sanitize_corrected(text: &str) -> String {
     collapse_cjk_spaces(&strip_markers(text))
 }
@@ -229,7 +218,7 @@ mod tests {
             marked_text_labeled(&words, Some(&labels)),
             "hello world ⏹S2 bye ⏹S1 ok"
         );
-        // 无标签表时仍是裸标记（segment/analysis 载体沿用）。
+        // Without a label table, bare markers are still used (the segment and analysis carriers keep this).
         assert_eq!(marked_text(&words), "hello world ⏹ bye ⏹ ok");
     }
 
@@ -239,9 +228,9 @@ mod tests {
             strip_markers("hello ⏸⏸ world ⏹S2 bye ⏹S12 ok"),
             "hello world bye ok"
         );
-        // 兼容：裸标记、模型抄写时多出的空格与变体选择符。
+        // Compatibility: bare markers, extra spaces the model adds when copying, and variation selectors.
         assert_eq!(strip_markers("a ⏹ b ⏹\u{FE0F} S3 c"), "a b c");
-        // 标签必须完整，否则原样留在正文里（不吞正文）。
+        // The label must be complete. Otherwise it stays in the body as it is (it does not swallow body text).
         assert_eq!(strip_markers("a ⏹Sure b"), "a Sure b");
         assert_eq!(strip_markers("a ⏹S2nd b"), "a S2nd b");
         assert_eq!(sanitize_corrected("你 ⏹S2 好"), "你好");
@@ -261,9 +250,9 @@ mod tests {
             "저는 내일 학교에 갑니다."
         );
         assert_eq!(collapse_cjk_spaces("いい 天気 ですね"), "いい天気ですね");
-        // 谚文挨着汉字 / 假名照旧贴着。
+        // Hangul next to Han characters or kana still stays attached.
         assert_eq!(collapse_cjk_spaces("大韓 민국 만세"), "大韓민국 만세");
-        // 0.5 之前逐音节的区间：词缝没有空格，模型写回的空格不算改动。
+        // Before 0.5, per-syllable intervals have no spaces at word seams, and spaces the model writes back are not counted as changes.
         let legacy = [("저", false), ("는", true)];
         let fresh = [("저는", false)];
         assert_eq!(collapse_cjk_spaces_like(&legacy, "저는 내일"), "저는내일");

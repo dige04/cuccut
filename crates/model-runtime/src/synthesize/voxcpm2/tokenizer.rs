@@ -1,18 +1,18 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/VoxCPM2TTS/VoxCPM2TTS.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/VoxCPM2TTS/VoxCPM2TTS.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! VoxCPM2 文本分词：`tokenizer.json` 的 Llama 式 SentencePiece-BPE（`Prepend ▁` +
-//! 空格换 `▁`、无预分词、`byte_fallback`），再按官方 `mask_multichar_chinese_tokens`
-//! 把「去掉 ▁ 后两个字以上且全是 CJK」的词片拆成单字 id。
+//! VoxCPM2 text tokenization: Llama-style SentencePiece-BPE from `tokenizer.json` (`Prepend ▁` +
+//! spaces replaced with `▁`, no pre-tokenization, `byte_fallback`). Then, following the official `mask_multichar_chinese_tokens`,
+//! pieces that are two or more characters long after removing ▁ and made up entirely of CJK are split into single-character ids.
 //!
-//! 对照 speech-swift `VoxCPM2TTS.swift::tokenize` / `expandVoxCPM2TokenizerToken`。
-//! 不引 `tokenizers` crate：它在 Windows 上要 onig，且这里只需要这一条确定的路径。
-//! 与 HF `tokenizers` 的差别只有一处：不识别文本里字面写出的特殊 token（`<|im_end|>` 等），
-//! 合成文本不会带它们。
+//! Follows speech-swift `VoxCPM2TTS.swift::tokenize` / `expandVoxCPM2TokenizerToken`.
+//! Does not use the `tokenizers` crate: it needs onig on Windows, and only this one deterministic path is needed here.
+//! The only difference from HF `tokenizers` is that special tokens written literally in the text (`<|im_end|>` etc.) are not recognized,
+//! and synthesis text will not contain them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,9 +23,9 @@ const SPACE: char = '\u{2581}';
 
 pub struct Tokenizer {
     vocab: HashMap<String, u32>,
-    /// `(左, 右)` → (合并优先级, 合并结果 id)。
+    /// `(left, right)` → (merge priority, merged result id).
     merges: HashMap<(u32, u32), (u32, u32)>,
-    /// 多字 CJK 词片 → 逐字 id。
+    /// Multi-character CJK piece → per-character ids.
     cjk_split: HashMap<u32, Vec<u32>>,
     byte_ids: [Option<u32>; 256],
     unk: Option<u32>,
@@ -94,7 +94,7 @@ impl Tokenizer {
         })
     }
 
-    /// `tokenize` + 逐 token 转 id + 多字 CJK 拆字；不加 BOS（与官方一致）。
+    /// `tokenize` + per-token conversion to ids + splitting multi-character CJK pieces; no BOS is added (matches the official behavior).
     pub fn encode(&self, text: &str) -> Vec<i32> {
         if text.is_empty() {
             return Vec::new();
@@ -112,7 +112,7 @@ impl Tokenizer {
                 symbols.extend(piece.bytes().filter_map(|byte| self.byte_ids[byte as usize].or(self.unk)));
             }
         }
-        // 每轮合并优先级最高（rank 最小）、同级取最左的一对，直到没有可合并的相邻对。
+        // Each round merges the pair with the highest priority (lowest rank), and among equal priorities the leftmost pair, until no adjacent pair can be merged.
         loop {
             let mut best: Option<(u32, usize, u32)> = None;
             for i in 0..symbols.len().saturating_sub(1) {
@@ -144,7 +144,7 @@ fn is_cjk(c: char) -> bool {
     )
 }
 
-/// 官方 `mask_multichar_chinese_tokens`：去掉 `▁` 后至少两个字、全部是 CJK 且每个字都在词表里。
+/// Official `mask_multichar_chinese_tokens`: after removing `▁`, the piece has at least two characters, all are CJK, and every character is in the vocabulary.
 fn split_cjk(token: &str, vocab: &HashMap<String, u32>) -> Option<Vec<u32>> {
     let clean: Vec<char> = token.chars().filter(|&c| c != SPACE).collect();
     if clean.len() < 2 || !clean.iter().all(|&c| is_cjk(c)) {
@@ -185,20 +185,20 @@ mod tests {
     #[test]
     fn merges_follow_rank_then_leftmost_and_split_multichar_cjk() {
         let t = toy();
-        // "ab c" → ▁ab ▁ c；"abc" 里 (▁,ab) 的优先级高于 (ab,c)。
+        // "ab c" → ▁ab ▁ c; in "abc", the (▁,ab) pair has higher priority than (ab,c).
         assert_eq!(t.encode("ab c"), vec![6, 1, 4]);
         assert_eq!(t.encode("abc"), vec![6, 4]);
-        // 不在词表、也没有字节片的 x 落成 <unk>，后面的 ab 仍能与 c 合并。
+        // An x that is neither in the vocabulary nor has a byte piece becomes <unk>, and the following ab can still merge with c.
         assert_eq!(t.encode("xabc"), vec![1, 0, 13]);
-        // 「你好」合成一片后按官方规则拆回两个字。
+        // “你好” (“hello”) merged into one piece is split back into two characters per the official rule.
         assert_eq!(t.encode("你好"), vec![1, 7, 8]);
-        // 不在词表的「一」按 UTF-8 字节走 byte fallback。
+        // The character “一” (one), which is not in the vocabulary, falls back to its UTF-8 bytes.
         assert_eq!(t.encode("\u{4E00}"), vec![1, 10, 11, 12]);
         assert!(t.encode("").is_empty());
     }
 
-    /// 真分词表：与 HF `tokenizers` 0.22 的 `encode(add_special_tokens=False)` 结果
-    /// 再做官方拆字后的 id 对拍（样例由 `uv run --with tokenizers` 生成）。
+    /// Real tokenizer table: its ids, after the official splitting, are checked against the output of HF `tokenizers` 0.22's `encode(add_special_tokens=False)`
+    /// (samples generated by `uv run --with tokenizers`).
     #[test]
     #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下的 aufklarer/VoxCPM2-MLX-int8"]
     fn real_tokenizer_matches_hf_reference_ids() {

@@ -4,9 +4,8 @@ import { CliError } from '../envelope.ts';
 import { buildTree } from './command-tree.ts';
 
 /**
- * `cuccut spec [<名字>]`（Agent 面设计 §4.5）：机器可读的目录，裸 JSON（不包信封）。名字可以写工具名（`videos_inspect`）、
- * 点号（`videos.inspect`）或命令（`videos inspect`）；`edits.<操作>` 给 `edits apply` 的一个操作（与 `edits_ops` 同源）。
- * 每一项都带接口版本。
+ * `cuccut spec [<name>]` (agent-surface design §4.5): a machine-readable catalog, bare JSON (no envelope). The name can be a tool name (`videos_inspect`), a dotted form (`videos.inspect`) or a command (`videos inspect`); `edits.<op>` gives one operation of `edits apply` (same source as `edits_ops`).
+ * Every item carries the interface version.
  */
 
 export type SpecResult =
@@ -32,7 +31,7 @@ export function specOf(catalog: CatalogListResult, editOps: CatalogEditOperation
   throw new CliError('INVALID_ARGUMENTS', M.unknownSpec(name));
 }
 
-/** 名字 → 工具：工具名、`名词.动词` 或 `名词 动词`（多词动词用 `-`）。 */
+/** Name → tool: tool name, `noun.verb` or `noun verb` (multi-word verbs use `-`). */
 export function findTool(tools: readonly CatalogTool[], name: string): CatalogTool | undefined {
   const direct = tools.find((tool) => tool.name === name);
   if (direct) return direct;

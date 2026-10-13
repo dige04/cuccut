@@ -4,45 +4,42 @@ import type { GenerationInputSpec, TaskInputSpec, TranscribeInputSpec } from './
 import { RecordJournal, type LedgerOptions } from './record-journal.ts';
 
 /**
- * Job 账本：`<runtime-home>/store/jobs.jsonl`（只追加的 JSONL，每次追加都 fsync，行数多了整份压缩，§7.3；
- * 格式见 `record-journal.ts`）。每条是公开的 `JobRecord` 加上冻结的任务规格；写入串行，后发起的写一定落在后面。
- * 旧的 `jobs.json` 在第一次读时导入，之后改名为 `jobs.json.migrated`。
+ * Job ledger: `<runtime-home>/store/jobs.jsonl` (append-only JSONL; every append is fsync'd; when the line count grows, the whole file is compacted, §7.3; format in `record-journal.ts`). Each entry is the public `JobRecord` plus the frozen task spec. Writes are serialized, so a write started later always lands after. The old `jobs.json` is imported on first read and then renamed `jobs.json.migrated`.
  */
 
 export interface StoredJob {
   record: JobRecord;
   /**
-   * 转写任务是 `TranscribeInputSpec`，生成任务（`record.kind` 为 `synthesizeSpeech` / `generateImage`）是 `GenerationInputSpec`，
-   * 导出（`export`）是 `TaskInputSpec`；由别的模块执行、JobManager 只记账的任务（固定流程）是 `HostedJobSpec`。
+   * A transcription task is `TranscribeInputSpec`; a generation task (`record.kind` is `synthesizeSpeech` / `generateImage`) is `GenerationInputSpec`; an export (`export`) is `TaskInputSpec`; a task executed by another module, which the JobManager only records (fixed flow), is `HostedJobSpec`.
    */
   spec: TranscribeInputSpec | GenerationInputSpec | TaskInputSpec | HostedJobSpec;
-  /** 第一次尝试的 Worker 版本：重试必须相同（架构设计 §6.5）。 */
+  /** Worker version of the first attempt: retries must match (architecture design §6.5). */
   workerVersion: string | null;
-  /** 提交时视频的位置：重启后重新排队要先按它打开视频（§7.5）。没有视频时没有。 */
+  /** The video's position at submission: on re-queue after a restart, the video is opened by it first (§7.5). None when there is no video. */
   videoPlace?: VideoPlace | null;
-  /** 远端任务 ID（可查询的在线 Provider 提交之后给出，重启后据此查询，§7.5）。现有的 Provider 都没有。 */
+  /** Remote task ID (given after submission to an online Provider that can be queried; used to query after a restart, §7.5). No existing Provider has one yet. */
   remoteTaskId?: string;
-  /** 发布意图（§7.3）：写产物库之前落账，结果与应用记下（或任务结束）时清掉。重启时有它，就按它认领产物。 */
+  /** Publish intent (§7.3): recorded in the ledger before writing to the artifact store; cleared when the result and application are recorded (or the task ends). On restart, if it is present, artifacts are claimed by it. */
   publishing?: PublishIntent;
 }
 
-/** 将要发布的产物与结果。产物库按内容寻址，产物 ID 在写之前就算得出。 */
+/** The artifacts to be published and the result. The artifact store is content-addressed, so artifact IDs are computed before writing. */
 export interface PublishIntent {
-  /** `sha256:<hex>`，按应用的顺序。 */
+  /** `sha256:<hex>`, in the order of application. */
   artifactIds: string[];
-  /** 发布之后的结果（应用之后补上的文档与素材 ID 不在里面）。 */
+  /** The result after publishing (documents and asset IDs added after applying are not included). */
   result: NonNullable<JobRecord['result']>;
-  /** 要应用到视频时的目标引用；只发布、不应用时 null。 */
+  /** The target reference when applying to the video; null when it is only published and not applied. */
   targetRefs: string[] | null;
   warnings: JobWarning[];
 }
 
-/** 托管任务：执行与冻结的参数由宿主（`hosted` 是它的名字）自己负责，这里只有记录。 */
+/** Hosted task: execution and frozen parameters are the host's responsibility (`hosted` is its name); here there is only the record. */
 export interface HostedJobSpec {
   hosted: string;
 }
 
-/** 终结的状态：`needs-reconciliation` 也算（不再执行，等用户用 `jobs.reconcile` 决定）。 */
+/** Terminal states: `needs-reconciliation` also counts (no longer executed; waiting for the user to decide with `jobs.reconcile`). */
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'needs-reconciliation']);
 
 export function isTerminal(state: JobRecord['state']): boolean {
@@ -71,14 +68,14 @@ export class JobLedger {
   }
 
   /**
-   * 排队写入一份完整的快照（按创建先后）：只追加与上次相比变化了的任务与删掉的任务；没有变化时不写。
-   * 返回这次写入（没有变化时是之前排着的写入）完成的 Promise。
+   * Queues a write of a full snapshot (in creation order). It writes only the tasks that changed since the last write, plus the deleted tasks; nothing is written when nothing changed.
+   * Returns a Promise that completes when this write completes (or, if nothing changed, when the write already queued completes).
    */
   save(jobs: readonly StoredJob[]): Promise<void> {
     return this.#journal.replace(jobs.map((job) => [job.record.jobId, job] as const));
   }
 
-  /** 等所有排队的写入完成。 */
+  /** Waits for all queued writes to complete. */
   flush(): Promise<void> {
     return this.#journal.flush();
   }
@@ -89,7 +86,7 @@ function jobKey(value: unknown): string | null {
   return typeof jobId === 'string' ? jobId : null;
 }
 
-/** 旧格式 `jobs.json`：`{ formatVersion: 1, jobs: StoredJob[] }`。 */
+/** Old format `jobs.json`: `{ formatVersion: 1, jobs: StoredJob[] }`. */
 function legacyJobs(data: unknown): unknown[] | null {
   const file = data as { formatVersion?: unknown; jobs?: unknown } | null;
   return file?.formatVersion === 1 && Array.isArray(file.jobs) ? file.jobs : null;

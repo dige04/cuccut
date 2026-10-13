@@ -1,4 +1,4 @@
-//! `transition.wipe@1`：一条（可羽化的）边扫过画布，两张画面都不动。
+//! `transition.wipe@1`: a (feathered) edge sweeps across the canvas. Neither picture moves.
 
 use super::{Direction, composite_by_coverage, sweep_coverage, sweep_edge};
 

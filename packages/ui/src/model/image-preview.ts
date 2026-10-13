@@ -21,7 +21,7 @@ export function imageFit(natural: { width: number; height: number }, viewport: {
 export function imageZoomStep(percent: number, delta: number): number {
   return delta > 0 ? IMAGE_ZOOMS.find(n => n > percent) ?? 400 : [...IMAGE_ZOOMS].reverse().find(n => n < percent) ?? 10;
 }
-/** 只把同一生成任务的候选放在一起；普通图片保持独立，不按目录猜分组。 */
+/** Only candidates from the same generation task are grouped together; ordinary images stay independent, and grouping is not guessed from the folder. */
 export function generatedImageGallery(current: ImageCandidate, entries: readonly SpaceEntry[]): ImageCandidate[] {
   const entry = 'entryId' in current.target ? entries.find(e => e.id === (current.target as { entryId: string }).entryId) : undefined;
   if (!entry?.origin?.jobId) return [current];
@@ -32,7 +32,7 @@ export function generatedImageGallery(current: ImageCandidate, entries: readonly
 }
 export const appendImageRequest = (draft: string, request: string): string => draft ? `${draft}\n\n${request}` : request;
 
-/** 每次播放只保留一个预览播放器；隐藏标签和卸载另由宿主管理。 */
+/** Only one preview player is kept per playback; hiding the tab and unmounting are managed separately by the host. */
 export function pauseOtherPreviews(current: HTMLMediaElement | null): void {
   document.querySelectorAll<HTMLMediaElement>('[data-cc-media-preview]').forEach(media => { if (media !== current) media.pause(); });
 }

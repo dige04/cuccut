@@ -10,7 +10,7 @@ import { useShell } from '../../state/shell-store.ts';
 import { useTools } from '../../state/tools-store.ts';
 import { RECORD_COPY } from './tools-copy.ts';
 
-/** 这类工具的记录：`jobs` 主题里这台电脑的界面提交的、不属于视频的任务，去掉本机藏起来的。`all` 给排队位次用。 */
+/** Records for this kind of tool: jobs in the `jobs` topic submitted from this computer's UI that do not belong to a video, minus those hidden locally. `all` is used for queue position. */
 export function useToolRecords(kind: JobKind): { ready: boolean; list: JobRecord[]; all: JobRecord[]; live: number } {
   const ready = useJobs((s) => s.ready);
   const all = useJobs((s) => s.jobs);
@@ -19,7 +19,7 @@ export function useToolRecords(kind: JobKind): { ready: boolean; list: JobRecord
   return { ready, list, all, live: liveCount(list) };
 }
 
-/** 取消一条在跑或排队的记录（`jobs.cancel`）；结果等主题事件，失败时提示。 */
+/** Cancels a running or queued record (`jobs.cancel`); the result comes as a topic event; shows a hint on failure. */
 export function useCancelJob(): (jobId: string) => void {
   const runtime = useRuntime();
   return useCallback(
@@ -31,7 +31,7 @@ export function useCancelJob(): (jobId: string) => void {
 }
 
 /**
- * 提交被拒时的提示：配置缺失（`CAPABILITY_NOT_CONFIGURED`）时写 Runtime 给的那句提示，并带去处按钮；其余照原因写。
+ * The hint when a submission is rejected: when configuration is missing (`CAPABILITY_NOT_CONFIGURED`), show the sentence the Runtime gives, with a button to where to fix it; otherwise show the reason as-is.
  */
 export function useSubmitFailed(kind: JobKind, text: (message: string) => string): (error: Error) => void {
   const go = useShell((s) => s.go);
@@ -42,7 +42,7 @@ export function useSubmitFailed(kind: JobKind, text: (message: string) => string
         ToastQueue.negative(text(error.message), { timeout: 6000 });
         return;
       }
-      // 带按钮的提示不自动消失（S2 的无障碍要求）。
+      // Hints with a button do not auto-dismiss (S2 accessibility requirement).
       ToastQueue.negative(text(remedy.hint || error.message), {
         actionLabel: remedy.label,
         onAction: () => go(remedy.target),
@@ -54,9 +54,7 @@ export function useSubmitFailed(kind: JobKind, text: (message: string) => string
 }
 
 /**
- * 没做成的记录「再试一次 / 重新排队」。中断了、Runtime 认可就地重跑的，走 `jobs.reconcile` retry（同一个任务再排队，不另建）；
- * 其余照冻结的参数重新提交一个新任务（`resubmit` 返回 null 表示参数不全、提交不了）。在途时 `pending`；
- * 重新提交成功后这条记下 `done`、不再给按钮——连点或回头再点都不会多扣一次钱。结果不明的不在这里处理，去任务详情对账。
+ * “再试一次 / 重新排队” (retry / re-queue) for unfinished records. If the job was interrupted and the Runtime allows an in-place rerun, it goes through `jobs.reconcile` retry (the same job is queued again, not a new one); otherwise a new job is submitted with the frozen parameters (`resubmit` returns null when the parameters are incomplete and it cannot be submitted). `pending` while in progress; after a successful resubmit the record is marked `done` and the button is no longer shown, so repeated or later clicks never charge twice. Results of unknown state are not handled here; reconcile them in the job details.
  */
 export function useRecordRetry(
   job: JobRecord,
@@ -88,8 +86,7 @@ export function useRecordRetry(
 export type MediaUrl = { status: 'loading' } | { status: 'ready'; url: string } | { status: 'failed'; message: string };
 
 /**
- * 产物的受限地址（`artifacts.openHandle`）：给 `<audio>` / `<img>`。句柄一小时有效、每次读取续期，页面开着时够用；
- * 每个卡片挂载时取一次。
+ * The restricted address of an artifact (`artifacts.openHandle`), for `<audio>` and `<img>`. A handle is valid for one hour and is renewed on each read, which is enough while the page is open; each card fetches it once on mount.
  */
 export function useArtifactUrl(artifactId: string | null): MediaUrl | null {
   const runtime = useRuntime();
@@ -110,8 +107,7 @@ export function useArtifactUrl(artifactId: string | null): MediaUrl | null {
 }
 
 /**
- * 下载一个产物：取受限地址、读成 Blob、用 `<a download>` 交给浏览器（桌面端走系统的下载）。地址读不成 Blob 时
- * 退回在新窗口里打开。失败原样抛出。
+ * Downloads an artifact: gets the restricted address, reads it as a Blob, and hands it to the browser through `<a download>` (on desktop, the system download). If the address cannot be read as a Blob, it falls back to opening it in a new window. Failures are thrown as-is.
  */
 export function useDownloadArtifact(): (artifactId: string, fileName: string) => Promise<void> {
   const runtime = useRuntime();
@@ -142,7 +138,7 @@ export function useDownloadArtifact(): (artifactId: string, fileName: string) =>
   );
 }
 
-/** 复制一段文字，成败都提示。 */
+/** Copies a piece of text; shows a hint on success or failure. */
 export function copyText(text: string): void {
   navigator.clipboard.writeText(text).then(
     () => ToastQueue.positive(RECORD_COPY.copied, { timeout: 3000 }),

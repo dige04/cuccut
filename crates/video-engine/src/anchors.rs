@@ -1,13 +1,9 @@
-//! 语义锚的跟随（视频格式规范 §3.16 的 `speech-anchor`）：每笔编辑事务的最后，按最终的时间线重新求锚点，把实例摆到求出的位置。
+//! Following of semantic anchors (`speech-anchor` in the video format spec §3.16): at the end of every edit transaction, anchors are re-solved against the final timeline, and instances are placed at the solved positions.
 //!
-//! - 词的投影与按文稿闪避同一种（`render_graph::text_plan::plan_text`，作用范围是转写素材在序列上的视频、音频实例，
-//!   按起点、再按 ID 排）：投影决定词出现在哪些实例上；时刻按那个实例的线性映射与词的刻度精确求，不经浮点秒。
-//! - 判定沿用 `timeline::anchors`：词的中点落在剪口里算被剪掉（`CutSet::word_is_cut`），端点落在剪口里时起点推到
-//!   保留部分的开头、终点拉到保留部分的结尾；中点出现不止一处时有歧义；偏移之后为负的锚点无效。原因码与
-//!   `AnchorError::code` 相同，另加句子、实例、序列锚点与摆放的几种。
-//! - 求不出来、或者摆不下（与同轨道的实例重叠、超出素材）时，实例留在原来的位置，列为 `orphaned`：回执的
-//!   `impact.orphanedAnchors` 与 [`orphaned`]（`videos.inspect`）。状态不落盘，每次按时间线现算。
-//! - 这笔事务里写下（新建或改了）的锚点有歧义、或者指向不存在的转写文档时整笔拒绝；早先写下的只列为 `orphaned`。
+//! - Word projection works the same way as ducking by script (`render_graph::text_plan::plan_text`; the scope is the video and audio instances on the sequence that play the transcribed asset, sorted by start, then by ID). The projection decides which instances a word appears in. Times are computed exactly from that instance's linear mapping and the word's ticks, without going through floating-point seconds.
+//! - Judgment follows `timeline::anchors`: a word whose midpoint falls inside a cut counts as cut (`CutSet::word_is_cut`). When an endpoint falls inside a cut, the start is pushed to the beginning of the kept part and the end is pulled to the end of the kept part. If the midpoint appears more than once, it is ambiguous. An anchor that is negative after the offset is invalid. The reason codes are the same as `AnchorError::code`, plus several more for sentence, instance and sequence anchors and placement.
+//! - When an anchor cannot be solved, or cannot be placed (overlaps another instance on the same track, or exceeds the asset), the instance stays where it was and is listed as `orphaned`: in the receipt's `impact.orphanedAnchors` and in [`orphaned`] (`videos.inspect`). The state is not persisted; it is recomputed from the timeline each time.
+//! - If an anchor written in this transaction (created or changed) is ambiguous, or points to a transcript document that does not exist, the whole transaction is rejected. Anchors written earlier are only listed as `orphaned`.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -25,27 +21,27 @@ use crate::model::*;
 use crate::ops::{Edge, EditContext, ItemMove, move_item, trim_item};
 use crate::state::{VideoState, item_range};
 
-/// 读一份文档某个版本的正文；文档或版本不存在时为 `None`。
+/// Reads the body text of one version of a document; `None` if the document or version does not exist.
 pub type Loader<'a> = dyn FnMut(&str, &str) -> EngineResult<Option<Value>> + 'a;
 
-/// 求不出锚点、或者摆不到求出的位置上的实例。
+/// An instance for which no anchor can be solved, or which cannot be placed at the solved position.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrphanedAnchor {
     pub item_id: Id,
-    /// `word-anchor-missing`、`word-anchor-cut`、`word-anchor-unmapped`、`word-anchor-ambiguous`、`word-anchor-invalid`、
-    /// `sentence-anchor-missing`、`item-anchor-missing`、`sequence-anchor-mismatch`、`anchor-range-empty`（求出的终点不晚于起点）、
-    /// `anchor-blocked`（摆不下：与同轨道的实例重叠、超出素材）。
+    /// `word-anchor-missing`, `word-anchor-cut`, `word-anchor-unmapped`, `word-anchor-ambiguous`, `word-anchor-invalid`,
+    /// `sentence-anchor-missing`, `item-anchor-missing`, `sequence-anchor-mismatch`, `anchor-range-empty` (the solved end is not later than the start),
+    /// `anchor-blocked` (cannot be placed: overlaps an instance on the same track, or exceeds the asset).
     pub reason: String,
 }
 
-/// 投影里浮点秒与精确时刻比较的容差。
+/// Tolerance for comparing floating-point seconds with exact times in the projection.
 const EPS: f64 = 1e-6;
 
 #[derive(Clone, Debug)]
 struct Fail {
     reason: String,
-    /// 锚点是这笔事务里写下的时整笔拒绝，而不是列为 `orphaned`。
+    /// An anchor written in this transaction rejects the whole transaction rather than being listed as `orphaned`.
     reject_when_written: bool,
 }
 
@@ -72,20 +68,20 @@ impl Fail {
     }
 }
 
-/// 求出的起点、终点（精确的序列时刻）；没有锚点的一端为 `None`。
+/// The solved start and end (exact sequence times); `None` for an end that has no anchor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
     start: Option<Ratio>,
     end: Option<Ratio>,
 }
 
-/// 一个实例的求值结果。
+/// The evaluation result for one instance.
 pub struct Resolution {
     item_id: Id,
     outcome: Result<Target, Fail>,
 }
 
-/// 词在一个作用实例上的投影：序列上的浮点区间，加上那个实例的精确映射。
+/// A word's projection onto one affected instance: a floating-point interval on the sequence, plus that instance's exact mapping.
 #[derive(Clone, Debug)]
 struct Piece {
     item_id: Id,
@@ -110,15 +106,15 @@ impl Piece {
     }
 }
 
-/// 一份转写文档在一个序列上的投影。
+/// The projection of one transcript document onto a sequence.
 struct Projection {
-    /// 文档时间就是序列时间，不经映射。
+    /// Document time is sequence time; no mapping is applied.
     sequence_clock: bool,
     words: HashMap<String, (Ratio, Ratio)>,
-    /// 存下来的句子：句子 ID → 成员词（按顺序）。文档没有句子时为 `None`。
+    /// The stored sentences: sentence ID → member words (in order). `None` when the document has no sentences.
     sentences: Option<HashMap<String, Vec<String>>>,
     pieces: HashMap<String, Vec<Piece>>,
-    /// 素材的剪口（精确时刻，按 `t0` 排）与判定用的 `CutSet`。
+    /// The asset's cuts (exact times, sorted by `t0`) and the `CutSet` used for judgment.
     cuts: Vec<(Ratio, Ratio)>,
     cut_set: Option<CutSet>,
 }
@@ -130,7 +126,7 @@ fn has_speech_anchor(state: &VideoState) -> bool {
         .any(|p| matches!(p.value.base().follow_policy, FollowPolicy::SpeechAnchor { .. }))
 }
 
-/// 按 `state` 的时间线求每个 `speech-anchor` 实例的锚点。
+/// Solves the anchor of each `speech-anchor` instance against the timeline in `state`.
 pub fn resolve(state: &VideoState, load: &mut Loader<'_>) -> EngineResult<Vec<Resolution>> {
     if !has_speech_anchor(state) {
         return Ok(Vec::new());
@@ -204,7 +200,7 @@ fn resolve_anchor(
             let Some(members) = projection.sentences.as_ref().and_then(|s| s.get(sentence_id)) else {
                 return Ok(Err(Fail::orphan("sentence-anchor-missing")));
             };
-            // 句子的起点是第一个求得出的词的开头，终点是最后一个求得出的词的结尾。
+            // A sentence starts at the beginning of the first word that can be solved and ends at the end of the last word that can be solved.
             let ordered: Vec<&String> = match sentence_edge {
                 AnchorEdge::Start => members.iter().collect(),
                 AnchorEdge::End => members.iter().rev().collect(),
@@ -254,7 +250,7 @@ fn sequence_fps(state: &VideoState, sequence_id: &str) -> EngineResult<Rate> {
         .ok_or_else(|| ErrorBody::not_found(kinds::sequence(), sequence_id))
 }
 
-/// 一个锚点的时刻：词的中点所在的出现处，再求这个端点。
+/// The time of one anchor: the occurrence where the word's midpoint lies, then this endpoint is solved.
 fn word_time(projection: &Projection, word_id: &str, edge: AnchorEdge, occurrence: Option<&str>) -> Result<Ratio, Fail> {
     let missing = || AnchorError::WordMissing {
         source_id: String::new(),
@@ -276,7 +272,7 @@ fn word_time(projection: &Projection, word_id: &str, edge: AnchorEdge, occurrenc
         .checked_add(t1)
         .and_then(|s| s.checked_div(Ratio::from_int(2)?))
         .ok_or_else(|| Fail::orphan("word-anchor-invalid"))?;
-    // 中点的出现处：同一刻的音画只算一处。
+    // The midpoint's occurrence: audio and video at the same moment count as one occurrence.
     let mut found: Vec<(&Piece, Ratio)> = Vec::new();
     for piece in pieces {
         if occurrence.is_some_and(|o| o != piece.item_id && o != piece.origin) {
@@ -293,7 +289,7 @@ fn word_time(projection: &Projection, word_id: &str, edge: AnchorEdge, occurrenc
         [one] => *one,
         _ => return Err(Fail::anchor(AnchorError::Ambiguous(word_id.to_string()))),
     };
-    // 端点落在剪口里：起点推到剪口之后，终点拉到剪口之前（timeline::anchors 的 SeamBias）。
+    // Endpoint inside a cut: the start is pushed to after the cut, the end is pulled to before the cut (SeamBias in timeline::anchors).
     let mut x = source;
     while let Some(&(c0, c1)) = projection.cuts.iter().find(|(c0, c1)| *c0 <= x && x < *c1) {
         x = match edge {
@@ -304,7 +300,7 @@ fn word_time(projection: &Projection, word_id: &str, edge: AnchorEdge, occurrenc
             break;
         }
     }
-    // 端点在任何一段上的位置：起点取不晚于中点的最近一处，终点取不早于中点的最近一处。
+    // Position of an endpoint across the segments: the start takes the nearest point not later than the midpoint; the end takes the nearest point not earlier than the midpoint.
     let candidates = pieces.iter().filter_map(|p| p.map(x).filter(|t| p.covers(*t)));
     let chosen = match edge {
         AnchorEdge::Start => candidates.filter(|t| *t <= middle_time).max(),
@@ -312,7 +308,7 @@ fn word_time(projection: &Projection, word_id: &str, edge: AnchorEdge, occurrenc
     };
     Ok(match chosen {
         Some(t) => t,
-        // 端点被修剪掉了（不是剪口）：靠到中点所在实例的边上。
+        // Endpoint was trimmed away (not a cut): snap to the edge of the instance where the midpoint lies.
         None => {
             let t = home.map(x).unwrap_or(middle_time);
             t.max(home.item_start).min(home.item_end)
@@ -402,7 +398,7 @@ fn build_projection(
     };
     let fps = sequence_fps(state, sequence_id)?;
 
-    // 作用范围与按文稿闪避相同：素材的视频、音频实例，按起点、再按 ID 排。
+    // Scope is the same as for ducking by script: the asset's video and audio instances, sorted by start, then by ID.
     let mut scope: Vec<(Ratio, Id)> = Vec::new();
     let mut maps: BTreeMap<Id, (Ratio, Ratio, Ratio, Ratio, Id)> = BTreeMap::new();
     for placed in state.items.values().filter(|p| p.sequence_id == sequence_id) {
@@ -453,7 +449,7 @@ fn build_projection(
         }
     }
 
-    // 素材的剪口集合：判定词有没有被剪掉，端点落在剪口里时靠边。
+    // The asset's cut set: decides whether a word has been cut, and snaps to the edge when an endpoint falls inside a cut.
     if let Some(cut_set_id) = crate::cuts::cut_set_document(state, asset_id)
         && let Some(revision) = state.documents.get(&cut_set_id).map(|d| d.current_revision.clone())
         && let Some(body) = load(&cut_set_id, &revision)?
@@ -495,7 +491,7 @@ fn ticks(value: &Value) -> Option<i128> {
     }
 }
 
-/// 摆放的目标：精确的起止与量化之后的帧。
+/// The placement target: exact start and end, and the frames after quantization.
 struct Placement {
     start: Ratio,
     end: Ratio,
@@ -503,7 +499,7 @@ struct Placement {
     end_frame: Option<i64>,
 }
 
-/// 求出的锚点在 `state` 上的摆放；与现在的位置相同时为 `None`。
+/// The placement of a solved anchor on `state`; `None` when it is the same as the current position.
 fn placement(state: &VideoState, item_id: &str, target: &Target) -> EngineResult<Result<Option<Placement>, Fail>> {
     let placed = &state.items[item_id];
     let fps = sequence_fps(state, &placed.sequence_id)?;
@@ -537,7 +533,7 @@ fn placement(state: &VideoState, item_id: &str, target: &Target) -> EngineResult
     if (start, end) == (current_start, current_end) {
         return Ok(Ok(None));
     }
-    // 到序列末尾的实例终点由引擎另求：只看起点会不会落进别的实例。
+    // The end of an instance running to the end of the sequence is solved separately by the engine: only check whether its start would land inside another instance.
     let probe_end = if placed.value.base().until_sequence_end {
         start
             .checked_add(frame_time(1, fps).ok_or_else(crate::ops::overflow)?)
@@ -564,7 +560,7 @@ fn placement(state: &VideoState, item_id: &str, target: &Target) -> EngineResult
     })))
 }
 
-/// 把求出的位置写进 `next`，返回列为 `orphaned` 的实例。锁着的实例要动时整笔拒绝（与 `follow-cuts` 相同）。
+/// Writes the solved positions into `next` and returns the instances listed as `orphaned`. When a locked instance would have to move, the whole transaction is rejected (same as `follow-cuts`).
 pub(crate) fn apply(
     before: &VideoState,
     next: &mut VideoState,
@@ -603,11 +599,11 @@ pub(crate) fn apply(
     Ok(orphaned)
 }
 
-/// 移动起点、再修剪终点（关键帧与音频的子帧照常换算）。超出素材等摆不下的情况还原并返回原因。
+/// Moves the start, then trims the end (keyframes and audio sub-frame offsets are converted as usual). For cases such as exceeding the asset, the change is reverted and the reason is returned.
 fn place(next: &mut VideoState, item_id: &str, placement: &Placement, ctx: &mut EditContext<'_>) -> EngineResult<Option<Fail>> {
     let sequence_id = next.items[item_id].sequence_id.clone();
     let fps = sequence_fps(next, &sequence_id)?;
-    // 带素材的实例修剪可能超出素材：先留一份（关键帧也会改），失败时整个还原；其余实例只会动它自己。
+    // Trimming an instance with an asset may exceed the asset: keep a copy first (keyframes also change). If it fails, revert everything; other instances only change themselves.
     let backup = next.items[item_id].value.asset_ref().is_some().then(|| next.clone());
     let item_backup = next.items[item_id].clone();
     let receipts = ctx.time_resolution.len();
@@ -651,7 +647,7 @@ fn place(next: &mut VideoState, item_id: &str, placement: &Placement, ctx: &mut 
     }
 }
 
-/// 现在的时间线上列为 `orphaned` 的实例：求不出锚点，或者不在求出的位置上（摆不下）。只读，不改视频。
+/// Instances on the current timeline listed as `orphaned`: an anchor cannot be solved, or the instance is not at the solved position (it cannot be placed). Read-only; does not change the video.
 pub fn orphaned(state: &VideoState, load: &mut Loader<'_>) -> EngineResult<Vec<OrphanedAnchor>> {
     let mut found = Vec::new();
     for Resolution { item_id, outcome } in resolve(state, load)? {

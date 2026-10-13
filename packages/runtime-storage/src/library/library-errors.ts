@@ -1,7 +1,7 @@
 import { RpcError } from '@cuccut/protocol';
 import type { Localized } from '@cuccut/protocol';
 
-/** 用户库的错误码（命令与协议规范 §11），放在 `RpcError.details.code`。 */
+/** User library error codes (command and protocol spec §11), placed in `RpcError.details.code`. */
 export type LibraryErrorCode =
   | 'LIBRARY_FORMAT_INVALID'
   | 'LIBRARY_KIND_RESERVED'
@@ -21,7 +21,7 @@ export function libraryError(
   return new RpcError(rpc, message, { code, ...details });
 }
 
-/** 内容或交换文件不合规：`invalid-request`。 */
+/** Content or exchange file that does not comply: `invalid-request`. */
 export function formatInvalid(message: string | Localized, details: Record<string, unknown> = {}): RpcError {
   return libraryError('LIBRARY_FORMAT_INVALID', 'invalid-request', message, details);
 }

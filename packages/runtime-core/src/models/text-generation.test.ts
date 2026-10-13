@@ -17,10 +17,8 @@ import { resolveRuntimeHome, type RuntimeHome } from '@cuccut/runtime-storage';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 文本生成（`models.generateText`、进程内的 `TextGenerator`，架构设计 §6.1、§6.4）与 `models.refreshProvider`、
- * `models.setCapabilityParameters`（§6.8）经网关端到端：选择与「没有配置」、默认值与过时的默认值、任务 → 假供应商 →
- * 校验 → 产物 → `artifacts.openHandle` 读回、幂等的 commandId、刷新模型列表，以及密钥不出现在任何记录里。
- * 测试只连本机回环地址上的假供应商，密钥是测试里编的字符串。
+ * Text generation (`models.generateText`, the in-process `TextGenerator`; architecture design §6.1, §6.4) and `models.refreshProvider` and `models.setCapabilityParameters` (§6.8), end to end through the gateway: selection and “no configuration”; defaults and stale defaults; task → fake provider → validation → artifact → read back via `artifacts.openHandle`; idempotent commandId; refreshing the model list; and keys appearing in no record.
+ * The test connects only to a fake provider on a loopback address; the key is a made-up string in the test.
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-text-e2e-0123456789';
@@ -99,7 +97,7 @@ function settled(side: Side, jobId: string): Promise<JobRecord> {
   return until(() => side.jobs()!.jobs.find((j) => j.jobId === jobId && ['completed', 'failed', 'cancelled'].includes(j.state)));
 }
 
-/** 日志、账本、配置、主题与诊断目录里都不能出现密钥。 */
+/** Keys must not appear in logs, the ledger, configuration, topics, or the diagnostics directory. */
 async function expectNoSecret(side: Side, secret: string) {
   const files = [path.join(side.home.logsDir, 'runtime.log'), side.home.jobsFile, side.home.modelServicesFile];
   for (const file of files) expect(await fs.readFile(file, 'utf8').catch(() => ''), file).not.toContain(secret);
@@ -340,7 +338,7 @@ describe('文本生成（经网关）', () => {
     expect(failed.refreshed).toMatchObject({ ok: false });
     expect(failed.refreshed.error).not.toContain(OPENAI_KEY);
     expect(failed.provider.capabilities.generateText!.models.every((m) => m.available !== false)).toBe(true);
-    // 回到内置列表：默认值又可用了。
+    // Back to the built-in list: the default is usable again.
     const { jobId } = await side.client.request('models.generateText', { messages: [{ role: 'user', content: 'x' }] });
     expect(await settled(side, jobId)).toMatchObject({ state: 'completed', modelId: 'gpt-6-astra' });
 

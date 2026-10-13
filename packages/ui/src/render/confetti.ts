@@ -4,18 +4,15 @@ import { R } from './render-copy.ts';
 import { isObject, type Json } from './text-style.ts';
 
 /**
- * 彩纸（内置生成器 `cuccut.confetti`，照设计稿 model-confetti.js）：十款配方是起点，颜色、形状、粒子运动、发射与种子
- * 都是参数，时长跟着片段走。两条硬约束：
- * 1. 闭式运动：每个粒子的位置、旋转、大小、透明度都是它自己年龄 τ 的显式函数，不积分、不存上一帧——拖播放头、
- *    倒放、抽帧都不会漂。
- * 2. 随机数只来自 splitmix64(seed, i·16 + c)：粒子 i 的第 c 个通道是纯函数；`randomSeed()` 只在新建元素时用一次。
- * 款式的次序、色板、形状与缺省发射读 `motion` 的内置配方，参数的范围读时间线的校验常量（都经编辑语义 WASM）；
- * 这里是新建、属性页用的参数补齐，款名、形状名这些界面文案在 `render-copy.ts`。粒子的求解与绘制在渲染内核里。
+ * Confetti (built-in generator `cuccut.confetti`, following the design file model-confetti.js): ten recipes are starting points; color, shape, particle motion, emission and seed are all parameters, and the duration follows the clip. Two hard constraints:
+ * 1. Closed-form motion: each particle's position, rotation, size and opacity are explicit functions of its own age τ. Nothing is integrated and no previous frame is stored, so scrubbing the playhead, reverse playback and frame skipping do not drift.
+ * 2. Random numbers come only from splitmix64(seed, i·16 + c): channel c of particle i is a pure function; `randomSeed()` is used once, only when a new element is created.
+ * The order of styles, the palettes, the shapes and the default emission read the built-in recipes in `motion`, and the parameter ranges read the timeline's validation constants (both through the edit-semantics WASM). This is where parameters are filled in for creation and the property panel; style names and shape names (UI copy) are in `render-copy.ts`. Particle solving and drawing happen in the render kernel.
  */
 
 const ranges = lazyObject(() => engineRanges().confetti);
 
-/** 上限：色板几种颜色、连续发射每秒几枚、每次爆发几枚、爆发间隔几秒。 */
+/** Limits: number of palette colors, particles emitted per second in continuous emission, particles per burst, and seconds between bursts. */
 export const CONFETTI_LIMITS = lazyObject(
   () =>
     ({
@@ -26,28 +23,28 @@ export const CONFETTI_LIMITS = lazyObject(
     }) as const,
 );
 
-/** 形状名（界面文案），读的时候按当前界面语言取。 */
+/** Shape name (UI copy), taken in the current UI language when read. */
 export const CONFETTI_SHAPE_NAMES = live(() => R.confetti.shapes);
 export type ConfettiShape = keyof typeof CONFETTI_SHAPE_NAMES;
 
 const isShape = (value: unknown): value is ConfettiShape => typeof value === 'string' && Object.hasOwn(CONFETTI_SHAPE_NAMES, value);
 
-/** 12 种单位形，次序是属性页的次序。 */
+/** 12 unit shapes; the order is the property panel's order. */
 export const CONFETTI_SHAPES: readonly ConfettiShape[] = lazyArray(() => ranges.shapes.filter(isShape));
 
 export interface ConfettiEmit {
   mode: 'continuous' | 'burst';
-  /** 连续发射：每秒出生几枚。 */
+  /** Continuous emission: particles born per second. */
   rate: number;
-  /** 爆发：每次几枚。 */
+  /** Burst: particles per burst. */
   count: number;
-  /** 爆发：第 b 次在 b × 间隔秒；0 = 只放一次。 */
+  /** Burst: the b-th burst happens at b × interval seconds; 0 = fire once only. */
   interval: number;
-  /** 片尾前一个寿命不再出生（结束时落尽）。 */
+  /** No particles are born during the last lifetime before the end of the clip (so they have all fallen by the end). */
   settle: boolean;
 }
 
-/** 一款彩纸：配方（色板、形状、发射器与缺省发射）加上界面的款名与出处（改编自哪个 MIT 来源）。 */
+/** One confetti style: its recipe (palette, shapes, emitters and default emission), plus the style name shown in the UI and its source (which MIT-licensed source it is adapted from). */
 export interface ConfettiStyle extends ConfettiPreset {
   key: string;
   name: string;
@@ -55,7 +52,7 @@ export interface ConfettiStyle extends ConfettiPreset {
   shapes: readonly ConfettiShape[];
 }
 
-/** 十款配方，目录次序。配方算一次就留着；款名（界面文案）是读取器，每次按当前界面语言取。 */
+/** Ten recipes, in catalog order. A recipe is computed once and kept; the style name (UI copy) is a reader that takes the current UI language each time. */
 export const CONFETTI_STYLES: readonly ConfettiStyle[] = lazyArray(() =>
   elementPresets().confetti.map((preset) => ({
     ...preset,
@@ -72,7 +69,7 @@ export function confettiStyle(key: unknown): ConfettiStyle {
   return CONFETTI_STYLES.find((style) => style.key === key) ?? CONFETTI_STYLES[0]!;
 }
 
-/** 参数的范围（倍率、风、不透明度、发射与起点）。 */
+/** Parameter ranges (scale, wind, opacity, emission and origin). */
 export const CONFETTI_RANGES = lazyObject(
   () =>
     ({
@@ -95,7 +92,7 @@ export const CONFETTI_RANGES = lazyObject(
 
 const within = (value: number, range: Range) => Math.min(range[1], Math.max(range[0], value));
 
-/** 一份完整的彩纸参数。`origin` / `angle` / `spread` 为 null 时跟着配方的发射器走。 */
+/** A full set of confetti parameters. When `origin` / `angle` / `spread` are null, they follow the recipe's emitter. */
 export interface ConfettiProps {
   style: string;
   seed: number;
@@ -116,14 +113,14 @@ export interface ConfettiProps {
 
 const MULTIPLIERS = ['size', 'speed', 'gravity', 'drift', 'spin', 'wind', 'opacity'] as const;
 
-/** 种子：53 位以内的非负整数（两边 JSON 都能原样带），别的一律当 0。 */
+/** Seed: a non-negative integer within 53 bits (both sides' JSON can carry it exactly); anything else is treated as 0. */
 export function confettiSeed(value: unknown): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(n)) return 0;
   return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(Math.abs(n)));
 }
 
-/** 某一款的完整参数（种子由调用方给：新建时 `randomSeed()`，换款时保留）。 */
+/** Full parameters for one style (the caller supplies the seed: `randomSeed()` when creating, kept when switching styles). */
 export function confettiDefaults(styleKey?: unknown, seed?: unknown): ConfettiProps {
   const style = confettiStyle(styleKey);
   return {
@@ -145,7 +142,7 @@ export function confettiDefaults(styleKey?: unknown, seed?: unknown): ConfettiPr
   };
 }
 
-/** 补齐一份可能残缺的参数（旧文档、手写 JSON），越界值夹回范围。 */
+/** Fills in a possibly incomplete set of parameters (old documents, hand-written JSON); out-of-range values are clamped back into range. */
 export function normalizeConfetti(value: unknown): ConfettiProps {
   const raw: Json = isObject(value) ? value : {};
   const base = confettiDefaults(raw.style, raw.seed);
@@ -178,19 +175,19 @@ export function normalizeConfetti(value: unknown): ConfettiProps {
   return out;
 }
 
-/** 换款：参数回到那一款的缺省，只有种子跟着人走（换款是重选，不是编辑）。 */
+/** Switching style: parameters return to that style's defaults; only the seed carries over (switching style is re-picking, not editing). */
 export function switchConfettiStyle(props: unknown, styleKey: string): ConfettiProps {
   return confettiDefaults(styleKey, isObject(props) ? props.seed : undefined);
 }
 
-/** 新建元素时写入的随机种子：53 位以内的非零安全整数。 */
+/** Random seed written when a new element is created: a non-zero safe integer within 53 bits. */
 export function randomSeed(): number {
-  const hi = Math.floor(Math.random() * 0x200000); // 21 位
-  const lo = Math.floor(Math.random() * 0x100000000); // 32 位
+  const hi = Math.floor(Math.random() * 0x200000); // 21 bits
+  const lo = Math.floor(Math.random() * 0x100000000); // 32 bits
   return hi * 0x100000000 + lo || 1;
 }
 
-/** 面板上显示的发射参数：没自定时回落到配方的第一枚发射器；多发射器的款标 `multi`。 */
+/** Emission parameters shown in the panel: when not customized, they fall back to the recipe's first emitter; a style with several emitters is marked `multi`. */
 export function effectiveEmit(props: ConfettiProps): { x: number; y: number; angle: number; spread: number; multi: boolean } {
   const recipe = confettiStyle(props.style);
   const emitter = recipe.emitters[0]!;

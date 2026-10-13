@@ -13,8 +13,7 @@ import {
 } from './transcript-switch.ts';
 
 /**
- * 换用文稿（架构设计 §6.6）：一笔事务写已有文稿的新版本，结转译文（视频格式规范 §5.3）、字幕、换行与分段（§5.5）
- * 与配音计划（§7.2）。真实引擎上的整条路径见 runtime-core 的 `transcribe-pipeline.test.ts`。
+ * Switching transcripts (architecture design §6.6): one transaction writes the new version of an existing transcript, carrying over translations, subtitles, line breaks and segmentation (video format spec §5.3, §5.5) and the dubbing plan (§7.2). For the full path on a real engine, see `transcribe-pipeline.test.ts` in runtime-core.
  */
 
 type PutDocument = Extract<EditOperation, { type: 'putDocument' }>;
@@ -37,7 +36,7 @@ const record = (id: Id, kind: string, extra: Partial<DocumentRecord> & Record<st
     ...extra,
   }) as unknown as DocumentRecord;
 
-/** 旧文稿两句；第二句的「line.」上有一个用户换行，第一句末尾一个，第二句开头一个分段。 */
+/** The old transcript has two sentences. The “line.” of the second sentence has a user line break, one at the end of the first sentence, and a segment break at the start of the second. */
 const previousSpeech = speech(
   [
     ['w0', 0, 400, 'Hello'],
@@ -48,7 +47,7 @@ const previousSpeech = speech(
   { userBreaks: { w1: 'break', w3: 'no-break' }, paragraphBreaks: ['w2'], layoutProfileId: 'layout-1' },
 );
 
-/** 新转写：第一句原文一样（大小写与标点不同也算一样），第二句改了。词 ID 全是新的。 */
+/** New transcription: the first sentence's original text is the same (case and punctuation differences also count as the same), and the second sentence has changed. All word IDs are new. */
 const nextSpeech = speech([
   ['w-2-000000', 10, 410, 'hello'],
   ['w-2-000001', 510, 910, ' there!'],
@@ -153,7 +152,7 @@ describe('换用文稿', () => {
       { start: 1000, end: 2000 },
       { start: 2000, end: 2200 },
     ];
-    // 新的刻度是 10_000：第一句 0–1.1s，第二句 1.1–2.0s，第三句 2.15–3s（与旧第三句重叠 0.05s，不到 0.1s 的一半）。
+    // The new time scale is 10_000: the first sentence is 0–1.1s, the second 1.1–2.0s, and the third 2.15–3s (it overlaps the old third sentence by 0.05s, less than half of 0.1s).
     const next = [
       { start: 0, end: 11_000 },
       { start: 11_000, end: 20_000 },

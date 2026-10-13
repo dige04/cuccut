@@ -36,18 +36,16 @@ const translateToast: TranslateDeps['toast'] = (kind, message, undo) =>
   );
 
 /**
- * AI 工具 Tab（原型 panel-aitools.jsx `AiToolsPanel`，产品设计 §5.10）：没有打开的工具页时是列表页（`AiToolsList`），
- * 点一行或别的面板带着范围的入口（`openAiTool`）打开那个工具页，「返回」回列表。
- * 翻译字幕挂翻译设置页（提交后翻到字幕页看进度与收据）、翻译配音挂配音页（开始后留在原地看进度与收据）、识别说话人挂
- * 它的四态页（设置、运行、确认、收据都在原地，`SpeakerFlow`）；剪成短视频挂它自己的参数页（`ShortsToolPage`）与结果页（`ShortsResultPage`）；其余交给 Agent（`AiAgentToolPage`）。
- * 网页宿主没有这个 Tab（见 editor-store 的 `hostPanelTab`）。
+ * AI tools tab (prototype panel-aitools.jsx `AiToolsPanel`, product design §5.10): with no tool page open, it shows the list page (`AiToolsList`); clicking a row, or an entry from another panel carrying a range (`openAiTool`), opens that tool page, and 「返回」 (Back) returns to the list.
+ * Translate subtitles is hosted by the translation settings page (after submitting, it switches to the subtitle page to see progress and receipts); translate and dub is hosted by the dubbing page (after starting, it stays in place to see progress and receipts); identify speakers is hosted by its four-state page (settings, running, confirmation and receipt all in place, `SpeakerFlow`); cut into a short video is hosted by its own parameters page (`ShortsToolPage`) and result page (`ShortsResultPage`); everything else goes to the Agent (`AiAgentToolPage`).
+ * The web host does not have this tab (see `hostPanelTab` in editor-store).
  */
 export function AiToolsPanel({ sequence, documents }: { sequence: Sequence; documents: Record<Id, DocumentRecord> }) {
   const runtime = useRuntime();
   useEffect(() => bindTranslate({ runtime, toast: translateToast }), [runtime]);
-  // 直接调模型的任务在列表页也要收尾（列表上的状态、回到工具页时的结果）。
+  // Direct model tasks must also be wrapped up on the list page (the status on the list, and the result when returning to the tool page).
   useBindAiToolRun();
-  // 重启前交给 Agent 的找可剪的口、刷新过期译文：那条会话还在跑就接上，跑完了就不再画进度卡。
+  // Before the restart, finding cut points and refreshing stale translations were handed to the Agent: if their conversation is still running, reattach; once done, the progress card is no longer drawn.
   const ready = useDirectory((s) => s.ready);
   const conversations = useDirectory((s) => s.conversations);
   const queues = useShell((s) => s.queues);
@@ -56,7 +54,7 @@ export function AiToolsPanel({ sequence, documents }: { sequence: Sequence; docu
   const page = useAiToolsNav((s) => (videoId ? (s.pages[videoId] ?? null) : null));
   const derivation = useMemo(() => readDerivation(documents), [documents]);
   const hasRun = useShortsRuns((s) => (videoId ? !!latestShortsRun(s.runs, videoId) : false));
-  // 去工具页的（生成配乐）没有自己的页：万一导航状态记着它（旧的状态），清掉回列表。
+  // Going to a tool page (generate soundtrack) has no page of its own: if navigation state still refers to it (old state), clear it and go back to the list.
   const toolPage = !!page && aiTool(page.tool).tier === 'tool';
   useEffect(() => {
     if (videoId && toolPage) closeAiTool(videoId);
@@ -67,7 +65,7 @@ export function AiToolsPanel({ sequence, documents }: { sequence: Sequence; docu
   const back = () => closeAiTool(videoId);
   const tool = aiTool(page.tool);
   if (tool.id === 'translate') {
-    // 进度、问题与收据都在字幕页：提交后翻过去。
+    // Progress, questions and receipts are on the subtitle page: after submitting, switch there.
     return (
       <TranslateFlow
         videoId={videoId}
@@ -78,14 +76,13 @@ export function AiToolsPanel({ sequence, documents }: { sequence: Sequence; docu
       />
     );
   }
-  // 配音的进度、跑到一半的授权询问、失败重试与收据都在配音页上：开始后留在原地。
+  // Dubbing progress, mid-run authorization prompts, retry on failure, and receipts are all on the dubbing page: stay in place after starting.
   if (tool.id === 'dub') return <DubFlow videoId={videoId} documents={documents} onBack={back} />;
-  // 识别结果先进确认页、应用后留收据：都在这一页上。
+  // Speaker identification results go to the confirmation page first and leave a receipt after applying: all on this page.
   if (tool.id === 'speakers') return <SpeakerFlow videoId={videoId} sequence={sequence} documents={documents} onBack={back} />;
   if (tool.tier === 'soon') return <AiToolSoon tool={tool} onBack={back} />;
   if (tool.tier === 'tool') return <AiToolsList videoId={videoId} sequence={sequence} documents={documents} />;
-  // 剪成短视频：只交给 Agent、总是新开会话，参数页自己的一套（没有「用」与「会话」两行）。交出去过（或开着的是切出来的一支）时
-  // 进来先是结果页，结果页「返回」才是参数页（原型 panel-aitools-shorts.jsx `ShortsCutPanel`）。
+  // Cut into a short video: only handed to the Agent, always starts a new conversation, with its own parameters page (no 「用」 (Use) and 「会话」 (Conversation) rows). If it was handed off before (or the one open is a cut-out clip), entering shows the result page first; the 「返回」 (Back) on the result page leads to the parameters page (prototype panel-aitools-shorts.jsx `ShortsCutPanel`).
   if (tool.id === 'shortscut') {
     const host = page.host ?? derivation?.parentVideoId ?? videoId;
     if (page.phase === 'result' || (page.phase !== 'setup' && (hasRun || !!derivation)))

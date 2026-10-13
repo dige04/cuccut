@@ -5,19 +5,15 @@ import { refOf, type Localized, type MessageRef } from '@cuccut/protocol';
 import { RcCommon, RcPackage } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * `.cuccut` 归档的容器（视频格式规范 §8）：不压缩的 POSIX ustar tar。只用 Node 自带的模块，读写都是流式的，
- * 素材不必整个读进内存。
+ * The container for `.cuccut` archives (video format spec §8): an uncompressed POSIX ustar tar. Uses only Node's built-in modules. Reading and writing are both streaming, so assets never have to be read fully into memory.
  *
- * 只写普通文件，名字按 ustar 的 prefix + name 最长 255 字节，单个文件小于 8 GiB（ustar 的长度字段是 11 位八进制）；
- * 更长的名字与更大的文件要 pax 扩展头，这一版不写也不读，在预检时逐项拒绝。
+ * Only regular files are written. Names follow ustar's prefix + name rule, at most 255 bytes in total, and a single file must be smaller than 8 GiB (ustar's length field is 11 octal digits). Longer names and larger files need pax extension headers, which this version neither writes nor reads, so they are rejected item by item during preflight.
  *
- * 读的时候不信任归档：头的校验和要对，只接受普通文件与目录项（硬链接、符号链接、设备与 pax / GNU 扩展头都拒绝），
- * 路径必须是相对的、不含 `..`、不含空段与反斜杠、在包的固定布局之内（`video.manifest.json`、`video.snapshot.json`、
- * `assets/`、`documents/`），同一个路径不能出现两次。
+ * Archives are not trusted when read: the header checksum must match, and only regular file and directory entries are accepted (hard links, symbolic links, devices, and pax / GNU extension headers are rejected). Paths must be relative, must not contain `..`, empty segments, or backslashes, and must fall within the package's fixed layout (`video.manifest.json`, `video.snapshot.json`, `assets/`, `documents/`). The same path may not appear twice.
  */
 
 const BLOCK = 512;
-/** ustar 的长度字段能表示的上限（11 位八进制）。 */
+/** The maximum value the length field of a ustar header can represent (11 octal digits). */
 export const MAX_ENTRY_BYTES = 8 * 1024 ** 3 - 1;
 export const MAX_PATH_BYTES = 255;
 const TOP_FILES = new Set(['video.manifest.json', 'video.snapshot.json']);
@@ -35,7 +31,7 @@ export class ArchiveError extends Error {
   }
 }
 
-/** 包里的路径能不能写进 ustar 头：按 `/` 拆成 prefix（≤155 字节）与 name（≤100 字节）。不能时返回原因。 */
+/** Whether a path in the package can be written into a ustar header: split on `/` into prefix (≤155 bytes) and name (≤100 bytes). Returns the reason when it can't. */
 export function ustarProblem(name: string, size: number): string | null {
   if (size > MAX_ENTRY_BYTES) return RcPackage.tarFileTooLarge().text;
   if (splitName(name) === null) return RcPackage.tarPathTooLong({ max: MAX_PATH_BYTES }).text;
@@ -46,7 +42,7 @@ function splitName(name: string): { prefix: string; name: string } | null {
   const bytes = Buffer.byteLength(name);
   if (bytes <= 100) return { prefix: '', name };
   if (bytes > MAX_PATH_BYTES) return null;
-  // 从后往前找一个 `/`，使两边都放得下。
+  // Search backwards from the end for a `/` so that both sides fit.
   for (let i = name.length - 1; i > 0; i--) {
     if (name[i] !== '/') continue;
     const prefix = name.slice(0, i);
@@ -82,7 +78,7 @@ function header(name: string, size: number, mtime: number): Buffer {
   return block;
 }
 
-/** 顺序写一个 tar 文件。每个条目边写边算 sha256，返回长度与摘要，由调用方写进清单。 */
+/** Writes a tar file sequentially. Computes sha256 for each entry as it is written, and returns the length and digest for the caller to put in the manifest. */
 export class TarWriter {
   readonly #file: fs.FileHandle;
   readonly #mtime: number;
@@ -93,7 +89,7 @@ export class TarWriter {
     this.#mtime = mtime;
   }
 
-  /** 新建（`wx`：已经存在时失败）。`mtime` 是写进每个头的修改时间（秒）。 */
+  /** Creates a new file (`wx`: fails if it already exists). `mtime` is the modification time (seconds) written into each header. */
   static async create(target: string, mtime: number): Promise<TarWriter> {
     return new TarWriter(await fs.open(target, 'wx'), mtime);
   }
@@ -118,8 +114,8 @@ export class TarWriter {
   }
 
   /**
-   * 写一个文件条目。`size` 是预期的长度：源的实际长度不同时抛错（文件在读的时候被改了），摘要按真正写进去的 bytes 算。
-   * `signal` 中止时在块之间停下。
+   * Writes a file entry. `size` is the expected length: throws if the source's actual length differs (the file was changed while being read). The digest is computed over the bytes actually written.
+   * Stops between blocks when `signal` aborts.
    */
   async addStream(
     name: string,
@@ -144,14 +140,14 @@ export class TarWriter {
     return { byteLength: size, sha256: `sha256:${hash.digest('hex')}` };
   }
 
-  /** 写结尾的两个空块，落盘并关闭。 */
+  /** Writes the two empty end blocks, flushes to disk, and closes. */
   async finish(): Promise<void> {
     await this.#write(Buffer.alloc(BLOCK * 2));
     await this.#file.sync();
     await this.#file.close();
   }
 
-  /** 出错时关闭（文件由调用方删掉）。 */
+  /** Closes on error (the caller deletes the file). */
   async abort(): Promise<void> {
     await this.#file.close().catch(() => {});
   }
@@ -160,7 +156,7 @@ export class TarWriter {
 export interface ArchiveEntry {
   path: string;
   size: number;
-  /** 数据在归档里的起点。 */
+  /** Where the data starts within the archive. */
   offset: number;
 }
 
@@ -176,7 +172,7 @@ function readOctal(block: Buffer, start: number, length: number): number {
   return parseInt(text, 8);
 }
 
-/** 包里的路径是否安全：相对、不含 `..` 与空段、在包的固定布局之内。 */
+/** Whether a path in the package is safe: relative, no `..` or empty segments, and within the package's fixed layout. */
 export function safePackagePath(name: string): boolean {
   if (!name || name.length > MAX_PATH_BYTES || name.startsWith('/') || /[\\\0]/.test(name) || /^[A-Za-z]:/.test(name)) return false;
   const parts = name.split('/');
@@ -185,8 +181,8 @@ export function safePackagePath(name: string): boolean {
 }
 
 /**
- * 列出归档里的文件条目（不读数据）。头的校验和、条目种类与路径按上面的规则检查；目录项只检查路径，不列出。
- * 结尾的空块之后的内容忽略；没有结尾时以文件末尾为准。
+ * Lists the file entries in the archive (without reading data). Checks header checksums, entry types, and paths by the rules above. Directory entries only have their paths checked and are not listed.
+ * Anything after the trailing empty blocks is ignored. Without a terminator, the end of the file is used.
  */
 export async function listArchive(file: string): Promise<ArchiveEntry[]> {
   const handle = await fs.open(file, 'r');
@@ -232,13 +228,13 @@ export async function listArchive(file: string): Promise<ArchiveEntry[]> {
   }
 }
 
-/** 一个条目的数据流。 */
+/** The data stream of one entry. */
 export function entryStream(file: string, entry: ArchiveEntry): AsyncIterable<Buffer> {
   if (entry.size === 0) return (async function* () {})();
   return createReadStream(file, { start: entry.offset, end: entry.offset + entry.size - 1 });
 }
 
-/** 读出一个条目的全部内容（清单、快照这类小文件）。 */
+/** Reads the entire contents of one entry (small files such as the manifest and snapshot). */
 export async function readEntry(file: string, entry: ArchiveEntry, limit: number): Promise<Buffer> {
   if (entry.size > limit) throw new ArchiveError('PACKAGE_INVALID', RcPackage.entryTooLarge({ path: entry.path }), entry.path);
   const chunks: Buffer[] = [];
@@ -246,7 +242,7 @@ export async function readEntry(file: string, entry: ArchiveEntry, limit: number
   return Buffer.concat(chunks);
 }
 
-/** 条目的 sha256（`sha256:<hex>`），可选地同时写到 `target`。 */
+/** The sha256 of an entry (`sha256:<hex>`), optionally also written to `target`. */
 export async function hashEntry(file: string, entry: ArchiveEntry, target?: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
   const out = target ? await fs.open(target, 'wx') : null;

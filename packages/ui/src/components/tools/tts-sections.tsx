@@ -21,7 +21,7 @@ import { VoicePicker } from '../voice-picker.tsx';
 import { detail, detailGrow, Indent, Row, Section, SectionLink } from './tool-parts.tsx';
 import { TTS_COPY } from './tools-copy.ts';
 
-/* 生成语音页的「声音」与「语言与细节」两节（从 tts-tool.tsx 拆出）。 */
+/* The “声音” (voice) and “语言与细节” (language and details) sections of the generate-speech page (split out of tts-tool.tsx). */
 
 const grow = style({ flexGrow: 1, minWidth: 0 });
 const voicePicker = style({ width: 240 });
@@ -56,7 +56,7 @@ const vibeStyle = style({ font: 'ui-xs', color: 'gray-700', lineClamp: 2 });
 
 type Patch = (patch: Partial<TtsDraft>) => void;
 
-/** 声音（设计稿 `CloudVoiceSection` 317-370）：音色（共享选择器：默认 · 我的声音 · 这家的音色 · 手填）、风格与念法卡、语速。 */
+/** Voice (design mockup `CloudVoiceSection` 317-370): the voice picker (shared: default · my voices · this provider's voices · manual entry), style and pronunciation card, speaking rate. */
 export function VoiceSection({ draft, option, voices, patch }: { draft: TtsDraft; option: SpeechOption; voices: MyVoices; patch: Patch }) {
   const info = option.info;
   const voiceKey = voiceKeyFor(draft, info);
@@ -139,7 +139,7 @@ export function VoiceSection({ draft, option, voices, patch }: { draft: TtsDraft
   );
 }
 
-/** 语言与细节（设计稿 `OptionsSection` 564-592 与种子一行 640-660）：语言、格式、种子。 */
+/** Language and details (design mockup `OptionsSection` 564-592 and the seed row 640-660): language, format, seed. */
 export function OptionsSection({ draft, option, patch }: { draft: TtsDraft; option: SpeechOption; patch: Patch }) {
   const info = option.info;
   const languages = languageOptions(info.languages);

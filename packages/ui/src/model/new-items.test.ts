@@ -90,7 +90,7 @@ describe('新建放哪条轨道', () => {
     ];
     const seq = sequence(tracks, [shape('a', 'v1', 0, 90)]);
     expect(visualSlots(seq, { fromFrame: 30, durationFrames: 30 }, 1)).toEqual({ slots: [{ trackId: 'v4' }], operations: [] });
-    // 时间没有重叠的话下面那几条也能用。
+    // Even when the times don't overlap, the entries below also work.
     expect(visualSlots(seq, { fromFrame: 90, durationFrames: 30 }, 2).slots).toEqual([{ trackId: 'v0' }, { trackId: 'v1' }]);
   });
 

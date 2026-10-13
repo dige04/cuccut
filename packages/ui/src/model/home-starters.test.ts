@@ -34,7 +34,7 @@ describe('homeStarters', () => {
     expect(slotLabels(starterOf('trans').prompt)).toEqual(['目标语言']);
     expect(starterOf('trans', '日文').prompt).toBe('转录这个视频，并翻译成日文，做成双语字幕。');
     expect(homeStarters('日文').find((s) => s.key === 'trans')?.prompt).toBe('转录这个视频，并翻译成日文，做成双语字幕。');
-    // 别的几条没有待填项，不受影响。
+    // The other entries have no unfilled slots, so they are unaffected.
     expect(starterOf('sub', '日文').prompt).toBe('给这个视频加上字幕。');
   });
 

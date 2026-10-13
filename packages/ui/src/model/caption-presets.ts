@@ -39,7 +39,7 @@ import { vi } from './caption-presets.vi.ts';
 export { PAINT_KEYS, WORD_KEYS } from './caption-style-body.ts';
 export { fontFamilyOf, lookStyle, type DesignLook, type PresetCategory } from './caption-preset-looks.ts';
 
-/** 字幕样式画廊的文案（英文是键与类型的来源，译文在 `caption-presets.zh-Hans.ts`）。专名的卡（Shorts、Ali……）不进目录。 */
+/** Copy for the caption-style gallery (the English is the source of the keys and types; translations are in `caption-presets.zh-Hans.ts`). Cards that are proper names (Shorts, Ali……) are not in the catalogue. */
 const en = {
   categories: {
     basic: 'Basic',
@@ -68,43 +68,40 @@ const en = {
 export type CaptionPresetsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 流程新建的缺省字幕样式文档的名字（jobs 的 `jobsCaptionLayer.styleName`）：界面新建的与它同名。 */
+/** The name of the default caption-style document created by the pipeline (`jobsCaptionLayer.styleName` in jobs): documents created in the UI carry the same name. */
 const STYLE_NAME_REF = { key: 'jobsCaptionLayer.styleName' };
 
-/** 新建的字幕样式文档叫什么（当前语言）。 */
+/** What a newly created caption-style document is called (in the current language). */
 export function defaultStyleName(): string {
   return formatRef(STYLE_NAME_REF, M.styleDocument);
 }
 
-/** 这个名字是不是缺省字幕样式的名字：哪种语言下建的都认（文档名按建它时的语言写进视频）。 */
+/** Whether this name is the default caption-style name: it is recognised whichever language it was created in (the document name is written into the video in the language used when it was created). */
 export function isDefaultStyleName(name: string): boolean {
   return name === M.styleDocument || LOCALES.some((locale) => formatRef(STYLE_NAME_REF, '', locale) === name);
 }
 
 
 /**
- * 字幕样式画廊的预设（字幕样式模型设计 §7，原型 `BC_CS.presets()`）。
+ * Presets for the caption-style gallery (caption style model design §7, prototype `BC_CS.presets()`).
  *
- * 一份预设是新正文（`CaptionStyleBody`）七个维度各一个取值，外加分类：字体与涂装、当前词（`activeWord`，每份都显式写出）、
- * 动效（`motion`）、排版模式（倒鸭子是 `layout.mode: 'sequence'`）。套一张 = 把它编译成 Studio 样式（`compileCaptionStyle`），
- * 写进涂装键（`PAINT_KEYS`）与词级键（`WORD_KEYS`：`wordAnimation` / `textMotion` / `wordBackground` / `emphasisLook`
- * 与来源卡 `stylePreset`）；位置、字号、显示时机、双语次序与间距不动。
+ * A preset is a new body (`CaptionStyleBody`) with one value for each of seven dimensions, plus a category: font and paint, the current word (`activeWord`, written out explicitly for every preset), motion (`motion`), and layout mode (upside-down duck is `layout.mode: 'sequence'`). Applying one = compiling it into a Studio style (`compileCaptionStyle`), written into the paint keys (`PAINT_KEYS`) and word-level keys (`WORD_KEYS`: `wordAnimation` / `textMotion` / `wordBackground` / `emphasisLook`
+ * and the source card `stylePreset`); position, font size, display timing, bilingual order and spacing are left unchanged.
  *
- * 43 份：基础 3（经典、Shorts、简洁）、社交 20、商务 6、复古 6、动效 7、动态排版 1（倒鸭子）。涂装数据与当前词取值在
- * `caption-preset-looks.ts`。
+ * 43 presets: basic 3 (Classic, Shorts, Simple), social 20, business 6, retro 6, motion 7, dynamic typography 1 (upside-down duck). The paint data and current-word values are in `caption-preset-looks.ts`.
  */
 
 export interface CaptionPreset {
   id: string;
   name: string;
   category: PresetCategory;
-  /** 这份预设的新正文（`preset` 记着它自己）。 */
+  /** The new body for this preset (`preset` records the preset itself). */
   body: CaptionStyleBody;
-  /** 编译出来的涂装（每个涂装键都给值）。 */
+  /** The compiled paint (every paint key gets a value). */
   style: Json;
 }
 
-/** 画廊的分区（§7，只按气质分）。 */
+/** Gallery sections (§7, grouped only by mood). */
 export const PRESET_GROUPS: readonly { key: PresetCategory; label: string }[] = (['basic', 'social', 'business', 'retro', 'motion', 'kinetic'] as const).map(
   (key) => ({
     key,
@@ -114,7 +111,7 @@ export const PRESET_GROUPS: readonly { key: PresetCategory; label: string }[] = 
   }),
 );
 
-/** 经典的涂装：默认预设（`DEFAULT_CAPTION_STYLE`）用它。 */
+/** The Classic paint: used by the default preset (`DEFAULT_CAPTION_STYLE`). */
 export const CLASSIC: Json = CLASSIC_PAINT;
 
 const LAYOUT_BASE = { mode: 'line', anchor: 'bottom', y: 0.86, width: 0.8, maxLines: 2 } as const;
@@ -130,7 +127,7 @@ function pick(style: Json, keys: readonly string[]): Json {
 
 type PresetRow = (typeof PRESET_TABLE)[number];
 
-/** 念到时入场的只写了预设名，按动效目录的默认补齐；出现时触发的照原样。 */
+/** Entrance when spoken only has the preset name written, filled in from the motion catalogue defaults; triggers on appearance are kept as they are. */
 function presetMotion(row: PresetRow): Motion | undefined {
   if (!row.motion) return undefined;
   const out: Motion = {};
@@ -147,7 +144,7 @@ function presetPaint(id: string): { paint: Json; wordBox?: CaptionStyleBody['sur
   if (id === 'shorts') return { paint: SHORTS_PAINT };
   const design = STUDIO_DESIGNS.find((d) => d.id === id);
   if (design) return { paint: completePaint(design.style), wordBox: design.wordBox };
-  // 倒鸭子借 Casper 的涂装（原型 `dz.look = 'casper'`）。
+  // The upside-down duck preset (倒鸭子) borrows Casper's paint (prototype `dz.look = 'casper'`).
   const look = LOOKS.find((l) => l.id === (id === 'daoyazi' ? 'casper' : id))!;
   return { paint: lookStyle(look.look) };
 }
@@ -162,7 +159,7 @@ function presetName(id: string): string {
 
 function buildPreset(row: PresetRow): CaptionPreset {
   const { paint, wordBox } = presetPaint(row.id);
-  // 涂装照旧数据解析：编译不回原值的涂装键记进 legacy，套上去与旧涂装逐键相等；当前词、动效与落位由预设给。
+  // Paint is parsed from the old data: paint keys whose compiled value does not match the original are recorded in legacy, so applying the preset matches the old paint key for key; the current word, motion and placement come from the preset.
   const parsed = keepOverrides(parseStudioStyle(paint), PAINT_KEYS);
   const body: CaptionStyleBody = {
     schema: CAPTION_STYLE_SCHEMA,
@@ -194,29 +191,28 @@ function buildPreset(row: PresetRow): CaptionPreset {
   };
 }
 
-/** 画廊的卡，按陈列次序。 */
+/** Gallery cards, in display order. */
 export const CAPTION_PRESETS: readonly CaptionPreset[] = PRESET_TABLE.map(buildPreset);
 
-/** 套这张卡写进样式的键（涂装 ＋ 词级）。`kind` 是落在哪一种行上：译文的当前词恒 none、念到时的入场不要。 */
+/** The keys this card writes into the style (paint + word-level). `kind` is which kind of line it lands on: a translation's current word is always none, and entrance when spoken is not included. */
 export function presetStyle(preset: CaptionPreset, kind: LineKind = 'original'): Json {
   return pick(compileCaptionStyle(preset.body, roleOf(kind)), [...PAINT_KEYS, ...WORD_KEYS]);
 }
 
 /**
- * 「经典」卡的当前词（变色 #18E1D6）：默认预设（`DEFAULT_CAPTION_STYLE`，规范 §5.6）带上它，新字幕不套卡也与画廊里亮着的
- * 「经典」一致。流程（`packages/jobs/src/pipelines/caption-layer.ts`）与内核（`video_model::caption_style::default_studio_style`）
- * 各留一份同样的字面量，三处一起改。
+ * The current word of the 「经典」 (Classic) card (colour change #18E1D6): the default preset (`DEFAULT_CAPTION_STYLE`, spec §5.6) carries it, so new captions that don't apply a card still match the Classic card that is highlighted in the gallery. The pipeline (`packages/jobs/src/pipelines/caption-layer.ts`)
+ * and the kernel (`video_model::caption_style::default_studio_style`) each keep a copy of the same literal; change all three together.
  */
 export const CLASSIC_WORD_ANIMATION: Json = presetStyle(CAPTION_PRESETS.find((p) => p.id === 'classic')!).wordAnimation as Json;
 
-/** 分区陈列：按 `PRESET_GROUPS` 的次序，空区不出。 */
+/** Section display: in the order of `PRESET_GROUPS`; empty sections are not shown. */
 export function presetGroups(): { key: PresetCategory; label: string; presets: CaptionPreset[] }[] {
   return PRESET_GROUPS.map((g) => ({ key: g.key, label: g.label, presets: CAPTION_PRESETS.filter((p) => p.category === g.key) })).filter(
     (g) => g.presets.length > 0,
   );
 }
 
-/** 套到哪儿：`all` 是用这份样式的每一行；`original` / `translation` 只给那一行上妆（写进 `origStyle` / `transStyle`）。 */
+/** Where it applies: `all` is every line that uses this style; `original` / `translation` only apply to that line (written into `origStyle` / `transStyle`). */
 export type PresetScope = 'all' | LineKind;
 
 const REPLACED: readonly string[] = [...PAINT_KEYS, ...WORD_KEYS];
@@ -228,11 +224,10 @@ function withoutReplaced(style: Json): Json {
 }
 
 /**
- * 套一张卡之后的样式文档正文（同 `patchCaptionStyle`：正文别的字段原样保留）。
- * - `all`：根样式的涂装键与词级键整组换成这张卡编译出来的；`origStyle` / `transStyle` 里的这两组键清掉（字号这类覆盖留着），
- *   清空了就去掉。
- * - 一行：按这一行的角色编译（译文的当前词恒 none），写进那一行的覆盖；根样式上有、这张卡没有的键在覆盖里写 `null`
- *   （两个渲染器都把 null 当没设），免得根样式的旧值从底下透上来。另一行不动。
+ * The style document body after applying a card (same as `patchCaptionStyle`: other body fields are kept as they are).
+ * - `all`: the root style's paint keys and word-level keys are replaced as a group with what this card compiles to; the same two groups are cleared from `origStyle` / `transStyle` (overrides such as font size are kept), and the override is removed if it ends up empty.
+ * - One line: compiled according to that line's role (a translation's current word is always none) and written into that line's overrides. Keys present in the root style but not in this card are written as `null` in the override
+ *   (both renderers treat null as unset), so the root style's old values do not show through from underneath. The other line is left alone.
  */
 export function applyPreset(body: unknown, preset: CaptionPreset, scope: PresetScope): Json {
   const doc = asObject(body);
@@ -256,28 +251,28 @@ export function applyPreset(body: unknown, preset: CaptionPreset, scope: PresetS
   return { ...doc, schema: STUDIO_STYLE, style: next };
 }
 
-/** 一行叠完覆盖后的样式，null（遮掉根上的值）当没有。 */
+/** The style of one line after layering the overrides; null (masking a value on the root) counts as absent. */
 function lineStyle(root: Json, kind: LineKind): Json {
   const out: Json = {};
   for (const [key, value] of Object.entries(mergedLineStyle(root, kind))) if (value !== null) out[key] = value;
   return out;
 }
 
-/** 这一行记着的来源卡（`stylePreset.id`）；没有记的是 null。 */
+/** The source card recorded for this line (`stylePreset.id`); null if none is recorded. */
 export function presetIdOf(root: Json, kind: LineKind): string | null {
   const id = asObject(lineStyle(root, kind)[PRESET_KEY]).id;
   return typeof id === 'string' ? id : null;
 }
 
-/** 来源卡记在根上（全部）还是那一行的覆盖里（只给一行），决定按哪种角色比。 */
+/** Whether the source card is recorded on the root (for all lines) or in that line's override (for one line only) decides which role it is compared by. */
 function appliedKind(root: Json, kind: LineKind): LineKind {
   const own = root[LINE_STYLE_KEY[kind]];
   return isObject(own) && PRESET_KEY in own ? kind : 'original';
 }
 
 /**
- * 这张卡是不是这几行的来源卡：按记下的 `stylePreset.id` 判（改过别的维度仍算，旁边标「已修改」）；
- * 旧样式没有记来源卡时按涂装逐键比。
+ * Whether this card is the source card for these lines: judged by the recorded `stylePreset.id` (it still counts if other dimensions were changed; a 「已修改」 (Modified) label is shown beside it);
+ * an old style with no recorded source card is matched key by key against its paint.
  */
 export function presetOn(root: Json, preset: CaptionPreset, kinds: readonly LineKind[]): boolean {
   if (kinds.length === 0) return false;
@@ -289,29 +284,29 @@ export function presetOn(root: Json, preset: CaptionPreset, kinds: readonly Line
 }
 
 /**
- * 来源卡亮着、但这几行与它编译出来的已经不一样（原型「已修改 · 还原」）。只看记着这张卡的行：没记来源卡的旧样式
- * （比如缺省样式）是按涂装认出来的，词级键本来就没写，不算改过。
+ * The source card is lit, but these lines no longer match what it compiles to (prototype 「已修改 · 还原」 (Modified · Revert)). Only lines that record this card are checked; old styles with no recorded source card
+ * (such as the default style) are recognised by their paint, and they never had word-level keys written, so they do not count as modified.
  */
 export function presetModified(root: Json, preset: CaptionPreset, kinds: readonly LineKind[]): boolean {
   return kinds.some((kind) => presetIdOf(root, kind) === preset.id && !sameKeys(lineStyle(root, kind), presetStyle(preset, appliedKind(root, kind)), REPLACED));
 }
 
-/** 卡片角标：这张卡的当前词模式（倒鸭子是排版模式）。 */
+/** Card badge: this card's current-word mode (upside-down duck is a layout mode). */
 export function presetBadge(preset: CaptionPreset): ActiveMode | 'sequence' {
   return preset.body.layout.mode === 'sequence' ? 'sequence' : preset.body.activeWord.mode;
 }
 
-/** 正套在这几行上的那张卡；混搭或没有时是 null。 */
+/** The card currently applied to these lines; null when mixed or absent. */
 export function currentPreset(root: Json, kinds: readonly LineKind[]): CaptionPreset | null {
   return CAPTION_PRESETS.find((preset) => presetOn(root, preset, kinds)) ?? null;
 }
 
 /**
- * 属性页改「当前词」「动效」「倒鸭子」这几个词级维度：这一行叠完覆盖的样式解析成正文、改、按这一行的角色编译，
- * 只回写词级键（`WORD_KEYS`），涂装、落位一个键都不动。写到哪儿：
- * - 原文：这张卡只套给了原文（`origStyle` 里记着来源卡）就写进 `origStyle`，否则写根样式；
- * - 译文：与原文叠成双语时写进 `transStyle`（根样式是两行共用的），只有译文时写根样式。
- * 写进覆盖时，根上有、编译结果没有的词级键写 null 遮掉。
+ * In the properties page, changing the word-level dimensions 「当前词」 (Current word), 「动效」 (Motion) or 「倒鸭子」 (Upside-down duck): the style for this line, after layering its overrides, is parsed into a body, changed, and compiled again according to this line's role,
+ * and only the word-level keys (`WORD_KEYS`) are written back; no paint or placement keys change. Where it is written:
+ * - Original: if this card was applied only to the original (the source card is recorded in `origStyle`), it is written into `origStyle`; otherwise it is written to the root style;
+ * - Translation: when stacked with the original as a bilingual pair, it is written into `transStyle` (the root style is shared by both lines); when only the translation is present, it is written to the root style.
+ * When writing into an override, word-level keys present on the root but absent from the compiled result are written as null to mask them.
  */
 export function editWordStyle(root: Json, kind: LineKind, paired: boolean, edit: (body: CaptionStyleBody) => CaptionStyleBody): Json {
   const next = pick(compileCaptionStyle(edit(parseStudioStyle(lineStyle(root, kind))), roleOf(kind)), WORD_KEYS);
@@ -330,7 +325,7 @@ export function editWordStyle(root: Json, kind: LineKind, paired: boolean, edit:
   return { ...root, [key]: line };
 }
 
-/** 这一行现在的正文（属性页读当前词、动效与倒鸭子的取值）。 */
+/** The current body of this line (the properties page reads the values for current word, motion and upside-down duck from it). */
 export function lineBody(root: Json, kind: LineKind): CaptionStyleBody {
   return parseStudioStyle(lineStyle(root, kind));
 }
@@ -342,8 +337,8 @@ function withoutWord(style: Json): Json {
 }
 
 /**
- * 画廊套到哪一份样式文档：轨条选中的那条用的；它还没有样式时取画面上别的字幕在用的那份；都没有是 null（套的时候新建）。
- * `kinds` 是套上去之后这份样式管的几种行：画面上用它的，加上还没有样式、会一起挂上来的。
+ * The style document the gallery applies to: the one used by the track selected in the strip; if it has no style yet, the one used by other captions on screen; null if neither (created when applying).
+ * `kinds` is which kinds of line this style governs after applying: those using it on screen, plus those without a style yet that get attached along with it.
  */
 export function galleryTarget(chips: readonly CaptionChip[], selected: string | null): { styleDocumentId: Id | null; kinds: LineKind[] } {
   const showing = chips.filter((chip) => chip.state !== 'shelved');
@@ -353,15 +348,15 @@ export function galleryTarget(chips: readonly CaptionChip[], selected: string | 
   return { styleDocumentId, kinds: (['original', 'translation'] as const).filter((kind) => present.has(kind)) };
 }
 
-/** 序列上还没有样式、能挂样式的字幕（锁住的实例与锁住轨道上的引擎会拒绝，跳过）。 */
+/** Captions on the sequence that have no style yet and can take one (the engine rejects locked instances and those on locked tracks, so they are skipped). */
 function unstyledCaptions(sequence: Sequence): CaptionItem[] {
   const locked = new Set(sequence.tracks.filter((track) => track.locked).map((track) => track.id));
   return sequence.items.filter((item): item is CaptionItem => item.type === 'caption' && !item.styleDocumentId && !item.locked && !locked.has(item.trackId));
 }
 
 /**
- * 写一份字幕样式的事务（一笔撤销）：有样式文档就写它的新版本；没有就新建一份（ref `style`，同 inspector-caption）。
- * 两种情况都把还没有样式的字幕挂上这份——原文与译文用同一份样式才叠成双语两行（预览按样式文档分组）。
+ * A transaction that writes a caption style (one undo step): if a style document exists, write its new version; otherwise create a new one (ref `style`, same as inspector-caption).
+ * In both cases, attach the style to captions that do not have one yet — the original and translation use one style so that they stack as a bilingual pair (the preview groups by style document).
  */
 export function captionStyleOperations(sequence: Sequence, record: DocumentRecord | undefined, body: Json): EditOperation[] {
   const target = record ? { documentId: record.id } : { ref: 'style' };
@@ -374,18 +369,18 @@ export function captionStyleOperations(sequence: Sequence, record: DocumentRecor
   return [put, ...attach];
 }
 
-/** 画廊缩略图的英中样张（data.js `subtitle.sample` 的 thumb 那句；样张按位次给：上面那行英文、下面那行中文）。 */
-// i18n-ignore: 双语样张，下面那行固定是中文，用来演示双语两行，不随界面语言
+/** The English–Chinese sample for gallery thumbnails (the thumb line of `subtitle.sample` in data.js; samples are assigned by position: English on the top line, Chinese on the bottom line). */
+// i18n-ignore: bilingual sample; the line below is always Chinese, to demonstrate a two-line bilingual display, and does not follow the UI language
 export const THUMB_SAMPLE = { main: 'Words are truth', sub: '词是真相' } as const;
 
-/** 缩略图的灰底（原型 .sthumb 的 135° 渐变，左上到右下）：画在画布上的数据，不随界面主题变（原型也钉成浅色）。 */
+/** The grey background of the thumbnail (prototype .sthumb's 135° gradient, top-left to bottom-right): data drawn on the canvas, which does not change with the UI theme (the prototype is also pinned to light). */
 export const THUMB_BACKDROP = ['#CFD2D6', '#A8ACB3'] as const;
 
 /**
- * 缩略图用的样式与行：涂装照搬，落位换成「居中、占满宽、固定字号」——原型缩略图按固定字号画（`SubThumb` fz 13），
- * 不随画面上的字号与位置走；双语比例、次序与间距保留，两行的相对大小与画面一致。
- * `px` 是大的那一行在缩略图上的像素（覆盖里单独写的字号不算，按比例链）。
- * 行覆盖里的落位也去掉：在画面上单独拖过的一行（`origStyle` / `transStyle` 的 `x`、`y`、`verticalAlign`）在缩略图里仍叠回两行的堆栈。
+ * The style and lines used for thumbnails: paint copied over, placement changed to 「居中、占满宽、固定字号」 (centred, full width, fixed font size). The prototype thumbnails are drawn at a fixed font size (`SubThumb` fz 13),
+ * not following the on-screen font size and position; bilingual ratio, order and spacing are kept, so the relative sizes of the two lines match the screen.
+ * `px` is the pixel size of the larger line on the thumbnail (a size set separately in an override does not count; the ratio chain applies).
+ * Placement in line overrides is also removed: a line dragged separately on screen (`x`, `y`, `verticalAlign` in `origStyle` / `transStyle`) is still stacked back into the two-line stack in the thumbnail.
  */
 export function thumbScene(
   root: Json,

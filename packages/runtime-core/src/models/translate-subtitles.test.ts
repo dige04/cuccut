@@ -12,9 +12,9 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 字幕文件的翻译（架构设计 §7.9）经网关端到端：对着本机回环地址上的假 OpenAI，文件到文件、不碰视频；没有配置文本模型时拒绝；
- * 字幕文本按 `transcript` 授权，撤销默认授权后启动即拒绝（桌面界面带待批准项，命令行不带），批准之后同一个 commandId 重新提交；
- * 输出是 Space 里带生成记录的条目。测试只连假供应商，密钥是测试里编的字符串，目录都在临时目录里。
+ * Translating subtitle files (architecture design §7.9) end to end through the gateway: file to file, against a fake OpenAI on a loopback address, without touching a video. Rejected when no text model is configured.
+ * Subtitle text is authorized under `transcript`. After the default authorization is revoked, startup is rejected (the desktop UI shows a pending approval item; the CLI does not). After approval, the same commandId is submitted again.
+ * The output is a Space entry with generation records. The test connects only to fake providers; the key is a made-up string; the directories are in the temp directory.
  */
 
 const engine = resolveEngineHostCommand();
@@ -22,7 +22,7 @@ const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-subtitles-0123456789';
 
 const SRT = '1\r\n00:00:01,000 --> 00:00:02,000\r\n大家好\r\n\r\n2\r\n00:00:02,500 --> 00:00:04,000\r\n今天讲<i>剪辑</i>\r\n';
 
-/** 命令行入口（apps/cli）：用 node 直接跑源文件，只给 PATH 与指向测试目录的 HOME、CUCCUT_HOME。 */
+/** Command-line entry (apps/cli): runs the source file directly with node, with only PATH and HOME and CUCCUT_HOME pointing at the test directories. */
 const CLI_MAIN = fileURLToPath(new URL('../../../../apps/cli/src/main.ts', import.meta.url));
 
 function cli(home: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -46,7 +46,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 假 OpenAI：按 ID 返回译文。 */
+/** Fake OpenAI: returns translations by ID. */
 function translator(state: { calls: number }): FakeHandler {
   return (request) => {
     if (request.method === 'GET' && request.path.endsWith('/models')) return { status: 200, json: { object: 'list', data: [] } };
@@ -130,7 +130,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
   it('文件到文件：写出同样条数与时间码的译文字幕，不碰视频；输出是 Space 里带生成记录的条目', async () => {
     await configure();
     const input = await subtitleFile();
-    // 输出目录给源文件所在的项目目录：发布的文件与扫描到的是同一个条目（不给时是保存位置，见 pipelines.test.ts）。
+    // The output directory is the project directory that holds the source file, so the published file and the scanned one are the same entry (when not given, it is the save location; see pipelines.test.ts).
     const { jobId } = await client.request('pipelines.start', {
       pipeline: 'translate-subtitles',
       params: { input, targetLanguage: 'en', outDir: path.dirname(input) },
@@ -180,7 +180,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
     expect(pending).toEqual([
       expect.objectContaining({ capability: 'generateText', recipient: 'openai', dataKinds: ['transcript'], videoId: null }),
     ]);
-    // 拒绝不发放、不放宽任何授权，也不建任务、不外发。
+    // A rejection grants nothing, loosens no authorization, creates no job, and sends nothing out.
     expect((await client.request('grants.list', { includeEnded: true })).grants).toHaveLength(before);
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
     expect(state.calls).toBe(0);
@@ -230,7 +230,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
       cwd,
     );
     expect(ok.code, ok.stderr).toBe(0);
-    // 目录派生的命令：stdout 是信封，结果在 result 里（任务摘要在 job.pipeline.summary）。
+    // Directory-derived command: stdout is the envelope, and the result is in `result` (the job summary is in job.pipeline.summary).
     const printed = JSON.parse(ok.stdout) as {
       ok: boolean;
       result: { jobId: string; job: { pipeline: { summary: { file: string; cueCount: number } } }; outputs: Array<{ path: string }> };
@@ -247,7 +247,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
 
     await fs.writeFile(path.join(cwd, 'bad.srt'), '1\n00:00:01,000 -> 00:00:02,000\nA\n');
     const bad = await cli(home, ['translate', '--file', 'bad.srt', '--to', 'en'], cwd);
-    // stdout 不是 TTY 时失败也是一行信封（写到 stdout）。
+    // When stdout is not a TTY, a failure is also a one-line envelope (written to stdout).
     expect(bad.code).toBe(1);
     expect(bad.stdout + bad.stderr).toContain('SUBTITLE_FILE_INVALID');
     const both = await cli(home, ['translate', 'vid_1', '--file', 'talk.srt', '--to', 'en'], cwd);

@@ -2,25 +2,25 @@ import type { EditOperation, Id } from '@cuccut/protocol';
 import { aabbOf, boundsOf, placeFields, poseOf, type Assets, type CanvasSize, type PlacedItem, type Rect } from './stage-pose.ts';
 
 /**
- * 多选的对齐与分布（属性页多选那一页）：按每件旋转后的外包盒量，参照选区的总外包盒或整块画布。
- * 平移外包盒等于平移框中心，所以只改动到的那一轴（`place` 的 `x` 或 `y`），其余字段一概不写；没动的件不出操作。
- * 全部操作放进一笔事务提交（一步撤销）。
+ * Alignment and distribution for a multi-selection (the multi-select page of the properties panel): each item's rotated bounding box is measured, and items are aligned against the selection's combined bounding box or the whole canvas.
+ * Moving a bounding box is the same as moving its center, so only the axis that changed (`x` or `y` of `place`) is written; other fields are never written, and items that did not move produce no operation.
+ * All operations are committed as one transaction (a single undo step).
  */
 
 export type AlignEdge = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
 export type AlignTarget = 'selection' | 'canvas';
 export type Axis = 'x' | 'y';
 
-/** 小于这个位移（画布像素）算没动（落盘的百分比取一位小数，取整后没变的也不出操作）。 */
+/** A displacement smaller than this (canvas pixels) counts as no movement. (Saved percentages keep one decimal place, so values that do not change after rounding also produce no operation.) */
 const STILL = 0.005;
 
 const AXIS_OF: Record<AlignEdge, Axis> = { left: 'x', hcenter: 'x', right: 'x', top: 'y', vcenter: 'y', bottom: 'y' };
 
-/** 一轴上的起点与长度。 */
+/** Start point and length on one axis. */
 const startOf = (r: Rect, axis: Axis) => (axis === 'x' ? r.x : r.y);
 const sizeOf = (r: Rect, axis: Axis) => (axis === 'x' ? r.w : r.h);
 
-/** 这一件在这一轴上的落点：边对边、中对中。 */
+/** Where this item lands on this axis: edge to edge, or center to center. */
 function edgeAt(r: Rect, edge: AlignEdge): number {
   const axis = AXIS_OF[edge];
   const start = startOf(r, axis);
@@ -55,7 +55,7 @@ function shiftOperations(
   return operations;
 }
 
-/** 把每件的某条边（或中线）对到参照盒的同一条边上。 */
+/** Aligns one edge (or the midline) of each item to the same edge of the reference box. */
 export function alignOperations(
   sequenceId: Id,
   items: readonly PlacedItem[],
@@ -79,8 +79,7 @@ export function alignOperations(
 }
 
 /**
- * 等距分布（三件起）：按中线排好次序，件与件之间的空隙一样大。参照选区时最前与最后两件不动；
- * 参照画布时最前一件贴到画布起边、最后一件贴到终边（重叠太多时空隙是负的，照样等分）。
+ * Even distribution (three or more items): items are ordered by their midlines, and the gaps between neighbours are equal. When the reference is the selection, the first and last items stay in place; when the reference is the canvas, the first item snaps to the canvas's start edge and the last to the end edge (if items overlap too much, the gaps are negative, but they are still evenly spaced).
  */
 export function distributeOperations(
   sequenceId: Id,

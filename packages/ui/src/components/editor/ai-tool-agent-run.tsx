@@ -16,7 +16,7 @@ import { PanelHead } from './panel-head.tsx';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 16 });
 const stack = style({ display: 'flex', flexDirection: 'column', gap: 12 });
-/** 同参数页顶上的说明卡（原型 .aicard）。 */
+/** Explanation card at the top of the same parameters page (prototype .aicard). */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -48,14 +48,14 @@ const chip = style({ flexShrink: 0, marginEnd: 4 });
 const finished = (state: AgentRunState) => state.kind === 'done' || state.kind === 'failed' || state.kind === 'stopped';
 
 /**
- * 找可剪的口与刷新过期译文交给 Agent 后留在工具页上的进度卡（原型 panel-aitools-cut.jsx `AgentRun`，产品设计 §5.10「交给智能体」）：
- * 交给了谁、在会话里走到哪（`agentRunState` 读那条会话的时间线），等放行时给一个直达会话的按钮；「打开会话」把会话带到眼前，
- * 「重新设置」回参数页（会话照样跑）。结果照常写进视频——剪辑建议进文稿与时间轴、重译的句子进字幕——这里只报进度，结束后「完成」回参数页。
+ * The progress card left on the tool page once finding cut points and refreshing stale translations have been handed to the Agent (prototype panel-aitools-cut.jsx `AgentRun`, product design §5.10 「交给智能体」 (hand to agent)):
+ * who it was handed to and how far it has got in the conversation (`agentRunState` reads that conversation's timeline); while waiting for approval, a button leads straight to the conversation. 「打开会话」 (Open conversation) brings the conversation into view,
+ * 「重新设置」 (Set up again) goes back to the parameters page (the conversation keeps running). Results are written into the video as usual — cut suggestions go into the script and timeline, retranslated sentences go into subtitles; here only progress is shown, and 「完成」 (Done) returns to the parameters page when it ends.
  */
 export function AiToolAgentRun({ videoId, tool, run, onBack }: { videoId: Id; tool: AgentToolId; run: AiToolAgentRun; onBack(): void }) {
   const runtime = useRuntime();
   const { conversationId } = run;
-  // 进度要读会话的时间线：盯着它（引用计数，会话页也在盯时共用一份）。
+  // Progress reads the conversation's timeline: watch it (reference-counted; shared with the conversation page when that is watching too).
   useEffect(() => runtime.watchConversation(conversationId), [runtime, conversationId]);
   const items = useTimeline((s) => s.byConversationId[conversationId]?.items);
   const conversation = useDirectory((s) => s.conversations.find((c) => c.id === conversationId) ?? null);

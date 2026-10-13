@@ -1,10 +1,8 @@
-//! 媒体层的画面：每个视频实例一条顺序解码流，图片解一次（SVG 与 GIF 图片由帧光栅从素材字节自己解，见 `asset_bytes`；
-//! 这里的 SVG 分支只接媒体类型没记成 SVG、文件却是 `.svg` 的素材）；解出来的非预乘 RGBA
-//! 换成预乘的画面交给帧光栅。视频帧的像素从解码器换过来（不复制），解码器还在同一帧时原样再用；探测说素材不带透明时
-//! alpha 全是 255、本来就是预乘的，不逐像素预乘。Lottie 贴纸要的素材字节按冻结的位置读；声波要的素材频谱从冻结的声音文件算，每个素材版本
-//! 算一次（[`frame_render::spectrum::analyze_file`]）。
-//! 一段时间没用到的解码流关掉（子进程不攒着），再用到时从目标前的关键帧重开。
-//! 视频先走平台原生解码（[`crate::native`]），每个素材各自回落 ffmpeg；图片仍经 ffmpeg 解。
+//! Picture for the media layer: one sequential decode stream per video instance. Images are decoded once (SVG and GIF images are decoded by the frame raster itself from the asset bytes, see `asset_bytes`;
+//! the SVG branch here only accepts assets whose media type was not recorded as SVG but whose file is `.svg`). The decoded non-premultiplied RGBA
+//! is converted to premultiplied and handed to the frame raster. Video frame pixels are taken over from the decoder (not copied); when the decoder still holds the same frame, it is reused as is. When probing says the asset has no transparency, alpha is all 255 and the data is already premultiplied, so no per-pixel premultiplication is done. Lottie stickers read the asset bytes they need from the frozen location. Waveforms compute the asset spectrum from the frozen sound file, once per asset version ([`frame_render::spectrum::analyze_file`]).
+//! Decode streams not used for a while are closed (subprocesses do not pile up), and when needed again they are reopened from the keyframe before the target.
+//! Video first goes through the platform-native decoder ([`crate::native`]), with each asset falling back to ffmpeg individually. Images still go through ffmpeg.
 
 use std::collections::HashMap;
 
@@ -22,18 +20,18 @@ use crate::input::Input;
 use crate::native::{self, Fallback};
 use crate::preflight::AssetPicture;
 
-/// 解码流闲置这么多输出帧之后关掉。
+/// Closes a decode stream after this many output frames of idleness.
 const IDLE_FRAMES: u64 = 90;
 
 enum Media {
     Video {
         decoder: Box<VideoDecoder>,
-        /// 当前帧（预乘）。像素是从解码器换出来的，不复制。
+        /// Current frame (premultiplied). The pixels are taken from the decoder, not copied.
         pixmap: Option<Pixmap>,
-        /// `pixmap` 是解码器的哪一帧（[`VideoDecoder::advance`] 的代号）。
+        /// Which frame of the decoder this is (the token from [`VideoDecoder::advance`]).
         generation: u64,
-        /// 素材可能带透明：要逐像素预乘；不带时解出来的 alpha 都是 255，预乘不改任何值，跳过。
-        /// 带透明的素材不走原生解码（原生把 alpha 压成 255），所以原生解出来的帧总是不用预乘。
+        /// The asset may have transparency: it must be premultiplied per pixel. When it does not, the decoded alpha is all 255, premultiplication changes no value, so it is skipped.
+        /// Assets with transparency do not use native decoding (native flattens alpha to 255), so frames decoded natively never need premultiplication.
         alpha: bool,
         asset_id: String,
     },
@@ -49,18 +47,18 @@ pub struct Sources<'a> {
     last_used: HashMap<String, u64>,
     frame: u64,
     skipped: Vec<UnsupportedItem>,
-    /// `素材ID@版本` → 素材频谱；算不出来（没有冻结的位置、没有声音）时是 `None`，声波按占位画并报提示。
+    /// `asset ID@version` → asset spectrum. `None` when it cannot be computed (no frozen location, or no sound); the waveform is then drawn as a placeholder and a notice is reported.
     spectra: HashMap<String, Option<Vec<u8>>>,
-    /// 挂给视频解码器的原生帧源；原生整体不可用时 `None`（原因在 `native_unavailable`）。
+    /// Native frame source attached to the video decoder; `None` when native is unavailable as a whole (the reason is in `native_unavailable`).
     native: Option<NativeDecode>,
     native_unavailable: Option<(&'static str, String)>,
-    /// 没挂原生的素材（可能带透明）。
+    /// Asset without native attached (may have transparency).
     decode_fallbacks: Vec<Fallback>,
-    /// 画布（画面那一块）的尺寸：铺满的视频按它定解码端的交付尺寸（[`crate::delivery`]）。
+    /// Canvas (picture block) size: full-bleed videos use it to set the decoder's delivery size ([`crate::delivery`]).
     canvas: (u32, u32),
 }
 
-/// 视频解码用了哪些后端（`done.video.decoder`）：没有视频时 `None`，都一样时是那个后端名，不一样时是 `mixed`。
+/// Which decode backends the video decoding used (`done.video.decoder`): `None` when there is no video; the backend name when all are the same; `mixed` when they differ.
 pub struct DecodeReport {
     pub decoder: Option<&'static str>,
     pub fallbacks: Vec<Fallback>,
@@ -85,7 +83,7 @@ impl<'a> Sources<'a> {
         }
     }
 
-    /// 视频解码的后端与回落记录（每个素材、每种原因记一次）。
+    /// Video decoding backends and fallback records (one per asset, per reason).
     pub fn decode_report(&self) -> DecodeReport {
         let mut backends: Vec<&'static str> = Vec::new();
         let mut fallbacks = self.decode_fallbacks.clone();
@@ -117,7 +115,7 @@ impl<'a> Sources<'a> {
         DecodeReport { decoder, fallbacks }
     }
 
-    /// 开始第 `k` 个输出帧：关掉闲置的解码流。
+    /// Starting output frame `k`: closes idle decode streams.
     pub fn begin_frame(&mut self, k: u64) {
         self.frame = k;
         let idle: Vec<String> = self
@@ -134,7 +132,7 @@ impl<'a> Sources<'a> {
         }
     }
 
-    /// 解码流重开的总次数（倒退、远跳与闲置关掉后再用到；顺序导出里没有这些时是 0）。
+    /// Total number of decode stream reopenings (after going backwards, large jumps, and reuse after an idle close). 0 in a sequential export, where none of these occur.
     pub fn restarts(&self) -> u32 {
         self.media
             .values()
@@ -145,12 +143,12 @@ impl<'a> Sources<'a> {
             .sum()
     }
 
-    /// 跳过模式下，执行时才发现解不出来的素材。
+    /// In skip mode, assets found undecodable only at execution time.
     pub fn skipped(&self) -> &[UnsupportedItem] {
         &self.skipped
     }
 
-    /// 停掉所有解码进程。
+    /// Stops all decode processes.
     pub fn close(&mut self) {
         for media in self.media.values_mut() {
             if let Media::Video { decoder, .. } = media {
@@ -159,7 +157,7 @@ impl<'a> Sources<'a> {
         }
     }
 
-    /// 根序列里的实例（帧光栅按根序列的实例画，见 `frame-render` 的 `SequenceContext`）。
+    /// Instances in the root sequence (the frame raster draws the root sequence's instances; see `SequenceContext` in `frame-render`).
     fn root_item(&self, item_id: &str) -> Option<&video_model::TimelineItem> {
         self.input
             .document
@@ -181,7 +179,7 @@ impl<'a> Sources<'a> {
         if let Some(info) = self.pictures.get(&key) {
             return Ok(Some(info.clone()));
         }
-        // 预检没见过的素材（不该发生）：现在探测，解不出来时按选项跳过或报错。
+        // An asset not seen in preflight (should not happen): probe it now. If it cannot be decoded, skip or error according to the options.
         let problem = match self.input.asset(&asset.id, &asset.revision) {
             None => format!("素材 {} 没有冻结的位置", asset.id),
             Some(entry) => match probe_picture(&self.tools, &entry.path) {
@@ -228,7 +226,7 @@ fn decode_error(e: media_core::MediaError) -> RenderError {
     RenderError::new(e.code, e.message)
 }
 
-/// 非预乘的 RGBA 就地换成预乘的。
+/// Converts non-premultiplied RGBA to premultiplied in place.
 fn premultiply(data: &mut [u8]) {
     for px in data.chunks_exact_mut(4) {
         let a = px[3] as u32;
@@ -264,7 +262,7 @@ impl LayerMedia for Sources<'_> {
             } else {
                 let asset = layer.asset.as_ref().expect("上面查过");
                 let origin = self.input.pts_origin(&asset.id, &asset.revision);
-                // 铺满画布、比画布大的视频让解码器直接交画布里的尺寸，帧光栅不再整幅重采样（[`crate::delivery`]）。
+                // Full-canvas videos larger than the canvas have the decoder deliver the canvas-size directly, so the frame raster no longer resamples the whole frame ([`crate::delivery`]).
                 let (width, height) = self
                     .root_item(&id)
                     .and_then(|item| delivery_size(item, (info.width, info.height), self.canvas))
@@ -302,7 +300,7 @@ impl LayerMedia for Sources<'_> {
                 let seconds = layer.source_seconds.unwrap_or(0.0).max(0.0);
                 let current = decoder.advance(seconds).map_err(decode_error)?;
                 if pixmap.is_none() || *generation != current {
-                    // 换上新的一帧：上一帧的缓冲还给解码器，新一帧的像素直接做成画面。
+                    // Swap in the new frame: the previous frame's buffer goes back to the decoder, and the new frame's pixels become the picture directly.
                     let spare = pixmap.take().map(Pixmap::take).unwrap_or_default();
                     let mut picture = decoder.swap_current(spare).expect("advance 成功就有当前帧");
                     if *alpha {

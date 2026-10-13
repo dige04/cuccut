@@ -16,7 +16,7 @@ vi.hoisted(() => {
 const KEY = 'cuccut.ai-tool-agent-runs';
 const run = { conversationId: 'c1', taskId: 't1', handedAt: '2026-10-10T08:00:00Z' };
 
-/** 模拟重启：存下的原样留着，内存里清空，再从本机读回来。 */
+/** Simulate a restart: what was stored stays, memory is cleared, and it is read back from this machine. */
 async function restart() {
   const saved = localStorage.getItem(KEY);
   useAiToolAgentRuns.setState({ runs: {} });

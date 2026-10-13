@@ -36,8 +36,8 @@ const field = style({ width: 'full' });
 const editActs = style({ display: 'flex', justifyContent: 'end', gap: 8 });
 
 /**
- * 忙时排队的消息，挂在输入框上方：会话的任务结束后按顺序发出。
- * 每条可以改文字、删掉，或「立即发送」——先试着插进当前回合，Agent 不支持就留在队列里等。
+ * Messages queued while busy, shown above the input box: they are sent in order when the session's task finishes.
+ * Each can have its text edited, be deleted, or be “Send now”. That first tries to insert it into the current turn; if the Agent does not support that, it stays in the queue and waits.
  */
 export function QueuedMessages({
   conversationId,
@@ -45,7 +45,7 @@ export function QueuedMessages({
   onSendNow,
 }: {
   conversationId: Id;
-  /** 正在「立即发送」的那一条。 */
+  /** The item currently being “Send now”. */
   sending: Id | null;
   onSendNow(id: Id): void;
 }) {

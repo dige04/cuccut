@@ -108,14 +108,13 @@ type Confirm =
   | { kind: 'delete'; voice: LibraryEntrySummary }
   | { kind: 'upload'; voice: LibraryEntrySummary; providerId: string; label: string }
   | { kind: 'remove-clone'; voice: LibraryEntrySummary; providerId: string; label: string }
-  /** 远端的克隆删不掉：要不要只删本机的（音色整只，或只是这一个克隆的记录）。 */
+  /** A remote clone cannot be deleted: whether to delete only the local copy (the whole voice, or just the record of this one clone). */
   | { kind: 'local-only'; scope: 'voice' | 'clone'; voice: LibraryEntrySummary; providerId: string; label: string; message: string };
 
 /**
- * 模型 › 语音合成 › 我的声音（设计稿 settings-voices.jsx:480-541）：用户库里的音色（`library` 主题经 voices-store）。
- * 从音频文件新建、导入导出音色包、编辑、删除、试听参考录音，以及在能克隆的云端引擎上建 / 删克隆。
- * 应用里录音与「从视频里分人取一段」还没有接上：入口置灰，原因写在旁边。
- * 浏览器里没有这一页的数据：Web 白名单不含 `library.*`，订阅不了 `library` 主题，那里不写「加载中」，直接说浏览器里没有。
+ * Models › Speech synthesis › My voices (design mock settings-voices.jsx:480-541): voices in the user's library (`library` topic via voices-store). Create from an audio file, import and export voice packages, edit, delete, trial-listen to reference recordings, and create / delete clones on cloud engines that support cloning.
+ * Recording in the app and “从视频里分人取一段”(Take a segment by speaker from a video) are not connected yet: their entries are greyed out, with the reason written beside them.
+ * In the browser there is no data for this page: the Web allowlist does not include `library.*`, and the `library` topic cannot be subscribed to, so it does not show “loading” and says directly that there is nothing in the browser.
  */
 export function MyVoices() {
   const runtime = useRuntime();
@@ -136,7 +135,7 @@ export function MyVoices() {
   const setFocus = useVoiceHandoff((s) => s.setFocus);
   const saved = useVoiceHandoff((s) => s.saved);
 
-  /** 试听克隆：到本地模型页能克隆的那一行，展开试听、选上这只音色；一只都没装时说去下载。 */
+  /** Trial clone: goes to the row on the local models page that can clone, expands its trial and selects this voice; if none is installed, says to go and download one. */
   const auditionClone = (voice: LibraryEntrySummary) => {
     const bundleId = auditionBundle(bundles, speech);
     const local = { tab: 'models', category: 'tts', page: 'local' } as const;
@@ -194,7 +193,7 @@ export function MyVoices() {
       const result = await exportVoice(runtime, voice, path);
       ToastQueue.positive(COPY.exported(result.path), { timeout: 5000 });
     } catch (error) {
-      // 目标已存在时 Runtime 拒绝覆盖（`conflict`，没有更细的错误码）。
+      // When the target already exists, the Runtime refuses to overwrite (`conflict`, with no finer error code).
       const exists = (error as { code?: unknown }).code === 'conflict';
       const text = rpcErrorText(error);
       ToastQueue.negative(exists ? COPY.exportFailedExists(text) : COPY.exportFailed(text), { timeout: 8000 });
@@ -349,7 +348,7 @@ export function MyVoices() {
   );
 }
 
-/** 回程条（设计稿 settings-voices.jsx `HandoffBar`）：从试听的「克隆新音色…」过来时写从哪儿来；存好一只后带回去用它。 */
+/** The return bar (design mock settings-voices.jsx `HandoffBar`): when coming from the trial's “克隆新音色…”(Clone new voice…), it says where it came from; after one is saved, it returns and uses that one. */
 function HandoffBar() {
   const handoff = useVoiceHandoff((s) => s.handoff);
   const setHandoff = useVoiceHandoff((s) => s.setHandoff);
@@ -438,7 +437,7 @@ function ConfirmDialog({
   }
 }
 
-/** 一行音色：试听、名字与标签、语言 / 录音 / 来源、逐字稿；⋯ 里是编辑、克隆、导出与删除；下面是克隆在跑或失败的一句。 */
+/** One voice row: trial listen, name and tags, language / recording / source, transcript; ⋯ holds edit, clone, export and delete; below it, a line for a clone in progress or failed. */
 function VoiceRow({
   voice,
   entry,
@@ -562,8 +561,8 @@ function VoiceRow({
 }
 
 /**
- * 每只音色的完整条目（语言、逐字稿、录音大小不在摘要里）：按 `id@version` 记着，版本变了才重读；
- * 列表与标签不等它，读到之前那一行写「正在读取…」。
+ * The full entry for each voice (language, transcript and recording size are not in the summary): keyed by `id@version`, re-read only when the version changes.
+ * The list and tags do not wait for it; until it is read, that row shows “正在读取…”(Reading…).
  */
 function useVoiceEntries(runtime: RuntimeSession, voices: readonly LibraryEntrySummary[]): (voice: LibraryEntrySummary) => VoiceEntry | null {
   const [entries, setEntries] = useState<Record<string, VoiceEntry>>({});
@@ -576,7 +575,7 @@ function useVoiceEntries(runtime: RuntimeSession, voices: readonly LibraryEntryS
       loadVoice(runtime, voice.id).then(
         (entry) => setEntries((prev) => ({ ...prev, [key]: entry, [`${entry.id}@${entry.version}`]: entry })),
         () => {
-          // 读不到（例如刚被删掉）：那一行就不显示细节，不反复重读。
+          // If it cannot be read (e.g. just deleted), the row shows no details and does not keep re-reading.
         },
       );
     }
@@ -584,7 +583,7 @@ function useVoiceEntries(runtime: RuntimeSession, voices: readonly LibraryEntryS
   return (voice) => entries[`${voice.id}@${voice.version}`] ?? null;
 }
 
-/** 试听参考录音：同一时间只放一只；受限地址按录音摘要记着，到期了再要。 */
+/** Trial listen of reference recordings: only one plays at a time; the restricted URL is kept by the recording digest and requested again when it expires. */
 function useAudition(runtime: RuntimeSession) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const handles = useRef(new Map<string, MediaHandle>());

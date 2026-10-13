@@ -14,12 +14,12 @@ import { ensureSaveDirectory, ensureSaveDirectoryForStep } from './save-location
 import { transcodeDemand } from '../resource-profiles.ts';
 
 /**
- * 文件转码（架构设计 §7.9）：文件到文件，不建视频，不经过视频的渲染管线，由 PATH 里的 ffmpeg 执行。
+ * File transcoding (architecture design §7.9): file to file; creates no video, does not go through the video render pipeline, and is run by the ffmpeg on PATH.
  *
- * 步骤：读取（ffprobe 每个输入；合并时决定流复制还是重新编码，提取音频时逐个决定）→ 编码（写进 staging，按 `-progress`
- * 报告秒数）→ 校验（ffprobe 读得出、有画面、编码与高度符合要求、时长在容差内；提取音频只看时长与音频轨）
- * → 发布（移到输出目录，不覆盖已有的文件）。
- * 输出记为没有视频的生成记录：`result.outputs` 的每一项带 `path`（输出文件的绝对路径），`artifactId` 是文件内容的摘要。
+ * Steps: read (ffprobe each input; when merging, decide between stream copy and re-encoding, and decide for each input when extracting audio) → encode (written to staging, reporting seconds via `-progress`)
+ * → verify (ffprobe can read it, it has video, codec and height meet the requirements, duration is within tolerance; audio extraction checks only duration and the audio track)
+ * → publish (moved to the output directory, existing files are not overwritten).
+ * Output is recorded as a generation record with no video: each item in `result.outputs` carries `path` (the absolute path of the output file), and `artifactId` is a digest of the file content.
  */
 
 export const TRANSCODE_PIPELINE = 'transcode';
@@ -28,31 +28,31 @@ export interface TranscodeDeps {
   ffmpeg: MediaToolResolver;
   ffprobe: MediaToolResolver;
   /**
-   * 发布时先试硬链接（同一个文件系统上原子、不覆盖）；false 时直接走跨文件系统的办法：占住目标文件名，
-   * 复制到同目录的临时文件，再改名覆盖占位。测试用。
+   * When publishing, try a hard link first (atomic on the same filesystem, does not overwrite); when `false`, go straight to the cross-filesystem method: claim the target file name,
+   * copy to a temporary file in the same directory, then rename it over the placeholder. For tests.
    */
   hardLink?: boolean;
   /**
-   * 不给 `outDir` 时的保存位置（§7.9「保存位置」，Runtime 按设置与主机决定）；提交时冻结进参数。没有接线时（只在单测里）
-   * 写在源文件旁边。
+   * The save location when `outDir` is not given (§7.9 “save location”; the Runtime decides from settings and the host); frozen into the parameters at submission. When not wired up (only in unit tests),
+   * it is written next to the source file.
    */
   saveDirectory?: () => string;
 }
 
-/** 冻结的参数：默认值已经补上。 */
+/** Frozen parameters: defaults are already filled in. */
 export interface FrozenTranscodeParams extends TranscodeParams {
   codec: 'h264' | 'hevc';
   audioBitrateKbps: number;
 }
 
-/** 合并能流复制的编码：MP4 放得下，且各片段一致。 */
+/** Codecs that can be stream-copied when merging: MP4 can hold them, and all segments match. */
 const COPYABLE_VIDEO = new Set(['h264', 'hevc']);
 const COPYABLE_AUDIO = new Set(['aac', 'mp3', 'alac']);
 const DEFAULT_CRF = { h264: 23, hevc: 28 } as const;
 const MERGE_SAMPLE_RATE = 48000;
 
 /**
- * 提取音频（§7.9）时能原样复制的音频编码与它们的容器；别的编码重新编码为 AAC 放进 `.m4a`。
+ * Audio codecs that can be copied unchanged when extracting audio (§7.9), and their containers; other codecs are re-encoded to AAC in `.m4a`.
  */
 const AUDIO_CONTAINERS: Readonly<Record<string, { ext: string; mediaType: string }>> = {
   aac: { ext: '.m4a', mediaType: 'audio/mp4' },
@@ -62,7 +62,7 @@ const AUDIO_CONTAINERS: Readonly<Record<string, { ext: string; mediaType: string
 };
 const AAC_CONTAINER = AUDIO_CONTAINERS.aac!;
 
-/** 一个输入的音轨怎样取出：流复制进对应的容器，或重新编码为 AAC（`reason` 说明原因）。 */
+/** How one input's audio track is extracted: stream-copied into the matching container, or re-encoded to AAC (`reason` gives the cause). */
 export interface AudioExtractDecision {
   copy: boolean;
   ext: string;
@@ -73,7 +73,7 @@ export interface AudioExtractDecision {
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     inputs: {
       type: 'array',
       items: fileInputSchema('输入文件的绝对路径', 'Space 里的视频文件、成片或音频条目'),
@@ -99,19 +99,19 @@ const PARAMS_SCHEMA = {
 
 interface ProbeOutput extends Record<string, unknown> {
   media: ProbedMedia[];
-  /** 输入文件的大小与修改时间：重试时核对，变了就重新读取。 */
+  /** Input file size and modification time: checked on retry; if they changed, the file is read again. */
   stats: Array<{ size: number; mtimeMs: number }>;
   mode: TranscodeSummary['mode'];
   reason: string | null;
-  /** 提取音频：每个输入的做法，与 `media` 一一对应。 */
+  /** Audio extraction: the approach for each input, matching `media` one to one. */
   audio?: AudioExtractDecision[];
 }
 
 interface EncodeOutput extends Record<string, unknown> {
-  /** staging 里的输出文件，以及各自对应的输入时长（合并时是总和）。 */
+  /** Output files in staging, and the duration of each corresponding input (the total when merging). */
   files: Array<{ file: string; expectedSec: number; source: string }>;
   version: string;
-  /** 命令摘要：输入与清单只留文件名；staging 里的输出留完整路径，完成时换成发布后的文件名。 */
+  /** Command summary: inputs and the manifest keep only file names; outputs in staging keep the full path, and are replaced with the published file name on completion. */
   commands: string[][];
 }
 
@@ -135,7 +135,7 @@ export function transcodePipeline(deps: TranscodeDeps): PipelineDefinition<Froze
         const stat = await fs.stat(file).catch(() => null);
         if (!stat?.isFile()) throw new RpcError('not-found', JobsTranscode.inputNotFound({ file }));
       }
-      // 保存位置（§7.9）：给了用它，否则 Runtime 的保存位置；提交时冻结，不存在时创建，不能写入时拒绝。
+      // Save location (§7.9): use it when given, otherwise the Runtime's save location; frozen at submission, created if it does not exist, rejected if not writable.
       const outDir = params.outDir ?? deps.saveDirectory?.();
       if (outDir !== undefined) await ensureSaveDirectory(outDir);
       let version: string;
@@ -204,7 +204,7 @@ export function transcodePipeline(deps: TranscodeDeps): PipelineDefinition<Froze
       {
         name: 'encode',
         label: () => JobsTranscode.stepEncode(),
-        // ffmpeg 的峰值需求（§7.7）：按输入的总大小估 staging。
+        // ffmpeg's peak requirement (§7.7): estimate staging from the total size of the inputs.
         resources: (_params, outputs) => ({
           demand: transcodeDemand((outputs.probe as ProbeOutput).stats.reduce((sum, s) => sum + s.size, 0)),
         }),
@@ -285,7 +285,7 @@ export function transcodePipeline(deps: TranscodeDeps): PipelineDefinition<Froze
       const probed = outputs.probe as ProbeOutput;
       const encoded = outputs.encode as EncodeOutput;
       const published = (outputs.publish as PublishOutput).outputs;
-      // 摘要里的输出用最终的文件名（发布时可能因重名加了序号），不用 staging 里的临时名字。
+      // The output in the summary uses the final file name (a number may have been added on publish to avoid a clash), not the temporary name in staging.
       const finalNames = new Map(encoded.files.map((f, i) => [f.file, path.basename(published[i]!.path!)]));
       const commands = encoded.commands.map((command) => command.map((arg) => finalNames.get(arg) ?? arg));
       const summary: TranscodeSummary = {
@@ -330,8 +330,8 @@ export function parseTranscodeParams(raw: Record<string, unknown>): FrozenTransc
 }
 
 /**
- * 提取音频（§7.9）：AAC、MP3、Opus、FLAC 流复制进对应的容器；别的编码重新编码为 AAC（`.m4a`），并说明原因
- * （记进摘要：按当前语言生成的文字）。
+ * Audio extraction (§7.9): AAC, MP3, Opus and FLAC are stream-copied into their matching containers; other codecs are re-encoded to AAC (`.m4a`), with the reason given
+ * (recorded in the summary: text generated in the current language).
  */
 export function extractAudioDecision(audio: NonNullable<ProbedMedia['audio']>): AudioExtractDecision {
   const container = AUDIO_CONTAINERS[audio.codec];
@@ -339,7 +339,7 @@ export function extractAudioDecision(audio: NonNullable<ProbedMedia['audio']>): 
   return { copy: false, ...AAC_CONTAINER, reason: JobsTranscode.audioReencode({ codec: audio.codec }).text };
 }
 
-/** 提取音频的总体做法：全部流复制时 `stream-copy`；有重新编码的，`reason` 逐个写明。 */
+/** Overall approach to audio extraction: `stream-copy` when everything is stream-copied; where anything is re-encoded, `reason` states each case. */
 function extractAudioSummary(inputs: string[], decisions: AudioExtractDecision[]): { mode: TranscodeSummary['mode']; reason: string | null } {
   const reasons = decisions.flatMap((d, i) =>
     d.copy ? [] : [JobsTranscode.fileReason({ name: path.basename(inputs[i]!), reason: d.reason ?? '' }).text],
@@ -350,8 +350,8 @@ function extractAudioSummary(inputs: string[], decisions: AudioExtractDecision[]
 }
 
 /**
- * 输出的文件名（不含序号）、扩展名与媒体类型：压缩 `<源文件名>-compressed.mp4`，合并 `<第一个源文件名>-merged.mp4`，
- * 提取音频 `<源文件名>` 加所选容器的扩展名。
+ * Output file name (without number), extension and media type: compression `<源文件名>-compressed.mp4`, merging `<第一个源文件名>-merged.mp4`,
+ * audio extraction `<源文件名>` plus the extension of the chosen container.
  */
 export function outputName(
   action: TranscodeParams['action'],
@@ -365,7 +365,7 @@ export function outputName(
   return { name: action === 'merge' ? `${stem}-merged` : `${stem}-compressed`, ext: '.mp4', mediaType: 'video/mp4' };
 }
 
-/** 合并时能不能流复制：各片段的编码、分辨率、帧率、像素格式、采样率与声道都一致，且编码放得进 MP4。`reason` 是按当前语言生成的文字。 */
+/** Whether merging can stream-copy: codec, resolution, frame rate, pixel format, sample rate and channels all match across segments, and the codec fits in MP4. `reason` is text generated in the current language. */
 export function mergeDecision(media: ProbedMedia[]): { mode: TranscodeSummary['mode']; reason: string | null } {
   const first = media[0]!;
   const differences: string[] = [];
@@ -469,7 +469,7 @@ async function encode(deps: TranscodeDeps, context: PipelineStepContext<FrozenTr
   return { output: { files, version, commands } };
 }
 
-/** 进度写到标准输出，不写统计行；staging 里的输出可以覆盖（重试时）。 */
+/** Progress is written to standard output, not as stats lines; outputs in staging may be overwritten (on retry). */
 const TAIL = ['-progress', 'pipe:1', '-nostats', '-y'];
 
 function videoCodecArgs(params: FrozenTranscodeParams): string[] {
@@ -483,7 +483,7 @@ function audioCodecArgs(params: FrozenTranscodeParams): string[] {
 }
 
 function compressArgs(params: FrozenTranscodeParams, input: string, out: string): string[] {
-  // 高度取上限与原高的较小者，并取偶数（4:2:0 要求）；宽按比例取偶数。
+  // Height is the smaller of the cap and the original height, rounded to an even number (4:2:0 requires it); width is scaled proportionally and rounded to an even number.
   const height = params.maxHeight !== undefined ? `trunc(min(ih\\,${params.maxHeight})/2)*2` : 'trunc(ih/2)*2';
   return [
     '-hide_banner',
@@ -506,7 +506,7 @@ function compressArgs(params: FrozenTranscodeParams, input: string, out: string)
   ];
 }
 
-/** 提取音频：只取第一条音轨，去掉画面、字幕与数据流；流复制或重新编码为 AAC。 */
+/** Audio extraction: takes only the first audio track, dropping video, subtitle and data streams; stream-copied or re-encoded to AAC. */
 function extractAudioArgs(params: FrozenTranscodeParams, input: string, decision: AudioExtractDecision, out: string): string[] {
   return [
     '-hide_banner',
@@ -526,7 +526,7 @@ function extractAudioArgs(params: FrozenTranscodeParams, input: string, decision
   ];
 }
 
-/** 重新编码的合并：各片段缩放、补边到第一个片段的画面（不超过高度上限），统一帧率、像素格式与音频，再拼接。 */
+/** Merging with re-encoding: each segment is scaled and padded to the first segment's frame (not exceeding the height cap), frame rate, pixel format and audio are unified, then concatenated. */
 function mergeArgs(params: FrozenTranscodeParams, media: ProbedMedia[], out: string): string[] {
   const first = media[0]!.video!;
   const height = even(Math.min(first.height, params.maxHeight ?? first.height));
@@ -574,7 +574,7 @@ function even(n: number): number {
   return Math.max(2, Math.round(n / 2) * 2);
 }
 
-/** 参数摘要：输入与清单的路径只留文件名（输出的路径在完成时换成发布后的文件名）。 */
+/** Parameter summary: input and manifest paths keep only file names (output paths are replaced with the published file name on completion). */
 function summarize(args: string[], paths: Set<string>): string[] {
   return args.map((arg) => {
     const bare = arg.startsWith('file:') ? arg.slice(5) : arg;
@@ -582,7 +582,7 @@ function summarize(args: string[], paths: Set<string>): string[] {
   });
 }
 
-/** 时长容差：0.5 秒或 2%，取大的。 */
+/** Duration tolerance: 0.5 seconds or 2%, whichever is larger. */
 export function durationTolerance(expectedSec: number): number {
   return Math.max(0.5, expectedSec * 0.02);
 }
@@ -608,7 +608,7 @@ function verifyProblems(
   return problems;
 }
 
-/** 提取音频的校验（§7.9）：只看时长与音频轨。 */
+/** Verification for audio extraction (§7.9): checks only duration and the audio track. */
 function audioVerifyProblems(probed: ProbedMedia | null, expectedSec: number): string[] {
   if (!probed) return [JobsTranscode.probeOutputFailed().text];
   const problems: string[] = [];
@@ -620,9 +620,9 @@ function audioVerifyProblems(probed: ProbedMedia | null, expectedSec: number): s
 }
 
 /**
- * 把 staging 里的文件发布到输出目录，不覆盖已有的文件：重名时依次加 `-2`、`-3`……
- * 同一个文件系统上用硬链接（原子、遇到已有的文件失败）；跨文件系统或不支持硬链接时，先以独占方式占住目标文件名，
- * 复制到同目录的临时文件，再改名覆盖占位，出错时删掉临时文件与占位。
+ * Publishes the file from staging to the output directory without overwriting existing files: on a name clash, `-2`, `-3`... are added in turn.
+ * On the same filesystem a hard link is used (atomic, fails if a file already exists); across filesystems, or when hard links are not supported, first claim the target name exclusively,
+ * copy to a temporary file in the same directory, then rename it over the placeholder; on error, delete the temporary file and the placeholder.
  */
 export async function publishFile(source: string, dir: string, stem: string, ext: string, tag: string, hardLink: boolean): Promise<string> {
   for (let n = 1; n < 10_000; n++) {

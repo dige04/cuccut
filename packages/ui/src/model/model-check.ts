@@ -20,25 +20,25 @@ import { installProgressView } from './models-install.ts';
 import { isBundleInstalled } from './models-local.ts';
 
 /**
- * 本地模型的「检查」（设计稿 model-local-check.js；架构设计 §6.3）：模型能不能正常使用只在行上一条状态里说。
- * 状态全从 Runtime 来：`modelTest` / `modelInstall` 任务（`jobs` 主题）与模型包上记下的 `selfTest`（`models` 主题）；
- * 本地只记两件 Runtime 不知道的事：提交被拒（检查没能开始）与这一行发起的修复任务（修完要自动再检查）。
+ * Local model “检查” (check) (design model-local-check.js; architecture design §6.3): whether a model can be used normally is stated only in one status on its row.
+ * All status comes from the Runtime: `modelTest` / `modelInstall` tasks (`jobs` topic) and the `selfTest` recorded on the model package (`models` topic);
+ * locally, only two things the Runtime does not know are recorded: a rejected submission (the check could not start) and the repair task this row started (which must trigger an automatic re-check when it finishes).
  */
 
 export type CheckProblemKind = 'failed' | 'not-started';
 
 export interface CheckProblem {
   kind: CheckProblemKind;
-  /** 认得的检查代码；认不得时 null（说法用通用的一句）。 */
+  /** Recognized check code; null when unrecognized (the wording falls back to the generic sentence). */
   code: ModelCheckCode | null;
-  /** 技术详情里的代码：检查代码，没有时用任务或拒绝的原始错误码。 */
+  /** Code shown in the technical details: the check code, or when there is none, the raw error code of the task or rejection. */
   rawCode: string | null;
   text: string;
   todo: string;
   repair: 'yes' | 'maybe' | 'no';
-  /** Runtime 的原话（技术详情）。 */
+  /** The Runtime's own message (technical details). */
   message: string | null;
-  /** Runtime 给的 `key: value` 行（技术详情）。 */
+  /** `key: value` lines given by the Runtime (technical details). */
   facts: string[];
 }
 
@@ -49,7 +49,7 @@ export type CheckState =
   | { phase: 'passed'; at: string }
   | { phase: 'failed'; at: string; problem: CheckProblem };
 
-/** 提交被拒：检查没能开始（`APP_FILE_MISSING` 除外，那是检查没通过）。 */
+/** Submission rejected: the check could not start (except `APP_FILE_MISSING`, which means the check failed). */
 export interface CheckRejection {
   at: string;
   code: string | null;
@@ -62,12 +62,12 @@ export interface CheckInputs {
   jobs: readonly JobRecord[];
   subject: CheckSubject;
   rejection?: CheckRejection | null;
-  /** 这一行发起的修复任务（`models.repair` 的 `modelInstall`）。 */
+  /** The repair task started from this row (`modelInstall` of `models.repair`). */
   repairJobId?: string | null;
 }
 
 const LIVE: readonly JobRecord['state'][] = ['queued', 'running'];
-/** 取消与被打断的检查不留结论：状态回到这次之前的样子。 */
+/** Cancelled or interrupted checks leave no conclusion: the status returns to what it was before this check. */
 const DROPPED: readonly JobRecord['state'][] = ['cancelled', 'interrupted'];
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -78,7 +78,7 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-/** 检查没通过：代码 → 说法与修复规则。 */
+/** Check failed: code → wording and repair rules. */
 export function failedProblem(
   input: { code: unknown; rawCode?: string | null; message?: string | null; facts?: readonly string[] },
   subject: CheckSubject,
@@ -97,8 +97,8 @@ export function failedProblem(
 }
 
 /**
- * 提交被拒 → 状态行。随应用分发的文件缺失是检查没通过（重新安装 CucCut）；其余是检查没能开始。
- * 连不上 Runtime（客户端的 `internal`，没有 `details.code`）说后台服务没响应。
+ * Submission rejected → status line. A missing file shipped with the app means the check failed (reinstall CucCut); anything else means the check could not start.
+ * Cannot reach the Runtime (the client's `internal`, with no `details.code`) reports that the background service did not respond.
  */
 export function rejectionProblem(rejection: CheckRejection, subject: CheckSubject): CheckProblem {
   if (rejection.code === 'APP_FILE_MISSING') {
@@ -116,7 +116,7 @@ export function rejectionProblem(rejection: CheckRejection, subject: CheckSubjec
   };
 }
 
-/** 拒绝的 `details` 里给人看的：只要短的字符串与数字，不要本机路径。 */
+/** The part of a rejection's `details` shown to people: only short strings and numbers, no local paths. */
 function rejectionFacts(details: unknown): string[] {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(asRecord(details))) {
@@ -129,7 +129,7 @@ function rejectionFacts(details: unknown): string[] {
   return lines;
 }
 
-/** 一次 RPC 失败 → 拒绝记录：错误码在 `details.code`；连不上 Runtime 时记成 `RUNTIME_UNREACHABLE`。 */
+/** One failed RPC → rejection record: the error code is in `details.code`; when the Runtime cannot be reached it is recorded as `RUNTIME_UNREACHABLE`. */
 export function rejectionOf(error: unknown, at = new Date().toISOString()): CheckRejection {
   const message = error instanceof Error ? error.message : String(error);
   const rpc = error as { code?: unknown; details?: unknown } | null;
@@ -140,7 +140,7 @@ export function rejectionOf(error: unknown, at = new Date().toISOString()): Chec
   return { at, code: unreachable ? 'RUNTIME_UNREACHABLE' : null, message, details };
 }
 
-/** 检查任务的阶段：用任务真实的 `phase`；总量已知时才有百分比。 */
+/** Stage of the check task: uses the task's actual `phase`; a percentage is shown only when the total is known. */
 export function checkPhase(job: Pick<JobRecord, 'phase' | 'progress'>): { label: string; percent: number | null } {
   const p = job.progress;
   const percent = p && p.total ? Math.max(0, Math.min(100, Math.round((p.done / p.total) * 100))) : null;
@@ -171,8 +171,8 @@ function latestTest(jobs: readonly JobRecord[], bundleId: string): JobRecord | n
 }
 
 /**
- * 行上的检查状态。先看这一行发起的修复在不在跑，再看最近一次（没取消的）检查任务在不在跑；结论按时间取最新的一个：
- * 模型包上记下的 `selfTest`、没记进去的失败任务（例如 `APP_FILE_MISSING`），或提交被拒。
+ * Check status on the row. First see whether the repair started from this row is running, then whether the latest (not cancelled) check task is running; the conclusion is the most recent one by time:
+ * the `selfTest` recorded on the model package, a failed task that was not recorded there (for example `APP_FILE_MISSING`), or a rejected submission.
  */
 export function checkState({ bundle, jobs, subject, rejection = null, repairJobId = null }: CheckInputs): CheckState {
   if (repairJobId) {
@@ -225,8 +225,8 @@ export function checkState({ bundle, jobs, subject, rejection = null, repairJobI
 }
 
 /**
- * 这一行发起的修复任务怎样了：还在跑（或任务列表里还没有它）null；完成了 `check`（自动再检查一次）；
- * 失败、取消或被打断 `drop`（不检查，原因照常写在行上）。
+ * Status of the repair task started from this row: still running (or not yet in the task list) → null; completed → `check` (automatically re-check once);
+ * failed, cancelled, or interrupted → `drop` (no check; the reason is still written on the row as usual).
  */
 export function repairOutcome(jobs: readonly JobRecord[], repairJobId: string | null): 'check' | 'drop' | null {
   if (!repairJobId) return null;
@@ -235,14 +235,14 @@ export function repairOutcome(jobs: readonly JobRecord[], repairJobId: string | 
   return job.state === 'completed' ? 'check' : 'drop';
 }
 
-/** 这一行现在能怎样检查：直接提交；先重新启用（上次加载失败被停用）再提交；或不能检查。 */
+/** How this row can be checked now: submit directly; re-enable first (it was disabled after a failed load) and then submit; or cannot be checked. */
 export type CheckRoute = 'test' | 'enable-then-test' | null;
 
 const USABLE: readonly ModelBundleStatus['state'][] = ['installed', 'loading', 'ready', 'busy', 'unloading'];
 
 /**
- * 这类模型包有没有检查：「说话人区分」（`capability: 'diarize'`）自己不跑任务、不加载 Worker，`models.test` 以 `unsupported` 拒绝，
- * 行上与 ⋯ 里都不给「检查」（设计稿 settings-local.jsx 的模型包那一行）。
+ * Whether this kind of model package has a check: “说话人区分” (speaker diarization) (`capability: 'diarize'`) runs no tasks itself and loads no Worker, so `models.test` rejects it with `unsupported`,
+ * and neither the row nor the ⋯ menu offers “检查” (check) (design settings-local.jsx, the model package row).
  */
 export function hasCheck(bundle: Pick<ModelBundleStatus, 'capability'>): boolean {
   return bundle.capability !== 'diarize';
@@ -253,12 +253,12 @@ export function checkRoute(bundle: ModelBundleStatus): CheckRoute {
   if (bundle.install && bundle.install.state !== 'paused') return null;
   if (bundle.reason === 'unsupported' || bundle.reason === 'worker-missing' || bundle.reason === 'relocating') return null;
   if (USABLE.includes(bundle.state)) return 'test';
-  // 加载失败被停用的（文件坏了、内存不够）：重新检查先解除停用，否则 Runtime 以 `MODEL_UNAVAILABLE` 拒绝。
+  // Models disabled after a failed load (corrupt file, not enough memory): re-check first lifts the disable, otherwise the Runtime rejects it with `MODEL_UNAVAILABLE`.
   if (bundle.reason === 'load-failed' || bundle.reason === 'resource') return 'enable-then-test';
   return null;
 }
 
-// ---- 视图 ----
+// ---- View ----
 
 export type CheckActionKey = 'cancel' | 'repair' | 'recheck' | 'details';
 
@@ -270,22 +270,22 @@ export interface CheckAction {
 
 export interface CheckLineView {
   tone: 'running' | 'passed' | 'failed';
-  /** 「检查中…」「检查没通过」「检查没能开始」；通过时没有。 */
+  /** "Checking…", "Check failed", "Check could not start"; nothing when it passes. */
   head: string | null;
   text: string;
   todo: string | null;
-  /** 在跑时的进度；总量未知时 null（进度条不确定）。 */
+  /** Progress while running; null when the total is unknown (the progress bar is indeterminate). */
   percent: number | null;
   actions: CheckAction[];
 }
 
-/** 行上能做的事：修复（装好了、没在装）与重新检查（`checkRoute` 不为 null）。 */
+/** Actions available on the row: repair (when installed and not being installed) and re-check (when `checkRoute` is not null). */
 export interface CheckAbilities {
   repair: boolean;
   recheck: boolean;
 }
 
-/** 行上那一条：没检查过 null；检查中有阶段、进度与取消；通过一句安静的话；没通过一句人话 + 怎么办 + 动作。 */
+/** The status shown on the row: null if never checked; while checking, a stage, progress, and cancel; a quiet one-line message when it passes; when it fails, a plain sentence + what to do + an action. */
 export function checkLineView(state: CheckState, can: CheckAbilities, now = Date.now()): CheckLineView | null {
   switch (state.phase) {
     case 'idle':
@@ -328,7 +328,7 @@ function problemActions(p: CheckProblem, can: CheckAbilities): CheckAction[] {
   return actions;
 }
 
-/** 「技术详情」：代码、模型与时间、Runtime 的原话与技术细节。复制也用它。 */
+/** “技术详情” (technical details): code, model and time, the Runtime's own message and technical specifics. Copying also uses it. */
 export function checkDetailLines(state: CheckState, bundleId: string, now = Date.now()): string[] {
   if (state.phase !== 'failed') return [];
   const p = state.problem;
@@ -344,7 +344,7 @@ export interface TryNoteView {
   text: string;
   todo: string | null;
   actions: TryAction[];
-  /** 提醒说的那次检查在什么时候（`tryNotice` 才有）：之后试用做成了就撤掉（`noticeAfterTry`）。 */
+  /** When the check the reminder refers to took place (only present with `tryNotice`); the reminder is withdrawn if a later trial succeeds (`noticeAfterTry`). */
   at?: string;
 }
 
@@ -356,7 +356,7 @@ export interface TryAction {
   primary?: boolean;
 }
 
-/** 试用面板开头的提醒：上次检查没通过就先说（没能开始的不算，那次没检查）。 */
+/** Reminder at the top of the trial panel: says so first if the last check did not pass (a check that could not start does not count, since it did not check). */
 export function tryNotice(state: CheckState, can: CheckAbilities, subject: TrySubject = TRY_SUBJECT): TryNoteView | null {
   if (state.phase !== 'failed' || state.problem.kind !== 'failed') return null;
   const p = state.problem;
@@ -367,8 +367,8 @@ export function tryNotice(state: CheckState, can: CheckAbilities, subject: TrySu
 }
 
 /**
- * 那次检查之后试用做成了（`okAt` 是做成的那次结束的时间），提醒就撤掉：再说「现在试听多半也会失败」与眼前的结果矛盾。
- * 行上那条检查结果照旧，重新检查才会换掉它；之后又检查没通过，提醒照样出来。
+ * A trial succeeded after that check (`okAt` is the time that successful run ended), so the reminder is withdrawn: saying “现在试听多半也会失败” (listening now will most likely fail too) would contradict the result in front of the user.
+ * The check result on the row stays as it is; only a re-check replaces it. If a later check fails again, the reminder appears as usual.
  */
 export function noticeAfterTry(notice: TryNoteView | null, okAt: string | null | undefined): TryNoteView | null {
   if (!notice?.at || !okAt) return notice;
@@ -379,7 +379,7 @@ export type TryFailureKind = 'invalid' | 'refUnreadable' | 'appFileMissing' | 'n
 
 const MODEL_ERRORS = new Set(['MODEL_LOAD_FAILED', 'MODEL_WORKER_CRASHED', 'MODEL_OUTPUT_INVALID', 'MODEL_UNAVAILABLE']);
 
-/** 试用失败的错误码（提交被拒时是 `details.code`，任务失败时是 `error.code`）→ 哪一类。 */
+/** Error code of a failed trial (`details.code` when the submission was rejected, `error.code` when the task failed) → which kind. */
 export function tryFailureKind(code: string | null, details: unknown): TryFailureKind {
   if (code === 'INPUT_UNREADABLE' || code === 'ASSET_MISSING') return 'refUnreadable';
   if (code === 'APP_FILE_MISSING') return 'appFileMissing';
@@ -389,7 +389,7 @@ export function tryFailureKind(code: string | null, details: unknown): TryFailur
   return 'other';
 }
 
-/** 文件名：路径的最后一段（两种分隔符都认）。 */
+/** File name: the last segment of the path (both separators are recognized). */
 export function fileLabel(file: unknown): string | null {
   if (typeof file !== 'string' || !file) return null;
   return file.split(/[\\/]/).filter(Boolean).pop() ?? null;
@@ -397,19 +397,19 @@ export function fileLabel(file: unknown): string | null {
 
 export interface TryFailureInput {
   kind: TryFailureKind;
-  /** 表单没填好时那一条；Runtime 的原话（`other`）。 */
+  /** The message for an incomplete form; the Runtime's own message (`other`). */
   message?: string | null;
-  /** 读不出的录音：用户选的文件名，或 `details.file`。 */
+  /** Recording that could not be read: the file name the user picked, or `details.file`. */
   file?: string | null;
-  /** 这次提交被拒（没开始），而不是任务失败。 */
+  /** This submission was rejected (did not start), rather than the task failing. */
   notStarted?: boolean;
-  /** 行上能检查。 */
+  /** The row can be checked. */
   canCheck: boolean;
-  /** 试听（默认）还是试画。 */
+  /** Listen (default) or try drawing. */
   subject?: TrySubject;
 }
 
-/** 试用自己的失败：哪里不对 + 怎么办 + 有动作就给按钮；不弹 toast。 */
+/** The trial's own failure: what is wrong + what to do, with a button if there is an action; no toast. */
 export function tryFailureView(input: TryFailureInput): TryNoteView {
   const subject = input.subject ?? TRY_SUBJECT;
   switch (input.kind) {

@@ -15,19 +15,19 @@ import { tr } from './sidebar.tr.ts';
 import { vi } from './sidebar.vi.ts';
 
 /**
- * Home 侧栏的树（产品设计 §3.1）。从上到下三段：
- * 置顶（钉住的项目与会话，它们同时还在原来的位置）、项目（按最近活动排，下面挂它的会话）、
- * 最近（不属于任何项目的会话）。「在一个列表中」时项目段换成全部会话的一张单表（用户修订）。
+ * The Home sidebar tree (product design §3.1). Three sections, top to bottom:
+ * pinned (pinned projects and sessions; they also remain in their original place), projects (sorted by recent activity, with their sessions listed below), and
+ * recent (sessions that belong to no project). When “in one list” is on, the projects section is replaced by a single table of all sessions (user revision).
  */
 
 export type SessionStatus = 'waiting' | 'failed' | 'running' | 'unread';
 export type StatusVariant = 'informative' | 'notice' | 'negative' | 'positive' | 'neutral';
 
-/** 侧栏状态灯与汇总的文案（译文在 `sidebar.<语言>.ts`）。 */
+/** Copy for the sidebar status lights and summaries (translations are in `sidebar.<locale>.ts`). */
 const en = {
   status: { waiting: 'Waiting for approval', failed: 'Failed', running: 'Running', unread: 'Done, unread' },
   stopping: 'Stopping',
-  /** 项目行汇总里的一段，例如「1 个进行中」。 */
+  /** One segment of the project row summary, e.g. “1 in progress”. */
   count: {
     waiting: (n: number) => `${n} waiting for approval`,
     failed: (n: number) => `${n} failed`,
@@ -52,7 +52,7 @@ const STATUS_INFO: Record<SessionStatus, { readonly label: string; variant: Stat
   unread: statusInfo('unread', 'positive'),
 };
 
-/** 汇总里的先后：要你动手的排前面。 */
+/** Order within the summary: items that need your action come first. */
 const STATUS_ORDER: SessionStatus[] = ['waiting', 'failed', 'running', 'unread'];
 
 export function sessionStatus(conversation: Conversation): SessionStatus | null {
@@ -69,7 +69,7 @@ export function sessionStatus(conversation: Conversation): SessionStatus | null 
   }
 }
 
-/** 会话行第二行的状态灯；没有状态时返回 null，改显示多久前。 */
+/** The status light on the second line of a session row; returns null when there is no status, and shows how long ago instead. */
 export function conversationStatus(conversation: Conversation): { label: string; variant: StatusVariant } | null {
   if (conversation.activity === 'stopping') return { label: M.stopping, variant: 'neutral' };
   const status = sessionStatus(conversation);
@@ -79,7 +79,7 @@ export function conversationStatus(conversation: Conversation): { label: string;
 export interface ProjectRow {
   project: Project;
   conversations: Conversation[];
-  /** 项目下会话状态的汇总，例如「1 个进行中 · 1 个等待批准」。 */
+  /** Summary of session statuses under a project, e.g. “1 in progress · 1 awaiting approval”. */
   summary: string | null;
   lastActiveAt: string;
 }
@@ -89,13 +89,13 @@ export type PinnedRow = { kind: 'project'; row: ProjectRow } | { kind: 'conversa
 export interface SidebarTree {
   pinned: PinnedRow[];
   projects: ProjectRow[];
-  /** 不属于任何项目的会话（「最近」）。 */
+  /** Sessions that belong to no project (“Recent”). */
   loose: Conversation[];
-  /** 「在一个列表中」：项目下的与不属于项目的会话放在一起。 */
+  /** “In one list”: sessions under projects and sessions that belong to no project are placed together. */
   flat: Conversation[];
 }
 
-/** 会话排序：最近活动或名称（侧栏「会话排序」）。项目始终按最近活动。 */
+/** Session sort order: by recent activity or by name (sidebar “Session sort”). Projects are always sorted by recent activity. */
 export type SidebarSort = 'recent' | 'name';
 
 const byRecent = (a: { updatedAt: string }, b: { updatedAt: string }) => b.updatedAt.localeCompare(a.updatedAt);

@@ -17,8 +17,8 @@ import {
 } from './model-actions.ts';
 
 /**
- * 模型页命令走真的 `RuntimeSession`（追加的薄方法），只把 `client.request` 换成假的：记下方法与参数，按方法回一个结果。
- * 不联网、不连 Runtime——密钥与验证都停在这一层。
+ * The model page commands run through a real `RuntimeSession` (with added thin methods); only `client.request` is replaced with a fake: it records the method and arguments, and returns a result by method.
+ * No network and no Runtime connection: keys and verification both stop at this layer.
  */
 function fakeSession(fail?: { method: string; error: Error }) {
   const session = new RuntimeSession({} as HostBridge);

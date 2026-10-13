@@ -1,24 +1,21 @@
-//! v3 的画面实例换成渲染内核（`subtitle-render`）的元素。
+//! v3 picture instances are converted into elements of the rendering kernel (`subtitle-render`).
 //!
-//! 字段一一对应（视频格式规范 §3.4–§3.7 采用的就是 v2 的元素模型）：时间是实例的区间换成的秒，几何、遮罩、平铺、
-//! 元素动画、文字样式与各种类的 props 原样带过去；关键帧绑定经 `bindings_to_timeline` 换成 v2 的 `keyframes`。
-//! 有三处不交给内核：源画面由调用方注入（[`SOURCE_PREFIX`] 加实例 ID），`fx` 由 [`crate::effects`] 先作用在源画面上，
-//! 转场由 [`crate::transition`] 在画好的层上画。
+//! Fields map one to one (the video format spec §3.4–§3.7 uses the v2 element model): time is the instance's range converted into seconds, and geometry, masks, tiling, element animation, text styles and each kind's props are carried over as is; keyframe bindings are converted to v2 `keyframes` by `bindings_to_timeline`.
+//! Three things are not handed to the kernel: the source picture is injected by the caller (the [`SOURCE_PREFIX`] plus the instance ID), `fx` is applied to the source picture first by [`crate::effects`], and transitions are drawn on the finished layers by [`crate::transition`].
 
 use subtitle_render::{TimelineVisualElement, vertical_align_from_str};
 use timeline::schema::{Background, ElementKind, Fit, VisualMode};
 use video_model::{AnimationBinding, TimelineItem};
 
-/// 注入的源画面的 ID 前缀：`layer:<实例 ID>`。
+/// ID prefix of the injected source picture: `layer:<instance ID>`.
 pub const SOURCE_PREFIX: &str = "layer:";
 
-/// 实例的源画面在内核里的 ID。
+/// The instance's source picture ID in the kernel.
 pub fn source_id(item_id: &str) -> String {
     format!("{SOURCE_PREFIX}{item_id}")
 }
 
-/// 画面实例换成内核的元素；音频与字幕没有。`bindings` 是序列上指向这个实例的关键帧绑定，读不懂的绑定当作没有
-/// （引擎写入时已校验）。
+/// Converts a picture instance into a kernel element; audio and captions have none. `bindings` are the keyframe bindings on the sequence that point to this instance; bindings that cannot be read are treated as absent (the engine validates them when writing).
 pub fn visual_element<'a>(
     item: &TimelineItem,
     fps: f64,
@@ -32,13 +29,13 @@ pub fn visual_element<'a>(
         .ok()
         .filter(|k| *k != timeline::keyframes::Keyframes::default());
     let media = item.media();
-    // 合成实例没有 `mode`：`place` 没写位置与宽时铺满，否则按画中画摆（与帧计划相同）。
+    // Composition instances have no `mode`: when `place` sets no position or width, they fill the frame; otherwise they are placed as picture-in-picture (same as the frame plan).
     let (mode, fit) = match item {
         TimelineItem::Composition(_) => {
             let fullscreen = place.x.is_none() && place.y.is_none() && place.w.is_none();
             (if fullscreen { VisualMode::Fullscreen } else { VisualMode::Pip }, Fit::Contain)
         }
-        // 贴纸按自己的宽高比摆，不裁切。
+        // Stickers are placed at their own aspect ratio, without cropping.
         TimelineItem::Sticker(_) => (VisualMode::Pip, Fit::Contain),
         _ => (media.map_or(VisualMode::Pip, |m| m.mode()), media.map_or(Fit::Cover, |m| m.fit())),
     };
@@ -56,7 +53,7 @@ pub fn visual_element<'a>(
         audio_fade_out: 0.0,
         mode,
         fit,
-        // 合成替身没有底：全屏 + contain 的留边与透明像素都露出下层（视频格式规范 §3.7）。
+        // A composition stand-in has no background: with full screen and contain, the letterbox margins and transparent pixels reveal the layer below (video format spec §3.7).
         bg: match item {
             TimelineItem::Composition(_) => None,
             _ => Some(media.map_or(Background::Black, |m| m.bg())),
@@ -101,7 +98,7 @@ pub fn visual_element<'a>(
     Some(element)
 }
 
-/// 内核的元素种类。合成实例按视频画（它的画面是预渲染替身）。
+/// The kernel's element kinds. A composition instance is drawn as video (its picture is a pre-rendered stand-in).
 fn element_kind(item: &TimelineItem) -> Option<ElementKind> {
     Some(match item {
         TimelineItem::Video(_) | TimelineItem::Composition(_) => ElementKind::Video,

@@ -6,47 +6,45 @@ import type { CodexInstall } from '../codex/codex-binary.ts';
 import type { CodexErrorInfo, CodexModel } from '../codex/codex-protocol.ts';
 
 /**
- * 测试用的假 codex：一个可执行文件，回答 `--version`、`login status` 与 `app-server`（stdio 上的 JSON 行，形状同
- * `codex-protocol.ts`）。它不联网、不读 `~/.codex`（`CODEX_HOME` 指向 `<dir>/codex-home`）、不碰本机真实的 codex；
- * 收到的每条消息记进 `log.jsonl`，测试据此核对会话的参数（工作目录、沙箱、有没有 MCP 服务、输入）与关闭。
+ * Fake codex for tests: one executable that answers `--version`, `login status` and `app-server` (JSON lines over stdio, same shape as `codex-protocol.ts`). It makes no network calls, does not read `~/.codex` (`CODEX_HOME` points to `<dir>/codex-home`), and does not touch the machine's real codex.
+ * Every message received is recorded in `log.jsonl`, and tests use it to check a session's parameters (working directory, sandbox, whether MCP servers are present, input) and shutdown.
  *
- * 探测取模型表也会起 app-server：这种进程（初始化之后第一个请求是 `model/list`）记成 `catalog-start` / `catalog-exit`，
- * 不算会话；会话进程照旧记 `start` / `exit`（`t` 是进程启动的时间）。
+ * Fetching the model table also starts an app-server. That kind of process (whose first request after initialization is `model/list`) is recorded as `catalog-start` / `catalog-exit` and does not count as a session. Session processes are still recorded as `start` / `exit` (`t` is the process start time).
  *
- * 用法：`createFakeCodex(dir)` 得到 `locate`，交给 `new CodexDriver(log, { locate })`；`scenario()` 改下一次的行为。
+ * Usage: `createFakeCodex(dir)` gives `locate`, which is passed to `new CodexDriver(log, { locate })`. `scenario()` changes the behavior of the next run.
  */
 
-/** 一个回合怎么结束。 */
+/** How a turn ends. */
 export interface FakeCodexTurn {
-  /** 回合开始后等多久再写文件、结束（毫秒）。 */
+  /** How long to wait after the turn starts before writing files and ending (milliseconds). */
   delayMs?: number;
-  /** 写进会话工作目录的文件：相对路径 → base64 内容。 */
+  /** Files to write into the session's working directory: relative path → base64 content. */
   files?: Record<string, string>;
-  /** 智能体的文字回复。 */
+  /** The agent's text reply. */
   reply?: string;
-  /** `hang`：一直不结束，直到收到 `turn/interrupt`。 */
+  /** `hang`: never ends until `turn/interrupt` is received. */
   status?: 'completed' | 'failed' | 'hang';
-  /** `failed` 时的错误说明。 */
+  /** The error description when `failed`. */
   error?: string;
-  /** `failed` 时错误里的结构化原因（`codexErrorInfo`）。 */
+  /** The structured reason in the error when `failed` (`codexErrorInfo`). */
   errorInfo?: CodexErrorInfo;
-  /** 回合里先发一个命令审批请求（越界的网络命令），记下 CucCut 的答复。 */
+  /** During the turn, first sends a command approval request (an out-of-bounds network command), and records CucCut's reply. */
   askApproval?: boolean;
-  /** 回合里（结束之前）发的 `error` 通知。 */
+  /** `error` notifications sent during the turn (before it ends). */
   errors?: Array<{ message: string; codexErrorInfo?: CodexErrorInfo | null; willRetry: boolean }>;
 }
 
 export interface FakeCodexScenario {
-  /** false：`locate` 返回 null（没有安装）。 */
+  /** false: `locate` returns null (not installed). */
   installed: boolean;
   version: string;
   loggedIn: boolean;
   turn: FakeCodexTurn;
-  /** `model/list` 的模型表（每页 2 个，带游标分页）；`error`：回 -32603；`hang`：一直不应答。 */
+  /** The model table for `model/list` (2 per page, with cursor pagination). `error`: replies -32603. `hang`: never replies. */
   models: CodexModel[] | 'error' | 'hang';
   /**
-   * `turn/steer`：`accept` 有活动回合时接受（没有时回 -32600 `no active turn to steer`，同真实的 codex）；
-   * `no-active-turn` 一律那样拒绝；`unsupported` 回 -32601；`error` 回 -32603（说不清送没送到）。
+   * `turn/steer`: `accept` accepts when there is an active turn (when there is none, replies -32600 `no active turn to steer`, same as the real codex);
+   * `no-active-turn` always rejects that way; `unsupported` replies -32601; `error` replies -32603 (it is unclear whether the message was delivered).
    */
   steer: 'accept' | 'no-active-turn' | 'unsupported' | 'error';
 }
@@ -61,12 +59,12 @@ export interface FakeCodexLogEntry {
 
 export interface FakeCodex {
   dir: string;
-  /** 给假 codex 的 `CODEX_HOME`（一开始是空目录）；测试在这里写 `config.toml`。 */
+  /** The `CODEX_HOME` given to the fake codex (an empty directory at first); tests write `config.toml` here. */
   codexHome: string;
   locate: () => Promise<CodexInstall | null>;
   scenario(patch: Partial<FakeCodexScenario>): void;
   log(): FakeCodexLogEntry[];
-  /** 收到的某个方法的请求参数，按到达顺序。 */
+  /** The request parameters of a given method, in arrival order. */
   requests(method: string): Array<{ pid: number; t: number; params: Record<string, unknown> }>;
 }
 
@@ -83,7 +81,7 @@ const DEFAULT_SCENARIO: FakeCodexScenario = {
   steer: 'accept',
 };
 
-/** 一个 `model/list` 里的模型；没给的字段取常见的值。 */
+/** A model in `model/list`. Fields that are not given take common values. */
 export function fakeModel(id: string, patch: Partial<CodexModel> = {}): CodexModel {
   return {
     id,
@@ -107,7 +105,7 @@ const ENTRY = fileURLToPath(new URL('./fake-codex-app-server.ts', import.meta.ur
 export async function createFakeCodex(dir: string, scenario: Partial<FakeCodexScenario> = {}): Promise<FakeCodex> {
   await fs.mkdir(dir, { recursive: true });
   const command = path.join(dir, 'codex');
-  // 假 codex 是 .ts：22.18 之前的 Node 要显式打开类型剥离（之后默认打开，这个标志无害）；环境被收窄过，不能靠 NODE_OPTIONS。
+  // The fake codex is a .ts file: Node versions before 22.18 need type stripping turned on explicitly (it is on by default after that, so this flag is harmless). The environment is narrowed, so NODE_OPTIONS cannot be used.
   await fs.writeFile(command, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types --no-warnings "${ENTRY}" "$@"\n`, { mode: 0o755 });
   const scenarioFile = path.join(dir, 'scenario.json');
   const logFile = path.join(dir, 'log.jsonl');
@@ -116,7 +114,7 @@ export async function createFakeCodex(dir: string, scenario: Partial<FakeCodexSc
   write();
   const codexHome = path.join(dir, 'codex-home');
   await fs.mkdir(codexHome, { recursive: true });
-  // 只给假 codex 它需要的环境：PATH（找 node 不靠它，但 shell 要）、它自己的目录与 CODEX_HOME（Driver 读 config.toml 用，不碰 ~/.codex）。
+  // Only give the fake codex the environment it needs: PATH (finding node does not rely on it, but the shell does), its own directory, and CODEX_HOME (the Driver reads config.toml from it, and ~/.codex is not touched).
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin', FAKE_CODEX_DIR: dir, CODEX_HOME: codexHome };
 
   const log = (): FakeCodexLogEntry[] => {

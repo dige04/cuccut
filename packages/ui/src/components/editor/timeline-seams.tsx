@@ -24,19 +24,17 @@ import { applyRestore, applyRetime } from './transcript-actions.ts';
 import { TRANSCRIPT_COPY } from './transcript-copy.ts';
 
 /**
- * 时间线上的剪口带（原型 timeline-cutbands.jsx）：剪口是全局的，像播放头一样贯穿所有轨道，一处剪口一条带
- * （视频与链接的音频在同一处的剪口并成一条）。悬停说剪掉了什么、多长；点一下恢复；拖两缘改剪切范围。
+ * Cut bands on the timeline (prototype timeline-cutbands.jsx): cuts are global, running through all tracks like the playhead, with one band per cut (a video and its linked audio cut at the same point are merged into one band). Hovering says what was cut and how long; clicking restores; dragging the two edges changes the cut range.
  *
- * 时间线是成片，剪掉的内容不占时间，所以带不按剪掉的原长度画宽（那样会盖住留下的内容），在剪口上画一条
- * 固定宽的斜纹带。拖缘时带按「新区间」伸缩：多剪的那截正好盖住要剪掉的画面，少剪时按比例收窄，收到零宽就是恢复。
- * 拖动的口径（吸词边界、Alt 自由、夹取）与生成的事务在 model/cut-bands.ts。
+ * The timeline is the finished output, and cut content takes no time, so bands are not drawn at the width of the removed original length (that would cover the kept content). Instead, each cut gets a fixed-width striped band. When an edge is dragged, the band scales with the new range: the extra cut covers the footage that is to be removed, and when cutting less it narrows proportionally, and reaching zero width means restore.
+ * The drag rules (snap to word boundaries, Alt for free movement, clamping) and the transaction it generates are in model/cut-bands.ts.
  */
 
-/** 静止时带宽（像素）。 */
+/** Band width at rest (pixels). */
 const REST_W = 16;
-/** 两缘命中区宽（压在带内侧；带窄时每侧缩到带宽的三分之一，中间留给点击恢复）。 */
+/** Width of the hit area on each edge (inside the band; when the band is narrow, each side shrinks to a third of the band width, leaving the middle for click-to-restore). */
 const EDGE_PX = 6;
-/** 按下后移动超过这么多像素才算拖。 */
+/** Moving more than this many pixels after pressing counts as a drag. */
 const DRAG_PX = 3;
 const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
 const NO_WORDS: SpeechWord[] = [];
@@ -55,7 +53,7 @@ const bandStyle = style({
   outlineStyle: { default: 'none', isFocusVisible: 'solid' },
   outlineColor: 'focus-ring',
   outlineWidth: 2,
-  // 斜纹、缝线与两缘的颜色在 editor.css（样式宏画不了渐变与内阴影），这里只给 token。
+  // The stripes, seam lines, and edge colors are in editor.css (style macros can't draw gradients or inner shadows); only tokens are given here.
   '--cc-cut-bg': { type: 'backgroundColor', value: 'gray-100' },
   '--cc-cut-bg-hover': { type: 'backgroundColor', value: 'gray-200' },
   '--cc-cut-bg-drag': { type: 'backgroundColor', value: 'blue-100' },
@@ -78,9 +76,7 @@ const tagStyle = style({
 const tipLine = style({ display: 'block' });
 
 /**
- * 剪口带层：挂在时间线内容层里、所有轨道行之后。`xOfFrame` 是序列帧 → 内容层横坐标（含行头列），
- * `top` / `height` 是轨道区的上沿与总高。`frames` 是看得见的时间窗（序列帧，时间线已含左右余量）：只画窗里的带，
- * 正在拖缘与有焦点的带不管在不在窗里都留着（见 AssetBands）。
+ * Cut band layer: mounted in the timeline content layer, after all track rows. `xOfFrame` maps a sequence frame to a content-layer x coordinate (including the header column); `top` / `height` are the top edge and total height of the track area. `frames` is the visible time window (sequence frames; the timeline already includes its left and right margins): only bands inside the window are drawn. Bands being dragged and bands with focus stay even when outside the window (see AssetBands).
  */
 export function CutBands({
   sequence,
@@ -113,14 +109,14 @@ export function CutBands({
     }
     return byAsset;
   }, [bands]);
-  // 每个素材取最新的那份转写（同文稿面板）：用来说剪掉了哪些字、拖缘时吸词边界。
+  // Each asset uses its latest transcript (same as the transcript panel): used to say which words were cut, and to snap to word boundaries while an edge is dragged.
   const speeches = useMemo(
     () => (groups.size ? new Map(mediaCandidates(sequence, assets, documents).map((candidate) => [candidate.asset.id, candidate.speech])) : null),
     [groups, sequence, assets, documents],
   );
   if (!groups.size) return null;
   const shared = { sequence, assets, xOfFrame, top, height, pps, editable };
-  // 带以剪口为中心 REST_W 宽：窗口两边各放宽一条带的宽度。
+  // The band is REST_W wide, centered on the cut; the window is widened on each side by one band's width.
   const slack = (REST_W / pps) * (sequence.fps.num / sequence.fps.den);
   return (
     <>
@@ -159,12 +155,11 @@ function AssetBands({
 }: BandProps & { bands: CutBand[]; from: number; to: number; speech: DocumentRecord | undefined; cutSet: DocumentRecord | undefined }) {
   const body = useDocumentBody(speech);
   const words = useMemo(() => (body === undefined ? NO_WORDS : (readSpeechWords(body)?.words ?? NO_WORDS)), [body]);
-  // 素材的剪口集合：恢复与改范围按它找盖住接缝的剪口。
+  // The set of cuts for an asset: restore and change-range find the cut that covers the seam through this set.
   const cutBody = useDocumentBody(cutSet);
   const cuts = useMemo(() => (cutBody === undefined ? NO_CUTS : (readCutSet(cutBody) ?? NO_CUTS)), [cutBody]);
-  // 按剪口位置排好，只画窗里的带。钉住的带（按着拖缘、键盘焦点在它上面）照画：卸掉会拆掉拖动的监听（= 取消拖动）、丢掉焦点。
-  // 最近钉过的那条（失焦、松开后也记着，直到别的带钉住）前后各一条也照画：焦点在滚出窗的带上时，Tab / Shift+Tab 走到的是
-  // 紧挨着的那条，不会跳到窗里第一条、漏掉中间没挂上的。不随失焦放掉：失焦先于新带得到焦点，那时就卸掉邻带，焦点会落空。
+  // Sorted by cut position; only bands inside the window are drawn. Pinned bands (an edge being dragged with the pointer held, or keyboard focus on the band) are still drawn: unmounting them would tear down the drag listeners (that cancels the drag) and drop focus.
+  // The most recently pinned band (remembered even after blur and release, until another band is pinned), plus the one before and after it, are also drawn: when focus is on a band that has scrolled out of the window, Tab / Shift+Tab goes to the adjacent band, rather than jumping to the first band in the window and skipping any in between that weren't mounted. It is not released on blur: blur happens before the new band gets focus, and by then the neighbors would be unmounted and focus would be lost.
   const index = useMemo(() => spanIndex(bands, (band) => ({ start: band.frame, end: band.frame })), [bands]);
   const position = useMemo(() => new Map(bands.map((band, i) => [band.key, i])), [bands]);
   const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
@@ -212,16 +207,16 @@ function Band({
   band: CutBand;
   words: readonly SpeechWord[];
   cuts: readonly TrackedCut[];
-  /** 这条带要不要钉住（不随滚动出窗卸掉）。 */
+  /** Whether this band should be pinned (not unmounted when it scrolls out of the window). */
   onHold(key: string, on: boolean): void;
 }) {
   const actions = useEditorActions();
   const [drag, setDrag] = useState<BandDrag | null>(null);
   const [tip, setTip] = useState(false);
-  // 进行中的拖动：卸载时拆掉 window 上的监听。
+  // An in-progress drag: on unmount, remove the listeners attached to window.
   const live = useRef<(() => void) | null>(null);
   useEffect(() => () => live.current?.(), []);
-  // 按下拖缘（监听已挂上，还没拖出 DRAG_PX 时 `drag` 仍是 null）到松开、以及键盘焦点在带上时，请父层钉住这一条。
+  // From pressing an edge (listeners attached, but `drag` is still null until the pointer has moved DRAG_PX) until release, and while keyboard focus is on the band, ask the parent to pin this one.
   const [grabbed, setGrabbed] = useState(false);
   const [focused, setFocused] = useState(false);
   const pinned = grabbed || focused;
@@ -235,7 +230,7 @@ function Band({
   const seconds = band.frames / perSecond;
   const text = useMemo(() => cutText(words, band.from, band.to), [words, band.from, band.to]);
 
-  // 几何：静止时以剪口为中心 REST_W 宽。拖动中多剪的部分按时间线比例往外伸，原来剪掉的那段按比例收窄。
+  // Geometry: at rest, REST_W wide, centered on the cut. While dragging, the extra cut extends outward in proportion to the timeline, and the originally cut portion narrows in proportion.
   const x = xOfFrame(band.frame);
   let left = x - REST_W / 2;
   let right = x + REST_W / 2;
@@ -251,12 +246,12 @@ function Band({
 
   const begin = (event: ReactPointerEvent<HTMLSpanElement>, edge: 'start' | 'end') => {
     if (event.button !== 0) return;
-    // 不让按下落到带本体（= 恢复）、片段或时间轴空白（= 清选中）上。
+    // Don't let a press land on the band body (that is restore), on a clip, or on empty timeline space (that clears the selection).
     event.preventDefault();
     event.stopPropagation();
     setTip(false);
     if (!editable || live.current) return;
-    // 改范围先要能恢复这一处，还要这一处正好是剪口剪掉的：拖一个空的范围试一下。
+    // Changing the range first needs this spot to be restorable, and the spot must be exactly where a cut was made: try dragging an empty range to test.
     const probe = retimeOperations(sequence, assets, band, cuts, { start: 0, end: 0 });
     const marks = bandWordMarks(band, words, fps);
     const pressX = event.clientX;
@@ -281,7 +276,7 @@ function Band({
       setGrabbed(false);
     };
     const move = (ev: PointerEvent) => {
-      // 在别的窗口里松开了：作废，不提交。
+      // Released in another window: discard it, don't commit.
       if (ev.buttons === 0) return detach();
       dx = ev.clientX - pressX;
       free = ev.altKey;
@@ -289,7 +284,7 @@ function Band({
         if (Math.abs(dx) <= DRAG_PX) return;
         started = true;
         if (probe && !probe.ok) {
-          // 这一处恢复不了，改范围（先恢复再剪）也做不到：照实说为什么。
+          // If this spot can't be restored, changing the range (restore, then cut) can't be done either: say why plainly.
           ToastQueue.neutral(TRANSCRIPT_COPY.restoreRefused[probe.reason], { timeout: 6000 });
           return detach();
         }
@@ -298,7 +293,7 @@ function Band({
       update();
     };
     const up = (ev: PointerEvent) => {
-      // 松开的位置也算一次移动：快速拖动时最后一段可能只出现在 pointerup 里。
+      // The release position also counts as a move: when dragging fast, the last segment may only appear in pointerup.
       if (started) {
         dx = ev.clientX - pressX;
         free = ev.altKey;
@@ -308,7 +303,7 @@ function Band({
       detach();
       if (done?.changed) void applyRetime(actions, retimeOperations(sequence, assets, band, cuts, done), fps, seconds);
     };
-    // Esc 取消（先于编辑器自己的 Esc）；拖动中按下 / 松开 Alt 立刻换吸附方式。
+    // Esc cancels (ahead of the editor's own Esc). Pressing or releasing Alt during a drag switches the snapping mode immediately.
     const key = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape' && ev.type === 'keydown') {
         ev.preventDefault();

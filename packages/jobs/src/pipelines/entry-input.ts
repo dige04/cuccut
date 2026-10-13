@@ -2,8 +2,8 @@ import { JobsEntryInput } from '@cuccut/protocol/messages/jobs/entry-input.ts';
 import { invalid } from './params.ts';
 
 /**
- * Space 条目作为流程的文件输入（架构设计 §7.9「Space 条目作为输入」）：参数里可以是绝对路径或 `{ entryId }`。
- * 条目由 Runtime 在 `pipelines.start` 的方法层换成路径，流程只冻结路径；没换掉的条目到这里以 `invalid-request` 拒绝。
+ * Space entries as file input to the pipeline (architecture design §7.9, “Space entries as input”): a parameter can be an absolute path or `{ entryId }`.
+ * The Runtime swaps the entry for a path in the method layer of `pipelines.start`; the pipeline only freezes the path. An entry that was not swapped reaches this point and is rejected with `invalid-request`.
  */
 export function fileInputSchema(pathDescription: string, entryDescription: string): Record<string, unknown> {
   return {
@@ -19,7 +19,7 @@ export function fileInputSchema(pathDescription: string, entryDescription: strin
   };
 }
 
-/** 参数里没换掉的 `{ entryId }`：说明要经 `pipelines.start` 提交。不是条目时什么都不做，交给调用方的检查。 */
+/** A `{ entryId }` left in the parameters: it means the call should be submitted through `pipelines.start`. If it is not an entry, nothing is done; the caller's check handles it. */
 export function rejectUnresolvedEntry(key: string, value: unknown): void {
   if (typeof value === 'object' && value !== null && typeof (value as { entryId?: unknown }).entryId === 'string') {
     throw invalid(key, JobsEntryInput.unresolvedEntry());

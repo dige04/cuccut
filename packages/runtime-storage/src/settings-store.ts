@@ -16,18 +16,17 @@ import { RuntimeStorageFiles as SF } from '@cuccut/protocol/messages/runtime-sto
 
 interface SettingsFile {
   schemaVersion: 1;
-  /** 只放与默认值不同的取值。不认识的键（更新的版本写下的）原样保留，不生效。 */
+  /** Only stores values that differ from the defaults. Unknown keys (written by a newer version) are kept as-is but have no effect. */
   values: Record<string, unknown>;
 }
 
 export type SettingsChange = Partial<SettingValues>;
 
 /**
- * Runtime 持有的偏好设置（架构设计 §5.10），文件是 `<runtime-home>/store/settings.json`。
+ * Preferences held by the Runtime (architecture design §5.10). The file is `<runtime-home>/store/settings.json`.
  *
- * - 写入整批校验、串行执行：校验 → 写临时文件再改名 → 换内存 → 通知。写盘失败时内存不变，崩溃不留半份文件。
- * - 文件里不合 schema 的取值（手工改坏的）按默认值处理，不让 Runtime 起不来；文件整个不是合法的 JSON 或认不出时
- *   改名保留、全部取默认值；更新版本写下的不改写，修改只留在内存里（`store-file.ts`，与其他 Runtime Store 文件一致）。
+ * - Writes are validated as a whole batch and run serially: validate → write a temporary file, then rename it → swap the memory copy → notify. If the disk write fails, memory is unchanged. A crash does not leave a half-written file.
+ * - Values in the file that do not match the schema (broken by hand edits) fall back to defaults, so the Runtime still starts. If the whole file is not valid JSON or cannot be recognized, it is renamed and kept, and all values use defaults. Files written by a newer version are not rewritten, and changes stay only in memory (`store-file.ts`, consistent with the other Runtime Store files).
  */
 export class SettingsStore implements SettingsReader {
   readonly #file: JsonStoreFile;
@@ -44,12 +43,12 @@ export class SettingsStore implements SettingsReader {
     this.#raw = { ...value };
   }
 
-  /** 一个键的有效值：用户设过且合 schema 的取值，否则是默认值。 */
+  /** The effective value of a key: the user-set value if it matches the schema, otherwise the default. */
   get<K extends SettingKey>(key: K): SettingValues[K] {
     return structuredClone(this.#effective(this.#raw, key));
   }
 
-  /** 全部键（或给出的键）的有效值与默认值。 */
+  /** Effective values and defaults for all keys (or for the given keys). */
   view(keys?: readonly SettingKey[]): SettingsView {
     const settings: Record<string, unknown> = {};
     const defaults: Record<string, unknown> = {};
@@ -64,7 +63,7 @@ export class SettingsStore implements SettingsReader {
     return this.view() as SettingsSnapshot;
   }
 
-  /** 任务创建时冻结它用到的取值与来源（§5.10）。返回的是副本，之后改设置不影响它。 */
+  /** When a task is created, freeze the values it uses and their sources (§5.10). Returns a copy. Later setting changes do not affect it. */
   snapshot<K extends SettingKey>(keys: readonly K[]): FrozenSettings<K> {
     const values = {} as Pick<SettingValues, K>;
     const sources = {} as Record<K, SettingSource>;
@@ -76,8 +75,8 @@ export class SettingsStore implements SettingsReader {
   }
 
   /**
-   * 改一组设置。`patch` 整批校验：未知的键或不合 schema 的值以 `invalid-request` 拒绝，什么都不保存。
-   * `null` 表示恢复默认值；等于默认值的取值不另存。返回新的完整视图与有效值变了的键。
+   * Changes a group of settings. `patch` is validated as a whole batch: unknown keys or values that do not match the schema are rejected with `invalid-request`, and nothing is saved.
+   * `null` restores the default. Values equal to the default are not stored separately. Returns the new full view and the keys whose effective values changed.
    */
   set(patch: unknown): Promise<{ snapshot: SettingsSnapshot; changed: SettingsChange }> {
     const run = this.#queue.then(() => this.#apply(patch));
@@ -85,7 +84,7 @@ export class SettingsStore implements SettingsReader {
     return run;
   }
 
-  /** 有效值变化时通知（写盘之后）；只带变了的键。 */
+  /** Notifies when effective values change (after the disk write). Carries only the changed keys. */
   onChange(listener: (changed: SettingsChange) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
@@ -116,7 +115,7 @@ export class SettingsStore implements SettingsReader {
         try {
           listener(structuredClone(changed));
         } catch {
-          // 订阅方的错误不影响已经落盘的修改。
+          // Subscriber errors do not affect changes already written to disk.
         }
       }
     }
@@ -134,7 +133,7 @@ export class SettingsStore implements SettingsReader {
   }
 }
 
-/** JSON 值的结构相等（对象不看键的顺序）。 */
+/** Structural equality of JSON values (object key order is ignored). */
 function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;

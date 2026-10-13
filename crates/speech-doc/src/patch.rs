@@ -1,53 +1,46 @@
-//! Transcript 局部补丁（`patchTranscript`）：把编辑器「整文档快照」的差异压缩成
-//! 只含改动的补丁，在服务端原地应用到 [`TranscriptDoc`]。
+//! Partial transcript patch (`patchTranscript`): compresses the diff between the editor's "whole-document snapshot" into a patch containing only the changes, and applies it in place on the server to [`TranscriptDoc`].
 //!
-//! 动机：Mac 编辑器本地持有一份可变文档，改说话人名、章节、段落断点或某一段
-//! 字幕后曾以 `replaceTranscript` 整份回传；数小时的逐词转录稿轻松达到数 MB，
-//! 既撞请求体上限，也让每次按键的写盘/历史/投影都按全量算。补丁把网络与
-//! journal 的成本压到与改动成正比，而语义仍然是「客户端提交它想要的最终值」，
-//! 不把业务规则搬回服务端。
+//! Motivation: the Mac editor holds a mutable document locally. After editing a speaker name, a chapter, a paragraph break or a subtitle segment, it used to send the whole thing back via `replaceTranscript`. A word-by-word transcript of several hours easily reaches several MB, which hits the request body limit and also makes every keystroke's disk write, history and projection be computed over the full document. The patch brings the cost of network and journal down to be proportional to the change, while the semantics remain "the client submits the final value it wants", without moving business rules back to the server.
 //!
-//! 补丁形状（op 里除 `kind` 之外的字段）：
+//! Patch shape (fields in an op other than `kind`):
 //!
 //! ```jsonc
 //! {
 //!   "words": {
-//!     // 原地改词：只列出变化的字段
+//!     // in-place word edits: only list the fields that changed
 //!     "update":  { "<id>": { "t0"?: 1.2, "t1"?: 1.5, "text"?: "…", "sp"?: "s1" } },
-//!     // 结构改动：闭区间替换（words 为空即删除）；或在某词之后插入（after=null 为开头）
+//!     // structural changes: closed-interval replacement (empty words means delete); or insert after a given word (after=null means at the start)
 //!     "splices": [
 //!       { "first": "<id>", "last": "<id>", "words": [ {id,t0,t1,text,sp}, … ] },
 //!       { "after": "<id>" | null,          "words": [ … ] }
 //!     ]
 //!   },
 //!   "set": {
-//!     // 稀疏表：键 → 新值；null 删除该键
+//!     // sparse tables: key → new value; null deletes the key
 //!     "speakers":   { "<id>": {"name": "…", "hue"?: 210} | null },
 //!     "breaks":     { "<wordId>": "break" | "nobreak" | null },
-//!     // 优化器自动 pin：profile → null 删整表；profile → {wordId → 值 | null}
+//!     // optimizer auto-pins: profile → null deletes the whole table; profile → {wordId → value | null}
 //!     "autoBreaks": { "<profile>": null | { "<wordId>": "break" | "nobreak" | null } },
-//!     // 生效的 LayoutProfile id；null 回到缺省 "default"
+//!     // the active LayoutProfile id; null reverts to the default "default"
 //!     "layoutProfile": "<id>" | null,
 //!     "paraBreaks": { "<wordId>": true | null },
 //!     "hidden":     { "<wordId>": true | null },
-//!     // 阶段戳：串照写；null 清掉；true = 盖上补丁应用后 words 的内容指纹
-//!     //（客户端拿不到 words 全量时声明「此表与当前文稿一致」的唯一写法）
+//!     // stage stamp: a string is written as-is; null clears it; true = stamp with the content fingerprint of words after the patch is applied
+//!     // (the only way for a client without the full words to declare that “this table matches the current text”)
 //!     "stages":     { "asr"|"asrLayout"|"polish"|"segment"|"chapters": "…" | null | true },
-//!     // 两级表：lang → null 删整语言；lang → {sid → 值 | null}
+//!     // two-level table: lang → null deletes the whole language; lang → {sid → value | null}
 //!     "trans":      { "<lang>": null | { "<sid>": "…" | null } },
 //!     "transAlign": { "<lang>": null | { "<sid>": {mode,pieces,…} | null } },
 //!     "transSrc":   { "<lang>": null | { "<sid>": "…" | null } },
-//!     // 0.4 单调化显示改写：lang → sid → {text,basis,transFingerprint}
+//!     // 0.4 monotonic display rewrite: lang → sid → {text,basis,transFingerprint}
 //!     "transDisplay": { "<lang>": null | { "<sid>": {text,basis,transFingerprint} | null } },
-//!     // 章节表很小，整表替换
+//!     // the chapter table is small, so it is replaced whole
 //!     "chapters":   [ {id,title,start,end}, … ]
 //!   }
 //! }
 //! ```
 //!
-//! 应用顺序：splices → update → set。全部应用完毕后由调用方跑
-//! [`TranscriptDoc::validate`]；补丁本身只保证引用的词/表键存在，不做业务校验。
-//! 任何一步失败都返回错误，调用方不得写盘（补丁作用在内存副本上）。
+//! Application order: splices → update → set. After everything is applied, the caller runs [`TranscriptDoc::validate`]; the patch itself only guarantees that the referenced words/table keys exist and does no business validation. If any step fails, an error is returned and the caller must not write to disk (the patch operates on an in-memory copy).
 
 use crate::doc::{
     BreakOverride, Chapter, Speaker, Stages, TransAlign, TransDisplay, TranscriptDoc, Word,
@@ -58,14 +51,14 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-/// 补丁应用后的统计，供 apply 回执里的 `applied` 条目描述改了什么。
+/// Statistics after the patch is applied, describing what changed for the `applied` entries in the apply receipt.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PatchSummary {
     pub updated_words: usize,
     pub removed_words: usize,
     pub inserted_words: usize,
     pub splices: usize,
-    /// 被 `set` 触碰的表名（按补丁出现顺序去重）。
+    /// Names of the tables touched by `set` (de-duplicated, in the order they appear in the patch).
     pub tables: Vec<String>,
 }
 
@@ -102,9 +95,9 @@ const SET_KEYS: &[&str] = &[
 ];
 const STAGE_KEYS: &[&str] = &["asr", "asrLayout", "polish", "segment", "chapters"];
 
-/// 把补丁应用到 `doc`。`patch` 是 op 对象本身（可含 `kind`，会被忽略）。
+/// Apply the patch to `doc`. `patch` is the op object itself (it may contain `kind`, which is ignored).
 ///
-/// 事务性：任一步失败时 `doc` 保持原样（内部先在副本上应用，成功才换入）。
+/// Transactional: if any step fails, `doc` is left unchanged (internally the patch is applied to a copy first, and swapped in only on success).
 pub fn apply_patch(doc: &mut TranscriptDoc, patch: &Value) -> Result<PatchSummary> {
     let object = patch
         .as_object()
@@ -163,7 +156,7 @@ struct SpliceBody {
     first: Option<String>,
     #[serde(default)]
     last: Option<String>,
-    /// `Some(None)` = 显式 null（开头插入），`None` = 未给。
+    /// `Some(None)` = explicit null (insert at the start), `None` = not given.
     #[serde(default, deserialize_with = "deserialize_nullable")]
     after: Option<Option<String>>,
     words: Vec<Word>,
@@ -238,7 +231,7 @@ fn apply_word_updates(
     if update.is_empty() {
         return Ok(());
     }
-    // 一次建索引：更新可能覆盖几千词（如整段说话人重指派）。
+    // Build the index once: an update may cover thousands of words (e.g. reassigning a whole run of speakers).
     let index: BTreeMap<&str, usize> = doc
         .words
         .iter()
@@ -320,7 +313,7 @@ fn apply_set(doc: &mut TranscriptDoc, set: &Value, summary: &mut PatchSummary) -
                     .ok_or_else(|| anyhow!("hidden 值必须是布尔"))
             })?,
             "stages" => {
-                // 顺序上 set 最后应用，words 已是终态；`true` 就盖它的内容指纹。
+                // set is applied last in order, so words are already in their final state; `true` stamps its content fingerprint.
                 let current = fingerprint(&doc.words);
                 patch_stages(&mut doc.stages, value, &current)?
             }
@@ -358,7 +351,7 @@ fn apply_set(doc: &mut TranscriptDoc, set: &Value, summary: &mut PatchSummary) -
     Ok(())
 }
 
-/// 稀疏表补丁：`{key: value | null}`。
+/// Sparse table patch: `{key: value | null}`.
 fn patch_map<T>(
     table: &mut BTreeMap<String, T>,
     patch: &Value,
@@ -379,8 +372,7 @@ fn patch_map<T>(
     Ok(())
 }
 
-/// 两级表补丁：`{lang: null | {sid: value | null}}`。语言下的表补空后自动移除，
-/// 与序列化时 `skip_serializing_if = "BTreeMap::is_empty"` 的约定一致。
+/// Two-level table patch: `{lang: null | {sid: value | null}}`. When a language's table is emptied by the patch, it is removed automatically, matching the convention of `skip_serializing_if = "BTreeMap::is_empty"` used in serialization.
 fn patch_nested<T>(
     table: &mut BTreeMap<String, BTreeMap<String, T>>,
     patch: &Value,
@@ -415,7 +407,7 @@ fn patch_nested<T>(
     Ok(())
 }
 
-/// `current` 是补丁应用后 words 的内容指纹：值写 `true` 的阶段盖它。
+/// `current` is the content fingerprint of words after the patch is applied: stages whose value is written as `true` are stamped with it.
 fn patch_stages(stages: &mut Stages, patch: &Value, current: &str) -> Result<()> {
     let object = patch
         .as_object()
@@ -568,13 +560,12 @@ mod tests {
         assert_eq!(doc.chapters.len(), 1);
         doc.validate().unwrap();
 
-        // 两级表补空即整语言消失，与序列化约定一致。
+        // When a two-level table is emptied, the whole language disappears, consistent with the serialization convention.
         apply_patch(&mut doc, &json!({"set": {"trans": {"zh": {"s-a": null}}}})).unwrap();
         assert!(doc.trans.get("zh").is_none());
     }
 
-    /// `stages.<阶段>: true` 盖的是补丁应用**之后** words 的内容指纹：同一笔补丁里
-    /// 先改词再声明章节一致，戳必须等于改词后的指纹（客户端拿不到全量 words）。
+    /// `stages.<stage>: true` stamps the content fingerprint of words **after** the patch is applied. If the same patch first edits words and then declares the chapters consistent, the stamp must equal the fingerprint after the word edits (the client does not have the full words).
     #[test]
     fn stage_true_stamps_the_post_patch_content_fingerprint() {
         let mut doc = doc();
@@ -594,11 +585,11 @@ mod tests {
         assert_ne!(before, after);
         assert_eq!(doc.stages.chapters.as_deref(), Some(after.as_str()));
         assert!(doc.stages.polish.is_none());
-        // false 不是合法值：既不是串也不是「盖当前」。
+        // false is not a valid value: it is neither a string nor “stamp current”.
         assert!(apply_patch(&mut doc, &json!({"set": {"stages": {"chapters": false}}})).is_err());
     }
 
-    /// 0.4：`autoBreaks` 是 profile → 词 id 的两级稀疏表，`layoutProfile` 是标量。
+    /// 0.4: `autoBreaks` is a two-level sparse table from profile → word id, and `layoutProfile` is a scalar.
     #[test]
     fn patches_auto_breaks_and_layout_profile() {
         let mut doc = doc();
@@ -617,13 +608,13 @@ mod tests {
         assert_eq!(doc.auto_breaks["default"]["b"], BreakOverride::Nobreak);
         assert_eq!(doc.layout_profile.as_deref(), Some("portrait"));
         assert_eq!(doc.layout_profile_id(), "portrait");
-        // 派生按生效 profile 取自动表：portrait 只钉 c。
+        // Derivation takes the auto table by the active profile: portrait pins only c.
         assert_eq!(
             doc.effective_breaks(doc.layout_profile_id()),
             BTreeMap::from([("c".to_owned(), BreakOverride::Break)])
         );
 
-        // 单键删除、整表删除、profile 回缺省。
+        // Single-key deletion, whole-table deletion, and profile reverting to the default.
         apply_patch(
             &mut doc,
             &json!({"set": {
@@ -635,7 +626,7 @@ mod tests {
         assert_eq!(doc.auto_breaks.get("default").map(BTreeMap::len), Some(1));
         assert!(!doc.auto_breaks.contains_key("portrait"));
         assert_eq!(doc.layout_profile, None);
-        // 补空即整 profile 消失，与序列化约定一致。
+        // When emptied, the whole profile disappears, consistent with the serialization convention.
         apply_patch(
             &mut doc,
             &json!({"set": {"autoBreaks": {"default": {"a": null}}}}),
@@ -644,7 +635,7 @@ mod tests {
         assert!(doc.auto_breaks.is_empty());
         doc.validate().unwrap();
 
-        // 值域校验：非法值与空 profile id 都拒绝，且不留半套改动。
+        // Value-range validation: invalid values and empty profile ids are both rejected, and no half-applied changes are left behind.
         let baseline = doc.clone();
         assert!(
             apply_patch(
@@ -658,8 +649,7 @@ mod tests {
         assert_eq!(doc, baseline);
     }
 
-    /// 0.4：`transDisplay` 与其他 `trans*` 表同形（lang → sid → 值），
-    /// 值是完整的 `{text,basis,transFingerprint}` 对象；单键删除与整语言删除同约定。
+    /// 0.4: `transDisplay` has the same shape as the other `trans*` tables (lang → sid → value), and its value is a complete `{text,basis,transFingerprint}` object. Single-key deletion and whole-language deletion follow the same convention.
     #[test]
     fn patches_trans_display_table() {
         let mut doc = doc();
@@ -673,7 +663,7 @@ mod tests {
         assert_eq!(summary.tables, vec!["transDisplay"]);
         assert_eq!(doc.trans_display["zh"]["s-a"].text, "我没去，因为我病了。");
         assert_eq!(doc.trans_display["zh"]["s-a"].basis, "monotonic-rewrite");
-        // 形状不全（缺 transFingerprint）拒绝且不留半套改动。
+        // An incomplete shape (missing transFingerprint) is rejected, with no half-applied changes left behind.
         let baseline = doc.clone();
         assert!(
             apply_patch(
@@ -713,7 +703,7 @@ mod tests {
         assert!(apply_patch(&mut doc, &json!({"set": {"words": []}})).is_err());
         assert!(apply_patch(&mut doc, &json!({"kind": "patchTranscript"})).is_err());
         assert!(apply_patch(&mut doc, &json!({"set": {"stages": {"bogus": "x"}}})).is_err());
-        // 前半合法、后半非法：失败的补丁不能留下半套改动。
+        // First half valid, second half invalid: a failed patch must not leave half-applied changes behind.
         assert!(
             apply_patch(
                 &mut doc,

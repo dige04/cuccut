@@ -10,8 +10,7 @@ import { ToolDriver, tool, until, type ToolSession } from '../agent-tools/testin
 import { writeSkill } from './testing/skill-fixtures.ts';
 
 /**
- * Agent skill 端到端（架构设计 §3.8、§12.9）：经真实的 RPC 网关管理 skill，假智能体收到会话开始的索引、点选 skill 的正文，
- * 并经真实的 MCP 端点调用 `skills_read`。内置目录是测试里建的临时目录。
+ * Agent skills end to end (architecture design §3.8, §12.9): manages skills through the real RPC gateway; the fake agent receives the session-start index and the body of a picked skill, and calls `skills_read` through the real MCP endpoint. The built-in catalog is a temporary directory created by the test.
  */
 
 async function rejection(promise: Promise<unknown>): Promise<RpcError> {
@@ -54,7 +53,7 @@ describe('Agent skill 端到端', () => {
       ...(skill ? { skill: { id: skill } } : {}),
       ...(skills ? { skills: skills.map((id) => ({ id })) } : {}),
     });
-    // 每个对话一个原生会话：新出现的那个就是这条消息的。
+    // One native session per conversation: the newly appearing one belongs to this message.
     const session = await until(() => driver.sessions[before]);
     await until(() => session.inputs.length > 0);
     return { conversationId: conversation.id, session };
@@ -77,7 +76,7 @@ describe('Agent skill 端到端', () => {
     await boot();
     const { session } = await send('你好');
     const instructions = session.options.developerInstructions!;
-    // 真实的 skills/cuccut/：SKILL.md 正文在前，skill 索引附在后面。
+    // The real skills/cuccut/: the SKILL.md body comes first, with the skill index appended after it.
     expect(instructions.startsWith('# CucCut\n')).toBe(true);
     expect(instructions).toContain('### The three baselines');
     expect(instructions).toContain('`<cuccut-editor-context>`');
@@ -89,7 +88,7 @@ describe('Agent skill 端到端', () => {
       expect(index).toContain(`- ${id}: `);
     }
     expect(session.inputs[0]).toBe('你好');
-    // 说明书页不进设置里的列表，不能开关。
+    // The manual page is not listed in the settings list and cannot be toggled.
     expect((await client.request('skills.list', {})).skills).toEqual([]);
     expect(await rejection(client.request('skills.setEnabled', { id: 'cuccut-workflows', enabled: false }))).toMatchObject({
       code: 'not-found',
@@ -117,7 +116,7 @@ describe('Agent skill 端到端', () => {
     expect(JSON.stringify(other.body)).toContain('SKILL_FILE_NOT_FOUND');
     const list = await client.request('skills.list', {});
     expect(list.diagnostics).toEqual([expect.objectContaining({ code: 'builtin-conflict', scope: 'user', dir: 'cuccut-conventions' })]);
-    // 终端与 MCP 不读工具桥面的页：它们有装好的 CucCut skill。
+    // Terminals and MCP do not read the tool bridge's page: they have the CucCut skill installed.
     const outside = await client.request('catalog.call', { name: 'skills_read', args: { id: 'cuccut-conventions' }, cwd: dir });
     expect(outside).toMatchObject({ ok: false, error: { code: 'SKILL_NOT_FOUND' } });
   });
@@ -212,7 +211,7 @@ describe('Agent skill 端到端', () => {
     expect((await rejection(client.request('skills.readFile', { id: 'my-notes', path: '../x' }))).code).toBe('invalid-request');
     expect((await rejection(client.request('skills.add', { path: source }))).details).toMatchObject({ code: 'SKILL_EXISTS' });
 
-    // 用户安装的 skill 在点选段与索引里带信任说明。
+    // User-installed skills carry a trust note in the picked-skill section and in the index.
     const { session } = await send('整理笔记', 'my-notes');
     expect(session.options.developerInstructions).toContain(' (user-installed)');
     expect(session.inputs[0]).toContain('user-installed skill');

@@ -10,7 +10,7 @@ import { OnlineTranscriber } from './online-transcriber.ts';
 import { openAiTranscriptionReply, startFakeProviderServer, type FakeProviderServer } from './testing/fake-provider-server.ts';
 
 /**
- * 在线转写执行者与真实 ffmpeg 的集成：解码、在静音处切片、逐块提交、时间换回素材时钟。供应商是本机的假服务。
+ * Integration of the online transcription executor with real ffmpeg: decoding, slicing at silences, submitting chunk by chunk, and mapping times back to the media clock. The provider is a local fake service.
  */
 
 const hasFfmpeg = (() => {
@@ -29,7 +29,7 @@ const WAV_BYTES_PER_SEC = 32_000;
 describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端点）', () => {
   let dir: string;
   let server: FakeProviderServer;
-  /** 2 秒音 · 1 秒静音 · 2 秒音 · 1 秒静音 · 2 秒音，共 8 秒。 */
+  /** 2 s tone · 1 s silence · 2 s tone · 1 s silence · 2 s tone, 8 s in total. */
   let speech: string;
   let videoOnly: string;
 
@@ -131,8 +131,8 @@ describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端
       expect(upload.fields.model).toEqual(['whisper-large']);
       expect(upload.fields.response_format).toEqual(['verbose_json']);
     }
-    // 每块的起点 = 之前各块的时长之和（按 WAV 字节数估，ffmpeg 的头可能多几十字节，比较时容差 10 毫秒）；
-    // 假服务给每块回 0.1–0.9 秒的一段。
+    // Each chunk's start = the sum of the durations of the chunks before it (estimated from WAV byte counts; ffmpeg's header may add a few dozen bytes, so the comparison tolerance is 10 ms);
+    // the fake service returns one segment of 0.1–0.9 seconds for each chunk.
     let cursor = 0;
     const expectedStarts = uploads.map((upload) => {
       const start = cursor;
@@ -140,7 +140,7 @@ describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端
       return Math.round((start + 0.1) * 48_000);
     });
     expect(cursor).toBeCloseTo(8, 1);
-    // 切点落在静音里（第 2–3 秒与第 5–6 秒之间），不在音中间。
+    // The cut points fall within the silences (between 2–3 s and 5–6 s), not in the middle of a tone.
     const cuts = expectedStarts.slice(1).map((ticks) => ticks / 48_000 - 0.1);
     for (const cut of cuts) expect([2, 5].some((s) => cut > s - 0.1 && cut < s + 1.1)).toBe(true);
     expect(result.segments.map((s) => s.start)).toEqual(expectedStarts.map((t) => expect.closeTo(t, -3)));

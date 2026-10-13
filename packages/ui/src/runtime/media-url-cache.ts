@@ -2,45 +2,45 @@ import type { Id, MediaHandle, VersionRef } from '@cuccut/protocol';
 
 type Entry = { state: 'pending'; promise: Promise<MediaHandle>; generation: number; controller: AbortController } | { state: 'ready'; handle: MediaHandle };
 
-/** 句柄离过期不到这么久就当它已经过期，重新要（与已发送图片的句柄同一个余量）。 */
+/** If a handle expires within this much time, treat it as already expired and request a new one (same margin as for handles of images already sent). */
 const FRESH_MARGIN_MS = 60_000;
 
 export interface MediaUrlCacheOptions {
   now?: () => number;
 }
 
-/** 取地址：`onProgress` 在 Runtime 准备兼容副本的每次轮询时报编码到了几成（0–1，还不知道时 null）。 */
+/** Fetch an address: on each poll while the Runtime prepares a compatible copy, `onProgress` reports how far encoding has got (0–1; null when not yet known). */
 export type ResolveMedia = (videoId: Id, asset: VersionRef, signal: AbortSignal, onProgress: (progress: number | null) => void) => Promise<MediaHandle>;
 
-/** 一个正在准备兼容副本的素材（产品设计 §5.1「预览载入与卡住」的转换中）。 */
+/** An asset whose compatible copy is being prepared (the conversion step of “preview loading and stalls” in product design §5.1). */
 export interface MediaPreparation {
   assetId: Id;
   revision: string;
-  /** 编码到了几成（0–1）；Runtime 还不知道时是 null。 */
+  /** How far encoding has got (0–1); null while the Runtime does not know yet. */
   progress: number | null;
 }
 
-/** 缓存的键：「视频:素材@版本」。 */
+/** Cache key: “video:asset@version”. */
 export function mediaUrlKey(videoId: Id, asset: VersionRef): string {
   return `${videoId}:${asset.id}@${asset.revision}`;
 }
 
 /**
- * 当前视频素材的媒体地址（`media.resolve` 的句柄），按「视频:素材@版本」记住，预览、素材面板与素材预览共用。
- * 时间线上上千个配音块常是同一个素材：同一刻挂上的元素只发一次请求（记住的是路上的请求，不只是结果）。
+ * Media addresses (`media.resolve` handles) for the current video's assets, remembered under “video:asset@version” and shared by the preview, the asset panel and the asset preview.
+ * On the timeline, thousands of voice-over clips are often the same asset: elements mounted at the same moment send only one request (what is remembered is the in-flight request, not just the result).
  *
- * - 失败不记：路上的请求失败时删掉，等着它的都拿到同一个错误，下一次再要就重新发。
- * - 句柄离过期不到一分钟就不再用，重新要。
- * - 某个地址放不出来时 `invalidate` 只在记着的还是这个地址时才删（先报错的那个删掉并重新要，其余的跟上新的请求）。
- * - 关掉视频、Runtime 重新连上（旧句柄随 Runtime 一起失效）时 `clear`，路上的请求回来也不收。
- * - 路上的请求在等 Runtime 准备兼容副本时记下进度（`progress`、`preparing`），变了通知订阅者；请求了结、被丢掉时一并删掉。
- *   被丢掉的请求还在轮询，它报的进度不收。
+ * - Failures are not remembered: a failed in-flight request is deleted, everyone waiting on it gets the same error, and the next request sends again.
+ * - A handle that expires within one minute is no longer used; a new one is requested.
+ * - When an address cannot be played, `invalidate` deletes it only if the remembered address is still that one (the first to report the error deletes it and requests again; the rest follow the new request).
+ * - `clear` runs when the video is closed or the Runtime reconnects (old handles become invalid with the Runtime); in-flight requests are ignored when they return.
+ * - While an in-flight request waits for the Runtime to prepare a compatible copy, its progress (`progress`, `preparing`) is recorded, and subscribers are notified when it changes; the record is deleted when the request finishes or is dropped.
+ *   A dropped request keeps polling, but the progress it reports is ignored.
  */
 export class MediaUrlCache {
   readonly #resolve: ResolveMedia;
   readonly #now: () => number;
   readonly #entries = new Map<string, Entry>();
-  /** 正在准备兼容副本的（键同 `#entries`），按开始准备的先后。 */
+  /** Assets whose compatible copies are being prepared (keyed the same as `#entries`), in the order preparation started. */
   readonly #preparing = new Map<string, MediaPreparation & { videoId: Id }>();
   readonly #listeners = new Set<() => void>();
   #generation = 0;
@@ -50,31 +50,31 @@ export class MediaUrlCache {
     this.#now = options.now ?? (() => Date.now());
   }
 
-  /** 已经取到、还没快过期的地址（渲染时同步读）；没有就是 null。 */
+  /** Addresses already fetched that are not close to expiring (read synchronously during rendering); null if none. */
   peek(videoId: Id, asset: VersionRef): string | null {
     const entry = this.#entries.get(mediaUrlKey(videoId, asset));
     return entry?.state === 'ready' && this.#fresh(entry.handle) ? entry.handle.url : null;
   }
 
-  /** 这个素材的兼容副本编码到了几成（0–1，Runtime 还不知道时 null）；不在准备是 undefined。 */
+  /** How far the compatible copy of this asset has been encoded (0–1; null while the Runtime does not know yet); undefined if it is not being prepared. */
   progress(videoId: Id, asset: VersionRef): number | null | undefined {
     return this.#preparing.get(mediaUrlKey(videoId, asset))?.progress;
   }
 
-  /** 这部视频正在准备兼容副本的素材，按开始准备的先后。 */
+  /** Assets of this video whose compatible copies are being prepared, in the order preparation started. */
   preparing(videoId: Id): MediaPreparation[] {
     return [...this.#preparing.values()]
       .filter((p) => p.videoId === videoId)
       .map(({ assetId, revision, progress }) => ({ assetId, revision, progress }));
   }
 
-  /** 准备进度变了（开始、推进、了结、被丢掉）时通知；返回取消订阅的函数。 */
+  /** Notifies when preparation progress changes (started, advanced, finished, dropped); returns an unsubscribe function. */
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  /** 地址：有新鲜的直接给；有路上的请求就等它；否则发一个。 */
+  /** Address: return a fresh one directly; if a request is in flight, wait for it; otherwise send one. */
   async get(videoId: Id, asset: VersionRef): Promise<string> {
     const key = mediaUrlKey(videoId, asset);
     const entry = this.#entries.get(key);
@@ -83,7 +83,7 @@ export class MediaUrlCache {
     return (await this.#load(key, videoId, asset)).url;
   }
 
-  /** 媒体元素放不出 `failedUrl`：记着的还是它才删掉；已经换了新地址或正在重新要时不动。 */
+  /** A media element cannot play `failedUrl`: delete it only if it is still the remembered address; do nothing if a new address has already replaced it or a new request is in progress. */
   invalidate(videoId: Id, asset: VersionRef, failedUrl: string): void {
     const key = mediaUrlKey(videoId, asset);
     const entry = this.#entries.get(key);
@@ -91,8 +91,8 @@ export class MediaUrlCache {
   }
 
   /**
-   * 预览卡住时的「重试」：这部视频记着的地址（取到的与路上的）全部丢掉，之后再要就重新发，路上的回来也不收。
-   * 已经挂着的媒体元素照用手上的地址，不受影响。
+   * The “retry” when a preview is stuck: drop all addresses remembered for this video (fetched and in-flight); the next request is sent anew, and in-flight responses are ignored when they return.
+   * Media elements already mounted keep using the address they have, unaffected.
    */
   forgetVideo(videoId: Id): void {
     const prefix = `${videoId}:`;
@@ -102,7 +102,7 @@ export class MediaUrlCache {
     if (dropped) this.#emit();
   }
 
-  /** 关掉视频或 Runtime 重新连上：全部丢掉，路上的请求回来也不收。 */
+  /** Video closed or Runtime reconnected: drop everything; in-flight requests are ignored when they return. */
   clear(): void {
     this.#generation++;
     for (const entry of this.#entries.values()) if (entry.state === 'pending') entry.controller.abort();
@@ -116,7 +116,7 @@ export class MediaUrlCache {
   #load(key: string, videoId: Id, asset: VersionRef): Promise<MediaHandle> {
     const controller = new AbortController();
     let entry: Entry | null = null;
-    // 只收还记着的这一个请求报的进度：被丢掉的请求还在轮询。
+    // Accept progress only from the one request still remembered; a dropped request keeps polling.
     const onProgress = (progress: number | null) => {
       if (!entry || this.#entries.get(key) !== entry) return;
       const known = this.#preparing.get(key);

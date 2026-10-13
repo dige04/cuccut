@@ -1,7 +1,7 @@
-//! 文本编码器：Qwen3-VL 的语言模型部分（只喂文本，M-RoPE 三轴位置相同 = 普通 1D RoPE）。
-//! 条件取末层 decoder 的输出（不过最终 RMSNorm），并丢掉系统提示那段前缀。
-//! decoder 本体直接复用 [`crate::backend::mlx::qwen3::TextDecoder`]。
-//! 提示词模板与分词在 [`super::prompt`]。v2 只给开发自检用的常驻编码器（`--check-lm` 的贪心续写）没有移植。
+//! Text encoder: the language-model part of Qwen3-VL (text only; the M-RoPE three axes share the same position, which is plain 1D RoPE).
+//! The condition is taken from the output of the last decoder layer (before the final RMSNorm), and the system-prompt prefix is dropped.
+//! The decoder itself is reused directly from [`crate::backend::mlx::qwen3::TextDecoder`].
+//! The prompt template and tokenization are in [`super::prompt`]. The resident encoder that v2 used only for developer self-checks (greedy continuation for `--check-lm`) was not ported.
 
 use super::weights;
 use anyhow::{Context, Result, bail};
@@ -12,18 +12,17 @@ use std::path::PathBuf;
 
 use crate::backend::mlx::qwen3::{TextDecoder, TextDecoderConfig, WeightStore};
 
-/// 语言模型权重的键前缀：mlx-community 4-bit 包是 `language_model.model`，ddalcu 8-bit 包
-/// 保留 transformers 原名 `model.language_model`。
+/// Key prefix of the language-model weights: the mlx-community 4-bit package uses `language_model.model`, while the ddalcu 8-bit package keeps the original transformers name `model.language_model`.
 const PREFIXES: [&str; 2] = ["language_model.model", "model.language_model"];
 
 fn is_lm_key(k: &str) -> bool {
     PREFIXES.iter().any(|p| k.starts_with(p) && k[p.len()..].starts_with('.'))
 }
 
-/// 从惰性表（只有文件头）认出前缀，并按第 0 层 q_proj 的形状反推 bits 与 group size：
-/// 打包列数 × 32 = 4096 × bits，分组数 × group = 4096。层没量化（没有 `.scales`）时 bits 记 16，
-/// 共享解码器就按原精度加载。注意共享解码器会把**没量化的 `embed_tokens`** 在加载时量化成
-/// 与层相同的 bits（8-bit 包就是这样：嵌入表 bf16、层 8-bit），这里不绕开它。
+/// Recognizes the prefix from the lazy table (file header only), and infers bits and group size from the shape of layer 0's q_proj:
+/// packed columns × 32 = 4096 × bits, number of groups × group = 4096. If a layer is not quantized (no `.scales`), bits is recorded as 16,
+/// and the shared decoder loads it at its original precision. Note that the shared decoder quantizes an **unquantized `embed_tokens`** to the same bits as the layers during loading
+/// (this is what the 8-bit package does: embedding table bf16, layers 8-bit); we do not work around it here.
 fn layout(map: &HashMap<String, Array>) -> Result<(&'static str, TextDecoderConfig)> {
     let prefix = PREFIXES
         .into_iter()
@@ -60,8 +59,8 @@ fn layout(map: &HashMap<String, Array>) -> Result<(&'static str, TextDecoderConf
     Ok((prefix, c))
 }
 
-/// 生成用的一次性编码：权重惰性打开，逐层流式读入（算第 i 层时预读第 i+1 层），用完即丢，
-/// 常驻只有 embedding 与相邻两层。返回 `[1, L - drop_idx, 4096]` 的 bf16 条件。
+/// One-shot encoding for generation: weights are opened lazily and read layer by layer in a streaming fashion (while computing layer i, layer i+1 is read ahead), and dropped after use;
+/// only the embedding and two adjacent layers stay resident. Returns a bf16 condition of `[1, L - drop_idx, 4096]`.
 pub fn encode_streaming(files: &[PathBuf], ids: &[u32], drop_idx: usize) -> Result<Array> {
     let raw = weights::lazy(files, is_lm_key).context("打开文本编码器权重")?;
     let (prefix, config) = layout(&raw)?;

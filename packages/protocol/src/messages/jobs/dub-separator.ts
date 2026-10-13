@@ -14,7 +14,7 @@ import { pl } from './dub-separator.pl.ts';
 import { tr } from './dub-separator.tr.ts';
 import { vi } from './dub-separator.vi.ts';
 
-/** `packages/jobs/src/pipelines/dub-separator.ts`：本机人声与背景分离的错误。 */
+/** `packages/jobs/src/pipelines/dub-separator.ts`: errors for separating vocals from the background locally. */
 const en = {
   noAudio: "The asset has no audio track, so it can't be separated",
   unreadable: "Couldn't read the asset",

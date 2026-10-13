@@ -33,7 +33,7 @@ describe('jsonl-file', () => {
     await fs.appendFile(file, '{"a":2,"b"');
     expect(await readJsonl(file)).toMatchObject({ rows: [{ a: 1 }], skipped: 0, truncatedTail: true, lines: 2 });
     await appendJsonl(file, ['{"a":3}'], { header: HEADER });
-    // 残行成了中间的坏行：跳过并计数，后面的行照读。
+    // A torn line in the middle became a bad line: skip and count it, keep reading the lines after it.
     expect(await readJsonl(file)).toMatchObject({ rows: [{ a: 1 }, { a: 3 }], skipped: 1, truncatedTail: false });
   });
 
@@ -41,7 +41,7 @@ describe('jsonl-file', () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '');
     expect(await readJsonl(file)).toMatchObject({ header: null, rows: [], lines: 0 });
-    // 只有半行（写文件头时崩溃）：按空文件处理，标出残行。
+    // Only a partial line (crash while writing the file header): treat as an empty file and flag the torn line.
     await fs.writeFile(file, '{"op":"hea');
     expect(await readJsonl(file)).toMatchObject({ header: null, rows: [], lines: 0, truncatedTail: true });
     await fs.writeFile(file, 'not json\n{"a":1}\n');

@@ -1,16 +1,13 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/OmniVoiceTTS/OmniVoiceBackbone.swift / Sources/OmniVoiceTTS/OmniVoiceDiffusion.swift`。
+//! Some implementations are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/OmniVoiceTTS/OmniVoiceBackbone.swift / Sources/OmniVoiceTTS/OmniVoiceDiffusion.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-bundle interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! OmniVoice 主干：Qwen3 双向注意力（无因果掩码）+ 文本 / 8 码本音频两张嵌入表 +
-//! 音频输出头。对照官方 `OmniVoice._prepare_embed_inputs` / `forward` 与
-//! `_predict_tokens_with_scoring`。
+//! OmniVoice backbone: Qwen3 bidirectional attention (no causal mask) + two embedding tables (text / 8-codebook audio) + audio output head. Checked against the official `OmniVoice._prepare_embed_inputs` / `forward` and `_predict_tokens_with_scoring`.
 //!
-//! 嵌入表在 MLX 端保持量化：按 id 先取行、再只反量化取出的行（整表 151676×1024 反量化成
-//! F32 要 600 MB）；Candle 端同样取行后反量化（`ops::dequantize` 按 MLX 语义实现）。
+//! On the MLX side, the embedding tables stay quantized: rows are fetched by id first, and only the fetched rows are dequantized (dequantizing the whole 151676×1024 table to F32 would take 600 MB); on the Candle side, rows are likewise fetched and then dequantized (`ops::dequantize` implements MLX semantics).
 
 use crate::synthesize::qwen3_tts::layers::{Linear, RmsNorm, SwigluMlp};
 use crate::synthesize::qwen3_tts::weights::Weights;
@@ -23,7 +20,7 @@ use anyhow::{Result, bail, ensure};
 
 use super::config::OmniVoiceConfig;
 
-/// 嵌入表：普通浮点，或 MLX 仿射量化（U32 打包 + scales / biases）。
+/// Embedding table: plain float, or MLX affine quantization (U32-packed + scales / biases).
 enum Embedding {
     Float(Array),
     Quantized {
@@ -54,7 +51,7 @@ impl Embedding {
         }
     }
 
-    /// `ids`（一维）→ `[N, D]`，F32。
+    /// `ids` (1-D) → `[N, D]`, F32.
     fn forward(&self, ids: &Array) -> Result<Array> {
         Ok(match self {
             Self::Float(weight) => weight.take_axis(ids, 0)?.as_dtype(Dtype::Float32)?,
@@ -146,14 +143,14 @@ impl Backbone {
         })
     }
 
-    /// 文本位置：`embed_tokens(ids)` → `[1, N, D]`。
+    /// Text positions: `embed_tokens(ids)` → `[1, N, D]`.
     pub fn embed_text(&self, ids: &[u32]) -> Result<Array> {
         let n = ids.len() as i32;
         Ok(self.embed_tokens.forward(&Array::from_slice(ids, &[n]))?.reshape(&[1, n, -1])?)
     }
 
-    /// 音频位置：8 个码本各自偏移 `i·audio_vocab` 后查表再求和 → `[1, frames, D]`。
-    /// `codes` 为 `[codebooks, frames]` 行主序（掩码位是 `mask_id`，有自己的嵌入）。
+    /// Audio positions: each of the 8 codebooks is offset by `i·audio_vocab`, looked up, and summed → `[1, frames, D]`.
+    /// `codes` is `[codebooks, frames]` in row-major order (masked positions use `mask_id`, which has its own embedding).
     pub fn embed_audio(&self, codes: &[u32], frames: usize) -> Result<Array> {
         ensure!(
             codes.len() == self.codebooks * frames && frames > 0,
@@ -187,14 +184,14 @@ impl Backbone {
         let q = fast::rope(&q, self.head_dim, false, self.rope_theta, 1.0, 0, None)?;
         let k = fast::rope(&k, self.head_dim, false, self.rope_theta, 1.0, 0, None)?;
         let scale = (self.head_dim as f32).sqrt().recip();
-        // 官方推理给整段全 True 的注意力掩码：双向、无因果。
+        // Official inference passes an attention mask that is all True: bidirectional, no causality.
         let out = fast::scaled_dot_product_attention(&q, &k, &v, scale, None, None)?;
         let merged = out.transpose_axes(&[0, 2, 1, 3])?.reshape(&[1, len, self.heads * self.head_dim])?;
         layer.o.forward(&merged)
     }
 
-    /// 整段嵌入 `[1, L, D]` 过主干，只对最后 `tail` 个位置出音频 logits：
-    /// `[codebooks, tail, audio_vocab]`（F32）。位置 id 从 0 起。
+    /// Passes the full embedding sequence `[1, L, D]` through the backbone, and produces audio logits only for the last `tail` positions:
+    /// `[codebooks, tail, audio_vocab]` (F32). Position ids start from 0.
     pub fn logits(&self, embeds: &Array, tail: usize) -> Result<Array> {
         let mut h = embeds.clone();
         for layer in &self.layers {
@@ -216,9 +213,7 @@ impl Backbone {
     }
 }
 
-/// 官方 `_predict_tokens_with_scoring`（`class_temperature = 0`，贪心）：
-/// 有引导时 `log_softmax(lp_c + g·(lp_c − lp_u))`，否则 `lp_c`；屏蔽掩码 id 后取
-/// argmax 作预测、最大对数概率作置信度。返回按 `[codebooks, T]` 行主序展开的两组值。
+/// Official `_predict_tokens_with_scoring` (`class_temperature = 0`, greedy): with guidance, `log_softmax(lp_c + g·(lp_c − lp_u))`, otherwise `lp_c`; after masking the mask id, takes argmax as the prediction and the maximum log-probability as the confidence. Returns two sets of values expanded in row-major order of `[codebooks, T]`.
 pub fn predict(cond: &Array, uncond: Option<&Array>, guidance: f32, mask_id: usize) -> Result<(Vec<u32>, Vec<f32>)> {
     let log_softmax = |x: &Array| -> Result<Array> { Ok(x.subtract(&x.logsumexp_axis(-1, true)?)?) };
     let lp_c = log_softmax(cond)?;
@@ -230,7 +225,7 @@ pub fn predict(cond: &Array, uncond: Option<&Array>, guidance: f32, mask_id: usi
         }
         _ => lp_c,
     };
-    // 掩码 id 是最后一项：切掉它等价于把它置成 −inf。
+    // The mask id is the last item: slicing it off is equivalent to setting it to −inf.
     let lp = lp.index((.., .., ..mask_id as i32));
     let pred = argmax_axis(&lp, -1, false)?.as_dtype(Dtype::Uint32)?;
     let score = lp.max_axis(-1, false)?;
@@ -242,7 +237,7 @@ pub fn predict(cond: &Array, uncond: Option<&Array>, guidance: f32, mask_id: usi
 mod tests {
     use super::*;
 
-    /// 8 bit、组长 32（MLX 支持的最小组长）：量化嵌入表按 id 取行后反量化，与直接查浮点表一致。
+    /// 8-bit, group size 32 (the smallest group size MLX supports): the quantized embedding table fetches rows by id and then dequantizes them, which matches looking up the float table directly.
     #[test]
     fn quantized_embedding_matches_float_rows() {
         let _mlx = super::super::tests::mlx_lock();

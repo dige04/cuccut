@@ -26,14 +26,14 @@ import { LOOPBACK_HOST as HOST, RecentRequests, ServiceClients, closeLoopback, l
 import { describeServiceTool, serviceToolExposed } from './mcp-tools.ts';
 
 /**
- * MCP 服务（架构设计 §4.8、§12.8）：给其他应用里的智能体用的无状态 MCP Streamable HTTP 端点，
- * 与工具桥共用 MCP 端点代码与工具实现，区别只在主体（服务主体与访问策略）。
+ * MCP service (architecture design §4.8, §12.8): a stateless MCP Streamable HTTP endpoint for agents in other apps.
+ * It shares the MCP endpoint code and tool implementations with the tool bridge; the only difference is the principal (service principal and access policy).
  *
- * - 只监听回环地址，端口可配置（默认 `MCP_DEFAULT_PORT`），被占用时进入 `error`，不换端口；
- * - 认证：每个客户端一枚令牌（`Authorization: Bearer <令牌>`），只存哈希；缺失、错误或已吊销时 401；
- * - 带 `Origin` 的请求拒绝（网页不能调用），`Host` 不是回环地址的拒绝（DNS 重绑定）；
- * - 每个请求一个主体（新的 `connectionId`）：请求结束时放下它打开的视频，断开时取消等待中的审批；
- * - 每个工具调用记审计：调用方、工具、目标视频与结果，不记参数正文与媒体内容，不记令牌。
+ * - Listens only on the loopback address, port configurable (default `MCP_DEFAULT_PORT`); if the port is taken, it enters `error` and does not switch ports;
+ * - Auth: one token per client (`Authorization: Bearer <token>`), only the hash is stored; missing, wrong or revoked tokens get 401;
+ * - Requests carrying `Origin` are rejected (web pages cannot call it), and requests whose `Host` is not a loopback address are rejected (DNS rebinding);
+ * - One principal per request (a new `connectionId`): when the request ends, release the videos it opened; on disconnect, cancel pending approvals;
+ * - Every tool call is audited: caller, tool, target video and result; argument bodies and media content are not recorded, and tokens are not recorded.
  */
 
 export interface McpServiceDeps {
@@ -43,11 +43,11 @@ export interface McpServiceDeps {
   models: ModelJobs;
   approvals: ServiceApprovals;
   log: Logger;
-  /** 客户端或最近的请求变了：送一条 `service.updated`。 */
+  /** The client or the recent requests changed: send one `service.updated`. */
   onChange: () => void;
   /**
-   * 整份工具目录的工具组，按服务的范围构造（与会话的目录同一个工厂）。对外露出哪些由目录项的 `surfaces` 与访问等级决定
-   * （`serviceToolExposed`），这里不挑。
+   * The full tool-catalog tool group, built for the service's scope (same factory as the session's catalog). Which ones are exposed externally is decided by the catalog entries' `surfaces` and access level
+   * (`serviceToolExposed`); nothing is filtered here.
    */
   toolSets: (scope: ToolScope) => ToolSet[];
 }
@@ -110,7 +110,7 @@ export class McpService implements ManagedService {
         this.#log.info('External request refused',{ status: response.statusCode });
         return;
       }
-      // 请求结束（或连接断开）：取消等待中的审批，放下这个请求打开的视频（宽限期后关闭，没有别人用的话）。
+      // Request ends (or the connection drops): cancel pending approvals, and release the videos this request opened (closed after a grace period, if no one else is using them).
       response.once('close', () => {
         this.#controllers.get(principal)?.abort();
         this.#deps.videos.connectionClosed(principal.connectionId);
@@ -127,7 +127,7 @@ export class McpService implements ManagedService {
     const server = this.#server;
     this.#server = null;
     this.#port = null;
-    // 立即断开已有连接（§12.8）；它提交的任务保留，由用户决定。
+    // Immediately disconnect existing connections (§12.8); the tasks it submitted are kept, and the user decides.
     if (server) await closeLoopback(server);
     await this.#deps.store.flush('mcp').catch(() => {});
   }
@@ -167,7 +167,7 @@ export class McpService implements ManagedService {
     return params.port !== undefined && params.port !== before.port;
   }
 
-  // ---- 客户端 ----
+  // ---- Client ----
 
   createClient(name: string): Promise<{ client: ServiceClient; token: string }> {
     return this.#clients.create(name);
@@ -181,7 +181,7 @@ export class McpService implements ManagedService {
     return this.#clients.revoke(clientId);
   }
 
-  /** 可以直接粘进别的应用的配置：地址与请求头形状，令牌用占位符（明文只在创建客户端时给出一次）。 */
+  /** Config that can be pasted directly into other apps: the address and header shape, with the token as a placeholder (plaintext is given only once, when the client is created). */
   connectionInfo(clientId?: string): McpConnectionInfo {
     const client = this.#clients.find(clientId);
     const { port, endpoint } = this.status();
@@ -197,12 +197,12 @@ export class McpService implements ManagedService {
     };
   }
 
-  /** 服务新建的视频（`videos_create`）加进它的视频名单：访问策略是名单时，之后才看得见它；是全部视频时不用改。 */
+  /** Videos the service creates (`videos_create`) are added to its video list: when the access policy is a list, they become visible only after this; when the policy is all videos, nothing needs to change. */
   async #allowVideo(videoId: Id): Promise<void> {
     if (await this.#deps.store.allowVideo('mcp', videoId)) this.#deps.onChange();
   }
 
-  // ---- 请求 ----
+  // ---- Requests ----
 
   #authenticate(request: IncomingMessage): ServicePrincipal | null {
     const client = this.#clients.authenticate(request);

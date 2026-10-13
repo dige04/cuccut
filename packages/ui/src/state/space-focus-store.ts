@@ -3,8 +3,8 @@ import type { Id, SpaceEntry } from '@cuccut/protocol';
 import { useShell } from './shell-store.ts';
 
 /**
- * 「在 Space 中查看」要打开的条目（工具结果、任务详情）：去 Space 那一类并记下条目，Space 页挂上后打开它的查看器、清掉记号。
- * 只活在内存里，不进路由。
+ * The item to open for "View in Space" (tool results, task details): navigates to that Space category and records the item; once the Space page mounts, it opens the item's viewer and clears the marker.
+ * Lives only in memory, not in the route.
  */
 export const useSpaceFocus = create<{ focus: Id | null }>()(() => ({ focus: null }));
 
@@ -13,7 +13,7 @@ export function showInSpace(entry: Pick<SpaceEntry, 'id' | 'kind'>): void {
   useShell.getState().go({ tab: 'space', category: entry.kind, projectId: null });
 }
 
-/** Space 页取走记号：条目已经在目录里时返回它的 ID 并清掉，否则 null（留着等目录到）。 */
+/** The Space page takes the marker: if the item is already in the catalog, returns its ID and clears the marker; otherwise null (kept until the catalog arrives). */
 export function takeSpaceFocus(known: (id: Id) => boolean): Id | null {
   const { focus } = useSpaceFocus.getState();
   if (!focus || !known(focus)) return null;

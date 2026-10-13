@@ -233,8 +233,8 @@ export {
 } from './pipelines/video-target.ts';
 export { checkLink, isPrivateAddress, redactUrl, redactUrlsInText, type HostLookup } from './pipelines/link-url.ts';
 
-/** 测试用的假 Model Worker 脚本的绝对路径（`node <path>` 运行）。 */
+/** Absolute path of the fake Model Worker script used in tests (run as `node <path>`). */
 export const FAKE_MODEL_WORKER = fileURLToPath(new URL('./testing/fake-model-worker.ts', import.meta.url));
 export { FAKE_YT_DLP, writeFakeYtDlp, type FakeYtDlp } from './testing/fake-tools.ts';
-/** 测试用：Speech Worker 发给文本模型的请求的假答案（翻译与翻译配音的测试共用）。 */
+/** For tests: the fake answer to requests the Speech Worker sends to the text model (shared by the translation and translated-dubbing tests). */
 export { fakeSpeechAnswer, requestedSentences, speechRequestKind } from './testing/fake-speech-model.ts';

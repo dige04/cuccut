@@ -4,7 +4,7 @@ import { useJobs } from '../../state/jobs-store.ts';
 import { useVideo, type OpenVideo } from '../../state/video-store.ts';
 import { DUB_REGEN_COPY as C } from './dub-copy.ts';
 
-// 提示走 S2 的 ToastQueue：测试里换成记录。
+// Toasts use S2's ToastQueue: swapped for a recorder in tests.
 const toasts = vi.hoisted(() => [] as Array<{ kind: string; message: string; onAction?: () => void }>);
 vi.mock('@react-spectrum/s2', () => {
   const push = (kind: string) => (message: string, options?: { onAction?: () => void }) => {
@@ -107,11 +107,11 @@ describe('重新生成这几句', () => {
     expect(useDubRegen.getState().busy).toEqual({});
     expect(toasts).toEqual([{ kind: 'neutral', message: C.submitted(2), onAction: undefined }]);
 
-    // 在跑：不收尾。
+    // Still running: do not wrap up.
     useJobs.setState({ jobs: [job('running')] });
     expect(toasts).toHaveLength(1);
 
-    // Runtime 写回：计划多了一版（更早的那一版是写回的，之后用户又改过一次）。
+    // Runtime writeback: the plan gained one version (the earlier one is the writeback; the user edited again afterwards).
     open({
       plan: planRecord({ '3': revision('2026-10-03T10:09:00Z', 'tx-user'), '2': revision('2026-10-03T10:05:00Z', 'tx-regroup') }),
       't-en': translationRecord,
@@ -133,7 +133,7 @@ describe('重新生成这几句', () => {
     done.onAction!();
     expect(deps.undo).toHaveBeenCalledWith({ transaction: 'tx-regroup' });
 
-    // 同一个任务再来事件也不再提示。
+    // A task event arriving again for the same task does not notify again.
     useJobs.setState({ jobs: [job('completed', regroupSummary([{ unitId: 'u1', status: 'replaced' }]))] });
     expect(toasts).toHaveLength(2);
   });

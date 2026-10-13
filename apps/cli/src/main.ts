@@ -3,11 +3,10 @@ import { adminBucket } from './admin/index.ts';
 import { runCli } from './cli.ts';
 
 /**
- * `cuccut` 的入口：派生命令（目录里的工具，Agent 面设计 §5）与管理桶（`admin/`，§7）都在 `runCli` 里分派，
- * 这里只接上进程。命令一览见 `cuccut --help`。
+ * Entry point of `cuccut`. Derived commands (tools from the catalog, Agent-facing design §5) and the admin bucket (`admin/`, §7) are both dispatched in `runCli`; this file only wires up the process. For the list of commands, see `cuccut --help`.
  */
 
-// 输出接到提前关掉的管道（`cuccut spec | head`）时安静退出。
+// Exit quietly when output goes to a pipe that is closed early (`cuccut spec | head`).
 process.stdout.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EPIPE') process.exit(process.exitCode ?? 0);
   throw error;

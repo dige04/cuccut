@@ -4,22 +4,22 @@ import { fmtSize } from './task-facts.ts';
 import { M, type ModelsDirMessages } from './models-dir-copy.ts';
 
 /**
- * 设置 › 本地模型 › 模型目录（架构设计 §6.3；设计稿 model-models-dir.js、settings-models-dir.jsx）。
- * 只放判断与文字：长路径的中间省略、卡片副题、哪些任务让更改暂时不可用、更改确认框的分支、移动进度。
- * 数字都来自 Runtime（`models.getDir`、`models.inspectDir`），这里不碰文件系统。
+ * Settings › Local models › Model directory (architecture design §6.3; design model-models-dir.js, settings-models-dir.jsx).
+ * Holds only the decisions and text: middle-ellipsis for long paths, card subtitle, which tasks temporarily make a change unavailable, the branches of the change confirmation dialog, and move progress.
+ * All numbers come from the Runtime (`models.getDir`, `models.inspectDir`); this file does not touch the file system.
  */
 
 export const MODELS_DIR_COPY: ModelsDirMessages['dir'] = live(() => M.dir);
 
 /**
- * 长路径中间省略：主目录缩成 ~，保留开头至多两段与结尾至多两段，装不下再减；永远不省掉最后一段。
- * 分隔符跟着路径走：只用 `\` 的（Windows）照样用 `\` 拼回去，盘符（`D:`）与 `~` 算开头的一段。
+ * Middle-ellipsis for long paths: the home directory is shortened to ~, keeping at most two segments at the start and at most two at the end, and reducing further if it still does not fit; the last segment is never dropped.
+ * The separator follows the path: paths that use only `\` (Windows) are rejoined with `\`, and the drive letter (`D:`) and `~` count as one leading segment.
  */
 export function shortenDir(full: string, max = 44): string {
   const path = shortenPath(full);
   if (path.length <= max) return path;
   const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
-  // 开头的分隔符原样保留：`/` 是根，`\\` 是网络路径。
+  // A leading separator is kept as is: `/` is the root, `\\` is a network path.
   const lead = /^[\\/]*/.exec(path)![0];
   const segs = path.split(/[\\/]/).filter((s) => s !== '');
   for (let head = Math.min(2, segs.length - 1); head >= 0; head -= 1) {
@@ -33,12 +33,12 @@ export function shortenDir(full: string, max = 44): string {
   return `…${sep}${last.length > max - 2 ? `${last.slice(0, max - 3)}…` : last}`;
 }
 
-/** 卡片副题：已用 · 所在磁盘可用 · 已识别 N 个模型（可用空间查不到时不写）。 */
+/** Card subtitle: used · free space on the disk · N models recognized (free space is omitted when it cannot be determined). */
 export function dirStats(info: ModelsDirInfo): string {
   return M.stats(fmtSize(info.usedBytes), info.freeBytes !== null ? fmtSize(info.freeBytes) : null, info.modelCount);
 }
 
-/** 目录本身的问题（外置盘没接上、不能写）；没有时 null。 */
+/** Problems with the directory itself (external drive not connected, not writable); null when there are none. */
 export function dirHealth(info: ModelsDirInfo): string | null {
   if (!info.exists) return MODELS_DIR_COPY.missingDir;
   if (!info.writable) return MODELS_DIR_COPY.notWritableDir;
@@ -50,15 +50,15 @@ const DIR_KINDS: readonly JobRecord['kind'][] = ['modelInstall', 'modelTest'];
 
 export interface DirBlocker {
   text: string;
-  /** 在用本地模型的普通任务（不含下载与检查）。 */
+  /** Ordinary tasks using local models (excluding downloads and checks). */
   jobIds: Id[];
-  /** 有普通任务时给「查看任务」。 */
+  /** When there are ordinary tasks, shows “查看任务” (view tasks). */
   hasTasks: boolean;
 }
 
 /**
- * 现在能不能更改：排队或进行中的下载、检查，以及带模型包的任务（转写、合成…）都会让 Runtime 拒绝。
- * 移动本身由进度条表达，不算在这里。没有时 null。
+ * Whether a change is possible right now: queued or running downloads and checks, as well as tasks that carry a model package (transcription, synthesis…), will all cause the Runtime to reject it.
+ * The move itself is shown by the progress bar and is not counted here. null when there is none.
  */
 export function dirBlocker(jobs: readonly JobRecord[], bundles: readonly ModelBundleStatus[]): DirBlocker | null {
   const name = (bundleId: string | null | undefined) => bundles.find((b) => b.bundleId === bundleId)?.label ?? bundleId ?? '';
@@ -77,16 +77,16 @@ export function dirBlocker(jobs: readonly JobRecord[], bundles: readonly ModelBu
 const unique = (list: string[]) => [...new Set(list)];
 
 export type ChangePlan =
-  /** 选定的文件夹不能用。 */
+  /** The selected folder cannot be used. */
   | { kind: 'error'; title: string; text: string }
-  /** 已经是当前目录。 */
+  /** Already the current directory. */
   | { kind: 'same' }
-  /** 当前目录里没有模型：只说明新位置里有什么，直接切换。 */
+  /** No models in the current directory: only states what is in the new location, then switches directly. */
   | { kind: 'direct'; found: string }
-  /** 当前目录里有模型：移过去，或只切换位置。 */
+  /** Models exist in the current directory: move them over, or only switch the location. */
   | { kind: 'choose'; found: string; move: { disabled: boolean; description: string }; switchDescription: string };
 
-/** 更改确认框的分支（`models.inspectDir` 的结果 → 几句话）。 */
+/** Branches of the change confirmation dialog (`models.inspectDir` result → a few sentences). */
 export function changePlan(inspection: ModelsDirInspection): ChangePlan {
   switch (inspection.problem) {
     case 'same':
@@ -118,13 +118,13 @@ export function changePlan(inspection: ModelsDirInspection): ChangePlan {
   };
 }
 
-/** 确认框里选中的方式：放不下时「移过去」不可选，落到「只切换位置」；不用选时是 switch。 */
+/** The option selected in the confirmation dialog: when it does not fit, “移过去” (move over) cannot be chosen and falls back to “只切换位置” (switch location only); when no choice is needed it is switch. */
 export function pickedMode(plan: ChangePlan, chosen: ModelsDirMode): ModelsDirMode {
   if (plan.kind !== 'choose') return 'switch';
   return plan.move.disabled ? 'switch' : chosen;
 }
 
-/** 更改之后的提示。 */
+/** Hint shown after a change. */
 export function appliedText(mode: ModelsDirMode, path: string, hadModels: boolean, moving: boolean): string {
   const where = shortenDir(path, 40);
   if (moving) return M.appliedMoving(where);
@@ -133,12 +133,12 @@ export function appliedText(mode: ModelsDirMode, path: string, hadModels: boolea
 }
 
 export interface MoveProgressView {
-  /** 0–100；还不知道总量时 null（进度条不确定）。 */
+  /** 0–100; null when the total is not yet known (the progress bar is indeterminate). */
   percent: number | null;
   label: string;
 }
 
-/** 移动任务的进度（`modelsMove`，`progress.unit: 'bytes'`）。 */
+/** Progress of the move task (`modelsMove`, `progress.unit: 'bytes'`). */
 export function moveProgressView(job: JobRecord | undefined, to: string | null): MoveProgressView {
   const where = to ? shortenDir(to, 36) : null;
   const progress = job?.progress;

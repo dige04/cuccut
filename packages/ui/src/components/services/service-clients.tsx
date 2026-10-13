@@ -29,10 +29,10 @@ import { CLIENTS_COPY } from './services-copy.ts';
 import { copyText, toastFailure } from './use-service-actions.ts';
 
 /*
- * 客户端与令牌（MCP 服务与模型接口服务共用；架构设计 §4.8「每个客户端一枚令牌，可单独吊销」）。
- * 原型 page-services.jsx 的「访问令牌 ••••」是一把全局的、每次启动换新的令牌；Runtime 按客户端发放、只存哈希，
- * 所以这里是：创建（令牌明文只显示这一次）→ 复制 → 吊销。令牌明文只在创建对话框的局部状态里，不进 store、不打日志。
- * 客户端列表来自 `services` 主题的 `clients`，吊销后主题会送来新状态。
+ * Clients and tokens (shared by the MCP service and the model API service; architecture design §4.8 “one token per client, individually revocable”).
+ * The prototype's page-services.jsx “Access token ••••” is one global token that is replaced on each launch. The Runtime issues tokens per client and stores only hashes,
+ * so here the flow is: create (the plaintext token is shown only this once) → copy → revoke. The plaintext token lives only in the local state of the create dialog; it does not go into the store and is not logged.
+ * The client list comes from `clients` in the `services` topic; after a revocation, the topic sends the new state.
  */
 
 type Kind = 'mcp' | 'model-api';
@@ -129,8 +129,8 @@ function RevokeClient({ kind, client, disabled }: { kind: Kind; client: ServiceC
 }
 
 /**
- * 创建客户端：先填名字，创建成功后同一个对话框换成「令牌只显示这一次」。
- * 状态放在对话框外层（S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍，见 name-dialog.tsx）；关掉即丢。
+ * Create a client: first fill in the name. After success, the same dialog switches to “The token is shown only once”.
+ * State lives in the outer dialog (S2's Dialog renders its children once in each of several slots; see name-dialog.tsx); closing it discards the state.
  */
 function CreateClientDialog({ kind, onClose }: { kind: Kind; onClose: () => void }) {
   const runtime = useRuntime();
@@ -146,7 +146,7 @@ function CreateClientDialog({ kind, onClose }: { kind: Kind; onClose: () => void
     setBusy(true);
     try {
       const { client, token } = kind === 'mcp' ? await runtime.createMcpClient(trimmed) : await runtime.createModelApiClient(trimmed);
-      // 不带 clientId 的那份片段：占位符正好是 `<令牌>`，换成明文只进剪贴板。取不到片段也要先把令牌给用户看。
+      // The snippet without clientId: the placeholder is exactly `<令牌>`, and it is replaced with the plaintext only in the clipboard. If the snippet cannot be fetched, the token must still be shown to the user first.
       const info = await (kind === 'mcp' ? runtime.mcpConnectionInfo() : runtime.modelApiConnectionInfo()).catch(() => null);
       setIssued({ name: client.name, token, snippet: info?.snippet ?? null });
     } catch (error) {
@@ -157,7 +157,7 @@ function CreateClientDialog({ kind, onClose }: { kind: Kind; onClose: () => void
   };
 
   return (
-    // 不设 isDismissible：S2 的可关闭对话框会藏掉按钮组，令牌那一步要明确点「完成」，也不会点到外面误关。
+    // Do not set isDismissible: S2's dismissible dialog hides the button group, and the token step needs an explicit click on “Done”, so an accidental click outside does not close it.
     <DialogContainer onDismiss={onClose}>
       <Dialog size="M">
         {({ close }) => (

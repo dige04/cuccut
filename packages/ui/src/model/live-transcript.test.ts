@@ -19,7 +19,7 @@ import {
 const fps = { num: 30, den: 1 };
 const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };
 
-/** 素材 `a1` 的一个实例：序列上从 `fromFrame` 起 `durationFrames` 帧，取素材的 `sourceIn` 秒起。 */
+/** One instance of material `a1`: on the sequence, starting at `fromFrame` for `durationFrames` frames, taking the material from `sourceIn` seconds onward. */
 function video(id: string, fromFrame: number, durationFrames: number, sourceIn: number): VideoItem {
   return {
     ...base,
@@ -77,9 +77,9 @@ describe('liveAt / livePending', () => {
   it('转录位置 = max(最后一段的终点, 进度秒数)，夹在素材时长里', () => {
     expect(liveAt([], null, 30)).toBe(0);
     expect(liveAt([seg(0, 4), seg(4, 9)], null, 30)).toBe(9);
-    // 进度按秒报：解码、VAD 走在识别前面时前缘跟进度。
+    // Progress is reported in seconds: the front edge follows progress when decoding and VAD run ahead of recognition.
     expect(liveAt([seg(0, 4)], { done: 12, total: 30, unit: 'seconds' }, 30)).toBe(12);
-    // 段落比进度新（进度事件还没到）时跟段落。
+    // When the paragraphs are newer than the progress (the progress event has not arrived yet), follow the paragraphs.
     expect(liveAt([seg(0, 14)], { done: 12, total: 30, unit: 'seconds' }, 30)).toBe(14);
     expect(liveAt([], { done: 45, total: 30, unit: 'seconds' }, 30)).toBe(30);
   });
@@ -87,7 +87,7 @@ describe('liveAt / livePending', () => {
   it('按 VAD 片段报的进度只当下限：done / total × 时长', () => {
     expect(liveAt([], { done: 5, total: 10, unit: 'segments' }, 30)).toBe(15);
     expect(liveAt([seg(0, 20)], { done: 5, total: 10, unit: 'segments' }, 30)).toBe(20);
-    // 总数不明、时长不明时不按片段数换算。
+    // When the total and the duration are unknown, do not convert by segment count.
     expect(liveAt([seg(0, 3)], { done: 5, total: null, unit: 'segments' }, 30)).toBe(3);
     expect(liveAt([seg(0, 3)], { done: 5, total: 10, unit: 'segments' }, null)).toBe(3);
   });
@@ -117,7 +117,7 @@ describe('liveTranscriptions', () => {
     expect(liveTranscriptions([parent, done], 'v1')).toEqual([{ assetId: 'a1', step: done, parent, running: false }]);
     const ended = { ...parent, state: 'completed' as const, endedAt: '2026-10-01T09:06:00Z' };
     expect(liveTranscriptions([ended, done], 'v1')).toEqual([]);
-    // 直接提交、没有父任务的转写做完就结束。
+    // A transcription submitted directly, with no parent task, ends when it finishes.
     expect(liveTranscriptions([{ ...done, submitter: { kind: 'connection', id: 'x' } }], 'v1')).toEqual([]);
   });
 
@@ -150,27 +150,27 @@ describe('第一次转录才画临时行；收尾时不空一拍', () => {
     const segments = [seg(0, 4), seg(4, 9)];
     const first = { captioned: false, transcribedBefore: false };
 
-    // 1. 识别中：段落在 liveSegments 里。还没有段落时（不流式的服务）也画——只有待定带。
+    // 1. Recognizing: the paragraphs are in liveSegments. Drawn too when there are no paragraphs yet (services that do not stream): only the pending band.
     let held = holdSegments({}, { s1: segments }, {}, [parent, running]);
     expect(held).toEqual({});
     expect(liveRowShown({ running: true, segments: 0, ...first })).toBe(true);
     expect(liveRowShown({ running: true, segments: 2, ...first })).toBe(true);
     expect(liveTranscriptShown({ running: true, segments: 0, documentLanded: false })).toBe(true);
 
-    // 2. 转写 Job 完成：reducer 丢掉它的段落，父任务还在建字幕层——留住，临时行接着画；转写文档落进视频前文稿也接着画。
+    // 2. Transcription Job completed: the reducer drops its paragraphs, but the parent task is still building the caption layer — keep them, and the temporary line keeps drawing; the script also keeps drawing until the transcript document lands in the video.
     held = holdSegments({ s1: segments }, {}, held, [parent, done]);
     expect(held).toEqual({ s1: segments });
     expect(liveTranscriptions([parent, done], 'v1')[0]!.running).toBe(false);
     expect(liveRowShown({ running: false, segments: held.s1!.length, ...first })).toBe(true);
     expect(liveTranscriptShown({ running: false, segments: 2, documentLanded: false })).toBe(true);
-    // 转写文档到了：文稿面板换成正式文稿；临时行不看转写文档（它是这次转录自己写的），只等字幕轨。
+    // Transcript document arrives: the script panel switches to the formal script; the temporary line does not look at the transcript document (this transcription wrote it itself), and only waits for the caption track.
     expect(liveTranscriptShown({ running: false, segments: 2, documentLanded: true })).toBe(false);
     expect(liveRowShown({ running: false, segments: 2, captioned: false, transcribedBefore: false })).toBe(true);
 
-    // 3a. 字幕轨出现：临时行收起。
+    // 3a. Caption track appears: the temporary line collapses.
     expect(liveRowShown({ running: false, segments: 2, captioned: true, transcribedBefore: false })).toBe(false);
 
-    // 3b. 流程结束（不建字幕层的流程也会走到这里）：留着的段落放掉，这次转录也不再算进行中。
+    // 3b. The flow ends (flows that do not build a caption layer also reach here): the retained paragraphs are released, and this transcription no longer counts as in progress.
     const ended = { ...parent, state: 'completed' as const, endedAt: '2026-10-01T09:06:00Z' };
     held = holdSegments({}, {}, held, [ended, done]);
     expect(held).toEqual({});
@@ -192,7 +192,7 @@ describe('第一次转录才画临时行；收尾时不空一拍', () => {
 
 describe('投到时间线上', () => {
   it('段落经取用这个素材的实例投到序列上：裁掉的部分不出现，错开的实例放对', () => {
-    // 素材 0–10 秒放在序列 0–5 秒（取 0–5），素材 20–30 秒放在序列 5–10 秒。
+    // Material 0–10 s placed at sequence 0–5 s (taking 0–5), material 20–30 s placed at sequence 5–10 s.
     const seq = sequence([video('v1', 0, 150, 0), video('v2', 150, 150, 20)]);
     const segments = [seg(1, 3, 'a'), seg(6, 8, 'cut'), seg(21, 24, 'b'), seg(4, 22, 'across')];
     const placed = placeSegments(seq, 'a1', segments);
@@ -202,7 +202,7 @@ describe('投到时间线上', () => {
       ['across', 3, 5, 7],
       ['b', 2, 6, 9],
     ]);
-    // 同一批段落、同一版序列再取是同一份。
+    // Fetching the same batch of paragraphs on the same sequence version again gives the same result.
     expect(placeSegments(seq, 'a1', segments)).toBe(placed);
   });
 
@@ -248,7 +248,7 @@ describe('只读的文稿行', () => {
   });
 
   it('句子按字幕的断句切开，经实例投到序列上：剪掉的不出现', () => {
-    // 素材 0–5 秒放在序列 0–5 秒，素材 20–25 秒放在序列 5–10 秒。
+    // Material 0–5 s placed at sequence 0–5 s, material 20–25 s placed at sequence 5–10 s.
     const seq = sequence([video('v1', 0, 150, 0), video('v2', 150, 150, 20)]);
     const placed = placeTranscript(seq, 'a1', speechBody);
     expect(placed.map((p) => [p.text, p.index, p.start, p.end])).toEqual([

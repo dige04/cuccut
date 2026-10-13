@@ -1,10 +1,9 @@
-//! `job.run`（capability `transcribe`）的编排：解码 → VAD → 逐段识别（模型带了对齐器时逐段强制对齐）→ `diarize` 且模型包
-//! 带了说话人区分时，整段音频跑一遍 Pyannote + WeSpeaker、把说话人投影到词（同 v2：识别完成之后）→ 组装并自检
-//! `cuccut.asr-result/v1`。自己切段的模型（[`RunMode::SelfSegmenting`]）没有 VAD 一步：整段音频交给它，它给出的行就是段。
-//! `capability: 'align'` 走同一个出口：解码 → 用对齐器给已知文本对时间 → 按停顿、句末标点与段长分段（协议规范 §2.5.1）。
+//! Orchestration of `job.run` (capability `transcribe`): decode → VAD → per-segment recognition (when the model includes an aligner, each segment is force-aligned) → when `diarize` is set and the model package includes speaker diarization, run Pyannote + WeSpeaker over the whole clip and project speakers onto words (same as v2: after recognition finishes) → assemble and self-check
+//! `cuccut.asr-result/v1`. Models that segment on their own ([`RunMode::SelfSegmenting`]) have no VAD step: the whole clip is handed to them, and the lines they return are the segments.
+//! `capability: 'align'` uses the same exit: decode → use the aligner to time a known text pair → split segments by pauses, sentence-final punctuation and segment length (protocol spec §2.5.1).
 //!
-//! 内部一律用 f64 秒（相对解码起点），只在写出段与结果时加上 range 起点、换算成整数 tick（架构设计 §6.6）。
-//! 取消在分段边界生效：解码的每次读、VAD 的每个 60 秒块、每个识别段之前各检查一次。
+//! Internally everything uses f64 seconds (relative to the decode start). Only when writing segments and results is the range start added and the values converted to integer ticks (architecture design §6.6).
+//! Cancellation takes effect at segment boundaries: it is checked before each decode read, each 60-second VAD block, and each recognition segment.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -39,38 +38,38 @@ use crate::speech::{
 use crate::ticks::{seconds_to_ticks, ticks_to_seconds};
 use crate::{SAMPLE_RATE, WORKER_VERSION};
 
-/// 解码出来的音频比请求的 range 短这么多秒以上，就报 `range-clamped`。
+/// If the decoded audio is shorter than the requested range by more than this many seconds, report `range-clamped`.
 const RANGE_CLAMP_TOLERANCE_SECONDS: f64 = 0.05;
 
-/// `align` 的分段：词间停顿超过这么多秒就另起一段（与在线 Provider 只给词时的分段规则相同）。
+/// `align` segmentation: a pause between words longer than this many seconds starts a new segment (same rule as the online provider when it returns only words).
 const ALIGN_SEGMENT_GAP_SECONDS: f64 = 0.8;
-/// `align` 的分段：一段已经超过这么长就另起一段。
+/// `align` segmentation: once a segment has exceeded this length, a new segment starts.
 const ALIGN_SEGMENT_MAX_SECONDS: f64 = 30.0;
 
-/// 任务对外的出口：事件与内存快照。
+/// The task's outward interface: events and in-memory snapshots.
 pub trait JobSink {
-    /// 推送一个事件（`job.phase`、`job.progress`、`job.segment`、`job.warning`、`job.language`）。
+    /// Pushes one event (`job.phase`, `job.progress`, `job.segment`, `job.warning`, `job.language`).
     fn event(&mut self, name: &str, params: Value);
 
-    /// 后端报告的最新内存快照（每段之后一次）。
+    /// The latest in-memory snapshot reported by the backend (once after each segment).
     fn memory(&mut self, _snapshot: MemorySnapshot) {}
 }
 
-/// 校验过、可以开跑的转写任务。
+/// A validated transcription task, ready to run.
 struct Job<'a> {
     params: &'a JobRunParams,
     options: TranscribeOptions,
     staging: &'a Path,
-    /// 断言的语言（规范码），`None` 表示自动识别。
+    /// The asserted language (canonical code); `None` means automatic detection.
     asserted_code: Option<String>,
-    /// 解码起点（素材时间，秒）与请求的长度。
+    /// Decode start (media time, seconds) and requested length.
     offset: f64,
     requested_length: Option<f64>,
-    /// `capability: 'align'` 的已知文本；`transcribe` 是 `None`。
+    /// Known text for `capability: 'align'`; `None` for `transcribe`.
     align_text: Option<String>,
 }
 
-/// 跑一个 `job.run`。返回的错误就是该请求的错误响应。
+/// Runs one `job.run`. The returned error is the error response for that request.
 pub fn run(
     model: &mut dyn LoadedModel,
     bundle: &VerifiedBundle,
@@ -104,7 +103,7 @@ pub fn run(
     result
 }
 
-/// 流水线模型的 VAD 与识别器；自己切段的模型是 `None`。
+/// The VAD and recognizer for the pipeline model; `None` for models that segment on their own.
 fn pipeline(model: &mut dyn LoadedModel) -> Option<(&mut dyn StreamingVad, &mut dyn SpeechRecognizer)> {
     match model.run_mode() {
         RunMode::Pipeline { vad, recognizer } => Some((vad, recognizer)),
@@ -112,8 +111,8 @@ fn pipeline(model: &mut dyn LoadedModel) -> Option<(&mut dyn StreamingVad, &mut 
     }
 }
 
-/// `family` 是 `asr` 组件的模型族：断言的语言按它的语言表把关。`align` 要求加载了对齐器（`aligner_loaded`）；
-/// 它的选项换成断言语言、不分离说话人、没有提示的 [`TranscribeOptions`]，已知文本另存。
+/// `family` is the model family of the `asr` component: the asserted language is checked against its language table. `align` requires the aligner to be loaded (`aligner_loaded`);
+/// its options are replaced by a [`TranscribeOptions`] with the asserted language, no speaker separation and no hints, and the known text is stored separately.
 fn prepare<'a>(params: &'a JobRunParams, family: &str, aligner_loaded: bool) -> Result<Job<'a>, ErrorBody> {
     if params.output_contract != OUTPUT_CONTRACT {
         return Err(ErrorBody::invalid_params(format!("outputContract must be {OUTPUT_CONTRACT}")));
@@ -206,36 +205,36 @@ struct Runner<'a> {
     sink: &'a mut dyn JobSink,
     stats: JobStats,
     warnings: Vec<Warning>,
-    /// 结果的 `speakers[]`：`diarize` 时由自己切段、带说话人标签的模型（MOSS）或说话人区分（§6.6）填。
+    /// The result's `speakers[]`: filled by models that segment on their own and attach speaker labels (MOSS) when `diarize` is set, or by speaker diarization (§6.6).
     speakers: Vec<Speaker>,
-    /// 模型带了对齐器：结果的 `provenance.models.aligner` 据此填写。自分段模型只在这个任务真用到对齐器时为 true。
+    /// The model includes an aligner: the result's `provenance.models.aligner` is filled from this. For self-segmenting models, it is true only when this task actually used the aligner.
     aligner_loaded: bool,
-    /// 这个任务用说话人模型合并过说话人：结果的 `provenance.models.speaker` 据此填写。
+    /// This task merged speakers using a speaker model: the result's `provenance.models.speaker` is filled from this.
     speaker_used: bool,
-    /// 这个任务跑过 Pyannote 分段：结果的 `provenance.models.segmentation` 据此填写。
+    /// This task ran Pyannote segmentation: the result's `provenance.models.segmentation` is filled from this.
     segmentation_used: bool,
 }
 
-/// 说话人区分的结局。
+/// The outcome of speaker diarization.
 enum Diarization {
-    /// 词与段带上了说话人，或没得到区间（报过警告）。
+    /// Words and segments were given a speaker, or no interval was obtained (a warning was reported).
     Done,
     Cancelled,
 }
 
-/// 一个识别段的强制对齐结果。
+/// The forced-alignment result for one recognized segment.
 enum Alignment {
-    /// 模型包没有对齐器：按字符长度估计，不报警告。
+    /// The model package has no aligner: estimate by character length, no warning is reported.
     Unavailable,
-    /// 词时间（相对解码起点的秒），已展开为严格递增、落在输出段内。
+    /// Word times (seconds relative to the decode start), already expanded to be strictly increasing and within the output segment.
     Aligned(Vec<WordIn>),
-    /// 对齐出错或没给出词：按字符长度估计并报 `alignment-failed`。
+    /// Alignment failed or returned no words: estimate by character length and report `alignment-failed`.
     Failed(&'static str),
 }
 
-/// 语言的进行状态。
+/// The language determination state.
 struct LanguageState {
-    /// 任务的语言（规范码）：断言的语言，或自动识别时第一段识别出文字的段上定下的语言。只有断言的语言交给模型。
+    /// The task's language (canonical code): the asserted language, or, when detecting automatically, the language set by the first segment that yields recognized text. Only the asserted language is passed to the model.
     locked: Option<String>,
     detected: bool,
     accumulated: String,
@@ -292,7 +291,7 @@ impl Runner<'_> {
             );
         }
 
-        // ---- 解码 ----
+        // ---- Decoding ----
         self.phase("decoding");
         let started = Instant::now();
         let audio_path = self.job.staging.join(audio::AUDIO_FILE);
@@ -379,12 +378,12 @@ impl Runner<'_> {
         };
         self.stats.speech_seconds = spans.iter().map(|span| span.duration()).sum();
 
-        // 识别用补过边的区间；写出的段在重叠处从中点分开，保证段不重叠。
+        // Recognition uses the interval padded at the edges; written segments are split at the midpoint of any overlap, so segments never overlap.
         let asr_spans = segmenter::padded(&spans, decoded_seconds);
         let mut output_spans = asr_spans.clone();
         segmenter::resolve_overlaps(&mut output_spans);
 
-        // ---- 逐段识别 ----
+        // ---- Per-segment recognition ----
         self.phase("transcribing");
         let started = Instant::now();
         let mut language = LanguageState {
@@ -403,8 +402,8 @@ impl Runner<'_> {
             let lower = ((asr_span.start * f64::from(SAMPLE_RATE)) as usize).min(samples.len());
             let upper = ((asr_span.end * f64::from(SAMPLE_RATE)) as usize).min(samples.len());
             if upper > lower {
-                // 只有断言的语言交给模型；自动识别时每段都让模型自己判断，不把先定下的语言强加给之后的段
-                // （Whisper 在给定的语言下会把别的语言翻译过来，中英混说的素材整段变成一种语言）。
+                // Only the asserted language is passed to the model. With automatic detection, the model decides for each segment, so a language fixed earlier is not forced on later segments
+                // (Whisper, when given a language, translates other languages into it, so mixed Chinese-English material would come out as a single language).
                 let request = RecognitionRequest {
                     language: self.job.asserted_code.as_deref(),
                     context: hint.as_deref(),
@@ -467,7 +466,7 @@ impl Runner<'_> {
         }
         self.stats.asr_ms = (started.elapsed().as_millis() as u64).saturating_sub(self.stats.align_ms);
 
-        // ---- 说话人区分（识别完成后，识别模型不卸载；同 v2）----
+        // ---- Speaker diarization (after recognition; the recognition model is not unloaded; same as v2) ----
         if self.job.options.diarize
             && model.has_diarizer()
             && !segments.is_empty()
@@ -485,12 +484,11 @@ impl Runner<'_> {
         self.finish(outcome, segments, Some(language_result), decoded_seconds, &segments_path, true)
     }
 
-    /// 说话人区分（架构设计 §6.6）：整段音频交给 Pyannote 分段 + WeSpeaker 声纹聚类，得到全局说话人区间，再按词时间
-    /// 投影到词（[`project_speaker_clusters`]，同 v2）。段的说话人是段里说话时长最多的那个。说话人 id 按在时间上第一次
-    /// 出现的次序编号（`spk-1`、`spk-2`…）；一个词都没分到的说话人排在后面，按最早的区间。
+    /// Speaker diarization (architecture design §6.6): the whole clip is passed to Pyannote segmentation + WeSpeaker voice-embedding clustering to get global speaker intervals, which are then projected onto words by word time
+    /// ([`project_speaker_clusters`], same as v2). A segment's speaker is the one who speaks the most within that segment. Speaker ids are numbered in the order they first appear in time (`spk-1`, `spk-2`…); speakers who got no words are placed last, ordered by their earliest interval.
     ///
-    /// 已经流出去的 `job.segment` 与 `segments.jsonl` 不带说话人：说话人只在 `result.json` 里（协议规范 §2.5.1）。
-    /// 模型加载失败或推理出错时报 `diarization-unavailable`、保留不带说话人的转录（一次完成的识别不因说话人区分作废）。
+    /// `job.segment` events already emitted and `segments.jsonl` carry no speakers: speakers appear only in `result.json` (protocol spec §2.5.1).
+    /// If the model fails to load or inference errors, `diarization-unavailable` is reported and the transcript is kept without speakers (a completed recognition is not voided by a diarization failure).
     fn diarize_segments(&mut self, model: &mut dyn LoadedModel, samples: &[f32], segments: &mut [Segment]) -> Diarization {
         if self.cancelled() {
             return Diarization::Cancelled;
@@ -567,10 +565,7 @@ impl Runner<'_> {
         Diarization::Done
     }
 
-    /// 自己切段的模型（MOSS）：整段音频一次交给它，行 → 段（重叠处从中点分开）。`diarize` 时才带上说话人，并用模型包
-    /// 的说话人模型把各块的局部说话人合并成全局的（v2 同款）；模型包带了对齐器时，没有词时间、长于 5 秒的行在行窗口内
-    /// 强制对齐（词标 `aligned`），其余按字符数估计。没有 VAD 一步；只在断言时送语言；模型没有提示通道，带了 `hint`
-    /// 时报 `hint-ignored`。
+    /// Models that segment on their own (MOSS): the whole clip is handed to it in one pass, and lines → segments (split at the midpoint of any overlap). Speakers are included only when `diarize` is set, and the model package's speaker model merges each chunk's local speakers into global ones (same as v2). When the model package includes an aligner, lines without word times and longer than 5 seconds are force-aligned within the line window (words marked `aligned`); the rest are estimated by character count. There is no VAD step; the language is passed only when asserted. The model has no hint channel, so if a `hint` is given, `hint-ignored` is reported.
     fn run_self_segmenting(
         &mut self,
         model: &mut dyn LoadedModel,
@@ -632,7 +627,7 @@ impl Runner<'_> {
         if let Some(snapshot) = model.memory() {
             self.sink.memory(snapshot);
         }
-        // 没断言语言时按全文猜一次（与 v2 一致）：既是转录结果的语言，也是对齐器的语言。
+        // If no language is asserted, guess once from the full text (same as v2): this is the transcript's language and also the aligner's language.
         let guessed = match asserted {
             Some(_) => None,
             None => autolang::guess_final(&rows.iter().map(|row| row.text.as_str()).collect::<Vec<_>>().join(" ")),
@@ -642,7 +637,7 @@ impl Runner<'_> {
             self.sink.event("job.language", params);
         }
 
-        // ---- 跨块说话人合并 ----
+        // ---- Merging speakers across chunks ----
         let diarize = self.job.options.diarize;
         if diarize && !speaker_ranges.is_empty() {
             self.phase("diarizing");
@@ -664,7 +659,7 @@ impl Runner<'_> {
                         eprintln!("[ccut-timing] moss-speakers units={units} embedded={embedded} merged_clusters={speakers}");
                     }
                 }
-                // 只有一块时标签本来就是全局的，不必合并。
+                // With only one chunk, the labels are already global, so no merging is needed.
                 SpeakerMerge::EmbedderUnavailable | SpeakerMerge::Mismatched if chunks > 1 => {
                     self.warn(Warning::new(WarningCode::DiarizationUnavailable).detail(format!(
                         "speakers were not merged across the {chunks} chunks the model transcribed separately; \
@@ -678,19 +673,19 @@ impl Runner<'_> {
             }
         }
 
-        // ---- 长行的词时间精修 ----
+        // ---- Refining word times for long lines ----
         let mut alignment_failures = HashSet::new();
         self.aligner_loaded = false;
         let targets = refine::indices_needing_words(&rows);
         if !targets.is_empty() && model.has_aligner() {
             self.phase("aligning");
             let started = Instant::now();
-            // 没被断言的语言不拿去当对齐器的语言（素材不是那个语言时对齐器按错的语言切词）：用按全文猜的。
+            // An unasserted language is not used as the aligner's language (if the material is not in that language, the aligner would split words using the wrong language): use the one guessed from the full text.
             let language = asserted.clone().or_else(|| guessed.clone()).unwrap_or_else(|| "en".to_owned());
             match model.aligner() {
                 Some(aligner) => {
                     self.aligner_loaded = true;
-                    // refine_word_timings 跳过样本窗为空的行，不为它们调用对齐器：按同一条件算出第 n 次调用对应的行。
+                    // refine_word_timings skips lines whose sample window is empty and does not call the aligner for them: the line for the nth call is computed with the same condition.
                     let called: Vec<usize> = targets
                         .iter()
                         .copied()
@@ -740,7 +735,7 @@ impl Runner<'_> {
                             );
                         },
                     );
-                    // 闭包不报错；万一报了，保留行级时间（精修绝不能作废一次已完成的转录）。
+                    // The closure does not return errors; if one does occur, keep the line-level times (refinement must never void a completed transcript).
                     if let Ok(refined) = refined {
                         rows = refined;
                     }
@@ -782,7 +777,7 @@ impl Runner<'_> {
         let mut labels: Vec<String> = Vec::new();
         let mut segments = Vec::new();
         for (span, (_, index, row)) in spans.into_iter().zip(rows) {
-            // 对齐出来的词收进写出的区间（去重叠可能把行收窄了）。
+            // Aligned words are clamped into the written interval (de-overlapping may have narrowed the line).
             let aligned = row.words.filter(|words| !words.is_empty()).map(|mut words| {
                 enforce_strict_word_times(&mut words, span.start, span.end);
                 words
@@ -834,9 +829,9 @@ impl Runner<'_> {
         self.finish(outcome, segments, Some(language_result), decoded_seconds, segments_path, true)
     }
 
-    /// 自动识别：优先用模型自报的语言名，其次按累计文本推断；识别出来就定为任务的语言并推送一次 `job.language`
-    /// （之后的段仍由模型自己判断语言）。空文本的片段不算：模型在没听出话的片段上照样自报一个语言（常是英语），
-    /// 不能拿它定。
+    /// Automatic detection: prefer the language name the model reports itself, otherwise infer from the accumulated text. Once recognized, it is set as the task's language and `job.language` is pushed once
+    /// (later segments still have the model decide the language themselves). Segments with empty text do not count: the model still reports a language on segments where it heard no speech (often English),
+    /// and that must not be used to set it.
     fn observe_language(&mut self, state: &mut LanguageState, model_name: Option<&str>, text: &str) {
         if state.locked.is_some() || text.trim().is_empty() {
             return;
@@ -852,7 +847,7 @@ impl Runner<'_> {
         self.sink.event("job.language", params);
     }
 
-    /// 一段的语言（给对齐器与词时间估计）：断言的语言；自动识别时是模型在这一段上自报的语言，报不出时用任务定下的语言。
+    /// A segment's language (for the aligner and word-time estimation): the asserted language; with automatic detection, the language the model reports for this segment, falling back to the task's language when none is reported.
     fn segment_language(&self, state: &LanguageState, model_name: Option<&str>) -> Option<String> {
         self.job
             .asserted_code
@@ -883,8 +878,8 @@ impl Runner<'_> {
         }
     }
 
-    /// `capability: 'align'`：整段已知文本交给对齐器（长音频由对齐器自己分块），对出来的词按停顿、句末标点与段长
-    /// 分段（规则与在线 Provider 只给词时相同）。对齐出错是 `INFERENCE_FAILED`——这里没有可退回的估计。
+    /// `capability: 'align'`: the whole known text is handed to the aligner (long audio is chunked by the aligner itself), and the aligned words are split into segments by pauses, sentence-final punctuation and segment length
+    /// (same rules as the online provider when it returns only words). An alignment error is `INFERENCE_FAILED`; there is no estimate to fall back on here.
     fn run_align(
         &mut self,
         model: &mut dyn LoadedModel,
@@ -967,8 +962,8 @@ impl Runner<'_> {
         self.finish(outcome, segments, None, decoded_seconds, segments_path, true)
     }
 
-    /// 流水线第 5 步：模型带了对齐器时，给一个识别段的文本对齐词时间。`audio` 是补过边的识别区间
-    /// （`asr_span`）的样本；词展开为严格递增并收进写出的区间（`output_span`）。出错或没给出词时退回估计（架构设计 §6.6）。
+    /// Pipeline step 5: when the model includes an aligner, align word times for one recognized segment's text. `audio` is the samples of the padded recognition interval
+    /// (`asr_span`); the words are expanded to be strictly increasing and clamped into the written interval (`output_span`). If an error occurs or no words are returned, fall back to estimation (architecture design §6.6).
     fn align_span(
         &mut self,
         model: &mut dyn LoadedModel,
@@ -999,8 +994,8 @@ impl Runner<'_> {
         Alignment::Aligned(words)
     }
 
-    /// 一段文本 → 段：tick 化、词时间、单调修正。`aligned` 是对齐过的词（相对解码起点的秒，标 `aligned`）；
-    /// 没有时按字符数估计（标 `estimated`）。起止塌成一点的段丢掉。
+    /// Text → segment: tick conversion, word times, monotonicity fix. `aligned` holds the aligned words (seconds relative to the decode start, marked `aligned`);
+    /// when absent, times are estimated by character count (marked `estimated`). Segments whose start and end collapse to a single point are dropped.
     fn build_segment(
         &mut self,
         number: usize,
@@ -1062,8 +1057,8 @@ impl Runner<'_> {
         }
     }
 
-    /// 组装、自检、写出 `result.json`。`decoded_seconds` 是实际处理过的音频长度；`examined` 为 false
-    /// 表示什么都没检查（没有音轨），coverage 为空。
+    /// Assembles, self-checks and writes `result.json`. `decoded_seconds` is the length of audio actually processed. `examined` being false
+    /// means nothing was checked (no audio track), and coverage is empty.
     fn finish(
         &mut self,
         outcome: Outcome,
@@ -1156,9 +1151,9 @@ impl Runner<'_> {
     }
 }
 
-/// 把说话人区间（相对解码起点的秒）投影到段里的词（tick），写词与段的 `speakerId`，返回结果的 `speakers[]`。
-/// 词的归属见 [`project_speaker_clusters`]；拿不到任何证据的词不带说话人。段取段里说话时长最多的说话人（平票取先出现
-/// 的）。id 按在时间上第一次出现的次序编号；一个词都没分到的簇排在后面，按最早的区间。
+/// Projects speaker intervals (seconds relative to the decode start) onto the words in segments (ticks), writes `speakerId` on words and segments, and returns the result's `speakers[]`.
+/// For how words are assigned, see [`project_speaker_clusters`]; words with no evidence carry no speaker. A segment takes the speaker who speaks the most within it (ties go to whoever appeared first).
+/// Ids are numbered in the order they first appear in time; clusters that got no words are placed last, ordered by their earliest interval.
 fn assign_speakers(segments: &mut [Segment], ranges: &[SpeakerRange], offset: f64, timescale: u64) -> Vec<Speaker> {
     let spans: Vec<(f64, f64)> = segments
         .iter()
@@ -1199,7 +1194,7 @@ fn assign_speakers(segments: &mut [Segment], ranges: &[SpeakerRange], offset: f6
 
     let mut clusters = projected.into_iter();
     for segment in segments.iter_mut() {
-        // 段里每个说话人的说话时长（tick），按第一次出现的次序。
+        // Each speaker's speaking time within the segment (ticks), in order of first appearance.
         let mut weights: Vec<(usize, u64)> = Vec::new();
         for word in &mut segment.words {
             let Some(cluster) = clusters.next().flatten() else {
@@ -1226,13 +1221,13 @@ fn assign_speakers(segments: &mut [Segment], ranges: &[SpeakerRange], offset: f6
         .collect()
 }
 
-/// 跑法在一个任务里变了：后端的实现有错。
+/// The run mode changed within one task: a bug in the backend implementation.
 fn not_a_pipeline() -> ErrorBody {
     eprintln!("[model-worker] the loaded model changed its run mode during a job");
     ErrorBody::new(codes::INFERENCE_FAILED, "speech recognition failed")
 }
 
-/// 对齐器给出的词（相对所给音频的秒）→ 相对解码起点的秒。空词丢掉，词尾不早于词首（同 v2 的流水线）。
+/// Words from the aligner (seconds relative to the given audio) → seconds relative to the decode start. Empty words are dropped; a word's end is never earlier than its start (same as v2's pipeline).
 fn decode_relative_words(aligned: Vec<AlignedWord>, origin: f64) -> Vec<WordIn> {
     aligned
         .into_iter()
@@ -1251,8 +1246,8 @@ fn decode_relative_words(aligned: Vec<AlignedWord>, origin: f64) -> Vec<WordIn> 
         .collect()
 }
 
-/// 只有词时间时的分段：停顿超过 [`ALIGN_SEGMENT_GAP_SECONDS`]、上一个词以句末标点结尾、或一段已经超过
-/// [`ALIGN_SEGMENT_MAX_SECONDS`] 时另起一段。规则与 `packages/providers` 的 `groupWords` 相同。
+/// Segmentation when only word times are available: a new segment starts when a pause exceeds [`ALIGN_SEGMENT_GAP_SECONDS`], when the previous word ends in sentence-final punctuation, or when a segment has already exceeded
+/// [`ALIGN_SEGMENT_MAX_SECONDS`]. The rules are the same as `groupWords` in `packages/providers`.
 fn group_aligned_words(words: Vec<WordIn>) -> Vec<Vec<WordIn>> {
     let mut groups: Vec<Vec<WordIn>> = Vec::new();
     let mut current: Vec<WordIn> = Vec::new();
@@ -1272,7 +1267,7 @@ fn group_aligned_words(words: Vec<WordIn>) -> Vec<Vec<WordIn>> {
     groups
 }
 
-/// 句末标点：`。！？!?…`，或不是省略号一部分的 `.`。
+/// Sentence-final punctuation: `。！？!?…`, or a `.` that is not part of an ellipsis.
 fn ends_sentence(text: &str) -> bool {
     let mut characters = text.chars().rev();
     match characters.next() {
@@ -1282,7 +1277,7 @@ fn ends_sentence(text: &str) -> bool {
     }
 }
 
-/// 把词拼回文本：中日文之间、标点之前不加空格，其余用空格隔开（同 `packages/providers` 的 `joinWords`）。
+/// Joins words back into text: no space between CJK characters or before punctuation; otherwise words are separated by spaces (same as `joinWords` in `packages/providers`).
 fn join_words(words: &[WordIn]) -> String {
     let mut out = String::new();
     for word in words {

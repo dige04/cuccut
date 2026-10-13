@@ -11,7 +11,7 @@ import { targetKey } from '../model/media.ts';
 import { useDraftImages } from './draft-images-store.ts';
 import { useShell } from './shell-store.ts';
 
-/** 只读取已授权的媒体句柄；较大的或非常规图片转成有界 PNG 附件，原文件不变。 */
+/** Reads only authorized media handles. Larger or unusual images are converted into bounded PNG attachments. The original file is unchanged. */
 export async function previewImageFile(handle: MediaHandle, name: string, image: HTMLImageElement): Promise<File> {
   if (handle.size > MAX_ATTACHMENT_BYTES) throw new Error(ATTACHMENT_COPY.tooLarge);
   if ((ATTACHMENT_MIME_TYPES as readonly string[]).includes(handle.mimeType)) {
@@ -52,7 +52,7 @@ export async function previewImageFile(handle: MediaHandle, name: string, image:
   return new File([blob], `${name}.png`, { type: 'image/png' });
 }
 
-/** 完成文件读取后再一起追加图片与文字；用户在等待期间输入的内容也保留。 */
+/** After the file read completes, append the images and text together. Text the user types while waiting is also kept. */
 export async function addImageRequest(
   conversationId: string,
   target: MediaTarget,

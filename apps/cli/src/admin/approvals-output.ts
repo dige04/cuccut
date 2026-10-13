@@ -10,10 +10,10 @@ import {
 import { M } from './approvals-copy.ts';
 
 /**
- * 访问模式的命令行写法与 `cuccut approvals` 的参数与输出（架构设计 §3.12）。从 main.ts 分出来，单独可测。
+ * Command-line spellings of access modes, and the arguments and output of `cuccut approvals` (Architecture design §3.12). Split out of main.ts so it can be tested on its own.
  */
 
-/** `--mode` 的写法（连字符小写）→ 协议里的值。 */
+/** The `--mode` spelling (lowercase, hyphenated) → the value in the protocol. */
 const MODE_FLAGS: Readonly<Record<string, AgentMode>> = {
   ask: 'ask',
   'auto-accept-edits': 'autoAcceptEdits',
@@ -22,7 +22,7 @@ const MODE_FLAGS: Readonly<Record<string, AgentMode>> = {
   plan: 'plan',
 };
 
-/** `--mode` → 发送用的访问模式；不给时为 undefined（用会话的模式）。 */
+/** `--mode` → the access mode to send. undefined when not given (the session's mode is used). */
 export function parseModeOption(mode: string | undefined): AgentMode | undefined {
   if (mode === undefined) return undefined;
   const flag = MODE_FLAGS[mode];
@@ -30,7 +30,7 @@ export function parseModeOption(mode: string | undefined): AgentMode | undefined
   return flag;
 }
 
-/** 访问模式给人看的写法：名字与命令行写法。 */
+/** An access mode as shown to people: its name and command-line spelling. */
 export function formatMode(mode: AgentMode): string {
   const flag = Object.keys(MODE_FLAGS).find((key) => MODE_FLAGS[key] === mode) ?? mode;
   return M.mode(AGENT_MODE_LABELS[mode], flag);
@@ -52,7 +52,7 @@ export function parseApprovalsArgs(args: string[]): ApprovalsCommand {
 
 const RISK_LABELS: Readonly<Record<RiskLevel, string>> = live(() => M.riskLabels);
 
-/** 待处理的审批，一条一行：审批号、来自谁、动作与风险、依据，以及服务审批的时限。 */
+/** A pending approval, one per line: approval number, who it is from, action and risk, basis, and the time limit for serving the approval. */
 export function formatApprovals(approvals: PendingApproval[], now: number = Date.now()): string[] {
   if (approvals.length === 0) return [M.none];
   return approvals.map((a) => {
@@ -74,7 +74,7 @@ export function formatApprovals(approvals: PendingApproval[], now: number = Date
   });
 }
 
-/** 会话里的一条审批要做什么（`cuccut chat` 的提示）。 */
+/** What an approval in a session asks you to do (the prompt in `cuccut chat`). */
 export function describeApprovalRequest(request: ApprovalRequest): string {
   switch (request.kind) {
     case 'command':

@@ -8,12 +8,10 @@ import { FileRows, Note, PlaceRow, Sec, SumRow, Summary } from './export-parts.t
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 「工程」页（设计稿 export-project.jsx、model-export.js `PROJECT_TARGETS`）：导到剪辑软件、算法元素、摘要。
+ * "Project" page (design mockup export-project.jsx, model-export.js `PROJECT_TARGETS`): export to editing software, algorithmic elements, summary.
  *
- * Runtime 能导的工程是 FCP7 XML（xmeml，Premiere Pro 与 DaVinci Resolve 都能导入），外加 CucCut 便携包（`.cuccut`，
- * 视频、全部文档与素材收进一个文件）；剪映 / CapCut / Final Cut Pro（FCPXML）/ Shotcut / Kdenlive 没有接上，列出来置灰。
- * 设计稿的算法元素三选一（转成视频素材 / 有损也转 / 放弃）没有接上：文字、图形、字幕、转场与效果写不进工程，
- * 逐项记进导出提醒（完成后在回执里列出）。
+ * The project formats the Runtime can export are FCP7 XML (xmeml, which both Premiere Pro and DaVinci Resolve can import), plus the CucCut portable bundle (`.cuccut`, which collects the video, all documents and assets into one file). JianYing / CapCut, Final Cut Pro (FCPXML), Shotcut and Kdenlive are not wired up: they are listed and disabled.
+ * The mockup's three-way choice for algorithmic elements (convert to video material / convert even if lossy / give up) is not wired up: text, graphics, subtitles, transitions and effects cannot be written into the project, and each one is recorded in the export notices (listed in the receipt after completion).
  */
 
 const targetName = style({ font: 'ui-sm', fontWeight: 'medium', color: 'gray-900' });

@@ -1,16 +1,19 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/TimestampCorrection.swift`。
+//! Parts of this file are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3ASR/TimestampCorrection.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the algorithms in Rust and adapts them to this project's backends, model packages and
+//! transcription interfaces; the upstream source notice is kept.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see
+//! `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 强制对齐的时间格单调化：非递减子序列（LIS）锚点 + 间隙修正。移植自 v2 `ccut-speech-core`。
+//! Monotonizes the forced-alignment time grid: anchors from the longest non-decreasing subsequence (LIS), then gap
+//! correction. Ported from v2 `ccut-speech-core`.
 
 use std::collections::HashSet;
 
-/// 非递减子序列锚点 + 小间隙就近修正 + 大间隙插值。
-/// 相邻词共享的 end/start 是合法相等值，不能按严格递增修成零长度词。
+/// Non-decreasing subsequence anchors + nearest-value correction for small gaps + interpolation for large gaps.
+/// Adjacent words that share an end/start are legitimate equal values and must not be fixed into zero-length words by forcing strict increase.
 #[allow(clippy::needless_range_loop)]
 pub fn enforce_monotonicity(raw: &[usize]) -> Vec<usize> {
     if raw.windows(2).all(|pair| pair[0] <= pair[1]) {

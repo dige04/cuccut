@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { GenerationParameters } from '@cuccut/protocol';
 
-/** 规范 JSON：对象的键按字典序，没有空白；`undefined` 的字段省略。相同的值总得到相同的字符串。 */
+/** Canonical JSON: object keys in lexicographic order, no whitespace; `undefined` fields are omitted. Equal values always give the same string. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
   if (Array.isArray(value)) return `[${value.map((v) => canonicalJson(v)).join(',')}]`;
@@ -15,67 +15,66 @@ export function sha256Hex(data: string | Uint8Array): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-/** 转写任务规格中决定结果的字段（架构设计 §6.6）。 */
+/** Fields of a transcription task spec that determine the result (architecture design §6.6). */
 export interface TranscribeInputSpec {
   contentHash: string;
   track: number;
   range: { start: number; end: number; timescale: number } | null;
   language: { mode: 'assert'; tag: string } | { mode: 'prefer'; tag: string | null };
-  /** 执行它的 Provider（`local`、`node:<nodeId>`、`openai`……）与模型（§6.2：任务冻结 `providerId` 与 `modelId`）。 */
+  /** The Provider that runs it (`local`, `node:<nodeId>`, `openai`…) and the model (§6.2: a task freezes `providerId` and `modelId`). */
   providerId: string;
   modelId: string;
-  /** 本地与节点的模型包；在线 Provider 为 null。 */
+  /** Model package for local and node Providers; null for online Providers. */
   bundleId: string | null;
   diarize: boolean;
   hint: string | null;
   outputContract: string;
 }
 
-/** 输入 hash：`sha256:<hex>`，对上面字段的规范 JSON 求摘要。不同的 Provider 或模型得到不同的 hash。 */
+/** Input hash: `sha256:<hex>`, the digest of the canonical JSON of the fields above. Different Providers or models give different hashes. */
 export function transcribeInputHash(spec: TranscribeInputSpec): string {
   const { contentHash, track, range, language, providerId, modelId, bundleId, diarize, hint, outputContract } = spec;
   return `sha256:${sha256Hex(canonicalJson({ contentHash, track, range, language, providerId, modelId, bundleId, diarize, hint, outputContract }))}`;
 }
 
-/** 生成任务规格中决定结果的字段（架构设计 §6.6）：能力、Provider、模型与冻结的参数（含原文或提示词）。 */
+/** Fields of a generation task spec that determine the result (architecture design §6.6): capability, Provider, model and frozen parameters (including the original text or prompt). */
 export interface GenerationInputSpec {
   capability: GenerationParameters['capability'];
   providerId: string;
   modelId: string;
   parameters: GenerationParameters;
-  /** 要导入结果的视频；没有时 null。不进输入 hash。 */
+  /** The video the result is imported into; null if there is none. Not part of the input hash. */
   videoId: string | null;
-  /** 导入的素材名（不进输入 hash）。 */
+  /** Name of the imported asset (not part of the input hash). */
   name: string | null;
   /**
-   * 保存位置的副本（架构设计 §7.9「保存位置」，不进输入 hash）：发布后在 `dir` 里按 `stem` 写一份可读名字的副本。
-   * 没有给 `saveDir` 的请求与旧账本里的任务没有这一项。
+   * A copy at the save location (architecture design §7.9 “save location”; not part of the input hash). After publishing, a copy with a readable name is written into `dir`, named by `stem`.
+   * Requests without `saveDir`, and tasks in the old ledger, do not have this field.
    */
   save?: { dir: string; stem: string } | null;
 }
 
 /**
- * 不经模型的任务（导出，架构设计 §9.11）的规格：执行所需的一切在冻结快照的产物里，账本只记它的 ID，
- * 不把大的计划写进 `jobs.jsonl`。执行者只在内存里（Runtime 重启后这类任务标为 `interrupted`，不续跑）。
- * 模型包的安装、修复与自检（§6.3）也是这类任务：账本只记模型包与要做的事。
+ * Spec for a task that does not go through a model (export, architecture design §9.11). Everything needed to execute it is in the frozen snapshot artifact. The ledger records only its ID, and does not write the large plan into `jobs.jsonl`. The executor lives only in memory (after a Runtime restart such tasks are marked `interrupted` and are not resumed).
+ * Installing, repairing and self-checking model packages (§6.3) are also tasks of this kind: the ledger records the model package and what is to be done.
  */
 export type TaskInputSpec =
   | {
       task: 'export';
-      /** 冻结快照（`cuccut.export-snapshot/1`）的产物。 */
+      /** Artifact of the frozen snapshot (`cuccut.export-snapshot/1`). */
       snapshotArtifactId: string;
     }
   | { task: 'modelInstall'; bundleId: string; repair: boolean; confirmBytes: number }
   | { task: 'modelTest'; bundleId: string }
-  /** 模型目录的移动（§6.3）：从哪里移到哪里、要搬的仓库与字节数。 */
+  /** Moving a model directory (§6.3): from where to where, the repository to move, and the byte count. */
   | { task: 'modelsMove'; from: string; to: string; repos: string[]; bytes: number }
-  /** 受管外部工具的下载（架构设计 §12.9）：工具、版本与这台机器要下载的文件的摘要。 */
+  /** Download of a managed external tool (architecture design §12.9): the tool, its version, and the digest of the files this machine has to download. */
   | { task: 'toolInstall'; tool: string; version: string; sha256: string }
-  /** 按原安装方式更新外部工具（§12.9）：工具、办法与要执行的命令（参数数组）。 */
+  /** Update of an external tool by its original install method (§12.9): the tool, the method, and the command to run (argument array). */
   | { task: 'toolUpdate'; tool: string; method: string; argv: string[] }
-  /** 音色克隆（§5.9）：库里的哪个音色（冻结的版本与摘要）、传给哪个 Provider。 */
+  /** Voice cloning (§5.9): which voice in the library (frozen version and digest), and which Provider it is passed to. */
   | { task: 'voiceClone'; library: 'voices'; id: string; version: number; contentHash: string; providerId: string }
-  /** 按需下载的字体（§9.1）：一个族与要下载的 face（按字体目录对好的字重与斜体）。不记下载地址。 */
+  /** Fonts downloaded on demand (§9.1): a family and the faces to download (weights and italics matched against the font catalog). The download address is not recorded. */
   | { task: 'fontDownload'; family: string; faces: { weight: number; italic: boolean }[] };
 
 export function generationInputHash(spec: GenerationInputSpec): string {

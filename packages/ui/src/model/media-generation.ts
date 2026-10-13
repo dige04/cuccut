@@ -19,16 +19,15 @@ import { jobLive } from './task-list.ts';
 import { speechRequest, type SpeechOption, type TtsDraft } from './tools-tts.ts';
 
 /**
- * 编辑器右侧「音频 › 生成语音 / 克隆声音」与「图片 › AI 生成」（设计稿 panel-tts.jsx、panel-image-gen.jsx）：
- * 与工具页同一套表单与请求，只多带 `videoId`。按合同，带 `videoId` 的生成任务做完由 Runtime 把结果导入成这个视频的素材
- * （`result.outputs[i].assetId`，来源记 `generated`），但不放上时间线——放上去仍是另一步（`placeAsset`）。
+ * Editor-side panels “Audio › Generate speech / Clone voice” and “Image › AI generate” (design files panel-tts.jsx, panel-image-gen.jsx):
+ * they share the same form and request as the tool pages, and only add `videoId`. Per the contract, when a generation task with `videoId` finishes, the Runtime imports the result as an asset of this video (`result.outputs[i].assetId`, with source recorded as `generated`), but does not put it on the timeline; placing it is still a separate step (`placeAsset`).
  */
 
-// ---- 请求 ----
+// ---- Request ----
 
-/** 这一块的文案（英文是键与类型的来源，译文在 `media-generation.<语言>.ts`）。 */
+/** Copy for this section (the English is the source of the keys and types; translations live in `media-generation.<locale>.ts`). */
 const en = {
-  /** 生成语音导入成素材时的名字：文字的开头（`head`，截断时已带省略号）。 */
+  /** Name given to a generated speech asset when imported: the start of the text (`head`, already with an ellipsis when truncated). */
   speechAssetName: (head: string) => `Speech: ${head}`,
 };
 
@@ -36,7 +35,7 @@ export type MediaGenerationMessages = typeof en;
 
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 生成语音导入成素材时的名字：「语音：」加文字的开头（与 Runtime 的默认名同样截 24 字）。 */
+/** Name given to a generated speech asset when imported: “语音：” (“Voice:”) followed by the start of the text (truncated to 24 characters, same as the Runtime default name). */
 export function speechAssetName(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   const chars = Array.from(flat);
@@ -48,13 +47,13 @@ export function editorSpeechRequest(draft: TtsDraft, option: SpeechOption, video
   return { ...request, videoId, name: speechAssetName(request.text) };
 }
 
-/** 编辑器里的生图草稿：多一颗「跟视频画布」（设计稿 `fit`）。 */
+/** Image-generation draft in the editor: adds a “跟视频画布” (follow video canvas) option (design `fit`). */
 export interface EditorImageDraft extends ImageDraft {
-  /** 画幅跟着视频画布走：选这颗时 `size` 不用，按画布取最接近的那一档。 */
+  /** Aspect ratio follows the video canvas: when this option is chosen, `size` is not used and the closest preset to the canvas is picked. */
   fit: boolean;
 }
 
-/** 画布最接近哪一档画幅（按宽高比的对数距离）；这只模型不让选尺寸时 null。 */
+/** Which aspect-ratio preset is closest to the canvas (by logarithmic distance of the aspect ratio); null when this model does not allow choosing a size. */
 export function canvasAspect(canvas: { width: number; height: number }, options: readonly AspectOption[]): AspectOption | null {
   if (!options.length || canvas.width <= 0 || canvas.height <= 0) return null;
   const target = Math.log(canvas.width / canvas.height);
@@ -63,12 +62,12 @@ export function canvasAspect(canvas: { width: number; height: number }, options:
   return best;
 }
 
-/** 「跟视频画布」那一档（没有可选画幅时 null）。 */
+/** The “跟视频画布” (follow video canvas) preset; null when there are no selectable aspect ratios. */
 export function fittedAspect(info: Pick<ImageModelInfo, 'aspectRatios' | 'sizes'>, canvas: { width: number; height: number }): AspectOption | null {
   return canvasAspect(canvas, aspectOptions(info));
 }
 
-/** 实际交出去的草稿：选了「跟视频画布」时画幅换成画布那一档。 */
+/** The draft as actually submitted: when “跟视频画布” (follow video canvas) is chosen, the aspect ratio is replaced by the canvas preset. */
 export function effectiveImageDraft(draft: EditorImageDraft, info: ImageModelInfo, canvas: { width: number; height: number }): ImageDraft {
   const fitted = draft.fit ? fittedAspect(info, canvas) : null;
   return fitted ? { ...draft, size: fitted.key } : draft;
@@ -83,14 +82,14 @@ export function editorImageRequest(
   return { ...imageRequest(effectiveImageDraft(draft, option.info, canvas), option), videoId };
 }
 
-/** 重试也要回到这个视频：工具页的「照冻结参数再提交」不带 `videoId`，这里补上。 */
+/** Retries must also return to this video: the tool page's “照冻结参数再提交” (resubmit with frozen parameters) does not carry `videoId`, so it is added here. */
 export function withVideo<R extends object>(request: R | null, videoId: Id): (R & { videoId: Id }) | null {
   return request ? { ...request, videoId } : null;
 }
 
-// ---- 记录 ----
+// ---- Records ----
 
-/** 这个视频里这一类生成任务，新的在前；本机藏起来的不列。不限提交者：Agent 在这个视频里生的也在。 */
+/** Generation tasks of this kind in this video, newest first; tasks hidden on this machine are not listed. Not limited to the submitter: tasks an Agent generated in this video are included too. */
 export function videoGenerationJobs(jobs: readonly JobRecord[], videoId: Id, kind: 'synthesizeSpeech' | 'generateImage', hidden: readonly Id[]): JobRecord[] {
   const skip = new Set(hidden);
   return jobs
@@ -98,14 +97,14 @@ export function videoGenerationJobs(jobs: readonly JobRecord[], videoId: Id, kin
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** 一条生成结果导入成的素材（导入失败或还没导入时 null）。 */
+/** The asset a generation result was imported as (null if the import failed or has not happened yet). */
 export function outputAsset(job: Pick<JobRecord, 'result'>, artifactId: string): Id | null {
   return job.result?.outputs?.find((o) => o.artifactId === artifactId)?.assetId ?? null;
 }
 
 /**
- * 生成语音子页走到哪一步（设计稿 `phase`）：还没提交是 setup；排队、在跑或刚提交还没出现在任务镜像里是 run；
- * 做完是 done；没做成（失败、中断、结果不明）是 failed；取消了回到 setup。
+ * Where the generate-speech subpage is (design `phase`): setup before submission; run while queued, running, or just submitted but not yet in the task mirror;
+ * done when finished; failed when it did not succeed (failed, interrupted, or outcome unknown); cancelling returns to setup.
  */
 export type TtsStage = 'setup' | 'run' | 'done' | 'failed';
 

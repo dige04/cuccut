@@ -9,16 +9,15 @@ import { JobManager, ResourceScheduler, type CapacitySource, type JobVideos } fr
 import { runWorker } from './video-export.ts';
 
 /**
- * 成片导出的租约与 Worker 的进程组（架构设计 §7.7）：Worker 异常退出或被取消时，Runtime 杀掉它的整个进程组，
- * 等组里的进程真的都退出之后任务才结束、租约才归还。用假的 Worker（Node 脚本）与它启动的假 ffmpeg（忽略 SIGTERM、
- * 标准输入输出不连 Worker 的管道），不做真实渲染。`kill(-pgid, 0)` 的探测可以被「闸门」挡住，假装组里还有进程：
- * 闸门关着时租约必须还在；打开之后租约归还，归还的那一刻组里已经没有进程。只在有进程组的系统上跑。
+ * The lease for finished-video export and the Worker's process group (architecture design §7.7): when the Worker exits abnormally or is canceled, the Runtime kills its whole process group,
+ * and the task does not end, nor the lease get returned, until the processes in the group have actually all exited. Uses a fake Worker (a Node script) and the fake ffmpeg it starts (ignores SIGTERM, and its stdin/stdout are not connected to the Worker's pipes); no real rendering is done. The `kill(-pgid, 0)` probe can be blocked by a "gate", which pretends the group still has processes:
+ * while the gate is closed the lease must still be held; once it opens, the lease is returned, and at the moment it is returned the group has no processes left. Runs only on systems with process groups.
  */
 
 const GiB = 1024 * 1024 * 1024;
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
-/** 假 Worker：开一个同组的假 ffmpeg，把两个 pid 原子地写进 `<输入>.pids`，报一次进度；收到 `cancel` 时报取消并退出，不管 ffmpeg。 */
+/** Fake Worker: starts a fake ffmpeg in the same group, atomically writes both pids into `<input>.pids`, and reports progress once; on receiving `cancel` it reports the cancellation and exits, without managing ffmpeg. */
 const FAKE_WORKER = `
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -76,17 +75,17 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
   let workerScript: string;
   let scheduler: ResourceScheduler;
   let jobs: JobManager;
-  /** 闸门关着时，`kill(-pgid, 0)` 一律当作组里还有进程。 */
+  /** While the gate is closed, `kill(-pgid, 0)` always counts as the group still having processes. */
   let gated: boolean;
-  /** 闸门关着时挡下的探测次数。 */
+  /** The number of probes blocked while the gate was closed. */
   let probesBlocked: number;
-  /** 每次归还租约时：闸门是否关着、Worker 的进程组里是否还有进程。 */
+  /** Each time the lease is returned: whether the gate is closed, and whether the Worker's process group still has processes. */
   let releases: Array<{ gated: boolean; groupAlive: boolean }>;
   let pids: { worker: number; ffmpeg: number } | null;
 
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-export-lease-'));
-    // Worker 以可执行文件的方式启动（`runWorker` 只传 `render <输入>` 两个参数）：一个 exec 到 node 的包装，pid 不变。
+    // The Worker is started as an executable (`runWorker` passes only the two arguments `render <input>`): a wrapper that execs into node, so the pid is unchanged.
     const script = path.join(dir, 'fake-export-worker.cjs');
     await fs.writeFile(script, FAKE_WORKER);
     workerScript = path.join(dir, 'fake-export-worker');
@@ -110,7 +109,7 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
         interactive: { memory: 0, gpuMemory: null, cpuThreads: 0, scratchDisk: null },
       }),
     });
-    // 记下每次归还租约的那一刻。
+    // Records the moment each lease return happens.
     const request = scheduler.request.bind(scheduler);
     scheduler.request = (req, handlers) =>
       request(req, {
@@ -162,7 +161,7 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 与导出服务相同的接法：一个带资源需求的任务，里面跑一次 Worker 的 `render`。 */
+  /** The same wiring as the export service: a task with resource requirements, inside which the Worker's `render` runs once. */
   async function startRender(): Promise<{ jobId: string; pids: { worker: number; ffmpeg: number } }> {
     const input = path.join(dir, `render-${crypto.randomBytes(4).toString('hex')}.json`);
     await fs.writeFile(input, '{}');
@@ -198,10 +197,10 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
 
   const record = (jobId: string): JobRecord => jobs.inspect(jobId);
 
-  /** 闸门关着：组已经被杀掉，但探测说还在——任务没结束，租约还在。打开闸门之后任务结束，租约在组真的退出之后归还。 */
+  /** Gate closed: the group has been killed, but the probe says it is still there, so the task has not ended and the lease is still held. After the gate opens, the task ends, and the lease is returned once the group has actually exited. */
   async function expectLeaseHeldUntilGroupGone(jobId: string, worker: { worker: number; ffmpeg: number }): Promise<JobRecord> {
     await until(() => probesBlocked > 0);
-    // Runtime 已经强杀了整个组：假 ffmpeg 忽略 SIGTERM，只有 SIGKILL 收得掉它。
+    // The Runtime has already force-killed the whole group: the fake ffmpeg ignores SIGTERM, so only SIGKILL can stop it.
     await until(() => !alive(worker.ffmpeg) && !alive(worker.worker), 3_000);
     expect(TERMINAL.has(record(jobId).state)).toBe(false);
     expect(scheduler.snapshot().leases).toHaveLength(1);
@@ -223,7 +222,7 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
 
   it('取消：Worker 自己退出但没停下 ffmpeg；组被杀掉、退出之后才归还租约', async () => {
     const { jobId, pids: started } = await startRender();
-    // 不等 `cancel` 兑现：它等任务结束，而任务要等闸门打开。
+    // Do not wait for `cancel` to take effect: it waits for the task to end, and the task waits for the gate to open.
     const cancelled = jobs.cancel(jobId);
     const done = await expectLeaseHeldUntilGroupGone(jobId, started);
     expect(done.state).toBe('cancelled');

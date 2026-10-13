@@ -1,36 +1,34 @@
-//! 语音合成的请求 / 结果 / 进度类型。引擎与上层（Worker 的任务编排）只经这里对话。
+//! Request / result / progress types for speech synthesis. The engine and the upper layer (the Worker's task orchestration) communicate only through here.
 //!
-//! 移植自 v2 `ccut-tts-core::types`，只留本地引擎用得到的部分：云端引擎、产品已不支持的引擎、合成回执、
-//! 「我的声音」（音色库在 Runtime 里解析成参考音频 + 原文，引擎只见 [`VoiceSpec::Clone`]）与只给云端用的
-//! 旋钮不带来。请求一族保留 v2 的 serde 形状（`kind` 标签、字段大小写），线上形状由接线时的协议决定。
+//! Ported from v2 `ccut-tts-core::types`; only the parts the local engines need are kept. Cloud engines, engines the product no longer supports, synthesis receipts, “My voice” (the voice library is resolved in the Runtime into reference audio + original text, so the engine only sees [`VoiceSpec::Clone`]), and knobs used only by the cloud are not brought over. The request family keeps v2's serde shape (the `kind` tag, field casing); the on-wire shape is decided by the protocol at wiring time.
 
 use super::readings::Reading;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// 本地语音合成引擎种类；随移植批次逐个接上。
+/// Kinds of local speech synthesis engines; each is wired in as its porting batch lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TtsEngineKind {
-    /// Qwen3-TTS 12 Hz（Base：克隆；CustomVoice：预置说话人 + 指令；VoiceDesign：一句描述造声）。
+    /// Qwen3-TTS 12 Hz (Base: cloning; CustomVoice: preset speakers + instructions; VoiceDesign: generates a voice from a one-sentence description).
     Qwen3Tts,
-    /// IndexTTS2（参考音频克隆 + 情感控制，22.05 kHz）。
+    /// IndexTTS2 (reference-audio cloning + emotion control, 22.05 kHz).
     IndexTts2,
-    /// IndexTTS 2.5（tiktoken 多语言 zh/en/ja/es/ar，参考音频克隆 + 情感控制，22.05 kHz）。
+    /// IndexTTS 2.5 (tiktoken multilingual zh/en/ja/es/ar, reference-audio cloning + emotion control, 22.05 kHz).
     #[serde(rename = "index-tts2.5")]
     IndexTts25,
-    /// GPT-SoVITS v2（参考音频克隆，参考文本可选，32 kHz）。
+    /// GPT-SoVITS v2 (reference-audio cloning; reference text optional; 32 kHz).
     GptSovits,
-    /// VoxCPM2（MiniCPM4 底座 + 局部扩散 + AudioVAE，无分词连续表示；克隆 + 风格指令，48 kHz）。
+    /// VoxCPM2 (MiniCPM4 backbone + local diffusion + AudioVAE, continuous representation without a tokenizer; cloning + style instructions, 48 kHz).
     #[serde(rename = "voxcpm2")]
     VoxCpm2,
-    /// OmniVoice（Qwen3 底座的掩码离散扩散，音色描述 / 克隆 / 时长与语速控制，24 kHz）。
+    /// OmniVoice (masked discrete diffusion on a Qwen3 backbone; voice description / cloning / duration and speaking-rate control, 24 kHz).
     #[serde(rename = "omnivoice")]
     OmniVoice,
 }
 
 impl TtsEngineKind {
-    /// 全部本地引擎，按声明次序。
+    /// All local engines, in declaration order.
     pub const ALL: [TtsEngineKind; 6] = [
         Self::Qwen3Tts,
         Self::IndexTts2,
@@ -40,13 +38,13 @@ impl TtsEngineKind {
         Self::OmniVoice,
     ];
 
-    /// [`Self::as_str`] 的反函数；认不出给 `None`。
+    /// Inverse of [`Self::as_str`]; returns `None` for unrecognized names.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
 
-    /// 模型包里 `tts` 组件的 family（Model Worker 协议规范 §4.1）。与 [`Self::as_str`] 不全相同（`indextts2` 对 `index-tts2`）。
+    /// The family of the `tts` component in a model package (Model Worker protocol spec §4.1). Not entirely the same as [`Self::as_str`] (`indextts2` vs `index-tts2`).
     pub const fn family(self) -> &'static str {
         use crate::bundle::{FAMILY_GPT_SOVITS, FAMILY_INDEXTTS2, FAMILY_INDEXTTS25, FAMILY_OMNIVOICE, FAMILY_QWEN3_TTS, FAMILY_VOXCPM2};
         match self {
@@ -59,7 +57,7 @@ impl TtsEngineKind {
         }
     }
 
-    /// [`Self::family`] 的反函数；不是合成主模型的 family 给 `None`。
+    /// Inverse of [`Self::family`]; returns `None` for a family that is not the main synthesis model's family.
     pub fn from_family(family: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.family() == family)
     }
@@ -75,12 +73,12 @@ impl TtsEngineKind {
         }
     }
 
-    /// 输出口径版本：同一请求（文本 / 音色 / 采样 / 种子）在新版里出的音频可能不同时递增。
+    /// Output-semantics version: incremented when the same request (text / voice / sampling / seed) may produce different audio in the new version.
     ///
-    /// - Qwen3-TTS 2：token 上限的下限 75 → 125 帧，此前被截断的段要重合成。
-    /// - Qwen3-TTS 3：注音按同音代表字渲染；此前 `<字|读音>` 原样进 tokenizer。
-    /// - IndexTTS2 2：注音按词表拼音片渲染、数字规范化护住拼音片。
-    /// - Qwen3-TTS 4、VoxCPM2 2：多块合成的块边界去首尾静音、插固定停顿、响度对齐到第一块（`synthesize::stitch`）。
+    /// - Qwen3-TTS 2: the lower bound of the token cap goes from 75 to 125 frames; segments that were previously truncated must be re-synthesized.
+    /// - Qwen3-TTS 3: annotations are rendered as a homophone representative character; previously `<字|读音>` was passed to the tokenizer as-is.
+    /// - IndexTTS2 2: annotations are rendered as the vocabulary's pinyin pieces, and number normalization protects the pinyin pieces.
+    /// - Qwen3-TTS 4, VoxCPM2 2: in multi-chunk synthesis, chunk boundaries have leading and trailing silence removed, fixed pauses inserted, and loudness aligned to the first chunk (`synthesize::stitch`).
     pub const fn output_revision(self) -> u32 {
         match self {
             Self::Qwen3Tts => 4,
@@ -89,20 +87,20 @@ impl TtsEngineKind {
         }
     }
 
-    /// 这只引擎怎么吃 `<字|读音>` 注音（架构设计 §6.1：由适配器转成各模型自己的写法，不支持时如实报告）。
-    /// 新增引擎必须在这里给出取值，并在 `readings::tests::DOC_TABLE` 加一行。
+    /// How this engine consumes `<字|读音>` annotations (architecture design §6.1: the adapter converts them into each model's own notation; when unsupported, report it honestly).
+    /// A newly added engine must give a value here and add a line to `readings::tests::DOC_TABLE`.
     pub const fn readings_support(self) -> ReadingsSupport {
         match self {
             Self::Qwen3Tts => ReadingsSupport::Homophone,
             Self::IndexTts2 => ReadingsSupport::InlinePinyin,
             Self::IndexTts25 => ReadingsSupport::Annotated,
             Self::GptSovits => ReadingsSupport::Unsupported,
-            // 官方都没有读音通道（上游 README）；按表面文字送。
+            // None of the official releases has a reading channel (upstream README); the surface text is sent as-is.
             Self::VoxCpm2 | Self::OmniVoice => ReadingsSupport::Unsupported,
         }
     }
 
-    /// 引擎原生输出采样率（Hz）。
+    /// The engine's native output sample rate (Hz).
     pub const fn native_sample_rate(self) -> u32 {
         match self {
             Self::Qwen3Tts => 24_000,
@@ -114,19 +112,18 @@ impl TtsEngineKind {
     }
 }
 
-/// 一只引擎怎么吃读音（新增引擎必须在 [`TtsEngineKind::readings_support`] 给出取值）。
+/// How an engine consumes readings (a newly added engine must give a value in [`TtsEngineKind::readings_support`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReadingsSupport {
-    /// 原样送 `<表面|读音>`：IndexTTS 2.5 的前端就吃这个语法。
+    /// Sends `<表面|读音>` as-is: the IndexTTS 2.5 front end accepts this syntax.
     Annotated,
-    /// 把字换成词表里有的大写拼音片（`XING2`）：IndexTTS2，上游「Pinyin control」。
+    /// Replaces the character with the uppercase pinyin piece from the vocabulary (`XING2`): IndexTTS2, upstream “Pinyin control”.
     InlinePinyin,
-    /// 换成同读音、本身不是多音字的常用字：Qwen3-TTS（官方没有读音通道；
-    /// v2 真权重 + ASR 对拍胜过正文写拼音）。词组表来源的注记不换。
+    /// Replaces with a common character that has the same reading and is not itself a polyphone: Qwen3-TTS (the official release has no reading channel;
+    /// comparing v2 real weights + ASR beat writing pinyin in the body text). Annotations from the phrase table are not replaced.
     Homophone,
-    /// 不认读音：按表面文字送，注记全部报 `dropped`。线上名 `none`（`unsupported` 是错误
-    /// kind，不拿来当能力值）。
+    /// Does not recognize readings: sends the surface text, and all annotations are reported as `dropped`. Its on-wire name is `none` (`unsupported` is an error kind and is not used as a capability value).
     #[serde(rename = "none")]
     Unsupported,
 }
@@ -142,16 +139,16 @@ impl ReadingsSupport {
     }
 }
 
-/// 说什么声音。
+/// What voice to speak with.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum VoiceSpec {
-    /// 引擎默认音色（CustomVoice 按语言挑说话人；只能克隆的引擎按语言挑内置音色）。
+    /// The engine's default voice (CustomVoice picks a speaker by language; engines that can only clone pick a built-in voice by language).
     Default,
-    /// 预置说话人（Qwen3-TTS CustomVoice 的 `Vivian`、`Ryan` 等）或内置音色 id（`zh-female` 等）。
+    /// A preset speaker (such as `Vivian` or `Ryan` for Qwen3-TTS CustomVoice) or a built-in voice id (such as `zh-female`).
     Preset { speaker: String },
-    /// 用参考音频克隆音色；`reference_text` 是参考音频的原文，Qwen3-TTS ICL
-    /// 模式需要它（缺省时只用 x-vector），IndexTTS2 忽略它。
+    /// Clones the voice from reference audio; `reference_text` is the transcript of the reference audio. Qwen3-TTS ICL
+    /// mode needs it (when absent, only the x-vector is used); IndexTTS2 ignores it.
     Clone {
         reference_audio: PathBuf,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,7 +156,7 @@ pub enum VoiceSpec {
     },
 }
 
-/// 采样参数；`None` 走各引擎的推荐默认值。
+/// Sampling parameters; `None` uses each engine's recommended defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SamplingOptions {
@@ -171,38 +168,38 @@ pub struct SamplingOptions {
     pub top_p: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repetition_penalty: Option<f32>,
-    /// 每个文本块最多生成的语音 token 数；`None` 按引擎默认。
+    /// Maximum number of speech tokens generated per text chunk; `None` uses the engine default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
-    /// 随机种子；`None` 表示每次不同。
+    /// Random seed; `None` means a different result each time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
-    /// 无分类器引导强度（VoxCPM2 / OmniVoice，官方默认都是 2.0）；`None` 按引擎默认。
+    /// Classifier-free guidance strength (VoxCPM2 / OmniVoice; the official default for both is 2.0); `None` uses the engine default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cfg: Option<f32>,
-    /// 扩散 / 迭代解码步数（VoxCPM2 默认 10，OmniVoice 默认 32）；`None` 按引擎默认。
+    /// Number of diffusion / iterative decoding steps (VoxCPM2 default 10, OmniVoice default 32); `None` uses the engine default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steps: Option<usize>,
 }
 
-/// IndexTTS 官方网页的「情感权重」缺省值（`webui.py` 的 `emo_weight` 滑块）：情感参考音频
-/// 的混合系数与情感向量的缩放都用它（官方 `infer(emo_alpha=…)`）。
+/// Default value of the “emotion weight” on IndexTTS's official web page (the `emo_weight` slider in `webui.py`): both the mixing coefficient of the emotion reference audio
+/// and the scaling of the emotion vector use it (official `infer(emo_alpha=…)`).
 pub const DEFAULT_EMOTION_ALPHA: f32 = 0.65;
 
 fn default_emotion_alpha() -> f32 {
     DEFAULT_EMOTION_ALPHA
 }
 
-/// IndexTTS2 / IndexTTS 2.5 情感控制。参数语义照官方网页（`webui.py`）：
-/// 情感参考音频按 `alpha` 与音色参考混合；情感向量是八个 0–1 的滑块，引擎先按官方
-/// `normalize_emo_vec` 加偏置、把合计缩到 0.8 以内，再乘 `alpha`。
+/// IndexTTS2 / IndexTTS 2.5 emotion control. Parameter semantics follow the official web page (`webui.py`):
+/// the emotion reference audio is mixed with the voice reference by `alpha`; the emotion vector is eight 0–1 sliders, and the engine first adds a bias per the official
+/// `normalize_emo_vec`, scales the total to within 0.8, and then multiplies by `alpha`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum EmotionSpec {
-    /// 从另一段参考音频取情感。
+    /// Takes the emotion from another reference audio clip.
     Audio { reference_audio: PathBuf, alpha: f32 },
-    /// 八维情感滑块（happy, angry, sad, afraid, disgusted, melancholic, surprised, calm），
-    /// 每维 0–1；`alpha` 是情感权重，省略取 [`DEFAULT_EMOTION_ALPHA`]。
+    /// Eight-dimensional emotion sliders (happy, angry, sad, afraid, disgusted, melancholic, surprised, calm),
+    /// each 0–1; `alpha` is the emotion weight; when omitted, [`DEFAULT_EMOTION_ALPHA`] is used.
     Vector {
         weights: [f32; 8],
         #[serde(default = "default_emotion_alpha")]
@@ -210,28 +207,28 @@ pub enum EmotionSpec {
     },
 }
 
-/// 一次合成请求。
+/// One synthesis request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TtsRequest {
     pub text: String,
-    /// BCP-47 风格语言码（`zh`、`en`、`ja`…）；`None` 让引擎自动判断。
+    /// BCP-47-style language code (`zh`, `en`, `ja`, …); `None` lets the engine detect it automatically.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     pub voice: VoiceSpec,
-    /// 自然语言指令：Qwen3-TTS CustomVoice / VoxCPM2 是风格（如「用兴奋的语气」），
-    /// Qwen3-TTS VoiceDesign / OmniVoice 是音色描述。
+    /// Natural-language instruction: for Qwen3-TTS CustomVoice / VoxCPM2 it is a style (such as “用兴奋的语气”, “in an excited tone”),
+    /// for Qwen3-TTS VoiceDesign / OmniVoice it is a voice description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instruct: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emotion: Option<EmotionSpec>,
-    /// 目标音频时长（秒）。OmniVoice 用它确定目标 token 数；翻译配音应传入时间槽长度。
-    /// 其他自回归引擎当前忽略该字段。
+    /// Target audio duration (seconds). OmniVoice uses it to determine the target token count; dubbing for translation should pass the length of the time slot.
+    /// Other autoregressive engines currently ignore this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_duration_seconds: Option<f64>,
     #[serde(default)]
     pub sampling: SamplingOptions,
-    /// 语速倍率（IndexTTS 2.5 与 OmniVoice）；其余本地引擎不收。
+    /// Speaking-rate multiplier (IndexTTS 2.5 and OmniVoice); other local engines do not accept it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed: Option<f32>,
 }
@@ -251,14 +248,14 @@ impl TtsRequest {
     }
 }
 
-/// 合成结果：单声道 f32 PCM，范围 [-1, 1]。
+/// Synthesis result: mono f32 PCM, range [-1, 1].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TtsAudio {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
-    /// 请求文字里没能按注记念的读音（引擎不认、词表没有这个片、没有代表字、注记畸形），
-    /// 偏移落在去注记后的表面文字上；由 [`crate::synthesize::load`] 的包装层
-    /// （[`crate::synthesize::readings::Annotating`]）填写，引擎自己构造时留空。
+    /// Readings in the request text that could not be spoken as annotated (the engine does not recognize them, the vocabulary has no such piece, there is no representative character, or the annotation is malformed).
+    /// The offset falls on the surface text with annotations removed. Filled in by the wrapper layer of [`crate::synthesize::load`]
+    /// ([`crate::synthesize::readings::Annotating`]); left empty when an engine constructs it itself.
     pub readings_dropped: Vec<Reading>,
 }
 
@@ -272,16 +269,16 @@ impl TtsAudio {
     }
 }
 
-/// 合成进度事件。回调返回 `false` 表示取消。
+/// Synthesis progress event. A callback returning `false` means cancel.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TtsProgress {
-    /// 正在加载权重或参考音频。
+    /// Loading weights or reference audio.
     Loading { stage: String },
-    /// 开始第 `index` 个文本块（0 起，共 `count` 个）。
+    /// Starting text chunk `index` (0-based, out of `count` total).
     ChunkStarted { index: usize, count: usize },
-    /// 当前块已生成的语音 token 数。
+    /// Number of speech tokens generated so far for the current chunk.
     Tokens { index: usize, generated: usize },
-    /// 当前块解码为波形完成，累计已生成音频秒数。
+    /// The current chunk has finished decoding to a waveform; cumulative generated audio seconds.
     ChunkFinished { index: usize, seconds: f64 },
 }
 
@@ -290,7 +287,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 请求一族的 serde 形状沿用 v2：改 serde 属性（`kind` 标签、字段大小写、`index-tts2.5` 的改名）会先在这里红。
+    /// The serde shape of the request family is carried over from v2: changing serde attributes (the `kind` tag, field casing, the rename of `index-tts2.5`) will turn red here first.
     #[test]
     fn request_wire_shape_is_pinned() {
         let request = TtsRequest {
@@ -359,7 +356,7 @@ mod tests {
             assert_eq!(TtsEngineKind::from_str(wire), Some(kind));
         }
         assert_eq!(TtsEngineKind::from_str("unknown-engine"), None);
-        // 模型包的 family 一一对应引擎（协议规范 §4.1 的 family 列表）。
+        // Each family in a model package corresponds one-to-one with an engine (the family list in protocol spec §4.1).
         let families = ["qwen3-tts", "indextts2", "indextts2.5", "gpt-sovits", "voxcpm2", "omnivoice"];
         for (kind, family) in TtsEngineKind::ALL.into_iter().zip(families) {
             assert_eq!(kind.family(), family);

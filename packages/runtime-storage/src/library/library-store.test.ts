@@ -10,9 +10,9 @@ import { storedZip } from '../testing/index.ts';
 import { extensionOf, isDotLottie, sniffBytes } from './media-sniff.ts';
 import { assertVoiceUploadAllowed, resolveVoiceClone } from './voice-access.ts';
 
-/** 最小的 PNG 文件头：库只按文件头认类型，品牌图片不做解码校验。 */
+/** Minimal PNG header. The library identifies types only by file header, and brand images are not decoded or validated. */
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 1)]);
-/** 只有文件头的 WAV：测试里的解码校验是假的，只看文件头。 */
+/** WAV with only a header. The decode validation in tests is fake, so only the header is checked. */
 const wav = (fill: number) => Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVEfmt ', 'latin1'), Buffer.alloc(64, fill)]);
 
 const glossary: TranscriptionGlossary = {
@@ -84,7 +84,7 @@ describe('用户库的存储', () => {
     expect(stale.code).toBe('conflict');
     expect(codeOf(stale)).toBe('LIBRARY_VERSION_CONFLICT');
 
-    // 没被固定的旧版本已经清掉。
+    // Old versions that were not pinned have already been cleared.
     expect((await rejection(() => store.get({ library: 'glossaries', id, version: 1 }))).code).toBe('not-found');
     expect(store.list('glossaries')).toEqual([
       expect.objectContaining({ id, version: 2, name: '产品术语', kind: 'transcription', termCount: 1, defaultEnabled: false }),
@@ -134,16 +134,16 @@ describe('用户库的存储', () => {
     expect(path.basename(stored)).toBe(`${file.sha256.slice('sha256:'.length)}.png`);
     expect(await fs.readFile(stored)).toEqual(PNG);
 
-    // 只改名字：沿用文件，出新版本。
+    // Rename only: reuse the file and produce a new version.
     const renamed = await store.put({ library: 'brand', id: image.entry.id, content: { name: '新标志', kind: 'image' } });
     expect(renamed.entry).toMatchObject({ version: 2, content: { name: '新标志', file } });
-    // PNG 不能当字体。
+    // A PNG cannot be used as a font.
     expect(codeOf(await rejection(store.put({ library: 'brand', id: image.entry.id, content: { name: 'x', kind: 'font' } })))).toBe(
       'LIBRARY_FORMAT_INVALID',
     );
-    // 新的图片要给文件。
+    // A new image must provide a file.
     expect(codeOf(await rejection(store.put({ library: 'brand', content: { name: 'x', kind: 'image' } })))).toBe('LIBRARY_FORMAT_INVALID');
-    // 认不出的文件不收，也不留下半个条目。
+    // Unrecognized files are not accepted, and no half-finished entry is left behind.
     await fs.writeFile(path.join(fixtures, 'junk.png'), 'not an image');
     expect(
       codeOf(
@@ -179,10 +179,10 @@ describe('用户库的存储', () => {
   it('音色：授权声明、参考录音变了克隆转为 stale、库音色的解析', async () => {
     const ref = path.join(fixtures, 'ref.bin');
     await fs.writeFile(ref, wav(1));
-    // 新的音色要给参考录音。
+    // A new voice must provide a reference recording.
     const content = { name: '我的声音', language: 'zh-CN', transcript: '你好', origin: 'recorded' as const, consent: { declared: false } };
     expect(codeOf(await rejection(store.put({ library: 'voices', content })))).toBe('LIBRARY_FORMAT_INVALID');
-    // 解码校验不过的不收。
+    // Files that fail decode validation are not accepted.
     await fs.writeFile(path.join(fixtures, 'ref.flac'), Buffer.concat([Buffer.from('fLaC'), Buffer.alloc(32)]));
     expect(codeOf(await rejection(store.put({ library: 'voices', content, file: { path: path.join(fixtures, 'ref.flac') } })))).toBe(
       'LIBRARY_FORMAT_INVALID',
@@ -195,7 +195,7 @@ describe('用户库的存储', () => {
       reference: { mediaType: 'audio/wav' },
     });
 
-    // 没有授权声明：不能上传（克隆），也不能用于合成。
+    // No consent statement: cannot upload (clone), and cannot be used for synthesis.
     const noConsent = await rejection(() => assertVoiceUploadAllowed(store.get({ library: 'voices', id }), 'openai'));
     expect(noConsent.code).toBe('conflict');
     expect(codeOf(noConsent)).toBe('VOICE_CONSENT_REQUIRED');
@@ -209,11 +209,11 @@ describe('用户库的存储', () => {
     expect(declared.entry.content.consent.declaredAt).not.toBeNull();
     expect(declared.entry.content.reference).toEqual(voice.entry.content.reference);
 
-    // 没有克隆
+    // No clone
     const missing = await rejection(() => resolveVoiceClone(store.get({ library: 'voices', id }), 'openai'));
     expect(codeOf(missing)).toBe('VOICE_CLONE_REQUIRED');
     expect(missing.details).toMatchObject({ reason: 'missing', providerId: 'openai' });
-    // 有效的克隆
+    // Valid clone
     await store.recordClone(id, 'openai', 'v-1');
     expect(resolveVoiceClone(store.get({ library: 'voices', id }), 'openai')).toMatchObject({
       voiceId: 'v-1',
@@ -221,7 +221,7 @@ describe('用户库的存储', () => {
     });
     expect(store.list('voices')[0]).toMatchObject({ consentDeclared: true, clones: [{ providerId: 'openai', state: 'valid' }] });
 
-    // 只改名字：克隆仍有效。换参考录音：克隆过期。
+    // Rename only: the clone is still valid. Change the reference recording: the clone expires.
     await store.put({
       library: 'voices',
       id,
@@ -241,7 +241,7 @@ describe('用户库的存储', () => {
     expect(codeOf(stale)).toBe('VOICE_CLONE_REQUIRED');
     expect(stale.details).toMatchObject({ reason: 'stale' });
 
-    // 删除：克隆转为 stale，留下只有条目头的墓碑（等远端删除克隆）；重启后仍在、但不出现在列表里。
+    // Delete: the clone becomes stale, leaving a tombstone with only the entry header (waiting for the remote clone to be deleted). After a restart it still exists, but it does not appear in the list.
     await store.recordClone(id, 'google', 'g-1');
     await store.remove('voices', id);
     const header = JSON.parse(await fs.readFile(path.join(dir, 'library', 'voices', id, 'entry.json'), 'utf8'));
@@ -271,7 +271,7 @@ describe('用户库的存储', () => {
     await fs.writeFile(other, Buffer.concat([PNG, Buffer.from('b')]));
     const v2 = (await store.put({ library: 'brand', id: v1.id, content: { name: 'a', kind: 'image' }, file: { path: other } })).entry;
     expect(v2.version).toBe(2);
-    // 旧版本还在，文件也在。
+    // The old version still exists, and so does its file.
     expect(store.get({ library: 'brand', id: v1.id, version: 1 }).contentHash).toBe(v1.contentHash);
     await expect(fs.stat(v1File)).resolves.toBeTruthy();
 
@@ -281,7 +281,7 @@ describe('用户库的存储', () => {
     await expect(fs.stat(path.join(dir, 'library', 'brand', v1.id, 'versions', '1.json'))).rejects.toThrow();
     expect(store.get({ library: 'brand', id: v1.id }).version).toBe(2);
 
-    // 固定着的条目被删除：按版本还能读到，解除后目录删掉。
+    // A pinned entry is deleted: it can still be read by version. After unpinning, the directory is removed.
     store.pin('job-2', [{ library: 'brand', id: v1.id }]);
     await store.remove('brand', v1.id);
     expect(store.list()).toEqual([]);
@@ -296,13 +296,13 @@ describe('用户库的存储', () => {
     store.pin('job', [{ library: 'glossaries', id: g.id }]);
     await store.put({ library: 'glossaries', id: g.id, content: { ...glossary, name: '再改' } });
     await store.idle();
-    // 没写完的新条目（没有条目头）与残留的临时文件
+    // An unfinished new entry (no entry header) and leftover temporary files
     await fs.mkdir(path.join(dir, 'library', 'brand', 'brd_partial', 'files'), { recursive: true });
     await fs.writeFile(path.join(dir, 'library', 'glossaries', g.id, 'versions', 'stray.tmp'), '');
 
     store = await open();
     expect(store.list()).toEqual([expect.objectContaining({ id: g.id, version: 3, name: '再改' })]);
-    // 固定只在内存里：重启后旧版本清掉。
+    // Pins exist only in memory: after a restart, old versions are cleared.
     expect(await fs.readdir(path.join(dir, 'library', 'glossaries', g.id, 'versions'))).toEqual(['3.json']);
     await expect(fs.stat(path.join(dir, 'library', 'brand', 'brd_partial'))).rejects.toThrow();
   });

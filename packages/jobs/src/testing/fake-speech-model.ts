@@ -1,7 +1,6 @@
 /**
- * 测试用：Speech Worker（字幕与翻译核心）发给文本模型的请求的假答案。请求走文件契约：要改写的载体包在
- * `<BEGIN INPUT name="<kind>.src.<ext>">` 里，翻译页是 `<section>` 里一句一个 `<p id="<句子 ID>">`。
- * 翻译页按句回一个答案（带对齐分组的按组写行），别的请求（译向简报等）回一个不合格的答案，让核心走自己的降级。
+ * For tests: fake answers to requests that the Speech Worker (the subtitle and translation core) sends to the text model. Requests follow a file contract: the carrier package to be rewritten is inside `<BEGIN INPUT name="<kind>.src.<ext>">`, and the translation page is one `<p id="<sentence ID>">` per sentence inside a `<section>`.
+ * The translation page gets one answer per sentence (when there are alignment groups, lines are written per group). Other requests (such as the target-language brief) get an invalid answer, so the core takes its own fallback path.
  */
 
 interface Tag {
@@ -28,12 +27,12 @@ function attr(open: string, name: string): string | null {
   return match ? match[1]!.replaceAll('&quot;', '"').replaceAll('&amp;', '&') : null;
 }
 
-/** 请求的种类（`translate`、`brief`……）；不是文件契约的请求时 null。 */
+/** The kind of request (`translate`, `brief`, …); null when it is not a request under the file contract. */
 export function speechRequestKind(user: string): string | null {
   return /<BEGIN INPUT name="([a-z-]+)\.src\./.exec(user)?.[1] ?? null;
 }
 
-/** 翻译页里要翻译的句子 ID（可编辑的 `<p>`）。 */
+/** The sentence IDs to translate on the translation page (the editable `<p>`s). */
 export function requestedSentences(user: string): string[] {
   return tags(user, 'section')
     .flatMap((section) => tags(section.inner, 'p'))
@@ -42,8 +41,7 @@ export function requestedSentences(user: string): string[] {
 }
 
 /**
- * 假答案。`line(sentenceId, group)` 给出一句（带对齐分组时是第 `group` 组）的译文；不给时按目标语言写一句各不相同的话
- * （核心的质量门会退回整页都一样的短译文与语言不对的译文）。
+ * Fake answer. `line(sentenceId, group)` gives the translation of one sentence (when there are alignment groups, group `group`). When not given, it writes a distinct sentence in the target language (the core's quality gate would reject a page where every translation is identical and short, or in the wrong language).
  */
 export function fakeSpeechAnswer(user: string, line?: (sentenceId: string, group: number) => string): string {
   if (speechRequestKind(user) !== 'translate') return '<article></article>';

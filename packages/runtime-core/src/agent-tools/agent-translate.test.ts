@@ -6,8 +6,7 @@ import type { VideoService } from '../videos/video-service.ts';
 import { AgentScope } from './agent-scope.ts';
 
 /**
- * 智能体自己翻译的进度记录（`documents_read` 的 translateTo）：登记、沿用、写入译文时完成、回合结束时收尾。
- * Harness 与 JobManager 用假的：只要 `agentRun`、`conversationOf`、`subscribe` 与 `host`。
+ * Progress records for the agent's own translation (`documents_read`'s translateTo): register, reuse, complete when the translation is written, and wrap up when the turn ends. Harness and JobManager are fakes; only `agentRun`, `conversationOf`, `subscribe` and `host` are needed.
  */
 
 const conversation = { id: 'conv_1', cwd: '/tmp/x', projectId: null, driverId: 'codex' } as unknown as Conversation;
@@ -74,7 +73,7 @@ describe('智能体自己翻译的进度记录', () => {
     });
     expect(scope.translationStarted(access(), { ...zh, sentences: 42 })).toBe(jobId);
     expect(hosted).toHaveLength(1);
-    // 另一门语言是另一条。
+    // Another language is another record.
     expect(scope.translationStarted(access(), { ...zh, language: 'ja', sentences: 42 })).not.toBe(jobId);
     expect(hosted).toHaveLength(2);
   });
@@ -107,7 +106,7 @@ describe('智能体自己翻译的进度记录', () => {
     emit({ type: 'task.upsert', task: task('task_2', 'completed') });
     await Promise.resolve();
     expect(hosted[1]!.record.state).toBe('interrupted');
-    // 收尾之后再写入不会改动已经终结的记录。
+    // Writing after wrap-up does not change an already finished record.
     scope.translationWritten(access(), { ...zh, documentId: 'doc_tr' });
     expect(hosted[1]!.record.state).toBe('interrupted');
   });

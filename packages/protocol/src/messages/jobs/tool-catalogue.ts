@@ -14,7 +14,7 @@ import { pl } from './tool-catalogue.pl.ts';
 import { tr } from './tool-catalogue.tr.ts';
 import { vi } from './tool-catalogue.vi.ts';
 
-/** `packages/jobs/src/tool-catalogue.ts`：工具目录里每个工具的名字与说明（`ToolDefinition.label` / `description`）。 */
+/** `packages/jobs/src/tool-catalogue.ts`: the name and description of each tool in the tool catalogue (`ToolDefinition.label` / `description`). */
 const en = {
   transcribeLabel: 'Transcribe',
   transcribeDescription:

@@ -20,17 +20,17 @@ import { connectRuntime, findRuntime, openClient, runtimeHome, type Session } fr
 import { runtimeCommand } from './runtime/runtime-command.ts';
 
 /**
- * `cuccut` 的分发（Agent 面设计 §4、§5）：元命令 → 管理桶 → 由目录派生的命令。
+ * Dispatch for `cuccut` (agent-surface design §4, §5): meta commands → admin bucket → commands derived from the catalog.
  *
- * - 元命令：`help`、`spec`、`version`、`status`、`runtime`，以及不带命令或带 `--help`。
- * - 管理桶（§7）：手写的、只给人用的命令，按名词与子命令精确匹配（`models configure`），先于派生命令。
- * - 其余按目录：连上 Runtime（必要时拉起），以 `catalog.list` 为准找命令、解析参数、执行。
+ * - Meta commands: `help`, `spec`, `version`, `status`, `runtime`, and the case with no command or with `--help`.
+ * - Admin bucket (§7): handwritten commands for humans only, matched exactly by noun and subcommand (`models configure`); checked before derived commands.
+ * - The rest follow the catalog: connect to the Runtime (starting it if necessary), find the command according to `catalog.list`, parse the arguments, and execute.
  */
 
-/** 管理桶：名字给帮助用，`handles` 判断一条命令归不归它，`run` 执行（收到命令行的全部参数）。 */
+/** Admin bucket: the name is for help; `handles` decides whether a command belongs to it; `run` executes it (receives all arguments from the command line). */
 export interface AdminBucket {
   entries: readonly AdminEntry[];
-  /** `words` 是命令行里去掉旗标之后的词（`['models', 'configure', …]`）。 */
+  /** `words` are the words on the command line with flags removed (`['models', 'configure', …]`). */
   handles(words: readonly string[]): boolean;
   run(argv: readonly string[], context: AdminContext): Promise<ExitCode>;
 }
@@ -40,7 +40,7 @@ export interface AdminContext {
   globals: GlobalFlags;
   home: string;
   cwd: string;
-  /** 这次调用的环境变量（测试里换成临时的 HOME、宿主配置目录）。 */
+  /** Environment variables for this call (in tests replaced with a temporary HOME and host config directory). */
   env: NodeJS.ProcessEnv;
 }
 
@@ -58,7 +58,7 @@ function isMeta(word: string): word is 'help' | 'spec' | 'version' | 'status' | 
   return META.has(word);
 }
 
-/** `status` 的参数：只有 `--full`（带上每种能力的全部 Provider 与模型、本地模型包的详情）。 */
+/** Arguments of `status`: only `--full` (includes all providers and models for each capability, and details of local model packages). */
 function statusArgs(tail: readonly string[]): boolean {
   for (const token of tail) {
     if (token === '--full') continue;
@@ -87,7 +87,7 @@ export async function runCli(argv: readonly string[], admin: AdminBucket, io: Cl
     } catch (error) {
       parseError = error;
     }
-    // 管理桶自己解析旗标（它们有 `--yes`、`--out` 之类的同名旗标，含义各自的）。
+    // The admin bucket parses flags itself (it has same-named flags such as `--yes` and `--out`, with their own meanings).
     const words = (parsed?.rest ?? argv).filter((token) => !token.startsWith('-'));
     if (words.length > 0 && !META.has(words[0]!) && admin.handles(words)) {
       const globals = extractGlobals(argv.filter((token) => token === '--json' || token === '--no-json')).globals;
@@ -104,7 +104,7 @@ export async function runCli(argv: readonly string[], admin: AdminBucket, io: Cl
       const target = first === 'help' ? tail : [];
       return await help(output, home, cwd, admin, target);
     }
-    // `--help` 在哪条命令上都是帮助，元命令（`runtime --help`、`spec --help`）也一样（§4.5）。
+    // `--help` is help on any command; meta commands (`runtime --help`, `spec --help`) too (§4.5).
     if (globals.help) return await help(output, home, cwd, admin, rest);
     if (first === 'spec') {
       if (tail.length > 1) throw new CliError('INVALID_ARGUMENTS', M.unknownSpec(tail.join(' ')));
@@ -113,8 +113,8 @@ export async function runCli(argv: readonly string[], admin: AdminBucket, io: Cl
     if (first === 'version') return await version(output, home);
     if (first === 'runtime') return await runtimeCommand(output, home, tail, globals.noStart);
 
-    // 没有正在跑的 Runtime 时先按快照看命令：拼错的命令（含已知名词后不认识的动词）不必为此拉起 Runtime，只给名词时
-    // 列出这个组也不必。有在跑的就问它（快照旧了时以它为准），不拉起。
+    // When no Runtime is running, commands are looked up from the snapshot first: a mistyped command (including an unknown verb after a known noun) does not need a Runtime started for this, and neither does listing the group when only a noun is given.
+    // If one is running, ask it (when the snapshot is stale, it takes precedence), without starting one.
     const snapshot = first === 'status' ? null : loadSnapshot();
     if (snapshot && !findRuntime(home)) {
       const known = lookup(buildTree(snapshot.tools), rest);
@@ -123,9 +123,9 @@ export async function runCli(argv: readonly string[], admin: AdminBucket, io: Cl
       }
       if (known.kind === 'group') return await help(output, home, cwd, admin, [known.noun]);
     }
-    // `status` 只认 `--full`；不认识的在拉起 Runtime 之前拒绝。
+    // `status` only accepts `--full`; unknown options are rejected before the Runtime is started.
     const statusFull = first === 'status' && statusArgs(tail);
-    // `status --no-start`：只看状态，没在跑也是一个回答。
+    // `status --no-start`: only looks at the status; not running is also an answer.
     if (first === 'status' && globals.noStart && !findRuntime(home)) {
       return output.success({ runtime: { running: false, home } }, 'cuccut runtime ensure');
     }
@@ -150,7 +150,7 @@ export async function runCli(argv: readonly string[], admin: AdminBucket, io: Cl
   }
 }
 
-/** 错误 → 失败信封。 */
+/** Error → failure envelope. */
 function fail(output: Output, error: unknown): ExitCode {
   if (error instanceof CliError) return output.failure(error.body());
   if (error instanceof RpcError) {
@@ -166,8 +166,8 @@ function adminEntry(admin: AdminBucket, name: string): AdminEntry | undefined {
 }
 
 /**
- * `help` 与 `spec` 用的目录（架构设计 §3.6）：有正在跑的 Runtime 时以它的 `catalog.list` 为准（版本与执行时一致），没有或问不到时
- * 用构建时的快照；都没有时 `CATALOG_UNAVAILABLE`。不为看帮助拉起 Runtime。
+ * The catalog used by `help` and `spec` (architecture design §3.6): when a Runtime is running, its `catalog.list` takes precedence (its version matches the one used at execution time); when there is none or it cannot be asked,
+ * the build-time snapshot is used; when neither exists, `CATALOG_UNAVAILABLE`. It does not start the Runtime just to show help.
  */
 async function readCatalog(
   home: string,
@@ -190,7 +190,7 @@ async function readCatalog(
         client.close();
       }
     } catch {
-      // 问不到（正在退出、协议不同）：退回快照。
+      // Cannot be asked (exiting, protocol differs): fall back to the snapshot.
     }
   }
   const snapshot = loadSnapshot();

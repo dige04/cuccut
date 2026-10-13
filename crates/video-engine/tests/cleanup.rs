@@ -1,5 +1,5 @@
-//! 清理：删空轨道（`deleteTrack`）与删没有引用的素材（`removeAssets`、`Video::unused_assets`）。
-//! 代码包与它烘焙出的预渲染替身成对删除；还有引用的素材、还有片段的轨道都拒绝。
+//! Cleanup: deletes empty tracks (`deleteTrack`) and unreferenced assets (`removeAssets`, `Video::unused_assets`).
+//! A code bundle and the pre-rendered stand-in baked from it are deleted as a pair; assets that are still referenced, and tracks that still have clips, are rejected.
 
 #![allow(clippy::result_large_err)]
 
@@ -74,7 +74,7 @@ fn order(video: &Video, id: &str) -> i64 {
     video.state().tracks[id].value.order
 }
 
-/// 一个代码包：清单带 `bundleId/revision`（预渲染替身的烘焙记录按它配对）。
+/// A code bundle: the manifest carries `bundleId/revision` (a pre-rendered stand-in is paired with it through its baking record).
 fn import_bundle(video: &mut Video, root: &Path, bundle_id: &str, revision: &str) -> Value {
     let dir = root.join(format!("{bundle_id}-{revision}"));
     fs::create_dir_all(&dir).unwrap();
@@ -93,7 +93,7 @@ fn import_bundle(video: &mut Video, root: &Path, bundle_id: &str, revision: &str
     json!({ "id": id, "revision": video.state().assets[&id].current_revision })
 }
 
-/// 一个小图片素材；给了 `baked_from` 时按烘焙出的预渲染替身记来源（不用 ffmpeg 也能测配对）。
+/// A small image asset; when `baked_from` is given, it is recorded as a pre-rendered stand-in with that source (pairing can be tested without ffmpeg).
 fn import_image(video: &mut Video, root: &Path, name: &str, baked_from: Option<(&str, &str)>) -> String {
     let path = root.join(format!("{name}.svg"));
     fs::write(
@@ -151,7 +151,7 @@ fn a_track_with_clips_is_not_deleted() {
     assert!(err.entity_ids.contains(&v1));
     assert_eq!(video.revision(), revision, "拒绝时视频不变");
 
-    // 同一笔里先删片段再删轨道就可以。
+    // Deleting a clip first, then the track, in the same transaction is fine.
     let committed = apply(
         &mut video,
         "cmd_delete_both",
@@ -184,7 +184,7 @@ fn deleting_an_empty_track_keeps_the_other_orders() {
     let before: Vec<i64> = [&v1, &a1, &v2, &v3].iter().map(|id| order(&video, id)).collect();
     assert_eq!(before, vec![0, 1, 2, 3]);
 
-    // 删中间那条：别的轨道的 order 不动（addTrack 取最大值加一、不动别人，删除也不动别人）。
+    // Delete the middle one: the other tracks' order does not change (addTrack takes the maximum plus one and does not touch others; deletion does not touch others either).
     let committed = apply(
         &mut video,
         "cmd_delete_v2",
@@ -200,7 +200,7 @@ fn deleting_an_empty_track_keeps_the_other_orders() {
     assert!(!video.state().tracks.contains_key(&v2));
     assert_eq!([&v1, &a1, &v3].map(|id| order(&video, id)), [0, 1, 3]);
 
-    // 再新建一条接在最上面：order 仍取最大值加一。
+    // Create a new one on top: order still takes the maximum plus one.
     let again = apply(
         &mut video,
         "cmd_add_again",
@@ -209,7 +209,7 @@ fn deleting_an_empty_track_keeps_the_other_orders() {
     .unwrap();
     assert_eq!(order(&video, &again.receipt.refs["v4"]), 4);
 
-    // 撤销删除：轨道连同原来的 order 回来。
+    // Undo the deletion: the track comes back together with its original order.
     undo(&mut video, "cmd_undo_delete", &committed.receipt.transaction_id);
     assert_eq!(order(&video, &v2), 2);
 }
@@ -296,7 +296,7 @@ fn unused_assets_lists_what_nothing_refers_to_and_remove_assets_deletes_it() {
     )
     .unwrap();
 
-    // 预检清单：只有谁都不指向的那个；实例、章节缩略图、文档来源都算引用。
+    // The pre-check list contains only the one nothing points to; instances, chapter thumbnails, and document sources all count as references.
     let unused = serde_json::to_value(video.unused_assets()).unwrap();
     assert_eq!(unused.as_array().unwrap().len(), 1, "{unused}");
     assert_eq!(unused[0]["assetId"], loose);
@@ -305,7 +305,7 @@ fn unused_assets_lists_what_nothing_refers_to_and_remove_assets_deletes_it() {
     assert!(unused[0]["byteLength"].as_u64().unwrap() > 0);
     assert!(unused[0].get("pairedWith").is_none());
 
-    // 删有引用的：拒绝，说出谁在用。
+    // Deleting one that is referenced: rejected, and it says who is using it.
     for (id, user) in [(&used_id, "item"), (&thumb, "marker"), (&spoken, "document")] {
         let err = apply(
             &mut video,
@@ -333,7 +333,7 @@ fn unused_assets_lists_what_nothing_refers_to_and_remove_assets_deletes_it() {
     .unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
 
-    // 真删：记录没了，回执列在 deletedIds 与 impact.removedAssets；bytes 不动（撤销能放回来）。
+    // Real deletion: the records are gone, and the receipt lists them in deletedIds and impact.removedAssets; the bytes are untouched (undo can restore them).
     let blob_count = || fs::read_dir(root.path().join("m").join("blobs")).unwrap().count();
     let blobs = blob_count();
     let committed = apply(
@@ -361,9 +361,9 @@ fn a_replaced_bundle_and_its_prerender_go_together() {
     let pre1 = import_image(&mut video, root.path(), "pre1", Some(("lower-third", "1")));
     let pre2 = import_image(&mut video, root.path(), "pre2", Some(("lower-third", "2")));
     let item = place_composition(&mut video, &rev1);
-    // 这里的替身是图片，挂不到实例上（替身要视频）；配对只看烘焙来源，与挂没挂上无关。
+    // The stand-in here is an image, which cannot be attached to an instance (stand-ins must be videos); pairing looks only at the baking source, whether or not it is attached.
 
-    // 换成第 2 版之后，第 1 版的代码包与替身都没有引用了，清单里互相标出另一半。
+    // After switching to version 2, the code bundle and stand-in of version 1 are no longer referenced, and the list marks each as the other's pair.
     apply(
         &mut video,
         "cmd_replace",
@@ -374,10 +374,10 @@ fn a_replaced_bundle_and_its_prerender_go_together() {
     let entry = |id: &str| unused.as_array().unwrap().iter().find(|e| e["assetId"] == id).cloned();
     assert_eq!(entry(&rev1_id).unwrap()["pairedWith"], json!([pre1]));
     assert_eq!(entry(&pre1).unwrap()["pairedWith"], json!([rev1_id]));
-    // 第 2 版的替身没挂在实例上，自己没有引用；它的代码包还在用，所以不配对。
+    // Version 2's stand-in is not attached to an instance, so it has no reference of its own; its code bundle is still in use, so they are not paired.
     assert!(entry(&pre2).unwrap().get("pairedWith").is_none());
 
-    // 只列代码包：替身跟着删。
+    // Listing only the code bundle: the stand-in is deleted along with it.
     let committed = apply(
         &mut video,
         "cmd_prune_rev1",
@@ -392,7 +392,7 @@ fn a_replaced_bundle_and_its_prerender_go_together() {
     assert_eq!(deleted, removed);
     assert!(!video.state().assets.contains_key(&pre1));
 
-    // 只列还在用的代码包的替身：只删替身，代码包有引用、不动。
+    // Listing only the stand-in of a code bundle that is still in use: only the stand-in is deleted; the code bundle is referenced, so it is untouched.
     let committed = apply(
         &mut video,
         "cmd_prune_pre2",
@@ -403,7 +403,7 @@ fn a_replaced_bundle_and_its_prerender_go_together() {
     assert!(video.state().assets.contains_key(rev2["id"].as_str().unwrap()));
 }
 
-/// 用 ffmpeg 现场生成一段替身视频；没有 ffmpeg 时返回 None，测试跳过。
+/// Generates a stand-in video on the spot with ffmpeg; returns None when there is no ffmpeg, and the test is skipped.
 fn prerender_clip(dir: &Path, name: &str, seconds: u32) -> Option<PathBuf> {
     let path = dir.join(format!("{name}.mp4"));
     let ok = std::process::Command::new("ffmpeg")
@@ -420,7 +420,7 @@ fn prerender_clip(dir: &Path, name: &str, seconds: u32) -> Option<PathBuf> {
     Some(path)
 }
 
-/// 导入一段从代码包某个版本烘焙出来的替身视频。
+/// Imports a stand-in video baked from a certain version of a code bundle.
 fn import_prerender(video: &mut Video, clip: &Path, bundle_id: &str, revision: &str) -> Value {
     let op = json!({
         "type": "importAsset", "path": clip, "ref": "p",
@@ -450,7 +450,7 @@ fn a_prerender_on_a_clip_counts_as_used_until_the_clip_moves_on() {
         vec![json!({ "type": "replaceCodeBundle", "itemId": item, "assetRef": rev1, "prerender": pre1 })],
     )
     .unwrap();
-    // 第 2 版和它的替身都还没用上；第 1 版和它的替身都挂在实例上，替身也算引用。
+    // Version 2 and its stand-in are not in use yet; version 1 and its stand-in are both attached to instances, and the stand-in counts as a reference too.
     let listed: Vec<String> = video.unused_assets().into_iter().map(|a| a.asset_id).collect();
     let mut expected = vec![rev2_id.clone(), pre2_id.clone()];
     expected.sort();
@@ -463,7 +463,7 @@ fn a_prerender_on_a_clip_counts_as_used_until_the_clip_moves_on() {
     .unwrap_err();
     assert_eq!(err.details["rule"], "asset-in-use");
 
-    // 换到第 2 版之后，第 1 版的代码包与替身成对出现在清单里；只列替身，代码包一起删。
+    // After switching to version 2, the code bundle and stand-in of version 1 appear in the list as a pair; listing only the stand-in, the code bundle is deleted along with it.
     apply(
         &mut video,
         "cmd_replace",

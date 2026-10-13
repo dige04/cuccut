@@ -2,13 +2,12 @@ import { asObject, isObject, num, type Json } from '../render/text-style.ts';
 import { wordAnimationPayload } from './caption-word-animation.ts';
 
 /**
- * 倒鸭子（`layout.mode = 'sequence'`，字幕样式模型设计 §6）的选项与它在 Studio 样式里的落点：
+ * Upside-down duck (倒鸭子, `layout.mode = 'sequence'`, caption style model design §6): its options and where they sit in the Studio style:
  * `wordAnimation.caption {schema 1, content 'orig', style {id 'caption-daoyazi', version 1}, palette, intensity, speed, seed,
- * options: [{kind: 'object', key: 'daoyazi', value: {preset, sequence, layout, camera, entrance, reveal, presentation}}]}`。
+ * options: [{kind: 'object', key: 'daoyazi', value: {preset, sequence, layout, camera, entrance, reveal, presentation}}]}`.
  *
- * 内核解析见 `crates/subtitle-render/src/caption_sequence.rs` 的 `CaptionSequenceOptions::from_value`：显式写出的镜头键
- * 盖过 `preset`（`light` 会把转向、提前量、停留改掉），所以 `dwell` / `anticipation` / `maxTurnDeg` / `fit` / `density`
- * 只在用户改过（正文里有值）时写。
+ * Kernel parsing: see `CaptionSequenceOptions::from_value` in `crates/subtitle-render/src/caption_sequence.rs`. An explicitly written camera key overrides `preset` (`light` would change turn, lead time and dwell), so `dwell` / `anticipation` / `maxTurnDeg` / `fit` / `density`
+ * are written only when the user has changed them (when the body has a value).
  */
 
 export const SEQUENCE_STYLE_ID = 'caption-daoyazi';
@@ -40,7 +39,7 @@ export interface SequenceOptions {
   sequence: { maxDurationMs: number; maxBlocks: number; maxWords: number; pauseThresholdMs: number; breakOnSpeakerChange: boolean };
 }
 
-/** 内置配色四套（v2 原值；画进视频画面的内容色）。 */
+/** Four built-in colour palettes (original v2 values; content colours painted into the video frame). */
 export const SEQUENCE_PALETTES: readonly { id: 'classic' | 'neon' | 'paper' | 'ice'; palette: SequencePalette }[] = [
   { id: 'classic', palette: { primary: '#FFFFFF', accent: '#FF9B42', secondary: '#59BAF2', background: '#111214' } },
   { id: 'neon', palette: { primary: '#F4F4F4', accent: '#C6FF3D', secondary: '#FF4FD8', background: '#0B0B12' } },
@@ -48,9 +47,9 @@ export const SEQUENCE_PALETTES: readonly { id: 'classic' | 'neon' | 'paper' | 'i
   { id: 'ice', palette: { primary: '#E8F4FF', accent: '#4CC9FF', secondary: '#FFD166', background: '#0E1A26' } },
 ];
 
-/** 轻动感的取值（内核 `preset: 'light'`）：不转向、提前量 0.3、停留 0.35、动感上限 40。 */
+/** Values for the light motion mode (kernel `preset: 'light'`): no turning, lead 0.3, dwell 0.35, motion cap 40. */
 export const LIGHT_PRESET = { maxTurnDeg: 0, anticipation: 0.3, dwell: 0.35, intensityCap: 40 } as const;
-/** 标准档的镜头默认值（内核 `CaptionSequenceOptions::default`）。 */
+/** Camera defaults for the standard tier (kernel `CaptionSequenceOptions::default`). */
 export const STANDARD_CAMERA = { maxTurnDeg: 90, anticipation: 0.5, dwell: 0.25 } as const;
 
 export const DEFAULT_SEQUENCE: SequenceOptions = {
@@ -66,17 +65,17 @@ export const DEFAULT_SEQUENCE: SequenceOptions = {
   sequence: { maxDurationMs: 12000, maxBlocks: 16, maxWords: 48, pauseThresholdMs: 800, breakOnSpeakerChange: true },
 };
 
-/** 内核固定的几项（界面不出）：段间淡出、镜头单次运动的上下限与停走档时长、入场。 */
+/** Items fixed by the kernel (not exposed in the UI): fade-out between segments, the min and max of a single camera move and its stop-and-go dwell duration, and entrance. */
 const FIXED = { fadeMs: 200, minTravelMs: 120, maxTravelMs: 1600, travelMs: 300, zoomLog: true, entrance: { durMs: 300, pre: 0.5 } };
 
-/** 镜头某一项的有效值：正文里写了用它，没写按预设档。 */
+/** The effective value of a camera item: use the body's value if one is written; otherwise use the preset tier. */
 export function cameraValue(options: SequenceOptions, key: 'dwell' | 'anticipation' | 'maxTurnDeg'): number {
   const own = options.camera[key];
   if (typeof own === 'number') return own;
   return options.preset === 'light' ? LIGHT_PRESET[key] : STANDARD_CAMERA[key];
 }
 
-/** 换一版：确定性地换一个种子（u32）。 */
+/** New version: deterministically switch to another seed (u32). */
 export function reseed(seed: number): number {
   return (Math.imul((seed >>> 0) ^ 0x9e3779b9, 2654435761) >>> 0) % 1_000_000;
 }
@@ -95,7 +94,7 @@ export function normalizeSequence(value: Partial<SequenceOptions> | null | undef
       history: { ...DEFAULT_SEQUENCE.presentation.history, ...v.presentation?.history },
     },
     sequence: { ...DEFAULT_SEQUENCE.sequence, ...v.sequence },
-    // 内核的取值域：动感 0–100、速度 0.35–2、种子非负整数。
+    // Kernel value ranges: motion 0–100, speed 0.35–2, seed a non-negative integer.
     intensity: Math.min(100, Math.max(0, finite(v.intensity, DEFAULT_SEQUENCE.intensity))),
     speed: Math.min(2, Math.max(0.35, finite(v.speed, DEFAULT_SEQUENCE.speed))),
     seed: Math.max(0, Math.round(finite(v.seed, DEFAULT_SEQUENCE.seed))),
@@ -112,7 +111,7 @@ function defined(value: Json): Json {
   return out;
 }
 
-/** 倒鸭子 → Studio 的 `wordAnimation`（无逐词动画的载荷去掉 `catalogId` ＋ `caption`）。 */
+/** Upside-down duck → Studio's `wordAnimation` (for a payload with no per-word animation, `catalogId` and `caption` are removed). */
 export function sequenceWordAnimation(value: SequenceOptions): Json {
   const o = normalizeSequence(value);
   const solid = o.presentation.background === 'solid';
@@ -141,7 +140,7 @@ export function sequenceWordAnimation(value: SequenceOptions): Json {
       ending: o.presentation.ending,
     }),
   };
-  // 内核只认 `wordAnimation.caption`（`style.id` 以 caption- 开头即走设计字幕分支）；不写 `catalogId`，否则内核按它另设逐词底块。
+  // The kernel only recognises `wordAnimation.caption` (a `style.id` starting with caption- takes the design-caption branch); do not write `catalogId`, otherwise the kernel sets a separate per-word backing block based on it.
   const { catalogId: _catalog, ...envelope } = wordAnimationPayload('none');
   return {
     ...envelope,
@@ -158,7 +157,7 @@ export function sequenceWordAnimation(value: SequenceOptions): Json {
   };
 }
 
-/** `wordAnimation.caption`（倒鸭子那一份）→ 选项（尽力；`sequenceWordAnimation` 的反向）。 */
+/** `wordAnimation.caption` (the upside-down duck one) → options (best effort; the reverse of `sequenceWordAnimation`). */
 export function parseSequence(caption: Json): SequenceOptions {
   const options = Array.isArray(caption.options) ? caption.options : [];
   const entry = options.find((o) => isObject(o) && o.key === 'daoyazi');

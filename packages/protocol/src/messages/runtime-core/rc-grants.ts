@@ -14,7 +14,7 @@ import { pl } from './rc-grants.pl.ts';
 import { tr } from './rc-grants.tr.ts';
 import { vi } from './rc-grants.vi.ts';
 
-/** 外发的数据种类在英文里的说法（`kinds` 参数是逗号分隔的种类代码，按读者的语言展开）。 */
+/** English wording of the kinds of data sent outward (the `kinds` parameter is a comma-separated list of kind codes, expanded in the reader's language). */
 const EN_KINDS: Readonly<Record<string, string>> = {
   transcript: 'transcripts and translations',
   frames: 'video frames and thumbnails',
@@ -32,11 +32,11 @@ function enKinds(codes: string): string {
   return new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(labels);
 }
 
-/** 授权与预算（grants/）的错误与补救说明。英文是键与类型的来源，译文在 `rc-grants.<语言>.ts`。 */
+/** Errors and remedy descriptions for authorizations and budgets (grants/). English is the source of keys and types; translations are in `rc-grants.<language>.ts`. */
 const en = {
   dataKinds: (p: { kinds: string }) => enKinds(p.kinds),
 
-  // 提交时的拒绝（grantRpcError）
+  // Rejection at submission (grantRpcError)
   grantLapsed: (p: { kinds: string; label: string; expired: boolean }) =>
     `The grant to send ${enKinds(p.kinds)} to ${p.label} has ${p.expired ? 'expired' : 'been revoked'}`,
   grantRequired: (p: { kinds: string; label: string }) => `Sending ${enKinds(p.kinds)} to ${p.label} needs the user's grant`,
@@ -54,7 +54,7 @@ const en = {
   combined: (p: { message: string; others: number }) =>
     `${p.message} (${p.others} more ${p.others === 1 ? 'transfer also needs' : 'transfers also need'} a grant)`,
 
-  // 补救（remedy.hint）
+  // Remedy (remedy.hint)
   hintRevoked:
     "Revoked or expired grants aren't restored automatically. Ask the user to grant access again in CucCut's Settings, or to approve this once in the session.",
   hintRequired:
@@ -70,13 +70,13 @@ const en = {
   hintServiceAuto:
     "An external service's auto level isn't a grant to send data out. Ask the user to issue a grant for this provider in CucCut (data types, scope, and budget), or change the service level to ask to approve each call.",
 
-  // 命令里的占位（按发出时的语言写进 remedy.commands）
+  // Placeholders in commands (written into remedy.commands in the language used at emission)
   placeholderPurpose: '<purpose>',
   placeholderMaxCalls: '<higher call count>',
   placeholderBudget: '<higher amount>',
   placeholderCalls: '<call count>',
 
-  // 任务开始时（JobError）
+  // At task start (JobError)
   grantLapsedBeforeStart: (p: { state: string }) =>
     `The grant ${p.state === 'expired' ? 'expired' : p.state === 'revoked' ? 'was revoked' : 'was narrowed'} before the task started, so no data was sent`,
   grantInvalidBeforeStart: 'The grant became invalid before the task started, so no data was sent',
@@ -84,7 +84,7 @@ const en = {
   ledgerUnsaved: "The grant ledger couldn't be written to disk, so no data was sent",
   providerDisabledBeforeStart: 'The provider was turned off before the task started, so no data was sent',
 
-  // 授权服务（grant-service、pipeline-grants）
+  // Grant service (grant-service, pipeline-grants)
   noSuchGrant: 'No such grant',
   toolPurpose: (p: { tool: string }) => `Tool "${p.tool}"`,
   pipelinePurpose: (p: { label: string }) => `Pipeline "${p.label}"`,

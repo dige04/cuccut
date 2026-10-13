@@ -1,5 +1,5 @@
-//! 变量与批量渲染（§5.1 / §11.1 / §11.2）：
-//! variables 类型校验、asset 变量委托、scenes[].dur 变量引用。
+//! Variables and batch rendering (§5.1 / §11.1 / §11.2):
+//! variables type validation, asset variable delegation, scenes[].dur variable references.
 
 use scene_primitives::{Resolver, host_requirements, host_requirements_with_vars};
 use serde_json::{Map, Value, json};
@@ -79,14 +79,14 @@ fn asset_var_src_resolves_in_ctx() {
 fn lint_variable_and_asset_var_rules() {
     let mut bad = doc();
     bad["variables"].as_array_mut().unwrap().extend([
-        json!({ "id": "x", "type": "gradient", "default": 1 }), // 未知类型
-        json!({ "id": "mode", "type": "enum", "default": "a" }), // enum 缺 options
+        json!({ "id": "x", "type": "gradient", "default": 1 }), // unknown type
+        json!({ "id": "mode", "type": "enum", "default": "a" }), // enum missing options
         json!({ "id": "clip2", "type": "asset",
-                "default": { "media": "interview" } }), // media 形态
+                "default": { "media": "interview" } }), // media form
     ]);
-    bad["assets"]["hero2"] = json!({ "type": "video", "src": "a.mp4", "var": "heroClip" }); // src+var 互斥
-    bad["assets"]["hero3"] = json!({ "type": "video", "var": "heroDur" }); // 委托非 asset 变量
-    bad["assets"]["hero4"] = json!({ "type": "video", "var": "ghost" }); // 委托未声明变量
+    bad["assets"]["hero2"] = json!({ "type": "video", "src": "a.mp4", "var": "heroClip" }); // src and var are mutually exclusive
+    bad["assets"]["hero3"] = json!({ "type": "video", "var": "heroDur" }); // delegating a non-asset variable
+    bad["assets"]["hero4"] = json!({ "type": "video", "var": "ghost" }); // delegating an undeclared variable
     let diags = scene_primitives::lint::lint(&bad);
     let msgs: Vec<String> = diags
         .iter()

@@ -1,53 +1,45 @@
-// 「倒鸭子」跨句动态排版字幕：`CaptionSequencePlan` 的编译器与采样器。
+// “Daoyazi” cross-sentence dynamic typography captions: the compiler and sampler for `CaptionSequencePlan`.
 //
-// 原型参考实现是 `designs/cuccut/app/model-daoyazi.js`（`BC_DZ`），设计稿
-// `docs/design/subtitle/ccut-daoyazi-caption-design.md` §6–§9。这里是它的纯函数移植：
-// 输入 cue / 词时序 / 词角色 / 用户参数，输出一份确定性的「世界排版 ＋ 镜头计划」，
-// 任意时刻 `sample(t)` 出这一帧的相机姿态与每个词的可见状态。不做 I/O，不碰字体：
-// 量宽由调用方注入（`measure(text, px)`），所以 CLI 与 App 同一份输入必然同一份世界。
+// The prototype reference implementation is `designs/cuccut/app/model-daoyazi.js` (`BC_DZ`), and the design doc is `docs/design/subtitle/ccut-daoyazi-caption-design.md` §6–§9. This is its pure-function port: input is the cue / word timing / word roles / user parameters, output is a deterministic “world layout + camera plan”. `sample(t)` gives the camera pose and the visible state of each word for that frame at any moment. No I/O, no font handling: text measurement is injected by the caller (`measure(text, px)`), so the CLI and the App get the same world from the same input.
 //
-// 与原型的口径差（都是有意的）：
-// * 参考画布就是输出画布（`width × height` 像素），`font_px` 是解出来的原文行字号；
-//   原型用 540 短边的参考画布再缩放到舞台。公式全是比例式，结果只差量化位。
-// * 说话人来自 cue 的 `sp`（投影已把说话人写在 cue 上），词时序来自 transcript `words[]`。
-// * 阶段 C（`docs/design/subtitle/ccut-daoyazi-caption-design.md` §3.2–§3.4 / §5.4）：`CaptionSequenceInput` 的
-//   `pins`（行固定位置 / 角度，世界局部像素）、`seq_seeds`（按段换一版）与 cue 的 `break_before`
-//   （手动断段）都进入排版；编辑态的总览取景与行命中见 `overview_frame` / `row_quads` / `pick_row`。
+// Intentional differences from the prototype (all deliberate):
+// * The reference canvas is the output canvas (`width × height` pixels); `font_px` is the solved font size of the source line. The prototype uses a 540-short-edge reference canvas and scales it to the stage. All formulas are proportional, so the results differ only in quantisation bits.
+// * Speakers come from the cue's `sp` (the projection has already written the speaker onto the cue); word timing comes from the transcript `words[]`.
+// * Stage C (`docs/design/subtitle/ccut-daoyazi-caption-design.md` §3.2–§3.4 / §5.4): `CaptionSequenceInput`'s `pins` (fixed row position / angle, in segment-local world pixels), `seq_seeds` (a different version per segment) and the cue's `break_before` (manual segment break) all feed into the layout. The editing-state overview framing, and row hit-testing, are in `overview_frame` / `row_quads` / `pick_row`.
 
 pub const CAPTION_SEQUENCE_COMPILER: &str = "typography-world";
 pub const CAPTION_SEQUENCE_SCOPE: &str = "sequence";
 pub const CAPTION_SEQUENCE_DEFAULT_SEED: u64 = 137;
 const SEQ_RECIPE_VERSION: u32 = 1;
-const SEQ_ALGORITHM_VERSION: u32 = 4; // 2026-09-18：同列等宽（逐行缩放字号）+ 整行入场 + 逐句换色
-/// 世界坐标量化：1/64 像素。
+const SEQ_ALGORITHM_VERSION: u32 = 4; // 2026-09-18: equal-width columns (font size scaled per row) + whole-row entrance + colour change per sentence
+/// World coordinate quantisation: 1/64 pixel.
 const SEQ_QUANT: f64 = 64.0;
 const SEQ_ZOOM_QUANT: f64 = 4096.0;
 const SEQ_TIME_QUANT: f64 = 1000.0;
-/// 世界最长边超过参考画布的这么多倍时报 `world-too-large`。
+/// Reports `world-too-large` when the longest side of the world exceeds this many times the reference canvas.
 const SEQ_WORLD_LIMIT: f64 = 6.0;
-/// typeMonkey.js `minWidthNum`：一行最短按两个字宽取景。
+/// typeMonkey.js `minWidthNum`: the shortest row is framed as two characters wide.
 const SEQ_MIN_ROW_EM: f64 = 2.0;
 /// typeMonkey.js `lineHeight`。
 const SEQ_LINE_HEIGHT: f64 = 1.12;
-/// 当前行屏幕字号 ≤ 画布高的 30%（两个字的行也能占满屏宽）。
+/// The current row's on-screen font size is ≤ 30% of the canvas height (even a two-character row can fill the screen width).
 const SEQ_ZOOM_FONT_CAP: f64 = 0.30;
-/// 行盒量化到 1/32：半宽 / 半高与段内累计高度都落在 1/64 网格上，行中心不用再四舍五入。
+/// Row boxes are quantised to 1/32: the half-width / half-height and the cumulative heights within a segment all land on the 1/64 grid, so row centres need no further rounding.
 const SEQ_ROW_QUANT: f64 = 32.0;
-/// 同列等宽：每行按「列宽 / 自然宽」缩放字号，夹在这个区间里（主角词行放得更开）。
-/// 量化到 1/16，免得浮点噪声换字号。
+/// Equal column width: each row's font size is scaled by “column width / natural width” and clamped to this range (hero-word rows may be scaled up further).
+/// Quantised to 1/16 so that floating-point noise does not change font sizes.
 const SEQ_ROW_SCALE_MIN: f64 = 0.75;
 const SEQ_ROW_SCALE_MAX: f64 = 2.0;
 const SEQ_ROW_SCALE_HERO_MAX: f64 = 2.75;
 const SEQ_ROW_SCALE_QUANT: f64 = 64.0;
-/// 防「快闪」：一块字在镜头前至少停这么久（到下一块首词开口为止）。不够的并进相邻块——
-/// 并完一行装不下就块内折行，折出来的每一行照样撑到列宽。
+/// Anti-flash: a block stays on the camera for at least this long (until the next block's first word starts speaking). Blocks that are too short are merged into an adjacent block. If the merged result does not fit on one row, it wraps within the block, and each wrapped line still fills the column width.
 const SEQ_MIN_BLOCK_DWELL_S: f64 = 0.7;
-/// 并块的上限：最多折成这么多行。
+/// Upper limit for merged blocks: at most this many lines.
 const SEQ_MERGE_MAX_LINES: f64 = 3.0;
-/// 单行装得下的上限（预算的倍数）：字号缩到 `SEQ_ROW_SCALE_MIN` 仍不超列宽。
+/// Upper limit for fitting on one row (a multiple of the budget): the row still does not exceed the column width even when the font size shrinks to `SEQ_ROW_SCALE_MIN`.
 const SEQ_LINE_OVERFLOW: f64 = 1.0 / SEQ_ROW_SCALE_MIN;
 
-// ---------------------------------------------------------------- 确定性随机
+// ---------------------------------------------------------------- Deterministic random
 struct SeqRng(u64);
 
 impl SeqRng {
@@ -69,10 +61,10 @@ impl SeqRng {
     }
 }
 
-// ---------------------------------------------------------------- 选项
+// ---------------------------------------------------------------- Options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeqCameraMotion {
-    /// MonkeyCam Smooth：镜头在相邻两个焦点的整段间隔里飞，到达即 onset。
+    /// MonkeyCam Smooth: the camera flies across the whole interval between two adjacent focus points; onset is when it arrives.
     Smooth,
     /// MonkeyCam Stop and Go：`[onset − lead, onset − lead + travel]`。
     StopAndGo,
@@ -103,7 +95,7 @@ pub enum SeqEnding {
     OverviewIfRoom,
 }
 
-/// 画幅档的排版 token（设计稿 §7.1；描述符 `layoutTokens.<aspect>` 同一份数）。
+/// Typography tokens for each aspect-ratio tier (design doc §7.1; the descriptor's `layoutTokens.<aspect>` is the same data).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SeqLayoutTokens {
     pub viewport: [f64; 4],
@@ -134,8 +126,7 @@ pub fn caption_sequence_layout_tokens(width: u32, height: u32) -> SeqLayoutToken
     }
 }
 
-/// `wordAnimation.caption.options[].{kind:"object", key:"daoyazi"}.value` 解出来的用户参数。
-/// 缺的键取默认值；`preset` 先于显式键生效（显式键赢）。
+/// User parameters decoded from `wordAnimation.caption.options[].{kind:"object", key:"daoyazi"}.value`. Missing keys take their defaults; `preset` takes effect before explicit keys (explicit keys win).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaptionSequenceOptions {
     pub preset: String,
@@ -166,7 +157,7 @@ pub struct CaptionSequenceOptions {
     pub history_blocks: usize,
     pub history_opacity: f64,
     pub ending: SeqEnding,
-    /// `light` 预设的动感上限。
+    /// Motion ceiling of the `light` preset.
     pub intensity_cap: Option<f64>,
 }
 
@@ -237,7 +228,7 @@ fn seq_rect(value: Option<&Value>) -> Option<[f64; 4]> {
 }
 
 impl CaptionSequenceOptions {
-    /// 从 `options.daoyazi` 那份对象解出来（`None` / 非对象 = 全默认）。
+    /// Decoded from the `options.daoyazi` object (`None` / non-object = all defaults).
     pub fn from_value(value: Option<&Value>) -> Self {
         let mut out = Self::default();
         let Some(value) = value.filter(|value| value.is_object()) else {
@@ -332,7 +323,7 @@ impl CaptionSequenceOptions {
         out
     }
 
-    /// 字幕区域三档（§3.3）：`center` 跟画幅档 token；`bottom` / `full` 双语时收一截给译文行。
+    /// Three caption-region presets (§3.3): `center` follows the aspect-ratio tier token; `bottom` / `full` reserve a strip for the translation line in bilingual mode.
     pub fn viewport_fraction(&self, tokens: &SeqLayoutTokens, bilingual: bool) -> [f64; 4] {
         if let Some(explicit) = self.viewport {
             return explicit;
@@ -347,7 +338,7 @@ impl CaptionSequenceOptions {
     }
 }
 
-/// `DesignedCaption.options` 里倒鸭子那一条：`{kind:"object", key:"daoyazi", value:{…}}`。
+/// The Daoyazi entry in `DesignedCaption.options`: `{kind:"object", key:"daoyazi", value:{…}}`.
 pub fn caption_sequence_option_value(design: &DesignedCaption) -> Option<&Value> {
     design.options.iter().find_map(|option| {
         (option.get("key").and_then(Value::as_str) == Some("daoyazi")).then(|| {
@@ -359,7 +350,7 @@ pub fn caption_sequence_option_value(design: &DesignedCaption) -> Option<&Value>
     })
 }
 
-// ---------------------------------------------------------------- 输入
+// ---------------------------------------------------------------- Input
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeqRole {
     Normal,
@@ -377,8 +368,7 @@ pub struct CaptionSequenceCue {
     pub words: Vec<Word>,
 }
 
-/// 固定住的一行（§3.4「固定布局」）：中心与角度都是**段局部**世界像素——排版时其他行绕开它，
-/// 换一版也不动它。键是行首词 id（`SeqBlock::key`）。
+/// A row pinned in place (§3.4 “fixed layout”): its centre and angle are both **segment-local** world pixels. Other rows route around it during layout, and it does not move when a different version is generated. The key is the row's first word id (`SeqBlock::key`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SeqPin {
     pub center: [f64; 2],
@@ -390,9 +380,9 @@ pub struct CaptionSequenceInput {
     pub cues: Vec<CaptionSequenceCue>,
     pub roles: HashMap<String, SeqRole>,
     pub duration: f64,
-    /// 行首词 id → 固定位置。
+    /// First-word id → fixed position.
     pub pins: HashMap<String, SeqPin>,
-    /// 段键（段首词 id，`SeqSequence::key`）→ 这一段单独换的版号；缺省与整轨同种子。
+    /// Segment key (first-word id of the segment, `SeqSequence::key`) → the version number separately chosen for this segment; when absent, it uses the same seed as the whole track.
     pub seq_seeds: HashMap<String, u64>,
 }
 
@@ -410,7 +400,7 @@ pub struct CaptionSequenceEnv {
     pub options: CaptionSequenceOptions,
 }
 
-// ---------------------------------------------------------------- 计划
+// ---------------------------------------------------------------- Plan
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeqWord {
     pub id: String,
@@ -418,7 +408,7 @@ pub struct SeqWord {
     pub start: f64,
     pub end: f64,
     pub role: SeqRole,
-    /// 块内坐标（像素），`y` 是行盒顶。
+    /// In-block coordinates (pixels); `y` is the top of the row box.
     pub x: f64,
     pub y: f64,
     pub w: f64,
@@ -428,30 +418,30 @@ pub struct SeqWord {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeqBlock {
-    /// 首词 id。
+    /// First word id.
     pub key: String,
     pub cue_id: String,
     pub hero: bool,
     pub first_t: f64,
     pub last_t: f64,
-    /// 取景宽：文字宽与最短两字宽取大（typeMonkey.js 的 `rowWidth` 夹取）；镜头与枢转都按它。
+    /// Framing width: the larger of the actual text width and the minimum two-character width (clamped as in typeMonkey.js's `rowWidth`); the camera and the pivot both use it.
     pub w: f64,
     pub h: f64,
-    /// 实际文字宽。
+    /// Actual text width.
     pub text_w: f64,
     pub lines: usize,
     pub font: f64,
     pub words: Vec<SeqWord>,
-    /// 全局世界坐标。
+    /// Global world coordinates.
     pub center: [f64; 2],
-    /// 段局部世界坐标（`center − sequence.origin`）；固定布局写盘用它。
+    /// Segment-local world coordinates (`center − sequence.origin`); fixed layouts are written to disk using these.
     pub local_center: [f64; 2],
     pub rot_deg: f64,
-    /// 所属段（typeMonkey.js 的 tm-block）在本序列里的序号。
+    /// Index of the segment this block belongs to (typeMonkey.js's tm-block) within this sequence.
     pub para: usize,
-    /// 这一行是用户固定住的（位置 / 角度来自 `CaptionSequenceInput::pins`）。
+    /// This row is pinned by the user (its position / angle come from `CaptionSequenceInput::pins`).
     pub pinned: bool,
-    /// 这一行的底色档：0 主色 / 1 强调色 / 2 第二强调色。一句（cue）一档，按种子抽。
+    /// Colour tier of this row: 0 primary / 1 accent / 2 second accent. One tier per sentence (cue), drawn from the seed.
     pub tone: u8,
 }
 
@@ -521,9 +511,9 @@ impl SeqBox {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeqSequence {
     pub id: String,
-    /// 段键 = 段首词 id；`seq_seeds` 与「换给当前动画段」按它寻址。
+    /// Segment key = the segment's first word id; `seq_seeds` and “apply to the current animation segment” address by it.
     pub key: String,
-    /// 这一段单独换的版号（`None` = 跟整轨）。
+    /// The version number chosen separately for this segment (`None` = follows the whole track).
     pub seq_seed: Option<u64>,
     pub start: f64,
     pub end: f64,
@@ -531,7 +521,7 @@ pub struct SeqSequence {
     pub origin: [f64; 2],
     pub world: SeqBox,
     pub segments: Vec<SeqSegment>,
-    /// 镜头从这一刻起飞向本段（第一段：硬切）。
+    /// The camera starts flying toward this segment from this moment (first segment: hard cut).
     pub cut_at: f64,
     pub visible_until: f64,
 }
@@ -541,7 +531,7 @@ pub struct CaptionSequencePlan {
     pub seed: u64,
     pub width: u32,
     pub height: u32,
-    /// 字幕区域（像素）。
+    /// Caption region (pixels).
     pub viewport: [f64; 4],
     pub font_px: f64,
     pub density: f64,
@@ -550,7 +540,7 @@ pub struct CaptionSequencePlan {
     pub speed: f64,
     pub reveal: SeqReveal,
     pub zoom_log: bool,
-    /// 停走档：镜头段用 CSS `ease`（typeMonkey.js 的 transition 曲线）；平滑档用 smoothstep。
+    /// Hold-and-move tier: camera segments use CSS `ease` (typeMonkey.js's transition curve); the smooth tier uses smoothstep.
     pub css_ease: bool,
     pub entrance_dur: f64,
     pub entrance_pre: f64,
@@ -562,11 +552,11 @@ pub struct CaptionSequencePlan {
     pub duration: f64,
     pub sequences: Vec<SeqSequence>,
     pub diagnostics: Vec<String>,
-    /// 状态离散变化的时刻（升序去重）：段切换、镜头段起止、词入场起止、词起止、淡出结束。
+    /// Moments at which state changes discretely (ascending, de-duplicated): segment switches, camera segment start and end, word entrance start and end, word start and end, end of fade-out.
     pub events: Vec<f64>,
 }
 
-// ---------------------------------------------------------------- 文本
+// ---------------------------------------------------------------- Text
 fn seq_is_cjk(ch: char) -> bool {
     matches!(
         ch as u32,
@@ -654,8 +644,7 @@ fn seq_bez_d(t: f64, p1: f64, p2: f64) -> f64 {
     3.0 * mt * mt * p1 + 6.0 * mt * t * (p2 - p1) + 3.0 * t * t * (1.0 - p2)
 }
 
-/// CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1)：typeMonkey.js 的 transition / zoomIn 曲线。
-/// x(t) 用牛顿法反解，定步数，与原型 `cssEase` 逐位一致。
+/// CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1): typeMonkey.js's transition / zoomIn curve. x(t) is inverted with Newton's method using a fixed number of steps, bit-identical to the prototype `cssEase`.
 fn seq_css_ease(u: f64) -> f64 {
     let u = u.clamp(0.0, 1.0);
     if u <= 0.0 {
@@ -715,7 +704,7 @@ fn seq_overlap_area(a: &SeqBox, b: &SeqBox, margin: f64) -> f64 {
     if ox > 0.0 && oy > 0.0 { ox * oy } else { 0.0 }
 }
 
-// ---------------------------------------------------------------- 分块与块内排版
+// ---------------------------------------------------------------- Chunking and in-block layout
 struct SeqRawBlock {
     cue_id: String,
     words: Vec<Word>,
@@ -727,7 +716,7 @@ fn seq_chunk_cue(
     roles: &HashMap<String, SeqRole>,
     density: f64,
 ) -> Vec<SeqRawBlock> {
-    // 行是最小单位：预算 `2.5 + 5 × density` 个 CJK 单位（density 0.65 → 5.75）
+    // A row is the smallest unit: budget `2.5 + 5 × density` CJK units (density 0.65 → 5.75)
     let budget = 2.5 + 5.0 * density;
     let mut blocks = Vec::new();
     let mut current: Vec<Word> = Vec::new();
@@ -786,10 +775,7 @@ fn seq_layout_block(
     roles: &HashMap<String, SeqRole>,
     measure: &mut dyn FnMut(&str, f64) -> f64,
 ) -> SeqBlock {
-    // 行内：词左对齐一路排过去（不居中）。**同列等宽**：先按基础字号量自然宽，再把这一行
-    // 的字号缩放到列宽（`预算字数 × 基础字号`）——短句字大、长句字小，一列的左右两边都齐，
-    // 镜头不必逐行变焦。并过块（防快闪）的长块按字数均分折成几行，每行各自撑到列宽：看上去
-    // 与几个单行块一样，只是一起入场、镜头只停一次。
+    // Within a row: words are left-aligned and run on in sequence (not centred). **Equal column width**: first measure the natural width at the base font size, then scale this row's font size so the row fills the column width (`budget characters × base font size`). Short sentences get larger text and long sentences smaller text, so both edges of a column are flush and the camera does not need to zoom per row. Long blocks merged by anti-flash are split evenly by character count into several rows, each filling the column width on its own. Visually this looks like several single-row blocks, except they enter together and the camera stops only once.
     let budget = 2.5 + 5.0 * resolved.density;
     let col_w = resolved.font_px * budget;
     let units: Vec<f64> = raw
@@ -870,7 +856,7 @@ fn seq_layout_block(
         }
         text_w = text_w.max(seq_q(x, SEQ_QUANT));
         w = w.max(seq_q(x.max(SEQ_MIN_ROW_EM * base), SEQ_ROW_QUANT));
-        // 行高量化到 1/32：累计出来的 y 与块高都落在网格上
+        // Row height quantised to 1/32: the accumulated y and block heights all land on the grid
         y += seq_q(line_h, SEQ_ROW_QUANT);
         font = font.min(base);
     }
@@ -911,11 +897,7 @@ fn seq_layout_block(
     }
 }
 
-/// 防「快闪」：停留不足 [`SEQ_MIN_BLOCK_DWELL_S`] 的块并进相邻块。停留 = 下一块首词开口 −
-/// 本块首词开口（段尾块 = 末词收声 − 首词开口）。并块总是保住**较早**的那个入场时刻——
-/// 字可以早一点出来，不能念完了才出来。邻块挑字数少的那个（一样多取前一块），所以一串
-/// 都很短的块两两成对，不会滚成一大块。主角块不参与；换说话人不并；并完不超过
-/// [`SEQ_MERGE_MAX_LINES`] 行。
+/// Anti-flash: a block whose dwell is shorter than [`SEQ_MIN_BLOCK_DWELL_S`] is merged into an adjacent block. Dwell = next block's first-word onset − this block's first-word onset (for the segment's last block: last word's end − first word's onset). Merging always keeps the **earlier** entrance time: text may appear a little early, but must not appear only after it has been read. The neighbour chosen is the one with fewer characters (on a tie, the previous block), so a run of very short blocks pairs off two by two and does not roll up into one big block. Hero blocks are excluded; no merging across a speaker change; after merging, the result must not exceed [`SEQ_MERGE_MAX_LINES`] lines.
 fn seq_merge_flash_blocks(
     blocks: &mut Vec<SeqRawBlock>,
     budget: f64,
@@ -966,16 +948,16 @@ fn seq_merge_flash_blocks(
         if into_prev {
             let absorbed = blocks.remove(index);
             blocks[index - 1].words.extend(absorbed.words);
-            // 不前进：原来的下一块现在落在 index 上
+            // Do not advance: the original next block now lands on index
         } else {
             let absorbed = blocks.remove(index + 1);
             blocks[index].words.extend(absorbed.words);
-            // 不前进：并完再量一次本块
+            // Do not advance: re-measure this block after merging
         }
     }
 }
 
-// ---------------------------------------------------------------- 分段
+// ---------------------------------------------------------------- Segmentation
 struct SeqRawSequence {
     id: String,
     start: f64,
@@ -1035,7 +1017,7 @@ fn seq_segment(input: &CaptionSequenceInput, resolved: &SeqResolved) -> Vec<SeqR
     out
 }
 
-// ---------------------------------------------------------------- 世界排版
+// ---------------------------------------------------------------- World layout
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SeqSide {
     Right,
@@ -1051,14 +1033,14 @@ const SEQ_SIDES: [SeqSide; 4] = [
     SeqSide::Above,
 ];
 
-/// 「顺着走」的方向：段自己坐标系里的下方——行就是往这个方向叠的。
+/// The direction of “running along”: downward in the segment's own coordinate system; rows are stacked in this direction.
 fn seq_run_side_of(rot_deg: f64) -> SeqSide {
     let quarter = (seq_norm_rot(rot_deg) / 90.0).round() as usize;
     SEQ_SIDES[(1 + quarter) % 4]
 }
 
-/// 直角旋转一个向量（顺时针为正、y 向下），编译期不用三角函数。
-/// `0.0 - x` 而不是 `-x`：不出 -0，量化后的坐标逐位稳定。
+/// Rotates a vector by a right angle (clockwise positive, y down); no trigonometry at compile time.
+/// `0.0 - x` rather than `-x`: avoids producing -0, so quantised coordinates are bit-stable.
 fn seq_rot_vec(rot: f64, v: [f64; 2]) -> [f64; 2] {
     let r = seq_norm_rot(rot);
     if (r - 90.0).abs() < 1e-6 {
@@ -1072,8 +1054,8 @@ fn seq_rot_vec(rot: f64, v: [f64; 2]) -> [f64; 2] {
     }
 }
 
-/// 段（typeMonkey.js 的 tm-block）：若干行左对齐往下叠成一列，整段一个角度。
-/// `origin` 是段局部原点（首行左上角）的世界位置，`height` 是已叠的高度。
+/// Segment (typeMonkey.js's tm-block): several rows, left-aligned, stacked downward into a column; the whole segment shares one angle.
+/// `origin` is the world position of the segment-local origin (top-left corner of the first row), and `height` is the height already stacked.
 #[derive(Debug, Clone, Copy)]
 struct SeqPara {
     origin: [f64; 2],
@@ -1103,9 +1085,9 @@ impl SeqPara {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SeqPivot {
-    /// 绕上一行**左下角**，新段顺时针转 90°，新首行的左下角就是那个角。
+    /// Pivoting around the **bottom-left corner** of the previous row, the new segment turns 90° clockwise, so the new first row's bottom-left corner is that corner.
     Lb,
-    /// 绕上一行**右下角**，新段逆时针转 90°，新首行的右下角就是那个角。
+    /// Pivoting around the **bottom-right corner** of the previous row, the new segment turns 90° counter-clockwise, so the new first row's bottom-right corner is that corner.
     Rb,
 }
 
@@ -1118,7 +1100,7 @@ impl SeqPivot {
     }
 }
 
-/// 枢转（typeMonkey.js 的 `rotate: 'lb' | 'rb'`）。角取的是取景宽（`w`）的角。
+/// Pivot (typeMonkey.js's `rotate: 'lb' | 'rb'`). The corner is taken from the framing width (`w`).
 fn seq_pivot_para(para: &SeqPara, prev_w: f64, w: f64, h: f64, dir: SeqPivot) -> SeqPara {
     let (pivot_local, rot, anchor) = match dir {
         SeqPivot::Lb => ([0.0, para.height], para.rot + 90.0, [0.0, h]),
@@ -1141,7 +1123,7 @@ struct SeqWorldLayout {
     last_rot: f64,
 }
 
-/// 行种子串与原型 `layoutWorld` 同：`recipe|alg|seed|seqSeed|sourceId|clipId|key`，段版号缺省是空槽。
+/// The row seed string matches the prototype `layoutWorld`: `recipe|alg|seed|seqSeed|sourceId|clipId|key`; the segment version defaults to an empty slot.
 fn seq_block_seed(resolved: &SeqResolved, seq_seed: Option<u64>, key: &str) -> u64 {
     let seq_seed = seq_seed.map(|n| n.to_string()).unwrap_or_default();
     let text = format!(
@@ -1151,17 +1133,13 @@ fn seq_block_seed(resolved: &SeqResolved, seq_seed: Option<u64>, key: &str) -> u
     render_raster::drawop::fnv1a64(text.as_bytes())
 }
 
-/// 世界排版（与原型 `layoutWorld` 同步）：行一行一行地进来——
-/// 1. 平常顺着当前段往下叠；
-/// 2. 上次转向之后至少隔了 `turn_every` 行时，用行种子抽一次「转不转」：到句读或 cue 边界处
-///    概率 `0.55 × min(intensity / 60, 1.6)`，行中间 `0.2 × …`（`max_turn_deg < 90` 恒否）；转的话先抽方向
-///    （70% 与上一次相反），撞到已有行就换另一边；
-/// 3. 顺着叠会撞上别的段时，节流允许就转，不允许就把新段**跳**到世界包围盒外顺着走的那一侧
-///    （隔 0.6 个视口），角度不变——不接受重叠。
-/// 种子只在「转不转」「往哪转」两处进入。
+/// World layout (kept in sync with the prototype `layoutWorld`): rows come in one at a time —
+/// 1. Normally, stack downward along the current segment.
+/// 2. Once at least `turn_every` rows have passed since the last turn, use the row seed to decide once whether to turn. At a punctuation or cue boundary the probability is `0.55 × min(intensity / 60, 1.6)`; mid-row it is `0.2 × …` (when `max_turn_deg < 90` it is always no). If turning, first draw the direction (70% opposite to the previous one); if that would hit an existing row, use the other side.
+/// 3. When stacking along would collide with another segment and throttling allows, turn. If throttling does not allow, **jump** the new segment outside the world bounding box, on the side it was running toward (0.6 viewports away), with the angle unchanged. Overlap is not accepted.
+/// The seed enters at only two points: “whether to turn” and “which way to turn”.
 ///
-/// 固定住的行（`pins`）先登记进占位表：别的行绕开它；轮到它时按固定的位置 / 角度落下，
-/// 并把段起点接到它身上（后面的行顺着它往下叠）——与原型同法。
+/// Pinned rows (`pins`) are first registered in the occupancy table, so other rows route around them. When their turn comes they are placed at the fixed position and angle, and the segment start is attached to them (later rows stack downward from them), the same as the prototype.
 fn seq_layout_world(
     seq_id: &str,
     seq_seed: Option<u64>,
@@ -1208,7 +1186,7 @@ fn seq_layout_world(
         let turn_roll = rng.unit();
         let dir_roll = rng.unit();
         let tone_roll = rng.unit();
-        // 逐句换色：一句的各行同色；主色占一半，两档强调色不连着出
+        // Colour changes per sentence: all rows of a sentence share one colour; the primary colour takes half, and the two accent tiers do not appear back to back.
         if index == 0 || blocks[index - 1].cue_id != blocks[index].cue_id {
             let pick = if tone_roll < 0.5 {
                 0
@@ -1329,7 +1307,7 @@ fn seq_layout_world(
             since_turn += 1;
             continue;
         }
-        // 跳到世界外：同角度另起一段，放在顺着走的那一侧
+        // Jump out of the world: a new segment at the same angle, placed on the side it was running toward
         let world = placed
             .iter()
             .fold(SeqBox::empty(), |acc, (bx, _)| acc.union(bx));
@@ -1372,9 +1350,8 @@ fn seq_layout_world(
     }
 }
 
-/// 取景（typeMonkey.js 的 `scale = conWidth / rowWidth`）：镜头对着**当前行**，把它的取景宽
-/// 放成视口宽的 `fit`——短行大、长行小，每行都占同一屏宽；行盒居中。
-/// 可读性区间：屏幕字号 ≥ 画布高 3.2%，≤ 30%，且单行高 ≤ 视口高 × fit。
+/// Framing (typeMonkey.js's `scale = conWidth / rowWidth`): the camera is aimed at the **current row**, and its framing width is set to `fit` of the viewport width. Short rows appear larger and long rows smaller, so every row occupies the same screen width; the row box is centred.
+/// Readability range: screen font size ≥ 3.2% of canvas height and ≤ 30%, and a single row's height ≤ viewport height × fit.
 fn seq_focus_for(
     center: [f64; 2],
     rot: f64,
@@ -1386,8 +1363,8 @@ fn seq_focus_for(
     let [_, _, vw, vh] = resolved.viewport;
     let w = w.max(1e-6);
     let h = h.max(1e-6);
-    // `font` 是这一块里最小的那行字号：同列等宽之后各行字号不同，可读性区间按它算。
-    // 不从 `h` 反推——折行的块 h 是几行之和，镜头不转时传进来的 w / h 还是对调过的。
+    // `font` is the smallest row font size within this block. After equal-width column scaling the rows have different font sizes, and the readability range is computed from the smallest.
+    // Do not derive it back from `h`: a wrapped block's h is the sum of several lines, and when the camera is not turning, the w / h passed in are still swapped.
     let font = font.max(1e-6);
     let mut zoom = (vw * resolved.fit) / w;
     let zoom_min = (0.032 * resolved.height) / font;
@@ -1428,7 +1405,7 @@ fn seq_overview_for(world: &SeqBox, rot: f64, viewport: [f64; 4]) -> SeqPose {
     }
 }
 
-/// 把这一段的局部世界接到上一段旁边，返回全局原点。
+/// Attaches this segment's local world to the side of the previous segment and returns the global origin.
 fn seq_place_world(
     local: &SeqBox,
     first: &SeqBlock,
@@ -1489,7 +1466,7 @@ fn seq_place_world(
     ]
 }
 
-// ---------------------------------------------------------------- 相机
+// ---------------------------------------------------------------- Camera
 struct SeqCameraPlan {
     segments: Vec<SeqSegment>,
     end_pose: SeqPose,
@@ -1626,7 +1603,7 @@ fn seq_plan_camera(
     }
 }
 
-// ---------------------------------------------------------------- 编译
+// ---------------------------------------------------------------- Compile
 pub fn compile_caption_sequence(
     input: &CaptionSequenceInput,
     env: &CaptionSequenceEnv,
@@ -1698,7 +1675,7 @@ pub fn compile_caption_sequence(
     for index in 0..sequences.len() {
         let (before, rest) = sequences.split_at_mut(index);
         let seq = &mut rest[0];
-        // 列顺着上一段的末角度续接：新段第一行接着同一方向往下叠
+        // A column continues from the end angle of the previous segment: the new segment's first row keeps stacking in the same direction
         let prev_last_rot = before
             .last()
             .map_or(0.0, |prev| prev.blocks.last().expect("blocks").rot_deg);
@@ -1812,12 +1789,12 @@ pub fn compile_caption_sequence(
     }
 }
 
-// ---------------------------------------------------------------- 采样
+// ---------------------------------------------------------------- Sampling
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SeqFrameWord {
     pub opacity: f64,
     pub scale: f64,
-    /// 入场缩放的原点 x（块内坐标；y 是词盒中线）：逐词时是词的左边，整块时是行的左边。
+    /// The x origin of the entrance scale (in-block coordinates; y is the middle of the word box): for per-word entrance, the left edge of the word; for a whole block, the left edge of the row.
     pub pivot_x: f64,
     pub speaking: bool,
 }
@@ -1837,9 +1814,9 @@ pub struct SeqFrame {
     pub seq: Option<usize>,
     pub camera: Option<SeqPose>,
     pub blocks: Vec<SeqFrameBlock>,
-    /// 上一段还在淡出：`(段下标, alpha)`，用当前相机画。
+    /// The previous segment is still fading out: `(segment index, alpha)`, drawn with the current camera.
     pub fading: Option<(usize, f64)>,
-    /// 这一帧有连续变化（镜头在飞 / 词在入场 / 上一段在淡出）。
+    /// This frame has continuous change (the camera is flying / a word is entering / the previous segment is fading out).
     pub animating: bool,
 }
 
@@ -1854,7 +1831,7 @@ impl CaptionSequencePlan {
         index
     }
 
-    /// 某一段在 `t` 的相机姿态；返回值的第二项 = 镜头正在段内运动。
+    /// The camera pose of a segment at `t`; the second item of the return value = the camera is moving within the segment.
     pub fn pose_at(&self, seq: &SeqSequence, t: f64) -> (SeqPose, bool) {
         let Some(first) = seq.segments.first() else {
             return (
@@ -1880,7 +1857,7 @@ impl CaptionSequencePlan {
                 continue;
             }
             let u = (t - segment.t0) / (segment.t1 - segment.t0).max(1e-6);
-            // 三个通道同一条曲线：位置、角度、缩放同时起步、同时停下
+            // The three channels share one curve: position, angle and scale start together and stop together
             let e = if self.css_ease {
                 seq_css_ease(u)
             } else {
@@ -1925,9 +1902,8 @@ impl CaptionSequencePlan {
         frame.animating |= moving;
         let pop_dur = self.entrance_dur.max(1e-6);
         let pre = self.entrance_pre;
-        // typeMonkey.js `zoomIn`：从 `pop_from` 倍放大到 1，原点在左中，CSS `ease`；
-        // 动感 60 时从 0.3 倍起（它的 `scale(.3)`），动感 0 不缩放
-        // 整行入场（默认）柔一些：从 0.7 倍起，不逐字闪——中文一词一字，逐字弹太碎
+        // typeMonkey.js `zoomIn`: scales from `pop_from` up to 1, origin at the left-middle, CSS `ease`. At motion 60 it starts from 0.3× (its `scale(.3)`); at motion 0 there is no scaling.
+        // The whole-row entrance (the default) is softer: it starts from 0.7× and does not flash per word. Chinese has one character per word, so popping per character is too fragmented.
         let pop_depth = match self.reveal {
             SeqReveal::Word => 0.7,
             SeqReveal::Block => 0.3,
@@ -2005,14 +1981,14 @@ impl CaptionSequencePlan {
         frame
     }
 
-    /// 编辑态取景（§3.3）：整段世界摊平在视口里（角度归零），与原型 `overviewFor(seq.world, 0)` 同。
+    /// Editing-state framing (§3.3): the whole segment world is laid out flat in the viewport (angle reset to zero), the same as the prototype `overviewFor(seq.world, 0)`.
     pub fn overview_pose(&self, seq_index: usize) -> Option<SeqPose> {
         let seq = self.sequences.get(seq_index)?;
         Some(seq_overview_for(&seq.world, 0.0, self.viewport))
     }
 
-    /// 编辑态的一帧：总览相机、这一段**每一行**都实显（不看时间、不淡历史、不入场）。
-    /// 后画的行排在后面（`rank` 反着给，画序照旧按 rank 降序）。
+    /// One frame of the editing state: the overview camera, and **every row** of this segment is fully visible (ignores time, does not fade history, does not enter).
+    /// Rows drawn later are placed later (`rank` is assigned in reverse; the drawing order still follows rank, descending).
     pub fn overview_frame(&self, seq_index: usize) -> SeqFrame {
         let mut frame = SeqFrame {
             t: 0.0,
@@ -2049,8 +2025,7 @@ impl CaptionSequencePlan {
         frame
     }
 
-    /// 某一段每一行在画布上的四角（顺时针：左上、右上、右下、左下），用给定相机投影；
-    /// `center_override` 把某一行临时挪到别处（拖拽预览）。
+    /// The four corners of each row of a segment on the canvas (clockwise: top-left, top-right, bottom-right, bottom-left), projected with the given camera. `center_override` temporarily moves one row elsewhere (drag preview).
     pub fn row_quads(
         &self,
         seq_index: usize,
@@ -2086,7 +2061,7 @@ impl CaptionSequencePlan {
             .collect()
     }
 
-    /// 画布上一点落在哪一行（后画的优先——与画序一致）。
+    /// Which row a point on the canvas falls on (the one drawn later takes priority, consistent with the drawing order).
     pub fn pick_row(&self, seq_index: usize, camera: &SeqPose, point: [f64; 2]) -> Option<usize> {
         let quads = self.row_quads(seq_index, camera, None);
         quads
@@ -2097,20 +2072,20 @@ impl CaptionSequencePlan {
             .map(|(idx, _)| idx)
     }
 
-    /// 画布位移 → 世界位移（按相机的角度与缩放反投影）。
+    /// Canvas displacement → world displacement (back-projected through the camera's angle and zoom).
     pub fn canvas_delta_to_world(&self, camera: &SeqPose, delta: [f64; 2]) -> [f64; 2] {
         let zoom = camera.zoom.max(1e-9);
         let v = seq_rot_vec(camera.rot, [delta[0] / zoom, delta[1] / zoom]);
         [v[0], v[1]]
     }
 
-    /// 下一次离散状态变化（严格晚于 `t`）。
+    /// The next discrete state change (strictly later than `t`).
     pub fn next_event_after(&self, t: f64) -> Option<f64> {
         let index = self.events.partition_point(|event| *event <= t + 1e-9);
         self.events.get(index).copied()
     }
 
-    /// 相机矩阵：世界 → 画布。`T(视口中心) · S(zoom) · R(−rot) · T(−cam)`。
+    /// Camera matrix: world → canvas. `T(viewport centre) · S(zoom) · R(−rot) · T(−cam)`.
     pub fn camera_transform(&self, camera: &SeqPose) -> Transform {
         let [vx, vy, vw, vh] = self.viewport;
         Transform::from_translate(-camera.x as f32, -camera.y as f32)
@@ -2126,7 +2101,7 @@ impl CaptionSequencePlan {
     }
 }
 
-/// 凸四边形内点判定（同向叉积）。
+/// Point-in-convex-quadrilateral test (same-direction cross products).
 fn seq_point_in_quad(p: [f64; 2], quad: &[[f64; 2]; 4]) -> bool {
     let mut sign = 0i8;
     for i in 0..4 {
@@ -2153,12 +2128,12 @@ fn seq_point_in_quad(p: [f64; 2], quad: &[[f64; 2]; 4]) -> bool {
 }
 
 impl SeqBlock {
-    /// 块矩阵：块内坐标 → 世界。`T(center) · R(rot) · T(−w/2, −h/2)`。
+    /// Block matrix: in-block coordinates → world. `T(center) · R(rot) · T(−w/2, −h/2)`.
     pub fn transform(&self) -> Transform {
         self.transform_at(self.center)
     }
 
-    /// 同 [`Self::transform`]，但中心换成给定的世界坐标（拖拽预览）。
+    /// Same as [`Self::transform`], but the centre is replaced by the given world coordinates (drag preview).
     pub fn transform_at(&self, center: [f64; 2]) -> Transform {
         Transform::from_translate((-self.w / 2.0) as f32, (-self.h / 2.0) as f32)
             .post_concat(Transform::from_rotate(self.rot_deg as f32))
@@ -2170,8 +2145,7 @@ impl SeqBlock {
 }
 
 impl SeqWord {
-    /// 入场缩放：绕 `(pivot_x, 词盒中线)` 放大 `scale`（块内坐标）——typeMonkey.js 的
-    /// `transform-origin: left center`。
+    /// Entrance scale: enlarges by `scale` around `(pivot_x, middle of the word box)` (in-block coordinates), the equivalent of typeMonkey.js's `transform-origin: left center`.
     pub fn pop_transform(&self, scale: f64, pivot_x: f64) -> Transform {
         if (scale - 1.0).abs() < 1e-6 {
             return Transform::identity();
@@ -2184,7 +2158,7 @@ impl SeqWord {
     }
 }
 
-/// 「换一版」的下一枚种子（LCG 一步；与原型 `reseed` 同式）。
+/// The next seed for “reshuffle” (one LCG step; the same formula as the prototype `reseed`).
 pub fn caption_sequence_reseed(seed: u64) -> u64 {
     ((seed & 0xFFFF_FFFF) * 1_103_515_245 + 12345) % 2_147_483_647
 }
@@ -2258,7 +2232,7 @@ mod caption_sequence_tests {
         let seq0 = &base.sequences[0];
         assert!(seq0.blocks.len() >= 3, "demo has several rows");
         let key = seq0.blocks[2].key.clone();
-        // 把第三行钉到远离自动排版的位置、竖过来
+        // Move the third row to a spot far from automatic layout, and make it vertical
         let pin = SeqPin {
             center: [900.0, -300.0],
             rot_deg: 90.0,
@@ -2278,11 +2252,11 @@ mod caption_sequence_tests {
             0,
             "auto rows must not overlap the pinned row"
         );
-        // 后面的行顺着钉住的行往下叠（同一段、同角度）
+        // Later rows stack downward from the pinned row (same segment, same angle)
         let next = &seq.blocks[3];
         assert_eq!(next.para, row.para);
         assert_eq!(next.rot_deg, row.rot_deg);
-        // 另一段照常排（世界续接跟着上一段末角度走，位置可以不同，行数与键不变）
+        // Another segment is laid out as usual (world continuation follows the end angle of the previous segment). Its position may differ, but the row count and keys stay the same.
         let keys = |s: &SeqSequence| s.blocks.iter().map(|b| b.key.clone()).collect::<Vec<_>>();
         assert_eq!(keys(&pinned.sequences[1]), keys(&base.sequences[1]));
         assert!(pinned.sequences[1].blocks.iter().all(|b| !b.pinned));
@@ -2359,7 +2333,7 @@ mod caption_sequence_tests {
             assert_eq!(p.pick_row(0, &camera, [cx, cy]), Some(idx));
         }
         assert_eq!(p.pick_row(0, &camera, [-50.0, -50.0]), None);
-        // 拖拽预览：中心换掉后四角整体平移
+        // Drag preview: after the centre is replaced, the four corners shift as a whole
         let moved = p.row_quads(
             0,
             &camera,
@@ -2466,7 +2440,7 @@ mod caption_sequence_tests {
             .expect("hero block");
         assert_eq!(hero.words.len(), 1);
         assert_eq!(hero.words[0].id, "c3:2");
-        // 重点词单独成行，字号由「撑满列宽」定，封顶 SEQ_ROW_SCALE_HERO_MAX
+        // A hero word on its own row; its font size is set by “fill the column width”, capped at SEQ_ROW_SCALE_HERO_MAX
         assert!(hero.font > 36.0 * 1.5, "{}", hero.font);
         assert!(hero.font <= 36.0 * SEQ_ROW_SCALE_HERO_MAX + 1e-9);
     }
@@ -2488,7 +2462,7 @@ mod caption_sequence_tests {
                 scale * SEQ_ROW_SCALE_QUANT,
                 (scale * SEQ_ROW_SCALE_QUANT).round()
             );
-            // 没碰到上下限的行：文字宽与列宽差不到一档量化
+            // Rows that do not hit the upper or lower limit: the text width and column width differ by less than one quantisation step
             if scale > SEQ_ROW_SCALE_MIN && scale < cap {
                 let natural = block.text_w / scale;
                 assert!(
@@ -2561,7 +2535,7 @@ mod caption_sequence_tests {
     #[test]
     fn words_pop_in_before_their_onset_and_fade_the_previous_sequence() {
         let plan = plan(137);
-        // 默认整行入场：一行的词共用行首时刻与行左缘原点，从 0.7 倍起，不标「正在说」
+        // Default whole-row entrance: the words of a row share the row's start time and left-edge origin, starting from 0.7×; no “currently speaking” marking
         assert_eq!(plan.reveal, SeqReveal::Block);
         let (row_idx, row) = plan.sequences[0]
             .blocks
@@ -2705,7 +2679,7 @@ mod caption_sequence_tests {
                 assert!(block.lines >= 1 && block.lines as f64 <= SEQ_MERGE_MAX_LINES);
                 assert_eq!(block.words[0].x, 0.0);
                 assert_eq!(block.words[0].y, 0.0);
-                // 行内从左往右不回头；换行时 x 归零、y 往下走一个行高
+                // Within a row, move left to right and never go back; on wrap, x resets to zero and y moves down one row height
                 let mut lines = 1;
                 for pair in block.words.windows(2) {
                     if pair[1].y == pair[0].y {
@@ -2731,7 +2705,7 @@ mod caption_sequence_tests {
                 assert_eq!(block.h * SEQ_ROW_QUANT, (block.h * SEQ_ROW_QUANT).round());
             }
         }
-        // 一个字的行：取景宽夹到两个字宽，文字宽照实
+        // A one-character row: the framing width is clamped to two character widths; the text width is as measured
         let one = cue("one", 0.0, 1.0, "a", &["走"]);
         let raw = SeqRawBlock {
             cue_id: one.id.clone(),
@@ -2751,7 +2725,7 @@ mod caption_sequence_tests {
             options: CaptionSequenceOptions::default(),
         };
         let row = seq_layout_block(&raw, &resolved, &HashMap::new(), &mut measure);
-        // 一个字撑不满列宽：字号顶到 SEQ_ROW_SCALE_MAX
+        // A single character does not fill the column width: the font size is capped at SEQ_ROW_SCALE_MAX
         assert_eq!(row.font, 36.0 * SEQ_ROW_SCALE_MAX);
         assert_eq!(row.text_w, row.font);
         assert_eq!(row.w, SEQ_MIN_ROW_EM * row.font);
@@ -2764,7 +2738,7 @@ mod caption_sequence_tests {
         let tail = chars("后面拖了一个字吗");
         CaptionSequenceInput {
             cues: vec![
-                // 13 个字 1.3 s：按预算切成 5 / 5 / 3，每行只有 0.5 s 上下
+                // 13 characters, 1.3 s: split by budget into 5 / 5 / 3, so each row gets only about 0.5 s
                 cue(
                     "f1",
                     0.0,
@@ -2772,7 +2746,7 @@ mod caption_sequence_tests {
                     "a",
                     &fast.iter().map(String::as_str).collect::<Vec<_>>(),
                 ),
-                // 8 个字 2.4 s：切成 5 / 3，尾巴「个字吗」…0.9 s，不算快闪
+                // 8 characters, 2.4 s: split into 5 / 3. The tail “个字吗” (“…个字吗”, a sentence-final particle phrase) runs 0.9 s, so it is not a flash
                 cue(
                     "f2",
                     1.4,
@@ -2780,7 +2754,7 @@ mod caption_sequence_tests {
                     "a",
                     &tail.iter().map(String::as_str).collect::<Vec<_>>(),
                 ),
-                // 一个字的短句 0.3 s，紧跟着下一句
+                // A one-character short sentence of 0.3 s, immediately followed by the next sentence
                 cue("f3", 3.9, 4.2, "a", &["哦"]),
                 cue("f4", 4.25, 6.0, "a", &["原来", "是", "这样", "啊"]),
             ],
@@ -2806,7 +2780,7 @@ mod caption_sequence_tests {
                     "{} 只停 {dwell}s",
                     block.key
                 );
-                // 并块保住较早的入场时刻，词序与词时间不动
+                // Merging keeps the earlier entrance time; word order and word timing are unchanged
                 assert_eq!(block.first_t, block.words[0].start);
                 for pair in block.words.windows(2) {
                     assert!(pair[1].start >= pair[0].start);
@@ -2817,7 +2791,7 @@ mod caption_sequence_tests {
             }
         }
         assert!(folded > 0, "并完装不下一行的块应当折行");
-        // 一个字都没丢
+        // No character is lost
         let words: usize = plan
             .sequences
             .iter()
@@ -2825,7 +2799,7 @@ mod caption_sequence_tests {
             .map(|block| block.words.len())
             .sum();
         assert_eq!(words, 13 + 8 + 1 + 4);
-        // 「哦」并进了后一句，没有单独闪一下
+        // “哦” (an interjection) was merged into the following sentence, so it does not flash on its own
         assert!(
             plan.sequences
                 .iter()
@@ -2874,7 +2848,7 @@ mod caption_sequence_tests {
                 }
                 let block = &seq.blocks[index];
                 assert_eq!([segment.to.x, segment.to.y], block.center);
-                // 上限按这一行自己的字号算：屏幕字号 ≤ 30% 画布高，行高 ≤ 视口高 × fit
+                // The upper limit is computed from this row's own font size: screen font size ≤ 30% of canvas height, and row height ≤ viewport height × fit
                 let cap = (SEQ_ZOOM_FONT_CAP * 540.0 / block.font).min(vh * plan.fit / block.h);
                 if segment.to.zoom >= cap - 1e-2 {
                     continue;
@@ -2916,7 +2890,7 @@ mod caption_sequence_tests {
         assert_eq!(seq_rot_vec(90.0, [1.0, 0.0]), [0.0, 1.0]);
         assert_eq!(seq_rot_vec(270.0, [1.0, 0.0]), [0.0, -1.0]);
         assert_eq!(seq_rot_vec(180.0, [1.0, 2.0]), [-1.0, -2.0]);
-        // 编译出来的段：同一段内相邻行左对齐紧贴往下叠；相邻段的角度差 ±90 或 0（跳段）
+        // Compiled segment: within one segment, adjacent rows stack downward, left-aligned and flush; the angle difference between adjacent segments is ±90 or 0 (a segment jump)
         let plan = plan(137);
         let mut turns = 0;
         for seq in &plan.sequences {

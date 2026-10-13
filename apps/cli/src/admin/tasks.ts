@@ -2,7 +2,7 @@ import { defineNoun } from './context.ts';
 import { M } from './tasks-copy.ts';
 import { formatContract, formatContractHistory, formatContractList, parseTasksArgs } from './tasks-output.ts';
 
-/** `cuccut tasks`：查看任务合同（架构设计 §3.2）。CLI 只读，不改合同。 */
+/** `cuccut tasks`: view task contracts (architecture design §3.2). Read-only in the CLI; does not change contracts. */
 export const tasks = defineNoun({
   name: 'tasks',
   get usage() {

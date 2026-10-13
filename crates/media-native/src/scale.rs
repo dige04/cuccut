@@ -1,33 +1,25 @@
-//! 与平台无关的尺寸推导与 CPU 重采样。
+//! Platform-independent size derivation and CPU resampling.
 //!
-//! 缩放的**快路径在平台层**：AVFoundation 的 `maximumSize` 与 CoreGraphics 的
-//! 位图上下文、Media Foundation 的 advanced video processing 都能在解码链路上
-//! 直接给出目标尺寸。本模块是收口：平台没照做（MF 常常只肯给原尺寸）时在 CPU 上
-//! 补一次重采样，保证 [`crate::extract_frame_rgba`] 的尺寸契约永远成立。
+//! The **fast path for scaling lives in the platform layer**: AVFoundation's `maximumSize`, CoreGraphics' bitmap context, and Media Foundation's advanced video processing can all produce the target size directly on the decode path. This module is the fallback: when a platform does not do so (MF often only agrees to return the original size), it performs one CPU resample to guarantee that the size contract of [`crate::extract_frame_rgba`] always holds.
 //!
-//! 滤波用**盒式（面积平均）**，缩略图场景足够：降采样时它就是最朴素的 area
-//! 平均（比 bilinear 抗锯齿更好），升采样时退化为最近邻。§15.1 下缩略图不是
-//! golden，不追求与 swscale 逐像素一致。
+//! The filter is **box (area-average)**, which is enough for thumbnails. When downsampling it is the plainest area average (better anti-aliasing than bilinear); when upsampling it degrades to nearest neighbor. Under §15.1, thumbnails are not golden, so pixel-exact agreement with swscale is not pursued.
 
 use crate::RgbaFrame;
 
-/// 源显示尺寸 + 目标宽度 → 目标高度（偶数对齐、至少 2）。
+/// Source display size + target width → target height (rounded to an even number, at least 2).
 ///
-/// 对齐 ffmpeg `scale=<w>:-2`：宽恰为 `target_width`，高按宽高比推出后吸附到
-/// 最近的偶数。偶数对齐是 4:2:0 色度采样的历史约束，这里保留它只为了让原生
-/// 路径与 ffmpeg 兜底路径给出同一个尺寸——同一个 filmstrip 里两条路径的格子
-/// 混着出现时，尺寸不能打架。
+/// Matches ffmpeg `scale=<w>:-2`: the width is exactly `target_width`, and the height is derived from the aspect ratio and then snapped to the nearest even number. Even alignment is a historical constraint of 4:2:0 chroma sampling. It is kept here only so that the native path and the ffmpeg fallback produce the same size. When cells from both paths appear mixed in one filmstrip, the sizes must not conflict.
 pub fn scaled_height(source_width: u32, source_height: u32, target_width: u32) -> u32 {
     if source_width == 0 || source_height == 0 || target_width == 0 {
         return 2;
     }
     let exact = f64::from(source_height) * f64::from(target_width) / f64::from(source_width);
     let even = (exact / 2.0).round().max(1.0);
-    // u32 上界：4K 级素材远够，极端宽高比也不会溢出。
+    // u32 upper bound: 4K-class material is far below it, and even extreme aspect ratios will not overflow.
     ((even as u32).min(u32::MAX / 2)) * 2
 }
 
-/// 盒式重采样到 `(width, height)`；尺寸已相符时直接克隆返回。
+/// Box-filter resample to `(width, height)`. If the size already matches, returns a clone directly.
 pub fn resize_rgba(frame: &RgbaFrame, width: u32, height: u32) -> RgbaFrame {
     if frame.width == width && frame.height == height {
         return frame.clone();
@@ -36,7 +28,7 @@ pub fn resize_rgba(frame: &RgbaFrame, width: u32, height: u32) -> RgbaFrame {
     let (target_width, target_height) = (width.max(1) as usize, height.max(1) as usize);
     let mut data = vec![0_u8; target_width * target_height * 4];
     for y in 0..target_height {
-        // 目标行 y 覆盖的源行区间 [y0, y1)；升采样时区间长度为 1（最近邻）。
+        // The source row interval [y0, y1) covered by target row y. When upsampling, the interval length is 1 (nearest neighbor).
         let y0 = y * source_height / target_height;
         let y1 = (((y + 1) * source_height).div_ceil(target_height)).max(y0 + 1);
         let y1 = y1.min(source_height);
@@ -71,12 +63,9 @@ pub fn resize_rgba(frame: &RgbaFrame, width: u32, height: u32) -> RgbaFrame {
     }
 }
 
-/// 顺时针旋转 `degrees`（只接受 0 / 90 / 180 / 270）。0 度直接克隆返回。
+/// Rotates clockwise by `degrees` (only 0 / 90 / 180 / 270 accepted). 0 degrees returns a clone directly.
 ///
-/// 与 Windows 单帧路径 `copy_rows` 的旋转规则同一条：`degrees` 是**把解码出来的
-/// 像素摆正到显示方向**需要顺时针转的角度，等价 ffmpeg CLI 的 autorotate。
-/// macOS 的顺序帧流用得上它——`AVAssetReaderTrackOutput` 不像
-/// `AVAssetImageGenerator` 那样有 `appliesPreferredTrackTransform`，摆正得自己来。
+/// Same rule as `copy_rows` in the Windows single-frame path: `degrees` is the clockwise angle needed to **turn the decoded pixels upright to the display orientation**, equivalent to ffmpeg CLI's autorotate. The macOS sequential frame stream needs it: `AVAssetReaderTrackOutput`, unlike `AVAssetImageGenerator`, has no `appliesPreferredTrackTransform`, so the orientation has to be handled here.
 pub fn rotate_rgba(frame: &RgbaFrame, degrees: u16) -> RgbaFrame {
     if degrees % 360 == 0 {
         return frame.clone();
@@ -114,15 +103,15 @@ mod tests {
 
     #[test]
     fn heights_follow_the_source_ratio_and_snap_to_even() {
-        // 16:9 的 1920x1080 缩到 168 宽：94.5 → 94（最近偶数）。
+        // 1920x1080 (16:9) scaled to width 168: 94.5 → 94 (nearest even).
         assert_eq!(scaled_height(1920, 1080, 168), 94);
         assert_eq!(scaled_height(1920, 1080, 320), 180);
         assert_eq!(scaled_height(320, 180, 320), 180);
-        // 竖屏。
+        // Portrait.
         assert_eq!(scaled_height(1080, 1920, 168), 298);
-        // 极端比例仍至少 2 像素高。
+        // Extreme ratios still get at least 2 pixels of height.
         assert_eq!(scaled_height(4000, 10, 84), 2);
-        // 退化输入不 panic。
+        // Degenerate input does not panic.
         assert_eq!(scaled_height(0, 0, 168), 2);
         assert_eq!(scaled_height(1920, 1080, 0), 2);
     }
@@ -133,15 +122,15 @@ mod tests {
         assert_eq!(resize_rgba(&frame, 2, 1), frame);
     }
 
-    /// 2x2 四色降到 1x1：盒式滤波给出四像素平均，alpha 强制不透明。
+    /// 2x2 with four colors reduced to 1x1: the box filter gives the average of the four pixels, and alpha is forced opaque.
     #[test]
     fn downsampling_averages_the_covered_source_box() {
         let frame = RgbaFrame::new(
             2,
             2,
             vec![
-                0, 0, 0, 255, // 黑
-                255, 255, 255, 255, // 白
+                0, 0, 0, 255, // Black
+                255, 255, 255, 255, // White
                 0, 0, 0, 255, //
                 255, 255, 255, 255, //
             ],
@@ -151,23 +140,23 @@ mod tests {
         assert_eq!(small.pixel(0, 0), Some([127, 127, 127, 255]));
     }
 
-    /// 顺时针 90 度：宽高互换，左上角像素转到右上角。
+    /// Clockwise 90 degrees: width and height swap, and the top-left pixel moves to the top-right.
     #[test]
     fn rotating_a_quarter_turn_clockwise_swaps_the_axes() {
-        // 2x1：左红右蓝。
+        // 2x1: red on the left, blue on the right.
         let frame = RgbaFrame::new(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).unwrap();
         let turned = rotate_rgba(&frame, 90);
         assert_eq!((turned.width, turned.height), (1, 2));
-        // 源 (0,0) → 目标 (0,0)；源 (1,0) → 目标 (0,1)。
+        // Source (0,0) → target (0,0); source (1,0) → target (0,1).
         assert_eq!(turned.pixel(0, 0), Some([255, 0, 0, 255]));
         assert_eq!(turned.pixel(0, 1), Some([0, 0, 255, 255]));
-        // 转四次回到原图；0 度是恒等。
+        // Four rotations return to the original image. 0 degrees is the identity.
         let full_circle = rotate_rgba(&rotate_rgba(&rotate_rgba(&turned, 90), 90), 90);
         assert_eq!(full_circle, frame);
         assert_eq!(rotate_rgba(&frame, 0), frame);
     }
 
-    /// 180 与 270 的坐标映射。
+    /// Coordinate mapping for 180 and 270.
     #[test]
     fn half_and_three_quarter_turns_map_corners_as_expected() {
         let frame = RgbaFrame::new(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).unwrap();
@@ -180,7 +169,7 @@ mod tests {
         assert_eq!(three.pixel(0, 1), Some([255, 0, 0, 255]));
     }
 
-    /// 升采样：每个目标像素落回唯一一个源像素（最近邻），左右两半各自纯色。
+    /// Upsampling: each target pixel falls back to exactly one source pixel (nearest neighbor), so the left and right halves are each a solid color.
     #[test]
     fn upsampling_keeps_solid_regions_solid() {
         let frame = RgbaFrame::new(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).unwrap();

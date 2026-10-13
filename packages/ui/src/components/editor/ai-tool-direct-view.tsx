@@ -59,7 +59,7 @@ const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap',
 const alertActions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 const note = style({ margin: 0, font: 'ui-xs', color: 'gray-600', lineHeight: '[1.5]' });
 const field = style({ width: 'full' });
-/** 模型写的正文：原样（Markdown 源文）、可选中，复制拿走的就是这一份。 */
+/** The body the model wrote: verbatim (Markdown source) and selectable; what copy takes is this exact text. */
 const output = style({
   margin: 0,
   padding: 12,
@@ -79,7 +79,7 @@ const doneRow = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui
 
 const runToast: AiToolRunDeps['toast'] = (kind, message) => ToastQueue[kind](message, { timeout: 5000 });
 
-/** 工具页挂上时把运行 store 绑到这条会话上（同 speaker-flow.tsx）。 */
+/** When the tool page mounts, bind the run store to this conversation (same as speaker-flow.tsx). */
 export function useBindAiToolRun(): void {
   const runtime = useRuntime();
   useEffect(
@@ -101,7 +101,7 @@ export interface DirectModel {
   options: ToolModelOption<TextModelInfo>[];
   selected: ToolModelOption<TextModelInfo> | null;
   select(option: ToolModelOption<TextModelInfo>): void;
-  /** 菜单与提示里写的名字。 */
+  /** The name shown in menus and hints. */
   name: string | null;
   ready: boolean;
   local: boolean;
@@ -109,9 +109,9 @@ export interface DirectModel {
 }
 
 /**
- * 这个工具直接调哪只文本模型：按工具记住的那只（还在菜单里就留着，哪怕现在不能用——页面给门卡），再是文本生成的默认值，
- * 再是第一只能用的。润色与章节要结构化输出，不支持的那几只照列、标原因、不能用。刷新过期译文走翻译流程，菜单同翻译设置页
- * （`translateModelOptions`：云端文本模型，要结构化输出）。
+ * Which text model this tool calls directly: the one remembered for the tool (kept while it is still in the menu, even if it cannot be used now — the page shows a gate), then the text-generation default,
+ * then the first one that can be used. Polishing and chapters need structured output: unsupported models are still listed, marked with a reason, and cannot be used. Refreshing stale translations goes through the translation flow, and the menu matches the translation settings page
+ * (`translateModelOptions`: cloud text models that need structured output).
  */
 export function useDirectModel(tool: AiToolKind | 'stale'): DirectModel {
   const view = useModels((s) => s.capabilities);
@@ -152,7 +152,7 @@ function providerGroups(options: readonly ToolModelOption<TextModelInfo>[]) {
   return out;
 }
 
-/** 提示词框底栏右边的文本模型选择（原型 tool-prompt.jsx `ToolModelPick`）：按服务商分组，不能用的写原因。 */
+/** The text-model picker on the right of the prompt box's bottom bar (prototype tool-prompt.jsx `ToolModelPick`): grouped by provider; models that cannot be used show the reason. */
 export function DirectModelPicker({ model }: { model: DirectModel }) {
   if (!model.options.length) {
     return <span className={note}>{C.modelNone}</span>;
@@ -188,7 +188,7 @@ export function DirectModelPicker({ model }: { model: DirectModel }) {
   );
 }
 
-/** 选中的模型不能用时框下的门卡：去连接、或换用能用的那只（同翻译页）。本机模型去本机模型页。`body` 说这个工具发给模型的是什么。 */
+/** The gate under the box when the selected model cannot be used: go connect, or switch to one that works (same as the translation page). Local models go to the local model page. `body` says what this tool sends to the model. */
 export function DirectModelGate({ model, body = C.modelGateBody }: { model: DirectModel; body?: string }) {
   const go = useShell((s) => s.go);
   if (!model.options.length) {
@@ -208,7 +208,7 @@ export function DirectModelGate({ model, body = C.modelGateBody }: { model: Dire
   }
   const selected = model.selected;
   if (selected && !selected.usable && (selected.local || selected.connected)) {
-    // 连上了但这只用不了（不支持结构化输出、本机模型没装好）：一行原因就够，菜单里能换。
+    // Connected but this one cannot be used (no structured output support, or the local model is not properly installed): one line of reason is enough; it can be switched in the menu.
     return <p className={note}>{selected.why}</p>;
   }
   return (
@@ -222,7 +222,7 @@ export function DirectModelGate({ model, body = C.modelGateBody }: { model: Dire
   );
 }
 
-// ---- 运行 ----
+// ---- Run ----
 
 export function DirectRunView({ run }: { run: AiToolRun }) {
   const jobs = useJobs((s) => s.jobs);
@@ -231,7 +231,7 @@ export function DirectRunView({ run }: { run: AiToolRun }) {
   const submitting = run.status === 'submitting' || !job || stale;
   const queued = !submitting && job.state === 'queued';
   const heading = submitting ? C.runSubmitting : queued ? C.runQueued : C.runRunning(run.model);
-  // 润色分批调模型：在跑的那一步报 `units` 进度（第几批）。
+  // Polishing calls the model in batches: the step that is running reports `units` progress (which batch).
   const step = job?.pipeline?.steps.find((s) => s.status === 'running');
   const progress = !submitting && step?.name === 'generate' && job?.progress?.unit === 'units' && job.progress.total ? job.progress : null;
   const pct = progress && progress.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : null;
@@ -257,9 +257,9 @@ export function DirectRunView({ run }: { run: AiToolRun }) {
   );
 }
 
-// ---- 结果 ----
+// ---- Result ----
 
-/** 只给结果的工具：正文原样、复制、完成（回到设置态，提示词框还在）。 */
+/** Tools that only give a result: body verbatim, copy, 「完成」 (Done) (back to the settings state; the prompt box is still there). */
 export function DirectResultView({ runKey: key, result, model }: { runKey: string; result: AiToolResult; model: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -304,7 +304,7 @@ export function DirectResultView({ runKey: key, result, model }: { runKey: strin
   );
 }
 
-/** 写进视频的工具：改了几处、一键撤销、完成。 */
+/** Tools that write into the video: how many places changed, one-click undo, 「完成」 (Done). */
 export function DirectReceiptView({ runKey: key, receipt }: { runKey: string; receipt: AiToolReceipt }) {
   const changes = receipt.summary.applied?.changes ?? 0;
   const text = !changes ? C.appliedNothing : receipt.tool === 'chapters' ? C.appliedChapters(changes) : C.appliedPolish(changes);
@@ -328,7 +328,7 @@ export function DirectReceiptView({ runKey: key, receipt }: { runKey: string; re
   );
 }
 
-/** 没跑完或被拒：原因、补救（去配模型）、从停下的那一步重试、去后台任务决定。 */
+/** Not finished or rejected: the reason, a remedy (go set up a model), retry from the step where it stopped, or decide in the background task. */
 export function DirectProblem({ runKey: key, problem }: { runKey: string; problem: AiToolProblem }) {
   const go = useShell((s) => s.go);
   const busy = useAiToolRun((s) => !!s.runs[key]);

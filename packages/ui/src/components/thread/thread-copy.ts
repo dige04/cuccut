@@ -14,9 +14,9 @@ import { pl } from './thread-copy.pl.ts';
 import { tr } from './thread-copy.tr.ts';
 import { vi } from './thread-copy.vi.ts';
 
-/** 会话线程（消息、步骤组、修改卡、复制按钮）的文案。英文写在这里，译文在 `thread-copy.zh-Hans.ts`。 */
+/** Copy for the session thread (messages, step groups, change cards, copy buttons). English is written here; the translations are in `thread-copy.zh-Hans.ts`. */
 const en = {
-  /** 名字后面括注说明，如「片段（3 个）」。 */
+  /** Parenthetical note after a name, e.g. “片段（3 个）” (Clips (3)). */
   withDetail: (text: string, detail: string) => `${text} (${detail})`,
   copy: 'Copy',
   copied: 'Copied',
@@ -44,7 +44,7 @@ const en = {
     aria: (name: string, detail: string) => `${name}, ${detail}`,
   },
   steps: {
-    /** 几步一起跑时，摘要行在那一步的类别名后面写的（`n` 是在跑的步数）。 */
+    /** When several steps run at once, the summary line writes this after the step's category name (`n` is the number of steps running). */
     more: (n: number) => `${n} running`,
     failed: (n: number) => `${n} failed`,
     thinking: 'Thinking',

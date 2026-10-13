@@ -19,7 +19,7 @@ import {
   type VideoInfoFacts,
 } from './video-info.ts';
 
-/** 语言名用注入的，不依赖运行环境的 Intl。 */
+/** Language names are injected, not taken from the runtime environment's Intl. */
 const NAMES: Record<string, string> = { zh: '中文', en: '英语', ja: '日语' };
 const languageName = (tag: string) => NAMES[tag] ?? tag;
 
@@ -32,7 +32,7 @@ function sequence(markers: Sequence['markers'] = []): Sequence {
     canvas: { width: 1920, height: 1080, workingSpace: 'srgb', background: { color: '#000000', alpha: 1 } },
     durationPolicy: { kind: 'derived' },
     tracks: [],
-    // 一条字幕把序列撑到 3 分 12 秒（30 fps 下 5760 帧）。
+    // One subtitle stretches the sequence to 3 min 12 s (5760 frames at 30 fps).
     items: [{ id: 'cap', type: 'caption', trackId: 's1', span: { fromFrame: 0, durationFrames: 5760 }, documentId: 'd_cap' }],
     animationBindings: [],
     transitions: [],
@@ -66,7 +66,7 @@ function doc(id: string, kind: string, language?: string): DocumentRecord {
 
 const LOCAL_ENGINE = { provider: 'local', bundleId: 'qwen3-asr-0.6b@mlx-4bit', models: { asr: { family: 'qwen3-asr', revision: 'abc' } }, backend: 'mlx' };
 
-/** 两位说话人、三段（换说话人就断段）。 */
+/** Two speakers, three segments (a change of speaker breaks the segment). */
 const speechBody = {
   schema: 'cuccut.speech/1',
   clock: 'source-asset',
@@ -115,10 +115,10 @@ describe('视频详情的行', () => {
     expect(sections(bare, editorExtras({ speakers: 0, chapters: 0, paragraphs: 0 }, []))[0]!.rows.map((r) => r.label)).toEqual(['媒体']);
     expect(contentsRow(0, 0, 0)).toBeNull();
     expect(translationRow(['  '])).toBeNull();
-    // 空分区连标题一起丢：没有来源信息就没有那个小标题；什么都没有时一个分区都不剩。
+    // An empty section drops its title too: with no source information there is no subtitle heading; when nothing is left, no section remains.
     expect(sections(bare).map((s) => s.title)).toEqual([VIDEO_INFO_SECTION.media]);
     expect(sections({ ...bare, media: null })).toEqual([]);
-    // 转写还没有时没有「转录」行；hero 认不出种类时只剩文件名。
+    // Without a transcript there is no “Transcription” row. If the hero cannot tell the kind, only the file name remains.
     const facts = editorFacts({ origin: 'derived', importedFrom: { originalName: 'mix.wav', importedAt: '' } }, null);
     expect(facts.transcript).toBeNull();
     expect(heroLine(facts.source)).toBe('mix.wav');
@@ -141,7 +141,7 @@ describe('视频详情的行', () => {
     expect(editor[0]!.rows[2]!.value).toBe('qwen3-asr-0.6b@mlx-4bit · 中文');
     expect(editor[0]!.rows[3]!.value).toBe('2 位说话人 · 1 章 · 3 段');
     expect(editor[0]!.rows[4]!.value).toBe('英语、日语');
-    // Space 那条路手上只有条目记录：没有转录、内容、译文，也没有来源信息。
+    // On the Space path, only the entry record is at hand: no transcript, content, translation, or source information.
     const card = sections(entryFacts({ kind: 'video', media: { durationSec: 192, width: 1920, height: 1080 } }, '口播剪辑', '/Users/me/口播剪辑.cuccut'));
     expect(card.map((s) => s.title)).toEqual([VIDEO_INFO_SECTION.media]);
     expect(card[0]!.rows.map((r) => `${r.label}=${r.value}`)).toEqual(['位置=/Users/me/口播剪辑.cuccut', '媒体=3:12 · 1920×1080']);
@@ -161,7 +161,7 @@ describe('视频详情的行', () => {
       '网址=https://kelang.example/ep42',
     ]);
     expect(meta.rows[4]!.mono).toBe(true);
-    // 日期不是八位数字就整行不出，不猜格式；缺的项各自省略。
+    // If the date is not an eight-digit number, the whole row is omitted. The format is not guessed; each missing item is omitted on its own.
     expect(prettyDate('2026-04-20')).toBeNull();
     const partial = editorFacts({ origin: 'link-import', source: { url: 'https://x.example/v', uploadDate: '2026-04-20' } });
     expect(sections(partial)[1]!.rows.map((r) => r.label)).toEqual(['网址']);
@@ -175,7 +175,7 @@ describe('视频详情的行', () => {
     expect(meta.rows[0]!.value).toBe('科浪访谈');
     expect(meta.rows[6]!.long).toBe(true);
     expect(copyText('t', null, [meta])).toContain('原简介: 第一段\n  第二段\n');
-    // 没改过名：原标题就是 hero 那行，不重复。
+    // Not renamed: the original title is the hero row, so it is not repeated.
     const same = snapshotFacts({ title: '科浪访谈', location: null, sequence: null, candidates: [{ asset: asset(described), speech: null }], speechBody: undefined, languageName });
     expect(sections(same)[0]!.rows.some((r) => r.label === '原标题')).toBe(false);
     expect(sections(same).flatMap((s) => s.rows.map((r) => r.label))).not.toContain('原标题');
@@ -205,7 +205,7 @@ describe('视频详情的行', () => {
     expect(short.startsWith('“The default way')).toBe(true);
     expect(short.endsWith('officer.mp4')).toBe(true);
     expect(elideMiddle('talk.mp4', HERO_NAME_MAX)).toBe('talk.mp4');
-    // 复制走完整值。
+    // Copy takes the full value.
     expect(heroLine({ kind: '本地文件', fileName: long })).toBe(`本地文件 · ${long}`);
   });
 
@@ -236,7 +236,7 @@ describe('视频详情的行', () => {
     expect(speechModel({ engine: 'whisper-large-v3' })).toBe('whisper-large-v3');
     expect(speechModel({ engine: null })).toBeNull();
     expect(speechModel(undefined)).toBeNull();
-    // 正文还没取到：转录行先只写语言。
+    // The body text has not been fetched yet: the transcription row shows only the language for now.
     const loading = snapshotFacts({
       title: 't',
       location: null,

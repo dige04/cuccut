@@ -1,53 +1,50 @@
-//! BCS1（CucCut Spectrum v1）：驱动 visualizer 元素像素的频谱缓存。
+//! BCS1 (CucCut Spectrum v1): the spectrum cache that drives the pixels of the visualizer element.
 //!
-//! 全部小端。header 40 字节，随后是 `frame_count` 个 640 字节定长帧：
+//! All little-endian. The header is 40 bytes, followed by `frame_count` fixed-length frames of 640 bytes each:
 //!
-//! | 偏移 | 大小 | 字段 |
+//! | Offset | Size | Field |
 //! | --- | --- | --- |
 //! | 0 | 4 | `magic` = `"BCS1"` |
 //! | 4 | 2 | `version` = 1 |
-//! | 6 | 2 | `flags`，bit0 = backend（0 = symphonia，1 = ffmpeg），其余保留为 0 |
+//! | 6 | 2 | `flags`, bit0 = backend (0 = symphonia, 1 = ffmpeg), other bits reserved and set to 0 |
 //! | 8 | 4 | `analysis_rate` = 60 |
 //! | 12 | 4 | `sample_rate` = 48000 |
 //! | 16 | 4 | `fft_size` = 1024 |
 //! | 20 | 4 | `time_bins` = 128 |
 //! | 24 | 4 | `freq_bins` = 512 |
 //! | 28 | 4 | `frame_count` |
-//! | 32 | 8 | `content_hash` = FNV-1a64(解码 PCM ‖ DSP 参数) |
+//! | 32 | 8 | `content_hash` = FNV-1a64(decoded PCM ‖ DSP parameters) |
 //!
-//! 每帧前 128 字节是时域行（中心化到 128，语义对齐 Web Audio 的
-//! `getByteTimeDomainData`：静音 ≈ 128），后 512 字节是频域行（dB 按 **canonical
-//! 窗 [-120, +40]** 线性映射到 0..255）。
+//! The first 128 bytes of each frame are the time-domain row (centered on 128, semantically aligned with Web Audio's `getByteTimeDomainData`: silence ≈ 128). The last 512 bytes are the frequency-domain row (dB is mapped linearly to 0..255 over the **canonical window [-120, +40]**).
 //!
-//! canonical 窗是唯一进缓存的 dB 窗：元素级的 `minDb` / `maxDb` / `smoothing` /
-//! `gain` 由 [`crate::remap`] 在 host preflight 重映射，一份缓存服务任意参数组合。
+//! The canonical window is the only dB window stored in the cache. The element-level `minDb` / `maxDb` / `smoothing` / `gain` are remapped by [`crate::remap`] during host preflight, so one cache serves any combination of parameters.
 
 use anyhow::{Result, bail};
 
 pub const MAGIC: &[u8; 4] = b"BCS1";
 pub const VERSION: u16 = 1;
 pub const HEADER_LEN: usize = 40;
-/// 分析帧率（Hz）。对齐 60 fps 预览的逐帧 `AnalyserNode` 采样节奏。
+/// Analysis frame rate (Hz). Aligned with the per-frame sampling cadence of the `AnalyserNode` in the 60 fps preview.
 pub const ANALYSIS_RATE: u32 = 60;
-/// visualizer 专用解码采样率。48 kHz 让前 64 个 FFT bin 覆盖 0–3 kHz、
-/// 全 512 个 bin 覆盖 0–24 kHz，与 Web Audio 参考链路一致。
+/// Decoding sample rate dedicated to the visualizer. 48 kHz lets the first 64 FFT bins cover 0–3 kHz and all 512 bins cover 0–24 kHz,
+/// consistent with the Web Audio reference chain.
 pub const SAMPLE_RATE: u32 = 48_000;
-/// 缓存层固定的 FFT 长度，**不随元素的 `fftSize` 变化**。
+/// FFT length fixed by the cache layer; **does not vary with the element's `fftSize`**.
 pub const FFT_SIZE: u32 = 1024;
 pub const TIME_BINS: u32 = 128;
 pub const FREQ_BINS: u32 = FFT_SIZE / 2;
-/// 每帧字节数 = 128 + 512。
+/// Bytes per frame = 128 + 512.
 pub const FRAME_LEN: usize = (TIME_BINS + FREQ_BINS) as usize;
-/// hop = `sample_rate / analysis_rate`，由分析帧率唯一确定。
+/// hop = `sample_rate / analysis_rate`, determined uniquely by the analysis frame rate.
 pub const HOP: u32 = SAMPLE_RATE / ANALYSIS_RATE;
-/// canonical dB 窗下沿。覆盖两组窗（-80/+40 与 -120/-10）的并集。
+/// Lower edge of the canonical dB window. Covers the union of the two window sets (-80/+40 and -120/-10).
 pub const CANONICAL_MIN_DB: f64 = -120.0;
-/// canonical dB 窗上沿。
+/// Upper edge of the canonical dB window.
 pub const CANONICAL_MAX_DB: f64 = 40.0;
-/// `flags` 里已定义的位；其余保留位必须为 0。
+/// The defined bits in `flags`; all other reserved bits must be 0.
 const FLAG_BACKEND_FFMPEG: u16 = 1 << 0;
 
-/// PCM 的来源解码器。跨后端**不承诺**逐位一致的 PCM，因此写进 header。
+/// The source decoder of the PCM. Bit-identical PCM across backends is **not guaranteed**, so it is written into the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpectrumBackend {
     Symphonia,
@@ -84,7 +81,7 @@ pub struct Bcs1Header {
 }
 
 impl Bcs1Header {
-    /// 冻结参数 + 本次的 backend、帧数与内容 hash。
+    /// Frozen parameters, plus this run's backend, frame count and content hash.
     pub fn new(backend: SpectrumBackend, frame_count: u32, content_hash: u64) -> Self {
         Self {
             version: VERSION,
@@ -99,12 +96,12 @@ impl Bcs1Header {
         }
     }
 
-    /// 内容 hash 的十六进制形式；进渲染指纹时用它，避免各处各写一份格式化。
+    /// Hexadecimal form of the content hash, used when feeding the render fingerprint, so that each place does not format it separately.
     pub fn content_hash_hex(&self) -> String {
         format!("{:016x}", self.content_hash)
     }
 
-    /// 频谱覆盖的秒数 = `frame_count / analysis_rate`。
+    /// Seconds covered by the spectrum = `frame_count / analysis_rate`.
     pub fn duration_seconds(&self) -> f64 {
         f64::from(self.frame_count) / f64::from(self.analysis_rate)
     }
@@ -123,7 +120,7 @@ impl Bcs1Header {
     }
 }
 
-/// 已校验的 BCS1 只读视图。所有取行方法都不复制字节。
+/// Validated read-only view of BCS1. All row-access methods copy no bytes.
 #[derive(Debug, Clone, Copy)]
 pub struct Bcs1View<'a> {
     header: Bcs1Header,
@@ -139,37 +136,35 @@ impl<'a> Bcs1View<'a> {
         self.header.frame_count as usize
     }
 
-    /// 第 `index` 帧的完整 640 字节；越界返回 `None`。
+    /// The full 640 bytes of frame `index`; returns `None` when out of range.
     pub fn frame(&self, index: usize) -> Option<&'a [u8]> {
         let start = index.checked_mul(FRAME_LEN)?;
         self.payload.get(start..start + FRAME_LEN)
     }
 
-    /// 第 `index` 帧的时域行（128 字节，静音 ≈ 128）。
+    /// The time-domain row of frame `index` (128 bytes, silence ≈ 128).
     pub fn time_row(&self, index: usize) -> Option<&'a [u8]> {
         self.frame(index).map(|frame| &frame[..TIME_BINS as usize])
     }
 
-    /// 第 `index` 帧的频域行（512 字节，canonical dB 窗）。
+    /// The frequency-domain row of frame `index` (512 bytes, canonical dB window).
     pub fn freq_row(&self, index: usize) -> Option<&'a [u8]> {
         self.frame(index).map(|frame| &frame[TIME_BINS as usize..])
     }
 
-    /// 秒 → 帧号：向下取整并钳制到有效范围。`frame_count` 为 0 时返回 `None`。
+    /// Seconds → frame number: round down and clamp to the valid range. Returns `None` when `frame_count` is 0.
     ///
-    /// 取整规则本身住在 [`frame_index_at`]——渲染期的 `VizTrack` 手上没有 BCS1
-    /// 字节，只有 `analysis_rate` 与帧数，两边必须落到同一个函数上。
+    /// The rounding rule itself lives in [`frame_index_at`]. The render-time `VizTrack` has no BCS1 bytes, only `analysis_rate` and the frame count, so both sides must go through the same function.
     pub fn frame_index_at(&self, seconds: f64) -> Option<usize> {
         frame_index_at(self.header.analysis_rate, self.frame_count(), seconds)
     }
 }
 
-/// **秒 → 帧号的唯一真相**（设计 ADR-E04）：`floor(t × analysis_rate)`，
-/// 再钳到 `0..frame_count-1`。不插值、不四舍五入。
+/// **The single source of truth for seconds → frame number** (design ADR-E04): `floor(t × analysis_rate)`,
+/// then clamped to `0..frame_count-1`. No interpolation, no rounding.
 ///
-/// 取整方向与 `quantize_time(t, fps) = floor(t·fps + 1e-9)/fps` 一致；插值会让
-/// 「同一帧渲染两次得到同一结果」依赖浮点结合律，因此被明确否掉。
-/// 非有限或非正的 `seconds` 一律落到帧 0：负时刻是调用方的越界，不是错误。
+/// The rounding direction matches `quantize_time(t, fps) = floor(t·fps + 1e-9)/fps`. Interpolation would make “rendering the same frame twice gives the same result” depend on floating-point associativity, so it was explicitly rejected.
+/// Non-finite or non-positive `seconds` all fall to frame 0: a negative time is an out-of-range input from the caller, not an error.
 pub fn frame_index_at(analysis_rate: u32, frame_count: usize, seconds: f64) -> Option<usize> {
     if frame_count == 0 {
         return None;
@@ -181,7 +176,7 @@ pub fn frame_index_at(analysis_rate: u32, frame_count: usize, seconds: f64) -> O
     Some((index as usize).min(frame_count - 1))
 }
 
-/// header + payload → BCS1 字节。payload 必须是 `frame_count × 640`。
+/// header + payload → BCS1 bytes. The payload must be `frame_count × 640`.
 pub fn encode(header: &Bcs1Header, payload: &[u8]) -> Result<Vec<u8>> {
     let expected = (header.frame_count as usize)
         .checked_mul(FRAME_LEN)
@@ -199,7 +194,7 @@ pub fn encode(header: &Bcs1Header, payload: &[u8]) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// BCS1 字节 → 只读视图。冻结参数逐项校验，保留位必须为 0。
+/// BCS1 bytes → read-only view. Frozen parameters are validated one by one; reserved bits must be 0.
 pub fn parse(bytes: &[u8]) -> Result<Bcs1View<'_>> {
     if bytes.len() < HEADER_LEN || &bytes[..4] != MAGIC {
         bail!("频谱不是 BCS1 格式");
@@ -262,7 +257,7 @@ pub fn parse(bytes: &[u8]) -> Result<Bcs1View<'_>> {
     })
 }
 
-/// 只读 header，不校验 payload 长度——渲染指纹只要内容 hash 时用它。
+/// Read-only header. Does not validate the payload length; the render fingerprint uses it only for the content hash.
 pub fn parse_header(bytes: &[u8]) -> Result<Bcs1Header> {
     Ok(parse(bytes)?.header())
 }
@@ -400,8 +395,8 @@ mod tests {
         assert_eq!(view.frame_index_at(f64::NAN), Some(0));
     }
 
-    /// 视图上的方法只是自由函数的转发——渲染期的 `VizTrack` 走的是自由函数，
-    /// 两条路必须逐个时刻给出同一个帧号（设计 ADR-E04「取整规则是契约的一部分」）。
+    /// The methods on the view only forward to the free functions. The render-time `VizTrack` goes through the free functions,
+    /// and the two paths must give the same frame number at every moment (design ADR-E04: “the rounding rule is part of the contract”).
     #[test]
     fn the_view_method_forwards_to_the_free_function() {
         let bytes = encode(

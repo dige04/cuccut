@@ -15,26 +15,26 @@ import { M, oneDecimal } from './tools-tts-copy.ts';
 import { VOICE_CLONE_PROVIDERS } from './voices-library.ts';
 
 /**
- * 生成语音工作台（设计稿 tool-tts.jsx 的云端部分、model-tools.js、model-cloud-tts.js、model-tts.js）：
- * 表单、校验、请求与记录卡。只认 `generation-options` 收的参数：音色、语言、格式、风格说明、语速、种子；
- * 文字超过模型上限时 Runtime 在提交时拒绝（不切段），这里先拦下来说清楚。
+ * Speech generation workspace (the cloud part of design mockup tool-tts.jsx, plus model-tools.js, model-cloud-tts.js, model-tts.js):
+ * form, validation, request and record card. It accepts only the parameters that `generation-options` takes: voice, language, format, style instruction, speaking rate, seed;
+ * when the text exceeds the model's limit, the Runtime rejects it at submit (it does not split it), so it is caught here first with a clear message.
  */
 
 export type SpeechOption = ToolModelOption<SpeechModelInfo>;
 
-/** 没写文字时那一句（设计稿 tool-tts.jsx `EMPTY_TEXT`）：按下「生成语音」之前不念它。 */
+/** The sentence used when no text is written (design mockup tool-tts.jsx `EMPTY_TEXT`): it is not spoken before 「生成语音」 (Generate speech) is pressed. */
 export function emptyText(): string {
   return M.emptyText;
 }
 
-/** 「填一段示例」（设计稿的 intro 示例句）：按要念的语言挑，不随界面语言变。 */
+/** 「填一段示例」 (Fill in a sample): the sample sentence from the design mockup's intro, chosen by the language to be spoken, and not changed by the UI language. */
 export const TTS_SAMPLES = {
-  // i18n-ignore: 中文示例句，给会念中文的模型念，按念的语言挑选
+  // i18n-ignore: Chinese sample sentence, spoken by models that can speak Chinese; chosen by the language being spoken
   zh: '欢迎使用 CucCut！转录、翻译、配音，全都在你自己的电脑上完成。',
   en: 'Welcome to CucCut! Transcribe, translate and voice over, all on your own machine.',
 } as const;
 
-/** 现成的念法（设计稿 model-tools.js `VIBES`）：点一下把这句填进「风格」。 */
+/** Ready-made delivery styles (design mockup model-tools.js `VIBES`): clicking one fills this sentence into 「风格」 (Style). */
 function vibe<K extends keyof typeof M.vibes>(key: K) {
   return {
     key,
@@ -49,29 +49,29 @@ function vibe<K extends keyof typeof M.vibes>(key: K) {
 export const VIBES = [vibe('radio'), vibe('launch'), vibe('bedtime'), vibe('news'), vibe('teach'), vibe('vlog')] as const;
 
 /**
- * 音色的选法：模型的默认音色、它列出的某个预置音色、手填供应商账号里的音色 ID（模型收 `custom` 时），
- * 或我的声音里的一只（`library:<条目 ID>`：Runtime 用它在所选 Provider 上的有效克隆合成）。
+ * How a voice is chosen: the model's default voice, one of the preset voices it lists, a voice ID typed in by hand from the provider account (when the model accepts `custom`),
+ * or one of 「我的声音」 (My voices) (`library:<entry ID>`: the Runtime synthesizes with its valid clone on the selected Provider).
  */
 export type VoiceKey = 'default' | 'custom' | `preset:${string}` | `library:${string}`;
 
-/** 我的声音（用户库 `voices` 的摘要）；null 为还没读到。 */
+/** My voices (summary of the user library's `voices`); null when not yet read. */
 export type MyVoices = readonly LibraryEntrySummary[] | null;
 
 export interface TtsDraft {
   text: string;
-  /** `providerId/modelId`；null 为还没选。 */
+  /** `providerId/modelId`; null when not yet chosen. */
   model: string | null;
   voice: VoiceKey;
   customVoice: string;
-  /** 风格说明（只在模型收 `instructions` 时发）。 */
+  /** Style instruction (sent only when the model accepts `instructions`). */
   instructions: string;
-  /** 语速；null 为没拨过（不传，用供应商的默认）。 */
+  /** Speaking rate; null when it has not been set (not sent, so the provider's default is used). */
   speed: number | null;
-  /** 种子（只在模型收 `seed` 时发）；空为不给。 */
+  /** Seed (sent only when the model accepts `seed`); empty means not given. */
   seed: string;
-  /** null 为模型的默认格式。 */
+  /** null means the model's default format. */
   format: SpeechFormat | null;
-  /** BCP 47；空为自动（不传）。 */
+  /** BCP 47; empty means automatic (not sent). */
   language: string;
 }
 
@@ -87,9 +87,9 @@ export const BLANK_TTS: TtsDraft = {
   language: '',
 };
 
-// ---- 文字 ----
+// ---- Text ----
 
-/** 分段（设计稿 model-tts.js `segments`）：句号、问号、感叹号后，英文句点加空白后，或换行。 */
+/** Segmenting (design mockup model-tts.js `segments`): after a full stop, question mark or exclamation mark; after an English period followed by whitespace; or at a line break. */
 export function segments(text: string): string[] {
   return text
     .split(/(?<=[。！？!?])\s*|(?<=\.)\s+|\n+/)
@@ -99,7 +99,7 @@ export function segments(text: string): string[] {
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/g;
 
-/** 念出来大约多少秒（设计稿 model-tts.js `estimateDuration`）：汉字 4.2 字 / 秒，英文 2.6 词 / 秒，每个停顿 0.18 秒。 */
+/** Estimated spoken duration in seconds (design mockup model-tts.js `estimateDuration`): 4.2 Chinese characters per second, 2.6 English words per second, 0.18 seconds per pause. */
 export function estimateDuration(text: string): number {
   const t = text.trim();
   if (!t) return 0;
@@ -109,22 +109,22 @@ export function estimateDuration(text: string): number {
   return Number((cjk / 4.2 + latinWords / 2.6 + pauses * 0.18).toFixed(1));
 }
 
-/** 字数行（设计稿 model-tools.js `textStats`）：「128 / 4096 字 · 3 段 · 约 12.4 秒」。 */
+/** Character count line (design mockup model-tools.js `textStats`): 「128 / 4096 字 · 3 段 · 约 12.4 秒」 (128 / 4096 characters · 3 segments · about 12.4 seconds). */
 export function textStats(text: string, max: number): string {
   const t = text.trim();
   if (!t) return M.statsEmpty(max);
   return M.stats(codePoints(t), max, segments(t).length, oneDecimal(estimateDuration(t)));
 }
 
-/** 示例句：按选的语言，自动时按模型会不会念中文。 */
+/** Sample sentence: by the selected language; when automatic, by whether the model can speak Chinese. */
 export function sampleText(draft: Pick<TtsDraft, 'language'>, info: Pick<SpeechModelInfo, 'languages'> | null): string {
   const lang = draft.language ? primaryLanguage(draft.language) : info && !speaks(info.languages, 'zh') ? 'en' : 'zh';
   return lang === 'zh' ? TTS_SAMPLES.zh : TTS_SAMPLES.en;
 }
 
-// ---- 念法 ----
+// ---- Delivery styles ----
 
-/** 点一张念法卡：同一张再点一次清空；文字框空着就顺手填一段示例（设计稿 `pickVibe`）。 */
+/** Clicking a delivery style card: clicking the same card again clears it; if the text box is empty, a sample is filled in at the same time (design mockup `pickVibe`). */
 export function pickVibe(draft: TtsDraft, key: string, info: SpeechModelInfo | null): Partial<TtsDraft> {
   const vibe = VIBES.find((v) => v.key === key);
   if (!vibe) return {};
@@ -132,14 +132,14 @@ export function pickVibe(draft: TtsDraft, key: string, info: SpeechModelInfo | n
   return draft.text.trim() ? { instructions: vibe.style } : { instructions: vibe.style, text: sampleText(draft, info) };
 }
 
-/** 「换一句」：随机挑一张与当前不同的念法卡（`rnd` 便于单测注入）。 */
+/** 「换一句」 (Another one): randomly picks a delivery style card different from the current one (`rnd` makes unit-test injection easy). */
 export function rollVibe(draft: TtsDraft, info: SpeechModelInfo | null, rnd: () => number = Math.random): Partial<TtsDraft> {
   const others = VIBES.filter((v) => v.style !== draft.instructions);
   const vibe = others[Math.floor(rnd() * others.length)] ?? VIBES[0];
   return pickVibe({ ...draft, instructions: '' }, vibe.key, info);
 }
 
-// ---- 音色 ----
+// ---- Voice ----
 
 export interface VoiceOption {
   key: VoiceKey;
@@ -154,7 +154,7 @@ function presetLabel(info: SpeechModelInfo, voiceId: string): string {
   return info.voices.find((v) => v.voiceId === voiceId)?.label ?? voiceId;
 }
 
-/** 音色下拉：默认（模型有默认音色时）、预置音色、手填音色 ID（模型收 `custom` 时）。 */
+/** Voice dropdown: default (when the model has a default voice), preset voices, and a hand-typed voice ID (when the model accepts `custom`). */
 export function voiceOptions(info: SpeechModelInfo): VoiceOption[] {
   const list: VoiceOption[] = [];
   if (info.defaultVoice) list.push({ key: 'default', label: M.defaultVoiceOption(presetLabel(info, info.defaultVoice)) });
@@ -169,14 +169,13 @@ export function libraryVoiceKey(id: string): VoiceKey {
   return `${LIBRARY_PREFIX}${id}`;
 }
 
-/** `library:<id>` 的条目 ID；别的选法为 null。 */
+/** The entry ID of `library:<id>`; null for other choices. */
 export function libraryIdOf(key: string): string | null {
   return key.startsWith(LIBRARY_PREFIX) ? key.slice(LIBRARY_PREFIX.length) : null;
 }
 
 /**
- * 我的声音里的一只在这只模型上用不用得了：用得了为 null，否则一句原因。Runtime 只用这家的有效克隆、
- * 并且要有本人声明，否则以 `VOICE_CLONE_REQUIRED` / `VOICE_CONSENT_REQUIRED` 拒绝；克隆在 模型 › 语音合成 › 我的声音 里建。
+ * Whether a voice from 「我的声音」 (My voices) can be used with this model: null if it can, otherwise one sentence giving the reason. The Runtime uses only this provider's valid clone, and it requires a declaration of consent from the person themselves; otherwise it rejects with `VOICE_CLONE_REQUIRED` / `VOICE_CONSENT_REQUIRED`. Clones are created in 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices).
  */
 export function libraryVoiceBlock(
   voice: Pick<LibraryEntrySummary, 'consentDeclared' | 'clones'>,
@@ -192,8 +191,8 @@ export function libraryVoiceBlock(
 }
 
 /**
- * 草稿里的音色在这只模型下还成不成立；不成立时退回默认（没有默认时退回第一项）。我的声音里的一只原样留着：
- * 删了、在这家用不了时由 `ttsProblems` 说清，不悄悄换成别的声音。
+ * Whether the voice in the draft still holds for this model; when it does not, it falls back to the default (or to the first item if there is no default). A voice from 「我的声音」 (My voices) is kept as is:
+ * if it has been deleted or cannot be used with this provider, `ttsProblems` says so, and it is not silently swapped for another voice.
  */
 export function voiceKeyFor(draft: Pick<TtsDraft, 'voice'>, info: SpeechModelInfo): VoiceKey {
   if (libraryIdOf(draft.voice) !== null) return draft.voice;
@@ -202,7 +201,7 @@ export function voiceKeyFor(draft: Pick<TtsDraft, 'voice'>, info: SpeechModelInf
   return options[0]?.key ?? 'default';
 }
 
-/** 实际交给 Runtime 的音色 ID；默认时 undefined（Runtime 用模型的 `defaultVoice`）；我的声音原样给 `library:<id>`。 */
+/** The voice ID actually passed to the Runtime; undefined for the default (the Runtime uses the model's `defaultVoice`); a voice from My Voices is passed unchanged as `library:<id>`. */
 export function voiceToSend(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info: SpeechModelInfo): string | undefined {
   const key = voiceKeyFor(draft, info);
   if (key === 'custom') return draft.customVoice.trim() || undefined;
@@ -211,7 +210,7 @@ export function voiceToSend(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info
   return undefined;
 }
 
-/** 音色的短名：状态句与记录卡用。我的声音写名字（还没读到时写「我的声音」，删了写「已删除的音色」）。 */
+/** Short name of the voice, used in status lines and record cards. A voice from My Voices uses its name (before it has been read, 「我的声音」 (My voice); if deleted, 「已删除的音色」 (deleted voice)). */
 export function voiceLabel(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info: SpeechModelInfo, voices: MyVoices = null): string {
   const key = voiceKeyFor(draft, info);
   if (key === 'custom') return draft.customVoice.trim() || M.customVoice;
@@ -221,9 +220,9 @@ export function voiceLabel(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info:
   return info.defaultVoice ? presetLabel(info, info.defaultVoice) : M.defaultVoice;
 }
 
-// ---- 语速、格式、种子 ----
+// ---- Speaking rate, format, seed ----
 
-/** 滑杆上的语速：没拨过时 1（落在区间里）。 */
+/** Speaking rate on the slider: 1 when it has not been set (falls within the range). */
 export function speedValue(draft: Pick<TtsDraft, 'speed'>, range: { min: number; max: number }): number {
   const v = draft.speed ?? 1;
   return Math.min(range.max, Math.max(range.min, v));
@@ -234,8 +233,8 @@ export function formatFor(draft: Pick<TtsDraft, 'format'>, info: Pick<SpeechMode
 }
 
 /**
- * 换一只模型：音色、语速、格式回到这只的默认；语言它不会念时回到自动；文字与风格留着。
- * 选的是我的声音时留着（它跟着人走，不跟模型走）：这只模型用不了时由选择器与 `ttsProblems` 说清。
+ * Switching models: voice, speaking rate and format return to this model's defaults; the language returns to automatic if the model cannot speak it; text and style are kept.
+ * When a voice from My Voices is selected, it is kept (it follows the person, not the model): if this model cannot use it, the picker and `ttsProblems` say so.
  */
 export function switchModel(draft: TtsDraft, option: SpeechOption): Partial<TtsDraft> {
   const language = draft.language && !speaks(option.info.languages, draft.language) ? '' : draft.language;
@@ -243,23 +242,23 @@ export function switchModel(draft: TtsDraft, option: SpeechOption): Partial<TtsD
   return { model: option.key, voice, customVoice: '', speed: null, format: null, language };
 }
 
-// ---- 校验与请求 ----
+// ---- Validation and request ----
 
-/** 语言的问题：选了的或（自动时）按文字判断出来的语言，模型的清单里没有。 */
+/** Language problem: the language that was selected, or (when automatic) the language detected from the text, is not on the model's list. */
 function languageProblem(draft: TtsDraft, option: SpeechOption): string | null {
   const tag = draft.language || detectLang(draft.text);
   if (!tag || speaks(option.info.languages, tag)) return null;
   return M.cannotSpeak(option.modelId, langName(primaryLanguage(tag)));
 }
 
-/** 我的声音那一只的问题：删了、在这只模型上用不了。还没读到我的声音时只看模型收不收（其余交给 Runtime 核对）。 */
+/** Problem with the My Voices entry: it was deleted, or it cannot be used with this model. Until My Voices has been read, only whether the model accepts it is checked (the rest is left to the Runtime to verify). */
 function libraryProblem(id: string, option: SpeechOption, voices: MyVoices): string | null {
   if (!voices) return customVoiceAllowed(option.info) ? null : M.presetOnly(option.modelId);
   const voice = voices.find((v) => v.id === id);
   return voice ? libraryVoiceBlock(voice, option) : M.voiceDeleted;
 }
 
-/** 生成前的问题（空即可提交）。按钮不置灰，按下再说清缺什么（设计稿 model-tools.js `validate`）。 */
+/** Problems before generating (empty means it can be submitted). The button is not greyed out; pressing it explains what is missing (design mockup model-tools.js `validate`). */
 export function ttsProblems(draft: TtsDraft, option: SpeechOption | null, voices: MyVoices = null, material: TtsMaterial | null = null): string[] {
   const problems: string[] = [];
   const text = material ? '' : draft.text.trim();
@@ -282,15 +281,15 @@ export function ttsProblems(draft: TtsDraft, option: SpeechOption | null, voices
 }
 
 /**
- * 念 Space 里的文档或字幕（`material`，架构设计 §7.9「Space 条目作输入」）：Runtime 读出条目的文字当 `text`（字幕去掉时间码），
- * 超过模型的字数上限时在提交时拒绝、不截断。`name` 只给界面看。
+ * Speak a document or subtitles from the Space (`material`, architecture design §7.9 「Space 条目作输入」 (Space entries as input)): the Runtime reads the entry's text as `text` (timecodes removed from subtitles).
+ * When it exceeds the model's character limit, it is rejected at submit and not truncated. `name` is for display only.
  */
 export interface TtsMaterial {
   entryId: string;
   name: string;
 }
 
-/** `models.synthesizeSpeech` 的参数：只带这只模型收的字段，不导入任何视频。给了素材时 `text` 是空串、带 `material`。 */
+/** Parameters for `models.synthesizeSpeech`: includes only the fields this model accepts, and imports no video. When a material is given, `text` is an empty string and `material` is included. */
 export function speechRequest(draft: TtsDraft, option: SpeechOption, material: TtsMaterial | null = null): Omit<SynthesizeSpeechRequest, 'commandId'> {
   const info = option.info;
   const voice = voiceToSend(draft, info);
@@ -312,13 +311,13 @@ export function speechRequest(draft: TtsDraft, option: SpeechOption, material: T
 
 export interface BarStatus {
   text: string;
-  /** 门没过或有问题：变橙。 */
+  /** When the gate is not passed or there is a problem: turns orange. */
   bad: boolean;
 }
 
 /**
- * 主按钮旁那句（设计稿 tool-tts.jsx `status`）：先说门（没模型、没连上），再说第一个问题（没写文字这一条要按过一次才说），
- * 都没有就念一遍这次会用的模型、音色、时长与字数。
+ * The sentence next to the primary button (design mockup tool-tts.jsx `status`): first states the gate (no model, not connected), then the first problem (the no-text problem is only stated after the button has been pressed once),
+ * and when there are none, reads out the model, voice, duration and character count that this run will use.
  */
 export function ttsStatus(draft: TtsDraft, option: SpeechOption | null, tried: boolean, voices: MyVoices = null, material: TtsMaterial | null = null): BarStatus {
   if (!option) return { text: M.noModel, bad: true };
@@ -332,9 +331,9 @@ export function ttsStatus(draft: TtsDraft, option: SpeechOption | null, tried: b
   return { text: `${option.modelId} · ${voiceLabel(draft, option.info, voices)}${tail}`, bad: false };
 }
 
-// ---- 记录 ----
+// ---- Records ----
 
-/** 两位的分:秒（设计稿 `recordMeta` 的「00:07」）。 */
+/** Minutes:seconds, two digits each (「00:07」 in design mockup `recordMeta`). */
 function mmss(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
@@ -344,14 +343,14 @@ function khz(rate: number): string {
   return `${Number((rate / 1000).toFixed(2))} kHz`;
 }
 
-/** 第一段音频输出。 */
+/** The first audio output. */
 export function audioOutput(job: Pick<JobRecord, 'result'>): GeneratedOutput | null {
   return job.result?.outputs?.find((o) => o.media.kind === 'audio') ?? null;
 }
 
 /**
- * 记录卡的元数据行（设计稿 model-tools.js `recordMeta`）：「00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · 中文 · 24 字」。
- * 时长与采样率是成品的事实，还没生成好时不写。
+ * The metadata line of the record card (design mockup model-tools.js `recordMeta`): 「00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · 中文 · 24 字」 (00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · Chinese · 24 characters).
+ * Duration and sample rate are facts about the finished output, so they are not written until it has been generated.
  */
 export function speechMeta(job: JobRecord, provider: string): string {
   const g = job.generation?.capability === 'synthesizeSpeech' ? job.generation : null;
@@ -369,19 +368,19 @@ export function speechMeta(job: JobRecord, provider: string): string {
     .join(' · ');
 }
 
-/** 念的那段文字。 */
+/** The text that is spoken. */
 export function speechText(job: Pick<JobRecord, 'generation'>): string {
   return job.generation?.capability === 'synthesizeSpeech' ? job.generation.text : '';
 }
 
-/** 记录卡的标题：文字的开头。 */
+/** Record card title: the beginning of the text. */
 export function speechTitle(job: Pick<JobRecord, 'generation'>): string {
   return clip(speechText(job), 18) || M.speech;
 }
 
 const AUDIO_EXT: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/flac': 'flac' };
 
-/** 下载的文件名：文字的开头（去掉文件名里不能用的字符）+ 格式的扩展名。 */
+/** Download file name: the beginning of the text (with characters not allowed in file names removed), plus the format's extension. */
 export function audioFileName(job: Pick<JobRecord, 'generation'>, output: Pick<GeneratedOutput, 'mediaType'>): string {
   const g = job.generation?.capability === 'synthesizeSpeech' ? job.generation : null;
   const ext = AUDIO_EXT[output.mediaType] ?? g?.format ?? 'mp3';
@@ -392,12 +391,12 @@ export function audioFileName(job: Pick<JobRecord, 'generation'>, output: Pick<G
   return `${stem || M.speech}.${ext}`;
 }
 
-/** 用的是我的声音时那只的条目 ID（任务冻结的用户库条目）；冻结的 `voice` 是它在供应商那边的克隆 ID。 */
+/** The entry ID of the My Voices entry used, when a voice from My Voices is used (the user library entry frozen by the job); the frozen `voice` is its clone ID on the provider's side. */
 function libraryVoiceOf(job: Pick<JobRecord, 'library'>): string | null {
   return job.library?.entries.find((e) => e.library === 'voices')?.id ?? null;
 }
 
-/** 「带回左边再改一版」：文字与设置回到表单；音色认回我的声音，或按这只模型的清单认回预置或手填。 */
+/** 「带回左边再改一版」 (Bring back to the left and revise): text and settings return to the form; the voice is matched back to My Voices, or matched back to a preset or hand-typed voice from this model's list. */
 export function draftFromJob(job: JobRecord, info: SpeechModelInfo | null): Partial<TtsDraft> | null {
   const g = job.generation?.capability === 'synthesizeSpeech' ? job.generation : null;
   if (!g) return null;
@@ -418,8 +417,8 @@ export function draftFromJob(job: JobRecord, info: SpeechModelInfo | null): Part
 }
 
 /**
- * 「再试一次 / 重新排队」：照冻结的参数原样再提交一次（同一个 Provider、模型与音色）。用的是我的声音时仍给 `library:<id>`，
- * 由 Runtime 重新核对克隆（过期了照实拒绝），不拿旧的克隆 ID 绕过去。
+ * 「再试一次 / 重新排队」 (Try again / re-queue): submits again with the frozen parameters unchanged (same provider, model and voice). When a voice from My Voices is used, `library:<id>` is still given,
+ * and the Runtime verifies the clone again (if it has expired, it is rejected as is); the old clone ID is not used to get around this.
  */
 export function speechRetry(job: JobRecord): Omit<SynthesizeSpeechRequest, 'commandId'> | null {
   const g = job.generation?.capability === 'synthesizeSpeech' ? job.generation : null;
@@ -439,8 +438,8 @@ export function speechRetry(job: JobRecord): Omit<SynthesizeSpeechRequest, 'comm
 }
 
 /**
- * 模型那一行右边的一句（设计稿 tool-tts.jsx `ModelLine` 的 `c.line`）：这只模型能做什么，全从能力描述里来——
- * 音色几个、收不收风格说明、语速区间、会念哪些语言、一次最多几字。
+ * The sentence on the right of the model line (design mockup tool-tts.jsx `ModelLine`, `c.line`): what this model can do, all taken from its capability description:
+ * how many voices, whether it accepts a style instruction, the speaking-rate range, which languages it can speak, and the maximum characters per request.
  */
 export function speechModelLine(info: SpeechModelInfo): string {
   return [
@@ -455,7 +454,7 @@ export function speechModelLine(info: SpeechModelInfo): string {
     .join(' · ');
 }
 
-/** 页头那枚标签（设计稿 model-cloud-tts.js `headerChip`）：走谁的服务。计费口径各家不同，只说「按用量计费」。 */
+/** The tag in the page header (design mockup model-cloud-tts.js `headerChip`): which service it goes through. Billing differs by provider, so it only says 「按用量计费」 (billed by usage). */
 export function headerChip(option: Pick<SpeechOption, 'provider'> | null): string | null {
   return option ? M.headerChip(option.provider) : null;
 }

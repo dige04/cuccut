@@ -187,7 +187,7 @@ describe('digestVideo', () => {
       place: { mode: 'fullscreen' },
     });
     expect(item('item_k')).not.toHaveProperty('parameterValues');
-    // 写了位置与宽的合成按画中画摆；没有替身的不写 prerender。
+    // A composition given a position and width is placed as picture-in-picture; one without a stand-in does not write a prerender.
     expect(item('item_g')).toMatchObject({ asset: { id: 'asset_b' }, place: { mode: 'pip', x: 80, y: 20, w: 30 } });
     expect(item('item_g')).not.toHaveProperty('prerender');
     expect(item('item_c')).toMatchObject({
@@ -332,7 +332,7 @@ describe('digestVideo', () => {
       },
     ]);
     const item = (id: string) => digest.items.find((i) => i.id === id);
-    // 铺满画布：只写 mode，位置与宽不参与。
+    // Full-canvas: only mode is written; position and width do not take part.
     expect(item('item_a')).toMatchObject({ place: { mode: 'fullscreen' }, embeddedAudio: { enabled: true, volume: 1 } });
     expect(item('item_a')).not.toHaveProperty('fx');
     expect(item('item_b')).toMatchObject({
@@ -467,7 +467,7 @@ describe('digestVideo', () => {
 
     snapshot.assets.asset_v = linked({ title: 'Talk' });
     expect(digestVideo(snapshot, '片子', []).assets[0]).toMatchObject({ source: { description: null, chapters: [] } });
-    // 本机导入的素材没有这一块。
+    // Locally imported media does not have this block.
     snapshot.assets.asset_v = talk;
     expect(digestVideo(snapshot, '片子', []).assets[0]).not.toHaveProperty('source');
   });

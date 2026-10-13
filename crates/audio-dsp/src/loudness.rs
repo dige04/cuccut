@@ -1,14 +1,12 @@
-//! ITU-R BS.1770-4 响度：K 加权、积分响度（绝对门 −70 LUFS + 相对门 −10 LU）、
-//! 短期响度（3 s 窗）、EBU Tech 3342 响度范围 LRA（−20 LU 相对门，P95 − P10）。
+//! ITU-R BS.1770-4 loudness: K weighting, integrated loudness (absolute gate −70 LUFS + relative gate −10 LU), short-term loudness (3 s window), and EBU Tech 3342 loudness range LRA (−20 LU relative gate, P95 − P10).
 //!
-//! 实现口径跟 libebur128：K 加权两级系数按它的解析式随采样率现算；先算 100 ms 子块的
-//! 各声道均方和，400 ms 门控块 = 连续 4 个子块（75% 重叠），3 s 短期窗 = 连续 30 个子块。
-//! 只支持左右等权（G = 1）的声道，环绕声道的 1.41 权重不在范围内。
+//! Implementation follows libebur128: the K-weighting two-stage coefficients are computed on the fly from its analytic formulas for each sample rate. First compute the mean-square sum of each channel over 100 ms sub-blocks; a 400 ms gating block = 4 consecutive sub-blocks (75% overlap); a 3 s short-term window = 30 consecutive sub-blocks.
+//! Only channels with equal left/right weighting (G = 1) are supported; the 1.41 weight of surround channels is out of scope.
 
 use crate::math::{db_to_gain, samples};
 use crate::stereo::Stereo;
 
-/// 无声时的响度值（与 ebur128 返回 `-inf` 同义；这里用有限值，方便 JSON）。
+/// Loudness value for silence (equivalent to ebur128 returning `-inf`; a finite value is used here for JSON).
 pub const SILENCE_LUFS: f64 = -200.0;
 
 const ABS_GATE: f64 = -70.0;
@@ -19,7 +17,7 @@ struct Kw {
     a: [f64; 3],
 }
 
-/// K 加权两级滤波器（高搁架 + RLB 高通），系数与 libebur128 同式。
+/// K-weighting two-stage filter (high shelf + RLB high-pass); coefficients follow the same formulas as libebur128.
 fn k_weighting(sr: f64) -> [Kw; 2] {
     let (f0, g, q) = (1681.974450955533, 3.999843853973347, 0.7071752369554196);
     let k = libm::tan(core::f64::consts::PI * f0 / sr);
@@ -44,7 +42,7 @@ fn k_weighting(sr: f64) -> [Kw; 2] {
     [shelf, hp]
 }
 
-/// 各声道 K 加权后，100 ms 子块的均方之和（Σ_c mean(z_c²)）。不满一块的尾巴丢弃。
+/// After K weighting per channel, the sum of mean squares over 100 ms sub-blocks (Σ_c mean(z_c²)). A tail shorter than a block is discarded.
 pub fn subblock_power(chans: &[&[f32]], sr: f64) -> Vec<f64> {
     let n = chans.iter().map(|c| c.len()).min().unwrap_or(0);
     let mut meter = Meter::new(chans.len(), sr);
@@ -53,13 +51,12 @@ pub fn subblock_power(chans: &[&[f32]], sr: f64) -> Vec<f64> {
     meter.into_subblocks()
 }
 
-/// 流式响度计：分段喂进同一段信号，与一次性调 [`subblock_power`] 逐位相同（K 加权
-/// 滤波状态跨段延续，子块求和顺序也同为「声道 0、声道 1 …」）。给放不进内存的整片母带用。
+/// Streaming loudness meter: feeding the same signal in segments gives bit-identical results to calling [`subblock_power`] once (the K-weighting filter state carries across segments, and the sub-block summation order is the same: “channel 0, channel 1 …”). For full mastering pieces that do not fit in memory.
 #[derive(Debug, Clone)]
 pub struct Meter {
     filters: [Kw; 2],
     step: usize,
-    /// 每声道：两级滤波状态、未满子块的累加、已处理的采样数。
+    /// Per channel: the two-stage filter state, the accumulation of an incomplete sub-block, and the number of samples processed.
     chans: Vec<([[f64; 2]; 2], f64, usize)>,
     sub: Vec<f64>,
 }
@@ -80,13 +77,13 @@ impl Meter {
         }
     }
 
-    /// 喂一段（各声道等长，声道数与 [`Meter::new`] 相同）。
+    /// Feed a segment (channels of equal length, same channel count as [`Meter::new`]).
     pub fn push(&mut self, chans: &[&[f32]]) {
         assert_eq!(chans.len(), self.chans.len(), "meter channel count");
         let step = self.step;
         for (c, (z, acc, pos)) in chans.iter().zip(self.chans.iter_mut()) {
             for v in c.iter() {
-                // 两级 DF-II 转置，全程 f64。
+                // Two-stage DF-II transposed, f64 throughout.
                 let mut x = *v as f64;
                 for (f, s) in self.filters.iter().zip(z.iter_mut()) {
                     let y = f.b[0] * x + s[0];
@@ -108,7 +105,7 @@ impl Meter {
         }
     }
 
-    /// 已完成的子块（最后一个声道也喂满的部分）。
+    /// Completed sub-blocks (the part where the last channel was also filled).
     pub fn subblocks(&self) -> &[f64] {
         let done = self
             .chans
@@ -125,17 +122,17 @@ impl Meter {
         self.sub
     }
 
-    /// 积分响度（LUFS），同 [`integrated`]。
+    /// Integrated loudness (LUFS), same as [`integrated`].
     pub fn integrated(&self) -> f64 {
         integrated_from_subblocks(self.subblocks())
     }
 
-    /// 一次测完，同 [`measure`]。
+    /// Measure everything in one go, same as [`measure`].
     pub fn measure(&self) -> Loudness {
         measure_subblocks(self.subblocks())
     }
 
-    /// 短期响度序列，同 [`short_term`]。
+    /// Short-term loudness series, same as [`short_term`].
     pub fn short_term(&self) -> Vec<f64> {
         windows(self.subblocks(), 30)
             .into_iter()
@@ -152,7 +149,7 @@ fn to_lufs(power: f64) -> f64 {
     }
 }
 
-/// 连续 `w` 个子块的平均功率（滑动一个子块一步）。
+/// Average power over `w` consecutive sub-blocks (sliding by one sub-block per step).
 fn windows(sub: &[f64], w: usize) -> Vec<f64> {
     if sub.len() < w {
         return Vec::new();
@@ -162,7 +159,7 @@ fn windows(sub: &[f64], w: usize) -> Vec<f64> {
         .collect()
 }
 
-/// 积分响度（LUFS）。短于 400 ms 或全静音返回 [`SILENCE_LUFS`]。
+/// Integrated loudness (LUFS). Returns [`SILENCE_LUFS`] if shorter than 400 ms or fully silent.
 pub fn integrated(chans: &[&[f32]], sr: f64) -> f64 {
     integrated_from_subblocks(&subblock_power(chans, sr))
 }
@@ -184,7 +181,7 @@ fn integrated_from_subblocks(sub: &[f64]) -> f64 {
     to_lufs(gated.iter().sum::<f64>() / gated.len() as f64)
 }
 
-/// 短期响度序列（3 s 窗，每 100 ms 一个值；第 j 个值对应 `[0.1·j, 0.1·j + 3)` 秒）。
+/// Short-term loudness series (3 s window, one value every 100 ms; the j-th value corresponds to `[0.1·j, 0.1·j + 3)` seconds).
 pub fn short_term(chans: &[&[f32]], sr: f64) -> Vec<f64> {
     windows(&subblock_power(chans, sr), 30)
         .into_iter()
@@ -192,7 +189,7 @@ pub fn short_term(chans: &[&[f32]], sr: f64) -> Vec<f64> {
         .collect()
 }
 
-/// 响度范围 LRA（LU）。
+/// Loudness range LRA (LU).
 pub fn loudness_range(chans: &[&[f32]], sr: f64) -> f64 {
     lra_from_subblocks(&subblock_power(chans, sr))
 }
@@ -217,7 +214,7 @@ fn lra_from_subblocks(sub: &[f64]) -> f64 {
     to_lufs(hi) - to_lufs(lo)
 }
 
-/// 一次测完：积分响度、LRA、最大短期响度。
+/// Measure everything in one go: integrated loudness, LRA, and maximum short-term loudness.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Loudness {
     pub integrated: f64,
@@ -241,7 +238,7 @@ fn measure_subblocks(sub: &[f64]) -> Loudness {
     }
 }
 
-/// 整体增益到目标积分响度，返回施加的增益（dB）。静音或不足 400 ms 时不动，返回 0。
+/// Apply an overall gain to reach the target integrated loudness; returns the applied gain (dB). If silent or shorter than 400 ms, it is left untouched and returns 0.
 pub fn normalize_to_lufs(x: &mut Stereo, sr: f64, target_lufs: f64) -> f64 {
     let now = integrated(&x.channels(), sr);
     if now <= SILENCE_LUFS {
@@ -287,7 +284,7 @@ mod tests {
     fn relative_gate_ignores_quiet_tail() {
         let mut x = sine(10 * 48_000, 1000.0, -20.0);
         x.extend(sine(10 * 48_000, 1000.0, -60.0));
-        // 不开相对门会是约 −23 LUFS；开了之后只剩交界处一两个过渡块的影响。
+        // Without the relative gate it would be about −23 LUFS; with it on, only the influence of one or two transition blocks at the boundary remains.
         let l = integrated(&[&x, &x], SR);
         assert!((l + 20.0).abs() < 0.1, "{l}");
     }
@@ -326,7 +323,7 @@ mod tests {
         let s = dynamic_noise(5);
         let whole = subblock_power(&s.channels(), SR);
         let mut m = Meter::new(2, SR);
-        // 故意用不对齐子块的段长。
+        // Deliberately uses a segment length that is not aligned to sub-blocks.
         let mut a = 0;
         for len in [1usize, 4799, 12_345, 100_000].iter().cycle() {
             if a >= s.len() {

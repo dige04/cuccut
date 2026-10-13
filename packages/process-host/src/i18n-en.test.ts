@@ -3,7 +3,7 @@ import { setLocale } from '@cuccut/protocol';
 import { ffmpegMissingRemedy, ffmpegMissingRemedyMessage } from './install-hint.ts';
 import { WorkerTimeoutError } from './json-line-worker.ts';
 
-/** 界面语言是英文时，缺 ffmpeg 的修法与 Worker 的错误是英文，并带消息引用。 */
+/** When the interface language is English, the fix for missing ffmpeg and the Worker's errors are in English, with a message reference. */
 describe('process-host 的英文文案', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

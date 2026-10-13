@@ -1,16 +1,13 @@
-//! IndexTTS 2.5 多语言 tiktoken 分词器。
+//! IndexTTS 2.5 multilingual tiktoken tokenizer.
 //!
-//! 对照官方 `indextts/utils/tokenizer.py`（index-tts 9c87c46）与 mlx-indextts
-//! `tokenizer_v25.py`：58 836 个 base64 字节 rank 之后依次排 1 673 个特殊 token，
-//! 预切分正则与 tiktoken `_byte_pair_merge` 保持一致；编码时全部特殊 token 都
-//! 允许出现在文本里（`allowed_special="all"`）。
+//! Checked against the official `indextts/utils/tokenizer.py` (index-tts 9c87c46) and mlx-indextts `tokenizer_v25.py`: after the 58,836 base64 byte ranks, 1,673 special tokens follow in order; the pre-tokenization regex stays consistent with tiktoken's `_byte_pair_merge`; when encoding, all special tokens may appear in the text (`allowed_special="all"`).
 
 use anyhow::{Context, Result, anyhow, bail};
 use fancy_regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// 官方语言码表，下标即 `lang_embedding` 行号（106 个，嵌入表多留 1 行）。
+/// Official language code table; the index is the row number in `lang_embedding` (106 entries; the embedding table has one extra row).
 pub const LANGUAGE_CODES: [&str; 106] = [
     "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk",
     "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn",
@@ -19,10 +16,10 @@ pub const LANGUAGE_CODES: [&str; 106] = [
     "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue", "minnan", "wuyu", "dialect", "zh/en", "en/zh", "common",
 ];
 
-/// 公开 2.5 权重支持的语言（`config.yaml` 的 `supported_languages`）。
+/// Languages supported by the public 2.5 weights (`supported_languages` in `config.yaml`).
 pub const RELEASED_LANGUAGES: [&str; 5] = ["zh", "en", "ja", "es", "ar"];
 
-/// 特殊 token 只登记前 99 个语言码（官方 `num_languages=99`）。
+/// Special tokens only register the first 99 language codes (official `num_languages=99`).
 const SPECIAL_LANGUAGE_COUNT: usize = 99;
 const AUDIO_EVENTS: [&str; 11] = [
     "ASR",
@@ -42,12 +39,12 @@ const TASK_TOKENS: [&str; 6] = ["translate", "transcribe", "startoflm", "startof
 const TTS_VOCAL_TOKENS: [&str; 7] = ["TTS/B", "TTS/O", "TTS/Q", "TTS/A", "TTS/CO", "TTS/CL", "TTS/H"];
 const PATTERN: &str = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
 
-/// 语言码在 `lang_embedding` 里的行号。
+/// Row number of the language code in `lang_embedding`.
 pub fn language_id(code: &str) -> Option<usize> {
     LANGUAGE_CODES.iter().position(|candidate| *candidate == code)
 }
 
-/// 官方特殊 token 顺序；第 i 个的 id 是 `rank 数 + i`。
+/// Official special token order; the id of the i-th one is `rank count + i`.
 pub fn special_token_strings() -> Vec<String> {
     let mut tokens = vec!["<|endoftext|>".to_string(), "<|startoftranscript|>".to_string()];
     tokens.extend(LANGUAGE_CODES[..SPECIAL_LANGUAGE_COUNT].iter().map(|code| format!("<|{code}|>")));
@@ -75,7 +72,7 @@ impl TiktokenTokenizer {
         Self::parse(&text).with_context(|| format!("解析 IndexTTS 2.5 词表 {} 失败", path.display()))
     }
 
-    /// 解析 `.tiktoken` 文本：每行 `base64(bytes) rank`，rank 必须连续覆盖 0..n。
+    /// Parses `.tiktoken` text: each line is `base64(bytes) rank`; ranks must cover 0..n contiguously.
     pub fn parse(text: &str) -> Result<Self> {
         let mut entries: Vec<Option<Vec<u8>>> = Vec::new();
         for (line_no, line) in text.lines().enumerate() {
@@ -104,12 +101,11 @@ impl TiktokenTokenizer {
         Self::from_pieces(pieces)
     }
 
-    /// 由按 rank 排好的字节 piece 构造；要求 256 个单字节都在表里，保证任意文本可编码。
+    /// Builds from byte pieces sorted by rank; requires all 256 single bytes to be in the table, so any text can be encoded.
     pub fn from_pieces(pieces: Vec<Vec<u8>>) -> Result<Self> {
         let mut ranks = HashMap::with_capacity(pieces.len());
         for (rank, piece) in pieces.iter().enumerate() {
-            // 官方 `*_char_del.tiktoken` 把删掉的字写成 `=`（空字节）占位保住 rank 连续；
-            // tiktoken 合并永远产出不了空 piece，这一行只在解码时对应空串。
+            // The official `*_char_del.tiktoken` writes a deleted character as `=` (empty bytes) as a placeholder to keep ranks contiguous; tiktoken merging never produces an empty piece, so this line only corresponds to an empty string when decoding.
             if piece.is_empty() {
                 continue;
             }
@@ -138,7 +134,7 @@ impl TiktokenTokenizer {
         })
     }
 
-    /// rank 数 + 特殊 token 数（公开 2.5 为 60 509）。
+    /// Rank count + special token count (60,509 for the public 2.5 weights).
     pub fn vocab_size(&self) -> usize {
         self.decoder.len() + self.special_tokens.len()
     }
@@ -152,7 +148,7 @@ impl TiktokenTokenizer {
         let mut out = Vec::new();
         let mut start = 0;
         let mut search = 0;
-        // 特殊 token 都是 `<|X|>` 且 X 不含 `|`，所以每个 `<|` 只可能对应到下一个 `|>`。
+        // Special tokens are all `<|X|>` with X not containing `|`, so each `<|` can only match the next `|>`.
         while let Some(relative) = text[search..].find("<|") {
             let open = search + relative;
             if let Some(close) = text[open + 2..].find("|>") {
@@ -214,13 +210,13 @@ impl TiktokenTokenizer {
         }
         let boundaries = byte_pair_merge(&self.ranks, piece);
         for window in boundaries.windows(2) {
-            // 构造时已保证单字节都在表里，合并出的片段必然有 rank。
+            // The single bytes are guaranteed to be in the table at construction, so any merged fragment always has a rank.
             out.push(self.ranks[&piece[window[0].0..window[1].0]]);
         }
     }
 }
 
-/// tiktoken `_byte_pair_merge`：反复合并 rank 最小的相邻片段，返回片段起点。
+/// tiktoken `_byte_pair_merge`: repeatedly merges the adjacent pieces with the lowest rank, returns the start positions of the pieces.
 fn byte_pair_merge(ranks: &HashMap<Vec<u8>, u32>, piece: &[u8]) -> Vec<(usize, u32)> {
     let rank_of = |range: &[u8]| ranks.get(range).copied().unwrap_or(u32::MAX);
     let mut parts = Vec::with_capacity(piece.len() + 1);
@@ -307,7 +303,7 @@ pub(crate) mod tests {
         out
     }
 
-    /// 256 个单字节加上 `ab`、`abc` 两条合并的合成词表。
+    /// Synthetic vocabulary: the 256 single bytes plus the two merges `ab` and `abc`.
     pub(crate) fn synthetic_tokenizer() -> TiktokenTokenizer {
         let mut pieces: Vec<Vec<u8>> = (0..=u8::MAX).map(|byte| vec![byte]).collect();
         pieces.push(b"ab".to_vec());
@@ -357,7 +353,7 @@ pub(crate) mod tests {
         let zh = tokenizer.special_id("<|zh|>").unwrap();
         assert_eq!(zh, 258 + 3);
         assert_eq!(tokenizer.encode("<|zh|> abc"), vec![zh, 32, 257]);
-        // 不是特殊 token 的 `<|…|>` 按普通字节编码。
+        // A `<|…|>` that is not a special token is encoded as ordinary bytes.
         assert_eq!(tokenizer.token_count("<|xx|>"), 6);
         let ids = tokenizer.encode("<|<|SPECIAL_TOKEN_2|>行<|SPECIAL_TOKEN_2|>");
         assert_eq!(tokenizer.decode(&ids), "<|<|SPECIAL_TOKEN_2|>行<|SPECIAL_TOKEN_2|>");

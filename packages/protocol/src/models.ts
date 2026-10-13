@@ -3,37 +3,36 @@ import { ProtocolLabels } from './messages/protocol/protocol-labels.ts';
 import type { MessageRef } from './message-ref.ts';
 
 /**
- * 本地模型包的状态（架构设计 §6.3、§6.5）。`models.list` 返回它。
+ * Status of a local model bundle (architecture design §6.3, §6.5). `models.list` returns it.
  *
- * 一个模型包是一个主模型及其固定依赖（VAD 等）在某个 backend 上的构建，例如 `qwen3-asr-0.6b@mlx-4bit`。
+ * A model bundle is one build of a main model and its fixed dependencies (VAD, etc.) on a given backend, e.g. `qwen3-asr-0.6b@mlx-4bit`.
  */
 
 /**
- * 模型包能做什么：`transcribe` / `align` 是语音识别的模型包，`synthesize` 是本地语音合成的模型包（对外即 `synthesizeSpeech`），
- * `separate` 是人声与伴奏分离的模型包（配音的 `separateAudio` 由它执行），`image` 是本地文生图的模型包（对外即 `generateImage`）。
- * `diarize` 是「说话人区分」模型包（Pyannote 分段 + WeSpeaker 声纹，架构设计 §6.6）：它自己不跑任务，装好之后不自带区分的
- * 识别模型包（Qwen3-ASR、Whisper）转写时带上它的组件、给段与词标说话人。
+ * What a model bundle can do: `transcribe` / `align` are speech-recognition bundles, `synthesize` is a local speech-synthesis bundle (exposed as `synthesizeSpeech`),
+ * `separate` is a vocal/accompaniment separation bundle (dubbing's `separateAudio` runs on it), `image` is a local text-to-image bundle (exposed as `generateImage`).
+ * `diarize` is a "speaker diarization" bundle (Pyannote segmentation + WeSpeaker voiceprints, architecture design §6.6): it runs no tasks by itself. Once installed, recognition bundles that do not diarize on their own (Qwen3-ASR, Whisper) carry its components when transcribing, and attach speaker labels to segments and words.
  */
 export type ModelCapability = 'transcribe' | 'align' | 'synthesize' | 'separate' | 'image' | 'diarize' | 'music';
 /**
- * `mlx`、`coreml`（Whisper 的 CoreML 包）只在 Apple Silicon 的 macOS 上可用；`candle` 全平台；`ggml`（Whisper 的 whisper.cpp 包）
- * 全平台，Apple Silicon 上不列出。`audio-cpp` 是本地音乐生成的模型包（GGUF 权重，由 audio.cpp 的 `audiocpp_cli` 执行，
- * 架构设计 §6.5）：全平台，设备按引擎的构建（Metal、CUDA、Vulkan 或 CPU）。
+ * `mlx` and `coreml` (Whisper's CoreML bundle) are available only on macOS with Apple Silicon; `candle` is available on all platforms; `ggml` (Whisper's whisper.cpp bundle)
+ * is available on all platforms, and is not listed on Apple Silicon. `audio-cpp` is the local music-generation bundle (GGUF weights, run by the `audiocpp_cli` of audio.cpp,
+ * architecture design §6.5): available on all platforms; the device depends on how the engine was built (Metal, CUDA, Vulkan or CPU).
  */
 export type ModelBackend = 'mlx' | 'coreml' | 'candle' | 'ggml' | 'audio-cpp';
 
 /**
- * - `not-installed`：清单缺失、文件缺失或大小不符，或校验 sha256 不过、加载时报告文件不对；部分组件已经装好、另一些缺失时
- *   `reason: 'incomplete'`，`components` 列出缺的是哪些（安装只补缺的组件，不整包重下）；
- * - `downloading`：安装或修复的任务在排队或进行中，`install` 带已收到的字节数；
- * - `installed`：文件齐全，Worker 没有加载它；
- * - `loading` / `ready` / `busy` / `unloading`：Worker 的状态；
- * - `error`：不可用，`reason` 说明原因（`unsupported`：这台机器的平台或后端不支持；`resource`：资源不足或反复崩溃后停用，
- *   `models.enable` 重新启用；`worker-missing`：没有找到 Model Worker 可执行文件）。音乐模型包（`audio-cpp`）的引擎是它的组件
- *   `audiocpp-engine`：权重在而引擎没装是 `not-installed` / `incomplete`；主机平台没有引擎包（又没有 `CUCCUT_AUDIOCPP_CLI`）是
- *   `error` / `unsupported`。
+ * - `not-installed`: manifest missing, files missing or size mismatch, sha256 verification fails, or loading reports wrong files; when some components are installed and others are not,
+ *   `reason: 'incomplete'`, and `components` lists which ones are missing (install only fills in the missing components, it does not re-download the whole bundle);
+ * - `downloading`: an install or repair task is queued or in progress; `install` carries the bytes received so far;
+ * - `installed`: files complete, Worker has not loaded it;
+ * - `loading` / `ready` / `busy` / `unloading`: Worker states;
+ * - `error`: unavailable, `reason` explains why (`unsupported`: this machine's platform or backend is not supported; `resource`: insufficient resources, or disabled after repeated crashes, re-enable with
+ *   `models.enable`; `worker-missing`: no Model Worker executable was found). The engine of a music bundle (`audio-cpp`) is its component
+ *   `audiocpp-engine`: if the weights are present but the engine is not, it is `not-installed` / `incomplete`; if the host platform has no engine package (and no `CUCCUT_AUDIOCPP_CLI`), it is
+ *   `error` / `unsupported`.
  *
- * 具体进度未知时不伪造百分比：总字节数未知时 `install.totalBytes` 为 null。
+ * When the progress is unknown, do not fabricate a percentage: `install.totalBytes` is null when the total size is unknown.
  */
 export type ModelBundleState = 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'busy' | 'unloading' | 'error';
 
@@ -47,108 +46,107 @@ export type ModelBundleReason =
   | 'hash-mismatch'
   | 'load-failed'
   | 'incomplete'
-  /** 正在把模型移到新的模型目录（`models.setDir` 的 `move`）：移完之前不能用。 */
+  /** The model is being moved to a new model directory (`move` in `models.setDir`): it cannot be used until the move finishes. */
   | 'relocating';
 
 export interface ModelBundleStatus {
   bundleId: string;
   capability: ModelCapability;
-  /** 给人看的名字（每个登记的模型包都有；旧的快照可能没有，那时用 `bundleId`）。 */
+  /** Human-readable name (every registered model bundle has one; older snapshots may not, in which case use `bundleId`). */
   label?: string;
-  /** 权重的许可：`commercialUse: false` 的模型包只许非商业用途，安装前要让用户看到。 */
+  /** Weight license: a bundle with `commercialUse: false` may only be used non-commercially, and the user must see this before installing. */
   license?: ModelLicense;
   backend: ModelBackend;
   device: string;
-  /** 必需组件的下载大小（字节），按内置清单；有组件没有登记清单时 null。装没装都给，供下载前显示大小（Runtime 总是给；旧的快照可能没有）。 */
+  /** Download size (bytes) of the required components, from the built-in manifest; null when a component has no registered manifest. Given whether or not the bundle is installed, so the size can be shown before downloading (Runtime always provides it; older snapshots may not). */
   estimatedBytes?: number | null;
   state: ModelBundleState;
   reason?: ModelBundleReason;
-  /** 给人看的补充说明（缺哪个文件、哪个平台）。不含本机绝对路径。 */
+  /** Supplementary note for people (which file is missing, which platform). Contains no absolute local paths. */
   detail?: string;
-  /** `detail` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `detail` (message-ref.ts). */
   detailRef?: MessageRef;
-  /** 组成模型包的各个组件（主模型的权重与共享的 VAD、对齐器……）各自装好没有。 */
+  /** The components that make up the bundle (the main model's weights, plus the shared VAD, aligner, ...), and whether each one is installed. */
   components?: ModelComponentStatus[];
-  /** 安装进度：正在下载，或上次停下时留在暂存区里的部分（`paused`，再次 `models.install` 从这里续传）。 */
+  /** Install progress: downloading, or the partial data left in the staging area when it last stopped (`paused`; another `models.install` resumes from here). */
   install?: ModelInstallProgress;
-  /** 最近一次检查（`models.test`）的结果。 */
+  /** Result of the most recent check (`models.test`). */
   selfTest?: ModelSelfTestResult;
 }
 
 /**
- * 模型包的一个组件：上游仓库的一个固定版本，装在 `<models-root>/<owner>/<repo>/`。几个模型包共用的组件（VAD 等）只装一份，
- * 按引用保留：删除模型包时只回收没有别的模型包在用的组件。来自 GitHub 发布页的组件（`origin: 'github-release'`，音乐模型包的
- * audio.cpp 引擎）是平台专属的，按 Runtime 所在主机取一个压缩包，装在 Runtime Home 的 `tools/<名字>/<版本>/`。
+ * A component of a model bundle: one pinned version of an upstream repo, installed at `<models-root>/<owner>/<repo>/`. Components shared by several bundles (VAD, etc.) are installed once and
+ * kept by reference: deleting a bundle reclaims only the components that no other bundle is using. Components from GitHub release pages (`origin: 'github-release'`, the audio.cpp engine of music bundles) are
+ * platform-specific: one archive is fetched for the host the Runtime runs on and installed at `tools/<name>/<version>/` under the Runtime Home.
  */
 export interface ModelComponentStatus {
   /** `asr`、`vad`、`aligner`、`audiocpp-engine`…… */
   component: string;
-  /** `<owner>/<repo>`（发布页组件是上游的 GitHub 仓库名） */
+  /** `<owner>/<repo>` (for release-page components, the upstream GitHub repo name) */
   repo: string;
-  /** 上游的提交（发布页组件是发布的标签，如 `v0.9.1`）。 */
+  /** Upstream commit (for release-page components, the release tag, e.g. `v0.9.1`). */
   revision: string;
   /**
-   * 组件从哪里下载：没有这一项是模型仓库（Hugging Face 或设置的镜像）；`github-release` 是 GitHub 发布页的预编译包（按主机平台选，
-   * 可由工具下载镜像替换），装在 Runtime Home 的 `tools/` 下而不是模型目录里。
+   * Where the component is downloaded from. Absent means the model repository (Hugging Face or the configured mirror). `github-release` is a precompiled package from a GitHub release page (chosen by host platform,
+   * and can be replaced by a download mirror tool), installed under `tools/` in the Runtime Home rather than in the model directory.
    */
   origin?: 'github-release';
-  /** `installed`：清单与文件齐全；`missing`：没装或不完整（缺文件、大小不符、版本不对）。 */
+  /** `installed`: manifest and files complete; `missing`: not installed or incomplete (missing files, size mismatch, wrong version). */
   state: 'installed' | 'missing';
   /**
-   * 已经装好时它占的字节数（清单里的大小之和）；没装时 null。发布页组件由 `CUCCUT_AUDIOCPP_CLI` 指向自己构建的引擎时算装好，
-   * 也是 null。
+   * Bytes the component occupies once installed (the sum of sizes in the manifest); null when not installed. For release-page components, it counts as installed when `CUCCUT_AUDIOCPP_CLI` points to an engine built locally,
+   * and is null in that case too.
    */
   bytes: number | null;
   /**
-   * 这个组件的下载大小（字节），按内置清单；没有登记清单时 null。装没装都给，供缺组件时显示要下多少（Runtime 总是给；旧的快照可能
-   * 没有）。
+   * Download size (bytes) of this component, from the built-in manifest; null when no manifest is registered. Given whether or not it is installed, so the UI can show how much will be downloaded when a component is missing (Runtime always provides it; older snapshots
+   * may not).
    */
   estimatedBytes?: number | null;
-  /** 同样用到这个组件（同一仓库与版本）的其他模型包。 */
+  /** Other model bundles that also use this component (same repo and version). */
   sharedWith: string[];
-  /** 可选的组件（对齐器、说话人模型）：安装与修复照样下载，缺它时模型包仍算装好、照常可用。 */
+  /** Optional components (aligner, speaker model): installs and repairs still download them, but when one is missing the model bundle still counts as installed and works normally. */
   optional?: boolean;
   /**
-   * 组件自己的许可（登记了才有；对齐器、说话人模型）。`CC-BY` 一类要署名的，署名写在 `summary` 里；供界面在模型详情的许可行列出
-   * 与权重许可不同或要署名的组件。
+   * The component's own license (only when registered; aligner, speaker model). Licenses such as `CC-BY` that require attribution have the attribution written in `summary`. Lets the UI list, in the model's detail license rows, components whose license differs from the weight license or requires attribution.
    */
   license?: ModelLicense;
 }
 
 export interface ModelInstallProgress {
-  /** 在途的安装或修复任务；`paused`（没有任务在跑）时 null。 */
+  /** The install or repair task in progress; null when `paused` (no task is running). */
   jobId: Id | null;
   state: 'queued' | 'downloading' | 'verifying' | 'paused';
-  /** 已经收到并留在暂存区的字节（含以前续传前留下的部分）。 */
+  /** Bytes already received and kept in the staging area (including any partial left from before an earlier resume). */
   receivedBytes: number;
-  /** 这次要下载的总字节数；上游没有给出大小时 null（不伪造百分比）。 */
+  /** Total bytes to download this time; null when upstream did not give a size (no fabricated percentage). */
   totalBytes: number | null;
 }
 
-/** 最近一次检查（`models.test`）的结论。字段名沿用 `selfTest`。 */
+/** Conclusion of the most recent check (`models.test`). The field name `selfTest` is kept. */
 export interface ModelSelfTestResult {
   state: 'passed' | 'failed';
   jobId: Id;
-  /** 结束的时间。 */
+  /** End time. */
   at: string;
-  /** 失败的原因，或通过时识别出的文字（固定样本，不含用户内容）。 */
+  /** Reason for failure, or the recognized text when it passed (a fixed sample, no user content). */
   detail?: string;
-  /** `detail` 是 Runtime 的文案时的消息引用（message-ref.ts）：界面按自己的语言重新生成；识别出的文字、旧记录没有。 */
+  /** Message reference when `detail` is Runtime copy (message-ref.ts): the UI regenerates it in its own language. Recognized text and old records do not have it. */
   detailRef?: MessageRef;
-  /** 没通过的原因（只在 `failed` 时有）。旧的记录没有这一项，按认不得的原因处理。 */
+  /** Reason the check did not pass (only present when `failed`). Old records lack this item and are treated as an unrecognized reason. */
   code?: ModelCheckCode;
-  /** 没通过时的技术细节（`key: value` 一行一条：Worker 的错误码与说明、组件、文件、实际结果），给反馈问题用；不含本机绝对路径。 */
+  /** Technical details when the check did not pass (one `key: value` per line: the Worker's error code and description, component, file, actual result), for filing issue reports. Contains no absolute local paths. */
   facts?: string[];
 }
 
 /**
- * 检查没通过的原因（命令与协议规范 §11.3）。模型包上的 `selfTest.code`，以及 `modelTest` 任务失败时的 `error.details.check`
- * 用同一组值；任务的 `error.code` 仍是 `MODEL_SELF_TEST_FAILED`（`APP_FILE_MISSING` 除外）。
- * - `APP_FILE_MISSING`：随应用分发的文件（样本、内置音色的录音）缺失，是安装不完整，不是模型的问题（不记进 `selfTest`）；
- * - `MODEL_FILES_DAMAGED`：模型的文件缺失或损坏，Worker 加载不了；
- * - `MODEL_OUTPUT_WRONG`：模型能加载、能运行，但输出不对（不合合同、识别不出样本、合成是静音……）；
- * - `MODEL_OUT_OF_MEMORY`：内存不够，模型没能加载；
- * - `MODEL_WORKER_FAILED`：Model Worker 起不来、中途退出、不支持这只模型，或被停用。
+ * Reasons a check did not pass (command and protocol spec §11.3). `selfTest.code` on a model bundle and `error.details.check` on a failed `modelTest` task use the same set of values;
+ * the task's `error.code` remains `MODEL_SELF_TEST_FAILED` (except for `APP_FILE_MISSING`).
+ * - `APP_FILE_MISSING`: a file shipped with the app (samples, recordings for built-in voices) is missing; the installation is incomplete, not a problem with the model (not recorded in `selfTest`);
+ * - `MODEL_FILES_DAMAGED`: the model's files are missing or corrupt, so the Worker cannot load it;
+ * - `MODEL_OUTPUT_WRONG`: the model loads and runs, but its output is wrong (does not meet the contract, fails to recognize the sample, synthesis is silent...);
+ * - `MODEL_OUT_OF_MEMORY`: not enough memory, the model could not be loaded;
+ * - `MODEL_WORKER_FAILED`: the Model Worker fails to start, exits midway, does not support this model, or has been disabled.
  */
 export const MODEL_CHECK_CODES = [
   'APP_FILE_MISSING',
@@ -160,8 +158,8 @@ export const MODEL_CHECK_CODES = [
 export type ModelCheckCode = (typeof MODEL_CHECK_CODES)[number];
 
 /**
- * 修复（`models.repair`，只重新下载坏掉的文件）对这个原因有没有用：`yes` 文件坏了，修复能解决；`maybe` 输出不对，
- * 可能是文件坏了，值得先修复；`no` 不是模型文件的问题（应用自带的文件、内存、Worker）。认不得的代码是 `no`。
+ * Whether repair (`models.repair`, which only re-downloads the broken files) helps with this reason: `yes` the files are broken, and repair fixes it; `maybe` the output is wrong, which may come from broken files, so repair is worth trying first;
+ * `no` it is not a model-file problem (app-bundled files, memory, the Worker). An unrecognized code is `no`.
  */
 export function modelCheckRepair(code: string | null | undefined): 'yes' | 'maybe' | 'no' {
   if (code === 'MODEL_FILES_DAMAGED') return 'yes';
@@ -169,70 +167,70 @@ export function modelCheckRepair(code: string | null | undefined): 'yes' | 'mayb
   return 'no';
 }
 
-/** 认得的检查代码；别的（包括旧记录没有的）为 null。 */
+/** A recognized check code; null for others (including those absent from older records). */
 export function modelCheckCode(value: unknown): ModelCheckCode | null {
   return typeof value === 'string' && (MODEL_CHECK_CODES as readonly string[]).includes(value) ? (value as ModelCheckCode) : null;
 }
 
 /**
- * 安装（或修复）一个模型包要做的事（`models.install` / `models.repair` 的第一步返回，架构设计 §6.3）：
- * 调用方把 `confirmBytes` 原样交回来才开始下载。
+ * What installing (or repairing) a model bundle will do (returned by the first step of `models.install` / `models.repair`, architecture design §6.3):
+ * the caller returns `confirmBytes` unchanged to start the download.
  */
 export interface ModelInstallPlan {
   bundleId: string;
-  /** 各组件：`installed` 不动；`missing` 下载缺的文件；`damaged`（修复时校验 sha256 不过）只重下坏的文件。 */
+  /** Per component: `installed` is left alone; `missing` downloads the missing files; `damaged` (sha256 check fails during repair) re-downloads only the broken files. */
   components: Array<{
     component: string;
     repo: string;
     revision: string;
-    /** 同 `ModelComponentStatus.origin`：`github-release` 的组件下载一个压缩包，核对后解开到 `tools/<名字>/<版本>/`。 */
+    /** Same as `ModelComponentStatus.origin`: a `github-release` component downloads one archive, verifies it, then extracts it to `tools/<name>/<version>/`. */
     origin?: 'github-release';
     action: 'keep' | 'download';
-    /** 要下载的文件（相对仓库目录；发布页组件是压缩包的文件名）。 */
+    /** Files to download (relative to the repo directory; for release-page components, the archive file name). */
     files: string[];
-    /** 这个组件要下载的字节数；有文件大小未知时 null。 */
+    /** Bytes this component will download; null when some file size is unknown. */
     bytes: number | null;
   }>;
-  /** 这次要下载的总字节数（不含暂存区里已经收到的部分）；有文件大小未知时 null。 */
+  /** Total bytes to download this time (excluding parts already received in the staging area); null when some file size is unknown. */
   downloadBytes: number | null;
-  /** 大小未知时按登记的估计值给出的字节数（仅供参考）。 */
+  /** Bytes given by the registered estimate when a size is unknown (for reference only). */
   estimatedBytes: number;
-  /** 确认用的字节数：`downloadBytes`，未知时取 `estimatedBytes`。 */
+  /** Bytes used for confirmation: `downloadBytes`, or `estimatedBytes` when unknown. */
   confirmBytes: number;
-  /** 暂存区里已经收到、这次不再下载的字节数。 */
+  /** Bytes already received in the staging area that will not be downloaded again this time. */
   resumedBytes: number;
-  /** 模型目录所在磁盘的可用空间；查不到时 null。 */
+  /** Free space on the disk holding the model directory; null if it cannot be determined. */
   availableBytes: number | null;
-  /** 下载来源的基址（不含凭据）。 */
+  /** Base URL of the download source (no credentials). */
   source: string;
-  /** 没有要下载的东西（都已装好）。 */
+  /** Nothing to download (everything is already installed). */
   upToDate: boolean;
 }
 
 export interface ModelInstallResult {
   plan: ModelInstallPlan;
-  /** 开始的安装任务；还没确认、或没有要下载的东西时 null。同一个模型包已经在安装时是那个任务。 */
+  /** The install task that was started; null when not yet confirmed or when there is nothing to download. If the same bundle is already installing, this is that task. */
   jobId: Id | null;
 }
 
 export interface ModelRemoveResult {
-  /** 删掉的仓库（`<owner>/<repo>`）。 */
+  /** Removed repos (`<owner>/<repo>`). */
   removed: string[];
-  /** 还有别的模型包在用、保留下来的仓库。 */
+  /** Repos kept because other model bundles are still using them. */
   kept: Array<{ repo: string; usedBy: string[] }>;
   bundle: ModelBundleStatus;
 }
 
-// ---- 下载来源（架构设计 §6.3「来源」、§5.10 `models.downloadEndpoint`）：Runtime 下载用，设置页按它认出选的是哪一个 ----
+// ---- Download source (architecture design §6.3 "Source", §5.10 `models.downloadEndpoint`): used by Runtime downloads; the settings page uses it to recognize which one is selected ----
 
-/** 设置为 null 时的下载来源：公共模型仓库。 */
+/** Download source when set to null: the public model repository. */
 export const DEFAULT_MODELS_ENDPOINT = 'https://huggingface.co';
-/** 选 ModelScope 时存的基址。 */
+/** Base URL saved when ModelScope is selected. */
 export const MODELSCOPE_ENDPOINT = 'https://www.modelscope.cn';
 
 const MODELSCOPE_HOSTS: ReadonlySet<string> = new Set(['modelscope.cn', 'www.modelscope.cn']);
 
-/** 基址指向 ModelScope（按主机认）。 */
+/** The base URL points to ModelScope (recognized by host). */
 export function isModelScopeEndpoint(endpoint: string): boolean {
   try {
     return MODELSCOPE_HOSTS.has(new URL(endpoint).hostname);
@@ -241,50 +239,50 @@ export function isModelScopeEndpoint(endpoint: string): boolean {
   }
 }
 
-// ---- 模型目录（架构设计 §6.3、§5.10）：本地模型放在哪个文件夹 ----
+// ---- Model directory (architecture design §6.3, §5.10): which folder local models are stored in ----
 
 /**
- * 生效的模型目录从哪里来：环境变量 `CUCCUT_MODELS_DIR`（只读，要改得改环境变量并重启）、设置 `models.dir`、
- * 或缺省的 `<runtime-home>/models`。
+ * Where the effective model directory comes from: the environment variable `CUCCUT_MODELS_DIR` (read-only; to change it, change the environment variable and restart), the setting `models.dir`,
+ * or the default `<runtime-home>/models`.
  */
 export type ModelsDirSource = 'env' | 'setting' | 'default';
 
-/** `models.getDir` 的结果：生效的模型目录与它的用量。 */
+/** Result of `models.getDir`: the effective model directory and its usage. */
 export interface ModelsDirInfo {
-  /** 生效的模型目录（绝对路径）。 */
+  /** The effective model directory (absolute path). */
   path: string;
   source: ModelsDirSource;
-  /** 缺省位置（`<runtime-home>/models`），「恢复默认」改回这里。 */
+  /** Default location (`<runtime-home>/models`); "Restore default" switches back to this. */
   defaultPath: string;
-  /** 目录在不在（外置盘没接上时为 false：模型都显示为未安装，安装被拒绝）。 */
+  /** Whether the directory exists (false when an external drive is not connected: models show as not installed, and installation is refused). */
   exists: boolean;
   writable: boolean;
-  /** 目录里能认出的模型仓库（带 `.ccut-manifest.json`）的大小之和，几个模型包共用的仓库只算一次。 */
+  /** Sum of sizes of the model repos recognized in the directory (those with `.ccut-manifest.json`); a repo shared by several bundles counts once. */
   usedBytes: number;
-  /** 所在磁盘的可用空间；读不到时 null。 */
+  /** Free space on the disk it is on; null when it cannot be read. */
   freeBytes: number | null;
-  /** 组件全部在这个目录里的模型包个数（不看平台支不支持）。 */
+  /** Number of model bundles whose components are all in this directory (regardless of whether the platform supports them). */
   modelCount: number;
-  /** 正在把模型移到新目录时那个任务（`kind: 'modelsMove'`）；没有时 null。 */
+  /** The task moving models to the new directory (`kind: 'modelsMove'`); null when there is none. */
   moveJobId: Id | null;
-  /** 那个移动的目标目录；没有时 null。 */
+  /** The target directory of that move; null when there is none. */
   moveTo: string | null;
 }
 
-/** 一个文件夹里认出的模型仓库：`<owner>/<repo>` 目录里带合法的 `.ccut-manifest.json`。 */
+/** A model repo recognized in a folder: a `<owner>/<repo>` directory that contains a valid `.ccut-manifest.json`. */
 export interface ModelsDirRepo {
   repo: string;
   revision: string;
-  /** 清单里的文件大小之和。 */
+  /** Sum of the file sizes in the manifest. */
   bytes: number;
-  /** 是不是登记过的模型包用到的仓库与版本（不是的不移动、不计入模型个数）。 */
+  /** Whether it is a repo and version used by a registered model bundle (if not, it is not moved and not counted in the model count). */
   known: boolean;
 }
 
 /**
- * `models.inspectDir` 的结果：改到这个文件夹之前要知道的事。只读，不在文件夹里写任何东西。
- * `problem`：`missing` 不存在或不是文件夹，`not-writable` 没有写入权限，`nested` 与当前目录互相包含（不能移动或切换），
- * `same` 就是当前目录；null 表示可以改。
+ * Result of `models.inspectDir`: what to know before changing to this folder. Read-only; it writes nothing in the folder.
+ * `problem`: `missing` means it does not exist or is not a folder; `not-writable` means no write permission; `nested` means it contains, or is contained by, the current directory (cannot move or switch);
+ * `same` means it is the current directory itself; null means it can be changed.
  */
 export interface ModelsDirInspection {
   path: string;
@@ -292,41 +290,41 @@ export interface ModelsDirInspection {
   writable: boolean;
   freeBytes: number | null;
   problem: 'missing' | 'not-writable' | 'nested' | 'same' | null;
-  /** 这个文件夹里已有的模型。 */
+  /** Models already in this folder. */
   found: { repos: ModelsDirRepo[]; bundleIds: string[]; bytes: number };
-  /** 当前目录里要移过去的模型（只算登记过的仓库）。 */
+  /** Models in the current directory to be moved over (only registered repos are counted). */
   current: { repos: ModelsDirRepo[]; bundleIds: string[]; bytes: number };
   /**
-   * 选「移过去」时：要搬的字节数（目标里已有同一仓库与版本的不再搬）、同一块盘（改名，不占新空间）还是跨盘（复制、校验后删源），
-   * 放不放得下。当前目录没有模型时 `requiredBytes` 为 0。
+   * When "move" is chosen: the bytes to carry (a repo and version already present in the target is not carried again), whether it is on the same disk (a rename, no new space) or a different disk (copy, verify, then delete the source), and
+   * whether it fits. `requiredBytes` is 0 when the current directory has no models.
    */
   move: { requiredBytes: number; sameVolume: boolean; fits: boolean };
 }
 
 /**
- * 更改模型目录（`models.setDir`）的方式：
- * - `move`：把当前目录里登记过的模型仓库与安装记录移到新目录，再换过去（一个 `modelsMove` 任务）；
- * - `switch`：只换位置，原目录的文件原样保留，新目录里已有的模型直接可用，其余显示为未安装。
- * 当前目录没有模型时两者一样。
+ * How the model directory is changed (`models.setDir`):
+ * - `move`: move the registered model repos and install records in the current directory to the new one, then switch to it (one `modelsMove` task);
+ * - `switch`: only change the location. The files in the original directory are kept as they are; models already in the new directory are usable right away, and the rest show as not installed.
+ * When the current directory has no models, the two are the same.
  */
 export type ModelsDirMode = 'move' | 'switch';
 
 export interface ModelsDirChangeResult {
-  /** `switch` 之后（或 `move` 提交时）的目录信息；`move` 在任务完成后才换过去。 */
+  /** Directory info after `switch` (or when `move` is submitted); `move` only switches over after the task completes. */
   dir: ModelsDirInfo;
-  /** `move` 的任务；`switch` 时 null。 */
+  /** The `move` task; null for `switch`. */
   jobId: Id | null;
 }
 
-// ---- 模型服务（架构设计 §6.1、§6.2、§6.8）：能力 × Provider ----
+// ---- Model services (architecture design §6.1, §6.2, §6.8): capability × Provider ----
 
 /**
- * 模型服务的能力。与上面模型包的 `ModelCapability`（本地模型包能做什么）是两个词表：这里是 Provider 对外提供的能力。
- * `transcribe` 有本地、节点与在线 Provider；`synthesizeSpeech` 有本地（已安装的语音合成模型包）与在线 Provider；`generateImage` 有本地（已安装的
- * 文生图模型包）、在线与智能体 Provider；
- * `generateText` 只有在线 Provider（局域网节点不共享它）；`separateAudio`（人声与背景分离）只有本地 Provider（已安装的分离模型包），
- * 由翻译配音使用；`generateMusic`（歌曲与配乐）只有本地 Provider（已安装的音乐生成模型包）。`transcribe` 与 `separateAudio`
- * 有出厂默认，其余没有。
+ * Capabilities of model services. These are a different vocabulary from the `ModelCapability` of model bundles above (what a local bundle can do): here it is what a Provider offers externally.
+ * `transcribe` is available from local, node and online Providers; `synthesizeSpeech` from local (installed speech-synthesis bundles) and online Providers; `generateImage` from local (installed
+ * text-to-image bundles), online and agent Providers;
+ * `generateText` only from online Providers (LAN nodes do not share it); `separateAudio` (vocal and background separation) only from local Providers (installed separation bundles),
+ * and is used by dubbing; `generateMusic` (songs and background music) only from local Providers (installed music-generation bundles). `transcribe` and `separateAudio`
+ * have factory defaults; the others do not.
  */
 export type ModelServiceCapability = 'transcribe' | 'synthesizeSpeech' | 'generateImage' | 'generateText' | 'separateAudio' | 'generateMusic';
 export const MODEL_SERVICE_CAPABILITIES: readonly ModelServiceCapability[] = [
@@ -339,29 +337,29 @@ export const MODEL_SERVICE_CAPABILITIES: readonly ModelServiceCapability[] = [
 ];
 
 /**
- * 有在线 Provider 的能力：云端页、自建服务商声明的模型与对外模型接口（`/v1/*`）只涉及这几种。`separateAudio` 与 `generateMusic`
- * 只在本机，不在其中。
+ * Capabilities that have online Providers: the cloud page, the models declared by self-hosted providers, and the external model API (`/v1/*`) involve only these. `separateAudio` and `generateMusic`
+ * are local-only and are not in this list.
  */
 export type OnlineCapability = Exclude<ModelServiceCapability, 'separateAudio' | 'generateMusic'>;
 export const ONLINE_CAPABILITIES: readonly OnlineCapability[] = ['transcribe', 'synthesizeSpeech', 'generateImage', 'generateText'];
 
 /**
- * Provider 的来源：`local`（本机 Model Worker）、`node`（已配对的局域网节点，`node:<nodeId>`）、
- * `online`（`openai`、`google`、`elevenlabs` 与用户自定义的兼容端点 `custom:<slug>`）、
- * `agent`（本机已安装并登录的智能体运行时，`agent:<driverId>`，首版只有 `agent:codex`，架构设计 §6.9）。
+ * Provider sources: `local` (this machine's Model Worker), `node` (a paired LAN node, `node:<nodeId>`),
+ * `online` (`openai`, `google`, `elevenlabs`, and user-defined compatible endpoints `custom:<slug>`),
+ * `agent` (an agent runtime installed and signed in on this machine, `agent:<driverId>`; the first release has only `agent:codex`, architecture design §6.9).
  */
 export type ProviderKind = 'local' | 'node' | 'online' | 'agent';
 
 /**
- * Provider 或模型此刻不可用的原因：
- * - `not-configured`：在线或智能体 Provider 没有启用（从未配置或被停用）；
- * - `missing-credential`：启用了但没有密钥；
- * - `not-installed`：本地模型包没有安装或文件不对；智能体 Provider：智能体运行时没有安装；
- * - `signed-out`：智能体运行时没有登录（在它自己的界面登录，CucCut 不经手账号）；
- * - `outdated`：智能体运行时的版本低于这个 Provider 要求的最低版本；
- * - `not-paired` / `not-connected`：节点没有配对或连不上；
- * - `unsupported`：这台机器、这个节点或这个版本不支持；
- * - `resource`：反复崩溃或资源不足后停用（`models.enable` 重新启用）。
+ * Reasons a Provider or model is unavailable right now:
+ * - `not-configured`: an online or agent Provider is not enabled (never configured, or disabled);
+ * - `missing-credential`: enabled, but no key;
+ * - `not-installed`: local model bundle not installed, or its files are wrong; agent Provider: the agent runtime is not installed;
+ * - `signed-out`: the agent runtime is not signed in (sign in in its own interface; CucCut does not handle the account);
+ * - `outdated`: the agent runtime's version is below the minimum this Provider requires;
+ * - `not-paired` / `not-connected`: the node is not paired or cannot be reached;
+ * - `unsupported`: this machine, this node or this version does not support it;
+ * - `resource`: disabled after repeated crashes or insufficient resources (re-enable with `models.enable`).
  */
 export type ProviderUnavailableReason =
   | 'not-configured'
@@ -374,30 +372,30 @@ export type ProviderUnavailableReason =
   | 'unsupported'
   | 'resource';
 
-/** 各能力的模型描述都有的字段。本地与节点的 `modelId` 是模型包 ID，在线的是供应商的模型名。 */
+/** Fields that the model descriptions of every capability have. For local and node, `modelId` is the model bundle ID; for online, it is the vendor's model name. */
 export interface ModelInfoBase {
   modelId: string;
   label: string;
-  /** 这个 Provider 在这种能力下的默认模型。 */
+  /** The default model of this Provider under this capability. */
   default?: boolean;
-  /** 用户声明的模型（自定义端点）：限制与特性由用户给出，按 `declared` 层对待（§3.6）。 */
+  /** User-declared models (custom endpoints): the limits and features are given by the user and treated at the `declared` tier (§3.6). */
   declared?: boolean;
-  /** 本地与节点逐个模型包报告可用性；不给时与所在 Provider 相同。 */
+  /** Local and node report availability per model bundle; when not given, it is the same as their Provider. */
   available?: boolean;
   unavailableReason?: ProviderUnavailableReason;
   detail?: string;
-  /** `detail` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `detail` (message-ref.ts). */
   detailRef?: MessageRef;
-  /** 结构化字段说不清的限制，一句给人（与智能体）看的话，例如智能体 Provider 的串行与耗时（§6.9）。 */
+  /** Limits that the structured fields cannot express, as one sentence for people (and agents), e.g. an agent Provider's serialization and duration (§6.9). */
   notes?: string;
   /**
-   * 单价（可选）：只在服务商公布了可信的单价、由描述给出时才有，用来估算一次调用的金额上界（架构设计 §7.8）。
-   * 没有时金额未知（`cost: 'unknown'`），有金额上限的授权不能保证上限。不写伪精确的价格；内置模型目前都没有。
+   * Unit price (optional): present only when the vendor publishes a trustworthy unit price and the description gives it. It is used to estimate an upper bound on the cost of one call (architecture design §7.8).
+   * When absent, the cost is unknown (`cost: 'unknown'`), and an authorization with a cost cap cannot guarantee the cap. Do not write pseudo-precise prices; the built-in models currently have none.
    */
   price?: ModelPrice;
 }
 
-/** 单价：每次请求、每张图片或每千字符（合成语音的文本）多少钱。金额是十进制字符串。 */
+/** Unit price: how much each request, each image, or each thousand characters (of text for synthesized speech) costs. The amount is a decimal string. */
 export interface ModelPrice {
   currency: string;
   amount: string;
@@ -405,54 +403,50 @@ export interface ModelPrice {
 }
 
 /**
- * 费用状态：本地免费（`free-local`）；在线的有可信的单价时 `estimate`，没有时 `unknown`；智能体 Provider 用的是用户
- * 已有的订阅，`subscription` 表示「订阅内，额度未知」。不写伪精确的金额。
+ * Cost status: local is free (`free-local`); online with a trustworthy unit price is `estimate`, and without one `unknown`; agent Providers use the user's existing subscription, and `subscription` means "within the subscription, quota unknown". Do not write pseudo-precise amounts.
  */
 export type ModelCost = 'free-local' | 'estimate' | 'unknown' | 'subscription';
 
-/** `transcribe` 的模型描述。 */
+/** Model description for `transcribe`. */
 export interface TranscribeModelInfo extends ModelInfoBase {
-  /** 单次请求的输入大小上限（字节）；null 为不限。超过时适配器切片提交。 */
+  /** Upper limit on the input size of one request (bytes); null means no limit. When exceeded, the adapter submits in slices. */
   maxInputBytes: number | null;
-  /** 单次请求的音频时长上限（秒）；null 为不限。 */
+  /** Upper limit on the audio duration of one request (seconds); null means no limit. */
   maxDurationSec: number | null;
-  /** `native`：返回词级时间；`none`：只有段级时间或没有时间，词时间按字符长度插值并标 `estimated`。 */
+  /** `native`: returns word-level timestamps; `none`: only segment-level timestamps or no timestamps, with word timing interpolated by character length and marked `estimated`. */
   wordTimestamps: 'native' | 'none';
-  /** 支持的语言（BCP 47 主语言子标签）；`any` 为不限。 */
+  /** Supported languages (BCP 47 primary language subtags); `any` means no limit. */
   languages: 'any' | string[];
-  /** 是否接受术语提示（`hint`）。 */
+  /** Whether term hints (`hint`) are accepted. */
   acceptsHint: boolean;
   /**
-   * 能不能区分说话人（`diarize`）：`native` 是模型自己区分（MOSS），`pack` 是装了「说话人区分」模型包、转写后区分
-   * （Qwen3-ASR、Whisper，架构设计 §6.6），`none` 是不区分（`diarize` 只报 `diarization-unavailable`）。没有这一项按 `none`。
+   * Whether speakers can be told apart (`diarize`): `native` means the model tells them apart itself (MOSS); `pack` means the speaker-diarization bundle is installed and diarization happens after transcription
+   * (Qwen3-ASR, Whisper; architecture design §6.6); `none` means no diarization (`diarize` only reports `diarization-unavailable`). When absent, it is treated as `none`.
    */
   speakers?: 'native' | 'pack' | 'none';
   /**
-   * 转写后区分说话人要用的「说话人区分」模型包（`bundleId`）：Qwen3-ASR 与 Whisper 的本地模型包登记了它，装没装都给，
-   * 界面据此知道装上它就能区分（`speakers` 只说此刻能不能）。自己区分的（MOSS）与在线模型不给。
+   * The speaker-diarization bundle (`bundleId`) used to tell speakers apart after transcription: the local bundles for Qwen3-ASR and Whisper register it, whether or not it is installed,
+   * so the UI knows that installing it lets diarization work (`speakers` only says whether it can be used right now). Models that diarize on their own (MOSS) and online models do not provide it.
    */
   diarizationPack?: string;
   cost: ModelCost;
 }
 
-/** 人声与背景分离的模型（本地的分离模型包）：输出人声与背景两条与输入等长、同采样率的音频（架构设计 §6.1）。 */
+/** A vocal-separation model (a local separation bundle): it outputs two audio tracks, vocals and background, each with the same length and sample rate as the input (architecture design §6.1). */
 export interface SeparateModelInfo extends ModelInfoBase {
   cost: ModelCost;
 }
 
-/** 合成语音的输出格式（都是自带容器头、ffprobe 认得的格式；不提供裸 PCM）。 */
+/** Output formats of synthesized speech (all carry their own container header and are recognized by ffprobe; no raw PCM is offered). */
 export type SpeechFormat = 'mp3' | 'wav' | 'flac';
 export const SPEECH_FORMATS: readonly SpeechFormat[] = ['mp3', 'wav', 'flac'];
 
-/** 生成图片的格式。 */
+/** Output format of generated images. */
 export type ImageFormat = 'png' | 'jpeg' | 'webp';
 export const IMAGE_FORMATS: readonly ImageFormat[] = ['png', 'jpeg', 'webp'];
 
 /**
- * 声音的指定方式：`preset` 是模型自带的音色（`voices` 里列出的）；`custom` 是供应商账号里的音色 ID（克隆、音色库），
- * 原样交给供应商，由它核对。本地模型还有两种：`clone` 是参考录音加原文（请求的 `reference`，或音色库条目
- * `library:<id>` 的参考录音），`describe` 是一句描述（请求的 `voiceDescription`）。模型不支持的方式在提交时拒绝，
- * 不换成别的声音。
+ * How a voice is specified: `preset` is a voice built into the model (listed in `voices`); `custom` is a voice ID in the vendor account (cloned, or from the voice library), passed to the vendor unchanged, which validates it. Local models have two more: `clone` is a reference recording plus its transcript (the request's `reference`, or the reference recording of a voice-library entry `library:<id>`), and `describe` is one sentence describing the voice (the request's `voiceDescription`). A method the model does not support is rejected at submission, not replaced with a different voice.
  */
 export type VoiceMode = 'preset' | 'custom' | 'clone' | 'describe';
 
@@ -460,15 +454,15 @@ export interface SpeechVoice {
   voiceId: string;
   label: string;
   /**
-   * 本地克隆模型的内置音色：这只音色其实是一段随应用分发的参考录音（`builtin`），选它就是用这段录音克隆。
-   * 模型自带的说话人（`model`）与在线音色不给。
+   * A built-in voice of the local cloning model: the voice is in fact a reference recording shipped with the app (`builtin`); choosing it means cloning from that recording.
+   * The model's own speakers (`model`) and online voices do not provide it.
    */
   source?: 'model' | 'builtin';
-  /** 音色的语言（BCP 47 主语言子标签）；不限时不给。 */
+  /** The language of the voice (BCP 47 primary language subtag); omitted when there is no limit. */
   language?: string;
 }
 
-/** 本地语音合成的一个数值旋钮的范围（含两端）与默认值。 */
+/** The range (inclusive at both ends) and default value of one numeric knob of local speech synthesis. */
 export interface SpeechKnobRange {
   min: number;
   max: number;
@@ -477,193 +471,192 @@ export interface SpeechKnobRange {
 }
 
 /**
- * 一句描述造声（`describe`）接受什么：`free` 为任意一句话；`vocabulary` 为封闭词表，每类至多选一项，词条用逗号分隔。
- * `terms` 的键是词条的语言（BCP 47 主语言子标签），同一类各语言的词条按下标一一对应；只有某种语言的类别只给那一种。
+ * What a one-sentence voice description (`describe`) accepts: `free` is any sentence; `vocabulary` is a closed vocabulary, at most one item per category, with terms separated by commas.
+ * The keys of `terms` are the language of the terms (BCP 47 primary language subtag); terms of the same category in each language correspond by index. A category given in only one language lists only that language.
  */
 export type SpeechVoiceDescription =
   { kind: 'free' } | { kind: 'vocabulary'; categories: Array<{ category: string; terms: Record<string, string[]> }> };
 
-/** 模型权重的许可：下载与使用前给人看。`commercialUse: false` 的模型只许非商业用途。 */
+/** The license of the model weights: shown to people before download and use. Models with `commercialUse: false` are for non-commercial use only. */
 export interface ModelLicense {
   name: string;
   url: string;
   commercialUse: boolean;
-  /** 一句给人看的说明。 */
+  /** A one-sentence note for people. */
   summary: string;
 }
 
 /**
- * 读音标注（多音字）怎么交给模型：读音标注是输入文本的一部分，Runtime 原样交给 Worker，由引擎换成自己的写法。
- * `homophone`：换成同音字；`inline-pinyin`：行内拼音；`annotated`：模型原生的标注写法；`unsupported`：模型没有读音通道，
- * 按表面文字合成（如实报告，不静默改写）。
+ * How pronunciation annotations (for polyphonic characters) are passed to the model: the annotation is part of the input text, the Runtime passes it unchanged to the Worker, and the engine converts it to its own notation.
+ * `homophone`: replaced with a homophone; `inline-pinyin`: inline pinyin; `annotated`: the model's native annotation notation; `unsupported`: the model has no pronunciation channel, so
+ * it synthesizes the surface text (reported honestly, not silently rewritten).
  */
 export type SpeechReadings = 'homophone' | 'inline-pinyin' | 'annotated' | 'unsupported';
 
-/** 本地语音合成模型（`local` Provider 的 `synthesizeSpeech` 模型）独有的描述。 */
+/** Description specific to local speech-synthesis models (the `synthesizeSpeech` models of the `local` Provider). */
 export interface LocalSpeechTraits {
-  /** 引擎的家族（`qwen3-tts`、`indextts2`……），给界面分组用。 */
+  /** Engine family (`qwen3-tts`, `indextts2`, ...), used by the UI for grouping. */
   family: string;
-  /** 输出的采样率（Hz）。输出一律是 WAV。 */
+  /** Output sample rate (Hz). The output is always WAV. */
   sampleRate: number;
-  /** 明显慢于其他本地模型（大模型），界面据此提示。 */
+  /** Clearly slower than other local models (large models); the UI shows a hint for this. */
   slow: boolean;
   /**
-   * 内置音色（`voices` 里 `source: 'builtin'` 的那些）怎么用：`reference` 是用它的参考录音与原文克隆，`description` 是把它的
-   * 英文声音描述交给按描述造声的模型；没有内置音色时 null。
+   * How built-in voices (those with `source: 'builtin'` in `voices`) are used: `reference` clones using their reference recording and transcript; `description` passes their English voice description to a model that creates voices from descriptions. null when there are no built-in voices.
    */
   builtinVoices: 'reference' | 'description' | null;
-  /** `clone` 的参考录音：建议时长（秒）；给了原文时的建议时长（有的模型给原文时要更短的参考）。 */
+  /** Reference recording for `clone`: suggested duration (seconds); also the suggested duration when a transcript is given (some models want a shorter reference when a transcript is given). */
   reference: { recommendedSeconds: [number, number]; withTranscriptSeconds: [number, number] | null; acceptsTranscript: boolean } | null;
-  /** `describe` 接受什么；不支持 `describe` 时 null。 */
+  /** What `describe` accepts; null when `describe` is not supported. */
   voiceDescription: SpeechVoiceDescription | null;
-  /** `instructions` 的含义：`style` 为语气与风格说明（与音色无关）；不接受时 null。 */
+  /** Meaning of `instructions`: `style` is tone and style guidance (unrelated to the voice); null when not accepted. */
   instructions: 'style' | null;
-  /** 情绪控制（情绪参考音频、情绪向量）：引擎支持，这一版的请求还不带。 */
+  /** Emotion control (emotion reference audio, emotion vectors): the engine supports it, but this version's requests do not yet carry it. */
   emotion: boolean;
-  /** 数值旋钮：`speed`（同 `speedRange`）、`cfg`（引导强度）、`steps`（扩散步数）。不接受的不给。 */
+  /** Numeric knobs: `speed` (same as `speedRange`), `cfg` (guidance strength), `steps` (diffusion steps). Not given when not accepted. */
   knobs: Partial<Record<'speed' | 'cfg' | 'steps', SpeechKnobRange>>;
-  /** 按目标时长合成的上限（秒）；不支持时 null。 */
+  /** Upper limit (seconds) for synthesizing to a target duration; null when not supported. */
   maxDurationSec: number | null;
   readings: SpeechReadings;
   license: ModelLicense;
 }
 
-/** `synthesizeSpeech` 的模型描述。 */
+/** Model description for `synthesizeSpeech`. */
 export interface SpeechModelInfo extends ModelInfoBase {
-  /** 预置音色；供应商的音色随账号变化时可以为空（此时只接受 `custom`）。 */
+  /** Preset voices. May be empty when the vendor's voices vary by account (then only `custom` is accepted). */
   voices: SpeechVoice[];
-  /** 不指定声音时用哪个；null 表示必须指定。 */
+  /** The voice used when none is specified; null means a voice must be specified. */
   defaultVoice: string | null;
   voiceModes: VoiceMode[];
-  /** 支持的语言（BCP 47 主语言子标签）；`any` 为不限或供应商没有给出清单。 */
+  /** Supported languages (BCP 47 primary language subtags); `any` means no limit, or the vendor gave no list. */
   languages: 'any' | string[];
-  /** 单次请求的文本上限（按 Unicode 码点计）。超过时在提交时拒绝：不截断、不切块。 */
+  /** Text limit per request (counted in Unicode code points). Exceeding it is rejected at submission: not truncated, not split into chunks. */
   maxInputChars: number;
   formats: SpeechFormat[];
   defaultFormat: SpeechFormat;
-  /** 是否接受语气与风格的说明（`instructions`）。 */
+  /** Whether tone and style instructions (`instructions`) are accepted. */
   acceptsInstructions: boolean;
-  /** 语速倍率的范围；null 为不接受 `speed`。 */
+  /** Range of the speaking-rate multiplier; null means `speed` is not accepted. */
   speedRange: { min: number; max: number } | null;
-  /** 是否接受 `seed`（供应商尽力复现，不保证）。 */
+  /** Whether `seed` is accepted (the vendor reproduces it on a best-effort basis, not guaranteed). */
   acceptsSeed: boolean;
   cost: ModelCost;
-  /** 本地语音合成模型独有的描述；在线模型不给。 */
+  /** Description specific to local speech-synthesis models; not given for online models. */
   local?: LocalSpeechTraits;
 }
 
-/** 一种宽高比与它默认的像素尺寸。 */
+/** An aspect ratio and its default pixel size. */
 export interface ImageAspectRatio {
-  /** `W:H`，如 `16:9`。 */
+  /** `W:H`, e.g. `16:9`. */
   ratio: string;
-  /** 只给宽高比时用的尺寸 `WIDTHxHEIGHT`。 */
+  /** The size `WIDTHxHEIGHT` used when only an aspect ratio is given. */
   size: string;
 }
 
-/** `generateImage` 的模型描述。 */
+/** Model description for `generateImage`. */
 export interface ImageModelInfo extends ModelInfoBase {
-  /** 接受的尺寸 `WIDTHxHEIGHT`。 */
+  /** Accepted sizes `WIDTHxHEIGHT`. */
   sizes: string[];
   aspectRatios: ImageAspectRatio[];
-  /** 不指定尺寸时用哪个；null 表示由供应商决定（`auto`）。 */
+  /** The size used when none is specified; null means the vendor decides (`auto`). */
   defaultSize: string | null;
-  /** 一次任务最多几张。 */
+  /** Maximum number of images in one task. */
   maxCount: number;
-  /** 提示词上限（按 Unicode 码点计）。超过时在提交时拒绝。 */
+  /** Upper limit on the prompt (counted in Unicode code points). Exceeding it is rejected at submission. */
   maxPromptChars: number;
   formats: ImageFormat[];
   defaultFormat: ImageFormat;
-  /** 模型是否接受参考图（以及最多几张）。这一版的 `models.generateImage` 还不带参考图，这里只描述模型。 */
+  /** Whether the model accepts reference images (and at most how many). This version of `models.generateImage` does not yet take reference images; this only describes the model. */
   referenceImages: { max: number } | null;
   acceptsSeed: boolean;
   cost: ModelCost;
-  /** 本地文生图模型独有的描述；在线模型不给。 */
+  /** Description specific to local text-to-image models; not given for online models. */
   local?: LocalImageTraits;
 }
 
-/** 本地文生图模型的旋钮：去噪步数的范围与默认值（请求的 `steps`）。 */
+/** Knobs of the local text-to-image model: the range and default of the denoising steps (the request's `steps`). */
 export interface LocalImageTraits {
   steps: SpeechKnobRange;
 }
 
-/** 音乐生成的方式：`song` 按风格与歌词生成有人声的歌曲；`instrumental` 按风格生成无人声的配乐。 */
+/** Music generation mode: `song` generates a song with vocals from a style and lyrics; `instrumental` generates an instrumental track without vocals from a style. */
 export type MusicMode = 'song' | 'instrumental';
 export const MUSIC_MODES: readonly MusicMode[] = ['song', 'instrumental'];
 /**
- * 音乐生成的规划：`off` 直接从风格与歌词生成；`melody` 先生成或接受一段旋律的乐谱再生成；`full` 先生成完整的乐谱。
- * 不给时用模型包登记的默认值（YuE2 是 `melody`）。
+ * Music generation planning: `off` generates directly from the style and lyrics; `melody` first generates, or accepts, a melody score and then generates; `full` first generates a complete score.
+ * When not given, the default registered by the model bundle is used (YuE2 is `melody`).
  */
 export type MusicPlanning = 'off' | 'melody' | 'full';
 export const MUSIC_PLANNINGS: readonly MusicPlanning[] = ['off', 'melody', 'full'];
 
-/** 本地音乐生成模型（`local` Provider 的 `generateMusic` 模型）独有的描述。 */
+/** Description specific to local music-generation models (the `generateMusic` models of the `local` Provider). */
 export interface LocalMusicTraits {
-  /** 引擎的家族（`yue2`）。 */
+  /** Engine family (`yue2`). */
   family: string;
   /**
-   * 执行引擎（`audiocpp_cli`）与它此刻找到的可执行文件；没找到时 null（模型不能生成）。引擎是模型包的 `audiocpp-engine` 组件：没装时
-   * 模型包是 `not-installed` / `incomplete`，`unavailableReason: 'not-installed'`。
+   * The execution engine (`audiocpp_cli`) and the executable it has found at this moment; null when not found (the model cannot generate). The engine is the bundle's `audiocpp-engine` component: when it is not installed,
+   * the bundle is `not-installed` / `incomplete`, with `unavailableReason: 'not-installed'`.
    */
   engine: { id: string; executable: string | null };
-  /** 输出的采样率（Hz）。输出一律是 WAV。 */
+  /** Output sample rate (Hz). The output is always WAV. */
   sampleRate: number;
-  /** 歌词支持的语言（BCP 47 主语言子标签）；`unverified` 表示上游没有核实过的清单。 */
+  /** Languages supported for lyrics (BCP 47 primary language subtags); `unverified` means the list has not been checked upstream. */
   lyricLanguages: string[] | 'unverified';
-  /** 接受的规划方式与默认值。 */
+  /** Accepted planning modes and their default. */
   planning: { options: MusicPlanning[]; default: MusicPlanning };
-  /** 扩散步数的范围（请求的 `steps`）。 */
+  /** Range of diffusion steps (the request's `steps`). */
   steps: SpeechKnobRange;
-  /** 明显慢（整首歌要几分钟以上），界面据此提示。 */
+  /** Clearly slow (a whole song takes several minutes or more); the UI shows a hint for this. */
   slow: boolean;
   license: ModelLicense;
 }
 
-/** `generateMusic` 的模型描述。 */
+/** Model description for `generateMusic`. */
 export interface MusicModelInfo extends ModelInfoBase {
   modes: MusicMode[];
-  /** 风格描述的上限（按 Unicode 码点计）。超过时在提交时拒绝。 */
+  /** Upper limit on the style description (counted in Unicode code points). Exceeding it is rejected at submission. */
   maxStyleChars: number;
-  /** 歌词的上限（按 Unicode 码点计）。 */
+  /** Upper limit on lyrics (counted in Unicode code points). */
   maxLyricsChars: number;
-  /** 一次能生成的时长上限（秒）：请求的 `maxDurationSec` 不能超过它。 */
+  /** Maximum duration (seconds) that can be generated at once: the request's `maxDurationSec` cannot exceed it. */
   maxDurationSec: number;
-  /** 不给 `maxDurationSec` 时的预算（秒）。 */
+  /** The budget (seconds) when `maxDurationSec` is not given. */
   defaultDurationSec: number;
   formats: SpeechFormat[];
   defaultFormat: SpeechFormat;
   acceptsSeed: boolean;
   cost: ModelCost;
-  /** 本地音乐生成模型独有的描述；目前只有本地模型。 */
+  /** Description specific to local music-generation models; currently only local models exist. */
   local?: LocalMusicTraits;
 }
 
 /**
- * 文本模型的推理强度（架构设计 §6.8）。各供应商的写法由适配器换算（OpenAI 的 `reasoning_effort`、Gemini 的
- * `thinkingLevel`）。模型不支持请求的那一档时用最接近的一档（一样近时取高的），不支持推理强度的模型忽略它；
- * 两种情况都在结果里注明。
+ * Reasoning effort of text models (architecture design §6.8). Each vendor's syntax is converted by its adapter (OpenAI's `reasoning_effort`, Gemini's
+ * `thinkingLevel`). When the model does not support the requested level, the nearest level is used (on a tie, the higher one); models that do not support reasoning effort ignore it;
+ * both cases are noted in the result.
  */
 export type TextEffort = 'minimal' | 'low' | 'medium' | 'high';
 export const TEXT_EFFORTS: readonly TextEffort[] = ['minimal', 'low', 'medium', 'high'];
 
-/** `generateText` 的模型描述。 */
+/** Model description for `generateText`. */
 export interface TextModelInfo extends ModelInfoBase {
-  /** 上下文窗口（输入加输出，按 token 计）。 */
+  /** Context window (input plus output, counted in tokens). */
   contextTokens: number;
-  /** 单次输出的 token 上限；请求的 `maxOutputTokens` 不能超过它。 */
+  /** Upper limit on output tokens per call; the request's `maxOutputTokens` cannot exceed it. */
   maxOutputTokens: number;
-  /** 接受的推理强度；空表示不能调节（请求的 `effort` 被忽略并注明）。 */
+  /** Accepted reasoning effort levels; empty means it cannot be adjusted (the request's `effort` is ignored and this is noted). */
   efforts: TextEffort[];
-  /** 不指定推理强度时供应商用哪一档；不能调节时 null。 */
+  /** The level the vendor uses when no reasoning effort is specified; null when it cannot be adjusted. */
   defaultEffort: TextEffort | null;
-  /** 是否接受按 JSON Schema 的结构化输出（`responseFormat.type: 'json'`）。 */
+  /** Whether structured output following a JSON Schema (`responseFormat.type: 'json'`) is accepted. */
   structuredOutput: boolean;
   acceptsTemperature: boolean;
-  /** 是否接受 `seed`（供应商尽力复现，不保证）。 */
+  /** Whether `seed` is accepted (the vendor reproduces it on a best-effort basis, not guaranteed). */
   acceptsSeed: boolean;
   cost: ModelCost;
 }
 
-/** 每种能力的模型描述。 */
+/** Model description for each capability. */
 export interface ModelInfoByCapability {
   transcribe: TranscribeModelInfo;
   synthesizeSpeech: SpeechModelInfo;
@@ -674,9 +667,9 @@ export interface ModelInfoByCapability {
 }
 
 /**
- * 只属于某一种能力的调用参数的默认值（架构设计 §6.8）。首版只有 `generateText`：
- * - `effort`：请求没给推理强度时用的那一档；null 表示交给模型自己的默认；
- * - `concurrency`：每个 Provider 同时进行的文本请求数（任务与进程内调用共用这个上限），默认 4。
+ * Default values of call parameters that belong to only one capability (architecture design §6.8). The first release has only `generateText`:
+ * - `effort`: the level used when the request gives no reasoning effort; null means defer to the model's own default;
+ * - `concurrency`: the number of text requests each Provider runs at once (tasks and in-process calls share this limit), default 4.
  */
 export interface TextCapabilityParameters {
   effort: TextEffort | null;
@@ -685,40 +678,40 @@ export interface TextCapabilityParameters {
 export const DEFAULT_TEXT_CONCURRENCY = 4;
 export const MAX_TEXT_CONCURRENCY = 32;
 
-/** `models.setCapabilityParameters` 的参数：给出的字段替换，null 恢复默认，不给不变。 */
+/** Parameters of `models.setCapabilityParameters`: given fields replace the current values; null restores the default; omitted fields stay unchanged. */
 export interface SetCapabilityParametersRequest {
   capability: 'generateText';
   effort?: TextEffort | null;
   concurrency?: number | null;
 }
 
-/** 一个 Provider 在一种能力下的模型与可用性。 */
+/** The models and availability of one Provider under one capability. */
 export interface ProviderCapability<M extends ModelInfoBase = ModelInfoBase> {
   models: M[];
   available: boolean;
   unavailableReason?: ProviderUnavailableReason;
-  /** 给人看的补充说明。不含密钥与本机绝对路径。 */
+  /** Supplementary note for people. Contains no keys and no absolute local paths. */
   detail?: string;
-  /** `detail` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `detail` (message-ref.ts). */
   detailRef?: MessageRef;
 }
 
 export type ProviderCapabilities = { [C in ModelServiceCapability]?: ProviderCapability<ModelInfoByCapability[C]> };
 
-/** Provider 描述（§6.1）：注册表里的条目，也是线上的形状。 */
+/** Provider description (§6.1): the registry entry, which is also the wire shape. */
 export interface ProviderDescriptor {
   providerId: string;
   kind: ProviderKind;
   label: string;
   capabilities: ProviderCapabilities;
-  /** 服务商目录的条目（在线与智能体 Provider 有，架构设计 §6.4）：界面据此分组、画图标、给出官网与 region。 */
+  /** Vendor catalog entry (online and agent Providers have one, architecture design §6.4): the UI uses it to group providers, draw icons, and show the official site and region. */
   vendor?: ProviderVendorInfo;
 }
 
 /**
- * 服务商目录里的一项（架构设计 §6.4）：`vendor` 是模型厂商，`relay` 是中转平台，`custom` 是用户添加的 OpenAI 兼容端点，
- * `agent` 是智能体 Provider（§6.9）。`regions` 是有预设基址的地区（第一个是缺省），账号的 `region` 从中选；
- * `icon` 是界面图标的 id（不是文件路径），没有时界面用首字母头像。
+ * An item in the vendor catalog (architecture design §6.4): `vendor` is a model vendor, `relay` is a relay platform, `custom` is a user-added OpenAI-compatible endpoint,
+ * and `agent` is an agent Provider (§6.9). `regions` are the regions with preset base URLs (the first is the default); the account's `region` is chosen from them.
+ * `icon` is the icon ID for the UI (not a file path); when absent, the UI uses an avatar with the initial letter.
  */
 export interface ProviderVendorInfo {
   kind: ProviderVendorKind;
@@ -728,83 +721,81 @@ export interface ProviderVendorInfo {
 }
 export type ProviderVendorKind = 'vendor' | 'relay' | 'custom' | 'agent';
 
-/** 账号最近一次调用的结果（只记录，不据此自动换账号，§6.2）。 */
+/** Result of the account's most recent call (recorded only; no automatic switch to another account is based on it, §6.2). */
 export type ProviderAccountState = 'ok' | 'invalid-key' | 'rate-limited' | 'quota-exhausted' | 'unknown';
 
 export interface ProviderAccountStatus {
   state: ProviderAccountState;
-  /** 记下这个状态的时间（ISO 8601）。 */
+  /** The time this state was recorded (ISO 8601). */
   at?: string;
-  /** `rate-limited`：供应商给了 `Retry-After` 时推出的恢复时间。 */
+  /** `rate-limited`: the recovery time derived from the `Retry-After` given by the vendor. */
   until?: string;
-  /** 给人看的补充（不含密钥）。 */
+  /** Supplementary note for people (no keys). */
   detail?: string;
-  /** `detail` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `detail` (message-ref.ts). */
   detailRef?: MessageRef;
 }
 
 /**
- * 一个在线 Provider 下的一个账号（一把密钥，架构设计 §6.8）。密钥永不回显，只有写入时算好的掩码（前 3 + … + 后 4；
- * 不超过 8 个字符时全是 •）。账号有序：一次调用用第一个启用且有密钥的账号，失败不换别的账号（§6.2）。
+ * One account under one online Provider (one key, architecture design §6.8). Keys are never echoed back; only a mask computed at write time is kept (first 3 + … + last 4;
+ * all • when there are 8 characters or fewer). Accounts are ordered: a call uses the first enabled account that has a key, and a failure does not switch to another account (§6.2).
  */
 export interface ProviderAccountView {
   accountId: string;
-  /** 用户起的名字；null 时界面显示掩码。 */
+  /** The name given by the user; when null, the UI shows the mask. */
   label: string | null;
   masked: string;
   enabled: boolean;
-  /** 有 region 预设的服务商：账号用哪个地区的基址（目录的 `regions` 之一）。 */
+  /** For Providers with region presets: which region's base URL the account uses (one of the catalog's `regions`). */
   region?: string;
-  /** 这个账号自己的基址覆盖（少见）：优先于服务商级的 `endpoint` 与目录的预设（§6.4）。 */
+  /** This account's own base URL override (rare): takes precedence over the Provider-level `endpoint` and the catalog presets (§6.4). */
   endpoint?: string;
   addedAt: string;
   lastUsedAt?: string;
-  /** 这个账号有没有密钥（凭据存储里查到的）。 */
+  /** Whether this account has a key (found in the credential store). */
   credential: 'set' | 'missing';
   status: ProviderAccountStatus;
 }
 
-/** 在线与智能体 Provider 的配置（只读视图）：密钥只报告有没有，从不回显。 */
+/** Configuration of online and agent Providers (read-only view): keys are only reported as present or absent, never echoed. */
 export interface ProviderConfigView {
   enabled: boolean;
-  /** 最近一次启用的时间：启用即是持续的授权（§6.2）。停用后为 null。 */
+  /** Time of the most recent enablement: enabling is an ongoing authorization (§6.2). null after disabling. */
   enabledAt: string | null;
   /**
-   * `set`：至少有一个启用且带密钥的账号；`missing`：没有；`none`：这个 Provider 不用密钥（智能体 Provider 用智能体运行时
-   * 自己的登录）。
+   * `set`: at least one enabled account has a key; `missing`: none; `none`: this Provider uses no key (agent Providers use the agent runtime's own sign-in).
    */
   credential: 'set' | 'missing' | 'none';
-  /** 账号（有序，§6.8）。在线 Provider 总是给出（可能为空）；智能体 Provider 没有，所以类型上可选。 */
+  /** Accounts (ordered, §6.8). Always given for online Providers (may be empty); agent Providers have none, so the type makes it optional. */
   accounts?: ProviderAccountView[];
-  /** 自定义端点的地址，或改写过的在线 Provider 基址；不给时用供应商的默认地址。 */
+  /** The address of a custom endpoint, or a rewritten base URL of an online Provider; when not given, the vendor's default address is used. */
   endpoint?: string;
-  /** 最近一次 `models.refreshProvider` 的结果；从没刷新过时没有。 */
+  /** Result of the most recent `models.refreshProvider`; absent if it has never been refreshed. */
   refreshed?: ProviderRefreshStatus;
 }
 
 /**
- * 向供应商取模型（与音色）列表的结果（`models.refreshProvider`，架构设计 §6.8）。列表只用来标注内置的模型：内置模型不在
- * 取到的列表里时报告为不可用（`unsupported`）；供应商账号里的音色补进没有预置音色的模型。取不到时 `ok: false`，
- * 照旧用内置的列表，`error` 说明原因（不含密钥）。
+ * Result of fetching the model (and voice) list from the vendor (`models.refreshProvider`, architecture design §6.8). The list is used only to annotate the built-in models: a built-in model that is not in the fetched list is reported as unavailable (`unsupported`);
+ * voices from the vendor account are added to models that have no preset voices. When fetching fails, `ok: false`, the built-in list is used as before, and `error` explains the cause (without keys).
  */
 export interface ProviderRefreshStatus {
   /** ISO 8601。 */
   at: string;
   ok: boolean;
-  /** 取到的模型个数；失败时没有。 */
+  /** Number of models fetched; absent on failure. */
   models?: number;
-  /** 取到的音色个数（有音色列表的供应商）；失败时没有。 */
+  /** Number of voices fetched (for vendors that have a voice list); absent on failure. */
   voices?: number;
   error?: string;
 }
 
-/** `models.configure` 返回的一个 Provider 的完整视图。 */
+/** The full view of one Provider, returned by `models.configure`. */
 export interface ProviderView extends ProviderDescriptor {
-  /** 只有在线与智能体 Provider 有配置；本地与节点为 null。 */
+  /** Only online and agent Providers have configuration; null for local and node. */
   config: ProviderConfigView | null;
 }
 
-/** 能力视图里的一个 Provider。 */
+/** A Provider in the capability view. */
 export interface ProviderCapabilityView<M extends ModelInfoBase = ModelInfoBase> extends ProviderCapability<M> {
   providerId: string;
   kind: ProviderKind;
@@ -817,20 +808,20 @@ export interface ModelRef {
   modelId: string;
 }
 
-/** 一种能力的视图：用户默认值、不显式指定时实际会用的 Provider 与模型、各 Provider。 */
+/** The view of one capability: the user's default, the Provider and model actually used when none is specified explicitly, and each Provider. */
 export interface CapabilityView<C extends ModelServiceCapability = ModelServiceCapability> {
-  /** 用户设的默认值；指向的 Provider 不可用时照样保留（§6.8）。例外：删除本地模型包时，没有出厂默认的能力里指向它的默认值清除。 */
+  /** The default set by the user; it is kept even when the Provider it points to is unavailable (§6.8). Exception: when a local model bundle is deleted, defaults that point to it are cleared for capabilities that have no factory default. */
   default: ModelRef | null;
-  /** 不显式指定时用哪个（§6.2 的第 2、3 条）；用户默认值不可用、或什么都没有时为 null，此时调用以 `CAPABILITY_NOT_CONFIGURED` 拒绝。 */
+  /** Which one is used when none is specified explicitly (§6.2, items 2 and 3); null when the user default is unavailable or nothing is set, in which case calls are rejected with `CAPABILITY_NOT_CONFIGURED`. */
   effective: (ModelRef & { source: 'user-default' | 'factory-default' }) | null;
   providers: ProviderCapabilityView<ModelInfoByCapability[C]>[];
-  /** 这种能力的参数默认值（只有 `generateText` 有），已经补上了出厂值。 */
+  /** Parameter defaults for this capability (only `generateText` has them), with the factory values already filled in. */
   parameters?: TextCapabilityParameters;
 }
 
 export type ModelCapabilitiesView = { [C in ModelServiceCapability]: CapabilityView<C> };
 
-/** `CAPABILITY_NOT_CONFIGURED` 的 `reason`。`signed-out` 与 `outdated` 只出自智能体 Provider（§6.9）。 */
+/** `reason` of `CAPABILITY_NOT_CONFIGURED`. `signed-out` and `outdated` come only from agent Providers (§6.9). */
 export type CapabilityNotConfiguredReason =
   | 'no-default'
   | 'missing-credential'
@@ -843,8 +834,8 @@ export type CapabilityNotConfiguredReason =
   | 'disabled';
 
 /**
- * 能力没有可用的 Provider 时（§6.2）：`RpcError` 的 `code` 为 `conflict`，`details` 为这个形状。在提交时拒绝，不创建任务。
- * `remedy.hint` 是一句给人看的话（Runtime 的语言），`hintRef` 是它的消息引用。
+ * When a capability has no available Provider (§6.2): the `code` of the `RpcError` is `conflict`, and `details` has this shape. It is rejected at submission and no task is created.
+ * `remedy.hint` is one sentence for people (in the Runtime's language), and `hintRef` is its message reference.
  */
 export interface CapabilityNotConfiguredDetails {
   code: 'CAPABILITY_NOT_CONFIGURED';
@@ -852,7 +843,7 @@ export interface CapabilityNotConfiguredDetails {
   reason: CapabilityNotConfiguredReason;
   providerId?: string;
   remedy: {
-    /** `setup-agent`：在智能体运行时自己的界面安装、登录或升级它（`reason` 说明是哪一样），CucCut 不代做。 */
+    /** `setup-agent`: install, sign in to, or upgrade the agent runtime in its own interface (`reason` says which one); CucCut does not do it for the user. */
     action: 'configure-provider' | 'set-default' | 'install-model' | 'pair-node' | 'enable-provider' | 'setup-agent';
     providerId?: string;
     capability: ModelServiceCapability;
@@ -861,7 +852,7 @@ export interface CapabilityNotConfiguredDetails {
   };
 }
 
-/** Agent 提示用户配置能力时使用的设置深链（产品设计 §3.2.2），与界面内路由一致。 */
+/** The settings deep link used when an agent prompts the user to configure a capability (product design §3.2.2), consistent with in-app routing. */
 export function capabilitySettingsHref(capability: ModelServiceCapability): string {
   const category: Record<ModelServiceCapability, string> = {
     transcribe: 'asr', synthesizeSpeech: 'tts', generateText: 'llm', generateImage: 'image', separateAudio: 'sep', generateMusic: 'music',
@@ -869,7 +860,7 @@ export function capabilitySettingsHref(capability: ModelServiceCapability): stri
   return `/settings/models/${category[capability]}`;
 }
 
-/** 每种能力可以配置的在线 Provider（补救命令里的占位）。 */
+/** The online Providers each capability can be configured with (placeholders in the remedy commands). */
 function configurableProviders(capability: ModelServiceCapability): string {
   const custom = ProtocolLabels.customProviderPlaceholder().text;
   switch (capability) {
@@ -881,23 +872,23 @@ function configurableProviders(capability: ModelServiceCapability): string {
       return `openai|elevenlabs|${custom}`;
     case 'separateAudio':
     case 'generateMusic':
-      // 没有在线 Provider：补救只有安装本机模型包或设默认值。
+      // No online Provider: the remedy is only to install a local model bundle or set a default.
       return 'local';
   }
 }
 
-/** 智能体 Provider 的 `providerId` 前缀（`agent:<driverId>`）。 */
+/** The `providerId` prefix of agent Providers (`agent:<driverId>`). */
 export const AGENT_PROVIDER_PREFIX = 'agent:';
 
 /**
- * `CAPABILITY_NOT_CONFIGURED` 的补救办法换成 CLI 命令（每条一行，可能为空）。CLI 打印它们；智能体工具把它们连同
- * `remedy.hint` 交给智能体，由智能体转告用户。密钥只从标准输入读，命令里从不出现。
+ * The remedy for `CAPABILITY_NOT_CONFIGURED` expressed as CLI commands (one per line, possibly empty). The CLI prints them; agent tools pass them to the agent along with
+ * `remedy.hint`, and the agent tells the user. Keys are read only from standard input and never appear in a command.
  */
 export function capabilityRemedyCommands(details: CapabilityNotConfiguredDetails): string[] {
   const providerId = details.remedy.providerId ?? details.providerId;
   const configure = `cuccut models configure <${configurableProviders(details.capability)}> --enable --key-stdin --verify < key.txt`;
   const install = [`cuccut models list  ${ProtocolLabels.bundlesCommandNote().text}`, 'cuccut models install <bundleId>'];
-  // 人声分离与音乐生成只有本机模型包：没有可以配置的在线 Provider，补救只有安装（或设默认值）。
+  // Vocal separation and music generation exist only as local model bundles: there is no online Provider to configure, so the remedy is only to install (or set a default).
   if (
     (details.capability === 'separateAudio' || details.capability === 'generateMusic') &&
     (details.remedy.action === 'configure-provider' || details.remedy.action === 'install-model')
@@ -906,7 +897,7 @@ export function capabilityRemedyCommands(details: CapabilityNotConfiguredDetails
   }
   switch (details.remedy.action) {
     case 'configure-provider':
-      // 智能体 Provider 没有密钥，配置它就是启用它。
+      // Agent Providers have no keys: configuring one means enabling it.
       if (providerId?.startsWith(AGENT_PROVIDER_PREFIX)) return [`cuccut models configure ${providerId} --enable`];
       return [providerId ? `cuccut models configure ${providerId} --enable --key-stdin --verify < key.txt` : configure];
     case 'enable-provider':
@@ -916,21 +907,21 @@ export function capabilityRemedyCommands(details: CapabilityNotConfiguredDetails
     case 'pair-node':
       return [`cuccut nodes pair ${ProtocolLabels.pairCommandArgs().text}`];
     case 'install-model':
-      // 本机模型包：先看要装哪个，安装前会显示大小并要求确认；也可以改用在线服务。
+      // Local model bundle: first see which one to install; its size is shown and confirmation is required before installing. Alternatively, use an online service.
       return [...install, configure];
     case 'setup-agent':
-      // 安装、登录与升级都在智能体运行时自己的界面里完成（架构设计 §3.11）；`hint` 说明怎么做。
+      // Installing, signing in and upgrading are all done in the agent runtime's own interface (architecture design §3.11); `hint` explains how.
       return [];
   }
 }
 
 /**
- * 自定义端点声明的模型；没给的字段取保守的默认值。`capability` 不给时是 `transcribe`。
- * - `transcribe`：25 MB、不限时长、尝试取词级时间、接受提示词；
- * - `synthesizeSpeech`：`voices` 的第一个是默认音色（没有时必须指定，接受任意音色 ID），文本 4096 字符，`mp3`；
- * - `generateImage`：`sizes` 的第一个是默认尺寸（没有时 `1024x1024`），一次 1 张，提示词 4000 字符，`png`；
- * - `generateText`：上下文 32768 token、单次输出 4096 token，不能调推理强度（声明了 `efforts` 时才发），接受结构化输出与
- *   `temperature`，不接受 seed。
+ * Models declared by a custom endpoint; fields that are not given take conservative defaults. `capability` defaults to `transcribe` when absent.
+ * - `transcribe`: 25 MB, unlimited duration, tries to get word-level timestamps, accepts hints;
+ * - `synthesizeSpeech`: the first of `voices` is the default voice (when there are none, a voice must be specified, and any voice ID is accepted), text 4096 characters, `mp3`;
+ * - `generateImage`: the first of `sizes` is the default size (when there are none, `1024x1024`), 1 image at a time, prompt 4000 characters, `png`;
+ * - `generateText`: context 32768 tokens, 4096 output tokens per call, reasoning effort cannot be adjusted (sent only when `efforts` is declared), accepts structured output and
+ *   `temperature`, does not accept seed.
  */
 export interface DeclaredModel {
   modelId: string;
@@ -952,22 +943,22 @@ export interface DeclaredModel {
   structuredOutput?: boolean;
 }
 
-/** `models.configure` 的参数。`credential` 只写：字符串设置，null 清除，不给不变。 */
+/** Parameters of `models.configure`. `credential` is write-only: a string sets it, null clears it, and omitting it leaves it unchanged. */
 export interface ConfigureProviderRequest {
   providerId: string;
   enabled?: boolean;
   credential?: string | null;
-  /** 自定义端点首次配置时必填；内置的在线 Provider 可以改写基址（代理、自建网关），null 恢复默认。 */
+  /** Required when a custom endpoint is first configured. Built-in online Providers may have their base URL rewritten (proxy, self-hosted gateway); null restores the default. */
   endpoint?: string | null;
-  /** 自定义端点声明的模型（整体替换）。 */
+  /** Models declared by the custom endpoint (replaces the whole list). */
   models?: DeclaredModel[];
-  /** 自定义端点的显示名。 */
+  /** The display name of the custom endpoint. */
   label?: string;
-  /** 保存前用新的密钥与端点向供应商验证一次（只读请求）；不通过时不保存。 */
+  /** Before saving, verify once with the vendor using the new key and endpoint (a read-only request); not saved if it fails. */
   verify?: boolean;
 }
 
-/** `models.addAccount`：给一个在线 Provider 加一个账号（加在最后）。`verify` 时先用这把密钥向供应商发一个只读请求。 */
+/** `models.addAccount`: adds one account to an online Provider (appended at the end). With `verify`, first send a read-only request to the vendor with this key. */
 export interface AddProviderAccountRequest {
   providerId: string;
   credential: string;
@@ -977,7 +968,7 @@ export interface AddProviderAccountRequest {
   verify?: boolean;
 }
 
-/** `models.updateAccount`：给出的字段替换；`label`、`region`、`endpoint` 为 null 时清除。 */
+/** `models.updateAccount`: the fields given replace the current ones; `label`, `region` and `endpoint` are cleared when null. */
 export interface UpdateProviderAccountRequest {
   providerId: string;
   accountId: string;
@@ -986,11 +977,11 @@ export interface UpdateProviderAccountRequest {
   enabled?: boolean;
   region?: string | null;
   endpoint?: string | null;
-  /** 换了密钥时先用新的密钥验证（列模型），不通过就不保存（`conflict`，`details.code` 为 `PROVIDER_*`）。 */
+  /** When the key is changed, verify the new key first (list the models); not saved if it fails (`conflict`, with `details.code` as `PROVIDER_*`). */
   verify?: boolean;
 }
 
-/** `models.arrangeAccounts`：账号的新顺序，要恰好是现有账号的一个排列。 */
+/** `models.arrangeAccounts`: the new order of accounts; it must be exactly a permutation of the existing accounts. */
 export interface ArrangeProviderAccountsRequest {
   providerId: string;
   order: string[];
@@ -998,13 +989,13 @@ export interface ArrangeProviderAccountsRequest {
 
 export interface ModelsSnapshot {
   capabilities: ModelCapabilitiesView;
-  /** 本地模型包的状态（与 `models.list` 相同）。 */
+  /** Status of local model bundles (same as `models.list`). */
   bundles: ModelBundleStatus[];
 }
 
 /**
- * `capabilities.updated`：配置、默认值、模型包或节点变化时发一条，带完整的新视图。
- * `bundle.updated`：一个本地模型包的状态变了（下载进度、安装、删除、检查、Worker 的加载与卸载），带它的完整状态。
+ * `capabilities.updated`: sent when configuration, defaults, model bundles or nodes change, carrying the full new view.
+ * `bundle.updated`: the state of one local model bundle changed (download progress, install, delete, check, Worker load and unload), carrying its full state.
  */
 export type ModelsEvent =
   { type: 'capabilities.updated'; capabilities: ModelCapabilitiesView } | { type: 'bundle.updated'; bundle: ModelBundleStatus };

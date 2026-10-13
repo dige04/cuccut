@@ -2,13 +2,12 @@ import { asObject, isObject, type Json } from '../render/text-style.ts';
 import type { ActiveWord, Motion } from './caption-style-body.ts';
 
 /**
- * 内置字幕预设的原始数据（字幕样式模型设计 §7）：31 份社交 / 商务 / 复古涂装（原型 `BC_VS` 的 look 单位）、
- * 经典与 Shorts（旧版内核 `classic_look` / `shorts_look`）、9 份 Studio 设计（原生样式文档字段），以及 43 份预设各自的
- * 当前词与动效（原型 `BC_CS.presets()` 的取值）。颜色字面值都是画进视频画面的内容色。
+ * Raw data for the built-in caption presets (caption style model design §7): 31 social / business / retro paints (the `look` units of the prototype `BC_VS`),
+ * the classic and Shorts looks (the old kernel's `classic_look` / `shorts_look`), 9 Studio designs (native style document fields), and the current word and motion of each of the 43 presets (the values of the prototype `BC_CS.presets()`). The colour literals are content colours painted into the video frame.
  */
 
-/** 原型单位的一份 look：`lh` 百分比、`spacing` 1/100 em、`corners` / `pad` 占字号百分比，`outlineW` 是 `fz × outlineW / 160`
- *  的那个数，`shDist` / `shBlur` 占字号百分比，`shColor` 带 alpha。 */
+/** One look in prototype units: `lh` is a percentage, `spacing` is in 1/100 em, `corners` / `pad` are percentages of the font size, `outlineW` is the number where `fz × outlineW / 160`
+ *  gives the outline width, `shDist` / `shBlur` are percentages of the font size, and `shColor` includes alpha. */
 export interface DesignLook {
   font: string;
   weight: number;
@@ -36,7 +35,7 @@ export interface DesignLook {
 
 export type PresetCategory = 'basic' | 'social' | 'business' | 'retro' | 'motion' | 'kinetic';
 
-/** 涂装之外、一张卡也要定下来的几项缺省（旧版 `base_style`）。 */
+/** The few defaults that every card needs beyond its paint (old `base_style`). */
 const BASE: Json = {
   fontStyle: 'normal',
   underline: false,
@@ -67,7 +66,7 @@ function withOpacity(color: string, percent: number): string {
   return `${opaque(color)}${alpha.toString(16).padStart(2, '0').toUpperCase()}`;
 }
 
-/** 字体名：两款商用字体换成原型的替身；字重后缀（`Poppins SemiBold`）去掉，字重由 `fontWeight` 给。 */
+/** Font names: two commercial fonts are swapped for the prototype's stand-ins; weight suffixes (`Poppins SemiBold`) are removed, and the weight comes from `fontWeight`. */
 export function fontFamilyOf(font: string): string {
   if (font === 'Komika Axis') return 'Bangers';
   if (font === 'The Bold Font') return 'Poppins';
@@ -77,7 +76,7 @@ export function fontFamilyOf(font: string): string {
   return ['Medium', 'SemiBold', 'Semibold', 'Extrabold', 'Black'].includes(suffix) ? font.slice(0, space) : font;
 }
 
-/** 一份涂装补齐成完整的：阴影与发光两个槽都给值（只开一个），描边的旧布尔与 `textOutline.on` 一致。 */
+/** A paint filled out to be complete: both the shadow and glow slots get values (only one is enabled), and the old outline boolean matches `textOutline.on`. */
 export function completePaint(style: Json): Json {
   const outline = asObject(style.textOutline);
   return {
@@ -90,9 +89,8 @@ export function completePaint(style: Json): Json {
 }
 
 /**
- * 原型 look → 样式文档的涂装（照旧版内核的换算）：字距 ×0.3（1/100 em → 30 号字的逻辑像素），描边 ×1.25（居中笔宽），
- * 圆角 30×corners/55，留白 30×1.4×pad/80（纵向是横向 ÷1.4），阴影距离 / 模糊 ÷100。有阴影而距离为 0 的是发光
- * （强度取阴影色的 alpha，范围 = 模糊 ÷0.9）。
+ * Prototype look → paint in the style document (converted as in the old kernel): letter spacing ×0.3 (1/100 em → logical pixels of a 30-point font), outline ×1.25 (centred stroke width), corner radius 30×corners/55, padding 30×1.4×pad/80 (vertical is horizontal ÷1.4), shadow distance and blur ÷100. A shadow with distance 0 is a glow
+ * (intensity taken from the shadow colour's alpha, radius = blur ÷0.9).
  */
 export function lookStyle(look: DesignLook): Json {
   const shadow =
@@ -128,7 +126,7 @@ export function lookStyle(look: DesignLook): Json {
   });
 }
 
-/** 经典：新建项目的种子涂装（旧版 `classic_look`，去掉字号 34——字号是落位）。 */
+/** Classic: the seed paint for new projects (old `classic_look`, with font size 34 removed — font size is placement). */
 export const CLASSIC_PAINT: Json = completePaint({
   fontFamily: 'system',
   fontWeight: 700,
@@ -140,7 +138,7 @@ export const CLASSIC_PAINT: Json = completePaint({
   dropShadow: { on: true, blur: 0.12, distance: 0.08, rotation: 45, color: '#000000', opacity: 0.9 },
 });
 
-/** Shorts：经典之上改字重、行高、描边与投影（旧版 `shorts_look`）。 */
+/** Shorts: on top of Classic, changes font weight, line height, outline and shadow (old `shorts_look`). */
 export const SHORTS_PAINT: Json = {
   ...CLASSIC_PAINT,
   fontWeight: 800,
@@ -149,7 +147,7 @@ export const SHORTS_PAINT: Json = {
   dropShadow: { on: true, blur: 0.1, distance: 0.06, rotation: 90, color: '#000000', opacity: 0.9 },
 };
 
-/** 31 份涂装（`BC_VS.PRESETS` 的次序；名字是专名，不进文案目录）。 */
+/** 31 paints (in the order of `BC_VS.PRESETS`; the names are proper nouns and are not in the copy catalogue). */
 export const LOOKS: readonly { id: string; name: string; category: PresetCategory; look: DesignLook }[] = [
   { id: 'prettymarketer', name: 'Pretty Little Marketer', category: 'social', look: { font: 'Montserrat', weight: 400, bold: true, italic: false, color: '#ffffff', align: 'center', lh: 125, spacing: 0, upper: '', bg: '#000000', opacity: 0, corners: 0, pad: 20, plate: 'line', outline: true, outlineColor: '#2b292a', outlineW: 5, shadow: true, shDist: 12, shAngle: 46, shBlur: 38, shColor: '#2b292aff' } },
   { id: 'ali', name: 'Ali', category: 'social', look: { font: 'Poppins SemiBold', weight: 600, bold: false, italic: false, color: '#000000', align: 'center', lh: 200, spacing: 1, upper: '', bg: '#FAFBFF', opacity: 100, corners: 30, pad: 20, plate: 'line', outline: false, outlineColor: '#000000', outlineW: 0, shadow: false, shDist: 12, shAngle: 90, shBlur: 24, shColor: '#000000cc' } },
@@ -185,8 +183,8 @@ export const LOOKS: readonly { id: string; name: string; category: PresetCategor
 ];
 
 /**
- * `BC_SD` 的九份 Studio 设计（`nativeStyle` 的涂装）。去掉了 `fontSize` / `fontSizeBasis`（字号是落位）与重复的 `align`；
- * `Poppins Black` 按 `fontFamilyOf` 收成 `Poppins` ＋ 900。当前词与动效在 `PRESET_TABLE`，逐词底块在 `wordBox`。
+ * The nine Studio designs of `BC_SD` (paints from `nativeStyle`). `fontSize` / `fontSizeBasis` (font size is placement) and the duplicate `align` were removed;
+ * `Poppins Black` is collapsed to `Poppins` plus weight 900 via `fontFamilyOf`. The current word and motion are in `PRESET_TABLE`, and the per-word backing block is in `wordBox`.
  */
 export const STUDIO_DESIGNS: readonly { id: string; style: Json; wordBox?: { color: string; padding: [number, number]; radius: number } }[] = [
   { id: 'studio-focus', style: { fontFamily: 'Anton', fontWeight: 400, bold: false, italic: false, fontColor: '#FFFFFF', lineHeight: 0.95, letterSpacing: 0.66, textTransform: 'uppercase', textAlign: 'center', background: false, backgroundColor: '#00000000', backgroundStyle: 'wrap', backgroundPadding: 0, backgroundPaddingY: 0, borderRadius: 0, textOutline: { on: true, color: '#000000', width: 32.8767 }, dropShadow: { on: true, color: '#000000', blur: 0, distance: 0.1912, rotation: 40.156, opacity: 0.88 } } },
@@ -200,12 +198,12 @@ export const STUDIO_DESIGNS: readonly { id: string; style: Json; wordBox?: { col
   { id: 'studio-ktv', style: { fontFamily: 'Poppins', fontWeight: 900, bold: false, italic: false, fontColor: '#FFF6D8', lineHeight: 1.18, letterSpacing: 0, textTransform: 'none', textAlign: 'center', background: false, backgroundColor: '#00000000', backgroundStyle: 'wrap', backgroundPadding: 0, backgroundPaddingY: 0, borderRadius: 0, textOutline: { on: true, color: '#3A1A08', width: 20 }, dropShadow: { on: true, color: '#000000', blur: 0.08, distance: 0.1, rotation: 60, opacity: 0.7 } } },
 ];
 
-/** 念到时入场只写预设名（其余按 `MOTION_PRESETS` 的默认补齐）；出现时触发的照原样。 */
+/** Entrance when spoken only writes the preset name (the rest is filled from the `MOTION_PRESETS` defaults); triggers on appearance are kept as they are. */
 export type PresetMotion = Partial<Record<keyof Motion, { preset: string } & Partial<NonNullable<Motion['in']>>>>;
 
 /**
- * 43 份预设的陈列次序、分类、当前词与动效（原型 `presets()`：基础 → 31 份原序（`simple` 挪进基础）→ 9 份 Studio → 倒鸭子）。
- * 默认值（`spoken: 'keep'`、`unspoken: 'keep'`、过渡 0.16 秒、变淡 0.5）省略。
+ * The display order, categories, current word and motion of the 43 presets (prototype `presets()`: basic → the 31 in original order (`simple` moved into basic) → 9 Studio → 倒鸭子 (upside-down duck)).
+ * Default values (`spoken: 'keep'`, `unspoken: 'keep'`, transition 0.16 s, fade 0.5) are omitted.
  */
 export const PRESET_TABLE: readonly { id: string; category: PresetCategory; activeWord: Partial<ActiveWord>; motion?: PresetMotion }[] = [
   { id: 'classic', category: 'basic', activeWord: { mode: 'color', color: '#18E1D6' } },

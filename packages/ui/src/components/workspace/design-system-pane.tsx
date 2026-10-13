@@ -17,9 +17,8 @@ const ERROR_TEXT: Record<DesignSystemAnnotationError, () => string> = {
 };
 
 /**
- * 设计系统标签的那几样（docs/design/canvas §10）：`designSystem.open`，地址另带 `?path=`（打开那一刻算好，§10.4），
- * 设计系统标注的草稿（§10.6）；没有计数，所以不给 `entryCount` 与 `countText`。
- * 编辑器给的位置是「章节 › 种类 “名字”」，前面加上是哪套设计系统。
+ * The items for the design-system tab (docs/design/canvas §10): `designSystem.open`; the address carries `?path=`, computed at open time (§10.4); the design-system annotation draft (§10.6). There is no count, so `entryCount` and `countText` are not given.
+ * The location the editor gives is 章节 › 种类 “名字” (section › kind “name”); the design system's name is put in front of it.
  */
 const DESIGN_SYSTEM_PANE: EditorPaneKind = {
   kind: 'design-system',
@@ -37,7 +36,7 @@ const DESIGN_SYSTEM_PANE: EditorPaneKind = {
     };
   },
   frameUrl: (address) => designFrameUrl(address, window.location),
-  // 取值时才读文案：跟着当前的界面语言。
+  // Copy is read when used: it follows the current UI language.
   get blocked() {
     return { title: DESIGN_SYSTEM.hostBlockedTitle, body: DESIGN_SYSTEM.hostBlockedBody };
   },
@@ -63,8 +62,8 @@ const DESIGN_SYSTEM_PANE: EditorPaneKind = {
 };
 
 /**
- * 功能区的设计系统标签（docs/design/canvas §10）：设计系统编辑器的 iframe 加标注（§10.6）。头部是标题、「标注」开关与「在 Space 中显示」。
- * 标签的通用部分（打开、消息往来、发送前保存、跳转、批注框）在 `EditorPane`。
+ * The design-system tab in the feature pane (docs/design/canvas §10): the design-system editor's iframe with annotations (§10.6). The header has the title, the “标注” (annotations) switch, and “在 Space 中显示” (show in Space).
+ * The generic parts of the tab (opening, message exchange, saving before sending, jumping, note box) are in `EditorPane`.
  */
 export function DesignSystemPane({ target, conversationId, active }: { target: FileTarget; conversationId: Id | null; active: boolean }) {
   return <EditorPane spec={DESIGN_SYSTEM_PANE} target={target} conversationId={conversationId} active={active} />;

@@ -54,9 +54,9 @@ describe('ModelDownloader', () => {
     const dir = path.join(root, 'acme', 'tiny-model');
     expect(JSON.parse(await fs.readFile(path.join(dir, MANIFEST_FILE), 'utf8'))).toEqual(manifest);
     expect(await fs.readFile(path.join(dir, 'sub/model.safetensors'))).toEqual(weights);
-    // 暂存区清空，空的上级目录也删掉。
+    // Empty the staging area and also delete the empty parent directories.
     expect(await fs.stat(path.join(root, STAGING_DIR)).catch(() => null)).toBeNull();
-    // 请求不带凭据。
+    // The request carries no credentials.
     expect(source.requests.every((r) => r.headers.authorization === undefined)).toBe(true);
   });
 
@@ -127,7 +127,7 @@ describe('ModelDownloader', () => {
     expect(error).toBeInstanceOf(DownloadError);
     expect((error as DownloadError).code).toBe('MODEL_DOWNLOAD_INTEGRITY');
     expect((error as DownloadError).remedy).toContain('换一个下载来源');
-    // 补救说明给人看：设置按设置页上的名字说，不写设置键。
+    // The remedy text is for people: name the setting as it appears on the settings page, not its key.
     for (const remedy of Object.values(DOWNLOAD_REMEDIES)) expect(remedy).not.toMatch(/models\.\w+/);
     expect(DOWNLOAD_REMEDIES.MODEL_DOWNLOAD_NETWORK).toContain('「设置 › 通用」的「模型下载来源」');
     expect(DOWNLOAD_REMEDIES.MODEL_DOWNLOAD_SOURCE).toContain('「设置 › 通用」的「模型下载来源」');
@@ -138,7 +138,7 @@ describe('ModelDownloader', () => {
   });
 
   it('续传出来的文件不符：从头再下一次；干净的那次对了就算成功', async () => {
-    // 先留下一个内容是坏的 `.part`（像旧的、不属于这个版本的残留）。
+    // First leave a corrupt `.part` behind (like an old leftover that does not belong to this version).
     const stage = stagingDirOf(root, REPO, REV);
     await fs.mkdir(path.join(stage, 'sub'), { recursive: true });
     await fs.writeFile(path.join(stage, 'sub/model.safetensors.part'), Buffer.alloc(1000, 1));
@@ -172,7 +172,7 @@ describe('ModelDownloader', () => {
     expect((flaky as DownloadError).details).toMatchObject({ status: 503, attempts: 3 });
     expect((flaky as DownloadError).remedy).toContain('续传');
 
-    // 重试次数之内恢复就成功。
+    // Recovering within the retry limit succeeds.
     source.fault('config.json', { status: 500 }, 2);
     await downloader({ retries: 2 }).download(REPO, REV, files, new AbortController().signal);
   });

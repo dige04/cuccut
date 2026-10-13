@@ -8,7 +8,7 @@ import { FAKE_CREDENTIAL_HELPER } from './testing/index.ts';
 import { KeychainCredentialStore } from './keychain-credential-store.ts';
 import { migrateFileCredentials } from './credential-migration.ts';
 
-/** 这些测试只用假的助手（`testing/fake-credential-helper.ts`），不访问系统的钥匙串。 */
+/** These tests use only a fake helper (`testing/fake-credential-helper.ts`) and do not access the system keychain. */
 
 const SECRET = 'sk-test-ONLY-keychain-0123456789';
 
@@ -85,7 +85,7 @@ describe('KeychainCredentialStore（假助手）', () => {
     expect((await failureOf(store.has('provider:openai'))).code).toBe('internal');
     await control({ mode: 'garbage' });
     expect((await failureOf(store.get('provider:openai'))).code).toBe('internal');
-    // `has` 与 `set` 不应该收到 not-found。
+    // `has` and `set` should not receive not-found.
     await control({ fail: { has: 'not-found' } });
     expect((await failureOf(store.has('provider:openai'))).code).toBe('internal');
   });
@@ -136,7 +136,7 @@ describe('migrateFileCredentials', () => {
     await fs.mkdir(helperDir);
     file = path.join(dir, 'store', 'model-credentials.json');
     await fs.mkdir(path.dirname(file), { recursive: true });
-    // 之前版本的文件：键是 providerId。
+    // File from an earlier version: the key was providerId.
     await fs.writeFile(file, JSON.stringify({ formatVersion: 1, credentials: { openai: `${SECRET}-openai`, google: `${SECRET}-google` } }));
     keychain = new KeychainCredentialStore({ helper: { command: process.execPath, args: [FAKE_CREDENTIAL_HELPER, helperDir] } });
     lines.length = 0;
@@ -169,7 +169,7 @@ describe('migrateFileCredentials', () => {
     expect(logged).not.toContain(SECRET);
 
     await fs.rm(path.join(helperDir, 'control.json'));
-    // 不回退：钥匙串后端读不到留在文件里的密钥。
+    // No fallback: the keychain backend cannot read secrets that remain in the file.
     expect(await keychain.get('provider:google')).toBeNull();
     const again = await migrateFileCredentials(new FileCredentialStore(file), keychain, log);
     expect(again).toEqual({ migrated: ['provider:google'], failed: [] });
@@ -181,7 +181,7 @@ describe('migrateFileCredentials', () => {
     const result = await migrateFileCredentials(new FileCredentialStore(file), new KeychainCredentialStore({ helper: null }), log);
     expect(result.migrated).toEqual([]);
     expect(result.failed.map((f) => f.code)).toEqual(['unavailable', 'unavailable']);
-    // 内容不变（键的格式也没被改写）。
+    // Content unchanged (the key format was not rewritten either).
     expect(await fs.readFile(file, 'utf8')).toBe(before);
     expect(lines.join('\n')).not.toContain(SECRET);
   });

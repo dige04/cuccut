@@ -9,21 +9,21 @@ import { CodeBundleError, type InspectedBundle } from './bundle-inspect.ts';
 import { CompositionHost, frameTicketAt, intrinsicMismatches, type CompositionSession, type RenderedFrame } from './composition-host.ts';
 
 /**
- * 代码包规范 §6.2 的验证（第一期子集）：在离屏宿主里打开包，按采样时刻取帧，产出 `CodeBundleVerificationReport`。
+ * Verification per code bundle spec §6.2 (first-phase subset): opens the bundle in an off-screen host, fetches frames at sampled times, and produces a `CodeBundleVerificationReport`.
  *
- * - `manifest` / `files` / `content-hash` / `network-static`：`inspectBundle` 已经检查过（静态扫描在非严格模式下仍可能留有引用）。
- * - `timeline` / `root`：打开会话时合同就绪；尺寸、帧率与清单不一致也记在 `root` 上（`COMPOSITION_INTRINSIC_MISMATCH`）。
- * - `seek`：0、中间帧、末帧与越过末尾一帧；越界的那一帧必须被夹到时长上。
- * - `determinism`：中间帧在乱序取过其他帧之后再取一次，PNG 摘要一致。第一帧与中间帧相同只记说明，不判失败。
- * - `alpha`：声明透明时，全部采样帧都没有透明像素才判失败。
- * - `network-runtime`：会话期间有被拦截的请求即失败。
- * - `duration`：页面时长与清单相差不超过一帧。
+ * - `manifest` / `files` / `content-hash` / `network-static`: already checked by `inspectBundle` (static scanning may still leave references in non-strict mode).
+ * - `timeline` / `root`: the contract is ready when the session opens. Mismatches in size, frame rate and manifest are also recorded on `root` (`COMPOSITION_INTRINSIC_MISMATCH`).
+ * - `seek`: frame 0, a middle frame, the last frame, and a frame past the end. The out-of-range frame must be clamped to the duration.
+ * - `determinism`: the middle frame is fetched again after other frames have been fetched out of order. The PNG digests must match. When the first frame and the middle frame are the same, this is only noted and does not fail.
+ * - `alpha`: when transparency is declared, it fails only if none of the sampled frames has a transparent pixel.
+ * - `network-runtime`: fails if any request was intercepted during the session.
+ * - `duration`: the page duration differs from the manifest by no more than one frame.
  */
 
 export interface VerifyBundleOptions {
-  /** 覆盖常规采样时刻（秒）；越过末尾一帧的采样总会追加。 */
+  /** Covers the regular sampling times (in seconds). A sample past the end is always appended. */
   sampleSeconds?: number[];
-  /** 声明透明时检查透明像素（默认 true）。 */
+  /** When transparency is declared, checks for transparent pixels (default true). */
   checkAlpha?: boolean;
 }
 
@@ -117,7 +117,7 @@ export async function verifyBundle(
         return frame;
       };
 
-      // seek：常规采样与越界一帧。
+      // seek: regular samples and the out-of-range frame.
       let seekOk = true;
       try {
         for (const seconds of regular) await render(seconds);
@@ -139,7 +139,7 @@ export async function verifyBundle(
         set({ id: 'seek', status: 'failed', code: error.code, detail: error.message });
       }
 
-      // determinism：中间时刻在取过其他帧之后再取一次。
+      // determinism: the middle time is fetched again after other frames have been fetched.
       const midSeconds = regular.length > 1 ? regular[Math.floor(regular.length / 2)]! : (regular[0] ?? 0);
       const first = frames.find((f) => f.seconds === midSeconds);
       if (!seekOk || !first) {
@@ -168,7 +168,7 @@ export async function verifyBundle(
         }
       }
 
-      // alpha：声明透明时，至少一帧有透明像素。
+      // alpha: when transparency is declared, at least one frame must have transparent pixels.
       const measuredAlpha = frames.some((f) => f.frame.transparentPixels > 0 || f.frame.translucentPixels > 0);
       if (!manifest.output.alpha || options.checkAlpha === false) {
         set({ id: 'alpha', status: 'skipped', detail: manifest.output.alpha ? 'disabled' : 'the bundle declares an opaque output' });
@@ -191,7 +191,7 @@ export async function verifyBundle(
 
       const determinism = checks.get('determinism');
       capabilities = {
-        // inspectBundle 已经保证是浏览器引擎与已知合同。
+        // inspectBundle already guarantees the browser engine and a known contract.
         contract: (manifest.runtime as { contract: string }).contract as CodeBundleContract,
         randomAccess: determinism?.status === 'passed',
         alpha: manifest.output.alpha && measuredAlpha,

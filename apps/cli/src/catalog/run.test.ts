@@ -35,7 +35,7 @@ function setup(target: CatalogCommand, args: Record<string, unknown>, globals: P
   return { fake, run, ...captured };
 }
 
-/** 提交之后由 Runtime 推的任务记录。 */
+/** Task record pushed by the Runtime after submission. */
 function later(fake: FakeClient, ...records: Parameters<typeof jobRecord>[0][]): void {
   setTimeout(() => {
     fake.snapshot([]);

@@ -14,7 +14,7 @@ function setup() {
       new Promise<MediaHandle>((resolve, reject) => pending.push({ resolve, reject, progress: onProgress })),
   );
   const cache = new MediaUrlCache(resolve, { now: () => now });
-  /** 一个新句柄：地址每次不同，`ttl` 之后过期。 */
+  /** A new handle: the address differs each time, and it expires after `ttl`. */
   const handle = (ttl = HOUR): MediaHandle => ({
     url: `http://media/grant-${++serial}`,
     mimeType: 'audio/wav',
@@ -132,7 +132,7 @@ describe('媒体地址缓存', () => {
     cache.invalidate('vid1', asset, 'http://media/other');
     expect(cache.peek('vid1', asset)).toBe(dead.url);
 
-    // 上千个元素都在 dead 上报错：第一个删掉并重新要，其余的删不动正在路上的请求，跟上它。
+    // When thousands of elements report errors on the same dead address, the first one deletes it and requests a new one; the rest cannot delete the in-flight request, so they follow it.
     cache.invalidate('vid1', asset, dead.url);
     const waiters = [cache.get('vid1', asset)];
     for (let i = 0; i < 999; i++) {
@@ -145,7 +145,7 @@ describe('媒体地址缓存', () => {
     expect(new Set(await Promise.all(waiters))).toEqual(new Set([next.url]));
     await settle();
 
-    // 新地址到了之后迟到的旧报错也删不掉它。
+    // A late old error arriving after the new address is in place cannot delete it either.
     cache.invalidate('vid1', asset, dead.url);
     expect(cache.peek('vid1', asset)).toBe(next.url);
     expect(resolve).toHaveBeenCalledTimes(2);
@@ -168,7 +168,7 @@ describe('媒体地址缓存', () => {
     expect(cache.peek('vid2', asset)).not.toBeNull();
     void cache.get('vid1', asset);
     expect(resolve).toHaveBeenCalledTimes(4);
-    // 卡住的那次终于回来了：不收，等的是新的这次。
+    // The stuck request finally returns: it is ignored, because what is awaited is the new one.
     pending[0]!.resolve(handle());
     await settle();
     expect(cache.peek('vid1', asset)).toBeNull();
@@ -191,7 +191,7 @@ describe('媒体地址缓存', () => {
     pending[0]!.progress(null);
     pending[1]!.progress(0.2);
     pending[0]!.progress(0.5);
-    // 同样的进度再报一次不再通知。
+    // The same progress reported again does not notify.
     pending[0]!.progress(0.5);
     expect(heard).toHaveBeenCalledTimes(3);
     expect(cache.progress('vid1', asset)).toBe(0.5);

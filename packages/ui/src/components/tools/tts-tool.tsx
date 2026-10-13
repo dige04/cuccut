@@ -54,14 +54,12 @@ import { useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * 设计稿 tool-tts.jsx `TtsToolPage`（672-785）：文字、模型（本机与云端，产品设计 §2.7 的统一「模型」一行）、
- * 声音（音色 / 风格 / 语速）、语言与细节，右边生成记录。要念的文字可以直接写，也可以选 Space 里的文档或字幕
- * （`material`，Runtime 读出文字；架构设计 §7.9「Space 条目作输入」），从 Space 查看器带来的条目预先选好。
+ * Design mockup tool-tts.jsx `TtsToolPage` (672-785): text, model (local and cloud, the unified “模型” (model) row of product design §2.7), voice (voice / style / rate), language and details; generation records on the right. The text to speak can be typed directly, or chosen from a document or subtitle in Space (`material`; the Runtime reads out the text; architecture design §7.9, “Space 条目作输入”); entries brought from the Space viewer are pre-selected.
  */
 
 const textFoot = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
 
-/** 生成语音（本机或云端）。提交走 `models.synthesizeSpeech`，记录是 `jobs` 主题里这类任务。 */
+/** Generates speech (local or cloud). Submission goes through `models.synthesizeSpeech`; the record is a job of this kind in the `jobs` topic. */
 export function TtsTool() {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
@@ -69,7 +67,7 @@ export function TtsTool() {
   const bundles = useModels((s) => s.bundles);
   const draft = useTools((s) => s.tts);
   const patch = useTools((s) => s.patchTts);
-  // 我的声音：还没读到时 null（库音色先不判克隆状态，交给 Runtime 核对）。
+  // My voices: null until read (library voices do not check clone status here; the Runtime verifies that).
   const myVoices = useVoices((s) => (s.ready ? s.voices : null));
   const records = useToolRecords('synthesizeSpeech');
   const now = useNow(30_000);
@@ -78,9 +76,9 @@ export function TtsTool() {
   const [submitting, setSubmitting] = useState(false);
   const submitFailed = useSubmitFailed('synthesizeSpeech', TTS_COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
-  // 「更改…」选的目录只活在这一页（不写回设置）。
+  // The directory chosen with “更改…” (change…) lives only on this page (not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
-  // 文字的来源：直接写，或 Space 里的文档 / 字幕。只活在这一页（草稿里存的是写的文字）。
+  // Source of the text: typed directly, or a document or subtitle in Space. Lives only on this page (the draft stores the typed text).
   const [source, setSource] = useState<'text' | 'space'>('text');
   const [entryId, setEntryId] = useState<Id | null>(null);
   usePreset('synthesize-speech', (id) => {
@@ -100,7 +98,7 @@ export function TtsTool() {
       ? { text: FORM_COPY.needEntry, bad: tried }
       : ttsStatus(draft, option, tried, myVoices, material);
   const toSettings = () => go({ tab: 'models', category: 'tts', page: option?.local ? 'local' : 'cloud' });
-  // 选中的本机模型还没装：模型一行下面给下载卡（设计稿 tool-tts.jsx `TtsModelGate`），有装好的本机模型时再给「换用已装的 X」。
+  // The chosen local model is not installed yet: a download card appears below the model row (design mockup `TtsModelGate`); when an installed local model exists, “换用已装的 X” (use installed X instead) is also offered.
   const gateBundle = downloadableBundle(bundles, option);
   const installed = gateBundle ? installedAlternative(options, option) : null;
 

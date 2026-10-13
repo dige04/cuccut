@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GrantRequestItem } from '@cuccut/protocol';
 import { modelCallRisk, outboundGrantOf } from './outbound-grants.ts';
 
-/** 模型工具的风险等级（架构设计 §3.12、§12.5）。 */
+/** Risk levels of the model tools (architecture §3.12, §12.5). */
 
 describe('modelCallRisk', () => {
   it('本机是 edit；有授权覆盖的外发是 command；没有授权覆盖是 high；没有启用、解析不到时按 command（提交时会被拒绝）', () => {

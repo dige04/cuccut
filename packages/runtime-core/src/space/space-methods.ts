@@ -26,15 +26,14 @@ type SpaceMethod =
 
 export interface SpaceMethodDeps {
   harness: Harness;
-  /** 删除与恢复视频：视频条目进出回收站转到这里。 */
+  /** Deleting and restoring videos: video entries moving into and out of the trash are handled here. */
   trash: VideoTrash;
-  /** 条目的缩略图（`space.thumbnail`）。 */
+  /** Thumbnail of an entry (`space.thumbnail`). */
   thumbnails: SpaceThumbnails;
 }
 
 /**
- * 改用户标记（`space.update`、`space.trash`、`space.restore`）。视频条目进出回收站不是写标记，是移动视频目录（§5.5）：
- * 移入回收站转为 `videos.delete`，恢复删除了的视频转为 `videos.restore`，前提与错误一样。其余字段照常写标记。
+ * Changes user markers (`space.update`, `space.trash`, `space.restore`). Moving a video entry into or out of the trash is not writing a marker; it moves the video directory (§5.5). Moving into the trash becomes `videos.delete`, and restoring a deleted video becomes `videos.restore`, with the same preconditions and errors. Other fields are written as markers as usual.
  */
 export async function updateEntry(
   space: SpaceCatalog,
@@ -53,7 +52,7 @@ export async function updateEntry(
     const { entry } = await trash.restore(params.entryId);
     return hasMarks ? space.update({ ...marks, entryId: entry.id }) : entry;
   }
-  // 已经删除了的视频再移入回收站（重复的请求）：照样回答回收站里的条目。
+  // A video that is already deleted is moved into the trash again (repeated request): it still answers with the trash entry.
   const trashedVideo = trashed === true ? space.trashedVideo(params.entryId) : null;
   if (trashedVideo) return hasMarks ? space.update({ ...marks, entryId: trashedVideo.entryId }) : space.get(trashedVideo.entryId);
   return space.update(params);
@@ -68,16 +67,14 @@ function isLiveVideo(space: SpaceCatalog, entryId: Id): boolean {
   }
 }
 
-/** 网关上的主体看 Space 的范围（`space.*` 与工具的候选输入 `tools.candidates` 共用）：对外服务不走这里。 */
+/** Scope of Space for principals on the gateway (shared by `space.*` and the tool candidate input `tools.candidates`). External services do not go through here. */
 export function viewerOf(principal: TrustedPrincipal): SpaceViewer {
   if (principal.kind === 'service') throw new RpcError('forbidden', RcSpace.serviceUsesMcp());
   return USER_VIEWER;
 }
 
 /**
- * `space.*` 的处理函数（架构设计 §5.7、§5.11），由 `handlers.ts` 并进方法表。网关上的主体（界面、CLI、Web）都是用户本人，
- * 看全部条目；对外服务不走网关，它们的范围在工具层（`space_list` / `space_search`）。Web 的白名单与 `space.import` 的路径约束
- * 在 `services/web-handlers.ts`。
+ * Handlers for `space.*` (architecture design §5.7, §5.11), merged into the method table by `handlers.ts`. Principals on the gateway (the UI, CLI, Web) are the user themselves and see all entries. External services do not go through the gateway; their scope is applied at the tool layer (`space_list` / `space_search`). The Web allowlist and the path constraints of `space.import` are in `services/web-handlers.ts`.
  */
 export function spaceMethods(space: SpaceCatalog, deps: SpaceMethodDeps): Pick<RpcHandlers['methods'], SpaceMethod> {
   const { harness, trash, thumbnails } = deps;

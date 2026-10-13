@@ -6,26 +6,26 @@ import { rateFromSpeed, speedOf } from './property-values.ts';
 import { speechSentences } from './translation-doc.ts';
 
 /**
- * 时间线上的配音块（设计稿 timeline-dub.jsx，产品设计 §12.6 / §15.6）：一组配音的实例在轨道上画成「淡的」块——
- * 左缘一道说话人色条、块上写这一句的译文，只有几种状态跳出来：语速快过 1.35× 整块换黄（过快），静音的压淡加删除线，
- * 手动拉过的在提示里写明。这里只算：哪些实例是配音块、每块的说话人与色相、译文、实际语速，拖右缘改语速时的新速率，
- * 以及菜单要发的操作。不碰 React。
+ * Dub blocks on the timeline (design mockup timeline-dub.jsx, product design §12.6 / §15.6): instances of a dub group are drawn on the track as “faded” blocks —
+ * a speaker color strip on the left edge, and the translation of the sentence written on the block; only a few states stand out: speaking rate faster than 1.35× turns the whole block yellow (too fast), muted blocks are dimmed with a strikethrough,
+ * and blocks stretched by hand are noted in the tooltip. This part only computes: which instances are dub blocks, each block's speaker and hue, translation, actual speaking rate, the new rate when dragging the right edge to change the rate,
+ * and the actions the menu should send. It does not touch React.
  *
- * 数据从哪来（都不需要另取正文以外的东西）：
- * - 实例的 `extensions['cuccut.dub']`：`{ groupId, language, unitId }`；分离出来的背景带 `stem`，不是配音块；
- * - 合成音频的素材来源（`provenance.source.tempo`）：流程对齐时用 atempo 加过的速，实例自己的变速再乘上去才是听到的语速；
- * - 配音计划文档（`dubbing-plan`，当前版本 `summary.groupId` 认组）：单元的译文与原句；
- * - 原句所在的转写（计划单元的 `targetAnchor.speechRef`）：句子第一个没隐藏的词的说话人。
- * 计划或转写还没取到时降级：块照画，色相取第一档、文字取片段名。
+ * Where the data comes from (none of it needs anything beyond the body text):
+ * - the instance's `extensions['cuccut.dub']`: `{ groupId, language, unitId }`; a separated background carries `stem` and is not a dub block;
+ * - the source of the synthesized audio (`provenance.source.tempo`): the speed applied with atempo during pipeline alignment; the instance's own speed change multiplied on top is the speaking rate actually heard;
+ * - the dubbing plan document (`dubbing-plan`; in the current version `summary.groupId` identifies the group): the unit's translation and original sentence;
+ * - the transcript containing the original sentence (the plan unit's `targetAnchor.speechRef`): the speaker of the sentence's first non-hidden word.
+ * When the plan or transcript has not been fetched, it degrades: blocks are still drawn, the hue uses the first tier, and the text uses the clip name.
  */
 
-/** 语速快过它就标「过快」（设计稿 model-tts.js `MAX_RATE`：舒适上限）。 */
+/** A speaking rate faster than this is marked “过快” (“Too fast”) (design mockup model-tts.js `MAX_RATE`: comfort ceiling). */
 export const DUB_FAST_RATE = 1.35;
-/** 合同 `setSpeed` 收的速率范围。 */
+/** The rate range accepted by the contract's `setSpeed`. */
 export const DUB_SPEED_MIN = 0.1;
 export const DUB_SPEED_MAX = 10;
 
-/** 说话人 → 色相，按说话人在转写里的次序轮转（设计稿 model-tts.js `SPEAKER_HUES`）。 */
+/** Speaker → hue, cycling by the speaker's order in the transcript (design mockup model-tts.js `SPEAKER_HUES`). */
 export const SPEAKER_HUES = ['blue', 'green', 'orange', 'purple', 'magenta', 'indigo'] as const;
 export type SpeakerHue = (typeof SPEAKER_HUES)[number];
 
@@ -38,7 +38,7 @@ type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
 
-// ---- 认块、认组 ----
+// ---- Identifying blocks and groups ----
 
 export interface DubMark {
   groupId: string;
@@ -46,7 +46,7 @@ export interface DubMark {
   unitId: string | null;
 }
 
-/** 这件实例是不是配音块：音频、带 `cuccut.dub.groupId`、不是分离出来的背景（`stem`）。 */
+/** Whether this instance is a dub block: it is audio, carries `cuccut.dub.groupId`, and is not a separated background (`stem`). */
 export function dubMark(item: SequenceItem): DubMark | null {
   if (item.type !== 'audio') return null;
   const own = item.extensions?.[DUB_EXTENSION];
@@ -58,12 +58,12 @@ export function dubMark(item: SequenceItem): DubMark | null {
 export interface DubGroup {
   groupId: string;
   language: string | null;
-  /** 这组的块，按时间先后。 */
+  /** The blocks of this group, in time order. */
   itemIds: Id[];
   trackIds: Id[];
 }
 
-/** 序列里的配音组（按第一次出现的次序），每组的块按时间先后。 */
+/** The dub groups in the sequence (in order of first appearance); each group's blocks are in time order. */
 export function dubGroups(sequence: Sequence): DubGroup[] {
   const groups = new Map<string, { group: DubGroup; starts: Map<Id, number> }>();
   for (const item of sequence.items) {
@@ -85,7 +85,7 @@ export function dubGroups(sequence: Sequence): DubGroup[] {
   }));
 }
 
-/** 只放这一组配音的轨道：行头写「配音 · 语言」。空的轨道、混着别的实例或别的组的不算。 */
+/** A track holding only this dub group: its row header reads “配音 · 语言” (“Dubbing · language”). Empty tracks, or tracks mixed with other instances or other groups, do not count. */
 export function dubTrackGroup(sequence: Sequence, trackId: Id): DubGroup | null {
   const items = sequence.items.filter((item) => item.trackId === trackId);
   if (items.length === 0) return null;
@@ -97,7 +97,7 @@ export function dubTrackGroup(sequence: Sequence, trackId: Id): DubGroup | null 
 
 export type DubStem = 'background' | 'vocals';
 
-/** 配音分离出的分轨实例（背景声或人声）：哪一种、哪一组；别的实例是 null。 */
+/** A split-track instance separated from dubbing (background sound or vocals): which kind and which group; other instances are null. */
 export function dubStemOf(item: SequenceItem): { stem: DubStem; groupId: string } | null {
   const own = item.extensions?.[DUB_EXTENSION];
   return isObject(own) && (own.stem === 'background' || own.stem === 'vocals') && text(own.groupId)
@@ -106,8 +106,8 @@ export function dubStemOf(item: SequenceItem): { stem: DubStem; groupId: string 
 }
 
 /**
- * 只放一组配音分离出的同一种分轨的轨道（设计稿 model-timeline.js 的「背景声」行）：哪一种、哪一组、这组的语言。
- * 空的轨道、混着别的实例、别的分轨或别的组的不算。
+ * A track holding only one kind of split track separated from one dub group (the “背景声” (“Background sound”) row of design mockup model-timeline.js): which kind, which group, and the group's language.
+ * Empty tracks, or tracks mixed with other split tracks or other groups, do not count.
  */
 export function stemTrackOf(sequence: Sequence, trackId: Id): { stem: DubStem; groupId: string; language: string | null } | null {
   const items = sequence.items.filter((item) => item.trackId === trackId);
@@ -119,9 +119,9 @@ export function stemTrackOf(sequence: Sequence, trackId: Id): { stem: DubStem; g
   return { ...first, language };
 }
 
-// ---- 配音计划与转写 ----
+// ---- Dubbing plan and transcript ----
 
-/** 这组配音的计划文档：`dubbing-plan`，当前版本的概要里记着 `groupId`（流程写入时给的）。 */
+/** The plan document for this dub group: `dubbing-plan`; the current version's summary records `groupId` (written when the pipeline writes it). */
 export function planRecordOf(documents: Record<Id, DocumentRecord>, groupId: string): DocumentRecord | null {
   for (const record of Object.values(documents)) {
     if (record.kind !== 'dubbing-plan') continue;
@@ -132,17 +132,17 @@ export function planRecordOf(documents: Record<Id, DocumentRecord>, groupId: str
 }
 
 export interface PlanUnit {
-  /** 译文单元（实例上的 `unitId`）。 */
+  /** Translation unit (the `unitId` on the instance). */
   unitId: Id;
-  /** 念的稿子（译文）。 */
+  /** The script to be read aloud (the translation). */
   text: string | null;
-  /** 原句与它所在的转写。 */
+  /** The original sentence and the transcript it is in. */
   sentenceId: Id | null;
   speechId: Id | null;
   status: string | null;
 }
 
-/** 配音计划正文里的单元，按译文单元认（`extensions['cuccut.dub'].translationUnitId`，旧的退回 `d-<unitId>`）。 */
+/** Units in the dubbing plan body, identified by translation unit (`extensions['cuccut.dub'].translationUnitId`; older ones fall back to `d-<unitId>`). */
 export function planUnits(body: unknown): Map<Id, PlanUnit> {
   const units = new Map<Id, PlanUnit>();
   if (!isObject(body) || !Array.isArray(body.units)) return units;
@@ -166,21 +166,21 @@ export function planUnits(body: unknown): Map<Id, PlanUnit> {
   return units;
 }
 
-/** 计划里引用的转写（取第一个有的）：说话人从它来。 */
+/** The transcript referenced by the plan (the first one present): speakers come from it. */
 export function planSpeechId(units: ReadonlyMap<Id, PlanUnit>): Id | null {
   for (const unit of units.values()) if (unit.speechId) return unit.speechId;
   return null;
 }
 
 export interface SpeakerIndex {
-  /** 说话人在转写里的次序（决定色相）。 */
+  /** The speaker's order in the transcript (determines the hue). */
   order: string[];
   names: Map<string, string>;
-  /** 句子 → 说话人：句子第一个没隐藏的词的（与 Runtime 一致）。 */
+  /** Sentence → speaker: the speaker of the sentence's first non-hidden word (consistent with the Runtime). */
   bySentence: Map<Id, string>;
 }
 
-/** 转写里的说话人与每句的说话人；正文不是转写时 null，没有说话人信息时三张表都是空的。 */
+/** Speakers in the transcript and each sentence's speaker; null when the body is not a transcript; when there is no speaker information, all three tables are empty. */
 export function sentenceSpeakers(body: unknown): SpeakerIndex | null {
   const sentences = speechSentences(body);
   if (!sentences || !isObject(body)) return null;
@@ -197,21 +197,21 @@ export function sentenceSpeakers(body: unknown): SpeakerIndex | null {
   return { order: speakers.map((s) => s.speakerId), names: new Map(speakers.map((s) => [s.speakerId, s.name])), bySentence };
 }
 
-// ---- 语速 ----
+// ---- Speaking rate ----
 
-/** 合成音频对齐时加过的速（素材来源里的 `tempo`；没有就是 1）。 */
+/** The speed applied when the synthesized audio was aligned (`tempo` in the asset's source; 1 when absent). */
 export function dubTempo(item: AudioItem, assets: Record<Id, AssetRecord>): number {
   const source = assets[item.assetRef.id]?.revisions[item.assetRef.revision]?.provenance.source;
   const tempo = isObject(source) ? source.tempo : undefined;
   return typeof tempo === 'number' && Number.isFinite(tempo) && tempo > 0 ? tempo : 1;
 }
 
-/** 实例自己的变速（线性时间映射的速率；定格时是 1）。 */
+/** The instance's own speed change (the rate of the linear time mapping; 1 when held). */
 export function itemSpeed(item: AudioItem): number {
   return item.timeMap.kind === 'linear' ? speedOf(item.timeMap.rate) : 1;
 }
 
-/** 块上的语速角标要不要写：1.0× 不写。 */
+/** Whether to write the speed badge on the block: 1.0× is not written. */
 export function showsRate(rate: number): boolean {
   return Math.abs(rate - 1) >= 0.005;
 }
@@ -221,35 +221,35 @@ export interface DubBlock {
   groupId: string;
   language: string | null;
   unitId: string | null;
-  /** 这一句在组里的序号（按时间，从 1 起）。 */
+  /** This sentence's index within the group (by time, starting from 1). */
   index: number;
-  /** 译文；计划还没取到时 null（画片段名）。 */
+  /** Translation; null when the plan has not been fetched yet (the clip name is drawn). */
   text: string | null;
   speakerId: string | null;
   speakerName: string | null;
   hue: SpeakerHue;
-  /** 合成时对齐加的速 × 实例的变速 = 听到的语速。 */
+  /** Speed applied in alignment during synthesis × the instance's speed change = the speaking rate heard. */
   tempo: number;
   speed: number;
   rate: number;
   fast: boolean;
   muted: boolean;
-  /** 实例自己变过速（手动拉过右缘，或在属性里改过）。 */
+  /** The instance's own speed was changed (its right edge was dragged by hand, or it was edited in the properties). */
   manual: boolean;
-  /** 这一句正在重配（在跑的配音流程冻结的 `params.regroup` 里有它）；时间线叠加，不在这里算。 */
+  /** This sentence is being re-dubbed (it appears in the `params.regroup` frozen by the running dubbing pipeline); the timeline overlay is applied, not computed here. */
   queued?: boolean;
-  /** 这一句有几个版本时，当前是第几版、用的种子（model/dub-takes.ts 的 `versionTip`）；只有一版时 null。 */
+  /** When this sentence has several versions, which version is current and the seed used (`versionTip` in model/dub-takes.ts); null when there is only one version. */
   version?: { k: number; seed: number | null } | null;
 }
 
-/** 已经取到的正文：组 → 配音计划正文，转写文档 ID → 转写正文。 */
+/** Bodies already fetched: group → dubbing plan body; transcript document ID → transcript body. */
 export interface DubSources {
   assets: Record<Id, AssetRecord>;
   plans: ReadonlyMap<string, unknown>;
   speeches: ReadonlyMap<Id, unknown>;
 }
 
-/** 序列里所有的配音块。 */
+/** All dub blocks in the sequence. */
 export function dubBlocks(sequence: Sequence, sources: DubSources): Map<Id, DubBlock> {
   const blocks = new Map<Id, DubBlock>();
   const byId = new Map(sequence.items.map((item) => [item.id, item]));
@@ -288,9 +288,9 @@ export function dubBlocks(sequence: Sequence, sources: DubSources): Map<Id, DubB
   return blocks;
 }
 
-// ---- 拖右缘改语速 ----
+// ---- Changing speed by dragging the right edge ----
 
-/** 同一条轨道上这件之后还有多少空（秒，到下一件的起点）；后面没有东西时 null。变长盖住后面的实例时引擎整笔拒绝。 */
+/** How much free space there is on the same track after this item (seconds, up to the start of the next item); null when nothing follows. If lengthening would cover a later instance, the engine rejects the whole edit. */
 export function roomAfter(sequence: Sequence, item: SequenceItem): number | null {
   const own = itemRangeSeconds(item, sequence.fps);
   let next: number | null = null;
@@ -303,26 +303,26 @@ export function roomAfter(sequence: Sequence, item: SequenceItem): number | null
 }
 
 export interface Stretch {
-  /** 要提交的速率（约分，取到两位小数）。 */
+  /** The rate to submit (reduced, to two decimal places). */
   rate: Rate;
   speed: number;
-  /** 这个速率下块的长度（秒）。 */
+  /** The block's length at this rate (seconds). */
   seconds: number;
-  /** 被夹住了（合同范围或后面那一件）。 */
+  /** Clamped (by the contract range or by the next item). */
   clamped: boolean;
 }
 
 /**
- * 把块拉到 `wantSeconds` 秒：取用的源区间不变，速率 = 原速率 × 原长度 / 新长度（设计稿「语速 = 合成时长 / 新时长」，
- * 引擎 `setSpeed` 同一个口径、按有理数精确算）。夹在合同的 0.1–10 之内；`room` 是到同轨下一件起点的长度，变长不能超过它
- * （速率往上取一档，宁可短一点也不盖住——盖住了引擎整笔拒绝）。
+ * Stretches the block to `wantSeconds`: the source range used is unchanged, and rate = original rate × original length / new length (design mockup “speaking rate = synthesized duration / new duration”,
+ * the same convention as the engine's `setSpeed`, computed exactly with rationals). Clamped within the contract's 0.1–10; `room` is the length up to the start of the next item on the same track, and lengthening cannot exceed it
+ * (the rate is rounded up one step, preferring a slightly shorter block over covering the next item; covering it makes the engine reject the whole edit).
  */
 export function stretchSpeed(item: AudioItem, wantSeconds: number, room: number | null): Stretch {
   const seconds0 = mediaTimeToSeconds(item.playDuration);
   const speed0 = itemSpeed(item);
   const source = seconds0 * speed0;
   let lo = DUB_SPEED_MIN;
-  // 向上取：浮点把「正好贴着」算成多一丁点时多进一档（短一点），不会反过来盖住。
+  // Round up: if floating point makes an exact fit come out a hair too long and step up one tier (a little shorter), it will not overlap instead.
   if (room !== null && room > 0) lo = Math.max(lo, Math.ceil((source / room) * 100) / 100);
   if (lo > DUB_SPEED_MAX) return { rate: rateFromSpeed(speed0), speed: speed0, seconds: seconds0, clamped: true };
   const rounded = Math.round((source / Math.max(1e-3, wantSeconds)) * 100) / 100;
@@ -330,14 +330,14 @@ export function stretchSpeed(item: AudioItem, wantSeconds: number, room: number 
   return { rate: rateFromSpeed(speed), speed, seconds: source / speed, clamped: speed !== rounded };
 }
 
-/** 拖完要不要提交：速率真的变了。 */
+/** Whether to commit after dragging: the rate has actually changed. */
 export function stretchChanged(item: AudioItem, stretch: Stretch): boolean {
   return Math.abs(stretch.speed - itemSpeed(item)) >= 0.005;
 }
 
-// ---- 菜单要发的操作 ----
+// ---- Actions the menu sends ----
 
-/** 选区里的配音块（按选区次序）；别的实例不管。 */
+/** Dub blocks in the selection (in selection order); other instances are ignored. */
 export function selectedBlocks(selection: readonly Id[], blocks: ReadonlyMap<Id, DubBlock>): DubBlock[] {
   return selection.flatMap((id) => {
     const block = blocks.get(id);
@@ -345,7 +345,7 @@ export function selectedBlocks(selection: readonly Id[], blocks: ReadonlyMap<Id,
   });
 }
 
-/** 这组配音有没有分离出来的背景声（「移除这组配音」连它一起拿掉）。 */
+/** Whether this dub group has a separated background sound (“移除这组配音” (“Remove this dub group”) removes it along with the group). */
 export function hasBackground(sequence: Sequence, groupId: string): boolean {
   return sequence.items.some((item) => {
     const own = item.extensions?.[DUB_EXTENSION];
@@ -353,7 +353,7 @@ export function hasBackground(sequence: Sequence, groupId: string): boolean {
   });
 }
 
-/** 静音或取消静音这几块：只发状态真的要变的那几件。 */
+/** Mute or unmute these blocks: only send the ones whose state actually needs to change. */
 export function muteOperations(sequence: Sequence, itemIds: readonly Id[], muted: boolean): EditOperation[] {
   const wanted = new Set(itemIds);
   return sequence.items
@@ -361,14 +361,14 @@ export function muteOperations(sequence: Sequence, itemIds: readonly Id[], muted
     .map((item) => ({ type: 'setAudioMix', sequenceId: sequence.id, itemId: item.id, muted }));
 }
 
-/** 这几件里有没有锁着的（实例锁定，或所在的轨道锁定）：引擎拒绝改它们，菜单把对应的项置灰。 */
+/** Whether any of these items are locked (the instance is locked, or its track is locked): the engine refuses to change them, and the menu greys out the corresponding entries. */
 export function anyLocked(sequence: Sequence, itemIds: readonly Id[]): boolean {
   const lockedTracks = new Set(sequence.tracks.filter((track) => track.locked).map((track) => track.id));
   const wanted = new Set(itemIds);
   return sequence.items.some((item) => wanted.has(item.id) && (item.locked || lockedTracks.has(item.trackId)));
 }
 
-/** 这组配音（连同分离出来的背景）里有没有锁着的：「移除这组配音」是一笔事务，有一件锁着整笔就被拒。 */
+/** Whether any part of this dub group (together with its separated background) is locked: “移除这组配音” (“Remove this dub group”) is one transaction, so if any item is locked the whole transaction is rejected. */
 export function groupLocked(sequence: Sequence, groupId: string): boolean {
   const ids = sequence.items
     .filter((item) => {

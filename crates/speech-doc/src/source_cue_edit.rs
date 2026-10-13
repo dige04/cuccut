@@ -1,8 +1,6 @@
-//! 原文 Cue 的结构编辑。
+//! Structural editing of source Cues.
 //!
-//! Cue 是从 `words[]` 派生的；删除一条 Cue 的持久语义因此只能是删除它拥有的
-//! 词原子。客户端提交 Cue id 与当前正文作 CAS，服务端在副本上重派生、删除并
-//! 清理失去词锚的覆盖键，避免时间轴选中项过期时误删另一段内容。
+//! Cues are derived from `words[]`, so the persistent meaning of deleting a Cue can only be deleting the word atoms it owns. The client submits the Cue id together with the current text as a CAS. The server re-derives on a copy, deletes, and cleans up override keys that have lost their word anchors. This avoids deleting another segment by mistake when the timeline selection is stale.
 
 use std::fmt;
 
@@ -42,7 +40,7 @@ impl fmt::Display for DeleteOriginalCueError {
     }
 }
 
-/// 删除一条派生 Cue 拥有的全部词；失败时 `doc` 保持原样。
+/// Delete all words owned by a derived Cue. On failure, `doc` is left unchanged.
 pub fn delete_original_cue(
     doc: &mut TranscriptDoc,
     request: DeleteOriginalCueRequest<'_>,

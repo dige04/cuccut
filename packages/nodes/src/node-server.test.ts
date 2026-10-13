@@ -6,8 +6,8 @@ import type { NodeJobs } from './node-jobs.ts';
 import { createNodeRequestHandler, parseRange } from './node-server.ts';
 
 /**
- * 三道门的顺序（规范 §2）：来源 → 版本 → 令牌。健康检查不过版本门与令牌门，配对不过令牌门。
- * 服务只听 127.0.0.1；来源地址在进处理函数之前改掉，模拟别的网段的对端。
+ * Order of the three gates (spec §2): source → version → token. The health check passes neither the version gate nor the token gate; pairing passes the version gate but not the token gate.
+ * The service listens only on 127.0.0.1. The source address is rewritten before the handler runs, to simulate a peer on another subnet.
  */
 
 const GOOD_TOKEN = 'client-a.good';
@@ -106,14 +106,14 @@ describe('请求处理的三道门', () => {
       { 'X-CucCut-Node-Protocol': 'v1' },
       { 'X-CucCut-Node-Protocol': '1.5' },
     ]) {
-      // 没有令牌也先报版本。
+      // The version is reported first even without a token.
       const response = await send('/v1/jobs/job_1', headers);
       expect(response.status).toBe(426);
       expect(response.body?.error).toMatchObject({ code: 'PROTOCOL_VERSION_UNSUPPORTED', details: { required: 1 } });
     }
     expect((await send('/v1/pair', {}, pairInit)).status).toBe(426);
     expect((await send('/v1/health')).status).toBe(200);
-    // 更高的版本不拒绝（向前兼容由节点的最低版本决定）。
+    // A higher version is not rejected (forward compatibility is governed by the node's minimum version).
     expect((await send('/v1/jobs/job_1', { 'X-CucCut-Node-Protocol': '2', ...AUTH })).status).toBe(200);
     expect(calls).toEqual(['health', 'get client-a job_1']);
   });
@@ -141,10 +141,10 @@ describe('请求处理的三道门', () => {
     expect(unknown.body?.error.code).toBe('INVALID_REQUEST');
     const wrongMethod = await send('/v1/jobs/job_1/result', headers, { method: 'POST' });
     expect(wrongMethod.status).toBe(405);
-    // 只有 GET /v1/health 免版本与令牌；别的方法照常过三道门。
+    // Only GET /v1/health is exempt from the version and token gates; other methods pass all three gates as usual.
     expect((await send('/v1/health', {}, { method: 'POST' })).status).toBe(426);
     expect((await send('/v1/health', headers, { method: 'POST' })).status).toBe(405);
-    // 未认证时同样的请求先被令牌门拦下。
+    // Without authentication, the same request is stopped first by the token gate.
     expect((await send('/v1/nope', V)).status).toBe(401);
   });
 

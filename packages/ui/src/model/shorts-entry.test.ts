@@ -10,7 +10,7 @@ describe('cutEntryAction', () => {
     for (const tab of ['aitools', 'video', 'elements', 'subtitle', null] as const) {
       expect(cutEntryAction<Tab>(tab, null, { hasResult: true, ai: true })).toEqual({ kind: 'adjust', to: 'transcript', railLabel: null });
     }
-    // 记着来处但已经离开文稿：不看来处。
+    // Remembers its origin but has already left the script: ignore the origin.
     expect(cutEntryAction<Tab>('video', { tab: 'aitools' }, { hasResult: true, ai: true }).kind).toBe('adjust');
   });
 
@@ -29,14 +29,14 @@ describe('cutEntryAction', () => {
       railLabel: 'Video',
     });
     expect(cutEntryAction<Tab>('transcript', { tab: 'elements' }, { railLabel: 'Elements' })).toMatchObject({ kind: 'back', to: 'elements' });
-    // 从 AI 工具来但没有结果页，或这个表面没有 AI 工具：按工具栏的名字回去。
+    // Came from an AI tool but has no result page, or this surface has no AI tool: go back by the toolbar name.
     expect(cutEntryAction<Tab>('transcript', { tab: 'aitools' }, { hasResult: false, ai: true, railLabel: 'AI tools' })).toEqual({
       kind: 'back',
       to: 'aitools',
       railLabel: 'AI tools',
     });
     expect(cutEntryAction<Tab>('transcript', { tab: 'aitools' }, { hasResult: true, ai: false, railLabel: 'AI tools' }).kind).toBe('back');
-    // 没给名字时退到面板标识。
+    // When no name is given, fall back to the panel identifier.
     expect(cutEntryAction<Tab>('transcript', { tab: 'subtitle' }).railLabel).toBe('subtitle');
   });
 
@@ -45,7 +45,7 @@ describe('cutEntryAction', () => {
     expect(cutEntryAction<Tab>('transcript', null, { hasResult: false, ai: true }).kind).toBeNull();
     expect(cutEntryAction<Tab>('transcript', null, { hasResult: true, ai: false }).kind).toBeNull();
     expect(cutEntryAction<Tab>('transcript', undefined).kind).toBeNull();
-    // 来处就是文稿（不会记下，防御）：当作没有来处。
+    // The origin is the script itself (never recorded; defensive): treat as having no origin.
     expect(cutEntryAction<Tab>('transcript', { tab: 'transcript' }, { hasResult: true, ai: true }).kind).toBe('result');
   });
 });
@@ -68,7 +68,7 @@ describe('landingPanel', () => {
   });
 });
 
-/** 一句一秒、每句两个词（第二个带句号）；`kept` 是留在时间线上的句号（从 0 起）。同 shorts-fold.test.ts。 */
+/** One sentence per second, two words per sentence (the second with a period); `kept` is the period that stays on the timeline (from 0). Same as shorts-fold.test.ts. */
 function transcript(sentences: number, kept: [number, number], perParagraph = 4) {
   const words: TranscriptWord[] = [];
   for (let s = 0; s < sentences; s++) {
@@ -91,16 +91,16 @@ describe('entryAnchor', () => {
     const { words, paragraphs } = transcript(30, [20, 25]);
     const plan = foldOutside(words, paragraphs, { before: 0, after: 0 });
     expect(entryAnchor(plan, words, paragraphs)).toEqual({ fold: 'before' });
-    // 铺开过的剪缝也还在那一行。
+    // Cut seams already spread out are still on that line.
     const open = foldOutside(words, paragraphs, { before: 99, after: 0 });
     expect(entryAnchor(open, words, paragraphs)).toEqual({ fold: 'before' });
   });
 
   it('lands on the paragraph holding the first kept word when nothing before is folded', () => {
-    // 片段从第 1 句开始：落在第一段。
+    // The clip starts at sentence 1: it falls in the first paragraph.
     const a = transcript(30, [0, 9]);
     expect(entryAnchor(foldOutside(a.words, a.paragraphs, { before: 0, after: 0 }), a.words, a.paragraphs)).toEqual({ paragraph: 0 });
-    // 片段前只有 3 句（不收剪缝），片段第一句在第二段（每段 4 句）。
+    // Only 3 sentences before the clip (cut seams not counted); the clip's first sentence is in the second paragraph (4 sentences per paragraph).
     const b = transcript(30, [3, 9]);
     expect(entryAnchor(foldOutside(b.words, b.paragraphs, { before: 0, after: 0 }), b.words, b.paragraphs)).toEqual({ paragraph: 0 });
     const c = transcript(30, [3, 9], 2);

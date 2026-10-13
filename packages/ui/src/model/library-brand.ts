@@ -15,7 +15,7 @@ import { pl } from './library-brand.pl.ts';
 import { tr } from './library-brand.tr.ts';
 import { vi } from './library-brand.vi.ts';
 
-/** 品牌库模型的文案（英文是键与类型的来源，译文在 `library-brand.zh-Hans.ts`）。 */
+/** Copy for the brand library model (English is the source for keys and types; translations are in `library-brand.zh-Hans.ts`). */
 const en = {
   videoTitle: 'Videos',
   videoEmpty: 'No videos saved yet',
@@ -53,9 +53,9 @@ export type LibraryBrandMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 编辑器 › 品牌的纯模型（产品设计 §13.7，设计稿 designs/cuccut/app/panel-brand.jsx）：品牌库里的视频、图片、贴纸、
- * 品牌色、字体与字幕样式。品牌库在 Runtime Home 里、跨视频复用（架构设计 §5.9）；放进视频时拷一份，
- * 之后库里的修改与删除不影响视频。模板（`overlayTemplate`）只保留种类，这里不做。
+ * Pure model for Editor › Brand (product design §13.7, design draft designs/cuccut/app/panel-brand.jsx): videos, images, stickers, brand colors, fonts and caption styles in the brand library.
+ * The brand library lives in the Runtime Home and is reused across videos (architecture design §5.9); when put into a video, a copy is taken, and later changes or deletions in the library do not affect the video.
+ * Templates (`overlayTemplate`) keep only their kind; they are not handled here.
  */
 
 export type BrandSectionKind = Exclude<BrandKind, 'overlayTemplate'>;
@@ -67,7 +67,7 @@ export interface BrandSection {
   hint: string;
 }
 
-/** 各节的次序与说明（设计稿：视频、图片、贴纸、品牌色、品牌字体、字幕样式）。 */
+/** The order and descriptions of the sections (design draft: videos, images, stickers, brand colors, brand fonts, caption styles). */
 export const BRAND_SECTIONS: readonly BrandSection[] = [
   {
     kind: 'video',
@@ -113,7 +113,7 @@ export function isBrandMediaKind(kind: string): kind is BrandMediaKind {
   return (BRAND_MEDIA_KINDS as readonly string[]).includes(kind);
 }
 
-/** 打开对话框里的文件类型（只是收窄候选；真正的类型由 Runtime 按内容判）。 */
+/** File types in the open dialog (only narrows the candidates; the real type is judged by the Runtime from the content). */
 export const BRAND_FILE_FILTERS: Record<BrandMediaKind, { name: string; extensions: string[] }[]> = {
   image: [{ get name() { return M.filterImages; }, extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
   video: [{ get name() { return M.filterVideos; }, extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv'] }],
@@ -121,29 +121,29 @@ export const BRAND_FILE_FILTERS: Record<BrandMediaKind, { name: string; extensio
   font: [{ get name() { return M.filterFonts; }, extensions: ['ttf', 'otf', 'woff2'] }],
 };
 
-/** 名字的上限（与 Runtime 一致）。 */
+/** Upper limit on names (consistent with the Runtime). */
 export const BRAND_NAME_MAX = 200;
 
-/** 条目名去掉首尾空白，截到上限（按字符，不切开代理对）。 */
+/** Trims leading and trailing whitespace from an entry name and truncates it to the limit (by characters, without splitting surrogate pairs). */
 export function clipBrandName(name: string): string {
   return [...name.trim()].slice(0, BRAND_NAME_MAX).join('');
 }
 
-/** 本机文件的默认条目名：文件名去掉扩展名。 */
+/** Default entry name for a local file: the file name without its extension. */
 export function nameFromPath(path: string): string {
   const base = path.split(/[\\/]/).pop() ?? '';
   const name = base.replace(/\.[^.]+$/, '').trim() || base.trim();
   return [...name].slice(0, BRAND_NAME_MAX).join('') || M.untitled;
 }
 
-/** 品牌色只收 `#RRGGBB` 或 `#RRGGBBAA`（Runtime 存成大写）。`#RGB` 展开成六位；不合法时 null。 */
+/** Brand colors accept only `#RRGGBB` or `#RRGGBBAA` (the Runtime stores them in uppercase). `#RGB` is expanded to six digits; null when invalid. */
 export function normalizeColor(text: string): string | null {
   const raw = text.trim().replace(/^#/, '');
   const hex = /^[0-9a-f]{3}$/i.test(raw) ? [...raw].map((c) => c + c).join('') : raw;
   return /^([0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex) ? `#${hex.toUpperCase()}` : null;
 }
 
-/** 色值换成 CSS 能读的 `rgba()`：八位 hex 在一些取色控件里读不出不透明度。 */
+/** Converts the color to `rgba()` that CSS can read: the eight-digit hex form cannot show its opacity in some color pickers. */
 export function colorCss(value: string): string {
   const hex = normalizeColor(value) ?? '#000000';
   const n = Number.parseInt(hex.slice(1, 7), 16);
@@ -151,36 +151,35 @@ export function colorCss(value: string): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.round(alpha * 1000) / 1000})`;
 }
 
-/** Lottie 动画的媒体类型：bodymovin JSON 与 `.lottie` 压缩包（zip）。 */
+/** Media types of Lottie animations: bodymovin JSON and `.lottie` archives (zip). */
 const LOTTIE_MEDIA_TYPES: readonly string[] = ['application/json', 'application/zip'];
 
-/** 贴纸是 Lottie 动画（不是图片）。 */
+/** Stickers are Lottie animations (not images). */
 export function isLottieSticker(content: BrandContent): boolean {
   return content.kind === 'sticker' && LOTTIE_MEDIA_TYPES.includes(content.file.mediaType);
 }
 
 /**
- * 元素页里一张品牌库贴纸进哪一页（设计稿 `BC_STSRC.isDynamicPage`，两页互补、不重复）：Lottie 与 GIF 进「动态贴纸」
- * （预览与导出都按 GIF 自己的帧时间播放），其余图片进「贴纸」。
+ * Which page a brand library sticker goes to in the element page (design draft `BC_STSRC.isDynamicPage`; the two pages complement each other, no duplicates): Lottie and GIF go to “Animated stickers”
+ * (preview and export both play them with GIF's own frame timing), and the rest of the images go to “Stickers”.
  */
 export function isDynamicSticker(content: BrandContent): boolean {
   return isLottieSticker(content) || (content.kind === 'sticker' && content.file.mediaType === 'image/gif');
 }
 
 /**
- * 元素页搜索品牌库贴纸：名字，「我的贴纸」「品牌库」，以及它那一页的名字与种类词（与内置格按分节名命中同一口径：
- * 搜「贴纸」两页的都在）。
+ * Searching brand library stickers in the element page: by name, “My stickers”, “Brand library”, and the name and kind words of its page (the same rule as built-in cells matching by section name: searching “stickers” finds both pages).
  */
 export function stickerMatches(name: string, dynamic: boolean, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  // i18n-ignore-start: 检索关键词，中英两种说法都收，与界面语言无关
+  // i18n-ignore-start: search keywords; both Chinese and English terms are accepted, independent of interface language
   const words = dynamic ? '动态贴纸 lottie 动画 animation' : '贴纸 sticker 图片 image';
   return `${name}\n我的贴纸 品牌库 brand ${words}`.toLowerCase().includes(q);
   // i18n-ignore-end
 }
 
-/** 一条品牌条目的说明：贴纸写图片还是动画，文件写大小。 */
+/** Description of a brand entry: stickers say whether they are images or animations, files say their size. */
 export function brandMeta(content: BrandContent): string {
   if (content.kind === 'color') return content.value;
   if (content.kind === 'captionStyle') return M.captionStyle;
@@ -196,21 +195,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-// ---- 从这个视频的素材存进品牌库 ----
+// ---- Save from this video's media into the brand library ----
 
 function isAbsolutePath(path: string): boolean {
   return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\');
 }
 
-/** 生成的素材在来源里记着产物 ID（`provenance.source.artifactId`）。 */
+/** Generated media records the output ID in its source (`provenance.source.artifactId`). */
 function artifactIdOf(source: unknown): string | null {
   const id = source && typeof source === 'object' ? (source as { artifactId?: unknown }).artifactId : undefined;
   return typeof id === 'string' && id.trim() ? id : null;
 }
 
 /**
- * 素材的文件从哪里来：生成的素材用产物库里的那一份，链接的素材用登记的绝对路径。
- * 导入时已经复制进视频目录的素材，Runtime 不给出它在磁盘上的位置，这时说明原因，让用户改从本机文件添加。
+ * Where the media file comes from: generated media uses the copy in the output library; linked media uses the registered absolute path.
+ * Media that was already copied into the video directory at import: the Runtime does not give its location on disk, so this explains the reason and asks the user to add it from a local file instead.
  */
 export function assetLibrarySource(asset: AssetRecord): { source: LibrarySource } | { reason: string } {
   const revision = asset.revisions[asset.currentRevision];
@@ -224,8 +223,7 @@ export function assetLibrarySource(asset: AssetRecord): { source: LibrarySource 
 }
 
 /**
- * 素材在品牌库里算哪一类；不能存的（音频、文档等）返回 null。Lottie 动画素材算贴纸；早先把 Lottie 记成 `other` 的 JSON
- * 素材也算（存进库时 Runtime 再按内容认）。
+ * Which kind the media counts as in the brand library; media that cannot be stored (audio, documents, etc.) returns null. Lottie animation media counts as a sticker; JSON media that was earlier recorded as `other` while it was Lottie also counts (the Runtime checks the content again when storing).
  */
 export function brandKindForAsset(asset: AssetRecord): BrandMediaKind | null {
   if (asset.kind === 'image' || asset.kind === 'video' || asset.kind === 'font') return asset.kind;
@@ -237,11 +235,11 @@ export function brandKindForAsset(asset: AssetRecord): BrandMediaKind | null {
 export interface BrandCandidate {
   asset: AssetRecord;
   source: LibrarySource | null;
-  /** 存不进来的原因。 */
+  /** The reason it cannot be stored. */
   reason: string | null;
 }
 
-/** 这个视频里能存进某一节的素材（贴纸一节收图片与 Lottie）。按名字排。 */
+/** Media in this video that can be stored into a section (the sticker section takes images and Lottie). Sorted by name. */
 export function brandCandidates(assets: Record<Id, AssetRecord>, kind: BrandMediaKind): BrandCandidate[] {
   return Object.values(assets)
     .filter((asset) => {
@@ -255,11 +253,11 @@ export function brandCandidates(assets: Record<Id, AssetRecord>, kind: BrandMedi
     });
 }
 
-// ---- 拷进视频之后怎么放 ----
+// ---- How it is placed after being copied into the video ----
 
 /**
- * 拷进视频的素材放到哪里：图片、视频与图片贴纸放到播放头处的时间线上；Lottie 贴纸用内置的 Lottie 播放器；
- * 字体只进素材库（文字的字体框还不能选素材里的字体）。
+ * Where copied media goes: images, videos and image stickers go onto the timeline at the playhead; Lottie stickers use the built-in Lottie player;
+ * fonts only go to the media library (the text font box cannot yet pick a font from the media).
  */
 export type BrandPlacement = 'asset' | 'lottie' | 'import-only';
 
@@ -270,7 +268,7 @@ export function brandPlacement(content: BrandContent): BrandPlacement {
 }
 
 /**
- * Lottie 贴纸的一层画面：素材贴纸指向素材的当前版本，循环播放；宽 18%，高按动画的宽高比，放在画面中央。
+ * One layer for a Lottie sticker: the media sticker points to the current version of the media and loops; width 18%, height follows the animation's aspect ratio, placed in the center of the frame.
  */
 export function lottieLayer(name: string, asset: AssetRecord, _canvas: { width: number; height: number }): VisualLayer {
   return {
@@ -282,15 +280,15 @@ export function lottieLayer(name: string, asset: AssetRecord, _canvas: { width: 
   };
 }
 
-/** Lottie 贴纸落多长（秒）：与内置贴纸一样。 */
+/** How long (in seconds) a Lottie sticker lasts: same as built-in stickers. */
 export const LOTTIE_SECONDS = 3;
 
-// ---- 字幕样式 ----
+// ---- Caption styles ----
 
-/** 字幕样式正文的上限（与 Runtime 一致）。 */
+/** Upper limit on the body of a caption style (consistent with the Runtime). */
 export const CAPTION_STYLE_MAX_BYTES = 64 * 1024;
 
-/** 字幕样式正文能不能存进品牌库：要是带字符串 `schema` 的对象，不超过 64 KiB。 */
+/** Whether the body of a caption style can be stored in the brand library: it must be an object with a string `schema`, and no more than 64 KiB. */
 export function captionStyleProblem(body: unknown): string | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return M.styleEmpty;
   if (typeof (body as { schema?: unknown }).schema !== 'string') return M.styleNoSchema;
@@ -301,11 +299,11 @@ export function captionStyleProblem(body: unknown): string | null {
 export interface CaptionStyleCandidate {
   documentId: Id;
   name: string;
-  /** 用这份样式的字幕实例数。 */
+  /** Number of caption instances that use this style. */
   uses: number;
 }
 
-/** 「存当前样式」能存的：序列上字幕实例在用的样式文档，用的多的在前，一样多按名字。 */
+/** What “Save current style” can store: the caption style documents used by caption instances on the sequence, the most used first, ties sorted by name. */
 export function captionStyleCandidates(sequence: Sequence, documents: Record<Id, DocumentRecord>): CaptionStyleCandidate[] {
   const uses = new Map<Id, number>();
   for (const item of sequence.items) {
@@ -318,7 +316,7 @@ export function captionStyleCandidates(sequence: Sequence, documents: Record<Id,
     .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name) || a.documentId.localeCompare(b.documentId));
 }
 
-/** 套用字幕样式时改哪些字幕：序列上的字幕实例，跳过锁住的实例与锁住的轨道上的。 */
+/** Which captions to change when applying a caption style: caption instances on the sequence, skipping locked instances and those on locked tracks. */
 export function captionStyleTargets(sequence: Sequence): Id[] {
   const locked = new Set(sequence.tracks.filter((track) => track.locked).map((track) => track.id));
   return sequence.items.filter((item) => item.type === 'caption' && !item.locked && !locked.has(item.trackId)).map((item) => item.id);

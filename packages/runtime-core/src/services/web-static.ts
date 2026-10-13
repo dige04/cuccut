@@ -8,12 +8,12 @@ import { RcWeb } from '@cuccut/protocol/messages/runtime-core';
 import { mimeTypeOf, resolveInside } from '../media.ts';
 
 /**
- * Web 服务的静态页面（架构设计 §4.8、§12.8）：Web 客户端的构建产物与未登录时的登录页，以及每个响应都带的安全头。
+ * Static pages of the web service (architecture design §4.8, §12.8): the web client's build output, the login page shown when not logged in, and the security headers carried by every response.
  */
 
 /**
- * 找 Web 客户端的构建产物目录（里面有 `index.html`）：`CUCCUT_WEB_DIST` 环境变量；打包后的应用里是 `<resources>/web`；
- * 开发时从本模块往上找仓库里的 `apps/web/dist`。都没有时 null。
+ * Finds the web client's build-output directory (the one containing `index.html`). It checks the `CUCCUT_WEB_DIST` environment variable. In the packaged app it is `<resources>/web`.
+ * In development, it walks up from this module to find `apps/web/dist` in the repository. Null if none is found.
  */
 export function resolveWebDist(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.CUCCUT_WEB_DIST) return env.CUCCUT_WEB_DIST;
@@ -32,7 +32,7 @@ export function resolveWebDist(env: NodeJS.ProcessEnv = process.env): string | n
   }
 }
 
-/** 每个响应都带的头：不嗅探类型、不发 Referer、不能被嵌入、不与其他来源共享窗口与资源。 */
+/** Headers carried by every response: no MIME sniffing, no Referer, cannot be embedded, and no sharing of windows and resources with other origins. */
 export function setSecurityHeaders(response: ServerResponse): void {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'no-referrer');
@@ -43,9 +43,9 @@ export function setSecurityHeaders(response: ServerResponse): void {
 }
 
 /**
- * Web 客户端页面的 CSP：只有自身来源。例外都是构建产物需要的，与桌面渲染进程一致：
- * `'wasm-unsafe-eval'` 编译预览的 WebAssembly（不放行 eval），`style-src 'unsafe-inline'` 给 React Spectrum 的内联样式，
- * 字体可以从 Typekit 取。连接只到这个服务自己的 WebSocket。
+ * CSP of the web client page: own origin only. The exceptions are needed by the build output and match the desktop renderer process:
+ * `'wasm-unsafe-eval'` compiles WebAssembly for previews (it does not allow eval), and `style-src 'unsafe-inline'` is for React Spectrum's inline styles.
+ * Fonts may be loaded from Typekit. Connections go only to this service's own WebSocket.
  */
 export function appCsp(port: number): string {
   return [
@@ -55,7 +55,7 @@ export function appCsp(port: number): string {
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     "worker-src 'self' blob:",
-    // 设计稿编辑器在这个服务的另一个回环主机名上（docs/design/canvas §6.2）。
+    // The design draft editor is on another loopback hostname of this service (docs/design/canvas §6.2).
     `frame-src 'self' blob: http://127.0.0.1:${port} http://localhost:${port}`,
     "font-src 'self' blob: data: https://use.typekit.net",
     `connect-src 'self' blob: ws://127.0.0.1:${port} ws://localhost:${port}`,
@@ -73,7 +73,7 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-/** 登录页（当前语言）。文案里的命令用 `<code>` 包起来，由这里拼好再作为参数交给文案。 */
+/** The login page (current language). Commands in the text are wrapped in `<code>`. They are assembled here and then passed to the text as arguments. */
 function loginHtml(): string {
   const t = (message: { text: string }) => escapeHtml(message.text);
   const launch = '<code>cuccut web open --launch</code>';
@@ -118,16 +118,16 @@ function loginHtml(): string {
 `;
 }
 
-/** 说明里嵌着两段 HTML（`<code>…</code>`）：先用占位符取文字、转义，再换回 HTML。 */
+/** The explanation contains two HTML fragments (`<code>…</code>`). Text is first taken via placeholders and escaped, then the HTML is swapped back in. */
 function loginInstructions(launch: string, open: string): string {
   const text = escapeHtml(RcWeb.loginInstructions({ launch: '\u0000launch\u0000', open: '\u0000open\u0000' }).text);
   return text.replace('\u0000launch\u0000', launch).replace('\u0000open\u0000', open);
 }
 
 /**
- * 登录页的脚本：访问代码来自链接的 fragment（随即从地址栏去掉），或由用户粘进输入框（`cuccut web open --launch`
- * 打开的是不带代码的地址，代码只打在终端里）；用它换会话 cookie，然后载入客户端。表单不提交（CSP 是 `form-action 'none'`），
- * 由脚本发请求。
+ * The login page's script. The access code comes from the link's fragment (which is removed from the address bar right away), or the user pastes it into the input box. `cuccut web open --launch`
+ * opens the address without a code, and the code is printed only in the terminal. The script uses it to exchange for the session cookie, and then loads the client. The form is not submitted (the CSP is `form-action 'none'`).
+ * The script sends the request.
  */
 function loginJs(): string {
   const text = {
@@ -223,7 +223,7 @@ function staticType(file: string): string {
   return STATIC_TYPES[path.extname(file).slice(1).toLowerCase()] ?? mimeTypeOf(file);
 }
 
-/** 构建产物里的一个文件。只能是目录里的普通文件（按真实路径）；没有时 404。HTML 带客户端的 CSP。 */
+/** A file in the build output. Only regular files inside the directory (by real path). Returns 404 if absent. HTML carries the client's CSP. */
 export async function sendStatic(
   dist: string,
   pathname: string,
@@ -239,7 +239,7 @@ export async function sendStatic(
     return;
   }
   if (relative === '') relative = 'index.html';
-  // 不给隐藏文件与 `..`；其余由 resolveInside 按真实路径确认在目录之内。
+  // Hidden files and `..` are not served. Everything else is confirmed to be inside the directory by real path, via resolveInside.
   const hidden = relative.split(/[/\\]/).some((part) => part.startsWith('.'));
   const found = hidden ? null : await resolveInside(dist, relative).catch(() => null);
   if (!found) {

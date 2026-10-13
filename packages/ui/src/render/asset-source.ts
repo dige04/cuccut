@@ -1,8 +1,8 @@
 import type { VersionRef } from '@cuccut/protocol';
 
-/** 素材字节怎么变成能画的东西；`release` 在缓存丢掉它时调用（例如销毁播放器实例）。 */
+/** How asset bytes become something drawable. `release` is called when the cache drops it (for example, to destroy a player instance). */
 export interface AssetDecoder<T> {
-  /** 缓存键的一部分：同一个素材可以按不同的解码器各解一份。 */
+  /** Part of the cache key: the same asset can be decoded separately by different decoders. */
   readonly name: string;
   decode(response: Response): Promise<T>;
   release?(value: T): void;
@@ -10,7 +10,7 @@ export interface AssetDecoder<T> {
 
 export type AssetState<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'failed'; message: string };
 
-/** 画帧时要用的素材内容从哪里来（界面里是视频的素材缓存）：还没有就去取，取到之后由缓存通知重画。 */
+/** The asset content needed to draw a frame, and where it comes from (in the UI, the video asset cache). If it is not there yet, fetch it; once it is fetched, the cache notification triggers a redraw. */
 export interface AssetSource {
   get<T>(asset: VersionRef, decoder: AssetDecoder<T>): AssetState<T>;
 }

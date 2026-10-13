@@ -1,7 +1,7 @@
 use crate::arrange::TimelineProjection;
 
-/// §2.3 clampEvent 的规范阈值：折叠后保留不足 10ms 的事件片段丢弃。
-/// Rust/JS/Swift 三端与所有调用方都必须消费同一常量，不得各自内联。
+/// Normative threshold for §2.3 clampEvent: after folding, event segments kept for less than 10 ms are discarded.
+/// The Rust, JS and Swift implementations and all callers must consume the same constant and must not inline their own copies.
 pub const MIN_EVENT_DURATION: f64 = 0.01;
 
 #[derive(Debug, Clone, PartialEq)]

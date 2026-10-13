@@ -37,30 +37,26 @@ import {
 } from './ai-tool-prompt.ts';
 
 /**
- * AI 工具的「直接调模型」（产品设计 §5.10，`ai-tool`）：不启动智能体、不经对话，把工具页提示词框里的文字与这个视频的
- * 上下文直接交给一个文本模型。与翻译同一套固定流程：后台任务、进度、取消（`jobs.cancel`）、从停下的那步重试
- * （`pipelines.retry`），每次调用经授权与预算（`withPipelineGrants`）。
+ * AI tool "direct model call" (product design §5.10, `ai-tool`): does not start an agent or go through a conversation. The text in the tool page's prompt box, together with this video's context, goes directly to a text model. It uses the same fixed flow as translation: a background job, progress, cancellation (`jobs.cancel`), and retry from the step where it stopped (`pipelines.retry`). Each call goes through authorization and budget (`withPipelineGrants`).
  *
- * - 启动时冻结：选定的文本模型、挂着的 skill 合成的系统提示词（只带 `SKILL.md` 与它用到的 `references/`）、附件
- *   （文本文件附全文，图片与别的文件不发、计数）。重试沿用冻结的这些，不再读 skill 与附件。
- * - 收集上下文：与导出文稿同一份写法的 Markdown 文稿（带时间码、说话人与章节，按范围），润色另取范围里编了号的词。
- * - 调用模型：润色按段落分批、每批一次结构化输出（只能一词对一词地改）；章节一次结构化输出；其余工具一次正文输出。
- * - 写进视频（只有润色与章节）：润色把改过的词写回同一份转写（`putDocument`），章节整份替换（`setChapters`）；都是一笔
- *   以 `system:pipeline` 提交的事务，受版本校验，界面一键撤销。执行期间文稿改了时以 `STALE_JOB_INPUT` 失败，不写。
+ * - Frozen at start: the chosen text model; the system prompt composed from the attached skill (only `SKILL.md` and the `references/` it uses); attachments (text files are attached in full; images and other files are not sent, only counted). Retry reuses these frozen values and does not read the skill and attachments again.
+ * - Context collection: a Markdown script in the same format as the exported script (with timecodes, speakers and chapters, by range); polishing separately takes the numbered words in range.
+ * - Model calls: polishing is batched by paragraph, with one structured output per batch (it can only change words one for one); chapters take one structured output; other tools take one body-text output.
+ * - Written into the video (polishing and chapters only): polishing writes the changed words back to the same transcript (`putDocument`); chapters replace the whole set (`setChapters`). Each is one transaction submitted as `system:pipeline`, checked against the version, and undoable with one click in the UI. If the script changes during execution, it fails with `STALE_JOB_INPUT` and nothing is written.
  */
 
-/** 文稿外发：润色与写作都把文稿交给模型；附件按文档计。 */
+/** Sending the script out: polishing and writing both hand the script to the model; attachments count as documents. */
 export const AI_TOOL_DATA_KINDS = ['transcript', 'document'] as const;
 
 const POLISH_BATCH_WORDS = 800;
 const APPLY_ATTEMPTS = 3;
-/** 文本附件的上限（字符）：超出的部分截掉、在正文末尾说明。 */
+/** Limit on text attachments (characters): any excess is cut off, with a note at the end of the body. */
 const ATTACHMENT_CHARS = 100_000;
 const TEXT_MIME = /^(text\/|application\/json$)/;
 
 export interface AiToolVideos {
   state(videoId: Id): { revision: string; rootSequenceId: Id; documents: Record<Id, DocumentRecord> } | null;
-  /** 视频根序列的时长（秒）与已有章节数；没打开时 null。 */
+  /** Duration (seconds) of the video's root sequence and the number of existing chapters; null when no video is open. */
   sequence(videoId: Id): { duration: number; chapters: number } | null;
   document(videoId: Id, documentId: Id, revision?: string): Promise<{ revision: string; body: unknown }>;
   apply(
@@ -73,23 +69,23 @@ export interface AiToolDeps {
   videos: AiToolVideos;
   text: Pick<TextGenerator, 'generate'>;
   selectText(target: { provider?: string; model?: string }): Promise<{ providerId: string; modelId: string; model: TextModelInfo }>;
-  /** 与导出文稿同一份写法的 Markdown（`exports.renderText`）：正文、段数与字数。 */
+  /** Markdown in the same format as the exported script (`exports.renderText`): body, paragraph count and word count. */
   transcript(videoId: Id, request: { documentId: Id; range?: { start: number; end: number } }): Promise<{ content: string; paragraphs: number; characters: number }>;
-  /** 范围里（时间线上）转写的词，按顺序；同一个词只出现一次。 */
+  /** The transcribed words in range (on the timeline), in order; each word appears only once. */
   words(videoId: Id, request: { documentId: Id; range?: { start: number; end: number } }): Promise<ContextWord[]>;
   skills(refs: { id: string }[]): Promise<SkillSystemPrompt>;
   attachments(ids: Id[]): Promise<{ ref: AttachmentRef; path: string }[]>;
   artifacts: Pick<ArtifactStore, 'put' | 'read'>;
 }
 
-/** 启动时冻结的部分。 */
+/** The parts frozen at start. */
 export interface FrozenAiToolParams extends AiToolParams {
   provider: string;
   model: string;
-  /** 用到的转写（没有转写的写作工具为 null）。 */
+  /** The transcript used (null for writing tools, which have no transcript). */
   transcriptId: Id | null;
   frozen: {
-    /** `{ system, attachments }` 的产物。 */
+    /** The output of `{ system, attachments }`. */
     artifactId: string;
     skills: string[];
     references: number;
@@ -122,7 +118,7 @@ interface GenerateOutput extends Record<string, unknown> {
   artifactId: string;
   text: string | null;
   finishReason: 'stop' | 'length';
-  /** 润色：词 id → 新文本；章节：草稿。 */
+  /** Polishing: word id → new text; chapters: a draft. */
   edits?: Record<string, string>;
   chapters?: Array<{ at: number; title: string; summary: string }>;
 }
@@ -216,7 +212,7 @@ export function aiToolPipeline(deps: AiToolDeps): PipelineDefinition<FrozenAiToo
         name: 'context',
         label: () => M.stepPrepare(),
         run: (context) => gatherContext(deps, context),
-        // 文稿有了新版本：重试时重新收集。
+        // The script has a new version: recollect on retry.
         reusable: async (output, { params }) => {
           const o = output as Partial<ContextOutput>;
           return o.documentId === null || deps.videos.state(params.videoId)?.documents[o.documentId ?? '']?.currentRevision === o.revision;
@@ -263,7 +259,7 @@ export function aiToolPipeline(deps: AiToolDeps): PipelineDefinition<FrozenAiToo
   };
 }
 
-/** 用哪份转写：给了就核对；不给时取视频里唯一的一份。写作工具没有转写也能跑（只有提示词）；润色与章节要有。 */
+/** Which transcript to use: if given, it is checked; if not given, the only transcript in the video is used. Writing tools can run without a transcript (prompt only); polishing and chapters need one. */
 function pickTranscript(documents: Record<Id, DocumentRecord>, requested: Id | undefined, tool: AiToolKind): Id | null {
   if (requested !== undefined) {
     const doc = documents[requested];
@@ -278,7 +274,7 @@ function pickTranscript(documents: Record<Id, DocumentRecord>, requested: Id | u
   return null;
 }
 
-/** 启动时冻结 skill 与附件：合成系统提示词、读出文本附件，写成一个产物。 */
+/** Freeze the skill and attachments at start: compose the system prompt, read the text attachments, and write them out as one artifact. */
 async function freezeInputs(deps: AiToolDeps, params: AiToolParams): Promise<FrozenAiToolParams['frozen']> {
   const skills = await deps.skills(params.skills ?? []);
   const resolved = params.attachments?.length ? await deps.attachments([...new Set(params.attachments)]) : [];
@@ -323,7 +319,7 @@ async function gatherContext(deps: AiToolDeps, context: PipelineStepContext<Froz
     if (revision === null) throw new PipelineStepError('STALE_JOB_INPUT', M.sourceChanged(), { documentId });
     const request = { documentId, ...(range ? { range } : {}) };
     const needsWords = params.tool === 'polish' || params.tool === 'chapters';
-    // 范围里没有文稿：导出以 `EXPORT_NOTHING_TO_EXPORT` 拒绝，原样记进任务。
+    // No script in range: the export is rejected with `EXPORT_NOTHING_TO_EXPORT`, and the reason is recorded in the job as is.
     const [rendered, words] = await Promise.all([
       deps.transcript(params.videoId, request),
       needsWords ? deps.words(params.videoId, request) : Promise.resolve([]),
@@ -400,12 +396,12 @@ async function generate(deps: AiToolDeps, context: PipelineStepContext<FrozenAiT
   return { output: { artifactId, text, finishReason: result.finishReason } satisfies GenerateOutput, result: { documentId: null, artifactId } };
 }
 
-/** 段落起点（时间线上的秒）：章节吸到这些时刻上。 */
+/** Paragraph start points (seconds on the timeline): chapters snap to these moments. */
 export function paragraphStarts(words: readonly ContextWord[]): number[] {
   return words.filter((w, i) => i === 0 || w.paragraphStart).map((w) => w.start);
 }
 
-/** 润色：把改过的词写回冻结的那一版转写（只改 text）。 */
+/** Polishing: write the changed words back to the frozen version of the transcript (only text is changed). */
 export function polishedBody(body: unknown, edits: Record<string, string>): { body: unknown; changes: number } {
   const source = body as { words?: Array<{ id?: unknown; text?: unknown }> } | null;
   if (!source || !Array.isArray(source.words)) return { body, changes: 0 };
@@ -442,7 +438,7 @@ async function apply(deps: AiToolDeps, context: PipelineStepContext<FrozenAiTool
       }
       const { body } = await deps.videos.document(params.videoId, documentId, ctx.revision!);
       const polished = polishedBody(body, generated.edits ?? {});
-      // 没有要改的：不提交空事务。
+      // Nothing to change: do not submit an empty transaction.
       if (polished.changes === 0) return { output: { transactionId: null, changes: 0 } satisfies ApplyOutput };
       operation = { type: 'putDocument', documentId, kind: current.kind, body: polished.body };
       changes = polished.changes;

@@ -56,7 +56,7 @@ describe('cuccut share 的能力开关', () => {
 
     const off = formatShareStatus(status({ capabilities: { transcribe: { enabled: false }, align: { enabled: true } } }));
     expect(off).toContain('  转写（transcribe）：已关闭（cuccut share capability transcribe on 打开）');
-    // 不认识的能力照原名显示。
+    // Unrecognized capabilities are shown under their original names.
     expect(off).toContain('  align（align）：已打开');
     expect(off.indexOf('能力：')).toBeLessThan(off.findIndex((line) => line.startsWith('已配对的电脑：')));
   });
@@ -72,7 +72,7 @@ describe('cuccut share 的能力开关', () => {
   it('capability <能力> <on|off>', () => {
     expect(parseCapabilitySwitch(['transcribe', 'off'])).toEqual({ capability: 'transcribe', enabled: false });
     expect(parseCapabilitySwitch(['transcribe', 'on'])).toEqual({ capability: 'transcribe', enabled: true });
-    // 认不认识这种能力由 Runtime 判断（invalid-request），这里只查形状。
+    // Whether a capability is recognized is decided by the Runtime (invalid-request). Here only the shape is checked.
     expect(parseCapabilitySwitch(['download', 'on'])).toEqual({ capability: 'download', enabled: true });
     for (const args of [[], ['transcribe'], ['transcribe', 'yes'], ['transcribe', 'on', 'extra']]) {
       expect(() => parseCapabilitySwitch(args)).toThrow(/cuccut share capability <能力> <on\|off>/);

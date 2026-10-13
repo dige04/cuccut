@@ -33,22 +33,22 @@ import {
 } from './app-update-service.ts';
 
 /*
- * 应用自动更新的 Electron 接线（架构设计 §2.6）：探测这次运行的环境、把真实的网络 / 命令 / 访达 / 退出交给服务，
- * 再经 IPC 暴露给预加载脚本（`window.cuccut.updates`）。状态与提醒推给所有窗口。
+ * Electron wiring for app auto-update (architecture design §2.6): detects the environment this run is in, hands the real network / command / Finder / quit to the service,
+ * and exposes it to the preload script over IPC (`window.cuccut.updates`). Status and reminders are pushed to all windows.
  *
- * 开发构建（没打包）一律「开发构建不检查更新」，除非设了 `CUCCUT_UPDATE_APPCAST`；即使设了，开发构建也从不自动换包
- * （运行中的是 node_modules 里的 Electron.app），安装时只在访达里显示安装包并打开下载页。
+ * Development builds (not packaged) always get “开发构建不检查更新” (development builds do not check for updates), unless `CUCCUT_UPDATE_APPCAST` is set; even when it is set, a development build never swaps the bundle automatically
+ * (the one running is Electron.app in node_modules), and at install time it only shows the installer in Finder and opens the download page.
  */
 
-/** 检查（拉清单）的超时。 */
+/** Timeout for the check (fetching the manifest). */
 const CHECK_TIMEOUT_MS = 20_000;
-/** 下载时多久没收到字节就算断了（不设总时长：安装包上百 MB，慢网也该下完）。 */
+/** How long without receiving bytes during download counts as a dropped connection. No total time limit is set: the installer is hundreds of MB, and even a slow network should be allowed to finish. */
 const STALL_TIMEOUT_MS = 60_000;
-/** 清单最大多少字节。 */
+/** Maximum size of the manifest, in bytes. */
 const MANIFEST_MAX_BYTES = 4 * 1024 * 1024;
-/** 用户数据目录里的安装标识，决定本机在分批推送里的位置。 */
+/** The install identifier in the user data directory, which determines this machine's position in staged rollouts. */
 const INSTALLATION_ID_FILE = 'update-installation-id';
-/** Windows 的安装器以 `--updated` 重新打开应用后，过多久清掉缓存目录里的安装器（那时安装器早已退出）。 */
+/** How long after the Windows installer reopens the app with `--updated` to wait before clearing the installer from the cache directory (by then the installer has long since exited). */
 const INSTALLER_CLEANUP_DELAY_MS = 60_000;
 
 const exec: Exec = (file, args, signal) =>
@@ -60,8 +60,7 @@ const exec: Exec = (file, args, signal) =>
   });
 
 /**
- * 打包时写进应用 package.json 的 build 号与变体（`tools/package-desktop.mjs`）：`cuccutBuild` 没有时 0（不是发布版，
- * 不检查更新，见 `availability`）；`cuccutVariant` 没有时 null（按标准版）。
+ * The build number and variant written into the app's package.json at packaging time (`tools/package-desktop.mjs`): `cuccutBuild` is 0 when absent (not a release build, so updates are not checked; see `availability`); `cuccutVariant` is null when absent (standard edition).
  */
 function readPackagedInfo(): { build: number; variant: string | null } {
   try {
@@ -88,7 +87,7 @@ function currentBuild(): number {
   return packagedInfo().build;
 }
 
-/** 运行中的包的 `CFBundleIdentifier`（只在打包过的 macOS 应用上读，启动时一次）。 */
+/** The running bundle's `CFBundleIdentifier` (read only on packaged macOS apps, once at startup). */
 function bundleIdentifier(bundle: string | null): string | null {
   if (!bundle) return null;
   try {
@@ -114,7 +113,7 @@ async function fetchText(url: string): Promise<string> {
   return text;
 }
 
-/** 网络响应体 → 字节流；每收到一块就重置断流计时。 */
+/** Network response body → byte stream; the stall timer is reset each time a chunk arrives. */
 async function* readBody(body: ReadableStream<Uint8Array>, onChunk: () => void): ByteSource {
   const reader = body.getReader();
   try {
@@ -161,7 +160,7 @@ async function writable(dir: string): Promise<boolean> {
   }
 }
 
-/** 脱离应用进程起换包脚本（应用退出后它还在跑），输出写进日志。 */
+/** Launches the swap script detached from the app process (it keeps running after the app quits); output is written to the log. */
 function launchScript(script: string, log: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const fd = openSync(log, 'w');
@@ -178,10 +177,10 @@ function launchScript(script: string, log: string): Promise<void> {
   });
 }
 
-/** 脱离应用进程起安装器（应用退出后它还在跑）。进程在 `spawn` 里同步创建；起不来的错误只能记日志，应用已在退出。 */
+/** Launches the installer detached from the app process (it keeps running after the app quits). The process is created synchronously in `spawn`; an error that prevents it from starting can only be logged, since the app is already quitting. */
 function spawnDetached(file: string, args: readonly string[]): void {
   const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
-  // i18n-ignore: 诊断日志，只打到主进程的终端，不进界面
+  // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
   child.once('error', (error) => console.error(`[cuccut] 应用更新：起安装器失败：${error.message}`));
   child.unref();
 }
@@ -194,7 +193,7 @@ async function isFile(file: string): Promise<boolean> {
   }
 }
 
-/** Windows 的安装版：NSIS 装的（exe 旁边有它的卸载程序）。zip 版没有。 */
+/** Windows installed edition: installed by NSIS (its uninstaller is next to the exe). The zip edition does not have one. */
 function windowsInstalledCopy(): Promise<boolean> {
   return nsisInstalledCopy(process.execPath, isFile);
 }
@@ -211,7 +210,7 @@ export function installAppUpdates(): AppUpdateService {
   const macos = platform === 'darwin';
   const target = feedTarget(platform, process.arch);
   const packaged = app.isPackaged;
-  // 开发构建里运行的是 node_modules 的 Electron.app，不当它是要换的包。
+  // A development build runs the Electron.app from node_modules, so it is not treated as a bundle to be swapped.
   const runningBundle = macos && packaged ? appBundleFromExecutable(process.execPath) : null;
   const unsupported = availability({
     appStore: Boolean((process as { mas?: boolean }).mas),
@@ -226,15 +225,15 @@ export function installAppUpdates(): AppUpdateService {
   const cacheDir = cacheDirectory(platform, os.homedir(), process.env);
   const { variant } = packagedInfo();
   const mac = { exec, runningBundle, writable, cacheDir, pid: process.pid, launchScript };
-  // i18n-ignore: 诊断日志，只打到主进程的终端，不进界面
+  // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
   const log = (message: string) => console.log(`[cuccut] 应用更新：${message}`);
-  // Windows 的安装器等应用走完正常退出（`before-quit` 里停 Runtime，「重启并更新」或退出即安装记下它）才起：`will-quit` 在那之后。
+  // The Windows installer is launched only after the app finishes its normal quit (`before-quit` stops the Runtime, and “重启并更新” (restart and update) or install on quit records it): `will-quit` comes after that.
   const installerOnQuit = createPendingLaunch(spawnDetached, log);
   app.on('will-quit', () => {
-    // i18n-ignore: 诊断日志，只打到主进程的终端，不进界面
+    // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
     if (installerOnQuit.fire()) log('安装器已起');
   });
-  // 安装器装完以 `--updated` 重新打开应用：过一会儿清掉留在缓存目录里的安装器（只清这次启动之前的文件）。
+  // After the installer finishes and reopens the app with `--updated`, the installer left in the cache directory is cleared after a while (only files from before this launch are cleared).
   if (platform === 'win32' && packaged && cacheDir && process.argv.includes('--updated')) {
     const started = Date.now();
     setTimeout(() => void discardStaleDownloads(cacheDir, started), INSTALLER_CLEANUP_DELAY_MS).unref();
@@ -260,7 +259,7 @@ export function installAppUpdates(): AppUpdateService {
       if (macos) return macCanAutoInstall(mac);
       return platform === 'win32' && (await windowsInstalledCopy());
     },
-    // macOS 下载完就解开、验签（Windows 的安装器只核对摘要，在下载时已经做过）；开发构建从不自动换包，也不就位。
+    // On macOS the download is extracted and its signature verified as soon as it finishes (the Windows installer only checks the digest, which is already done during download); development builds never swap the bundle automatically, and never stage it either.
     prepare: async (info, archive, signal) => (packaged && macos ? prepareMac(info, archive, mac, signal) : { type: 'none' }),
     installPackage: async (info, archive, { staged, relaunch }) => {
       if (!packaged) return { type: 'fallback' };

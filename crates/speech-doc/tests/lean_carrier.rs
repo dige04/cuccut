@@ -855,8 +855,8 @@ fn a_model_cut_the_lint_refuses_still_beats_a_character_seam() {
         "To size up real problems and opportunities, build prototypes with AI in the loop, and learn to tell a promising idea from just a shiny one.",
         "26 |To..opportunities|去衡量真正的问题和机会，|build..loop|让 AI 参与其中做原型，|and..promising|并学会分辨一个有前景的|idea..one|想法和一个只是看着亮眼的点子。",
     );
-    // 「有前景的 | 想法」以「的」收尾：悬垂尾是唯一放行的语病，落 flagged 档，
-    // 这块没有干净缝所以仍然用它（第六轮这里是 `有前景的想|法`）。
+    // “有前景的 | 想法” ends in “的”: a dangling tail is the only grammatical defect let through, so it lands in the flagged tier.
+    // This block has no clean seam, so it still takes that cut (in round six it was here: `有前景的想|法`).
     assert_eq!(
         extra,
         vec![SplitCut {

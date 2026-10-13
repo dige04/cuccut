@@ -5,11 +5,11 @@ import { routeVideo, useShell, type Route } from './shell-store.ts';
 import { useVideo, type OpenVideo } from './video-store.ts';
 
 /**
- * 发给智能体的编辑器上下文（产品设计 §3.2.3 引用标签、§6.7 上下文理解）：打开的视频、它的版本、
- * 选中的片段和播放头。只在视频属于这个会话的来源目录时附带——智能体只能读写那里的视频。
+ * Editor context sent to the agent (product design §3.2.3 reference tags, §6.7 context understanding): the open video, its version,
+ * the selected clip and the playhead. It is attached only when the video belongs to the session's source directory, since the agent can only read and write videos there.
  */
 
-/** 会话的来源：所属项目，或不属于项目的会话自己。 */
+/** The session's source: the project it belongs to, or the session itself if it does not belong to a project. */
 export interface ContextScope {
   conversationId: Id | null;
   projectId: Id | null;
@@ -18,8 +18,8 @@ export interface ContextScope {
 const MAX_SELECTION = 200;
 
 /**
- * 打开的视频就是眼前这个位置的视频（Home 的当前视频标签，或 Space 打开的视频）。换会话、换标签时视频不关
- * （功能区标签还引用着它），但别的会话里开着的视频不随这里的消息附带。
+ * The open video is the one at this position (the current-video tab in Home, or the video opened from Space). Switching sessions or tabs does not close the video
+ * (the feature-area tab still references it), but videos open in other sessions are not attached to messages sent here.
  */
 function routeKey(route: Route): string | null {
   const target = routeVideo(route);
@@ -34,7 +34,7 @@ function inScope(video: OpenVideo | null, scope: ContextScope, shown: string | n
     : scope.conversationId !== null && source.conversationId === scope.conversationId;
 }
 
-/** 发送时取一次：版本、选区与播放头都是这一刻的；另带界面语言，skill 据此定输出语言。 */
+/** Taken once at send time: the version, selection and playhead are as of that moment. Also carries the UI language, which the skill uses to decide the output language. */
 export function captureEditorContext(scope: ContextScope): EditorContext | null {
   const video = useVideo.getState().video;
   if (!inScope(video, scope, routeKey(useShell.getState().route)) || !video.state || !video.videoId) return null;
@@ -53,7 +53,7 @@ export function captureEditorContext(scope: ContextScope): EditorContext | null 
   };
 }
 
-/** 输入框上方的引用标签要显示的内容；播放头不在里面，免得播放时整个会话跟着重绘。 */
+/** Content shown in the reference tag above the input box. The playhead is not included, so the whole session does not redraw during playback. */
 export function useContextTag(scope: ContextScope): { videoId: Id; videoName: string; selected: number } | null {
   const shown = useShell((s) => routeKey(s.route));
   const videoId = useVideo((s) => (inScope(s.video, scope, shown) && s.video.state ? s.video.videoId : null));

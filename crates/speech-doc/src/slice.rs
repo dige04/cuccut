@@ -1,21 +1,13 @@
-//! 从一份 transcript 切出源媒体区间 `[in, out)` 的子文档（`ccut shorts cut`，
-//! `docs/design/video/ccut-shorts-design.md` §5.5 / D5）。
+//! Sub-document cut from a transcript for the source media range `[in, out)` (`ccut shorts cut`, `docs/design/video/ccut-shorts-design.md` §5.5 / D5).
 //!
-//! 切出来的新项目与源**引用同一个媒体文件**，主轨是一段 clip `[in, out]`，所以：
+//! The cut-out project and the source **reference the same media file**. Its main track is a single clip `[in, out]`, so:
 //!
-//! * 词时间**不重基**，仍是源媒体秒——字幕按 clip 投影到时间轴 `0..out-in`，与在源项目里
-//!   对同一段剪一刀完全同口径；`media` 原样保留（`duration` 也是源媒体的）。
-//! * 词 id 不变：`s-<首词id>` 句键、覆盖表、译文表都能直接按 id 过滤。
-//! * 词的去留看**中点**是否落在 `[in, out)`：跨边界的词归中点那一侧，clip 投影会把
-//!   它裁到边界上。
-//! * 译文只留**整句都切进来**的句子（`trans` / `transSrc` / `transAlign` /
-//!   `transDisplay` 同步过滤）；被切掉头或尾的句子没有译文，交给翻译流程补——
-//!   半句的原文配整句的译文只会是错字幕。
-//! * 阶段戳：源里「此刻仍有效」的戳按切片重算（切片继承源的有效性），源里已过期的戳
-//!   原样留着（仍对不上切片，继续表达「有人工改动」）。
-//! * 章节：[`slice_range`] 把与切片相交的章节裁进来；`ccut shorts cut` 走
-//!   [`slice_range_with`] 且 `keep_chapters: false`——一支短视频不该带长视频的章节
-//!   （`chapters` 为空、`stages.chapters` 清掉，表示「没生成过章节」）。
+//! * Word times are **not rebased**. They stay in source-media seconds. Subtitles are projected onto the timeline `0..out-in` per clip, with exactly the same convention as cutting once at that spot in the source project. `media` is kept as-is (`duration` is also the source media's).
+//! * Word ids are unchanged, so the `s-<first word id>` sentence keys, the override table, and the translation table can all be filtered by id directly.
+//! * Whether a word is kept depends on whether its **midpoint** falls in `[in, out)`. Words that cross a boundary go to the side of their midpoint, and the clip projection trims them at the boundary.
+//! * Translations are kept only for sentences that are **entirely cut in** (`trans` / `transSrc` / `transAlign` / `transDisplay` are filtered in sync). Sentences with a cut-off head or tail have no translation and are left for the translation flow to fill in. A half-sentence of source text paired with a whole-sentence translation would only be the wrong subtitle.
+//! * Stage stamps: stamps that are still valid in the source are recomputed for the slice (the slice inherits the source's validity). Stamps already expired in the source are kept as-is. They still do not match the slice, so they continue to express "manually edited".
+//! * Chapters: [`slice_range`] keeps the chapters that intersect the slice, trimmed to it. `ccut shorts cut` goes through [`slice_range_with`] with `keep_chapters: false`. A short video should not carry the long video's chapters (`chapters` is empty and `stages.chapters` is cleared, meaning "chapters were never generated").
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,10 +16,10 @@ use crate::fingerprint::{fingerprint, id_fingerprint};
 use crate::layout::layout_fingerprint;
 use crate::sentence::derive_sentences;
 
-/// [`slice_range_with`] 的选项。
+/// Options for [`slice_range_with`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SliceOptions {
-    /// 保留与切片相交的章节（裁到切片边界）；`false` 时切片不带章节。
+    /// Keep chapters that intersect the slice (trimmed to the slice boundaries). When `false`, the slice carries no chapters.
     pub keep_chapters: bool,
 }
 
@@ -39,12 +31,12 @@ impl Default for SliceOptions {
     }
 }
 
-/// 切出 `[in, out)`，章节裁进来。调用方保证 `in < out`。
+/// Cut `[in, out)` and keep the chapters, trimmed in. The caller guarantees `in < out`.
 pub fn slice_range(doc: &TranscriptDoc, start: f64, end: f64) -> TranscriptDoc {
     slice_range_with(doc, start, end, SliceOptions::default())
 }
 
-/// 切出 `[in, out)`，按 `options` 决定带不带章节。调用方保证 `in < out`。
+/// Cut `[in, out)`. `options` decides whether chapters are carried. The caller guarantees `in < out`.
 pub fn slice_range_with(
     doc: &TranscriptDoc,
     start: f64,
@@ -61,7 +53,7 @@ pub fn slice_range_with(
         .filter(|word| keep(word.t0, word.t1))
         .map(|word| word.id.as_str())
         .collect();
-    // 整句都在切片里的句子才保留译文。
+    // Only sentences entirely inside the slice keep their translations.
     let whole_sentences: BTreeSet<String> = derive_sentences(doc, &[])
         .into_iter()
         .filter(|sentence| {
@@ -107,7 +99,7 @@ pub fn slice_range_with(
     keep_sentences(&mut out.trans_align, &whole_sentences);
     keep_sentences(&mut out.trans_display, &whole_sentences);
 
-    // 阶段戳：源里仍有效的按切片重算，过期的原样保留。
+    // Stage stamps: those still valid in the source are recomputed for the slice. Expired ones are kept as-is.
     let source_content = fingerprint(&doc.words);
     let source_ids = id_fingerprint(&doc.words);
     let source_layout = layout_fingerprint(doc);
@@ -171,8 +163,8 @@ mod tests {
                 },
             );
         }
-        // 句 A：w0..w1（10–11 s，头在切片外）；句 B：w2..w3（20–21 s，整句在内）；
-        // 句 C：w4..w5（29.5–31 s，尾在切片外）；w6 是乙在 50 s 说的，切片外。
+        // Sentence A: w0..w1 (10–11 s, head outside the slice). Sentence B: w2..w3 (20–21 s, wholly inside).
+        // Sentence C: w4..w5 (29.5–31 s, tail outside the slice). w6 is spoken by speaker B at 50 s, outside the slice.
         doc.words = vec![
             word("w0", 9.0, 9.8, "前面", "s1"),
             word("w1", 10.2, 11.0, "一句。", "s1"),
@@ -220,7 +212,7 @@ mod tests {
         let doc = source();
         let cut = slice_range(&doc, 10.0, 30.0);
         let ids: Vec<&str> = cut.words.iter().map(|word| word.id.as_str()).collect();
-        // w0 中点 9.4 在外；w1 中点 10.6 在内；w4 中点 29.7 在内；w5 中点 30.6 在外。
+        // w0 midpoint 9.4 is outside. w1 midpoint 10.6 is inside. w4 midpoint 29.7 is inside. w5 midpoint 30.6 is outside.
         assert_eq!(ids, ["w1", "w2", "w3", "w4"]);
         assert_eq!(cut.words[0].t0, 10.2, "词时间不重基");
         assert_eq!(cut.media, doc.media);

@@ -1,19 +1,17 @@
-//! 采样率转换（纯逻辑，全平台编译）。
+//! Sample-rate conversion (pure logic, compiled on all platforms).
 //!
-//! HTDemucs 只在 44.1 kHz 上工作；输入若是 48 kHz / 16 kHz 等先转到 44.1 kHz，分离后
-//! 直接以 44.1 kHz 输出。实现是加 Hann 窗的 sinc 插值（每侧 `TAPS` 个抽头），
-//! 降采样时截止频率取目标 Nyquist，足够配音场景使用；不是 libsamplerate 级别的精度。
+//! HTDemucs only works at 44.1 kHz; inputs at 48 kHz / 16 kHz etc. are first converted to 44.1 kHz, and after separation the output is directly at 44.1 kHz. The implementation is Hann-windowed sinc interpolation (`TAPS` taps on each side), and when downsampling the cutoff is set to the target Nyquist; this is accurate enough for dubbing, but not libsamplerate-level precision.
 
 const TAPS: usize = 32;
 
-/// 把 `input` 从 `from` Hz 重采样到 `to` Hz。相同采样率原样返回。
+/// Resamples `input` from `from` Hz to `to` Hz. Returns it unchanged when the rates are the same.
 pub fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
     if from == to || input.is_empty() || from == 0 || to == 0 {
         return input.to_vec();
     }
     let ratio = f64::from(to) / f64::from(from);
     let out_len = ((input.len() as f64) * ratio).round().max(1.0) as usize;
-    // 降采样时把 sinc 拉宽到目标 Nyquist 以抗混叠。
+    // When downsampling, widen the sinc to the target Nyquist to prevent aliasing.
     let cutoff = ratio.min(1.0);
     let half_width = (TAPS as f64 / cutoff).ceil() as isize;
     let mut out = Vec::with_capacity(out_len);
@@ -43,7 +41,7 @@ fn hann_sinc(x: f64, half_width: f64) -> f64 {
         let px = std::f64::consts::PI * x;
         px.sin() / px
     };
-    // 归一化到 [-1, 1] 的位置，再套 Hann 窗。
+    // Position normalized to [-1, 1], then apply the Hann window.
     let t = x / half_width;
     if t.abs() >= 1.0 {
         return 0.0;
@@ -62,11 +60,11 @@ mod tests {
     }
 
     fn check_sine(from: u32, to: u32, freq: f64) {
-        let input = sine(from as usize, from, freq); // 1 秒
+        let input = sine(from as usize, from, freq); // 1 second
         let out = resample(&input, from, to);
         assert!((out.len() as i64 - to as i64).abs() <= 1, "长度 {}", out.len());
         let expected = sine(out.len(), to, freq);
-        // 忽略两端各 100 个样本的边缘效应。
+        // Ignore edge effects of 100 samples at each end.
         let err = out
             .iter()
             .zip(&expected)
@@ -98,7 +96,7 @@ mod tests {
 
     #[test]
     fn downsample_attenuates_above_new_nyquist() {
-        // 48k 下的 23 kHz 在 44.1k 里超过 Nyquist，应被明显压低而不是混叠回来。
+        // 23 kHz at 48k exceeds the Nyquist frequency at 44.1k, so it should be clearly attenuated rather than aliased back.
         let input = sine(48_000, 48_000, 23_000.0);
         let out = resample(&input, 48_000, 44_100);
         let rms = (out.iter().skip(200).map(|v| v * v).sum::<f32>() / (out.len() - 200) as f32).sqrt();

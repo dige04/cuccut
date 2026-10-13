@@ -1,10 +1,8 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/pi/tool-call-mapper.ts（pi 自带工具 bash / read / edit / write / find / grep / ls 的参数形状、
- * edit 的 `edits[{oldText,newText}]` 与旧式 old_string / new_string、结果文字取 content / output / stdout、退出码取 exitCode / code）
- * 与 agent.ts 里按 message_update 的 assistantMessageEvent 拼文字与思考的做法。
- * 改成 CucCut 的 AgentItem：改文件的工具输出 unified diff（edit 用 pi 给的 `details.patch`，没有时与 write 一样从参数合成），
- * bash 的输出与退出码取 `result.structuredContent`（1.0.4 实测），工具条目从 tool_execution_start 开始，不从流式的 toolcall_* 开始。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * packages/server/src/server/agent/providers/pi/tool-call-mapper.ts (argument shapes for pi's built-in tools bash / read / edit / write / find / grep / ls, edit's `edits[{oldText,newText}]` and the older old_string / new_string, result text taken from content / output / stdout, exit code from exitCode / code)
+ * and the way agent.ts assembles text and thinking from message_update's assistantMessageEvent.
+ * Changed to CucCut's AgentItem: the output of file-changing tools is a unified diff (edit uses pi's `details.patch`; when absent, it is synthesized from the arguments, as write does). Bash output and exit code are taken from `result.structuredContent` (measured in 1.0.4). Tool items start at tool_execution_start, not at the streaming toolcall_*.
  */
 import path from 'node:path';
 import type { AgentEvent, AgentItem } from '@cuccut/harness';
@@ -24,19 +22,19 @@ interface OpenTool {
   name: string;
   args: Record<string, unknown>;
   startedAt: number;
-  /** tool_execution_update 已经发出去的输出（partialResult 是累计的，只发新增的部分）。 */
+  /** Output already emitted by tool_execution_update (partialResult is cumulative, so only the new part is emitted). */
   streamed: string;
 }
 
 /**
- * 把一轮里 pi 的事件翻成 CucCut 的条目事件。一轮 = 一次 `prompt` 从 agent_start 到 agent_settled；
- * pi 的 turn_start / turn_end 是其中每一次模型调用，不对应 CucCut 的回合，这里不管它们。
+ * Translates pi's events within a turn into CucCut's item events. One turn = one `prompt` from agent_start to agent_settled.
+ * pi's turn_start / turn_end mark each model call inside it and do not correspond to CucCut turns, so they are ignored here.
  */
 export class PiItemMapper {
   readonly #turnId: string;
   readonly #cwd: string | null;
   readonly #now: () => number;
-  /** 本轮第几条助手消息：同一条消息里的文字块与思考块按 contentIndex 区分。 */
+  /** Index of this assistant message within the turn. Text blocks and thinking blocks in the same message are told apart by contentIndex. */
   #message = 0;
   readonly #texts = new Map<number, OpenText>();
   readonly #tools = new Map<string, OpenTool>();
@@ -62,7 +60,7 @@ export class PiItemMapper {
       case 'message_update':
         return this.#update(event.assistantMessageEvent as Record<string, unknown> | undefined);
       case 'message_end':
-        // 正常情况下 *_end 已经收好了；出错或中断时可能没有，按已有的文字收掉。
+        // Normally *_end has already closed them out. On error or interrupt it may be missing, so close out whatever text exists.
         return role(event.message) === 'assistant' ? this.#closeTexts() : [];
       case 'tool_execution_start':
         return this.#toolStart(event);
@@ -75,7 +73,7 @@ export class PiItemMapper {
     }
   }
 
-  /** 回合结束：还开着的文字收掉，还没有终态的工具记成 interrupted（不能当成完成）。 */
+  /** Turn end: close any text still open, and record tools without a terminal state as interrupted (they must not count as completed). */
   finish(): AgentEvent[] {
     const events = this.#closeTexts();
     for (const [id, open] of this.#tools) {
@@ -115,9 +113,9 @@ export class PiItemMapper {
         const events = this.#texts.has(index) ? [] : this.#open(index, kind);
         const open = this.#texts.get(index)!;
         this.#texts.delete(index);
-        // *_end 带着这一块的全文，以它为准。
+        // *_end carries the full text of this block, and it is authoritative.
         const text = typeof e.content === 'string' ? e.content : open.text;
-        if (!text && events.length) return []; // 从没开过、也没有字：不留空条目
+        if (!text && events.length) return []; // Never opened and no text: do not leave an empty item
         events.push(this.#completed({ kind: open.kind, id: open.id, text }));
         return events;
       }
@@ -144,7 +142,7 @@ export class PiItemMapper {
     if (!id || this.#tools.has(id)) return [];
     const name = String(event.toolName ?? '');
     const args = record(event.args);
-    // 工具调用 id 来自模型服务，有的服务每轮都从 call_0 数起：带上回合 id，免得同一会话里条目 id 撞车。
+    // Tool call ids come from the model service, and some services count from call_0 on every turn. Include the turn id so item ids do not collide within the same session.
     const item = piToolItem(`${this.#turnId}:${id}`, name, args, this.#cwd);
     this.#tools.set(id, { item, name, args, startedAt: this.#now(), streamed: '' });
     return [{ type: 'item.started', turnId: this.#turnId, item }];
@@ -189,7 +187,7 @@ export class PiItemMapper {
   }
 }
 
-/** 工具名 → 时间线上的工具种类。 */
+/** Tool name → tool kind on the timeline. */
 export function piToolKind(name: string): ToolCallKind {
   if (name === 'bash') return 'command';
   if (name === 'edit' || name === 'write') return 'file-change';
@@ -227,8 +225,7 @@ export function piToolItem(id: string, name: string, args: Record<string, unknow
 }
 
 /**
- * 工具结果的文字与退出码。bash（1.0.4 实测）：`structuredContent: { output, exit_code }`，`content` 的文字末尾另附一行
- * `Command exited with code N`；没有 structuredContent 时从文字里剥这一行。旧版的 `output` / `stdout` / `exitCode` / `code` 也认。
+ * Tool result text and exit code. bash (measured in 1.0.4): `structuredContent: { output, exit_code }`, with a line `Command exited with code N` appended to the end of the `content` text. Without structuredContent, that line is stripped from the text. The older `output` / `stdout` / `exitCode` / `code` are also accepted.
  */
 export function toolResult(name: string, result: unknown, isError: boolean): { output: string; exitCode: number | null } {
   if (typeof result === 'string') return { output: result, exitCode: name === 'bash' ? (isError ? null : 0) : null };
@@ -254,9 +251,8 @@ export function toolResult(name: string, result: unknown, isError: boolean): { o
 }
 
 /**
- * 改文件的工具成功时的 unified diff。edit：pi 在 `details.patch` 给了带行号与上下文的补丁（`details.diff` 是它自己界面用的
- * 带行号格式，不是 unified diff），直接用；没有时从 `edits` 合成。write：结果里没有 details，全文按新增行合成；
- * 拿不到旧内容，分不清新建还是覆盖，只写 `+++` 头。
+ * Unified diff for a successful file-changing tool. edit: pi provides a patch with line numbers and context in `details.patch` (`details.diff` is the line-numbered format of pi's own UI, not a unified diff); use it directly. When absent, synthesize it from `edits`. write: the result has no details, so the whole content is synthesized as added lines.
+ * The old content is not available, so creation cannot be told apart from overwrite; only the `+++` header is written.
  */
 export function fileChangeDiff(name: string, args: Record<string, unknown>, result: unknown, cwd: string | null): string | null {
   const patch = str(record(record(result).details).patch);
@@ -288,7 +284,7 @@ function bodyLines(text: string): string[] {
   return text.replace(/\r?\n$/, '').split(/\r?\n/);
 }
 
-/** diff 头里的路径：工作目录里的写相对路径（`a/` / `b/` 前缀），工作目录外的绝对路径原样写。 */
+/** Paths in the diff header: relative paths inside the working directory (with `a/` / `b/` prefixes); absolute paths outside the working directory are written as they are. */
 function diffPath(file: string, cwd: string | null): { a: string; b: string } {
   const shown = displayPath(file, cwd);
   if (path.isAbsolute(shown)) return { a: shown, b: shown };
@@ -303,7 +299,7 @@ function displayPath(file: string, cwd: string | null): string {
   return file;
 }
 
-/** 内容块里的文字拼起来；图片记成占位。没有内容块时为 null。 */
+/** Join the text of the content blocks; images are recorded as placeholders. Null when there are no content blocks. */
 function contentText(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   return content

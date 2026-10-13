@@ -8,15 +8,15 @@ import { useEditor } from '../../state/editor-store.ts';
 const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
 
 /**
- * 编辑器快捷键清单（原型 editor-keys.jsx 的 SHEET 与对话框）：`?` 打开，只列编辑器里真有的键。
- * 原型借全屏播放器的 ↑/↓、M、F 也在清单里：音量与静音只管预览听到的大小（不进视频），F 进全屏播放；
- * 全屏播放器有自己的一张键表（fullscreen-player.tsx，在全屏里按 ? 看），不列在这里。
- * 帮助中心（help-keys）用同一份 rows。
+ * Editor shortcut list (the SHEET and dialog from the prototype editor-keys.jsx): opened with `?`, lists only the keys that really exist in the editor.
+ * The prototype also puts the fullscreen player's ↑/↓, M and F keys in the list: volume and mute only affect how loud the preview sounds (not the video), and F enters fullscreen playback.
+ * The fullscreen player has its own key table (fullscreen-player.tsx, shown by pressing ? in fullscreen), which is not listed here.
+ * The help center (help-keys) uses the same rows.
  */
 export function ShortcutSheet() {
   const open = useEditor((s) => s.shortcutsOpen);
   const setOpen = useEditor((s) => s.setShortcutsOpen);
-  // 离开编辑器时收起，下次进来不自己弹出。
+  // Closed when leaving the editor, so it does not pop up by itself the next time.
   useEffect(() => () => setOpen(false), [setOpen]);
   return (
     <DialogContainer onDismiss={() => setOpen(false)}>

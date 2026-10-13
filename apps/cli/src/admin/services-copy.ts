@@ -23,11 +23,11 @@ import { vi } from './services-copy.vi.ts';
 
 const s = (n: number) => (n === 1 ? '' : 's');
 
-/** `cuccut services` 与 `cuccut web` 的文案（英文是键与类型的来源，译文在 `services-copy.<语言>.ts`）。 */
+/** Copy for `cuccut services` and `cuccut web`. The English is the source of the keys and types; the translations are in `services-copy.<language>.ts`. */
 const en = {
   accessLinkVideo: (video: string) => `After signing in, the editor for video ${video} opens directly`,
 
-  /** `cuccut services --help` 与 `cuccut help services` 的正文。 */
+  /** The body of `cuccut services --help` and `cuccut help services`. */
   help: `Usage:
   cuccut services [status]         External services: status, address, level, and scope of the
                                    MCP service, model API service, web service, and LAN node
@@ -70,7 +70,7 @@ const en = {
   cuccut services web sessions     List browser sessions (session tokens not included)
   cuccut services web revoke <sessionId>
                                    Revoke a browser session: its connection drops immediately`,
-  /** `cuccut web --help` 的正文。 */
+  /** The body of `cuccut web --help`. */
   webHelp: `Usage:
   cuccut web open [--video <videoId>] [--launch]       Start the web service (default port ${WEB_DEFAULT_PORT}) and print a one-time access link; the link works
                                    only once, for two minutes. --video opens that video directly in the editor (videoId comes from

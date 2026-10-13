@@ -2,7 +2,7 @@ import { spawn, type StdioOptions } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { stopChild } from './stop-child.ts';
 
-/** 起一个 Node 子进程跑 `source`；`ipc` 为 true 时带 IPC 通道（与主进程起 Runtime 一样）。等它报告就绪再返回。 */
+/** Starts a Node child process running `source`; when `ipc` is true it gets an IPC channel (as the main process does when it starts the Runtime). Returns once it reports ready. */
 async function child(source: string, ipc: boolean) {
   const stdio: StdioOptions = ['ignore', 'pipe', 'ignore', ...(ipc ? (['ipc'] as const) : [])];
   const proc = spawn(process.execPath, ['-e', `${source}; setInterval(() => {}, 1000); process.stdout.write('ready\\n');`], { stdio });

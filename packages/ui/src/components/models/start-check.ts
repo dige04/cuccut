@@ -5,8 +5,8 @@ import { useModels } from '../../state/models-store.ts';
 import { startSelfTest } from './local-model-actions.ts';
 
 /**
- * 提交一次检查：被停用的（上次加载失败）先重新启用。被拒时记进 store，写在状态行上，不弹 toast。
- * 按提交那一刻的模型包状态走：修完自动检查时，模型包可能刚刚变过。
+ * Submits a check: a model that is disabled (its last load failed) is re-enabled first. If it is rejected, it is recorded in the store and written on the status line, no toast.
+ * It uses the model package state at the moment of submission: when a check runs automatically after a repair, the model package may have just changed.
  */
 export async function startCheck(session: Pick<RuntimeSession, 'enableModelBundle' | 'testModelBundle'>, bundleId: string): Promise<void> {
   const store = useModelCheck.getState();

@@ -3,8 +3,8 @@ import { applyConversationEvent } from '@cuccut/client';
 import type { ConversationEvent, ConversationSnapshot, Id, TimelineItem } from '@cuccut/protocol';
 
 /**
- * 会话内容镜像，按会话 ID 存放（架构设计 §11.4）。归约是纯函数，未变的条目保持同一引用，
- * 条目组件用 memo 就只在自己变化时重绘。
+ * Mirror of conversation content, stored by conversation ID (architecture design §11.4). The reducer is a pure function; unchanged entries keep the same reference,
+ * so entry components wrapped in memo re-render only when they change.
  */
 export interface TimelineStore {
   byConversationId: Record<Id, ConversationSnapshot>;

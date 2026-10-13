@@ -1,4 +1,4 @@
-//! HTDemucs-FT 对着 mlx 的张量词汇（`tensor/mlx.rs`）编译的一份模型图与分离器（见 [`super`]）。
+//! A model graph and separator for HTDemucs-FT, compiled against the mlx tensor vocabulary (`tensor/mlx.rs`) (see [`super`]).
 
 #[path = "layers.rs"]
 mod layers;

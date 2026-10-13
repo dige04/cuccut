@@ -3,7 +3,7 @@ import type { UsageRecord } from '@cuccut/protocol';
 import type { ModelUnitPrice } from './model-prices.ts';
 import { buildUsageReport, periodStart } from './usage-report.ts';
 
-// 本地时间 2026-10-06 12:00（报告按本机日期划分）。
+// Local time 2026-10-06 12:00 (reports are split by the local machine's date).
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 const at = (daysAgo: number, hour = 10) => new Date(2026, 9, 6 - daysAgo, hour, 0, 0).toISOString();
 
@@ -31,21 +31,21 @@ function rec(overrides: Partial<UsageRecord>): UsageRecord {
 }
 
 const RECORDS: UsageRecord[] = [
-  // 估算：(1,000,000 − 200,000) × 2 + 200,000 × 0.2 + 100,000 × 10 = 1.6 + 0.04 + 1.0 = 2.64 USD
+  // Estimate: (1,000,000 − 200,000) × 2 + 200,000 × 0.2 + 100,000 × 10 = 1.6 + 0.04 + 1.0 = 2.64 USD
   rec({ units: { inputTokens: 1_000_000, cachedTokens: 200_000, outputTokens: 100_000 } }),
-  // 报告的金额优先于估算。
+  // The reported amount takes precedence over the estimate.
   rec({ units: { inputTokens: 10, outputTokens: 10 }, cost: { kind: 'reported', amount: '0.5', currency: 'USD' }, accountId: 'b2' }),
-  // 用量不全：未知。
+  // Usage incomplete: unknown.
   rec({ units: { inputTokens: 10 }, status: 'error', error: 'PROVIDER_REJECTED: x' }),
-  // 转写：90 秒 × 0.006 / 60 = 0.009 USD；两天前。
+  // Transcription: 90 s × 0.006 / 60 = 0.009 USD; two days ago.
   rec({ at: at(2), providerId: 'openai', capability: 'transcribe', modelId: 'whisper-1', units: { audioSeconds: 90 } }),
-  // 别的币种分开汇总：1,000,000 × 2.4 / 1e6 = 2.4 CNY；十天前。
+  // Other currencies are totaled separately: 1,000,000 × 2.4 / 1e6 = 2.4 CNY; ten days ago.
   rec({ at: at(10), providerId: 'qwen', modelId: 'qwen3.8-max', accountId: 'gone', units: { inputTokens: 1_000_000, outputTokens: 0 } }),
-  // 价目表里没有：未知。智能体 Provider 没有账号。
+  // Not in the price table: unknown. The agent Provider has no account.
   rec({ at: at(1), providerId: 'agent:codex', accountId: null, capability: 'generateImage', modelId: 'codex-image', units: { images: 1 } }),
-  // 验证：不计费用，也不算未知。
+  // Verification: no cost is counted, and it is not counted as unknown.
   rec({ source: 'verify', capability: null, modelId: null, accountId: null }),
-  // 时段之外：40 天前。
+  // Outside the time range: 40 days ago.
   rec({ at: at(40), units: { inputTokens: 1, outputTokens: 1 } }),
 ];
 
@@ -106,7 +106,7 @@ describe('buildUsageReport', () => {
       cost: [{ amount: '0.009', currency: 'USD' }],
     });
     expect(report.byProvider.find((r) => r.key === 'agent:codex')).toMatchObject({ costKind: 'unknown', cost: [] });
-    // 验证没有能力与模型：不进这两个分组。
+    // Verification with no capability and no model: not included in these two groups.
     expect(report.byCapability.map((r) => [r.key, r.calls])).toEqual([
       ['generateText', 3],
       ['generateImage', 1],

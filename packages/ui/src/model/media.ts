@@ -1,6 +1,6 @@
 import type { MediaTarget } from '@cuccut/protocol';
 
-/** 媒体定位的稳定键：同一个文件得到同一个键，用来缓存句柄、记住播放位置。 */
+/** Stable key for locating media: the same file gets the same key, used to cache handles and remember playback position. */
 export function targetKey(target: MediaTarget): string {
   if ('entryId' in target) return `entry:${target.entryId}`;
   if ('videoId' in target) return `video:${target.videoId}:${target.assetId}:${target.revision ?? ''}`;

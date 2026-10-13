@@ -2,12 +2,12 @@ import type { DocumentContent, Id, Revision } from '@cuccut/protocol';
 
 type Entry = { state: 'loading' } | { state: 'ready'; body: unknown } | { state: 'failed'; at: number };
 
-/** 取失败之后隔这么久才再取（连接断开、Runtime 重启时会失败一阵）。 */
+/** After a failed fetch, wait this long before fetching again (the connection drops and the Runtime restarts, so fetches fail for a while). */
 const RETRY_MS = 3000;
 
 /**
- * 文档正文的缓存（视频格式规范 §4.4：正文按版本保存，不随快照下发）。一个版本的正文不会再变，按「文档@版本」记住；
- * 预览与时间线共用一份，取到了通知订阅者重画。
+ * Cache of document bodies (video format spec §4.4: bodies are stored per version and are not sent with the snapshot). The body of one version never changes, so it is remembered under “document@version”;
+ * previews and the timeline share one copy, and subscribers are notified to redraw when it arrives.
  */
 export class DocumentCache {
   readonly #read: (documentId: Id, revision: Revision) => Promise<DocumentContent>;
@@ -19,13 +19,13 @@ export class DocumentCache {
     this.#read = read;
   }
 
-  /** 已经取到的正文；还没有时是 undefined。不发请求（React 渲染里也能调）。 */
+  /** The body if it has already been fetched; undefined until then. Sends no request (also callable during React rendering). */
   peek(documentId: Id, revision: Revision): unknown {
     const entry = this.#entries.get(key(documentId, revision));
     return entry?.state === 'ready' ? entry.body : undefined;
   }
 
-  /** 还没有就去取；正在取或刚失败过就不重复发。 */
+  /** Fetch it if there is none yet; do not send a duplicate while a fetch is in progress or has just failed. */
   load(documentId: Id, revision: Revision): void {
     const k = key(documentId, revision);
     const entry = this.#entries.get(k);
@@ -44,13 +44,13 @@ export class DocumentCache {
     return () => this.#listeners.delete(listener);
   }
 
-  /** 换了视频：旧视频的正文不再要，路上的请求回来也不收。 */
+  /** Video changed: bodies of the old video are no longer needed, and in-flight requests are ignored when they return. */
   clear(): void {
     this.#generation++;
     this.#entries.clear();
   }
 
-  /** 忘掉还在路上的请求（预览卡住时的「重试」）：之后再要就重新发，路上的回来也不收；取到的照留。 */
+  /** Forget in-flight requests (the “retry” when a preview is stuck): the next request is sent anew, and in-flight responses are ignored when they return; bodies already fetched are kept. */
   forgetPending(): void {
     for (const [k, entry] of [...this.#entries]) if (entry.state === 'loading') this.#entries.delete(k);
   }

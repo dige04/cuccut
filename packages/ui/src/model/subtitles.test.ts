@@ -80,7 +80,7 @@ describe('字幕解析', () => {
     const text = '1\n00:00:01,000 --> 00:00:02,000\n你好\n';
     expect(decodeSubtitleText(new TextEncoder().encode(text))).toBe(text);
     expect(decodeSubtitleText(new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('你好')]))).toBe('你好');
-    // 「你好」的 GBK 编码。
+    // GBK encoding of “你好” (“hello”).
     expect(decodeSubtitleText(new Uint8Array([0xc4, 0xe3, 0xba, 0xc3]))).toBe('你好');
     expect(decodeSubtitleText(new Uint8Array([0xff, 0xfe, 0x60, 0x4f, 0x7d, 0x59]))).toBe('你好');
   });
@@ -129,18 +129,18 @@ describe('定位排队', () => {
     expect(media.currentTime).toBe(10);
     queue.request(20);
     queue.request(30);
-    // 第一次 seek 还没完成：不打断它，显示最新的请求。
+    // The first seek has not finished yet: do not interrupt it, show the latest request.
     expect(media.currentTime).toBe(10);
     expect(queue.target).toBe(30);
 
-    // 10 落地：中间的 20 丢掉，直接发 30。
+    // 10 lands: drop the 20 in between and send 30 directly.
     expect(queue.settle()).toBe(false);
     expect(media.currentTime).toBe(30);
     expect(queue.target).toBe(30);
 
     expect(queue.settle()).toBe(true);
     expect(queue.target).toBeNull();
-    // 不是我们发起的 seeked 不影响状态。
+    // A seeked event we did not initiate does not affect the state.
     expect(queue.settle()).toBe(true);
   });
 

@@ -12,20 +12,20 @@ import { problemRemedy, toolUseProblem } from '../external-tools/external-tool-s
 import { RcRuntime } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 工具此刻能不能用（`tools.list`，架构设计 §7.9）：静态注册表加 Runtime 的状态。原因沿用已有的错误码：
+ * Whether a tool can be used right now (`tools.list`, architecture design §7.9): the static registry plus the Runtime's state. The reasons reuse the existing error codes:
  *
- * - 能力：按提交时的同一套选择判断（不显式指定 Provider 时会用哪个），选不出时 `CAPABILITY_NOT_CONFIGURED`（带 `reason`）；
- * - 外部工具：上次探测的结果（`externalTools.list`，第一次时探测），不能用时 `TOOL_NOT_INSTALLED`、`TOOL_UNAVAILABLE`、
- *   `TOOL_OUTDATED`、`TOOL_CONSENT_REQUIRED`，正在按原安装方式更新时 `TOOL_UPDATING`；
- * - 联网下载：严格离线（`offline.strict`）时 `OFFLINE_STRICT`。
+ * - capabilities: judged by the same selection as at submit time (which Provider is used when none is given explicitly); when none can be selected, `CAPABILITY_NOT_CONFIGURED` (with `reason`);
+ * - external tools: the result of the last probe (`externalTools.list`, probed the first time); when unusable, `TOOL_NOT_INSTALLED`, `TOOL_UNAVAILABLE`,
+ *   `TOOL_OUTDATED`, `TOOL_CONSENT_REQUIRED`; while being updated in its original install way, `TOOL_UPDATING`;
+ * - downloads over the network: `OFFLINE_STRICT` when strict offline mode (`offline.strict`) is on.
  *
- * 一定要的依赖进 `problems`（不可用），只在某些输入或参数下才用的进 `limitations`（照样可用）。
+ * Required dependencies go into `problems` (unavailable); those needed only for certain inputs or parameters go into `limitations` (still available).
  */
 
 export interface ToolAvailabilityDeps {
-  /** 这种能力此刻选不出 Provider 时的错误（`CAPABILITY_NOT_CONFIGURED`）；选得出时 null。 */
+  /** The error (`CAPABILITY_NOT_CONFIGURED`) when this capability cannot select a Provider right now; null when one can be selected. */
   capability(capability: ModelServiceCapability): Promise<RpcError | null>;
-  /** 受管外部工具的状态（上次探测的结果）。 */
+  /** Status of a managed external tool (the result of the last probe). */
   externalTools(): Promise<ExternalToolStatus[]>;
   offlineStrict(): boolean;
 }
@@ -103,7 +103,7 @@ function problemOfCapability(capability: ModelServiceCapability, error: RpcError
   };
 }
 
-/** 选择能力时的异常换成「不可用」：只认 `RpcError`，别的照样抛出。 */
+/** An exception while selecting a capability is turned into “unavailable”: only `RpcError` is caught; others are still thrown. */
 export async function capabilityError(select: () => Promise<unknown>): Promise<RpcError | null> {
   try {
     await select();

@@ -8,28 +8,28 @@ import { useJobs } from './jobs-store.ts';
 import { recentOf } from './home-templates-store.ts';
 
 /**
- * 字体库的状态（产品设计 §5.9「字体」；架构设计 §9.1；原型 font-library-store.jsx）：选字框、字体条、导出面板与
- * 设置 › 字体共用。权威在 Runtime：族的状态来自 `fonts.catalogue`，视频用到的来自 `fonts.usage`，进度来自 `jobs`
- * 主题里的 `fontDownload` 任务；这里只缓存与推进请求，任务结束时按族重新取状态。算的东西在 model/font-library.ts。
+ * Font library state (product design §5.9 "Fonts"; architecture design §9.1; prototype font-library-store.jsx). The font picker, the font strip, the export panel and
+ * Settings › Fonts all share it. The authority is the Runtime: family state comes from `fonts.catalogue`, the fonts a video uses come from `fonts.usage`, and progress comes from the `fontDownload` task in the `jobs`
+ * topic. Here we only cache and advance requests, and when a task ends, state is fetched again per family. The computations are in model/font-library.ts.
  */
 
 type Client = Pick<CucCutClient, 'request'>;
 
-/** 一页取多少（`fonts.catalogue` 的上限）。 */
+/** How many to fetch per page (the `fonts.catalogue` limit). */
 const PAGE = 500;
 
 export type SampleState = { state: 'loading' } | { state: 'ready'; css: string } | { state: 'none' };
 
 interface FontLibraryState {
-  /** 族的状态（按 `familyKey`）与 Runtime 给的次序（上次整表取的时候）。 */
+  /** Family state (by `familyKey`) and the order the Runtime gave (from the last full-list fetch). */
   statuses: Record<string, FontFamilyStatus>;
   order: string[];
   loaded: boolean;
-  /** 打开着的视频用到的字体（`fonts.usage`，整部视频：字幕算在内）。 */
+  /** Fonts used by the open video (`fonts.usage`, the whole video, subtitles included). */
   usage: Record<Id, FontsUsageResult>;
-  /** 导出面板这一次导出用到的字体（`fonts.usage` 带上「烧录字幕」的选择），按 `exportUsageKey`。 */
+  /** Fonts used by this export in the export panel (`fonts.usage` with the "burn subtitles" choice), by `exportUsageKey`. */
   exportUsage: Record<string, FontsUsageResult>;
-  /** 打开视频的那一批（字体条）。 */
+  /** The batch for the open video (the font strip). */
   batch: FontBatch | null;
   samples: Record<string, SampleState>;
   downloaded: { faces: DownloadedFontFace[]; totalBytes: number; inUse: string[] } | null;
@@ -46,7 +46,7 @@ export const useFontLibrary = create<FontLibraryState>()(() => ({
   downloaded: null,
 }));
 
-/** 最近用过的族（这台电脑上记着，原型的 recent）。 */
+/** Recently used families, remembered on this computer (the prototype's recent). */
 export const useFontRecent = create<{ recent: string[]; use(family: string): void }>()(
   persist(
     (set) => ({
@@ -78,7 +78,7 @@ function putStatuses(list: readonly FontFamilyStatus[], appendOrder = false): vo
 
 let loading: Promise<void> | null = null;
 
-/** 整表（约两千个族，按页取）。取过之后只按族刷新；`force` 时重取（次序按 Runtime 的新次序）。 */
+/** The full list (about two thousand families, fetched by page). After it has been fetched, it is refreshed per family only. `force` refetches it (the order follows the Runtime's new order). */
 export function loadCatalogue(client: Client, force = false): Promise<void> {
   if (useFontLibrary.getState().loaded && !force) return Promise.resolve();
   loading ??= (async () => {
@@ -101,7 +101,7 @@ export function loadCatalogue(client: Client, force = false): Promise<void> {
   return loading;
 }
 
-/** 按族重新取状态（任务结束、下载开始、导出在下载时）。 */
+/** Refetch state per family (when a task ends, a download starts, or an export is downloading). */
 export async function refreshFamilies(client: Client, families: readonly string[]): Promise<void> {
   const unique = [...new Set(families.map((f) => f.trim()).filter(Boolean))];
   for (let i = 0; i < unique.length; i += 200) {
@@ -113,19 +113,19 @@ export async function refreshFamilies(client: Client, families: readonly string[
   }
 }
 
-/** 手动下载（点下载、重试、选中一个还没下载的族）：不看自动下载的开关。返回这次有没有开始下载。 */
+/** Manual download (click download, retry, or select a family not yet downloaded). It ignores the auto-download switch. Returns whether a download started this time. */
 export async function downloadFamily(client: Client, family: string): Promise<boolean> {
   const result = await client.request('fonts.download', { family });
   putStatuses([result.status], true);
   return result.jobId !== null;
 }
 
-/** 在下载这个族的任务（`fontDownload`）。 */
+/** The task downloading this family (`fontDownload`). */
 function liveJobOf(family: string): JobRecord | undefined {
   return liveFontJobs(useJobs.getState().jobs).get(familyKey(family));
 }
 
-/** 取消一个族的下载：Runtime 记为 `CANCELLED`（列表上是「已取消」）。导出任务里的下载随导出取消，这里不管。 */
+/** Cancel a family's download. The Runtime records it as `CANCELLED` (shown as "cancelled" in the list). A download inside an export task is cancelled with the export, and is not handled here. */
 export async function cancelFamily(client: Client, family: string): Promise<void> {
   const job = liveJobOf(family) ?? null;
   const jobId = job?.jobId ?? useFontLibrary.getState().statuses[familyKey(family)]?.job?.jobId ?? null;
@@ -137,7 +137,7 @@ export async function cancelFamily(client: Client, family: string): Promise<void
   }
 }
 
-/** 选中一个族：记进最近用过；还没下载（或上次失败、取消）的开始下载。返回开始下载的族的状态，没开始时 null。 */
+/** Select a family: record it in recently used. If it is not yet downloaded (or the last attempt failed or was cancelled), start the download. Returns the state of the family whose download started, or null if none started. */
 export async function chooseFamily(client: Client, family: string): Promise<FontFamilyStatus | null> {
   useFontRecent.getState().use(family);
   const status = useFontLibrary.getState().statuses[familyKey(family)];
@@ -146,11 +146,11 @@ export async function chooseFamily(client: Client, family: string): Promise<Font
   return started ? (useFontLibrary.getState().statuses[familyKey(family)] ?? status) : null;
 }
 
-// ---- 视频 ----
+// ---- Video ----
 
 /**
- * 打开视频：Runtime 清点用到的字体（`fonts.usage`，`download: true`：还没下载的按自动下载的规则开始下载，十分钟内失败过
- * 的不自动重试），字体条记下这一批。自动下载关着时这一批等用户点「下载」。
+ * Open a video: the Runtime inventories the fonts it uses (`fonts.usage`, `download: true`). Those not yet downloaded start under the auto-download rules, and ones that failed within the last ten minutes
+ * are not retried automatically. The font strip records this batch. When auto-download is off, the batch waits for the user to click "Download".
  */
 export async function openVideoFonts(client: Client, videoId: Id, autoDownload: boolean): Promise<void> {
   const usage = await client.request('fonts.usage', { videoId, download: true });
@@ -169,7 +169,7 @@ export async function openVideoFonts(client: Client, videoId: Id, autoDownload: 
   }));
 }
 
-/** 再清点一次（导出面板打开时；不下载）。 */
+/** Inventory again (when the export panel opens; no download). */
 export async function refreshUsage(client: Client, videoId: Id): Promise<void> {
   const usage = await client.request('fonts.usage', { videoId });
   putStatuses(
@@ -179,12 +179,12 @@ export async function refreshUsage(client: Client, videoId: Id): Promise<void> {
   useFontLibrary.setState((s) => ({ usage: { ...s.usage, [videoId]: usage } }));
 }
 
-/** 导出面板的清点按（视频，烧不烧字幕）各记一份：来回切换时晚到的回应不会盖掉当前选择的那一份。 */
+/** The export panel's inventories (video, with or without burned-in subtitles) are each recorded separately. Switching back and forth does not let a late response overwrite the one for the current choice. */
 export const exportUsageKey = (videoId: Id, burnCaptions: boolean) => `${videoId}\u0000${burnCaptions ? 'burn' : 'plain'}`;
 
 /**
- * 导出面板（视频页）的清点：与这次导出同一套参数（`burnCaptions`；序列与导出一样用根序列），不下载。字幕不烧进画面时
- * 只给字幕用的族不在清单里。记在 `exportUsage`，不动整部视频的 `usage`（选字框的「这个视频里用到」与字体条读它）。
+ * Inventory for the export panel (video page): the same parameters as this export (`burnCaptions`; the sequence is the root sequence, as in export), with no download. When subtitles are not burned into the picture,
+ * families used only by subtitles are left out of the list. It is recorded in `exportUsage` and does not touch the whole video's `usage` (the font picker's "used in this video" and the font strip read that).
  */
 export async function refreshExportUsage(client: Client, videoId: Id, burnCaptions: boolean): Promise<void> {
   const usage = await client.request('fonts.usage', { videoId, burnCaptions });
@@ -209,7 +209,7 @@ const pendingOf = (batch: FontBatch) =>
     return !!liveJobOf(n) || status?.state === 'downloading';
   });
 
-/** 字体条的「跳过这个」：取消当前在下的那一个，这个族先用回退字体，条上接着念下一个。 */
+/** The font strip's "skip this": cancel the one currently downloading. That family falls back to the fallback font, and the strip moves on to the next one. */
 export async function skipCurrent(client: Client): Promise<void> {
   const batch = useFontLibrary.getState().batch;
   const current = batch ? pendingOf(batch)[0] : undefined;
@@ -218,14 +218,14 @@ export async function skipCurrent(client: Client): Promise<void> {
   await cancelFamily(client, current);
 }
 
-/** 字体条的 ✕：取消这一批还在下载的。 */
+/** The font strip's ✕: cancel the batch's downloads still in progress. */
 export async function cancelBatch(client: Client): Promise<void> {
   const batch = useFontLibrary.getState().batch;
   if (!batch) return;
   await Promise.all(pendingOf(batch).map((n) => cancelFamily(client, n).catch(() => {})));
 }
 
-/** 自动下载关着时字体条上的「下载」：这一批改成下载，逐个提交（Runtime 同时下两个）。 */
+/** On the font strip with auto-download off, "Download": this batch switches to downloading and is submitted one by one (the Runtime downloads two at a time). */
 export async function downloadBatch(client: Client): Promise<void> {
   const batch = useFontLibrary.getState().batch;
   if (!batch) return;
@@ -233,7 +233,7 @@ export async function downloadBatch(client: Client): Promise<void> {
   for (const family of batch.families) await downloadFamily(client, family).catch(() => {});
 }
 
-// ---- 设置 › 字体 ----
+// ---- Settings › Fonts ----
 
 export async function loadDownloaded(client: Client): Promise<void> {
   useFontLibrary.setState({ downloaded: await client.request('fonts.downloaded', {}) });
@@ -257,9 +257,9 @@ export async function clearDownloaded(client: Client) {
   }
 }
 
-// ---- 样张 ----
+// ---- Samples ----
 
-/** 把样张装进界面的字体表：返回 CSS 里的族名。测试替换。 */
+/** Install a sample into the interface's font table. Returns the family name used in CSS. Replaced in tests. */
 export type FaceRegistrar = (name: string, bytes: ArrayBuffer) => Promise<void>;
 
 const registerInDocument: FaceRegistrar = async (name, bytes) => {
@@ -276,8 +276,8 @@ function decodeBase64(data: string): ArrayBuffer {
 }
 
 /**
- * 一行滚进视野时取它的样张（`fonts.sample`：只含族名那几个字的子集），装进界面的字体表，之后这一行按它画。
- * 本机已装的族用系统字体本身；随内核、字体目录里的族要样张；取不到（离线、严格离线、不在目录里）就是界面字体的纯文字。
+ * When a row scrolls into view, fetch its sample (`fonts.sample`, a subset containing only the characters of the family name) and install it into the interface's font table. The row is then drawn with it.
+ * Families already installed on this machine use the system font itself. Families that ship with the kernel or are in the font catalogue need a sample. If it cannot be fetched (offline, strictly offline, or not in the catalogue), the row is plain text in the interface font.
  */
 export async function requestSample(client: Client, family: string, register: FaceRegistrar = registerInDocument): Promise<void> {
   const key = familyKey(family);
@@ -303,15 +303,15 @@ export async function requestSample(client: Client, family: string, register: Fa
   }
 }
 
-// ---- 跟着任务走 ----
+// ---- Following tasks ----
 
 let syncUsers = 0;
 let stopSync: (() => void) | null = null;
 
 /**
- * 跟着 `jobs` 主题：`fontDownload` 任务结束（完成、失败、取消）时按族重新取状态，设置页的已下载列表也刷新。导出开始与结束时
- * 也刷新已下载列表：还没结束的导出钉住它用的字体（「导出在用」、删除钮不可点），钉住与解除都在这两个时候。
- * 引用计数：选字框、字体条、导出面板与设置页都会挂；最后一个离开时退订。
+ * Follows the `jobs` topic. When a `fontDownload` task ends (completed, failed or cancelled), state is fetched again per family, and the downloaded list on the settings page is refreshed too. The downloaded list is also refreshed when an export starts and when it ends:
+ * an export still in progress pins the fonts it uses ("in use by export", with the delete button disabled). Pinning and unpinning both happen at these two moments.
+ * Reference counted: the font picker, the font strip, the export panel and the settings page each attach. When the last one leaves, it unsubscribes.
  */
 export function startFontLibrarySync(client: Client): () => void {
   syncUsers++;
@@ -322,12 +322,12 @@ export function startFontLibrarySync(client: Client): () => void {
     const settle = (jobs: readonly JobRecord[]) => {
       const ended: string[] = [];
       const nowExporting = new Set(jobs.filter((j) => j.kind === 'export' && jobLive(j)).map((j) => j.jobId));
-      // 第一次只记下（挂上时设置页自己取过一次）；之后有导出开始或结束就重取已下载列表。
+      // The first time just records (the settings page fetched once when mounted). After that, the downloaded list is refetched whenever an export starts or ends.
       const pinsChanged = exports !== null && (nowExporting.size !== exports.size || [...nowExporting].some((id) => !exports!.has(id)));
       exports = nowExporting;
       for (const job of jobs) {
         if (job.kind === 'export') {
-          // 导出自己下载的 face 不是 `fontDownload` 任务：导出离开下载阶段（或结束）时，状态里记着这个导出在下的族再取一次。
+          // Faces an export downloads itself are not `fontDownload` tasks. When the export leaves the download stage (or ends), refetch the families this export was downloading that are recorded in the state.
           if (jobLive(job) && job.phase === 'downloading') exporting.add(job.jobId);
           else if (exporting.delete(job.jobId)) {
             const { statuses } = useFontLibrary.getState();

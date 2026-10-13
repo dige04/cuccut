@@ -14,7 +14,7 @@ import { pl } from './job-library.pl.ts';
 import { tr } from './job-library.tr.ts';
 import { vi } from './job-library.vi.ts';
 
-/** `packages/jobs/src/job-library.ts`：任务引用用户库条目时的拒绝。 */
+/** `packages/jobs/src/job-library.ts`: rejections when a job references user library entries. */
 const en = {
   serviceNoGlossaries: "Clients of external services can't use glossaries from the user library",
   serviceNoVoices: "Clients of external services can't use voices from the user library",

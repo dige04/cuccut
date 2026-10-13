@@ -141,7 +141,7 @@ describe('一部视频只出现一次', () => {
   const query = { category: 'all' as const, projectId: null, search: '', sort: 'recent' as const };
   const at = (h: number) => `2026-10-01T${String(h).padStart(2, '0')}:00:00.000Z`;
   const from = (videoId: string) => ({ source: 'exported' as const, projectId: 'p1', videoId });
-  // 截图里的情形：一部下载转录的视频，连同下载的源文件、导出的成片、字幕与文稿
+  // The situation in the screenshot: a video whose transcript was downloaded, together with the downloaded source file, the exported finished cut, the subtitles and the script
   const video = entry('v', { kind: 'video', name: '洗碗机', ref: { videoId: 'vid1' }, lastActivityAt: at(1) });
   const files = [
     entry('mp4', { kind: 'video-file', name: '洗碗机.mp4', origin: { ...from('vid1'), source: 'imported' }, lastActivityAt: at(2) }),
@@ -271,7 +271,7 @@ describe('位置与来源', () => {
     expect(entryPath(entry('a', { relPath: 'clips/a.mp4' }), dirs)).toBe('/work/promo/clips/a.mp4');
     expect(entryPath(entry('c', { source: { projectId: null, conversationId: 'c1' } }), dirs)).toBe('/tmp/c1/c.mp4');
     expect(entryPath(entry('x', { source: { projectId: 'gone', conversationId: null } }), dirs)).toBeNull();
-    // 不在来源目录里的结果：写到保存位置的文件（§7.9）。
+    // Results not in the source directory: files written to the save location (§7.9).
     expect(entryPath(entry('s', { source: { projectId: null, conversationId: null }, file: { path: '/Users/me/Downloads/s.mp3' } }), dirs)).toBe(
       '/Users/me/Downloads/s.mp3',
     );
@@ -291,16 +291,16 @@ describe('位置与来源', () => {
     const entries = [parent, child, trashed];
     expect(derivedFrom(child)).toBe('v_parent');
     expect(derivedFrom(parent)).toBeNull();
-    // 产物的 origin 也指向视频，但它不是派生的视频。
+    // The product's origin also points to a video, but it is not a derived video.
     expect(derivedFrom(entry('e', { kind: 'export', origin: { source: 'exported', videoId: 'v_parent' } }))).toBeNull();
     expect(derivedCount(entries, 'v_parent')).toBe(1);
     expect(derivedCount(entries, 'v_child')).toBe(0);
     expect(fromVideoId(child)).toBeNull();
     expect(groupEntries(entries).map((row) => row.id)).toEqual(expect.arrayContaining(['parent', 'child']));
     expect(sourceLabel(child, dirs, '新会话', videoNamesOf(entries))).toBe('宣传片 · talks · 来自「发布会」');
-    // 父视频不在列表里时只写位置。
+    // When the parent video is not in the list, only the location is written.
     expect(sourceLabel(child, dirs, '新会话', videoNamesOf([child]))).toBe('宣传片 · talks');
-    // 查看框的「查看来源视频」：父视频还在、不在回收站里才有。
+    // “View source video” in the view box: shown only when the parent video is still there and not in the trash.
     expect(parentVideoOf(entries, child)?.id).toBe('parent');
     expect(parentVideoOf(entries, parent)).toBeNull();
     expect(parentVideoOf([child], child)).toBeNull();

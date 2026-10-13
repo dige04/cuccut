@@ -19,16 +19,11 @@ import type { PlannedDocument, TextEntry, TextPlan } from './export-plan.ts';
 import { assStyleMapping } from './ass-style.ts';
 
 /**
- * 字幕与文稿的写出（架构设计 §9.13）：把引擎投影到时间线上的条目（`TextPlan`，已经去掉了被剪掉的词）拼成句子、
- * 拆成字幕条，写成 SRT、VTT、ASS、JSON、Markdown 或纯文本；写完再按同一种格式解析回来，条数与时间对得上才算通过。
+ * Writing subtitles and scripts (architecture design §9.13): the engine's projection of entries onto the timeline (`TextPlan`, with cut words already removed) is assembled into sentences, split into caption cues, and written as SRT, VTT, ASS, JSON, Markdown, or plain text. After writing, the file is parsed back in the same format, and it passes only if the entry count and times match.
  *
- * - 时间是相对导出范围起点的秒（文件从 0 开始），全部来自引擎的投影；这里只做取整与重叠修复。
- * - 词时间不可信（插值、缺失）的词不写逐词时间（验收 AT-05）；只有句子级时间的文档，JSON 里没有 `words`。
- * - 双语合并：译文按句子（或字幕条）ID 配；句子被剪得不完整时不配译文（格式规范 §5.7），记一条警告。
- *   另一份带时间的文档按时间重叠配到主文档的句子上。译文认两种正文（格式规范 §5.3）：`cuccut.translation/2`
- *   （单元按 `sourceSentenceId` 配，成员是 `alignment.sourceWordIds`；`alignment` 为 null 的单元，成员取按字幕与翻译核心的
- *   规则从转写的词得出的那一句，与翻译时的句子相同；转写没有存句子时，句子也按成员切）与旧项目导入的
- *   `cuccut.translation/1`（单元的 `id` 就是句子 ID，成员取转写的句子）。
+ * - Times are seconds relative to the start of the export range (files start at 0), all from the engine's projection. Here we only round and repair overlaps.
+ * - Words whose timing is not trustworthy (interpolated, missing) are not written with per-word times (acceptance AT-05). For documents with only sentence-level timing, JSON has no `words`.
+ * - Bilingual merge: translations are matched to sentences (or caption cues) by ID. A sentence that is only partly kept after cutting is not matched to a translation (format spec §5.7), and a warning is recorded. Another timed document is matched to the main document's sentences by time overlap. Translations come in two body formats (format spec §5.3): `cuccut.translation/2` (units matched by `sourceSentenceId`, members are `alignment.sourceWordIds`; for a unit whose `alignment` is null, the member is the sentence derived from the transcript's words by the caption and translation-core rules, the same sentence used at translation time; when the transcript has no stored sentences, sentences are also split by members), and the legacy `cuccut.translation/1` imported from old projects (the unit's `id` is the sentence ID, and members are taken from the transcript's sentences).
  */
 
 export type TextFormat = SubtitleExportFormat | TranscriptExportFormat;
@@ -38,32 +33,32 @@ export interface TextExportInput {
   format: TextFormat;
   primary: { document: PlannedDocument; plan: TextPlan };
   secondary: { document: PlannedDocument; plan: TextPlan | null } | null;
-  /** 主文档的第一个字幕实例的样式文档（ASS 用）。 */
+  /** The style document of the first caption instance in the main document (used for ASS). */
   style: unknown;
   canvas: { width: number; height: number };
   meta: { videoId: string; videoName: string; videoRevision: string; sequenceId: string; sequenceRevision: string };
-  /** 时间的范围（秒）：导出范围的时长；`skipCut: false` 时是原文的跨度（`sourcePlan`）。 */
+  /** Time range (seconds): the duration of the export range. With `skipCut: false`, it is the span of the original (`sourcePlan`). */
   rangeDuration: number;
   maxCharsPerLine?: number;
-  /** 文稿（Markdown、纯文本）在每段末尾写段首的时间（`[mm:ss]`，满一小时 `[hh:mm:ss]`）。 */
+  /** Scripts (Markdown, plain text) write the start time of each paragraph at its end (`[mm:ss]`, or `[hh:mm:ss]` past one hour). */
   timestamps?: boolean;
-  /** 文稿写说话人：每段都写（段里有说话人时），默认 true。 */
+  /** Scripts write speaker names: on every paragraph (when the paragraph has a speaker). Default true. */
   speakers?: boolean;
-  /** 文稿的章节小标题（与条目同一个时间基准，按开始排好）；null 或不给时不写。 */
+  /** Chapter subheadings of the script (on the same time base as the entries, sorted by start). null or omitted means none are written. */
   chapters?: TextChapter[] | null;
-  /** Markdown 文稿的文首元信息；null 或不给时不写，纯文本与 JSON 不写。 */
+  /** Front matter for a Markdown script. null or omitted means none is written. Plain text and JSON never write it. */
   frontMatter?: FrontMatter | null;
 }
 
-/** 章节（序列上 `kind: 'chapter'` 的标记）：标题与开始的时刻。 */
+/** A chapter (a marker with `kind: 'chapter'` on the sequence): its title and start time. */
 export interface TextChapter {
   title: string;
   start: number;
 }
 
 /**
- * 文首元信息（YAML）的字段，按这个顺序写；缺的（null、空串）整行不写。说话人与章节由正文得出，接在后面。
- * 与设计稿 model-transcript.js 的 `frontmatter()`、v2 的 `--frontmatter` 同一份字段与写法。
+ * Front matter (YAML) fields, written in this order. Missing ones (null, empty strings) are omitted entirely. Speakers and chapters are derived from the body and appended after.
+ * Same fields and format as `frontmatter()` in the design draft model-transcript.js and v2's `--frontmatter`.
  */
 export interface FrontMatter {
   title: string | null;
@@ -79,17 +74,17 @@ export interface FrontMatter {
 
 export interface TextExportOutput {
   content: string;
-  /** 写出的条数：字幕是条，JSON 是句子，Markdown 与纯文本是段落。 */
+  /** The number of items written: captions are cues, JSON is sentences, and Markdown and plain text are paragraphs. */
   entries: number;
-  /** 最后一条的结束时间（秒）。 */
+  /** End time of the last item (seconds). */
   durationSec: number;
-  /** 主文档正文里的拉丁词数与汉字数（不含标题、说话人、时间码与译文），界面说篇幅用。 */
+  /** Latin word count and Han character count in the main document body (excluding titles, speakers, timecodes, and translations). The UI uses them to show length. */
   words: number;
   cjkCharacters: number;
-  /** 纯文本文稿里章节小标题的块数：校验数段落时扣掉它们（小标题与正文同样是一块文字，看格式分不清）。 */
+  /** The number of blocks of chapter subheadings in a plain-text script. Subtracted when validating the paragraph count, since subheadings and body text are both text blocks and the format can't tell them apart. */
   headings: number;
   warnings: JobWarning[];
-  /** 校验时的范围（秒）：即 `TextExportInput.rangeDuration`。 */
+  /** The range used for validation (seconds): that is, `TextExportInput.rangeDuration`. */
   rangeSec: number;
 }
 
@@ -101,7 +96,7 @@ export interface TextWord {
   timed: boolean;
 }
 
-/** 一句（或一条字幕）：拆字幕条、写文稿与 JSON 的单位。 */
+/** One sentence (or one caption cue): the unit for splitting captions and writing scripts and JSON. */
 export interface TextSegment {
   id: string;
   start: number;
@@ -109,10 +104,10 @@ export interface TextSegment {
   text: string;
   speaker: string | null;
   translation: string | null;
-  /** 配译文用：转写的句子 ID，字幕文档的字幕条 ID；没有句子切分的转写为 null。 */
+  /** For matching translations: the transcript's sentence ID, or a caption document's cue ID. null for a transcript without sentence segmentation. */
   sentenceId: string | null;
   paragraphStart: boolean;
-  /** 转写的词；字幕文档为 null。 */
+  /** The transcript's words. null for a caption document. */
   words: TextWord[] | null;
 }
 
@@ -123,20 +118,20 @@ interface Cue {
   secondary: string[];
 }
 
-/** 句与句之间超过这么长的停顿就分句（没有句子切分的转写用）。 */
+/** A pause between sentences longer than this splits them (used for transcripts without sentence segmentation). */
 const PAUSE_SECONDS = 1;
 const SENTENCE_END = /[.!?。！？…]["'”’）)\]]*$/u;
 const NO_SPACE_BEFORE = /^[,.!?;:%)\]}'’”…，。！？；：、）」』】》]/u;
 const WIDE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{20000}-\u{3fffd}]/u;
 
-/** 显示宽度：全角字算 2。 */
+/** Display width: full-width characters count as 2. */
 export function displayWidth(text: string): number {
   let width = 0;
   for (const char of text) width += WIDE.test(char) ? 2 : 1;
   return width;
 }
 
-/** 词拼成文字：词自带前导空格的（一些识别器的习惯）原样接；否则西文词之间加空格，全角字与标点前不加。 */
+/** Joins words into text. Words that carry their own leading space (a habit of some recognizers) are joined as-is. Otherwise a space is added between Western words, and none is added before full-width characters or punctuation. */
 export function joinWords(tokens: string[], leadingSpaces: boolean): string {
   if (leadingSpaces) return tokens.join('').replace(/\s+/g, ' ').trim();
   let out = '';
@@ -155,7 +150,7 @@ export function joinWords(tokens: string[], leadingSpaces: boolean): string {
   return out;
 }
 
-/** 折行：保留原有的换行；超宽的行在空格处（西文）或按宽度（全角，标点不放行首）断开。 */
+/** Line wrapping: keeps the existing line breaks. Over-wide lines break at spaces (Western text) or by width (full-width text, where punctuation may not start a line). */
 export function wrapLines(text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split(/\r?\n/)) {
@@ -175,7 +170,7 @@ export function wrapLines(text: string, maxWidth: number): string[] {
         if (chars[i] === ' ') lastSpace = i;
       }
       if (lastSpace > 0 && !WIDE.test(chars[cut] ?? '')) cut = lastSpace;
-      // 行首不放标点：把它留在上一行。
+      // Punctuation may not start a line: keep it on the previous line.
       while (cut < chars.length && NO_SPACE_BEFORE.test(chars[cut]!)) cut++;
       if (cut <= 0) cut = 1;
       lines.push(chars.slice(0, cut).join('').trim());
@@ -186,7 +181,7 @@ export function wrapLines(text: string, maxWidth: number): string[] {
   return lines;
 }
 
-// ---- 句子 ----
+// ---- Sentences ----
 
 interface SpeechBody {
   speakers?: Array<{ id: string; name?: string }>;
@@ -198,7 +193,7 @@ interface TranslationBody {
   schema?: string;
   units?: Array<{
     id: string;
-    // cuccut.translation/1（旧项目导入）
+    // cuccut.translation/1 (imported from old projects)
     text?: string;
     display?: string;
     // cuccut.translation/2（§5.3）
@@ -211,23 +206,21 @@ interface TranslationBody {
   }>;
 }
 
-/** 读出的译文：句子 ID → 译文；`/2` 还带每句的词成员（不含隐藏的词）。 */
+/** Translations read: sentence ID → translation. `/2` also carries each sentence's word members (excluding hidden words). */
 interface Translation {
   texts: Map<string, string>;
   members: Map<string, Set<string>> | null;
-  /** 标成过期（`status: 'stale'`）而不用的单元数。 */
+  /** The number of units marked stale (`status: 'stale'`) and therefore not used. */
   stale: number;
 }
 
 const TRANSLATION_V2 = 'cuccut.translation/2';
 
-/** 转写按字幕与翻译核心的规则得出的句子：句子 ID → 指纹与（可见的）词。 */
+/** The sentences the transcript yields under the caption and translation-core rules: sentence ID → fingerprint and (visible) words. */
 type DerivedSentences = Map<string, { fingerprint: string; wordIds: string[] }>;
 
 /**
- * `alignment` 为 null 的 `/2` 单元（智能体自己写的译文，§5.3 允许）没有记下成员：按翻译时同一套规则从主文档（转写）的词
- * 重新得出句子（`sourceSentences`，经 editor-wasm），取那一句的词。只在用得上时算一次。句子的 WASM 没有构建时照样抛出
- * （`EditorWasmUnavailable`），导出失败而不是悄悄少了译文。
+ * A `/2` unit whose `alignment` is null (a translation the agent wrote itself, allowed by §5.3) did not record its members. The sentence is re-derived from the main document's (transcript's) words with the same rules used at translation time (`sourceSentences`, via editor-wasm), and that sentence's words are taken. Computed once, only when needed. If the sentence WASM is not built, it still throws (`EditorWasmUnavailable`), so the export fails rather than silently losing translations.
  */
 function sentenceDeriver(primary: PlannedDocument): () => DerivedSentences | null {
   let derived: DerivedSentences | null | undefined;
@@ -241,8 +234,7 @@ function sentenceDeriver(primary: PlannedDocument): () => DerivedSentences | nul
 }
 
 /**
- * 读译文。`derive` 给出转写此刻的句子：`alignment` 为 null 的单元按它取成员，指纹与单元记下的不同（原句改过）时不用它，
- * 记为过期。
+ * Reads translations. `derive` gives the transcript's sentences as they are now. For a unit whose `alignment` is null, its members are taken from them. When the fingerprint differs from the one recorded on the unit (the source sentence was changed), it is not used and is marked stale.
  */
 function translationOf(body: TranslationBody | null, derive: (() => DerivedSentences | null) | null): Translation {
   const units = Array.isArray(body?.units) ? body.units : [];
@@ -273,7 +265,7 @@ function translationOf(body: TranslationBody | null, derive: (() => DerivedSente
   return { texts, members, stale };
 }
 
-/** 转写没有存句子时，按 `/2` 译文的词成员给条目标上句子 ID（翻译时就是按这些句子译的）。 */
+/** When the transcript has no stored sentences, tags entries with sentence IDs from the `/2` translation's word members (the translation was done by those sentences). */
 function withTranslationSentences(
   entries: TextEntry[],
   secondary: TextExportInput['secondary'],
@@ -290,7 +282,7 @@ function withTranslationSentences(
   });
 }
 
-/** 转写正文里每句（未隐藏的）词。 */
+/** Each sentence's words (not hidden) in the transcript body. */
 function sentenceMembers(body: SpeechBody | null): Map<string, Set<string>> {
   const members = new Map<string, Set<string>>();
   if (!body?.sentences || !Array.isArray(body.words)) return members;
@@ -310,8 +302,7 @@ function sentenceMembers(body: SpeechBody | null): Map<string, Set<string>> {
 }
 
 /**
- * 转写正文里本来就放不上字幕的词：时长不为正（`end <= start`，转写给的词时间塌成一点）或没有文字。规划（`text_plan.rs`）
- * 不出这些词，但它们不是剪掉的——配整句译文时不把它们算作缺的成员。隐藏的词不在其中：隐藏是用户的剪辑。
+ * Words in the transcript body that can't fit on a caption anyway: duration not positive (`end <= start`, where the transcript gives the word a collapsed time at one point), or with no text. Planning (`text_plan.rs`) doesn't emit these words, but they are not cut. When matching a whole-sentence translation, they are not counted as missing members. Hidden words are not in this set: hiding is the user's edit.
  */
 function unplaceableWords(body: SpeechBody | null): Set<string> {
   const ids = new Set<string>();
@@ -323,18 +314,18 @@ function unplaceableWords(body: SpeechBody | null): Set<string> {
   return ids;
 }
 
-/** 说话人的显示名；没有名字的用转写时的默认名（「说话人 N」）。 */
+/** A speaker's display name. If it has none, the transcript's default name is used (“Speaker N”). */
 function speakerNames(primary: PlannedDocument): Map<string, string> {
   const body = (primary.body ?? null) as SpeechBody | null;
   return new Map((body?.speakers ?? []).map((s, i) => [s.id, s.name?.trim() || JobsSpeechDocument.speakerName({ n: i + 1 }).text]));
 }
 
-/** 主文档的条目拼成句子（字幕文档一条就是一句）。 */
+/** The main document's entries assembled into sentences (for a caption document, one cue is one sentence). */
 export function segmentsOf(input: Pick<TextExportInput, 'primary' | 'secondary'>, warnings: JobWarning[]): TextSegment[] {
   const { plan, document } = input.primary;
   const names = speakerNames(document);
   const speakerOf = (id: string | undefined) => (id === undefined ? null : (names.get(id) ?? id));
-  // 译文（不带时间的另一份文档）读一次：切句与配译文用同一份成员。
+  // Translations (a separate document without timing) are read once: the same members are used for sentence splitting and for matching translations.
   const translation =
     input.secondary && input.secondary.plan === null
       ? translationOf(input.secondary.document.body as TranslationBody | null, plan.unit === 'speech' ? sentenceDeriver(document) : null)
@@ -359,7 +350,7 @@ export function segmentsOf(input: Pick<TextExportInput, 'primary' | 'secondary'>
     let run: TextEntry[] = [];
     for (const entry of entries) {
       const last = run.at(-1);
-      // 知道句子时按句子切（句子里的停顿、说话人由切句的规则决定，这里不再拆）；不知道时按停顿、说话人与句末标点切。
+      // When sentences are known, split by sentence (pauses and speakers within a sentence are decided by the sentence-splitting rules, so they are not split again here). When not known, split by pauses, speakers, and sentence-final punctuation.
       const known = last !== undefined && (last.sentenceId !== undefined || entry.sentenceId !== undefined);
       const split =
         last !== undefined &&
@@ -414,7 +405,7 @@ function attachSecondary(
       const text = translation.texts.get(unitId);
       if (!text) continue;
       if (members) {
-        // 句子被剪得不完整时不配整句的译文（格式规范 §5.7）；放不上字幕的词（零时长、没有文字）不算剪掉，两边都不数它。
+        // A sentence that is only partly kept after cutting is not matched to its whole-sentence translation (format spec §5.7). Words that can't fit on a caption (zero duration, no text) are not counted as cut, and neither side counts them.
         const expected = new Set([...(members.get(unitId) ?? [])].filter((id) => !unplaceable.has(id)));
         const present = new Set((segment.words ?? []).map((w) => w.id).filter((id) => !unplaceable.has(id)));
         if (!members.has(unitId) || expected.size !== present.size || [...expected].some((id) => !present.has(id))) {
@@ -429,7 +420,7 @@ function attachSecondary(
       warn(warnings, 'TRANSLATION_SKIPPED_STALE', RcExport.translationStale({ count: translation.stale }));
     return;
   }
-  // 另一份带时间的文档：每条按中点归到所在的句子。
+  // Another document with timing: each entry is assigned to the sentence containing its midpoint.
   const other = segmentsOf({ primary: { document: secondary.document, plan: secondary.plan }, secondary: null }, warnings);
   const buckets = new Map<TextSegment, string[]>();
   let unmatched = 0;
@@ -446,7 +437,7 @@ function attachSecondary(
   if (unmatched > 0) warn(warnings, 'BILINGUAL_UNMATCHED', RcExport.bilingualUnmatched({ count: unmatched }));
 }
 
-// ---- 字幕条 ----
+// ---- Caption cues ----
 
 function cuesOf(segments: TextSegment[], maxWidth: number, warnings: JobWarning[]): Cue[] {
   const cues: Cue[] = [];
@@ -454,7 +445,7 @@ function cuesOf(segments: TextSegment[], maxWidth: number, warnings: JobWarning[
   let estimatedSplits = 0;
   for (const segment of segments) {
     const secondary = segment.translation ? wrapLines(segment.translation, maxWidth) : [];
-    // 字幕文档没有词时间、双语的句子要与译文对齐：都不拆，整句一条。
+    // A caption document has no word timing, and bilingual sentences must be aligned with translations: neither is split, so each whole sentence is one cue.
     const fits = displayWidth(segment.text) <= capacity && segment.end - segment.start <= EXPORT_MAX_CUE_SECONDS;
     if (!segment.words || segment.translation !== null || fits) {
       cues.push({ start: segment.start, end: segment.end, lines: wrapLines(segment.text, maxWidth), secondary });
@@ -477,7 +468,7 @@ function cuesOf(segments: TextSegment[], maxWidth: number, warnings: JobWarning[
       const tooWide = group.length > 0 && displayWidth(candidate) > capacity;
       const tooLong = group.length > 0 && word.end - group[0]!.start > EXPORT_MAX_CUE_SECONDS;
       if (tooWide || tooLong) {
-        // 尽量在标点处断：退回到组里最后一个以标点结尾的词之后。
+        // Try to break at punctuation: fall back to after the last word in the group that ends with punctuation.
         const punct = group.findLastIndex((w, i) => i > 0 && /[,，、;；:：.。!！?？]$/u.test(w.text));
         if (punct > 0 && punct < group.length - 1) {
           const carry = group.slice(punct + 1);
@@ -497,7 +488,7 @@ function cuesOf(segments: TextSegment[], maxWidth: number, warnings: JobWarning[
   return cues;
 }
 
-/** 按格式的时间单位取整（毫秒或百分之一秒），再修：结束不早于开始，不与下一条重叠。 */
+/** Rounds times to the format's time unit (milliseconds or centiseconds), then repairs them: the end is not earlier than the start, and the cue does not overlap the next one. */
 function quantize(cues: Cue[], unitsPerSecond: number): Array<Cue & { a: number; b: number }> {
   const sorted = [...cues].sort((x, y) => x.start - y.start || x.end - y.end);
   const out = sorted.map((cue) => ({ ...cue, a: Math.round(cue.start * unitsPerSecond), b: Math.round(cue.end * unitsPerSecond) }));
@@ -521,7 +512,7 @@ function clock(units: number, unitsPerSecond: number, separator: string, hourDig
   return `${String(h).padStart(hourDigits, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}${separator}${String(frac).padStart(fracDigits, '0')}`;
 }
 
-/** SRT 的文字：空行会结束这一条，`-->` 会被当成时间行。 */
+/** SRT text: a blank line ends the cue, and `-->` would be read as a timing line. */
 function srtText(line: string): string {
   return line.replace(/-->/g, '→').trim();
 }
@@ -530,13 +521,13 @@ function vttText(line: string): string {
   return line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').trim();
 }
 
-/** 记一条任务警告：文字按当前语言，另带引用。 */
+/** Records a task warning. The text is in the current language, with a reference attached. */
 function warn(warnings: JobWarning[], code: string, detail: Localized): void {
   warnings.push({ code, detail: detail.text, detailRef: refOf(detail) });
 }
 
 function assText(line: string): string {
-  // i18n-ignore: ASS 转义用的全角替代字符
+  // i18n-ignore: full-width substitute characters used for ASS escaping
   return line.replace(/\\/g, '＼').replace(/\{/g, '｛').replace(/\}/g, '｝').trim();
 }
 
@@ -610,7 +601,7 @@ function writeJson(input: TextExportInput, segments: TextSegment[]): { content: 
       ...(s.speaker && input.speakers !== false ? { speaker: s.speaker } : {}),
       ...(s.translation ? { translation: s.translation } : {}),
       ...(s.paragraphStart ? { paragraphStart: true } : {}),
-      // 只有每个词的时间都可信时才写逐词时间（验收 AT-05）。
+      // Per-word times are written only when every word's time is trustworthy (acceptance AT-05).
       ...(allTimed ? { words: s.words!.map((w) => ({ id: w.id, text: w.text, start: round3(w.start), end: round3(w.end) })) } : {}),
     };
   });
@@ -634,7 +625,7 @@ function writeJson(input: TextExportInput, segments: TextSegment[]): { content: 
           },
         }
       : {}),
-    /** 时间是相对导出范围起点的秒。 */
+    /** Times are seconds relative to the start of the export range. */
     duration: round3(input.rangeDuration),
     wordTiming: timed > 0 && untimed === 0 ? 'word' : timed > 0 ? 'partial' : 'none',
     segments: out,
@@ -650,9 +641,8 @@ interface Paragraph {
 }
 
 /**
- * 句子分段，与编辑器的文稿面板同一套规则（`TRANSCRIPT_PARAGRAPH`）：标了段首、换了说话人、停顿够长时断，
- * 句末处这段够长了（或停顿稍长且不太短）也断。转写多半没有存段落，只按段首与说话人分时，独白会成为一整段。
- * 写章节小标题时，章节的开始处也断（`breaks`），小标题才不会落在一段的中间。
+ * Splits sentences into paragraphs using the same rules as the editor's script panel (`TRANSCRIPT_PARAGRAPH`): break where a paragraph start is marked, where the speaker changes, or where the pause is long enough. Also break at a sentence end when the paragraph is already long enough (or the pause is somewhat long and the paragraph isn't too short). Transcripts usually don't store paragraphs, so when split only by paragraph starts and speakers, a monologue becomes one whole paragraph.
+ * When writing chapter subheadings, a break is also made at the start of each chapter (`breaks`), so a subheading never falls in the middle of a paragraph.
  */
 function paragraphsOf(segments: TextSegment[], breaks: readonly number[] = []): Paragraph[] {
   const paragraphs: Array<{ start: number; speaker: string | null; parts: TextSegment[]; width: number }> = [];
@@ -690,7 +680,7 @@ function joinSentences(texts: string[]): string {
   return joinWords(texts, false);
 }
 
-/** 文首元信息的一个值：折成一行，再按 JSON 写成双引号字符串（合法的 YAML 标量）。 */
+/** One value of the front matter: folded onto one line, then written as a double-quoted JSON string (a valid YAML scalar). */
 function yamlQuote(value: string): string {
   return JSON.stringify(oneLine(value));
 }
@@ -707,7 +697,7 @@ const FRONT_MATTER_KEYS = [
   'translation',
 ] as const;
 
-/** 文首元信息：`---` 之间每个字段一行，缺的不写；之后是正文里出现的说话人与章节表（`[mm:ss] 章名`）。 */
+/** Front matter: one line per field between `---` lines, missing fields omitted. It is followed by the speakers that appear in the body and the chapter table (`[mm:ss] chapter name`). */
 function frontMatterBlock(meta: FrontMatter, speakers: string[], chapters: TextChapter[]): string {
   const lines = ['---'];
   for (const key of FRONT_MATTER_KEYS) {
@@ -720,13 +710,13 @@ function frontMatterBlock(meta: FrontMatter, speakers: string[], chapters: TextC
   return lines.join('\n');
 }
 
-/** 一段文稿：这一段开始了新的一章时带上那一章（小标题写在段前）。 */
+/** A paragraph of the script. If this paragraph starts a new chapter, that chapter is included (its subheading is written before the paragraph). */
 interface TranscriptBlock {
   chapter: TextChapter | null;
   paragraph: Paragraph;
 }
 
-/** 段落配上章节：每章的小标题放在开始于它（及之后）的第一段前面；没有段落的章不写。 */
+/** Assigns chapters to paragraphs: each chapter's subheading goes before the first paragraph that starts at (or after) its start. Chapters with no paragraphs are not written. */
 function transcriptBlocks(input: TextExportInput, segments: TextSegment[]): TranscriptBlock[] {
   const chapters = input.chapters ?? [];
   const paragraphs = paragraphsOf(
@@ -742,7 +732,7 @@ function transcriptBlocks(input: TextExportInput, segments: TextSegment[]): Tran
   });
 }
 
-/** 文首列出的说话人：开着说话人时，正文里出现过的，按出现的先后。 */
+/** The speakers listed at the top: when speakers are on, those that appear in the body, in order of first appearance. */
 function speakersOf(input: TextExportInput, blocks: TranscriptBlock[]): string[] {
   if (input.speakers === false) return [];
   return [...new Set(blocks.map((b) => b.paragraph.speaker).filter((s): s is string => s !== null))];
@@ -784,7 +774,7 @@ function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** 写出一份字幕或文稿。 */
+/** Writes out one caption or script file. */
 export function renderText(input: TextExportInput): TextExportOutput {
   const warnings: JobWarning[] = [];
   const maxWidth = input.maxCharsPerLine ?? EXPORT_MAX_CHARS_PER_LINE;
@@ -823,7 +813,7 @@ export function renderText(input: TextExportInput): TextExportOutput {
   };
 }
 
-// ---- 校验：按格式解析回来 ----
+// ---- Validation: parse back by format ----
 
 export interface TextCheck {
   ok: boolean;
@@ -840,11 +830,11 @@ function seconds(m: RegExpExecArray, offset: number, fraction: number): number {
   return Number(m[offset]) * 3600 + Number(m[offset + 1]) * 60 + Number(m[offset + 2]) + Number(m[offset + 3]) / fraction;
 }
 
-/** 解析写出的文件：条数、时间单调、结束晚于开始、不超出范围。 */
+/** Parses the written file and checks the entry count, monotonic times, end later than start, and nothing beyond the range. */
 export function checkText(
   format: TextFormat,
   content: string,
-  expected: { entries: number; durationSec: number; /** 纯文本里章节小标题的块数（`TextExportOutput.headings`）。 */ headings?: number },
+  expected: { entries: number; durationSec: number; /** The number of blocks of chapter subheadings in plain text (`TextExportOutput.headings`). */ headings?: number },
 ): TextCheck {
   const problems: string[] = [];
   const times: Array<[number, number]> = [];
@@ -894,8 +884,8 @@ export function checkText(
       problems.push(RcExport.invalidJson().text);
     }
   } else {
-    // 段落之外的块：文首元信息、标题、章节小标题与译文（Markdown，正文里的 `#`、`>` 都转义过，按开头认得出）；
-    // 纯文本的章节小标题按写出的块数扣掉——正文本身可以长得和小标题一样（「— 题外话 —」）。
+    // Blocks other than paragraphs: front matter, headings, chapter subheadings, and translations (Markdown: `#` and `>` in the body are escaped, so they are recognized by their start).
+    // Plain-text chapter subheadings are subtracted by the number of blocks written, since body text can look exactly like a subheading (“— aside —”).
     const blocks = content.split(/\n\n+/).filter((b) => b.trim());
     entries =
       format === 'md'

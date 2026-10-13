@@ -1,12 +1,12 @@
 import type { Easing, FrameSpan, Sequence, Transition } from '@cuccut/protocol';
 
 /**
- * 转场的窗口与缓动（视频格式规范 §3.9），与 Rust `video-model/src/transition.rs` 相同：
+ * Transition window and easing (video format spec §3.9), identical to Rust `video-model/src/transition.rs`:
  *
- * - 两侧转场的窗口按 `placement` 摆在剪切点上：居中从 `cut − ⌊D/2⌋` 开始，`start-at-cut` 从剪切点开始，
- *   `end-at-cut` 在剪切点结束；
- * - 入场（只有右侧）从实例开头开始，出场（只有左侧）在实例结尾结束；
- * - 窗口是 `[start, start + D)`（帧）。
+ * - The window of a two-sided transition is placed on the cut point by `placement`: centred starts at `cut − ⌊D/2⌋`, `start-at-cut` starts at the cut point,
+ *   and `end-at-cut` ends at the cut point;
+ * - An in (right side only) starts at the start of the instance, and an out (left side only) ends at the end of the instance;
+ * - The window is `[start, start + D)` (frames).
  */
 export function transitionWindow(transition: Transition, left: FrameSpan | undefined, right: FrameSpan | undefined): [number, number] | null {
   const duration = transition.durationFrames;
@@ -20,7 +20,7 @@ export function transitionWindow(transition: Transition, left: FrameSpan | undef
   return [start, start + duration];
 }
 
-/** 缓动：进度 `p`（0–1）到画法用的值。 */
+/** Easing: maps progress `p` (0–1) to the value used for drawing. */
 export function applyEasing(easing: Easing, p: number): number {
   switch (easing) {
     case 'linear':
@@ -35,8 +35,8 @@ export function applyEasing(easing: Easing, p: number): number {
 }
 
 /**
- * 两侧转场让实例在自己的区间之外也要画（左侧画到窗口结束、右侧从窗口开始画）：每个实例因此多占的帧区间。
- * 预览按它给同一素材多备元素（拆开的两段之间叠化时，同一个素材同时要两个源时刻）。
+ * A two-sided transition makes an instance draw outside its own range (the left side draws up to the window end, the right side draws from the window start): the extra frame range each instance therefore occupies.
+ * The preview uses this to prepare extra elements for the same asset (when two split parts cross-fade, the same asset needs two source times at once).
  */
 export function transitionReach(sequence: Sequence): Map<string, [number, number]> {
   const spans = new Map(sequence.items.flatMap((item) => ('span' in item && item.span ? [[item.id, item.span] as const] : [])));

@@ -130,97 +130,93 @@ export interface StartRuntimeOptions {
   host?: string;
   port?: number;
   allowedOrigins?: readonly string[];
-  /** 同时把日志打到 stderr。 */
+  /** Also logs to stderr. */
   echoLogs?: boolean;
-  /** 测试用：替换内置的 Driver。 */
+  /** For tests: replaces the built-in Driver. */
   drivers?: (log: Logger) => AgentDriver[];
-  /** 测试用：替换用户添加的 ACP 智能体（`agents.addProvider`）的 Driver 工厂。默认 `createCustomAcpDriver`。 */
+  /** For tests: replaces the Driver factory for user-added ACP agents (`agents.addProvider`). Default `createCustomAcpDriver`. */
   customDriver?: (provider: CustomAgentProvider, log: Logger) => AgentDriver;
-  /** 监视来源目录的变化（默认开）。测试里关掉，改用 `space.rescan()`。 */
+  /** Watches the source directory for changes (on by default). Tests turn it off and use `space.rescan()` instead. */
   watchSpace?: boolean;
-  /** 视频引擎可执行文件。默认取 `CUCCUT_ENGINE_HOST` 或仓库里构建出的 `engine-host`。 */
+  /** The video engine executable. Defaults to `CUCCUT_ENGINE_HOST`, or the `engine-host` built in the repo. */
   engineHost?: string | null;
-  /** 连接断开后多久关闭它打开的视频（默认 15 秒）。 */
+  /** How long after a connection drops before the videos it opened are closed (default 15 seconds). */
   videoGraceMs?: number;
-  /** Model Worker 的命令。默认取 `CUCCUT_MODEL_WORKER` 或仓库里构建出的 `model-worker`；null 表示本地推理不可用。 */
+  /** The Model Worker command. Defaults to `CUCCUT_MODEL_WORKER`, or the `model-worker` built in the repo; null means local inference is unavailable. */
   modelWorker?: ModelWorkerCommand | null;
-  /** 模型空闲多久后卸载（默认 10 分钟）。 */
+  /** How long a model stays idle before it is unloaded (default 10 minutes). */
   jobIdleMs?: number;
-  /** 资源调度用的机器容量（测试注入假的容量）；不给时按本机探测，偏好设置 `resources.capacity` 可以覆盖。 */
+  /** Machine capacity used for resource scheduling (a fake capacity is injected in tests). When not given, it is probed on this machine; the preference `resources.capacity` can override it. */
   capacity?: CapacitySource;
-  /** 局域网能力共享的节点端（架构设计 §6.7）。测试用回环地址、假的 mDNS 与短期限。 */
+  /** The node side of LAN capability sharing (architecture design §6.7). Tests use loopback, a fake mDNS, and short deadlines. */
   nodes?: NodeShareOptions;
-  /** 局域网能力共享的发起端：发现与远端任务的期限。测试用假的发现与短期限。 */
+  /** The initiator side of LAN capability sharing: discovery and the deadline for remote jobs. Tests use a fake discovery and short deadlines. */
   initiator?: NodeInitiatorRuntimeOptions;
-  /** 在线 Provider 的调节项。测试把内置 Provider 的基址指向本机的假服务、缩短退避；不会读取任何环境里的密钥。 */
+  /** Tuning for online providers. Tests point the built-in providers' base URLs at local fake services and shorten the backoff. It never reads any key from the environment. */
   online?: Omit<OnlineSourceOptions, 'store' | 'ffmpeg'>;
-  /** 智能体 Provider（§6.9）的调节项。测试缩短探测缓存与一次生成的期限。 */
+  /** Tuning for agent providers (§6.9). Tests shorten the probe cache and the deadline for one generation. */
   agentProviders?: Omit<AgentSourceOptions, 'store' | 'drivers'>;
   /**
-   * 凭据存储（§6.8）：由构建类型决定，不是用户设置。开发版本 `file`（默认），正式版本 `keychain`；测试可以直接给一个实例，
-   * 或给钥匙串后端一个假的助手（`credentialHelper`）。
+   * Credential store (§6.8): decided by the build type, not by a user setting. Development builds use `file` (the default), release builds use `keychain`. Tests can pass an instance directly, or give the keychain backend a fake helper (`credentialHelper`).
    */
   credentials?: CredentialStoreOptions['kind'];
-  /** 钥匙串后端的助手命令。默认取 `CUCCUT_CREDENTIAL_HELPER`、打包的资源目录或仓库里构建出的 `credential-helper`。 */
+  /** Helper command for the keychain backend. Defaults to `CUCCUT_CREDENTIAL_HELPER`, the packaged resources directory, or the `credential-helper` built in the repo. */
   credentialHelper?: CredentialStoreOptions['helper'];
-  /** 对外服务（§4.8）的调节项。测试缩短服务审批的时限。 */
+  /** Tuning for external services (§4.8). Tests shorten the approval deadline for services. */
   services?: ServicesOptions;
-  /** 模型安装（§6.3）的调节项。测试把下载来源指向本机的假服务，注入可用空间、内置清单与自检样本；不访问真实网络。 */
+  /** Tuning for model installs (§6.3). Tests point the download source at a local fake service, inject free space, a built-in manifest, and a self-test sample. No real network access. */
   modelInstall?: ModelJobsOptions['modelInstall'];
-  /** 测试用：卡住或打断模型目录的移动、假装跨盘。 */
+  /** For tests: stalls or interrupts a model directory move, or pretends the move crosses disks. */
   modelsDirTesting?: ModelJobsOptions['modelsDirTesting'];
   /**
-   * 受管外部工具（§12.9）与从链接导入（§7.9）的调节项。测试给一个只含假工具的搜索路径（不会碰到系统里真实的 yt-dlp）、
-   * 不含真实环境变量的覆盖、带已知摘要的假清单与本机的下载来源，以及不访问真实 DNS 的主机名解析。
+   * Tuning for managed external tools (§12.9) and for importing from links (§7.9). Tests give a search path that holds only fake tools (so the system's real yt-dlp is never touched), overrides not drawn from real environment variables, a fake manifest with known digests and a local download source, and hostname resolution that does not hit real DNS.
    */
   externalTools?: Pick<ExternalToolServiceOptions, 'env' | 'overrides' | 'manifests' | 'platform' | 'download'> & { lookup?: HostLookup };
-  /** 任务的故障注入（测试用，架构设计 §7.3）：在应用闭环的几个时刻模拟崩溃。 */
+  /** Fault injection for tasks (for tests, architecture design §7.3): simulates crashes at several points in the task's closed loop. */
   jobFaults?: ModelJobsOptions['faults'];
-  /** Agent 的安装动作（§12.9）。测试换掉打开系统终端的方式与运行命令的环境。 */
+  /** The agent's install action (§12.9). Tests replace how the system terminal is opened and the environment in which commands run. */
   agentSetup?: Pick<AgentSetupOptions, 'env' | 'openTerminal' | 'flushMs'>;
   /**
-   * 内置创作模板的目录（模板包规范 §6）。默认取 `CUCCUT_TEMPLATES_DIR`、打包的资源目录或仓库根的 `templates/`；null 表示没有内置模板。
-   * 用户模板总在 `<home>/templates`。
+   * Directory of built-in creation templates (template package spec §6). Defaults to `CUCCUT_TEMPLATES_DIR`, the packaged resources directory, or `templates/` at the repo root. null means there are no built-in templates.
+   * User templates always live in `<home>/templates`.
    */
   templatesDir?: string | null;
   /**
-   * 内置 Agent skill 的目录（架构设计 §3.8）。默认取 `CUCCUT_SKILLS_DIR`、打包的资源目录或仓库根的 `skills/cuccut/built-in-skills/`；
-   * null 表示没有。
-   * 用户添加与导入的 skill 总在 `<home>/skills`。
+   * Directory of built-in agent skills (architecture design §3.8). Defaults to `CUCCUT_SKILLS_DIR`, the packaged resources directory, or `skills/cuccut/built-in-skills/` at the repo root.
+   * null means there are none.
+   * User-added and imported skills always live in `<home>/skills`.
    */
   skillsDir?: string | null;
   /**
-   * 说明书的根目录（里面是 `cuccut/`，Agent 面设计 §8.6）：会话内智能体的指导与说明书页由它按工具桥面渲染，`cuccut skill install`
-   * 按 CLI 面渲染。默认取 `CUCCUT_AGENT_SKILLS_DIR`、打包的资源目录或仓库根的 `skills/`；找不到或渲染不了时 Runtime 启动失败。
+   * Root directory of the manuals (it contains `cuccut/`; Agent surface design §8.6). The in-session agent's guidance and manual pages are rendered from it for the tool-bridge surface, and `cuccut skill install` renders them for the CLI surface. Defaults to `CUCCUT_AGENT_SKILLS_DIR`, the packaged resources directory, or `skills/` at the repo root. If it is not found or cannot be rendered, Runtime startup fails.
    */
   agentSkillsDir?: string | null;
   /**
-   * 幻灯片编辑器的构建目录（docs/design/slides §3）。默认取 `CUCCUT_SLIDES_EDITOR_DIST`、打包的资源目录或仓库的
-   * `apps/slides-editor/dist`；null 表示没有构建（`slides.open` 照常给地址，页面回 503，结果里 `editorAvailable` 为 false）。
+   * Build directory of the slide editor (docs/design/slides §3). Defaults to `CUCCUT_SLIDES_EDITOR_DIST`, the packaged resources directory, or the repo's `apps/slides-editor/dist`.
+   * null means it has not been built: `slides.open` still returns the address, the page answers 503, and `editorAvailable` is false in the result.
    */
   slidesEditorDist?: string | null;
   /**
-   * 设计稿编辑器的构建目录（docs/design/canvas §3）。默认取 `CUCCUT_DESIGN_EDITOR_DIST`、打包的资源目录或仓库的
-   * `apps/design-editor/dist`；null 表示没有构建（`design.open` 照常给地址，页面回 503，结果里 `editorAvailable` 为 false）。
+   * Build directory of the design canvas editor (docs/design/canvas §3). Defaults to `CUCCUT_DESIGN_EDITOR_DIST`, the packaged resources directory, or the repo's `apps/design-editor/dist`.
+   * null means it has not been built: `design.open` still returns the address, the page answers 503, and `editorAvailable` is false in the result.
    */
   designEditorDist?: string | null;
   /**
-   * 设计系统编辑器的构建目录（docs/design/canvas §10.2）。默认取 `CUCCUT_DESIGN_SYSTEM_EDITOR_DIST`、打包的资源目录或仓库的
-   * `apps/design-system-editor/dist`；null 表示没有构建（`designSystem.open` 照常给地址，页面回 503，结果里 `editorAvailable` 为 false）。
+   * Build directory of the design system editor (docs/design/canvas §10.2). Defaults to `CUCCUT_DESIGN_SYSTEM_EDITOR_DIST`, the packaged resources directory, or the repo's `apps/design-system-editor/dist`.
+   * null means it has not been built: `designSystem.open` still returns the address, the page answers 503, and `editorAvailable` is false in the result.
    */
   designSystemEditorDist?: string | null;
-  /** 从 GitHub 导入 skill（§12.9）。测试注入假的 fetch，不访问真实网络。 */
+  /** Importing skills from GitHub (§12.9). Tests inject a fake fetch and make no real network access. */
   skillsGithub?: GithubFetchOptions;
-  /** 按需下载的字体（§9.1）。测试注入只含几个族的字体目录，并把下载指向本机的假服务；不访问真实网络。 */
+  /** Fonts downloaded on demand (§9.1). Tests inject a font directory holding only a few families, and point downloads at a local fake service. No real network access. */
   fonts?: { catalogue?: FontCatalogue; download?: FontDownloadOptions };
-  /** 谁拉起了这个 Runtime（§2.2）：写进 `RuntimeInfo` 与发现文件，`cuccut runtime stop` 据此只停 CLI 拉起的。 */
+  /** Who launched this Runtime (§2.2). It is written into `RuntimeInfo` and the discovery file, and `cuccut runtime stop` uses it to stop only the ones the CLI launched. */
   launchedBy?: RuntimeLauncher | null;
   /**
-   * 空闲退出（§2.2，CLI 拉起的 Runtime）：没有连接、没有任务、没有开着的对外服务满设置 `runtime.idleExitMinutes` 时调用
-   * `onIdle`（入口在那里停下 Runtime）。不给时不检查。
+   * Idle exit (§2.2, for a Runtime launched by the CLI): when there are no connections, no tasks, and no open external services for the full `runtime.idleExitMinutes` setting, calls `onIdle` (the entry point stops the Runtime there). When not given, no checks are made.
    */
   idleExit?: Omit<IdleExitOptions, 'minutes'> | null;
-  /** `runtime.stop` 的去处（§2.2）：入口在那里停下 Runtime。不给时 `runtime.stop` 以 `unsupported` 拒绝。 */
+  /** Where `runtime.stop` goes (§2.2): the entry point stops the Runtime there. When not given, `runtime.stop` is rejected with `unsupported`. */
   requestStop?: (() => void) | null;
 }
 
@@ -232,24 +228,24 @@ export interface RunningRuntime {
   videos: VideoService;
   models: ModelJobs;
   exports: ExportService;
-  /** 用户库（架构设计 §5.9）。 */
+  /** The user library (architecture design §5.9). */
   library: LibraryService;
   nodes: NodeService;
-  /** 发起端：已配对的节点与远端节点 Provider。 */
+  /** The initiator: paired nodes and the remote node provider. */
   initiator: NodeInitiator;
-  /** 偏好设置（架构设计 §5.10）。 */
+  /** Preferences (architecture design §5.10). */
   settings: RuntimeSettings;
-  /** 对外服务（架构设计 §4.8）。 */
+  /** External services (architecture design §4.8). */
   services: RuntimeServices;
-  /** 受管外部工具（架构设计 §12.9）。 */
+  /** Managed external tools (architecture design §12.9). */
   externalTools: ExternalToolService;
-  /** 按需下载的字体（架构设计 §9.1）。 */
+  /** Fonts downloaded on demand (architecture design §9.1). */
   fonts: FontService;
   log: Logger;
   close(): Promise<void>;
 }
 
-/** 同一个 Runtime Home 已经有活着的实例。调用方应该连接它，而不是再起一个。 */
+/** A live instance already exists for the same Runtime Home. The caller should connect to it instead of starting another. */
 export class RuntimeAlreadyRunningError extends Error {
   readonly discovery: RuntimeDiscovery | null;
   readonly pid: number;
@@ -263,11 +259,11 @@ export class RuntimeAlreadyRunningError extends Error {
 }
 
 /**
- * 停止的顺序。它不是启动顺序的简单反转：对外服务、节点服务与任务最先停（外部请求断开、远端任务不再进队列，在途任务交还视频的租约），网关最后停。
- * 启动时每起好一个服务就把它的停止步骤登记到对应的位置；正常停止（`close()`）与启动中途失败共用这一份顺序，
- * 只跑已经登记的步骤。实例锁与日志在所有步骤之后。
+ * The stop order. It is not a plain reverse of the start order: external services, the node service and tasks stop first (external requests disconnect, remote jobs stop entering the queue, and in-flight jobs hand back their video leases). The gateway stops last.
+ * At startup, each service registers its stop step at the matching position as soon as it is up. A normal stop (`close()`) and a failure midway through startup share this one order and run only the steps that were registered.
+ * The instance lock and the log come after all the steps.
  */
-/** 回收站保留期的清理间隔。 */
+/** Interval for the trash retention cleanup. */
 const TRASH_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const STOP_ORDER = [
@@ -301,12 +297,12 @@ class StopSequence {
     this.#log = log;
   }
 
-  /** 登记一步；`failure` 是这一步出错时记的日志，null 表示静默。 */
+  /** Registers one step. `failure` is the log written if this step fails; null means silent. */
   add(step: StopStep, stop: () => unknown, failure: string | null): void {
     this.#steps.set(step, { stop, failure });
   }
 
-  /** 按停止顺序跑已登记的步骤，每步只跑一次。一步出错不影响后面的步骤，也不抛出。 */
+  /** Runs the registered steps in stop order, each step only once. A failing step does not affect the later steps, and nothing is thrown. */
   async run(): Promise<void> {
     for (const step of STOP_ORDER) {
       const entry = this.#steps.get(step);
@@ -322,8 +318,8 @@ class StopSequence {
 }
 
 /**
- * 组装并启动 Runtime（架构设计 §2）：实例锁 → 存储 → Harness → Space 目录 → 网关 → 发现文件。
- * 停止顺序见 `STOP_ORDER`；启动中途失败时，已经起来的服务按同样的顺序停掉，再释放实例锁、关日志，抛出原来的错误。
+ * Assembles and starts the Runtime (architecture design §2): instance lock → storage → Harness → Space directory → gateway → discovery file.
+ * For the stop order, see `STOP_ORDER`. If startup fails midway, the services already up are stopped in the same order, then the instance lock is released and the log is closed, and the original error is thrown.
  */
 export async function startRuntime(options: StartRuntimeOptions = {}): Promise<RunningRuntime> {
   const home = options.home ?? resolveRuntimeHome();
@@ -347,7 +343,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
 
   const log = createFileLogger({ file: path.join(home.logsDir, 'runtime.log'), echo: options.echoLogs });
   const stops = new StopSequence(log);
-  // Harness 比任务账本晚打开：重启后补做的应用要等它就绪才知道任务的保护范围；启动失败时不让它们一直等。
+  // The Harness opens after the task ledger. Apps resumed after a restart need it to know the task's protection scope, so they wait for it to be ready; if startup fails, they are not left waiting forever.
   let harnessOpened!: (harness: Harness) => void;
   let harnessFailed!: (error: unknown) => void;
   const harnessReady = new Promise<Harness>((resolve, reject) => {
@@ -360,14 +356,14 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     stops.add('legacy-upgrade', () => legacyUpgrade.stop(), 'Stopping legacy upgrade failed');
     await legacyUpgrade.prepare().catch(() => log.warn('Legacy upgrade preparation deferred'));
     const drivers = new DriverRegistry();
-    // 内置 Driver 按 `BUILTIN_DRIVER_IDS` 的顺序注册（注册顺序就是 `agents.list` 的顺序）。
+    // Built-in drivers are registered in the order of `BUILTIN_DRIVER_IDS` (the registration order is the order of `agents.list`).
     const builtin = () =>
       [new ClaudeDriver(log), new CodexDriver(log), new PiDriver(log), new OpenCodeDriver(log), ...acpDrivers(log)].sort(
         (a, b) => (BUILTIN_DRIVER_IDS as readonly string[]).indexOf(a.id) - (BUILTIN_DRIVER_IDS as readonly string[]).indexOf(b.id),
       );
     for (const driver of options.drivers?.(log) ?? builtin()) drivers.register(driver);
-    // 用户添加的 ACP 智能体（§3.11）：排在内置的后面，按添加顺序；在 Harness 读探测缓存之前注册，缓存里的条目才认得它们。
-    // 运行中的添加与移除由 Harness 经同一个存储与工厂处理。
+    // User-added ACP agents (§3.11) come after the built-ins, in the order they were added. They are registered before the Harness reads the probe cache, so the cache entries recognize them.
+    // Additions and removals while running are handled by the Harness through the same store and factory.
     const customProviders = new AgentProviderStore(home.agentProvidersFile, { log: log.child('agent-providers') });
     const createCustomDriver = (provider: CustomAgentProvider) => (options.customDriver ?? createCustomAcpDriver)(provider, log);
     for (const provider of await customProviders.load()) {
@@ -375,7 +371,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       drivers.register(createCustomDriver(provider), { custom: customAgentProviderView(provider) });
     }
 
-    // 引擎要 ffprobe、媒体分析要 ffmpeg：桌面应用从访达启动时 PATH 里没有它们，用登录 shell 的 PATH。
+    // The engine needs ffprobe, and media analysis needs ffmpeg. When the desktop app is launched from Finder, PATH does not include them, so the login shell's PATH is used.
     const toolEnv = async () => ({ ...process.env, PATH: await resolveLoginShellPath() });
     const videos = new VideoService({
       log,
@@ -386,8 +382,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     });
     stops.add('videos', () => videos.shutdown(), 'Stopping the video engine failed');
     const media = new MediaRegistry({ log, originAllowed: (origin) => originAllowed(origin, options.allowedOrigins) });
-    // 幻灯片、设计稿与设计系统编辑器（docs/design/slides §6、docs/design/canvas §6、§10.4）：网关与 Web 服务共用，同一个
-    // 目录只有一个存储与一个目录监听。
+    // Slide, design canvas and design system editors (docs/design/slides §6, docs/design/canvas §6, §10.4): shared by the gateway and the web service. One directory has one store and one directory watch.
     const slides = new SlidesService({
       log,
       editorDist: options.slidesEditorDist === undefined ? undefined : () => options.slidesEditorDist ?? null,
@@ -395,7 +390,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       designSystemEditorDist: options.designSystemEditorDist === undefined ? undefined : () => options.designSystemEditorDist ?? null,
     });
     stops.add('slides', () => slides.close(), null);
-    // 生成的音频与图片、参考录音都用 ffprobe 解码校验（与引擎同一个 ffprobe）；WebM 播放也用它探测编码。
+    // Generated audio and images, and reference recordings, are decoded and checked with ffprobe (the same ffprobe as the engine). WebM playback also uses it to probe the codec.
     const ffprobe = async () => ({ command: process.env.CUCCUT_FFPROBE || 'ffprobe', env: await toolEnv() });
     const analysis = new MediaAnalysis({
       cacheDir: path.join(home.cacheDir, 'media'),
@@ -404,18 +399,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       ffprobe,
     });
     stops.add('analysis', () => analysis.close(), 'Stopping media analysis failed');
-    // 取帧时标人脸（`videos_frames` 的 `faces`）：每次调用起一个 `face-detect` 进程，缺了就不标。
+    // Faces are marked when frames are taken (`faces` in `videos_frames`). Each call spawns a `face-detect` process; if it is missing, no marks are added.
     const faces = createFaceDetector({ log });
     const modelWorker = options.modelWorker !== undefined ? options.modelWorker : resolveModelWorkerCommand();
-    // 在线 Provider 的密钥与节点令牌共用一个凭据存储；钥匙串后端在这里迁走明文文件里遗留的密钥。
+    // Online provider keys and node tokens share one credential store. The keychain backend migrates keys left over in the plaintext file here.
     const credentials = await openCredentialStore(home, log, {
       ...(options.credentials !== undefined ? { kind: options.credentials } : {}),
       ...(options.credentialHelper !== undefined ? { helper: options.credentialHelper } : {}),
     });
-    // 发起端在 JobManager 之前：远端节点 Provider 是 JobManager 的 Provider 之一。
+    // The initiator comes before the JobManager, because the remote node provider is one of the JobManager's providers.
     const initiator = await openNodeInitiator(home, credentials, log, options.initiator);
     stops.add('initiator', () => initiator.close(), 'Stopping the node initiator failed');
-    // 用户库在 JobManager 之前：转写的术语表与合成的库音色由任务冻结、固定。产物来源在任务库建好之后才有。
+    // The user library comes before the JobManager: the transcription glossary and the synthesized library voices are frozen and fixed by the task. Artifact sources only exist after the job library is built.
     let artifacts: { locate(artifactId: string): Promise<string | null> } | null = null;
     const library = await LibraryService.open({
       dir: home.libraryDir,
@@ -424,21 +419,21 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       artifacts: { locate: (artifactId) => artifacts?.locate(artifactId) ?? Promise.resolve(null) },
       ffprobe,
     });
-    // 新视频采用用户库里默认启用的条目（§5.9）。
+    // New videos adopt the entries enabled by default in the user library (§5.9).
     videos.onCreated((videoId, principal) => library.adoptDefaults(videoId, principal));
-    // 偏好设置在模型任务之前读入：模型目录（`models.dir`，§6.3）决定模型目录的根。
+    // Preferences are read in before the model tasks: the model directory (`models.dir`, §6.3) determines the root of the model directory.
     const settings = await openSettings(home, log);
     let settingsStore: RuntimeSettings['store'] | null = settings.store;
-    // 从链接导入（§7.9）在 JobManager 建好时登记；外部工具服务与 Harness 在后面才有，流程用到时再取。
+    // Import from links (§7.9) is registered when the JobManager is built. The external tool service and the Harness come later, so flows fetch them when they need them.
     let externalToolsRef: ExternalToolService | null = null;
-    // AI 工具「直接调模型」的流程用到的 skill 目录、附件与导出服务：它们在后面几步才建好，调用时再取。
+    // The skill directory, attachments and export service used by the AI tool's “call the model directly” flow are built in later steps, so they are fetched at call time.
     let aiToolRefs: { skills: SkillCatalog; attachments: AttachmentStore; exports: ExportService } | null = null;
     const aiToolRef = () => {
       if (!aiToolRefs) throw new RpcError('busy', RcAiTools.notReady());
       return aiToolRefs;
     };
     let harnessRef: Harness | null = null;
-    // 流程的 `{ entryId }` 目标按 Space 目录解析（§7.9）：Space 在后面才建，解析时再取。
+    // A flow's `{ entryId }` target is resolved against the Space directory (§7.9). Space is built later, so it is fetched at resolution time.
     let spaceRef: SpaceCatalog | null = null;
     const linkSources = new FileLinkSources(path.join(home.root, 'store', 'link-sources.json'));
     const toolOverrides = options.externalTools?.overrides ?? process.env;
@@ -453,7 +448,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       if (!project) throw new RpcError('not-found', RcRuntime.projectNotFound());
       return project.path;
     };
-    // 会话的来源（与智能体的 `videos_create` 同样的放置，AgentScope.source）：属于项目时是项目目录与项目范围，否则是工作目录。
+    // The session's source (placed the same way as the agent's `videos_create`, AgentScope.source): when the session is in a project, the project directory and project scope; otherwise the working directory.
     const conversationSource = (conversationId: Id): { root: string; scope: { projectId: Id } | { conversationId: Id } } => {
       const { conversation } = requireHarness().getConversation(conversationId);
       if (conversation.projectId) {
@@ -471,28 +466,28 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       videos,
       log,
       worker: () => modelWorker,
-      // 字幕与翻译核心的 Speech Worker 与引擎宿主同一次 cargo 构建，放在它旁边。
+      // The subtitle and translation core's Speech Worker comes from the same cargo build as the engine host, and sits next to it.
       speechWorker: () => resolveSpeechWorkerCommand(options.engineHost !== undefined ? options.engineHost : resolveEngineHostCommand()),
       env: toolEnv,
-      // 音乐引擎（§6.5）是音乐模型包的组件：`CUCCUT_AUDIOCPP_CLI` 与工具下载镜像按外部工具的覆盖读（测试不读真实环境）。
+      // The music engine (§6.5) is a component of the music model pack. `CUCCUT_AUDIOCPP_CLI` and the tool download mirror are read as external-tool overrides (tests do not read the real environment).
       toolOverrides,
-      // 偏好设置在后面才读入：做安装计划时再取。
+      // Preferences are read in later: fetched when the install plan is built.
       toolsEndpoint: () => toolsDownloadEndpoint(toolOverrides, settingsStore?.get('tools.downloadEndpoint') ?? null),
       idleMs: options.jobIdleMs,
       ...(options.capacity ? { capacity: options.capacity } : {}),
-      // 偏好设置在后面才读入：准入时再取。
+      // Preferences are read in later: fetched at admission.
       resourceCapacity: () => settingsStore?.get('resources.capacity') ?? null,
       remote: new NodeProviderSource(initiator),
-      // 在线 Provider 用 ffmpeg 准备音频（与媒体分析同一个 ffmpeg）。
+      // Online providers prepare audio with ffmpeg (the same ffmpeg as media analysis).
       ffmpeg: async () => ({ command: process.env.CUCCUT_FFMPEG || 'ffmpeg', env: await toolEnv() }),
       ffprobe,
       library: library.store,
       enabledGlossaries: (videoId, step) => library.enabledGlossaries(videoId, step),
       ...(options.online ? { online: options.online } : {}),
-      // 智能体作为 Provider（§6.9）：与会话共用 Driver 注册表，但每次生成开一个专用的原生会话。
+      // Agents as providers (§6.9) share the Driver registry with sessions, but each generation opens its own dedicated native session.
       agents: drivers,
       ...(options.agentProviders ? { agentProviders: options.agentProviders } : {}),
-      // 偏好设置在后面才读入：安装时再取下载来源与严格离线。
+      // Preferences are read in later: fetched at install time for the download source and strict offline mode.
       installSettings: () => ({
         downloadEndpoint: settingsStore?.get('models.downloadEndpoint') ?? null,
         offlineStrict: settingsStore?.get('offline.strict') ?? false,
@@ -505,7 +500,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         },
       },
       ...(options.modelsDirTesting ? { modelsDirTesting: options.modelsDirTesting } : {}),
-      // 保存位置（§7.9）：偏好设置在后面才读入，提交时再取。
+      // Save location (§7.9): preferences are read in later, fetched at submit time.
       saveDirectory: () => resolveSaveDirectory({ settings: settingsStore?.get('downloads.directory') ?? null }),
       pipelineTargets: {
         entry: (entryId) => {
@@ -513,10 +508,10 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
           return entryPlace(spaceRef, entryId);
         },
         projectRoot,
-        // 流程按会话新建视频（`create: { conversationId }`）：建在会话的来源里，不属于项目时是它的工作目录（§3.10）。
+        // A flow creates a video in a session (`create: { conversationId }`). It is created in the session's source: when the session is not in a project, that is its working directory (§3.10).
         conversationSource,
       },
-      // 任务下的 Job 与流程应用结果时带上任务合同的保护范围（§3.2）。任务已经不在了（会话删掉了）时没有保护。
+      // Jobs under a task, and flow results, carry the task contract's protection scope (§3.2). If the task is already gone (the session was deleted), there is no protection.
       taskProtections: async (taskId, videoId) => {
         const harness = await harnessReady;
         try {
@@ -543,7 +538,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
             outputsDir: path.join(home.root, 'outputs'),
             sources: linkSources,
             ffprobe,
-            // `CUCCUT_FFMPEG` 是绝对路径时告诉 yt-dlp 用它合并音视频；否则 yt-dlp 自己在 PATH 里找。
+            // When `CUCCUT_FFMPEG` is an absolute path, yt-dlp is told to use it to merge audio and video. Otherwise yt-dlp looks for it on PATH itself.
             ffmpegLocation: async () => {
               const configured = toolOverrides.CUCCUT_FFMPEG;
               return configured && path.isAbsolute(configured) ? configured : null;
@@ -574,11 +569,11 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         log: log.child('voice-clone'),
       }),
     );
-    // 授权账本在任务停下（结算完）之后写盘。
+    // The authorization ledger is written to disk after the task stops (once it is settled).
     stops.add('grants', () => models.grants.flush(), 'Writing the grant ledger failed');
-    // 用量账本与账号的最近使用时间同样在任务停下之后写完（§6.10）。
+    // The usage ledger and the account's last-used time are also fully written after the task stops (§6.10).
     stops.add('usage', () => models.flushUsage(), 'Writing the usage ledger failed');
-    // 受管外部工具（§12.9）：探测、同意与安装；安装是 JobManager 里的 `toolInstall` 任务。
+    // Managed external tools (§12.9): probing, consent and install. The install is a `toolInstall` job in the JobManager.
     const externalTools = new ExternalToolService({
       toolsDir: path.join(home.root, 'tools'),
       storeFile: path.join(home.root, 'store', 'external-tools.json'),
@@ -592,11 +587,11 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       ...options.externalTools,
     });
     externalToolsRef = externalTools;
-    // 原始链接只留给还能重试的从链接导入流程。
+    // The raw link is kept only for the import-from-link flow, which can still be retried.
     await pruneLinkSources(models.jobs, linkSources).catch((error) => log.warn('Pruning link sources failed', { error: String(error) }));
-    // 停任务会取消在途任务、关掉 Worker 进程。
+    // Stopping a task cancels in-flight jobs and shuts down the Worker process.
     stops.add('jobs', () => models.jobs.shutdown(), 'Stopping background tasks failed');
-    // 按需下载的字体（§9.1）：缓存在 Runtime Home 的 `fonts/` 下；下载是 JobManager 里的 `fontDownload` 任务。
+    // Fonts downloaded on demand (§9.1) are cached under `fonts/` in the Runtime Home. The download is a `fontDownload` job in the JobManager.
     const fonts = new FontService({
       dir: path.join(home.root, 'fonts'),
       jobs: models.jobs,
@@ -610,23 +605,23 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       }),
       ...options.fonts,
     });
-    // 导出是 JobManager 里的 `export` 任务（架构设计 §9.11）；ffmpeg / ffprobe 同媒体分析。
+    // Export is the `export` job in the JobManager (architecture design §9.11). ffmpeg and ffprobe are the same as for media analysis.
     const exports = new ExportService({
       jobs: models.jobs,
       videos,
       fonts,
       ffmpeg: async () => ({ command: process.env.CUCCUT_FFMPEG || 'ffmpeg', env: await toolEnv() }),
       ffprobe: async () => ({ command: process.env.CUCCUT_FFPROBE || 'ffprobe', env: await toolEnv() }),
-      // 成片的 Render Worker 与引擎宿主同一次 cargo 构建，放在它旁边。
+      // The render Worker for the finished output comes from the same cargo build as the engine host, and sits next to it.
       exportWorker: () => resolveExportWorkerCommand(options.engineHost !== undefined ? options.engineHost : resolveEngineHostCommand()),
       log: log.child('exports'),
     });
-    // 共享开着的话，节点服务在这里就开始监听（不重新发配对码）；端口被占不影响 Runtime 启动。
+    // If sharing is on, the node service starts listening here (the pairing code is not reissued). A port that is already taken does not stop the Runtime from starting.
     const nodes = await openNodeShare(home, models, log, options.nodes);
-    // 停节点服务会取消远端任务、关掉监听、撤下 mDNS 登记：它可能在所有接口上监听，启动失败也不能留着这个对外的端口。
+    // Stopping the node service cancels remote jobs, closes the listener, and withdraws the mDNS registration. It may listen on all interfaces, so even when startup fails this externally reachable port must not be left open.
     stops.add('nodes', () => nodes.close(), 'Stopping the node service failed');
-    // 智能体的工具通道：会话令牌在原生会话建立时发放、释放时收回（架构设计 §3.5）。
-    // Agent 的 skill（§3.8）：开关只存差量；目录每次重读。开着的 skill 的索引在每个原生会话开始时附在指导后面。
+    // The agent's tool channel: the session token is issued when the native session is created and revoked when it is released (architecture design §3.5).
+    // Agent skills (§3.8): toggles store only the difference, and the directory is re-read every time. The index of enabled skills is appended to the guidance at the start of each native session.
     const skillPrefs = new SkillPrefsStore(home.skillPrefsFile, { log: log.child('skill-prefs') });
     await skillPrefs.load();
     const skills = new SkillCatalog({
@@ -643,7 +638,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       (principal) => videos.connectionClosed(principal.connectionId),
       async () => skillIndexBlock(await skills.enabled()),
     );
-    // 消息里的图片：经网关同一端口上传，发送时交给 Driver（产品设计 §3.2.4）。
+    // Images in messages: uploaded through the same gateway port, and handed to the Driver on send (product design §3.2.4).
     const attachments = new AttachmentStore({
       dir: home.attachmentsDir,
       log,
@@ -652,8 +647,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     stops.add('attachments', () => attachments.close(), null);
     aiToolRefs = { skills, attachments, exports };
 
-    // 偏好设置（前面已经读入）：新会话的默认 Driver 与访问模式从这里冻结（§3.11、§3.12）。
-    // 改了机器容量：排队的任务按新的容量重新看一遍。
+    // Preferences (already read in above): the default Driver and access mode for new sessions are frozen from here (§3.11, §3.12).
+    // When machine capacity changes, queued jobs are re-checked against the new capacity.
     settings.store.onChange((changed) => {
       if ('resources.capacity' in changed) models.jobs.resources.recheck();
     });
@@ -667,35 +662,35 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       providers: { store: customProviders, create: createCustomDriver },
       settings: settings.store,
       tools: grants,
-      // 主停止（§7.4）一并取消这个会话的智能体提交、还没结束的 Job。
+      // The main stop (§7.4) also cancels this session's agent submissions and its unfinished Jobs.
       jobs: { cancelSubmittedBy: (conversationId) => cancelAgentJobs(models.jobs, conversationId) },
       attachments,
-      // 任务预算（§3.2、§7.8）：合同的预算策略登记在授权账本里，任务里的每次外发调用在授权之外还要通过它。
+      // Task budget (§3.2, §7.8): the contract's budget policy is registered in the authorization ledger. Each outbound call in a task must pass it in addition to authorization.
       budgets: models.grants,
-      // 把无项目会话工作目录里的东西搬进项目时（§3.10），打开着的视频目录跳过。
+      // When items from a session's working directory (with no project) are moved into a project (§3.10), an open video directory is skipped.
       openVideoDirs: () => videos.openRefs().map((ref) => ref.path),
       closeIdleVideos: (dir) => videos.closeIdleIn(dir),
       log,
     });
     stops.add('harness', () => harness.shutdown(), 'Stopping the Harness failed');
-    // 升级前留在会话工作目录里的视频搬进项目，没有会话的工作目录收拾掉（§3.10）。在 Space 首次扫描与客户端连上之前。
+    // Videos left in session working directories before the upgrade are moved into their projects, and working directories with no session are cleaned up (§3.10). This runs before Space's first scan and before any client connects.
     await harness.migrateScratch().catch((error: unknown) => log.warn('Failed to tidy session folders', { error: String(error) }));
-    // 默认 Agent 存在偏好设置里（`agent.defaultDriver`，§3.11）：设置页、CLI、`agents.setDefault` 改了它都推送新的 Agent 视图。
-    // 默认 Agent 没设过默认模型时 `DriverInfo.defaultModel` 取 `agent.defaultModel`，改了它也推送。
+    // The default Agent is stored in preferences (`agent.defaultDriver`, §3.11). When the settings page, the CLI, or `agents.setDefault` changes it, the new Agent view is pushed.
+    // When the default Agent has no default model set, `DriverInfo.defaultModel` takes `agent.defaultModel`, and changing it also pushes.
     settings.store.onChange((changed) => {
       if ('agent.defaultDriver' in changed || 'agent.defaultModel' in changed) harness.agentsChanged();
     });
     harnessRef = harness;
     harnessOpened(harness);
-    // 应用内运行的安装、升级命令：停 Harness 之前结束它们（结束后的重新探测要用 Harness）。
+    // Install and upgrade commands run inside the app: end them before stopping the Harness (the re-probe after they end needs the Harness).
     const setup = new AgentSetup({ agents: (o) => harness.agents(o), log, ...options.agentSetup });
     stops.add('setup', () => setup.shutdown(), 'Stopping agent setup commands failed');
-    // 登记只在内存里：上次没发出去的、会话删除时没删干净的附件目录在这里清掉。
+    // Registration is kept in memory only. Attachment directories left over from an unsent message, or not fully cleaned up when a session was deleted, are cleared here.
     await attachments.removeOrphans(harness.referencedAttachments());
-    // 整份工具目录（§3.5）：同一个工厂按范围构造全部工具组，会话的工具桥用会话的范围（任务、规划模式、来源目录），
-    // MCP 服务用服务的范围（访问策略）。每个工具出现在哪些面由目录项的 `surfaces` 决定，这里不挑。
+    // The whole tool catalog (§3.5): one factory builds all tool groups for a scope. A session's tool bridge uses the session's scope (tasks, plan mode, the source directory), and MCP services use the service's scope (the access policy). Which surfaces each tool appears on is decided by its catalog entry's `surfaces`; nothing is chosen here.
+    // The code view (§8): the Electron off-screen host is started on demand and shared by all tool groups. The ffmpeg used for baking is the same one used for media analysis (found via the login shell's PATH).
     const packages = new PackageImporter(videos);
-    // 代码画面（§8）：Electron 离屏宿主按需拉起，各组工具共用一个；烘焙用的 ffmpeg 与媒体分析同一个（按登录 shell 的 PATH 找）。
+    // The code view (§8): the Electron off-screen host is started on demand and shared by all tool groups. The ffmpeg used for baking is the same one used for media analysis (found via the login shell's PATH).
     const compositionHost = new SharedCompositionHost({
       electron: resolveElectronBinary(),
       cacheDir: home.cacheDir,
@@ -704,10 +699,10 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     stops.add('compositions', () => compositionHost.close(), 'Stopping the composition host failed');
     const compositionFfmpeg = async () =>
       process.env.CUCCUT_FFMPEG || (await findOnPath('ffmpeg', (await toolEnv()).PATH ?? '')) || 'ffmpeg';
-    // 导入与预览的主体：工具（会话、终端、对外服务）与界面的 `compositions.*` 共用这一个，宿主也是同一个。
+    // Import and preview: the tools (sessions, terminals, external services) and the UI's `compositions.*` share this one, and the host is the same too.
     const compositions = new CompositionService({ videos, ffmpeg: compositionFfmpeg, host: compositionHost, log });
     const toolSets = (toolScope: ToolScope): ToolSet[] => {
-      // 从链接下载：`download` 与 `transcribe` 给 `url` 时共用。
+      // Download from a link: `download` and `transcribe` share this when given a `url`.
       const linkImport = {
         tools: externalTools,
         pipelines: models.pipelines,
@@ -722,7 +717,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
           analysis,
           faces,
           packages,
-          // Space 目录在后面才建好：派生时再取。
+          // The Space directory is built later, so it is fetched at derivation time.
           findDerived: (parentVideoId, key) => spaceDerivedFinder(space)(parentVideoId, key),
         }),
         new ModelTools({ models, scope: toolScope }),
@@ -731,18 +726,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         new ModelInstallTools({ installs: models.installs, catalog: models.catalog, scope: toolScope }),
         new ProjectTools({ harness, videos, scope: toolScope }),
         new LibraryTools({ library, scope: toolScope }),
-        // Space 目录在后面才建好：工具调用时再取。
+        // The Space directory is built later, so it is fetched at tool call time.
         new SpaceTools({ space: () => space, scope: toolScope, jobs: models.jobs }),
         new SkillTools({ skills, scope: toolScope }),
         new GrantTools({ models, scope: toolScope }),
         new TaskTools({ harness, scope: toolScope }),
         new LinkImportTools(linkImport),
-        // 一级动词（transcribe、translate、dub、transcode）：启动固定流程；视频启用的术语表由流程自己读。
+        // First-level verbs (transcribe, translate, dub, transcode) start fixed pipelines. The glossary enabled for the video is read by the pipeline itself.
         new FlowTools({ pipelines: models.pipelines, scope: toolScope, linkImport }),
         new DownloadTools({
           scope: toolScope,
           downloadsDirectory: () => resolveDownloadsDirectory(settings.store.get('downloads.directory')),
-          // 交出的文件登记为 Space 交付物（§3.5）；Space 目录在后面才建好，调用时再取。
+          // Files handed out are registered as Space deliverables (§3.5). The Space directory is built later, so it is fetched at call time.
           register: (handover) =>
             space.recordHandover(handover).catch((error: unknown) => log.warn('Registering a handed-over download failed', { error: String(error) })),
         }),
@@ -754,29 +749,27 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
           scope: toolScope,
         }),
         new CompositionTools({ videos, scope: toolScope, compositions }),
-        // 会话里的幻灯片（docs/design/slides §7.2）：校验与导入素材；编译器与 deck 的存储来自幻灯片服务。
+        // Slides in a session (docs/design/slides §7.2): validation and material import. The compiler and the deck storage come from the slides service.
         new SlidesTools({ scope: toolScope, slides }),
-        // 会话里的设计稿（docs/design/canvas §7.2）：结构校验与导入素材；设计稿的存储来自同一个编辑器服务。
+        // Design canvases in a session (docs/design/canvas §7.2): structure validation and material import. Canvas storage comes from the same editor service.
         new DesignTools({ scope: toolScope, design: slides }),
-        // 会话里的设计系统（docs/design/canvas §10.5）：结构校验与导入素材；存储来自同一个编辑器服务。
+        // Design systems in a session (docs/design/canvas §10.5): structure validation and material import. Storage comes from the same editor service.
         new DesignSystemTools({ scope: toolScope, designSystem: slides }),
       ];
     };
-    // 会话的工具桥与网关 `catalog.call`（终端）共用同一组工具实例：`ScopeRouter` 按主体的种类转给会话的范围或终端的范围
-    // （用户本人，相对路径按 cwd 解析）；两个面各自是这组工具的一个视图（`surface`）。
+    // The session's tool bridge and the gateway's `catalog.call` (terminal) share the same tool instances. `ScopeRouter` routes by the subject's kind to the session's scope or the terminal's scope (the user themselves, with relative paths resolved against cwd). Each of the two surfaces is a view of this tool set (`surface`).
     const scope = new ScopeRouter({
       agent: new AgentScope({ harness, videos, jobs: models.jobs }),
       local: new LocalScope({ harness, videos, jobs: models.jobs, space: () => space, projectsDir: home.projectsDir }),
     });
     const tools = new ToolCatalog(toolSets(scope), log, { surface: 'agent' });
-    // 会话内智能体的指导（§3.8；Agent 面设计 §8.6）：说明书按工具桥面渲染，`{{tool:…}}` 按这份目录核对。SKILL.md 正文是每个原生会话的
-    // 开发者指导，目录页、做法总览与约定登记成内置 skill。渲染不了就让启动失败，不带着空的或过期的指导开会话。
+    // In-session agent guidance (§3.8; Agent surface design §8.6): the manuals are rendered for the tool-bridge surface, and `{{tool:…}}` is checked against this catalog. The SKILL.md body is the developer guidance for each native session. The catalog page, the overview of approaches, and conventions are registered as built-in skills. If rendering fails, startup fails rather than opening sessions with empty or stale guidance.
     const agentSkillsDir = options.agentSkillsDir === undefined ? resolveBuiltinAgentSkillsDir() : options.agentSkillsDir;
     const guidance = loadAgentGuidance(agentSkillsDir, { tools: tools.list() });
     grants.setInstructions(guidance.instructions);
     skills.setGuidePages(guidance.pages, guidance.sourceDir);
     const mcp = new McpEndpoint({ grants, tools, log });
-    // 对外服务（§4.8）：先登记，网关就绪之后再开启随 Runtime 启动的。停止时排在最前：断开外部连接，取消待处理的服务审批。
+    // External services (§4.8): registered first, and the ones that start with the Runtime are opened once the gateway is ready. On stop they go first: external connections are disconnected and pending service approvals are cancelled.
     const services = await openServices({
       home,
       harness,
@@ -791,11 +784,11 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
 
     const marks = new SpaceMarkStore(home.spaceFile, { log: log.child('space-marks') });
     await marks.load();
-    // Space 的产物记录（§5.7）：产出产物的任务的派生用事实，Job Ledger 修剪之后条目照样在。
+    // Space's artifact records (§5.7): the derived facts for the jobs that produced artifacts. The entries remain after the Job Ledger prunes.
     const spaceArtifacts = new SpaceArtifactStore(home.spaceArtifactsFile, { log: log.child('space-artifacts') });
     const retained = await spaceArtifacts.load();
     if (retained.skipped > 0 || retained.quarantined) log.warn('Skipped unreadable parts of the Space output records', retained);
-    // 跨视频的内容索引（§5.11）：派生缓存，只经 VideoService 的只读查询读视频；有视频索引完成时 Space 目录重算派生状态。
+    // The cross-video content index (§5.11): a derived cache that reads videos only through VideoService's read-only queries. When a video index finishes, the Space directory's derived state is recomputed.
     const contentIndex = new ContentIndex({
       dir: path.join(home.cacheDir, 'content-index'),
       reader: { readContent: (dir) => videos.readContent(dir), peek: (dir) => videos.peek(dir) },
@@ -814,7 +807,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       scratchDirs: [home.scratchDir, ...(home.legacyScratchDir ? [home.legacyScratchDir] : [])],
     });
     spaceRef = space;
-    // 回收站的保留期（§5.7）：首次扫描之后清一次，之后每 6 小时一次；天数每次取当时的设置。
+    // Trash retention (§5.7): cleaned once after the first scan, then every 6 hours. The number of days is read from the setting each time.
     const sweepTrash = () =>
       void space.ready
         .then(() => space.sweepTrash(settings.store.get('space.trashRetentionDays')))
@@ -831,11 +824,11 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     );
     space.start();
     sweepTrash();
-    // 上次被强杀留下的导出临时文件与打开便携包的暂存目录（§5.8）：首次扫描之后在后台清一次。
+    // Export temp files left behind by a forced kill, and the staging directories used to open portable packages (§5.8): cleaned once in the background after the first scan.
     void space.ready
       .then(() => sweepLeftovers({ jobs: () => models.jobs.list(), sourceRoots: () => space.sourceRoots(), log }))
       .catch((error) => log.warn('Leftover file cleanup failed', { error: String(error) }));
-    // 产物库与缓存的后台清理（§5.1、§7.3）：Space 从账本补齐产物记录之后清一轮产物库，之后每次账本淘汰任务后再清；缓存每小时核一次大小。
+    // Background cleanup of the artifact library and the cache (§5.1, §7.3): after Space fills in artifact records from the ledger, the artifact library is cleaned once, and again after each ledger eviction job. The cache size is checked every hour.
     const storageGc = new StorageGc({
       jobs: models.jobs,
       spaceArtifacts,
@@ -867,7 +860,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       startedAt: nowIso(),
       launchedBy: options.launchedBy ?? null,
     };
-    // 有没有人在用（§2.2）：`runtime.status` 报告它，CLI 拉起的按它空闲退出。
+    // Whether anyone is using the Runtime (§2.2): `runtime.status` reports it, and CLI-launched Runtimes exit when idle based on it.
     const activity = new RuntimeActivity(
       {
         info,
@@ -879,8 +872,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         ? {
             ...options.idleExit,
             minutes: () => settings.store.get('runtime.idleExitMinutes'),
-            // 先删发现文件再停（§2.2）：停任务与服务要一会儿，这期间来找 Runtime 的 CLI 看不到它、等它放开实例锁后另起一个，
-            // 不会连上一个正在退出的。
+            // Delete the discovery file before stopping (§2.2). Stopping tasks and services takes a while, and during that time a CLI looking for the Runtime cannot see it. Once the instance lock is released, the CLI starts another one, rather than connecting to one that is exiting.
             onIdle: () =>
               void removeDiscovery(home, instanceId)
                 .catch(() => {})
@@ -923,16 +915,16 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       skills,
       skillInstaller,
       fonts,
-      // 代码画面（§8）：界面的 `compositions.*` 与工具共用同一个服务与宿主。
+      // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,
-      // 终端的目录视图（§3.5）：同一组工具里 `surfaces` 含 `cli` 的。
+      // The terminal's directory view (§3.5): among the same tool set, those whose `surfaces` include `cli`.
       catalog: tools.withView({ surface: 'cli' }),
       agentSkillsDir,
       activity,
       requestStop: options.requestStop ?? null,
       legacyUpgrade,
     };
-    // Web 服务（§4.8）用同一组处理函数，只把媒体句柄换成它自己的（同源地址、要会话）；白名单在它的网关入口上。
+    // The web service (§4.8) uses the same handler functions, swapping in only its own media handle (a same-origin address, requiring a session). The allowlist is at its gateway entry.
     services.web.bind({
       runtime: info,
       handlers: createHandlers({
@@ -944,7 +936,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       }),
       slides: slides.server,
     });
-    // 在场的用户（工具页的当场授权，§7.9）：这个网关上的桌面界面连接。CLI、智能体、浏览器与对外服务都不算。
+    // Present user (the in-place authorization on tool pages, §7.9): a desktop UI connection on this gateway. CLI, agents, browsers and external services do not count.
     const present = new Set<string>();
     models.grants.setPresence((submitter) => submitter.kind === 'connection' && present.has(submitter.id));
     const gateway = new Gateway({
@@ -973,7 +965,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         videos.connectionClosed(principal.connectionId);
       },
     });
-    // 监听失败时网关自己收拾干净；登记在监听之前，是为了之后写发现文件失败时也关掉它。
+    // If listening fails, the gateway cleans itself up. Registration happens before listening so the gateway is also closed if writing the discovery file fails later.
     stops.add('gateway', () => gateway.close(), 'Stopping the gateway failed');
     const endpoint = await gateway.listen(options.host, options.port);
     media.setBaseUrl(endpoint.replace(/^ws:/, 'http:'));
@@ -983,7 +975,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     const discovery: RuntimeDiscovery = { ...info, endpoint, token };
     await writeDiscovery(home, discovery);
     stops.add('discovery', () => removeDiscovery(home, instanceId), null);
-    // 开启随 Runtime 启动的对外服务：失败（端口被占用）只让那个服务进入 error，不影响 Runtime。
+    // External services that start with the Runtime: a failure (port in use) puts only that service into error, and the Runtime is not affected.
     await services.manager.restore();
     activity.start();
     stops.add('activity', () => activity.stop(), null);
@@ -1043,9 +1035,9 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
 }
 
 /**
- * 取消一个会话的智能体提交、还在排队或运行的 Job（§7.4 主停止的第 2 步），走与 `jobs.cancel` 相同的路径。
- * 不等运行中的 Provider 停下，只等引擎确认停止屏障（至多 `BARRIER_ACK_MS`）：兑现时这些 Job 不会再写进视频。
- * 兑现为发出取消的个数。已经结束的 Job 与结果不受影响。
+ * Cancels a session's agent-submitted jobs that are still queued or running (step 2 of the main stop, §7.4), using the same path as `jobs.cancel`.
+ * It does not wait for running providers to stop. It only waits for the engine to acknowledge the stop barrier (at most `BARRIER_ACK_MS`). Once that is done, these jobs will no longer write into the video.
+ * Resolves to the number of cancellations issued. Jobs that have already finished, and their results, are unaffected.
  */
 async function cancelAgentJobs(jobs: JobManager, conversationId: Id): Promise<number> {
   const pending = jobs
@@ -1064,5 +1056,5 @@ async function cancelAgentJobs(jobs: JobManager, conversationId: Id): Promise<nu
   return pending.length;
 }
 
-/** 主停止等引擎确认停止屏障的上限：引擎卡住时不拖住停止（之后到的提交仍有 Node 侧的屏障）。 */
+/** The upper limit on how long the main stop waits for the engine to acknowledge the stop barrier. A stuck engine does not hold up the stop; later submissions still get the Node-side barrier. */
 const BARRIER_ACK_MS = 5_000;

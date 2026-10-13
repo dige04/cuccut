@@ -16,9 +16,9 @@ import { vi } from './text-copy.vi.ts';
 
 type TokenUsage = { input: number | string; output: number | string } | null;
 
-/** `cuccut text` 的文案（英文是键与类型的来源，译文在 `text-copy.<语言>.ts`）。 */
+/** Copy for `cuccut text` (English is the source of the keys and types; translations are in `text-copy.<lang>.ts`). */
 const en = {
-  /** `cuccut text --help` 与 `cuccut help text` 的正文。 */
+  /** Body of `cuccut text --help` and `cuccut help text`. */
   help: `Usage:
   cuccut text <prompt> [options]   Call a text model once; a prompt of - is read from stdin. The full text goes
                                    to stdout (with --out it goes to the file, and stdout gets the task and
@@ -49,7 +49,7 @@ const en = {
   noTextResult: 'The task finished but returned no text',
   fetchOutputFailed: (artifactId: string, status: number) => `Couldn't fetch output ${artifactId}: HTTP ${status}`,
   written: (file: string) => `Wrote ${file}`,
-  /** stderr 上的模型与用量。 */
+  /** Model and usage on stderr. */
   modelLine: (provider: string, model: string, usage: TokenUsage) =>
     `${provider} / ${model}${usage ? `, input ${usage.input} / output ${usage.output} tokens` : ''}`,
 };

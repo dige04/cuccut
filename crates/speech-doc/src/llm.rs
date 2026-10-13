@@ -1,12 +1,10 @@
-//! LLM 调用抽象（对拍 voice-ink `LLMJson.swift` 的错误分类与解析纪律）。
+//! LLM call abstraction (mirrors the error classification and parsing discipline of voice-ink `LLMJson.swift`).
 //!
-//! 引擎只依赖 [`LlmJson`] trait；宿主提供 provider 直连或 agent 应答循环
-//! 两种执行器。约束靠三层叠加：json_object（宿主负责）、fence-strip 解析、
-//! 引擎侧确定性语义校验——失败走统一重试。
+//! The engine depends only on the [`LlmJson`] trait. The host provides either a direct provider connection or an agent response loop as its executor. Constraints are layered: json_object (the host's responsibility), fence-strip parsing, and engine-side deterministic semantic validation. Failures go through one unified retry path.
 
 use serde::de::DeserializeOwned;
 
-/// `--llm` 参数：`agent` 或 `provider:<vendor>/<model>`。
+/// The `--llm` argument: `agent` or `provider:<vendor>/<model>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlmMode {
     Agent,
@@ -15,8 +13,7 @@ pub enum LlmMode {
 
 impl LlmMode {
     pub fn parse(text: &str) -> Result<Self, String> {
-        // 历史上 App 曾把 UI 装饰标签（"… · → 简体中文"）连同模型名写进
-        // llm.default；模型 id 不含空白，截到首个空白即得机器 token。
+        // Previously the App wrote UI decoration labels ("… · → 简体中文", i.e. “… · → Simplified Chinese”) together with the model name into llm.default. Model IDs contain no whitespace, so truncating at the first whitespace yields the machine token.
         let text = text.trim();
         let text = text.split_whitespace().next().unwrap_or(text);
         if text == "agent" {
@@ -42,7 +39,7 @@ impl LlmMode {
     }
 }
 
-/// `--llm-effort`：provider 推理强度。`auto` 交给 provider 自己的缺省。
+/// `--llm-effort`: the provider's reasoning intensity. `auto` defers to the provider's own default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReasoningEffort {
     Auto,
@@ -65,7 +62,7 @@ impl ReasoningEffort {
     }
 }
 
-/// 一次 JSON-mode 调用请求。
+/// One JSON-mode call request.
 #[derive(Debug, Clone)]
 pub struct LlmRequest {
     /// "analysis" | "polish" | "polish-retry" | "segment-repair" | "seam-repair" | "punct-repair"
@@ -79,23 +76,20 @@ pub struct LlmRequest {
     /// One-based attempt number. Hosts use it for retry telemetry while the
     /// retry reason remains reserved for semantic prompt feedback.
     pub attempt: u32,
-    /// 语义校验失败重试时注入的结构化原因（宿主转给 provider prompt 或
-    /// agent problems）。
+    /// The structured reason injected when a retry follows a semantic validation failure (the host passes it on to the provider prompt, or to the agent problems).
     pub retry_reason: Option<String>,
 }
 
 #[derive(Debug)]
 pub enum LlmError {
-    /// status=0 表示 DNS、连接、TLS 或超时等无 HTTP 响应的传输失败；它与
-    /// 408/429/5xx 一样可重试。401/403/404 及其他 4xx 终止。
+    /// status=0 means a transport failure with no HTTP response, such as DNS, connection, TLS or timeout. Like 408/429/5xx, it is retryable. 401/403/404 and other 4xx terminate.
     Http {
         status: u16,
         message: String,
     },
-    /// 响应不可用（无 JSON、解码失败、语义校验失败）——可重试。
+    /// An unusable response (no JSON, decoding failure, semantic validation failure) is retryable.
     Malformed(String),
-    /// provider 终止性错误（鉴权/模型不存在等），直接离开管线——
-    /// 绝不拿降级结果掩盖配置问题。
+    /// A terminal provider error (authentication failure, model not found, etc.) leaves the pipeline directly. Never mask a configuration problem with a degraded result.
     Terminal(String),
     Cancelled,
 }
@@ -127,15 +121,11 @@ impl LlmError {
     }
 }
 
-/// 一次 JSON-mode 调用：system + user → 原始响应文本。
-/// 解析、fence-strip、语义校验都在引擎侧。
+/// One JSON-mode call: system + user → raw response text. Parsing, fence-strip and semantic validation all happen on the engine side.
 pub trait LlmJson {
     fn complete(&mut self, request: &LlmRequest) -> Result<String, LlmError>;
 
-    /// 一组互相独立的调用。默认逐个串行；agent 执行器覆盖为同时挂出全部
-    /// 请求，让多个 worker 并行认领（每个请求仍是独立 call/租约）。每个
-    /// 结果一就绪便回调，`index` 对应 `requests` 下标。默认实现保持 provider /
-    /// FakeLlm 的逐个串行行为。
+    /// A group of mutually independent calls. The default runs them serially, one by one. The agent executor overrides this to post all requests at once, so that multiple workers can claim them in parallel (each request is still an independent call/lease). Each result triggers the callback as soon as it is ready, with `index` corresponding to the subscript in `requests`. The default implementation keeps the one-by-one serial behaviour of provider / FakeLlm.
     fn complete_batch_with(
         &mut self,
         requests: &[LlmRequest],
@@ -146,8 +136,7 @@ pub trait LlmJson {
         }
     }
 
-    /// 兼容需要按请求顺序统一消费结果的引擎。底层仍经
-    /// [`LlmJson::complete_batch_with`] 派发，因此 agent 可以并行执行。
+    /// Compatibility for engines that need to consume results in request order. It still dispatches via [`LlmJson::complete_batch_with`], so agents can execute in parallel.
     fn complete_batch(&mut self, requests: &[LlmRequest]) -> Vec<Result<String, LlmError>> {
         let mut slots: Vec<Option<Result<String, LlmError>>> =
             (0..requests.len()).map(|_| None).collect();
@@ -170,7 +159,7 @@ pub trait LlmJson {
     }
 }
 
-/// fence-strip 解析：取响应中最外层 `{…}`，容忍 markdown 围栏与前后闲话。
+/// fence-strip parsing: take the outermost `{…}` in the response, tolerating markdown fences and surrounding chatter.
 pub fn decode<T: DeserializeOwned>(raw: &str) -> Result<T, LlmError> {
     let left = raw
         .find('{')
@@ -182,8 +171,7 @@ pub fn decode<T: DeserializeOwned>(raw: &str) -> Result<T, LlmError> {
     serde_json::from_str(&raw[left..=right]).map_err(|error| LlmError::Malformed(error.to_string()))
 }
 
-/// 重试判定：terminal/cancelled 不重试；其余按分类；引擎抛出的语义错误
-/// （映射失败 = attempt 失败）默认可重试。
+/// Retry decision: terminal and cancelled are never retried; the rest follow the classification. Semantic errors thrown by the engine (a mapping failure, i.e. a failed attempt) are retryable by default.
 pub fn should_retry(error: &LlmError) -> bool {
     error.is_retryable()
 }
@@ -191,50 +179,39 @@ pub fn should_retry(error: &LlmError) -> bool {
 pub const MAX_RETRIES: u32 = 3;
 pub const RETRY_BACKOFF_SECONDS: f64 = 2.0;
 
-/// 全局重试策略（重试策略重设计 §2.6）：page-fatal 只允许整页重试
-/// [`RetryPolicy::MAX_PAGE_ATTEMPTS`] 次，之后按各 kind 自己的分页器**对半缩窄**
-/// （[`RetryPolicy::SPLIT_THEN`]）再各试一次；单元级补做波次最多
-/// [`RetryPolicy::UNIT_ROUNDS`] 轮。总调用量与旧的 [`MAX_RETRIES`] 同量级，但
-/// 兜底粒度减半。
+/// The global retry policy (retry policy redesign §2.6): page-fatal allows only [`RetryPolicy::MAX_PAGE_ATTEMPTS`] whole-page retries. After that, each kind's own paginator **halves the window** ([`RetryPolicy::SPLIT_THEN`]) and tries each half once more. Unit-level catch-up waves run at most [`RetryPolicy::UNIT_ROUNDS`] rounds. The total call volume is of the same order as the old [`MAX_RETRIES`], but the fallback granularity is halved.
 ///
-/// [`MAX_RETRIES`] 保留给尚未迁移到本策略的调用点。
+/// [`MAX_RETRIES`] is kept for call sites that have not yet migrated to this policy.
 pub struct RetryPolicy;
 
 impl RetryPolicy {
-    /// page-fatal 的整页尝试次数（第 1 次首发、第 2 次带意见重发）。
+    /// The number of whole-page attempts for page-fatal (the 1st is the initial send; the 2nd resends with feedback).
     pub const MAX_PAGE_ATTEMPTS: u32 = 2;
-    /// 整页尝试耗尽后是否对半分页再各试一次。
+    /// Whether, after the whole-page attempts are exhausted, to split the page in half and try each half once more.
     pub const SPLIT_THEN: bool = true;
-    /// 单元级补做波次的轮数上限。
+    /// The upper limit on rounds of unit-level catch-up waves.
     pub const UNIT_ROUNDS: u32 = 2;
 }
 
-/// [`complete_batch_retry_report`] 的结账：轮次耗尽后**每个**仍失败的请求。
+/// The settlement of [`complete_batch_retry_report`]: **every** request that still fails after the rounds are exhausted.
 ///
-/// 空 `failed` 即全部成功。非重试错误（Terminal/Cancelled/协议违规）不会进这里，
-/// 它们照旧立即 `Err` 上抛。
+/// An empty `failed` means all succeeded. Non-retryable errors (Terminal/Cancelled/protocol violations) never reach here; they still propagate immediately as `Err`.
 #[derive(Debug, Default)]
 pub struct BatchOutcome {
-    /// `(requests` 下标, 最后一次失败原因)`，按下标升序。
+    /// `(requests` index, last failure reason)`, in ascending index order.
     pub failed: Vec<(usize, LlmError)>,
 }
 
 impl BatchOutcome {
-    /// 是否所有请求都成功。
+    /// Whether all requests succeeded.
     pub fn is_complete(&self) -> bool {
         self.failed.is_empty()
     }
 }
 
-/// 批量派发一组独立请求，并按页独立重试。成功项在底层结果就绪时立即交给
-/// `on_ready`；失败项才进入下一轮，每轮只退避一次。completion 错误不会改写
-/// 请求，只有引擎语义校验失败才通过 `validation_retry_reason` 注入重试原因。
-/// 请求自带的 `retry_reason`（调用方在补做波次里说明「为什么重问」）原样随
-/// 每一轮发出，直到被校验原因取代。
+/// Dispatches a group of independent requests in a batch, retrying each page independently. A successful item is handed to `on_ready` as soon as its underlying result is ready. A failed item enters the next round, and each round backs off once. A completion error does not rewrite the request; only an engine semantic validation failure injects a retry reason via `validation_retry_reason`. A request's own `retry_reason` (the caller's explanation, in a catch-up wave, of "why ask again") is sent unchanged in every round, until a validation reason replaces it.
 ///
-/// 与 [`complete_batch_retry_with`] 的差别只在结账：轮次耗尽时把**每个**失败页
-/// 与原因交还调用方（[`BatchOutcome`]），而不是只报第一条。调用方因此可以只对
-/// 失败页缩窄重试或确定性收口，其余页照常落库。
+/// The only difference from [`complete_batch_retry_with`] is the settlement: when the rounds are exhausted, **every** failed page is returned to the caller together with its reason ([`BatchOutcome`]), rather than only the first. The caller can therefore narrow retries, or deterministically finalize only the failed pages, while the others are stored as usual.
 pub fn complete_batch_retry_report<T>(
     llm: &mut dyn LlmJson,
     requests: &[LlmRequest],
@@ -320,10 +297,9 @@ pub fn complete_batch_retry_report<T>(
     Ok(BatchOutcome::default())
 }
 
-/// [`complete_batch_retry_report`] 的薄封装：耗尽时只上抛**第一个**失败原因。
+/// A thin wrapper over [`complete_batch_retry_report`]: when exhausted, it propagates only the **first** failure reason.
 ///
-/// 尚未迁移到「拒绝即缩窄」的调用点继续用它；新代码应改用报告式变体，才能
-/// 对每个失败单元分别缩窄或收口。
+/// Call sites that have not yet moved to "reject means narrow" keep using it. New code should use the report variant, so that each failed unit can be narrowed or finalized separately.
 pub fn complete_batch_retry_with<T>(
     llm: &mut dyn LlmJson,
     requests: &[LlmRequest],
@@ -348,7 +324,7 @@ pub fn complete_batch_retry_with<T>(
     }
 }
 
-/// 带重试执行一个 attempt 闭包。退避 sleep 由宿主注入（core 零 I/O、零时钟）。
+/// Runs one attempt closure with retry. The backoff sleep is injected by the host (core has zero I/O and no clock).
 pub fn with_retry<T>(
     attempts: u32,
     mut sleep: impl FnMut(f64),
@@ -372,10 +348,10 @@ pub fn with_retry<T>(
     Err(last.unwrap_or_else(|| LlmError::Malformed("no attempts executed".to_owned())))
 }
 
-/// 脚本化假实现（对拍 voice-ink `FakeLLMJSON`）：离线测试全部引擎逻辑。
+/// A scripted fake implementation (mirrors voice-ink `FakeLLMJSON`), for testing all engine logic offline.
 pub struct FakeLlm {
     script: std::collections::VecDeque<Result<String, LlmError>>,
-    /// 记录每次调用的 (kind, system, user, retry_reason)。
+    /// Records each call's (kind, system, user, retry_reason).
     pub calls: Vec<(String, String, String, Option<String>)>,
     pub attempts: Vec<u32>,
 }
@@ -564,8 +540,7 @@ mod tests {
         assert_eq!(completed, [Shape { value: 9 }]);
     }
 
-    /// 报告式变体的结账：耗尽后每个失败页都要交还调用方（旧变体只报第一条），
-    /// 成功页照常落库、不受失败页牵连。
+    /// The settlement of the report variant: after exhaustion, every failed page is returned to the caller (the old variant reported only the first one). Successful pages are stored as usual and are not affected by failed pages.
     #[test]
     fn batch_retry_report_returns_every_exhausted_failure() {
         let request = |kind| LlmRequest {
@@ -576,7 +551,7 @@ mod tests {
             attempt: 1,
             retry_reason: None,
         };
-        // 3 页 × 2 轮：页 0 首轮就成功，页 1/2 两轮都坏。
+        // 3 pages × 2 rounds: page 0 succeeds in the first round; pages 1 and 2 are bad in both rounds.
         let mut fake = FakeLlm::new([
             Ok("{\"value\": 1}".to_owned()),
             Err(LlmError::Malformed("p1".to_owned())),
@@ -606,7 +581,7 @@ mod tests {
         );
         assert!(!outcome.is_complete());
 
-        // 薄封装保持旧语义：只上抛第一条。
+        // The thin wrapper keeps the old semantics: it propagates only the first failure.
         let mut fake = FakeLlm::new([
             Err(LlmError::Malformed("a".to_owned())),
             Err(LlmError::Malformed("b".to_owned())),
@@ -624,8 +599,7 @@ mod tests {
         assert!(matches!(error, LlmError::Malformed(_)), "{error:?}");
     }
 
-    /// 请求自带的重试原因随第一轮发出，传输失败后的下一轮仍然带着；校验失败
-    /// 给出的原因取代它。
+    /// A request's own retry reason goes out in the first round, and the next round after a transport failure still carries it. A reason from a validation failure replaces it.
     #[test]
     fn batch_retry_report_keeps_the_requests_own_retry_reason() {
         let request = LlmRequest {
@@ -668,7 +642,7 @@ mod tests {
         );
     }
 
-    /// Terminal 仍然立即上抛，不进 [`BatchOutcome::failed`]。
+    /// Terminal still propagates immediately and does not enter [`BatchOutcome::failed`].
     #[test]
     fn batch_retry_report_still_aborts_on_terminal() {
         let mut fake = FakeLlm::new([Err(LlmError::Terminal("401".to_owned()))]);

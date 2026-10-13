@@ -15,8 +15,8 @@ import { tr } from './data-grants-copy.tr.ts';
 import { vi } from './data-grants-copy.vi.ts';
 
 /**
- * 设置 › 隐私 ›「数据外发授权」（data-grants.tsx）的文案。英文是键与类型的来源，译文在 `data-grants-copy.<语言>.ts`。
- * 撤销授权是 Revoke，不是界面通用的「撤销」（Undo）。
+ * Copy for Settings › Privacy › “Data egress grants” (数据外发授权) (data-grants.tsx). English is the source of keys and types; translations live in `data-grants-copy.<language>.ts`.
+ * Revoking a grant is “Revoke” (撤销授权), not the general UI “Undo” (撤销).
  */
 const en = {
   title: 'Data sharing grants',

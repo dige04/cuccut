@@ -1,40 +1,26 @@
-//! Lottie 素材的**填充色分组**（原型 `designs/cuccut/app/model-lottiefill.js`）。
+//! **Fill-color grouping** for Lottie assets (prototype `designs/cuccut/app/model-lottiefill.js`).
 //!
-//! 静态 SVG 贴纸的换色在 [`crate::svg_fill`]：数一数源码里有几个填充色分组，就出
-//! 几张色卡。动态贴纸换成 Noto 的 Lottie JSON 之后，「动态贴纸也能分色」这句话
-//! 由这一层兑现——Lottie 的颜色不在属性上，而在图层的形状项（`ty: "fl"` 填充 /
-//! `ty: "st"` 描边，`c.k` 是 0–1 的 RGB 数组）与纯色图层（`ty: 1` 的 `sc`）上。
+//! Recoloring for static SVG stickers is in [`crate::svg_fill`]: count the fill-color groups in the source and you get that many swatches. Once an animated sticker is replaced with a Noto Lottie JSON, the claim that “animated stickers can be color-grouped too” is made good by this layer. Lottie colors are not on properties but on the layer's shape items (`ty: "fl"` fill / `ty: "st"` stroke, where `c.k` is an RGB array in 0–1) and on solid layers (`sc` on `ty: 1`).
 //!
-//! 两条与另外两份实现逐字同源的规则——原型的 `BC_LOTTIEFILL.colorsOf` 与生成器
-//! [`scripts/dev/elements/generate.py`] 的 `lottie_colors`（`anim/provenance.json`
-//! 里每一份的 `colors` 就是它的产物）：
+//! Two rules that are identical, word for word, to the other two implementations (the prototype's `BC_LOTTIEFILL.colorsOf` and the generator [`scripts/dev/elements/generate.py`]'s `lottie_colors`; each entry's `colors` in `anim/provenance.json` is its output):
 //!
-//! 1. **只收静态色**。`c.a` 为真表示这条颜色本身带关键帧，那不是一个可以整体换
-//!    掉的色区，跳过。
-//! 2. **按出现次数排序，最多 [`MAX_SWATCHES`] 组**；次数相同按第一次出现的先后
-//!    ——用户看到的第一张色卡就是画面上最大的那块色。
+//! 1. **Only static colors are collected.** `c.a` being truthy means this color itself carries keyframes; that is not a color region that can be swapped as a whole, so it is skipped.
+//! 2. **Sorted by occurrence count, at most [`MAX_SWATCHES`] groups**; ties are ordered by first appearance. The first swatch the user sees is the largest color block in the picture.
 //!
-//! 换色本身不在这里：文档里的真相是 `sticker.fillOverrides`（**按源 hex 键**，
-//! 与 SVG 侧同一张表），渲染侧的落点是
-//! `ccut_render::source::lottie::Lottie::apply_fill_overrides`。色卡 ↔ 覆盖表的
-//! 翻译复用 [`crate::svg_fill::fills_to_overrides`] 与
-//! [`crate::svg_fill::fill_list_from_overrides`]，两种素材共一份。
+//! The recoloring itself is not here: the source of truth in the document is `sticker.fillOverrides` (**keyed by source hex**, the same table as on the SVG side), and the render side applies it in `ccut_render::source::lottie::Lottie::apply_fill_overrides`. Translating between swatches and the override table reuses [`crate::svg_fill::fills_to_overrides`] and [`crate::svg_fill::fill_list_from_overrides`], one shared implementation for both asset types.
 
 use serde_json::Value;
 
 use crate::svg_fill::{FillCard, norm_fill_hex};
 
-/// 默认色卡最多几张（原型 `BC_LOTTIEFILL.LIMIT`、生成器 `lottie_colors(limit=8)`）。
+/// Maximum number of default swatches (prototype `BC_LOTTIEFILL.LIMIT`, generator `lottie_colors(limit=8)`).
 ///
-/// 比 SVG 那边的 [`crate::svg_fill::MAX_SWATCHES`]（5）多——八组是 Noto 那批
-/// 素材的实际色数上界。
+/// More than the SVG side's [`crate::svg_fill::MAX_SWATCHES`] (5): eight groups is the upper bound on the number of colors actually found in the Noto asset batch.
 pub const MAX_SWATCHES: usize = 8;
 
-/// Lottie 的 `[r, g, b]`（0–1，偶尔 0–255）→ `#RRGGBB`。
+/// Lottie's `[r, g, b]` (0–1, occasionally 0–255) → `#RRGGBB`.
 ///
-/// 任意一维大于 1 就整体按 0–255 解释（生成器 `lottie_rgb` 同判）：Lottie 两种
-/// 写法都有，而 `[1, 1, 1]` 这种既是白也是「几乎全黑的 255 制」，按 0–1 读是
-/// bodymovin 的默认。
+/// If any component is greater than 1, the whole triple is read as 0–255 (the generator's `lottie_rgb` makes the same decision). Lottie has both notations, and `[1, 1, 1]` is both white and “an almost-black value on the 255 scale”; reading it as 0–1 is bodymovin's default.
 pub fn rgb_hex(value: &Value) -> Option<String> {
     let list = value.as_array()?;
     if list.len() < 3 {
@@ -62,8 +48,7 @@ pub fn rgb_hex(value: &Value) -> Option<String> {
     Some(out)
 }
 
-/// 纯色图层的 `sc`：只认 `#RGB` / `#RRGGBB`，其余（`transparent`、空串、写坏的）
-/// 不是一个可换的色区，跳过。
+/// A solid layer's `sc`: only `#RGB` / `#RRGGBB` are recognized; anything else (`transparent`, an empty string, malformed values) is not a swappable color region and is skipped.
 fn solid_hex(value: &str) -> Option<String> {
     let trimmed = value.trim();
     let body = trimmed.strip_prefix('#')?;
@@ -71,7 +56,7 @@ fn solid_hex(value: &str) -> Option<String> {
     (hexy && (body.len() == 3 || body.len() == 6)).then(|| norm_fill_hex(trimmed))
 }
 
-/// 形状树里的静态色，按遇到的次序发出。`gr` 递归进 `it`，其余项跳过。
+/// Static colors in the shape tree, emitted in the order encountered. `gr` recurses into `it`; other items are skipped.
 fn visit_shapes(items: &Value, out: &mut Vec<String>) {
     let Some(list) = items.as_array() else {
         return;
@@ -80,7 +65,7 @@ fn visit_shapes(items: &Value, out: &mut Vec<String>) {
         match item.get("ty").and_then(Value::as_str) {
             Some("fl" | "st") => {
                 let Some(color) = item.get("c") else { continue };
-                // `c.a` 为真 = 这条颜色自己带关键帧，不是一个整体可换的色区。
+                // `c.a` truthy = this color carries keyframes itself, so it is not a color region that can be swapped as a whole.
                 if color.get("a").is_some_and(is_truthy) {
                     continue;
                 }
@@ -99,8 +84,7 @@ fn visit_shapes(items: &Value, out: &mut Vec<String>) {
     }
 }
 
-/// JS 的真值判断：`0` / `false` / `null` / 缺席都是假。Lottie 的 `a` 实际写的是
-/// `0` / `1`，但手写文档里 `true` 也出现过。
+/// JS truthiness: `0` / `false` / `null` / absent are all falsy. Lottie's `a` is actually written as `0` / `1`, but `true` also appears in hand-written documents.
 fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(flag) => *flag,
@@ -110,8 +94,7 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
-/// 一份 Lottie 里所有静态色的落点，按遇到的次序。根图层在前，预合成
-/// （`assets[].layers`）依 `assets` 的次序跟在后面——与原型和生成器同一趟遍历。
+/// Where every static color in one Lottie file lands, in the order encountered. Root layers come first; precomposition layers (`assets[].layers`) follow in the order of `assets`, the same single pass as the prototype and the generator.
 pub fn colors_in_order(doc: &Value) -> Vec<String> {
     let mut out = Vec::new();
     let mut lists = vec![doc.get("layers")];
@@ -137,10 +120,9 @@ pub fn colors_in_order(doc: &Value) -> Vec<String> {
     out
 }
 
-/// 色卡表：出现次数最多的前 [`MAX_SWATCHES`] 组，次数相同按第一次出现的先后。
+/// Swatch table: the top [`MAX_SWATCHES`] groups by occurrence count; ties are ordered by first appearance.
 ///
-/// `tag` 恒为空——SVG 那边的副标题是承载色的标签名（`path` / `rect`），Lottie 的
-/// 承载是形状项，没有对用户有意义的名字，卡头就只剩「第 N 组」。
+/// `tag` is always empty. On the SVG side the subtitle is the name of the tag carrying the color (`path` / `rect`); a Lottie color is carried by a shape item, which has no name meaningful to the user, so the card header is just “第 N 组” (group N).
 pub fn fills_of_doc(doc: &Value) -> Vec<FillCard> {
     let order = colors_in_order(doc);
     let mut cards: Vec<FillCard> = Vec::new();
@@ -154,13 +136,13 @@ pub fn fills_of_doc(doc: &Value) -> Vec<FillCard> {
             }),
         }
     }
-    // 稳定排序：次数降序，次数相同保持第一次出现的先后。
+    // Stable sort: count descending; ties keep their first-appearance order.
     cards.sort_by(|a, b| b.count.cmp(&a.count));
     cards.truncate(MAX_SWATCHES);
     cards
 }
 
-/// 一份 Lottie JSON 文本的色卡表。解析不动就是空表——**空表就是「不出颜色段」**。
+/// The swatch table for one Lottie JSON text. If it cannot be parsed, the table is empty. **An empty table means 「不出颜色段」 (no color section is shown).**
 pub fn fills_of(json: &str) -> Vec<FillCard> {
     serde_json::from_str::<Value>(json)
         .map(|doc| fills_of_doc(&doc))
@@ -197,8 +179,7 @@ mod tests {
         assert_eq!(cards[0].hex, "#FF0000");
     }
 
-    /// 排序是「次数降序、同次按首次出现」——用户看到的第一张卡是画面上最大的
-    /// 那块色。这条与原型 `colorsOf` 和生成器 `Counter.most_common` 同一口径。
+    /// The sort is “count descending, ties by first appearance”: the first swatch the user sees is the largest color block in the picture. This matches the prototype's `colorsOf` and the generator's `Counter.most_common`.
     #[test]
     fn swatches_rank_by_frequency_then_first_appearance() {
         let fill = |hex: [i64; 3]| json!({"ty": "fl", "c": {"a": 0, "k": hex}});
@@ -219,8 +200,7 @@ mod tests {
         );
     }
 
-    /// 预合成里的图层也算数：Noto 的动态贴纸把整段动画塞在 `assets[].layers` 里，
-    /// 只看 `doc.layers` 的话一张卡都读不出来。
+    /// Layers inside precompositions count too: Noto's animated stickers put the whole animation inside `assets[].layers`, so reading only `doc.layers` would yield no swatches at all.
     #[test]
     fn precomp_layers_and_solids_count_too() {
         let doc = json!({

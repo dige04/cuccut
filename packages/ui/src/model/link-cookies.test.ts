@@ -10,7 +10,7 @@ import {
   usedCookieText,
 } from './link-cookies.ts';
 
-/** 下载视频的「网站登录」（产品设计 §2.7）：勾选的顺序、「所有浏览器」的全选与半选、说明与结果的说法。 */
+/** The “网站登录” (website login) option for downloading videos (product design §2.7): the tick order, the select-all and partial state of “所有浏览器” (all browsers), and the wording of the descriptions and results. */
 
 const detected: CookieBrowserInfo[] = [
   { id: 'chrome', label: 'Chrome', lastUsedAt: '2026-10-06T09:42:00Z' },
@@ -60,11 +60,11 @@ describe('网站登录', () => {
     expect(chrome[2]).toMatch(/^Chrome 开着时 Cookie 库被占用.*先完全退出这个浏览器/);
     expect(chrome[3]).toMatch(/^Chrome 在 Windows 上通常用应用绑定加密.*可能读不到.*建议在 Firefox 里登录目标网站后改勾 Firefox。$/);
     expect(chrome.join('')).not.toMatch(/钥匙串|完全磁盘访问权限/);
-    // Opera、Vivaldi 只有占用的问题，不说应用绑定加密。
+    // Opera and Vivaldi only have the file-in-use problem; do not mention app-bound encryption for them.
     const opera = cookieNotes(['opera', 'vivaldi'], 'win32');
     expect(opera).toHaveLength(3);
     expect(opera[2]).toMatch(/^Opera、Vivaldi 开着时.*这些浏览器.*改勾 Firefox。$/);
-    // 勾了 Firefox 就不再建议。
+    // Once Firefox is ticked, stop suggesting it.
     const mixed = cookieNotes(['chrome', 'firefox', 'edge', 'brave'], 'win32');
     expect(mixed[3]).toMatch(/^Chrome、Edge、Brave 在 Windows 上通常用应用绑定加密/);
     expect(mixed.join('')).not.toMatch(/改勾 Firefox/);

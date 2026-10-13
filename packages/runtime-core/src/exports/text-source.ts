@@ -2,9 +2,7 @@ import type { TextEntry, TextPlan } from './export-plan.ts';
 import type { TextChapter } from './text-export.ts';
 
 /**
- * 文稿不跳过剪掉的部分（`skipCut: false`，命令与协议规范 §4.4）：不经时间线投影，直接从文档正文取条目——转写的词、
- * 字幕的句子，时间是文档自己的时钟（秒）。取法与引擎 `text_plan.rs` 的 `speech_entries` / `caption_entries` 相同：
- * 隐藏的词与空白的条目不要（隐藏是文稿里删掉的字，不是时间线上剪掉的），零时长的词占后面的空隙，词时间不可信的词标出来。
+ * Script without cut removal (`skipCut: false`, command and protocol spec §4.4): does not go through timeline projection, and takes entries directly from the document body (transcript words, caption sentences), with times on the document's own clock (seconds). The method is the same as `speech_entries` / `caption_entries` in the engine's `text_plan.rs`. Hidden words and blank entries are excluded (hiding removes text from the script, not a cut on the timeline). Zero-duration words take up the gap that follows them, and words with untrustworthy timing are marked.
  */
 
 interface SpeechWord {
@@ -41,7 +39,7 @@ interface SourceBody {
   cues?: CaptionCue[];
 }
 
-/** 零时长的词在后面的空隙里占的一段：到下一个词的起点为止、至多 0.08 秒；下一个词就从这里开始时没有（略过）。 */
+/** The stretch a zero-duration word takes up in the gap that follows: up to the next word's start, at most 0.08 seconds. When the next word starts right here, there is none (skipped). */
 const ZERO_DURATION_SLOT = 0.08;
 
 function speechEntries(body: SourceBody, seconds: (ticks: number | undefined) => number): TextEntry[] {
@@ -110,8 +108,7 @@ function captionEntries(body: SourceBody, seconds: (ticks: number | undefined) =
 }
 
 /**
- * 一份文档不经投影的计划。`projected` 是它在这段范围里的投影：`whole` 时取整份文档；不然（给了范围）取投影到的第一条与
- * 最后一条之间（按文档里的顺序）的原文，其间剪掉的部分都在。计划的范围是 `[0, 最后一条的结束)`。
+ * The plan for a document without projection. `projected` is its projection over this range. `whole` takes the entire document. Otherwise (a range is given), it takes the original text from the first projected entry to the last one (in document order), so cut parts in between are included. The plan's range is `[0, end of the last entry)`.
  */
 export function sourcePlan(body: unknown, projected: TextPlan, whole: boolean): TextPlan {
   const source = (body ?? {}) as SourceBody;
@@ -134,8 +131,7 @@ export function sourcePlan(body: unknown, projected: TextPlan, whole: boolean): 
 }
 
 /**
- * 章节换到原文的时钟：章节标记在序列时间上（相对范围起点，`chapters`），取它之后投影出来的第一条（结束晚于章节开始的那一条）
- * 在原文里的开始。之后没有文字的章节不要。
+ * Maps chapters to the original's clock. Chapter markers are on sequence time (relative to the range start, `chapters`). A chapter's start in the original is the start of the first entry projected after it (the one ending later than the chapter starts). Chapters with no text after them are omitted.
  */
 export function sourceChapters(chapters: readonly TextChapter[], projected: TextPlan, source: TextPlan): TextChapter[] {
   const startOf = new Map<string, number>();

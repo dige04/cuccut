@@ -17,7 +17,7 @@ import {
 import type { AudioPlan, PlannedAsset } from './export-plan.ts';
 import { masterRunner, resolveExportWorkerCommand } from './video-export.ts';
 
-/** 音频导出的混音、母带与编码：真实的 ffmpeg（母带可以是替身，也可以是真的 Render Worker）。缺 ffmpeg 时跳过。 */
+/** Audio export mixing, mastering and encoding: real ffmpeg (mastering may be a stub or the real Render Worker). Skipped when ffmpeg is missing. */
 
 const ffmpeg = (() => {
   try {
@@ -83,7 +83,7 @@ describe.skipIf(!ffmpeg)('音频导出的进度', () => {
     const result = await render(loud, master, progress);
     expect(result.warnings.map((w) => w.code)).toEqual(['LOUDNESS_NOT_MEASURABLE']);
     const share = DURATION * MIX_PROGRESS_SHARE;
-    // 混音只报到份额处（母带开始前先报一次份额处）；母带从份额处按它报的比例走到时长。
+    // Mixing only reports up to the share point (the share point is reported once before mastering starts); mastering runs from the share point to the duration, following the ratio it reports.
     expect(Math.max(...progress.slice(0, atMasterStart))).toBeLessThanOrEqual(share);
     expect(progress[atMasterStart - 1]).toBe(share);
     expect(progress.slice(atMasterStart)).toEqual([share, share + (DURATION - share) / 2, DURATION, DURATION]);
@@ -105,7 +105,7 @@ describe.skipIf(!ffmpeg)('音频导出的进度', () => {
   });
 });
 
-/** 16 位 PCM 的 WAV：找到 `data` 块，按声道交错读成 [−1, 1]。 */
+/** 16-bit PCM WAV: finds the `data` chunk and reads the samples interleaved by channel into [−1, 1]. */
 function wavSamples(bytes: Buffer): Float32Array {
   for (let at = 12; at + 8 <= bytes.length;) {
     const id = bytes.toString('ascii', at, at + 4);
@@ -155,7 +155,7 @@ describe.skipIf(!ffmpeg)('混音的滤镜图从文件读', () => {
       modifiedAt: null,
       audio: { sampleRate: 48_000, channels: 1 },
     };
-    // 前一秒每 0.05 毫秒一个折点、在 0.5 与 1 之间来回；之后静音。
+    // The first second has a breakpoint every 0.05 ms, oscillating between 0.5 and 1; silent after that.
     const envelope: Array<[number, number]> = Array.from({ length: 20_000 }, (_, i) => [i * 0.00005, 0.75 + 0.25 * Math.sin(i / 7)]);
     envelope.push([1.001, 0]);
     const plan: AudioPlan = {
@@ -188,7 +188,7 @@ describe.skipIf(!ffmpeg)('混音的滤镜图从文件读', () => {
     expect(result.media.durationSec).toBeCloseTo(DURATION, 2);
     const samples = wavSamples(await fs.readFile(result.file));
     const peak = (from: number, to: number) => Math.max(...samples.subarray(from * 2 * 48_000, to * 2 * 48_000).map(Math.abs));
-    // ffmpeg 的 sine 振幅是 1/8；包络在 0.5 到 1 之间。
+    // ffmpeg's sine amplitude is 1/8; the envelope is between 0.5 and 1.
     expect(peak(0.1, 0.9)).toBeGreaterThan(0.06);
     expect(peak(1.1, 1.9)).toBe(0);
     expect((await fs.readdir(staging)).sort()).toEqual(['dense.wav', 'tone.wav']);

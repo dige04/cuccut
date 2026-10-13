@@ -19,23 +19,19 @@ import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 import { useRenderedText } from './use-rendered-text.ts';
 
 /**
- * 「文稿」页（设计稿 export-transcript.jsx、model-transcript.js）：语言、格式、带什么、出去是什么样、摘要。
+ * The "Transcript" page (design mockup export-transcript.jsx, model-transcript.js): language, format, what to include, what the output looks like, and the summary.
  *
- * 落到 Runtime（text-export.ts，写法见命令与协议规范 §4.4）的是：主文档（转写，没有时取时间轴上的字幕）、可选一份译文
- * 作双语对照、md / txt，以及五个选项——文首元信息（只 Markdown；勾选跨会话记住，没存过时勾选）、章节标题（来自序列上的
- * 章节标记，视频没有章节时置灰）、段落时间戳、说话人、跳过已剪段（关掉时是剪之前的整份原文，时间按素材算）。五个开关与
- * 文稿面板的复制设置共用（transcript-include.tsx）。
- * 分段与文稿面板同一套规则（`TRANSCRIPT_PARAGRAPH`）。
- * 与设计稿的出入：译文不能单独成稿（主文档只认转写与字幕），原文那一行锁着开；译文一次配一门。
+ * What lands in the Runtime (text-export.ts, see the command and protocol spec §4.4) is: the main document (the transcription; if there is none, the subtitles on the timeline), an optional translation as a bilingual comparison, md / txt, and five options: a metadata header at the top (Markdown only; the tick is remembered across sessions, unticked if never saved), chapter headings (from the sequence's chapter markers; disabled if the video has no chapters), paragraph timestamps, speaker, and skip cut segments (when off, the full original text from before the cuts, with times measured on the source). These five switches are shared with the transcript panel's copy settings (transcript-include.tsx).
+ * Paragraph splitting uses the same rules as the transcript panel (`TRANSCRIPT_PARAGRAPH`).
+ * Differences from the mockup: a translation cannot be a standalone document (the main document only accepts transcription and subtitles); the original-text row is locked on; only one translation language per export.
  *
- * 「出去是什么样」的预览、右上角的复制与摘要的篇幅都取 Runtime 不写文件排出的正文（`exports.renderText`），
- * 与导出的文件逐字节相同：预览框固定高度、可滚动，铺全文；复制成功时图标换成绿色对勾，3 秒后换回。
+ * The "what it looks like" preview, the copy button at the top right, and the length of the summary all use the body text that the Runtime renders without writing a file (`exports.renderText`), which is byte-identical to the exported file. The preview box has a fixed height and scrolls, showing the full text. On a successful copy the icon turns green with a check mark for 3 seconds, then changes back.
  */
 
 const row = style({ marginTop: 12 });
-/** 复制成功后对勾停留多久。 */
+/** How long the check mark stays after copying. */
 const COPIED_MS = 3000;
-/** 预览框（设计稿 `.xtxpv`）：只读、固定高度、可滚动，小号等宽字铺全文；右上角留出复制按钮的位置。 */
+/** Preview box (mockup `.xtxpv`): read-only, fixed height, scrolls; small monospace text showing the full text; leaves room at the top right for the copy button. */
 const previewBox = style({ position: 'relative' });
 const preview = style({
   font: 'code-sm',
@@ -74,7 +70,7 @@ export function ExportTranscriptTab({ env, submitter, onClose }: { env: ExportEn
   }));
   const set = (patch: Partial<Omit<TranscriptForm, 'frontmatter'>>) => setForm((f) => ({ ...f, ...patch }));
   const hasChapters = env.sequence.markers.some((m) => m.kind === 'chapter');
-  /** 生效的选项：文首只在 Markdown 时、章节只在视频有章节时算数（摘要也不写一个不存在的东西）。 */
+  /** The effective options: the header only counts for Markdown, and chapters only count when the video has chapters (so the summary never mentions something that does not exist). */
   const effective: TranscriptForm = { ...form, frontmatter: frontmatter && form.format === 'md', chapters: form.chapters && hasChapters };
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -106,7 +102,7 @@ export function ExportTranscriptTab({ env, submitter, onClose }: { env: ExportEn
   const rendered = useRenderedText(env, settings, source ? [source.documentId, ...(translation ? [translation.documentId] : [])] : []);
   const shown = rendered.shown;
   const receipt = rendered.output ? lengthReceipt(rendered.output.entries, rendered.output.cjkCharacters, rendered.output.words) : null;
-  /** 成功只换图标（绿色对勾），不弹提示；浏览器拒绝时照旧弹负向提示。 */
+  /** Success only swaps the icon (green check), with no toast; if the browser refuses, the negative notice still appears as usual. */
   const copy = async () => {
     if (rendered.output && (await copyToClipboard(rendered.output.content, null))) setCopied(true);
   };
@@ -173,7 +169,7 @@ export function ExportTranscriptTab({ env, submitter, onClose }: { env: ExportEn
       <Note>{format.note}</Note>
 
       <Sec>{EXPORT_COPY.include}</Sec>
-      {/* 与文稿面板的复制设置同一组开关（transcript-include.tsx） */}
+      {/* The same group of switches as the transcript panel's copy settings (transcript-include.tsx) */}
       <TranscriptIncludeChecks
         value={effective}
         disabled={{ frontmatter: form.format !== 'md', chapters: !hasChapters }}
@@ -188,7 +184,7 @@ export function ExportTranscriptTab({ env, submitter, onClose }: { env: ExportEn
         <Note warn>{rendered.problem.title}</Note>
       ) : (
         <div className={previewBox}>
-          {/* 可滚动的区域要能用键盘到达（tabIndex），读屏按「预览」念出。 */}
+          {/* A scrollable area must be reachable by keyboard (tabIndex); screen readers read "Preview" aloud. */}
           <pre
             className={preview({ isStale: rendered.loading })}
             tabIndex={0}

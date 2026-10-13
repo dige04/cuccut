@@ -1,33 +1,24 @@
 /*!
- * 元素路径与编辑溯源的**寻址层**（BCF 直接编辑回写方案 §4.3）。
+ * Addressing layer for element paths and edit provenance (BCF direct-edit write-back plan §4.3).
  *
- * 界面在舞台上点中的是 resolve 之后的节点，而回写要落到作者写在 TSX 里的节点，
- * 中间隔着 `Resolver::expand_node` 的组件展开与派生 id 铸造。本模块定义两跳映射
- * 里**共用的那套地址**：
+ * What the stage hit-tests on the canvas is the node after resolve, but write-back has to land on the node the author wrote in the TSX, with the component expansion of `Resolver::expand_node` and the minting of derived ids in between. This module defines the address scheme shared by the two-hop mapping:
  *
- * 1. **元素路径**（`path`）：从 clip 根元素出发的 `/` 分段串。每段是子节点的
- *    `id`（非空、不含 `/`、且在同级里唯一），否则退化成 `#<下标>`。根元素本身
- *    是空串。id 优先是刻意的——作者重排数组不该让未决的编辑请求失配。
- * 2. **JSON 指针**（`pointer`）：编译产物里的绝对位置，形如
- *    `tracks/0/clips/2/element/children/1/style/x`（无前导 `/`，数组用下标）。
- *    edit-map 的条目、W2 手术的目标都以它为准。
+ * 1. **Element path** (`path`): a `/`-separated segment string starting from the clip root element. Each segment is the child's `id` (non-empty, no `/`, and unique among its siblings), otherwise it falls back to `#<index>`. The root element itself is the empty string. Preferring the id is deliberate: the author reordering the array should not cause a pending edit request to mismatch.
+ * 2. **JSON pointer** (`pointer`): the absolute position in the compiled output, of the form `tracks/0/clips/2/element/children/1/style/x` (no leading `/`, arrays by index). Edit-map entries and the target of W2 surgery both go by it.
  *
- * 客户端说 `(clip, path, prop)`，服务端用 [`locate_element`] 把它折成 pointer，
- * 再查 edit-map 决定走哪条通道。反方向（pointer → path）不提供：pointer 是实现
- * 内部的精确坐标，暴露给消费方会让它去反解析数组下标。
+ * The client says `(clip, path, prop)`, and the server folds it into a pointer with [`locate_element`], then looks up the edit-map to decide which channel to take. The reverse direction (pointer → path) is not provided: the pointer is the precise internal coordinate of the implementation, and exposing it to consumers would let them reverse-parse array indices.
  */
 
 use serde_json::Value;
 
 use crate::json::JsonExt;
 
-/// 元素路径的下标段前缀。`#` 不是合法 id 首字符，两种段形态不会撞。
+/// Prefix for index segments in an element path. `#` is not a legal first character for an id, so the two segment forms cannot collide.
 pub const INDEX_PREFIX: char = '#';
 
-/// 单个子节点在同级里的路径段：有稳定 id 用 id，否则 `#<下标>`。
+/// The path segment of a single child among its siblings: uses the id if it has a stable one, otherwise `#<index>`.
 ///
-/// “稳定”= 非空、不含 `/`、不以 `#` 开头、且在 `siblings` 里唯一。同级重名时
-/// 两个节点都退化成下标段（否则一条路径会指向两个节点）。
+/// "Stable" means non-empty, contains no `/`, does not start with `#`, and is unique within `siblings`. When siblings share a name, both nodes fall back to index segments (otherwise one path would point at two nodes).
 pub fn path_segment(siblings: &[Value], index: usize) -> String {
     let fallback = format!("{INDEX_PREFIX}{index}");
     let Some(node) = siblings.get(index) else {
@@ -43,7 +34,7 @@ pub fn path_segment(siblings: &[Value], index: usize) -> String {
     if unique { id.to_string() } else { fallback }
 }
 
-/// 可作路径段的 id：非空、不含 `/`、不以 `#` 开头。
+/// An id usable as a path segment: non-empty, contains no `/`, does not start with `#`.
 pub fn stable_id(node: &Value) -> Option<&str> {
     let id = node.gstr("id")?;
     if id.is_empty() || id.contains('/') || id.starts_with(INDEX_PREFIX) {
@@ -52,7 +43,7 @@ pub fn stable_id(node: &Value) -> Option<&str> {
     Some(id)
 }
 
-/// 拼接元素路径：`join_path("", "title") == "title"`。
+/// Joining element paths: `join_path("", "title") == "title"`.
 pub fn join_path(base: &str, segment: &str) -> String {
     if base.is_empty() {
         segment.to_string()
@@ -61,17 +52,17 @@ pub fn join_path(base: &str, segment: &str) -> String {
     }
 }
 
-/// 拼接 JSON 指针段（同 `join_path`，另起名字是为了让调用点自己说清在拼哪种地址）。
+/// Joins JSON pointer segments (same as `join_path`; a separate name is used so the call site makes clear which kind of address is being built).
 pub fn join_pointer(base: &str, segment: &str) -> String {
     join_path(base, segment)
 }
 
-/// `prop` 的点路径 → 指针段（`style.x` → `style/x`）。
+/// Dot path of `prop` → pointer segments (`style.x` → `style/x`).
 pub fn prop_pointer(prop: &str) -> String {
     prop.replace('.', "/")
 }
 
-/// 按 JSON 指针（无前导 `/`，数组用下标）取值。
+/// Fetch a value by JSON pointer (no leading `/`, arrays by index).
 pub fn value_at<'a>(doc: &'a Value, pointer: &str) -> Option<&'a Value> {
     let mut cur = doc;
     if pointer.is_empty() {
@@ -87,7 +78,7 @@ pub fn value_at<'a>(doc: &'a Value, pointer: &str) -> Option<&'a Value> {
     Some(cur)
 }
 
-/// clip id → 它在编译产物里的 `element` 指针（`tracks/<i>/clips/<j>/element`）。
+/// clip id → its `element` pointer in the compiled output (`tracks/<i>/clips/<j>/element`).
 pub fn locate_clip_element(doc: &Value, clip: &str) -> Option<String> {
     let tracks = doc.get_("tracks")?.as_array()?;
     for (ti, track) in tracks.iter().enumerate() {
@@ -101,10 +92,9 @@ pub fn locate_clip_element(doc: &Value, clip: &str) -> Option<String> {
     None
 }
 
-/// `(clip, 元素路径)` → 编译产物里的 JSON 指针。
+/// `(clip, element path)` → JSON pointer in the compiled output.
 ///
-/// 路径段既认 id，也认 `#<下标>`；为了兼容手写的目标，纯数字段在 id 匹配失败后
-/// 再按下标试一次（方案 §3 的示例就写成 `cards/1/value`）。
+/// Path segments accept both ids and `#<index>`. To stay compatible with hand-written targets, a purely numeric segment is tried again as an index after id matching fails (the example in plan §3 is written as `cards/1/value`).
 pub fn locate_element(doc: &Value, clip: &str, path: &str) -> Option<String> {
     let mut pointer = locate_clip_element(doc, clip)?;
     if path.is_empty() {
@@ -124,7 +114,7 @@ pub fn locate_element(doc: &Value, clip: &str, path: &str) -> Option<String> {
     Some(pointer)
 }
 
-/// 一段路径在同级数组里的下标。
+/// The index of a path segment within its sibling array.
 fn child_index(children: &[Value], segment: &str) -> Option<usize> {
     if let Some(rest) = segment.strip_prefix(INDEX_PREFIX) {
         return rest.parse::<usize>().ok().filter(|i| *i < children.len());
@@ -138,14 +128,14 @@ fn child_index(children: &[Value], segment: &str) -> Option<usize> {
     if by_id.len() == 1 {
         return Some(by_id[0]);
     }
-    // 兜底：裸数字段按下标（方案示例里的 `cards/1/value` 形态）
+    // Fallback: bare numeric segments are treated as indices (the `cards/1/value` form in the plan's example)
     segment
         .parse::<usize>()
         .ok()
         .filter(|i| *i < children.len())
 }
 
-/// 编译产物里一棵元素树的全部路径（深度优先，根在前）。
+/// All paths of an element tree in the compiled output (depth-first, root first).
 pub fn element_paths(root: &Value) -> Vec<String> {
     let mut out = Vec::new();
     walk_paths(root, String::new(), &mut out);
@@ -165,25 +155,23 @@ fn walk_paths(node: &Value, path: String, out: &mut Vec<String>) {
     }
 }
 
-/// 舞台节点的作者溯源（`resolve` 铸派生 id 时随手登记，方案 §4.3-2）。
+/// Author provenance of a stage node (recorded as a side effect when `resolve` mints derived ids, plan §4.3-2).
 ///
-/// 消费方拿它把 resolved 命中折回**作者写的那个节点**；`component` 非空即说明
-/// 这个节点是组件展开的产物，W2 手术一律不适用，只能进 W3。
+/// Consumers use it to map a resolved hit back to the **node the author wrote**. A non-empty `component` means this node is a product of component expansion: W2 surgery never applies, and it can only go to W3.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NodeOrigin {
-    /// 作者节点的元素路径。组件**内部**节点从组件根起算；逐实例 wrapper
-    /// （编译器铸的合成盒）留在 clip 空间，值即 `use` 节点自身的路径。
+    /// Element path of the author node. Nodes **inside** a component count from the component root; per-instance wrappers (synthetic boxes minted by the compiler) stay in clip space, and the value is the path of the `use` node itself.
     pub authored: String,
-    /// 组件名（组件展开产物才有）。
+    /// Component name (present only for component-expansion products).
     pub component: Option<String>,
-    /// 实例化点：`use` 节点自身的元素路径（clip 根起算）。
+    /// Instantiation point: the element path of the `use` node itself (from the clip root).
     pub site: Option<String>,
-    /// `use.each` 展开下标。
+    /// `use.each` expansion index.
     pub index: Option<usize>,
 }
 
 impl NodeOrigin {
-    /// 直接写在 clip 元素树里的作者节点。
+    /// Author node written directly in the clip element tree.
     pub fn authored(path: impl Into<String>) -> Self {
         Self {
             authored: path.into(),
@@ -191,7 +179,7 @@ impl NodeOrigin {
         }
     }
 
-    /// 组件展开产物：`site` 是 use 节点路径，`authored` 是组件根内路径。
+    /// Component expansion product: `site` is the use-node path, `authored` is the path inside the component root.
     pub fn derived(
         component: impl Into<String>,
         site: impl Into<String>,
@@ -206,12 +194,12 @@ impl NodeOrigin {
         }
     }
 
-    /// 派生节点不可字面量手术（方案 §4.3-2：折不回作者节点就归 derived）。
+    /// Derived nodes cannot undergo literal surgery (plan §4.3-2: if they cannot be folded back to the author node, they are classed as derived).
     pub fn is_derived(&self) -> bool {
         self.component.is_some()
     }
 
-    /// 与预览壳 `resolve.js` 的 `_origin` 同形的 JSON（镜像对拍用）。
+    /// JSON identical in shape to the `_origin` of the preview shell's `resolve.js` (for mirror cross-checking).
     pub fn to_json(&self) -> Value {
         let mut map = serde_json::Map::new();
         map.insert("authored".into(), Value::String(self.authored.clone()));
@@ -228,12 +216,12 @@ impl NodeOrigin {
     }
 }
 
-/// 反查表的一行：舞台上的 resolved 位置 → 作者节点。
+/// A row of the reverse-lookup table: stage resolved position → author node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginEntry {
-    /// resolved 树里的元素路径（同一套分段规则，但走的是展开后的树）。
+    /// Element path within the resolved tree (same segment rules, but over the expanded tree).
     pub resolved: String,
-    /// resolved 节点 id（可能重复——组件多实例共享组件根 id，故不作键）。
+    /// Resolved node id (may be duplicated: multiple component instances share the component root id, so it is not used as a key).
     pub id: String,
     pub origin: NodeOrigin,
 }
@@ -282,7 +270,7 @@ mod tests {
             .clone();
         assert_eq!(path_segment(&children, 0), "title");
         assert_eq!(path_segment(&children, 1), "cards");
-        // 同级重名：两个都退化成下标段
+        // Same-level name collision: both fall back to index segments
         assert_eq!(path_segment(&children, 2), "#2");
         assert_eq!(path_segment(&children, 3), "#3");
     }
@@ -302,7 +290,7 @@ mod tests {
             locate_element(&d, "problem-shot", "cards/#1").unwrap(),
             "tracks/1/clips/0/element/children/1/children/1"
         );
-        // 方案示例里的裸数字段
+        // Bare numeric segment from the plan example
         assert_eq!(
             locate_element(&d, "problem-shot", "cards/1").unwrap(),
             "tracks/1/clips/0/element/children/1/children/1"

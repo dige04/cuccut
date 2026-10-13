@@ -14,7 +14,7 @@ import { pl } from './speech-worker.pl.ts';
 import { tr } from './speech-worker.tr.ts';
 import { vi } from './speech-worker.vi.ts';
 
-/** `packages/jobs/src/pipelines/speech-worker.ts` 给人看的文字：错误与产出检查（`details.problems`）。 */
+/** `packages/jobs/src/pipelines/speech-worker.ts`: text shown to people for errors and output checks (`details.problems`). */
 const en = {
   incompatible: (p: { protocol: string }) => `Speech Worker's protocol isn't ${p.protocol}`,
   exited: 'Speech Worker exited unexpectedly',

@@ -9,12 +9,11 @@ import { CliError, EXIT, exitCodeForJob, type ExitCode, type Output } from '../e
 import { waitForJob, watchJobs } from '../job-wait.ts';
 
 /**
- * 管理桶（Agent 面设计 §7）的公共部分：每个名词一个文件（`admin/<名词>.ts`），各自声明旗标与用法，共用这里的上下文、
- * §5.1 的信封与 §5.2 的退出码。手写的格式（`*-output.ts`）只在给人读时用；`--json`（stdout 不是 TTY 时默认）写协议方法的
- * 原始结果。
+ * Common parts of the admin bucket (Agent-surface design §7): one file per noun (`admin/<noun>.ts`), each declaring its flags and usage, sharing the context here,
+ * the §5.1 envelope and the §5.2 exit codes. Hand-written formats (`*-output.ts`) are used only for people to read. `--json` (the default when stdout is not a TTY) writes the raw result of the protocol method.
  */
 
-/** 每个名词都认的旗标。 */
+/** Flags that every noun accepts. */
 export const COMMON_OPTIONS = {
   json: { type: 'boolean' },
   'no-json': { type: 'boolean' },
@@ -28,28 +27,28 @@ export type AdminValues<O extends ParseArgsOptionsConfig> = ReturnType<
 
 export interface AdminNoun<O extends ParseArgsOptionsConfig = ParseArgsOptionsConfig> {
   name: string;
-  /** 与目录同名的名词（`models`、`jobs`、`space`、`library`、`skills`）只认这些子命令，其余交给派生命令。 */
+  /** Nouns named the same as a directory (`models`, `jobs`, `space`, `library`, `skills`) accept only these subcommands; the rest go to derived commands. */
   verbs?: readonly string[];
   partial?: true;
-  /** 不连 Runtime 的子命令（`skill path`）：`ctx.client` 不可用。 */
+  /** Subcommands that do not connect to the Runtime (`skill path`): `ctx.client` is not available. */
   offline?: readonly string[];
-  /** `cuccut <名词> --help` 与 `cuccut help <名词>` 的正文。 */
+  /** The body of `cuccut <noun> --help` and `cuccut help <noun>`. */
   usage: string;
   options: O;
   run(ctx: AdminRun<AdminValues<O>>): Promise<ExitCode>;
 }
 
-/** 声明一个名词（保留旗标的字面类型）。 */
+/** Declares a noun (keeps the literal type of its flags). */
 export function defineNoun<const O extends ParseArgsOptionsConfig>(noun: AdminNoun<O>): AdminNoun<O> {
   return noun;
 }
 
 export interface FollowOptions {
-  /** 完成时：写结果，返回退出码。 */
+  /** On completion: writes the result and returns the exit code. */
   complete: (job: JobRecord) => Promise<ExitCode> | ExitCode;
-  /** 失败、取消或中断时补充说明（写 stderr）；之后写失败信封。 */
+  /** On failure, cancellation or interruption: adds an explanation (written to stderr), then writes the failure envelope. */
   stopped?: (job: JobRecord) => void;
-  /** 只认第几次尝试之后的记录。 */
+  /** Only accepts records from after the Nth attempt. */
   minAttempt?: number;
   onUpdate?: (job: JobRecord) => void;
 }
@@ -61,7 +60,7 @@ export class AdminRun<V> {
   /** Runtime Home（`CUCCUT_HOME`）。 */
   readonly home: string;
   readonly env: NodeJS.ProcessEnv;
-  /** 名词之后的位置参数。 */
+  /** Positional arguments after the noun. */
   readonly args: string[];
   readonly values: V;
   readonly usage: string;
@@ -86,33 +85,33 @@ export class AdminRun<V> {
     this.usage = init.usage;
   }
 
-  /** 到 Runtime 的连接；名词声明为 `offline` 的子命令里没有。 */
+  /** The connection to the Runtime. Not present in subcommands the noun declares as `offline`. */
   get client(): CucCutClient {
     if (!this.#client) throw new Error(CLI.noRuntimeClient);
     return this.#client;
   }
 
-  /** 成功：`--json` 写原始结果的信封，给人读时打印这几行。 */
+  /** On success: with `--json`, the envelope of the raw result. For people to read, prints these lines. */
   done(result: unknown, lines: readonly string[], next?: string | null): ExitCode {
     return this.output.report(result, lines, next);
   }
 
-  /** 没有抛错、但这条命令没有做成（审批已处理过、服务没起来等）：失败信封。 */
+  /** No error was thrown, but this command did not get done (the approval was already handled, the service did not start, etc.): failure envelope. */
   fail(error: CatalogToolError, exitCode?: ExitCode): ExitCode {
     return this.output.failure(error, exitCode);
   }
 
-  /** 给人看的过程说明，写 stderr（不碰 stdout 的 JSON）。 */
+  /** Progress notes for people, written to stderr (does not touch stdout's JSON). */
   log(line: string): void {
     this.output.stderr.write(`${line}\n`);
   }
 
-  /** 用法错误（退出码 4）。 */
+  /** Usage error (exit code 4). */
   usageError(message: string = this.usage): CliError {
     return new CliError('INVALID_ARGUMENTS', message);
   }
 
-  /** 跑一段参数解析：`*-output.ts` 里的解析函数抛的普通错误都是用法错误。 */
+  /** Runs an argument parse. Plain errors thrown by the parse functions in `*-output.ts` are all usage errors. */
   parse<T>(fn: () => T): T {
     try {
       return fn();
@@ -122,14 +121,14 @@ export class AdminRun<V> {
     }
   }
 
-  /** 相对路径按工作目录解析。 */
+  /** Relative paths are resolved against the working directory. */
   resolve(file: string): string {
     return path.resolve(this.cwd, file);
   }
 
   /**
-   * 要用户同意才做的事（下载、执行更新命令）：`--yes` 直接同意；终端里问一次；不在终端里又没给 `--yes` 时以
-   * `CONFIRMATION_REQUIRED`（退出码 4）拒绝，不默认同意。
+   * Actions that need the user's consent (downloads, running update commands): `--yes` consents directly. In a terminal it asks once. When not in a terminal and `--yes` is not given, it refuses with
+   * `CONFIRMATION_REQUIRED` (exit code 4). It never consents by default.
    */
   async confirm(question: string, yes: boolean | undefined, refusal: string): Promise<boolean> {
     if (yes) return true;
@@ -143,7 +142,7 @@ export class AdminRun<V> {
     }
   }
 
-  /** 提交一个任务并跟到终态：进度写 stderr，完成交给 `complete`，失败写失败信封（退出码按任务的错误码）。 */
+  /** Submits a task and follows it to its final state. Progress is written to stderr, completion is handed to `complete`, and failure is written as a failure envelope (the exit code follows the task's error code). */
   async follow(submit: () => Promise<{ jobId: string }>, options: FollowOptions): Promise<ExitCode> {
     const watcher = watchJobs(this.client);
     let jobId: string;
@@ -176,7 +175,7 @@ export class AdminRun<V> {
   }
 }
 
-/** 读标准输入的全部内容。 */
+/** Reads all of standard input. */
 export async function readStdin(prompt: string | null): Promise<string> {
   if (process.stdin.isTTY && prompt) process.stderr.write(`${prompt}\n`);
   const chunks: Buffer[] = [];

@@ -18,7 +18,7 @@ import { StyleCells } from './caption-style-cells.tsx';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 import { ColorField, Note, PRow, Sec, SecHead, Seg, ValueRow } from './inspector-controls.tsx';
 
-/** 「当前词」「动效」「倒鸭子」三段共用的入参：这一行叠完覆盖的样式怎么读、改完的根样式交给谁（拖动中 / 松手）。 */
+/** Input shared by the three sections “当前词” (current word), “动效” (motion) and “倒鸭子” (reverse): how the style that this line overlays is read, and to whom the root style goes after editing (while dragging or on release). */
 export interface WordSectionProps {
   root: Json;
   kind: LineKind;
@@ -28,14 +28,14 @@ export interface WordSectionProps {
   onCommit(next: Json): void;
 }
 
-/** 改一个词级维度：返回改完的根样式（`editWordStyle`：只回写词级键）。 */
+/** Changes one word-level dimension and returns the root style after the edit (`editWordStyle`, which writes back only word-level keys). */
 export function useWordEdit({ root, kind, paired }: Pick<WordSectionProps, 'root' | 'kind' | 'paired'>) {
   const body = useMemo(() => lineBody(root, kind), [root, kind]);
   const edit = (change: (b: CaptionStyleBody) => CaptionStyleBody) => editWordStyle(root, kind, paired, change);
   return { body, edit };
 }
 
-/** 属性页被要求滚到这一段时（字幕工具条的「动画」）滚过来，滚完清掉。 */
+/** When the properties page is asked to scroll to this section (the caption toolbar's “动画” (animation)), it scrolls there and then clears the request. */
 export function useSectionFocus() {
   const ref = useRef<HTMLDivElement>(null);
   const focus = useCaptionSection((s) => s.focus);
@@ -48,8 +48,7 @@ export function useSectionFocus() {
 }
 
 /**
- * 字幕属性页「当前词」（原型 panel-subactive.jsx，字幕样式模型设计 §4 / §9）：正在念的那个词长什么样，念过 / 没念到的
- * 词怎么处理。每一格是这一行套上那个模式之后的缩略图。只改词级键，涂装一个键都不动。译文没有逐词时间，这一段只给说明。
+ * Caption properties page “当前词” (current word) (prototype panel-subactive.jsx; caption style model design §4 / §9): what the word being read looks like, and how words already read or not yet reached are handled. Each cell is a thumbnail of this line with that mode applied. Only word-level keys are changed; no appearance keys are touched. The translation has no per-word timing, so this section only shows an explanation.
  */
 export function CaptionActiveSection(props: WordSectionProps) {
   const { root, kind, isDisabled, onLive, onCommit } = props;
@@ -143,7 +142,7 @@ export function CaptionActiveSection(props: WordSectionProps) {
           <Seg
             label={P.spoken}
             value={a.spoken}
-            // 扫色本身就是染过（§5），不给「染色」。
+            // The color sweep is itself a dye (§5), so no “染色” (dye color) option is offered.
             options={SPOKEN_MODES.filter((m) => !(sweep && m === 'tint')).map((m) => ({ key: m, label: P.spokenModes[m] }))}
             isDisabled={isDisabled}
             onChange={(spoken) => commit({ spoken })}

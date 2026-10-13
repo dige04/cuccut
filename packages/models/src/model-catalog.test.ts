@@ -16,7 +16,7 @@ import { LocalProviderSource } from './local-source.ts';
 import { MANIFEST_FILE, ModelCatalog, resolveModelsDir, resolveModelsRoot } from './model-catalog.ts';
 import { weightBytes } from './repo-manifests.ts';
 
-/** 在模型目录里写一个合成的仓库：几个小文件和与之相符的清单。 */
+/** Write a synthetic repository into the model directory: a few small files and a matching manifest. */
 async function writeRepo(root: string, repo: string, revision: string, files: Record<string, string>): Promise<string> {
   const dir = path.join(root, ...repo.split('/'));
   await fs.mkdir(dir, { recursive: true });
@@ -62,7 +62,7 @@ describe('ModelCatalog', () => {
   it('模型目录的根：CUCCUT_MODELS_DIR 覆盖默认的 <home>/models', () => {
     expect(resolveModelsRoot('/h', {})).toBe(path.join('/h', 'models'));
     expect(resolveModelsRoot('/h', { CUCCUT_MODELS_DIR: '/m' })).toBe(path.resolve('/m'));
-    // 设置 `models.dir` 在环境变量之后、缺省之前；设成缺省位置等于没设。
+    // Set `models.dir` after the environment variable but before the default. Setting it to the default location is the same as not setting it.
     expect(resolveModelsDir('/h', {}, '/s')).toEqual({
       path: path.resolve('/s'),
       source: 'setting',
@@ -100,7 +100,7 @@ describe('ModelCatalog', () => {
       capability: 'transcribe',
       backend: 'mlx',
       device: 'metal',
-      // 说明带着引用：界面与 CLI 按读者的语言重新生成。
+      // The description carries a reference: the UI and CLI regenerate it in the reader's language.
       detailRef: { key: 'modelsModelCatalog.noManifest', params: { repo: expect.any(String) } },
     });
     await installBoth();
@@ -111,11 +111,11 @@ describe('ModelCatalog', () => {
       device: 'metal',
       label: 'Qwen3-ASR 0.6B',
       state: 'installed',
-      // 必需组件的下载大小，按随应用发布的清单估计（不看本机装的文件）。
+      // The download size of required components, estimated from the manifest shipped with the app (does not look at locally installed files).
       estimatedBytes: 714_289_971,
       license: expect.objectContaining({ name: 'Apache-2.0', commercialUse: true }),
       components: [
-        // 每个组件也带按清单估的下载大小（装好的照样给），界面在缺组件时据此写要下多少。
+        // Each component also carries a download size estimated from the manifest (even when installed). The UI uses it to say how much to download when components are missing.
         {
           component: 'asr',
           repo: asr.repo,
@@ -125,7 +125,7 @@ describe('ModelCatalog', () => {
           estimatedBytes: 713_031_680,
           sharedWith: [],
         },
-        // 大一档的 Qwen3-ASR 用同一个 VAD。
+        // The larger Qwen3-ASR tier uses the same VAD.
         {
           component: 'vad',
           repo: vad.repo,
@@ -135,7 +135,7 @@ describe('ModelCatalog', () => {
           estimatedBytes: 1_258_291,
           sharedWith: ['qwen3-asr-1.7b@mlx-8bit', 'whisper-large-v3@coreml', 'whisper-large-v3-turbo@coreml'],
         },
-        // 可选的对齐器没装：模型包照样算装好。
+        // The optional aligner is not installed: the model pack still counts as installed.
         {
           component: 'aligner',
           repo: QWEN3_FORCED_ALIGNER.repo,
@@ -150,14 +150,14 @@ describe('ModelCatalog', () => {
             'moss-transcribe-diarize@mlx-8bit',
           ],
           optional: true,
-          // 组件自己的许可随状态带出。
+          // Each component's own license is carried along with its status.
           license: QWEN3_FORCED_ALIGNER.license,
         },
       ],
     });
     expect((await catalog.list()).map((b) => b.bundleId)).toEqual(platformBundles('darwin', 'arm64').map((b) => b.bundleId));
 
-    // ASR 好、VAD 坏：缺一部分组件，报告 incomplete 并点名缺的组件与原因，不当成整包没装。
+    // ASR good, VAD bad: some components are missing. Report incomplete and name the missing components and reasons, rather than treating the whole pack as not installed.
     const weights = path.join(catalog.repoDir(vad.repo), 'model.safetensors');
     await fs.writeFile(weights, 'weights-vad-longer');
     let status = await catalog.status(QWEN3_ASR_0_6B_BUNDLE);
@@ -171,7 +171,7 @@ describe('ModelCatalog', () => {
 
     await writeRepo(root, vad.repo, 'other-revision', { 'model.safetensors': 'x' });
     expect((await catalog.status(QWEN3_ASR_0_6B_BUNDLE))!.detail).toContain('版本不是');
-    // 两个组件都缺：报第一个组件的具体原因。
+    // Both components missing: report the specific reason of the first component.
     await fs.rm(path.join(catalog.repoDir(asr.repo), 'config.json'));
     expect(await catalog.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({ state: 'not-installed', reason: 'missing-file' });
     expect(await catalog.status('nope')).toBeNull();
@@ -225,7 +225,7 @@ describe('ModelCatalog', () => {
         { modelId: 'htdemucs-ft@candle', default: true },
       ]);
     }
-    // candle 的分离在 CPU 与 CUDA 上都升成 f32：常驻按文件的两倍，CPU 计在内存、CUDA 计在 GPU 内存。
+    // candle's separation is upcast to f32 on both CPU and CUDA: resident memory is twice the file size. CPU counts toward memory, CUDA counts toward GPU memory.
     const linux = new ModelCatalog({ root, platform: 'linux', arch: 'x64' });
     const bytes = (await linux.workerWeightBytes('htdemucs-ft@candle'))!;
     expect(bytes).toBe(await silicon.workerWeightBytes('htdemucs-ft@mlx'));
@@ -329,19 +329,19 @@ describe('ModelCatalog', () => {
     await writeRepo(root, vad.repo, vad.revision, { 'config.json': '{}', 'model.safetensors': 'weights-vad' });
     const windows = new ModelCatalog({ root, platform: 'win32', arch: 'x64', threads: 2 });
     expect(await windows.status(turbo.bundleId)).toMatchObject({ state: 'installed', backend: 'ggml', device: 'cpu' });
-    // 没装可选的对齐器：Whisper 的权重字节（内置清单大小未知，按估计的 834 MiB）加上 VAD 在 candle CPU 上的 f32 常驻量，计在内存。
+    // The optional aligner is not installed: Whisper's weight bytes (the built-in manifest size is unknown, so the estimated 834 MiB), plus VAD's f32 resident size on candle CPU, counted toward memory.
     const memory = { bytes: 834 * 1024 * 1024 + vad.parameters! * 4, pool: 'memory' };
     expect(await windows.workerFootprint(turbo.bundleId)).toEqual(memory);
     windows.setWorkerDevice('ggml', 'vulkan');
     expect(await windows.status(turbo.bundleId)).toMatchObject({ device: 'vulkan' });
     expect(await windows.bundleFor(turbo.bundleId)).toMatchObject({ backend: 'ggml', device: 'vulkan' });
     expect(await windows.workerFootprint(turbo.bundleId)).toEqual({ ...memory, pool: 'gpuMemory' });
-    // CUDA 安装包的 Worker 报 `cuda`：同样计在 GPU 内存。
+    // A CUDA install's Worker reporting `cuda`: also counted toward GPU memory.
     windows.setWorkerDevice('ggml', 'cuda');
     expect(await windows.status(turbo.bundleId)).toMatchObject({ device: 'cuda' });
     expect(await windows.bundleFor(turbo.bundleId)).toMatchObject({ backend: 'ggml', device: 'cuda' });
     expect(await windows.workerFootprint(turbo.bundleId)).toEqual({ ...memory, pool: 'gpuMemory' });
-    // candle 的设备与 GGML 的各记各的。
+    // candle's device and GGML's are tracked separately.
     expect(await windows.status('qwen3-asr-0.6b@candle')).toMatchObject({ device: 'cpu' });
     windows.setWorkerDevice('ggml', null);
     expect(await windows.status(turbo.bundleId)).toMatchObject({ device: 'cpu' });
@@ -380,7 +380,7 @@ describe('ModelCatalog', () => {
     expect(await linux.bundleFor('qwen3-asr-0.6b@candle', { device: 'cpu' })).toMatchObject({ device: 'cpu' });
     linux.setWorkerDevice('candle', null);
     expect(await linux.status('qwen3-asr-0.6b@candle')).toMatchObject({ device: 'cpu' });
-    // MLX 的设备是登记好的，不随握手变。
+    // MLX's device is registered and does not change with the handshake.
     const silicon = new ModelCatalog({ root, ...mac });
     silicon.setWorkerDevice('mlx', 'cpu');
     expect(await silicon.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({ device: 'metal' });
@@ -439,12 +439,12 @@ describe('ModelCatalog', () => {
     const local = async () =>
       (await new LocalProviderSource({ catalog, transcriber: null }).describe('local', 'view'))!.capabilities.transcribe!.models;
 
-    // 没装：识别模型包不带说话人组件。
+    // Not installed: the recognition model pack does not include the speaker component.
     const before = await catalog.workerWeightBytes(QWEN3_ASR_0_6B_BUNDLE);
     expect(Object.keys((await catalog.bundleFor(QWEN3_ASR_0_6B_BUNDLE)).components).sort()).toEqual(['asr', 'vad']);
     expect(await catalog.speakers(QWEN3_ASR_0_6B_BUNDLE)).toBe('none');
     expect(await catalog.speakers('moss-transcribe-diarize@mlx-8bit')).toBe('native');
-    // 没装也说出要哪个模型包（界面据此给「下载」）；MOSS 自己区分，不给。
+    // Even when not installed, name which model pack is needed (the UI uses this to offer “下载”, download). MOSS distinguishes speakers itself, so nothing is given.
     expect(await local()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ modelId: QWEN3_ASR_0_6B_BUNDLE, speakers: 'none', diarizationPack: SPEAKER_DIARIZATION_BUNDLE }),
@@ -453,7 +453,7 @@ describe('ModelCatalog', () => {
     expect((await local()).find((m) => m.modelId === 'moss-transcribe-diarize@mlx-8bit')).not.toHaveProperty('diarizationPack');
     expect((await local()).some((m) => m.modelId === SPEAKER_DIARIZATION_BUNDLE)).toBe(false);
 
-    // 只装了一半（缺 WeSpeaker）还是不带。
+    // Only half installed (WeSpeaker missing): still not included.
     const segmentation = pack.components.segmentation!;
     const speaker = pack.components.speaker!;
     expect(speaker.optional).toBeFalsy();
@@ -490,7 +490,7 @@ describe('ModelCatalog', () => {
     await installBoth();
     const catalog = new ModelCatalog({ root, ...mac });
     expect((await catalog.verify(QWEN3_ASR_0_6B_BUNDLE)).ok).toBe(true);
-    // 同样大小、内容不同：只有 verify 发现得了。
+    // Same size, different content: only verify can detect this.
     await fs.writeFile(path.join(catalog.repoDir(asr.repo), 'model.safetensors'), 'weights-ASR');
     expect(await catalog.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({ state: 'installed' });
     const result = await catalog.verify(QWEN3_ASR_0_6B_BUNDLE);
@@ -517,7 +517,7 @@ describe('ModelCatalog', () => {
   });
 
   const realRoot = '/Users/jim/Library/Application Support/CucCut/models';
-  // 只在显式要求时读真实目录（CUCCUT_REAL_MODELS_TEST=1）：平时的测试不碰用户的数据目录。
+  // The real directory is read only when explicitly asked (CUCCUT_REAL_MODELS_TEST=1). Ordinary tests do not touch the user's data directory.
   const realAvailable =
     process.env.CUCCUT_REAL_MODELS_TEST === '1' &&
     process.platform === 'darwin' &&
@@ -534,7 +534,7 @@ describe('ModelCatalog', () => {
   });
 });
 
-/** 音乐模型包的第二个组件 audio.cpp 引擎（架构设计 §6.3）：按主机平台选压缩包，放在工具目录里，可以用 `engineOverride` 顶替。 */
+/** The second component of the music model pack, the audio.cpp engine (architecture design §6.3): the archive is chosen by host platform, placed in the tools directory, and can be replaced with `engineOverride`. */
 describe('ModelCatalog audio.cpp 引擎组件', () => {
   const YUE = 'yue2-3b@audio-cpp-q8';
   let root: string;
@@ -556,7 +556,7 @@ describe('ModelCatalog audio.cpp 引擎组件', () => {
     expect(status!.detail).toContain('linux-arm64');
     expect(status!.estimatedBytes).toBeNull();
     expect(arm.engineExecutable(YUE)).toBeNull();
-    // 同一台主机按指定的平台键看：有引擎包，引擎没装是 not-installed / incomplete。
+    // Same host, viewed with the specified platform key: an engine pack exists, and with the engine not installed it is not-installed / incomplete.
     const pinned = new ModelCatalog({ root, platform: 'linux', arch: 'arm64', platformKey: 'linux-x64' });
     expect(await pinned.status(YUE)).toMatchObject({ state: 'not-installed', reason: 'incomplete' });
     expect((await pinned.status(YUE))!.estimatedBytes).toBeGreaterThan(0);
@@ -590,7 +590,7 @@ describe('ModelCatalog audio.cpp 引擎组件', () => {
     expect(await catalog.status(YUE)).toMatchObject({ state: 'installed' });
     expect(catalog.engineExecutable(YUE)).toBe(path.join(dir, 'audiocpp_cli'));
     expect((await catalog.verify(YUE)).ok).toBe(true);
-    // 指定的工具目录。
+    // Specified tools directory.
     const elsewhere = new ModelCatalog({ root, platform: 'darwin', arch: 'arm64', toolsDir: path.join(root, 'tools') });
     expect(elsewhere.toolsDir).toBe(path.join(root, 'tools'));
     expect(await elsewhere.status(YUE)).toMatchObject({ state: 'not-installed', reason: 'incomplete' });

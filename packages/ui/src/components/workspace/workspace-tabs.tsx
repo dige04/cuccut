@@ -29,20 +29,20 @@ import { HeaderButton } from '../session/header-button.tsx';
 import { useWorkspaceOverlay } from './workspace-overlay.ts';
 import { WorkspaceTabPreview } from './workspace-tab-preview.tsx';
 
-/** 标签与它的内容面板互相指向（role=tab 的 aria-controls / role=tabpanel 的 aria-labelledby）。 */
+/** The tab and its content panel point at each other (aria-controls on role=tab / aria-labelledby on role=tabpanel). */
 export const workspaceTabId = (key: string) => `workspace-tab-${encodeURIComponent(key)}`;
 export const workspacePanelId = (key: string) => `workspace-panel-${encodeURIComponent(key)}`;
-/** 单条标签条里会话那个固定的第一个标签；定义在 model/workspace.ts，这里转出给原来的引用方。 */
+/** The fixed first tab for the conversation in a single tab strip; defined in model/workspace.ts and re-exported here for the existing importers. */
 export { CONVERSATION_TAB };
 
-/** 单条标签条（窄窗口或完整视图）的会话标签：标题、进行中 / 等待批准，以及它是不是当前选中的。 */
+/** The conversation tab in the single tab strip (narrow window or full view): title, running / awaiting approval, and whether it is the currently selected one. */
 export interface ConversationTabInfo {
   title: string;
   status: 'running' | 'waiting' | null;
   selected: boolean;
 }
 
-/** 标签名：打开着的视频用它最新的名字，网页用页面标题，其余按 Space 条目，找不到时用路径末段。 */
+/** Tab name: an open video uses its latest name, a web page uses the page title, others use the Space entry, and if none is found, the last segment of the path. */
 export function useWorkspaceTitle(): (item: WorkspaceItem) => string {
   const entries = useSpace((s) => s.entries);
   const webTitles = useShell((s) => s.webTitles);
@@ -132,7 +132,7 @@ interface Drag {
   target: { key: string; after: boolean } | null;
 }
 
-/** 悬停缩略卡要显示的页签：会话页签的 `item` 是 'conversation'；`rect` 是进入页签时量的矩形。 */
+/** The tab for which the hover thumbnail card is shown: for a conversation tab, `item` is 'conversation'; `rect` is the rectangle measured when the pointer entered the tab. */
 interface HoverTab {
   key: string;
   item: WorkspaceItem | 'conversation';
@@ -140,7 +140,7 @@ interface HoverTab {
   rect: { left: number; bottom: number };
 }
 
-/** 页签的悬停回调：进入时开始 500 ms 计时，离开、按下或开始拖动时取消。 */
+/** Hover callbacks for a tab: entering starts a 500 ms timer; leaving, pressing or starting a drag cancels it. */
 interface HoverHandlers {
   onHoverStart: (rect: DOMRect) => void;
   onHoverEnd: () => void;
@@ -157,9 +157,9 @@ interface Preview {
 }
 
 /**
- * 功能区标签条（原型 home-workspace.jsx `WorkspaceTabs`）：浏览器式标签，选中与关闭分开。
- * 键盘：←/→ 循环、Home/End、Enter/空格选中、Delete 关闭、Alt+Shift+←/→ 挪位置；中键关闭；
- * 拖动排序：过 6px 才算拖、松手才落位，Esc / 失焦 / 切走窗口取消；读屏播报拖动过程。末尾的「+」打开新标签页（空白网页标签）。
+ * Workspace tab strip (prototype home-workspace.jsx `WorkspaceTabs`): browser-style tabs, with selecting and closing kept separate.
+ * Keyboard: ←/→ cycle, Home/End, Enter/Space select, Delete closes, Alt+Shift+←/→ moves the tab; middle click closes;
+ * drag to reorder: a drag only counts past 6px, and the tab drops on release; Esc / losing focus / switching away from the window cancels; the screen reader announces the drag as it goes. The “+” at the end opens a new tab (blank web tab).
  */
 export function WorkspaceTabs({
   tabs,
@@ -167,9 +167,9 @@ export function WorkspaceTabs({
   conversation,
 }: {
   tabs: WorkspaceItem[];
-  /** 选中的标签；单条标签条里选中会话标签时为 null。 */
+  /** The selected tab; null when the conversation tab is selected in a single tab strip. */
   active: string | null;
-  /** 只有单条标签条（窄窗口或完整视图）才传：会话是排在最前面的固定标签，不能拖动或关闭，别的标签也排不到它前面。 */
+  /** Pass only for a single tab strip (narrow window or full view): the conversation is a fixed tab at the front that cannot be dragged or closed, and no other tab can be placed in front of it. */
   conversation?: ConversationTabInfo;
 }) {
   const title = useWorkspaceTitle();
@@ -183,11 +183,11 @@ export function WorkspaceTabs({
   const suppressClick = useRef(false);
   const scrollFrame = useRef<number | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  // 拖动标签期间登记为覆盖层：Electron 的网页视图暂时让开，免得盖住拖动的标签。
+  // Register as an overlay while a tab is being dragged: the Electron web view makes way for now, so it does not cover the dragged tab.
   useWorkspaceOverlay(!!preview);
   const [announcement, announce] = useState('');
   const entries = useSpace((s) => s.entries);
-  // 悬停缩略卡（产品设计 §3.3）：指针停留 500 ms 显示；离开、按下或拖动时取消。
+  // Hover thumbnail card (product design §3.3): shown after the pointer rests for 500 ms; cancelled on leave, press or drag.
   const [hoverTab, setHoverTab] = useState<HoverTab | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
@@ -210,7 +210,7 @@ export function WorkspaceTabs({
     listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [active, tabs.length, narrow]);
 
-  // 没有标签可去时：单条标签条落到会话标签，并排时落到会话头的按钮。
+  // When there is no tab to go to: in a single tab strip it falls to the conversation tab, and in side-by-side mode it falls to the conversation header's button.
   const focusTab = (key: string | null) => {
     const target = key
       ? document.getElementById(workspaceTabId(key))
@@ -230,7 +230,7 @@ export function WorkspaceTabs({
     const key = itemKey(item);
     const next = closeTab({ tabs, active }, key);
     closePane(key);
-    // 选中的是会话标签时，关掉别的标签不把视图带走，焦点回到会话标签。
+    // When the conversation tab is selected, closing other tabs does not carry the view away; focus returns to the conversation tab.
     requestAnimationFrame(() => focusTab(conversation?.selected ? CONVERSATION_TAB : next.active));
   };
 
@@ -274,7 +274,7 @@ export function WorkspaceTabs({
     const element = listRef.current;
     if (!current?.active || !element) return;
     const bounds = element.getBoundingClientRect();
-    // 槽位按按下时量的，列表滚动了就整体平移。
+    // Slot positions are measured at press time; if the list scrolls, they are shifted together as a whole.
     const shift = element.scrollLeft - current.scrollLeft;
     const rects = current.rects.map((r) => ({ ...r, left: r.left - shift }));
     const inside =
@@ -377,7 +377,7 @@ export function WorkspaceTabs({
     if (event.altKey && event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
       event.preventDefault();
       event.stopPropagation();
-      // 会话标签不动；第一个真标签往左也不动（tabs[-1] 不存在），排不到会话前面。
+      // The conversation tab stays put; the first real tab also does not move left (tabs[-1] does not exist), so nothing can be placed in front of the conversation.
       const offset = event.key === 'ArrowRight' ? 1 : -1;
       const neighbor = tabs[index + offset];
       if (item && neighbor) {
@@ -386,7 +386,7 @@ export function WorkspaceTabs({
       }
       return;
     }
-    // ←/→、Home/End 在「会话 + 标签」之间走：单条标签条里会话是第 0 个。
+    // ←/→ and Home/End move across “conversation + tabs”: in a single tab strip the conversation is index 0.
     const order = [...(narrow ? [CONVERSATION_TAB] : []), ...tabs.map(itemKey)];
     const next = tabKeyIndex(event.key, onConversation ? 0 : index + (narrow ? 1 : 0), order.length);
     if (next !== null) {
@@ -427,7 +427,7 @@ export function WorkspaceTabs({
             <span className={separator} aria-hidden="true" />
           </>
         ) : null}
-        {/* 只有这一段可拖动、可滚动；拖动的槽位只量这里的 `data-workspace-tab`，会话标签天然不在其中。 */}
+        {/* Only this section can be dragged and scrolled; drag slots measure only the `data-workspace-tab` elements here, and the conversation tab is naturally not among them. */}
         <div ref={listRef} className={list} role="presentation">
           {tabs.map((item) => {
             const key = itemKey(item);
@@ -476,7 +476,7 @@ export function WorkspaceTabs({
           })}
         />
       ) : null}
-      {/* 遮罩挂在 body 上（原型同）。 */}
+      {/* The mask is attached to body (same as the prototype). */}
       {preview
         ? createPortal(
             <div className={`${shield} cc-no-drag`} aria-hidden="true">
@@ -494,9 +494,8 @@ export function WorkspaceTabs({
 }
 
 /**
- * 单条标签条（窄窗口或完整视图）里会话那个固定的第一个标签（原型 home-workspace.jsx `ConversationTab`）：会话图标加会话标题。
- * 没有 `data-workspace-tab`、没有拖动处理，也没有关闭钮；提示语写明不能拖动或关闭。进行中 / 等待批准时图标右上角有点，
- * 状态也写进提示与读屏名称，不只靠颜色。
+ * The fixed first conversation tab in a single tab strip (narrow window or full view) (prototype home-workspace.jsx `ConversationTab`): conversation icon plus conversation title.
+ * It has no `data-workspace-tab`, no drag handling and no close button; the tooltip states that it cannot be dragged or closed. While running / awaiting approval, a dot appears at the icon's top right, and the state is also written into the tooltip and the screen reader name, not only conveyed by colour.
  */
 function ConversationTab({
   info,
@@ -520,7 +519,7 @@ function ConversationTab({
         onHoverEnd();
       }}
       onPointerDownCapture={onPress}>
-      {/* 指针悬停时由缩略卡说明这个页签，自己的提示不出；键盘聚焦照旧有提示。 */}
+      {/* When the pointer hovers, the thumbnail card describes this tab, so its own tooltip does not appear; keyboard focus still shows the tooltip as before. */}
       <TooltipTrigger delay={500} isDisabled={hovered}>
         <Focusable>
           <div
@@ -612,7 +611,7 @@ function TabItem({
         }
       }}
       onMouseDown={(event) => {
-        // 中键按下时不要进浏览器的自动滚动。
+        // Do not enter the browser's auto-scroll when the middle button is pressed.
         if (event.button === 1) event.preventDefault();
       }}
       onAuxClick={(event) => {
@@ -621,7 +620,7 @@ function TabItem({
           onClose();
         }
       }}>
-      {/* 指针悬停时由缩略卡说明这个页签，自己的提示不出；键盘聚焦照旧有提示。 */}
+      {/* When the pointer hovers, the thumbnail card describes this tab, so its own tooltip does not appear; keyboard focus still shows the tooltip as before. */}
       <TooltipTrigger delay={500} isDisabled={hovered}>
         <Focusable>
           <div

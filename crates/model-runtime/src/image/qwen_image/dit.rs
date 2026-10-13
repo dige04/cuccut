@@ -1,16 +1,11 @@
-//! QwenImage21Transformer2DModel（单流 DiT，32 层；线性层是 MLX 4/8-bit 量化或原精度 bf16）。
+//! QwenImage21Transformer2DModel (single-stream DiT, 32 layers; linear layers are MLX 4/8-bit quantized or original-precision bf16).
 //!
-//! `causal_condition=true`：文本 token 严格因果、只用 t=0 的调制；目标图 token 看见全部前缀与
-//! 自身。于是文本段与采样步无关——首次前向把每层（norm + RoPE 之后的）文本 K/V 存下，之后每步
-//! 只算图像 token，拼上缓存的文本 K/V 做无掩码注意力。这正是参考管线 `kv_cache` 的做法。
-//! 文本段不单独跑一遍：第一步逐层先算文本、存 K/V，再算图像。
+//! `causal_condition=true`: text tokens are strictly causal and use only the t=0 modulation; target image tokens see the whole prefix and themselves. So the text segment is independent of the sampling step. The first forward pass stores each layer's text K/V (after norm and RoPE), and later steps compute only the image tokens, then do unmasked attention against the cached text K/V. This is what the reference pipeline's `kv_cache` does.
+//! The text segment is not run separately: on the first step, text is computed layer by layer first, its K/V stored, and then the image is computed.
 //!
-//! 32 层权重（~4 GB）不常驻：每步重开惰性表，算第 i 层时预读第 i+1 层，用完即丢，常驻的只有
-//! 输入输出投影与调制（~0.1 GB）和相邻两层（~0.25 GB）。权重文件在 OS 文件缓存里，内存紧时
-//! 可被回收，代价是那一步改从磁盘读。
+//! The 32 layers' weights (~4 GB) are not kept resident. Each step reopens the lazy table; while computing layer i it prefetches layer i+1 and drops layer i after use. What stays resident is the input and output projections and modulation (~0.1 GB) plus two adjacent layers (~0.25 GB). The weight files sit in the OS file cache and can be reclaimed under memory pressure, at the cost of that step reading from disk.
 //!
-//! 计算精度见 [`Precision`]：缺省按本机实测在 f16 / bf16 里选（[`Precision::probe`]）；
-//! 没有原生 bf16 运算的 GPU（M2 上慢约 1.8×）用 f16、残差流存 f32 防溢出，其余用 bf16。
+//! For compute precision, see [`Precision`]. By default it picks between f16 and bf16 by measuring this machine ([`Precision::probe`]). GPUs without native bf16 arithmetic (about 1.8× slower on M2) use f16 with the residual stream in f32 to prevent overflow; the rest use bf16.
 
 use super::{rope, weights};
 use crate::backend::mlx::qwen3::WeightStore;
@@ -29,16 +24,13 @@ const HEAD_DIM: i32 = 128;
 const LAYERS: usize = 32;
 const EPS: f32 = 1e-6;
 
-/// DiT 的计算精度。M2 的 GPU 没有原生 bf16 运算：`--bench 4096` 实测一层 7 个线性层 4-bit
-/// bf16 1169 ms、f16 661 ms，注意力 149 → 110 ms；1024² 实跑每步 44.2 → 27.2 s。
+/// DiT compute precision. The M2 GPU has no native bf16 arithmetic: `--bench 4096` measured one layer's 7 4-bit linear layers at 1169 ms in bf16 and 661 ms in f16, and attention at 149 → 110 ms. A real 1024² run went from 44.2 → 27.2 s per step.
 ///
-/// f16 只有 5 位指数（最大 65504），所以 f16 模式下残差流改存 f32，只有线性层与注意力的输入
-/// 输出是 f16；bf16 模式与参考管线一致，残差也是 bf16。
+/// f16 has only a 5-bit exponent (maximum 65504), so in f16 mode the residual stream is stored as f32, and only the inputs and outputs of the linear layers and attention are f16. bf16 mode matches the reference pipeline, and its residual is also bf16.
 #[derive(Clone, Copy, Debug)]
 pub struct Precision {
     pub compute: Dtype,
-    /// 流式读入的量化层先整层解量化成 `compute` 再按 dense 乘：f16 下线性层快约 12%（整步约
-    /// 9%）；一层 dense f16 约 0.44 GB（4-bit 约 0.12 GB），进程峰值因此多约 0.33 GB。
+    /// A quantized layer that is streamed in is fully dequantized into `compute` and then multiplied as dense. f16 makes the linear layers about 12% faster (about 9% for the whole step). One dense f16 layer is about 0.44 GB (4-bit is about 0.12 GB), so the process peak is about 0.33 GB higher.
     pub dequant: bool,
 }
 
@@ -51,8 +43,7 @@ impl Precision {
         }
     }
 
-    /// 在本机量一次同形的 4-bit 矩阵乘（1024 个 token × 4096 → 4096，与分块时的一次 `to_q`
-    /// 同形，随机权重），f16 与 bf16 交替各跑 5 次（另有 1 轮热身），取各自最短。约 0.2 s。
+    /// Measures once on this machine a 4-bit matmul of the same shape (1024 tokens × 4096 → 4096, the same shape as one `to_q` in blocked mode, random weights). f16 and bf16 are run alternately 5 times each, plus 1 warm-up round, and the shortest of each is kept. About 0.2 s.
     pub fn probe() -> Result<Probe> {
         let key = mlx_rs::random::key(0)?;
         let w = mlx_rs::random::normal::<f32>(&[DIM, DIM], None, None, &key)?
@@ -75,7 +66,7 @@ impl Precision {
         };
         for round in 0..6 {
             let (f, b) = (run(&x16, &s16, &b16)?, run(&xb, &sb, &bb)?);
-            // 第 0 轮是热身：kernel 首次编译、GPU 升频。
+            // Round 0 is a warm-up: the first kernel compilation and the GPU clock ramp-up.
             if round > 0 {
                 p.f16_ms = p.f16_ms.min(f);
                 p.bf16_ms = p.bf16_ms.min(b);
@@ -85,11 +76,10 @@ impl Precision {
     }
 }
 
-/// bf16 的 4-bit 矩阵乘不比 f16 慢过这个倍数就选 bf16。M2 实测约 1.77×，原生 bf16 的 GPU
-/// 应接近 1×；门槛留得宽，免得测量抖动让同一台机器两次选得不一样（输出会随之不同）。
+/// bf16 is chosen if its 4-bit matmul is no more than this multiple slower than f16. It measures about 1.77× on M2; a GPU with native bf16 should be close to 1×. The threshold is set loosely so that measurement jitter does not make the same machine choose differently between runs (the output would change with it).
 const BF16_TOLERANCE: f64 = 1.3;
 
-/// [`Precision::probe`] 的实测：同形 4-bit 矩阵乘各自的最短耗时（毫秒）。
+/// The shortest measured time (milliseconds) of each same-shape 4-bit matmul, for [`Precision::probe`].
 #[derive(Clone, Copy, Debug)]
 pub struct Probe {
     pub f16_ms: f64,
@@ -97,8 +87,7 @@ pub struct Probe {
 }
 
 impl Probe {
-    /// bf16 够快就用 bf16：与参考管线同精度，指数位与 f32 一样宽、不会溢出，残差流也不用另存
-    /// f32；否则用 f16。
+    /// bf16 is used if it is fast enough: it has the same precision as the reference pipeline, its exponent is as wide as f32's so it does not overflow, and the residual stream needs no separate f32 copy. Otherwise f16.
     pub fn pick(self) -> Dtype {
         if self.bf16_ms <= self.f16_ms * BF16_TOLERANCE {
             Dtype::Bfloat16
@@ -108,7 +97,7 @@ impl Probe {
     }
 }
 
-/// f16 计算溢出（DiT 输出含非有限值）。调用方可以改用 bf16 重跑。
+/// f16 computation overflowed (the DiT output contains non-finite values). The caller can rerun with bf16.
 #[derive(Debug)]
 pub struct Overflow;
 
@@ -120,10 +109,7 @@ impl std::fmt::Display for Overflow {
 
 impl std::error::Error for Overflow {}
 
-/// 无 bias 的线性层。有 `.scales` 的是 MLX affine 量化，bits 与 group size 由形状反推
-/// （打包列数 × 32 = 输入维 × bits，分组数 × group = 输入维），所以 4-bit 包与 8-bit 包共用；
-/// 没有 `.scales` 的按原精度直接乘，不在加载时再量化。scales / biases / dense 权重加载时转成
-/// 计算精度，输入在乘之前转过去。
+/// Linear layers without bias. Those with `.scales` are MLX affine-quantized; bits and group size are inferred from the shapes (packed column count × 32 = input dimension × bits, number of groups × group size = input dimension), so the 4-bit and 8-bit packages share the code. Those without `.scales` are multiplied directly at their original precision, not re-quantized at load. Scales, biases and dense weights are converted to the compute precision at load, and the input is converted before multiplying.
 enum Lin {
     Quant {
         w: Array,
@@ -136,7 +122,7 @@ enum Lin {
 }
 
 impl Lin {
-    /// `dequant` 为真时把量化层解量化成 dense（只对流式读入的 32 层用；层外权重常驻，不值得）。
+    /// When `dequant` is true, the quantized layer is dequantized into dense (used only for the 32 streamed layers; out-of-layer weights stay resident, so it is not worth it there).
     fn load(s: &mut WeightStore, p: &str, input: i32, dtype: Dtype, dequant: bool) -> Result<Self> {
         let w = s.take(&format!("{p}.weight"))?;
         if !s.contains(&format!("{p}.scales")) {
@@ -183,9 +169,7 @@ impl Lin {
     }
 }
 
-/// 两种包的键名不全一样：mlx-community 4-bit 包把 diffusers 的 `nn.Sequential` 下标与
-/// `timestep_embedder` 摊平了（`modulation.0`、`time_text_embed.linear_1`），ddalcu 8-bit 包
-/// 保留原名（`modulation.1`、`time_text_embed.timestep_embedder.linear_1`）。取第一个存在的。
+/// The two packages do not use exactly the same key names. The mlx-community 4-bit package flattens diffusers' `nn.Sequential` indices and `timestep_embedder` (`modulation.0`, `time_text_embed.linear_1`), while the ddalcu 8-bit package keeps the original names (`modulation.1`, `time_text_embed.timestep_embedder.linear_1`). The first key that exists is used.
 fn pick<'a>(s: &WeightStore, names: &[&'a str]) -> Result<&'a str> {
     names
         .iter()
@@ -198,7 +182,7 @@ fn scalar(v: f32, like: &Array) -> Result<Array> {
     Ok(Array::from_f32(v).as_dtype(like.dtype())?)
 }
 
-/// 与 torch 的 `.to(torch.bfloat16)` 相同的就近偶数舍入。
+/// The same round-to-nearest-even as torch's `.to(torch.bfloat16)`.
 pub fn bf16_round(v: f32) -> f32 {
     let bits = v.to_bits();
     let lsb = (bits >> 16) & 1;
@@ -218,7 +202,7 @@ struct Block {
     out: Lin,
 }
 
-/// 一组调制参数，已 reshape 成 `[1,1,DIM]` 以便按 token 广播。
+/// One set of modulation parameters, already reshaped to `[1,1,DIM]` for per-token broadcasting.
 struct Mod {
     scale1: Array,
     gate1: Array,
@@ -240,8 +224,7 @@ pub struct Dit {
     proj_out: Lin,
 }
 
-/// 文本前缀的逐层 K/V（`[1,H,L,D]`，已过 norm 与 RoPE）。第一步之前 `kv` 为空、`pending`
-/// 装着过完 `txt_in` 的文本 hidden；第一步逐层填满 `kv` 后 `pending` 清空。
+/// Per-layer K/V of the text prefix (`[1,H,L,D]`, already through norm and RoPE). Before the first step, `kv` is empty and `pending` holds the text hidden states after `txt_in`. After the first step fills `kv` layer by layer, `pending` is cleared.
 pub struct TextCache {
     kv: Vec<(Array, Array)>,
     text_len: usize,
@@ -255,7 +238,7 @@ struct TextPending {
     sin: Array,
 }
 
-/// 一步里按层取权重：惰性表只有文件头，`take` 拿出第 i 层的张量并发起异步读取。
+/// Takes the weights of a layer during a step: the lazy table holds only the file header. `take` removes the tensors of layer i and starts an asynchronous read.
 struct BlockStream {
     lazy: HashMap<String, Array>,
     prec: Precision,
@@ -267,7 +250,7 @@ impl BlockStream {
         Ok(Self { lazy, prec })
     }
 
-    /// `prefetch` 为真时立刻在 CPU stream 上开始读这一层（与 GPU 上正在算的上一层重叠）。
+    /// If `prefetch` is true, the read of this layer starts immediately on the CPU stream (overlapping with the previous layer being computed on the GPU).
     fn take(&mut self, i: usize, prefetch: bool) -> Result<Block> {
         let prefix = format!("transformer_blocks.{i}.");
         let keys: Vec<String> = self.lazy.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
@@ -285,7 +268,7 @@ impl BlockStream {
     }
 }
 
-/// 把 `[1,S,H,D]` 的相邻两维当复数，乘以 `cos + i·sin`（`[S, D/2]`）。f32 计算后回到原 dtype。
+/// Treats adjacent pairs of the two dimensions of `[1,S,H,D]` as complex numbers and multiplies them by `cos + i·sin` (`[S, D/2]`). Computed in f32, then returned to the original dtype.
 fn apply_rope(x: &Array, cos: &Array, sin: &Array) -> Result<Array> {
     let s = x.dim(1);
     let dtype = x.dtype();
@@ -312,7 +295,7 @@ impl Block {
     fn load(s: &mut WeightStore, i: usize, prec: Precision) -> Result<Self> {
         let p = format!("transformer_blocks.{i}");
         let (dt, dq) = (prec.compute, prec.dequant);
-        // norm 权重也转成计算精度：rms_norm 的输出按 x 与权重的公共类型，f16 × bf16 会升成 f32。
+        // Norm weights are also converted to the compute precision: the output of rms_norm takes the common type of x and the weight, and f16 × bf16 would promote to f32.
         Ok(Self {
             to_q: Lin::load(s, &format!("{p}.attn.to_q"), DIM, dt, dq)?,
             to_k: Lin::load(s, &format!("{p}.attn.to_k"), DIM, dt, dq)?,
@@ -331,7 +314,7 @@ impl Block {
         Ok(n.multiply(&scale.add(&scalar(1.0, scale)?)?)?)
     }
 
-    /// 返回 (q, k, v)，都是 `[1,H,S,D]`，q/k 已过 per-head RMSNorm 与 RoPE。
+    /// Returns (q, k, v), all `[1,H,S,D]`, with q and k already through per-head RMSNorm and RoPE.
     fn qkv(&self, xm: &Array, cos: &Array, sin: &Array) -> Result<(Array, Array, Array)> {
         let s = xm.dim(1);
         let shape = [1, s, HEADS, HEAD_DIM];
@@ -357,8 +340,8 @@ impl Block {
 }
 
 impl Dit {
-    /// 只常驻层外的权重；32 层在这里按键核对一遍（惰性，不读文件），真正读取在每步里。
-    /// `files` 是 `transformer/` 下的 safetensors 分片：32 层与层外权重都从这里取。
+    /// Only the out-of-layer weights stay resident. The 32 layers are checked here by key (lazily, without reading files); the actual reads happen in each step.
+    /// `files` are the safetensors shards under `transformer/`: both the 32 layers and the out-of-layer weights come from here.
     pub fn load(files: &[PathBuf], prec: Precision) -> Result<Self> {
         let mut stream = BlockStream::open(files, prec)?;
         for i in 0..LAYERS {
@@ -393,7 +376,7 @@ impl Dit {
         Ok(me)
     }
 
-    /// 正弦时间嵌入 → MLP，返回 `[1, DIM]`（bf16）。`sigma` 按管线两次转 bf16 的舍入复刻。
+    /// Sinusoidal timestep embedding → MLP, returns `[1, DIM]` (bf16). `sigma` reproduces the pipeline's two bf16 roundings.
     fn temb(&self, sigma: f64) -> Result<Array> {
         let t = bf16_round(bf16_round((sigma * 1000.0) as f32) / 1000.0);
         let half = 128usize;
@@ -429,8 +412,7 @@ impl Dit {
         )
     }
 
-    /// 图像 token 过一层：先逐块算 q/k/v（K/V 拼在文本前缀后面凑成整张），再逐块做注意力、
-    /// to_out 与 MLP，每块求值后才进下一块。每个 token 的算子与不分块时完全相同。
+    /// Image tokens pass through one layer. First q/k/v are computed block by block (K/V are concatenated after the text prefix to form the whole). Then attention, to_out and the MLP are computed block by block, and each block is evaluated before moving on to the next. Each token's operations are exactly the same as without blocking.
     #[allow(clippy::too_many_arguments)]
     fn image_layer(
         b: &Block,
@@ -472,12 +454,12 @@ impl Dit {
         Ok(y)
     }
 
-    /// 文本前缀：`enc` 是文本编码器输出 `[1,L,4096]`。这里只过 `txt_in`，逐层部分并进第一步。
+    /// Text prefix: `enc` is the text encoder output `[1,L,4096]`. Only `txt_in` is applied here; the per-layer part is merged into the first step.
     pub fn prepare_text(&self, enc: &Array, grid_h: usize, grid_w: usize) -> Result<TextCache> {
         let text_len = enc.dim(1) as usize;
         let (cos_all, sin_all) = rope::dit_rope_tables(text_len, grid_h, grid_w);
         let (cos, sin) = Self::tables(&cos_all, &sin_all, 0, text_len);
-        // ZeroCenterRMSNorm：fp32 下 `x * rsqrt(mean(x²)+eps) * (w+1)`。
+        // ZeroCenterRMSNorm: in fp32, `x * rsqrt(mean(x²)+eps) * (w+1)`.
         let dtype = enc.dtype();
         let w1 = self.txt_norm.as_dtype(Dtype::Float32)?.add(&Array::from_f32(1.0))?;
         let normed = fast::rms_norm(&enc.as_dtype(Dtype::Float32)?, &w1, EPS)?.as_dtype(dtype)?;
@@ -491,7 +473,7 @@ impl Dit {
         })
     }
 
-    /// 文本 token 过一层（因果注意力、t=0 调制），返回这一层的文本 K/V。
+    /// A text token passes through one layer (causal attention, t=0 modulation) and returns this layer's text K/V.
     fn text_layer(b: &Block, p: &mut TextPending) -> Result<(Array, Array)> {
         let xm = Block::modulate(&p.x, &p.m.scale1)?;
         let (q, k, v) = b.qkv(&xm, &p.cos, &p.sin)?;
@@ -502,9 +484,9 @@ impl Dit {
         Ok((k, v))
     }
 
-    /// 一步去噪：`latents` 是 `[1, N, 64]`（任意浮点 dtype），返回速度场 `[1, N, 64]`（f32）。
-    /// 每层按 `chunk` 个图像 token 分块算（K/V 仍是整张），把层内临时张量压到 1/⌈N/chunk⌉。
-    /// 层权重逐层流式读入；第一步顺带把文本前缀的 K/V 填进 `cache`。
+    /// One denoising step: `latents` is `[1, N, 64]` (any float dtype), and it returns the velocity field `[1, N, 64]` (f32).
+    /// Each layer is computed in blocks of `chunk` image tokens (K/V are still for the whole image), which reduces the per-layer temporaries to 1/⌈N/chunk⌉.
+    /// Layer weights are streamed in layer by layer. On the first step, the text prefix's K/V are also filled into `cache`.
     pub fn step(&self, cache: &mut TextCache, latents: &Array, sigma: f64, grid_h: usize, grid_w: usize, chunk: usize) -> Result<Array> {
         let n = grid_h * grid_w;
         if latents.dim(1) as usize != n {
@@ -559,7 +541,7 @@ mod tests {
     #[test]
     fn probe_picks_bf16_only_when_it_is_not_much_slower() {
         let pick = |f16_ms, bf16_ms| Probe { f16_ms, bf16_ms }.pick();
-        // M2 实测（--bench 4096 的 qmm）：bf16 慢约 1.77×
+        // M2 measurement (qmm with --bench 4096): bf16 is about 1.77× slower
         assert_eq!(pick(661.0, 1169.0), Dtype::Float16);
         assert_eq!(pick(10.0, 10.5), Dtype::Bfloat16);
         assert_eq!(pick(10.0, 9.0), Dtype::Bfloat16);
@@ -569,7 +551,7 @@ mod tests {
     #[test]
     fn bf16_rounding_matches_torch() {
         assert_eq!(bf16_round(1.0), 1.0);
-        // 987.6 在 bf16 下相邻可表示值是 984 与 988
+        // At 987.6 under bf16, the adjacent representable values are 984 and 988
         assert_eq!(bf16_round(987.6), 988.0);
         assert_eq!(bf16_round(0.1), 0.10009765625);
     }

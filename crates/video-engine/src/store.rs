@@ -1,7 +1,7 @@
-//! VideoStore：视频目录里的 `video.db`（架构设计 §5.1）。只有持有写锁的引擎写它。
+//! VideoStore: `video.db` in the video directory (architecture design §5.1). Only the engine that holds the write lock writes it.
 //!
-//! 一笔事务的实体、版本、幂等记录、回执、撤销记录与 outbox 在同一个 SQLite 事务里提交（§5.2）。
-//! 提交时用 `revision` 与 `owner_generation` 做条件更新：旧的所有者即使还活着也写不进来。
+//! A transaction's entities, versions, idempotency records, receipt, undo records and outbox are committed in one SQLite transaction (§5.2).
+//! Commits use conditional updates on `revision` and `owner_generation`, so an old owner cannot write even if it is still alive.
 
 use std::path::Path;
 
@@ -99,10 +99,10 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 "#;
 
-/// 改名为「视频」之前的格式标识。
+/// The format identifier from before the rename to "video".
 const LEGACY_FORMAT: &str = "cuccut.movie";
-/// 旧布局升级到当前格式：表与列改名；存下的 JSON（实体、回执、事件、撤销记录）里的键与实体种类改名。
-/// JSON 字符串里的引号是转义过的，带引号的键只会匹配真正的键。文档正文是用户内容，不动。
+/// Upgrade an old layout to the current format: tables and columns are renamed, and the keys and entity kinds in the stored JSON (entities, receipts, events, undo records) are renamed.
+/// Quotes inside JSON strings are escaped, so a quoted key only matches the real key. Document bodies are user content and are not touched.
 const LEGACY_UPGRADE: &str = r#"
 ALTER TABLE movies RENAME TO videos;
 ALTER TABLE entities RENAME COLUMN movie_id TO video_id;
@@ -121,11 +121,11 @@ UPDATE undo_records SET changes = replace(replace(replace(changes, '"movieId":',
 
 pub struct Store {
     conn: Connection,
-    /// `transactions` 有没有标签引用列。它们是后加的：可写打开时补上；只读打开的旧库没有，按没有引用读。
+    /// Whether `transactions` has the tag reference columns. They were added later: a writable open adds them; a read-only open of an old database that lacks them reads as having no references.
     label_refs: bool,
 }
 
-/// 标签引用列（命令与协议规范 §3.1）：可选字段，旧库补上即可，不改 schemaVersion（视频格式规范 §1.4）。
+/// The tag reference columns (command and protocol spec §3.1) are optional fields; old databases get them added, and schemaVersion is not changed (video format spec §1.4).
 const LABEL_REF_COLUMNS: [&str; 2] = ["label_ref", "base_label_ref"];
 
 fn missing_label_ref_columns(conn: &Connection) -> EngineResult<Vec<&'static str>> {
@@ -138,40 +138,40 @@ fn ref_json(message_ref: Option<&MessageRef>) -> Option<String> {
     message_ref.map(json)
 }
 
-/// 读不出的引用当作没有：照存下的文字显示，不让一列坏数据挡住历史。
+/// A reference that cannot be read is treated as absent and shown as the stored text, so one piece of bad data does not block the history.
 fn parse_ref(column: Option<String>) -> Option<MessageRef> {
     column.and_then(|c| serde_json::from_str(&c).ok())
 }
 
-/// 视频认领所属项目的结果（架构设计 §5.1；视频格式规范 §1.3）。
+/// The result of a video claiming its owning project (architecture design §5.1; video format spec §1.3).
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "outcome")]
 pub enum ProjectClaim {
-    /// 库里还没有所属项目（升级前的视频、刚新建的视频）：记下传入的项目，videoId 不变。
+    /// The database has no owning project yet (a video from before the upgrade, or a newly created video): record the project passed in; the videoId does not change.
     Adopted,
-    /// 已经属于这个项目。
+    /// Already belongs to this project.
     Unchanged,
-    /// 属于另一个项目：这是副本，或被搬到了另一个项目。换成新的 videoId，旧的记进 `previousVideoIds`。
+    /// Belongs to another project: this is a copy, or it was moved to another project. Replace it with a new videoId and record the old one in `previousVideoIds`.
     #[serde(rename_all = "camelCase")]
     Reassigned { previous_video_id: Id, video_id: Id },
 }
 
-/// meta 表里所属项目与曾用 videoId 的键。它们不属于视频的修订内容：写它们不产生新版本，不进撤销历史。
+/// The owning-project and previous-videoId keys in the meta table. They are not part of the video's revision content: writing them creates no new version and does not enter undo history.
 const META_PROJECT_ID: &str = "projectId";
 const META_PREVIOUS_VIDEO_IDS: &str = "previousVideoIds";
 
-/// 一笔事务的撤销记录：逐实体的前后状态，以及是否已被撤销。
+/// The undo record of a transaction: the before and after state of each entity, and whether it has been undone.
 pub struct UndoRecord {
     pub changes: Vec<EntityChange>,
     pub undone_by: Option<Id>,
-    /// 0 是正向修改，1 是撤销，2 是重做……
+    /// 0 is a forward change, 1 is an undo, 2 is a redo, ...
     pub undo_depth: i64,
-    /// 正向修改的标签；撤销与重做在它前面加前缀。
+    /// The label of a forward change; undo and redo add a prefix in front of it.
     pub base_label: String,
     pub base_label_ref: Option<MessageRef>,
 }
 
-/// 撤销栈上的一步。
+/// One step on the undo stack.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UndoStep {
@@ -181,7 +181,7 @@ pub struct UndoStep {
     pub label_ref: Option<MessageRef>,
 }
 
-/// 一笔事务要写入的全部内容。
+/// Everything a transaction writes.
 pub struct CommitRecord<'a> {
     pub video_id: &'a str,
     pub base_revision: i64,
@@ -201,7 +201,7 @@ pub struct CommitRecord<'a> {
     pub base_label_ref: Option<&'a MessageRef>,
 }
 
-/// 一个文档版本的正文，与引用它的文档头在同一个 SQLite 事务里写入。
+/// The body of one document version, written in the same SQLite transaction as the document header that references it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentBody {
     pub document_id: Id,
@@ -221,12 +221,12 @@ impl Store {
         Ok(())
     }
 
-    /// 查询里的标签引用列；只读打开的旧库没有这一列，按 NULL 读。
+    /// The tag reference columns in a query; an old read-only database lacks these columns and they are read as NULL.
     fn ref_column(&self, column: &'static str) -> &'static str {
         if self.label_refs { column } else { "NULL" }
     }
 
-    /// 新建视频的数据库。调用方已持有写锁。
+    /// The database of a newly created video. The caller already holds the write lock.
     pub fn create(path: &Path, state: &VideoState, now: &str) -> EngineResult<Store> {
         let mut conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -252,8 +252,7 @@ impl Store {
         Ok(Store { conn, label_refs: true })
     }
 
-    /// 便携包导入（视频格式规范 §8）：刚用 [`Store::create`] 建好的库接上包里的修订号（视频与各个序列的），
-    /// 并写入文档与素材的各个版本。
+    /// Portable package import (video format spec §8): attaches the revision numbers from the package (for the video and each sequence) to a database just created with [`Store::create`], and writes the versions of documents and assets.
     pub fn import_versions(&mut self, state: &VideoState, documents: &[DocumentBody]) -> EngineResult<()> {
         let tx = self.conn.transaction()?;
         tx.execute("UPDATE videos SET revision = ?1 WHERE id = ?2", params![state.revision, state.id])?;
@@ -294,7 +293,7 @@ impl Store {
         Ok(())
     }
 
-    /// 在旧布局的数据库文件上就地升级到当前格式（调用方持有旧锁，随后改名）。已经升级过的什么也不做。
+    /// Upgrade a database file in the old layout in place to the current format (the caller holds the old lock, and renames afterwards). A database that is already upgraded is left alone.
     pub fn upgrade_legacy(path: &Path) -> EngineResult<()> {
         let mut conn = Connection::open(path)?;
         Store::configure(&conn)?;
@@ -312,7 +311,7 @@ impl Store {
             Some(VIDEO_FORMAT) => {}
             _ => return Err(ErrorBody::unsupported_video(msg!("engine.notCuccutVideo", "Not a CucCut video"))),
         }
-        // 关掉最后一个连接时 SQLite 把 WAL 合并回主文件，改名时只剩一个文件。
+        // When the last connection closes, SQLite merges the WAL back into the main file, so only one file is left when renaming.
         conn.close().map_err(|(_, e)| e)?;
         Ok(())
     }
@@ -336,7 +335,7 @@ impl Store {
         Ok(store)
     }
 
-    /// 补上标签引用列，返回能不能读它们。只读打开不改库：旧库缺列时按没有引用读。
+    /// Add the tag reference columns, and return whether they can be read. A read-only open does not change the database: when an old database lacks the columns, it reads as having no references.
     fn add_label_ref_columns(&self, read_only: bool) -> EngineResult<bool> {
         let conn = &self.conn;
         let missing = missing_label_ref_columns(conn)?;
@@ -364,7 +363,7 @@ impl Store {
         schema_version_supported(&version)
     }
 
-    /// 读出视频的工作态与当前的所有者代。
+    /// Read the video's working state and the current owner generation.
     pub fn load(&self) -> EngineResult<(VideoState, i64)> {
         let (id, revision, event_seq, generation): (String, i64, i64, i64) = self
             .conn
@@ -427,8 +426,8 @@ impl Store {
         Ok((state, generation))
     }
 
-    /// 一个文档存过的最大版本号，含已撤销事务写下的版本（正文留在库里，供重做与历史读取）。
-    /// 新版本要从它之上编号：复用一个已存在的号，`INSERT OR IGNORE` 会留下旧正文。
+    /// The largest version number ever stored for a document, including versions written by undone transactions (their bodies stay in the database for redo and history reads).
+    /// New versions are numbered above it: reusing an existing number would make `INSERT OR IGNORE` keep the old body.
     pub fn max_document_revision(&self, video_id: &str, document_id: &str) -> EngineResult<u64> {
         let mut stmt = self
             .conn
@@ -443,7 +442,7 @@ impl Store {
         Ok(max)
     }
 
-    /// 一个文档版本的正文（JSON 文本）。
+    /// The body of one document version (JSON text).
     pub fn document_body(&self, video_id: &str, document_id: &str, revision: &str) -> EngineResult<Option<String>> {
         Ok(self
             .conn
@@ -455,7 +454,7 @@ impl Store {
             .optional()?)
     }
 
-    /// 取得写入权时递增所有者代（ownerGeneration，架构设计 §2.3）。
+    /// Increment the owner generation (ownerGeneration, architecture design §2.3) when write ownership is acquired.
     pub fn bump_generation(&mut self, video_id: &str) -> EngineResult<i64> {
         let tx = self.conn.transaction()?;
         tx.execute(
@@ -467,7 +466,7 @@ impl Store {
         Ok(generation)
     }
 
-    /// 幂等记录：同一个 key 的载荷摘要与原回执。
+    /// Idempotency record: the payload digest for the same key, and the original receipt.
     pub fn find_by_key(&self, video_id: &str, key: &str) -> EngineResult<Option<(String, TransactionReceipt)>> {
         let row: Option<(String, String)> = self
             .conn
@@ -511,7 +510,7 @@ impl Store {
         .transpose()
     }
 
-    /// 原子提交一笔事务。条件更新失败说明版本或所有者已经变了：整笔回滚。
+    /// Atomically commit one transaction. If the conditional update fails, the version or the owner has changed, and the whole transaction is rolled back.
     pub fn commit(&mut self, record: &CommitRecord<'_>) -> EngineResult<()> {
         let tx = self.conn.transaction()?;
         let state = record.state;
@@ -633,9 +632,9 @@ impl Store {
         Ok(())
     }
 
-    /// 某个操作者的撤销栈（命令与协议规范 §8.2「按顺序撤销」）：
-    /// 撤销 = 最新的、未被撤销的正向修改或重做；重做 = 最新的正向修改之后、未被重做的撤销。
-    /// 只看这个操作者自己的事务：用户的撤销不抹掉智能体的修改。
+    /// One operator's undo stack (command and protocol spec §8.2, "undo in order"):
+    /// undo = the latest forward change or redo that has not been undone; redo = the latest undo after the latest forward change that has not been redone.
+    /// It considers only this operator's own transactions: a user's undo does not erase an agent's changes.
     pub fn undo_steps(&self, video_id: &str, actor: &str) -> EngineResult<(Option<UndoStep>, Option<UndoStep>)> {
         let step = |sql: &str| -> EngineResult<Option<UndoStep>> {
             Ok(self
@@ -668,12 +667,11 @@ impl Store {
         Ok((undo, redo))
     }
 
-    /// 库里提到过的全部内容摘要（`sha256:` 后的十六进制），供 `blobs/` 的 GC 判断引用（[`crate::gc`]）。
+    /// All content digests mentioned in the database (the hex after `sha256:`), for the GC of `blobs/` to decide references ([`crate::gc`]).
     ///
-    /// 宁多勿少：素材的每个版本（不只当前版本）、代码包版本，加上当前实体与撤销记录正文里出现的摘要。
-    /// 不按存储方式筛：`collectAssets` 把链接素材收进来时不产生新版本，`asset_versions` 里那一行仍写着 `linked`，
-    /// 真实的存储方式只在实体与撤销记录里。多算进来的摘要（链接素材、文档）在 `blobs/` 里没有对应的条目，不影响结果。
-    /// 不按 videoId 筛：认领项目换过标识的视频，库里只有这一个视频。
+    /// Err on the side of more: every version of an asset (not only the current one) and code bundle versions, plus the digests appearing in current entities and in undo record bodies.
+    /// Not filtered by storage mode: when `collectAssets` collects a linked asset it produces no new version, and the row in `asset_versions` still says `linked`; the real storage mode exists only in entities and undo records. Extra digests collected (linked assets, documents) have no matching entry in `blobs/`, which does not affect the result.
+    /// Not filtered by videoId: a video whose identity was changed when it claimed a project has only this one video in the database.
     pub fn referenced_content_hashes(&self) -> EngineResult<std::collections::HashSet<String>> {
         let mut hashes = std::collections::HashSet::new();
         for sql in [
@@ -693,7 +691,7 @@ impl Store {
         Ok(hashes)
     }
 
-    /// 视频的 id（`videos` 表只有一行）。
+    /// The video's id (the `videos` table has only one row).
     pub fn video_id(&self) -> EngineResult<Id> {
         self.conn
             .query_row("SELECT id FROM videos LIMIT 1", [], |r| r.get(0))
@@ -701,7 +699,7 @@ impl Store {
             .ok_or_else(|| ErrorBody::unsupported_video(msg!("engine.videoRecordMissing", "The video record is missing")))
     }
 
-    /// 视频所属的项目；还没有认领过时为空。
+    /// The project the video belongs to; empty if it has not been claimed yet.
     pub fn project_id(&self) -> EngineResult<Option<Id>> {
         Ok(self
             .conn
@@ -709,7 +707,7 @@ impl Store {
             .optional()?)
     }
 
-    /// 这个视频曾经用过的 videoId，旧的在前（每被当作副本换一次标识，追加一个）。
+    /// The videoIds this video has used before, oldest first (one is appended each time it is treated as a copy and given a new identity).
     pub fn previous_video_ids(&self) -> EngineResult<Vec<Id>> {
         let text: Option<String> = self
             .conn
@@ -725,9 +723,8 @@ impl Store {
         }
     }
 
-    /// 认领所属项目（调用方持有写锁）。没有所属项目时记下传入的；相同什么也不做；
-    /// 不同时把视频换成 `new_video_id`：所有表里的 videoId、视频自身实体的 id，以及回执、事件与撤销记录里
-    /// 引用它的 JSON 一起改，修订号、事件序号、所有者代与历史不变。全部在一个 SQLite 事务里，崩溃后要么全做要么没做。
+    /// Claim the owning project (the caller holds the write lock). If there is no owning project, record the one passed in; if it is the same, do nothing;
+    /// if it is different, switch the video to `new_video_id`: the videoId in all tables, the video entity's own id, and the JSON that references it in receipts, events and undo records are all rewritten together. Revision numbers, event sequence numbers, the owner generation and history are unchanged. It all happens in one SQLite transaction, so after a crash either all of it is done or none of it is.
     pub fn claim_project(&mut self, video_id: &str, project_id: &str, new_video_id: &str) -> EngineResult<ProjectClaim> {
         if project_id.is_empty() || project_id.chars().count() > 128 {
             return Err(ErrorBody::invalid_operation(msg!("engine.projectIdLength", "projectId must be 1–128 characters")));
@@ -774,7 +771,7 @@ impl Store {
                         params![new_video_id, video_id],
                     )?;
                 }
-                // 视频自身也是一个实体，实体 id 就是 videoId；读出时 `state.id` 取自它。
+                // The video itself is also an entity, and its entity id is the videoId; when read, `state.id` is taken from it.
                 tx.execute(
                     "UPDATE entities SET entity_id = ?1 WHERE entity_id = ?2",
                     params![new_video_id, video_id],
@@ -783,8 +780,7 @@ impl Store {
                     "UPDATE entities SET parent_id = ?1 WHERE parent_id = ?2",
                     params![new_video_id, video_id],
                 )?;
-                // 存下的 JSON 里引用 videoId 的地方（回执与事件的 `videoId`、撤销记录里视频实体的 `id`）。
-                // JSON 字符串里的引号是转义过的，带引号的 id 只会匹配真正的值。文档正文是用户内容，不动。
+                // The places in stored JSON that reference the videoId (the `videoId` of receipts and events, and the `id` of the video entity in undo records). Quotes inside JSON strings are escaped, so a quoted id only matches the real value. Document bodies are user content and are not touched.
                 for (table, column) in [
                     ("entities", "body"),
                     ("receipts", "body"),
@@ -814,7 +810,7 @@ impl Store {
         Ok(outcome)
     }
 
-    /// outbox 里 `after` 之后的事件，按序号排列（断线补发与崩溃恢复）。
+    /// Events in the outbox after `after`, in sequence-number order (for resending after a disconnect and for crash recovery).
     pub fn events_after(&self, video_id: &str, after: i64, limit: i64) -> EngineResult<Vec<VideoEvent>> {
         let mut stmt = self
             .conn
@@ -872,8 +868,7 @@ impl Store {
     }
 }
 
-/// 版本门（视频格式规范 §1.4）：只接受当前版本。版本 1–2 的视频用的是旧的元素模型，不为它们保留兼容，
-/// 拒绝打开并说明原因，不改写；更高的版本是更新的 CucCut 写的，同样拒绝。
+/// The version gate (video format spec §1.4): only the current version is accepted. Videos at versions 1–2 use the old element model; no compatibility is kept for them, so opening is refused with the reason given, without rewriting. Higher versions were written by a newer CucCut, and are refused too.
 pub fn schema_version_supported(version: &str) -> EngineResult<()> {
     match version.parse::<u32>() {
         Ok(v) if v == SCHEMA_VERSION => Ok(()),

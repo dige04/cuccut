@@ -22,8 +22,7 @@ import { BrandSwatches } from './brand-swatches.tsx';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
- * 属性页的共用件（原型 panel-shared.jsx）：分节头、带标签的行、滑杆加精确输入的数值行、开关卡、取色、分段与删除钮。
- * 拖动中的值走 `onLive`（只叠给预览，不提交），松手、回车、失焦才 `onCommit`。
+ * Shared pieces of the properties page (prototype panel-shared.jsx): section header, labeled row, value row (slider plus precise input), switch card, color picker, segmented control and delete button. Values during a drag go through `onLive` (overlaid on the preview only, not committed). `onCommit` fires on release, Enter, or blur.
  */
 
 type Color = ReturnType<typeof parseColor>;
@@ -53,7 +52,7 @@ const secAction = style({ flexShrink: 0, marginStart: 'auto', paddingStart: 8 })
 const sec = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const prow = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 });
 const label = style({ flexShrink: 0, width: '[62px]', font: 'ui-sm', color: 'gray-700' });
-/** 数值行（原型 .cc-value-row）：滑杆自带标签与读数，右边一枚精确输入钮；说明另起一行靠右。 */
+/** Value row (prototype .cc-value-row): the slider brings its own label and readout, with a precise-input button on the right. The description goes on its own line, aligned right. */
 const valueRow = style({
   display: 'grid',
   gridTemplateColumns: ['minmax(0, 1fr)', 'auto'],
@@ -99,7 +98,7 @@ const danger = style({
   cursor: { default: 'pointer', isDisabled: 'default' },
 });
 
-/** 分节头：左边标题加紧跟的说明，右边一件动作。 */
+/** Section header: title on the left with its description right after it, and one action on the right. */
 export function SecHead({
   children,
   aside,
@@ -120,12 +119,12 @@ export function SecHead({
   );
 }
 
-/** 一节的内容：竖排，间距 8。 */
+/** Section content: vertical, with spacing of 8. */
 export function Sec({ children }: { children: ReactNode }) {
   return <div className={sec}>{children}</div>;
 }
 
-/** 左边 62 宽的标签，右边是控件。 */
+/** A label 62px wide on the left, with the control on the right. */
 export function PRow({ label: text, children }: { label?: ReactNode; children: ReactNode }) {
   return (
     <div className={prow}>
@@ -135,12 +134,12 @@ export function PRow({ label: text, children }: { label?: ReactNode; children: R
   );
 }
 
-/** 灰色的小字说明（「预览暂不体现」这一类）。 */
+/** Grey small-print description (for example “预览暂不体现” (the preview does not show this yet)). */
 export function Note({ children }: { children: ReactNode }) {
   return <p className={note}>{children}</p>;
 }
 
-/** 滑杆与输入框的读数格式：Intl 认得的单位直接带上，其余单位写在说明行里。秒按当前语言的写法认。 */
+/** Number format for sliders and inputs: units that Intl recognizes are attached directly; other units are written on the description line. Seconds are parsed in the current language's notation. */
 function intlUnitOf(suffix: string): string | undefined {
   if (suffix === '%') return 'percent';
   if (suffix === '°') return 'degree';
@@ -153,9 +152,7 @@ function format(value: number, digits: number): string {
 }
 
 /**
- * 数值行（原型 bbf8d82）：S2 滑杆自带标签、读数与键盘步进，精确值在原生弹层的数字框里敲。
- * 滑杆只到 `max`，数字框可以越过它到 `hardMax`（音量）；越过时说明行写出当前值。
- * 拖动中的值走 `onLive`，松手才提交；数字框失焦、回车或按步进钮时提交。
+ * Value row (prototype bbf8d82): the S2 slider has its own label, readout and keyboard stepping, and the precise value is typed into a number box in a native popover. The slider only goes up to `max`; the number box can go past it, up to `hardMax` (volume). When past it, the description line states the current value. Values during a drag go through `onLive` and are committed on release. The number box commits on blur, Enter, or a step button press.
  */
 export function ValueRow({
   label: text,
@@ -182,14 +179,14 @@ export function ValueRow({
   unit?: string;
   extra?: ReactNode;
   isDisabled?: boolean;
-  /** 敲进来的数怎么归位（缺省钳进 [min, hardMax]；旋转角是折回）。 */
+  /** How a typed number is normalized (by default clamped to [min, hardMax]; rotation angle wraps around). */
   normalize?(value: number): number;
   onLive?(value: number): void;
   onCommit(value: number): void;
 }) {
   const top = hardMax ?? max;
   const [drag, setDrag] = useState<number | null>(null);
-  // 刚提交、视频还没回来的值：显示它，不闪回旧值（失败或被引擎改过时过一会儿放弃）。
+  // A value just committed whose video has not come back yet: show it, and do not flash back to the old value. Give up after a while if it failed or the engine changed it.
   const [pending, setPending] = useState<number | null>(null);
   useEffect(() => {
     if (pending !== null && value === pending) setPending(null);
@@ -200,7 +197,7 @@ export function ValueRow({
     return () => clearTimeout(timer);
   }, [pending]);
   const current = pending ?? value;
-  // 拖动开始前的值：拖动中预览叠了草稿，`value` 已经是拖到的值，松手时要跟拖之前比。
+  // The value from before the drag began. During a drag the preview is overlaid with the draft, so `value` is already the dragged value, and on release it must be compared against the pre-drag value.
   const dragFrom = useRef<number | null>(null);
   const clampTo = (n: number) => (normalize ? normalize(n) : Math.min(top, Math.max(min, n)));
   const shown = drag ?? current;
@@ -281,7 +278,7 @@ export function ValueRow({
   );
 }
 
-/** 开关卡（原型 .stcard）：标题加开关，开着时下面是这一组的参数。 */
+/** Switch card (prototype .stcard): a title plus a switch. When on, the parameters of this group are shown below it. */
 export function SwitchCard({
   title,
   isOn,
@@ -306,7 +303,7 @@ export function SwitchCard({
   );
 }
 
-/** 不带开关的卡（图形的填充、描边）。 */
+/** Card without a switch (shape fill and stroke). */
 export function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className={card} aria-label={title}>
@@ -318,10 +315,10 @@ export function Card({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-/** 分段控件没有选中项时用的键：S2 在 `selectedKey` 为空时会自己选中第一项并回调，那等于一打开页面就改了视频。 */
+/** Key used when a segmented control has no selection. S2 auto-selects the first item and fires a callback when `selectedKey` is empty, which would mean opening the page changes the video. */
 const NO_SEGMENT = '\u0000none';
 
-/** 分段：几个互斥的选项。`value` 为 null（当前值不是其中任何一项）时一项也不选中。 */
+/** Segmented control: several mutually exclusive options. When `value` is null (the current value is none of them), no item is selected. */
 export function Seg<K extends string>({
   label: text,
   value,
@@ -355,8 +352,7 @@ export function Seg<K extends string>({
 const SWATCHES = ['#FFFFFF', '#000000', '#FF4C45', '#FF9F0A', '#FACC15', '#22C55E', '#3CADFF', '#3B63FB', '#A855F7', '#FF6B9A'];
 
 /**
- * 取色：一枚色块加 hex 的小按钮，点开是取色面板（饱和度 / 明度方块、色相条、不透明度条、hex 输入与常用色）。
- * 拖动中走 `onLive`，松手、点常用色或敲完 hex 才 `onCommit`。写回 `#RRGGBB`，不透明时 `#RRGGBBAA`。
+ * Color picker: a swatch plus a small hex button. Clicking opens the color panel (saturation and brightness square, hue bar, opacity bar, hex input, and common colors). Values during a drag go through `onLive`. `onCommit` fires on release, on clicking a common color, or after the hex is typed. Written back as `#RRGGBB`, or `#RRGGBBAA` when not fully opaque.
  */
 export function ColorField({
   label: text,
@@ -382,7 +378,7 @@ export function ColorField({
   useEffect(() => {
     if (!dragging) setColor(toColor(current));
   }, [current, dragging]);
-  // 拖动开始前的颜色：拖动中预览叠了草稿，`value` 已经是拖到的颜色。
+  // The color from before the drag began. During a drag the preview is overlaid with the draft, so `value` is already the dragged color.
   const liveFrom = useRef<string | null>(null);
   const write = (next: Color) => fromColor(next, allowAlpha);
   const live = (next: Color) => {
@@ -459,7 +455,7 @@ function fromColor(color: Color, allowAlpha: boolean): string {
   return colorString(hex, allowAlpha ? rgb.getChannelValue('alpha') : 1);
 }
 
-/** 页底的删除钮（原型 .danger）：红色整宽。 */
+/** Delete button at the bottom of the page (prototype .danger): red, full width. */
 export function DangerButton({ children, isDisabled, onPress }: { children: ReactNode; isDisabled?: boolean; onPress(): void }) {
   const [hovered, setHovered] = useState(false);
   return (

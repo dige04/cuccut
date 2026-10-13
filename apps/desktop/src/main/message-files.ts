@@ -5,12 +5,12 @@ import type { MessageFile } from '@cuccut/ui';
 
 const IMAGE_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 
-/** macOS 可混选；Windows / Linux 必须在打开系统选择器前决定选文件还是目录。 */
+/** macOS can mix files and directories. Windows / Linux must decide before opening the system picker whether to select files or directories. */
 export function messageFileProperties(platform: string, folders: boolean): ('openFile' | 'openDirectory' | 'multiSelections')[] {
   return platform === 'darwin' ? ['openFile', 'openDirectory', 'multiSelections'] : [folders ? 'openDirectory' : 'openFile', 'multiSelections'];
 }
 
-/** 只读取系统选择器刚返回的图片；其他文件和目录保留路径，不递归读取目录内容。 */
+/** Reads only the images just returned by the system picker. Other files and directories keep their paths, and directory contents are not read recursively. */
 export async function messageFiles(paths: readonly string[], images: boolean): Promise<MessageFile[]> {
   let imageCount = 0;
   const result: MessageFile[] = [];
@@ -19,7 +19,7 @@ export async function messageFiles(paths: readonly string[], images: boolean): P
     const entry: MessageFile = { path: selected, kind: stat.isDirectory() ? 'directory' : 'file' };
     const mimeType = IMAGE_MIME[path.extname(selected).toLowerCase()];
     if (images && stat.isFile() && mimeType && stat.size > 0 && stat.size <= MAX_ATTACHMENT_BYTES && imageCount < MAX_ATTACHMENTS_PER_MESSAGE) {
-      // 用固定上限读取，文件在 stat 后变大时也不会向渲染进程发送超大数据。
+      // Reads up to a fixed limit, so that even if a file grows after stat, no oversized payload is sent to the renderer process.
       const handle = await fs.open(selected, 'r');
       try {
         const bytes = Buffer.alloc(stat.size + 1);

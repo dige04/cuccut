@@ -14,7 +14,7 @@ import { pl } from './speech-self-test.pl.ts';
 import { tr } from './speech-self-test.tr.ts';
 import { vi } from './speech-self-test.vi.ts';
 
-/** `packages/models/src/speech-self-test.ts` 语音合成自检没通过的原因（含 WAV 解析的问题，人声分离自检也用）。 */
+/** Reasons why the speech synthesis self-test in `packages/models/src/speech-self-test.ts` failed (including WAV parsing problems; the vocal separation self-test also uses this). */
 const en = {
   notWav: 'Not a RIFF/WAVE file',
   missingFmt: 'The fmt chunk is missing',

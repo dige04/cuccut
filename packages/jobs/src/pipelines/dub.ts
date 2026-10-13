@@ -57,57 +57,48 @@ import { TRANSLATION_SCHEMA, type FrozenSource } from './translation-document.ts
 import { glossaryChanged, readGlossaryRef } from './translation-glossary.ts';
 
 /**
- * 翻译配音（架构设计 §7.9；视频格式规范 §7.2、§7.3）：视频里一份 `speech` 文档 → 一组配音（一条配音轨、逐句的配音实例与
- * 一份 `dubbing-plan` 文档），在一笔编辑事务里应用。由流程自己调用模型，不启动智能体。
+ * Dubbed translation (architecture design §7.9; video format spec §7.2, §7.3): one `speech` document in a video → one dub group (one dub track, per-sentence dub instances, and one `dubbing-plan` document), applied in one editing transaction. The pipeline calls the models itself; no agent is started.
  *
- * 步骤：读取原文 →（缺译文时）翻译、组装、写入译文 → 核对译文 →（可选）分离人声与背景 → 逐句合成 → 时间对齐 → 应用。
+ * Steps: read the source → (if there is no translation) translate, assemble, and write the translation → check the translation → (optional) separate vocals from background → synthesize sentence by sentence → time alignment → apply.
  *
- * - 翻译的四步就是 `translate` 流程的步骤（同一份实现，参数按配音的冻结参数换算），不另写一份；
- * - 核对译文：逐句比较译文单元的 `sourceFingerprint` 与原文当前句子的指纹（§10）；原文改过、句子没了或单元标成 `stale` 的
- *   是过期的；译文记下的术语表（`glossaryRef`）在库里改过、改动涉及这句的术语时也过期（`glossary-changed`）。过期的不合成，
- *   在结果里报告句数与单元；
- * - 音色按说话人选：视频里给这位说话人绑定的（`library-selection` 的 `speakerVoices`）优先，其次参数 `voice`，最后模型的默认
- *   音色。绑定的音色在合成这一步换算、检查（库里音色的授权声明与克隆有效性）；不可用时这位说话人的句子不合成、逐句报告，
- *   配音计划里这些单元是 `failed`，不换成别的音色；
- * - 逐句合成：每句一个子任务、一个产物；每次调用都经授权与预算（由 Runtime 实现的 `DubSpeech` 负责）。授权或额度不够、
- *   凭据被拒时停下（已经合成的句子留在 staging 的清单里）；其余失败的句子记下，全部跑完之后这一步失败，重试只合成
- *   失败与没合成的句子，成功的句子复用；
- * - 时间对齐：`alignDub`（纯函数）；需要加速时用 ffmpeg `atempo` 生成新文件，放不下的句子不放，报告超出多少；
- * - 应用：导入音频、新建配音轨、放实例、写配音计划，原声按参数静音、压低或不动，都在同一笔事务里。实例带
- *   `role: 'dub'` 与 `extensions['cuccut.dub']`（这一组的 `groupId`、语言与译文单元）；导出按它选「只要某一组配音」。
+ * - The four translation steps are the steps of the `translate` pipeline (the same implementation, with parameters converted from the dub's frozen parameters); they are not written a second time.
+ * - Checking the translation: compare each translation unit's `sourceFingerprint` with the fingerprint of the current source sentence (§10) one by one. A unit is stale if the source has been edited, the sentence is gone, or the unit is marked `stale`. If the glossary recorded by the translation (`glossaryRef`) has changed in the library, and the change involves a term in this sentence, it is also stale (`glossary-changed`). Stale units are not synthesized; the result reports the number of sentences and units.
+ * - Voice is chosen per speaker: the voice bound to that speaker in the video (`library-selection`'s `speakerVoices`) comes first, then the `voice` parameter, and finally the model's default voice. A bound voice is converted and checked at the synthesis step (the consent declaration of the library voice and the validity of the clone). If it is unusable, this speaker's sentences are not synthesized and are reported one by one. In the dubbing plan these units are `failed`, and they are not swapped for a different voice.
+ * - Synthesis sentence by sentence: each sentence is one subtask and one artifact. Every call goes through authorization and budget (implemented by the `DubSpeech` that the Runtime provides). If authorization or quota is insufficient, or credentials are rejected, stop (sentences already synthesized remain in the staging manifest). Other failed sentences are recorded; once all have run, this step fails. A retry synthesizes only the failed and not-yet-synthesized sentences, and reuses the successful ones.
+ * - Time alignment: `alignDub` (a pure function). When a speed change is needed, ffmpeg `atempo` produces a new file. Sentences that do not fit are not placed, and the overflow is reported.
+ * - Apply: import the audio, create the dub track, place the instances, and write the dubbing plan. The original audio is muted, lowered, or left alone according to the parameters; all of this happens in one transaction. Instances carry `role: 'dub'` and `extensions['cuccut.dub']` (this group's `groupId`, language, and translation units). Export uses this to select “only one dub group”.
  *
- * 每次执行都新增一组配音，不替换已有的配音轨（给定的配音不被自动改成语音合成）。
+ * Each execution adds a new dub group and does not replace the existing dub tracks (a dub that was given is never automatically turned into synthesized speech).
  */
 
 export const DUB_PIPELINE = 'dub';
 export const DUBBING_PLAN_SCHEMA = 'cuccut.dubbing-plan/1';
-/** 配音实例的扩展命名空间。 */
+/** Extension namespace for dub instances. */
 export const DUB_EXTENSION = 'cuccut.dub';
 const DEFAULT_DUCK_DB = 18;
 const APPLY_ATTEMPTS = 3;
 const MANIFEST_FILE = 'dub-synthesis.json';
 
-/** 合成用的音色：启动时选定并检查（不联网），之后每次调用照用。 */
+/** Voice used for synthesis: chosen and checked at startup (no network), then used unchanged for every later call. */
 export interface DubVoice {
   providerId: string;
   modelId: string;
-  /** 用户给的音色（`library:<id>` 原样记下，每次调用时再换成那个 Provider 上的克隆）。 */
+  /** Voice given by the user (`library:<id>` recorded as-is; each call swaps it for that Provider's clone). */
   voice: string;
-  /** 输出格式（`wav` 优先）。 */
+  /** Output format (`wav` preferred). */
   format: 'wav' | 'mp3' | 'flac';
-  /** 单次合成的字符上限。 */
+  /** Character limit for a single synthesis call. */
   maxInputChars: number;
-  /** 模型接受种子（`seed`）；句级重配据此决定记不记种子。旧的冻结参数没有，当作不接受。 */
+  /** Whether the model accepts a seed (`seed`). Sentence-level re-dub uses it to decide whether to record a seed. Old frozen parameters do not have it, and it is treated as not accepted. */
   acceptsSeed?: boolean;
 }
 
-/** 语音合成：由 Runtime 实现（选择 Provider、换算库里的音色、授权与预算、调用）。 */
+/** Speech synthesis: implemented by the Runtime (choosing the Provider, converting library voices, authorization and budget, and the call itself). */
 export interface DubSpeech {
-  /** 启动（与重试）时：选定 Provider 与模型，检查音色、语言与格式；`library:<id>` 没有有效克隆时抛 `VOICE_CLONE_REQUIRED`。 */
+  /** At startup (and on retry): chooses the Provider and model, checks voice, language, and format. A `library:<id>` without a valid clone throws `VOICE_CLONE_REQUIRED`. */
   prepare(target: { provider?: string; model?: string; voice?: string; language: string }): Promise<DubVoice>;
   /**
-   * 合成一句，输出写在 `staging` 里。每次调用经授权与预算（预留、结算）；失败抛 `PipelineStepError`（错误码同任务的错误码：
-   * `GRANT_REQUIRED`、`BUDGET_EXCEEDED`、`PROVIDER_*`……）。
+   * Synthesizes one sentence; the output is written to `staging`. Each call goes through authorization and budget (reserve, then settle). On failure it throws `PipelineStepError`, with the same error codes as the task: `GRANT_REQUIRED`, `BUDGET_EXCEEDED`, `PROVIDER_*`……
    */
   synthesize(request: {
     voice: DubVoice;
@@ -117,19 +108,19 @@ export interface DubSpeech {
     jobId: Id;
     staging: string;
     signal: AbortSignal;
-    /** 合成的种子（句级重配，模型接受时才给）。 */
+    /** Synthesis seed (for sentence-level re-dub; given only when the model accepts one). */
     seed?: number;
   }): Promise<{ file: string }>;
 }
 
-/** 人声与背景分离（`separateAudio`，架构设计 §6.1）的执行者。没有配置时流程的分离这一步跳过。 */
+/** Executor for separating vocals from background (`separateAudio`, architecture design §6.1). If it is not configured, the pipeline's separation step is skipped. */
 export interface DubSeparator {
   readonly providerId: string;
-  /** 用的模型（本机是分离模型包的 ID）。 */
+  /** Model used (locally, the ID of the separation model pack). */
   readonly modelId: string;
-  /** Model Worker 要加载的权重（字节，`ModelCatalog.workerWeightBytes`），估计它的内存需求用；不知道时 null。 */
+  /** Weight file size (bytes) that the Model Worker loads (`ModelCatalog.workerWeightBytes`), used to estimate the memory needed; null if unknown. */
   readonly workerWeightBytes: number | null;
-  /** 把 `file` 分成人声与背景两个文件，写在 `staging` 里。 */
+  /** Splits `file` into two files, vocals and background, written in `staging`. */
   separate(request: {
     file: string;
     staging: string;
@@ -139,81 +130,80 @@ export interface DubSeparator {
   }): Promise<{ vocals: string; background: string }>;
 }
 
-/** 配音读写视频的能力：在翻译的基础上，多了序列的实例与文稿在序列上的位置。 */
+/** Capabilities for reading and writing the video during dubbing: on top of translation, adds the sequence's instances and the position of the script on the sequence. */
 export interface DubVideos extends PipelineVideos {
-  /** 序列此刻的帧率与实例；没有时 null。 */
+  /** The sequence's current frame rate and instances; null if none. */
   sequence(videoId: Id, sequenceId: Id): { fps: { num: number; den: number }; items: SequenceItem[] } | null;
-  /** 文稿在序列上的投影（引擎的文字计划）：每个词在序列上的起止秒与所在的实例；`end` 是序列的终点。 */
+  /** Projection of the script onto the sequence (the engine's text plan): each word's start and end in seconds on the sequence, and the instance it is in. `end` is the end of the sequence. */
   speechOnTimeline(
     videoId: Id,
     sequenceId: Id,
     documentId: Id,
   ): Promise<{ videoRevision: string; end: number; words: Array<{ wordId: Id; itemId: Id | null; start: number; end: number }> }>;
-  /** 素材某个版本的源文件（分离用）。 */
+  /** Source file of one version of an asset (used for separation). */
   assetFile(videoId: Id, assetId: Id): Promise<{ file: string; revision: string } | null>;
 }
 
 export interface DubDeps {
   videos: DubVideos;
-  /** 缺译文时翻译用的文本生成（与 `translate` 流程同一份）。 */
+  /** Text generation used for translation when there is no translation (same as the `translate` pipeline). */
   translation: Omit<TranslateDeps, 'videos'>;
   speech: DubSpeech;
   /**
-   * 分离的执行者：不给 `model` 时按此刻的默认（用户默认值或出厂默认，§6.2）选，给了时用冻结的那只；没有配置或已不可用
-   * 时 null。
+   * The separation executor. When no `model` is given, it chooses the current default (the user's default, or the factory default, §6.2). When one is given, it uses the frozen one. null if none is configured or it is no longer available.
    */
   separator?: (model?: { providerId: string; modelId: string }) => Promise<DubSeparator | null>;
   ffmpeg: MediaToolResolver;
   ffprobe: MediaToolResolver;
-  /** 同时在途的合成调用（默认 2）。 */
+  /** Synthesis calls allowed in flight at the same time (default 2). */
   concurrency?: number;
 }
 
-/** 视频里给一位说话人绑定的音色（启动时读出）。 */
+/** Voice bound in the video to one speaker (read at startup). */
 export interface DubSpeakerVoice {
   speakerId: string;
-  /** 绑定的音色：`library:<id>` 或 Provider 的音色 ID。 */
+  /** Bound voice: `library:<id>`, or the Provider's voice ID. */
   voice: string;
-  /** 启动时已经确定不能用（对外服务的客户端不能用库里的音色）。 */
+  /** Determined at startup to be unusable (clients serving external users cannot use library voices). */
   unavailable?: { code: string; reason: string };
 }
 
-/** 冻结的参数。 */
+/** Frozen parameters. */
 export interface FrozenDubParams {
   videoId: Id;
   documentId: Id;
   language: string;
-  /** 用户给的译文；null 时流程先翻译。 */
+  /** Translation given by the user; null means the pipeline translates first. */
   translationId: Id | null;
-  /** 读取原文与翻译四步用的参数（给了译文时只用到视频与源文档）。 */
+  /** Parameters for the four steps that read the source and translate (when a translation is given, only the video and the source document are used). */
   translate: FrozenTranslateParams;
   voice: DubVoice;
-  /** `voice` 的来源：参数给的（`params`）或模型的默认音色（`default`）。旧的冻结参数没有，按 `params`。 */
+  /** Where `voice` came from: the parameters (`params`) or the model's default voice (`default`). Old frozen parameters do not have it, and are treated as `params`. */
   voiceSource?: 'params' | 'default';
-  /** 视频里给这份转写的说话人绑定的音色；指定了别的 Provider 的绑定不在里面（不用）。 */
+  /** Voices bound in the video to this transcript's speakers. Bindings for other Providers are not included (not used). */
   speakerVoices?: DubSpeakerVoice[];
   originalAudio: DubOriginalAudio;
   duckDb: number;
   separateBackground: boolean;
-  /** 分离的执行者；没有要求或没有配置时 null。 */
+  /** The separation executor; null when separation is not requested or not configured. */
   separatorId: string | null;
-  /** 分离用的模型（启动时选定，重试照用）；`separatorId` 为 null 时 null。旧的冻结参数没有，执行时按此刻的默认选。 */
+  /** The model for separation (chosen at startup and reused on retry); null when `separatorId` is null. Old frozen parameters do not have it, and at execution the current default is chosen. */
   separatorModel?: string | null;
-  /** 分离的 Model Worker 要加载的权重（字节），这一步的资源估计用；不知道时 null。 */
+  /** Weight file size (bytes) that the separation Model Worker loads, used for this step's resource estimate; null if unknown. */
   separatorWeightBytes?: number | null;
-  /** 句级重配：只合成这一组里的这几句，写回这一组（见 `DubRegroup`）。 */
+  /** Sentence-level re-dub: re-synthesizes only these few sentences in this group, and writes back to this group (see `DubRegroup`). */
   regroup?: FrozenDubRegroup;
 }
 
-/** 句级重配一次最多几句。 */
+/** Maximum number of sentences in one sentence-level re-dub. */
 const MAX_REGROUP_UNITS = 200;
-/** 种子的上限（ElevenLabs 等接受 32 位无符号整数）。 */
+/** Upper bound for the seed (ElevenLabs and others accept 32-bit unsigned integers). */
 const MAX_SEED = 4_294_967_295;
 
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     videoId: { type: 'string', description: '已打开的视频（等同 target: { videoId }）' },
     target: targetSchema('要配音的视频：已打开的，或 Space 里的视频条目（流程期间由 Runtime 打开）；与 videoId 给一个', null),
     documentId: { type: 'string', description: '源 speech 文档；视频里只有一份或给了 translationId 时可以不给' },
@@ -276,7 +266,7 @@ const KEYS = [
   'regroup',
 ];
 
-/** 句级重配时不能同时给的参数：都取自那一组的配音计划。 */
+/** Parameters that may not be given together in a sentence-level re-dub: all of them are taken from that group's dubbing plan. */
 const REGROUP_EXCLUSIVE = [
   'documentId',
   'targetLanguage',
@@ -312,7 +302,7 @@ export function parseDubParams(raw: Record<string, unknown>): DubParams {
   const translationId = optional('translationId', 128);
   const targetLanguage = optional('targetLanguage', 35);
   if (targetLanguage === undefined && translationId === undefined) throw invalid('targetLanguage', J.orTranslationId());
-  // 翻译相关的参数按 `translate` 的规则校验（同一份实现）。
+  // Translation-related parameters are validated by the rules of `translate` (the same implementation).
   const translateRaw: Record<string, unknown> = { videoId: raw.videoId, targetLanguage: targetLanguage ?? 'und' };
   for (const [from, to] of [
     ['documentId', 'documentId'],
@@ -378,7 +368,7 @@ function parseRegroup(value: unknown): DubRegroup {
   return { groupId, units: units as Id[], ...(seed !== undefined ? { seed: seed as 'new' | number } : {}) };
 }
 
-// ---- 各步的产出 ----
+// ---- Outputs of each step ----
 
 interface CheckOutput extends StepOutput {
   artifactId: string;
@@ -390,11 +380,11 @@ interface CheckOutput extends StepOutput {
   stale: number;
 }
 
-/** 核对过的配音脚本（产物）。 */
+/** The checked dubbing script (artifact). */
 interface DubScript {
   translation: { id: Id; revision: string };
   language: string;
-  /** `speakerId`：原句的说话人（转写没有说话人时没有）。 */
+  /** `speakerId`: the original sentence's speaker (absent if the transcript has no speakers). */
   units: Array<{ unitId: Id; sentenceId: Id; fingerprint: string; text: string; speakerId?: string }>;
   stale: Array<{
     unitId: Id;
@@ -411,7 +401,7 @@ interface SeparateOutput extends StepOutput {
 }
 
 interface SynthEntry {
-  /** 文本、音色与语言的摘要：变了就重新合成。 */
+  /** Digest of the text, voice, and language: re-synthesize when any of them changes. */
   key: string;
   artifactId: string;
   durationSec: number;
@@ -423,15 +413,15 @@ interface SynthOutput extends StepOutput {
   synthesized: number;
   reused: number;
   calls: { calls: number; retries: number; failures: number };
-  /** 音色不可用、没有合成的句数。 */
+  /** Count of sentences not synthesized because their voice was unusable. */
   voiceUnavailable?: number;
 }
 
-/** 合成这一步的产物（`SynthOutput.artifactId`）。旧的产物只有 `units`。 */
+/** The artifact of this synthesis step (`SynthOutput.artifactId`). Old artifacts only have `units`. */
 interface SynthResult {
-  /** 合成了的句子（音色不可用的不在里面）。 */
+  /** Sentences that were synthesized (those with an unusable voice are not in here). */
   units: Record<Id, SynthEntry>;
-  /** 每句的音色（用户给的写法）与来源。 */
+  /** The voice for each sentence (as the user wrote it) and where it came from. */
   voices?: Record<Id, { voice: string; voiceSource: DubVoiceSource }>;
   unavailable?: DubSummary['voiceUnavailableUnits'];
   speakers?: DubSummary['speakers'];
@@ -440,7 +430,7 @@ interface SynthResult {
 interface Placement {
   unitId: Id;
   sentenceId: Id;
-  /** 原句所在的实例（同一句在时间线上出现几次就放几次）。 */
+  /** Instances of the original sentence (if the same sentence appears several times on the timeline, it is placed several times). */
   itemId: Id | null;
   startUs: number;
   fit: Exclude<DubFit, 'overlong'>;
@@ -456,7 +446,7 @@ interface AlignResult {
   placements: Placement[];
   overlong: Array<{ unitId: Id; overflowSeconds: number }>;
   offTimeline: Id[];
-  /** 原句所在的实例：原声的静音或闪避作用在它们上面。 */
+  /** Instances of the original sentence: muting or ducking of the original acts on these. */
   dialogueItemIds: Id[];
 }
 
@@ -472,11 +462,11 @@ interface ApplyOutput extends StepOutput {
   planDocumentId: Id;
   groupId: string;
   items: number;
-  /** 句级重配：每句新记下的是第几版。 */
+  /** Sentence-level re-dub: the version number newly recorded for each sentence. */
   takes?: Record<Id, number>;
 }
 
-/** 合成失败时这句怎么办：停下整步，再试一次，或记下这句失败。 */
+/** What to do with this sentence when synthesis fails: stop the whole step, try again once, or record this sentence as failed. */
 const TERMINAL = new Set([
   'GRANT_REQUIRED',
   'GRANT_REVOKED',
@@ -494,11 +484,11 @@ const TERMINAL = new Set([
   'MEDIA_TOOL_UNAVAILABLE',
 ]);
 const TRANSIENT = new Set(['PROVIDER_UNAVAILABLE', 'PROVIDER_TIMEOUT', 'PROVIDER_RATE_LIMITED', 'MODEL_OUTPUT_INVALID']);
-/** 说话人绑定的音色在合成途中变得不可用：这位说话人余下的句子不合成、逐句报告（参数与默认的音色照旧停下整步）。 */
+/** A speaker's bound voice becomes unusable during synthesis: this speaker's remaining sentences are not synthesized and are reported one by one (the parameter and default voices still stop the whole step). */
 const VOICE_LOST = new Set(['VOICE_CLONE_REQUIRED', 'VOICE_CONSENT_REQUIRED', 'VOICE_NOT_FOUND']);
 
 export function dubPipeline(deps: DubDeps): PipelineDefinition<FrozenDubParams, DubParams> {
-  // 只复用翻译的前几步（不建字幕层）：根序列不交给它。
+  // Reuse only the first few translation steps (no caption layer): the root sequence is not handed to it.
   const videos = deps.videos;
   const translate = translatePipeline({
     ...deps.translation,
@@ -512,7 +502,7 @@ export function dubPipeline(deps: DubDeps): PipelineDefinition<FrozenDubParams, 
   });
   const concurrency = Math.max(1, deps.concurrency ?? 2);
   const step = (name: string) => translate.steps.find((s) => s.name === name)!;
-  // 翻译流程的步骤原样复用：换上它自己的参数。
+  // The translation pipeline's steps are reused unchanged, with its own parameters swapped in.
   const reuse = (name: string, label: LazyText, onlyWhenTranslating: boolean): PipelineStep<FrozenDubParams> => {
     const inner = step(name);
     return {
@@ -584,7 +574,7 @@ export function dubPipeline(deps: DubDeps): PipelineDefinition<FrozenDubParams, 
         name: 'separate',
         label: () => J.stepSeparate(),
         when: (params) => params.separatorId !== null,
-        // 本机分离：Worker 进程按模型包估计（同一个模型包的任务共用），这一步自己的是解出的音频与两路输出。
+        // Local separation: the Worker process estimates it per model pack (tasks sharing a model pack share the estimate). This step's own part is the decoded audio and the two outputs.
         resources: (params) => localSeparateResources(params.separatorModel ?? null, params.separatorWeightBytes ?? null),
         run: (context) => separate(deps, context),
         reusable: async (output, { params, artifacts }) => {
@@ -604,7 +594,7 @@ export function dubPipeline(deps: DubDeps): PipelineDefinition<FrozenDubParams, 
         name: 'align',
         label: () => J.stepAlign(),
         run: (context) => align(deps, context),
-        // 对齐之后视频改过（时间线可能变了）：重新对齐。
+        // After alignment the video was changed (the timeline may have changed): align again.
         reusable: async (output, { params, artifacts }) =>
           deps.videos.state(params.videoId)?.revision === (output as AlignOutput).videoRevision &&
           (await artifacts.locate((output as AlignOutput).artifactId)) !== null,
@@ -670,7 +660,7 @@ export function dubPipeline(deps: DubDeps): PipelineDefinition<FrozenDubParams, 
   };
 }
 
-/** 句级重配每句的结果。 */
+/** The result for each sentence in a sentence-level re-dub. */
 function regroupSummary(
   regroup: FrozenDubRegroup,
   script: DubScript,
@@ -699,7 +689,7 @@ function regroupSummary(
   };
 }
 
-// ---- 启动时的检查与冻结 ----
+// ---- Checks and freezing at startup ----
 
 async function freeze(
   deps: DubDeps,
@@ -732,7 +722,7 @@ async function freeze(
     }
     translateParams = given.translate;
   } else {
-    // 缺译文：与 `translate` 同样地选文本模型、检查结构化输出。
+    // Missing translation: select the text model and check structured output the same way `translate` does.
     const plan = await translate.prepare(
       {
         videoId: params.videoId,
@@ -759,7 +749,7 @@ async function freeze(
     ...(params.voice !== undefined ? { voice: params.voice } : {}),
   });
   const originalAudio = params.originalAudio ?? 'duck';
-  // `keep` 原声不动，分出来的两轨没有地方用：不分离（结果 `not-requested`）。
+  // `keep` (original kept as-is): the two separated tracks would have nowhere to be used, so do not separate (result `not-requested`).
   const separateBackground = (params.separateBackground ?? false) && originalAudio !== 'keep';
   const separator = separateBackground ? ((await deps.separator?.()) ?? null) : null;
   const frozen: FrozenDubParams = {
@@ -781,7 +771,7 @@ async function freeze(
   return { frozen, library };
 }
 
-/** 已有的译文：译自哪份转写、什么语言，读取原文用的参数（不翻译）。 */
+/** Existing translation: which transcript it was translated from, its language, and the parameters used to read the source (no translation is done). */
 async function givenTranslation(
   deps: DubDeps,
   videoId: Id,
@@ -817,7 +807,7 @@ async function givenTranslation(
   };
 }
 
-/** 配音计划正文里句级重配读写的部分。 */
+/** The part of the dubbing plan body that sentence-level re-dub reads and writes. */
 interface PlanBody {
   schema?: unknown;
   sequenceId?: unknown;
@@ -842,7 +832,7 @@ interface PlanUnit {
   [key: string]: unknown;
 }
 
-/** 计划单元的 `extensions['cuccut.dub']`。 */
+/** `extensions['cuccut.dub']` of a plan unit. */
 interface PlanUnitDub {
   translationUnitId?: unknown;
   voice?: unknown;
@@ -861,14 +851,14 @@ function unitDub(unit: PlanUnit): PlanUnitDub {
   return value && typeof value === 'object' ? (value as PlanUnitDub) : {};
 }
 
-/** 计划单元对应的译文单元 ID。 */
+/** The translation unit ID that corresponds to the plan unit. */
 function planUnitId(unit: PlanUnit): Id | null {
   const id = unitDub(unit).translationUnitId;
   if (typeof id === 'string') return id;
   return typeof unit.id === 'string' && unit.id.startsWith('d-') ? unit.id.slice(2) : null;
 }
 
-/** 视频里这一组配音的计划：`summary.groupId`（旧的计划看正文的 `groupId`）是它的 `dubbing-plan` 文档。 */
+/** The dubbing plan for this dub group in the video: `summary.groupId` (old plans use the `groupId` in the body) is its `dubbing-plan` document. */
 async function findPlan(deps: DubDeps, videoId: Id, groupId: string): Promise<{ documentId: Id; revision: string; body: PlanBody } | null> {
   const state = deps.videos.state(videoId);
   if (!state) return null;
@@ -885,7 +875,7 @@ async function findPlan(deps: DubDeps, videoId: Id, groupId: string): Promise<{ 
   return null;
 }
 
-/** 这一组配音在序列上的实例（不含分离出来的背景）。 */
+/** Instances of this dub group on the sequence (excludes the separated background). */
 function groupItems(items: SequenceItem[], groupId: string): AudioItem[] {
   return items.filter((item): item is AudioItem => {
     if (item.type !== 'audio') return false;
@@ -895,9 +885,7 @@ function groupItems(items: SequenceItem[], groupId: string): AudioItem[] {
 }
 
 /**
- * 句级重配的冻结：找到这一组的配音计划，译文、语言、Provider、模型与音色都取自它（用了视频里说话人绑定的句子照那次记下的
- * 音色）；要重配的句子都要在计划与译文里。文本不取计划里的，合成时读译文的当前版本（先改译文再重配）。
- * 种子 `'new'` 在这里随机取一个（模型不接受种子时 null）。
+ * Freezing for a sentence-level re-dub: finds this group's dubbing plan. The translation, language, Provider, model, and voice all come from it (sentences that used a speaker voice bound in the video keep the voice recorded then). Every sentence to re-dub must be in both the plan and the translation. The text is not taken from the plan: at synthesis time the translation's current version is read (edit the translation first, then re-dub). The seed `'new'` is chosen randomly here (null if the model does not accept seeds).
  */
 async function freezeRegroup(deps: DubDeps, videoId: Id, regroup: DubRegroup, options: PipelinePrepareOptions): Promise<FrozenDubParams> {
   const state = deps.videos.state(videoId);
@@ -949,7 +937,7 @@ async function freezeRegroup(deps: DubDeps, videoId: Id, regroup: DubRegroup, op
     voice: recorded.voice,
     language: given.language,
   });
-  // 用了视频里说话人绑定的句子：照那次记下的音色；其余的用计划记下的音色（参数给的或模型默认的）。
+  // Sentences that used a speaker voice bound in the video keep the voice recorded then; the rest use the voice recorded in the plan (given by parameter or the model default).
   const speakerVoices = new Map<string, DubSpeakerVoice>();
   let voiceSource: 'params' | 'default' = 'params';
   for (const id of regroup.units) {
@@ -998,8 +986,7 @@ async function freezeRegroup(deps: DubDeps, videoId: Id, regroup: DubRegroup, op
 }
 
 /**
- * 视频里给这份转写的说话人绑定的音色（`library-selection`，视频格式规范 §4.6）。指定了别的 Provider 的绑定不用；
- * 对外服务的客户端不能用库里的音色：这样的绑定记成不可用（这位说话人的句子不合成、报告），不换成别的音色。
+ * The voice bound in the video to this transcript's speaker (`library-selection`, video format spec §4.6). Bindings for other Providers are not used. External-facing clients cannot use library voices: such a binding is recorded as unusable (this speaker's sentences are not synthesized and are reported), and is not swapped for a different voice.
  */
 async function speakerBindings(
   deps: DubDeps,
@@ -1025,7 +1012,7 @@ async function speakerBindings(
     }));
 }
 
-/** 重试：以冻结的参数再查一次（视频打开着、音色的克隆还有效、文本模型还在）。 */
+/** Retry: check again with the frozen parameters (the video is open, the voice's clone is still valid, the text model is still available). */
 async function refreeze(
   deps: DubDeps,
   translate: PipelineDefinition<FrozenTranslateParams, TranslateParams>,
@@ -1045,7 +1032,7 @@ async function refreeze(
   return params;
 }
 
-// ---- 核对译文 ----
+// ---- Check the translation ----
 
 async function checkTranslation(deps: DubDeps, context: PipelineStepContext<FrozenDubParams>): Promise<StepResult> {
   const { videos } = deps;
@@ -1104,7 +1091,7 @@ async function checkTranslation(deps: DubDeps, context: PipelineStepContext<Froz
       script.units.push({ unitId: unit.id, sentenceId, fingerprint: sentence!.fingerprint, text, ...(speakerId ? { speakerId } : {}) });
     }
   }
-  // 句级重配：只核对、合成要重配的那几句。
+  // Sentence-level re-dub: only checks and synthesizes the sentences to be re-dubbed.
   const only = params.regroup ? new Set(params.regroup.units) : null;
   if (only) {
     script.units = script.units.filter((u) => only.has(u.unitId));
@@ -1136,8 +1123,7 @@ async function checkTranslation(deps: DubDeps, context: PipelineStepContext<Froz
 }
 
 /**
- * 术语表改过的过期判断（视频格式规范 §5.3）：译文记下的库里术语表有一张的内容摘要与库里当前的不同时，逐句比较翻译时
- * 与现在出现在这句原文里的术语；有增、删或改了译法的，这句过期。库里删了的条目当作没有术语。没有用库里的术语表或没有库时不判断。
+ * Staleness check when the glossary has changed (video format spec §5.3). When the library glossary recorded in the translation has a content digest that differs from the library's current one, compare, sentence by sentence, the terms as they were at translation time with the terms that now appear in this sentence's source. If a term was added, removed, or had its translation changed, the sentence is stale. Entries deleted from the library count as no term. Nothing is judged when no library glossary was used or there is no library.
  */
 function glossaryCheck(deps: DubDeps, value: unknown): (sentenceText: string) => boolean {
   const ref = readGlossaryRef(value);
@@ -1160,7 +1146,7 @@ function glossaryCheck(deps: DubDeps, value: unknown): (sentenceText: string) =>
   return (sentenceText) => glossaryChanged(ref, sentenceText, current);
 }
 
-// ---- 分离人声与背景（可选） ----
+// ---- Separate vocals from background (optional) ----
 
 async function separate(deps: DubDeps, context: PipelineStepContext<FrozenDubParams>): Promise<StepResult> {
   const { params, artifacts, signal, staging, jobId, progress } = context;
@@ -1199,7 +1185,7 @@ async function separate(deps: DubDeps, context: PipelineStepContext<FrozenDubPar
   return { output, result: { documentId: null, artifactId: output.backgroundArtifactId } };
 }
 
-/** 分离的输出合约（架构设计 §6.4）：人声与背景各一条音频，与输入等长（容差一帧音频 20 毫秒）、采样率相同。 */
+/** Output contract of separation (architecture design §6.4): one audio each for vocals and background, the same length as the input (tolerance one audio frame, 20 ms), and the same sample rate. */
 export function stemProblems(
   input: { durationSec: number; audio: { sampleRate: number } | null },
   stems: Record<'vocals' | 'background', { durationSec: number; audio: { sampleRate: number } | null }>,
@@ -1220,19 +1206,19 @@ export function stemProblems(
   return problems;
 }
 
-// ---- 逐句合成 ----
+// ---- Synthesis sentence by sentence ----
 
 async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubParams>, concurrency: number): Promise<StepResult> {
   const { params, outputs, artifacts, signal, staging, progress, spawn, warn } = context;
   const script = await readArtifact<DubScript>(artifacts, (outputs['check-translation'] as CheckOutput).artifactId);
   const manifestFile = path.join(staging, MANIFEST_FILE);
   const manifest = await readManifest(manifestFile);
-  // 种子（句级重配）进摘要；没有种子时与原来的摘要相同（`acceptsSeed` 不算在音色里）。
+  // The seed (sentence-level re-dub) enters the digest. Without a seed the digest is the same as before (`acceptsSeed` is not part of the voice).
   const seed = params.regroup?.seed ?? null;
   const keyOf = (text: string, { acceptsSeed: _, ...voice }: DubVoice) =>
     `sha256:${sha256Hex(canonicalJson({ text, language: params.language, voice, ...(seed !== null ? { seed } : {}) }))}`;
 
-  // 每句的音色：说话人在视频里绑定的优先，其次参数 `voice`，最后模型的默认音色（`params.voice` 已经是二者之一）。
+  // Voice per sentence: the speaker's binding in the video comes first, then the `voice` parameter, then the model's default voice (`params.voice` is already one of these two).
   const bound = await resolveSpeakerVoices(deps, params, new Set(script.units.flatMap((u) => (u.speakerId ? [u.speakerId] : []))));
   const voices: NonNullable<SynthResult['voices']> = {};
   const unavailable: NonNullable<SynthResult['unavailable']> = [];
@@ -1248,7 +1234,7 @@ async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubP
       work.push({ index, unit, voice: params.voice, speakerId: null });
     }
   }
-  // 合成途中失效的绑定音色：这位说话人余下的句子不再调用。
+  // A bound voice that becomes invalid during synthesis: this speaker's remaining sentences are no longer called.
   const lost = new Map<string, { code: string; reason: string }>();
 
   const counter = new CallCounter();
@@ -1268,7 +1254,7 @@ async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubP
   const local = new AbortController();
   const stop = () => local.abort();
   signal.addEventListener('abort', stop, { once: true });
-  // 停在授权、预算、认证这类之后每句都会遇到的失败上：不再发起新的调用；已经在路上的调用（已经预留、在额度之内）照常完成。
+  // For failures that every later sentence would also hit, such as authorization, budget, or authentication: stop starting new calls. Calls already in flight (already reserved, within the quota) complete as usual.
   let terminal: { unitId: Id; error: PipelineStepError } | null = null;
   const failed: Array<{ unitId: Id; code: string; message: string }> = [];
   let saving = Promise.resolve();
@@ -1333,7 +1319,7 @@ async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubP
       if (signal.aborted) throw error;
       const failure = asStepError(error);
       if (w.speakerId !== null && VOICE_LOST.has(failure.code)) {
-        // 绑定的音色失效（克隆过期、撤回了授权声明、库里删了）：这句与这位说话人余下的句子不合成，逐句报告。
+        // Bound voice invalid (clone expired, consent revoked, or deleted from the library): this sentence and the speaker's remaining sentences are not synthesized, and are reported one by one.
         const problem = voiceProblem(failure);
         lost.set(w.speakerId, problem);
         skip(w, problem);
@@ -1398,7 +1384,7 @@ async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubP
     }
     warn(jobWarning('DUB_VOICE_UNAVAILABLE', J.voicesUnavailable({ count: unavailable.length, speakers: joinList(speakers) })));
   }
-  // 各说话人用的音色（同一位说话人的句子用同一个音色）。
+  // Voice for each speaker (sentences of the same speaker use the same voice).
   const speakers = new Map<string | null, NonNullable<SynthResult['speakers']>[number]>();
   for (const unit of script.units) {
     const key = unit.speakerId ?? null;
@@ -1420,7 +1406,7 @@ async function synthesize(deps: DubDeps, context: PipelineStepContext<FrozenDubP
   return { output, result: { documentId: null, artifactId } };
 }
 
-/** 说话人绑定的音色：每次合成这一步都重新换算、检查（库里音色的授权声明与克隆有效性；不联网）。 */
+/** The speaker's bound voice: converted and checked again every time this step synthesizes (the library voice's consent declaration and clone validity; no network). */
 async function resolveSpeakerVoices(
   deps: DubDeps,
   params: FrozenDubParams,
@@ -1448,7 +1434,7 @@ async function resolveSpeakerVoices(
   return out;
 }
 
-/** 音色不可用的原因：错误码，与 `stale`、`missing`（克隆）、`no-consent`（没有授权声明）、`removed`（库里删了）之类。 */
+/** Reason a voice is unusable: an error code, such as `stale`, `missing` (clone), `no-consent` (no consent declaration), or `removed` (deleted from the library). */
 function voiceProblem(error: unknown): { code: string; reason: string } {
   const details = (error instanceof PipelineStepError || error instanceof RpcError ? error.details : undefined) as
     { code?: unknown; reason?: unknown } | undefined;
@@ -1486,7 +1472,7 @@ async function writeManifest(file: string, manifest: Record<Id, SynthEntry>): Pr
   await fs.rename(temp, file);
 }
 
-// ---- 时间对齐 ----
+// ---- Time alignment ----
 
 async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams>): Promise<StepResult> {
   const { params, outputs, artifacts, signal, staging, progress, warn } = context;
@@ -1499,7 +1485,7 @@ async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams
   const sequenceId = source.sequenceId;
   const timeline = await deps.videos.speechOnTimeline(params.videoId, sequenceId, params.documentId);
 
-  // 每句在时间线上的每次出现：同一个实例里的词合成一个时间窗（秒按微秒取整，比较用整数）。
+  // Each occurrence of each sentence on the timeline: the words in one instance form one time window (seconds rounded to microseconds; comparisons use integers).
   const sentenceOfWord = new Map<Id, Id>();
   for (const s of source.sentences) for (const w of s.wordIds) sentenceOfWord.set(w, s.id);
   const windows = new Map<string, { sentenceId: Id; itemId: Id | null; start: number; end: number }>();
@@ -1517,15 +1503,15 @@ async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams
     }
   }
   const sorted = [...windows.values()].sort((a, b) => a.start - b.start || a.end - b.end);
-  // 同一句被剪成几段、前后相连（中间没有别的句子）时是同一次出现，只配一次：从第一段的起点开始，时间窗到最后一段的终点。
-  // 隔着别的句子再出现（复制了片段）时再配一次。
+  // When the same sentence is cut into several segments that are adjacent (no other sentence in between), it is one occurrence and is dubbed only once: the window starts at the first segment's start and runs to the last segment's end.
+  // If the sentence reappears with other sentences in between (a copied clip), it is dubbed again.
   const ordered: typeof sorted = [];
   for (const w of sorted) {
     const last = ordered.at(-1);
     if (last && last.sentenceId === w.sentenceId) last.end = Math.max(last.end, w.end);
     else ordered.push({ ...w });
   }
-  // 原声的静音或闪避不作用在只有「音色不可用、没有合成」的句子的实例上（那些句子没有配音替代）。
+  // Muting or ducking of the original does not apply to instances of sentences that have only an unusable voice and were not synthesized (those sentences have no dub to stand in for them).
   const unvoiced = new Set(script.units.filter((u) => !synth.units[u.unitId]).map((u) => u.sentenceId));
   const dialogueItemIds = [...new Set(sorted.flatMap((w) => (w.itemId && !unvoiced.has(w.sentenceId) ? [w.itemId] : [])))];
   const dialogue = new Set(dialogueItemIds);
@@ -1556,10 +1542,10 @@ async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams
   for (const [i, window] of ordered.entries()) {
     const unit = byUnit.get(window.sentenceId);
     if (!unit) continue;
-    // 音色不可用、没有合成的句子不放。
+    // Sentences with an unusable voice that were not synthesized are not placed.
     const entry = synth.units[unit.unitId];
     if (!entry) continue;
-    // 不越过：下一个开始得更晚的时间窗（任何一句，包括没有配音的），没有时是序列的终点。
+    // Do not cross: the next time window that starts later (any sentence, including ones without a dub). If there is none, the end of the sequence.
     const next = ordered.slice(i + 1).find((w) => w.start > window.start || (w.start === window.start && w !== window));
     const limit = next ? next.start : Math.max(sequenceEnd, window.end);
     const aligned = alignDub({ start: window.start / 1e6, end: window.end / 1e6, limit: limit / 1e6 }, entry.durationSec);
@@ -1578,7 +1564,7 @@ async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams
       audio = made;
     }
     const samples = Math.floor(audio.durationSec * audio.sampleRate);
-    // 实测的长度（变速之后可能多出几个采样）仍要在下一句之前结束，否则如实算作放不下，不截断。
+    // The measured length (it may gain a few samples after the speed change) must still end before the next sentence. Otherwise it is honestly counted as not fitting, and is not truncated.
     const overflowUs = window.start * audio.sampleRate + samples * 1e6 - limit * audio.sampleRate;
     if (overflowUs > 0) {
       overlong.set(unit.unitId, Math.max(overlong.get(unit.unitId) ?? 0, round3(overflowUs / 1e6 / audio.sampleRate)));
@@ -1619,7 +1605,7 @@ async function align(deps: DubDeps, context: PipelineStepContext<FrozenDubParams
   return { output, result: { documentId: null, artifactId } };
 }
 
-/** 用 ffmpeg `atempo` 变速（保持音高），输出 16 位 PCM 的 WAV，发布为产物。 */
+/** Speed change with ffmpeg `atempo` (keeps the pitch); outputs a 16-bit PCM WAV, published as an artifact. */
 async function stretch(
   deps: DubDeps,
   artifacts: ArtifactStore,
@@ -1655,7 +1641,7 @@ async function stretch(
   return { artifactId: put.artifactId, durationSec: probed.durationSec, sampleRate: probed.audio.sampleRate };
 }
 
-// ---- 应用 ----
+// ---- Apply ----
 
 async function applyDub(videos: DubVideos, context: PipelineStepContext<FrozenDubParams>): Promise<StepResult> {
   if (context.params.regroup) return applyRegroup(videos, context, context.params.regroup);
@@ -1711,7 +1697,7 @@ async function applyDub(videos: DubVideos, context: PipelineStepContext<FrozenDu
       const output: ApplyOutput = { trackId, planDocumentId, groupId, items: aligned.placements.length };
       return { output, result: { documentId: planDocumentId, artifactId: (outputs.align as AlignOutput).artifactId } };
     } catch (error) {
-      // 版本冲突：视频在读与写之间改过；下一轮会发现版本变了，以 STALE_JOB_INPUT 结束（重试时重新对齐）。
+      // Version conflict: the video was changed between read and write. The next round will find that the version changed and end with STALE_JOB_INPUT (on retry, align again).
       if (error instanceof RpcError && error.code === 'conflict' && attempt < APPLY_ATTEMPTS) continue;
       if (error instanceof PipelineStepError) throw error;
       throw new PipelineStepError('APPLY_FAILED', J.applyRejected(), { cause: messageOf(error) });
@@ -1719,7 +1705,7 @@ async function applyDub(videos: DubVideos, context: PipelineStepContext<FrozenDu
   }
 }
 
-/** 应用配音的那一笔事务的全部操作（导出给测试）。 */
+/** All operations of the transaction that applies the dub (exported for tests). */
 export async function dubOperations(input: {
   params: FrozenDubParams;
   aligned: AlignResult;
@@ -1734,7 +1720,7 @@ export async function dubOperations(input: {
   artifacts: ArtifactStore;
 }): Promise<EditOperation[]> {
   const { params, aligned, script, synth, source, check, separated, sequence, groupId, parentJobId, artifacts } = input;
-  // 每句的音色（旧的合成产物没有：都是参数的音色）。
+  // Voice for each sentence (old synthesis artifacts do not have it: all use the parameter voice).
   const voiceOf = (unitId: Id) => synth.voices?.[unitId] ?? { voice: params.voice.voice, voiceSource: params.voiceSource ?? 'params' };
   const unavailable = new Map((synth.unavailable ?? []).map((u) => [u.unitId, u]));
   const language = params.language;
@@ -1789,15 +1775,15 @@ export async function dubOperations(input: {
   });
   operations.push({ type: 'insertItems', sequenceId, items });
 
-  // 原声：只作用在原句所在、带声音的实例上。
+  // Original: applies only to the instances where the original sentence is, and which have sound.
   const audible = new Set(sequence.items.filter((item) => item.type === 'audio' || item.type === 'video').map((item) => item.id));
   const dialogue = aligned.dialogueItemIds.filter((id) => audible.has(id));
   const sounding = (id: Id) => {
     const item = sequence.items.find((i) => i.id === id)!;
     return item.type === 'audio' ? !item.mix.muted : item.type === 'video' ? item.embeddedAudio.enabled : false;
   };
-  // 分离过（`keep` 不分离）：原句所在、还出声、用的正是分离的那份素材的实例换成两份分轨——实例静音，同样的位置与源区间
-  // 放一段背景（「背景声」轨，原样音量）；`duck` 时再放一段人声（「人声」轨），由闪避压低。`mute` 时人声也静音，不放。
+  // Separated (`keep` does not separate): for instances where the original sentence is, that are still audible, and that use the same asset the separation was made from, swap the instance for two separate tracks. The instance is muted, and a background segment is placed at the same position and source range (the “背景声” (background sound) track, at the original volume). For `duck`, a vocals segment is also placed (the “人声” (vocals) track), which is ducked. For `mute`, the vocals are muted too and are not placed.
+  //
   const stemmed =
     separated && params.originalAudio !== 'keep' ? dialogue.filter((id) => sounding(id) && stemSource(sequence, id, separated)) : [];
   const stems: Array<{ stem: 'background' | 'vocals'; artifactId: string; name: string }> =
@@ -1829,10 +1815,10 @@ export async function dubOperations(input: {
     );
   }
 
-  // 静音的实例记进配音计划（这次才静音的，之前已经静音的不算），「只要原声」的导出与「听原声」据此恢复：
-  // `mute` 是原句所在的全部实例，`duck` 是换成分轨的那几个。
+  // Instances that were muted are recorded in the dubbing plan (only those muted this time; ones already muted before do not count). “Original only” export and “listen to original” use this to restore them. `mute` covers all instances of the original sentence; `duck` covers the ones swapped for separate tracks.
+  //
   const mutedNow = params.originalAudio === 'mute' ? dialogue.filter(sounding) : stems.length > 0 ? stemmed : [];
-  // `duck` 压的是人声轨与没有换成分轨的原声实例。
+  // `duck` lowers the vocals track and the original instances that were not swapped for separate tracks.
   const stemmedSet = new Set(stemmed);
   const duckItems = dialogue.filter((id) => !stemmedSet.has(id));
   const duckVocals = stems.some((s) => s.stem === 'vocals');
@@ -1859,7 +1845,7 @@ export async function dubOperations(input: {
           sourceSentenceIds: [u.sentenceId],
           sourceFingerprint: u.fingerprint,
           script: { text: u.text, revision: check.revision, reviewed: false },
-          // 用了视频里的说话人绑定时是那位说话人的 ID（`library-selection` 的 `speakerVoices`），否则 null。
+          // When the video's speaker binding is used, this is that speaker's ID (`speakerVoices` of `library-selection`); otherwise null.
           speakerBindingId: voice.voiceSource === 'video' ? (u.speakerId ?? null) : null,
           targetAnchor: { kind: 'sentence', speechRef: source.speechRef, sentenceId: u.sentenceId, edge: 'start' },
           timingPolicy: 'fit-fixed-slot',
@@ -1930,12 +1916,10 @@ export async function dubOperations(input: {
   return operations;
 }
 
-// ---- 句级重配的应用 ----
+// ---- Applying the sentence-level re-dub ----
 
 /**
- * 句级重配的应用：一笔事务里导入新的音频、删掉这几句在这一组里的旧实例、在原来的配音轨上放新的、写配音计划的新版本
- * （每句追加一版并设为当前版本）。合成了却放不下的句子不删旧的那一版，只在计划里记下这一版没放上。不新建轨道，
- * 不动原声的处理与别的句子。
+ * Applying a sentence-level re-dub: in one transaction, import the new audio, delete the old instances of these sentences in this group, place the new ones on the original dub track, and write a new version of the dubbing plan (each sentence appends a version and sets it as current). For a sentence that was synthesized but does not fit, the old version is not deleted; the plan only records that this version was not placed. No new track is created, and the handling of the original and the other sentences is not touched.
  */
 async function applyRegroup(
   videos: DubVideos,
@@ -1996,7 +1980,7 @@ async function applyRegroup(
   }
 }
 
-/** 句级重配那一笔事务的全部操作，与每句新记下的版本号。 */
+/** All operations of the sentence-level re-dub transaction, and the version number newly recorded for each sentence. */
 async function regroupOperations(input: {
   params: FrozenDubParams;
   regroup: FrozenDubRegroup;
@@ -2038,16 +2022,16 @@ async function regroupOperations(input: {
     const index = units.findIndex((u) => planUnitId(u) === unitId);
     const unit = units[index];
     const text = scripted.get(unitId);
-    // 过期的（没有合成）、计划里已经没有的：不动。
+    // Stale (not synthesized) or already gone from the plan: left alone.
     if (!unit || !text) continue;
     const placed = placements.get(unitId) ?? [];
     const over = overlong.get(unitId);
-    // 音色不可用、原句不在时间线上：没有新的一版。
+    // Voice unusable, or the original sentence not on the timeline: no new version.
     if (placed.length === 0 && over === undefined) continue;
     const dub: PlanUnitDub = { ...unitDub(unit) };
     const olds = items.filter((item) => unitOfItem(item) === unitId);
     const versions = takesOf(unit, dub, olds[0] ?? null, typeof planJobId === 'string' ? planJobId : null);
-    // 当前版本的素材以实例为准：换下来之前记进那一版，之后能切回。
+    // The media of the current version follows the instance. Before replacing it, record it into that version, so it can be switched back later.
     const current = versions.find((t) => t.k === dub.take);
     if (current && olds[0] && !current.assetRef) current.assetRef = { id: olds[0].assetRef.id, revision: olds[0].assetRef.revision };
     const k = versions.reduce((max, t) => Math.max(max, t.k), 0) + 1;
@@ -2112,7 +2096,7 @@ async function regroupOperations(input: {
           subframeOffset,
           playDuration: { ticks: String(p.samples), timescale: p.sampleRate },
           timeMap: { kind: 'linear', sourceIn: { ticks: '0', timescale: 1 }, rate: { num: 1, den: 1 } },
-          // 留下这句原来的音量与静音；淡入淡出跟着旧的长度，不留。
+          // Keeps this sentence's original volume and mute state; the fade in and out follow the old length and are not kept.
           mix: { volume: like?.mix.volume ?? 1, ...(like?.mix.muted ? { muted: true } : {}) },
           name: like?.name ?? J.itemName({ n }).text,
           role: 'dub',
@@ -2135,7 +2119,7 @@ async function regroupOperations(input: {
       unit.script = { text: text.text, revision: check.revision, reviewed: false };
       unit.sourceFingerprint = text.fingerprint;
     } else if (olds.length === 0) {
-      // 放不下、之前也没有放上的一版：照第一次配音的样子标成要适配。
+      // A version that does not fit and was not placed before: marked as needing fit, the same as in the first dub.
       unit.status = 'needs-fit';
       dub.overflowSeconds = over;
       unit.script = { text: text.text, revision: check.revision, reviewed: false };
@@ -2164,7 +2148,7 @@ async function regroupOperations(input: {
   return { operations, takes, trackId };
 }
 
-/** 一句已有的版本；旧的计划没有版本时，已经放上时间线的那一版补记为第 1 版（当前版本）。 */
+/** An existing version of a sentence. For an old plan with no versions, the version already on the timeline is backfilled as version 1 (the current one). */
 function takesOf(unit: PlanUnit, dub: PlanUnitDub, current: AudioItem | null, planJobId: Id | null): DubPlanTake[] {
   if (Array.isArray(dub.takes)) return dub.takes.map((t) => ({ ...t }));
   const artifactId = typeof dub.artifactId === 'string' ? dub.artifactId : null;
@@ -2188,15 +2172,14 @@ function takesOf(unit: PlanUnit, dub: PlanUnitDub, current: AudioItem | null, pl
   ];
 }
 
-/** 这个实例的声音来自分离的那份素材（音频实例，或带声音的视频实例）。 */
+/** This instance's sound comes from the separated asset (an audio instance, or a video instance with sound). */
 function stemSource(sequence: { items: SequenceItem[] }, itemId: Id, separated: SeparateOutput): boolean {
   const item = sequence.items.find((i) => i.id === itemId);
   return !!item && (item.type === 'audio' || item.type === 'video') && item.assetRef.id === separated.assetId;
 }
 
 /**
- * 换成分轨的原声实例各放一段分离出来的背景或人声：位置、源区间与音量照抄（分轨与源素材等长、同一时钟）。
- * 分轨也带这一组的标记（`stem`）：「只要原声」去掉它，「只要这一组配音」不含它，移除这组配音时一起拿掉。
+ * Each original instance swapped for separate tracks gets a segment of the separated background or vocals. The position, source range, and volume are copied (the tracks and the source asset have the same length and the same clock). The tracks also carry this group's marker (`stem`): “original only” removes the marker, “this group's dub only” does not include them, and removing the dub group removes them too.
  */
 function stemItems(
   sequence: { fps: { num: number; den: number }; items: SequenceItem[] },
@@ -2240,18 +2223,18 @@ function stemItems(
   return out;
 }
 
-/** 序列上的精确起点（微秒）拆成「粗帧 + 余数」（视频格式规范 §2.10），余数落在 [0, 一帧)。 */
+/** The exact sequence start (microseconds) split into “coarse frame + remainder” (video format spec §2.10). The remainder is in [0, one frame). */
 export function audioStart(
   startUs: number,
   fps: { num: number; den: number },
 ): { fromFrame: number; subframeOffset: { ticks: string; timescale: number } } {
-  // 起点 = startUs / 1e6 秒；帧 = floor(startUs · num / (den · 1e6))。
+  // Start = startUs / 1e6 seconds; frame = floor(startUs · num / (den · 1e6)).
   const us = BigInt(startUs);
   const num = BigInt(fps.num);
   const den = BigInt(fps.den);
   const million = 1_000_000n;
   const fromFrame = (us * num) / (den * million);
-  // 余数 = startUs/1e6 − fromFrame·den/num = (startUs·num − fromFrame·den·1e6) / (1e6·num)
+  // Remainder = startUs/1e6 − fromFrame·den/num = (startUs·num − fromFrame·den·1e6) / (1e6·num)
   let ticks = us * num - fromFrame * den * million;
   let timescale = million * num;
   const g = gcd(ticks, timescale);

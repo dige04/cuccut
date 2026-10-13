@@ -14,7 +14,7 @@ import { pl } from './media-probe.pl.ts';
 import { tr } from './media-probe.tr.ts';
 import { vi } from './media-probe.vi.ts';
 
-/** `packages/jobs/src/media-probe.ts`：生成的音频、图片没有通过解码校验的原因（进任务错误的 `details.problems`）。 */
+/** `packages/jobs/src/media-probe.ts`: why generated audio or images did not pass decode validation (goes into the task error's `details.problems`). */
 const en = {
   unknownMediaType: (p: { mediaType: string }) => `Unrecognized media type ${p.mediaType}`,
   unreadable: "Couldn't read the output file",

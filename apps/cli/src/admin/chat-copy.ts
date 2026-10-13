@@ -14,9 +14,9 @@ import { pl } from './chat-copy.pl.ts';
 import { tr } from './chat-copy.tr.ts';
 import { vi } from './chat-copy.vi.ts';
 
-/** `cuccut chat` 的文案（英文是键与类型的来源，译文在 `chat-copy.<语言>.ts`）。 */
+/** Copy for `cuccut chat`. The English is the source of the keys and types; the translations are in `chat-copy.<language>.ts`. */
 const en = {
-  /** `cuccut chat --help` 与 `cuccut help chat` 的正文。 */
+  /** The body of `cuccut chat --help` and `cuccut help chat`. */
   help: `Usage:
   cuccut chat <message> [options]  Send a message and print the reply
     --project <dir>                Chat in this project directory (the project is identified
@@ -41,7 +41,7 @@ const en = {
   chatTemplate: (id: string) => `Template: ${id}`,
   chatSkill: (id: string) => `Skill: ${id}`,
   chatMode: (mode: string) => `Access mode: ${mode}`,
-  /** 会话任务结束：状态（`taskStatus` 或原样的状态值）与错误。 */
+  /** The session task has ended: its status (`taskStatus`, or the status value as-is) and error. */
   taskEnded: (status: string, error: string | null) => `Task: ${status}${error ? ` — ${error}` : ''}`,
   taskStatus: { completed: 'Done', stopped: 'Stopped', failed: 'Failed' } as Readonly<Record<string, string>>,
   taskFailed: 'Task failed',

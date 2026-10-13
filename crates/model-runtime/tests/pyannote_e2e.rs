@@ -1,11 +1,10 @@
-//! Pyannote 分段 + WeSpeaker 声纹聚类的带权重 e2e（移植自 v2 `ccut-speech` 的 `pyannote_e2e`）：
+//! Pyannote segmentation + WeSpeaker speaker-embedding clustering real-weight e2e (ported from v2 `ccut-speech`'s `pyannote_e2e`):
 //!
 //! CUCCUT_TEST_MODELS_DIR=… cargo test -p model-runtime --test pyannote_e2e -- --ignored --test-threads=1 --nocapture
 //! CUCCUT_TEST_MODELS_DIR=… cargo test -p model-runtime --no-default-features --features backend-candle \
 //!   --test pyannote_e2e -- --ignored --test-threads=1 --nocapture
 //!
-//! 启用了 candle 就测 candle（CPU），否则测 MLX。权重按 `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` 核对后
-//! 加载，不在时打印原因后跳过。
+//! If candle is enabled, test candle (CPU); otherwise test MLX. Weights are checked against `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` and loaded; if absent, the reason is printed and the test is skipped.
 
 #![cfg(any(
     feature = "backend-candle",
@@ -60,7 +59,7 @@ impl Diarizer {
     }
 }
 
-/// 有声纹模型就走「分割 + 声纹再识别」，否则纯 IoU。
+/// If a speaker-embedding model is present, use “segmentation + speaker re-identification”; otherwise use pure IoU.
 fn load_diarizer() -> Option<Diarizer> {
     let segmentation = verified(PYANNOTE_REPO, "pyannote-segmentation", "segmentation")?;
     let speaker = verified(WESPEAKER_REPO, "wespeaker", "speaker");
@@ -91,7 +90,7 @@ fn pyannote_diarizes_reference_fixture() {
             && segment.end > segment.start
             && segment.end <= duration + 1e-6
     }));
-    // 输出按起点升序，同起点按说话人升序。
+    // Output is sorted ascending by start time; ties are sorted by speaker ascending.
     assert!(
         segments
             .windows(2)
@@ -100,16 +99,15 @@ fn pyannote_diarizes_reference_fixture() {
     );
 
     let speakers = segments.iter().map(|segment| segment.speaker).collect::<BTreeSet<_>>();
-    // 说话人 id 必须是从 0 开始的连续区间（render_segments 会压缩空洞）。
+    // Speaker ids must be a contiguous range starting from 0 (render_segments compacts any gaps).
     assert_eq!(
         speakers,
         (0..speakers.len()).collect::<BTreeSet<_>>(),
         "说话人 id 不连续：{segments:?}"
     );
 
-    // 以下是用真实权重实测校准的数值断言，两个后端都必须满足。参考夹具是单人朗读，3.68 秒——不足一个滑窗，只能验证
-    // 「单窗口不分裂」；跨窗口串联与声纹聚类由下面的 `pyannote_reidentifies_speaker_after_interruption` 用拼接音频覆盖。
-    // 实测输出恰为一段 [0.000, 3.680] speaker 0，两条路径（声纹 / 纯 IoU）、两个后端（MLX / candle）结果一致。
+    // The following are numeric assertions calibrated by measuring with real weights, and both backends must satisfy them. The reference fixture is a single reader, 3.68 seconds: shorter than one sliding window, so it can only verify that a single window does not split. Cross-window stitching and speaker clustering are covered by `pyannote_reidentifies_speaker_after_interruption` below, which uses concatenated audio.
+    // The measured output is exactly one segment, [0.000, 3.680] speaker 0. Both paths (embedding / pure IoU) and both backends (MLX / candle) give the same result.
     assert!(
         (1..=2).contains(&speakers.len()),
         "说话人数 {} 超出预期：{segments:?}",
@@ -121,18 +119,16 @@ fn pyannote_diarizes_reference_fixture() {
         voiced > duration * 0.5 && voiced <= duration * 1.5,
         "语音总时长 {voiced:.2}s 与音频 {duration:.2}s 不匹配：{segments:?}"
     );
-    // 每段都不短于最短语音门槛。
+    // Every segment is no shorter than the minimum speech threshold.
     assert!(
         segments.iter().all(|segment| segment.end - segment.start >= 0.30 - 1e-9),
         "{segments:?}"
     );
 }
 
-/// 跨窗口的声纹再识别：A 说话 → B 打断 → A 回来，A 前后必须是同一个全局 id。
+/// Cross-window speaker re-identification: A speaks → B interrupts → A returns. A's turns before and after must share the same global id.
 ///
-/// 两个夹具是不同说话人（真实 WeSpeaker 实测余弦距离 0.841，远高于 0.715 阈值；同一人前后半段只有 0.381），因此拼接
-/// 出来的音频是一段合法的双人对话。中间的静音把 IoU 链路彻底切断，所以只有声纹聚类能把 A 的两轮认回同一个人——纯 IoU
-/// 路径会把 A 的第二轮判成新说话人。
+/// The two fixtures are different speakers (real WeSpeaker measured a cosine distance of 0.841, far above the 0.715 threshold; the same person's first and second halves score only 0.381), so the concatenated audio is a legitimate two-person dialogue. The silence in between fully cuts the IoU chain, so only speaker-embedding clustering can tie A's two turns back to one person. The pure IoU path would classify A's second turn as a new speaker.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Pyannote and WeSpeaker installed"]
 fn pyannote_reidentifies_speaker_after_interruption() {
@@ -146,7 +142,7 @@ fn pyannote_reidentifies_speaker_after_interruption() {
     let speaker_a = audio("test-sample.wav");
     let speaker_b = audio("chinese-sample.wav");
 
-    // A, B, A, B 四轮，轮间插入静音，记录每轮的真值区间。
+    // Four turns, A, B, A, B, with silence inserted between turns; record each turn's ground-truth interval.
     let mut samples = Vec::new();
     let mut turns = Vec::new();
     for (label, turn) in [('A', &speaker_a), ('B', &speaker_b), ('A', &speaker_a), ('B', &speaker_b)] {
@@ -166,7 +162,7 @@ fn pyannote_reidentifies_speaker_after_interruption() {
         },
     );
 
-    // 每轮取重叠最多的段作为该轮的说话人。
+    // Each turn takes the segment with the most overlap as that turn's speaker.
     let dominant = |start: f64, end: f64| -> usize {
         segments
             .iter()
@@ -188,7 +184,7 @@ fn pyannote_reidentifies_speaker_after_interruption() {
     assert_eq!(speakers, BTreeSet::from([0, 1]), "双人对话应当恰好识别出两个人：{segments:?}");
 }
 
-/// 人数上限必须是硬上限：不得因为 IoU 或聚类的兜底路径溢出。
+/// The speaker-count cap must be a hard cap: it must not be exceeded by the IoU or the clustering fallback paths.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Pyannote installed"]
 fn pyannote_respects_speaker_cap() {
@@ -210,7 +206,7 @@ fn audio(name: &str) -> Vec<f32> {
     decode_mono(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name), 16_000).expect("decode fixture")
 }
 
-/// 按 `<models-root>/<repo>/.ccut-manifest.json` 核对出一个组件的文件；权重不在时给 `None` 并打印原因。
+/// Resolves a component's files from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");

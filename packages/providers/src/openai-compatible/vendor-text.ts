@@ -1,7 +1,7 @@
-// 目录里的 OpenAI 兼容文本服务商（`generateText`，架构设计 §6.4）：与 `custom:<名字>` 同一个 Chat Completions 端点
-// （`POST {base}/chat/completions`，Bearer，输出上限用 `max_tokens`），只差基址与内置模型表（`vendor-catalog.ts`）。
-// 结构化输出按服务商的写法：支持 JSON Schema 的发 `json_schema`，只支持 JSON 模式的发 `json_object` 并把 schema 写进系统
-// 消息；输出都在本地按 schema 校验。推理强度、`seed` 只在模型表声明支持时发出（目前都不声明）。
+// OpenAI-compatible text providers from the catalog (`generateText`, architecture design §6.4): the same Chat Completions endpoint as `custom:<name>`
+// (`POST {base}/chat/completions`, Bearer, output limit as `max_tokens`), differing only in base URL and built-in model table (`vendor-catalog.ts`).
+// Structured output follows each provider's style: providers that support JSON Schema get `json_schema`; those that support only JSON mode get `json_object`, with the schema written into the system
+// message. Output is validated against the schema locally in all cases. Reasoning effort and `seed` are sent only when the model table declares support for them (none currently do).
 import type { TextReply } from '@cuccut/models';
 import type { TextModelInfo } from '@cuccut/protocol';
 import type { AdapterConfig, AdapterHttp, ModelLister, ProviderListing, TextAdapter, TextRequest } from '../adapter.ts';
@@ -39,7 +39,7 @@ export class VendorTextAdapter implements TextAdapter, ModelLister {
     return openAiListModels(config, signal, http, this.#options.label);
   }
 
-  /** 验证密钥：列模型（`GET {base}/models`）。 */
+  /** Verifies the key by listing models (`GET {base}/models`). */
   async validateCredential(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp): Promise<void> {
     await this.listModels(config, signal, http);
   }

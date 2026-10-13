@@ -21,9 +21,9 @@ import { detail } from './tool-parts.tsx';
 import { TRANSCRIBE_TOOL_COPY } from './tools-copy.ts';
 
 /*
- * 语音模型下面的「更多选项」：识别说话人（设计稿 tool-transcribe.jsx `AsrMoreOptions`、tools.css `.asrmore`）。转录工具页与
- * 重新转录共用。默认收起，标题带当前状态，收起时也看得见为什么开始不了。拨开了又没装「说话人区分」时就地给下载（走模型页
- * 同一个安装对话框），下完就开着。
+ * “更多选项” (More options) below the speech model: identify speakers (design file tool-transcribe.jsx `AsrMoreOptions`, tools.css `.asrmore`). Shared by the transcription tool page and
+ * re-transcription. Collapsed by default; the title shows the current state, and while collapsed it still shows why the job cannot start. If it is switched on but speaker diarization is not installed, a download is offered in place (through the same install dialog as the model page),
+ * and it stays on once the download finishes.
  */
 
 const subtitle = style({ marginStart: 8, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
@@ -48,11 +48,11 @@ export interface SpeakerState {
   s: SpeakerSwitch;
   pack: ModelBundleStatus | null;
   facts: SpeakerPackFacts;
-  /** 就地下载说话人模型走下载还是补齐（`inlineInstallMode`）。 */
+  /** Whether the in-place download of the speaker model is a fresh download or a completion (`inlineInstallMode`). */
   mode: 'install' | 'complete';
 }
 
-/** 这只语音模型的「识别说话人」此刻的样子：`pick` 是用户亲手拨的值（null 为没拨过）。 */
+/** The current state of “识别说话人” (Identify speakers) for this speech model: `pick` is the value the user set by hand (null if never set). */
 export function useSpeakerState(info: TranscribeModelInfo | null | undefined, pick: boolean | null): SpeakerState {
   const bundles = useModels((s) => s.bundles);
   const id = speakerPackId(info);
@@ -67,7 +67,7 @@ export function useSpeakerState(info: TranscribeModelInfo | null | undefined, pi
 
 export function AsrMoreOptions({ state, name, onPick }: { state: SpeakerState; name: string; onPick: (on: boolean) => void }) {
   const { s, pack, facts } = state;
-  // 打开对话框时定下下载还是补齐，下载中不换计划。
+  // The choice between download and completion is fixed when the dialog opens; the plan does not change during a download.
   const [installing, setInstalling] = useState<'install' | 'complete' | null>(null);
   const copy = speakerCopy(s, name, facts);
   const install = pack?.install;

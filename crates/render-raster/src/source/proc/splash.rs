@@ -1,5 +1,5 @@
-//! `proc:"splash"`：`at` 时刻在 `(x, y)` 溅起的一簇水珠 + 一圈扩散的水冠。
-//! 一次性：`at` 之前、`at + life` 之后一条 op 都不发。多次溅落用多个实例。
+//! `proc:"splash"`: at time `at`, a cluster of water droplets is thrown up at `(x, y)`, plus an expanding ring of water crown.
+//! One-shot: no op is emitted before `at` or after `at + life`. For multiple splashes, use multiple instances.
 use super::{circle, color, fill, stroke, unit};
 use crate::drawop::FrameBuilder;
 use scene_primitives::proc::Splash;
@@ -24,11 +24,11 @@ pub(super) fn record(
 
     let mut drops = Vec::new();
     for i in 0..splash.count as u64 {
-        // 方向：以正上方为轴 ±0.8 rad 的扇面。
+        // Direction: a fan of ±0.8 rad around straight up.
         let a = (unit(seed, i, 1) - 0.5) * 1.6;
         let v = splash.speed * h * (0.4 + 0.6 * unit(seed, i, 2));
         let (vx, vy) = (v * libm::sin(a), -v * libm::cos(a));
-        // 落回起跳线就消失：水珠不穿过水面。
+        // Droplets vanish when they fall back to the launch line: they do not pass through the water surface.
         if g > 0.0 && age > -2.0 * vy / g {
             continue;
         }
@@ -39,7 +39,7 @@ pub(super) fn record(
     }
     fill(drops, color(&splash.color, 1.0 - k), tf, b);
 
-    // 水冠：扁椭圆，前 60 % 寿命内扩开并淡出。
+    // Water crown: a flattened ellipse, expanding and fading out over the first 60% of its life.
     let crown = (age / (splash.life * 0.6)).min(1.0);
     if crown < 1.0 {
         let ease = 1.0 - (1.0 - crown) * (1.0 - crown);

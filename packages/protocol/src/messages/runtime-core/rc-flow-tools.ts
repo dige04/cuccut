@@ -15,16 +15,16 @@ import { tr } from './rc-flow-tools.tr.ts';
 import { vi } from './rc-flow-tools.vi.ts';
 
 /**
- * 一级动词（agent-tools/flow-tools.ts：`transcribe`、`translate`、`dub`、`transcode`）给用户看的文字：审批卡里的摘要。
- * 工具说明、错误与给智能体的下一步只给模型看，不在这里。英文是键与类型的来源，译文在 `rc-flow-tools.<语言>.ts`。
+ * Human-facing text for the first-level verbs (agent-tools/flow-tools.ts: `transcribe`, `translate`, `dub`, `transcode`): summaries on approval cards.
+ * Tool descriptions, errors and next steps for the model are for the model only and are not here. English is the source of keys and types; translations are in `rc-flow-tools.<language>.ts`.
  */
 
-/** 摘要里的服务商与模型：给了 provider 时写在括号里。 */
+/** The provider and model in the summary: written in parentheses when a provider is given. */
 function providerNote(p: { provider: string | null; model: string | null }): string {
   return p.provider ? ` (${p.provider}${p.model ? ` ${p.model}` : ''})` : '';
 }
 
-/** 配音时原声怎么处理（`duck`、`mute`、`keep`）。 */
+/** How the original audio is handled while dubbing (`duck`, `mute`, `keep`). */
 function originalAction(original: string): string {
   switch (original) {
     case 'mute':
@@ -36,7 +36,7 @@ function originalAction(original: string): string {
   }
 }
 
-/** 转码的动作（`compress`、`merge`、`extract-audio`）连同文件数。 */
+/** Transcode action (`compress`, `merge`, `extract-audio`) together with the file count. */
 function transcodeAction(action: string, count: number): string {
   const files = `${count} ${count === 1 ? 'file' : 'files'}`;
   switch (action) {
@@ -50,30 +50,30 @@ function transcodeAction(action: string, count: number): string {
 }
 
 const en = {
-  /** 列表里各项之间的分隔。 */
+  /** Separator between items in a list. */
   listSeparator: ', ',
 
-  /** 转写已有视频里的素材；`asset` 为 null 时是主轨上的素材。 */
+  /** Transcribe an asset in an existing video; when `asset` is null, it is the asset on the main track. */
   transcribeVideoSummary: (p: { asset: string | null; provider: string | null; model: string | null; captions: boolean }) =>
     `Transcribe ${p.asset ? `asset ${p.asset}` : 'the asset on the main track'}${providerNote(p)}${p.captions ? ' and add a subtitle layer' : ''}`,
-  /** 转写已有视频里的素材并换用文稿（`target: 'replace'`）。 */
+  /** Transcribe an asset in an existing video and swap in the transcript (`target: 'replace'`). */
   transcribeReplaceSummary: (p: { asset: string | null; provider: string | null; model: string | null }) =>
     `Re-transcribe ${p.asset ? `asset ${p.asset}` : 'the asset on the main track'}${providerNote(p)} and replace the video's current transcript, carrying over translations, subtitles and dubbing (one undoable transaction)`,
-  /** 转写本机文件，只写 TXT 与 SRT 文稿；`outDir` 为 null 时写到下载目录。 */
+  /** Transcribe a local file, writing only TXT and SRT transcripts; when `outDir` is null, written to the downloads folder. */
   transcribeFileSummary: (p: { file: string; provider: string | null; model: string | null; outDir: string | null }) =>
     `Transcribe ${p.file}${providerNote(p)} and write TXT and SRT transcripts to ${p.outDir ?? 'the Downloads folder'}`,
-  /** 从本机文件新建视频、导入、放上时间线再转写。 */
+  /** Create a video from a local file, import it, place it on the timeline, then transcribe it. */
   transcribeCreateSummary: (p: { name: string | null; file: string; provider: string | null; model: string | null; captions: boolean }) =>
     `Create video${p.name ? ` "${p.name}"` : ''}, import ${p.file} and add it to the timeline, then transcribe it${providerNote(p)}${p.captions ? ' and add a subtitle layer' : ''}`,
 
-  /** 用文本模型翻译视频里的转写。 */
+  /** Translate the transcript of a video with a text model. */
   translateVideoSummary: (p: { to: string; provider: string | null; model: string | null; captions: boolean; bilingual: boolean }) =>
     `Translate the transcript into ${p.to} with the text model${providerNote(p)}${p.captions ? ` and add a ${p.bilingual ? 'bilingual ' : ''}subtitle layer` : ''}`,
-  /** 用文本模型翻译本机的字幕文件；`outDir` 为 null 时写到下载目录。 */
+  /** Translate a local subtitle file with a text model; when `outDir` is null, written to the downloads folder. */
   translateFileSummary: (p: { input: string; to: string; provider: string | null; model: string | null; outDir: string | null }) =>
     `Translate subtitle file ${p.input} into ${p.to} with the text model${providerNote(p)} and write the new file to ${p.outDir ?? 'the Downloads folder'}`,
 
-  /** 翻译配音；`original` 是 `duck`、`mute` 或 `keep`。 */
+  /** Translate the dub; `original` is `duck`, `mute` or `keep`. */
   dubSummary: (p: {
     to: string | null;
     translation: string | null;
@@ -84,7 +84,7 @@ const en = {
   }) =>
     `Translated voice-over${p.to ? ` (${p.to})` : ''}: ${p.translation ? `use translation ${p.translation}` : 'translate with the text model first'}, synthesize sentence by sentence${providerNote(p)}${p.voice ? ` with voice ${p.voice}` : ''}, add a new voice-over track, and ${originalAction(p.original)} the original audio`,
 
-  /** 转码；`action` 是 `compress`、`merge` 或 `extract-audio`，`files` 是前几个文件（用 `listSeparator` 连起来），`truncated` 表示还有更多。 */
+  /** Transcode; `action` is `compress`, `merge` or `extract-audio`; `files` are the first few files (joined with `listSeparator`); `truncated` means there are more. */
   transcodeSummary: (p: { action: string; count: number; files: string; truncated: boolean; outDir: string | null }) =>
     `${transcodeAction(p.action, p.count)} (${p.files}${p.truncated ? '…' : ''}) and save to ${p.outDir ?? 'the Downloads folder'}`,
 };

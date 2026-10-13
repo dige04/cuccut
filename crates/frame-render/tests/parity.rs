@@ -1,12 +1,7 @@
-//! 预览与导出画出同一帧：每个场景按导出的路子（`plan_frame` 求计划、内置字体、原生构建）画出来，帧的摘要与输入
-//! 一起记在 `tests/fixtures/parity.json`；界面包的测试（`packages/ui/src/render/parity.test.ts`）把同一份输入送进
-//! 编出来的预览 WASM，逐帧比摘要。场景覆盖每种画面实例、每种转场、`fx`、遮罩、平铺、元素动画、关键帧、模板层与字幕，
-//! 以及输出缩放、不铺背景与不画字幕三个开关。
+//! Preview and export draw the same frame. Each scene is drawn the way export does it (`plan_frame` computes the plan, built-in fonts, native build), and the frame digest is recorded together with the inputs in `tests/fixtures/parity.json`. The UI package's test (`packages/ui/src/render/parity.test.ts`) feeds the same inputs into the compiled preview WASM and compares digests frame by frame. The scenes cover every kind of picture instance, every transition, `fx`, masks, tiling, element animation, keyframes, template layers and captions, plus three switches: output scaling, not painting the background, and not drawing captions.
 //!
-//! 内核改了画法时先跑 `CUCCUT_UPDATE_PARITY=1 cargo test -p frame-render --test parity` 重写夹具，再跑界面包的测试。
-//! 源画面在夹具里写成竖条（`bands`），两边按同一个规则铺成非预乘的 RGBA，经同一个 `premultiplied` 送进渲染器；
-//! 浏览器解码（视频、位图）不在这里，送进来的都是解好的画面。SVG 与 GIF 图片和 Lottie 一样以素材字节送进去，两边各自在内核里
-//! 光栅或解码。
+//! When the kernel's drawing changes, first run `CUCCUT_UPDATE_PARITY=1 cargo test -p frame-render --test parity` to rewrite the fixture, then run the UI package's test.
+//! Source pictures are written in the fixture as vertical bands (`bands`). Both sides tile them into non-premultiplied RGBA by the same rule, and feed them through the same `premultiplied` into the renderer. Browser decoding (video, bitmaps) is not covered here; what is fed in is always an already-decoded picture. SVG and GIF images, like Lottie, are fed in as asset bytes, and each side rasterizes or decodes them in the kernel.
 
 mod common;
 
@@ -27,10 +22,10 @@ use video_model::{DocumentRecord, TimelineItem, VersionRef, VideoSnapshot};
 const LOTTIE: &str = include_str!("../../render-raster/tests/fixtures/lottie/cases/shapes.json");
 const LOTTIE_IMAGE: &str = include_str!("../../render-raster/tests/fixtures/lottie/cases/image-embedded.json");
 const STUDIO: &str = "cuccut.legacy-studio-style/0.1";
-/// 纯色填充的 SVG 贴纸，带一段 `<text>`：两边的 resvg 都没有字体，文字都不画（预览的 wasm 不带 `text`，导出的字体库是空的）。
+/// A solid-fill SVG sticker with a `<text>` run: neither side's resvg has fonts, so the text is not drawn (the preview wasm is built without `text`, and the export font library is empty).
 const SVG_STICKER: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30" viewBox="0 0 40 30"><rect width="40" height="15" fill="#FF4000"/><circle cx="20" cy="22" r="7" fill="#2060FF"/><text x="2" y="12" font-size="10" fill="#FFFFFF">Hi</text></svg>"##;
 
-/// 一帧：序列帧号（30 fps）、输出尺寸与两个开关。
+/// One frame: the sequence frame number (30 fps), the output size, and two switches.
 #[derive(Clone, Copy)]
 struct Shot {
     frame: i64,
@@ -58,17 +53,17 @@ struct Scene {
     name: &'static str,
     video: VideoSnapshot,
     documents: Vec<Value>,
-    /// 实例 ID → (宽, 高, 从左到右等宽的竖条颜色)。
+    /// Instance ID → (width, height, colored vertical bands of equal width from left to right).
     pictures: Vec<(&'static str, u32, u32, Vec<[u8; 4]>)>,
-    /// `素材ID@版本` → 文本字节。
+    /// `asset ID@version` → text bytes.
     assets: Vec<(&'static str, String)>,
-    /// `素材ID@版本` → 二进制字节（夹具里写成十六进制）。
+    /// `asset ID@version` → binary bytes (written as hex in the fixture).
     binary_assets: Vec<(&'static str, Vec<u8>)>,
-    /// 实例 ID → BCS1。
+    /// Instance ID → BCS1.
     spectra: Vec<(&'static str, Vec<u8>)>,
-    /// `素材ID@版本` → 素材频谱（BCS1）。
+    /// `asset ID@version` → asset spectrum (BCS1).
     audio_spectra: Vec<(&'static str, Vec<u8>)>,
-    /// 视频里的转写（`{documentId, sourceAssetId?, body}`，与预览的 `bc_set_speech` 相同）：声波的 `speaker` 用。
+    /// Transcript for the video (`{documentId, sourceAssetId?, body}`, same as preview's `bc_set_speech`): used by the waveform's `speaker`.
     speech: Vec<Value>,
     shots: Vec<Shot>,
 }
@@ -95,7 +90,7 @@ impl Scene {
     }
 }
 
-/// 竖条画面：第 x 列的颜色是 `bands[x * n / w]`（非预乘 RGBA）。界面包的测试按同一个规则铺。
+/// Band picture: the color of column x is `bands[x * n / w]` (non-premultiplied RGBA). The UI package's test tiles by the same rule.
 fn bands_rgba(w: u32, h: u32, bands: &[[u8; 4]]) -> Vec<u8> {
     let n = bands.len() as u32;
     let mut row = Vec::with_capacity(w as usize * 4);
@@ -116,7 +111,7 @@ fn unhex(text: &str) -> Vec<u8> {
         .collect()
 }
 
-/// 夹具里的输入原样送进渲染器：按实例给画面与频谱、按 `素材ID@版本` 给素材字节与素材频谱（与预览 WASM 相同）。
+/// Input in the fixture is fed to the renderer unchanged: pictures and spectra by instance, asset bytes and asset spectra by `asset ID@version` (same as preview WASM).
 #[derive(Default)]
 struct FixtureMedia {
     pictures: BTreeMap<String, Pixmap>,
@@ -150,13 +145,13 @@ fn with(mut value: Value, extra: Value) -> Value {
     value
 }
 
-/// 画中画红图（16×9），宽 50% 摆在画布中间；`body` 并进实例。
+/// Picture-in-picture red image (16×9), 50% wide, centered in the canvas; `body` is merged into the instance.
 fn pip(name: &'static str, body: Value, frames: &[i64]) -> Scene {
     let item = with(image("a", 0, 0, 90, json!({ "place": { "w": 50 } })), body);
     Scene::new(name, video(vec![item], vec![image_asset("a_a", 16, 9)], json!({})), frames).picture("a", 16, 9, &[RED, YELLOW])
 }
 
-/// 生成器一类（不读媒体）的实例：宽 60%，从第 0 帧起 90 帧。
+/// An instance of the generator class (does not read media): 60% wide, 90 frames from frame 0.
 fn generator(name: &'static str, body: Value, frames: &[i64]) -> Scene {
     let item = with(item("g", 0, 90, json!({ "place": { "w": 60 } })), body);
     Scene::new(name, video(vec![item], vec![], json!({})), frames)
@@ -192,7 +187,7 @@ fn caption(id: &str, document: &str, style: Option<&str>, frames: i64, scopes: &
     value
 }
 
-/// A [0, 30) 接 B [30, 60)，中间一个 20 帧的两侧转场。
+/// A [0, 30) followed by B [30, 60), with a 20-frame two-sided transition in between.
 fn two_sided(name: &'static str, kind: &str, params: Value) -> Scene {
     let video = video(
         vec![full_image("a", 0, 0, 30), full_image("b", 0, 30, 30)],
@@ -206,7 +201,7 @@ fn two_sided(name: &'static str, kind: &str, params: Value) -> Scene {
 
 fn scenes() -> Vec<Scene> {
     let mut scenes = vec![
-        // —— 媒体实例 ——
+        // —— Media instances ——
         Scene::new(
             "image-fullscreen",
             video(vec![full_image("img", 0, 0, 30)], vec![image_asset("a_img", W, H)], json!({})),
@@ -263,7 +258,7 @@ fn scenes() -> Vec<Scene> {
         )
         .picture("a", 16, 9, &[RED])
         .picture("b", 16, 9, &[RED, BLUE]),
-        // —— 文字与图形 ——
+        // —— Text and graphics ——
         generator(
             "text-plain",
             json!({ "type": "text", "text": "Hello 你好", "style": { "fontSize": 60, "color": "#FFFFFF" },
@@ -324,7 +319,7 @@ fn scenes() -> Vec<Scene> {
             }, "place": { "w": 50, "rot": 25 } }),
             &[15],
         ),
-        // —— 遮罩、平铺、动画、关键帧 ——
+        // —— Masks, tiling, animation, keyframes ——
         pip("mask-ellipse", json!({ "mask": { "shape": "ellipse", "feather": 0.3 } }), &[15]),
         pip("tile", json!({ "place": { "w": 20, "rot": 10 }, "tile": { "on": true } }), &[15]),
         pip(
@@ -362,7 +357,7 @@ fn scenes() -> Vec<Scene> {
     }
     scenes.push(keyframed);
 
-    // —— 生成器与贴纸 ——
+    // —— Generators and stickers ——
     scenes.extend([
         generator(
             "counter",
@@ -490,7 +485,7 @@ fn scenes() -> Vec<Scene> {
     lottie.assets.push(("a_lottie@rev_1", LOTTIE.to_string()));
     scenes.push(lottie);
 
-    // 换色的 Lottie 与内嵌位图的 Lottie：WASM 里同一份解码与换色。
+    // Recolored Lottie and Lottie with embedded bitmaps: the same decoding and recoloring in WASM.
     let mut recoloured = Scene::new(
         "sticker-lottie-recoloured",
         video(
@@ -519,7 +514,7 @@ fn scenes() -> Vec<Scene> {
     recoloured.assets.push(("a_bitmap@rev_1", LOTTIE_IMAGE.to_string()));
     scenes.push(recoloured);
 
-    // SVG 贴纸：原色一份、按 `fillOverrides` 换色一份，都由内核从素材字节按输出的长边光栅。
+    // SVG sticker: one with the original color, and one recolored by `fillOverrides`. Both are rasterized by the kernel from the asset bytes at the output's long side.
     let mut svg = Scene::new(
         "sticker-svg-recoloured",
         video(
@@ -552,7 +547,7 @@ fn scenes() -> Vec<Scene> {
     });
     scenes.push(svg);
 
-    // GIF：图片实例的动图一直循环，贴纸按 `loop`（这里播一次停在末帧），都由内核从素材字节解、按时刻取帧。
+    // GIF: a GIF picture in an image instance loops forever. A sticker follows `loop` (here it plays once and stops on the last frame). Both are decoded by the kernel from the asset bytes, with frames picked by time.
     let mut gif = Scene::new(
         "gif-image-and-sticker",
         video(
@@ -569,13 +564,13 @@ fn scenes() -> Vec<Scene> {
             vec![gif_asset("a_im", 8, 8)],
             json!({}),
         ),
-        // 第 4 帧（133 ms）两个都在第二帧；第 40 帧（1333 ms）图片转回来落在第三帧，贴纸停在末帧。
+        // At frame 4 (133 ms) both are on the second frame. At frame 40 (1333 ms) the image has cycled back and lands on the third frame, while the sticker stays on its last frame.
         &[4, 40],
     );
     gif.binary_assets.push(("a_im@rev_1", STRIPES_GIF.to_vec()));
     scenes.push(gif);
 
-    // `.lottie` 压缩包：清单里的动画、包里的 PNG 与内嵌的 SVG 图片，WASM 里同一份解包与光栅。
+    // `.lottie` archive: the animation from the manifest, the PNG in the package, and the embedded SVG image. The same unpacking and rasterization happen in WASM.
     let mut archive = Scene::new(
         "sticker-dotlottie",
         video(
@@ -610,7 +605,7 @@ fn scenes() -> Vec<Scene> {
         &[45],
     ));
 
-    // —— 转场 ——
+    // —— Transitions ——
     scenes.extend([
         two_sided("transition-dissolve", "dissolve", json!({})),
         two_sided("transition-wipe", "wipe", json!({})),
@@ -642,7 +637,7 @@ fn scenes() -> Vec<Scene> {
         );
     }
 
-    // —— 字幕 ——
+    // —— Captions ——
     let mut studio = Scene::new(
         "captions-studio",
         video(vec![caption("cap", "doc", Some("style"), 240, &[])], vec![], json!({})),
@@ -714,8 +709,7 @@ fn scenes() -> Vec<Scene> {
     ];
     scenes.push(source_clock);
 
-    // 字幕的词来自转写（文档头的 `sourceDocumentId`）：没有空格的中文逐字变色，剪掉的字（源 10.5–11.0 的「的」）与
-    // 隐藏的字（「再」）不画。导出把转写冻结进 `documents`，预览经 `bc_set_speech` 送同一份。
+    // Caption words come from the transcript (`sourceDocumentId` in the document header). Unspaced Chinese changes color character by character, and the cut character (“的”, the particle “de”, at source 10.5–11.0) and the hidden character (“再”, “again”) are not drawn. Export freezes the transcript into `documents`, and preview sends the same one through `bc_set_speech`.
     let clip_from = |id: &str, from: i64, frames: i64, source_ms: i64| {
         video_item(
             id,
@@ -765,7 +759,7 @@ fn scenes() -> Vec<Scene> {
     }));
     scenes.push(words);
 
-    // 设计字幕的强调按转写的词 ID（写在多字词上的落到拆出来的每个字上），底部模板横条把字幕抬上去。
+    // The emphasis on the design caption is keyed by transcript word ID (emphasis written on a multi-character word lands on each split character). The bottom template bar lifts the caption above it.
     let mut emphasis = Scene::new(
         "captions-emphasis-template",
         video(
@@ -825,7 +819,7 @@ fn scenes() -> Vec<Scene> {
     ];
     scenes.push(boxed);
 
-    // 定位框样式的左右对齐：各行在折行宽度里对齐，贴框的左边与右边（两行，看得出每一行各自对齐）。
+    // Left and right alignment of a positioned-box style: each line is aligned within the wrap width, against the left and right edges of the box (two lines, so you can see that each line is aligned on its own).
     for (name, side) in [("captions-boxed-left", "left"), ("captions-boxed-right", "right")] {
         let mut aligned = Scene::new(
             name,
@@ -848,7 +842,7 @@ fn scenes() -> Vec<Scene> {
         scenes.push(aligned);
     }
 
-    // 定位框样式的逐字显现：三个一样长的词各占一秒，起点、念到第一个、刚念到第二个、念到第三个各取一帧。
+    // Word-by-word reveal in a positioned box: three equally long words, each taking one second. Frames are taken at the start, when the first word is spoken, just after the second word is spoken, and after the third word is spoken.
     let mut reveal = Scene::new(
         "captions-boxed-reveal",
         video(vec![caption("cap", "doc", Some("style"), 90, &[])], vec![], json!({})),
@@ -869,7 +863,7 @@ fn scenes() -> Vec<Scene> {
     ];
     scenes.push(reveal);
 
-    // —— 输出缩放与不铺背景 ——
+    // —— Output scaling and not painting the background ——
     let mut scaled = pip(
         "output-scaled-transparent",
         json!({ "place": { "x": 70, "y": 40, "w": 50, "rot": 15 }, "fx": { "shadow": { "offsetX": 20, "offsetY": 20, "blur": 10, "color": "#000000", "opacity": 0.6 } } }),
@@ -895,7 +889,7 @@ fn scenes() -> Vec<Scene> {
     scenes
 }
 
-/// 声波听这条序列的混音：两段声音（一段淡入、一段压低音量）在不同的轨上叠着放，素材频谱各自随源时间变。
+/// The waveform listens to this sequence's mix: two sounds (one fading in, one turned down) are layered on different tracks, and each asset spectrum varies with its source time.
 fn visualizer_audio() -> Scene {
     let track = |id: &str, order: i64, kind: &str| {
         json!({ "id": id, "order": order, "kind": kind, "locked": false, "visible": true, "muted": false,
@@ -936,7 +930,7 @@ fn visualizer_audio() -> Scene {
         json!({ "tracks": [track("trk_v1", 0, "visual"), track("trk_a1", 0, "audio"), track("trk_a2", 1, "audio")] }),
     );
     let mut scene = Scene::new("visualizer-audio", video, &[12, 40, 75, 3]);
-    // 低频那份随源时间渐强，高频那份一直响。
+    // The low-frequency one grows louder with source time, while the high-frequency one stays loud throughout.
     scene.audio_spectra.push((
         "a_low@rev_1",
         spectrum_by_frame(120, |frame, bin| if bin < 96 { (100 + frame) as u8 } else { 0 }),
@@ -947,8 +941,8 @@ fn visualizer_audio() -> Scene {
     scene
 }
 
-/// 同一段混音，声波只听 spk_a（`alwaysShow: false`）：spk_a 在 [0.2, 0.8) 与 [2.2, 2.8) 秒说话，spk_b 在 [1.2, 2.0)。
-/// 第 30 帧（1 秒）是 spk_a 停下不到 0.5 秒，画静止的样子；第 40 帧已经隐去；第 75 帧 spk_a 又在说。
+/// The same mix, with the waveform listening only to spk_a (`alwaysShow: false`): spk_a speaks at [0.2, 0.8) and [2.2, 2.8) seconds, and spk_b at [1.2, 2.0).
+/// Frame 30 (1 second): spk_a stopped less than 0.5 seconds ago, so it draws the still look. Frame 40: already hidden. Frame 75: spk_a is speaking again.
 fn visualizer_speaker() -> Scene {
     let mut scene = visualizer_audio();
     scene.name = "visualizer-speaker";
@@ -969,7 +963,7 @@ fn visualizer_speaker() -> Scene {
     scene
 }
 
-/// 夹具里的转写求出各说话人的区间（与预览 WASM 的 `bc_set_speech` 同一个求法）；一份都没有时是 `None`。
+/// Speaker intervals are derived from the fixture's transcript (same derivation as preview WASM's `bc_set_speech`); `None` if there is no transcript at all.
 fn speakers_of(video: &VideoSnapshot, speech: &[Value]) -> Option<Arc<frame_render::SpeakerActivity>> {
     if speech.is_empty() {
         return None;
@@ -992,11 +986,11 @@ fn speakers_of(video: &VideoSnapshot, speech: &[Value]) -> Option<Arc<frame_rend
     Some(Arc::new(speaker_activity(VideoView::from(video), "seq", &pairs).unwrap()))
 }
 
-/// 按导出的路子画一个场景的每一帧：每个场景一个渲染器（与预览一样跨帧复用缓存），帧时刻是 `帧号/30` 的有理数。
+/// Draws every frame of one scene the way export does: one renderer per scene (reusing caches across frames, as preview does), with frame times as the rational number `frame number / 30`.
 fn render_scene(scene: &Value) -> Vec<Value> {
     let video: VideoSnapshot = serde_json::from_value(scene["video"].clone()).unwrap();
     let mut documents: Vec<FrozenDocument> = serde_json::from_value(scene["documents"].clone()).unwrap();
-    // 导出的计划把字幕的词所在的转写冻结在 `documents` 里；预览经 `bc_set_speech` 送同一份。
+    // The export plan freezes the transcript containing the caption's words in `documents`. Preview sends the same one through `bc_set_speech`.
     for speech in scene.get("speech").and_then(Value::as_array).into_iter().flatten() {
         documents.push(
             serde_json::from_value(json!({
@@ -1080,8 +1074,7 @@ fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/parity.json")
 }
 
-/// 按镜头分段取景（派生子视频的 `crops`）的样子：同一素材在镜头边界上拆成两段，右段的 `sourceIn` 接着左段，两段各带一份
-/// 不同的 `crop`（左段取左半、右段取右半），铺满画布。帧取两段中间与接缝两侧。
+/// The look of framing by shot segments (the derived sub-video's `crops`): the same asset is split into two segments at a shot boundary. The right segment's `sourceIn` continues from the left one, and each segment carries a different `crop` (the left takes the left half, the right takes the right half), filling the canvas. Frames are taken between the two segments and on either side of the seam.
 fn two_piece_crop() -> Scene {
     Scene::new(
         "video-two-piece-crop",
@@ -1105,7 +1098,7 @@ fn two_piece_crop() -> Scene {
     )
 }
 
-/// 两段确实各用自己的裁剪：源画面左红右蓝，左段只看得到红，右段只看得到蓝，接缝那一帧就换。
+/// Confirms that the two segments really use their own crops: the source is red on the left and blue on the right. The left segment shows only red and the right only blue, so the frame at the seam switches.
 #[test]
 fn two_piece_crop_switches_at_the_seam() {
     let scene = two_piece_crop();
@@ -1151,13 +1144,13 @@ fn build_fixture() -> Value {
 #[test]
 fn parity_fixture_is_current() {
     let fixture = build_fixture();
-    // 每个场景都画了自己的东西：没有跳过的层，场景之间第一帧互不相同。
+    // Each scene drew its own content: no skipped layers, and first frames differ between scenes.
     let mut seen = BTreeMap::new();
     for scene in fixture["scenes"].as_array().unwrap() {
         for shot in scene["shots"].as_array().unwrap() {
             assert_eq!(shot["skipped"], json!([]), "{}", scene["name"]);
         }
-        // 声波拿到了频谱（或这条序列确实没有声音）：不报缺频谱的提示。
+        // The waveform got its spectrum (or this sequence really has no sound): no hint about a missing spectrum is reported.
         if scene["name"].as_str().unwrap().starts_with("visualizer-") {
             for shot in scene["shots"].as_array().unwrap() {
                 assert_eq!(shot["warnings"], json!([]), "{}", scene["name"]);

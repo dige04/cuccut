@@ -13,20 +13,19 @@ import { startCheck } from './start-check.ts';
 export interface BundleCheck {
   state: CheckState;
   can: CheckAbilities;
-  /** 提交检查的请求还没回来。 */
+  /** The submit request for the check has not returned yet. */
   starting: boolean;
-  /** 检查（被停用的先重新启用）；被拒时记下，写在状态行上，不弹 toast。 */
+  /** Check (a disabled model is re-enabled first); if rejected, it is recorded and written on the status line, no toast. */
   start: () => Promise<void>;
-  /** 取消检查（任务取消）或修复（停下并丢掉这次下载的部分），状态回到之前那条。 */
+  /** Cancel the check (task cancelled) or repair (stop and discard the partial download): the status goes back to the one before. */
   cancel: () => void;
-  /** 修复对话框提交了任务：记下来，修完自动再检查。 */
+  /** The repair dialog submitted a task: record it, and check again automatically when it finishes. */
   repairStarted: (jobId: string) => void;
 }
 
 /**
- * 一行模型包的「检查」（model/model-check.ts）：状态从 `jobs` / `models` 主题算；提交被拒与这一行发起的修复记在
- * state/model-check-store.ts。修复任务完成后自动再检查一次；失败、取消或被打断就不检查，原因照常写在行上。
- * `ownFiles`：模型包自己的文件在盘上（`bundleActions` 的同名参数），权重在、缺组件的也能修复。
+ * The “检查”(Check) for one model package row (model/model-check.ts): status is computed from the `jobs` / `models` topics; a rejected submit and a repair started from this row are recorded in state/model-check-store.ts. After a repair task completes, a check runs once more automatically; if it fails, is cancelled or is interrupted, no check runs, and the reason stays written on the row.
+ * `ownFiles`: the model package's own files are on disk (the same-named parameter of `bundleActions`); a model with weights present but missing components can also be repaired.
  */
 export function useBundleCheck(
   bundle: ModelBundleStatus,
@@ -54,7 +53,7 @@ export function useBundleCheck(
 
   const repairEnd = repairOutcome(jobs, repairJobId);
   useEffect(() => {
-    // 只认还记着的那一次：同一个结束只触发一次检查（开发模式下 effect 会跑两遍）。
+    // Only recognizes the one still recorded: the same completion triggers one check only (effects run twice in development mode).
     const store = useModelCheck.getState();
     if (!repairEnd || !repairJobId || store.repairs[id] !== repairJobId) return;
     store.setRepair(id, null);

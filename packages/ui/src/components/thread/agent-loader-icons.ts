@@ -2,17 +2,17 @@ import * as loader from '@react-spectrum/ai/loader';
 import type { Cell } from '@react-spectrum/ai/loader';
 import { THINKING, forKind, type LoaderIcon } from '../../model/agent-loader.ts';
 
-/** 名字 → 像素格。按类型核对：model/agent-loader.ts 里的每个名字都得是这个包导出的单个图形。 */
+/** Name → pixel grid. Check by type: every name in model/agent-loader.ts must be a single graphic exported by this package. */
 const TABLE: Record<LoaderIcon, Cell[]> = loader;
 
-/** 加载图形的键：'thinking' 是通用序列，其余是步骤类别（model/agent-loader.ts 的 LoaderKind；认不出的走兜底）。 */
+/** Keys of the loader graphics: 'thinking' is the generic sequence; the rest are step categories (LoaderKind in model/agent-loader.ts; unrecognised ones fall back to the default). */
 export type LoaderKey = 'thinking' | (string & {});
 
 const SEQUENCES = new Map<string, Cell[][] | undefined>();
 
 /**
- * 正在跑的那一步与回合页脚播的序列。按键缓存，数组引用稳定（PixelLoader 拿到新引用会从第一个图重播）；
- * 一个图都取不到时给 undefined，PixelLoader 用它的默认图形。
+ * The sequence played for the step that is running and for the turn footer. Cached by key so the array reference stays stable (if PixelLoader gets a new reference it replays from the first frame);
+ * when no frame can be obtained, undefined is returned, and PixelLoader uses its default graphic.
  */
 export function loaderSequence(key: LoaderKey): Cell[][] | undefined {
   if (!SEQUENCES.has(key)) {

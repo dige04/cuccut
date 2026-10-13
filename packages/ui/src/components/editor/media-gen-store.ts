@@ -5,23 +5,23 @@ import { BLANK_IMAGE } from '../../model/tools-image.ts';
 import { BLANK_TTS, type TtsDraft } from '../../model/tools-tts.ts';
 
 /**
- * 素材面板里生成的那几页按视频记的状态（设计稿 editor.jsx 的 `paneView` 与 panel-image-gen.jsx 的 `J.drafts[scope]`）：
- * 音频 Tab 翻到哪个子页、图片 Tab 在哪一段、两张表单的草稿、生成语音正在看的那个任务。放在模块级：
- * 在时间线上选中东西会把右栏切到「属性」，回来时子页与草稿都还在；不往 editor-store 里加字段。
+ * Per-video state for the generation pages in the media panel (design drafts editor.jsx `paneView` and panel-image-gen.jsx `J.drafts[scope]`):
+ * which sub-page the Audio tab is on, which segment the Image tab is in, the drafts of the two forms, and the task the generated voice view is showing. It lives at module level:
+ * selecting something on the timeline switches the right column to “Properties”, and when you come back the sub-pages and drafts are still there; no fields are added to editor-store.
  */
 
 export type AudioSubpage = 'tts' | 'clone';
 export type ImageSegment = 'project' | 'gen';
 
 export interface MediaGenState {
-  /** 音频 Tab 的子页；null 为素材列表。 */
+  /** Sub-page of the Audio tab; null means the media list. */
   audio: AudioSubpage | null;
   image: ImageSegment;
   tts: TtsDraft;
-  /** 生成语音子页提交的那个任务（看它的进度与结果）；null 为还在填表。 */
+  /** The task submitted by the generate-voice sub-page (to follow its progress and result); null means the form is still being filled in. */
   ttsJob: Id | null;
   img: EditorImageDraft;
-  /** 「最近生成」展开了全部批次没有。 */
+  /** Whether “Recently generated” has been expanded to show all batches. */
   allImages: boolean;
 }
 
@@ -56,7 +56,7 @@ export const useMediaGenStore = create<MediaGenStore>()((set) => ({
     }),
 }));
 
-/** 这个视频的那一份（没有记过时是空白的那份，引用稳定）。 */
+/** This video's entry (a blank one when nothing has been recorded; the reference is stable). */
 export function useMediaGen(videoId: Id | null): MediaGenState {
   return useMediaGenStore((s) => (videoId ? (s.byVideo[videoId] ?? BLANK_MEDIA_GEN) : BLANK_MEDIA_GEN));
 }

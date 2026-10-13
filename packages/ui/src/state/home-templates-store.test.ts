@@ -3,7 +3,7 @@ import type { TemplateSummary } from '@cuccut/protocol';
 import { templateCatalogOf } from '../model/home-templates.ts';
 import { recentOf, useHomeTemplates } from './home-templates-store.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载；预先放一份旧版本存下的记忆。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module. Pre-load a memory saved by an old version.
 vi.hoisted(() => {
   const data = new Map<string, string>([
     ['cuccut.homeTemplates', JSON.stringify({ state: { recent: ['tips', 7, 'vlog-edit'] }, version: 1 })],
@@ -18,7 +18,7 @@ vi.hoisted(() => {
   });
 });
 
-// 在 beforeEach 复位之前记下读出来的那份。
+// Record what was read before beforeEach resets it.
 const hydrated = useHomeTemplates.getState().recent;
 
 function summary(id: string): TemplateSummary {

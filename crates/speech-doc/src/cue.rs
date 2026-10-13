@@ -1,18 +1,18 @@
-//! Cue / Para 派生投影（§18.5，规范性算法）。
+//! Cue / Para derived projections (§18.5, normative algorithm).
 //!
-//! 字幕行与段落不落盘；同一份转录在任何实现必须派生出相同结果。
+//! Subtitle lines and paragraphs are not written to disk. Any implementation must derive the same result from the same transcript.
 
 use crate::doc::{BreakOverride, TranscriptDoc, Word};
 
-/// 规范性缺省参数（§18.5）。
+/// Normative default parameters (§18.5).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CueParams {
     pub max_chars: usize,
     pub pause_sec: f64,
-    /// 从句标点（逗号类）断行的最短行宽。
+    /// Minimum line width for breaking at clause punctuation (commas).
     pub min_clause_chars: usize,
     pub min_pause_chars: usize,
-    /// 破折号（打断/重启）断行的最短行宽——比逗号档更低。
+    /// Minimum line width for breaking at dashes (interruptions and restarts), lower than the comma tier.
     pub min_dash_chars: usize,
     pub overflow_slack: usize,
     pub min_cue_display_sec: f64,
@@ -32,15 +32,15 @@ impl Default for CueParams {
     }
 }
 
-/// 派生出的字幕行（概念性，非持久化）。
+/// A derived subtitle line (conceptual, not persisted).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cue {
-    /// `"q-" + 首词 id`——首词不变则跨重派生稳定。
+    /// `"q-" + first word id`. Stable across re-derivation as long as the first word does not change.
     pub id: String,
     pub start: f64,
     pub end: f64,
     pub sp: String,
-    /// 指回 `doc.words` 的下标（只含非 hidden 词）。
+    /// Index back into `doc.words` (non-hidden words only).
     pub word_indices: Vec<usize>,
 }
 
@@ -50,27 +50,25 @@ impl Cue {
     }
 }
 
-/// 段落：按（章节 × 连续同说话人）分组，再叠加 paraBreaks 钉。
+/// Paragraph: grouped by (chapter × consecutive same speaker), then overlaid with the paraBreaks pins.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Para {
-    /// `"p-" + 首词 id`。
+    /// `"p-" + first word id`.
     pub id: String,
     pub sp: String,
     pub cue_indices: Vec<usize>,
 }
 
-/// 词序列拼接为展示文本（CJK 邻接不加空格）。
+/// Joins a word sequence into display text (no space between adjacent CJK characters).
 pub fn join_words<'a, I: IntoIterator<Item = &'a Word>>(words: I) -> String {
     crate::atomize::join_word_texts(words)
 }
 
-/// 手工拆行的词边界扫描：把「显示串字符偏移」`target_chars` 映射回词边界。
+/// Scans word boundaries for manual line splitting: maps a display-string character offset `target_chars` back to a word boundary.
 ///
-/// 标尺与 [`join_words`] / `join_word_texts` 完全一致（`join_prefix_char_lens`），
-/// 不得自行按词累加固定分隔宽度。返回值是 **A 行末词** 在 `word_texts` 中的下标
-/// （落在 `0..len-1`，`breaks` 钉就打在该词上）；不足两词时返回 `None`。
+/// The ruler matches [`join_words`] / `join_word_texts` exactly (`join_prefix_char_lens`). Do not add a fixed separator width per word. The return value is the index in `word_texts` of **the last word of line A** (in `0..len-1`; the `breaks` pin lands on that word). Returns `None` when there are fewer than two words.
 ///
-/// tie-breaking 定死：取前缀长度距 `target_chars` 最近的边界，等距取靠前边界。
+/// Tie-breaking is fixed: take the boundary whose prefix length is nearest to `target_chars`; on a tie, take the earlier boundary.
 pub fn split_boundary_at_char<W: crate::atomize::JoinWord>(
     word_texts: &[W],
     target_chars: usize,
@@ -89,10 +87,7 @@ pub fn split_boundary_at_char<W: crate::atomize::JoinWord>(
     best.map(|(index, _)| index)
 }
 
-/// 标点优先断行阶梯（§18.5 条件 3–6，对拍 JS/Swift `autoBreak`）：
-/// 句末 > 从句标点（破折号低门槛）> 长停顿 > 溢出。溢出在下一词以从句/
-/// 句末标点收尾且总宽不超 `maxChars + overflowSlack` 时延长收入标点，
-/// 避免在标点前一格硬切。
+/// Punctuation-first line-break ladder (§18.5 conditions 3–6, matching the JS/Swift `autoBreak`): sentence end > clause punctuation (dashes have a lower threshold) > long pause > overflow. When it overflows and the next word ends in clause or sentence punctuation, with the total width not exceeding `maxChars + overflowSlack`, the punctuation is pulled in, to avoid a hard cut one character before it.
 pub(crate) fn auto_break(word: &Word, next: &Word, line_chars: usize, params: &CueParams) -> bool {
     if crate::atomize::sentence_end(&word.text) {
         return true;
@@ -124,10 +119,9 @@ pub(crate) fn auto_break(word: &Word, next: &Word, line_chars: usize, params: &C
     false
 }
 
-/// Cue 派生：顺序扫描非 hidden 词，按 §18.5 六条断行条件（优先级从高到低）。
+/// Cue derivation: scan the non-hidden words in order and apply the six line-break conditions of §18.5, from highest to lowest priority.
 ///
-/// 钉表取 [`TranscriptDoc::effective_breaks`]：`autoBreaks[layoutProfile]`
-/// 打底、用户 `breaks` 覆盖同键（0.4 起优化器结果与用户意图分表）。
+/// The pin table is [`TranscriptDoc::effective_breaks`]: `autoBreaks[layoutProfile]` is the base, and the user's `breaks` override the same key. Since 0.4, the optimizer's results and the user's intent are kept in separate tables.
 pub fn derive_cues(doc: &TranscriptDoc, params: &CueParams) -> Vec<Cue> {
     let mut cues: Vec<Cue> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
@@ -161,8 +155,7 @@ pub fn derive_cues(doc: &TranscriptDoc, params: &CueParams) -> Vec<Cue> {
 
     for (position, &index) in visible.iter().enumerate() {
         let word = &doc.words[index];
-        // paraBreaks 钉在词前。若该词落在一个已打开 Cue 内，必须先封口，
-        // 否则 derive_paras 只能看到 Cue 首词，段落钉会有数据却无法生效。
+        // paraBreaks pins before a word. If that word falls inside an open Cue, the Cue must be closed first. Otherwise derive_paras only sees the Cue's first word, and the paragraph pin would have data but never take effect.
         if !current.is_empty() && doc.para_breaks.get(&word.id).copied().unwrap_or(false) {
             flush(&mut cues, &mut current);
             current_chars = 0;
@@ -179,8 +172,8 @@ pub fn derive_cues(doc: &TranscriptDoc, params: &CueParams) -> Vec<Cue> {
             break;
         };
 
-        // 优先级：说话人切换（不可抑制）> 手工 break/nobreak > 自动阶梯。
-        // 句末必须封 Cue（Sentence 由完整 Cue 聚合），仅显式 nobreak 可抑制。
+        // Priority: speaker switch (not suppressible) > manual break/nobreak > automatic ladder.
+        // A sentence end must close a Cue (a Sentence is aggregated from complete Cues). Only an explicit nobreak can suppress it.
         let break_now = if next.sp != word.sp {
             true
         } else {
@@ -198,7 +191,7 @@ pub fn derive_cues(doc: &TranscriptDoc, params: &CueParams) -> Vec<Cue> {
     cues
 }
 
-/// Para 派生：（章节 × 连续同说话人）分组 + paraBreaks 钉。
+/// Para derivation: (chapter × consecutive same speaker) grouping, plus the paraBreaks pins.
 pub fn derive_paras(doc: &TranscriptDoc, cues: &[Cue]) -> Vec<Para> {
     let mut paras: Vec<Para> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
@@ -224,7 +217,7 @@ pub fn derive_paras(doc: &TranscriptDoc, cues: &[Cue]) -> Vec<Para> {
     };
 
     for (index, cue) in cues.iter().enumerate() {
-        // paraBreaks 钉在词前起新段：Cue 首词被钉 ⇒ 该 Cue 起新段。
+        // A paraBreaks pin before a word starts a new paragraph. If a Cue's first word is pinned, that Cue starts a new paragraph.
         let first_word = &doc.words[cue.word_indices[0]];
         let pinned = doc
             .para_breaks
@@ -245,19 +238,14 @@ pub fn derive_paras(doc: &TranscriptDoc, cues: &[Cue]) -> Vec<Para> {
     paras
 }
 
-/// 「短插话」段落的缺省字数上限（展示口径 `join_words` 字符数）。
+/// Default character limit for a 「short interjection」 paragraph (counted as `join_words` characters in the display measure).
 pub const SHORT_INTERJECTION_MAX_CHARS: usize = 10;
-/// 「短插话」段落的缺省时长上限（秒）。
+/// Default duration limit for a 「short interjection」 paragraph (seconds).
 pub const SHORT_INTERJECTION_MAX_SECONDS: f64 = 3.0;
 
-/// 短插话段落：夹在**同一说话人**的两段之间、自身说话人不同、文本不超过
-/// `max_chars` 字且时长不超过 `max_seconds` 秒的段落（「嗯。」「哦。」「对。」
-/// 这类应答）。返回它们在 `paras` 里的下标（升序）。
+/// Short-interjection paragraph: a paragraph between two paragraphs of the **same speaker**, whose own speaker is different, whose text is no more than `max_chars` characters, and whose duration is no more than `max_seconds` seconds (acknowledgements such as 「嗯。」 ("mm."), 「哦。」 ("oh."), 「对。」 ("right.")). Returns their indices in `paras`, in ascending order.
 ///
-/// 只是**观测口径**，不改派生：规范 §18.5 的 Para 仍按（章节 × 连续同说话人）
-/// 分组，说话人一切换必然另起段。多人访谈实测 1965 段里 1284 段是这类插话
-/// （369×「嗯。」，中位 8 字 / 0.95 s）；polish 信封以此计数上报，供 UI 决定
-/// 折叠/内联展示，而不是改四端的派生逻辑（2026-08 裁决）。
+/// This is an **observation measure** only and does not change derivation. The §18.5 Para still groups by (chapter × consecutive same speaker), so every speaker change starts a new paragraph. In a measured multi-person interview, 1284 of 1965 paragraphs were such interjections (369 × 「嗯。」, median 8 characters and 0.95 s). The polish envelope reports this count so the UI can choose to fold or inline them. The derivation logic of the four platform implementations is not changed (decision of 2026-08).
 pub fn short_interjection_paragraphs(
     doc: &TranscriptDoc,
     cues: &[Cue],
@@ -323,16 +311,16 @@ mod tests {
 
     #[test]
     fn split_boundary_uses_the_join_ruler_and_breaks_ties_toward_the_earlier_boundary() {
-        // 前缀长度按 join_word_texts 计：CJK 相邻不加空格。
+        // Prefix length is measured with join_word_texts: no space between adjacent CJK characters.
         assert_eq!(
             crate::atomize::join_prefix_char_lens(["我", "用", "CucCut", "剪"]),
             vec![1, 2, 9, 11]
         );
-        // 等距 → 取靠前边界：前缀 [2, 4, 7]，target 3 与前两个边界等距。
+        // On a tie, take the earlier boundary. With prefixes [2, 4, 7] and target 3, the target is equidistant from the first two boundaries.
         assert_eq!(split_boundary_at_char(&["ab", "c", "de"], 3), Some(0));
-        // 不等距 → 取最近边界。
+        // Not a tie: take the nearest boundary.
         assert_eq!(split_boundary_at_char(&["ab", "c", "de"], 4), Some(1));
-        // 末词边界不参与（拆在末词之后等于没拆）；不足两词无法拆分。
+        // The boundary after the last word does not count (splitting after the last word is no split). Fewer than two words cannot be split.
         assert_eq!(split_boundary_at_char(&["ab", "c", "de"], 99), Some(1));
         assert_eq!(split_boundary_at_char(&["ab"], 0), None);
         assert_eq!(split_boundary_at_char::<&str>(&[], 0), None);
@@ -361,9 +349,7 @@ mod tests {
 
     #[test]
     fn short_sentence_end_still_closes_before_the_next_sentence() {
-        // 回归真实失败形态：前一个展示 Cue 因 overflow 已在 "take" 前断开，
-        // 剩下的 "their job." 很短；句号仍必须封口，不能把
-        // 后一句 "Maybe…" 吞进同一 Cue / Sentence。
+        // Regression test for the real failure shape: the previous display Cue was already broken by overflow before "take", leaving "their job." very short. The period must still close the Cue, and the next sentence "Maybe…" must not be swallowed into the same Cue or Sentence.
         let doc = doc_from_rows(&[RowIn::new(
             0.0,
             5.0,
@@ -395,7 +381,7 @@ mod tests {
             .insert(id.to_owned(), value);
     }
 
-    /// `autoBreaks[default]` 的自动 pin 与用户 `breaks` 一样参与派生。
+    /// The automatic pins of `autoBreaks[default]` take part in derivation just like the user's `breaks`.
     #[test]
     fn auto_pins_apply_when_no_user_pin_covers_the_same_word() {
         let mut doc = doc_from_rows(&[RowIn::new(0.0, 5.0, "一二三四五")]);
@@ -406,7 +392,7 @@ mod tests {
         assert_eq!(cues[1].id, "q-g1.0~2");
     }
 
-    /// 同键以用户 `breaks` 为准：用户 nobreak 压过自动 break，用户 break 压过自动 nobreak。
+    /// On the same key the user's `breaks` win: a user nobreak overrides an automatic break, and a user break overrides an automatic nobreak.
     #[test]
     fn user_pins_override_auto_pins_on_the_same_word() {
         let mut doc = doc_from_rows(&[RowIn::new(0.0, 5.0, "一二三四五")]);
@@ -415,7 +401,7 @@ mod tests {
             .insert("g1.0~1".to_owned(), BreakOverride::Nobreak);
         assert_eq!(derive_cues(&doc, &CueParams::default()).len(), 1);
 
-        // 句末封口只有 nobreak 能抑制；自动 nobreak 同样有效，但用户 break 压过它。
+        // Only nobreak can suppress the sentence-end close. An automatic nobreak is just as effective, but a user break overrides it.
         let mut doc = doc_from_rows(&[RowIn::new(0.0, 5.0, "今天聊设计。再看实现。")]);
         let cues = derive_cues(&doc, &CueParams::default());
         assert_eq!(cues.len(), 2);
@@ -428,7 +414,7 @@ mod tests {
         assert_eq!(derive_cues(&doc, &CueParams::default()).len(), 2);
     }
 
-    /// 说话人切换不可抑制：用户与自动 nobreak 都拦不住。
+    /// A speaker switch cannot be suppressed: neither a user nobreak nor an automatic one can stop it.
     #[test]
     fn nobreak_pins_still_cannot_suppress_a_speaker_change() {
         let mut row_a = RowIn::new(0.0, 2.0, "你好");
@@ -442,7 +428,7 @@ mod tests {
         assert_eq!(derive_cues(&doc, &CueParams::default()).len(), 2);
     }
 
-    /// 文档指向未知/其他 profile 时，只有用户 pin 生效。
+    /// When the document points to an unknown or other profile, only user pins take effect.
     #[test]
     fn unknown_layout_profile_falls_back_to_user_pins_only() {
         let mut doc = doc_from_rows(&[RowIn::new(0.0, 5.0, "一二三四五")]);
@@ -490,7 +476,7 @@ mod tests {
             doc.words = serde_json::from_value::<Vec<Word>>(row["words"].clone()).unwrap();
             doc.breaks = serde_json::from_value(row["breaks"].clone()).unwrap();
             doc.hidden = serde_json::from_value(row["hidden"].clone()).unwrap();
-            // 0.4 增补：`autoBreaks[profile]` 打底、`breaks` 覆盖；夹具缺省即空表。
+            // 0.4 addition: `autoBreaks[profile]` is the base and `breaks` overrides it. The fixture's default is an empty table.
             if let Some(auto) = row.get("autoBreaks") {
                 doc.auto_breaks = serde_json::from_value(auto.clone()).unwrap();
             }
@@ -552,8 +538,7 @@ mod tests {
         assert_eq!(paras.len(), 2);
         assert_eq!(paras[1].id, "p-g1.2");
     }
-    /// 短插话观测口径：夹在同一说话人之间的「嗯。」计入，长回答与同说话人
-    /// 的相邻段不计；派生本身不变（插话仍是独立 Para）。
+    /// Short-interjection observation measure: 「嗯。」 between two paragraphs of the same speaker is counted. Long answers and adjacent paragraphs of the same speaker are not. Derivation itself is unchanged, and the interjection is still a separate Para.
     #[test]
     fn short_interjections_are_counted_but_still_their_own_paragraphs() {
         let mut row_a = RowIn::new(0.0, 4.0, "今天我们先来讲第一个完整的句子。");
@@ -582,7 +567,7 @@ mod tests {
             vec![1],
             "「嗯。」计入；长回答不计；末段「好的。」没有右邻不计"
         );
-        // 时长上限：同样的「嗯。」拖到 5 秒就不算插话。
+        // Duration limit: the same 「嗯。」 stretched to 5 seconds no longer counts as an interjection.
         let mut row_slow = RowIn::new(4.0, 9.0, "嗯。");
         row_slow.speaker = Some("B".to_owned());
         let mut row_a2 = RowIn::new(0.0, 4.0, "今天我们先来讲第一个完整的句子。");

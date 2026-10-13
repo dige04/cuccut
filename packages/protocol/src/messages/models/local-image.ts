@@ -14,7 +14,7 @@ import { pl } from './local-image.pl.ts';
 import { tr } from './local-image.tr.ts';
 import { vi } from './local-image.vi.ts';
 
-/** `packages/models/src/local-image.ts` 给人看的文字：本地文生图模型的耗时提示。 */
+/** `packages/models/src/local-image.ts`: text shown to people with the duration hint for local text-to-image models. */
 const en = {
   slowCpu: (p: { steps: number }) => `Generates on this computer's CPU with ${p.steps} steps: a 1024² image takes several hours, and even 512² takes about an hour; much faster with an NVIDIA GPU (CUDA)`,
   slowLocal: (p: { steps: number }) => `Generates on this computer with ${p.steps} steps: each image takes a few minutes to over ten minutes`,

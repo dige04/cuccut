@@ -46,8 +46,7 @@ function fileName(path: string): string {
 }
 
 /**
- * 新建（从一个音频文件）或编辑一只音色：名字、语言、逐字稿与本人声明。编辑时先读完整的条目，保存带上版本号；
- * 别处先改了时换成最新的内容并说一句，不自动覆盖。状态放在 Dialog 外层（S2 的 Dialog 会把 children 渲染几遍）。
+ * Create (from an audio file) or edit a voice: name, language, transcript and self-declaration. When editing, the full entry is read first, and saving carries the version number; if it was changed elsewhere, the latest content is swapped in with a note, and nothing is overwritten automatically. State is kept in the outer layer of the Dialog (S2's Dialog renders its children several times).
  */
 export function VoiceDialog({
   mode,
@@ -56,7 +55,7 @@ export function VoiceDialog({
 }: {
   mode: VoiceDialogMode;
   onClose: () => void;
-  /** 新建存好后：带回去的那一侧（「克隆新音色…」的回程）要知道是哪只。 */
+  /** After creating and saving: the side that takes it back (the return from “克隆新音色…”(Clone new voice…)) needs to know which voice it is. */
   onCreated?: (voiceId: string) => void;
 }) {
   const runtime = useRuntime();

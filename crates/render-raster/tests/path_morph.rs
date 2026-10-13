@@ -1,7 +1,7 @@
 #![cfg(feature = "media")]
 
-//! `pathMorph` 通道 + `path.morphTo`（规范 §6.2.1 / §6.4）：形状序列 `[d, morphTo…]` 上的分段线性
-//! 逐顶点插值；填充、描边与 `pathDraw` 的长度口径都跟着插值后的形状走；拓扑不等是硬错误。
+//! `pathMorph` channel + `path.morphTo` (spec §6.2.1 / §6.4): piecewise-linear
+//! per-vertex interpolation over the shape sequence `[d, morphTo…]`; fill, stroke and the `pathDraw` length measure all follow the interpolated shape; mismatched topology is a hard error.
 
 use render_raster::drawop::encode;
 use render_raster::plan::{CapabilityProfile, CpuExecutor, FramePlanner, execute_plan};
@@ -70,7 +70,7 @@ fn px(data: &[u8], x: u32, y: u32) -> [u8; 4] {
 const WHITE: [u8; 4] = [255, 255, 255, 255];
 const BLUE: [u8; 4] = [0, 0, 255, 255];
 
-// 左方块 → 右方块 → 下方的扁条：三个同拓扑形状
+// Left square → right square → flat bar below: three shapes with the same topology
 const LEFT: &str = "M20 20 L80 20 L80 80 L20 80 Z";
 const RIGHT: &str = "M160 20 L220 20 L220 80 L160 80 Z";
 const LOW: &str = "M160 120 L220 120 L220 150 L160 150 Z";
@@ -123,7 +123,7 @@ fn without_the_channel_a_morph_to_path_records_identically() {
 
 #[test]
 fn path_draw_measures_the_morphed_outline() {
-    // 短横线 morph 成长横线；pathDraw 0.5 应画到**当前形状**的一半
+    // A short line morphs into a long line; pathDraw 0.5 should draw to half of the **current shape**
     let mut stage = Stage::new(doc(json!({
         "type": "path", "id": "p", "d": "M20 80 L60 80", "morphTo": "M20 80 L220 80",
         "stroke": "#0000ff", "strokeWidth": 8, "lineCap": "butt",

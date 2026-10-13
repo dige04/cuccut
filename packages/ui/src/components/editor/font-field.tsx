@@ -10,12 +10,10 @@ import { PRow } from './inspector-controls.tsx';
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * 字体框（产品设计 §5.9「字体」；原型 panel-font-picker.jsx）：属性页的文字样式（文字、计时器类元素、字幕）与舞台工具条
- * 的字体格共用。桌面端是一张表——内置、本机、已下载与可按需下载的族合在一起（font-library-list.tsx）；属性页里在字体行
- * 下面展开（原型的 `inline`），工具条里是弹层。Web 入口的浏览器会话没有 `fonts.*`，保持原来的几种固定字体。
+ * Font box (product design §5.9 “字体” (Fonts); prototype panel-font-picker.jsx): the text styles of the properties page (text, timer-type elements, captions) and the font cell of the stage toolbar share it. On desktop it is one table, combining built-in, local, downloaded and on-demand families (font-library-list.tsx). On the properties page it expands below the font row (the prototype's `inline`); in the toolbar it is a popover. The Web entry's browser session has no `fonts.*`, so it keeps the original few fixed fonts.
  */
 
-/** Web 入口的固定字体：渲染器认得的几种（别名见 text-style.ts），加上系统里常见的中文字体。认不出的现值也列出来。 */
+/** Fixed fonts for the Web entry: the few the renderer recognizes (aliases in text-style.ts), plus common Chinese system fonts. Current values that are not recognized are listed too. */
 export const FONTS: { id: string; label: string }[] = [
   {
     id: SYSTEM_FONT,
@@ -53,7 +51,7 @@ export const FONT_ALIASES: Record<string, string> = {
   serif: 'Source Serif 4',
 };
 
-/** 文字样式里的 `fontFamily` → 字体框的现值（没写是系统字体，旧的别名换成族名）。 */
+/** `fontFamily` in the text style → the font box's current value (if unset, the system font; old aliases are replaced with the family name). */
 export function currentFont(raw: unknown): string {
   const value = typeof raw === 'string' && raw.trim() ? raw : SYSTEM_FONT;
   return FONT_ALIASES[value] ?? value;
@@ -92,13 +90,13 @@ const inlinePanel = style({ marginTop: '[6px]', marginBottom: 8 });
 const quietText = style({ maxWidth: 112, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 
 interface FontFieldProps {
-  /** 文字样式里原样的 `fontFamily`（可能没有、可能是旧别名）。 */
+  /** The raw `fontFamily` in the text style (it may be absent, or an old alias). */
   value: unknown;
   isDisabled?: boolean;
   onChange(family: string): void;
 }
 
-/** 属性页的「字体」一行：点开在下面展开一张表，选中即收起。 */
+/** The “字体” (Font) row on the properties page: click to expand a table below it; selecting an entry collapses it. */
 export function FontField({ value, isDisabled = false, onChange }: FontFieldProps) {
   const web = useRuntime().host.platform === 'web';
   const font = currentFont(value);
@@ -141,7 +139,7 @@ export function FontField({ value, isDisabled = false, onChange }: FontFieldProp
   );
 }
 
-/** 舞台工具条的字体格：安静的按钮，点开是弹层（原型 stage-toolbar.jsx 的 268px 下拉）。 */
+/** The font cell of the stage toolbar: a quiet button; clicking it opens a popover (prototype stage-toolbar.jsx's 268px dropdown). */
 export function ToolbarFontField({ value, isDisabled = false, onChange, label }: FontFieldProps & { label: string }) {
   const web = useRuntime().host.platform === 'web';
   const font = currentFont(value);
@@ -168,7 +166,7 @@ export function ToolbarFontField({ value, isDisabled = false, onChange, label }:
   );
 }
 
-/** Web 入口：原来的固定几种（浏览器会话没有 `fonts.*`，不能下载也不能列本机字体）。 */
+/** Web entry: the original few fixed fonts (the browser session has no `fonts.*`, so it cannot download or list local fonts). */
 function FixedFontPicker({
   font,
   isDisabled,

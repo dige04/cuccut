@@ -1,8 +1,8 @@
-// 旧项目导入的测试：合成的旧项目放在临时目录里，不碰任何真实项目。
+// Tests for old project import: the synthesized old projects are placed in a temp directory and never touch any real project.
 //
 //   CUCCUT_ENGINE_HOST=<engine-host> node --test scripts/legacy-import/legacy-import.test.ts
 //
-// 没有 engine-host 或 ffmpeg 时，经过引擎的那一组跳过；只看计划的那一组照常跑。
+// Without an engine-host or ffmpeg, the group that goes through the engine is skipped; the group that only checks the plan runs as usual.
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -75,7 +75,7 @@ const words = [
   { id: 'w4', t0: 1.2, t1: 1.5, text: '四' },
 ];
 
-/** 一个时间线项目：主媒体有一处剪口，每种元素一个，外加转场、闪避、关键帧、词锚点、隐藏元素、Lottie 贴纸与模板层。 */
+/** A timeline project: the main media has one cut point; one of each element type, plus transitions, ducking, keyframes, word anchors, hidden elements, Lottie stickers and template layers. */
 function makeBcut(): string {
   const dir = path.join(ccutRoot, 'fixture.ccut');
   mkdirSync(dir, { recursive: true });
@@ -235,7 +235,7 @@ function makeBcut(): string {
   return dir;
 }
 
-/** 一个外部视频项目：一段带音量关键帧的音频（dB），画面轨上一个代码合成（代码包在盘上，没有渲染结果）。 */
+/** An external video project: one audio segment with volume keyframes (dB), and one code composition on the picture track (code package on disk, no render result). */
 function makeExternal(): string {
   const dir = path.join(externalRoot, 'ext-project');
   const revision = path.join(dir, 'projects', 'p1', 'assets', 'hyperframes', 'scene', 'sha256-aa');
@@ -285,8 +285,8 @@ function makeExternal(): string {
 }
 
 /**
- * 一个代码项目：入口、数据与编译结果（合成 ID `comp-a`），`films` 是放进项目的视频（相对项目目录），
- * `media` 是 `project.json` 里记着的主媒体路径。
+ * A code project: entry, data and compiled output (composition ID `comp-a`); `films` are the videos placed in the project (relative to the project directory),
+ * and `media` is the main media path recorded in `project.json`.
  */
 function makeCode(name: string, films: string[], mediaPath?: string): string {
   const dir = path.join(codeRoot, `${name}.ccut`);
@@ -311,7 +311,7 @@ function makeCode(name: string, films: string[], mediaPath?: string): string {
 describe('时间换算', () => {
   test('落在两帧正中间时取早的那一帧', () => {
     const fps = { num: 30, den: 1 };
-    // 50 000 µs 正好是 1.5 帧。
+    // 50 000 µs is exactly 1.5 frames.
     assert.equal(frameAt(50_000n, fps), 1);
     assert.equal(frameAt(50_001n, fps), 2);
     assert.equal(frameAt(16_666n, fps), 0);
@@ -466,7 +466,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(text.followPolicy.kind, 'speech-anchor');
     assert.deepEqual(text.followPolicy.start, { kind: 'word', speechRef: { document: 'speech' }, wordId: 'w2', edge: 'start' });
     assert.equal(text.followPolicy.end.edge, 'end');
-    // w2 头在 0.35 秒（10.5 帧，取早的第 10 帧）；w3 尾在源 1.0 秒，减掉 0.2 秒的剪口是成片 0.8 秒（第 24 帧）。
+    // w2 head is at 0.35 s (10.5 frames, take the earlier one, frame 10); w3 tail is at source 1.0 s, and minus the 0.2 s cut point gives 0.8 s in the output (frame 24).
     assert.deepEqual(text.span, { fromFrame: 10, durationFrames: 14 });
     assert.equal(
       content.items.some((i) => i.sourceId === 't3'),
@@ -547,7 +547,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
   });
 
   test('设计字幕的强调（captionEmphasis）随字幕样式原样带过来，键是转写里的词 ID', () => {
-    // 另放一份带字幕的副本（不放进 ccutRoot：经过引擎的那组只导两个项目）。
+    // Another copy with subtitles is placed separately (not in ccutRoot: the group that goes through the engine only imports two projects).
     const dir = path.join(root, 'captioned', 'fixture.ccut');
     cpSync(path.join(ccutRoot, 'fixture.ccut'), dir, { recursive: true });
     mkdirSync(path.join(dir, 'studio'), { recursive: true });
@@ -590,7 +590,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.deepEqual(style.wordAnimation.caption.style, { id: 'caption-highlight', version: 1 });
     const wordIds = new Set((doc('speech').words as Obj[]).map((w) => w.id));
     for (const id of Object.keys(style.captionEmphasis)) assert.ok(wordIds.has(id), `强调的键 ${id} 不是转写里的词`);
-    // 字幕行指向这些词，渲染时强调按它们落到字上。
+    // Subtitle lines point at these words; when rendered, emphasis lands on the words they point to.
     assert.deepEqual(
       (doc('caption:source').cues as Obj[]).map((c) => [c.id, c.words]),
       [
@@ -606,8 +606,8 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     const external = planContent(plan, dryAssets(plan));
     const audio = external.items[0].item as Obj;
     assert.equal(audio.mix.volume, 1);
-    // 第一帧的 easeInQuad 管 0 → 15 帧这一段，记在第二个点上；第二帧的 ease-in-out 不在缓动表里，第三个点按线性；
-    // 最后一帧的 hold 不管任何一段，不报。
+    // The easeInQuad of the first frame governs the segment 0 → 15 frames, recorded at the second point; the ease-in-out of the second frame is not in the easing table, so the third point is linear;
+    // the hold at the last frame governs no segment and is not reported.
     assert.deepEqual(audio.mix.envelope, [
       { at: { ticks: '0', timescale: 1 }, volume: 1 },
       { at: { ticks: '1', timescale: 2 }, volume: 0.251189, ease: 'easeInQuad' },
@@ -677,7 +677,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     const style = (content.documents.find((d) => d.ref === 'caption-style')?.body as Obj).style;
     assert.equal(style.animationPresetId, undefined);
     assert.equal(style.fontSize, 40);
-    // 预设不同不算单句自己的样式：cue 的扩展里只有来源。
+    // A different preset does not count as a sentence's own style: the cue's extension holds only the source.
     for (const cue of (content.documents.find((d) => d.ref === 'caption')?.body as Obj).cues)
       assert.deepEqual(Object.keys(cue.extensions['cuccut.import']), ['sourceItemId']);
     const caption = content.items.find((i) => (i.item as Obj).type === 'caption')?.item as Obj;
@@ -711,7 +711,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     if (!existsSync(path.join(ccutRoot, 'fixture.ccut'))) makeBcut();
     const external = existsSync(path.join(externalRoot, 'ext-project')) ? path.join(externalRoot, 'ext-project') : makeExternal();
     const args = ['--ccut', ccutRoot, '--external', external, '--out', out, '--engine', engine as string, '--ffprobe', ffprobe as string];
-    // 导三遍：第二遍原样重跑（已经写过的步骤跳过），第三遍带 --replace 删掉重建。
+    // Import three times: the second run repeats as-is (steps already written are skipped); the third run uses --replace to delete and rebuild.
     for (const extra of [[], [], ['--replace']]) {
       const run = spawnSync(process.execPath, [path.join(here, 'import.ts'), ...args, ...extra], { env, encoding: 'utf8' });
       assert.equal(run.status, 0, `导入失败：\n${run.stderr}\n${readReport()}`);
@@ -719,7 +719,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
       for (const r of pass.projects) assert.deepEqual(r.failed, [], `${extra.join(' ') || '重跑'}：${r.source}`);
     }
     report = JSON.parse(readFileSync(path.join(out, 'import-report.json'), 'utf8'));
-    // 核对脚本要独占打开视频，先跑完再在这里打开。
+    // The verification script must open the video exclusively; run it to completion first, then open it here.
     const check = spawnSync(
       process.execPath,
       [path.join(here, 'verify.ts'), out, '--engine', engine as string, '--ffprobe', ffprobe as string],
@@ -829,7 +829,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     assert.equal(item('t2').untilSequenceEnd, true);
     assert.equal(item('t2').followPolicy.kind, 'sequence-fixed');
     for (const id of ['sh1', 'st1', 'vz1', 'pg1', 'd1', 'ph1', 'cf1', 'wb1', 'n1', 'v1', 'a1', 'a2']) item(id);
-    // Lottie 贴纸：引擎把 Lottie 的 JSON 登记成 lottie，尺寸与时长按动画读出。
+    // Lottie sticker: the engine registers the Lottie JSON as lottie; size and duration are read from the animation.
     const lottie = item('st2');
     assert.deepEqual(lottie.sticker, { source: 'asset', path: 'media/spin.json', loop: 'once', fillOverrides: { '#FF0000': '#00C853' } });
     const asset = snapshot.assets[lottie.assetRef.id];
@@ -893,7 +893,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     assert.equal(imported.written['单侧转场'], 2);
     assert.equal(imported.written['闪避规则'], 2);
     assert.equal(imported.written['关键帧绑定'], 3);
-    // 实例 0.6 秒（18 帧），两侧转场各自最多生效 9 帧。
+    // The instance is 0.6 s (18 frames); the transitions on each side take effect for at most 9 frames.
     assert.deepEqual(
       imported.shortenedTransitions.map((t) => [t.sourceId, t.side, t.effectiveFrames]),
       [
@@ -914,7 +914,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
   });
 });
 
-/** 给代码项目加配音：两段认领了合成里口播句子（`bcfClip`）的配音，一段没认领的音乐。 */
+/** Adds dubbing to a code project: two dubbing segments claim the narration sentences in the composition (`bcfClip`), and one unclaimed music segment. */
 function addNarration(dir: string): void {
   const tone = path.join(media, 'tone.wav');
   writeFileSync(
@@ -1075,7 +1075,7 @@ describe('代码项目经过引擎', { skip: noEngine }, () => {
     assert.equal(withoutFilm.assets.linked, 0);
     assert.deepEqual(withoutFilm.dropped, { 没有预渲染替身的代码合成: 1 });
     assert.ok(withoutFilm.videoDir && existsSync(path.join(withoutFilm.videoDir, 'video.db')));
-    // 引擎收下音画联动组：合成与两段认领的配音同组，替身的声音关着。
+    // The engine accepts the audio-picture linked group: the composition and the two claimed dubbing segments are in the same group; the stand-in's sound is off.
     const narrated = byName('narrated-film');
     assert.deepEqual(narrated.items, { composition: 1, audio: 3 });
     assert.equal(narrated.written['归进音画联动组的配音（bcfClip）'], 2);

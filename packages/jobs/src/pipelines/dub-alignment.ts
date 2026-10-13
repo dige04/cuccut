@@ -1,44 +1,43 @@
 /**
- * 配音的时间对齐（视频格式规范 §7.3 的 `fit-fixed-slot`；架构设计 §7.9）：一句配音放进原句在序列上的时间窗。
- * 纯函数，同样的输入总是同样的结果。秒都是序列时间。
+ * Time alignment for dubbing (video format spec §7.3 `fit-fixed-slot`; architecture design §7.9): fits one dubbed sentence into the sentence's time window on the sequence. Pure function: the same input always gives the same result. All seconds are sequence time.
  *
- * 规则，按顺序：
- * 1. 不比时间窗长：从原句的起点放，不变速；
- * 2. 比时间窗长：按需加速（ffmpeg `atempo`，保持音高），倍率向上取到千分位，至多 `maxTempo`（默认 1.25）；
- * 3. 加速到上限仍放不下：可以占用这句之后、下一句之前的静音；
- * 4. 仍放不下：`overlong`，不放进时间线，如实报告超出多少。绝不截断，也绝不压到下一句上。
+ * Rules, in order:
+ * 1. Not longer than the window: placed from the original sentence's start, no speed change.
+ * 2. Longer than the window: speed up as needed (ffmpeg `atempo`, which keeps the pitch). The factor is rounded up to the thousandth and is at most `maxTempo` (default 1.25).
+ * 3. Still does not fit after speeding up to the limit: it may use the silence after this sentence, before the next one.
+ * 4. Still does not fit: `overlong`. It is not placed on the timeline, and the overflow is reported honestly. It is never truncated, and never pressed into the next sentence.
  *
- * 下一句的起点（`limit`）早于这句的终点时（两句重叠），时间窗只算到下一句的起点。
+ * When the start of the next sentence (`limit`) is earlier than this sentence's end (the two sentences overlap), the window only runs to the start of the next sentence.
  */
 
 export const MAX_DUB_TEMPO = 1.25;
-/** 比较时的容差（秒）：浮点误差不让刚好放得下的句子变成放不下。 */
+/** Comparison tolerance (seconds): floating-point error must not turn a sentence that just fits into one that does not. */
 const EPSILON = 1e-6;
 
 export type DubFit = 'fit' | 'tempo' | 'extended' | 'overlong';
 
 export interface DubSlot {
-  /** 原句在序列上的起点与终点。 */
+  /** Start and end of the original sentence on the sequence. */
   start: number;
   end: number;
-  /** 不能越过的位置：下一句的起点，没有下一句时是序列的终点（不早于这句的终点）。 */
+  /** The position that may not be crossed: the start of the next sentence, or the end of the sequence if there is no next sentence (not earlier than this sentence's end). */
   limit: number;
 }
 
 export interface DubAlignment {
   fit: DubFit;
-  /** 放在哪里（总是原句的起点）。 */
+  /** Where it is placed (always the start of the original sentence). */
   start: number;
-  /** 变速倍率；1 表示不变速。 */
+  /** Speed factor; 1 means no speed change. */
   tempo: number;
-  /** 变速之后的时长。 */
+  /** Duration after the speed change. */
   duration: number;
   end: number;
-  /** `overlong` 时超出 `limit` 多少秒；其余为 0。 */
+  /** For `overlong`, how many seconds it exceeds `limit` by; otherwise 0. */
   overflow: number;
 }
 
-/** 一句配音（合成出来的真实时长 `duration` 秒）放进时间窗 `slot`。 */
+/** Fits one dubbed sentence (the real synthesized duration `duration` in seconds) into the time window `slot`. */
 export function alignDub(slot: DubSlot, duration: number, maxTempo: number = MAX_DUB_TEMPO): DubAlignment {
   if (!(duration > 0) || !Number.isFinite(duration)) throw new RangeError('The voice-over duration must be positive');
   if (!(maxTempo >= 1) || !Number.isFinite(maxTempo)) throw new RangeError('maxTempo must be at least 1');
@@ -64,11 +63,11 @@ export function alignDub(slot: DubSlot, duration: number, maxTempo: number = MAX
 
 function ceilTo(value: number, digits: number): number {
   const scale = 10 ** digits;
-  // 先去掉浮点噪声再向上取：1.2 / 1 不会变成 1.201。
+  // Strip floating-point noise before rounding up: 1.2 / 1 must not become 1.201.
   return Math.ceil(Math.round(value * scale * 1e6) / 1e6) / scale;
 }
 
-/** 把 `atempo` 倍率写成 ffmpeg 的滤镜参数（单个 atempo 接受 0.5–100，这里只会是 1–1.25）。 */
+/** Writes the `atempo` factor as an ffmpeg filter argument (a single atempo accepts 0.5–100; here it is always 1–1.25). */
 export function atempoFilter(tempo: number): string {
   return `atempo=${tempo.toFixed(3)}`;
 }

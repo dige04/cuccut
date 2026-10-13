@@ -27,10 +27,7 @@ import { toastError } from './font-detail.tsx';
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * 打开视频时的字体条（产品设计 §5.9「字体」；原型 font-downloads.jsx 的 FontOpenStrip）：舞台上方一条，整部视频只有这一处
- * 说字体下载的事。Runtime 清点用到的族（`fonts.usage`，按自动下载的设置开始下载；十分钟内失败过的不自动重试），这里念
- * 进行中（第几个、族名与进度，跳过这个 / 全部取消）、全到了（3 秒后自己收起）、没取到（查看：族 → 回退字体 · 原因，可重试）
- * 与自动下载关着（下载 / 设置）。下载期间画面照回退字体画，到了就换上（预览自己要字体）。
+ * Font bar shown when a video opens (product design §5.9 “字体” (Fonts); prototype font-downloads.jsx's FontOpenStrip): a strip above the stage, and the only place in the whole video that talks about font downloads. The Runtime checks which families are used (`fonts.usage`) and starts downloads according to the auto-download setting; families that failed within the last ten minutes are not retried automatically. This bar shows: downloads in progress (which one, the family name and progress, with skip-this and cancel-all), all downloaded (collapses itself after 3 seconds), failed (view: family → fallback font · reason, with retry), and auto-download off (download / settings). While downloading, the picture is drawn in the fallback font and switches once the font arrives (the preview itself needs the font).
  */
 
 const strip = style({
@@ -56,7 +53,7 @@ const nowrap = style({ flexShrink: 0 });
 
 export function FontBar({ videoId }: { videoId: Id | null }) {
   const { client, host } = useRuntime();
-  // 浏览器会话没有 `fonts.*`：Web 入口不清点、不画这一条。
+  // The browser session has no `fonts.*`: the Web entry does not check and does not draw this bar.
   const web = host.platform === 'web';
   const auto = useSetting('fonts.autoDownload');
   const settingsLoaded = auto !== null;
@@ -67,12 +64,12 @@ export function FontBar({ videoId }: { videoId: Id | null }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => (web ? undefined : startFontLibrarySync(client)), [client, web]);
-  // 打开视频时清点一次（设置镜像到了才知道自动下载开没开）。
+  // Check once when the video opens (only then does the mirrored setting show whether auto-download is on).
   useEffect(() => {
     if (web || !settingsLoaded || !videoId) return;
     void openVideoFonts(client, videoId, auto !== false).catch(() => {});
     return () => leaveVideoFonts(videoId);
-    // 只在打开时清点：之后改设置不重新清点。
+    // Check only on open: changing the settings later does not trigger a new check.
   }, [client, videoId, settingsLoaded, web]);
 
   const live = useMemo(() => liveFontJobs(jobs), [jobs]);

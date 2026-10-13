@@ -14,7 +14,7 @@ import { pl } from './music-tool-copy.pl.ts';
 import { tr } from './music-tool-copy.tr.ts';
 import { vi } from './music-tool-copy.vi.ts';
 
-/** 工具 › 生成音乐（设计稿 tool-music.jsx）的文案；译文在 `music-tool-copy.<语言>.ts`。 */
+/** Copy for Tools › Generate music (design file tool-music.jsx); translations are in `music-tool-copy.<language>.ts`. */
 const en = {
   title: 'Generate music',
   submit: 'Generate music',

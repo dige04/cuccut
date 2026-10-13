@@ -1,8 +1,6 @@
-//! Easing 词汇表（规范附录 A，封闭枚举），与 JS / Swift 原型逐式一致。
+//! Easing vocabulary (spec Appendix A, closed enum), formula-for-formula consistent with the JS / Swift prototypes.
 //!
-//! 实现已迁入 [`motion::curve`]（阶段 1，设计 §10）：`ccut-core` 与
-//! `ccut-timeline` 共用同一张表与同一份函数体，这里只保留兼容 re-export。
-//! **不要**在本 crate 里写回本地副本。
+//! The implementation has moved into [`motion::curve`] (stage 1, design §10): `ccut-core` and `ccut-timeline` share the same table and the same function bodies, and only a compatibility re-export is kept here. **Do not** write a local copy back into this crate.
 
 pub use motion::curve::{EASE_NAMES, apply_ease};
 
@@ -24,13 +22,13 @@ mod tests {
     fn known_values() {
         assert!((apply_ease(Some("easeOutCubic"), 0.5) - 0.875).abs() < 1e-12);
         assert!((apply_ease(Some("easeInOutQuad"), 0.5) - 0.5).abs() < 1e-12);
-        // easeOutBack 越过 1
+        // easeOutBack overshoots 1
         assert!(apply_ease(Some("easeOutBack"), 0.7) > 1.0);
     }
 
     #[test]
     fn unknown_names_still_fall_back_to_identity() {
-        // GPUI / Mac kernel 回落到 easeOutCubic；core 侧保持恒等（计划 §4.5）。
+        // The GPUI / Mac kernel falls back to easeOutCubic; the core side keeps identity (plan §4.5).
         assert_eq!(apply_ease(Some("magic-spring"), 0.37), 0.37);
         assert_eq!(apply_ease(None, 0.37), 0.37);
     }

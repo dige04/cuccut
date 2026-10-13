@@ -70,7 +70,7 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 16 });
 const stack = style({ display: 'flex', flexDirection: 'column', gap: 12 });
-/** 说明卡（原型 .aicard）。 */
+/** Explainer card (prototype .aicard). */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -83,7 +83,7 @@ const card = style({
   lineHeight: '[1.5]',
 });
 const cardTitle = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
-/** 路标（原型 .signpost）：一句说明下一步会发生什么。 */
+/** Signpost (prototype .signpost): one line explaining what will happen next. */
 const signpost = style({ margin: 0, font: 'ui-sm', color: 'gray-700', lineHeight: '[1.5]' });
 const rows = style({ display: 'flex', flexDirection: 'column', gap: 12 });
 const row = style({ display: 'flex', alignItems: 'start', gap: 8 });
@@ -108,7 +108,7 @@ const footer = style({
 });
 const alertActions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 
-// 运行态头（同 dub-status.tsx 的样子）。
+// Running-state header (same look as dub-status.tsx).
 const head = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const titleRow = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui', color: 'gray-900' });
 const liveDot = style({
@@ -144,7 +144,7 @@ const stepLabel = style({
 });
 const headActions = style({ display: 'flex', alignItems: 'center', gap: 8 });
 
-// 说话人卡（原型 .spkc）。
+// Speaker card (prototype .spkc).
 const speakerCard = style({
   display: 'flex',
   flexDirection: 'column',
@@ -156,7 +156,7 @@ const speakerCard = style({
   borderColor: 'gray-200',
 });
 const speakerHead = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
-/** 与文稿里说话人名字同一套颜色（transcript-paragraph.tsx，按第一次出现的次序）。 */
+/** Same color set as the speaker names in the script (transcript-paragraph.tsx), assigned in order of first appearance. */
 const dot = style({
   flexShrink: 0,
   width: 10,
@@ -195,9 +195,9 @@ const hueOf = (index: number) => String(index % HUES) as '0';
 const speakersToast: SpeakersDeps['toast'] = (kind, message) => ToastQueue[kind](message, { timeout: 5000 });
 
 /**
- * 工具页 › 识别说话人（原型 panel-aitools-flows.jsx `SpeakerFlow`）：设置 → 运行 → 确认 → 收据。识别在本机的「说话人区分」
- * 模型包里做（Runtime 的 `speakers` 流程，不重新转写），结果先进确认页：试听片段、改名，「应用」才写进视频（一笔可撤销的事务）。
- * 「用」也能选交给 Agent（发意图句到这个视频的会话）。浏览器里的 CucCut 没有这一页（工具页在网页宿主上不出现），这里照样防着。
+ * Tools page › Identify speakers (prototype panel-aitools-flows.jsx `SpeakerFlow`): settings → run → confirm → receipt. Identification runs locally in the “说话人区分”(speaker diarization) model pack (the Runtime's `speakers` flow, without re-transcribing).
+ * The result goes to the confirm page first: preview clips and rename speakers. Only “应用”(apply) writes it into the video (a single undoable transaction).
+ * “用”(use) can also be set to hand off to the Agent (sends an intent sentence to this video's session). CucCut in the browser does not have this page (the Tools page does not appear on the web host), but the guard is still kept here.
  */
 export function SpeakerFlow({
   videoId,
@@ -243,7 +243,7 @@ export function SpeakerFlow({
     );
   }
 
-  // 收据页的「返回」与「完成」一样回到设置页（提示词还在），设置页的「返回」才回列表。
+  // “返回”(back) on the receipt page, like “完成”(done), returns to the settings page (the prompt is still there). “返回” on the settings page is what goes back to the list.
   const showsReceipt = !run && !proposal && !!receipt;
   return (
     <>
@@ -274,7 +274,7 @@ export function SpeakerFlow({
   );
 }
 
-// ---- 设置 ----
+// ---- Settings ----
 
 function SetupView({
   videoId,
@@ -313,7 +313,7 @@ function SetupView({
   const pct = downloading && install.totalBytes ? Math.min(100, Math.floor((install.receivedBytes / install.totalBytes) * 100)) : null;
 
   const blocked = !pack || !speech || !editable || downloading || !!waiting;
-  // 交给 Agent：提示词框里的模板（意图句 + 固定约束），挂着说话人标注的 skill（产品设计 §5.10）。
+  // Handing off to the Agent: the template in the prompt box (intent sentence plus fixed constraints), with the speaker-labeling skill attached (product design §5.10).
   const template = toolTemplate('speakers', intentPrompt({ tool: 'speakers', title: ref?.name ?? null, scope }));
   const start = async () => {
     if (!ready) {
@@ -464,7 +464,7 @@ function ProblemAlert({ videoId, problem }: { videoId: Id; problem: SpeakersProb
   );
 }
 
-// ---- 运行 ----
+// ---- Run ----
 
 function RunView({ run }: { run: SpeakersRun }) {
   const jobs = useJobs((s) => s.jobs);
@@ -510,9 +510,9 @@ function RunView({ run }: { run: SpeakersRun }) {
   );
 }
 
-// ---- 确认 ----
+// ---- Confirm ----
 
-/** 试听：定位到这一句、播放，到句尾停下；再点一次停。 */
+/** Preview: seeks to this sentence and plays it, stopping at the end of the sentence; click again to stop. */
 function useClipPlayer() {
   const actions = useEditorActions();
   const [on, setOn] = useState<string | null>(null);
@@ -697,7 +697,7 @@ function SpeakerCard({
   );
 }
 
-// ---- 收据 ----
+// ---- Receipt ----
 
 function DoneView({
   videoId,
@@ -714,7 +714,7 @@ function DoneView({
   const speech = documents[summary.source.documentId];
   const stale = useMemo(() => (speech ? staleCaptions(sequence, documents, speech) : []), [sequence, documents, speech]);
   const running = useSpeakersRun((s) => !!s.runs[videoId]);
-  // 「完成」回到设置页，不回列表。
+  // “完成”(done) returns to the settings page, not the list.
   const finish = () => closeSpeakers(videoId);
   return (
     <div className={`${body} cc-scroll`}>

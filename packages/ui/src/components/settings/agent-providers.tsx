@@ -21,7 +21,7 @@ import { AgentProviderCard } from './agent-provider-card.tsx';
 import { M } from './general-settings-copy.ts';
 import { agentOverview, groupDrivers, isInstalled, moreSummary, setupDoneToast } from './agent-setup.ts';
 
-// 状态卡（settings-agent.css .agset-status）：卡片本身是中性的一层，只有左边 40px 的图标块按状态变色。
+// Status card (.agset-status in settings-agent.css): the card itself is a neutral layer; only the 40px icon block on the left changes color with status.
 const status = style({
   display: 'flex',
   alignItems: 'center',
@@ -44,10 +44,10 @@ const statusText = style({ flexGrow: 1, flexBasis: 0, minWidth: 220 });
 const statusTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900' });
 const statusBody = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-700' });
 const empty = style({ padding: 20, font: 'ui-sm', color: 'gray-600' });
-/** 浏览器里为什么卡上的开关与按钮置灰：启停、检测、安装都要 Web 白名单之外的 `agents.*`；命令仍能复制。 */
+/** Why the toggles and buttons on the card are greyed out in the browser: start/stop, detect and install all need `agents.*` commands outside the web allowlist. Commands can still be copied. */
 const webNote = style({ margin: 0, font: 'ui-sm', color: 'gray-800' });
 const meta = style({ font: 'ui-xs', color: 'gray-600', textAlign: 'end' });
-// 「更多」折叠段的开关（settings-agent.css .agset-more）：一整条描边按钮，展开后下面再接一张同样的卡。
+// The toggle for the collapsed “More” section (.agset-more in settings-agent.css): a single outlined button. Once expanded, another card of the same kind follows below it.
 const more = style({
   display: 'flex',
   alignItems: 'center',
@@ -72,22 +72,22 @@ const moreSub = style({ font: 'ui-xs', color: 'gray-600' });
 const moreAct = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-700' });
 const catalog = style({ minWidth: 0 });
 const faq = style({ minWidth: 0 });
-// 常见问题一条一条之间一条分隔线，第一条上面不画（.agset-disclosure）。
-// 一条一条之间的分隔线由面板画（settings-ui.tsx `RowPanel`）。
+// Each FAQ item is separated from the next by a divider line; no line is drawn above the first (.agset-disclosure).
+// The dividers between items are drawn by the panel (`RowPanel` in settings-ui.tsx).
 const faqItem = style({ paddingY: 4 });
 const faqBody = style({ margin: 0, font: 'ui-sm', color: 'gray-700' });
 const faqLink = style({ marginTop: 8 });
 
 /**
- * Agent 提供方（page-settings-agent.jsx:112-157，产品设计 §7.6）：状态卡、每家一张卡、「更多」折叠段、添加更多 Agent、常见问题。
- * 主列表是检测到的、常驻的内置几家与用户添加的；收进「更多」的四家没检测到时折叠，装上了自己挪进主列表。
+ * Agent providers (page-settings-agent.jsx:112-157, product design §7.6): the status card, one card per agent, the “More” collapsible section, add more agents, and FAQ.
+ * The main list holds the detected built-in agents that are always shown, plus user-added ones. The four agents tucked into “More” are collapsed when not detected, and move into the main list by themselves once installed.
  */
 export function AgentProviders() {
   const runtime = useRuntime();
   const web = runtime.host.platform === 'web';
   const connected = useConnection((s) => s.state.status === 'connected');
   const drivers = useConnection((s) => s.drivers);
-  // 还在首次探测、没有任何结果的 Driver：没有卡片可画，用上面的进度条表示检测中。
+  // A Driver still on its first probe with no results has no card to draw, so the progress bar above shows detection in progress.
   const checking = useConnection((s) => s.checking);
   const go = useShell((s) => s.go);
   const [expanded, setExpanded] = useState<DriverId | null>(null);
@@ -95,7 +95,7 @@ export function AgentProviders() {
   const [enabling, setEnabling] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
-  // 设置页里运行的安装、升级命令：这一页开着时订阅它的输出与结果；成功跑完（Runtime 已重新检测）弹一句。
+  // Install and upgrade commands run from the settings page. While this page is open it subscribes to their output and results. When one finishes successfully (the Runtime has re-detected), a short message pops up.
   useEffect(
     () =>
       watchAgentSetup(runtime, (run, view) => {
@@ -108,10 +108,10 @@ export function AgentProviders() {
 
   const groups = groupDrivers(drivers ?? []);
   const list = [...groups.main, ...groups.more];
-  // 还没有就绪的、又有 Driver 在首次探测时不下结论（同 `homeGate`），状态卡先不出。
+  // Agents that are not ready yet, while a Driver has not reached a conclusion during its first probe (same as `homeGate`): the status card is not shown yet.
   const settled = !!drivers && (!checking.length || drivers.some((d) => d.state === 'ready'));
   const overview = drivers && settled ? agentOverview(drivers) : null;
-  // 还在首次探测的没有 source 可看：内置的算内置，刚添加的算添加的。
+  // Agents still on their first probe have no source to show: built-in ones count as built-in, newly added ones count as added.
   const pendingAdded = checking.filter((id) => !isBuiltinDriverId(id)).length;
   const checkedAt = list.map((d) => d.checkedAt).sort().at(-1);
 

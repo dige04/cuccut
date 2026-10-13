@@ -37,7 +37,7 @@ import {
   type AgentToolId,
 } from './ai-tools.ts';
 
-/** 仓库根 `skills/cuccut/built-in-skills/`：随应用分发的内置 skill，一个目录一个 id。 */
+/** Repo root `skills/cuccut/built-in-skills/`: the built-in skills shipped with the app, one directory per id. */
 const SKILLS_DIR = path.resolve(import.meta.dirname, '../../../../skills/cuccut/built-in-skills');
 const AGENT_TOOLS: AgentToolId[] = ['polish', 'chapters', 'speakers', 'retranscribe', 'cleanup', 'stale', 'summary', 'blog', 'title', 'desc', 'cover', 'shortscut'];
 
@@ -160,7 +160,7 @@ describe('设置态折成附加要求', () => {
       '风格：像朋友聊天',
       '要发到：B 站，按它的规定写，写完提醒我核对',
     ]);
-    // 自定义风格没写字、视角自动：都不进句子
+    // A custom style with no text and an automatic viewpoint: neither goes into the sentence
     expect(writingExtra('desc', { style: 'custom', customStyle: ' ', view: 'auto' })).toEqual([]);
   });
 
@@ -287,13 +287,13 @@ describe('AI 工具 Tab', () => {
     expect(lines[0]).toBe(intent);
     expect(lines[1]).toBe('用 Markdown 写，用英语。');
     expect(lines.join('\n')).toMatch(/mm:ss/);
-    // 没给语言：跟文稿
+    // No language given: follow the document
     expect(standingLines('desc')[0]).toBe('用 Markdown 写，语言与文稿相同。');
     expect(standingLines('title', { language: ' ' })[0]).toBe('语言与文稿相同。');
     const polish = toolTemplate('polish', '润色。');
     expect(polish).not.toMatch(/Markdown/);
     expect(polish).toMatch(/不改写我的表达/);
-    // 没有固定约束的工具只有意图句；空意图句不留空行
+    // A tool with no fixed constraints has only the intent sentence; an empty intent sentence does not leave a blank line
     expect(toolTemplate('cleanup', '找口癖。')).toBe('找口癖。');
     expect(toolTemplate('cleanup', '  ')).toBe('');
   });
@@ -306,11 +306,11 @@ describe('AI 工具 Tab', () => {
     expect(has.options.map((o) => o.key)).toEqual(['new', 'current']);
     expect(has.options[1]).toMatchObject({ conversationId: 'c9', label: '接着「剪口癖」' });
     expect(has.options[1]!.sub).toMatch(/已有 2 条消息/);
-    // 还没取到消息数：照样给，不写数
+    // The message count has not been fetched yet: still give it, just without a number
     expect(sessionOptions({ canCreate: true, current: { id: 'c9', title: ' ', messages: null } }).options[1]!.label).toBe('接着「这个视频的会话」');
-    // 还没说过话的空会话不算
+    // An empty session where nothing has been said yet does not count
     expect(sessionOptions({ canCreate: true, current: { id: 'c2', title: 'x', messages: 0 } }).options).toHaveLength(1);
-    // 视频不属于项目：新会话看不到它，只能接着它所在的会话
+    // The video is not in a project: a new session cannot see it, so it can only continue the session it lives in
     const only = sessionOptions({ canCreate: false, current: { id: 'c3', title: 'x', messages: 4 } });
     expect(only.options.map((o) => o.key)).toEqual(['current']);
     expect(only.fallback).toBe('current');

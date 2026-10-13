@@ -26,22 +26,22 @@ import { buildAsrResult, noAudioResult, type ChunkResult, type ResultContext } f
 import { ProvidersConfig as PC, ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 在线 Provider 的转写执行者（架构设计 §6.4）：一个 `providerId` 一个实例。
+ * Transcription executor for online providers (architecture design §6.4): one instance per `providerId`.
  *
- * 解码（ffmpeg → staging 里的母带）→ 超过单次请求的上限时在静音处切片 → 按顺序逐块提交（进度按秒）→ 时间换回素材时钟、
- * 拼成 `cuccut.asr-result/v1` 写进 staging。取消时中止在途的 HTTP 请求与 ffmpeg，以 `cancelled` 兑现。
- * 中间文件（母带与切片）在这一次尝试结束时删掉；staging 本身由 JobManager 在任务终结时删除。
+ * Decode (ffmpeg → the master in staging) → when over the single-request limit, slice at silences → submit chunks in order (progress by seconds) → map times back to the media clock,
+ * and assemble `cuccut.asr-result/v1` and write it to staging. On cancel, in-flight HTTP requests and ffmpeg are aborted, and it resolves as `cancelled`.
+ * Intermediate files (the master and the slices) are deleted when this attempt ends; staging itself is deleted by JobManager when the task finishes.
  */
 
 export interface OnlineTranscriberOptions {
   providerId: string;
   label: string;
   adapter: TranscribeAdapter;
-  /** 此刻的配置（含从凭据存储取出的密钥）；停用或缺密钥时 null，凭据存储不可用时抛 `ProviderFailure`。 */
+  /** Current configuration (including the key retrieved from the credential store); null when disabled or the key is missing; throws `ProviderFailure` when the credential store is unavailable. */
   config: () => Promise<AdapterConfig | null>;
   ffmpeg: FfmpegResolver;
   http?: AdapterHttp;
-  /** 调用结束时的报告（用量账本与账号状态，§6.10）：一次尝试一条，切片合在一起，用量是已经转写的秒数。 */
+  /** Report at the end of a call (usage ledger and account status, §6.10): one entry per attempt, with the slices combined; usage is the number of seconds transcribed. */
   report?: CallReporter;
 }
 
@@ -52,7 +52,7 @@ interface CallState {
 
 const WORK_DIR = 'online';
 const RESULT_FILE = 'result.json';
-/** 解出来的音频短于这个长度就不提交，直接是 `no-speech`。 */
+/** Decoded audio shorter than this length is not submitted; the result is directly `no-speech`. */
 const MIN_AUDIO_SEC = 0.05;
 
 export class OnlineTranscriber implements TranscribeProvider {
@@ -73,7 +73,7 @@ export class OnlineTranscriber implements TranscribeProvider {
     if (signal.aborted) controller.abort();
     this.#inflight.add(controller);
     const work = path.join(run.staging, WORK_DIR);
-    // 这次尝试用的密钥：出错时据此去掉错误文本里的密钥，不在错误处理里再取一次。
+    // The key used for this attempt: on error, it is used to strip the key from the error text, rather than fetching it again in the error handling.
     let secret: string | null = null;
     const call: CallState = { sent: null, audioSeconds: 0 };
     const report = (error?: unknown) => {
@@ -108,7 +108,7 @@ export class OnlineTranscriber implements TranscribeProvider {
         report(error);
         throw error;
       }
-      // 意料之外的错误：文本可能来自供应商的响应，去掉密钥再报告。
+      // Unexpected error: the text may come from the provider's response, so strip the key before reporting.
       const message = error instanceof Error ? error.message : String(error);
       const failure = new ProviderFailure('protocol', redact(PC.transcribeFailed({ label: this.#options.label, message }).text, secret ? [secret] : []));
       report(failure);
@@ -235,7 +235,7 @@ export class OnlineTranscriber implements TranscribeProvider {
     return result;
   }
 
-  /** 停止：中止所有在途的请求。 */
+  /** Stop: aborts all in-flight requests. */
   async close(): Promise<void> {
     for (const controller of this.#inflight) controller.abort();
   }

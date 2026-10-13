@@ -1,4 +1,4 @@
-//! 视频认领所属项目（架构设计 §5.1；视频格式规范 §1.3）：采用、相同、换标识三种情况。
+//! A video claims its owning project (architecture design §5.1; video format spec §1.3): three cases: adopt, same, and change identifier.
 
 #![allow(clippy::result_large_err)]
 
@@ -49,7 +49,7 @@ fn open(dir: &Path) -> Video {
     Video::open(dir, OpenMode::Write, &ffprobe()).unwrap()
 }
 
-/// 递归复制目录（`cp -r`）。锁文件也照抄，与用户在 Finder 里复制一样。
+/// Recursively copies a directory (`cp -r`). Lock files are copied too, just as when a user copies in Finder.
 fn copy_dir(from: &Path, to: &Path) {
     fs::create_dir_all(to).unwrap();
     for entry in fs::read_dir(from).unwrap() {
@@ -75,7 +75,7 @@ fn adopts_when_the_video_has_no_project_and_keeps_the_id() {
     assert_eq!(video.claim_project("proj_a").unwrap(), ProjectClaim::Adopted);
     assert_eq!(video.id(), id);
     assert_eq!(video.project_id().unwrap().as_deref(), Some("proj_a"));
-    // 认领不是修订：版本号、历史与撤销栈都不变。
+    // Claiming is not a revision: the version number, history and undo stack are all unchanged.
     assert_eq!(video.revision(), "1");
     assert_eq!(video.history(10).unwrap().len(), 1);
     drop(video);
@@ -130,17 +130,17 @@ fn a_copy_in_another_project_gets_a_new_id_with_history_intact() {
     assert_eq!(copy.project_id().unwrap().as_deref(), Some("proj_b"));
     assert_eq!(copy.previous_video_ids().unwrap(), vec![original_id.clone()]);
 
-    // 内容、修订号与历史不变，只有视频的 id 换了。
+    // Content, revision number and history are unchanged; only the video's id changed.
     let mut expected = snapshot.clone();
     expected.id = new_id.clone();
     assert_eq!(copy.snapshot(), expected);
     assert_eq!(copy.history(10).unwrap(), history);
     assert_eq!(copy.event_seq(), 2);
-    // 回执与事件里的 videoId 跟着换了：补发的事件路由到新的 id。
+    // The videoId in receipts and events changed too: re-sent events route to the new id.
     assert_eq!(copy.find_receipt("cmd_2").unwrap().unwrap().video_id, new_id);
     assert!(copy.events_after(0, 10).unwrap().iter().all(|e| e.video_id == new_id));
 
-    // 撤销照常：撤销记录里视频实体的 id 也换了，撤销之后 id 不会退回旧的。
+    // Undo works as usual: the id of the video entity in the undo records has changed too, and after an undo the id does not revert to the old one.
     copy.undo(&UndoRequest {
         command_id: "cmd_undo".into(),
         target: UndoTarget::Undo,
@@ -157,14 +157,14 @@ fn a_copy_in_another_project_gets_a_new_id_with_history_intact() {
     assert_eq!(reopened.id(), new_id);
     assert_eq!(reopened.snapshot().name, "第一版");
 
-    // 原视频不受影响。
+    // The original video is unaffected.
     let original = open(&original_dir);
     assert_eq!(original.id(), original_id);
     assert_eq!(original.project_id().unwrap().as_deref(), Some("proj_a"));
     assert_eq!(original.snapshot(), snapshot);
     drop(original);
 
-    // 副本的副本：曾用的 id 依次追加。
+    // A copy of a copy: previously used ids are appended in order.
     let third = root.path().join("第三份").join("v");
     copy_dir(&copy_dir_path, &third);
     let (third_id, claim) = claim_project_dir(&third, "proj_c").unwrap();
@@ -185,7 +185,7 @@ fn claiming_a_directory_respects_the_write_lock() {
     let (_, claim) = claim_project_dir(&dir, "proj_a").unwrap();
     assert_eq!(claim, ProjectClaim::Adopted);
 
-    // 只读打开不能认领。
+    // A read-only open cannot claim.
     let mut reader = Video::open(&dir, OpenMode::ReadOnly, &ffprobe()).unwrap();
     assert!(reader.claim_project("proj_b").is_err());
 }

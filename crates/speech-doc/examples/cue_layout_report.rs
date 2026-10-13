@@ -1,14 +1,11 @@
-//! 对**任意落盘 transcript** 报 `autoBreaks` 的布局质量（计划 M6.1b 第 4 条）。
+//! Reports the `autoBreaks` layout quality of **any saved transcript** (plan M6.1b item 4).
 //!
 //! ```text
 //! cargo run -p ccut-flow-core --example cue_layout_report -- <标签> <transcript.json> [<标签> <transcript.json> …]
 //! cargo run -p ccut-flow-core --example cue_layout_report -- --optimize <标签> <transcript.json>
 //! ```
 //!
-//! 指标与 `segment_local_f1 firstscreen` **逐条同口径**（Cue 数、最长 CPL、超宽、
-//! 超 20 CPS、峰 CPS、缝数、悬垂缝率），区别只在于：那个例子在进程内跑 SaT 并
-//! 自己造输入，本例只读文件，因此可以量 `ccut segment --boundary-scorer
-//! off | local | hybrid` 三条 **CLI** 路径的真实产物。**不加载任何模型。**
+//! Metrics use **exactly the same basis** as `segment_local_f1 firstscreen` (cue count, longest CPL, over-wide, over 20 CPS, peak CPS, seam count, dangling-seam rate). The only difference: that example runs SaT in-process and builds its own input, while this one only reads files, so it can measure the real output of the three **CLI** paths `ccut segment --boundary-scorer off | local | hybrid`. **No models are loaded.**
 
 use std::path::Path;
 
@@ -22,7 +19,7 @@ use speech_doc::seam::ends_dangling;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // 只在内存里重算，便于真实长文稿前后对比；绝不回写输入文件。
+    // Recomputed in memory only, so real long scripts can be compared before and after; never writes back to the input file.
     let optimize = args.first().is_some_and(|arg| arg == "--optimize");
     if optimize {
         args.remove(0);

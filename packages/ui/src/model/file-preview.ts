@@ -14,7 +14,7 @@ export function documentPreview(name: string): DocumentPreview | null {
   return null;
 }
 
-/** RFC 4180 的引号、转义双引号与多行单元格；有界渲染，不截断后冒充完整表格。 */
+/** RFC 4180 quoting, escaped double quotes and multi-line cells; bounded rendering, so it does not truncate and then pass the result off as a complete table. */
 export function parseDelimited(text: string, delimiter: ',' | '\t'): { rows: string[][]; error: 'quote' | 'limit' | null } {
   const rows: string[][] = [];
   let row: string[] = [], cell = '', quoted = false, closed = false;
@@ -51,7 +51,7 @@ export function parseDelimited(text: string, delimiter: ',' | '\t'): { rows: str
 
 export function formatJson(text: string): { text: string; valid: boolean } {
   try {
-    JSON.parse(text); // 只校验；格式化保留数字字面量，避免长整数 ID 被浮点数改写。
+    JSON.parse(text); // Validation only; formatting keeps numeric literals, so long integer IDs are not rewritten by floating-point conversion.
     const tokens = text.match(/"(?:\\.|[^"\\])*"|[{}\[\],:]|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) ?? [];
     let output = '', depth = 0;
     const newline = () => '\n' + '  '.repeat(depth);
@@ -79,7 +79,7 @@ export function pdfScale(pageWidth: number, available: number, zoom: string): nu
 }
 
 export type FilePreviewMode = DocumentPreview | 'image' | 'video' | 'audio';
-/** Runtime 的内容事实优先于扩展名；旧 Runtime 保留原有按扩展名回退。 */
+/** The Runtime's content facts take priority over the file extension; older Runtimes keep the original fallback to the extension. */
 export function resolvedPreviewMode(name: string, handle: MediaHandle, legacy: FilePreviewMode | null): FilePreviewMode | null {
   switch (handle.contentKind) {
     case 'text': {
@@ -97,7 +97,7 @@ export function resolvedPreviewMode(name: string, handle: MediaHandle, legacy: F
   }
 }
 
-/** 文件可能在发句柄后增长；消费响应时再次限制总量，不把不可信长度交给 arrayBuffer()。 */
+/** A file may grow after its handle is issued; the total is limited again when the response is consumed, so an untrusted length is not passed to arrayBuffer(). */
 export async function readPreviewText(response: Response, encoding = 'utf-8', limit = TEXT_PREVIEW_LIMIT): Promise<{ text: string } | { error: 'limit' | 'binary' }> {
   const reader = response.body?.getReader();
   if (!reader) return { text: '' };

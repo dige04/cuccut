@@ -14,9 +14,7 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 识别说话人（架构设计 §6.6）经网关端到端：真实引擎里的视频，从假模型来源装上「说话人区分」模型包，区分在假的 Model Worker
- * 里（前一半的词是一个人、后一半是另一个人）。流程只给提案、不改视频；`edits.applySpeakers` 一笔事务写转写与重切的译文，
- * `edits.undo` 还原；识别之后改过转写时拒绝应用。
+ * Speaker identification (architecture design §6.6) end to end through the gateway: a video in a real engine; the speaker-diarization model pack is installed from a fake model source, and diarization runs in a fake Model Worker (the first half of the words belongs to one person, the second half to another). The pipeline only gives a proposal and does not change the video. `edits.applySpeakers` writes the transcript and the re-split translation in one transaction; `edits.undo` restores them. Applying is rejected if the transcript was edited after identification.
  */
 
 const engine = resolveEngineHostCommand();
@@ -48,7 +46,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 两句（「Hello there, how are you?」「Fine.」），都是说话人 a；假 Worker 把后三个词判给另一个人（前三个词长，留给 a），第一句被切开。 */
+/** Two sentences (“Hello there, how are you?” “Fine.”), both by speaker a. The fake Worker gives the last three words to someone else (the first three words are long enough to stay with a), so the first sentence gets split. */
 const TEXTS = ['Hello', 'there,', 'how', 'are', 'you?', 'Fine.'];
 const speech = {
   schema: 'cuccut.speech/1',
@@ -211,7 +209,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
       ['a', '说话人 1', false],
       ['spk-2', '说话人 2', true],
     ]);
-    // 识别本身不写视频。
+    // Identification itself does not write to the video.
     expect((await client.request('videos.history', { videoId })).entries.length).toBe(before.entries.length);
 
     const { receipt } = await client.request('edits.applySpeakers', {
@@ -232,7 +230,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
     expect(translated.revision).toBe('2');
     expect(translated.body.units).toHaveLength(3);
 
-    // 已经应用过一次：转写是新版本，同一个提案再应用以 STALE_JOB_INPUT 拒绝。
+    // Already applied once: the transcript is a new version, so applying the same proposal again is rejected with STALE_JOB_INPUT.
     const stale = await client.request('edits.applySpeakers', { videoId, jobId, commandId: newId('cmd') }).catch((e: unknown) => e);
     expect(stale).toMatchObject({ code: 'conflict', details: { code: 'STALE_JOB_INPUT' } });
 
@@ -240,7 +238,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
     expect((await docOf(videoId, speechId)).revision).toBe('1');
     expect((await docOf(videoId, translationId)).revision).toBe('1');
 
-    // 撤销那笔撤销即重做：两份文档回到应用后的内容。
+    // Undo the undo (redo): both documents go back to the post-apply content.
     await client.request('edits.undo', { videoId, commandId: newId('cmd'), target: { transaction: undone.receipt.transactionId } });
     const redone = await docOf(videoId, speechId);
     expect(redone.body.words.map((w: { speaker: string }) => w.speaker)).toEqual(['a', 'a', 'a', 'spk-2', 'spk-2', 'spk-2']);

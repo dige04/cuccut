@@ -6,11 +6,11 @@ import { useSharePolling } from './services/use-share-status.ts';
 import { WebServicePage } from './services/web-service.tsx';
 
 /**
- * 服务（产品设计 §2.1；架构设计 §4.8；原型 designs/cuccut/app/page-services.jsx `ServicesPage`）：这台 Mac 上由 CucCut 提供、
- * 等别的应用或设备连进来的四项服务——MCP 服务、远端算力、Web 服务、模型接口。不带 `service` 是总览，带了进那一项的详情。
- * 认不得的 `service`（包括旧的 `runtime` 与智能体引擎）落回总览；Runtime 卡搬到 `services/runtime-card.tsx`，给设置 › 诊断挂。
- * MCP、Web、模型接口的状态来自 `services` 主题（rail 常驻订阅）；远端算力另在页面开着、窗口在前台时轮询共享状态
- * （节点协议没有订阅主题，见 use-share-status.ts）。
+ * Services (product design §2.1; architecture design §4.8; prototype designs/cuccut/app/page-services.jsx `ServicesPage`): the four services CucCut provides on this Mac for other apps or devices to connect to—
+ * MCP service, remote compute, Web service, model API. With no `service`, it shows the overview; with one, it shows the detail page for that item.
+ * An unrecognized `service` (including the old `runtime` and agent engine) falls back to the overview. The Runtime card moves to `services/runtime-card.tsx` and is mounted under Settings › Diagnostics.
+ * The status of MCP, Web and model API comes from the `services` topic (subscribed permanently by the rail). Remote compute is polled separately for shared status while the page is open and the window is in the foreground
+ * (the node protocol has no topic subscription; see use-share-status.ts).
  */
 export function ServicesPage({ service }: { service?: string }) {
   useSharePolling();

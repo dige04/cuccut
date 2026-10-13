@@ -53,8 +53,7 @@ fn content_tracks_do_not_guess_rich_run_ranges_or_apply_tween_easing() {
     );
 }
 
-/// `textCount` 的 `format` 是封闭键集（§7.1）：新增的 `grouping` / `pad` /
-/// `negativePrefix` 被接受，未知键与类型不对的值在 resolve 期报错。
+/// The `format` of `textCount` is a closed key set (§7.1): the newly added `grouping` / `pad` / `negativePrefix` are accepted, while unknown keys and values of the wrong type raise an error at resolve time.
 #[test]
 fn text_count_format_is_a_closed_schema() {
     let counter = |format: Value| {

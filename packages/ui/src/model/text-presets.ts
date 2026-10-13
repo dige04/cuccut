@@ -18,20 +18,20 @@ import { vi } from './text-presets.vi.ts';
 
 export { TEXT_PRESETS, type TextPreset, type TextPresetLayer };
 
-/** 文字面板的文案（英文是键与类型的来源，译文在 `text-presets.<语言>.ts`）。预设里的示例字不翻译，见 text-preset-data.ts。 */
+/** Copy for the text panel (English is the source of the keys and types; translations are in `text-presets.<语言>.ts`). Sample characters in the presets are not translated; see text-preset-data.ts. */
 const en = {
   catAll: 'All',
   catSimple: 'Simple',
   catTitle: 'Title',
   catLower: 'Lower third',
   catOther: 'Other',
-  /** 「添加文本框」新建出来的占位文字。 */
+  /** Placeholder text created by “添加文本框” (“Add text box”). */
   blankText: 'Type your text',
 };
 export type TextPresetsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 文字面板的分类（原型：全部 / 简单 / 标题 / 下三分 / 其它）。 */
+/** Categories of the text panel (prototype: All / Simple / Title / Lower third / Other). */
 export const TEXT_CATEGORIES = [
   {
     key: 'all',
@@ -66,7 +66,7 @@ export const TEXT_CATEGORIES = [
 ] as const;
 export type TextCategory = (typeof TEXT_CATEGORIES)[number]['key'];
 
-/** 「全部」那一档每个分区只摆前几格，多的走「查看全部」。 */
+/** In the “全部” (“All”) tier, each section shows only its first few cells; more go to “查看全部” (“View all”). */
 export const PEEK = 6;
 
 export function presetsOf(category: Exclude<TextCategory, 'all'>): TextPreset[] {
@@ -74,12 +74,12 @@ export function presetsOf(category: Exclude<TextCategory, 'all'>): TextPreset[] 
 }
 
 /**
- * 一段文字排好之后要多大的框（序列像素，含底板留白）：`wrapWidth` 给了就按它折行，否则不折。
- * 由界面用画布量；这一层不碰 DOM。
+ * How large a box a laid-out piece of text needs (sequence pixels, including the backing padding): if `wrapWidth` is given, the text wraps to it; otherwise it does not wrap.
+ * The UI measures it with a canvas; this layer does not touch the DOM.
  */
 export type MeasureText = (text: string, style: Record<string, unknown>, wrapWidth: number | null) => { width: number; height: number };
 
-/** 「添加文本框」：白字黑底的标题样式（旧版 `TEXT_TITLE`），播放头处 10 秒，画面中线偏上。 */
+/** “添加文本框” (“Add text box”): white-on-black title style (legacy `TEXT_TITLE`), 10 seconds at the playhead, placed slightly above the frame's vertical center. */
 export const BLANK_TEXT_SECONDS = 10;
 export const BLANK_TEXT = {
   get text() {
@@ -99,8 +99,8 @@ export const BLANK_TEXT = {
 };
 
 /**
- * 一层预设的 `place`：形状按 `w`（高写在图形的 `h` 里）；文字给了 `w` 就按它的宽折行，没给时框宽取量出来的文字宽
- * （元素模型的文字框宽就是折行宽，高由种类推出，不再记量出来的高）。
+ * The `place` of one layer of a preset: for shapes, by `w` (the height is written in the shape's `h`); for text, if `w` is given the text wraps to its width, and if not, the box width is the measured text width
+ * (in the element model the text box width is the wrap width, and the height is derived from the kind, so the measured height is no longer recorded).
  */
 export function presetLayerBox(layer: TextPresetLayer, canvas: { width: number; height: number }, measure: MeasureText): Place {
   const { x, y, w, rot } = layer.place;
@@ -109,7 +109,7 @@ export function presetLayerBox(layer: TextPresetLayer, canvas: { width: number; 
   return placeBox({ x, y, w: width, ...(rot === undefined ? {} : { rot }) });
 }
 
-/** 一条预设 → 新建的几层（低层在前），各层按自己的 `delay` 错峰。 */
+/** One preset → the several layers it creates (lower layers first); each layer is staggered by its own `delay`. */
 export function presetLayers(
   preset: TextPreset,
   canvas: { width: number; height: number },
@@ -128,7 +128,7 @@ export function presetLayers(
   });
 }
 
-/** 新建之后选中哪一层：第一层文字（旧版 `preferred_member`），没有文字时第一层。 */
+/** Which layer is selected after creation: the first text layer (legacy `preferred_member`), or the first layer if there is no text. */
 export function preferredLayer(preset: TextPreset): number {
   return Math.max(
     0,
@@ -136,7 +136,7 @@ export function preferredLayer(preset: TextPreset): number {
   );
 }
 
-/** 「添加文本框」的那一层。 */
+/** The layer created by “添加文本框” (“Add text box”). */
 export function blankTextLayer(canvas: { width: number; height: number }, measure: MeasureText): VisualLayer {
   const size = measure(BLANK_TEXT.text, BLANK_TEXT.style, null);
   const place = placeBox({ x: 50, y: 40, w: (size.width / canvas.width) * 100 });

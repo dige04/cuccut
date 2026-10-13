@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PipelineStepError } from './pipeline.ts';
 import { ensureSaveDirectory, ensureSaveDirectoryForStep, readableStem, writableDirectoryProblem } from './save-location.ts';
 
-/** 保存位置（架构设计 §7.9）：建好目录、确认能写，与可读的文件名。 */
+/** Save location (architecture design §7.9): the directory is created, confirmed writable, and file names are readable. */
 
 describe('保存位置的目录', () => {
   let dir: string;

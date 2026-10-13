@@ -1,14 +1,19 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/TextPreprocessing.swift`。
+//! Parts of this file are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3ASR/TextPreprocessing.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the algorithms in Rust and adapts them to this project's backends, model packages and
+//! transcription interfaces; the upstream source notice is kept.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see
+//! `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 识别文本 → 词。空格分词的语言按空白切，中间的汉字逐字成词；日、韩、泰等无空格语言走 ICU 分词。
-//! 每个词保留原样的 `surface`（含贴在后面的标点）和只留字母数字的 `cleaned`。
+//! Utterance text → words. Languages that separate words with spaces are split on whitespace, and CJK characters in
+//! between become one word each; unspaced languages such as Japanese, Korean and Thai go through ICU segmentation.
+//! Each word keeps its original `surface` (including punctuation attached after it) and a `cleaned` form that keeps
+//! only letters and digits.
 //!
-//! 强制对齐的输入布局（[`prepare_for_alignment`]、[`alignment_input`]）移植自 v2 `ccut-speech-core`，供对齐批次接入。
+//! The forced-alignment input layout ([`prepare_for_alignment`], [`alignment_input`]) is ported from v2
+//! `ccut-speech-core`, for the alignment batch to hook into.
 
 use icu_segmenter::WordSegmenter;
 use icu_segmenter::options::WordBreakInvariantOptions;
@@ -82,7 +87,7 @@ pub fn alignment_input(slotted: &SlottedText, audio_tokens: usize) -> AlignmentI
     }
 }
 
-/// `language` 是规范语言码或语言名；`None` 时按字符本身判断要不要走 ICU 分词。
+/// `language` is a canonical language code or language name. When `None`, whether to use ICU segmentation is decided from the characters themselves.
 pub fn split_into_word_pairs(text: &str, language: Option<&str>) -> Vec<WordPair> {
     let native = match language {
         Some(language) => {
@@ -102,7 +107,7 @@ pub fn split_into_word_pairs(text: &str, language: Option<&str>) -> Vec<WordPair
     }
 }
 
-/// 假名、谚文、泰文、老挝文、高棉文、缅文、藏文。
+/// Kana, Hangul, Thai, Lao, Khmer, Burmese, Tibetan.
 fn needs_dictionary_segmentation(character: char) -> bool {
     matches!(
         character as u32,
@@ -116,7 +121,7 @@ fn native_tokenize_pairs(text: &str) -> Vec<WordPair> {
     let mut previous_boundary = iterator.next().unwrap_or(0);
     let mut ranges = Vec::new();
     for boundary in iterator {
-        // ICU4X 对日中词典分段会把规则状态标成 None；是否为词以 clean_token 判定，避免丢掉有效范围。
+        // ICU4X's dictionary segmentation for Chinese and Japanese sets the rule status to None. Whether a piece is a word is decided by clean_token, so that valid ranges are not dropped.
         if !clean_token(&text[previous_boundary..boundary]).is_empty() {
             ranges.push(previous_boundary..boundary);
         }
@@ -246,8 +251,8 @@ pub fn is_han_ideograph(character: char) -> bool {
 mod tests {
     use super::*;
 
-    // ---- 以下两个移植自 v2 `ccut-speech-core/tests/forced_alignment_input.rs` ----
-    // v2 第二个测试末尾用 include_str! 守着两个对齐后端的调用点；v3 只有 MLX 的对齐器，守它一个。
+    // ---- The following two are ported from v2 `ccut-speech-core/tests/forced_alignment_input.rs` ----
+    // At the end of v2's second test, include_str! guards the call sites of the two alignment backends. v3 has only the MLX aligner, so it guards just that one.
 
     #[test]
     fn qwen_forced_alignment_places_both_time_slots_after_each_word() {
@@ -293,7 +298,7 @@ mod tests {
         let pairs = split_into_word_pairs("Testing, one two three. CucCut is ready!", Some("en"));
         assert_eq!(surfaces(&pairs), ["Testing,", "one", "two", "three.", "CucCut", "is", "ready!"]);
         assert_eq!(pairs[0].cleaned, "Testing");
-        // 孤立的标点贴到前一个词上。
+        // An isolated punctuation mark attaches to the previous word.
         assert_eq!(surfaces(&split_into_word_pairs("yes - no", None)), ["yes-", "no"]);
     }
 
@@ -313,14 +318,14 @@ mod tests {
         assert!(split_into_word_pairs("...", Some("ja")).is_empty());
     }
 
-    // 移植自 v2 `ccut-speech-core/tests/core.rs` 的 `text_preprocessing_preserves_surface_and_cleans_model_text`。
+    // Ported from the `text_preprocessing_preserves_surface_and_cleans_model_text` test in v2 `ccut-speech-core/tests/core.rs`.
     #[test]
     fn clean_token_keeps_letters_marks_and_apostrophes() {
         assert_eq!(clean_token("l'été!"), "l'été");
-        // 组合附加符（U+0301）是词的一部分，不能当标点删掉。
+        // A combining accent (U+0301) is part of the word and must not be deleted as punctuation.
         assert_eq!(clean_token("cafe\u{301}?"), "cafe\u{301}");
         assert_eq!(clean_token("42%"), "42");
-        // 扩展 B 区的汉字也算汉字；假名不算。
+        // Han characters from extension B also count as Han; kana do not.
         assert!(is_han_ideograph('\u{20000}'));
         assert!(!is_han_ideograph('あ'));
     }

@@ -3,17 +3,17 @@ import type { RenderPlanner } from '../../render/render-planner.ts';
 import { drawImage, scheduleThumb, thumbnailPlanner } from '../../render/thumbnails.ts';
 import type { ThumbPicture } from './thumb-scenes.ts';
 
-/** 画一张缩略图：尺寸是格子的设备像素，`ratio` 是像素密度。还没有可画的东西时返回 null（格子留空）。 */
+/** Draws one thumbnail: the size is the cell's device pixels, `ratio` is the pixel density. Returns null when there is nothing to draw yet (the cell stays empty). */
 export type ThumbDraw = (planner: RenderPlanner, width: number, height: number, ratio: number) => ThumbPicture | null;
 
-/** 在缩略图下面先铺的底（设备像素）。 */
+/** Background fill laid down first under the thumbnail (device pixels). */
 export type ThumbBackdrop = (context: CanvasRenderingContext2D, width: number, height: number) => void;
 
 type Size = { width: number; height: number };
 
 let loaded: RenderPlanner | null = null;
 
-/** 缩略图共用的渲染内核实例：载入（含字体）之前为 null。 */
+/** Shared render kernel instance for thumbnails: null until loaded (including fonts). */
 export function useThumbPlanner(): RenderPlanner | null {
   const [planner, setPlanner] = useState(loaded);
   useEffect(() => {
@@ -24,7 +24,7 @@ export function useThumbPlanner(): RenderPlanner | null {
         loaded = value;
         if (live) setPlanner(value);
       },
-      (error: unknown) => console.warn('缩略图的渲染内核载入失败', error), // i18n-ignore: 开发日志
+      (error: unknown) => console.warn('缩略图的渲染内核载入失败', error), // i18n-ignore: dev log
     );
     return () => {
       live = false;
@@ -33,7 +33,7 @@ export function useThumbPlanner(): RenderPlanner | null {
   return planner;
 }
 
-/** 画布的 CSS 尺寸（跟着 ResizeObserver 走，没变时同一个对象）；还没量到时为 null。 */
+/** The canvas's CSS size (follows ResizeObserver; the same object while unchanged); null until measured. */
 export function useCanvasSize(ref: RefObject<HTMLCanvasElement | null>): Size | null {
   const [size, setSize] = useState<Size | null>(null);
   useEffect(() => {
@@ -50,8 +50,8 @@ export function useCanvasSize(ref: RefObject<HTMLCanvasElement | null>): Size | 
 }
 
 /**
- * 由渲染内核画的缩略图画布：按自己的 CSS 尺寸铺满设备像素，尺寸或 `draw` 变了就重画。平时排队画（一屏几十个格子
- * 不一口气卡住界面）；`live` 时（悬停播放，每一帧都换 `draw`）直接画。内核载入之前格子留空。
+ * Thumbnail canvas drawn by the render kernel: fills the device pixels at its own CSS size, and redraws when the size or `draw` changes. Normally draws are queued
+ * (so dozens of cells on screen don't freeze the UI all at once); when `live` (hover playback, where `draw` changes every frame) it draws immediately. Cells stay empty until the kernel loads.
  */
 export function KernelThumb({ draw, live = false, backdrop }: { draw: ThumbDraw; live?: boolean; backdrop?: ThumbBackdrop }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -69,10 +69,10 @@ export function KernelThumb({ draw, live = false, backdrop }: { draw: ThumbDraw;
         try {
           picture = draw(planner, width, height, ratio);
         } catch (error) {
-          console.warn('缩略图画不出来', error); // i18n-ignore: 开发日志
+          console.warn('缩略图画不出来', error); // i18n-ignore: dev log
         }
       }
-      // 尺寸没变就不重设（重设会重新分配位图）：悬停播放时每帧都要重画。
+      // Don't reset the size when it hasn't changed (resetting reallocates the bitmap): during hover playback it redraws every frame.
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       const context = canvas.getContext('2d');

@@ -1,57 +1,38 @@
-//! 文本原子化与字符度量（逐字对拍 voice-ink `SubText` / `SubAlign`）。
+//! Text atomization and character metrics (cross-checked character by character against voice-ink `SubText` / `SubAlign`).
 //!
-//! - [`atomize`]：汉字与假名逐字，其余文字（拉丁、谚文……）按空白分词，标点
-//!   归属前一个原子，cohesion 守卫保 `3.14` / `U.S.` / `don't` /
-//!   `state-of-the-art` 为单原子；无损——每个非空白字符恰好落入一个原子。
-//! - 「中日韩」在这里是两个不同的问题，各有各的谓词，不要混用：
-//!   - **占不占两格、算不算一个阅读单位**（宽度、CPS、页预算）：汉字、假名、
-//!     谚文都算——[`is_cjk_char`] / [`is_cjk_adjacent`] / [`is_cjk_text`]。
-//!   - **词与词之间写不写空格**（切词逐字、拼接不加空格、任意两字之间可断）：
-//!     只有汉字与假名——[`is_unspaced_cjk_char`] / [`is_unspaced_cjk_adjacent`]。
-//!     韩文按空格分词，走拉丁那一路。
-//! - 两套度量严格区分：行宽用 [`visual_width`]（CJK 记 2），CPS 用
-//!   [`count_cps_chars`]（非空白计 1）。
+//! - [`atomize`]: Han characters and kana are split one per atom; other scripts (Latin, Hangul, ...) are split on whitespace. Punctuation attaches to the preceding atom, and the cohesion guard keeps `3.14` / `U.S.` / `don't` / `state-of-the-art` as single atoms. It is lossless: every non-whitespace character falls into exactly one atom.
+//! - “中日韩” is two different questions here, each with its own predicate, and they must not be mixed:
+//!   - **Whether it takes two cells and counts as one reading unit** (width, CPS, page budget): Han, kana and Hangul all count. See [`is_cjk_char`] / [`is_cjk_adjacent`] / [`is_cjk_text`].
+//!   - **Whether a space is written between words** (character-by-character word splitting, concatenation without spaces, where any two characters may break): only Han and kana. See [`is_unspaced_cjk_char`] / [`is_unspaced_cjk_adjacent`]. Hangul is split on spaces and takes the Latin path.
+//! - The two metrics are strictly separated: line width uses [`visual_width`] (CJK counts 2), and CPS uses [`count_cps_chars`] (non-whitespace counts 1).
 //!
-//! 与 Swift 的已知偏差：Swift 按 grapheme cluster 迭代，这里按 Unicode 标量
-//! （组合记号极端情形下计数不同）。切词不受影响：组合记号与零宽连接符跟着
-//! 它所附着的字符走（[`is_combining`]），不当标点切开。
+//! Known deviation from Swift: Swift iterates by grapheme cluster, while here it iterates by Unicode scalar, so counts differ in extreme cases with combining marks. Word splitting is not affected: combining marks and zero-width joiners follow the character they attach to ([`is_combining`]) and are not split off as punctuation.
 
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-/// 宽字符意义上的 CJK 词字符（三区段）：汉字、假名、谚文音节。回答的是
-/// 「占两格、一个字算一个阅读单位」；**不**回答「词之间写不写空格」——那个
-/// 问题用 [`is_unspaced_cjk_char`]。
+/// CJK word characters in the wide-character sense (three ranges): Han characters, kana, and Hangul syllables. This answers "takes two cells, and one character is one reading unit". It does **not** answer "is a space written between words"; for that question use [`is_unspaced_cjk_char`].
 pub fn is_cjk_char(ch: char) -> bool {
     is_unspaced_cjk_char(ch) || is_hangul_syllable(ch)
 }
 
-/// 词与词之间不写空格、一个字就是一个原子的文字：汉字与假名。谚文不在内
-/// （韩文按空格分词）；泰文一类虽然也不写空格，但没有逐字的词界，空白之间
-/// 整段是一个原子，同样不在内。
+/// Characters that take no space between words, where one character is one atom: Han characters and kana. Hangul is not included (Hangul is split on spaces). Thai and similar scripts also write without spaces, but they have no per-character word boundaries, so the whole run between whitespace is one atom; they are not included either.
 pub fn is_unspaced_cjk_char(ch: char) -> bool {
     matches!(ch as u32, 0x4E00..=0x9FFF | 0x3040..=0x30FF)
 }
 
-/// 谚文音节（U+AC00..U+D7AF）。
+/// Hangul syllables (U+AC00..U+D7AF).
 pub fn is_hangul_syllable(ch: char) -> bool {
     matches!(ch as u32, 0xAC00..=0xD7AF)
 }
 
-/// 字符串任一标量是 CJK 即视为 CJK（对拍 `SubText.isCJK(String)`——
-/// 混排文本走 CJK 路径是刻意行为）。
+/// A string counts as CJK if any of its scalars is CJK (matches `SubText.isCJK(String)`; treating mixed text on the CJK path is deliberate).
 pub fn is_cjk_text(text: &str) -> bool {
     text.chars().any(is_cjk_char)
 }
 
-/// 中日文语境标点规范化：ASCII `,` `:` `;` 任一直接邻字符是汉字或假名时替换
-/// 为全角 `，` `：` `；`；两侧都不是的场合（`3,000`、`10:30`、URL、纯英文
-/// 句子、韩文——韩文用半角标点）原样保留。`.` 刻意不映射——`配置好.env`、`详见 README.md` 一类
-/// 文件名/缩写歧义无法靠邻字判定。幂等：全角字符不在映射域内。
+/// Normalization of punctuation for Chinese/Japanese context: ASCII `,` `:` `;` are replaced with full-width `，` `：` `；` when either directly adjacent character is a Han character or kana. They are left unchanged when neither side is (`3,000`, `10:30`, URLs, pure English sentences, Hangul; Hangul uses half-width punctuation). `.` is deliberately not mapped, because file names and abbreviations such as `配置好.env` and `详见 README.md` cannot be disambiguated from the adjacent characters. Idempotent: full-width characters are outside the mapping domain.
 ///
-/// 用途：LLM 生成的 brief 摘要/风格指南混入半角标点后会随 system prompt
-/// 回显传染整条下游翻译（file-v1 基准 zh-Hans 译文半角逗号/冒号 14 处，
-/// json-v0 基线 0 处），在验收/转换处做一次确定性清洗即可断根，且不产生
-/// worker 重试成本。
+/// Purpose: when half-width punctuation mixes into LLM-generated brief summaries or style guides, it spreads through the system prompt echo into the whole downstream translation. The file-v1 benchmark's zh-Hans translations had 14 half-width commas/colons, while the json-v0 baseline had 0. One deterministic cleanup at acceptance or conversion breaks this chain, with no worker retry cost.
 pub fn normalize_cjk_ascii_punctuation(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -88,14 +69,12 @@ pub fn spaced_script_letter(ch: char) -> bool {
         )
 }
 
-/// 宽度意义上的"宽字符"（记 2 格）：CJK 词字符（含谚文）+ CJK 标点/全角区 +
-/// 中文引号破折号。拼接要不要空格不看它，看 [`is_unspaced_cjk_adjacent`]。
+/// “Wide characters” in the width sense (counted as 2 cells): CJK word characters (including Hangul), plus CJK punctuation and the full-width block, plus Chinese quotes and dashes. Whether a space is needed at concatenation is not decided by this; see [`is_unspaced_cjk_adjacent`].
 pub fn is_cjk_adjacent(ch: char) -> bool {
     is_cjk_char(ch) || is_wide_mark(ch)
 }
 
-/// 拼接意义上的"不写空格的字符"：汉字、假名 + CJK 标点/全角区 + 中文引号
-/// 破折号。两侧都是它时词间不加空格（[`sep_len`] 第 1 条）。
+/// “Characters that take no space” in the concatenation sense: Han characters and kana, plus CJK punctuation and the full-width block, plus Chinese quotes and dashes. When both sides are such characters, no space is added between words ([`sep_len`] rule 1).
 pub fn is_unspaced_cjk_adjacent(ch: char) -> bool {
     is_unspaced_cjk_char(ch) || is_wide_mark(ch)
 }
@@ -105,22 +84,17 @@ fn is_wide_mark(ch: char) -> bool {
         0x3000..=0x303F | 0xFF00..=0xFFEF | 0x2014 | 0x2018..=0x201D | 0x2026)
 }
 
-/// 全角标点/符号：CJK 标点区（U+3000..U+303F 的 、。「」『』《》〈〉【】〔〕）
-/// 与全角区（U+FF00..U+FFEF 的 ，。！？：；（））中的标点/符号。这类字形**自带
-/// 视觉留白**，任何一侧命中都不该再补空格。合取 [`is_punctuation_or_symbol`]
-/// 是为了把全角字母/数字（Ａ、１）排除在外——它们仍按普通词占空格。
+/// Full-width punctuation and symbols: punctuation in the CJK punctuation block (U+3000..U+303F: 、。「」『』《》〈〉【】〔〕) and punctuation/symbols in the full-width block (U+FF00..U+FFEF: ，。！？：；（）). These glyphs **carry their own visual whitespace**, so no space should be added on either side when one side matches. The conjunction with [`is_punctuation_or_symbol`] exists to exclude full-width letters and digits (Ａ、１); those still take space as ordinary words.
 fn is_fullwidth_punctuation(ch: char) -> bool {
     matches!(ch as u32, 0x3000..=0x303F | 0xFF00..=0xFFEF) && is_punctuation_or_symbol(ch)
 }
 
-/// 中英共用排印符：U+2014 —、U+2018..U+201D ‘’‚‛“”、U+2026 …。
-/// 它们在 Latin 排版里**正常参与空格**（`said “Hello`、`students’ books`、
-/// `so… yeah`），字形不自带留白，因此不能套用全角标点的单侧规则。
+/// Shared typographic marks used in both Chinese and English: U+2014 —, U+2018..U+201D ‘’‚‛“”, U+2026 …. In Latin typesetting they **normally take part in spacing** (`said “Hello`, `students’ books`, `so… yeah`), and their glyphs carry no whitespace of their own, so the single-side rule for full-width punctuation cannot apply to them.
 fn is_shared_typographic_mark(ch: char) -> bool {
     matches!(ch as u32, 0x2014 | 0x2018..=0x201D | 0x2026)
 }
 
-/// 开定界符（Unicode Ps/Pi）。
+/// Opening delimiters (Unicode Ps/Pi).
 fn is_opening_delimiter(ch: char) -> bool {
     matches!(
         get_general_category(ch),
@@ -128,7 +102,7 @@ fn is_opening_delimiter(ch: char) -> bool {
     )
 }
 
-/// 闭定界符（Unicode Pe/Pf）。
+/// Closing delimiters (Unicode Pe/Pf).
 fn is_closing_delimiter(ch: char) -> bool {
     matches!(
         get_general_category(ch),
@@ -155,7 +129,7 @@ pub(crate) fn is_punctuation_or_symbol(ch: char) -> bool {
 
 const COHESIVE_MARKS: &[char] = &['.', ',', '\'', '’', '-', '–', ':', '/', '@', '&', '+'];
 
-/// 哪些字符一个字就是一个原子。
+/// Which characters are one atom per character.
 type PerChar = fn(char) -> bool;
 
 fn is_word_char(ch: char, per_char: PerChar) -> bool {
@@ -165,11 +139,7 @@ fn is_word_char(ch: char, per_char: PerChar) -> bool {
     ch.is_alphabetic() || ch.is_numeric() || ch == '_'
 }
 
-/// 组合记号（Unicode Mn / Mc / Me）与零宽连接符（ZWNJ / ZWJ）：书写上属于它
-/// 前面那个字符，不是标点。泰文声调符（U+0E48..U+0E4B）、天城文等的 virama
-/// 与 nukta、分解形式的拉丁重音都是 Mn 而不是字母；把它们当标点会在词中间
-/// 收尾（`พื้นที่` 切成 `พื้` + `นที่`、`क्या` 切成 `क्` + `या`），再按词间
-/// 空格拼回去就多出空格、改了原文。
+/// Combining marks (Unicode Mn / Mc / Me) and zero-width joiners (ZWNJ / ZWJ): in writing they belong to the character before them, and they are not punctuation. Thai tone marks (U+0E48..U+0E4B), the Devanagari virama and nukta, and decomposed Latin accents are all Mn rather than letters. Treating them as punctuation would end a word in the middle (`พื้นที่` would split into `พื้` + `นที่`, and `क्या` into `क्` + `या`). Re-joining them with inter-word spaces would then add spaces and change the original text.
 pub(crate) fn is_combining(ch: char) -> bool {
     matches!(ch, '\u{200C}' | '\u{200D}')
         || matches!(
@@ -180,46 +150,33 @@ pub(crate) fn is_combining(ch: char) -> bool {
         )
 }
 
-/// 无损原子化：汉字与假名逐字，其余文字按词（空白之间的一段）。韩文在这里
-/// 按空格分词，一个어절一个原子。
+/// Lossless atomization: Han characters and kana character by character, other text by word (a run between whitespace). Here Hangul is split on spaces, one 어절 (eojeol) per atom.
 ///
-/// 这是**成词**用的口径：建稿、把改过的文本重绑成词、给译文找切点。拿模型
-/// 文本去和文稿词比对（LCS 的键）或按页计量的地方用 [`atomize_syllables`]。
+/// This is the convention for **forming words**: building the draft, re-binding edited text back into words, and finding cut points in translations. Where model text is compared with draft words (as the LCS key), or where text is measured by page, use [`atomize_syllables`].
 pub fn atomize(text: &str) -> Vec<String> {
     atomize_with(text, is_unspaced_cjk_char)
 }
 
-/// 谚文也逐音节切的原子化（0.5 之前文稿的口径）。
+/// Atomization that also splits Hangul syllable by syllable (the convention for drafts before 0.5).
 ///
-/// 用在两类地方：
+/// Used in two kinds of places:
 ///
-/// - **比对与计量**：把模型文本与文稿词做 LCS 的键、词序列签名、
-///   [`word_count`]。键越细越稳——韩文模型改一个助词、补一处空格都不该让整
-///   个어절对不上；预算按音节计则是为了让韩文一页装的内容与以前相同。
-/// - **旧文稿的改写**：0.5 之前建的韩文文稿每个音节一个词（读入时带上
-///   「贴前」标记保持原样显示），改写这种区间时新词要沿用同一粒度，见
-///   [`atomize_like`]。
+/// - **Comparison and measurement**: as the LCS key between model text and draft words, as the word-sequence signature, and in [`word_count`]. A finer key is more stable: when the model changes one particle or adds one space, the whole 어절 should not stop matching. Budgets counted by syllable keep the content of a Hangul page the same as before.
+/// - **Rewriting old drafts**: Hangul drafts built before 0.5 have one word per syllable (read in with a glue marker, so they display as before). When such a span is rewritten, the new words must follow the same granularity; see [`atomize_like`].
 pub fn atomize_syllables(text: &str) -> Vec<String> {
     atomize_with(text, is_cjk_char)
 }
 
-/// 区间里有没有泰文一类按词切开的词（[`is_script_glued`]）。有的话，拿模型
-/// 文本与这段文稿词做 LCS 时要用 [`comparison_atoms`] 的细口径。
+/// Whether the span contains words that are split on word boundaries in scripts such as Thai ([`is_script_glued`]). If it does, comparing model text against these draft words for LCS must use the finer convention of [`comparison_atoms`].
 pub fn needs_fine_comparison<W: JoinWord>(words: &[W]) -> bool {
     words.iter().any(is_script_glued)
 }
 
-/// 拿模型文本与文稿词做 LCS 时的原子（键由调用方再过 [`atom_key`]）。
+/// Atoms of model text for LCS comparison against draft words (the caller passes the key further through [`atom_key`]).
 ///
-/// `fine` 为假时与 [`atomize_syllables`] 逐个相同。为真时（区间里有泰文一类
-/// 按词切开的词，见 [`needs_fine_comparison`]）每个原子再按字素簇切开：文稿
-/// 那侧是一个个词，模型文本那侧按空白只能切到短语，两侧粒度不同就对不上；
-/// 拿分词模型去切模型文本也不行，它依赖上下文，模型改一处空格就会换切法。
-/// 两侧都切到字素簇才对称。所有原子都切（不只含泰文的），否则 `14:30` 这种
-/// 夹在泰文里的段在两侧会一边整一边碎。
+/// When `fine` is false, these are identical atom by atom to [`atomize_syllables`]. When it is true (the span contains words split on word boundaries in scripts such as Thai; see [`needs_fine_comparison`]), each atom is further split into grapheme clusters. On the draft side each is one word, but model text split by whitespace alone only gets phrases, and mismatched granularity on the two sides would not match. Splitting model text with a word-segmentation model does not help either: it depends on context, so if the model changes one space it would change the split. Only when both sides are split into grapheme clusters is the comparison symmetric. Every atom is split (not only those containing Thai); otherwise a segment such as `14:30` embedded in Thai would be whole on one side and fragmented on the other.
 ///
-/// 字素簇在这里**只是比对键**：调用方把匹配映射回文稿词的下标，切句、分段
-/// 的边界仍然只落在文稿的词边界上。
+/// Grapheme clusters here are **only a comparison key**. The caller maps matches back to draft word indices, and sentence cuts and segment boundaries still fall only on draft word boundaries.
 pub fn comparison_atoms(text: &str, fine: bool) -> Vec<String> {
     let atoms = atomize_syllables(text);
     if !fine {
@@ -236,15 +193,13 @@ pub fn comparison_atoms(text: &str, fine: bool) -> Vec<String> {
         .collect()
 }
 
-/// 按 `words` 现有的粒度原子化 `text`：
+/// Atomizes `text` at the granularity of the existing `words`:
 ///
-/// - 区间里有 0.5 之前逐音节韩文的「贴前」词（[`is_legacy_glued`]）→ 逐音节；
-/// - 区间里有不写空格的文字切出来的「贴前」词（[`is_script_glued`]，泰文一类
-///   按词建稿的新文稿）→ [`atomize_words`] 的切法，只取文本；
-/// - 否则按 [`atomize`]。
+/// - if the span has a glue-marked word from before 0.5 that is Hangul split by syllable ([`is_legacy_glued`]), split by syllable;
+/// - if the span has glue-marked words from text in unspaced scripts ([`is_script_glued`], new drafts built word by word in Thai and similar scripts), use the split of [`atomize_words`], taking only the text;
+/// - otherwise use [`atomize`].
 ///
-/// 返回的只是文本：拿它重新拼文本会在泰文词之间多出空格，成词的地方用
-/// [`atomize_words_like`]，把标记带上。
+/// It returns only text. Re-joining text from it would add spaces between Thai words, so where words are formed, use [`atomize_words_like`] to carry the markers.
 pub fn atomize_like<W: JoinWord>(words: &[W], text: &str) -> Vec<String> {
     match span_granularity(words) {
         Granularity::LegacySyllables => atomize_syllables(text),
@@ -256,10 +211,7 @@ pub fn atomize_like<W: JoinWord>(words: &[W], text: &str) -> Vec<String> {
     }
 }
 
-/// 区间里**已有的一个词**的文本按区间粒度拆成原子（给比对键用，另一侧是
-/// [`atomize_like`] 切的改写文本）。与 [`atomize_like`] 只差在泰文一类按词
-/// 切开的区间：已有的词本身就是一个词，不再拿去分词——单独一个词送进分词
-/// 模型可能被切成两段，两侧的键就对不上了。
+/// Splits the text of **one existing word** within the span into atoms at the span's granularity (for the comparison key; the other side is the rewritten text split by [`atomize_like`]). It differs from [`atomize_like`] only for spans in scripts split on word boundaries, such as Thai: an existing word is already one word and is not segmented again. A single word fed to a word-segmentation model may be cut into two pieces, and then the keys on the two sides would not match.
 pub fn atomize_word_like<W: JoinWord>(words: &[W], word_text: &str) -> Vec<String> {
     match span_granularity(words) {
         Granularity::LegacySyllables => atomize_syllables(word_text),
@@ -267,9 +219,7 @@ pub fn atomize_word_like<W: JoinWord>(words: &[W], word_text: &str) -> Vec<Strin
     }
 }
 
-/// [`atomize_like`] 带上每个原子的「贴前」标记，给成词的地方用（改写区间、
-/// 文本编辑）。逐音节的旧韩文区间与普通区间一律不带标记——前者由
-/// [`crate::rebind::reglue_legacy_span`] 按旧规则重定，后者本来就没有。
+/// [`atomize_like`] with each atom's glue marker attached, for use where words are formed (rewritten spans, text edits). Syllable-split old Hangul spans and ordinary spans carry no markers. The former are re-bound by [`crate::rebind::reglue_legacy_span`] under the old rules, and the latter never had markers.
 pub fn atomize_words_like<W: JoinWord>(words: &[W], text: &str) -> Vec<(String, bool)> {
     match span_granularity(words) {
         Granularity::LegacySyllables => atomize_syllables(text)
@@ -284,21 +234,15 @@ pub fn atomize_words_like<W: JoinWord>(words: &[W], text: &str) -> Vec<(String, 
     }
 }
 
-/// 泰文一类按词切开的区间改写时的切法：`text` 开头、结尾与区间原有词逐字相同
-/// 的那几段沿用原来的词界，只有中间改动过的一段重新分词，标记按 `text` 里
-/// 有没有空白重定（[`script_glue_from_text`]）。
+/// The splitting rule for rewriting a span split on word boundaries, such as Thai: the segments at the start and end of `text` that are character-for-character identical to the span's original words keep the original word boundaries. Only the middle segment that was changed is re-segmented, and the markers are re-derived from whether `text` contains whitespace ([`script_glue_from_text`]).
 ///
-/// 分词模型的结果跟上下文有关：同一个词，整句送进去和只送半句，边界可能不同
-/// （实测泰文验收句每个子区间单独重切，边缘处约 9% 的子区间变了切法）。整段
-/// 重切会让没改的词换掉 id 与时间；锚定之后，原文不变时切出来的就是原来的词。
-/// 锚定的结果拼回去与 [`atomize_words`] 拼回去不一致时（锚点落在拉丁词中间
-/// 之类），退回整段重切。
+/// Word-segmentation results depend on context: the same word may get different boundaries when the whole sentence is fed in versus only half of it. Measured on Thai acceptance sentences, re-cutting each sub-span separately changed the split for about 9% of sub-spans at the edges. Re-cutting the whole segment would change the IDs and timings of unedited words. With anchoring, the words come out as the originals whenever the text is unchanged. If the anchored result concatenated does not match the concatenation from [`atomize_words`] (for example, an anchor lands in the middle of a Latin word), the whole segment is re-cut instead.
 fn atomize_words_anchored<W: JoinWord>(words: &[W], text: &str) -> Vec<(String, bool)> {
     let fresh = atomize_words(text);
     let clean_cut = |before: Option<char>, after: Option<char>| {
         !after.is_some_and(is_combining) && !before.is_some_and(is_preposed_vowel)
     };
-    // 锚定的词：(文本, 它在 `text` 里的起点)。
+    // Anchored word: (text, its start position in `text`).
     let mut head: Vec<(String, usize)> = Vec::new();
     let mut cursor = 0;
     for word in words {
@@ -330,16 +274,12 @@ fn atomize_words_anchored<W: JoinWord>(words: &[W], text: &str) -> Vec<(String, 
         tail.push((word.to_owned(), start));
         end = start;
     }
-    // 重切的中间段两头切出纯标点（模型在引号外加了空格：`ว่า“ยืนยัน` →
-    // `ว่า “ยืนยัน`，尾锚 `ยืนยัน` 原样留下，中间只剩 `ว่า “`）时，把挨着的
-    // 锚定词还给中间段一起切，标点才能像整段重切时那样贴到词上，不单成一个词。
-    // 每侧最多还一个：本来就单独成段的标点（两边都有空格的 `—`）还一个词也
-    // 贴不上，再还下去只会让没改的词换切法。
+    // When the middle segment being re-cut has pure punctuation at both ends (the model added a space outside a quote, `ว่า“ยืนยัน` → `ว่า “ยืนยัน`: the tail anchor `ยืนยัน` is left as is and the middle is only `ว่า “`), the adjacent anchored words are handed back to the middle segment to be cut together. That way the punctuation attaches to a word as it would when the whole segment is re-cut, rather than standing alone as a word. At most one word is returned per side: punctuation that was already its own segment (a `—` with a space on both sides) cannot attach to any word, and returning more would only change the split of unchanged words.
     let punct_only =
         |piece: Option<&(String, bool)>| piece.is_some_and(|(atom, _)| atom_key(atom).is_none());
     let mut middle = atomize_words(&text[cursor..end]);
     if punct_only(middle.last()) && tail.pop().is_some() {
-        // `tail` 从文本末尾往前存，最后一个是离中间段最近的锚。
+        // `tail` is stored from the end of the text backwards, so the last one is the anchor closest to the middle segment.
         end = tail.last().map_or(text.len(), |&(_, next)| next);
         middle = atomize_words(&text[cursor..end]);
     }
@@ -363,8 +303,7 @@ fn atomize_words_anchored<W: JoinWord>(words: &[W], text: &str) -> Vec<(String, 
     }
 }
 
-/// 泰文、老挝文写在辅音前面的元音（逻辑顺序也在前）：它和后一个辅音是一个
-/// 音节，词界不能落在它后面。
+/// Thai and Lao vowels written before the consonant (they also come first in logical order): they and the following consonant form one syllable, so a word boundary must not fall after them.
 fn is_preposed_vowel(ch: char) -> bool {
     matches!(ch as u32, 0x0E40..=0x0E44 | 0x0EC0..=0x0EC4)
 }
@@ -385,23 +324,17 @@ fn span_granularity<W: JoinWord>(words: &[W]) -> Granularity {
     }
 }
 
-/// 0.5 之前逐音节的韩文词：带「贴前」标记、且含谚文音节。读旧文稿时
-/// [`legacy_glue`] 只会给这种词打标记（谚文挨谚文、谚文挨破折号 / 省略号 /
-/// 弯引号外侧，被标记的一侧总是谚文）。
+/// A Hangul word from before 0.5 that is split by syllable: it carries the glue marker and contains Hangul syllables. When old drafts are read, [`legacy_glue`] only marks words of this kind. (Hangul next to Hangul, and Hangul next to the outside of a dash, ellipsis or curly quote; the marked side is always Hangul.)
 pub fn is_legacy_glued<W: JoinWord + ?Sized>(word: &W) -> bool {
     word.glued() && word.join_text().chars().any(is_hangul_syllable)
 }
 
-/// 不写空格的文字（[`is_unspaced_script_char`]）在建稿时按词切开后，词内后续
-/// 各段带的「贴前」标记：带标记、且不是 [`is_legacy_glued`]。
+/// Glue markers carried by the later segments within a word, after text in unspaced scripts ([`is_unspaced_script_char`]) has been split into words at draft time: the marker is set, and the word is not [`is_legacy_glued`].
 pub fn is_script_glued<W: JoinWord + ?Sized>(word: &W) -> bool {
     word.glued() && !is_legacy_glued(word)
 }
 
-/// 词与词之间不写空格、又不能逐字成词的文字：泰文、老挝文、藏文（含宗喀）、
-/// 缅甸文、高棉文（含扩展区）。这些文字里的空格是短语或分句的停顿，不是词界；
-/// 词界要靠分词（[`atomize_words`]）。与 [`spaced_script_letter`] 排除的是同
-/// 一组文字。
+/// Scripts that write no spaces between words and cannot be made into one-character words: Thai, Lao, Tibetan (including Zongkha), Burmese, and Khmer (including the extension blocks). In these scripts a space is a pause in a phrase or clause, not a word boundary, so word boundaries must come from word segmentation ([`atomize_words`]). They are the same set of scripts excluded by [`spaced_script_letter`].
 pub fn is_unspaced_script_char(ch: char) -> bool {
     matches!(
         ch as u32,
@@ -415,8 +348,7 @@ pub fn is_unspaced_script_char(ch: char) -> bool {
     )
 }
 
-/// 有分词模型的那几种（泰、老挝、缅甸、高棉）。藏文没有分词模型，词内的
-/// 音节已经由 [`atomize`] 在音节符 `་`（tsheg）处切开。
+/// Scripts that have a word-segmentation model (Thai, Lao, Burmese, Khmer). Tibetan has no segmentation model; syllables within a word are already split by [`atomize`] at the syllable mark `་` (tsheg).
 pub(crate) fn is_lstm_script_char(ch: char) -> bool {
     matches!(
         ch as u32,
@@ -424,20 +356,15 @@ pub(crate) fn is_lstm_script_char(ch: char) -> bool {
     )
 }
 
-/// 两段文本之间的缝碰到不写空格的文字（任一侧的边界字符是
-/// [`is_unspaced_script_char`]）。
+/// A seam between two pieces of text touches unspaced script (the boundary character on either side is [`is_unspaced_script_char`]).
 fn script_seam(prev: &str, next: &str) -> bool {
     prev.chars().last().is_some_and(is_unspaced_script_char)
         || next.chars().next().is_some_and(is_unspaced_script_char)
 }
 
-/// 成词口径的原子化，带「贴前」标记：先按 [`atomize`] 切，再把含泰、老挝、
-/// 缅甸、高棉文字的原子按词切开（ICU4X 的 LSTM 分词）。标记为真的原子与前一个
-/// 原子之间原文没有空白、且缝碰到不写空格的文字——这种缝按 [`sep_len`] 会被
-/// 补上空格，所以要带标记才能拼回原文。藏文按音节符切开的缝同样带标记。
+/// Atomization at word-formation granularity, with glue markers. First split by [`atomize`], then split the atoms containing Thai, Lao, Burmese, and Khmer text into words (ICU4X LSTM segmentation). An atom marked as glued has no whitespace in the original between it and the previous atom, and the seam touches unspaced script. Such a seam would get a space from [`sep_len`], so it must be marked in order to re-join to the original text. Seams left by splitting Tibetan at the syllable mark are marked the same way.
 ///
-/// 不含这些文字的文本与 [`atomize`] 逐个相同、标记全为假。无损：按标记拼回
-/// （[`join_word_texts`]）等于原文去掉首尾空白、把空白折成单个空格。
+/// Text without these scripts is identical to [`atomize`] atom by atom, and all markers are false. It is lossless: re-joining by the markers ([`join_word_texts`]) gives the original text with leading and trailing whitespace removed and whitespace runs folded into single spaces.
 pub fn atomize_words(text: &str) -> Vec<(String, bool)> {
     let atoms = atomize(text);
     let mut out: Vec<(String, bool)> = Vec::with_capacity(atoms.len());
@@ -449,8 +376,7 @@ pub fn atomize_words(text: &str) -> Vec<(String, bool)> {
         let start = if text[cursor + skipped..].starts_with(&atom) {
             cursor + skipped
         } else {
-            // atomize 是无损的，原子按序、只隔空白；保险起见找不到时按
-            // 子串定位，定位不到就当作隔着空白。
+            // atomize is lossless: atoms are in order and separated only by whitespace. To be safe, if an atom is not found, locate it by substring; if it still cannot be located, treat it as separated by whitespace.
             match text[cursor..].find(&atom) {
                 Some(offset) => cursor + offset,
                 None => {
@@ -476,10 +402,7 @@ pub fn atomize_words(text: &str) -> Vec<(String, bool)> {
     out
 }
 
-/// 一串按序取自 `text` 的词（转录引擎给的逐词时间、页面上的源词）各自与前
-/// 一个词之间要不要带「贴前」标记：原文里两词之间没有空白、且缝碰到不写空格
-/// 的文字（[`is_unspaced_script_char`]）。其余的缝（中日文逐字、拉丁词）一律
-/// 为假，与没有这一步时相同。词在原文里按序对不上时返回 `None`。
+/// For a sequence of words taken in order from `text` (per-word timings from the transcription engine, source words on the page), whether each word needs a glue marker relative to the previous word: there is no whitespace between the two words in the original, and the seam touches unspaced script ([`is_unspaced_script_char`]). All other seams (Chinese and Japanese character by character, Latin words) are always false, the same as without this step. Returns `None` when the words cannot be matched in order against the original.
 pub fn script_glue_from_text<S: AsRef<str>>(words: &[S], text: &str) -> Option<Vec<bool>> {
     let mut flags = Vec::with_capacity(words.len());
     let mut cursor = 0;
@@ -501,10 +424,7 @@ pub fn script_glue_from_text<S: AsRef<str>>(words: &[S], text: &str) -> Option<V
     Some(flags)
 }
 
-/// 把一个原子里的泰、老挝、缅甸、高棉文字按词切开。只采用至少一侧是这些
-/// 文字的分词边界（`F-07`、`14:30` 这类夹在里面的拉丁 / 数字段保持完整）；
-/// 只有标点的段并进相邻的词：开定界符（Ps/Pi）并给后一个词，其余并给前一个
-/// 词；重复符 `ๆ` / `ໆ` 并给前一个词。拼起来等于原子。
+/// Splits the Thai, Lao, Burmese and Khmer text in one atom into words. Only word boundaries where at least one side is one of these scripts are used, so Latin and digit segments embedded inside (such as `F-07` and `14:30`) stay intact. Segments that are only punctuation are merged into an adjacent word: an opening delimiter (Ps/Pi) goes to the following word, and the rest go to the preceding word. The repetition marks `ๆ` / `ໆ` go to the preceding word. Concatenated, the pieces equal the atom.
 fn split_script_words(atom: &str) -> Vec<String> {
     if !atom.chars().any(is_lstm_script_char) {
         return vec![atom.to_owned()];
@@ -541,7 +461,7 @@ fn split_script_words(atom: &str) -> Vec<String> {
             let opening = segment.chars().last().is_some_and(is_opening_delimiter)
                 && !repetition_mark(segment);
             let has_next_word = segments[index + 1..].iter().any(|next| has_word_char(next));
-            // 已经在等后一个词的标点之后的标点也跟着等，顺序不乱。
+            // Punctuation that follows punctuation already waiting for the next word also waits, so the order is preserved.
             if !carry.is_empty() || (opening && has_next_word) || pieces.is_empty() {
                 carry.push_str(segment);
             } else if let Some(last) = pieces.last_mut() {
@@ -565,9 +485,9 @@ fn split_script_words(atom: &str) -> Vec<String> {
 fn atomize_with(text: &str, per_char: PerChar) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out: Vec<String> = Vec::new();
-    let mut run = String::new(); // 开放中的非 CJK 词原子
-    let mut pending_prefix = String::new(); // 行首/间隙标点，等待向前依附
-    let mut gap_before = true; // 光标前是空白（或文本开头）
+    let mut run = String::new(); // Open non-CJK word atom
+    let mut pending_prefix = String::new(); // Punctuation at the start of a line or in a gap, waiting to attach backwards
+    let mut gap_before = true; // The cursor is preceded by whitespace (or the start of the text)
 
     macro_rules! flush_run {
         () => {
@@ -587,9 +507,7 @@ fn atomize_with(text: &str, per_char: PerChar) -> Vec<String> {
             continue;
         }
         if is_combining(c) && !gap_before {
-            // 接在它所附着的字符后面：开放中的词、刚收尾的原子（CJK 字、
-            // 以标点收尾的词）、或还在等词的前缀标点。间隙后的孤立记号没有
-            // 可附着的字符，照旧走下面的分支。
+            // Attaches to the character it belongs to: an open word, a just-closed atom (a CJK character, or a word ending in punctuation), or prefix punctuation still waiting for a word. An isolated mark after a gap has no character to attach to, and falls through to the branch below.
             if !run.is_empty() {
                 run.push(c);
             } else if let Some(last) = out.last_mut() {
@@ -618,7 +536,7 @@ fn atomize_with(text: &str, per_char: PerChar) -> Vec<String> {
             i += 1;
             continue;
         }
-        // 标点/符号连串 [i..j)
+        // Punctuation/symbol run [i..j)
         let mut j = i;
         while j < chars.len()
             && !chars[j].is_whitespace()
@@ -632,7 +550,7 @@ fn atomize_with(text: &str, per_char: PerChar) -> Vec<String> {
         let next_is_content = j < chars.len() && !chars[j].is_whitespace();
         if !gap_before {
             if !run.is_empty() && next_is_word && j - i == 1 && COHESIVE_MARKS.contains(&chars[i]) {
-                run.push(chars[i]); // 3.14 / don't / state-of-the-art 保持内聚
+                run.push(chars[i]); // 3.14 / don't / state-of-the-art stay cohesive
             } else if !run.is_empty() {
                 run.push_str(&punct);
                 flush_run!();
@@ -661,80 +579,48 @@ fn atomize_with(text: &str, per_char: PerChar) -> Vec<String> {
     out
 }
 
-/// 文本的计量单位数，用于语言中立的页预算计量。
+/// Number of measurement units in the text, used for language-neutral page budget measurement.
 ///
-/// 汉字、假名、谚文逐字计一、其余文字按词计一，依附标点不单独计数
-/// （[`atomize_syllables`] 的口径）。按字符计量对 CJK 与 Latin 并不公平
-/// （Latin 一词约 5.5 字符，CJK 一字即一词），同一个字符预算下 CJK 页的信息
-/// 密度是 Latin 的数倍；改用这个单位即可让两类文字落在同一量纲上。韩文的
-/// **词**是어절（[`atomize`]），但预算仍按音节计：一个어절平均三个音节，按
-/// 어절计会让同样的页预算装进约三倍的内容。分页粒度下每页只调用一次，分配
-/// 开销可以忽略。
+/// Han characters, kana and Hangul count one each per character. Other scripts count one per word. Attached punctuation is not counted separately (the convention of [`atomize_syllables`]). Measuring by character is unfair between CJK and Latin: a Latin word is about 5.5 characters, while a CJK character is one word. Under the same character budget a CJK page would carry several times the information density of a Latin page. Using this unit puts both kinds of script on the same scale. The **word** of Hangul is the 어절 ([`atomize`]), but the budget is still counted by syllable: a 어절 averages three syllables, so counting by 어절 would fit about three times the content into the same page budget. Pagination calls this once per page, so the allocation cost is negligible.
 pub fn word_count(text: &str) -> usize {
     atomize_syllables(text).len()
 }
 
-/// 词间分隔宽度，三档（对拍 `SubText.sepLen`）：
+/// Width of the separator between words, in three tiers (matches `SubText.sepLen`):
 ///
-/// 1. 两侧都是不写空格的字符（[`is_unspaced_cjk_adjacent`]：汉字、假名、CJK
-///    标点/全角区、中文引号破折号）→ 0；谚文紧挨汉字或假名 → 0（中日文里
-///    夹的韩文、韩文里夹的汉字照原样贴着）。**谚文与谚文之间不在此列**：
-///    韩文按空格分词，两个어절之间是 1。
-/// 2. 任一侧是**全角标点**（[`is_fullwidth_punctuation`]）→ 0，**单侧即可**。
-/// 3. 任一侧是**共用排印符**（[`is_shared_typographic_mark`]）→ 只有当缝落在
-///    该符号的**内容侧**时才 0：`prev` 以开定界符（Ps/Pi）结尾，或 `next` 以
-///    闭定界符（Pe/Pf）开头。
+/// 1. Both sides are non-spaced characters ([`is_unspaced_cjk_adjacent`]: Han characters, kana, CJK punctuation and the full-width block, Chinese quotes and dashes) → 0. Hangul next to a Han character or kana → 0 (Hangul embedded in Chinese or Japanese, and Han characters embedded in Hangul, stay attached as they are). **Hangul next to Hangul is not in this case**: Hangul is split on spaces, so between two 어절 it is 1.
+/// 2. Either side is **full-width punctuation** ([`is_fullwidth_punctuation`]) → 0. **One side is enough.**
+/// 3. Either side is a **shared typographic mark** ([`is_shared_typographic_mark`]) → 0 only if the seam falls on the **content side** of that mark: `prev` ends with an opening delimiter (Ps/Pi), or `next` begins with a closing delimiter (Pe/Pf).
 ///
-/// 为什么第 2、3 条规则不同、**不要合并回一条**：全角标点的字形本身就带视觉
-/// 留白，任一侧命中都不该再补空格；而共用排印符（U+2014 —、U+2018..U+201D
-/// ‘’‚‛“”、U+2026 …）在 Latin 排版里是正常参与空格的字符，套用单侧规则会把
-/// `said “Hello` 压成 `said“Hello`、`students’ books` 压成 `students’books`、
-/// `so… yeah` 压成 `so…yeah`。英文是真实的翻译目标语，那样会整体算错英文译片
-/// 的显示宽度并进而影响切分。
+/// Why rules 2 and 3 differ, and **why they must not be merged back into one rule**: full-width punctuation glyphs carry their own visual whitespace, so no space should be added when either side matches. Shared typographic marks (U+2014 —, U+2018..U+201D ‘’‚‛“”, U+2026 …), however, take part in spacing as normal characters in Latin typesetting. Applying the single-side rule would squeeze `said “Hello` into `said“Hello`, `students’ books` into `students’books`, and `so… yeah` into `so…yeah`. English is a real translation target, so that would miscalculate the display width of English translation segments as a whole, and thereby affect the splitting.
 ///
-/// 第 3 条的判据是一句话：**定界符在面向自身内容的那一侧不占空格。** 所以
-/// `名为“` + `PluginDataJSON”` 里 `“`（Pi）在 `prev` 末尾、缝在它的内容侧 → 0，
-/// 拼回去是 `名为“PluginDataJSON”` 而不是幻影空格 `名为“ PluginDataJSON”`
-/// （幻影空格会让 `join_atoms` 的 canonical 与译文不等长，`split.rs` 的 seam
-/// 偏移与 protected-term 匹配整体错位）；而 `students’` + `books` 里 `’`（Pf）
-/// 在 `prev` 末尾、缝在它的**外**侧 → 1，英文撇号后的空格得以保留。
-/// `—`（Pd）和 `…`（Po）两侧皆非定界符，永远只走第 1 条。
+/// The test for rule 3, in one sentence: **a delimiter takes no space on the side facing its own content.** So in `名为“` + `PluginDataJSON”`, the `“` (Pi) is at the end of `prev` and the seam is on its content side, giving 0. That joins back as `名为“PluginDataJSON”`, not with a phantom space `名为“ PluginDataJSON”`. A phantom space would make the canonical from `join_atoms` differ in length from the translation, shifting the seam offsets in `split.rs` and the protected-term matching. In `students’` + `books`, however, the `’` (Pf) is at the end of `prev` and the seam is on its **outer** side, giving 1, so the space after the English apostrophe is kept.
 ///
-/// 判定只看两侧各一个边界字符（`prev` 常常是整段累计前缀，不能回扫，否则
-/// 单原子调用与整串调用会给出不同结果，重新引入偏移漂移）。已知取舍：
-/// `sep_len("好”", "foo")` 这类「闭引号外侧接 Latin」在中文语境本该闭合、在
-/// 英文语境（`“Hello world” today`）本该留空格，两字符局部信息不足以区分，
-/// 这里按英文取 1（也是本次改动前的原有行为）。
+/// The judgement looks only at one boundary character on each side. `prev` is often the accumulated prefix of a whole segment, and it must not be scanned backwards; otherwise single-atom calls and whole-string calls would give different results, which would reintroduce offset drift. Known trade-off: a case like `sep_len("好”", "foo")`, a closing quote outside followed by Latin, should close in a Chinese context but keep a space in an English context (`“Hello world” today`). Two characters of local information cannot tell these apart, so it takes 1, as English (this was also the existing behaviour before this change).
 pub fn sep_len(prev: &str, next: &str) -> usize {
     sep_len_with(prev, next, unspaced_pair)
 }
 
-/// [`sep_len`] 第 1 条：这两个相邻字符之间不写空格。两侧都是不写空格的字符
-/// （汉字、假名、CJK 标点/全角区、中文引号破折号），或谚文紧挨汉字 / 假名。
-/// 谚文与谚文不在内。清洗模型文本里多余空格的地方
-/// （`markers::collapse_cjk_spaces`）与它同口径。
+/// Rule 1 of [`sep_len`]: no space between these two adjacent characters. Both sides are non-spaced characters (Han characters, kana, CJK punctuation and the full-width block, Chinese quotes and dashes), or Hangul sits next to a Han character or kana. Hangul next to Hangul is not included. Where stray spaces in model text are cleaned up (`markers::collapse_cjk_spaces`), the same convention is used.
 pub fn unspaced_pair(prev: char, next: char) -> bool {
     (is_unspaced_cjk_adjacent(prev) && is_unspaced_cjk_adjacent(next))
         || (is_hangul_syllable(prev) && is_unspaced_cjk_char(next))
         || (is_unspaced_cjk_char(prev) && is_hangul_syllable(next))
 }
 
-/// 0.5 之前的 [`unspaced_pair`]：谚文也算「不写空格的字符」。只给旧文稿用。
+/// The pre-0.5 version of [`unspaced_pair`]: Hangul also counts as a “non-spaced character”. Only for old drafts.
 pub(crate) fn legacy_unspaced_pair(prev: char, next: char) -> bool {
     is_cjk_adjacent(prev) && is_cjk_adjacent(next)
 }
 
-/// 0.5 之前的 [`sep_len`]。只用来读旧文稿——见 [`legacy_glue`]。
+/// The pre-0.5 version of [`sep_len`]. It is only used to read old drafts. See [`legacy_glue`].
 fn legacy_sep_len(prev: &str, next: &str) -> usize {
     sep_len_with(prev, next, legacy_unspaced_pair)
 }
 
-/// 这道词缝在 0.5 之前不加空格、按现在的规则却会加：旧文稿里这样的词要带
-/// 上「贴前」标记（[`crate::doc::Word::glue`]）才能保持原来的显示。
+/// A seam that got no space before 0.5 but would get one under the current rules. Old drafts need such words to carry a glue marker ([`crate::doc::Word::glue`]) to keep their original display.
 ///
-/// 命中的只有韩文逐音节的旧词：谚文挨谚文，以及谚文与破折号、省略号、弯
-/// 引号外侧之间。读入旧版文稿、以及改写仍是逐音节的区间时，都用它给词定
-/// 标记。
+/// Only syllable-split old Hangul words match: Hangul next to Hangul, and Hangul next to the outside of a dash, ellipsis or curly quote. It is used to mark words when old-version drafts are read, and when a span that is still split by syllable is rewritten.
 pub fn legacy_glue(prev: &str, next: &str) -> bool {
     legacy_sep_len(prev, next) == 0 && sep_len(prev, next) == 1
 }
@@ -769,14 +655,9 @@ fn sep_len_with(prev: &str, next: &str, unspaced_pair: fn(char, char) -> bool) -
     1
 }
 
-/// 拼接规则眼里的一个词：文本，加上文稿里存的「贴前」标记
-/// （[`crate::doc::Word::glue`]）。标记为真时这个词与拼接序列里的前一个词
-/// 之间不加空格，不论 [`sep_len`] 怎么判。
+/// A word as seen by the concatenation rules: its text, plus the glue marker stored in the draft ([`crate::doc::Word::glue`]). When the marker is true, no space is added between this word and the previous word in the concatenated sequence, whatever [`sep_len`] would decide.
 ///
-/// 纯文本（`&str` / `String`）没有标记，一律按 [`sep_len`] 走——译文原子、
-/// 模型写回的片段都是这一类。凡是文本取自 `doc.words` 的地方，要么直接把
-/// 词传进来，要么用 `(text, glue)` 把标记带上；只传文本会让带标记的文稿
-/// 在那一处多出空格。
+/// Plain text (`&str` / `String`) has no marker and always follows [`sep_len`]. Translation atoms and segments written back by the model are of this kind. Wherever text is taken from `doc.words`, either pass the word itself, or carry the marker with `(text, glue)`. Passing only the text would add a space at that point in a draft that has markers.
 pub trait JoinWord {
     fn join_text(&self) -> &str;
     fn glued(&self) -> bool {
@@ -823,7 +704,7 @@ impl JoinWord for (String, bool) {
     }
 }
 
-/// 认「贴前」标记的 [`sep_len`]：`prev` 是已拼好的前缀（或前一个词的文本）。
+/// [`sep_len`] that honours the glue marker: `prev` is the already-joined prefix (or the text of the previous word).
 pub fn word_sep<W: JoinWord + ?Sized>(prev: &str, next: &W) -> usize {
     if next.glued() {
         0
@@ -832,7 +713,7 @@ pub fn word_sep<W: JoinWord + ?Sized>(prev: &str, next: &W) -> usize {
     }
 }
 
-/// 词序列拼接为展示文本（汉字、假名之间不加空格；带「贴前」标记的词不加空格）。
+/// Joins a word sequence into display text (no spaces between Han characters and kana; words with a glue marker get no space).
 pub fn join_word_texts<I>(words: I) -> String
 where
     I: IntoIterator,
@@ -848,11 +729,9 @@ where
     output
 }
 
-/// 与 [`join_word_texts`] 同一把标尺：返回每个词边界处展示串的累计字符数。
+/// The same ruler as [`join_word_texts`]: returns the cumulative character count of the display string at each word boundary.
 ///
-/// `out[i]` 是前 `i + 1` 个词拼接后的字符数（含 `sep_len` 判定插入的空格），
-/// 因此下标与输入词序列一一对应。任何需要把「显示串偏移」映射回词边界的地方
-/// 都必须用它，而不是自行按词累加固定分隔宽度——后者在 CJK 邻接处会漂移。
+/// `out[i]` is the number of characters after the first `i + 1` words are joined, including the spaces that the `sep_len` judgement inserts. So the indices correspond one-to-one with the input word sequence. Anything that needs to map a display-string offset back to a word boundary must use this, rather than accumulating a fixed separator width per word, because the latter drifts at CJK junctions.
 pub fn join_prefix_char_lens<I>(words: I) -> Vec<usize>
 where
     I: IntoIterator,
@@ -874,20 +753,19 @@ where
     lens
 }
 
-/// 行宽度量：CJK 邻接字符记 2，其余记 1。
+/// Line width measure: adjacent CJK characters count 2, others count 1.
 pub fn visual_width(text: &str) -> usize {
     text.chars()
         .map(|ch| if is_cjk_adjacent(ch) { 2 } else { 1 })
         .sum()
 }
 
-/// CPS 分子：非空白字符数。
+/// CPS numerator: the number of non-whitespace characters.
 pub fn count_cps_chars(text: &str) -> usize {
     text.chars().filter(|ch| !ch.is_whitespace()).count()
 }
 
-/// 归一化字符流：剥空白/标点/符号，逐字符小写展开（对拍 `SubAlign.normalizeChars`）。
-/// 「模型只许加标点」由归一化后严格相等来证明。
+/// Normalized character stream: strips whitespace, punctuation and symbols, and expands each character to lowercase (matches `SubAlign.normalizeChars`). “The model may only add punctuation” is proven by strict equality after normalization.
 pub fn normalize_chars(text: &str) -> String {
     let mut output = String::new();
     for ch in text.chars() {
@@ -901,13 +779,13 @@ pub fn normalize_chars(text: &str) -> String {
     output
 }
 
-/// LCS 原子键：归一化后字符串；纯标点原子键为空，调用方应剔除。
+/// LCS atom key: the normalized string. A punctuation-only atom has an empty key, and the caller should drop it.
 pub fn atom_key(atom: &str) -> Option<String> {
     let key = normalize_chars(atom);
     (!key.is_empty()).then_some(key)
 }
 
-/// 编辑距离（字符级 Levenshtein，滚动行）。
+/// Edit distance (character-level Levenshtein, using rolling rows).
 pub fn edit_distance(a: &[char], b: &[char]) -> usize {
     if a.is_empty() {
         return b.len();
@@ -928,7 +806,7 @@ pub fn edit_distance(a: &[char], b: &[char]) -> usize {
     previous[b.len()]
 }
 
-/// 归一化相似度：`1 - editDistance/maxLen`；两侧皆空为 1。
+/// Normalized similarity: `1 - editDistance/maxLen`. If both sides are empty, it is 1.
 pub fn similarity(a: &str, b: &str) -> f64 {
     let na: Vec<char> = normalize_chars(a).chars().collect();
     let nb: Vec<char> = normalize_chars(b).chars().collect();
@@ -939,7 +817,7 @@ pub fn similarity(a: &str, b: &str) -> f64 {
     1.0 - edit_distance(&na, &nb) as f64 / max_len as f64
 }
 
-/// 字符权重（`TranscriptModel.wWeight`）：`max(2, letters+numbers+') + 1.4`。
+/// Character weight (`TranscriptModel.wWeight`): `max(2, letters+numbers+') + 1.4`.
 pub fn w_weight(token: &str) -> f64 {
     let semantic = token
         .chars()
@@ -948,7 +826,7 @@ pub fn w_weight(token: &str) -> f64 {
     (semantic.max(2) as f64) + 1.4
 }
 
-/// rebind 空隙填充权重（`correctionTimingWeight`）：`max(1, letters+numbers+')`。
+/// Weight for filling rebind gaps (`correctionTimingWeight`): `max(1, letters+numbers+')`.
 pub fn correction_timing_weight(token: &str) -> f64 {
     let semantic = token
         .chars()
@@ -961,13 +839,13 @@ const CLOSERS: &[char] = &['”', '"', '’', '\'', '」', '』', '）', ')', ']
 const TERMINAL: &[char] = &['。', '．', '.', '？', '?', '！', '!', '…'];
 const CLAUSE_END: &[char] = &[',', ';', ':', '—', '–', '，', '；', '：', '、'];
 
-/// 小写词干缩写表——`"Dr."` 的句点不是句末。
+/// Table of lowercase stem abbreviations. The period in `"Dr."` is not a sentence end.
 const SENTENCE_ABBREV: &[&str] = &[
     "mr", "mrs", "ms", "dr", "prof", "st", "sr", "jr", "rev", "hon", "fr", "gen", "gov", "sen",
     "rep", "col", "lt", "sgt", "capt", "vs", "etc", "inc", "ltd", "corp", "dept", "vol", "fig",
 ];
 
-/// 逆序跳过右引号/括号后看终止标点（对拍 `TranscriptBoundary.endsSentence`）。
+/// Skips closing quotes and brackets in reverse order, then looks for the terminal punctuation (matches `TranscriptBoundary.endsSentence`).
 pub fn ends_sentence(text: &str) -> bool {
     for ch in text.chars().rev() {
         if CLOSERS.contains(&ch) {
@@ -978,8 +856,7 @@ pub fn ends_sentence(text: &str) -> bool {
     false
 }
 
-/// 句末判定（对拍 `TranscriptModel.sentenceEnd`）：至多一个 closer 后的终止
-/// 标点；`.` 在 token 内部另有 `.`（`2.14`/`a.com`）或词干是缩写时不算句末。
+/// Sentence-end check (matches `TranscriptModel.sentenceEnd`): a terminal punctuation mark after at most one closer. A `.` that has another `.` inside the token (`2.14` / `a.com`), or whose stem is an abbreviation, does not count as a sentence end.
 pub fn sentence_end(token: &str) -> bool {
     let trimmed: Vec<char> = token.chars().collect();
     let mut index = trimmed.len();
@@ -1010,8 +887,7 @@ pub fn sentence_end(token: &str) -> bool {
     true
 }
 
-/// 从句标点（`clauseEndChar`）：至多跳过一个右引号/括号后取尾标点。
-/// 返回标点本身——破折号（打断/重启）与逗号类使用不同的断行门槛。
+/// Clause punctuation (`clauseEndChar`): skips at most one closing quote or bracket, then takes the trailing punctuation. It returns the punctuation itself, because dashes (interruptions and restarts) and comma-like marks use different line-break thresholds.
 pub fn clause_end_char(token: &str) -> Option<char> {
     let chars: Vec<char> = token.chars().collect();
     let mut index = chars.len();
@@ -1025,12 +901,9 @@ pub fn clause_end_char(token: &str) -> Option<char> {
     CLAUSE_END.contains(&last).then_some(last)
 }
 
-/// 第 `cut` 个原子边界在**原文里**是否真有空白背书。
+/// Whether the `cut`-th atom boundary **in the original text** is actually backed by whitespace.
 ///
-/// [`atomize`] 丢掉空白，[`join_word_texts`] 又会在 CJK/Latin 交界补一个渲染
-/// 用空格——于是「担心AI会抢走…」在原子层看起来和「你的 GPU 在…」一样有
-/// 「词间空格缝」，但前者切的是动词和它的宾语从句。凡是把缝质量分级的地方
-/// （DP 目标函数、自由缝判定）都必须用原文空白，而不是拼接后的空格。
+/// [`atomize`] drops whitespace, and [`join_word_texts`] then inserts a rendering space at CJK/Latin junctions. So at the atom level, “担心AI会抢走…” (worried AI will take away…) looks like “你的 GPU 在…” (your GPU is…) in having a word-space seam. But the former cuts between a verb and its object clause. Wherever seam quality is graded (the DP objective function, the free-seam judgement), the original whitespace must be used, not the spaces produced by concatenation.
 pub fn seam_backed_by_whitespace(text: &str, atoms: &[String], cut: usize) -> bool {
     if cut == 0 || cut >= atoms.len() {
         return false;
@@ -1054,14 +927,14 @@ mod tests {
 
     #[test]
     fn normalize_cjk_ascii_punctuation_targets_cjk_neighbors_only() {
-        // 基准里观测到的传染源形态：Latin 词后紧跟 CJK。
+        // The contagion pattern observed in the benchmark: a Latin word immediately followed by CJK.
         assert_eq!(
             normalize_cjk_ascii_punctuation("Martin,让我担心的是"),
             "Martin，让我担心的是"
         );
         assert_eq!(normalize_cjk_ascii_punctuation("他说:好"), "他说：好");
         assert_eq!(normalize_cjk_ascii_punctuation("分号;例子"), "分号；例子");
-        // 两侧都不是 CJK：数字、时间、URL、纯英文原样保留。
+        // Neither side is CJK: digits, times, URLs and pure English are kept as they are.
         assert_eq!(
             normalize_cjk_ascii_punctuation("共 3,000 人"),
             "共 3,000 人"
@@ -1075,7 +948,7 @@ mod tests {
             normalize_cjk_ascii_punctuation("Keep tone light, direct: yes; ok"),
             "Keep tone light, direct: yes; ok"
         );
-        // `.` 不在映射域（文件名/缩写歧义）；已是全角的文本幂等。
+        // `.` is outside the mapping domain (file name and abbreviation ambiguity). Text that is already full-width is idempotent.
         assert_eq!(normalize_cjk_ascii_punctuation("配置好.env"), "配置好.env");
         let normalized = normalize_cjk_ascii_punctuation("他说：好，再见；完");
         assert_eq!(normalized, "他说：好，再见；完");
@@ -1090,7 +963,7 @@ mod tests {
             .iter()
             .position(|atom| atom == "AI")
             .expect("AI atom present");
-        // 拼接后是「担心 AI」，但原文没有空格：不是缝。
+        // After joining it reads “担心 AI” (worried AI), but the original has no space, so it is not a seam.
         assert!(!seam_backed_by_whitespace(text, &atoms, cut));
 
         let spaced = "你的 GPU 在显存读取之间会有空闲算力——";
@@ -1105,7 +978,7 @@ mod tests {
     #[test]
     fn atomize_matches_voiceink_test_vectors() {
         assert_eq!(atomize("你好，世界。"), vec!["你", "好，", "世", "界。"]);
-        // 汉字、假名逐字；韩文按空格分词。
+        // Han characters and kana character by character; Hangul split on spaces.
         assert_eq!(
             atomize("いい天気 한국어"),
             vec!["い", "い", "天", "気", "한국어"]
@@ -1120,33 +993,32 @@ mod tests {
         );
     }
 
-    /// 组合记号不切词：切完再拼回去必须还是原文。
+    /// Combining marks are not split: after splitting and re-joining, the result must still be the original text.
     #[test]
     fn combining_marks_stay_inside_their_word() {
-        // 泰文：声调符 U+0E49 / U+0E48 是 Mn 且不是字母。
+        // Thai: tone marks U+0E49 / U+0E48 are Mn and are not letters.
         assert_eq!(atomize("พื้นที่"), vec!["พื้นที่"]);
         assert_eq!(atomize("ผมไม่ได้ไป ตลาดน้ำ"), vec!["ผมไม่ได้ไป", "ตลาดน้ำ"]);
-        // 天城文：virama U+094D、nukta U+093C；孟加拉文 hasanta U+09CD；
-        // 泰米尔文 pulli U+0BCD。
+        // Devanagari: virama U+094D, nukta U+093C. Bengali: hasanta U+09CD. Tamil: pulli U+0BCD.
         assert_eq!(atomize("क्या हुआ?"), vec!["क्या", "हुआ?"]);
         assert_eq!(atomize("ज़रूरी"), vec!["ज़रूरी"]);
         assert_eq!(atomize("বাংলা ভাষার জন্য"), vec!["বাংলা", "ভাষার", "জন্য"]);
         assert_eq!(atomize("தமிழ் மொழி"), vec!["தமிழ்", "மொழி"]);
-        // 阿拉伯文 tashkeel、希伯来文 niqqud。
+        // Arabic tashkeel, Hebrew niqqud.
         assert_eq!(atomize("مَرْحَبًا بِكُمْ"), vec!["مَرْحَبًا", "بِكُمْ"]);
         assert_eq!(atomize("שָׁלוֹם עוֹלָם"), vec!["שָׁלוֹם", "עוֹלָם"]);
-        // 分解形式（NFD）的拉丁重音。
+        // Latin accents in decomposed form (NFD).
         assert_eq!(
             atomize("re\u{301}sume\u{301} done"),
             vec!["re\u{301}sume\u{301}", "done"]
         );
-        // 零宽连接符（波斯文 ZWNJ、僧伽罗文 ZWJ）留在词内。
+        // Zero-width joiners (Persian ZWNJ, Sinhala ZWJ) stay within the word.
         assert_eq!(atomize("می\u{200C}خواهم"), vec!["می\u{200C}خواهم"]);
-        // CJK 字后的组合浊点跟着那个字。
+        // A combining dakuten after a CJK character goes with that character.
         assert_eq!(atomize("か\u{3099}き"), vec!["か\u{3099}", "き"]);
-        // 词尾标点之后的记号仍跟着前一个原子，不另起一个。
+        // A mark following word-final punctuation still follows the previous atom, rather than starting a new one.
         assert_eq!(atomize("a.\u{301} b"), vec!["a.\u{301}", "b"]);
-        // 表情的变体选择符 U+FE0F 也是 Mn：照旧随表情一起。
+        // The emoji variation selector U+FE0F is also Mn, so it goes with the emoji as before.
         assert_eq!(atomize("I ❤\u{FE0F} you"), vec!["I", "❤\u{FE0F}", "you"]);
         assert_eq!(atomize("ok❤\u{FE0F}"), vec!["ok❤\u{FE0F}"]);
         for text in [
@@ -1162,8 +1034,7 @@ mod tests {
         }
     }
 
-    /// 韩文按空格分词：一个어절一个原子，标点跟着它所在的어절，拼回去就是
-    /// 原文。这张表与 `ccut-editor-core/src/subtext.rs` 的同名测试逐条相同。
+    /// Hangul split on spaces: one 어절 per atom, punctuation follows the 어절 it is in, and re-joining gives the original text. This table is identical, test by test, to the same-named tests in `ccut-editor-core/src/subtext.rs`.
     #[test]
     fn korean_is_cut_and_joined_at_spaces() {
         assert_eq!(
@@ -1174,12 +1045,12 @@ mod tests {
             atomize("“안녕하세요,” 그가 말했다."),
             vec!["“안녕하세요,”", "그가", "말했다."]
         );
-        // 谚文与拉丁、数字连写是一个어절。
+        // Hangul written together with Latin letters and digits is one 어절.
         assert_eq!(
             atomize("iPhone을 3개 샀어요"),
             vec!["iPhone을", "3개", "샀어요"]
         );
-        // 夹在韩文里的汉字仍逐字，且与谚文贴着。
+        // Han characters embedded in Hangul stay character by character, and stick to the adjacent Hangul.
         assert_eq!(atomize("大韓민국"), vec!["大", "韓", "민국"]);
         for text in [
             "저는 내일 학교에 갑니다.",
@@ -1194,8 +1065,7 @@ mod tests {
                 text,
             );
         }
-        // 词缝：谚文与谚文之间是 1；谚文挨汉字 / 假名是 0；全角标点照旧
-        // 单侧闭合；共用排印符按拉丁规则。
+        // Seams: between Hangul and Hangul is 1. Hangul next to Han characters or kana is 0. Full-width punctuation still closes on one side. Shared typographic marks follow the Latin rule.
         assert_eq!(sep_len("저는", "내일"), 1);
         assert_eq!(sep_len("갑니다.", "저는"), 1);
         assert_eq!(sep_len("韓", "민국"), 0);
@@ -1208,18 +1078,18 @@ mod tests {
         assert_eq!(sep_len("그래서…", "네"), 1);
         assert_eq!(sep_len("맞아요", "—"), 1);
         assert_eq!(sep_len("iPhone", "을"), 1);
-        // 宽度不变：谚文仍是两格。
+        // Width unchanged: Hangul is still two cells.
         assert_eq!(visual_width("한국어 ab"), 9);
         assert!(is_cjk_char('한') && !is_unspaced_cjk_char('한'));
         assert!(spaced_script_letter('한') && !spaced_script_letter('漢'));
-        // 韩文用半角标点：不换全角。
+        // Hangul uses half-width punctuation, so it is not converted to full-width.
         assert_eq!(
             normalize_cjk_ascii_punctuation("네, 맞아요: 정말; 그래요"),
             "네, 맞아요: 정말; 그래요"
         );
     }
 
-    /// 逐音节的口径留给比对、计量与旧文稿：与 0.5 之前的 `atomize` 逐字相同。
+    /// The syllable-level convention is kept for comparison, measurement and old drafts. It is character-for-character identical to `atomize` before 0.5.
     #[test]
     fn syllable_atoms_keep_the_pre_0_5_cut() {
         assert_eq!(
@@ -1230,7 +1100,7 @@ mod tests {
             atomize_syllables("저는 내일, 갑니다."),
             vec!["저", "는", "내", "일,", "갑", "니", "다."]
         );
-        // 不含谚文的文本两种口径逐字相同。
+        // For text without Hangul, the two conventions are identical character for character.
         for text in [
             "你好，世界。",
             "3.14 U.S. don't state-of-the-art a.com",
@@ -1240,22 +1110,21 @@ mod tests {
         ] {
             assert_eq!(atomize_syllables(text), atomize(text), "{text}");
         }
-        // 预算按音节计。
+        // The budget is counted by syllable.
         assert_eq!(word_count("저는 내일 학교에 갑니다."), 10);
-        // 一个旧词（单音节，标点跟着它）在两种口径下都是一个原子。
+        // An old word (one syllable, with its punctuation attached) is one atom under both conventions.
         for word in ["한", "다.", "(그", "어,”"] {
             assert_eq!(atomize(word), vec![word]);
             assert_eq!(atomize_syllables(word), vec![word]);
         }
-        // 区间里有带标记的词就沿用逐音节。
+        // If the span has marked words, keep the syllable-level split.
         let legacy = [("저", false), ("는", true)];
         let fresh = [("저는", false), ("내일", false)];
         assert_eq!(atomize_like(&legacy, "저는"), vec!["저", "는"]);
         assert_eq!(atomize_like(&fresh, "저는"), vec!["저는"]);
     }
 
-    /// 泰文区间改写时锚定在原有的词上：原文不变就切回原来的词（哪怕区间从
-    /// 短语中间开始、单独重切会换切法），只改了中间时首尾的词不动。
+    /// When a Thai-like span is rewritten, it is anchored to the existing words. If the original text is unchanged, it is cut back to the original words, even if the span starts in the middle of a phrase where re-cutting alone would change the split. When only the middle has changed, the first and last words are left alone.
     #[test]
     fn script_word_spans_are_recut_only_where_the_text_changed() {
         let phrase = "ลลิตาไม่ได้ยกเลิกการประชุมแต่เลื่อนไปเป็นวันพฤหัสบดี";
@@ -1265,7 +1134,7 @@ mod tests {
             let span = &whole[start..end];
             let text = join_word_texts(span.iter());
             let mut expected = span.to_vec();
-            expected[0].1 = false; // 区间首词与区间前的关系由调用方保持
+            expected[0].1 = false; // The relation between the span's first word and what precedes it is kept by the caller
             assert_eq!(atomize_words_like(span, &text), expected, "{start}..{end}");
             assert_eq!(
                 atomize_like(span, &text),
@@ -1274,7 +1143,7 @@ mod tests {
                     .collect::<Vec<_>>()
             );
         }
-        // 只改中间一个词：首尾的词原样保留。
+        // Only one word in the middle changed: the first and last words are kept as they are.
         let span = &whole[..];
         let edited = join_word_texts(
             span.iter()
@@ -1299,13 +1168,13 @@ mod tests {
             .collect();
         assert_eq!(recut[..3], head[..]);
         assert_eq!(recut.last(), span.last());
-        // 已有的一个词按原样当一个原子。
+        // An existing single word is kept as one atom, as it is.
         for (atom, _) in &whole {
             assert_eq!(atomize_word_like(span, atom), vec![atom.clone()]);
         }
     }
 
-    /// 不写空格的文字按词切开、带标记；其余文字与 [`atomize`] 逐个相同。
+    /// Text in unspaced scripts is split into words and marked. Other text is identical to [`atomize`] atom by atom.
     #[test]
     fn atomize_words_splits_unspaced_scripts_and_leaves_the_rest_alone() {
         for text in [
@@ -1344,8 +1213,7 @@ mod tests {
                 );
             }
         }
-        // 夹在泰文里的拉丁 / 数字段不拆；引号不单独成词（原子内的开引号跟
-        // 后一个词，原子边上的引号沿用 atomize 的归属）。
+        // Latin and digit segments embedded in Thai are not split. Quotes do not stand alone as words: an opening quote inside an atom goes with the following word, and quotes at the edge of an atom keep the attachment rule of atomize.
         let words = atomize_words("รหัสF-07ปรากฏข้างคำว่า“ยืนยันแล้ว”แต่");
         let atoms: Vec<&str> = words.iter().map(|(atom, _)| atom.as_str()).collect();
         assert!(atoms.contains(&"F-07"), "{atoms:?}");
@@ -1353,7 +1221,7 @@ mod tests {
         let words = atomize_words("เขาพูด“สวัสดี”ครับ");
         let atoms: Vec<&str> = words.iter().map(|(atom, _)| atom.as_str()).collect();
         assert!(!atoms.contains(&"“") && !atoms.contains(&"”"), "{atoms:?}");
-        // 短语之间的空格不带标记。
+        // Spaces between phrases carry no marker.
         let words = atomize_words("สวัสดีครับ ขอบคุณ");
         let after_space = words
             .iter()
@@ -1372,7 +1240,7 @@ mod tests {
             script_glue_from_text(&["เวลา", "14:30", "น."], "เวลา14:30น."),
             Some(vec![false, true, true])
         );
-        // 中日文逐字、拉丁词：不带标记（拼接规则本来就对）。
+        // Chinese and Japanese character by character, and Latin words: no marker (the concatenation rules already handle them).
         assert_eq!(
             script_glue_from_text(&["大", "家"], "大家"),
             Some(vec![false, false])
@@ -1381,14 +1249,14 @@ mod tests {
             script_glue_from_text(&["don", "'t"], "don't"),
             Some(vec![false, false])
         );
-        // 对不上原文就不给。
+        // Not given if it does not match the original.
         assert_eq!(
             script_glue_from_text(&["ลลิตา", "ยกเลิก"], "ลลิตาไม่ได้ยกเลิก"),
             None
         );
     }
 
-    /// 两种「贴前」词分得开：旧韩文逐音节的词含谚文，泰文一类的不含。
+    /// The two kinds of glued word are told apart: old Hangul syllable-level words contain Hangul, while Thai-like ones do not.
     #[test]
     fn legacy_and_script_glue_are_told_apart() {
         assert!(is_legacy_glued(&("는", true)));
@@ -1406,7 +1274,7 @@ mod tests {
             atomize_words_like(&legacy, "저는"),
             vec![("저".to_owned(), false), ("는".to_owned(), false)]
         );
-        // 没有标记的泰文区间（0.5 之前、或按短语建的文稿）按短语，与以前相同。
+        // Thai spans without markers (from before 0.5, or drafts built by phrase) are split by phrase, as before.
         let phrases = [("ลลิตาไม่ได้", false)];
         assert_eq!(
             atomize_like(&phrases, "ลลิตาไม่ได้ยกเลิก"),
@@ -1414,21 +1282,21 @@ mod tests {
         );
     }
 
-    /// 旧文稿的词缝：0.5 之前不加空格、现在会加的缝才带标记。
+    /// Glue in old drafts: only seams that got no space before 0.5 but get one now carry a marker.
     #[test]
     fn legacy_glue_marks_exactly_the_seams_the_rule_change_would_open() {
         assert!(legacy_glue("저", "는"));
         assert!(legacy_glue("다—", "그"));
         assert!(legacy_glue("…", "네"));
-        // 两种规则答案相同的缝不带标记。
-        assert!(!legacy_glue("다.", "그")); // 都是 1
-        assert!(!legacy_glue("iPhone", "을")); // 都是 1
-        assert!(!legacy_glue("韓", "국")); // 都是 0
-        assert!(!legacy_glue("「", "안")); // 都是 0
+        // Seams where the two rules give the same answer carry no marker.
+        assert!(!legacy_glue("다.", "그")); // Both are 1
+        assert!(!legacy_glue("iPhone", "을")); // Both are 1
+        assert!(!legacy_glue("韓", "국")); // Both are 0
+        assert!(!legacy_glue("「", "안")); // Both are 0
         assert!(!legacy_glue("你", "好"));
         assert!(!legacy_glue("hello", "world"));
         assert!(!legacy_glue("い", "い"));
-        // 带上标记后，逐音节的旧词拼出来与 0.5 之前逐字相同。
+        // With the marker attached, old syllable-level words join exactly as they did character by character before 0.5.
         let words = [
             "저", "는", "내", "일", "iPhone", "을", "샀", "다.", "그", "래", "요",
         ];
@@ -1448,24 +1316,23 @@ mod tests {
 
     #[test]
     fn word_count_matches_atomize_across_scripts() {
-        // 纯英文：按词计。
+        // Pure English: counted by word.
         assert_eq!(
             word_count("alpha bravo charlie delta echo, foxtrot golf hotel."),
             8
         );
-        // 纯中文：逐字计，句末标点依附前一原子。
+        // Pure Chinese: counted character by character, and the sentence-final punctuation attaches to the preceding atom.
         assert_eq!(word_count("你好，世界。"), 4);
-        // 中英混排。
+        // Mixed Chinese and English.
         assert_eq!(word_count("他用 Agent 来做"), 5);
-        // 数字与内聚标点不被拆开。
+        // Digits and cohesive punctuation are not split apart.
         assert_eq!(word_count("3.14 U.S. don't state-of-the-art a.com"), 5);
         assert_eq!(word_count(""), 0);
     }
 
     #[test]
     fn word_count_exposes_cjk_information_density() {
-        // 同样的字符数，CJK 的词数远高于 Latin —— 这正是按字符计页预算对两种
-        // 语言不公平的原因。
+        // With the same character count, CJK has far more words than Latin. This is exactly why budgeting pages by characters is unfair between the two languages.
         let zh = "人工智能正在改变视频剪辑的工作方式。";
         let en = "we ship fast video";
         assert_eq!(zh.chars().count(), en.chars().count());
@@ -1492,29 +1359,25 @@ mod tests {
             join_word_texts(["他", "用", "Agent", "来", "做"]),
             "他用 Agent 来做"
         );
-        // 全角标点自带留白：任一侧命中即闭合（单侧规则）。
+        // Full-width punctuation carries its own whitespace: it closes when either side matches (the single-side rule).
         assert_eq!(sep_len("Agent", "（"), 0);
         assert_eq!(sep_len("）", "Agent"), 0);
         assert_eq!(sep_len("名为「", "PluginDataJSON」"), 0);
-        // 共用排印符只在缝落到自身内容侧时闭合：开定界符看 prev 末尾、
-        // 闭定界符看 next 开头。原报障 `名为“ | PluginDataJSON”` 必须是 0。
+        // A shared typographic mark closes only when the seam falls on its own content side: for an opening delimiter, look at the end of prev; for a closing delimiter, look at the start of next. The original reported case `名为“ | PluginDataJSON”` must give 0.
         assert_eq!(sep_len("名为“", "PluginDataJSON”"), 0);
         assert_eq!(sep_len("PluginDataJSON”", "的"), 0);
         assert_eq!(sep_len("他说", "“你好"), 0);
-        // …而 Latin 语境里同一批符号必须保留空格（英文是真实目标语）。
+        // …but in a Latin context the same marks must keep their spaces (English is a real target language).
         assert_eq!(sep_len("said", "“Hello"), 1);
         assert_eq!(sep_len("students’", "books"), 1);
         assert_eq!(sep_len("so…", "yeah"), 1);
         assert_eq!(sep_len("dash—", "next"), 1);
-        // 已知取舍：闭引号外侧接 Latin 无法靠两字符区分中英语境，按英文取 1
-        //（等同本次改动前的原有行为）。
+        // Known trade-off: a closing quote outside followed by Latin cannot be told apart between Chinese and English contexts using two characters, so it takes 1, as English (the same as before this change).
         assert_eq!(sep_len("”", "Agent"), 1);
-        // 全角字母/数字不是标点，仍按普通词处理。
+        // Full-width letters and digits are not punctuation, and are still treated as ordinary words.
         assert_eq!(sep_len("Ａ", "B"), 1);
         assert_eq!(sep_len("A", "１"), 1);
-        // 共用排印符的开/闭归类按 Unicode 类别核实，不靠记忆：
-        // U+2018 Pi、U+201A Ps、U+201B Pi、U+201C Pi / U+2019 Pf、U+201D Pf /
-        // U+2014 Pd、U+2026 Po（两者皆非定界符，只走双侧规则）。
+        // The opening/closing classification of shared typographic marks is checked against Unicode categories, not from memory: U+2018 Pi, U+201A Ps, U+201B Pi, U+201C Pi / U+2019 Pf, U+201D Pf / U+2014 Pd, U+2026 Po (neither of the last two is a delimiter, so only the two-sided rule applies).
         for ch in ['‘', '‚', '‛', '“'] {
             assert!(
                 is_shared_typographic_mark(ch) && is_opening_delimiter(ch),
@@ -1534,17 +1397,16 @@ mod tests {
                 "{ch}"
             );
         }
-        // 共用排印符不属于全角块，全角标点也不属于共用排印符（两类互斥）。
+        // Shared typographic marks are not in the full-width block, and full-width punctuation is not among the shared typographic marks (the two classes are mutually exclusive).
         assert!(!is_fullwidth_punctuation('“') && !is_fullwidth_punctuation('…'));
         assert!(is_fullwidth_punctuation('「') && !is_shared_typographic_mark('「'));
         assert!(!is_fullwidth_punctuation('Ａ') && !is_fullwidth_punctuation('１'));
-        // 成对定界符跨 Latin 内容时 canonical 必须与原文逐字相等。
+        // For paired delimiters spanning Latin content, canonical must equal the original text character for character.
         assert_eq!(
             join_word_texts(["包", "含", "名为“", "PluginDataJSON”的", "清", "单"]),
             "包含名为“PluginDataJSON”的清单"
         );
-        // 英文引用整段往返必须逐字无损（tier 3 若退化成单侧规则，这里会塌成
-        // `said“Hello world”today`）。
+        // A round trip of a whole English quotation must be lossless, character for character. (If tier 3 degraded into the single-side rule, this would collapse to `said“Hello world”today`.)
         assert_eq!(
             join_word_texts(["said", "“Hello", "world”", "today"]),
             "said “Hello world” today"
@@ -1597,18 +1459,18 @@ mod tests {
 
     #[test]
     fn a_glued_word_joins_without_a_space_whatever_its_neighbours_are() {
-        // 纯文本没有标记，照字符规则来。
+        // Plain text has no markers, so the character rules apply.
         assert_eq!(join_word_texts(["hello", "world"]), "hello world");
         assert_eq!(word_sep("hello", "world"), 1);
-        // 带标记的词贴住前一个词：拼接、分隔宽度、前缀长度三处同一口径。
+        // A glued word sticks to the previous word. The concatenation, the separator width and the prefix length use the same convention in all three places.
         let words = [("hello", false), ("world", true), ("again", false)];
         assert_eq!(join_word_texts(words), "helloworld again");
         assert_eq!(word_sep("hello", &words[1]), 0);
         assert_eq!(word_sep("world", &words[2]), 1);
         assert_eq!(join_prefix_char_lens(words), vec![5, 10, 16]);
-        // 首词的标记没有前一个词可贴。
+        // The first word's marker has no previous word to attach to.
         assert_eq!(join_word_texts([("hello", true)]), "hello");
-        // 没有标记时与纯文本逐字相同。
+        // Without a marker, it is identical character for character to plain text.
         let plain = ["他", "用", "Agent", "来", "做"];
         assert_eq!(
             join_word_texts(plain.map(|text| (text, false))),
@@ -1620,7 +1482,7 @@ mod tests {
     fn weights_match_voiceink_formulas() {
         assert_eq!(w_weight("a"), 3.4); // max(2,1)+1.4
         assert_eq!(w_weight("hello"), 6.4);
-        assert_eq!(w_weight("don't"), 6.4); // 5 semantic chars (含 ')
+        assert_eq!(w_weight("don't"), 6.4); // 5 semantic chars (including ')
         assert_eq!(correction_timing_weight("…"), 1.0);
         assert_eq!(correction_timing_weight("came"), 4.0);
     }

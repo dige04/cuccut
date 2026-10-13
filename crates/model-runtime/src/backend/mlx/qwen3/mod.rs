@@ -1,5 +1,5 @@
-//! Qwen3-ASR（0.6B / 1.7B）的 MLX 实现。基础层（`Dense`、`LayerNorm`、`QuantizedDense`、`gelu_same_dtype`）
-//! 照 v2 对外导出，供 Whisper、MOSS、本地语音合成等批次复用。
+//! MLX implementation of Qwen3-ASR (0.6B / 1.7B). The base layers (`Dense`, `LayerNorm`, `QuantizedDense`, `gelu_same_dtype`)
+//! are exported as in v2, for reuse by batches such as Whisper, MOSS and local speech synthesis.
 
 mod audio_encoder;
 mod layers;

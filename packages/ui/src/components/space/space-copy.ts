@@ -15,31 +15,31 @@ import { pl } from './space-copy.pl.ts';
 import { tr } from './space-copy.tr.ts';
 import { vi } from './space-copy.vi.ts';
 
-/** 英文的「n 个某物」：只分单复数。 */
+/** English “n things” phrasing: only distinguishes singular from plural. */
 const count = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
 
 /**
- * Space 页的文案（产品设计 §4；原型 page-space.jsx、space-list.jsx、space-viewer.jsx）。英文是键与类型的来源，
- * 译文在 `space-copy.<语言>.ts`。做不了的动作写一句真实原因，原因本身在 model/space-actions.ts。
+ * Copy for the Space page (product design §4; prototypes page-space.jsx, space-list.jsx, space-viewer.jsx). English is the source of keys and types;
+ * translations are in `space-copy.<locale>.ts`. For actions that cannot be done, write one real reason; the reason itself lives in model/space-actions.ts.
  */
 const en = {
   searchPlaceholder: "Search names, files, or what's said in videos",
   searchLabel: 'Search the Library',
 
-  // 列表与菜单
+  // Lists and menus
   openVideo: 'Open video',
   viewInfo: 'View info',
-  /** 收了文件的视频（产品设计 §4.3）：菜单项、卡片上的「N 个文件」、列表名称下的一行、查看框里的文件列表与回到视频。 */
+  /** Videos with files attached (product design §4.3): menu item, the “N 个文件” (N files) on cards, a line under the list name, the file list in the viewer, and back to video. */
   viewInfoFiles: 'View info and files',
   filesButton: (n: number) => count(n, 'file', 'files'),
-  /** `summary` 是按类型的明细（「Export 2 · Subtitles 1」）。 */
+  /** `summary` is the per-type breakdown (“Export 2 · Subtitles 1”). */
   filesButtonLabel: (n: number, summary: string) => `${count(n, 'file', 'files')}: ${summary}`,
   filesLine: (n: number, summary: string) => `${count(n, 'file', 'files')} · ${summary}`,
   filesTitle: 'Files',
   filesListLabel: "This video's files",
   viewVideo: 'View video',
   factFolder: 'Folder',
-  /** 视频条目的转录动作（产品设计 §4.4）：没转录过、转录过、上次失败。 */
+  /** Transcription action for video items (product design §4.4): not yet transcribed, transcribed, last attempt failed. */
   transcribe: { first: 'Transcribe…', redo: 'Re-transcribe…', retry: 'Retry transcription…' },
   info: 'Video details…',
   view: 'View',
@@ -60,7 +60,7 @@ const en = {
   noValue: '—',
   favorited: 'Favorited',
 
-  // 工具条
+  // Toolbar
   statusPicker: 'Status',
   refreshMenu: 'Refresh',
   rescan: 'Rescan project folders',
@@ -73,7 +73,7 @@ const en = {
       ? `Index rebuilt · ${count(entries, 'item', 'items')} · content index for ${count(pending, 'video', 'videos')} still updating in the background`
       : `Index rebuilt · ${count(entries, 'item', 'items')}`,
 
-  // 新建
+  // New
   newLabel: 'New',
   newBlank: 'New blank video',
   newBlankHint: 'A 16:9 blank video that opens right away, with no transcription or queue',
@@ -96,7 +96,7 @@ const en = {
   createdFromFile: (name: string) => `Created video "${name}" and placed the asset`,
   createdEmpty: (reason: string) => `The video was created, but the asset wasn't placed: ${reason}`,
 
-  // 导入框（原型 SpaceImport）
+  // Import dialog (prototype SpaceImport)
   importTitle: 'Import assets',
   importProject: 'Import to project',
   importHint:
@@ -105,7 +105,7 @@ const en = {
   importNoProject: 'No projects yet: open a project folder in Home first.',
   importing: 'Importing',
 
-  // 查看框
+  // Viewer dialog
   factSource: 'Source',
   factFile: 'File',
   factMeasure: 'Duration or dimensions',
@@ -123,7 +123,7 @@ const en = {
   version: (frozen: string, current: string | null) =>
     current && current !== frozen ? `Video version ${frozen}; the video is now ${current}` : `Video version ${frozen}`,
   missingTitle: "Can't find this file",
-  // 卡片角标与列表缩略图的读屏说明（原型 sp-prev__flag）
+  // Screen-reader descriptions for card badges and list thumbnails (prototype sp-prev__flag)
   missingFile: 'File not found',
   missingBody: 'The item is still here. Its status recovers once the file is back.',
   failedTitle: 'Generation failed',
@@ -133,7 +133,7 @@ const en = {
   reexport: 'Export again from the source video',
   noPreviewVideo: 'Videos open in the editor.',
 
-  // 能力（origin.capability）
+  // Capabilities (origin.capability)
   capability: {
     synthesizeSpeech: 'Voice-over',
     generateImage: 'Generate image',
@@ -143,7 +143,7 @@ const en = {
     'videos-derive': 'Cut into shorts',
   } as Record<string, string>,
 
-  // 动作的结果
+  // Action results
   trashed: (name: string) => `Moved to Trash · ${name}`,
   undo: 'Undo',
   restored: (name: string) => `Restored · ${name}`,
@@ -155,17 +155,17 @@ const en = {
       ? `Started a new session with "${name}" attached: write what to do, then send`
       : `Back in "${title}" with "${name}" attached: write what to do, then send`,
   sourceGone: "The source video isn't in any project or session folder right now, so it can't be opened",
-  /** `what` 是动作的名字（如 `trash`、`rebuild`），不分大小写都能读。 */
+  /** `what` is the action name (e.g. `trash`, `rebuild`); it is readable regardless of case. */
   failed: (what: string, reason: string) => `${what} failed: ${reason}`,
 
-  // 删除视频（产品设计 §4.9）
+  // Delete video (product design §4.9)
   trashVideoTitle: 'Delete this video?',
   trashVideoBody: "The whole video folder moves to the project's Trash and can be restored. Linked original assets stay where they are.",
   trashVideoRelated: (n: number) =>
     `${count(n, 'item', 'items')} exported or generated from it will stay in the Library and won't be deleted with the video:`,
   trashVideoConfirm: 'Delete video',
 
-  // 彻底删除
+  // Delete permanently
   purgeTitle: 'Delete permanently?',
   purgeBody: (name: string) =>
     `"${name}" will be deleted from disk and can't be restored. If a video or a running task still uses it, nothing is deleted and you'll see what's using it.`,
@@ -176,14 +176,14 @@ const en = {
   blockedBody: (name: string) => `"${name}" is still in use, so nothing was deleted:`,
   gotIt: 'Got it',
 
-  // 改名
+  // Rename
   renameTitle: 'Rename',
   renameLabel: 'Display name',
   renameHint: (fileName: string) =>
     `Only changes the name shown in the Library; the file itself stays the same. Leave it empty to go back to "${fileName}".`,
   save: 'Save',
 
-  // 来源视频改过（产品设计 §4.6）
+  // Source video has changed (product design §4.6)
   changedDialogTitle: 'The source video has changed',
   changedDialogBody: (frozen: string | null, current: string | null) =>
     `This result matches video version ${frozen ?? '(unknown)'}; the video is now ${current ?? '(unknown)'}. The current working copy will open.`,
@@ -192,7 +192,7 @@ const en = {
   changedFromFrozenReason:
     "Continuing from the version this export was made from isn't possible yet (Runtime has no command to go back to a version). You can open the current working copy and view that version in History.",
 
-  // 内容命中（架构设计 §5.11）
+  // Content hits (architecture design §5.11)
   hitsTitle: 'Said in videos',
   hitsCount: (n: number) => count(n, 'match', 'matches'),
   hitsSearching: 'Searching the content index',
@@ -201,7 +201,7 @@ const en = {
   hitUnopenable: "This video isn't in any project or session folder right now, or it's in Trash, so it can't be opened",
   hitSourceClock: 'This is in an asset, not on the timeline: open the video and look for it',
   hitStale: 'The video changed after it was indexed, so the position may be off',
-  // 内容命中的过滤与分组（设计稿 page-projects.jsx HitGroup；种类、说话人是合同 space.search 的筛选）
+  // Filtering and grouping of content hits (design draft page-projects.jsx HitGroup; kind and speaker are filters of the contract's space.search)
   hitsGrouped: (n: number, videos: number) => `${count(n, 'match', 'matches')} · ${count(videos, 'video', 'videos')}`,
   hitKind: 'Document type',
   hitKindAll: 'All types',
@@ -211,7 +211,7 @@ const en = {
   hitsNoneFiltered: 'Nothing matches this type or speaker. Try another one.',
   hitsMore: (n: number) => `Show ${n} more`,
 
-  // 页面里的其余文字
+  // Other text on the page
   cancel: 'Cancel',
   openForEdit: 'Open for editing',
   newVideo: 'New video',
@@ -225,7 +225,7 @@ const en = {
   emptyTrash: 'Trash is empty',
   emptyFavorite: 'No favorites yet',
   emptyAll: 'No items yet',
-  /** 某个类型分类（`label` 是分类名）下还没有条目。 */
+  /** A type category (`label` is the category name) has no entries yet. */
   emptyCategory: (label: string) => `Nothing in ${label} yet`,
   emptyFilteredBody: 'Try other keywords, or clear the project and status filters.',
   emptyTrashBody: 'Items you move to Trash show up here. You can restore them or delete them permanently.',
@@ -241,9 +241,9 @@ const en = {
   issueUnreadable: (detail: string) => `Can't read: ${detail}`,
   preparing: 'Getting the Library ready…',
   preparingBody: 'The first time, project folders need to be scanned. This takes a moment.',
-  /** 新建菜单项的说明：已经筛了项目时写明建在哪个项目里。 */
+  /** Description of the new-menu item: when filtered to a project, state which project it will be created in. */
   createIn: (project: string, hint: string) => `In "${project}" · ${hint}`,
-  /** 「新建空视频」等子菜单的读屏名：`label` 是菜单项的名字。 */
+  /** Screen-reader name for submenus such as “新建空视频” (New blank video): `label` is the menu item's name. */
   whichProjectFor: (label: string) => `${label}: which project`,
   entryActions: (name: string) => `Actions for "${name}"`,
   entriesLabel: 'Library items',
@@ -252,30 +252,30 @@ const en = {
   columnSource: 'Source',
   columnActivity: 'Last activity',
   columnMenu: 'Actions',
-  /** 删除视频时只列前几个相关条目，其余合成一行：`n` 是总数。 */
+  /** When deleting a video, list only the first few related items and fold the rest into one line: `n` is the total. */
   relatedMore: (n: number) => `…${n} in total`,
-  /** 导入结果的一句话（`text` 来自 model/space-actions.ts `importSummary`）后面带上项目名。 */
+  /** One-sentence import result (`text` comes from `importSummary` in model/space-actions.ts), followed by the project name. */
   importSummaryIn: (text: string, project: string) => `${text} (${project})`,
-  /** 查看框「最近活动」：相对时间后面括上具体时间。 */
+  /** Viewer “最近活动” (recent activity): the relative time is followed by the exact time in brackets. */
   activityAt: (ago: string, at: string) => `${ago} (${at})`,
-  /** 把条目状态的原因放在说明前面：`reason` 是一句话，不带句末标点。 */
+  /** Put the reason for an item's status before the explanation: `reason` is one sentence with no closing punctuation. */
   withReason: (reason: string, body: string) => `${reason}. ${body}`,
-  /** 父视频卡片 / 行上的派生计数（剪成短视频）。 */
+  /** Derived count on the parent video card / row (cut into shorts). */
   shortsCount: (n: number) => (n === 1 ? '1 short' : `${n} shorts`),
-  /** 卡片 / 行上「N 支短视频」的读屏名：按来源筛出这部视频切出的短视频。 */
+  /** Screen-reader name for “N 支短视频” (N shorts) on cards and rows: filters to the shorts cut from this video's source. */
   shortsView: 'See shorts cut from this',
-  /** 父视频查看框里「切出的短视频」一节（产品设计 §4.5）：标题、右上角筛成全部的动作、只露出前几支时的提示。 */
+  /** The “切出的短视频” (shorts cut from it) section in the parent video's viewer (product design §4.5): the title, the action in the top-right that switches the filter to “全部” (All), and the hint shown when only the first few are displayed. */
   shortsTitle: 'Shorts cut from this video',
   shortsInList: 'Show in list',
   shortsMore: (n: number) => (n === 1 ? '1 more short. Show them all in the list.' : `${n} more shorts. Show them all in the list.`),
-  /** 一支短视频在父视频上的区间（`from`、`to` 是时间码）。 */
+  /** The range one short occupies on its parent video (`from` and `to` are timecodes). */
   shortsSpan: (from: string, to: string) => `Original ${from}–${to}`,
-  /** 短视频的查看框：换成父视频的查看框。 */
+  /** Viewer for a short: swapped for the parent video's viewer. */
   viewSourceVideo: 'View source video',
-  /** 按来源筛选时顶上的筛选条：`name` 是父视频名。 */
+  /** Filter bar shown at the top when filtering by source: `name` is the parent video's name. */
   shortsFilter: (name: string) => `Shorts cut from “${name}”`,
   shortsFilterClear: 'Clear filter',
-  /** 删除父视频时补一句：派生视频不会跟着删。 */
+  /** When deleting a parent video, add a note: derived videos are not deleted with it. */
   trashVideoShorts: (n: number) => (n === 1 ? '1 video was derived from it; it stays on its own.' : `${n} videos were derived from it; each stays on its own.`),
 };
 

@@ -15,13 +15,13 @@ import { tr } from './model-source-copy.tr.ts';
 import { vi } from './model-source-copy.vi.ts';
 
 /**
- * 本地模型下载来源的文案（英文是键与类型的来源，译文在 `model-source-copy.<语言>.ts`）。Hugging Face、ModelScope 与网址是名字，
- * 不在文案里、不翻译。
+ * Copy for local-model download sources (the English is the source of the keys and types; translations are in `model-source-copy.<locale>.ts`). Hugging Face, ModelScope, and URLs are names:
+ * they are not part of the copy and are not translated.
  */
 const en = {
-  /** 本地模型页的行名；通用页用自己的「模型下载来源」。 */
+  /** Row name on the local models page; the general page uses its own “模型下载来源” (model download source). */
   label: 'Download source',
-  /** 本地模型页底部的折叠区。 */
+  /** Collapsible section at the bottom of the local models page. */
   fold: 'Download and storage',
   custom: 'Custom',
   isDefault: 'Default',

@@ -1,13 +1,13 @@
-//! 自动语言识别：优先用模型自己报出的语言（Qwen3-ASR 的语言名、Whisper 的语言码）；没有时用 whatlang 从已识别的
-//! 文本推断。
+//! Automatic language identification: prefers the language the model itself reports (Qwen3-ASR's language name, Whisper's language code); when there is none, uses whatlang to infer it from the recognized
+//! text.
 
 use super::language::{self, QWEN_LANGUAGES, canonical_code, code_from_qwen_name};
 use crate::bundle::FAMILY_WHISPER_MLX;
 
-/// 文本推断至少要这么多字符才可信。
+/// Text-based inference needs at least this many characters to be trusted.
 pub const MIN_CHARS: usize = 40;
 
-/// 模型报出的语言名 → 规范码；认不出的语言名再按语言标签试一次。
+/// Model-reported language name → canonical code; if the name is not recognized, tries again by language tag.
 pub fn code_from_name(name: Option<&str>) -> Option<String> {
     let name = name?.trim();
     if name.is_empty() || name.eq_ignore_ascii_case("none") {
@@ -22,12 +22,12 @@ pub fn code_from_name(name: Option<&str>) -> Option<String> {
         .or_else(|| whisper_code(name))
 }
 
-/// Whisper 报的是语言码；Qwen3-ASR 不认、Whisper 认的（`sw`、`jw`）按 Whisper 的表收下。
+/// Whisper reports a language code; those that Qwen3-ASR does not recognize but Whisper does (`sw`, `jw`) are accepted using Whisper's table.
 fn whisper_code(tag: &str) -> Option<String> {
     language::supports(FAMILY_WHISPER_MLX, tag).then(|| canonical_code(tag)).flatten()
 }
 
-/// 用 whatlang 从文本推断语言；文本太短或推断出的语言 Qwen3-ASR 不支持时 `None`。
+/// Infers the language from text with whatlang; `None` if the text is too short or the inferred language is not supported by Qwen3-ASR.
 pub fn detect(text: &str) -> Option<String> {
     if text.chars().count() < MIN_CHARS {
         return None;
@@ -46,8 +46,8 @@ pub fn detect(text: &str) -> Option<String> {
     Some(code.to_owned())
 }
 
-/// 整段转写完了还不知道语言时的最后猜测（移植自 v2）：前 4000 个字母里假名占一成以上是日文、谚文过半是韩文、汉字
-/// 过半是中文；否则交给 whatlang，不设最短字数与可信度门槛。MOSS 精修词时间时给对齐器选语言用。
+/// Last-resort guess when the language is still unknown after the whole transcription (ported from v2): among the first 4000 letters, if kana make up more than 10% it is Japanese; if Hangul make up more than half it is Korean; if Han characters make up more than half it is Chinese;
+/// otherwise defer to whatlang, with no minimum length and no confidence threshold. Used to choose the aligner's language when MOSS refines word timings.
 pub fn guess_final(text: &str) -> Option<String> {
     let sample: String = text.chars().take(4_000).collect();
     let (mut han, mut kana, mut hangul, mut letters) = (0usize, 0usize, 0usize, 0usize);
@@ -86,7 +86,7 @@ fn supported(tag: &str) -> Option<String> {
     QWEN_LANGUAGES.iter().any(|(known, _)| *known == code).then_some(code)
 }
 
-/// whatlang 给 ISO 639-3；Qwen 支持的语言里只有这些需要换成 639-1。
+/// whatlang gives ISO 639-3 codes; only these among the languages Qwen supports need to be converted to 639-1.
 fn iso639_1(code: &str) -> String {
     const TABLE: &[(&str, &str)] = &[
         ("ara", "ar"),
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(code_from_name(Some("Cantonese")).as_deref(), Some("yue"));
         assert_eq!(code_from_name(Some("mandarin")).as_deref(), Some("zh"));
         assert_eq!(code_from_name(Some("de")).as_deref(), Some("de"));
-        // Whisper 报语言码：Qwen3-ASR 不认的照 Whisper 的表收下。
+        // Whisper reports language codes: those that Qwen3-ASR does not recognize are accepted per Whisper's table.
         assert_eq!(code_from_name(Some("sw")).as_deref(), Some("sw"));
         assert_eq!(code_from_name(Some("jw")).as_deref(), Some("jw"));
         assert_eq!(code_from_name(Some("None")), None);
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(guess_final("今天天气很好").as_deref(), Some("zh"));
         assert_eq!(guess_final("今日はいい天気ですね").as_deref(), Some("ja"));
         assert_eq!(guess_final("오늘 날씨가 좋네요").as_deref(), Some("ko"));
-        // 没有最短字数门槛：短句也给出猜测。
+        // No minimum length threshold: short sentences also get a guess.
         assert_eq!(guess_final("testing one two three").as_deref(), Some("en"));
         assert_eq!(guess_final("   "), None);
     }

@@ -9,13 +9,13 @@ import { useExportPlaces } from '../../state/export-store.ts';
 import { EXPORT_COPY } from './export-copy.ts';
 
 /**
- * 导出弹层共用的小件（设计稿 ui.css 的 `.cpsec` `.xnote` `.xquick` `.xlanes` `.xlane` `.xsum` `.xacts`），
- * 只用 S2 token。
+ * Small shared parts of the export panel (design mockup ui.css `.cpsec` `.xnote` `.xquick` `.xlanes` `.xlane` `.xsum` `.xacts`),
+ * using only S2 tokens.
  */
 
 const sec = style({ margin: 0, marginTop: { default: 16, isFirst: 0 }, marginBottom: 8, font: 'ui-xs', fontWeight: 'bold', color: 'gray-600' });
 
-/** 一节的小标题（`.cpsec`）。 */
+/** Section subtitle (`.cpsec`). */
 export function Sec({ children, first }: { children: ReactNode; first?: boolean }) {
   return <h3 className={sec({ isFirst: !!first })}>{children}</h3>;
 }
@@ -24,12 +24,12 @@ const note = style({ marginTop: 8, font: 'ui-xs', color: { default: 'gray-600', 
 const noteRow = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8, font: 'ui-xs', color: 'gray-600', minWidth: 0 });
 const noteLinks = style({ display: 'flex', gap: 8, flexShrink: 0 });
 
-/** 小字说明（`.xnote`）。 */
+/** Small note text (`.xnote`). */
 export function Note({ children, warn }: { children: ReactNode; warn?: boolean }) {
   return <div className={note({ isWarn: !!warn })}>{children}</div>;
 }
 
-/** 左边一句、右边几个链接（`.xnote--row`）。 */
+/** One sentence on the left, several links on the right (`.xnote--row`). */
 export function NoteRow({ children, links }: { children: ReactNode; links: ReactNode }) {
   return (
     <div className={noteRow}>
@@ -39,7 +39,7 @@ export function NoteRow({ children, links }: { children: ReactNode; links: React
   );
 }
 
-/** 小字里的动作（`.xlink`）。 */
+/** An action inside small text (`.xlink`). */
 export function TextLink({ children, onPress }: { children: ReactNode; onPress: () => void }) {
   return (
     <Link isStandalone isQuiet onPress={onPress}>
@@ -52,12 +52,12 @@ const quick = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', c
 const quickField = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
 const quickLabel = style({ flexShrink: 0, font: 'ui-sm', color: 'gray-700' });
 
-/** 一排快捷设置（`.xquick`）。 */
+/** A row of quick settings (`.xquick`). */
 export function Quick({ children }: { children: ReactNode }) {
   return <div className={quick}>{children}</div>;
 }
 
-/** 快捷设置的一项：左边名字，右边控件（`.xquick__f`）。 */
+/** One quick setting: name on the left, control on the right (`.xquick__f`). */
 export function QuickField({ label, children, id }: { label: string; children: ReactNode; id?: string }) {
   return (
     <div className={quickField}>
@@ -92,7 +92,7 @@ const laneName = style({ font: 'ui-sm', fontWeight: 'medium', color: { default: 
 const laneSub = style({ font: 'ui-xs', color: { default: 'gray-600', isOff: 'gray-500' }, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
 const laneEnd = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, font: 'code-xs', color: 'gray-600' });
 
-/** 一张开关清单（`.xlanes`）。 */
+/** A list of toggles (`.xlanes`). */
 export function Lanes({ children, label }: { children: ReactNode; label: string }) {
   return (
     <div className={lanes} role="group" aria-label={label}>
@@ -101,7 +101,7 @@ export function Lanes({ children, label }: { children: ReactNode; label: string 
   );
 }
 
-/** 清单的一行（`.xlane`）：图标、名字与说明、右边的控件；关着的整行变淡。 */
+/** One row of the list (`.xlane`): icon, name and description, control on the right; a row that is off is dimmed as a whole. */
 export function Lane({ icon, name, sub, off, end, start }: { icon?: ReactNode; name: ReactNode; sub?: ReactNode; off?: boolean; end?: ReactNode; start?: ReactNode }) {
   return (
     <div className={lane}>
@@ -122,7 +122,7 @@ const sumLabel = style({ flexShrink: 0, width: 40, color: 'gray-600' });
 const sumValue = style({ flexGrow: 1, minWidth: 0, fontWeight: 'medium', color: 'gray-900', overflowWrap: 'anywhere' });
 const sumMono = style({ flexGrow: 1, minWidth: 0, font: 'code-sm', color: 'gray-900', overflowWrap: 'anywhere' });
 
-/** 摘要（`.xsum`）。 */
+/** Summary (`.xsum`). */
 export function Summary({ children }: { children: ReactNode }) {
   return <div className={summary}>{children}</div>;
 }
@@ -137,7 +137,7 @@ export function SumRow({ label, children, mono, end }: { label: string; children
   );
 }
 
-/** 文件名几行：多于 4 个时只列前 4 个（设计稿 export-audio.jsx）。 */
+/** Filename lines: when there are more than 4, only the first 4 are listed (design mockup export-audio.jsx). */
 export function FileRows({ names }: { names: readonly string[] }) {
   return (
     <>
@@ -152,8 +152,8 @@ export function FileRows({ names }: { names: readonly string[] }) {
 }
 
 /**
- * 位置：没挑过时由 Runtime 决定（项目下的 exports/）；成片页给了 `sourceDir`（桌面端、素材链在视频目录外时才有），导到原视频所在的文件夹。
- * 可以挑一个目录，挑过的按视频记着（`useExportPlaces`），「用默认位置」回到上面的缺省。
+ * Location: when not chosen, the Runtime decides (exports/ under the project). The page for the finished file gives `sourceDir` (desktop only, and only when the source chain is outside the video's folder), so the export goes to the folder of the original video.
+ * A folder can be picked, and the pick is remembered per video (`useExportPlaces`); "Use default location" returns to the default above.
  */
 export function PlaceRow({ videoId, sourceDir = null }: { videoId: Id; sourceDir?: string | null }) {
   const dir = useExportPlaces((s) => s.dirs[videoId] ?? null);
@@ -180,7 +180,7 @@ export function PlaceRow({ videoId, sourceDir = null }: { videoId: Id; sourceDir
   );
 }
 
-/** 挑一个目录（宿主的目录对话框）；取消时 null。 */
+/** Pick a folder (the host's folder dialog); null if cancelled. */
 export function usePickDir(): () => Promise<string | null> {
   const runtime = useRuntime();
   return () =>
@@ -193,7 +193,7 @@ export function usePickDir(): () => Promise<string | null> {
 const acts = style({ display: 'flex', justifyContent: 'end', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 16 });
 const actsBetween = style({ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 16 });
 
-/** 底部按钮（`.xacts`）。 */
+/** Bottom buttons (`.xacts`). */
 export function Actions({ children, between }: { children: ReactNode; between?: boolean }) {
   return <div className={between ? actsBetween : acts}>{children}</div>;
 }
@@ -203,7 +203,7 @@ const problemList = style({ margin: 0, marginTop: 4, paddingStart: 16, font: 'ui
 const problemHint = style({ marginTop: 4, font: 'ui-sm' });
 const problemActs = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 
-/** 被拒或失败：标题、Runtime 原话、逐项清单、补救说明，以及界面能直接做的那一步。 */
+/** Rejected or failed: title, the Runtime's own words, an itemized list, a remedy note, and the step the UI can do directly. */
 export function ProblemAlert({ problem, actions }: { problem: ExportProblem; actions?: ReactNode }) {
   return (
     <div className={problemWrap}>

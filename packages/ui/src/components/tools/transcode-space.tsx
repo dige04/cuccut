@@ -7,8 +7,7 @@ import { SpacePicker } from './tool-video-picker.tsx';
 import { TRANSCODE_COPY } from './tools-copy.ts';
 
 /*
- * 压缩、合并、提取音频的 Space 输入（架构设计 §7.9「Space 条目作输入」）：列表里的条目记成 `space:<entryId>`，
- * 这里给它们起名字，并画「从 Space 添加…」的选择器——选一条就加到列表末尾。
+ * Space inputs for compress, merge and extract audio (architecture design §7.9, “Space 条目作输入” (Space entries as inputs)): list items are recorded as `space:<entryId>`; here they get names, and the “从 Space 添加…” (Add from Space…) picker is drawn: choosing one appends it to the end of the list.
  */
 
 export interface InputName {
@@ -16,7 +15,7 @@ export interface InputName {
   sub: string;
 }
 
-/** 列表项的名字与第二行：本机文件是文件名与完整路径，Space 条目是条目名与「Space · 种类」。 */
+/** Name and second line of a list item: for local files, the file name and full path; for Space entries, the entry name and “Space · 种类” (Space · kind). */
 export function useInputName(): (input: string) => InputName {
   const entries = useSpace((s) => s.entries);
   return (input) => {
@@ -27,7 +26,7 @@ export function useInputName(): (input: string) => InputName {
   };
 }
 
-/** 从 Space 选条目加进列表：已经加过的再选不重复加。 */
+/** Adds an entry picked from Space to the list: entries already added are not added again. */
 export function SpaceInputs({
   tool,
   inputs,

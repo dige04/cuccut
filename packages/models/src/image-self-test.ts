@@ -4,13 +4,12 @@ import { refOf, type GenerationParameters, type Localized, type MessageRef } fro
 import { ModelsImageSelfTest as M } from '@cuccut/protocol/messages/models/image-self-test.ts';
 
 /**
- * 本地文生图模型包的自检（架构设计 §6.3，Model Worker 协议规范 §4.3）：固定的提示词、尺寸、seed，少量步数生成一张小图，
- * 检查输出是能解码的 PNG、尺寸对、不是一整片同一种颜色。不判断画得好不好，只证明整条生图链路能出图。
+ * Self-test for the local text-to-image model pack (architecture design §6.3, Model Worker protocol spec §4.3): a fixed prompt, size and seed, a small image generated with few steps, and a check that the output is a decodable PNG, the size is right, and it is not a single solid color. It does not judge whether the image is good; it only proves that the whole image-generation chain can produce an image.
  */
 
 type ImageParameters = Extract<GenerationParameters, { capability: 'generateImage' }>;
 
-/** 自检的固定输入：小尺寸、少步数，几十秒内出结果；seed 固定，同一台机器上每次是同一张图。 */
+/** Fixed input for the self-test: small size, few steps, results within tens of seconds. The seed is fixed, so on the same machine it is the same image every time. */
 export const IMAGE_SELF_TEST = {
   prompt: 'A red apple on a wooden table',
   width: 256,
@@ -19,7 +18,7 @@ export const IMAGE_SELF_TEST = {
   steps: 4,
 } as const;
 
-/** 自检的冻结参数（与正式提交同一形状；步数另由 `IMAGE_SELF_TEST.steps` 指定）。 */
+/** Frozen parameters of the self-test (same shape as a real submission; the step count is set separately by `IMAGE_SELF_TEST.steps`). */
 export function imageSelfTestParameters(): ImageParameters {
   const { prompt, width, height, seed } = IMAGE_SELF_TEST;
   return { capability: 'generateImage', prompt, size: `${width}x${height}`, aspectRatio: null, count: 1, format: 'png', seed };
@@ -28,16 +27,16 @@ export function imageSelfTestParameters(): ImageParameters {
 export interface PngFacts {
   width: number;
   height: number;
-  /** 不同像素值（按 RGBA 计）的个数，最多数到 `DISTINCT_CAP`。 */
+  /** Number of distinct pixel values (counted as RGBA), counting up to `DISTINCT_CAP`. */
   distinct: number;
 }
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-/** 每像素的通道数，按 PNG 的颜色类型（只认 8 位）。 */
+/** Channels per pixel, according to the PNG color type (only 8-bit is supported). */
 const CHANNELS: Readonly<Record<number, number>> = { 0: 1, 2: 3, 4: 2, 6: 4 };
 const DISTINCT_CAP = 1024;
 
-/** 解析 PNG（8 位灰度、灰度加透明、RGB、RGBA，不隔行）：解出像素数不同的颜色。不合格式时给出原因。 */
+/** Parse a PNG (8-bit grayscale, grayscale with alpha, RGB, RGBA, non-interlaced): returns the number of pixels for each distinct color. Gives a reason when the format does not match. */
 export function inspectPng(bytes: Buffer): { ok: true; png: PngFacts } | { ok: false; problem: string } {
   const parsed = parsePng(bytes);
   return parsed.ok ? parsed : { ok: false, problem: parsed.problem.text };
@@ -92,7 +91,7 @@ function parsePng(bytes: Buffer): { ok: true; png: PngFacts } | { ok: false; pro
   return { ok: true, png: { width, height, distinct: seen.size } };
 }
 
-/** 去掉每行的过滤（PNG 规范的 None / Sub / Up / Average / Paeth）。 */
+/** Remove per-row filtering (PNG spec's None / Sub / Up / Average / Paeth). */
 function unfilter(raw: Buffer, width: number, height: number, bpp: number): Uint8Array | null {
   const stride = width * bpp;
   const out = new Uint8Array(height * stride);
@@ -124,8 +123,7 @@ function unfilter(raw: Buffer, width: number, height: number, bpp: number): Uint
 }
 
 /**
- * 自检的判定：能解码、尺寸是请求的、颜色不止一两种。不通过时给出原因：`problem` 是当前语言的文本，`problemRef` 是它的
- * 消息引用（记进检查结果的 `detailRef`、任务错误的 `messageRef`）。
+ * Self-test verdict: it decodes, the size is the one requested, and there are more than one or two colors. When it fails, it gives a reason: `problem` is the text in the current language, and `problemRef` is its message reference (recorded in the check result's `detailRef` and the task error's `messageRef`).
  */
 export function imageSelfTestVerdict(
   bytes: Buffer,

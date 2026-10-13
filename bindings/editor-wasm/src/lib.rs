@@ -1,25 +1,24 @@
-//! 界面与 Node 共用的纯语义 WASM 入口（架构设计 §1.4、§13.1、§13.6）：界面要的领域规则在这里调 Rust 的那一份，
-//! 不在 TS 里另写。
+//! The pure-semantics WASM entry shared by the UI and Node (architecture design §1.4, §13.1, §13.6): the domain rules the UI needs are called here from the one Rust copy,
+//! not re-written in TS.
 //!
-//! - 转写正文的句子与原文指纹（字幕与翻译核心的规则，经 `speech-doc-bridge`）：翻译流程冻结原文、译文核对、配音判过期、
-//!   内容索引与界面的逐句对照都调这一个；
-//! - 舞台的框（[`stage`]）：`place` 与画布像素框互换、种类的缺省落位，与帧计划画层同一个实现（`render_graph::item_box`）；
-//! - 引擎的取值区间与缺省值（[`ranges`]）：效果、闪避、音量、关键帧、动画与彩纸，界面的数字框按它们封顶；
-//! - 元素的样式目录（[`presets`]）：声波、进度条与彩纸的款式与默认参数，读渲染用的同一份内置配方。
+//! - Transcript sentences and their source fingerprints (the sentence and translation core rules, via `speech-doc-bridge`): the translation flow freezes the source, checks translations, dubbing judges staleness, and the content index and the UI's per-sentence alignment all call this one;
+//! - Stage boxes ([`stage`]): `place` converting between the stage box and canvas pixel boxes, and the default placement by kind, using the same implementation as the frame plan's layers (`render_graph::item_box`);
+//! - Engine value ranges and defaults ([`ranges`]): effects, ducking, volume, keyframes, animation and confetti; the UI's number inputs are capped by these;
+//! - The element style catalogue ([`presets`]): styles and default parameters for the waveform, progress bar and confetti, read from the same built-in recipes used for rendering.
 //!
-//! 与 `preview-wasm` 同一套约定，不用 wasm-bindgen，JSON 经线性内存进出：
+//! The same conventions as `preview-wasm`: no wasm-bindgen; JSON goes in and out through linear memory:
 //!
-//! - `bc_alloc(len)` / `bc_free(ptr, len)`：宿主写入输入用的缓冲；
-//! - `bc_<名字>(ptr, len)`：输入是 JSON，返回 0 表示成功，输出区（`bc_output_ptr` / `bc_output_len`）是结果 JSON；
-//!   否则输出区是 `{code, message}`；
-//! - `bc_speech_sentences`：输入是 `cuccut.speech/1` 正文，结果是
-//!   `{ derivation, timescale, editViewHash, contentFingerprint, sentences: [{ id, wordIds, text, fingerprint, speaker?, start, end }] }`，
-//!   `start` / `end` 是正文 `timescale` 下的整数刻度（边界上不出现浮点秒）；
-//! - `bc_stage_box` / `bc_stage_place` / `bc_place_default`：见 [`stage`] 里的同名函数；
-//! - `bc_engine_ranges`：见 [`ranges::engine_ranges`]；
-//! - `bc_element_presets`：见 [`presets::element_presets`]；
-//! - `bc_speaker_proposal` / `bc_apply_speakers`：已有转写的识别说话人，见 [`speakers`]；
-//! - `bc_source_chapters`：来源自带章节（平台的 `chapters[]`、简介里的时间戳大纲或显式大纲）的解析与吸附，见 [`source_chapters`]。
+//! - `bc_alloc(len)` / `bc_free(ptr, len)`: buffers the host writes its input into;
+//! - `bc_<name>(ptr, len)`: the input is JSON; returns 0 on success, and the output area (`bc_output_ptr` / `bc_output_len`) holds the result JSON;
+//!   otherwise the output area is `{code, message}`;
+//! - `bc_speech_sentences`: the input is a `cuccut.speech/1` transcript body; the result is
+//!   `{ derivation, timescale, editViewHash, contentFingerprint, sentences: [{ id, wordIds, text, fingerprint, speaker?, start, end }] }`;
+//!   `start` / `end` are integer ticks in the body's `timescale` (no floating-point seconds appear at boundaries);
+//! - `bc_stage_box` / `bc_stage_place` / `bc_place_default`: see the functions of the same names in [`stage`];
+//! - `bc_engine_ranges`: see [`ranges::engine_ranges`];
+//! - `bc_element_presets`: see [`presets::element_presets`];
+//! - `bc_speaker_proposal` / `bc_apply_speakers`: speakers recognized in an existing transcript, see [`speakers`];
+//! - `bc_source_chapters`: parsing and snapping of the chapters a source provides itself (the platform's `chapters[]`, a timestamped outline in the description, or an explicit outline), see [`source_chapters`].
 
 pub mod presets;
 pub mod ranges;
@@ -33,7 +32,7 @@ use serde::Serialize;
 use speech_doc_bridge::sentences::source_sentences;
 use video_model::speech::SpeechBody;
 
-/// 调用失败：`code` 是稳定的错误码。
+/// The call failed: `code` is a stable error code.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct EntryError {
     pub code: &'static str,
@@ -67,7 +66,7 @@ thread_local! {
     static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// 转写正文的句子（JSON）。正文读不懂、不是 `cuccut.speech/1`、词缺源时间或说话人不合法时 `INVALID_SPEECH`。
+/// The transcript body's sentences (JSON). `INVALID_SPEECH` when the body cannot be read, is not `cuccut.speech/1`, a word lacks source time, or a speaker is invalid.
 pub fn speech_sentences(input: &[u8]) -> Result<String, EntryError> {
     let invalid = |message: String| EntryError {
         code: "INVALID_SPEECH",
@@ -97,7 +96,7 @@ pub fn speech_sentences(input: &[u8]) -> Result<String, EntryError> {
     Ok(serde_json::to_string(&output).expect("句子总能序列化"))
 }
 
-/// 输入读不懂（不是约定的 JSON 形状）。
+/// The input cannot be read (it is not the agreed JSON shape).
 pub(crate) fn invalid_input(error: serde_json::Error) -> EntryError {
     EntryError {
         code: "INVALID_INPUT",
@@ -123,7 +122,7 @@ pub extern "C" fn bc_alloc(len: usize) -> *mut u8 {
 }
 
 /// # Safety
-/// `ptr` 与 `len` 必须来自同一次 `bc_alloc`。
+/// `ptr` and `len` must come from the same `bc_alloc` call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
@@ -131,11 +130,11 @@ pub unsafe extern "C" fn bc_free(ptr: *mut u8, len: usize) {
     }
 }
 
-/// 导出一个 `bc_<名字>(ptr, len) -> u32`：读输入、调函数、把结果或错误写进输出区。
+/// Exports a `bc_<name>(ptr, len) -> u32`: reads the input, calls the function, and writes the result or the error into the output area.
 macro_rules! export {
     ($($name:ident => $function:path;)*) => {$(
         /// # Safety
-        /// `ptr` 指向 `len` 个已写入的字节。
+        /// `ptr` points to `len` bytes that have been written.
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(ptr: *const u8, len: usize) -> u32 {
             let input = unsafe { std::slice::from_raw_parts(ptr, len) };

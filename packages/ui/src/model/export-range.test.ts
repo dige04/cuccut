@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chapter, sequence, track, videoItem } from '../testing/sequence-records.ts';
 import { chapterPieces, clampCustom, clipPieces, initialRange, mergeSegments, parseRangeTime, rangePlan, rangeScope, type RangeState } from './export-range.ts';
 
-// 60 秒的片子：三段视频（0–20、20–40、45–60），中间空了 5 秒；三章（0、20、45 秒）。
+// A 60-second film: three video segments (0–20, 20–40, 45–60) with a 5-second gap in the middle; three chapters (0, 20, 45 seconds).
 const seq = sequence(
   [track('v1', 'visual', 1), track('v2', 'visual', 2, { visible: false })],
   [

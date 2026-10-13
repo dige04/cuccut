@@ -2,21 +2,17 @@ import type { ApplicationRecord, Id } from '@cuccut/protocol';
 import { RecordJournal, type LedgerOptions } from './record-journal.ts';
 
 /**
- * 应用账本（架构设计 §7.2）：`<runtime-home>/store/applications.jsonl`（只追加的 JSONL，格式见 `record-journal.ts`；
- * 旧的 `applications.json` 第一次读时导入，之后改名为 `.migrated`），与任务账本分开。执行的结果（产物）与「应用到视频」
- * 是两条记录：一个任务可以有多次应用（重启后的补做、用户的 `jobs.reconcile apply`），每次都先落账再提交事务。
+ * Application ledger (architecture design §7.2): `<runtime-home>/store/applications.jsonl` (append-only JSONL, format in `record-journal.ts`; the old `applications.json` is imported on first read and then renamed `.migrated`), kept separate from the job ledger. The result of an execution (the artifact) and “applied to the video” are two records: one task can have several applications (a re-run after restart, or the user's `jobs.reconcile apply`), and each one is written to the ledger first and then committed in a transaction.
  *
- * 这里是应用状态的权威；任务记录里的 `applications` 是它的投影。每次写入都要等落盘（崩溃安全的顺序靠它），
- * 写入串行，后发起的写一定落在后面。
+ * This is the authority for application state; the `applications` in a task record is its projection. Every write waits until it reaches disk (crash-safe ordering depends on this). Writes are serialized, so a write started later always lands after.
  */
 
 /**
- * 重新打开视频要的位置（Runtime 给出、原样交回，JobManager 不解读）。重启之后视频都没有打开，补做应用之前
- * 按它重新打开；目录不见了或里面换成了别的视频就是 `stale-input`。
+ * The position needed to reopen the video (given by the Runtime and handed back unchanged; the JobManager does not interpret it). After a restart no video is open, so before a re-run is applied, the video is reopened from this. If the directory is gone, or a different video is now in it, that is `stale-input`.
  */
 export type VideoPlace = Record<string, unknown>;
 
-/** 账本里的一条：公开记录，加上恢复时要的位置与已经提交过几次（下一个 `commandId` 的序号）。 */
+/** One entry in the ledger: the public record, plus the position needed for recovery and how many times it has been committed (the sequence number of the next `commandId`). */
 export interface StoredApplication {
   record: ApplicationRecord;
   place: VideoPlace | null;
@@ -53,12 +49,12 @@ export class ApplicationLedger {
     return this.#items.get(applicationId);
   }
 
-  /** 一个任务的各次应用，旧的在前。 */
+  /** The applications of one task, oldest first. */
   forJob(jobId: Id): StoredApplication[] {
     return [...this.#items.values()].filter((item) => item.record.jobId === jobId);
   }
 
-  /** 一个任务最近的一次应用；没有时 undefined。 */
+  /** The most recent application of one task; undefined if there is none. */
   latest(jobId: Id): StoredApplication | undefined {
     return this.forJob(jobId).at(-1);
   }
@@ -67,7 +63,7 @@ export class ApplicationLedger {
     return [...this.#items.values()];
   }
 
-  /** 写入一条并等它落盘。 */
+  /** Writes one entry and waits until it reaches disk. */
   put(item: StoredApplication): Promise<void> {
     item.record.updatedAt = new Date().toISOString();
     this.#items.delete(item.record.applicationId);
@@ -76,7 +72,7 @@ export class ApplicationLedger {
     return this.#journal.put(item.record.applicationId, item);
   }
 
-  /** 删掉这些任务的应用（任务被淘汰时）。 */
+  /** Deletes the applications of these tasks (when the tasks are evicted). */
   remove(jobIds: ReadonlySet<Id>): Promise<void> {
     const removed: Id[] = [];
     for (const [id, item] of this.#items) {
@@ -88,7 +84,7 @@ export class ApplicationLedger {
     return this.#journal.remove(removed);
   }
 
-  /** 故障注入：模拟进程在这一刻崩溃，之后的写入都不落盘。 */
+  /** Fault injection: simulates the process crashing at this moment; later writes are not persisted. */
   freeze(): void {
     this.#frozen = true;
   }
@@ -103,7 +99,7 @@ function applicationKey(value: unknown): string | null {
   return typeof applicationId === 'string' ? applicationId : null;
 }
 
-/** 旧格式 `applications.json`：`{ formatVersion: 1, applications: StoredApplication[] }`。 */
+/** Old format `applications.json`: `{ formatVersion: 1, applications: StoredApplication[] }`. */
 function legacyApplications(data: unknown): unknown[] | null {
   const file = data as { formatVersion?: unknown; applications?: unknown } | null;
   return file?.formatVersion === 1 && Array.isArray(file.applications) ? file.applications : null;

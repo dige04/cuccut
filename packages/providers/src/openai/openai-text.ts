@@ -1,14 +1,11 @@
-// OpenAI 文本模型（`generateText`，架构设计 §6.4）。2026-10-03 读过的文档：
+// OpenAI text models (`generateText`, architecture design §6.4). Docs read on 2026-10-03:
 //   https://platform.openai.com/docs/models
 //   https://platform.openai.com/docs/models/gpt-6-astra
 //   https://platform.openai.com/docs/models/gpt-6.1-sol
 //   https://platform.openai.com/docs/models/gpt-6-luna
 //   https://platform.openai.com/docs/guides/reasoning
-// 文档确认的：三个旗舰文本模型 gpt-6-astra（最强）、gpt-6.1-sol（均衡）、gpt-6-luna（高效），上下文 1,050,000 token、
-// 单次输出 128,000 token；`reasoning_effort` 取 none / minimal / low / medium / high / xhigh / max，默认 medium；astra 不接受
-// none，sol 不接受 none 与 minimal。我们的四档（minimal–high）按此声明。
-// 没能确认的：这几个推理模型是否接受 `temperature` 与 `seed`（旧的推理模型只接受默认的 temperature），按不接受声明；
-// 费用按 `unknown`。默认模型选均衡的 gpt-6.1-sol。
+// Confirmed by the docs: three flagship text models, gpt-6-astra (strongest), gpt-6.1-sol (balanced), gpt-6-luna (efficient); context 1,050,000 tokens and up to 128,000 output tokens per request; `reasoning_effort` takes none / minimal / low / medium / high / xhigh / max, default medium; astra does not accept none, and sol accepts neither none nor minimal. Our four levels (minimal to high) are declared accordingly.
+// Not confirmed: whether these reasoning models accept `temperature` and `seed` (older reasoning models accept only the default temperature), so they are declared as not accepting them; cost is `unknown`. The default model is the balanced gpt-6.1-sol.
 import { ProviderFailure, type TextReply } from '@cuccut/models';
 import type { TextModelInfo } from '@cuccut/protocol';
 import type { AdapterConfig, AdapterHttp, ModelLister, ProviderListing, TextAdapter, TextRequest } from '../adapter.ts';
@@ -57,7 +54,7 @@ export class OpenAiTextAdapter implements TextAdapter, ModelLister {
   }
 }
 
-/** `GET {base}/models`：`data[].id`。OpenAI 与兼容端点相同。 */
+/** `GET {base}/models`: `data[].id`. Same for OpenAI and compatible endpoints. */
 export async function openAiListModels(
   config: AdapterConfig,
   signal: AbortSignal,

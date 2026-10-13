@@ -1,15 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/WhisperASR/WhisperGenerationConfig.swift / Sources/WhisperASR/WhisperByteLevelTokenizer.swift`。
+//! Parts of this file's implementation are adapted from speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream files: `Sources/WhisperASR/WhisperGenerationConfig.swift / Sources/WhisperASR/WhisperByteLevelTokenizer.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut reimplements the related algorithms in Rust and adapts them to this project's backend, model packages and transcription interface; the original upstream attribution is kept.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Whisper 解码的纯逻辑：分词器（byte-level BPE 的解码与提示编码）、`generation_config.json` 里的特殊 token 与
-//! 语言表、识别提示 → 前缀 token 的规则、贪心解码的抑制规则与重复词保护。
+//! Pure logic for Whisper decoding: the tokenizer (byte-level BPE decoding and prompt encoding), the special tokens and language table in `generation_config.json`, the rules that turn a recognition prompt into prefix tokens, and the suppression rules and repeated-word guard for greedy decoding.
 //!
-//! 与推理框架无关：MLX 版 Whisper（`backend::mlx::whisper`）用它决定解码前缀、每步哪些 token 不能出、
-//! 何时停。规则与 CucCut 早先 Swift 版 `WhisperCoreMLRuntime` 及 v2 `ccut-speech` 的 Whisper 逐项一致。
+//! Independent of the inference framework: the MLX Whisper (`backend::mlx::whisper`) uses it to decide the decoding prefix, which tokens are disallowed at each step, and when to stop. The rules match the earlier CucCut Swift `WhisperCoreMLRuntime` and the Whisper in v2 `ccut-speech` item for item.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -20,18 +18,17 @@ use serde_json::Value;
 
 use crate::speech::tokenizer::Qwen3Tokenizer;
 
-/// 一个解码窗的采样数：16 kHz 下 30 秒。更长的音频按它切成独立的窗。
+/// Number of samples in one decoding window: 30 seconds at 16 kHz. Longer audio is split into independent windows of this size.
 pub const WINDOW_SAMPLES: usize = 480_000;
-/// 每个窗「提示 + 任务前缀 + 生成」共用的 token 预算（large-v3 的 `n_text_ctx` 是 448，这里沿用 WhisperKit
-/// 导出的 224，与早先 Core ML 版同一口径）。
+/// Token budget shared by the prompt, task prefix and generation in each window (large-v3's `n_text_ctx` is 448; here the 224 exported by WhisperKit is kept, the same basis as the earlier Core ML version).
 pub const DECODER_TOKEN_BUDGET: usize = 224;
-/// 同一个词连续出现超过这么多次就停：贪心解码陷进复读时及早收手。
+/// Stop when the same word repeats more than this many times in a row, so greedy decoding bails out early when it gets stuck in a loop.
 const MAX_REPEATED_WORD_RUN: usize = 2;
-/// initial prompt 最多占 token 预算的一半：预算就是这一段音频「提示 + 生成」的全部，提示写满了就没地方生成了。
-/// 超出的从**前面**截，留最靠近音频的那一截——与 whisper.cpp 的 `max_prompt_ctx` 同一取舍。
+/// The initial prompt takes at most half of the token budget: the budget is all of the "prompt + generation" for this audio segment, and if the prompt filled it there would be no room left to generate.
+/// Overflow is trimmed from the **front**, keeping the part closest to the audio, the same trade-off as `max_prompt_ctx` in whisper.cpp.
 const PROMPT_BUDGET_SHARE: usize = 2;
 
-/// `generation_config.json` 里解码要用的特殊 token 与语言表。
+/// Special tokens and the language table from `generation_config.json` that decoding needs.
 #[derive(Debug)]
 pub struct GenerationConfig {
     pub(crate) start_of_transcript: i32,
@@ -86,7 +83,7 @@ impl GenerationConfig {
             no_timestamps: json_i32(object.get("no_timestamps_token_id")).unwrap_or(50_364),
             special_token_begin: end_token,
             begin_suppress_tokens,
-            // 与 Swift/WhisperKit greedy 默认一致：忽略导出的宽泛 suppress_tokens。
+            // Matches the Swift/WhisperKit greedy default: the broad exported suppress_tokens are ignored.
             suppress_tokens: HashSet::new(),
             language_token_set: languages.values().copied().collect(),
             language_tokens_by_code: languages,
@@ -114,12 +111,12 @@ impl GenerationConfig {
         self.special_token_begin
     }
 
-    /// 语言检测时只在这些 token 里取最大。
+    /// During language detection, the maximum is taken only over these tokens.
     pub fn is_language_token(&self, token: i32) -> bool {
         self.language_token_set.contains(&token)
     }
 
-    /// 语言提示（`zh`、`zh-Hant`、`EN`）→ 语言 token；认不出返回 `None`，交给语言检测。
+    /// Language hint (`zh`, `zh-Hant`, `EN`) → language token; returns `None` if it is not recognized, leaving it to language detection.
     pub fn language_token(&self, hint: &str) -> Option<i32> {
         let code = hint
             .trim()
@@ -134,14 +131,12 @@ impl GenerationConfig {
         self.language_codes_by_token.get(&token).cloned()
     }
 
-    /// 解码任务前缀：`<|startoftranscript|><|lang|><|transcribe|>`。**不是** initial prompt——那一段在它前面，
-    /// 见 [`prompt_tokens`]；`<|notimestamps|>` 在它后面，作为第一步解码的输入。
+    /// Decoding task prefix: `<|startoftranscript|><|lang|><|transcribe|>`. This is **not** the initial prompt; that segment comes before it, see [`prompt_tokens`]. `<|notimestamps|>` comes after it, as the input to the first decoding step.
     pub fn task_tokens(&self, language_token: i32) -> [i32; 3] {
         [self.start_of_transcript, language_token, self.transcribe_token]
     }
 
-    /// 贪心解码的这一步要不要跳过 `token`：`<|endoftext|>` 只在第一个 token 且被 begin_suppress 时跳过；其余特殊
-    /// token（时间戳、语言、任务）一律不出；第一个 token 不出 begin_suppress 里的（空格），suppress 里的总是不出。
+    /// Whether this greedy decoding step should skip `token`: `<|endoftext|>` is skipped only when it is the first token and begin_suppress applies; all other special tokens (timestamps, language, task) are never emitted; as the first token, the begin_suppress set (spaces) is not emitted, and tokens in suppress are always not emitted.
     pub fn should_suppress(&self, token: i32, generated_count: usize) -> bool {
         if token == self.end_token {
             return generated_count == 0 && self.begin_suppress_tokens.contains(&token);
@@ -153,16 +148,15 @@ impl GenerationConfig {
     }
 }
 
-/// Whisper 的 `tokenizer.json`（`openai/whisper-large-v3`）：解码 token、给识别提示编码。
+/// Whisper's `tokenizer.json` (`openai/whisper-large-v3`): decodes tokens and encodes recognition prompts.
 #[derive(Debug)]
 pub struct WhisperTokenizer {
     pub(crate) id_to_token: HashMap<i32, String>,
     pub(crate) special_ids: HashSet<i32>,
     pub(crate) byte_decoder: HashMap<char, u8>,
-    /// 识别提示的开头标记。旧导出的 `tokenizer.json` 里可能没有，`None` 就等于这份权重没有提示通道。
+    /// The start-of-prompt marker. It may be missing from older exports of `tokenizer.json`; `None` means this set of weights has no prompt channel.
     pub(crate) start_of_prev: Option<i32>,
-    /// 编码方向：Whisper 与 Qwen3 同是 GPT-2 byte-level BPE，借共享的那只做编码，不在这里再实现一遍 merge 循环
-    /// （解码仍用上面的 `id_to_token`，因为特殊 token 的处置两边不同）。
+    /// Encoding direction: Whisper and Qwen3 are both GPT-2 byte-level BPE, so encoding reuses the shared tokenizer instead of reimplementing the merge loop here. (Decoding still uses `id_to_token` above, because special tokens are handled differently on the two sides.)
     pub(crate) encoder: Qwen3Tokenizer,
 }
 
@@ -195,7 +189,7 @@ impl WhisperTokenizer {
         if id_to_token.is_empty() {
             bail!("Whisper tokenizer.json 未包含 model.vocab");
         }
-        // `model.merges` 既可能是 ["a b", …]（旧格式），也可能是 [["a","b"], …]。
+        // `model.merges` may be either ["a b", …] (old format) or [["a","b"], …].
         let merges = raw
             .get("model")
             .and_then(|model| model.get("merges"))
@@ -219,8 +213,7 @@ impl WhisperTokenizer {
         })
     }
 
-    /// 只给识别提示用：一段普通文本 → token。特殊 token 不参与（`<|…|>` 的字面量在 byte-level BPE 下会被拆成
-    /// 普通片段，拿不到特殊 id，这正是想要的）。
+    /// Used only for recognition prompts: plain text → tokens. Special tokens do not take part (under byte-level BPE, the literal `<|…|>` is split into ordinary fragments and does not get a special id, which is exactly what is wanted).
     pub fn encode(&self, text: &str) -> Vec<i32> {
         self.encoder.encode(text)
     }
@@ -247,12 +240,9 @@ impl WhisperTokenizer {
     }
 }
 
-/// 识别提示 → 解码器前缀里提示那一段（`<|startofprev|>` + 普通文本 token）。Whisper 的 initial prompt 是
-/// `<|startofprev|>` 加一段**普通文本** token；缺这只特殊 token（旧导出）就等于没有通道，如实返回空而不是把文本当
-/// 转录前缀塞进去（那会被模型当成已经识别出的内容抄出来）。
+/// Builds the prompt segment of the decoder prefix from the recognition prompt (`<|startofprev|>` plus plain-text tokens). Whisper's initial prompt is `<|startofprev|>` followed by a segment of **plain-text** tokens. If this special token is missing (older exports), there is no prompt channel at all, so the function honestly returns empty rather than inserting the text as a transcript prefix (the model would copy it out as if it had already been recognized).
 ///
-/// `token_budget` 是每个窗「提示 + 生成」共用的 token 预算；提示最多占一半，再让出任务前缀与第一步输入
-/// （`<|notimestamps|>`）的位置。超出的从前面截：截尾会把话说到一半，截头只丢最早的几条术语。
+/// `token_budget` is the token budget shared by "prompt + generation" in each window. The prompt takes at most half, leaving room for the task prefix and the first-step input (`<|notimestamps|>`). Overflow is trimmed from the front: trimming the end would cut the speech off mid-sentence, while trimming the start only drops the earliest terms.
 pub fn prompt_tokens(tokenizer: &WhisperTokenizer, generation: &GenerationConfig, prompt: Option<&str>, token_budget: usize) -> Vec<i32> {
     let Some(text) = prompt.map(str::trim).filter(|text| !text.is_empty()) else {
         return Vec::new();
@@ -276,7 +266,7 @@ pub fn prompt_tokens(tokenizer: &WhisperTokenizer, generation: &GenerationConfig
     out
 }
 
-/// 在 `logits` 里取不被 `should_skip` 跳过、且不是 NaN 的最大值的下标。
+/// Returns the index of the largest value in `logits` that `should_skip` does not skip and that is not NaN.
 pub fn argmax_where(logits: &[f32], should_skip: impl Fn(usize) -> bool) -> Option<i32> {
     let mut best = None;
     let mut best_value = f32::NEG_INFINITY;
@@ -292,7 +282,7 @@ pub fn argmax_where(logits: &[f32], should_skip: impl Fn(usize) -> bool) -> Opti
     best
 }
 
-/// 贪心解码陷进复读的保护：最后一个词连续出现超过 [`MAX_REPEATED_WORD_RUN`] 次就停。
+/// Guard against greedy decoding getting stuck in repetition: stop when the last word repeats more than [`MAX_REPEATED_WORD_RUN`] times in a row.
 pub fn should_stop_for_repeated_words(tokenizer: &WhisperTokenizer, tokens: &[i32]) -> bool {
     if tokens.len() <= MAX_REPEATED_WORD_RUN {
         return false;
@@ -312,7 +302,7 @@ fn normalized_words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// tokenizers 的 `model.merges` 一条：`"a b"` 或 `["a", "b"]`。
+/// One entry of the tokenizers `model.merges`: `"a b"` or `["a", "b"]`.
 fn merge_pair(row: &Value) -> Option<(String, String)> {
     if let Some(text) = row.as_str() {
         let (first, second) = text.split_once(' ')?;
@@ -322,7 +312,7 @@ fn merge_pair(row: &Value) -> Option<(String, String)> {
     Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
 }
 
-/// GPT-2 byte-level BPE 的「可见字符 → 字节」表。
+/// The GPT-2 byte-level BPE table mapping visible characters to bytes.
 fn make_byte_decoder() -> HashMap<char, u8> {
     let mut bytes = (33_u16..=126).chain(161..=172).chain(174..=255).collect::<Vec<_>>();
     let mut characters = bytes.clone();
@@ -364,7 +354,7 @@ mod tests {
         assert_eq!(values, (0..=255).collect::<Vec<_>>());
     }
 
-    /// 只填解码需要的那几格；编码器与 `<|startofprev|>` 各测各的。
+    /// Only fills the entries decoding needs; the encoder and `<|startofprev|>` are tested separately.
     fn decode_only_tokenizer(id_to_token: HashMap<i32, String>) -> WhisperTokenizer {
         WhisperTokenizer {
             id_to_token,
@@ -407,7 +397,7 @@ mod tests {
 
     #[test]
     fn a_prompt_becomes_startofprev_plus_bpe_tokens() {
-        // 迷你词表：单字节 token + 一条 merge，足够看出「编码走的是 BPE，提示前面挂 `<|startofprev|>`」。
+        // Mini vocabulary: single-byte tokens plus one merge, enough to show that "encoding goes through BPE, and the prompt is prefixed with `<|startofprev|>`".
         let vocab = vec![("a".to_owned(), 10), ("b".to_owned(), 11), ("ab".to_owned(), 12)];
         let merges = vec![("a".to_owned(), "b".to_owned())];
         let tokenizer = WhisperTokenizer {
@@ -425,11 +415,11 @@ mod tests {
         );
         assert!(prompt_tokens(&tokenizer, &generation, Some("  "), DECODER_TOKEN_BUDGET).is_empty());
         assert!(prompt_tokens(&tokenizer, &generation, None, DECODER_TOKEN_BUDGET).is_empty());
-        // 预算 224：提示最多 224 / 2 − 4 = 108 个普通 token，从前面截。
+        // Budget 224: the prompt takes at most 224 / 2 − 4 = 108 plain tokens, trimmed from the front.
         let long = "ab".repeat(200);
         let tokens = prompt_tokens(&tokenizer, &generation, Some(&long), DECODER_TOKEN_BUDGET);
         assert_eq!(tokens.len(), 1 + 108);
-        // 没有 `<|startofprev|>` 就没有提示通道。
+        // Without `<|startofprev|>` there is no prompt channel.
         let without = decode_only_tokenizer(HashMap::new());
         assert!(prompt_tokens(&without, &generation, Some("ab"), DECODER_TOKEN_BUDGET).is_empty());
     }
@@ -449,14 +439,14 @@ mod tests {
     #[test]
     fn suppression_matches_the_greedy_defaults() {
         let generation = generation_config();
-        // 导出的 suppress_tokens 被有意忽略。
+        // The exported suppress_tokens are deliberately ignored.
         assert!(!generation.should_suppress(7, 1));
-        // 第一个 token 不能是空格，也不能直接结束；之后可以。
+        // The first token cannot be a space and cannot end the sequence directly; later tokens may.
         assert!(generation.should_suppress(220, 0));
         assert!(!generation.should_suppress(220, 1));
         assert!(generation.should_suppress(50_257, 0));
         assert!(!generation.should_suppress(50_257, 1));
-        // 其余特殊 token（语言、任务、时间戳）一律不出。
+        // All other special tokens (language, task, timestamps) are never emitted.
         for token in [50_258, 50_259, 50_360, 50_364, 50_365] {
             assert!(generation.should_suppress(token, 3), "{token}");
         }

@@ -4,7 +4,7 @@ import { compilerAvailable, loadSlidesCompiler } from '../slides-compiler.ts';
 import { createCommentLabels, localeFromSearch } from './comment-labels.ts';
 import type { HostCommentLabels } from './slides-host.ts';
 
-/** 标注位置标签的词表（docs/design/slides §8.2）：跟随 CucCut 的界面语言，英文与运行时原文逐字一致。 */
+/** Vocabulary for annotation position labels (docs/design/slides §8.2): follows CucCut's UI language, and the English matches the runtime's original text word for word. */
 
 const ROLES = ['display', 'h1', 'h2', 'h3', 'lead', 'eyebrow', 'body', 'caption'];
 const ELEMENTS = ['img', 'icon', 'stack', 'grid', 'overlay', 'html', 'spacer'];
@@ -16,7 +16,7 @@ const PARTS = [
 ];
 
 beforeEach(() => {
-  // 测试进程钉在简体中文（vitest.config.ts 的 CUCCUT_LOCALE）；这里要按参数换语言
+  // The test process is pinned to Simplified Chinese (CUCCUT_LOCALE in vitest.config.ts), so here the language has to be switched by parameter
   vi.stubEnv('CUCCUT_LOCALE', '');
 });
 
@@ -74,7 +74,7 @@ describe('createCommentLabels', () => {
   });
 });
 
-/** 运行时拼标签时用这些词：要先构建编辑器（`npm run build:slides-editor`）。 */
+/** The runtime uses these words when building labels, so the editor must be built first (`npm run build:slides-editor`). */
 describe.skipIf(!compilerAvailable())('运行时的标注位置标签', () => {
   type Labels = { label: string; detail: string };
   type Runtime = Record<string, unknown> & {

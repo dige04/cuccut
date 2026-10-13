@@ -4,8 +4,8 @@ import { M } from './templates-copy.ts';
 import { formatTemplateDetail, formatTemplateList } from './templates-output.ts';
 
 /**
- * `cuccut templates`：创作模板目录（模板包规范 §6）。模板是给 CucCut 智能体的简报，外部 Agent 用 skill。
- * 按 CLI 的输出语言要模板的语言版本（规范 §3.6）。
+ * `cuccut templates`: the creative template catalog (template package spec §6). Templates are briefs for the CucCut agent; external agents use the skill.
+ * Asks for the template's language version according to the CLI output language (spec §3.6).
  */
 export const templates = defineNoun({
   name: 'templates',

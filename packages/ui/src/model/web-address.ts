@@ -1,15 +1,15 @@
 import { safeUrl } from './workspace.ts';
 
 /**
- * 网页标签的地址栏与缩放（产品设计 §3.3；移植自设计稿 model-home-browser.js）。
+ * The address bar and zoom for web tabs (product design §3.3; ported from the design mockup model-home-browser.js).
  */
 
-/** 不是网址的输入走这个搜索（设计稿：Google）。 */
+/** Input that is not a URL goes to this search engine (mockup: Google). */
 export const WEB_SEARCH_URL = 'https://www.google.com/search?q=';
 
 /**
- * 地址栏的输入 → 要打开的网址。像主机名（`a.b`、`localhost`、`[::1]`，可带端口）或带协议的按网址处理，
- * 不合规矩（非 http/https、带账号密码）返回 null；其余当搜索词。空输入返回 null。
+ * Address bar input → the URL to open. Input that looks like a hostname (`a.b`, `localhost`, `[::1]`, optionally with a port) or that has a protocol is treated as a URL.
+ * Input that does not follow the rules (not http/https, or with a username or password) returns null. Anything else is a search term. Empty input returns null.
  */
 export function resolveAddress(input: string): string | null {
   const text = input.trim();
@@ -19,7 +19,7 @@ export function resolveAddress(input: string): string | null {
   return WEB_SEARCH_URL + encodeURIComponent(text);
 }
 
-/** 地址栏静止时显示的网址：主机 + 路径（根路径省略）+ 查询 + 片段，不显示协议。 */
+/** The URL shown while the address bar is idle: host + path (the root path is omitted) + query + fragment, without the protocol. */
 export function displayUrl(url: string): string {
   try {
     const u = new URL(url);
@@ -29,17 +29,17 @@ export function displayUrl(url: string): string {
   }
 }
 
-/** 缩放档位（百分比）：50–200。 */
+/** Zoom levels (percent): 50–200. */
 export const WEB_ZOOM_STEPS = [50, 67, 75, 90, 100, 110, 125, 150, 175, 200] as const;
 
-/** 放大（delta > 0）或缩小一档；当前值不在档位上时取最近的下一档。到头不动。 */
+/** Zoom in (delta > 0) or out by one level. If the current value is not on a level, it moves to the nearest next level. It stops at the ends. */
 export function zoomStep(current: number, delta: 1 | -1): number {
   const steps: readonly number[] = WEB_ZOOM_STEPS;
   if (delta > 0) return steps.find((s) => s > current) ?? steps.at(-1)!;
   return [...steps].reverse().find((s) => s < current) ?? steps[0]!;
 }
 
-/** 网页加载多久算「较慢」。 */
+/** How long a page load takes before it counts as “slow”. */
 export const WEB_SLOW_MS = 15_000;
 
 export interface WebKeyLike {
@@ -52,8 +52,8 @@ export interface WebKeyLike {
 }
 
 /**
- * 网页标签的快捷键（原型 home-browser.jsx）：⌘L 聚焦地址栏，⌘R 重新加载；Windows 与 Linux 用 Ctrl。
- * 字母按物理键（`code`）判断，输入法改写 `key` 时也认得出。
+ * Keyboard shortcuts for web tabs (prototype home-browser.jsx): ⌘L focuses the address bar, ⌘R reloads. Windows and Linux use Ctrl.
+ * Letter keys are matched by physical key (`code`), so they are recognized even when an input method rewrites `key`.
  */
 export function webShortcut(event: WebKeyLike, mac: boolean): 'focus-address' | 'reload' | 'force-reload' | 'find' | null {
   const mod = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;

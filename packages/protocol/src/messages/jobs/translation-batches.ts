@@ -14,7 +14,7 @@ import { pl } from './translation-batches.pl.ts';
 import { tr } from './translation-batches.tr.ts';
 import { vi } from './translation-batches.vi.ts';
 
-/** `packages/jobs/src/pipelines/translation-batches.ts`：逐批翻译、术语表参数与产物读取的错误。 */
+/** `packages/jobs/src/pipelines/translation-batches.ts`: errors for batch-by-batch translation, glossary parameters and reading outputs. */
 const en = {
   glossaryItemInvalid: 'Each item of parameter glossary needs a non-empty source and target',
   glossaryNoteInvalid: 'The note in parameter glossary should be a string',

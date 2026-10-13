@@ -1,21 +1,22 @@
-//! 编写/组合 AST（ADR-M02、设计 §5.2）与它的编译器。
+//! Authoring / composition AST (ADR-M02, design §5.2) and its compiler.
 //!
-//! Timeline / BCF 的 **legacy** lowering 仍然直接构造 `MotionProgram`（段布局、
-//! fill 语义与逐通道曲线必须逐位复刻现有公式，绕一圈 Graph 只会增加漂移面，
-//! 见 §15 阶段 1 偏离 5）。这里是 `animate.flow` / `animate.parts` 的编译路径：
+//! The **legacy** lowering of Timeline / BCF still constructs `MotionProgram` directly. Segment layout, fill semantics and the
+//! per-channel curves must replicate the existing formulas bit for bit, and going around through Graph would only add drift
+//! surface (see §15 stage 1, deviation 5). This is the compile path for `animate.flow` / `animate.parts`:
 //!
 //! ```text
-//! MotionGraph ──compile_flow()──► Vec<FlowTrack>（每轨一串关键帧）
+//! MotionGraph ──compile_flow()──► Vec<FlowTrack> (one keyframe sequence per track)
 //!                                     │
 //!                        ┌────────────┴────────────┐
 //!                        ▼                         ▼
-//!             to_program()（强类型段）      ccut-core 的 Channel（Kf.v 原文 JSON）
+//!             to_program() (strongly typed segments)   ccut-core's Channel (raw Kf.v JSON)
 //! ```
 //!
-//! **关键帧是唯一中间形态**，两条投影因此逐位一致：`MotionProgram` 的段由同一串
-//! 关键帧按 `lower_bcf::to_program` 的窗口规则生成，`Channel` 直接拿这串关键帧。
-//! 代价是 `oscillate` / `noise` / 曲线对象都要在编译期**铺成关键帧**——正好也让
-//! `sample(t)` 保持纯查表、乱序采样天然一致（设计 §11）。
+//! **Keyframes are the only intermediate form**, so the two projections are bit-for-bit identical. The segments of
+//! `MotionProgram` are generated from the same keyframe sequence by the window rules of `lower_bcf::to_program`, and `Channel`
+//! takes the keyframe sequence directly. The cost is that `oscillate` / `noise` / curve objects must all be **laid out as
+//! keyframes** at compile time. That also keeps `sample(t)` a pure lookup, so out-of-order sampling is consistent by nature
+//! (design §11).
 
 use serde_json::Value;
 
@@ -32,15 +33,15 @@ use crate::program::{
 use crate::text_parts::{StaggerFrom, stagger_order_from};
 use crate::value::{MotionValue, PropertyId};
 
-/// `repeat` 展开的段数上限（计划 §3.2.2）。1.2s 的 child × 512 ≈ 10 分钟，
-/// 超了报错而不是静默截断。
+/// Upper bound on the number of segments produced by `repeat` expansion (plan §3.2.2). A 1.2 s child × 512 ≈ 10 minutes;
+/// exceeding it raises an error rather than truncating silently.
 pub const REPEAT_UNROLL_CAP: usize = 512;
 
-/// 曲线对象（spring / cubicBezier / steps）铺成关键帧时的采样率下限。
-/// 封闭枚举里的**名称**曲线不走这条路——它们在 `Kf.ease` 上是无损的。
+/// Lower bound on the sampling rate when curve objects (spring / cubicBezier / steps) are laid out as keyframes.
+/// **Named** curves in the closed enum do not take this path; they are lossless on `Kf.ease`.
 pub const CURVE_BAKE_MIN_FPS: f64 = 60.0;
 
-/// 单条轨的关键帧上限，挡住 `repeat` × `oscillate` 的组合爆炸。
+/// Upper bound on the keyframes of a single track, blocking a combinatorial explosion from `repeat` × `oscillate`.
 pub const TRACK_FRAME_CAP: usize = 20_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,21 +50,20 @@ pub enum RepeatMode {
     Yoyo,
 }
 
-/// `repeat` 的终点（规范 §7.5）。`Until` 是**已求值的绝对秒**——TimeExpr 与
-/// `clip.start` / `clip.end` 保留串由 `ccut-core` 在交给本 crate 之前解开
-/// （`ccut-motion` 不依赖 `ccut-core`，也就没有 cue 表与定点迭代）。
+/// The end point of `repeat` (spec §7.5). `Until` is an **already evaluated absolute second**. TimeExpr and the `clip.start` /
+/// `clip.end` reserved strings are resolved by `ccut-core` before handing over to this crate (`ccut-motion` does not depend on
+/// `ccut-core`, so there is no cue table or fixed-point iteration here).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RepeatEnd {
     Count(u32),
     Until(f64),
 }
 
-/// 幅度：JSON 数字或未求值的相对长度对象（规范 §7.8）。
+/// Amplitude: a JSON number, or an unevaluated relative-length object (spec §7.8).
 pub type Amplitude = Value;
 
-/// 变体预算（设计 §13）：12 个。`At` 是阶段 3 为规范 §7.5 的 `at` 键加的
-/// **绝对定位**变体（`at` 可以出现在任何 op 上，把它拆成一层包装比给 11 个变体
-/// 各加一个 `Option<f64>` 字段干净）。
+/// Variant budget (design §13): 12. `At` is an **absolute positioning** variant that stage 3 added for the `at` key of spec §7.5
+/// (`at` can appear on any op; wrapping it as one layer is cleaner than adding an `Option<f64>` field to each of the 11 variants).
 #[derive(Clone, Debug, PartialEq)]
 pub enum MotionOp {
     Set {
@@ -90,13 +90,13 @@ pub enum MotionOp {
         id: String,
         version: Option<u32>,
         params: serde_json::Map<String, Value>,
-        /// `resolve_durations()` 归一化后一定是 `Some`。
+        /// Always `Some` after `resolve_durations()` normalization.
         dur: Option<f64>,
     },
     Parallel(Vec<MotionOp>),
     Sequence(Vec<MotionOp>),
-    /// `targets` 在**解析期**就展开成具体目标（part 集合或元素集合），
-    /// 时长规则 `max(item_i + order_i·gap)` 因此仍是纯函数。
+    /// `targets` are expanded into concrete targets (a part set or an element set) at **parse time**, so the duration rule
+    /// `max(item_i + order_i·gap)` remains a pure function.
     Stagger {
         item: Box<MotionOp>,
         gap: f64,
@@ -128,15 +128,15 @@ pub enum MotionOp {
         amplitude: Amplitude,
         period: f64,
         seed: u64,
-        /// 通道序数：`effective_seed = seed + channel × 101`，与冻结的
-        /// `jitter@1` 的 `channelSeedStride` 同一套派生（x / y 用不同子种子）。
+        /// Channel ordinal: `effective_seed = seed + channel × 101`, the same derivation as the frozen `jitter@1` `channelSeedStride`
+        /// (x / y use different sub-seeds).
         channel: u64,
         lattice: i64,
         dur: f64,
         composite: CompositeMode,
     },
-    /// 绝对定位（规范 §7.5 的 `at`）。`delay` 的位移仍然叠加在它上面，
-    /// 这样 `use.stagger` 包裹整棵 flow 时绝对时间也跟着挪（规范 §10.3）。
+    /// Absolute positioning (spec §7.5 `at`). The `delay` offset is still added on top of it, so when `use.stagger` wraps a whole
+    /// flow, the absolute time moves with it (spec §10.3).
     At {
         at: f64,
         child: Box<MotionOp>,
@@ -144,7 +144,7 @@ pub enum MotionOp {
 }
 
 impl MotionOp {
-    /// 设计 §5.2 / 规范 §7.5 的规范性时长规则。
+    /// The normative duration rule of design §5.2 / spec §7.5.
     pub fn duration(&self) -> f64 {
         match self {
             Self::Set { .. } => 0.0,
@@ -172,19 +172,19 @@ impl MotionOp {
             Self::Delay { delay, child } => delay + child.duration(),
             Self::Repeat { end, child, .. } => match end {
                 RepeatEnd::Count(count) => *count as f64 * child.duration(),
-                // `until` 是绝对秒；相对时长在这里无从表达，退回单次 child。
-                // `compile` 用绝对起点重新算展开次数，不依赖这个值。
+                // `until` is absolute seconds, so a relative duration cannot be expressed here and it falls back to a single child.
+                // `compile` recomputes the expansion count from the absolute start and does not depend on this value.
                 RepeatEnd::Until(_) => child.duration(),
             },
             Self::At { child, .. } => child.duration(),
         }
     }
 
-    /// 时间反转（`repeat.mode = "yoyo"` 的返程）。
+    /// Time reversal (the return leg of `repeat.mode = "yoyo"`).
     ///
-    /// **只交换 `from`/`to`，不反转曲线**：反转后的曲线回不到 BCF `Kf.ease` 的
-    /// 封闭枚举，会让 flow 的关键帧投影与程序采样分家（§15 阶段 3 偏离）。
-    /// 规范 §7.5 举的 `easeInOutSine` 本来就对称，交换端点即精确镜像。
+    /// **Only swaps `from` / `to`; does not reverse the curve**. A reversed curve would fall outside the closed enum of BCF `Kf.ease`,
+    /// and it would make the flow's keyframe projection diverge from program sampling (§15 stage 3 deviation). The `easeInOutSine`
+    /// example in spec §7.5 is symmetric to begin with, so swapping the endpoints is an exact mirror.
     pub fn reversed(&self) -> MotionOp {
         match self {
             Self::Tween {
@@ -242,14 +242,14 @@ impl MotionGraph {
     }
 }
 
-/// 编译上下文。`window.0` 是根节点的缺省起点（规范 §7.5：根缺省 `clip.start`）。
+/// Compile context. `window.0` is the default start of the root node (spec §7.5: the root defaults to `clip.start`).
 #[derive(Clone, Copy, Debug)]
 pub struct CompileCtx {
     pub fps: f64,
     pub window: (f64, Option<f64>),
     pub project_end: f64,
     pub time_base: TimeBase,
-    /// 规范 §7.3：省略 seed 时编译期写死 0。
+    /// Spec §7.3: when seed is omitted, the compile-time default is 0.
     pub default_seed: u64,
 }
 
@@ -266,7 +266,7 @@ impl Default for CompileCtx {
 }
 
 impl CompileCtx {
-    /// 曲线对象铺关键帧用的采样率：不低于 [`CURVE_BAKE_MIN_FPS`]。
+    /// Sampling rate for laying curve objects out as keyframes: not below [`CURVE_BAKE_MIN_FPS`].
     fn bake_fps(&self) -> f64 {
         if self.fps.is_finite() && self.fps > CURVE_BAKE_MIN_FPS {
             self.fps
@@ -276,9 +276,9 @@ impl CompileCtx {
     }
 }
 
-// ── 编译产物 ─────────────────────────────────────────────────────────
+// ── Compile output ─────────────────────────────────────────────────────────
 
-/// 一个关键帧。`v` 是**原文 JSON**（数字或未求值的相对长度对象）。
+/// One keyframe. `v` is the **raw JSON** (a number, or an unevaluated relative-length object).
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlowFrame {
     pub t: f64,
@@ -286,7 +286,7 @@ pub struct FlowFrame {
     pub ease: Option<String>,
 }
 
-/// 一条轨的关键帧串。`(target, prop, composite, order)` 是轨的身份。
+/// The keyframe sequence of one track. `(target, prop, composite, order)` is the identity of the track.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlowTrack {
     pub target: TargetId,
@@ -299,15 +299,15 @@ pub struct FlowTrack {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CompiledFlow {
     pub tracks: Vec<FlowTrack>,
-    /// 展开过的配方（provenance；采样期不查）。
+    /// Expanded recipe (provenance; not consulted during sampling).
     pub sources: Vec<PresetRef>,
-    /// 命中的 alias（供 `preset-alias-used` info lint）。
+    /// The alias that was matched (for the `preset-alias-used` info lint).
     pub aliases_used: Vec<String>,
 }
 
 impl CompiledFlow {
-    /// 关键帧 → 强类型 `MotionProgram`。段布局与 `lower_bcf::to_program` 同一套
-    /// 窗口规则，因此程序采样与关键帧采样逐位一致。
+    /// Keyframes → strongly typed `MotionProgram`. Segment layout uses the same window rules as `lower_bcf::to_program`, so program
+    /// sampling and keyframe sampling are bit-for-bit identical.
     pub fn to_program(&self, time_base: TimeBase) -> MotionProgram {
         let mut program = MotionProgram::new(time_base);
         for track in &self.tracks {
@@ -375,25 +375,26 @@ impl CompiledFlow {
     }
 }
 
-/// `MotionGraph` → `MotionProgram`（关键帧投影见 [`compile_flow`]）。
+/// `MotionGraph` → `MotionProgram` (for the keyframe projection, see [`compile_flow`]).
 pub fn compile(graph: &MotionGraph, ctx: &CompileCtx) -> Result<MotionProgram, MotionError> {
     Ok(compile_flow(graph, ctx)?.to_program(ctx.time_base))
 }
 
-/// `MotionGraph` → 每轨一串关键帧。
+/// `MotionGraph` → one keyframe sequence per track.
 pub fn compile_flow(graph: &MotionGraph, ctx: &CompileCtx) -> Result<CompiledFlow, MotionError> {
     let mut graph = graph.clone();
     resolve_durations(&mut graph.root)?;
     let mut out = CompiledFlow::default();
     lower_op(&graph.root, ctx.window.0, 0.0, None, ctx, &mut out)?;
     for track in &mut out.tracks {
-        // 稳定排序：同刻的多帧保持写入序（`repeat` 的接缝处先来的那帧带着到达曲线）。
+        // Stable sort: multiple frames at the same instant keep their write order (at a `repeat` seam, the frame that arrived first
+        // carries the arriving curve).
         track
             .frames
             .sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
-        // `repeat` / `sequence` 的接缝会在同一时刻产出**同值**的两帧（前一程的
-        // 终点 = 后一程的起点）。去重后段数就等于「几程 × 每程几段」，
-        // 也让 `to_program()` 不产生零长段。真正的阶跃（同刻不同值）保留。
+        // At the seams of `repeat` / `sequence`, two frames with the **same value** appear at the same instant (the end of the previous
+        // pass equals the start of the next). After deduplication, the segment count equals passes × segments per pass, and
+        // `to_program()` produces no zero-length segments. True steps (different values at the same instant) are kept.
         track.frames.dedup_by(|later, earlier| {
             (later.t - earlier.t).abs() < f64::EPSILON && later.v == earlier.v
         });
@@ -410,8 +411,8 @@ pub fn compile_flow(graph: &MotionGraph, ctx: &CompileCtx) -> Result<CompiledFlo
     Ok(out)
 }
 
-/// 归一化 pass：把每个 `preset` op 的 `dur` 用配方的 `defaults.dur` 填实，
-/// 好让 `duration()` 保持纯函数（计划 §3.2.0）。
+/// Normalization pass: fills each `preset` op's `dur` with the recipe's `defaults.dur`, so that `duration()` stays a pure
+/// function (plan §3.2.0).
 pub fn resolve_durations(op: &mut MotionOp) -> Result<(), MotionError> {
     match op {
         MotionOp::Preset { id, dur, .. } => {
@@ -438,7 +439,7 @@ pub fn resolve_durations(op: &mut MotionOp) -> Result<(), MotionError> {
     }
 }
 
-/// `enter` 槽的历史缺省（`resolve.rs` 的 `dur.unwrap_or(0.5)`）。
+/// The historical default for the `enter` slot (`dur.unwrap_or(0.5)` in `resolve.rs`).
 pub const DEFAULT_PRESET_DUR: f64 = 0.5;
 
 fn push_frames(
@@ -470,7 +471,7 @@ fn push_frames(
     });
 }
 
-/// `cursor` 是本 op 的起点，`shift` 是外层 `delay` 累计的位移（`at` 也要跟着挪）。
+/// `cursor` is the start of this op, and `shift` is the offset accumulated from outer `delay`s (`at` must move with it too).
 fn lower_op(
     op: &MotionOp,
     cursor: f64,
@@ -686,11 +687,11 @@ fn lower_op(
     }
 }
 
-/// `noise` op 的通道子种子步长，与冻结的 `jitter@1` 的 `channelSeedStride` 同值。
+/// Channel sub-seed step for the `noise` op; same value as the frozen `jitter@1` `channelSeedStride`.
 pub const CHANNEL_SEED_STRIDE: u64 = 101;
 
-/// 一段 tween → 关键帧。名称曲线无损保留在 `ease` 上；曲线对象（spring /
-/// cubicBezier / steps）在编译期**铺成线性关键帧**（§15 阶段 3 偏离）。
+/// One tween → keyframes. Named curves are kept losslessly on `ease`. Curve objects (spring / cubicBezier / steps) are **laid out
+/// as linear keyframes** at compile time (§15 stage 3 deviation).
 fn tween_frames(
     from: &Value,
     to: &Value,
@@ -708,7 +709,7 @@ fn tween_frames(
             )));
         }
         _ => {
-            // 曲线对象：按 fps 网格铺关键帧。
+            // Curve objects: lay keyframes on the fps grid.
             let steps = ((dur * ctx.bake_fps()).ceil() as usize).clamp(1, TRACK_FRAME_CAP - 1);
             let mut frames = Vec::with_capacity(steps + 1);
             for index in 0..=steps {
@@ -737,12 +738,11 @@ fn tween_frames(
     ])
 }
 
-/// `oscillate` / `noise` → 关键帧。
+/// `oscillate` / `noise` → keyframes.
 ///
-/// 波形在 [`sampled_wave`] 里本来就是 `wave_samples` 点的**分段线性**函数
-/// （第 `samples` 个点被钉为 [`crate::loop_kernel::seam_value`]：ramp 是 1、其余
-/// 波形是 0，与各自相位 0 处的取值接成一圈），因此把断点铺成关键帧、段间线性
-/// 插值 = 内核逐位相同的值，而不是近似。
+/// Inside [`sampled_wave`] the waveform is already a **piecewise linear** function of `wave_samples` points (the `samples`-th point
+/// is pinned to [`crate::loop_kernel::seam_value`]: ramp is 1, the other waveforms are 0, closing a loop with their phase-0 values).
+/// So laying the breakpoints out as keyframes with linear interpolation between them gives the kernel's values bit for bit, not an approximation.
 #[allow(clippy::too_many_arguments)]
 fn wave_frames(
     wave: WaveKind,
@@ -761,7 +761,7 @@ fn wave_frames(
     let samples = DEFAULT_WAVE_SAMPLES;
     let step = period / samples as f64;
     let mut breakpoints: Vec<f64> = vec![0.0];
-    // 相位跨过 k/samples 的那些时刻就是分段线性的断点。
+    // The instants at which the phase crosses k/samples are the breakpoints of the piecewise linear function.
     let first = ((phase * samples as f64).ceil()) as i64;
     let mut k = first;
     loop {
@@ -791,8 +791,8 @@ fn wave_frames(
     Ok(frames)
 }
 
-/// 幅度 × 波形值。数字直乘；相对长度对象按分量缩放（`value` 与 `offset` 同乘），
-/// 求值仍留给布局之后的 `build_channels_after_layout`（设计 §5.5）。
+/// Amplitude × waveform value. Numbers are multiplied directly. Relative-length objects are scaled per component (`value` and
+/// `offset` are both multiplied); evaluation is still left to `build_channels_after_layout` after layout (design §5.5).
 pub fn scale_amplitude(amplitude: &Value, factor: f64) -> Result<Value, MotionError> {
     if let Some(n) = amplitude.as_f64() {
         return Ok(Value::from(n * factor));
@@ -808,12 +808,13 @@ pub fn scale_amplitude(amplitude: &Value, factor: f64) -> Result<Value, MotionEr
     }))
 }
 
-/// 关键帧值的线性混合（曲线对象铺帧用）。
+/// Linear blend of keyframe values (used when laying out curve-object frames).
 ///
-/// 相对长度的求值是 `px = value × basis + offset`，对 `value` / `offset` 双线性，
-/// 因此两端的线性插值只在**结果仍能写成一个 `{value, basis, offset}`** 时可表示：
-/// 同 basis（两个分量各自线性），或其中一端是绝对长度（它整个折进 `offset`）。
-/// 两个不同的非绝对 basis 混不出单一对象——那需要两条基准的和，报错而不是猜。
+/// Relative-length evaluation is `px = value × basis + offset`, which is bilinear in `value` / `offset`. So a linear interpolation
+/// between the two ends can only be represented when **the result can still be written as a single `{value, basis, offset}`**:
+/// either the same basis (each component linear on its own), or one end is an absolute length (which folds entirely into `offset`).
+/// Two different non-absolute bases cannot blend into a single object, since that would need the sum of two bases. Raise an error
+/// rather than guess.
 fn mix_flow_value(a: &Value, b: &Value, u: f64) -> Result<Value, MotionError> {
     if let (Some(na), Some(nb)) = (a.as_f64(), b.as_f64()) {
         return Ok(Value::from(na + (nb - na) * u));
@@ -856,7 +857,7 @@ fn mix_flow_value(a: &Value, b: &Value, u: f64) -> Result<Value, MotionError> {
     Err(MotionError::Unsupported("curve-object-mixes-two-bases"))
 }
 
-/// 属性缺省合成模式（`composite` 缺省时用它，规范 §7.7）。
+/// Default composite mode for properties (used when `composite` is omitted, spec §7.7).
 pub fn default_composite(prop: &str) -> CompositeMode {
     default_mode(prop)
 }
@@ -904,7 +905,7 @@ mod tests {
         assert_eq!(MotionOp::Sequence(children).duration(), 0.4 + 1.2 + 0.7);
     }
 
-    /// 设计 §11 的 property test：随机组合树上 `parallel = max`、`sequence = Σ`。
+    /// Design §11 property test: on random composition trees, `parallel = max` and `sequence = Σ`.
     #[test]
     fn duration_rules_hold_on_random_trees() {
         fn build(state: &mut u64, depth: usize) -> MotionOp {
@@ -980,9 +981,9 @@ mod tests {
         );
     }
 
-    /// 时长按**实际 order**取最大：`start`/`end` 是 `0..n` 的置换（最大 n-1），
-    /// `center` 不是（`[2,1,0,1,2]`，最大 2）。规范 §7.5 写的
-    /// `max(item_i + i·gap)` 默认 order 是置换，这里取实际值更准（实现注记）。
+    /// Duration takes the maximum over the **actual order**: `start` / `end` are permutations of `0..n` (maximum n-1), while `center`
+    /// is not (`[2,1,0,1,2]`, maximum 2). The spec §7.5 formula `max(item_i + i·gap)` assumes the default order is a permutation; taking
+    /// the actual value here is more accurate (implementation note).
     #[test]
     fn stagger_duration_follows_the_actual_order_table() {
         for (order, span) in [
@@ -1105,7 +1106,7 @@ mod tests {
             .collect();
         backward.reverse();
         assert_eq!(forward, backward);
-        // yoyo：第二程从 +6 回到 -6
+        // yoyo: the second pass returns from +6 to -6
         let track = program.track("y").unwrap();
         assert_eq!(track.segments.len(), 4);
         assert_eq!(track.segments[1].t0, 0.4);
@@ -1121,7 +1122,7 @@ mod tests {
             },
         };
         let flow = compile_flow(&graph, &CompileCtx::default()).unwrap();
-        // 起点 0.0 / 0.4 / 0.8 三程；1.2 那程起点已过 until
+        // Passes start at 0.0 / 0.4 / 0.8; the pass starting at 1.2 already starts past `until`
         assert_eq!(flow.tracks[0].frames.len(), 6);
         assert!(flow.tracks[0].frames.iter().all(|f| f.t <= 1.2 + 1e-12));
     }
@@ -1198,11 +1199,11 @@ mod tests {
         };
         assert_eq!(noise(0), noise(0));
         assert_ne!(noise(0), noise(42));
-        // 相位 0 处噪声恒为 0（晶格 0 号顶点被钉住）⇒ add 轨从单位元起步
+        // At phase 0 the noise is always 0 (lattice vertex 0 is pinned) ⇒ the add track starts from the identity
         assert_eq!(noise(0)[0], 0.0f64.to_bits());
     }
 
-    /// 曲线对象 + 相对长度 → 绝对端点：混出来的仍是单一 `{value, basis, offset}`。
+    /// Curve object + relative length → absolute endpoints: the blend still comes out as a single `{value, basis, offset}`.
     #[test]
     fn baking_a_curve_object_keeps_relative_lengths_representable() {
         let graph = MotionGraph {
@@ -1225,11 +1226,11 @@ mod tests {
         assert_eq!(frames[0].v["value"], json!(0.05));
         assert_eq!(frames[0].v["basis"], json!("canvasShortEdge"));
         assert_eq!(frames.last().unwrap().v["value"], json!(0.0));
-        // 每一帧仍是一个可求值的相对长度对象
+        // Each frame is still an evaluable relative-length object
         for frame in frames {
             assert!(frame.v.get("basis").is_some(), "{:?}", frame.v);
         }
-        // 两条不同的非绝对基准混不出单一对象 ⇒ 报错而不是猜
+        // Two different non-absolute bases cannot blend into a single object ⇒ raise an error rather than guess
         let graph = MotionGraph {
             root: MotionOp::Tween {
                 target: TargetId::SELF,
@@ -1283,7 +1284,7 @@ mod tests {
         assert_eq!(flow.tracks[0].frames[30].v, json!(0.0));
     }
 
-    /// 设计 §13：Graph op 变体预算。穷举 `match` 让「加一个变体」编译不过。
+    /// Design §13: Graph op variant budget. An exhaustive `match` makes “adding a variant” fail to compile.
     #[test]
     fn motion_op_variant_budget_is_respected() {
         fn name(op: &MotionOp) -> &'static str {

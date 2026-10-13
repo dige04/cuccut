@@ -11,8 +11,7 @@ const IN_REPO = path.join('packages', 'editor-wasm', 'src', RELATIVE);
 let loaded: EditorSemantics | null = null;
 
 /**
- * WASM 文件的位置：本模块旁边的 `generated/editor.wasm`；Runtime 被打进别的 bundle 时，从 bundle 往上找仓库里的
- * `packages/editor-wasm/src/generated/editor.wasm`（与找 cargo 产物同一个办法）。找不到时 null。
+ * Location of the WASM file: `generated/editor.wasm` next to this module. When the Runtime is bundled into another bundle, search upward from the bundle for `packages/editor-wasm/src/generated/editor.wasm` in the repo (same method as finding cargo artifacts). Returns null if not found.
  */
 export function locateEditorWasm(here = path.dirname(fileURLToPath(import.meta.url))): string | null {
   const beside = path.join(here, RELATIVE);
@@ -30,7 +29,7 @@ export function locateEditorWasm(here = path.dirname(fileURLToPath(import.meta.u
   }
 }
 
-/** 载入一次，之后同步复用。没有构建时抛 `EditorWasmUnavailable`。 */
+/** Loads once, then reuses synchronously. Throws `EditorWasmUnavailable` if not built. */
 export function editorSemantics(): EditorSemantics {
   if (loaded) return loaded;
   const file = locateEditorWasm();
@@ -42,12 +41,12 @@ export function editorSemantics(): EditorSemantics {
   return loaded;
 }
 
-/** WASM 是否已经构建（测试据此跳过）。 */
+/** Whether the WASM has been built (tests skip based on this). */
 export function editorWasmAvailable(): boolean {
   return locateEditorWasm() !== null;
 }
 
-/** 各函数见 `EditorSemantics` 的同名方法。 */
+/** Each function: see the same-named method on `EditorSemantics`. */
 export const {
   speechSentences,
   stageBox,

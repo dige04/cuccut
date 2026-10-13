@@ -3,12 +3,9 @@ import { ModelsImageBundles as M } from '@cuccut/protocol/messages/models/image-
 import type { BundleDefinition } from './bundle-registry.ts';
 
 /**
- * 本地文生图的模型包（架构设计 §6.3）。`bundleId` 是 `<模型>@<backend>-<量化>`。仓库、版本与文件清单（`repo-manifests.ts`）
- * 与旧版 CucCut 为同一版本固定的一致。
+ * Model packs for local text-to-image (architecture design §6.3). `bundleId` is `<model>@<backend>-<quantization>`. The repos, versions and file lists (`repo-manifests.ts`) match the older CucCut, pinned to the same versions.
  *
- * Qwen-Image-2.1 的文本编码器、DiT 与 VAE 在一个仓库里，整个仓库是一个 `image` 组件；三段顺序运行、逐层流式读入、从不同时
- * 驻留，所以 Model Worker 的峰值远小于权重总量（约 10 GB），资源调度按 `image.peakBytes`（实测）计，不按权重估计。MLX 的
- * 只在 Apple Silicon 上列出，别的平台列 candle 的变体（`platformBundles`）。
+ * Qwen-Image-2.1's text encoder, DiT and VAE live in one repo, and the whole repo is one `image` component. The three stages run in sequence, streamed in layer by layer, and are never resident at the same time, so the Model Worker's peak is far below the total weight size (about 10 GB). Resource scheduling counts `image.peakBytes` (measured), not a weight-based estimate. The MLX variant is listed only on Apple Silicon; on other platforms the candle variants are listed instead (`platformBundles`).
  */
 
 const MiB = 1024 * 1024;
@@ -18,15 +15,15 @@ const QWEN_IMAGE_LICENSE: ModelLicense = {
   name: 'Qwen RESEARCH LICENSE AGREEMENT',
   url: 'https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE',
   commercialUse: false,
-  // 许可摘要给人看：用 getter，读的时候（列出状态、序列化过线）按当前语言生成。
+  // The license summary is for people to read: use a getter, which generates it in the current language when read (when listing status, serializing over the wire).
   get summary() {
     return M.qwenImageLicense().text;
   },
 };
 
 /**
- * 宽高比与默认像素尺寸：长边 1024，短边按比例取 32 的倍数（与旧版的尺寸规则相同）。第一个是默认尺寸。
- * Worker 认的是更宽的规则（32 的倍数、长边 ≤ 1536、长短边之比 ≤ 3），这里只列界面与请求能选的几档。
+ * Aspect ratios and default pixel sizes: long side 1024, short side scaled to a multiple of 32 (same sizing rule as the older version). The first one is the default size.
+ * The Worker accepts a wider rule (multiples of 32, long side ≤ 1536, long/short ratio ≤ 3). Here we list only the few sizes the UI and requests can pick.
  */
 export const QWEN_IMAGE_ASPECTS: ReadonlyArray<{ ratio: string; size: string }> = [
   { ratio: '1:1', size: '1024x1024' },
@@ -52,18 +49,16 @@ const QWEN_IMAGE_MLX: BundleDefinition = {
     aspects: QWEN_IMAGE_ASPECTS,
     extraSizes: ['512x512'],
     maxPromptChars: 1024,
-    // 设计稿 image-gen.jsx 的「步数」：8–40，一次加减 4，默认 20。
+    // The "steps" control in the design draft image-gen.jsx: 8–40, adjusted by 4 at a time, default 20.
     steps: { min: 8, max: 40, step: 4, default: 20 },
-    // 实测 Model Worker 的进程峰值（phys_footprint）：256² 约 0.7 GB、1024² 约 1.0 GB（MLX 峰值 0.94 GB）；旧版同一管线
-    // 512² 约 0.8 GB。留到 2 GiB 容更大的尺寸（长边至多 1536）与抖动。
+    // Measured peak process memory of the Model Worker (phys_footprint): about 0.7 GB at 256², about 1.0 GB at 1024² (MLX peak 0.94 GB). The older version's same pipeline at 512² was about 0.8 GB. Budget up to 2 GiB to leave room for larger sizes (long side up to 1536) and fluctuation.
     peakBytes: 2 * GiB,
     slow: true,
   },
 };
 
 /**
- * candle 后端的同一个模型包（架构设计 §6.5）：同一个 MLX 4-bit 仓库，用到时逐个矩阵反量化（与旧版相同），只在 Apple Silicon
- * 以外的平台列出。CPU 上以 f32 计算，CUDA 上以 bf16。CPU 上很慢：1024² 二十步约三小时（实测见 §6.5）。
+ * The same model pack for the candle backend (architecture design §6.5): the same MLX 4-bit repo, dequantized matrix by matrix as needed (same as the older version), and listed only on platforms other than Apple Silicon. On CPU it computes in f32, on CUDA in bf16. It is very slow on CPU: 1024² at 20 steps takes about three hours (measured, see §6.5).
  */
 const QWEN_IMAGE_CANDLE: BundleDefinition = {
   ...QWEN_IMAGE_MLX,
@@ -72,11 +67,9 @@ const QWEN_IMAGE_CANDLE: BundleDefinition = {
   device: 'cpu',
   image: {
     ...QWEN_IMAGE_MLX.image!,
-    // CPU 上算 f32，计在进程内存。本机实测进程峰值（phys_footprint）：256² 2.4 GB、1024² 4.7 GB（出在 VAE 解码；DiT 那段
-    // 3.3 GB，逐层反量化的矩阵约 0.9 GB 加注意力的分块）。常驻集还算上映射的权重页（1024² 4.9 GB），那部分是文件缓存、可回收，
-    // 不计。留到 6 GiB 容长边 1536 的尺寸与抖动。
+    // On CPU, computation is f32, and memory counts toward process memory. Measured peak process memory on this machine (phys_footprint): 256² 2.4 GB, 1024² 4.7 GB (the peak is in VAE decode; the DiT stage is 3.3 GB, made up of about 0.9 GB for dequantized matrices layer by layer plus attention chunks). The resident set also includes mapped weight pages (4.9 GB at 1024²); that part is file cache and reclaimable, so it is not counted. Budget up to 6 GiB to cover the long side 1536 size and fluctuation.
     peakBytes: 6 * GiB,
-    // CUDA 上算 bf16，计在显存：本机没有 CUDA；旧版同一管线实测 1024×576 整卡峰值 3.57 GiB（含桌面约 1.2 GB），1024² 未测。
+    // On CUDA, computation is bf16, and memory counts toward VRAM. This machine has no CUDA. The older version's same pipeline measured a peak of 3.57 GiB across the whole card at 1024×576 (including about 1.2 GB for the desktop); 1024² was not measured.
     devicePeakBytes: { cuda: 4 * GiB },
   },
 };

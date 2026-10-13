@@ -43,20 +43,19 @@ import { assertVoiceUploadAllowed } from './voice-access.ts';
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 用户库的存储（架构设计 §5.9）。只有 Runtime 经它读写。
+ * User library storage (architecture design §5.9). Only the Runtime reads and writes through it.
  *
  * ```text
  * <home>/library/<glossaries|voices|brand>/<id>/
- *   entry.json            条目头：当前版本、保留的版本、删除时间、音色的克隆（原子写；它是提交点）
- *   versions/<n>.json     第 n 版的内容
- *   files/<hex>.<ext>     文件，按内容摘要命名
+ *   entry.json            entry header: current version, retained versions, deletion time, voice clones (atomic write; it is the commit point)
+ *   versions/<n>.json     content of version n
+ *   files/<hex>.<ext>     files, named by content digest
  * ```
  *
- * - 每次内容变化得到新的版本号（递增的整数）与内容摘要；内容不变不产生新版本。
- * - 旧版本只在被固定（`pin`，例如进行中的任务冻结了它）时保留；解除固定后清掉。没有 `entry.json` 的目录是没写完的新条目，
- *   打开时删掉；没被保留的版本引用的文件同样删掉。
- * - 删除条目时，固定着的版本留到解除固定；音色有克隆时留下一个只有条目头的墓碑（克隆转为 `stale`），等远端删除克隆（§14）。
- * - 写操作串行执行。
+ * - Each content change gets a new version number (an incrementing integer) and a content digest. Unchanged content does not produce a new version.
+ * - Old versions are kept only while pinned (`pin`, for example an in-progress task froze it). They are cleared after unpinning. A directory without `entry.json` is an unfinished new entry and is deleted on open. Files referenced only by versions that are not kept are deleted too.
+ * - When an entry is deleted, pinned versions are kept until unpinned. A voice with clones leaves a tombstone holding only the entry header (its clones become `stale`), waiting for the remote clone to be deleted (§14).
+ * - Write operations run serially.
  */
 
 const ENTRY_FILE = 'entry.json';
@@ -71,7 +70,7 @@ const MAX_BYTES: Record<BrandMediaKind | 'voice', number> = {
   video: 4096 * MiB,
   voice: VOICE_REFERENCE_MAX_BYTES,
 };
-/** Lottie 贴纸的 JSON 要整个解析，上限小一些。 */
+/** Lottie sticker JSON must be parsed in full, so its limit is smaller. */
 const LOTTIE_MAX_BYTES = 10 * MiB;
 
 interface EntryHeader {
@@ -98,7 +97,7 @@ interface Held {
   versions: Map<number, StoredVersion>;
 }
 
-/** 放进库里的文件：本机路径，或已经在内存里的 bytes（音色包解出来的）。 */
+/** A file put into the library: a local path, or bytes already in memory (unpacked from a voice package). */
 export type LibraryFileInput = { path: string; fileName?: string } | { bytes: Buffer; fileName: string };
 
 export interface LibraryPutInput {
@@ -107,7 +106,7 @@ export interface LibraryPutInput {
   expectedVersion?: number;
   content: LibraryContentInput;
   file?: LibraryFileInput;
-  /** 导入音色包时沿用包里的授权时间。 */
+  /** When importing a voice package, keep the consent time from the package. */
   consentDeclaredAt?: string | null;
 }
 
@@ -119,7 +118,7 @@ export interface LibraryPutOutcome<L extends LibraryName = LibraryName> {
 
 export interface LibraryStoreOptions {
   dir: string;
-  /** 参考录音能不能解码（Runtime 用 ffprobe）；不能时抛 `LIBRARY_FORMAT_INVALID`。没有给时音色存不进来。 */
+  /** Whether the reference recording can be decoded (the Runtime uses ffprobe). If not, throws `LIBRARY_FORMAT_INVALID`. If none is given, the voice cannot be stored. */
   validateAudio?: (file: string, mediaType: string) => Promise<void>;
   onEvent?: (event: LibraryEvent) => void;
   now?: () => Date;
@@ -129,7 +128,7 @@ export class LibraryStore {
   readonly dir: string;
   readonly #options: LibraryStoreOptions;
   readonly #entries = new Map<string, Held>();
-  /** 持有者 → 它固定的版本。 */
+  /** Holder → the versions it pins. */
   readonly #pins = new Map<string, FrozenLibraryEntry[]>();
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -144,7 +143,7 @@ export class LibraryStore {
     return store;
   }
 
-  // ---- 读 ----
+  // ---- Read ----
 
   list(library?: LibraryName, kind?: string): LibraryEntrySummary[] {
     const out: LibraryEntrySummary[] = [];
@@ -159,7 +158,7 @@ export class LibraryStore {
     return out.sort((a, b) => order(a.library) - order(b.library) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   }
 
-  /** 当前版本，或保留着的旧版本（被固定的）。删除了但版本还被固定着的条目也能按版本读到。 */
+  /** The current version, or a retained old version (pinned). An entry that was deleted but whose versions are still pinned can also be read by version. */
   get<L extends LibraryName>(ref: LibraryEntryRef & { library: L }): LibraryEntry<L> {
     const held = this.#entries.get(key(ref.library, ref.id));
     if (!held || (held.header.removedAt && ref.version === undefined)) throw new RpcError('not-found', SL.entryNotFound());
@@ -173,12 +172,12 @@ export class LibraryStore {
     return this.#entry(held, stored) as LibraryEntry<L>;
   }
 
-  /** 条目带的文件（音色的参考录音、品牌库的媒体）；没有时 null。 */
+  /** Files the entry carries (a voice's reference recording, brand library media). null if none. */
   fileOf(entry: LibraryEntry): LibraryFile | null {
     return fileOfContent(entry.content);
   }
 
-  /** 文件在磁盘上的位置。 */
+  /** Location of the file on disk. */
   filePath(entry: Pick<LibraryEntry, 'library' | 'id'>, file: LibraryFile): string {
     return path.join(this.#entryDir(entry.library, entry.id), 'files', storedFileName(file));
   }
@@ -187,14 +186,14 @@ export class LibraryStore {
     return this.#entryDir(library, id);
   }
 
-  // ---- 写 ----
+  // ---- Write ----
 
   put<L extends LibraryName>(input: LibraryPutInput & { library: L }): Promise<LibraryPutOutcome<L>> {
     return this.#serial(async () => {
       try {
         return (await this.#put(input)) as LibraryPutOutcome<L>;
       } catch (error) {
-        // 新条目没写成：收进来的文件一并删掉（已有条目的由清理处理）。
+        // If the new entry fails to be written, the files collected for it are deleted too. Files of existing entries are handled by cleanup.
         if (!input.id) await this.#dropUncommitted(input.library);
         throw error;
       }
@@ -216,9 +215,8 @@ export class LibraryStore {
   }
 
   /**
-   * 记下一个 Provider 上的克隆。克隆要把参考录音上传给供应商，先过授权检查（`VOICE_CONSENT_REQUIRED`）。
-   * `referenceHash` 是上传的那份参考录音的摘要（不给时取当前的）：上传期间参考录音改了、条目被删了（被任务固定着、留着墓碑）时，
-   * 照样记下这个远端克隆，但直接是 `stale`——远端确实有它，`library.removeVoiceClone` 才删得掉。
+   * Records a clone on a Provider. The clone requires uploading the reference recording to the vendor, so it first passes the consent check (`VOICE_CONSENT_REQUIRED`).
+   * `referenceHash` is the digest of the reference recording that was uploaded (if not given, the current one is used). If the reference recording changed during the upload, or the entry was deleted (pinned by a task, leaving a tombstone), this remote clone is still recorded, but directly as `stale`. The remote does have it, so `library.removeVoiceClone` can delete it.
    */
   recordClone(id: Id, providerId: string, voiceId: string, referenceHash?: string): Promise<LibraryEntry<'voices'> | null> {
     return this.#serial(async () => {
@@ -245,7 +243,7 @@ export class LibraryStore {
     });
   }
 
-  /** 一个音色（含删除后留下的墓碑）在一个 Provider 上的克隆；没有时 null。条目不在时 `not-found`。 */
+  /** The clone of a voice (including a tombstone left after deletion) on one Provider. null if none. `not-found` if the entry does not exist. */
   cloneOf(id: Id, providerId: string): { clone: VoiceClone | null; removed: boolean } {
     const held = this.#entries.get(key('voices', id));
     if (!held) throw new RpcError('not-found', SL.entryNotFound());
@@ -254,8 +252,8 @@ export class LibraryStore {
   }
 
   /**
-   * 清掉一个克隆的记录（远端已经删掉、或用户只要清本地记录）。删除了的音色在最后一个克隆清掉、也没有被固定时连目录一起删掉。
-   * 没有这个克隆时 `not-found`。
+   * Clears a clone's record (already deleted remotely, or the user only wants to clear the local record). When the last clone of a deleted voice is cleared and it is not pinned, its directory is removed too.
+   * `not-found` if this clone does not exist.
    */
   removeClone(id: Id, providerId: string): Promise<void> {
     return this.#serial(async () => {
@@ -271,11 +269,11 @@ export class LibraryStore {
     });
   }
 
-  // ---- 固定 ----
+  // ---- Pins ----
 
   /**
-   * 固定条目的版本（不给版本时取当前版本），返回冻结下来的版本与摘要。同一个持有者可以多次固定；`unpin` 一次全部解除。
-   * 同步执行：任务提交时冻结，不等写队列。
+   * Pins a version of an entry (the current version if none is given), and returns the frozen version and its digest. The same holder may pin more than once. `unpin` releases them all at once.
+   * Runs synchronously: it freezes at task submission and does not wait for the write queue.
    */
   pin(holder: string, refs: LibraryEntryRef[]): FrozenLibraryEntry[] {
     const frozen = refs.map((ref) => {
@@ -286,7 +284,7 @@ export class LibraryStore {
     return frozen;
   }
 
-  /** 解除一个持有者的全部固定，清掉不再需要的旧版本。 */
+  /** Releases all pins held by one holder and clears old versions that are no longer needed. */
   unpin(holder: string): Promise<void> {
     const released = this.#pins.get(holder);
     if (!released) return Promise.resolve();
@@ -299,7 +297,7 @@ export class LibraryStore {
     });
   }
 
-  /** 这个版本此刻被固定了几次（测试与诊断用）。 */
+  /** How many times this version is pinned right now (for tests and diagnostics). */
   pinCount(ref: Required<LibraryEntryRef>): number {
     let n = 0;
     for (const pins of this.#pins.values()) {
@@ -308,12 +306,12 @@ export class LibraryStore {
     return n;
   }
 
-  /** 等写队列清空（关闭前、测试里）。 */
+  /** Waits for the write queue to drain (before closing, and in tests). */
   async idle(): Promise<void> {
     await this.#queue.catch(() => {});
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #serial<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.#queue.then(fn, fn);
@@ -428,7 +426,7 @@ export class LibraryStore {
     held.header.versions = [...held.header.versions.filter((v) => v !== version), version];
     held.versions.set(version, stored);
     if (library === 'voices') {
-      // 参考录音变了，各 Provider 上的克隆不再代表这个声音。
+      // The reference recording changed, so the clones on each Provider no longer represent this voice.
       const referenceHash = (content as VoiceContent).reference.sha256;
       for (const clone of Object.values(held.header.clones)) if (clone.referenceHash !== referenceHash) clone.state = 'stale';
     }
@@ -439,7 +437,7 @@ export class LibraryStore {
     return { entry: this.#entry(held, stored), created: !existing, changed: true };
   }
 
-  /** 把文件收进条目目录：认类型、查种类与大小、边复制边算摘要，按 `<hex>.<ext>` 存放。 */
+  /** Collects a file into the entry directory: identifies its type, checks its kind and size, computes the digest while copying, and stores it as `<hex>.<ext>`. */
   async #ingest(dir: string, input: LibraryFileInput, kind: BrandMediaKind | 'voice'): Promise<LibraryFile> {
     const label = kind === 'voice' ? SL.referenceRecording().text : kind;
     const max = MAX_BYTES[kind];
@@ -463,7 +461,7 @@ export class LibraryStore {
       try {
         if (isLottie(JSON.parse(text))) mediaType = 'application/json';
       } catch {
-        // 不是 JSON
+        // Not JSON
       }
     }
     if (!mediaType && kind === 'sticker' && looksLikeZip(head) && size <= LOTTIE_MAX_BYTES) {
@@ -509,7 +507,7 @@ export class LibraryStore {
     }
   }
 
-  /** 删掉这个库里没有条目头的目录（没写完的新条目）。只在写队列里调用，不会碰到正在写的条目。 */
+  /** Deletes directories in this library that have no entry header (unfinished new entries). Only called inside the write queue, so it never touches an entry being written. */
   async #dropUncommitted(library: LibraryName): Promise<void> {
     const libDir = path.join(this.dir, library);
     const ids = await fs.readdir(libDir).catch(() => [] as string[]);
@@ -524,7 +522,7 @@ export class LibraryStore {
     await writeJsonAtomic(path.join(this.#entryDir(held.header.library, held.header.id), ENTRY_FILE), held.header);
   }
 
-  /** 只留当前版本与被固定的版本，以及它们引用的文件。删除了且什么都不留时删掉整个目录（有克隆的音色留墓碑）。 */
+  /** Keeps only the current version, the pinned versions, and the files they reference. When the entry is deleted and nothing is kept, deletes the whole directory (a voice with clones leaves a tombstone). */
   async #prune(held: Held): Promise<void> {
     const { library, id } = held.header;
     const dir = this.#entryDir(library, id);
@@ -570,9 +568,9 @@ export class LibraryStore {
         if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) continue;
         const dir = path.join(libDir, id);
         const header = await readJson<EntryHeader>(path.join(dir, ENTRY_FILE)).catch(() => undefined);
-        if (header === undefined) continue; // 读不出来：留给人看，不动它
+        if (header === undefined) continue; // Cannot be read: leave it for a person to look at, do not touch it
         if (header === null) {
-          // 没写完的新条目
+          // Unfinished new entry
           await fs.rm(dir, { recursive: true, force: true });
           continue;
         }
@@ -584,7 +582,7 @@ export class LibraryStore {
           held.versions.set(header.current, stored);
         }
         this.#entries.set(key(library, id), held);
-        // 重启之后没有固定：旧版本与删除了的条目都可以清掉。
+        // After a restart there are no pins, so old versions and deleted entries can all be cleared.
         await this.#prune(held);
       }
     }
@@ -670,7 +668,7 @@ async function readHead(file: string): Promise<Buffer> {
   }
 }
 
-/** 删掉目录里不在名单上的文件（含没写完的临时文件）。目录不存在时什么都不做。 */
+/** Deletes files in the directory that are not on the list (including leftover temporary files). Does nothing if the directory does not exist. */
 async function removeExcept(dir: string, keep: Set<string>): Promise<void> {
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   await Promise.all(names.filter((n) => !keep.has(n)).map((n) => fs.rm(path.join(dir, n), { recursive: true, force: true })));

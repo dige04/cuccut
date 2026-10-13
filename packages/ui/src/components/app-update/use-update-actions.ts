@@ -9,19 +9,19 @@ import { useTasks } from '../../state/tasks-store.ts';
 import { U, type UpdateStep } from './update-copy.ts';
 
 /*
- * 更新的动作（设计稿 settings-update.jsx `act`）：关于页、rail 按钮打开的更新窗、toast 走同一套。检查、下载、取消、安装
- * 都是主进程的事，这里只转给宿主的 `updates` 面；「重启并更新」先过停止屏障（架构设计 §2.6）。
+ * Update actions (design settings-update.jsx `act`): the About page, the update window opened from the rail button, and toasts all use the same set. Checking, downloading, canceling and installing are all done by the main process;
+ * here they are only forwarded to the host's `updates` surface; “重启并更新” (restart and update) goes through the stop barrier first (architecture design §2.6).
  */
 
 const failed = (step: UpdateStep) => (error: unknown) =>
   ToastQueue.negative(U.failed(step, error instanceof Error ? error.message : String(error)), { timeout: 5000 });
 
-/** 现在还在跑的后台任务（读两个 store 的当前值，不订阅）。 */
+/** Background tasks still running now (reads the current values of the two stores, without subscribing). */
 export function liveBarrierTasks(): BarrierTask[] {
   return barrierTasks(useJobs.getState().jobs, useTasks.getState().tasks, isJobLive);
 }
 
-/** 交给主进程安装：校验、换包、退出都在那边；从这里起不再等后台任务。 */
+/** Hands off to the main process to install: verification, swapping the package and quitting all happen there; from here on it no longer waits for background tasks. */
 export function installNow(runtime: RuntimeSession): void {
   const updates = runtime.host.updates;
   if (!updates) return;
@@ -29,7 +29,7 @@ export function installNow(runtime: RuntimeSession): void {
   void updates.install().catch(failed('install'));
 }
 
-/** 「现在停止并安装」：先把在跑的 Agent 任务停掉、Job 取消掉，都有了回音再安装（停不掉的不拦安装，Runtime 退出时照样停）。 */
+/** “现在停止并安装” (stop now and install): first stop the running Agent tasks and cancel the Jobs, and install once both have responded; tasks that cannot be stopped do not block the install (the Runtime still stops them when it exits). */
 export async function stopAllAndInstall(runtime: RuntimeSession): Promise<void> {
   const tasks = liveBarrierTasks();
   await Promise.allSettled(
@@ -42,7 +42,7 @@ export async function stopAllAndInstall(runtime: RuntimeSession): Promise<void> 
 }
 
 /**
- * 「重启并更新」：有后台任务在跑就打开停止屏障，没有就直接安装。
+ * “重启并更新” (restart and update): if background tasks are running, it opens the stop barrier; if not, it installs directly.
  *
  * The update window (a base-ui modal) and the barrier (a Spectrum alert, react-aria focus scope) are two modal systems
  * that must not stack: base-ui would read a click in the alert as an outside click and both would fight over focus.

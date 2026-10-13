@@ -1,13 +1,10 @@
-//! 平台原生编解码（架构设计 §9.11「画面」）：能用就用 `media-native`（macOS AVFoundation / Windows Media Foundation），
-//! 用不了的那一路单独回落 ffmpeg，回落原因记进 `done` 事件的 `video.fallbacks`。
+//! Platform-native codecs (architecture design §9.11 “picture”): `media-native` is used where it works (macOS AVFoundation / Windows Media Foundation). Where it does not, that one path falls back to ffmpeg individually, and the fallback reason is recorded in `video.fallbacks` of the `done` event.
 //!
-//! - 解码：每个视频实例的 [`VideoDecoder`](media_core::decode::VideoDecoder) 挂上原生帧源（[`decode`]），按素材各自回落；
-//!   可能带透明的素材不走原生（原生解码把 alpha 压成 255），直接用 ffmpeg。
-//! - 编码：只有 H.264 + MP4、偶数宽高、混音是 48 kHz 立体声 WAV（32 位浮点或 16/24/32 位整数）时走原生写入器（[`choose_encoder`]）；
-//!   HEVC、WebM/VP9、奇数尺寸、别的混音格式与原生打不开时走 ffmpeg。
-//! - 环境变量 `CUCCUT_EXPORT_NATIVE=0` 关掉原生，整条导出只走 ffmpeg（排查与测试用）。
+//! - Decoding: each video instance's [`VideoDecoder`](media_core::decode::VideoDecoder) gets a native frame source attached ([`decode`]), with fallback per asset. Assets that may carry transparency do not use native (native decoding flattens alpha to 255) and go straight to ffmpeg.
+//! - Encoding: the native writer ([`choose_encoder`]) is used only for H.264 + MP4, with even width and height, and a 48 kHz stereo WAV mix (32-bit float or 16/24/32-bit integer). HEVC, WebM/VP9, odd sizes, other mix formats, and cases where native cannot open fall back to ffmpeg.
+//! - The environment variable `CUCCUT_EXPORT_NATIVE=0` turns native off, so the whole export uses only ffmpeg (for troubleshooting and tests).
 //!
-//! RGBA 是导出循环里唯一的像素格式：BGRA↔RGBA 的换序留在 `media-native` 里。
+//! RGBA is the only pixel format in the export loop; the BGRA↔RGBA channel swap stays inside `media-native`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,14 +15,14 @@ use media_core::encode::{Container, EncodeSettings, FrameSink, Quality, VideoCod
 use media_native::{AudioInput, Mp4Options, Mp4Writer, PcmFormat, SequentialDecoder};
 use serde::Serialize;
 
-/// 关掉原生编解码的环境变量（值为 `0` 时关）。
+/// Environment variable that turns native codecs off (off when the value is `0`).
 pub const NATIVE_ENV: &str = "CUCCUT_EXPORT_NATIVE";
 
-/// 原生回落 ffmpeg 的一条记录（`done.video.fallbacks` 的元素）。`reason` 是英文代码。
+/// One record of native falling back to ffmpeg (an element of `done.video.fallbacks`). `reason` is an English code.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fallback {
-    /// `decoder` 或 `encoder`。
+    /// `decoder` or `encoder`.
     pub scope: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_id: Option<String>,
@@ -57,12 +54,12 @@ fn enabled_by(value: Option<&str>) -> bool {
     value.is_none_or(|v| v.trim() != "0")
 }
 
-/// 原生编解码有没有被环境变量关掉。
+/// Whether native codecs have been turned off by the environment variable.
 pub fn enabled() -> bool {
     enabled_by(std::env::var(NATIVE_ENV).ok().as_deref())
 }
 
-/// 原生解码整体不可用的原因（关掉了、平台没有）；可用时 `None`。
+/// Reason native decoding as a whole is unavailable (turned off, or not offered on this platform); `None` when available.
 pub fn decode_unavailable() -> Option<(&'static str, String)> {
     if !enabled() {
         return Some(("native-disabled", format!("{NATIVE_ENV}=0")));
@@ -73,7 +70,7 @@ pub fn decode_unavailable() -> Option<(&'static str, String)> {
     None
 }
 
-/// 挂给视频解码器的原生帧源；原生不可用时 `None`。
+/// The native frame source attached to the video decoder; `None` when native is unavailable.
 pub fn decode() -> Option<NativeDecode> {
     if decode_unavailable().is_some() {
         return None;
@@ -100,14 +97,14 @@ impl FrameFeed for Feed {
     }
 }
 
-/// 编码走哪条路：原生写入器（带参数），或 ffmpeg（带不走原生的原因）。
+/// Which path encoding takes: the native writer (with its parameters), or ffmpeg (with the reason it does not take native).
 #[derive(Clone, Debug, PartialEq)]
 pub enum EncoderPlan {
     Native(Mp4Options),
     Ffmpeg(Fallback),
 }
 
-/// 按输出设置选编码器。混音 WAV 还没写出来时（导出开始时的预检）按能走原生算，执行时（WAV 已在）再按实际格式定。
+/// Selects the encoder from the output settings. When the mix WAV has not been written yet (the preflight at export start), it is computed as if native would work; at execution time (WAV already present), it is set by the actual format.
 pub fn choose_encoder(settings: &EncodeSettings) -> EncoderPlan {
     let audio_ok = |path: &Path| match media_native::read_wav_layout(path) {
         Ok(layout) if layout.is_native_pcm() => Ok(()),
@@ -184,7 +181,7 @@ fn choose_encoder_with(
     })
 }
 
-/// 打开原生写入器（在编码队列的写线程里调用）。
+/// Opens the native writer (called on the write thread of the encode queue).
 pub fn open_sink(path: PathBuf, options: &Mp4Options) -> Result<Box<dyn FrameSink>, MediaError> {
     let writer = media_native::open_mp4_writer_with_options(&path, options)
         .map_err(|e| MediaError::new("EXPORT_ENCODE_FAILED", format!("{e:#}")))?;
@@ -194,14 +191,14 @@ pub fn open_sink(path: PathBuf, options: &Mp4Options) -> Result<Box<dyn FrameSin
     }))
 }
 
-/// 原生写入器做成编码队列的输出：失败与放弃时不留文件。
+/// Makes the native writer the output of the encode queue. On failure or abandonment, no file is left behind.
 struct NativeSink {
     writer: Option<Mp4Writer>,
     path: PathBuf,
 }
 
 impl NativeSink {
-    /// 删掉输出；还没建出来（`NotFound`）或删不掉都不再报错——导出已经以别的原因失败或取消了。
+    /// Deletes the output. No error is reported if it was never created (`NotFound`) or cannot be deleted, since the export has already failed or been cancelled for another reason.
     fn remove_output(&self) {
         let _ = std::fs::remove_file(&self.path);
     }
@@ -229,7 +226,7 @@ impl FrameSink for NativeSink {
     }
 
     fn abort(mut self: Box<Self>) {
-        // 丢掉写入器即取消写入（AVAssetWriter cancelWriting / Sink Writer 释放），再删掉写了一半的文件。
+        // Dropping the writer cancels the write (AVAssetWriter cancelWriting / Sink Writer release), then the half-written file is deleted.
         drop(self.writer.take());
         self.remove_output();
     }
@@ -333,7 +330,7 @@ mod tests {
         assert!(value.get("assetId").is_none());
     }
 
-    /// 放弃与收尾失败都不留文件；放弃时文件可能还没建出来，不报错。
+    /// Abandonment and failure during wrap-up both leave no file. On abandonment the file may not have been created yet, so no error is reported.
     #[test]
     fn an_aborted_native_sink_leaves_no_file() {
         if !media_native::encode_available() {

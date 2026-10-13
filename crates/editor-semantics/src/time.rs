@@ -1,28 +1,28 @@
-//! 时间类型与规则（视频格式规范 §2）。这里是 `parseDecimalSeconds`、`compareTime`、
-//! `mapTime`、`quantizeFrame`、`timestampAt` 的语义单源（§2.13）；宿主只拿结果。
+//! Time types and rules (video format spec §2). This is the single source of semantics for `parseDecimalSeconds`, `compareTime`,
+//! `mapTime`, `quantizeFrame`, and `timestampAt` (§2.13); hosts only receive results.
 
 use message_ref::{Text, msg};
 use serde::{Deserialize, Serialize};
 
 use crate::ratio::Ratio;
 
-/// 时间合同的版本（§2.13、TIME-08）。改变舍入或采样规则必须升级它。
+/// Version of the time contract (§2.13, TIME-08). Any change to rounding or sampling rules must bump it.
 pub const TIME_CONTRACT_VERSION: u32 = 1;
 
-/// JSON 里的安全整数上限（2^53 − 1）。帧号、timescale、Rate 的分子分母都不超过它。
+/// Safe-integer upper bound in JSON (2^53 − 1). Frame numbers, timescale, and the numerator and denominator of Rate all stay within it.
 pub const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
 
-/// 十进制秒最多接受的整数位与小数位。超过时报溢出，不截断。
+/// Maximum integer and fractional digits accepted for decimal seconds. Exceeding them reports overflow rather than truncating.
 const MAX_INT_DIGITS: usize = 18;
 const MAX_FRAC_DIGITS: usize = 18;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TimeError {
-    /// 非法的十进制、负的绝对位置、零 timebase（`INVALID_TIME_VALUE`）。
+    /// Invalid decimal, negative absolute position, or zero timebase (`INVALID_TIME_VALUE`).
     Invalid { field: String, reason: Text },
-    /// 输入或中间值超出合同上限（`TIME_ARITHMETIC_OVERFLOW`）。
+    /// Input or intermediate value exceeds the contract limit (`TIME_ARITHMETIC_OVERFLOW`).
     Overflow { field: String },
-    /// `exact-frame` 的请求不在帧边界上（`TIME_NOT_ON_FRAME_GRID`）。
+    /// An `exact-frame` request is not on a frame boundary (`TIME_NOT_ON_FRAME_GRID`).
     NotOnFrameGrid {
         requested: MediaTime,
         floor: i64,
@@ -52,7 +52,7 @@ impl TimeError {
     }
 }
 
-/// 帧率：约分之后的正有理数（§2.3）。
+/// Frame rate: a positive rational number, reduced (§2.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rate {
     pub num: i64,
@@ -66,7 +66,7 @@ impl Rate {
         Ok(rate)
     }
 
-    /// 分子分母为正的安全整数并已约分。不约分的 Rate 不接受，避免同一个帧率有两种写法。
+    /// Safe integers with a positive numerator and denominator, already reduced. A Rate that is not reduced is rejected, so that one frame rate cannot be written in two ways.
     pub fn validate(&self, field: &str) -> Result<(), TimeError> {
         let (num, den) = (self.num as i128, self.den as i128);
         if num <= 0 || den <= 0 {
@@ -86,13 +86,13 @@ impl Rate {
         Ratio::new(self.num as i128, self.den as i128).expect("Rate 已校验")
     }
 
-    /// 一帧的时长（秒）。
+    /// Duration of one frame (seconds).
     pub fn frame_duration(self) -> Ratio {
         Ratio::new(self.den as i128, self.num as i128).expect("Rate 已校验")
     }
 }
 
-/// `ticks / timescale` 秒。`ticks` 是有符号的十进制整数字符串（§2.3）。
+/// `ticks / timescale` seconds. `ticks` is a signed decimal integer string (§2.3).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaTime {
     pub ticks: String,
@@ -100,7 +100,7 @@ pub struct MediaTime {
 }
 
 impl MediaTime {
-    /// 规范形式：约分之后的值。timescale 必须是安全整数。
+    /// Canonical form: the value after reduction. timescale must be a safe integer.
     pub fn from_ratio(value: Ratio, field: &str) -> Result<MediaTime, TimeError> {
         if value.den() > MAX_SAFE_INTEGER {
             return Err(TimeError::overflow(field));
@@ -118,7 +118,7 @@ impl MediaTime {
         }
     }
 
-    /// 按值解析；1500/1000 与 3/2 得到同一个 `Ratio`（§2.3、TM05）。
+    /// Parses by value; 1500/1000 and 3/2 yield the same `Ratio` (§2.3, TM05).
     pub fn to_ratio(&self, field: &str) -> Result<Ratio, TimeError> {
         if self.timescale <= 0 {
             return Err(TimeError::invalid(field, msg!("time.timescaleNotPositive", "timescale must be greater than 0")));
@@ -130,7 +130,7 @@ impl MediaTime {
         Ratio::new(ticks, self.timescale as i128).ok_or_else(|| TimeError::overflow(field))
     }
 
-    /// 缓存键用的规范值（§2.13）。
+    /// Canonical value used for cache keys (§2.13).
     pub fn canonical_key(&self, field: &str) -> Result<String, TimeError> {
         Ok(self.to_ratio(field)?.canonical())
     }
@@ -150,10 +150,10 @@ fn parse_integer(text: &str, field: &str) -> Result<i128, TimeError> {
     text.parse::<i128>().map_err(|_| TimeError::overflow(field))
 }
 
-/// 精确解析十进制秒（§2.8、TM05、TM06）。
+/// Exact parsing of decimal seconds (§2.8, TM05, TM06).
 ///
-/// 语法：可选的负号，至少一位整数，可选的小数部分（点之后至少一位）。不接受加号、
-/// 指数、NaN、Infinity、空白与千分位。超出位数或合同上限时报溢出，不截断。
+/// Syntax: an optional minus sign, at least one integer digit, and an optional fractional part (at least one digit after the point).
+/// Does not accept a plus sign, exponent, NaN, Infinity, whitespace, or thousands separators. Exceeding the digit count or contract limit reports overflow rather than truncating.
 pub fn parse_decimal_seconds(text: &str, field: &str) -> Result<Ratio, TimeError> {
     let (negative, body) = match text.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -184,7 +184,7 @@ pub fn parse_decimal_seconds(text: &str, field: &str) -> Result<Ratio, TimeError
     Ok(value)
 }
 
-/// 秒的精确值写回十进制字符串。只有分母是 2 与 5 的幂时才是有限小数；否则为 `None`。
+/// Writes an exact seconds value back as a decimal string. It is a finite decimal only when the denominator is a power of 2 and 5; otherwise `None`.
 pub fn format_decimal_seconds(value: Ratio) -> Option<String> {
     let mut den = value.den();
     let mut scale = 0u32;
@@ -216,12 +216,12 @@ pub fn format_decimal_seconds(value: Ratio) -> Option<String> {
     Some(if negative { format!("-{text}") } else { text })
 }
 
-/// 精确比较两个时间（按值，不按字符串）。
+/// Compares two times exactly (by value, not by string).
 pub fn compare_time(a: &MediaTime, b: &MediaTime) -> Result<std::cmp::Ordering, TimeError> {
     Ok(a.to_ratio("a")?.cmp(&b.to_ratio("b")?))
 }
 
-/// 视觉时间输入：秒与帧互斥（§2.8）。
+/// Visual time input: seconds and frames are mutually exclusive (§2.8).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "unit", rename_all = "lowercase", deny_unknown_fields)]
 pub enum TimelineTimeInput {
@@ -239,8 +239,8 @@ pub enum FrameAlignment {
 }
 
 impl TimelineTimeInput {
-    /// 输入解析成的精确时间。帧输入按命令所属序列的帧率换算（不接受别的时间域）。
-    /// `allow_negative` 只给相对偏移用；绝对位置不能为负（§2.4）。
+    /// Exact time that the input parses to. Frame input is converted using the frame rate of the sequence the command belongs to (no other time domain is accepted).
+    /// `allow_negative` is only for relative offsets; absolute positions cannot be negative (§2.4).
     pub fn resolve(&self, fps: Rate, field: &str, allow_negative: bool) -> Result<Ratio, TimeError> {
         let value = match self {
             TimelineTimeInput::Seconds { value } => parse_decimal_seconds(value, field)?,
@@ -259,17 +259,17 @@ impl TimelineTimeInput {
     }
 }
 
-/// 帧边界的精确时间：`frame × den / num`。
+/// Exact time of a frame boundary: `frame × den / num`.
 pub fn frame_time(frame: i128, fps: Rate) -> Option<Ratio> {
     Ratio::from_int(frame)?.checked_mul(fps.frame_duration())
 }
 
-/// 精确时间落在帧网格上的位置（可以不是整数）。
+/// Position of an exact time on the frame grid (it need not be an integer).
 pub fn frames_at(time: Ratio, fps: Rate) -> Option<Ratio> {
     time.checked_mul(fps.ratio())
 }
 
-/// 按对齐政策把精确时间量化到帧边界（§2.6）。`nearest-frame` 恰在正中时取较早的边界。
+/// Quantizes an exact time to a frame boundary according to the alignment policy (§2.6). With `nearest-frame`, a time exactly at the midpoint takes the earlier boundary.
 pub fn quantize_frame(time: Ratio, fps: Rate, policy: FrameAlignment, field: &str) -> Result<i64, TimeError> {
     let x = frames_at(time, fps).ok_or_else(|| TimeError::overflow(field))?;
     let floor = x.floor();
@@ -302,7 +302,7 @@ fn to_frame(frame: i128, field: &str) -> Result<i64, TimeError> {
     Ok(frame as i64)
 }
 
-/// 量化回执（§2.9）：请求的格式化值、精确值、实际落点与偏差。
+/// Quantization receipt (§2.9): the requested formatted value, exact value, actual landing point, and deviation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeQuantizationReceipt {
@@ -330,7 +330,7 @@ pub enum SequenceDomainKind {
     Sequence,
 }
 
-/// 一次量化：解析输入，按政策落到帧上，并给出回执。
+/// One quantization: parses the input, snaps it to a frame according to the policy, and returns a receipt.
 pub struct Quantized {
     pub frame: i64,
     pub receipt: TimeQuantizationReceipt,
@@ -342,7 +342,7 @@ pub struct GridContext<'a> {
     pub fps: Rate,
 }
 
-/// 绝对位置：解析 → 量化一次 → 回执。
+/// Absolute position: parse → quantize once → receipt.
 pub fn quantize_input(
     input: &TimelineTimeInput,
     grid: &GridContext<'_>,
@@ -353,7 +353,7 @@ pub fn quantize_input(
     quantize_exact(requested, input.clone(), grid, policy, field)
 }
 
-/// 已经求出的精确目标（例如「当前位置 + 相对偏移」）量化一次（TM07：先求绝对目标，再量化）。
+/// Quantizes an already computed exact target (for example, “current position + relative offset”) once (TM07: compute the absolute target first, then quantize).
 pub fn quantize_exact(
     requested: Ratio,
     input: TimelineTimeInput,
@@ -386,7 +386,7 @@ pub fn quantize_exact(
     })
 }
 
-/// 视觉实例的映射（§2.5）。
+/// Mapping for a visual instance (§2.5).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum TimeMap {
@@ -394,7 +394,7 @@ pub enum TimeMap {
     Hold { source_at: MediaTime },
 }
 
-/// 视频时刻 `t` 对应的源时刻：`sourceIn + (t − itemStart) × rate`（§2.5）。不要求 `t` 在整数帧上。
+/// Source time corresponding to video time `t`: `sourceIn + (t − itemStart) × rate` (§2.5). `t` does not need to fall on an integer frame.
 pub fn map_time(time_map: &TimeMap, item_start: Ratio, t: Ratio) -> Result<Ratio, TimeError> {
     match time_map {
         TimeMap::Hold { source_at } => source_at.to_ratio("sourceAt"),
@@ -409,8 +409,8 @@ pub fn map_time(time_map: &TimeMap, item_start: Ratio, t: Ratio) -> Result<Ratio
     }
 }
 
-/// 输出帧 `n` 的编码时间戳（微秒）：`round(n × den / num × 1e6)`，tie 取偶数（§2.13）。
-/// 与编辑吸附的 `nearest-frame`（取较早边界）是两套规则。
+/// Encoded timestamp (microseconds) of output frame `n`: `round(n × den / num × 1e6)`, with ties rounding to even (§2.13).
+/// This is a separate rule from `nearest-frame` used for edit snapping, which takes the earlier boundary.
 pub fn timestamp_at(n: i64, output_fps: Rate) -> Option<i64> {
     let t = frame_time(n as i128, output_fps)?.checked_mul(Ratio::from_int(1_000_000)?)?;
     let floor = t.floor();

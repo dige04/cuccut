@@ -1,31 +1,30 @@
-//! 字幕样式文档的正文（视频格式规范 §5.6，文档 `kind: 'caption-style'`）。
+//! Body of a caption-style document (video format spec §5.6, document `kind: 'caption-style'`).
 //!
-//! 两种正文：Studio 样式（`cuccut.legacy-studio-style/0.1`，v2 字幕样式的 `style` 原样）与定位框样式
-//! （`cuccut.boxed-caption-style/<N>`，外部工程导入写的）。引擎写入时只核对定位框样式的逐词动画
-//! （[`caption_style_body_problems`]），其余字段由渲染内核读，不校验。
+//! Two kinds of body: the Studio style (`cuccut.legacy-studio-style/0.1`, the v2 caption style's `style` kept as it is) and the boxed-caption style
+//! (`cuccut.boxed-caption-style/<N>`, written by external project imports). When the engine writes, it only checks the per-word animation of the boxed-caption style
+//! ([`caption_style_body_problems`]); the other fields are read by the render kernel and are not validated.
 
 use message_ref::{Text, msg};
 use serde_json::Value;
 
 pub const CAPTION_STYLE_KIND: &str = "caption-style";
-/// Studio 字幕样式。
+/// Studio caption style.
 pub const STUDIO_STYLE_SCHEMA: &str = "cuccut.legacy-studio-style/0.1";
 const BOXED_STYLE_PREFIX: &str = "cuccut.boxed-caption-style/";
 
-/// 定位框样式：`cuccut.boxed-caption-style/` 后面跟版本号。
+/// Boxed-caption style: `cuccut.boxed-caption-style/` followed by a version number.
 pub fn is_boxed_style_schema(schema: &str) -> bool {
     schema
         .strip_prefix(BOXED_STYLE_PREFIX)
         .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// 默认预设（视频格式规范 §5.6「默认预设」）：没有样式文档的字幕按它画，新建字幕层种下的 Studio 样式也是它。
+/// Default preset (video format spec §5.6 “默认预设” (default preset)): captions with no style document are drawn with it, and the Studio style seeded into a newly created caption layer is it too.
 ///
-/// 涂装是新建项目的种子「经典」（原型 `model-defaultsub.js`，编辑器 `caption-presets.ts` 的 `CLASSIC`，逐字段相同）：
-/// 白字、700 字重、黑色描边（`textOutline.width` 是字号的百分比，随字号缩放）与投影，浅色画面上也看得清；底板关着。
-/// `punct: true`：普通逗号、句号换成空格；转写和导出的字幕文件保留原文。不分语言。
-/// 编辑器（`packages/ui/src/model/property-values.ts` 的 `DEFAULT_CAPTION_STYLE`）与流程（`packages/jobs` 的
-/// `caption-layer.ts`）各有一份同样的正文，改的时候三处一起改。
+/// The finish is the seed “经典” (classic) for new projects (prototype `model-defaultsub.js`, the editor's `CLASSIC` in `caption-presets.ts`, identical field by field):
+/// white text, weight 700, black outline (`textOutline.width` is a percentage of the font size and scales with it) and a shadow, legible even on light pictures; the backing plate is off.
+/// `punct: true`: ordinary commas and periods are replaced with spaces; transcripts and exported caption files keep the original text. Not language-specific.
+/// The editor (`DEFAULT_CAPTION_STYLE` in `packages/ui/src/model/property-values.ts`) and the pipeline (`caption-layer.ts` in `packages/jobs`) each keep a copy of the same body; change all three together when editing.
 pub fn default_studio_style() -> Value {
     serde_json::json!({
         "fontStyle": "normal",
@@ -53,7 +52,7 @@ pub fn default_studio_style() -> Value {
     })
 }
 
-/// 逐词动画目录的 19 个 id，与渲染内核的目录（`subtitle_render::word_animation_catalog::WORD_ANIMATIONS`）同名同序。
+/// The 19 ids of the per-word animation catalog, with the same names in the same order as the render kernel's catalog (`subtitle_render::word_animation_catalog::WORD_ANIMATIONS`).
 pub const WORD_ANIMATION_IDS: [&str; 19] = [
     "none",
     "boxHighlight",
@@ -76,8 +75,8 @@ pub const WORD_ANIMATION_IDS: [&str; 19] = [
     "paint",
 ];
 
-/// 正文与 §5.6 不合的地方（空表示合）。定位框样式：`style` 是对象；`style.animationPresetId` 出现时是逐词动画目录里的
-/// 一个 id。别的 schema 不核对。
+/// Places where the body does not match §5.6 (empty means it matches). Boxed-caption style: `style` is an object; when `style.animationPresetId` is present, it is an id in the per-word animation catalog.
+/// Other schemas are not checked.
 pub fn caption_style_body_problems(body: &Value) -> Vec<Text> {
     let schema = body.get("schema").and_then(Value::as_str).unwrap_or_default();
     if !is_boxed_style_schema(schema) {
@@ -139,7 +138,7 @@ mod tests {
             assert_eq!(caption_style_body_problems(&boxed(bad.clone())).len(), 1, "{bad}");
         }
         assert_eq!(caption_style_body_problems(&boxed(json!("reveal"))).len(), 1);
-        // Studio 样式与别的 schema 不核对：旧文档里的 `catalogId` 可能是内核名。
+        // Studio styles are not checked against other schemas: `catalogId` in old documents may be a kernel name.
         let studio = json!({ "schema": STUDIO_STYLE_SCHEMA, "style": { "wordAnimation": { "catalogId": "Color" } } });
         assert!(caption_style_body_problems(&studio).is_empty());
     }

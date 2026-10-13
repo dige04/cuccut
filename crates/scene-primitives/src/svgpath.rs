@@ -1,15 +1,12 @@
-//! SVG path 解析 → 折线，供描边生长（pathDraw）、填充与路径裁剪采样。
+//! Parses SVG paths into polylines, for stroke growth (pathDraw), fill and path-clip sampling.
 //!
-//! 命令集：`M L H V A C S Q T Z` 及各自的相对（小写）形式。弧线按规范 F.6.5
-//! 端点参数转圆心参数；贝塞尔在**路径自身坐标系**里按固定规则预采样
-//! （[`CURVE_TOLERANCE_VERSION`]），因此拓扑不随输出分辨率变化。
-//! 不认识的命令字母不再静默跳过：[`parse_checked`] 把它们收集出来，
-//! `ccut lint` 报 `path-command-unsupported`。
+//! Command set: `M L H V A C S Q T Z` and their relative (lowercase) forms. Arcs are converted from endpoint to center parameters per spec F.6.5. Béziers are pre-sampled with fixed rules in the **path's own coordinate system** ([`CURVE_TOLERANCE_VERSION`]), so the topology does not change with the output resolution.
+//! Unrecognized command letters are no longer skipped silently: [`parse_checked`] collects them, and `ccut lint` reports `path-command-unsupported`.
 
-/// 曲线预采样规则的版本号。改采样密度会改几何摘要，必须连同 golden 一起升。
+/// Version number of the curve pre-sampling rules. Changing the sampling density changes the geometry digest, so it must be bumped together with the golden files.
 pub const CURVE_TOLERANCE_VERSION: u32 = 1;
 
-/// 解析结果：折线子路径 + 不认识的命令字母（按首次出现序去重）。
+/// Parse result: polyline subpaths plus unrecognized command letters (de-duplicated, in order of first appearance).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Parsed {
     pub subpaths: Vec<Vec<(f64, f64)>>,
@@ -115,7 +112,7 @@ fn tokenize(d: &str) -> Vec<String> {
             tokens.push(std::mem::take(&mut buf));
             buf.push(ch);
         } else if ch == '.' && buf.contains('.') && !exp {
-            // "1.5.5" ⇒ 1.5 与 .5
+            // "1.5.5" ⇒ 1.5 and .5
             tokens.push(std::mem::take(&mut buf));
             buf.push(ch);
         } else {
@@ -136,7 +133,7 @@ fn is_command(token: &str) -> Option<char> {
     }
 }
 
-/// 贝塞尔段数：按控制多边形长度取，夹在 [8, 64]；单位是路径自身坐标。
+/// Number of Bézier segments: taken from the control polygon length, clamped to [8, 64]; the unit is the path's own coordinates.
 fn curve_steps(poly_len: f64) -> usize {
     ((poly_len / 3.0).ceil() as usize).clamp(8, 64)
 }
@@ -181,7 +178,7 @@ pub fn parse_checked(d: &str) -> Parsed {
     let mut current: Vec<(f64, f64)> = Vec::new();
     let mut cur = (0.0f64, 0.0f64);
     let mut start = (0.0f64, 0.0f64);
-    // 上一段贝塞尔的「反射用」控制点（S / T 用）；非曲线命令后失效。
+    // The “reflection” control point of the previous Bézier segment (used by S / T); invalidated after any non-curve command.
     let mut last_cubic: Option<(f64, f64)> = None;
     let mut last_quad: Option<(f64, f64)> = None;
 
@@ -201,7 +198,7 @@ pub fn parse_checked(d: &str) -> Parsed {
                 if !unsupported.contains(&c) {
                     unsupported.push(c);
                 }
-                // 跳过它的参数，直到下一个命令字母。
+                // Skip its arguments until the next command letter.
                 while i < tokens.len() && is_command(&tokens[i]).is_none() {
                     i += 1;
                 }
@@ -224,12 +221,12 @@ pub fn parse_checked(d: &str) -> Parsed {
                 continue;
             }
         } else if cmd == ' ' {
-            i += 1; // 命令缺失的游离数字：丢弃，避免死循环
+            i += 1; // Stray numbers without a command: discard them to avoid an infinite loop
             continue;
         }
         let rel = cmd.is_ascii_lowercase();
         let (ox, oy) = if rel { cur } else { (0.0, 0.0) };
-        // Z 之后不带 M 直接续画：从起点新开一条子路径。
+        // After Z, drawing continues without M: start a new subpath from the starting point.
         if current.is_empty() && !matches!(cmd, 'M' | 'm') {
             current.push(cur);
         }
@@ -243,7 +240,7 @@ pub fn parse_checked(d: &str) -> Parsed {
                 cur = (ox + num(&mut i), oy + num(&mut i));
                 start = cur;
                 current.push(cur);
-                cmd = if rel { 'l' } else { 'L' }; // M 后续坐标按 L 处理
+                cmd = if rel { 'l' } else { 'L' }; // Coordinates following M are treated as L
                 last_cubic = None;
                 last_quad = None;
             }
@@ -322,7 +319,7 @@ pub fn parse_checked(d: &str) -> Parsed {
     }
 }
 
-/// SVG 端点参数 → 圆心参数，采样为折线（不含起点）
+/// Converts SVG endpoint parameters to center parameters and samples them as a polyline (excluding the start point)
 fn arc_points(
     p1: (f64, f64),
     p2: (f64, f64),
@@ -410,7 +407,7 @@ mod tests {
 
     #[test]
     fn full_circle_arc() {
-        // 参考文档的 logo 圆环：半径 52 的近整圆
+        // The logo ring in the reference doc: a near-full circle with radius 52
         let polys = parse("M60 8 A52 52 0 1 1 59.9 8");
         assert_eq!(polys.len(), 1);
         let len = polyline_len(&polys);
@@ -443,7 +440,7 @@ mod tests {
                 (10.0, 10.0)
             ]
         );
-        // m 相对的是 z 回到的起点 (10,10)
+        // The relative m is relative to the start point (10,10) that z returns to
         assert_eq!(polys[1].first(), Some(&(30.0, 10.0)));
         assert_eq!(polys[1].last(), Some(&(30.0, 10.0)));
     }
@@ -456,7 +453,7 @@ mod tests {
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].last(), Some(&(400.0, 0.0)));
         assert!(a[0].len() > 32);
-        // 半圆近似：C 的弧长应落在 100..157 之间
+        // Semicircle approximation: the arc length of C should fall between 100..157
         let len = polyline_len(&parse("M0 0 C0 50 100 50 100 0"));
         assert!(len > 100.0 && len < 157.0, "len={len}");
     }

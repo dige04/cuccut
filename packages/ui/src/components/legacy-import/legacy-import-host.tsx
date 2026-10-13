@@ -14,17 +14,15 @@ import { LI } from './legacy-import-copy.ts';
 import { useOpenImported } from './legacy-import-task.tsx';
 
 /*
- * 启动时的旧版项目导入询问（设计稿 legacy-import.jsx；架构设计 §2.7）：挂在外壳根上。Runtime 发现还没导入的旧版项目、
- * 又没有记下决定时在 `legacy-import` 主题上给出询问，这里问一次：
- * - 要不要导入：「导入」带焦点，Enter 直接导入；「跳过」与关掉对话框都是这次不导入——不发请求，这次启动不再弹，下次启动再问。
- * - 导入到哪：默认是 Runtime 给的系统文稿 / 文档文件夹下的 `CucCut`，「更改…」交给系统的文件夹选择器。
- * - 不再提醒：Footer 里的勾选框；勾着跳过就回答 `never`，Runtime 记下，以后不再导入。
- * 点「导入」之后，导入是一轮后台任务：进度与结果从同一个主题来（`run`），写进 legacy-import-store，任务页、Home 顶上那一条
- * 与 rail 读它；一轮（或一次重试）跑完在这里弹一条 toast，带去处（看原因，或去 Space 看导入的项目）。
- * Web 没有这个询问：远端浏览器选不了本机目录，主题与方法也不在 Web 服务的白名单里。
+ * The startup prompt to import legacy projects (design mockup legacy-import.jsx; architecture design §2.7): mounted at the shell root. When the Runtime finds legacy projects that are not yet imported and has no recorded decision, it raises a prompt on the `legacy-import` topic, and this asks once:
+ * - Whether to import: "Import" has focus, so Enter imports directly; "Skip" and closing the dialog both mean not importing this time: no request is sent, it is not shown again this launch, and it is asked again next launch.
+ * - Where to import: the default is the `CucCut` folder under the system Documents folder given by the Runtime; "Change…" hands off to the system folder picker.
+ * - Don't remind again: a checkbox in the footer; when ticked with skip, it answers `never`, the Runtime records it, and no more imports are offered.
+ * After clicking "Import", the import runs as a background round: progress and results come from the same topic (`run`), are written to legacy-import-store, and the task page, the strip at the top of Home and the rail read from it. When a round (or a retry) finishes, a toast appears here with a destination (see the reason, or go to Space to see the imported projects).
+ * The web has no such prompt: a remote browser cannot pick a local directory, and the topic and methods are not on the Web service's allowlist.
  */
 
-/** 这次启动（这个界面进程）里点过「跳过」：Runtime 重启换了询问也不再弹，下次启动再问。 */
+/** "Skip" was clicked in this launch (this UI process): even if the Runtime restarts and raises the prompt again, it does not show; it is asked again next launch. */
 let skippedThisLaunch = false;
 
 const lead = style({ margin: 0, font: 'body', color: 'gray-800' });
@@ -70,7 +68,7 @@ export function LegacyImportHost() {
   const connected = useConnection((s) => s.state.status === 'connected');
   const prompt = useLegacyImport((s) => s.prompt);
   const [skipped, setSkipped] = useState(skippedThisLaunch);
-  // 回答成功到 Runtime 推来「询问没了」之间，这一问不再显示，免得再点一次。
+  // Between a successful answer and the Runtime pushing "prompt gone", this prompt is not shown, so the user is not made to click again.
   const [answered, setAnswered] = useState<string | null>(null);
   const onRun = useRunToasts();
 
@@ -97,8 +95,8 @@ export function LegacyImportHost() {
 }
 
 /**
- * 一轮导入（或一次重试）跑完时的 toast。界面记下这一轮看着排队、导入过的项目：覆盖整次导入就报整体，
- * 否则只报重试的那几个。打开界面时已经跑完的不报（没看着它跑）。
+ * Toast when a round (or one retry) of the import finishes. The UI records the projects this round showed as queued and imported: if the round covers the whole import, it reports overall; otherwise it reports only the ones retried.
+ * Rounds that had already finished when the UI opened are not reported (the UI did not see them run).
  */
 function useRunToasts() {
   const go = useShell((s) => s.go);
@@ -112,7 +110,7 @@ function useRunToasts() {
     }
     const before = seen.current?.runId === run.runId ? seen.current : null;
     const live = runLive(run);
-    // 第一次看到就在跑（界面重开时导入已经开始）：按整次导入算；跑完之后又排上的是重试，从空的算起。
+    // First seen already running (the UI was reopened after the import had started): counted as the whole import; a retry queued after it finished starts from empty.
     const batch = before?.live
       ? before.batch
       : new Set<string>(before ? [] : run.items.filter((it) => it.state !== 'skipped').map((it) => it.path));
@@ -134,7 +132,7 @@ function LegacyImportDialog({ prompt, onSkip, onAnswered }: { prompt: LegacyImpo
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
   const platform = runtime.host.platform;
-  // 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。每次弹出都从默认值开始。
+  // State lives outside the dialog: S2's Dialog renders children in several slots; each open starts from the defaults.
   const [directory, setDirectory] = useState(prompt.defaultDirectory);
   const [never, setNever] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -156,7 +154,7 @@ function LegacyImportDialog({ prompt, onSkip, onAnswered }: { prompt: LegacyImpo
       );
       onAnswered();
       if (decision === 'import') {
-        // 这一轮的 ID 在点按钮时再取：回答成功时 Runtime 未必已经推来这一轮。
+        // The ID for this round is taken when the button is clicked: when the answer succeeds, the Runtime may not yet have pushed this round.
         ToastQueue.info(LI.importing(count), {
           actionLabel: LR.viewProgress,
           shouldCloseOnAction: true,
@@ -167,7 +165,7 @@ function LegacyImportDialog({ prompt, onSkip, onAnswered }: { prompt: LegacyImpo
         });
       } else ToastQueue.neutral(LI.neverDone);
     } catch (error) {
-      // 目录建不了、写不了，或询问已经不在：留在对话框里，换个目录再试。
+      // If the folder cannot be created or written to, or the prompt is already gone: stay in the dialog and try another folder.
       ToastQueue.negative(LI.failed(error instanceof Error ? error.message : String(error)));
       setBusy(false);
     }

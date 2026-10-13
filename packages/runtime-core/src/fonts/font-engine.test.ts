@@ -15,9 +15,9 @@ import { FontCatalogue } from './font-catalogue.ts';
 import { FontService } from './font-service.ts';
 
 /**
- * 按需下载的字体与真实引擎（架构设计 §9.1）：随内核发布的族名与文件对拍；下载的文件由引擎按渲染用的同一套解析核对，
- * 核对过的进缓存后由引擎在本机字体之后挑到。字体服务是本机的假服务，给的是 render-raster 的测试字体 ColrProbe。
- * 缺 engine-host 时跳过。
+ * Downloaded fonts and the real engine (architecture design §9.1): checks the family names shipped with the kernel against the files. Downloaded files are verified by the engine with the same parsing used for rendering, and once verified and cached, they are picked by the engine after local fonts.
+ * The font service is a local fake serving ColrProbe, render-raster's test font.
+ * Skipped when engine-host is missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -117,7 +117,7 @@ describe.skipIf(!engine)('字体与真实引擎', () => {
       expect(path.dirname(path.dirname(resolved.faces[0]!.path))).toBe(path.join(fontsDir, 'files'));
       expect(await fs.readFile(resolved.faces[0]!.path)).toEqual(probe);
 
-      // 文件是字体但族名不对（给 Lobster 的是 ColrProbe）；不是字体。都不进缓存。
+      // A file that is a font but has the wrong family name (ColrProbe was served for Lobster), and a file that is not a font at all. Neither goes into the cache.
       for (const [family, message] of [
         ['Lobster', /族名对不上/],
         ['Garbage Font', /不是能用的字体/],
@@ -130,7 +130,7 @@ describe.skipIf(!engine)('字体与真实引擎', () => {
         });
       }
       expect((await fonts.downloaded()).faces.map((f) => f.family)).toEqual(['ColrProbe']);
-      // 引擎的检查只认绝对路径、读得出来的字体。
+      // The engine's check accepts only absolute paths to fonts it can read.
       await expect(videos.inspectFont(path.join(dir, 'nothing.ttf'))).rejects.toMatchObject({ details: { code: 'FONT_INVALID' } });
     } finally {
       await jobs.shutdown();

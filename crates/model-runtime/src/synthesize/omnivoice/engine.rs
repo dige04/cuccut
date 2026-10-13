@@ -1,23 +1,17 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/OmniVoiceTTS/OmniVoiceModel.swift / Sources/OmniVoiceTTS/OmniVoiceTTSModel.swift`。
+//! Some implementations are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/OmniVoiceTTS/OmniVoiceModel.swift / Sources/OmniVoiceTTS/OmniVoiceTTSModel.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-bundle interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! `OmniVoice` 引擎：把 Qwen3 主干、Higgs 音频分词器接到 `TtsEngine`。
-//! 生成流程对照官方 `omnivoice/models/omnivoice.py`（`generate` → `_preprocess_all` →
-//! `_generate_iterative` / `_generate_chunked` → `_decode_and_post_process`），
-//! 默认值对照 `OmniVoiceGenerationConfig`：32 步、引导 2.0、`t_shift = 0.1`、
-//! `layer_penalty_factor = 5`、`position_temperature = 5`、`class_temperature = 0`（贪心）、
-//! 去噪 token 开、后处理开（去长静音、音量归一、淡入淡出 0.1 s、两侧各补 0.1 s）。
+//! The `OmniVoice` engine: connects the Qwen3 backbone and the Higgs audio tokenizer to `TtsEngine`.
+//! The generation flow follows the official `omnivoice/models/omnivoice.py` (`generate` → `_preprocess_all` → `_generate_iterative` / `_generate_chunked` → `_decode_and_post_process`). Defaults follow `OmniVoiceGenerationConfig`: 32 steps, guidance 2.0, `t_shift = 0.1`, `layer_penalty_factor = 5`, `position_temperature = 5`, `class_temperature = 0` (greedy), denoising tokens on, post-processing on (remove long silences, normalize volume, fade in/out 0.1 s, pad 0.1 s on both sides).
 //!
-//! 音色三条路：
-//! - `Default` 且带 `instruct` → 官方「音色设计」：不带参考音频，只凭 instruct；
-//! - `Default` 不带 `instruct` → 该语言的内置音色作参考（官方此时是「auto」随机音色，
-//!   CucCut 要求同一请求音色稳定，所以改用内置音色）；
-//! - `Preset` / `Clone` → 参考音频克隆（参考文本可缺；官方缺参考文本时会跑 Whisper
-//!   转写，这里不转写，按「无参考文本」估时长与拼文本）；也可同时带 `instruct`。
+//! Three voice paths:
+//! - `Default` with `instruct` → official "voice design": no reference audio, only the instruct;
+//! - `Default` without `instruct` → the built-in voice for that language as the reference (officially this is "auto", a random voice, but CucCut requires the voice to be stable for the same request, so the built-in voice is used instead);
+//! - `Preset` / `Clone` → reference-audio cloning (reference text may be absent; officially, when the reference text is missing, Whisper is run to transcribe it, but here no transcription is done, and the duration is estimated and the text assembled as "without reference text"); `instruct` may also be given at the same time.
 
 use super::audio;
 use super::backbone::{Backbone, predict};
@@ -42,7 +36,7 @@ use anyhow::{Context, Result, bail, ensure};
 pub const ENGINE_NAME: &str = "OmniVoice";
 pub const SAMPLE_RATE: u32 = 24_000;
 const ABORT_MESSAGE: &str = "合成已取消";
-/// 官方 `OmniVoiceGenerationConfig` 的其余默认。
+/// The rest of the official `OmniVoiceGenerationConfig` defaults.
 const T_SHIFT: f32 = 0.1;
 const LAYER_PENALTY: f32 = 5.0;
 const POSITION_TEMPERATURE: f32 = 5.0;
@@ -53,11 +47,11 @@ pub struct OmniVoice {
     tokenizer: Tokenizer,
     backbone: Backbone,
     codec: Codec,
-    /// 最后一个字段：权重先析构，再等 GPU 并清缓存。
+    /// Last field: the weights are dropped first, then wait for the GPU and clear the cache.
     _cache_guard: ModelMemoryCacheGuard,
 }
 
-/// 已编码的参考：`[codebooks, frames]` token、参考文本、原始 RMS（音量归一用）。
+/// An encoded reference: `[codebooks, frames]` tokens, reference text, original RMS (used for volume normalization).
 pub(crate) struct VoicePrompt {
     codes: Vec<u32>,
     frames: usize,
@@ -69,14 +63,12 @@ pub(crate) struct VoicePrompt {
 pub(crate) struct Sampling {
     pub cfg: f32,
     pub steps: usize,
-    /// 每段目标 token 上限（25 Hz）。
+    /// Upper limit of target tokens per segment (25 Hz).
     pub max_tokens: usize,
 }
 
 impl OmniVoice {
-    /// 按清单加载：`config.json`、`tokenizer.json`、`model.safetensors`，以及同一组件里
-    /// `audio_tokenizer/` 下的 `config.json`、`model.safetensors`。缺文件是 `MODEL_NOT_INSTALLED`，
-    /// 在碰 Metal 之前就报。
+    /// Loads per the manifest: `config.json`, `tokenizer.json`, `model.safetensors`, and, in the same component, the `config.json` and `model.safetensors` under `audio_tokenizer/`. A missing file is `MODEL_NOT_INSTALLED`, reported before touching Metal.
     pub fn load(model: &VerifiedFiles) -> Result<Self> {
         Self::load_with_progress(model, &mut |_| true)
     }
@@ -100,7 +92,7 @@ impl OmniVoice {
         let tokenizer = Tokenizer::load(tokenizer_path)?;
         ensure_device()?;
         configure_memory_cache()?;
-        // 先建守卫：后面任何一步加载失败，展开时也会等 GPU 并清掉已分配的缓存。
+        // Create the guard first: if any later loading step fails, the drop will still wait for the GPU and clear any cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
         stage("weights")?;
         let mut weights =
@@ -121,7 +113,7 @@ impl OmniVoice {
         );
         drop(codec_weights);
         let model = Self::assemble(tokenizer, backbone, codec)?;
-        // 加载期的守卫在这里析构：等 GPU 并清缓存（v2 在这里调 `clear_memory_cache`）；模型自己的守卫管卸载。
+        // The loading guard is dropped here: waits for the GPU and clears the cache (v2 calls `clear_memory_cache` here); the model's own guard handles unloading.
         drop(cache_guard);
         Ok(model)
     }
@@ -161,8 +153,7 @@ impl OmniVoice {
         f64::from(SAMPLE_RATE) / self.codec.hop() as f64
     }
 
-    /// 官方 `create_voice_clone_prompt`（`preprocess_prompt = True`）：记下原始 RMS、
-    /// 过轻的参考先放大到 0.1；没有参考文本时截短超长参考；去长静音；裁到整帧；编码。
+    /// Official `create_voice_clone_prompt` (`preprocess_prompt = True`): records the original RMS; a reference that is too quiet is first amplified to 0.1; without reference text, an over-long reference is truncated; long silences are removed; trimmed to whole frames; encoded.
     pub(crate) fn prompt_from_samples(&self, samples: &[f32], text: Option<&str>) -> Result<VoicePrompt> {
         let rms = audio::rms(samples);
         let mut wav: Vec<f32> = if rms > 0.0 && rms < 0.1 {
@@ -204,8 +195,7 @@ impl OmniVoice {
             .collect()
     }
 
-    /// 官方 `_prepare_inference_inputs` 的前缀（目标之前的部分）：风格 token、
-    /// `<|text_start|>参考文本 目标文本<|text_end|>`、参考音频 token。
+    /// The prefix of the official `_prepare_inference_inputs` (the part before the target): style tokens, `<|text_start|>reference text target text<|text_end|>`, reference audio tokens.
     pub(crate) fn prefix_ids(
         &self,
         text: &str,
@@ -229,8 +219,7 @@ impl OmniVoice {
         ids
     }
 
-    /// 一段文本的迭代解码，返回 `[codebooks, target]` 行主序 token。
-    /// `on_step(已完成步数)` 返回 `false` 即取消。
+    /// Iterative decoding of one text segment; returns `[codebooks, target]` row-major tokens. `on_step(steps completed)` returning `false` cancels.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn generate(
         &self,
@@ -281,7 +270,7 @@ impl OmniVoice {
         Ok(tokens)
     }
 
-    /// 官方 `_post_process_audio`：去长静音 → 按参考 RMS 或峰值归一音量 → 淡入淡出补边。
+    /// Official `_post_process_audio`: remove long silences → normalize volume to the reference RMS or peak → fade-in/fade-out padding.
     fn post_process(&self, audio: &[f32], ref_rms: Option<f32>) -> Vec<f32> {
         let mut out = audio::remove_silence(audio, SAMPLE_RATE, 500, 100, 100);
         match ref_rms {
@@ -297,8 +286,7 @@ impl OmniVoice {
         audio::fade_and_pad(&out, PAD_SECONDS, FADE_SECONDS, SAMPLE_RATE)
     }
 
-    /// 按块合成并后处理。`voice` 为空即音色设计：第 0 块不带参考，其余块以第 0 块的
-    /// 生成结果与原文作参考（官方 `_generate_chunked` 无参考分支）。
+    /// Synthesizes by chunks and post-processes. An empty `voice` means voice design: chunk 0 has no reference; other chunks use chunk 0's generated result and the original text as the reference (the official `_generate_chunked` has a no-reference branch).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn synthesize_chunks(
         &self,
@@ -315,7 +303,7 @@ impl OmniVoice {
         let ref_text = voice.and_then(|v| v.text.as_deref());
         let ref_frames = voice.map(|v| v.frames);
         let frame_rate = self.frame_rate();
-        // 有目标时长：单块直接定 token 数；多块按「整段估计 / 目标」折成语速，各块照语速估。
+        // With a target duration: a single chunk sets the token count directly; for multiple chunks, the whole-length estimate / target is folded into a speaking rate, and each chunk is estimated according to that rate.
         let (fixed_target, speed) = match duration {
             Some(seconds) => {
                 let target = ((seconds * frame_rate) as usize).max(1);
@@ -364,8 +352,7 @@ impl OmniVoice {
     }
 }
 
-/// 官方 `_get_time_steps`：`torch.linspace(0, 1, n+1)`（float32，前半从起点累加、
-/// 后半从终点倒推）再做 `t_shift·t / (1 + (t_shift − 1)·t)`。
+/// Official `_get_time_steps`: `torch.linspace(0, 1, n+1)` (float32; the first half accumulates from the start, the second half counts back from the end), then `t_shift·t / (1 + (t_shift − 1)·t)`.
 pub(crate) fn time_steps(steps: usize, t_shift: f32) -> Vec<f32> {
     let n = steps + 1;
     let step = (1.0f32 - 0.0) / steps as f32;
@@ -382,7 +369,7 @@ pub(crate) fn time_steps(steps: usize, t_shift: f32) -> Vec<f32> {
         .collect()
 }
 
-/// 官方每步揭开的 token 数：`ceil(total·(t[s+1] − t[s]))`，不超过剩余；最后一步收尾。
+/// Official number of tokens unmasked per step: `ceil(total·(t[s+1] − t[s]))`, capped at the remaining count; the last step finishes up.
 pub(crate) fn unmask_schedule(total: usize, steps: usize) -> Vec<usize> {
     let t = time_steps(steps, T_SHIFT);
     let mut rem = total;
@@ -400,8 +387,7 @@ pub(crate) fn unmask_schedule(total: usize, steps: usize) -> Vec<usize> {
         .collect()
 }
 
-/// 官方一步里的位置选择：置信度减去 `码本序号 × 5`，除以位置温度 5 再加 Gumbel 噪声，
-/// 已揭开的位置记 −∞，取前 `k` 个位置写入预测。`uniforms` 是与 token 同序的 `[0,1)` 均匀数。
+/// Official position selection in one step: the confidence minus `codebook index × 5`, divided by the position temperature 5, plus Gumbel noise; positions already unmasked are set to −∞; the top `k` positions are taken and written as predictions. `uniforms` are `[0,1)` uniform numbers in the same order as the tokens.
 pub(crate) fn unmask_top(tokens: &mut [u32], pred: &[u32], score: &[f32], uniforms: &[f32], frames: usize, k: usize, mask: u32) {
     let mut keyed: Vec<(f32, usize)> = (0..tokens.len())
         .map(|i| {
@@ -423,7 +409,7 @@ pub(crate) fn unmask_top(tokens: &mut [u32], pred: &[u32], score: &[f32], unifor
 pub(crate) fn sampling_for(request: &TtsRequest) -> Result<Sampling> {
     let cfg = request.sampling.cfg.unwrap_or(DEFAULT_CFG);
     let steps = request.sampling.steps.unwrap_or(DEFAULT_STEPS);
-    // 官方 `guidance_scale = 0` 表示不做引导（跳过无条件分支），是合法取值。
+    // Official `guidance_scale = 0` means no guidance (the unconditional branch is skipped), which is a valid value.
     ensure!(cfg.is_finite() && cfg >= 0.0, "{ENGINE_NAME} cfg 必须是非负数，收到 {cfg}");
     ensure!(steps > 0, "{ENGINE_NAME} steps 必须大于 0");
     let max_tokens = request.sampling.max_tokens.unwrap_or((MAX_TARGET_SECONDS * 25.0) as usize);
@@ -431,7 +417,7 @@ pub(crate) fn sampling_for(request: &TtsRequest) -> Result<Sampling> {
     Ok(Sampling { cfg, steps, max_tokens })
 }
 
-/// 目标时长与语速：时长优先（官方 `duration` 覆盖 `speed`），限 (0, 60] 秒；语速须为正。
+/// Target duration and speaking rate: duration takes precedence (official `duration` overrides `speed`), limited to (0, 60] seconds; speed must be positive.
 fn duration_and_speed(request: &TtsRequest) -> Result<(Option<f64>, f64)> {
     if let Some(seconds) = request.target_duration_seconds {
         ensure!(
@@ -454,7 +440,7 @@ impl TtsEngine for OmniVoice {
         SAMPLE_RATE
     }
 
-    /// 模型没有说话人表；露出来的是随包的内置音色（`VoiceSpec::Preset` 的取值）。
+    /// The model has no speaker table; what is exposed are the built-in voices bundled with the package (the values of `VoiceSpec::Preset`).
     fn preset_speakers(&self) -> Vec<String> {
         crate::synthesize::voices::ids()
     }
@@ -512,7 +498,7 @@ mod tests {
         let t = time_steps(4, 0.1);
         assert_eq!(t.len(), 5);
         assert_eq!(t[0], 0.0);
-        // f32 下 0.1 / (1 − 0.9) 落在 0.99999976（torch float32 同值），不是精确的 1。
+        // In f32, 0.1 / (1 − 0.9) comes to 0.99999976 (the same value as torch float32), not exactly 1.
         assert!((t[4] - 1.0).abs() < 1e-6, "{t:?}");
         // 0.1·0.25 / (1 − 0.9·0.25) = 0.025 / 0.775
         assert!((t[1] - 0.025 / 0.775).abs() < 1e-7, "{t:?}");
@@ -527,7 +513,7 @@ mod tests {
             assert_eq!(s.len(), steps);
             assert_eq!(s.iter().sum::<usize>(), total, "{total}/{steps}: {s:?}");
         }
-        // t_shift = 0.1 让早期每步揭开得少、后期多。
+        // t_shift = 0.1 makes each step unmask fewer tokens early on and more later.
         let s = unmask_schedule(1600, 32);
         assert!(s[0] < s[31], "{s:?}");
     }
@@ -535,14 +521,14 @@ mod tests {
     #[test]
     fn unmask_prefers_confident_early_codebooks_and_skips_revealed() {
         let mask = 1024;
-        // 2 个码本 × 3 帧；第 1 帧码本 0 已揭开。
+        // 2 codebooks × 3 frames; codebook 0 of frame 1 is already unmasked.
         let mut tokens = vec![mask, 7, mask, mask, mask, mask];
         let pred = vec![10, 11, 12, 13, 14, 15];
         let score = vec![-0.1, 0.0, -3.0, -0.1, -0.2, -0.3];
-        // 均匀数取中值：Gumbel 噪声对所有位置相同，只比置信度与码本惩罚。
+        // The uniform number is taken at its median: the Gumbel noise is the same for all positions, so only confidence and the codebook penalty are compared.
         let uniforms = vec![0.5; 6];
         unmask_top(&mut tokens, &pred, &score, &uniforms, 3, 2, mask);
-        // 码本 1 惩罚 5：码本 0 的两个空位（-0.1、-3.0）都优先于码本 1。
+        // Codebook 1 penalty 5: both empty slots of codebook 0 (-0.1, -3.0) take priority over codebook 1.
         assert_eq!(tokens, vec![10, 7, 12, mask, mask, mask]);
         unmask_top(&mut tokens, &pred, &score, &uniforms, 3, 3, mask);
         assert_eq!(tokens, vec![10, 7, 12, 13, 14, 15]);

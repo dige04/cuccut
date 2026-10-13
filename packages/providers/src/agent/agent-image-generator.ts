@@ -15,13 +15,13 @@ import { IMAGE_MEDIA } from '../adapter.ts';
 import type { CallReporter } from '../usage-reporter.ts';
 import { ProvidersAgent as PA } from '@cuccut/protocol/messages/providers';
 
-/** 执行前的复核：启用了、Driver 可用、版本够。 */
+/** Pre-execution recheck: enabled, Driver available, version sufficient. */
 export type AgentReadiness =
   | {
       ok: true;
       driver: AgentDriver;
       version: string;
-      /** 用户手动指定的可执行文件；null 由 Driver 自己找。 */
+      /** Executable file the user specified manually. null means the Driver finds it itself. */
       executable?: string | null;
     }
   | { ok: false; reason: ProviderUnavailableReason; message: string };
@@ -29,23 +29,23 @@ export type AgentReadiness =
 export interface AgentImageGeneratorOptions {
   providerId: string;
   label: string;
-  /** 执行时再确认一次：排队期间被停用、退出登录或卸载的，不再开会话。 */
+  /** Checked again at execution time: anything disabled, signed out or uninstalled while queued does not open a session. */
   ready: () => Promise<AgentReadiness>;
-  /** 交给原生会话的开发者指令：任务、输出文件名与禁止事项。 */
+  /** Developer instructions handed to the native session: the task, the output file name and the prohibitions. */
   instructions: string;
-  /** 回合的输入：提示词原样放进去。 */
+  /** The turn's input. The prompt is passed in verbatim. */
   turnText: (prompt: string) => string;
-  /** 约定的输出文件名（相对工作目录）。 */
+  /** The agreed output file name (relative to the working directory). */
   outputName: string;
-  /** 一个回合的期限（毫秒）；到时中断并关闭会话，任务失败。 */
+  /** Deadline for one turn (milliseconds). On timeout, the turn is interrupted, the session is closed, and the task fails. */
   turnTimeoutMs: number;
-  /** 会话开起来之后的调用结束时的报告（用量账本，§6.10；没有账号，费用未知）。 */
+  /** The report at the end of the call, after the session has started (usage ledger, §6.10; no account, so the cost is unknown). */
   report?: CallReporter;
 }
 
-/** 错误说明里带上的回复摘录（不是输出，只帮用户看懂为什么没有图）。 */
+/** Excerpt of the reply included in the error description. It is not output; it only helps the user understand why there is no image. */
 const REPLY_EXCERPT = 300;
-/** 在工作目录里找图片时最多往下几层。 */
+/** When looking for images in the working directory, the maximum number of levels to descend. */
 const MAX_DEPTH = 3;
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|gif)$/i;
 
@@ -58,15 +58,12 @@ type TurnResult =
   | { kind: 'cancelled' };
 
 /**
- * 智能体作为图片 Provider 的执行者（架构设计 §6.9）。一次 `generate` 是一个专用的原生会话：
+ * The agent as the executor of an image provider (architecture design §6.9). One `generate` is a dedicated native session:
  *
- * - 不属于任何用户会话，不带视频上下文与历史，不给 MCP 服务（没有 CucCut 的工具）；工作目录是这个 Job 的 staging，
- *   访问限定为只写这个目录（`confinement: 'cwd-write-only'`），会话请求的审批一律拒绝（没有人来批）。
- * - 只发一个回合：开发者指令说明任务，输入是提示词。回合结束（完成、失败、超时、取消）后会话关闭。
- * - 输出是会话写进 staging 的图片文件：有约定的文件名就取它，否则取唯一的那张，有多张就全部交出去、由 JobManager 的张数
- *   校验拒绝。只收普通文件（不跟随符号链接）。声明的媒体类型是请求的格式；文件头、解码与尺寸由 JobManager 校验。
- * - 智能体的文字回复不是输出：没有图片就失败（`PROVIDER_REJECTED`，`details.reason: 'no-image'`），只把回复的摘录放进
- *   错误详情。不重试，不换 Provider。
+ * - It does not belong to any user session, and has no video context or history. It is not given MCP services (there are no CucCut tools). The working directory is this Job's staging, and access is confined to writing only to this directory (`confinement: 'cwd-write-only'`). Session approval requests are always rejected, since there is no one to approve them.
+ * - Only one turn is sent. The developer instructions describe the task, and the input is the prompt. The session is closed when the turn ends (completed, failed, timed out, or cancelled).
+ * - The output is the image files the session writes into staging. If there is an agreed file name, that file is taken; otherwise the only file is taken. If there are several, all of them are handed over and JobManager's count check rejects them. Only regular files are accepted (symbolic links are not followed). The declared media type is the requested format. The file header, decoding and dimensions are validated by JobManager.
+ * - The agent's text reply is not output. Without an image, the call fails (`PROVIDER_REJECTED`, `details.reason: 'no-image'`), and only an excerpt of the reply goes into the error details. No retries, and no switching providers.
  */
 export class AgentImageGenerator implements GenerationProvider {
   readonly id: string;
@@ -83,7 +80,7 @@ export class AgentImageGenerator implements GenerationProvider {
     const onAbort = () => controller.abort();
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) controller.abort();
-    // 进入生成阶段（要开会话了）才算一次真实调用；之前的检查失败与取消不记用量。
+    // Only a real call once the generation stage is entered (the session is about to open). Earlier check failures and cancellations do not record usage.
     let startedAt: number | null = null;
     const tracked: GenerationSink = {
       generating: () => {
@@ -121,7 +118,7 @@ export class AgentImageGenerator implements GenerationProvider {
     }
   }
 
-  /** 正常停止：中断在途的回合、关闭会话，等它们收尾。 */
+  /** Normal stop: interrupt the in-flight turn, close the session, and wait for them to wrap up. */
   async close(): Promise<void> {
     const running = [...this.#inflight.entries()];
     for (const [controller] of running) controller.abort();
@@ -134,7 +131,7 @@ export class AgentImageGenerator implements GenerationProvider {
     if (parameters.capability !== 'generateImage') {
       throw new ProviderFailure('unavailable', PA.imagesOnly({ label }).text, { providerId });
     }
-    // 参数在提交时按模型描述检查过（尺寸、seed、张数、格式都不接受）；这里再挡一次，不把它们悄悄丢掉。
+    // The parameters were checked at submission against the model description (size, seed, count and format are not accepted). Check again here, rather than silently dropping them.
     if (parameters.count !== 1 || parameters.size !== null || parameters.seed !== null || parameters.format !== 'png') {
       throw new ProviderFailure('rejected', PA.onePngOnly({ label }).text, { code: 'PROVIDER_REJECTED', providerId });
     }
@@ -149,7 +146,7 @@ export class AgentImageGenerator implements GenerationProvider {
     try {
       session = await ready.driver.createSession({
         cwd: run.staging,
-        // 受限会话（confinement）的策略固定，访问模式不起作用；模型与强度用 Agent 自己的默认。
+        // The policy of a confined session is fixed, so the access mode has no effect. The model and effort use the Agent's own defaults.
         accessMode: 'fullAccess',
         model: null,
         effort: null,
@@ -212,7 +209,7 @@ export class AgentImageGenerator implements GenerationProvider {
     return { outcome: 'completed', outputs, workerVersion: `${providerId} ${ready.version}` };
   }
 
-  /** 发一个回合，等它结束、失败、会话退出、超时或取消。取消与超时时请求中断（会话随后关闭）。 */
+  /** Sends one turn and waits for it to end, fail, the session to exit, time out, or be cancelled. On cancel or timeout, the request is interrupted (the session is closed afterwards). */
   async #turn(
     session: AgentSession,
     text: string,
@@ -229,7 +226,7 @@ export class AgentImageGenerator implements GenerationProvider {
           if (event.item.kind === 'agent-message' && event.item.text.trim()) replies.push(event.item.text.trim());
           return;
         case 'approval.requested':
-          // 没有人来批：越界的动作一律拒绝。
+          // There is no one to approve, so out-of-bounds actions are all rejected.
           declined++;
           void session.respondToApproval(event.approvalId, { decision: 'decline' }).catch(() => {});
           return;
@@ -270,7 +267,7 @@ export class AgentImageGenerator implements GenerationProvider {
   }
 }
 
-/** staging 里的图片候选：普通文件（不跟随符号链接），扩展名或文件头是图片。隐藏文件不算。按路径排序。 */
+/** Image candidates in staging: regular files (symbolic links not followed) whose extension or file header is an image. Hidden files do not count. Sorted by path. */
 async function collectImages(root: string): Promise<string[]> {
   const found: string[] = [];
   const walk = async (dir: string, depth: number): Promise<void> => {

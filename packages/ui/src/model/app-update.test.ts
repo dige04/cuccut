@@ -22,7 +22,7 @@ import {
   type BarrierTask,
 } from './app-update.ts';
 
-/* 设计稿 model-app-update.test.js 里与界面有关的断言逐条搬过来；状态机本身在主进程（app-update-rules.test.ts）。 */
+/* Move the UI-related assertions from the design-spec model-app-update.test.js over one by one; the state machine itself lives in the main process (app-update-rules.test.ts). */
 
 const info: AppUpdateInfo = {
   version: '2.3.0',

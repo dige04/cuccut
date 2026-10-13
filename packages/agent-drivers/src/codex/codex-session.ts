@@ -1,10 +1,10 @@
 /**
- * Codex 会话（`codex app-server` 的机器协议）。
+ * Codex session (the machine protocol of `codex app-server`).
  *
- * `steer` 判定「确定没送进去」的那几种拒绝（`isDefinitiveSteerRejection`）移植自 paseo 的
- * packages/server/src/server/agent/providers/codex-app-server-agent.ts（`isDefinitiveCodexSteerRejection`、
- * `steerActiveTurn`），Apache-2.0，Copyright (c) 2025-present Mohamed Boudra；modified：
- * 改成 CucCut 的 `'accepted' | 'unavailable'` 返回值，并按 CucCut 自己记的活动回合先判一次。
+ * The check in `steer` for the rejections that definitely mean "not delivered" (`isDefinitiveSteerRejection`) is ported from paseo's
+ * packages/server/src/server/agent/providers/codex-app-server-agent.ts (`isDefinitiveCodexSteerRejection`,
+ * `steerActiveTurn`), Apache-2.0, Copyright (c) 2025-present Mohamed Boudra. Modified:
+ * changed to CucCut's `'accepted' | 'unavailable'` return value, and checked first against the active turn that CucCut itself records.
  */
 import { spawn } from 'node:child_process';
 import {
@@ -61,24 +61,24 @@ import { classifyCodexError } from './codex-error.ts';
 import { mapCodexItem } from './map-item.ts';
 import { CodexRpcConnection, CodexRpcError, NO_RESPONSE, type RpcId } from './rpc-connection.ts';
 
-/** Codex 会话实际支持的能力：steer 走 `turn/steer`，图片走 `localImage`。 */
+/** What the Codex session actually supports: steer uses `turn/steer`, images use `localImage`. */
 export const CODEX_CAPABILITIES: DriverProbe['capabilities'] = { steer: true, approvals: true, resume: true, images: true };
 
 /**
- * 访问模式 → Codex 的审批策略、审批人与沙箱（架构设计 §3.12）。两边不一致时取更严的一方：Codex 来问的动作再由
- * Harness 按 CucCut 的决策表决定自动、询问或拒绝；Codex 不来问的动作（沙箱内直接执行的）CucCut 无从拦截，
- * 所以 Codex 侧的策略不能比 CucCut 的模式更宽。旧值先换成新值。
+ * Access mode → Codex's approval policy, reviewer, and sandbox (architecture design §3.12). When the two sides disagree, take the stricter one: actions Codex asks about are then decided by the Harness
+ * per CucCut's decision table as auto, ask, or reject. Actions Codex does not ask about (those executed directly inside the sandbox) CucCut cannot intercept,
+ * so Codex's policy must not be looser than CucCut's mode. Old values are converted to new ones first.
  *
- * | 模式 | approvalPolicy | sandbox | 说明 |
+ * | Mode | approvalPolicy | sandbox | Notes |
  * | --- | --- | --- | --- |
- * | plan | untrusted | read-only | 只读沙箱，不可信的命令都来问 |
- * | ask | untrusted | workspace-write | 命令与文件修改都来问，交给用户 |
- * | autoAcceptEdits | untrusted | workspace-write | 都来问；工作目录内的文件修改由 Harness 自动接受 |
- * | auto | on-request | workspace-write | 沙箱内直接执行；越出沙箱时来问（算 `high`，交给用户） |
- * | fullAccess | never | workspace-write | 不来问；沙箱仍然生效 |
+ * | plan | untrusted | read-only | Read-only sandbox; untrusted commands all ask |
+ * | ask | untrusted | workspace-write | Commands and file edits both ask, handed to the user |
+ * | autoAcceptEdits | untrusted | workspace-write | Both ask; file edits inside the working directory are auto-accepted by the Harness |
+ * | auto | on-request | workspace-write | Runs directly inside the sandbox; asks when leaving the sandbox (rated `high`, handed to the user) |
+ * | fullAccess | never | workspace-write | Never asks; the sandbox still applies |
  *
- * 审批人一律显式给 `user`：用户的 config.toml 若把审批人设成 auto_review，Codex 来问的动作就绕过了 CucCut 的决策表。
- * 会话中途换模式时，下一轮在 `turn/start` 上带新的策略；沙箱变了（进出「先给方案」）才另带 `sandboxPolicy`。
+ * The reviewer is always set explicitly to `user`: if the user's config.toml sets the reviewer to auto_review, actions Codex asks about would bypass CucCut's decision table.
+ * When the mode changes mid-session, the next turn carries the new policy on `turn/start`; `sandboxPolicy` is sent separately only when the sandbox changes (entering or leaving plan-first).
  */
 export function codexPolicy(mode: AgentMode | Autonomy): { approvalPolicy: AskForApproval; approvalsReviewer: ApprovalsReviewer; sandbox: SandboxMode } {
   switch (normalizeAgentMode(mode)) {
@@ -95,14 +95,14 @@ export function codexPolicy(mode: AgentMode | Autonomy): { approvalPolicy: AskFo
 }
 
 /**
- * CucCut 工具调用的时限（秒，`mcp_servers.<name>.tool_timeout_sec`）。会话审批没有时限，用户可能过很久才处理；
- * Codex 默认 60 秒就放弃一次工具调用，所以按 `MCP_TOOL_CALL_TIMEOUT_MS` 放宽到一天。
+ * Time limit for CucCut tool calls (seconds, `mcp_servers.<name>.tool_timeout_sec`). Session approvals have no time limit, and the user may take a long time to respond;
+ * Codex gives up on a tool call after its default 60 seconds, so it is relaxed to one day via `MCP_TOOL_CALL_TIMEOUT_MS`.
  */
 export const CODEX_TOOL_TIMEOUT_SEC = MCP_TOOL_CALL_TIMEOUT_MS / 1000;
 
 /**
- * CucCut 的输入 → Codex 的 `UserInput`：文字在前，图片（已经落在本机）按 `localImage` 给路径，由 Codex 自己读。
- * 只有图片、没有文字时不发空的文字段。
+ * CucCut input → Codex's `UserInput`: text first; images (already on the local machine) are passed as `localImage` paths, which Codex reads itself.
+ * When there are only images and no text, no empty text segment is sent.
  */
 export function codexUserInput(input: AgentInput): CodexUserInput[] {
   const images = (input.images ?? []).map((image): CodexUserInput => ({ type: 'localImage', path: image.path }));
@@ -111,8 +111,8 @@ export function codexUserInput(input: AgentInput): CodexUserInput[] {
 }
 
 /**
- * 每一轮带上的沙箱（`turn/start` 的 `sandboxPolicy`）。只在沙箱和线程当前的不同时才带：`workspaceWrite` 按 Codex 的缺省细项
- * （额外可写目录为空、不联网、照旧可写 `/tmp` 与 `$TMPDIR`），带了就盖过用户 config.toml 里的 `sandbox_workspace_write`。
+ * The sandbox carried on each turn (`sandboxPolicy` on `turn/start`). It is sent only when the sandbox differs from the thread's current one. `workspaceWrite` uses Codex's default details
+ * (no extra writable directories, no network, still writable `/tmp` and `$TMPDIR`), since sending it would override `sandbox_workspace_write` in the user's config.toml.
  */
 export function codexSandboxPolicy(sandbox: SandboxMode): SandboxPolicy {
   switch (sandbox) {
@@ -126,8 +126,8 @@ export function codexSandboxPolicy(sandbox: SandboxMode): SandboxPolicy {
 }
 
 /**
- * 受限的一次性调用（`confinement: 'cwd-write-only'`，架构设计 §6.9）：沙箱只允许写工作目录，去掉默认可写的 `/tmp` 与
- * `$TMPDIR`，命令不联网；审批策略 `never`：越界的动作不会来问，直接失败。
+ * Restricted one-shot call (`confinement: 'cwd-write-only'`, architecture design §6.9): the sandbox allows writes only to the working directory, removes the default-writable `/tmp` and
+ * `$TMPDIR`, and commands get no network. Approval policy `never`: out-of-bounds actions are not asked about and simply fail.
  */
 const CONFINED_POLICY: { approvalPolicy: AskForApproval; sandbox: SandboxMode } = { approvalPolicy: 'never', sandbox: 'workspace-write' };
 const CONFINED_WORKSPACE_WRITE: SandboxWorkspaceWrite = {
@@ -143,7 +143,7 @@ interface PendingApproval {
   abandon: () => void;
 }
 
-/** 「总是允许」的规则归 Harness 存，原生侧只按会话级放行处理（见 `ApprovalResponse`）。 */
+/** "Always allow" rules are stored by the Harness; the native side only handles session-level allowance (see `ApprovalResponse`). */
 const DECISION: Record<ApprovalResponse['decision'], CodexApprovalDecision> = {
   accept: 'accept',
   'accept-for-session': 'acceptForSession',
@@ -152,9 +152,9 @@ const DECISION: Record<ApprovalResponse['decision'], CodexApprovalDecision> = {
   cancel: 'cancel',
 };
 
-/** 回合内不再重试的错误：Codex 随后的 `turn/completed`（failed）带同一个错误，所以先记下，等回合结束时一起报。 */
+/** Errors not retried within the turn: the `turn/completed` (failed) that Codex sends next carries the same error, so the error is recorded now and reported together when the turn ends. */
 interface TurnFailure {
-  /** Codex 给的原话；没有时是 CucCut 写的「未知错误」。 */
+  /** The original text from Codex; when absent, the "unknown error" written by CucCut. */
   message: DriverText;
   code: AgentErrorCode | null;
 }
@@ -171,11 +171,11 @@ export class CodexSession implements AgentSession {
   readonly #fileChanges = new Map<string, string[]>();
   #threadId: string | null = null;
   #confined = false;
-  /** 线程当前的沙箱：换模式进出「先给方案」时，下一轮的 `turn/start` 才带 `sandboxPolicy`。 */
+  /** The thread's current sandbox: when the mode switches into or out of plan-first, the next turn's `turn/start` carries `sandboxPolicy`. */
   #sandbox: SandboxMode = 'workspace-write';
-  /** `on-request` 下 Codex 只为越出沙箱来问：报给 Harness 时标为越界（§3.12）。随每一轮的访问模式更新。 */
+  /** Under `on-request`, Codex asks only about actions that leave the sandbox: when reported to the Harness they are marked as out-of-bounds (§3.12). Updated with each turn's access mode. */
   #escalationOnly = false;
-  /** 正在跑的回合：`turn/start` 应答或 `turn/started` 时记下，`turn/completed` 时清掉。steer 只投给它。 */
+  /** The turn currently running: recorded on the `turn/start` response or `turn/started`, cleared on `turn/completed`. Steer is sent only to it. */
   #activeTurnId: string | null = null;
   #lastCompletedTurnId: string | null = null;
   readonly #turnFailures = new Map<string, TurnFailure>();
@@ -206,7 +206,7 @@ export class CodexSession implements AgentSession {
     conn.onNotification((method, params) => this.#onNotification(method, params));
     conn.onExit((error) => {
       this.#activeTurnId = null;
-      // 报过错、却没等到 turn/completed 进程就退了：把记下的错误报出来，别吞掉。
+      // An error was reported but the process exited before turn/completed arrived: report the recorded error rather than swallow it.
       for (const [turnId, failure] of this.#turnFailures) {
         this.#emit({
           type: 'session.error',
@@ -238,7 +238,7 @@ export class CodexSession implements AgentSession {
         kind: 'file-change',
         reason: p.reason ?? null,
         files: this.#fileChanges.get(p.itemId) ?? (p.grantRoot ? [p.grantRoot] : []),
-        // 文件修改按访问模式放行，不存规则。
+        // File edits are allowed according to the access mode; no rules are stored.
         rule: null,
       });
     });
@@ -274,7 +274,7 @@ export class CodexSession implements AgentSession {
         this.#threadId = res.thread.id;
         return;
       } catch (error) {
-        // 原生会话恢复不了时如实告知，不假装上下文还在（架构设计 §2.5）。
+        // When the native session cannot be restored, say so honestly rather than pretend the context is still there (architecture design §2.5).
         this.#log.warn('Codex session resume failed; starting a new one', { error: String(error) });
         const warning = DriversCommon.resumeFailed({ name: 'Codex', error: errorMessage(error) });
         queueMicrotask(() => this.#emit({ type: 'session.warning', message: String(warning), ...refField('messageRef', warning) }));
@@ -290,26 +290,26 @@ export class CodexSession implements AgentSession {
     const params: TurnStartParams = {
       threadId: this.#requireThread(),
       input: codexUserInput(input),
-      // 受限会话的策略固定；普通会话每一轮按会话当前的访问模式、模型与强度。
+      // A restricted session's policy is fixed; a normal session uses the session's current access mode, model, and effort on each turn.
       ...(this.#confined ? {} : { approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer }),
       ...(sandboxChanged ? { sandboxPolicy: codexSandboxPolicy(policy.sandbox) } : {}),
       ...(settings.model ? { model: settings.model } : {}),
       ...(settings.effort ? { effort: settings.effort } : {}),
     };
-    // 这一轮的审批可能先于应答到达：越界标记在发请求前就换成这一轮的。
+    // The approval for this turn may arrive before the response, so the out-of-bounds flag is switched to this turn's value before the request is sent.
     if (!this.#confined) this.#escalationOnly = policy.approvalPolicy === 'on-request';
     const res = await this.#conn.request<TurnStartResponse>('turn/start', params);
     if (sandboxChanged) this.#sandbox = policy.sandbox;
-    // 应答与 turn/started、turn/completed 可能在同一批输出里到达：已经结束的回合不再记成活动的。
+    // The response and turn/started and turn/completed may arrive in the same batch of output: a turn that has already ended is not recorded as active.
     if (res.turn.status === 'inProgress' && res.turn.id !== this.#lastCompletedTurnId) this.#activeTurnId = res.turn.id;
     return { turnId: res.turn.id };
   }
 
   /**
-   * 把输入插进正在跑的回合（`turn/steer`，带 `expectedTurnId` 作前置条件）。
-   * - 这个回合已经结束（CucCut 记的活动回合不是它）：不发请求，直接 `unavailable`。
-   * - Codex 明确拒绝（方法不存在、没有活动回合、活动回合不是它、回合不可插话）：`unavailable`，输入确定没送进去。
-   * - 超时、断线之类说不清送没送到的：抛错，不报 `unavailable`——Harness 会把它当成没送进去，界面再发一次就重复了。
+   * Inserts input into the turn that is running (`turn/steer`, with `expectedTurnId` as a precondition).
+   * - If this turn has already ended (the active turn CucCut recorded is not it): no request is sent; returns `unavailable` directly.
+   * - If Codex explicitly rejects it (method does not exist, no active turn, the active turn is not this one, or the turn cannot be steered): `unavailable`; the input was definitely not delivered.
+   * - Timeouts, disconnects, and similar cases where it is unclear whether delivery happened: throws, and does not return `unavailable`. The Harness would treat that as not delivered, and the UI would send it again, causing a duplicate.
    */
   async steer(turnId: string, input: AgentInput): Promise<'accepted' | 'unavailable'> {
     if (!this.#threadId || this.#activeTurnId !== turnId) return 'unavailable';
@@ -408,10 +408,10 @@ export class CodexSession implements AgentSession {
         const stashed = this.#turnFailures.get(turn.id) ?? null;
         this.#turnFailures.delete(turn.id);
         const outcome = turn.status === 'interrupted' ? 'interrupted' : turn.status === 'failed' ? 'failed' : 'completed';
-        // 失败的回合：优先用回合自己带的错误，没有时用之前那条不再重试的错误通知。
+        // Failed turn: prefer the error the turn itself carries; if there is none, use the earlier non-retried error notification.
         const failure = outcome === 'failed' ? (turn.error ? turnFailure(turn.error) : stashed) : null;
         if (outcome !== 'failed' && stashed) {
-          // 报过错却没失败（按协议不该发生）：别把那条错误吞掉。
+          // An error was reported but the turn did not fail (should not happen per the protocol): do not swallow that error.
           this.#emit({
             type: 'session.error',
             turnId: turn.id,
@@ -475,12 +475,12 @@ export class CodexSession implements AgentSession {
       case 'error': {
         const failure = turnFailure((p.error ?? {}) as Partial<CodexTurnError>);
         const willRetry = p.willRetry === true;
-        // 不再重试、属于正在跑的回合：紧接着的 turn/completed（failed）会带上它，那时一起报，免得界面上出现两遍。
+        // Not retried, and belongs to the running turn: the turn/completed (failed) that follows carries it, so report it then, to avoid showing it twice in the UI.
         if (!willRetry && turnId && turnId === this.#activeTurnId) {
           this.#turnFailures.set(turnId, failure);
           return;
         }
-        // 会重试的（回合继续）、或不属于正在跑的回合：作为会话错误报出来，不结束回合。
+        // Retried ones (the turn continues), or ones that do not belong to the running turn: report as a session error without ending the turn.
         this.#emit({
           type: 'session.error',
           turnId: turnId || null,
@@ -520,9 +520,9 @@ function turnFailure(error: Partial<CodexTurnError>): TurnFailure {
 }
 
 /**
- * `turn/steer` 确定没把输入送进去的几种拒绝（app-server `turn_processor.rs` 的原话，对照 codex 源码与 0.159.0）：
- * 方法不存在（`-32601`），或 `-32600` 且是「没有活动回合」「活动回合不是这个」「这个回合不可插话」（`activeTurnNotSteerable`）。
- * 别的 `-32600`、超时、断线都算说不清。
+ * The `turn/steer` rejections that definitely mean the input was not delivered (wording from app-server `turn_processor.rs`, checked against the codex source and 0.159.0):
+ * the method does not exist (`-32601`), or `-32600` with "no active turn", "the active turn is not this one", or "this turn cannot be steered" (`activeTurnNotSteerable`).
+ * Other `-32600`, timeouts, and disconnects are treated as unclear.
  */
 function isDefinitiveSteerRejection(error: unknown): boolean {
   if (!(error instanceof CodexRpcError)) return false;

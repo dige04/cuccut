@@ -1,48 +1,45 @@
-//! 动态素材源（升级方案 §7 / 规范 §23 第 2 条）。
+//! Dynamic asset sources (upgrade plan §7 / spec §23 item 2).
 //!
-//! 一个 `VisualSource` 就是「给我一个源时刻、还我一张画面」的可随机访问素材：
-//! 动图（GIF / APNG / WebP）、将来的 Lottie，以及概念上早已如此的视频。
+//! A `VisualSource` is a randomly accessible asset of the form "give me a source time, return me a picture":
+//! animated images (GIF / APNG / WebP), Lottie in the future, and video, which has always been conceptually the same.
 //!
-//! **唯一正式接口是 [`VisualSource::sample`]，参数是绝对源时间，不是增量。**
-//! 没有 `update(delta)`、没有内部时钟、没有"上一帧"状态——这不是风格偏好，
-//! 而是导出可乱序 / 可并行 / 可缓存的前提：
+//! **The only official interface is [`VisualSource::sample`], whose argument is an absolute source time, not a delta.**
+//! There is no `update(delta)`, no internal clock, and no "previous frame" state — this is not a style preference,
+//! but a prerequisite for export to be out-of-order, parallel and cacheable:
 //!
-//! * 渲染是**乱序**的：`ccut render --t 7.5` 直接跳到第 225 帧，全片导出还按
-//!   stride 把帧分给多个 worker，每个 worker 各自跳着走；
-//! * 帧指纹（`plan::frame_plan` 三层指纹）要求同一时刻恒等于同一批字节，
-//!   持有增量时钟的源做不到；
-//! * 因此 conformance 里"顺序采样 == 乱序采样"是必选项，不是可选项
-//!   （见 `tests/animated_source.rs`）。
+//! * Rendering is **out of order**: `ccut render --t 7.5` jumps straight to frame 225, and full-film export also
+//!   hands frames to multiple workers by stride, each worker jumping around on its own;
+//! * The frame fingerprint (`plan::frame_plan`'s three-layer fingerprint) requires that the same moment always equals the same bytes,
+//!   which a source holding an incremental clock cannot guarantee;
+//! * Therefore "sequential sampling == out-of-order sampling" in conformance is mandatory, not optional
+//!   (see `tests/animated_source.rs`).
 //!
-//! 两种实现：[`animated_image::AnimatedImage`]（GIF / APNG / WebP，全帧驻留的
-//! 位图源）与 [`lottie::Lottie`]（bodymovin 子集，**直接发 DrawOp** 而不是先
-//! 光栅化）。设计 §7 说的「两种并存后再抽 `ccut-source` crate」这一刻到了，
-//! 但两者共享的只有本文件这一百来行 trait 与时长表工具，而 `Lottie` 反过来
-//! 依赖 `crate::drawop` / `crate::raster` / `crate::plan::PreflightDiagnostic`
-//! ——真拆出去会把 `ccut-render` 的三个模块一起拽走，换来的是一条新的 crate
-//! 边界和一份新的 Cargo 条目。因此**本批评估后决定不拆**，留在
-//! `ccut-render/src/source/` 里；等到出现第三种源（alpha video / 矢量序列）
-//! 或有别的 crate 要单独消费源层时再议。
+//! Two implementations: [`animated_image::AnimatedImage`] (GIF / APNG / WebP, a bitmap source with all frames resident
+//! ) and [`lottie::Lottie`] (bodymovin subset, **emits DrawOps directly** rather than first
+//! rasterizing). Design §7 said "after the two coexist, extract a `ccut-source` crate"; that moment has arrived,
+//! but the two share only the roughly hundred lines of trait and duration-table utilities in this file, while `Lottie` in turn
+//! depends on `crate::drawop` / `crate::raster` / `crate::plan::PreflightDiagnostic`
+//! — splitting it out for real would drag three `ccut-render` modules along with it, in exchange for a new crate
+//! boundary and a new Cargo entry. So **after evaluation, this batch decided not to split**, and it stays in
+//! `ccut-render/src/source/`; revisit when a third kind of source (alpha video / vector sequence)
+//! appears, or when another crate needs to consume the source layer on its own.
 
-//! ## 两个 trait，不是一个
+//! ## Two traits, not one
 //!
-//! [`VisualSource`] 是**画面**源：`sample` 还的是一张 premultiplied RGBA
-//! [`SourceFrame`]。元素方案的 visualizer（[`visualizer::VizTrack`]，ADR-E04）
-//! 走的是隔壁的 [`visualizer::VizSource`]，**没有**并进本 trait，理由两条：
+//! [`VisualSource`] is the **picture** source: `sample` returns a premultiplied RGBA
+//! [`SourceFrame`]. The element-side visualizer ([`visualizer::VizTrack`], ADR-E04)
+//! goes through the neighboring [`visualizer::VizSource`] and is **not** merged into this trait, for two reasons:
 //!
-//! 1. **一帧频谱不是一张图**。`VizFrame` 是时域行 + 频域行两条**宽度不同**的
-//!    字节行（BCS1 的 128 / 512）；硬塞进 `Pixmap` 就要就地发明一套像素约定，
-//!    而 ADR-E04 的下游消费者是 `visualizer_frame(recipe, props, viz, bbox)
-//!    -> DrawOp`，要的是数据不是像素。§8.3 那张 `w × 2` 的 `R8Unorm` 纹理是
-//!    **GPU 上传期**按配方 `binWidth` 现搭的，不是源层的产物。
-//! 2. **频谱没有「素材原尺寸」**。[`lottie::Lottie`] 也直接发 DrawOp，但它至少
-//!    还有个合成画布可以光栅化（它的 `VisualSource::sample` 就是干这个的，
-//!    只服务 probe / conformance）；频谱在拿到配方、颜色与元素盒之前根本没有
-//!    画面可言，那一步就是 `visualizer_frame` 本身。
+//! 1. **A frame of spectrum is not a picture.** `VizFrame` is a time-domain row plus a frequency-domain row, two byte rows of **different widths** (BCS1's 128 / 512); forcing it into a `Pixmap` would mean inventing a pixel convention on the spot,
+//!    whereas ADR-E04's downstream consumer is `visualizer_frame(recipe, props, viz, bbox)
+//!    -> DrawOp`, which wants data, not pixels. The `w × 2` `R8Unorm` texture in §8.3 is
+//!    **built at GPU upload time** from the recipe's `binWidth`; it is not a product of the source layer.
+//! 2. **Spectrum has no "native asset size".** [`lottie::Lottie`] also emits DrawOps directly, but it at least
+//!    has a composition canvas that can be rasterized (its `VisualSource::sample` does exactly this, and only serves probe / conformance); a spectrum has no picture at all until it has the recipe, colors and element box, and that step is `visualizer_frame` itself.
 //!
-//! 分家的只有「一帧是什么」。**四条采样义务两个 trait 逐字相同**：唯一入口是
-//! 绝对时刻的 `sample`、不得持有增量时钟、采样只取 `&self`、内容指纹覆盖全部
-//! 字节；conformance 的「乱序采样 == 顺序采样」两边都是必选项。
+//! Only "what one frame is" is split. **The four sampling obligations are identical word for word in both traits**: the single entry point is
+//! `sample` at an absolute time, no incremental clock may be held, sampling takes only `&self`, and the content fingerprint covers all
+//! bytes; "out-of-order sampling == sequential sampling" in conformance is mandatory on both sides.
 
 pub mod animated_image;
 pub mod confetti;
@@ -76,12 +73,12 @@ pub use whiteboard::{
     WhiteboardPace, WhiteboardParams, analyze as whiteboard_analyze, whiteboard_frame,
 };
 
-/// 源类型（`AssetKind` 的渲染侧对应物）。
+/// Source kind (the render-side counterpart of `AssetKind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// GIF / APNG / 动画 WebP
+    /// GIF / APNG / animated WebP
     AnimatedImage,
-    /// bodymovin JSON 的纯 Rust 子集渲染器（ADR-M11）
+    /// Pure-Rust subset renderer for bodymovin JSON (ADR-M11)
     Lottie,
 }
 
@@ -100,12 +97,12 @@ impl fmt::Display for SourceKind {
     }
 }
 
-/// 源时间（媒体源时刻）。
+/// Source time (media source moment).
 ///
-/// 内部按**整毫秒**存放：动图的逐帧时长本来就是毫秒（GIF 是 10ms 单位、
-/// APNG/WebP 是毫秒），DrawOp 的 `media_ms` 也是毫秒，多留一层浮点只会给
-/// 「同一时刻两次取到不同帧」留缝。秒 → 毫秒的取整只发生在
-/// [`MediaTime::from_secs`] 这一处。
+/// Stored internally as **whole milliseconds**: animated-image frame durations are already milliseconds (GIF uses 10 ms units,
+/// APNG/WebP use milliseconds), and DrawOp's `media_ms` is also milliseconds; keeping an extra floating-point layer would only leave room for
+/// "two reads at the same moment getting different frames". Rounding from seconds to milliseconds happens only in
+/// [`MediaTime::from_secs`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MediaTime {
     ms: i64,
@@ -114,7 +111,7 @@ pub struct MediaTime {
 impl MediaTime {
     pub const ZERO: MediaTime = MediaTime { ms: 0 };
 
-    /// 秒 → 源时间（四舍五入到毫秒，与 `record_media` 的视频路径同一口径）。
+    /// Seconds → source time (rounded to milliseconds, same convention as the video path in `record_media`).
     pub fn from_secs(secs: f64) -> MediaTime {
         MediaTime {
             ms: (secs * 1000.0).round() as i64,
@@ -140,13 +137,12 @@ impl fmt::Display for MediaTime {
     }
 }
 
-/// 素材自带的循环声明（GIF 的 NETSCAPE2.0 / APNG 的 `acTL.num_plays` /
-/// WebP 的 `ANIM.loop_count`）。
+/// The asset's own loop declaration (GIF's NETSCAPE2.0 / APNG's `acTL.num_plays` /
+/// WebP's `ANIM.loop_count`).
 ///
-/// **它是探测出来的元数据，不是渲染判据**：文档里 `animatedImage` 元素写不写
-/// `loop` 才决定画面循不循环（缺省沿用本字段）。理由是确定性——一份文档的
-/// 播放行为不该取决于某个容器字节，而应当写在文档里；`ccut probe` 把它打出来，
-/// 作者据此决定要不要显式写 `loop`。
+/// **It is metadata obtained by probing, not a rendering criterion**: whether the picture loops is decided by whether the `animatedImage` element in the document writes
+/// `loop` (the default falls back to this field). The reason is determinism — a document's playback behavior should not depend on some container byte, but should be written in the document; `ccut probe` prints it out, and
+/// the author decides from that whether to write `loop` explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLoop {
     Infinite,
@@ -154,7 +150,7 @@ pub enum SourceLoop {
 }
 
 impl SourceLoop {
-    /// 播放遍数；`0` = 无限（`RNode::media_plays` 的编码）。
+    /// Play count; `0` = infinite (the encoding of `RNode::media_plays`).
     pub fn plays(self) -> u32 {
         match self {
             SourceLoop::Infinite => 0,
@@ -179,14 +175,14 @@ impl fmt::Display for SourceLoop {
     }
 }
 
-/// 探测结果：尺寸、帧数、逐帧时长表、循环声明。
+/// Probe result: dimensions, frame count, per-frame duration table, loop declaration.
 #[derive(Debug, Clone)]
 pub struct SourceMetadata {
     pub kind: SourceKind,
     pub width: u32,
     pub height: u32,
-    /// 逐帧**起点**毫秒表，长度 = 帧数 + 1，末项是总时长（累积和）。
-    /// 单调不减；相邻两项相等表示该帧时长为 0（容器里写了 delay 0）。
+    /// Per-frame **start** time table in milliseconds, length = frame count + 1; the last entry is the total duration (a cumulative sum).
+    /// Non-decreasing; two adjacent equal entries mean that frame has zero duration (the container wrote delay 0).
     pub frame_starts_ms: Vec<i64>,
     pub loops: SourceLoop,
 }
@@ -196,7 +192,7 @@ impl SourceMetadata {
         self.frame_starts_ms.len().saturating_sub(1)
     }
 
-    /// 总时长（秒）。
+    /// Total duration (seconds).
     pub fn duration(&self) -> f64 {
         self.total_ms() as f64 / 1000.0
     }
@@ -205,23 +201,23 @@ impl SourceMetadata {
         self.frame_starts_ms.last().copied().unwrap_or(0)
     }
 
-    /// `frameIndex = frame_at_duration_table(localTime)`（设计 §7）。
+    /// `frameIndex = frame_at_duration_table(localTime)` (design §7).
     ///
-    /// 落在末端之后一律冻结末帧——循环折叠是**调用方**的事（元素的
-    /// `loop` / `segment` 语义在 `record_media` 里已经折过了），源本身不循环。
+    /// Any time after the end freezes on the last frame — loop folding is the **caller's** job (the element's
+    /// `loop` / `segment` semantics have already been folded in `record_media`); the source itself does not loop.
     pub fn frame_at(&self, time: MediaTime) -> usize {
         frame_index(&self.frame_starts_ms, time.millis())
     }
 
-    /// 该时刻所属帧的**起点**——录制期用它把源时间量化到帧起点，
-    /// 同一帧的连续时刻因此得到逐字节相同的 DrawOp（静止帧缓存靠这个命中）。
+    /// The **start** of the frame that contains this moment — during recording, it is used to quantize the source time to the frame start,
+    /// so consecutive moments within the same frame get byte-identical DrawOps (the still-frame cache hits on this).
     pub fn frame_start(&self, time: MediaTime) -> MediaTime {
         MediaTime::from_millis(frame_start_ms(&self.frame_starts_ms, time.millis()))
     }
 }
 
-/// 时长表查找：返回 `ms` 所在的帧序号。表须为 `frame_starts_ms` 形态
-/// （N+1 项、单调不减）。空表返回 0。
+/// Duration-table lookup: returns the frame index that contains `ms`. The table must have the `frame_starts_ms` shape
+/// (N+1 entries, non-decreasing). An empty table returns 0.
 pub fn frame_index(frame_starts_ms: &[i64], ms: i64) -> usize {
     let n = frame_starts_ms.len().saturating_sub(1);
     if n == 0 {
@@ -229,13 +225,13 @@ pub fn frame_index(frame_starts_ms: &[i64], ms: i64) -> usize {
     }
     let total = frame_starts_ms[n];
     let ms = ms.clamp(0, (total - 1).max(0));
-    // 相等时取**后**一帧：零时长帧（delay 0）因此被跳过，与浏览器一致。
+    // On ties, take the **later** frame: zero-duration frames (delay 0) are thus skipped, consistent with browsers.
     frame_starts_ms[..n]
         .partition_point(|start| *start <= ms)
         .saturating_sub(1)
 }
 
-/// 时长表查找：返回 `ms` 所在帧的起点毫秒。
+/// Duration-table lookup: returns the start time in milliseconds of the frame that contains `ms`.
 pub fn frame_start_ms(frame_starts_ms: &[i64], ms: i64) -> i64 {
     frame_starts_ms
         .get(frame_index(frame_starts_ms, ms))
@@ -243,20 +239,20 @@ pub fn frame_start_ms(frame_starts_ms: &[i64], ms: i64) -> i64 {
         .unwrap_or(0)
 }
 
-/// 一帧画面（premultiplied RGBA，与 `MediaStore` 的其余画面同一像素格式）。
+/// One frame of picture (premultiplied RGBA, same pixel format as the other pictures in `MediaStore`).
 #[derive(Debug, Clone)]
 pub struct SourceFrame {
     pub index: usize,
-    /// 该帧在源时间轴上的起点
+    /// Start of this frame on the source timeline
     pub start: MediaTime,
     pub pixmap: Arc<Pixmap>,
 }
 
-/// 内容指纹：`sha256(源类型 ‖ 解码器版本 ‖ 全部字节)`。
+/// Content fingerprint: `sha256(source kind ‖ decoder version ‖ all bytes)`.
 ///
-/// 「全部字节」是刻意的——动图的每一帧都在同一个容器里，改任何一帧、改任何一条
-/// delay、改 loop count 都换指纹。等 Lottie 进来（子资源 image/font 是独立文件）
-/// 时，子资源的 hash 按 preflight 收集顺序并入同一条链（设计 §7）。
+/// "All bytes" is deliberate — every frame of an animated image lives in the same container, so changing any frame, any
+/// delay, or the loop count changes the fingerprint. Once Lottie is in (its sub-assets image/font are separate files),
+/// the hashes of sub-assets are folded into the same chain in preflight collection order (design §7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContentHash([u8; 32]);
 
@@ -280,8 +276,8 @@ impl fmt::Display for ContentHash {
     }
 }
 
-/// 解码预算：动图是**全帧驻留**的（见 `AnimatedImage`），必须有上限，
-/// 否则一个 1080p × 400 帧的 GIF 直接吃掉 3.3 GB。
+/// Decode budget: animated images are **fully resident** (see `AnimatedImage`) and must have a cap,
+/// otherwise a single 1080p × 400-frame GIF would eat 3.3 GB outright.
 #[derive(Debug, Clone, Copy)]
 pub struct PrepareCtx {
     pub max_frames: usize,
@@ -292,27 +288,27 @@ impl Default for PrepareCtx {
     fn default() -> Self {
         PrepareCtx {
             max_frames: 2048,
-            // 256 MiB：1080p 约 32 帧、512×512 约 256 帧、常见表情包动图数千帧
+            // 256 MiB: about 32 frames at 1080p, about 256 frames at 512×512, and thousands of frames for typical meme animations
             max_bytes: 256 << 20,
         }
     }
 }
 
-/// 动态素材源（设计 §7）。
+/// Dynamic asset source (design §7).
 ///
-/// `prepare` 与 `sample` 都取 `&self`：源在 `load_assets` 期一次性构造，之后由
-/// 多个渲染 worker 共享（`Arc<LoadedAssets>`），采样不得改变任何可观察状态。
+/// `prepare` and `sample` both take `&self`: the source is constructed once during `load_assets` and then shared by
+/// several render workers (`Arc<LoadedAssets>`); sampling must not change any observable state.
 pub trait VisualSource: Send + Sync {
     fn kind(&self) -> SourceKind;
 
-    /// 元数据（尺寸、时长表、循环声明）。
+    /// Metadata (dimensions, duration table, loop declaration).
     fn probe(&self) -> Result<SourceMetadata>;
 
-    /// 预热：把渲染期需要的一切在这里备齐（Lottie 的子资源在此收集并入 hash）。
-    /// 幂等；渲染期不得再有 I/O、更不得有网络。
+    /// Warm-up: prepare everything the render phase needs here (Lottie's sub-assets are collected here and folded into the hash).
+    /// Idempotent; no further I/O may happen during rendering, and certainly no network.
     fn prepare(&self, ctx: &PrepareCtx) -> Result<()>;
 
-    /// **唯一正式采样接口**：绝对源时间 → 画面。
+    /// **The only official sampling interface**: absolute source time → picture.
     fn sample(&self, time: MediaTime) -> Result<SourceFrame>;
 
     fn fingerprint(&self) -> ContentHash;
@@ -324,7 +320,7 @@ mod tests {
 
     #[test]
     fn the_duration_table_maps_time_to_frames() {
-        // 三帧：[0,100) [100,300) [300,600)
+        // Three frames: [0,100) [100,300) [300,600)
         let table = [0, 100, 300, 600];
         assert_eq!(frame_index(&table, 0), 0);
         assert_eq!(frame_index(&table, 99), 0);
@@ -332,7 +328,7 @@ mod tests {
         assert_eq!(frame_index(&table, 299), 1);
         assert_eq!(frame_index(&table, 300), 2);
         assert_eq!(frame_index(&table, 599), 2);
-        // 末端之后冻结末帧，负数夹到首帧
+        // After the end, freeze on the last frame; negative values clamp to the first frame
         assert_eq!(frame_index(&table, 600), 2);
         assert_eq!(frame_index(&table, 10_000), 2);
         assert_eq!(frame_index(&table, -5), 0);
@@ -340,7 +336,7 @@ mod tests {
 
     #[test]
     fn zero_length_frames_are_skipped() {
-        // 第 1 帧 delay 0：任何时刻都不该落在它上面
+        // Frame 1 has delay 0: no moment should ever land on it
         let table = [0, 100, 100, 400];
         assert_eq!(frame_index(&table, 99), 0);
         assert_eq!(frame_index(&table, 100), 2);

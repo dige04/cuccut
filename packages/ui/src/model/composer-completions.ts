@@ -1,9 +1,9 @@
 /*
- * 输入区的 @ 提及与 / 斜杠命令（原型 model-agent.js `mentionQuery` / `slashQuery` / `slashItems` / `applySlash`）。
+ * @ mentions and / slash commands in the composer (prototype `mentionQuery` / `slashQuery` / `slashItems` / `applySlash` in model-agent.js).
  *
- * @ 提及的路径引号规则移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra）
- * packages/app/src/utils/file-mention-autocomplete.ts（`findActiveFileMention`、`formatQuotedFileMentionPath`），modified：
- * 查询改用原型的规则（@ 前面必须是开头或空白，查询里不能有空白与引号）；插入时保留 @ 前缀，只在路径带空白或引号时才加引号。
+ * The quoting rules for @ mention paths are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra),
+ * packages/app/src/utils/file-mention-autocomplete.ts (`findActiveFileMention`, `formatQuotedFileMentionPath`), modified:
+ * the query uses the prototype's rules (an @ must be at the start or after whitespace, and the query cannot contain whitespace or quotes); when inserting, the @ prefix is kept, and quotes are added only when the path contains whitespace or quotes.
  */
 import { defineMessages, type Id, type SpaceEntry } from '@cuccut/protocol';
 import { SLASH_COMMANDS, type SlashCommand } from '../copy.ts';
@@ -26,8 +26,8 @@ import { KIND_LABEL } from './space.ts';
 import { timeStamp } from './transcript-text.ts';
 
 /**
- * @ 候选的文案（英文是键与类型的来源，译文在 `composer-completions.zh-Hans.ts`）。插进正文的引用也随界面语言：
- * 它是用户这条消息的一部分。
+ * Copy for @ candidates (the English is the source of keys and types; the translations live in `composer-completions.zh-Hans.ts`). The reference inserted into the body also follows the UI language:
+ * it is part of the user's message.
  */
 const en = {
   chapterN: (n: number) => `Chapter ${n}`,
@@ -39,7 +39,7 @@ const en = {
 export type ComposerCompletionsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 光标前正在输入的那个补全：`raw` 是要被替换掉的原文（含 @ 或 /），`query` 是用来筛选的部分。 */
+/** The completion being typed before the cursor: `raw` is the original text to be replaced (including the @ or /), and `query` is the part used for filtering. */
 export interface ActiveCompletion {
   kind: 'slash' | 'mention';
   query: string;
@@ -47,15 +47,15 @@ export interface ActiveCompletion {
 }
 
 /**
- * 交给 PromptTokenField 的 `completionTrigger`：开头或空白后面的 @ 或 /。它从光标往回找最后一个匹配，
- * 那个位置到光标的文字就是 `filterValue`；真正算不算补全由 `activeCompletion` 决定。
+ * The `completionTrigger` passed to PromptTokenField: an @ or / at the start or after whitespace. It searches backward from the cursor for the last match;
+ * the text from that position to the cursor is `filterValue`. Whether it actually counts as a completion is decided by `activeCompletion`.
  */
 export const COMPLETION_TRIGGER = /(?<=^|\s)[@/]/;
 
 /**
- * 光标前的正文里有没有正在输入的补全。
- * 斜杠命令只认正文**开头**、后面还没敲空格的 /token：它是整句的动词，放中间就成了路径。
- * @ 可以出现在任何位置，但前面得是开头或空白（`a@b.com` 不是提及）。
+ * Whether there is a completion being typed in the body text before the cursor.
+ * Slash commands are recognised only as a **leading** /token at the start of the body, with no space typed after it yet: it is the verb of the whole sentence, and in the middle it would become a path.
+ * @ can appear anywhere, but it must be at the start or after whitespace (`a@b.com` is not a mention).
  */
 export function activeCompletion(beforeCaret: string): ActiveCompletion | null {
   const slash = /^\/([^\s/]*)$/.exec(beforeCaret);
@@ -70,17 +70,17 @@ export function slashMatches(query: string): SlashCommand[] {
   return SLASH_COMMANDS.filter((c) => !q || c.cmd.slice(1).toLowerCase().startsWith(q) || c.label.includes(query));
 }
 
-/** 「+」菜单里选斜杠命令：替换正文开头已有的 /token，其余原样接在后面，正文里只多一个 `/xxx `。 */
+/** Choosing a slash command from the “+” menu: replaces the existing /token at the start of the body and keeps the rest after it, so the body gains only one `/xxx `. */
 export function applySlash(text: string, cmd: string): string {
   return `${cmd} ${text.replace(/^\/[^\s/]*\s?/, '')}`;
 }
 
-/** 「+」菜单里的「引用」：在末尾放一个 @ 打开候选；前面不是空白就先补一个空格。 */
+/** “Reference” in the “+” menu: puts an @ at the end to open the candidates; if the character before it is not whitespace, a space is added first. */
 export function appendMentionAnchor(text: string): string {
   return text && !/\s$/.test(text) ? `${text} @` : `${text}@`;
 }
 
-/** 引用插进正文的样子：`@相对路径`；路径带空白或引号时整体加引号，里面的 `"` 转义。 */
+/** How a reference is inserted into the body: `@relative-path`; when the path contains whitespace or quotes, the whole thing is wrapped in quotes and the `"` inside is escaped. */
 export function mentionText(path: string): string {
   return /[\s"']/.test(path) ? `@"${path.replace(/"/g, '\\"')}"` : `@${path}`;
 }
@@ -92,15 +92,15 @@ export interface MentionCandidate {
   insert: string;
 }
 
-/** 候选的范围：会话所在的项目；不属于项目的会话用它自己的工作目录。都没有（新会话还没选项目）就没有候选。 */
+/** Scope of candidates: the project the session belongs to; a session not in a project uses its own working directory. With neither (a new session with no project chosen yet), there are no candidates. */
 export interface MentionScope {
   projectId: Id | null;
   conversationId: Id | null;
 }
 
 /**
- * @ 的候选：Space 目录快照里这个项目（或会话工作目录）下的视频与文件，回收站里的不算。
- * 只引入只读参考，写入目标仍是会话绑定的目录。视频在前，其余按最近活动。眼前打开的视频的章节与说话人见 `videoMentionCandidates`。
+ * @ candidates: the videos and files under this project (or the session's working directory) in the Space directory snapshot; items in the trash are excluded.
+ * Only read-only references are brought in; the write target is still the directory bound to the session. Videos come first, the rest by most recent activity. For the chapters and speakers of the video currently open, see `videoMentionCandidates`.
  */
 export function mentionCandidates(entries: readonly SpaceEntry[], scope: MentionScope, query: string, limit = 20): MentionCandidate[] {
   if (!scope.projectId && !scope.conversationId) return [];
@@ -114,16 +114,16 @@ export function mentionCandidates(entries: readonly SpaceEntry[], scope: Mention
     .map((e) => ({ id: e.id, label: e.name, description: `${KIND_LABEL[e.kind]} · ${e.relPath}`, insert: mentionText(e.relPath) }));
 }
 
-/** 眼前打开的视频里可以 @ 的东西：章节（按起点排）与说话人（转写里出现过的，名字去重）。 */
+/** Things in the currently open video that can be @-mentioned: chapters (sorted by start) and speakers (those who appear in the transcript, with names de-duplicated). */
 export interface VideoMentions {
   chapters: readonly Pick<ChapterSpan, 'id' | 'index' | 'label' | 'title' | 'start' | 'end'>[];
   speakers: readonly { id: string; name: string }[];
 }
 
 /**
- * @ 候选里「这个视频」那一组（设计稿 model-agent.js `mentionItems` 的章节与说话人）：发给智能体的编辑器上下文里没有章节、
- * 说话人字段，所以插进正文的是一段文字引用——章节带序号、名字与起止时间（`@第 2 章 开场（00:12–01:30）`），智能体凭时间
- * 定位；说话人写成 `@说话人「名字」`。查询匹配名字，也认「章节」「说话人」与「第 N 章」。
+ * The “this video” group among the @ candidates (the chapters and speakers from `mentionItems` in the design draft model-agent.js): the editor context sent to the agent has no chapter or speaker fields,
+ * so what gets inserted into the body is a text reference. A chapter carries its number, name and start/end time (`@第 2 章 开场（00:12–01:30）`), and the agent locates it by time;
+ * a speaker is written as `@说话人「名字」` (`@` plus “speaker” plus the name). Queries match names, and also recognise 章节 (chapter), 说话人 (speaker) and 第 N 章 (chapter N).
  */
 export function videoMentionCandidates(mentions: VideoMentions, query: string, limit = 20): MentionCandidate[] {
   const q = query.toLowerCase();
@@ -133,7 +133,7 @@ export function videoMentionCandidates(mentions: VideoMentions, query: string, l
     const n = chapter.index + 1;
     const ordinal = M.chapterN(n);
     const name = chapter.label.trim();
-    // i18n-ignore: 检索关键词，中英两种说法都收，与界面语言无关
+    // i18n-ignore: search keywords; both Chinese and English terms are accepted, independent of the UI language
     if (!hit(chapter.title, ordinal, `第 ${n} 章`, `第${n}章`, `chapter ${n}`, '章节', 'chapter')) continue;
     const range = `${timeStamp(chapter.start)}–${timeStamp(chapter.end)}`;
     out.push({
@@ -144,7 +144,7 @@ export function videoMentionCandidates(mentions: VideoMentions, query: string, l
     });
   }
   for (const speaker of mentions.speakers) {
-    // i18n-ignore: 检索关键词，中英两种说法都收，与界面语言无关
+    // i18n-ignore: search keywords; both Chinese and English terms are accepted, independent of the UI language
     if (!hit(speaker.name, '说话人', 'speaker')) continue;
     out.push({ id: `speaker:${speaker.id}`, label: speaker.name, description: M.speaker, insert: M.speakerInsert(speaker.name) });
   }

@@ -1,10 +1,11 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/v2/runtime.ts 的 OpenCodeV2Runtime.start（`opencode serve
- * --hostname 127.0.0.1 --port 0`、随机的 OPENCODE_PASSWORD、等 stdout 的 `server listening on` 一行、Basic 认证、
- * 回 HTML 当作接口不兼容、stderr 读掉不留、先礼后兵地结束进程组）与 http-error.ts 的 OpenCodeHttpError。
- * 改成 CucCut 用的一个会话一个 serve 进程（不做引用计数的进程池），HTTP 与事件流用手写的 fetch 客户端
- * （不依赖 @opencode/client），事件流断开与进程退出都交给会话处理。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * OpenCodeV2Runtime.start in packages/server/src/server/agent/providers/opencode/v2/runtime.ts (`opencode serve
+ * --hostname 127.0.0.1 --port 0`, a random OPENCODE_PASSWORD, waiting for the `server listening on` line on stdout, Basic auth,
+ * treating an HTML response as an incompatible API, draining stderr without keeping it, ending the process group politely first and then forcefully)
+ * and OpenCodeHttpError in http-error.ts.
+ * Changed to one serve process per session for CucCut (no reference-counted process pool). HTTP and the event stream use a hand-written fetch client
+ * (no dependency on @opencode/client). The session handles event stream disconnects and process exits.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -13,7 +14,7 @@ import { DriversOpencode } from '@cuccut/protocol/messages/agent-drivers';
 import type { DriverText } from '../driver-text.ts';
 import { OPENCODE_ENV } from './opencode-preset.ts';
 
-/** 事件流里的一条：`{ id, type, data, durable? }`（v2 的 `V2Event`）。 */
+/** One entry in the event stream: `{ id, type, data, durable? }` (the `V2Event` of v2). */
 export interface OpenCodeEvent {
   id?: string;
   type: string;
@@ -21,7 +22,7 @@ export interface OpenCodeEvent {
   durable?: { aggregateID: string; seq: number };
 }
 
-/** OpenCode 回了非 2xx，或者回的是网页（不是 v2 API）。 */
+/** OpenCode returned a non-2xx status, or returned a web page (not the v2 API). */
 export class OpenCodeHttpError extends Error {
   readonly name = 'OpenCodeHttpError';
   readonly operation: string;
@@ -36,33 +37,33 @@ export class OpenCodeHttpError extends Error {
 }
 
 export interface RequestOptions {
-  /** 查询参数。`location` 编成 `location[directory]=…`，与 v2 API 的写法一致。 */
+  /** Query parameters. `location` is encoded as `location[directory]=…`, matching the v2 API's format. */
   query?: Record<string, string | undefined>;
   location?: string;
   body?: unknown;
   signal?: AbortSignal;
-  /** 单个请求的时限，默认 30 秒。 */
+  /** Time limit for a single request, default 30 seconds. */
   timeoutMs?: number;
 }
 
 export interface ServeOptions {
   command: string;
   env: NodeJS.ProcessEnv;
-  /** 子进程的工作目录。API 按请求里的 `location` 定项目目录，这里只影响 serve 自己。 */
+  /** Working directory of the child process. The API sets the project directory from `location` in each request; this only affects serve itself. */
   cwd: string;
   log: Logger;
-  /** 等 `server listening on` 一行与 `/api/info` 的时限，默认 30 秒。 */
+  /** Time limit for waiting on the `server listening on` line and `/api/info`, default 30 seconds. */
   startupTimeoutMs?: number;
 }
 
 const LISTENING = /server listening on (http:\/\/127\.0\.0\.1:\d+)\r?\n/;
 
 /**
- * 一个 `opencode serve` 子进程与它的 HTTP 客户端。只监听 127.0.0.1，每次启动随机生成密码，别的进程连不上。
+ * One `opencode serve` child process and its HTTP client. Listens only on 127.0.0.1 and generates a random password on each start, so other processes cannot connect.
  */
 export class OpenCodeServer {
   readonly url: string;
-  /** 退出的原因：CucCut 写的（信号、退出码）是 `Localized`，进程启动出错是原话；正常退出为 null。 */
+  /** Reason for exit: values CucCut writes (signal, exit code) are `Localized`; a process start error is the original text; a normal exit is null. */
   readonly exited: Promise<DriverText | null>;
   readonly #proc: ChildProcess;
   readonly #auth: string;
@@ -109,7 +110,7 @@ export class OpenCodeServer {
         resolve(error.message);
       });
     });
-    // 输出里可能有凭据：读掉不留，只在调试日志里记长度。
+    // The output may contain credentials: drain it without keeping it, and only log its length in the debug log.
     proc.stderr?.on('data', (chunk: Buffer) => options.log.debug('opencode serve stderr', { bytes: chunk.length }));
     const deadline = Date.now() + timeoutMs;
     let url: string;
@@ -133,7 +134,7 @@ export class OpenCodeServer {
           finish(new Error(String(DriversOpencode.serveExitedAtStart({ reason: reason ?? DriversOpencode.exitCode({ code: '0' }) })))),
         );
       });
-      // 之后的 stdout 也读掉，免得管道写满卡住子进程。
+      // Keep reading stdout afterwards too, so the pipe does not fill up and block the child process.
       proc.stdout?.on('data', () => undefined);
     } catch (error) {
       await stopProcess(proc, () => exitedFlag, exited);
@@ -179,8 +180,8 @@ export class OpenCodeServer {
   }
 
   /**
-   * 订阅全局事件流（`GET /api/event`，SSE）。每条 `data:` 是一个 JSON 事件；`:` 开头的心跳行忽略。
-   * 流结束或出错时调 `onClose`（带原因；`stop()` 主动结束时原因为 null）。
+   * Subscribe to the global event stream (`GET /api/event`, SSE). Each `data:` is one JSON event; lines starting with `:` are heartbeats and are ignored.
+   * When the stream ends or errors, calls `onClose` (with a reason; a `stop()` that ends it on purpose gives a reason of null).
    */
   subscribe(onEvent: (event: OpenCodeEvent) => void, onClose: (error: DriverText | null) => void): () => void {
     const controller = new AbortController();
@@ -216,7 +217,7 @@ export class OpenCodeServer {
     };
   }
 
-  /** 结束 serve：先 SIGTERM 整个进程组，5 秒不退再 SIGKILL。 */
+  /** End serve: send SIGTERM to the whole process group first, and SIGKILL if it has not exited after 5 seconds. */
   close(): Promise<void> {
     this.#stopping ??= stopProcess(this.#proc, () => this.#exitedFlag, this.exited);
     return this.#stopping;
@@ -230,7 +231,7 @@ export class OpenCodeServer {
   }
 }
 
-/** 一帧 SSE：把 `data:` 行拼起来解析成事件；心跳与解析不了的返回 null。 */
+/** One SSE frame: joins the `data:` lines and parses them into an event; heartbeats and unparseable frames return null. */
 export function parseFrame(frame: string): OpenCodeEvent | null {
   const data = frame
     .split(/\r?\n/)
@@ -252,7 +253,7 @@ async function stopProcess(proc: ChildProcess, hasExited: () => boolean, exited:
   if (hasExited()) return;
   const kill = (signal: NodeJS.Signals) => {
     try {
-      // detached 启动的子进程自成一个进程组：连它派生的命令一起结束。
+      // A child process started detached forms its own process group, so ending it also ends the commands it spawned.
       if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, signal);
       else proc.kill(signal);
     } catch {

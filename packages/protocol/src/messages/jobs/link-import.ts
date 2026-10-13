@@ -14,7 +14,7 @@ import { pl } from './link-import.pl.ts';
 import { tr } from './link-import.tr.ts';
 import { vi } from './link-import.vi.ts';
 
-/** `packages/jobs/src/pipelines/link-import.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/link-import.ts`. */
 const en = {
   languageTag: "must be a BCP 47 language tag",
   requiresTranscribe: "can only be given with transcribe",

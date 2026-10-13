@@ -11,9 +11,9 @@ import { parseSubtitles } from './subtitle-file.ts';
 import { parseTranslateSubtitlesParams, translateSubtitlesPipeline } from './translate-subtitles.ts';
 
 /**
- * 字幕文件的翻译（架构设计 §7.9）：对着临时目录里的字幕文件与进程内的假文本 Provider（经真实的 `TextRunner` 与结构化输出
- * 校验）：条数与时间码不变、双语、换格式、术语表、输出不合时重发与失败后的重试、读不准的文件启动时拒绝、没有配置文本模型。
- * 授权、`pendingGrants` 与 Space 里的条目在 runtime-core 的端到端测试。
+ * Subtitle file translation (architecture design §7.9): runs against subtitle files in a temporary directory and an in-process fake text provider (through the real `TextRunner` and structured-output
+ * validation). Covers: cue count and timecodes unchanged, bilingual output, format conversion, glossary, resending when output does not match and retry after failure, rejection at startup of files that cannot be read exactly, and no text model configured.
+ * Authorization, `pendingGrants` and Space entries are covered by the end-to-end tests in runtime-core.
  */
 
 const MODEL: TextModelInfo = {
@@ -30,7 +30,7 @@ const MODEL: TextModelInfo = {
   cost: 'unknown',
 };
 
-/** n 条 SRT（CRLF、带 BOM）：第 3 条是空的，第 2 条两行带斜体。 */
+/** n SRT cues (CRLF, with BOM): cue 3 is empty, and cue 2 has two lines with italics. */
 function srt(n: number): string {
   const blocks: string[] = [];
   for (let i = 1; i <= n; i++) {
@@ -105,7 +105,7 @@ describe('字幕文件的翻译流程', () => {
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-subtitles-'));
     files = path.join(dir, 'files');
-    // 保存位置（§7.9）：还不存在，第一次写时创建。
+    // Save location (§7.9): does not exist yet; created on the first write.
     saved = path.join(dir, 'saved');
     await fs.mkdir(files);
     jobs = testJobManager(dir);
@@ -171,10 +171,10 @@ describe('字幕文件的翻译流程', () => {
       ['check', 'completed'],
       ['publish', 'completed'],
     ]);
-    // 24 条有文本，每批 20 条：两次调用；第二批带前文。
+    // 24 cues with text, 20 per batch: two calls; the second batch carries the preceding context.
     expect(text.runs).toHaveLength(2);
     expect(text.runs[1]!.parameters.messages[1]!.content).toContain('"Hello number 20."');
-    // 多行接成一句、去掉斜体再送模型。
+    // Multiple lines are joined into one sentence, italics are removed, and then it is sent to the model.
     expect(text.runs[0]!.parameters.messages[1]!.content).toContain('"Second line continues"');
 
     expect(record.pipeline!.params).toMatchObject({ outDir: saved });
@@ -210,7 +210,7 @@ describe('字幕文件的翻译流程', () => {
     });
     expect(stepJob(record, 'translate').warnings).toEqual([expect.objectContaining({ code: 'SUBTITLE_MARKUP_STRIPPED' })]);
 
-    // 再来一次：不覆盖，加序号。
+    // Run again: no overwrite, a number is added.
     const again = await translate({ input });
     expect(again.result!.outputs![0]!.path).toBe(path.join(saved, 'movie-2.zh-CN.srt'));
     expect(await fs.readFile(out, 'utf8')).toBe(bytes.toString('utf8'));

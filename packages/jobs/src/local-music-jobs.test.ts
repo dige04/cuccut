@@ -21,14 +21,14 @@ import { LocalMusicProvider } from './local-music-provider.ts';
 import { LOCAL_MUSIC_DEMAND, localMusicResources } from './resource-profiles.ts';
 
 /**
- * 本地音乐生成（架构设计 §6.1、§6.3、§7.7）：audio.cpp 引擎每个任务一个进程，由 `LocalMusicProvider` 起与收；
- * 引擎是假的（一个按同样命令行写 WAV 的脚本），真实的推理不在这里。
+ * Local music generation (architecture design §6.1, §6.3, §7.7): the audio.cpp engine runs one process per job, started and collected by `LocalMusicProvider`.
+ * The engine is fake (a script that writes a WAV for the same command line); real inference is not here.
  */
 
 const YUE = MUSIC_BUNDLES[0]!;
 const GiB = 1024 * 1024 * 1024;
 
-/** 假引擎：读 `--out-dir` / `--out` 写一段正弦 WAV，时长取 `semantic_max_tokens / 25`（撞上限）或环境变量给的秒数；按环境变量失败或挂起。 */
+/** Fake engine: reads `--out-dir` / `--out` and writes a sine WAV; the duration is `semantic_max_tokens / 25` (hitting the limit) or the seconds given by an environment variable; fails or hangs according to environment variables. */
 const FAKE_ENGINE = `
 const fs = require('node:fs');
 const path = require('node:path');
@@ -99,7 +99,7 @@ describe('本地音乐生成', () => {
     engine = path.join(dir, 'audiocpp_cli');
     await fs.writeFile(engine, `#!/bin/sh\nexec "${process.execPath}" "${path.join(dir, 'fake-engine.cjs')}" "$@"\n`, { mode: 0o755 });
     await installYue(path.join(dir, 'models'));
-    // 引擎组件由开发者覆盖（`CUCCUT_AUDIOCPP_CLI`）满足：模型包算装好，不看工具目录。
+    // The engine component is satisfied by a developer override (`CUCCUT_AUDIOCPP_CLI`): the model package counts as installed, and the tool directory is not checked.
     catalog = new ModelCatalog({
       root: path.join(dir, 'models'),
       toolsDir: path.join(dir, 'tools'),
@@ -166,7 +166,7 @@ describe('本地音乐生成', () => {
       expect(crypto.createHash('sha256').update(bytes).digest('hex')).toBe(output!.sha256);
       expect(attempt.workerVersion).toContain('audiocpp_cli');
       expect(events).toEqual(['generating', 'progress 1/1']);
-      // 假引擎正好写满 token 上限换算的时长：算撞上限。
+      // The fake engine writes exactly the duration converted from the token limit: this counts as hitting the limit.
       expect(warnings).toEqual([expect.objectContaining({ code: 'output-truncated' })]);
 
       const args = JSON.parse(await fs.readFile(path.join(dir, 'staging', 'args.json'), 'utf8')) as string[];

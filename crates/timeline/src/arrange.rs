@@ -5,12 +5,9 @@ use crate::schema::{Clip, TimelineDocument, TimelineError};
 
 const EPSILON: f64 = 1e-9;
 
-/// 已投影的 clip 分段。
+/// A projected clip segment.
 ///
-/// **serde 形态是对外线格式**（camelCase）：`apps/cli` 的
-/// `studio_timeline_projection` 把同一张表发给 studio，studio 再原样回喂给
-/// `ccut-wasm` 的 `loadTimeline` 信封（设计 §13 P6b「投影补接」）。字段名一旦
-/// 改动，那条回路会在 `deny_unknown_fields` 上当场红。
+/// **The serde shape is the external wire format** (camelCase): `apps/cli`'s `studio_timeline_projection` sends the same table to studio, and studio feeds it back unchanged into the `loadTimeline` envelope of `ccut-wasm` (design §13 P6b “projection wiring”). Once a field name changes, that loop fails immediately on `deny_unknown_fields`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClipSegment {
@@ -20,7 +17,7 @@ pub struct ClipSegment {
     pub timeline_end: f64,
 }
 
-/// 已投影的一个 clip。serde 形态同 [`ClipSegment`]。
+/// A single projected clip. Its serde shape is the same as [`ClipSegment`].
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClipProjection {
@@ -104,16 +101,11 @@ impl ClipProjection {
     }
 }
 
-/// 输出时刻 → `(源 id, 源媒体时刻)`，**只要一张已投影的 clip 表**。
+/// Output time → `(source id, source media time)`, **given only a projected clip table**.
 ///
-/// [`TimelineProjection::timeline_to_source`] 就是它的一层包装，两者因此不可能
-/// 分叉。单独暴露是给**手里只有 clip 表、没有 `CutSet` 的 host** 用的：浏览器
-/// 预览（`ccut-wasm`）的投影是 studio 把服务端算好的那张表原样喂回来的，重建
-/// 一份 `CutSet` 既没有输入（源时长是 host 探测的）也没有意义（折算本身一个
-/// cut 都不读）。
+/// [`TimelineProjection::timeline_to_source`] is a thin wrapper around it, so the two cannot diverge. It is exposed separately for **hosts that hold only the clip table and no `CutSet`**: the browser preview (`ccut-wasm`)'s projection is the table studio fed back unchanged from the one the server computed, and rebuilding a `CutSet` has neither input (source durations are probed by the host) nor purpose (the mapping itself reads no cut at all).
 ///
-/// `duration` 必须是 clip 表最后一段的 `timeline_end`——`TimelineProjection`
-/// 里那一份就是这么来的（`build` 的 `timeline_cursor`）。
+/// `duration` must be the `timeline_end` of the table's last segment. The one in `TimelineProjection` is derived that way (`timeline_cursor` in `build`).
 pub fn clips_timeline_to_source(
     clips: &[ClipProjection],
     duration: f64,
@@ -124,14 +116,9 @@ pub fn clips_timeline_to_source(
         .map(|position| (position.src_id, position.source_time))
 }
 
-/// [`clips_timeline_to_source`] 的完整形态：连**哪条 clip 在播**一并给出。
+/// The full form of [`clips_timeline_to_source`]: it also reports **which clip is playing**.
 ///
-/// 折算本身与 `clips_timeline_to_source` 是同一份代码（后者就是这里的一层
-/// 投影），所以两者不可能分叉。单独存在是因为 host 的播放循环需要 clip 身份：
-/// [`TimelineProjection::playback_step`] 的入参就是 clip id，没有它宿主只能在
-/// 自己那侧再写一遍缝判定。Swift（`TimelineMapProjection.timelineToSource`）与
-/// JS（`skills/cuccut/templates/studio/timeline-mapping.js`）两个孪生实现一直
-/// 返回 `clipId`，这里是把 Rust 这一份补齐到同一形状。
+/// The mapping itself is the same code as `clips_timeline_to_source` (the latter is a thin projection of this), so the two cannot diverge. It exists separately because the host's playback loop needs clip identity: the input to [`TimelineProjection::playback_step`] is a clip id, and without it the host would have to re-implement the seam decision on its own side. The Swift (`TimelineMapProjection.timelineToSource`) and JS (`skills/cuccut/templates/studio/timeline-mapping.js`) twin implementations have always returned `clipId`; this brings the Rust version up to the same shape.
 pub fn clips_timeline_to_position(
     clips: &[ClipProjection],
     duration: f64,
@@ -742,9 +729,7 @@ mod tests {
         );
     }
 
-    /// `timeline_to_position` 只是 `timeline_to_source` 多带 clip 身份的形态：
-    /// 同一输入必须逐位同结果，clip 归属按同一条缝规则（`Preceding` 归前段、
-    /// `Following` 归后段）。
+    /// `timeline_to_position` is just the form of `timeline_to_source` that additionally carries clip identity: for the same input it must give a bit-identical result, and clip ownership follows the same seam rule (`Preceding` belongs to the earlier segment, `Following` to the later one).
     #[test]
     fn timeline_to_position_agrees_with_timeline_to_source_and_names_the_clip() {
         let projection =
@@ -779,7 +764,7 @@ mod tests {
         assert_eq!(after.source_time, 1.0);
         assert_eq!(after.rate, 2.0);
 
-        // 越界一律钳进排布内（与 `timeline_to_source` 同一档）。
+        // Out-of-range values are always clamped into the arrangement (same tier as `timeline_to_source`).
         assert_eq!(
             projection
                 .timeline_to_position(99.0, SeamBias::Following)

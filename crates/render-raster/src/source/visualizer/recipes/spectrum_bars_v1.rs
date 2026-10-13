@@ -1,21 +1,18 @@
-//! `spectrum-bars-v1`：`bars` / `bars_rounded` / `bars_bottom`（设计 §7.2）。
+//! `spectrum-bars-v1`: `bars` / `bars_rounded` / `bars_bottom` (design §7.2).
 //!
-//! 最经典的频谱柱：把可用的 bin 等分成 `barCount` 个槽位，每根柱子的高度是槽中心
-//! 处的频谱幅度经 `easing` 再与 `minHeight` 取大（静音时留一排短柱，元素不会
-//! "消失"）。三款样式全靠参数区分：
+//! The classic spectrum bars: the usable bins are split into `barCount` slots; each bar's height is the spectrum amplitude at the slot centre, shaped by `easing` and then taking the larger of that and `minHeight` (at silence, a row of short bars stays, so the element does not "disappear"). The three styles are told apart entirely by parameters:
 //!
-//! | 样式 | `barCount` | `align` | `gap` | `radius` | `minHeight` |
+//! | Style | `barCount` | `align` | `gap` | `radius` | `minHeight` |
 //! | --- | --- | --- | --- | --- | --- |
 //! | `bars` | 48 | mirror | 0.35 | 0 | 0.02 |
 //! | `bars_rounded` | 32 | mirror | 0.45 | 1 | 0.06 |
 //! | `bars_bottom` | 64 | bottom | 0.25 | 0 | 0.02 |
 //!
-//! * `align: mirror` 以盒子中线上下对称，`bottom` 贴盒底向上长；
-//! * `gap` 是**槽宽的分数**（0 = 柱子铺满槽位），柱子在槽内居中；
-//! * `radius` 是圆角占"柱宽与柱高之较小者的一半"的分数——`1` 就是两端全圆的
-//!   胶囊，任何柱高下都不会出现自交的圆角。
+//! * `align: mirror` is symmetric above and below the box's centre line; `bottom` grows upward from the bottom of the box;
+//! * `gap` is a **fraction of the slot width** (0 = bars fill the slot), and each bar is centred within its slot;
+//! * `radius` is the corner radius as a fraction of "half of the smaller of bar width and bar height" — `1` gives a capsule with fully rounded ends, and no height produces self-intersecting corners.
 //!
-//! 每根柱一条 `FillRect`，返回 `barCount`。只用主色。
+//! One `FillRect` per bar; returns `barCount`. Uses the primary colour only.
 
 use motion::preset_registry::VisualizerBody;
 

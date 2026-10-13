@@ -1,6 +1,4 @@
-//! DrawOp 重放 → tiny-skia Pixmap。层栈实现 PushLayer/PopLayer（组不透明度
-//! + 混合模式），裁剪栈实现 ClipPath/PopClip，DrawMedia 经 MediaStore 取像素
-//! （image 直引 / video 顺序解码），DrawBitmap 直接取帧内的位图侧表。
+//! DrawOp replay → tiny-skia Pixmap. The layer stack implements PushLayer/PopLayer (group opacity + blend mode), the clip stack implements ClipPath/PopClip, DrawMedia fetches pixels through MediaStore (images directly, videos decoded sequentially), and DrawBitmap takes the bitmap side table within the frame directly.
 
 use crate::drawop::{DrawOp, FrameOps, MatteMode, PaintData, PathData, StaticPrefix};
 #[cfg(feature = "media")]
@@ -10,9 +8,7 @@ use anyhow::{Result, anyhow};
 use std::cell::OnceCell;
 use std::sync::{Arc, Mutex};
 
-/// [`StaticPrefix`] 的光栅缓存：键 `(key, 宽, 高)` → 前缀画完后的整张画面。
-/// 进程级（导出的各 worker、预览的各帧共用），至多 [`STATIC_PREFIX_ENTRIES`] 张，
-/// 最近用到的排在末尾；1080p 一张 8.3 MB。
+/// Raster cache for [`StaticPrefix`]: key `(key, width, height)` → the whole image after the prefix is painted. It is process-wide (shared by the export workers and the preview's frames), holds at most [`STATIC_PREFIX_ENTRIES`] images, and the most recently used one sits at the end. One 1080p image is 8.3 MB.
 static STATIC_PREFIXES: Mutex<Vec<((u64, u32, u32), Arc<Pixmap>)>> = Mutex::new(Vec::new());
 const STATIC_PREFIX_ENTRIES: usize = 2;
 
@@ -40,8 +36,7 @@ fn static_prefix_put(key: (u64, u32, u32), pixmap: &Pixmap) {
     entries.push((key, Arc::new(pixmap.clone())));
 }
 
-/// path 侧表按需物化：命中背景缓存时前缀里的纹理几何（几万粒颗粒）一次都不转换。
-/// `get` 与 `Vec::get` 同形，调用点不变。
+/// The path side table is materialized on demand. On a background-cache hit, the texture geometry inside the prefix (tens of thousands of grains) is never converted at all. `get` has the same shape as `Vec::get`, so call sites do not change.
 struct LazyPaths<'a> {
     data: &'a [PathData],
     cells: Vec<OnceCell<Option<tiny_skia::Path>>>,
@@ -65,8 +60,7 @@ use tiny_skia::{
     Pixmap, PixmapPaint, PixmapRef, Point, RadialGradient, SpreadMode, Stroke, Transform,
 };
 
-/// 裁剪栈的一格。`layer_depth` 是压栈时的层深度：`PopClip` 必须在同一层里
-/// 完成（规范 §14.5），否则「层内建立的裁剪」会泄漏到层外的绘制上。
+/// One cell of the clip stack. `layer_depth` is the layer depth at push time. `PopClip` must complete within the same layer (spec §14.5); otherwise a clip set up inside a layer would leak onto draws outside it.
 struct ClipEntry {
     mask: Mask,
     layer_depth: usize,
@@ -79,7 +73,7 @@ fn to_paint(c: &[f32; 4]) -> Paint<'static> {
     p
 }
 
-/// 自然尺寸单位的源裁剪框换到实际帧尺寸，取整后仍落在帧内（全零 = 整幅源）。
+/// Converts the source crop box, given in natural-size units, to the actual frame size. After rounding it still falls inside the frame (all zeros = the whole source).
 fn scale_crop(src: &[f32; 4], fx: f32, fy: f32, width: u32, height: u32) -> [f32; 4] {
     if src[2] <= 0.0 || src[3] <= 0.0 {
         return *src;
@@ -99,13 +93,10 @@ fn to_tf(m: &[f32; 6]) -> Transform {
     Transform::from_row(m[0], m[1], m[2], m[3], m[4], m[5])
 }
 
-/// `out.draw_pixmap(0, 0, src, &PixmapPaint::default(), transform, None)` 的捷径（不透明度 1、src-over、不裁剪；
-/// 平移时 tiny-skia 不论要的是什么滤波都按最近邻取）：`transform` 是整数平移（含恒等），且盖到的源像素只有不透明的
-/// 与全零的时，src-over 就是把不透明像素原样拷过去、全零像素不动。先扫一遍再拷：有半透明像素就什么都不改、返回
-/// false，调用方照走 `draw_pixmap`，两条路逐字节相同（`copy_over_tests` 与 `draw_pixmap` 对拍）。
+/// Shortcut for `out.draw_pixmap(0, 0, src, &PixmapPaint::default(), transform, None)` (opacity 1, src-over, no clip; for translations, tiny-skia uses nearest-neighbour sampling whatever filter is requested). It applies when `transform` is an integer translation (including identity) and the source pixels it covers are only opaque or fully zero. In that case src-over just copies the opaque pixels across and leaves the zero pixels alone. Scan first, then copy: if there is any semi-transparent pixel, nothing is changed and false is returned, and the caller proceeds with `draw_pixmap`. The two paths are byte-for-byte identical (`copy_over_tests` cross-checks against `draw_pixmap`).
 ///
-/// 视频帧整幅不透明：整幅视频层（预览画的与导出画的）由此省掉逐像素的浮点管线（Pattern 着色器只有 highp 实现）。
-/// 全零的行按整行与零比较，透明的大片几乎不花时间。
+/// A video frame is fully opaque, so a whole-frame video layer (in both preview and export) skips the per-pixel floating-point pipeline (the Pattern shader only has a highp implementation).
+/// Fully zero rows are compared as whole rows against zero, so large transparent areas take almost no time.
 pub fn copy_over(out: &mut Pixmap, src: PixmapRef, transform: Transform) -> bool {
     let Transform {
         sx,
@@ -115,7 +106,7 @@ pub fn copy_over(out: &mut Pixmap, src: PixmapRef, transform: Transform) -> bool
         tx,
         ty,
     } = transform;
-    // NaN 与无穷的 fract 是 NaN，不等于 0。
+    // The fract of NaN and infinity is NaN, which is not equal to 0.
     if sx != 1.0 || sy != 1.0 || kx != 0.0 || ky != 0.0 || tx.fract() != 0.0 || ty.fract() != 0.0 {
         return false;
     }
@@ -153,7 +144,7 @@ pub fn copy_over(out: &mut Pixmap, src: PixmapRef, transform: Transform) -> bool
         for pixel in row.chunks_exact(4) {
             match pixel[3] {
                 255 => {}
-                // 全零才是透明；预乘不合法的 (r,g,b,0) 在 src-over 里会加到底下，交给管线。
+                // Only fully zero counts as transparent. An invalid premultiplied (r,g,b,0) would add onto whatever is underneath in src-over, so it is left to the pipeline.
                 0 if pixel == [0, 0, 0, 0] => opaque = false,
                 _ => return false,
             }
@@ -191,12 +182,9 @@ fn to_color(c: &[f32; 4]) -> Color {
     .expect("color")
 }
 
-/// paint 侧表条目 → tiny-skia `Paint`。
+/// Converts a paint side-table entry to a tiny-skia `Paint`.
 ///
-/// 渐变几何在 **path 本地坐标系**里（与 op 的 `tf` 同一系），shader 的
-/// `transform` 因此恒为 identity——`fill_path` 会把 `tf` 一并施加上去。
-/// 退化几何（起止点重合 / 半径 ≤ 0 / 只有一个色标）折成末标纯色：tiny-skia
-/// 会拒绝构造这类 shader，静默不画比画错更难查。
+/// Gradient geometry lives **in the path's local coordinate system** (the same system as the op's `tf`), so the shader's `transform` is always identity. `fill_path` applies `tf` on top of it. Degenerate geometry (coincident start and end points, radius ≤ 0, or only one color stop) is folded into a solid color of the last stop. tiny-skia refuses to construct such shaders, and silently drawing nothing is harder to debug than drawing something wrong.
 fn paint_from(data: &PaintData) -> Paint<'static> {
     let mut paint = Paint::default();
     paint.anti_alias = true;
@@ -264,11 +252,9 @@ fn to_join(code: u8) -> LineJoin {
     }
 }
 
-/// 把遮罩源层折进目标层的 alpha（`PopMatte`）。
+/// Folds a mask source layer into the alpha of the target layer (`PopMatte`).
 ///
-/// 两张画面都是**预乘** RGBA 且同尺寸，逐像素乘一个 0..1 因子即可——预乘格式
-/// 下「乘 alpha」就是四个分量同乘，不需要先解预乘再乘回去。因子用整数
-/// （0..=255 定点）算，避免浮点取整在不同平台上分叉。
+/// Both images are **premultiplied** RGBA of the same size, so multiplying each pixel by a 0..1 factor is enough. In a premultiplied format, "multiply by alpha" means multiplying all four components together, with no need to un-premultiply and re-premultiply. The factor is computed in integers (0..=255 fixed point), to avoid floating-point rounding diverging across platforms.
 pub(crate) fn apply_matte(target: &mut Pixmap, matte: &Pixmap, mode: MatteMode) {
     let src = matte.data();
     let dst = target.data_mut();
@@ -277,7 +263,7 @@ pub(crate) fn apply_matte(target: &mut Pixmap, matte: &Pixmap, mode: MatteMode) 
         let factor = match mode {
             MatteMode::Alpha => alpha,
             MatteMode::AlphaInverted => 255 - alpha,
-            // 预乘像素的亮度已经含 alpha 权重（Rec.709 整数权重，和为 65536）
+            // The luminance of a premultiplied pixel already includes its alpha weight (Rec.709 integer weights, summing to 65536)
             MatteMode::Luma | MatteMode::LumaInverted => {
                 let luma =
                     (13933 * u32::from(m[0]) + 46871 * u32::from(m[1]) + 4732 * u32::from(m[2]))
@@ -320,7 +306,7 @@ pub fn rounded_rect_path(x: f64, y: f64, w: f64, h: f64, radius: f64) -> Option<
         )?);
         return pb.finish();
     }
-    const K: f64 = 0.5522847498307936; // 圆角三次贝塞尔近似
+    const K: f64 = 0.5522847498307936; // Rounded-corner cubic Bézier approximation
     let k = K * r;
     pb.move_to((x + r) as f32, y as f32);
     pb.line_to((x + w - r) as f32, y as f32);
@@ -369,14 +355,12 @@ pub fn rounded_rect_path(x: f64, y: f64, w: f64, h: f64, radius: f64) -> Option<
 pub trait FrameMedia {
     fn frame(&mut self, id: &str, media_ms: i64) -> Result<Arc<Pixmap>>;
 
-    /// 可按任意尺寸光栅的矢量动图（program / Lottie / 动画 SVG）的自然尺寸；
-    /// 位图、视频与不支持的实现返回 `None`（缺省）。
+    /// The natural size of a vector animated image that can be rasterized at any size (program, Lottie, animated SVG). Bitmaps, videos and unsupported implementations return `None` (the default).
     fn vector_natural_size(&self, _id: &str) -> Option<(u32, u32)> {
         None
     }
 
-    /// 同 [`Self::frame`]，矢量动图按 `target` 设备像素光栅。做不到的实现照旧
-    /// 交自然尺寸（缺省）；调用方按交回的实际尺寸换算，不假定等于 `target`。
+    /// Same as [`Self::frame`], but vector animated images are rasterized at the `target` device pixel size. Implementations that cannot do this keep the natural size (the default). The caller converts using the actual size returned, and does not assume it equals `target`.
     fn frame_for_target(
         &mut self,
         id: &str,
@@ -403,8 +387,7 @@ impl FrameMedia for MediaStore {
         media_ms: i64,
         target: Option<(u32, u32)>,
     ) -> Result<Arc<Pixmap>> {
-        // media_ms < 0 是静态图的约定标记；≥ 0 时先问动图（它已全帧驻留），
-        // 再落到视频的顺序解码器。
+        // media_ms < 0 is the marker convention for static images. When ≥ 0, the animated image is asked first (it is already fully resident as frames), and then it falls through to the video's sequential decoder.
         if media_ms < 0 {
             return self.image_frame(id);
         }
@@ -415,12 +398,11 @@ impl FrameMedia for MediaStore {
     }
 }
 
-/// 矢量源单边与面积上限：放得再大也不无界分配（8K 横幅的面积）。
+/// Upper limits on a vector source's side length and area, so that however large the source is, allocation is never unbounded (the area of an 8K banner).
 const MEDIA_TARGET_MAX_SIDE: f64 = 8192.0;
 const MEDIA_TARGET_MAX_AREA: f64 = 7680.0 * 4320.0;
 
-/// 自然尺寸 `natural` 的矢量源在 `tf` 下实际占的设备像素。与自然尺寸相差不到
-/// 一像素时返回 `None`：按自然尺寸光栅，结果与从前逐字节相同。
+/// The device pixels a vector source of natural size `natural` actually occupies under `tf`. Returns `None` when this is less than one pixel different from the natural size: it is rasterized at natural size, and the result is byte-for-byte identical to before.
 fn media_target(tf: &[f32; 6], (width, height): (u32, u32)) -> Option<(u32, u32)> {
     let w = f64::from(width) * f64::from(tf[0]).hypot(f64::from(tf[1]));
     let h = f64::from(height) * f64::from(tf[2]).hypot(f64::from(tf[3]));
@@ -450,21 +432,20 @@ pub fn rasterize(
     rasterize_with_media(frame, width, height, media)
 }
 
-/// `?Sized`：`PassExecutor` 是对象安全 trait，媒体入口以 `&mut dyn FrameMedia`
-/// 传进来，必须能直接喂给这里（否则折叠路径就要多包一层壳）。
+/// `?Sized`: `PassExecutor` is an object-safe trait, and the media entry point receives `&mut dyn FrameMedia`. That must be passed straight in here (otherwise the folded path would need an extra wrapper layer).
 pub fn rasterize_with_media(
     frame: &FrameOps,
     width: u32,
     height: u32,
     media: &mut (impl FrameMedia + ?Sized),
 ) -> Result<Pixmap> {
-    // path 侧表按需物化（见 [`LazyPaths`]）
+    // The path side table is materialized on demand (see [`LazyPaths`])
     let paths = LazyPaths::new(&frame.paths);
 
     let paints: Vec<Paint<'static>> = frame.paints.iter().map(paint_from).collect();
 
     let mut base = Pixmap::new(width, height).ok_or_else(|| anyhow!("pixmap"))?;
-    // 静态前缀（背景纸）：命中就从前缀之后接着画；未命中时画到前缀末尾存一张。
+    // Static prefix (the background paper): on a hit, continue painting from after the prefix. On a miss, paint through to the end of the prefix and store one image.
     let prefix = frame
         .static_prefix
         .filter(|prefix| prefix.ops > 0 && prefix.ops <= frame.ops.len())
@@ -480,12 +461,11 @@ pub fn rasterize_with_media(
             None => store_at = Some((key, ops)),
         }
     }
-    // 层栈：(离屏层, 合成不透明度, 混合模式)。遮罩源层用 `None` 的混合模式区分
-    // ——它不回贴画面，只在 `PopMatte` 时折进下面那一层的 alpha。
+    // Layer stack: (offscreen layer, composite opacity, blend mode). A mask source layer is marked by a blend mode of `None`. It is not composited back onto the image, and is only folded into the alpha of the layer below at `PopMatte`.
     let mut layers: Vec<(Pixmap, f32, tiny_skia::BlendMode)> = Vec::new();
-    // 遮罩源层在 `layers` 里的下标（`PushMatte` 压入，`PopMatte` 弹出）。
+    // Index of the mask source layer in `layers` (pushed by `PushMatte`, popped by `PopMatte`).
     let mut mattes: Vec<usize> = Vec::new();
-    // 裁剪栈：栈顶是当前生效的累积 mask（逐层求交）
+    // Clip stack: the top is the currently effective accumulated mask (intersected layer by layer)
     let mut clips: Vec<ClipEntry> = Vec::new();
 
     macro_rules! target {
@@ -501,7 +481,7 @@ pub fn rasterize_with_media(
         if let Some((key, ops)) = store_at
             && index == ops
         {
-            // 只在前缀真的收平时缓存（录制器保证；防御写法，不收平就不缓存）。
+            // Cache only when the prefix really flattens (guaranteed by the recorder; a defensive check: no caching if it does not flatten).
             if layers.is_empty() && clips.is_empty() && mattes.is_empty() {
                 static_prefix_put(key, &base);
             }
@@ -572,8 +552,7 @@ pub fn rasterize_with_media(
                     .strings
                     .get(*asset as usize)
                     .ok_or_else(|| anyhow!("DrawMedia 引用未知 string {asset}"))?;
-                // 矢量动图按它在画面里实际占的像素光栅（缩小的预览省光栅，放大的
-                // 导出不糊）；`tf` 与 `src` 仍以自然尺寸为单位，按交回的尺寸换算。
+                // Vector animated images are rasterized at the pixel size they actually occupy in the image (a shrunken preview saves rasterization work, and a magnified export stays sharp). `tf` and `src` are still in natural-size units and are converted using the size returned.
                 let natural = (*media_ms >= 0)
                     .then(|| media.vector_natural_size(id))
                     .flatten();
@@ -594,7 +573,7 @@ pub fn rasterize_with_media(
                     quality: FilterQuality::Bilinear,
                     ..Default::default()
                 };
-                // 源裁剪（fit: cover）：全零 = 整幅源
+                // Source crop (fit: cover): all zeros = whole source
                 if src[2] > 0.0 && src[3] > 0.0 {
                     let rect = tiny_skia::IntRect::from_xywh(
                         src[0].round() as i32,
@@ -740,7 +719,7 @@ pub fn rasterize_with_media(
                 let (layer, opacity, blend_mode) = layers
                     .pop()
                     .ok_or_else(|| anyhow!("PopLayer 无匹配 PushLayer"))?;
-                // 层回贴不受裁剪影响：裁剪已经在层内的每次绘制上生效过了。
+                // Compositing the layer back is unaffected by the clip, since the clip has already applied to each draw inside the layer.
                 target!().draw_pixmap(
                     0,
                     0,
@@ -786,7 +765,7 @@ pub fn rasterize_with_media(
             }
         }
     }
-    // 整帧只有前缀（背景纸之上什么都没有）：循环里走不到前缀末尾，在这里存。
+    // If the whole frame is only the prefix (nothing above the background paper), the loop never reaches the end of the prefix, so store it here.
     if let Some((key, _)) = store_at
         && layers.is_empty()
         && clips.is_empty()
@@ -942,7 +921,7 @@ mod media_target_tests {
 mod copy_over_tests {
     use super::*;
 
-    /// 可复现的伪随机字节（xorshift）。
+    /// Reproducible pseudo-random bytes (xorshift).
     struct Bytes(u64);
 
     impl Bytes {
@@ -954,7 +933,7 @@ mod copy_over_tests {
         }
     }
 
-    /// 合法的预乘像素：`alpha` 给定，颜色不超过它。
+    /// A valid premultiplied pixel: `alpha` is given, and the color does not exceed it.
     fn pixel(bytes: &mut Bytes, alpha: u8) -> [u8; 4] {
         let channel = |bytes: &mut Bytes| {
             if alpha == 0 {
@@ -974,7 +953,7 @@ mod copy_over_tests {
         pixmap
     }
 
-    /// 底下是随机的半透明画面；捷径成立时与 `draw_pixmap` 逐字节相同，不成立时 `out` 一个字节都不动。
+    /// The underlying image is random and semi-transparent. When the shortcut holds, the result is byte-for-byte identical to `draw_pixmap`; when it does not hold, `out` is left entirely untouched.
     fn check(src: &Pixmap, transform: Transform, expect_fast: bool) {
         let mut bytes = Bytes(0x9e37_79b9_7f4a_7c15);
         let base = pixmap(37, 23, |_, _| {
@@ -1006,14 +985,14 @@ mod copy_over_tests {
     #[test]
     fn copy_over_matches_draw_pixmap() {
         let mut bytes = Bytes(42);
-        // 每个通道值都走一遍：不透明像素的颜色取遍 0..=255。
+        // Every channel value is walked through: the colors of opaque pixels take all values 0..=255.
         let mut value = 0u32;
         let opaque = pixmap(16, 16, |_, _| {
             let v = (value % 256) as u8;
             value += 1;
             [v, v.wrapping_mul(7), v.wrapping_add(91), 255]
         });
-        // 透明底上一块不透明的（像一个居中的视频），与全零、不透明夹杂的行。
+        // An opaque block on a transparent background (like a centered video), mixed with fully zero rows and opaque rows.
         let block = pixmap(20, 12, |x, y| {
             if (4..15).contains(&x) && (2..10).contains(&y) {
                 pixel(&mut bytes, 255)
@@ -1039,7 +1018,7 @@ mod copy_over_tests {
             ] {
                 check(src, Transform::from_translate(tx, ty), true);
             }
-            // 不是整数平移：交给管线。
+            // Not an integer translation: left to the pipeline.
             for transform in [
                 Transform::from_translate(0.5, 0.0),
                 Transform::from_scale(2.0, 2.0),
@@ -1047,10 +1026,10 @@ mod copy_over_tests {
             ] {
                 check(src, transform, false);
             }
-            // 整个落在画面外。
+            // Entirely outside the image.
             check(src, Transform::from_translate(100.0, 0.0), false);
         }
-        // 有半透明像素、或者预乘不合法的 (r,g,b,0)：不走捷径，什么都不动。
+        // Has semi-transparent pixels, or an invalid premultiplied (r,g,b,0): the shortcut is not taken and nothing is touched.
         let soft = pixmap(8, 8, |x, y| {
             if (x, y) == (5, 6) {
                 pixel(&mut bytes, 128)

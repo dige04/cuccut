@@ -12,8 +12,7 @@ import { allToolNames } from './all-tool-sets.ts';
 import { ToolDriver, mcp, post, tool, until } from './testing/fake-agent.ts';
 
 /**
- * 端到端：假智能体拿着会话令牌，经真实的 MCP 端点调用视频工具，修改落到真实的 Rust 引擎里，
- * 界面那边的视频主题与会话里的变更卡都要跟上。需要 engine-host 与 ffmpeg，缺了就跳过。
+ * End to end: a fake agent holding a session token calls the video tools through the real MCP endpoint. The changes land in the real Rust engine, and the video topic in the UI and the change card in the session must keep up. Needs engine-host and ffmpeg; skipped if they are missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -84,7 +83,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 发一条消息，等假智能体的回合开始。 */
+  /** Sends a message and waits for the fake agent's turn to start. */
   async function send(text: string, options: { autonomy?: Autonomy; accessMode?: AgentMode; context?: EditorContext } = {}) {
     const { taskId } = await client.request('conversations.send', { conversationId, text, commandId: newId('cmd'), ...options });
     const session = await until(() => driver.sessions[0]);
@@ -110,7 +109,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(init.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'cuccut' }, capabilities: { tools: {} } });
     const listed = await mcp(session, 'tools/list');
     const tools = listed.result!.tools as { name: string; inputSchema: { type: string } }[];
-    // 工具桥列出目录里的全部工具（每一项的 surfaces 都含 agent）。
+    // The tool bridge lists every tool in the directory (each entry's surfaces include agent).
     expect(tools.map((t) => t.name).sort()).toEqual(allToolNames());
     expect(tools.every((t) => t.inputSchema.type === 'object')).toBe(true);
 
@@ -158,7 +157,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(applied.body).toMatchObject({ status: 'committed', label: '放入 clip.mp4', durationSeconds: { before: 0, after: 3 } });
     expect(applied.body.timeResolution[0]).toMatchObject({ actualFrame: 30, actualSeconds: 1 });
 
-    // 界面那边：同一个视频的主题收到这笔修改，操作者是这个会话的智能体，任务号是当前任务。
+    // UI side: the same video's topic receives the change; the operator is this session's agent; the task number is the current task.
     const event = await until(() => videoEvents.find((e) => e.transactionId === applied.body.transactionId));
     expect(event.actor).toEqual({ kind: 'agent', id: `agent:${conversationId}` });
     expect(event.taskId).toBe(taskId);
@@ -166,7 +165,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     const placed = mirror.sequences[mirror.rootSequenceId]!.items.find((item) => item.type === 'video');
     expect(placed).toMatchObject({ span: { fromFrame: 30, durationFrames: 60 } });
 
-    // 会话里：一张变更卡，内容取自回执。
+    // In the session: one change card, with content taken from the receipt.
     const card = (await items()).find((i) => i.kind === 'video-change');
     expect(card).toMatchObject({
       taskId,
@@ -180,7 +179,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       undoOf: null,
     });
 
-    // 旧版本上的修改被拒绝，视频不变。
+    // A change based on an old version is rejected, and the video is unchanged.
     const stale = await tool(session, 'edits_apply', {
       video: videoId,
       expectedRevision: inspected.body.revision,
@@ -190,13 +189,13 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(stale.isError).toBe(true);
     expect(stale.body.error).toMatchObject({ code: 'PROJECT_REVISION_CONFLICT', retryability: 'after-refresh' });
 
-    // 撤销自己的那一步：也是一笔修改，也有变更卡。
+    // Undoing one's own step is also a change, and it also gets a change card.
     const undone = await tool(session, 'edits_undo', { video: videoId });
     expect(undone.body).toMatchObject({ undoOf: applied.body.transactionId, durationSeconds: { before: 3, after: 0 } });
     await until(() => runtime.videos.mirror(videoId)!.video.sequences[mirror.rootSequenceId]!.items.length === 0);
     expect((await items()).filter((i) => i.kind === 'video-change')).toHaveLength(2);
 
-    // 参数与操作写错：如实返回，不提交。
+    // Wrong parameters or operation: reported as is, not submitted.
     const bad = await tool(session, 'edits_apply', { video: videoId, label: 'x', operations: [] });
     expect(bad.body.error.code).toBe('INVALID_ARGUMENTS');
     const badTime = await tool(session, 'edits_apply', {
@@ -209,7 +208,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     const missing = await tool(session, 'videos_inspect', { video: '../elsewhere' });
     expect(missing.body.error.code).toMatch(/VIDEO_NOT_FOUND|VIDEO_OUTSIDE_WORKSPACE/);
 
-    // 回合结束后工具不可用。
+    // After the turn ends, the tools are unavailable.
     session.finish();
     await until(() => runtime.harness.agentRun(conversationId).taskId === null);
     const after = await tool(session, 'videos_inspect', { video: videoId });
@@ -231,10 +230,10 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       target: { projectId: project.id, path: created.body.video },
       videoRevision: created.body.revision,
     });
-    // 新建不是一笔修改：没有变更卡。
+    // Creating is not a change: no change card.
     expect((await items()).some((i) => i.kind === 'video-change')).toBe(false);
 
-    // 不属于项目的会话（架构设计 §3.10）：视频建在它的工作目录里，不建项目；Space 按会话来源列出。
+    // A session that does not belong to a project (architecture design §3.10): the video is built in its working directory and no project is created. Space lists it by session source.
     const { conversation: looseConversation } = await client.request('conversations.create', { projectId: null, title: '帮我加字幕' });
     const loose = looseConversation.id;
     const scratch = looseConversation.cwd;
@@ -267,8 +266,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       return entries.length === 2 && entries.every((e) => e.source.projectId === null);
     });
 
-    // 从这部视频新开一条会话（`folderOf`，§3.10）：与它共用工作目录，打得开原来的视频；新建的视频记在原来那条会话的位置上，
-    // Space 不多出一个来源。
+    // Opening a new session from this video (`folderOf`, §3.10) shares its working directory and can open the original video. A newly created video is recorded at the position of the original session, so Space does not gain an extra source.
     const { conversation: guestConversation } = await client.request('conversations.create', { folderOf: loose, title: '剪成短视频' });
     expect(guestConversation).toMatchObject({ projectId: null, cwd: scratch, folderOf: loose });
     const guest = guestConversation.id;
@@ -288,10 +286,10 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       const entries = (await client.request('space.list', { kind: ['video'] })).entries;
       return entries.filter((e) => e.source.conversationId === loose).length === 3 && !entries.some((e) => e.source.conversationId === guest);
     });
-    // 回合结束、原生会话还闲着（它的智能体还开着视频）：放进项目时先关掉它，不算别处开着。
+    // The turn ended, but the native session is idle (its agent still has the video open). When it is put into a project, close it first; it does not count as open elsewhere.
     guestSession.finish();
 
-    // 用户明确要建项目：projects_adopt_session 以最早建的视频命名，会话绑定到它，视频与文件搬进项目（智能体开着的先放下）。
+    // The user explicitly asks to create a project: projects_adopt_session names it after the earliest-created video, binds the session to it, and moves the videos and files into the project (agents that still hold them release them first).
     const adopted = await tool(looseSession, 'projects_adopt_session', {});
     expect(adopted.isError, JSON.stringify(adopted.body)).toBe(false);
     expect(adopted.body).toMatchObject({ name: '会话里的片', created: true });
@@ -309,12 +307,12 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       videoId: looseCreated.body.videoId,
       target: { projectId: boundProject.id, path: looseCreated.body.video },
     });
-    // 共用工作目录的会话跟着进了项目，卡片改指向项目。
+    // Sessions that share the working directory follow into the project, and their cards now point to the project.
     const followed = await client.request('conversations.get', { conversationId: guest });
     expect(followed.conversation).toMatchObject({ projectId: boundProject.id, cwd: boundProject.path });
     expect(followed.conversation.folderOf).toBeUndefined();
     expect(followed.items.find((i) => i.kind === 'video-created')).toMatchObject({ target: { projectId: boundProject.id, path: guestCreated.body.video } });
-    // 再调一次原样返回；之后的新视频建在项目里。
+    // Calling again returns the same result. Later new videos are created in the project.
     expect((await tool(looseSession, 'projects_adopt_session', {})).body).toMatchObject({ projectId: boundProject.id, created: false });
     const third = await tool(looseSession, 'videos_create', { name: '第三部' });
     expect(third.isError, JSON.stringify(third.body)).toBe(false);
@@ -322,15 +320,15 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     const listedBound = await tool(looseSession, 'videos_list', {});
     expect(listedBound.body.workspace).toBe(boundProject.path);
     expect(listedBound.body.videos).toHaveLength(4);
-    // Space：视频条目在项目来源下，旧的会话来源没有了。
+    // Space: video entries are under the project source, and the old session source is gone.
     await until(async () => {
       const entries = (await client.request('space.list', { kind: ['video'], projectId: boundProject.id })).entries;
       return entries.length === 4 && entries.every((e) => e.source.projectId === boundProject.id && e.source.conversationId === null);
     });
-    // 回合结束：回合里指向项目的旧路径删掉。
+    // Turn ended: the old paths in the turn that pointed to the project are deleted.
     looseSession.finish();
     await until(async () => !(await fs.lstat(scratch).then(() => true, () => false)));
-    // 删掉会话：项目与视频都在。
+    // Deleting the session: the project and its videos remain.
     await client.request('conversations.delete', { conversationId: loose });
     await fs.access(path.join(boundProject.path, looseCreated.body.video, 'video.db'));
     expect(runtime.harness.listProjects().some((p) => p.id === boundProject.id)).toBe(true);
@@ -403,7 +401,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       expect.objectContaining({ trigger: { kind: 'items', trackIds: [visualTrack] }, depth: 10, attackSeconds: 0.1, releaseSeconds: 0.35 }),
     ]);
     expect(after.body.items.find((i: { id: string }) => i.id === rightId).fx).toEqual(['saturation']);
-    // 界面与 Runtime 的镜像经事件拿到同样的对象。
+    // The UI and the Runtime's mirror receive the same object through events.
     await until(() => runtime.videos.mirror(videoId)!.video.sequences[after.body.sequence.id]!.transitions.length === 1);
     const mirrored = runtime.videos.mirror(videoId)!.video.sequences[after.body.sequence.id]!;
     expect(mirrored.markers.map((m) => m.label)).toEqual(['开场', '后半']);
@@ -455,7 +453,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(pip.isError).toBe(false);
     expect(await digest()).toMatchObject({ place: { mode: 'pip', x: 80, y: 80, w: 30 } });
 
-    // 不透明度超出 [0, 1] 整笔不生效。
+    // An opacity outside [0, 1] makes the whole change take no effect.
     const bad = await tool(session, 'edits_apply', {
       video: videoId,
       expectedRevision: pip.body.revision.after,
@@ -486,7 +484,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     const used = after.body.items.find((i: { type: string }) => i.type === 'video');
     const emptyTrack = after.body.tracks.find((t: { name?: string }) => t.name === '空轨').id;
 
-    // 有片段的轨道：拒绝，details 给出片段与下一步的操作。
+    // A track that has clips: rejected, and details give the clips and the next operations.
     const busy = await tool(session, 'edits_apply', {
       video: videoId,
       expectedRevision: after.body.revision,
@@ -505,7 +503,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     });
     expect(dropped.body).toMatchObject({ status: 'committed', deletedIds: [emptyTrack], removedTracks: [emptyTrack] });
 
-    // 只列出：只有没放上去的那一份，视频不变。
+    // List only: only the copy that was not placed remains, and the video is unchanged.
     const listed = await tool(session, 'assets_prune', { video: videoId });
     expect(listed.isError).toBe(false);
     expect(listed.body.assets).toEqual([
@@ -514,7 +512,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(listed.body.revision).toBe(dropped.body.revision.after);
     const spare = listed.body.assets[0].assetId;
 
-    // 还在用的素材：拒绝，不弹确认、不提交。
+    // Asset still in use: rejected, with no confirmation prompt and no submission.
     const refused = await tool(session, 'assets_prune', { video: videoId, assetIds: [used.asset.id], apply: true });
     expect(refused.body.error).toMatchObject({ code: 'INVALID_OPERATION', details: { rule: 'asset-in-use', assetIds: [used.asset.id] } });
 
@@ -573,7 +571,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
         label: '加轨道',
         operations: [{ type: 'addTrack', kind: 'visual' }],
       });
-    /** 等到下一条待处理的审批（统一列表与会话里的审批卡同一个 id）。 */
+    /** Waits for the next pending approval (the unified list and the approval card in the session share the same id). */
     const nextPending = async () => {
       const pending = await until(() => runtime.harness.approvals.pending()[0]);
       expect(pending).toMatchObject({
@@ -587,7 +585,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       return pending;
     };
 
-    // ask：修改要问。用旧的处理方式（agents.respondToApproval）允许，之后才执行。
+    // ask: changes ask first. Approve with the old flow (agents.respondToApproval), and then it runs.
     const before = revision();
     const first = addTrack();
     const asked = await nextPending();
@@ -600,21 +598,21 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(allowed.body).toMatchObject({ status: 'committed', approval: { mode: 'ask', risk: 'edit', decidedBy: 'user' } });
     expect(revision()).not.toBe(before);
 
-    // 用统一的 approvals.respond 拒绝：工具返回 APPROVAL_DENIED，不改视频。
+    // Reject with the unified approvals.respond: the tool returns APPROVAL_DENIED and the video is not changed.
     const afterFirst = revision();
     const second = addTrack();
     await client.request('approvals.respond', { approvalId: (await nextPending()).approvalId, decision: 'deny' });
     expect((await second).body.error).toMatchObject({ code: 'APPROVAL_DENIED', mode: 'ask', risk: 'edit' });
     expect(revision()).toBe(afterFirst);
 
-    // 打断回复：待处理的取消，工具返回 APPROVAL_CANCELLED。
+    // Interrupt reply: the pending one is cancelled, and the tool returns APPROVAL_CANCELLED.
     const third = addTrack();
     await nextPending();
     await client.request('agents.interrupt', { conversationId });
     expect((await third).body.error).toMatchObject({ code: 'APPROVAL_CANCELLED', mode: 'ask', risk: 'edit' });
     expect(runtime.harness.approvals.pending()).toEqual([]);
 
-    // 任务进行中切到「自动接受修改」：之后的修改不再问，会话里记一条提示。
+    // Switched to “auto accept changes” mid-task: later changes no longer ask, and a notice is recorded in the session.
     await client.request('conversations.update', { conversationId, accessMode: 'autoAcceptEdits' });
     const auto = await addTrack();
     expect(auto.body).toMatchObject({ status: 'committed', approval: { mode: 'autoAcceptEdits', risk: 'edit', decidedBy: 'auto' } });
@@ -624,7 +622,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     });
     expect((await client.request('conversations.get', { conversationId })).conversation.accessMode).toBe('autoAcceptEdits');
 
-    // 切回 ask（旧值 controlled）后再问；主停止取消待处理的。
+    // Switched back to ask (the old value was controlled), and it asks again. The main stop cancels the pending ones.
     await client.request('conversations.update', { conversationId, accessMode: 'controlled' });
     const fourth = addTrack();
     const last = await nextPending();
@@ -643,7 +641,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
 
   it('videos_inspect 按 videoId：关掉了的视频按来源目录找到并打开；别的目录里的找不到', async () => {
     const { session } = await send('看看视频');
-    // 两个关掉了的视频（流程新建、放下租约之后就是这样）：第一次按 videoId 要扫来源目录，顺带记下看过的每个视频的目录。
+    // Two closed videos (this is the state after creating them in the flow and releasing the lease): the first lookup by videoId scans the session source directories, and it also records each video's directory that it sees.
     const closed: { videoId: Id; relPath: string; name: string }[] = [];
     for (const name of ['流程新建的', '另一个']) {
       const created = await client.request('videos.create', { projectId: project.id, name });
@@ -659,7 +657,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
       expect(runtime.videos.ref(closedId)?.relPath).toBe(relPath);
     }
 
-    // 不在会话来源目录里的：找不到，也不会被打开。
+    // Not in the session source directories: not found, and not opened.
     const other = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-other-'));
     try {
       const outside = await client.request('videos.create', {
@@ -679,7 +677,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
 
   it('videos_delete：风险 high，自动接受修改时也要问；拒绝不动，允许后移进回收站；来源目录之外的视频找不到', async () => {
     const { session } = await send('删掉样片', { accessMode: 'autoAcceptEdits' });
-    // 界面开着它时删除被拒绝（VIDEO_IN_USE）：先关掉。
+    // Deleting is rejected while the UI has the video open (VIDEO_IN_USE): close it first.
     await client.request('videos.close', { videoId });
     const dir = path.join(project.path, videoPath);
     const asked = async () => {
@@ -701,7 +699,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     await expect(fs.stat(dir)).rejects.toThrow();
     expect((await client.request('space.list', { trash: 'only' })).entries.map((e) => e.id)).toEqual([done.body.entryId]);
 
-    // 不在会话来源目录里的（或不存在的）：不问，直接找不到。
+    // Not in the session source directories (or nonexistent): not asked, just not found.
     const other = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-other-'));
     try {
       const outside = await client.request('videos.create', {
@@ -718,7 +716,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
 
   it('会话删除后令牌失效，智能体打开的视频按宽限期关闭', async () => {
     const { session } = await send('读一下');
-    // 界面先关掉它，只剩智能体打开着。
+    // The UI closed it first, so only the agent still has it open.
     await client.request('videos.close', { videoId });
     await tool(session, 'videos_inspect', { video: videoPath });
     expect(runtime.videos.ref(videoId)).not.toBeNull();

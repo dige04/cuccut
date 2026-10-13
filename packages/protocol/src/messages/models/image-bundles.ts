@@ -14,7 +14,7 @@ import { pl } from './image-bundles.pl.ts';
 import { tr } from './image-bundles.tr.ts';
 import { vi } from './image-bundles.vi.ts';
 
-/** `packages/models/src/image-bundles.ts` 给人看的文字：文生图模型包的许可摘要（模型名、许可证名、厂商名不翻译）。 */
+/** `packages/models/src/image-bundles.ts`: text shown to people for licence summaries of text-to-image model bundles (model names, licence names and vendor names are not translated). */
 const en = {
   qwenImageLicense: 'Non-commercial use only (research / evaluation); commercial use requires a separate request to Qwen. The MLX bundle is a derivative and falls under the same license',
 };

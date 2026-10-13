@@ -15,13 +15,13 @@ import { pl } from './chapter-copy.pl.ts';
 import { tr } from './chapter-copy.tr.ts';
 import { vi } from './chapter-copy.vi.ts';
 
-/** 编辑器里章节的文案：时间线章节条、右键菜单、加 / 改名浮层、走带的上一章 / 下一章、文稿的章节头行。译文在 `chapter-copy.zh-Hans.ts`。 */
+/** Chapter copy in the editor: the timeline chapter bar, the context menu, the add/rename popover, previous and next chapter while playing, and the transcript's chapter header line. Translations are in `chapter-copy.zh-Hans.ts`. */
 const en = {
   band: 'Chapters',
   prev: 'Previous chapter',
   next: 'Next chapter',
   noChapters: 'No chapters yet',
-  /** 章节条上没有章的空当（第一章之前、章与章之间）。 */
+  /** Gaps on the chapter bar that have no chapter (before the first chapter, between chapters). */
   gap: 'No chapter',
   beforeFirst: 'Before the first chapter',
   add: 'Add chapter at playhead',
@@ -29,10 +29,10 @@ const en = {
   remove: 'Delete this chapter',
   menuLabel: (title: string) => `Chapter “${title}”`,
   gapMenuLabel: 'Chapter bar',
-  /** 章节条一段的读屏名：标题加起止。 */
+  /** Screen-reader name for a chapter segment on the chapter bar: the title plus start and end. */
   segmentLabel: (title: string, range: string) => `${title}, ${range}, click to jump to the start`,
   dragHint: 'Drag to move the start of this chapter',
-  /** 加 / 改名浮层。 */
+  /** Add / rename popover. */
   addTitle: 'Add chapter',
   renameTitle: 'Rename chapter',
   titleLabel: 'Title',
@@ -49,7 +49,7 @@ const en = {
   renamed: (title: string) => `Renamed to “${title}”`,
   removed: (title: string) => `Deleted chapter “${title}”`,
   undo: 'Undo',
-  /** 文稿的章节头行。 */
+  /** The chapter header line in the transcript. */
   clickRename: 'Click to rename',
   jump: 'Jump to the start of this chapter',
   paragraphs: (n: number) => `${n} paragraph${n === 1 ? '' : 's'}`,

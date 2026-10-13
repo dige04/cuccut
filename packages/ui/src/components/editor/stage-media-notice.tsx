@@ -4,7 +4,7 @@ import { iconStyle, lightDark, style } from '@react-spectrum/s2/style' with { ty
 import { STAGE_MEDIA_COPY as C } from '../../model/stage-media.ts';
 import type { StageMedia } from './use-stage-media.ts';
 
-/** 盖在画面上、不收指针：点画面照旧是选中 / 清选（设计稿 `.stagemedia`）。 */
+/** Overlays the picture and does not capture the pointer: clicking the picture still selects or deselects as usual (design draft `.stagemedia`). */
 const layer = style({
   position: 'absolute',
   display: 'flex',
@@ -14,7 +14,7 @@ const layer = style({
   boxSizing: 'border-box',
   pointerEvents: 'none',
 });
-/** 画面背后总是黑的，卡也总是深色：不随明暗主题翻转。 */
+/** The area behind the picture is always black and cards are always dark: they do not flip with the light/dark theme. */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -25,7 +25,7 @@ const card = style({
   paddingY: 12,
   borderRadius: 'lg',
   backgroundColor: 'transparent-black-800',
-  // `font` 简写自带颜色，颜色要写在它后面。
+  // The `font` shorthand sets a color of its own, so the color must be written after it.
   font: 'ui-sm',
   color: 'transparent-white-800',
   overflowWrap: 'anywhere',
@@ -37,8 +37,8 @@ const failure = style({ color: lightDark('red-700', 'red-1000') });
 const action = style({ marginTop: 4, pointerEvents: 'auto' });
 
 /**
- * 主媒体放不出来时画面正中的常驻卡（设计稿 stage.jsx 的 `StageMediaNotice`）。播放时也不收：字幕、元素照常画在它周围。
- * 桌面端多一个「重新关联…」（设计稿放在 Space 的 ⋯ 菜单里，这里改到卡上，见 model/stage-media.ts）。
+ * The persistent card in the middle of the picture when main media cannot be played (design draft stage.jsx `StageMediaNotice`). It does not go away during playback: captions and elements are still drawn around it.
+ * On desktop there is one extra “重新关联…”(relink…) (the design draft puts it in the ⋯ menu in Space; here it is moved onto the card, see model/stage-media.ts).
  */
 export function StageMediaNotice({ media, frame }: { media: StageMedia; frame: { left: number; top: number; width: number; height: number } }) {
   const n = media.notice;

@@ -1,10 +1,9 @@
-// 构建原生进程：视频引擎（engine-host）、Render Worker（export-worker）、speech-worker、人脸检测（face-detect）与本地推理进程（model-worker）。
-// model-worker 的推理后端随平台（架构设计 §6.5）：Apple Silicon 的 macOS 用默认 feature（MLX + Core ML）；
-// 别的平台关掉默认 feature、开 candle 与 whisper.cpp 的 Whisper（`whisper-ggml`，构建要 CMake 与 C++ 编译器）。
-// CUCCUT_WORKER_FEATURES（逗号分隔）再追加 feature，例如 NVIDIA 显卡上设 `cuda,whisper-ggml-cuda`（candle 与 Whisper 都走 CUDA，
-// 要 CUDA Toolkit；没有 GPU 的构建机另设 CMAKE_CUDA_ARCHITECTURES），AMD / Intel 显卡上设 `whisper-ggml-vulkan`（要 Vulkan SDK）。
-// 其余参数原样交给两次 cargo build（例如 `npm run build:engine -- --release`）。
-// 两次构建都会跑完；任一失败时以非零退出，与 cargo 的 --keep-going 一致。
+// Builds the native processes: the video engine (engine-host), the Render Worker (export-worker), speech-worker, face detection (face-detect), and the local inference process (model-worker).
+// The model-worker's inference backend depends on the platform (architecture design §6.5): on macOS with Apple Silicon, it uses the default features (MLX + Core ML);
+// on other platforms, turn off the default features and enable candle and whisper.cpp's Whisper (`whisper-ggml`; the build needs CMake and a C++ compiler).
+// CUCCUT_WORKER_FEATURES (comma-separated) appends more features, for example `cuda,whisper-ggml-cuda` on NVIDIA GPUs (candle and Whisper both use CUDA, which needs the CUDA Toolkit; on build machines without a GPU, also set CMAKE_CUDA_ARCHITECTURES). On AMD / Intel GPUs, set `whisper-ggml-vulkan` (needs the Vulkan SDK).
+// Other arguments are passed through as-is to both cargo build runs (for example `npm run build:engine -- --release`).
+// Both builds always run to completion; if either one fails, exit with a non-zero code, consistent with cargo's --keep-going.
 
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -14,7 +13,7 @@ import { ensureCargo } from './cargo-path.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const extra = process.argv.slice(2);
 
-/** model-worker 的 feature 参数：Apple Silicon 的 macOS 保留默认，其余平台换成 candle 与 whisper-ggml；再加上环境变量里的。 */
+/** Feature arguments for model-worker: on macOS with Apple Silicon, keep the defaults; on other platforms, switch to candle and whisper-ggml; then add the ones from the environment variable. */
 function modelWorkerFeatureArgs(platform, arch, workerFeatures) {
   const added = (workerFeatures ?? '')
     .split(',')
@@ -34,7 +33,7 @@ function cargo(args) {
 
 ensureCargo();
 
-// --no-default-features 作用于命令里的每个包，所以 model-worker 单独构建。
+// --no-default-features applies to every package in the command, so model-worker is built separately.
 const engines = cargo(['build', '--keep-going', '-p', 'engine-host', '-p', 'export-worker', '-p', 'speech-worker', '-p', 'face-detect', ...extra]);
 const worker = cargo([
   'build',

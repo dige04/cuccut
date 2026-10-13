@@ -6,55 +6,53 @@ import type { PiInstall } from '../pi/pi-binary.ts';
 import type { PiModel } from '../pi/pi-models.ts';
 
 /**
- * 测试用的假 `pi --mode rpc`：一个可执行文件，回答 `--version`，带 `--mode rpc` 时在 stdio 上说 pi 的 JSON 行协议
- * （命令带 `id`，应答 `type: 'response'`，事件没有 `id`）。事件的形状照 pi 1.0.4 的真实输出（一次 prompt 里每次模型调用
- * 各有一对 turn_start / turn_end，agent_end 之后是 agent_settled；edit 的结果带 `details.patch`，bash 的带 `structuredContent`）。
- * 不联网、不碰本机真实的 pi；收到的每条命令记进 `log.jsonl`。
+ * Fake `pi --mode rpc` for tests: one executable that answers `--version`. When given `--mode rpc`, it speaks pi's JSON-line protocol over stdio (commands carry an `id`, replies are `type: 'response'`, events have no `id`). The event shapes follow pi 1.0.4's real output: within one prompt, each model call has a pair of turn_start / turn_end, agent_end is followed by agent_settled, edit results carry `details.patch`, and bash results carry `structuredContent`.
+ * It makes no network calls and does not touch the machine's real pi. Every command received is recorded in `log.jsonl`.
  *
- * 用法：`createFakePi(dir)` 得到 `locate`，交给 `new PiDriver(log, { locate })`；`scenario()` 改下一次的行为（每个进程启动时读一次）。
+ * Usage: `createFakePi(dir)` gives `locate`, which is passed to `new PiDriver(log, { locate })`. `scenario()` changes the behavior of the next run (read once when each process starts).
  */
 
 export interface FakePiTool {
   name: string;
   args: Record<string, unknown>;
-  /** tool_execution_end 的 `result`。 */
+  /** The `result` of tool_execution_end. */
   result: unknown;
   isError?: boolean;
-  /** 先发一次 tool_execution_update，partialResult 是这段文字。 */
+  /** First sends one tool_execution_update, with partialResult set to this text. */
   partial?: string;
 }
 
-/** 一次 prompt 里 pi 做什么。 */
+/** What pi does in one prompt. */
 export interface FakePiTurn {
   thinking?: string;
-  /** 每个工具单独一次模型调用（一对 turn_start / turn_end）。 */
+  /** Each tool gets its own model call (a pair of turn_start / turn_end). */
   tools?: FakePiTool[];
-  /** 最后的文字回复（分两段增量发）。 */
+  /** The final text reply (sent in two incremental chunks). */
   reply?: string;
-  /** 开始一个 bash 之后一直不结束，直到收到 abort。 */
+  /** After a bash starts, it never ends until an abort is received. */
   hang?: boolean;
-  /** 最后一条助手消息以 stopReason 'error' 结束，带这个 errorMessage。 */
+  /** The last assistant message ends with stopReason 'error', with this errorMessage. */
   error?: string;
-  /** prompt 直接回 success: false。 */
+  /** The prompt directly replies success: false. */
   promptError?: string;
-  /** 发出 agent_start 与一段文字之后进程以码 3 退出。 */
+  /** After emitting agent_start and a piece of text, the process exits with code 3. */
   exitMidTurn?: boolean;
-  /** 先来一次扩展提问（confirm），看 CucCut 怎么答。 */
+  /** First an extension question (confirm) arrives, to see how CucCut answers. */
   ask?: boolean;
 }
 
 export interface FakePiScenario {
   installed: boolean;
   version: string;
-  /** get_available_models 的结果；空表示没有可用的凭据。 */
+  /** The result of get_available_models. Empty means there are no usable credentials. */
   models: PiModel[];
-  /** get_state 里当前的模型；null 时给 pi 没配模型时的 `{ provider: 'unknown', id: 'unknown' }`。 */
+  /** The current model in get_state. When null, it gives `{ provider: 'unknown', id: 'unknown' }`, which pi uses when no model is configured. */
   current: { provider: string; id: string } | null;
-  /** false：steer 与 clear_queue 回「Unknown command」（旧版）。 */
+  /** false: steer and clear_queue reply "Unknown command" (old version). */
   steer: boolean;
-  /** false：不发 agent_settled（旧版）。 */
+  /** false: does not emit agent_settled (old version). */
   settled: boolean;
-  /** get_state 之前就退出（启动失败）。 */
+  /** Exits before get_state (startup failure). */
   crashOnStart: boolean;
   turn: FakePiTurn;
 }
@@ -66,7 +64,7 @@ export interface FakePiLogEntry {
   cwd?: string;
   args?: string[];
   env?: Record<string, string | undefined>;
-  /** `--extension` 文件当时的内容（进程结束后 CucCut 会删掉它）。 */
+  /** The content of the `--extension` file at the time (CucCut deletes it after the process ends). */
   extension?: string;
   instructions?: string;
   msg?: Record<string, unknown>;
@@ -77,9 +75,9 @@ export interface FakePi {
   locate: () => Promise<PiInstall | null>;
   scenario(patch: Partial<FakePiScenario>): void;
   log(): FakePiLogEntry[];
-  /** 收到的某一种命令，按到达顺序。 */
+  /** One kind of command received, in arrival order. */
   commands(type: string): Array<Record<string, unknown>>;
-  /** 会话文件放在这里（假的 `~/.pi/agent/sessions`）。 */
+  /** Session files are kept here (the fake `~/.pi/agent/sessions`). */
   sessionsDir: string;
 }
 
@@ -113,7 +111,7 @@ export async function createFakePi(dir: string, scenario: Partial<FakePiScenario
   const sessionsDir = path.join(dir, 'sessions');
   await fs.mkdir(sessionsDir, { recursive: true });
   const command = path.join(dir, 'pi');
-  // 假 pi 是 .ts：22.18 之前的 Node 要显式打开类型剥离；环境被收窄过，不能靠 NODE_OPTIONS。
+  // The fake pi is a .ts file: Node versions before 22.18 need type stripping turned on explicitly. The environment is narrowed, so NODE_OPTIONS cannot be used.
   await fs.writeFile(command, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types --no-warnings "${ENTRY}" "$@"\n`, {
     mode: 0o755,
   });

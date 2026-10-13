@@ -1,9 +1,9 @@
-//! 到序列末尾（视频格式规范 §3.16）：`untilSequenceEnd` 的实例没有自己的终点，每笔编辑事务的最后按当前的时间线求出来。
+//! To the end of the sequence (video format spec §3.16): an instance with `untilSequenceEnd` has no end of its own; at the end of each edit transaction it is computed from the current timeline.
 //!
-//! - 终点是序列里其余实例精确终点的最大值向上取整到帧（与 `derived` 的序列长度同一个算法）；`fixed` 时是固定的帧数。
-//! - 同一条轨道上后面还有实例时截到它的起点，不与它重叠。
-//! - 长度至少 1 帧；带线性源时钟的不超出素材。
-//! - 这是求出来的值，不是对实例的编辑：实例或轨道锁着也照样更新；任务保护照常核对。
+//! - The end is the maximum exact end of the other instances in the sequence, rounded up to a frame (the same algorithm as the sequence length of `derived`); when `fixed`, it is a fixed number of frames.
+//! - If later instances follow on the same track, it is cut at their start so it does not overlap them.
+//! - The length is at least 1 frame; for instances with a linear source clock, it does not exceed the asset.
+//! - This is a computed value, not an edit to the instance: it is updated even if the instance or track is locked, and task protection is checked as usual.
 
 use editor_semantics::frame_time;
 
@@ -12,7 +12,7 @@ use crate::model::*;
 use crate::ops::overflow;
 use crate::state::{VideoState, item_range};
 
-/// 按 §3.16 重算每条序列上 `untilSequenceEnd` 实例的终点。
+/// Recompute, per §3.16, the end of each `untilSequenceEnd` instance on every sequence.
 pub(crate) fn settle(state: &mut VideoState) -> EngineResult<()> {
     let sequence_ids: Vec<Id> = state.sequences.keys().cloned().collect();
     for sequence_id in sequence_ids {
@@ -48,7 +48,7 @@ fn settle_sequence(state: &mut VideoState, sequence_id: &str) -> EngineResult<()
     let end_frames = fixed.unwrap_or(end_frames);
     open.sort();
     for (from, id, track_id) in open {
-        // 同一条轨道上的下一个实例：起点在这个实例的起点之后（没有重叠，所以至少晚一帧）。
+        // The next instance on the same track: its start is after this instance's start (there is no overlap, so it is at least one frame later).
         let next = state
             .items
             .values()

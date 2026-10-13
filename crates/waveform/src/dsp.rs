@@ -1,14 +1,14 @@
-//! PCM → BCS1 的派生 DSP。参数全部冻结在 [`crate::bcs1`]，此处不接受覆写。
+//! Derived DSP for PCM → BCS1. The parameters are all frozen in [`crate::bcs1`]; no overrides are accepted here.
 //!
-//! | 参数 | 值 |
+//! | Parameter | Value |
 //! | --- | --- |
-//! | 窗函数 | Blackman（周期式），窗长 = `fft_size` = 1024 |
+//! | Window function | Blackman (periodic), window length = `fft_size` = 1024 |
 //! | hop | `sample_rate / analysis_rate` = 800 |
 //! | FFT | realfft `plan_fft_forward(1024)` |
-//! | 幅度 | `sqrt(re² + im²) / fft_size` → `20 * log10(max(mag, 1e-10))` |
-//! | 边界 | 窗口左对齐在 `frame * hop`，越界零填充 |
+//! | Magnitude | `sqrt(re² + im²) / fft_size` → `20 * log10(max(mag, 1e-10))` |
+//! | Boundary | window left-aligned at `frame * hop`, zero-padded out of bounds |
 //!
-//! 帧数 = `ceil(duration * analysis_rate)` = `ceil(samples / hop)`，与时长是确定关系。
+//! Frame count = `ceil(duration * analysis_rate)` = `ceil(samples / hop)`, which is deterministically related to the duration.
 
 use anyhow::{Context, Result, bail};
 use realfft::RealFftPlanner;
@@ -19,21 +19,19 @@ use crate::bcs1::{
     HOP, SAMPLE_RATE, SpectrumBackend, TIME_BINS, encode,
 };
 
-/// 幅度下限：`log10(0)` 不可用，且再低的能量在 canonical 窗里也已经是 0。
+/// Magnitude floor: `log10(0)` is unusable, and any lower energy is already 0 in the canonical window.
 const MAGNITUDE_FLOOR: f64 = 1e-10;
-/// 内容 hash 的算法域分隔符。BCS1 的二进制版号不必随 DSP 调参变化，但任何
-/// 会改变频谱字节的算法都必须改这个标识，让缓存内容指纹同步失效。
+/// Domain separator for the content hash algorithm. The BCS1 binary version need not change with DSP tuning, but any algorithm that changes the spectrum bytes must change this identifier, so that the cache's content fingerprint is invalidated in step.
 const DSP_FINGERPRINT: &[u8] = b"bcs1-dsp-blackman-normalized-v2";
 
-/// 给定样本数的帧数：`ceil(samples / hop)`。
+/// Frame count for a given number of samples: `ceil(samples / hop)`.
 pub fn frame_count_for(samples: usize) -> usize {
     samples.div_ceil(HOP as usize)
 }
 
-/// BCS1 header 的内容 hash：FNV-1a64(解码 PCM 的 f32 小端字节 ‖ 全部 DSP 参数)。
+/// BCS1 header content hash: FNV-1a64(the decoded PCM's f32 little-endian bytes ‖ all DSP parameters).
 ///
-/// **backend 不参与**——它只进 `flags`。同一份 PCM 无论谁解出来的，内容 hash 相同，
-/// 渲染因此可复现。
+/// **The backend does not take part**; it only goes into `flags`. The same PCM gives the same content hash whichever decoder produced it, so rendering is reproducible.
 pub fn content_hash(pcm: &[f32]) -> u64 {
     let mut hash = Fnv1a64::new();
     hash.write(DSP_FINGERPRINT);
@@ -46,8 +44,7 @@ pub fn content_hash(pcm: &[f32]) -> u64 {
     hash.finish()
 }
 
-/// 时域采样点 → 中心化字节：`128 + round(sample * 127)`，钳制 0..255。
-/// 语义对齐 Web Audio 的 `getByteTimeDomainData`：静音 = 128。
+/// Time-domain sample → centered byte: `128 + round(sample * 127)`, clamped to 0..255. Semantically aligned with Web Audio's `getByteTimeDomainData`: silence = 128.
 pub fn time_byte(sample: f32) -> u8 {
     let sample = if sample.is_finite() {
         f64::from(sample)
@@ -57,12 +54,12 @@ pub fn time_byte(sample: f32) -> u8 {
     (128.0 + (sample * 127.0).round()).clamp(0.0, 255.0) as u8
 }
 
-/// 幅度 → dB：`20 * log10(max(mag, 1e-10))`。
+/// Magnitude → dB: `20 * log10(max(mag, 1e-10))`.
 pub fn magnitude_db(magnitude: f64) -> f64 {
     20.0 * magnitude.max(MAGNITUDE_FLOOR).log10()
 }
 
-/// dB → canonical 窗字节：`clamp(255 * (dB + 120) / 160, 0, 255)`。
+/// dB → canonical-window byte: `clamp(255 * (dB + 120) / 160, 0, 255)`.
 pub fn canonical_byte(decibels: f64) -> u8 {
     let span = CANONICAL_MAX_DB - CANONICAL_MIN_DB;
     (255.0 * (decibels - CANONICAL_MIN_DB) / span)
@@ -70,7 +67,7 @@ pub fn canonical_byte(decibels: f64) -> u8 {
         .round() as u8
 }
 
-/// 48 kHz 单声道 PCM → 完整 BCS1 文件字节。
+/// 48 kHz mono PCM → the full BCS1 file bytes.
 pub fn analyze(pcm: &[f32], backend: SpectrumBackend) -> Result<Vec<u8>> {
     let payload = analyze_payload(pcm)?;
     let frame_count = (payload.len() / FRAME_LEN) as u32;
@@ -80,7 +77,7 @@ pub fn analyze(pcm: &[f32], backend: SpectrumBackend) -> Result<Vec<u8>> {
     )
 }
 
-/// 只算 payload（`frame_count × 640`），不带 header。
+/// Computes only the payload (`frame_count × 640`), without the header.
 pub fn analyze_payload(pcm: &[f32]) -> Result<Vec<u8>> {
     if pcm.is_empty() {
         bail!("媒体没有可解码的音频样本");
@@ -97,7 +94,7 @@ pub fn analyze_payload(pcm: &[f32]) -> Result<Vec<u8>> {
     Ok(payload)
 }
 
-/// 一帧的分析：窗口左对齐在 `start`，越界零填充。
+/// Analysis of one frame: the window is left-aligned at `start`, zero-padded out of bounds.
 struct FrameAnalyser {
     window: Vec<f64>,
     fft: std::sync::Arc<dyn realfft::RealToComplex<f64>>,
@@ -122,7 +119,7 @@ impl FrameAnalyser {
     fn frame(&mut self, pcm: &[f32], start: usize, payload: &mut Vec<u8>) -> Result<()> {
         let window_len = FFT_SIZE as usize;
         let stride = window_len / TIME_BINS as usize;
-        // 时域行取窗内未加窗的原始样本；加窗只服务频域。
+        // The time-domain row takes the raw, unwindowed samples in the window; windowing serves only the frequency domain.
         for point in 0..TIME_BINS as usize {
             payload.push(time_byte(sample_at(pcm, start + point * stride)));
         }
@@ -133,8 +130,7 @@ impl FrameAnalyser {
             .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
             .context("执行 1024 点 real FFT")?;
         for bin in self.spectrum.iter().take(FREQ_BINS as usize) {
-            // Web Audio 的 analyser 在 FFT 后先做 1/N 幅度归一化，再进入
-            // smoothing / dB 窗。realfft 返回未归一化结果，所以这里显式除 N。
+            // Web Audio's analyser normalizes the FFT output by 1/N before smoothing and the dB window. realfft returns unnormalized results, so the division by N is explicit here.
             let magnitude = (bin.re * bin.re + bin.im * bin.im).sqrt() / window_len as f64;
             payload.push(canonical_byte(magnitude_db(magnitude)));
         }
@@ -142,17 +138,16 @@ impl FrameAnalyser {
     }
 }
 
-/// 分段送 PCM 的 [`analyze`]：结果与把整段 PCM 一次交给 [`analyze`] 逐字节相同，手里只留一个窗口的样本。
-/// 解码与分析不在同一处（编辑器预览按块把浏览器解好的声音送进 WASM）时用它，不必把整段 PCM 放进一块内存。
+/// [`analyze`] fed PCM in segments. The result is byte-for-byte identical to passing the whole PCM to [`analyze`] at once, and only one window of samples is kept at a time. Use it when decoding and analysis happen in different places (the editor preview feeds browser-decoded audio into WASM in blocks), so the whole PCM need not sit in one buffer.
 pub struct SpectrumStream {
     analyser: FrameAnalyser,
     hash: Fnv1a64,
-    /// 已送进来的样本数。
+    /// Number of samples fed so far.
     samples: usize,
-    /// 还要用到的样本：第一个是全局的第 `offset` 个。
+    /// Samples still needed. The first one is the global sample at index `offset`.
     pending: Vec<f32>,
     offset: usize,
-    /// 下一帧的帧号。
+    /// Frame number of the next frame.
     next: usize,
     payload: Vec<u8>,
 }
@@ -178,7 +173,7 @@ impl SpectrumStream {
         }
     }
 
-    /// 接着送一段样本。窗口完整的帧当场算掉，用不到的样本随即丢弃。
+    /// Feeds the next segment of samples. Frames whose windows are complete are computed immediately, and samples no longer needed are discarded.
     pub fn push(&mut self, pcm: &[f32]) -> Result<()> {
         for sample in pcm {
             self.hash.write(&sample.to_le_bytes());
@@ -201,7 +196,7 @@ impl SpectrumStream {
         Ok(())
     }
 
-    /// 送完了：算掉末尾越界零填充的帧，交出完整的 BCS1 文件字节。
+    /// Done feeding: computes the trailing frames that run past the end (zero-padded), and returns the full BCS1 file bytes.
     pub fn finish(mut self, backend: SpectrumBackend) -> Result<Vec<u8>> {
         if self.samples == 0 {
             bail!("媒体没有可解码的音频样本");
@@ -226,7 +221,7 @@ impl SpectrumStream {
     }
 }
 
-/// 越界零填充；非有限样本按静音处理，避免 NaN 顺着 FFT 污染整帧。
+/// Zero-padded beyond the end. Non-finite samples are treated as silence, so that NaN does not spread through the FFT and contaminate the whole frame.
 fn sample_at(pcm: &[f32], index: usize) -> f32 {
     match pcm.get(index) {
         Some(sample) if sample.is_finite() => *sample,
@@ -275,7 +270,7 @@ mod tests {
         assert_eq!(canonical_byte(-200.0), 0);
         assert_eq!(canonical_byte(999.0), 255);
         assert_eq!(canonical_byte(-40.0), 128);
-        // 幅度下限：0 与 1e-12 都落在 -200 dB，钳到 0。
+        // Magnitude floor: 0 and 1e-12 both fall at -200 dB, clamped to 0.
         assert_eq!(magnitude_db(0.0), -200.0);
         assert_eq!(magnitude_db(1.0), 0.0);
         assert!((magnitude_db(10.0) - 20.0).abs() < 1e-12);
@@ -295,7 +290,7 @@ mod tests {
 
     #[test]
     fn streamed_pcm_matches_one_shot_analysis() {
-        // 长度不是 hop 的整数倍，块长也不对齐 hop 与窗长。
+        // The length is not an integer multiple of the hop, and the block length is not aligned with the hop or window length.
         let pcm: Vec<f32> = (0..20_123)
             .map(|i| (i as f32 * 0.031).sin() * 0.6 + (i as f32 * 0.0007).cos() * 0.2)
             .collect();
@@ -333,7 +328,7 @@ mod tests {
         let right = bcs1::parse(&ffmpeg).unwrap().header();
         assert_eq!(left.content_hash, right.content_hash);
         assert_ne!(left.backend, right.backend);
-        // payload 与 backend 无关，只有 flags 不同。
+        // The payload is independent of the backend; only the flags differ.
         assert_eq!(symphonia[bcs1::HEADER_LEN..], ffmpeg[bcs1::HEADER_LEN..]);
 
         let mut nudged = pcm.clone();
@@ -343,7 +338,7 @@ mod tests {
 
     #[test]
     fn a_pure_tone_peaks_in_its_own_bin() {
-        // 48 kHz / 1024 点 → bin 宽 46.875 Hz；3000 Hz 落在 bin 64。
+        // 48 kHz / 1024 points → bin width 46.875 Hz; 3000 Hz falls in bin 64.
         let pcm: Vec<f32> = (0..9600)
             .map(|index| {
                 (0.5 * (2.0 * std::f64::consts::PI * 3000.0 * index as f64 / 48_000.0).sin()) as f32
@@ -359,7 +354,7 @@ mod tests {
 
     #[test]
     fn windows_are_left_aligned_and_zero_padded_at_the_tail() {
-        // 一帧半的素材：第二帧只有前 400 个样本有效，其余零填充。
+        // Material one and a half frames long: in the second frame only the first 400 samples are valid; the rest are zero-padded.
         let pcm: Vec<f32> = (0..1200)
             .map(|index| if index < 800 { 0.5 } else { -0.5 })
             .collect();
@@ -368,7 +363,7 @@ mod tests {
         assert_eq!(view.frame_count(), 2);
         assert_eq!(view.time_row(0).unwrap()[0], time_byte(0.5));
         assert_eq!(view.time_row(1).unwrap()[0], time_byte(-0.5));
-        // 第二帧第 p 个时域点 = 样本 800 + p*8：p = 49 仍在素材内，p = 50 已越界。
+        // Sample p of the second frame's time domain = sample 800 + p*8: p = 49 is still within the material, p = 50 is out of bounds.
         assert_eq!(view.time_row(1).unwrap()[49], time_byte(-0.5));
         assert_eq!(view.time_row(1).unwrap()[50], 128);
         assert_eq!(view.time_row(1).unwrap()[127], 128);
@@ -376,9 +371,7 @@ mod tests {
 
     #[test]
     fn fft_magnitude_is_normalized_before_db_conversion() {
-        // bin-centered 正弦经过周期 Blackman 后，单边复 FFT 的峰值是
-        // amplitude * sum(window) / 2。再除 N 后应约为 0.5 * 0.42 / 2 = 0.105，
-        // 即 -19.58 dB；若漏掉 1/N 会整体高约 60.2 dB 并贴顶。
+        // After a bin-centered sine passes through the periodic Blackman, the peak of the one-sided complex FFT is amplitude * sum(window) / 2. After dividing by N it should be about 0.5 * 0.42 / 2 = 0.105, i.e. -19.58 dB. If the 1/N were omitted, it would be about 60.2 dB too high and hit the ceiling.
         let pcm: Vec<f32> = (0..FFT_SIZE as usize)
             .map(|index| {
                 (0.5 * (2.0 * std::f64::consts::PI * 64.0 * index as f64 / f64::from(FFT_SIZE))

@@ -1,17 +1,16 @@
-//! 对齐 golden 集的加载、约束校验与 `AnchorAligner` 基线（计划 M0.1）。
+//! Loading of the alignment golden set, constraint checks, and the `AnchorAligner` baseline (plan M0.1).
 //!
-//! 这里是**唯一**做文件 I/O 的一侧：库代码只提供
-//! [`speech_doc::golden::GoldenFile::from_str`] 与
-//! [`speech_doc::metrics`] 的纯函数。
+//! This is the **only** side that does file I/O. The library code only provides the pure functions
+//! [`speech_doc::golden::GoldenFile::from_str`] and
+//! [`speech_doc::metrics`].
 //!
-//! 校验：schema、tag 合法、bead 两侧连续全覆盖且单调、硬锚落在自己的 bead 内、
-//! `sentenceId` 是对应 `examples/<project>.ccut/transcript.json` 真实派生的句、
-//! `sourceWords` 与该句词文本逐一相等。
+//! Checks: schema, valid tags, beads fully and continuously covering both sides and monotonic, hard anchors falling inside their own bead,
+//! `sentenceId` being the sentence really derived from the matching `examples/<project>.ccut/transcript.json`, and
+//! `sourceWords` equal to that sentence's word text one by one.
 //!
-//! 基线：对每条用例用 [`AnchorAligner`] 产出对齐边，再走
-//! [`minimal_monotonic_blocks`]（块的目标区间即 `target` 字符坐标，可直接与
-//! golden bead 对照）与 [`plan_sentence`]（决策树结果）。数值**不设门槛**，
-//! 只打印：
+//! Baseline: for each case, [`AnchorAligner`] produces alignment edges, which then go through
+//! [`minimal_monotonic_blocks`] (a block's target range is the `target` character coordinates, directly comparable with the golden beads) and [`plan_sentence`] (the decision-tree result). Numbers have **no threshold**;
+//! they are only printed:
 //!
 //! ```text
 //! cargo test -p ccut-flow-core --test golden_align -- --nocapture
@@ -31,11 +30,11 @@ use speech_doc::metrics::{
 };
 use speech_doc::sentence::{Sentence, derive_sentences};
 
-/// 每个 `<lang>.json` 至少这么多条（计划 M0.1 验收）。
+/// Each `<lang>.json` must have at least this many cases (plan M0.1 acceptance).
 const MIN_CASES_PER_FILE: usize = 25;
-/// golden 集总量下限。
+/// Lower bound on the total size of the golden set.
 const MIN_CASES_TOTAL: usize = 100;
-/// 每类 tag 的下限。
+/// Lower bound per tag class.
 const MIN_CASES_PER_TAG: usize = 5;
 
 fn golden_root() -> PathBuf {
@@ -46,7 +45,7 @@ fn examples_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/examples")
 }
 
-/// `core/fixtures/align/golden/<project>/<lang>.json`，按路径排序。
+/// `core/fixtures/align/golden/<project>/<lang>.json`, sorted by path.
 fn golden_files() -> Vec<(PathBuf, GoldenFile)> {
     let root = golden_root();
     let mut paths = Vec::new();
@@ -92,7 +91,7 @@ fn load_project(project: &str) -> TranscriptDoc {
     doc
 }
 
-/// `AlignBlock`（src 为闭区间、tgt 为半开区间）⇒ [`Bead`]。
+/// `AlignBlock` (src as a closed interval, tgt as a half-open interval) ⇒ [`Bead`].
 fn block_bead(block: &AlignBlock) -> Bead {
     Bead::new(block.src.0..block.src.1 + 1, block.tgt.0..block.tgt.1)
 }
@@ -273,7 +272,7 @@ fn golden_anchor_aligner_baseline() {
             let src_words: Vec<&str> = case.source_words.iter().map(String::as_str).collect();
             let edges = AnchorAligner.align(&src_words, &case.target, &ctx);
 
-            // 硬锚命中：golden 标注的硬锚里，AnchorAligner 真正产出同样边的比例。
+            // Hard-anchor hit rate: among the hard anchors labelled in the golden set, the proportion for which AnchorAligner actually produces the same edge.
             for anchor in &case.hard_anchors {
                 row.hard_anchor_total += 1;
                 if edges.iter().any(|edge| {

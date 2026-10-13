@@ -1,10 +1,7 @@
-//! `fx`（格式规范 §3.9）按固定顺序作用。
+//! `fx` (format spec §3.9) is applied in a fixed order.
 //!
-//! 1–10 作用在源画面上（裁剪之后、放进框之前，与 v2 的媒体元素相同）：滤镜与特效预设、灰度与亮度、曝光、对比度、
-//! 饱和度、色相经 `timeline::lower_element_effects` 的配方由 `render-raster` 执行；色温（8）没有现成的配方，在这里按
-//! 规范的公式画；模糊、锐化、颗粒与暗角（9–10）再交回配方。长度按画布短边从 540 短边换算。
-//! 遮罩与揭示（11–12）在内核的元素管线里。描边与阴影（13–14）作用在画好的整层上：沿 alpha 轮廓，所以已经
-//! 包含遮罩、圆角与元素动画的结果；颜色与偏移是画布方向，不随实例旋转。
+//! 1–10 apply to the source picture (after cropping and before being placed in the frame, as with v2 media elements): filter and effect presets, grayscale and brightness, exposure, contrast, saturation, and hue, via the recipes from `timeline::lower_element_effects`, executed by `render-raster`; color temperature (8) has no ready-made recipe, so it is drawn here using the formula from the spec; blur, sharpen, grain and vignette (9–10) are handed back to recipes. Lengths are scaled from the 540-pixel short edge to the output canvas short edge.
+//! Masks and reveals (11–12) are in the kernel's element pipeline. Stroke and shadow (13–14) apply to the finished layer: they follow the alpha outline, so they already include the results of masks, rounded corners and element animation; color and offset are in canvas direction and do not rotate with the instance.
 
 use anyhow::Result;
 use render_raster::effects::{EffectRef, UniformMap, UniformValue, apply_filter_in_place};
@@ -12,7 +9,7 @@ use subtitle_render::apply_media_effects;
 use tiny_skia::Pixmap;
 use video_model::Fx;
 
-/// 作用在源画面上的 1–10。`short_edge` 是输出画布的短边（像素）。
+/// Effects 1–10 applied to the source picture. `short_edge` is the output canvas short edge, in pixels.
 pub fn apply_to_source(fx: &Fx, pixmap: &mut Pixmap, short_edge: f64) {
     let scale = short_edge / timeline::REFERENCE_SHORT_EDGE;
     let v2 = fx.to_timeline();
@@ -42,7 +39,7 @@ pub fn apply_to_source(fx: &Fx, pixmap: &mut Pixmap, short_edge: f64) {
     apply_media_effects(pixmap, Some(&detail), scale);
 }
 
-/// 色温：R × (1 + 0.2t)、B × (1 − 0.2t)，截在 [0, 1]。在预乘值上算，截到 alpha 等价于在直通值上截到 1。
+/// Color temperature: R × (1 + 0.2t), B × (1 − 0.2t), clamped to [0, 1]. Computed on premultiplied values; clamping to alpha is equivalent to clamping to 1 on straight values.
 pub fn temperature(pixmap: &mut Pixmap, amount: f64) {
     let red = 1.0 + 0.2 * amount;
     let blue = 1.0 - 0.2 * amount;
@@ -53,7 +50,7 @@ pub fn temperature(pixmap: &mut Pixmap, amount: f64) {
     }
 }
 
-/// 作用在画好的整层上的 13–14：先描边，再阴影。
+/// Effects 13–14 applied to the finished layer: stroke first, then shadow.
 pub fn apply_to_layer(fx: &Fx, layer: &mut Pixmap, short_edge: f64) -> Result<()> {
     if let Some(stroke) = &fx.stroke
         && stroke.width > 0.0
@@ -91,7 +88,7 @@ pub fn apply_to_layer(fx: &Fx, layer: &mut Pixmap, short_edge: f64) -> Result<()
     Ok(())
 }
 
-/// `#RRGGBB` / `#RRGGBBAA` 换成直通的 0–1 RGBA，alpha 再乘 `alpha`。读不懂时是黑色。
+/// Converts `#RRGGBB` / `#RRGGBBAA` to straight 0–1 RGBA, with alpha further multiplied by `alpha`. Black when unreadable.
 pub fn straight_color(text: &str, alpha: f64) -> [f64; 4] {
     let [r, g, b, a] = hex_rgba(text).unwrap_or([0, 0, 0, 255]);
     [
@@ -102,7 +99,7 @@ pub fn straight_color(text: &str, alpha: f64) -> [f64; 4] {
     ]
 }
 
-/// `#RRGGBB` 或 `#RRGGBBAA` 的四个分量。
+/// The four components of `#RRGGBB` or `#RRGGBBAA`.
 pub fn hex_rgba(text: &str) -> Option<[u8; 4]> {
     let hex = text.strip_prefix('#')?;
     if !matches!(hex.len(), 6 | 8) || !hex.is_ascii() {
@@ -112,7 +109,7 @@ pub fn hex_rgba(text: &str) -> Option<[u8; 4]> {
     Some([byte(0)?, byte(2)?, byte(4)?, if hex.len() == 8 { byte(6)? } else { 255 }])
 }
 
-/// 描边或阴影让层的像素超出它自己的框（要整张画布那么大的层）。
+/// The stroke or shadow makes the layer's pixels extend beyond its own box (a layer as large as the whole canvas).
 pub fn needs_layer_pass(fx: &Fx) -> bool {
     fx.stroke.as_ref().is_some_and(|s| s.width > 0.0) || fx.shadow.as_ref().is_some_and(|s| s.opacity > 0.0)
 }
@@ -123,12 +120,12 @@ mod tests {
 
     #[test]
     fn temperature_scales_red_and_blue_and_clips_to_alpha() {
-        // 预乘值：半透明的 (200, 100, 100) 是 (100, 50, 50, 128)。
+        // Premultiplied values: the semi-transparent (200, 100, 100) is (100, 50, 50, 128).
         let mut pixmap = Pixmap::new(1, 1).unwrap();
         pixmap.data_mut().copy_from_slice(&[100, 50, 50, 128]);
         temperature(&mut pixmap, 1.0);
         assert_eq!(pixmap.data(), &[120, 50, 40, 128]);
-        // 截到 alpha，等于直通值截到 1。
+        // Clamping to alpha equals clamping the straight value to 1.
         pixmap.data_mut().copy_from_slice(&[120, 50, 40, 128]);
         temperature(&mut pixmap, 1.0);
         assert_eq!(pixmap.data(), &[128, 50, 32, 128]);

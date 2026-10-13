@@ -1,7 +1,6 @@
-//! 媒体面板的确定性像素效果：锐化、噪点与暗角。
+//! Deterministic pixel effects for the media panel: sharpen, noise, and vignette.
 //!
-//! 三条内核都只依赖输入像素、尺寸和参数；没有时钟或未播种随机数，因而能在
-//! App 预览、CLI 导出和 WASM CPU reference 之间保持相同输出。
+//! All three kernels depend only on the input pixels, the dimensions, and the parameters. There is no clock and no unseeded random number. This keeps the output identical across the App preview, the CLI export, and the WASM CPU reference.
 
 fn scale_premul(channel: u8, factor: f64) -> u8 {
     (f64::from(channel) * factor).round().clamp(0.0, 255.0) as u8

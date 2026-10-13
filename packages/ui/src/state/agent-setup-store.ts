@@ -3,11 +3,10 @@ import { applyAgentSetupEvent } from '@cuccut/client';
 import type { AgentSetupEvent, AgentSetupRun, AgentSetupSnapshot, Id } from '@cuccut/protocol';
 
 /**
- * 设置页里运行的 Agent 安装、升级命令（`agent-setup` 主题）的镜像。只在 Agent 提供方页签打开时订阅（`watchAgentSetup`），
- * 离开就清空。
+ * Mirror of the Agent install and upgrade commands run on the settings page (`agent-setup` topic). Subscribed only while the Agent providers tab is open (`watchAgentSetup`);
+ * cleared on leaving.
  *
- * `shown`：这次订阅里见过「运行中」的那几次。日志框只给它们（以及正在运行的）显示——Runtime 在内存里留着最近 20 次，
- * 早先跑完的那次不再挂在命令下面（设计稿 useCmdRun 的运行状态由卡片持有，离开页面就没了）。
+ * `shown`: the runs seen as "running" during this subscription. The log box shows only those (and any still running). The Runtime keeps the latest 20 in memory, and earlier finished runs are no longer attached under the command (the run state of useCmdRun in the design draft is held by the card and is lost when the page is left).
  */
 export interface AgentSetupStore {
   ready: boolean;

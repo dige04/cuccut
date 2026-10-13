@@ -10,10 +10,9 @@ import { useEditorActions } from './editor-context.tsx';
 import type { FrameRect } from './stage-objects.tsx';
 
 /**
- * 按镜头分段取景的小牌（原型 stage-objects.jsx 的 `ShotChip`，产品设计 §5.10「改一支短视频」）：选中其中一段时挂在画面左下角
- * 的外面，写「这一段 · 第 X–Y 秒」（子视频时间线上的秒），说清楚拖动只改这一段；次要操作「套到整支」把这一段现在的裁剪写到
- * 同一素材的每一段，一笔事务，提示里可以撤销。挂在画面外面：画面上方是视频工具条，画面里面会挡住要对的人。
- * 带 `data-stage-editor`，舞台的点选与框选不接它上面的指针。
+ * The chip for framing by shot segment (prototype stage-objects.jsx `ShotChip`, product design §5.10 “改一支短视频”(edit a short)). When one segment is selected, it hangs just outside the bottom-left corner of the picture, reading “这一段 · 第 X–Y 秒”(this segment · seconds X–Y), in seconds on the child video's timeline, which makes clear that dragging only changes this segment. The secondary action “套到整支”(apply to whole clip) writes this segment's current crop to every segment of the same asset, as one transaction, which can be undone from the notice.
+ * It sits outside the picture, because the video toolbar is above the picture and placing the chip inside would cover the subject being framed.
+ * It carries `data-stage-editor`, so stage point selection and marquee selection do not take pointer input on it.
  */
 
 const chip = style({
@@ -34,19 +33,18 @@ const chip = style({
   userSelect: 'none',
 });
 
-/** 小牌离画面下沿多远、离舞台下沿至少留多少（舞台像素）。 */
+/** How far the chip sits below the picture's bottom edge, and the minimum distance to leave from the stage's bottom edge (stage pixels). */
 const GAP = 8;
 const CHIP_H = 40;
 
-/** 舞台的高与视频工具条（舞台像素；没有工具条时 null）。 */
+/** The stage's height and the video toolbar's position (stage pixels; null when there is no toolbar). */
 interface Room {
   h: number;
   bar: { top: number; h: number } | null;
 }
 
 /**
- * 小牌的上沿：画面下沿外 8px，舞台放不下时贴着舞台底；视频工具条也翻到了画面下方、和小牌叠在一起时，小牌挪到工具条上面
- * （压在画面下沿上，总比把工具条盖住好）。
+ * The chip's top edge is 8px outside the picture's bottom edge, or flush with the stage bottom if the stage has no room. When the video toolbar has also flipped below the picture and overlaps the chip, the chip moves above the toolbar (sitting on the picture's bottom edge is better than covering the toolbar).
  */
 function chipTop(frame: FrameRect, room: Room | null): number {
   const below = frame.top + frame.height + GAP;
@@ -62,7 +60,7 @@ export function StageShotChip({ item, sequence, frame }: { item: PannableVideo; 
   const { apply, undo } = useEditorActions();
   const ref = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<Room | null>(null);
-  // 量舞台高与视频工具条的位置：工具条贴着舞台顶放不下时也翻到画面下方，小牌要让开它。
+  // Measure the stage height and the video toolbar's position: when the toolbar cannot fit at the top of the stage and flips below the picture too, the chip must make way for it.
   useLayoutEffect(() => {
     const node = ref.current;
     const area = node?.parentElement;
@@ -76,7 +74,7 @@ export function StageShotChip({ item, sequence, frame }: { item: PannableVideo; 
     const resize = new ResizeObserver(measure);
     resize.observe(area);
     const moves = new MutationObserver(measure);
-    // 工具条量完自己才落位（改 style），后挂上来的也要接住：看整个舞台叠加层的增删与 style 变化，没变就不重渲染。
+    // The toolbar only positions itself after measuring (it changes its style), so later-mounted ones must also be caught: watch additions, removals and style changes across the whole stage overlay, and do not re-render when nothing changed.
     moves.observe(area, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
     return () => {
       resize.disconnect();

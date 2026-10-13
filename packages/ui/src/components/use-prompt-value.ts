@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PromptFieldValue } from '@react-spectrum/ai';
 import { fromPromptSegments, nextSlotIndex, toPromptSegments } from '../model/prompt-slots.ts';
 
-/** 草稿字符串 → PromptFieldValue：`{{label}}` 变占位 token（模板包规范 §5.5），光标放在最后一个片段的末尾。 */
+/** Draft string → PromptFieldValue: `{{label}}` becomes a placeholder token (template pack spec §5.5), and the cursor goes to the end of the last segment. */
 function valueOf(text: string): PromptFieldValue {
   const segments = toPromptSegments(text);
   const last = segments.length - 1;
@@ -12,8 +12,8 @@ function valueOf(text: string): PromptFieldValue {
 }
 
 /**
- * 选中片段 `from` 之后的下一个占位 token（到末尾从头再找）；没有占位 token 时原样返回。
- * `from` 缺省取选区的后端：选中一个 token 时就从它后面接着找。
+ * The next placeholder token after the selected segment `from` (searching from the start once the end is reached); returns the input unchanged when there is no placeholder token.
+ * `from` defaults to the back end of the selection: when a token is selected, the search continues after it.
  */
 export function selectNextSlot(value: PromptFieldValue, from = value.selectedRange.end.index): PromptFieldValue {
   const i = nextSlotIndex(value.segments, from);
@@ -23,10 +23,8 @@ export function selectNextSlot(value: PromptFieldValue, from = value.selectedRan
 }
 
 /**
- * 字符串草稿与 PromptField 的值之间的桥（原型 ui.jsx 的 PromptField）。
- * 自己打的字原样留着 PromptFieldValue，光标与撤销不丢；只有草稿从外面换了（起点预填、模板填入、发送后清空、发送失败放回），
- * 才按新字符串重建，光标放到末尾。草稿里的 `{{label}}` 画成占位 token，序列化时写回 `{{label}}`
- * （S2 的 toString 会把它写成 label，占位性就丢了）；用户自己打的 `{{x}}` 不经过重建，照旧是文字。
+ * The bridge between the string draft and the PromptField value (prototype ui.jsx PromptField).
+ * Text the user types is kept as-is in PromptFieldValue, so the cursor and undo are not lost. The value is rebuilt from the new string, with the cursor at the end, only when the draft is replaced from outside (initial prefill, template fill-in, cleared after sending, put back after a failed send). `{{label}}` in the draft is drawn as a placeholder token and serialized back to `{{label}}` (S2's toString writes it as the label, which would lose the placeholder). A `{{x}}` the user typed is not rebuilt and stays as plain text.
  */
 export function usePromptValue(
   text: string,
@@ -43,16 +41,16 @@ export function usePromptValue(
     setState({ text: next, value });
     if (next !== text) onText(next);
   };
-  // 「填下一处」与填入带占位符的草稿后选中下一处：只改选区、不改文字，按 state 里最新的值算（可以在定时器里调）。
-  // `from`：从哪个片段之后找；输入框重新聚焦时 TokenField 会按 DOM 重设光标，调用方要在聚焦前记下原来的位置。
+  // “Fill next” and selecting the next placeholder after filling a draft with placeholders only change the selection, not the text; they compute from the latest value in state (so they can run in a timer).
+  // `from`: which segment to search after. When the input is refocused, TokenField resets the cursor from the DOM, so the caller must record the original position before focusing.
   const selectSlot = (from?: number) => setState((s) => ({ ...s, value: selectNextSlot(s.value, from) }));
   return [current.value, onChange, selectSlot];
 }
 
 /**
- * 聚焦 PromptField（或包着它的元素）里的输入框，光标放到末尾，接着已有的草稿往下写。
- * 输入框是 contenteditable：TokenField 只在已聚焦时才把光标写回 DOM，程序聚焦会落在开头；
- * 所以聚焦后直接把 DOM 选区收到末尾，TokenField 会跟着 selectionchange 更新光标。
+ * Focuses the input inside a PromptField (or the element wrapping it), with the cursor at the end, so typing continues the existing draft.
+ * The input is contenteditable: TokenField only writes the cursor back to the DOM while focused, and a programmatic focus would land at the start;
+ * so after focusing, the DOM selection is moved to the end directly, and TokenField follows it through selectionchange to update the cursor.
  */
 export function focusPromptEnd(container: Element | null | undefined) {
   const input = container?.querySelector<HTMLElement>('[role="textbox"]');

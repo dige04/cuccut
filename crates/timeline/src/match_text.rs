@@ -12,7 +12,7 @@ pub struct MatchWord {
     pub t0: f64,
     pub t1: f64,
     pub text: String,
-    /// 文稿词的「贴前」标记：与前一个词之间不写空格，不看两侧是什么字符。
+    /// The 「贴前」 (attach-to-previous) marker for transcript words: no space is written between it and the previous word, regardless of the characters on either side.
     pub glue: bool,
 }
 
@@ -92,9 +92,7 @@ impl Display for MatchPlanError {
 
 impl Error for MatchPlanError {}
 
-/// 汉字 / 假名与全角标点：词间不留空格的文字。谚文不在其中——韩文按空格
-/// 分词（与 `ccut-flow-core` 的 `sep_len` 同一条规则；0.5 之前逐音节的韩文
-/// 文稿靠词上的 `glue` 标记拼回去）。
+/// Hanzi / kana and full-width punctuation: text with no spaces between words. Hangul is not included. Korean is split on spaces (the same rule as `sep_len` in `ccut-flow-core`; Korean transcripts that were syllable-by-syllable before 0.5 are rejoined using the `glue` marker on the words).
 fn is_unspaced_cjk_adjacent(ch: char) -> bool {
     matches!(ch as u32,
         0x4E00..=0x9FFF | 0x3040..=0x30FF |
@@ -354,8 +352,7 @@ mod tests {
         }]
     }
 
-    /// 韩文按空格分词：带空格的查询能对上按어절存的词；0.5 之前逐音节的文稿
-    /// 靠 `glue` 拼回原样（查询要照它的写法，不带空格）。
+    /// Korean is split on spaces: a query with spaces matches words stored by 어절 (eojeol, space-delimited word units). Transcripts stored syllable by syllable before 0.5 are restored to their original form via `glue` (queries must follow that form, without spaces).
     #[test]
     fn korean_queries_match_words_joined_at_spaces() {
         let spaced = korean_paragraph(&[
@@ -371,7 +368,7 @@ mod tests {
         let legacy = korean_paragraph(&[("저", false), ("는", true), ("내", true), ("일", true)]);
         let hit = plan_text_match(&legacy, &empty_cuts(), &options("는내일")).unwrap();
         assert_eq!(hit.hits[0].word_ids, ["w2", "w3", "w4"]);
-        // 汉字 / 假名照旧不加空格。
+        // Hanzi / kana still get no spaces, as before.
         let han = korean_paragraph(&[("大", false), ("家", false), ("好", false)]);
         let hit = plan_text_match(&han, &empty_cuts(), &options("大家好")).unwrap();
         assert_eq!(hit.hits[0].word_ids, ["w1", "w2", "w3"]);

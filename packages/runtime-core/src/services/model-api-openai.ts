@@ -20,9 +20,9 @@ import { LIBRARY_VOICE_PREFIX } from '@cuccut/runtime-storage/library';
 import { ApiError } from './model-api-errors.ts';
 
 /**
- * OpenAI 形状的请求与响应（架构设计 §4.8 的模型接口服务）。请求字段只认这里列出的；不认识的字段忽略（OpenAI 的客户端
- * 常带 `user` 之类），认识但不支持的（流式语音、`url` 形式的图片、工具调用……）回答 400 `UNSUPPORTED_PARAMETER`。
- * 模型名的解析不在这里（`model-api-routing.ts`）。
+ * OpenAI-shaped requests and responses (the model API service in architecture design §4.8). Only the request fields listed here are recognized; unknown fields are ignored (OpenAI clients
+ * often carry things like `user`); recognized but unsupported ones (streaming speech, `url`-form images, tool calls, ...) answer 400 `UNSUPPORTED_PARAMETER`.
+ * Model name resolution is not here (`model-api-routing.ts`).
  */
 
 type Json = Record<string, unknown>;
@@ -38,7 +38,7 @@ function unsupported(message: Localized): ApiError {
   return new ApiError(400, 'UNSUPPORTED_PARAMETER', message);
 }
 
-/** `field 只支持 a、b、c`：取值按当前语言的列表分隔符连起来。 */
+/** `field only supports a, b, c`: the values are joined with the list separator of the current language. */
 function onlySupports(field: string, values: readonly string[]): ApiError {
   return unsupported(RcModelApi.onlySupports({ field, values: values.join(RcModelApi.listSeparator().text) }));
 }
@@ -69,18 +69,18 @@ function integer(body: Json, key: string, min: number): number | undefined {
   return value;
 }
 
-/** JSON 请求体必须是一个对象。 */
+/** A JSON request body must be an object. */
 export function jsonObject(value: unknown): Json {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid(RcModelApi.bodyNotObject());
   return value as Json;
 }
 
-/** 每种请求都要的 `model`。 */
+/** `model`, required for every kind of request. */
 export function modelName(body: Json): string {
   return string(body, 'model', true).trim();
 }
 
-// ---- 语音合成：POST /v1/audio/speech ----
+// ---- Speech synthesis: POST /v1/audio/speech ----
 
 export function speechRequest(body: Json): SynthesizeSpeechRequest {
   const input = string(body, 'input', true);
@@ -93,7 +93,7 @@ export function speechRequest(body: Json): SynthesizeSpeechRequest {
   }
   const streamFormat = string(body, 'stream_format');
   if (streamFormat !== undefined && streamFormat !== 'audio') throw unsupported(RcModelApi.speechStreamUnsupported());
-  // 用户库的音色（`library:<id>`）不对外部程序开放（架构设计 §5.9）：在审批之前就拒绝。
+  // The user library's voices (`library:<id>`) are not exposed to external programs (architecture design §5.9): rejected before approval.
   if (voice !== undefined && voice.trim().startsWith(LIBRARY_VOICE_PREFIX)) {
     throw invalid(RcModelApi.libraryVoiceUnsupported());
   }
@@ -106,7 +106,7 @@ export function speechRequest(body: Json): SynthesizeSpeechRequest {
   };
 }
 
-// ---- 图片：POST /v1/images/generations ----
+// ---- Images: POST /v1/images/generations ----
 
 export function imageRequest(body: Json): GenerateImageRequest {
   const prompt = string(body, 'prompt', true);
@@ -129,7 +129,7 @@ export function imageRequest(body: Json): GenerateImageRequest {
   };
 }
 
-// ---- 聊天：POST /v1/chat/completions ----
+// ---- Chat: POST /v1/chat/completions ----
 
 export interface ChatRequest {
   request: GenerateTextRequest;
@@ -150,7 +150,7 @@ export function chatRequest(body: Json): ChatRequest {
   if (n !== undefined && n !== 1) throw unsupported(RcModelApi.nOnlyOne());
   if (body.logprobs === true) throw unsupported(RcModelApi.logprobsUnsupported());
   const temperature = number(body, 'temperature');
-  // 两个都给时以新的 max_completion_tokens 为准。
+  // If both are given, the new max_completion_tokens takes precedence.
   const maxOutputTokens = integer(body, 'max_completion_tokens', 1) ?? integer(body, 'max_tokens', 1);
   const seed = integer(body, 'seed', 0);
   const effort = string(body, 'reasoning_effort');
@@ -251,7 +251,7 @@ export function chatCompletion(outcome: ChatOutcome): Json {
   };
 }
 
-/** `stream: true`：首版不做真正的增量，整段结果以一个内容块的 SSE 返回（然后是结束块与 `[DONE]`）。 */
+/** `stream: true`: the first version does not do true incremental output; the whole result is returned as SSE with one content chunk, followed by the end chunk and `[DONE]`. */
 export function chatCompletionStream(outcome: ChatOutcome, includeUsage: boolean): string {
   const base = {
     id: outcome.id,
@@ -272,7 +272,7 @@ export function chatCompletionStream(outcome: ChatOutcome, includeUsage: boolean
   return chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n';
 }
 
-// ---- 转写：POST /v1/audio/transcriptions ----
+// ---- Transcription: POST /v1/audio/transcriptions ----
 
 export interface TranscriptionOptions {
   format: TranscriptionFormat;
@@ -282,7 +282,7 @@ export interface TranscriptionOptions {
   segments: boolean;
 }
 
-/** multipart 的文本字段 → 转写选项。 */
+/** Text fields of the multipart → transcription options. */
 export function transcriptionOptions(fields: Map<string, string[]>): TranscriptionOptions {
   const one = (key: string) => fields.get(key)?.[0];
   const format = (one('response_format') ?? 'json') as TranscriptionFormat;
@@ -298,7 +298,7 @@ export function transcriptionOptions(fields: Map<string, string[]>): Transcripti
   const prompt = one('prompt')?.trim();
   return {
     format,
-    // 调用方给的是音频的语言：按断言处理（模型不得更改）。
+    // The caller gives the language of the audio: handled as an assertion (the model must not change it).
     ...(language ? { language: { mode: 'assert', tag: language } as LanguageRequest } : {}),
     ...(prompt ? { hint: prompt } : {}),
     words: granularities.includes('word'),
@@ -308,7 +308,7 @@ export function transcriptionOptions(fields: Map<string, string[]>): Transcripti
 
 const CJK = /[぀-ヿ㐀-鿿豈-﫿＀-￯]/;
 
-/** 段落连成全文：两边都不是中日文时用空格隔开。 */
+/** Joins the segments into full text: separated by a space when neither side is Chinese or Japanese. */
 export function transcriptText(result: AsrResult): string {
   let text = '';
   for (const segment of result.segments) {
@@ -333,7 +333,7 @@ function clock(ticks: number, timescale: number, separator: ',' | '.'): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}${separator}${pad(ms % 1000, 3)}`;
 }
 
-/** 按 `response_format` 写出转写结果：正文与媒体类型。 */
+/** Writes out the transcription according to `response_format`: the body and the media type. */
 export function transcriptionBody(
   result: AsrResult,
   options: TranscriptionOptions,

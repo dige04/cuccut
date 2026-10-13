@@ -25,7 +25,7 @@ import { useEditorReference } from '../use-editor-reference.ts';
 import { AgentGateLine } from './agent-gate-line.tsx';
 import { QUICK_CHAT_COPY as COPY } from './quick-chat-copy.ts';
 
-// 展开的卡片让开右侧竖排的工具栏（48px 宽的一列加 24px 间距）；最小化的圆形图标照旧贴在右下角、工具栏下方。
+// The expanded card yields to the vertical toolbar on the right (a 48px-wide column plus 24px of spacing). The minimized round icon stays at the bottom right as before, below the toolbar.
 const dock = style({ position: 'absolute', insetEnd: { default: 24, isOpen: '[72px]' }, bottom: 24, zIndex: 20 });
 const trigger = style({
   position: 'relative',
@@ -36,7 +36,7 @@ const trigger = style({
   padding: 0,
   borderWidth: 0,
   borderRadius: 'full',
-  // 浮在编辑器上的面用 elevated 底色：深色下比面板亮一档，不至于和身后的面板糊成一片（gray-25 在深色下与面板同色）。
+  // The panel floating over the editor uses the elevated background: in dark mode it is one step brighter than the panel, so it does not blur into the panel behind it (gray-25 is the same color as the panel in dark mode).
   '--s2-container-bg': { type: 'backgroundColor', value: { default: 'elevated', isHovered: 'gray-100', isPressed: 'gray-200' } },
   backgroundColor: '--s2-container-bg',
   boxShadow: 'elevated',
@@ -48,7 +48,7 @@ const trigger = style({
   outlineOffset: 2,
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** 最小化时图标右上角的点：颜色沿用 Home 侧栏会话行的状态灯（model/sidebar.ts `sessionStatus`）：进行中蓝、等批准橙、失败红、完成未读绿。 */
+/** The dot at the top right of the icon when minimized. Its color follows the status light of session rows in the Home sidebar (model/sidebar.ts `sessionStatus`): running blue, awaiting approval orange, failed red, completed and unread green. */
 const dot = style({
   position: 'absolute',
   top: 2,
@@ -57,7 +57,7 @@ const dot = style({
   borderRadius: 'full',
   borderWidth: 2,
   borderStyle: 'solid',
-  // 描一圈图标的底色，把点和图标隔开。
+  // Outline the icon's background color, so the dot is separated from the icon.
   borderColor: '[var(--s2-container-bg)]',
   backgroundColor: { status: { running: 'accent', waiting: 'notice', failed: 'negative', unread: 'positive' } },
 });
@@ -74,44 +74,38 @@ const panel = style({
 });
 const head = style({ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingStart: 16, paddingEnd: 8, paddingTop: 8 });
 const title = style({ flexGrow: 1, minWidth: 0, font: 'title-sm', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-// 输入框自带左右 12 的留白，上面与标题之间再空 4；下面紧贴工具栏，只留输入框自己的那一点（产品设计 §5.1「输入区底栏」）。
+// The input box has 12px of padding on the left and right, and 4px of space above it, between it and the title. Below, it sits right against the toolbar, keeping only the input's own small space (product design §5.1 “输入区底栏” (composer footer bar)).
 const body = style({ paddingTop: 4, marginBottom: -8 });
 const gate = style({ paddingX: 16, paddingBottom: 12 });
 
-/** 悬浮会话的草稿按视频分：换一个视频就是另一个输入框，没发出的话不跟过去。 */
+/** The floating session's draft is kept per video: switching to another video means a different input box, and an unsent draft does not carry over. */
 function draftKeyOf(videoKey: string | null): string {
   return `video-chat:${videoKey ?? ''}`;
 }
 
 /**
- * Space 里打开的视频右下角的悬浮会话（产品设计 §2.2、§5.1）：默认展开成一个新会话的输入框，不抢编辑器的焦点；最小化后缩成图标
- * （记在本机），图标上的点提示这里最近发起的会话正在干活、等批准或做完未读。输入框与 Home 起始页同一个（`Composer`）：左边访问模式，
- * 右边 Agent · 模型 · 推理强度，选择的语义也一样（按这个视频的草稿记，发出时带给新会话，选过的访问模式记成默认）。
+ * The floating session in the bottom-right of a video opened in Space (product design §2.2, §5.1). By default it expands into an input box for a new session and does not steal focus from the editor. Once minimized, it shrinks to an icon (remembered locally), and a dot on the icon hints that the most recently started session here is working, awaiting approval, or completed and unread. The input box is the same as the Home start page's (`Composer`): access mode on the left, Agent · model · reasoning effort on the right. The meaning of the choices is also the same: they are recorded per this video's draft, passed to the new session on send, and the chosen access mode is remembered as the default.
  *
- * 发出即转到 Home 的这条会话，第一句话就是这段 prompt，编辑器此刻的状态随它带进去，会话里出这部视频的视频卡，点「打开编辑器」回来
- * （`video-cards.ts` `openingVideo`）。发送前不建空会话；每次都新建一条会话，回到 Space 仍从空的输入框开始。会话归入视频所在的项目；
- * 视频不属于项目（在某条无项目会话的工作目录里）时新会话也不属于项目，与那条会话共用工作目录（`folderOf`，架构设计 §3.10），
- * 显示在「最近」。
+ * Sending switches to that session on Home. Its first message is this prompt, and the editor's current state travels with it. In the session, a video card for this video appears, and clicking “Open editor” comes back (`video-cards.ts` `openingVideo`). No empty session is created before sending. Each send creates a new session, and returning to Space still starts from an empty input box. The session belongs to the video's project. If the video is not in a project (it sits in the working directory of a session with no project), the new session also has no project and shares that session's working directory (`folderOf`, architecture design §3.10), and it is shown under “最近” (Recent).
  */
 export function VideoQuickChat() {
   const runtime = useRuntime();
   const source = useVideo((s) => s.video?.ref?.source ?? null);
   const projectId = source?.projectId ?? null;
   const owner = projectId ? null : (source?.conversationId ?? null);
-  // 视频所在的那条会话还在目录里才共用它的工作目录；不在了（被删）就建一条普通的无项目会话。
+  // The session the video came from shares its working directory only if it still exists in the directory. If it has been deleted, create an ordinary session with no project.
   const ownerKnown = !!useConversationMeta(owner);
   const key = useShell((s) => {
     const target = routeVideo(s.route);
     return target ? targetKey(target) : null;
   });
   const draftKey = draftKeyOf(key);
-  // 图标上的点看这里最近发起的那条会话；被删了（目录里找不到）就不亮。
+  // The dot on the icon looks at the session most recently started from here. If that session was deleted (not found in the directory), the dot does not light up.
   const started = useShell((s) => (key ? (s.videoChats[key] ?? null) : null));
   const watched = useConversationMeta(started);
   const prefMin = useShell((s) => s.videoChatMin);
-  // 工具页（`aitools`）开着时，展开的卡片正好盖住页底的「交给 Agent」：这段时间按最小化显示，但不改记在本机的偏好；
-  // 用户自己点开图标则这一次照常展开（`peek`），工具页关掉就复位，回到偏好的状态。工具页上的点开、最小化都只动 `peek`，不碰偏好。
-  // 网页宿主没有 AI 工具 Tab：记着的 `aitools` 在那里落回文稿，不算开着。
+  // While the tools page (`aitools`) is open, the expanded card covers the “交给 Agent” (Hand off to Agent) at the bottom of the page. During this time it shows as minimized, but the preference stored locally is not changed. When the user clicks the icon to open it, it expands this time (`peek`). When the tools page closes, it resets to the preferred state. Opening and minimizing on the tools page touch only `peek`, never the preference.
+  // The web host has no AI tools tab: a remembered `aitools` falls back to the transcript there, and does not count as open.
   const web = runtime.host.platform === 'web';
   const toolsOpen = useEditor((s) => hostPanelTab(s.panelTab, web) === 'aitools');
   const [peek, setPeek] = useState(false);
@@ -119,19 +113,19 @@ export function VideoQuickChat() {
   const drivers = useConnection((s) => s.drivers);
   const checking = useConnection((s) => s.checking);
   const guide = gateGuide(homeGate(drivers, checking));
-  // 新会话的访问模式与 Agent · 模型 · 强度：这个视频的草稿上选过的，否则设置里的默认（同起始页）。
+  // The access mode and Agent · model · effort for a new session: whatever was chosen on this video's draft, otherwise the default in settings (same as the start page).
   const draftMode = useShell((s) => s.draftAccessModes[draftKey]);
   const defaultMode = useSetting('agent.defaultAccessMode');
   const choice = useShell((s) => s.draftAgents[draftKey]);
-  // 草稿上选的 Agent 还在首次探测时显示「正在检测」，不退回默认的那个（发送时照旧带草稿上的选择）。
+  // If the Agent chosen on the draft still shows “正在检测” (Detecting) on the first probe, do not fall back to the default one. On send, the draft's choice is still used.
   const driver =
     choice?.driverId && checking.includes(choice.driverId)
       ? null
       : (drivers?.find((d) => d.id === choice?.driverId) ?? defaultDriver(drivers, checking));
   const { model, effort } = draftSelection(driver, choice);
-  // 引用标签与发送时取的编辑器状态按视频自己的来源（项目，或它所在的那条无项目会话）认，不按新会话：新会话发出前还不存在。
+  // Reference tags and the editor state captured on send are matched by the video's own source (its project, or the no-project session it sits in), not by the new session, which does not exist before sending.
   const editor = useEditorReference({ conversationId: owner, projectId });
-  // 默认展开时不抢编辑器的焦点；用户自己点开的才把光标放进输入框（Composer 挂上时聚焦一次）。
+  // By default, expanding does not steal focus from the editor. Only when the user opens it themselves is the cursor placed in the input (focus once when Composer mounts).
   const [opened, setOpened] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -144,13 +138,13 @@ export function VideoQuickChat() {
     requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
-  /** 新建一条会话（项目里的视频归那个项目，否则不属于项目），转到它，再把第一句话发出去（同起始页 `onSend`）。 */
+  /** Create a new session (a video in a project belongs to that project; otherwise it belongs to none), switch to it, then send the first message (same as the start page's `onSend`). */
   const startConversation = async (text: string, attachments: AttachmentRef[], skills: SkillSendRef[], videoKey: string) => {
-    // 编辑器此刻的状态在离开 Space 之前取：引用标签只认眼前显示的视频。
+    // The editor state is captured before leaving Space. Reference tags only recognize the video currently on screen.
     const context = await editor.capture();
     let conversationId: Id | null = null;
     try {
-      // 只传草稿上选过的；没选的由 Runtime 按偏好给。选过的访问模式同时记成新会话的默认。
+      // Pass only what was chosen on the draft. Anything not chosen is supplied by the Runtime according to preferences. A chosen access mode is also recorded as the default for new sessions.
       const conversation = await runtime.createConversation(projectId, {
         ...(owner && ownerKnown ? { folderOf: owner } : {}),
         ...(draftMode ? { accessMode: draftMode } : {}),
@@ -164,7 +158,7 @@ export function VideoQuickChat() {
       shell.setDraftAccessMode(draftKey, null);
       shell.setDraftAgent(draftKey, null);
       shell.setVideoChat(videoKey, conversation.id);
-      // 编辑器不跟去：视频卡上的「打开编辑器」再打开它。
+      // The editor does not follow: “Open editor” on the video card opens it again.
       shell.go({ tab: 'home', conversationId: conversation.id, projectId: null });
       await runtime.send(
         conversation.id,
@@ -178,19 +172,19 @@ export function VideoQuickChat() {
       return true;
     } catch (error) {
       ToastQueue.negative(sendFailureMessage(error), { timeout: 5000 });
-      // 会话已经建好、人也转过去了：话、图片与点选的 skill 放回那条会话的输入框，不吞掉用户的输入。
+      // Once the session is built and the user has been switched to it, the message, images and picked skill go back into that session's input box, so the user's input is not lost.
       if (conversationId) {
         useShell.getState().setDraft(conversationId, text);
         useDraftImages.getState().move(draftKey, conversationId);
         useDraftSkills.getState().move(draftKey, conversationId);
         return true;
       }
-      // 会话没建成：输入框放回原话，人留在编辑器。
+      // If the session fails to build, the original text goes back into the input box and the user stays in the editor.
       return false;
     }
   };
 
-  // 输入框里按 Esc 收起；补全弹层开着时 Esc 先关弹层。
+  // Pressing Esc in the input collapses it. When the completion popup is open, Esc closes the popup first.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (event.key !== 'Escape' || event.defaultPrevented || target.getAttribute('role') !== 'textbox') return;
@@ -250,7 +244,7 @@ export function VideoQuickChat() {
           reference={editor.reference}
           mentionScope={{ projectId, conversationId: null }}
           onSend={async (text, attachments, skills) => {
-            // 视频还没载入（不知道它在哪个项目）时先不发，话留在输入框里。
+            // If the video is not loaded yet (so its project is unknown), do not send. The text stays in the input.
             if (!source || !key) return false;
             return startConversation(text, attachments, skills, key);
           }}

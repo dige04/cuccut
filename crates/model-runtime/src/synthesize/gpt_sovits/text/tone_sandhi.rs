@@ -1,13 +1,13 @@
-//! 声调变调：复刻上游 `text/tone_sandhi.py` 的 `ToneSandhi`（源自 PaddleSpeech）。
+//! Tone sandhi: replicates `ToneSandhi` from upstream `text/tone_sandhi.py` (originally from PaddleSpeech).
 //!
-//! 韵母形如 `ian4`，末位是声调；「改 N 声」即替换末位字符。
+//! A final looks like `ian4`, and its last character is the tone. “Changing to tone N” means replacing the last character.
 
 use super::jieba;
 use super::pinyin;
 use super::pychar;
 use super::words::{self, MUST_NEURAL_TONE_WORDS, MUST_NOT_NEURAL_TONE_WORDS};
 
-/// `(词, 词性)` 序列。
+/// Sequence of `(word, part of speech)`.
 pub type Seg = Vec<(String, String)>;
 
 const PUNC: &str = "：，；。？！“”‘’':,;.?!";
@@ -74,7 +74,7 @@ fn merge_yi(seg: Seg) -> Seg {
             let last = first.last().unwrap_or(&seg[i - 1]).clone();
             if last.0 == seg[i + 1].0 && last.1 == "v" && seg[i + 1].1 == "v" {
                 let Some(slot) = first.last_mut() else {
-                    // 上游在这里抛 IndexError 并被吞掉，seg 原样返回
+                    // Upstream raises IndexError here and swallows it, so seg is returned unchanged
                     return seg;
                 };
                 *slot = (format!("{}一{}", last.0, seg[i + 1].0), last.1);
@@ -106,7 +106,7 @@ fn merge_reduplication(seg: Seg) -> Seg {
     out
 }
 
-/// `_merge_continuous_three_tones`（`edge_only=false`）与 `_merge_continuous_three_tones_2`（`true`）。
+/// `_merge_continuous_three_tones` (`edge_only=false`) and `_merge_continuous_three_tones_2` (`true`).
 fn merge_three_tones(seg: Seg, edge_only: bool) -> Seg {
     let finals: Vec<Vec<String>> = seg.iter().map(|(word, _)| pinyin::lazy(word).1).collect();
     let mut merge_last = vec![false; seg.len()];
@@ -155,7 +155,7 @@ pub fn pre_merge_for_modify(seg: Seg) -> Seg {
     merge_er(seg)
 }
 
-/// `_split_word`：搜索模式分词里最短的子词放在它所在的一侧，另一侧是剩余部分。
+/// `_split_word`: in search-mode segmentation, the shortest sub-word is placed on its own side, and the other side is the remainder.
 fn split_word(word: &str) -> [String; 2] {
     let tokens = jieba::cut_for_search(word);
     let first = tokens.iter().map(String::as_str).min_by_key(|w| char_len(w)).unwrap_or(word);

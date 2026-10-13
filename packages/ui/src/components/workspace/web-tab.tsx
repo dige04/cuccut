@@ -38,7 +38,7 @@ import './web-tab.css';
 
 const ZOOM_MIN = Math.min(...WEB_ZOOM_STEPS);
 const ZOOM_MAX = Math.max(...WEB_ZOOM_STEPS);
-/** 视图位置变了而大小没变时（ResizeObserver 不报），隔这么久再量一次。 */
+/** When the view's position changes but its size does not (ResizeObserver does not report it), measure again after this delay. */
 const BOUNDS_POLL_MS = 500;
 
 const root = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, minHeight: 0 });
@@ -79,7 +79,7 @@ const loadingRow = style({
 const viewport = style({ position: 'relative', display: 'flex', flexGrow: 1, minHeight: 0, overflow: 'hidden' });
 const placeholder = style({ flexGrow: 1, minWidth: 0, minHeight: 0, backgroundColor: 'gray-25' });
 const centered = style({ display: 'flex', flexGrow: 1, minWidth: 0, minHeight: 0, overflow: 'auto' });
-/** 原型 `.home-browser__start`：起始、停止、失败、拒绝、不支持都是这一块。放在新标签页起始页里时（`isNested`）由外层排版。 */
+/** Prototype `.home-browser__start`: the start, stop, failed, refused and unsupported states all live in this block. When placed inside the new-tab start page (`isNested`), the outer layout positions it. */
 const start = style({
   display: 'flex',
   flexDirection: 'column',
@@ -91,7 +91,7 @@ const start = style({
   font: 'ui',
   color: 'gray-600',
 });
-/** 原型 `.home-browser__newtab`：新标签页起始页，提示在上、「工具」在下。 */
+/** Prototype `.home-browser__newtab`: the new-tab start page, with the hint on top and “Tools” below. */
 const newtab = style({
   display: 'flex',
   flexDirection: 'column',
@@ -104,7 +104,7 @@ const newtab = style({
   paddingY: 32,
   boxSizing: 'border-box',
 });
-/** 原型 `.home-browser__tools` / `__tool*`：卡片网格，悬停换底色。 */
+/** Prototype `.home-browser__tools` / `__tool*`: a grid of cards that changes background on hover. */
 const tools = style({ alignSelf: 'stretch', display: 'flex', flexDirection: 'column', gap: 8 });
 const toolsTitle = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-600', margin: 0 });
 const toolCard = style({
@@ -164,24 +164,24 @@ const footer = style({
 const footerText = style({ flexGrow: 1, minWidth: 0, overflowWrap: 'anywhere' });
 
 export interface WebTabProps {
-  /** 工作区里的网页标签（`WorkspaceItem` 的 `{ kind: 'web', id, url }`）。`url` 为空是新标签页。 */
+  /** A web tab in the workspace (`{ kind: 'web', id, url }` of `WorkspaceItem`). An empty `url` means a new tab. */
   item: { id: string; url: string };
-  /** 是不是当前标签：不是时原生视图隐藏，⌘L / ⌘R 也不响应。 */
+  /** Whether this is the current tab: when it is not, the native view is hidden and ⌘L / ⌘R do not respond. */
   active: boolean;
   /**
-   * 原生网页视图永远盖在界面之上：有对话框、菜单、命令面板之类的覆盖层压到功能区时传 false，视图暂时隐藏。默认 true。
+   * The native web view always sits above the UI. Pass false when an overlay such as a dialog, menu or command palette covers the workspace area, and the view is hidden for now. Defaults to true.
    */
   visible?: boolean;
-  /** 页面地址变了（地址栏前往、站内跳转、后退前进、重定向）：用它更新路由里的 `item.url`。 */
+  /** Page address changed (go from the address bar, in-site navigation, back/forward, redirect): use it to update `item.url` in the route. */
   onUrlChange?: (url: string) => void;
-  /** 页面标题变了：用作标签名。 */
+  /** Page title changed: used as the tab name. */
   onTitleChange?: (title: string) => void;
 }
 
 /**
- * 功能区的网页标签（产品设计 §3.3，原型 home-browser.jsx `WorkspaceBrowser`；架构设计 §12.10）。
- * 网页在宿主的独立视图里（`host.web`）：这里画工具栏、地址栏与各种状态，内容区是一块占位，
- * 把它在窗口里的矩形报给宿主。没有 `host.web` 的环境（浏览器预览）显示「这个环境不能内嵌网页」。
+ * The web tab in the workspace area (product design §3.3, prototype home-browser.jsx `WorkspaceBrowser`; architecture design §12.10).
+ * The page lives in the host's own separate view (`host.web`): this draws the toolbar, the address bar and the various states. The content area is a placeholder, and its rectangle in the window is reported to the host.
+ * In an environment without `host.web` (browser preview) it shows “This environment cannot embed web pages.”
  */
 export function WebTab(props: WebTabProps) {
   const runtime = useRuntime();
@@ -189,7 +189,7 @@ export function WebTab(props: WebTabProps) {
   return web ? <WebView {...props} web={web} /> : <Unsupported url={props.item.url} tabId={props.item.id} />;
 }
 
-/** 交给系统浏览器：桌面端走宿主（只收 http/https），浏览器预览直接开新窗口。 */
+/** Hand off to the system browser: on desktop it goes through the host (only http/https accepted); in browser preview it opens a new window directly. */
 function useOpenOutside(): (url: string) => void {
   const runtime = useRuntime();
   return (url: string) => {
@@ -200,7 +200,7 @@ function useOpenOutside(): (url: string) => void {
 }
 
 /**
- * 没有内嵌网页宿主（Web 客户端、浏览器预览）：说明不能内嵌网页。新标签页（还没有地址）照样显示「工具」卡片（产品设计 §3.3）。
+ * With no embedded-web host (web client, browser preview): explains that web pages cannot be embedded. A new tab (no address yet) still shows the “Tools” cards (product design §3.3).
  */
 function Unsupported({ url, tabId }: { url: string; tabId: string }) {
   const openOutside = useOpenOutside();
@@ -229,9 +229,8 @@ function Unsupported({ url, tabId }: { url: string; tabId: string }) {
 }
 
 /**
- * 新标签页起始页（产品设计 §3.3「新标签页起始页」，原型 home-browser.jsx `NewTabStart`）：上面是提示（`children`），
- * 下面是「工具」——「新建网页」在项目目录（没有项目时是会话工作目录）里新建一个 HTML 文件，「浏览项目文件」看项目目录；
- * 两者都把这个起始页签原地换成对应的标签。还没有会话也没有项目的空白草稿不显示「新建网页」。
+ * The new-tab start page (product design §3.3 “new-tab start page”, prototype home-browser.jsx `NewTabStart`): the hint on top (`children`), and “Tools” below. “New web page” creates an HTML file in the project directory (or the conversation's working directory when there is no project), and “Browse project files” shows the project directory.
+ * Both turn this start tab in place into the matching tab. A blank draft with no conversation and no project does not show “New web page”.
  */
 function NewTabStart({ tabId, children }: { tabId: string; children: ReactNode }) {
   const runtime = useRuntime();
@@ -304,7 +303,7 @@ function NewTabStart({ tabId, children }: { tabId: string; children: ReactNode }
 
 const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-/** 「新建网页」写入的最小网页骨架：标题用项目名（没有时用会话名），语言跟随界面语言。 */
+/** The minimal web page skeleton written by “New web page”: the title is the project name (or the conversation name when there is none), and the language follows the UI language. */
 function pageSkeleton(title: string): string {
   const t = escapeHtml(title);
   return [
@@ -325,7 +324,7 @@ function pageSkeleton(title: string): string {
   ].join('\n');
 }
 
-/** 原型 `.home-browser__start`：图标、标题、说明（可多行）、按钮。 */
+/** Prototype `.home-browser__start`: icon, title, description (may span lines), button. */
 function StartBlock({
   title,
   body,
@@ -360,7 +359,7 @@ function StartBlock({
 }
 
 function IconButton({ label, isDisabled, onPress, children }: { label: string; isDisabled?: boolean; onPress: () => void; children: ReactNode }) {
-  // 提示放在上方：下方是原生网页视图，会盖住它。
+  // The hint goes on top: the native web view below would cover it.
   return (
     <TooltipTrigger placement="top">
       <ActionButton isQuiet aria-label={label} isDisabled={isDisabled} onPress={onPress}>
@@ -401,13 +400,13 @@ function WebView({ item, active, visible = true, onUrlChange, onTitleChange, web
   const [menuOpen, setMenuOpen] = useState(false);
   const [stopped, setStopped] = useState(false);
   const [dismissed, setDismissed] = useState('');
-  /** 视图正在显示或正在打开的网址：外面改 `item.url` 时据此判断要不要导航。 */
+  /** The URL the view is showing or opening: when `item.url` changes from outside, this decides whether to navigate. */
   const target = useRef('');
   const reported = useRef({ url: item.url, title: '' });
   const callbacks = useRef({ onUrlChange, onTitleChange });
   callbacks.current = { onUrlChange, onTitleChange };
 
-  // 每个标签一个原生视图：挂上时建，卸下时销毁。
+  // One native view per tab: created on mount, destroyed on unmount.
   useEffect(() => {
     let alive = true;
     let created: string | null = null;
@@ -435,8 +434,8 @@ function WebView({ item, active, visible = true, onUrlChange, onTitleChange, web
   const hasPage = isWebUrl(page?.url);
   const currentUrl = hasPage ? page!.url : target.current || item.url;
 
-  // 视图的状态推回来：地址栏（不在编辑时）、路由里的网址、标签名。
-  // 只在页面地址真的变了时改：开始加载时推回来的还是旧地址，不能把刚提交的新地址冲掉。
+  // The view's state is pushed back: the address bar (when not being edited), the URL in the route, and the tab name.
+  // Only update when the page address actually changed: when loading starts, the value pushed back is still the old address, and it must not overwrite the newly submitted address.
   const lastPageUrl = useRef('');
   useEffect(() => {
     if (!page) return;
@@ -458,7 +457,7 @@ function WebView({ item, active, visible = true, onUrlChange, onTitleChange, web
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // 外面改了 `item.url`（路由恢复、从别处打开）：视图没在显示它就打开它。
+  // `item.url` was changed from outside (route restore, opened from elsewhere): if the view is not showing it, open it.
   useEffect(() => {
     if (!editing) setAddress(item.url);
     if (!viewId || !item.url || item.url === target.current) return;
@@ -494,7 +493,7 @@ function WebView({ item, active, visible = true, onUrlChange, onTitleChange, web
           : { kind: 'page' };
   const showView = !!viewId && active && visible && !menuOpen && mode.kind === 'page';
 
-  // 先报位置再显示：占位块的屏幕矩形（CSS 像素，主窗口不缩放时等于宿主的 DIP）交给宿主。
+  // Report the position before showing: the placeholder block's screen rectangle (CSS pixels, equal to the host's DIPs when the main window is not scaled) is handed to the host.
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!viewId || !showView || !el) return;
@@ -570,7 +569,7 @@ function WebView({ item, active, visible = true, onUrlChange, onTitleChange, web
     });
   };
 
-  // 工具栏与原生网页里的快捷键都由当前标签处理。
+  // Shortcuts in both the toolbar and the native web page are handled by the current tab.
   const keys = useRef({ focusAddress, reload, openFind });
   keys.current = { focusAddress, reload, openFind };
   useEffect(() => web.onShortcut(event => {
@@ -793,7 +792,7 @@ function StateMessage({
   }
   const { error } = mode;
   if (error.kind === 'blocked') {
-    // 回环与应用自己的地址不进内嵌视图，但可以交给系统浏览器（宿主只收 http/https）。
+    // Loopback and the app's own addresses do not go into the embedded view, but they can be handed to the system browser (the host only accepts http/https).
     const outside = isWebUrl(error.url) ? error.url : null;
     return (
       <StartBlock

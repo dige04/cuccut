@@ -4,9 +4,9 @@ import { HOME_COPY } from '../../copy.ts';
 import { isExample, type HomeTemplate } from '../../model/home-templates.ts';
 import { useTemplateFileUrl } from './use-templates.ts';
 
-// 统一的 16:10 格子：竖屏、方形的画面两边留空，一排卡片才对得齐。几何在 app.css（.cc-tpl-cover）。
+// A uniform 16:10 cell: portrait and square images leave empty space on both sides, so a row of cards lines up. The geometry is in app.css (.cc-tpl-cover).
 const box = style({ backgroundColor: 'gray-100' });
-// 作品示例的小标识：与卡片上「已选」同一份几何。
+// The small badge for a work example: same geometry as the “已选” (selected) mark on the card.
 const kindBadge = style({
   display: 'flex',
   alignItems: 'center',
@@ -50,11 +50,11 @@ const art = style({
 });
 
 /**
- * 模板的封面（原型 home-templates.jsx `HomeTemplateThumb`）：按模板自己的画幅画一帧，放进统一的格子里。
- * `size`：xs = 模板行与输入框里的小色块（不写字）；md = 卡片封面；lg = 详情里的预览。
- * `slide`：null = 封面；数字 = 预览播到第几幕。
- * 清单有封面图（`cover.file`）时封面显示那张图，底下照样画占位封面，图片加载前与加载失败时看到的是它（规范 §3.3）；
- * 预览视频不在这里，详情里另放（template-library.tsx）。
+ * Template cover (prototype home-templates.jsx `HomeTemplateThumb`): draws one frame in the template's own aspect ratio and fits it into the uniform cell.
+ * `size`: xs = small colour swatch in the template row and input box (no text); md = card cover; lg = preview in the detail view.
+ * `slide`: null = cover; a number = the preview is played up to that scene.
+ * When the manifest has a cover image (`cover.file`), the cover shows that image. The placeholder cover is still drawn underneath, and it is what shows before the image loads or if loading fails (spec §3.3).
+ * The preview video is not here; the detail view holds it separately (template-library.tsx).
  */
 export function TemplateCover({
   template,
@@ -89,7 +89,7 @@ export function TemplateCover({
   );
 }
 
-/** 作品示例的「示例」小标识（场景模板不标）：卡片标题旁与输入框下那一行都用它（原型 `HomeTemplateKind`）。 */
+/** The “示例” (Example) badge on work examples (scene templates are not marked): used next to the card title and on the line below the input box (prototype `HomeTemplateKind`). */
 export function TemplateKindBadge({ template }: { template: Pick<HomeTemplate, 'kind'> }) {
   return isExample(template) ? <span className={kindBadge}>{HOME_COPY.exampleBadge}</span> : null;
 }

@@ -3,8 +3,7 @@ import remarkCjkFriendlyGfmStrikethrough from 'remark-cjk-friendly-gfm-strikethr
 import remarkGfm from 'remark-gfm';
 
 /**
- * 界面里渲染 Markdown 统一用的 remark 插件：GFM，加上 CJK 友好的强调与删除线规则。
- * CommonMark 的定界规则要求 `**` 外侧是空白或标点，`建议**确定**后`、`**粗体。**接着` 这类中日韩写法会原样露出星号；
- * remark-cjk-friendly 放宽了这一条，GFM 的 `~~` 同理由 remark-cjk-friendly-gfm-strikethrough 处理。只做解析，界面不回写 Markdown。
+ * The remark plugins used for rendering Markdown in the UI: GFM, plus CJK-friendly emphasis and strikethrough rules.
+ * CommonMark's delimiter rules require `**` to be flanked by whitespace or punctuation, so CJK writing such as `建议**确定**后` or `**粗体。**接着` would show the asterisks as raw text. remark-cjk-friendly relaxes this rule, and GFM's `~~` is handled the same way by remark-cjk-friendly-gfm-strikethrough. It only parses; the UI does not write Markdown back.
  */
 export const remarkPlugins = [remarkGfm, remarkCjkFriendly, remarkCjkFriendlyGfmStrikethrough];

@@ -7,7 +7,7 @@ import { NodesServer } from '@cuccut/protocol/messages/nodes';
 import { FileCredentialStore } from '@cuccut/runtime-storage';
 import { NodeStore } from './client/node-store.ts';
 
-/** 界面语言是英文时，节点两端写给人看的错误是英文；发起端的 RPC 错误带消息引用。 */
+/** When the UI language is English, the node-side error messages shown to people are in English; the initiator's RPC errors carry a message reference. */
 describe('nodes 的英文文案', () => {
   let dir: string;
 

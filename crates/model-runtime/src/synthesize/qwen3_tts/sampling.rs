@@ -1,18 +1,18 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Sampling.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/Sampling.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! Talker / Code Predictor 采样。
+//! Sampling for the Talker and Code Predictor.
 //!
-//! 参考实现在 MLX 图上做 top-k / top-p / gumbel-max；这里 logits 已拉回主机
-//! `f32` 切片，用同样的算子顺序在 CPU 上计算，并用自带的可播种 RNG 做
-//! 分类采样（gumbel-max 等价于按 softmax 概率分类采样）。纯逻辑，全平台
-//! 编译，可无权重单测。
+//! The reference implementation does top-k / top-p / gumbel-max on the MLX graph. Here the logits have already been pulled back into a host
+//! `f32` slice, and the same operator order is computed on the CPU, using a built-in seedable RNG for
+//! categorical sampling (gumbel-max is equivalent to sampling a category by softmax probabilities). Pure logic, compiles on all
+//! platforms, and can be unit-tested without weights.
 
-/// 采样配置。
+/// Sampling configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SamplingConfig {
     pub temperature: f32,
@@ -20,7 +20,7 @@ pub struct SamplingConfig {
     pub top_p: f32,
     pub repetition_penalty: f32,
     pub max_tokens: usize,
-    /// 加到 EOS logit 上的偏置（top-k / top-p 不会滤掉 EOS）。
+    /// Bias added to the EOS logit (top-k / top-p do not filter out EOS).
     pub eos_logit_bias: f32,
 }
 
@@ -38,7 +38,7 @@ impl Default for SamplingConfig {
 }
 
 impl SamplingConfig {
-    /// 由 [`crate::synthesize::types::SamplingOptions`] 覆盖：`None` 字段保持模型默认。
+    /// Overridden by [`crate::synthesize::types::SamplingOptions`]: `None` fields keep the model defaults.
     pub fn from_options(options: &crate::synthesize::types::SamplingOptions) -> Self {
         let mut config = Self::default();
         if let Some(t) = options.temperature {
@@ -59,13 +59,13 @@ impl SamplingConfig {
         config
     }
 
-    /// Code Predictor 是否走贪心：Talker 温度 ≤ 0 时。
+    /// Whether the Code Predictor uses greedy decoding: when the Talker temperature is ≤ 0.
     pub fn code_predictor_greedy(&self) -> bool {
         self.temperature <= 0.0
     }
 }
 
-/// splitmix64 随机数发生器：确定性、可播种，只用于采样。
+/// splitmix64 random number generator: deterministic and seedable, used only for sampling.
 #[derive(Debug, Clone)]
 pub struct Rng {
     state: u64,
@@ -76,7 +76,7 @@ impl Rng {
         Self { state: seed }
     }
 
-    /// 未指定种子时用时钟播种。
+    /// Seeded from the clock when no seed is specified.
     pub fn from_optional_seed(seed: Option<u64>) -> Self {
         let seed = seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
@@ -95,7 +95,7 @@ impl Rng {
         z ^ (z >> 31)
     }
 
-    /// `[0, 1)` 均匀分布。
+    /// Uniform distribution over `[0, 1)`.
     pub fn next_f64(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
@@ -113,7 +113,7 @@ fn argmax(logits: &[f32]) -> i32 {
     best as i32
 }
 
-/// 按 softmax(logits) 做分类采样；被掩成 −1e9 的项概率为 0。
+/// Categorical sampling from softmax(logits). Entries masked to −1e9 have probability 0.
 fn categorical(logits: &[f32], rng: &mut Rng) -> i32 {
     let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let weights: Vec<f64> = logits.iter().map(|&l| ((l - max) as f64).exp()).collect();
@@ -128,7 +128,7 @@ fn categorical(logits: &[f32], rng: &mut Rng) -> i32 {
             return i as i32;
         }
     }
-    // 浮点误差兜底：取最后一个非零权重项。
+    // Floating-point error fallback: take the last non-zero-weight entry.
     weights
         .iter()
         .rposition(|&w| w > 0.0)
@@ -136,14 +136,14 @@ fn categorical(logits: &[f32], rng: &mut Rng) -> i32 {
         .unwrap_or_else(|| argmax(logits))
 }
 
-/// 第 `k` 大的值（k ≥ 1，k ≤ len）。
+/// The k-th largest value (k ≥ 1, k ≤ len).
 fn kth_largest(logits: &[f32], k: usize) -> f32 {
     let mut sorted = logits.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     sorted[sorted.len() - k]
 }
 
-/// 就地应用 top-k：低于第 k 大值的项掩成 −1e9。
+/// Applies top-k in place: entries below the k-th largest value are masked to −1e9.
 fn apply_top_k(logits: &mut [f32], top_k: usize) {
     if top_k == 0 || top_k >= logits.len() {
         return;
@@ -156,12 +156,10 @@ fn apply_top_k(logits: &mut [f32], top_k: usize) {
     }
 }
 
-/// 就地应用 top-p（nucleus）：按概率降序累计，保留累计质量首次达到 `top_p`
-/// 的最小前缀，其余掩成 −1e9。
+/// Applies top-p (nucleus) in place: sorts by probability in descending order, accumulates, and keeps the smallest prefix whose cumulative mass first reaches `top_p`.
+/// The rest are masked to −1e9.
 ///
-/// 参考实现在升序序列上用 `cum − p > top_p` 做掩码，会把概率最高的 token
-/// 掩掉（默认 `top_p = 1.0` 从不触发，所以未暴露）；这里按标准 nucleus
-/// 语义实现，默认值下两者都是空操作。
+/// The reference implementation masks with `cum − p > top_p` over an ascending sequence, which masks out the highest-probability token. (The default `top_p = 1.0` never triggers it, so it was not exposed.) Here it is implemented with standard nucleus semantics. At the default value, both are no-ops.
 fn apply_top_p(logits: &mut [f32], top_p: f32) {
     if top_p >= 1.0 {
         return;
@@ -187,8 +185,7 @@ fn apply_top_p(logits: &mut [f32], top_p: f32) {
     }
 }
 
-/// Talker 采样：压制区间、重复惩罚、温度、top-k、
-/// top-p（EOS 免疫过滤并加偏置）、分类采样。`logits` 会被就地修改。
+/// Talker sampling: suppression range, repetition penalty, temperature, top-k, top-p (EOS is exempt from filtering and gets a bias), categorical sampling. `logits` is modified in place.
 pub fn sample_token(
     logits: &mut [f32],
     config: &SamplingConfig,
@@ -245,7 +242,7 @@ pub fn sample_token(
     categorical(logits, rng)
 }
 
-/// Code Predictor 每组采样：贪心或温度 + top-k + 分类采样。
+/// Code Predictor per-group sampling: greedy, or temperature + top-k + categorical sampling.
 pub fn sample_frame_token(logits: &mut [f32], config: &SamplingConfig, rng: &mut Rng) -> i32 {
     if config.code_predictor_greedy() {
         return argmax(logits);
@@ -282,7 +279,7 @@ mod tests {
     #[test]
     fn suppress_range_keeps_eos() {
         let mut logits = vec![0.0f32; 10];
-        logits[5] = 10.0; // 在压制区但不是 EOS
+        logits[5] = 10.0; // In the suppressed range but not EOS
         logits[7] = 5.0; // EOS
         logits[1] = 1.0;
         let t = sample_token(&mut logits, &greedy(), &[], Some((4, 10)), 7, &mut Rng::new(1));
@@ -323,17 +320,17 @@ mod tests {
 
     #[test]
     fn top_p_keeps_head_of_distribution() {
-        // 概率约 [0.665, 0.245, 0.09]：top_p 0.5 只留最大项
+        // Probabilities of about [0.665, 0.245, 0.09]: top_p 0.5 keeps only the largest
         let mut logits = vec![2.0f32, 1.0, 0.0];
         apply_top_p(&mut logits, 0.5);
         assert_eq!(logits[0], 2.0);
         assert_eq!(logits[1], MASKED);
         assert_eq!(logits[2], MASKED);
-        // top_p 0.8：前两项累计 0.91 ≥ 0.8，第三项被掩
+        // top_p 0.8: the first two sum to 0.91 ≥ 0.8, so the third is masked
         let mut logits = vec![2.0f32, 1.0, 0.0];
         apply_top_p(&mut logits, 0.8);
         assert_eq!(logits, vec![2.0, 1.0, MASKED]);
-        // top_p 0.95：三项全留
+        // top_p 0.95: all three kept
         let mut logits = vec![2.0f32, 1.0, 0.0];
         apply_top_p(&mut logits, 0.95);
         assert_eq!(logits, vec![2.0, 1.0, 0.0]);

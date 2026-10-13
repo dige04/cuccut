@@ -1,4 +1,4 @@
-//! 系统的安全存储。macOS 钥匙串与 Windows Credential Manager 的 generic password；其他平台对每个请求回答 `unsupported`。
+//! The system's secure storage: generic passwords in the macOS Keychain and Windows Credential Manager; other platforms answer every request with `unsupported`.
 
 pub use platform::SystemKeychain;
 
@@ -11,7 +11,7 @@ mod platform {
 
     use crate::{ErrorCode, HelperError, SecretBackend};
 
-    // Security 框架的结果码（SecBase.h、MacErrors.h）。
+    // Result codes from the Security framework (SecBase.h, MacErrors.h).
     const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
     const ERR_SEC_AUTH_FAILED: i32 = -25293;
     const ERR_SEC_USER_CANCELED: i32 = -128;
@@ -22,7 +22,7 @@ mod platform {
     const ERR_SEC_READ_ONLY: i32 = -25292;
     const ERR_SEC_MISSING_ENTITLEMENT: i32 = -34018;
 
-    /// 结果码到错误码。信息里只有结果码与系统的说明，没有 key 以外的请求内容。
+    /// Maps result codes to error codes. The message contains only the result code and the system's description, and no request content other than the key.
     pub(crate) fn classify(code: i32) -> ErrorCode {
         match code {
             ERR_SEC_ITEM_NOT_FOUND => ErrorCode::NotFound,
@@ -40,7 +40,7 @@ mod platform {
         HelperError::new(classify(code), format!("钥匙串返回 {code}：{detail}"))
     }
 
-    /// 登录钥匙串里 service 为 [`crate::SERVICE`] 的 generic password，account 是 key。
+    /// Generic password in the login keychain whose service is [`crate::SERVICE`], with the key as the account.
     pub struct SystemKeychain;
 
     impl SecretBackend for SystemKeychain {
@@ -98,7 +98,7 @@ mod platform {
             String::from_utf8(bytes.to_vec()).map_err(|_| HelperError::new(ErrorCode::Internal, "Invalid legacy credential encoding"))
         }
 
-        /// 只查属性，不读出密钥。
+        /// Queries attributes only; does not read out the secret.
         fn has(&self, key: &str) -> Result<bool, HelperError> {
             let found = ItemSearchOptions::new()
                 .class(ItemClass::generic_password())
@@ -136,7 +136,7 @@ mod platform {
 mod platform {
     use crate::{ErrorCode, HelperError, SecretBackend};
 
-    /// 这个平台还没有安全存储的实现（架构设计 §14）。
+    /// This platform does not yet have a secure storage implementation (architecture design §14).
     pub struct SystemKeychain;
 
     fn unsupported() -> HelperError {

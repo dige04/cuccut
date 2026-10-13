@@ -1,16 +1,12 @@
-//! 内置 preset 与文档里的十进制数必须读成正确舍入的 double。
+//! Built-in presets and decimal numbers in documents must be read as correctly rounded doubles.
 //!
-//! serde_json 默认的快速路径对 17 位有效数字的数可能读偏 1 ULP，所以
-//! `core/Cargo.toml` 在 workspace 层给它开了 `float_roundtrip`。feature 按构建图
-//! 合并：`cargo test --workspace` 里别的 crate 也会把它带进来，看不出声明丢没丢；
-//! `cargo test -p ccut-motion` 的构建图只有本 crate 与 `ccut-core`，声明一丢这里就红。
-//! 真正的 wasm32 产物由 `apps/web/tests/unit/render/wasm-float-parse.test.ts` 守。
+//! serde_json's default fast path may misread a 17-significant-digit number by 1 ULP, so `core/Cargo.toml` enables `float_roundtrip` at the workspace level. Features are merged by the build graph: other crates in `cargo test --workspace` also pull it in, so whether the declaration was dropped cannot be seen there. The build graph of `cargo test -p ccut-motion` contains only this crate and `ccut-core`, so if the declaration is dropped, this test goes red here. The real wasm32 artifact is guarded by `apps/web/tests/unit/render/wasm-float-parse.test.ts`.
 
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-/// 按 preset 注册表的读法（`from_str` → `Value` → `as_f64`）读一个数字字面量。
+/// Reads a number literal by the preset registry's reading method (`from_str` → `Value` → `as_f64`).
 fn serde_f64(literal: &str) -> f64 {
     serde_json::from_str::<Value>(literal)
         .ok()
@@ -29,9 +25,7 @@ fn assert_correctly_rounded(literal: &str, context: &str) {
     );
 }
 
-/// 快速路径实测会读偏的贴帧秒值 `k / fps`（最短往返十进制，JS `JSON.stringify`
-/// 与 ryu 写出的就是这串）。元素活跃窗是 `start <= t < end`，t 由 JS 以精确 double
-/// 传进 wasm；起止时刻读大 1 ULP，元素就在自己的起始帧缺席、在结束帧多画一帧。
+/// Frame-aligned second values `k / fps` that the fast path is measured to misread (shortest round-trip decimal; JS `JSON.stringify` and ryu output exactly this string). An element's active window is `start <= t < end`, and t is passed from JS to wasm as an exact double. If the start or end moment is read 1 ULP high, the element is absent on its own first frame and draws one extra frame at its end frame.
 #[test]
 fn frame_snapped_seconds_read_as_correctly_rounded_doubles() {
     for (literal, frame) in [
@@ -61,7 +55,7 @@ fn every_builtin_preset_float_reads_as_the_correctly_rounded_double() {
             }
         }
     }
-    // `timeline.loop.elSway3d` 的 `0.9659258262890683` 是快速路径唯一读偏的内置常量。
+    // The `0.9659258262890683` of `timeline.loop.elSway3d` is the only built-in constant the fast path misreads.
     assert!(
         files.len() > 300 && floats > 3000,
         "只扫到 {} 个文件、{floats} 个浮点字面量，目录找错了？",
@@ -80,7 +74,7 @@ fn json_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 文档序抽出字符串以外的数字字面量，带行号。
+/// Extracts the number literals outside string literals, in document order, with line numbers.
 fn number_literals(text: &str) -> Vec<(usize, &str)> {
     let bytes = text.as_bytes();
     let (mut out, mut i, mut line) = (Vec::new(), 0, 1);

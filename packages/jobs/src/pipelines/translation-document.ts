@@ -6,36 +6,31 @@ import { joinList, withCause } from '../job-text.ts';
 import { glossaryRefProblems, type GlossaryRef } from './translation-glossary.ts';
 
 /**
- * 翻译流程的原文与译文文档（视频格式规范 §5.2、§5.3）。
+ * Source and translation documents for the translation pipeline (video format spec §5.2, §5.3).
  *
- * 原文：`cuccut.speech/1` 的句子与内容指纹只有一套规则，字幕与翻译核心（`speech-doc`）的 `derive_sentences`，
- * 经 `@cuccut/editor-wasm` 调同一份 Rust（界面、Speech Worker 用的也是它）：句末标点（分号不断句）、停顿不少于 1.8 秒、
- * 换说话人、句内 80 词、分段与章节边界断句；隐藏的词不进句子；正文里存下的 `sentences` 不参与。句子 ID 是 `s-<首词 ID>`，
- * 指纹是 `<词数>:<首词 ID>:<末词 ID>:<FNV-1a 的 36 进制>`，`editViewHash` 是规则名 `speech-doc/sentences` 与全部句子的
- * ID、指纹的摘要。
+ * Source: `cuccut.speech/1` sentences and content fingerprints follow one set of rules, `derive_sentences` in the subtitle and translation core (`speech-doc`), called through `@cuccut/editor-wasm` into the same Rust code (the UI and the Speech Worker use it too). Rules: sentences end at terminal punctuation (a semicolon does not end a sentence), a pause of at least 1.8 seconds, a speaker change, at most 80 words within a sentence, and breaks at segment and chapter boundaries. Hidden words are excluded from sentences. A `sentences` stored in the body is not used. Sentence IDs are `s-<first word ID>`. The fingerprint is `<word count>:<first word ID>:<last word ID>:<FNV-1a in base 36>`. `editViewHash` is a digest of the rule name `speech-doc/sentences` and every sentence's ID and fingerprint.
  *
- * 译文：`cuccut.translation/2`，字段严格按 §5.3 的 `TranslationDocumentVersion`；`id` 与 `revision` 是文档记录的，
- * 正文里不重复。整份转写一起翻译时 `sourceBasis.scopeLineage` 为空（范围就是整份文档）。
+ * Translation: `cuccut.translation/2`, with fields strictly as `TranslationDocumentVersion` in §5.3. `id` and `revision` are recorded by the document record and are not repeated in the body. When the whole transcript is translated at once, `sourceBasis.scopeLineage` is empty (the scope is the whole document).
  */
 
 export { SENTENCE_DERIVATION, type SourceSentence };
 export const TRANSLATION_SCHEMA = 'cuccut.translation/2';
 
-/** 冻结的原文：哪份文档的哪个版本、在哪个序列上、怎么切的句子。发布为产物，后面的步骤只读它。 */
+/** Frozen source: which document and version, on which sequence, and how its sentences were split. Published as an artifact; later steps read only this. */
 export interface FrozenSource {
   derivation: string;
   speechRef: { id: Id; revision: string };
   sequenceId: Id;
   language: string | null;
   editViewHash: string;
-  /** 转写正文的 `timescale`：句子的 `start` / `end` 按它计。 */
+  /** The transcript body's `timescale`. Sentence `start` / `end` are measured in it. */
   timescale: number;
   sentences: SourceSentence[];
 }
 
 /**
- * 读 `speech` 正文的句子；正文不是 `cuccut.speech/1`、词缺源时间或说话人不合法时返回问题。
- * 句子与指纹的 WASM 没有构建时抛 `EditorWasmUnavailable`（先运行 `npm run build:wasm`）。
+ * Reads the sentences of a `speech` body. Returns problems when the body is not `cuccut.speech/1`, a word is missing its source time, or a speaker is invalid.
+ * Throws `EditorWasmUnavailable` when the sentence and fingerprint WASM has not been built (run `npm run build:wasm` first).
  */
 export function sourceSentences(
   body: unknown,
@@ -53,12 +48,12 @@ export function sourceSentences(
   }
 }
 
-/** 读不了原文的说明：文本与它的引用（`asLocalized(problem, problemRef)` 可以连同引用抛出）。 */
+/** Explanation for a source that cannot be read: the text and its reference (`asLocalized(problem, problemRef)` can throw it along with the reference). */
 function problemOf(text: Localized): { problem: string; problemRef: MessageRef } {
   return { problem: text.text, problemRef: refOf(text) };
 }
 
-/** 把几行文本接成一句（字幕文件的一条字幕送模型时用）：自带空白时照用；两个拉丁字母数字之间没有空白时补一个空格；中文不加空格。 */
+/** Joins several lines of text into one sentence (used when a subtitle-file cue is sent to the model). Existing whitespace is kept as is; a space is inserted between two Latin letters or digits with no whitespace between them; no spaces are added for Chinese. */
 export function joinWords(texts: string[]): string {
   let out = '';
   for (const text of texts) {
@@ -101,16 +96,14 @@ export interface TranslationBody {
 }
 
 /**
- * 按 §5.3 校验译文正文，并核对它与冻结的原文逐句对应：单元的句子 ID 与指纹是那一句的，`sourceBasis` 指向同一个序列、
- * `editViewHash` 相同（译文的句子与这里按同一套规则派生）。没有问题时返回空数组。
+ * Validates the translation body against §5.3 and checks that it corresponds sentence by sentence with the frozen source: each unit's sentence ID and fingerprint belong to that sentence, `sourceBasis` points to the same sequence, and `editViewHash` is the same (the translation's sentences are derived with the same rules here). Returns an empty array when there are no problems.
  */
 export function translationProblems(body: unknown, source: FrozenSource): string[] {
   return documentProblems(body, source.speechRef, source);
 }
 
 /**
- * 只按 §5.3 校验译文正文的形状与它指向的原文版本，不核对句子：句子由别处的规则派生时（Speech Worker 按字幕与翻译核心的
- * 句子规则，架构设计 §7.9）用它。给了 `only` 时逐个单元的核对只做这些句子的（就地刷新：别的单元是底稿原样带回来的）。
+ * Validates only the shape of the translation body against §5.3 and the source version it points to, without checking sentences. Used when sentences are derived by rules elsewhere (the Speech Worker uses the subtitle and translation core's sentence rules, architecture design §7.9). When `only` is given, the per-unit check covers only those sentences (for an in-place refresh, the other units are carried back unchanged from the base).
  */
 export function translationShapeProblems(body: unknown, speechRef: { id: Id; revision: string }, only?: ReadonlySet<Id>): string[] {
   return documentProblems(body, speechRef, null, only);

@@ -1,12 +1,11 @@
-//! OmniVoice 文本分词器：Qwen3 的 byte-level BPE（`tokenizer.json`）。
+//! OmniVoice text tokenizer: Qwen3's byte-level BPE (`tokenizer.json`).
 //!
-//! 按 HF `tokenizers` 的流水线逐段实现：先切出 added token（33 个，`<|text_start|>`
-//! 等，不参与归一化）→ 其余片段 NFC → 按 Qwen2 预切分正则切词（`Isolated`）→ 字节映射
-//! 成 GPT-2 的可见字符 → 按 merges 次序做 BPE（每轮合并 rank 最小、同 rank 取最左的相邻对）。
-//! 不带 BOS / EOS（Qwen2 的 post_processor 只是 ByteLevel）。
+//! Implemented step by step following the HF `tokenizers` pipeline: first split out added tokens (33 of them, `<|text_start|>`
+//! etc., not subject to normalization) → the remaining fragments undergo NFC → split into words with the Qwen2 pre-tokenization regex (`Isolated`) → bytes mapped
+//! to GPT-2 visible characters → BPE in merges order (each round merges the pair with the smallest rank; among equal ranks, the leftmost adjacent pair).
+//! No BOS / EOS is added (Qwen2's post_processor is just ByteLevel).
 //!
-//! 没有复用 `crate::speech::tokenizer::Qwen3Tokenizer`：它按空白预切分，与官方正则
-//! 在数字、缩写、换行与标点上切法不同。
+//! Does not reuse `crate::speech::tokenizer::Qwen3Tokenizer`: it pre-splits on whitespace, whereas the upstream regex splits differently on digits, abbreviations, newlines, and punctuation.
 
 use anyhow::{Context, Result, bail, ensure};
 use fancy_regex::Regex;
@@ -15,15 +14,15 @@ use std::collections::HashMap;
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
-/// `tokenizer.json` 的预切分正则（Qwen2 / Qwen3 通用）。
+/// Pre-tokenization regex from `tokenizer.json` (common to Qwen2 / Qwen3).
 const PATTERN: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 
 pub struct Tokenizer {
-    /// GPT-2 可见字符 → id（仅单字符，BPE 的初始符号）。
+    /// GPT-2 visible character → id (single characters only; the initial BPE symbols).
     char_ids: HashMap<char, u32>,
-    /// `(左 id, 右 id)` → `(merge 次序, 合并后 id)`。
+    /// `(left id, right id)` → `(merge order, merged id)`.
     merges: HashMap<(u32, u32), (u32, u32)>,
-    /// added token 原文 → id，按长度从长到短排好便于最长匹配。
+    /// Added token text → id, sorted from longest to shortest to facilitate longest-match.
     added: Vec<(String, u32)>,
     pattern: Regex,
     byte_chars: [char; 256],
@@ -99,7 +98,7 @@ impl Tokenizer {
         self.added.iter().find(|(content, _)| content == token).map(|(_, id)| *id)
     }
 
-    /// `tokenizer(text).input_ids`（不加特殊 token）。
+    /// `tokenizer(text).input_ids` (no special tokens added).
     pub fn encode(&self, text: &str) -> Vec<u32> {
         let mut out = Vec::new();
         let mut start = 0;
@@ -150,7 +149,7 @@ impl Tokenizer {
                 }
             }
             let Some((rank, _, merged)) = best else { break };
-            // 同一 rank 的所有非重叠出现从左到右一起合并（与逐个合并等价）。
+            // All non-overlapping occurrences of the same rank are merged together from left to right (equivalent to merging one by one).
             let mut next = Vec::with_capacity(symbols.len());
             let mut i = 0;
             while i < symbols.len() {
@@ -168,7 +167,7 @@ impl Tokenizer {
     }
 }
 
-/// GPT-2 `bytes_to_unicode`：可打印字节映射到自身，其余依次映射到 U+0100 起。
+/// GPT-2 `bytes_to_unicode`: printable bytes map to themselves; the rest are mapped in order starting at U+0100.
 fn bytes_to_unicode() -> [char; 256] {
     let mut table = ['\0'; 256];
     let mut extra = 0u32;
@@ -196,13 +195,13 @@ mod tests {
         assert_eq!(table[b' ' as usize], 'Ġ');
         assert_eq!(table[b'\n' as usize], 'Ċ');
         assert_eq!(table[0], 'Ā');
-        // 0x7f–0xa0 与软连字符 0xad 不可打印：依次排到 U+0100 之后（GPT-2 同表）。
+        // 0x7f–0xa0 and the soft hyphen 0xad are non-printable: they are placed in order after U+0100 (same table as GPT-2).
         assert_eq!(table[0xa0], 'ł');
         assert_eq!(table[0xad], 'Ń');
     }
 
-    /// 期望 id 由 HF `tokenizers` 读同一份 `tokenizer.json` 跑出（`encode(add_special_tokens=False)`）；
-    /// 需要真实权重：`CUCCUT_TEST_MODELS_DIR` 下的 `aufklarer/OmniVoice-MLX-int8`。
+    /// Expected ids were produced by HF `tokenizers` reading the same `tokenizer.json` (`encode(add_special_tokens=False)`);
+    /// real weights are needed: `aufklarer/OmniVoice-MLX-int8` under `CUCCUT_TEST_MODELS_DIR`.
     #[test]
     #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下的 aufklarer/OmniVoice-MLX-int8"]
     fn real_tokenizer_matches_hf_tokenizers() {
@@ -241,9 +240,9 @@ mod tests {
         let id = |s: &str| tiny_vocab()[s].as_u64().unwrap() as u32;
         assert_eq!(tokenizer.encode("abc"), vec![id("abc")]);
         assert_eq!(tokenizer.encode("abc a"), vec![id("abc"), id("Ġa")]);
-        // added token 取最长匹配，不参与归一化与预切分。
+        // Added tokens use longest match and do not take part in normalization or pre-tokenization.
         assert_eq!(tokenizer.encode("ab<|x|>yb<|x|>"), vec![id("ab"), 901, id("b"), 900]);
-        // 数字逐个切开。
+        // Digits are split individually.
         assert_eq!(tokenizer.encode("12"), vec![id("1"), id("2")]);
     }
 

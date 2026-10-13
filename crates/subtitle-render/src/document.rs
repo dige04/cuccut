@@ -1,16 +1,9 @@
-// —— 以下内容自 `core/crates/ccut-kernel/src/cmd/studio_export.rs` 原样搬迁（主方案 D2）——
-// 来源行区间（合并 e64ed8fc 之后的行号）：:1-229（头部说明、导入、常量、
-// 字幕核心类型）与 :407-2063（文档装载、样式解析、逐词动画、排版投影）。
-// 中间的 :230-406 是导出专属类型（VideoExportStats / PatchFallback /
-// VideoRenderMode / VideoExportTiming / fallback_envelope），留在 CLI。
+// —— The content below was moved verbatim from `core/crates/ccut-kernel/src/cmd/studio_export.rs` (main plan D2) ——
+// Source line ranges (line numbers after merging e64ed8fc): :1-229 (header notes, imports, constants, the subtitle core types) and :407-2063 (document loading, style parsing, per-word animation, layout projection). The middle section :230-406 holds export-only types (VideoExportStats / PatchFallback / VideoRenderMode / VideoExportTiming / fallback_envelope), which stay in the CLI.
 
-// Subtitle Studio 与 timeline 元素的统一 overlay 视频导出。
+// Unified overlay video export for Subtitle Studio and timeline elements.
 //
-// Studio 的 Canvas 预览和这里共用同一份 `studio/data.json` 样式语义：显示窗口、
-// 双语字号、逐词状态与入场时长都按 `subtitle-rendering.js` 的纯函数规则计算。
-// CLI 将结果编译为类型化逐帧计划，用 cosmic-text + tiny-skia 绘制透明叠加层，
-// 并为每帧录制确定性的 DrawOp 指令流，再由当前平台的原生媒体后端解码、
-// 合成并编码 H.264/AAC MP4。
+// Studio's Canvas preview and this code share the same `studio/data.json` style semantics: the display window, bilingual font sizes, per-word state and entrance durations are all computed by the pure-function rules in `subtitle-rendering.js`. The CLI compiles the result into a typed per-frame plan, draws the transparent overlay with cosmic-text + tiny-skia, and records a deterministic DrawOp instruction stream for each frame. The native media backend of the current platform then decodes, composites and encodes it as an H.264/AAC MP4.
 
 use anyhow::{Context, Result, anyhow, bail};
 use speech_doc::split::target_delivery_projection;
@@ -43,29 +36,18 @@ use tiny_skia::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-// 参考短边（540）的真相只有 `timeline::REFERENCE_SHORT_EDGE` 一处：
-// 字幕排版的 canvas_scale 与元素效果 lowering 折算的是同一个基准，搬迁时
-// 顺手把 studio_export 里那份同值副本并掉。glob 导出让 CLI 侧 `ass_style.rs`
-// 继续按裸名引用。
+// The single source of truth for the reference short edge (540) is `timeline::REFERENCE_SHORT_EDGE`. Subtitle layout's canvas_scale and element effect lowering both scale against this same baseline. The same-valued copy in studio_export was also merged into it during the move. The glob export lets the CLI-side `ass_style.rs` keep referring to it by its bare name.
 pub use timeline::REFERENCE_SHORT_EDGE;
 pub const DEFAULT_LEAD_IN: f64 = 0.5;
 pub const DEFAULT_TAIL: f64 = 1.0;
-/// 双语字号缺省比例的权威定义：烧录端 [`resolve_line_style`]、Web
-/// `subtitle-rendering.js` `lineFontSize` 与 NLE 可编辑导出
-/// `services::editable_export::line_style` 共用同一组常量，任何一端单独改数
-/// 都会让三端字号分叉。
-/// 参考字号：`root.fontSize` 的默认值，同时是底板留白 / 圆角 / 字距的归一化分母。
+/// The authoritative definition of the bilingual font-size default ratios. The burn-in side [`resolve_line_style`], the Web `subtitle-rendering.js` `lineFontSize`, and the NLE editable export `services::editable_export::line_style` all share the same set of constants. Changing the numbers on any one side alone would make the three sides' font sizes diverge.
+/// Reference font size: the default value of `root.fontSize`, and also the normalisation denominator for the background plate's padding, corner radius and letter-spacing.
 ///
-/// 原型 `designs/cuccut/app/panel-substyle.jsx:82-86` 的 `padOf` / `radiusOf` 都是
-/// **占字号的百分比**，所以这几样必须跟着**这一行自己的字号**缩放；此前它们乘的是
-/// `canvas_scale`（只含画布短边与全局 `scale`），双语译文行的 `transScale` 在它上面
-/// 是隐形的，于是译文行的底板与字距与原文行一样大。默认字号的行 `font_size /
-/// REFERENCE_FONT_SIZE == canvas_scale`，输出逐像素不变。
+/// The prototype `designs/cuccut/app/panel-substyle.jsx:82-86` `padOf` / `radiusOf` are **percentages of the font size**, so these must scale with **this line's own font size**. Previously they multiplied `canvas_scale` (which contains only the canvas short edge and the global `scale`), so the bilingual translation line's `transScale` had no effect on them, and the translation line's plate and letter-spacing were as large as the source line's. A row at the default font size has `font_size / REFERENCE_FONT_SIZE == canvas_scale`, and its output is unchanged pixel for pixel.
 pub const REFERENCE_FONT_SIZE: f64 = 30.0;
-/// 底板留白的横竖比：原型 `padOf` 竖向 `pad·fz/100`、横向再乘 1.4——「左右比上下宽
-/// 一点，字才不贴着板边」。此前核心是竖向 = 横向 × 0.45（块底 0.62），比原型扁一半。
+/// The horizontal-to-vertical ratio of the plate's padding. The prototype `padOf` uses vertical `pad·fz/100` and horizontal ×1.4: “left and right slightly wider than top and bottom, so the text does not stick to the plate edge”. Previously the core had vertical = horizontal × 0.45 (block plate 0.62), which made plates flatter than the prototype by about half.
 pub const PLATE_PAD_ASPECT: f64 = 1.4;
-/// 缺省双语：上行（译文）32、下行（原文）20，与语言无关；根字号 30 为基线。
+/// Default bilingual sizes: top line (translation) 32, bottom line (source) 20, independent of language; root font size 30 is the baseline.
 pub const DEFAULT_BILINGUAL_ORIG_SCALE: f64 = 20.0 / 30.0;
 pub const DEFAULT_TRANSLATION_RATIO: f64 = 32.0 / 20.0;
 
@@ -117,14 +99,13 @@ impl StudioMode {
         }
     }
 
-    /// 文档的显示模式一律由字幕轨集派生。`style.mode` 只是兼容投影，所有读点
-    /// 都走这里，避免第二处判据。缺席时统一回落 `orig`。
+    /// The display mode of a document is always derived from the subtitle track set. `style.mode` is only a compatibility projection. All read points go through here, to avoid a second criterion. When absent, fall back uniformly to `orig`.
     pub fn of_style(style: &Value) -> Self {
         mode_of(&resolve_track_set(style))
     }
 }
 
-/// 字幕轨的角色。一门语言 = 一条轨；本轮两行内核里每个 role 至多一条。
+/// The role of a subtitle track. One language = one track; in this round, each role has at most one track in the two-line core.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackRole {
     Source,
@@ -155,12 +136,9 @@ impl TrackRole {
     }
 }
 
-/// 字幕样式的两个持久上下文（`voiceInkContexts.{sub,bi}`）。
+/// The two persistent contexts for subtitle style (`voiceInkContexts.{sub,bi}`).
 ///
-/// wire 仍然使用既有的 `"sub"` / `"bi"`，枚举只负责让 App、CLI 与共享写路径
-/// 不再靠散落的字符串猜当前在编辑哪一套样式。原来住在 `ccut-workspace` 的
-/// `studio::style_sync`；写事务信封（`ccut-editor-core::edits::Mutation`）也要
-/// 带它，而纯 crate 不许依赖写路径，所以落到轨集判据同住的这里。
+/// The wire format still uses the existing `"sub"` / `"bi"`. The enum only stops the App, the CLI and the shared write path from guessing which style set is being edited from scattered strings. It originally lived in `ccut-workspace`'s `studio::style_sync`. The write transaction envelope (`ccut-editor-core::edits::Mutation`) also needs to carry it, but a pure crate must not depend on the write path, so it moved here alongside the track-set judgement.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StyleContext {
     #[serde(rename = "sub")]
@@ -185,18 +163,13 @@ impl StyleContext {
         }
     }
 
-    /// 这份 style 的扁平层是哪个上下文拍平出来的——写路径 `selected_context`
-    /// 无 `ctx` 提示时的判据。
+    /// Which context the flat layer of this style was flattened from. This is the criterion for `selected_context` on the write path when there is no `ctx` hint.
     ///
-    /// **判据刻意不是轨集裁决**（[`resolve_track_set`] 优先信
-    /// `voiceInkContexts.bi.mode`）：`bi.mode` 是 `bi` 上下文自己的记录
-    /// （「选中我时画双语还是纯译文」），恒等于 `bi`/`trans`，它回答不了「用户此刻
-    /// 在哪个 tab」。Mac 在 Subtitle Tab 编辑时扁平层就是 `sub` 的投影、根 `mode`
-    /// 就是 `orig`，拿 `bi.mode` 去选上下文会把单行样式写进双语 set 里。
+    /// **The criterion is deliberately not the track-set resolution** ([`resolve_track_set`] prefers `voiceInkContexts.bi.mode`). `bi.mode` is the `bi` context's own record (“whether to draw bilingual or translation-only when I am selected”), always equal to `bi`/`trans`, so it cannot answer “which tab the user is in right now”. On the Mac, when editing in the Subtitle Tab, the flat layer is a projection of `sub` and the root `mode` is `orig`. Using `bi.mode` to pick the context would write single-line style into the bilingual set.
     ///
-    /// 1. 根 `mode` 可解析 → 它说了算；
-    /// 2. 否则看 `tracks`（新模型客户端可以只写轨集）；
-    /// 3. 两者都没有 → `Subtitle`，与 `render_plan` 的缺省 `orig` 同侧。
+    /// 1. If the root `mode` can be parsed, it decides.
+    /// 2. Otherwise look at `tracks` (new-model clients may write only the track set).
+    /// 3. If neither is present, `Subtitle`, on the same side as the default `orig` of `render_plan`.
     pub fn of_style(style: &Value) -> Self {
         let mode = style
             .get("mode")
@@ -210,17 +183,14 @@ impl StyleContext {
     }
 }
 
-/// `studio/style.json` 根键 `tracks` 的一条：画面/timeline 上的一条字幕轨。
+/// One entry of the root key `tracks` in `studio/style.json`: one subtitle track on the picture / timeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubtitleTrack {
     pub role: TrackRole,
     pub lang: Option<String>,
-    /// 这条轨此刻在画面上被关掉了吗（D10，`tracks[].hidden`，缺省 `false`）。
+    /// Whether this track is switched off on the picture (D10, `tracks[].hidden`, default `false`).
     ///
-    /// 与「拿下」（把轨从 `tracks` 里删掉）是两件事：`hidden` 保留声明，只是
-    /// 不烧、不参与生效模式派生。轨集本身仍然是文档真相，所以根 `mode` 依旧按
-    /// **声明**的轨集写（[`mode_of`] 不看 `hidden`）；只有渲染/导出侧走
-    /// [`effective_track_set`] / [`effective_mode`]。
+    /// This is different from “removing” (deleting the track from `tracks`). `hidden` keeps the declaration; it just is not burned in and does not take part in deriving the effective mode. The track set is still the document's truth, so the root `mode` continues to follow the **declared** track set (`mode_of` does not look at `hidden`). Only the render and export side goes through [`effective_track_set`] / [`effective_mode`].
     pub hidden: bool,
 }
 
@@ -241,38 +211,35 @@ impl SubtitleTrack {
         Self::new(TrackRole::Translation, lang)
     }
 
-    /// 链式设置 [`hidden`](Self::hidden)。
+    /// Chained setter for [`hidden`](Self::hidden).
     pub fn with_hidden(mut self, hidden: bool) -> Self {
         self.hidden = hidden;
         self
     }
 
-    /// 这条轨在协议 lane 键 `subs:<styleTrackId>` 里的 id。
+    /// The id of this track within the protocol lane key `subs:<styleTrackId>`.
     ///
-    /// **唯一一处**构造字幕轨 id 的地方：轨集里同 role 至多一条
-    /// （[`parse_track_set`] 去重），所以 role 串就是稳定 id。App 的展示泳道 id
-    /// （`tr-subs` / `tr-subs-trans`）是另一套东西，不要混用。
+    /// **The only place** that constructs a subtitle track id. A role has at most one track in the track set ([`parse_track_set`] de-duplicates), so the role string is a stable id. The App's display lane ids (`tr-subs` / `tr-subs-trans`) are a different thing; do not mix them.
     pub fn track_id(&self) -> &'static str {
         self.role.as_str()
     }
 }
 
-/// 轨集 → 兼容 `mode`。唯一一份派生规则。
+/// Track set → compatibility `mode`. The single derivation rule.
 pub fn mode_of(tracks: &[SubtitleTrack]) -> StudioMode {
     let has_source = tracks.iter().any(|t| t.role == TrackRole::Source);
     let has_translation = tracks.iter().any(|t| t.role == TrackRole::Translation);
     match (has_source, has_translation) {
         (true, true) => StudioMode::Bilingual,
         (false, true) => StudioMode::Translated,
-        // 空轨集不该存在；真遇到就按最保守的 orig 兜底。
+        // An empty track set should not exist; if one is encountered, fall back to the most conservative orig.
         _ => StudioMode::Original,
     }
 }
 
-/// `mode` → 轨集。重派生时尽量沿用同 role 旧条目的 `lang`。
+/// `mode` → track set. When re-deriving, preferably keep the `lang` of the old entry with the same role.
 pub fn track_set_of_mode(mode: StudioMode, previous: &[SubtitleTrack]) -> Vec<SubtitleTrack> {
-    // `hidden` 与 `lang` 一样按 role 沿用：重派生只换轨集形状，不该顺手把用户
-    // 关掉的轨重新点亮。
+    // `hidden` is kept per role, just like `lang`. Re-deriving changes only the shape of the track set, and must not quietly re-enable a track the user had switched off.
     let track_of = |role: TrackRole| {
         let previous = previous.iter().find(|t| t.role == role);
         SubtitleTrack::new(role, previous.and_then(|t| t.lang.clone()))
@@ -288,7 +255,7 @@ pub fn track_set_of_mode(mode: StudioMode, previous: &[SubtitleTrack]) -> Vec<Su
     }
 }
 
-/// 只读 `style.tracks`，不看 `mode`。非法条目丢弃，同 role 去重（保留首条）。
+/// Reads only `style.tracks`, not `mode`. Invalid entries are dropped; duplicate roles are de-duplicated (the first entry is kept).
 pub fn parse_track_set(style: &Value) -> Vec<SubtitleTrack> {
     let Some(items) = style.get("tracks").and_then(Value::as_array) else {
         return Vec::new();
@@ -316,10 +283,9 @@ pub fn parse_track_set(style: &Value) -> Vec<SubtitleTrack> {
     tracks
 }
 
-/// 原始 `tracks` 数组里被 [`parse_track_set`] 按 role 去重丢弃的重复条目的角色。
+/// The roles of the duplicate entries in the raw `tracks` array that [`parse_track_set`] dropped during de-duplication by role.
 ///
-/// 契约要求「生效译文轨 >1 条时取文档顺序第一条并告警」。轨集模型同 role 至多
-/// 一条，多出来的那条在解析时就被丢了，所以告警判据只能从原始数组上取。
+/// The contract requires “when there is more than one effective translation track, take the first in document order and emit a warning”. The track-set model allows at most one per role, so extras are dropped at parse time. The warning criterion therefore has to be taken from the raw array.
 pub fn duplicate_track_roles(style: &Value) -> Vec<TrackRole> {
     let Some(items) = style.get("tracks").and_then(Value::as_array) else {
         return Vec::new();
@@ -345,11 +311,9 @@ pub fn duplicate_track_roles(style: &Value) -> Vec<TrackRole> {
     duplicates
 }
 
-/// 兼容 `mode` 信号：`voiceInkContexts.bi.mode` 优先，其次扁平根 `mode`。
+/// Compatibility `mode` signal: `voiceInkContexts.bi.mode` takes priority, followed by the flat root `mode`.
 ///
-/// apps/mac 在 Subtitle Tab 改任何样式都会从被钉死单行的 `.sub` set 刷出一个
-/// 根 `mode="orig"`，那不是用户意图；用户真正看到的模式记在 `bi` 上下文里。
-/// 按根 `mode` 重派生会把译文轨静默拿掉，所以两个信号里 `bi.mode` 更可信。
+/// Whenever apps/mac changes any style in the Subtitle Tab, it writes back a root `mode="orig"` from the `.sub` set, which is pinned to a single line. That is not the user's intent. The mode the user actually sees is recorded in the `bi` context. Re-deriving from the root `mode` would silently remove the translation track, so of the two signals `bi.mode` is the more trustworthy.
 pub fn mode_signal(style: &Value) -> Option<StudioMode> {
     style
         .pointer("/voiceInkContexts/bi/mode")
@@ -363,18 +327,14 @@ pub fn mode_signal(style: &Value) -> Option<StudioMode> {
         })
 }
 
-/// 读时迁移 + 兼容裁决：给出这份 style 当前画面上的字幕轨集。
+/// Read-time migration and compatibility resolution: gives the subtitle track set currently on screen for this style.
 ///
-/// 1. 读 `tracks`（非法丢弃、同 role 去重）；
-/// 2. 读兼容 `mode` 信号（[`mode_signal`]：`voiceInkContexts.bi.mode` 优先，
-///    其次根 `mode`）；
-/// 3. tracks 合法非空且信号存在但与 `mode_of(tracks)` 不一致 → 以信号为准重派生。
-///    新模型的写者两者永远一致，不一致只可能来自旧写者（apps/mac 无条件回写
-///    `mode` 与 `bi.mode`），旧写者的值更新；
-/// 4. tracks 缺失/为空 → 从信号派生；信号也缺失 → `[source]`。
+/// 1. Read `tracks` (drop invalid entries, de-duplicate by role).
+/// 2. Read the compatibility `mode` signal ([`mode_signal`]: `voiceInkContexts.bi.mode` takes priority, followed by the root `mode`).
+/// 3. If tracks is valid and non-empty, and a signal exists but is inconsistent with `mode_of(tracks)`, re-derive from the signal. New-model writers always keep the two consistent, so inconsistency can only come from an old writer (apps/mac unconditionally writes back `mode` and `bi.mode`), and the old writer's values are the more recent ones.
+/// 4. If tracks is missing or empty, derive from the signal; if the signal is also missing, `[source]`.
 ///
-/// 纯读函数：绝不写回磁盘。落盘由写路径的 canonicalize 负责，而 canonicalize 的
-/// 输出满足 `mode == bi.mode == mode_of(tracks)`，因此读时迁移是幂等的。
+/// This is a pure read function and never writes back to disk. Persistence is the job of the canonicalize step on the write path, and canonicalize's output satisfies `mode == bi.mode == mode_of(tracks)`, so read-time migration is idempotent.
 pub fn resolve_track_set(style: &Value) -> Vec<SubtitleTrack> {
     let tracks = parse_track_set(style);
     let mode = mode_signal(style);
@@ -386,11 +346,9 @@ pub fn resolve_track_set(style: &Value) -> Vec<SubtitleTrack> {
     }
 }
 
-/// 生效轨集：[`resolve_track_set`] 之后去掉 `hidden` 的那几条（D10）。
+/// Effective track set: after [`resolve_track_set`], the entries with `hidden` removed (D10).
 ///
-/// 渲染、烧录、导出的字幕语言派生**只看这一份**；`style` 根上的 `mode` 与
-/// [`mode_of`] 仍然描述**声明**的轨集（关掉一条轨不改变文档声明，「放回」才能
-/// 拿回原样）。生效集可以为空 = 这次一条字幕都不烧。
+/// Rendering, burn-in and export derive the subtitle language **from this set only**. The root `mode` on `style` and [`mode_of`] still describe the **declared** track set: switching one track off does not change the document's declaration, and “putting it back” restores it as it was. The effective set may be empty, meaning no subtitles are burned in this time.
 pub fn effective_track_set(style: &Value) -> Vec<SubtitleTrack> {
     resolve_track_set(style)
         .into_iter()
@@ -398,7 +356,7 @@ pub fn effective_track_set(style: &Value) -> Vec<SubtitleTrack> {
         .collect()
 }
 
-/// 生效轨集 → 生效模式；生效集为空时 `None`（= 不烧字幕，等价 `--no-subs`）。
+/// Effective track set → effective mode. `None` when the effective set is empty (= do not burn subtitles, equivalent to `--no-subs`).
 pub fn effective_mode(style: &Value) -> Option<StudioMode> {
     let tracks = effective_track_set(style);
     if tracks.is_empty() {
@@ -407,7 +365,7 @@ pub fn effective_mode(style: &Value) -> Option<StudioMode> {
     Some(mode_of(&tracks))
 }
 
-/// 轨集 → `style.tracks` 的 JSON 形态。
+/// Track set → the JSON form of `style.tracks`.
 pub fn tracks_json(tracks: &[SubtitleTrack]) -> Value {
     Value::Array(
         tracks
@@ -418,7 +376,7 @@ pub fn tracks_json(tracks: &[SubtitleTrack]) -> Value {
                 if let Some(lang) = &track.lang {
                     entry.insert("lang".into(), Value::String(lang.clone()));
                 }
-                // 缺省值不落盘：老文档与「没关过任何轨」的新文档字节一致。
+                // Default values are not written to disk, so old documents and new documents where no track has ever been switched off are byte-identical.
                 if track.hidden {
                     entry.insert("hidden".into(), Value::Bool(true));
                 }
@@ -428,7 +386,7 @@ pub fn tracks_json(tracks: &[SubtitleTrack]) -> Value {
     )
 }
 
-/// `mode` 的兼容写出串（与 [`StudioMode::parse`] 同源的短串）。
+/// The compatibility write-out string for `mode` (a short string from the same source as [`StudioMode::parse`]).
 pub fn mode_token(mode: StudioMode) -> &'static str {
     match mode {
         StudioMode::Original => "orig",
@@ -461,13 +419,11 @@ pub struct LineStyle {
     pub effect_blur: f64,
     pub background_on: bool,
     pub background_color: SubtitleColor,
-    /// 横向内边距 `backgroundPadding × (font_size / REFERENCE_FONT_SIZE) × 0.8`
-    /// （同时用作底板圆角的缺省值）。
+    /// Horizontal padding `backgroundPadding × (font_size / REFERENCE_FONT_SIZE) × 0.8` (also used as the default for the plate's corner radius).
     pub background_pad_h: f64,
-    /// 纵向内边距 `pad_h / PLATE_PAD_ASPECT`，与原型 `panel-substyle.jsx` 的
-    /// `padOf` 同口径（竖 `pad·fz/100`、横再乘 1.4）。
+    /// Vertical padding `pad_h / PLATE_PAD_ASPECT`, on the same basis as `padOf` in the prototype `panel-substyle.jsx` (vertical `pad·fz/100`, horizontal further ×1.4).
     ///
-    /// 与 `background_on` 无关：底板关掉的行照样按这个数撑开自己的槽位。
+    /// Independent of `background_on`: a row whose plate is turned off still expands its own slot by this amount.
     pub background_pad_v: f64,
     /// Rounded-corner radius in output pixels. Missing `borderRadius` deliberately
     /// falls back to the legacy `background_pad_h` value for byte compatibility.
@@ -476,46 +432,41 @@ pub struct LineStyle {
     /// 28%-of-frame minimum width. Missing or explicit `wrap` paints one plate per
     /// visual line.
     pub block_background: bool,
-    /// 整块底板的最小宽（输出像素）。字幕轨由 `resolve_line_style` 定为 28% 画幅；
-    /// 文字元素在 `render_plan::text_element_block_plate` 里改成元素盒宽
-    /// （`place.w`，没给则 0 = 包住最宽一行）。
+    /// Minimum width of the whole plate (output pixels). The subtitle track is set to 28% of the frame by `resolve_line_style`. For text elements, `render_plan::text_element_block_plate` changes it to the element box width (`place.w`; if none is given, 0 = wrap around the widest line).
     pub background_min_width: f64,
     pub line_height: f64,
     pub text_transform: String,
-    /// 普通（非配方）字幕的强调词外观：样式根的 `emphasisLook` 作用在
-    /// `captionEmphasis` 里 role 为 emphasis / hero 的词上。设计字幕（配方）
-    /// 有自己的强调通道，此处恒为 `None`；没有 `emphasisLook` 时也为 `None`，
-    /// 排版与像素与旧行为逐位一致。
+    /// Emphasis appearance for words in ordinary (non-recipe) subtitles: the root-level `emphasisLook` of the style applies to words with role emphasis / hero in `captionEmphasis`. Designed captions (recipes) have their own emphasis channel, so this is always `None` there. When there is no `emphasisLook`, it is also `None`, so the layout and pixels are bit-identical to the old behaviour.
     pub emphasis: Option<Arc<EmphasisLook>>,
 }
 
-/// `emphasisLook` 的取值范围（缩放绕词的基线中心，夹在这一区间）。
+/// Value range of `emphasisLook` (the scale centre is the word's baseline centre; clamped to this interval).
 pub const EMPHASIS_LOOK_SCALE_RANGE: (f64, f64) = (0.8, 1.6);
-/// hero 词在 `emphasisLook.scale` 之上再放大的倍数（结果仍夹进上面的区间）。
+/// The extra multiplier applied to a hero word on top of `emphasisLook.scale` (the result is still clamped to the range above).
 pub const EMPHASIS_LOOK_HERO_FACTOR: f64 = 1.15;
 
-/// 一个被强调的词：`captionEmphasis[<wordId>]`。
+/// An emphasised word: `captionEmphasis[<wordId>]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmphasisWord {
     pub hero: bool,
-    /// 逐词颜色，优先于 [`EmphasisLook::color`]。
+    /// Per-word colour, which takes precedence over [`EmphasisLook::color`].
     pub color: Option<SubtitleColor>,
 }
 
-/// 普通字幕强调词的外观（样式根 `emphasisLook`）。
+/// Emphasis appearance for words in ordinary subtitles (root-level `emphasisLook`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmphasisLook {
     pub color: Option<SubtitleColor>,
-    /// 已映射成实际 shaping 字族（与 [`font_name`] 同口径）。
+    /// Already mapped to the actual shaping font family (same source as [`font_name`]).
     pub font_name: Option<String>,
     pub bold: Option<bool>,
     pub italic: Option<bool>,
-    /// 已夹进 [`EMPHASIS_LOOK_SCALE_RANGE`]。
+    /// Already clamped to [`EMPHASIS_LOOK_SCALE_RANGE`].
     pub scale: f64,
     pub words: HashMap<String, EmphasisWord>,
 }
 
-/// 一个强调词实际用的字形参数。
+/// The glyph parameters actually used for an emphasised word.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmphasisVariant<'a> {
     pub color: Option<SubtitleColor>,
@@ -526,7 +477,7 @@ pub struct EmphasisVariant<'a> {
 }
 
 impl EmphasisLook {
-    /// 词 `id` 的强调外观；不在 `captionEmphasis` 里返回 `None`。
+    /// The emphasis appearance of word `id`; returns `None` if it is not in `captionEmphasis`.
     pub fn variant(&self, id: &str) -> Option<EmphasisVariant<'_>> {
         let word = self.words.get(id)?;
         let (low, high) = EMPHASIS_LOOK_SCALE_RANGE;
@@ -544,8 +495,7 @@ impl EmphasisLook {
     }
 }
 
-/// `captionEmphasis` 里 role 为 emphasis / hero 的词：`(词 ID, role, 逐词颜色, 原条目)`。
-/// 设计字幕配方与普通字幕的 `emphasisLook` 共用这一份判据。
+/// Words in `captionEmphasis` with role emphasis / hero: `(word ID, role, per-word colour, original entry)`. Designed caption recipes and the emphasis of ordinary subtitles (`emphasisLook`) share this one criterion.
 pub fn caption_emphasis_words(
     style: &Value,
 ) -> impl Iterator<Item = (&String, &str, Option<SubtitleColor>, &Value)> {
@@ -573,8 +523,7 @@ pub fn caption_emphasis_words(
         })
 }
 
-/// 从（合并后的）行样式解出 [`EmphasisLook`]。没有 `emphasisLook`、没有强调词、
-/// 或这一行走设计字幕配方时返回 `None`。
+/// Resolves [`EmphasisLook`] from the (merged) line style. Returns `None` when there is no `emphasisLook`, no emphasised words, or this line uses a designed caption recipe.
 pub fn emphasis_look(style: &Value) -> Option<Arc<EmphasisLook>> {
     let look = style.get("emphasisLook")?.as_object()?;
     let animation = style
@@ -674,29 +623,23 @@ pub struct WordVisual {
     pub underline_offset_em: Option<f64>,
     pub bottom_em: Option<f64>,
     pub shadow_off: bool,
-    /// 经典逐词高亮块这一帧的缩放倍数（`None` = 恒定 1.0 的旧行为）。块以矩形
-    /// **中心**缩放，圆角同倍跟随；文字不受影响。
+    /// The scale factor of the classic per-word highlight block for this frame (`None` = constant 1.0, the old behaviour). The block scales around the rectangle's **centre**, and its corner radius follows at the same rate. Text is not affected.
     pub box_scale: Option<f64>,
-    /// 经典逐词高亮块这一帧的 alpha（`None` = 沿用词自身的 opacity）。**块与
-    /// 文字分开动画**：块 alpha 一旦借用词 opacity 就会把字一起淡掉。
+    /// The alpha of the classic per-word highlight block for this frame (`None` = use the word's own opacity). **The block and the text are animated separately**: if the block's alpha borrowed the word's opacity, the text would fade along with it.
     pub box_opacity: Option<f64>,
     pub recipe: Option<CaptionRecipeResolvedWord>,
 }
 
-/// 逐词高亮块的时间轴（原型 `designs/cuccut/app/model-subanim.js` 的
-/// `boxHighlightV2` 轨，`group: "word"`）：**一个词的窗口就是一个周期**，块的
-/// scale 与 alpha 各走一条关键帧曲线，只画在当前词上。
+/// The timeline of the per-word highlight block (the prototype `designs/cuccut/app/model-subanim.js` `boxHighlightV2` track, `group: "word"`). **One word's window is one cycle**: the block's scale and alpha each follow their own keyframe curve, and are drawn only on the current word.
 ///
-/// 这一层不进 `spoken`/`unspoken` 的三档合并——曲线只对 `active` 有意义，
-/// 摊进 [`WordVisual`] 会让 [`merge_visual`] 需要为「覆盖一条曲线」定义语义，
-/// 而文档里从来没有第二条曲线可覆盖。
+/// This layer does not enter the three-tier merge of `spoken`/`unspoken`. The curve only has meaning for `active`. Folding it into [`WordVisual`] would require [`merge_visual`] to define semantics for “overriding a curve”, while the document has never had a second curve to override.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WordBoxTrack {
-    /// `(相位, 倍数)`，相位升序。
+    /// `(phase, multiplier)`, phases in ascending order.
     pub scale: Vec<(f64, f64)>,
-    /// `(相位, alpha)`，相位升序。
+    /// `(phase, alpha)`, phases in ascending order.
     pub opacity: Vec<(f64, f64)>,
-    /// 每段的缓动控制点（`cubic-bezier(x1, y1, x2, y2)`）。
+    /// The easing control points for each segment (`cubic-bezier(x1, y1, x2, y2)`).
     pub easing: [f64; 4],
 }
 
@@ -709,8 +652,7 @@ impl WordBoxTrack {
         sample_keyframes(&self.opacity, self.easing, phase)
     }
 
-    /// 曲线是否真的随时间变化。恒定轨（比如 `stack` 的 .92）不该把整条字幕
-    /// 拖进逐帧缓存键。
+    /// Whether the curve actually varies over time. A constant track (e.g. `stack`'s .92) should not drag the whole caption into the per-frame cache key.
     pub fn is_animated(&self) -> bool {
         let varies = |frames: &[(f64, f64)]| {
             frames
@@ -721,12 +663,10 @@ impl WordBoxTrack {
     }
 }
 
-/// `sinInOut` 的控制点（原型 `EASING` 表：`cubic-bezier(0.37, 0, 0.63, 1)`）。
+/// The control points for `sinInOut` (prototype `EASING` table: `cubic-bezier(0.37, 0, 0.63, 1)`).
 pub const WORD_BOX_EASING_SIN_IN_OUT: [f64; 4] = [0.37, 0.0, 0.63, 1.0];
 
-/// 缓动名 → `cubic-bezier` 控制点。表与原型
-/// `designs/cuccut/app/model-subanim.js` 的 `EASING` 同源；`square*` 是阶跃，
-/// 块轨用不到，未知名一律落回 `sinInOut`。
+/// Easing name → `cubic-bezier` control points. The table shares its source with the prototype `designs/cuccut/app/model-subanim.js` `EASING`. `square*` are steps, which block tracks do not use. Unknown names always fall back to `sinInOut`.
 pub fn word_box_easing(name: &str) -> [f64; 4] {
     match name {
         "linear" => [0.0, 0.0, 1.0, 1.0],
@@ -739,11 +679,9 @@ pub fn word_box_easing(name: &str) -> [f64; 4] {
     }
 }
 
-/// `cubic-bezier(x1, y1, x2, y2)` 在 `t` 处的 y。
+/// The y of `cubic-bezier(x1, y1, x2, y2)` at `t`.
 ///
-/// 控制点被 CSS 钳在 x∈[0,1]，此时 x(u) 单调，解唯一——二分 32 步的误差已经
-/// 小于 f64 在这一带的有效位，且**不依赖初值**，跨平台逐位一致（渲染确定性
-/// 红线：牛顿迭代的收敛路径会随 FMA 结果漂）。
+/// CSS clamps the control points to x∈[0,1], so x(u) is monotonic and the solution is unique. Binary search with 32 steps gives an error already smaller than the effective precision of f64 in this range, and it **does not depend on the initial guess**, so it is bit-identical across platforms. (Render determinism is a red line: the convergence path of Newton iteration drifts with FMA results.)
 pub fn cubic_bezier_ease(curve: [f64; 4], t: f64) -> f64 {
     let [x1, y1, x2, y2] = curve;
     let t = t.clamp(0.0, 1.0);
@@ -766,8 +704,7 @@ pub fn cubic_bezier_ease(curve: [f64; 4], t: f64) -> f64 {
     axis(y1, y2, f64::midpoint(low, high))
 }
 
-/// 关键帧线性插值 ＋ 段内缓动。相位钳在 `[0, 1]`，首帧之前取首值、末帧之后取
-/// 末值。
+/// Keyframe linear interpolation plus within-segment easing. The phase is clamped to `[0, 1]`; before the first frame the first value is taken, and after the last frame the last value is taken.
 pub fn sample_keyframes(frames: &[(f64, f64)], easing: [f64; 4], phase: f64) -> Option<f64> {
     let first = frames.first()?;
     let phase = phase.clamp(0.0, 1.0);
@@ -789,8 +726,7 @@ pub fn sample_keyframes(frames: &[(f64, f64)], easing: [f64; 4], phase: f64) -> 
     frames.last().map(|(_, value)| *value)
 }
 
-/// `active` 载荷里的 `boxScale` / `boxOpacity` / `boxEasing`。三个键都缺席时返回
-/// `None`，此时块回到常量矩形——旧文档与其余 preset 的行为一字不变。
+/// `boxScale` / `boxOpacity` / `boxEasing` in the `active` payload. When all three keys are absent, returns `None`, and the block returns to a constant rectangle. The behaviour of old documents and of the other presets is unchanged byte for byte.
 pub fn word_box_track(active: &Value) -> Option<WordBoxTrack> {
     fn keyframes(value: &Value) -> Option<Vec<(f64, f64)>> {
         let array = value.as_array()?;
@@ -823,7 +759,7 @@ pub fn word_box_track(active: &Value) -> Option<WordBoxTrack> {
     })
 }
 
-/// 词 `index` 的窗口在 `time` 处的相位（0–1）。零长或越界返回 0。
+/// The phase (0–1) of word `index`'s window at `time`. A zero-length window or an out-of-range index returns 0.
 pub fn word_phase(item: &TimedItem, index: usize, time: f64) -> f64 {
     let Some(word) = item.words.get(index) else {
         return 0.0;
@@ -835,19 +771,14 @@ pub fn word_phase(item: &TimedItem, index: usize, time: f64) -> f64 {
     ((time - word.start) / span).clamp(0.0, 1.0)
 }
 
-/// 经典逐词高亮块的默认圆角（`em`）：`active.borderRadiusEm` 缺席时的口径。
+/// The default corner radius (`em`) of the classic per-word highlight block: the basis used when `active.borderRadiusEm` is absent.
 ///
-/// 舞台/导出与面板小样读**同一个数**——面板那一侧自己写个 0.25，改一次内核
-/// 默认值就只有一半界面跟上。
+/// The stage, export and panel preview all read **the same number**. If the panel side wrote its own 0.25, changing the kernel default once would update only half of the UI.
 pub const CLASSIC_WORD_BOX_RADIUS_EM: f64 = 0.25;
 
-/// 经典逐词高亮块的矩形。CPU `draw_line_layout` 与 GPU `subtitle_scene_frame`
-/// **共用这一份口径**：两处各写一遍就是两种几何意见，对拍必然分叉。
+/// The rectangle of the classic per-word highlight block. The CPU `draw_line_layout` and the GPU `subtitle_scene_frame` **share this one definition**: if each wrote its own, there would be two geometric opinions, and cross-checks would inevitably diverge.
 ///
-/// 几何与 Studio `canvas-stage.jsx` 的 highlight Rect 逐字段同源（0.14em 左右
-/// 外扩、0.04em 上外扩、1.08em 高、`borderRadiusEm` 默认 0.25），再按
-/// [`WordVisual::box_scale`] 绕矩形中心整体缩放（圆角同倍，药丸才不会在胀缩
-/// 途中变成方角）。
+/// The geometry comes from the same source as the highlight Rect in Studio's `canvas-stage.jsx`, field by field (0.14em outset left and right, 0.04em outset on top, 1.08em height, `borderRadiusEm` default 0.25). It is then scaled as a whole around the rectangle's centre by [`WordVisual::box_scale`]. The corner radius scales at the same rate, so the pill does not turn square-cornered while expanding or contracting.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClassicWordBox {
     pub x: f64,
@@ -888,8 +819,7 @@ pub fn classic_word_box(
     }
 }
 
-/// 块自己的 alpha 系数。有 `boxOpacity` 轨时块与文字分开——**不再**把块 alpha
-/// 等同于词 opacity；没有轨时逐位回到旧行为。
+/// The block's own alpha factor. When there is a `boxOpacity` track, the block and the text are separated: the block alpha is **no longer** equated with the word's opacity. Without a track, it reverts bit-for-bit to the old behaviour.
 pub fn classic_word_box_alpha(visual: &WordVisual) -> f64 {
     clamp(
         visual
@@ -909,7 +839,7 @@ pub struct WordAnimation {
     pub spoken: WordVisual,
     pub active: WordVisual,
     pub unspoken: WordVisual,
-    /// 当前词高亮块的时间轴（[`word_box_track`]），只有「药丸高亮」这一档写。
+    /// The timeline of the current-word highlight block ([`word_box_track`]); only the “pill highlight” option writes it.
     pub box_track: Option<WordBoxTrack>,
     pub caption: Option<DesignedCaption>,
 }
@@ -921,21 +851,20 @@ pub struct DesignedCaption {
     pub content: String,
     pub primary: SubtitleColor,
     pub accent: SubtitleColor,
-    /// 第三色（倒鸭子的主角词）；没写时跟 `accent`。
+    /// The third colour (the Daoyazi hero word); if not written, it follows `accent`.
     pub secondary: SubtitleColor,
     pub intensity: f64,
     pub speed: f64,
     pub seed: Option<u64>,
     pub options: Vec<Value>,
     pub overrides: HashMap<String, CaptionWordOverride>,
-    /// 阶段 C 的编辑意图（样式根键 `captionSequences`，§5.4）。
+    /// Stage C editing intent (root style key `captionSequences`, §5.4).
     pub sequences: CaptionSequenceIntent,
 }
 
-/// 用户对「动态排版」做过的手动编辑：断段、按段换版、固定住的行。单位是 540 短边参考
-/// 画布（`REFERENCE_SHORT_EDGE`）的像素，输出画布按 `min(w, h) / 540` 换算。
+/// The user's manual edits to “dynamic typography”: segment breaks, per-segment version changes, and pinned rows. Units are pixels of the 540 short-edge reference canvas (`REFERENCE_SHORT_EDGE`); the output canvas is converted by `min(w, h) / 540`.
 ///
-/// JSON 形状：
+/// JSON shape:
 /// ```json
 /// "captionSequences": {
 ///   "schema": 1,
@@ -946,22 +875,22 @@ pub struct DesignedCaption {
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CaptionSequenceIntent {
-    /// 在这些 cue（按 cue 首词 id）前另起一段。
+    /// Start a new segment before these cues (keyed by each cue's first word id).
     pub break_before: Vec<String>,
-    /// 段键（段首词 id）→ 版号。
+    /// Segment key (the segment's first word id) → version number.
     pub seeds: HashMap<String, u64>,
-    /// 行键（行首词 id）→ 固定位置。
+    /// Row key (the row's first word id) → fixed position.
     pub pins: HashMap<String, CaptionSequencePin>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaptionSequencePin {
-    /// 段局部世界坐标，540 短边单位。
+    /// Segment-local world coordinates, in 540 short-edge units.
     pub center: [f64; 2],
     pub rot_deg: f64,
 }
 
-/// 样式根键 `captionSequences` 的名字。
+/// The name of the root style key `captionSequences`.
 pub const CAPTION_SEQUENCES_KEY: &str = "captionSequences";
 
 impl CaptionSequenceIntent {
@@ -1139,7 +1068,7 @@ pub fn project_media(project: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// 读取 Studio 正文并按页面相同顺序叠加尚未 apply 的编辑，使 CLI 导出与当前预览一致。
+/// Reads the Studio body and applies, in the same order as the page, the edits not yet applied, so that CLI export matches the current preview.
 #[cfg(feature = "host")]
 pub fn load_preview_document(project: &Path) -> Result<Value> {
     if let Some(data) = crate::host::live_document(project)? {
@@ -1156,11 +1085,9 @@ pub fn load_preview_document(project: &Path) -> Result<Value> {
     apply_pending_edits(project, data)
 }
 
-/// 按导出请求的译文语言读取 Studio 正文。
+/// Reads the Studio body in the translation language requested by the export.
 ///
-/// 投影只承载一种目标语言，而 Mac 端刷新投影时从不指定语言，所以项目里除当前
-/// 目标语言外的译文本来一律导不出来。语言不一致时这里在内存里按 `lang` 重投影：
-/// 保留 `rev`，页面尚未提交的 edits.json 覆盖层照常生效。
+/// The projection carries only one target language, and the Mac side never specifies a language when it refreshes the projection. So translations in the project other than the current target language could never be exported. When the language does not match, this re-projects in memory by `lang`: `rev` is kept, and the not-yet-committed edits.json overlay from the page still applies.
 #[cfg(feature = "host")]
 pub fn load_preview_document_for_lang(project: &Path, lang: Option<&str>) -> Result<Value> {
     let document = load_preview_document(project)?;
@@ -1180,11 +1107,9 @@ pub fn load_preview_document_for_lang(project: &Path, lang: Option<&str>) -> Res
     }
 }
 
-/// 正文的**进程内**内容指纹：序列化字节流直接喂哈希器，不先拼一整份字符串
-/// （七小时项目的正文序列化后是几十 MB，那份中间 `String` 纯属浪费）。
+/// The **in-process** content fingerprint of the body. The serialised byte stream is fed directly into the hasher, without first building a whole string (a seven-hour project's body is tens of MB when serialised, so that intermediate `String` would be pure waste).
 ///
-/// 只供同进程比较「这份正文和上一份是否一字不差」，不落盘、不跨进程；
-/// `DefaultHasher` 跨版本不稳定无所谓。
+/// It is used only within the same process, to check whether “this body and the previous one are identical, byte for byte”. It is not persisted and not shared across processes. It does not matter that `DefaultHasher` is unstable across versions.
 pub fn document_fingerprint(document: &Value) -> u64 {
     use std::hash::Hasher;
     struct HashSink(std::collections::hash_map::DefaultHasher);
@@ -1198,7 +1123,7 @@ pub fn document_fingerprint(document: &Value) -> u64 {
         }
     }
     let mut sink = HashSink(std::collections::hash_map::DefaultHasher::new());
-    // `Value` 序列化不会失败；万一失败，写进去的前缀仍是确定性的。
+    // `Value` serialisation does not fail. In the unlikely event that it does, the prefix written is still deterministic.
     let _ = serde_json::to_writer(&mut sink, document);
     sink.0.finish()
 }
@@ -1216,12 +1141,9 @@ pub fn apply_pending_edits(project: &Path, mut data: Value) -> Result<Value> {
     Ok(data)
 }
 
-/// 从内核共享缓存借来的正文 → 可改写的预览正文：独占时直接拆出，否则深拷
-/// 一次，再叠 `studio/edits.json`。
+/// Turns a body borrowed from the kernel's shared cache into a mutable preview body. If it is exclusively owned, it is taken apart directly; otherwise a deep copy is made. Then the `studio/edits.json` overlay is applied.
 ///
-/// 深拷与 edits 覆盖放在同一处：调用方只在需要可写副本时才付一次拷贝的价
-/// （`Arc` 已独占时零拷贝），不再各自复制一遍正文。`Value::clone` 本身是
-/// serde_json 内编译的派生实现，放在哪个 crate 调用对速度没有实测差别。
+/// The deep copy and the edits overlay are placed together, so the caller pays for a copy only when it needs a writable one (zero copies if the `Arc` is already exclusive), rather than each caller copying the body itself. `Value::clone` is the derived implementation compiled inside serde_json. Calling it from one crate or another makes no measured difference in speed.
 #[cfg(feature = "host")]
 pub fn preview_document_from_shared(
     project: &Path,
@@ -1232,11 +1154,9 @@ pub fn preview_document_from_shared(
     apply_pending_edits(project, document)
 }
 
-/// 读取 `ccut export --to mp4 --sub-style` 指定的导出期字幕样式。
+/// Reads the export-time subtitle style specified by `ccut export --to mp4 --sub-style`.
 ///
-/// 文件与 `studio/style.json` 同构：一份扁平样式 blob，可带 `origStyle` /
-/// `transStyle` 行级局部覆盖。读取失败、JSON 无效或顶层不是对象都直接报错，
-/// 绝不静默退回项目样式——静默退回会让用户拿到一份看起来正常、样式却不对的产物。
+/// The file has the same shape as `studio/style.json`: a flat style blob, which may carry line-level partial overrides `origStyle` / `transStyle`. A read failure, invalid JSON, or a top level that is not an object is reported as an error. It never silently falls back to the project style, because a silent fallback would give the user an output that looks normal but has the wrong style.
 #[cfg(feature = "host")]
 pub fn load_subtitle_style_override(path: &Path) -> Result<Value> {
     let bytes = fs::read(path)
@@ -1252,12 +1172,9 @@ pub fn load_subtitle_style_override(path: &Path) -> Result<Value> {
     Ok(style)
 }
 
-/// 把导出期样式整体写进内存中的 Studio 正文。
+/// Writes the export-time style wholesale into the in-memory Studio body.
 ///
-/// 这里是**替换**而不是合并：预设导出的语义是「这次就照这份样式渲染」，所以
-/// 项目 `studio/style.json` 与 `studio/edits.json` 的 `style` 覆盖层一并作废。
-/// [`load_preview_document`] 已经把 edits 覆盖层并进 `document["style"]`，因此
-/// 在其之后整体赋值即可同时满足两条语义。文档不落盘，项目状态不受影响。
+/// This is a **replacement**, not a merge. The semantics of a preset export are “render this time with exactly this style”, so the project's `studio/style.json` and the `style` overlay of `studio/edits.json` are both discarded. [`load_preview_document`] has already merged the edits overlay into `document["style"]`, so assigning the whole value after it satisfies both semantics at once. The document is not persisted, and project state is unaffected.
 pub fn apply_subtitle_style_override(document: &mut Value, style: Value) {
     document["style"] = style;
 }
@@ -1268,21 +1185,13 @@ pub fn load_overlay_document(project: &Path) -> Result<Value> {
     overlay_document_with_live_timeline(project, &document)
 }
 
-/// 把 Studio 正文的整条 cue 流换成一段一次性小样（方案 §5.4 S16）。
+/// Replaces the whole cue stream of the Studio body with a one-off sample (plan §5.4 S16).
 ///
-/// 样式面板的 Designed Caption 配方小样需要「按这份样式跑一段 demo 词」，而
-/// 项目 transcript 与它无关：Mac `StylePreviewViews.update` 就是现造一条
-/// `Cue(id:"pv")` + `pv0..pvN` 逐词 1 秒交给本地 Presentation 内核。字幕像素
-/// 只走 serve（方案 D4），于是同一份构造搬到这里。
+/// The style panel's Designed Caption recipe preview needs “run a demo word sequence with this style”, and the project transcript has nothing to do with it. The Mac `StylePreviewViews.update` builds one `Cue(id:"pv")` plus `pv0..pvN`, with 1-second per-word timing, and hands it to the local Presentation kernel. Subtitle pixels go only through serve (plan D4), so the same construction was moved here.
 ///
-/// 四件事：① `cues` 换成唯一一条 `pv`（词 id 定死 `pv0..pvN-1`，`sampleEmphasis`
-/// 就按这套 id 挂）；② `sentences` / `transCues` / `sourceDocs` 清空——小样没有
-/// 译文轴；③ 丢掉 `timeline` 并盖上 `_overlayTimelineFingerprint`，让
-/// [`overlay_document_with_live_timeline`] 短路、`load_timeline_elements` 拿到
-/// 空轨道：样式小样只画字幕，不画项目的 B-roll/水印/文字元素；④ `captionEmphasis`
-/// **整体替换**（项目那份挂在真实词 id 上，对小样毫无意义）。
+/// Four things happen. ① `cues` is replaced with a single `pv` (word ids are fixed at `pv0..pvN-1`, so `sampleEmphasis` attaches to this id set). ② `sentences` / `transCues` / `sourceDocs` are cleared, since the sample has no translation axis. ③ `timeline` is dropped and `_overlayTimelineFingerprint` is stamped, so that [`overlay_document_with_live_timeline`] short-circuits and `load_timeline_elements` gets an empty track. The style sample draws only captions, not the project's B-roll, watermark or text elements. ④ `captionEmphasis` is **wholly replaced**, because the project's one is attached to real word ids and is meaningless for the sample.
 ///
-/// 返回小样自身时间轴的终点秒数——调用方据此定这份渲染计划的时长。
+/// Returns the end time in seconds of the sample's own timeline. The caller uses it to set the duration of this render plan.
 pub fn apply_overlay_sample(
     document: &mut Value,
     words: &[(&str, f64, f64)],
@@ -1321,21 +1230,13 @@ pub fn apply_overlay_sample(
     end
 }
 
-/// 把转录中已经落定的那几段换成内存正文里的 cue 流（台账 #219 缺口 ①）。
+/// Replaces the cue stream in the Studio body with the segments that have already settled during transcription (ledger #219, gap ①).
 ///
-/// 转录跑着的时候项目盘上还没有 `transcript.json`，可 serve 的任务帧已经在给
-/// 「已转录到第几秒 + 这几句的文本」（`liveSegments`，累加器在
-/// `ccut_editor_core::live_track`）。字幕像素只由内核出（方案 D6：App 内一行
-/// 排版都没有），所以实时段也走同一条路——调用方把累加出来的段交到这里，
-/// 正文里的 cue 流整份换成它们，再照常编译渲染计划。
+/// While transcription is running, `transcript.json` does not yet exist on the project disk, but the task frame being served already reports “how many seconds have been transcribed, plus the text of those sentences” (`liveSegments`; the accumulator lives in `ccut_editor_core::live_track`). Subtitle pixels are produced only by the kernel (plan D6: the App does no layout of a single line at all), so live segments take the same path. The caller hands the accumulated segments here, the cue stream in the body is replaced wholesale by them, and the render plan is then compiled as usual.
 ///
-/// 与 [`apply_overlay_sample`] 的差别：**只换字幕**。`timeline` 原样留着，
-/// 元素层（含分离主轨的主视频）照画；时间是项目自己的时间轴秒，不是小样的
-/// 0..N 秒钟。`sentences` / `transCues` 清空——实时段没有译文轴，留着只会让
-/// 旧稿的词 id 映射到新造的 cue 上。
+/// Difference from [`apply_overlay_sample`]: **only the subtitles are replaced**. `timeline` is kept as is, so the element layer (including the main video on a detached audio track) is still drawn. The times are the project's own timeline seconds, not the sample's 0..N seconds. `sentences` / `transCues` are cleared, because live segments have no translation axis, and leaving them would map old-draft word ids onto newly created cues.
 ///
-/// 逐词时间没有（任务帧只给整句），词表交给 [`timed_inputs`] 从文本派生，
-/// 与「转录稿里没有 `words` 的 cue」走同一条兜底。
+/// No per-word timing is available (the task frame gives only whole sentences), so the word list is derived from the text by [`timed_inputs`], following the same fallback as for “cues in the transcript without `words`”.
 pub fn apply_live_cues(document: &mut Value, spans: &[(f64, f64, &str)]) {
     let rows: Vec<Value> = spans
         .iter()
@@ -1349,7 +1250,7 @@ pub fn apply_live_cues(document: &mut Value, spans: &[(f64, f64, &str)]) {
     document["transCues"] = json!([]);
 }
 
-/// Studio 正文里是否有可用译文；多源时间轴的译文来自 `sourceDocs`，一并计入。
+/// Whether the Studio body has a usable translation. For multi-source timelines, the translation comes from `sourceDocs` and is counted too.
 pub fn document_has_translation(document: &Value) -> bool {
     fn filled(scope: &Value) -> bool {
         let text = |value: &Value| value.as_str().is_some_and(|text| !text.trim().is_empty());
@@ -1742,9 +1643,7 @@ pub fn translation_structure(data: &mut Value, ops: &[Value]) {
     });
 }
 
-/// 两片之间不加空格的字符对：汉字 / 假名 / 全角标点相邻，或谚文挨着汉字 /
-/// 假名。两侧都是谚文时加空格——韩文按空格分词（`ccut-flow-core` 的
-/// `sep_len` 同一条规则）。
+/// Pairs of characters with no space inserted between them: Han characters, kana or full-width punctuation adjacent to each other, or Hangul next to Han or kana. When both sides are Hangul, a space is added, because Korean is split into words by spaces (the same rule as `sep_len` in `ccut-flow-core`).
 pub fn unspaced_pair(left: char, right: char) -> bool {
     speech_doc::atomize::unspaced_pair(left, right)
 }
@@ -1934,8 +1833,7 @@ pub fn display_padding(buffer: f64, gap: f64, lead_in: f64, tail: f64) -> f64 {
     buffer.max(0.0).min(gap.max(0.0) * buffer.max(0.0) / cap)
 }
 
-/// 显示间距不依赖标点开关或语言标签：源字幕、译文和导入字幕都可能混排。
-/// 仅在汉字/假名与 ASCII 字母数字的直接邻接处补空格，不改正文、大小写或词时刻。
+/// Display spacing does not depend on the punctuation switch or the language tag: source subtitles, translations and imported subtitles can all be mixed-script. A space is added only at the direct boundary between Han or kana and ASCII letters or digits. Text content, case and word timings are not changed.
 pub fn projected_text(text: &str, language: &str, enabled: bool) -> String {
     let text = if enabled {
         target_delivery_projection(text, language)
@@ -1978,8 +1876,7 @@ pub fn derived_words(
     if !explicit.is_empty() {
         return explicit;
     }
-    // 没有逐词时间时，按显示间距切分；否则无空格的混排句会被当成一个词，
-    // 折行与推算高亮和显式带空格的同一句不同。已有词的 ID 与时间不动。
+    // When there is no per-word timing, split by display spacing. Otherwise a mixed-script sentence without spaces would be treated as one word, and wrapping and highlight extrapolation would differ from the same sentence written with explicit spaces. Existing word IDs and timings are unchanged.
     let spaced = speech_doc::autocorrect::display_spacing(text);
     let tokens: Vec<&str> = spaced
         .split_whitespace()
@@ -2033,9 +1930,7 @@ pub fn timed_items(
     timed_inputs(&values, style)
 }
 
-/// 一条绘制输入落成 [`TimedItem`] 时的 id：`id`，没有就 `sid`，再没有按它在输入
-/// 切片里的位置编号（`index` 是**过滤前**的下标）。逐条样式要从原始条目反查到
-/// 这个 id，两处必须走同一个函数。
+/// The id a drawing input gets when it becomes a [`TimedItem`]: `id`, else `sid`, else a number from its position in the input slice (`index` is the index **before filtering**). Per-item styles must look this id back up from the original entry, so both sites must go through the same function.
 pub fn timed_input_id(item: &Value, text_key: &str, index: usize) -> String {
     item.get("id")
         .or_else(|| item.get("sid"))
@@ -2120,15 +2015,12 @@ pub fn merged_line_style(root: &Value, kind: LineKind) -> Value {
     Value::Object(merged)
 }
 
-/// 行级位置覆盖：`origStyle.x/y`、`transStyle.x/y` 是该行文本块中心的帧百分比。
+/// Line-level position override: `origStyle.x/y` and `transStyle.x/y` are frame-percentage positions of the centre of that line's text block.
 ///
-/// 必须显式读 partial，不能走 [`merged_line_style`]——合并结果永远带着根节点的
-/// 锚点 `x`/`y`，那样每行都会被判成「有覆盖」，堆栈会整体塌到锚点上。
-/// x、y 必须同时存在且有限才算覆盖（契约：两者都在才脱离堆栈），所以这里也不能
-/// 用 `finite()`：它会把 `null`/NaN 补成默认值，凭空造出覆盖。
+/// It must read the partial explicitly and must not go through [`merged_line_style`]: the merged result always carries the root node's anchor `x`/`y`, so every line would be judged as “overridden”, and the stack would collapse onto the anchor as a whole.
+/// x and y must both be present and finite to count as an override (contract: both must be present to leave the stack). So `finite()` cannot be used here either, because it would fill `null`/NaN with defaults and invent an override out of nothing.
 ///
-/// 行级位置只在双语上下文有意义。单行导出必须忽略残留覆盖，否则一次双语摆放会
-/// 把 orig/trans 单行模式下唯一那行也搬走。
+/// A line-level position only has meaning in a bilingual context. Single-line export must ignore leftover overrides, otherwise one bilingual placement would also move the only line in orig/trans single-line mode.
 pub fn line_position_override(
     root: &Value,
     kind: LineKind,
@@ -2150,7 +2042,7 @@ pub fn line_position_override(
     Some((coordinate("x")?, coordinate("y")?))
 }
 
-/// 垂直锚点：文本块（或槽位内的一行）挂在锚线上的哪条边。
+/// Vertical anchor: which edge of the text block (or of a row within a slot) hangs on the anchor line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerticalAlign {
     Top,
@@ -2158,11 +2050,9 @@ pub enum VerticalAlign {
     Bottom,
 }
 
-/// 严格白名单：只认 `"top" | "center" | "bottom"` 三个字符串，其余一律缺席。
+/// A strict allowlist: only the three strings `"top" | "center" | "bottom"` are accepted, and anything else is absent.
 ///
-/// 缺席不是 center 的同义词——它还意味着「用接缝规则」。所以这里必须返回
-/// `Option`，把「显式写了 center」和「什么都没写」分开；数字、布尔、拼错的字符串
-/// 都当没写，与 JS 预览的 `typeof === 'string'` 判据同构。
+/// Absent is not a synonym for center. It also means “use the seam rule”. So this must return an `Option`, to distinguish “explicitly wrote center” from “wrote nothing”. Numbers, booleans and misspelt strings are all treated as not written, which is isomorphic to the JS preview's `typeof === 'string'` check.
 pub fn vertical_align_from_str(value: &str) -> Option<VerticalAlign> {
     match value {
         "top" => Some(VerticalAlign::Top),
@@ -2172,18 +2062,16 @@ pub fn vertical_align_from_str(value: &str) -> Option<VerticalAlign> {
     }
 }
 
-/// JSON 侧的 [`vertical_align_from_str`]：非字符串一律当没写。
+/// The JSON-side [`vertical_align_from_str`]: non-strings are treated as not written.
 pub fn parse_vertical_align(value: Option<&Value>) -> Option<VerticalAlign> {
     vertical_align_from_str(value?.as_str()?)
 }
 
-/// 行级垂直锚点：`origStyle.verticalAlign` / `transStyle.verticalAlign`。
+/// Line-level vertical anchor: `origStyle.verticalAlign` / `transStyle.verticalAlign`.
 ///
-/// 与 [`line_position_override`] 同构，两条纪律照抄：
-/// - 只读 partial，不走 [`merged_line_style`]——合并结果会带上根节点的块级锚点，
-///   那样每一行都会被判成「显式指定」，接缝规则就永远轮不到。
-/// - 只在双语上下文消费。单行导出必须忽略残留的行级锚点，否则一次双语摆放会把
-///   orig/trans 单行模式下唯一那行也搬走。
+/// Isomorphic to [`line_position_override`], with the same two rules copied over:
+/// - Read only the partial, not via [`merged_line_style`]. The merged result would carry the root node's block-level anchor, so every line would be judged as “explicitly specified”, and the seam rule would never get a turn.
+/// - Consumed only in a bilingual context. Single-line export must ignore leftover line-level anchors, otherwise one bilingual placement would also move the only line in orig/trans single-line mode.
 pub fn line_vertical_align(
     root: &Value,
     kind: LineKind,
@@ -2199,13 +2087,13 @@ pub fn line_vertical_align(
     parse_vertical_align(overrides.get("verticalAlign"))
 }
 
-/// 逐条样式覆盖表在根样式上的键（§16.3.1）：
-/// `style.cueStyles[源条目 id]["source" | "translation"] = {…稀疏字段}`。
+/// The per-item style override table's keys on the root style (§16.3.1):
+/// `style.cueStyles[source entry id]["source" | "translation"] = {…sparse fields}`.
 ///
-/// 缺席 = 跟随整条轨；`{}` = 已脱离但一项没改，画出来与跟随逐像素相同。
+/// Absent means the line follows the whole track. `{}` means detached but with nothing changed, which renders pixel-identical to following.
 pub const CUE_STYLES_KEY: &str = "cueStyles";
 
-/// 覆盖表里区分原文 / 译文那一层的键。
+/// The key in the override table that distinguishes the source layer from the translation layer.
 pub fn cue_style_track(kind: LineKind) -> &'static str {
     match kind {
         LineKind::Original => "source",
@@ -2213,7 +2101,7 @@ pub fn cue_style_track(kind: LineKind) -> &'static str {
     }
 }
 
-/// 某一条源条目在某一行上的覆盖表；没脱离时是 `None`。
+/// The override table for one source entry on one line; `None` when it is not detached.
 pub fn cue_style_partial<'a>(
     root: &'a Value,
     kind: LineKind,
@@ -2225,16 +2113,14 @@ pub fn cue_style_partial<'a>(
         .as_object()
 }
 
-/// 这一条字幕画出来用的根样式：整条轨的样式叠上它自己的覆盖表。
+/// The root style used to draw this one caption: the whole track's style with its own override table laid on top.
 ///
-/// 覆盖表为空或缺席时返回 `None`，调用方直接用整条轨那一份，不白拷一次根样式。
-/// 叠法与 [`merged_line_style`] / [`resolve_line_style`] 的读法配套：
-/// - 双语：覆盖写进这一行自己的 partial（`origStyle` / `transStyle`），另一行不受
-///   影响。行级位置要 x、y 成对才算脱离堆栈，只给了一半时另一半取整条轨此刻的值。
-/// - 单行：覆盖同时写进根节点（锚点 x/y/verticalAlign 与根字号从根上读），并压过
-///   两份 partial 里已有的同名键，否则 partial 会把覆盖又盖回去。
+/// When the override table is empty or absent, returns `None`, and the caller uses the whole track's copy directly, without copying the root style needlessly.
+/// The overlay method matches the reading method of [`merged_line_style`] / [`resolve_line_style`]:
+/// - Bilingual: the override is written into this line's own partial (`origStyle` / `transStyle`), and the other line is unaffected. A line-level position counts as detached from the stack only when both x and y are present. If only one is given, the other takes the track's current value.
+/// - Single-line: the override is written into the root node at the same time (anchor x/y/verticalAlign and root font size are read from the root). It overrides the same-named keys already in both partials, otherwise the partials would overwrite the override back.
 ///
-/// 结果里去掉了 `cueStyles` 本身：每条覆盖各拷一份整张表是 O(n²)。
+/// The `cueStyles` key itself is removed from the result, since copying the whole table for each override would be O(n²).
 pub fn cue_root(root: &Value, kind: LineKind, source_id: &str, mode: StudioMode) -> Option<Value> {
     let partial = cue_style_partial(root, kind, source_id).filter(|partial| !partial.is_empty())?;
     let mut next = root.as_object().cloned().unwrap_or_default();
@@ -2292,8 +2178,7 @@ pub fn font_name(style: &Value) -> String {
         "bebas" => "Bebas Neue",
         "lexend" => "Lexend Deca",
         "serif" => "Source Serif 4",
-        // SwiftPM 为 UI 字体写入稳定的内部 family；样式模型仍保留用户
-        // 看到的产品名，MP4 shaping 在这里落到实际打包 family。
+        // SwiftPM writes a stable internal family for UI fonts. The style model still keeps the product name the user sees, and MP4 shaping lands on the family actually bundled here.
         "Source Sans 3" => "VK Sans",
         "Source Code Pro" => "VK Code",
         other => other,
@@ -2357,11 +2242,7 @@ pub fn resolve_line_style(
         .and_then(Value::as_bool)
         .or_else(|| style.get("outline").and_then(Value::as_bool))
         .unwrap_or_else(|| finite(outline.get("width"), 0.0) > 0.0 && outline_color.a < 252);
-    // 持久化的 `textOutline.width` 是**可见外扩量**占字号的百分比，不是线宽：
-    // Mac `StagePaneView` 写的是 `.strokeWidth = -width * 0.5`（AppKit 的负值描边
-    // 跨轮廓居中，单位是字号百分比），线宽 = width/100·fontSize·0.5，外扩量正好是
-    // 它的一半。这里存整条居中线宽，`raster` 的 tiny-skia stroke 与 `ass_style`
-    // 的外扩量都从它派生。漏掉 0.5 会让烧录描边比预览粗一倍。
+    // The persisted `textOutline.width` is the **visible outset** as a percentage of the font size, not the line width. Mac `StagePaneView` writes `.strokeWidth = -width * 0.5` (AppKit's negative stroke is centred across the contour, and its unit is a percentage of the font size). Line width = width/100·fontSize·0.5, and the outset is exactly half of it. Here the full centred line width is stored; the tiny-skia stroke in `raster` and the outset in `ass_style` both derive from it. Missing the 0.5 would make the burned-in outline twice as thick as the preview.
     let outline_width = finite(
         outline.get("width"),
         if style.get("outline").and_then(Value::as_bool) == Some(true) {
@@ -2394,16 +2275,8 @@ pub fn resolve_line_style(
         .get("on")
         .and_then(Value::as_bool)
         .unwrap_or_else(|| finite(glow.get("intensity"), 0.0) > 0.0);
-    // 模糊半径**不夹上限**：原型与 Web 预览都不夹（`panel-substyle.jsx` 的
-    // `filter: drop-shadow()` 直接吃 range），夹一道就等于「预览里柔、烧录里硬」。
-    // 面板的 glow range 最大 100（⇒ 0.9·fontSize）、shadow blur 最大 0.5
-    // （⇒ 0.5·fontSize），可调范围本来就落在旧上限之内——夹取只对手写 JSON 生效，
-    // 而那正是 Bulb / Vegas 这类大模糊配方被削掉的地方。下限仍保 1px：0 半径的
-    // box blur 没有意义。
-    // 已知缺口：发光与阴影共用同一个 effect 槽位，`glow_on` 时阴影被整个丢掉，
-    // 而 Mac 预览是发光轮次（`SubtitleFrameDrawing.swift:544-551`）之后照常画
-    // 带阴影的描边，两者可以叠加。拆成两个槽位要动 render_plan 的 DrawOp 结构，
-    // 不在本次修复范围内。
+    // The blur radius is **not capped**. Neither the prototype nor the Web preview caps it: `panel-substyle.jsx`'s `filter: drop-shadow()` takes the range directly. Capping it once would mean “soft in the preview, hard in burn-in”. The panel's glow range maximum is 100 (⇒ 0.9·fontSize), and the shadow blur maximum is 0.5 (⇒ 0.5·fontSize), so the adjustable range already falls within the old cap. Clamping only affected hand-written JSON, and that is exactly where large-blur recipes such as Bulb and Vegas were cut down. The lower bound still keeps 1px, since a 0-radius box blur is meaningless.
+    // Known gap: glow and shadow share the same effect slot, so when `glow_on` the shadow is dropped entirely. On the Mac preview, the shadowed outline is still drawn after the glow pass (`SubtitleFrameDrawing.swift:544-551`), and the two can stack. Splitting them into two slots would require changing the DrawOp structure in render_plan, which is outside the scope of this fix.
     let (effect_on, effect_color, effect_x, effect_y, effect_blur) = if glow_on {
         (
             true,
@@ -2436,11 +2309,10 @@ pub fn resolve_line_style(
                 .and_then(parse_css_color)
                 .is_some_and(|color| color.a < 252)
         });
-    // `block` 底板只影响最小宽度（下面的 `background_min_width`），**不再另调纵向
-    // 留白**：原型 `padOf` 只有一个 `pad`，横竖之比恒为 [`PLATE_PAD_ASPECT`]。
+    // The `block` plate affects only the minimum width (`background_min_width` below). **It no longer adjusts vertical padding separately**: the prototype `padOf` has only one `pad`, so the horizontal-to-vertical ratio is always [`PLATE_PAD_ASPECT`].
     let block_background =
         style.get("backgroundStyle").and_then(Value::as_str) == Some("block") && background_on;
-    // 底板留白 / 圆角 / 字距都归一化到**这一行自己的字号**（见 [`REFERENCE_FONT_SIZE`]）。
+    // Plate padding, corner radius and letter-spacing are all normalised to **this line's own font size** (see [`REFERENCE_FONT_SIZE`]).
     let size_scale = font_size / REFERENCE_FONT_SIZE;
     let background_pad_h = finite(style.get("backgroundPadding"), 10.0).max(0.0) * size_scale * 0.8;
     let font_weight = style
@@ -2626,7 +2498,7 @@ pub fn visual_from_json(value: &Value) -> WordVisual {
             .get("shadowOff")
             .and_then(Value::as_bool)
             .unwrap_or(false),
-        // 曲线不进三档合并，见 [`WordBoxTrack`]。
+        // Curves are not part of the three-tier merge; see [`WordBoxTrack`].
         box_scale: None,
         box_opacity: None,
         recipe: None,
@@ -2785,13 +2657,9 @@ pub fn word_animation(style: &Value) -> WordAnimation {
             animation.unspoken.underline = Some(false);
             animation.unspoken.opacity = Some(0.0);
         }
-        // 纯不透明度那两档（原型 `model-subanim.js` 的 `karaokeV2` / `highlight`）。
+        // Pure opacity tiers (the prototype `model-subanim.js` `karaokeV2` / `highlight`).
         //
-        // **一块底都没有，也不换色**：颜色参数表里拿颜色的只有三条
-        // （`colourHighlight` 当字色，`boxHighlight` / `bgHighlight` 当块色），卡拉 OK
-        // 与荧光笔一个都不在。它们各只有一条 `colour.a` 曲线，所以这里只写
-        // `opacity`——不写 `background` / `color`，`classic_word_box` 就不会画块，
-        // 面板那一侧 `accent_bindings` 也就没有颜色行可给。
+        // **Neither has a plate, and neither changes colour.** Among the colour parameters, only three take a colour: `colourHighlight` as the text colour, and `boxHighlight` / `bgHighlight` as the box colour. Karaoke and highlighter are neither of these. Each has only one `colour.a` curve, so only `opacity` is written here. `background` / `color` are not written, so `classic_word_box` will not draw a box, and the panel side's `accent_bindings` has no colour row to offer.
         "Karaoke" => {
             animation.spoken.opacity = Some(1.0);
             animation.active.opacity = Some(1.0);
@@ -2826,8 +2694,7 @@ pub fn word_animation(style: &Value) -> WordAnimation {
     animation
 }
 
-/// 经典逐词动画的三档合并。`phase` 是**当前词自己窗口内**的相位（0–1），只被
-/// [`WordAnimation::box_track`] 消费；没有轨的效果对它免疫，传什么都一样。
+/// The three-tier merge of the classic per-word animation. `phase` is the phase **within the current word's own window** (0–1), consumed only by [`WordAnimation::box_track`]. Effects without a track are immune to it, whatever is passed.
 pub fn word_state(
     animation: &WordAnimation,
     index: usize,
@@ -2853,8 +2720,7 @@ pub fn word_state(
     value
 }
 
-/// Designed Caption 的逐词投影。所有时间通道由 Mac 同源 recipe resolver 给出，
-/// 这里仅把颜色、透明度和 plate 语义转换成共享光栅层可消费的状态。
+/// The per-word projection of a Designed Caption. All timing channels are given by the Mac-equivalent recipe resolver. Here, colour, opacity and plate semantics are converted into state that the shared raster layer can consume.
 pub fn designed_word_state(
     design: &DesignedCaption,
     item: &TimedItem,
@@ -2871,8 +2737,7 @@ pub fn designed_word_state(
     };
     let marked = design.overrides.get(&word.id);
     if resolved.is_none() {
-        // Mac 将冻结但不可用的 recipe 当作显式验证错误；共享烧录层没有错误
-        // 回传通道，因此画空而不是退化为无关的 Basic 字幕。
+        // The Mac treats a frozen but unusable recipe as an explicit validation error. The shared burn-in layer has no error return channel, so it draws nothing rather than degrading to an unrelated Basic caption.
         visual.opacity = Some(0.0);
         return visual;
     }
@@ -3046,6 +2911,5 @@ pub fn timed_runs(text: &str, words: &[Word], transform: &str) -> Vec<TextRun> {
     runs
 }
 
-// 元素几何 → DrawOp 的纯组装在 P6a 整块下沉进 `ccut-timeline-render`
-// （设计 §9.1；`git mv` 搬迁，函数体一字未改）。本文件从此只调用它。
+// The pure assembly of element geometry → DrawOp was moved wholesale in P6a into `ccut-timeline-render` (design §9.1; a `git mv` move, function bodies unchanged). This file now only calls it.
 use timeline_render as element_draw;

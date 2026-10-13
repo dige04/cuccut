@@ -8,8 +8,8 @@ import { createFakeOpenCode, type FakeOpenCode, type FakeOpenCodeScenario } from
 import { OpenCodeDriver } from './opencode-driver.ts';
 
 /**
- * OpenCode 会话对着假 serve：一轮的消息与推理、工具步骤（文件修改带 diff）、审批（允许、拒绝、本会话放行）、
- * 访问模式与模型、中断、进程意外退出、恢复、MCP 与开发者指令。假 serve 在启动时读场景，改场景之后要新开会话。
+ * OpenCode session against a fake serve: one turn's messages and reasoning, tool steps (file changes with diffs), approvals (allow, deny, allow for this session),
+ * access mode and model, interrupt, unexpected process exit, resume, MCP and developer instructions. The fake serve reads its scenario at startup, so after changing the scenario, start a new session.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 8_000): Promise<T> {
@@ -85,7 +85,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
       expect.objectContaining({ kind: 'reasoning', text: 'thinking' }),
       expect.objectContaining({ kind: 'agent-message', text: 'hello there' }),
     ]);
-    // 会话建在工作目录上，用 build 智能体，访问模式写成权限规则。
+    // The session is created on the working directory, uses the build agent, and access mode is written as permission rules.
     const create = fake.requests('POST', '/api/session')[0]!.body!;
     expect(create.location).toEqual({ directory: cwd });
     expect(create.agent).toBe('build');

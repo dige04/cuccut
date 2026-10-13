@@ -17,7 +17,7 @@ describe('trimCache', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 写一个 `size` 字节的文件，修改时间是 `hoursAgo` 小时之前。 */
+  /** Writes a file of `size` bytes, with a modification time `hoursAgo` hours in the past. */
   const put = async (relative: string, size: number, hoursAgo: number) => {
     const file = path.join(dir, relative);
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -46,7 +46,7 @@ describe('trimCache', () => {
     const older = await put('media/playback/x.mp4', 200, 40);
     const newer = await put('media/bb/peaks.bin', 200, 30);
     const newest = await put('media/files/f.jpg', 200, 1);
-    // 总共 1200，上限 1000，降到 900：删掉最旧的两个（400）之后是 800。
+    // Total 1200, limit 1000, reduced to 900: after deleting the two oldest (400), it is 800.
     const result = await trimCache(dir, { maxBytes: 1000 });
     expect(result).toMatchObject({ totalBytes: 1200, protectedBytes: 400, removed: 2, removedBytes: 400, remainingBytes: 800, failed: 0 });
     for (const file of [index, wal, shm, newer, newest]) expect(await exists(file)).toBe(true);
@@ -61,7 +61,7 @@ describe('trimCache', () => {
     const at = new Date(Date.now() - 2 * HOUR);
     await fs.utimes(ccDir, at, at);
     const result = await trimCache(dir, { maxBytes: 600 });
-    // 1100 → 目标 540：删掉旧的临时文件（500）与缩略图（100），剩下正在写的 500。
+    // 1100 → target 540: delete the old temporary files (500) and thumbnails (100), leaving the 500 still being written.
     expect(result).toMatchObject({ removed: 2, remainingBytes: 500 });
     expect(await exists(inFlight)).toBe(true);
     expect(await exists(stale)).toBe(false);

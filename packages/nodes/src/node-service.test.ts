@@ -22,10 +22,10 @@ import {
 } from './testing/test-node.ts';
 
 /**
- * 节点服务端到端：真实的 HTTP（只听 127.0.0.1、系统分配端口）→ NodeJobs → JobManager → 假的 Model Worker。
+ * End-to-end test of the node service: real HTTP (listening only on 127.0.0.1, system-assigned port) → NodeJobs → JobManager → fake Model Worker.
  */
 
-/** 假 Model Worker 的默认转写（按 3 个词一段）：这些文字不能出现在事件、台账与日志里。 */
+/** The fake Model Worker's default transcription (one segment per 3 words): this text must not appear in events, the ledger or logs. */
 const TRANSCRIPT_PHRASES = ['testing one two', 'three cuccut is'];
 const MEDIA = Buffer.from('RIFF fake audio bytes for the node protocol tests');
 
@@ -49,7 +49,7 @@ async function errorOf(response: Response): Promise<NodeErrorBody['error']> {
   return ((await response.json()) as NodeErrorBody).error;
 }
 
-/** 不经 fetch 的原始 HTTP 请求：自己控制 Content-Length 与 Transfer-Encoding。 */
+/** A raw HTTP request not sent through fetch: controls its own Content-Length and Transfer-Encoding. */
 function rawRequest(
   baseUrl: string,
   options: { method: string; path: string; headers: Record<string, string>; chunks?: Buffer[] },
@@ -137,7 +137,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     });
     expect(job.jobId).toMatch(/^job_/);
 
-    // 先订阅再上传：流一直开着，直到终态那条之后由节点关闭。
+    // Subscribe before uploading: the stream stays open until the terminal event, after which the node closes it.
     const stream = api(`/v1/jobs/${job.jobId}/events`);
     const uploaded = await upload(job.jobId, MEDIA);
     expect(uploaded.status).toBe(204);
@@ -158,12 +158,12 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(events.at(-1)).toMatchObject({ type: 'job', job: { state: 'completed' } });
     expect(events).toContainEqual(expect.objectContaining({ type: 'language', tag: 'en', confidence: 0.87 }));
     expect(events).toContainEqual(expect.objectContaining({ type: 'warning', warning: { code: 'diarization-unavailable' } }));
-    // 嵌在 job 事件里的 lastSeq 就是这条事件的 seq。
+    // The lastSeq embedded in the job event is that event's seq.
     for (const e of jobEvents) expect(e.job.lastSeq).toBe(e.seq);
     const serialized = JSON.stringify(events);
     for (const phrase of TRANSCRIPT_PHRASES) expect(serialized).not.toContain(phrase);
 
-    // since：只给之后的事件；任务已终结，写完就关。
+    // since: only later events are given; the task has already terminated, so close after writing.
     const middle = seqs[Math.floor(seqs.length / 2)]!;
     const resumed = await readEvents(await api(`/v1/jobs/${job.jobId}/events?since=${middle}`));
     expect(resumed.map((e) => (e as { seq: number }).seq)).toEqual(seqs.filter((s) => s > middle));
@@ -173,7 +173,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(done).toMatchObject({ state: 'completed', phase: 'done', error: null, lastSeq: seqs.at(-1) });
     expect(done.output).toEqual({ sha256: expect.stringMatching(/^[0-9a-f]{64}$/), byteLength: expect.any(Number) });
 
-    // 结果：整份。
+    // Result: the whole file.
     const full = await api(`/v1/jobs/${job.jobId}/result`);
     expect(full.status).toBe(200);
     expect(full.headers.get('etag')).toBe(`"sha256:${done.output!.sha256}"`);
@@ -185,7 +185,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(result.schema).toBe('cuccut.asr-result/v1');
     expect(result.segments.map((s) => s.text)).toEqual(expect.arrayContaining(TRANSCRIPT_PHRASES));
 
-    // 结果：续传。
+    // Result: resumed.
     const partial = await api(`/v1/jobs/${job.jobId}/result`, { headers: { range: 'bytes=10-' } });
     expect(partial.status).toBe(206);
     expect(partial.headers.get('content-range')).toBe(`bytes 10-${bytes.length - 1}/${bytes.length}`);
@@ -198,7 +198,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(beyond.headers.get('content-range')).toBe(`bytes */${bytes.length}`);
     await beyond.arrayBuffer();
 
-    // 节点上：媒体已删，结果留着；JobManager 的记录是远端提交、没有视频、没有产物。
+    // On the node: the media is deleted and the result is kept; JobManager's record is a remote submission with no video and no artifacts.
     expect(await exists(path.join(jobDir(job.jobId), 'input'))).toBe(false);
     expect(await exists(path.join(jobDir(job.jobId), 'result.json'))).toBe(true);
     const record = node.manager.inspect(job.jobId);
@@ -223,7 +223,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     const share = await fs.readFile(node.home.nodeShareFile, 'utf8');
     expect(share).not.toContain(token.split('.')[1]);
 
-    // 删除：之后一律 404，任务目录没了。
+    // Delete: afterwards always 404, and the task directory is gone.
     const deleted = await api(`/v1/jobs/${job.jobId}`, { method: 'DELETE' });
     expect(deleted.status).toBe(204);
     for (const suffix of ['', '/events', '/result']) {
@@ -241,7 +241,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     const first = await create(request);
     expect(first.status).toBe(201);
     const job = (await first.json()) as NodeJob;
-    // 键的顺序不同也算同一份请求。
+    // Keys in a different order count as the same request.
     const reordered = {
       options: request.options,
       input: request.input,
@@ -261,7 +261,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(conflict.status).toBe(409);
     expect(await errorOf(conflict)).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
 
-    // 别的客户端用同一个 clientJobId 是另一个任务。
+    // Another client using the same clientJobId is a different task.
     const other = await node.pair('client-b', 'B');
     const separate = await create(request, other);
     expect(separate.status).toBe(201);
@@ -297,7 +297,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await getJob(job.jobId)).toMatchObject({ state: 'failed', error: { code: 'INPUT_HASH_MISMATCH' } });
     expect(await exists(path.join(jobDir(job.jobId), 'input'))).toBe(false);
     expect(await exists(path.join(jobDir(job.jobId), 'input.part'))).toBe(false);
-    // 终结的任务：事件流写完就关。
+    // For a terminated task, the event stream closes after writing.
     const events = await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
     expect(events.at(-1)).toMatchObject({ type: 'job', job: { state: 'failed' } });
     expect(node.manager.list()).toEqual([]);
@@ -471,7 +471,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     const events = await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
     const jobEvents = events.filter((e) => e.type === 'job');
     expect(jobEvents.at(-1)).toMatchObject({ job: { state: 'completed', attempt: 2 } });
-    // 第 2 次尝试在终态之前就出现在事件里（发起端能显示「重试中」）。
+    // The second attempt appears in the events before the terminal state (the initiator can show "retrying").
     expect(jobEvents.slice(0, -1).some((e) => e.job.attempt === 2 && e.job.state === 'running')).toBe(true);
     expect(jobEvents.filter((e) => e.job.attempt === 1).map((e) => e.job.state)).not.toContain('failed');
     expect(jobEvents.map((e) => e.job.state)).not.toContain('interrupted');
@@ -598,7 +598,7 @@ describe('配对与吊销（HTTP）', () => {
     expect(node.manager.inspect(running.jobId).state).toBe('cancelled');
     expect(await exists(path.join(node.home.nodeJobsDir, running.jobId))).toBe(false);
     expect(await exists(path.join(node.home.nodeJobsDir, waiting.jobId))).toBe(false);
-    // 别的客户端不受影响。
+    // Other clients are unaffected.
     expect((await nodeFetch(node.baseUrl, other, `/v1/jobs/${kept.jobId}`)).status).toBe(200);
     const persisted = JSON.parse(await fs.readFile(node.home.nodeShareFile, 'utf8')) as { clients: Array<{ clientId: string }> };
     expect(persisted.clients.map((c) => c.clientId)).toEqual(['client-b']);
@@ -638,7 +638,7 @@ describe('共享开关（NodeService）', () => {
     const mode = (await fs.stat(node.home.nodeShareFile)).mode & 0o777;
     expect(mode).toBe(0o600);
 
-    // 再次开启：换一个配对码，nodeId 不变。
+    // Enabled again: a new pairing code, and the nodeId is unchanged.
     const again = await node.service.start({});
     expect(again.nodeId).toBe(status.nodeId);
     expect(pairingCodeOf(again)).not.toBeNull();
@@ -697,7 +697,7 @@ describe('能力的分项开关', () => {
 
   it('第一次开启共享：支持的能力全部打开，写进 node-share.json', async () => {
     node = await startTestNode({ share: null });
-    // 还没开启过：按开启时的默认报告。
+    // Never enabled before: reports the defaults in effect when it was enabled.
     expect(node.service.status().capabilities).toEqual({ transcribe: { enabled: true } });
     const status = await node.service.start({ port: 0 });
     expect(status.capabilities).toEqual({ transcribe: { enabled: true } });
@@ -722,12 +722,12 @@ describe('能力的分项开关', () => {
     const rejected = await createJob(n, token, testJobRequest(MEDIA));
     expect(rejected.status).toBe(403);
     expect(await errorOf(rejected)).toMatchObject({ code: 'CAPABILITY_DISABLED', details: { capability: 'transcribe' } });
-    // 已经接受的任务重发同一个幂等键不是新任务：照样返回原来的。
+    // Re-sending an already-accepted task with the same idempotency key is not a new task: the original is returned.
     const replay = await createJob(n, token, runningRequest);
     expect(replay.status).toBe(200);
     expect(await replay.json()).toMatchObject({ jobId: running.jobId });
 
-    // 等上传的任务照样收媒体、跑完。
+    // Tasks waiting for upload still receive their media and run to completion.
     const uploaded = await nodeFetch(n.baseUrl, token, `/v1/jobs/${waiting.jobId}/input`, {
       method: 'PUT',
       headers: { 'content-type': 'application/octet-stream' },
@@ -739,7 +739,7 @@ describe('能力的分项开关', () => {
     expect(waitingEvents.at(-1)).toMatchObject({ type: 'job', job: { state: 'completed' } });
     expect((await nodeFetch(n.baseUrl, token, `/v1/jobs/${running.jobId}/result`)).status).toBe(200);
 
-    // 再打开：新任务照常创建。
+    // Reopened: new tasks are created as usual.
     const on = await n.service.setCapability('transcribe', true);
     expect(on.capabilities).toEqual({ transcribe: { enabled: true } });
     expect((await health(n)).capabilities.transcribe.enabled).toBe(true);
@@ -759,7 +759,7 @@ describe('能力的分项开关', () => {
     expect((await health(node)).capabilities.transcribe.enabled).toBe(false);
     expect((await createJob(node, token, testJobRequest(MEDIA))).status).toBe(403);
 
-    // 关掉共享再设：开启时沿用，不回到默认。
+    // Sharing turned off and then set again: carried over from when it was enabled, not reset to the default.
     await node.service.stop();
     await node.service.setCapability('transcribe', true);
     await node.service.setCapability('transcribe', false);
@@ -800,7 +800,7 @@ describe('能力的分项开关', () => {
     });
     expect((await health(node)).capabilities.transcribe.enabled).toBe(true);
     expect((await createJob(node, token, testJobRequest(MEDIA))).status).toBe(201);
-    // 下一次写入补上这张表。
+    // The next write adds this table.
     await node.service.setCapability('transcribe', true);
     expect((await stored(node)).capabilities).toEqual({ transcribe: { enabled: true } });
   });
@@ -824,7 +824,7 @@ describe('能力的分项开关', () => {
     const dir = node.dir;
     await node.close({ keepDir: true });
 
-    // 代码里多了一种可共享的能力（align），存下的表里没有它。
+    // A new shareable capability (align) was added in code; the stored table does not contain it.
     node = await startTestNode({ dir, share: null, shareableCapabilities: ['transcribe', 'align'] });
     expect(node.service.status().capabilities).toEqual({ transcribe: { enabled: true }, align: { enabled: false } });
     const enabled = await node.service.setCapability('align', true);
@@ -855,7 +855,7 @@ describe('ShareStatus.addresses：只列出此刻连得上的地址', () => {
 });
 
 describe('与本地视频任务共用一个队列', () => {
-  /** 内存里的视频：一个素材，记下提交的编辑。 */
+  /** An in-memory video: one asset, recording the submitted edits. */
   class FakeVideos implements JobVideos {
     leases = 0;
     applied: EditOperation[][] = [];
@@ -903,12 +903,12 @@ describe('与本地视频任务共用一个队列', () => {
       { kind: 'connection', id: 'conn_1' },
     );
     const { job: remote } = await submitTestJob(node.baseUrl, token, MEDIA, { bundleId });
-    // 换一个提示，免得与第一个本地任务合并成同一个。
+    // Change the hint so it does not merge with the first local task into one.
     const local2 = await node.manager.submitTranscribe(
       { videoId: 'mov_1', assetId: 'ast_1', bundleId, hint: 'second' },
       { kind: 'connection', id: 'conn_1' },
     );
-    // 第一个本地任务还在加载模型时，远端任务排在它后面。
+    // While the first local task is still loading the model, the remote task queues behind it.
     expect(node.manager.inspect(remote.jobId).state).toBe('queued');
 
     for (const jobId of [local1.jobId, remote.jobId, local2.jobId]) await node.manager.settled(jobId);
@@ -919,7 +919,7 @@ describe('与本地视频任务共用一个队列', () => {
       expect(Date.parse(records[i]!.startedAt!)).toBeGreaterThanOrEqual(Date.parse(records[i - 1]!.endedAt!));
     }
     expect(records[1]).toMatchObject({ submitter: { kind: 'node', id: 'client-a' }, videoId: null, result: null });
-    // 只有两个本地任务写了视频。
+    // Only two local tasks wrote a video.
     expect(videos.applied).toHaveLength(2);
     expect(videos.leases).toBe(0);
   });

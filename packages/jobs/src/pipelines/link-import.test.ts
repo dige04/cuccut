@@ -27,9 +27,8 @@ import { PipelineRunner } from './pipeline-runner.ts';
 import { createScopeOf, type PipelineTargets, type VideoLease } from './video-target.ts';
 
 /**
- * 从链接导入（架构设计 §7.9）：假 yt-dlp（不联网）、真实的 ffprobe 校验下载结果。参数校验、注入防护（以 - 开头的链接、
- * 带空格与引号的标题）、私有网络、链接脱敏、进度、失败分类、取消清理、失败后重试续传、同意撤回与严格离线。
- * 没有 ffprobe 时跳过需要它的部分。
+ * Import from a link (architecture design §7.9): a fake yt-dlp (no network) and the real ffprobe to validate the download. Covers parameter validation, injection defense (links starting with -, titles with spaces and quotes), private networks, link redaction, progress, failure classification, cleanup on cancel, resume on retry after failure, withdrawal of consent, and strict offline mode.
+ * The parts that need ffprobe are skipped when it is not available.
  */
 
 const hasFfprobe = (() => {
@@ -86,7 +85,7 @@ describe('从链接导入的参数', () => {
       projectId: 'prj_1',
       create: { projectId: 'prj_1' },
     });
-    // 不属于项目的会话：新建在会话的来源目录里；顶层的会话可以一并给，要是同一个。
+    // A session that does not belong to a project: created in the session's source directory; a top-level session may also be given, if it is the same one.
     expect(parseLinkImportParams({ url, target: { create: { conversationId: 'conv_1' } } })).toMatchObject({
       create: { conversationId: 'conv_1' },
     });
@@ -128,7 +127,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
   let leases: number;
   let transcribeState: 'completed' | 'failed';
   let fileTranscriptId: string | undefined;
-  /** 新建的视频里的文档（转写写进去的）；转写 Job 的结果给出 `speechDocumentId`。 */
+  /** The document in the new video (where the transcript is written); the transcribe Job's result gives `speechDocumentId`. */
   let newDocuments: Record<string, DocumentRecord>;
   let speechDocumentId: string | undefined;
   let checked: unknown[];
@@ -152,7 +151,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     newDocuments = {};
     speechDocumentId = undefined;
     checked = [];
-    // 新建视频与重试时重新取得它：假的，只数租约。
+    // Obtained again when the video is created and on retry: a fake, which only counts leases.
     const lease = (videoId: string, place: Record<string, unknown>): VideoLease => {
       leases++;
       let held = true;
@@ -180,7 +179,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     const deps: LinkImportDeps = {
       tool: async () => {
         if (!consented) throw new RpcError('conflict', '要先同意', { code: 'TOOL_CONSENT_REQUIRED', remedy: '在设置里同意' });
-        // PATH 只有一个空目录：系统里真实的 yt-dlp 不会被用到。
+        // PATH holds only one empty directory, so the real yt-dlp on the system will not be used.
         return { ...fake.nodeTool, version: '2026.07.04', source: 'managed', env: { ...fake.nodeTool.env, PATH: path.join(dir, 'empty') } };
       },
       destination: async (target) => {
@@ -198,7 +197,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
               : videoId === 'vid_empty'
                 ? { revision: '0', rootSequenceId: 'seq_empty', documents: {} }
                 : null,
-        // vid_1 的时间线上已经有片段，vid_empty 与新建的视频是空的。
+        // vid_1's timeline already has clips; vid_empty and the newly created video are empty.
         rootSequence: (videoId) =>
           ['vid_1', 'vid_new', 'vid_empty'].includes(videoId)
             ? ({
@@ -293,7 +292,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
   it('下载、校验、发布到下载目录并导入视频；链接在记录与来源里都已脱敏，原始链接只在下载时用', async () => {
     const raw = `https://video.example.com/watch?v=abc&token=${SECRET}#t=3`;
     const { jobId } = await start({ url: raw, videoId: 'vid_1', subtitleLanguages: ['en'], transcribe: true });
-    // 提交之后，原始链接只在 0600 的暂存文件里。
+    // After submission, the original link exists only in the 0600 staging file.
     expect(await fs.readFile(sourcesFile, 'utf8')).toContain(SECRET);
     const parent = await finished(jobId);
     expect(parent.state).toBe('completed');
@@ -309,11 +308,11 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
       description: 'A fake clip.\n\nChapters:\n0:00 Opening\n0:01 Ending',
       sourceChapters: 2,
     });
-    // 文件名取自清理过的标题，落在下载目录里；字幕同名；工具的临时文件不发布。
+    // The file name comes from the cleaned title and lands in the download directory; the subtitle has the same name; the tool's temporary files are not published.
     expect(summary.files.media).toBe(path.join(await fs.realpath(downloads()), `rf Fake clip one two it's ok.wav`));
     expect(summary.files.subtitles).toEqual([path.join(await fs.realpath(downloads()), `rf Fake clip one two it's ok.en.vtt`)]);
     expect((await fs.readdir(downloads())).sort()).toEqual([`rf Fake clip one two it's ok.en.vtt`, `rf Fake clip one two it's ok.wav`]);
-    // 导入：链接素材，来源里是脱敏的链接、平台元数据、工具与下载时间。
+    // Import: link material; the source holds the redacted link, platform metadata, the tool and download time.
     expect(applied).toHaveLength(1);
     const op = (applied[0]!.request.operations as Array<Record<string, unknown>>)[0]!;
     expect(op).toMatchObject({
@@ -327,7 +326,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
           webpageUrl: 'https://video.example.com/watch?v=abc',
           platform: 'Generic',
           mediaId: 'abc123',
-          // 简介与清洗过的平台章节：交给字幕与翻译核心的 from_metadata 用的就是这两个键。
+          // The description and the cleaned platform chapters: the subtitle and translation core reads these two keys through from_metadata.
           description: 'A fake clip.\n\nChapters:\n0:00 Opening\n0:01 Ending',
           chapters: [
             { start: 0, end: 0.5, title: 'First half' },
@@ -345,11 +344,11 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
         submitter: { kind: 'pipeline', id: jobId },
       },
     ]);
-    // 任务记录（Web 能读到 jobs.*）里没有原始链接；完成之后暂存文件也删了。
+    // The task record (readable by Web through jobs.*) holds no original link; the staging file is also deleted after completion.
     expect(JSON.stringify(jobs.list())).not.toContain(SECRET);
     expect(JSON.stringify(applied)).not.toContain(SECRET);
     await expect(fs.stat(sourcesFile)).rejects.toMatchObject({ code: 'ENOENT' });
-    // 下载工具拿到的是原始链接，在 -- 之后；不读配置、不加载插件；输出模板在 staging 里。
+    // The download tool receives the original link after --; it does not read config or load plugins; the output template is in staging.
     const calls = (await fake.calls()).filter((c) => c.argv);
     expect(calls).toHaveLength(2);
     for (const call of calls) {
@@ -358,7 +357,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     }
     const download = calls[1]!.argv!;
     expect(download[download.indexOf('-o') + 1]).toBe(path.join(stagingOf(jobId), 'dl', 'media.%(ext)s'));
-    // 真实的字节进度。
+    // Real byte progress.
     const bytes = records.filter((r) => r.parentJobId === jobId && r.progress?.unit === 'bytes');
     expect(bytes.length).toBeGreaterThan(0);
     expect(bytes.at(-1)!.progress!.total).toBe(16_044);
@@ -420,7 +419,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
       expect.objectContaining({ type: 'importAsset', storage: 'linked', ref: 'link' }),
       { type: 'addItem', sequenceId: 'seq_new', asset: { ref: 'link' }, at: { unit: 'frames', value: 0 }, alignment: 'floor-frame' },
     ]);
-    // 转写提交了两次（失败一次、重试一次），新建与导入各只一次。重试换一个命令：同一个命令会拿回上次失败的那个 Job。
+    // Transcription was submitted twice (one failure, one retry); creation and import each happen only once. The retry uses a different command: the same command would return the Job that failed last time.
     expect(transcribed).toHaveLength(2);
     expect(transcribed[0]).toMatchObject({ request: { commandId: `${jobId}:transcribe` } });
     expect(transcribed[1]).toEqual({
@@ -471,7 +470,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
       diarize: true,
       commandId: `${jobId}:transcribe`,
     });
-    // 字幕层这一步跑了：假视频的时间线是空的，所以没建，摘要说明原因。
+    // The subtitle layer step ran: the fake video's timeline is empty, so none was created, and the summary says why.
     expect(parent.pipeline!.steps.find((s) => s.name === 'captions')!.status).toBe('completed');
     expect(parent.pipeline!.summary).toMatchObject({
       videoId: 'vid_new',
@@ -501,7 +500,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     });
     const parent = await finished(jobId);
     expect(parent).toMatchObject({ state: 'completed', videoId: 'vid_new' });
-    // saveTo 交给 destination 决定（会话不属于项目时 Runtime 仍给下载目录）。
+    // saveTo is decided by destination (when the session does not belong to a project, the Runtime still gives the download directory).
     expect(destinations).toEqual([{ conversationId: 'conv_1', saveTo: 'project' }]);
     expect(created).toEqual([
       {
@@ -525,7 +524,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     const summary = parent.pipeline!.summary as unknown as LinkImportSummary;
     const [media, transcript] = parent.result!.outputs!;
     expect(media!.path).toBe(summary.files.media);
-    // 下载的媒体不进产物库：按登记的路径找。
+    // Downloaded media does not enter the artifact library: find it by its registered path.
     expect(await jobs.artifacts.locate(media!.artifactId)).toBeNull();
     const file = await locateArtifact(jobs.artifacts, media!.artifactId, media!);
     expect(file).toBe(summary.files.media);
@@ -548,9 +547,9 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
         }),
       },
     });
-    // 文稿不是下载的媒体：不按链接导入的来源导入。
+    // A transcript is not downloaded media: it is not imported with the link-import source.
     expect(linkImportAssetOperation(parent, { artifactId: transcript!.artifactId, file: transcript!.path! })).toBeNull();
-    // 同样大小、内容改过：不认；删掉了也不认。
+    // Same size but content changed: not recognized; also not recognized after deletion.
     const bytes = await fs.readFile(summary.files.media);
     bytes[bytes.length - 1] = bytes.at(-1)! ^ 0xff;
     await fs.writeFile(summary.files.media, bytes);
@@ -622,7 +621,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
 
   it('取消杀掉整个进程组并删掉 staging；之后的重试从头下载', async () => {
     const { jobId } = await start({ url: 'https://video.example.com/slow' });
-    // 两个 pid 都读到正整数才算数：文件还没写好时不能当成 0（`kill(0, 0)` 永远成功）。
+    // Both pids count only when they read as positive integers: while the file is not yet written it must not be taken as 0 (`kill(0, 0)` always succeeds).
     let pids: number[] = [];
     await waitFor(async () => {
       pids = await Promise.all([readPid(`${fake.log}.pid`), readPid(`${fake.log}.child.pid`)]);
@@ -642,7 +641,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(failed.state).toBe('failed');
     expect(failed.error).toMatchObject({ code: 'LINK_NETWORK_ERROR' });
     expect(await fs.readdir(path.join(stagingOf(jobId), 'dl'))).toEqual(['media.wav.part']);
-    // 原始链接还留着，重试要用。
+    // The original link is still kept; retry needs it.
     expect(await fs.readFile(sourcesFile, 'utf8')).toContain(SECRET);
     await runner.retry(jobId);
     const retried = await finished(jobId);
@@ -675,7 +674,7 @@ function alive(pid: number): boolean {
   }
 }
 
-/** 读一个 pid 文件；还没有或内容不是正整数时给 0。 */
+/** Reads a pid file; gives 0 if it does not exist yet or its content is not a positive integer. */
 async function readPid(file: string): Promise<number> {
   const text = await fs.readFile(file, 'utf8').catch(() => '');
   return /^[1-9]\d*$/.test(text.trim()) ? Number(text.trim()) : 0;

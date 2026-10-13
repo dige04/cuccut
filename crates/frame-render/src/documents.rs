@@ -1,5 +1,4 @@
-//! 合成要读的文档：字幕文档、字幕样式文档与字幕的词所在的转写文档的冻结正文（引擎 `exports.plan` 的 `documents`，
-//! 预览由界面送进来）。
+//! Documents that composition reads: frozen bodies of the caption document, the caption style document, and the transcript document holding the caption words (`documents` of the engine's `exports.plan`; the preview supplies them from the UI).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,21 +14,21 @@ pub struct FrozenDocument {
     pub kind: Option<String>,
     #[serde(default)]
     pub schema: Option<String>,
-    /// 字幕行的种类：`original` 或 `translation`（派生自译文的字幕）。
+    /// Caption line kind: `original` or `translation` (captions derived from a translation).
     #[serde(default)]
     pub line_kind: Option<String>,
-    /// 文档头的 `sourceDocumentId`：字幕的句子用 `words` 指向这份文档里的词。
+    /// The document header's `sourceDocumentId`: caption sentences point to words in this document through `words`.
     #[serde(default)]
     pub source_document_id: Option<String>,
-    /// 文档头的 `sourceAssetId`：转写描述的素材（投有效词流用）。
+    /// The document header's `sourceAssetId`: the media the transcript describes (used to project the effective word stream).
     #[serde(default)]
     pub source_asset_id: Option<String>,
-    /// 文档不在了时为 `null`。
+    /// `null` when the document is gone.
     #[serde(default)]
     pub body: Value,
 }
 
-/// 按 ID 查的文档。正文共享：预览换文档时不再整份复制转写。
+/// Documents looked up by ID. Bodies are shared: when the preview swaps documents, the transcript is no longer copied in full.
 #[derive(Clone, Debug, Default)]
 pub struct Documents {
     by_id: HashMap<String, Arc<FrozenDocument>>,
@@ -40,7 +39,7 @@ impl Documents {
         Documents::shared(documents.into_iter().map(Arc::new))
     }
 
-    /// 共享正文的文档；同一个 ID 出现两次时后一份为准。
+    /// Documents with shared bodies; if the same ID appears twice, the later one wins.
     pub fn shared(documents: impl IntoIterator<Item = Arc<FrozenDocument>>) -> Documents {
         Documents {
             by_id: documents.into_iter().map(|d| (d.document_id.clone(), d)).collect(),

@@ -3,8 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Id } from '@cuccut/protocol';
 
 /**
- * 「生成配乐」做好后自动铺进视频音乐轨的记录（产品设计 §2.7「生成配乐」）：铺过的任务号。只是界面的记号，跨会话记在本机：
- * 用户把铺好的音乐删掉之后再打开视频，不会又铺一遍。最多记最近几百条。
+ * Record of "Generate soundtrack" results that were automatically laid onto the video's music track (product design §2.7 "Generate soundtrack"): the task numbers already laid. This is only a UI marker, recorded on this machine across conversations:
+ * after the user deletes the laid music and reopens the video, it is not laid again. Keeps at most the latest several hundred entries.
  */
 interface SoundtrackStore {
   placed: Record<Id, true>;

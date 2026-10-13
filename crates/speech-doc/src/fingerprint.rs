@@ -1,16 +1,16 @@
-//! FNV-1a 双指纹（逐字对拍 voice-ink `PipelineFingerprint.swift`）。
+//! Dual FNV-1a fingerprints (cross-checked word for word against voice-ink `PipelineFingerprint.swift`).
 //!
-//! - 内容指纹 [`fingerprint`]：哈希每个词的 text——文本编辑即失效；
-//! - 结构指纹 [`id_fingerprint`]：只哈希词 id——润色 rebind 保 id 故存活，
-//!   重转录换发全部 id 故失效。
+//! - Content fingerprint [`fingerprint`]: hashes each word's text — any text edit invalidates it;
+//! - Structural fingerprint [`id_fingerprint`]: hashes only word ids — a polish-stage rebind keeps the ids, so it survives,
+//!   while re-transcription reissues all ids, so it invalidates.
 
 use crate::doc::Word;
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-/// 每个元素:UTF-8 逐字节 FNV-1a,之后 `hash ^= 0x1f; hash *= prime`
-/// （最后一个元素之后也执行）——防止 ["ab","c"] 与 ["a","bc"] 撞哈希。
+/// For each element: UTF-8 bytes fed through FNV-1a byte by byte, followed by `hash ^= 0x1f; hash *= prime`
+/// (also executed after the last element) — to prevent ["ab","c"] and ["a","bc"] from colliding.
 fn hash_items<'a, I: IntoIterator<Item = &'a str>>(items: I) -> u64 {
     let mut hash = FNV_OFFSET;
     for item in items {
@@ -38,8 +38,8 @@ fn base36(mut value: u64) -> String {
     String::from_utf8(output).expect("base36 digits are ASCII")
 }
 
-/// 内容指纹：`count:firstId:lastId:base36(FNV-1a(每词 text))`；空词流为
-/// `0:-:-:<hash>`。
+/// Content fingerprint: `count:firstId:lastId:base36(FNV-1a(each word's text))`; for an empty word stream it is
+/// `0:-:-:<hash>`.
 pub fn fingerprint(words: &[Word]) -> String {
     let hash = hash_items(words.iter().map(|word| word.text.as_str()));
     format!(
@@ -51,13 +51,13 @@ pub fn fingerprint(words: &[Word]) -> String {
     )
 }
 
-/// 结构指纹：`count:base36(FNV-1a(每词 id))`。
+/// Structural fingerprint: `count:base36(FNV-1a(each word id))`.
 pub fn id_fingerprint(words: &[Word]) -> String {
     let hash = hash_items(words.iter().map(|word| word.id.as_str()));
     format!("{}:{}", words.len(), base36(hash))
 }
 
-/// 任意字符串序列的指纹：`count:base36`（版式串、产物头等；调用方自行排序）。
+/// Fingerprint of an arbitrary string sequence: `count:base36` (layout strings, artifact headers, etc.; the caller sorts them itself).
 pub fn fingerprint_strings<I>(items: I) -> String
 where
     I: IntoIterator,

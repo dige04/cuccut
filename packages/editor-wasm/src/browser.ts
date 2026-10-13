@@ -3,9 +3,8 @@ import { EditorSemantics, EditorWasmUnavailable, semanticsApi } from './semantic
 export * from './semantics.ts';
 
 /**
- * 浏览器里的载入：Vite 把 `generated/editor.wasm` 以 data URL 内联进 bundle（开发服务器与打包后的 file:// 页面走同一条路，
- * 与预览的 WASM 一样）。用急切的 glob 而不是静态 import：没有构建时这里拿到空对象，调用时才报错，界面别的部分照常载入。
- * 用的 Vite 配置要把 `.wasm` 列进 `assetsInclude`。
+ * Loading in the browser: Vite inlines `generated/editor.wasm` into the bundle as a data URL (the dev server and the packaged file:// page take the same path, same as the WASM for preview). Uses an eager glob instead of a static import: without a build, this gets an empty object and only errors when called, so the rest of the UI still loads.
+ * The Vite config must list `.wasm` in `assetsInclude`.
  */
 const inlined = import.meta.glob<string>('./generated/editor.wasm', { eager: true, query: '?inline', import: 'default' });
 
@@ -22,7 +21,7 @@ function decodeDataUrl(url: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/** 载入一次，之后同步复用。没有构建时抛 `EditorWasmUnavailable`。 */
+/** Loads once, then reuses synchronously. Throws `EditorWasmUnavailable` if not built. */
 export function editorSemantics(): EditorSemantics {
   if (loaded) return loaded;
   const url = dataUrl();
@@ -31,12 +30,12 @@ export function editorSemantics(): EditorSemantics {
   return loaded;
 }
 
-/** WASM 是否已经构建。 */
+/** Whether the WASM has been built. */
 export function editorWasmAvailable(): boolean {
   return dataUrl() !== null;
 }
 
-/** 各函数见 `EditorSemantics` 的同名方法。 */
+/** Each function: see the same-named method on `EditorSemantics`. */
 export const {
   speechSentences,
   stageBox,
@@ -49,7 +48,7 @@ export const {
   sourceChapters,
 } = semanticsApi(editorSemantics);
 
-/** 与 Node 一侧同名，浏览器里没有文件路径。 */
+/** Same name as on the Node side; there are no file paths in the browser. */
 export function locateEditorWasm(): string | null {
   return null;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { audioItem, captionItem, chapter, sequence, track, videoItem } from '../testing/sequence-records.ts';
 import { gapsAfterDelete, mergeSpans, rippleOperations, selectionSpans, shiftFrame, uncoveredSpans } from './timeline-ripple.ts';
 
-// 30 fps：视频在播放头 300 帧处切成两段，字幕也切成两段，下面一条配乐只盖前 5 秒。
+// 30 fps: the video is cut in two at playhead frame 300, the subtitles are also cut in two, and the music track below only covers the first 5 seconds.
 const tracks = [track('s1', 'subtitle', 3), track('v1', 'visual', 1), track('a1', 'audio', 2)];
 const items = [
   videoItem('vL', 'v1', 0, 300),

@@ -12,18 +12,15 @@ import { DUB_REGEN_COPY as C } from './dub-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * 句级重配的提交与收尾（设计稿 timeline-dub.jsx 的「重新生成这几句」「改译文并重配…」，panel-dub-fit.jsx）：
- * 提交 `pipelines.start`（`dub` 带 `regroup`），只重配这几句、写回原来那一组。哪几句在排队不记在这里——时间线从 `jobs` 镜像里
- * 在跑的配音流程冻结的 `params.regroup` 读（model/dub-takes.ts），从别处（智能体、命令行）发起的也一样画。
+ * Submitting and wrapping up per-sentence re-dub (design timeline-dub.jsx “Re-generate these sentences” and “Edit translation and re-dub…”, panel-dub-fit.jsx):
+ * submits `pipelines.start` (`dub` with `regroup`), re-dubbing only those sentences and writing them back into the original group. Which sentences are queued is not recorded here: the timeline reads it from the `params.regroup` frozen in the running dub flow in the `jobs` mirror (model/dub-takes.ts), so jobs started elsewhere (by an agent or from the command line) are shown the same way.
  *
- * 与工具页里的翻译配音（dub-run.ts）分开：那边按视频一次只配一组、完成后留整组的收据；这里同一个视频可以同时重配几组里的
- * 不同句子，完成时只给一条提示（换上了几句、哪几句没换上），带「撤销」——撤的是 Runtime 写回的那一笔（配音计划在那一笔里
- * 写了新版本，版本的 `createdBy` 就是那一笔事务）。
+ * Separate from the translated voice-over in the tool page (dub-run.ts): that one dubs one group at a time per video and leaves the whole group's receipt when complete. Here, several different sentences from several groups can be re-dubbed at the same time on one video, and on completion only one notice is shown (how many sentences were replaced, and which were not), with “Undo”, which undoes the one operation the Runtime wrote back (the plan gets a new version in that operation, and that version's `createdBy` is the transaction).
  *
- * 授权：外发只有合成一项。被拒（`GRANT_REQUIRED` / `GRANT_REVOKED`）时如实提示缺哪一家的授权，不在这里发授权。
+ * Authorization: only synthesis goes out. When refused (`GRANT_REQUIRED` / `GRANT_REVOKED`), the notice honestly says which provider's authorization is missing; authorization is not requested here.
  */
 
-/** 用到的会话与编辑能力；测试给假的。 */
+/** The session and editing capabilities used; tests supply fakes. */
 export interface RegenDeps {
   runtime: {
     startDub(params: DubParams): Promise<Id>;
@@ -33,7 +30,7 @@ export interface RegenDeps {
   undo(target: UndoTarget): Promise<TransactionReceipt | null>;
 }
 
-/** 编辑器里的依赖：会话与编辑动作（动作经闭包调，不依赖 `this`）。 */
+/** Editor dependencies: the session and editing actions (actions are called via closures, not relying on `this`). */
 export function regenDeps(runtime: RegenDeps['runtime'], actions: Pick<RegenDeps, 'apply' | 'undo'>): RegenDeps {
   return { runtime, apply: (operations, label) => actions.apply(operations, label), undo: (target) => actions.undo(target) };
 }
@@ -43,13 +40,13 @@ interface Pending {
   videoId: Id;
   groupId: string;
   units: Id[];
-  /** 这一组的配音计划，与提交时它已有的版本：完成后多出来的那一版是 Runtime 写回的。 */
+  /** This group's dub plan, and the versions it had at submit time: the version that appears after completion is the one the Runtime wrote back. */
   planDocumentId: Id | null;
   revisions: string[];
   deps: RegenDeps;
 }
 
-/** 「改译文并重配」对话框要打开的那几句。 */
+/** The sentences the “Edit translation and re-dub” dialog should open with. */
 export interface FitRequest {
   videoId: Id;
   groupId: string;
@@ -58,7 +55,7 @@ export interface FitRequest {
 
 interface RegenState {
   pending: Record<Id, Pending>;
-  /** 正在提交的组（提交回执之前）。 */
+  /** The group being submitted (before the submit receipt). */
   busy: Record<string, true>;
   fit: FitRequest | null;
 }
@@ -70,7 +67,7 @@ const TOAST_MS = 5000;
 
 let unwatch: (() => void) | null = null;
 
-/** 测试用：清空状态并停止盯任务。 */
+/** For tests: clears state and stops watching tasks. */
 export function resetDubRegen(): void {
   unwatch?.();
   unwatch = null;
@@ -94,11 +91,11 @@ export interface RegenRequest {
   videoId: Id;
   groupId: string;
   units: Id[];
-  /** 这一组的配音计划（撤销要找它的新版本）。 */
+  /** This group's dub plan (undo looks for its new version). */
   planDocumentId: Id | null;
 }
 
-/** 只重配这几句（换个种子）。提交成功返回任务 ID；同一组正在提交、没有句子时什么都不做。 */
+/** Re-dubs only these sentences (with a new seed). Returns the task ID on a successful submit; if the same group is already being submitted, or there are no sentences, does nothing. */
 export async function regenerateUnits(deps: RegenDeps, request: RegenRequest): Promise<Id | null> {
   const { videoId, groupId, units, planDocumentId } = request;
   if (units.length === 0) return null;
@@ -118,7 +115,7 @@ export async function regenerateUnits(deps: RegenDeps, request: RegenRequest): P
     }));
     unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
     ToastQueue.neutral(C.submitted(units.length), { timeout: TOAST_MS });
-    // 任务事件可能比回执先到。
+    // A task event may arrive before the receipt.
     settle(useJobs.getState().jobs);
     return jobId;
   } catch (error) {
@@ -134,15 +131,15 @@ export async function regenerateUnits(deps: RegenDeps, request: RegenRequest): P
 }
 
 export interface RetextRequest extends RegenRequest {
-  /** 这组配音用的译文（计划正文的 `translationRef.id`）。 */
+  /** The translation this dub uses (the `translationRef.id` of the plan body). */
   translationId: Id | null;
-  /** 译文单元 → 改成的文字；没改的不给。 */
+  /** Translation unit → the text it was changed to; unchanged ones are not included. */
   texts: ReadonlyMap<Id, string>;
 }
 
 /**
- * 改译文并重配：先在一笔编辑里写译文的新版本（只改给了的几句），等它提交了再只重配这几句——合成读的是译文的当前版本。
- * 改译文那一笔失败时（编辑器已经提示）不重配。
+ * Edit translation and re-dub: first writes a new version of the translation in one edit (only the sentences given are changed); once that commits, only those sentences are re-dubbed, since synthesis reads the translation's current version.
+ * If the translation edit fails (the editor has already notified), nothing is re-dubbed.
  */
 export async function retextAndRegenerate(deps: RegenDeps, request: RetextRequest): Promise<Id | null> {
   const { videoId, translationId, texts } = request;
@@ -177,7 +174,7 @@ export async function retextAndRegenerate(deps: RegenDeps, request: RetextReques
   return regenerateUnits(deps, request);
 }
 
-/** Runtime 写回的那一笔：配音计划在提交之后多出来的最早一个版本的 `createdBy`。 */
+/** The operation the Runtime wrote back: the `createdBy` of the earliest version of the dub plan that appears after submit. */
 function regroupTransaction(pending: Pending): Id | null {
   if (!pending.planDocumentId) return null;
   const record = documentsOf(pending.videoId)?.[pending.planDocumentId];
@@ -191,7 +188,7 @@ function regroupTransaction(pending: Pending): Id | null {
   return first?.createdBy ?? null;
 }
 
-/** 盯着从这里提交的任务：结束了就收尾，每个只收一次（先同步删掉）。 */
+/** Watches the tasks submitted from here: wraps up when one ends, and each is wrapped up only once (removed synchronously first). */
 function settle(jobs: readonly JobRecord[]): void {
   for (const pending of Object.values(useDubRegen.getState().pending)) {
     const job = jobs.find((candidate) => candidate.jobId === pending.jobId);

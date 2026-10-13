@@ -46,7 +46,7 @@ import { saveEditorFile, type EditorExportCopy } from './editor-save-file.ts';
 export type { EditorExportCopy } from './editor-save-file.ts';
 
 const pane = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, minHeight: 0 });
-/** 头部与单文件标签同一个样子（原型 home-workspace.css `.home-resource__bar`）。 */
+/** The header looks the same as a single-file tab (prototype home-workspace.css `.home-resource__bar`). */
 const bar = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -67,11 +67,11 @@ const bar = style({
 const headText = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
 const name = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900', overflowWrap: 'anywhere' });
 const meta = style({ font: 'ui-sm', color: 'gray-600' });
-/** 编辑器自带页面列表、画布与工具栏，铺满标签的内容区；批注框的锚点按 iframe 视口坐标叠在上面。 */
+/** The editor brings its own page list, canvas and toolbar, filling the tab's content area; the note box's anchors are overlaid using the iframe's viewport coordinates. */
 const stage = style({ position: 'relative', display: 'flex', flexGrow: 1, minHeight: 0, minWidth: 0 });
 const frame = style({ display: 'block', flexGrow: 1, minHeight: 0, width: 'full', borderWidth: 0, backgroundColor: 'gray-25' });
 const anchor = style({ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' });
-/** 批注框（原型 home-slides.css `.home-slides__form`、home-design.css `.home-design__form`）。 */
+/** The note box (prototype home-slides.css `.home-slides__form`, home-design.css `.home-design__form`). */
 const form = style({ display: 'flex', flexDirection: 'column', gap: 12, width: 320, maxWidth: 'full' });
 const formLabel = style({ font: 'ui-sm', color: 'gray-700', margin: 0, overflowWrap: 'anywhere' });
 const formField = style({ width: 'full' });
@@ -104,7 +104,7 @@ const footer = style({
   borderColor: 'gray-100',
 });
 
-/** 编辑器标签的文案：幻灯片用 `SLIDES`，设计稿用 `DESIGN`，设计系统用 `DESIGN_SYSTEM`，键名相同。 */
+/** Editor tab copy: slides use `SLIDES`, design uses `DESIGN`, the design system uses `DESIGN_SYSTEM`; the key names are the same. */
 export interface EditorPaneCopy {
   paneLabel(name: string): string;
   frameTitle(name: string): string;
@@ -114,7 +114,7 @@ export interface EditorPaneCopy {
   openFailed(reason: string): string;
 }
 
-/** 标注的文案（幻灯片 `SLIDES`、设计稿 `DESIGN`、设计系统 `DESIGN_SYSTEM`）。 */
+/** Annotation copy (slides `SLIDES`, design `DESIGN`, design system `DESIGN_SYSTEM`). */
 export interface EditorAnnotationCopy {
   annotate: string;
   noteLabel: string;
@@ -127,101 +127,98 @@ export interface EditorAnnotationCopy {
   noConversation: string;
 }
 
-/** 打开的结果里标签要用的几样：编辑器地址、这台机器有没有编辑器、标题与「N 页」「N 个画板」这类计数。 */
+/** What a tab needs from the open result: the editor address, whether this machine has an editor, the title, and counts such as “N 页” (N pages) and “N 个画板” (N artboards). */
 export interface EditorOpened {
   url: string;
   editorAvailable: boolean;
   title: string;
   count: number | null;
-  /** 加载时另加在地址上的查询参数（设计系统的 `path`，docs/design/canvas §10.4）；打开那一刻算好，之后不随别的数据重新载入。 */
+  /** Extra query parameters added to the address on load (the design system's `path`, docs/design/canvas §10.4): computed at open time and not reloaded with other data afterwards. */
   params?: Readonly<Record<string, string>>;
 }
 
-/** 批注框收下的一条（编辑器经 `editor:compose` 给的位置）。 */
+/** One note received from the editor (the position is given by the editor through `editor:compose`). */
 export interface EditorCompose {
   anchor: string;
   label: string;
   detail?: string;
   area?: boolean;
-  /** 设计系统里目标所在的章节（docs/design/canvas §10.6）。 */
+  /** The section where the target is in the design system (docs/design/canvas §10.6). */
   section?: string;
 }
 
 /**
- * 标注那几样（幻灯片 docs/design/slides §8.2、设计稿 docs/design/canvas §8.2、设计系统 §10.6）。没有这一块的编辑器标签
- * 不显示「标注」开关与批注框，编辑器要弹批注框时回 `opened: false`，也不交编号标记。
+ * The annotation pieces (slides docs/design/slides §8.2, design docs/design/canvas §8.2, design system §10.6). An editor tab without this block does not show the “标注” switch or the note box; when the editor asks to show the note box, it replies `opened: false`, and it does not hand over number markers.
  */
 export interface EditorAnnotations {
   copy: EditorAnnotationCopy;
-  /** 批注框里与存下的位置标签：编辑器给的 `label` 前面加上是哪份文档（设计系统写「设计系统「X」 › …」）；不给时照编辑器的。 */
+  /** In the note box and the saved position label, the editor's `label` with the document name in front (the design system writes 设计系统“X” › …); when not given, the editor's own label is used. */
   label?(label: string, title: string): string;
-  /** 批注的字数上限。 */
+  /** The character limit for a note. */
   textLimit: number;
-  /** 草稿里属于这份文档的编号标记（订阅这个会话的草稿；每种标签的 spec 不变，hook 的顺序也不变）。 */
+  /** The number markers in the draft that belong to this document (subscribes to this session's draft; the spec for each tab kind is unchanged, and so is the hook order). */
   useThreads(conversationId: Id | null, target: FileTarget): EditorThread[];
-  /** 收下一条批注；加不进去时返回要提示的话。成功时返回 null。 */
+  /** Accepts one note; when it cannot be added, returns the message to show. Returns null on success. */
   add(conversationId: Id, target: FileTarget, compose: EditorCompose, text: string): string | null;
-  /** 加进去之后这个会话草稿里的条数（提示里写）。 */
+  /** The number of items in this session's draft after adding (written in the hint). */
   draftCount(conversationId: Id): number;
 }
 
-/** 这一种编辑器标签各自的部分；其余（iframe、消息往来、发送前保存、跳转、批注框）都在 `EditorPane` 里。 */
+/** The part specific to this kind of editor tab; the rest (iframe, message exchange, saving before sending, jumping, note box) lives in `EditorPane`. */
 export interface EditorPaneKind {
   kind: EditorKind;
   icon: ReactNode;
   copy: EditorPaneCopy;
   open(runtime: RuntimeSession, target: FileTarget): Promise<EditorOpened>;
-  /** Space 条目里记着的计数（还没打开完时先显示）；没有计数的（设计系统）不写这两样。 */
+  /** The counts recorded on the Space entry (shown first before the open completes); a tab without counts (design system) does not write these two. */
   entryCount?(entry: SpaceEntry): number | null;
   countText?(n: number): string;
   /**
-   * 放进 iframe 的地址：`opened.url` 加上界面语言。返回 null 表示这里放不了（设计稿在 Web 端换不到另一个回环主机名，
-   * docs/design/canvas §6.2），标签显示 `blocked` 的说明。
+   * The address put in the iframe: `opened.url` plus the UI language. Returns null when it cannot be placed here (on Web, the design mockup cannot switch to another loopback hostname, docs/design/canvas §6.2); the tab then shows the `blocked` explanation.
    */
   frameUrl?(address: string): string | null;
   blocked?: { title: string; body: string };
-  /** 标注；没有这一项的标签不能标注。 */
+  /** Annotation; a tab without this item cannot be annotated. */
   annotations?: EditorAnnotations;
   /**
-   * 整份导出（设计稿 docs/design/canvas §8.3）：经运行时自己的 frame 协议问它能导出哪些格式，头部显示「导出」菜单；
-   * 编辑器交来的文件（`editor:save-file`）也只有这种标签保存。没有这一项的标签回 `failed`。
+   * Whole-document export (design mockup docs/design/canvas §8.3): asks the Runtime through its own frame protocol which formats it can export; the header shows an “导出” (export) menu. Files the editor hands over (`editor:save-file`) are also saved only by this kind of tab. A tab without this item replies `failed`.
    */
   exports?: EditorExportCopy;
 }
 
 type Opened = { key: string; result: EditorOpened } | { key: string; error: string };
 
-/** 编辑器载入后报的状态；`url` 对不上当前地址的是上一次载入的，作废。 */
+/** The status the editor reports after loading; a `url` that does not match the current address is from the previous load and is discarded. */
 interface EditorState {
   url: string;
   canEdit: boolean;
-  /** 标注模式开着没有（以编辑器报的为准）。 */
+  /** Whether annotation mode is on (as the editor reports it). */
   mode: boolean;
 }
 
-/** 编辑器请父窗口弹出的批注框。 */
+/** The note box the editor asks the parent window to show. */
 interface Compose extends EditorCompose {
   requestId: string;
   point: EditorPoint;
 }
 
-/** 发送前等编辑器保存完的上限；过了算没保存成（发送照常，由调用方提示）。 */
+/** The upper limit for waiting on the editor to save before sending; once exceeded, it counts as not saved (sending still proceeds, and the caller shows a hint). */
 const FLUSH_TIMEOUT_MS = 10_000;
-/** 跳到已发送的一条前，编辑器收下临时那条标注要的时间（运行时下一次渲染后才认得它）。 */
+/** Before jumping to a sent item, the time the editor is given to accept the temporary annotation (the Runtime only recognizes it after its next render). */
 const REVEAL_DELAY_MS = 200;
 
-/** 菜单里一种格式的名字。 */
+/** The name of a format in the menu. */
 const EXPORT_LABEL: Record<DesignExportFormat, (copy: EditorExportCopy) => string> = {
   html: (copy) => copy.exportHtml,
   pdf: (copy) => copy.exportPdf,
   png: (copy) => copy.exportPng,
 };
 
-/** 没有标注的标签用的编号标记：一直是空的。 */
+/** The number marker for tabs without annotations: always empty. */
 const NO_THREADS: EditorThread[] = [];
 const useNoThreads = (): EditorThread[] => NO_THREADS;
 
-/** 编辑器地址带上打开结果给的查询参数（`params`）与界面语言（`?lang=`）：编辑器按语言写标注位置标签。 */
+/** The editor address carries the query parameters from the open result (`params`) and the UI language (`?lang=`); the editor writes annotation position labels in that language. */
 export function editorUrl(address: string, locale: Locale, params?: Readonly<Record<string, string>>): string {
   const url = new URL(address, window.location.href);
   for (const [name, value] of Object.entries(params ?? {})) url.searchParams.set(name, value);
@@ -230,22 +227,19 @@ export function editorUrl(address: string, locale: Locale, params?: Readonly<Rec
 }
 
 /**
- * 功能区的编辑器标签（幻灯片 docs/design/slides §8.1、设计稿 docs/design/canvas §8.1）：头部是图标、标题与计数，
- * 「标注」开关、「在 Space 中显示」与「在文件夹中显示」；内容是编辑器的 iframe，地址来自 `slides.open` / `design.open`。
- * 地址里的 grant 只在 Runtime 的内存里，所以每次挂上都重新打开，每次连上（`connectionId` 变了，含没收到断开信号就重连上的）
- * 也重新打开（Runtime 重启后地址会变，iframe 跟着重新载入；没重启时还是同一个地址，不重载）。
- * 这台机器没有构建编辑器时说明不可用，不加载地址。地址上带打开时的界面语言（`?lang=`），编辑器按它写标注位置标签。
- * 设计系统标签（docs/design/canvas §10）也用这里，地址另带 `?path=`；它的标注（§10.6）多带一个章节（`section`）。
+ * The editor tab in the feature pane (slides docs/design/slides §8.1, design docs/design/canvas §8.1): the header is an icon, a title and a count; then the “标注” (annotations) switch, “在 Space 中显示” (show in Space), and “在文件夹中显示” (show in folder). The content is the editor's iframe, with its address from `slides.open` / `design.open`.
+ * The grant in the address lives only in the Runtime's memory, so it is reopened on every mount, and on every connection (`connectionId` changes, including reconnects where no disconnect signal was received). It is also reopened on each connection: after a Runtime restart the address changes and the iframe reloads; without a restart it is the same address and does not reload.
+ * When this machine has no built editor, the tab says it is unavailable and does not load the address. The address carries the UI language at open time (`?lang=`), which the editor uses for annotation position labels.
+ * The design-system tab (docs/design/canvas §10) also uses this; its address additionally carries `?path=`, and its annotations (§10.6) carry one extra `section`.
  *
- * 标注（§8.2）经 postMessage 与编辑器往来（`@cuccut/slides/editor-messages`，两种编辑器同一套）：编辑器里点一个元素或框一块区域，
- * 这里在那个位置弹出批注框，「添加到对话」进这个会话的草稿；草稿里属于这份文档的交回编辑器画编号标记。
- * 编辑器里「让智能体修好」的提示经 `editor:suggest-prompt` 放进这个会话的输入框。
- * 发送消息前经 `registerEditorFlush` 让编辑器保存完；已发送消息里点一条，经 `useEditorReveal` 跳到那个位置。
+ * Annotations (§8.2) exchange messages with the editor through postMessage (`@cuccut/slides/editor-messages`, the same set for both editors): clicking an element or drawing a box in the editor opens a note box at that position here; “添加到对话” (add to conversation) puts it into this session's draft; the draft items that belong to this document are handed back to the editor to draw number markers.
+ * The prompt for “让智能体修好” (let the agent fix it) from the editor is put into this session's input box via `editor:suggest-prompt`.
+ * Before a message is sent, `registerEditorFlush` makes the editor save; clicking an item in a sent message jumps to that position via `useEditorReveal`.
  */
 export function EditorPane({ spec, target, conversationId, active }: { spec: EditorPaneKind; target: FileTarget; conversationId: Id | null; active: boolean }) {
   const runtime = useRuntime();
   const { copy, annotations: notes, exports: exportCopy } = spec;
-  // 每次连上（含断开后很快重连、界面没来得及显示断开的）都重新打开：Runtime 重启后 grant 与地址都换了
+  // Reopened on every connection (including quick reconnects where the disconnect was not yet shown): after a Runtime restart the grant and the address both change.
   const connectionId = useConnection((s) => (s.state.status === 'connected' ? s.state.connectionId : null));
   const go = useShell((s) => s.go);
   const entries = useSpace((s) => s.entries);
@@ -264,7 +258,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
     return () => {
       live = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- target 按 key 比较：同一份文档换了对象不重开
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- target is compared by key: swapping in a new object for the same document does not reopen it
   }, [runtime, key, connectionId]);
 
   const current = opened?.key === key ? opened : null;
@@ -278,8 +272,8 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
   const root = 'projectId' in target ? projects.find((p) => p.id === target.projectId)?.path : conversation?.cwd;
   const absolute = entry ? entryPath(entry, { projects, conversations }) : 'path' in target ? markdownAbsolutePath(target.path, root ?? null) : null;
 
-  // —— 与编辑器的往来（§8.2）——
-  // 地址带上打开时的界面语言，标注位置标签按它写；之后换语言不重新载入（会丢掉还没保存的改动），下次打开时跟上。
+  // —— Exchanges with the editor (§8.2) ——
+  // The address carries the UI language at open time, and annotation position labels are written in it. Changing the language afterwards does not reload (that would lose unsaved edits); the change is picked up the next time it is opened.
   const [locale] = useState(getLocale);
   const address = result?.editorAvailable ? (spec.frameUrl ? spec.frameUrl(result.url) : result.url) : null;
   const url = address ? editorUrl(address, locale, result?.params) : null;
@@ -291,23 +285,23 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
   const ready = !!url && editor?.url === url;
   const [compose, setCompose] = useState<(Compose & { url: string }) | null>(null);
   const composing = ready && compose?.url === url ? compose : null;
-  // spec 不变，所以这里调的 hook 也不变
+  // The spec does not change, so the hooks called here do not change either.
   const useThreads = notes?.useThreads ?? useNoThreads;
   const threads = useThreads(conversationId, target);
   const threadsKey = threads.map((t) => `${t.id}@${t.n}`).join(' ');
   const reveal = useEditorReveal((s) => s.reveals[key]);
-  /** 等编辑器回 `editor:flushed` 的那几次。 */
+  /** The times waiting for the editor to reply `editor:flushed`. */
   const flushes = useRef(new Map<string, (saved: boolean) => void>());
-  /** 跳到已发送的那条时临时交给编辑器的一条：`n` 为 0，编辑器不画它的标记。 */
+  /** A temporary item handed to the editor when jumping to a sent item: `n` is 0, so the editor does not draw its marker. */
   const extra = useRef<EditorThread | null>(null);
-  /** 运行时报的能导出的格式（§8.3）；`url` 对不上当前地址的是上一次载入的。 */
+  /** The export formats the Runtime reports (§8.3); a `url` that does not match the current address is from the previous load. */
   const [exportState, setExportState] = useState<{ url: string; options: DesignExportOption[] } | null>(null);
   const exportOptions = ready && exportCopy && exportState?.url === url ? exportState.options : [];
 
   const post = (message: HostToEditorMessage | typeof FRAME_CHROME_POKE | ReturnType<typeof exportCommand>) => {
     if (origin) frameRef.current?.contentWindow?.postMessage(message, origin);
   };
-  /** 请运行时导出一种格式：多画板时它在编辑器里先让人挑，做好后经 `editor:save-file` 交回来保存。 */
+  /** Asks the Runtime to export one format: with several artboards, the editor first lets the user choose; when done, it is handed back through `editor:save-file` to be saved. */
   const requestExport = (format: DesignExportFormat) => {
     const option = exportOptions.find((o) => o.format === format);
     if (option && !option.disabled) post(exportCommand(option, crypto.randomUUID()));
@@ -319,7 +313,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
     post({ type: 'editor:composer-closed', requestId: compose.requestId });
   };
 
-  /** 收到编辑器的一条消息；每次渲染换成最新的，监听只挂一次。 */
+  /** Receives a message from the editor; set to the latest on every render, and the listener is attached only once. */
   const receive = useRef<(message: EditorToHostMessage) => void>(() => {});
   receive.current = (message) => {
     if (!url) return;
@@ -327,7 +321,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
       case 'editor:ready':
         setEditor({ url, canEdit: message.canEdit, mode: false });
         setCompose(null);
-        // 运行时的 hello 可能早于父窗口的监听，载入后再碰一次，让它报能导出的格式
+        // The Runtime's hello may come before the parent window's listener, so it is poked again after loading to make it report the exportable formats.
         if (exportCopy) post(FRAME_CHROME_POKE);
         return;
       case 'editor:mode':
@@ -341,7 +335,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
           post({ type: 'editor:compose-result', requestId, opened: false });
           return;
         }
-        // 同一时间只开一个批注框：上一个当作关了
+        // Only one note box is open at a time: the previous one counts as closed.
         if (compose) post({ type: 'editor:composer-closed', requestId: compose.requestId });
         setCompose({
           url,
@@ -360,11 +354,11 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
         flushes.current.get(message.requestId)?.(message.saved);
         return;
       case 'editor:external-change':
-        // 编辑器自己重新载入，这里不用管
+        // The editor reloads itself; nothing to do here.
         return;
       case 'editor:suggest-prompt': {
-        // 「让智能体修好」等（§4）：提示放进这个会话的输入框，接在已有的话后面，由用户自己发送。
-        // 标签页不属于会话时回 false，编辑器改为把提示复制到剪贴板。
+        // “让智能体修好” (let the agent fix it) and similar (§4): the prompt is put into this session's input box, appended after the existing text, for the user to send.
+        // When the tab does not belong to a session, returns false; the editor then copies the prompt to the clipboard instead.
         if (conversationId) {
           const shell = useShell.getState();
           shell.setDraft(conversationId, mergeDraft(shell.drafts[conversationId], message.prompt));
@@ -384,7 +378,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
     }
   };
 
-  /** 运行时自己的 frame 协议（§8.3）：hello 时碰一下，之后它报能导出的格式。只有能导出的标签理会。 */
+  /** The Runtime's own frame protocol (§8.3): poked on hello, after which it reports the exportable formats. Only tabs that can export respond. */
   const receiveChrome = useRef<(message: FrameChromeMessage) => void>(() => {});
   receiveChrome.current = (message) => {
     if (!url || !exportCopy) return;
@@ -409,15 +403,15 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
     return () => window.removeEventListener('message', handle);
   }, [url]);
 
-  // 草稿里属于这份文档的标注交给编辑器画编号标记；编辑器每次载入后都要重新给
+  // The annotations in the draft that belong to this document are handed to the editor to draw number markers; the editor must be given them again after each load.
   const latestThreads = useRef(threads);
   latestThreads.current = threads;
   useEffect(() => {
     if (ready && notes) postThreads(latestThreads.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 按编号与 id 比较，草稿里别的会话、别的文档变了不重发
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- compared by number and id; changes to other sessions or other documents in the draft do not resend
   }, [ready, editor, threadsKey]);
 
-  // 发送消息前让编辑器把改动保存完（只读的编辑器没有要保存的）；没保存成时提示里写这份文档的名字
+  // Lets the editor save its changes before a message is sent (a read-only editor has nothing to save); when the save fails, the hint names this document.
   const canEdit = ready && editor.canEdit;
   const latestTitle = useRef(title);
   latestTitle.current = title;
@@ -443,30 +437,30 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
       unregister();
       for (const settle of [...pending.values()]) settle(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- post 只随地址变
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- post changes only with the address
   }, [canEdit, key, url]);
 
-  // 已发送消息里点了一条：编辑器只认得手上的标注，不在草稿里的先临时交给它，下一次渲染后再跳
+  // When an item in a sent message is clicked: the editor only recognizes the annotations it holds, so one not in the draft is handed to it temporarily, and the jump happens after the next render.
   useEffect(() => {
     if (!ready || !reveal) return;
     useEditorReveal.getState().take(key, reveal.seq);
     const known = latestThreads.current.some((t) => t.id === reveal.id);
     extra.current = known ? null : { id: reveal.id, anchor: reveal.anchor, n: 0, ...(reveal.section ? { section: reveal.section } : {}) };
     postThreads(latestThreads.current);
-    // 不在清理里取消：`take` 之后 reveal 变了会触发清理；标签卸下时 iframe 没了，post 自然落空
+    // Not cancelled in cleanup: after `take`, a change of reveal triggers cleanup; when the tab is unmounted the iframe is gone, so post simply has no effect.
     window.setTimeout(() => {
       post({ type: 'editor:reveal', id: reveal.id });
       if (extra.current?.id !== reveal.id) return;
       extra.current = null;
       postThreads(latestThreads.current);
     }, REVEAL_DELAY_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在要求来了、编辑器载入后跳一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jumps once only, when the request arrives and after the editor has loaded
   }, [ready, reveal]);
 
-  // 标签切走时关掉批注框
+  // Closes the note box when the tab is switched away.
   useEffect(() => {
     if (!active) closeCompose();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只看切走
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only watches for switching away
   }, [active]);
 
   const add = (text: string) => {
@@ -589,8 +583,8 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
 }
 
 /**
- * 批注框（§8.2 第 3 步，移植自原型 home-slides.jsx `SlideNoteForm`、home-design.jsx `DesignNoteForm`）：
- * 上面是位置，一个输入框，「取消」与「添加到对话」；⌘/Ctrl+Enter 添加。
+ * The note box (§8.2 step 3, ported from the prototype's home-slides.jsx `SlideNoteForm` and home-design.jsx `DesignNoteForm`):
+ * the position is shown above, with one input box, “取消” (cancel) and “添加到对话” (add to conversation); ⌘/Ctrl+Enter adds.
  */
 function NoteForm({
   copy,

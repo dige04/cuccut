@@ -19,14 +19,13 @@ import type { PlannedDocument, TextEntry, TextPlan } from '../exports/export-pla
 import { segmentsOf } from '../exports/text-export.ts';
 
 /**
- * 把引擎 `videos.readContent` 的结果（快照与文字类文档）变成内容索引里的一个视频（架构设计 §5.11）：
- * 可检索的段落，以及 Space 目录派生状态要用的事实（时间线上用着哪些素材、链接的素材指向哪些文件）。纯函数，不碰磁盘。
+ * Turns the result of the engine's `videos.readContent` (snapshots and text documents) into a video in the content index (architecture design §5.11):
+ * searchable segments, and the facts the derived state of the Space catalog needs (which materials are used on the timeline, which files linked materials point to). A pure function; does not touch the disk.
  *
- * - 转写与字幕优先用根序列上的投影（与导出同一套句子切分，`segmentsOf`），时间是序列时间；
- *   文档对应的素材不在时间线上（投影为空或出错）时退回正文里的源时间。
- * - 译文没有时间：借用它的转写那一句的时间。`cuccut.translation/2` 按 `sourceSentenceId`，找不到那一句时（转写没有存句子）
- *   按对齐的词（`alignment.sourceWordIds`）或句子 ID 里的首词（`s-<词 ID>`）；`/1` 按单元 ID。标成过期的单元不收。
- * - 章节取根序列上 `kind: 'chapter'` 的标记，标题与简介。
+ * - Transcripts and subtitles prefer the projection on the root sequence (same sentence splitting as export, `segmentsOf`), with sequence time. When the material for a document is not on the timeline (projection empty or errored), it falls back to the source time in the body text.
+ * - Translations have no time of their own: they borrow the time of the transcript sentence they belong to. `cuccut.translation/2` matches by `sourceSentenceId`; when that sentence is not found (transcripts do not store sentences),
+ *   it matches by aligned words (`alignment.sourceWordIds`) or by the first word in the sentence ID (`s-<word ID>`); `/1` matches by unit ID. Units marked stale are not collected.
+ * - Chapters take the `kind: 'chapter'` markers on the root sequence, with their title and description.
  */
 
 export interface ReadContentDocument extends Partial<PlannedDocument> {
@@ -34,7 +33,7 @@ export interface ReadContentDocument extends Partial<PlannedDocument> {
   kind: string;
   plan?: TextPlan | null;
   planError?: { code: string; message: string };
-  /** 读不出正文时引擎的英文缺省说明与它的消息引用。 */
+  /** The engine's English default explanation used when the body cannot be read, and its message reference. */
   error?: string;
   errorRef?: MessageRef;
 }
@@ -58,31 +57,31 @@ export interface ContentSegment {
   speaker: string | null;
 }
 
-/** Space 目录与工具的候选输入用的视频事实。 */
+/** Video facts used as candidate inputs for the Space catalog and tools. */
 export interface VideoFacts {
-  /** 任何序列上的实例引用着的素材。 */
+  /** Materials referenced by instances on any sequence. */
   timelineAssetIds: Id[];
-  /** 链接的素材（任何版本）指向的文件：绝对路径（相对路径按视频目录解析）。 */
+  /** Files that linked materials (any version) point to: absolute paths (relative paths are resolved against the video directory). */
   linkedFiles: { assetId: Id; name: string; path: string }[];
-  /** 文稿：语言、有没有逐词时间、在不在时间线上（§7.9 的候选输入）。 */
+  /** Transcript: language, whether it has per-word timing, and whether it is on the timeline (candidate inputs for §7.9). */
   transcripts: VideoTranscriptFact[];
-  /** 译文：目标语言、译自哪份文稿、过期的单元数。 */
+  /** Translation: target language, the transcript it was translated from, and the number of stale units. */
   translations: VideoTranslationFact[];
-  /** 配音组：语言与对应的译文、文稿。 */
+  /** Dubbing group: language, and the corresponding translation and transcript. */
   dubGroups: VideoDubGroupFact[];
   /**
-   * 封面取的那一帧（`posterFrame`，Space 的缩略图用）：素材版本、源时间（秒）与媒体分析要的内容摘要、媒体类型和时长；
-   * 根序列上没有可见的视频片段时 null。格式版本 3 之前的缓存里没有这一项（`undefined`），等重读。
+   * The frame picked for the cover (`posterFrame`, used for Space thumbnails): material version, source time (seconds), the content digest that media analysis needs, media type and duration.
+   * null when there is no visible video clip on the root sequence. Caches before format version 3 have no such item (`undefined`); it is re-read.
    */
   poster?: VideoPosterFact | null;
   /**
-   * 根序列的时长（秒，与智能体工具的视频摘要同一个 `sequenceDurationFrames`）与画布尺寸：Space 视频条目的 `media`。
-   * 快照不全时 null。格式版本 4 之前的缓存里没有这一项（`undefined`），等重读。
+   * Duration of the root sequence (seconds, same `sequenceDurationFrames` as the agent tool's video summary) and canvas size: the `media` of a Space video entry.
+   * null when the snapshot is incomplete. Caches before format version 4 have no such item (`undefined`); it is re-read.
    */
   timeline?: VideoTimelineFact | null;
   /**
-   * 派生来源（`videos.derive` 建的子视频，架构设计 §3.5「派生子视频」）：取自 `derivation` 文档当前版本的概要；不是派生的为 null。
-   * 存储格式版本 2 之前的缓存里没有这一项。
+   * Derivation source (child videos created by `videos.derive`, architecture design §3.5 “derived child videos”): taken from the summary of the current version of the `derivation` document; null if not derived.
+   * Caches before storage format version 2 have no such item.
    */
   origin?: VideoOriginFact | null;
 }
@@ -90,7 +89,7 @@ export interface VideoFacts {
 export interface VideoOriginFact {
   parentVideoId: Id;
   parentRevision: string;
-  /** 幂等键：同一父视频版本、同一区间与设置的派生认回这个子视频。 */
+  /** Idempotency key: a derivation with the same parent video version, the same range and the same settings recognizes this child video. */
   key: string;
   range: { start: number; end: number };
 }
@@ -113,7 +112,7 @@ export interface VideoPosterFact {
 export interface ExtractedContent {
   segments: ContentSegment[];
   facts: VideoFacts;
-  /** 读不出来的文档：ID 与原因。 */
+  /** Documents that could not be read: ID and reason. */
   problems: { documentId: Id; detail: string }[];
 }
 
@@ -158,9 +157,9 @@ type TimeSpan = { clock: 'sequence' | 'source'; start: number; end: number };
 export function extractContent(result: ReadContentResult, videoDir: string): ExtractedContent {
   const segments: ContentSegment[] = [];
   const problems: { documentId: Id; detail: string }[] = [];
-  /** 每份转写的句子 ID → 时间，给译文用。 */
+  /** For each transcript: sentence ID → time, used for translations. */
   const sentenceTimes = new Map<Id, Map<string, TimeSpan>>();
-  /** 每份转写的词 ID → 时间（译文的对齐词）。 */
+  /** For each transcript: word ID → time (the aligned words for translations). */
   const wordTimes = new Map<Id, Map<string, TimeSpan>>();
   const translations: ReadContentDocument[] = [];
 
@@ -295,14 +294,14 @@ interface FactTranslationUnit {
 }
 
 /**
- * 文稿、译文与配音组的事实（§5.11、§7.9 的候选输入）。读的是 `videos.readContent` 已经给出的东西：文字类文档的正文与根序列上
- * 的投影、快照里的文档头与实例，不另外读视频。
+ * Facts about transcripts, translations and dubbing groups (candidate inputs for §5.11 and §7.9). They read what `videos.readContent` has already provided: the body of text documents and the projection on the root sequence,
+ * and the document headers and instances in the snapshot. They do not read the video separately.
  *
- * - 逐词时间：有可见的词，且没有一个词的 `timingQuality` 是 `estimated` 或 `missing`；
- * - 在时间线上：根序列上的投影有内容；
- * - 译文过期的单元按配音的规则数（标成过期、原文的句子不在了、指纹不符、译文为空），术语表改过要读用户库，这里不判断；
- *   `/1` 的译文没有指纹，只数标成过期的与空的；原文不在视频里时全部算过期；
- * - 配音组：`dubbing-plan` 文档（摘要里的 `groupId`、译自的译文）与带 `cuccut.dub` 扩展的配音实例合起来。
+ * - Per-word timing: there are visible words, and no word has a `timingQuality` of `estimated` or `missing`;
+ * - On the timeline: the projection on the root sequence has content;
+ * - Stale units of a translation are counted by the dubbing rules (marked stale, source sentence no longer exists, fingerprint mismatch, empty translation). If the glossary has changed, the user library would have to be read, which is not judged here;
+ *   `/1` translations have no fingerprint, so only units marked stale and empty are counted; when the source is not in the video, all units count as stale;
+ * - Dubbing groups: the `dubbing-plan` document (`groupId` in the summary, the translation it was translated from) together with dubbing instances carrying the `cuccut.dub` extension.
  */
 function documentFacts(result: ReadContentResult): Pick<VideoFacts, 'transcripts' | 'translations' | 'dubGroups'> {
   const records = result.snapshot.documents ?? {};
@@ -312,7 +311,7 @@ function documentFacts(result: ReadContentResult): Pick<VideoFacts, 'transcripts
   for (const doc of result.documents) {
     if (doc.error !== undefined) continue;
     if (doc.schema === 'cuccut.speech/1') {
-      // 正文里的 `schema` 可能省略：文档头已经说明是转写。
+      // The `schema` in the body may be omitted: the document header already says it is a transcript.
       speechBodies.set(doc.documentId, doc.body && typeof doc.body === 'object' ? { schema: doc.schema, ...doc.body } : doc.body);
       const words = ((doc.body as { words?: FactWord[] } | null)?.words ?? []).filter(
         (w) => w && w.hidden !== true && typeof w.text === 'string' && w.text !== '',
@@ -343,7 +342,7 @@ function documentFacts(result: ReadContentResult): Pick<VideoFacts, 'transcripts
     });
   }
 
-  // 配音组：先从配音计划，再补上只有实例的组；实例数按组数。
+  // Dubbing groups: first from the dubbing plan, then add groups that only have instances; the instance count is per group.
   const groups = new Map<string, VideoDubGroupFact>();
   const translationSource = new Map(translations.map((t) => [t.documentId, t.sourceDocumentId]));
   for (const record of Object.values(records)) {
@@ -398,8 +397,8 @@ function staleUnits(v2: boolean, units: FactTranslationUnit[], sourceDocumentId:
 }
 
 /**
- * 转写当前句子的指纹（字幕与翻译核心的规则，经 editor-wasm）；正文读不了时 null。WASM 没有构建时也是 null：只按单元自己的
- * 状态与文本数过期的，不让整个内容索引失败。
+ * Fingerprint of the transcript's current sentences (the subtitle and translation core rules, via editor-wasm); null when the body cannot be read. Also null when the WASM is not built: staleness is then judged only from each unit's own state and text,
+ * so the whole content index does not fail.
  */
 function currentFingerprints(body: unknown): Map<string, string> | null {
   try {
@@ -411,7 +410,7 @@ function currentFingerprints(body: unknown): Map<string, string> | null {
   }
 }
 
-/** `/2` 译文单元的时间：那一句的；转写没有存句子时，对齐的词的范围，或句子 ID 里的首词。 */
+/** Time of a `/2` translation unit: that sentence's time; when the transcript does not store sentences, the range of the aligned words, or the first word in the sentence ID. */
 function unitTime(
   sentenceId: string,
   wordIds: string[] | undefined,
@@ -447,9 +446,9 @@ export function factsOf(snapshot: VideoSnapshot, videoDir: string): Pick<VideoFa
   return { timelineAssetIds: [...used].sort(), linkedFiles };
 }
 
-/** 封面那一帧的素材版本与时间（不含路径：文件在要画缩略图时再按视频目录找）。 */
+/** Material version and time of the cover frame (no path: the file is looked up in the video directory when the thumbnail is drawn). */
 export function posterOf(snapshot: VideoSnapshot): VideoPosterFact | null {
-  // 快照不全（只带内容所需字段的旧读法、测试替身）时没有封面，不影响其余事实。
+  // When the snapshot is incomplete (old reads that carry only the fields content needs, or test doubles), there is no cover; the other facts are unaffected.
   const root = snapshot.sequences?.[snapshot.rootSequenceId];
   if (!root?.tracks || !root.items || !snapshot.assets) return null;
   const frame = posterFrame(snapshot);
@@ -465,7 +464,7 @@ export function posterOf(snapshot: VideoSnapshot): VideoPosterFact | null {
   };
 }
 
-/** 派生来源：`derivation` 文档当前版本的概要（`cuccut.derivation/1`）；没有或形状不对时 null。 */
+/** Derivation source: the summary of the current version of the `derivation` document (`cuccut.derivation/1`); null when absent or the shape is wrong. */
 export function originOf(snapshot: VideoSnapshot): VideoOriginFact | null {
   const records = Object.values(snapshot.documents ?? {})
     .filter((d) => d.kind === 'derivation')
@@ -483,9 +482,9 @@ export function originOf(snapshot: VideoSnapshot): VideoOriginFact | null {
   return null;
 }
 
-/** 根序列的时长与画布尺寸。 */
+/** Duration and canvas size of the root sequence. */
 export function timelineOf(snapshot: VideoSnapshot): VideoTimelineFact | null {
-  // 快照不全（同 `posterOf`）时没有：实例缺了 `span` 时算不出时长。
+  // Absent when the snapshot is incomplete (same as `posterOf`): the duration cannot be computed when an instance lacks `span`.
   const root = snapshot.sequences?.[snapshot.rootSequenceId];
   if (!root?.tracks || !Array.isArray(root.items) || !root.canvas || !(root.fps?.num > 0) || !(root.fps.den > 0)) return null;
   const { width, height } = root.canvas;
@@ -509,7 +508,7 @@ function plannedOf(doc: ReadContentDocument): PlannedDocument {
   };
 }
 
-/** 投影不出来时：转写正文里的词按源时间排成一份「计划」，句子 ID 来自正文的句子切分。 */
+/** When the projection cannot be produced: the words in the transcript body are arranged by source time into a “plan”, and the sentence IDs come from the sentence splitting of the body. */
 function sourcePlanOfSpeech(doc: ReadContentDocument): TextPlan | null {
   const body = doc.body as SpeechBody | null;
   if (!body || !Array.isArray(body.words)) return null;

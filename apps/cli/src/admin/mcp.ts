@@ -20,9 +20,9 @@ import { M } from './mcp-copy.ts';
 import { formatClients, formatService } from './services-output.ts';
 
 /**
- * 管理桶 `cuccut mcp install|status`（Agent 面设计 §6.2；架构设计 §4.8）：一条命令把外部 Agent 接到 CucCut 的 MCP 服务——开服务、
- * 为这个宿主建客户端拿令牌、写进宿主的 MCP 配置。令牌能放进宿主的环境变量段时放那里、配置里引用它（Claude Code）；宿主没有这样的
- * 地方时明文写进它的配置文件（Codex、Cursor、Gemini CLI），结果与帮助里都说明。`status` 不打印令牌。
+ * Admin bucket `cuccut mcp install|status` (Agent-surface design §6.2; Architecture design §4.8): one command connects an external agent to CucCut's MCP service. It opens the service,
+ * creates a client for this host to get a token, and writes it into the host's MCP config. Where the host's environment-variable section can hold the token, the token goes there and the config references it (Claude Code). Where the host has no such
+ * place, the token is written in plaintext into its config file (Codex, Cursor, Gemini CLI), and the result and the help both say so. `status` does not print the token.
  */
 export const mcp = defineNoun({
   name: 'mcp',
@@ -55,14 +55,14 @@ async function install(ctx: McpRun) {
   const level = ctx.parse(() => parseLevel(ctx.values.level));
   const clientName = ctx.values.name?.trim() || HOST_LABELS[host];
   const config = mcpHostConfig(host, ctx.env);
-  // 先看宿主的配置：要拒绝就在发令牌之前拒绝，不留下没人用的客户端。
+  // Look at the host config first. To refuse, refuse before issuing a token, so that no unused client is left behind.
   const existed = hasMcpEntry(host, ctx.env);
   if (existed && !ctx.values.yes) {
     throw new CliError('CONFIRMATION_REQUIRED', M.entryExists(config.file, MCP_ENTRY_NAME), {
       file: config.file,
     });
   }
-  // 替换前认出旧条目用的客户端（令牌是 `<clientId>.<密钥>`）：新条目写好之后吊销它，不留下没人用的令牌。
+  // Before replacing, identify the client the old entry used (the token is `<clientId>.<secret>`). After the new entry is written, revoke it, so that no unused token is left behind.
   const oldToken = existed ? readMcpEntryToken(host, ctx.env) : null;
   const oldClientId = oldToken ? clientIdOfToken(oldToken) : null;
 
@@ -85,12 +85,12 @@ async function install(ctx: McpRun) {
     url = (await ctx.client.request('services.mcp.connectionInfo', { clientId: created.client.clientId })).url;
     written = writeMcpEntry(host, ctx.env, { name: MCP_ENTRY_NAME, url, token: created.token });
   } catch (error) {
-    // 没写进去的令牌没人能用：吊销刚建的客户端。
+    // A token that was not written cannot be used by anyone: revoke the client just created.
     await ctx.client.request('services.mcp.revokeClient', { clientId: created.client.clientId }).catch(() => undefined);
     throw error;
   }
 
-  // 旧条目的客户端：认出来且还在就吊销；认不出（手写的条目、令牌不是 CucCut 发的形状）时列出同名的客户端，由用户处理。
+  // The old entry's client: if it is recognized and still exists, revoke it. If it cannot be recognized (a hand-written entry, or a token not in CucCut's shape), list the same-named clients and leave them to the user.
   const clients = service.clients ?? [];
   const oldClient = oldClientId ? (clients.find((client) => client.clientId === oldClientId) ?? null) : null;
   let revokedClient: ServiceClient | null = null;
@@ -116,7 +116,7 @@ async function install(ctx: McpRun) {
     ...(written.envFile ? { envFile: written.envFile, envVar: written.envVar } : {}),
     replaced: existed,
     revokedClient,
-    // 认不出旧条目用的是哪个客户端（手写的条目、令牌不是 CucCut 发的形状）：没有吊销任何客户端。
+    // Cannot tell which client the old entry used (a hand-written entry, or a token not in CucCut's shape): no client is revoked.
     ...(existed && !oldClientId ? { previousClientUnknown: true } : {}),
     ...(others.length ? { staleClients: others } : {}),
     client: created.client,
@@ -192,12 +192,11 @@ async function status(ctx: McpRun) {
   return ctx.done({ service, hosts }, lines);
 }
 
-/** 当前目录不在项目里时 CLI 新建视频用的默认项目（与 `@cuccut/runtime-core` 的 `LOCAL_DEFAULT_PROJECT_DIR` 相同）。 */
+/** The default project that the CLI creates videos in when the current directory is not inside a project (same as `LOCAL_DEFAULT_PROJECT_DIR` in `@cuccut/runtime-core`). */
 const DEFAULT_PROJECT_DIR = 'CLI';
 
 /**
- * 对外服务新建视频必须给已登记的项目，又不能自己建项目（Agent 面设计 §6.2）：CucCut 里一个项目都没有时（新装、没开过 App），
- * 登记默认项目目录下的 `CLI` 项目——与终端没有项目时用的是同一个——外部 Agent 的 `projects_list` 才有项目可用。已有项目时不动。
+ * Creating videos through the external service must use a registered project, and the service cannot create a project itself (Agent-surface design §6.2). When CucCut has no projects at all (fresh install, App never opened), it registers the `CLI` project in the default project directory, the same one the terminal uses when there is no project, so that an external agent's `projects_list` has a project to use. When projects already exist, nothing is changed.
  */
 async function ensureSomeProject(ctx: McpRun): Promise<Project | null> {
   const { projects } = await ctx.client.request('projects.list', {});

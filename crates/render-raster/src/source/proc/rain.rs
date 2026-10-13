@@ -1,13 +1,13 @@
-//! `proc:"rain"`：三层深度的斜雨丝，下落对时间取模——任意时刻闭式求值。
+//! `proc:"rain"`: slanted rain streaks in three depth layers. The fall wraps modulo time, so it is closed-form at any instant.
 use super::{color, push_box_clip, stroke, unit};
 use crate::drawop::{DrawOp, FrameBuilder};
 use crate::source::kernel::{path_seg_line, path_seg_move};
 use scene_primitives::proc::{MAX_DROPS, Rain};
 use tiny_skia::Transform;
 
-/// 1080p 盒、density = 1 时的雨丝条数。
+/// Number of streaks for a 1080p box at density = 1.
 const DROPS_AT_FULL_HD: f64 = 1_400.0;
-/// 深度分层：同层一条 `StrokePath`，线宽与不透明度按层取。
+/// Depth layers: one `StrokePath` per layer; stroke width and opacity are chosen per layer.
 const LAYERS: usize = 3;
 
 pub(super) fn record(
@@ -23,7 +23,7 @@ pub(super) fn record(
         return;
     }
     let deg = core::f64::consts::PI / 180.0;
-    // 阵风：倾角绕基准摆动。整片雨幕同一刻同一倾角（绕雨丝起点剪切），闭式。
+    // Gusts: the tilt angle swings around a baseline. The whole rain curtain has the same tilt at any instant (shear around each streak's start point), closed-form.
     let sway_phase = unit(seed, 0, 0x7769_6E64) * core::f64::consts::TAU;
     let angle = rain.angle + rain.wind * 20.0 * libm::sin(0.7 * time + sway_phase);
     let slope = libm::tan(angle.clamp(-80.0, 80.0) * deg);
@@ -31,7 +31,7 @@ pub(super) fn record(
         let norm = libm::sqrt(1.0 + slope * slope);
         (slope / norm, 1.0 / norm)
     };
-    // 横向要多铺出最大倾斜时的水平跨度，雨幕才能盖满盒子。
+    // The horizontal extent must be laid out wider for the maximum tilt, so the rain curtain covers the whole box.
     let max_slope = libm::tan((rain.angle.abs() + rain.wind * 20.0).min(80.0) * deg);
     let ext = h * max_slope;
     let span_x = w + 2.0 * ext;
@@ -48,7 +48,7 @@ pub(super) fn record(
         let speed = rain.speed * h * (0.55 + 0.45 * z) * (0.9 + 0.2 * unit(seed, i, 3));
         let len = max_len * (0.4 + 0.6 * z);
         let phase = span_y * unit(seed, i, 4);
-        // 雨丝头的竖向行程：对 span_y 取模，落出盒底从盒顶上方再进。
+        // Vertical travel of the streak head: modulo span_y, so it falls past the bottom of the box and re-enters from above the top.
         let s = (phase + speed * time).rem_euclid(span_y);
         let head_y = s - max_len;
         let head_x = x0 + head_y * slope;

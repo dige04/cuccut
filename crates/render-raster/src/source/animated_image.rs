@@ -1,17 +1,10 @@
-//! `AnimatedImage`：GIF / APNG / 动画 WebP 的 [`VisualSource`] 实现（设计 §7）。
+//! `AnimatedImage`: the [`VisualSource`] implementation for GIF / APNG / animated WebP (design §7).
 //!
-//! 纯 Rust 解码（`image` crate 的 `gif` / `png` / `webp` feature），Windows 与
-//! macOS 走同一条码；渲染期没有进程、没有 I/O、没有网络。
+//! Pure Rust decoding (`image` crate's `gif` / `png` / `webp` features); Windows and macOS use the same code; at render time there is no process, no I/O, no network.
 //!
-//! **全帧驻留**：`decode` 一次性把整段动画解成 premultiplied `Pixmap`，
-//! `sample` 只是查表 + `Arc::clone`。这不是偷懒，而是随机访问的最短路径——
-//! 逐帧 disposal / blend 让第 N 帧的像素依赖前面所有帧，若不预解就必须持有
-//! "上一帧"状态，而那正是 §7 明令禁止的增量时钟。代价是内存，由
-//! [`PrepareCtx`] 的帧数 / 字节双上限兜住。
+//! **Full frames resident**: `decode` decodes the entire animation once into premultiplied `Pixmap`s; `sample` is just a table lookup + `Arc::clone`. This is not laziness but the shortest path to random access — per-frame disposal / blend makes frame N's pixels depend on all previous frames; if we did not pre-decode we would have to hold "previous frame" state, which is exactly the incremental clock §7 explicitly forbids. The cost is memory, bounded by the frame count / byte double cap of [`PrepareCtx`].
 //!
-//! disposal（GIF 的 `Background`/`Keep`/`Previous`、APNG 的 `dispose_op` +
-//! `blend_op`）与画布合成由 `image` 的 `AnimationDecoder` 负责：它吐出的每一帧
-//! 都已经是**整幅画布**的最终像素，这正是本实现要的语义。
+//! Disposal (GIF's `Background`/`Keep`/`Previous`, APNG's `dispose_op` + `blend_op`) and canvas compositing are handled by the `image` crate's `AnimationDecoder`: each frame it emits is already the **full canvas**'s final pixels, which is exactly the semantics this implementation wants.
 
 use super::{
     ContentHash, MediaTime, PrepareCtx, SourceFrame, SourceKind, SourceLoop, SourceMetadata,
@@ -24,11 +17,10 @@ use std::io::Cursor;
 use std::sync::Arc;
 use tiny_skia::{IntSize, Pixmap};
 
-/// 指纹里的解码器身份：解码语义（disposal 折叠、premultiply 取整、delay 取整）
-/// 一旦改变就必须换指纹，否则旧缓存会喂出新像素。
+/// Decoder identity in the fingerprint: once decoding semantics (disposal folding, premultiply rounding, delay rounding) change, the fingerprint must change too, otherwise old cache would feed new pixels.
 const DECODER_TAG: &[u8] = b"ccut.source.animatedImage/v1\0";
 
-/// 动图驻留预算超限；调用方按类型判断回退，不依赖错误文案。
+/// Animated image resident budget exceeded; the caller decides the fallback by type and does not depend on the error text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimatedImageBudgetExceeded {
     Frames { actual: usize, limit: usize },
@@ -54,7 +46,7 @@ impl std::fmt::Display for AnimatedImageBudgetExceeded {
 
 impl std::error::Error for AnimatedImageBudgetExceeded {}
 
-/// 容器格式（按魔数判定，不看扩展名——与 serve 上传口一致）。
+/// Container format (determined by magic bytes, not by extension — consistent with the serve upload entry).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimatedFormat {
     Gif,
@@ -71,7 +63,7 @@ impl AnimatedFormat {
         }
     }
 
-    /// 魔数嗅探。`None` = 不是这三种容器。
+    /// Magic-number sniffing. `None` = not one of these three containers.
     pub fn sniff(bytes: &[u8]) -> Option<AnimatedFormat> {
         if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
             return Some(AnimatedFormat::Gif);
@@ -94,7 +86,7 @@ pub struct AnimatedImage {
 }
 
 impl AnimatedImage {
-    /// 字节 → 已解码的动图源。`src` 只用于报错定位。
+    /// Bytes → decoded animated image source. `src` is used only for error location.
     pub fn decode(src: &str, bytes: &[u8], ctx: &PrepareCtx) -> Result<AnimatedImage> {
         let format = AnimatedFormat::sniff(bytes).ok_or_else(|| {
             anyhow!("{src}：animatedImage 资产必须是 GIF / APNG / WebP 容器（按魔数判定）")
@@ -166,13 +158,12 @@ impl AnimatedImage {
         self.frames.len()
     }
 
-    /// 逐帧起点毫秒表（N+1 项）——`HostInputs` 回填给 core，录制期按它把源时间
-    /// 量化到帧起点。
+    /// Per-frame start-ms table (N+1 entries) — `HostInputs` backfills it to core; at recording time the source time is quantized to the frame start by it.
     pub fn frame_starts_ms(&self) -> &[i64] {
         &self.meta.frame_starts_ms
     }
 
-    /// 按序号直取（golden / 测试用；渲染路径一律走 [`VisualSource::sample`]）。
+    /// Direct access by index (for golden / tests; the render path always goes through [`VisualSource::sample`]).
     pub fn frame(&self, index: usize) -> Option<Arc<Pixmap>> {
         self.frames.get(index).cloned()
     }
@@ -187,8 +178,8 @@ impl VisualSource for AnimatedImage {
         Ok(self.meta.clone())
     }
 
-    /// 动图在 [`AnimatedImage::decode`] 期就已全帧驻留，这里只复核预算。
-    /// （给 Lottie 留的钩子：它的子资源要在这一步收集、hash、预加载。）
+    /// The animated image is fully resident at [`AnimatedImage::decode`] time; here only the budget is rechecked.
+    /// (A hook reserved for Lottie: its sub-resources must be collected, hashed, and preloaded at this step.)
     fn prepare(&self, ctx: &PrepareCtx) -> Result<()> {
         check_budget(self.frames.len(), self.bytes_resident(), ctx)
     }
@@ -232,7 +223,7 @@ impl std::fmt::Debug for AnimatedImage {
     }
 }
 
-/// `AnimationDecoder` → (循环声明, premultiplied 帧, 起点毫秒表)。
+/// `AnimationDecoder` → (loop declaration, premultiplied frames, start-ms table).
 fn collect<'a, D: AnimationDecoder<'a>>(
     src: &str,
     decoder: D,
@@ -293,8 +284,7 @@ fn check_budget(frames: usize, bytes: usize, ctx: &PrepareCtx) -> Result<()> {
     Ok(())
 }
 
-/// `Delay` → 毫秒。整数四舍五入（`round(n/d) = (2n + d) / 2d`），
-/// 全程走整数运算——浮点在这里没有任何好处，只有跨平台取整风险。
+/// `Delay` → ms. Integer rounding (`round(n/d) = (2n + d) / 2d`); the whole path uses integer arithmetic — floats offer no benefit here, only cross-platform rounding risk.
 fn delay_ms(delay: Delay) -> i64 {
     let (numer, denom) = delay.numer_denom_ms();
     let (n, d) = (i64::from(numer), i64::from(denom));
@@ -305,13 +295,13 @@ fn delay_ms(delay: Delay) -> i64 {
     }
 }
 
-/// 只解第一帧（premultiplied）：动图超过预算或总时长为 0 时退回画它。不靠 `media` feature，预览的 wasm 也能用。
+/// Decode only the first frame (premultiplied): when an animation exceeds the budget or its total duration is 0, fall back to drawing it. Does not depend on the `media` feature, so the preview's wasm can use it too.
 pub fn decode_first_frame(src: &str, bytes: &[u8]) -> Result<Pixmap> {
     let image = image::load_from_memory(bytes).map_err(|e| anyhow!("{src}：解不开：{e}"))?;
     to_pixmap(src, image.to_rgba8())
 }
 
-/// straight RGBA（`image` 的输出）→ premultiplied（tiny-skia 的像素格式）。
+/// Straight RGBA (`image`'s output) → premultiplied (tiny-skia's pixel format).
 fn to_pixmap(src: &str, buffer: image::RgbaImage) -> Result<Pixmap> {
     let (w, h) = (buffer.width(), buffer.height());
     let size = IntSize::from_wh(w, h).ok_or_else(|| anyhow!("{src}：零尺寸动图帧"))?;
@@ -355,9 +345,9 @@ mod tests {
     #[test]
     fn delays_round_to_whole_milliseconds() {
         assert_eq!(delay_ms(Delay::from_numer_denom_ms(100, 1)), 100);
-        // GIF 的 10ms 单位
+        // GIF's 10 ms unit
         assert_eq!(delay_ms(Delay::from_numer_denom_ms(30, 1)), 30);
-        // APNG 的分数延时：1/25 s = 40ms
+        // APNG's fractional delay: 1/25 s = 40 ms
         assert_eq!(delay_ms(Delay::from_numer_denom_ms(1000, 25)), 40);
         // 1/30 s ≈ 33.33ms → 33
         assert_eq!(delay_ms(Delay::from_numer_denom_ms(1000, 30)), 33);

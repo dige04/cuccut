@@ -1,6 +1,4 @@
-//! 译文片缝质量：悬垂连接词 / 黏着助词 / 闪现片 lint、preferred seam、
-//! Latin 零 LLM 预拆。对拍 voice-ink `PipelineLint.checkAlign` 与
-//! `DisplaySplitEngine.preferredTargetSplit` / `semanticPreSplitPieces`。
+//! Quality of translation seams: lint for dangling connectives, clinging particles and flash fragments, the preferred seam, and zero-LLM pre-splitting for Latin text. Cross-checked against voice-ink `PipelineLint.checkAlign` and `DisplaySplitEngine.preferredTargetSplit` / `semanticPreSplitPieces`.
 
 use crate::atomize::{
     atomize, clause_end_char, count_cps_chars, join_word_texts, seam_backed_by_whitespace,
@@ -11,11 +9,11 @@ use crate::split::{
     TransParams, exceeds_one_line_fit, piece_display_units, primary_subtag, target_cps_chars,
 };
 
-/// 可独立展示的最小片长；3 字及以下优先并入相邻片。
+/// The minimum length of a piece that can be displayed on its own. Pieces of 3 characters or fewer are merged into an adjacent piece first.
 pub const MIN_PIECE_CHARS: usize = 3;
-/// Latin 预拆：源/目标占比偏差上限。
+/// Latin pre-split: upper limit on the deviation of the source/target proportion.
 pub const SNAP_RATIO_DIVERGENCE: f64 = 0.18;
-/// Latin 预拆：两侧最短语音时长（秒）。
+/// Latin pre-split: minimum speech duration on each side (seconds).
 pub const MIN_CUE_DISPLAY_SEC: f64 = 1.0;
 
 const CLOSERS: &[char] = &[
@@ -25,12 +23,9 @@ const STRONG_CLAUSE_PUNCT: &[char] = &[
     ',', '.', '!', '?', ';', ':', '，', '。', '！', '？', '；', '：', '…', '—',
 ];
 const SEMANTIC_SEAM_PUNCT: &[char] = &['；', ';', '：', ':', '—'];
-/// 开/闭字形可区分的成对定界符。缝落在一对**已闭合**的定界符内部即语病
-///（「…名为“ | PluginDataJSON”的…」把引号和被引内容切开）。
+/// Paired delimiters whose opening and closing forms are distinguishable by glyph. A seam inside a pair that is **already closed** is a grammatical flaw (e.g. 「…名为“ | PluginDataJSON”的…」, where the quote marks are split away from the quoted content).
 ///
-/// 直引号 `"` / `'` 不纳入：单个字符无法从字形判开闭，只能按奇偶计数，而
-/// 英文里它们兼作撇号（`it's`）与英寸号（`6" pipe`），奇偶法必然误判。
-/// 中文译文用的是全角引号，本表已覆盖；漏判直引号是有意的取舍。
+/// Straight quotes `"` and `'` are not included. A single character's glyph cannot tell open from close, so they could only be counted by parity, and in English they double as apostrophes (`it's`) and inch marks (`6" pipe`), so parity counting would inevitably misjudge. Chinese translations use full-width quotes, which this table already covers. Missing straight quotes is a deliberate trade-off.
 const DELIM_PAIRS: &[(char, char)] = &[
     ('“', '”'),
     ('‘', '’'),
@@ -54,16 +49,13 @@ const DANGLING_CJK: &[char] = &[
     '和', '与', '或', '及', '跟', '而', '并', '且', '把', '被', '让', '使', '将', '比', '向', '往',
     '从', '当', '由', '给', '于',
 ];
-/// 双字悬垂谓语：以补语为必需成分、片尾出现即断裂（G3 基线实测「类似 |
-/// 于…」两处落库）。单字表覆盖不到（似/当不是虚词）。
+/// Two-character dangling predicates: the complement is a required part, so the piece breaks when it ends there (G3 baseline measured two cases of 「类似 | 于…」 ("similar to | …") being committed to the database). Single-character tables do not cover them, since 似 and 当 are not function words.
 const DANGLING_CJK_BIGRAMS: &[&str] = &["类似", "相当"];
-/// 在显示切缝里末字仍是危险函数词，但作为**完整句末**时已构成常见名词/谓词。
+/// At a display seam the last character is still a dangerous function word, but as a **complete sentence end** it already forms a common noun or predicate.
 const COMPLETE_CJK_SENTENCE_TAILS: &[&str] = &["方向", "对比", "总和", "跟不跟"];
-/// 片尾「的」按悬垂处理（「…的 | 名词」定语与中心语被切开；p850 基准草稿
-/// 实测两处落库），但这些双字名词/代词以「的」收尾是完整词，不算悬垂。
+/// A 「的」 at the end of a piece is treated as dangling (the 「…的 | 名词」 attributive and its head are split apart; two cases were committed in the p850 benchmark draft). Two-character nouns and pronouns that end in 「的」 are complete words and are not counted as dangling.
 const DE_TAIL_COMPLETE_BIGRAMS: &[&str] = &["目的", "标的", "有的", "别的", "似的"];
-/// 数字后的单位/量词：片首出现且前片以数字结尾 ⇒ 数量短语被切开
-///（p850 基准草稿实测「1000 | 美元」）。单字表只收数字后近乎无歧义的。
+/// A unit or measure word after a number: if it starts a piece and the preceding piece ends in a number, the quantity phrase has been cut (「1000 | 美元」 ("1000 | US dollars") was measured in the p850 benchmark draft). The single-character table includes only those that are almost unambiguous after a number.
 const NUMBER_UNIT_PREFIXES: &[&str] = &[
     "美元", "欧元", "英镑", "日元", "港元", "万亿", "分钟", "小时", "公里", "公斤", "元", "块",
     "万", "亿", "年", "月", "日", "号", "岁", "人", "名", "位", "个", "次", "倍", "点", "天", "周",
@@ -74,9 +66,7 @@ const LEADING_DANGLING_CJK: &[char] = &[
     '的', '地', '得', '了', '着', '过', '时', '者', '们', '之', '吗', '呢', '吧', '啊', '呀', '嘛',
     '哦',
 ];
-/// 片尾仍在等待中心语的中文数量/类别短语。这里只收高置信度谓词尾，避免把
-/// 「我只要一个 | 另一个不要」这类省略结构一概误判；右片有正文且左片无
-/// 句读时才由 [`incomplete_nominal_split`] 阻塞。
+/// Chinese quantity and category phrases at the end of a piece that still await their head noun. Only high-confidence predicate endings are collected here, to avoid flagging elliptical structures such as 「我只要一个 | 另一个不要」 ("I only want one | the other I don't want") in general. This is blocked only by [`incomplete_nominal_split`], and only when the right piece has body text and the left piece has no punctuation.
 const INCOMPLETE_CJK_NOMINAL_TAILS: &[&str] = &[
     "有一个",
     "有一种",
@@ -89,15 +79,9 @@ const INCOMPLETE_CJK_NOMINAL_TAILS: &[&str] = &[
     "成为一个",
     "成为一种",
 ];
-/// 片首并列连词：中文并列结构被切在 `和`/`及`/`与`/`或` 之前，与「片尾悬垂
-/// 连词」是同一处语病的对称面（R2 基准实测「它们是 KV 缓存 | 和
-/// PagedAttention。」「…就来聊聊 KV 缓存 | 和 PagedAttention。」两处；`或`
-/// 曾只进悬垂尾表不进片首表，导致预拆建议裸切「…A | 或者 B」与契约的并列
-/// 禁切条款冲突）。前片以句读收尾时不算（由 [`lint_pieces`] 的
-/// `ends_clause_punct` 门控）。
+/// A coordinating conjunction at the start of a piece. A Chinese coordinate structure is cut before `和`/`及`/`与`/`或`. This is the mirror image of "a dangling conjunction at the end of a piece", the same flaw seen from the other side. R2 benchmark measured two cases: 「它们是 KV 缓存 | 和 PagedAttention。」 and 「…就来聊聊 KV 缓存 | 和 PagedAttention。」. `或` used to appear only in the dangling-tail table, not the piece-start table, so the pre-split suggestion could bare-cut 「…A | 或者 B」, which conflicted with the contract's rule against cutting inside a coordination. It does not apply when the preceding piece ends with punctuation (gated by `ends_clause_punct` in [`lint_pieces`]).
 const LEADING_COORDINATOR_CJK: &[char] = &['和', '及', '与', '或'];
-/// 以并列连词起首但本身成词/成短语的片首（这些是合法片首，不得拦）。
-/// 注意 `或者`/`或是` 不在此列：它们仍是并列连词，裸切在其前同样断并列。
+/// Coordinating words at the start of a piece that form a word or phrase on their own. These are legal piece starts and must not be blocked. Note that `或者` and `或是` are not in this list: they are still coordinating conjunctions, and a bare cut before them likewise breaks the coordination.
 const LEADING_COORDINATOR_WORDS: &[&str] = &[
     "和平",
     "和谐",
@@ -119,26 +103,22 @@ const LEADING_COORDINATOR_WORDS: &[&str] = &[
     "或许",
     "或多或少",
 ];
-/// 弱收尾：裸尾片（无句读收尾）落在语法上不可停顿的尾形上。R2 基准 14 处
-/// 硬悬空全部落在这几类：结构助词/方位后缀、副词、助动词、量词、及物光动词
-/// 缺宾（见审计 §4.2.1）。
+/// Weak endings: a bare trailing piece (not closed by punctuation) that lands on a form that cannot grammatically pause there. All 14 hard dangling cases in the R2 benchmark fell into these types: structural particles and locative suffixes, adverbs, auxiliary verbs, measure words, and transitive light verbs missing their object (see audit §4.2.1).
 ///
-/// Blocking 只收「无标点时几乎不可能合法收句」的形态；语境相关的光动词
-/// （知道/占用/生成…）留在 [`WEAK_TAIL_ADVISORY_WORDS`]，避免把
-/// 「我不知道」「来看看」这类完整谓语误判成语病、凭空多一轮回炉。
+/// Blocking covers only the forms that almost never legally end a clause without punctuation. Context-dependent light verbs (知道 "know", 占用 "occupy", 生成 "generate" …) stay in [`WEAK_TAIL_ADVISORY_WORDS`], so that complete predicates such as 「我不知道」 ("I don't know") and 「来看看」 ("come take a look") are not misjudged as flaws, which would force an extra rework round.
 const WEAK_TAIL_BLOCKING_WORDS: &[&str] = &[
-    // 副词
+    // Adverbs
     "如何",
     "只是",
     "同时",
     "预先",
     "仅仅",
-    // 助动词
+    // Auxiliary verbs
     "可以",
-    // 量词短语（不含裸「一个/一种」：省略结构合法，见 INCOMPLETE_CJK_NOMINAL_TAILS）
+    // Measure-word phrases (excludes bare 「一个/一种」 ("one" / "one kind"): the elliptical structure is legal, see INCOMPLETE_CJK_NOMINAL_TAILS)
     "一系列",
     "一块",
-    // 光动词 + 完成体「了」：宾语必然在下一片
+    // Light verb + perfective 「了」: the object must be in the next piece
     "采用了",
     "内置了",
     "了解了",
@@ -152,8 +132,7 @@ const WEAK_TAIL_BLOCKING_WORDS: &[&str] = &[
     "占用了",
     "生成了",
 ];
-/// 弱收尾（提示级）：及物光动词缺宾。是否缺宾取决于语境，只提示 + 参与
-/// 目标预拆罚分，不阻塞。
+/// Weak ending (advisory level): a transitive light verb missing its object. Whether the object is missing depends on context, so this only gives a hint and adds to the target pre-split penalty. It does not block.
 const WEAK_TAIL_ADVISORY_WORDS: &[&str] = &[
     "生成",
     "占用",
@@ -164,77 +143,68 @@ const WEAK_TAIL_ADVISORY_WORDS: &[&str] = &[
     "获取",
     "释放",
 ];
-/// 以「得」收尾但本身成词的双字尾（这些片尾合法）。
+/// Two-character endings that end in 「得」 but are words on their own (such piece endings are legal).
 const WEAK_TAIL_DE_COMPLETE_BIGRAMS: &[&str] = &["心得", "所得", "值得", "难得", "舍得"];
 
 // ---------------------------------------------------------------------------
-// 形态类弱尾（开放类）。`WEAK_TAIL_BLOCKING_WORDS` 是封闭词表，中文悬空尾
-// 却是开放类：R3 基准实测 `采用了`/`同时` 等词条命中后，缺陷只是**位移**到
-// 相邻的未列出形态上（见审计 §2「缺陷位移」）。下面几组按**形态**判定，
-// 词表只保留「成词陷阱」豁免侧（与既有「以上」「心得」同一机制）。
+// Morphology-class weak endings (open class). `WEAK_TAIL_BLOCKING_WORDS` is a closed word list, but Chinese dangling endings form an open class: in R3 benchmark measurements, after entries such as `采用了` ("adopted") and `同时` ("at the same time") were hit, the defect merely **shifted** to adjacent forms that were not listed (see audit §2, "defect displacement"). The groups below judge by **form**. The word list keeps only the exemption side for "word traps" (strings that look like fragments but are real words), using the same mechanism as the existing 「以上」 ("above") and 「心得」 ("takeaways").
 // ---------------------------------------------------------------------------
 
-/// 处置式/兼语式框架词：`把/将/让/使/叫 + NP` 后必须跟谓语。
+/// Disposal and pivotal frame words: `把/将/让/使/叫 + NP` must be followed by a predicate.
 const FRAME_DISPOSAL_CJK: &[char] = &['把', '将', '让', '使', '叫'];
-/// 框架词回看窗口（字）。超出窗口即认为该框架已在更早处闭合。
+/// Lookback window for frame words (in characters). Beyond the window, the frame is considered already closed earlier.
 const FRAME_LOOKBACK: usize = 10;
-/// 处置式/兼语式豁免：含框架字但框架字不作框架词用的双字词（副词「即将」、
-/// 时间名词「将来」、连词「即使」等）。命中位置可在框架字前或后。
+/// Exemptions for disposal and pivotal constructions: two-character words that contain a frame character but do not use it as a frame word, such as the adverb 「即将」 ("about to"), the time noun 「将来」 ("future"), and the conjunction 「即使」 ("even if"). The matching position may be before or after the frame character.
 const FRAME_COMPLETE_BIGRAMS: &[&str] = &[
     "即将", "行将", "将来", "将要", "将会", "将近", "假使", "即使", "纵使", "致使", "促使", "迫使",
     "大把", "把握", "把手", "叫做", "名叫", "号叫",
 ];
-/// 补语/体标记收尾：框架后已出现谓语核心，不算处置式缺谓语
-///（缺宾的情形由 [`VERB_COMPLEMENT_TAILS`] 单独判）。
+/// Closed by a complement or aspect marker: a predicate core has already appeared after the frame, so this is not a disposal construction missing its predicate. (A missing object is judged separately by [`VERB_COMPLEMENT_TAILS`].)
 const PREDICATE_TAIL_CJK: &[char] = &[
     '了', '着', '过', '到', '成', '出', '掉', '回', '走', '开', '住', '给', '完', '好', '起', '下',
     '来', '去', '上',
 ];
 
-/// 及物动词 + 趋向/结果补语：补语收尾即缺宾（「浪费掉 ‖ 60%」「观察到 ‖ 50%」）。
+/// Transitive verb + directional or resultative complement: ending on the complement means the object is missing (「浪费掉 ‖ 60%」 ("waste away | 60%"), 「观察到 ‖ 50%」 ("observed to | 50%")).
 const VERB_COMPLEMENT_TAILS: &[char] = &['到', '掉', '出', '成'];
-/// 动补缺宾豁免：以补语字收尾但本身是自足动词/名词的双字词。
+/// Exemptions for a complement missing its object: two-character words that end in a complement character but are self-sufficient verbs or nouns on their own.
 const VERB_COMPLEMENT_COMPLETE_BIGRAMS: &[&str] = &[
-    // 到
+    // 到 (to, arrive)
     "迟到", "报到", "周到", "独到", "不到", "直到", "来到",
-    // 掉（自足不及物极少，只豁免明显成词的）
-    "丢掉", // 出：输出/产出/支出 等是名词
+    // 掉 (away; a self-sufficient intransitive is rare, so only clearly word-forming cases are exempted)
+    "丢掉", // 出 (out): 输出 ("output"), 产出 ("yield"), 支出 ("expenditure") and similar are nouns
     "输出", "产出", "支出", "付出", "演出", "突出", "杰出", "外出", "日出", "售出", "退出", "指出",
-    // 成：完成/形成 等可自足收句
+    // 成 (become): 完成 ("complete"), 形成 ("form") and similar can close a clause on their own
     "完成", "形成", "达成", "组成", "构成", "集成", "合成", "赞成", "现成", "既成",
 ];
 
-/// 方位后缀：`在/从/对/往/向 … X` 或「数量/Latin + 方位」构成的方位框架
-/// 未闭合。「上」在下面单独判（沿用既有的「在…上」回看规则）。
+/// Locative suffix: a locative frame `在/从/对/往/向 … X`, or a locative frame formed by a "quantity/Latin + locative" pattern, is not closed. 「上」 ("on") is judged separately below, following the existing 「在…上」 lookback rule.
 const LOCATIVE_SUFFIX_CJK: &[char] = &['里', '中', '下', '内', '间'];
-/// 方位框架的显式引导词。
+/// Explicit introducing words of a locative frame.
 const LOCATIVE_FRAME_CJK: &[char] = &['在', '从', '对', '往', '向'];
-/// 方位后缀豁免：这些双字尾是自足的代词/名词/动词，不是待闭合的方位短语。
+/// Exemptions for locative suffixes: these two-character endings are self-sufficient pronouns, nouns or verbs, not locative phrases still waiting to be closed.
 const LOCATIVE_COMPLETE_BIGRAMS: &[&str] = &[
-    // 里
+    // 里 (inside)
     "这里", "那里", "哪里", "家里", "心里", "手里", "公里", "英里", "海里", "表里",
-    // 中
+    // 中 (among)
     "其中", "当中", "之中", "集中", "空中", "眼中", "心中", "适中", "居中", "命中", "选中", "看中",
-    "击中", "猜中", // 下
+    "击中", "猜中", // 下 (under)
     "以下", "如下", "低下", "属下", "手下", "天下", "地下", "陛下", "阁下", "留下", "放下", "剩下",
-    // 内
-    "以内", "之内", "国内", "室内", "体内", "对内", // 间
+    // 内 (within)
+    "以内", "之内", "国内", "室内", "体内", "对内", // 间 (between)
     "之间", "期间", "中间", "时间", "空间", "房间", "瞬间", "民间", "夜间", "车间",
 ];
 
-/// 方位后缀落在**片首**：与 [`LOCATIVE_SUFFIX_CJK`] 是同一语病的对称面
-///（「从你现有的 GPU ‖ 中获得…」把方位框架从中间切开）。这些字起首时
-/// 几乎总黏着前一片的 NP，除非本身成词。
+/// A locative suffix at the **start** of a piece. This is the mirror image of [`LOCATIVE_SUFFIX_CJK`], the same flaw seen from the other side (「从你现有的 GPU ‖ 中获得…」 splits the locative frame in the middle). When these characters start a piece, they almost always cling to the noun phrase of the previous piece, unless they form a word on their own.
 const LEADING_LOCATIVE_WORDS: &[&str] = &[
     "中国", "中间", "中心", "中央", "中断", "中止", "中文", "中英", "下面", "下一", "下来", "下去",
     "下列", "下载", "上面", "上一", "上来", "上去", "上述", "上下", "里面", "内容", "内存", "内部",
     "内核", "内置", "间接", "间隔",
 ];
 
-/// 光动词框架：`来/去 + 单音节重叠动词`（聊聊/看看/说说）缺宾。
+/// Light-verb frame: `来/去 + monosyllabic reduplicated verb` (聊聊 "chat", 看看 "take a look", 说说 "talk") missing its object.
 const LIGHT_VERB_FRAME_CJK: &[char] = &['来', '去'];
-/// 系词「是」裸尾：表语在下一片。判据从治超机制的实测坏缝反推
-///（`所以，如果你的最大序列长度是 ‖ 2048 个 token，`）。
+/// The copula 「是」 ("is") at the end of a piece: the predicate nominal must be in the next piece. The criterion was reverse-derived from a bad seam measured in the speed-limiting mechanism (`所以，如果你的最大序列长度是 ‖ 2048 个 token，`).
 const COPULA_COMPLETE_BIGRAMS: &[&str] = &["求是", "自是"];
 pub(crate) const CUT_BEFORE_CJK: &[&str] = &[
     "但是", "所以", "因为", "然后", "而且", "不过", "如果", "虽然", "那么", "或者", "并且", "同时",
@@ -243,13 +213,13 @@ pub(crate) const CUT_BEFORE_CJK: &[&str] = &[
 const CUT_BEFORE_LATIN: &[&str] = &[
     "but", "so", "because", "then", "which", "when", "while", "and", "or", "if",
 ];
-/// 弱缝:介词/不定式引导的短语起点。只用于源词区间锚定吸附,不用于目标切分。
+/// Weak seam: the start of a phrase introduced by a preposition or infinitive. Used only for snapping the source-word span anchor, not for target splitting.
 const CUT_BEFORE_LATIN_WEAK: &[&str] = &[
     "to", "with", "for", "from", "into", "onto", "about", "without", "through", "over", "under",
     "between", "across", "by", "at", "on", "in", "of", "as", "after", "before", "during", "since",
     "until", "toward", "towards", "via",
 ];
-/// 源词区间锚定:占比边界向语义缝吸附的搜索窗口(词数)。
+/// Source-word span anchoring: the search window (in words) within which a proportional boundary snaps toward a semantic seam.
 const ANCHOR_SNAP_WINDOW: usize = 2;
 
 fn is_cjk_lang(lang: &str) -> bool {
@@ -270,7 +240,7 @@ fn strip_closers(text: &str) -> &str {
     &text[..end]
 }
 
-/// 片是否以句末标点收尾（剥离 closer 后）。
+/// Whether the piece ends with a sentence-final punctuation mark (after stripping closers).
 pub fn ends_sentence_final(text: &str) -> bool {
     let trimmed = text.trim();
     let stripped = strip_closers(trimmed);
@@ -280,7 +250,7 @@ pub fn ends_sentence_final(text: &str) -> bool {
         .is_some_and(|ch| SENTENCE_FINAL_PUNCT.contains(&ch))
 }
 
-/// 片是否以从句标点收尾（剥离空白后）。
+/// Whether the piece ends with a clause-level punctuation mark (after stripping whitespace).
 pub fn ends_clause_punct(text: &str) -> bool {
     text.trim()
         .chars()
@@ -288,7 +258,7 @@ pub fn ends_clause_punct(text: &str) -> bool {
         .is_some_and(|ch| CLAUSE_PUNCT.contains(&ch))
 }
 
-/// 片是否以悬垂连接词/介词结尾。
+/// Whether the piece ends with a dangling connective or preposition.
 pub fn ends_dangling(text: &str) -> bool {
     let trimmed = text.trim();
     let Some(last) = trimmed.chars().last() else {
@@ -314,8 +284,7 @@ pub fn ends_dangling(text: &str) -> bool {
     if last == '的' && !de_tail_complete(trimmed, &tail) {
         return true;
     }
-    // 强标点可能在润色回写时与两侧 Latin 词相连；按最后一个 lexical run
-    // 判断，避免把 `matters—the` 当成一个安全词而漏掉悬空冠词 `the`。
+    // Strong punctuation may be attached to Latin words on either side during polish write-back. Judge by the last lexical run, so that `matters—the` is not treated as one safe word, which would miss the dangling article `the`.
     let Some(tok) = trimmed
         .split(|ch: char| !ch.is_alphanumeric() && ch != '\'' && ch != '-')
         .filter(|token| !token.is_empty())
@@ -326,13 +295,11 @@ pub fn ends_dangling(text: &str) -> bool {
     DANGLING_LATIN.contains(&tok.to_ascii_lowercase().as_str())
 }
 
-/// 句末标点是否落在悬垂词上——「假句末」判据（`… because.` / `… of how.`）。
+/// Whether the sentence-final punctuation falls on a dangling word: the "false sentence end" criterion (`… because.` / `… of how.`).
 ///
-/// 与 [`ends_dangling`] 的差别是必须先**确认**这是个句末：文本以句末标点
-/// 收尾，剥掉 closer 与句末标点后再看最后一个实义词。`ends_dangling` 本身
-/// 遇到 `CLAUSE_PUNCT`（含 `.`）直接返回 false，直接调用永远判不出来。
+/// The difference from [`ends_dangling`] is that this must first **confirm** that the text really ends a sentence: it ends with sentence-final punctuation, and after stripping closers and that punctuation, the last content word is checked. `ends_dangling` itself returns false on any `CLAUSE_PUNCT` (which includes `.`), so calling it directly could never detect this.
 ///
-/// 只对 Latin/中文这类可判定语言有意义，调用方负责语言门。
+/// Meaningful only for languages that can be judged this way (Latin and Chinese). The caller is responsible for the language gate.
 pub fn dangling_sentence_end(text: &str) -> bool {
     let trimmed = text.trim();
     if !ends_sentence_final(trimmed) {
@@ -347,14 +314,11 @@ pub fn dangling_sentence_end(text: &str) -> bool {
     if is_elliptical_infinitive_end(stripped) {
         return false;
     }
-    // 单字母编号/变量（`a.`、`B.`）在测试夹具、枚举口述与数学转录里可独立成句；
-    // 不能因为 `a` 同时也是英文冠词就把纯协议 round-trip 判成假句末。
+    // A single-letter enumerator or variable (`a.`, `B.`) can stand as a sentence on its own in test fixtures, enumerated dictation and math transcripts. Do not classify a pure protocol round-trip as a false sentence end just because `a` is also the English article.
     if stripped.len() == 1 && stripped.chars().all(|ch| ch.is_ascii_alphabetic()) {
         return false;
     }
-    // `的` 在显示切缝里仍是高风险悬垂词，但在完整中文句末常作判断、强调或
-    // 名词化收尾（“是的。”“这是很重要的。”）。把整句判据与切缝判据分开：
-    // 仅保留孤立碎片“的。”的告警，避免长访谈产生数百条无行动价值的误报。
+    // `的` is still a high-risk dangling word at a display seam, but at the end of a complete Chinese sentence it often serves as a judgment, emphasis or nominalizing ending (“是的。” “这是很重要的。”). Keep the whole-sentence criterion separate from the seam criterion: keep the warning only for an isolated fragment 「的。」, so that long interviews do not generate hundreds of false alarms with no actionable value.
     if stripped.ends_with('的') && stripped != "的" {
         return false;
     }
@@ -367,11 +331,9 @@ pub fn dangling_sentence_end(text: &str) -> bool {
     ends_dangling(stripped)
 }
 
-/// 文本中是否有任一句落在悬垂连接词/介词上。
+/// Whether any sentence in the text ends on a dangling connective or preposition.
 ///
-/// [`dangling_sentence_end`] 只检查一个已知句片；文件载体与 json-v0 单句重试
-/// 拿到的都是可能包含多句的整段文本。统一在这里按 `atomize` + `sentence_end`
-/// 切片，避免两条验收路径各自实现一套略有漂移的扫描器。
+/// [`dangling_sentence_end`] checks only one known sentence fragment. Both the file-based carrier and the json-v0 single-sentence retry receive whole text that may contain several sentences. The scan is unified here by slicing with `atomize` + `sentence_end`, so the two acceptance paths do not each implement a slightly drifting scanner.
 pub fn contains_dangling_sentence_end(text: &str) -> bool {
     let atoms = atomize(text);
     let mut sentence_start = 0usize;
@@ -385,14 +347,9 @@ pub fn contains_dangling_sentence_end(text: &str) -> bool {
         }
         sentence_start = index + 1;
     }
-    // 最后一个句末原子之后的残段。丢掉它会开出一个盲区：ASCII 省略号收尾的
-    // `but...` 过不了 [`crate::atomize::sentence_end`] 的 `2.14` / `a.com` 守卫
-    // （词干里还留着 `.` 就不算句末），于是整段尾巴被静默丢弃、本函数恒返回
-    // false，而 `ccut check` 走的 [`dangling_sentence_end`] 却照样告警——同一
-    // 现象两条路径给相反答案，模型还能靠把 `.` 改成 `...` 蒙混过验收。
+    // The remainder after the last sentence-end atom. Dropping it opens a blind spot: an ASCII-ellipsis-ended `but...` fails the `2.14` / `a.com` guard of [`crate::atomize::sentence_end`] (a `.` left in the stem means it is not a sentence end). The whole tail is then silently discarded and this function always returns false, while [`dangling_sentence_end`], which `ccut check` uses, still warns. The same phenomenon gave opposite answers on the two paths, and the model could get past acceptance by changing `.` to `...`.
     //
-    // 残段不以句末标点收尾时 `dangling_sentence_end` 自己就会返回 false，
-    // 所以这里不会把「话没说完的段尾」误判成悬垂句末。
+    // A remainder that does not end with sentence-final punctuation is not judged a dangling sentence end by `dangling_sentence_end` itself, so an unfinished tail is not mistaken for a dangling sentence end here.
     if sentence_start < atoms.len() {
         let tail = join_word_texts(atoms[sentence_start..].iter().map(String::as_str));
         if dangling_sentence_end(&tail) {
@@ -402,17 +359,14 @@ pub fn contains_dangling_sentence_end(text: &str) -> bool {
     false
 }
 
-/// 是否是句末标点（`。！？.!?…`）。
+/// Whether it is a sentence-final punctuation mark (`。！？.!?…`).
 pub fn is_sentence_final_punct(ch: char) -> bool {
     SENTENCE_FINAL_PUNCT.contains(&ch)
 }
 
-/// 是否含有互相冲突的相邻句末/分句标点（例如 `。，`、`，。`、`，，`）。
+/// Whether it contains conflicting adjacent sentence-final or clause punctuation (for example `。，`, `，。`, `，，`).
 ///
-/// `？！`、`!?` 这类组合句末语气，以及省略号，都是合法写法；这里只拦一边
-/// 已经封句、另一边却又要求句内续接的组合，以及两个连续的分句标点。模型在句界
-/// 重贴时偶尔会把新标点追加到 ASR 原标点后面，若不在提交时拒绝，派生
-/// Sentence/Cue 都会保留噪声。
+/// Combined tone marks such as `？！` and `!?`, as well as ellipses, are all legal. This only blocks combinations where one side has closed the sentence and the other side requires the sentence to continue, plus two consecutive clause punctuation marks. When a model re-attaches punctuation at sentence boundaries it sometimes appends new punctuation after the original ASR punctuation. If that is not rejected at submission, the derived Sentence and Cue would keep the noise.
 pub fn contains_conflicting_punctuation(text: &str) -> bool {
     let sentence_final = |ch: char| matches!(ch, '。' | '！' | '？' | '.' | '!' | '?');
     let clause = |ch: char| matches!(ch, '，' | '、' | '；' | '：' | ',' | ';' | ':');
@@ -423,23 +377,19 @@ pub fn contains_conflicting_punctuation(text: &str) -> bool {
     })
 }
 
-/// 冲突相邻标点的确定性归一（重试策略重设计 R2「代码先修」）。
+/// Deterministic normalization of conflicting adjacent punctuation (retry strategy redesign R2, "fix in code first").
 ///
-/// 判据与 [`contains_conflicting_punctuation`] 严格互补：凡是那里判冲突的相邻
-/// 对，这里都消解掉一个，结果保证 `!contains_conflicting_punctuation(out)`。
-/// 规则只有一条——**句末标点赢**：
+/// The judgment is strictly complementary to [`contains_conflicting_punctuation`]: every adjacent pair that is flagged as conflicting there has one of its marks resolved here, and the result is guaranteed to satisfy `!contains_conflicting_punctuation(out)`. There is one rule: **the sentence-final mark wins**.
 ///
-/// - `。，` / `，。` → 保留句末的那个（`。`）；
-/// - `，，` / `,;` 一类两个连续分句标点 → 保留前一个；
-/// - `..` → `.`（同一句末重复，保留一个）。
+/// - `。，` / `，。`: keep the sentence-final one (`。`).
+/// - Two consecutive clause punctuation marks such as `，，` / `,;`: keep the earlier one.
+/// - `..` → `.`: a repeated sentence end keeps one mark.
 ///
-/// `？！`、`!?`、`……` 这类组合语气不在冲突集里，原样保留。空白不影响判定：
-/// 冲突判定看的是相邻字符，因此中间隔了空格的两个标点本就不算冲突。
+/// Combined tone marks such as `？！`, `!?` and `……` are not in the conflict set, so they are kept as they are. Whitespace does not affect the judgment: conflict detection looks at adjacent characters, so two punctuation marks separated by a space are not a conflict to begin with.
 pub fn normalize_conflicting_punctuation(text: &str) -> String {
     let sentence_final = |ch: char| matches!(ch, '。' | '！' | '？' | '.' | '!' | '?');
     let clause = |ch: char| matches!(ch, '，' | '、' | '；' | '：' | ',' | ';' | ':');
-    // 第一步：恰好两个连续的 ASCII 句点折成一个。三个及以上是省略号写法，
-    // 原样保留（`...` 不是 `..`）。
+    // Step 1: fold exactly two consecutive ASCII periods into one. Three or more is an ellipsis and is kept as it is (`...` is not `..`).
     let mut folded = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
     let mut index = 0usize;
@@ -462,8 +412,7 @@ pub fn normalize_conflicting_punctuation(text: &str) -> String {
         folded.push(chars[index]);
         index += 1;
     }
-    // 第二步：按「已写出的最后一个字符」逐字消解冲突对，保证消解本身不会
-    // 制造出新的冲突对（`，，。` → `。`，而不是 `，。`）。
+    // Step 2: resolve conflicting pairs one character at a time, based on the last character already written. This guarantees that the resolution itself does not create a new conflicting pair (`，，。` → `。`, not `，。`).
     let mut out = String::with_capacity(folded.len());
     for ch in folded.chars() {
         match out.chars().next_back() {
@@ -473,7 +422,7 @@ pub fn normalize_conflicting_punctuation(text: &str) -> String {
                 out.push(ch);
             }
             Some(last) if clause(last) && clause(ch) => continue,
-            // 消解后可能露出两个同款 CJK 句末（`。，。`）：只留一个。
+            // After resolution, two identical CJK sentence ends may be exposed (`。，。`): keep only one.
             Some('。') if ch == '。' => continue,
             _ => out.push(ch),
         }
@@ -481,11 +430,9 @@ pub fn normalize_conflicting_punctuation(text: &str) -> String {
     out
 }
 
-/// 是否含有疑似被 ASR 粘成一个词的超长纯 Latin atom。
+/// Whether it contains an overlong run of pure Latin letters that ASR glued into a single word.
 ///
-/// 该判据故意只看连续 ASCII 字母，不把 URL、带连字符术语或数字串算进去。
-/// 调用方还应按语言门控；当前主要用于中文转录里的英文 code-switching，避免
-/// `purereinforcementlearning` 这类本应有空格的短语漏过 polish 质量门。
+/// This criterion deliberately looks only at consecutive ASCII letters. It does not count URLs, hyphenated terms or digit strings. The caller should also gate by language. It is currently used mainly for English code-switching in Chinese transcripts, so that phrases such as `purereinforcementlearning`, which should have spaces, do not pass the polish quality gate.
 pub fn contains_likely_collapsed_latin_atom(text: &str, min_chars: usize) -> bool {
     let mut run = 0usize;
     for ch in text.chars() {
@@ -501,12 +448,9 @@ pub fn contains_likely_collapsed_latin_atom(text: &str, min_chars: usize) -> boo
     false
 }
 
-/// 英语疑问/关系结构允许介词悬置：`what it reaches out to`、
-/// `what this is an example of` 的末词虽是介词，但宾语已经前置，句子完整。
+/// English wh- and relative constructions allow a stranded preposition. In `what it reaches out to` and `what this is an example of`, the final word is a preposition, but its object has been fronted, so the sentence is complete.
 ///
-/// 这里只豁免当前悬垂词表里确实会触发假句末的 `to/of`，并要求 wh 词与末介词
-/// 之间出现一个显式从句主语；这样 `what to do because of.` 仍会被报出，而不会
-/// 因为远处碰巧有 `what` 就误放行。
+/// Only `to` and `of`, which currently trigger false sentence ends in the dangling-word table, are exempted. The exemption also requires an explicit clause subject between the wh-word and the final preposition. This way `what to do because of.` is still reported, and it is not exempted just because a `what` happens to appear somewhere far away.
 fn has_fronted_latin_preposition_object(text: &str) -> bool {
     let tokens = text
         .split(|ch: char| !ch.is_alphanumeric() && ch != '\'')
@@ -534,11 +478,7 @@ fn has_fronted_latin_preposition_object(text: &str) -> bool {
         })
 }
 
-/// 英语的不定式省略：`They can slow down any time they want to.`、
-/// `You don't have to.`、`I was going to.` 的末词是 `to`，但它是被省略的动词短语
-/// 的标记，不是等待宾语的介词；句子完整。只放行紧跟在这些许可动词之后的 `to`
-///（口语访谈里 `want to.` 一类实测被 polish 验收打回，Agent 只能原样交回），
-/// `example of.`、`what to do because of.` 照旧是假句末。
+/// English infinitive ellipsis: in `They can slow down any time they want to.`, `You don't have to.` and `I was going to.`, the final word is `to`. But it marks an elided verb phrase, not a preposition waiting for an object, so the sentence is complete. Only a `to` immediately after these permitted verbs is exempted. (In spoken interviews, `want to.`-type endings were rejected by polish acceptance, and the agent could only hand the text back unchanged.) `example of.` and `what to do because of.` remain false sentence ends, as before.
 fn is_elliptical_infinitive_end(text: &str) -> bool {
     const LICENSORS: &[&str] = &[
         "want", "wants", "wanted", "need", "needs", "needed", "have", "has", "had", "going",
@@ -560,9 +500,7 @@ fn is_elliptical_infinitive_end(text: &str) -> bool {
             .is_some_and(|before| LICENSORS.contains(&before.as_str()))
 }
 
-/// 以「的」收尾的双字尾是否自足。「有的」只在**独立**出现时是代词
-///（有的人/有的是）；前面还有表意字时是「现有的/所有的/已有的」这类
-/// 定语 + 的，仍在等中心语（治超实测坏缝 `从你现有的 ‖ GPU 中获得…`）。
+/// Whether a two-character ending that ends in 「的」 is self-sufficient. 「有的」 ("some") is a pronoun only when it stands **alone** (有的人 "some people", 有的是 "some are"). When other meaningful characters come before it, it is an attributive plus 的, as in 「现有的」 / 「所有的」 / 「已有的」 ("existing" / "all" / "already existing"), which still awaits its head noun. (Measured bad seam in the speed-limit case: `从你现有的 ‖ GPU 中获得…`.)
 fn de_tail_complete(trimmed: &str, tail: &str) -> bool {
     if !DE_TAIL_COMPLETE_BIGRAMS.contains(&tail) {
         return false;
@@ -577,8 +515,7 @@ fn de_tail_complete(trimmed: &str, tail: &str) -> bool {
         .is_some_and(|ch| is_ideograph(ch))
 }
 
-/// 片是否以黏着助词或并列连词开头。介词「于」几乎总属于前一片的谓语
-///（类似于/取决于/属于…），唯一常见的合法片首是连词「于是」。
+/// Whether the piece starts with a clinging particle or a coordinating conjunction. The preposition 「于」 almost always belongs to the predicate of the preceding piece (类似于 "similar to", 取决于 "depends on", 属于 "belongs to" …). The only common legal piece start is the conjunction 「于是」 ("so").
 pub fn starts_dangling(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.starts_with('于') && !trimmed.starts_with("于是") {
@@ -596,11 +533,9 @@ pub fn starts_dangling(text: &str) -> bool {
             .any(|word| trimmed.starts_with(word))
 }
 
-/// 裸尾片是否落在语法上不可停顿的弱尾形上。返回 `(严重度, 命中的尾形)`；
-/// 以句读收尾（含 closer 后）时一律不算。
+/// Whether a bare trailing piece lands on a weak ending that cannot be paused at grammatically. Returns `(severity, matched ending form)`. A piece ending with punctuation (including after a closer) is never counted.
 ///
-/// 与 [`ends_dangling`] 分开是刻意的：`ends_dangling` 也作用在**源**片上
-/// （`validate_source_shape`），中文弱尾表混进去会在 zh→X 任务里变成源侧阻塞。
+/// It is kept separate from [`ends_dangling`] on purpose. `ends_dangling` also applies to **source** pieces (`validate_source_shape`), and mixing the Chinese weak-ending table into it would turn it into a source-side blocker in zh→X tasks.
 pub fn ends_weak_tail(text: &str) -> Option<(SeamLintKind, &'static str)> {
     let trimmed = text.trim();
     let stripped = strip_closers(trimmed);
@@ -616,9 +551,7 @@ pub fn ends_weak_tail(text: &str) -> Option<(SeamLintKind, &'static str)> {
         .into_iter()
         .rev()
         .collect();
-    // 方位框架「在…上」：整个介词短语还在等谓语（R2「这里的输出质量在数学上 |
-    // 与单独运行大模型完全相同。」）。只在同片出现「在」时命中，绕开
-    // 以上/晚上/网上/线上 这类自足词，无需维护白名单。
+    // The locative frame 「在…上」 ("at … on"): the whole prepositional phrase is still waiting for its predicate (R2 「这里的输出质量在数学上 | 与单独运行大模型完全相同。」). It triggers only when 在 appears in the same piece. This avoids self-sufficient words such as 以上 ("above"), 晚上 ("evening"), 网上 ("online") and 线上 ("online") without needing a whitelist.
     if last == '上' && tail2 != "以上" && stripped.chars().rev().take(12).any(|ch| ch == '在') {
         return Some((SeamLintKind::Blocking, "在…上"));
     }
@@ -640,31 +573,26 @@ pub fn ends_weak_tail(text: &str) -> Option<(SeamLintKind, &'static str)> {
         .map(|word| (SeamLintKind::Advisory, *word))
 }
 
-/// 形态类弱尾判定（开放类）。命中返回形态名，全部为 Blocking。
+/// Morphology-class weak-ending judgment (open class). On a hit it returns the form name. All are Blocking.
 ///
-/// 输入是已 `strip_closers`、已确认不以句读收尾的裸尾片。空白一律先剥除：
-/// 交付投影会在 CJK 与 Latin 之间补空格，`35% 里`/`将 max_...` 这类片的
-/// 形态相邻关系不能被这些空格切断。
+/// The input is a bare trailing piece that has already been through `strip_closers` and is confirmed not to end with punctuation. All whitespace is stripped first: the delivery projection inserts spaces between CJK and Latin text, so the morphological adjacency of pieces such as `35% 里` or `将 max_...` must not be broken by those spaces.
 fn morphological_weak_tail(stripped: &str) -> Option<&'static str> {
     let chars: Vec<char> = stripped.chars().filter(|ch| !ch.is_whitespace()).collect();
     let last = *chars.last()?;
-    // 回看窗按「单位」计：连续 ASCII 词元记 1 个单位，否则
-    // `将 max_num_batched_tokens` 这类片会被一个长 Latin 词整个吃掉窗口。
+    // The lookback window is counted in units. A run of consecutive ASCII tokens counts as one unit. Otherwise a piece such as `将 max_num_batched_tokens` would have its whole window consumed by one long Latin word.
     let units = unit_offsets_from_end(&chars);
     let bigram: String = chars[chars.len().saturating_sub(2)..].iter().collect();
 
-    // 2 · 及物动词 + 趋向/结果补语（到/掉/出/成）收尾 ⇒ 宾语在下一片。
-    // 先于处置式判：`把 X 映射到` 两条都沾边，缺宾才是实际语病。
+    // 2 · Transitive verb + directional or resultative complement (到/掉/出/成) at the end ⇒ the object is in the next piece. Checked before the disposal construction, because `把 X 映射到` matches both, and the missing object is the actual flaw.
     if VERB_COMPLEMENT_TAILS.contains(&last) && chars.len() >= 2 {
         let head = chars[chars.len() - 2];
-        // 前一字必须是表意字（`8 到` / `v2 出` 这类不是动补）。
+        // The character before must be a meaningful character (`8 到` and `v2 出` are not complements).
         if is_ideograph(head) && !VERB_COMPLEMENT_COMPLETE_BIGRAMS.contains(&bigram.as_str()) {
             return Some("动补缺宾");
         }
     }
 
-    // 3 · 方位框架未闭合。「上」沿用既有的「在…上」回看；里/中/下/内/间
-    // 另加「数量/Latin + 方位」触发（R3「也就是这 35% 里 ‖ 用于 KV…」）。
+    // 3 · Locative frame not closed. 「上」 reuses the existing lookback for 「在…上」. 里/中/下/内/间 are additionally triggered by a "quantity/Latin + locative" pattern (R3 「也就是这 35% 里 ‖ 用于 KV…」 ("that is, within these 35% | used for KV…")).
     if LOCATIVE_SUFFIX_CJK.contains(&last)
         && chars.len() >= 2
         && !LOCATIVE_COMPLETE_BIGRAMS.contains(&bigram.as_str())
@@ -679,12 +607,12 @@ fn morphological_weak_tail(stripped: &str) -> Option<&'static str> {
         }
     }
 
-    // 6 · 系词「是」裸尾：表语必然在下一片。
+    // 6 · A bare copula 「是」 at the end: the predicate nominal must be in the next piece.
     if last == '是' && !COPULA_COMPLETE_BIGRAMS.contains(&bigram.as_str()) {
         return Some("系词缺表语");
     }
 
-    // 5 · 光动词：`来/去 + 单音节重叠动词`（来聊聊/去看看）缺宾。
+    // 5 · Light verb: `来/去 + monosyllabic reduplicated verb` (来聊聊 "come chat", 去看看 "go take a look") missing its object.
     if chars.len() >= 3 && chars[chars.len() - 2] == last && is_ideograph(last) {
         let light = chars
             .iter()
@@ -697,8 +625,7 @@ fn morphological_weak_tail(stripped: &str) -> Option<&'static str> {
         }
     }
 
-    // 1/4 · 处置式（把/将 + NP）与兼语式（让/使/叫 + NP）后无谓语。
-    // 片尾落在补语/体标记上时视为谓语已出现，交由上面的动补判据处理。
+    // 1/4 · A disposal construction (把/将 + NP) and a pivotal construction (让/使/叫 + NP) with no predicate after them. If the piece ends on a complement or aspect marker, a predicate is considered present, and it is handled by the complement criterion above.
     if !PREDICATE_TAIL_CJK.contains(&last) {
         for index in (0..chars.len().saturating_sub(1)).rev() {
             if units[index] > FRAME_LOOKBACK {
@@ -726,8 +653,7 @@ fn morphological_weak_tail(stripped: &str) -> Option<&'static str> {
     None
 }
 
-/// 每个字符到片尾的「单位距离」：连续 ASCII 词元（含 `_-.`）整体记 1 个单位，
-/// 其余每字 1 个单位。片尾字符距离为 0。
+/// The "unit distance" from each character to the end of the piece: a run of consecutive ASCII tokens (including `_-.`) counts as one unit as a whole, and every other character counts as one unit. The distance at the last character of the piece is 0.
 fn unit_offsets_from_end(chars: &[char]) -> Vec<usize> {
     let mut offsets = vec![0usize; chars.len()];
     let mut unit = 0usize;
@@ -748,13 +674,9 @@ pub(crate) fn is_ideograph(ch: char) -> bool {
     matches!(ch, '\u{4E00}'..='\u{9FFF}' | '\u{3040}'..='\u{30FF}' | '\u{AC00}'..='\u{D7AF}')
 }
 
-/// 目标片边界疑似切进 CJK 词内：两侧都是 CJK 表意字符且缝上没有任何标点/
-/// 空白。确定性切分器按字原子工作、没有词典，"简|化""思考如|何"这类词内
-/// 切只能保守拦截。
+/// The target piece boundary may be cutting inside a CJK word: both sides are CJK ideographs, and there is no punctuation or whitespace at the seam. The deterministic splitter works atom by atom on characters and has no dictionary, so cuts inside words such as "简|化" or "思考如|何" can only be blocked conservatively.
 ///
-/// 两侧都是谚文音节的缝不算：韩文按空格分词，原子是어절，原子之间的缝
-/// 本来就是词界（0.5 之前逐音节的文稿靠词上的「贴前」标记拦，见
-/// `layout::seam_grade`）。谚文挨着汉字 / 假名的缝仍按词内算。
+/// A seam between two Hangul syllables does not count. Korean is split by spaces, its atoms are eojeol, and the seams between atoms are already word boundaries. (Before 0.5, per-syllable scripts relied on a "sticks to previous" mark on words to block this; see `layout::seam_grade`.) Seams where Hangul is next to Han or kana still count as inside a word.
 pub(crate) fn cjk_midword_boundary(left: &str, right: &str) -> bool {
     let (Some(last), Some(first)) = (left.chars().next_back(), right.chars().next()) else {
         return false;
@@ -764,16 +686,14 @@ pub(crate) fn cjk_midword_boundary(left: &str, right: &str) -> bool {
         && !(crate::atomize::is_hangul_syllable(last) && crate::atomize::is_hangul_syllable(first))
 }
 
-/// 片内是否存在能**真正解决超行**的全合法自由缝。四个条件缺一不可：
+/// Whether there is a fully legal free seam within the piece that **truly resolves** the over-line problem. All four conditions are required:
 ///
-/// 1. 两侧都不超 fit —— 否则切了还是超行，只是多赔一片；
-/// 2. 两侧都长于 [`MIN_PIECE_CHARS`] —— 闪现碎片不是一行字幕；
-/// 3. 两侧都不触发客观级缝问题（[`is_objective_blocking`]）；
-/// 4. 不落在 CJK 词内边界（切完必被 draft 门打回）。
+/// 1. Neither side exceeds fit. Otherwise the cut still leaves an over-line piece, just at the cost of one more piece.
+/// 2. Both sides are longer than [`MIN_PIECE_CHARS`]. A flash fragment is not a subtitle line.
+/// 3. Neither side triggers an objective seam problem ([`is_objective_blocking`]).
+/// 4. It does not fall inside a CJK word boundary, since the draft gate would reject it after the cut.
 ///
-/// 这是「超 fit 必须再切一刀」的前置条件，也是「有缝必须是**全合法**缝才
-/// 强制」的判据本体：返回 `None` 的超 fit 片归 translation-unsplittable
-/// 通道，保持整片交付（审计 §7 P0-a）。
+/// This is the precondition for "a piece that exceeds fit must be cut again". It is also the criterion body for "a seam is enforced only if it is a **fully legal** seam". An over-fit piece that returns `None` goes to the translation-unsplittable channel and is delivered whole (audit §7 P0-a).
 pub fn free_seam(text: &str, lang: &str, params: &TransParams) -> Option<(String, String)> {
     let atoms = atomize(text);
     if atoms.len() < 2 {
@@ -785,9 +705,7 @@ pub fn free_seam(text: &str, lang: &str, params: &TransParams) -> Option<(String
         if left.trim().is_empty() || right.trim().is_empty() {
             continue;
         }
-        // 缝必须由原文的标点或空白背书，与 DP 的缝分级同口径：CJK/Latin
-        // 交界拼接出的渲染空格不是缝（「担心 | AI 会抢走…」切在动词和宾语
-        // 从句之间），否则"有自由缝"会把明显更差的切法当成必须执行的要求。
+        // The seam must be backed by punctuation or whitespace in the source, with the same basis as the DP seam grading. A rendered space at a CJK/Latin junction is not a seam: a cut such as 「担心 | AI 会抢走…」 ("worried | AI will take away…"), made between a verb and its object clause, is not one. Otherwise a "free seam exists" check would treat a clearly worse cut as a requirement to enforce.
         if !sentence_end(&left)
             && clause_end_char(&left).is_none()
             && !seam_backed_by_whitespace(text, &atoms, cut)
@@ -815,13 +733,12 @@ pub fn free_seam(text: &str, lang: &str, params: &TransParams) -> Option<(String
     None
 }
 
-/// 片尾是否为顿号（并列分隔符，不是展示缝）。
+/// Whether the piece ends with a 顿号 (、, the enumeration comma). It is a parallel separator, not a display seam.
 pub fn ends_list_separator(text: &str) -> bool {
     text.trim().chars().last() == Some('、')
 }
 
-/// 「数字 | 单位」跨缝：左片剥 closer 后以 ASCII 数字收尾，右片以数字后
-/// 近乎无歧义的单位/量词开头。
+/// A "number | unit" split across a seam: after stripping closers, the left piece ends in an ASCII digit, and the right piece starts with a unit or measure word that almost unambiguously follows a number.
 fn number_unit_split(left: &str, right: &str) -> bool {
     let ends_digit = strip_closers(left.trim())
         .chars()
@@ -836,8 +753,7 @@ fn number_unit_split(left: &str, right: &str) -> bool {
         .any(|unit| right.starts_with(unit))
 }
 
-/// 「我们有一个 | 想改变的系统」一类跨片未完成名词短语。数量词本身可能
-/// 合法省略，故只拦上表中的高置信度谓词尾，并要求下一片确有词汇内容。
+/// An incomplete noun phrase spanning pieces, such as 「我们有一个 | 想改变的系统」 ("we have one | a system we want to change"). A quantity word may be legitimately omitted, so only the high-confidence predicate endings in the table above are blocked, and the next piece must have actual lexical content.
 fn incomplete_nominal_split(left: &str, right: &str) -> bool {
     let left = left.trim_end();
     if left.is_empty() || ends_clause_punct(left) {
@@ -850,10 +766,9 @@ fn incomplete_nominal_split(left: &str, right: &str) -> bool {
             .any(|tail| left.ends_with(tail))
 }
 
-/// 「… X ‖ 中/里/上… 」：方位后缀被切到右片，方位框架从中间断开。
+/// "… X ‖ 中/里/上…": a locative suffix is pushed into the right piece, breaking the locative frame in the middle.
 ///
-/// 判据与片尾方位框架对称、同样取窄：左片须有显式引导词（在/从/对/往/向）
-/// 或以数量/Latin 词元收尾，右片首字不得自身成词（中国/下面/内容…）。
+/// The criterion mirrors the locative-frame check at the end of a piece, and it is equally narrow. The left piece must have an explicit introducing word (在/从/对/往/向), or end in a quantity or Latin token. The first character of the right piece must not itself form a word (中国 "China", 下面 "below", 内容 "content" …).
 fn leading_locative_split(left: &str, right: &str) -> bool {
     let left = left.trim_end();
     if left.is_empty() || ends_clause_punct(left) {
@@ -883,19 +798,14 @@ fn leading_locative_split(left: &str, right: &str) -> bool {
         .any(|word| right.starts_with(word))
 }
 
-/// 「A 和 B ‖ 中心语」：缝落在第二个并列项之后，把并列 NP 与中心语切开。
+/// "A 和 B ‖ head": the seam falls after the second coordinated item, splitting the coordinated noun phrase from its head.
 ///
-/// 精度门（缺一不可）。「和」兼作介词（「很高兴和大家聊聊 ‖ 如何…」），
-/// 误判会把合法缝拦下、把「悬空」换成「超行」，因此判据取窄：
-/// 左片无句读收尾；第二个并列项必须**短且是名词性的**（单个 Latin/数字
-/// 词元，或 ≤3 个表意字且不含重叠动词）——介词「和」后面跟的是「NP + 谓语」，
-/// 长度上就落不进这个窗口；右片以表意字起首，且不是人称代词主语、
-/// 转折/承接连词或疑问词引导的小句。
+/// Precision gates, all required. 和 also serves as a preposition (「很高兴和大家聊聊 ‖ 如何…」 ("glad to chat with everyone | how…")). Misjudging it would block legal seams and turn a dangling tail into an over-line piece, so the criterion is kept narrow. The left piece must not end with punctuation. The second coordinated item must be **short and nominal**: a single Latin or digit token, or no more than 3 Han characters that do not contain a reduplicated verb. A preposition 和 followed by "NP + predicate" does not fit this window because of its length. The right piece must start with a Han character and must not be a clause introduced by a personal-pronoun subject, an adversative or continuative conjunction, or an interrogative word.
 fn coordinated_head_split(left: &str, right: &str) -> bool {
-    /// 第二个并列项的最大表意字数。
+    /// The maximum number of Han characters in the second coordinated item.
     const MAX_SECOND_ITEM_CHARS: usize = 3;
     const SUBJECT_PRONOUN_CJK: &[char] = &['我', '你', '他', '她', '它', '咱', '您'];
-    /// 以这些词起首的右片是新小句，不是并列 NP 的中心语。
+    /// Right pieces starting with these words are new clauses, not the head of a coordinated noun phrase.
     const CLAUSE_OPENER_CJK: &[&str] = &[
         "如何",
         "怎么",
@@ -934,7 +844,7 @@ fn coordinated_head_split(left: &str, right: &str) -> bool {
     else {
         return false;
     };
-    // 连词自身成词（和平/与其/及时…）时不是并列结构。
+    // When the conjunction is itself a word (和平 "peace", 与其 "rather than", 及时 "timely"), it is not coordination.
     let from_coordinator: String = chars[index..].iter().collect();
     if LEADING_COORDINATOR_WORDS
         .iter()
@@ -959,11 +869,11 @@ fn coordinated_head_split(left: &str, right: &str) -> bool {
     if second.len() > MAX_SECOND_ITEM_CHARS || !second.iter().all(|ch| is_ideograph(*ch)) {
         return false;
     }
-    // 重叠动词（聊聊/看看）说明「和」是介词，后面是谓语不是并列项。
+    // A reduplicated verb (聊聊, 看看) shows that 和 is a preposition, and what follows is a predicate, not a coordinated item.
     !second.windows(2).any(|pair| pair[0] == pair[1])
 }
 
-/// 源词是否以语义缝标点收尾（分号/冒号/破折号；普通逗号不算）。
+/// Whether the source word ends with a semantic seam punctuation mark (semicolon, colon, dash). An ordinary comma does not count.
 pub fn ends_semantic_seam_punct(text: &str) -> bool {
     let stripped = strip_closers(text.trim());
     stripped
@@ -974,23 +884,22 @@ pub fn ends_semantic_seam_punct(text: &str) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeamLintKind {
-    /// 阻塞：触发 LLM 重试或兜底修复。
+    /// Blocking: triggers an LLM retry or fallback repair.
     Blocking,
-    /// 建议：soft+1..hard 存在更优缝；不阻塞。
+    /// Advisory: a better seam exists between soft+1 and hard. Does not block.
     Advisory,
 }
 
-/// 问题类别：悬垂/粘着是客观语病（worker 答案可据此回炉），闪现与
-/// aim-band 是长度取舍（只提示）。
+/// Issue categories. Dangling and clinging are objective flaws, so worker answers can be reworked accordingly. Flash fragments and aim-band are length trade-offs and only give a hint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeamLintClass {
     DanglingTail,
-    /// 裸尾片落在语法上不可停顿的弱尾形上（结构助词/副词/助动词/量词/光动词）。
+    /// A bare trailing piece lands on a weak form that cannot grammatically pause there (structural particle, adverb, auxiliary, measure word, light verb).
     WeakTail,
     BoundHead,
     IncompleteNominal,
     ListSeparator,
-    /// 缝落在一对已闭合的成对定界符内部（引号/括号被切开）。
+    /// The seam falls inside a closed pair of paired delimiters (quotes or brackets are split).
     UnpairedDelimiter,
     FlashFragment,
     AimBand,
@@ -1004,9 +913,7 @@ pub struct SeamLintIssue {
     pub message: String,
 }
 
-/// 客观语病级问题（悬垂尾/黏着首的 Blocking）：引擎验收回炉与 `task submit`
-/// 提交期 lint 共用此判定——两侧规则不一致时，worker 会在提交期通过、到
-/// 引擎聚合 repair 批才被打回，凭空多一次调用（p850 基准实测）。
+/// Objective flaw-level issues (Blocking for a dangling tail or a clinging head). The engine's acceptance-and-rework and the lint at `task submit` submission time share this judgment. If the two sides' rules disagreed, the worker would pass at submission and only be rejected in the engine's aggregated repair batch, adding an unnecessary call (measured in the p850 benchmark).
 pub fn is_objective_blocking(issue: &SeamLintIssue) -> bool {
     issue.kind == SeamLintKind::Blocking
         && matches!(
@@ -1020,12 +927,9 @@ pub fn is_objective_blocking(issue: &SeamLintIssue) -> bool {
         )
 }
 
-/// 缝是否落在一对已闭合的成对定界符内部。返回 `(缝下标, 该定界符跨度的
-/// 目标语阅读单位数)`，缝下标即右片下标。
+/// Whether the seam falls inside a closed pair of delimiters. Returns `(seam index, number of target-language reading units spanned by that delimiter pair)`. The seam index is the index of the right piece.
 ///
-/// 只认**已闭合**的定界符对：整句只有半个引号（ASR/译文本身不配对）时任何
-/// 切分都躲不开，不应反复打回 worker。跨度按纯拼接计（不补 `sep_len` 空格），
-/// 只用于和 hard 比较，误差至多一个空格。
+/// Only **closed** delimiter pairs are recognized. When the whole sentence has only half a quote (ASR or the translation does not pair them), no split can avoid it, and the worker should not be sent back again and again. The span is computed by plain concatenation (without adding `sep_len` spaces) and is used only for comparison with hard. The error is at most one space.
 fn delimiter_pair_seams(pieces: &[&str], lang: &str) -> Vec<(usize, usize)> {
     let mut chars: Vec<char> = Vec::new();
     let mut bounds: Vec<usize> = Vec::with_capacity(pieces.len());
@@ -1063,7 +967,7 @@ fn delimiter_pair_seams(pieces: &[&str], lang: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// 对一组片做缝质量 lint。`lang`/`params` 用于 aim-band advisory。
+/// Runs the seam-quality lint on a set of pieces. `lang` and `params` are used for the aim-band advisory.
 pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<SeamLintIssue> {
     let mut issues = Vec::new();
     if pieces.is_empty() {
@@ -1071,14 +975,10 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
     }
     let pair_seams = delimiter_pair_seams(pieces, lang);
     for (index, text) in pieces.iter().enumerate() {
-        // 片自身的展示宽度按契约口径计（片尾标点免费）；参与合并可行性求和
-        // 时,作为合并结果**头部**的片其片尾标点会变成行内负担,须按
-        // `target_cps_chars` 全额计,作为**尾部**的片仍按本口径计。
+        // A piece's own display width is counted by the contract's basis, where end-of-piece punctuation is free. When summing feasibility for a merge, a piece that becomes the **head** of the merged result has its end punctuation turn into inline load, so it must be counted in full with `target_cps_chars`. A piece that remains the **tail** is still counted by this basis.
         let chars = piece_display_units(text, lang);
-        // 末片可悬垂（下一句续接）；中间片不行。
-        // 消息里的 piece 序号一律 1 基（"piece 2/4"）：与 validate_source_shape
-        // 的 segment 序号同基。p850 基准实测 worker 把 0 基 "piece 1" 读成
-        // 第 1 片，对着错误的片改答案。
+        // The last piece may dangle, since the next sentence continues it. Middle pieces may not.
+        // Piece numbers in messages are always 1-based ("piece 2/4"), the same base as the segment numbers in validate_source_shape. In the p850 benchmark the worker read the 0-based "piece 1" as the first piece and rewrote the answer for the wrong piece.
         let ordinal = index + 1;
         let total = pieces.len();
         if index + 1 < pieces.len() && ends_dangling(text) {
@@ -1091,8 +991,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 ),
             });
         }
-        // 弱尾（得/在…上/副词/助动词/量词/光动词）与悬垂连词是同一类语病的
-        // 不同尾形；已判 DanglingTail 的片不重复报。
+        // Weak endings (得 / 在…上 / adverb / auxiliary / measure word / light verb) and dangling connectives are different forms of the same flaw. A piece already judged DanglingTail is not reported again.
         if index + 1 < pieces.len()
             && !ends_dangling(text)
             && let Some((kind, form)) = ends_weak_tail(text)
@@ -1127,8 +1026,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 },
             });
         }
-        // 方位后缀落在片首：方位框架被从中间切开（「从你现有的 GPU ‖
-        // 中获得…」）。与片尾方位框架判据是同一语病的对称面。
+        // A locative suffix at the start of a piece breaks the locative frame in the middle (「从你现有的 GPU ‖ 中获得…」). It is the mirror image of the locative-frame check at the end of a piece, the same flaw from the other side.
         if index > 0 && leading_locative_split(pieces[index - 1], text) {
             issues.push(SeamLintIssue {
                 piece_index: index,
@@ -1149,9 +1047,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 ),
             });
         }
-        // 并列结构的对称面：`LEADING_COORDINATOR_CJK` 只禁止切在「和/及/与」
-        // **之前**，切在**第二个并列项之后**同样会把并列 NP 与其中心语切开
-        //（R3「…存了那些 Key 和 Value ‖ 矩阵，…」）。
+        // The mirror image of coordination: `LEADING_COORDINATOR_CJK` only forbids cutting **before** 和/及/与. Cutting **after the second coordinated item** equally splits the coordinated noun phrase from its head (R3 「…存了那些 Key 和 Value ‖ 矩阵，…」 ("…stored those Key and Value | matrix, …")).
         if index > 0 && coordinated_head_split(pieces[index - 1], text) {
             issues.push(SeamLintIssue {
                 piece_index: index - 1,
@@ -1172,8 +1068,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 ),
             });
         }
-        // 顿号是并列分隔符不是缝：短并列项被拆开时应合并；合并会超 hard 的
-        // 长枚举保留缝但提示。
+        // The enumeration comma is a parallel separator, not a seam. Short coordinated items that get split should be merged. For long enumerations where merging would exceed hard, the seam is kept but a hint is emitted.
         if index > 0 && ends_list_separator(pieces[index - 1]) {
             let merged = target_cps_chars(pieces[index - 1], lang) + chars;
             issues.push(SeamLintIssue {
@@ -1189,11 +1084,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 ),
             });
         }
-        // 引号/括号内部不是缝：被引内容应整片保留。定界符跨度**达到** hard
-        // 时切分不可避免，降级为提示，避免 worker 反复回炉。口径必须是
-        // `span < hard`：span == hard 的整引片虽不超限，但它无法再容纳任何
-        // 引号外文字，逼 worker 单拆引内内容——s-g25.25 基准实测 advisory 推荐
-        // 的切法正是 submit lint 以 Blocking 拒绝的切法，形成不可满足闭环。
+        // Content inside quotes or brackets is not a seam: quoted content should be kept whole in one piece. When the delimiter span **reaches** hard, the cut is unavoidable, so it is downgraded to a hint to avoid sending the worker back again and again. The condition must be `span < hard`. A whole quoted piece with span == hard does not exceed the limit, but it has no room left for any text outside the quotes, so it forces the worker to split the content inside the quotes alone. The s-g25.25 benchmark measured that the cut recommended by the advisory is exactly the one the submit lint rejects as Blocking, which forms an unsatisfiable loop.
         if let Some((_, span)) = pair_seams.iter().copied().find(|(seam, _)| *seam == index) {
             issues.push(SeamLintIssue {
                 piece_index: index - 1,
@@ -1253,7 +1144,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
     issues
 }
 
-/// 合并相邻片以消除阻塞级缝问题；拼接不变量保持。
+/// Merges adjacent pieces to eliminate blocking-level seam problems. The concatenation invariant is preserved.
 pub fn repair_lint_pieces(pieces: Vec<String>, lang: &str, params: &TransParams) -> Vec<String> {
     let mut current = pieces;
     for _ in 0..current.len().saturating_mul(2).max(1) {
@@ -1265,7 +1156,7 @@ pub fn repair_lint_pieces(pieces: Vec<String>, lang: &str, params: &TransParams)
         if blocking.is_empty() || current.len() <= 1 {
             break;
         }
-        // 优先合并闪现片与邻片；其次把悬垂结尾片并入后片 / 黏着开头片并入前片。
+        // Prefer merging a flash fragment with a neighbor. Next, merge a piece with a dangling ending into the following piece, and a piece with a clinging start into the preceding piece.
         let index = blocking[0].piece_index;
         let chars = piece_display_units(&current[index], lang);
         let short_tag_fits_previous = chars <= MIN_PIECE_CHARS
@@ -1285,8 +1176,7 @@ pub fn repair_lint_pieces(pieces: Vec<String>, lang: &str, params: &TransParams)
         } else if previous_fits {
             false
         } else {
-            // 展示 hard 是交付不变量。没有任一相邻片可安全吸收时保留当前缝，
-            // 交给定向 LLM 精修；绝不能为消除 lint 制造 over-hard 译片。
+            // Delivery hard is a delivery invariant. When no adjacent piece can be absorbed safely, keep the current seam and hand it to a targeted LLM refinement. Never produce an over-hard piece just to eliminate a lint.
             break;
         };
         let (left, right) = if merge_with_next {
@@ -1300,10 +1190,7 @@ pub fn repair_lint_pieces(pieces: Vec<String>, lang: &str, params: &TransParams)
     current
 }
 
-/// worker 答案的接受后修复：只合并"可安全并入邻片"的闪现碎片（Blocking 级
-/// FlashFragment），文本与句内源词区间同步合并。悬垂/粘着缝在验收侧已拒绝，
-/// 这里不改其他缝；保持 ≥2 片、绝不产出超 hard 片。选边逻辑与
-/// [`repair_lint_pieces`] 一致。
+/// Post-acceptance repair of worker answers. Only flash fragments that can safely be absorbed into a neighbor are merged (Blocking-level FlashFragment), and the text and in-sentence source word spans are merged in sync. Dangling and clinging seams are already rejected on the acceptance side, so this does not change other seams. It keeps at least 2 pieces and never produces an over-hard piece. The side-selection logic is the same as in [`repair_lint_pieces`].
 pub fn repair_flash_pieces_with_ranges(
     pieces: Vec<(String, (usize, usize))>,
     lang: &str,
@@ -1367,7 +1254,7 @@ fn ascii_word_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
-/// 在目标语文本中找一条平衡的自然缝；无安全候选时返回 `None`。
+/// Finds a balanced natural seam in the target-language text. Returns `None` if there is no safe candidate.
 pub fn preferred_target_split(
     text: &str,
     lang: &str,
@@ -1412,7 +1299,7 @@ pub fn preferred_target_split(
                 start -= 1;
             }
             let token: String = chars[start..=i].iter().collect::<String>().to_lowercase();
-            // 缩写 / 点号单字母串（Dr. / U.S.）不是从句缝。
+            // Abbreviations and single-letter dotted strings (Dr. / U.S.) are not clause seams.
             if !sentence_end(&token) {
                 i += 1;
                 continue;
@@ -1479,7 +1366,7 @@ pub fn preferred_target_split(
         if !seen.insert(offset) {
             continue;
         }
-        // 基础安全：不切开 ASCII 词内部、不落在 opener 后 / closer 前。
+        // Basic safety: do not split inside an ASCII word, and do not land after an opener or before a closer.
         if offset == 0 || offset >= chars.len() {
             continue;
         }
@@ -1506,8 +1393,7 @@ pub fn preferred_target_split(
         if starts_dangling(&right) && !ends_clause_punct(&left) {
             continue;
         }
-        // 弱尾罚分：Blocking 级尾形直接淘汰（这种缝一产生就会被 lint 打回），
-        // Advisory 级降一档 tier，使同等宽度下切点后移。
+        // Weak-ending penalty: a Blocking-level ending is eliminated outright, because such a seam would be rejected by lint as soon as it is created. An Advisory-level ending is demoted by one tier, so the cut point moves later at the same width.
         let tier = match ends_weak_tail(&left) {
             Some((SeamLintKind::Blocking, _)) => continue,
             Some((SeamLintKind::Advisory, _)) => tier + 1,
@@ -1543,8 +1429,7 @@ pub fn preferred_target_split(
     best.map(|(split, _, _, _)| split)
 }
 
-/// Latin 零 LLM 预拆：未超 fit、超 aim、有平衡目标缝 + 源语义缝 + 两侧 ≥1s。
-/// 返回两片 `(text, from_word, to_word)`；不满足条件时 `None`。
+/// Latin zero-LLM pre-split: the piece is not over fit, is over aim, has a balanced target seam, a source semantic seam, and at least 1 s on each side. Returns the two pieces `(text, from_word, to_word)`. Returns `None` if the conditions are not met.
 pub fn latin_semantic_presplit(
     translation: &str,
     words: &[&Word],
@@ -1602,7 +1487,7 @@ pub fn latin_semantic_presplit(
     ])
 }
 
-/// over-fit / 缝预览清单条目（供 `ccut check` / align list 消费）。
+/// An entry in the over-fit and seam-preview list (consumed by `ccut check` and the align list).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlignListEntry {
     pub key: String,
@@ -1614,7 +1499,7 @@ pub struct AlignListEntry {
     pub seam_reason: Option<String>,
 }
 
-/// 扫描已译句，列出超 fit / 超 hard 及可选 preferred seam。
+/// Scans translated sentences and lists over-fit and over-hard pieces, with optional preferred seams.
 pub fn align_list_entries(
     translations: &[(String, String)],
     lang: &str,
@@ -1642,8 +1527,7 @@ pub fn align_list_entries(
     out
 }
 
-/// 源词边界的缝强度。`boundary` 是右片首词下标(1..words.len());0 = 非缝。
-/// 3 = 左词带从句/句末标点;2 = 右词是连词/关系词;1 = 右词是介词/不定式 to。
+/// Seam strength at a source word boundary. `boundary` is the index of the first word of the right piece (1..words.len()). 0 means not a seam. 3 = the left word carries a clause or sentence-final punctuation. 2 = the right word is a conjunction or relative word. 1 = the right word is a preposition or the infinitive marker `to`.
 pub(crate) fn source_boundary_strength(words: &[&str], boundary: usize) -> u8 {
     if boundary == 0 || boundary >= words.len() {
         return 0;
@@ -1668,10 +1552,7 @@ pub(crate) fn source_boundary_strength(words: &[&str], boundary: usize) -> u8 {
     0
 }
 
-/// 把修复后的文本片重新锚定到源词区间:先按字符占比划分,再把每个内部边界
-/// 在 ±ANCHOR_SNAP_WINDOW 词窗口内吸附到最近的源语义缝(距离优先,同距离取
-/// 强度高者)。占比裸切会落在 `make|changes` 这类短语内部;吸附不到才保持
-/// 占比位置。
+/// Re-anchors repaired text pieces to source word spans. First the pieces are split by character proportion. Then each internal boundary is snapped to the nearest source semantic seam within a window of ±ANCHOR_SNAP_WINDOW words (nearest first; at equal distance, the one with higher strength wins). A naive proportional cut would land inside phrases such as `make|changes`. The proportional position is kept only when no seam can be snapped to.
 pub fn reanchor_texts(texts: Vec<String>, source_words: &[&str], lang: &str) -> Vec<TransPiece> {
     use crate::split::anchor_pieces_to_words;
     let word_count = source_words.len();
@@ -1692,8 +1573,7 @@ pub fn reanchor_texts(texts: Vec<String>, source_words: &[&str], lang: &str) -> 
         }];
     }
     let k = texts.len();
-    // 内部边界 = 每片右邻的起始词下标;逐个左→右吸附,保持严格递增且给后续
-    // 片留 ≥1 词。
+    // Internal boundary = the starting word index of each piece's right neighbor. Snap them one by one from left to right, keeping them strictly increasing and leaving at least 1 word for the later pieces.
     let mut bounds: Vec<usize> = ranges.iter().take(k - 1).map(|&(_, to)| to + 1).collect();
     let mut prev = 0usize;
     for i in 0..bounds.len() {
@@ -1745,8 +1625,7 @@ pub fn reanchor_texts(texts: Vec<String>, source_words: &[&str], lang: &str) -> 
 mod tests {
     use super::*;
 
-    /// 两侧都是谚文的缝是어절之间的词界，不算切进词内；汉字 / 假名之间、
-    /// 谚文挨着汉字的缝照旧算。
+    /// A seam between two Hangul syllables is a word boundary between eojeol, not a cut inside a word. Seams between Han and kana, and between Hangul and Han, still count as before.
     #[test]
     fn a_seam_between_two_hangul_units_is_a_word_boundary() {
         assert!(cjk_midword_boundary("简", "化"));
@@ -1767,7 +1646,7 @@ mod tests {
         assert!(ends_dangling("matters—the"));
         assert!(starts_dangling("了吗"));
         assert!(starts_dangling("的时候"));
-        // 「的确」表面以「的」开头；是否违规还要看前片是否句读——单侧函数仍为 true。
+        // “的确” ("indeed") superficially starts with “的”. Whether it is a violation also depends on whether the preceding piece ends with punctuation. The single-side function still returns true.
         assert!(starts_dangling("的确"));
         assert!(ends_clause_punct("开心。"));
         assert!(ends_sentence_final("完成。"));
@@ -1775,7 +1654,7 @@ mod tests {
         assert!(!ends_sentence_final("完成，"));
     }
 
-    /// p1215 真实样本：ASR 原生的假句末在润色后仍然残留。
+    /// Real sample from p1215: ASR-native false sentence ends remain after polish.
     #[test]
     fn dangling_sentence_end_flags_false_periods() {
         assert!(dangling_sentence_end(
@@ -1784,17 +1663,16 @@ mod tests {
         assert!(dangling_sentence_end("It's a good example of."));
         assert!(dangling_sentence_end("And."));
         assert!(dangling_sentence_end("我们把它拆成两块，然后把结果和。"));
-        // 正常句末不报。
+        // A normal sentence end is not reported.
         assert!(!dangling_sentence_end("We are done now."));
         assert!(!dangling_sentence_end("这就是我们的目的。"));
         assert!(!dangling_sentence_end("a."));
-        // 不以句末标点收尾的句子（gap/词数封口）不在判据内。
+        // A sentence that does not end with sentence-final punctuation (cut by gap or word count) is outside this criterion.
         assert!(!dangling_sentence_end("alpha and"));
         assert!(!dangling_sentence_end("alpha and,"));
-        // 剥引号后仍能判。
+        // Still detected after the quotes are stripped.
         assert!(dangling_sentence_end("he called it the.\""));
-        // wh 宾语已经前置的合法介词悬置不能误报；远处只有 wh 词、没有从句主语
-        // 时仍是残缺结尾。
+        // A legitimate stranded preposition after a fronted wh-object must not be a false positive. When only a wh-word appears far away and there is no clause subject, it is still an incomplete ending.
         assert!(!dangling_sentence_end("This is what it connects to."));
         assert!(!dangling_sentence_end(
             "Which means we check what it reaches out to."
@@ -1805,15 +1683,14 @@ mod tests {
         assert!(dangling_sentence_end(
             "We need to decide what to do because of."
         ));
-        // 不定式省略：`to` 标记被省略的动词短语，句子完整（skill 试用实测
-        // `want to.` 被 polish 验收打回）。
+        // Infinitive ellipsis: `to` marks an elided verb phrase, and the sentence is complete. (In a skill trial, `want to.` was rejected by polish acceptance.)
         assert!(!dangling_sentence_end(
             "They can slow down any time they want to."
         ));
         assert!(!dangling_sentence_end("You don't have to."));
         assert!(!dangling_sentence_end("I was going to!"));
         assert!(!dangling_sentence_end("We're supposed to."));
-        // 不是许可动词之后的 `to` 仍是假句末。
+        // A `to` that does not follow a permitted verb is still a false sentence end.
         assert!(dangling_sentence_end("Then we went to."));
         assert!(dangling_sentence_end("To."));
         assert!(!dangling_sentence_end("是的。"));
@@ -1834,16 +1711,12 @@ mod tests {
         ));
     }
 
-    /// p-fb353b44 实测：ASCII 省略号收尾的悬垂句末曾是整条链的盲区。
+    /// Measured in p-fb353b44: a dangling sentence end closed by an ASCII ellipsis was a blind spot for the whole chain.
     ///
-    /// `atomize::sentence_end` 的 `2.14` / `a.com` 守卫会因为词干里还留着 `.`
-    /// 而拒绝把 `but...` 认成句末，于是最后一个句末原子之后的整条尾巴被静默
-    /// 丢弃、扫描恒返回 false——而 `ccut check` 直接调用的
-    /// [`dangling_sentence_end`] 照样告警。两条路径必须给同一个答案，否则
-    /// `polish-retry` 只要把句末 `.` 改成 `...` 就能骗过验收。
+    /// The `2.14` / `a.com` guard of `atomize::sentence_end` rejects `but...` as a sentence end, because the stem still contains `.`. The whole tail after the last sentence-end atom is then silently discarded, and the scan always returns false, while [`dangling_sentence_end`], which `ccut check` calls directly, still warns. The two paths must give the same answer. Otherwise `polish-retry` could get past acceptance just by changing a sentence-final `.` into `...`.
     #[test]
     fn trailing_residue_after_the_last_sentence_end_is_still_scanned() {
-        // 单独喂给整句判据是 true，走整段扫描也必须是 true。
+        // Fed alone to the whole-sentence criterion it is true, and the full-text scan must also be true.
         assert!(dangling_sentence_end(
             "I don't normally sound like this, but..."
         ));
@@ -1851,12 +1724,12 @@ mod tests {
             "I don't normally sound like this, but..."
         ));
         assert!(contains_dangling_sentence_end("上一句完整。就是说当..."));
-        // Unicode 省略号本来就没进盲区，回归保护。
+        // The Unicode ellipsis was never in the blind spot. Regression guard.
         assert!(contains_dangling_sentence_end("上一句完整。就是说当…"));
-        // 残段不以句末标点收尾（话没说完的段尾）不算悬垂句末。
+        // A remainder that does not end with sentence-final punctuation (an unfinished tail) is not a dangling sentence end.
         assert!(!contains_dangling_sentence_end("上一句完整。就是说当"));
         assert!(!contains_dangling_sentence_end("alpha and"));
-        // 正常收尾的整段不受影响。
+        // Normally terminated whole text is unaffected.
         assert!(!contains_dangling_sentence_end(
             "We are done now. It works..."
         ));
@@ -1888,11 +1761,11 @@ mod tests {
         ));
     }
 
-    /// R2 代码先修：冲突相邻标点由代码归一，不再回灌给模型重掷整页。
-    /// 归一化必须与检测判据严格互补——输出恒不再命中检测。
+    /// R2 code-first fix: conflicting adjacent punctuation is normalized by code and is no longer fed back to the model to re-roll the whole page.
+    /// The normalization must be strictly complementary to the detection criterion: the output never triggers detection again.
     #[test]
     fn conflicting_punctuation_is_normalized_deterministically() {
-        // 句末赢：丢掉相邻的弱标点，不论前后。
+        // The sentence-final mark wins: drop the adjacent weak punctuation, whichever side it is on.
         assert_eq!(
             normalize_conflicting_punctuation("事情。，然后继续。"),
             "事情。然后继续。"
@@ -1901,7 +1774,7 @@ mod tests {
             normalize_conflicting_punctuation("事情，。然后继续。"),
             "事情。然后继续。"
         );
-        // 两个分句标点保留前一个；连消解也不留下新的冲突对。
+        // Of two clause punctuation marks, keep the earlier one. Even after resolution, no new conflicting pair is left behind.
         assert_eq!(
             normalize_conflicting_punctuation("讲完了，，大家"),
             "讲完了，大家"
@@ -1918,7 +1791,7 @@ mod tests {
             normalize_conflicting_punctuation("done., then"),
             "done. then"
         );
-        // `..` → `.`；`...` 是省略号，原样保留。
+        // `..` → `.`. `...` is an ellipsis and is kept as it is.
         assert_eq!(
             normalize_conflicting_punctuation("done.. next"),
             "done. next"
@@ -1927,7 +1800,7 @@ mod tests {
             normalize_conflicting_punctuation("wait... ok"),
             "wait... ok"
         );
-        // 合法组合语气与小数点不受影响。
+        // Legitimate combined tone marks and decimal points are unaffected.
         assert_eq!(
             normalize_conflicting_punctuation("真的吗？！当然！"),
             "真的吗？！当然！"
@@ -1936,7 +1809,7 @@ mod tests {
             normalize_conflicting_punctuation("版本 1.0，继续。"),
             "版本 1.0，继续。"
         );
-        // 互补性：归一化后恒不再命中检测。
+        // Complementarity: after normalization, detection never fires again.
         for sample in [
             "事情。，然后。",
             "事情，。然后。",
@@ -1954,10 +1827,10 @@ mod tests {
 
     #[test]
     fn de_tail_is_dangling_except_complete_nouns() {
-        // 定语「的」悬垂（p850 基准草稿实测「…的 | 名词」两处落库）。
+        // A dangling attributive 「的」 (p850 benchmark draft: two cases of 「…的 | 名词」 ("…of | noun") were committed).
         assert!(ends_dangling("这是我们生成的"));
         assert!(!ends_dangling("这是我们生成的。"));
-        // 以「的」收尾的完整词不算悬垂。
+        // A complete word ending in 「的」 is not dangling.
         assert!(!ends_dangling("这就是我们的目的"));
         assert!(!ends_dangling("有的"));
         assert!(!ends_dangling("像做梦似的"));
@@ -1975,7 +1848,7 @@ mod tests {
                 && i.message.contains("unit")),
             "{issues:?}"
         );
-        // 非单位开头不误报。
+        // A start that is not a unit does not trigger a false positive.
         let ok = ["团队规模到了 2023", "情况才有了改变。"];
         assert!(
             lint_pieces(&ok, "zh", &params)
@@ -2009,8 +1882,7 @@ mod tests {
         );
     }
 
-    /// R2 基准两处两轮未修的硬悬空定点：`s-g41.0#0`（助词「得」）与
-    /// `s-g89.0#0`（「在数学上」被腰斩）。
+    /// Two hard-dangling fixed points from the R2 benchmark that survived two rounds of repair: `s-g41.0#0` (the particle 「得」) and `s-g89.0#0` (「在数学上」 ("in mathematics") cut in half).
     #[test]
     fn lint_blocks_weak_tail_regressions_from_run2() {
         let params = TransParams::for_lang("zh");
@@ -2040,7 +1912,7 @@ mod tests {
         }
     }
 
-    /// R2 已判优的宽片与常见完整收尾不得被新规则打回。
+    /// Wide pieces already judged good in R2, and common complete endings, must not be rejected by the new rules.
     #[test]
     fn weak_tail_spares_complete_tails() {
         let params = TransParams::for_lang("zh");
@@ -2075,7 +1947,7 @@ mod tests {
         }
     }
 
-    /// 并列结构不得切在 `和`/`及`/`与` 之前（`s-wmsk9mmhy-8#2`、`s-g20.19#3`）。
+    /// A coordinated structure must not be cut before `和`/`及`/`与` (`s-wmsk9mmhy-8#2`, `s-g20.19#3`).
     #[test]
     fn lint_blocks_cut_before_chinese_coordinator() {
         let params = TransParams::for_lang("zh");
@@ -2091,11 +1963,11 @@ mod tests {
                     && issue.message.contains("coordinator")
                     && is_objective_blocking(issue)
             });
-            // 「及其」是成词片首，不得拦。
+            // 「及其」 ("and its") is a piece start that forms a word, so it must not be blocked.
             let expected = !pieces[1].starts_with("及其");
             assert_eq!(blocked, expected, "{pieces:?} -> {issues:?}");
         }
-        // 前片以句读收尾时，并列连词起首是合法片首。
+        // When the preceding piece ends with punctuation, a coordinating conjunction at the start is a legal piece start.
         let ok = ["它们是 KV 缓存，", "和 PagedAttention 一起工作。"];
         assert!(
             lint_pieces(&ok, "zh", &params)
@@ -2104,25 +1976,24 @@ mod tests {
         );
     }
 
-    /// R3 审计 §2：封闭词表命中后缺陷只是**位移**到相邻的未列出形态。
-    /// 这里逐条锁死五个形态类的正例（全部取自 R3 的 10 处硬悬空）。
+    /// R3 audit §2: once a closed word list is hit, the defect only **shifts** to adjacent forms that are not listed. Here the positive examples of each of the five morphology classes are locked in (all taken from the 10 hard dangling cases of R3).
     #[test]
     fn weak_tail_blocks_open_class_morphology() {
         for (text, form) in [
-            // 1 · 处置式：把/将 + NP 后无谓语
+            // 1 · Disposal construction: 把/将 + NP with no predicate after it
             ("而块表会把逻辑页地址", "处置式缺谓语"),
             ("同时你还可以将 max_num_batched_tokens", "处置式缺谓语"),
-            // 4 · 兼语式：让/使/叫 + NP 后无谓语
+            // 4 · Pivotal construction: 让/使/叫 + NP with no predicate after it
             ("模型必须让你的输入", "兼语式缺谓语"),
-            // 2 · 及物动词 + 趋向/结果补语后缺宾
+            // 2 · Transitive verb + directional or resultative complement, with the object missing
             ("这些传统系统会浪费掉", "动补缺宾"),
             ("生产环境的部署已经观察到", "动补缺宾"),
-            // 3 · 方位框架（既有规则只覆盖「上」）
+            // 3 · Locative frame (the existing rules cover only 「上」)
             ("也就是这 35% 里", "方位框架"),
             ("在这种情况下", "方位框架"),
             ("在一个完整的推理周期内", "方位框架"),
             ("你在生产环境的 AI 开发中", "方位框架"),
-            // 5 · 光动词：来/去 + 单音节重叠动词缺宾
+            // 5 · Light verb: 来/去 + monosyllabic reduplicated verb, with the object missing
             ("那我们就来聊聊", "光动词重叠"),
         ] {
             assert_eq!(
@@ -2133,30 +2004,30 @@ mod tests {
         }
     }
 
-    /// 形态类必须保留「成词陷阱」白名单豁免，否则会把「悬空」换成「超行」。
+    /// The morphology-class checks must keep the "word trap" whitelist exemptions. Otherwise they would turn a dangling ending into an over-line piece.
     #[test]
     fn weak_tail_morphology_keeps_word_trap_exemptions() {
         for text in [
-            // 既有豁免
+            // Existing exemptions
             "刚才提到的以上",
             "这是我的一点心得",
-            // 框架字不作框架词用
+            // Frame character not used as a frame word
             "这项能力在不久的将来",
             "整个流程即将",
             "假使",
-            // 动补字成词
+            // Complement character forms a word
             "把结果写到文件并输出",
             "第一阶段已经完成",
             "这项工作我们迟到",
-            // 方位字成词
+            // Locative character forms a word
             "答案就在其中",
             "请看下面的说明如下",
             "两次请求之间",
             "这台机器有八张卡在手里",
-            // 处置式后已带谓语/补语
+            // The disposal construction already has a predicate or complement after it
             "块表会把逻辑页地址映射过来",
             "我们把这些页面整理好",
-            // 重叠动词但没有光动词框架
+            // Reduplicated verb, but no light-verb frame
             "情况正在渐渐",
         ] {
             assert!(
@@ -2167,8 +2038,7 @@ mod tests {
         }
     }
 
-    /// R3 新增缺陷：既有规则只禁止切在「和」**之前**，切在第二个并列项
-    /// **之后**同样会把并列 NP 与中心语切开。
+    /// New defect found in R3: the existing rule only forbids cutting **before** 和, but cutting **after** the second coordinated item equally splits the coordinated noun phrase from its head.
     #[test]
     fn lint_blocks_cut_after_second_coordinated_item() {
         let params = TransParams::for_lang("zh");
@@ -2184,7 +2054,7 @@ mod tests {
                 "{pieces:?} -> {issues:?}"
             );
         }
-        // 介词「和」（后接 NP + 谓语）与新小句起首都是合法缝，不得拦。
+        // The preposition 和 (followed by NP + predicate) and a new clause start are both legal seams and must not be blocked.
         for pieces in [
             ["今天很高兴和大家聊聊", "如何不再时刻盯着你的智能体。"],
             ["他喜欢音乐和电影", "然后就去休息了。"],
@@ -2200,7 +2070,7 @@ mod tests {
         }
     }
 
-    /// 弱尾罚分不得产出「切完立刻被 lint 打回」的预拆缝。
+    /// The weak-ending penalty must not produce a pre-split seam that gets rejected by lint immediately after it is cut.
     #[test]
     fn preferred_split_rejects_weak_tail_left_side() {
         let params = TransParams::for_lang("zh");
@@ -2216,7 +2086,7 @@ mod tests {
     #[test]
     fn lint_blocks_cut_inside_paired_delimiter() {
         let params = TransParams::for_lang("zh");
-        // s-g4.16：缝落在 “…” 内部。
+        // s-g4.16: the seam falls inside “…”.
         let pieces = ["一个根目录下包含名为“", "PluginDataJSON”的清单。"];
         let issues = lint_pieces(&pieces, "zh", &params);
         assert!(
@@ -2226,14 +2096,14 @@ mod tests {
             "{issues:?}"
         );
         assert!(issues.iter().filter(|i| is_objective_blocking(i)).count() >= 1);
-        // 定界符对完整落在同一片里 ⇒ 无问题。
+        // If the delimiter pair falls entirely within the same piece, there is no problem.
         let clean = ["一个根目录下包含", "名为“PluginDataJSON”的清单。"];
         assert!(
             !lint_pieces(&clean, "zh", &params)
                 .iter()
                 .any(|i| i.class == SeamLintClass::UnpairedDelimiter),
         );
-        // 括号同理，并且能被 repair 合并掉。
+        // Brackets work the same way, and can be merged away by repair.
         let paren = ["我们用代理插件（", "Agent Plugin）来做这件事。"];
         assert!(lint_pieces(&paren, "zh", &params).iter().any(|i| i.class
             == SeamLintClass::UnpairedDelimiter
@@ -2262,14 +2132,14 @@ mod tests {
     #[test]
     fn lint_ignores_unclosed_and_oversized_delimiter_spans() {
         let params = TransParams::for_lang("zh");
-        // 整句只有半个引号：任何切分都躲不开，不能反复打回 worker。
+        // A whole sentence with only half a quote: any split is unavoidable, so it must not be sent back to the worker again and again.
         let unclosed = ["他当时就说“我们", "明天再来讨论这件事。"];
         assert!(
             !lint_pieces(&unclosed, "zh", &params)
                 .iter()
                 .any(|i| i.class == SeamLintClass::UnpairedDelimiter),
         );
-        // 引号跨度本身超 hard：切分不可避免，降级为 Advisory。
+        // If the quote span itself exceeds hard, the split is unavoidable, so it is downgraded to Advisory.
         let oversized = [
             "他说“这是一段很长的引文内容",
             "长到根本不可能塞进单独一片里”。",
@@ -2288,7 +2158,7 @@ mod tests {
                 .any(|i| i.class == SeamLintClass::UnpairedDelimiter),
             "{issues:?}"
         );
-        // 英文撇号不是闭定界符，不得凭空造出跨度。
+        // An English apostrophe is not a closing delimiter, so it must not create a span out of nothing.
         let latin = TransParams::for_lang("en");
         assert!(
             !lint_pieces(&["the students’ books", "were left behind"], "en", &latin)
@@ -2297,14 +2167,11 @@ mod tests {
         );
     }
 
-    /// span == hard 的整引片虽合法，但已装不下任何引号外文字；此时引内切分
-    /// 不可避免，必须降级 Advisory——s-g25.25 基准实测 `span <= hard` 的口径
-    /// 让 aim-band advisory 推荐的切法被 submit lint 以 Blocking 拒绝，形成
-    /// 不可满足闭环。
+    /// A whole quoted piece with span == hard is legal, but it has no room left for any text outside the quotes. A split inside the quotes is then unavoidable, so it must be downgraded to Advisory. The s-g25.25 benchmark measured that a `span <= hard` boundary let the cut recommended by the aim-band advisory get rejected by the submit lint as Blocking, forming an unsatisfiable loop.
     #[test]
     fn lint_delimiter_span_at_hard_is_advisory() {
         let params = TransParams::for_lang("zh");
-        // 引号跨度 = “ + 18 全角字 + ” = 20 单位，正好等于 hard。
+        // Quote span = “ + 18 full-width characters + ” = 20 units, exactly equal to hard.
         let pieces = ["他说“字字字字字字字字字", "字字字字字字字字字”。"];
         let issues = lint_pieces(&pieces, "zh", &params);
         assert!(
@@ -2320,15 +2187,14 @@ mod tests {
                 .all(|i| i.kind == SeamLintKind::Advisory),
             "{issues:?}"
         );
-        // span == hard − 1：合并后仍能容纳引号外文字，保持 Blocking。
+        // span == hard − 1: after merging, it can still hold text outside the quotes, so it stays Blocking.
         let below = ["他说“字字字字字字字字字", "字字字字字字字字”。"];
         assert!(lint_pieces(&below, "zh", &params).iter().any(|i| i.class
             == SeamLintClass::UnpairedDelimiter
             && i.kind == SeamLintKind::Blocking),);
     }
 
-    /// `或` 与 和/及/与 同属并列连词：裸切在它之前断开并列结构；前片句读
-    /// 收尾时是合法小句首。`或许` 成词豁免。
+    /// 「或」 ("or") is a coordinating conjunction like 和/及/与. A bare cut before it breaks the coordinated structure. When the preceding piece ends with punctuation, it is a legal clause start. 「或许」 ("perhaps") as a word is exempt.
     #[test]
     fn lint_blocks_bare_cut_before_huo_coordinator() {
         let params = TransParams::for_lang("zh");
@@ -2341,14 +2207,14 @@ mod tests {
                 && i.message.contains("和/及/与/或")),
             "{issues:?}"
         );
-        // 前片以句读收尾 ⇒ 合法。
+        // If the preceding piece ends with punctuation, it is legal.
         let punct = ["你可以选苹果，", "或者选香蕉带走。"];
         assert!(
             !lint_pieces(&punct, "zh", &params)
                 .iter()
                 .any(|i| i.class == SeamLintClass::BoundHead),
         );
-        // 「或许」是完整副词，不算并列连词开头。
+        // 「或许」 is a complete adverb, not a coordinating-conjunction start.
         let adverb = ["他今天没有过来", "或许明天才会来。"];
         assert!(
             !lint_pieces(&adverb, "zh", &params)
@@ -2357,8 +2223,7 @@ mod tests {
         );
     }
 
-    /// 预拆建议与 lint 同口径：不得推荐裸切在 `或者` 之前（曾经 CUT_BEFORE
-    /// 候选不受并列门控，advisory 推荐的切法正是 lint 拒绝的切法）。
+    /// Pre-split suggestions follow the same criterion as the lint: they must not recommend a bare cut before 「或者」 ("or"). Previously CUT_BEFORE candidates were not gated by coordination, so the advisory recommended exactly the cut that the lint rejects.
     #[test]
     fn preferred_split_never_bare_cuts_before_huo() {
         let params = TransParams::for_lang("zh");
@@ -2369,15 +2234,14 @@ mod tests {
                 "advisory 推荐了 lint 会拒绝的裸切: {split:?}"
             );
         }
-        // 前面有句读时，切在句读后、右片以「或者」开头是合法的。
+        // When punctuation comes before it, a cut after the punctuation with the right piece starting with 「或者」 is legal.
         let punct = "我们可以直接采用现有的方案，或者重新设计一套完全不同的架构";
         let split = preferred_target_split(punct, "zh", params.soft, Some(params.hard))
             .expect("句读缝应给出建议");
         assert!(split.right.starts_with("或者"), "{split:?}");
     }
 
-    /// 闪帧阈值按片级展示口径（片尾标点免费）：「他说了:」展示 3 单位，
-    /// 曾按 4 计而漏判。
+    /// The flash-frame threshold is measured on the per-piece display basis, where end punctuation is free. 「他说了:」 ("he said:") displays as 3 units. It was previously counted as 4 and missed.
     #[test]
     fn flash_threshold_uses_display_units() {
         let params = TransParams::for_lang("zh");
@@ -2408,7 +2272,7 @@ mod tests {
             &params,
         );
         assert_eq!(repaired, vec!["这些想法复杂、有趣而深刻。".to_owned()]);
-        // 合并会超 hard 的长枚举只提示不阻塞。
+        // A long enumeration that would exceed hard on merge only gets a hint, not a block.
         let long = [
             "第一项内容、第二项内容、第三项内容、",
             "第四项内容、第五项内容与第六项内容。",
@@ -2437,7 +2301,7 @@ mod tests {
     #[test]
     fn lint_blocks_flash_when_mergeable() {
         let params = TransParams::for_lang("zh");
-        // 「尾片」不是完整短句，且可并入邻片。
+        // A “tail piece” is not a complete short sentence, and it can be merged into a neighbor.
         let pieces = ["前面很长的一片字幕内容", "尾片", "再接一段够长的内容文字"];
         let issues = lint_pieces(&pieces, "zh", &params);
         assert!(
@@ -2519,7 +2383,7 @@ mod tests {
 
     #[test]
     fn latin_presplit_requires_source_semantic_seam_and_duration() {
-        // 源缝在首词后；时长占比贴近目标逗号缝（约 55%）。
+        // The source seam falls after the first word, and its duration proportion is close to the target comma seam (about 55%).
         let left = Word {
             id: "a".into(),
             t0: 0.0,
@@ -2545,7 +2409,7 @@ mod tests {
             glue: false,
         };
         let words = [&left, &mid, &right];
-        // 31–42 CPS：超 aim 但仍单行 fit（空格不计）。
+        // 31–42 CPS: over aim, but still fits a single line (spaces not counted).
         let translation = "Review notes carefully, and share feedback.";
         let params = TransParams::for_lang("en");
         let cps = count_cps_chars(translation);
@@ -2574,9 +2438,7 @@ mod tests {
 
     #[test]
     fn reanchor_snaps_boundaries_to_source_seams() {
-        // 真实回归样本("Loop Engineering" 基准 s-g5.33):裸占比锚定会把
-        // 边界切进 make|changes 与 external|applications;吸附后应落在
-        // changes, 之后与 to 之前。
+        // A real regression sample ("Loop Engineering" benchmark s-g5.33): naive proportional anchoring would cut the boundary inside make|changes and external|applications. After snapping, it should land after changes and before to.
         let words: Vec<&str> = "This was the beginning of Context Engineering, where the \
              agent could now access files to load and make changes, or even use MCP to start \
              interacting with databases and external applications to load its own context."
@@ -2606,6 +2468,6 @@ mod tests {
         assert_eq!(pieces[1].to, Some(5));
         let boundary = pieces[1].from.unwrap();
         assert_eq!(pieces[0].to.unwrap() + 1, boundary);
-        assert_eq!(boundary, 3); // 无缝可吸,保持占比切分
+        assert_eq!(boundary, 3); // No seam to snap to: keep the proportional split.
     }
 }

@@ -1,22 +1,21 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift / Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift / Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 基础层：线性、LayerNorm、Conv1d（NLC / NCL 两种布局）、Conv2d（NHWC）、
-//! BatchNorm（推理）、GroupNorm（PyTorch 兼容）、嵌入查表。
+//! Base layers: Linear, LayerNorm, Conv1d (NLC / NCL layouts), Conv2d (NHWC),
+//! BatchNorm (inference), GroupNorm (PyTorch-compatible), embedding lookup.
 //!
-//! 线性权重按 safetensors 的 f16 原样驻留，前向时转成输入 dtype（与 speech-swift
-//! `weight.asType(x.dtype)` / MLX matmul 的类型提升一致）；卷积与归一化参数在
-//! 加载时转 f32。
+//! Linear weights stay in their safetensors f16 form and are cast to the input dtype in the forward pass (matching speech-swift
+//! `weight.asType(x.dtype)` / MLX matmul type promotion); convolution and normalization parameters are converted to f32 at load time.
 
 use super::weights::WeightMap;
 use crate::synthesize::tensor::{Array, Dtype, fast, ops};
 use anyhow::Result;
 
-/// `y = x @ Wᵀ + b`，权重形状 `[out, in]`（PyTorch 布局）。
+/// `y = x @ Wᵀ + b`, with weight shape `[out, in]` (PyTorch layout).
 pub struct Linear {
     pub weight: Array,
     pub bias: Option<Array>,
@@ -34,7 +33,7 @@ impl Linear {
         Ok(Self { weight, bias: None })
     }
 
-    /// 从 weight-norm (g, v) 融合出的 f32 权重构造。
+    /// Constructs from f32 weights fused from weight-norm (g, v).
     pub fn load_weight_norm(weights: &mut WeightMap, prefix: &str) -> Result<Self> {
         let weight = weights.take_weight_norm(prefix)?;
         let bias = weights.take_optional_f32(&format!("{prefix}.bias"))?;
@@ -56,7 +55,7 @@ impl Linear {
     }
 }
 
-/// 最后一维 LayerNorm（可选仿射）。
+/// LayerNorm over the last dimension (optional affine).
 pub struct LayerNorm {
     pub weight: Option<Array>,
     pub bias: Option<Array>,
@@ -98,7 +97,7 @@ impl RmsNorm {
     }
 }
 
-/// 1D 卷积。权重内部保存为 MLX 布局 `[Cout, K, Cin/groups]`（f32）。
+/// 1D convolution. Weights are stored internally in MLX layout `[Cout, K, Cin/groups]` (f32).
 pub struct Conv1d {
     pub weight: Array,
     pub bias: Option<Array>,
@@ -109,7 +108,7 @@ pub struct Conv1d {
 }
 
 impl Conv1d {
-    /// 由 PyTorch 布局 `[Cout, Cin/groups, K]` 的权重构造。
+    /// Constructs from weights in PyTorch layout `[Cout, Cin/groups, K]`.
     pub fn from_torch(weight: Array, bias: Option<Array>) -> Result<Self> {
         let weight = weight.as_dtype(Dtype::Float32)?.transpose_axes(&[0, 2, 1])?;
         Ok(Self {
@@ -154,7 +153,7 @@ impl Conv1d {
         self
     }
 
-    /// 输入 `[N, L, Cin]`，输出 `[N, L', Cout]`。
+    /// Input `[N, L, Cin]`, output `[N, L', Cout]`.
     pub fn forward_nlc(&self, x: &Array) -> Result<Array> {
         let mut y = ops::conv1d(x, &self.weight, self.stride, self.padding, self.dilation, self.groups)?;
         if let Some(bias) = &self.bias {
@@ -163,7 +162,7 @@ impl Conv1d {
         Ok(y)
     }
 
-    /// 输入 `[N, Cin, L]`，输出 `[N, Cout, L']`。
+    /// Input `[N, Cin, L]`, output `[N, Cout, L']`.
     pub fn forward_ncl(&self, x: &Array) -> Result<Array> {
         let x = x.swap_axes(1, 2)?;
         let y = self.forward_nlc(&x)?;
@@ -171,7 +170,7 @@ impl Conv1d {
     }
 }
 
-/// 2D 卷积（NHWC），权重内部保存为 `[Cout, H, W, Cin]`（f32）。
+/// 2D convolution (NHWC). Weights are stored internally as `[Cout, H, W, Cin]` (f32).
 pub struct Conv2d {
     pub weight: Array,
     pub bias: Option<Array>,
@@ -180,7 +179,7 @@ pub struct Conv2d {
 }
 
 impl Conv2d {
-    /// 由 PyTorch 布局 `[Cout, Cin, H, W]` 构造。
+    /// Constructs from PyTorch layout `[Cout, Cin, H, W]`.
     pub fn from_torch(weight: Array, bias: Option<Array>) -> Result<Self> {
         let weight = weight.as_dtype(Dtype::Float32)?.transpose_axes(&[0, 2, 3, 1])?;
         Ok(Self {
@@ -207,7 +206,7 @@ impl Conv2d {
         self
     }
 
-    /// 输入 `[N, H, W, Cin]`。
+    /// Input `[N, H, W, Cin]`.
     pub fn forward_nhwc(&self, x: &Array) -> Result<Array> {
         let mut y = ops::conv2d(x, &self.weight, self.stride, self.padding, None, None)?;
         if let Some(bias) = &self.bias {
@@ -217,7 +216,7 @@ impl Conv2d {
     }
 }
 
-/// 推理态 BatchNorm：预先折成 `scale` / `shift`，作用在最后一维。
+/// Inference-mode BatchNorm: pre-folded into `scale` / `shift`, applied over the last dimension.
 pub struct BatchNorm {
     pub scale: Array,
     pub shift: Array,
@@ -242,14 +241,14 @@ impl BatchNorm {
         Ok(Self { scale, shift })
     }
 
-    /// 通道在最后一维。
+    /// Channels are in the last dimension.
     pub fn forward_channels_last(&self, x: &Array) -> Result<Array> {
         Ok(x * &self.scale + &self.shift)
     }
 }
 
-/// `GroupNorm(num_groups=1)`（PyTorch 语义：在 [C, L] 全部元素上统计，再按通道仿射）。
-/// 输入 `[N, C, L]`。
+/// `GroupNorm(num_groups=1)` (PyTorch semantics: statistics over all elements of [C, L], then a per-channel affine transform).
+/// Input `[N, C, L]`.
 pub struct GroupNorm1 {
     pub weight: Array,
     pub bias: Array,
@@ -278,8 +277,7 @@ impl GroupNorm1 {
     }
 }
 
-/// 激活函数：不用 mlx-rs `nn::*` 的 compiled 版本（每种形状都会重新编译），
-/// 直接按公式展开。
+/// Activation functions: not using the compiled versions from mlx-rs `nn::*` (each shape would be recompiled); the formulas are expanded directly.
 pub mod act {
     use crate::synthesize::tensor::{Array, ops};
     use anyhow::Result;
@@ -288,13 +286,13 @@ pub mod act {
         Ok(x * ops::sigmoid(x)?)
     }
 
-    /// 精确 GELU：`x · (1 + erf(x/√2)) / 2`。
+    /// Exact GELU: `x · (1 + erf(x/√2)) / 2`.
     pub fn gelu(x: &Array) -> Result<Array> {
         let erf = ops::erf(x * std::f32::consts::FRAC_1_SQRT_2)?;
         Ok(x * (erf + 1.0f32) * 0.5f32)
     }
 
-    /// tanh 近似 GELU（GPT-2 `gelu_new`）。
+    /// tanh-approximated GELU (GPT-2 `gelu_new`).
     pub fn gelu_tanh(x: &Array) -> Result<Array> {
         let inner = (x + x.square()?.multiply(x)? * 0.044_715f32) * (2.0f32 / std::f32::consts::PI).sqrt();
         Ok(x * 0.5f32 * (ops::tanh(inner)? + 1.0f32))

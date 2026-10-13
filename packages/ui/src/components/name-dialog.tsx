@@ -3,8 +3,8 @@ import { Button, ButtonGroup, Content, Dialog, DialogContainer, Form, Heading, T
 import { S } from './shell-copy.ts';
 
 /**
- * 输入一个名字的小对话框（新建项目、重命名）。提交失败时留在对话框里并提示，不吞掉输入。
- * 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+ * Small dialog for entering a name (new project, rename). When submission fails, it stays open and shows a message, without discarding the input.
+ * State lives in the outer dialog component: S2's Dialog renders its children once in each of several slots.
  */
 export function NameDialog({
   title,

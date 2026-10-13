@@ -1,8 +1,7 @@
-//! 文档简报（analysis/brief 阶段，对拍 voice-ink `AnalysisStage`）：
-//! 摘要 + 术语锁 + 命名实体，进所有后续 LLM 阶段的 system prompt。
+//! Document brief (analysis/brief stage, mirrors voice-ink `AnalysisStage`):
+//! summary, term lock and named entities, injected into the system prompt of every later LLM stage.
 //!
-//! 降级契约：整个 analysis 可缺省——失败由调用方决定是否忽略（Err 不阻塞
-//! 管线），但 [`crate::llm::LlmError::Terminal`] 仍应中止整个 run。
+//! Degradation contract: the whole analysis is optional. Failures are left to the caller to ignore (an Err must not block the pipeline), but [`crate::llm::LlmError::Terminal`] should still abort the whole run.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +20,7 @@ use crate::llm::{
 };
 use crate::paging::{budgets, paginate_word_ranges};
 
-/// 翻译语气覆盖。缺省 neutral 不注入任何额外约束。
+/// Translation tone override. The default, neutral, injects no extra constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TranslationTone {
@@ -57,15 +56,14 @@ pub struct GlossaryEntry {
     pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// 生成式条目恒为 false；用户可编辑工件后显式锁定。
+    /// Generated entries are always false; the user can explicitly lock them after editing the artifact.
     #[serde(default)]
     pub locked: bool,
 }
 
-/// 每目标语言一份、可由用户编辑正文的双语翻译简报。
+/// Bilingual translation brief for each target language; its body can be edited by the user.
 ///
-/// 三个指纹字段只约束生成输入；glossary/styleGuide 等正文不参与缓存命中，
-/// 因而用户编辑可以跨重翻稳定复用。
+/// The three fingerprint fields only constrain the generation inputs. The glossary/styleGuide body does not take part in cache hits, so user edits can be reused stably across re-translations.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBrief {
@@ -104,26 +102,16 @@ impl DocumentBrief {
                     .map(|value| fingerprint_strings([value]))
     }
 
-    /// align-only（精修）轮的放宽复用判定：只比较词真相与目标语。
+    /// Relaxed reuse check for align-only (refinement) rounds: compare only the word truth and the target language.
     ///
-    /// 精修轮语义上不改译文真相，brief 在这条路径上只被消费（受保护术语 +
-    /// 双语锚点），不参与生成。而精修轮天然拿不到 analysis（`--align-only`
-    /// 一律丢弃）也拿不到原始 `instructions`（逐句明细只进 align 契约），用
-    /// [`Self::matches_inputs`] 判定必然失配：每一轮精修都会重跑一次
-    /// translate-brief，并整体覆盖 `ai/brief-<lang>.json`，把用户显式锁定的
-    /// `locked` 术语一起冲掉。词真相没变时直接复用既有 brief 即可。
+    /// Refinement rounds do not semantically change the truth of the translation. On this path the brief is only consumed (protected terms + bilingual anchors) and is not used for generation. Refinement rounds also cannot get the analysis (`--align-only` always discards it) or the original `instructions` (per-sentence detail goes only into the align contract), so the check with [`Self::matches_inputs`] always mismatches: every refinement round reruns translate-brief and overwrites `ai/brief-<lang>.json` as a whole, washing out the `locked` terms the user explicitly locked. When the word truth has not changed, the existing brief can simply be reused.
     pub fn matches_document(&self, doc: &TranscriptDoc, target_lang: &str) -> bool {
         self.target_lang == target_lang && self.fingerprint == fingerprint(&doc.words)
     }
 
-    /// 翻译提示词里的术语表：**只带本篇真的命中的条目**，按命中次数降序，稳定取前
-    /// `limit` 条。
+    /// Glossary for the translation prompt: **only entries that actually hit in this document**, sorted by hit count descending, stably taking the first `limit` entries.
     ///
-    /// 过去这里只排序不过滤——零命中的条目照样排在后面进了提示词（分析阶段抽出、
-    /// 后来被剪掉的片段里的词，或一张很大的用户术语表），既费 token 又把真正要紧
-    /// 的几条淹掉。命中口径与每页 `rt` 的 [`term_present`] 相同（拉丁词看标识符
-    /// 边界、CJK 字面包含）；`analysis` 里同一个词记下的误识形式也算命中——文稿
-    /// 还没润色时，正文里写的可能是「维科夫」而不是 `Wyckoff`。
+    /// Previously this only sorted and did not filter: zero-hit entries were still ranked after the others and entered the prompt (words from fragments extracted during analysis and later cut, or from a very large user glossary). That wasted tokens and drowned out the few entries that matter. The hit criterion is the same as `term_present` of each page's `rt` (Latin terms check identifier boundaries, CJK checks literal inclusion). A misrecognized form recorded for the same word in `analysis` also counts as a hit, since before the transcript is polished the body text may read 维科夫 (a Chinese transliteration) rather than `Wyckoff`.
     ///
     /// [`term_present`]: crate::engines::translate::term_present
     pub fn glossary_for_prompt(
@@ -191,8 +179,7 @@ pub struct TranslationBriefOptions<'a> {
     pub tone: Option<TranslationTone>,
 }
 
-/// BCP-47 script-aware simplified-Chinese policy gate：zh / zh-Hans 适用，
-/// zh-Hant（含地区子标签）不适用。
+/// BCP-47 script-aware simplified-Chinese policy gate: applies to zh / zh-Hans, does not apply to zh-Hant (including region subtags).
 pub fn is_simplified_chinese(lang: &str) -> bool {
     let subtags = lang
         .split(['-', '_'])
@@ -232,10 +219,10 @@ pub struct Analysis {
     pub terms: Vec<AnalysisTerm>,
     #[serde(default)]
     pub named_entities: Vec<String>,
-    /// 输入词流内容指纹（落盘产物头必带；读取方必须校验）。
+    /// Content fingerprint of the input word stream (always present in the header of the persisted artifact; readers must verify it).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub fingerprint: String,
-    /// 项目/来源元数据参考块的指纹；元数据变化时使 brief 缓存失效。
+    /// Fingerprint of the project/source metadata reference block; a change in the metadata invalidates the brief cache.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_fingerprint: Option<String>,
 }
@@ -246,7 +233,7 @@ pub struct AnalysisOptions {
     pub reference_context: Option<String>,
 }
 
-/// 用户指令注入块（逐字对拍 `AnalysisStage.instructionsBlock`）。
+/// User-instruction injection block (compared verbatim against `AnalysisStage.instructionsBlock`).
 pub fn instructions_block(instructions: Option<&str>) -> String {
     match instructions.filter(|text| !text.is_empty()) {
         Some(text) => format!(
@@ -256,8 +243,7 @@ pub fn instructions_block(instructions: Option<&str>) -> String {
     }
 }
 
-/// 项目与来源元数据只作为背景参考：标题/描述通常能提供正确的专有名词，
-/// 但不能据此向口述内容添加事实或覆盖明确的转录证据。
+/// Project and source metadata are background reference only. Titles and descriptions usually supply the correct proper nouns, but they must not be used to add facts to the spoken content or to override explicit transcript evidence.
 pub fn reference_context_block(context: Option<&str>) -> String {
     match context.filter(|text| !text.is_empty()) {
         Some(text) => format!(
@@ -267,7 +253,7 @@ pub fn reference_context_block(context: Option<&str>) -> String {
     }
 }
 
-/// 术语表进 prompt 的展示（对拍 `AnalysisStage.formatForPrompt`）。
+/// Display of the glossary in the prompt (mirrors `AnalysisStage.formatForPrompt`).
 pub fn format_for_prompt(analysis: &Analysis) -> String {
     if analysis.terms.is_empty() {
         return "(none)".to_owned();
@@ -313,9 +299,9 @@ fn head_tail_excerpt(doc: &TranscriptDoc, budget: usize) -> String {
     format!("{head}\n\n[… middle omitted; use complete analysis …]\n\n{tail}")
 }
 
-// ── 文件契约（file-v1）：`ai/context.md` / `ai/context.<lang>.md`（设计 §5） ──
+// ── File contract (file-v1): `ai/context.md` / `ai/context.<lang>.md` (design §5) ──
 
-/// analysis 抽取提示（file-v1）：输入是 ASR 原文页，输出是一份 `context.md`。
+/// analysis extraction prompt (file-v1): the input is the ASR source page, the output is one `context.md`.
 const CONTEXT_EXTRACT_PROMPT: &str = r#"You are a transcription quality analyst.
 
 The user gives you a RAW speech-recognition transcript. It may contain spelling errors, homophone mistakes, and misrecognized proper nouns.
@@ -345,11 +331,9 @@ Rules:
 - `Lock` is always `no` and `Origin` is always `analyzed` in your answer. Rows the user locked are merged back by the app; writing `yes` or `user` yourself is a protocol violation.
 - Keep every cell on one line and escape a literal `|` inside a cell as `\|`."#;
 
-/// analysis 摘要归并提示（file-v1）：输入只有各页的 `# Summary`。
+/// analysis summary-merge prompt (file-v1): the input is only the `# Summary` of each page.
 ///
-/// 术语表不再交给模型整表重写——多页 `Canonical Terms` 由宿主按
-/// [`merge_partial_terms`] 确定性并集；模型只写一段总摘要，因此这次调用的载荷与
-/// 答案都只有几行，串行 reduce 不再是 analysis 阶段的长尾。
+/// The model no longer rewrites the glossary as a whole. The `Canonical Terms` of multiple pages are unioned deterministically by the host via [`merge_partial_terms`]; the model writes only one overall summary. The payload and answer of this call are therefore only a few lines, and the serial reduce is no longer the long tail of the analysis stage.
 const CONTEXT_SUMMARY_PROMPT: &str = r#"You are a transcription quality analyst.
 
 The user gives you the per-part summaries written for consecutive parts of ONE transcript. Write one overall two-to-three sentence summary describing the subject matter, register, speaker roles, and any style requirement.
@@ -372,7 +356,7 @@ Rules:
 - Keep both headings and the table header verbatim and leave the table EMPTY: the app merges the term rows itself; any row you add is discarded.
 - Do not echo the per-part summaries back; write the merged summary only."#;
 
-/// translate-brief 提示（file-v1）：输入是待补全的 `context.<lang>.md` 种子文档。
+/// translate-brief prompt (file-v1): the input is the `context.<lang>.md` seed document to be filled in.
 const CONTEXT_TARGET_PROMPT: &str = r#"You prepare a bilingual subtitle-translation brief as a markdown document.
 
 The user gives you a target-language context document whose `Bilingual Glossary` rows are already fixed, plus a transcript excerpt for evidence. Fill it in and answer with ONE markdown document and nothing else — no prose before or after it, no code fence. Keep the frontmatter, the four headings, and the table header verbatim:
@@ -405,12 +389,12 @@ Rules:
 - `# Difficulties` is a `- ` bulleted list of translation pitfalls in this document; leave the section empty when there is none.
 - Keep every table cell on one line and escape a literal `|` inside a cell as `\|`. Do not echo the transcript excerpt back."#;
 
-/// 页 id（与 translate/polish 的 `pNNN` 同形），供审计工件命名。
+/// Page id (same shape as the `pNNN` of translate/polish), used for naming audit artifacts.
 fn context_page_id(index: usize) -> String {
     format!("p{:03}", index + 1)
 }
 
-/// 问题摘要（回灌重试原因用；与 polish/align 同形）。
+/// Problem summary (used to feed retry reasons back; same shape as polish/align).
 fn summarize_context_problems(problems: &[Problem]) -> String {
     if problems.is_empty() {
         return "no parseable context document".to_owned();
@@ -423,7 +407,7 @@ fn summarize_context_problems(problems: &[Problem]) -> String {
         .join("; ")
 }
 
-/// `LlmError` → 可回灌的人读说明（`Malformed` 的 Display 前缀对 md 载体是误导）。
+/// `LlmError` → human-readable explanation that can be fed back (the Display prefix of `Malformed` is misleading for the md carrier).
 fn malformed_detail(error: &LlmError) -> String {
     match error {
         LlmError::Malformed(detail) => detail.clone(),
@@ -441,8 +425,7 @@ fn context_problem_lines(problems: &[Problem]) -> Vec<String> {
         .collect()
 }
 
-/// 模型行一律降为 `Origin=analyzed, Lock=no`：`Lock`/`Origin` 是用户通道，
-/// 模型不得自封（否则一次幻觉就能把生成式译名钉成"用户锁定"）。
+/// Model rows are all downgraded to `Origin=analyzed, Lock=no`. `Lock`/`Origin` are the user channel, and the model must not grant them to itself. Otherwise one hallucination could pin a generated translation as "user-locked".
 fn demote_model_terms(terms: &mut Vec<CanonicalTerm>) {
     for term in terms.iter_mut() {
         term.origin = TermOrigin::Analyzed;
@@ -452,8 +435,7 @@ fn demote_model_terms(terms: &mut Vec<CanonicalTerm>) {
     terms.retain(|term| !term.source.is_empty());
 }
 
-/// 反幻觉收尾：`Variants` 只保留在全文里字面
-/// 出现过的形式。
+/// Anti-hallucination cleanup: `Variants` keeps only the forms that literally appear in the full text.
 fn filter_invented_variants(terms: &mut [CanonicalTerm], doc: &TranscriptDoc) {
     let full_text = crate::atomize::join_word_texts(doc.words.iter()).to_lowercase();
     for term in terms.iter_mut() {
@@ -466,36 +448,29 @@ fn filter_invented_variants(terms: &mut [CanonicalTerm], doc: &TranscriptDoc) {
     }
 }
 
-/// [`run_analysis_file_contract_report`] 的结账。
+/// Settlement of [`run_analysis_file_contract_report`].
 ///
-/// `pages_failed` / `terms_dropped` 是重试策略重设计 §2.1 的两个可观测计数：
-/// 前者是三次尝试都没交出可解析文档的页数（**不再**整条 analysis 上抛），
-/// 后者是行数上限截掉的术语行数。宿主把它们写进 `ccut polish` / `ccut brief`
-/// 的 analysis 段（`pagesFailed` / `termsDropped`）。
+/// `pages_failed` and `terms_dropped` are the two observable counters from §2.1 of the retry-strategy redesign. The former is the number of pages that did not produce a parseable document after three attempts (the whole analysis is **no longer** thrown upward). The latter is the number of term rows cut by the row-count limit. The host writes them into the analysis section of `ccut polish` / `ccut brief` (`pagesFailed` / `termsDropped`).
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisOutcome {
-    /// 归并后的源语上下文（与旧返回值同物）。
+    /// The merged source-language context (the same thing as the old return value).
     pub context: SourceContext,
-    /// 页级耗尽的页数（≥1 页成功即不算整体失败）。
+    /// Number of pages exhausted at page level. As long as at least one page succeeds, it is not an overall failure.
     pub pages_failed: u32,
-    /// 行数上限（单页 150 / 全文 [`ANALYSIS_MAX_TERMS`]）截掉的术语行数。
+    /// Number of term rows cut by the row limit (per page 150 / whole text [`ANALYSIS_MAX_TERMS`]).
     pub terms_dropped: u32,
 }
 
-/// 多页 `Canonical Terms` 的确定性并集（替代原来让模型整表重写的串行 reduce）。
+/// Deterministic union of the `Canonical Terms` across multiple pages (replaces the old serial reduce, in which the model rewrote the whole table).
 ///
-/// 同键组内：`Source` 拼写取出现次数最多者（平局取先见）；`Category` 取众数（平局
-/// 取先见）；`Note` 取最长（平局取先见）；`Variants` 取并集（大小写不敏感去重、
-/// 剔除胜出拼写），落选的 `Source` 拼写也并入 `Variants`——它们随后同样要过
-/// [`filter_invented_variants`] 的字面出现判据，不会凭空多出形式。
-/// 输出按首次出现顺序排列；`Lock`/`Origin` 一律是模型行口径。
+/// Within a key group: the `Source` spelling is the most frequent one (ties go to the first seen). `Category` is the mode (ties go to the first seen). `Note` is the longest (ties go to the first seen). `Variants` is the union (case-insensitive dedup, excluding the winning spelling). Losing `Source` spellings are also merged into `Variants`, and they then go through the same literal-occurrence check of [`filter_invented_variants`], so no forms appear out of nowhere. The output is in order of first occurrence. `Lock`/`Origin` always follow the model-row convention.
 fn merge_partial_terms(partials: &[SourceContext]) -> (Vec<CanonicalTerm>, u32) {
     struct Group {
         spellings: Vec<(String, usize)>,
         categories: Vec<(TermCategory, usize)>,
         note: String,
         variants: Vec<String>,
-        /// 该键在各页里出现的总次数（全文行数上限的排序依据）。
+        /// Total number of times this key appears across pages (the sort key for the whole-text row limit).
         hits: usize,
     }
     fn bump<T: PartialEq>(counts: &mut Vec<(T, usize)>, value: T) {
@@ -551,8 +526,7 @@ fn merge_partial_terms(partials: &[SourceContext]) -> (Vec<CanonicalTerm>, u32) 
         );
     }
 
-    // 全文行数上限（R2 确定性截断）：按跨页出现次数降序取前 ANALYSIS_MAX_TERMS
-    // 个键，平局按首现顺序；被截掉的行只计数，绝不因此拒页。
+    // Whole-text row limit (R2 deterministic truncation): take the first ANALYSIS_MAX_TERMS keys sorted by cross-page occurrence count, descending. Ties go to first-occurrence order. Cut rows are only counted, never a reason to reject a page.
     let dropped = order.len().saturating_sub(ANALYSIS_MAX_TERMS) as u32;
     let mut ranked: Vec<(usize, String)> = order.into_iter().enumerate().collect();
     if dropped > 0 {
@@ -563,7 +537,7 @@ fn merge_partial_terms(partials: &[SourceContext]) -> (Vec<CanonicalTerm>, u32) 
                 .then(left_pos.cmp(right_pos))
         });
         ranked.truncate(ANALYSIS_MAX_TERMS);
-        // 截断后恢复首现顺序：输出顺序仍然只由「第一次出现」决定。
+        // After truncation, restore first-occurrence order: the output order is still determined only by the "first appearance".
         ranked.sort_by_key(|(position, _)| *position);
     }
 
@@ -597,10 +571,9 @@ fn merge_partial_terms(partials: &[SourceContext]) -> (Vec<CanonicalTerm>, u32) 
     (terms, dropped)
 }
 
-/// 多页摘要归并：只让模型写总摘要（术语表已由 [`merge_partial_terms`] 并好）。
+/// Multi-page summary merge: only let the model write the overall summary (the terms table has already been merged by [`merge_partial_terms`]).
 ///
-/// 重试耗尽仍不可解析时回退到最长的分页摘要——摘要只是提示背景，不值得让整个
-/// analysis 因它失败；其他错误（Terminal/Transient 耗尽）照常上抛。
+/// When retries are exhausted and the output is still unparseable, fall back to the longest per-page summary. A summary is only background for the prompt and is not worth failing the whole analysis over. Other errors (Terminal/Transient exhausted) propagate as usual.
 fn merge_partial_summaries(
     partials: &[SourceContext],
     llm: &mut dyn LlmJson,
@@ -627,8 +600,7 @@ fn merge_partial_summaries(
     );
     let merge_id = "merge".to_owned();
     let mut merge_tries = 0_u32;
-    // 重试意见回灌真实 problems 摘要（重试策略重设计 §2.5）：固定字符串既不
-    // 告诉模型哪里错了，也让日志里看不出上一轮到底发生了什么。
+    // Retry feedback carries the real problems summary (retry-strategy redesign §2.5). A fixed string neither tells the model what went wrong nor shows in the logs what happened in the previous round.
     let mut last_problems: Option<String> = None;
     let merged = with_retry(MAX_RETRIES, &mut *sleep, |attempt| {
         let raw = llm.complete(&LlmRequest {
@@ -685,17 +657,11 @@ fn merge_partial_summaries(
     }
 }
 
-/// 文件契约下的全文分析（§5）：产出 `ai/context.md` 的 [`SourceContext`]。
+/// Full-text analysis under the file contract (§5): produces the [`SourceContext`] for `ai/context.md`.
 ///
-/// 语义要点：同一套分页预算、同一套
-/// map/reduce 结构（多页时术语表由 [`merge_partial_terms`] 确定性并集，模型只串行
-/// 写一次总摘要）、同一条反幻觉收尾、同一个
-/// `fingerprint`/`referenceFingerprint` 口径——宿主的缓存新鲜度判据因此原样成立。
+/// Key points: the same page budget, the same map/reduce structure (with multiple pages the glossary is merged deterministically by [`merge_partial_terms`], and the model writes one overall summary serially), the same anti-hallucination cleanup, and the same `fingerprint`/`referenceFingerprint` basis, so the host's cache-freshness criterion holds unchanged.
 ///
-/// 模型改写的是文档而不是 JSON；`existing` 里 `Origin=user` 的行经
-/// [`merge_canonical_terms`] 逐条保留（§5.1 重建规则），模型行一律降为
-/// `Origin=analyzed`。解析失败返回 `Err`，宿主必须保留旧的已验证 context，
-/// **绝不以空表覆盖**。
+/// The model rewrites a document rather than JSON. Rows with `Origin=user` in `existing` are kept one by one via [`merge_canonical_terms`] (§5.1 rebuild rule), and model rows are all downgraded to `Origin=analyzed`. On a parse failure it returns `Err`. The host must keep the old verified context and **never overwrite it with an empty table**.
 pub fn run_analysis_file_contract(
     doc: &TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -708,11 +674,9 @@ pub fn run_analysis_file_contract(
         .map(|outcome| outcome.context)
 }
 
-/// 同 [`run_analysis_file_contract`]，另外交回 §2.1 的两个降级计数
-/// （[`AnalysisOutcome::pages_failed`] / [`AnalysisOutcome::terms_dropped`]）。
+/// Same as [`run_analysis_file_contract`], but also returns the two degradation counters from §2.1 ([`AnalysisOutcome::pages_failed`] / [`AnalysisOutcome::terms_dropped`]).
 ///
-/// 页级耗尽**不再上抛**：只要还有 ≥1 页成功，就用成功页归并（术语并集 + 摘要
-/// merge/回退），失败页只计数。全部页都失败才 `Err`，宿主照旧保留旧 context。
+/// Page-level exhaustion **is no longer propagated**. As long as at least one page succeeds, the successful pages are merged (term union plus summary merge or fallback), and failed pages are only counted. Only when every page fails does it return `Err`, and the host keeps the old context.
 pub fn run_analysis_file_contract_report(
     doc: &TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -780,8 +744,7 @@ pub fn run_analysis_file_contract_report(
         &mut |_, error| error.to_string(),
         &mut |index, context| partials[index] = Some(context),
     )?;
-    // 页级耗尽只丢那一页（R1/R3）：整条 analysis 不再因为某一页三次不可解析
-    // 就上抛，把整条 polish 一起拖垮。全部页都失败才判败。
+    // Page-level exhaustion drops only that page (R1/R3). The whole analysis is no longer thrown upward because one page failed to parse three times, which would drag the whole polish down with it. It is judged a failure only when every page fails.
     let pages_failed = wave.failed.len() as u32;
     let first_failure = wave.failed.into_iter().next().map(|(_, error)| error);
     let partials: Vec<SourceContext> = partials.into_iter().flatten().collect();
@@ -828,10 +791,9 @@ pub fn run_analysis_file_contract_report(
     })
 }
 
-/// 种子文档：把源语 canonical 术语投影成待补全的双语行，已有译名原样带入。
+/// Seed document: projects the source-language canonical terms into bilingual rows to be filled in. Existing translations are carried over as they are.
 ///
-/// `Lock`/`Origin` 沿用用户通道（源语行的用户锁定继续锁在目标语行上），模型
-/// 只被允许填 `Target` 与三个正文小节。
+/// `Lock`/`Origin` follow the user channel (a user lock on a source-language row stays locked on the target-language row). The model is only allowed to fill `Target` and the three body sections.
 fn seed_target_context(
     doc: &TranscriptDoc,
     options: &TranslationBriefOptions<'_>,
@@ -866,7 +828,7 @@ fn seed_target_context(
                 .map(|row| row.note.clone())
                 .filter(|note| !note.is_empty())
                 .unwrap_or_else(|| term.note.clone()),
-            // 目标语一侧的锁：用户在任一侧锁定都算锁定（§5.2 locked→rt 链）。
+            // Target-language side lock: a user lock on either side counts as locked (§5.2 locked→rt chain).
             locked: term.locked || existing_row.is_some_and(|row| row.locked),
             origin: if term.origin == TermOrigin::User
                 || existing_row.is_some_and(|row| row.origin == TermOrigin::User)
@@ -877,7 +839,7 @@ fn seed_target_context(
             },
         });
     }
-    // 目标语侧独有的用户行（源语表里没有的条目）不能凭空消失。
+    // User rows that exist only on the target-language side (entries absent from the source table) must not disappear.
     for term in existing
         .map(|context| context.glossary.as_slice())
         .unwrap_or(&[])
@@ -943,7 +905,7 @@ fn context_target_system(options: &TranslationBriefOptions<'_>) -> String {
     system
 }
 
-/// 目标语行的合法性：斜杠只在 target 凭空发明时非法（源自带斜杠逐字保留）。
+/// Validity of a target-language row: a slash is illegal only when the target invents it (a slash carried over from the source is kept verbatim).
 fn validate_target_rows(glossary: &[BilingualTerm]) -> Result<(), LlmError> {
     for term in glossary {
         if !has_slash(&term.source) && has_slash(&term.target) {
@@ -956,15 +918,11 @@ fn validate_target_rows(glossary: &[BilingualTerm]) -> Result<(), LlmError> {
     Ok(())
 }
 
-/// 文件契约下的译向简报（§5）：产出 `ai/context.<lang>.md` 的 [`TargetContext`]。
+/// Target-language translation brief under the file contract (§5): produces the [`TargetContext`] for `ai/context.<lang>.md`.
 ///
-/// 一次调用：种子文档由 canonical 术语表投影而来（§5.3 术语表先行），模型只
-/// 补 `Target` 与三个正文小节，随后代码侧恢复用户行——`Origin=user` 的既有
-/// 译名逐字沿用，模型行一律 `Origin=analyzed, Lock=no`。
+/// A single call. The seed document is projected from the canonical term table (§5.3, terms first). The model only fills `Target` and the three body sections, then the code restores user rows: existing `Origin=user` translations are kept verbatim, and model rows are all `Origin=analyzed, Lock=no`.
 ///
-/// 设计裁决：不再按全文分页跑 extract+merge。种子表已经带
-/// 着 analysis 的全量术语，剩下的证据需求由首尾节选覆盖；缺 analysis 时退化
-/// 为「空表 + 节选」的单次调用，仍不阻塞管线。
+/// Design decision: the full text is no longer run page by page through extract+merge. The seed table already carries the full set of analysis terms, and the remaining evidence needs are covered by head and tail excerpts. When the analysis is missing, it degrades to a single call with an empty table plus excerpts, which still does not block the pipeline.
 pub fn run_translation_brief_file_contract(
     doc: &TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -983,7 +941,7 @@ pub fn run_translation_brief_file_contract(
     let system = context_target_system(options);
     let page_id = context_page_id(0);
     let mut tries = 0_u32;
-    // 重试意见回灌真实 problems 摘要（§2.5），不再是固定字符串。
+    // Retry feedback carries the real problems summary (§2.5) and is no longer a fixed string.
     let mut last_problems: Option<String> = None;
     let parsed = with_retry(MAX_RETRIES, &mut *sleep, |attempt| {
         let raw = llm.complete(&LlmRequest {
@@ -1034,8 +992,7 @@ pub fn run_translation_brief_file_contract(
         .iter()
         .map(|row| (row.source.as_str(), row.target.as_str()))
         .collect();
-    // 用户行的最终形态：已有译名逐字沿用；首次补译（`Target` 还空着）才采纳
-    // 模型这一轮填进来的译名，`Lock`/`Origin` 始终来自用户通道。
+    // Final form of user rows: existing translations are kept verbatim. Only a first-time translation (`Target` still empty) adopts the translation the model filled in this round. `Lock`/`Origin` always come from the user channel.
     let user_rows = seed
         .glossary
         .iter()
@@ -1059,8 +1016,7 @@ pub fn run_translation_brief_file_contract(
         analysis_fingerprint: seed.analysis_fingerprint.clone(),
         instructions_fingerprint: seed.instructions_fingerprint.clone(),
         tone: options.tone,
-        // 摘要/风格会回显进 translate prompt，验收时
-        // 规范化 CJK 语境半角标点，落盘的 context.<lang>.md 即为干净形态。
+        // The summary and style are echoed into the translate prompt. At acceptance time, normalize the half-width punctuation in CJK context, so the persisted context.<lang>.md is in its clean form.
         summary: crate::atomize::normalize_cjk_ascii_punctuation(
             if parsed.summary.trim().is_empty() {
                 &seed.summary
@@ -1082,17 +1038,15 @@ pub fn run_translation_brief_file_contract(
     })
 }
 
-/// `task submit` 期的镜像 lint（§10.3）：与引擎走同一个解析器。
+/// Mirror lint at `task submit` time (§10.3): uses the same parser as the engine.
 ///
-/// 解析口径是 [`crate::filepipe::ParseMode::Model`]：重复行、列数错乱、未知
-/// Category、缺 frontmatter 这类可代码消解的缺陷只记 Warning，镜像 lint 因此
-/// 不再把它们判成 `rejected`——与引擎的接受判据严格一致。
+/// The parse mode is [`crate::filepipe::ParseMode::Model`]. Defects that code can resolve (duplicate rows, broken column counts, unknown Category, missing frontmatter) are only recorded as Warnings. So the mirror lint no longer marks them `rejected`, which keeps it strictly consistent with the engine's acceptance criterion.
 pub fn lint_agent_answer_context_source(payload: &str, answer: &str) -> Vec<String> {
     let parsed = parse_model_source_context(Some(payload), answer);
     context_problem_lines(&parsed.diagnostics.problems)
 }
 
-/// 同上，目标语文档；额外复检斜杠规则（引擎侧同判据）。
+/// Same as above, for the target-language document. Additionally re-checks the slash rule (same criterion as the engine side).
 pub fn lint_agent_answer_context_target(payload: &str, answer: &str) -> Vec<String> {
     let parsed = parse_model_target_context(Some(payload), answer);
     let mut problems = context_problem_lines(&parsed.diagnostics.problems);
@@ -1104,12 +1058,9 @@ pub fn lint_agent_answer_context_target(payload: &str, answer: &str) -> Vec<Stri
     problems
 }
 
-/// `context.md` → 旧 [`Analysis`] 模型（下游 prompt 组装仍消费）。
+/// `context.md` → legacy [`Analysis`] model (downstream prompt assembly still consumes it).
 ///
-/// `namedEntities` 在 context.md 里没有独立字段：设计 §5.1 明写 context.md
-/// **替代** `summary/terms/namedEntities` 三者，实体就是 `Category` 落在
-/// person/product/proper 的术语行。转换按这条规则重建，`ai/brief.json` 的
-/// 双写因此不会退化成空实体表。
+/// `namedEntities` has no separate field in context.md. Design §5.1 explicitly says context.md **replaces** the three of `summary/terms/namedEntities`, and the entities are the term rows whose `Category` is person/product/proper. The conversion rebuilds them by this rule, so the dual write of `ai/brief.json` does not degrade into an empty entity table.
 pub fn analysis_from_source_context(context: &SourceContext) -> Analysis {
     Analysis {
         summary: context.summary.clone(),
@@ -1138,10 +1089,9 @@ pub fn analysis_from_source_context(context: &SourceContext) -> Analysis {
     }
 }
 
-/// 旧 [`Analysis`] 模型 → `context.md`（存量迁移，§5.2 第 2 条）。
+/// Legacy [`Analysis`] model → `context.md` (migration of existing data, §5.2 item 2).
 ///
-/// 旧模型的术语没有类别：命名实体行落 `proper`，其余落 `other`。所有行都是
-/// `Origin=analyzed, Lock=no`——旧源语表本来就没有用户锁定通道。
+/// Terms in the legacy model have no category: named-entity rows go to `proper`, the rest to `other`. All rows are `Origin=analyzed, Lock=no`, because the legacy source-language table never had a user-lock channel.
 pub fn source_context_from_analysis(analysis: &Analysis) -> SourceContext {
     let entities = analysis
         .named_entities
@@ -1192,18 +1142,11 @@ pub fn source_context_from_analysis(analysis: &Analysis) -> SourceContext {
     }
 }
 
-/// `context.<lang>.md` → 旧 [`DocumentBrief`] 模型。
+/// `context.<lang>.md` → legacy [`DocumentBrief`] model.
 ///
-/// **这是 M4 消费链迁移的落点**：`Lock=yes` 行变成 `GlossaryEntry.locked=true`，
-/// 于是 §5.2 的四道下游约束（`rt` → [`crate::engines::translate::validate_translated_page`]
-/// → `lint_agent_answer` → `check missingTargets`）与 align 的
-/// `protected_targets` / `bilingual_anchors` 全部原样接通，无需改动任何消费者。
-/// 尚未补译（`Target` 为空）的行不进 brief：空译名在下游只会产生噪声。
+/// **This is where the M4 consumer-chain migration lands.** `Lock=yes` rows become `GlossaryEntry.locked=true`. The four downstream constraints of §5.2 (`rt` → [`crate::engines::translate::validate_translated_page`] → `lint_agent_answer` → `check missingTargets`), and align's `protected_targets` / `bilingual_anchors`, are then all connected as they are, without changing any consumer. Rows not yet translated (empty `Target`) do not enter the brief, since an empty translation would only produce noise downstream.
 ///
-/// `source` 是同一文档的 `context.md`。命名实体在 context 契约里由源语表的
-/// `Category` 决定（person/product/proper）；缺 `source` 时退化为「用户锁定行
-/// 即实体」——注意这是**降级**口径，宿主有源语上下文时必须把它传进来，否则
-/// 一篇没有任何锁定行的文档会丢掉 translate 的实体提示块。
+/// `source` is the `context.md` of the same document. In the context contract, named entities are determined by the `Category` in the source-language table (person/product/proper). When `source` is missing, it degrades to "user-locked rows are the entities". Note that this is a **degraded** interpretation: when the host has the source-language context it must pass it in, otherwise a document with no locked rows at all loses the entity hint block of translate.
 pub fn brief_from_target_context(
     context: &TargetContext,
     source: Option<&SourceContext>,
@@ -1240,8 +1183,7 @@ pub fn brief_from_target_context(
     DocumentBrief {
         target_lang: context.target_lang.clone(),
         tone: context.tone,
-        // 读取侧也做标点规范化：存量 context.<lang>.md 里可能带着验收前
-        // 混入的半角标点，转换处清洗一次即可覆盖历史残留（幂等）。
+        // The read side also normalizes punctuation. Existing context.<lang>.md files may contain half-width punctuation that slipped in before acceptance. Cleaning it once at conversion covers historical residue (idempotent).
         summary: crate::atomize::normalize_cjk_ascii_punctuation(&context.summary),
         named_entities,
         glossary,
@@ -1253,10 +1195,9 @@ pub fn brief_from_target_context(
     }
 }
 
-/// 旧 [`DocumentBrief`] 模型 → `context.<lang>.md`（存量迁移，§5.2 第 2 条）。
+/// Legacy [`DocumentBrief`] model → `context.<lang>.md` (migration of existing data, §5.2 item 2).
 ///
-/// `locked=true` 的存量条目转为 `Origin=user, Lock=yes`——这正是设计要求的
-/// 「用户锁定通道」迁移；生成式条目落 `Origin=analyzed`。
+/// Legacy entries with `locked=true` become `Origin=user, Lock=yes`. This is the "user-lock channel" migration the design requires. Generated entries land as `Origin=analyzed`.
 pub fn target_context_from_brief(brief: &DocumentBrief) -> TargetContext {
     let mut glossary = brief
         .glossary
@@ -1273,8 +1214,7 @@ pub fn target_context_from_brief(brief: &DocumentBrief) -> TargetContext {
                 TermOrigin::Analyzed
             },
         })
-        // 锁定行没有译名时无法编译 required targets，解析器也会拒；存量里
-        // 不该有这种行，真出现就降级为不锁。
+        // A locked row without a translation cannot compile the required targets, and the parser rejects it too. Such rows should not exist in existing data; if one does appear, it is downgraded to unlocked.
         .map(|mut term| {
             if term.locked && term.target.is_empty() {
                 term.locked = false;
@@ -1348,7 +1288,7 @@ mod tests {
         assert_eq!(llm.calls[0].0, "analysis");
         assert_eq!(attempts, vec![("p001".to_owned(), true)]);
         assert_eq!(context.terms.len(), 1);
-        // 反幻觉判据：BaoKut 未字面出现被滤掉。
+        // Anti-hallucination check: a BaoKut that does not literally appear is filtered out.
         assert_eq!(context.terms[0].variants, vec!["bao cut".to_owned()]);
         assert_eq!(context.terms[0].category, TermCategory::Product);
         assert_eq!(context.fingerprint, fingerprint(&doc.words));
@@ -1357,7 +1297,7 @@ mod tests {
     #[test]
     fn file_contract_analysis_keeps_user_rows_and_demotes_model_claims() {
         let doc = doc();
-        // 模型自封 Lock/Origin：必须被降级，且不得顶掉用户行。
+        // The model granting Lock/Origin to itself: it must be downgraded, and it must not displace user rows.
         let answer: &'static str = Box::leak(
             CONTEXT_ANSWER
                 .replace("| no | analyzed |", "| yes | user |")
@@ -1412,7 +1352,7 @@ mod tests {
         assert!(rejected >= 1);
     }
 
-    /// 9600 词 → 两个 analysis 页（ANALYSIS=8000 + 10% slack / ANALYSIS_MIN_LAST=500）。
+    /// 9600 words → two analysis pages (ANALYSIS=8000 + 10% slack / ANALYSIS_MIN_LAST=500).
     fn two_page_doc() -> TranscriptDoc {
         let text = "yan lecun says bao cut ".repeat(40);
         let rows = (0..48)
@@ -1460,7 +1400,7 @@ mod tests {
         )
         .expect("analysis");
         assert_eq!(llm.calls.len(), 3);
-        // merge 调用只带各页摘要，不再带整张术语表。
+        // The merge call carries only the per-page summaries, not the whole glossary table any more.
         let merge_user = &llm.calls[2].2;
         assert!(
             merge_user.contains("## Part p001\nPart one summary."),
@@ -1477,8 +1417,7 @@ mod tests {
             ]
         );
         assert_eq!(context.summary, "Merged summary.");
-        // 术语并集：拼写平局取先见、Note 取最长、Category 众数平局取先见、
-        // 落选拼写并入 Variants 后仍受字面出现判据约束（"Yann-LeCun" 未出现被滤）。
+        // Term union: on spelling ties the first seen wins, Note takes the longest, Category mode ties go to the first seen. Losing spellings merged into Variants still face the literal-occurrence check ("Yann-LeCun" not appearing → filtered).
         assert_eq!(context.terms.len(), 2);
         let cuccut = &context.terms[0];
         assert_eq!(cuccut.source, "CucCut");
@@ -1553,12 +1492,11 @@ mod tests {
             vec!["res next".to_owned(), "resnet x".to_owned()]
         );
         assert_eq!(merged[1].source, "DiT");
-        // 与规范形只差大小写的变体不保留。
+        // Variants that differ from the canonical form only in case are not kept.
         assert!(merged[1].variants.is_empty());
     }
 
-    /// 全文行数上限（§2.1）：超出 [`ANALYSIS_MAX_TERMS`] 的键按跨页出现次数
-    /// 降序取胜，输出仍按首现顺序；丢弃计数交给宿主上报，不拒页。
+    /// Whole-text row limit (§2.1): keys beyond [`ANALYSIS_MAX_TERMS`] are selected by cross-page occurrence count, descending. The output is still in first-occurrence order. The drop count is handed to the host to report, and pages are not rejected.
     #[test]
     fn merge_partial_terms_caps_total_rows_by_cross_page_hits() {
         let term = |source: String| CanonicalTerm {
@@ -1569,7 +1507,7 @@ mod tests {
             locked: false,
             origin: TermOrigin::Analyzed,
         };
-        // 页 1 写 ANALYSIS_MAX_TERMS + 20 个独有词；页 2 只复写最后 10 个。
+        // Page 1 writes ANALYSIS_MAX_TERMS + 20 unique words; page 2 only rewrites the last 10.
         let unique: Vec<CanonicalTerm> = (0..ANALYSIS_MAX_TERMS + 20)
             .map(|index| term(format!("Term{index:04}")))
             .collect();
@@ -1583,7 +1521,7 @@ mod tests {
         let (merged, dropped) = merge_partial_terms(&[partial(unique), partial(repeated)]);
         assert_eq!(merged.len(), ANALYSIS_MAX_TERMS);
         assert_eq!(dropped, 20);
-        // 出现两次的 10 个词必须留下，哪怕它们首现顺序最靠后。
+        // The 10 words that appear twice must be kept, even if their first occurrence comes latest in order.
         for index in ANALYSIS_MAX_TERMS + 10..ANALYSIS_MAX_TERMS + 20 {
             let wanted = format!("Term{index:04}");
             assert!(
@@ -1591,16 +1529,14 @@ mod tests {
                 "{wanted} 出现两次却被截断"
             );
         }
-        // 输出顺序仍是首现顺序（单调递增的 Term 序号）。
+        // The output order is still the first-occurrence order (monotonically increasing Term sequence number).
         let sources: Vec<&str> = merged.iter().map(|term| term.source.as_str()).collect();
         let mut sorted = sources.clone();
         sorted.sort_unstable();
         assert_eq!(sources, sorted);
     }
 
-    /// §2.1 端到端：一页三次耗尽**不再**上抛整条 analysis。剩下的页照常归并，
-    /// 失败页只计入 `pages_failed`。实测 5 次 analysis 运行每次都有 3–9 页耗尽，
-    /// 旧行为把整条 polish 一起拖垮。
+    /// §2.1 end to end: exhausting three attempts on one page **no longer** propagates upward and fails the whole analysis. The remaining pages are merged as usual, and failed pages are only counted in `pages_failed`. Measured: each of 5 analysis runs had 3–9 pages exhausted, and the old behavior dragged the whole polish down with it.
     #[test]
     fn file_contract_analysis_keeps_good_pages_when_one_page_gives_up() {
         let doc = two_page_doc();
@@ -1616,7 +1552,7 @@ mod tests {
         .expect("one failed page must not sink the analysis");
         assert_eq!(outcome.pages_failed, 1);
         assert_eq!(outcome.terms_dropped, 0);
-        // 只剩一页成功 ⇒ 不再跑 merge 调用，摘要直接取那一页。
+        // Only one page succeeded ⇒ no merge call is run; the summary is taken directly from that page.
         assert_eq!(outcome.context.summary, "Part one summary.");
         assert_eq!(
             outcome
@@ -1630,7 +1566,7 @@ mod tests {
         assert_eq!(outcome.context.fingerprint, fingerprint(&doc.words));
     }
 
-    /// 全部页耗尽仍然 `Err`：宿主必须保留旧 context，绝不以空表覆盖。
+    /// If every page is exhausted, it still returns `Err`: the host must keep the old context and never overwrite it with an empty table.
     #[test]
     fn file_contract_analysis_errors_only_when_every_page_fails() {
         let doc = two_page_doc();
@@ -1647,10 +1583,10 @@ mod tests {
         assert!(matches!(error, LlmError::Malformed(_)), "{error:?}");
     }
 
-    /// 实测最高频的两种页拒（重复行 / 大表）现在首轮即接受，一次调用就够。
+    /// The two most common page rejections measured (duplicate rows / oversized table) are now accepted on the first round, so a single call is enough.
     #[test]
     fn file_contract_analysis_accepts_duplicate_and_bulky_tables_in_one_call() {
-        // 单页但足够长的输入：体积硬顶按 8× 输入算，太短的夹具会被下限吃掉。
+        // Single page but long input: the hard size ceiling is computed as 8× the input, so short fixtures are not eaten by the floor.
         let text = "we use bao cut every day ".repeat(20);
         let rows = (0..20)
             .map(|i| RowIn::new(i as f64 * 10.0, i as f64 * 10.0 + 9.0, text.trim()))
@@ -1707,7 +1643,7 @@ mod tests {
         assert_eq!(llm.calls.len(), 1, "首轮即接受，不再烧三次重试");
         assert_eq!(rejected, 0);
         assert_eq!(outcome.pages_failed, 0);
-        // 单页上限截到 150 行；第一行的重复被合并。
+        // The single-page cap is cut to 150 rows; duplicates of the first row are merged.
         assert_eq!(
             outcome.context.terms.len(),
             crate::filepipe::ANALYSIS_MAX_TERMS_PER_PAGE
@@ -1715,7 +1651,7 @@ mod tests {
         assert_eq!(outcome.context.terms[0].source, "CucCut");
     }
 
-    /// 提示词收紧（§2.1）：明确禁止普通词汇/语气词，并写死每页行数上限。
+    /// Prompt tightened (§2.1): explicitly forbids common words and filler words, and fixes the per-page row limit.
     #[test]
     fn analysis_prompt_forbids_ordinary_vocabulary() {
         assert!(CONTEXT_EXTRACT_PROMPT.contains("NEVER list ordinary vocabulary"));
@@ -1807,14 +1743,14 @@ mod tests {
         .expect("brief");
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(llm.calls[0].0, "translate-brief");
-        // 种子文档必须把源语术语投影进去，模型只填 Target。
+        // The seed document must project the source-language terms into it. The model only fills Target.
         assert!(llm.calls[0].2.contains("| CucCut |"), "{}", llm.calls[0].2);
         let locked = context
             .glossary
             .iter()
             .find(|term| term.source == "CucCut")
             .expect("locked row");
-        // 用户锁定的译名逐字沿用，模型改写（包裁）被丢弃。
+        // User-locked translations are kept verbatim. Model rewrites (wrapping) are discarded.
         assert_eq!(locked.target, "宝剪");
         assert_eq!(locked.origin, TermOrigin::User);
         assert!(locked.locked);
@@ -1859,7 +1795,7 @@ mod tests {
     fn context_documents_round_trip_through_legacy_models() {
         let source = source_context();
         let analysis = analysis_from_source_context(&source);
-        // Category ∈ {person, product, proper} 的行就是命名实体。
+        // Rows with Category ∈ {person, product, proper} are the named entities.
         assert_eq!(analysis.named_entities, vec!["CucCut".to_owned()]);
         let back = source_context_from_analysis(&analysis);
         assert_eq!(back.summary, source.summary);
@@ -1894,14 +1830,14 @@ mod tests {
             ..TargetContext::default()
         };
         let brief = brief_from_target_context(&target, Some(&source));
-        // 未补译的行不进 brief；Lock=yes 变成 GlossaryEntry.locked。
+        // Rows not yet translated do not enter the brief. Lock=yes becomes GlossaryEntry.locked.
         assert_eq!(brief.glossary.len(), 1);
         assert!(brief.glossary[0].locked);
-        // 实体来自源语表的 Category，而不是「锁定行」这个降级口径。
+        // Entities come from the Category in the source-language table, not from the degraded "locked row" interpretation.
         assert_eq!(brief.named_entities, vec!["CucCut".to_owned()]);
         assert_eq!(brief.style_guide, "口语");
         let degraded = brief_from_target_context(&target, None);
-        // 存量 context 里 CJK 语境的半角标点在转换处被规范化（历史残留清洗）。
+        // Half-width punctuation in CJK context in an existing context is normalized at conversion (historical residue cleanup).
         let infected = TargetContext {
             summary: "介绍 vLLM,重点是显存".to_owned(),
             style: "口语化,短句;避免书面腔:直译".to_owned(),
@@ -1986,8 +1922,7 @@ mod tests {
             problems.iter().any(|line| line.contains("slash")),
             "{problems:?}"
         );
-        // 源词自带斜杠（半角/全角）逐字保留不算并列备选；target 凭空发明的
-        // 全角斜杠同样被拒。
+        // A slash inside a source word (half- or full-width) is kept verbatim and is not treated as an alternative. A full-width slash that the target invents is also rejected.
         let verbatim = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| /compact | /compact | | no | analyzed |\n| AI／人工智能 | AI／人工智能 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
         assert!(lint_agent_answer_context_target("", verbatim).is_empty());
         let fullwidth = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 宝剪辑／包剪 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
@@ -2023,14 +1958,12 @@ mod tests {
         assert!(CONTEXT_TARGET_PROMPT.contains("spacing rule as mandatory"));
         assert!(CONTEXT_TARGET_PROMPT.contains("35% KV 缓存"));
         assert!(CONTEXT_TARGET_PROMPT.contains("--speculative-model"));
-        // 韩文不在这条规则里：助词贴着前面的词写。
+        // Korean is not covered by this rule: particles are written attached to the word before them.
         assert!(CONTEXT_TARGET_PROMPT.contains("Han characters or kana"));
         assert!(CONTEXT_TARGET_PROMPT.contains("does not apply to a target written in Hangul"));
     }
 
-    /// 精修（align-only）轮拿不到 analysis / instructions / tone：按生成输入
-    /// 判定必然失配，每轮都会重跑 brief 并冲掉用户锁定的术语。放宽判定只看
-    /// 词真相与目标语。
+    /// On a refinement (align-only) round the analysis, instructions and tone are unavailable. Judging by the generation inputs necessarily mismatches, so the brief is rerun every round and the user-locked terms get washed out. The relaxed check looks only at the word truth and the target language.
     #[test]
     fn align_only_brief_reuse_ignores_generation_inputs() {
         let doc = doc();
@@ -2042,15 +1975,15 @@ mod tests {
             instructions_fingerprint: Some(fingerprint_strings(["Keep CucCut"])),
             ..Default::default()
         };
-        // 生成输入判定失配（精修轮传的正是这三个 None）。
+        // The generation-input check mismatches (refinement rounds pass exactly these three None).
         assert!(!brief.matches_inputs(&doc, None, None));
-        // 文档判定命中。
+        // Document check hit.
         assert!(brief.matches_document(&doc, "zh"));
-        // 词真相变了就不再复用——译文真相本身已经过期。
+        // If the word truth changed, do not reuse. The translation's truth itself has expired.
         let mut changed_words = doc.clone();
         changed_words.words[0].text = "They".to_owned();
         assert!(!brief.matches_document(&changed_words, "zh"));
-        // 目标语不同不复用。
+        // Different target language: do not reuse.
         assert!(!brief.matches_document(&doc, "ja"));
     }
 
@@ -2146,7 +2079,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        // `commitment` 不是 `commit`；`spring` 没出现；`Wyckoff` 只以误识形式出现。
+        // `commitment` is not `commit`; `spring` does not appear; `Wyckoff` appears only as a misrecognized form.
         let source = "维科夫讲过 commitment 和量化，量化之后更稳。";
         let picked = |analysis| {
             brief

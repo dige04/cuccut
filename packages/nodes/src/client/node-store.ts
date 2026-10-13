@@ -7,18 +7,18 @@ import { silentNodeLog, type NodeLogger } from '../node-logger.ts';
 import { NodesClient as NC } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 发起端的持久状态（节点协议规范 §11）：`<home>/store/nodes.json`，权限 0600。
+ * Initiator's persistent state (node protocol spec §11): `<home>/store/nodes.json`, permissions 0600.
  *
- * - `clientId`：这台 Runtime 在所有节点眼里的标识，第一次打开时生成，之后不变（节点用它区分客户端、同一个
- *   `clientId` 再次配对替换旧令牌）。
- * - `nodes`：已配对的节点（没有令牌）。别名在本机唯一：默认取节点的名字，冲突时加 `-2`、`-3`……；同一个 `nodeId`
- *   再次配对替换原来的记录、保留别名（除非这次指定了新的别名）。
- * - 令牌经 `CredentialStore` 存放，key 是 `node:<nodeId>`（架构设计 §6.8）；只在用到时取，只进 `Authorization` 头。
+ * - `clientId`: this Runtime's identifier as seen by all nodes. It is generated the first time the store is opened and never changes after that (nodes use it to tell clients apart;
+ *   pairing again with the same `clientId` replaces the old token).
+ * - `nodes`: paired nodes (without tokens). Aliases are unique on this machine: the default is the node's name, with `-2`, `-3`… added on conflict. Pairing the same `nodeId`
+ *   again replaces the original record and keeps the alias (unless a new alias is given this time).
+ * - Tokens are stored in `CredentialStore` under the key `node:<nodeId>` (architecture design §6.8); they are read only when needed and go only into the `Authorization` header.
  *
- * 之前的版本把令牌写在这个文件的记录里：打开时逐个迁进凭据存储，迁成功的从文件里去掉；迁不成功的（凭据存储不可用）
- * 原样留在文件里等下次启动再迁，但不拿来用——不回退到明文。
+ * Earlier versions wrote tokens into the records in this file. On open, they are migrated one by one into the credential store, and each successful migration removes the token from the file. A token that cannot be migrated
+ * (the credential store is unavailable) stays in the file as is until the next start, but it is not used: there is no fallback to plaintext.
  *
- * 写入是临时文件加改名，串行；内存里的状态是权威，文件是它的快照。
+ * Writes use a temporary file followed by a rename, and are serialized. The in-memory state is authoritative; the file is a snapshot of it.
  */
 
 export interface PairedNodeRecord {
@@ -31,7 +31,7 @@ export interface PairedNodeRecord {
 }
 
 interface StoredNode extends PairedNodeRecord {
-  /** 旧版本写在文件里、还没迁进凭据存储的令牌。 */
+  /** Tokens written to the file by older versions that have not yet been migrated into the credential store. */
   token?: string;
 }
 
@@ -41,7 +41,7 @@ interface NodesFile {
   nodes: StoredNode[];
 }
 
-/** 节点协议对 `clientId` 的要求（令牌是 `<clientId>.<secret>`，所以不能含 `.`）。 */
+/** Node protocol requirement for `clientId` (tokens are `<clientId>.<secret>`, so it cannot contain `.`). */
 export const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const ALIAS_MAX = 63;
 
@@ -50,7 +50,7 @@ export class NodeStore {
   readonly #file: JsonStoreFile;
   readonly #data: NodesFile;
   readonly #credentials: CredentialStore;
-  /** 读不到令牌的节点与原因（不含令牌）。 */
+  /** Nodes whose tokens cannot be read, with the reason (no token included). */
   readonly #problems = new Map<string, string>();
   #chain: Promise<void> = Promise.resolve();
 
@@ -62,9 +62,9 @@ export class NodeStore {
   }
 
   /**
-   * 读文件；没有时生成新的 `clientId` 并立即落盘。不是 JSON 或认不出时先改名保留（`<文件>.corrupt-<时间>`）再生成新的；
-   * 更新版本写下的或读不了的不改名也不覆盖，这次运行用一个只在内存里的 `clientId`（`store-file.ts`）。
-   * 文件里还有旧版本的令牌时迁进凭据存储。
+   * Read the file. If it is missing, generate a new `clientId` and write it to disk immediately. If it is not JSON or is not recognized, first rename it to keep it (`<file>.corrupt-<time>`), then generate a new one.
+   * A file written by a newer version, or one that cannot be read, is neither renamed nor overwritten; this run uses a `clientId` that exists only in memory (`store-file.ts`).
+   * If the file still holds tokens from an older version, migrate them into the credential store.
    */
   static async open(path: string, credentials: CredentialStore, log: NodeLogger = silentNodeLog): Promise<NodeStore> {
     const file = new JsonStoreFile(path, log);
@@ -88,15 +88,15 @@ export class NodeStore {
     return found ? record(found) : null;
   }
 
-  /** `nodeId` 或别名 → 记录（`nodeId` 优先）。 */
+  /** `nodeId` or alias → record (`nodeId` takes priority). */
   resolve(ref: string): PairedNodeRecord | null {
     const found = this.#data.nodes.find((n) => n.nodeId === ref) ?? this.#data.nodes.find((n) => n.alias === ref);
     return found ? record(found) : null;
   }
 
   /**
-   * 这个节点的令牌，只在发请求时取。凭据存储里没有时 null；凭据存储不可用时抛 `CredentialStoreError`，并记下原因
-   * （`credentialProblem()`）。
+   * This node's token, fetched only when a request is made. Null when the credential store has none. Throws `CredentialStoreError` when the credential store is unavailable, and records the reason
+   * (`credentialProblem()`).
    */
   async token(nodeId: string): Promise<string | null> {
     try {
@@ -109,20 +109,20 @@ export class NodeStore {
     }
   }
 
-  /** 最近一次读不到这个节点的令牌的原因；没有问题时 null。 */
+  /** Reason for the most recent failure to read this node's token; null when there is no problem. */
   credentialProblem(nodeId: string): string | null {
     return this.#problems.get(nodeId) ?? null;
   }
 
-  /** 指定的别名能不能给 `nodeId` 用：不能与别的节点的别名或 `nodeId` 相同。不能用时抛 `conflict`。 */
+  /** Whether the given alias may be used for `nodeId`: it may not be the same as another node's alias or `nodeId`. Throws `conflict` when it cannot be used. */
   checkAlias(alias: string, nodeId: string): void {
     const taken = this.#data.nodes.some((n) => n.nodeId !== nodeId && (n.alias === alias || n.nodeId === alias));
     if (taken) throw new RpcError('conflict', NC.aliasTaken({ alias }));
   }
 
   /**
-   * 配对成功：先把令牌写进凭据存储，再新增或替换这个 `nodeId` 的记录。凭据存储不可用时以 `conflict`
-   * （`CREDENTIAL_UNAVAILABLE`）拒绝，记录不变。
+   * Pairing succeeded: first write the token into the credential store, then add or replace the record for this `nodeId`. When the credential store is unavailable, reject with `conflict`
+   * (`CREDENTIAL_UNAVAILABLE`), and leave the record unchanged.
    */
   async upsert(
     node: Omit<PairedNodeRecord, 'alias' | 'pairedAt'> & { token: string; alias?: string; pairedAt?: string },
@@ -147,7 +147,7 @@ export class NodeStore {
       port: node.port,
       pairedAt: node.pairedAt ?? new Date().toISOString(),
     };
-    // 写凭据期间别的配对可能改了列表：按 nodeId 重新找位置。
+    // Another pairing may have changed the list while the credential was being written: look up the position again by nodeId.
     const at = nodes.findIndex((n) => n.nodeId === node.nodeId);
     if (at >= 0) nodes[at] = entry;
     else nodes.push(entry);
@@ -156,8 +156,8 @@ export class NodeStore {
   }
 
   /**
-   * 删掉本机的记录与令牌；没有这个节点时返回 false。先删令牌：凭据存储不可用时以 `conflict`（`CREDENTIAL_UNAVAILABLE`）
-   * 拒绝，记录不变（不留下删不掉的令牌）。
+   * Delete this machine's record and token; returns false when there is no such node. The token is deleted first: when the credential store is unavailable, reject with `conflict` (`CREDENTIAL_UNAVAILABLE`)
+   * and leave the record unchanged (so no token is left that cannot be deleted).
    */
   async remove(nodeId: string): Promise<boolean> {
     if (!this.#data.nodes.some((n) => n.nodeId === nodeId)) return false;
@@ -194,7 +194,7 @@ export class NodeStore {
     }
   }
 
-  /** 旧版本写在文件里的令牌：逐个迁进凭据存储，迁成功的从文件里去掉。日志只记 `nodeId` 与原因。 */
+  /** Tokens written to the file by older versions: migrate them one by one into the credential store, and remove each from the file once migrated. Logs only the `nodeId` and the reason. */
   async #migrateTokens(log: NodeLogger): Promise<void> {
     let migrated = 0;
     for (const node of this.#data.nodes) {
@@ -218,9 +218,9 @@ export class NodeStore {
   #save(): Promise<void> {
     const snapshot = structuredClone(this.#data);
     const next = this.#chain.then(async () => {
-      if (this.#file.readOnly) return this.#file.write(snapshot); // 只记一次 warn，不写。
+      if (this.#file.readOnly) return this.#file.write(snapshot); // Log a warning only once; do not write.
       await this.#file.write(snapshot, { mode: 0o600 });
-      // umask 可能放宽了新文件的权限：改名之后再收紧一次。
+      // The umask may have loosened the permissions of the new file: tighten them again after the rename.
       await fs.chmod(this.file, 0o600);
     });
     this.#chain = next.catch(() => {});
@@ -232,7 +232,7 @@ function newClientId(): string {
   return `c_${crypto.randomBytes(16).toString('base64url')}`;
 }
 
-/** 对外的记录：没有令牌。 */
+/** Record as exposed externally: no token. */
 function record(node: StoredNode): PairedNodeRecord {
   const { nodeId, alias, name, host, port, pairedAt } = node;
   return { nodeId, alias, name, host, port, pairedAt };

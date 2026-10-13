@@ -7,50 +7,50 @@ import { jobErrorText, jobWaitText } from './localized-text.ts';
 import { langName } from './tools-models.ts';
 
 /**
- * 后台任务的统一表（原型 page-tasks.jsx、产品设计 §2.1 用户修订）：Agent 会话里的任务（TaskSummary）与
- * 模型计算（JobRecord）合成一张表，任务页、侧栏与任务胶囊读同一份。纯函数：时间与目录作为参数传进来。
+ * Unified table of background tasks (prototype page-tasks.jsx, product design §2.1 user revision): tasks in agent sessions (TaskSummary) and
+ * model computations (JobRecord) are combined into one table, which the tasks page, sidebar and task pill all read from. A pure function: the time and directory are passed in as parameters.
  */
 
 /**
- * 任务的种类：Agent 任务，或 Job 的种类。导出也是一条 Job（`kind: 'export'`，架构设计 §9.11）：标题、位置与阶段读它的
- * `export` 信息；任务胶囊不列本视频的导出（顶栏的导出按钮已经在念它的进度）。
- * `legacyImport` 是启动时导入旧版项目的那一轮（`legacy-import` 主题，model/legacy-import-run.ts），不是 Job。
+ * Kind of task: an agent task, or a Job kind. An export is also a Job (`kind: 'export'`, architecture design §9.11): its title, location and stage come from its
+ * `export` information; the task pill does not list this video's exports (the export button in the top bar already shows their progress).
+ * `legacyImport` is the round that imports an old project at startup (`legacy-import` topic, model/legacy-import-run.ts), not a Job.
  */
 export type TaskKind = 'agent' | JobKind | 'legacyImport';
 
-/** 原型的色调：chip 与种类图标底色按它取（page-tasks.jsx `TaskCard`）。 */
+/** Prototype tone: the chip and kind-icon background colors are taken from it (page-tasks.jsx `TaskCard`). */
 export type TaskTone = 'accent' | 'info' | 'notice' | 'neutral' | 'positive' | 'negative';
 
 export type TaskAction = { type: 'stop'; taskId: Id } | { type: 'cancel'; jobId: Id };
 
 export interface TaskRow {
   id: Id;
-  /** 来自哪：Agent 任务、Job，或这次启动导入旧版项目的那一轮。 */
+  /** Source: an agent task, a Job, or the round that imported the old project at this startup. */
   origin: 'task' | 'job' | 'legacy-import';
   kind: TaskKind;
-  /** 念出来的种类：通常是 `kindLabel(kind)`；从链接导入的 `kind` 是通用的 `pipeline`，念「从链接导入」。 */
+  /** The kind as shown: usually `kindLabel(kind)`; a generic `pipeline` kind from a link import is shown as “从链接导入” (“Import from link”). */
   kindText: string;
   title: string;
-  /** 副标题的「在哪」：Agent 任务是项目 › 会话，Job 是模型 · 跑在哪。 */
+  /** The “where” in the subtitle: for an agent task it is project › session; for a Job it is model · where it runs. */
   where: string;
-  /** 开始时间；还在排队的 Job 用提交时间。 */
+  /** Start time; a Job still queued uses its submission time. */
   startedAt: string;
   endedAt: string | null;
-  /** 进行中一组：Agent 任务在跑或正在停止，Job 排队或在跑。 */
+  /** In-progress group: agent tasks that are running or stopping, and Jobs that are queued or running. */
   live: boolean;
   queued: boolean;
-  /** Agent 任务在等用户批准。 */
+  /** Agent task waiting for user approval. */
   waiting: boolean;
-  /** 状态 chip 的字。 */
+  /** Text of the status chip. */
   label: string;
   tone: TaskTone;
-  /** 在跑的 Job 的阶段；排队的 Job 是 Runtime 记着的在等什么（没有时 null）。 */
+  /** Stage of a running Job; for a queued Job, what the Runtime has recorded it is waiting for (null when there is none). */
   phase: string | null;
-  /** 0–100；null 表示没有确定进度。 */
+  /** 0–100; null means progress is not determinate. */
   pct: number | null;
-  /** 卡片上的进度条：数字是确定进度，`indet` 转圈，null 不画。 */
+  /** Progress bar on the card: a number is determinate progress, `indet` spins, and null draws nothing. */
   progress: number | 'indet' | null;
-  /** 来源 chip：智能体经工具提交的念「Agent」，别的连接念「命令行」。 */
+  /** Source chip: work submitted by an agent through a tool shows “Agent”; other connections show “命令行” (“Command line”). */
   chip: 'agent' | 'cli' | null;
   action: TaskAction | null;
   conversationId: Id | null;
@@ -59,7 +59,7 @@ export interface TaskRow {
   error: string | null;
 }
 
-/** 编辑器打开的视频：转录的标题念它的名字与素材名，胶囊的「这个视频」也按它判。 */
+/** The video open in the editor: a transcription's title shows its name and asset name, and the pill's “这个视频” (“This video”) is judged by it too. */
 export interface OpenVideoFacts {
   videoId: Id;
   name: string;
@@ -79,13 +79,13 @@ export interface TaskGroup {
   items: TaskRow[];
 }
 
-/** 截到 n 个字符（按码点），超出补「…」（原型 model-task-facts.js `clip`）。 */
+/** Truncates to n characters (by code point), appending “…” when it overflows (prototype model-task-facts.js `clip`). */
 export function clip(text: string, n: number): string {
   const chars = Array.from(text.trim());
   return chars.length > n ? `${chars.slice(0, n).join('')}…` : chars.join('');
 }
 
-/** 0–100 的整数；总量未知或为 0 时 null（不伪造百分比）。向下取整：没做完就不念 100%。 */
+/** Integer 0–100; null when the total is unknown or 0 (no percentage is made up). Rounded down: an unfinished task never shows 100%. */
 export function jobPercent(job: Pick<JobRecord, 'progress'>): number | null {
   const p = job.progress;
   if (!p || p.total == null || !(p.total > 0)) return null;
@@ -94,7 +94,7 @@ export function jobPercent(job: Pick<JobRecord, 'progress'>): number | null {
 
 const AGENT_PROVIDER_NAME: Record<string, string> = { codex: 'Codex', claude: 'Claude' };
 
-/** Job 跑在哪：本机、远端节点、云端；智能体 Provider 在本机跑（原型 data.js `runsOn: '本机 · Codex'`）。 */
+/** Where a Job runs: this machine, a remote node, or the cloud; an agent Provider runs on this machine (prototype data.js `runsOn: '本机 · Codex'`). */
 export function runsOnLabel(providerId: string): string {
   if (providerId === 'local') return TASK_VIEW_COPY.local;
   if (providerId.startsWith('node:')) return TASK_VIEW_COPY.node;
@@ -109,23 +109,23 @@ export function kindLabel(kind: TaskKind): string {
   return TASK_KIND_LABEL[kind];
 }
 
-/** 会话 ID：Agent 任务自己的，或智能体经工具提交的 Job 的。 */
+/** Session ID: the agent task's own, or that of a Job an agent submitted through a tool. */
 function jobConversation(job: JobRecord): Id | null {
   return job.submitter.kind === 'agent' ? job.submitter.id : null;
 }
 
-/** 转录流程的名字（Runtime 的 `TRANSCRIBE_PIPELINE`）。 */
+/** Name of the transcription pipeline (the Runtime's `TRANSCRIBE_PIPELINE`). */
 const TRANSCRIBE_PIPELINE = 'transcribe';
 
 /**
- * 转录流程（`pipelines.start` 的 `transcribe`：编辑器的生成字幕、重新转录，智能体与命令行的转录）的父任务。它把识别交给一个
- * `transcribe` Job，在任务表里与那次转写同样念「转录」，不念通用的「流程」。
+ * Parent task of the transcription pipeline (`transcribe` from `pipelines.start`: the editor's generate-subtitles and re-transcribe, and transcription from agents and the command line). It hands recognition to a
+ * `transcribe` Job, and in the task table it shows “转录” (“Transcription”) just as that transcription does, not the generic “流程” (“Pipeline”).
  */
 function isTranscribePipeline(job: Pick<JobRecord, 'kind' | 'pipeline'>): boolean {
   return job.kind === 'pipeline' && job.pipeline?.name === TRANSCRIBE_PIPELINE;
 }
 
-/** 转写的素材：转写 Job 记在自己身上；转录流程的父任务记在冻结参数里（给定素材时）或落点里（取代文稿、另建视频）。 */
+/** The asset being transcribed: a transcription Job records it on itself; the parent task of a transcription pipeline records it in its frozen parameters (when a source is given) or in its destination (replacing the transcript, or creating a new video). */
 function transcribeAsset(job: JobRecord): Id | null {
   if (job.assetId) return job.assetId;
   const params = isTranscribePipeline(job) ? job.pipeline!.params : null;
@@ -145,20 +145,20 @@ function jobTitle(job: JobRecord, video: OpenVideoFacts | null): string {
     const asset = assetId ? video.assets[assetId]?.name : undefined;
     return [kindLabel('transcribe'), video.name, asset].filter(Boolean).join(' · ');
   }
-  // 从链接导入：「从链接导入 · 标题」（标题还没解析出来时写网站）。
+  // Import from link: “从链接导入 · 标题” (“Import from link · title”); while the title has not yet been resolved, the site name is written.
   if (isLinkImport(job)) return linkTitle(job);
-  // 智能体自己翻译：「翻译 · 访谈 · 英语」（视频名只有打开着时才知道）。
+  // Agent translating on its own: “翻译 · 访谈 · 英语” (“Translate · Interview · English”); the video name is only known while it is open.
   if (job.kind === 'agentTranslate') {
     return [kindLabel(job.kind), video?.name, job.translation ? langName(job.translation.targetLanguage) : null].filter(Boolean).join(' · ');
   }
-  // 导出：「导出视频 · MP4 · 访谈」（种类与格式取冻结的设置；视频名只有打开着时才知道）。
+  // Export: “导出视频 · MP4 · 访谈” (“Export video · MP4 · Interview”); the kind and format come from the frozen settings; the video name is only known while it is open.
   if (job.kind === 'export' && job.export) return [exportTitle(job.export.settings), video?.name].filter(Boolean).join(' · ');
   return kindLabel(job.kind);
 }
 
 /**
- * 这几种 Job 的 `providerId` 不是模型服务商，而是工具或来源的名字（yt-dlp、google-fonts），`modelId` 是工具版本或字体族；
- * 它们都在本机跑，不能按 `runsOnLabel` 落到「云端」。
+ * For these kinds of Job, `providerId` is not a model provider but the name of a tool or source (yt-dlp, google-fonts), and `modelId` is the tool version or font family;
+ * they all run on this machine, and must not fall under “云端” (“Cloud”) through `runsOnLabel`.
  */
 function localToolWhere(job: JobRecord): string | null {
   if (isLinkImport(job) || job.kind === 'toolInstall' || job.kind === 'toolUpdate') {
@@ -168,23 +168,23 @@ function localToolWhere(job: JobRecord): string | null {
   return null;
 }
 
-/** 在哪：导出是写到哪个目录（本机）；别的 Job 是模型 · 跑在哪。 */
+/** // Where: for an export, the directory it is written to (this machine); for other Jobs, model · where it runs. */
 function jobWhere(job: JobRecord): string {
-  // 智能体自己翻译：`modelId` 就是 Driver，「本机 · Codex」已经说全了。
+  // Agent translating on its own: `modelId` is the Driver, and “本机 · Codex” (“This machine · Codex”) already says it all.
   if (job.kind === 'agentTranslate') return runsOnLabel(job.providerId);
   if (job.kind === 'export' && job.export) return [shortenPath(job.export.destination.dir), runsOnLabel(job.providerId)].join(' · ');
   return localToolWhere(job) ?? [job.modelId, runsOnLabel(job.providerId)].filter(Boolean).join(' · ');
 }
 
 /**
- * Worker 崩溃后自动重跑的那一下（job-manager 的 `crashed` 分支）：状态先记为 `interrupted` 推出来，但没有写 `endedAt`，
- * 紧接着同一个任务再跑一次。真结束了的中断一定有 `endedAt`。
+ * The automatic rerun after a Worker crash (the `crashed` branch of job-manager): the status is first derived as `interrupted`, but `endedAt` is not written,
+ * and the same task then runs again right away. An interruption that has really ended always has `endedAt`.
  */
 export function jobRetrying(job: Pick<JobRecord, 'state' | 'endedAt'>): boolean {
   return job.state === 'interrupted' && job.endedAt === null;
 }
 
-/** 还没结束：排队、在跑，或崩溃后正在自动重跑。 */
+/** Not yet ended: queued, running, or automatically rerunning after a crash. */
 export function jobLive(job: Pick<JobRecord, 'state' | 'endedAt'>): boolean {
   return job.state === 'queued' || job.state === 'running' || jobRetrying(job);
 }
@@ -192,11 +192,11 @@ export function jobLive(job: Pick<JobRecord, 'state' | 'endedAt'>): boolean {
 const JOB_ENDED: Record<Exclude<JobRecord['state'], 'queued' | 'running'>, { label: string; tone: TaskTone }> = {
   completed: { label: TASK_VIEW_COPY.completed, tone: 'positive' },
   failed: { label: TASK_VIEW_COPY.failed, tone: 'negative' },
-  // 取消不叫失败：失败是链路坏了，取消是用户自己停的（原型 page-tasks.jsx 第 120 轮）。
+  // Cancellation is not called a failure: a failure means the pipeline broke, while cancellation is stopped by the user (prototype page-tasks.jsx, round 120).
   cancelled: { label: TASK_VIEW_COPY.cancelled, tone: 'neutral' },
-  // 中断：Runtime 停止或重启时没做完，不续跑。不是链路坏了，也不是用户停的。
+  // Interrupted: the Runtime stopped or restarted before it finished, and it is not resumed. The pipeline did not break, and the user did not stop it.
   interrupted: { label: TASK_VIEW_COPY.interrupted, tone: 'neutral' },
-  // 结果不明：Runtime 重启时外发调用还没回音，可能已经计费，不自动重发（§7.5），等用户决定。
+  // Outcome unknown: when the Runtime restarted, the outgoing call had not yet returned, so it may already have been billed; it is not re-sent automatically (§7.5) and waits for the user to decide.
   'needs-reconciliation': { label: TASK_VIEW_COPY.needsReconciliation, tone: 'notice' },
 };
 
@@ -208,7 +208,7 @@ export function jobRow(job: JobRecord, ctx: TaskContext): TaskRow {
   const retrying = jobRetrying(job);
   const running = job.state === 'running' || retrying;
   const pct = job.state === 'running' ? jobPercent(job) : null;
-  // 排队时那一行写 Runtime 记着的在等什么（并发名额或机器资源，架构设计 §7.6）。
+  // While queued, that row shows what the Runtime has recorded it is waiting for (a concurrency slot or machine resources, architecture design §7.6).
   const phase = retrying
     ? TASK_VIEW_COPY.retrying
     : running
@@ -228,7 +228,7 @@ export function jobRow(job: JobRecord, ctx: TaskContext): TaskRow {
       : running
         ? { label: pct == null ? phase! : `${phase} · ${pct}%`, tone: 'accent' as const }
         : JOB_ENDED[job.state as keyof typeof JOB_ENDED];
-  // 转录流程念「转录」、画转写的图标：与它转写期间合成的那一行（`taskRows`）同一个种类，前后不跳。
+  // The transcription pipeline shows “转录” and draws the transcription icon: it is the same kind as the row combined with it during its transcription (`taskRows`), so nothing jumps before or after.
   const kind: TaskKind = isTranscribePipeline(job) ? 'transcribe' : job.kind;
   return {
     id: job.jobId,
@@ -248,7 +248,7 @@ export function jobRow(job: JobRecord, ctx: TaskContext): TaskRow {
     pct,
     progress: running ? (pct ?? 'indet') : queued ? 'indet' : null,
     chip: job.submitter.kind === 'agent' ? 'agent' : job.submitter.kind === 'connection' ? 'cli' : null,
-    // 智能体自己翻译不给取消：取消这条记录停不下智能体，要停就停那条会话（打开会话，或停它那一行的 Agent 任务）。
+    // An agent translating on its own has no cancel option: cancelling this record cannot stop the agent, so to stop it, stop that session (open the session, or stop the Agent task on its row).
     action: (queued || running) && job.kind !== 'agentTranslate' ? { type: 'cancel', jobId: job.jobId } : null,
     conversationId,
     projectId: conversation?.projectId ?? video?.projectId ?? null,
@@ -261,9 +261,9 @@ export function agentRow(task: TaskSummary, ctx: TaskContext): TaskRow {
   const conversation = ctx.conversations.find((c) => c.id === task.conversationId);
   const project = task.projectId ? ctx.projects.find((p) => p.id === task.projectId) : undefined;
   const live = task.status === 'running' || task.status === 'stopping';
-  // 等用户批准时任务本身仍在进行，等待记在会话的活动上（产品设计 §3.1）。
+  // While waiting for user approval, the task itself is still in progress; the wait is recorded in the session's activity (product design §3.1).
   const waiting = task.status === 'running' && conversation?.activity === 'awaiting-approval';
-  // 会话标题常常就是第一句话（也就是任务目标）：一样时只写项目。
+  // The session title is often the first sentence (which is the task goal): when they are the same, only the project is written.
   const title = task.conversationTitle && task.conversationTitle !== task.goal ? task.conversationTitle : null;
   const where = [project?.name ?? (title ? null : TASK_VIEW_COPY.noProject), title].filter(Boolean).join(' › ');
   const tone: TaskTone = waiting
@@ -302,8 +302,8 @@ export function agentRow(task: TaskSummary, ctx: TaskContext): TaskRow {
 }
 
 /**
- * 还在跑的固定流程正在等的那次转录：从链接导入与转录流程都以自己的 jobId 为提交者提交转写（`video-create.ts`
- * `transcribeInVideo`、转录流程的「转写」一步）。
+ * The transcription that a running fixed pipeline is waiting for: both the import-from-link and the transcription pipeline submit the transcription using their own jobId as the submitter (`video-create.ts`
+ * `transcribeInVideo`, and the “转写” (“Transcribe”) step of the transcription pipeline).
  */
 function livePipelineTranscribe(parent: JobRecord, jobs: readonly JobRecord[]): JobRecord | null {
   return (
@@ -319,16 +319,15 @@ function livePipelineTranscribe(parent: JobRecord, jobs: readonly JobRecord[]): 
 
 export interface TaskRowsOptions {
   /**
-   * 固定流程走到转录时与它的转录合成一行（原型 model-import.js `attach`：同一个任务变成转录，念转录的阶段与模型 · 本机）：
-   * 从链接导入与转录流程（生成字幕、重新转录）都是。任务详情按 ID 找原样的那一行，传 false。
+   * When a fixed pipeline reaches transcription, it is combined into one row with its transcription (prototype model-import.js `attach`: the same task becomes a transcription, showing the transcription's stage and model · this machine):
+   * both the import-from-link and the transcription pipeline (generate subtitles, re-transcribe) do this. Task details find the row as-is by ID, so pass false.
    */
   fold?: boolean;
 }
 
 /**
- * 合成一张表，后起的在前。固定流程的步骤（`parentJobId`）折叠在父任务下，不单独成行（与 `jobs.list` 一致）；
- * `fold` 时流程在转录期间沿用自己的 ID、标题、来源与取消，种类、阶段、进度与「在哪」换成那次转录的——流程按步骤数报的
- * 进度（转录流程转写那一步就是 2/4）不当转写的进度念，转写也不另成一行。
+ * Combined into one table, later ones first. Steps of a fixed pipeline (`parentJobId`) are folded under their parent task and do not get a row of their own (consistent with `jobs.list`);
+ * when `fold` applies, the pipeline keeps its own ID, title, source and cancellation during transcription, while its kind, stage, progress and “where” are replaced with those of that transcription. The pipeline's progress, which counts steps (the transcription step of the transcription pipeline is 2/4), is not shown as the transcription's progress, and the transcription does not get a row of its own.
  */
 export function taskRows(
   tasks: readonly TaskSummary[],
@@ -352,7 +351,7 @@ export function taskRows(
   return rows.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
 }
 
-/** 两组：进行中（在跑、排队、正在停止）与历史，各自保持表里的顺序。 */
+/** Two groups: in progress (running, queued, stopping) and history, each keeping its order in the table. */
 export function taskGroups(rows: readonly TaskRow[]): [TaskGroup, TaskGroup] {
   return [
     { id: 'active', label: TASK_VIEW_COPY.activeSection, items: rows.filter((r) => r.live) },

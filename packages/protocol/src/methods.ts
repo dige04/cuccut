@@ -155,44 +155,44 @@ import type {
 } from './video.ts';
 
 /**
- * 公共方法表（架构设计 §4.1）。界面、CLI 与外部智能体发同一组请求。
+ * Public method table (architecture design §4.1). The UI, CLI and external agents send the same set of requests.
  *
- * 规则：
- * - 公共请求不携带 `actor` 或任何信任标记；身份由 Runtime 从已认证的连接构造（§4.2）。
- * - 会产生副作用的命令带 `commandId`，同一个 key 重试返回同一份结果。
+ * Rules:
+ * - Public requests do not carry `actor` or any trust marker; identity is built by the Runtime from the authenticated connection (§4.2).
+ * - Commands that have side effects carry `commandId`; retrying with the same key returns the same result.
  */
 export interface RpcMethods {
   'runtime.info': { params: Record<string, never>; result: RuntimeInfo };
-  /** 连接、任务与空闲退出（架构设计 §2.2）：只给 `cli` 与 `desktop` 连接，其余 `forbidden`。 */
+  /** Connection, tasks and idle exit (architecture design §2.2): given only to `cli` and `desktop` connections; all others get `forbidden`. */
   'runtime.status': { params: Record<string, never>; result: RuntimeStatus };
   /**
-   * 请 CLI 拉起的 Runtime 停下（`cuccut runtime stop`，架构设计 §2.2）：只给 `cli` 连接；不是 CLI 拉起的 `forbidden`
-   * （`details.code: 'RUNTIME_NOT_OWNED'`），有桌面端连着时 `conflict`（`RUNTIME_IN_USE`）。响应先回，随后按停止顺序收尾。
+   * Ask the Runtime launched by the CLI to stop (`cuccut runtime stop`, architecture design §2.2): only for `cli` connections; if the CLI did not launch it, `forbidden`
+   * (`details.code: 'RUNTIME_NOT_OWNED'`); with a desktop connected, `conflict` (`RUNTIME_IN_USE`). The response is sent first, then shutdown proceeds in stop order.
    */
   'runtime.stop': { params: Record<string, never>; result: { stopping: true } };
-  /** 旧版项目的导入询问与这次启动里的导入（架构设计 §2.7）：与 `legacy-import` 主题的快照相同。不在 Web 服务的白名单里。 */
+  /** Legacy project import prompts and the imports in this startup (architecture design §2.7): same as the snapshot of the `legacy-import` topic. Not on the Web service allowlist. */
   'legacyImport.get': { params: Record<string, never>; result: LegacyImportSnapshot };
   /**
-   * 回答导入询问：`import` 记下目录并开始在后台导入，`never` 记下以后不再导入。`promptId` 不是正在等的询问时 `not-found`；
-   * `directory` 不是绝对路径、落在旧版或 Runtime 自己的数据目录里、建不了或写不了时 `invalid-request`。
+   * Answer an import prompt: `import` records the directory and starts importing in the background; `never` records that nothing should be imported later. When `promptId` is not the prompt being waited on, `not-found`;
+   * when `directory` is not an absolute path, falls inside the legacy or Runtime's own data directory, or cannot be created or written, `invalid-request`.
    */
   'legacyImport.answer': { params: LegacyImportAnswer; result: Record<string, never> };
   /**
-   * 重新导入没导入的旧版项目（`paths` 缺省 = 全部没导入的；点名的跳过项也重新导入，清掉跳过的记录）。其他任务在跑时先排队等。
-   * 没有这次的导入、或没有可以重试的时 `queued: 0`。只给桌面界面与 CLI（`forbidden`）。
+   * Re-import legacy projects that were not imported (`paths` defaults to all not-yet-imported ones; named skipped items are also re-imported, clearing the skip record). Other running tasks are queued first.
+   * With no import in this run, or nothing to retry, `queued: 0`. Given only to the desktop UI and CLI (`forbidden`).
    */
   'legacyImport.retry': { params: LegacyImportRetry; result: { queued: number } };
   /**
-   * 跳过没导入的项目：记下，以后不再自动导入；`skipped: false` 撤销跳过。`changed` 是改了的个数（不在这次导入里、
-   * 或状态不对的路径忽略）。只给桌面界面与 CLI（`forbidden`）。
+   * Skip not-yet-imported projects: record them and do not import them automatically later; `skipped: false` cancels the skip. `changed` is the number changed (paths that are not in this import,
+   * or are in the wrong state, are ignored). Given only to the desktop UI and CLI (`forbidden`).
    */
   'legacyImport.setSkipped': { params: LegacyImportSetSkipped; result: { changed: number } };
 
-  /** Agent 列表与偏好（设置 › Agent 提供方）。探测结果短时缓存。 */
+  /** Agent list and preferences (Settings › Agent providers). Probe results are cached briefly. */
   'agents.list': { params: Record<string, never>; result: AgentsView };
-  /** 「重新检测」：不用缓存，重新探测安装、版本、登录，并刷新模型表。 */
+  /** “Re-detect”: skips the cache, re-probes installation, version and login, and refreshes the model table. */
   'agents.detect': { params: { driverId?: DriverId }; result: AgentsView };
-  /** 启用或停用一个 Agent，设它的默认模型与强度，或手动指定可执行文件（null 取消指定）。 */
+  /** Enable or disable an Agent, set its default model and intensity, or specify its executable manually (null clears the specification). */
   'agents.configure': {
     params: {
       driverId: DriverId;
@@ -203,63 +203,62 @@ export interface RpcMethods {
     };
     result: AgentsView;
   };
-  /** 新会话默认用哪个 Agent：写偏好设置 `agent.defaultDriver`（架构设计 §3.11、§5.10）。 */
+  /** Which Agent new sessions use by default: writes the preference `agent.defaultDriver` (architecture design §3.11, §5.10). */
   'agents.setDefault': { params: { driverId: DriverId }; result: AgentsView };
   /**
-   * 添加一个说 ACP 的智能体（架构设计 §3.11）：存进 `store/agent-providers.json`，立即注册成 Driver 并在后台探测。
-   * `id` 不得与内置的或已添加的重名（重名 `conflict`，`details.code: 'AGENT_PROVIDER_EXISTS'`）；同一个 `commandId` 重试返回同一结果。
-   * 浏览器与对外服务不能调用：它决定这台机器上运行什么命令。
+   * Add an ACP-speaking agent (architecture design §3.11): stored in `store/agent-providers.json`, immediately registered as a Driver, and probed in the background.
+   * `id` must not duplicate a built-in or already-added one (a duplicate gives `conflict`, `details.code: 'AGENT_PROVIDER_EXISTS'`); retrying with the same `commandId` returns the same result.
+   * Browsers and external services cannot call it: it decides which command runs on this machine.
    */
   'agents.addProvider': {
     params: { id: DriverId; name: string; command: string[]; env?: Record<string, string>; commandId?: Id };
     result: AgentsView;
   };
   /**
-   * 移除一个用户添加的智能体：注销 Driver，一并删掉它的探测缓存、Agent 偏好里它的条目；偏好设置 `agent.defaultDriver` 指向它时清空。
-   * 正在用它的任务以失败结束，之后这些会话发送时以 `driver-unavailable` 拒绝。内置的不能移除（`invalid-request`，
-   * `details.code: 'AGENT_PROVIDER_BUILTIN'`，用 `agents.configure` 停用）；没有这个 id 为 `not-found`。
+   * Remove a user-added agent: unregister the Driver, and delete its probe cache and its entry in the Agent preferences; clear `agent.defaultDriver` if it points to this agent.
+   * Tasks using it end as failed, and later sends on those sessions are rejected with `driver-unavailable`. Built-in agents cannot be removed (`invalid-request`,
+   * `details.code: 'AGENT_PROVIDER_BUILTIN'`; use `agents.configure` to disable them); an id that does not exist gives `not-found`.
    */
   'agents.removeProvider': { params: { id: DriverId }; result: AgentsView };
-  /** 放行策略、模型表自动更新这类偏好。 */
+  /** Preferences such as the access policy and automatic updates of the model table. */
   'agents.updatePreferences': {
     params: { policy?: Partial<AgentPolicy>; modelAutoUpdate?: boolean };
     result: AgentsView;
   };
-  /** 移除一条「总是允许」规则。不存在时原样返回。 */
+  /** Remove an “always allow” rule. If it does not exist, it is returned as is. */
   'agents.removeRule': { params: { rule: string }; result: AgentsView };
-  /** 处理会话里的一条审批（与 `approvals.respond` 是同一个实现）。`accept-for-session` 在这个任务里不再问同一种动作，`accept-always` 另存一条规则。 */
+  /** Handle one approval in a session (same implementation as `approvals.respond`). `accept-for-session` stops asking about the same kind of action in this task; `accept-always` saves a separate rule. */
   'agents.respondToApproval': {
     params: { conversationId: Id; approvalId: Id; decision: ApprovalDecision };
     result: { status: 'accepted' | 'declined' | 'already-resolved' };
   };
-  /** 次级操作：只停当前模型回合（D04），待处理的审批按取消处理。主停止按钮走 `tasks.stop`。 */
+  /** Secondary action: stops only the current model turn (D04); pending approvals are treated as cancelled. The main stop button uses `tasks.stop`. */
   'agents.interrupt': {
     params: { conversationId: Id };
     result: { status: 'requested' | 'no-active-turn' };
   };
   /**
-   * 在应用内运行一个 Agent 的安装或升级命令（架构设计 §12.9）。调用方先让用户确认将要执行的完整命令。
+   * Run an Agent's install or upgrade command inside the app (architecture design §12.9). The caller first has the user confirm the full command that will run.
    *
-   * - 参数里没有命令：Runtime 从当前探测结果里按 `kind` 取 `install[].command`（安装）或 `upgrade`（升级）；
-   *   没有这种方式时 `invalid-request`。`script` 类（从网络下载并运行脚本）一律 `invalid-request`，只能复制或 `agents.openTerminal`。
-   * - 不提权、不读输入：stdin 关闭，要密码的命令会直接失败，界面提示改在终端里运行。
-   * - 同一个 Agent 已经有一次在运行时 `busy`；同一个 `commandId` 重试返回同一次运行。
-   * - 输出与状态经 `agent-setup` 主题送达；结束后 Runtime 重新探测这个 Agent，再送出终态。
+   * - No command in the parameters: the Runtime takes `install[].command` (install) or `upgrade` (upgrade) from the current probe results by `kind`; if there is no such method, `invalid-request`. The `script` kind (download and run a script from the network) is always `invalid-request`; it can only be copied or opened with `agents.openTerminal`.
+   * - No privilege escalation and no input reading: stdin is closed; a command that asks for a password fails immediately, and the UI asks the user to run it in a terminal instead.
+   * - If the same Agent already has a run in progress: `busy`; retrying with the same `commandId` returns that same run.
+   * - Output and status are delivered through the `agent-setup` topic; when done, the Runtime re-probes the Agent and then sends the final state.
    */
   'agents.runSetup': {
     params: { driverId: DriverId; action: AgentSetupAction; kind: DriverInstallOption['kind']; commandId: Id };
     result: { run: AgentSetupRun };
   };
-  /** 停止一次还在运行的 `agents.runSetup`。已经做了的部分不回退。不认识的 `runId` 为 `not-found`。 */
+  /** Stop a `agents.runSetup` that is still running. Parts already done are not rolled back. An unknown `runId` gives `not-found`. */
   'agents.cancelSetup': {
     params: { runId: Id };
     result: { status: 'requested' | 'not-running' };
   };
   /**
-   * 打开系统终端，在里面运行登录、安装或升级命令（架构设计 §12.9：要密码、要管理员权限的交给系统终端）。
-   * 命令同样从探测结果里取：`login` 用 `loginCommand`，`install` / `upgrade` 必须给 `kind`（`script` 类也可以）。
-   * 找不到对应的命令时 `invalid-request`。这个平台上打不开终端时返回 `unsupported`，调用方退回复制 `command`。
-   * Runtime 只负责打开终端，不知道命令在终端里的结果；之后由界面「重新检测」。
+   * Open the system terminal and run the login, install or upgrade command in it (architecture design §12.9: commands that need a password or administrator rights are handed to the system terminal).
+   * The command is also taken from the probe results: `login` uses `loginCommand`; `install` / `upgrade` must give `kind` (the `script` kind is allowed too).
+   * If no matching command is found, `invalid-request`. If no terminal can be opened on this platform, `unsupported`, and the caller falls back to copying `command`.
+   * The Runtime only opens the terminal and does not know the result of the command there; the UI then uses “re-detect”.
    */
   'agents.openTerminal': {
     params: { driverId: DriverId; action: 'login' | AgentSetupAction; kind?: DriverInstallOption['kind'] };
@@ -268,34 +267,33 @@ export interface RpcMethods {
 
   'projects.list': { params: Record<string, never>; result: { projects: Project[] } };
   /**
-   * 把一个已有目录登记为项目（架构设计 §5.1）。项目的标识在目录里的 `.ccut/project.json`，没有时写入：
-   * 同一个目录重复打开、移动或改名之后打开，都返回同一个项目；复制出来的目录得到新的项目。
-   * 目录不可写而需要写入标记时以 `forbidden` 拒绝（`details.code: 'PROJECT_DIR_READ_ONLY'`）；
-   * 标记的版本比这个 Runtime 新时以 `conflict` 拒绝（`details.code: 'PROJECT_MARKER_UNSUPPORTED'`），不改写它。
+   * Register an existing directory as a project (architecture design §5.1). The project's identity is in `.ccut/project.json` in the directory; it is written if absent.
+   * Opening the same directory again, or opening it after it has been moved or renamed, returns the same project; a copied directory gets a new project.
+   * If the directory is not writable and the marker must be written, `forbidden` (`details.code: 'PROJECT_DIR_READ_ONLY'`);
+   * if the marker's version is newer than this Runtime, `conflict` (`details.code: 'PROJECT_MARKER_UNSUPPORTED'`), and the marker is not rewritten.
    */
   'projects.open': { params: { path: string }; result: { project: Project } };
-  /** 在 `RuntimeInfo.projectsDir` 下新建一个目录、写入项目标记并登记为项目；重名自动加序号。 */
+  /** Create a new directory under `RuntimeInfo.projectsDir`, write the project marker and register it as a project; a duplicate name gets an automatic sequence number. */
   'projects.create': { params: { name?: string; commandId?: Id }; result: { project: Project } };
-  /** 改显示名、置顶、归档。只改登记，不动目录。 */
+  /** Change the display name, pin or archive. Only changes the registration; does not touch the directory. */
   'projects.update': {
     params: { projectId: Id; name?: string; pinned?: boolean; archived?: boolean };
     result: { project: Project };
   };
   /**
-   * 列出会话所在目录（属于项目时是项目目录，否则是会话的工作目录）里的文件（架构设计 §11.2）。
-   * 不给 `query` 时列 `dir`（相对根目录，默认根目录）这一层；给了就在 `dir` 下按名字递归查找。
-   * 跳过隐藏文件与依赖目录；指出根目录的符号链接不列。读文件内容走 `media.resolve` 的 `{ conversationId, path }`。
+   * List the files in the directory where the session lives (the project directory when it belongs to a project, otherwise the session's working directory) (architecture design §11.2).
+   * Without `query`, lists one level at `dir` (relative to the root; default is the root); with `query`, searches recursively by name under `dir`.
+   * Skips hidden files and dependency directories; symbolic links at the root are not listed. To read file contents, use `media.resolve` with `{ conversationId, path }`.
    */
   'projects.files.list': {
     params: { conversationId: Id; dir?: string; query?: string; limit?: number };
     result: ProjectFilesList;
   };
   /**
-   * 在同一个根目录（项目目录，或不属于项目的会话的工作目录；给 `projectId` 时是项目目录）里新建一个文件并写入 UTF-8 文本
-   * （新标签页起始页的「新建网页」，产品设计 §3.3）。`dir` 相对根目录、默认根目录，解析符号链接后仍须在根目录内，
-   * 不能是隐藏目录、依赖目录或视频目录（及其里面）；`name` 只取最后一段，拒绝空名、`.`、`..` 与以 `.` 开头的名字。
-   * 独占创建，不覆盖：重名时依次试 `名字 2.扩展名`、`名字 3.扩展名`……。返回新文件的定位与条目：属于项目时是
-   * `{ projectId, path }`，否则是 `{ conversationId, path }`。
+   * Create a new file with UTF-8 text in the same root directory (the project directory, or the working directory of a session not in a project; with `projectId`, the project directory) (the “New web page” on the new tab start page, product design §3.3).
+   * `dir` is relative to the root, default root; after resolving symlinks it must still be inside the root, and it cannot be a hidden directory, dependency directory or video directory (or anything inside them).
+   * `name` keeps only its last segment; empty names, `.`, `..` and names starting with `.` are rejected.
+   * Created exclusively, never overwriting: on a name clash, tries `name 2.ext`, `name 3.ext`, and so on. Returns the location and entry of the new file: `{ projectId, path }` when it belongs to a project, otherwise `{ conversationId, path }`.
    */
   'projects.files.create': {
     params: ({ conversationId: Id } | { projectId: Id }) & { name: string; content: string; dir?: string };
@@ -304,11 +302,10 @@ export interface RpcMethods {
 
   'conversations.list': { params: Record<string, never>; result: DirectorySnapshot };
   /**
-   * 新建会话。没给的 Agent、模型、强度取偏好里的默认（`agent.defaultDriver`、那个 Agent 的默认模型与强度），
-   * 建好之后固定在会话上，改偏好不影响已有会话（架构设计 §3.11）。`accessMode` 没给（或 null）时会话跟随
-   * `agent.defaultAccessMode`（§3.12），给了等于建好后切换一次（接受旧值）。
-   * `folderOf`：新会话用这条会话的工作目录（从一部不属于项目的视频发起新会话时，新会话要能打开它与它旁边的文件，§3.10）；
-   * 那条会话属于项目时新会话就建在那个项目里，`projectId` 不看。
+   * Create a new session. Any Agent, model or intensity not given is taken from the preference defaults (`agent.defaultDriver`, that Agent's default model and intensity);
+   * once created it is fixed on the session, and changing preferences does not affect existing sessions (architecture design §3.11). If `accessMode` is not given (or null), the session follows `agent.defaultAccessMode` (§3.12); if given, it is equivalent to switching once after creation (old values accepted).
+   * `folderOf`: the new session uses this session's working directory (when starting a new session from a video that is not in a project, the new session must be able to open that video and the files beside it, §3.10);
+   * if that session belongs to a project, the new session is created in that project and `projectId` is ignored.
    */
   'conversations.create': {
     params: {
@@ -328,11 +325,10 @@ export interface RpcMethods {
     result: ConversationSnapshot & { seq: Seq };
   };
   /**
-   * 改标题、置顶、归档、Agent、模型、强度、访问模式。归档只影响列表显示，不取消任务（产品设计 §2.3）。
-   * 模型、强度随时可改，下一轮生效。Agent 只能在会话还没有任务时换，之后换会得到 `conflict`。
-   * `accessMode` 切换会话的模式（架构设计 §3.12）：对之后的动作立即生效（任务进行中也是），在会话里记一条提示；
-   * 接受旧值（`controlled`、`authorized`），`null` 表示回到跟随 `agent.defaultAccessMode`。`pendingReferences: null` 去掉还没发出的
-   * Space 条目引用（`space.continueInConversation`）。
+   * Change the title, pin, archive state, Agent, model, intensity or access mode. Archiving only affects list display and does not cancel tasks (product design §2.3).
+   * The model and intensity can be changed at any time and take effect on the next turn. The Agent can only be changed while the session has no tasks; otherwise the change gives `conflict`.
+   * `accessMode` switches the session's mode (architecture design §3.12): it applies immediately to later actions (even while a task is running), and a notice is recorded in the session;
+   * old values are accepted (`controlled`, `authorized`); `null` returns to following `agent.defaultAccessMode`. `pendingReferences: null` removes Space entry references that have not been sent yet (`space.continueInConversation`).
    */
   'conversations.update': {
     params: {
@@ -348,32 +344,27 @@ export interface RpcMethods {
     };
     result: { conversation: Conversation };
   };
-  /** 用户看过了：清掉「已完成未读」。 */
+  /** The user has seen it: clears “completed, unread”. */
   'conversations.markRead': { params: { conversationId: Id }; result: { conversation: Conversation } };
-  /** 只删除 Runtime Store 里的会话记录，不删项目目录里的任何文件（架构设计 §3.10）。 */
+  /** Deletes only the session record in the Runtime Store; deletes no files in the project directory (architecture design §3.10). */
   'conversations.delete': { params: { conversationId: Id }; result: { deleted: true } };
   /**
-   * 发送一条用户消息，建立任务并启动一个回合。`context`：编辑器里打开的视频与选区，交给智能体作为上下文。
-   * `accessMode`（旧名 `autonomy`，两个都给时以 `accessMode` 为准）与会话当前的模式不同时，等于先切换会话的模式（§3.12）；
-   * 都不给时用会话的模式，会话没有切换过时用 `agent.defaultAccessMode`。
-   * `attachments`：`attachments.prepare` 拿到、已经上传完的图片。会话还有任务在跑时得到 `busy`
-   * （界面把消息排进队列，等任务结束再发，或用 `conversations.steer` 插进当前回合）。
-   * 任务合同（架构设计 §3.2）随任务建立：`contract` 给出的部分照用，其余按默认（范围来自 `context`、`autonomy` 是此刻的模式）。
-   * `template`：挂上的场景模板（模板包规范 §5.2）。Runtime 读目录里当前的模板，把简报引导前言、`prompt.md` 正文与素材清单
-   * 附在交给智能体的文字后面；会话里的消息仍是 `text`，另带一个模板标记。没有这个模板时 `not-found`（`TEMPLATE_NOT_FOUND`）；
-   * 作品示例（`kind: 'example'`）的正文本来就是用户输入，`invalid-request`（`TEMPLATE_NOT_SCENE`）；`assets` 里有清单没登记的路径时
-   * `invalid-request`（`TEMPLATE_FILE_NOT_FOUND`）。
-   * `skills`：点选的 skill（架构设计 §3.8），按挂上的顺序，开着的、关着的都可以；`skill` 是只点一个时的旧写法，两个都给时 `skill`
-   * 排在最前，重复的 id 只算第一次（`sendSkillRefs`）。Runtime 读目录里当前的 `SKILL.md`，每个 skill 把正文与「同目录还有哪些文件、
-   * 用 `skills_read` 取」包成一段，按顺序附在交给智能体的文字后面（在模板段之后）；消息上按同样的顺序带 skill 标记。
-   * 有一个不存在时整条 `not-found`（`SKILL_NOT_FOUND`）。
-   * `slideAnnotations`：幻灯片标签里加进草稿的标注（docs/design/slides §9），最多 `SLIDE_ANNOTATION_LIMITS.perMessage` 条。
-   * Runtime 把 deck 换成相对会话工作目录的路径，每份 deck 一段 `<cuccut-slide-annotations>` 附在交给智能体的文字最后；
-   * 消息上原样带一份。deck 的位置找不到（Space 条目或项目已不在）时整条 `not-found`。
-   * `designAnnotations`：设计稿标签里加进草稿的标注（docs/design/canvas §9），限制与幻灯片标注相同（`DESIGN_ANNOTATION_LIMITS`）。
-   * 每份设计稿一段 `<cuccut-design-annotations>`，附在幻灯片标注段之后；编号各自从 1 起；设计稿找不到时同样整条 `not-found`。
-   * `designSystemAnnotations`：设计系统标签里加进草稿的标注（docs/design/canvas §10.6），限制相同（`DESIGN_SYSTEM_ANNOTATION_LIMITS`）。
-   * 每套设计系统一段 `<cuccut-design-system-annotations>`，附在设计稿标注段之后；编号各自从 1 起；设计系统找不到时同样整条 `not-found`。
+   * Send a user message, create a task and start a turn. `context`: the video and selection open in the editor, given to the agent as context.
+   * `accessMode` (old name `autonomy`; if both are given, `accessMode` wins). If it differs from the session's current mode, it is the same as switching the session's mode first (§3.12);
+   * if neither is given, the session's mode is used, and if the session has never been switched, `agent.defaultAccessMode`.
+   * `attachments`: images that were obtained with `attachments.prepare` and are fully uploaded. If the session still has a task running, `busy` (the UI queues the message to send after the task ends, or uses `conversations.steer` to insert it into the current turn).
+   * The task contract (architecture design §3.2) is set up with the task: the parts given in `contract` are used, the rest take defaults (scope from `context`; `autonomy` is the current mode).
+   * `template`: the scene template attached (template package spec §5.2). The Runtime reads the template as it currently is in the directory and appends the brief's guidance preamble, the body of `prompt.md` and the asset list to the text handed to the agent; the message in the session stays `text`, with a template marker. Without that template: `not-found` (`TEMPLATE_NOT_FOUND`);
+   * the body of a showcase example (`kind: 'example'`) is already user input, so `invalid-request` (`TEMPLATE_NOT_SCENE`); if `assets` contains a path not registered in the manifest: `invalid-request` (`TEMPLATE_FILE_NOT_FOUND`).
+   * `skills`: the skills picked (architecture design §3.8), in the order attached; enabled and disabled ones are both allowed. `skill` is the old form for picking just one; if both are given, `skill` comes first and duplicate ids count only once (`sendSkillRefs`).
+   * The Runtime reads the current `SKILL.md` in the directory and wraps each skill's body together with “which other files are in the same directory; get them with `skills_read`” into one segment; the segments are appended in order to the text handed to the agent (after the template segment), and the message carries skill markers in the same order.
+   * If any one does not exist, the whole request is `not-found` (`SKILL_NOT_FOUND`).
+   * `slideAnnotations`: annotations added to the draft from slide labels (docs/design/slides §9), at most `SLIDE_ANNOTATION_LIMITS.perMessage`.
+   * The Runtime turns each deck into a path relative to the session working directory, and appends one `<cuccut-slide-annotations>` segment per deck at the end of the text handed to the agent; the message carries a copy unchanged. If a deck's location cannot be found (its Space entry or project is gone), the whole request is `not-found`.
+   * `designAnnotations`: annotations added to the draft from design labels (docs/design/canvas §9); the limits are the same as for slide annotations (`DESIGN_ANNOTATION_LIMITS`).
+   * One `<cuccut-design-annotations>` segment per design, appended after the slide annotation segment; numbering starts at 1 in each. If a design is not found, the whole request is likewise `not-found`.
+   * `designSystemAnnotations`: annotations added to the draft from design-system labels (docs/design/canvas §10.6); the limits are the same (`DESIGN_SYSTEM_ANNOTATION_LIMITS`).
+   * One `<cuccut-design-system-annotations>` segment per design system, appended after the design annotation segment; numbering starts at 1 in each. If a design system is not found, likewise the whole request is `not-found`.
    */
   'conversations.send': {
     params: {
@@ -395,8 +386,8 @@ export interface RpcMethods {
     result: { taskId: Id };
   };
   /**
-   * 把一条消息插进正在运行的回合（Agent 支持时）。不支持或没有运行中的回合时如实返回，由界面决定排队还是先停再发。
-   * `slideAnnotations`、`designAnnotations`、`designSystemAnnotations` 与 `conversations.send` 的相同。
+   * Insert a message into the turn that is running (when the Agent supports it). If unsupported or no turn is running, report that honestly and let the UI decide whether to queue it or stop first and then send.
+   * `slideAnnotations`, `designAnnotations` and `designSystemAnnotations` are the same as in `conversations.send`.
    */
   'conversations.steer': {
     params: {
@@ -412,20 +403,20 @@ export interface RpcMethods {
   };
 
   /**
-   * 登记要随消息发送的图片或普通文件，拿到一次性的上传地址（媒体通道同一端口，`PUT` 原始字节，Content-Type 与声明一致）。
-   * 大小、格式按 `MAX_ATTACHMENT_BYTES` 与 `ATTACHMENT_UPLOAD_MIME_TYPES` 检查；上传完成前发送会得到 `invalid-params`。
-   * 地址一段时间不用就失效。
+   * Register an image or ordinary file to be sent with a message, and get a one-time upload address (same port as the media channel; `PUT` the raw bytes, with a Content-Type matching the declaration).
+   * Size and format are checked against `MAX_ATTACHMENT_BYTES` and `ATTACHMENT_UPLOAD_MIME_TYPES`; sending before the upload completes gives `invalid-params`.
+   * The address expires if unused for a while.
    */
   'attachments.prepare': {
     params: { fileName: string; mimeType: string; size: number };
     result: { attachment: AttachmentRef; uploadUrl: string };
   };
 
-  /** 主停止（D04）：先禁止新的调用与自动批准，待处理的审批按取消处理，再请求中断回合。 */
+  /** Main stop (D04): first forbid new calls and automatic approvals, treat pending approvals as cancelled, then request interruption of the turn. */
   'tasks.stop': { params: { taskId: Id }; result: { status: TaskStatus } };
   /**
-   * 以显式的合同建立任务并开始（与带 `contract` 的 `conversations.send` 是同一个实现，`goal` 是发给智能体的消息）。
-   * 会话还有任务在运行时 `busy`。
+   * Create and start a task with an explicit contract (same implementation as `conversations.send` with `contract`; `goal` is the message sent to the agent).
+   * `busy` while the session still has a task running.
    */
   'tasks.create': {
     params: {
@@ -438,43 +429,41 @@ export interface RpcMethods {
     };
     result: { taskId: Id; contract: TaskContract };
   };
-  /** 一个任务的合同：默认是最新修订，给 `revision` 时是那个修订；连同任务预算的用量。 */
+  /** A task's contract: the latest revision by default, or that revision if `revision` is given; together with the task's budget usage. */
   'tasks.getContract': { params: { taskId: Id; revision?: number }; result: TaskContractView };
-  /** 给 `conversationId`：这个会话每个任务的最新合同，新的在前；给 `taskId`：这个任务的全部修订，旧的在前。 */
+  /** Given `conversationId`: the latest contract of each task in this session, newest first. Given `taskId`: all revisions of this task, oldest first. */
   'tasks.listContracts': { params: { conversationId: Id } | { taskId: Id }; result: { contracts: TaskContract[] } };
   /**
-   * 修改进行中任务的合同，产生新的修订。`expectedRevision` 不是最新修订时 `conflict`（`CONTRACT_REVISION_CONFLICT`）；
-   * 任务已经结束时 `conflict`（`TASK_NOT_RUNNING`）。尚未启动的步骤采用新约束，已经冻结输入的 Job 不变。
-   * `autonomy` 等于切换会话的访问模式（§3.12）。同一个 `commandId` 只生效一次。
+   * Change the contract of a task in progress, producing a new revision. If `expectedRevision` is not the latest revision, `conflict` (`CONTRACT_REVISION_CONFLICT`); if the task has already ended, `conflict` (`TASK_NOT_RUNNING`).
+   * Steps not yet started adopt the new constraints; Jobs whose inputs are already frozen are unchanged.
+   * `autonomy` is the same as switching the session's access mode (§3.12). The same `commandId` takes effect only once.
    */
   'tasks.updateContract': {
     params: { taskId: Id; expectedRevision: number; commandId: Id; patch: TaskContractPatch };
     result: { contract: TaskContract };
   };
   /**
-   * 改变目标（§3.2）：`previousWork: 'stop'` 停止旧任务并取消它提交、还没结束的 Job；`keep` 只停下旧任务的回合，已经提交的
-   * Job 照常完成、产物留作候选。之后以新目标建立新任务（新的 Run），合同由旧合同派生（`supersedes`），预算上限照搬、用量从零计。
+   * Change the goal (§3.2): `previousWork: 'stop'` stops the old task and cancels the Jobs it has submitted that have not finished; `keep` only stops the old task's turn, and submitted Jobs finish as usual with their outputs kept as candidates.
+   * A new task is then created with the new goal (a new Run); its contract is derived from the old one (`supersedes`), the budget cap is carried over, and usage starts from zero.
    */
   'tasks.changeGoal': {
     params: { taskId: Id; goal: string; previousWork: 'stop' | 'keep'; commandId: Id };
     result: { taskId: Id; previousTaskId: Id; contract: TaskContract };
   };
-  /** 记录一项验收检查的结果（首版由用户或智能体记录；QualityService 的自动执行待定，架构设计 §14）。任务结束后也可以记录。 */
+  /** Record the result of one acceptance check (in the first version recorded by the user or the agent; automatic execution by QualityService is still to be decided, architecture design §14). Results can also be recorded after the task ends. */
   'tasks.recordCheck': {
     params: { taskId: Id; checkId: Id; outcome: CheckOutcome; note?: string; commandId?: Id };
     result: { result: CheckResult };
   };
-  /** 一个任务的验收检查（最新合同里的）与记录过的结果，旧的在前。 */
+  /** A task's acceptance checks (from the latest contract) and the recorded results, oldest first. */
   'tasks.listChecks': { params: { taskId: Id }; result: { checks: CheckDefinition[]; results: CheckResult[] } };
 
-  /** 待处理的审批（架构设计 §3.12）：会话的与对外服务的，旧的在前。与 `tasks` 主题快照里的 `approvals` 相同。 */
+  /** Pending approvals (architecture design §3.12): both the session's and the external services', oldest first. Same as `approvals` in the `tasks` topic snapshot. */
   'approvals.list': { params: Record<string, never>; result: { approvals: PendingApproval[] } };
   /**
-   * 处理一条待处理的审批，会话的或对外服务的都行（与 `agents.respondToApproval`、`services.respondToApproval` 是同一个实现）。
-   * 已经处理过、超时或取消的返回 `already-resolved`；不存在的也是（审批结束后不留在列表里）。
-   * 带外发授权的审批（`grants`）允许时可以给 `grant`：不给或 `persist: false` 只放行这一次（金额未知）；
-   * `persist: true` 同时发放持续授权（架构设计 §12.5），发放的授权经 `grants` 主题送达。审批不带 `grants` 时给 `grant` 是
-   * `invalid-request`。
+   * Handle one pending approval, whether it belongs to a session or an external service (same implementation as `agents.respondToApproval` and `services.respondToApproval`).
+   * An approval that has already been handled, timed out or been cancelled returns `already-resolved`; so does one that does not exist (approvals do not stay in the list once finished).
+   * For an approval with outbound grants (`grants`), `grant` may be given when allowing: omitted, or `persist: false`, allows only this once (amount unknown); `persist: true` also issues a standing grant (architecture design §12.5), delivered through the `grants` topic. If the approval has no `grants`, giving `grant` is `invalid-request`.
    */
   'approvals.respond': {
     params: { approvalId: Id; decision: PendingApprovalDecision; grant?: ApprovalGrantChoice };
@@ -482,125 +471,118 @@ export interface RpcMethods {
   };
 
   /**
-   * 数据外发的授权（架构设计 §12.5）。变化经 `grants` 主题送达。浏览器（Web 服务）调不了 `grants.*`：发放与撤销授权
-   * 只在桌面界面与 CLI 里做。
-   * `grants.list` 默认只列有效的；`includeEnded: true` 时连撤销、到期、用完的一起列。
+   * Authorization for outbound data (architecture design §12.5). Changes are delivered through the `grants` topic. The browser (Web service) cannot call `grants.*`: granting and revoking authorizations is done only in the desktop UI and CLI.
+   * `grants.list` lists only valid ones by default; with `includeEnded: true`, revoked, expired and used-up ones are listed too.
    */
   'grants.list': { params: { recipient?: string; videoId?: Id; includeEnded?: boolean }; result: { grants: Grant[] } };
-  /** 发放一条持续授权。`free-local` 不能发放（本机计算不需要授权）；`estimate-cap` 要给 `budgetCap`。 */
+  /** Issue a standing grant. `free-local` cannot be issued (local computation needs no authorization); `estimate-cap` requires `budgetCap`. */
   'grants.create': { params: GrantCreateParams; result: { grant: Grant } };
-  /** 改一条授权（收紧或调整预算）。收紧时 `generation` 加一；已撤销的 `conflict`。 */
+  /** Change a grant (tighten it or adjust its budget). Tightening increments `generation`; a revoked grant gives `conflict`. */
   'grants.update': { params: GrantUpdateParams; result: { grant: Grant } };
-  /** 撤销：禁止新的调用，排队中的调用开始时被拒绝（`GRANT_REVOKED`）；已经外发与计费的部分如实报告。重复撤销返回同样的结果。 */
+  /** Revoke: forbid new calls; calls in the queue are rejected when they start (`GRANT_REVOKED`); what has already been sent and billed is reported as it is. Revoking again returns the same result. */
   'grants.revoke': { params: { grantId: Id }; result: GrantRevokeResult };
-  /** 一条授权的用量：已用次数与金额、预留中的，以及用过它的任务。 */
+  /** A grant's usage: the times and amount used, what is reserved, and the tasks that used it. */
   'grants.usage': { params: { grantId: Id }; result: GrantUsageReport };
 
-  /** Space 的用户标记（架构设计 §5.7）：收藏、显示名、回收站。只写标记，不碰文件。 */
+  /** User marks on Spaces (architecture design §5.7): favorite, display name, trash. Only writes marks; does not touch files. */
   'space.update': {
     params: { entryId: Id; favorite?: boolean; displayName?: string | null; trashed?: boolean };
     result: { entry: SpaceEntry };
   };
-  /** 立即重扫所有来源目录。 */
+  /** Rescan all source directories immediately. */
   'space.rescan': { params: Record<string, never>; result: { ok: true } };
-  /** Space 目录的查询（架构设计 §5.7）：按项目、种类、状态、来源视频筛选，分页。按调用方的范围过滤。 */
+  /** Query Space directories (architecture design §5.7): filter by project, kind, status and source video; paginated. Filtered by the caller's scope. */
   'space.list': { params: SpaceListParams; result: SpaceListResult };
   'space.get': { params: { entryId: Id }; result: { entry: SpaceEntry } };
-  /** 跨视频的内容检索（架构设计 §5.11）：查派生的内容索引，不打开视频。 */
+  /** Cross-video content search (architecture design §5.11): queries the derived content index without opening videos. */
   'space.search': { params: SpaceSearchParams; result: SpaceSearchResult };
-  /** 把一个文件登记为项目的素材，不放进任何视频。项目之外的文件先复制进项目的 `imports/`。 */
+  /** Register a file as a project asset without putting it into any video. Files outside the project are first copied into the project's `imports/`. */
   'space.import': { params: { projectId: Id; path: string; name?: string }; result: { entry: SpaceEntry; copied: boolean } };
-  /** 显示名；`null` 恢复文件名。等同于 `space.update` 的 `displayName`。 */
+  /** Display name; `null` restores the file name. Same as `displayName` of `space.update`. */
   'space.rename': { params: { entryId: Id; name: string | null }; result: { entry: SpaceEntry } };
   'space.setFavorite': { params: { entryId: Id; favorite: boolean }; result: { entry: SpaceEntry } };
-  /** 移入回收站：只写 `user.trashedAt`。 */
+  /** Move to trash: writes only `user.trashedAt`. */
   'space.trash': { params: { entryId: Id }; result: { entry: SpaceEntry } };
   'space.restore': { params: { entryId: Id }; result: { entry: SpaceEntry } };
   /**
-   * 物理删除（§5.5 的引用图）：只删回收站里的条目（失败的占位例外，清除即可）；仍被引用时不删，返回阻止删除的引用。
-   * 删除了的视频（`videos.delete`）在这里物理删除；还在来源目录里的视频条目拒绝。
+   * Physical deletion (reference graph of §5.5): only deletes entries in the trash (failed placeholders are the exception; clearing them is enough). If still referenced, nothing is deleted and the blocking references are returned.
+   * Deleted videos (`videos.delete`) are physically deleted here; video entries still in a source directory are rejected.
    */
   'space.purge': { params: { entryId: Id }; result: SpacePurgeResult };
   'space.openForEdit': { params: { entryId: Id }; result: SpaceOpenForEditResult };
   /**
-   * 条目的缩略图（产品设计 §4.2–§4.3，网格的卡片与列表的名称列）：画面、正文摘要或没有（`SpaceThumbnail`）。视频的封面取自
-   * 当前工作稿，不要求视频已经打开。解不了、读不了的文件回答 `none`，不报错；条目不存在或看不到是 `not-found`。
+   * Thumbnail of the entry (product design §4.2–§4.3; the card in grid view and the name column in list view): an image, a text summary, or none (`SpaceThumbnail`). A video's cover is taken from the current working draft, and the video does not need to be open.
+   * Files that cannot be decoded or read answer `none` without an error; an entry that does not exist or cannot be seen is `not-found`.
    */
   'space.thumbnail': { params: { entryId: Id }; result: SpaceThumbnail };
   /**
-   * 从条目继续一段会话（§5.7）：属于项目的条目在项目里新建会话，不属于项目的回到条目原来的会话（没有时新建）；
-   * 给了 `conversationId` 时用它，它要看得到这个条目。只建会话、附上条目的引用，不启动任务。
+   * Continue a session from an entry (§5.7): an entry in a project creates a new session in that project; an entry not in a project goes back to the entry's original session (creating one if none exists).
+   * If `conversationId` is given, it is used, and the entry must be visible to it. Only creates the session and attaches the entry's reference; does not start a task.
    */
   'space.continueInConversation': {
     params: { entryId: Id; conversationId?: Id; commandId?: Id };
     result: SpaceContinueResult;
   };
-  /** 丢掉派生的目录与内容索引，从权威来源重建；用户标记不受影响。 */
+  /** Drop the derived directories and content index, and rebuild from the authoritative sources; user marks are unaffected. */
   'space.rebuildIndex': { params: Record<string, never>; result: SpaceRebuildResult };
 
   /**
-   * 取得一个文件的媒体地址（架构设计 §4.5、§5.6）：受限句柄，限定到这个文件，有期限。
-   * 文件来自 Space 条目，或会话工作目录、项目目录里的路径（例如智能体改过的文件）。
+   * Get a media address for a file (architecture design §4.5, §5.6): a restricted handle, limited to this file, with an expiry.
+   * The file comes from a Space entry, or from a path in the session working directory or project directory (for example a file the agent has changed).
    */
   'media.resolve': { params: MediaTarget; result: MediaHandle };
   /**
-   * 已签发的文件句柄的播放地址（架构设计 §4.5）：WebM 的编码都在 `playable` 里时直接给原句柄，否则准备兼容副本并轮询；
-   * 原始字节始终经 media.resolve。
+   * Playback address for an issued file handle (architecture design §4.5): if all the WebM codecs are in `playable`, the original handle is given directly; otherwise a compatible copy is prepared and polled.
+   * The original bytes always go through media.resolve.
    */
   'media.playback': { params: { url: string; playable?: PlaybackCodec[] }; result: MediaPlayback };
-  /** 与一个视频放在同一目录里的字幕文件（播放器叠加用）。只列出，不读内容。 */
+  /** Subtitle files in the same directory as a video (used for overlay in the player). Only lists them; does not read content. */
   'media.subtitles': { params: FileTarget; result: { tracks: SubtitleTrack[] } };
   /**
-   * 素材声音的峰值（时间线画波形），按素材版本的内容摘要缓存在 Runtime Home 里。只分析音视频素材。
-   * 第一次要解码整段声音：没做完时回 `pending`，隔 `retryAfterMs` 再问同一个请求。
+   * Peak levels of an asset's sound (used to draw the waveform on the timeline), cached in the Runtime Home keyed by the content digest of the asset version. Only audio and video assets are analyzed.
+   * The first request must decode the whole sound: while it is not finished, `pending` is returned, and the same request is asked again after `retryAfterMs`.
    */
   'media.peaks': { params: AssetTarget; result: MediaPeaks };
-  /** 视频素材在源时间 `at`（秒）的一帧，缩成小 JPEG（时间线的胶片条）。时间按 0.1 秒取整后缓存。 */
+  /** One frame of a video asset at source time `at` (seconds), scaled down to a small JPEG (the filmstrip on the timeline). Time is rounded to 0.1 s and cached. */
   'media.thumbnail': { params: AssetTarget & { at: number }; result: MediaThumbnail };
   /**
-   * 本机字体（架构设计 §9.1）：按「族名、字重、斜体」在本机字体里挑一个 face（与排版引擎同一套匹配），给出它所在文件的
-   * 受限读取句柄（同 `media.resolve`）与把它抽成单独字体的做法：编辑器预览按区间只取这一个 face 的表，拼好注入渲染器
-   * （字体集合不整个下载）。与成片导出冻结的是同一份解析与抽法。只按给的 face 找，不列字体目录；抽出来的 face 上限 96 MB。
-   * 本机没有的族再到下载缓存里找（`source: 'downloaded'`）。`download: true` 时，字体目录里有、这个字重还没下载的 face
-   * 按设置 `fonts.autoDownload` 开始下载（不是严格离线、最近没失败过），记为 `missing` 的 `downloading`（带 `jobId`），
-   * 下载完再问一次就有；这期间照回退字体画。一次最多 32 个。只开给桌面与 CLI，浏览器不开放。
+   * Local fonts (architecture design §9.1): pick one face from the local fonts by family name, weight and italic (using the same matching as the typesetting engine), and give the restricted read handle of the file it lives in (same as `media.resolve`) and how to extract it as a standalone font.
+   * The editor preview fetches only the table for this face, by range, and injects the assembled font into the renderer (the whole font set is not downloaded). The parsing and extraction are the same as those frozen by final-cut export. It only looks for the given faces and does not list the font directory; an extracted face is capped at 96 MB.
+   * A family that is not local is looked up in the download cache (`source: 'downloaded'`). With `download: true`, a face that is in the font directory but whose weight has not been downloaded starts downloading per the `fonts.autoDownload` setting (not strictly offline, and no recent failure); it is reported as `downloading` (with `jobId`) for `missing`. Asking again after the download finishes returns it; in the meantime the fallback font is used. At most 32 at a time. Only offered to the desktop and CLI; not exposed in the browser.
    */
   'fonts.resolve': { params: { faces: FontFaceQuery[]; download?: boolean }; result: FontsResolveResult };
   /**
-   * 选字列表（架构设计 §9.1）：字体目录里的族、随内核发布的族与本机已装的族合在一起，每个族带此刻的状态（随内核、本机、
-   * 已下载、可下载、下载中与进度、失败与原因）、分类、文字、字重与许可。按族名、分类、文字与状态筛，分页；随内核的在前，
-   * 其次已下载的，然后按目录的热门程度（本机装了的目录字体也在这里），目录里没有的本机字体最后（按族名）。`families`
-   * 给了时只查这几个族（不分页）。不联网。
+   * Font picker list (architecture design §9.1): families from the font directory, families shipped with the kernel and families installed locally, merged together. Each family carries its current status (bundled, local, downloaded, downloadable, downloading with progress, failed with reason), category, sample text, weights and license.
+   * Filtered by family name, category, text and status, and paginated. Bundled ones come first, then downloaded ones, then the rest in the directory's popularity order (locally installed fonts that are in the directory are here too); local fonts not in the directory come last, sorted by family name.
+   * When `families` is given, only those families are queried (not paginated). No network access.
    */
   'fonts.catalogue': { params: FontsCatalogueParams; result: FontsCatalogueResult };
   /**
-   * 下载一个族（字体目录里的）：`faces` 不给时下载正体的常规与粗体（按目录对到这个族实际有的字重），给了时按给的字重与斜体
-   * 对好再下载。提交下载任务（`kind: 'fontDownload'`），立即返回；已经下载好的 face 不再下载，已经在下载的返回那个任务。
-   * 失败之后再调一次就是重试；取消用 `jobs.cancel`。不在目录里时 `not-found`（`FONT_NOT_IN_CATALOGUE`）；随内核或本机已有
-   * 的族 `conflict`（`FONT_NOT_DOWNLOADABLE`）；严格离线时 `conflict`（`OFFLINE_STRICT`）。
+   * Download a family (from the font directory): if `faces` is not given, downloads the regular and bold of the upright style (matched to the weights the directory actually has for that family); if given, matches and downloads the given weights and italics.
+   * Submits a download task (`kind: 'fontDownload'`) and returns immediately. Faces already downloaded are not downloaded again; a family already downloading returns that task.
+   * Calling again after a failure retries; cancel with `jobs.cancel`. Not in the directory: `not-found` (`FONT_NOT_IN_CATALOGUE`); a family already bundled with the kernel or present locally: `conflict` (`FONT_NOT_DOWNLOADABLE`); strict offline: `conflict` (`OFFLINE_STRICT`).
    */
   'fonts.download': { params: { family: string; faces?: FontFaceStyle[]; commandId?: Id }; result: FontDownloadResult };
-  /** 下载缓存里的 face 与总大小；`inUse` 是还没结束的导出用着的族（删不掉，`FONT_IN_USE`）。 */
+  /** Faces in the download cache and their total size; `inUse` is the families used by unfinished exports (they cannot be deleted, `FONT_IN_USE`). */
   'fonts.downloaded': { params: Record<string, never>; result: { faces: DownloadedFontFace[]; totalBytes: number; inUse: string[] } };
   /**
-   * 删除一个族下载的 face（`faces` 不给时全部）。还没结束的导出冻结了它、或在等它下载时以 `conflict`（`FONT_IN_USE`，
-   * `details.jobIds`）拒绝，一个也不删；在下载的先取消。已经完成的导出不受影响（成片里已经画好了）。
+   * Delete a family's downloaded faces (all of them if `faces` is not given). If an unfinished export has frozen them, or is waiting for them to download, the call is rejected with `conflict` (`FONT_IN_USE`, `details.jobIds`) and none are deleted; faces still downloading are cancelled first.
+   * Completed exports are not affected (their final cut has already been drawn).
    */
   'fonts.remove': { params: { family: string; faces?: FontFaceStyle[] }; result: FontRemoveResult };
-  /** 清空下载缓存：还没结束的导出用着的 face 留下（`kept`），其余删除；在下载的先取消。 */
+  /** Empty the download cache: faces used by unfinished exports are kept (`kept`); the rest are deleted. Downloads in progress are cancelled first. */
   'fonts.clear': { params: Record<string, never>; result: FontRemoveResult };
   /**
-   * 选字列表的样张（架构设计 §9.1）：一个字体目录里的族、只含族名里那几个字的子集（CSS 接口的 `text` 参数），界面拿它
-   * 把族名画成这个族的样子。请求只带族名、常规字重与这几个字，与下载同一套接口设置、主机限制、大小上限、不跟随重定向；
-   * 存在字体缓存的 `samples/` 里，下次不再取。严格离线时不取（`data: null`）；不在目录里的族 `data: null`。
-   * 取不到（连不上、回应不对）时以 `conflict` 报，`details.code` 是 `FONT_DOWNLOAD_*`。只开给桌面与 CLI。
+   * Specimen for the font picker list (architecture design §9.1): a family from the font directory, as a subset containing only the characters in the family name (the `text` parameter of the CSS interface). The UI uses it to draw the family name in that family's look.
+   * The request carries only the family name, the regular weight and those characters, with the same interface settings, host restrictions, size limit and no redirect following as downloads. It is stored in `samples/` in the font cache and is not fetched again next time.
+   * Not fetched under strict offline (`data: null`); a family not in the directory gives `data: null`.
+   * If it cannot be fetched (no connection, bad response), reports `conflict`, with `details.code` as `FONT_DOWNLOAD_*`. Only for the desktop and CLI.
    */
   'fonts.sample': { params: { family: string }; result: FontSampleResult };
   /**
-   * 一个打开着的视频用到的字体（架构设计 §9.1）：与成片导出同一份冻结交给 Render Worker 排一遍字（文字、字幕、模板
-   * 生成的内容都在内），每个族给出点了名的 face、此刻的状态与内核此刻用什么画它（回退族）。`download: true` 时，还没
-   * 下载的 face 按 `fonts.resolve` 的同一条规则开始下载（自动下载开着、不是严格离线、十分钟内没失败过），`started`
-   * 列出这次开始下载的族。缺省整条根序列、烧字幕。只开给桌面与 CLI。
+   * Fonts used by an open video (architecture design §9.1): the same frozen input as the final-cut export, handed to the Render Worker to lay out the text once (text, captions and template-generated content are all included).
+   * For each family, gives the face named, its current status, and what the kernel draws it with right now (the fallback family). With `download: true`, faces not yet downloaded start downloading by the same rule as `fonts.resolve` (auto-download on, not strictly offline, and no failure in the last ten minutes); `started` lists the families whose downloads started this time.
+   * By default the whole root sequence is handled and captions are burned in. Only offered to the desktop and CLI.
    */
   'fonts.usage': {
     params: { videoId: Id; sequenceId?: Id; burnCaptions?: boolean; download?: boolean };
@@ -608,537 +590,501 @@ export interface RpcMethods {
   };
 
   /**
-   * 新建一个视频（视频格式规范 §1）：在项目目录（或不属于项目的会话的工作目录）下建一个视频目录并打开它。
-   * 打开的视频属于这条连接；连接断开一段时间后 Runtime 关闭它，释放写入锁。
+   * Create a new video (video format spec §1): creates a video directory under the project directory (or the working directory of a session not in a project) and opens it.
+   * The opened video belongs to this connection. If the connection has been disconnected for a while, the Runtime closes the video and releases its write lock.
    */
   'videos.create': {
     params: { projectId?: Id; conversationId?: Id; name?: string; fps?: Rate; width?: number; height?: number; commandId?: Id };
     result: VideoOpenResult;
   };
   /**
-   * 派生子视频（架构设计 §3.5「派生子视频」，工具 `videos_derive`）：复制一个已打开的视频（时间线、文稿、章节），把剪辑后时间线
-   * `[start, end)` 之外的部分用剪口剪掉，建在父视频旁边并打开。同一父视频版本、同一区间与设置再调用时认回同一个子视频（`reused`）。
-   * 区间对到帧后为空时 `DERIVE_RANGE_EMPTY`，父视频里有不能复制的片段时 `DERIVE_UNSUPPORTED_ITEM`，父视频不在项目或会话的目录里时
-   * `DERIVE_PARENT_UNPLACED`。
+   * Derive a child video (architecture design §3.5 “derive child video”, tool `videos_derive`): copies an open video (timeline, transcript, chapters) and cuts away the parts outside the edited timeline range `[start, end)` at the cut points. The child is created next to the parent video and opened.
+   * Calling again with the same parent video version, the same range and the same settings recognizes the same child video (`reused`).
+   * If the range is empty after snapping to frames, `DERIVE_RANGE_EMPTY`; if the parent contains clips that cannot be copied, `DERIVE_UNSUPPORTED_ITEM`; if the parent video is not in the project or session directory, `DERIVE_PARENT_UNPLACED`.
    */
   'videos.derive': {
     params: VideoDeriveParams;
     result: VideoDeriveResult;
   };
   /**
-   * 镜头切换（架构设计 §3.5「镜头切换」，工具 `videos_shots`）：剪辑后时间线一段区间里画面的切换点与镜头。只读，不写文件。
-   * 区间超过 20 分钟、终点不大于起点时 `invalid-request`（`details.code` 为 `SHOTS_RANGE_TOO_LONG`、`SHOTS_RANGE_EMPTY`）；没装 ffmpeg 时 `internal`。
+   * Shot changes (architecture design §3.5 “shot changes”, tool `videos_shots`): the cut points and shots of the picture within a range of the edited timeline. Read-only; writes no files.
+   * A range longer than 20 minutes, or an end not after its start, gives `invalid-request` (`details.code` `SHOTS_RANGE_TOO_LONG`, `SHOTS_RANGE_EMPTY`); without ffmpeg installed, `internal`.
    */
   'videos.shots': {
     params: VideoShotsParams;
     result: VideoShotsResult;
   };
   /**
-   * 打开一个便携包（视频格式规范 §8）：校验清单（格式版本、每个文件的长度与摘要、路径不越出包），在项目目录或会话工作目录里
-   * 建一个新视频（新的 `videoId`，素材全部收进视频）并打开。`path` 是 `.cuccut` 文件，绝对路径或相对来源目录；
-   * 新视频的目录名取包里的视频名（重名加序号）。Web 服务只接受来源目录里的文件。不给智能体与对外服务。
+   * Open a portable package (video format spec §8): verify the manifest (format version, length and digest of each file, paths that do not escape the package), create a new video in the project directory or the session working directory (a new `videoId`, with all assets collected into the video), and open it.
+   * `path` is a `.cuccut` file, absolute or relative to a source directory. The new video's directory name takes the video name from the package (duplicates get a sequence number). The Web service accepts only files in source directories. Not offered to agents or external services.
    */
   'videos.importPackage': {
     params: { projectId?: Id; conversationId?: Id; path: string; commandId?: Id };
     result: VideoOpenResult;
   };
   /**
-   * 在幻灯片标签里打开一份 deck（docs/design/slides §6.1）：Space 里的幻灯片条目，或来源目录里的 deck 目录。
-   * 目录按真实路径必须在来源目录之内、认得出是 deck（有合法的 `deck.json`）。同一个目录返回同一个地址。
+   * Open a deck in a slide label (docs/design/slides §6.1): a slide entry in Space, or a deck directory in a source directory.
+   * The directory's real path must lie inside a source directory, and it must be recognizable as a deck (it has a valid `deck.json`). The same directory returns the same address.
    */
   'slides.open': { params: FileTarget; result: SlidesOpenResult };
   /**
-   * 在设计稿标签里打开一份设计稿（docs/design/canvas §6.1）：Space 里的设计稿条目，或来源目录里的设计稿目录。
-   * 目录的校验与 `slides.open` 相同，认得出是设计稿（`canvas.json` 的 `v` 为 3、`boards` 是对象）；与 `slides.open` 共用 grant 表，
-   * 同一个目录返回同一个地址。
+   * Open a design in a design label (docs/design/canvas §6.1): a design entry in Space, or a design directory in a source directory.
+   * Validation of the directory is the same as `slides.open`, and it must be recognizable as a design (`canvas.json` with `v` 3 and `boards` an object). It shares the grant table with `slides.open`;
+   * the same directory returns the same address.
    */
   'design.open': { params: FileTarget; result: DesignOpenResult };
   /**
-   * 在设计系统标签里打开一个设计系统（docs/design/canvas §10.4）：Space 里的设计系统条目，或来源目录里的设计系统目录。
-   * 目录的校验与 `design.open` 相同，认得出是设计系统（`design-system.json` 的认法见 docs/design/canvas §10.1），否则
-   * `invalid-request`、`details.code` 为 `DESIGN_SYSTEM_NOT_A_SYSTEM`。与 `slides.open`、`design.open` 共用 grant 表（按种类分开），
-   * 同一个目录返回同一个地址。
+   * Open a design system in a design-system label (docs/design/canvas §10.4): a design-system entry in Space, or a design-system directory in a source directory.
+   * Validation of the directory is the same as `design.open`, and it must be recognizable as a design system (for how `design-system.json` is recognized, see docs/design/canvas §10.1); otherwise `invalid-request` with `details.code` `DESIGN_SYSTEM_NOT_A_SYSTEM`.
+   * It shares the grant table with `slides.open` and `design.open` (kept separate by kind); the same directory returns the same address.
    */
   'designSystem.open': { params: FileTarget; result: DesignSystemOpenResult };
-  /** 打开一个视频：Space 里的视频条目，或来源目录里的视频目录。已经打开的返回同一个 `videoId`。 */
+  /** Open a video: a video entry in Space, or a video directory in a source directory. A video that is already open returns the same `videoId`. */
   'videos.open': { params: FileTarget; result: VideoOpenResult };
-  /** 这条连接不再需要这个视频；没有其他连接打开它时 Runtime 关闭它。 */
+  /** This connection no longer needs this video. If no other connection has it open, the Runtime closes it. */
   'videos.close': { params: { videoId: Id }; result: { closed: boolean } };
   /**
-   * 删除视频（架构设计 §5.5、§5.7）：整个视频目录移进来源目录里的回收站，可以恢复；物理删除走 `space.purge` 或回收站的保留期。
-   * 不碰链接素材的原文件。别的连接打开着、有进行中的任务、被别的进程锁着时拒绝（`VIDEO_IN_USE`、`VIDEO_BUSY`、`VIDEO_LOCKED`）。
+   * Delete a video (architecture design §5.5, §5.7): the whole video directory is moved into the trash in the source directory and can be restored. Physical deletion goes through `space.purge` or the trash retention period.
+   * The original files of linked assets are not touched. Rejected when another connection has it open, a task is in progress, or another process holds a lock (`VIDEO_IN_USE`, `VIDEO_BUSY`, `VIDEO_LOCKED`).
    */
   'videos.delete': { params: FileTarget | { videoId: Id }; result: VideoDeleteResult };
-  /** 把删除了的视频从回收站移回原来的位置。 */
+  /** Move a deleted video back from the trash to where it was. */
   'videos.restore': { params: { entryId: Id }; result: VideoRestoreResult };
   'videos.history': { params: { videoId: Id; limit?: number }; result: { entries: HistoryEntry[] } };
   /**
-   * 已打开视频里此刻读不到的素材版本（视频格式规范 §4.2）：每个素材的当前版本与实例引用的版本里，文件不在、
-   * 已经不是登记时的文件，或相对路径越出了项目目录的。视频照常打开；界面据此标出缺失的素材，不必等到 `media.resolve` 失败。
-   * 只看文件在不在、长度对不对，不重算摘要。打开视频、收到 `video.replaced`、提交了素材类操作之后各查一次。
+   * Asset versions in an open video that cannot be read right now (video format spec §4.2). For each asset's current version and the versions its instances reference, this lists those whose file is missing, is no longer the file recorded at registration, or whose relative path escapes the project directory.
+   * The video still opens normally. The UI uses this to mark missing assets without waiting for `media.resolve` to fail.
+   * It only checks whether the file exists and its length matches; it does not recompute the digest. It is checked once after opening a video, after receiving `video.replaced`, and after submitting asset operations.
    */
   'videos.assetStatus': { params: { videoId: Id }; result: { missing: MissingAsset[] } };
-  /** 读一份文档的正文：不给版本时读当前版本。正文不随快照下发，界面画字幕时按需来取。 */
+  /** Read the body of a document. Without a version, reads the current version. The body is not sent in the snapshot; the UI fetches it on demand when drawing captions. */
   'documents.read': { params: { videoId: Id; documentId: Id; revision?: Revision }; result: DocumentContent };
 
   /**
-   * 提交一笔编辑事务（命令与协议规范 §4、§5）：全部操作一起生效或全部不生效。
-   * `expectedRevision` 与当前版本不一致时返回 `conflict`（`PROJECT_REVISION_CONFLICT`）。
-   * `label` 是给人看的修改名，`labelRef` 是它在目录里的引用（§3.1）：引擎原样存下，读者按自己的语言重新生成。
+   * Submit an edit transaction (command and protocol spec §4, §5): all operations take effect together or none take effect.
+   * If `expectedRevision` does not match the current version, `conflict` (`PROJECT_REVISION_CONFLICT`).
+   * `label` is the change name shown to people; `labelRef` is its reference in the catalog (§3.1). The engine stores it as is, and readers regenerate it in their own language.
    */
   'edits.apply': {
     params: { videoId: Id; commandId: Id; expectedRevision: Revision; operations: EditOperation[]; label?: string; labelRef?: MessageRef };
     result: EditResult;
   };
-  /** 撤销（命令与协议规范 §8）：`undo` / `redo` 指这条连接的操作者自己最近的一步。 */
+  /** Undo (command and protocol spec §8): `undo` and `redo` refer to the connection's own most recent step. */
   'edits.undo': {
     params: { videoId: Id; commandId: Id; target: UndoTarget; expectedRevision?: Revision };
     result: EditResult;
   };
   'edits.undoState': { params: { videoId: Id }; result: UndoState };
   /**
-   * 应用一次识别说话人（`speakers` 流程）的提案：一笔编辑事务，转写与有变化的译文各写新版本，`edits.undo` 撤销。
-   * 文稿或译文在识别之后改过时 `conflict`（`STALE_JOB_INPUT`）。
+   * Apply a speaker identification proposal (the `speakers` flow): one edit transaction; the transcript and each translation that changed are written as new versions. `edits.undo` reverts it.
+   * If the transcript or a translation was edited after identification, `conflict` (`STALE_JOB_INPUT`).
    */
   'edits.applySpeakers': { params: ApplySpeakersParams; result: EditResult };
   /**
-   * 代码画面（动效图形，架构设计 §8）的预览：界面不经过智能体，按合成内部的时刻取帧（与工具 `compositions_preview` 同一个服务）。
-   * 帧写成 PNG，返回各帧的受限读取句柄。视频要已经打开；不改视频。
+   * Preview of a code composition (motion graphics, architecture design §8): the UI does not go through the agent; it fetches frames at times inside the composition (same service as the `compositions_preview` tool).
+   * Frames are written as PNG, and a restricted read handle is returned for each. The video must already be open; the video is not changed.
    */
   'compositions.preview': { params: CompositionPreviewParams; result: CompositionPreviewResult };
   /**
-   * 代码画面的导入：验证、烘焙预渲染、导入两个素材并放一个合成片段（两笔可撤销的修改，与工具 `compositions_import` 同一个服务）。
-   * 操作者是用户本人（`user_local`，与 `edits.apply` 相同）；给了 `conversationId` 时在会话里放变更卡。烘焙可能要几分钟。
+   * Import a code composition: validate it, bake a pre-render, import two assets, and place a composition clip (two undoable changes; same service as the `compositions_import` tool).
+   * The operator is the user (`user_local`, same as `edits.apply`). When `conversationId` is given, a change card is placed in the session. Baking can take several minutes.
    */
   'compositions.import': { params: CompositionImportParams; result: CompositionImportResult };
 
-  /** 本地模型包与它们的状态（架构设计 §6.3）。 */
+  /** Local model bundles and their status (architecture design §6.3). */
   'models.list': { params: Record<string, never>; result: { bundles: ModelBundleStatus[] } };
   /**
-   * 转写一个音视频素材（架构设计 §6.6）：立即返回 `jobId`，进度与结果经 `jobs` 主题送达；完成时 Runtime 把结果写成
-   * 一份 `speech` 文档。相同输入的任务还在排队或运行时返回同一个 `jobId`。视频要先打开；任务进行期间 Runtime 让它保持打开。
-   * Provider 与模型按 §6.2 选择；选中的 Provider 不可用、或什么都没有配置时返回 `conflict`，`details` 为
-   * `CapabilityNotConfiguredDetails`，不创建任务。不认识的模型或节点返回 `not-found`。节点的拒绝与失联、在线 Provider 的
-   * 认证与配额失败是任务的错误（`REMOTE_NODE_*`、`PROVIDER_*`）。
+   * Transcribe an audio or video asset (architecture design §6.6): returns a `jobId` immediately; progress and results are delivered through the `jobs` topic. On completion the Runtime writes the result as a `speech` document.
+   * A task with the same input that is still queued or running returns the same `jobId`. The video must be opened first; the Runtime keeps it open while the task runs.
+   * The provider and model are chosen per §6.2. If the chosen provider is unavailable, or nothing is configured, `conflict` is returned with `details` of `CapabilityNotConfiguredDetails`, and no task is created. An unknown model or node gives `not-found`. Rejection or loss of a node, and authentication or quota failures of online providers, are task errors (`REMOTE_NODE_*`, `PROVIDER_*`).
    */
   'models.transcribe': { params: TranscribeRequest; result: { jobId: Id } };
   /**
-   * 合成语音（架构设计 §6.6）：立即返回 `jobId`，进度与结果经 `jobs` 主题送达。Provider 与模型按 §6.2 选择，这种能力没有
-   * 出厂默认：没有显式指定、也没有默认值时返回 `conflict`（`CAPABILITY_NOT_CONFIGURED`），不创建任务。文本超过模型上限、
-   * 音色或格式不被模型接受时 `invalid-request`。给 `videoId` 时视频要已打开，结果以 `system:jobs` 导入为素材（不上时间线）。
-   * 同一个 `commandId` 返回同一个任务；相同参数的两次提交是两个任务（每次生成都可能不同）。
+   * Speech synthesis (architecture design §6.6): returns a `jobId` immediately; progress and results are delivered through the `jobs` topic. The provider and model are chosen per §6.2. This capability has no factory default: if nothing is explicitly specified and there is no default value, `conflict` (`CAPABILITY_NOT_CONFIGURED`) is returned and no task is created.
+   * Text over the model's limit, or a voice or format the model does not accept, gives `invalid-request`. With `videoId`, the video must already be open, and the result is imported as an asset through `system:jobs` (it is not placed on the timeline).
+   * The same `commandId` returns the same task. Two submissions with the same parameters are two tasks, since each generation may differ.
    */
   'models.synthesizeSpeech': { params: SynthesizeSpeechRequest; result: { jobId: Id } };
-  /** 生成图片：规则同 `models.synthesizeSpeech`；尺寸、张数与格式要在模型声明的范围内。 */
+  /** Generate images: the rules are the same as `models.synthesizeSpeech`; size, count and format must be within the range the model declares. */
   'models.generateImage': { params: GenerateImageRequest; result: { jobId: Id } };
   /**
-   * 生成音乐（歌曲或配乐）：规则同 `models.synthesizeSpeech`，只有本地 Provider（已安装的音乐生成模型包与它的引擎）。
-   * 歌曲要给歌词；配乐不收歌词。预算 `maxDurationSec` 要在模型声明的范围内。
+   * Generate music (a song or background score): the rules are the same as `models.synthesizeSpeech`, and only local providers are used (installed music generation model bundles and their engine).
+   * A song requires lyrics; a background score takes no lyrics. The `maxDurationSec` budget must be within the range the model declares.
    */
   'models.generateMusic': { params: GenerateMusicRequest; result: { jobId: Id } };
   /**
-   * 调用一次文本模型（架构设计 §6.1、§6.4）：立即返回 `jobId`；完成时全文发布为产物（`.txt`，结构化输出是校验过的
-   * `.json`），结果带产物 ID 与开头一段的预览。选择规则同 `models.synthesizeSpeech`（没有出厂默认）。结构化输出不合 schema、
-   * 或因输出上限被截断时任务以 `MODEL_OUTPUT_INVALID` 失败；文本被截断时任务完成并带 `output-truncated` 警告。
+   * Call a text model once (architecture design §6.1, §6.4): returns a `jobId` immediately. On completion the full text is published as an artifact (`.txt`; structured output is a validated `.json`), and the result carries the artifact ID and a preview of the opening paragraph.
+   * The selection rules are the same as `models.synthesizeSpeech` (no factory default). If structured output does not match the schema, or is cut short by the output limit, the task fails with `MODEL_OUTPUT_INVALID`; if the text is truncated, the task completes with an `output-truncated` warning.
    */
   'models.generateText': { params: GenerateTextRequest; result: { jobId: Id } };
   /**
-   * 向一个在线 Provider 取可用的模型（与音色）列表，缓存在配置里并记下时间（架构设计 §6.8）。取不到时照旧用内置列表，
-   * `refreshed.ok` 为 false 并说明原因；这不是请求的错误。不是在线 Provider 时 `invalid-request`。
+   * Fetch the list of available models (and voices) from an online provider, cached in the configuration with the time recorded (architecture design §6.8). If it cannot be fetched, the built-in list is used as before, with `refreshed.ok` false and a reason; this is not a request error.
+   * Not an online provider: `invalid-request`.
    */
   'models.refreshProvider': { params: { providerId: string }; result: { provider: ProviderView; refreshed: ProviderRefreshStatus } };
-  /** 设置一种能力的参数默认值（首版只有 `generateText` 的推理强度与并发上限）；null 恢复出厂值。返回补全后的值。 */
+  /** Set the parameter defaults for one capability (in the first version, only `generateText`'s reasoning intensity and concurrency limit); null restores the factory values. Returns the completed values. */
   'models.setCapabilityParameters': { params: SetCapabilityParametersRequest; result: { parameters: TextCapabilityParameters } };
-  /** 重新启用一个因反复崩溃而停用的模型包，并清掉加载失败的记录。 */
+  /** Re-enable a model bundle that was disabled after repeated crashes, and clear its load-failure record. */
   'models.enable': { params: { bundleId: string }; result: { bundle: ModelBundleStatus } };
   /**
-   * 安装一个本地模型包（架构设计 §6.3）：两步。不给 `confirmBytes` 时只返回计划（要下载的组件、文件与字节数），不下载；
-   * 把计划里的 `confirmBytes` 原样交回来才提交安装任务（`kind: 'modelInstall'`，进度在 `jobs` 主题，模型包状态在 `models`
-   * 主题）。字节数与此刻的计划不一致时 `conflict`（`MODEL_INSTALL_SIZE_CHANGED`，`details.plan` 是新计划）。只下载缺的组件；
-   * 暂存区里已经收到并校验过的文件不再下载，没下完的文件按 HTTP Range 续传。都已装好时 `jobId` 为 null。同一个模型包已经在
-   * 安装时返回那个任务。严格离线（`offline.strict`）时 `conflict`（`OFFLINE_STRICT`）。
+   * Install a local model bundle (architecture design §6.3) in two steps. Without `confirmBytes`, only the plan is returned (the components, files and byte counts to download); nothing is downloaded.
+   * The `confirmBytes` from the plan must be sent back unchanged to submit the install task (`kind: 'modelInstall'`; progress in the `jobs` topic, bundle status in the `models` topic). If the byte count differs from the current plan, `conflict` (`MODEL_INSTALL_SIZE_CHANGED`, with `details.plan` as the new plan).
+   * Only the missing components are downloaded. Files already received and verified in staging are not downloaded again; partly downloaded files resume with HTTP Range. If everything is already installed, `jobId` is null. If the same bundle is already being installed, that task is returned.
+   * Under strict offline (`offline.strict`), `conflict` (`OFFLINE_STRICT`).
    */
   'models.install': { params: { bundleId: string; confirmBytes?: number; commandId?: Id }; result: ModelInstallResult };
   /**
-   * 停下一个模型包的安装（取消它的任务）。默认保留暂存区里已经收到的部分（再次 `models.install` 续传）；`discard: true` 时
-   * 一并删掉。没有在安装时只按 `discard` 处理暂存区。
+   * Stop a model bundle's install (cancels its task). By default, what has been received in staging is kept, so `models.install` can resume it; with `discard: true`, it is deleted too. If nothing is installing, `discard` only applies to staging.
    */
   'models.cancelInstall': { params: { bundleId: string; discard?: boolean }; result: { bundle: ModelBundleStatus } };
   /**
-   * 删除一个模型包：删掉它独有的组件，别的模型包还在用的共享组件保留。有任务在用它（排队或进行中的转写、检查、安装，
-   * 或 Worker 正在加载、执行）时 `conflict`（`MODEL_IN_USE`，`details.jobIds`）；空闲时先卸载 Worker。
+   * Delete a model bundle: its own components are deleted; shared components that other bundles still use are kept. If a task is using it (a queued or running transcription, check or install, or the Worker is loading or executing), `conflict` (`MODEL_IN_USE`, `details.jobIds`); when idle, the Worker is unloaded first.
    */
   'models.remove': { params: { bundleId: string }; result: ModelRemoveResult };
   /**
-   * 修复一个模型包：逐个文件校验 sha256，只重新下载缺失或损坏的文件。两步确认与 `models.install` 相同（计划里的字节数
-   * 要在校验之后才知道，第一步会把文件读一遍）。
+   * Repair a model bundle: verify the sha256 of each file, and re-download only the missing or corrupted ones. The two-step confirmation is the same as for `models.install` (the byte count in the plan is only known after verification, and the first step reads the files through).
    */
   'models.repair': { params: { bundleId: string; confirmBytes?: number; commandId?: Id }; result: ModelInstallResult };
   /**
-   * 检查：用随附的固定样本走一遍完整的 Worker 流程（加载、识别或合成、核对输出），结论记在模型包状态的 `selfTest` 上
-   * （没通过时带 `code` 与 `facts`）。是一个任务（`kind: 'modelTest'`），失败时 `error.details.check` 是同一个 `code`。
-   * 模型包不可用时 `conflict`（`MODEL_UNAVAILABLE`）；随应用分发的样本读不出来时 `conflict`（`APP_FILE_MISSING`）。
+   * Check: run the complete Worker flow with the bundled fixed sample (load, recognize or synthesize, then verify the output). The result is recorded in the bundle status `selfTest` (with `code` and `facts` when it fails). It is a task (`kind: 'modelTest'`); on failure `error.details.check` holds the same `code`.
+   * If the bundle is unavailable, `conflict` (`MODEL_UNAVAILABLE`); if the sample shipped with the app cannot be read, `conflict` (`APP_FILE_MISSING`).
    */
   'models.test': { params: { bundleId: string; commandId?: Id }; result: { jobId: Id } };
   /**
-   * 模型目录（架构设计 §6.3）：生效的目录、来源（环境变量、设置或缺省）、用量与所在磁盘的可用空间。含本机路径：
-   * 不在 Web 服务的白名单里，MCP 对外服务也不提供。
+   * Model catalog (architecture design §6.3): the effective directory, its source (environment variable, setting or default), usage, and the free space on its disk. It contains local paths, so it is not on the Web service allowlist and is not offered by the MCP external service.
    */
   'models.getDir': { params: Record<string, never>; result: ModelsDirInfo };
   /**
-   * 看一个文件夹能不能作模型目录（只读）：在不在、可不可写、可用空间、里面已有的模型（按仓库的 `.ccut-manifest.json` 认），
-   * 以及「移过去」要搬多少、放不放得下。`path: null` 看缺省位置。
+   * Check whether a folder can be used as a model directory (read-only): whether it exists, whether it is writable, free space, the models already in it (recognized by the repository's `.ccut-manifest.json`),
+   * and how much would need to be transferred to “move it there” and whether it fits. `path: null` checks the default location.
    */
   'models.inspectDir': { params: { path: string | null }; result: ModelsDirInspection };
   /**
-   * 更改模型目录：`path: null` 恢复缺省位置。`switch` 立即换过去（原目录的文件保留）；`move` 提交 `kind: 'modelsMove'` 的
-   * 任务，搬完、校验完才换过去，中途失败或取消时回滚、原目录不动。环境变量指定了目录时 `conflict`（`MODELS_DIR_ENV_LOCKED`）；
-   * 有排队或进行中的本地模型任务（转写、合成、安装、检查、移动），或 Worker 正忙时 `conflict`（`MODEL_IN_USE`）；
-   * 文件夹不存在 `MODELS_DIR_MISSING`、不可写 `MODELS_DIR_NOT_WRITABLE`、与当前目录互相包含 `MODELS_DIR_NESTED`、
-   * 放不下 `MODELS_DIR_NO_SPACE`（都是 `conflict`）。就是当前目录时什么都不做。
+   * Change the model directory: `path: null` restores the default location. `switch` changes to it immediately (files in the original directory are kept). `move` submits a task of `kind: 'modelsMove'`, and switches only after the copy has been verified; if it fails midway or is cancelled, it rolls back and the original directory is left untouched.
+   * If the environment variable sets the directory: `conflict` (`MODELS_DIR_ENV_LOCKED`). If local model tasks are queued or running (transcription, synthesis, install, check, move), or the Worker is busy: `conflict` (`MODEL_IN_USE`).
+   * Folder does not exist: `MODELS_DIR_MISSING`; not writable: `MODELS_DIR_NOT_WRITABLE`; one contains the other: `MODELS_DIR_NESTED`; not enough space: `MODELS_DIR_NO_SPACE` (all `conflict`). If it is already the current directory, nothing is done.
    */
   'models.setDir': { params: { path: string | null; mode: ModelsDirMode; commandId?: Id }; result: ModelsDirChangeResult };
   /**
-   * 模型服务的只读视图（架构设计 §6.8）：每种能力下各 Provider 的模型、限制、默认值、此刻是否可用与原因。
-   * 已配对的节点各探测一次健康（每个至多 2 秒，并行）。
+   * Read-only view of the model services (architecture design §6.8): for each capability, each provider's models, limits, defaults, whether it is available right now, and the reason if not.
+   * Each paired node is health-probed once (at most 2 seconds each, in parallel).
    */
   'models.capabilities': { params: Record<string, never>; result: { capabilities: ModelCapabilitiesView } };
-  /** 配置一个在线 Provider（`openai`、`google`、`custom:<slug>`）。启用即是持续的授权；密钥只写，从不回显。 */
+  /** Configure an online provider (`openai`, `google`, `custom:<slug>`). Enabling it is a standing authorization. Keys are write-only and never echoed back. */
   'models.configure': { params: ConfigureProviderRequest; result: { provider: ProviderView } };
   /**
-   * 删除一个在线 Provider 的配置与它全部账号的密钥（内置的服务商回到未配置，自定义端点整个删掉）。指向它的默认值保留，
-   * 报告为不可用。
+   * Delete an online provider's configuration and all of its account keys (built-in vendors return to unconfigured; custom endpoints are removed entirely). Defaults that point to it are kept and reported as unavailable.
    */
   'models.removeProvider': { params: { providerId: string }; result: { removed: true } };
   /**
-   * 给一个在线 Provider 加一个账号（一把密钥，架构设计 §6.8），加在最后。`verify` 时先用这把密钥向供应商发一个只读请求，
-   * 不通过不保存。凭据存储不可用时 `conflict`（`CREDENTIAL_UNAVAILABLE`）。
+   * Add an account (one key, architecture design §6.8) to an online provider, appended at the end. With `verify`, a read-only request is first sent to the vendor using this key; if it fails, nothing is saved. If the credential store is unavailable: `conflict` (`CREDENTIAL_UNAVAILABLE`).
    */
   'models.addAccount': { params: AddProviderAccountRequest; result: { provider: ProviderView } };
-  /** 改一个账号：名字、密钥、开关、region 或账号级的基址。没有这个账号时 `not-found`。 */
+  /** Change an account: its name, key, switch, region, or account-level base URL. No such account: `not-found`. */
   'models.updateAccount': { params: UpdateProviderAccountRequest; result: { provider: ProviderView } };
-  /** 删除一个账号与它的密钥。删掉最后一个账号不等于移除服务商：服务商仍启用，但 `credential: 'missing'`。 */
+  /** Delete an account and its key. Deleting the last account does not remove the provider: the provider stays enabled but has `credential: 'missing'`. */
   'models.removeAccount': { params: { providerId: string; accountId: string }; result: { provider: ProviderView } };
-  /** 账号的新顺序（「设为首选」）：第一个启用且有密钥的账号生效。`order` 要恰好是现有账号的一个排列。 */
+  /** The new order of accounts (“set as preferred”): the first enabled account that has a key takes effect. `order` must be exactly a permutation of the existing accounts. */
   'models.arrangeAccounts': { params: ArrangeProviderAccountsRequest; result: { provider: ProviderView } };
-  /** 用量（只读，架构设计 §6.8）：按时段汇总用量账本，金额分报告、估算与未知。 */
+  /** Usage (read-only, architecture design §6.8): aggregates the usage ledger by time period. Amounts are reported separately as actual, estimated or unknown. */
   'models.usage': { params: UsageRequest; result: UsageReport };
-  /** 设置或清除（`providerId: null`）一种能力的默认 Provider 与模型；不给 `modelId` 时用该 Provider 的默认模型。 */
+  /** Set (or clear, with `providerId: null`) the default provider and model for one capability. Without `modelId`, that provider's default model is used. */
   'models.setDefault': {
     params: { capability: ModelServiceCapability; providerId: string | null; modelId?: string };
     result: { default: ModelRef | null };
   };
   'jobs.inspect': { params: { jobId: Id }; result: JobRecord };
-  /** 取消一项计算（架构设计 §7.4）：返回取消之后的状态（已经结束的任务返回它的终态）。 */
+  /** Cancel a computation (architecture design §7.4): returns the state after cancellation (a task that has already ended returns its final state). */
   'jobs.cancel': { params: { jobId: Id }; result: { state: JobState } };
   /**
-   * 新的在前；给 `videoId` 时只列这个视频的。固定流程的步骤（带 `parentJobId` 的子任务）默认折叠在父任务下不列出，
-   * `children: true` 时一并列出。
+   * Newest first. With `videoId`, only that video's. Steps of a fixed flow (subtasks with `parentJobId`) are collapsed under their parent task and not listed by default;
+   * with `children: true`, they are listed too.
    */
   'jobs.list': { params: { videoId?: Id; children?: boolean }; result: { jobs: JobRecord[] } };
   /**
-   * 资源调度的现状（只读，架构设计 §7.6、§7.7）：机器容量与来源、预留、已租出与此刻还能用的量、每份租约、
-   * 共用的常驻进程与排队中的任务（各自在等什么）。
+   * The current state of resource scheduling (read-only, architecture design §7.6, §7.7): machine capacity and its sources, reservations, what has been leased out and how much is still available, each lease, shared resident processes, and queued tasks (and what each one is waiting for).
    */
   'jobs.resources': { params: Record<string, never>; result: ResourcesSnapshot };
   /**
-   * 处理重启后结果不明或没有应用完的任务（架构设计 §7.5）：`retry`、`discard`、`apply` 三种决定，各有合法的状态
-   * （见 `JobReconcileDecision`）；不合法时 `conflict`（`RECONCILE_NOT_ALLOWED`，`details` 给出当前状态与允许的决定）。
-   * 返回处理之后的记录。智能体不能调用。
+   * Handle tasks whose outcome is unknown, or that were not fully applied, after a restart (architecture design §7.5). There are three decisions: `retry`, `discard` and `apply`, each with the states in which it is allowed (see `JobReconcileDecision`). If it is not allowed: `conflict` (`RECONCILE_NOT_ALLOWED`, with `details` giving the current state and the allowed decisions).
+   * Returns the record after handling. Agents cannot call it.
    */
   'jobs.reconcile': { params: { jobId: Id; decision: JobReconcileDecision }; result: JobRecord };
-  /** 可用的固定流程、它们的步骤与参数的 JSON Schema（架构设计 §7.9）。 */
+  /** The fixed flows available, their steps, and the JSON Schema of their parameters (architecture design §7.9). */
   'pipelines.list': { params: Record<string, never>; result: { pipelines: PipelineInfo[] } };
   /**
-   * 启动一个固定流程：立即返回父任务的 `jobId`，进度与结果经 `jobs` 主题送达。没有这个流程时 `not-found`；参数不合
-   * 流程的 schema 时 `invalid-request`；流程需要的能力没有配置时 `conflict`（`CAPABILITY_NOT_CONFIGURED`）。
+   * Start a fixed flow: returns the parent task's `jobId` immediately; progress and results are delivered through the `jobs` topic. No such flow: `not-found`. Parameters that do not match the flow's schema: `invalid-request`. A capability the flow needs is not configured: `conflict` (`CAPABILITY_NOT_CONFIGURED`).
    */
   'pipelines.start': { params: { pipeline: string; params: Record<string, unknown>; commandId?: string }; result: { jobId: Id } };
   /**
-   * 从失败（或被取消、被中断）的那一步重新执行一个流程，复用之前已完成步骤的输出；返回同一个父任务的 `jobId`。
-   * 还在进行或已经完成时 `conflict`（`JOB_NOT_RETRYABLE`）。
+   * Run a flow again from the step that failed (or was cancelled or interrupted), reusing the outputs of steps already completed; returns the same parent task's `jobId`. If it is still running or has already completed: `conflict` (`JOB_NOT_RETRYABLE`).
    */
   'pipelines.retry': { params: { jobId: Id }; result: { jobId: Id } };
   /**
-   * 工具目录（架构设计 §7.9）：每个工具的输入、结果、执行方式与依赖，加上此刻能不能用、不能用的原因（只读，不探测网络；
-   * 外部工具用上次探测的结果）。浏览器会话里执行方法不在白名单的工具标为不可用（`WEB_METHOD_NOT_ALLOWED`）。
+   * Tool catalog (architecture design §7.9): each tool's inputs, results, execution mode and dependencies, plus whether it can be used now and, if not, why (read-only; does not probe the network; external tools use their last probe result).
+   * In a browser session, a tool whose methods are not on the allowlist is marked unavailable (`WEB_METHOD_NOT_ALLOWED`).
    */
   'tools.list': { params: Record<string, never>; result: ToolsListResult };
   /**
-   * 一个工具可选的视频条目与每个条目里可选的文档（只读）：事实来自内容索引与 Space 目录，不打开视频；范围规则与 `space.list`
-   * 相同。还没有索引的视频照样列出（`indexed: false`），有它们时 `complete` 为 false。没有这个工具时 `not-found`；
-   * 不接受视频输入的工具返回空列表。
+   * The optional video entries for a tool, and the optional documents in each entry (read-only). The facts come from the content index and the Space directory, without opening the video; the scope rules are the same as for `space.list`.
+   * Videos that have no index yet are still listed (`indexed: false`), and `complete` is false when there are any. No such tool: `not-found`. Tools that accept no video input return an empty list.
    */
   'tools.candidates': { params: ToolCandidatesParams; result: ToolCandidatesResult };
   /**
-   * Agent 面的工具目录（架构设计 §3.5、§4.1）：与会话里的智能体、MCP 服务同一份目录，带参数的 JSON Schema、说明、注解与风险。
-   * 只给 `cli` 与 `desktop` 连接，其余 `forbidden`。
+   * Tool catalog for the Agent surface (architecture design §3.5, §4.1): the same catalog as used by agents in sessions and by MCP services, with the JSON Schema of parameters, descriptions, annotations and risk.
+   * Only for `cli` and `desktop` connections; others get `forbidden`.
    */
   'catalog.list': { params: Record<string, never>; result: CatalogListResult };
   /**
-   * 按名调用目录里的工具，主体是 `LocalPrincipal`（写入算 `user_local`，不走 CucCut 的审批）。工具层的结果与拒绝都在返回值里
-   * （`ok`），拒绝的形态与 MCP 工具结果的 `error` 相同；只给 `cli` 与 `desktop` 连接，其余 `forbidden`。
+   * Call a tool in the catalog by name. The principal is `LocalPrincipal` (writes count as `user_local` and do not go through CucCut's approval). Results and rejections at the tool level are in the return value (`ok`); the shape of a rejection is the same as the `error` of an MCP tool result.
+   * Only for `cli` and `desktop` connections; others get `forbidden`.
    */
   'catalog.call': { params: CatalogCallParams; result: CatalogCallResult };
   /**
-   * 给外部 Agent 的说明书按 CLI 面渲染好的文件（Agent 面设计 §8.6），`cuccut skill install` 用。来源目录按
-   * `CUCCUT_AGENT_SKILLS_DIR` → 打包资源 → 仓库根找；都没有时 `not-found`（`AGENT_SKILL_NOT_FOUND`），标记或占位符写错时
-   * `conflict`（`AGENT_SKILL_INVALID`，带文件与行号）。只给 `cli` 与 `desktop` 连接，其余 `forbidden`。
+   * The instruction file for external agents, rendered as files for the CLI surface (Agent surface design §8.6), used by `cuccut skill install`. The source directory is searched in this order: `CUCCUT_AGENT_SKILLS_DIR`, then packaged resources, then the repo root. If none is found: `not-found` (`AGENT_SKILL_NOT_FOUND`). If markers or placeholders are wrong: `conflict` (`AGENT_SKILL_INVALID`, with file and line).
+   * Only for `cli` and `desktop` connections; others get `forbidden`.
    */
   'catalog.agentSkill': { params: Record<string, never>; result: CatalogAgentSkill };
-  /** 受管外部工具（架构设计 §12.9）的状态：上次探测的结果（第一次调用时探测）。只在本机执行 `--version`，不联网。 */
+  /** The status of managed external tools (architecture design §12.9): the last probe results (probed on the first call). Runs `--version` locally only; no network. */
   'externalTools.list': { params: Record<string, never>; result: { tools: ExternalToolStatus[] } };
-  /** 重新探测（全部，或 `name` 这一个），返回全部工具的状态。 */
+  /** Re-probe (all of them, or only `name`), and return the status of all tools. */
   'externalTools.detect': { params: { name?: string }; result: { tools: ExternalToolStatus[] } };
   /**
-   * 下载一个受管工具到 Runtime Home 的 `tools/`：提交安装任务（`kind: 'toolInstall'`），立即返回 `jobId`。要显式的用户同意：
-   * 不给 `consent: true` 时以 `conflict`（`TOOL_CONSENT_REQUIRED`，`details.offer` 是来源、版本、大小与许可）拒绝，不下载；
-   * 给了就记下同意（`via`，默认 `app`）再提交。清单里摘要未知时 `conflict`（`TOOL_MANIFEST_INCOMPLETE`）；严格离线时
-   * `conflict`（`OFFLINE_STRICT`）；不能由 CucCut 下载的工具（ffmpeg）`invalid-request`（`TOOL_NOT_MANAGED`）。
-   * 同一个工具已经在安装时返回那个任务。
+   * Download a managed tool into `tools/` under the Runtime Home: submits an install task (`kind: 'toolInstall'`) and returns a `jobId` immediately. Explicit user consent is required:
+   * without `consent: true`, it is rejected with `conflict` (`TOOL_CONSENT_REQUIRED`; `details.offer` gives the source, version, size and license) and nothing is downloaded;
+   * with it, the consent is recorded (`via`, default `app`) and then the task is submitted. If the digest in the manifest is unknown: `conflict` (`TOOL_MANIFEST_INCOMPLETE`). Under strict offline: `conflict` (`OFFLINE_STRICT`). A tool that CucCut cannot download (ffmpeg): `invalid-request` (`TOOL_NOT_MANAGED`).
+   * If the same tool is already being installed, that task is returned.
    */
   'externalTools.install': {
     params: { name: string; consent?: boolean; via?: 'app' | 'cli'; commandId?: Id };
     result: ExternalToolInstallResult;
   };
   /**
-   * 按原安装方式更新系统里的那一份（`status.update`）：提交更新任务（`kind: 'toolUpdate'`），立即返回 `jobId`；输出逐段写进
-   * 任务记录的 `command`，结束后重新探测。要用户看过完整命令：`command` 与此刻的 `update.command` 不同或没给时以 `conflict`
-   * （`TOOL_UPDATE_CONFIRM_REQUIRED`，`details.update` 是此刻的办法）拒绝，不执行。判断不了安装方式、或是受管副本时
-   * `conflict`（`TOOL_UPDATE_UNSUPPORTED`）；要管理员权限等不能代为执行时 `conflict`（`TOOL_UPDATE_MANUAL`，`details.update`）；
-   * 严格离线时 `conflict`（`OFFLINE_STRICT`）；正在安装、或有流程正在用它时 `conflict`（`TOOL_IN_USE`）。同一个工具已经在
-   * 更新时返回那个任务。
+   * Update the copy on the system by its original install method (`status.update`): submits an update task (`kind: 'toolUpdate'`) and returns a `jobId` immediately. Output is written segment by segment into the task record's `command`, and the tool is probed again when it ends.
+   * The user must have seen the full command: if `command` is not given, or differs from the current `update.command`, `conflict` (`TOOL_UPDATE_CONFIRM_REQUIRED`, with `details.update` giving the current method) is returned and nothing runs.
+   * If the install method cannot be determined, or it is the managed copy: `conflict` (`TOOL_UPDATE_UNSUPPORTED`). If it needs administrator rights and cannot be run on the user's behalf: `conflict` (`TOOL_UPDATE_MANUAL`, `details.update`).
+   * Under strict offline: `conflict` (`OFFLINE_STRICT`). If it is being installed, or a flow is using it: `conflict` (`TOOL_IN_USE`). If the same tool is already updating, that task is returned.
    */
   'externalTools.update': { params: { name: string; command?: string; commandId?: Id }; result: ExternalToolUpdateResult };
   /**
-   * 指定（或用 null 清除）一个工具的路径：用户自己装的那一份优先于受管副本与 PATH。先执行一次 `--version` 核对，
-   * 不能运行时 `invalid-request`（`TOOL_UNAVAILABLE`）。只记路径，不代表同意使用下载工具。
+   * Set (or clear with null) a tool's path. A copy the user installed themselves takes precedence over the managed copy and PATH. It runs `--version` first to check; if it cannot run: `invalid-request` (`TOOL_UNAVAILABLE`).
+   * This only records the path; it does not mean consent to use download tools.
    */
   'externalTools.setPath': { params: { name: string; path: string | null }; result: { tool: ExternalToolStatus } };
-  /** 删除受管副本（不动系统里的与用户指定的）。正在安装、更新，或有流程正在用它时 `conflict`（`TOOL_IN_USE`）。 */
+  /** Delete the managed copy (the system copy and the user-specified one are not touched). If it is being installed or updated, or a flow is using it: `conflict` (`TOOL_IN_USE`). */
   'externalTools.remove': { params: { name: string }; result: { tool: ExternalToolStatus } };
-  /** 记下（`grant: true`）或撤回（`grant: false`）用户对一个工具的同意。撤回之后用它的流程拒绝执行。 */
+  /** Record (`grant: true`) or withdraw (`grant: false`) the user's consent for a tool. After withdrawal, flows that use it refuse to run. */
   'externalTools.consent': { params: { name: string; grant: boolean; via?: 'app' | 'cli' }; result: { tool: ExternalToolStatus } };
   /**
-   * 这台机器上下载工具能读到 Cookie 的浏览器（下载视频的「网站登录」）：按 yt-dlp 的查找规则看各浏览器的 Cookie 库在不在，
-   * 最近改过的在前。每次调用都重新看；只看文件在不在与修改时间，不读 Cookie 内容，不运行下载工具。`platform` 是 Runtime
-   * 所在主机的平台（`process.platform` 的取值：darwin、win32、linux…）：下载在那台主机上运行，界面按它提示系统授权。
+   * Browsers on this machine whose cookies the download tools can read (for “website login” when downloading videos). Following yt-dlp's lookup rules, it checks whether each browser's cookie store exists, most recently modified first.
+   * It is checked again on every call. It only checks existence and modification time; it does not read cookie contents and does not run the download tool. `platform` is the platform of the host the Runtime runs on (`process.platform` values: darwin, win32, linux, …): downloads run on that host, and the UI prompts for system authorization accordingly.
    */
   'externalTools.cookieBrowsers': { params: Record<string, never>; result: { platform: string; browsers: CookieBrowserInfo[] } };
   /**
-   * 导出（架构设计 §9.11、§9.13）：冻结视频的当前版本并预检，立即返回 `jobId`；之后的编辑不影响这个导出。
-   * 预检不过时不创建任务，以 `RpcError.details.code` 给出原因（`EXPORT_*`、`ASSET_MISSING`、`ASSET_CHANGED`，命令与协议规范 §11.4）。
+   * Export (architecture design §9.11, §9.13): freezes the video's current version and runs preflight; returns a `jobId` immediately. Later edits do not affect this export.
+   * If preflight fails, no task is created, and the reason is given in `RpcError.details.code` (`EXPORT_*`, `ASSET_MISSING`, `ASSET_CHANGED`; command and protocol spec §11.4).
    */
   'exports.create': { params: ExportCreateRequest; result: { jobId: Id } };
-  /** 一个导出任务的记录；不是导出的任务 `not-found`。 */
+  /** The record of an export task. A task that is not an export: `not-found`. */
   'exports.get': { params: { jobId: Id }; result: JobRecord };
-  /** 导出任务，新的在前；给 `videoId` 时只列这个视频的。 */
+  /** Export tasks, newest first. With `videoId`, only that video's. */
   'exports.list': { params: { videoId?: Id }; result: { jobs: JobRecord[] } };
   /**
-   * 字幕或文稿的正文，不写文件、不建任务（导出面板文稿页的预览与「复制文本」）：与 `exports.create` 同一套冻结、预检与写法，
-   * 正文与同样设置导出的文件逐字节相同；预检的拒绝码也相同（目标目录的那几项除外，这里不碰目标目录）。只读。
+   * The body of captions or a transcript, without writing files or creating tasks (the preview on the transcript page of the export panel and “copy text”). It uses the same freeze, preflight and writing as `exports.create`, so the body is byte-identical to a file exported with the same settings.
+   * The preflight rejection codes are also the same, except for the items about the target directory, which is not touched here. Read-only.
    */
   'exports.renderText': { params: ExportRenderTextRequest; result: ExportRenderTextResult };
-  /** 一个产物（`sha256:<hex>`）的受限读取句柄，同 `media.resolve`（架构设计 §4.5）。没有这个产物时 `not-found`。 */
+  /** A restricted read handle for an artifact (`sha256:<hex>`), same as `media.resolve` (architecture design §4.5). No such artifact: `not-found`. */
   'artifacts.openHandle': { params: { artifactId: string }; result: MediaHandle };
 
   /**
-   * 用户库（架构设计 §5.9）：术语表、音色与品牌库。条目的变化经 `library` 主题送达。
-   * 不给 `library` 时列出全部库；`kind` 只留这一种（例如 `translation`、`image`）。
+   * User library (architecture design §5.9): glossaries, voices and brand libraries. Changes to entries are delivered through the `library` topic.
+   * Without `library`, all libraries are listed. `kind` keeps only that kind (for example `translation` or `image`).
    */
   'library.list': { params: { library?: LibraryName; kind?: string }; result: { entries: LibraryEntrySummary[] } };
-  /** 一个条目的当前版本，或一个还保留着的旧版本（被任务固定的）。没有时 `not-found`。 */
+  /** The current version of an entry, or an old version that is still kept (pinned by a task). No such entry: `not-found`. */
   'library.get': { params: LibraryEntryRef; result: { entry: LibraryEntry } };
   /**
-   * 新建或修改一个条目：内容不变时不产生新版本（`changed: false`）。带文件的种类由 `source` 提供文件，Runtime 按内容识别类型，
-   * 不看扩展名。内容不合规时 `invalid-request`（`LIBRARY_FORMAT_INVALID`）；`overlayTemplate` 以 `LIBRARY_KIND_RESERVED` 拒绝。
+   * Create or modify an entry. If the content is unchanged, no new version is made (`changed: false`). For kinds that carry files, `source` supplies the file; the Runtime identifies the type from the content, not the extension.
+   * Content that does not conform: `invalid-request` (`LIBRARY_FORMAT_INVALID`). `overlayTemplate` is rejected with `LIBRARY_KIND_RESERVED`.
    */
   'library.put': { params: LibraryPutParams; result: { entry: LibraryEntry; created: boolean; changed: boolean } };
-  /** 删除一个条目。已经进入视频的拷贝不受影响；音色在各 Provider 上的克隆转为 `stale`。 */
+  /** Delete an entry. Copies that have already been placed in videos are unaffected. Voice clones on each provider become `stale`. */
   'library.remove': { params: { library: LibraryName; id: Id }; result: { removed: true } };
   /**
-   * 导入一个交换文件，新建一个条目：术语表的 Markdown、音色包 `.bcvoice`、品牌库的媒体文件或 `cuccut.library-item` JSON。
-   * 类型按内容识别，不看扩展名；认不出或校验不通过时 `invalid-request`（`LIBRARY_FORMAT_INVALID`）。
+   * Import an exchange file to create a new entry: a glossary in Markdown, a voice package `.bcvoice`, brand library media files, or `cuccut.library-item` JSON.
+   * The type is identified from the content, not the extension. If it cannot be recognized or validation fails: `invalid-request` (`LIBRARY_FORMAT_INVALID`).
    */
   'library.import': { params: { path: string; commandId?: Id }; result: { entry: LibraryEntry } };
-  /** 把一个条目写成交换文件（格式见架构设计 §5.9）。目标已存在时 `conflict`，不覆盖。 */
+  /** Write an entry out as an exchange file (the format is in architecture design §5.9). If the target already exists: `conflict`, and nothing is overwritten. */
   'library.export': { params: { entry: LibraryEntryRef; path: string }; result: LibraryExportResult };
   /**
-   * 把一个条目拷进视频：一笔普通的编辑事务。图片、视频、贴纸与字体以 `managed` 方式导入为素材，来源记下库条目与版本；
-   * 字幕样式写成一份 `caption-style` 文档（给了 `captionItemIds` 时同一事务里设为这些字幕的样式）。
-   * 术语表、音色与颜色不能这样进入视频（`LIBRARY_ENTRY_NOT_APPLICABLE`）。
+   * Copy an entry into a video: an ordinary edit transaction. Images, videos, stickers and fonts are imported as `managed` assets, and the source records the library entry and its version.
+   * Caption styles are written as a `caption-style` document; if `captionItemIds` is given, they are set as the style of those captions in the same transaction.
+   * Glossaries, voices and colors cannot enter a video this way (`LIBRARY_ENTRY_NOT_APPLICABLE`).
    */
   'library.applyToVideo': { params: LibraryApplyParams; result: LibraryApplyResult };
   /**
-   * 视频里启用的库条目（架构设计 §5.9）：哪一步用哪几张术语表、哪个说话人用哪个音色，记在视频的 `library-selection` 文档里。
-   * 新视频建好时按条目的 `defaultEnabled` 写一份（只在有默认启用的术语表时）；之后只经 `setVideoSelection` 改。
+   * The library entries enabled in a video (architecture design §5.9): which glossaries each step uses, and which voice each speaker uses, are recorded in the video's `library-selection` document.
+   * When a new video is created, one is written according to each entry's `defaultEnabled` (only when there are default-enabled glossaries). Afterwards it is changed only through `setVideoSelection`.
    */
   'library.getVideoSelection': { params: { videoId: Id }; result: VideoLibrarySelection };
   /**
-   * 改视频里启用的条目：一笔普通的编辑事务。术语表要在库里、种类与步骤相符（`transcribe` 只放转写用，`translate` 只放翻译用），
-   * 否则 `LIBRARY_ENTRY_NOT_APPLICABLE`；库里没有的条目 `not-found`；`library:` 音色要在库里，说话人要在那份转写里。
+   * Change the library entries enabled in a video: an ordinary edit transaction. A glossary must be in the library, and its kind and step must match (`transcribe` only for transcription, `translate` only for translation); otherwise `LIBRARY_ENTRY_NOT_APPLICABLE`.
+   * An entry not in the library: `not-found`. A `library:` voice must be in the library; a speaker must be in that transcript.
    */
   'library.setVideoSelection': { params: LibrarySetSelectionParams; result: LibrarySetSelectionResult };
-  /** 条目文件（品牌库的媒体、音色的参考录音）的短期读取句柄，同 `artifacts.openHandle`。没有文件的条目 `not-found`。 */
+  /** A short-lived read handle for an entry's file (brand library media, reference recordings of voices), same as `artifacts.openHandle`. An entry without a file: `not-found`. */
   'library.openHandle': { params: LibraryEntryRef; result: MediaHandle };
   /**
-   * 在一个 Provider 上克隆库里的音色（架构设计 §5.9）：立即返回任务的 `jobId`（`kind: 'voiceClone'`），进度与结果经 `jobs` 主题。
-   * 没有授权声明时 `conflict`（`VOICE_CONSENT_REQUIRED`）；Provider 没有克隆接口时 `invalid-request`（`VOICE_CLONE_UNSUPPORTED`）；
-   * 上传参考录音是数据外发（数据种类 `audio`），没有覆盖它的授权时 `forbidden`（`GRANT_REQUIRED`、`BUDGET_EXCEEDED`……）。
+   * Clone a library voice on a provider (architecture design §5.9): returns the task's `jobId` immediately (`kind: 'voiceClone'`); progress and results are delivered through the `jobs` topic.
+   * Without an authorization statement: `conflict` (`VOICE_CONSENT_REQUIRED`). If the provider has no cloning interface: `invalid-request` (`VOICE_CLONE_UNSUPPORTED`).
+   * Uploading the reference recording is outbound data (data kind `audio`). Without an authorization covering it: `forbidden` (`GRANT_REQUIRED`, `BUDGET_EXCEEDED`, …).
    */
   'library.createVoiceClone': { params: VoiceCloneCreateParams; result: { jobId: Id } };
   /**
-   * 删除一个克隆：先请求远端删除，成功（或远端已经没有）后清掉记录。远端删除失败时记录保留，以 Provider 的错误码报告
-   * （`PROVIDER_*`）。删除了的音色留下的克隆也能这样删。
+   * Delete a clone: first request deletion on the remote side; once that succeeds (or the remote has none), clear the record. If remote deletion fails, the record is kept and reported with the provider's error code (`PROVIDER_*`).
+   * A clone left behind by a deleted voice can also be deleted this way.
    */
   'library.removeVoiceClone': { params: VoiceCloneRemoveParams; result: VoiceCloneRemoveResult };
 
   /**
-   * 创作模板目录（模板包规范 §6）：内置目录与 Runtime Home 下 `templates/` 里的全部可用模板，以及跳过的模板目录与原因。
-   * 每次调用都重新读目录，用户放进新模板之后再列一次就能看到。顺序不是合同。每个模板按 `language`（通常是界面语言，
-   * 缺省为 Runtime 的界面语言）挑一个语言版本（模板包规范 §3.6），清单的文案已经换成它。
+   * Catalog of creative templates (template package spec §6): all the available templates in the built-in catalog and under `templates/` in the Runtime Home, plus the skipped template directories and the reasons.
+   * The directory is read again on every call, so a template the user has added appears on the next list. Order is not a contract. For each template, a language version is picked by `language` (usually the UI language; defaults to the Runtime's UI language) (template package spec §3.6), and the manifest copy is replaced with that version.
    */
   'templates.list': { params: { language?: string }; result: TemplateListResult };
   /**
-   * 一个模板的清单与提示词全文，按 `language` 挑语言版本（同 `templates.list`）。没有这个模板（或它没能加载）时 `not-found`
-   * （`TEMPLATE_NOT_FOUND`）。
+   * The full manifest and prompt of one template, with the language version picked by `language` (same as `templates.list`). If there is no such template, or it could not be loaded: `not-found` (`TEMPLATE_NOT_FOUND`).
    */
   'templates.get': { params: { id: string; language?: string }; result: TemplateDetail };
   /**
-   * 模板随附文件的短期读取句柄，同 `artifacts.openHandle`。`path` 是清单里登记的 `cover.file`、`preview.file` 或 `assets[].path`；
-   * 没登记的路径 `not-found`（`TEMPLATE_FILE_NOT_FOUND`），模板目录里别的文件（含 `prompt.md`）也一样。
+   * A short-lived read handle for a file bundled with a template, same as `artifacts.openHandle`. `path` is `cover.file`, `preview.file` or `assets[].path` registered in the manifest.
+   * A path not registered: `not-found` (`TEMPLATE_FILE_NOT_FOUND`); other files in the template directory (including `prompt.md`) behave the same way.
    */
   'templates.openHandle': { params: { id: string; path: string }; result: MediaHandle };
 
   /**
-   * Agent 的 skill 目录（架构设计 §3.8）：内置目录与 `<Runtime Home>/skills/` 里的全部可用 skill、各自的开关，以及跳过的目录与原因。
-   * 每次调用都重新读目录。顺序不是合同。
+   * Agent skill catalog (architecture design §3.8): all the available skills in the built-in catalog and in `<Runtime Home>/skills/`, each one's on/off switch, plus the skipped directories and the reasons.
+   * The directory is read again on every call. Order is not a contract.
    */
   'skills.list': { params: Record<string, never>; result: SkillListResult };
-  /** 一个 skill 的摘要、`SKILL.md` 全文与文件清单。没有这个 skill（或它没能加载）时 `not-found`（`SKILL_NOT_FOUND`）。 */
+  /** One skill's summary, full `SKILL.md`, and file list. No such skill (or it could not be loaded): `not-found` (`SKILL_NOT_FOUND`). */
   'skills.get': { params: { id: string }; result: SkillDetail };
   /**
-   * 读 skill 目录里的一个文本文件。`path` 必须是 `skills.get` 文件清单里的路径，否则 `not-found`（`SKILL_FILE_NOT_FOUND`）；
-   * 超过 `SKILL_LIMITS.readFileBytes` 时 `invalid-request`（`SKILL_FILE_TOO_LARGE`），不是 UTF-8 文本时 `invalid-request`（`SKILL_FILE_NOT_TEXT`）。
+   * Read one text file in a skill directory. `path` must be a path in the file list from `skills.get`; otherwise `not-found` (`SKILL_FILE_NOT_FOUND`).
+   * Over `SKILL_LIMITS.readFileBytes`: `invalid-request` (`SKILL_FILE_TOO_LARGE`). Not UTF-8 text: `invalid-request` (`SKILL_FILE_NOT_TEXT`).
    */
   'skills.readFile': { params: { id: string; path: string }; result: SkillFileContent };
   /**
-   * 开关一个 skill（内置的也可以）。只存与来源默认值不同的差量。对已经在运行的原生会话不生效：会话开始时的 skill 索引是那时的开关，
-   * 之后新开的原生会话才按新的开关（架构设计 §3.8）。
+   * Switch a skill on or off (built-in ones too). Only the differences from the source default are stored.
+   * It does not affect native sessions that are already running: the skill index at session start reflects the switch at that time, and native sessions started later use the new switch (architecture design §3.8).
    */
   'skills.setEnabled': { params: { id: string; enabled: boolean }; result: SkillChangeResult };
   /**
-   * 从本地文件夹添加（架构设计 §12.9）：把文件夹复制进 `<Runtime Home>/skills/<id>/`，`id` 不给时由文件夹名规范化；归「我的」，默认开。
-   * 文件夹不存在时 `not-found`（`SKILL_SOURCE_NOT_FOUND`）；没有 `SKILL.md`、front matter 不合规、含符号链接时 `invalid-request`
-   * （`SKILL_INVALID`）；超过文件数或总大小上限时 `invalid-request`（`SKILL_TOO_LARGE`）；目标已存在或与已有 skill 同 id 时
-   * `conflict`（`SKILL_EXISTS`），不覆盖。错误的 `details` 带 `skillId` 与将写入的 `path`。Web 会话不开放。
+   * Add from a local folder (architecture design §12.9): copies the folder to `<Runtime Home>/skills/<id>/`. If `id` is not given, it is normalized from the folder name. It is filed under “Mine” and enabled by default.
+   * Folder missing: `not-found` (`SKILL_SOURCE_NOT_FOUND`). No `SKILL.md`, invalid front matter, or symbolic links inside: `invalid-request` (`SKILL_INVALID`). Over the file count or total size limit: `invalid-request` (`SKILL_TOO_LARGE`).
+   * Target already exists, or the same id as an existing skill: `conflict` (`SKILL_EXISTS`), nothing is overwritten. The error `details` carry `skillId` and the `path` that would be written. Not available in Web sessions.
    */
   'skills.add': { params: { path: string; id?: string; commandId?: Id }; result: SkillChangeResult };
   /**
-   * 从 GitHub 导入（架构设计 §12.9）：`url` 是 `owner/repo`、`https://github.com/<owner>/<repo>` 或
-   * `https://github.com/<owner>/<repo>/tree/<ref>/<子目录>`（`ref` 取 `tree/` 之后的一段）。只取那个目录里的文件，不执行任何内容，
-   * 复制进 `<Runtime Home>/skills/<id>/` 并记下地址、`ref` 与提交；归「第三方」，默认关。`id` 不给时由子目录名（仓库根时是仓库名）规范化。
-   * 地址不认识时 `invalid-request`（`SKILL_GITHUB_URL_INVALID`）；仓库、`ref` 或子目录不存在时 `not-found`（`SKILL_SOURCE_NOT_FOUND`）；
-   * 网络失败或被限流时 `conflict`（`SKILL_GITHUB_NETWORK`、`SKILL_GITHUB_RATE_LIMITED`）；严格离线时 `conflict`（`OFFLINE_STRICT`）；
-   * 其余同 `skills.add`（`SKILL_INVALID`、`SKILL_TOO_LARGE`、`SKILL_EXISTS`，冲突在联网之前就查）。Web 会话不开放。
+   * Import from GitHub (architecture design §12.9). `url` is `owner/repo`, `https://github.com/<owner>/<repo>`, or `https://github.com/<owner>/<repo>/tree/<ref>/<subdirectory>` (`ref` is the segment after `tree/`). Only the files in that directory are fetched; nothing is executed. They are copied into `<Runtime Home>/skills/<id>/`, recording the address, the `ref` and the commit. It is filed under “Third party” and disabled by default. If `id` is not given, it is normalized from the subdirectory name (or the repo name when at the repo root).
+   * An unrecognized address: `invalid-request` (`SKILL_GITHUB_URL_INVALID`). A repo, `ref` or subdirectory that does not exist: `not-found` (`SKILL_SOURCE_NOT_FOUND`). A network failure or rate limit: `conflict` (`SKILL_GITHUB_NETWORK`, `SKILL_GITHUB_RATE_LIMITED`). Under strict offline: `conflict` (`OFFLINE_STRICT`).
+   * Otherwise the same as `skills.add` (`SKILL_INVALID`, `SKILL_TOO_LARGE`, `SKILL_EXISTS`; conflicts are checked before going online). Not available in Web sessions.
    */
   'skills.importGithub': { params: { url: string; id?: string; commandId?: Id }; result: SkillChangeResult };
   /**
-   * 移除一个「我的」或「第三方」skill：删掉 `<Runtime Home>/skills/<id>/` 与它的开关记录。内置的 `invalid-request`
-   * （`SKILL_BUILTIN_NOT_REMOVABLE`），只能关。Web 会话不开放。
+   * Remove a “Mine” or “Third party” skill: delete `<Runtime Home>/skills/<id>/` and its switch record. A built-in skill: `invalid-request` (`SKILL_BUILTIN_NOT_REMOVABLE`); built-in skills can only be turned off. Not available in Web sessions.
    */
   'skills.remove': { params: { id: string }; result: SkillRemoveResult };
 
   /**
-   * 共享这台电脑的模型能力（节点协议规范 §10）：开启节点服务并生成一个配对码。已经开着时按新参数重启监听。
-   * 端口被占用时不报错：`listening` 为 false，`error` 说明原因。
+   * Share this computer's model capabilities (node protocol spec §10): turns on the node service and generates a pairing code. If it is already on, listening is restarted with the new parameters.
+   * If the port is occupied, no error is raised: `listening` is false and `error` gives the reason.
    */
   'nodes.share.start': { params: ShareStartParams; result: ShareStatus };
-  /** 关闭共享：取消并删除全部远端任务，停止监听。已配对的客户端保留。 */
+  /** Stop sharing: cancel and delete all remote tasks, and stop listening. Paired clients are kept. */
   'nodes.share.stop': { params: Record<string, never>; result: ShareStatus };
   'nodes.share.status': { params: Record<string, never>; result: ShareStatus };
-  /** 作废旧配对码并生成新的，同时解除配对锁定。共享没有开启时返回 `conflict`。 */
+  /** Invalidate the old pairing code and generate a new one, and also lift the pairing lock. If sharing is not on: `conflict`. */
   'nodes.share.pairingCode': { params: Record<string, never>; result: ShareStatus };
-  /** 吊销一个客户端：令牌立即失效，它的远端任务取消并删除。 */
+  /** Revoke a client: its token becomes invalid immediately, and its remote tasks are cancelled and deleted. */
   'nodes.share.revoke': { params: { clientId: string }; result: ShareStatus };
   /**
-   * 打开或关闭一种模型能力的共享，立即生效（健康端点随即报告；关闭后新任务以 `403 CAPABILITY_DISABLED` 拒绝，已接受的任务照常跑完）。
-   * 状态持久。`capability` 不是节点支持共享的模型能力（`NODE_SHAREABLE_CAPABILITIES`）时 `invalid-request`。
+   * Turn sharing of a model capability on or off, effective immediately. The health endpoint reports the change at once. After it is turned off, new tasks are rejected with `403 CAPABILITY_DISABLED`; tasks already accepted run to completion.
+   * The state is persisted. A `capability` that is not one nodes can share (`NODE_SHAREABLE_CAPABILITIES`): `invalid-request`.
    */
   'nodes.share.setCapability': { params: { capability: string; enabled: boolean }; result: ShareStatus };
-  /** 在局域网里找开着共享的节点（macOS 用 mDNS；其他平台返回空列表）。不含这台电脑自己。 */
+  /** Find nodes on the LAN that have sharing turned on (uses mDNS on macOS; returns an empty list on other platforms). Does not include this computer itself. */
   'nodes.discover': { params: { timeoutMs?: number }; result: { nodes: DiscoveredNode[] } };
   /**
-   * 用节点上显示的配对码配对，令牌只存在本机。失败时返回 `conflict`，`details.code` 为 `REMOTE_NODE_REJECTED`
-   * （`details.reason`：`pairing-code-invalid`、`pairing-locked`、`version`、`source-not-allowed`）或 `REMOTE_NODE_LOST`（连接不上）。
+   * Pair with a node using the pairing code shown on it; the token exists only on this machine. On failure, returns `conflict`, with `details.code` as `REMOTE_NODE_REJECTED` (`details.reason`: `pairing-code-invalid`, `pairing-locked`, `version`, `source-not-allowed`) or `REMOTE_NODE_LOST` (cannot connect).
    */
   'nodes.pair': { params: { host: string; port: number; code: string; alias?: string }; result: { node: PairedNode } };
-  /** 已配对的节点，每个带一次实时的健康探测（2 秒超时）。 */
+  /** Paired nodes, each with a live health probe (2-second timeout). */
   'nodes.list': { params: Record<string, never>; result: { nodes: PairedNode[] } };
-  /** 只删本机的记录与令牌；节点那边的配对由节点的用户吊销。 */
+  /** Deletes only the local record and token. The pairing on the node side is revoked by the node's user. */
   'nodes.remove': { params: { nodeId: string }; result: Record<string, never> };
 
-  /** 对外服务（架构设计 §4.8）：全部服务的状态。节点服务的状态是 `nodes.share.status` 的投影。 */
+  /** External services (architecture design §4.8): the status of all services. The node service's status is a projection of `nodes.share.status`. */
   'services.list': { params: Record<string, never>; result: { services: ServiceStatus[] } };
   /**
-   * 开启一个服务。已经开着时原样返回。端口被占用时不报错：状态为 `error`，`error` 说明原因。
-   * 这个版本没有提供的服务以 `conflict` 拒绝，`details.code` 为 `SERVICE_NOT_AVAILABLE`。节点服务等同 `nodes.share.start`（不带参数）。
+   * Start a service. If it is already running, it is returned as is. If the port is occupied, no error is raised: the status is `error`, with `error` giving the reason.
+   * A service not provided in this version: `conflict` (`details.code` `SERVICE_NOT_AVAILABLE`). The node service is the same as `nodes.share.start` (with no parameters).
    */
   'services.start': { params: { serviceId: ServiceId }; result: { service: ServiceStatus } };
-  /** 停止一个服务：断开已有连接，待处理的审批按取消处理；它提交的 Job 保留。 */
+  /** Stop a service: existing connections are disconnected, pending approvals are treated as cancelled, and the Jobs it submitted are kept. */
   'services.stop': { params: { serviceId: ServiceId }; result: { service: ServiceStatus } };
   /**
-   * 改一个服务的配置（随 Runtime 启动、端口、访问策略），原子落盘后生效；开着时改端口会按新端口重启监听。
-   * 节点服务以 `invalid-request` 拒绝：它的配置用 `nodes.share.*`。
+   * Change a service's configuration (whether it starts with the Runtime, its port, access policy). It takes effect after an atomic write to disk. If it is running, changing the port restarts listening on the new port.
+   * The node service rejects this with `invalid-request`: its configuration is set with `nodes.share.*`.
    */
   'services.configure': { params: ServiceConfigureParams; result: { service: ServiceStatus } };
-  /** 处理一条服务审批。已经处理过、超时或取消的返回 `already-resolved`。 */
+  /** Handle one service approval. An approval that has already been handled, timed out or been cancelled returns `already-resolved`. */
   'services.respondToApproval': {
     params: { approvalId: Id; decision: ServiceApprovalDecision };
     result: { status: 'allowed' | 'denied' | 'already-resolved' };
   };
-  /** 为 MCP 服务发放一个客户端令牌。令牌明文只在这里返回一次，Runtime 只存哈希。 */
+  /** Issue a client token for the MCP service. The plaintext token is returned here only once; the Runtime stores only a hash. */
   'services.mcp.createClient': { params: { name: string }; result: { client: ServiceClient; token: string } };
   'services.mcp.listClients': { params: Record<string, never>; result: { clients: ServiceClient[] } };
-  /** 吊销一个客户端：它的令牌立即失效。没有这个客户端时 `not-found`。 */
+  /** Revoke a client: its token becomes invalid immediately. No such client: `not-found`. */
   'services.mcp.revokeClient': { params: { clientId: string }; result: { clients: ServiceClient[] } };
-  /** 连接信息：地址、请求头形状与可粘贴的配置片段，不含令牌明文。给 `clientId` 时片段里写上客户端名。 */
+  /** Connection info: the address, the request header shape, and a config snippet that can be pasted, without the plaintext token. With `clientId`, the client's name is written into the snippet. */
   'services.mcp.connectionInfo': { params: { clientId?: string }; result: McpConnectionInfo };
-  /** 为模型接口服务发放一个客户端令牌：规则同 `services.mcp.createClient`，两个服务的令牌互不通用。 */
+  /** Issue a client token for the model API service. The rules are the same as `services.mcp.createClient`; the tokens of the two services are not interchangeable. */
   'services.modelApi.createClient': { params: { name: string }; result: { client: ServiceClient; token: string } };
   'services.modelApi.listClients': { params: Record<string, never>; result: { clients: ServiceClient[] } };
-  /** 吊销一个客户端：它的令牌立即失效。没有这个客户端时 `not-found`。 */
+  /** Revoke a client: its token becomes invalid immediately. No such client: `not-found`. */
   'services.modelApi.revokeClient': { params: { clientId: string }; result: { clients: ServiceClient[] } };
-  /** 连接信息：基址（OpenAI SDK 的 `baseURL`）、请求头形状与片段，不含令牌明文。 */
+  /** Connection info: the base URL (the OpenAI SDK's `baseURL`), the request header shape and a snippet, without the plaintext token. */
   'services.modelApi.connectionInfo': { params: { clientId?: string }; result: ModelApiConnectionInfo };
   /**
-   * 设置一条别名（同名的替换）：模型名 → 一种能力下的 Provider 与模型（`modelId` 不给时用该 Provider 的默认模型）。
-   * 不检查目标此刻是否可用：不可用时请求按 §4.8 回答 404 或 503。返回整张别名表。
+   * Set an alias (an existing one with the same name is replaced): model name → provider and model for one capability (without `modelId`, that provider's default model is used).
+   * It does not check whether the target is available right now: when unavailable, requests are answered with 404 or 503 per §4.8. Returns the whole alias table.
    */
   'services.modelApi.setAlias': {
     params: { alias: string; capability: ModelApiAlias['capability']; providerId: string; modelId?: string };
     result: { aliases: ModelApiAlias[] };
   };
-  /** 删除一条别名；没有这条时 `not-found`。返回整张别名表。 */
+  /** Delete an alias. If there is no such alias: `not-found`. Returns the whole alias table. */
   'services.modelApi.removeAlias': { params: { alias: string }; result: { aliases: ModelApiAlias[] } };
   /**
-   * 为浏览器生成一个访问链接（架构设计 §4.8）：`http://127.0.0.1:<port>/#code=<一次性代码>`。代码放在 fragment 里，
-   * 不进服务器日志与 Referer；只能换一次会话，`WEB_ACCESS_CODE_TTL_MS` 之后作废。给 `video`（videoId）时链接直达这个视频的
-   * 编辑器：路径与查询是 `webVideoHref` 的结果（`/home?video=<JSON 的 FileTarget>`），fragment 里仍只有代码；找不到这个视频时
-   * `not-found`（`details.code: 'VIDEO_NOT_FOUND'`）。Web 服务没有开着时以 `conflict` 拒绝（`details.code: 'SERVICE_NOT_RUNNING'`）。
-   * 浏览器会话自己不能调用这个方法。
+   * Generate an access link for the browser (architecture design §4.8): `http://127.0.0.1:<port>/#code=<one-time code>`. The code is in the fragment, so it does not enter server logs or the Referer. It can be exchanged for a session only once, and it expires after `WEB_ACCESS_CODE_TTL_MS`.
+   * With `video` (a videoId), the link goes directly to that video's editor: the path and query are the result of `webVideoHref` (`/home?video=<JSON of FileTarget>`), and the fragment still holds only the code. If the video is not found: `not-found` (`details.code: 'VIDEO_NOT_FOUND'`).
+   * If the Web service is not running, it is rejected with `conflict` (`details.code: 'SERVICE_NOT_RUNNING'`).
+   * A browser session cannot call this method itself.
    */
   'services.web.createAccessLink': { params: { video?: Id }; result: WebAccessLink };
-  /** 当前的浏览器会话（不含会话令牌）。 */
+  /** The current browser session (without the session token). */
   'services.web.listSessions': { params: Record<string, never>; result: { sessions: WebSession[] } };
-  /** 吊销一个浏览器会话：它的连接立即断开，cookie 随即失效。没有这个会话时 `not-found`。 */
+  /** Revoke a browser session: its connection is disconnected immediately and its cookie becomes invalid. No such session: `not-found`. */
   'services.web.revokeSession': { params: { sessionId: string }; result: { sessions: WebSession[] } };
 
-  /** Runtime 持有的偏好设置（架构设计 §5.10）。不给 `keys` 时返回全部；不认识的键 `invalid-request`。 */
+  /** Preferences held by the Runtime (architecture design §5.10). Without `keys`, all are returned. An unknown key: `invalid-request`. */
   'settings.get': { params: { keys?: SettingKey[] }; result: SettingsView };
   /**
-   * 改一组设置：整批校验（未知的键、不合 schema 的值整批 `invalid-request`，一个也不保存），校验通过后原子落盘再生效。
-   * `null` 表示恢复默认值。返回新的完整视图；有效值变了的键经 `settings` 主题送 `settings.updated`。
+   * Change a set of settings. The whole batch is validated first: unknown keys or values that do not match the schema fail the whole batch with `invalid-request`, and none are saved. After validation passes, the settings are written to disk atomically and then take effect.
+   * `null` restores the default. Returns the new full view; keys whose effective value changed are sent as `settings.updated` on the `settings` topic.
    */
   'settings.set': { params: { values: { [K in SettingKey]?: SettingInputValues[K] | null } }; result: SettingsSnapshot };
 
@@ -1149,91 +1095,87 @@ export interface RpcMethods {
   unsubscribe: { params: { topic: Topic }; result: { ok: true } };
 }
 
-/** 一个文件（或视频目录）的定位：Space 条目，或某个会话工作目录、项目目录里的相对路径。 */
+/** The location of a file (or video directory): a Space entry, or a relative path in a session working directory or project directory. */
 export type FileTarget = { entryId: Id } | { conversationId: Id; path: string } | { projectId: Id; path: string };
 
-/** `projects.files.list` 的一项。`path` 相对根目录，用 `/` 分隔，可以原样交给 `{ conversationId, path }`。 */
+/** One item from `projects.files.list`. `path` is relative to the root, uses `/` as separator, and can be passed as is to `{ conversationId, path }`. */
 export interface ProjectFileEntry {
   path: string;
   name: string;
   isDir: boolean;
-  /** 文件的字节数；目录为 null。 */
+  /** The size of the file in bytes; null for a directory. */
   size: number | null;
-  /** 最后修改时间；视频目录取 `video.db`、幻灯片目录取 `deck.json`、设计稿目录取 `canvas.json`、设计系统目录取 `design-system.json` 的修改时间。 */
+  /** The last modification time. For a video directory, the time of `video.db`; for a slide directory, `deck.json`; for a design directory, `canvas.json`; for a design-system directory, `design-system.json`. */
   modifiedAt: string | null;
   /**
-   * 认得出的媒体与文档类型（与 Space 同一套分类）；含 `video.db` 的目录是 `video`，含合法 `deck.json` 的目录是 `slides`，
-   * 含合法 `canvas.json`（v 为 3）的目录是 `design`，含合法 `design-system.json`（认法见 docs/design/canvas §10.1）的目录是
-   * `design-system`；其余为 null。
+   * The media and document types recognized (the same classification as Space). A directory containing `video.db` is `video`; a directory containing a valid `deck.json` is `slides`; a directory containing a valid `canvas.json` (v 3) is `design`; a directory containing a valid `design-system.json` (recognized as described in docs/design/canvas §10.1) is `design-system`. Otherwise null.
    */
   kind: SpaceEntryKind | null;
 }
 
 export interface ProjectFilesList {
-  /** 根目录的绝对路径（登记的路径，不解析符号链接）。 */
+  /** The absolute path of the root directory (the registered path; symbolic links are not resolved). */
   root: string;
   entries: ProjectFileEntry[];
-  /** 超过 `limit` 或查找的上限，只返回了一部分。 */
+  /** Exceeded `limit` or the search cap, so only part of the results were returned. */
   truncated: boolean;
 }
 
-/** 一个已打开的视频里的素材版本。不给版本时取当前版本。 */
+/** An asset version in an open video. Without a version, the current version is used. */
 export interface AssetTarget {
   videoId: Id;
   assetId: Id;
   revision?: Revision;
 }
 
-/** 会话里某条用户消息带的附件（`AttachmentRef.id`）。只读：媒体通道核对它确实出现在这条会话的消息里。 */
+/** An attachment carried by a user message in a session (`AttachmentRef.id`). Read-only: the media channel checks that it does appear in a message of this session. */
 export interface AttachmentTarget {
   conversationId: Id;
   attachmentId: Id;
 }
 
 /**
- * 桌面端的本机文件（架构设计 §4.5）：工作目录之外、没有产物记录的文档或媒体副本，在文件标签里只读预览。绝对路径；
- * Runtime 只对桌面客户端发放，以文件自己的目录为根检查，只给普通文件。不是 `FileTarget`：不能拿去打开、删除视频。
+ * A local file on the desktop (architecture design §4.5): a document or media copy outside the working directory that has no artifact record, previewed read-only in the file tab. An absolute path. The Runtime issues it only to desktop clients; it checks against the file's own directory as the root, and gives only regular files. It is not a `FileTarget`: it cannot be used to open or delete a video.
  */
 export interface LocalFileTarget {
   localPath: string;
 }
 
 /**
- * 媒体通道的定位：文件，或一个已打开的视频里的素材（受管理的素材在视频目录的 `blobs/` 里），
- * 或会话里某条消息附的图片，或桌面端的本机文件。
+ * The locator for the media channel: a file; or an asset in an open video (managed assets live in the `blobs/` of the video directory); or an image attached to a message in a session; or a local file on the desktop.
  */
 export type MediaTarget = FileTarget | AssetTarget | AttachmentTarget | LocalFileTarget;
 
 export interface VideoOpenResult {
   ref: VideoRef;
-  /** 订阅 `video:<id>` 主题之前的首份快照；界面随后订阅主题，从它的序号接上。 */
+  /** The first snapshot before subscribing to the `video:<id>` topic. The UI then subscribes to the topic and continues from its sequence number. */
   snapshot: VideoTopicSnapshot;
 }
 
 export interface EditResult {
   receipt: TransactionReceipt;
-  /** 同一个 `commandId` 重试时为 true：返回的是第一次提交的回执，没有再提交一次。 */
+  /** true when the same `commandId` is retried: the receipt from the first submission is returned, and nothing is submitted again. */
   replayed: boolean;
 }
 
 export interface SubtitleTrack {
-  /** 取这个字幕文件用的定位，与视频同一个来源目录。 */
+  /** The locator used to fetch this caption file, in the same source directory as the video. */
   target: FileTarget;
   fileName: string;
-  /** 与视频同名（去掉扩展名之后相同，或只多出语言之类的后缀）。同名的排在前面。 */
+  /** Same name as the video (equal after removing the extension, or differing only by a suffix such as a language). Same-name files come first. */
   matched: boolean;
-  /** 同名时视频名之后的部分，例如 `zh`、`en.forced`；没有时为 null。 */
+  /** For same-name files, the part after the video name, for example `zh` or `en.forced`; null if there is none. */
   tag: string | null;
 }
 
 export type FileContentKind = 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'archive' | 'binary';
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be';
 
-/** `progress`：兼容副本编码到了源时长的几成（0–1）；还不知道时省略。 */
+/** `progress`: how far, as a fraction (0–1), the compatible copy has been encoded through the source duration; omitted when not yet known. */
 export type MediaPlayback = { status: 'pending'; retryAfterMs: number; progress?: number } | { status: 'ready'; media: MediaHandle };
 
 export interface MediaHandle {
-  /** Runtime 根据至多 64 KiB 的文件前缀识别；旧 Runtime 可以不提供。 */
+  /** The Runtime identifies it from up to the first 64 KiB of the file. Old Runtimes may not provide it. */
   contentKind?: FileContentKind;
   textEncoding?: TextEncoding;
   url: string;
@@ -1243,7 +1185,7 @@ export interface MediaHandle {
   expiresAt: string;
 }
 
-/** 要找的一个字体 face：族名、字重（1–1000）与是否斜体（排字时点的名）。 */
+/** One font face to look for: the family name, the weight (1–1000), and whether it is italic (the name used when typesetting). */
 export interface FontFaceQuery {
   family: string;
   weight: number;
@@ -1251,12 +1193,11 @@ export interface FontFaceQuery {
 }
 
 /**
- * 把字体文件里的一个 face 抽成单独的字体：新字体共 `size` 字节，开头是 `header`（十六进制），其余每张表从原文件的
- * `from` 起取 `length` 个字节放到新字体的 `to` 处（表之间的空隙是 0）。
+ * Extract one face from a font file into a standalone font. The new font is `size` bytes in total and begins with `header` (hex). Each remaining table is taken from the original file starting at `from`, `length` bytes, and placed at `to` in the new font. The gaps between tables are zero bytes.
  */
 export interface FontFaceLayout {
   faceIndex: number;
-  /** 原文件的字节数。 */
+  /** The byte count of the original file. */
   fileSize: number;
   size: number;
   header: string;
@@ -1264,31 +1205,28 @@ export interface FontFaceLayout {
 }
 
 /**
- * 找不到一个 face 的原因：`not-found` 本机与下载缓存都没有这个族（也不在字体目录里）；`too-large` 有，但抽出来超过上限；
- * `downloadable` 在字体目录里、没下载（自动下载关着、严格离线，或这次没要求下载）；`downloading` 正在下载（`jobId`），
- * 下载完再问一次就有；`download-failed` 最近一次下载失败（`code`），过一会儿或用 `fonts.download` 再试。
+ * Reasons a face cannot be found. `not-found`: neither the local fonts nor the download cache have this family, and it is not in the font directory. `too-large`: it is present, but the extracted result exceeds the limit. `downloadable`: it is in the font directory but not downloaded (auto-download is off, strict offline, or no download was requested this time). `downloading`: a download is in progress (`jobId`); ask again after it finishes. `download-failed`: the most recent download failed (`code`); try again later, or retry with `fonts.download`.
  */
 export type FontMissingReason = 'not-found' | 'too-large' | 'downloadable' | 'downloading' | 'download-failed';
 
-/** `fonts.resolve` 的结果：找到的 face（按请求的次序，重复的只给一次）与它所在文件的读取句柄，找不到的与原因。 */
+/** The result of `fonts.resolve`: the faces found (in request order, duplicates given once), with the read handle of the file they are in; and those not found, with the reason. */
 export interface FontsResolveResult {
-  /** `source`：`local` 本机字体，`downloaded` 下载缓存。 */
+  /** `source`: `local` for local fonts, `downloaded` for the download cache. */
   faces: (FontFaceQuery & FontFaceLayout & { source: 'local' | 'downloaded'; file: MediaHandle })[];
   missing: (FontFaceQuery & { reason: FontMissingReason; jobId?: Id; code?: FontDownloadErrorCode | 'CANCELLED' })[];
 }
 
 /**
- * 素材声音的峰值。`peaks` 是 base64 编码的字节，一个字节一格：那段源时间里（声道混合之后）的最大绝对振幅，
- * 0–255 对应静音到满幅，没有归一化。第 `i` 格从源时间 `i / binsPerSecond` 秒开始。素材没有声音时是 `no-audio`。
+ * Peak levels of an asset's sound. `peaks` is base64-encoded bytes, one byte per bin: the maximum absolute amplitude in that span of source time (after channels are mixed), where 0–255 maps from silence to full scale. Not normalized. Bin `i` starts at source time `i / binsPerSecond` seconds. If the asset has no sound: `no-audio`.
  */
 export type MediaPeaks =
   { status: 'ready'; binsPerSecond: number; peaks: string } | { status: 'pending'; retryAfterMs: number } | { status: 'no-audio' };
 
 export interface MediaThumbnail {
   mimeType: 'image/jpeg';
-  /** base64 编码的图片。 */
+  /** A base64-encoded image. */
   data: string;
-  /** 实际取帧的源时间（秒）：请求的时间按 0.1 秒取整、限制在素材时长之内。 */
+  /** The source time (seconds) at which the frame was actually taken: the requested time rounded to 0.1 s and clamped to the asset's duration. */
   at: number;
 }
 
@@ -1297,8 +1235,7 @@ export type RpcParams<M extends RpcMethod> = RpcMethods[M]['params'];
 export type RpcResult<M extends RpcMethod> = RpcMethods[M]['result'];
 
 /**
- * Agent 列表与偏好：设置页与会话选择器共用。`drivers` 是每个 Driver 最近一次的探测结果（启动时来自磁盘缓存，`checkedAt`
- * 是那次探测的时间）；还没有任何结果、正在首次探测的 Driver 不在里面，列在 `checking`。`agents` 主题推送新视图。
+ * The Agent list and preferences: shared by the settings page and the session picker. `drivers` is each Driver's most recent probe result (at startup, from the disk cache; `checkedAt` is the time of that probe). Drivers with no result yet, or currently in their first probe, are not in it and are listed in `checking`. The `agents` topic pushes new views.
  */
 export interface AgentsView {
   drivers: DriverInfo[];

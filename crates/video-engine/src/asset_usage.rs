@@ -1,13 +1,11 @@
-//! 素材的引用与清理（命令与协议规范 §4.2 `removeAssets`）。
+//! Asset references and cleanup (command and protocol spec §4.2 `removeAssets`).
 //!
-//! 一个素材「有引用」，是指下面任何一处还指向它（与 `check_references` 核对的同一张图，再加文档的来源）：
-//! - 任何序列上的实例：内容本身的 `assetRef` 与合成的预渲染替身 `prerender`（[`TimelineItem::asset_refs`]）；
-//! - 章节（标记）的缩略图；
-//! - 文档的来源素材 `sourceAssetId`：转写、剪口集合、剪辑提案描述的录音。
+//! An asset “is referenced” when any of the places below still points to it (the same map checked by `check_references`, plus the document's provenance):
+//! - any instance on any sequence: the content's own `assetRef` and the synthesized prerender stand-in `prerender` ([`TimelineItem::asset_refs`]);
+//! - the thumbnail of a chapter (marker);
+//! - a document's source asset `sourceAssetId`: the transcript, the cut set, and the recording described by the edit proposal.
 //!
-//! 没有引用的素材可以删掉记录（`removeAssets`）。代码包与它烘焙出的预渲染替身成对处理：替身的来源记录
-//! （`provenance` 为 `composition-bake`，代码包规范 §7）里的 `sourceBundleRef` 是代码包清单的 `bundleId/revision`，
-//! 与代码包素材清单的同名字段对上就是一对。
+//! An unreferenced asset may have its record deleted (`removeAssets`). A code bundle and the prerender stand-in baked from it are handled as a pair: the `sourceBundleRef` in the stand-in's provenance record (`provenance` is `composition-bake`, code bundle spec §7) is the `bundleId/revision` of the code bundle manifest. The two are a pair when it matches the same-named field in the code bundle's asset manifest.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,10 +17,10 @@ use crate::model::*;
 use crate::ops::EditContext;
 use crate::state::VideoState;
 
-/// 烘焙出的预渲染替身在 `provenance.origin` 里的取值（代码包规范 §7，与 `@cuccut/protocol` 的 `BAKE_PROVENANCE_ORIGIN` 相同）。
+/// The value of `provenance.origin` on a baked prerender stand-in (code bundle spec §7; same as `BAKE_PROVENANCE_ORIGIN` in `@cuccut/protocol`).
 pub const BAKE_PROVENANCE_ORIGIN: &str = "composition-bake";
 
-/// 一个没有引用的素材（`videos.unusedAssets`）。
+/// An asset with no references (`videos.unusedAssets`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnusedAsset {
@@ -30,16 +28,16 @@ pub struct UnusedAsset {
     pub name: String,
     pub kind: AssetKind,
     pub media_type: String,
-    /// 当前版本的字节数。
+    /// Byte size of the current version.
     pub byte_length: u64,
-    /// `managed`（bytes 在视频目录里）或 `linked`（文件留在原处，删掉记录不动它）。
+    /// `managed` (bytes are in the video directory) or `linked` (the file stays where it is; deleting the record does not touch it).
     pub storage: String,
-    /// 成对的另一半（代码包 ↔ 它的预渲染替身），同样没有引用；删掉其中一个时一起删。
+    /// The other half of a pair (code bundle ↔ its prerender stand-in), also unreferenced; when one is deleted, both are deleted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paired_with: Vec<Id>,
 }
 
-/// 每个有引用的素材 → 引用它的实例、标记与文档的 ID。
+/// For each referenced asset → the IDs of the instances, markers and documents that reference it.
 pub fn asset_users(state: &VideoState) -> BTreeMap<Id, BTreeSet<Id>> {
     let mut users: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
     for placed in state.items.values() {
@@ -60,7 +58,7 @@ pub fn asset_users(state: &VideoState) -> BTreeMap<Id, BTreeSet<Id>> {
     users
 }
 
-/// 代码包清单的身份 `bundleId/revision`。
+/// The identity of a code bundle manifest: `bundleId/revision`.
 fn bundle_identity(asset: &AssetRecord) -> Option<(String, String)> {
     if asset.kind != AssetKind::Bundle {
         return None;
@@ -69,7 +67,7 @@ fn bundle_identity(asset: &AssetRecord) -> Option<(String, String)> {
     identity_of(manifest.get("bundleId")?, manifest.get("revision")?)
 }
 
-/// 预渲染替身记下的来源代码包身份（烘焙记录的 `sourceBundleRef`）。
+/// The source code bundle identity recorded by a prerender stand-in (the `sourceBundleRef` of the bake record).
 fn baked_from(asset: &AssetRecord) -> Option<(String, String)> {
     let revision = asset.revisions.get(&asset.current_revision)?;
     if revision.provenance.origin != BAKE_PROVENANCE_ORIGIN {
@@ -88,7 +86,7 @@ fn identity_of(id: &Value, revision: &Value) -> Option<(String, String)> {
     Some((id.as_str()?.to_string(), revision))
 }
 
-/// 素材 → 成对的另一半（代码包 ↔ 预渲染替身），只看身份，不看有没有引用。
+/// Asset → its paired other half (code bundle ↔ prerender stand-in); matches on identity only, not on whether it is referenced.
 fn pairs(state: &VideoState) -> BTreeMap<Id, BTreeSet<Id>> {
     let mut bundles: BTreeMap<(String, String), Vec<&Id>> = BTreeMap::new();
     for (id, asset) in &state.assets {
@@ -107,7 +105,7 @@ fn pairs(state: &VideoState) -> BTreeMap<Id, BTreeSet<Id>> {
     out
 }
 
-/// 视频里没有引用的素材，按 ID 排序。
+/// Assets in the video that have no references, sorted by ID.
 pub fn unused_assets(state: &VideoState) -> Vec<UnusedAsset> {
     let users = asset_users(state);
     let unused: BTreeSet<&Id> = state.assets.keys().filter(|id| !users.contains_key(*id)).collect();
@@ -139,7 +137,7 @@ pub fn unused_assets(state: &VideoState) -> Vec<UnusedAsset> {
         .collect()
 }
 
-/// `removeAssets`：列出的素材都必须没有引用；成对的另一半也没有引用时一起删掉。只删记录。
+/// `removeAssets`: every listed asset must have no references; when the other half of a pair is also unreferenced, it is deleted together. Only records are deleted.
 pub(crate) fn remove_assets(state: &mut VideoState, asset_ids: &[Id], ctx: &mut EditContext<'_>) -> EngineResult<()> {
     if asset_ids.is_empty() {
         return Err(ErrorBody::invalid_operation(msg!(

@@ -1,12 +1,11 @@
-//! Easing 词汇表（规范附录 A，封闭枚举）与曲线规格。
+//! Easing vocabulary (spec Appendix A, closed enum) and curve specs.
 //!
-//! `apply_ease` / `EASE_NAMES` 的函数体逐式来自 `ccut-core/src/ease.rs`；
-//! `spring_value` / `spring_normalized` / `curve_overshoots` 逐式来自
-//! `ccut-timeline/src/motion.rs`。这里是它们唯一的实现处，其余 crate re-export。
+//! The function bodies of `apply_ease` / `EASE_NAMES` are copied expression-for-expression from `ccut-core/src/ease.rs`;
+//! `spring_value` / `spring_normalized` / `curve_overshoots` are copied expression-for-expression from `ccut-timeline/src/motion.rs`. This is their only implementation site; the other crates re-export them.
 
 use std::f64::consts::PI;
 
-/// 规范附录 A 的封闭 easing 枚举。
+/// Closed easing enum from spec Appendix A.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EaseId {
     Linear,
@@ -31,7 +30,7 @@ pub enum EaseId {
     EaseOutElastic,
 }
 
-/// 顺序即 `EaseId` 的声明顺序，也是 Timeline schema `ease` 枚举的顺序。
+/// The order is the declaration order of `EaseId`, and also the order of the Timeline schema `ease` enum.
 pub const EASE_NAMES: &[&str] = &[
     "linear",
     "easeInQuad",
@@ -91,7 +90,7 @@ impl EaseId {
     }
 }
 
-/// 逐式来自 `ccut-core/src/ease.rs::apply_ease` 的 match 分支。
+/// Match arms copied expression-for-expression from `ccut-core/src/ease.rs::apply_ease`.
 pub fn apply_ease_id(id: EaseId, t: f64) -> f64 {
     match id {
         EaseId::Linear => t,
@@ -186,9 +185,9 @@ pub fn apply_ease_id(id: EaseId, t: f64) -> f64 {
     }
 }
 
-/// 未知名字回落到恒等（与 `ease.rs` 的 `_ => t` 一致）。**不要**把这个回落改成
-/// `easeOutCubic`：GPUI / Mac kernel 的回落不同，Timeline schema 校验让这个分歧
-/// 对已校验文档不可达，阶段 1 改任何一侧都会移动像素（计划 §4.5）。
+/// Unknown names fall back to identity (consistent with `_ => t` in `ease.rs`). **Do not** change this fallback to
+/// `easeOutCubic`: the fallback in the GPUI / Mac kernel differs, and Timeline schema validation keeps this divergence
+/// unreachable for validated documents. Changing either side in stage 1 would move pixels (plan §4.5).
 pub fn apply_ease(name: Option<&str>, t: f64) -> f64 {
     match EaseId::parse(name.unwrap_or("linear")) {
         Some(id) => apply_ease_id(id, t),
@@ -204,11 +203,11 @@ pub enum StepPosition {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CurveSpec {
-    /// 未声明曲线。行为等价 `linear`，但作为 BCF `Kf.ease: None` 的无损载体存在。
+    /// Undeclared curve. Behaves like `linear`, but exists as the lossless carrier for BCF `Kf.ease: None`.
     Default,
     Named(EaseId),
-    /// 不在封闭枚举里的名字。必须保留原文：`curve_overshoots` 对它做子串匹配，
-    /// 采样时回落到恒等（计划 §1.2）。
+    /// A name outside the closed enum. The original text must be kept: `curve_overshoots` does substring matching on it,
+    /// and sampling falls back to identity (plan §1.2).
     Unknown(String),
     CubicBezier {
         x1: f64,
@@ -234,7 +233,7 @@ impl CurveSpec {
         }
     }
 
-    /// 回到 BCF `Kf.ease`：`Default` 是 `None`，其余是原名。
+    /// Back to BCF `Kf.ease`: `Default` is `None`, the others are their original names.
     pub fn ease_name(&self) -> Option<&str> {
         match self {
             Self::Default => None,
@@ -245,7 +244,7 @@ impl CurveSpec {
     }
 }
 
-/// 逐式来自 `ccut-timeline/src/motion.rs::sample_curve`。
+/// Expression-for-expression from `ccut-timeline/src/motion.rs::sample_curve`.
 pub fn sample_curve(curve: &CurveSpec, progress: f64) -> f64 {
     match curve {
         CurveSpec::Default => apply_ease(None, progress),
@@ -257,15 +256,15 @@ pub fn sample_curve(curve: &CurveSpec, progress: f64) -> f64 {
     }
 }
 
-/// 字幕入场姿态的**历史** cubic-bezier 求解器（`transition.caption.*@1`）。
+/// Historical cubic-bezier solver for caption entry poses (`transition.caption.*@1`).
 ///
-/// 逐行搬自 `core/crates/ccut-kernel/src/cmd/studio_export/transition.rs::cubic_bezier`：
-/// 6 次牛顿（每步把参数夹回 `[0, 1]`）+ 10 次二分，容差 `1e-6`。
+/// Copied line-for-line from `core/crates/ccut-kernel/src/cmd/studio_export/transition.rs::cubic_bezier`:
+/// 6 Newton iterations (clamping the parameter back to `[0, 1]` at each step) + 10 bisection steps, tolerance `1e-6`.
 ///
-/// **为什么不用 [`cubic_bezier`]**：那条是 8 次牛顿 + 1e-12 容差，两者在
-/// `[0, 1]` 上最大差约 `2.2e-6`。乘 255 之后落在 u8 舍入边界上的概率不低，
-/// 换求解器就是换字幕像素——`core/fixtures/motion/studio-export-fingerprints.json`
-/// 的 180 个取值钉着它。配方因此显式声明 `solver`，而不是"反正都是贝塞尔"。
+/// **Why not [`cubic_bezier`]**: that one uses 8 Newton iterations and a 1e-12 tolerance, and the two differ by at most
+/// about `2.2e-6` on `[0, 1]`. After multiplying by 255, the chance of landing on a u8 rounding boundary is not low, so
+/// switching solvers would switch caption pixels; the 180 values in `core/fixtures/motion/studio-export-fingerprints.json`
+/// pin this. The recipe therefore declares `solver` explicitly, rather than assuming “they are all Béziers anyway”.
 pub fn cubic_bezier_caption(x1: f64, y1: f64, x2: f64, y2: f64, progress: f64) -> f64 {
     fn coordinate(t: f64, p1: f64, p2: f64) -> f64 {
         let inverse = 1.0 - t;
@@ -301,7 +300,7 @@ pub fn cubic_bezier_caption(x1: f64, y1: f64, x2: f64, y2: f64, progress: f64) -
     coordinate(parameter, y1, y2)
 }
 
-/// 逐式来自 `ccut-timeline/src/motion.rs::curve_overshoots`（含子串匹配语义）。
+/// Expression-for-expression from `ccut-timeline/src/motion.rs::curve_overshoots` (including the substring-matching semantics).
 pub fn curve_overshoots(curve: &CurveSpec) -> bool {
     match curve {
         CurveSpec::Default => false,
@@ -313,7 +312,7 @@ pub fn curve_overshoots(curve: &CurveSpec) -> bool {
     }
 }
 
-/// 逐式来自 `ccut-timeline/src/motion.rs::spring_value`。
+/// Expression-for-expression from `ccut-timeline/src/motion.rs::spring_value`.
 pub fn spring_value(response: f64, damping: f64, time: f64) -> f64 {
     if time <= 0.0 {
         return 0.0;
@@ -335,7 +334,7 @@ pub fn spring_value(response: f64, damping: f64, time: f64) -> f64 {
     }
 }
 
-/// 逐式来自 `ccut-timeline/src/motion.rs::spring_normalized`。
+/// Expression-for-expression from `ccut-timeline/src/motion.rs::spring_normalized`.
 pub fn spring_normalized(response: f64, damping: f64, progress: f64) -> f64 {
     if progress <= 0.0 {
         return 0.0;
@@ -351,7 +350,7 @@ pub fn spring_normalized(response: f64, damping: f64, progress: f64) -> f64 {
     }
 }
 
-/// 阶段 1 只由单测驱动；阶段 5 收编 `studio_export/transition.rs` 的 `magic-*` 曲线。
+/// Stage 1 is driven only by unit tests; stage 5 absorbs the `magic-*` curves from `studio_export/transition.rs`.
 pub fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
     if t <= 0.0 {
         return 0.0;
@@ -363,7 +362,7 @@ pub fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
         let v = 1.0 - u;
         3.0 * v * v * u * a + 3.0 * v * u * u * b + u * u * u
     };
-    // 牛顿迭代 + 二分兜底，固定迭代次数保证确定性。
+    // Newton iteration with a bisection fallback; a fixed iteration count guarantees determinism.
     let mut u = t;
     for _ in 0..8 {
         let x = bezier(x1, x2, u) - t;
@@ -393,7 +392,7 @@ pub fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
     bezier(y1, y2, u)
 }
 
-/// 阶段 1 只由单测驱动。
+/// Stage 1 is driven only by unit tests.
 pub fn steps(count: u32, position: StepPosition, t: f64) -> f64 {
     if count == 0 {
         return t;

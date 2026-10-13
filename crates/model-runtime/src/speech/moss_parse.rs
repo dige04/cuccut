@@ -1,4 +1,4 @@
-//! MOSS 输出 `[start][Sxx]text[end]` 的增量解析、生成预算与结果适配。移植自 v2 `ccut-speech-core`。
+//! Incremental parsing of MOSS output `[start][Sxx]text[end]`, generation budget and result adaptation. Ported from v2 `ccut-speech-core`.
 
 use super::{LiveSegment, RowIn};
 
@@ -21,7 +21,7 @@ enum State {
     AfterEnd,
 }
 
-/// `[start][Sxx]text[end]` 增量解析器。
+/// Incremental parser for `[start][Sxx]text[end]`.
 pub struct MossOutputParser {
     state: State,
     token: String,
@@ -247,11 +247,9 @@ fn is_timestamp_character(character: char) -> bool {
     character.is_numeric() || matches!(character, '.' | ',')
 }
 
-/// 字节流增量解码器：按任意切点接收解码字节，只把合法 UTF-8 前缀喂给
-/// [`MossOutputParser`]，不完整的多字节序列留到下一批。
+/// Incremental byte-stream decoder: accepts decoded bytes split at arbitrary points, feeds only the valid UTF-8 prefix to [`MossOutputParser`], and holds incomplete multi-byte sequences until the next batch.
 ///
-/// 替换语义与 `String::from_utf8_lossy` 一致：真正非法的序列换成一个
-/// `U+FFFD`，因此任意切分下的产出都等于对整段字节做一次性 lossy 解码再解析。
+/// Replacement semantics match `String::from_utf8_lossy`: genuinely invalid sequences are replaced with a single `U+FFFD`, so the output under any split equals a one-shot lossy decode of the whole byte stream followed by parsing.
 #[derive(Default)]
 pub struct MossStreamDecoder {
     parser: MossOutputParser,
@@ -282,7 +280,7 @@ impl MossStreamDecoder {
                             segments.extend(self.parser.feed("\u{FFFD}"));
                             self.pending.drain(..valid + invalid);
                         }
-                        // 尾部只是被切断的合法序列，等下一批字节。
+                        // A tail that is merely a truncated valid sequence waits for the next batch of bytes.
                         None => {
                             self.pending.drain(..valid);
                             break;
@@ -325,11 +323,10 @@ pub struct MossGenerationPlan {
 }
 
 impl MossGenerationPlan {
-    /// 产品默认分块时长。1800 s 的超长上下文会让 MOSS 把非中文音频翻译成中文输出
-    /// （语言漂移），且解码速度随上下文膨胀显著下降；300 s 同时修掉这两个问题。
+    /// Product default chunk duration. A very long context of 1800 s makes MOSS translate non-Chinese audio into Chinese output (language drift), and decoding speed drops noticeably as the context grows; 300 s fixes both problems.
     pub const CHUNK_DURATION: f64 = 300.0;
     pub const MIN_CHUNK_DURATION: f64 = 60.0;
-    /// 实验旋钮的上界：仍允许手工拉到 1800 s 复现长上下文行为。
+    /// Upper bound for the experimental knob: it can still be set manually to 1800 s to reproduce long-context behavior.
     pub const MAX_CHUNK_DURATION: f64 = 1_800.0;
     pub const MIN_TOKENS: usize = 5_120;
     pub const MAX_TOKENS: usize = 65_536;
@@ -339,7 +336,7 @@ impl MossGenerationPlan {
         Self::make_with_chunk_duration(audio_duration, Self::CHUNK_DURATION)
     }
 
-    /// 实验旋钮入口：用给定分块时长驱动同一套 token 预算逻辑，时长先按合法区间收敛。
+    /// Entry point for the experimental knob: drives the same token-budget logic with a given chunk duration; the duration is first clamped to the valid range.
     pub fn make_with_chunk_duration(audio_duration: f64, chunk_duration: f64) -> Self {
         let chunk_duration = Self::clamp_chunk_duration(chunk_duration);
         let finite = if audio_duration.is_finite() { audio_duration.max(0.0) } else { 0.0 };
@@ -359,7 +356,7 @@ impl MossGenerationPlan {
         }
     }
 
-    /// 解析 `CCUT_MOSS_CHUNK_SECONDS` 的原始取值；缺省或非法时回落到默认分块时长。
+    /// Parses the raw value of `CCUT_MOSS_CHUNK_SECONDS`; falls back to the default chunk duration when absent or invalid.
     pub fn chunk_duration_from_env(raw: Option<&str>) -> f64 {
         raw.and_then(|value| value.trim().parse::<f64>().ok())
             .filter(|value| value.is_finite())
@@ -376,8 +373,7 @@ pub struct SpeakerRange {
     pub start: f64,
     pub end: f64,
     pub cluster: usize,
-    /// 该区间所属的全局 chunk 序号；`adapt_output` 只产出单 chunk 结果，
-    /// 统一填 0，由 host 侧的分块拼接循环回填真实序号。
+    /// Global chunk index this interval belongs to. `adapt_output` produces only single-chunk results and fills in 0; the host-side chunk-concatenation loop backfills the real index.
     pub chunk: usize,
 }
 
@@ -437,7 +433,7 @@ mod tests {
 
     #[test]
     fn moss_stream_decoder_matches_whole_stream_parse_at_any_split() {
-        // 同时覆盖被切断的多字节字符与真正非法的字节（0xFF）。
+        // Covers both truncated multi-byte characters and genuinely invalid bytes (0xFF).
         let mut bytes = "[0.00][S01]你好世界[1.00][1.00][S02]".as_bytes().to_vec();
         bytes.push(0xFF);
         bytes.extend_from_slice("坏字[2.00][2.00][S01]tail[3.00]".as_bytes());
@@ -480,24 +476,23 @@ mod tests {
         assert_eq!(MossOutputParser::parse(malformed)[0].text, "kept");
         assert_eq!(MossGenerationPlan::make(300.0).max_tokens, 9_600);
         assert_eq!(MossGenerationPlan::make(f64::INFINITY).max_tokens, 5_120);
-        // token 上限判据只对「整段音频装得进一个分块」的情形成立；默认分块 300 s 之后
-        // 1_338 s 的整片时长不再满足该前提，判据改由块级时长驱动。
+        // The token-limit criterion holds only when the whole audio fits into one chunk. Past the default 300 s chunk, a total of 1_338 s no longer meets this premise, so the criterion is instead driven by chunk-level duration.
         let plan = MossGenerationPlan::make(280.0);
         assert!(plan.stopped_at_token_limit(plan.max_tokens, 152.11, 280.0));
         assert!(!MossGenerationPlan::make(1_338.42).stopped_at_token_limit(MossGenerationPlan::MAX_TOKENS, 152.11, 1_338.42));
 
-        // 产品默认分块 300 s；旋钮上界 1800 s 与默认值必须是两个不同的常量。
+        // The product default chunk is 300 s; the knob's upper bound 1800 s and the default must be two different constants.
         assert_eq!(MossGenerationPlan::CHUNK_DURATION, 300.0);
         assert_eq!(MossGenerationPlan::MAX_CHUNK_DURATION, 1_800.0);
         assert_eq!(MossGenerationPlan::make(1_800.0).chunk_duration, 300.0);
 
-        // 分块时长旋钮：缺省与非法取值回落到默认 300，合法取值同时收敛分块与 token 预算。
+        // Chunk-duration knob: missing and invalid values fall back to the default 300; valid values set both the chunking and the token budget.
         for raw in [None, Some("abc"), Some(""), Some("nan"), Some("inf")] {
             assert_eq!(MossGenerationPlan::chunk_duration_from_env(raw), MossGenerationPlan::CHUNK_DURATION);
         }
         assert_eq!(MossGenerationPlan::chunk_duration_from_env(Some(" 360 ")), 360.0);
         assert_eq!(MossGenerationPlan::chunk_duration_from_env(Some("10")), 60.0);
-        // 旋钮可以拉到默认值以上，直到 MAX_CHUNK_DURATION 才截断。
+        // The knob can be raised above the default, and is only truncated at MAX_CHUNK_DURATION.
         assert_eq!(MossGenerationPlan::chunk_duration_from_env(Some("1200")), 1_200.0);
         assert_eq!(
             MossGenerationPlan::chunk_duration_from_env(Some("9000")),
@@ -506,7 +501,7 @@ mod tests {
         let short = MossGenerationPlan::make_with_chunk_duration(3_600.0, 360.0);
         assert_eq!(short.chunk_duration, 360.0);
         assert_eq!(short.max_tokens, 11_520);
-        // 60s 分块的估算 1920 token 仍被 MIN_TOKENS 抬到 5120。
+        // The estimated 1920 tokens for 60 s chunks are still raised to 5120 by MIN_TOKENS.
         assert_eq!(
             MossGenerationPlan::make_with_chunk_duration(3_600.0, 60.0).max_tokens,
             MossGenerationPlan::MIN_TOKENS
@@ -542,7 +537,7 @@ mod tests {
             outcome.speaker_ranges.iter().map(|range| range.cluster).collect::<Vec<_>>(),
             vec![0, 1]
         );
-        // adapt_output 只看单块结果，chunk 一律填 0，由 host 的拼接循环回填真实序号。
+        // adapt_output looks only at a single chunk's result and fills in 0 for the chunk; the host's concatenation loop backfills the real index.
         assert!(outcome.speaker_ranges.iter().all(|range| range.chunk == 0));
 
         let damaged = MossOutputSegment {

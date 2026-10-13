@@ -14,12 +14,12 @@ import { pl } from './time.pl.ts';
 import { tr } from './time.tr.ts';
 import { vi } from './time.vi.ts';
 
-/** 参数是标量，或嵌套的引用（展开之后的文字）。 */
+/** The parameter is a scalar, or a nested reference (the text after expansion). */
 type P<K extends string> = Record<K, string | number>;
 
 /**
- * `crates/editor-semantics` 的时间输入错误（经引擎错误的参数带出）。
- * 英文条目与 Rust `msg!` 的模板一字不差（`tools/rust-messages.test.ts` 核对）；改英文要两边一起改，键发布后不改名、不复用。
+ * Time input errors from `crates/editor-semantics` (carried through the parameters of engine errors).
+ * The English entries match the Rust `msg!` templates word for word (checked by `tools/rust-messages.test.ts`). When the English changes, change both sides together. Keys are not renamed or reused after release.
  */
 const en = {
   rateNotPositive: 'Frame rate numerator and denominator must be positive',

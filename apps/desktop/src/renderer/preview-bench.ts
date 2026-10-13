@@ -1,60 +1,60 @@
 import { previewEngineOf, useShell, type PlaybackStats, type StallReport } from '@cuccut/ui/diagnostics';
 
-/** 一次播放基准的参数：打开哪个视频（项目里的相对路径）、从哪一刻开始、放多久。 */
+/** Parameters of one playback benchmark: which video to open (its relative path in the project), where to start, and how long to play. */
 export interface PreviewBenchInput {
   projectId: string;
   path: string;
-  /** 从这一刻开始放（秒）。 */
+  /** Where to start playing (seconds). */
   at: number;
-  /** 放多久（秒）。 */
+  /** How long to play (seconds). */
   seconds: number;
-  /** 打开视频、等预览就绪的时限（毫秒）。 */
+  /** Time limit for opening the video and waiting for the preview to be ready (milliseconds). */
   openTimeoutMs: number;
 }
 
 export interface PreviewBenchResult {
-  /** 序列画布与画帧用的像素尺寸。 */
+  /** Pixel size of the sequence canvas and the drawn frames. */
   canvas: { width: number; height: number };
   size: { width: number; height: number } | null;
   devicePixelRatio: number;
   visibility: DocumentVisibilityState;
-  /** 打开视频到预览就绪。 */
+  /** From opening the video to the preview being ready. */
   openMs: number;
-  /** 打开视频到画上精确的第一帧（媒体都到了）。 */
+  /** From opening the video to the exact first frame being drawn (all media has arrived). */
   openExactMs: number | null;
-  /** 按下播放到第一帧画上去。 */
+  /** From pressing play to the first frame being drawn. */
   firstFrameMs: number | null;
-  /** 播放了多久（毫秒）与其间画上去的帧。 */
+  /** How long playback ran (milliseconds) and the frames drawn during that time. */
   elapsedMs: number;
   presented: number;
-  /** 画上去的不同的视频帧、这段时间里视频走过的帧、没画出来的帧。 */
+  /** Distinct video frames drawn, frames the video advanced through in that time, and frames not drawn. */
   distinctFrames: number;
   spannedFrames: number;
   droppedFrames: number;
   presentedFps: number;
-  /** 视频自己的帧率（按走过的帧与时间算）。 */
+  /** The video's own frame rate (computed from the frames advanced and the time). */
   sourceFps: number;
   stats: Omit<PlaybackStats, 'tickMs' | 'uploadMs' | 'renderMs' | 'drift' | 'frames'>;
   tickMs: Quantiles;
   uploadMs: Quantiles;
   renderMs: Quantiles;
-  /** requestAnimationFrame 的间隔（页面的刷新节奏，主线程被占住时变长）。 */
+  /** Interval of requestAnimationFrame (the page's refresh rhythm; it grows when the main thread is busy). */
   rafIntervalMs: Quantiles;
-  /** 超过 50 ms 的长任务：个数与最长的一个（播放的第一秒另记）。 */
+  /** Long tasks over 50 ms: the count and the longest one (the first second of playback is recorded separately). */
   longTasks: { count: number; maxMs: number; firstSecond: number };
-  /** 媒体元素与计划的偏差（毫秒）。 */
+  /** Deviation of the media element from the plan (milliseconds). */
   driftMs: Quantiles;
-  /** 媒体元素报 `waiting`（等数据、声音停住）的次数。 */
+  /** Number of times the media element reports `waiting` (waiting for data, audio stalled). */
   waiting: number;
-  /** 停着时拖动播放头：每次定位到新画面画上去的毫秒。 */
+  /** Dragging the playhead while paused: milliseconds until the new frame is drawn after each seek. */
   scrubMs: Quantiles;
-  /** 每一下拖动的毫秒（按先后，画不上去的记 `null`）。 */
+  /** Milliseconds for each drag, in order; a seek whose frame never gets drawn is recorded as `null`. */
   scrubSteps: (number | null)[];
-  /** 拖动的最后一下到画上精确的那一帧（与导出同一帧）的毫秒。 */
+  /** Milliseconds from the last drag to the exact frame being drawn (the same frame as in export). */
   scrubSettleMs: number | null;
-  /** 停着跳到远处一刻（点时间线）：到第一次画上去、到画上精确的那一帧的毫秒。 */
+  /** While paused, jumping to a distant moment (clicking the timeline): milliseconds to the first frame drawn, and to the exact frame being drawn. */
   jumpMs: { first: number | null; exact: number | null };
-  /** 预览最近一次卡住的诊断（引擎的 `stallReport`）；没卡过是 null。 */
+  /** Diagnostics of the preview's most recent stall (the engine's `stallReport`); null if it never stalled. */
   stall: StallReport | null;
 }
 
@@ -82,13 +82,13 @@ async function waitFor<T>(probe: () => T | null | undefined, timeoutMs: number, 
   for (;;) {
     const value = probe();
     if (value) return value;
-    // i18n-ignore: 开发用基准的诊断输出，不进界面
+    // i18n-ignore: diagnostic output of a development benchmark, not shown in the UI
     if (performance.now() > deadline) throw new Error(`等 ${what} 超过 ${timeoutMs} ms`);
     await delay(20);
   }
 }
 
-/** 下一次往预览画布上画（`putImageData` 或 `drawImage`）的时刻。 */
+/** The moment of the next draw onto the preview canvas (`putImageData` or `drawImage`). */
 function nextPresent(canvas: HTMLCanvasElement): Promise<number> {
   return new Promise((resolve) => {
     const context = canvas.getContext('2d')!;
@@ -105,7 +105,7 @@ function nextPresent(canvas: HTMLCanvasElement): Promise<number> {
   });
 }
 
-/** 下一次画上精确的那一帧（`engine.exact`）的时刻；超时给 `null`。 */
+/** The moment the next exact frame (`engine.exact`) is drawn; `null` on timeout. */
 async function nextExact(canvas: HTMLCanvasElement, engine: { readonly exact: boolean }, timeoutMs: number): Promise<number | null> {
   const deadline = performance.now() + timeoutMs;
   for (;;) {
@@ -117,44 +117,44 @@ async function nextExact(canvas: HTMLCanvasElement, engine: { readonly exact: bo
   }
 }
 
-// 按结构而不是界面文字找元素：界面的 aria-label 随界面语言变。
+// Find elements by structure rather than by UI text: the UI's aria-label changes with the UI language.
 const PREVIEW_CANVAS = 'canvas[data-preview-status]';
 const PREVIEW_READY = 'canvas[data-preview-status="ready"]';
 const PLAY_BUTTON = 'button.cc-transport-play';
 
 /**
- * 预览播放的端到端基准（`npm run bench:preview`，`tools/preview-bench.mjs`）：随产物构建、应用自己不加载。
- * 基准脚本在隐藏窗口里打开真正的界面、连上隔离的 Runtime 之后动态导入这一份，调 `cuccutPreviewBench()`：经外壳打开视频，
- * 停着时拖几下播放头，再按「播放」放一段，按引擎的计数与页面的长任务、刷新间隔、媒体元素的 `waiting` 汇总。
+ * End-to-end benchmark of preview playback (`npm run bench:preview`, `tools/preview-bench.mjs`): built along with the output, and the app itself does not load it.
+ * After the benchmark script opens the real UI in a hidden window and connects to an isolated Runtime, it dynamically imports this file and calls `cuccutPreviewBench()`: it opens a video through the shell,
+ * drags the playhead a few times while paused, then presses “play” and plays for a while, and summarizes the engine's counters with the page's long tasks, refresh intervals and the media element's `waiting` events.
  */
 globalThis.cuccutPreviewBench = async (input) => {
-  // 先离开编辑器、等上一个视频的预览画布拆掉，免得把它当成这一个的。
+  // Leave the editor first and wait for the previous video's preview canvas to be torn down, so it is not mistaken for this one's.
   useShell.getState().navigate('/space');
-  // i18n-ignore: 开发用基准的诊断输出（等待项的名字），不进界面
+  // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
   await waitFor(() => !document.querySelector(PREVIEW_CANVAS), input.openTimeoutMs, '上一个预览关掉');
   const opened = performance.now();
   useShell.getState().openVideo({ projectId: input.projectId, path: input.path });
   const canvas = await waitFor(
     () => document.querySelector<HTMLCanvasElement>(PREVIEW_READY),
     input.openTimeoutMs,
-    // i18n-ignore: 开发用基准的诊断输出（等待项的名字），不进界面
+    // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
     '预览就绪',
   ).catch((error: unknown) => {
-    // 等不到就绪：带上引擎的卡住诊断（卡在哪一步）。
+    // If readiness never comes, include the engine's stall diagnostics (which step it is stuck on).
     const stuck = document.querySelector<HTMLCanvasElement>(PREVIEW_CANVAS);
     const report = stuck ? previewEngineOf(stuck)?.stallReport : undefined;
     throw report ? new Error(`${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(report)}`) : error;
   });
-  // i18n-ignore: 开发用基准的诊断输出（等待项的名字），不进界面
+  // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
   const engine = await waitFor(() => previewEngineOf(canvas), input.openTimeoutMs, '预览引擎');
-  // i18n-ignore: 同上
+  // i18n-ignore: same as above
   await waitFor(() => engine.plan, input.openTimeoutMs, '帧计划');
   const openMs = performance.now() - opened;
-  // 等第一帧画好（媒体都到了）再拖，否则量到的是载入。
+  // Wait until the first frame is drawn (all media has arrived) before dragging; otherwise what gets measured is loading.
   const openExact = engine.exact ? performance.now() : await nextExact(canvas, engine, input.openTimeoutMs);
   const openExactMs = openExact === null ? null : Math.round(openExact - opened);
 
-  // 停着时拖动播放头：画上去之后隔 50 ms 再定位一次，记到画上去的时间；最后一下之后记到画上精确那一帧的时间。
+  // Dragging the playhead while paused: after each frame is drawn, seek again 50 ms later and record the time until that frame is drawn; after the last drag, record the time until the exact frame is drawn.
   const scrub: (number | null)[] = [];
   let scrubSettleMs: number | null = null;
   for (let i = 0; i < 8; i++) {
@@ -169,7 +169,7 @@ globalThis.cuccutPreviewBench = async (input) => {
       scrubSettleMs = exact === null ? null : Math.round(exact - start);
     }
   }
-  // 停下之后跳到几秒外（点时间线，多半落在关键帧之间），再回到开头准备播放。
+  // After stopping, jump a few seconds away (clicking the timeline, most likely landing between keyframes), then go back to the start to prepare for playback.
   await delay(300);
   const jumpFirst = nextPresent(canvas);
   const jumped = performance.now();
@@ -203,7 +203,7 @@ globalThis.cuccutPreviewBench = async (input) => {
   };
   requestAnimationFrame(frame);
 
-  // i18n-ignore: 开发用基准的诊断输出（等待项的名字），不进界面
+  // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
   const play = await waitFor(() => document.querySelector<HTMLButtonElement>(PLAY_BUTTON), 5000, '播放按钮');
   const firstPresent = nextPresent(canvas);
   const started = performance.now();
@@ -212,7 +212,7 @@ globalThis.cuccutPreviewBench = async (input) => {
   await delay(Math.max(0, input.seconds * 1000 - (performance.now() - started)));
   const stats = structuredClone(engine.stats);
   const elapsedMs = performance.now() - started;
-  // 播放中同一个键就是「暂停」。
+  // While playing, the same key means “pause”.
   document.querySelector<HTMLButtonElement>(PLAY_BUTTON)?.click();
   measuring = false;
   observer.disconnect();

@@ -31,7 +31,7 @@ import { vi } from './editor.vi.ts';
 
 type ElementName = 'sticker' | 'placeholder' | 'whiteboard' | 'progress' | 'visualizer' | 'confetti' | 'draw';
 
-/** 编辑器模型的文案（英文是键与类型的来源，译文在 `editor.zh-Hans.ts`）。 */
+/** Editor model copy (English is the source of keys and types; translations are in `editor.zh-Hans.ts`). */
 const en = {
   trackKind: { visual: 'Visual', audio: 'Audio', subtitle: 'Subtitles' } as Record<Track['kind'], string>,
   counter: 'Counter',
@@ -55,18 +55,18 @@ export type EditorMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 编辑器的纯模型：时间线的几何、命中、吸附。预览在某个时刻画什么由 Rust 的帧计划决定（`render/`）。
- * 这里的秒只用于显示与命中；提交给引擎的时间用帧（拖动、拆分）或十进制秒字符串（输入框），见产品设计 §5.8。
+ * The editor's pure model: timeline geometry, hit testing and snapping. What the preview draws at a given moment is decided by the Rust frame plan (`render/`).
+ * Seconds here are used only for display and hit testing; times sent to the engine are frames (dragging, splitting) or decimal second strings (input boxes), see product design §5.8.
  */
 
 export interface TrackRow {
   track: Track;
-  /** 行头上的名字：类别（画面、音频、字幕），有名字的接「 · 名字」，同类不止一条且没有名字的按顺序编号。 */
+  /** Row header label: the category (visual, audio, subtitles). A named track appends “ · name”. Unnamed tracks of the same category, when there is more than one, are numbered in order. */
   label: string;
 }
 
 
-/** 视频引擎给默认轨道起的「V1」「A1」这类代号不算名字，行头只写类别。 */
+/** Codes the video engine gives default tracks, such as “V1” and “A1”, do not count as names; the row header shows only the category. */
 const TRACK_CODE = /^[VAS]\d+$/;
 
 function labelled(tracks: Track[]): TrackRow[] {
@@ -78,7 +78,7 @@ function labelled(tracks: Track[]): TrackRow[] {
   });
 }
 
-/** 叠放分组：画面与字幕轨道合成在同一叠里（渲染按 `order` 统一排序），声音另算一叠。 */
+/** Stacking group: visual and subtitle tracks share one stack (rendering sorts them uniformly by `order`); audio forms its own stack. */
 export type StackingGroup = 'picture' | 'sound';
 
 export function stackingGroup(kind: Track['kind']): StackingGroup {
@@ -86,8 +86,8 @@ export function stackingGroup(kind: Track['kind']): StackingGroup {
 }
 
 /**
- * 时间线上的轨道行：画面与字幕轨道是同一叠，按 `order` 从大到小（上面的行盖住下面的，与画面的叠放一致；
- * 字幕不自动在最上），音频轨道在下。编号按种类各自数。
+ * Track rows on the timeline: visual and subtitle tracks share one stack, sorted by `order` from high to low (rows above cover rows below, matching the visual stacking;
+ * subtitles are not automatically placed on top). Audio tracks come below. Numbering is counted separately for each kind.
  */
 export function trackRows(sequence: Sequence): TrackRow[] {
   const byOrder = [...sequence.tracks].sort((a, b) => a.order - b.order);
@@ -99,9 +99,9 @@ export function trackRows(sequence: Sequence): TrackRow[] {
 }
 
 /**
- * 时间线画出来的行：视频自带声音，原声画在视频行里；引擎给每个视频默认建的那条音频轨在放进音频之前是空的，不另画一行。
- * 没有名字（或只有 A1 这类代号）、也没有实例的音频轨不画，有名字的照画（用户或配音建的）。放音频时照样落到它上面
- * （`placeAsset`；拖到别的行上由引擎挑第一条音频轨），放进去之后这一行就出现。行头名字与 `trackRows` 相同。
+ * Rows drawn on the timeline: a video carries its own sound, so its original audio is drawn in the video row. The audio track the engine creates by default for each video stays empty until audio is placed into it, so it gets no separate row.
+ * An audio track with no name (or only a code such as A1) and no instances is not drawn; a named one is drawn (created by the user or for dubbing). Audio dropped in still lands on it
+ * (`placeAsset`; when dropped onto another row, the engine picks the first audio track), and the row appears once something is placed in it. Row header names are the same as `trackRows`.
  */
 export function timelineRows(sequence: Sequence): TrackRow[] {
   const used = new Set(sequence.items.map((item) => item.trackId));
@@ -114,7 +114,7 @@ export function rootSequence(video: VideoSnapshot): Sequence | null {
   return video.sequences[video.rootSequenceId] ?? null;
 }
 
-/** 实例在序列上的区间（帧，音频可以有小数部分）。 */
+/** The instance's range on the sequence (in frames; audio may have a fractional part). */
 export function itemFrames(item: SequenceItem, fps: Rate): { start: number; end: number } {
   if (item.type === 'audio') {
     const { start, end } = itemRangeSeconds(item, fps);
@@ -128,8 +128,8 @@ export function durationSeconds(sequence: Sequence): number {
 }
 
 /**
- * 走带播放键的三态：在播是暂停；停着且播放头到了片尾（差不到 0.05 秒）是重播，否则是播放（原型 model-player.js `playButtonState`）。
- * 空时间线（时长为 0）无所谓片尾，显示播放。
+ * Three states of the transport play button: while playing it is pause; when stopped and the playhead has reached the end (within 0.05 seconds) it is replay; otherwise it is play (prototype model-player.js `playButtonState`).
+ * An empty timeline (duration 0) has no end to speak of, so it shows play.
  */
 export type PlayButtonState = 'play' | 'pause' | 'replay';
 
@@ -140,7 +140,7 @@ export function playButtonState(state: { playing: boolean; playhead: number; dur
   return playhead >= duration - 0.05 ? 'replay' : 'play';
 }
 
-/** 秒落到哪一帧（向下取整，帧的起点）。 */
+/** The frame a second falls in (rounded down, the frame's start). */
 export function frameAt(seconds: number, fps: Rate): number {
   return Math.max(0, Math.floor((seconds * fps.num) / fps.den + 1e-6));
 }
@@ -150,10 +150,10 @@ export function nearestFrame(seconds: number, fps: Rate): number {
 }
 
 /**
- * 预览要给每个视频素材准备几个元素：同一帧上用到它的（启用的）实例最多有几个。
- * 同一素材出现在两条轨道上、或者叠在一起时，各自要定位到不同的源时刻。
- * 用到视频素材的除了视频实例，还有带预渲染替身的合成实例：帧计划把它当视频层给出来，素材是替身。
- * 两侧转场里实例在自己的区间之外也要画（拆开的两段之间叠化时，同一素材同时要两个源时刻），区间按转场窗口放宽。
+ * How many elements the preview needs for each video asset: the maximum number of enabled instances that use it on the same frame.
+ * When the same asset appears on two tracks, or is stacked, each one must seek to a different source time.
+ * Besides video instances, composition instances with pre-rendered stand-ins also use video assets: the frame plan gives them as a video layer, and the asset is the stand-in.
+ * Instances on both sides of a transition are also drawn outside their own range (when two split pieces cross-dissolve, the same asset needs two source times at once), so the range is widened to the transition window.
  */
 export function videoSlots(sequence: Sequence): { asset: VersionRef; count: number }[] {
   const spans = new Map<string, { asset: VersionRef; edges: [number, number][] }>();
@@ -169,7 +169,7 @@ export function videoSlots(sequence: Sequence): { asset: VersionRef; count: numb
     spans.set(key, entry);
   }
   return [...spans.values()].map(({ asset, edges }) => {
-    // 同一帧上先结束再开始：首尾相接的两段共用一个元素。
+    // On the same frame, the one that ends goes before the one that starts: two back-to-back segments share one element.
     edges.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
     let open = 0;
     let count = 0;
@@ -178,7 +178,7 @@ export function videoSlots(sequence: Sequence): { asset: VersionRef; count: numb
   });
 }
 
-/** 吸附：在阈值（帧）内找最近的目标。没有时返回原值。 */
+/** Snapping: finds the nearest target within the threshold (in frames). Returns the original value if none. */
 export function snapFrame(frame: number, targets: readonly number[], threshold: number): { frame: number; snapped: number | null } {
   let best: number | null = null;
   for (const target of targets) {
@@ -187,7 +187,7 @@ export function snapFrame(frame: number, targets: readonly number[], threshold: 
   return best === null ? { frame, snapped: null } : { frame: best, snapped: best };
 }
 
-/** 吸附目标：播放头、序列起点，以及（除了正在拖的）所有实例的两端。 */
+/** Snap targets: the playhead, the sequence start, and both ends of every instance (except the one being dragged). */
 export function snapTargets(sequence: Sequence, playheadFrame: number, exclude: ReadonlySet<string>): number[] {
   const targets = new Set<number>([0, playheadFrame]);
   for (const item of sequence.items) {
@@ -199,14 +199,14 @@ export function snapTargets(sequence: Sequence, playheadFrame: number, exclude: 
   return [...targets];
 }
 
-/** 实例能否放上这条轨道（与引擎一致）：音频只进音频轨道，字幕只进字幕轨道，其余（视频、图片、文字、图形、合成）只进视觉轨道。 */
+/** Whether an instance can go on this track (consistent with the engine): audio goes only on audio tracks, subtitles only on subtitle tracks, and everything else (video, image, text, graphics, composition) only on visual tracks. */
 export function trackAccepts(track: Track, item: { type: SequenceItem['type'] }): boolean {
   if (item.type === 'audio') return track.kind === 'audio';
   if (item.type === 'caption') return track.kind === 'subtitle';
   return track.kind === 'visual';
 }
 
-/** 实例在时间线与检查器里显示的名字：自己的名字优先，否则按内容取（文字、素材名、生成器名、字幕文档名）。 */
+/** The name an instance shows in the timeline and inspector: its own name first; otherwise it is derived from its content (text, asset name, generator name, subtitle document name). */
 export function itemLabel(item: SequenceItem, assets: Record<Id, AssetRecord>, documents: Record<Id, DocumentRecord>): string {
   if (item.name) return item.name;
   switch (item.type) {
@@ -233,7 +233,7 @@ export function itemLabel(item: SequenceItem, assets: Record<Id, AssetRecord>, d
   }
 }
 
-/** 时间线块按什么上色、配哪个图标（同旧版网页时间线的 `elementHue` / `elementIcon`）：带计时读数的文字算计数器。 */
+/** How timeline blocks are colored and which icon they get (same as `elementHue` / `elementIcon` in the old web timeline): text with a timing readout counts as a counter. */
 export type ClipKind = SequenceItem['type'] | 'counter';
 
 export function clipKind(item: SequenceItem): ClipKind {
@@ -241,7 +241,7 @@ export function clipKind(item: SequenceItem): ClipKind {
   return item.type;
 }
 
-/** 时间线刻度的间隔（秒）：让相邻两个标注之间至少有 `minPx` 像素。 */
+/** Interval in seconds between timeline ticks: ensures at least `minPx` pixels between adjacent labels. */
 export function rulerStep(pxPerSecond: number, minPx = 72): { major: number; minor: number } {
   const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
   const major = steps.find((s) => s * pxPerSecond >= minPx) ?? 3600;
@@ -249,7 +249,7 @@ export function rulerStep(pxPerSecond: number, minPx = 72): { major: number; min
   return { major, minor };
 }
 
-/** 刻度标注：「0:05」「1:30」；小于一秒的间隔带一位小数。 */
+/** Tick labels: “0:05”, “1:30”; intervals under one second get one decimal place. */
 export function rulerLabel(seconds: number, step: number): string {
   const whole = Math.floor(seconds + 1e-6);
   const m = Math.floor(whole / 60);
@@ -258,7 +258,7 @@ export function rulerLabel(seconds: number, step: number): string {
   return `${m}:${s}`;
 }
 
-/** 编辑器的时码：「00:00:05:12」（时:分:秒:帧）。帧号按序列的帧率，向下取整。 */
+/** Editor timecode: “00:00:05:12” (hours:minutes:seconds:frames). The frame number follows the sequence's frame rate, rounded down. */
 export function formatTimecode(seconds: number, fps: Rate): string {
   const perSecond = Math.max(1, Math.round(fps.num / fps.den));
   const frame = frameAt(seconds, fps);
@@ -271,18 +271,18 @@ export function formatTimecode(seconds: number, fps: Rate): string {
   return `${two(h)}:${two(m)}:${two(s)}:${two(Math.min(Math.max(ff, 0), perSecond - 1))}`;
 }
 
-/** 秒数显示到毫秒：「10.010 秒」。只是呈现；提交用精确值。 */
+/** Seconds shown to the millisecond: “10.010 秒” (10.010 seconds). Display only; submissions use the exact value. */
 export function formatSeconds(seconds: number): string {
   return M.seconds(seconds.toFixed(3));
 }
 
-/** 帧率显示：「30 fps」「29.97 fps」。 */
+/** Frame rate display: “30 fps”, “29.97 fps”. */
 export function formatFps(fps: Rate): string {
   const value = fps.num / fps.den;
   return `${Number.isInteger(value) ? value : value.toFixed(2)} fps`;
 }
 
-/** 解析用户输入的秒数：「10」「10.5」「1:05.2」。不合法时返回 null。返回十进制字符串，交给引擎量化。 */
+/** Parses seconds typed by the user: “10”, “10.5”, “1:05.2”. Returns null if invalid. Returns a decimal string, to be quantized by the engine. */
 export function parseSecondsInput(text: string): string | null {
   const trimmed = text.trim().replace(/秒$/, '').trim();
   const clock = /^(\d+):(\d{1,2}(?:\.\d+)?)$/.exec(trimmed);

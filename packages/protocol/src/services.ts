@@ -4,11 +4,11 @@ import type { OnlineCapability } from './models.ts';
 import type { WebServiceAccess } from './web.ts';
 
 /**
- * 对外服务（架构设计 §4.8、§12.8）：Runtime 向其他程序与设备开放的入口，由 ServiceManager 统一管理。
+ * External services (architecture design §4.8, §12.8): the entry points the Runtime opens to other programs and devices, managed uniformly by ServiceManager.
  *
- * - 每个服务有同一组状态，默认 `off`，由用户显式开启；配置持久化在 `store/services.json`，启动时恢复。
- * - 状态与待处理的服务审批经 `services` 主题送达（命令与协议规范 §10.4）。
- * - 节点服务（`node`）的状态是 `nodes.share.*` 的投影：开关、端口与配对仍用那组专用方法。
+ * - Each service has the same set of states. The default is `off`, and the user turns it on explicitly. Configuration is persisted in `store/services.json` and restored on startup.
+ * - Status and pending service approvals are delivered over the `services` topic (command and protocol spec §10.4).
+ * - The state of the node service (`node`) is a projection of `nodes.share.*`: its toggle, port and pairing still use that dedicated set of methods.
  */
 
 export const SERVICE_IDS = ['mcp', 'model-api', 'web', 'node'] as const;
@@ -16,40 +16,40 @@ export type ServiceId = (typeof SERVICE_IDS)[number];
 
 export type ServiceState = 'off' | 'starting' | 'on' | 'stopping' | 'error';
 
-/** 操作等级：`read` 只有查询；`ask` 写入、任务与生成逐次由用户确认；`auto` 直接执行。等级不够的工具不出现在目录里。 */
+/** Operation level: `read` is query only; `ask` writes, tasks and generation are confirmed by the user each time; `auto` runs directly. Tools below the required level do not appear in the catalog. */
 export const SERVICE_LEVELS = ['read', 'ask', 'auto'] as const;
 export type ServiceLevel = (typeof SERVICE_LEVELS)[number];
 
-/** 访问策略（§4.8）：范围（全部视频或一份 videoId 名单）与操作等级。 */
+/** Access policy (§4.8): scope (all videos, or a list of videoIds) and operation level. */
 export interface ServicePolicy {
   videos: 'all' | { ids: Id[] };
   level: ServiceLevel;
 }
 
-/** 新服务的默认策略：全部视频、逐次确认。 */
+/** Default policy for a new service: all videos, confirmed each time. */
 export const DEFAULT_SERVICE_POLICY: ServicePolicy = { videos: 'all', level: 'ask' };
 
-/** MCP 服务的默认端口（回环）。端口被占用时服务进入 `error`，不换端口。 */
+/** Default port for the MCP service (loopback). If the port is taken, the service enters `error` and does not switch ports. */
 export const MCP_DEFAULT_PORT = 47620;
 /**
- * MCP 服务的接口版本：工具名与参数是对外合同，破坏性变更升这个版本（`serverInfo.version` 与 `cuccut.interfaceVersion`）。
- * `2`：开放清单改为按工具目录的 `surfaces` 推出，`exports_create` → `export`、`link_import_start` → `download`、
- * `models_synthesize_speech` → `speak`、`models_generate_image` → `image`、`skill_read` → `skills_read`，`videos_create` 加 `project`。
+ * Interface version of the MCP service: tool names and parameters are an external contract; breaking changes bump this version (`serverInfo.version` and `cuccut.interfaceVersion`).
+ * `2`: the exposed list is now derived from the tool catalog's `surfaces`; `exports_create` → `export`, `link_import_start` → `download`,
+ * `models_synthesize_speech` → `speak`, `models_generate_image` → `image`, `skill_read` → `skills_read`, and `videos_create` adds `project`.
  */
 export const MCP_INTERFACE_VERSION = '2';
 
 /**
- * 工具目录项的效果（架构设计 §3.5）：`query` 只读；`mutation` 改状态（进撤销栈或写文件）；`job` 立即返回 `jobId`，
- * 结果要等；`destructive` 不可撤销或移出编辑器（要用户明确同意）。
+ * Effect of a tool catalog entry (architecture design §3.5): `query` is read-only; `mutation` changes state (it goes on the undo stack or writes files); `job` returns a `jobId` immediately and the result comes later;
+ * `destructive` cannot be undone or moves things out of the editor (requires explicit user consent).
  */
 export const TOOL_EFFECTS = ['query', 'mutation', 'job', 'destructive'] as const;
 export type ToolEffect = (typeof TOOL_EFFECTS)[number];
 
-/** 工具目录项出现在哪些面：`agent`（会话里的智能体的工具桥）、`mcp`（对外的 MCP 服务）、`cli`（cuccut CLI）。 */
+/** Which surfaces a tool catalog entry appears on: `agent` (the tool bridge for agents in a session), `mcp` (the external MCP service), `cli` (the cuccut CLI). */
 export const TOOL_SURFACES = ['agent', 'mcp', 'cli'] as const;
 export type ToolSurface = (typeof TOOL_SURFACES)[number];
 
-/** MCP 服务开放的一个工具：名字、标题与效果（`query` 的在任何等级下都开放，其余只在 `ask` 与 `auto` 下）。 */
+/** A tool exposed by the MCP service: its name, title and effect (`query` tools are exposed at every level; the others only under `ask` and `auto`). */
 export interface McpServiceTool {
   name: string;
   title: string;
@@ -57,8 +57,8 @@ export interface McpServiceTool {
 }
 
 /**
- * MCP 服务开放的工具（§4.8）：由 Runtime 的工具目录按 `surfaces` 含 `mcp` 推出，这里是同一份清单的协议常量，
- * 给界面列出工具用；runtime-core 的测试断言两者一致。改名或改参数要升 `MCP_INTERFACE_VERSION`。
+ * Tools exposed by the MCP service (§4.8): derived by the Runtime's tool catalog from entries whose `surfaces` include `mcp`. This is the protocol constant for the same list,
+ * used by the UI to list tools; runtime-core tests assert that the two match. Renaming a tool or changing its parameters requires bumping `MCP_INTERFACE_VERSION`.
  */
 export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'videos_list', title: 'List videos', effect: 'query' },
@@ -102,24 +102,24 @@ export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'library_show', title: 'Show a user library entry', effect: 'query' },
   { name: 'download', title: 'Download from link', effect: 'job' },
 ];
-/** 模型接口服务的默认端口（回环），与 MCP 服务相邻。 */
+/** Default port (loopback) of the model API service, next to the MCP service. */
 export const MODEL_API_DEFAULT_PORT = 47621;
 /**
- * 模型接口服务的接口版本：路径、请求与响应的字段是对外合同，破坏性变更升这个版本（每个响应的
- * `X-CucCut-Interface-Version` 头与 `GET /v1/cuccut/info`）。
+ * Interface version of the model API service: the paths and the request and response fields are an external contract; breaking changes bump this version (in each response's
+ * `X-CucCut-Interface-Version` header and in `GET /v1/cuccut/info`).
  */
 export const MODEL_API_INTERFACE_VERSION = '1';
-/** 模型接口服务每个客户端同时在途的生成请求的默认上限：超出时 429。 */
+/** Default cap on in-flight generation requests per client for the model API service: over the limit returns 429. */
 export const MODEL_API_DEFAULT_MAX_CONCURRENT = 4;
 export const MODEL_API_MAX_CONCURRENT_LIMIT = 64;
-/** 模型接口服务接受的上传（转写的 multipart 请求体）上限：超过时 413。 */
+/** Upload limit accepted by the model API service (the multipart body for transcription): over the limit returns 413. */
 export const MODEL_API_MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
-/** 模型接口服务接受的 JSON 请求体上限：超过时 413。 */
+/** JSON body limit accepted by the model API service: over the limit returns 413. */
 export const MODEL_API_MAX_JSON_BYTES = 8 * 1024 * 1024;
 
 /**
- * 模型接口服务的路由开关（架构设计 §4.8）：默认只路由到本机（`local`）；把外部请求转给在线 Provider、
- * 局域网节点或智能体 Provider 要分别显式开启。没开启的那一类模型不出现在 `/v1/models`，按名访问是 404。
+ * Route switches of the model API service (architecture design §4.8): by default it only routes to this machine (`local`). Forwarding external requests to online providers, LAN nodes or agent providers must each be turned on explicitly.
+ * A model category that is not enabled does not appear in `/v1/models`, and access by name returns 404.
  */
 export interface ModelApiRouting {
   online: boolean;
@@ -128,8 +128,8 @@ export interface ModelApiRouting {
 }
 
 /**
- * 别名表的一条：外部程序用的模型名 → 一种能力下的 Provider 与模型。`modelId` 为 null 时用这个 Provider 的默认模型
- * （用户默认值指向它时取用户默认值）。别名全局唯一，不含 `/`（`<providerId>/<modelId>` 是规范写法）。
+ * One entry in the alias table: a model name used by external programs → a provider and model under one capability. When `modelId` is null, the provider's default model is used
+ * (when the user's default points to it, the user's default is used). Aliases are globally unique and contain no `/` (`<providerId>/<modelId>` is the canonical form).
  */
 export interface ModelApiAlias {
   alias: string;
@@ -138,21 +138,21 @@ export interface ModelApiAlias {
   modelId: string | null;
 }
 
-/** 模型接口服务自己的配置与限制（`ServiceStatus.modelApi`）。 */
+/** The model API service's own config and limits (`ServiceStatus.modelApi`). */
 export interface ModelApiStatus {
   routing: ModelApiRouting;
   aliases: ModelApiAlias[];
-  /** 每个客户端同时在途的生成请求上限。 */
+  /** Cap on in-flight generation requests per client. */
   maxConcurrentPerClient: number;
   maxUploadBytes: number;
   maxJsonBytes: number;
   interfaceVersion: string;
 }
 
-/** 服务审批的时限：超时按拒绝处理。比常见 MCP 客户端的请求超时（60 秒）短，调用方能收到明确的拒绝。 */
+/** Timeout for service approvals: on timeout it is treated as a rejection. Shorter than the common MCP client request timeout (60 s), so callers receive a clear rejection. */
 export const SERVICE_APPROVAL_TIMEOUT_MS = 50_000;
 
-/** 一个已发放的客户端：只有元数据，令牌明文只在创建时返回一次，Runtime 只存哈希。 */
+/** An issued client: metadata only. The plaintext token is returned once, at creation; the Runtime stores only a hash. */
 export interface ServiceClient {
   clientId: string;
   name: string;
@@ -160,67 +160,67 @@ export interface ServiceClient {
   lastUsedAt: string | null;
 }
 
-/** 一次外部请求的审计记录（§12.8）：调用方、工具、目标与结果，不含参数正文与媒体内容。 */
+/** Audit record of one external request (§12.8): caller, tool, target and result; no parameter bodies or media content. */
 export interface ServiceRequestRecord {
   at: string;
   clientId: string;
   clientName: string;
   tool: string;
-  /** 目标视频（videoId），没有时为 null。 */
+  /** Target video (videoId); null if there is none. */
   videoId: Id | null;
-  /** `ok`，或拒绝、失败时的错误码。 */
+  /** `ok`, or the error code on rejection or failure. */
   outcome: string;
 }
 
 export interface ServiceStatus {
   serviceId: ServiceId;
   label: string;
-  /** 这个版本是否提供该服务。为 false 时状态总是 `off`，`services.start` 以 `SERVICE_NOT_AVAILABLE` 拒绝。 */
+  /** Whether this version provides the service. When false, the status is always `off`, and `services.start` rejects with `SERVICE_NOT_AVAILABLE`. */
   available: boolean;
   state: ServiceState;
-  /** `error` 时的原因（例如端口被占用）。 */
+  /** The reason when `error` (e.g. the port is in use). */
   error: string | null;
   errorRef?: MessageRef;
-  /** 随 Runtime 启动。节点服务为共享是否开着。 */
+  /** Starts with the Runtime. For the node service, whether sharing is on. */
   autostart: boolean;
-  /** 配置的端口；开着时是实际监听的端口。 */
+  /** Configured port; when on, the port actually listening. */
   port: number | null;
-  /** 开着时的地址（MCP 服务是 `http://127.0.0.1:<port>/mcp`），否则为 null。 */
+  /** Address when on (the MCP service is `http://127.0.0.1:<port>/mcp`), otherwise null. */
   endpoint: string | null;
-  /** 访问策略；节点服务没有（为 null）。 */
+  /** Access policy; the node service has none (null). */
   policy: ServicePolicy | null;
-  /** 已发放的客户端；节点服务的已配对客户端在 `nodes.share.status` 里。 */
+  /** Issued clients; for the node service, the paired clients are in `nodes.share.status`. */
   clients: ServiceClient[];
-  /** 最近的外部请求，新的在前，至多 20 条。 */
+  /** Recent external requests, newest first, at most 20. */
   recentRequests: ServiceRequestRecord[];
-  /** 模型接口服务的路由、别名与限制；其他服务没有。 */
+  /** Routes, aliases and limits of the model API service; other services have none. */
   modelApi?: ModelApiStatus;
-  /** 只有 Web 服务有：只读与方法白名单（它没有访问策略，`policy` 为 null；浏览器会话列在 `clients` 里）。 */
+  /** Web service only: read-only, with a method allowlist (it has no access policy, so `policy` is null; browser sessions are listed in `clients`). */
   web?: WebServiceAccess;
 }
 
-/** 一条待处理的服务审批（`ask` 等级下的写入、任务与生成）。 */
+/** One pending service approval (writes, tasks and generation at the `ask` level). */
 export interface ServiceApproval {
   approvalId: Id;
   serviceId: ServiceId;
   clientId: string;
   clientName: string;
   tool: string;
-  /** 目标视频，没有时为 null。 */
+  /** Target video; null if there is none. */
   video: { videoId: Id; name: string } | null;
-  /** 参数摘要：给人看的一行，不含长文本与媒体内容。 */
+  /** Parameter summary: one human-readable line, without long text or media content. */
   summary: string;
   createdAt: string;
   expiresAt: string;
 }
 
 export type ServiceApprovalDecision = 'allow' | 'deny';
-/** `timeout`：到时限无人处理，按拒绝；`cancelled`：服务停止或调用方断开。 */
+/** `timeout`: no one handled it before the deadline, so it is rejected; `cancelled`: the service stopped or the caller disconnected. */
 export type ServiceApprovalOutcome = 'allowed' | 'denied' | 'timeout' | 'cancelled';
 
 export interface ServicesSnapshot {
   services: ServiceStatus[];
-  /** 待处理的服务审批，旧的在前。 */
+  /** Pending service approvals, oldest first. */
   approvals: ServiceApproval[];
 }
 
@@ -229,46 +229,46 @@ export type ServicesEvent =
   | { type: 'approval.requested'; approval: ServiceApproval }
   | { type: 'approval.resolved'; approvalId: Id; outcome: ServiceApprovalOutcome };
 
-/** `services.configure` 的可改项；不给的保持原样。 */
+/** The changeable items of `services.configure`; omitted items stay as they are. */
 export interface ServiceConfigureParams {
   serviceId: ServiceId;
   autostart?: boolean;
-  /** 0 表示由系统挑一个空闲端口（测试与诊断用）。 */
+  /** 0 means the system picks a free port (for tests and diagnostics). */
   port?: number;
   level?: ServiceLevel;
   videos?: 'all' | { ids: Id[] };
-  /** 只用于模型接口服务：给出的开关替换，不给的不变。其他服务以 `invalid-request` 拒绝。 */
+  /** Only for the model API service: the given switches replace the current ones; omitted ones stay unchanged. Other services reject with `invalid-request`. */
   routing?: Partial<ModelApiRouting>;
-  /** 只用于模型接口服务：每个客户端同时在途的生成请求上限。 */
+  /** Only for the model API service: cap on in-flight generation requests per client. */
   maxConcurrentPerClient?: number;
-  /** 只有 Web 服务接受：只读。 */
+  /** Accepted only by the Web service: read-only. */
   readOnly?: boolean;
-  /** 只有 Web 服务接受：方法白名单（方法名或 `<命名空间>.*`），只能在默认集合之内收紧；null 恢复默认集合。 */
+  /** Accepted only by the Web service: a method allowlist (method name or `<namespace>.*`), which can only be narrowed within the default set; null restores the default set. */
   methods?: string[] | null;
 }
 
-/** `services.mcp.connectionInfo` 的结果：可以直接粘进别的应用的 MCP 配置，不含令牌明文。 */
+/** Result of `services.mcp.connectionInfo`: can be pasted directly into the MCP config of another app; no plaintext token. */
 export interface McpConnectionInfo {
   url: string;
-  /** 请求头的形状；`<token>` 换成创建客户端时拿到的令牌。 */
+  /** Shape of the request header; `<token>` is replaced with the token obtained when the client was created. */
   headers: { Authorization: string };
-  /** 常见 MCP 客户端的配置片段（JSON 文本）。 */
+  /** Config snippets for common MCP clients (JSON text). */
   snippet: string;
   interfaceVersion: string;
-  /** 服务没有开着时的提示，开着时为 null。 */
+  /** Hint for when the service is not on; null when it is on. */
   notice: string | null;
 }
 
 /**
- * `services.modelApi.connectionInfo` 的结果：OpenAI 形状的客户端怎么连（基址与请求头），不含令牌明文。
+ * Result of `services.modelApi.connectionInfo`: how an OpenAI-shaped client connects (base URL and headers), with no plaintext token.
  */
 export interface ModelApiConnectionInfo {
-  /** `http://127.0.0.1:<port>/v1`：OpenAI SDK 的 `baseURL`。 */
+  /** `http://127.0.0.1:<port>/v1`: the `baseURL` for the OpenAI SDK. */
   baseUrl: string;
   headers: { Authorization: string };
-  /** 常见写法的片段（环境变量）：令牌用占位符。 */
+  /** Snippet for a common usage (environment variables): the token uses a placeholder. */
   snippet: string;
   interfaceVersion: string;
-  /** 服务没有开着时的提示，开着时为 null。 */
+  /** Hint for when the service is not on; null when it is on. */
   notice: string | null;
 }

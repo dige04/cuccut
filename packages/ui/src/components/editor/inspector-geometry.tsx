@@ -64,13 +64,12 @@ const fields = style({
 });
 const quickRow = style({ display: 'flex', flexWrap: 'wrap', gap: '[6px]' });
 
-/** 钉点与锁比只在这次会话里记着（不落盘），按片段 ID。 */
+/** Pin points and aspect lock are remembered only in this session (not saved to disk), keyed by clip ID. */
 const PINS = new Map<string, Pin>();
 const LOCKS = new Map<string, boolean>();
 
 /**
- * 几何段：九宫钉点、X / Y / W / H（画布百分比）、锁定比例、快捷动作（贴齐钉点 · 整宽 · 整高 · 适应画布 · 填满画布），
- * 下面是旋转与翻转。只在提交时换算回 `place`；铺满画布的片段框不看位置，只能转与翻转。
+ * Geometry section: a 3×3 grid of pin points, X / Y / W / H (canvas percentages), aspect-ratio lock, and quick actions (snap to pin · full width · full height · fit to canvas · fill canvas). Rotation and flip are below. Values are converted back to `place` only on commit. For clips whose frame fills the canvas, the position is ignored, and only rotation and flip are allowed.
  */
 export function GeometrySection({
   item,
@@ -208,7 +207,7 @@ export function GeometrySection({
   );
 }
 
-/** 几何段的一格数：标签在上，框里是一位小数的百分比；回车或失焦提交，Esc 放弃，非法输入弹回。 */
+/** One number cell in the geometry section: label on top, and a percentage with one decimal place inside the box. Commits on Enter or blur, Esc discards, and invalid input snaps back. */
 function NumField({
   label,
   value,

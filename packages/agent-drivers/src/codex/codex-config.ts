@@ -3,16 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * Codex 的配置目录：`CODEX_HOME`，没设时是 `~/.codex`。先看给 codex 子进程的环境（含登录 shell 里设的），再看本进程的。
+ * Codex's config directory: `CODEX_HOME`, or `~/.codex` when unset. The environment given to the codex child process is checked first (including what the login shell sets), then this process's.
  */
 export function codexHome(env: NodeJS.ProcessEnv): string {
   return env.CODEX_HOME || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 }
 
 /**
- * 不传模型时 codex 会用哪个：`config.toml` 顶层的 `model = "..."`。读不到、没写为 null。
- * 只读这一个键，不读凭据；不引入 TOML 依赖，只认第一个表头（`[...]`）之前的 `model = "..."` 或 `'...'`。
- * 不跟 `profile = "..."` 去找 `[profiles.<名>]` 里的覆盖：这种配置下报的可能不是实际用的模型。
+ * Which model codex uses when no model is passed: the top-level `model = "..."` in `config.toml`. Null when it cannot be read or is not set.
+ * Only this one key is read, and credentials are not; no TOML dependency is introduced, and only `model = "..."` or `'...'` before the first table header (`[...]`) is recognized.
+ * It does not follow `profile = "..."` to find overrides in `[profiles.<name>]`: under this kind of config, the model reported may not be the one actually used.
  */
 export async function readCodexConfigModel(env: NodeJS.ProcessEnv): Promise<string | null> {
   let text: string;

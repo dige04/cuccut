@@ -18,16 +18,15 @@ import { tr } from './transcript-text.tr.ts';
 import { vi } from './transcript-text.vi.ts';
 
 /**
- * 文稿的纯文本：复制、查找替换与译文视图都从这里取（设计稿 model-transcript.js `paraText` / `copyText` / `copyReceipt`，
- * panels.jsx `TranscriptPanel` 的查找）。
+ * Plain text of the transcript: copy, find-and-replace and the translation view all take it from here (design draft model-transcript.js `paraText` / `copyText` / `copyReceipt`,
+ * panels.jsx `TranscriptPanel` find).
  *
- * - 一段的文字照屏幕上拼：词去掉首尾空白，`spaced` 的词前面空一格。整个剪掉的词不算（与导出、改字态同一口径）。
- * - 替换落在转写正文的词上（`editWordText`，不动时间线）：命中只在一个词里时改这个词；跨了几个词时，替换后的文字按空白
- *   拆开的块数与原来的词数一样就一一对上，否则整体落到第一个词、其余的词隐藏。命中盖住了词间的空格时两边的词一起算。
- * - 译文按句对应到段：一句归它第一个词所在的那一段，段里各句的译文按次序接起来。
+ * - A paragraph's text is assembled as shown on screen: each word is trimmed of leading and trailing whitespace, and a `spaced` word gets a space in front. Words that are fully cut are not counted (same rule as export and the edited state).
+ * Replacement lands on the words of the transcript body (`editWordText`, timeline untouched): when the match lies within one word, only that word changes; when it spans several words, the replacement text is split on whitespace, and if the number of pieces equals the number of original words they map one to one, otherwise the whole text goes to the first word and the rest are hidden. When the match covers the space between words, the words on both sides count too.
+ * Translations map to paragraphs by sentence: a sentence belongs to the paragraph containing its first word, and the translations of the sentences in a paragraph are joined in order.
  */
 
-/** 复制回执（译文在 `transcript-text.<语言>.ts`）。 */
+/** Copy receipt (translations are in `transcript-text.<lang>.ts`). */
 const en = {
   receipt: (paragraphs: number, amount: string) => `${paragraphs} ${paragraphs === 1 ? 'paragraph' : 'paragraphs'} · ${amount}`,
   characters: (n: number) => `${n} ${n === 1 ? 'character' : 'characters'}`,
@@ -38,12 +37,12 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 
 type Json = Record<string, unknown>;
 
-/** 复制与引用用的时间码：与导出的文稿同一个写法（`mm:ss`，向下取整；一小时以上 `hh:mm:ss`）。 */
+/** Timecode for copy and quotes: the same format as the exported transcript (`mm:ss`, rounded down; `hh:mm:ss` for an hour or more). */
 export const timeStamp = transcriptStamp;
 
-// ---- 一段的文字 ----
+// ---- Paragraph text ----
 
-/** 一个词在段落文字里的位置（左闭右开）。 */
+/** Position of a word in the paragraph text (start inclusive, end exclusive). */
 export interface WordSpan extends TextRange {
   id: string;
   index: number;
@@ -56,7 +55,7 @@ export interface ParagraphText {
 
 type TextWord = Pick<TranscriptWord, 'id' | 'index' | 'text' | 'spaced' | 'state'>;
 
-/** 一段（或一串选中的词）的文字。`withCut` 时剪掉的词也算（选区复制：选了什么就复制什么）。 */
+/** Text of a paragraph, or of a run of selected words. With `withCut`, cut words are included (selection copy copies what is selected). */
 export function paragraphText(words: readonly TextWord[], withCut = false): ParagraphText {
   let text = '';
   const spans: WordSpan[] = [];
@@ -71,13 +70,13 @@ export function paragraphText(words: readonly TextWord[], withCut = false): Para
   return { text, words: spans };
 }
 
-/** 查找命中落在一个词身上的样子：词内的几段（相对这个词的偏移），与它前面那个空格要不要一起标（0 不标，1 标，2 当前那一处）。 */
+/** How a find match lands on a word: the segments inside the word (offsets relative to the word), and whether the space before it is marked too (0 = not marked, 1 = marked, 2 = the current match). */
 export interface WordHighlight {
   ranges: Array<{ start: number; end: number; current: boolean }>;
   gap: 0 | 1 | 2;
 }
 
-/** 一段里的命中（`para.text` 上的区间）摊到词上，按词下标（`TranscriptWord.index`）给。 */
+/** A paragraph's matches (ranges on `para.text`) spread onto words, keyed by word index (`TranscriptWord.index`). */
 export function wordHighlights(para: ParagraphText, marks: readonly (TextRange & { current?: boolean })[]): Map<number, WordHighlight> {
   const out = new Map<number, WordHighlight>();
   const of = (index: number) => {
@@ -101,9 +100,9 @@ export function wordHighlights(para: ParagraphText, marks: readonly (TextRange &
   return out;
 }
 
-// ---- 替换 ----
+// ---- Replace ----
 
-/** 一处命中碰到的词（在 `para.words` 里的下标，升序）：字有重叠的词，加上被它盖住的词间空格两边的词。 */
+/** Words touched by one match (indices into `para.words`, ascending): the words whose characters overlap, plus the words on either side of a word-gap space covered by the match. */
 function touched(para: ParagraphText, range: TextRange): number[] {
   const hit = new Set<number>();
   para.words.forEach((word, k) => {
@@ -118,8 +117,8 @@ function touched(para: ParagraphText, range: TextRange): number[] {
 }
 
 /**
- * 在一段里落下若干替换（命中来自 `findRanges(para.text, …)`，互不重叠），改写转写正文里对应的词。返回新正文与实际改了几处；
- * 什么都没变时 null。替换文字按字面插入。
+ * Applies several replacements within one paragraph (matches come from `findRanges(para.text, …)` and do not overlap), rewriting the corresponding words in the transcript body. Returns the new body and how many places were actually changed;
+ * null when nothing changed. Replacement text is inserted literally.
  */
 export function replaceInParagraph(
   body: unknown,
@@ -127,7 +126,7 @@ export function replaceInParagraph(
   ranges: readonly TextRange[],
   replacement: string,
 ): { body: Json; changed: number } | null {
-  // 碰到的词连成块：同一个词上的几处、连着的几处并成一块，一块一起改。
+  // Touched words are grouped into blocks: several matches on the same word, or consecutive ones, merge into one block that is changed together.
   const clusters: Array<{ from: number; to: number; ranges: TextRange[] }> = [];
   for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
     const words = touched(para, range);
@@ -168,32 +167,32 @@ export function replaceInParagraph(
   return doc && changed ? { body: doc, changed } : null;
 }
 
-// ---- 复制 ----
+// ---- Copy ----
 
-/** 文稿的语言视图：原文、只看译文、双语对照（原文一行、译文一行）。 */
+/** Language views of the transcript: source, translation only, or bilingual side by side (source on one line, translation on the next). */
 export type TranscriptView = 'source' | 'translation' | 'both';
 
 export interface CopyParagraph {
-  /** 段首在序列上的时刻（秒）。 */
+  /** Start time of the paragraph on the sequence (seconds). */
   start: number;
   speaker: string | null;
   text: string;
   translation: string;
 }
 
-/** 一段在某个视图下的文字；双语是两行，不拼成一句。 */
+/** A paragraph's text in one view; bilingual gives two lines, not merged into one sentence. */
 export function viewText(para: Pick<CopyParagraph, 'text' | 'translation'>, view: TranscriptView): string {
   if (view === 'translation') return para.translation;
   if (view === 'both') return [para.text, para.translation].filter(Boolean).join('\n');
   return para.text;
 }
 
-/** 只要文字（「只复制文字」与选区的复制）：段与段之间空一行，不带说话人与时间。 */
+/** Text only (“Copy text only” and selection copy): paragraphs separated by a blank line, without speaker or time. */
 export function copyText(paras: readonly CopyParagraph[], options: { view: TranscriptView }): string {
   return paras.map((para) => viewText(para, options.view)).join('\n\n');
 }
 
-/** 文稿的一节：章节（第一章之前、不写章节时 null）与归它的段。 */
+/** A section of the transcript: the chapter (null before the first chapter, or when no chapters are written) and the paragraphs that belong to it. */
 export interface CopySection {
   chapter: { title: string; start: number } | null;
   paras: readonly CopyParagraph[];
@@ -204,18 +203,18 @@ export interface TranscriptWriteOptions {
   view: TranscriptView;
   speakers: boolean;
   timestamps: boolean;
-  /** Markdown 开头的一级标题（视频名）；节选（这一段、这一章）不写。 */
+  /** The top-level Markdown heading at the start (the video name); not written for excerpts (this paragraph, this chapter). */
   title?: string | null;
 }
 
 /**
- * 按导出文稿的写法排出几节段落（命令与协议规范 §4.4，与 Runtime text-export.ts 的 `writeMarkdown` / `writeText` 逐行对应）：
- * 复制这一段、这一章，以及只看译文时的全文——这几种 Runtime 排不了（范围导出的时间从范围起点算、Markdown 总带标题；
- * 主文档不收译文）。其余的全文复制走 `exports.renderText`，与导出的文件逐字节相同。
+ * Lays out sections of paragraphs in the same form as the exported transcript (command and protocol spec §4.4; line-by-line counterpart of `writeMarkdown` / `writeText` in the Runtime's text-export.ts):
+ * copying this paragraph or this chapter, and the full text in translation-only view. The Runtime cannot lay these out (range exports count time from the range start, and Markdown always carries a heading;
+ * the main document does not include translations). Other full-text copies go through `exports.renderText`, byte-identical to the exported file.
  *
- * - Markdown：章节 `## 名字`（带时间戳时 ` · mm:ss`），段 `**说话人:** 正文 [mm:ss]`，双语的译文另起一块 `> 译文`；标记字符转义。
- * - 纯文本：章节 `— 名字 —`，段 `说话人: 正文 [mm:ss]`，双语的译文紧接下一行。
- * - 只看译文时译文当正文写；正文是空的段不写，没有段落的章不写。块与块之间空一行，末尾不加换行。
+ * - Markdown: chapter `## Name` (with ` · mm:ss` when timestamps are shown), paragraph `**Speaker:** text [mm:ss]`, bilingual translation as its own block `> translation`; markup characters escaped.
+ * - Plain text: chapter `— Name —`, paragraph `Speaker: text [mm:ss]`, bilingual translation on the line right after.
+ * - In translation-only view the translation is written as body text; paragraphs with an empty body are not written, and chapters with no paragraphs are not written. One blank line between blocks, no trailing newline.
  */
 export function writeTranscript(sections: readonly CopySection[], options: TranscriptWriteOptions): string {
   const md = options.format === 'md';
@@ -248,7 +247,7 @@ export function writeTranscript(sections: readonly CopySection[], options: Trans
   return out.join('\n\n');
 }
 
-/** 按章节分节：一段归它开始时已经开始的最后一章（与导出同一个归法）。`chapters` 按开始排好。 */
+/** Groups paragraphs into sections by chapter: a paragraph belongs to the last chapter that has already started when it starts (same rule as export). `chapters` is sorted by start. */
 export function chapterSections(paras: readonly CopyParagraph[], chapters: readonly { title: string; start: number }[]): CopySection[] {
   const out: { chapter: CopySection['chapter']; paras: CopyParagraph[] }[] = [];
   let current = -1;
@@ -263,7 +262,7 @@ export function chapterSections(paras: readonly CopyParagraph[], chapters: reado
   return out;
 }
 
-/** 复制的回执：段数加字数——中文按字、拉丁文字按词（两种语言的「量」不是一回事），哪种多按哪种算。 */
+/** Copy receipt: paragraph count plus length. Chinese is counted by character, Latin-script text by word (the “amount” of the two languages is not the same kind of thing); whichever count is larger decides the unit used. */
 export function copyReceipt(paras: readonly Pick<CopyParagraph, 'text' | 'translation'>[], view: TranscriptView): string {
   const text = paras.map((para) => viewText(para, view)).join('');
   const cjk = (text.match(/[一-鿿]/g) ?? []).length;
@@ -271,18 +270,18 @@ export function copyReceipt(paras: readonly Pick<CopyParagraph, 'text' | 'transl
   return lengthReceipt(paras.length, cjk, words);
 }
 
-/** 「N 段 · M 字」：汉字比拉丁词多时按字数说，否则按词数说（导出面板的篇幅用 Runtime 数好的字数与词数）。 */
+/** “N 段 · M 字” (N paragraphs · M characters): reports characters when Han characters outnumber Latin words, otherwise words (the export panel's length uses the character and word counts computed by the Runtime). */
 export function lengthReceipt(paragraphs: number, cjkCharacters: number, words: number): string {
   return M.receipt(paragraphs, cjkCharacters >= words ? M.characters(cjkCharacters) : M.words(words));
 }
 
-// ---- 译文 ----
+// ---- Translation ----
 
 const CJK_END = /[　-〿぀-ヿ㐀-鿿＀-￯]$/u;
 
 /**
- * 每段的译文（与 `paragraphs` 一一对应，没有译文的段是空串）。句子取自转写正文（没存句子时按停顿与句末标点派生，
- * 与翻译时同一个取法），一句归它第一个还在文稿里的词所在的段。正文认不出时 null。
+ * Each paragraph's translation (one to one with `paragraphs`; a paragraph with no translation is an empty string). Sentences come from the transcript body (when sentences are not stored, they are derived from pauses and sentence-ending punctuation,
+ * the same way as at translation time), and a sentence belongs to the paragraph containing its first word still in the transcript. null when the body cannot be recognised.
  */
 export function paragraphTranslations(
   speechBody: unknown,

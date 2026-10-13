@@ -33,16 +33,14 @@ import { useEditorActions } from './editor-context.tsx';
 import { auditionRange, deleteDubBlocks, muteDubBlocks } from './timeline-commands.ts';
 
 /**
- * 时间线上的配音块（设计稿 timeline-dub.jsx `DubBlock` / `DubBlockMenu`，ui.css `.tdub`）：块是淡的——中性浅灰底、
- * 左缘 3px 说话人色条、译文；语速快过 1.35× 整块换黄、角标写「1.62× · 过快」；静音的压淡加删除线；选中描蓝。
- * 右缘是拉伸把手：拖它改这一句的语速（时间线负责手势，松手一次 `setSpeed`）。右键弹块菜单，作用于选中的那几句。
- * 算什么都在 model/timeline-dub.ts；这里只画，并经文档缓存取配音计划与转写的正文。
+ * Dub blocks on the timeline (design draft timeline-dub.jsx `DubBlock` / `DubBlockMenu`, ui.css `.tdub`): the blocks are faded, with a neutral light-gray fill, a 3px speaker-colored strip on the left edge, and the translation. A speed above 1.35× turns the whole block yellow, with a corner badge reading “1.62× · 过快”. Muted blocks are dimmed with strikethrough; selected blocks get a blue outline.
+ * The right edge is a stretch handle: drag it to change this sentence's speed (the timeline handles the gesture; one `setSpeed` on release). Right-click opens the block menu, which acts on the selected sentences.
+ * All computation is in model/timeline-dub.ts; this file only draws, and it fetches the dub plan and the transcript body through the document cache.
  */
 
 /**
- * 序列里的配音块：配音计划与原句所在转写的正文经文档缓存取（与预览、字幕块共用一份），取到了重算；
- * 还没取到时块照画（色相取第一档、文字留给片段名）。再叠上哪几句在重配（`jobs` 镜像里在跑的配音流程冻结的
- * `params.regroup`）与当前是第几版（model/dub-takes.ts）。任务进度事件很多，订阅的是排好序的句子串，句子没变不重算。
+ * Dub blocks in the sequence: the dub plan and the body of the transcript for the original sentences are fetched through the document cache (shared with preview and subtitle blocks); once fetched, the blocks are recomputed.
+ * Until then the blocks still draw (hue takes the first tier, text is left to the clip name). On top of that, the sentences being re-dubbed (the `params.regroup` frozen in the dub flow running in the `jobs` mirror) and the current take number (model/dub-takes.ts) are layered. Task progress events are very frequent, so this subscribes to the sorted string of sentences; it does not recompute when the sentences are unchanged.
  */
 export function useDubBlocks(sequence: Sequence, documents: Record<Id, DocumentRecord>, assets: Record<Id, AssetRecord>): ReadonlyMap<Id, DubBlock> {
   const cache = useRuntime().videos.documents;
@@ -70,7 +68,7 @@ export function useDubBlocks(sequence: Sequence, documents: Record<Id, DocumentR
       if (speechId && speechBody !== undefined) speeches.set(speechId, speechBody);
     }
     return { blocks: dubBlocks(sequence, { assets, plans, speeches }), plans, wanted: JSON.stringify(missing) };
-    // `loaded`：缓存里取到了新的正文，重算一遍。
+    // `loaded`: new body text was fetched from the cache; recompute once.
   }, [sequence, documents, assets, cache, loaded]);
   useEffect(() => {
     for (const [id, revision] of JSON.parse(wanted) as Array<[Id, string]>) cache.load(id, revision);
@@ -78,7 +76,7 @@ export function useDubBlocks(sequence: Sequence, documents: Record<Id, DocumentR
   return useMemo(() => withRegen(blocks, plans, queuedSet(queued)), [blocks, plans, queued]);
 }
 
-/** 块随状态变的部分；位置、圆角、边框线型、裁切、排版在 editor.css 的 `.cc-clip` / `.cc-dub-block`，字体继承自轨（见 timeline.tsx 的 lane）。 */
+/** The parts that vary with state. Position, corner radius, border style, clipping, and typography are in editor.css `.cc-clip` / `.cc-dub-block`; the font is inherited from the track (see lane in timeline.tsx). */
 const block = style({
   borderWidth: { default: 1, isSelected: 2 },
   cursor: { default: 'grab', isLocked: 'not-allowed' },
@@ -91,11 +89,11 @@ const block = style({
   borderColor: { default: 'gray-200', isFast: 'yellow-400', isQueued: 'gray-300', isSelected: 'blue-800' },
   color: { default: 'gray-800', isFast: 'yellow-1100', isQueued: 'gray-600' },
   opacity: { default: 1, isOff: 0.45, isMuted: 0.55 },
-  // 正在重配的条纹（设计稿 `.tdub--queued`）在 editor.css（样式宏画不了渐变），这里只给 token。
+  // The stripes for sentences being re-dubbed (design draft `.tdub--queued`) live in editor.css, since style macros cannot draw gradients; here only the tokens are given.
   '--cc-dub-stripe': { type: 'backgroundColor', value: 'gray-100' },
   '--cc-dub-stripe-gap': { type: 'backgroundColor', value: 'gray-50' },
 });
-/** 左缘的说话人色条（设计稿 `.tdub__sp`，色取说话人色相的边色档）。 */
+/** Speaker-color strip on the left edge (design draft `.tdub__sp`; the color is the speaker hue's edge-color tier). */
 const speakerStrip = style({
   position: 'absolute',
   top: 0,
@@ -124,7 +122,7 @@ const rateBadge = style({
   backgroundColor: { default: 'gray-200', isFast: 'yellow-400' },
   color: { default: 'gray-800', isFast: 'yellow-1100' },
 });
-/** 右缘拉伸把手（设计稿 `.thnd--r`）：热区宽 min(7, w/3)，里面一根说话人色的细条。 */
+/** Right-edge stretch handle (design draft `.thnd--r`): hit area is min(7, w/3) wide, with a thin speaker-colored bar inside. */
 const stretchHandle = style({ position: 'absolute', top: 0, bottom: 0, insetEnd: 0, zIndex: 2, cursor: 'ew-resize' });
 const stretchPill = style({
   position: 'absolute',
@@ -139,18 +137,18 @@ const stretchPill = style({
   },
 });
 
-/** 角标上的语速：1.0× 不写。 */
+/** Speed on the badge: 1.0× is not written. */
 export function rateText(rate: number, fast: boolean): string {
   return showsRate(rate) ? COPY.rate(rate, fast) : '';
 }
 
-/** 拖右缘时这一块的样子：实例的新变速乘上合成时的速，就是新的语速。 */
+/** How this block looks while its right edge is being dragged: the instance's new speed change multiplied by the speed at synthesis time gives the new speed. */
 export function stretchedLook(dub: DubBlock, speed: number): { rate: number; fast: boolean } {
   const rate = dub.tempo * speed;
   return { rate, fast: rate > DUB_FAST_RATE + 1e-9 };
 }
 
-/** 一块配音（位置与宽度由时间线按手势算好给进来）。 */
+/** One dub block (its position and width are computed from the gesture by the timeline and passed in). */
 export function DubBlockView({
   dub,
   name,
@@ -168,17 +166,17 @@ export function DubBlockView({
   onStretchPointerDown,
 }: {
   dub: DubBlock;
-  /** 片段名：计划还没取到时块上写它。 */
+  /** Clip name: written on the block while the plan has not been fetched yet. */
   name: string;
   left: number;
   width: number;
   selected: boolean;
   locked: boolean;
   editable: boolean;
-  /** 所在的轨道静音了，或这件停用了。 */
+  /** The track it sits on is muted, or this item is disabled. */
   off: boolean;
   active: boolean;
-  /** 正在拖右缘：拖到的实例变速。 */
+  /** Dragging the right edge: the speed the instance is being dragged to. */
   stretchSpeed: number | null;
   style?: CSSProperties;
   onPointerDown(event: ReactPointerEvent<HTMLDivElement>): void;
@@ -189,7 +187,7 @@ export function DubBlockView({
   const look = stretchSpeed === null ? { rate: dub.rate, fast: dub.fast } : stretchedLook(dub, stretchSpeed);
   const rate = queued ? '' : rateText(look.rate, look.fast);
   const text = dub.text ?? name;
-  // 正在重配的块画条纹、写「重新生成中…」，不画角标、不给拉伸（Runtime 写回时会换掉这一件）。
+  // Blocks being re-dubbed get stripes and the text “重新生成中…”, with no badge and no stretch handle (the Runtime write-back will replace this item).
   const canStretch = editable && !locked && !queued;
   const version = dub.version ? REGEN.version(dub.version.k, dub.version.seed) : '';
   const fast = look.fast && !queued;
@@ -224,7 +222,7 @@ export function DubBlockView({
   );
 }
 
-/** 块菜单的标题：一句写译文（长了截断），多句写句数（设计稿 model-dub.js `selectionTitle`）。 */
+/** Title of the block menu: one sentence shows its translation (truncated if long); several sentences show the count (design draft model-dub.js `selectionTitle`). */
 function menuTitle(chosen: readonly DubBlock[], name: string): string {
   if (chosen.length > 1) return COPY.selection(chosen.length);
   const text = chosen[0]?.text ?? name;
@@ -232,11 +230,10 @@ function menuTitle(chosen: readonly DubBlock[], name: string): string {
 }
 
 /**
- * 配音块的右键菜单（设计稿 `DubBlockMenu`）：作用于选中的那几句（右键的那块不在选区里时只算它）。
- * 听这一句（只选了一句时）；静音 / 取消静音；重新生成这几句（同样的译文与声音换个种子再合成）；改译文并重配…；删除这几句。
- * 「移除这组配音」挪到了配音行头的 ⋯（timeline-dub-head.tsx）。重新生成要跑在线模型：只在桌面端、视频可改、找得到这组的
- * 配音计划、选中的几句都不在重配时可点（Web 表面不放 AI 入口）。
- * 渲染在时间线菜单的 MenuTrigger 里（timeline-menu.tsx），锚点与开关由它管。
+ * Right-click menu for a dub block (design draft `DubBlockMenu`): acts on the selected sentences (if the right-clicked block is not in the selection, only that block counts).
+ * Listen to this sentence (only when one sentence is selected); mute / unmute; regenerate these sentences (same translation and voice, new seed for synthesis); Edit translation and re-dub…; delete these sentences.
+ * “Remove this dub group” has moved to the ⋯ on the dub track header (timeline-dub-head.tsx). Regenerating runs an online model, so it is only enabled on desktop, when the video is editable, when the dub plan for this group can be found, and when none of the selected sentences is being re-dubbed (the Web surface has no AI entry point).
+ * Rendered inside the MenuTrigger of the timeline menu (timeline-menu.tsx), whose anchor and open state are managed there.
  */
 export function DubBlockMenu({
   dub,
@@ -267,11 +264,11 @@ export function DubBlockMenu({
   const title = menuTitle(chosen, name);
   const desktop = runtime.host.platform !== 'web';
   const plan = planRecordOf(documents, dub.groupId);
-  // 选区可能跨组：重配只认右键那一块所在的组。
+  // The selection may span groups: re-dub only acts on the group of the block that was right-clicked.
   const units = [...new Set(chosen.flatMap((b) => (b.groupId === dub.groupId && b.unitId ? [b.unitId] : [])))];
   const inQueue = chosen.some((b) => b.queued);
   const canRegen = editable && !!plan && !!videoId && units.length > 0 && !inQueue && !busy;
-  // 锁着的改不了（引擎会拒绝）：选中的几句里有锁着的，静音与删除置灰。
+  // Locked items can't be changed (the engine rejects it): if any selected sentence is locked, mute and delete are greyed out.
   const disabled = [...(editable ? (anyLocked(sequence, ids) ? ['mute', 'delete'] : []) : ['mute', 'delete']), ...(canRegen ? [] : ['regen', 'fit'])];
 
   const run = (key: string) => {

@@ -1,16 +1,10 @@
-// OpenAI 语音合成与图片生成的模型（架构设计 §6.4）。2026-10-03 读过的文档：
+// Models for OpenAI speech synthesis and image generation (architecture design §6.4). Docs read on 2026-10-03:
 //   https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
 //   https://developers.openai.com/api/docs/guides/text-to-speech
 //   https://developers.openai.com/api/reference/resources/images/methods/generate
 //   https://developers.openai.com/api/docs/guides/image-generation
-// 文档确认的：语音模型 tts-1、tts-1-hd、gpt-4o-mini-tts；13 个内置音色，tts-1 / tts-1-hd 只有其中 9 个；指南推荐 marin、cedar；
-// 文本 ≤ 4096 字符；语言大体同 Whisper（指南列出的语言）；mp3 是默认格式；`speed` 0.25–4.0；`instructions` 不用于 tts-1 系列；
-// 没有 `seed`。图片模型 gpt-image-1、gpt-image-1-mini、gpt-image-1.5、gpt-image-2（dall-e-2/3 已于 2026-05-12 退役）；
-// 尺寸 1024x1024、1536x1024、1024x1536 与 `auto`（不给 `size`）；gpt-image-2 接受任意 WIDTHxHEIGHT（边长是 16 的倍数、
-// 宽高比 1:3–3:1、最大 3840x2160，超过 2560x1440 为实验性）；`n` 1–10；提示词 ≤ 32000 字符；没有 `seed`；
-// 参考图走 `/images/edits`（这一版不用）。
-// 没能确认的：自定义音色（`{ id }`）只按 gpt-4o-mini-tts 声明；opus、aac 的容器（不提供）；参考图的张数上限（按 16 声明）；
-// gpt-image-2 的非标准尺寸只列出几个 16:9 的常用值，不开放任意尺寸。
+// Confirmed by the docs: speech models tts-1, tts-1-hd, gpt-4o-mini-tts; 13 built-in voices, of which tts-1 / tts-1-hd have only 9; the guide recommends marin and cedar; text ≤ 4096 characters; languages broadly the same as Whisper (the languages the guide lists); mp3 is the default format; `speed` 0.25–4.0; `instructions` is not used for the tts-1 series; no `seed`. Image models gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gpt-image-2 (dall-e-2/3 were retired on 2026-05-12); sizes 1024x1024, 1536x1024, 1024x1536 and `auto` (omit `size`); gpt-image-2 accepts any WIDTHxHEIGHT (side lengths multiples of 16, aspect ratio 1:3 to 3:1, maximum 3840x2160; above 2560x1440 is experimental); `n` 1–10; prompt ≤ 32000 characters; no `seed`; reference images go through `/images/edits` (not used in this version).
+// Not confirmed: custom voices (`{ id }`) are declared only for gpt-4o-mini-tts; the opus and aac containers (not provided); the maximum number of reference images (declared as 16); for gpt-image-2 only a few common 16:9 non-standard sizes are listed, arbitrary sizes are not exposed.
 import type { ImageAspectRatio, ImageModelInfo, SpeechModelInfo, SpeechVoice } from '@cuccut/protocol';
 import type { AdapterConfig, ImageAdapter, ImageOutput, ImageRequest, SpeechAdapter, SpeechOutput, SpeechRequest } from '../adapter.ts';
 import { openAiGenerateImages, openAiSynthesize } from './openai-generation.ts';

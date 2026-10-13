@@ -3,14 +3,13 @@ import type { AiToolId } from './ai-tools.ts';
 import { jobLive, jobPercent } from './task-list.ts';
 
 /**
- * AI 工具列表每一行右边的状态（产品设计 §5.10「AI 工具 Tab」，原型 panel-aitools-list.jsx `rowState`）：只报编辑器手里有的事实，
- * 按「在跑 > 待处理 > 过期 > 章节 > 上次跑过」取第一个。这里只做判断，文案与色调由列表按 `kind` 取。
+ * The status at the right of each row in the AI tools list (product design §5.10 “AI tools tab”, prototype panel-aitools-list.jsx `rowState`). It reports only facts the editor holds, and takes the first match in the order running > pending > stale > chapters > last run. This only makes the decision; the list picks the copy and tone from `kind`.
  */
 export type AiToolRowState =
   | { kind: 'running'; percent: number | null }
-  /** 直接调模型的结果或收据还没看完（「完成」之前）。 */
+  /** Results or receipts from a direct model call that have not been reviewed yet (before “Done”). */
   | { kind: 'result' }
-  /** 识别说话人的提案等人确认。 */
+  /** Speaker-identification proposals waiting for confirmation. */
   | { kind: 'review' }
   | { kind: 'pending'; count: number }
   | { kind: 'stale'; count: number }
@@ -19,17 +18,17 @@ export type AiToolRowState =
   | { kind: 'undone' };
 
 export interface AiToolRowFacts {
-  /** 这个视频上这个工具在跑的任务；百分比不知道时 null。 */
+  /** The task for this tool running on this video; null when the percentage is unknown. */
   running?: { percent: number | null } | null;
   result?: boolean;
   review?: boolean;
-  /** 时间线上建议了、还没定的剪切（只对找可剪的口）。 */
+  /** Cuts suggested on the timeline but not yet decided (only for finding cut points). */
   pendingCuts?: number;
-  /** 过期的译文句子（只对刷新过期译文）。 */
+  /** Stale translated sentences (only for refreshing stale translations). */
   staleSentences?: number;
-  /** 时间线上的章节数（只对生成章节）。 */
+  /** The number of chapters on the timeline (only for generating chapters). */
   chapters?: number;
-  /** 这个视频上这个工具最近一次跑完的那一次；`undone` 是它写进视频的那一笔已经撤销。 */
+  /** The most recent completed run of this tool on this video; `undone` means the change it wrote into the video has been undone. */
   last?: { at: string; undone: boolean } | null;
 }
 
@@ -44,7 +43,7 @@ export function aiToolRowState(tool: AiToolId, facts: AiToolRowFacts): AiToolRow
   return null;
 }
 
-// ---- 事实 ----
+// ---- Facts ----
 
 export interface AiToolJobFacts {
   running: { percent: number | null } | null;
@@ -54,7 +53,7 @@ export interface AiToolJobFacts {
 const toolOf = (job: JobRecord): unknown => job.pipeline?.params.tool;
 const videoOf = (job: JobRecord): unknown => job.videoId ?? job.pipeline?.params.videoId;
 
-/** 直接调模型的任务（`ai-tool` 流程）里属于这个视频的，按工具分：在跑的那一个与最近一次完成的那一个。 */
+/** The direct model call tasks (`ai-tool` flow) that belong to this video, grouped by tool: the one running, and the most recently completed one. */
 export function aiToolJobFacts(jobs: readonly JobRecord[], videoId: Id): Partial<Record<string, AiToolJobFacts>> {
   const out: Partial<Record<string, AiToolJobFacts>> = {};
   for (const job of jobs) {
@@ -73,7 +72,7 @@ export function aiToolJobFacts(jobs: readonly JobRecord[], videoId: Id): Partial
   return out;
 }
 
-/** 这部视频的「生成配乐」任务（`generateMusic` 带 `videoId`，从工具页提交）：在跑的那一个与最近一次完成的那一个。 */
+/** This video's “generate music” task (`generateMusic` with `videoId`, submitted from the tools page): the one running, and the most recently completed one. */
 export function soundtrackJobFacts(jobs: readonly JobRecord[], videoId: Id): AiToolJobFacts | null {
   let facts: AiToolJobFacts | null = null;
   for (const job of jobs) {
@@ -95,8 +94,7 @@ export const EDITORIAL_PROPOSAL_KIND = 'editorial-proposal';
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * 剪辑提案（视频格式规范 §6.2）里还没定的建议条数。转写在检测之后改过的提案已经过期（`speechRef` 不是那份转写的现在这版），
- * 不算；正文还没取到或认不出来时不算。
+ * The number of undecided suggestions in a cut proposal (video format spec §6.2). A proposal that was changed after the transcription's detection is already stale (its `speechRef` is not the current version of that transcript), so it is not counted; nor is one when the body text has not been fetched or cannot be recognized.
  */
 export function pendingCutCount(proposals: readonly { record: DocumentRecord; body: unknown }[], documents: Record<Id, DocumentRecord>): number {
   let n = 0;

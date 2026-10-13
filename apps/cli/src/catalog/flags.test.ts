@@ -5,7 +5,7 @@ import { buildTree, lookup, type CatalogCommand } from './command-tree.ts';
 import { defaultGlobals, extractGlobals, kebab, parseToolArgs, type GlobalFlags, type InputSource } from './flags.ts';
 import { loadSnapshot } from './snapshot.ts';
 
-/** 旗标派生（Agent 面设计 §5.3），按构建期快照（vitest 的 globalSetup 先写好）里的真实 schema 测。 */
+/** Flag derivation (agent-surface design §5.3), tested against the real schema in the build-time snapshot (written beforehand by vitest's globalSetup). */
 
 const snapshot = loadSnapshot();
 if (!snapshot) throw new Error('没有目录快照：先运行 npm run build:catalog');
@@ -112,7 +112,7 @@ describe('旗标派生', () => {
       noCaptions: true,
     });
     expect(await parse(['transcribe'], ['--file', 'a.mp4', '--diarize'])).toMatchObject({ diarize: true });
-    // 既能是布尔又能是对象的：开关，或 --x=<JSON>。
+    // Values that can be either a boolean or an object: a switch, or --x=<JSON>.
     expect(await parse(['export'], ['demo', '--kind', 'subtitles', '--format', 'srt', '--bilingual'])).toMatchObject({ bilingual: true });
     expect(await parse(['export'], ['demo', '--kind', 'subtitles', '--format', 'srt', '--bilingual={"language":"en"}'])).toMatchObject({
       bilingual: { language: 'en' },
@@ -127,7 +127,7 @@ describe('旗标派生', () => {
       query: '词',
       kinds: ['caption', 'translation'],
     });
-    // 没有固定格式的文本元素不按逗号切：文件名里可以有逗号。
+    // Text elements without a fixed format are not split on commas: file names may contain commas.
     expect(await parse(['transcode'], ['a,b.mp4', 'c.mp4', '--merge'])).toEqual({ files: ['a,b.mp4', 'c.mp4'], merge: true });
     expect(await parse(['transcode'], ['--files', 'a.mp4', '--files', 'b.mp4'])).toEqual({ files: ['a.mp4', 'b.mp4'] });
     expect((await rejection(parse(['transcode'], ['a.mp4', '--files', 'b.mp4']))).code).toBe('INVALID_ARGUMENTS');
@@ -176,7 +176,7 @@ describe('旗标派生', () => {
 
     const exported = await parse(['export'], ['demo', '--kind', 'video', '--format', 'mp4', '--range', '1.5:10', '--fps', '30000/1001']);
     expect(exported).toMatchObject({ range: { start: 1.5, end: 10 }, fps: { num: 30000, den: 1001 } });
-    // 只有一个文本字段的对象直接写值；写 JSON 也行。
+    // An object with only one text field takes the value directly; writing JSON also works.
     const replaced = await parse(['compositions', 'import'], ['demo', '--path', 'g/2', '--replace', 'item_1']);
     expect(replaced).toEqual({ video: 'demo', path: 'g/2', replace: { itemId: 'item_1' } });
     const json = await parse(['compositions', 'import'], ['demo', '--path', 'g/2', '--replace', '{"itemId":"item_2"}']);

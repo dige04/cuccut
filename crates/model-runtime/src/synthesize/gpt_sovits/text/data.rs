@@ -1,4 +1,4 @@
-//! 内嵌数据：`include_bytes!` 编进二进制，首次使用时 zlib 解压（格式见 `data/README.md`）。
+//! Embedded data: compiled into the binary with `include_bytes!` and zlib-decompressed on first use (format described in `data/README.md`).
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -16,18 +16,18 @@ pub(crate) fn inflate_text(bytes: &[u8]) -> String {
     String::from_utf8(inflate(bytes)).expect("GPT-SoVITS 内嵌数据不是 UTF-8")
 }
 
-/// 单字表覆盖的码点区间（pypinyin 数据里有读音的 CJK 基本区）。
+/// Code point range covered by the single-character table (the CJK basic block entries that have readings in the pypinyin data).
 pub const HAN_LO: u32 = 0x4E00;
 pub const HAN_HI: u32 = 0x9FA5;
-/// 单字表里「没有读音」的标记。
+/// Marker in the single-character table for "no reading".
 pub const NO_PINYIN: u16 = 0xFFFF;
 
 pub struct PinyinTables {
-    /// 音节 id → (`Style.INITIALS`, `Style.FINALS_TONE3`)。
+    /// Syllable id → (`Style.INITIALS`, `Style.FINALS_TONE3`).
     pub syllables: Vec<(String, String)>,
-    /// U+4E00..=U+9FA5 的默认读音音节 id。
+    /// Default-reading syllable ids for U+4E00..=U+9FA5.
     pub chars: Vec<u16>,
-    /// 全部词组，按码点排序；整词读音与逐字默认读音不同时带音节 id。
+    /// All phrases, sorted by code point; a syllable id is included when the whole-word reading differs from the per-character default readings.
     pub phrases: Vec<(String, Option<Vec<u16>>)>,
 }
 
@@ -58,13 +58,13 @@ pub static PINYIN: LazyLock<PinyinTables> = LazyLock::new(|| {
     PinyinTables { syllables, chars, phrases }
 });
 
-/// 繁 → 简（上游 `char_convert.t2s_dict` 中繁简不同的字）。
+/// Traditional → simplified (characters whose traditional and simplified forms differ, from upstream `char_convert.t2s_dict`).
 pub static T2S: LazyLock<HashMap<char, char>> = LazyLock::new(|| {
     let chars: Vec<char> = inflate_text(include_bytes!("data/t2s.txt.z")).chars().collect();
     chars.chunks_exact(2).map(|pair| (pair[0], pair[1])).collect()
 });
 
-/// `opencpop-strict.txt`：拼音 → (声母符号, 韵母符号)。
+/// `opencpop-strict.txt`: pinyin → (initial symbol, final symbol).
 pub static OPENCPOP: LazyLock<HashMap<String, (String, String)>> = LazyLock::new(|| {
     inflate_text(include_bytes!("data/opencpop_strict.txt.z"))
         .lines()
@@ -85,11 +85,11 @@ fn word_phones(text: &str) -> HashMap<String, Vec<String>> {
         .collect()
 }
 
-/// CMU 词典（含上游热词覆盖）。
+/// CMU dictionary (including upstream hot-word overrides).
 pub static CMUDICT: LazyLock<HashMap<String, Vec<String>>> =
     LazyLock::new(|| word_phones(&inflate_text(include_bytes!("data/cmudict.txt.z"))));
 
-/// 上游姓名词典（只含不在 CMU 表里的词）。
+/// Upstream name dictionary (containing only words not in the CMU table).
 pub static NAMEDICT: LazyLock<HashMap<String, Vec<String>>> =
     LazyLock::new(|| word_phones(&inflate_text(include_bytes!("data/namedict.txt.z"))));
 
@@ -99,7 +99,7 @@ pub struct Homograph {
     pub pos1: String,
 }
 
-/// g2p-en 多音词表。
+/// g2p-en heteronym table.
 pub static HOMOGRAPHS: LazyLock<HashMap<String, Homograph>> = LazyLock::new(|| {
     inflate_text(include_bytes!("data/homographs.txt.z"))
         .lines()
@@ -115,7 +115,7 @@ pub static HOMOGRAPHS: LazyLock<HashMap<String, Homograph>> = LazyLock::new(|| {
         .collect()
 });
 
-/// 顺序读 `gen_data.py` 写出的二进制表：LE 7-bit varint、front-coded 键。
+/// Reads in order the binary table written by `gen_data.py`: little-endian 7-bit varints and front-coded keys.
 struct Cursor<'a> {
     data: &'a [u8],
     pos: usize,
@@ -166,7 +166,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// 按 UTF-8 字节序排好的字符串集合（与 `str` 的 `Ord` 一致），下标即表内序号。
+/// A set of strings sorted in UTF-8 byte order (consistent with the `Ord` of `str`); the index is the entry's position in the table.
 pub struct SortedKeys {
     arena: Vec<u8>,
     ends: Vec<u32>,
@@ -196,13 +196,13 @@ impl SortedKeys {
     }
 }
 
-/// NLTK `averaged_perceptron_tagger_eng`：类别、tagdict 与特征权重（千分整数还原成 f64）。
+/// NLTK `averaged_perceptron_tagger_eng`: classes, tagdict and feature weights (thousandths integers restored to f64).
 pub struct EnTagger {
     pub classes: Vec<String>,
     pub words: SortedKeys,
     pub word_class: Vec<u8>,
     pub feats: SortedKeys,
-    /// 第 i 个特征的权重在 `pairs[feat_start[i]..feat_start[i + 1]]`。
+    /// The weights of feature i are in `pairs[feat_start[i]..feat_start[i + 1]]`.
     pub feat_start: Vec<u32>,
     pub pairs: Vec<(u8, f64)>,
 }
@@ -256,7 +256,7 @@ pub static EN_TAGGER: LazyLock<EnTagger> = LazyLock::new(|| {
     }
 });
 
-/// wordsegment 词频表（unigram + 首词在 unigram 表里的 bigram，键为 `"w1 w2"`）。
+/// wordsegment frequency table (unigrams, plus bigrams whose first word is in the unigram table, keyed as `"w1 w2"`).
 pub struct WordFreq {
     pub unigrams: SortedKeys,
     pub unigram_counts: Vec<u64>,
@@ -294,7 +294,7 @@ pub static WORDSEGMENT: LazyLock<WordFreq> = LazyLock::new(|| {
     }
 });
 
-/// g2p-en 2.1.0 GRU 编解码器权重（行优先）。
+/// g2p-en 2.1.0 GRU encoder/decoder weights (row-major).
 pub struct G2pGru {
     pub enc_emb: Vec<f32>,
     pub enc_w_ih: Vec<f32>,
@@ -310,7 +310,7 @@ pub struct G2pGru {
     pub fc_b: Vec<f32>,
 }
 
-/// 隐层维度。
+/// Hidden-layer dimension.
 pub const GRU_HIDDEN: usize = 256;
 
 pub static G2P_GRU: LazyLock<G2pGru> = LazyLock::new(|| {

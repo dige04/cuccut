@@ -83,7 +83,7 @@ const verdict = style({
   color: { default: 'gray-600', tone: { positive: 'green-900', negative: 'red-900', neutral: 'gray-600' } },
 });
 
-/** 一只模型名字后面那句：预置音色数、尺寸与张数、上下文与推理强度、Codex 这类的说明。 */
+/** The sentence after a model name: the number of preset voices, size and number of images, context and reasoning effort, and notes such as those for Codex. */
 function modelLeadText(capability: OnlineCapability, model: ModelInfoBase): string {
   const parts: string[] = [];
   if (model.label && model.label !== model.modelId) parts.push(model.label);
@@ -97,7 +97,7 @@ function modelLeadText(capability: OnlineCapability, model: ModelInfoBase): stri
   return parts.join(' · ');
 }
 
-/** 说明行里与刷新有关的那一段。 */
+/** The part of the description line related to refresh. */
 function refreshText(line: RefreshLine): string {
   switch (line.state) {
     case 'refreshing':
@@ -114,7 +114,7 @@ function refreshText(line: RefreshLine): string {
   }
 }
 
-/** 卡头的那句说明（设计稿 settings-cloud.jsx:200-219 的 headDesc）；刷新失败时整句标红、不写默认。 */
+/** The description sentence in the card header (design mock settings-cloud.jsx:200-219 `headDesc`); when a refresh fails, the whole sentence turns red and no default is written. */
 function headText(
   card: CloudProviderCard,
   capability: OnlineCapability,
@@ -137,11 +137,9 @@ function headText(
 }
 
 /**
- * 一张服务商卡（设计稿 settings-cloud.jsx:299-341）：卡头是名字与一句说明、「已连接」、「管理密钥 / 连接」；
- * 连上且这一档有模型时可展开，列出模型、判词、默认标签与「测试」。自建的在下面多一行「添加模型」，
- * 这一档还没有模型的自建服务商连上后直接展开（说明行写着「在下面添加」）。
- * 文本生成与语音合成档的卡头多一颗「刷新」（模型 / 音色目录）；没连接时置灰，任何一家在刷新时各家的刷新与密钥按钮都等着。
- * 浏览器里只留「测试」：刷新、密钥与「添加模型」都要 Web 白名单之外的方法，置灰。
+ * A provider card (design mock settings-cloud.jsx:299-341): the header has the name and one sentence of description, a “已连接”(Connected) tag, and “管理密钥 / 连接”(Manage key / Connect). When connected and this tier has models, it can be expanded to list the models, the verdict, the default tag and “测试”(Test). Custom providers have an extra “添加模型”(Add model) line below; a custom provider with no models in this tier expands straight away once connected (its description says “在下面添加”(Add below)).
+ * The card header of text generation and speech synthesis tiers has an extra “刷新”(Refresh) button (model / voice list); it is greyed out when not connected. While any provider is refreshing, the refresh and key buttons of every provider wait.
+ * In the browser only “测试”(Test) remains: refresh, keys and “添加模型”(Add model) need methods outside the Web allowlist, so they are greyed out.
  */
 export function ProviderCard({
   card: provider,
@@ -166,9 +164,9 @@ export function ProviderCard({
   onKey: () => void;
   onAddModel: () => void;
   onProbe: (model: ModelInfoBase) => void;
-  /** 这一家正在刷新。 */
+  /** This provider is refreshing. */
   refreshing: boolean;
-  /** 有哪一家正在刷新。 */
+  /** Which provider is refreshing. */
   refreshBusy: boolean;
   onRefresh: () => void;
 }) {

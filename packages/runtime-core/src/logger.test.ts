@@ -25,8 +25,8 @@ async function readLines(file: string) {
 }
 
 /**
- * 像终端关掉后的 `process.stderr`：每次写都失败，先回调、再在流上发 'error'，流也不会因此销毁（以后每次写还是失败）。
- * 没人接 'error' 时 `emit` 抛出，成为测试里的未捕获异常。
+ * Like `process.stderr` after the terminal has closed: every write fails. It calls the callback first, then emits 'error' on the stream. The stream is not destroyed, so every later write still fails.
+ * If nothing listens for 'error', `emit` throws, which becomes an uncaught exception in the test.
  */
 function brokenStderr(code: string) {
   const writes: string[] = [];
@@ -53,7 +53,7 @@ describe('createFileLogger 的回显', () => {
     const log = createFileLogger({ file, echo: true, echoStream: stream });
     log.info('first');
     await tick();
-    // 失败之后（Runtime 的入口会把未捕获的异常这样记下来）：只进文件，不再碰 stderr，不会一条接一条地失败下去。
+    // After a failure (the Runtime entry logs uncaught exceptions this way), only the file is written. stderr is no longer touched, so failures do not pile up one after another.
     for (let i = 0; i < 100; i += 1) log.error('Uncaught exception', { error: `write ${code}` });
     log.child('jobs').warn('later');
     await tick();

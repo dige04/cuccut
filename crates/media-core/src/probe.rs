@@ -1,4 +1,4 @@
-//! 启动前的探测：素材的画面尺寸（已按旋转元数据交换宽高）与带不带透明，本机 ffmpeg 有哪些编码器。
+//! Probing before starting: the media's picture size (width and height already swapped per the rotation metadata), whether it has transparency, and which encoders the local ffmpeg has.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -8,29 +8,29 @@ use serde_json::Value;
 
 use crate::{MediaError, Tools, tail};
 
-/// 素材第一条视频流（图片也是一条视频流）的显示尺寸与带不带透明。
+/// Display size and whether it has transparency, for the media's first video stream (an image also counts as a video stream).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureInfo {
     pub width: u32,
     pub height: u32,
-    /// 画面可能带透明：像素格式有 alpha 分量、认不出的格式，或容器标了 alpha（`alpha_mode`，带透明的 VP9 WebM
-    /// 的像素格式写的是不带 alpha 的 `yuv420p`）。为 `false` 时解出来的 RGBA 一律不透明。
+    /// The picture may have transparency: its pixel format has an alpha component, the format is not recognised, or the container flags alpha (`alpha_mode`; a transparent VP9 WebM
+    /// has a pixel format written as `yuv420p`, which has no alpha). When `false`, the decoded RGBA is always opaque.
     pub alpha: bool,
 }
 
-/// 确定不带 alpha 分量的 ffmpeg 像素格式（前缀）。不在这里的（含 `yuva*`、`rgba`、`gbrap*`、`ya*`、`pal8` 与
-/// 认不出的）都当作可能带透明。
+/// ffmpeg pixel formats known to have no alpha component (matched by prefix). Anything not listed here (including `yuva*`, `rgba`, `gbrap*`, `ya*`, `pal8`, and
+/// unrecognised ones) is treated as possibly transparent.
 const OPAQUE_PIX_FMTS: &[&str] = &[
     "yuv", "nv", "p01", "p21", "p41", "gray", "rgb24", "bgr24", "rgb48", "bgr48", "gbrp", "0rgb", "rgb0", "0bgr", "bgr0", "x2rgb10",
     "x2bgr10", "uyvy422", "yuyv422", "yvyu422", "monow", "monob", "xv30", "xv36", "y210", "y212", "vuyx",
 ];
 
-/// 像素格式确定不带 alpha。
+/// The pixel format is known to have no alpha.
 pub fn opaque_pix_fmt(name: &str) -> bool {
     !name.starts_with("yuva") && OPAQUE_PIX_FMTS.iter().any(|prefix| name.starts_with(prefix))
 }
 
-/// 探测素材的画面。没有视频流时为 `None`；ffprobe 读不了这个文件时报 `EXPORT_DECODE_FAILED`。
+/// Probe the media's picture. `None` if there is no video stream; reports `EXPORT_DECODE_FAILED` if ffprobe cannot read the file.
 pub fn probe_picture(tools: &Tools, path: &Path) -> Result<Option<PictureInfo>, MediaError> {
     let output = Command::new(&tools.ffprobe)
         .args(["-v", "error", "-select_streams", "v:0", "-show_entries"])
@@ -88,7 +88,7 @@ pub fn probe_picture(tools: &Tools, path: &Path) -> Result<Option<PictureInfo>, 
     }))
 }
 
-/// 本机 ffmpeg 的编码器名字（`ffmpeg -encoders` 的第二列）。
+/// Encoder names of the local ffmpeg (the second column of `ffmpeg -encoders`).
 pub fn encoders(tools: &Tools) -> Result<BTreeSet<String>, MediaError> {
     let output = Command::new(&tools.ffmpeg)
         .args(["-hide_banner", "-nostdin", "-encoders"])
@@ -102,7 +102,7 @@ pub fn encoders(tools: &Tools) -> Result<BTreeSet<String>, MediaError> {
     let mut names = BTreeSet::new();
     let mut listing = false;
     for line in text.lines() {
-        // 表头之后的分隔线是 ` ------`。
+        // The separator line after the header is ` ------`.
         if line.trim_start().starts_with("------") {
             listing = true;
             continue;

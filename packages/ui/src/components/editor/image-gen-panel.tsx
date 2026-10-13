@@ -63,14 +63,12 @@ import { useMediaGen, useMediaGenStore } from './media-gen-store.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 /*
- * 图片 Tab 的「AI 生成」段（设计稿 panel-image-gen.jsx `ImageGenPane`）：工具页那张表单压扁一点，多一颗「跟视频画布」画幅；
- * 下面是这个视频最近 3 批结果。生成走 `models.generateImage` 带 `videoId`：做完由 Runtime 直接收进这个视频的素材库
- * （设计稿里「收进素材库」那一步因此成了状态），「放到画布」放在播放头处。参考图这一版的接口不带，置灰写原因。
+ * The “AI 生成” (AI generation) section of the image tab (design panel-image-gen.jsx `ImageGenPane`): the form from the tool page, slightly compressed, with one extra aspect-ratio option “跟视频画布” (follow video canvas). Below it are this video's three most recent batches of results. Generation goes through `models.generateImage` with `videoId`. When it finishes, the Runtime itself puts the result into this video's asset library (so the design's “收进素材库” (put into asset library) step becomes a state), and “放到画布” (put on canvas) places it at the playhead. The reference-image option is not in this version's interface, so it is greyed out with the reason written.
  */
 
 const FIT = '__fit';
 
-/** 放在图片页「AI 生成」那一段的页签面板里：撑满面板、自己滚动。 */
+/** The tab panel inside the image page's “AI 生成” (AI generation) section: fills the panel and scrolls on its own. */
 const body = style({ boxSizing: 'border-box', height: 'full', overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
 const secHead = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
@@ -151,7 +149,7 @@ const signpost = style({
   lineHeight: '[1.5]',
 });
 
-/** 画幅示意框：长边 18px（设计稿 `AspectRow` 的 `box`）。 */
+/** Aspect-ratio indicator box: long side 18px (design `AspectRow`'s `box`). */
 function boxSize(ratio: number): { width: number; height: number } {
   return ratio >= 1 ? { width: 18, height: Math.max(6, Math.round(18 / ratio)) } : { width: Math.max(6, Math.round(18 * ratio)), height: 18 };
 }
@@ -200,7 +198,7 @@ export function ImageGenPane({ videoId, sequence, assets }: { videoId: Id; seque
       .finally(() => setSubmitting(false));
   };
 
-  // 「再来一版」：带回那一批的提示词与设置（画幅按那一批的，不再跟画布），种子留空。
+  // “再来一版” (another version): carries back that batch's prompt and settings (the aspect ratio follows that batch, not the canvas), with the seed left empty.
   const again = (job: JobRecord) => {
     const next = againDraft(job);
     if (!next) return;
@@ -341,7 +339,7 @@ function SubHead({ title, aside }: { title: string; aside?: ReactNode }) {
   );
 }
 
-/** 画幅（「跟视频画布」在最前）、数量、高级（种子；本机模型另有步数）。 */
+/** Aspect ratio (“跟视频画布” (follow video canvas) first), count, advanced (seed; local models also have steps). */
 function ImageOptions({
   videoId,
   draft,
@@ -463,7 +461,7 @@ function ImageOptions({
   );
 }
 
-/** 一条生图记录：在跑、没做成、取消了但可能计费的卡与工具页同一套；做完的一批换成编辑器里的动作。 */
+/** One generation record: a card for a running, failed, or cancelled-but-possibly-billed job uses the same set as the tool page. A finished batch is replaced by the editor's actions. */
 function VideoImageRecord({
   job,
   all,
@@ -561,7 +559,7 @@ function DoneBatch({
   );
 }
 
-/** 一张结果（设计稿 `ImageCard` 的四个动作）：放到画布 · 已在素材库（状态）· 用作参考（置灰）· 再来一版。 */
+/** One result (design `ImageCard`'s four actions): put on canvas · already in asset library (a state) · use as reference (greyed out) · another version. */
 function ImageCard({
   job,
   result,

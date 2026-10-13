@@ -2,15 +2,15 @@ import type { Localized } from '@cuccut/protocol';
 import { RcSkills } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * `SKILL.md` 的 front matter（架构设计 §3.8）：文件开头 `---` 包起来的一段 YAML。这里只读顶层的字符串字段，不引入 YAML 库：
+ * `SKILL.md` front matter (architecture design §3.8): a YAML block wrapped in `---` at the start of the file. Only top-level string fields are read here. No YAML library is introduced:
  *
- * - `key: value`：纯量原样（去掉行尾 ` #注释`）；单引号、双引号包起来的按 YAML 的转义写法还原；
- * - `key: |` / `key: >`（可带 `-`、`+` 与缩进数字）：下面缩进的几行是块纯量，`|` 保留换行，`>` 把行折成空格；
- * - 纯量接着写在下面缩进的几行里：折成一行；
- * - 顶层键下面的嵌套映射、列表（例如 `metadata:`、`allowed-tools:`）整段跳过，值记为空串；
- * - 空行与 `#` 注释行忽略。
+ * - `key: value`: scalars are used as-is, with a trailing ` #comment` removed. Values wrapped in single or double quotes are restored using YAML's escape rules.
+ * - `key: |` / `key: >` (may carry `-`, `+` and an indentation number): the indented lines below form a block scalar. `|` keeps line breaks, and `>` folds lines into spaces.
+ * - A scalar continued on the indented lines below is folded into one line.
+ * - Nested mappings and lists under top-level keys (for example `metadata:` and `allowed-tools:`) are skipped entirely, and the value is recorded as an empty string.
+ * - Blank lines and `#` comment lines are ignored.
  *
- * 顶层出现看不懂的行时整份不合规；字段的取舍（必填、长度）由调用方决定。
+ * A top-level line that cannot be understood makes the whole thing noncompliant. The choice of fields (required, length) is up to the caller.
  */
 
 export type FrontmatterResult = { ok: true; fields: Map<string, string>; body: string } | { ok: false; problem: Localized };
@@ -33,7 +33,7 @@ export function parseSkillFrontmatter(raw: string): FrontmatterResult {
       continue;
     }
     if (/^[ \t]/.test(line)) {
-      // 上一个键的嵌套内容（映射、列表）：不读。
+      // The nested content (mappings, lists) of the previous key is not read.
       i++;
       continue;
     }
@@ -42,7 +42,7 @@ export function parseSkillFrontmatter(raw: string): FrontmatterResult {
     const key = match[1]!;
     const rest = (match[2] ?? '').trim();
     i++;
-    // 下面缩进的几行（含夹在中间的空行）归这个键。
+    // The indented lines below, including blank lines between them, belong to this key.
     const start = i;
     while (i < block.length && (/^[ \t]/.test(block[i]!) || (!block[i]!.trim() && nextIndented(block, i)))) i++;
     const continuation = block.slice(start, i);
@@ -54,7 +54,7 @@ export function parseSkillFrontmatter(raw: string): FrontmatterResult {
     } else if (rest.startsWith("'")) {
       fields.set(key, singleQuoted(rest));
     } else if (rest === '') {
-      // 值写在下一行：嵌套的映射或列表不读；缩进的纯文字折成一行。
+      // The value is on the next line. Nested mappings or lists are not read. Indented plain text is folded into one line.
       const nested = continuation.some((l) => /^\s*-(\s|$)/.test(l) || /^\s*[A-Za-z0-9_][\w.-]*\s*:(\s|$)/.test(l));
       fields.set(key, nested ? '' : fold(continuation.map((l) => l.trim())));
     } else {
@@ -72,7 +72,7 @@ function nextIndented(block: string[], i: number): boolean {
   return false;
 }
 
-/** 块纯量：去掉共同的缩进；`|` 保留换行，`>` 把相邻的行折成空格（空行保留为换行）。首尾空白去掉。 */
+/** Block scalar: removes the common indentation. `|` keeps line breaks, and `>` folds adjacent lines into spaces (blank lines are kept as line breaks). Leading and trailing whitespace is removed. */
 function blockScalar(lines: string[], style: '|' | '>'): string {
   const indents = lines.filter((l) => l.trim()).map((l) => l.length - l.trimStart().length);
   const indent = indents.length ? Math.min(...indents) : 0;
@@ -95,7 +95,7 @@ function blockScalar(lines: string[], style: '|' | '>'): string {
     .trim();
 }
 
-/** 多行纯量：空行之间的行用空格连起来，空行变成换行。 */
+/** Multi-line scalar: lines between blank lines are joined with spaces, and blank lines become line breaks. */
 function fold(lines: string[]): string {
   return blockScalar(lines, '>');
 }
@@ -111,7 +111,7 @@ function doubleQuoted(value: string): string {
     const parsed: unknown = JSON.parse(literal);
     if (typeof parsed === 'string') return parsed;
   } catch {
-    // YAML 的转义比 JSON 多（`\'`、`\x41`……）：解析不了时去掉引号原样用。
+    // YAML has more escapes than JSON (`\'`, `\x41`, …). When it cannot be parsed, the quotes are removed and the value is used as-is.
   }
   return literal.replace(/^"|"$/g, '');
 }

@@ -9,7 +9,7 @@ import { extractContent, type ContentSegment, type ReadContentDocument, type Rea
 import { matchTerms, searchSegments, type SearchableVideo } from './content-search.ts';
 import { ContentStore, STORE_FILE, STORE_VERSION, termClauses, type CandidateFilter, type StoredVideo } from './content-store.ts';
 
-/** 内容索引的抽取与检索：不需要引擎；检索用临时目录里的库。 */
+/** Extraction and search for the content index: no engine needed; search uses a database in a temporary directory. */
 
 function snapshot(extra: Partial<Record<string, unknown>> = {}): VideoSnapshot {
   return {
@@ -176,7 +176,7 @@ describe('视频事实：时长与画布尺寸', () => {
       },
     });
     const { facts } = extractContent({ ...result([]), snapshot: complete }, '/p/访谈');
-    // 150 帧 × 1001 / 30000 = 5.005 秒；别的序列不算。
+    // 150 frames × 1001 / 30000 = 5.005 seconds; other sequences do not count.
     expect(facts.timeline).toEqual({ durationSec: 5.005, width: 1080, height: 1920 });
   });
 
@@ -250,12 +250,12 @@ describe('视频事实：文稿、译文与配音组', () => {
       },
     };
     const { facts } = extractContent(result([speech, translation]), '/p/访谈');
-    // u2 指纹不符、u3 标成过期、u4 为空、u5 原句不在了。
+    // u2 fingerprint mismatch, u3 marked stale, u4 empty, u5 original sentence gone.
     expect(facts.translations).toEqual([
       { documentId: 't2', name: '英文', language: 'en', sourceDocumentId: 'd1', units: 5, staleUnits: 4 },
     ]);
 
-    // 转写不在视频里：全部过期；/1 的译文只数标成过期的与空的。
+    // Transcript not in the video: all stale. The /1 translation counts only the ones marked stale and the empty ones.
     const orphan = extractContent(result([translation]), '/p/访谈').facts.translations[0]!;
     expect(orphan.staleUnits).toBe(5);
     const legacy = extractContent(
@@ -356,7 +356,7 @@ describe('内容检索', () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  /** 记下每次给库的过滤条件。 */
+  /** Records every filter condition given to the database. */
   function spy(): { source: { candidates: (filter: CandidateFilter) => ReturnType<ContentStore['candidates']> }; filters: CandidateFilter[] } {
     const filters: CandidateFilter[] = [];
     return {
@@ -395,7 +395,7 @@ describe('内容检索', () => {
       expect.objectContaining({ snippet: '视频剪辑很好玩', highlights: [] }),
     ]);
     expect(searchSegments(store, videos, { query: '剪辑', limit: 2 })).toMatchObject({ truncated: true, hits: [{}, {}] });
-    // 正好 limit 条时不算截断。
+    // Exactly `limit` rows is not counted as truncated.
     expect(searchSegments(store, videos, { query: '剪辑', limit: 3 })).toMatchObject({ truncated: false });
   });
 
@@ -410,7 +410,7 @@ describe('内容检索', () => {
   it('两字的词走子串过滤，三字以上走 MATCH；混合的多词同一段里 AND', () => {
     expect(termClauses(['剪辑'])).toEqual({ match: null, short: ['剪辑'] });
     expect(termClauses(['剪辑视', 'ab', 'say "hi"'])).toEqual({ match: '"剪辑视" AND "say ""hi"""', short: ['ab'] });
-    // 按码点计：两个表情是四个 UTF-16 单元，仍然太短。
+    // Counted by code points: two emoji are four UTF-16 units, still too short.
     expect(termClauses(['😀😀'])).toEqual({ match: null, short: ['😀😀'] });
 
     const { source, filters } = spy();
@@ -424,7 +424,7 @@ describe('内容检索', () => {
       { match: '"视频剪辑"', short: ['好玩'] },
       { match: '"我们来"', short: ['好玩'] },
     ]);
-    // 通配符与引号按字面匹配。
+    // Wildcards and quotes are matched literally.
     store.replace(stored(videos[1]!), [{ ...v2[0]!, text: '50% off_now "quoted"' }]);
     expect(searchSegments(store, videos, { query: '0%', limit: 10 }).hits).toHaveLength(1);
     expect(searchSegments(store, videos, { query: '%', limit: 10 }).hits).toHaveLength(1);

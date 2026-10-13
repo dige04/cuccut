@@ -40,8 +40,7 @@ import {
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 /*
- * 翻译配音的运行态、授权询问、问题与收据（设计稿 panel-dub.jsx 的进度与收尾）。进度只读 Runtime 报来的：父任务的步骤、
- * 翻译与合成那一步子任务的句数、逐句子任务；没有总数时不造百分比。
+ * Running state, authorization prompts, issues and receipt for dubbing (the progress and wrap-up in design draft panel-dub.jsx). Progress reads only what the Runtime reports: the parent task's steps, the sentence counts of the translation and synthesis step's subtasks, and the per-sentence subtasks. Without a total, no percentage is shown.
  */
 
 const head = style({
@@ -84,7 +83,7 @@ const stepLabel = style({
 const actions = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 });
 const note = style({ flexGrow: 1, minWidth: 0, font: 'ui-xs', color: 'gray-600', lineHeight: '[1.5]' });
 const noShrink = style({ flexShrink: 0 });
-/** 卡片外框：单独挂在面板里时左右留 12；放进已经有内边距的滚动区（`flush`）时不再留。 */
+/** Card frame: when mounted alone in a panel, leave 12px on the left and right; when placed in a scroll area that already has padding (`flush`), add none. */
 const alertBox = style({ flexShrink: 0, paddingX: { default: 12, isFlush: 0 }, paddingTop: 12 });
 const alertActions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 const alertNote = style({ marginTop: 4, font: 'ui-xs', color: 'gray-700', lineHeight: '[1.5]' });
@@ -108,7 +107,7 @@ const code = style({
   overflowWrap: 'anywhere',
 });
 
-/** 服务商 ID → 名字（模型视图里各能力的服务商）：授权的接收方照它写。 */
+/** Provider ID to name (the provider for each capability in the model view): the authorized recipient is written with it. */
 function useProviderLabels(): ReadonlyMap<string, string> {
   const capabilities = useModels((s) => s.capabilities);
   return useMemo(() => {
@@ -119,15 +118,15 @@ function useProviderLabels(): ReadonlyMap<string, string> {
 }
 
 export interface DubLive {
-  /** 从这里提交的这一轮；别处发起的为 null。 */
+  /** The run submitted from here; null for runs started elsewhere. */
   run: DubRun | null;
-  /** 父任务；刚提交、回执还没到时为 null。 */
+  /** Parent task; null just after submission, before the receipt arrives. */
   job: JobRecord | null;
   language: string | null;
   progress: DubProgress | null;
 }
 
-/** 这个视频正在跑的配音：从这里提交的那一轮，或别处（智能体、命令行）发起、还活着的。 */
+/** The dub running for this video: the run submitted from here, or one started elsewhere (by an agent or the command line) that is still alive. */
 export function useDubLive(videoId: Id | null): DubLive | null {
   const run = useDubRun((s) => (videoId ? (s.runs[videoId] ?? null) : null));
   const jobs = useJobs((s) => s.jobs);
@@ -144,10 +143,10 @@ export function useDubLive(videoId: Id | null): DubLive | null {
   }, [videoId, run, jobs]);
 }
 
-/** 运行态头：语言、百分比、进度条、句数与步骤、逐句子任务、步骤阶梯、取消。 */
+/** Running-state header: language, percentage, progress bar, sentence count and steps, per-sentence subtasks, step ladder, cancel. */
 export function DubRunHead({ live }: { live: DubLive }) {
   const { run, job, progress } = live;
-  // 重试刚提交、镜像里还是那条已经结束的记录时，按「提交中」画。
+  // When a retry has just been submitted and the mirror still holds the already-ended record, draw it as “提交中” (submitting).
   const stale = !!run && !!job && !isJobLive(job);
   const submitting = run?.status === 'submitting' || !job || stale;
   const queued = !submitting && !!progress?.queued;
@@ -207,8 +206,7 @@ export function DubRunHead({ live }: { live: DubLive }) {
 }
 
 /**
- * 第一次配音（或重试）被授权拒绝：说明要外发什么、给谁；「发放授权并开始」先弹确认框，写清外发什么 / 给谁 / 限哪个视频 /
- * 用途，按了「发放并继续」才发 `grants.create`，之后用同样的参数重新提交。
+ * First dub (or retry) rejected by authorization: explains what would be sent out and to whom. “发放授权并开始” (grant authorization and start) first opens a confirmation dialog stating what is sent, to whom, limited to which video, and for what purpose. Only after “发放并继续” (grant and continue) is pressed does it send `grants.create`, then resubmit with the same parameters.
  */
 export function DubAskCard({ videoId, ask, videoName, flush = false }: { videoId: Id; ask: DubAsk; videoName: string | null; flush?: boolean }) {
   const labels = useProviderLabels();
@@ -270,7 +268,7 @@ const VARIANT = { 'not-configured': 'notice', failed: 'negative' } as const;
 const retryNoteText = (note: 'charges' | 'partial' | 'free' | null) =>
   note === 'charges' ? C.retryCharges : note === 'partial' ? C.retryPartial : note === 'free' ? C.retryFree : null;
 
-/** 说话人的名字：转写里登记的；没有时照写 ID。 */
+/** Speaker's name: the one registered in the transcript; if none, the ID is shown as is. */
 const speakerLabel = (speakerId: string | null, names: ReadonlyMap<string, string>) =>
   speakerId === null ? C.speakerNone : (names.get(speakerId) ?? speakerId);
 
@@ -287,7 +285,7 @@ function VoiceFailureList({ rows, names, library }: { rows: VoiceFailure[]; name
   );
 }
 
-/** 配音没走通：原因、逐句的事实、补救的去处；能重试的给「重试」并说清会不会再计费。 */
+/** Dubbing did not succeed: the reason, per-sentence facts, and where to go for a fix. If it can be retried, offer “重试” (retry) and state whether it will be billed again. */
 export function DubProblemAlert({
   videoId,
   problem,
@@ -352,8 +350,7 @@ export function DubProblemAlert({
 }
 
 /**
- * 收据：如实列出摘要（放上几句、各句去向、说话人用的音色、音色不可用的句子、合成调用、译文、分离与原声、告警），
- * 留一个「撤销这组配音」。撤不了那一笔、退回部分撤销时写明留下了什么。
+ * Receipt: honestly lists the summary (how many sentences were placed, where each sentence went, the voice each speaker used, sentences whose voice was unavailable, synthesis calls, translations, separation and original audio, warnings), and offers “撤销这组配音” (undo this dub group). Where that entry cannot be undone, or only a partial undo is done, state what was left behind.
  */
 export function DubReceiptCard({
   videoId,
@@ -452,7 +449,7 @@ export function DubReceiptCard({
   );
 }
 
-/** 这个视频的询问、问题与收据（同一时间通常只有一样）。`flush`：放进已经有内边距的滚动区。 */
+/** This video's prompts, issues and receipt (usually only one of these at a time). `flush`: placed in a scroll area that already has padding. */
 export function DubNotices({
   videoId,
   videoName,
@@ -476,7 +473,7 @@ export function DubNotices({
   );
 }
 
-/** 这个视频的配音状态（别处挂进度用，比如工具页里的列表）：运行态头，加询问、问题、收据。 */
+/** This video's dub status (for showing progress elsewhere, such as the list on the tools page): running-state header, plus prompts, issues and receipt. */
 export function DubStatus({ videoId, videoName, speakerNames }: { videoId: Id; videoName: string | null; speakerNames: ReadonlyMap<string, string> }) {
   const live = useDubLive(videoId);
   return (

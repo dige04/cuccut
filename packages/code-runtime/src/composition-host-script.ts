@@ -1,23 +1,21 @@
 /**
- * Electron 离屏宿主的主进程脚本（CommonJS 源码，作为字符串随 bundle 分发）。
+ * The main-process script for the Electron off-screen host (CommonJS source, distributed as a string with the bundle).
  *
- * `composition-host.ts` 把它连同 `COMPOSITION_ADAPTER_SCRIPT` 写进缓存目录的 `host-<摘要>.cjs`，以 `<Electron> --composition-host <脚本>` 启动（`hostSpawnArgs`）。
- * 协议同 `JsonLineWorker`：stdin 每行一个请求 `{id, method, params}`，stdout 每行一个响应或事件；日志写 stderr。
+ * `composition-host.ts` writes it, together with `COMPOSITION_ADAPTER_SCRIPT`, into the cache directory as `host-<digest>.cjs`, and starts it with `<Electron> --composition-host <script>` (`hostSpawnArgs`).
+ * The protocol is the same as `JsonLineWorker`: stdin receives one request `{id, method, params}` per line, and stdout emits one response or event per line. Logs go to stderr.
  *
- * - 启动后（`app.whenReady()` 之后）发事件 `ready`；stdin 关闭即退出。不用顶层 await：ready 要等脚本求值结束才发。
- * - `open`：每个会话一个非持久分区、一个隐藏的离屏窗口；拦截根目录以外的 `file:` 与一切 `data:` / `blob:` / `about:` /
- *   `devtools:` 以外的请求（事件 `networkBlocked`），拒绝全部权限请求与导航、弹窗。
- * - `frame`：同一会话串行；seek → 回读校验 → `invalidate()` 等一次 `paint`（最多 500 ms）→ `capturePage()` 截图。
- *   回读容差是采样帧率下的半帧：帧率取请求里的 `fps`（取帧票据的），没有时取 `open` 的 `fps`（包的 intrinsic）。
- *   不直接用 `paint` 事件带来的图像：实测它可能是上一次提交的旧帧，`capturePage()` 才稳定反映 seek 后的画面。
- * - 页面里未捕获的异常（`Uncaught …` 级别为 error 的控制台消息）、渲染进程退出、主框架加载失败都让在途请求以
- *   `COMPOSITION_SCRIPT_ERROR` 失败。
+ * - After startup (after `app.whenReady()`) it emits the event `ready`. It exits when stdin closes. There is no top-level await: `ready` is emitted only after the script has finished evaluating.
+ * - `open`: one non-persistent partition and one hidden off-screen window per session. It intercepts `file:` requests outside the root directory, and all requests other than `data:` / `blob:` / `about:` / `devtools:` (event `networkBlocked`). It denies all permission requests, navigation and pop-ups.
+ * - `frame`: serial within the same session. seek → read-back check → `invalidate()` and wait for one `paint` (up to 500 ms) → `capturePage()` screenshot.
+ *   The read-back tolerance is half a frame at the sampling frame rate. The frame rate comes from the request's `fps` (the frame-fetch ticket), and when absent, from the `fps` given to `open` (the bundle's intrinsic rate).
+ *   It does not use the image carried by `paint` events directly: measured, it can be a stale frame from the previous commit. `capturePage()` reliably reflects the picture after the seek.
+ * - Uncaught exceptions in the page (console messages at error level, `Uncaught …`), renderer process exit, and main-frame load failure all fail in-flight requests with `COMPOSITION_SCRIPT_ERROR`.
  */
 
-/** 宿主脚本里换成 `JSON.stringify(COMPOSITION_ADAPTER_SCRIPT)` 的占位。 */
+/** The placeholder in the host script that is replaced by `JSON.stringify(COMPOSITION_ADAPTER_SCRIPT)`. */
 export const ADAPTER_PLACEHOLDER = '/*__CUCCUT_ADAPTER_SOURCE__*/null';
 
-// i18n-ignore-start: 子进程脚本源码，不是给人看的文字
+// i18n-ignore-start: child-process script source, not user-facing text
 export const COMPOSITION_HOST_SCRIPT = String.raw`'use strict';
 const { app, BrowserWindow, session } = require('electron');
 const fs = require('fs');

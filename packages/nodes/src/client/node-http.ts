@@ -17,16 +17,16 @@ import {
 import { NodesClient as NC } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 节点服务的 HTTP 客户端（节点协议规范 §2–§7），发起端用。只用 `node:http`：上传要带 `Content-Length` 的流式请求体
- * （节点拒收 `Transfer-Encoding`），事件流要能按空闲期限断开。每个请求一条新连接（`agent: false`），不留陈旧的长连接。
+ * HTTP client for the node service (node protocol spec §2–§7), used by the initiator. Only `node:http` is used: uploads need a streamed body with `Content-Length`
+ * (nodes reject `Transfer-Encoding`), and the event stream must be disconnectable on an idle deadline. Each request gets a new connection (`agent: false`), with no stale long-lived connections.
  *
- * 令牌只放在 `Authorization` 头里：错误的说明只有节点给出的文字、主机与端口、系统的错误码，从不带请求头。
+ * The token is placed only in the `Authorization` header. Error messages contain only the text given by the node, the host and port, and system error codes; they never include request headers.
  */
 
-/** 节点返回的非 2xx（规范 §8）。`message` 是节点的说明。 */
+/** Non-2xx response from the node (§8). `message` is the node's message. */
 export class NodeResponseError extends Error {
   readonly status: number;
-  /** 节点的错误码；响应体不合规时为 `HTTP_<status>`。 */
+  /** The node's error code; `HTTP_<status>` when the response body is non-conforming. */
   readonly code: string;
   readonly details: Record<string, unknown> | undefined;
 
@@ -39,9 +39,9 @@ export class NodeResponseError extends Error {
   }
 }
 
-/** 连不上、连接中断、超时，或响应不是合法的 JSON。 */
+/** Cannot connect, connection interrupted, timeout, or response is not valid JSON. */
 export class NodeConnectionError extends Error {
-  /** 系统错误码（`ECONNREFUSED`……）或 `TIMEOUT`、`BAD_RESPONSE`。 */
+  /** System error code (`ECONNREFUSED`…), or `TIMEOUT` or `BAD_RESPONSE`. */
   readonly code: string;
 
   constructor(code: string, message: string) {
@@ -51,7 +51,7 @@ export class NodeConnectionError extends Error {
   }
 }
 
-/** 中止（调用方的 `AbortSignal`）。 */
+/** Aborted (the caller's `AbortSignal`). */
 export class NodeRequestAborted extends Error {
   constructor() {
     super('Request aborted');
@@ -59,7 +59,7 @@ export class NodeRequestAborted extends Error {
   }
 }
 
-/** 节点的拒绝 → `REMOTE_NODE_REJECTED` 的 `details.reason`（规范 §9、§10）；不是拒绝时 null。 */
+/** The node's rejection → `details.reason` of `REMOTE_NODE_REJECTED` (§9, §10); null when it is not a rejection. */
 export function rejectReason(error: NodeResponseError): RemoteNodeRejectReason | null {
   switch (error.code) {
     case NODE_ERROR.UNAUTHORIZED:
@@ -83,13 +83,13 @@ export function rejectReason(error: NodeResponseError): RemoteNodeRejectReason |
     case NODE_ERROR.PAIRING_LOCKED:
       return 'pairing-locked';
   }
-  // 响应体不合规时按状态码认。
+  // When the response body is non-conforming, classify by status code.
   if (error.status === 401) return 'unpaired';
   if (error.status === 426) return 'version';
   return null;
 }
 
-/** 这台发起端与节点的协议版本是否兼容（规范 §2：双方各自的最低版本）。 */
+/** Whether this initiator's protocol version is compatible with the node's (§2: each side's minimum version). */
 export function versionCompatible(health: Pick<NodeHealth, 'nodeProtocolVersion' | 'minNodeProtocolVersion'>): boolean {
   return (
     Number.isInteger(health.nodeProtocolVersion) &&
@@ -99,9 +99,9 @@ export function versionCompatible(health: Pick<NodeHealth, 'nodeProtocolVersion'
   );
 }
 
-/** 发起端能对话的最低节点协议版本。 */
+/** Minimum node protocol version the initiator can talk to. */
 const NODE_PROTOCOL_VERSION_MIN_ACCEPTED = 1;
-/** JSON 响应的上限（健康、任务记录、错误）。 */
+/** Limit for JSON responses (health, task records, errors). */
 const JSON_RESPONSE_LIMIT = 1024 * 1024;
 
 interface RequestOptions {
@@ -110,11 +110,11 @@ interface RequestOptions {
   token?: string | null;
   json?: unknown;
   headers?: Record<string, string | number>;
-  /** 整个请求（含读完 JSON 响应）的期限；`streaming` 时只管到响应头。 */
+  /** Deadline for the whole request, including reading the JSON response; with `streaming`, it only covers up to the response headers. */
   timeoutMs?: number;
-  /** 响应体是长流（事件流）：期限只管到响应头。 */
+  /** The response body is a long stream (event stream): the deadline only covers up to the response headers. */
   streaming?: boolean;
-  /** 连接上没有数据流动的期限（上传、下载）。 */
+  /** Deadline for no data to flow on the connection (uploads, downloads). */
   idleMs?: number;
   signal?: AbortSignal;
 }
@@ -124,7 +124,7 @@ export class NodeClient {
   readonly port: number;
 
   constructor(host: string, port: number) {
-    // `[::1]` 这样的写法去掉方括号：`http.request` 要的是裸地址。
+    // Strip the brackets from forms like `[::1]`: `http.request` wants the bare address.
     this.host = host.replace(/^\[(.*)\]$/, '$1');
     this.port = port;
   }
@@ -157,7 +157,7 @@ export class NodeClient {
     await this.#json<void>({ method: 'DELETE', path: `/v1/jobs/${encodeURIComponent(jobId)}`, token, ...options });
   }
 
-  /** 上传媒体：文件流式读出，`Content-Length` 为 `byteLength`，不把文件读进内存。 */
+  /** Upload media: the file is streamed out, `Content-Length` is `byteLength`, and the file is not read into memory. */
   async upload(
     token: string,
     jobId: string,
@@ -183,7 +183,7 @@ export class NodeClient {
     await this.#finish(response);
   }
 
-  /** 打开事件流（`since` 之后的事件）。返回的响应由调用方逐行读取并负责销毁。 */
+  /** Open the event stream (events after `since`). The returned response is read line by line by the caller, who is responsible for destroying it. */
   async events(
     token: string,
     jobId: string,
@@ -204,7 +204,7 @@ export class NodeClient {
     return response;
   }
 
-  /** 下载结果到 `dest`，同时算 sha256。返回小写十六进制的摘要与长度。 */
+  /** Download the result to `dest`, computing sha256 at the same time. Returns the lowercase hex digest and the length. */
   async download(
     token: string,
     jobId: string,
@@ -233,7 +233,7 @@ export class NodeClient {
     return { sha256: hash.digest('hex'), byteLength };
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   async #json<T>(options: RequestOptions): Promise<T> {
     const response = await this.#send(options);
@@ -246,7 +246,7 @@ export class NodeClient {
     }
   }
 
-  /** 读完响应体；非 2xx 抛 `NodeResponseError`。 */
+  /** Read the full response body; throws `NodeResponseError` for non-2xx. */
   async #finish(response: http.IncomingMessage): Promise<Buffer> {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -283,8 +283,8 @@ export class NodeClient {
   }
 
   /**
-   * 发出请求，等到响应头。`write` 给出时由它写请求体（并负责结束），否则写 `json` 或空体。
-   * `timeoutMs` 管到响应体读完（调用方读完之前计时器还在）；`idleMs` 管连接上的空闲。
+   * Send the request and wait for the response headers. If `write` is given, it writes the request body (and ends it); otherwise it writes `json` or an empty body.
+   * `timeoutMs` covers until the response body has been read (the timer stays alive until the caller finishes reading); `idleMs` covers idleness on the connection.
    */
   #send(options: RequestOptions, write?: (request: http.ClientRequest) => void): Promise<http.IncomingMessage> {
     const headers: Record<string, string | number> = { [NODE_PROTOCOL_HEADER]: String(NODE_PROTOCOL_VERSION), ...options.headers };
@@ -340,12 +340,12 @@ export class NodeClient {
           clearTimeout(timer);
           timer = null;
         }
-        // 响应体读完或连接关闭时才清掉计时器与中止监听：读响应体的过程同样受它们约束。
+        // The timer and abort listener are cleared only when the response body is fully read or the connection closes: reading the body is bound by them too.
         const done = () => cleanup();
         response.on('end', done);
         response.on('close', done);
         response.on('error', () => {});
-        // 计时器或中止在读响应体时触发：`request.destroy` 也会销毁响应。
+        // If the timer or abort fires while the body is being read: `request.destroy` also destroys the response.
         resolve(response);
       });
       if (write) write(request);
@@ -360,12 +360,12 @@ export class NodeClient {
   }
 }
 
-/** 事件流的一行（心跳之外的事件带 `seq`）。 */
+/** One line of the event stream (events other than heartbeats carry `seq`). */
 export type StreamedNodeEvent = NodeJobEvent;
 
 /**
- * 逐行读 NDJSON 事件流。`idleMs` 内没有任何数据（心跳也算数据）就销毁响应并抛 `NodeConnectionError('TIMEOUT')`。
- * 流正常结束时迭代结束；不合规的行抛 `NodeConnectionError('BAD_RESPONSE')`。
+ * Read the NDJSON event stream line by line. If no data (heartbeats count as data) arrives within `idleMs`, destroy the response and throw `NodeConnectionError('TIMEOUT')`.
+ * When the stream ends normally, iteration ends; a non-conforming line throws `NodeConnectionError('BAD_RESPONSE')`.
  */
 export async function* readEventStream(response: http.IncomingMessage, idleMs: number): AsyncGenerator<StreamedNodeEvent> {
   let idle: ReturnType<typeof setTimeout> | null = null;

@@ -12,48 +12,45 @@ import { JobsTranslationGlossary as J } from '@cuccut/protocol/messages/jobs/tra
 import { canonicalJson, sha256Hex } from '../input-hash.ts';
 
 /**
- * 翻译用的术语表（架构设计 §7.9；视频格式规范 §5.3 的 `glossaryRef`）：
+ * Glossary for translation (architecture design §7.9; `glossaryRef` in video format spec §5.3):
  *
- * - 来源依次是调用时给的术语（`glossary`）、调用时给的库里的术语表（`glossaries`）、视频里启用的翻译用术语表；
- *   同一个原文写法只取最先出现的那条。启动时冻结库里条目的版本，内容在第一步之前就写进产物，之后不再读库。
- * - 进提示词有上限：去重之后不超过 `ALL_TERMS` 条（且放得下）时全部带上；否则每批只带原文写法出现在这一批
- *   （或它的前文）里的，再按上面的顺序截到 `MAX_TERMS` 条、`MAX_CHARS` 个字符。
- * - 译文文档的 `glossaryRef` 记下用的条目、版本与摘要，以及原文里出现过的术语（`terms`）；术语表之后改了，配音核对
- *   译文时据此判断哪几句过期（`glossary-changed`）。
+ * - Sources, in order: terms passed in the call (`glossary`), library glossaries passed in the call (`glossaries`), and the translation glossary enabled in the video. For the same source spelling, only the first one that appears is kept. At startup, the versions of library entries are frozen and their contents are written to artifacts before the first step; the library is not read after that.
+ * - The prompt has a size limit. When there are no more than `ALL_TERMS` entries after deduplication (and they fit), all of them are included. Otherwise each batch carries only those whose source spelling appears in that batch (or its preceding context), truncated in the order above to `MAX_TERMS` entries and `MAX_CHARS` characters.
+ * - The translation document's `glossaryRef` records the entries used, their versions and digests, and the terms that appear in the source (`terms`). If the glossary changes later, dubbing uses this to decide which sentences in the translation are stale when it checks them (`glossary-changed`).
  */
 
-/** 去重之后不超过这么多条时，每批都带上全部术语。 */
+/** When there are no more than this many entries after deduplication, every batch carries all terms. */
 export const ALL_TERMS = 30;
-/** 每批最多带这么多条术语。 */
+/** Each batch carries at most this many terms. */
 export const MAX_TERMS = 60;
-/** 每批术语的总字符数上限（按提示词里的行算）。 */
+/** Maximum total characters of terms per batch (counted by the lines in the prompt). */
 export const MAX_CHARS = 4000;
-/** `glossaryRef.terms` 最多记这么多条；超过时 `termsTruncated: true`。 */
+/** `glossaryRef.terms` records at most this many entries; when exceeded, `termsTruncated: true`. */
 export const MAX_RECORDED_TERMS = 2000;
-/** 一次翻译最多用这么多张库里的术语表（调用时给的与视频启用的各自不超过）。 */
+/** One translation uses at most this many library glossaries (the call-given ones and the video-enabled ones are each capped at this number). */
 export const MAX_LIBRARY_GLOSSARIES = 20;
 
 export type GlossaryLibrary = Pick<LibraryStore, 'get'>;
 
-/** 冻结的一张库里的术语表。 */
+/** One frozen library glossary. */
 export interface FrozenGlossary extends FrozenLibraryEntry {
   name: string;
   origin: 'explicit' | 'video';
 }
 
-/** 启动时解析出的术语表：冻结的条目，与视频里启用但这次没用的。 */
+/** Glossary resolved at startup: the frozen entries, and those enabled in the video but not used this time. */
 export interface ResolvedGlossaries {
   entries: FrozenGlossary[];
   skipped: TranslateGlossaryUse['skipped'];
 }
 
-/** 写进产物的术语表内容（翻译这一步只读它）。 */
+/** Glossary contents written to artifacts (the translation step reads only this). */
 export interface GlossarySnapshot {
   inline: GlossaryEntry[];
   entries: Array<FrozenGlossary & { terms: TranslationGlossary['terms'] }>;
 }
 
-/** 一条进提示词的术语；`entryId` 是库里的术语表，调用时直接给的为 null。 */
+/** A term that goes into the prompt. `entryId` is the library glossary, and null for terms passed directly in the call. */
 export interface PromptTerm {
   source: string;
   target: string;
@@ -61,18 +58,18 @@ export interface PromptTerm {
   entryId: Id | null;
 }
 
-/** 译文文档里的 `glossaryRef`（视频格式规范 §5.3）。 */
+/** `glossaryRef` in the translation document (video format spec §5.3). */
 export interface GlossaryRef {
   entries: Array<{ library: 'glossaries'; id: Id; version: number; contentHash: string; name: string }>;
   inline: { contentHash: string; count: number } | null;
-  /** 原文里出现过的术语（翻译时的版本）：哪张表、原文写法与译法。 */
+  /** Terms that appeared in the source (as of translation): which glossary, the source spelling and the translation. */
   terms: Array<{ entryId: Id | null; source: string; target: string }>;
-  /** 出现的术语多于 `MAX_RECORDED_TERMS` 条、没有记全时为 true。 */
+  /** True when more than `MAX_RECORDED_TERMS` terms appeared and not all were recorded. */
   termsTruncated?: true;
 }
 
 /**
- * BCP 47 标签是否相配：相同，或一个是另一个在子标签边界上的前缀（`en` 与 `en-US` 相配，`zh-Hans` 与 `zh-Hant` 不配）。
+ * Whether BCP 47 tags match: they are identical, or one is a prefix of the other at a subtag boundary (`en` matches `en-US`; `zh-Hans` does not match `zh-Hant`).
  */
 export function languageMatches(a: string, b: string): boolean {
   const x = a.toLowerCase();
@@ -81,8 +78,7 @@ export function languageMatches(a: string, b: string): boolean {
 }
 
 /**
- * 启动时解析术语表：调用时给的（`explicit`）不在、不是翻译用、语言不符时拒绝；视频里启用的（`video`）删了或语言不符时
- * 跳过并记下。对外服务的客户端不能用调用时给的库里的术语表，视频启用的也不用。
+ * Resolves the glossary at startup. A glossary passed in the call (`explicit`) is rejected if it is missing, is not a translation glossary, or has the wrong language. A glossary enabled in the video (`video`) is skipped and recorded if it was deleted or has the wrong language. A client of the external service cannot use a library glossary passed in the call, and the video-enabled one is not used either.
  */
 export function resolveGlossaries(input: {
   library: GlossaryLibrary | undefined;
@@ -167,7 +163,7 @@ export function resolveGlossaries(input: {
   return { entries, skipped };
 }
 
-/** 读出冻结版本的内容（启动时，版本已经固定）。 */
+/** Reads the contents of the frozen version (at startup, when the version is already fixed). */
 export function glossarySnapshot(
   library: GlossaryLibrary | undefined,
   inline: GlossaryEntry[],
@@ -182,7 +178,7 @@ export function glossarySnapshot(
   };
 }
 
-/** 全部术语按优先顺序（调用时给的、调用时给的库里的、视频启用的）去重：同一个原文写法（不分大小写）只留第一条。 */
+/** Deduplicates all terms in priority order (passed in the call, library glossaries passed in the call, video-enabled). For the same source spelling (case-insensitive), only the first is kept. */
 export function promptTerms(snapshot: GlossarySnapshot): PromptTerm[] {
   const out: PromptTerm[] = [];
   const seen = new Set<string>();
@@ -201,8 +197,7 @@ export function promptTerms(snapshot: GlossarySnapshot): PromptTerm[] {
 }
 
 /**
- * 原文写法是否出现在文本里：不分大小写；只由拉丁字母、数字与常见连接符组成的写法要落在词边界上（`AI` 不匹配 `said`），
- * 其他（中文等）按子串。
+ * Whether a source spelling appears in the text. Case-insensitive. A spelling made only of Latin letters, digits and common connectors must fall on word boundaries (`AI` does not match `said`). Others (such as Chinese) match as substrings.
  */
 export function termOccurs(source: string, text: string): boolean {
   const needle = source.trim();
@@ -217,8 +212,7 @@ export function termOccurs(source: string, text: string): boolean {
 const lineLength = (t: PromptTerm) => [...`- ${t.source} → ${t.target}${t.note ? ` (${t.note})` : ''}`].length + 1;
 
 /**
- * 这一批带哪些术语。条数不多（`ALL_TERMS` 以内、放得下）时全部带上；否则只带出现在 `text`（这一批与前文）里的，
- * 按优先顺序截到 `MAX_TERMS` 条、`MAX_CHARS` 个字符。`capped` 是相关但没能放进去的条数。
+ * Which terms this batch carries. When there are few (within `ALL_TERMS` and they fit), all are carried. Otherwise only those that appear in `text` (this batch and the preceding context) are carried, truncated in priority order to `MAX_TERMS` entries and `MAX_CHARS` characters. `capped` is the number of relevant terms that could not fit.
  */
 export function selectTerms(terms: PromptTerm[], text: string): { terms: PromptTerm[]; capped: number } {
   const total = terms.reduce((n, t) => n + lineLength(t), 0);
@@ -235,7 +229,7 @@ export function selectTerms(terms: PromptTerm[], text: string): { terms: PromptT
   return { terms: picked, capped: relevant.length - picked.length };
 }
 
-/** 译文文档的 `glossaryRef`：没有术语表时 null。`terms` 是原文写法出现在原文里的术语（不受提示词上限的影响）。 */
+/** The translation document's `glossaryRef`. null when there is no glossary. `terms` are the terms whose source spelling appears in the source (not affected by the prompt limit). */
 export function glossaryRefOf(snapshot: GlossarySnapshot, sourceText: string): GlossaryRef | null {
   if (snapshot.inline.length === 0 && snapshot.entries.length === 0) return null;
   const terms: GlossaryRef['terms'] = [];
@@ -265,14 +259,14 @@ export function glossaryRefOf(snapshot: GlossarySnapshot, sourceText: string): G
   };
 }
 
-/** 读译文正文里的 `glossaryRef`；不是认得的形状时 null（当作没有术语表）。 */
+/** Reads `glossaryRef` from a translation body. null when the shape is not recognized (treated as no glossary). */
 export function readGlossaryRef(value: unknown): GlossaryRef | null {
   const ref = value as Partial<GlossaryRef> | null;
   if (!ref || typeof ref !== 'object' || !Array.isArray(ref.entries) || !Array.isArray(ref.terms)) return null;
   return ref as GlossaryRef;
 }
 
-/** 校验 `glossaryRef` 的形状（组装译文时），没有问题时返回空数组。 */
+/** Validates the shape of `glossaryRef` (when assembling the translation). Returns an empty array when there are no problems. */
 export function glossaryRefProblems(value: unknown): string[] {
   if (value === undefined) return [];
   const ref = readGlossaryRef(value);
@@ -294,10 +288,7 @@ export function glossaryRefProblems(value: unknown): string[] {
 }
 
 /**
- * 术语表改了之后，这一句的译文是否过期。`glossaryRef` 里有表此刻的内容摘要变了（或删了）时，按翻译时同样的顺序与去重
- * 得出这句原文里出现的术语此刻的译法（删了的表此刻没有术语；调用时直接给的术语没有「此刻」，照翻译时的），与翻译时
- * 记下的比：有任何不同（译法改了、术语删了、新加的术语出现在这句里）就过期。`termsTruncated` 时记下的术语不全，
- * 有表变了而这句里出现了任何术语就算过期。
+ * Whether this sentence's translation is stale after the glossary changed. When the content digest of a glossary in `glossaryRef` has changed (or the glossary was deleted), the terms appearing in this source sentence are worked out in the same order and with the same deduplication as at translation time, using their current translations (a deleted glossary has no terms now; terms passed directly in the call have no "now" and are taken as at translation time). These are compared with the terms recorded at translation time. Any difference (a translation changed, a term was removed, or a newly added term appears in this sentence) makes it stale. When `termsTruncated` is set, the recorded terms are incomplete, so if a glossary changed and any term appears in this sentence, it counts as stale.
  */
 export function glossaryChanged(
   ref: GlossaryRef,

@@ -1,4 +1,4 @@
-//! `TextPreprocessor.get_phones_and_bert` 的文本部分：分段、逐段 `clean_text`、拼音素 id。
+//! Text part of `TextPreprocessor.get_phones_and_bert`: segmentation, per-segment `clean_text`, and phone ids.
 
 use super::error::PyError;
 use super::langseg::{self, SegLang};
@@ -6,18 +6,18 @@ use super::symbols::symbol_id;
 use super::{en, zh};
 
 pub struct Segment {
-    // 分段语种与原文只供 golden 对拍核对。
+    // Segment languages and the original text are only kept for checking against the golden parity data.
     #[cfg_attr(not(test), allow(dead_code))]
     pub lang: SegLang,
     #[cfg_attr(not(test), allow(dead_code))]
     pub text: String,
     pub norm: String,
     pub ids: Vec<u32>,
-    /// 中文段每个字的音素数（BERT 逐字特征按它展开）；英文段没有。
+    /// Number of phones per character in a Chinese segment (the per-character BERT features are expanded by this count); English segments have none.
     pub word2ph: Option<Vec<usize>>,
 }
 
-/// `mode` 为 zh 时中英混排自动分段，为 en 时整段按英文处理。
+/// When `mode` is zh, mixed Chinese/English text is split into segments automatically; when it is en, the whole text is treated as English.
 pub fn text_phones(text: &str, mode: SegLang) -> Result<Vec<Segment>, PyError> {
     phones(text, mode, false)
 }
@@ -29,7 +29,7 @@ fn phones(text: &str, mode: SegLang, is_final: bool) -> Result<Vec<Segment>, PyE
         SegLang::Zh => langseg::zh_segments(&text)?,
     };
     if pairs.is_empty() {
-        // 上游在空 bert 列表上 torch.cat
+        // Upstream calls torch.cat on an empty bert list
         return Err(PyError::Runtime);
     }
     let mut count = 0;
@@ -58,7 +58,7 @@ fn phones(text: &str, mode: SegLang, is_final: bool) -> Result<Vec<Segment>, PyE
             word2ph,
         });
     }
-    // 音素太少时前面补句点重算一次
+    // If there are too few phones, prepend a period and recompute once.
     if !is_final && count < 6 {
         return phones(&format!(".{text}"), mode, true);
     }

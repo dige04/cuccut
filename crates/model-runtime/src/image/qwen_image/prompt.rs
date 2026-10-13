@@ -1,16 +1,13 @@
-//! 文本编码器的输入：文生图提示词模板与分词。纯逻辑，全平台编译。
+//! Inputs to the text encoder: the text-to-image prompt template and tokenization. Pure logic, compiles on all platforms.
 //!
-//! 分词：v2 用 HF `tokenizers` crate 读 `processor/tokenizer.json`；这里复用 OmniVoice 的纯 Rust Qwen2 BPE
-//! （[`crate::synthesize::omnivoice::tokenizer::Tokenizer`]，同一份 `tokenizer.json` 格式：added token 先切出、NFC、
-//! Qwen2 预切分正则、byte-level BPE，不加 BOS / EOS），不为它再引一个分词库。它的报错文案带「OmniVoice」字样，
-//! 读的其实是这里的分词表。
+//! Tokenization: v2 uses the HF `tokenizers` crate to read `processor/tokenizer.json`. Here the pure-Rust Qwen2 BPE from OmniVoice is reused ([`crate::synthesize::omnivoice::tokenizer::Tokenizer`], same `tokenizer.json` format: added tokens are split out first, NFC, the Qwen2 pre-tokenization regex, byte-level BPE, no BOS or EOS added), so no separate tokenizer library is pulled in for it. Its error messages carry the word “OmniVoice”, but it is actually reading this tokenizer vocabulary.
 
 use anyhow::Result;
 use std::path::Path;
 
 use crate::synthesize::omnivoice::tokenizer::Tokenizer;
 
-/// 管线的系统提示；编码器输出里这一段（[`Prompter::drop_idx`] 个 token）被丢掉。
+/// The pipeline's system prompt. The segment of the encoder output for it ([`Prompter::drop_idx`] tokens) is dropped.
 pub const SYSTEM: &str = "<|im_start|>system\nComprehend and analyze the provided prompt.<|im_end|>\n";
 
 pub struct Prompter {
@@ -19,7 +16,7 @@ pub struct Prompter {
 }
 
 impl Prompter {
-    /// `tokenizer` 是 `processor/tokenizer.json`。
+    /// `tokenizer` is `processor/tokenizer.json`.
     pub fn load(tokenizer: &Path) -> Result<Self> {
         let tokenizer = Tokenizer::load(tokenizer)?;
         let drop_idx = tokenizer.encode(SYSTEM).len();
@@ -30,7 +27,7 @@ impl Prompter {
         self.drop_idx
     }
 
-    /// 文生图模板（管线的 `prompt_template_t2i`）。空提示按管线换成一个空格。
+    /// Text-to-image template (the pipeline's `prompt_template_t2i`). An empty prompt is replaced by a single space, as in the pipeline.
     pub fn t2i_ids(&self, prompt: &str) -> Vec<u32> {
         let prompt = if prompt.is_empty() { " " } else { prompt };
         let text = format!("{SYSTEM}<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n");
@@ -46,7 +43,7 @@ impl Prompter {
 mod tests {
     use super::*;
 
-    /// 需要真实权重：`CUCCUT_TEST_MODELS_DIR` 下的 `mlx-community/Qwen-Image-2.1-MLX-4bit`。
+    /// Requires real weights: `mlx-community/Qwen-Image-2.1-MLX-4bit` under `CUCCUT_TEST_MODELS_DIR`.
     #[test]
     #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下的 mlx-community/Qwen-Image-2.1-MLX-4bit"]
     fn template_tokens_are_single_ids_and_the_system_prefix_is_dropped() {
@@ -59,12 +56,12 @@ mod tests {
         assert_eq!(ids[0], start);
         assert_eq!(ids.iter().filter(|&&id| id == start).count(), 3);
         assert_eq!(ids.iter().filter(|&&id| id == end).count(), 2);
-        // 系统前缀的 token 正好是模板的开头：丢掉 drop_idx 个之后从 user 轮开始。
+        // The tokens of the system prefix are exactly the start of the template. After dropping drop_idx of them, it starts from the user turn.
         let system = prompter.t2i_ids("x")[..prompter.drop_idx()].to_vec();
         assert_eq!(&ids[..prompter.drop_idx()], &system[..]);
         assert_eq!(ids[prompter.drop_idx()], start);
         assert_eq!(*system.last().unwrap(), Tokenizer::load(&path).unwrap().encode("\n")[0]);
-        // 空提示按管线换成一个空格，不会少掉 user 轮。
+        // As in the pipeline, an empty prompt is replaced by a single space, so the user turn is not lost.
         assert_eq!(prompter.t2i_ids("").len(), prompter.t2i_ids(" ").len());
     }
 }

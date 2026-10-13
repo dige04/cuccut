@@ -1,14 +1,13 @@
-//! Lottie 几何：贝塞尔轮廓、形状原语（矩形 / 椭圆 / 星形）、路径修改器
-//! （trim / 圆角 / 虚线）与到 DrawOp `PathData` 的转换。
+//! Lottie geometry: Bézier outlines, shape primitives (rectangle, ellipse, star), path modifiers
+//! (trim, rounded corners, dashes), and conversion to `PathData` for DrawOp.
 //!
-//! 全程 f64，只在最后一步落到 `PathData` 的 f32——中间量用 f32 会让 trim 的
-//! 弧长累加在长路径上掉精度，而 trim 的可见结果对长度极其敏感。
+//! Everything is in f64 and is narrowed to f32 `PathData` only at the final step. With f32 intermediates, the arc-length accumulation in trim loses precision on long paths, and the visible result of trim is very sensitive to length.
 
 use crate::drawop::{PathData, PathSeg};
 
 pub type Pt = [f64; 2];
 
-/// 仿射变换，行序与 `tiny_skia::Transform::from_row` 一致。
+/// Affine transform. Row order matches `tiny_skia::Transform::from_row`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Affine {
     pub sx: f64,
@@ -51,7 +50,7 @@ impl Affine {
         }
     }
 
-    /// 角度制，顺时针为正（AE 的旋转方向，y 轴向下）。
+    /// Angle in degrees, clockwise positive (AE's rotation direction, y axis down).
     pub fn rotate(degrees: f64) -> Affine {
         let r = degrees.to_radians();
         let (s, c) = (r.sin(), r.cos());
@@ -65,7 +64,7 @@ impl Affine {
         }
     }
 
-    /// AE 的 skew / skewAxis（角度制）。
+    /// AE's skew and skewAxis (in degrees).
     pub fn skew(skew: f64, axis: f64) -> Affine {
         if skew == 0.0 {
             return Affine::IDENTITY;
@@ -81,7 +80,7 @@ impl Affine {
         Affine::rotate(-axis).then(shear).then(Affine::rotate(axis))
     }
 
-    /// `self` 之后再施加 `outer`（即 `outer ∘ self`）。
+    /// Applies `outer` after `self` (that is, `outer ∘ self`).
     pub fn then(self, outer: Affine) -> Affine {
         Affine {
             sx: outer.sx * self.sx + outer.kx * self.ky,
@@ -100,7 +99,7 @@ impl Affine {
         ]
     }
 
-    /// 只作用于方向向量（不含平移）——切线用它。
+    /// Applies only to direction vectors (no translation). Tangents use this.
     pub fn apply_vector(&self, p: Pt) -> Pt {
         [
             self.sx * p[0] + self.kx * p[1],
@@ -119,7 +118,7 @@ impl Affine {
         ]
     }
 
-    /// 均匀缩放的标量近似（描边宽度换算用；AE 对非均匀缩放的描边本就是近似）。
+    /// Scalar approximation for uniform scaling, used when converting stroke width. (AE's strokes under non-uniform scaling are themselves an approximation.)
     pub fn mean_scale(&self) -> f64 {
         let a = (self.sx * self.sx + self.ky * self.ky).sqrt();
         let b = (self.kx * self.kx + self.sy * self.sy).sqrt();
@@ -127,7 +126,7 @@ impl Affine {
     }
 }
 
-/// 一条贝塞尔轮廓。`i` / `o` 是**相对 `v` 的**控制点偏移（bodymovin 约定）。
+/// A Bézier outline. `i` and `o` are control-point offsets **relative to `v`** (bodymovin convention).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Contour {
     pub v: Vec<Pt>,
@@ -154,7 +153,7 @@ impl Contour {
         }
     }
 
-    /// 反向（bodymovin 的 `d: 3`）：顶点倒序，进出切线互换。
+    /// Reversal (bodymovin's `d: 3`): vertices in reverse order, with in and out tangents swapped.
     pub fn reversed(&self) -> Contour {
         let mut out = Contour {
             v: self.v.iter().rev().copied().collect(),
@@ -162,7 +161,7 @@ impl Contour {
             o: self.i.iter().rev().copied().collect(),
             closed: self.closed,
         };
-        // 闭合轮廓反向后首点仍应是原首点，否则 trim 的起点会跳一格
+        // After reversing a closed outline, the first point must remain the original first point. Otherwise the start of trim jumps one step.
         if self.closed && out.v.len() > 1 {
             out.v.rotate_right(1);
             out.i.rotate_right(1);
@@ -171,7 +170,7 @@ impl Contour {
         out
     }
 
-    /// 逐段三次贝塞尔。闭合轮廓多一段回到首点。
+    /// Cubic Bézier segment by segment. A closed outline has one extra segment that returns to the first point.
     fn segments(&self) -> Vec<CubicSeg> {
         let n = self.v.len();
         if n < 2 {
@@ -192,7 +191,7 @@ impl Contour {
     }
 }
 
-/// 一组轮廓 = 一条可填充 / 可描边的路径。
+/// A group of outlines equals one path that can be filled or stroked.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ShapePath(pub Vec<Contour>);
 
@@ -213,7 +212,7 @@ impl ShapePath {
         self.0.extend(other.0.iter().cloned());
     }
 
-    /// → DrawOp 的路径侧表条目。
+    /// Path-side table entry for DrawOp.
     pub fn to_path_data(&self) -> PathData {
         let mut segs = Vec::new();
         for contour in &self.0 {
@@ -266,12 +265,12 @@ fn dist(a: Pt, b: Pt) -> f64 {
     (d[0] * d[0] + d[1] * d[1]).sqrt()
 }
 
-// ── 形状原语 ───────────────────────────────────────────────────────
+// ── shape primitives ───────────────────────────────────────────────
 
-/// 圆的四段三次贝塞尔近似常量。
+/// Four-segment cubic Bézier approximation constant for a circle.
 const KAPPA: f64 = 0.5519;
 
-/// 椭圆（bodymovin `el`）：中心 `p`、直径 `s`。
+/// Ellipse (bodymovin `el`): center `p`, diameter `s`.
 pub fn ellipse(center: Pt, size: Pt) -> Contour {
     let (rx, ry) = (size[0] / 2.0, size[1] / 2.0);
     let (cx, cy) = (center[0], center[1]);
@@ -284,7 +283,7 @@ pub fn ellipse(center: Pt, size: Pt) -> Contour {
     }
 }
 
-/// 矩形（bodymovin `rc`）：中心 `p`、尺寸 `s`、圆角 `r`。
+/// Rectangle (bodymovin `rc`): center `p`, size `s`, corner radius `r`.
 pub fn rect(center: Pt, size: Pt, radius: f64) -> Contour {
     let (hw, hh) = ((size[0] / 2.0).abs(), (size[1] / 2.0).abs());
     let (cx, cy) = (center[0], center[1]);
@@ -303,7 +302,7 @@ pub fn rect(center: Pt, size: Pt, radius: f64) -> Contour {
         };
     }
     let k = r * KAPPA;
-    // 顺序与 AE 一致：右上 → 右下 → 左下 → 左上，每角两个顶点
+    // Order follows AE: top-right → bottom-right → bottom-left → top-left, with two vertices per corner.
     Contour {
         v: vec![
             [cx + hw, cy - hh + r],
@@ -339,7 +338,7 @@ pub fn rect(center: Pt, size: Pt, radius: f64) -> Contour {
     }
 }
 
-/// 星形 / 多边形（bodymovin `sr`）。`points` 是**角数**；星形交替内外半径。
+/// Star or polygon (bodymovin `sr`). `points` is the **number of corners**. A star alternates outer and inner radius.
 #[allow(clippy::too_many_arguments)]
 pub fn star(
     center: Pt,
@@ -354,7 +353,7 @@ pub fn star(
     let n = points.max(2.0).round() as usize;
     let count = if is_star { n * 2 } else { n };
     let step = std::f64::consts::TAU / count as f64;
-    // AE 的 0° 指向正上方
+    // AE's 0° points straight up.
     let mut angle = rotation.to_radians() - std::f64::consts::FRAC_PI_2;
     let mut contour = Contour {
         v: Vec::with_capacity(count),
@@ -374,7 +373,7 @@ pub fn star(
         contour
             .v
             .push([center[0] + radius * c, center[1] + radius * s]);
-        // 圆角量：AE 的 roundness 是百分比，落在切线上
+        // AE's roundness is a percentage, applied along the tangent.
         let handle = radius * (round / 100.0) * step / 2.0;
         contour.o.push([-handle * s, handle * c]);
         contour.i.push([handle * s, -handle * c]);
@@ -383,7 +382,7 @@ pub fn star(
     contour
 }
 
-// ── 路径修改器 ─────────────────────────────────────────────────────
+// ── path modifiers ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 struct CubicSeg {
@@ -393,8 +392,8 @@ struct CubicSeg {
     p3: Pt,
 }
 
-/// 每段贝塞尔的弧长采样数。**常量**：迭代次数参与结果，不能随长度自适应，
-/// 否则同一条路径在不同缩放下会 trim 到不同位置。
+/// Number of arc-length samples per Bézier segment. **Constant**: the iteration count affects the result, so it must not adapt to length.
+/// Otherwise the same path would trim to different positions at different scales.
 const FLATTEN: usize = 32;
 
 impl CubicSeg {
@@ -412,7 +411,7 @@ impl CubicSeg {
         ]
     }
 
-    /// 累积弧长表（`FLATTEN + 1` 项，首项为 0）。
+    /// Cumulative arc-length table (`FLATTEN + 1` entries, the first being 0).
     fn lut(&self) -> Vec<f64> {
         let mut out = Vec::with_capacity(FLATTEN + 1);
         out.push(0.0);
@@ -427,7 +426,7 @@ impl CubicSeg {
         out
     }
 
-    /// 弧长 → 参数 t（在采样表内线性插值）。
+    /// Arc length → parameter t (linear interpolation within the sample table).
     fn t_at_length(&self, lut: &[f64], length: f64) -> f64 {
         let total = *lut.last().unwrap_or(&0.0);
         if total <= 0.0 {
@@ -444,7 +443,7 @@ impl CubicSeg {
         (idx as f64 - 1.0 + frac) / FLATTEN as f64
     }
 
-    /// de Casteljau 截取 `[t0, t1]`。
+    /// de Casteljau subdivision to `[t0, t1]`.
     fn split(&self, t0: f64, t1: f64) -> CubicSeg {
         let right = self.split_after(t0);
         let t = if t0 < 1.0 {
@@ -490,7 +489,7 @@ fn lerp_pt(a: Pt, b: Pt, t: f64) -> Pt {
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
 }
 
-/// 一条轮廓的可测量形态：分段 + 每段弧长表 + 总长。
+/// Measurable form of one outline: segments, plus an arc-length table per segment, plus the total length.
 struct Measured {
     segs: Vec<CubicSeg>,
     luts: Vec<Vec<f64>>,
@@ -511,7 +510,7 @@ fn measure(contour: &Contour) -> Measured {
     }
 }
 
-/// 取 `[from, to]`（弧长）之间的一段，产出**开放**轮廓。
+/// Takes the portion between `[from, to]` (arc length), producing an **open** outline.
 fn slice(m: &Measured, from: f64, to: f64) -> Option<Contour> {
     if m.total <= 0.0 || to <= from {
         return None;
@@ -564,8 +563,8 @@ fn slice(m: &Measured, from: f64, to: f64) -> Option<Contour> {
     Some(out)
 }
 
-/// Trim Paths（bodymovin `tm`）。`start` / `end` 是 0..100 的百分比，
-/// `offset` 是角度。`individually` 对应 `m: 2`（逐轮廓），否则整条路径连起来算。
+/// Trim Paths (bodymovin `tm`). `start` and `end` are percentages from 0 to 100, and
+/// `offset` is an angle. `individually` corresponds to `m: 2` (per outline). Otherwise the whole path is measured as one.
 pub fn trim(path: &ShapePath, start: f64, end: f64, offset: f64, individually: bool) -> ShapePath {
     let (mut s, mut e) = (start / 100.0, end / 100.0);
     let o = offset / 360.0;
@@ -593,7 +592,7 @@ pub fn trim(path: &ShapePath, start: f64, end: f64, offset: f64, individually: b
         return ShapePath(out);
     }
 
-    // 并行模式：全部轮廓首尾相接当作一条来量
+    // Parallel mode: all outlines are joined end to end and measured as one.
     let measured: Vec<Measured> = path.0.iter().map(measure).collect();
     let total: f64 = measured.iter().map(|m| m.total).sum();
     if total <= 0.0 {
@@ -642,8 +641,8 @@ fn trim_measured(m: &Measured, s: f64, e: f64, contour: &Contour) -> Vec<Contour
     out
 }
 
-/// 圆角（bodymovin `rd`）。只处理**尖角**顶点（进出切线都为零），与
-/// lottie-web 的 `RoundCornersModifier` 同一判据——已经带曲率的顶点不动。
+/// Rounded corners (bodymovin `rd`). Only handles **sharp** vertices, meaning those whose incoming and outgoing tangents are both zero. It uses the same criterion as
+/// lottie-web's `RoundCornersModifier`. Vertices that already carry curvature are left alone.
 pub fn round_corners(path: &ShapePath, radius: f64) -> ShapePath {
     if radius <= 0.0 {
         return path.clone();
@@ -697,15 +696,15 @@ pub fn round_corners(path: &ShapePath, radius: f64) -> ShapePath {
     ShapePath(out)
 }
 
-/// 虚线（bodymovin 描边的 `d`）。`pattern` 是 dash/gap 交替的长度序列，
-/// `offset` 是起始偏移。产出一组开放轮廓，交给描边原语。
+/// Dashed line (bodymovin's stroke `d`). `pattern` is the alternating sequence of dash and gap lengths,
+/// and `offset` is the starting offset. Produces a set of open outlines for the stroke primitive.
 pub fn dash(path: &ShapePath, pattern: &[f64], offset: f64) -> ShapePath {
     let pattern: Vec<f64> = pattern.iter().copied().filter(|v| *v >= 0.0).collect();
     let cycle: f64 = pattern.iter().sum();
     if pattern.is_empty() || cycle <= 0.0 {
         return path.clone();
     }
-    // 奇数长度按 SVG 惯例重复一遍，凑成 dash/gap 成对
+    // Odd-length patterns are repeated once, following the SVG convention, so that they form dash/gap pairs.
     let pattern: Vec<f64> = if pattern.len() % 2 == 1 {
         pattern.iter().chain(pattern.iter()).copied().collect()
     } else {
@@ -721,7 +720,7 @@ pub fn dash(path: &ShapePath, pattern: &[f64], offset: f64) -> ShapePath {
         let mut position = -offset.rem_euclid(cycle);
         let mut index = 0usize;
         let mut on = true;
-        // 上限保护：一条路径最多切 4096 段虚线，病态 pattern 不至于挂住渲染
+        // Upper bound: a path is cut into at most 4096 dash segments, so a pathological pattern cannot stall rendering.
         for _ in 0..4096 {
             if position >= m.total {
                 break;
@@ -759,7 +758,7 @@ mod tests {
     fn affine_composition_matches_manual_application() {
         let m = Affine::scale(2.0, 3.0).then(Affine::translate(5.0, 7.0));
         assert_eq!(m.apply([1.0, 1.0]), [7.0, 10.0]);
-        // 向量不吃平移
+        // Vectors do not take translation.
         assert_eq!(m.apply_vector([1.0, 1.0]), [2.0, 3.0]);
     }
 
@@ -776,7 +775,7 @@ mod tests {
         let ys: Vec<f64> = contour.v.iter().map(|p| p[1]).collect();
         assert!((xs.iter().cloned().fold(f64::MIN, f64::max) - 5.0).abs() < 1e-12);
         assert!((ys.iter().cloned().fold(f64::MIN, f64::max) - 3.0).abs() < 1e-12);
-        // 半径被夹到短边一半
+        // The radius is clamped to half the short side.
         assert_eq!(rect([0.0, 0.0], [10.0, 6.0], 99.0).v.len(), 8);
     }
 
@@ -832,7 +831,7 @@ mod tests {
     fn round_corners_only_touches_sharp_vertices() {
         let rounded = round_corners(&square(), 2.0);
         assert_eq!(rounded.0[0].v.len(), 8, "四个尖角各裂成两个顶点");
-        // 已经带曲率的椭圆不被改动
+        // An ellipse that already carries curvature is left unchanged.
         let circle = ShapePath::single(ellipse([0.0, 0.0], [10.0, 10.0]));
         assert_eq!(round_corners(&circle, 3.0), circle);
     }

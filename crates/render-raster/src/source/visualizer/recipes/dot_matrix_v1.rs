@@ -1,11 +1,8 @@
-//! `dot-matrix-v1`：`dots`（设计 §7.2）。
+//! `dot-matrix-v1`: `dots` (design §7.2).
 //!
-//! LED 点阵式频谱：盒子分成 `columns × rows` 个格子，每列的频谱幅度经 `easing`
-//! 决定从底部起点亮几行（四舍五入到整行，**至少一行**——静音时留一排底灯，元素
-//! 不会消失）。点亮的点用主色（`Dots`），每列最高的那颗用副色（`Peaks`）。
+//! An LED dot-matrix spectrum: the box is split into `columns × rows` cells. For each column, the spectrum amplitude, shaped by `easing`, decides how many rows light up from the bottom (rounded to whole rows, **at least one row** — in silence one row of base lights stays on, so the element does not disappear). Lit dots use the primary colour (`Dots`); the highest dot in each column uses the secondary colour (`Peaks`).
 //!
-//! `dotRadius` 是点半径占**格子边长（取宽高较小者）**的分数。每颗点一条圆角
-//! 全圆的 `FillRect`，返回点亮的总颗数。
+//! `dotRadius` is the dot radius as a fraction of the **cell side length (the smaller of width and height)**. Each dot is one `FillRect` with fully rounded corners (a circle); returns the total number of lit dots.
 
 use motion::preset_registry::VisualizerBody;
 

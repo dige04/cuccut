@@ -1,24 +1,14 @@
-//! whisper.cpp（ggml）跨平台 Whisper 后端，从 v2 `ccut-speech` 的 `ggml_backend` 原样移植。
+//! whisper.cpp (ggml) cross-platform Whisper backend, ported unchanged from v2 `ccut-speech`'s `ggml_backend`.
 //!
-//! 与 `candle` 并列：candle 承担 Qwen3 / MOSS / VAD / 对齐器，这里只
-//! 承担 Whisper。ggml 的 CPU 内核全平台可用；GPU 按 feature 编进 ggml 的后端：
-//! `whisper-ggml-cuda` 编 CUDA 后端（NVIDIA，构建要 CUDA Toolkit），
-//! `whisper-ggml-vulkan` 编 Vulkan 后端（AMD / Intel / NVIDIA 显卡与核显，运行期
-//! 只依赖显卡驱动自带的 Vulkan 运行时）。两个可以同时编进来。CUDA 与 Vulkan 都还
-//! 没有在实机上跑过（未实测）。`whisper-ggml-metal` 编 macOS Metal 后端，已用 AMD Radeon Pro 5500M
-//! 与 Whisper large-v3 Turbo q8_0 实测；Intel Worker 禁用 ggml 的并发 Metal 调度以避免独显上的计算错误。
+//! Alongside `candle`: candle handles Qwen3 / MOSS / VAD / aligner, and this only handles Whisper. ggml's CPU kernels are available on all platforms; GPU backends are compiled into ggml by feature:
+//! `whisper-ggml-cuda` builds the CUDA backend (NVIDIA; the build needs the CUDA Toolkit),
+//! `whisper-ggml-vulkan` builds the Vulkan backend (AMD / Intel / NVIDIA graphics cards and integrated GPUs; at runtime it depends only on the Vulkan runtime bundled with the graphics driver).
+//! Both can be built in together. CUDA and Vulkan have not yet been run on real hardware (untested). `whisper-ggml-metal` builds the macOS Metal backend, measured on an AMD Radeon Pro 5500M with Whisper large-v3 Turbo q8_0; Intel Workers disable ggml's concurrent Metal scheduling to avoid compute errors on the discrete GPU.
 //!
-//! 设备选择只有一条规则：`CUCCUT_GPU=off` 强制 CPU；否则取 ggml 枚举到的第一
-//! 个 GPU 设备（与 whisper.cpp 的 `gpu_device = 0` 是同一台），没有就 CPU 并打印
-//! 一次可见的回退提示（与 candle CUDA 的回退提示同形——没有任何报错、只是慢一个
-//! 数量级的静默退化最难定位）。ggml 的 registry 先登记 CUDA、后登记 Vulkan，所以
-//! 两个都编进来时 NVIDIA 机器上选到的是 CUDA；没有 NVIDIA 驱动时 CUDA 后端报 0 个
-//! 设备（只打日志、不中止进程），选到的是 Vulkan。
+//! Device selection follows a single rule: `CUCCUT_GPU=off` forces CPU; otherwise take the first GPU device ggml enumerates (the same device as whisper.cpp's `gpu_device = 0`). If there is none, use CPU and print a visible fallback notice once (the same form as candle's CUDA fallback notice: a silent degradation that reports no error and is only an order of magnitude slower is the hardest to locate). ggml's registry registers CUDA first and Vulkan second, so when both are built in, an NVIDIA machine selects CUDA. Without an NVIDIA driver, the CUDA backend reports 0 devices (it only logs, without aborting the process), and Vulkan is selected.
 //!
-//! v3 的边界：模型包的 `asr` 组件（family `whisper-ggml`）列出一个 `.bin`（单文件 GGML 权重，词表内嵌，没有 `tokenizer`
-//! 组件）；切段的 Silero VAD 与可选的强制对齐器是 candle 的（[`super::candle`]），所以 `whisper-ggml` 连带 `backend-candle`。
-//! `worker.hello` 报 `devices`：用得上 GPU 时 `[<所选 GPU 的设备名>, "cpu"]`（`cuda`、`vulkan` 或 `metal`，见
-//! [`GgmlDevice::protocol_label`]），否则 `["cpu"]`；模型包的 `device` 是 `cpu` 时一律跑 CPU。
+//! v3 boundary: the model pack's `asr` component (family `whisper-ggml`) lists one `.bin` (a single-file GGML weight with an embedded vocabulary; there is no `tokenizer` component). The Silero VAD that splits audio into segments and the optional forced aligner are candle's ([`super::candle`]), so `whisper-ggml` also requires `backend-candle`.
+//! `worker.hello` reports `devices`: when a GPU is usable, `[<所选 GPU 的设备名>, "cpu"]` (`cuda`, `vulkan` or `metal`, see [`GgmlDevice::protocol_label`]), otherwise `["cpu"]`; when the model pack's `device` is `cpu`, CPU is always used.
 
 pub mod whisper;
 
@@ -37,20 +27,20 @@ use crate::speech::{ForcedAlignment, SpeakerDiarization};
 
 pub use crate::gpu_env::{GPU_ENV, gpu_disabled_by_env};
 
-/// ggml 认的设备名（协议的设备标签）。
+/// Device names ggml recognizes (the protocol's device labels).
 pub const DEVICE_CPU: &str = "cpu";
 pub const DEVICE_CUDA: &str = "cuda";
 pub const DEVICE_VULKAN: &str = "vulkan";
 pub const DEVICE_METAL: &str = "metal";
 
-/// ggml 看到的一个计算设备。
+/// A compute device as seen by ggml.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GgmlDevice {
-    /// 后端注册名（`CPU` / `Vulkan` / `CUDA` …），来自 ggml 的 backend registry。
+    /// Backend registration name (`CPU` / `Vulkan` / `CUDA` …), from ggml's backend registry.
     pub backend: String,
-    /// 设备描述（显卡型号或 CPU 名）。
+    /// Device description (graphics card model or CPU name).
     pub description: String,
-    /// 是否 GPU（独显或核显）。
+    /// Whether it is a GPU (discrete or integrated).
     pub is_gpu: bool,
 }
 
@@ -63,13 +53,13 @@ impl GgmlDevice {
         }
     }
 
-    /// 日志与诊断用的短标签：`ggml-cuda` / `ggml-vulkan` / `ggml-cpu`。
+    /// Short label for logs and diagnostics: `ggml-cuda` / `ggml-vulkan` / `ggml-cpu`.
     pub fn label(&self) -> String {
         format!("ggml-{}", self.backend.to_ascii_lowercase())
     }
 
-    /// 协议的设备标签，按后端注册名映射：`CUDA` 是 `cuda`，`Vulkan` 是 `vulkan`；别的 GPU 后端（HIP 构建注册为 `ROCm`、
-    /// SYCL 等，CucCut 的构建都不编）取小写的注册名；不是 GPU 的（CPU，以及 macOS 上类型为加速器的 BLAS）一律 `cpu`。
+    /// The protocol device label, mapped from the backend registration name: `CUDA` is `cuda`, `Vulkan` is `vulkan`; other GPU backends (HIP builds register as `ROCm`,
+    /// SYCL, etc., none of which CucCut's builds compile in) use the lowercase registration name; anything that is not a GPU (CPU, and on macOS the BLAS whose type is accelerator) is always `cpu`.
     pub fn protocol_label(&self) -> String {
         if !self.is_gpu {
             return DEVICE_CPU.to_owned();
@@ -83,10 +73,9 @@ impl GgmlDevice {
     }
 }
 
-/// 把 exe 同目录下的 ggml 动态后端（`ggml-vulkan.dll` 之类）登记进 registry。
+/// Registers the ggml dynamic backends (such as `ggml-vulkan.dll`) located in the same directory as the exe into the registry.
 ///
-/// 静态链接的后端本来就在 registry 里，这一步对它们是空操作；只有以
-/// `GGML_BACKEND_DL=ON` 构建、后端以独立动态库随包发行时才真的加载。缺文件不报错。
+/// Statically linked backends are already in the registry, so this step is a no-op for them; it actually loads something only when built with `GGML_BACKEND_DL=ON` and the backends ship as separate dynamic libraries. A missing file is not an error.
 pub fn load_sidecar_backends() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -100,17 +89,17 @@ pub fn load_sidecar_backends() {
         let Ok(path) = std::ffi::CString::new(dir.to_string_lossy().as_bytes()) else {
             return;
         };
-        // SAFETY: 传入的是有效的 NUL 结尾字符串；ggml 只在目录里找 ggml-*.{dll,so,dylib}。
+        // SAFETY: the argument is a valid NUL-terminated string; ggml only looks for ggml-*.{dll,so,dylib} in the directory.
         unsafe { whisper_rs::whisper_rs_sys::ggml_backend_load_all_from_path(path.as_ptr()) };
     });
 }
 
-/// 枚举 ggml 当前 registry 里的全部设备（GPU 在前，与 ggml 内部顺序一致）。
+/// Enumerates all devices in ggml's current registry (GPUs first, matching ggml's internal order).
 pub fn devices() -> Vec<GgmlDevice> {
     use whisper_rs::whisper_rs_sys as sys;
     load_sidecar_backends();
     let mut out = Vec::new();
-    // SAFETY: 只读查询 registry；返回的 C 字符串由 ggml 持有、生命周期与进程相同。
+    // SAFETY: a read-only query of the registry; the returned C string is owned by ggml and lives as long as the process.
     unsafe {
         let count = sys::ggml_backend_dev_count();
         for index in 0..count {
@@ -141,12 +130,12 @@ unsafe fn c_string(ptr: *const std::os::raw::c_char) -> String {
     if ptr.is_null() {
         String::new()
     } else {
-        // SAFETY: 调用方保证 ptr 指向 NUL 结尾字符串。
+        // SAFETY: the caller guarantees that ptr points to a NUL-terminated string.
         unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
     }
 }
 
-/// 纯函数版的设备选择：给定枚举结果与开关，得出实际用哪台。
+/// Pure-function version of device selection: given the enumeration result and the switches, determines which device is actually used.
 pub fn choose_device(devices: &[GgmlDevice], gpu_disabled: bool) -> GgmlDevice {
     if !gpu_disabled && let Some(gpu) = devices.iter().find(|d| d.is_gpu) {
         return gpu.clone();
@@ -154,7 +143,7 @@ pub fn choose_device(devices: &[GgmlDevice], gpu_disabled: bool) -> GgmlDevice {
     devices.iter().find(|d| !d.is_gpu).cloned().unwrap_or_else(GgmlDevice::cpu_fallback)
 }
 
-/// 编进本二进制的 ggml GPU 后端（协议设备名），CUDA 在前（与 ggml registry 的登记顺序一致）。
+/// The ggml GPU backends built into this binary (protocol device names), with CUDA first (matching the ggml registry's registration order).
 pub fn gpu_backends_built() -> &'static [&'static str] {
     const BUILT: &[&str] = &[
         #[cfg(feature = "whisper-ggml-cuda")]
@@ -167,7 +156,7 @@ pub fn gpu_backends_built() -> &'static [&'static str] {
     BUILT
 }
 
-/// 本次运行 Whisper 会用的设备。编进了 GPU 后端（CUDA 或 Vulkan）却没枚举到 GPU 时打印一次告警，点名编进来的后端。
+/// The device Whisper will use in this run. When a GPU backend (CUDA or Vulkan) is built in but no GPU is enumerated, a warning is printed once, naming the built-in backend.
 pub fn default_device() -> GgmlDevice {
     let disabled = gpu_disabled_by_env();
     if disabled {
@@ -182,7 +171,7 @@ pub fn default_device() -> GgmlDevice {
     device
 }
 
-/// 编进了 GPU 后端却没有可用 GPU 时的提示：点名编进来的后端，各带一句常见原因。
+/// The notice when a GPU backend is built in but no usable GPU is present: names the built-in backend and gives one common cause for each.
 fn no_gpu_warning(built: &[&str]) -> String {
     let (names, reasons): (Vec<&str>, Vec<&str>) = built
         .iter()
@@ -200,18 +189,18 @@ fn no_gpu_warning(built: &[&str]) -> String {
     )
 }
 
-/// 诊断用的运行时快照。
+/// Runtime snapshot for diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WhisperRuntime {
-    /// `ggml-cuda` / `ggml-vulkan` / `ggml-cpu` …：本次实际会用的后端。
+    /// `ggml-cuda` / `ggml-vulkan` / `ggml-cpu` …: the backend actually used this time.
     pub backend: String,
-    /// 设备描述。
+    /// Device description.
     pub device: String,
-    /// 编进了哪些 GPU 后端（`cuda`、`vulkan`；见 [`gpu_backends_built`]）。
+    /// Which GPU backends are built in (`cuda`, `vulkan`; see [`gpu_backends_built`]).
     pub gpu_backends_built: &'static [&'static str],
-    /// 是否枚举到了至少一台 GPU（不受 `CUCCUT_GPU` 影响）。
+    /// Whether at least one GPU was enumerated (not affected by `CUCCUT_GPU`).
     pub gpu_available: bool,
-    /// `CUCCUT_GPU` 是否显式关闭了 GPU。
+    /// Whether `CUCCUT_GPU` explicitly turned the GPU off.
     pub gpu_disabled: bool,
 }
 
@@ -228,7 +217,7 @@ pub fn runtime_probe() -> WhisperRuntime {
     }
 }
 
-/// 编译期后端标识（不做任何枚举）：`ggml-cuda+vulkan`、`ggml-cuda`、`ggml-vulkan`、`ggml-metal` 或 `ggml-cpu`。
+/// Compile-time backend identifier (performs no enumeration): `ggml-cuda+vulkan`, `ggml-cuda`, `ggml-vulkan`, `ggml-metal` or `ggml-cpu`.
 pub const fn built_backend() -> &'static str {
     match (cfg!(feature = "whisper-ggml-cuda"), cfg!(feature = "whisper-ggml-vulkan")) {
         (true, true) => "ggml-cuda+vulkan",
@@ -264,19 +253,19 @@ impl Backend for GgmlBackend {
     fn load(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<Box<dyn LoadedModel>, ErrorBody> {
         let device = check_device(bundle)?;
         let (Some(asr_files), Some(vad_files)) = (&bundle.asr, &bundle.vad) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(codes::MODEL_UNSUPPORTED, "the bundle needs asr and vad components"));
         };
         if asr_files.family != FAMILY_WHISPER_GGML {
             return Err(transcription_not_wired(Some(&asr_files.family)));
         }
 
-        // 先按清单取齐文件：缺文件是 MODEL_NOT_INSTALLED，不必先加载上 GB 的权重。
+        // Gather all files from the manifest first: a missing file is MODEL_NOT_INSTALLED, so there is no need to load weights that are several GB first.
         let weights = asr_files.require_extension_in("", "bin")?[0].to_path_buf();
         let vad_weights = vad_files.require_extension("safetensors")?;
-        // 对齐器是可选组件（与别的识别模型包共用同一只）：带了才加载，缺文件同样报 MODEL_NOT_INSTALLED。
+        // The aligner is an optional component (shared with the other recognition model packs): it loads only if present, and a missing file likewise reports MODEL_NOT_INSTALLED.
         candle::check_aligner_files(bundle)?;
-        // 说话人区分同样可选（candle 的 Pyannote 与 WeSpeaker）：只核对文件，任务里要用时才加载。
+        // Speaker diarization is also optional (candle's Pyannote and WeSpeaker): only the files are checked, and the models load when a job needs them.
         let diarizer = DiarizerSlot::new(bundle, &candle::default_device())?;
 
         phase(ModelPhase::LoadingWeights, Some("vad"));
@@ -303,8 +292,8 @@ impl Backend for GgmlBackend {
     }
 }
 
-/// 模型包的设备：`cpu` 总能跑（不碰 GPU）；`cuda` / `vulkan` / `metal` 要求本进程选中的 GPU（`worker.hello` 报的首选设备）正是它——
-/// 编进了对应的后端、枚举到了设备、`CUCCUT_GPU` 没关。同时编进 CUDA 与 Vulkan、选中 CUDA 的进程同样不收 `vulkan`。
+/// The model pack's device: `cpu` always runs (it does not touch the GPU); `cuda` / `vulkan` / `metal` require that the GPU selected by this process (the preferred device reported by `worker.hello`) is exactly that device —
+/// the corresponding backend is built in, a device was enumerated, and `CUCCUT_GPU` is not off. A process with both CUDA and Vulkan built in that selected CUDA likewise does not accept `vulkan`.
 fn check_device(bundle: &VerifiedBundle) -> Result<GgmlDevice, ErrorBody> {
     let unsupported = |message: String| {
         ErrorBody::new(codes::MODEL_UNSUPPORTED, message)
@@ -329,7 +318,7 @@ fn check_device(bundle: &VerifiedBundle) -> Result<GgmlDevice, ErrorBody> {
     }
 }
 
-/// 加载好的 VAD（candle）+ Whisper（whisper.cpp）+ 可选的强制对齐器（candle）+ 按需加载的说话人区分（candle）。
+/// The loaded VAD (candle) + Whisper (whisper.cpp) + optional forced aligner (candle) + on-demand speaker diarization (candle).
 pub struct GgmlModel {
     vad: SileroVad,
     asr: WhisperGgml,
@@ -346,12 +335,12 @@ impl LoadedModel for GgmlModel {
         }
     }
 
-    /// 与 candle 同：整个 Worker 进程的常驻内存；CUDA / Vulkan 的显存不在其中。
+    /// Same as candle: the resident memory of the whole Worker process; CUDA / Vulkan VRAM is not included.
     fn memory(&self) -> Option<MemorySnapshot> {
         candle::memory()
     }
 
-    /// whisper.cpp 没有单独的预热（v2 同样不预热）。
+    /// whisper.cpp has no separate warm-up (v2 likewise does not warm up).
     fn warmup_ms(&self) -> u64 {
         0
     }
@@ -408,8 +397,8 @@ mod tests {
         assert_eq!(choose_device(&devices, true).protocol_label(), DEVICE_CPU);
     }
 
-    /// CUDA 与 Vulkan 都编进来时（ggml 先登记 CUDA），NVIDIA 机器上的枚举结果是 CUDA 的设备在前、同一张卡的 Vulkan 设备在后：
-    /// 选 CUDA，协议标签是 `cuda`。
+    /// When both CUDA and Vulkan are built in (ggml registers CUDA first), on an NVIDIA machine the enumeration puts the CUDA device first and the Vulkan device for the same card after it:
+    /// CUDA is selected, and the protocol label is `cuda`.
     #[test]
     fn prefers_cuda_over_vulkan_when_both_are_enumerated() {
         let devices = vec![
@@ -424,7 +413,7 @@ mod tests {
         assert_eq!(choose_device(&devices, true).protocol_label(), DEVICE_CPU);
     }
 
-    /// 没有 NVIDIA 驱动时 CUDA 后端报 0 个设备，只剩 Vulkan 的：标 `vulkan`。
+    /// Without an NVIDIA driver, the CUDA backend reports 0 devices, leaving only Vulkan's: labeled `vulkan`.
     #[test]
     fn labels_a_vulkan_only_gpu_as_vulkan() {
         let devices = vec![gpu("Vulkan", "Intel(R) Arc(TM) Graphics"), cpu()];
@@ -433,7 +422,7 @@ mod tests {
         assert_eq!(chosen.protocol_label(), DEVICE_VULKAN);
     }
 
-    /// 协议标签只看是不是 GPU 与后端注册名：别的 GPU 后端取小写注册名；不是 GPU 的设备（含 BLAS 这类加速器）都是 `cpu`。
+    /// The protocol label depends only on whether the device is a GPU and on the backend registration name: other GPU backends use the lowercase registration name; devices that are not GPUs (including accelerators such as BLAS) are all `cpu`.
     #[test]
     fn protocol_label_maps_backend_names() {
         assert_eq!(gpu("Metal", "AMD Radeon Pro 5500M").protocol_label(), DEVICE_METAL);
@@ -484,7 +473,7 @@ mod tests {
 
     #[test]
     fn registry_enumeration_reports_a_cpu_device() {
-        // 真实 registry：静态链接的 CPU 后端总在；GPU 视机器而定。
+        // Real registry: the statically linked CPU backend is always present; GPUs depend on the machine.
         let devices = devices();
         assert!(devices.iter().any(|d| !d.is_gpu), "{devices:?}");
         let probe = runtime_probe();
@@ -500,7 +489,7 @@ mod tests {
         if gpu_backends_built().is_empty() {
             assert_eq!(status.devices, [DEVICE_CPU]);
         } else if status.devices.len() > 1 {
-            // 首选设备只能是编进来的 GPU 后端之一。
+            // The preferred device can only be one of the GPU backends built in.
             assert_eq!(status.devices.len(), 2, "{:?}", status.devices);
             assert!(gpu_backends_built().contains(&status.devices[0].as_str()), "{:?}", status.devices);
         }

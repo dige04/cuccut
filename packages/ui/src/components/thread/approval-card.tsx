@@ -11,7 +11,7 @@ import { CopyButton } from './copy-button.tsx';
 
 type Approval = Extract<TimelineItem, { kind: 'approval' }>;
 
-/** 待决定的卡（原型 ui.css `.aperm` :2805-2814）：橙底、细边，标题、等宽的命令、理由、三个答案。 */
+/** The pending-decision card (prototype ui.css `.aperm` :2805-2814): orange background, thin border; title, monospace command, reason, and three answers. */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -39,22 +39,20 @@ const subject = style({
 });
 const why = style({ margin: 0, font: 'ui-sm', color: 'gray-700', overflowWrap: 'anywhere' });
 const answers = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 });
-/** 决定过的审批收成一行 quiet Disclosure（原型 `BCDisclosure`，agent-thread.jsx:167-169）。 */
+/** An approval that has been decided collapses into a single-line quiet Disclosure (prototype `BCDisclosure`, agent-thread.jsx:167-169). */
 const decided = style({ alignSelf: 'stretch' });
 const decidedTitle = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-sm', color: 'gray-600' });
 const decidedBody = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const sectionHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', font: 'ui-xs', color: 'gray-600' });
 
 /**
- * 这个窗口里点过的答案：时间线上的 `decision` 到达之前（以及早先没有这个字段的记录）先用它，
- * 决定之后那一行写「之后 <规则> 不再问」（见 `approvalDecidedLabel`）。
+ * The answer clicked in this window: used until the `decision` arrives on the timeline (and for earlier records that lack this field). After the decision, that line reads “之后 <规则> 不再问” (no more asking about <rule> from now on) (see `approvalDecidedLabel`).
  */
 const chosenHere = new Map<string, ApprovalDecision>();
 
 /**
- * 审批卡（产品设计 §7.2，原型 agent-thread.jsx `PermissionMsg` :151-191）：访问模式要求先问的动作，Agent 停下来问。
- * 三个答案：允许 / 总是允许 <规则>（没有规则时不出）/ 拒绝。决定之后卡片留在线程里，收成一行可展开的记录，
- * 展开是可复制的输入摘要与理由。原型待决定态里的 ToolSetup（当场改模型与范围）没有后端数据，不做。
+ * Approval card (product design §7.2, prototype agent-thread.jsx `PermissionMsg` :151-191): when the access mode requires asking first for an action, the agent stops and asks.
+ * Three answers: 允许 (Allow) / 总是允许 <规则> (Always allow <rule>; not shown when there is no rule) / 拒绝 (Deny). After a decision, the card stays in the thread and collapses into a single expandable record line; expanding it shows the copyable input summary and the reason. The prototype's ToolSetup in the pending state (changing model and scope on the spot) has no backend data, so it is not implemented.
  */
 export const ApprovalCard = memo(function ApprovalCard({ item, conversationId }: { item: Approval; conversationId: string }) {
   const runtime = useRuntime();

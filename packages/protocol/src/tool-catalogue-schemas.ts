@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 import { TOOL_CANDIDATES_MAX_LIMIT } from './tool-catalogue.ts';
 
-/** `tools.*`（工具目录，架构设计 §7.9）的入站校验，由 `schemas.ts` 并进方法表。 */
+/** Inbound validation for `tools.*` (tool catalogue, architecture design §7.9), merged into the method table by `schemas.ts`. */
 
 const id = z.string().min(1).max(200);
 

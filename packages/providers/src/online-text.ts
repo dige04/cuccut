@@ -8,16 +8,16 @@ export interface OnlineTextProviderOptions {
   providerId: string;
   label: () => string;
   adapter: TextAdapter;
-  /** 执行时的配置（含从凭据存储取出的密钥）；没有启用或没有密钥时 null，凭据存储不可用时抛 `ProviderFailure`。 */
+  /** Configuration at execution time (including the key retrieved from the credential store); null if not enabled or if there is no key; throws `ProviderFailure` if the credential store is unavailable. */
   config: () => Promise<AdapterConfig | null>;
   http?: AdapterHttp;
-  /** 调用结束时的报告（用量账本与账号状态，§6.10）。 */
+  /** Report at the end of a call (usage ledger and account status, §6.10). */
   report?: CallReporter;
 }
 
 /**
- * 在线 Provider 的文本执行者（架构设计 §6.4）：执行时再读一次配置，按冻结的模型与参数发一次请求（HTTP 层自己有界重试），
- * 把响应读成 `TextReply`。并发上限、计数与结果检查在 `TextRunner` 里，任务与进程内调用共用。
+ * Text executor for online providers (architecture design §6.4): re-reads the configuration at execution time, sends one request with the frozen model and parameters (the HTTP layer does its own bounded retries),
+ * and reads the response into a `TextReply`. Concurrency limits, counting and result checks are in `TextRunner`, shared by tasks and in-process calls.
  */
 export class OnlineTextProvider implements TextProvider {
   readonly id: string;
@@ -31,7 +31,7 @@ export class OnlineTextProvider implements TextProvider {
   async generateText(run: TextRun, signal: AbortSignal, hooks: TextCallHooks): Promise<TextReply> {
     const label = this.#options.label();
     let secret: string | null = null;
-    // 请求发出时记下（用量账本只记真的发出了请求的调用）。
+    // Recorded when the request is sent (the usage ledger only records calls that actually sent a request).
     let sent: { accountId: string | null; startedAt: number } | null = null;
     const report = (outcome: { reply?: TextReply; error?: unknown }) => {
       if (!sent || !this.#options.report) return;
@@ -76,7 +76,7 @@ export class OnlineTextProvider implements TextProvider {
         throw error;
       }
       if (signal.aborted) throw new ProviderAborted();
-      // 意料之外的错误：文本可能来自供应商的响应，去掉密钥再报告。
+      // Unexpected error: the text may come from the provider's response, so strip the key before reporting.
       const message = error instanceof Error ? error.message : String(error);
       const failure = new ProviderFailure('protocol', redact(PC.textFailed({ label, message }).text, secret ? [secret] : []));
       report({ error: failure });

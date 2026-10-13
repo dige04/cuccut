@@ -1,12 +1,11 @@
-//! Effect manifest（设计 §6.3）：效果是**数据配方**，不是代码分支。
+//! Effect manifest (design §6.3): an effect is a **data recipe**, not a code branch.
 //!
-//! manifest 必须声明的东西（规范 §14.5）：uniform 类型/默认/范围、输入数、
-//! 纹理坐标原点、颜色契约（`colorSpace` + `precision`）、premultiplied alpha、
-//! 采样与边缘规则、`resizeMode`、`determinism`、`capabilities`、`fallback`、
-//! `version`，以及**具名内核** `kernel`——CPU 参考实现按这个名字注册，
-//! 未知内核名在解析期就被拒（与 preset 注册表同一纪律）。
+//! What a manifest must declare (spec §14.5): uniform type / default / range, input count, texture coordinate origin,
+//! color contract (`colorSpace` + `precision`), premultiplied alpha, sampling and edge rules, `resizeMode`, `determinism`,
+//! `capabilities`, `fallback`, `version`, and the **named kernel** `kernel`. The CPU reference implementation is registered
+//! under this name, and an unknown kernel name is rejected at parse time (the same discipline as the preset registry).
 //!
-//! 键集是封闭的：多一个键就是 `manifest-invalid`。手滑写错的字段不会被静默忽略。
+//! The key set is closed: one extra key is `manifest-invalid`. A mistyped field is never silently ignored.
 
 use std::collections::BTreeMap;
 
@@ -19,13 +18,13 @@ use crate::MotionError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EffectDomain {
-    /// 单输入像素滤镜。
+    /// Single-input pixel filter.
     Filter,
-    /// 遮罩：按几何 / 图像的覆盖率乘 alpha。
+    /// Mask: multiplies alpha by a coverage computed from geometry or an image.
     Mask,
-    /// 合成（blend 表）。
+    /// Composite (blend table).
     Composite,
-    /// 双画面转场：两张输入 surface + `progress ∈ [0, 1]` 闭区间（规范 §9）。
+    /// Two-picture transition: two input surfaces + `progress ∈ [0, 1]` closed interval (spec §9).
     Transition,
 }
 
@@ -53,11 +52,11 @@ impl EffectDomain {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamKind {
     Number,
-    /// 相对长度：以 `basis` 为基准，求值后再按 `quantize` 归整。
+    /// Relative length: measured against `basis`, then rounded by `quantize` after evaluation.
     Length,
     Bool,
     Enum,
-    /// 非预乘 RGBA 0..1。
+    /// Non-premultiplied RGBA 0..1.
     Color,
     Vec2,
     Text,
@@ -94,15 +93,15 @@ impl ParamKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamSpec {
     pub kind: ParamKind,
-    /// 缺省值。`None` = 必填（调用方不给就是 `preset-param-missing`）。
+    /// Default value. `None` = required (a caller that does not supply it gets `preset-param-missing`).
     pub default: Option<UniformValue>,
     pub min: Option<f64>,
     pub max: Option<f64>,
-    /// `enum` 的取值闭集。
+    /// Closed set of values for `enum`.
     pub options: Vec<String>,
-    /// `length` 的基准名（`canvasShortEdge` / `inputShortEdge` / `px`）。
+    /// Base names for `length` (`canvasShortEdge` / `inputShortEdge` / `px`).
     pub basis: Option<String>,
-    /// 求值后的归整规则（`round-to-int` / `none`）。
+    /// Rounding rule applied after evaluation (`round-to-int` / `none`).
     pub quantize: Option<String>,
 }
 
@@ -114,11 +113,11 @@ pub struct EffectManifest {
     pub inputs: u8,
     pub params: BTreeMap<String, ParamSpec>,
     pub color: ColorContract,
-    /// 具名 CPU 内核。`ccut-render::effects` 按这个名字注册实现。
+    /// Named CPU kernel. `ccut-render::effects` registers implementations under this name.
     pub kernel: String,
-    /// 纹理坐标原点。当前闭集只有 `top-left`。
+    /// Texture coordinate origin. The current closed set has only `top-left`.
     pub origin: String,
-    /// alpha 约定。当前闭集只有 `premultiplied`。
+    /// Alpha convention. The current closed set has only `premultiplied`.
     pub alpha: String,
     pub sampling: String,
     pub edge: String,
@@ -127,7 +126,7 @@ pub struct EffectManifest {
     pub capabilities: Vec<String>,
     pub fallback: Option<EffectRef>,
     pub doc: Option<String>,
-    /// manifest 源文本的指纹（进 FramePlan 指纹的 `pkg_hash` 用）。
+    /// Fingerprint of the manifest source text (used for `pkg_hash` in the FramePlan fingerprint).
     pub source_hash: u64,
 }
 
@@ -144,8 +143,8 @@ impl EffectManifest {
         format!("{}@{}", self.id, self.version)
     }
 
-    /// 「没有参数 X」报错后面接的可用参数名单：作者没有别处能离线查到效果的参数表，
-    /// 所以名单就放在报错里。没有参数的效果写「它不带参数」。
+    /// The list of available parameter names that follows the “no parameter X” error. Authors have no other offline way to look
+    /// up an effect's parameter table, so the list goes in the error itself. An effect without parameters says “it takes no parameters”.
     pub fn params_hint(&self) -> String {
         if self.params.is_empty() {
             return "它不带参数".to_owned();
@@ -154,8 +153,8 @@ impl EffectManifest {
         format!("可用参数：{}", names.join(" / "))
     }
 
-    /// 校验并补全 uniform：未知参数 `preset-param-unknown`、缺必填
-    /// `preset-param-missing`、类型不符 / 越界 `preset-param-invalid`。
+    /// Validates and fills in uniforms: unknown parameter → `preset-param-unknown`; missing required parameter →
+    /// `preset-param-missing`; wrong type / out of range → `preset-param-invalid`.
     pub fn resolve_uniforms(
         &self,
         given: &super::UniformMap,
@@ -216,7 +215,7 @@ impl EffectManifest {
     }
 }
 
-// ── 解析 ────────────────────────────────────────────────────────────
+// ── Parsing ────────────────────────────────────────────────────────────
 
 const MANIFEST_KEYS: &[&str] = &[
     "id",
@@ -242,7 +241,7 @@ const PARAM_KEYS: &[&str] = &[
     "type", "default", "min", "max", "options", "basis", "quantize", "doc",
 ];
 
-/// `origin` / `alpha` / `sampling` / `edge` / `resizeMode` 的封闭取值。
+/// Closed values for `origin` / `alpha` / `sampling` / `edge` / `resizeMode`.
 const ORIGINS: &[&str] = &["top-left"];
 const ALPHAS: &[&str] = &["premultiplied", "straight"];
 const SAMPLINGS: &[&str] = &["nearest", "linear"];
@@ -322,7 +321,7 @@ fn uniform_from_json(
     })
 }
 
-/// 解析一份 manifest 源文本。`source_hash` 由调用方按原文算。
+/// Parses one manifest source text. The caller computes `source_hash` over the original text.
 pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, MotionError> {
     let value: Value =
         serde_json::from_str(source).map_err(|error| invalid(format!("JSON 解析失败 {error}")))?;
@@ -477,7 +476,7 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
         )));
     }
 
-    // `composite` 域的 blend 表必须与 `BlendMode` 的封闭枚举逐项对齐。
+    // The blend table in the `composite` domain must line up item-for-item with the closed enum `BlendMode`.
     if let Some(list) = object.get("blendModes") {
         let list = list
             .as_array()

@@ -3,27 +3,23 @@ import { isVisualItem, type AssetRecord, type Crop, type Id, type Place, type Se
 import { round1, wrapRotation } from './geometry-panel.ts';
 
 /**
- * 舞台上摆实例的几何（照原型 model-pose.js 与 model-select.js）：能力表与把手集合、移动 / 改边 / 缩放 / 旋转、
- * 吸附与参考线、多选的整体平移与缩放、方向键微调。
+ * Geometry for placing instances on the stage (following the prototype model-pose.js and model-select.js): the capability table and handle sets, move / edge resize / scale / rotate, snapping and guide lines, multi-select group translate and scale, and arrow-key nudging.
  *
- * 坐标一律是序列画布像素、左上原点。盒子用中心表示（`Pose`）。落盘的是元素模型的 `place`（画幅百分比：框中心、
- * 框宽；高由种类推出，`scaleY` 再乘一次高），与盒互换只在 `poseOf` / `placeFields` 两处，两处都调 Rust 帧计划的那一份
- * （`render-graph` 的 `item_box` / `place_from_box`，经 `editor-wasm`）。这里只剩手势本身：把手、吸附、限位、多选与键盘。
- * 原型的阈值量的是画面像素（6px 吸附、2px 死区……），调用方按显示比例换成画布像素再传进来。
+ * All coordinates are sequence canvas pixels, with the origin at top-left. Boxes are represented by their center (`Pose`). What is saved to disk is the element model's `place` (frame percentages: box center and box width; height is derived from the kind, and `scaleY` multiplies the height once more). Converting between box and `place` happens only in `poseOf` / `placeFields`, and both call the single copy of the Rust frame plan (`item_box` / `place_from_box` in `render-graph`, via `editor-wasm`). What remains here is only the gesture itself: handles, snapping, limits, multi-select, and keyboard. The prototype's thresholds are measured in frame pixels (6px snapping, 2px dead zone, ...); the caller converts them to canvas pixels using the display scale before passing them in.
  */
 
 export interface Point {
   x: number;
   y: number;
 }
-/** 左上角口径的轴对齐盒。 */
+/** Axis-aligned box in top-left coordinates. */
 export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
-/** 实例的框：中心、未旋转的宽高、绕中心看的角度（度，顺时针）。 */
+/** An instance's box: center, unrotated width and height, and angle around the center (degrees, clockwise). */
 export interface Pose {
   cx: number;
   cy: number;
@@ -35,53 +31,53 @@ export interface CanvasSize {
   width: number;
   height: number;
 }
-/** 视频的素材表：媒体实例的框高按源的显示宽高比推，要查它。 */
+/** Asset table for videos: a media instance's box height is derived from the source's display aspect ratio, so it must be looked up. */
 export type Assets = Readonly<Record<Id, AssetRecord>>;
 
-/** 吸附阈值（画面像素）。 */
+/** Snapping threshold (frame pixels). */
 export const SNAP_PX = 6;
-/** 中心吸附半径：画布宽 / 高的百分比。 */
+/** Center snapping radius: percentage of canvas width / height. */
 export const CENTER_SNAP = 1.5;
-/** 旋转栅格（度）。 */
+/** Rotation grid (degrees). */
 export const ROT_STEP = 15;
-/** 起手死区（画面像素）：这以内仍算点击。 */
+/** Start dead zone (frame pixels): movement within this still counts as a click. */
 export const DEAD_ZONE = 2;
-/** 参考线的重合判据（画面像素）。 */
+/** Criterion for a guide line coinciding (frame pixels). */
 export const GUIDE_TOL = 1;
-/** 一次缩放手势的倍率范围。 */
+/** Scale factor range for one scale gesture. */
 export const SCALE_MIN = 0.1;
 export const SCALE_MAX = 5;
-/** 框最窄：画布宽的 2%，且不少于 10 像素；最大到画布的 400%（填满画布要能长出画面外）。 */
+/** Minimum box width: 2% of canvas width and at least 10 pixels; maximum 400% of the canvas (filling the canvas must be possible to extend beyond the frame). */
 export const MIN_W = 2;
 export const MIN_PX = 10;
 export const MAX_SIZE = 400;
-/** 把手退化的判据（画面像素）：任一边小于 24 换成少几个的那一套。 */
+/** Criterion for degrading the handles (frame pixels): if any side is less than 24, switch to the set with fewer handles. */
 export const SMALL_SET = 24;
-/** 小一档把手样式的判据（画面像素，与上面不同口径）。 */
+/** Criterion for the smaller handle style (frame pixels, measured differently from the one above). */
 export const SMALL_STYLE_W = 50;
 export const SMALL_STYLE_H = 40;
-/** 视频允许大半出画，只留 min(盒边, 10%) 的可见带。 */
+/** Videos may be mostly outside the frame, keeping only a visible strip of min(box side, 10%). */
 export const KEEP_VISIBLE = 10;
-/** 非视频的中心限位（画布百分比）。 */
+/** Center limits for non-video items (canvas percentages). */
 export const LIMITS = { x: [3, 97], y: [4, 96] } as const;
-/** 框选的起拖阈值（画面像素）。 */
+/** Drag-start threshold for marquee selection (frame pixels). */
 export const MARQUEE_MIN = 4;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
-// ---- 能力表与把手 ----
+// ---- Capability table and handles ----
 
 export type Handle = 'n' | 'e' | 's' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
 /**
- * 改大小的三档（原型 CAPS 的 `resize`）：
- * - `free` 八把手，宽高比自由（四角默认仍锁比例，⇧ 解锁）：视频、合成，以及框高按画幅定的生成类元素；
- * - `text` 左右改框宽（字号不变、重新折行）＋ 四角连字号一起等比放大：文字；
- * - `corner` 只有四角、恒锁比例：图片、图形、贴纸、白板。
+ * Three resize tiers (`resize` in the prototype CAPS):
+ * - `free`: eight handles, free aspect ratio (corners still lock the ratio by default; ⇧ unlocks): videos, compositions, and generated elements whose box height is set by the frame;
+ * - `text`: left and right change the box width (font size unchanged, text re-wraps), plus the corners scale uniformly together with the font size: text;
+ * - `corner`: only four corners, always ratio-locked: images, shapes, stickers, whiteboards.
  */
 export type ResizeKind = 'free' | 'text' | 'corner';
 
-/** 舞台上能摆的实例：有 `place` 的画面实例。 */
+/** Instances that can be placed on the stage: frame instances that have a `place`. */
 export type PlacedItem = VisualItem;
 
 export function isPlaced(item: SequenceItem): item is PlacedItem {
@@ -100,7 +96,7 @@ const HANDLE_SETS: Record<ResizeKind, { big: Handle[]; small: Handle[] }> = {
   corner: { big: ['nw', 'ne', 'sw', 'se'], small: ['nw'] },
 };
 
-/** 这一档此刻出哪几个把手；`w` / `h` 是未旋转的盒尺寸（画面像素），任一边 < 24 就退化。 */
+/** Which handles this tier shows right now; `w` / `h` are the unrotated box size (frame pixels); if either side is < 24, it degrades. */
 export function handlesFor(kind: ResizeKind, w: number, h: number): Handle[] {
   const set = HANDLE_SETS[kind];
   return w < SMALL_SET || h < SMALL_SET ? set.small : set.big;
@@ -109,7 +105,7 @@ export function handlesFor(kind: ResizeKind, w: number, h: number): Handle[] {
 export const smallHandles = (w: number, h: number) => w < SMALL_STYLE_W || h < SMALL_STYLE_H;
 export const isCorner = (handle: Handle) => handle.length === 2;
 
-/** 四角是等比缩放（文字连字号、图片与图形）还是改宽高（自由一档）。 */
+/** Whether the corners scale uniformly (text with its font size, images and shapes) or change width and height (the free tier). */
 export function cornerScales(kind: ResizeKind, handle: Handle): boolean {
   return isCorner(handle) && kind !== 'free';
 }
@@ -117,7 +113,7 @@ export function cornerScales(kind: ResizeKind, handle: Handle): boolean {
 const CURSOR_ORDER: Handle[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const CURSOR_STEP = [0, 1, 2, 2, 3, 4, 4, 5, 6, 6, 7, 8, 0];
 
-/** 光标随旋转角转：30° 一格查表（原型 `resizeCursor`，45° 附近落在同一档）。 */
+/** The cursor rotates with the rotation angle: looked up in 30° steps (`resizeCursor` in the prototype; angles near 45° fall into the same step). */
 export function resizeCursor(handle: Handle, rotation: number): string {
   const a = wrapRotation(rotation);
   const n = a < 0 ? a + 360 : a;
@@ -125,9 +121,9 @@ export function resizeCursor(handle: Handle, rotation: number): string {
   return `${CURSOR_ORDER[(CURSOR_ORDER.indexOf(handle) + step) % 8]}-resize`;
 }
 
-// ---- place ↔ 盒 ----
+// ---- place ↔ box ----
 
-/** 推框要看的那几样（`editor-wasm` 只读这些）：种类、`place`、`mode`、图形与贴纸的属性、裁剪。 */
+/** The fields needed for pushing boxes (`editor-wasm` only reads these): kind, `place`, `mode`, shape and sticker properties, and crop. */
 function stageItem(item: PlacedItem): StageItem {
   const out: StageItem = { type: item.type, place: item.place };
   if ('mode' in item && item.mode !== undefined) out.mode = item.mode;
@@ -137,7 +133,7 @@ function stageItem(item: PlacedItem): StageItem {
   return out;
 }
 
-/** 实例引用的素材（合成是预渲染）里推框要看的部分：种类与引用的那个版本的视频信息；素材表里没有时不传。 */
+/** The part of the referenced asset that box pushing needs (compositions are pre-rendered): the kind and the video info of the referenced version; omitted when the asset table does not have it. */
 function stageAsset(item: PlacedItem, assets: Assets | undefined): StageAsset | undefined {
   const ref = item.type === 'composition' ? item.prerender : 'assetRef' in item ? item.assetRef : undefined;
   const record = ref ? assets?.[ref.id] : undefined;
@@ -149,25 +145,23 @@ function stageAsset(item: PlacedItem, assets: Assets | undefined): StageAsset | 
 const sizeOf = (canvas: CanvasSize): CanvasSize => ({ width: canvas.width, height: canvas.height });
 
 /**
- * `place` → 盒：帧计划画层用的同一个框（`render-graph` 的 `item_box`，经 `editor-wasm` 同步调）。媒体的框高按 `assets` 里
- * 源的显示宽高比（含裁剪），查不到时按画布的；贴纸与占位框的素材是图片或视频时按媒体摆。
+ * `place` → box: the same box the frame plan uses for layers (`item_box` in `render-graph`, called synchronously via `editor-wasm`). A media box's height follows the source's display aspect ratio in `assets` (including crop); when not found, the canvas ratio is used. Stickers and placeholder boxes whose asset is an image or video are placed as media.
  */
 export function poseOf(item: PlacedItem, canvas: CanvasSize, assets?: Assets): Pose {
   const { cx, cy, w, h, rotation } = stageBox(stageItem(item), sizeOf(canvas), stageAsset(item, assets));
   return { cx, cy, w, h, rotation };
 }
 
-/** 能不能改位置与大小：铺满画布的实例的框不看 `place`，只能转。 */
+/** Whether position and size can be changed: a full-canvas instance's box ignores `place`, so it can only be rotated. */
 export function posable(item: PlacedItem, canvas: CanvasSize, assets?: Assets): boolean {
   return !stageBox(stageItem(item), sizeOf(canvas), stageAsset(item, assets)).fullscreen;
 }
 
-/** `setTransform` 写进 `place` 的那几个字段。 */
+/** The fields that `setTransform` writes into `place`. */
 export type PlaceFields = Partial<Pick<Place, 'x' | 'y' | 'w' | 'scaleY' | 'rot'>>;
 
 /**
- * 盒 → `place`（`poseOf` 的反函数，同在 `render-graph`）：只给出取整后和此刻不同的字段（什么都没变是空对象）。`scale` 不动，
- * 框宽折成 `w`；框高写进 `scaleY`（高 ÷ 按落盘的宽推出的自然高）。百分比与角度取一位小数、`scaleY` 取三位；铺满画布的只写角度。
+ * Box → `place` (the inverse of `poseOf`, also in `render-graph`): only gives the fields that differ from the current values after rounding (no change gives an empty object). `scale` is left alone; the box width is folded into `w`; the box height is written to `scaleY` (height ÷ the natural height derived from the saved width). Percentages and angles keep one decimal place, `scaleY` keeps three; full-canvas items only write the angle.
  */
 export function placeFields(item: PlacedItem, pose: Pose, canvas: CanvasSize, assets?: Assets): PlaceFields {
   const { cx, cy, w, h, rotation } = pose;
@@ -175,27 +169,27 @@ export function placeFields(item: PlacedItem, pose: Pose, canvas: CanvasSize, as
   return stagePlace(stageItem(item), { cx, cy, w, h, rotation }, sizeOf(canvas), stageAsset(item, assets));
 }
 
-/** 旋转的枢轴：框的中心（元素模型绕中心转）。 */
+/** Rotation pivot: the box center (the element model rotates around the center). */
 export function pivotOf(item: PlacedItem, canvas: CanvasSize, assets?: Assets): Point {
   const pose = poseOf(item, canvas, assets);
   return { x: pose.cx, y: pose.cy };
 }
 
-/** 盒的局部点（相对中心、未旋转）→ 画布点。 */
+/** Local point of the box (relative to the center, unrotated) → canvas point. */
 function toCanvas(pose: Pose, lx: number, ly: number): Point {
   const cos = Math.cos(rad(pose.rotation));
   const sin = Math.sin(rad(pose.rotation));
   return { x: pose.cx + lx * cos - ly * sin, y: pose.cy + lx * sin + ly * cos };
 }
 
-/** 四个角：左上、右上、右下、左下（旋转之后）。 */
+/** The four corners: top-left, top-right, bottom-right, bottom-left (after rotation). */
 export function cornersOf(pose: Pose): [Point, Point, Point, Point] {
   const hw = pose.w / 2;
   const hh = pose.h / 2;
   return [toCanvas(pose, -hw, -hh), toCanvas(pose, hw, -hh), toCanvas(pose, hw, hh), toCanvas(pose, -hw, hh)];
 }
 
-/** 点落在旋转过的盒里没有（边上算）。 */
+/** Whether the point is inside the rotated box (edges count). */
 export function poseContains(pose: Pose, p: Point): boolean {
   const cos = Math.cos(rad(-pose.rotation));
   const sin = Math.sin(rad(-pose.rotation));
@@ -206,7 +200,7 @@ export function poseContains(pose: Pose, p: Point): boolean {
   return Math.abs(lx) <= pose.w / 2 + 1e-9 && Math.abs(ly) <= pose.h / 2 + 1e-9;
 }
 
-/** 旋转之后的外包盒。 */
+/** Bounding box after rotation. */
 export function aabbOf(pose: Pose): Rect {
   const c = Math.abs(Math.cos(rad(pose.rotation)));
   const s = Math.abs(Math.sin(rad(pose.rotation)));
@@ -215,21 +209,21 @@ export function aabbOf(pose: Pose): Rect {
   return { x: pose.cx - w / 2, y: pose.cy - h / 2, w, h };
 }
 
-/** 未旋转的盒（吸附按它算，与原型 `frameBox` 同口径）。 */
+/** Unrotated box (snapping uses this, on the same basis as `frameBox` in the prototype). */
 export function boxRect(pose: Pose): Rect {
   return { x: pose.cx - pose.w / 2, y: pose.cy - pose.h / 2, w: pose.w, h: pose.h };
 }
 
-// ---- 平移取景 ----
+// ---- Pan framing ----
 
-/** 铺满画面、`cover`、带裁剪的视频（剪成短视频的子视频按镜头分段取景就是这样）：画布上拖它是平移裁剪窗口。 */
+/** Full-frame, `cover`, or cropped videos (sub-videos cut into short videos that are framed shot by shot work like this): dragging it on the canvas pans the crop window. */
 export type PannableVideo = VideoItem & { crop: Crop };
 
 export function isPannable(item: SequenceItem): item is PannableVideo {
   return item.type === 'video' && item.mode === 'fullscreen' && (item.fit ?? 'cover') === 'cover' && !!item.crop;
 }
 
-/** 源的显示尺寸（已按旋转交换，乘上像素宽高比；与 `render-graph` 的 `display_size` 同口径）；素材表里没有时 null。 */
+/** Display size of the source (width and height swapped for rotation, multiplied by the pixel aspect ratio; same basis as `display_size` in `render-graph`); null when not in the asset table. */
 export function sourceSize(item: VideoItem, assets: Assets | undefined): { width: number; height: number } | null {
   const video = assets?.[item.assetRef.id]?.revisions[item.assetRef.revision]?.video;
   if (!video) return null;
@@ -242,9 +236,7 @@ export function sourceSize(item: VideoItem, assets: Assets | undefined): { width
 const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
 
 /**
- * 平移裁剪窗口（画布像素的指针位移 → 新的裁剪）：窗口大小不变（左右之和、上下之和不变），只挪位置，夹在源画面里。
- * 往右拖是画面跟着往右走，窗口往左挪（`left` 变小）。一个画布像素合多少源画面按 `cover` 的缩放算（窗口按长的那一边铺满画布）；
- * 不知道源尺寸时按窗口正好铺满画布算。上下之和是 0（窗口与源一样高）时竖直方向不动。取四位小数；没动时原样返回同一个对象。
+ * Pan crop window (pointer displacement in canvas pixels → new crop): the window size stays the same (the sum of left and right, and the sum of top and bottom, are unchanged); only its position moves, clamped within the source frame. Dragging right makes the picture move right, so the window moves left (`left` gets smaller). How many source-frame pixels one canvas pixel covers is computed from the `cover` scaling (the window fills the canvas along its longer side). When the source size is unknown, it is computed as if the window exactly fills the canvas. When the sum of top and bottom is 0 (the window is as tall as the source), the vertical direction does not move. Four decimal places; if nothing moved, the same object is returned as is.
  */
 export function panCrop(crop: Crop, dx: number, dy: number, canvas: CanvasSize, source: { width: number; height: number } | null): Crop {
   const sumX = crop.left + crop.right;
@@ -252,7 +244,7 @@ export function panCrop(crop: Crop, dx: number, dy: number, canvas: CanvasSize, 
   const cw = 1 - sumX;
   const ch = 1 - sumY;
   if (!(cw > 0) || !(ch > 0) || !(canvas.width > 0) || !(canvas.height > 0)) return crop;
-  // 每个画布像素是源画面宽 / 高的几分之几。
+  // Each canvas pixel is a fraction of the source frame's width / height.
   let fx = cw / canvas.width;
   let fy = ch / canvas.height;
   if (source) {
@@ -266,17 +258,16 @@ export function panCrop(crop: Crop, dx: number, dy: number, canvas: CanvasSize, 
   return { left, top, right: round4(Math.max(0, sumX - left)), bottom: round4(Math.max(0, sumY - top)) };
 }
 
-// ---- 移动 ----
+// ---- Move ----
 
-/** 中心的活动范围（画布像素）。 */
+/** Allowed range of the center (canvas pixels). */
 export interface Limits {
   x: [number, number];
   y: [number, number];
 }
 
 /**
- * 移动限位：视频按盒子放宽（只留 min(盒边, 10%) 的可见带，原型 `mediaLimits`），其余中心夹在 3–97% / 4–96%。
- * 起手时已经在限位外的，限位放宽到包住起手位置，免得一碰就跳。
+ * Move limits: videos are relaxed according to the box (only a visible strip of min(box side, 10%) is kept; `mediaLimits` in the prototype), and the centers of other items are clamped to 3–97% / 4–96%. If an item is already outside the limits at the start, the limits are widened to contain the start position, so it does not jump when touched.
  */
 export function moveLimits(item: PlacedItem, pose: Pose, canvas: CanvasSize): Limits {
   const media = (size: number, total: number): [number, number] => {
@@ -294,13 +285,13 @@ export function moveLimits(item: PlacedItem, pose: Pose, canvas: CanvasSize): Li
   };
 }
 
-/** 参考线：`axis: 'x'` 是一条竖线（画在 x = at），`'y'` 是横线。 */
+/** Guide line: `axis: 'x'` is a vertical line (drawn at x = at), `'y'` is a horizontal line. */
 export interface Guide {
   axis: 'x' | 'y';
   at: number;
 }
 
-/** 吸附的上下文：画布、其它对象的盒（未旋转）、阈值（画布像素）。`null` 表示不吸（按住 ⌥）。 */
+/** Snapping context: the canvas, the boxes of other objects (unrotated), and the threshold (canvas pixels). `null` means no snapping (⌥ held). */
 export interface SnapContext {
   canvas: CanvasSize;
   others: Rect[];
@@ -310,7 +301,7 @@ export interface SnapContext {
 const edgesX = (b: Rect) => [b.x, b.x + b.w / 2, b.x + b.w];
 const edgesY = (b: Rect) => [b.y, b.y + b.h / 2, b.y + b.h];
 
-/** 一根轴上的候选线：画布的起边、中线、终边在前（等距时画布赢），然后是其它对象的边与中线。 */
+/** Candidate lines on one axis: the canvas's start edge, midline and end edge come first (the canvas wins when distributing evenly), followed by the edges and midlines of other objects. */
 function axisLines(extent: number, others: Rect[], pick: (b: Rect) => number[]): number[] {
   return [0, extent / 2, extent, ...others.flatMap(pick)];
 }
@@ -333,7 +324,7 @@ function snapAxis(moving: number[], lines: number[], threshold: number): { delta
   return { delta: best, lines: hit };
 }
 
-/** 多线吸附：盒的三条边逐一对全部候选线试，取最近的位移；返回还要再加的位移与对上的线。 */
+/** Multi-line snapping: each of the box's three edges is tried against all candidate lines, and the nearest displacement is taken; returns the extra displacement still to add and the lines that matched. */
 export function snapMove(box: Rect, snap: SnapContext): { dx: number; dy: number; guides: Guide[] } {
   const { canvas, others, threshold } = snap;
   const out = { dx: 0, dy: 0, guides: [] as Guide[] };
@@ -351,7 +342,7 @@ export function snapMove(box: Rect, snap: SnapContext): { dx: number; dy: number
   return out;
 }
 
-/** 这个盒子此刻贴着哪几条线（渲染期的参考线，不是求解器）：按住 ⌥ 不吸，但压在线上照样画。 */
+/** Which lines this box is touching right now (guide lines for rendering, not a solver): with ⌥ held it does not snap, but lines it sits on are still drawn. */
 export function guidesFor(box: Rect, canvas: CanvasSize, others: Rect[], tolerance: number): Guide[] {
   if (!(canvas.width > 0) || !(canvas.height > 0)) return [];
   const out: Guide[] = [];
@@ -370,8 +361,8 @@ export function guidesFor(box: Rect, canvas: CanvasSize, others: Rect[], toleran
 }
 
 /**
- * 移动：先把中心吸到画布中线（±1.5%）并夹进限位，再叠多线吸附（原型 `dragPos` 后接 `snapMove`）。
- * `snap` 为 null（⌥）时两步吸附都不参与，只夹限位。
+ * Move: first snaps the center to the canvas midline (±1.5%) and clamps it into the limits, then applies multi-line snapping (the prototype's `dragPos` followed by `snapMove`).
+ * When `snap` is null (⌥), neither snapping step applies; only the limits are clamped.
  */
 export function dragMove(start: Pose, dx: number, dy: number, limits: Limits, snap: SnapContext | null): Pose {
   let cx = start.cx + dx;
@@ -391,9 +382,9 @@ export function dragMove(start: Pose, dx: number, dy: number, limits: Limits, sn
   return { ...start, cx, cy };
 }
 
-// ---- 改边与四角 ----
+// ---- Edge and corner resize ----
 
-/** 框的尺寸范围（画布像素）：宽不窄于画布 2% 与 10 像素，高不矮于 10 像素，都不超过画布的 400%。 */
+/** Box size range (canvas pixels): width not narrower than 2% of the canvas or 10 pixels, height not shorter than 10 pixels, and none exceeding 400% of the canvas. */
 export function sizeRange(canvas: CanvasSize): { min: { w: number; h: number }; max: { w: number; h: number } } {
   return {
     min: { w: Math.max((canvas.width * MIN_W) / 100, MIN_PX), h: MIN_PX },
@@ -403,22 +394,21 @@ export function sizeRange(canvas: CanvasSize): { min: { w: number; h: number }; 
 
 export interface EdgeResize {
   handle: Handle;
-  /** 指针总位移（画布像素）。 */
+  /** Total pointer displacement (canvas pixels). */
   dx: number;
   dy: number;
   start: Pose;
-  /** ⌥：以中心为锚、位移双倍计入。 */
+  /** ⌥: anchored at the center, the displacement is counted twice. */
   alt: boolean;
-  /** ⇧：自由一档的四角解锁比例。 */
+  /** ⇧: unlocks the aspect ratio for the corners in the free tier. */
   shift: boolean;
-  /** 锁死的宽高比（宽 / 高）；null 是自由。 */
+  /** Locked aspect ratio (width / height); null means free. */
   ratio: number | null;
   range: { min: { w: number; h: number }; max: { w: number; h: number } };
 }
 
 /**
- * 改边（原型 `edgeResize`，闭式解）：位移投影到盒子旋转后的自身轴，左 / 上两侧取反；四角在
- * `⌥ || !⇧ || 锁比例` 时把两轴摊成同一个比例；锚在对边中点 / 对角（⌥ 在中心），新中心 = 旧中心 + R(θ)·((1−sx)·ax, (1−sy)·ay)。
+ * Edge resize (`edgeResize` in the prototype, closed-form solution): the displacement is projected onto the box's own rotated axes, with the left / top sides negated; at the corners, when `⌥ || !⇧ || ratio locked`, both axes are made into one common ratio; the anchor is at the midpoint of the opposite edge or the opposite corner (at the center with ⌥); new center = old center + R(θ)·((1−sx)·ax, (1−sy)·ay).
  */
 export function edgeResize(o: EdgeResize): Pose {
   const { handle, start } = o;
@@ -449,14 +439,14 @@ export function edgeResize(o: EdgeResize): Pose {
   return { ...start, w: w0 * sx, h: h0 * sy, cx: start.cx + ux * cos - uy * sin, cy: start.cy + ux * sin + uy * cos };
 }
 
-/** 四角的对角点（旋转之后）：缩放时它不动。 */
+/** The diagonally opposite corner point (after rotation): it stays fixed during scaling. */
 export function oppositeCorner(pose: Pose, handle: Handle): Point {
   const sx = handle.includes('w') ? 1 : -1;
   const sy = handle.includes('n') ? 1 : -1;
   return toCanvas(pose, (sx * pose.w) / 2, (sy * pose.h) / 2);
 }
 
-/** 一次等比缩放的倍率：按指针到锚点的距离比，夹在 0.1–5，且不把短边缩到 10 像素以下（本来就更小的不再缩）。 */
+/** Scale factor for one uniform scale: the ratio of the pointer's distance to the anchor, clamped to 0.1–5, and the short side is not reduced below 10 pixels (if it is already smaller, it is not reduced further). */
 export function scaleFactor(anchor: Point, p0: Point, p: Point, shortSide: number): number {
   const d0 = Math.hypot(p0.x - anchor.x, p0.y - anchor.y);
   const d = Math.hypot(p.x - anchor.x, p.y - anchor.y);
@@ -464,7 +454,7 @@ export function scaleFactor(anchor: Point, p0: Point, p: Point, shortSide: numbe
   return clamp(d / Math.max(d0, 1), lo, SCALE_MAX);
 }
 
-/** 盒绕一个点等比缩放：中心随之平移到 `anchor + (c0 − anchor) × f`，于是锚点那个位置不动。 */
+/** Box scales uniformly around a point: the center moves to `anchor + (c0 − anchor) × f`, so the anchor point stays put. */
 export function scaleAbout(pose: Pose, anchor: Point, f: number): Pose {
   return {
     ...pose,
@@ -475,16 +465,16 @@ export function scaleAbout(pose: Pose, anchor: Point, f: number): Pose {
   };
 }
 
-/** 四角等比缩放（原型 `cornerScaleAbout`）：锚在对角，⌥ 锚在中心。 */
+/** Uniform corner scaling (`cornerScaleAbout` in the prototype): anchored at the opposite corner; with ⌥ anchored at the center. */
 export function cornerScale(start: Pose, handle: Handle, p0: Point, p: Point, alt: boolean): { pose: Pose; factor: number } {
   const anchor = alt ? { x: start.cx, y: start.cy } : oppositeCorner(start, handle);
   const factor = scaleFactor(anchor, p0, p, Math.min(start.w, start.h));
   return { pose: scaleAbout(start, anchor, factor), factor };
 }
 
-// ---- 旋转 ----
+// ---- Rotate ----
 
-/** 默认吸到 15° 栅格，`free`（⇧ / ⌥）时自由、保留一位小数。 */
+/** Snaps to a 15° grid by default; with `free` (⇧ / ⌥) it is unconstrained, keeping one decimal place. */
 export function snapRotation(degrees: number, free: boolean): number {
   const w = wrapRotation(degrees);
   if (free) return round1(w);
@@ -492,19 +482,19 @@ export function snapRotation(degrees: number, free: boolean): number {
   return s === -180 ? 180 : s === 0 ? 0 : s;
 }
 
-/** 指针相对枢轴的角度（度，12 点方向为 0，顺时针）。 */
+/** Pointer angle relative to the pivot (degrees; 12 o'clock is 0, clockwise). */
 export function pointerAngle(pivot: Point, p: Point): number {
   return (Math.atan2(p.y - pivot.y, p.x - pivot.x) * 180) / Math.PI + 90;
 }
 
-/** 旋转手势：起手角度加上指针绕枢轴转过的角度。 */
+/** Rotate gesture: the starting angle plus the angle the pointer has swept around the pivot. */
 export function dragRotation(start: number, pivot: Point, p0: Point, p: Point, free: boolean): number {
   return snapRotation(start + pointerAngle(pivot, p) - pointerAngle(pivot, p0), free);
 }
 
-// ---- 多选 ----
+// ---- Multi-select ----
 
-/** 整体平移：先把位移夹到全组都合法，再逐件加同一个位移（逐件各夹各的会把组拖变形）。 */
+/** Group translate: first clamp the displacement so it is valid for the whole group, then add the same displacement to each item (clamping each item separately would distort the group when dragged). */
 export function groupShift(starts: Pose[], limits: Limits[], dx: number, dy: number): Point {
   if (!starts.length) return { x: 0, y: 0 };
   let lo = -Infinity;
@@ -522,7 +512,7 @@ export function groupShift(starts: Pose[], limits: Limits[], dx: number, dy: num
   return { x: clamp(dx, Math.min(lo, 0), Math.max(hi, 0)), y: clamp(dy, Math.min(lo2, 0), Math.max(hi2, 0)) };
 }
 
-/** 一组盒的外包盒（各自旋转后的外包盒取并集）；空集是 null。 */
+/** Bounding box of a group of boxes (the union of each box's rotated bounding box); null for an empty set. */
 export function boundsOf(rects: Rect[]): Rect | null {
   if (!rects.length) return null;
   let x0 = Infinity;
@@ -539,8 +529,7 @@ export function boundsOf(rects: Rect[]): Rect | null {
 }
 
 /**
- * 整体等比缩放（原型 `groupScale`）：绕统一框的中心缩，每件的中心与尺寸同乘一个倍率。倍率按指针到中心的距离比
- * （把手跟手），夹在 0.1–5，且组里最小的那件短边不缩到 10 像素以下。
+ * Group uniform scale (`groupScale` in the prototype): scales around the center of the unified box; each item's center and size are multiplied by the same factor. The factor is the ratio of the pointer's distance to the center (so the handle follows the pointer), clamped to 0.1–5, and the short side of the smallest item in the group is not reduced below 10 pixels.
  */
 export function groupScale(starts: Pose[], bounds: Rect, p0: Point, p: Point): { poses: Pose[]; factor: number } {
   const center = { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
@@ -549,10 +538,10 @@ export function groupScale(starts: Pose[], bounds: Rect, p0: Point, p: Point): {
   return { poses: starts.map((s) => scaleAbout(s, center, factor)), factor };
 }
 
-// ---- 键盘 ----
+// ---- Keyboard ----
 
 /**
- * 方向键微调（原型 editor-keys：1%，⇧ 5%，⌥↑/↓ 0.1%）：按画布宽 / 高的百分比。⌥←/→ 让给时间微调，返回 null。
+ * Arrow-key nudge (prototype editor-keys: 1%, ⇧ 5%, ⌥↑/↓ 0.1%): in percentages of the canvas width / height. ⌥←/→ is left to the time nudge, and returns null.
  */
 export function nudgeDelta(key: string, shift: boolean, alt: boolean, canvas: CanvasSize): Point | null {
   const dx = key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : 0;
@@ -563,9 +552,9 @@ export function nudgeDelta(key: string, shift: boolean, alt: boolean, canvas: Ca
   return { x: (dx * step * canvas.width) / 100, y: (dy * step * canvas.height) / 100 };
 }
 
-// ---- 框选 ----
+// ---- Marquee selection ----
 
-/** 起手到此刻的矩形；`on` 是越过了 4px（以内仍算一次点击）。阈值用画面像素时传进来的点也得是画面像素。 */
+/** Rectangle from the start to now; `on` means it has moved past 4px (within that it still counts as a click). When the threshold is in frame pixels, the points passed in must also be in frame pixels. */
 export function marqueeRect(p0: Point, p1: Point, min = MARQUEE_MIN): Rect & { on: boolean } {
   const r = normRect({ x: p0.x, y: p0.y, w: p1.x - p0.x, h: p1.y - p0.y });
   return { ...r, on: Math.max(r.w, r.h) >= min };
@@ -575,7 +564,7 @@ export function normRect(r: Rect): Rect {
   return { x: Math.min(r.x, r.x + r.w), y: Math.min(r.y, r.y + r.h), w: Math.abs(r.w), h: Math.abs(r.h) };
 }
 
-/** 两个盒相交（边贴边不算）。 */
+/** Two boxes intersect (edges that only touch do not count). */
 export function rectsCross(a: Rect, b: Rect): boolean {
   const m = normRect(a);
   const n = normRect(b);

@@ -37,7 +37,7 @@ const ALIGNS = [
   },
 ] as const;
 
-/** 阴影的距离与模糊存的是字号的比例：界面 0–100 对应 0–0.3 与 0–0.5（cuccut-app 的口径）。 */
+/** Shadow distance and blur are stored as ratios of the font size: the UI range 0–100 maps to 0–0.3 and 0–0.5 (the cuccut-app convention). */
 const SHADOW_DISTANCE_MAX = 0.3;
 const SHADOW_BLUR_MAX = 0.5;
 
@@ -45,7 +45,7 @@ function visible(value: unknown): boolean {
   return (parseColor(value)?.a ?? 0) > 0;
 }
 
-/** 这几个开关与 text-style.ts 的 resolveLineStyle（渲染内核同一个判法）一致，所以开着就一定画得出来。 */
+/** These toggles match resolveLineStyle in text-style.ts (the same check the render core uses), so whatever is switched on can always be drawn. */
 export function backgroundOn(style: Json): boolean {
   if (typeof style.background === 'boolean') return style.background;
   if (typeof style.bgOn === 'boolean') return style.bgOn;
@@ -67,9 +67,7 @@ export function shadowOn(style: Json): boolean {
 }
 
 /**
- * 文字样式（文字实例的 `style` 与 Studio 字幕样式的根对象，字段同一套）：字体、字号、颜色、粗斜下划线、
- * 对齐、行高、字间距，以及背景 · 描边 · 发光 · 阴影四张开关卡。显示的缺省值与渲染器一致，开着的效果都画得出来。
- * `onLive` / `onCommit` 收到的是根对象上的补丁（嵌套字段整组给出），由调用方叠进样式再提交。
+ * Text style (the `style` of a text instance and the root object of Studio caption styles, with the same fields): font, size, color, bold / italic / underline, alignment, line height, letter spacing, and four toggle cards for background, stroke, glow and shadow. The displayed defaults match the renderer, so every effect that is on can be drawn. `onLive` and `onCommit` receive patches on the root object (nested fields are given as a whole group), and the caller overlays them onto the style before committing.
  */
 export function TextStyleEditor({
   style,
@@ -83,9 +81,9 @@ export function TextStyleEditor({
   isDisabled: boolean;
   onLive(patch: Json): void;
   onCommit(patch: Json): void;
-  /** 字幕样式：多给大小写与背景形态两项（原型 panel-subprops.jsx；Studio 字幕样式的 `textTransform`、`backgroundStyle`）。 */
+  /** Caption style: offers two extra options, case and background shape (prototype panel-subprops.jsx; the Studio caption style's `textTransform` and `backgroundStyle`). */
   caption?: boolean;
-  /** 字号下面的一句说明（字幕属性页的比例链）。 */
+  /** A line of explanation under the size (the proportion chain of the caption properties page). */
   sizeNote?: ReactNode;
 }) {
   const legacyOutline = style.outline === true;

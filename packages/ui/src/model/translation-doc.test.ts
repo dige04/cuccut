@@ -17,7 +17,7 @@ import {
 import workerSample from './fixtures/worker-translation.json';
 
 /**
- * 转写：句末标点断句、分号不断；停顿 1.5 秒不断、1.9 秒断；换说话人断；隐藏的词不进文本与指纹。
+ * Transcript: sentences split at sentence-ending punctuation, semicolons do not split; a 1.5-second pause does not split, a 1.9-second pause does; a speaker change splits; hidden words are kept out of the text and the fingerprint.
  */
 const speech = {
   schema: 'cuccut.speech/1',
@@ -37,7 +37,7 @@ const speech = {
 };
 
 describe.skipIf(!editorWasmAvailable())('原文的句子与指纹（字幕与翻译核心的规则，经 editor-wasm）', () => {
-  // 指纹是核心对同样的正文算出来的；规则一变这里就红。
+  // The fingerprint is computed by the core over the same body; if the rules change, this test goes red.
   it('按停顿 ≥ 1.8 秒、换说话人、句末标点断句，分号不断', () => {
     const expected = [
       { id: 's-w1', wordIds: ['w1', 'w2', 'w3'], text: 'Hello world; again.', fingerprint: '3:w1:w3:2lr52qv73aau9' },
@@ -150,7 +150,7 @@ describe('就地改一句译文', () => {
     expect(result!.unit).toMatchObject({ id: 't-s1', naturalText: 'One!', status: 'reviewed', sourceFingerprint: 'fp-s1' });
     expect(result!.unit.alignment!.textHash).toBe(`sha256:${await sha256Hex('One!')}`);
     expect(result!.body.units.map((u) => u.naturalText)).toEqual(['One!', 'two', 'three']);
-    // 别的字段原样。
+    // Other fields are kept as they are.
     expect(result!.body.sourceBasis).toBe(body.sourceBasis);
   });
 
@@ -208,13 +208,13 @@ describe('标为过期与去掉过期标记', () => {
     const marked = markUnit(body, rows[0]!, false)!;
     expect(marked.unit).toMatchObject({ status: 'reviewed', sourceFingerprint: 'fp-s1' });
     expect(marked.rebound).toBe(false);
-    // 标了过期、原句也改过：两样一起去掉。
+    // Marked stale and the source sentence also changed: both are removed together.
     const changed = markUnit(body, rows[1]!, false)!;
     expect(changed.rebound).toBe(true);
     expect(changed.unit).toMatchObject({ status: 'reviewed', sourceFingerprint: 'fp-new', naturalText: 'two' });
     expect(changed.unit.alignment!.sourceWordIds).toEqual(['s2', 's2b']);
     expect(unitState(changed.unit, sentences[1]!)).toBe('ok');
-    // 本来就不过期的不写。
+    // Ones that are not stale are not written.
     expect(markUnit(body, rows[2]!, false)).toBeNull();
   });
 
@@ -226,9 +226,9 @@ describe('标为过期与去掉过期标记', () => {
 });
 
 /**
- * 端到端：`fixtures/worker-translation.json` 是同一份转写交给真的 Speech Worker 翻译（模型是假的）写出的译文，连同那份转写。
- * 界面按自己取的句子与指纹逐句核对，每一句都应是正常的——两边用的是同一份核心规则。转写里有分号、1.5 秒与 1.9 秒的停顿、
- * 隐藏的词与换说话人。样例由 packages/jobs 的 speech-worker.test.ts 用真的 Worker 核对（`CUCCUT_WRITE_FIXTURES=1` 时重写）。
+ * End to end: `fixtures/worker-translation.json` is the translation written by a real Speech Worker from the same transcript (the model is a fake), together with that transcript.
+ * The UI checks each sentence against the sentences and fingerprints it derives itself, and every one should come out normal, since both sides use the same core rules. The transcript contains a semicolon, pauses of 1.5 and 1.9 seconds,
+ * hidden words and a speaker change. The sample is verified by speech-worker.test.ts in packages/jobs against a real Worker (rewritten when `CUCCUT_WRITE_FIXTURES=1`).
  */
 describe.skipIf(!editorWasmAvailable())('Speech Worker 写出的译文在界面里核对', () => {
   const translation = readTranslation(workerSample.translation)!;

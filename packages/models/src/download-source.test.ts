@@ -62,7 +62,7 @@ describe('下载来源', () => {
     expect(modelFileUrl(MODELSCOPE_ENDPOINT, 'ggerganov/whisper.cpp', 'abc', 'ggml.bin')).toBe(
       'https://huggingface.co/ggerganov/whisper.cpp/resolve/abc/ggml.bin',
     );
-    // 别的镜像不受影响。
+    // Other mirrors are not affected.
     expect(repoEndpoint('https://mirror.example/', 'ggerganov/whisper.cpp')).toBe('https://mirror.example');
   });
 

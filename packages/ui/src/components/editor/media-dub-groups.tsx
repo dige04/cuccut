@@ -29,11 +29,11 @@ import { useDocumentBody } from './use-document-body.ts';
 import { DUB_GROUP_COPY as C } from './dub-group-copy.ts';
 
 /**
- * 音频页里的配音组（设计稿 panel-media.jsx `AudioGroup`）：一种语言一张卡，组头是语言小牌、「配音 · English」、
- * 在不在时间线、文件与句数；点组头展开逐个文件（背景声一行，每句一行，点一句选中它并跳过去）。⋯ 是整组的动作。
- * 「移除这组配音」用配音收据的部分撤销那一套操作（dub-undo）：删掉这一组的实例、恢复这次静音的原声、去掉以配音轨为触发的闪避，
- * 一笔提交、可撤销；协议里没有删轨道与删文档的操作，空的配音轨与配音计划会留下。「重新生成 N 句…」打开改译文并重配
- * （dub-fit-dialog.tsx，挂在时间线上），只重配没合成或放不下的几句；整组下载 Runtime 还没有，置灰写明原因。
+ * Dub groups on the audio page (design draft panel-media.jsx `AudioGroup`): one card per language. The group header shows a language badge, “Dub · English”,
+ * whether it is on the timeline, and the file and line counts. Clicking the header expands each file (the background track is one row, each line is one row; clicking a line selects it and jumps there). The ⋯ is the action for the whole group.
+ * “Remove this dub group” uses the partial-undo operations of the dub receipt (dub-undo): it deletes this group's instances, restores the original audio that was muted, and removes the ducking triggered by the dub track,
+ * committed as one step and undoable. The protocol has no operation to delete tracks or documents, so empty dub tracks and dub plans are left behind. “Regenerate N lines…” opens the edit-translation-and-redub dialog
+ * (dub-fit-dialog.tsx, mounted on the timeline), and only redubs the lines that are not synthesized or do not fit. Downloading the whole group is not yet supported by the Runtime, so it is greyed out with the reason stated.
  */
 
 const card = style({
@@ -158,7 +158,7 @@ export function DubGroupCard({
   const loading = !!plan && planBody === undefined;
   const trackLabel = g.trackId ? trackRows(sequence).find((row) => row.track.id === g.trackId)?.label : undefined;
 
-  // 没合成或放不下、也不在重配的句（与 `g.regen` 同一个口径，再去掉正在重配的）。
+  // Lines that are not synthesized or don't fit, and are not being redubbed (same criteria as `g.regen`, minus the ones being redubbed right now).
   const queued = queuedSet(useJobs((s) => queuedKey(s.jobs, videoId)));
   const regenUnits = failedUnits(planBody, placedUnits(sequence, groupId)).flatMap((f) => (queued.has(queuedId(groupId, f.unitId)) ? [] : [f.unitId]));
   const disabled: string[] = ['download'];
@@ -226,7 +226,7 @@ export function DubGroupCard({
             {g.line}
           </span>
         </span>
-        {/* 组头是可点的 div：右侧的 ⋯ 本身是按钮，按钮里不能再套按钮；点它不开合。 */}
+        {/* The group header is a clickable div: the ⋯ on the right is itself a button, and a button cannot be nested inside another button; clicking it does not toggle. */}
         <span className={actions} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
           <MenuTrigger>
             <ActionButton isQuiet size="S" aria-label={C.groupMenu}>

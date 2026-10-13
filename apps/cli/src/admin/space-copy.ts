@@ -16,7 +16,7 @@ import { vi } from './space-copy.vi.ts';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** 管理桶 `cuccut space …` 的文案（英文是键与类型的来源，译文在 `space-copy.<语言>.ts`）。 */
+/** Copy for the admin bucket `cuccut space …` (English is the source of the keys and types; translations are in `space-copy.<lang>.ts`). */
 const en = {
   help: `Usage:
   cuccut space rescan              Scan the source folders again

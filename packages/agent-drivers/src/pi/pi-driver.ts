@@ -1,8 +1,7 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/pi/agent.ts 的模型目录（起一个 `pi --mode rpc`、get_available_models、
- * 取当前模型、关掉）。改成 CucCut 的 DriverProbe：登录状态按可用模型表是否为空判断，模型表按命令与版本缓存 10 分钟，
- * 协议路径已验证的标 `verified: true`，另记 `tested: false`（还没有用真实模型账号跑过）。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * the model catalog in packages/server/src/server/agent/providers/pi/agent.ts (start a `pi --mode rpc`, get_available_models,
+ * read the current model, shut it down). Changed to CucCut's DriverProbe: login state is judged by whether the available model table is empty; the model table is cached for 10 minutes, keyed by command and version; protocol paths that have been verified are marked `verified: true`, and `tested: false` is recorded separately (not yet run with a real model account).
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -17,14 +16,14 @@ import { derivePiModels, type PiModel } from './pi-models.ts';
 import { PiRpcProcess, piErrorMessage } from './pi-rpc-process.ts';
 import { PI_CAPABILITIES, PI_DRIVER_ID, PiSession } from './pi-session.ts';
 
-/** 模型表的缓存：拿到了留 10 分钟；没登录或出错 1 分钟后再试。 */
+/** Model table cache: kept for 10 minutes when obtained; if not logged in or on error, retry after 1 minute. */
 const CATALOG_TTL_MS = 10 * 60_000;
 const CATALOG_RETRY_MS = 60_000;
 
 /**
- * 最低版本。用到的命令里最晚出现的是 clear_queue（pi 0.84.4，见 paseo 的兼容说明）；steer、agent_settled 另有退路
- * （回「Unknown command」时报不支持、没有 agent_settled 时以 agent_end 收尾）。只在 1.0.4 上实测过。
- * 原型里的 0.62.0 是演示值，没有采用。
+ * Minimum version. The latest-appearing command used is clear_queue (pi 0.84.4, see paseo's compatibility notes). steer and agent_settled have fallbacks:
+ * report unsupported when the reply is “Unknown command”, and finish on agent_end when agent_settled is absent. Only tested in practice on 1.0.4.
+ * The 0.62.0 in the prototype is a demo value and was not adopted.
  */
 export const PI_MIN_VERSION = '0.84.4';
 
@@ -35,26 +34,25 @@ interface PiCatalog {
 }
 
 export interface PiDriverOptions {
-  /** 找到可执行文件。默认按 `CUCCUT_PI_PATH`、登录 shell 的 PATH 与常见安装位置找。测试注入假的 pi。 */
+  /** Find the executable. By default searches via `CUCCUT_PI_PATH`, the login shell's PATH, and common install locations. Tests inject a fake pi. */
   locate?: () => Promise<PiInstall | null>;
-  /** 探测（起进程、取模型表）的总时限，默认 30 秒（带着 API 密钥第一次取目录实测要十来秒）。 */
+  /** Total time limit for the probe (starting the process and fetching the model table), default 30 seconds (measured: the first catalog fetch with an API key takes about ten-odd seconds). */
   probeTimeoutMs?: number;
 }
 
 /**
- * Pi（`@earendil-works/pi-coding-agent`）：经 `pi --mode rpc` 的 JSON 行协议接入（架构设计 §3.1）。每个会话一个 pi 进程。
+ * Pi (`@earendil-works/pi-coding-agent`): connected through the JSON line protocol of `pi --mode rpc` (architecture design §3.1). One pi process per session.
  *
- * 开放程度（D08）：Driver 与 pi 之间的协议路径已经用真实的 pi 1.0.4 加脚本化的模型服务跑通（写、改、命令、读、steer、中断、
- * 恢复、MCP 与开发者指令），按「协议路径验证即放开」`verified` 为 true；还没有用真实的模型账号在 CucCut 里实测，`tested` 为 false。
- * 没有审批通道（`approvals: false`），只适合「完全访问」。
+ * Openness level (D08): the protocol path between the Driver and pi has been run end to end with the real pi 1.0.4 and a scripted model service (write, edit, command, read, steer, interrupt, resume, MCP and developer instructions). Following the rule “open once the protocol path is verified”, `verified` is true. It has not yet been run in CucCut with a real model account, so `tested` is false.
+ * There is no approval channel (`approvals: false`), so it only suits “full access”.
  */
 export class PiDriver implements AgentDriver {
   readonly id = PI_DRIVER_ID;
-  /** 协议路径已用真实 pi 与脚本化模型服务验证（架构设计 §3.11 的 D08）：可以开会话。 */
+  /** The protocol path has been verified with the real pi and a scripted model service (D08 in architecture design §3.11): sessions may be opened. */
   readonly verified = true;
-  /** 还没有用真实模型账号在 CucCut 里跑过：能开会话，界面提示「未在 CucCut 实测」。 */
+  /** Not yet run with a real model account in CucCut: sessions can be opened, and the UI shows “not tested in CucCut”. */
   readonly tested = false;
-  /** 探测要起一个 `pi --mode rpc` 进程取模型表（带着 API 密钥第一次取要十来秒）：`agents.list` 不等它（§3.11）。 */
+  /** The probe starts a `pi --mode rpc` process to fetch the model table (the first fetch with an API key takes about ten-odd seconds). `agents.list` does not wait for it (§3.11). */
   readonly slowProbe = true;
   readonly #log: Logger;
   readonly #locate: () => Promise<PiInstall | null>;
@@ -141,7 +139,7 @@ export class PiDriver implements AgentDriver {
     return executable ? piAt(executable) : this.#locate();
   }
 
-  /** 模型表与登录状态，按「哪个命令、哪个版本」缓存；同时到来的探测共用一次，`force` 不用缓存。 */
+  /** Model table and login state, cached by “which command, which version”. Concurrent probes share one fetch; `force` skips the cache. */
   #catalog(install: PiInstall, force: boolean): Promise<PiCatalog> {
     const key = `${install.command}\0${install.version ?? ''}`;
     const hit = this.#catalogs.get(key);
@@ -156,11 +154,9 @@ export class PiDriver implements AgentDriver {
   }
 
   /**
-   * 起一个临时的 `pi --mode rpc --no-session`（在主目录，不写会话文件）：get_available_models 与 get_state，然后关掉。不调模型。
+   * Start a temporary `pi --mode rpc --no-session` (in the home directory, writes no session file): get_available_models and get_state, then shut it down. Does not call a model.
    *
-   * 登录状态：pi 的 get_available_models 只列出有可用凭据的模型（`/login` 的订阅登录、auth.json 里的密钥、环境变量里的
-   * API 密钥、models.json 自定义的服务都算），一个都没有就是没登录。不看 `~/.pi/agent/auth.json` 在不在：pi 每次启动都会建一个
-   * 内容为 `{}` 的空文件，它在不代表登录了；探测也不读凭据文件的内容（架构设计 §3.11）。
+   * Login state: pi's get_available_models lists only models with usable credentials (subscription login via `/login`, keys in auth.json, API keys in environment variables, and custom services in models.json all count). If there are none, you are not logged in. Whether `~/.pi/agent/auth.json` exists is not checked: pi creates an empty file containing `{}` on every start, so its existence does not mean logged in. The probe also does not read the contents of the credentials file (architecture design §3.11).
    */
   async #readCatalog(install: PiInstall): Promise<PiCatalog> {
     const proc = new PiRpcProcess(

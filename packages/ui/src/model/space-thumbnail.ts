@@ -1,28 +1,28 @@
 import type { SpaceEntry, SpaceEntryKind, SpaceThumbnail } from '@cuccut/protocol';
 
 /**
- * Space 条目缩略图的纯函数（产品设计 §4.2–§4.3；`space.thumbnail`）：哪些条目值得去取、条目的哪些变化要重取，
- * 以及 Runtime 的回答怎么变成界面画的东西。取的排队与缓存在 `runtime/space-thumbnails.ts`。
+ * Pure functions for Space item thumbnails (product design §4.2–§4.3; `space.thumbnail`): which items are worth fetching, which changes to an item require refetching,
+ * and how the Runtime's answer becomes what the UI draws. Fetch queuing and caching are in `runtime/space-thumbnails.ts`.
  */
 
-/** 界面画的缩略图：画面是 data URL，文档与字幕是正文摘要，`none` 画类型占位。 */
+/** The thumbnail the UI draws: the image is a data URL; documents and subtitles are text excerpts; `none` draws a placeholder for the type. */
 export type Thumbnail =
   { kind: 'image'; url: string; width: number; height: number } | { kind: 'text'; excerpt: string } | { kind: 'none' };
 
 export const NO_THUMBNAIL: Thumbnail = { kind: 'none' };
 
-/** Runtime 一定答 `none` 的类型（音频、便携包、模板）不去问。 */
+/** Types the Runtime always answers `none` for (audio, portable packages, templates) are not requested. */
 const PICTURED: ReadonlySet<SpaceEntryKind> = new Set(['video', 'export', 'video-file', 'image', 'document', 'subtitle']);
 
-/** 值得去取缩略图：类型有画面或正文，且不是缺失、生成中或失败的（这几种 Runtime 都答 `none`，缺失另画灰底）。 */
+/** Worth fetching a thumbnail: the type has a picture or text, and it is not missing, generating, or failed (the Runtime answers `none` for those; missing items get a grey background drawn separately). */
 export function wantsThumbnail(entry: SpaceEntry): boolean {
   if (!PICTURED.has(entry.kind)) return false;
   return entry.status !== 'missing' && entry.status !== 'generating' && entry.status !== 'failed';
 }
 
 /**
- * 条目的版本：这几项任何一项变了都重取（`entry.upsert` 带来新的条目时）。视频改了时间线会刷新最近活动；
- * 文件换了内容会变大小或最近活动；状态从缺失、生成中回来，或指向的视频、路径换了，也要重取。
+ * The item's version: if any of these changes, refetch (when `entry.upsert` brings a new item). When a video's timeline changes, the recent activity is refreshed; when a file's content changes, its size or recent activity changes;
+ * and when the status returns from missing or generating, or the video or path it points to changes, refetch as well.
  */
 export function thumbnailVersion(entry: SpaceEntry): string {
   const ref = entry.ref && 'videoId' in entry.ref ? entry.ref.videoId : '';

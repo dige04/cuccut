@@ -46,7 +46,7 @@ import { useNow } from '../use-now.ts';
 import { useDocumentBodies } from './use-document-body.ts';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 16 });
-/** 顶上那张卡与列表的行（原型 .atagent、.drill.ail__row）：左图标、两行字、右边状态与箭头，整行可点。 */
+/** The top card and the rows of the list (prototype .atagent, .drill.ail__row): icon on the left, two lines of text, status and arrow on the right; the whole row is clickable. */
 const tile = style({
   display: 'flex',
   alignItems: 'center',
@@ -91,10 +91,10 @@ const text = style({ display: 'flex', flexDirection: 'column', gap: '[2px]', fle
 const name = style({ font: 'ui', fontWeight: 'bold', color: 'inherit' });
 const sub = style({ font: 'ui-xs', color: 'gray-600' });
 const iconBox = style({ display: 'flex', flexShrink: 0, color: 'gray-700' });
-/** 状态 chip（原型 .ail__st，`Chip` 即 S2 Badge subtle）：不被两行字挤窄。 */
+/** Status chip (prototype .ail__st; `Chip` is S2 Badge subtle): not squeezed narrow by the two lines of text. */
 const stateChip = style({ flexShrink: 0 });
 const chev = style({ display: 'flex', flexShrink: 0, color: 'gray-500' });
-/** 没有文稿时的说明卡（原型 .aicard.ail__empty）。 */
+/** The explanation card shown when there is no script (prototype .aicard.ail__empty). */
 const emptyCard = style({
   display: 'flex',
   flexDirection: 'column',
@@ -130,7 +130,7 @@ const TOOL_ICON: Partial<Record<AiToolId, ComponentType>> = {
 const STALE_LISTED = AI_TOOLS.some((t) => t.id === 'stale' && LIST_GROUPS.includes(t.group));
 
 type RowTone = 'informative' | 'notice' | 'neutral';
-/** 色调同原型的 Chip：在跑 accent → informative，过期与要人看的 notice，其余（含原型的 info）neutral。 */
+/** Tones match the prototype's Chip: running is accent → informative; notices that need a person's attention and stale items are notice; everything else (including the prototype's info) is neutral. */
 const ROW_TONE: Record<AiToolRowState['kind'], RowTone> = {
   running: 'informative',
   result: 'notice',
@@ -163,7 +163,7 @@ function rowText(state: AiToolRowState, now: number): string {
   }
 }
 
-/** 过期的译文句子（`enabled` 为假时不取正文）：时间线上每份译文对着它译自的那份转写逐句配对（同字幕面板与配音页的判断）。读不出来时 0，不去猜。 */
+/** Stale translated sentences (the body text is not fetched when `enabled` is false): on the timeline, each translation is paired sentence by sentence with the transcript segment it was translated from (same judgment as the subtitle panel and the dubbing page). 0 when it cannot be read; no guessing. */
 function useStaleSentences(documents: Record<Id, DocumentRecord>, enabled: boolean): number {
   const translations = useMemo(
     () =>
@@ -187,7 +187,7 @@ function useStaleSentences(documents: Record<Id, DocumentRecord>, enabled: boole
   }, [speeches, speechBodies, translations, translationBodies]);
 }
 
-/** 剪辑提案里还没定的建议（找可剪的口写的，视频格式规范 §6.2）。 */
+/** Undecided suggestions in a cut proposal (written by finding cut points; video format spec §6.2). */
 function usePendingCuts(documents: Record<Id, DocumentRecord>): number {
   const proposals = useMemo(() => Object.values(documents).filter((d) => d.kind === EDITORIAL_PROPOSAL_KIND), [documents]);
   const bodies = useDocumentBodies(proposals);
@@ -195,21 +195,20 @@ function usePendingCuts(documents: Record<Id, DocumentRecord>): number {
 }
 
 /**
- * 一行右边的状态（原型 panel-aitools-list.jsx `rowState`，判断见 `aiToolRowState`）：在跑的（直接调模型的任务、识别说话人、留在原地
- * 交给 Agent 而那条会话还在跑的）、
- * 要人看的结果、找可剪的口留下的建议、过期的译文、时间线上的章节、上次跑完的时间或已撤销。只报编辑器手里有的事实。
+ * The status on the right of a row (prototype panel-aitools-list.jsx `rowState`; judgment in `aiToolRowState`): running (direct model call tasks, speaker identification, in-place tools handed to the Agent whose conversation is still running),
+ * results awaiting a person's look, suggestions left by finding cut points, stale translations, chapters on the timeline, the last finish time, or undone. It only reports facts the editor has.
  */
 function useRowStates(videoId: Id, sequence: Sequence, documents: Record<Id, DocumentRecord>): Partial<Record<AiToolId, { text: string; tone: RowTone }>> {
   const chapters = useMemo(() => chapterPieces(sequence).length, [sequence]);
   const pendingCuts = usePendingCuts(documents);
-  // 刷新过期译文这一行在列表里时才去取转写与译文的正文（它所在的翻译组还在各自面板里，见 `LIST_GROUPS`）。
+  // The body text of the transcript and translation is fetched only when this refresh row is in the list (the translation group it belongs to is in its own panel, see `LIST_GROUPS`).
   const staleSentences = useStaleSentences(documents, STALE_LISTED);
   const speakersRunning = useSpeakersRun((s) => !!s.runs[videoId] || !!s.installs[videoId]);
   const speakersPending = useSpeakersRun((s) => !!s.proposals[videoId]);
-  // 直接调模型的任务（键「视频 · 工具」）：从这里提交、还没拿到任务号的；出了结果还没看完的；撤销过的。
+  // Direct model tasks (key 「视频 · 工具」 (video · tool)): submitted from here and not yet given a task ID; results not yet looked at; undone.
   const prefix = `${videoId}:`;
   const submitting = useAiToolRun(useShallow((s) => Object.values(s.runs).filter((r) => r.videoId === videoId).map((r) => r.tool)));
-  // 撤销过的收据不算没看完：那一行写「已撤销」。
+  // An undone receipt does not count as unseen: that row says 「已撤销」 (Undone).
   const unread = useAiToolRun(
     useShallow((s) =>
       [...Object.keys(s.results), ...Object.entries(s.receipts).filter(([, r]) => !r.undone).map(([k]) => k)]
@@ -218,12 +217,12 @@ function useRowStates(videoId: Id, sequence: Sequence, documents: Record<Id, Doc
     ),
   );
   const undoneJobs = useAiToolRun((s) => s.undoneJobs);
-  // 任务镜像里这个视频的 `ai-tool` 任务：别处（CLI、另一个窗口）提交的也在。
+  // The `ai-tool` task for this video in the task mirror: includes ones submitted elsewhere (CLI, another window).
   const jobs = useJobs((s) => s.jobs);
   const jobFacts = useMemo(() => aiToolJobFacts(jobs, videoId), [jobs, videoId]);
-  // 生成配乐不走 `ai-tool` 流程：是工具页提交的 `generateMusic` 任务带着这部视频。
+  // Generating a soundtrack does not go through the `ai-tool` flow: it is the `generateMusic` task submitted from the tool page that carries this video.
   const soundtrackFacts = useMemo(() => soundtrackJobFacts(jobs, videoId), [jobs, videoId]);
-  // 找可剪的口与刷新过期译文交给 Agent 后留在原地：那条会话还有任务在跑（排着队的也算）。
+  // After finding cut points and refreshing stale translations were handed to the Agent while staying in place: that conversation still has tasks running (queued ones count too).
   const agentRuns = useAiToolAgentRuns((s) => s.runs);
   const conversations = useDirectory((s) => s.conversations);
   const agentBusy = (tool: AiToolId) => {
@@ -253,7 +252,7 @@ function useRowStates(videoId: Id, sequence: Sequence, documents: Record<Id, Doc
   return states;
 }
 
-/** 顶上那张卡：Agent 能用时一句话交给它（新开一条会话，这个视频作为上下文）；不能用时换成配置引导（产品设计 §5.10）。 */
+/** The card at the top: when the Agent is available, hand off in one sentence (starts a new conversation with this video as context); when not, replace it with setup guidance (product design §5.10). */
 function AgentCard({ guide }: { guide: GateGuide | null }) {
   const source = useVideo((s) => s.video?.ref?.source ?? null);
   const drivers = useConnection((s) => s.drivers);
@@ -264,7 +263,7 @@ function AgentCard({ guide }: { guide: GateGuide | null }) {
   const open = () => {
     const shell = useShell.getState();
     const target = routeVideo(shell.route);
-    // 项目里的视频：项目的新会话起始页，视频作为功能区的标签留在右边；不属于项目的：它所在的那条会话（起始页新建的会话不与它共用工作目录）。
+    // A video in a project: the project's new-conversation start page, with the video kept as a feature-area tab on the right. A video not in a project: the conversation it sits in (a conversation created from the start page does not share a working directory with it).
     const from = inProject ? { conversationId: null, projectId: source!.projectId } : { conversationId: source?.conversationId ?? null, projectId: null };
     if (target) shell.openPane({ kind: 'video', target }, from);
     else shell.go({ tab: 'home', ...from });
@@ -305,9 +304,8 @@ function SetupCard({ guide }: { guide: GateGuide }) {
 }
 
 /**
- * 生成配乐（原型 panel-aitools.jsx `openSoundtrack`）：不在这个 Tab 里做，带上这部视频去工具 › 生成音乐，时长按视频预填（按 5 秒向上取整、
- * 夹进范围；视频比单次上限长时预填上限，做好后循环铺满，产品设计 §2.7「生成配乐」）。提交时带 `videoId`，做好后 Runtime 把那段音乐导入
- * 这部视频的素材，编辑器再把它铺上音乐轨（soundtrack-bed.tsx）。
+ * Generate a soundtrack (prototype panel-aitools.jsx `openSoundtrack`): not done in this tab. Instead, this video is carried to Tools › Generate music, with the duration pre-filled from the video (rounded up to the nearest 5 seconds and clamped to the range; if the video is longer than a single generation's limit, the limit is pre-filled and the result loops to fill the whole video; product design §2.7 「生成配乐」 (generate soundtrack)).
+ * On submit it carries `videoId`; once done, the Runtime imports that audio into this video's assets, and the editor then lays it down on a music track (soundtrack-bed.tsx).
  */
 function openSoundtrack(videoId: Id, sequence: Sequence): void {
   const video = useVideo.getState().video;
@@ -323,9 +321,8 @@ function openSoundtrack(videoId: Id, sequence: Sequence): void {
 }
 
 /**
- * AI 工具 Tab 的列表页（原型 panel-aitools-list.jsx，产品设计 §5.10「分批」）：顶上一张交给 Agent 的卡；没有文稿时加一张说明卡、
- * 工具行置灰（生成配乐不用文稿，照样能点）；下面按组列第一批的三组工具、「画面」组里的剪成短视频与「声音」组的生成配乐，每行一句说明与
- * 这个视频上的状态；脚注说清还在各自面板里的工具。
+ * The list page of the AI tools tab (prototype panel-aitools-list.jsx, product design §5.10 「分批」 (in batches)): a card at the top to hand off to the Agent; when there is no script, an explanation card is added and tool rows are greyed out (generating a soundtrack does not use the script, so it stays clickable).
+ * Below, the first batch of tools grouped by category, plus the short-video cut in the 「画面」 (Visuals) group and generate-soundtrack in the 「声音」 (Sound) group, each row with one sentence of description and its status on this video; the footnote says which tools are still in their own panels.
  */
 export function AiToolsList({ videoId, sequence, documents }: { videoId: Id; sequence: Sequence; documents: Record<Id, DocumentRecord> }) {
   const drivers = useConnection((s) => s.drivers);

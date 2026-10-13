@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { macCommandScript, openSystemTerminal, posixTerminalScript, shellQuote, type SpawnProcess } from './system-terminal.ts';
 
 /**
- * 系统终端启动器：spawn 与平台都是注入的，测试里不真的打开终端。
- * 生成的 `.command` 脚本用 `sh` 实际跑一遍（`SHELL` 指向 `true`，末尾的 `exec` 立刻结束），核对自删与转义。
+ * Launcher for the system terminal: spawn and platform are injected, so the tests do not really open a terminal.
+ * The generated `.command` script is run once for real with `sh` (`SHELL` points to `true`, and the trailing `exec` ends immediately), to check self-deletion and escaping.
  */
 
 const run = promisify(execFile);
@@ -20,7 +20,7 @@ interface Call {
   options: SpawnOptions;
 }
 
-/** 假的 spawn：记下调用，按 `behave` 决定这个进程是起来了、退出了，还是没找到。 */
+/** Fake spawn: records the call, and based on `behave` decides whether the process started, exited, or was not found. */
 function fakeSpawn(behave: (command: string) => { exit?: number; error?: boolean; spawn?: boolean }) {
   const calls: Call[] = [];
   const spawnFn: SpawnProcess = (command, args, options) => {

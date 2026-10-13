@@ -4,66 +4,65 @@ import { thumbnailGrid, sourceClock, sourceSecondsAt } from './clip-media.ts';
 import { durationSeconds } from './editor.ts';
 
 /**
- * 编辑器的全屏播放器（原型 model-player.js、player.jsx）的判据：控件什么时候收起、进度条上的一点是哪一秒、哪个键做什么、
- * 字幕四档各露哪些字幕。纯函数，界面（components/editor/fullscreen-player.tsx）只把这些结论画出来。
+ * Criteria for the editor's full-screen player (prototype model-player.js, player.jsx): when the controls collapse, which second a point on the progress bar is, what each key does,
+ * and which subtitles each of the four subtitle modes shows. Pure functions; the UI (components/editor/fullscreen-player.tsx) only draws these conclusions.
  *
- * 时间都是序列秒：编辑器的时间线上剪掉的段不占时间（拼缝即合拢），时间线时钟就是成片时钟，进度条与时码读的就是播放头。
+ * All times are sequence seconds: segments cut from the editor's timeline take no time (the seam closes up), and the timeline clock is the output clock, so the progress bar and timecode read the playhead.
  */
 
-/** 空闲多久收起控件（原型 `IDLE_MS`）。 */
+/** How long to stay idle before the controls collapse (prototype `IDLE_MS`). */
 export const IDLE_MS = 3000;
-/** ←/→ 与 J/L 一次跳多少秒。 */
+/** How many seconds ←/→ and J/L jump at once. */
 export const SEEK_STEP = 5;
 export const SEEK_STEP_LONG = 10;
-/** 进度条悬停预览格：横片 160 宽，竖片按画幅收窄，高最多 120（原型 `PREV_W` / `PREV_MAX_H`）。 */
+/** Hover preview cell on the progress bar: 160 wide for landscape; portrait is narrowed to match the frame, with a maximum height of 120 (prototype `PREV_W` / `PREV_MAX_H`). */
 export const PREVIEW_WIDTH = 160;
 export const PREVIEW_MAX_HEIGHT = 120;
 
 /**
- * 「按住不放」的三件事：拖着进度条、开着弹层（菜单与键表）、正在拖音量。任一件为真，空闲计时就不收走控件——手还在条子上，
- * 条子却消失了，是播放器里最招人烦的一种「聪明」。
+ * Three things that “hold the controls up”: dragging the progress bar, a popup being open (menu or key table), and dragging the volume. If any one is true, the idle timer does not hide the controls. The hand is still on the bar, and the bar disappearing is the most annoying kind of “cleverness” in a player.
  */
 export function holdingVisible(state: { scrubbing: boolean; popup: boolean; volumeDragging: boolean }): boolean {
   return state.scrubbing || state.popup || state.volumeDragging;
 }
 
-/** 控件该不该收起：只有在播、指针不在控件条上、没按住任何东西、空闲满 3 秒时才收。暂停一定可见。 */
+/** Whether the controls should collapse: only when playing, the pointer is not on the control bar, nothing is held, and 3 seconds of idle have passed. Paused always stays visible. */
 export function chromeHidden(state: { playing: boolean; hovering: boolean; holding: boolean; idleMs: number }): boolean {
   return state.playing && !state.hovering && !state.holding && state.idleMs >= IDLE_MS;
 }
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** 进度比例（0–1）。时长为 0（空时间线）时恒为 0，不除出 NaN。 */
+/** Progress fraction (0–1). Always 0 when the duration is 0 (empty timeline), so there is no NaN from division. */
 export function seekFraction(seconds: number, duration: number): number {
   if (!(duration > 0)) return 0;
   return clamp(seconds / duration, 0, 1);
 }
 
-/** 进度条上的横坐标 → 秒（只用 `rect` 的 left 与 width）。 */
+/** Horizontal position on the progress bar → seconds (uses only `rect`'s left and width). */
 export function timeAt(clientX: number, rect: { left: number; width: number }, duration: number): number {
   if (!(rect.width > 0) || !(duration > 0)) return 0;
   return clamp(((clientX - rect.left) / rect.width) * duration, 0, duration);
 }
 
-/** 跳转步进，夹在 [0, 时长]。 */
+/** Seek step, clamped to [0, duration]. */
 export function stepTime(seconds: number, delta: number, duration: number): number {
   return clamp(seconds + delta, 0, Math.max(0, duration || 0));
 }
 
-/** 0–9 跳到时长的 0%–90%。 */
+/** 0–9 jump to 0%–90% of the duration. */
 export function percentTime(digit: number, duration: number): number {
   const total = Math.max(0, duration || 0);
   return clamp((digit / 10) * total, 0, total);
 }
 
-/** 章节边界在进度条上的位置（0–1）。首章的 0 不画——那是轨道的起点，不是一道缝。 */
+/** Position of chapter boundaries on the progress bar (0–1). The first chapter's 0 is not drawn; it is the track's start, not a seam. */
 export function chapterTicks(chapters: readonly { start: number }[], duration: number): number[] {
   if (!(duration > 0)) return [];
   return chapters.map((c) => c.start).filter((s) => s > 0.01 && s < duration).map((s) => s / duration);
 }
 
-/** 悬停预览格的大小：宽 160、按画布比例，竖片高不超过 120。 */
+/** Size of the hover preview cell: width 160, proportional to the canvas, with portrait height not exceeding 120. */
 export function previewSize(canvas: { width: number; height: number }): { width: number; height: number } {
   const ratio = canvas.width > 0 && canvas.height > 0 ? canvas.width / canvas.height : 16 / 9;
   const height = Math.min(PREVIEW_MAX_HEIGHT, Math.round(PREVIEW_WIDTH / ratio));
@@ -71,8 +70,8 @@ export function previewSize(canvas: { width: number; height: number }): { width:
 }
 
 /**
- * 进度条悬停气泡上那一格画面：这一刻最上面那层（轨道 `order` 最大）启用着、轨道可见、素材有画面的视频片段，换到素材的源时间。
- * 序列时间先按时长的约百分之一取整（`thumbnailGrid` 的档位），指针挪一点点时复用同一张缩略图，不为每个像素取一次帧。
+ * The picture in the progress bar hover bubble: the topmost layer at this moment (highest track `order`) that is enabled, on a visible track, and is a video clip with picture, mapped to the source time of the material.
+ * Sequence time is first rounded to about one percent of the duration (the `thumbnailGrid` steps); when the pointer moves a little, the same thumbnail is reused, so a frame is not grabbed for every pixel.
  */
 export function seekFrame(
   sequence: Sequence,
@@ -99,15 +98,15 @@ export function seekFrame(
   return best ? { asset: best.asset, at: best.at } : null;
 }
 
-/* ---------- 字幕四档 ---------- */
+/* ---------- Four subtitle modes ---------- */
 
 /**
- * 全屏里的字幕档位是视图态，不是文档编辑：选「只看译文」不把原文在视频里拿下（那会进撤销、跟着导出走），只在预览送去画的序列上
- * 临时停用不该露的字幕（`captionView`）。档位按画面上实际有的字幕生成：只有原文时不摆「双语」，那是空承诺。
+ * The subtitle mode in fullscreen is a view state, not document editing: choosing “translation only” does not remove the original from the video (that would enter undo and follow export). It only temporarily disables subtitles that should not show, on the sequence sent to the preview.
+ * Modes are generated from the subtitles actually on screen: with only the original, “Bilingual” is not offered, since that would be an empty promise.
  */
 export type CaptionMode = 'off' | 'source' | 'trans' | 'both';
 
-/** 画面上（轨道可见、实例启用着）有没有原文与译文字幕。 */
+/** Whether there are original and translated subtitles on screen (track visible, instance enabled). */
 export function captionAvailability(sequence: Sequence, documents: Record<Id, DocumentRecord>): { hasSource: boolean; hasTranslation: boolean } {
   const shown = captionChips(sequence, documents).filter((chip) => chip.state === 'on');
   return { hasSource: shown.some((chip) => chip.kind === 'original'), hasTranslation: shown.some((chip) => chip.kind === 'translation') };
@@ -121,7 +120,7 @@ export function captionModes(hasSource: boolean, hasTranslation: boolean): Capti
   return modes;
 }
 
-/** 进全屏时的默认档：两种都有是双语，否则跟着有的那种，都没有是关。 */
+/** Default mode when entering fullscreen: bilingual if both are present, otherwise whichever is present; off if neither. */
 export function defaultCaptionMode(hasSource: boolean, hasTranslation: boolean): CaptionMode {
   if (hasSource && hasTranslation) return 'both';
   if (hasSource) return 'source';
@@ -129,18 +128,18 @@ export function defaultCaptionMode(hasSource: boolean, hasTranslation: boolean):
   return 'off';
 }
 
-/** 选过的档位还在就用它（字幕被拿下之后可能不在了），否则用默认档。 */
+/** If the chosen mode is still there, use it (after a subtitle is removed it may be gone); otherwise use the default mode. */
 export function effectiveCaptionMode(picked: CaptionMode | null, hasSource: boolean, hasTranslation: boolean): CaptionMode {
   return picked && captionModes(hasSource, hasTranslation).includes(picked) ? picked : defaultCaptionMode(hasSource, hasTranslation);
 }
 
-/** C：轮到下一档；当前档不在表里时从表头的下一档开始。 */
+/** C: go to the next mode; if the current mode is not in the table, start from the entry after the table's head. */
 export function cycleCaptionMode(current: CaptionMode, hasSource: boolean, hasTranslation: boolean): CaptionMode {
   const modes = captionModes(hasSource, hasTranslation);
   return modes[(Math.max(0, modes.indexOf(current)) + 1) % modes.length]!;
 }
 
-/** 某一档下原文或译文露不露。 */
+/** Whether the original or the translation shows in a given mode. */
 export function captionVisible(mode: CaptionMode, kind: 'original' | 'translation'): boolean {
   if (mode === 'off') return false;
   if (mode === 'source') return kind === 'original';
@@ -148,7 +147,7 @@ export function captionVisible(mode: CaptionMode, kind: 'original' | 'translatio
   return true;
 }
 
-/** 按档位停用不该露的字幕实例（只把启用的停掉，从不把拿下的放回）；没有要停的时原样返回。 */
+/** Disable the subtitle instances that should not show under the mode (only stops the enabled ones, never re-adds removed ones); returns unchanged if there is nothing to stop. */
 export function captionView(sequence: Sequence, documents: Record<Id, DocumentRecord>, mode: CaptionMode): Sequence {
   let changed = false;
   const items = sequence.items.map((item) => {
@@ -159,11 +158,11 @@ export function captionView(sequence: Sequence, documents: Record<Id, DocumentRe
   return changed ? { ...sequence, items } : sequence;
 }
 
-/* ---------- 键盘 ---------- */
+/* ---------- Keyboard ---------- */
 
 /**
- * 全屏时播放器独占键盘：编辑器那一层（删除、复制粘贴、方向键推元素）在观看面上没有可操作的对象，接着接只会让人在看片时误删东西。
- * ⌘ / Ctrl / ⌥ 一律不接（留给系统与浏览器），⇧ 只用在左右键上。
+ * In fullscreen the player takes exclusive hold of the keyboard. The editor layer (delete, copy/paste, arrow keys to nudge elements) has no operable object on the viewing surface, and letting it through would only make people delete things by accident while watching.
+ * ⌘ / Ctrl / ⌥ are never taken (left to the system and browser); ⇧ is used only with left/right.
  */
 export type PlayerAction =
   | 'play'
@@ -185,13 +184,13 @@ export type PlayerAction =
 
 export interface PlayerKey {
   action: PlayerAction;
-  /** `percent` 的数字（0–9）。 */
+  /** Digit of `percent` (0–9). */
   digit?: number;
 }
 
 type KeyLike = Pick<KeyboardEvent, 'key' | 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>;
 
-/** 字母键：先认字符（Dvorak 等布局按字符走），认不出再按物理键位（与编辑器的 `letterOf` 同一条）。 */
+/** Letter keys: match the character first (layouts such as Dvorak go by character), and if it is not recognized, by physical key position (same as the editor's `letterOf`). */
 function letterOf(event: KeyLike): string {
   const key = event.key.length === 1 ? event.key.toLowerCase() : '';
   if (/^[a-z]$/.test(key)) return key;
@@ -230,9 +229,9 @@ export function resolvePlayerKey(event: KeyLike): PlayerKey | null {
 }
 
 /**
- * 人看的那张键表（`?`）。键只有一张表：播放器真正接的是 `resolvePlayerKey`，测试逐行拿 `probe` 打进去核对，并反向扫一遍键盘——
- * `resolvePlayerKey` 能返回、这张表没写的动作直接判红。`also` 是同一行里的另一半方向（写了 ← 就不再单列 →）。
- * 说明文字按 `action` 在文案目录里取（fullscreen-player-copy 的 `keys`）。
+ * The key table shown to people (`?`). There is only one key table: the player actually wires `resolvePlayerKey`. The tests feed each row through `probe` to check it, and also scan the keyboard in reverse:
+ * any action `resolvePlayerKey` can return that this table does not list is marked red. `also` is the other half of the same row (once ← is listed, → is not listed separately).
+ * Descriptions are looked up by `action` in the copy catalog (`keys` of fullscreen-player-copy).
  */
 export interface PlayerKeyRow {
   action: PlayerAction;

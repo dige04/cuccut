@@ -6,24 +6,20 @@ import { activeImportStaging, isImportStagingName } from '../videos/package-impo
 import { isHiddenTempOf } from './export-publish.ts';
 
 /**
- * 启动时清理上次被强杀留下的残留（架构设计 §5.8）：
+ * Startup cleanup of leftovers from a previous forced kill (architecture design §5.8):
  *
- * - 导出的隐藏临时文件：只看 Ledger 里还在、已经结束的导出任务记下的目标目录与输出文件名，只删名字是
- *   `.<输出文件名>.<8 位十六进制>.tmp` 的普通文件。排队、运行中的导出用到的（目录，文件名）不碰；Ledger 里已经剪掉的导出
- *   留下的临时文件找不到，不删。
- * - 打开便携包的暂存目录：只在来源目录（项目目录、没有项目的会话的工作目录）的第一层找名字是 `.cuccut-import-<8 位十六进制>`
- *   的目录，跳过这个进程里进行中的打开用着的。
+ * - Hidden export temp files: only looks at the target directories and output file names recorded by export jobs in the ledger that are still present and have finished, and deletes only regular files whose names are `.<output file name>.<8 hex digits>.tmp`. The (directory, file name) pairs used by queued or running exports are not touched. Temp files left by exports already pruned from the ledger cannot be found, so they are not deleted.
+ * - Staging directories for opening portable packages: only looks at the first level of the source directory (the project directory, or the working directory of a session with no project) for directories named `.cuccut-import-<8 hex digits>`, skipping the ones used by in-progress opens in this process.
  *
- * 两种都只删修改时间早于 `minAgeMs`（默认 1 小时）的：刚开始的导出与打开（包括别的进程里的）不会被删。用 `lstat` 判断种类，
- * 符号链接一律不碰，不往下找别的目录；用户自己的文件名字对不上，不会被删。失败只记日志，不影响启动。
+ * Both kinds are deleted only if their modification time is earlier than `minAgeMs` (default 1 hour), so exports and opens that just started (including those in other processes) are not deleted. The kind is determined with `lstat`. Symbolic links are never touched, and no other directories are searched beneath them. User files whose names don't match are not deleted. Failures are only logged and do not affect startup.
  */
 
 export const LEFTOVER_MIN_AGE_MS = 60 * 60 * 1000;
 
 export interface LeftoverSweepOptions {
-  /** Ledger 里的任务。 */
+  /** Jobs in the ledger. */
   jobs: () => readonly JobRecord[];
-  /** 来源目录。 */
+  /** Source directory. */
   sourceRoots: () => readonly string[];
   log: Logger;
   minAgeMs?: number;
@@ -42,7 +38,7 @@ export async function sweepLeftovers(options: LeftoverSweepOptions): Promise<Lef
   const removed: string[] = [];
   const old = (stat: { mtimeMs: number }) => stat.mtimeMs < cutoff;
 
-  // 导出：目标目录 → 结束了的导出的输出文件名；进行中的导出用着的文件名不算。
+  // Exports: target directory → output file names of finished exports; file names used by in-progress exports are excluded.
   const finished = new Map<string, Set<string>>();
   const busy = new Map<string, Set<string>>();
   for (const job of options.jobs()) {
@@ -72,7 +68,7 @@ export async function sweepLeftovers(options: LeftoverSweepOptions): Promise<Lef
     }
   }
 
-  // 打开便携包：来源目录第一层的暂存目录。
+  // Opening portable packages: staging directories at the first level of the source directory.
   const active = activeImportStaging();
   const roots = new Set<string>();
   for (const root of options.sourceRoots()) roots.add(await fs.realpath(root).catch(() => root));

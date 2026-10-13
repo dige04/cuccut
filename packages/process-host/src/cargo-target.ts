@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** 读 `.cargo/<file>` 里 `[build]` 段的 `target-dir`（只认单行字符串；够用即可，不引入 TOML 依赖）。 */
+/** Reads the `target-dir` in the `[build]` section of `.cargo/<file>` (only a single-line string is accepted; that is enough, and no TOML dependency is added). */
 function readConfiguredTargetDir(cargoDir: string): string | null {
   for (const file of ['config.local.toml', 'config.toml']) {
     let text: string;
@@ -25,8 +25,7 @@ function readConfiguredTargetDir(cargoDir: string): string | null {
 }
 
 /**
- * 从 `startDir` 往上，列出可能存放 cargo 产物的目录：`CARGO_TARGET_DIR`，各级 `.cargo/config*.toml`
- * 里的 `build.target-dir`（本机可通过不入库的 `config.local.toml` 把它挪到外置盘），以及默认的 `<dir>/target`。
+ * Walking up from `startDir`, lists the directories where cargo output may be: `CARGO_TARGET_DIR`, the `build.target-dir` in each level's `.cargo/config*.toml` (on this machine it can be moved to an external drive through the uncommitted `config.local.toml`), and the default `<dir>/target`.
  */
 export function* cargoTargetDirs(startDir: string, env: NodeJS.ProcessEnv = process.env): Generator<string> {
   if (env.CARGO_TARGET_DIR) yield path.resolve(env.CARGO_TARGET_DIR);
@@ -41,7 +40,7 @@ export function* cargoTargetDirs(startDir: string, env: NodeJS.ProcessEnv = proc
   }
 }
 
-/** 在 cargo 产物目录里找 `{release,debug}/<exe>`。 */
+/** Finds `{release,debug}/<exe>` in the cargo output directories. */
 export function findCargoBinary(startDir: string, exe: string, env: NodeJS.ProcessEnv = process.env): string | null {
   for (const targetDir of cargoTargetDirs(startDir, env)) {
     for (const profile of ['release', 'debug']) {

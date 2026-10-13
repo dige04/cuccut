@@ -43,8 +43,8 @@ const centered = style({
 });
 
 /**
- * `autoFocus`：挂上时把光标放进输入框；编辑器右下角默认展开的悬浮会话不抢焦点。
- * `quietSend`：旁边开着标签（视频编辑器的「导出」是那一屏唯一的黄色主按钮），发送按钮用中性色。
+ * `autoFocus`: on mount, put the caret in the input box; the floating conversation that opens by default at the editor's bottom-right does not steal focus.
+ * `quietSend`: a tab is open beside it (in the video editor, 「导出」 (Export) is the only yellow primary button on that screen), so the send button uses a neutral color.
  */
 export function ConversationView({
   conversationId,
@@ -57,13 +57,13 @@ export function ConversationView({
 }) {
   const runtime = useRuntime();
   const meta = useConversationMeta(conversationId);
-  // 会话没切过访问模式时跟着设置里的默认走（§3.12），设置还没到就按协议的默认。
+  // If the conversation has never switched access mode, follow the default in settings (§3.12); if settings have not loaded yet, use the protocol's default.
   const defaultMode = useSetting('agent.defaultAccessMode') ?? DEFAULT_AGENT_MODE;
   const ready = useDirectory((s) => s.ready);
   const items = useTimelineItems(conversationId);
   const loaded = useTimelineLoaded(conversationId);
   const go = useShell((s) => s.go);
-  // 与另一条会话共用工作目录的，来源按那条会话认（架构设计 §3.10）。
+  // A conversation sharing a working directory with another one takes its source from that conversation (architecture design §3.10).
   const editor = useEditorReference({ conversationId: meta?.folderOf ?? conversationId, projectId: meta?.projectId ?? null });
   const slideAnnotations = useDraftSlideAnnotationList(conversationId);
   const designAnnotations = useDraftDesignAnnotationList(conversationId);
@@ -71,7 +71,7 @@ export function ConversationView({
   const [sendingNow, setSendingNow] = useState<Id | null>(null);
 
   useEffect(() => runtime.watchConversation(conversationId), [runtime, conversationId]);
-  // 正在看的会话完成了就算读过：清掉「已完成未读」。
+  // If you are viewing a conversation when it completes, count it as read: clear 「已完成未读」 (completed, unread).
   const unread = meta?.unread ?? false;
   useEffect(() => {
     if (unread) void runtime.markRead(conversationId).catch(() => {});
@@ -93,10 +93,10 @@ export function ConversationView({
   }
 
   const busy = meta.activeTaskId !== null;
-  // 有过任务的会话不能再换 Agent（原生会话不能跨 Agent 续，架构设计 §3.11）。
+  // A conversation that has run a task cannot switch Agent again (a native conversation cannot be resumed across Agents, architecture design §3.11).
   const lockedTo = items.some((i) => i.kind === 'task') ? meta.driverId : null;
 
-  /** 忙的时候发的话先排队，带上此刻的编辑器状态、点选的 skill 与幻灯片、设计稿、设计系统标注；任务结束后按顺序发出。 */
+  /** Messages sent while busy are queued first, carrying the editor state at that moment, the selected skill and slides, design drafts and design-system annotations; they are sent in order once the task ends. */
   const enqueue = async (
     text: string,
     attachments: AttachmentRef[],
@@ -125,7 +125,7 @@ export function ConversationView({
 
   const sendNow = async (messageId: Id) => {
     setSendingNow(messageId);
-    // 带 skill 的不插话（协议的 steer 不收 skill），留在队列等这一轮结束：提示说的是这个原因，不是 Agent 不支持插话。
+    // A message with a skill does not interrupt (the protocol's steer does not accept skills); it stays queued until this turn ends. The hint gives this reason, not that the Agent does not support interrupting.
     const withSkill = !!useShell.getState().queues[conversationId]?.find((m) => m.id === messageId)?.skills?.length;
     try {
       const result = await sendQueuedMessageNow(runtime, conversationId, messageId);
@@ -205,8 +205,8 @@ export function ConversationView({
         mentionScope={{ projectId: meta.projectId, conversationId }}
         queue={<QueuedMessages conversationId={conversationId} sending={sendingNow} onSendNow={(id) => void sendNow(id)} />}
         beforeSend={async () => {
-          // 带着幻灯片、设计稿或设计系统标注时，先让打开着的编辑器把改动保存完（docs/design/slides §8.2、docs/design/canvas §8.2、§10.6）：
-          // 智能体读到的是用户看到的版本。等的时候输入框里的话留着；没保存成就不发，写出是哪几份（产品设计 §3.2.4），输入与标注都留着。
+          // When carrying slides, design drafts or design-system annotations, first let the open editor save its changes (docs/design/slides §8.2, docs/design/canvas §8.2, §10.6):
+          // the agent reads the version the user sees. While waiting, the text stays in the input box; if the save did not succeed, do not send, and say which ones (product design §3.2.4); input and annotations are kept.
           const slides = useDraftSlideAnnotations.getState().annotations[conversationId] ?? [];
           const designs = useDraftDesignAnnotations.getState().annotations[conversationId] ?? [];
           const systems = useDraftDesignSystemAnnotations.getState().annotations[conversationId] ?? [];
@@ -222,7 +222,7 @@ export function ConversationView({
           return !failedSlides.length && !failedDesigns.length && !failedSystems.length;
         }}
         onSend={async (input, attachments, skills) => {
-          // 幻灯片、设计稿与设计系统标注（§8.2、§10.6）：只带标注、没写话时补一句；发出去（或排进队列）后从草稿里摘掉。
+          // Slides, design drafts and design-system annotations (§8.2, §10.6): if only annotations are attached with no text written, add a sentence; after sending (or queuing), remove them from the draft.
           const drafted = useDraftSlideAnnotations.getState().annotations[conversationId] ?? [];
           const draftedDesigns = useDraftDesignAnnotations.getState().annotations[conversationId] ?? [];
           const draftedSystems = useDraftDesignSystemAnnotations.getState().annotations[conversationId] ?? [];
@@ -239,7 +239,7 @@ export function ConversationView({
             useDraftDesignAnnotations.getState().sent(conversationId, draftedDesigns.map((n) => n.id));
             useDraftDesignSystemAnnotations.getState().sent(conversationId, draftedSystems.map((n) => n.id));
           };
-          // 前面还有排队的：排到最后，保持先后；会话空着就先发队首那一条。
+          // If items are already queued ahead: put this one at the end to keep the order; if the conversation is empty, send the head of the queue first.
           if (busy || useShell.getState().queues[conversationId]?.length) {
             await enqueue(text, attachments, skills, notes, designNotes, systemNotes);
             sentNotes();
@@ -265,7 +265,7 @@ export function ConversationView({
             sentNotes();
             return true;
           } catch (error) {
-            // 刚好有任务开跑（别的窗口、别的入口）：这句话排队，不丢。
+            // A task just started (from another window or entry point): queue this message so it is not lost.
             if (error instanceof RpcError && error.code === 'busy') {
               await enqueue(text, attachments, skills, notes, designNotes, systemNotes);
               sentNotes();

@@ -13,9 +13,7 @@ import { AI_TOOL_DATA_KINDS, aiToolPipeline } from './ai-tool-pipeline.ts';
 import type { ContextWord } from './ai-tool-prompt.ts';
 
 /**
- * AI 工具「直接调模型」在 Runtime 里的接线（产品设计 §5.10）：流程在 JobManager 建好时登记，skill 目录、附件与导出服务在
- * Runtime 启动的后面几步才有，调用时再取。文稿用导出文稿同一份写法（`exports.renderText`），润色的词取引擎的文字计划
- * （时间线投影，剪掉的词不在里面），与导出、配音一致。
+ * Wiring of the AI tool "direct model call" in the Runtime (product design §5.10): the pipeline is registered when JobManager is built, while the skill catalog, attachments and export service only become available in later steps of Runtime startup, so they are fetched at call time. The script uses the same format as the exported script (`exports.renderText`). Polished words use the engine's text plan (the timeline projection, in which deleted words are absent), consistent with export and dubbing.
  */
 export interface AiToolWiring {
   videos: VideoService;

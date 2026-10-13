@@ -90,7 +90,7 @@ describe('编辑操作', () => {
     const busy = sequence(tracks, [video('x', 'v1', 0, 90)]);
     expect(placeAsset(busy, clip, 15)).toMatchObject([{ trackId: 'v2', at: { value: 15 } }]);
 
-    // 上面那条在播放头处空着、下面那条占着：放上面。上面那条占着、下面空着：下面会被盖住，新建一条。
+    // Above is empty at the playhead and below is occupied: put it above. Above is occupied and below is empty: below would be covered, so create a new one.
     const full = sequence(tracks, [video('x', 'v1', 0, 90), video('y', 'v2', 30, 30)]);
     const overlay = placeAsset(full, clip, 15);
     expect(overlay.map((op) => op.type)).toEqual(['addTrack', 'insertItems']);
@@ -140,7 +140,7 @@ describe('编辑操作', () => {
     );
     expect(ops.map((op) => op.type)).toEqual(['importAsset', 'addItem', 'importAsset', 'addItem', 'importAsset']);
     expect(ops[1]).toMatchObject({ asset: { ref: 'drop0' }, trackId: 'v1', at: { value: 45 } });
-    // 音频不能进视觉轨道：交给引擎挑音频轨道，接在末尾。
+    // Audio cannot go onto a visual track: leave it to the engine to pick an audio track, appended at the end.
     expect(ops[3]).toEqual({ type: 'addItem', sequenceId: 'seq', asset: { ref: 'drop1' }, alignment: 'exact-frame' });
     expect(ops[0]).toEqual({ type: 'importAsset', path: '/a.mp4', ref: 'drop0' });
   });
@@ -211,11 +211,11 @@ describe('编辑操作', () => {
     expect(trimOperation(seq, caption, 'end', 120)).toMatchObject({ edge: 'end', at: { value: 120 } });
     expect(splitOperations(seq, [], 45).map((op) => 'itemId' in op && op.itemId)).toEqual(['k', 'c']);
 
-    // 字幕没有源时间：两端都不受限。
+    // Subtitles have no source time, so neither end is limited.
     expect(trimBounds(caption, assets, seq)).toEqual({ min: 0, max: Number.POSITIVE_INFINITY });
-    // 合成的开头不能早于源时间 0（入点 0.5 秒 → 最多往前 15 帧）；代码包没有时长，结尾不受限。
+    // The composition's start cannot be earlier than source time 0 (in point 0.5 s → at most 15 frames earlier). A code package has no duration, so the end is not limited.
     expect(trimBounds(composition, assets, seq)).toEqual({ min: 15, max: Number.POSITIVE_INFINITY });
-    // 有预渲染替身时，结尾受替身的长度限制（2 秒的替身，入点 0.5 秒 → 还能放 45 帧）。
+    // With a pre-rendered stand-in, the end is limited by the stand-in's length (a 2 s stand-in, in point 0.5 s → 45 frames can still play).
     const prerendered = { ...composition, prerender: { id: 'asset_v', revision: '1' } };
     expect(trimBounds(prerendered, assets, seq)).toEqual({ min: 15, max: 75 });
 
@@ -307,7 +307,7 @@ describe('素材菜单：用在哪、在文件夹中显示', () => {
     expect(assetFilePath(linked('/Users/me/a.mp4'), '/v/demo')).toBe('/Users/me/a.mp4');
     expect(assetFilePath(linked('media/a.mp4'), '/v/demo/')).toBe('/v/demo/media/a.mp4');
     expect(assetFilePath(linked('media\\a.mp4'), 'C:\\v\\demo')).toBe('C:\\v\\demo\\media\\a.mp4');
-    // 链到视频目录外的：折掉 `..`，不越过根。
+    // For a link outside the video directory, fold `..` away and do not go past the root.
     expect(assetFilePath(linked('../downloads/a b.webm'), '/p/proj/demo')).toBe('/p/proj/downloads/a b.webm');
     expect(assetFilePath(linked('..\\downloads\\a.webm'), 'C:\\p\\demo')).toBe('C:\\p\\downloads\\a.webm');
     expect(assetFilePath(linked('../../../a.mp4'), '/v/demo')).toBe('/a.mp4');

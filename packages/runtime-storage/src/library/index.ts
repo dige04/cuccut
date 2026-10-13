@@ -1,4 +1,4 @@
-/** 用户库（架构设计 §5.9、§13.1）：存储、交换格式与出站授权。只有 Runtime 使用。 */
+/** User library (architecture design §5.9, §13.1): storage, exchange formats, and outbound authorization. Used only by the Runtime. */
 export * from './content-hash.ts';
 export * from './glossary-hint.ts';
 export * from './glossary-markdown.ts';

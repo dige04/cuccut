@@ -10,29 +10,27 @@ import { COMPOSITION_ADAPTER_SCRIPT, type AdapterPageInfo } from './composition-
 import { ADAPTER_PLACEHOLDER, COMPOSITION_HOST_SCRIPT } from './composition-host-script.ts';
 
 /**
- * Electron 离屏宿主的 TypeScript 端（架构设计 §8.3–§8.4）：拉起 `<Electron> --composition-host host.cjs`（`hostSpawnArgs`），
- * 经 JSON 行协议打开会话、按票据取帧。
+ * TypeScript side of the Electron off-screen host (architecture design §8.3–§8.4): launches `<Electron> --composition-host host.cjs` (`hostSpawnArgs`), and over a JSON-line protocol opens sessions and fetches frames by ticket.
  *
- * 一个宿主进程可以开多个会话（每个会话一个窗口、一个隔离分区）；同一会话的取帧在宿主里串行。
- * 帧是 `capturePage()` 的 PNG；`receipt.sha256` 是 PNG bytes 的摘要——同一个 Electron 版本里 PNG 编码是确定的，
- * 所以同一画面得到同一摘要（换 Electron 版本后摘要可能整体变化，不能跨版本比对）。
+ * One host process can open multiple sessions (each session has one window and one isolated partition); frame fetches within the same session are serialized in the host.
+ * A frame is the PNG from `capturePage()`; `receipt.sha256` is the digest of the PNG bytes. PNG encoding is deterministic within the same Electron version, so the same picture gets the same digest (the digest may change as a whole after changing the Electron version, so digests cannot be compared across versions).
  */
 
 export interface CompositionHostOptions {
-  /** Electron 可执行文件；不给时按 `resolveElectronBinary` 找，显式给 null 表示没有。 */
+  /** Electron executable; if not given, it is found via `resolveElectronBinary`; explicitly passing null means there is none. */
   electron?: string | null;
-  /** 写宿主脚本的目录（默认系统临时目录）。 */
+  /** Directory where the host script is written (default: the system temp directory). */
   cacheDir?: string;
   env?: NodeJS.ProcessEnv;
-  /** 宿主 stderr 的每一行。 */
+  /** Each line of the host's stderr. */
   log?: (line: string) => void;
-  /** 启动与打开会话的超时（默认 20 s）。 */
+  /** Timeout for startup and for opening a session (default 20 s). */
   openTimeoutMs?: number;
-  /** 一次取帧的超时（默认 10 s）。 */
+  /** Timeout for one frame capture (default 10 s). */
   frameTimeoutMs?: number;
 }
 
-/** 页面报告并经清单核对后的合成信息。 */
+/** Composition info reported by the page and checked against the manifest. */
 export interface CompositionPage {
   width: number;
   height: number;
@@ -43,13 +41,13 @@ export interface CompositionPage {
 
 export interface RenderedFrame {
   receipt: FrameReceipt;
-  /** PNG bytes（RGBA，透明窗口时是直通 alpha）。 */
+  /** PNG bytes (RGBA; straight alpha when the window is transparent). */
   png: Buffer;
-  /** alpha 为 0 的像素数（窗口不透明时恒为 0）。 */
+  /** Number of pixels with alpha 0 (always 0 when the window is opaque). */
   transparentPixels: number;
-  /** 0 < alpha < 255 的像素数。 */
+  /** Number of pixels with 0 < alpha < 255. */
   translucentPixels: number;
-  /** 截图方式：恒为 `capturePage`（`paint` 事件的图像实测可能是旧帧，只用来等一次重绘）。 */
+  /** Capture method: always `capturePage` (the image from the `paint` event may be a stale frame, so it is only used to wait for one repaint). */
   captureMode: 'paint' | 'capturePage';
 }
 
@@ -57,9 +55,9 @@ export interface CompositionSession {
   readonly id: string;
   readonly bundle: InspectedBundle;
   readonly page: CompositionPage;
-  /** 页面原样报告的信息（没给的字段为 null）。 */
+  /** Info as reported by the page, unchanged (fields not provided are null). */
   readonly reportedPage: AdapterPageInfo;
-  /** 到目前为止被拦截的请求 URL（打开期间与每次取帧后刷新）。 */
+  /** Request URLs intercepted so far (refreshed during opening and after each frame capture). */
   readonly blockedRequests: readonly string[];
   frame(ticket: FrameTicket): Promise<RenderedFrame>;
   dispose(): Promise<void>;
@@ -67,7 +65,7 @@ export interface CompositionSession {
 
 export interface OpenSessionOptions {
   compositionId?: string;
-  /** 页面报告的尺寸、帧率、时长与清单不一致时抛 `COMPOSITION_INTRINSIC_MISMATCH`（默认 true）。验证流程关掉它，自己逐项记录。 */
+  /** If the size, frame rate or duration reported by the page disagree with the manifest, throws `COMPOSITION_INTRINSIC_MISMATCH` (default true). The verification flow turns this off and records each item itself. */
   strictIntrinsic?: boolean;
 }
 
@@ -75,12 +73,12 @@ const DEFAULT_OPEN_TIMEOUT_MS = 20_000;
 const DEFAULT_FRAME_TIMEOUT_MS = 10_000;
 const KNOWN_CODES = new Set<string>(CODE_BUNDLE_ERROR_CODES);
 
-/** 找 Electron：显式路径 → Electron 宿主 → 开发时已经安装的二进制；只读探测，不触发下载。 */
+/** Finds Electron: explicit path → Electron host → binary already installed for development; read-only probe, does not trigger a download. */
 export function resolveElectronBinary(env: NodeJS.ProcessEnv = process.env, from: string = import.meta.url): string | null {
   if (env.CUCCUT_ELECTRON) return env.CUCCUT_ELECTRON;
   if (process.versions.electron) return process.execPath;
   try {
-    // Electron 44 的入口在缺少二进制时同步运行 install.js；Runtime 启动与能力探测不能执行它。
+    // Electron 44's entry point synchronously runs install.js when the binary is missing; Runtime startup and capability probing must not run it.
     const packageDir = path.dirname(createRequire(from).resolve('electron'));
     const pathFile = path.join(packageDir, 'path.txt');
     const executable = fs.existsSync(pathFile) ? fs.readFileSync(pathFile, 'utf8').trim() : '';
@@ -89,12 +87,12 @@ export function resolveElectronBinary(env: NodeJS.ProcessEnv = process.env, from
       : executable ? path.join(packageDir, 'dist', executable) : null;
     if (resolved && fs.existsSync(resolved)) return resolved;
   } catch {
-    // 没装 electron 包，或安装记录不可读。
+    // The electron package is not installed, or its install record is unreadable.
   }
   return null;
 }
 
-/** 把宿主脚本写到缓存目录；文件名带内容摘要，并发的宿主各自写临时文件再改名，不会读到半个脚本。 */
+/** Writes the host script to the cache directory. The filename carries a content digest, and concurrent hosts each write a temp file and then rename it, so no one reads a half-written script. */
 function writeHostScript(cacheDir: string | undefined): string {
   const source = COMPOSITION_HOST_SCRIPT.replace(ADAPTER_PLACEHOLDER, () => JSON.stringify(COMPOSITION_ADAPTER_SCRIPT));
   const digest = crypto.createHash('sha256').update(source).digest('hex').slice(0, 16);
@@ -109,10 +107,9 @@ function writeHostScript(cacheDir: string | undefined): string {
 }
 
 /**
- * 拉起宿主的参数：开关与脚本是两个独立参数（不写成 `--composition-host=<脚本>`）。
- * - 打包后的应用（Runtime 以 `ELECTRON_RUN_AS_NODE` 跑在应用自己的可执行文件里，`resolveElectronBinary` 拿到的就是它）不认命令行里的
- *   脚本，总是加载 asar 里的主进程入口；入口见到这个开关就只跑后面的脚本（`apps/desktop/src/main/composition-host-entry.ts`）。
- * - 开发态的 Electron（default_app）跳过 `-` 开头的未知参数，把下一个不带 `-` 的参数当应用文件，脚本照样直接加载。
+ * Arguments for launching the host: the switch and the script are two separate arguments (not written as `--composition-host=<script>`).
+ * - The packaged app (the Runtime runs under `ELECTRON_RUN_AS_NODE` in the app's own executable, which is what `resolveElectronBinary` returns) does not recognize a script on the command line; it always loads the main-process entry inside the asar. On seeing this switch, the entry runs only the script that follows (`apps/desktop/src/main/composition-host-entry.ts`).
+ * - Development Electron (default_app) skips unknown arguments starting with `-` and treats the next argument that does not start with `-` as the app file; the script is still loaded directly.
  */
 export function hostSpawnArgs(script: string): string[] {
   return ['--composition-host', script];
@@ -120,7 +117,7 @@ export function hostSpawnArgs(script: string): string[] {
 
 const isCode = (code: string): code is CodeBundleErrorCode => KNOWN_CODES.has(code);
 
-/** 子进程错误 → `CodeBundleError`。 */
+/** Child-process error → `CodeBundleError`. */
 function mapError(error: unknown, worker: JsonLineWorker): CodeBundleError {
   if (error instanceof CodeBundleError) return error;
   if (error instanceof WorkerRequestError) {
@@ -163,7 +160,7 @@ interface FrameResult {
 
 const sameRate = (a: Rate, b: Rate) => a.num * b.den === b.num * a.den;
 
-/** 页面报告与清单逐项比对；返回不一致的项。 */
+/** Compares the page report with the manifest item by item; returns the mismatched items. */
 export function intrinsicMismatches(
   bundle: InspectedBundle,
   page: CompositionPage,
@@ -192,7 +189,7 @@ export class CompositionHost {
     this.#frameTimeoutMs = options.frameTimeoutMs ?? DEFAULT_FRAME_TIMEOUT_MS;
   }
 
-  /** 拉起宿主并等它报告 `ready`；找不到 Electron 或启动失败时抛 `COMPOSITION_HOST_UNAVAILABLE`。 */
+  /** Launches the host and waits for it to report `ready`; throws `COMPOSITION_HOST_UNAVAILABLE` if Electron is not found or startup fails. */
   static async start(options: CompositionHostOptions = {}): Promise<CompositionHost> {
     const baseEnv = options.env ?? process.env;
     const electron = options.electron === undefined ? resolveElectronBinary(baseEnv) : options.electron;
@@ -242,7 +239,7 @@ export class CompositionHost {
     return this.#worker.alive;
   }
 
-  /** 宿主事件（`networkBlocked {sessionId, url}`），供日志与界面。 */
+  /** Host event (`networkBlocked {sessionId, url}`), for logs and the UI. */
   onEvent(listener: (event: WorkerEvent) => void): () => void {
     return this.#worker.onEvent(listener);
   }
@@ -255,7 +252,7 @@ export class CompositionHost {
     }
   }
 
-  /** 打开一个会话：加载入口、注入适配脚本、等合同就绪，再与清单交叉核对。 */
+  /** Opens a session: loads the entry, injects the adapter script, waits for the contract to be ready, then cross-checks against the manifest. */
   async open(bundle: InspectedBundle, options: OpenSessionOptions = {}): Promise<CompositionSession> {
     const { manifest } = bundle;
     if (manifest.runtime.engine !== 'browser') {
@@ -302,18 +299,18 @@ export class CompositionHost {
     return session;
   }
 
-  /** @internal 会话用。 */
+  /** @internal For sessions. */
   requestFrame(params: { sessionId: string; seconds: number; requestId: string; fps: Rate }): Promise<FrameResult> {
     return this.#request<FrameResult>('frame', params, this.#frameTimeoutMs);
   }
 
-  /** @internal 会话用。 */
+  /** @internal For sessions. */
   async closeSession(sessionId: string): Promise<void> {
     if (!this.#worker.alive) return;
     await this.#request('close', { sessionId }, this.#frameTimeoutMs);
   }
 
-  /** 关掉宿主（关 stdin，宿主销毁全部窗口后退出）。 */
+  /** Shuts the host down (closes stdin; the host destroys all windows and exits). */
   async close(): Promise<void> {
     await this.#worker.close(5_000);
   }
@@ -348,7 +345,7 @@ class HostSession implements CompositionSession {
     return this.#blocked;
   }
 
-  /** 按票据的 `localTime` 取一帧（输出尺寸恒为包的固有尺寸；票据的宽高只做记录）。 */
+  /** Captures one frame at the ticket's `localTime` (output size is always the package's intrinsic size; the ticket's width and height are only recorded). */
   async frame(ticket: FrameTicket): Promise<RenderedFrame> {
     if (this.#disposed) throw new CodeBundleError('COMPOSITION_SCRIPT_ERROR', 'The composition session has been disposed');
     const requestedSeconds = Number(ticket.localTime.ticks) / ticket.localTime.timescale;
@@ -386,7 +383,7 @@ class HostSession implements CompositionSession {
   }
 }
 
-/** 按秒数构造一张取帧票据（`localTime` 以输出帧率为时间基时精确；其余用微秒）。 */
+/** Builds a capture ticket from seconds (`localTime` is exact when the output frame rate is the time base; otherwise microseconds are used). */
 export function frameTicketAt(
   bundle: InspectedBundle,
   time: { frameIndex: number; fps: Rate } | { seconds: number },

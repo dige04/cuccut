@@ -113,70 +113,68 @@ export interface HarnessOptions {
   conversations: ConversationStore;
   projects: ProjectStore;
   drivers: DriverRegistry;
-  /** Agent 偏好（各家的默认模型、放行策略、「总是允许」规则）。没给时用 Runtime Home 里的那份。 */
+  /** Agent preferences (each provider's default model, permission policy, "always allow" rules). If not given, the one in the Runtime Home is used. */
   prefs?: AgentPrefsStore;
-  /** Agent 的探测缓存（§3.11）。没给时用 Runtime Home 里的那份（`store/agent-probes.json`）。 */
+  /** Agent probe cache (§3.11). If not given, the one in the Runtime Home is used (`store/agent-probes.json`). */
   probes?: AgentProbeStore;
   log: Logger;
   /**
-   * 偏好设置（架构设计 §5.10）：新会话的默认 Driver、新任务的默认访问模式。没有时按内置默认值。
-   * 能写（`set`）时，移除一个用户添加的智能体会把指向它的 `agent.defaultDriver` 清空。
+   * Preferences (architecture design §5.10): the default Driver for new sessions and the default access mode for new tasks. Without them, built-in defaults are used.
+   * When writable (`set`), removing a user-added agent clears any `agent.defaultDriver` that points to it.
    */
   settings?: SettingsReader & { set?(patch: unknown): Promise<unknown> };
   /**
-   * 用户添加的 ACP 智能体（§3.11）：存储与从配置构造 Driver 的工厂（`@cuccut/agent-drivers` 的 `createCustomAcpDriver`）。
-   * 启动时已经存着的由调用方在打开 Harness 之前注册（探测缓存要认得它们）；这里只管运行中的添加与移除。没有时两个方法 `unsupported`。
+   * User-added ACP agents (§3.11): storage and the factory that builds a Driver from config (`createCustomAcpDriver` in `@cuccut/agent-drivers`).
+   * Those already stored at startup are registered by the caller before opening the Harness (the probe cache needs to recognize them); this only handles additions and removals while running. Without it, both methods are `unsupported`.
    */
   providers?: { store: AgentProviderStore; create(provider: CustomAgentProvider): AgentDriver };
-  /** 智能体的工具通道（架构设计 §3.5）。没有时智能体只有它自带的文件与命令能力。 */
+  /** The agent's tool channel (architecture design §3.5). Without it, the agent only has its own built-in file and command abilities. */
   tools?: AgentToolAccess;
   /**
-   * 智能体经工具提交的后台 Job（§7.4）：主停止时取消这个会话还没结束的，返回发出取消的个数。异步时在引擎确认
-   * 停止屏障之后兑现（之后这些 Job 不会再写进视频）。
+   * Background Jobs the agent submitted through tools (§7.4): when the main stop happens, cancel the ones in this session that have not finished, and return the number cancelled. When asynchronous, they are carried out after the engine confirms the stop barrier (after which these Jobs no longer write into the video).
    */
   jobs?: { cancelSubmittedBy(conversationId: Id): number | Promise<number> };
-  /** 消息里的图片附件（产品设计 §3.2.4）。没有时带附件的发送如实拒绝。 */
+  /** Image attachments in messages (product design §3.2.4). Without it, sends with attachments are honestly rejected. */
   attachments?: HarnessAttachments;
-  /** 任务预算的账本（架构设计 §3.2、§7.8）：每个任务建立时登记它的预算策略。没有时合同不带 `budgetPolicyRef`、不能设预算。 */
+  /** Ledger for task budgets (architecture design §3.2, §7.8): each task registers its budget policy when created. Without it, contracts carry no `budgetPolicyRef` and budgets cannot be set. */
   budgets?: TaskBudgetPort;
   /**
-   * 此刻打开着的视频目录（真实路径）。会话工作目录里有它们时不放进项目、不删会话（`VIDEO_IN_USE`）；检查之后才打开的，搬的时候
-   * 跳过它们（与包含它们的目录），关掉之后再搬。
-   * 没有时当作都没有打开。
+   * Video directories currently open (real paths). When a session's working directory contains them, they are not put into the project and the session is not deleted (`VIDEO_IN_USE`). Those opened after the check are skipped when moving (along with the directories containing them) and moved after they are closed.
+   * Without it, treat all as not open.
    */
   openVideoDirs?: () => readonly string[];
-  /** 搬工作目录之前，把其中没人再用、只在宽限期里等着关的视频现在就关掉（§3.10）。 */
+  /** Before moving a working directory, close now any videos in it that nobody else uses and that are only waiting in the grace period (§3.10). */
   closeIdleVideos?: (dir: string) => Promise<void>;
 }
 
-/** 附件仓库：`attachments.prepare` 登记、经上传地址收下的图片，发送时换成本地文件交给 Driver。 */
+/** Attachment store: images registered by `attachments.prepare` and received via the upload address; swapped for local files when sent and handed to the Driver. */
 export interface HarnessAttachments {
   kindOf?(id:Id):AttachmentRef['kind']|undefined;
-  /** 换成本地文件。不认识的抛 `not-found`，还没传完的抛 `invalid-request`。 */
+  /** Swap for local files. Unknown ones throw `not-found`; ones not yet fully uploaded throw `invalid-request`. */
   resolve(ids: Id[]): Promise<{ ref: AttachmentRef; path: string }[]>;
-  /** 已经随消息发出：从此跟着会话走，不再按过期清理。 */
+  /** Already sent with a message: from now on it follows the session and is no longer cleaned up as expired. */
   markSent(ids: Id[]): void;
-  /** 会话删除时删掉只有它引用的附件文件。 */
+  /** When a session is deleted, delete the attachment files that only it references. */
   discard?(ids: Id[]): Promise<void>;
 }
 
-/** 改合同的一方：用户（界面、CLI、Web）或任务里的智能体（工具）。 */
+/** The party that changes the contract: the user (UI, CLI, Web) or an agent in a task (tool). */
 export type ContractActor = 'user' | 'agent';
 
-/** 停止请求发出后，等原生侧确认的期限；超过就结束智能体进程（架构设计 §2.4）。 */
+/** Deadline for the native side to confirm after a stop request is sent; past it, the agent process is ended (architecture design §2.4). */
 const STOP_CONFIRM_MS = 10_000;
 const SHUTDOWN_GRACE_MS = 3_000;
-/** 任务结束后原生会话空闲多久就关掉。恢复句柄已经持久化，下次发送时恢复。 */
+/** How long the native session stays idle after a task ends before it is closed. The resume handle is already persisted, so it is resumed on the next send. */
 const SESSION_IDLE_MS = 10 * 60_000;
-/** `agents.list` 的便宜纠正（§3.11）：经过集成测试、结果不是 ready 的 Driver，结果超过这么久就后台再探一次。 */
+/** Cheap correction for `agents.list` (§3.11): a Driver that passed the integration test with a result that is not ready. Once the result is older than this, probe it again in the background. */
 const STALE_RECHECK_MS = 60_000;
-/** 无项目会话绑定项目时，选定的项目目录先记在工作目录里的这个文件（§3.10 的幂等键）；绑定完成后删掉。 */
+/** When a project-less session binds to a project, the chosen project directory is first recorded in this file in the working directory (the idempotency key of §3.10); deleted after binding completes. */
 const BIND_INTENT_FILE = '.cuccut-binding.json';
-/** 搬进项目时因为视频开着留下的工作目录，隔多久再搬一次。 */
+/** For a working directory left behind when moving into a project because a video was open: how long to wait before trying the move again. */
 const FOLD_RETRY_MS = 30_000;
 /**
- * 运行中出现这些错误，说明这个 Driver 的探测结果可能过时了（刚退出登录、卸载、升级了 CLI、模型表变了）：
- * 后台强制重新探测它（§3.11）。不直接改写缓存里的状态：探测是唯一的事实来源。
+ * If these errors occur while running, this Driver's probe result may be stale (just logged out, uninstalled, CLI upgraded, model table changed):
+ * force a re-probe of it in the background (§3.11). Do not rewrite the state in the cache directly: the probe is the single source of truth.
  */
 const RECHECK_ERROR_CODES = new Set<AgentErrorCode>([
   'AGENT_AUTH_REQUIRED',
@@ -186,36 +184,35 @@ const RECHECK_ERROR_CODES = new Set<AgentErrorCode>([
 ]);
 
 interface ActiveRun extends RunContext {
-  /** 此刻生效的访问模式：任务开始时取定，任务进行中切换模式时跟着改（§3.12）。 */
+  /** The access mode in effect now: fixed when a task starts, and changed along with it if the mode is switched during the task (§3.12). */
   mode: AgentMode;
-  /** 用户选了「这个任务里不再问」的 CucCut 工具。只在内存里，任务结束即失效。 */
+  /** CucCut tools the user chose "don't ask again in this task" for. In memory only; invalid when the task ends. */
   sessionAllowed: Set<string>;
-  /** 发送时会话上的模型与强度：这一轮按它跑，中途改了下一轮生效。 */
+  /** The model and effort on the session at send time: this turn runs with them; changes made mid-turn take effect on the next turn. */
   model: string | null;
   effort: string | null;
   interruptSent: boolean;
   stopTimer: ReturnType<typeof setTimeout> | null;
 }
 
-/** 会话里一次 CucCut 工具调用要确认的内容（§3.12）。 */
+/** The content of one CucCut tool call in a session that needs confirmation (§3.12). */
 export interface ToolCallApprovalRequest {
   tool: string;
-  /** 目标：视频、文件。 */
+  /** Targets: video, file. */
   targets: string[];
   summary: string;
   risk: RiskLevel;
   /**
-   * 这次调用要外发、还没有授权覆盖的数据（§12.5）：审批里列出，允许时带回用户对授权的选择。带它的审批不受
-   * 「这个任务里不再问」与「总是允许」影响：每一次外发都要有授权覆盖。
+   * Data this call will send out that is not yet covered by an authorization (§12.5): listed in the approval; when allowed, carries back the user's choice of authorization. Approvals carrying it are not affected by "don't ask again in this task" or "always allow": every outbound send must have an authorization covering it.
    */
   grants?: GrantRequestItem[];
-  /** 「总是允许」存的规则（通常是工具名）。不给或 null 表示这次不提供（例如不可撤销的覆盖）。 */
+  /** The rule "always allow" stores (usually the tool name). Not given or null means not offered this time (e.g. an irreversible override). */
   rule?: string | null;
 }
 
 /**
- * 工具调用的审批结果。`allowed` 时可以执行；其余不执行：`denied`（模式不允许或用户拒绝）、`cancelled`（停止、打断、任务结束）、
- * `no-task`（会话没有进行中的任务）。`mode` 是当时生效的访问模式，记进工具结果。
+ * Result of the tool call approval. `allowed` means it may execute; the others do not: `denied` (the mode disallows it or the user refused), `cancelled` (stop, interrupt, task ended),
+ * `no-task` (the session has no task in progress). `mode` is the access mode in effect at the time, recorded in the tool result.
  */
 export type ToolCallApproval =
   | { status: 'allowed' | 'denied'; mode: AgentMode; risk: RiskLevel; decidedBy: 'auto' | 'user' | 'rule'; grant?: ApprovalGrantChoice }
@@ -223,13 +220,13 @@ export type ToolCallApproval =
   | { status: 'no-task' };
 
 /**
- * Agent Harness 的外观（架构设计 §3）：会话、任务、审批与原生会话的协调。
+ * Facade of the Agent Harness (architecture design §3): coordination of sessions, tasks, approvals and native sessions.
  *
- * 0.1 的范围：ConversationStore、TaskController（发送、停止屏障）、ApprovalService、
- * ConversationProjector 与 AgentManager。ContextBuilder、ToolCatalog、VideoMemory 随视频引擎出现。
+ * Scope of 0.1: ConversationStore, TaskController (send, stop barrier), ApprovalService,
+ * ConversationProjector and AgentManager. ContextBuilder, ToolCatalog and VideoMemory come with the video engine.
  */
 export class Harness {
-  /** 会话与对外服务共用的审批（§3.12、§4.8）。待处理的审批经 `tasks` 主题送达。 */
+  /** Approvals shared by sessions and external services (§3.12, §4.8). Pending approvals are delivered via the `tasks` topic. */
   readonly approvals = new ApprovalService();
   readonly #home: RuntimeHome;
   readonly #store: ConversationStore;
@@ -246,17 +243,17 @@ export class Harness {
   readonly #states = new Map<Id, ConversationState>();
   readonly #runs = new Map<Id, ActiveRun>();
   readonly #commands = new Map<string, Id>();
-  /** 会话审批 → 统一审批号：键是 `<会话>/<条目里的审批号>`。 */
+  /** Session approval → unified approval number: the key is `<session>/<approval number in the entry>`. */
   readonly #approvalKeys = new Map<string, Id>();
   readonly #idleTimers = new Map<Id, ReturnType<typeof setTimeout>>();
-  /** 进行中的「无项目会话绑定项目」：同一个会话同时只跑一趟。 */
+  /** In-progress "project-less session binds to project": only one run per session at a time. */
   readonly #binding = new Map<Id, Promise<Project>>();
   /**
-   * 回合进行中绑定了项目的会话 → 它回合里还在用的旧工作目录（共用工作目录的会话是那条会话的）：回合结束时收拾那里剩下的东西，
-   * 并关掉原生会话（下一轮在项目目录里起）。
+   * A session bound to a project while a turn is in progress → the old working directory still used in that turn (for a session sharing a working directory, it belongs to that session). When the turn ends, clean up what is left there,
+   * and close the native session (the next turn starts in the project directory).
    */
   readonly #rebound = new Map<Id, string>();
-  /** 搬进项目时因为视频开着没搬完的工作目录 → 下次再搬的计时器（视频关掉后搬走，§3.10）。 */
+  /** Working directory left over from a move into a project because a video was open → the timer for the next move (move once the video is closed, §3.10). */
   readonly #foldRetries = new Map<string, ReturnType<typeof setTimeout>>();
   readonly #openVideoDirs: () => readonly string[];
   readonly #closeIdleVideos: (dir: string) => Promise<void>;
@@ -288,7 +285,7 @@ export class Harness {
     );
     this.#directory = new TopicLog(() => this.directorySnapshot(), '0');
     this.#tasks = new TopicLog(() => this.tasksSnapshot(), '0');
-    // `agents` 主题（§3.11）：快照就是同步的 `agents.list` 视图；每个 Driver 的探测完成、偏好变化时送整份新视图。
+    // `agents` topic (§3.11): the snapshot is the synchronous `agents.list` view; each Driver's probe completion and preference changes push a full new view.
     this.#agentsTopic = new TopicLog(() => this.agentsSnapshot(), '0');
     this.#drivers.onChange(() => this.agentsChanged());
     this.approvals.subscribe((event) => {
@@ -301,17 +298,17 @@ export class Harness {
     const harness = new Harness(options);
     const prefs = await harness.#prefs.load();
     for (const id of options.drivers.ids()) options.drivers.setExecutable(id, prefs.drivers[id]?.executable ?? null);
-    // 先设好可执行文件再读探测缓存：缓存里按别的可执行文件探测的条目丢掉（§3.11）。
+    // Set the executable first, then read the probe cache: entries probed against a different executable are dropped (§3.11).
     await options.drivers.load(options.probes ?? new AgentProbeStore(options.home.agentProbesFile), harness.#log.child('drivers'));
     await options.projects.load();
     for (const record of await options.conversations.load()) harness.#adopt(record);
     harness.#recover();
-    // 界面先看到上次的结果，后台把每个 Driver 重新探测一遍，各自完成各自推送。
+    // The UI sees the last result first; in the background, each Driver is re-probed, and each pushes its own result on completion.
     void options.drivers.refresh(undefined, { reason: 'startup' });
     return harness;
   }
 
-  // ---- 目录 ----
+  // ---- Directory ----
 
   directorySnapshot(): DirectorySnapshot {
     return {
@@ -320,7 +317,7 @@ export class Harness {
     };
   }
 
-  /** 任务中心：所有会话的任务，新的在前；以及会话与对外服务的待处理审批，旧的在前。 */
+  /** Task center: tasks from all sessions, newest first; plus pending approvals from sessions and external services, oldest first. */
   tasksSnapshot(): TasksSnapshot {
     const tasks = [...this.#states.values()].flatMap((state) => state.tasks().map((task) => summarize(state.conversation, task)));
     tasks.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0));
@@ -341,21 +338,20 @@ export class Harness {
     return state.subscribe(afterSeq, listener);
   }
 
-  // ---- 项目 ----
+  // ---- Projects ----
 
   listProjects(): Project[] {
     return this.#projects.list();
   }
 
   /**
-   * 打开一个目录作为项目（架构设计 §5.1）。项目的标识在目录里的 `.ccut/project.json`，登记只是索引：
+   * Open a directory as a project (architecture design §5.1). The project's identity is the `.ccut/project.json` in the directory; the registry is only an index:
    *
-   * 1. 有标记、登记里有这个 id：路径相同是同一个项目；登记的路径已不存在（或那里的标记不再是这个 id）是目录被移动或改名，
-   *    更新登记的路径，id 与会话不变；登记的路径还在且标记仍是这个 id，当前目录是副本，写入新的 id、作为新项目登记。
-   * 2. 有标记、登记里没有：沿用标记里的 id（登记由标记重建）。
-   * 3. 没有标记：登记里已有这个路径（升级前登记的项目）沿用它的 id，否则新 id；写入标记。
+   * 1. Marker present, registry has this id: same path is the same project. If the registered path no longer exists (or its marker is no longer this id), the directory was moved or renamed: update the registered path, with the id and sessions unchanged. If the registered path still exists and its marker is still this id, the current directory is a copy: write a new id and register it as a new project.
+   * 2. Marker present, not in the registry: reuse the id in the marker (the registry is rebuilt from the marker).
+   * 3. No marker: if the registry already has this path (a project registered before the upgrade), reuse its id; otherwise a new id. Write the marker.
    *
-   * 标记只在这里（与新建项目）写，总在登记之前写：目录不可写时报错，不登记一个没有标记的项目。
+   * The marker is written only here (and when creating a new project), always before the registry: if the directory is not writable, error out, and do not register a project without a marker.
    */
   async openProject(dir: string): Promise<Project> {
     let real: string;
@@ -372,38 +368,38 @@ export class Harness {
     if (marker) {
       const registered = this.#projects.get(marker.projectId);
       if (!registered) {
-        // 登记被删、换了机器：按标记重建。标记优先：同一路径上如果还有别的旧登记，保留它，不动它的会话。
+        // Registry deleted or moved to another machine: rebuild from the marker. The marker takes priority: if another old registry entry exists at the same path, keep it and do not touch its sessions.
         project = newProject(marker.projectId, real, marker.createdAt, now);
       } else if (registered.path === real || (await sameDirectory(registered.path, real))) {
         project = { ...registered, path: real, lastActiveAt: now, archived: false };
       } else if (await this.#stillMarked(registered.path, registered.id)) {
-        // 副本：原项目还在原处。副本得到新的标识，不继承原项目的会话与 Space 标记。
+        // Copy: the original project is still in its original place. The copy gets a new identity and does not inherit the original project's sessions or Space markers.
         const id = newId('proj');
         await this.#writeMarker(real, id, now);
         this.#log.info('Project folder is a copy; assigned a new id', { from: registered.id, to: id });
         project = newProject(id, real, now, now);
       } else {
-        // 被移动或改名：沿用标识，会话仍然挂在它下面。名字跟着目录走，用户改过的保留。
+        // Moved or renamed: keep the identity, sessions remain attached under it. The name follows the directory; a name the user changed is kept.
         moved = registered.path;
         const name = registered.name === dirLabel(registered.path) ? dirLabel(real) : registered.name;
         project = { ...registered, name, path: real, lastActiveAt: now, archived: false };
         this.#log.info('Project folder moved', { projectId: registered.id });
       }
     } else {
-      // 没有标记：升级前登记的路径沿用原来的 id。删掉标记再从同一路径打开也会得到原来的 id。
+      // No marker: a path registered before the upgrade keeps its original id. Deleting the marker and opening from the same path again also gives the original id.
       const existing = this.#projects.findByPath(real);
       const id = existing?.id ?? newId('proj');
       await this.#writeMarker(real, id, existing?.createdAt ?? now);
       project = existing ? { ...existing, lastActiveAt: now, archived: false } : newProject(id, real, now, now);
     }
-    // 重新打开一个归档的项目，等于把它拿回列表。
+    // Reopening an archived project is the same as putting it back in the list.
     await this.#projects.put(project);
     this.#directory.publish({ type: 'project.upsert', project });
     if (moved) this.#rebaseConversations(project);
     return project;
   }
 
-  /** 读当前目录的标记。认不出的改名保留后当作没有；版本太新的拒绝打开，不改写它。 */
+  /** Read the marker in the current directory. An unrecognized name is kept and then treated as absent; a version too new is refused and not rewritten. */
   async #readMarker(dir: string): Promise<ProjectMarker | null> {
     let read: ProjectMarkerRead;
     try {
@@ -437,7 +433,7 @@ export class Harness {
     }
   }
 
-  /** 登记的路径上是否还是这个项目：目录还在、标记还是这个 id。读不了标记时按「还在」处理，宁可当副本也不抢走原项目的标识。 */
+  /** Whether the registered path is still this project: the directory still exists and the marker is still this id. If the marker cannot be read, treat it as "still there": better to treat it as a copy than to take over the original project's identity. */
   async #stillMarked(dir: string, projectId: Id): Promise<boolean> {
     if (
       !(await fs.stat(dir).then(
@@ -454,7 +450,7 @@ export class Harness {
     }
   }
 
-  /** 项目目录换了位置：绑定在它上面的会话的工作目录跟着换。 */
+  /** The project directory moved: the working directories of sessions bound to it follow the move. */
   #rebaseConversations(project: Project): void {
     for (const state of this.#states.values()) {
       if (state.conversation.projectId !== project.id || state.conversation.cwd === project.path) continue;
@@ -462,7 +458,7 @@ export class Harness {
     }
   }
 
-  /** 新建项目：在项目目录下建一个新目录（产品设计 §3.1）。重名加序号，从不复用已有目录。 */
+  /** Create a new project: make a new directory under the project directory (product design §3.1). Duplicate names get a number; an existing directory is never reused. */
   async createProject(params: { name?: string; commandId?: Id }): Promise<Project> {
     const key = params.commandId ? `project:${params.commandId}` : null;
     const done = key ? this.#commands.get(key) : undefined;
@@ -476,8 +472,8 @@ export class Harness {
   }
 
   /**
-   * 在项目目录下建一个新目录并作为项目打开（登记、写标记）。`reserve` 在建目录之前拿到选定的路径（绑定会话时先把它记下来，
-   * 崩溃后据此接着用同一个目录，§3.10）；给了它时不选已经存在的名字。
+   * Create a new directory under the project directory and open it as a project (register, write the marker). `reserve` obtains the chosen path before the directory is created (recorded first when binding a session,
+   * so after a crash the same directory is reused, §3.10). When given, an already-existing name is not chosen.
    */
   async #newProjectDir(name: string, reserve?: (dir: string) => Promise<void>): Promise<Project> {
     const base = sanitizeDirName(name) || HP.untitledProject().text;
@@ -498,7 +494,7 @@ export class Harness {
       try {
         return await this.openProject(dir);
       } catch (error) {
-        // 写不进标记就不留下一个空目录。
+        // If the marker cannot be written, do not leave an empty directory behind.
         await fs.rmdir(dir).catch(() => {});
         throw error;
       }
@@ -506,26 +502,25 @@ export class Harness {
     throw new RpcError('conflict', HP.tooManySameName());
   }
 
-  // ---- 无项目会话绑定项目（架构设计 §3.10） ----
+  // ---- Project-less session binds to project (architecture design §3.10) ----
 
   /**
-   * 把无项目的会话放进一个新项目（用户明确要建项目时由智能体的 `projects_adopt_session` 调用；删除还有视频的会话之前也走这里）：先在项目目录下
-   * 建立项目并登记（与 `createProject` 同一条路径；名字是给的 `name`，不给时取工作目录里最早建的视频的名字，没有视频时取会话标题，
-   * 再没有用默认名），再把会话绑定到它（`projectId` 从 null 变为它，工作目录换成项目目录），工作目录里已有的东西原样搬进项目目录
-   * （相对路径不变）。之后视频建在项目里，Space 按项目列出，删会话不影响它们。已经属于项目的会话直接返回那个项目。
-   * 新建视频本身不绑定：无项目会话的视频就建在它的工作目录里。
+   * Put a project-less session into a new project (called by the agent's `projects_adopt_session` when the user explicitly asks to create a project; also used before deleting a session that still has videos). First create and register a project under the project directory (same path as `createProject`; the name is the given `name`; if not given, use the name of the earliest-created video in the working directory, and if there are no videos, the session title,
+   * and if none of those, the default name). Then bind the session to it (`projectId` changes from null to it, and the working directory switches to the project directory), and move what is already in the working directory into the project directory unchanged
+   * (relative paths unchanged). Afterwards, videos are created in the project, Space lists them by project, and deleting the session does not affect them. A session already in a project returns that project directly.
+   * A new video itself is not bound: a video created in a project-less session is created in its working directory.
    *
-   * 工作目录里的视频还被别的窗口、任务或连接开着时拒绝（`conflict`，`VIDEO_IN_USE`），不建项目、不绑定：开着的视频搬不动，
-   * 先绑定再等它关掉会让它落在会话的工作目录与项目之外。
+   * Refused (`conflict`, `VIDEO_IN_USE`) when a video in the working directory is still open in another window, task or connection: no project is created and nothing is bound. An open video cannot be moved;
+   * binding first and waiting for it to close would leave it outside both the session's working directory and the project.
    *
-   * 幂等：会话记录上的 `projectId` 是持久的锚点，绑定之后再来的调用（重试、同一命令的重复提交、崩溃后恢复的流程）都拿回同一个项目；
-   * 同一个会话同时到来的调用共用一趟。选定的项目目录在建之前先记在工作目录的 `.cuccut-binding.json` 里：项目建好、会话还没绑定之间
-   * 崩溃时，下次绑定接着用那个目录，不产生第二个项目。
+   * Idempotent: `projectId` on the session record is the durable anchor. Calls arriving after binding (retries, duplicate submissions of the same command, the flow resumed after a crash) all get the same project back;
+   * concurrent calls for the same session share one run. The chosen project directory is first recorded in the working directory's `.cuccut-binding.json` before creation: if it crashes after the project is created but before the session is bound,
+   * the next bind reuses that directory and does not produce a second project.
    *
-   * 回合进行中绑定时，原生会话仍以原来的工作目录起着：旧路径换成指向项目目录的链接（Windows 是目录联接），回合里按旧路径的读写
-   * 落到项目里；回合结束时删掉链接并关掉原生会话（下一轮在项目目录里起，按恢复句柄续上）。
+   * When binding during a turn, the native session is still running with its original working directory: the old path is replaced with a link pointing to the project directory (a directory junction on Windows), so reads and writes by old path during the turn land in the project.
+   * When the turn ends, the link is deleted and the native session closed (the next turn starts in the project directory and resumes via the resume handle).
    *
-   * 共用工作目录的会话（`folderOf`）放进的是那条会话：两边连同共用这个目录的其他会话一起绑定到同一个项目。
+   * A session sharing a working directory (`folderOf`) moves the whole group: both sides are bound to the same project together with the other sessions sharing that directory.
    */
   ensureConversationProject(conversationId: Id, options: { name?: string } = {}): Promise<Project> {
     const state = this.#require(conversationId);
@@ -547,8 +542,8 @@ export class Harness {
     const scratch = this.#ownScratch(state.conversation);
     const intentFile = scratch ? path.join(scratch, BIND_INTENT_FILE) : null;
     if (scratch) await fs.mkdir(scratch, { recursive: true });
-    // 视频还开着就不绑：工作目录一换，开着的视频就落在会话的工作目录与项目之外，Space 里找不到、也打不开，直到它被关掉。
-    // 这条与共用这个目录的会话里闲着的原生会话先关掉（绑定之后本来也要关）：它们的智能体开着的视频随之放下。
+    // Do not bind while a video is still open: once the working directory changes, an open video would fall outside both the session's working directory and the project, unfindable and unopenable in Space until it is closed.
+    // First close the idle native sessions among the sessions sharing this directory (they would be closed after binding anyway): the videos their agents have open are released along with them.
     if (scratch) {
       await this.#releaseIdle([state, ...this.#guestsOf(id)]);
       await this.#assertNoneOpen(scratch);
@@ -566,9 +561,9 @@ export class Harness {
       name?.trim() || (scratch ? await firstVideoName(scratch) : null) || state.conversation.title,
       intentFile ? (dir) => fs.writeFile(intentFile, JSON.stringify({ path: dir })) : undefined,
     );
-    // 会话可能在这期间被删掉了：项目留着，不再绑定。
+    // The session may have been deleted in the meantime: keep the project, do not bind.
     if (this.#states.get(id) !== state) return project;
-    // 共用这个工作目录的会话一起换到项目里。
+    // Sessions sharing this working directory move into the project together.
     const guests = this.#guestsOf(id);
     state.updateConversation({ projectId: project.id, cwd: project.path }, { touch: false });
     for (const guest of guests) guest.updateConversation({ projectId: project.id, cwd: project.path, folderOf: undefined }, { touch: false });
@@ -578,13 +573,13 @@ export class Harness {
     let linked = false;
     for (const member of [state, ...guests]) {
       if (!this.#runs.has(member.id)) {
-        // 闲着的原生会话还在旧目录里：关掉，下一轮在项目目录里起。
+        // Idle native sessions are still in the old directory: close them; the next turn starts in the project directory.
         await this.#agents.release(member.id);
         continue;
       }
       if (!scratch) continue;
       this.#rebound.set(member.id, scratch);
-      // 回合里的原生会话还按旧路径读写：旧路径换成指向项目目录的链接，回合结束时删掉。
+      // The native session in a turn still reads and writes by the old path: the old path becomes a link to the project directory, deleted when the turn ends.
       if (!linked && !(await fs.lstat(scratch).then(() => true, () => false))) {
         await fs.symlink(project.path, scratch, process.platform === 'win32' ? 'junction' : 'dir').catch(() => {});
       }
@@ -593,18 +588,18 @@ export class Harness {
     return project;
   }
 
-  /** 没有回合在跑的会话：关掉它们的原生会话（下一轮按恢复句柄续上），智能体开着的视频随之放下。 */
+  /** For sessions with no turn running: close their native sessions (the next turn resumes via the resume handle); videos the agent has open are released along with them. */
   async #releaseIdle(states: ConversationState[]): Promise<void> {
     for (const member of states) if (!this.#runs.has(member.id)) await this.#agents.release(member.id);
   }
 
-  /** 与这条会话共用工作目录的会话（`folderOf` 指向它）。 */
+  /** Sessions sharing the working directory with this session (`folderOf` points to it). */
   #guestsOf(id: Id): ConversationState[] {
     return [...this.#states.values()].filter((other) => other.conversation.folderOf === id);
   }
 
   /**
-   * 收拾会话的旧工作目录：指向项目的链接直接删掉；目录里剩下的东西搬进项目，再删掉空目录（打开着的视频留下时目录也留下）。
+   * Clean up the session's old working directory: a link pointing to the project is deleted directly; what remains in the directory is moved into the project, then the empty directory is deleted (if an open video is left, the directory is also kept).
    */
   async #clearScratch(state: ConversationState | null, scratch: string, project: Project, guests: ConversationState[] = []): Promise<void> {
     const stat = await fs.lstat(scratch).catch(() => null);
@@ -619,7 +614,7 @@ export class Harness {
     if (!(await removeIfEmpty(scratch))) await this.#retryFoldLater(scratch, project.id, state?.id ?? null);
   }
 
-  /** 工作目录里还有开着的视频没搬：过一会儿再搬，直到搬完（视频关掉之后）。回合还在用旧目录时等回合结束（`#afterRebind`）。 */
+  /** Videos still open in the working directory were not moved: try moving them again later, until all are moved (after the videos are closed). While a turn still uses the old directory, wait for the turn to end (`#afterRebind`). */
   async #retryFoldLater(scratch: string, projectId: Id, conversationId: Id | null): Promise<void> {
     if (this.#closing || this.#foldRetries.has(scratch)) return;
     const real = await fs.realpath(scratch).catch(() => null);
@@ -642,8 +637,8 @@ export class Harness {
   }
 
   /**
-   * 工作目录里的视频都没有打开（§3.10）：先把只在宽限期里等着关的关掉，还有别的窗口、任务或连接开着的就拒绝（`VIDEO_IN_USE`），
-   * 什么都不动。放进项目与删会话之前用。
+   * No videos in the working directory are open (§3.10): first close the ones only waiting to close in the grace period. If other windows, tasks or connections still have them open, refuse (`VIDEO_IN_USE`),
+   * and change nothing. Used before moving into a project and before deleting a session.
    */
   async #assertNoneOpen(scratch: string): Promise<void> {
     const real = await fs.realpath(scratch).catch(() => null);
@@ -655,15 +650,15 @@ export class Harness {
     throw new RpcError('conflict', HP.sessionVideosOpen({ names: names.join(', ') }), { code: 'VIDEO_IN_USE', videos: names });
   }
 
-  /** 会话自己的、在 Runtime Home 的 scratch 下的工作目录；别处的（项目目录）为 null。 */
+  /** The session's own working directory under scratch in the Runtime Home; for those elsewhere (the project directory), null. */
   #ownScratch(conversation: Conversation): string | null {
     const own = path.join(this.#home.scratchDir, conversation.id);
     return path.resolve(conversation.cwd) === path.resolve(own) && isInside(this.#home.scratchDir, own) ? own : null;
   }
 
   /**
-   * 把会话工作目录里的东西原样搬进项目目录（打开着的视频目录跳过，关掉后再搬），并把会话里指向旧工作目录的视频卡改指向项目。
-   * 打开着的视频由引擎按打开的文件继续读写；跳过它们只是为了不在 Windows 上改名失败。
+   * Move what is in the session working directory unchanged into the project directory (skip open video directories and move them after they are closed), and change the video cards in the session that point to the old working directory to point to the project.
+   * Open video directories are handled by the engine, which keeps reading and writing the opened files; skipping them only avoids rename failures on Windows.
    */
   async #foldScratch(state: ConversationState | null, scratch: string, project: Project, guests: ConversationState[] = []): Promise<void> {
     const real = await fs.realpath(scratch).catch(() => null);
@@ -677,7 +672,7 @@ export class Harness {
       return;
     }
     if (!state || moved.size === 0) return;
-    // 共用这个目录的会话里的卡片写的是这条会话（或它自己）的位置：一起改。
+    // Cards in sessions sharing this directory that point to the location of this session (or itself): change them together.
     for (const member of [state, ...guests]) {
       for (const item of member.items()) {
         if (item.kind !== 'video-created' && item.kind !== 'video-change' && item.kind !== 'slides-created' && item.kind !== 'design-created' && item.kind !== 'design-system-created') continue;
@@ -691,8 +686,7 @@ export class Harness {
   }
 
   /**
-   * 回合进行中绑定了项目的会话，回合结束之后：把回合里新写进旧工作目录的搬过去、删掉空目录（共用这个目录的会话还有回合在用时
-   * 等最后一个结束），关掉原生会话。
+   * After a turn ends for a session bound to a project during the turn: move what the turn newly wrote into the old working directory, delete the empty directory (if another session sharing this directory is still in a turn, wait for the last one to finish), and close the native session.
    */
   async #afterRebind(conversationId: Id, projectId: Id | null, scratch: string): Promise<void> {
     const project = projectId ? this.#projects.get(projectId) : undefined;
@@ -702,13 +696,13 @@ export class Harness {
   }
 
   /**
-   * 启动时收拾会话的工作目录（§3.10），在客户端连上之前跑：
+   * At startup, clean up session working directories (§3.10), run before the client connects:
    *
-   * - 旧版本放在 Runtime Home 里的（`legacyScratchDir`）：无项目会话的搬到 `scratchDir`，会话的工作目录跟着换；
-   * - 已经属于项目的会话还留着的工作目录或链接（回合中绑定后没来得及收拾）：链接删掉，目录里剩下的东西搬进项目，删掉空目录；
-   * - 没有对应会话的：有视频的把其中不隐藏的条目搬进「恢复的视频」项目（按界面语言命名，已有就沿用），然后删掉；没有视频的直接删掉。
+   * - Those placed in the Runtime Home by the old version (`legacyScratchDir`): move project-less sessions' contents to `scratchDir`, and the session's working directory follows.
+   * - Working directories or links still left by sessions that already belong to a project (not cleaned up in time after binding during a turn): delete the link, move what remains in the directory into the project, and delete the empty directory.
+   * - Those with no corresponding session: if they contain videos, move their non-hidden entries into the "Recovered videos" project (named by the UI language; reuse it if it exists), then delete; if no videos, delete directly.
    *
-   * 无项目会话自己的工作目录不动：里面的视频就留在那里。一个目录出错不影响别的，记日志后留着，下次启动再试。
+   * A project-less session's own working directory is left alone: videos inside stay there. An error in one directory does not affect others; it is logged and left in place, to be retried at the next startup.
    */
   async migrateScratch(): Promise<{ moved: number; folded: number; recovered: number; removed: number }> {
     const result = { moved: 0, folded: 0, recovered: 0, removed: 0 };
@@ -739,7 +733,7 @@ export class Harness {
     }
     for (const entry of entries) {
       const dir = path.join(base, entry.name);
-      // 回合中绑定时留下的链接：启动时没有回合，删掉。
+      // Links left by binding during a turn: at startup there is no turn, so delete them.
       if (entry.isSymbolicLink()) {
         await fs.unlink(dir).catch(() => {});
         continue;
@@ -754,7 +748,7 @@ export class Harness {
           result.folded++;
         } else if (state) {
           if (!legacy || path.resolve(state.conversation.cwd) !== path.resolve(dir)) continue;
-          // 旧位置的工作目录：整个搬到新位置。视频卡按会话与相对路径定位，不用改。
+          // Working directory at the old location: move the whole thing to the new location. Video cards are located by session and relative path, so nothing needs changing.
           await fs.mkdir(this.#home.scratchDir, { recursive: true });
           const name = await moveInto(dir, this.#home.scratchDir, entry.name);
           state.updateConversation({ cwd: path.join(this.#home.scratchDir, name) }, { touch: false });
@@ -776,13 +770,13 @@ export class Harness {
   }
 
   /**
-   * 共用工作目录的会话跟上那条会话（启动时，在收拾会话目录之前）：那条会话已经属于项目（绑定后来不及改它们就停了）时一起进项目；
-   * 工作目录换了位置时跟过去；那条会话没了（同上，删掉之后来不及改）时，第一个会话接过这个目录（改名成它自己的工作目录），其余的
-   * 改共用它的。
+   * Sessions sharing a working directory catch up with that session (at startup, before cleaning up session directories). If that session already belongs to a project (binding stopped before it could update them), they move into the project together.
+   * When the working directory has changed location, they follow it. If that session no longer exists (likewise, deleted before it could be updated), the first session takes over this directory (renamed to its own working directory), and the rest
+   * are updated to share it.
    */
   async #settleGuests(): Promise<void> {
     const adopted = new Map<Id, Conversation>();
-    // 那条会话没了时最早建的一条接过目录：按建立时间（同时的按 id）过，载入的先后不定。
+    // When that session no longer exists, the earliest-created one takes over the directory: ordered by creation time (by id if simultaneous); the order of loading is arbitrary.
     const states = [...this.#states.values()].sort(
       (a, b) => a.conversation.createdAt.localeCompare(b.conversation.createdAt) || a.id.localeCompare(b.id),
     );
@@ -811,11 +805,11 @@ export class Harness {
     await this.#store.flush();
   }
 
-  /** 工作目录还指着旧位置、目录却已经不在的无项目会话：换到新位置（建出空目录），以后的文件写到那里。 */
+  /** A project-less session whose working directory still points to the old location but the directory no longer exists: switch to the new location (creating an empty directory), and future files are written there. */
   async #relocateLegacyCwds(legacy: string, result: { moved: number }): Promise<void> {
     for (const state of this.#states.values()) {
       const { conversation } = state;
-      // 共用工作目录的会话跟着那条会话走（`#settleGuests`）。
+      // Sessions sharing a working directory follow that session (`#settleGuests`).
       if (conversation.projectId || conversation.folderOf || !isInside(legacy, conversation.cwd)) continue;
       if (await fs.lstat(conversation.cwd).then(() => true, () => false)) continue;
       const cwd = path.join(this.#home.scratchDir, conversation.id);
@@ -826,7 +820,7 @@ export class Harness {
     await this.#store.flush();
   }
 
-  /** 收容没有会话的视频的项目：按界面语言命名；那个目录已经登记（或在那里）就沿用，不每次启动都新建一个。 */
+  /** The project that collects videos without a session: named by the UI language; if that directory is already registered (or present there), reuse it, rather than creating a new one on every startup. */
   async #recoveredProject(): Promise<Project> {
     const name = HP.recoveredVideos().text;
     const dir = path.join(this.#home.projectsDir, sanitizeDirName(name));
@@ -848,11 +842,11 @@ export class Harness {
     return project;
   }
 
-  // ---- 会话 ----
+  // ---- Sessions ----
 
   async createConversation(params: {
     projectId?: Id | null;
-    /** 用这条会话的工作目录（§3.10）：它不属于项目时新会话与它共用工作目录（`folderOf`），属于项目时新会话建在那个项目里。 */
+    /** Use this session's working directory (§3.10): if it does not belong to a project, a new session shares the working directory (`folderOf`); if it belongs to a project, the new session is created in that project. */
     folderOf?: Id;
     title?: string;
     commandId?: Id;
@@ -864,13 +858,13 @@ export class Harness {
     const key = params.commandId ? `create:${params.commandId}` : null;
     const done = key ? this.#commands.get(key) : undefined;
     if (done) return this.#require(done).conversation;
-    // 用户要开始用 Agent 了：缓存说不可用的（刚在终端登录了、装好了）趁这时后台再探一次（§3.11 的便宜纠正），不等它。
+    // The user is about to start using an agent: if the cache says it is unavailable (just logged in or installed in the terminal), probe again in the background now as a cheap correction (§3.11), without waiting for it.
     this.#drivers.recheckStale(STALE_RECHECK_MS);
 
     let projectId = params.projectId ?? null;
     let host: Conversation | null = null;
     if (params.folderOf) {
-      // 共用的总是自己有工作目录的那条；它正在放进项目时等它放完，新会话跟着建在项目里。
+      // For sharing, the one that always has its own working directory. If it is in the middle of moving into a project, wait for that to finish; the new session is then created in the project.
       let owner = this.#require(params.folderOf).conversation;
       if (owner.folderOf) owner = this.#require(owner.folderOf).conversation;
       await this.#binding.get(owner.id)?.catch(() => {});
@@ -880,14 +874,14 @@ export class Harness {
     }
     const project = projectId ? this.#projects.get(projectId) : null;
     if (projectId && !project) throw new RpcError('not-found', HP.projectNotFound({ id: projectId }));
-    // 会话创建时冻结 Driver、模型与强度（§3.11）。没指定 Driver 时用偏好设置里的默认（见 `#defaultDriverId`）：
-    // 用户设的默认没有注册时拒绝；退回内置的 codex 时它没有安装也可以先建会话，发送时再报不可用。显式指定的必须已注册。
+    // The Driver, model and effort are frozen when the session is created (§3.11). If no Driver is specified, use the default from the preferences (see `#defaultDriverId`):
+    // if the user's default is not registered, refuse; when falling back to the built-in codex, a session can be created even if it is not installed, and sending reports it as unavailable. An explicitly specified one must be registered.
     const driverId = params.driverId ?? this.#defaultDriverId();
     if (params.driverId) this.#drivers.get(params.driverId);
     if (params.accessMode) this.#checkAccessMode(driverId, normalizeAgentMode(params.accessMode));
     const defaultDriverId = this.#defaultDriverId({ strict: false });
-    // 模型与强度：显式给的（`model: null` = Agent 默认模型）> 这个 Agent 自己的默认（设置 › Agent）> 偏好设置里的全局默认
-    // （只用于默认 Driver）> 推荐模型（见 `#defaultModelOf`）。
+    // Model and effort: explicitly given (`model: null` = the agent's default model) > this agent's own default (Settings › Agent) > the global default in the preferences
+    // (used only for the default Driver) > the recommended model (see `#defaultModelOf`).
     const driverPrefs = this.#prefs.driver(driverId);
     const global = driverId === defaultDriverId ? this.#settings.snapshot(['agent.defaultEffort']).values : null;
     const { model, effort } = await this.#checkModel(driverId, {
@@ -901,8 +895,8 @@ export class Harness {
     });
 
     const id = newId('conv');
-    // 无项目会话的工作目录在 `scratchDir` 下（系统给应用的数据目录），新建的视频也在这里；用户要建项目时才绑定，东西搬进项目
-    // （§3.10，`ensureConversationProject`）。共用工作目录的会话就在那条会话的工作目录里。
+    // A project-less session's working directory is under `scratchDir` (the app data directory provided by the system), and new videos are also created here. Binding happens only when the user creates a project, moving the contents into the project
+    // (§3.10, `ensureConversationProject`). A session sharing a working directory lives inside that session's working directory.
     const cwd = project ? project.path : host ? host.cwd : path.join(this.#home.scratchDir, id);
     await fs.mkdir(cwd, { recursive: true });
     const now = nowIso();
@@ -924,7 +918,7 @@ export class Harness {
         unread: false,
         activity: 'idle',
         activeTaskId: null,
-        // null：跟随偏好设置 `agent.defaultAccessMode`（§3.12）。
+        // null: follow the preference `agent.defaultAccessMode` (§3.12).
         accessMode: params.accessMode ? normalizeAgentMode(params.accessMode) : null,
       },
       items: [],
@@ -938,7 +932,7 @@ export class Harness {
     return state.conversation;
   }
 
-  /** 会话此刻的记录；不存在时 undefined。工具的范围按它取工作目录与项目：调用中途绑定了项目也跟得上。 */
+  /** The session's current record; undefined when it does not exist. Tools take their working directory and project scope from it, so a project bound mid-call is also picked up. */
   conversationOf(id: Id): Conversation | undefined {
     return this.#states.get(id)?.conversation;
   }
@@ -968,7 +962,7 @@ export class Harness {
     if (params.archived !== undefined) patch.archived = params.archived;
     if (params.pendingReferences === null && state.conversation.pendingReferences) patch.pendingReferences = undefined;
     if (params.driverId !== undefined && params.driverId !== conv.driverId) {
-      // 原生会话不能跨 Agent 续：有过任务的会话不能换。
+      // A native session cannot be resumed across agents: a session that has had a task cannot be switched.
       if (state.tasks().length > 0 || conv.activeTaskId) {
         throw new RpcError('conflict', HA.cannotChangeAgent());
       }
@@ -984,7 +978,7 @@ export class Harness {
       state.record.agent = { driverId: params.driverId, persistence: null };
       await this.#agents.release(state.id);
     }
-    // 换了 Agent 也查一遍：偏好里的模型不在新 Agent 的模型表里时改用推荐模型，不适用的强度回到模型默认。
+    // Also check when the agent changes: if the model in the preferences is not in the new agent's model table, use the recommended model; an inapplicable effort goes back to the model's default.
     if (params.model !== undefined || params.effort !== undefined || patch.driverId !== undefined) {
       const checked = await this.#checkModel(patch.driverId ?? conv.driverId, {
         model: params.model !== undefined ? params.model : patch.model !== undefined ? patch.model : conv.model,
@@ -993,10 +987,10 @@ export class Harness {
         givenEffort: params.effort !== undefined,
       });
       if (params.model !== undefined || patch.driverId !== undefined) patch.model = checked.model;
-      // 只换了模型：旧的强度对新模型不适用时回到模型默认。
+      // Only the model was changed: if the old effort does not apply to the new model, go back to the model's default.
       if (params.effort !== undefined || checked.effort !== (patch.effort !== undefined ? patch.effort : conv.effort)) patch.effort = checked.effort;
     }
-    // 模式切换对之后的动作立即生效，进行中的任务也是（§3.12）；原生侧的审批策略与沙箱下一轮生效。
+    // A mode switch takes effect immediately for subsequent actions, and for the task in progress too (§3.12); the native-side approval policy and sandbox take effect next turn.
     if (params.accessMode) this.#checkAccessMode(patch.driverId ?? conv.driverId, normalizeAgentMode(params.accessMode));
     if (params.accessMode !== undefined) this.#switchMode(state, params.accessMode === null ? null : normalizeAgentMode(params.accessMode));
     if (Object.keys(patch).length === 0) return state.conversation;
@@ -1005,8 +999,8 @@ export class Harness {
   }
 
   /**
-   * 给会话附上一个 Space 条目的引用（`space.continueInConversation`，架构设计 §5.7）：记在会话上，随下一次发送附在消息后面。
-   * 同一个条目只留一份（新的替换旧的），最多 `MAX_PENDING_REFERENCES` 个（多了丢掉最早的）。不启动任务。
+   * Attach a Space item reference to the session (`space.continueInConversation`, architecture design §5.7): recorded on the session and attached after the message with the next send.
+   * Only one copy per item is kept (a new one replaces the old), at most `MAX_PENDING_REFERENCES` (when exceeded, the oldest is dropped). Does not start a task.
    */
   attachReference(conversationId: Id, reference: SpaceEntryReference): Conversation {
     const state = this.#require(conversationId);
@@ -1015,13 +1009,13 @@ export class Harness {
     return state.updateConversation({ pendingReferences }, { touch: false });
   }
 
-  /** 会话此刻的访问模式：进行中的任务用的，否则会话切换过的，否则 `agent.defaultAccessMode`。 */
+  /** The session's current access mode: the one used by the task in progress; otherwise the one the session switched to; otherwise `agent.defaultAccessMode`. */
   conversationMode(conversationId: Id): AgentMode {
     const state = this.#require(conversationId);
     return this.#runs.get(conversationId)?.mode ?? this.#resolveMode(state).mode;
   }
 
-  /** 发送时的模式：会话切换过的，否则偏好设置（用户设的，或内置默认）。 */
+  /** The mode at send time: the one the session switched to; otherwise the preference (user-set, or the built-in default). */
   #resolveMode(state: ConversationState): { mode: AgentMode; source: AutonomySource } {
     if (state.conversation.accessMode) return { mode: state.conversation.accessMode, source: 'conversation' };
     const frozen = this.#settings.snapshot(['agent.defaultAccessMode']);
@@ -1032,8 +1026,8 @@ export class Harness {
   }
 
   /**
-   * 切换会话的模式（§3.12）：对之后的动作立即生效，进行中的任务也是（已经在等用户的审批不变）。
-   * 生效的模式变了时在会话里记一条提示；会话还没有任何内容时只记在会话上。`null` 回到跟随偏好设置。
+   * Switch the session's mode (§3.12): takes effect immediately for subsequent actions, and for the task in progress too (approvals already waiting on the user are unchanged).
+   * When the effective mode changes, a notice is recorded in the session; if the session has no content yet, it is recorded only on the session. `null` goes back to following the preference.
    */
   #switchMode(state: ConversationState, next: AgentMode | null, options: { contract?: boolean } = {}): void {
     const run = this.#runs.get(state.id);
@@ -1042,7 +1036,7 @@ export class Harness {
     const after = this.#resolveMode(state).mode;
     if (run) run.mode = after;
     if (before === after || state.items().length === 0) return;
-    // 合同的 autonomy 就是这个模式：进行中的任务记一个新修订（经合同修改切换时由那次修改一并记）。
+    // The contract's autonomy is this mode: the task in progress records a new revision (when switched via a contract change, that change records it).
     if (run && options.contract !== false) {
       const latest = this.#latestContract(state, run.taskId);
       if (latest && latest.autonomy !== after) {
@@ -1068,22 +1062,21 @@ export class Harness {
   }
 
   /**
-   * 只删会话记录（架构设计 §3.10）：不碰项目目录。运行中的任务先停下。
-   * 不属于项目、工作目录里还有视频的，先建一个以视频命名的项目并搬进去（`ensureConversationProject`），视频不随会话消失；其中还有
-   * 视频被别处开着时不删（`VIDEO_IN_USE`，会话的智能体刚放下的不算），会话记录与工作目录原样留着；其他原因搬不了的留在原处，
-   * 下次启动收进「恢复的视频」。属于项目的会话还留着的工作目录，剩下的东西搬进项目；没有视频的工作目录随会话删掉。
-   * 还有别的会话共用这个工作目录（`folderOf`）时，同样先放进项目，那些会话跟着进去，不丢目录；共用别人工作目录的会话删掉时
-   * 不碰那个目录。
+   * Delete only the session record (architecture design §3.10): does not touch the project directory. A running task is stopped first.
+   * For a session not in a project whose working directory still has videos, first create a project named after the video and move it in (`ensureConversationProject`), so the videos do not vanish with the session. If any of those videos are open elsewhere, do not delete (`VIDEO_IN_USE`; the session's agent just released them does not count), and the session record and working directory are left as they are. If they cannot be moved for other reasons, they stay in place and
+   * are collected into "Recovered videos" at next startup. For a session in a project, the leftovers in its working directory are moved into the project; a working directory with no videos is deleted with the session.
+   * When other sessions share this working directory (`folderOf`), it is likewise first put into a project, and those sessions move along with it, so the directory is not lost. When a session sharing someone else's working directory is deleted,
+   * that directory is not touched.
    */
   async deleteConversation(id: Id): Promise<void> {
     const state = this.#require(id);
     const run = this.#runs.get(id);
-    // 回合中绑定留下的收尾交给下面的删除前整理，不在回合结束时再做一遍。
+    // Cleanup left by binding during a turn is handled by the pre-delete tidy-up below, not done again when the turn ends.
     this.#rebound.delete(id);
     if (run) this.#finish(state, run, 'stopped', null);
     this.#cancelIdle(id);
     await this.#agents.release(id);
-    // 先停下回合、放掉原生会话：会话的智能体自己开着的视频由此放下，不算别处开着。
+    // First stop the turn and release the native session: the videos the session's agent opened itself are released by this, and do not count as open elsewhere.
     const scratch = path.join(this.#home.scratchDir, id);
     const guests = state.conversation.projectId ? [] : this.#guestsOf(id);
     if (!state.conversation.projectId && (guests.length > 0 || (await containsVideo(scratch)))) {
@@ -1098,7 +1091,7 @@ export class Harness {
     for (const task of state.tasks()) this.#tasks.publish({ type: 'task.removed', taskId: task.id });
     await this.#store.delete(id);
     this.#directory.publish({ type: 'conversation.removed', conversationId: id });
-    // 图片跟着会话走：别的会话还引用的留下。
+    // Images follow the session: those still referenced by other sessions are kept.
     const others = this.referencedAttachments();
     const own = [...attachmentIdsOf(state)].filter((a) => !others.has(a));
     if (own.length) await this.#attachments?.discard?.(own).catch((error) => this.#log.warn('Failed to delete attachments', { error: (error as Error).name }));
@@ -1130,18 +1123,18 @@ export class Harness {
     }
   }
 
-  /** 所有会话的消息里引用的附件。Runtime 启动时据此清掉没人引用的附件目录。 */
+  /** Attachments referenced in messages across all sessions. At Runtime startup, attachment directories that nothing references are cleared based on this. */
   referencedAttachments(): Set<Id> {
     const ids = new Set<Id>();
     for (const state of this.#states.values()) for (const a of attachmentIdsOf(state)) ids.add(a);
     return ids;
   }
 
-  // ---- 任务 ----
+  // ---- Tasks ----
 
   /**
-   * 发送一条消息：建立任务与一次执行尝试，然后在后台启动回合。
-   * 没有附件时任务在同步部分就建好；带附件时先把附件换成本地文件，再重新检查一遍会话与命令。
+   * Send a message: create a task and one execution attempt, then start the turn in the background.
+   * With no attachments, the task is created in the synchronous part; with attachments, swap them for local files first, then recheck the session and command.
    */
   async send(params: {
     conversationId: Id;
@@ -1152,23 +1145,23 @@ export class Harness {
     context?: EditorContext;
     attachments?: Id[];
     contract?: TaskContractInput;
-    /** 改变目标时由 `changeGoal` 给出：新任务接替的旧任务。 */
+    /** Set by `changeGoal` when the goal changes: the old task that the new one replaces. */
     supersedes?: TaskContract['supersedes'];
     /**
-     * 挂上的场景模板（模板包规范 §5.2），由 Runtime 解析好：`ref` 记在用户消息上，`instructions`（简报引导、正文与素材）
-     * 只附在交给智能体的文字后面。
+     * The attached scene template (template package spec §5.2), resolved by the Runtime: `ref` is recorded on the user message; `instructions` (brief guidance, body and materials)
+     * are appended only to the text handed to the agent.
      */
     template?: { ref: TemplateMessageRef; instructions: string };
     /**
-     * 点选的 skill（架构设计 §3.8），由 Runtime 按挂上的顺序解析好：`refs` 记在用户消息上，`instructions`（每个 skill 一段
-     * `SKILL.md` 正文与同目录文件）只附在交给智能体的文字后面，排在模板段之后。
+     * Skills selected by the user (architecture design §3.8), resolved by the Runtime in attachment order: `refs` are recorded on the user message; `instructions` (one segment per skill: the body of its `SKILL.md` and files in the same directory)
+     * are appended only to the text handed to the agent, after the template segment.
      */
     skills?: { refs: SkillMessageRef[]; instructions: string };
-    /** 幻灯片标注（docs/design/slides §9），由 Runtime 按添加的顺序解析好 deck 相对会话工作目录的路径。 */
+    /** Slide annotations (docs/design/slides §9), resolved by the Runtime in the order added, as paths of the deck relative to the session working directory. */
     slideAnnotations?: ResolvedSlideAnnotation[];
-    /** 设计稿标注（docs/design/canvas §9），由 Runtime 按添加的顺序解析好设计稿相对会话工作目录的路径。 */
+    /** Design annotations (docs/design/canvas §9), resolved by the Runtime in the order added, as paths of the design relative to the session working directory. */
     designAnnotations?: ResolvedDesignAnnotation[];
-    /** 设计系统标注（docs/design/canvas §10.6），由 Runtime 按添加的顺序解析好设计系统相对会话工作目录的路径。 */
+    /** Design system annotations (docs/design/canvas §10.6), resolved by the Runtime in the order added, as paths of the design system relative to the session working directory. */
     designSystemAnnotations?: ResolvedDesignSystemAnnotation[];
   }): Promise<{ taskId: Id }> {
     const key = `send:${params.commandId}`;
@@ -1176,7 +1169,7 @@ export class Harness {
     if (done) return { taskId: done };
     this.#checkCanSend(params.conversationId);
     this.#checkDriverUsable(this.#require(params.conversationId).conversation.driverId);
-    // 访问模式在切换之前先查（§3.12）：没有逐次审批通道的 Driver 只能 fullAccess，不合的整次拒绝，不改会话的模式。
+    // The access mode is checked before switching (§3.12): a Driver with no per-call approval channel can only use fullAccess. If it does not fit, the whole send is rejected and the session's mode is not changed.
     const requestedMode = params.accessMode ?? params.autonomy;
     {
       const pending = this.#require(params.conversationId);
@@ -1187,13 +1180,13 @@ export class Harness {
     let attached: { ref: AttachmentRef; path: string }[] = [];
     if (params.attachments?.length) {
       attached = await this.#resolveAttachments(this.#require(params.conversationId), params.attachments);
-      // 换附件期间同一条命令可能已经发出，会话也可能被删除或开始了别的任务。
+      // During the attachment swap, the same command may already have been sent, and the session may have been deleted or started another task.
       const again = this.#commands.get(key);
       if (again) return { taskId: again };
       this.#checkCanSend(params.conversationId);
     }
     const state = this.#require(params.conversationId);
-    // 显式给出的模式等于先切换会话的模式；否则用会话的模式，会话没有切换过时用偏好设置（§3.12）。连同来源记在任务卡片上。
+    // An explicitly given mode is the same as switching the session's mode first; otherwise use the session's mode, and if the session has never been switched, use the preference (§3.12). Recorded on the task card together with its source.
     const requested = requestedMode;
     let autonomy: { mode: AgentMode; source: AutonomySource };
     if (requested) {
@@ -1205,7 +1198,7 @@ export class Harness {
     }
     const taskId = newId('task');
     const now = nowIso();
-    // 合同随任务建立（§3.2）：先登记预算策略，预算不合法时整次拒绝，不留下任务。
+    // The contract is created with the task (§3.2): register the budget policy first; if the budget is invalid, reject the whole send and leave no task behind.
     const budget = this.#budgets ? this.#budgets.setTaskBudget(taskId, params.contract?.budget ?? NO_TASK_BUDGET) : null;
     if (params.contract?.budget && !budget) throw new RpcError('invalid-request', HA.noBudgetLedger());
     const contract = buildContract({
@@ -1222,7 +1215,7 @@ export class Harness {
     });
     this.#commands.set(key, taskId);
     this.#cancelIdle(state.id);
-    // 从 Space 附上的条目引用随这条消息发出去，发出后清空（§5.7）。
+    // Entry references attached from Space go out with this message and are cleared after sending (§5.7).
     const references = state.conversation.pendingReferences ?? [];
     this.#tasksOf(state)[taskId] = { revisions: [contract], checkResults: [] };
     if (attached.length) this.#attachments?.markSent(attached.map((a) => a.ref.id));
@@ -1292,9 +1285,9 @@ export class Harness {
   }
 
   /**
-   * 会话的 Driver 能不能用来发送：没注册（用户移除了这个智能体，或这一版没有它）以 `driver-unavailable` 拒绝，不建任务；
-   * D08（§3.11）：未经集成测试的 Driver 只显示探测结果，不能用来开始会话。`verified` 是 Driver 这一版的事实，
-   * 直接看 Driver 本身，不等探测。
+   * Whether the session's Driver can be used to send: if not registered (the user removed this agent, or this version does not have it), reject with `driver-unavailable` and create no task.
+   * D08 (§3.11): a Driver that has not passed the integration test only shows its probe result and cannot be used to start a session. `verified` is a fact about this version of the Driver,
+   * read directly from the Driver itself, without waiting for a probe.
    */
   #checkDriverUsable(driverId: DriverId): void {
     if (!this.#drivers.has(driverId)) {
@@ -1308,9 +1301,9 @@ export class Harness {
   }
 
   /**
-   * 没有逐次审批通道的 Driver（`capabilities.approvals` 为 false，如 Pi）只能在 `fullAccess` 下运行（§3.12）：两边取更严的，
-   * 它不来问的动作 CucCut 拦不住，别的模式等于名不副实。不合的以 `conflict`（`AGENT_ACCESS_MODE_UNSUPPORTED`）拒绝，
-   * 不替用户改模式。能力先看活着的原生会话，再看探测结果，再看 Driver 的常量；都不知道时不拦。
+   * A Driver without a per-call approval channel (`capabilities.approvals` is false, e.g. Pi) can only run in `fullAccess` (§3.12): take the stricter of the two.
+   * Actions it does not ask about cannot be stopped by CucCut, and any other mode would be nominal. A mismatch is rejected with `conflict` (`AGENT_ACCESS_MODE_UNSUPPORTED`),
+   * without changing the user's mode for them. Capability is checked first against the live native session, then the probe result, then the Driver's constants; if none is known, do not block.
    */
   #checkAccessMode(driverId: DriverId, mode: AgentMode): void {
     if (mode === 'fullAccess' || this.#approvalsSupported(driverId) !== false) return;
@@ -1326,12 +1319,12 @@ export class Harness {
     if (!this.#drivers.has(driverId)) return null;
     const driver = this.#drivers.get(driverId);
     const probe = this.#drivers.result(driverId);
-    // 没有 describe() 的 Driver 探测抛错时，结果里的能力是占位的 false，不能当真。
+    // When a Driver without describe() throws during probing, the capabilities in the result are placeholder false values and cannot be trusted.
     if (probe && (probe.state !== 'error' || driver.describe)) return probe.capabilities.approvals;
     return driver.describe?.().capabilities.approvals ?? null;
   }
 
-  /** 给人看的 Agent 名字：探测结果里的，没有时 Driver 常量里的，再没有时内置的名字表，最后是 id。 */
+  /** The name of the agent shown to people: from the probe result; if none, from the Driver constant; if none, from the built-in name table; finally the id. */
   #driverNameOf(driverId: DriverId): string {
     const known = this.#drivers.result(driverId)?.name;
     if (known) return known;
@@ -1351,8 +1344,8 @@ export class Harness {
   }
 
   /**
-   * 消息里的附件换成本地文件：数量不超过上限、Agent 支持图片、每一个都已经传完。
-   * 能力先看活着的原生会话，没有时看探测结果；不知道就当不支持，不悄悄丢掉图片。
+   * Attachments in the message are swapped for local files: count not over the limit, the agent supports images, and each one is fully uploaded.
+   * Capability is checked first against the live native session, then the probe result. If unknown, treat it as unsupported and do not silently drop the image.
    */
   async #resolveAttachments(state: ConversationState, ids: Id[]): Promise<{ ref: AttachmentRef; path: string }[]> {
     if (!this.#attachments) throw new RpcError('unsupported', HA.attachmentsUnsupported());
@@ -1371,7 +1364,7 @@ export class Harness {
   }
 
   /**
-   * 把一条消息插进正在运行的回合。Agent 不支持、或回合还没开始时如实返回，由界面排队或先停再发。
+   * Insert a message into a turn that is running. If the agent does not support it, or the turn has not started, return honestly; the UI then queues it or stops first and then sends.
    */
   async steer(params: {
     conversationId: Id;
@@ -1423,9 +1416,9 @@ export class Harness {
     return { status: 'steered' };
   }
 
-  // ---- 任务合同（架构设计 §3.2）----
+  // ---- Task contract (architecture design §3.2) ----
 
-  /** 一个任务的合同：默认最新修订，给 `revision` 时是那个修订；连同预算用量。 */
+  /** A task's contract: the latest revision by default; when `revision` is given, that revision; along with the budget usage. */
   getContract(taskId: Id, revision?: number): TaskContractView {
     const { log } = this.#contractLog(taskId);
     const latest = log.revisions.at(-1)!;
@@ -1434,7 +1427,7 @@ export class Harness {
     return { contract: structuredClone(contract), latestRevision: latest.revision, budget: this.#budgets?.taskBudget(taskId) ?? null };
   }
 
-  /** 一个会话每个任务的最新合同（新的在前），或一个任务的全部修订（旧的在前）。 */
+  /** The latest contract of each task in a session (newest first), or all revisions of one task (oldest first). */
   listContracts(params: { conversationId: Id } | { taskId: Id }): { contracts: TaskContract[] } {
     if ('taskId' in params) return { contracts: structuredClone(this.#contractLog(params.taskId).log.revisions) };
     const state = this.#require(params.conversationId);
@@ -1446,15 +1439,15 @@ export class Harness {
     return { contracts: structuredClone(contracts) };
   }
 
-  /** 智能体所在任务的当前合同（工具读取、提交时取保护范围）；不在任务里时 null。 */
+  /** The current contract of the task the agent is in (read by tools, used for the protected scope on submission); null when not in a task. */
   currentContract(conversationId: Id, taskId: Id): TaskContract | null {
     const state = this.#states.get(conversationId);
     return state ? this.#latestContract(state, taskId) : null;
   }
 
   /**
-   * 修改进行中任务的合同，产生新的修订（§3.2）。尚未启动的步骤采用新约束；已经冻结输入的 Job 不变。
-   * `autonomy` 等于切换会话的模式；智能体不能改模式、预算与保护范围（`CONTRACT_FIELD_READONLY`）。
+   * Modify the contract of a task in progress, producing a new revision (§3.2). Steps not yet started adopt the new constraints; Jobs whose inputs are already frozen are unchanged.
+   * `autonomy` equals the session's switched mode; the agent cannot change the mode, budget or protected scope (`CONTRACT_FIELD_READONLY`).
    */
   updateContract(
     params: { taskId: Id; expectedRevision: number; commandId: Id; patch: TaskContractPatch },
@@ -1498,9 +1491,9 @@ export class Harness {
   }
 
   /**
-   * 改变目标（§3.2）：`stop` 停止旧任务并取消它提交、还没结束的 Job；`keep` 只停下旧任务的回合，已经提交的 Job 照常完成，
-   * 产物留作候选。旧任务结束之后以新目标建立新任务（新的 Run），合同由旧合同派生。旧任务已经结束时直接建立新任务
-   * （`stop` 仍取消这个会话还没结束的 Job）。
+   * Change the goal (§3.2): `stop` stops the old task and cancels its submitted Jobs that have not finished; `keep` only stops the old task's turn, and submitted Jobs complete as usual,
+   * with outputs kept as candidates. After the old task ends, a new task is created with the new goal (a new Run), with its contract derived from the old one. If the old task has already ended, the new task is created directly
+   * (`stop` still cancels the session's unfinished Jobs).
    */
   async changeGoal(params: { taskId: Id; goal: string; previousWork: 'stop' | 'keep'; commandId: Id }): Promise<{
     taskId: Id;
@@ -1552,7 +1545,7 @@ export class Harness {
     return { taskId, previousTaskId: params.taskId, contract: structuredClone(this.#latestContract(state, taskId)!) };
   }
 
-  /** 记录一项验收检查的结果（§3.2；首版由用户或智能体记录）。任务结束后也可以记录。 */
+  /** Record the result of one acceptance check (§3.2; in the first version, recorded by the user or the agent). Can also be recorded after the task ends. */
   recordCheck(
     params: { taskId: Id; checkId: Id; outcome: CheckOutcome; note?: string; commandId?: Id },
     by: ContractActor = 'user',
@@ -1602,7 +1595,7 @@ export class Harness {
     throw new RpcError('not-found', HA.taskNotFound({ id: taskId }));
   }
 
-  /** 追加一个修订：任务条目带上它（会话的 `item.upsert`，任务中心的 `task.upsert`）。 */
+  /** Append a revision: the task entry carries it (the session's `item.upsert`, the task center's `task.upsert`). */
   #pushContract(state: ConversationState, contract: TaskContract): void {
     const log = (this.#tasksOf(state)[contract.taskId] ??= { revisions: [], checkResults: [] });
     log.revisions.push(contract);
@@ -1611,11 +1604,11 @@ export class Harness {
     else this.#store.markDirty(state.id);
   }
 
-  // ---- 工具调用（架构设计 §3.5）----
+  // ---- Tool calls (architecture design §3.5) ----
 
   /**
-   * 工具调用的权限依据：会话、当前任务、此刻的访问模式与停止屏障。
-   * 没有运行中的任务时 `taskId` 为空：工具只在任务里可用。`autonomy` 是 `mode` 的旧名，同一个值。
+   * Basis for tool call permission: the session, the current task, the access mode at this moment, and the stop barrier.
+   * When no task is running, `taskId` is empty: tools are available only within a task. `autonomy` is the old name for `mode`, the same value.
    */
   agentRun(conversationId: Id): {
     conversation: Conversation;
@@ -1636,8 +1629,8 @@ export class Harness {
   }
 
   /**
-   * 会话里一次 CucCut 工具调用的审批（§3.12）：按此刻的模式与动作的风险查表。要问用户时在会话里放一张审批卡、
-   * 进入统一的待处理列表并等待，没有时限；停止、打断或任务结束时按取消处理。
+   * Approval of one CucCut tool call in a session (§3.12): looked up in a table by the current mode and the action's risk. When the user must be asked, an approval card is placed in the session,
+   * enters the unified pending list and waits with no time limit. On stop, interrupt or task end, it is treated as cancelled.
    */
   async approveToolCall(conversationId: Id, request: ToolCallApprovalRequest): Promise<ToolCallApproval> {
     const state = this.#require(conversationId);
@@ -1650,7 +1643,7 @@ export class Harness {
     const outbound = (request.grants?.length ?? 0) > 0;
     if (verdict === 'ask' && !outbound && run.sessionAllowed.has(request.tool)) return { status: 'allowed', mode, risk, decidedBy: 'user' };
     if (verdict === 'ask' && !outbound && this.#ruleAllows(request.rule)) {
-      // 「总是允许」的规则：自动答应，时间线上留一张已决定的卡片。
+      // "Always allow" rule: answer yes automatically, leaving a decided card on the timeline.
       const approvalId = newId('apv');
       const now = nowIso();
       state.upsert({
@@ -1686,14 +1679,14 @@ export class Harness {
     return { status: 'cancelled', mode, risk };
   }
 
-  /** 智能体经工具提交了一笔视频修改：在会话里放一张变更卡（产品设计 §6.5）。 */
+  /** The agent submitted a video change through a tool: a change card is placed in the session (product design §6.5). */
   recordVideoChange(conversationId: Id, taskId: Id | null, change: VideoChange): void {
     const state = this.#states.get(conversationId);
     if (!state) return;
     state.upsert({ kind: 'video-change', id: `change/${change.transactionId}`, createdAt: nowIso(), taskId, ...change });
   }
 
-  /** 智能体经 `videos_create` 新建了视频：会话里记一条，界面的视频卡从它出现（产品设计 §3.2.2、架构设计 §11.3）。 */
+  /** The agent created a new video via `videos_create`: one entry is recorded in the session, and the UI's video card appears from it (product design §3.2.2, architecture design §11.3). */
   recordVideoCreated(conversationId: Id, taskId: Id | null, created: VideoCreated): void {
     const state = this.#states.get(conversationId);
     if (!state) return;
@@ -1701,9 +1694,9 @@ export class Harness {
   }
 
   /**
-   * 智能体的 `slides_check` 校验通过了一份 deck：会话里记一条，线程里出现幻灯片卡片（docs/design/slides §7.3）。
-   * 同一份 deck 只有一条：再次通过时更新标题与页数，所属任务换成这次校验的任务（卡片跟着挂到那一轮的回复下面），
-   * 条目的 id 与位置不变。
+   * The agent's `slides_check` validated a deck: one entry is recorded in the session, and a slide card appears in the thread (docs/design/slides §7.3).
+   * There is only one entry per deck. When it passes again, the title and page count are updated, and the owning task is changed to this validation's task (the card follows and hangs under that turn's reply),
+   * with the entry's id and position unchanged.
    */
   recordSlidesCreated(conversationId: Id, taskId: Id | null, created: SlidesCreated): void {
     const state = this.#states.get(conversationId);
@@ -1719,8 +1712,8 @@ export class Harness {
   }
 
   /**
-   * 智能体的 `design_check` 校验通过了一份设计稿：会话里记一条，线程里出现设计稿卡片（docs/design/canvas §7.3）。
-   * 与 `recordSlidesCreated` 相同：同一份设计稿只有一条，再次通过时更新标题与画板数、换成这次的任务，id 与位置不变。
+   * The agent's `design_check` validated a design: one entry is recorded in the session, and a design card appears in the thread (docs/design/canvas §7.3).
+   * Same as `recordSlidesCreated`: only one entry per design. When it passes again, the title and artboard count are updated and the task changed to this one, with id and position unchanged.
    */
   recordDesignCreated(conversationId: Id, taskId: Id | null, created: DesignCreated): void {
     const state = this.#states.get(conversationId);
@@ -1736,8 +1729,8 @@ export class Harness {
   }
 
   /**
-   * 智能体的 `design_system_check` 校验通过了一个设计系统：会话里记一条，线程里出现设计系统卡片（docs/design/canvas §10.5）。
-   * 与 `recordDesignCreated` 相同：同一个设计系统只有一条，再次通过时更新标题、换成这次的任务，id 与位置不变。
+   * The agent's `design_system_check` validated a design system: one entry is recorded in the session, and a design system card appears in the thread (docs/design/canvas §10.5).
+   * Same as `recordDesignCreated`: only one entry per design system. When it passes again, the title is updated and the task changed to this one, with id and position unchanged.
    */
   recordDesignSystemCreated(conversationId: Id, taskId: Id | null, created: DesignSystemCreated): void {
     const state = this.#states.get(conversationId);
@@ -1754,9 +1747,9 @@ export class Harness {
   }
 
   /**
-   * 主停止（D04、产品设计 §3.2.6）：先建立屏障——不再批准任何调用，待批的审批一律取消——
-   * 再取消这个会话的智能体提交、还没结束的 Job，并请求中断回合。停止被接受不等于原生侧或供应商已经停下；
-   * 终态以回合结束事件为准。取消了几个 Job 记在会话的提示里。
+   * Main stop (D04, product design §3.2.6): first establish the barrier. No further calls are approved, and pending approvals are all cancelled.
+   * Then cancel the session's agent-submitted Jobs that have not finished, and request the turn be interrupted. Accepting a stop does not mean the native side or the provider has stopped; the final state is determined by the turn-end event.
+   * The number of Jobs cancelled is recorded in the session's notice.
    */
   async stopTask(taskId: Id): Promise<{ status: TaskStatus }> {
     const state = [...this.#states.values()].find((s) => s.conversation.activeTaskId === taskId);
@@ -1774,7 +1767,7 @@ export class Harness {
       if (task?.kind === 'task') state.upsert({ ...task, status: 'stopping' });
       state.updateConversation({ activity: 'stopping' });
       this.#cancelPendingApprovals(state, run);
-      // 取消 Job（等引擎确认停止屏障）与中断回合同时进行。
+      // Cancelling Jobs (waiting for the engine to confirm the stop barrier) and interrupting the turn proceed at the same time.
       const cancelling = Promise.resolve(this.#jobs?.cancelSubmittedBy(state.id) ?? 0);
       const interrupted = this.#interrupt(state, run);
       interrupted.catch(() => {});
@@ -1788,7 +1781,7 @@ export class Harness {
     return { status: task?.kind === 'task' ? task.status : 'stopping' };
   }
 
-  /** 次级操作「停止回复」：只停当前回合，不建立停止屏障，也不取消后台 Job；待处理的审批按取消处理。 */
+  /** Secondary action "stop reply": stops only the current turn, does not establish a stop barrier, and does not cancel background Jobs. Pending approvals are treated as cancelled. */
   async interrupt(conversationId: Id): Promise<{ status: 'requested' | 'no-active-turn' }> {
     const state = this.#require(conversationId);
     const run = this.#runs.get(conversationId);
@@ -1817,10 +1810,10 @@ export class Harness {
       refreshActivity(state);
       return { status: 'already-resolved' as const };
     }
-    // 「总是允许」：规则归 CucCut 存（设置页能移除），原生侧与本任务里只按「不再问」处理。
+    // "Always allow": the rule is stored by CucCut (removable in the settings page); the native side and this task only treat it as "don't ask again".
     const always = params.decision === 'accept-always';
     if (!unified) {
-      // 没有进统一列表的条目（不应出现）：照旧直接回答 Driver。
+      // Entries not in the unified list (should not happen): answer the Driver directly as before.
       await session?.respondToApproval(params.approvalId, { decision: always ? 'accept-for-session' : params.decision });
       const status = params.decision === 'decline' ? ('declined' as const) : ('accepted' as const);
       state.upsert({ ...item, status, decidedAt: nowIso(), decidedBy: 'user', decision: params.decision });
@@ -1828,21 +1821,21 @@ export class Harness {
       if (always) await this.#rememberRule(item.request);
       return { status };
     }
-    // 带外发授权的审批每一次都要有授权覆盖（§12.5）：不存规则。
+    // Approvals carrying outbound-send authorization need an authorization covering them every time (§12.5): no rule is stored.
     const outbound = (this.approvals.get(unified)?.grants?.length ?? 0) > 0;
-    // 与 `approvals.respond` 同一个实现：统一列表里结束这一条，卡片与 Driver 的回答在 `#askUser` 的回调里。
+    // Same implementation as `approvals.respond`: ends this one in the unified list. The card and the Driver's answer are in the callback of `#askUser`.
     const result = this.approvals.respond(unified, params.decision === 'decline' ? 'deny' : 'allow', {
       forSession: params.decision === 'accept-for-session' || always,
     });
     if (result.status === 'already-resolved') return { status: 'already-resolved' as const };
-    // 卡片上记下点的是哪个答案（回调里只知道允许与否）。
+    // The card records which answer was clicked (the callback only knows allow or not).
     const settled = state.item(`approval/${params.approvalId}`);
     if (settled?.kind === 'approval' && settled.decidedBy === 'user') state.upsert({ ...settled, decision: params.decision });
     if (always && result.status === 'allowed' && !outbound) await this.#rememberRule(item.request);
     return { status: result.status === 'allowed' ? ('accepted' as const) : ('declined' as const) };
   }
 
-  /** 「总是允许」存进偏好（所有会话，设置页能移除）。不提供规则的请求不存。 */
+  /** "Always allow" is stored in preferences (all sessions; removable in the settings page). A request that does not provide a rule is not stored. */
   async #rememberRule(request: ApprovalRequest): Promise<void> {
     const rule = request.rule;
     if (!rule) return;
@@ -1851,7 +1844,7 @@ export class Harness {
     });
   }
 
-  /** 这条规则在「总是允许」里。 */
+  /** This rule is in "Always allow". */
   #ruleAllows(rule: string | null | undefined): boolean {
     return !!rule && this.#prefs.get().rules.includes(rule);
   }
@@ -1860,15 +1853,14 @@ export class Harness {
     return this.agents().then((view) => view.drivers);
   }
 
-  // ---- Agent 与偏好（架构设计 §3.11）----
+  // ---- Agents and preferences (architecture design §3.11) ----
 
   /**
-   * Agent 列表与偏好（`agents.list`、`agents.detect`，§3.11）。
+   * Agent list and preferences (`agents.list`, `agents.detect`, §3.11).
    *
-   * - 平常（`agents.list`）：有结果的 Driver 直接用缓存（启动时来自磁盘）；还没有任何结果的，探测快的等它探完
-   *   （首次启动 Claude、Codex 约 1 秒），要拉起智能体进程的（`slowProbe`：ACP、Pi、OpenCode）不等，列在 `checking`，探完经 `agents` 主题推送。顺带做便宜的纠正
-   *   （`recheckStale`）。
-   * - `fresh`（`agents.detect`，「重新检测」）：强制重新探测（给了 `driverId` 只探那一个），等探完再返回，返回前推送一次。
+   * - Normally (`agents.list`): Drivers with results use the cache directly (loaded from disk at startup). Those with no result yet: fast-probing ones are waited for (on first launch, Claude and Codex take about 1 second); those that need to launch an agent process (`slowProbe`: ACP, Pi, OpenCode) are not waited for, are listed in `checking`, and are pushed via the `agents` topic when probing finishes. Cheap corrections are also made along the way
+   *   (`recheckStale`).
+   * - `fresh` (`agents.detect`, "Re-detect"): force a re-probe (if `driverId` is given, only that one), wait for probing to finish before returning, and push once before returning.
    */
   async agents(options: { fresh?: boolean; driverId?: DriverId } = {}): Promise<AgentsView> {
     if (options.fresh) {
@@ -1886,7 +1878,7 @@ export class Harness {
     return this.agentsSnapshot();
   }
 
-  /** 同步的 Agent 视图：已有的探测结果合并偏好，还没有结果的列在 `checking`。`agents` 主题的快照。 */
+  /** Synchronous agent view: existing probe results merged with preferences; those with no result yet are listed in `checking`. The snapshot of the `agents` topic. */
   agentsSnapshot(): AgentsView {
     const preferences = this.#prefs.get();
     const defaultId = this.#defaultDriverId({ strict: false });
@@ -1898,23 +1890,23 @@ export class Harness {
   }
 
   /**
-   * `AgentsView` 变了：在 `agents` 主题上推送整份新视图。探测完成、Agent 偏好的每一次修改都经这里；
-   * 偏好设置里的默认 Agent（`agent.defaultDriver`）由 Runtime 在设置变化时调用。
+   * `AgentsView` changed: push the full new view on the `agents` topic. Every probe completion and every change to agent preferences goes through here.
+   * The default agent in the preferences (`agent.defaultDriver`) is handled by the Runtime, which calls this when settings change.
    */
   agentsChanged(): void {
     if (this.#closing) return;
     this.#agentsTopic.publish({ type: 'agents.updated', view: this.agentsSnapshot() });
   }
 
-  /** 改 Agent 偏好并推送新视图：所有写偏好的路径都走这里，界面只靠 `agents` 主题也不会漏。 */
+  /** Change agent preferences and push the new view: all paths that write preferences go through here, so the UI does not miss updates relying on the `agents` topic alone. */
   async #updatePrefs(update: Parameters<AgentPrefsStore['update']>[0]): Promise<void> {
     await this.#prefs.update(update);
     this.agentsChanged();
   }
 
   /**
-   * 一个 Driver 的探测结果，给要按它决定行为的路径（图片能力）：有结果用结果；经过集成测试却还没有任何结果（首次启动的那一秒）
-   * 时等它探完，免得把还在探测当成不支持。
+   * A Driver's probe result, for paths whose behavior depends on it (image capability): use the result if there is one. If it passed the integration test but has no result yet (the first second after launch),
+   * wait for probing to finish, so that a Driver still being probed is not treated as unsupported.
    */
   async #probeOf(driverId: DriverId): Promise<DriverProbe | null> {
     const known = this.#drivers.result(driverId);
@@ -1923,7 +1915,7 @@ export class Harness {
     return this.#drivers.result(driverId);
   }
 
-  /** 后台强制重新探测一个 Driver（运行中的纠正，§3.11）。 */
+  /** Force a background re-probe of one Driver (run-time correction, §3.11). */
   #recheckDriver(driverId: DriverId, reason: string): void {
     if (this.#closing || !this.#drivers.ids().includes(driverId)) return;
     this.#log.info('Re-probing Agent', { driverId, reason });
@@ -1931,8 +1923,8 @@ export class Harness {
   }
 
   /**
-   * 添加一个说 ACP 的智能体（`agents.addProvider`，§3.11）：存进 `store/agent-providers.json`，注册成 Driver，后台探测。
-   * 不等探测（ACP 智能体的冷启动可达十几秒）：返回时它在 `checking` 里，探完经 `agents` 主题推送。
+   * Add an ACP-speaking agent (`agents.addProvider`, §3.11): stored in `store/agent-providers.json`, registered as a Driver, and probed in the background.
+   * Does not wait for probing (cold start of an ACP agent can take over ten seconds). On return it is in `checking`, and is pushed via the `agents` topic when probing finishes.
    */
   async addProvider(params: {
     id: DriverId;
@@ -1967,8 +1959,8 @@ export class Harness {
   }
 
   /**
-   * 移除一个用户添加的智能体（`agents.removeProvider`，§3.11）。正在用它的任务以失败结束、原生会话关掉；注销 Driver（连同探测缓存），
-   * 删掉 Agent 偏好里它的条目，偏好设置 `agent.defaultDriver` 指向它时清空。用过它的会话保留，之后发送以 `driver-unavailable` 拒绝。
+   * Remove a user-added agent (`agents.removeProvider`, §3.11). Tasks using it end as failed and its native session is closed. The Driver is unregistered (along with its probe cache),
+   * its entry is removed from the agent preferences, and `agent.defaultDriver` in the preferences is cleared if it points to it. Sessions that used it are kept; later sends are rejected with `driver-unavailable`.
    */
   async removeProvider(id: DriverId): Promise<AgentsView> {
     const providers = this.#requireProviders();
@@ -2000,13 +1992,13 @@ export class Harness {
     }
     this.#log.info('Removed Agent', { driverId: id });
     const preferred = this.#settings.snapshot(['agent.defaultDriver']).values['agent.defaultDriver'];
-    // 清空默认 Agent 时 Runtime 收到设置变化会推送一次新视图（agent.defaultDriver 的监听），这里不再重复推送。
+    // When the default agent is cleared, the Runtime pushes a new view once on the settings change (the agent.defaultDriver listener), so it is not repeated here.
     if (preferred === id && this.#settings.set) await this.#settings.set({ 'agent.defaultDriver': null });
     else this.agentsChanged();
     return this.agentsSnapshot();
   }
 
-  /** `agents.setDefault`：只认注册了的 Driver（写偏好设置之前查，免得之后每次建会话都失败）。 */
+  /** `agents.setDefault`: only accepts registered Drivers (checked before writing preferences, so that later session creation does not fail every time). */
   assertDriverRegistered(id: DriverId): void {
     this.#drivers.get(id);
   }
@@ -2026,12 +2018,12 @@ export class Harness {
     this.#drivers.get(params.driverId);
     const before = this.#prefs.driver(params.driverId);
     const givenModel = params.defaultModel !== undefined;
-    // `defaultModel: null` 是明确选了「Agent 默认模型」，存成 `AGENT_DEFAULT_MODEL`（存储里的 null 是没设过，用推荐模型）。
+    // `defaultModel: null` explicitly means "the agent's default model", stored as `AGENT_DEFAULT_MODEL` (a null in storage means not set, so the recommended model is used).
     const wantedModel = params.defaultModel === AGENT_DEFAULT_MODEL ? null : params.defaultModel;
     const checked =
       givenModel || params.defaultEffort !== undefined
         ? await this.#checkModel(params.driverId, {
-            // 只改强度：按新会话实际会用的模型（设过的、推荐的或 Agent 默认）校验，存的模型不动。
+            // Only the effort is changed: validate against the model the new session will actually use (set, recommended, or the agent's default); the stored model is unchanged.
             model:
               wantedModel !== undefined
                 ? wantedModel
@@ -2040,7 +2032,7 @@ export class Harness {
                     this.#drivers.result(params.driverId)?.models ?? [],
                     params.driverId === this.#defaultDriverId({ strict: false }),
                   ),
-            // 换了默认模型，旧的强度可能不适用：没一起给就回到模型默认。
+            // The default model changed, so the old effort may not apply: go back to the model's default if it was not given together.
             effort: params.defaultEffort !== undefined ? params.defaultEffort : givenModel ? null : before.defaultEffort,
             givenModel,
             givenEffort: params.defaultEffort !== undefined,
@@ -2056,7 +2048,7 @@ export class Harness {
       if (params.executable !== undefined) current.executable = params.executable;
       p.drivers[params.driverId] = current;
     });
-    // 换了可执行文件：丢掉旧结果（它属于另一个可执行文件），只重新探测这一个。
+    // Executable changed: discard old results (they belong to another executable), and re-probe only this one.
     if (params.executable !== undefined && this.#drivers.setExecutable(params.driverId, params.executable)) {
       void this.#drivers.refresh([params.driverId], { force: true, reason: 'configure' });
       this.agentsChanged();
@@ -2080,12 +2072,12 @@ export class Harness {
   }
 
   /**
-   * 模型与强度要在这个 Agent 的模型表里（架构设计 §3.11）。探测不到模型表（没装、出错、旧版本）时不校验：
-   * 交给 Agent 自己决定，失败时回合以 `AGENT_MODEL_UNAVAILABLE` 结束。
+   * Model and effort must be in this agent's model table (architecture design §3.11). When the model table cannot be probed (not installed, error, old version), no validation is done:
+   * leave it to the agent to decide; on failure the turn ends with `AGENT_MODEL_UNAVAILABLE`.
    *
-   * - 传入的模型不在表里：`invalid-request`；沿用的（偏好里的默认、会话原来的）不在表里：改用推荐模型；
-   * - 传入的强度不在所选模型（null 时是 Agent 标的默认模型）的强度里：`invalid-request`；
-   * - 强度不是这次传入的（沿用旧值或偏好）而对所选模型无效：回到 null，用模型默认。
+   * - A model passed in that is not in the table: `invalid-request`. A carried-over one (the preference default or the session's original) not in the table: use the recommended model instead.
+   * - An effort passed in that is not among the efforts of the chosen model (the agent's listed default model when null): `invalid-request`.
+   * - An effort not passed in (carried over from the old value or the preference) and invalid for the chosen model: go back to null and use the model default.
    */
   async #checkModel(
     driverId: DriverId,
@@ -2093,7 +2085,7 @@ export class Harness {
   ): Promise<{ model: string | null; effort: string | null }> {
     let { model, effort } = wanted;
     if (model === null && effort === null) return { model, effort };
-    // 读缓存里的结果，不等探测（会话创建不被探测卡住）：还没有结果时模型表为空，照下面的规则不校验。
+    // Read the cached result without waiting for probing (session creation is not blocked by probing). If there is no result yet, the model table is empty and no validation applies, per the rules below.
     const probe = this.#drivers.result(driverId);
     const models = probe?.models ?? [];
     if (!models.length) return { model, effort };
@@ -2103,7 +2095,7 @@ export class Harness {
       if (wanted.givenModel) {
         throw new RpcError('invalid-request', HA.modelMissing({ agent: name, model, choices: models.map((m) => m.id).join(HA.listSeparator().text) }));
       }
-      // 沿用的模型（偏好里的默认、会话原来的）已经不在模型表里：改用推荐模型（设计稿：「新会话会改用推荐模型」）。
+      // The carried-over model (preference default or the session's original) is no longer in the model table: use the recommended model (design doc: "new sessions will switch to the recommended model").
       target = recommendedDriverModel(driverId, models) ?? undefined;
       model = target?.id ?? null;
     }
@@ -2122,7 +2114,7 @@ export class Harness {
     return { model, effort };
   }
 
-  /** 合并探测结果与偏好。停用排在问题之后（设计稿的优先级：没装 > 出错 > 版本太旧 > 没登录 > 已停用 > 可用）。 */
+  /** Merge probe results with preferences. Disabled ranks after problems (design priority: not installed > error > version too old > not logged in > disabled > available). */
   #driverInfo(probe: DriverProbe, isDefault: boolean): DriverInfo {
     const prefs = this.#prefs.driver(probe.id);
     const custom = this.#drivers.custom(probe.id);
@@ -2142,10 +2134,10 @@ export class Harness {
   }
 
   /**
-   * 新会话起手用的模型（§3.11）：这个 Agent 偏好里设过的 > 默认 Agent 的偏好设置 `agent.defaultModel` > 推荐模型
-   * （`recommendedDriverModel`，2026-09-29 用户裁决：Claude Code 用 Sonnet、Codex 用 `-sol`，不让 CLI 配置里的贵模型当默认）。
-   * `AGENT_DEFAULT_MODEL` 是用户明确选了「Agent 默认模型」，返回 null（不传模型，按 CLI 配置）。设过的模型不在模型表里时
-   * 原样返回，由 `#checkModel` 换成推荐模型；`DriverInfo.defaultModel` 原样给出，设置页才能把它标成「已不在模型表里」。
+   * The model to start a new session with (§3.11): an explicit setting from this agent's preferences > the default agent's preference `agent.defaultModel` > the recommended model
+   * (`recommendedDriverModel`; user decision of 2026-09-29: Claude Code uses Sonnet, Codex uses `-sol`, and the expensive model in the CLI config is not made the default).
+   * `AGENT_DEFAULT_MODEL` means the user explicitly chose "the agent's default model", so it returns null (no model passed, per the CLI config). A set model not in the model table
+   * is returned as is, and `#checkModel` swaps it for the recommended model. `DriverInfo.defaultModel` is given as is, so the settings page can mark it as "no longer in the model table".
    */
   #defaultModelOf(driverId: DriverId, models: readonly DriverModel[], isDefaultDriver: boolean): string | null {
     let chosen = this.#prefs.driver(driverId).defaultModel;
@@ -2155,8 +2147,8 @@ export class Harness {
   }
 
   /**
-   * 新会话的默认 Agent（§3.11）：偏好设置 `agent.defaultDriver` 指定的——没有注册时拒绝（`strict`），不悄悄换成别的；
-   * 没有设置（或它已停用）时用内置的 codex，codex 停用了用第一个没停用的。不探测：没安装也可以先建会话，发送时再报不可用。
+   * The default agent for new sessions (§3.11): the one specified by the preference `agent.defaultDriver`. Refused if not registered (`strict`), not silently swapped for another.
+   * If not set (or it is disabled), use the built-in codex; if codex is disabled, use the first one not disabled. No probing: a session can be created even if not installed, and sending then reports it as unavailable.
    */
   #defaultDriverId(options: { strict: boolean } = { strict: true }): DriverId {
     const ids = this.#drivers.ids();
@@ -2168,7 +2160,7 @@ export class Harness {
     return ids.find(enabled) ?? 'codex';
   }
 
-  /** 正常停止（架构设计 §2.4）：停止接纳 → 屏障 → 中断 → 持久化 → 关闭原生会话。 */
+  /** Normal stop (architecture design §2.4): stop intake → barrier → interrupt → persist → close the native session. */
   async shutdown(): Promise<void> {
     this.#closing = true;
     const active = [...this.#runs.entries()];
@@ -2190,19 +2182,19 @@ export class Harness {
     for (const timer of this.#foldRetries.values()) clearTimeout(timer);
     this.#foldRetries.clear();
     await this.#agents.releaseAll();
-    // 之后才完成的探测不再写缓存、不再推送。
+    // Probes that complete later no longer write the cache or push.
     this.#drivers.close();
     this.#agentsTopic.clear();
-    // 落盘前先把窗口内待发的文本增量发出去，记录里的 seq 才与文本同一水位。
+    // Before persisting, first send the text deltas pending in the window, so that the seq in the record is at the same watermark as the text.
     for (const state of this.#states.values()) state.flush();
     await Promise.all([this.#store.flush(), this.#projects.flush(), this.#prefs.flush(), this.#drivers.flush()]);
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #adopt(record: ConversationRecord): ConversationState {
-    // 早先写下的记录没有置顶、未读、模型、强度与访问模式：补上默认值，不升记录版本。任务卡片上的旧模式值换成新值（§3.12），
-    // 审批卡片上旧的 `decidedBy: 'mode'` 换成 `auto`。
+    // Records written earlier lacked pinned, unread, model, effort and access mode: fill in defaults without bumping the record version. Old mode values on task cards are swapped for new values (§3.12),
+    // and the old `decidedBy: 'mode'` on approval cards is swapped for `auto`.
     const conv = record.conversation as Partial<Conversation> & Conversation;
     const accessMode = conv.accessMode ? normalizeAgentMode(conv.accessMode) : null;
     record.conversation = {
@@ -2220,7 +2212,7 @@ export class Harness {
           ? { ...item, decidedBy: 'auto' as const }
           : item,
     );
-    // 没有合同的旧任务：补上默认合同（目标与开始时的模式），不升记录版本。
+    // Old tasks without a contract: fill in a default contract (goal and mode at start), without bumping the record version.
     record.tasks ??= {};
     record.items = record.items.map((item) => {
       if (item.kind !== 'task') return item;
@@ -2247,7 +2239,7 @@ export class Harness {
       dirty: () => this.#store.markDirty(record.conversation.id),
       conversationChanged: (conversation, previous) => {
         this.#directory.publish({ type: 'conversation.upsert', conversation });
-        // 任务中心显示会话标题与所属项目：改名、绑定项目后它的任务行一起更新。
+        // The task center shows the session title and owning project: when renamed or bound to a project, its task rows update together.
         if (conversation.title !== previous.title || conversation.projectId !== previous.projectId) {
           for (const task of state.tasks()) this.#tasks.publish({ type: 'task.upsert', task: summarize(conversation, task) });
         }
@@ -2258,7 +2250,7 @@ export class Harness {
     return state;
   }
 
-  /** 崩溃恢复：上次退出时还在运行的任务如实标为失败，不假装续跑（架构设计 §2.5、§7.5）。 */
+  /** Crash recovery: tasks running when the app last exited are honestly marked as failed, not pretended to resume (architecture design §2.5, §7.5). */
   #recover(): void {
     for (const state of this.#states.values()) {
       const conv = state.conversation;
@@ -2293,12 +2285,12 @@ export class Harness {
         this.#finish(state, run, 'stopped', null);
         return;
       }
-      // 模式取此刻生效的：发送之后、回合开始之前切换过的也算。
+      // The mode is the one in effect now: a switch made after sending and before the turn starts also counts.
       const { turnId } = await session.startTurn(input, turnSettings(run));
       run.turnId ??= turnId;
       if (run.stopRequested) await this.#interrupt(state, run);
     } catch (error) {
-      // 原生会话起不来（Claude、Codex 找不到命令时是不带 agentCode 的 driver-unavailable）：缓存可能过时，重新探测。
+      // Native session fails to start (for Claude and Codex, when the command is not found, it is driver-unavailable without an agentCode): the cache may be stale, so re-probe.
       if (error instanceof RpcError && error.code === 'driver-unavailable')
         this.#recheckDriver(state.conversation.driverId, 'driver-unavailable');
       if (this.#runs.get(state.id) !== run) return;
@@ -2316,7 +2308,7 @@ export class Harness {
       return;
     }
     if (event.type === 'approval.resolved') {
-      // Driver 自己撤回了请求：统一列表里的这一条按取消处理（条目由投影收起）。
+      // The Driver itself withdrew the request: this entry in the unified list is treated as cancelled (the entry is collapsed by the projection).
       const unified = this.#approvalKeys.get(approvalKey(conversationId, event.approvalId));
       if (unified) this.approvals.cancel(unified);
     }
@@ -2358,8 +2350,8 @@ export class Harness {
   }
 
   /**
-   * Driver 报上来的审批（§3.12）：按动作的风险与此刻的模式查表。自动的与拒绝的当场回答 Driver，在会话里留一张
-   * 已决定的审批卡（记下模式与风险）；要问的进入统一的待处理列表，等用户。
+   * Approval reported by the Driver (§3.12): looked up in a table by the action's risk and the mode at this moment. Automatic and denied ones are answered to the Driver on the spot, leaving a decided approval card in the session
+   * (recording the mode and risk). Those to be asked go into the unified pending list and wait for the user.
    */
   #onDriverApproval(
     state: ConversationState,
@@ -2370,8 +2362,8 @@ export class Harness {
     const { request } = event;
     const risk = driverApprovalRisk(request, state.conversation.cwd, event.escalation === true);
     const decided = decideApproval(run.mode, risk);
-    // 「总是允许」的规则只把要问的变成允许，不放开模式拒绝的（`plan` 下的写）。命中时只答应这一次（`accept`），
-    // 不交给原生侧的会话级放行：之后在设置里移除规则，立即生效。
+    // The "always allow" rule only turns an ask into allow, and does not override a mode denial (writes under `plan`). When it matches, only this one is accepted (`accept`),
+    // and it is not handed to the native side's session-level permission: removing the rule in settings later takes effect immediately.
     const byRule = decided === 'ask' && this.#ruleAllows(request.rule);
     const verdict = byRule ? 'allow' : decided;
     if (verdict !== 'ask') {
@@ -2404,8 +2396,8 @@ export class Harness {
   }
 
   /**
-   * 交给用户：会话里放一张待处理的审批卡，统一列表里加一条（没有时限）。结束时同步更新卡片；
-   * Driver 的审批同时回答 Driver（允许、本任务内允许、拒绝或取消）。
+   * Hand to the user: place one pending approval card in the session and add one entry to the unified list (no time limit). Update the card when it ends.
+   * The Driver's approval also answers the Driver (allow, allow within this task, deny, or cancel).
    */
   #askUser(
     state: ConversationState,
@@ -2467,7 +2459,7 @@ export class Harness {
     return resolution;
   }
 
-  /** 这个任务待处理的审批一律取消（停止、打断、任务结束、Runtime 停止）：Driver 收到取消，等待中的工具调用返回取消。 */
+  /** All pending approvals for this task are cancelled (stop, interrupt, task end, Runtime stop): the Driver receives the cancel, and waiting tool calls return cancelled. */
   #cancelPendingApprovals(state: ConversationState, run: RunContext): void {
     const session = this.#agents.get(state.id);
     for (const item of state.items()) {
@@ -2481,7 +2473,7 @@ export class Harness {
 
   async #interrupt(state: ConversationState, run: ActiveRun): Promise<void> {
     const session = this.#agents.get(state.id);
-    // 回合还没开始：#startRun 会在拿到会话或回合之后看到 stopRequested。
+    // The turn has not started: #startRun will see stopRequested once it gets the session or the turn.
     if (!session || !run.turnId || run.interruptSent) return;
     run.interruptSent = true;
     const receipt = await session.interrupt(run.turnId);
@@ -2522,8 +2514,8 @@ export class Harness {
         this.#log.warn('Failed to tidy the session folder after binding a project', { conversationId: state.id, error: String(e) }),
       );
     }
-    // 错了纠正（§3.11）：失败的原因说明探测结果可能过时，或者回合跑通了而缓存说它不可用，都后台重新探测这个 Driver。
-    // 不用「原生会话建好了」当信号：Claude 的进程在第一轮才起。
+    // Wrong and corrected (§3.11): a failure implies the probe result may be stale, or the turn succeeded while the cache said it was unavailable. Either way, re-probe this Driver in the background.
+    // Do not use "the native session was created" as the signal: Claude's process only starts on the first turn.
     const driverId = state.conversation.driverId;
     if (status === 'failed' && errorCode && RECHECK_ERROR_CODES.has(errorCode)) this.#recheckDriver(driverId, errorCode);
     else if (status === 'completed') {
@@ -2563,7 +2555,7 @@ export class Harness {
   }
 }
 
-/** 内置 Driver 的名字：还没有探测结果、Driver 也没有 `describe()` 时用（用户添加的智能体用它自己配置的名字）。 */
+/** Name of a built-in Driver: used when there is no probe result yet and the Driver has no `describe()` (user-added agents use the name they configure themselves). */
 const BUILTIN_DRIVER_NAME: Record<BuiltinDriverId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
@@ -2576,12 +2568,12 @@ const BUILTIN_DRIVER_NAME: Record<BuiltinDriverId, string> = {
   kimi: 'Kimi Code',
 };
 
-/** 交给 Driver 的这一轮设置：此刻生效的模式，加上发送时的模型与强度。 */
+/** The settings for this turn handed to the Driver: the mode in effect now, plus the model and effort at send time. */
 function turnSettings(run: ActiveRun): TurnSettings {
   return { accessMode: run.mode, model: run.model, effort: run.effort };
 }
 
-/** CucCut 工具调用在审批卡片上的样子。 */
+/** How a CucCut tool call looks on an approval card. */
 function toolRequest(request: ToolCallApprovalRequest): ApprovalRequest {
   return {
     kind: 'tool',
@@ -2593,7 +2585,7 @@ function toolRequest(request: ToolCallApprovalRequest): ApprovalRequest {
   };
 }
 
-/** Driver 抛出的启动错误可以带上结构化原因（`code` 是 `AgentErrorCode`）。 */
+/** A startup error thrown by a Driver may carry a structured reason (`code` is an `AgentErrorCode`). */
 function agentErrorCode(error: unknown): AgentErrorCode | null {
   const code = (error as { agentCode?: unknown } | null)?.agentCode;
   return typeof code === 'string' && code.startsWith('AGENT_') ? (code as AgentErrorCode) : null;
@@ -2604,8 +2596,8 @@ function approvalKey(conversationId: Id, approvalId: Id): string {
 }
 
 /**
- * Driver 报上来的动作的风险等级（§3.12）：越出沙箱的一律 `high`；文件修改都在工作目录之内是 `edit`，有一个在外面就是 `high`；
- * 其余命令是 `command`。
+ * Risk level of an action reported by the Driver (§3.12): anything escaping the sandbox is always `high`; file edits all within the working directory are `edit`, and if one is outside it is `high`;
+ * other commands are `command`.
  */
 export function driverApprovalRisk(request: ApprovalRequest, cwd: string, escalation: boolean): RiskLevel {
   if (escalation) return 'high';
@@ -2635,9 +2627,9 @@ function summarize(conversation: Conversation, task: Extract<TimelineItem, { kin
   };
 }
 
-/** 目录名：去掉路径分隔符与控制字符，压掉首尾空白与点。 */
-/** 目录名作项目的默认显示名。 */
-/** 两个 FileTarget 是不是同一处（同一个项目或会话的同一个相对路径）。 */
+/** Directory name: strips path separators and control characters, trims leading and trailing whitespace and dots. */
+/** Directory name used as a project's default display name. */
+/** Whether two FileTargets are the same place (the same relative path in the same project or session). */
 function sameTarget(a: SlidesCreated['target'], b: SlidesCreated['target']): boolean {
   if (a.path !== b.path) return false;
   if ('projectId' in a) return 'projectId' in b && a.projectId === b.projectId;
@@ -2652,13 +2644,13 @@ function newProject(id: Id, dir: string, createdAt: string, now: string): Projec
   return { id, name: dirLabel(dir), path: dir, createdAt, lastActiveAt: now, pinned: false, archived: false };
 }
 
-/** 两个路径是否是同一个目录（大小写不敏感的卷上，同一个目录可能有两种写法）。 */
+/** Whether two paths are the same directory (on case-insensitive volumes, the same directory can be written in two ways). */
 async function sameDirectory(a: string, b: string): Promise<boolean> {
   const [x, y] = await Promise.all([fs.stat(a).catch(() => null), fs.stat(b).catch(() => null)]);
   return !!x && !!y && x.dev === y.dev && x.ino === y.ino;
 }
 
-/** 写项目标记失败：只读卷与没有权限给出明确的错误，其他照实报告。 */
+/** Failure to write the project marker: read-only volumes and missing permission give a clear error; others are reported as they are. */
 function writeFailure(dir: string, error: unknown): RpcError {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
@@ -2681,11 +2673,11 @@ function sanitizeDirName(name: string): string {
 }
 
 /**
- * 把编辑器上下文附在发给智能体的文字后面（架构设计 §3.4）。会话里显示的仍是用户的原话，上下文另存在消息上。
+ * Append editor context after the text sent to the agent (architecture design §3.4). The session still shows the user's original words; the context is stored separately on the message.
  */
 export function withEditorContext(text: string, context: EditorContext | undefined): string {
   if (!context) return text;
-  // i18n-ignore-start: 发给智能体的上下文（给模型的提示词），不随界面语言变化
+  // i18n-ignore-start: context sent to the agent (prompt for the model), does not change with the UI language
   const lines = [
     `用户在 CucCut 编辑器里打开着视频「${context.videoName}」（video: ${JSON.stringify(context.videoPath)}，videoId: ${context.videoId}，用户看到的版本 ${context.revision}）。`,
     `播放头在 ${context.playheadSeconds.toFixed(3)} 秒。`,
@@ -2697,16 +2689,16 @@ export function withEditorContext(text: string, context: EditorContext | undefin
   return `${text}\n\n<cuccut-editor-context>\n${lines.join('\n')}\n</cuccut-editor-context>`;
 }
 
-/** 一个会话最多同时挂着几个还没发出的条目引用。 */
+/** Maximum number of unsent item references a session may have attached at once. */
 const MAX_PENDING_REFERENCES = 20;
 
 /**
- * 把从 Space 附上的条目引用附在发给智能体的文字后面（架构设计 §5.7）：只有标识与元数据，不含文件内容；
- * 智能体要内容时经工具按 id 去取。会话里显示的仍是用户的原话，引用另存在消息上。
+ * Append item references attached from Space to the text sent to the agent (architecture design §5.7): only identifiers and metadata, no file contents.
+ * When the agent needs the content, it fetches it by id through a tool. The session still shows the user's original words; the references are stored separately on the message.
  */
 export function withSpaceReferences(text: string, references: readonly SpaceEntryReference[]): string {
   if (references.length === 0) return text;
-  // i18n-ignore-start: 发给智能体的条目引用（给模型的提示词），不随界面语言变化
+  // i18n-ignore-start: item references sent to the agent (prompt for the model), does not change with the UI language
   const lines = references.map((r) => {
     const facts = [
       `entryId: ${r.entryId}`,
@@ -2731,15 +2723,15 @@ export function withSpaceReferences(text: string, references: readonly SpaceEntr
   // i18n-ignore-end
 }
 
-/** 一条幻灯片标注与它的 deck 相对会话工作目录的路径（以 `/` 分隔、以 `/` 结尾；不在工作目录里时是绝对路径）。 */
+/** One slide annotation and the path of its deck relative to the session working directory (separated by `/`, ending with `/`; an absolute path if not in the working directory). */
 export interface ResolvedSlideAnnotation {
   annotation: SlideAnnotation;
   deckPath: string;
 }
 
 /**
- * 把幻灯片标注附在发给智能体的文字后面（docs/design/slides §9）：每份 deck 一段，按 deck 第一次出现的顺序；
- * 编号是在整条消息里的序号，与界面上 composer 列表、编辑器里的编号标记一致。会话里显示的仍是用户的原话，标注另存在消息上。
+ * Append slide annotations after the text sent to the agent (docs/design/slides §9): one section per deck, in the order each deck first appears.
+ * The numbering is the sequence across the whole message, consistent with the numbered markers in the composer list in the UI and in the editor. The session still shows the user's original words; the annotations are stored separately on the message.
  */
 export function withSlideAnnotations(text: string, annotations: readonly ResolvedSlideAnnotation[]): string {
   if (annotations.length === 0) return text;
@@ -2753,15 +2745,15 @@ export function withSlideAnnotations(text: string, annotations: readonly Resolve
   return [text, '', ...blocks].join('\n');
 }
 
-/** 一条设计稿标注与它的设计稿相对会话工作目录的路径（写法与 `ResolvedSlideAnnotation.deckPath` 相同）。 */
+/** One design annotation and the path of its design relative to the session working directory (written the same way as `ResolvedSlideAnnotation.deckPath`). */
 export interface ResolvedDesignAnnotation {
   annotation: DesignAnnotation;
   canvasPath: string;
 }
 
 /**
- * 把设计稿标注附在发给智能体的文字后面（docs/design/canvas §9），排在幻灯片标注段之后：每份设计稿一段，按第一次出现的顺序；
- * 编号是在这条消息的设计稿标注里的序号，与界面上的列表、编辑器里的编号标记一致（幻灯片标注各自编号）。
+ * Append design annotations after the text sent to the agent (docs/design/canvas §9), after the slide annotation section: one section per design, in order of first appearance.
+ * The numbering is the sequence within this message's design annotations, consistent with the list in the UI and the numbered markers in the editor (slide annotations are numbered separately).
  */
 export function withDesignAnnotations(text: string, annotations: readonly ResolvedDesignAnnotation[]): string {
   if (annotations.length === 0) return text;
@@ -2777,15 +2769,15 @@ export function withDesignAnnotations(text: string, annotations: readonly Resolv
   return [text, '', ...blocks].join('\n');
 }
 
-/** 一条设计系统标注与它的设计系统相对会话工作目录的路径（写法与 `ResolvedSlideAnnotation.deckPath` 相同）。 */
+/** One design system annotation and the path of its design system relative to the session working directory (written the same way as `ResolvedSlideAnnotation.deckPath`). */
 export interface ResolvedDesignSystemAnnotation {
   annotation: DesignSystemAnnotation;
   systemPath: string;
 }
 
 /**
- * 把设计系统标注附在发给智能体的文字后面（docs/design/canvas §10.6），排在设计稿标注段之后：每套设计系统一段，按第一次出现的顺序；
- * 编号是在这条消息的设计系统标注里的序号，与界面上的列表、编辑器里的编号标记一致（幻灯片、设计稿标注各自编号）。
+ * Append design system annotations after the text sent to the agent (docs/design/canvas §10.6), after the design annotation section: one section per design system, in order of first appearance.
+ * The numbering is the sequence within this message's design system annotations, consistent with the list in the UI and the numbered markers in the editor (slide and design annotations are numbered separately).
  */
 export function withDesignSystemAnnotations(text: string, annotations: readonly ResolvedDesignSystemAnnotation[]): string {
   if (annotations.length === 0) return text;
@@ -2801,14 +2793,14 @@ export function withDesignSystemAnnotations(text: string, annotations: readonly 
   return [text, '', ...blocks].join('\n');
 }
 
-/** 会话的消息里引用的附件。 */
+/** Attachments referenced in the session's messages. */
 function attachmentIdsOf(state: ConversationState): Set<Id> {
   const ids = new Set<Id>();
   for (const item of state.items()) if (item.kind === 'user-message') for (const a of item.attachments ?? []) ids.add(a.id);
   return ids;
 }
 
-/** 附件换成 Driver 的图片输入；没有附件时不带 `images`。 */
+/** Attachments swapped for the Driver's image input. When there are no attachments, `images` is not included. */
 function imagesOf(attached: { ref: AttachmentRef; path: string }[]): { images?: AgentImage[] } {
   const images=attached.filter(a=>a.ref.kind==='image').map(a=>({path:a.path,mimeType:a.ref.mimeType}));return images.length?{images}:{};
 }

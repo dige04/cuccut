@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveLineStyle, type Json } from '../render/text-style.ts';
 import { editBlock, editLine, followRatio, followShared, lineOverrides, lineSize, lineView, withCaptionStyle } from './caption-lines.ts';
 
-/** 渲染器在 540 短边的画布上画出来的字号 = 30 号口径的有效字号。 */
+/** The font size the renderer draws on a 540-short-side canvas equals the effective size on the 30-point basis. */
 const drawn = (root: Json, kind: 'original' | 'translation', compact: boolean) =>
   resolveLineStyle(root, kind, { width: 960, height: 540 }, compact).fontSize;
 

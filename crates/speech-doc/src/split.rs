@@ -1,12 +1,10 @@
-//! 译文展示切分与投影（v0.3 §5–§7，规范性算法）。
+//! Display splitting and projection of translations (v0.3 §5–§7, normative algorithm).
 //!
-//! - [`TransParams`]：fit（触发）/ soft（建议）/ hard（强制）三阈值；
-//! - [`split_independent`]：各自对齐——目标语自身习惯切行（零 LLM）；
-//! - [`split_proportional`]：字符占比切 + 缝吸附的通用纯文本工具；
-//! - [`anchor_pieces_to_words`]：independent 译片 → 句内源词区间划分
-//!   （词原子仍是唯一时间来源）；
-//! - [`derive_trans_cues`]：译文 Cue 流投影——export / check / studio 的
-//!   统一消费面；无有效 `transAlign` 的句降级整句上屏。
+//! - [`TransParams`]: three thresholds, fit (trigger) / soft (suggested) / hard (forced).
+//! - [`split_independent`]: each side aligns on its own, using the target language's own habitual line splitting (zero LLM).
+//! - [`split_proportional`]: a general plain-text tool that splits by character proportion and snaps to seams.
+//! - [`anchor_pieces_to_words`]: maps independent pieces to source word ranges within the sentence (word atoms remain the only time source).
+//! - [`derive_trans_cues`]: projection of the translation Cue stream. This is the shared consumption surface for export, check, and studio. Sentences without a valid `transAlign` degrade to the whole sentence on screen.
 
 use crate::atomize::{
     atomize, clause_end_char, count_cps_chars, is_cjk_char, join_word_texts, normalize_chars,
@@ -16,7 +14,7 @@ use crate::doc::{AlignMode, Correspondence, TextBasis, TransAlign, TranscriptDoc
 use crate::seam::{SeamLintKind, cjk_midword_boundary, is_objective_blocking, lint_pieces};
 use crate::sentence::Sentence;
 
-/// BCP-47 主子标签（小写）。
+/// BCP-47 primary subtag (lowercase).
 pub fn primary_subtag(lang: &str) -> String {
     lang.split(['-', '_'])
         .next()
@@ -216,10 +214,7 @@ fn should_replace_delivery_punctuation(chars: &[char], index: usize) -> bool {
     true
 }
 
-/// 字幕的非破坏性交付投影（扩展 Voice Ink
-/// `SubtitlePresentation.projectPunctuation` 的展示语义到所有语言）：普通逗号/
-/// 句号不占字幕预算，只在两侧仍有可见内容时投影成一个半角分隔空格；数字与
-/// ASCII 数据 token 内部的逗号/句号保留。
+/// Non-destructive delivery projection of subtitles (extending the display semantics of Voice Ink's `SubtitlePresentation.projectPunctuation` to all languages). Ordinary commas and full stops do not take subtitle budget. They are projected into a single half-width separator space only when visible content remains on both sides. Commas and full stops inside numbers and ASCII data tokens are kept.
 pub fn target_delivery_projection(text: &str, _lang: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut output = String::new();
@@ -258,15 +253,12 @@ pub fn target_delivery_projection(text: &str, _lang: &str) -> String {
     output
 }
 
-/// CJK 双格语言（zh/ja/ko）：阅读单位按全角格折算，Latin 约按半字计价。
+/// CJK double-width languages (zh/ja/ko): reading units are measured in full-width cells, and Latin is priced at roughly half a character.
 fn cjk_cell_lang(lang: &str) -> bool {
     matches!(primary_subtag(lang).as_str(), "zh" | "ja" | "ko")
 }
 
-/// 目标语 hard/CPS 阅读单位。所有语言先走交付投影；CJK 目标语（zh/ja/ko）再按
-/// 两个半角格约等于一个全角字计数，因此 Latin 产品名不会被逐字母高估——契约
-/// 双胞胎里"Latin letters and digits count about half"承诺的就是这一口径。
-/// 其他语言按投影后的非空白字符计。
+/// Target-language hard / CPS reading units. All languages first go through the delivery projection. CJK target languages (zh/ja/ko) are then counted by treating two half-width cells as about one full-width character, so Latin product names are not overestimated letter by letter. This is the "Latin letters and digits count about half" promised in the contract's twin. Other languages count the non-whitespace characters after projection.
 pub fn target_cps_chars(text: &str, lang: &str) -> usize {
     let projected = target_delivery_projection(text, lang);
     if cjk_cell_lang(lang) {
@@ -277,10 +269,7 @@ pub fn target_cps_chars(text: &str, lang: &str) -> usize {
     }
 }
 
-/// 单片作为展示行的宽度口径：片尾标点（含收尾引号/括号与空白）不计。契约声明
-/// "whitespace and the trailing punctuation of a segment are free"；交付投影只
-/// 免普通逗号/句号，"他说："这类片尾冒号仍会被 [`target_cps_chars`] 计 1，导致
-/// 闪帧阈值把 2 字片当 3 字放行。片内标点照常计数（合并后变成行内可见负担）。
+/// Width basis of a single piece as a display line: trailing punctuation of the segment (including closing quotes, brackets, and whitespace) is not counted. The contract says "whitespace and the trailing punctuation of a segment are free". The delivery projection exempts only ordinary commas and full stops, while a trailing colon such as "他说：" (he said:) is still counted as 1 by [`target_cps_chars`]. That would let the flash-frame threshold pass a 2-character piece as 3. Punctuation inside the piece is counted as usual, because after merging it becomes a visible burden within the line.
 pub fn piece_display_units(text: &str, lang: &str) -> usize {
     let trimmed = text.trim_end_matches(|ch: char| {
         ch.is_whitespace() || crate::atomize::is_punctuation_or_symbol(ch)
@@ -288,24 +277,19 @@ pub fn piece_display_units(text: &str, lang: &str) -> usize {
     target_cps_chars(trimmed, lang)
 }
 
-/// 重排改写幅度护栏（AI 管线设计 §8.3 / 文件契约设计 §2「校验只有一份」）。
+/// Rewrite-magnitude guardrail for reordering (AI pipeline design §8.3 / file contract design §2: "validation exists in only one place").
 ///
-/// `reordered` 允许 worker 重排译句小句顺序来消除语序交叉，但只准调语序和
-/// 必要的连接词/助词；阅读单位大漂移说明它顺手压缩或补写了内容，按改写拒收。
+/// `reordered` lets the worker reorder the clauses of a translated sentence to remove cross-ordering, but it only permits adjusting order and the necessary connectives and particles. A large drift in reading units means it quietly compressed or padded content, and it is rejected as a rewrite.
 ///
-/// 容差取「±25% 与 ±4 单位的较大者」，但**不得超过原句的一半**：4 单位的
-/// 绝对底线是给连接词/助词留的余量，短句里它会大过整句本身——8 单位以下的句
-/// 子按原式恒不触发，「你好，世界」压成「好」也算合格，护栏对短句形同虚设。
-/// 上限只影响 8 单位以下的句子，长句的判据逐字不变。
+/// The tolerance is the larger of "±25% and ±4 units", but it **must not exceed half of the original sentence**. The absolute floor of 4 units is headroom reserved for connectives and particles. In a short sentence it would be bigger than the sentence itself. Sentences under 8 units would never trigger under the old formula, so “你好，世界” (4 units) compressed to “好” would also pass, and the guardrail would be a dead letter for short sentences. The cap affects only sentences under 8 units. The criterion for long sentences is unchanged word for word.
 ///
-/// 这一份是**唯一实现**：align 引擎的 provider 验收、agent 提交期 lint 与
-/// 文件契约表格解析三处共用。曾经是三份逐字复制的算术，设计 §2 点名要求合并。
+/// This is the **single implementation**. Provider acceptance in the align engine, the agent's submit-time lint, and the file-contract table parser all share it. It used to be three character-for-character copies of the arithmetic, which design §2 explicitly asked to merge.
 pub fn reordered_rewrite_exceeds(old_units: usize, new_units: usize) -> bool {
     let tolerance = (old_units / 4).max(4).min(old_units.div_ceil(2));
     new_units.abs_diff(old_units) > tolerance
 }
 
-/// 目标语交付阅读速度（阅读单位/秒，bad 档）。
+/// Target-language delivery reading speed (reading units per second, "bad" tier).
 pub fn target_reading_cps(lang: &str) -> f64 {
     match primary_subtag(lang).as_str() {
         "zh" => 9.0,
@@ -316,13 +300,12 @@ pub fn target_reading_cps(lang: &str) -> f64 {
     }
 }
 
-/// 一条目标字幕的最低建议展示时长。短片至少 1 秒，其余按目标语 CPS。
+/// Minimum suggested display duration for one target subtitle. Short clips get at least 1 second; otherwise it follows the target language's CPS.
 pub fn target_required_seconds(text: &str, lang: &str) -> f64 {
     (target_cps_chars(text, lang) as f64 / target_reading_cps(lang)).max(1.0)
 }
 
-/// 目标语 fit 的单行判定。CJK 目标语（zh/ja/ko）按全角格测量：CJK/全角 = 2 cells，
-/// Latin/半角 = 1 cell；其他语言沿用非空白字符数。
+/// Single-line fit check for the target language. CJK target languages (zh/ja/ko) are measured in full-width cells: CJK/full-width = 2 cells, Latin/half-width = 1 cell. Other languages keep counting non-whitespace characters.
 pub fn exceeds_one_line_fit(text: &str, lang: &str, fit: usize) -> bool {
     if cjk_cell_lang(lang) {
         visual_width(&target_delivery_projection(text, lang)) > fit * 2
@@ -331,19 +314,19 @@ pub fn exceeds_one_line_fit(text: &str, lang: &str, fit: usize) -> bool {
     }
 }
 
-/// 三阈值（v0.3 §6.1，计数口径 = 非空白字符）。
+/// Three thresholds (v0.3 §6.1, counting basis = non-whitespace characters).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransParams {
-    /// 触发：译句 ≤ fit 且未超 hard ⇒ 整句一行，不拆。
+    /// Trigger: translated sentence ≤ fit and not over hard ⇒ the whole sentence is one line and is not split.
     pub fit: usize,
-    /// 建议：拆分时的目标片长（进 LLM prompt 与切分器 DP）。
+    /// Suggested: the target piece length when splitting (goes into the LLM prompt and the splitter's DP).
     pub soft: usize,
-    /// 强制：任何片 > hard ⇒ check blocker；确定性切分器按构造不产出。
+    /// Forced: any piece > hard ⇒ check blocker. The deterministic splitter does not produce this by construction.
     pub hard: usize,
 }
 
 impl TransParams {
-    /// 规范性缺省：CJK（zh/ja/ko）16/14/20，其余 42/30/42。
+    /// Normative defaults: CJK (zh/ja/ko) 16/14/20, others 42/30/42.
     pub fn for_lang(lang: &str) -> Self {
         match primary_subtag(lang).as_str() {
             "zh" | "ja" | "ko" => Self {
@@ -359,18 +342,14 @@ impl TransParams {
         }
     }
 
-    /// 显式 fit 覆盖（`--fit`，CJK 场景导向）：soft = fit−2（下限 4），
-    /// hard = max(fit, round(soft × 1.4))。
+    /// Explicit fit override (`--fit`, aimed at CJK scenarios): soft = fit−2 (floor 4), hard = max(fit, round(soft × 1.4)).
     pub fn with_fit(fit: usize) -> Self {
         let soft = fit.saturating_sub(2).max(4);
         let hard = fit.max((soft as f64 * 1.4).round() as usize);
         Self { fit, soft, hard }
     }
 
-    /// Shorts 交付（`project.json` 的 `delivery: "shorts"`）的三阈值：`fit` 取竖屏字幕块的
-    /// 一行——中日韩按全角字 [`SHORTS_LINE_EM`]，其余语言按非空白字符 [`SHORTS_LINE_CHARS`]；
-    /// `soft` / `hard` 与 [`Self::for_lang`] 同一档保持相同比例（中日韩 14/16、20/16，其余
-    /// 30/42、42/42），所以 [`OVER_FIT_PENALTY`] 与缝罚分阶梯的标定不变，只是整体按一行收窄。
+    /// Three thresholds for Shorts delivery (`delivery: "shorts"` in `project.json`). `fit` takes one line of a vertical caption block: for CJK, full-width characters per [`SHORTS_LINE_EM`]; for other languages, non-whitespace characters per [`SHORTS_LINE_CHARS`]. `soft` and `hard` keep the same ratios as the same tier in [`Self::for_lang`] (CJK 14/16, 20/16; others 30/42, 42/42). So the calibration of [`OVER_FIT_PENALTY`] and the seam-penalty ladder is unchanged. Everything is just narrowed to one line.
     pub fn for_shorts(lang: &str) -> Self {
         let base = Self::for_lang(lang);
         let fit = if cjk_cell_lang(lang) {
@@ -386,8 +365,7 @@ impl TransParams {
         }
     }
 
-    /// 按项目交付格式取三阈值：`shorts` 走 [`Self::for_shorts`]，缺席或其他值走
-    /// [`Self::for_lang`]。
+    /// Pick the three thresholds by the project's delivery format. `shorts` goes to [`Self::for_shorts`]. Absent or any other value goes to [`Self::for_lang`].
     pub fn for_delivery(lang: &str, delivery: Option<&str>) -> Self {
         match delivery.map(str::trim) {
             Some(SHORTS_DELIVERY) => Self::for_shorts(lang),
@@ -396,62 +374,32 @@ impl TransParams {
     }
 }
 
-/// `project.json` 里 Shorts 交付的取值（与 `ccut_project::DELIVERIES` 同名）。
+/// The value for Shorts delivery in `project.json` (same name as `ccut_project::DELIVERIES`).
 pub const SHORTS_DELIVERY: &str = "shorts";
 
-/// Shorts 竖屏字幕块一行放得下几个全角字（em）。字幕块宽 60% 画宽、译文行字号 5.5% 画宽
-/// （`ccut_editor_core::shorts::caption_width` / `CAPTION_WIDTH_PCT`；双语与仅译文两种轨集里
-/// 译文行都是最大的那行），60 / 5.5 ≈ 10.9，向下取整。editor-core 的测试从那两个数重算并与
-/// 这里对拍，改其一另一边会红。
+/// How many full-width characters (em) fit on one line of a Shorts vertical caption block. The caption block is 60% of the frame width, and the translation line's font size is 5.5% of the frame width (`ccut_editor_core::shorts::caption_width` / `CAPTION_WIDTH_PCT`; in both the bilingual and translation-only track sets, the translation line is the largest line). 60 / 5.5 ≈ 10.9, rounded down. The editor-core tests recompute from those two numbers and cross-check against this value. If one side changes, the other side fails.
 pub const SHORTS_LINE_EM: usize = 10;
 
-/// 同一行放得下几个非空白字符（中日韩以外的目标语，计数口径同 [`count_cps_chars`]）。
-/// 按 Shorts 字幕的字面量（`system` 解析到内置的 Noto Sans SC，字重 800）：拉丁文句子平均每个
-/// 非空白字符 0.58–0.61 em（英 / 法 / 德 / 西，词间空格摊在内），10.9 em 的一行约放 18–19 个；
-/// 西里尔文 0.65 em、约 17 个。取 17，让西里尔文也落在一行里；其余文字（阿拉伯、天城、泰文等）
-/// 与 [`TransParams::for_lang`] 一样同归这一档，没有按文字单独实测。
+/// How many non-whitespace characters fit on one line for target languages other than CJK. The counting basis is the same as [`count_cps_chars`]. Based on the literal Shorts caption setup (`system` resolves to the built-in Noto Sans SC, weight 800): Latin sentences average 0.58–0.61 em per non-whitespace character (English, French, German, Spanish, with inter-word spaces spread in), so a 10.9 em line fits about 18–19. Cyrillic is 0.65 em, about 17. Take 17 so that Cyrillic also fits on one line. Other scripts (Arabic, Devanagari, Thai, etc.) fall into this same tier as in [`TransParams::for_lang`], without per-script measurement.
 pub const SHORTS_LINE_CHARS: usize = 17;
 
-/// 超 fit 片的目标函数罚分。审计 §7 P0-a：`piece_cost` 的「向 soft 收敛」
-/// 平方项**主动偏好**一片 19u 而非两片 9.5u（0.178 < 1.089），超行是目标
-/// 函数选出来的，不是缝不够用——R3 的 30 片超行里有 10 片存在自由缝。
+/// Objective-function penalty for pieces over fit. Audit §7 P0-a: the "converge toward soft" square term of `piece_cost` **actively prefers** one 19u piece over two 9.5u pieces (0.178 < 1.089). So over-fit pieces were chosen by the objective function, not because seams were insufficient. 10 of the 30 over-fit pieces in R3 have a free seam available.
 ///
-/// 标定卡在缝罚分阶梯之间：> 词间空白 0.8 + 最坏长度平方项差
-/// （((fit−soft)/soft)² ≈ 0.02 与 ((hard−soft)/soft)² ≈ 0.19）⇒ 只要存在
-/// 能真正消掉超行的合法缝，DP 必取；实测 R3 超行 top-10 全部与
-/// [`crate::seam::free_seam`] 判据一致。
+/// The calibration sits between the seam-penalty steps: it is greater than the inter-word whitespace 0.8 plus the worst-case length-square difference (((fit−soft)/soft)² ≈ 0.02 and ((hard−soft)/soft)² ≈ 0.19). So whenever a legal seam exists that can truly eliminate the over-fit piece, the DP always takes it. Measured on R3, the top-10 over-fit pieces all match the [`crate::seam::free_seam`] criterion.
 pub(crate) const OVER_FIT_PENALTY: f64 = 1.5;
 
-/// 「无缝」档罚分（缝上既无标点也无空白：CJK 字界、开标点后随 Latin）。
+/// "No-seam" tier penalty (the seam has neither punctuation nor whitespace: CJK character boundaries, and after opening punctuation followed by Latin).
 ///
-/// 必须 = 1.5 + [`OVER_FIT_PENALTY`]。这是「有缝必须是**全合法**缝才强制
-/// 切分」的算术形式：一刀最多能免掉一个片的超 fit 罚分（1.2）、退回一档
-/// 缝罚分（≤0.8）、再省下长度平方项（≤((hard−soft)/soft)²，CJK 档 0.19），
-/// 合计 < 2.7。因此超 fit 永远买不动一刀无缝切分——纯 CJK 片内没有自由缝
-/// 时保持整片交付（归 translation-unsplittable 通道），不会被治超逼成
-/// [`crate::seam::cjk_midword_boundary`] 那种切完必然被 draft 门打回的切法。
+/// It must equal 1.5 + [`OVER_FIT_PENALTY`]. This is the arithmetic form of "a seam is forcibly used for splitting only if it is a **fully legal** seam". One cut can give back at most one piece's over-fit penalty (1.2), one seam-penalty tier (≤0.8), and the length-square term (≤((hard−soft)/soft)², 0.19 for the CJK tier). That totals less than 2.7. So over-fit can never buy a no-seam cut. In a pure-CJK piece with no free seam, the piece stays whole for delivery and goes to the translation-unsplittable channel. It is not forced into a cut like [`crate::seam::cjk_midword_boundary`], which the draft gate always rejects after splitting.
 pub(crate) const NO_SEAM_PENALTY: f64 = 1.5 + OVER_FIT_PENALTY;
 
-/// 客观级语病缝罚分（必须 > [`NO_SEAM_PENALTY`]）。
+/// Objective seam penalty for grammatical defects (must be > [`NO_SEAM_PENALTY`]).
 ///
-/// DP 目标函数原本对缝质量一无所知：切分合法性全靠事后
-/// [`crate::seam::repair_lint_pieces`] 合并回去，而合并必然把片重新撑宽。
-/// 治超罚分一上，这条链就变成「超行 ⇄ 悬空」的跷跷板——实测会选出
-/// `它会把 KV | 缓存拆分成…`（处置式悬空）、`vLLM 还提供了一个零成本的 |
-/// n-gram 推测器，`（「的」悬垂）这类切法。把 [`is_objective_blocking`]
-/// 直接计入目标函数后，DP 只会在**全合法自由缝**上治超，与
-/// [`crate::seam::free_seam`] 判据按构造一致。
+/// Originally the DP objective knew nothing about seam quality. Split legality depended entirely on the after-the-fact [`crate::seam::repair_lint_pieces`] merging back, and merging always widens a piece again. Once the over-fit penalty was introduced, this chain became a seesaw between "over-fit line ⇄ dangling". Measurements selected cuts such as `它会把 KV | 缓存拆分成…` (a dangling 处置式 construction) and `vLLM 还提供了一个零成本的 | n-gram 推测器，` (a dangling “的”). Once [`is_objective_blocking`] is counted directly in the objective, the DP cures over-fit only at **fully legal free seams**. That matches the [`crate::seam::free_seam`] criterion by construction.
 pub(crate) const BLOCKING_SEAM_PENALTY: f64 = NO_SEAM_PENALTY + 0.5;
 
-/// 缝惩罚（低 = 更愿意在此断）：句末 0 < 子句标点 0.3 < 词间空白 0.8 <
-/// 无缝档 [`NO_SEAM_PENALTY`]。原子边界天然合法：atomize 把标点串一律附着到**前**一个原子
-///（开标点也不例外，`名为“` 是一个原子），并让 Latin 词与数字保持内聚。
-/// 因此「开标点 + 后随 Latin」的缝要靠 [`sep_len`] 判 0 才落到 1.5 档，
-/// 否则 DP 会当成廉价的词间空白缝优先在开引号后面切开。
-/// `whitespace_backed`：该缝在原文里真有空白（见
-/// [`seam_backed_by_whitespace`]）。CJK/Latin 交界处拼接补出的渲染空格不算
-/// 缝——否则「担心 | AI 会抢走…」会被当成词间缝，治超罚分一施压就切在动词
-/// 和宾语从句之间。对齐块 DP（[`crate::align_block`]）复用同一标尺。
+/// Seam penalty (lower = more willing to cut here): sentence end 0 < clause punctuation 0.3 < inter-word whitespace 0.8 < no-seam tier [`NO_SEAM_PENALTY`]. Atomic boundaries are naturally legal. Atomize attaches punctuation runs uniformly to the **preceding** atom (opening punctuation included, so `名为“` is one atom), and it keeps Latin words and numbers cohesive. So a seam of "opening punctuation followed by Latin" must be judged 0 by [`sep_len`] to fall into the 1.5 tier. Otherwise the DP would treat it as a cheap inter-word whitespace seam and preferentially cut right after the opening quote.
+/// `whitespace_backed`: the seam really has whitespace in the original text (see [`seam_backed_by_whitespace`]). A rendered space inserted at a CJK/Latin junction is not a seam. Otherwise "担心 | AI 会抢走…" would be treated as an inter-word seam, and as soon as the over-fit penalty pressed, it would cut between a verb and its object clause. The alignment-block DP ([`crate::align_block`]) reuses the same yardstick.
 pub(crate) fn seam_penalty(prev: &str, next: &str, whitespace_backed: bool) -> f64 {
     if sentence_end(prev) {
         0.0
@@ -468,10 +416,8 @@ fn join_atoms(atoms: &[String]) -> String {
     join_word_texts(atoms.iter().map(String::as_str))
 }
 
-/// 各自对齐切分（v0.3 §5.1）：DP 选缝，每片 ≤ hard、贴近 soft、优先高等级
-/// 缝；片数 ≤ `max_pieces`（每片至少要锚一个源词）。译句同时满足 ≤ fit 与
-/// ≤ hard 时原样整句一片。
-/// 单原子超 hard（巨型 Latin 词等）按字符位置硬切兜底。
+/// Align-each-side split (v0.3 §5.1). The DP chooses seams. Each piece is ≤ hard and close to soft, preferring higher-grade seams. The piece count is ≤ `max_pieces` (each piece must anchor at least one source word). If the translated sentence satisfies both ≤ fit and ≤ hard, it is kept as one whole piece.
+/// A single atom over hard (for example a giant Latin word) falls back to a hard character-position cut.
 pub fn split_independent(
     translation: &str,
     params: &TransParams,
@@ -480,8 +426,7 @@ pub fn split_independent(
     split_independent_for_lang(translation, params, max_pieces, "")
 }
 
-/// [`split_independent`] 的目标语感知版本；简中使用与 fit/hard 校验一致的
-/// 交付投影预算。
+/// The target-language-aware version of [`split_independent`]. For Simplified Chinese, it uses the delivery-projection budget consistent with fit/hard validation.
 pub fn split_independent_for_lang(
     translation: &str,
     params: &TransParams,
@@ -491,7 +436,7 @@ pub fn split_independent_for_lang(
     split_independent_for_lang_protected(translation, params, max_pieces, lang, &[])
 }
 
-/// 目标语感知切分，并把指定目标术语视为不可从中间断开的原子。
+/// Target-language-aware splitting. Specified target terms are treated as atoms that must not be broken from the middle.
 pub fn split_independent_for_lang_protected(
     translation: &str,
     params: &TransParams,
@@ -509,15 +454,9 @@ pub fn split_independent_for_lang_protected(
     )
 }
 
-/// 严格合法切分：只在**非客观语病**缝上切、每片必须 ≤ hard、不做字符位硬切
-/// 兜底。存在这样的切分时返回各片（≥2 片）；整段本就 ≤ fit 且 ≤ hard 时返回
-/// 单片；找不到返回 `None`。
+/// Strict legal split: cut only at **non-objective-defect** seams, every piece must be ≤ hard, and there is no fallback character-position hard cut. When such a split exists, return the pieces (≥2). When the whole thing is already ≤ fit and ≤ hard, return a single piece. Return `None` if none is found.
 ///
-/// 与 [`split_independent_for_lang`] 的区别在于**回答的问题不同**：交付切分
-/// 必须永远给出结果（客观语病缝只是重罚，兜底还会字符位硬切），因此它的输出
-/// 不能用来判断「worker 是否有合法动作」——提交期 lint 要的正是后者：拿它给
-/// worker 提示切法（切法本身必须能过 `align-illegal-seam` lint），或在无解时
-/// 放行而不是拒收。
+/// The difference from [`split_independent_for_lang`] is **the question each one answers**. A delivery split must always produce a result. Objective-defect seams are only heavily penalized, and the fallback does a hard character-position cut. So its output cannot be used to judge whether the worker has a legal action. The submit-time lint needs exactly that. It uses this function to hint the worker at a cut (the cut itself must pass the `align-illegal-seam` lint), or, when there is no solution, it lets the submission through instead of rejecting it.
 pub fn legal_split_for_lang(
     translation: &str,
     params: &TransParams,
@@ -535,13 +474,12 @@ pub fn legal_split_for_lang(
     (!pieces.is_empty()).then_some(pieces)
 }
 
-/// [`split_independent_impl`] 的两种口径。
+/// The two modes of [`split_independent_impl`].
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SplitMode {
-    /// 交付：永远给出结果；客观语病缝重罚，单原子超 hard 允许并由
-    /// [`oversize_hard_cut`] 字符位硬切兜底。
+    /// Delivery: always produces a result. Objective-defect seams are heavily penalized. A single atom over hard is allowed, and is handled by a character-position hard cut in [`oversize_hard_cut`] as a fallback.
     Deliver,
-    /// 严格合法：客观语病缝直接不可行，任何片都不得超 hard，DP 无解即返回空。
+    /// Strict legal: objective-defect seams are simply infeasible. No piece may exceed hard. The DP returns empty if there is no solution.
     LegalOnly,
 }
 
@@ -612,10 +550,7 @@ fn split_independent_impl(
         }))
         .collect();
     let piece_len = |j: usize, i: usize| prefix[i] - prefix[j];
-    // 超 fit 判定必须用与 check/交付一致的视觉口径：`target_cps_chars` 先剥
-    // 空白再量，`exceeds_one_line_fit` 连分隔空格一起量——含 Latin 的片
-    // （R3 超行 top-10 的多数）在单位口径下会被整体漏判。逐 (j,i) 记忆化；
-    // 超 hard 的组合本就出局，按 `piece_len` 单调性提前收敛。
+    // The over-fit check must use the same visual basis as check and delivery. `target_cps_chars` strips whitespace before measuring, and `exceeds_one_line_fit` measures together with the separator spaces. Pieces containing Latin (most of the R3 top-10 over-fit pieces) would be missed wholesale under a unit basis. Memoized per (j,i). Combinations over hard are already eliminated, and the search converges early by the monotonicity of `piece_len`.
     let mut over_fit = vec![false; (n + 1) * (n + 1)];
     for j in 0..n {
         for i in (j + 1)..=n {
@@ -626,9 +561,8 @@ fn split_independent_impl(
                 exceeds_one_line_fit(&join_atoms(&atoms[j..i]), lang, params.fit);
         }
     }
-    // 缝合法性按「前缀 | 后缀」两片预判一次（缝质量判据都是局部尾/首形态）。
-    // 严格口径另记客观语病缝：那是 `align-illegal-seam` lint 的拒收判据，
-    // LegalOnly 模式下直接不可行。
+    // The seam legality is checked once in advance on the two-piece split "prefix | suffix", since the seam-quality criteria are both local tail and head shapes.
+    // The strict basis separately records objective-defect seams. That is the rejection criterion of the `align-illegal-seam` lint. In LegalOnly mode they are simply infeasible.
     let mut objective_seam = vec![false; n + 1];
     let blocking_seam: Vec<bool> = (0..=n)
         .map(|j| {
@@ -639,16 +573,10 @@ fn split_independent_impl(
             let right = join_atoms(&atoms[j..]);
             let issues = lint_pieces(&[left.as_str(), right.as_str()], lang, params);
             objective_seam[j] = issues.iter().any(is_objective_blocking);
-            // CJK 词内边界与客观语病同级：确定性切分器按字原子工作、没有词典，
-            // 「同时还可 ‖ 以将…」这类词内切 `lint_pieces` 一条都不报（尾字
-            // 「可」不在弱尾表里），却比任何弱尾都难读。不加这一条，DP 会为了
-            // 躲开「…将」的弱尾罚分主动切进词里——p850 现场 s-g79.0 的
-            // 「可|以」正是这么来的，`oversize_hard_cut` 根本没被调用到。
-            // 用加性罚分而非硬排除：纯 CJK 长句里每条缝都是词内边界，硬排除
-            // 会让整句无解。
+            // CJK intra-word boundaries rank at the same level as objective defects. The deterministic splitter works on character atoms and has no dictionary. So "同时还可 ‖ 以将…" (a cut inside a word) is reported by none of the `lint_pieces` rules, because the trailing character “可” is not in the weak-tail table. Yet it is harder to read than any weak tail. Without this term, the DP would cut into the word on purpose, to avoid the weak-tail penalty of "…将". The p850 live case s-g79.0, "可|以", came from exactly this, and `oversize_hard_cut` was never called.
+            // Use an additive penalty, not a hard exclusion. In a pure CJK long sentence every seam is an intra-word boundary, and a hard exclusion would leave the whole sentence without a solution.
             cjk_midword_boundary(left.trim_end(), right.trim_start())
-                // 用 Blocking 全集（不只客观级）：闪现碎片同样不是可交付的一行，
-                // 治超罚分不得把片逼成 `vLLM | 还提供了…` 这类 2u 头片。
+                // Use the full Blocking set, not only the objective level. Flash fragments are likewise not a deliverable line, and the over-fit penalty must not push a piece into a 2-unit head piece such as `vLLM | 还提供了…`.
                 || issues
                     .iter()
                     .any(|issue| issue.kind == SeamLintKind::Blocking)
@@ -659,7 +587,7 @@ fn split_independent_impl(
         let len = piece_len(j, i);
         if len > params.hard {
             if i - j == 1 && mode == SplitMode::Deliver {
-                // 单原子超硬：允许（后段硬切兜底），重罚。
+                // A single atom over hard is allowed (the later hard-cut fallback handles it), but it is heavily penalized.
                 return Some(5.0 + (len - params.hard) as f64 * 0.5);
             }
             return None;
@@ -673,7 +601,7 @@ fn split_independent_impl(
 
     let max_k = max_pieces.min(n);
     const INF: f64 = f64::INFINITY;
-    // dp[k][i] = 前 i 个原子切成 k 片的最小成本。
+    // dp[k][i] = minimum cost of splitting the first i atoms into k pieces.
     let mut dp = vec![vec![INF; n + 1]; max_k + 1];
     let mut back = vec![vec![0usize; n + 1]; max_k + 1];
     dp[0][0] = 0.0;
@@ -728,18 +656,18 @@ fn split_independent_impl(
         cuts.push(j);
         i = j;
     }
-    cuts.reverse(); // 首元素恒 0
+    cuts.reverse(); // The first element is always 0
     let mut pieces = Vec::with_capacity(best_k);
     for (index, &j) in cuts.iter().enumerate() {
         let end = cuts.get(index + 1).copied().unwrap_or(n);
         let piece = join_atoms(&atoms[j..end]);
         match mode {
             SplitMode::Deliver => pieces.extend(oversize_hard_cut(piece, params, lang)),
-            // LegalOnly 下 `piece_cost` 已排除任何超 hard 片，无需兜底。
+            // Under LegalOnly, `piece_cost` has already excluded any piece over hard, so no fallback is needed.
             SplitMode::LegalOnly => pieces.push(piece),
         }
     }
-    // 硬切兜底可能撑破片数上限：从头合并到上限内（极端情形，完整性优先）。
+    // The hard-cut fallback may break the piece-count cap. Merge from the head until it is within the cap (an extreme case, where completeness takes priority).
     while pieces.len() > max_pieces && pieces.len() > 1 {
         let merged = join_word_texts([pieces[0].as_str(), pieces[1].as_str()]);
         pieces.splice(0..2, [merged]);
@@ -747,20 +675,11 @@ fn split_independent_impl(
     pieces
 }
 
-/// 超硬兜底切分的缝吸附窗口（原子数）。理想等宽切点附近这么多个原子内如果
-/// 存在更强的缝，就吸附过去；窗口再大就会把片长拉得离 soft 太远，反而制造
-/// 新的超行/闪现片。
+/// Seam-snapping window (in atom count) for the over-hard fallback split. If a stronger seam exists within this many atoms of the ideal equal-width cut point, snap to it. A larger window would pull piece lengths too far from soft and create new over-width or flash pieces.
 const OVERSIZE_SEAM_WINDOW: usize = 3;
-/// 单片超硬的兜底切分：先按原子边界切、并在理想等宽切点 ±
-/// [`OVERSIZE_SEAM_WINDOW`] 个原子内吸附到最强的缝；窗口内全是 CJK 词内边界
-/// 时再放宽到全部可行边界找非词内切点。只有整段不含可用原子边界（巨型 Latin
-/// 词等）才退回纯字符位置硬切。
+/// Fallback split for a single piece over hard. First split at atom boundaries, and snap to the strongest seam within ±[`OVERSIZE_SEAM_WINDOW`] atoms of the ideal equal-width cut point. Only when the window contains nothing but CJK intra-word boundaries is it relaxed to all feasible boundaries, to find a non-intra-word cut. Only when the span has no usable atom boundary at all (for example a giant Latin word) does it fall back to a pure character-position hard cut.
 ///
-/// 这是 DP 无解时的最后一道兜底（`piece_cost` 把超 hard 视为不可行，含长保护
-/// 术语的尾片会走到这里）。旧实现是零缝感知的纯等宽切，必然出现「可|以」这类
-/// 词内切；缝感知后仍保证每片 ≤ hard——吸附只在两侧都不破顶时才采纳，且每一刀
-/// 的理想位置都从**实际**上一刀重新推导，不用固定等宽网格，避免误差累积把末片
-/// 顶破 hard。
+/// This is the last fallback when the DP has no solution. [`piece_cost`] treats over-hard as infeasible, so a tail piece that contains long protected terms ends up here. The old implementation was a pure equal-width cut with no seam awareness, which inevitably produced intra-word cuts like "可|以". After making it seam-aware, it still guarantees each piece ≤ hard. Snapping is adopted only if neither side breaks the ceiling. Each cut's ideal position is re-derived from the **actual** previous cut, not from a fixed equal-width grid, so accumulated error cannot push the last piece over hard.
 fn oversize_hard_cut(text: String, params: &TransParams, lang: &str) -> Vec<String> {
     let total = target_cps_chars(&text, lang);
     if total <= params.hard {
@@ -773,12 +692,10 @@ fn oversize_hard_cut(text: String, params: &TransParams, lang: &str) -> Vec<Stri
     oversize_char_cut(text, params, lang)
 }
 
-/// 原子边界 + 缝吸附的超硬切分。每片 ≤ hard（除非单原子自身超 hard，此时该
-/// 原子单独走字符硬切）。
+/// Atom-boundary plus seam-snapping over-hard split. Each piece is ≤ hard, unless a single atom by itself exceeds hard. In that case the atom is hard-cut at character positions alone.
 fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<String> {
     let n = atoms.len();
-    // prefix[i] = 前 i 个原子的目标显示单元数（按拼接后的文本计量，与
-    // `target_cps_chars` 同口径）。
+    // prefix[i] = the target's display units for the first i atoms (measured on the concatenated text, on the same basis as `target_cps_chars`).
     let mut prefix = vec![0usize; n + 1];
     for index in 0..n {
         prefix[index + 1] = prefix[index] + target_cps_chars(&atoms[index], lang);
@@ -794,7 +711,7 @@ fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<
             pieces.push(join_atoms(&atoms[start..n]));
             break;
         }
-        // 单原子自身超 hard：没有任何合法边界能救，退回字符硬切。
+        // A single atom over hard by itself: no legal boundary can save it, so fall back to a character hard cut.
         if span(start, start + 1) > params.hard {
             pieces.extend(oversize_char_cut(
                 join_atoms(&atoms[start..start + 1]),
@@ -804,12 +721,12 @@ fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<
             start += 1;
             continue;
         }
-        // 可行上界：左片不得超 hard。
+        // Feasibility upper bound: the left piece must not exceed hard.
         let mut max_cut = start + 1;
         while max_cut < n && span(start, max_cut + 1) <= params.hard {
             max_cut += 1;
         }
-        // 理想切点从**剩余**长度重新推导，不用固定网格。
+        // The ideal cut point is re-derived from the **remaining** length, not from a fixed grid.
         let parts_left = remaining.div_ceil(params.soft).max(2);
         let ideal_len = remaining.div_ceil(parts_left);
         let ideal = (start + 1..=max_cut)
@@ -825,7 +742,7 @@ fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<
         let score = |cut: usize| {
             let strength = crate::seam::source_boundary_strength(&refs, cut);
             let distance = ideal.abs_diff(cut);
-            // 强度高优先 → 非词内切优先 → 离理想点近优先 → 靠前优先。
+            // Seam strength first, then non-intra-word cuts, then closer to ideal, then earlier.
             (std::cmp::Reverse(strength), midword(cut), distance, cut)
         };
         let window_lo = ideal.saturating_sub(OVERSIZE_SEAM_WINDOW).max(start + 1);
@@ -833,8 +750,7 @@ fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<
         let best = (window_lo..=window_hi)
             .min_by_key(|&cut| score(cut))
             .unwrap_or(ideal);
-        // 窗口内既没有缝、又只能切进 CJK 词内时，放宽到全部可行边界找一个
-        // 非词内切点（离理想点最近者），词内切只作最后兜底。
+        // If the window has no seam, and only CJK intra-word cut points, relax to all feasible boundaries and pick a non-intra-word cut point (the one nearest the ideal point). Intra-word cuts are only the last fallback.
         let cut = if crate::seam::source_boundary_strength(&refs, best) == 0 && midword(best) {
             (start + 1..=max_cut)
                 .filter(|&cut| !midword(cut))
@@ -850,8 +766,7 @@ fn oversize_seam_cut(atoms: &[String], params: &TransParams, lang: &str) -> Vec<
     pieces
 }
 
-/// 纯字符位置硬切：按 soft 目标均分（不足 hard 则原样返回）。只在整段没有可
-/// 用原子边界时使用。
+/// Pure character-position hard cut: split evenly by the soft target (returned as-is if under hard). Used only when the whole span has no usable atom boundary.
 fn oversize_char_cut(text: String, params: &TransParams, lang: &str) -> Vec<String> {
     let total = target_cps_chars(&text, lang);
     if total <= params.hard {
@@ -879,10 +794,7 @@ fn oversize_char_cut(text: String, params: &TransParams, lang: &str) -> Vec<Stri
     pieces
 }
 
-/// 强制一对一 / 兜底切分（v0.3 §5.3）：译文按 `weights`（各源 Cue 的源文
-/// 非空白字符数）占比切段，切点吸附到 ±`snap` 非空白字符内最近的原子边界，
-/// 吸附不到则按字符位置硬切。返回恰 `weights.len()` 段（可含空段——调用方
-/// 负责把空段并进相邻片区间）。
+/// Forced one-to-one or fallback split (v0.3 §5.3). The translation is split proportionally by `weights` (each source Cue's non-whitespace character count in the source text). Each cut point snaps to the nearest atom boundary within ±`snap` non-whitespace characters. If none is found, it is hard-cut by character position. Returns exactly `weights.len()` segments. Empty segments are allowed, so the caller must merge them into adjacent piece ranges.
 pub fn split_proportional(translation: &str, weights: &[usize], snap: usize) -> Vec<String> {
     if weights.is_empty() {
         return Vec::new();
@@ -890,8 +802,7 @@ pub fn split_proportional(translation: &str, weights: &[usize], snap: usize) -> 
     let atoms = atomize(translation);
     let canonical = join_atoms(&atoms);
     let chars: Vec<char> = canonical.chars().collect();
-    // cps_prefix[i] = chars[0..i] 的非空白字符数；atom_boundary[i] = 位置 i
-    // （chars[i-1] 与 chars[i] 之间）是原子边界。
+    // cps_prefix[i] = the number of non-whitespace characters in chars[0..i]. atom_boundary[i] = position i (between chars[i-1] and chars[i]) is an atom boundary.
     let mut cps_prefix = vec![0usize; chars.len() + 1];
     for (i, ch) in chars.iter().enumerate() {
         cps_prefix[i + 1] = cps_prefix[i] + usize::from(!ch.is_whitespace());
@@ -901,7 +812,7 @@ pub fn split_proportional(translation: &str, weights: &[usize], snap: usize) -> 
         let mut pos = 0usize;
         for (index, atom) in atoms.iter().enumerate() {
             if index > 0 && sep_len(&atoms[index - 1], atom) == 1 {
-                pos += 1; // 分隔空格
+                pos += 1; // Separator space
                 atom_boundary[pos] = true;
             } else if index > 0 {
                 atom_boundary[pos] = true;
@@ -919,13 +830,13 @@ pub fn split_proportional(translation: &str, weights: &[usize], snap: usize) -> 
         accumulated += (*weight).max(1);
         let ideal_cps =
             ((accumulated as f64 / total_weight as f64) * total_cps as f64).round() as usize;
-        // 目标 cps → 字符位置（首个达到 ideal 的位置）。
+        // Target cps → character position (the first position that reaches the ideal).
         let ideal_char = cps_prefix
             .iter()
             .position(|&c| c >= ideal_cps)
             .unwrap_or(chars.len());
-        // 在 ±snap（cps 距离）内找最近原子边界。
-        let mut best: Option<(usize, usize)> = None; // (距离, 位置)
+        // Find the nearest atom boundary within ±snap (in cps distance).
+        let mut best: Option<(usize, usize)> = None; // (distance, position)
         for pos in previous_char + 1..=chars.len() {
             if !atom_boundary[pos] {
                 continue;
@@ -959,9 +870,7 @@ pub fn split_proportional(translation: &str, weights: &[usize], snap: usize) -> 
     pieces
 }
 
-/// independent 译片 → 句内源词区间（v0.3 §5.1 时间锚定的离散形态）：
-/// 按累计字符占比给每片分配 ≥1 个源词，区间划分 `0..word_count`。
-/// 调用方保证 `piece_cps.len() <= word_count`。
+/// Independent pieces → source word ranges within the sentence (the discrete form of the time anchoring in v0.3 §5.1). Assign each piece at least one source word by cumulative character proportion, partitioning `0..word_count` into ranges. The caller guarantees `piece_cps.len() <= word_count`.
 pub fn anchor_pieces_to_words(piece_cps: &[usize], word_count: usize) -> Vec<(usize, usize)> {
     let k = piece_cps.len();
     assert!(
@@ -987,9 +896,7 @@ pub fn anchor_pieces_to_words(piece_cps: &[usize], word_count: usize) -> Vec<(us
     ranges
 }
 
-/// `transAlign` 条目的基准文本（对齐块设计 §5）：`text_basis == trans` 取
-/// `trans[lang][sid]`，`display` 取 `transDisplay[lang][sid].text`；缺失 ⇒ `None`
-///（条目按 align-stale 处理）。
+/// The baseline text of a `transAlign` entry (alignment-block design §5). With `text_basis == trans`, take `trans[lang][sid]`. With `display`, take `transDisplay[lang][sid].text`. If it is missing ⇒ `None` (the entry is treated as align-stale).
 pub fn basis_text<'a>(
     doc: &'a TranscriptDoc,
     lang: &str,
@@ -1010,7 +917,7 @@ pub fn basis_text<'a>(
     }
 }
 
-/// [`align_entry_valid`] 的语言感知入口：自动按 `text_basis` 解析基准文本。
+/// The language-aware entry point of [`align_entry_valid`]. It resolves the baseline text automatically from `text_basis`.
 pub fn align_entry_valid_for_lang(
     doc: &TranscriptDoc,
     sentence: &Sentence,
@@ -1021,9 +928,7 @@ pub fn align_entry_valid_for_lang(
         .is_some_and(|text| align_entry_valid(doc, sentence, text, entry))
 }
 
-/// `transAlign` 条目有效性（v0.3 §4 不变量 + 0.4 块层 I3/I4）。无效 ⇒
-/// align-stale，展示降级整句上屏。`translation` 必须是条目 `text_basis` 对应
-/// 的基准文本（[`basis_text`]）；只有 `trans` 基准条目才可直接传自然译句。
+/// Validity of a `transAlign` entry (v0.3 §4 invariants plus the 0.4 block-layer I3/I4). Invalid ⇒ align-stale, and display degrades to the whole sentence on screen. `translation` must be the baseline text that matches the entry's `text_basis` ([`basis_text`]). Only a `trans`-based entry may be passed the natural translated sentence directly.
 pub fn align_entry_valid(
     doc: &TranscriptDoc,
     sentence: &Sentence,
@@ -1046,7 +951,7 @@ pub fn align_entry_valid(
     }
     match entry.mode {
         AlignMode::Independent => {
-            // independent 无对齐主张：不含块层，也不得宣称块级对应。
+            // independent makes no alignment claim. It has no block layer, and it must not claim a block-level correspondence.
             if !entry.blocks.is_empty() || entry.correspondence == Some(Correspondence::Block) {
                 return false;
             }
@@ -1077,13 +982,13 @@ pub fn align_entry_valid(
             if expected != anchor_count {
                 return false;
             }
-            // 显式整句对应：只有一片（旧 `crossing` 条目按读取侧解释，不受限）。
+            // Explicit whole-sentence correspondence: only one piece. (Old `crossing` entries are interpreted on the read side and are not restricted.)
             if entry.correspondence == Some(Correspondence::Sentence) && entry.pieces.len() != 1 {
                 return false;
             }
             crate::align_block::validate_blocks(entry, anchor_count)
         }
-        // 旧版 oneToOne 直接锚定源 Cue，违反翻译 Cue 独立派生契约。
+        // The legacy oneToOne anchored directly to source Cues, which violates the contract that translation Cues are derived independently.
         AlignMode::OneToOne => false,
     }
 }
@@ -1112,24 +1017,20 @@ fn ordered_anchor_ordinals(
     Some(output)
 }
 
-/// 译文 Cue（subtitle 投影，非持久化）。
+/// Translation Cue (subtitle projection, not persisted).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransCue {
     pub sentence_id: String,
     pub text: String,
     pub start: f64,
     pub end: f64,
-    /// manyToOne / independent 的句内源词下标区间；目标片多于源词时
-    /// independent 按整句时窗排时，留为 `None`。
+    /// Source-word index range within the sentence for manyToOne and independent. When the target has more pieces than source words, independent is timed by the whole-sentence window and this is left as `None`.
     pub word_span: Option<(usize, usize)>,
-    /// true = 无有效 transAlign 的整句上屏降级。
+    /// true = whole-sentence on-screen fallback for an entry with no valid transAlign.
     pub fallback: bool,
 }
 
-/// 在不改变持久化词锚和片文案的前提下，利用片间静音并轻微移动展示边界，
-/// 为同一句内的译片争取最低阅读时长。若整句总时长不足以同时满足所有片，
-/// 按各片所需时长的比例分摊整句时窗——短缺由所有片均担，而不是让排序
-/// 靠后或碰巧配了短源片的那一行独自闪过。
+/// Without changing the persisted word anchors or the piece text, use the silence between pieces and slightly move the display boundaries, to give the translated pieces within the same sentence the minimum reading time. If the whole sentence's duration cannot satisfy all pieces at once, distribute the whole-sentence window in proportion to the duration each piece needs. The shortage is shared by all pieces. It is not left to a later-ordered piece, or to the line that happened to pair with a short source piece, to flash by alone.
 fn smooth_trans_cue_times(cues: &mut [TransCue], lang: &str) {
     if cues.len() < 2 {
         return;
@@ -1146,9 +1047,7 @@ fn smooth_trans_cue_times(cues: &mut [TransCue], lang: &str) {
         if total_required <= f64::EPSILON {
             return;
         }
-        // 比例压缩后 sum == available：下面的边界推导仍然可行，且每片
-        // 拿到的时长与其阅读量成正比（pad_trans_cue_times 随后还会向句外
-        // 静音借时补足绝对缺口）。
+        // After proportional compression, sum == available. The boundary derivation below stays feasible, and each piece gets a duration proportional to its reading load. (pad_trans_cue_times will then still borrow silence from outside the sentence to cover the absolute shortfall.)
         let scale = available / total_required;
         for value in &mut required {
             *value *= scale;
@@ -1182,8 +1081,7 @@ fn smooth_trans_cue_times(cues: &mut [TransCue], lang: &str) {
     last.end = sentence_end;
 }
 
-/// 用相邻字幕之间真实存在的静音（以及媒体尾部空白）补足仍偏短的目标字幕。
-/// 只扩展到空白区，不覆盖相邻字幕；先借后方静音，再借前方静音。
+/// Pad target subtitles that are still too short, using the real silence between adjacent subtitles (and the blank at the media tail). Extend only into blank space and never overlap adjacent subtitles. Borrow silence from the later side first, then from the earlier side.
 fn pad_trans_cue_times(cues: &mut [TransCue], lang: &str, media_end: f64) {
     for index in 0..cues.len() {
         let required = target_required_seconds(&cues[index].text, lang);
@@ -1213,11 +1111,7 @@ fn pad_trans_cue_times(cues: &mut [TransCue], lang: &str, media_end: f64) {
     }
 }
 
-/// 译文 Cue 流派生：每个已翻译句展开为 1..N 条 [`TransCue`]（时序）。
-/// 未翻译句不产出；无效/缺失 `transAlign` 的句产出单条整句上屏（自然译句）。
-/// 有效条目的片文本按其 `text_basis` 基准（[`basis_text`]）投影；显式
-/// `correspondence: sentence` 的 manyToOne 条目整句单条上屏（时窗 = 锚定词
-/// 时窗，`fallback` 沿用「超出单行容量才算降级」的口径）。
+/// Derive the translation Cue stream. Each translated sentence expands into 1..N [`TransCue`] (in time order). Untranslated sentences produce nothing. Sentences with an invalid or missing `transAlign` produce a single cue for the whole sentence (the natural translation). The piece text of a valid entry is projected according to its `text_basis` baseline ([`basis_text`]). A manyToOne entry with explicit `correspondence: sentence` is shown as a single whole-sentence cue (time window = the anchored word window). `fallback` follows the rule "degrade only when the text exceeds single-line capacity".
 pub fn derive_trans_cues(doc: &TranscriptDoc, sentences: &[Sentence], lang: &str) -> Vec<TransCue> {
     let Some(table) = doc.trans.get(lang) else {
         return Vec::new();
@@ -1241,8 +1135,7 @@ pub fn derive_trans_cues(doc: &TranscriptDoc, sentences: &[Sentence], lang: &str
                 start: sentence.word_start(doc),
                 end: sentence.word_end(doc),
                 word_span: None,
-                // 翻译流不读取源 Cue 数量；只有超出目标单行容量且缺少有效切法
-                // 才是降级。
+                // The translation stream does not read the source Cue count. Only exceeding the target single-line capacity without a valid split counts as degradation.
                 fallback: !fits_one_line,
             });
             out.extend(sentence_out);
@@ -1250,7 +1143,7 @@ pub fn derive_trans_cues(doc: &TranscriptDoc, sentences: &[Sentence], lang: &str
         };
         match entry.mode {
             AlignMode::ManyToOne if entry.correspondence == Some(Correspondence::Sentence) => {
-                // 整句对应：源按词时间逐词高亮、译文整句静态显示，不宣称逐片对应。
+                // Whole-sentence correspondence: the source is highlighted word by word following the word timing, and the translation is shown statically as a whole sentence. It does not claim per-piece correspondence.
                 let anchor_ordinals =
                     ordered_anchor_ordinals(doc, sentence, &entry.words).expect("validated");
                 let first = anchor_ordinals[0];
@@ -1309,9 +1202,7 @@ pub fn derive_trans_cues(doc: &TranscriptDoc, sentences: &[Sentence], lang: &str
                         });
                     }
                 } else {
-                    // 极短源文可能对应很长译文。目标片数多于源词时，无法为每片
-                    // 分配非空连续词区间；按目标阅读单位在整句时窗内分配展示时间，
-                    // 明确放弃逐片双语对应，但仍保留译文和 hard 上限。
+                    // A very short source text may correspond to a very long translation. When the number of target pieces exceeds the source word count, it is impossible to give each piece a non-empty, contiguous word range. Display time is then allocated within the whole-sentence window by target reading units. This explicitly gives up per-piece bilingual correspondence, but still keeps the translation and the hard limit.
                     let start = doc.words[sentence.word_indices[anchor_ordinals[0]]].t0;
                     let end = doc.words[sentence.word_indices[*anchor_ordinals.last().unwrap()]].t1;
                     let duration = (end - start).max(0.0);
@@ -1352,54 +1243,47 @@ mod tests {
     use crate::doc::{BreakOverride, DocEngine, DocMedia, Speaker, TransPiece, Word};
     use crate::sentence::derive_sentences;
 
-    /// 改写幅度护栏的绝对底线（±4 单位）不得大过原句的一半：否则 8 单位以下
-    /// 的句子恒不触发，「你好，世界」（4 单位）压成「好」（1 单位）也算合格，
-    /// 提交期 lint 与 provider 验收对短句的召回都是 0。长句判据逐字不变。
+    /// The absolute floor of the rewrite-magnitude guardrail (±4 units) must not exceed half of the original sentence. Otherwise sentences under 8 units never trigger, so “你好，世界” (4 units) compressed to “好” (1 unit) would also pass. The submit-time lint and provider acceptance would then have zero recall on short sentences. The criterion for long sentences is unchanged word for word.
     #[test]
     fn rewrite_guard_scales_down_for_short_sentences() {
-        // 短句：底线被原句一半压住。
+        // Short sentence: the floor is capped at half of the original sentence.
         assert!(reordered_rewrite_exceeds(4, 1));
         assert!(!reordered_rewrite_exceeds(4, 2));
         assert!(reordered_rewrite_exceeds(2, 0));
-        // 8 单位起底线恢复成 ±4，与历史口径逐字一致。
+        // From 8 units onward, the floor returns to ±4, identical word for word to the historical basis.
         assert!(!reordered_rewrite_exceeds(8, 4));
         assert!(reordered_rewrite_exceeds(8, 3));
         assert!(!reordered_rewrite_exceeds(24, 20));
         assert!(reordered_rewrite_exceeds(24, 17));
-        // 等长重排永远放行。
+        // Same-length reordering is always allowed.
         assert!(!reordered_rewrite_exceeds(4, 4));
     }
 
-    /// 契约双胞胎声明 "Latin letters and digits count about half"，系数钉死在
-    /// 全部 CJK 目标语（zh/ja/ko），不只简中——曾经 ja/ko 走非空白字符全价，
-    /// 与共享契约文本矛盾。
+    /// The contract twin declares "Latin letters and digits count about half". The coefficient is fixed for all CJK target languages (zh/ja/ko), not only Simplified Chinese. ja and ko once counted non-whitespace characters at full price, which contradicted the shared contract text.
     #[test]
     fn cjk_targets_price_latin_at_half() {
-        // s-g6.18 基准句：33 个全角字 + "agentskills.io"/"Open Agent Skills"
-        // 等 42 个 Latin 字符；半价口径 54 单位（54/14 ≈ 建议 4 片，与引擎
-        // data-budget 输出一致），全价口径会虚高到 75。
+        // s-g6.18 benchmark sentence: 33 full-width characters plus 42 Latin characters such as "agentskills.io" and "Open Agent Skills". The half-price basis gives 54 units (54/14 ≈ 4 suggested pieces, consistent with the engine's data-budget output). The full-price basis would inflate it to 75.
         let text = "没错，而且虽然 agentskills.io 上定义了 Open Agent Skills 标准，但在创建 AI Agent Skills 时，这些仍然是我们需要考虑的一些问题。";
         assert_eq!(target_cps_chars(text, "zh"), 54);
         assert_eq!(target_cps_chars("KVキャッシュとPagedAttention", "ja"), 14);
         assert_eq!(target_cps_chars("KVキャッシュとPagedAttention", "zh"), 14);
-        // 非 CJK 目标语仍按非空白字符计。
+        // Non-CJK target languages still count non-whitespace characters.
         assert_eq!(target_cps_chars("KV cache rocks", "en"), 12);
     }
 
-    /// 片级展示宽度：片尾标点（含冒号/收尾引号）免费，片内标点照常。
-    /// 曾经"他说:"被闪帧阈值计 3 而契约口径是 2。
+    /// Piece-level display width: trailing punctuation of the piece (including colons and closing quotes) is free. In-piece punctuation counts as usual. Previously "他说:" (he said:) was counted as 3 by the flash-frame threshold, while the contract basis is 2.
     #[test]
     fn piece_display_units_free_trailing_punctuation() {
         assert_eq!(target_cps_chars("他说:", "zh"), 3);
         assert_eq!(piece_display_units("他说:", "zh"), 2);
         assert_eq!(piece_display_units("他说：", "zh"), 2);
-        // 普通句号本就被交付投影免费，两个口径一致。
+        // Ordinary full stops are already free under the delivery projection, so the two bases agree.
         assert_eq!(piece_display_units("他说。", "zh"), 2);
-        // 片内标点是行内可见负担，不免。
+        // In-piece punctuation is a visible burden within the line, so it is not free.
         assert_eq!(piece_display_units("他说：好的", "zh"), 5);
-        // 收尾引号 + 句读一起免。
+        // A closing quote and sentence punctuation are free together.
         assert_eq!(piece_display_units("他说：好的！」", "zh"), 5);
-        // 纯标点片宽度为 0（本身就是闪帧碎片）。
+        // A pure-punctuation piece has width 0 (it is itself a flash fragment).
         assert_eq!(piece_display_units("……", "zh"), 0);
     }
 
@@ -1418,13 +1302,13 @@ mod tests {
         assert_eq!(TransParams::for_shorts("ko"), zh);
         let fr = TransParams::for_shorts("fr");
         assert_eq!(fr.fit, SHORTS_LINE_CHARS);
-        // 非中日韩档的缺省 hard 等于 fit，收窄后照旧。
+        // The default hard for non-CJK tiers equals fit, and it stays the same after narrowing.
         assert_eq!(fr.hard, fr.fit);
-        // 没列出的文字与缺省表一样落在非中日韩档。
+        // Scripts not listed fall into the non-CJK tier, as in the default table.
         for lang in ["ru", "ar", "hi", "th", "und"] {
             assert_eq!(TransParams::for_shorts(lang), fr, "{lang}");
         }
-        // 各档都比缺省窄，soft ≤ fit ≤ hard，hard / soft 与缺省档同比（缝罚分标定不变）。
+        // Every tier is narrower than the default: soft ≤ fit ≤ hard. hard and soft keep the same ratio as the default tier, so the seam-penalty calibration is unchanged.
         for lang in ["zh", "fr"] {
             let (base, narrow) = (TransParams::for_lang(lang), TransParams::for_shorts(lang));
             assert!(narrow.fit < base.fit, "{lang}");
@@ -1448,15 +1332,14 @@ mod tests {
         );
     }
 
-    /// 收窄后硬上限只有 13 个全角字：没有标点的长句也要切得开，而且不把数字和量词、
-    /// 拉丁串拆开（竖屏字幕的折行禁则在切分这一层同样成立）。
+    /// After narrowing, the hard cap is only 13 full-width characters. Long sentences without punctuation must still be splittable, without splitting numbers from their quantifiers or breaking Latin strings apart. The line-breaking prohibition rules for vertical subtitles also hold at this splitting layer.
     #[test]
     fn shorts_budget_splits_a_long_clause_without_breaking_numbers_or_latin() {
         let params = TransParams::for_shorts("zh");
         let text = "这家公司去年一口气融资了10亿美元然后把钱全部投进了OpenAI的芯片研发";
         let pieces = split_independent_for_lang(text, &params, usize::MAX, "zh");
         assert!(pieces.len() >= 3, "{pieces:?}");
-        // 交付切分会在中日韩与数字 / 拉丁之间补空格（`10 亿`），比对时去掉空白。
+        // Delivery splitting inserts spaces between CJK text and digits or Latin (`10 亿`). Strip whitespace when comparing.
         let squeeze = |value: &str| value.split_whitespace().collect::<String>();
         assert_eq!(squeeze(&pieces.concat()), text);
         for piece in &pieces {
@@ -1532,8 +1415,7 @@ mod tests {
             target_delivery_projection(phrase, "zh"),
             "我是 Claude Code 的创始工程师之一"
         );
-        // 混排宽度超过 16 个全角格，可在一个 target unit 内换成两行；
-        // 但它没有超过 20-char hard，不能把“之一”挤到下一语义片。
+        // Mixed-script width over 16 full-width cells can wrap into two lines within one target unit. But it does not exceed the 20-char hard limit, so “之一” must not be pushed to the next semantic piece.
         assert!(exceeds_one_line_fit(phrase, "zh", 16));
         assert!(target_cps_chars(phrase, "zh") <= TransParams::for_lang("zh").hard);
         assert_eq!(target_cps_chars("版本 1.2，发布。", "zh"), 6);
@@ -1568,26 +1450,24 @@ mod tests {
     #[test]
     fn independent_split_prefers_punctuation_seams() {
         let params = TransParams::for_lang("zh");
-        // 22 字，逗号在第 10 字后——应在逗号处断而不是均分。
+        // 22 characters, with a comma after the 10th. It should break at the comma rather than split evenly.
         let text = "你过的就是这种生活，二〇二八年人们会过的生活。";
         let pieces = split_independent(text, &params, 10);
         assert_eq!(pieces.len(), 2);
         assert!(pieces[0].ends_with("，"), "{pieces:?}");
         assert!(count_cps_chars(&pieces[0]) <= params.hard);
         assert!(count_cps_chars(&pieces[1]) <= params.hard);
-        // 拼接不变量。
+        // Concatenation invariant.
         assert_eq!(normalize_chars(&pieces.concat()), normalize_chars(text));
     }
 
     #[test]
     fn independent_split_never_cuts_inside_paired_delimiter() {
-        // s-g4.16 回归：`名为“` 与 `PluginDataJSON”` 之间曾被判为廉价的词间
-        // 空白缝（0.8 档），DP 优先在开引号后切开，且 canonical 多出幻影空格。
+        // s-g4.16 regression: the seam between `名为“` and `PluginDataJSON”` had once been judged a cheap inter-word whitespace seam (0.8 tier). The DP therefore preferred to cut after the opening quote, and the canonical text gained a phantom space.
         let trans =
             "最简单来说，一个代理插件就是一个根目录下包含名为“PluginDataJSON”的清单的文件夹。";
         let atoms = atomize(trans);
-        // canonical 必须与译文逐字相等，否则 seam 偏移与 protected-term
-        // 匹配整体错位，幻影空格还会随片文本落库。
+        // canonical must match the translation character for character. Otherwise the seam offset and the protected-term matching would be globally misaligned, and the phantom space would be persisted along with the piece text.
         assert_eq!(join_atoms(&atoms), trans);
 
         let params = TransParams::for_lang("zh-Hans");
@@ -1606,25 +1486,21 @@ mod tests {
             "quoted span must stay whole: {pieces:?}"
         );
 
-        // 同一个根因的另一面：缝不落在定界符上时，幻影空格直接留在片文本里
-        // 并落库（`validate_target_texts` 用 normalize_chars 比对，看不见空白）。
+        // The other side of the same root cause: when the seam does not fall on a delimiter, the phantom space stays in the piece text and is persisted. (`validate_target_texts` compares with normalize_chars, which cannot see whitespace.)
         let inline = "这是一个叫《PluginDataJSON》的清单文件。";
         let pieces = split_independent_for_lang(inline, &params, 4, "zh-Hans");
         assert_eq!(pieces.concat(), inline);
     }
 
-    /// P0-a 回归：行宽是硬约束，不是二次项里的一个软偏好。
+    /// P0-a regression: line width is a hard constraint, not a soft preference inside a quadratic term.
     ///
-    /// R3 质量审计的 30 片超 fit 中有一批「有自由缝却没切」——`piece_cost` 的
-    /// 「贴近 soft」平方项让一片 19u 宽片（0.178）明显便宜过切成两片
-    /// （≥1.089，还要付缝分），DP 于是主动选宽片。治超罚分必须压过任何一刀
-    /// 能退回来的钱（缝档 ≤0.8 + 长度差 ≤0.19），否则挪刀就能把罚分洗掉。
+    /// In the R3 quality audit, some of the 30 over-fit pieces had "a free seam but were not cut". The "stay near soft" square term of `piece_cost` made a 19u piece (0.178) clearly cheaper than cutting it into two (≥1.089, plus seam cost), so the DP deliberately chose the wide piece. The over-fit penalty must outweigh anything a single cut could give back (seam tier ≤0.8 plus length difference ≤0.19). Otherwise, moving the cut would wash the penalty away.
     #[test]
     fn over_fit_piece_is_cut_when_a_free_seam_exists() {
         let params = TransParams::for_lang("zh");
         assert!(OVER_FIT_PENALTY < NO_SEAM_PENALTY);
         assert!(NO_SEAM_PENALTY < BLOCKING_SEAM_PENALTY);
-        // 一刀最多退回：治超罚分 + 最贵的真缝档 + 长度平方项差额。
+        // One cut can give back at most: the over-fit penalty, plus the most expensive real seam tier, plus the length-square difference.
         assert!(OVER_FIT_PENALTY + 0.8 + 1.0 < NO_SEAM_PENALTY + BLOCKING_SEAM_PENALTY);
 
         for (trans, expected) in [
@@ -1649,9 +1525,7 @@ mod tests {
         }
     }
 
-    /// P0-a 的另一半：无自由缝的超 fit 片保持整片。强切只会把超行换成悬垂
-    /// 尾（悬空⇄超行跷跷板），这类片归 translation-unsplittable 通道，由
-    /// 译文改写而不是展示切分解决。
+    /// The other half of P0-a: over-fit pieces without a free seam stay whole. A forced cut would only swap the over-width line for a dangling tail (the dangling ⇄ over-width seesaw). Such pieces fall into the translation-unsplittable channel and are solved by rewriting the translation, not by display splitting.
     #[test]
     fn over_fit_piece_without_a_free_seam_stays_whole() {
         let params = TransParams::for_lang("zh");
@@ -1659,7 +1533,7 @@ mod tests {
             "这样它们就不用重新计算你已经知道的东西。",
             "一个面向延迟敏感型工作负载的额外功能：",
             "从你现有的 GPU 中获得大幅提升的吞吐量。",
-            // 「担心|AI」在拼接后看着像词间空格缝，原文里没有空白：不是缝。
+            // "担心|AI" looks like an inter-word space seam after concatenation, but the original has no whitespace there, so it is not a seam.
             "我发现很多人担心AI会抢走自己的工作。",
         ] {
             assert!(exceeds_one_line_fit(trans, "zh", params.fit), "{trans}");
@@ -1723,12 +1597,12 @@ mod tests {
 
     #[test]
     fn proportional_split_snaps_to_atom_boundaries() {
-        // 权重均分 20 字中文 → 理想切点 10；最近词边界在标点后。
+        // Equal-weight split of 20 Chinese characters → the ideal cut is at 10. The nearest word boundary is after the punctuation.
         let text = "你得像打磨像素一样，打磨每一个词元。";
         let pieces = split_proportional(text, &[10, 10], 3);
         assert_eq!(pieces.len(), 2);
         assert_eq!(normalize_chars(&pieces.concat()), normalize_chars(text));
-        // Latin：切点吸附到空白，不切词。
+        // Latin: the cut point snaps to whitespace, so no word is split.
         let latin = split_proportional("alpha bravo charlie delta", &[12, 12], 3);
         assert_eq!(latin.len(), 2);
         assert!(latin.iter().all(|p| !p.is_empty()));
@@ -1748,7 +1622,7 @@ mod tests {
         assert_eq!(anchor_pieces_to_words(&[1, 30], 4), vec![(0, 0), (1, 3)]);
         assert_eq!(anchor_pieces_to_words(&[30, 1], 4), vec![(0, 2), (3, 3)]);
         assert_eq!(anchor_pieces_to_words(&[5], 3), vec![(0, 2)]);
-        // 片数 = 词数：逐词。
+        // Piece count = word count: one word per piece.
         assert_eq!(
             anchor_pieces_to_words(&[8, 8, 8], 3),
             vec![(0, 0), (1, 1), (2, 2)]
@@ -1807,10 +1681,10 @@ mod tests {
         let sentences = derive_sentences(&doc, &cues);
         assert_eq!(sentences.len(), 1);
 
-        // 未翻译：空流。
+        // Untranslated: empty stream.
         assert!(derive_trans_cues(&doc, &sentences, "zh").is_empty());
 
-        // 超 fit 的有译无对齐：整句上屏降级。
+        // Over-fit translation with no alignment: degrade to whole-sentence on-screen.
         doc.trans.entry("zh".to_owned()).or_default().insert(
             "s-g1.0".to_owned(),
             "第一段译文需要自然对应，第二段译文负责完整收尾。".to_owned(),
@@ -1821,7 +1695,7 @@ mod tests {
         assert_eq!(stream[0].start, 0.0);
         assert_eq!(stream[0].end, 3.2);
 
-        // 旧版 Cue 锚定条目不再有效：翻译 Cue 不能继承源 Cue 边界。
+        // Old Cue-anchored entries are no longer valid. Translation Cues cannot inherit source Cue boundaries.
         doc.trans_align.entry("zh".to_owned()).or_default().insert(
             "s-g1.0".to_owned(),
             TransAlign {
@@ -1851,8 +1725,7 @@ mod tests {
         assert_eq!(stream.len(), 1);
         assert!(stream[0].fallback);
 
-        // 新版 manyToOne：词锚可落在旧 Cue 内部；展示边界在可行时会围绕
-        // 词锚平滑，但 word_span 仍保留精确语义映射。
+        // New manyToOne: word anchors may fall inside an old Cue. Display boundaries smooth around the word anchors where feasible, but word_span still keeps the exact semantic mapping.
         doc.trans_align.get_mut("zh").unwrap().insert(
             "s-g1.0".to_owned(),
             TransAlign {
@@ -1862,7 +1735,7 @@ mod tests {
                 text_basis: Default::default(),
                 aligner: None,
                 blocks: Vec::new(),
-                // 即使旧 cues 快照错误也不影响词锚条目：校验完全不读取它。
+                // Even if the old cues snapshot is wrong, word-anchored entries are unaffected. Validation does not read it at all.
                 cues: vec!["q-obsolete".to_owned()],
                 words: doc.words.iter().map(|word| word.id.clone()).collect(),
                 pieces: vec![
@@ -1884,7 +1757,7 @@ mod tests {
         assert_eq!(stream[0].end, 1.6);
         assert_eq!(stream[1].start, 1.6);
 
-        // 拼接不变量破坏（句级重写）⇒ 条目失效 ⇒ 回到整句上屏。
+        // Concatenation invariant broken (sentence-level rewrite) ⇒ entry invalid ⇒ falls back to whole-sentence on-screen.
         doc.trans.get_mut("zh").unwrap().insert(
             "s-g1.0".to_owned(),
             "完全重写过的译文已经超过单行容量而且旧切法不再有效。".to_owned(),
@@ -1930,7 +1803,7 @@ mod tests {
         );
         let stream = derive_trans_cues(&doc, &sentences, "zh");
         assert_eq!(stream.len(), 2);
-        // 边界落在源词边缘：片1 末词 t1 == 片2 首词 t0 的前一词边缘。
+        // The boundary falls at the edge of a source word: the end word t1 of piece 1 equals the edge before the first word t0 of piece 2.
         assert_eq!(stream[0].start, 0.0);
         assert!(stream[0].end > 0.0 && stream[0].end < 3.2);
         assert_eq!(stream[1].end, 3.2);
@@ -1982,7 +1855,7 @@ mod tests {
         );
         let before = derive_trans_cues(&doc, &sentences, "zh");
 
-        // 只改原文展示 Cue 的断行覆盖；Sentence 词序列与时间没有变化。
+        // Only the display line-break override of the source text changes. The Sentence word sequence and its timing do not change.
         doc.breaks.insert("g1.4".to_owned(), BreakOverride::Nobreak);
         let reflowed_cues = derive_cues(&doc, &CueParams::default());
         assert_ne!(
@@ -2054,9 +1927,7 @@ mod tests {
 
     #[test]
     fn smoothing_shares_shortfall_proportionally_when_sentence_is_too_dense() {
-        // 整句时窗放不下全部阅读需求时，不再保留词边缘时间（那会让碰巧配
-        // 了短源片的行独自闪过），而是按需求比例分摊：4 字片 vs 36 字片的
-        // 需求是 1s vs 4s，2.5s 时窗应按 0.5s / 2.0s 分配。
+        // When the whole-sentence window cannot fit all reading needs, word-edge times are no longer kept. That would let a line paired with a short source piece flash by alone. Instead, distribute proportionally to needs: a 4-character piece versus a 36-character piece need 1s versus 4s, so a 2.5s window should be allocated 0.5s and 2.0s.
         let mut cues = vec![
             TransCue {
                 sentence_id: "s1".to_owned(),
@@ -2120,14 +1991,14 @@ mod tests {
             text: text.to_owned(),
         };
         let translation = "甲乙丙。";
-        // 合法：连续全覆盖 + 拼接相等。
+        // Legal: contiguous full coverage plus equal concatenation.
         assert!(align_entry_valid(
             &doc,
             sentence,
             translation,
             &entry(vec![p(0, 3, "甲乙"), p(4, 7, "丙。")], AlignMode::ManyToOne)
         ));
-        // 区间不连续 / 覆盖不全 / 拼接不等 → 无效。
+        // Ranges not contiguous, coverage incomplete, or concatenation unequal → invalid.
         assert!(!align_entry_valid(
             &doc,
             sentence,
@@ -2146,16 +2017,14 @@ mod tests {
             translation,
             &entry(vec![p(0, 3, "改"), p(4, 7, "丙。")], AlignMode::ManyToOne)
         ));
-        // 旧 Cue 快照完全忽略；旧 oneToOne Cue 锚定条目始终无效。
+        // The old Cue snapshot is ignored entirely. Old oneToOne Cue-anchored entries are always invalid.
         let stale_cues = entry(vec![p(0, 7, "甲乙丙。")], AlignMode::ManyToOne);
         assert!(align_entry_valid(&doc, sentence, translation, &stale_cues));
         let legacy = entry(vec![p(0, 1, "甲乙丙。")], AlignMode::OneToOne);
         assert!(!align_entry_valid(&doc, sentence, translation, &legacy));
     }
 
-    /// 0.4 块层：I3/I4 进 `align_entry_valid`；显式整句对应只许一片；
-    /// independent 不含块；旧 `crossing` 多片条目仍按片投影（设计 §5「保留
-    /// pieces 时间」），显式 `sentence` 条目整句单条上屏。
+    /// 0.4 block layer: I3/I4 go into `align_entry_valid`. An explicit whole-sentence correspondence allows only one piece. independent contains no block. Legacy multi-piece `crossing` entries are still projected per piece (design §5, "keep pieces timing"). Explicit `sentence` entries are shown as a single whole-sentence cue.
     #[test]
     fn align_entry_valid_enforces_block_layer_and_sentence_shape() {
         use crate::doc::{AlignBlock, Correspondence};
@@ -2188,19 +2057,19 @@ mod tests {
             block((4, 7), (3, 6)),
         ];
         assert!(align_entry_valid(&doc, sentence, translation, &entry));
-        // (h) 片切进块内部：源侧 from 不在块起点。
+        // (h) A piece cut inside a block: the source-side from is not at the block start.
         let mut inside = entry.clone();
         inside.pieces = vec![p(0, 2, "甲乙，"), p(3, 7, "丙丁。")];
         assert!(!align_entry_valid(&doc, sentence, translation, &inside));
-        // 目标侧：片文本切点不在块边界。
+        // Target side: the piece text cut point is not on a block boundary.
         let mut inside = entry.clone();
         inside.pieces = vec![p(0, 3, "甲乙"), p(4, 7, "，丙丁。")];
         assert!(!align_entry_valid(&doc, sentence, translation, &inside));
-        // 块覆盖不全 / 与片总长不符。
+        // Block coverage incomplete, or it does not match the total piece length.
         let mut short = entry.clone();
         short.blocks.pop();
         assert!(!align_entry_valid(&doc, sentence, translation, &short));
-        // 显式整句对应：恰一片、恰一块。
+        // Explicit whole-sentence correspondence: exactly one piece and exactly one block.
         let mut sentence_level = TransAlign::new(
             AlignMode::ManyToOne,
             words.clone(),
@@ -2218,7 +2087,7 @@ mod tests {
         two_pieces.pieces = vec![p(0, 3, "甲乙，"), p(4, 7, "丙丁。")];
         two_pieces.blocks.clear();
         assert!(!align_entry_valid(&doc, sentence, translation, &two_pieces));
-        // independent 不得携带块层或宣称块级对应。
+        // independent must not carry a block layer or claim block-level correspondence.
         let mut independent = TransAlign::new(
             AlignMode::Independent,
             Vec::new(),
@@ -2252,7 +2121,7 @@ mod tests {
             &independent
         ));
 
-        // 投影：显式 sentence ⇒ 整句单条；旧 crossing 多片 ⇒ 仍按片。
+        // Projection: explicit sentence ⇒ a single cue for the whole sentence. Legacy crossing with multiple pieces ⇒ still per piece.
         doc.trans
             .entry("zh".to_owned())
             .or_default()
@@ -2282,9 +2151,7 @@ mod tests {
         assert_eq!(stream[0].word_span, Some((0, 3)));
     }
 
-    /// E2 的 DP 侧：`blocking_seam` 把 CJK 词内边界记为客观语病。p850 现场
-    /// s-g79.0 的「同时还可 ‖ 以将…」不是兜底硬切造成的——是 DP 为了躲开
-    /// 「…将」的弱尾罚分主动切进词里。不加词内项时本用例复现该缺陷。
+    /// The DP side of E2: `blocking_seam` records CJK intra-word boundaries as objective defects. The p850 live case s-g79.0, "同时还可 ‖ 以将…", was not caused by a fallback hard cut. The DP cut into the word on purpose, to avoid the weak-tail penalty of "…将". Without the intra-word term, this test case reproduces the defect.
     #[test]
     fn dp_does_not_cut_inside_a_cjk_word_when_a_real_boundary_exists() {
         let params = TransParams::for_lang("zh");
@@ -2300,7 +2167,7 @@ mod tests {
                 "max_pieces={max_pieces}"
             );
         }
-        // 整句同理：逗号缝保留，「可以」不被拆开。
+        // For the whole sentence as well: the comma seam is kept, and "可以" is not split.
         let full = "生产部署已观察到 50% 的吞吐量提升，同时还可以将 max_num_batched_tokens 设置为大于 2048。";
         let pieces = split_independent_for_lang(full, &params, 4, "zh");
         assert!(pieces[0].ends_with("提升，"), "{pieces:?}");

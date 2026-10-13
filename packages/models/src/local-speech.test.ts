@@ -25,7 +25,7 @@ import {
 } from './speech-self-test.ts';
 import { builtinVoice, builtinVoiceFile } from './speech-voices.ts';
 
-/** 本地合成在提交时的检查与冻结（架构设计 §6.1、§6.6），以及自检的判定（Model Worker 协议规范 §4.3）。 */
+/** Submission-time checks and freezing for local synthesis (architecture design §6.1, §6.6), and the self-test verdict (Model Worker protocol spec §4.3). */
 
 const status = { detail: undefined } as unknown as ModelBundleStatus;
 const def = (id: string) => SPEECH_BUNDLES.find((b) => b.bundleId === id)!;
@@ -270,7 +270,7 @@ describe('freezeReferenceFile', () => {
   });
 });
 
-/** 合成一段 WAV：`sample(i)` 是 -1..1 的样本。 */
+/** Synthesize a WAV: `sample(i)` is the sample in -1..1. */
 function wav(options: {
   seconds: number;
   rate?: number;
@@ -323,7 +323,7 @@ describe('自检的判定', () => {
 
   it('静音、太短、太长、不是 WAV 都不通过', () => {
     expect(speechSelfTestVerdict(wav({ seconds: 1, sample: () => 0 }))).toMatchObject({ passed: false, problem: '输出是静音' });
-    // -70 dBFS 也当作静音。
+    // -70 dBFS also counts as silence.
     expect(speechSelfTestVerdict(wav({ seconds: 1, sample: (i) => (i % 2 ? 1 : -1) * 10 ** (-70 / 20) }))).toMatchObject({ passed: false });
     expect(speechSelfTestVerdict(wav({ seconds: SPEECH_SELF_TEST_LIMITS.minDurationSec / 2 }))).toMatchObject({
       passed: false,
@@ -342,7 +342,7 @@ describe('自检的判定', () => {
   it('削波：到了满幅的样本超过 0.1% 不通过；峰值接近满幅但没有削到顶的照常通过', () => {
     const square = speechSelfTestVerdict(wav({ seconds: 1, sample: (i) => (i % 2 ? 1 : -1) * 0.6 }));
     expect(square).toMatchObject({ passed: true, wav: { clippedRatio: 0 } });
-    // 一秒里 24 个样本到顶（0.1%）还算通过，再多就是削波。
+    // 24 samples at full scale in one second (0.1%) still passes; more than that is clipping.
     const edge = (count: number) => wav({ seconds: 1, sample: (i) => (i < count ? 1 : Math.sin(i / 10) * 0.25) });
     expect(speechSelfTestVerdict(edge(24))).toMatchObject({ passed: true, wav: { peak: expect.closeTo(1, 3) } });
     expect(speechSelfTestVerdict(edge(25))).toMatchObject({ passed: false, problem: expect.stringMatching(/^输出削波：/) });

@@ -3,18 +3,18 @@ import type { Id } from '@cuccut/protocol';
 import { addDesignAnnotation, removeDesignAnnotation, type DesignAnnotationError, type DraftDesignAnnotation } from '../model/design-annotations.ts';
 
 /**
- * 设计稿标签里加进对话的标注（docs/design/canvas §8.2），按会话 id 分；composer 上显示「设计稿标注 · N 条」，
- * 发送时随消息交出去。只在这个窗口里，不持久化（同幻灯片标注、点选的 skill 与附图）。
- * 标注只加在建好的会话上：设计稿标签所在的位置还没有会话时不收（标签页自己提示）。
+ * Annotations on design-draft tags added to the conversation (docs/design/canvas §8.2), keyed by session id. The composer shows "design annotations · N",
+ * and they are handed over with the message when it is sent. Only in this window, not persisted (same as slide annotations, selected skills and attached images).
+ * Annotations are only added to sessions that already exist: when the design tab's location has no session yet, they are not accepted (the tab itself shows a hint).
  */
 interface DraftDesignAnnotationsStore {
-  /** 会话 id → 按添加顺序的标注。 */
+  /** Session id → annotations in the order added. */
   annotations: Record<Id, readonly DraftDesignAnnotation[]>;
-  /** 接在后面加一条；加不进去时返回原因，草稿不变。 */
+  /** Append one. If it cannot be added, return the reason and leave the draft unchanged. */
   add(conversationId: Id, note: DraftDesignAnnotation): DesignAnnotationError | null;
   remove(conversationId: Id, id: string): void;
   clear(conversationId: Id): void;
-  /** 发出去了：摘掉发出去的那几条（发送期间新加的留着）。 */
+  /** Sent: remove the annotations that were sent (ones added during sending are kept). */
   sent(conversationId: Id, ids: readonly string[]): void;
 }
 
@@ -47,7 +47,7 @@ export const useDraftDesignAnnotations = create<DraftDesignAnnotationsStore>()((
   };
 });
 
-/** 这个会话草稿里的设计稿标注；没有时是同一个空数组（订阅不抖）。 */
+/** The design annotations in this session's draft. When there are none, the same empty array is returned (so subscribers don't churn). */
 export function useDraftDesignAnnotationList(conversationId: Id | null): readonly DraftDesignAnnotation[] {
   return useDraftDesignAnnotations((s) => (conversationId ? (s.annotations[conversationId] ?? EMPTY) : EMPTY));
 }

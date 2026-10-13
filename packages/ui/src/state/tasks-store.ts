@@ -4,8 +4,8 @@ import type { ConversationActivity, PendingApproval, TaskSummary, TasksEvent, Ta
 import { SC } from './state-copy.ts';
 
 /**
- * 任务镜像（任务中心与标题栏的任务胶囊）。只由 Runtime 的快照与事件改写。
- * `approvals`：待处理的审批，会话的与对外服务的都在这里（架构设计 §3.12）；服务审批卡从这里取外发授权（`grants`）。
+ * Task mirror (the task center and the task pill in the title bar). Rewritten only by the Runtime's snapshots and events.
+ * `approvals`: pending approvals, both conversation and external-service ones are here (architecture design §3.12); the service approval card takes its outbound grants (`grants`) from here.
  */
 export interface TasksStore {
   ready: boolean;
@@ -31,7 +31,7 @@ export function isLive(task: TaskSummary): boolean {
   return task.status === 'running' || task.status === 'stopping';
 }
 
-/** 进行中的任务怎么称呼。等用户批准时任务本身仍在进行，等待记在会话的活动上（产品设计 §3.1）。 */
+/** How an in-progress task is labelled. While waiting for user approval, the task itself is still in progress; the waiting is recorded on the conversation's activity (product design §3.1). */
 export function liveLabel(task: TaskSummary, activity: ConversationActivity | undefined): string {
   if (task.status === 'stopping') return SC.task.stopping;
   return activity === 'awaiting-approval' ? SC.task.awaitingApproval : SC.task.running;

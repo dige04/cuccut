@@ -1,9 +1,9 @@
-//! BCF `animate` → 通道 IR → `MotionProgram`（设计 §5.7）。
+//! BCF `animate` → channel IR → `MotionProgram` (design §5.7).
 //!
-//! 阶段 1 的 BCF 路径是**结构**重构，输出契约逐字节不变：`Channel/Kf` 与
-//! `sample_frames` 仍是兼容层（设计 §5.3），`deep_resolve`/`resolve_ref`/
-//! `mix_value` 留在 `ccut-core`——它们依赖 `Ctx`、`$vars/$theme/$assets` 与
-//! `Rgba`，属于 BCF 文档域而不是动画内核（计划 §4.1）。
+//! In phase 1 the BCF path is a **structural** refactor; the output contract stays byte-for-byte unchanged. `Channel/Kf` and
+//! `sample_frames` remain the compatibility layer (design §5.3). `deep_resolve`/`resolve_ref`/
+//! `mix_value` stay in `ccut-core`: they depend on `Ctx`, `$vars/$theme/$assets` and
+//! `Rgba`, so they belong to the BCF document domain rather than the animation kernel (plan §4.1).
 
 use serde_json::Value;
 
@@ -18,11 +18,11 @@ use crate::program::{
 use crate::relative_value::LengthContext;
 use crate::value::{MotionValue, PropertyId};
 
-/// 一个关键帧。`v` 是**原始 JSON**，`typed` 是强类型视角。
+/// A keyframe. `v` is the **raw JSON**, and `typed` is the strongly typed view.
 ///
-/// 两者并存是刻意的（计划 §4.4）：`sample_frames` 在两端 `clone()` 原值，
-/// `record_node` 再用 `as_f64` 读回，所以整数 `0` 必须一直是 `Number(0)` 而不是
-/// `0.0`。`to_channels()` 因此按构造还原原文，而不是靠运气重新序列化对上。
+/// Keeping both is deliberate (plan §4.4): `sample_frames` `clone()`s the raw value at both ends,
+/// and `record_node` then reads it back with `as_f64`, so an integer `0` must always stay `Number(0)` rather than
+/// `0.0`. `to_channels()` therefore restores the original by construction, rather than relying on luck to re-serialize to a match.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KfIr {
     pub t: f64,
@@ -44,8 +44,8 @@ pub struct ChannelIr {
     pub frames: Vec<KfIr>,
 }
 
-/// 逐式来自 `ccut-core/src/resolve.rs::lay_preset_frames`：
-/// preset 的 `'%'` 帧 → `[t0, t0+dur]` 绝对时间通道。
+/// Formulas carried over one-for-one from `ccut-core/src/resolve.rs::lay_preset_frames`:
+/// the preset's `'%'` frames → absolute-time channels over `[t0, t0+dur]`.
 pub fn preset_channels(kfs: &[Value], t0: f64, dur: f64) -> Vec<ChannelIr> {
     kfs.iter()
         .filter_map(|ch| {
@@ -76,10 +76,10 @@ pub fn preset_channels(kfs: &[Value], t0: f64, dur: f64) -> Vec<ChannelIr> {
         .collect()
 }
 
-/// 逐式来自 `ccut-core/src/resolve.rs::transition_channels`（规范 §9 双通道）。
+/// Formulas carried over one-for-one from `ccut-core/src/resolve.rs::transition_channels` (spec §9, two channels).
 ///
-/// 只有**第二**个关键帧带 ease，时间是 `t0 ± half`。`cut` 产出零通道。
-/// 一侧可以有多条通道（`zoomThrough` 的 scale + opacity），每条各带自己的 ease。
+/// Only the **second** keyframe carries an ease; its time is `t0 ± half`. `cut` produces zero channels.
+/// One side may have several channels (`zoomThrough`'s scale + opacity), each with its own ease.
 pub fn transition_channels(
     recipe: &TransitionRecipe,
     t0: f64,
@@ -118,7 +118,7 @@ fn curve_of(ease: Option<&str>) -> CurveSpec {
     }
 }
 
-/// 通道 IR → 强类型 program（指纹与阶段 4 的 `PoseBuffer` 路径用）。
+/// Channel IR → strongly typed program (used for the fingerprint and the phase-4 `PoseBuffer` path).
 pub fn to_program(channels: &[ChannelIr]) -> MotionProgram {
     let mut program = MotionProgram::new(TimeBase::Absolute);
     for channel in channels {
@@ -129,8 +129,8 @@ pub fn to_program(channels: &[ChannelIr]) -> MotionProgram {
             .map(|frame| frame.typed.clone())
             .unwrap_or(MotionValue::Discrete(Value::Null));
         let mut segments = Vec::new();
-        // 首帧自带 ease 时补一个零长标记段：`sample_frames` 从不读首帧的 ease，
-        // 但 `to_channels()` 必须还原它。常见情况（没有首帧 ease）不产生这个段。
+        // When the first frame carries an ease, insert a zero-length marker segment: `sample_frames` never reads the first frame's ease,
+        // but `to_channels()` must restore it. The common case (no first-frame ease) produces no such segment.
         if let Some(first) = channel.frames.first()
             && first.ease.is_some()
         {
@@ -192,8 +192,8 @@ pub fn to_program(channels: &[ChannelIr]) -> MotionProgram {
         program.property_tracks.push(PropertyTrack {
             target: TargetId::SELF,
             property,
-            // BCF legacy 四槽：每条通道一条 Replace 轨，`order` 恒 0。出画不走这个
-            // program：`ccut-core::sample::sample_channels` 按窗口裁决 replace 轨。
+            // BCF legacy four slots: each channel gets one Replace track, with `order` always 0. Frame output does not go through this
+            // program: `ccut-core::sample::sample_channels` resolves the replace tracks per window.
             composite: CompositeMode::Replace,
             order: 0,
             base,
@@ -205,7 +205,7 @@ pub fn to_program(channels: &[ChannelIr]) -> MotionProgram {
     program
 }
 
-/// `to_program` 的无损逆变换：`to_channels(to_program(chs)) == chs`。
+/// The lossless inverse of `to_program`: `to_channels(to_program(chs)) == chs`.
 pub fn to_channels(program: &MotionProgram) -> Vec<ChannelIr> {
     let mut out = Vec::new();
     for track in &program.property_tracks {
@@ -213,7 +213,7 @@ pub fn to_channels(program: &MotionProgram) -> Vec<ChannelIr> {
         let mut frames: Vec<KfIr> = Vec::new();
         let mut head_ease = None;
         let mut segments = track.segments.as_slice();
-        // 零长标记段（首帧 ease）
+        // Zero-length marker segment (first-frame ease)
         if let Some(first) = segments.first()
             && segments.len() > 1
             && first.t0 == first.t1
@@ -272,9 +272,9 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// ADR-M08 冻结守卫：BCF legacy 四槽的每条通道都落成单 `Replace` 轨、
-    /// `order` 恒 0。只有作者显式引用**新** family（`motion.*`）才拿得到
-    /// add / multiply。
+    /// ADR-M08 freeze guard: every channel of the BCF legacy four slots lowers to a single `Replace` track,
+    /// with `order` always 0. Only an author who explicitly references the **new** family (`motion.*`) gets
+    /// add / multiply.
     #[test]
     fn every_builtin_bcf_preset_lowers_to_single_replace_tracks() {
         for name in crate::preset_registry::ids(crate::preset_registry::Domain::BcfMotion) {
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(channels[0].prop, "opacity");
         assert_eq!(channels[0].frames[0].t, 1.0);
         assert_eq!(channels[0].frames[1].t, 1.4);
-        // 整数保持整数（`sample_frames` 在端点 clone 原值）
+        // Integers stay integers (`sample_frames` clones the raw value at the endpoints)
         assert_eq!(channels[0].frames[0].v, json!(0));
         assert_eq!(channels[0].frames[1].v, json!(1));
     }
@@ -367,7 +367,7 @@ mod tests {
             corpus.extend(transition_channels(recipe, 2.0, 0.25, &ctx, true).unwrap());
             corpus.extend(transition_channels(recipe, 2.0, 0.25, &ctx, false).unwrap());
         }
-        // 首帧带 ease、单帧通道、非表内属性名，都要能原样回来。
+        // A first frame with an ease, single-frame channels, and property names not in the table must all round-trip unchanged.
         corpus.push(ChannelIr {
             prop: "volume".into(),
             frames: vec![

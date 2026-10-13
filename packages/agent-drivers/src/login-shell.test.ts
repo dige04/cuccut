@@ -4,7 +4,7 @@ import { mergeLoginEnv, parseEnv0, resolveLoginShellEnv, stripHostSessionEnv } f
 describe('stripHostSessionEnv', () => {
   it('按前缀去掉宿主 Claude Code 会话的变量，保留用户自己配的与无关的', () => {
     const env = {
-      // 宿主会话（Claude Code 桌面版里实测漏下来的一部分）
+      // Host session (part of this leaked through, found in real testing with the Claude Code desktop app)
       CLAUDECODE: '1',
       CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
       CLAUDE_EFFORT: 'high',
@@ -16,7 +16,7 @@ describe('stripHostSessionEnv', () => {
       CLAUDE_AGENT_SDK_VERSION: '0.3.288',
       CLAUDE_PID: '123',
       CLAUDE_SOMETHING_NEW: 'x',
-      // 用户自己配的
+      // Set by the user
       CLAUDE_CONFIG_DIR: '/Users/me/.claude-work',
       CLAUDE_CODE_USE_BEDROCK: '1',
       CLAUDE_CODE_USE_VERTEX: '1',
@@ -25,7 +25,7 @@ describe('stripHostSessionEnv', () => {
       ANTHROPIC_BASE_URL: 'https://gateway.example.com',
       ANTHROPIC_API_KEY: 'key',
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'my-opus',
-      // 无关的
+      // Unrelated
       PATH: '/usr/bin',
       HOME: '/Users/me',
       MY_CLAUDE_HELPER: 'kept',
@@ -59,7 +59,7 @@ describe('stripHostSessionEnv', () => {
       HOME: '/Users/me',
       MY_CLAUDE_HELPER: 'kept',
     });
-    // 不改传入的对象。
+    // Does not modify the object passed in.
     expect(env.CLAUDECODE).toBe('1');
   });
 });

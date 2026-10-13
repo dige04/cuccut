@@ -11,23 +11,21 @@ import { ProgressReporter } from './progress.ts';
 import { waitForJob, watchJobs, type JobWatcher } from '../job-wait.ts';
 
 /**
- * 执行一条派生命令（Agent 面设计 §5）：`catalog.call` → 信封。
+ * Runs one derived command (agent-surface design §5): `catalog.call` → envelope.
  *
- * - `destructive` 没有 `--yes`：不调用，说明会发生什么，退出码 4（§3.3；不做交互确认，确认是宿主的事）。
- * - `models install` 没有 `--yes`：先报大小、不下载（§4.3），同样退出码 4；已经装好或正在下载时照常调用（不会再下载）。
- * - `job`：默认等到终态（订阅 `jobs` 主题，不轮询 `jobs_wait`），结果是提交时的结果加 `job`（`jobs_inspect` 的记录）与
- *   `outputs`；`--no-wait` 直接返回 `jobId`；`--timeout` 到时给出 `jobId` 与最近的进度，退出码 1，任务继续；Ctrl-C 取消任务。
- *   `jobs retry` 只认这次重跑（结果的 `attempt`）之后的记录。
- * - `jobs wait`：不调用 `jobs_wait`（它最多等一会儿就返回），与默认等待同一条路径，退出码按终态。
- * - 结果超过 `--max-bytes`（默认 64 KiB）或给了 `--result-file`：完整结果写到文件，stdout 只给覆盖范围、路径与
- *   `truncated: true`（§5.5）。
+ * - `destructive` without `--yes`: not called; explains what would happen, exit code 4 (§3.3; there is no interactive confirmation, confirmation is the host's job).
+ * - `models install` without `--yes`: reports the size first and does not download (§4.3), also exit code 4; if it is already installed or downloading, the tool is called as usual (it will not download again).
+ * - `job`: by default waits until a terminal state (subscribes to the `jobs` topic, does not poll `jobs_wait`); the result is the submission result plus `job` (the record from `jobs_inspect`) and `outputs`; `--no-wait` returns `jobId` directly; when `--timeout` is reached, gives `jobId` and the latest progress, exit code 1, and the task continues; Ctrl-C cancels the task.
+ *   `jobs retry` only recognizes records after this rerun (the result's `attempt`).
+ * - `jobs wait`: does not call `jobs_wait` (which returns after waiting a while); takes the same path as the default wait, with the exit code according to the terminal state.
+ * - If the result exceeds `--max-bytes` (default 64 KiB) or `--result-file` is given: the full result is written to a file, and stdout gets only the coverage, the path and `truncated: true` (§5.5).
  */
 export interface RunContext {
   session: Session;
   command: CatalogCommand;
   args: Record<string, unknown>;
   globals: GlobalFlags;
-  /** 工作目录（realpath）。 */
+  /** Working directory (realpath). */
   cwd: string;
   output: Output;
   now?: () => Date;
@@ -58,7 +56,7 @@ export async function runTool(ctx: RunContext): Promise<ExitCode> {
     if (!project && !hasField) throw new CliError('INVALID_ARGUMENTS', M.projectNotDirectory(globals.project));
   }
 
-  // 先订阅再提交：提交之后的每一次变化都不会漏掉。
+  // Subscribe first, then submit: no change after submission is missed.
   const watcher = tool.effect === 'job' && (globals.wait ?? true) ? watchJobs(ctx.session.client) : null;
   let call;
   try {
@@ -76,7 +74,7 @@ export async function runTool(ctx: RunContext): Promise<ExitCode> {
   const result = isRecord(call.result) ? call.result : null;
   const jobId = result && typeof result.jobId === 'string' ? result.jobId : null;
   if (watcher && result && jobId) {
-    // 重跑（`jobs retry`）沿用同一个 jobId：之前那次的终态不算。
+    // A rerun (`jobs retry`) reuses the same jobId: the terminal state of the previous run does not count.
     const minAttempt = typeof result.attempt === 'number' ? result.attempt : undefined;
     return waitAndReport(ctx, result, jobId, watcher, { minAttempt });
   }
@@ -85,8 +83,8 @@ export async function runTool(ctx: RunContext): Promise<ExitCode> {
 }
 
 /**
- * `models install` 的确认（§4.3）：没有 `--yes` 时只取安装计划（网关的 `models.install` 不带 `confirmBytes` 不下载），报包名、
- * 大小与来源，退出码 4。已经装好、或这个模型包正在下载时返回 null：照常调用工具，它不会再下载。
+ * Confirmation for `models install` (§4.3): without `--yes`, only the install plan is fetched (the gateway's `models.install` without `confirmBytes` does not download); it reports the package name,
+ * size and source, and exits with code 4. It returns null when the model is already installed or this model package is downloading: the tool is called as usual, and it will not download again.
  */
 async function installGate(ctx: RunContext): Promise<ExitCode | null> {
   const bundleId = typeof ctx.args.bundleId === 'string' ? ctx.args.bundleId : defaultTranscribeBundle();
@@ -112,16 +110,16 @@ async function installGate(ctx: RunContext): Promise<ExitCode | null> {
 }
 
 /**
- * 这台机器默认的转写模型包：与 `@cuccut/models` 的 `defaultTranscribeBundle` 相同（`models_install` 不给 `bundleId` 时装它）。
- * CLI 不依赖那个包，`run.test.ts` 核对两边一致；CLI 与它连的 Runtime 在同一台机器上。
+ * The default transcription model package on this machine: same as `defaultTranscribeBundle` in `@cuccut/models` (`models_install` installs it when no `bundleId` is given).
+ * The CLI does not depend on that package; `run.test.ts` checks that the two match. The CLI and the Runtime it connects to are on the same machine.
  */
 export function defaultTranscribeBundle(platform: NodeJS.Platform = process.platform, arch: string = process.arch): string {
   return platform === 'darwin' && arch === 'arm64' ? 'moss-transcribe-diarize@mlx-8bit' : 'moss-transcribe-diarize@candle';
 }
 
 /**
- * `jobs wait <jobId>`（§5.4）：先经 `jobs_inspect` 过一遍可见性（错误码与 MCP 相同），再与默认等待走同一条路径：订阅 `jobs`
- * 主题等到终态，`--timeout`（或工具的 `--timeout-sec`）到时 `WAIT_TIMEOUT`，退出码按终态，Ctrl-C 取消任务。
+ * `jobs wait <jobId>` (§5.4): first checks visibility via `jobs_inspect` (error codes are the same as MCP), then takes the same path as the default wait: subscribes to the `jobs`
+ * topic and waits for a terminal state; when `--timeout` (or the tool's `--timeout-sec`) is reached, it reports `WAIT_TIMEOUT`; the exit code follows the terminal state; Ctrl-C cancels the task.
  */
 async function waitCommand(ctx: RunContext): Promise<ExitCode> {
   const { client } = ctx.session;
@@ -143,14 +141,14 @@ async function waitCommand(ctx: RunContext): Promise<ExitCode> {
   return waitAndReport({ ...ctx, globals: { ...ctx.globals, timeout } }, { jobId }, jobId, watcher, { initial });
 }
 
-/** 写成功的信封；结果太大时落盘。 */
+/** Envelope for a successful write; large results go to disk. */
 function finish(ctx: RunContext, result: unknown, next?: string | null): ExitCode {
   const spilled = spill(ctx, result);
   const hint = next === undefined ? (isRecord(result) && typeof result.next === 'string' ? result.next : null) : next;
   return ctx.output.success(spilled, hint);
 }
 
-/** 大结果落盘（§5.5）：返回要写到 stdout 的结果（原样，或覆盖范围与继续读取的办法）。 */
+/** Large results go to disk (§5.5): returns the result to write to stdout (as is, or the coverage and how to read the rest). */
 export function spill(ctx: Pick<RunContext, 'globals' | 'cwd' | 'command' | 'now'>, result: unknown): unknown {
   const text = JSON.stringify(result);
   const bytes = Buffer.byteLength(text ?? '');
@@ -170,7 +168,7 @@ export function spill(ctx: Pick<RunContext, 'globals' | 'cwd' | 'command' | 'now
     summary: summarize(result),
     continueWith: {
       file,
-      // 要整个结果直接写在 stdout 上时给的上限（向上取整到 KiB）。
+      // The limit above which the whole result is written directly to stdout (rounded up to KiB).
       maxBytes: Math.ceil(bytes / 1024) * 1024,
       ...(paging.length ? { paging } : {}),
     },
@@ -178,7 +176,7 @@ export function spill(ctx: Pick<RunContext, 'globals' | 'cwd' | 'command' | 'now
   };
 }
 
-/** 覆盖范围：完整结果的顶层键、每个数组有多少项（结果本身是数组时给 `items`）。 */
+/** Coverage: the top-level keys of the full result and how many items each array has (`items` when the result itself is an array). */
 function coverageOf(result: unknown): Record<string, unknown> {
   if (Array.isArray(result)) return { items: result.length };
   if (!isRecord(result)) return typeof result === 'string' ? { chars: result.length } : {};
@@ -187,7 +185,7 @@ function coverageOf(result: unknown): Record<string, unknown> {
   return { keys: Object.keys(result).filter((key) => key !== 'next'), ...(Object.keys(arrays).length ? { arrays } : {}) };
 }
 
-/** 摘要：顶层的短标量照抄（id、版本、`nextCursor`），数组给条数，对象给键，长文本给字数。 */
+/** Summary: short top-level scalars are copied as-is (id, version, `nextCursor`); arrays give counts, objects give keys, long text gives character counts. */
 function summarize(result: unknown): unknown {
   if (Array.isArray(result)) return { items: result.length };
   if (!isRecord(result)) return typeof result === 'string' ? { chars: result.length } : result;
@@ -202,7 +200,7 @@ function summarize(result: unknown): unknown {
   return out;
 }
 
-/** 这条命令能缩小结果的参数（分页、条数、时间范围）：落盘时建议用它们分批读。 */
+/** Arguments of this command that can narrow the result (pagination, count, time range): when written to disk, suggest using them to read in batches. */
 const PAGING_FIELDS = /^(limit|offset|cursor|page|range|fromSeconds|toSeconds)$/;
 
 function pagingFlags(command: CatalogCommand): string[] {
@@ -212,7 +210,7 @@ function pagingFlags(command: CatalogCommand): string[] {
     .map((field) => `--${kebab(field)}`);
 }
 
-/** 请求失败时分清是 Runtime 断了（退出码 3）还是别的。 */
+/** When a request fails, distinguishes whether the Runtime is down (exit code 3) or something else. */
 async function request<T>(ctx: RunContext, send: () => Promise<T>): Promise<T> {
   try {
     return await send();
@@ -224,7 +222,7 @@ async function request<T>(ctx: RunContext, send: () => Promise<T>): Promise<T> {
   }
 }
 
-/** 等任务到终态（§5.4）；`--timeout` 到时给出 `jobId` 与最近的进度，退出码 1，任务继续。 */
+/** Waits for a task to reach a terminal state (§5.4); when `--timeout` is reached, gives `jobId` and the latest progress, exit code 1, and the task continues. */
 async function waitAndReport(
   ctx: RunContext,
   submitted: Record<string, unknown>,
@@ -255,7 +253,7 @@ async function waitAndReport(
   );
 }
 
-/** `jobs_inspect` 的记录（Agent 面的形态：输出、下一步）；取不到时 null。 */
+/** The record from `jobs_inspect` (agent-surface form: output, next step); null if it cannot be fetched. */
 async function inspect(ctx: RunContext, jobId: string): Promise<Record<string, unknown> | null> {
   try {
     const call = await ctx.session.client.request('catalog.call', { name: 'jobs_inspect', args: { jobId }, cwd: ctx.cwd });
@@ -270,7 +268,7 @@ async function completed(ctx: RunContext, submitted: Record<string, unknown>, jo
   const { next: _submittedNext, ...rest } = submitted;
   const outputs = record.outputs ?? job.result?.outputs;
   const { next: recordNext, ...recordRest } = record;
-  // 提交回执里的 state 是提交那一刻的（queued / running）：等到终态之后换成终态，与 job.state 一致。
+  // The state in the submission receipt is that of the moment of submission (queued / running); after waiting for a terminal state it is replaced with the terminal state, so it matches job.state.
   const result = {
     ...rest,
     ...('state' in rest ? { state: job.state } : {}),
@@ -280,7 +278,7 @@ async function completed(ctx: RunContext, submitted: Record<string, unknown>, jo
   return finish(ctx, result, typeof recordNext === 'string' ? recordNext : null);
 }
 
-/** 以失败、取消、中断或待对账结束：按任务的错误码给退出码（只会是 1 或 2）。 */
+/** Ends in failure, cancellation, interruption or pending reconciliation: exit code according to the task's error code (only 1 or 2 are possible). */
 async function stopped(ctx: RunContext, job: JobRecord): Promise<ExitCode> {
   const record = await inspect(ctx, job.jobId);
   const code = job.error?.code ?? FALLBACK_CODE[job.state] ?? 'JOB_FAILED';
@@ -297,7 +295,7 @@ async function stopped(ctx: RunContext, job: JobRecord): Promise<ExitCode> {
   return ctx.output.failure(error, exitCodeForJob(code));
 }
 
-/** 任务没有带错误码就结束时用的码。 */
+/** Code used when the task ends without an error code. */
 const FALLBACK_CODE: Partial<Record<JobRecord['state'], string>> = {
   cancelled: 'JOB_CANCELLED',
   'needs-reconciliation': 'JOB_NEEDS_RECONCILIATION',

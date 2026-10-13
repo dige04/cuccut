@@ -1,15 +1,9 @@
-//! Worker 的状态机与两条线程。
+//! The Worker's state machine and its two threads.
 //!
-//! - **stdin 线程**（主线程）读请求、在共享锁下做状态转换，能立即回答的立即回答（`worker.hello`、
-//!   `worker.status`、`job.cancel` 与各种状态错误），其余交给推理线程。
-//! - **推理线程**独占加载好的模型（MLX 的数组不是 `Send`），依次执行 `model.load`、`model.unload`、
-//!   `job.run`，事件与响应都直接写 stdout。stdin 线程从不碰 MLX：`worker.status` 的内存快照是推理线程
-//!   每段（合成是每个任务）之后缓存下来的。
+//! - **stdin thread** (main thread) reads requests and makes state transitions under a shared lock. It answers immediately whatever it can (`worker.hello`, `worker.status`, `job.cancel` and the various state errors) and hands the rest to the inference thread.
+//! - **Inference thread** exclusively owns the loaded model (MLX arrays are not `Send`) and runs `model.load`, `model.unload` and `job.run` in turn. Events and responses are written straight to stdout. The stdin thread never touches MLX: the in-memory snapshot for `worker.status` is cached by the inference thread after each segment (for synthesis, after each job).
 //!
-//! 识别、合成、分离与文生图共用这套线程模型：模型包带 `tts` 组件时加载出来的是一只 TTS 引擎（[`Loaded::Synthesis`]），
-//! 带 `separator` 组件时是分离模型（[`Loaded::Separation`]），带 `image` 组件时是一只图像引擎（[`Loaded::Image`]），
-//! 只带 `segmentation` 与 `speaker` 时是说话人区分（[`Loaded::Diarization`]）；`job.run` 按 `capability` 分到
-//! [`transcribe::run`]、[`synthesize::job::run`]、[`separate::job::run`]、[`image::job::run`] 或 [`diarize::run`]。
+//! Recognition, synthesis, separation and text-to-image share this threading model. When a model bundle carries the `tts` component, what gets loaded is a TTS engine ([`Loaded::Synthesis`]). With a `separator` component it is a separation model ([`Loaded::Separation`]), and with an `image` component it is an image engine ([`Loaded::Image`]). With only `segmentation` and `speaker`, it is speaker diarization ([`Loaded::Diarization`]). `job.run` dispatches by `capability` to [`transcribe::run`], [`synthesize::job::run`], [`separate::job::run`], [`image::job::run`] or [`diarize::run`].
 
 use std::io::{BufWriter, Stdout, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -34,12 +28,12 @@ use model_runtime::transcribe::{self, JobSink};
 use model_runtime::{CONTRACT_VERSION, WORKER_VERSION};
 use serde_json::{Value, json};
 
-/// 推理线程的栈：MLX 构图与 Metal 编译走得比较深。
+/// Stack of the inference thread: MLX graph construction and Metal compilation go fairly deep.
 const INFERENCE_STACK_BYTES: usize = 16 * 1024 * 1024;
 
-// ---- 输出 -------------------------------------------------------------------------------------
+// ---- Output -------------------------------------------------------------------------------------
 
-/// stdout：两条线程共用，一行一锁。写不进去就退出（Runtime 已经不读了）。
+/// stdout: shared by both threads, one lock per line. If the write fails, exit (the Runtime is no longer reading).
 #[derive(Clone)]
 pub struct Output(Arc<Mutex<BufWriter<Stdout>>>);
 
@@ -79,13 +73,13 @@ impl Output {
     }
 }
 
-/// 立即结束进程，不跑析构：推理线程可能正握着 MLX 的数组与 Metal 命令缓冲，正常退出时的全局析构会与它赛跑。
+/// Exit the process immediately without running destructors. The inference thread may be holding MLX arrays and a Metal command buffer, and the global destructors on a normal exit would race with it.
 pub fn hard_exit(code: i32) -> ! {
-    // SAFETY: _exit 不返回，也不触碰 Rust 的任何状态。
+    // SAFETY: _exit does not return and does not touch any Rust state.
     unsafe { libc::_exit(code) }
 }
 
-// ---- 共享状态 ---------------------------------------------------------------------------------
+// ---- Shared state ---------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -133,13 +127,13 @@ impl Shared {
         self.status.lock().unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// 推理还在进行（加载、任务、卸载）：这时退出必须走 [`hard_exit`]。
+    /// Inference is still in progress (loading, job, unloading): exiting now must go through [`hard_exit`].
     pub fn in_flight(&self) -> bool {
         matches!(self.status().state, State::Loading | State::Busy | State::Unloading)
     }
 }
 
-// ---- 推理线程 ---------------------------------------------------------------------------------
+// ---- Inference thread ---------------------------------------------------------------------------------
 
 enum Work {
     Load { id: Value, bundle: Box<VerifiedBundle> },
@@ -174,7 +168,7 @@ impl Inference {
                 panic_exit(&self.output, &id, method);
             }
         }
-        // 通道关了（stdin EOF 且没有进行中的工作）：模型在这里析构，守卫同步 GPU、清缓存。
+        // Channel closed (stdin EOF and no work in progress): the model is dropped here, and the guard synchronizes the GPU and clears the cache.
         drop(self.model.take());
     }
 
@@ -321,7 +315,7 @@ impl Inference {
         }
     }
 
-    /// 任务终止：回到 ready（模型还在）、清掉任务与取消标志，再回响应。
+    /// Job terminated: go back to ready (the model is still loaded), clear the job and the cancel flag, then send the response.
     fn finish_job(&self, id: &Value, response: Result<Value, ErrorBody>) {
         {
             let mut status = self.shared.status();
@@ -337,14 +331,13 @@ fn serialize_failed(error: serde_json::Error) -> ErrorBody {
     ErrorBody::new(codes::INFERENCE_FAILED, error.to_string())
 }
 
-/// 加载的模型包做不了这种任务（识别的模型包上跑合成、合成的模型包上生图之类）：与模型做不到的其余情况同为
-/// `MODEL_UNSUPPORTED`。
+/// The loaded model bundle cannot do this kind of job (running synthesis on a recognition bundle, image generation on a synthesis bundle, and so on). It is reported as `MODEL_UNSUPPORTED`, the same as the other cases where the model cannot do the job.
 fn capability_not_loaded(capability: &str) -> ErrorBody {
     ErrorBody::new(codes::MODEL_UNSUPPORTED, format!("the loaded model bundle cannot {capability}"))
         .with_details(json!({ "capability": capability, "reason": "capability-not-loaded" }))
 }
 
-/// 任务事件直接写 stdout；`job.phase` 顺带更新 `worker.status` 里的阶段。
+/// Job events are written straight to stdout. `job.phase` also updates the phase in `worker.status`.
 struct Sink<'a> {
     output: &'a Output,
     shared: &'a Shared,
@@ -366,7 +359,7 @@ impl JobSink for Sink<'_> {
     }
 }
 
-/// panic：回该请求一个 `WORKER_PANIC`，然后退出（协议规范 §1）。
+/// Panic: reply to that request with `WORKER_PANIC`, then exit (protocol spec §1).
 fn panic_exit(output: &Output, id: &Value, method: &str) -> ! {
     eprintln!("[model-worker] panic while handling {method}; exiting");
     output.respond(
@@ -380,7 +373,7 @@ fn panic_exit(output: &Output, id: &Value, method: &str) -> ! {
     hard_exit(1)
 }
 
-// ---- stdin 侧 ---------------------------------------------------------------------------------
+// ---- stdin side ---------------------------------------------------------------------------------
 
 pub struct Worker {
     output: Output,
@@ -402,12 +395,12 @@ impl Worker {
         });
         let (sender, receiver) = std::sync::mpsc::channel();
         let (thread_output, thread_shared) = (output.clone(), shared.clone());
-        // 模型不是 Send：推理线程自己创建、自己持有。
+        // The model is not Send: the inference thread creates it and holds it itself.
         let handle = std::thread::Builder::new()
             .name("inference".into())
             .stack_size(INFERENCE_STACK_BYTES)
             .spawn(move || {
-                // 推理以 utility QoS 运行，不抢前台（架构设计 §6.5）。只作用于本线程。
+                // Inference runs at utility QoS so it does not compete with the foreground (architecture design §6.5). It applies to this thread only.
                 priority::lower_current_thread();
                 Inference {
                     output: thread_output,
@@ -425,7 +418,7 @@ impl Worker {
         })
     }
 
-    /// 处理一行请求。
+    /// Handle one line of request.
     pub fn handle_line(&mut self, line: &[u8]) {
         let request: Value = match serde_json::from_slice(line) {
             Ok(value) => value,
@@ -444,7 +437,7 @@ impl Worker {
         }
     }
 
-    /// `None`：响应由推理线程稍后给出。
+    /// `None`: the response is given later by the inference thread.
     fn dispatch(&mut self, id: &Value, method: &str, params: Value) -> Option<Result<Value, ErrorBody>> {
         match method {
             "worker.hello" => Some(self.hello(params)),
@@ -463,9 +456,8 @@ impl Worker {
             return Err(ErrorBody::new(codes::CONTRACT_MISMATCH, "contract version mismatch")
                 .with_details(json!({ "expected": CONTRACT_VERSION, "actual": hello.contract_version })));
         }
-        // 识别、合成与文生图都按模型族声明：`transcribeFamilies` / `synthesizeFamilies` / `imageFamilies` 是这个构建接上了
-        // 加载器的 `asr` / `tts` / `image` family，非空时才声明 `transcribe` / `synthesize` / `image`（协议规范 §2.1）。
-        // 还没接上的 family 由 Runtime 判为 `capability-missing`，不当成模型包坏了。
+        // Recognition, synthesis and text-to-image are declared per model family. `transcribeFamilies` / `synthesizeFamilies` / `imageFamilies` are the `asr` / `tts` / `image` families whose loaders this build has wired up. The `transcribe` / `synthesize` / `image` capabilities are declared only when the list is non-empty (protocol spec §2.1).
+        // Families that are not wired up yet are judged `capability-missing` by the Runtime, not treated as a broken bundle.
         let transcribe_families = backend::transcribe_families();
         let synthesize_families = synthesize::available_families();
         let image_families = image::available_families();
@@ -473,18 +465,18 @@ impl Worker {
         if !transcribe_families.is_empty() {
             capabilities.push("transcribe");
         }
-        // `align` 要模型包带上可选的 `aligner` 组件；这里只声明这个构建接上了对齐器（§2.5.1）。
+        // `align` requires the model bundle to carry the optional `aligner` component. Here we only declare that this build has the aligner wired up (§2.5.1).
         if backend::aligner_available() {
             capabilities.push("align");
         }
-        // `diarize` 同样要模型包带上说话人区分的组件（`segmentation` + `speaker`）；这里只声明这个构建接上了它（§2.5.1）。
+        // `diarize` likewise requires the model bundle to carry the speaker-diarization components (`segmentation` + `speaker`). Here we only declare that this build has them wired up (§2.5.1).
         if backend::diarizer_available() {
             capabilities.push("diarize");
         }
         if !synthesize_families.is_empty() {
             capabilities.push("synthesize");
         }
-        // 分离同样按模型族声明：`separateFamilies` 是这个构建能加载的 `separator` family（§2.5.4）。
+        // Separation is also declared per model family: `separateFamilies` is the `separator` families this build can load (§2.5.4).
         let separate_families = separate::available_families();
         if !separate_families.is_empty() {
             capabilities.push("separate");
@@ -563,10 +555,8 @@ impl Worker {
         }
     }
 
-    /// `job.run`：参数先按形状检查（`INVALID_PARAMS`），再检查状态（`WORKER_BUSY`），然后交给推理线程。
-    /// `capability: "synthesize"` 的参数是 [`SynthesizeRunParams`]（协议规范 §2.5.2），`"image"` 的是
-    /// [`ImageRunParams`]（§2.5.3），`"separate"` 的是 [`SeparateRunParams`]（§2.5.4），`"diarize"` 的是
-    /// [`DiarizeRunParams`]（§2.5.5）。
+    /// `job.run`: parameters are checked for shape first (`INVALID_PARAMS`), then state (`WORKER_BUSY`), and then handed to the inference thread.
+    /// Parameters for `capability: "synthesize"` are [`SynthesizeRunParams`] (protocol spec §2.5.2), for `"image"` they are [`ImageRunParams`] (§2.5.3), for `"separate"` they are [`SeparateRunParams`] (§2.5.4), and for `"diarize"` they are [`DiarizeRunParams`] (§2.5.5).
     fn run(&self, id: &Value, params: Value) -> Result<(), ErrorBody> {
         let capability = run_capability(&params);
         let (job_id, work) = if capability == Some("synthesize") {
@@ -638,14 +628,14 @@ impl Worker {
     fn forward(&self, work: Work) {
         let sent = self.work.as_ref().is_some_and(|sender| sender.send(work).is_ok());
         if !sent {
-            // 推理线程已经不在了（只可能是 panic 后正在退出）。
+            // The inference thread is already gone (this can only happen while it is exiting after a panic).
             eprintln!("[model-worker] the inference thread is gone; exiting");
             self.output.flush();
             hard_exit(1);
         }
     }
 
-    /// stdin 关闭或协议错误：没有进行中的推理就正常收尾（让模型析构），否则立即退出。
+    /// stdin closed or protocol error: if no inference is in progress, finish cleanly (letting the model drop). Otherwise, exit immediately.
     pub fn shutdown(mut self, code: i32) -> ! {
         if self.shared.in_flight() {
             self.output.flush();
@@ -664,7 +654,7 @@ fn state_error(code: &str, message: &str, state: State) -> ErrorBody {
     ErrorBody::new(code, message).with_details(json!({ "state": state.as_str() }))
 }
 
-/// 现在的 UTC 时间，ISO 8601（`2026-10-02T14:03:07.123Z`）。
+/// Current UTC time in ISO 8601 (`2026-10-02T14:03:07.123Z`).
 fn utc_now() -> String {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     format_utc(elapsed.as_secs(), elapsed.subsec_millis())
@@ -673,7 +663,7 @@ fn utc_now() -> String {
 fn format_utc(seconds: u64, millis: u32) -> String {
     let days = (seconds / 86_400) as i64;
     let rest = seconds % 86_400;
-    // Howard Hinnant 的 civil_from_days。
+    // Howard Hinnant's civil_from_days.
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

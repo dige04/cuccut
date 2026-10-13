@@ -1,96 +1,89 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/generic-acp-agent.ts、cursor-acp-agent.ts、kimi-acp-agent.ts 的启动命令
- * （`cursor-agent acp`、`kimi acp`）与 provider 目录里的 `grok agent stdio`、探测时的 `NO_BROWSER`；copilot-acp-agent.ts 的
- * `copilot --acp`、URL 形式的模式 id 与经 `allow_all` 配置项实现的「全部放行」。
- * 改成 CucCut 的预设表：名称、订阅、安装方式照原型 designs/cuccut/app/data.js 的 MORE_HARNESSES。
+ * Some mechanisms are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * the startup commands in packages/server/src/server/agent/providers/generic-acp-agent.ts, cursor-acp-agent.ts and kimi-acp-agent.ts (`cursor-agent acp`, `kimi acp`), the `grok agent stdio` in the provider directory, and `NO_BROWSER` during probing; copilot-acp-agent.ts's `copilot --acp`, the URL-form mode ids, and "allow all" implemented through the `allow_all` config option.
+ * Changed to CucCut's preset table: names, subscriptions and install methods follow the prototype designs/cuccut/app/data.js MORE_HARNESSES.
  */
 import type { DriverId, DriverInstallOption, Localized } from '@cuccut/protocol';
 import { DriversAcp } from '@cuccut/protocol/messages/agent-drivers';
 import { officialScript } from '../driver-text.ts';
 
-/** 内置的 ACP 预设（`BUILTIN_DRIVER_IDS` 里经 ACP 接入的五个）。 */
+/** The built-in ACP presets (the five among `BUILTIN_DRIVER_IDS` that connect through ACP). */
 export type BuiltinAcpDriverId = 'copilot' | 'gemini' | 'cursor' | 'grok' | 'kimi';
-/** 经 ACP 接入的 Driver：内置预设，或用户添加的智能体（`agents.addProvider`）。 */
+/** Drivers connected through ACP: built-in presets, or user-added agents (`agents.addProvider`). */
 export type AcpDriverId = DriverId;
 
 /**
- * ACP 的共享实现是否已经验证（架构设计 §3.11 的 D08）：同一协议的共享实现在一家真机跑通完整会话即算验证，
- * 没有单独写 `verified` 的预设与用户添加的智能体都取它。已经经 claude-code-acp 适配器（Claude Code 的 ACP 包装）
- * 在真机跑通新建、审批、追问、中断与恢复，所以为 true；为 false 时只显示探测结果，不能开会话。
+ * Whether ACP's shared implementation has been verified (architecture design §3.11 D08): a shared implementation of the same protocol counts as verified once a full session has run on a real machine with one vendor. Presets without their own `verified`, and user-added agents, take this value. It has already run new session, approval, follow-up, interrupt and resume on a real machine through the claude-code-acp adapter (Claude Code's ACP wrapper), so it is true; when it is false, only the probe result is shown, and sessions cannot be opened.
  */
 export const ACP_SHARED_VERIFIED = true;
 
 /**
- * 一个 ACP 智能体的预设：同一份 `AcpDriver` 实现，差别只在怎么找到、怎么启动、怎么登录。
- * 用户添加的智能体也是一个预设（`customAcpPreset`）：没有最低版本、安装方式、登录命令与已知位置。
+ * A preset for one ACP agent: the same `AcpDriver` implementation; the only differences are how it is found, how it is started and how it is logged in.
+ * A user-added agent is also a preset (`customAcpPreset`): it has no minimum version, install method, login command or known locations.
  */
 export interface AcpPreset {
   id: AcpDriverId;
   name: string;
-  /** 终端里敲的名字，也是在 PATH 上找的文件名；用户添加的可以是绝对路径。 */
+  /** The name typed in the terminal, also the file name searched for on PATH; user-added ones may be absolute paths. */
   command: string;
-  /** 以 ACP（stdio 上的 JSON 行）启动它的参数。 */
+  /** The arguments that start it with ACP (JSON lines over stdio). */
   args: string[];
-  /** 启动它时另加的环境变量（用户添加的智能体的 `env`）。可能含密钥，不写日志。 */
+  /** Extra environment variables added when starting it (the `env` of a user-added agent). May contain secrets; not written to logs. */
   env?: Record<string, string>;
   /**
-   * CucCut 能驱动的最低版本：本机实测过的版本，或移植来源记录的、带 ACP 的版本。null：没有要求，也不运行 `--version`
-   * （用户添加的命令可能是 `npx` 这类，`--version` 报的不是智能体的版本）。
+   * The minimum version CucCut can drive: a version tested on this machine, or a version recorded from the porting source as carrying ACP. null: there is no requirement, and `--version` is not run (a user-added command may be `npx` or similar, and `--version` would not report the agent's version).
    */
   minVersion: string | null;
-  /** 需要什么订阅或账号（CucCut 写的文字，读的时候取当前语言）。 */
+  /** What subscription or account is needed (text written by CucCut; the current language is read when displayed). */
   plan?: Localized;
   /**
-   * 在终端里登录的命令。几家都没有独立的登录子命令时，填启动交互界面的命令（在里面按提示登录）。
+   * The command to log in from the terminal. When several vendors have no separate login subcommand, fill in the command that starts the interactive interface (log in there following the prompts).
    */
   loginCommand: string | null;
   /**
-   * 未登录时给人看的一句「怎么登录」。不给时按 `loginCommand` 说「在终端运行 … 登录」；几种登录方式并存时
-   * （Gemini CLI 的 Google 账号与 API 密钥）写在这里。
+   * A sentence shown to the user when not logged in, saying how to log in. If not given, it says "run … in the terminal to log in" based on `loginCommand`; it is written here when several login methods coexist (Gemini CLI's Google account and API key).
    */
   loginHint?: Localized;
   install?: DriverInstallOption[];
-  /** 没装时给人看的一句：怎么装。 */
+  /** A sentence shown when not installed: how to install it. */
   installHint?: Localized;
-  /** PATH 之外的已知安装位置（`~` 开头的相对于用户主目录）。 */
+  /** Known install locations outside PATH (paths starting with `~` are relative to the user's home directory). */
   knownLocations?: string[];
-  /** 模型表从哪来：`session` 读 `session/new` 应答里的模型（`models` 或分类为 model 的配置项）；`cursor` 另走扩展方法。 */
+  /** Where the model table comes from: `session` reads the models in the `session/new` response (`models`, or config options categorized as model); `cursor` uses an extension method. */
   models: 'session' | 'cursor';
   /**
-   * 访问模式 → ACP 会话模式（`session/set_mode`）的候选，按顺序取智能体有的第一个；都没有就不设并提示一次。
-   * 只放不比 CucCut 的模式更宽的原生模式（架构设计 §3.12：两边取更严的）。
+   * Candidates that map access modes to ACP session modes (`session/set_mode`); the first one the agent has is taken, in order. If none, nothing is set and a notice is shown once.
+   * Only native modes no broader than CucCut's modes are used (architecture design §3.12: the stricter of the two sides).
    */
   modes: Record<'plan' | 'ask' | 'fullAccess', string[]>;
   /**
-   * 「全部放行」不是会话模式、而是一个配置项的智能体（Copilot 的 `allow_all`）：完全访问时经 `session/set_config_option`
-   * 设为 `on`，别的模式设为 `off`（离开完全访问时先关它再换模式）。会话里没有这个配置项时不设，完全访问按 `modes` 运行并提示一次。
+   * "Allow all" is not a session mode but a config option for some agents (Copilot's `allow_all`): in full access it is set to `on` through `session/set_config_option`, and in other modes to `off` (when leaving full access, it is turned off first, then the mode is changed). When the session has no such config option, nothing is set, and full access runs according to `modes` with a notice shown once.
    */
   permissionOption?: { configId: string; on: string; off: string };
   /**
-   * 能不能开会话（D08，架构设计 §3.11）。不给取 `ACP_SHARED_VERIFIED`：共享实现已经验证，同一协议的预设都算验证过。
+   * Whether a session can be opened (D08, architecture design §3.11). If not given, takes `ACP_SHARED_VERIFIED`: the shared implementation is verified, so presets of the same protocol count as verified.
    */
   verified?: boolean;
   /**
-   * 这一家的智能体本身在 CucCut 上实测过完整会话。不给为 false：照样能开会话，界面提示「未在 CucCut 实测」。
-   * 共享实现是经 claude-code-acp 适配器验证的，内置预设都还没以自家智能体实测过。
+   * Whether this vendor's agent itself has run a full session on CucCut on a real machine. If not given, it is false: sessions can still be opened, but the UI shows "not tested in CucCut".
+   * The shared implementation was verified through the claude-code-acp adapter; the built-in presets have not yet been tested with their own agents.
    */
   tested?: boolean;
 }
 
-/** 未登录时的说明：`loginHint`，没有时按登录命令。 */
+/** The note shown when not logged in: `loginHint`; if absent, the login command is used. */
 export function loginAdvice(preset: Pick<AcpPreset, 'loginHint' | 'loginCommand' | 'command'>): Localized {
   return preset.loginHint ?? DriversAcp.loginViaTerminal({ command: preset.loginCommand ?? preset.command });
 }
 
 /**
- * 访问模式到原生会话模式的映射（两边取更严的）：
+ * Mapping from access modes to native session modes (the stricter of the two sides):
  *
- * | CucCut 模式 | 候选 | 说明 |
+ * | CucCut mode | Candidates | Notes |
  * | --- | --- | --- |
- * | plan | plan → default | 只出方案；没有 plan 模式的退回逐项询问 |
- * | ask / autoAcceptEdits / auto | default | 动手之前来问，由 Harness 按决策表定；原生的自动编辑模式会放过工作目录外的写，不用 |
- * | fullAccess | yolo / bypassPermissions → default | 不再来问 |
+ * | plan | plan → default | Only produces plans; falls back to per-item confirmation when there is no plan mode |
+ * | ask / autoAcceptEdits / auto | default | Asks before acting, decided by the Harness's decision table; the native auto-edit mode lets writes outside the working directory through, so it is not used |
+ * | fullAccess | yolo / bypassPermissions → default | No longer asks |
  */
 export const ACP_MODES: AcpPreset['modes'] = {
   plan: ['plan', 'default'],
@@ -100,23 +93,22 @@ export const ACP_MODES: AcpPreset['modes'] = {
 
 const LOCAL_BIN = (command: string) => [`~/.local/bin/${command}`, `/opt/homebrew/bin/${command}`, `/usr/local/bin/${command}`];
 
-/** Copilot 的会话模式 id 是 URL 形式（`copilot --acp` 1.0.92 实测）。 */
+/** Copilot's session mode ids are in URL form (verified on `copilot --acp` 1.0.92). */
 const COPILOT_MODE = (name: 'agent' | 'plan') => `https://agentclientprotocol.com/protocol/session-modes#${name}`;
 
-/** 给人看的字段（`plan`、`loginHint`、`installHint`、官方脚本的 `install`）写成 getter：读的时候取当前语言。 */
+/** Human-facing fields (`plan`, `loginHint`, `installHint`, and the official script's `install`) are written as getters: the current language is read when they are accessed. */
 export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
   copilot: {
     id: 'copilot',
     name: 'GitHub Copilot',
     command: 'copilot',
     args: ['--acp'],
-    // 本机实测 initialize / session/new（URL 形式的模式 id 与 allow_all 配置项）的版本。paseo 2026-04-02 起经 `copilot --acp` 接入
-    // （当时 npm 上约为 1.0.15），但更早的版本有没有这些模式与配置项没有查到，先按实测的版本要求。
+    // The version whose `initialize` and `session/new` (URL-form mode ids and the allow_all config option) were checked locally. paseo has connected through `copilot --acp` since 2026-04-02 (at that time npm was around 1.0.15), but whether earlier versions have these modes and config options was not checked, so the version requirement follows the locally verified version for now.
     minVersion: '1.0.92',
     get plan() {
       return DriversAcp.copilotPlan();
     },
-    // `initialize` 的 authMethods 写的是「在终端运行 copilot login」；交互界面里的 /login 也行。
+    // The `authMethods` in `initialize` say "run copilot login in the terminal"; `/login` in the interactive interface also works.
     loginCommand: 'copilot login',
     get loginHint() {
       return DriversAcp.copilotLoginHint();
@@ -135,7 +127,7 @@ export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
     },
     knownLocations: LOCAL_BIN('copilot'),
     models: 'session',
-    // #autopilot 会自己开 allow-all 并一直跑到完成，比 CucCut 的任何模式都宽，不用；完全访问是 #agent 加 allow_all。
+    // #autopilot turns allow-all on by itself and runs until completion, which is broader than any CucCut mode, so it is not used; full access is #agent plus allow_all.
     modes: {
       plan: [COPILOT_MODE('plan'), 'plan'],
       ask: [COPILOT_MODE('agent'), 'default'],
@@ -149,14 +141,14 @@ export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
     name: 'Gemini CLI',
     command: 'gemini',
     args: ['--acp'],
-    // 本机实测 initialize / session/new 的版本；更早的版本用 `--experimental-acp`。
+    // The version whose `initialize` and `session/new` were checked locally; earlier versions use `--experimental-acp`.
     minVersion: '0.46.0',
     get plan() {
       return DriversAcp.geminiPlan();
     },
-    // Gemini CLI 没有独立的登录子命令：启动后在交互界面里选登录方式。
+    // Gemini CLI has no separate login subcommand: after starting it, choose a login method in the interactive interface.
     loginCommand: 'gemini',
-    // 用 API 密钥的话，密钥写在 ~/.gemini/.env 里最稳：Gemini CLI 自己读它，与 CucCut 怎么启动无关。
+    // If using an API key, storing the key in ~/.gemini/.env is most reliable: Gemini CLI reads it itself, regardless of how CucCut starts it.
     get loginHint() {
       return DriversAcp.geminiLoginHint();
     },
@@ -208,7 +200,7 @@ export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
     get plan() {
       return DriversAcp.grokPlan();
     },
-    // 第一次启动时在浏览器里登录（或设 XAI_API_KEY）。
+    // On first start, log in in the browser (or set XAI_API_KEY).
     loginCommand: 'grok',
     get install() {
       return [officialScript('curl -fsSL https://x.ai/cli/install.sh | bash', 'curl -fsSL https://x.ai/cli/install.sh | bash')];
@@ -230,9 +222,9 @@ export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
     get plan() {
       return DriversAcp.kimiPlan();
     },
-    // 在交互界面里输入 /login 登录。
+    // Enter /login in the interactive interface to log in.
     loginCommand: 'kimi',
-    // 原型没有给出可以稳妥列出的安装命令：按官方说明安装。
+    // The prototype does not give an install command that can be listed safely: install it following the official instructions.
     install: [],
     get installHint() {
       return DriversAcp.kimiInstallHint();
@@ -244,5 +236,5 @@ export const ACP_PRESETS: Record<BuiltinAcpDriverId, AcpPreset> = {
   },
 };
 
-/** 探测与会话进程的额外环境：不要自己打开浏览器去登录（后台进程弹出浏览器，用户不知道从哪来的）。 */
+/** Extra environment for probe and session processes: do not try to open a browser to log in yourself (a browser popping up from a background process would leave the user wondering where it came from). */
 export const ACP_ENV: Record<string, string> = { NO_BROWSER: '1', NO_OPEN_BROWSER: '1' };

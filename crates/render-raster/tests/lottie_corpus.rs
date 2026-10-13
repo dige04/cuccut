@@ -1,20 +1,15 @@
-//! Lottie 语料门（环境门控）。
+//! Lottie corpus gate (environment-gated).
 //!
-//! 语料**不在仓库里**（第三方素材、许可各异、几十兆美术资源）。测试经
-//! `CCUT_LOTTIE_CORPUS` 指向本地语料目录；没设或目录不存在就整条跳过，
-//! 不 fail——CI 与别人的机器上本来就没有这批素材。
+//! The corpus is **not in the repository** (third-party assets, varied licences, tens of megabytes of art resources). The test points to the local corpus directory via `CCUT_LOTTIE_CORPUS`; if it is unset or the directory does not exist, the whole test is skipped rather than failing — CI and other people's machines simply do not have these assets.
 //!
-//! 收集规程与 2026-08-20 的普查结果见 `core/fixtures/lottie/README.md`。
-//! 进仓库的只有两份 golden：
+//! For the collection procedure and the census results of 2026-08-20, see `core/fixtures/lottie/README.md`. Only two goldens are checked into the repository:
 //!
-//! * `golden-frames.json`：12 个 golden 素材在固定几帧上的 **DrawOp 指纹**。
-//!   钉指纹而不是像素——指纹覆盖的是矢量指令本身，跨机器不受光栅化差异与
-//!   缺失外链图片影响，也正是静止帧缓存真正用的那把键。
-//! * `corpus-coverage.json`：整份语料在细化子集边界下的**分类结果**——哪些
-//!   完整可渲染、哪些被 `lottie-unsupported-feature` 拦下、拦的理由是什么。
-//!   子集边界一动，这张表就会红。
+//! * `golden-frames.json`: **DrawOp fingerprints** of the 12 golden assets at a fixed set of frames.
+//!   Pinning fingerprints rather than pixels: the fingerprint covers the vector instructions themselves, is unaffected across machines by rasterization differences or missing external images, and is also the very key that the still-frame cache actually uses.
+//! * `corpus-coverage.json`: the **classification results** for the whole corpus under the refined subset boundary — which assets render completely, which are blocked by `lottie-unsupported-feature`, and the reason for each block.
+//!   If the subset boundary changes, this table goes red.
 //!
-//! 重生成：`CCUT_UPDATE_GOLDEN=1 CCUT_LOTTIE_CORPUS=~/lottie-corpus cargo test -p ccut-render --test lottie_corpus`
+//! To regenerate: `CCUT_UPDATE_GOLDEN=1 CCUT_LOTTIE_CORPUS=~/lottie-corpus cargo test -p ccut-render --test lottie_corpus`
 
 use render_raster::drawop::{self, FrameBuilder};
 use render_raster::source::lottie::Lottie;
@@ -48,8 +43,7 @@ fn updating() -> bool {
     std::env::var("CCUT_UPDATE_GOLDEN").is_ok_and(|v| v != "0")
 }
 
-/// golden 写盘：稳定键序（`serde_json` 的 `preserve_order` 未开启 ⇒ 对象按
-/// `BTreeMap` 排序）+ 两空格缩进 + 末尾换行，逐字节可比。
+/// Writing goldens to disk: stable key order (`serde_json`'s `preserve_order` is not enabled ⇒ objects are sorted by `BTreeMap`), two-space indentation, and a trailing newline, so output is byte-comparable.
 fn write_golden(path: &Path, value: &Value) {
     let mut text = serde_json::to_string_pretty(value).expect("序列化 golden");
     text.push('\n');
@@ -63,7 +57,7 @@ fn assert_or_update(path: &Path, actual: Value) {
     }
     let expected = read_json(path);
     if expected != actual {
-        // 逐条报差异比整份 JSON diff 好读得多
+        // Reporting differences item by item is much easier to read than a whole-JSON diff
         let (a, b) = (
             serde_json::to_string_pretty(&expected).unwrap(),
             serde_json::to_string_pretty(&actual).unwrap(),
@@ -75,8 +69,8 @@ fn assert_or_update(path: &Path, actual: Value) {
     }
 }
 
-/// 语料里除 manifest 之外的全部 `.json`（`manifest.json` 是来源清单，不是
-/// Lottie 文档）。
+/// All `.json` files in the corpus except the manifest (`manifest.json` is the source list, not a
+/// Lottie document).
 fn corpus_files(dir: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .expect("读语料目录")
@@ -90,7 +84,7 @@ fn corpus_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// 内嵌子资源挂上；外链子资源在语料目录里找，找不到就报出来。
+/// Attach embedded sub-assets; external sub-assets are looked up in the corpus directory, and if not found, reported.
 fn attach(lottie: &mut Lottie) -> Result<(), String> {
     let mut loaded = Vec::new();
     for requirement in lottie.image_requirements().to_vec() {
@@ -130,7 +124,7 @@ fn attach(lottie: &mut Lottie) -> Result<(), String> {
     Ok(())
 }
 
-/// 五个固定取样点（首帧 / 四分之一 / 中点 / 四分之三 / 末帧内）。
+/// Five fixed sample points (first frame / quarter / midpoint / three-quarters / within the last frame).
 fn sample_points(total_ms: i64) -> Vec<i64> {
     let last = (total_ms - 1).max(0);
     vec![0, last / 4, last / 2, last * 3 / 4, last]
@@ -226,8 +220,7 @@ fn the_refined_subset_classifies_the_whole_corpus_the_way_the_census_promised() 
     );
 }
 
-/// 报错文本 → 稳定的分类关键词（golden 里存这个，而不是整句中文，免得
-/// 改一个字就红一片）。
+/// Error text → stable classification keyword (the golden stores this rather than the whole Chinese sentence, so that changing one character does not turn everything red).
 fn classify(message: &str) -> &'static str {
     for (needle, label) in [
         ("文字图层", "text-layer"),
@@ -267,7 +260,7 @@ fn the_twelve_golden_files_keep_their_draw_op_fingerprints() {
         let bytes = std::fs::read(&path).expect("读 golden 素材");
         let mut lottie = Lottie::parse("golden", name, &bytes)
             .unwrap_or_else(|e| panic!("golden 素材 {name} 必须落在子集内：{e:#}"));
-        // 外链子资源缺席不影响 DrawOp 指纹：图片只以资产名进指令流
+        // Missing external sub-assets do not affect the DrawOp fingerprint: images enter the instruction stream only by asset name
         let _ = attach(&mut lottie);
         let meta = lottie.metadata().clone();
         let samples: Vec<Value> = sample_points(meta.total_ms())

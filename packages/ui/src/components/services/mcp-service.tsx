@@ -34,13 +34,13 @@ import { COMMON_COPY, MCP_COPY } from './services-copy.ts';
 import { copyText, useConfigureService, useFlipService } from './use-service-actions.ts';
 
 /*
- * MCP 服务详情页（原型 designs/cuccut/app/page-services.jsx `McpServicePage`；架构设计 §4.8、§12.8）。
- * 读写 `services.*` 与 `services.mcp.*`：起停、连接信息、客户端令牌、最近请求、开放范围、允许的操作、端口与自动启动。
- * 与原型的不同：
- * - 原型「要更换视频、权限或令牌设置，请先停止服务」——Runtime 每次请求现读策略，运行中改了立即生效，所以不锁；
- * - 原型一把全局令牌、可关掉——Runtime 按客户端发令牌、总是要，所以「需要访问令牌」开着且置灰，令牌在「客户端与令牌」里发；
- * - 原型「已连接的客户端」是在线连接——Runtime 只有已发放的客户端与最近使用时间，没有在线状态；
- * - 「检查服务」置灰：Runtime 没有给界面健康检查。
+ * MCP service detail page (prototype designs/cuccut/app/page-services.jsx `McpServicePage`; architecture design §4.8, §12.8).
+ * Reads and writes `services.*` and `services.mcp.*`: start/stop, connection info, client tokens, recent requests, access scope, allowed operations, port and auto-start.
+ * Differences from the prototype:
+ * - The prototype says “To change the video, permission or token settings, stop the service first.” The Runtime reads policy anew on every request, so changes made while running take effect immediately, and nothing is locked;
+ * - The prototype uses one global token that can be switched off. The Runtime issues tokens per client and always requires them, so “Requires access token” is on and greyed out, and tokens are issued under “Clients and tokens”;
+ * - The prototype's “connected clients” are live connections. The Runtime only has issued clients and their last-used time, with no online status;
+ * - “Check service” is greyed out: the Runtime does not provide a health check to the UI.
  */
 
 const pickerBtn = style({ marginTop: 8 });
@@ -143,7 +143,7 @@ export function McpServicePage() {
   );
 }
 
-/** 「连接」：地址、配置片段（令牌是占位符）、复制。服务没开着时 Runtime 也给地址与片段，另带一句提示。 */
+/** “Connect”: address, configuration snippet (the token is a placeholder), copy. When the service is not running, the Runtime still provides the address and snippet, with an extra hint. */
 function McpConnect({ status }: { status: ServiceStatus }) {
   const runtime = useRuntime();
   const [info, setInfo] = useState<McpConnectionInfo | null>(null);
@@ -186,7 +186,7 @@ function McpConnect({ status }: { status: ServiceStatus }) {
   );
 }
 
-/** 「允许的操作」与「可访问的视频」：运行中改也立即生效（Runtime 每次请求现读策略）。 */
+/** “Allowed operations” and “Accessible videos”: changes made while running also take effect immediately (the Runtime reads policy anew on every request). */
 function McpAccess({ status, videos, scope }: { status: ServiceStatus; videos: { videoId: Id; name: string }[]; scope: string }) {
   const configure = useConfigureService();
   const policy = status.policy ?? { videos: 'all' as const, level: 'ask' as const };

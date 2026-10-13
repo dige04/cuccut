@@ -14,11 +14,11 @@ import { pl } from './common.pl.ts';
 import { tr } from './common.tr.ts';
 import { vi } from './common.vi.ts';
 
-/** `packages/jobs` 各处共用的片段：列表分隔符、「说明：原因」这类组合句。 */
+/** Fragments shared across `packages/jobs`: list separators, and combined sentences such as “explanation: reason”. */
 const en = {
-  /** 把几个 ID、名字连成一串时的分隔符（在用的时候读）。 */
+  /** Separator used when several IDs or names are joined into a list (read when used). */
   listSeparator: ', ',
-  /** 一句说明后面接上原因（原因可以是别的消息引用，也可以是第三方原话）。 */
+  /** Appends a reason after a sentence of explanation. The reason can be another message reference, or verbatim third-party text. */
   withCause: (p: { message: string; cause: string }) => `${p.message}: ${p.cause}`,
 };
 

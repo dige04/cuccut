@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { applySpaceEvent } from '@cuccut/client';
 import type { SpaceEntry, SpaceEvent, SpaceScanIssue, SpaceSnapshot } from '@cuccut/protocol';
 
-/** Space 目录的镜像（架构设计 §5.7）。只由 Runtime 的快照与事件改写。 */
+/** Mirror of the Space catalog (architecture design §5.7). Rewritten only by the Runtime's snapshots and events. */
 export interface SpaceStore {
   ready: boolean;
   scanning: boolean;

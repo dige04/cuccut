@@ -1,15 +1,10 @@
-//! 固定 PCM → BCS1 的逐字节 golden。
+//! Byte-for-byte golden for fixed PCM → BCS1.
 //!
-//! 夹具 `tests/fixtures/spectrum/tone-48k-mono-f32.wav` 是 48 kHz、单声道、
-//! **32 位浮点**的 WAV：解码到 f32 PCM 是恒等变换，不经任何重采样或整数量化，
-//! 因此 symphonia 与 ffmpeg 拿到的样本本就相同，golden 不会因为 CI 上有没有
-//! ffmpeg 而漂移。golden 的 `flags` 固定 backend = symphonia（bit0 = 0）。
+//! The fixture `tests/fixtures/spectrum/tone-48k-mono-f32.wav` is a 48 kHz, mono, **32-bit float** WAV. Decoding it to f32 PCM is an identity transform, with no resampling or integer quantization, so symphonia and ffmpeg receive identical samples, and the golden does not drift depending on whether CI has ffmpeg. The golden's `flags` are fixed at backend = symphonia (bit0 = 0).
 //!
-//! 本测试自己解 WAV（20 行字节读取），**不依赖 symphonia**——`waveform`
-//! 是无 I/O 的纯函数 crate，不该为了跑测试把解码器拖进依赖树。
-//! 端到端"真解码器 → 同一份 golden"由 `apps/cli` 的 spectrum 集成测试覆盖。
+//! This test parses the WAV itself (20 lines of byte reading) and **does not depend on symphonia**. `waveform` is a pure-function crate with no I/O, and it should not pull a decoder into the dependency tree just to run tests. The end-to-end check “real decoder → same golden” is covered by the spectrum integration test in `apps/cli`.
 //!
-//! 重生成：`CCUT_UPDATE_GOLDEN=1 cargo test -p waveform --test spectrum_golden`
+//! Regenerate: `CCUT_UPDATE_GOLDEN=1 cargo test -p waveform --test spectrum_golden`
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +19,7 @@ fn updating() -> bool {
     std::env::var("CCUT_UPDATE_GOLDEN").is_ok_and(|value| value != "0")
 }
 
-/// 48 kHz 单声道 32 位浮点 WAV → f32 PCM。只认夹具用的那一种布局。
+/// 48 kHz mono 32-bit float WAV → f32 PCM. Only accepts the one layout the fixture uses.
 fn decode_float32_wav(bytes: &[u8]) -> Vec<f32> {
     assert_eq!(&bytes[..4], b"RIFF", "夹具不是 RIFF");
     assert_eq!(&bytes[8..12], b"WAVE", "夹具不是 WAVE");
@@ -91,7 +86,7 @@ fn the_fixture_tone_matches_the_bcs1_golden_byte_for_byte() {
         );
     }
 
-    // golden 的结构性事实：12 帧、backend 固定 symphonia、静音段真的是静音。
+    // Structural facts of the golden: 12 frames, backend fixed to symphonia, and the silent segment really is silent.
     let view = bcs1::parse(&golden).unwrap();
     let header = view.header();
     assert_eq!(header.frame_count, 12);
@@ -99,9 +94,9 @@ fn the_fixture_tone_matches_the_bcs1_golden_byte_for_byte() {
     assert_eq!(u16::from_le_bytes(golden[6..8].try_into().unwrap()), 0);
     assert_eq!(header.content_hash, dsp::content_hash(&pcm));
     assert_eq!(header.duration_seconds(), 0.2);
-    // 帧 0 完全落在前 2400 个静音样本里（窗长 1024），因此时域行全是 128。
+    // Frame 0 lies entirely within the first 2400 silent samples (window length 1024), so its time-domain row is all 128.
     assert!(view.time_row(0).unwrap()[..100].iter().all(|&b| b == 128));
-    // 帧 8 起始于样本 6400，落在有声段，时域必然离开中心。
+    // Frame 8 starts at sample 6400, inside the sounding section, so its time domain must leave the centre.
     assert!(view.time_row(8).unwrap().iter().any(|&b| b != 128));
 }
 

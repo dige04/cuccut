@@ -1,8 +1,8 @@
-//! 译文卡跨 Sentence 段落合并。
+//! Merging translation cards across Sentence paragraphs.
 //!
-//! 这是持久化语义：只有下句首词上的 `paraBreaks` 是唯一句界时才能移除；
-//! 源 Sentence 按规范重新派生，译文按语言折回幸存的上句 id，旧 alignment
-//! 覆盖层失效。客户端只提交乐观锁基线与当前可见文本，不自行重拼表。
+//! This is a persisted semantic: a `paraBreaks` entry on the first word of the next sentence may only be removed when it is the sole sentence boundary.
+//! Source Sentences are re-derived from the canonical form, translations fold back into the surviving previous sentence id per language, and the old alignment
+//! overlay is invalidated. The client only submits the optimistic-lock baseline and the currently visible text, and does not rebuild the table itself.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -20,7 +20,7 @@ pub struct TranslationParagraphMergeRequest<'a> {
     pub lower_sentence_id: &'a str,
     pub upper_base: &'a str,
     pub lower_base: &'a str,
-    /// 编辑器尚未单独提交的文本；与移除 paragraph pin 同一事务落地。
+    /// Text the editor has not yet committed on its own. It lands in the same transaction as removing the paragraph pin.
     pub upper_value: &'a str,
     pub lower_value: &'a str,
 }
@@ -77,8 +77,8 @@ fn chapter_at(doc: &TranscriptDoc, time: f64) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// 对拍 Mac `TranslateModel.scriptOf`：跨句折叠沿用产品目标语的展示分隔，
-/// CJK / Thai 不插空格，其余语言插一个空格。未知 BCP-47 主语言按 Latin 兜底。
+/// Matches Mac `TranslateModel.scriptOf`: cross-sentence folding uses the display separator of the product's target language.
+/// CJK / Thai insert no space; other languages insert one space. An unknown BCP-47 primary language falls back to Latin.
 fn join_translation_texts<'a>(language: &str, texts: impl IntoIterator<Item = &'a str>) -> String {
     let primary = language
         .split(['-', '_'])
@@ -122,9 +122,9 @@ fn visible_translation(doc: &TranscriptDoc, sentence: &Sentence, language: &str)
     )
 }
 
-/// 移除跨 Sentence 的 paragraph pin，并把所有语言的旧句级真相折回上句。
+/// Removes a paragraph pin that crosses Sentences, and folds every language's old sentence-level truth back into the previous sentence.
 ///
-/// 所有校验与变换先在副本完成；错误不会留下半套 `paraBreaks` / `trans` 状态。
+/// All validation and transformation are done on a copy first, so an error never leaves `paraBreaks` / `trans` half-updated.
 pub fn merge_translation_paragraphs(
     doc: &mut TranscriptDoc,
     request: TranslationParagraphMergeRequest<'_>,

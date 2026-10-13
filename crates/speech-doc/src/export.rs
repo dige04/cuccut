@@ -1,17 +1,10 @@
-//! 字幕文件导出：Cue / 句 / 译文 Cue → srt、vtt、ass 与带逐词时间的 json。
+//! Subtitle file export: Cue / sentence / translated Cue → srt, vtt, ass, and json with per-word timestamps.
 //!
-//! 移植自 CucCut v2 `ccut-kernel`：`cmd/media/subtitles.rs` 全部可纯函数化的部分与
-//! `cmd/media/tests.rs` 的生产代码段（被 `media.rs` 以 `include!` 引入的
-//! `build_subtitle_events` / `render_subtitle_events` / `render_source_subtitles` /
-//! `ass_time` / `subtitle_time` 等），`ExportMode` 来自 `cmd/media.rs`，
-//! ASS 头的常量与 [`AssStyleSheet`] 来自 `cmd/studio_export/ass_style.rs`（见 [`ass_style`]）。
+//! Ported from CucCut v2 `ccut-kernel`: all parts of `cmd/media/subtitles.rs` that can be pure functions, and the production code section of `cmd/media/tests.rs` (`build_subtitle_events` / `render_subtitle_events` / `render_source_subtitles` / `ass_time` / `subtitle_time` etc., which `media.rs` pulls in with `include!`). `ExportMode` comes from `cmd/media.rs`, and the ASS header constants and [`AssStyleSheet`] come from `cmd/studio_export/ass_style.rs` (see [`ass_style`]).
 //!
-//! 语义原样：双语按「句内源 Cue 边界 ∪ 译片边界」分段（[`build_subtitle_events`]）；
-//! 缺译句一律不回退原文——译文模式整句不产出事件，双语模式只留原文行。
+//! Semantics are kept as-is: in bilingual mode, segments are split by the union of source Cue boundaries within a sentence and translation segment boundaries ([`build_subtitle_events`]); a sentence missing its translation never falls back to the source text. In translation mode the whole sentence produces no event; in bilingual mode only the source line is kept.
 //!
-//! 只依赖 [`TranscriptDoc`] 与纯数据入参。v2 里读写工程目录、走时间线投影的那一支
-//! （`render_project_timeline_subtitles`、`timeline_timed_words`、
-//! `extra_source_transcripts`）不在本模块。
+//! Depends only on [`TranscriptDoc`] and pure data inputs. The v2 branch that reads and writes the project directory and goes through timeline projection (`render_project_timeline_subtitles`, `timeline_timed_words`, `extra_source_transcripts`) is not in this module.
 
 pub mod ass_style;
 
@@ -26,10 +19,10 @@ use crate::split::{TransCue, derive_trans_cues, target_delivery_projection};
 
 pub use ass_style::{ASS_PRIMARY_STYLE, ASS_TRANSLATION_STYLE, AssStyleSheet};
 
-/// 词化落盘时 v2 宿主的固定采样率（v2 `ccut-speech::audio::SAMPLE_RATE`）。
+/// Fixed sample rate of the v2 host when word segmentation is saved to disk (v2 `ccut-speech::audio::SAMPLE_RATE`).
 const SAMPLE_RATE: u32 = 16_000;
 
-/// 字幕的内容模式：原文、译文、双语。
+/// Subtitle content mode: source text, translation, or bilingual.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportMode {
     Original,
@@ -42,7 +35,7 @@ pub enum SubtitleFlavor {
     Srt,
     Vtt,
     Ass,
-    /// 字幕式 JSON：事件与前三种同源，另附逐词时间戳（[`render_json_words`]）。
+    /// Subtitle-style JSON: its events come from the same source as the first three formats, and it additionally carries per-word timestamps ([`render_json_words`]).
     JsonWords,
 }
 
@@ -54,9 +47,9 @@ pub struct SubtitleWindow {
 }
 
 impl SubtitleWindow {
-    /// `--range` 换算后的一段（秒）：须有限且 `0 <= start < end`。
+    /// A segment (in seconds) after `--range` conversion: must be finite and `0 <= start < end`.
     ///
-    /// 非法时返回错误文案；v2 的 CLI 另把它包成 `time-invalid` / `--range` 的结构化失败。
+    /// Invalid input returns an error message; v2's CLI additionally wraps it as a structured `time-invalid` / `--range` failure.
     pub fn new(start: f64, end: f64) -> Result<Self, String> {
         if start.is_finite() && end.is_finite() && start >= 0.0 && end > start {
             Ok(Self { start, end })
@@ -91,15 +84,11 @@ impl SubtitleWindow {
     }
 }
 
-/// rows → 字幕文本（worker 的 OpenAI 兼容面 `response_format=srt|vtt`）。
+/// rows → subtitle text (the worker's OpenAI-compatible surface, `response_format=srt|vtt`).
 ///
-/// 走的是与 `ccut export --to srt --no-cuts` **同一条**投影：`build_doc` →
-/// `derive_cues` → `derive_sentences` → [`render_source_subtitles`]。兼容面没有
-/// 工程也没有时间线，因此对应的是「原始源时间」那一支；同一批 rows 两条路径
-/// 必须逐字节一致，`worker_openai.rs` 的对拍测试守着这一点。
+/// It uses the **same** projection as `ccut export --to srt --no-cuts`: `build_doc` → `derive_cues` → `derive_sentences` → [`render_source_subtitles`]. The compatibility surface has no project and no timeline, so it corresponds to the "original source time" branch. The same rows must produce byte-identical output on both paths; the cross-check test in `worker_openai.rs` guards this.
 ///
-/// v2 在函数内按引擎 id 查模型目录得出说话人边界策略
-/// （`speaker_boundary_policy_for_engine`）；这里由调用方传入 `speaker_policy`。
+/// In v2 the function looks up the speaker-boundary policy from the model catalog by engine id (`speaker_boundary_policy_for_engine`); here the caller passes it in as `speaker_policy`.
 pub fn subtitles_from_rows(
     rows: &[RowIn],
     language: &str,
@@ -138,7 +127,7 @@ pub fn subtitles_from_rows(
         &sentences,
         ExportMode::Original,
         None,
-        // 兼容面没有 studio/style.json，交付标点与 `ccut export` 的缺省一致。
+        // The compatibility surface has no studio/style.json, so the delivery punctuation follows the default of `ccut export`.
         true,
         flavor,
         &SubtitleRenderOptions::default(),
@@ -147,7 +136,7 @@ pub fn subtitles_from_rows(
     .0
 }
 
-/// 说话人显示名：多说话人才加前缀，单说话人字幕不带。
+/// Speaker display name: a prefix is added only when there are multiple speakers; single-speaker subtitles have none.
 fn speaker_prefix(doc: &TranscriptDoc, sp: &str, flavor: SubtitleFlavor) -> String {
     if doc.speakers.len() < 2 {
         return String::new();
@@ -163,7 +152,7 @@ fn speaker_prefix(doc: &TranscriptDoc, sp: &str, flavor: SubtitleFlavor) -> Stri
     }
 }
 
-/// 字幕事件里念的说话人显示名：与 ASS 的 Name 字段同一判据（多说话人才有）。
+/// Speaker display name read out in subtitle events: uses the same criterion as the ASS Name field (only present when there are multiple speakers).
 fn speaker_display_name(doc: &TranscriptDoc, sp: &str) -> Option<String> {
     (doc.speakers.len() >= 2).then(|| {
         doc.speakers
@@ -172,10 +161,9 @@ fn speaker_display_name(doc: &TranscriptDoc, sp: &str) -> Option<String> {
     })
 }
 
-/// 一个已落到输出时钟上的原文词（`--to json-words` 用）。
+/// A source word already placed on the output clock (used by `--to json-words`).
 ///
-/// `src` 只在时间轴投影那一支有值：多素材工程的事件 sp 是 `{src}:{speaker}`，
-/// 词只归到同一素材的事件里，叠放的两条素材轨不会互相串词。
+/// `src` has a value only in the timeline-projection branch: for multi-source projects the event sp is `{src}:{speaker}`, and words are attached only to events from the same source, so two overlapping source tracks never cross-contaminate each other's words.
 struct TimedWord {
     src: Option<String>,
     start: f64,
@@ -183,7 +171,7 @@ struct TimedWord {
     text: String,
 }
 
-/// 源时间那一支（`--no-cuts`）：非 hidden 词原样取源时间，与 Cue 同一份词集。
+/// Source-time branch (`--no-cuts`): non-hidden words take their source times as-is, using the same word set as the Cues.
 fn source_timed_words(doc: &TranscriptDoc) -> Vec<TimedWord> {
     doc.words
         .iter()
@@ -197,18 +185,17 @@ fn source_timed_words(doc: &TranscriptDoc) -> Vec<TimedWord> {
         .collect()
 }
 
-/// 秒 → 毫秒精度，避免 `0.1 + 0.2` 式的浮点尾巴进文件。
+/// Seconds → millisecond precision, so floating-point tails like `0.1 + 0.2` do not end up in the file.
 fn json_seconds(value: f64) -> Value {
     json!((value * 1000.0).round() / 1000.0)
 }
 
-/// `--to json-words`：把与 srt/vtt/ass 同一份事件写成 JSON，每条带逐词时间戳。
+/// `--to json-words`: writes the same events as srt/vtt/ass as JSON, each with per-word timestamps.
 ///
-/// - `text` 与 SRT 那一条的正文逐字相同（双语是「原文\n译文」两行）；
-/// - `words[]` 是**原文**词：词中点落在这条的 `[start, end)` 里、且来自同一素材；
-///   译文没有逐词时间，译文模式下这里仍是说话的那些原文词；
-/// - `speaker` 只在多说话人且没加 `--no-speakers` 时出现（与 ASS Name 同判据）；
-/// - `timebase` 是 `output`（成片时间，剪口生效）或 `source`（`--no-cuts`）。
+/// - `text` is character-for-character identical to the body of that entry in SRT (bilingual is two lines, "source\ntranslation");
+/// - `words[]` are **source** words: words whose midpoint falls within this entry's `[start, end)` and that come from the same source. Translation has no per-word timing, so in translation mode this still lists the source words that were spoken;
+/// - `speaker` appears only when there are multiple speakers and `--no-speakers` is not given (same criterion as the ASS Name);
+/// - `timebase` is `output` (output timeline, cuts applied) or `source` (`--no-cuts`).
 fn render_json_words(
     doc: &TranscriptDoc,
     events: &[SubtitleEvent],
@@ -269,7 +256,7 @@ fn render_json_words(
     text
 }
 
-/// 字幕事件:(start, end, sp, body)。
+/// Subtitle event: (start, end, sp, body).
 pub type SubtitleEvent = (f64, f64, String, String);
 
 fn subtitle_delivery_text(text: &str, language: &str, project_punctuation: bool) -> String {
@@ -288,7 +275,7 @@ fn join_subtitle_lines(lines: impl IntoIterator<Item = String>) -> String {
         .join("\n")
 }
 
-/// independent 双语:句内源 Cue 边界 ∪ 译片边界分段,相邻同内容合并。
+/// independent bilingual: segments split by the union of the source Cue boundaries within a sentence and the translation segment boundaries; adjacent segments with identical content are merged.
 fn union_events(
     doc: &TranscriptDoc,
     cues: &[Cue],
@@ -353,15 +340,15 @@ fn union_events(
     events
 }
 
-/// 字幕文件导出的渲染选项与投影后的区间选择。
+/// Rendering options for subtitle file export, and the interval selection after projection.
 pub struct SubtitleRenderOptions {
-    /// `--no-speakers` 取反：srt 的 `[Name] `、vtt 的 `<v Name>`、ass 的 Name 字段。
+    /// Inverse of `--no-speakers`: the `[Name] ` prefix for srt, `<v Name>` for vtt, and the Name field for ass.
     pub speakers: bool,
-    /// ASS 头与双语第二行的样式名；srt/vtt 不消费。
+    /// Style name for the ASS header and the bilingual second line; srt/vtt do not use it.
     pub ass: AssStyleSheet,
-    /// `--to json-words` 的文首字段（mode / 语言）；值为 null 的键不落盘。其余格式不消费。
+    /// Leading fields of `--to json-words` (mode / language); keys whose value is null are not written out. Other formats do not use them.
     pub json_header: Value,
-    /// 裁取投影后的窗口并归零；None 保持整片导出。
+    /// Crops the projected window and zeroes it; None keeps the full export.
     pub window: Option<SubtitleWindow>,
 }
 
@@ -432,9 +419,9 @@ pub fn build_subtitle_events(
         }
         for sentence in sentences {
             let Some(pieces) = by_sentence.get(sentence.id.as_str()) else {
-                // 缺译句一律不回退原文，与画面链路（MP4 烧录/预览）同口径：
-                // 译文模式整句留空——sidecar 里就是不产出该条事件，序号顺延；
-                // 双语模式只是没有译文行，原文行照常输出。
+                // A missing translation never falls back to the source text, consistent with the picture pipeline (MP4 burn-in / preview):
+                // in translation mode the whole sentence is left empty: the sidecar simply produces no event for it, and numbering continues;
+                // in bilingual mode there is just no translation line, and the source line is output as usual.
                 *missing_translations += 1;
                 if mode == ExportMode::Bilingual {
                     for &cue_index in &sentence.cue_indices {
@@ -451,7 +438,7 @@ pub fn build_subtitle_events(
             };
             match mode {
                 ExportMode::Translated => {
-                    // 译文自成 Cue 流(independent 的行边界即译文自己的行)。
+                    // The translation forms its own Cue stream (in independent mode, the line boundaries are the translation's own lines).
                     let sp = cues[sentence.cue_indices[0]].sp.clone();
                     for piece in pieces {
                         events.push((
@@ -467,8 +454,7 @@ pub fn build_subtitle_events(
                     }
                 }
                 ExportMode::Bilingual => {
-                    // 源字幕 Cue 与翻译 Cue 是两条独立时间流；双语导出只在最终
-                    // 展示阶段取两者边界并集，不让源 Cue 反向决定译文切分。
+                    // The source Cue stream and the translation Cue stream are two independent time streams. Bilingual export takes only the union of their boundaries at the final display stage, and does not let source Cues dictate how the translation is split.
                     events.extend(union_events(
                         doc,
                         cues,
@@ -495,8 +481,7 @@ pub fn render_subtitle_events(
     let mut output = match flavor {
         SubtitleFlavor::Srt => String::new(),
         SubtitleFlavor::Vtt => String::from("WEBVTT\n\n"),
-        // 头由调用方合成：默认来自工程样式（v2 `studio_export::ass_style_sheet`），
-        // `--no-style` 退回 VoiceInk 时代的固定头。事件投影仍是三种格式共用的。
+        // The header is composed by the caller: by default it comes from the project style (v2 `studio_export::ass_style_sheet`); `--no-style` falls back to the fixed header from the VoiceInk era. Event projection is still shared by all three formats.
         SubtitleFlavor::Ass => options.ass.header.clone(),
         SubtitleFlavor::JsonWords => {
             unreachable!("json-words 带逐词时间，由 render_json_words 渲染")
@@ -554,11 +539,9 @@ pub fn render_subtitle_events(
     output
 }
 
-/// `--no-cuts`：跳过剪辑时间线投影，直接按 `transcript.json` 的原始源时间输出。
+/// `--no-cuts`: skips clip timeline projection and outputs directly using the original source times from `transcript.json`.
 ///
-/// 只读主 transcript。多素材工程的每条 source 都有自己从 0 开始的源时间轴，放在
-/// 同一个字幕文件里必然互相重叠，所以副素材一律跳过并由调用方给出警告——这正是
-/// 「原始源时间」这个语义本身的边界，不是实现偷懒。
+/// Reads only the main transcript. Each source in a multi-source project has its own source timeline starting at 0, so putting them in the same subtitle file would inevitably overlap. Secondary sources are therefore always skipped, and the caller issues a warning. This is the boundary of the "original source time" semantics itself, not laziness in the implementation.
 pub fn render_source_subtitles(
     doc: &TranscriptDoc,
     cues: &[Cue],
@@ -626,15 +609,11 @@ pub fn ass_time(seconds: f64) -> String {
     format!("{hours}:{minutes:02}:{seconds:02}.{centis:02}")
 }
 
-/// 一条 Dialogue 的正文。
+/// The body of one Dialogue entry.
 ///
-/// 双语正文永远是「原文行 + `\n` + 译文行」（见 `join_subtitle_lines`），译文行
-/// 用行内 `{\r<样式名>}` 切到译文样式。两个样式共享 Alignment/Margin，所以行内
-/// 切换不会挪动这一条事件的位置。
+/// A bilingual body is always "source line + `\n` + translation line" (see `join_subtitle_lines`); the translation line switches to the translation style with an inline `{\r<style name>}`. The two styles share Alignment/Margin, so the inline switch does not move this event's position.
 ///
-/// 只有正文真的有换行时才插入切换标签：单行事件（双语模式下整句缺译只剩原文行、或某个
-/// 并集区间只落到一侧）保持主样式。已知近似：双语模式下「只有译文没有原文」的单行
-/// 事件会按原文样式渲染。
+/// The switch tag is inserted only when the body really contains a line break. Single-line events (in bilingual mode, a sentence missing its translation leaves only the source line, or a union interval falls on only one side) keep the main style. Known approximation: in bilingual mode, a single-line event that has a translation but no source is rendered in the source style.
 fn ass_dialogue_text(body: &str, translation_style: Option<&str>) -> String {
     let escaped = ass_text(body);
     let Some(style) = translation_style else {
@@ -780,9 +759,9 @@ mod tests {
             &mut missing,
         );
         assert!(bilingual.contains("hello there\n你好"));
-        // 双语语义不变：缺译句只是没有译文行，原文行照常输出。
+        // The bilingual semantics are unchanged: a missing translation just means there is no translation line, and the source line is output as usual.
         assert!(bilingual.contains("goodbye now"), "{bilingual}");
-        assert_eq!(missing, 1); // 第二句没有译文
+        assert_eq!(missing, 1); // The second sentence has no translation
         let mut missing = 0;
         let translated = render_subtitles(
             &doc,
@@ -796,13 +775,13 @@ mod tests {
             &mut missing,
         );
         assert!(translated.contains("你好"));
-        // 译文模式缺译句留空 = 根本不产出这条事件，绝不回退原文；序号顺延。
+        // In translation mode, a sentence with a missing translation is left empty: no event is produced at all, never falling back to the source text; numbering continues.
         assert!(!translated.contains("goodbye now"), "{translated}");
         assert!(!translated.contains("\n2\n"), "{translated}");
-        assert_eq!(missing, 1); // 计数不受留空影响
+        assert_eq!(missing, 1); // Counting is not affected by the empty entries
     }
 
-    /// 缺译句在 vtt/ass 里同样是「这条不存在」，而不是空文本条目。
+    /// In vtt/ass, a missing translation likewise means "this entry does not exist", not an entry with empty text.
     #[test]
     fn translated_mode_drops_untranslated_sentences_from_every_flavor() {
         let mut doc = word_doc();
@@ -830,14 +809,14 @@ mod tests {
             assert!(!rendered.contains("goodbye now"), "{rendered}");
             assert_eq!(missing, 1);
             if flavor == SubtitleFlavor::Ass {
-                // 只剩第一句那一条 Dialogue，缺译句连时间轴都不占。
+                // Only the first sentence's Dialogue remains; a missing translation does not take up any space on the timeline.
                 assert_eq!(rendered.matches("Dialogue:").count(), 1, "{rendered}");
             }
         }
     }
 
-    /// ASS 双语是「一条 Dialogue 两行」，缺译时那条事件只剩原文一行：
-    /// 正文里没有 `\N`，也就不该出现切到译文样式的 `{\r...}` 标签。
+    /// ASS bilingual is "one Dialogue entry with two lines". When the translation is missing, that event has only the source line:
+    /// the body contains no `\N`, so there should be no `{\r...}` tag switching to the translation style.
     #[test]
     fn ass_bilingual_missing_translation_stays_a_single_primary_line() {
         let mut doc = word_doc();
@@ -859,9 +838,7 @@ mod tests {
             true,
             &mut missing,
         );
-        // v2 用 `studio_export::ass_style_sheet(&json!({}), "bi", …)` 合成双语头；它依赖字幕渲染
-        // 内核，在 `subtitle-render` 的 `ass_style`（那里有这条测试的原样版本），本 crate 不依赖
-        // 渲染，这里手建一份带译文样式的头，断言只看 Dialogue 行。
+        // v2 composes the bilingual header with `studio_export::ass_style_sheet(&json!({}), "bi", …)`. That depends on the subtitle rendering kernel; the verbatim version of this test lives in `subtitle-render`'s `ass_style`. This crate does not depend on rendering, so a header with a translation style is hand-built here, and the assertions only look at the Dialogue lines.
         let ass = AssStyleSheet {
             translation_style: Some(ASS_TRANSLATION_STYLE.to_owned()),
             ..AssStyleSheet::legacy()
@@ -885,7 +862,7 @@ mod tests {
             .collect();
         assert_eq!(dialogues.len(), 2, "{rendered}");
         assert!(dialogues[0].contains("hello there\\N"), "{rendered}");
-        // 缺译那条：单行原文，没有换行也没有译文样式切换。
+        // The entry with the missing translation: a single source line, with no line break and no translation style switch.
         let missing_line = dialogues[1];
         assert!(missing_line.contains("goodbye now"), "{rendered}");
         assert!(!missing_line.contains("\\N"), "{rendered}");
@@ -897,7 +874,7 @@ mod tests {
     #[test]
     fn bilingual_spanning_piece_repeats_across_its_cues() {
         use crate::doc::{AlignMode, TransAlign, TransPiece};
-        // 一句两 Cue,单片跨两 Cue(整句上屏):译行在两条事件里重复。
+        // One sentence spans two Cues, and a single clip spans both Cues (the whole sentence is shown at once): the translation line is repeated in two events.
         let mut row = RowIn::new(
             0.0,
             8.0,
@@ -1046,11 +1023,11 @@ mod tests {
             SubtitleFlavor::Srt,
             &mut missing,
         );
-        // 并集分段:每个事件都是 原文\n译文 两行;边界并集 ≥ 源 Cue 数。
+        // Union segmentation: each event is two lines, source\ntranslation; the boundary union is ≥ the number of source Cues.
         assert!(bilingual.contains("\n前半句译文\n"), "{bilingual}");
         assert!(bilingual.contains("\n后半句译文\n"), "{bilingual}");
         assert_eq!(missing, 0);
-        // 译文单语导出:行 = 译片自己的边界。
+        // Translation-only export: lines are the translation's own boundaries.
         let mut missing = 0;
         let translated = render_subtitles(
             &doc,

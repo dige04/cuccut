@@ -7,48 +7,47 @@ import { CliError, isRecord } from '../envelope.ts';
 import type { CatalogCommand } from './command-tree.ts';
 
 /**
- * 命令行 → 工具参数（Agent 面设计 §5.3）。旗标由目录项的 JSON Schema 派生，不手写：
+ * Command line → tool arguments (agent-surface design §5.3). Flags are derived from the JSON Schema of the catalog entry, not written by hand:
  *
- * - 字段名 `camelCase` → `--kebab-case`（`documentId` → `--document-id`）；`--flag=value` 与 `--flag value` 都行。
- * - 布尔是开关，`--no-x` 给 false；字段名本身以 `no` 开头的（`noVideo`）按字段名 `--no-video` 直接匹配，不当成否定。
- *   既能是布尔又能是别的（`export.bilingual`、`loudness`）的也是开关，别的取值写成 `--x=<值>`。
- * - 数字按十进制解析；枚举与固定取值（`sampleRate`）当场检查。
- * - 数组可以重复给（`--glossary a --glossary b`），也可以给一个 JSON 数组；元素是枚举或有固定格式的（`kinds`、`at`）还可以逗号分隔。
- * - 对象与对象数组给 JSON 字面量、`@文件` 或 `-`（stdin）；`{start, end}` 的范围可以写 `a:b`，`{num, den}` 的帧率可以写
- *   `30000/1001` 或 `30`。
- * - 没有固定格式的文本字段（`speak --text`、`documents put` 以外的大段文字）接受 `@文件` 与 `-`；要以 `@` 开头的字面量写 `@@`。
- * - 位置参数只有一个，由目录项的 `positional` 指定；它与同名旗标二选一。`positional` 是数组（`transcode` 的 `files`）时收下全部位置参数。
- * - 目录项的 `cliSwitches` 是快捷开关：`transcribe --replace` 等于 `--target replace`，与那个字段的旗标二选一。
+ * - Field names `camelCase` → `--kebab-case` (`documentId` → `--document-id`); both `--flag=value` and `--flag value` work.
+ * - Booleans are switches; `--no-x` gives false. A field whose name itself starts with `no` (`noVideo`) is matched directly as `--no-video` by its field name, not treated as a negation.
+ *   Those that can be boolean or something else (`export.bilingual`, `loudness`) are also switches; other values are written as `--x=<value>`.
+ * - Numbers are parsed as decimal; enums and fixed values (`sampleRate`) are checked on the spot.
+ * - Arrays may be given repeatedly (`--glossary a --glossary b`), or as one JSON array; elements that are enums or have a fixed format (`kinds`, `at`) may also be comma-separated.
+ * - Objects and arrays of objects take a JSON literal, `@file`, or `-` (stdin); a `{start, end}` range can be written `a:b`, and a `{num, den}` frame rate can be written
+ *   `30000/1001` or `30`.
+ * - Text fields without a fixed format (`speak --text`, large text other than `documents put`) accept `@file` and `-`; to pass a literal starting with `@`, write `@@`.
+ * - There is only one positional argument, specified by the catalog entry's `positional`; it is mutually exclusive with the flag of the same name. When `positional` is an array (`files` of `transcode`), all positional arguments are accepted.
+ * - The catalog entry's `cliSwitches` are shortcut switches: `transcribe --replace` equals `--target replace`, and is mutually exclusive with the flag for that field.
  *
- * 保留给 CLI 自己的旗标见 `GLOBAL_FLAGS`；目录字段派生出的旗标不得与它们重名（`dryRun` 与 `project` 是有意的，见下）。
+ * The CLI's reserved flags are in `GLOBAL_FLAGS`; flags derived from catalog fields must not share their names (`dryRun` and `project` are intentional, see below).
  */
 
 export interface GlobalFlags {
-  /** `--json` / `--no-json`；不给时按 stdout 是不是 TTY。 */
+  /** `--json` / `--no-json`; if not given, it depends on whether stdout is a TTY. */
   json: boolean | undefined;
-  /** `--project <目录或 id>`。 */
+  /** `--project <directory or id>`. */
   project: string | undefined;
   yes: boolean;
-  /** `--wait` / `--no-wait`；不给时返回任务的命令默认等待。 */
+  /** `--wait` / `--no-wait`; if not given, commands that return a task wait by default. */
   wait: boolean | undefined;
-  /** `--timeout <秒>`：等待的上限。 */
+  /** `--timeout <seconds>`: upper limit on waiting. */
   timeout: number | undefined;
   /** `--progress jsonl|text`。 */
   progress: 'jsonl' | 'text' | undefined;
   maxBytes: number;
-  /** `--result-file <文件>`：完整结果写到这个文件（§5.5）。`--out` 不是 CLI 的，留给工具自己的 `out` 字段。 */
+  /** `--result-file <file>`: the full result is written to this file (§5.5). `--out` is not the CLI's; it is left for the tool's own `out` field. */
   resultFile: string | undefined;
   noStart: boolean;
   dryRun: boolean;
   help: boolean;
 }
 
-/** 结果的默认预算（§5.5）：超过时写到文件，stdout 只给摘要。 */
+/** Default result budget (§5.5): when exceeded, the result is written to a file and stdout gets only a summary. */
 export const DEFAULT_MAX_BYTES = 64 * 1024;
 
 /**
- * CLI 保留的旗标。`--dry-run` 映射到有 `dryRun` 字段的工具（`edits apply`），`--project` 同时给 `catalog.call` 的项目与
- * 有 `project` 字段的工具；其余字段派生出的旗标都不得与这些重名（`catalog-snapshot.test.ts` 检查）。
+ * CLI-reserved flags. `--dry-run` maps to tools that have a `dryRun` field (`edits apply`), and `--project` applies both to the project of `catalog.call` and to tools that have a `project` field; other flags derived from fields must not share these names (checked by `catalog-snapshot.test.ts`).
  */
 export const GLOBAL_FLAGS = [
   'json',
@@ -84,7 +83,7 @@ export function defaultGlobals(): GlobalFlags {
   };
 }
 
-/** 从命令行里取出 CLI 自己的旗标（出现在哪里都行，`--` 之后的不算），其余原样留下。 */
+/** Takes the CLI's own flags out of the command line (they may appear anywhere; those after `--` do not count); the rest are left as they are. */
 export function extractGlobals(argv: readonly string[]): { globals: GlobalFlags; rest: string[] } {
   const globals = defaultGlobals();
   const rest: string[] = [];
@@ -164,7 +163,7 @@ export function extractGlobals(argv: readonly string[]): { globals: GlobalFlags;
   return { globals, rest };
 }
 
-/** 读 `@文件` 与 `-`（stdin）。测试注入。 */
+/** Reads `@file` and `-` (stdin). Injected in tests. */
 export interface InputSource {
   readFile(file: string): Promise<string>;
   readStdin(): Promise<string>;
@@ -185,13 +184,13 @@ export function processInput(cwd: string): InputSource {
 
 type Schema = Record<string, unknown>;
 
-/** 一个字段派生出的旗标。 */
+/** A flag derived from one field. */
 export interface FlagSpec {
   field: string;
   flag: string;
   schema: Schema;
   required: boolean;
-  /** 开关：不带值（布尔，或含布尔分支的 anyOf）。 */
+  /** Switch: takes no value (a boolean, or an anyOf containing a boolean branch). */
   switch: boolean;
   array: boolean;
 }
@@ -219,7 +218,7 @@ function hasBoolean(schema: Schema): boolean {
   return Array.isArray(schema.anyOf) && (schema.anyOf as Schema[]).some((branch) => branch.type === 'boolean');
 }
 
-/** 解析一条派生命令的参数（命令名之后的部分，CLI 自己的旗标已经取出）。 */
+/** Parses the arguments of one derived command (the part after the command name; the CLI's own flags have already been removed). */
 export async function parseToolArgs(
   command: CatalogCommand,
   argv: readonly string[],
@@ -287,7 +286,7 @@ export async function parseToolArgs(
     }
   }
 
-  // 位置参数：只有 `positional` 指定的那一个字段，与同名旗标二选一。
+  // Positional argument: only the field specified by `positional`; mutually exclusive with the flag of the same name.
   if (positionals.length > 0) {
     const spec = tool.positional ? specs.find((s) => s.field === tool.positional) : undefined;
     if (!spec) throw invalid(M.noPositional(command.display, positionals[0]!));
@@ -318,12 +317,12 @@ export async function parseToolArgs(
   return args;
 }
 
-/** `--project` 给工具的 `project` 字段：是目录时给绝对路径（工具认已登记项目目录的路径），否则原样当项目 id。 */
+/** `--project` gives the tool its `project` field: when it is a directory, the absolute path (the tool recognizes paths of registered project directories); otherwise the value is used as-is as the project id. */
 function projectArgument(value: string, cwd: string): string {
   return projectDirectory(value, cwd) ?? value;
 }
 
-/** `--project` 按 cwd 解析成存在的目录（绝对路径）；不是目录时 null（可能是项目 id）。 */
+/** `--project` is resolved against cwd into an existing directory (absolute path); null when it is not a directory (it may be a project id). */
 export function projectDirectory(value: string, cwd: string): string | null {
   const dir = path.resolve(cwd, value);
   try {
@@ -338,7 +337,7 @@ function setOnce(args: Record<string, unknown>, spec: FlagSpec, value: unknown):
   args[spec.field] = value;
 }
 
-/** `@文件` 与 `-` 的来源；stdin 只能读一次。 */
+/** Source of `@file` and `-`; stdin can only be read once. */
 class Reader {
   readonly #input: InputSource;
   #stdinUsed = false;
@@ -371,7 +370,7 @@ class Reader {
   }
 }
 
-/** 数组字段的一次出现：JSON 数组整体给，或一个元素（枚举与固定格式的元素可以逗号分隔）。 */
+/** One occurrence of an array field: either the whole JSON array, or one element (enum and fixed-format elements may be comma-separated). */
 async function arrayItems(schema: Schema, raw: string, flag: string, reader: Reader): Promise<unknown[]> {
   const items = (isRecord(schema.items) ? schema.items : {}) as Schema;
   if (raw.startsWith('[') || raw === '-' || (raw.startsWith('@') && items.type === 'object')) {
@@ -388,7 +387,7 @@ async function arrayItems(schema: Schema, raw: string, flag: string, reader: Rea
   return [await coerce(items, raw, flag, reader, false)];
 }
 
-/** 一个取值按 schema 换成 JSON 值。`files` 为 false 时文本不读 `@文件`（数组的元素）。 */
+/** Converts a value into a JSON value according to the schema. When `files` is false, the text does not read `@file` (array elements). */
 async function coerce(schema: Schema, raw: string, flag: string, reader: Reader, files = true): Promise<unknown> {
   if (Array.isArray(schema.anyOf)) {
     const branches = schema.anyOf as Schema[];
@@ -399,7 +398,7 @@ async function coerce(schema: Schema, raw: string, flag: string, reader: Reader,
       try {
         return await coerce(branch, raw, flag, reader, false);
       } catch {
-        // 下一个分支。
+        // Next branch.
       }
     }
     throw invalid(M.badValue(flag, raw));
@@ -437,7 +436,7 @@ async function coerce(schema: Schema, raw: string, flag: string, reader: Reader,
     case 'array':
       return arrayItems(schema, raw, flag, reader);
     default:
-      // 没有类型（自由 JSON）：像 JSON 的按 JSON 解析，否则当字符串。
+      // No type (free JSON): if it looks like JSON, parse it as JSON; otherwise treat it as a string.
       return raw.startsWith('{') || raw.startsWith('[') || raw === '-' || raw.startsWith('@') ? reader.json(raw, flag) : raw;
   }
 }
@@ -445,7 +444,7 @@ async function coerce(schema: Schema, raw: string, flag: string, reader: Reader,
 const RANGE = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/;
 const RATIO = /^(\d+)(?:\/(\d+))?$/;
 
-/** 对象：`a:b` 的范围、`n/d` 的分数，或 JSON（字面量、`@文件`、`-`）。 */
+/** Object: an `a:b` range, an `n/d` fraction, or JSON (literal, `@file`, `-`). */
 async function objectValue(schema: Schema, raw: string, flag: string, reader: Reader): Promise<unknown> {
   const properties = isRecord(schema.properties) ? schema.properties : {};
   if ('start' in properties && 'end' in properties) {
@@ -456,7 +455,7 @@ async function objectValue(schema: Schema, raw: string, flag: string, reader: Re
     const ratio = RATIO.exec(raw);
     if (ratio) return { num: Number(ratio[1]), den: Number(ratio[2] ?? 1) };
   }
-  // 只有一个文本字段的对象（例如 `--replace <itemId>`）：不像 JSON、@文件或 - 的值就是那个字段。
+  // An object with only one text field (for example `--replace <itemId>`): a value that does not look like JSON, @file or - is that field's value.
   const single = soleTextField(schema);
   if (single && !(raw.startsWith('{') || raw === '-' || raw.startsWith('@'))) return { [single]: raw };
   const value = await reader.json(raw, flag);
@@ -464,7 +463,7 @@ async function objectValue(schema: Schema, raw: string, flag: string, reader: Re
   return value;
 }
 
-/** 对象只有一个字段、而且是文本时，那个字段的名字（命令行可以直接写它的值）。 */
+/** When an object has only one field and it is text, the name of that field (the command line can write its value directly). */
 export function soleTextField(schema: Schema): string | null {
   const properties = isRecord(schema.properties) ? schema.properties : {};
   const keys = Object.keys(properties);

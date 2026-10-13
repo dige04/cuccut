@@ -1,18 +1,14 @@
-//! `confetti_frame`：配方 + 用户覆盖 + 时刻 → DrawOp。
+//! `confetti_frame`: recipe + user overrides + moment → DrawOp.
 //!
-//! 签名与 [`crate::source::progress::progress_frame`] 同形（`&mut FrameBuilder` +
-//! 返回 op 条数），host 的分派因此长得一样。一帧的指令流是：
+//! The signature matches [`crate::source::progress::progress_frame`] (`&mut FrameBuilder` + returns op count), so the host's dispatch looks the same. A frame's instruction stream is:
 //!
 //! ```text
-//! ClipPath(元素盒)  FillPath × N（每粒一条，路径按形状去重）  PopClip
+//! ClipPath(element box)  FillPath × N (one per particle, paths deduplicated by shape)  PopClip
 //! ```
 //!
-//! 空帧（没有活着的粒子，或 `t < 0`）**一条 op 都不压**，返回 0——
-//! host 据此不生成空的 `SceneNode::Vectors`。
+//! An empty frame (no live particles, or `t < 0`) **pushes no op at all** and returns 0 — the host thereby does not generate an empty `SceneNode::Vectors`.
 //!
-//! 像素量口径与 progress 相同：配方里的 `speedPx` / `gravityPx` / `sizePx` 等
-//! 是 540 短边下的值，`× pixel_scale` 折到当前画布；系数由 host 算好传进来
-//! （参考短边的真相住在 `ccut_timeline::REFERENCE_SHORT_EDGE`）。
+//! The pixel-quantity convention is the same as progress: `speedPx` / `gravityPx` / `sizePx` etc. in the recipe are values at a 540 short edge, `× pixel_scale` folds them to the current canvas; the coefficients are computed by the host and passed in (the source of truth for the reference short edge lives in `ccut_timeline::REFERENCE_SHORT_EDGE`).
 
 use motion::preset_registry::{CatalogueRecipe, Recipe};
 
@@ -24,7 +20,7 @@ use super::shapes::{ConfettiShape, unit_path};
 
 pub use crate::source::kernel::DrawBox as ConfettiBox;
 
-/// 用户侧的发射覆盖：`ConfettiProps.emit` 的镜像，`None` = 用配方缺省。
+/// User-side emission override: mirror of `ConfettiProps.emit`; `None` = use recipe defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ConfettiEmitOverride {
     pub mode: Option<EmitMode>,
@@ -34,10 +30,9 @@ pub struct ConfettiEmitOverride {
     pub settle: bool,
 }
 
-/// 绘制参数：**已经解析好的**色板 / 形状表 + 倍率 + 折算系数。
+/// Draw parameters: **already-resolved** palette / shape table + multiplier + folding coefficients.
 ///
-/// `colors` / `shapes` 已由 host 决定是用户表还是配方表（都非空）；
-/// `opacity` 已乘进元素自身的 opacity。
+/// `colors` / `shapes` have already been decided by the host as the user table or the recipe table (both non-empty); `opacity` has already been multiplied into the element's own opacity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfettiParams {
     pub seed: u64,
@@ -48,11 +43,11 @@ pub struct ConfettiParams {
     pub gravity: f64,
     pub drift: f64,
     pub spin: f64,
-    /// 绝对风力（px/s²，540 短边），加在配方 `windPx` 上。
+    /// Absolute wind force (px/s², at 540 short edge), added on top of the recipe `windPx`.
     pub wind: f64,
     pub opacity: f64,
     pub emit: ConfettiEmitOverride,
-    /// 元素盒百分比；`Some` 时替换配方的整组发射器。
+    /// Element box percentage; when `Some`, it replaces the recipe's entire emitter group.
     pub origin: Option<(f64, f64)>,
     pub angle: Option<f64>,
     pub spread: Option<f64>,
@@ -87,8 +82,7 @@ fn pair(recipe: &Recipe, key: &str) -> Option<[f64; 2]> {
     Some([arr.first()?.as_f64()?, arr.get(1)?.as_f64()?])
 }
 
-/// 配方参数包 → 强类型 [`Motion`]。解析期已保证必填项在场且合法，这里的
-/// `unwrap_or` 只是让 `Option` 消失，不是第二份缺省表。
+/// Recipe parameter bundle → strongly-typed [`Motion`]. Parsing has already ensured required items are present and valid; the `unwrap_or` here only removes the `Option`, it is not a second set of defaults.
 pub fn motion_of(recipe: &Recipe) -> Motion {
     let emit_obj = recipe.object("emit");
     let text = |key: &str| emit_obj.and_then(|o| o.get(key)).and_then(|v| v.as_str());
@@ -154,7 +148,7 @@ pub fn motion_of(recipe: &Recipe) -> Motion {
     }
 }
 
-/// 用户覆盖合并到配方发射缺省上。
+/// User overrides merged onto the recipe's emission defaults.
 pub fn effective_emit(motion: &Motion, over: &ConfettiEmitOverride) -> Emit {
     Emit {
         mode: over.mode.unwrap_or(motion.emit.mode),
@@ -171,8 +165,7 @@ pub fn effective_emit(motion: &Motion, over: &ConfettiEmitOverride) -> Emit {
     }
 }
 
-/// `first` 后接 `second`：与 `ccut-timeline-render::scene::post_concat_mat6`
-/// 同一条公式（本 crate 不依赖那边，故此处复述）。
+/// `first` followed by `second`: same formula as `ccut-timeline-render::scene::post_concat_mat6` (this crate does not depend on that one, so it is restated here).
 pub fn post_concat(first: Mat6, second: Mat6) -> Mat6 {
     let [a, b, c, d, tx, ty] = first;
     let [e, f, g, h, ux, uy] = second;
@@ -186,15 +179,13 @@ pub fn post_concat(first: Mat6, second: Mat6) -> Mat6 {
     ]
 }
 
-/// 一帧 confetti 的**粒子表**（元素盒内坐标，左上原点）——闭式核唯一的入口。
+/// The **particle table** of one confetti frame (coordinates within the element box, top-left origin) — the sole entry point of the closed-form kernel.
 ///
-/// [`confetti_frame`] 用它出指令流；缩略图与目录格这类「只要坐标不要像素」的
-/// 读者（`ccut-wasm` 的 `confettiSample`）也用它，两条路径因此不可能画出不同
-/// 的一帧。样式没登记、色板或形状表为空、时刻非有限时返回空表。
+/// [`confetti_frame`] uses it to produce the instruction stream; thumbnails and catalog cells, which only want coordinates and not pixels (`ccut-wasm`'s `confettiSample`), also use it, so the two paths can never draw different frames. Returns an empty table when the style is not registered, the palette or shape table is empty, or the time is non-finite.
 ///
-/// * `time`：元素本地时刻（`t − element.start`，秒）。
-/// * `duration`：元素时长（`emit.settle` 用；开放式片尾传 `None`）。
-/// * `box_size`：元素盒的宽高（画布像素）。
+/// * `time`: element-local time (`t − element.start`, seconds).
+/// * `duration`: element duration (used by `emit.settle`; pass `None` for an open-ended tail).
+/// * `box_size`: width and height of the element box (canvas pixels).
 pub fn confetti_particles(
     recipe: &CatalogueRecipe,
     params: &ConfettiParams,
@@ -236,11 +227,11 @@ pub fn confetti_particles(
     )
 }
 
-/// 一帧 confetti → 指令流；返回**新压入的 DrawOp 条数**（空帧 0）。
+/// One frame of confetti → instruction stream; returns **the number of DrawOp entries newly pushed** (0 for an empty frame).
 ///
-/// * `time`：元素本地时刻（`t − element.start`，秒）。
-/// * `duration`：元素时长（`emit.settle` 用；开放式片尾传 `None`）。
-/// * `bbox`：元素盒（画布像素）；`tf`：元素的仿射（旋转 / 姿态）。
+/// * `time`: element-local time (`t − element.start`, seconds).
+/// * `duration`: element duration (used by `emit.settle`; pass `None` for an open-ended tail).
+/// * `bbox`: element box (canvas pixels); `tf`: element's affine transform (rotation / pose).
 pub fn confetti_frame(
     builder: &mut FrameBuilder,
     recipe: &CatalogueRecipe,

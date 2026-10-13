@@ -1,17 +1,17 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/VoxCPM2TTS/MiniCPM4.swift / Sources/VoxCPM2TTS/VoxCPM2TTS.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/VoxCPM2TTS/MiniCPM4.swift / Sources/VoxCPM2TTS/VoxCPM2TTS.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! MiniCPM4 骨干与 VoxCPM2 的局部模块：LongRoPE、GQA 注意力、解码层、
-//! `VoxCPMLocEnc`（逐 patch 取 CLS 的局部编码器）、`VoxCPMLocDiTV2`（局部扩散估计器）、
-//! 标量量化层（FSQ）。对照 speech-swift `MiniCPM4.swift` 与 `VoxCPM2TTS.swift`
-//! 的 `ScalarQuantizationLayer`。
+//! The MiniCPM4 backbone and VoxCPM2's local modules: LongRoPE, GQA attention, decoder layers,
+//! `VoxCPMLocEnc` (the local encoder that takes the CLS token per patch), `VoxCPMLocDiTV2` (the local diffusion estimator),
+//! and the scalar quantization layer (FSQ). Follows speech-swift `MiniCPM4.swift` and `VoxCPM2TTS.swift`,
+//! specifically its `ScalarQuantizationLayer`.
 //!
-//! 同一张图同时跑 MLX 与 Candle：RoPE 不走 `fast::rope`（两端对 `freqs` 的口径不同，
-//! Candle 版还忽略它），而是在主机侧按 LongRoPE 公式算好 f32 cos/sin 表再用普通算子旋转。
+//! The same graph runs on both MLX and Candle: RoPE does not use `fast::rope` (the two backends interpret `freqs` differently,
+//! and the Candle version ignores it). Instead, the f32 cos/sin tables are computed on the host from the LongRoPE formula and applied with ordinary ops.
 
 use crate::synthesize::tensor::fast::{self, ScaledDotProductAttentionMask};
 use crate::synthesize::tensor::nn::silu;
@@ -23,13 +23,13 @@ use anyhow::Result;
 use crate::synthesize::qwen3_tts::layers::{KvCache, Linear, SwigluMlp};
 use crate::synthesize::qwen3_tts::weights::Weights;
 
-/// 取一个浮点张量并提升到 f32（speech-swift 在 Apple 上把非量化参数一律提升到 f32：
-/// bf16/fp16 会让扩散循环出毛刺）。
+/// Takes a floating-point tensor and upcasts it to f32 (speech-swift upcasts all non-quantized parameters to f32 on Apple,
+/// because bf16/fp16 would make the diffusion loop produce artifacts).
 pub fn take_f32(weights: &mut Weights, key: &str) -> Result<Array> {
     Ok(weights.take(key)?.as_dtype(Dtype::Float32)?)
 }
 
-/// RMSNorm：权重提升到 f32，激活本来就是 f32。
+/// RMSNorm: weights are upcast to f32; activations are already f32.
 pub struct Norm {
     weight: Array,
     eps: f32,
@@ -48,9 +48,9 @@ impl Norm {
     }
 }
 
-/// MiniCPM LongRoPE（`MiniCPMLongRoPE`）：`freq_i = inv_freq_i / factor_i`，
-/// `max_position_embeddings > original` 时用 long_factor，否则 short_factor；
-/// cos/sin 再乘 `sqrt(1 + ln(scale)/ln(original))`。
+/// MiniCPM LongRoPE (`MiniCPMLongRoPE`): `freq_i = inv_freq_i / factor_i`,
+/// uses long_factor when `max_position_embeddings > original`, otherwise short_factor;
+/// cos/sin are then multiplied by `sqrt(1 + ln(scale)/ln(original))`.
 #[derive(Clone)]
 pub struct LongRope {
     freqs: Vec<f32>,
@@ -77,7 +77,7 @@ impl LongRope {
         Self { freqs, scaling }
     }
 
-    /// 位置 `offset..offset+len` 的 `(cos, sin)`，形状 `[1, len, 1, head_dim]`。
+    /// `(cos, sin)` for positions `offset..offset+len`, shape `[1, len, 1, head_dim]`.
     pub fn tables(&self, offset: usize, len: usize) -> (Array, Array) {
         let half = self.freqs.len();
         let dim = half * 2;
@@ -97,7 +97,7 @@ impl LongRope {
     }
 }
 
-/// `x * cos + rotate_half(x) * sin`，`x` 为 `[B, L, H, D]`（非 interleaved）。
+/// `x * cos + rotate_half(x) * sin`, where `x` is `[B, L, H, D]` (non-interleaved).
 fn apply_rope(x: &Array, cos: &Array, sin: &Array) -> Result<Array> {
     let d = x.dim(-1);
     let half = d / 2;
@@ -114,7 +114,7 @@ pub struct Dims {
     pub head_dim: usize,
     pub layers: usize,
     pub eps: f32,
-    /// `use_mup` 时的残差缩放 `scale_depth / sqrt(layers)`，否则 1。
+    /// Residual scale `scale_depth / sqrt(layers)` when `use_mup` is set, otherwise 1.
     pub residual_scale: f32,
 }
 
@@ -167,7 +167,7 @@ impl Attention {
             ),
             None => (k, v),
         };
-        // 单步解码（len == 1）看全部历史，不需要掩码；prefill 时 cache 为空。
+        // A single decoding step (len == 1) attends to the full history and needs no mask; during prefill the cache is empty.
         let mask = (causal && len > 1).then_some(ScaledDotProductAttentionMask::Causal);
         let out = fast::scaled_dot_product_attention(&q, &keys, &values, self.scale, mask, None)?
             .transpose_axes(&[0, 2, 1, 3])?
@@ -183,7 +183,7 @@ struct Layer {
     post_norm: Norm,
 }
 
-/// MiniCPM 模型（无 lm_head）：`base_lm`、`residual_lm`、局部编码器与 DiT 的骨干。
+/// MiniCPM model (no lm_head): the backbone for `base_lm`, `residual_lm`, the local encoder and the DiT.
 pub struct MiniCpm {
     layers: Vec<Layer>,
     norm: Norm,
@@ -211,7 +211,7 @@ impl MiniCpm {
         })
     }
 
-    /// `x` `[B, L, H]` → 末层 norm 后的 `[B, L, H]` 与每层新 cache。
+    /// `x` `[B, L, H]` → `[B, L, H]` after the final norm, plus a new cache per layer.
     pub fn forward(&self, x: &Array, cache: Option<&[KvCache]>, causal: bool) -> Result<(Array, Vec<KvCache>)> {
         let offset = cache.and_then(|c| c.first()).map_or(0, |c| c.len() as usize);
         let tables = self.rope.as_ref().map(|r| r.tables(offset, x.dim(1) as usize));
@@ -237,7 +237,7 @@ impl MiniCpm {
     }
 }
 
-/// `VoxCPMLocEnc`：每个 patch 前面拼一个可学习 CLS，非因果编码后取 CLS。
+/// `VoxCPMLocEnc`: a learnable CLS token is prepended to each patch; non-causal encoding, then the CLS output is taken.
 pub struct LocEnc {
     in_proj: Linear,
     special: Array,
@@ -285,8 +285,8 @@ impl TimeMlp {
     }
 }
 
-/// `SinusoidalPosEmb(dim)(t, scale=1000)`：`[sin(1000·t·f), cos(1000·t·f)]`，
-/// `f_i = exp(-i·ln(10000)/(half-1))`。主机侧算，返回 `[len(ts), dim]`。
+/// `SinusoidalPosEmb(dim)(t, scale=1000)`: `[sin(1000·t·f), cos(1000·t·f)]`,
+/// `f_i = exp(-i·ln(10000)/(half-1))`. Computed on the host; returns `[len(ts), dim]`.
 pub fn sinusoidal(ts: &[f32], dim: usize) -> Array {
     let half = dim / 2;
     let step = (10000f64).ln() / (half as f64 - 1.0);
@@ -301,7 +301,7 @@ pub fn sinusoidal(ts: &[f32], dim: usize) -> Array {
     Array::from_slice(&out, &[ts.len() as i32, dim as i32])
 }
 
-/// `VoxCPMLocDiTV2`：`[mu tokens, 时间 token, cond patch, x patch]` 非因果编码后取 x 段。
+/// `VoxCPMLocDiTV2`: `[mu tokens, time token, cond patch, x patch]` is encoded non-causally, then the x segment is taken.
 pub struct LocDit {
     in_proj: Linear,
     cond_proj: Linear,
@@ -309,7 +309,7 @@ pub struct LocDit {
     time_mlp: TimeMlp,
     decoder: MiniCpm,
     hidden: i32,
-    /// `mean_mode=false` 时 dt 恒为 0，`delta_time_mlp(sinusoidal(0))` 是常量，加载时算好。
+    /// When `mean_mode=false`, dt is always 0, so `delta_time_mlp(sinusoidal(0))` is a constant, computed at load time.
     delta_token: Array,
 }
 
@@ -330,8 +330,8 @@ impl LocDit {
         })
     }
 
-    /// `x` `[B, C, P]`、`mu` `[B, k·hidden]`、`t` 每个 batch 同一时刻、`cond` `[B, C, Pc]`
-    /// → 速度场 `[B, C, P]`。
+    /// `x` `[B, C, P]`, `mu` `[B, k·hidden]`, `t` the same time for every batch item, `cond` `[B, C, Pc]`
+    /// → velocity field `[B, C, P]`.
     pub fn forward(&self, x: &Array, mu: &Array, t: f32, cond: &Array) -> Result<Array> {
         let b = x.dim(0);
         let x_proj = self.in_proj.forward(&x.transpose_axes(&[0, 2, 1])?)?;
@@ -349,8 +349,8 @@ impl LocDit {
     }
 }
 
-/// UnifiedCFM 的时间表：`t = linspace(1, 0, n+1)`，再做 sway 采样
-/// `t + (cos(π/2·t) − 1 + t)`（系数 1.0）。
+/// UnifiedCFM time schedule: `t = linspace(1, 0, n+1)`, then sway sampling
+/// `t + (cos(π/2·t) − 1 + t)` (coefficient 1.0).
 pub fn time_span(steps: usize) -> Vec<f32> {
     let steps = steps.max(1);
     (0..=steps)
@@ -361,8 +361,8 @@ pub fn time_span(steps: usize) -> Vec<f32> {
         .collect()
 }
 
-/// `UnifiedCFM.solveEuler`（CFG-Zero*）：前 `max(1, ⌊0.04·(n+1)⌋)` 步速度置零；其余步
-/// 正负两路同批估计，`st* = <v+, v−>/(‖v−‖²+1e-8)`，`v = v−·st* + cfg·(v+ − v−·st*)`。
+/// `UnifiedCFM.solveEuler` (CFG-Zero*): the velocity is zeroed for the first `max(1, ⌊0.04·(n+1)⌋)` steps; for the remaining steps
+/// the positive and negative branches are estimated in the same batch, `st* = <v+, v−>/(‖v−‖²+1e-8)`, `v = v−·st* + cfg·(v+ − v−·st*)`.
 pub fn solve_euler(dit: &LocDit, noise: Array, mu: &Array, cond: &Array, steps: usize, cfg: f32) -> Result<Array> {
     let span = time_span(steps);
     let zero_init = ((span.len() as f64 * 0.04) as usize).max(1);
@@ -374,7 +374,7 @@ pub fn solve_euler(dit: &LocDit, noise: Array, mu: &Array, cond: &Array, steps: 
         let t = span[step - 1];
         let dt = span[step - 1] - span[step];
         if step <= zero_init {
-            // 速度为零：x 不变，只推进时间。
+            // Zero velocity: x stays the same, only time advances.
             continue;
         }
         let x_in = ops::concatenate_axis(&[&x, &x], 0)?;
@@ -397,7 +397,7 @@ pub fn solve_euler(dit: &LocDit, noise: Array, mu: &Array, cond: &Array, steps: 
     Ok(x)
 }
 
-/// 标量量化层：`out_proj(round(tanh(in_proj(x))·s)/s)`。
+/// Scalar quantization layer: `out_proj(round(tanh(in_proj(x))·s)/s)`.
 pub struct Fsq {
     in_proj: Linear,
     out_proj: Linear,

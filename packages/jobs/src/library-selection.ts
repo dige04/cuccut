@@ -10,15 +10,15 @@ import {
 } from '@cuccut/protocol';
 
 /**
- * 视频里启用的库条目（架构设计 §5.9；视频格式规范 §4.6 的 `library-selection`）：读正文、找文档。
- * 正文认不出的部分不解释（读到的当作没启用），写回由 `library.setVideoSelection` 整份重写。
+ * Library entries enabled in a video (architecture design §5.9; `library-selection` in video format spec §4.6): reads the body and finds the document.
+ * Parts of the body that are not recognized are not interpreted (read as not enabled); writing back is a full rewrite by `library.setVideoSelection`.
  */
 
 export function emptySelection(): LibrarySelection {
   return { glossaries: { transcribe: [], translate: [] }, speakerVoices: [] };
 }
 
-/** 视频里的 `library-selection` 文档；有几份时取 ID 最小的一份（正常只有一份）。 */
+/** The `library-selection` document in the video; if there are several, the one with the smallest ID is taken (normally there is only one). */
 export function selectionDocument(documents: Record<Id, DocumentRecord>): DocumentRecord | null {
   const found = Object.values(documents)
     .filter((d) => d.kind === LIBRARY_SELECTION_KIND)
@@ -31,7 +31,7 @@ const ids = (value: unknown): Id[] =>
     ? [...new Set(value.filter((v): v is string => typeof v === 'string' && v !== ''))].slice(0, MAX_SELECTED_GLOSSARIES)
     : [];
 
-/** 读正文：不是 `cuccut.library-selection/1` 时当作什么都没启用；不合的项丢掉。 */
+/** Reads the body: when it is not `cuccut.library-selection/1`, treat it as nothing enabled; non-conforming items are dropped. */
 export function readSelection(body: unknown): LibrarySelection {
   const b = body as { schema?: unknown; glossaries?: { transcribe?: unknown; translate?: unknown }; speakerVoices?: unknown } | null;
   if (!b || typeof b !== 'object' || b.schema !== LIBRARY_SELECTION_SCHEMA) return emptySelection();
@@ -54,12 +54,12 @@ export function readSelection(body: unknown): LibrarySelection {
   return { glossaries: { transcribe: ids(b.glossaries?.transcribe), translate: ids(b.glossaries?.translate) }, speakerVoices };
 }
 
-/** 写进视频的正文。 */
+/** The body written into the video. */
 export function selectionBody(selection: LibrarySelection): Record<string, unknown> {
   return { schema: LIBRARY_SELECTION_SCHEMA, ...selection };
 }
 
-/** 读一个视频此刻启用的条目（经 `document` 读正文）；没有这份文档时是空的。 */
+/** Reads the entries enabled for a video now (reads the body via `document`); when there is no such document, it is empty. */
 export async function videoSelection(
   documents: Record<Id, DocumentRecord>,
   read: (documentId: Id, revision: string) => Promise<unknown>,

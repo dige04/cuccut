@@ -63,7 +63,7 @@ const lockNote = style({
 });
 const lockText = style({ flexGrow: 1 });
 
-/** 一页里各节共用的东西：片段、序列、改法，以及现在能不能改（视频可编辑、片段与轨道都没锁）。 */
+/** What the sections of a page share: the clip, the sequence, the editing method, and whether it can be edited right now (video editable, clip and track not locked). */
 export interface ItemPageProps<T extends SequenceItem = SequenceItem> {
   item: T;
   sequence: Sequence;
@@ -72,7 +72,7 @@ export interface ItemPageProps<T extends SequenceItem = SequenceItem> {
   canChange: boolean;
 }
 
-/** 片段或它所在的轨道锁着：说清楚为什么都是灰的；片段自己锁着时给一个解锁钮。 */
+/** The clip or its track is locked: explains why everything is greyed out. If the clip itself is locked, offers an unlock button. */
 export function LockNotice({
   item,
   sequence,
@@ -103,7 +103,7 @@ export function LockNotice({
   );
 }
 
-/** 不透明度（有布局框的片段）。 */
+/** Opacity (for clips that have a layout box). */
 export function OpacityRow({ item, sequence, edit, canChange }: ItemPageProps<VisualItem>) {
   return (
     <ValueRow
@@ -133,7 +133,7 @@ const SPEEDS = [
 ] as const;
 type SpeedKey = (typeof SPEEDS)[number]['key'];
 
-/** 变速（视频、音频的线性时间映射）：常用倍速一点即改，自定义 0.25–4×。取用的素材不变，长度按新速率重算。 */
+/** Speed (linear time mapping for video and audio): common speeds change with one click, and custom values range from 0.25 to 4×. The source material stays the same, and the length is recalculated at the new rate. */
 export function SpeedSection({ item, sequence, edit, canChange }: ItemPageProps<VideoItem | AudioItem>) {
   const map = item.timeMap;
   const speed = map.kind === 'linear' ? speedOf(map.rate) : 1;
@@ -187,8 +187,7 @@ function millis(value: number): MediaTime | undefined {
 }
 
 /**
- * 声音：静音、音量（0–200%，数字框可到 400%，行尾是 dB）与淡入淡出（0–5 秒，两者之和不超过片段长度）。
- * 音频改自己的混音；视频与有声音的合成改它自带的那路声音（静音就是不用它）。
+ * Audio: mute, volume (0–200%; the number box can reach 400%, and the end of the row shows dB), and fade in and out (0–5 seconds, with the two together not exceeding the clip length). Audio clips change their own mix. Video and compositions with audio change the audio track they carry (muting means not using it).
  */
 export function SoundSection({ item, sequence, edit, canChange }: ItemPageProps<VideoItem | AudioItem | CompositionItem>) {
   const route = item.type === 'audio' ? item.mix : item.type === 'video' ? item.embeddedAudio : item.audio;
@@ -256,8 +255,7 @@ export function SoundSection({ item, sequence, edit, canChange }: ItemPageProps<
 }
 
 /**
- * 时间：开始与结束（输入十进制秒或「分:秒」，按编辑帧率对齐到最近的一帧；旁边一枚钮设为播放头），
- * 下面是时长、时码、素材入点与轨道。
+ * Time: start and end (type decimal seconds or “分:秒” (min:sec); they snap to the nearest frame at the edit frame rate, and a button beside each sets it to the playhead). Below are the duration, timecode, source in-point and track.
  */
 export function TimeSection({ item, sequence, assets, edit, canChange }: ItemPageProps) {
   const fps = sequence.fps;
@@ -324,7 +322,7 @@ export function TimeSection({ item, sequence, assets, edit, canChange }: ItemPag
   );
 }
 
-/** 时间输入：回车或离开时提交十进制秒字符串（不先在界面上取整），由引擎量化；Esc 放弃。 */
+/** Time input: on Enter or on leaving, commits the decimal-seconds string (it is not rounded in the UI first). The engine quantizes it. Esc discards. */
 function TimeField({
   label,
   seconds: value,
@@ -372,7 +370,7 @@ function TimeField({
   );
 }
 
-/** 页底的删除钮。 */
+/** Delete button at the bottom of the page. */
 export function DeleteItem({ item, sequence, edit, canChange }: ItemPageProps) {
   return (
     <DangerButton

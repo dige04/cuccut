@@ -49,7 +49,7 @@ async function reload(): Promise<ConversationStore> {
   return store;
 }
 
-/** 完整记录的 JSON 等价（去掉 undefined 等差异）。 */
+/** JSON equivalent of a complete record (ignoring differences such as undefined). */
 function plain(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
@@ -116,7 +116,7 @@ describe('ConversationStore', () => {
     expect(plain(again.get('conv_1'))).toEqual(plain(r));
     expect(again.get('conv_1')!.items.map((i) => i.id)).toEqual(['item_1', 'item_2', 'item_3']);
 
-    // 重启后的第一次保存只写变化的部分。
+    // The first save after a restart writes only the changed parts.
     const loaded = again.get('conv_1')!;
     (loaded.items[1] as { text: string }).text = 'b2';
     again.markDirty('conv_1');
@@ -158,7 +158,7 @@ describe('ConversationStore', () => {
     expect(plain(again.get('conv_1'))).toEqual(plain(r));
     expect(warnings.map((w) => w.message)).toEqual(['Conversation log ends with a partial line; skipped it']);
 
-    // 之后的写入不能接在残行后面：下次读入时能看到。
+    // Later writes must not be appended after a partial line; they need to be visible when read back next time.
     const loaded = again.get('conv_1')!;
     loaded.items.push({ id: 'item_2', createdAt: '2026-01-01T00:00:01Z', taskId: 'task_1', kind: 'user-message', text: 'hi' } as TimelineItem);
     again.markDirty('conv_1');
@@ -182,7 +182,7 @@ describe('ConversationStore', () => {
       expect(names.some((n) => n.startsWith(`${id}.jsonl.corrupt-`))).toBe(true);
     }
     expect(warnings).toHaveLength(4);
-    // 改名后的文件下次启动不再读。
+    // A file renamed this way is not read again at the next startup.
     warnings = [];
     expect(await (await reload()).list()).toEqual([]);
     expect(warnings).toEqual([]);
@@ -214,7 +214,7 @@ describe('ConversationStore', () => {
       if ((await lines()).length > 50) sawLong = true;
     }
     expect(sawLong).toBe(true);
-    // 1 个 item：行数上限是 1 × 4 + 64，压缩过后行数回落。
+    // 1 item: the line limit is 1 × 4 + 64; after compaction, the line count falls back.
     expect((await lines()).length).toBeLessThanOrEqual(69);
     expect(plain((await reload()).get('conv_1'))).toEqual(plain(r));
     expect((await fs.readdir(dir)).filter((n) => n.endsWith('.tmp'))).toEqual([]);
@@ -230,7 +230,7 @@ describe('ConversationStore', () => {
     expect((await fs.readdir(dir)).sort()).toEqual(['conv_legacy.json.migrated', 'conv_legacy.jsonl']);
     expect((await lines('conv_legacy')).map((l) => l.op)).toEqual(['snapshot']);
 
-    // 迁移后的第一次保存只追加变化。
+    // The first save after migration appends only the changes.
     const loaded = store.get('conv_legacy')!;
     loaded.items.push(agentMessage('item_2', 'new'));
     store.markDirty('conv_legacy');

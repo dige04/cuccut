@@ -6,9 +6,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-/** 公开的字体元数据（不要 API key）。 */
+/** Public font metadata (no API key). */
 const METADATA_URL = 'https://fonts.google.com/metadata/fonts';
-/** google/fonts 仓库的目录树：许可按顶层目录分（`ofl/`、`apache/`、`ufl/`），子目录名是族名去掉空格与符号后的小写。 */
+/** Directory tree of the google/fonts repo: licenses are grouped by top-level directory (`ofl/`, `apache/`, `ufl/`); subdirectory names are the family names lowercased with spaces and symbols removed. */
 const TREE_API = 'https://api.github.com/repos/google/fonts/' + 'git/trees/';
 
 const LICENCE_DIRS = { ofl: 'OFL-1.1', apache: 'Apache-2.0', ufl: 'UFL-1.0' } as const;
@@ -31,7 +31,7 @@ interface MetadataFamily {
   popularity: number;
 }
 
-/** 目录里的一项（键短，文件小）：f 族名、c 分类、s 字符子集、w 正体字重、i 斜体字重、v 可变字体、l 许可。 */
+/** One entry in the directory (short keys, small files): f family name, c category, s character subset, w upright weights, i italic weights, v variable font, l license. */
 interface CatalogueFamily {
   f: string;
   c: string;
@@ -60,7 +60,7 @@ async function getJson(url: string): Promise<unknown> {
   return JSON.parse(stripGuard(text));
 }
 
-/** 元数据接口的回应以 `)]}'` 开头防 JSON 劫持，去掉再解析。 */
+/** The metadata endpoint's response starts with `)]}'` to guard against JSON hijacking; strip it before parsing. */
 function stripGuard(text: string): string {
   return text.startsWith(")]}'") ? text.slice(4) : text;
 }
@@ -70,7 +70,7 @@ async function loadMetadata(): Promise<MetadataFamily[]> {
   return (raw as { familyMetadataList: MetadataFamily[] }).familyMetadataList;
 }
 
-/** `{ ofl: [目录名…], apache: […], ufl: […] }`。 */
+/** `{ ofl: [目录名…], apache: […], ufl: […] }`. */
 async function loadLicenceDirs(): Promise<Record<string, string[]>> {
   if (values.licences) return JSON.parse(readFileSync(values.licences, 'utf8')) as Record<string, string[]>;
   const root = (await getJson(`${TREE_API}main`)) as { tree: { path: string; sha: string }[] };
@@ -101,7 +101,7 @@ for (const meta of [...metadata].sort((a, b) => a.popularity - b.popularity || a
   const keys = Object.keys(meta.fonts);
   const weights = keys.filter((k) => /^\d+$/.test(k)).map(Number);
   const italics = keys.filter((k) => /^\d+i$/.test(k)).map((k) => Number(k.slice(0, -1)));
-  // 认不出许可的不收：选字时要能给出许可。
+  // Fonts whose license cannot be recognized are not included: the license must be shown when choosing a font.
   if (!licence || !category || weights.length + italics.length === 0) {
     skipped.push(meta.family);
     continue;

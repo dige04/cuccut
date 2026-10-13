@@ -1,8 +1,6 @@
 /**
- * 图形的轮廓形状（`ShapeProps` 的 `shape`）：20 款的几何，照旧版 `core/presets/builtin/shape/` 的生成物搬来，
- * 坐标在 0–100 的方框里（左上原点、y 向下），画的时候横纵各自拉到布局框。几何是逐点落下的原始路径、不是照名字重画的，所以有几个 id 与画面
- * 对不上（`squig2` 是块状箭头、`tick2` 是叉、`cross` 与 `cross2` 都是加号、`sharp2` 是对话气泡），那是原名，不改。
- * 矩形与椭圆由参数画，不在这张表里。
+ * Outline shapes for graphics (`ShapeProps`' `shape`): geometry of 20 styles, carried over from the generated output of the old `core/presets/builtin/shape/`. Coordinates are in a 0–100 box (top-left origin, y pointing down), and are stretched horizontally and vertically to the layout box when drawn. The geometry is the raw path, point by point, not redrawn from the name, so some ids do not match their pictures: `squig2` is a block arrow, `tick2` is a cross, `cross` and `cross2` are both plus signs, and `sharp2` is a speech bubble. Those are the original names and are not changed.
+ * Rectangles and ellipses are drawn from parameters and are not in this table.
  */
 export const SHAPE_OUTLINES: Record<string, string> = {
   triangle: 'M50 2L91.5692 74L8.4308 74Z',

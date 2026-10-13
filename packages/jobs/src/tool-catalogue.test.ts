@@ -7,7 +7,7 @@ import { TRANSCODE_PIPELINE } from './pipelines/transcode.ts';
 import { TRANSLATE_PIPELINE } from './pipelines/translate.ts';
 import { TRANSLATE_SUBTITLES_PIPELINE } from './pipelines/translate-subtitles.ts';
 
-/** 工具目录的静态注册表（架构设计 §7.9）：首批工具、声明完整、ID 稳定。 */
+/** Static registry of the tool catalogue (architecture design §7.9): the first batch of tools, complete declarations, stable IDs. */
 
 describe('工具目录', () => {
   it('十个工具按组排列，ID 唯一且是小写连字符', () => {
@@ -33,11 +33,11 @@ describe('工具目录', () => {
       expect(tool.results.length).toBeGreaterThan(0);
       for (const capability of [...tool.capabilities, ...tool.optionalCapabilities])
         expect(MODEL_SERVICE_CAPABILITIES).toContain(capability);
-      // 一种能力不会同时是必需与可选的。
+      // A capability cannot be both required and optional.
       expect(tool.capabilities.filter((c) => tool.optionalCapabilities.includes(c))).toEqual([]);
-      // 按输入换执行方式时，那种输入要在 inputs 里。
+      // When execution is switched by input, that input must be listed in inputs.
       for (const input of Object.keys(tool.executionByInput ?? {})) expect(tool.inputs).toContain(input);
-      // 接受视频输入的工具才有候选规则。
+      // Only tools that accept video input have candidate rules.
       expect(tool.candidates !== null).toBe(tool.inputs.includes('video'));
     }
   });
@@ -46,7 +46,7 @@ describe('工具目录', () => {
     expect(toolDefinition('transcribe')).toMatchObject({
       execution: { kind: 'pipeline', method: 'pipelines.start', pipeline: TRANSCRIBE_PIPELINE },
       inputs: ['file', 'video'],
-      // 只给文件时结果是保存位置里的 TXT 与 SRT。
+      // With only a file given, the result is the TXT and SRT in the save location.
       results: ['artifact', 'video'],
       capabilities: ['transcribe'],
       externalTools: [],
@@ -55,7 +55,7 @@ describe('工具目录', () => {
       candidates: 'videos',
     });
     expect(TRANSCRIBE_PIPELINE).toBe('transcribe');
-    // 翻译字幕两种做法：视频里的文稿写成新的译文，字幕文件翻译成新的字幕文件（文件到文件）。
+    // Two ways to translate subtitles: the transcript in a video is written as a new translation; a subtitle file is translated into a new subtitle file (file to file).
     expect(toolDefinition('translate-subtitles')).toMatchObject({
       inputs: ['video', 'document', 'file'],
       results: ['video', 'artifact'],
@@ -92,7 +92,7 @@ describe('工具目录', () => {
       candidates: null,
     });
     expect(toolDefinition('merge-video')).toMatchObject({ execution: { pipeline: TRANSCODE_PIPELINE, params: { action: 'merge' } } });
-    // Space 里的文档、字幕条目经 `material` 当素材（§7.9）。
+    // Documents and subtitle entries in Space are used as material via `material` (§7.9).
     expect(toolDefinition('synthesize-speech')).toMatchObject({
       category: 'speech',
       inputs: ['text', 'document'],

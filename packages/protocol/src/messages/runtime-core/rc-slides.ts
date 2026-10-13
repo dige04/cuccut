@@ -14,7 +14,7 @@ import { pl } from './rc-slides.pl.ts';
 import { tr } from './rc-slides.tr.ts';
 import { vi } from './rc-slides.vi.ts';
 
-/** 会话里的幻灯片（docs/design/slides）。英文是键与类型的来源，译文在 `rc-slides.<语言>.ts`。 */
+/** Slides in a session (docs/design/slides). English is the source of keys and types; translations are in `rc-slides.<language>.ts`. */
 const en = {
   notADeck: "This folder isn't a slide deck: it has no valid deck.json",
 };

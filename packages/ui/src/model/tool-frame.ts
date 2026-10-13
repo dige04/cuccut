@@ -15,7 +15,7 @@ import { tr } from './tool-frame.tr.ts';
 import { vi } from './tool-frame.vi.ts';
 import { localNotDownloaded, type ToolModelOption } from './tools-models.ts';
 
-/** 模型一行的文案（译文在 `tool-frame.<语言>.ts`）。`noun` 是这种模型的叫法，由调用方按当前语言给。 */
+/** The model row’s copy (translations are in `tool-frame.<lang>.ts`). `noun` is what this kind of model is called; the caller supplies it in the current language. */
 const en = {
   noneAvailable: (noun: string) => `No ${noun} available yet; set one up in Settings`,
   pickOne: (noun: string) => `Choose a ${noun} first`,
@@ -33,17 +33,17 @@ export type ToolFrameMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 工具页的统一骨架（产品设计 §2.7；设计稿 tool-frame.jsx）：输入 → 模型 → 选项 → 保存位置 → 开始。
- * 这里是「模型」一行的纯逻辑：没有可用模型、选中的还没装或没连上时，这一行怎么说、主按钮旁写哪条原因。
- * 不整页挡住：页面照常能填，只是开始按钮按不了并说明原因。
+ * The shared skeleton of tool pages (product design §2.7; design file tool-frame.jsx): input → model → options → save location → start.
+ * This is the pure logic for the “model” row: when there is no usable model, or the selected one is not installed or not connected, what that row says, and what reason is shown beside the main button.
+ * It does not block the whole page. The page can still be filled in; only the start button is disabled, and it explains why.
  */
 
-/** 选中的这只给人看的名字：本机写模型的名字，云端写服务商。 */
+/** The name shown to people for the selected model: for a local model, the model’s name; for a cloud one, the provider. */
 function nameOf<M>(o: ToolModelOption<M>): string {
   return o.local ? o.label : o.provider;
 }
 
-/** 主按钮旁那条原因（设计稿 `modelReason`）；能用时 null。`noun` 是这种模型的叫法（「语音合成模型」）。 */
+/** The reason line beside the main button (design file `modelReason`); null when usable. `noun` is what this kind of model is called (“speech synthesis model”). */
 export function modelReason<M>(options: readonly ToolModelOption<M>[], selected: ToolModelOption<M> | null, noun: string): string | null {
   if (!options.length) return M.noneAvailable(noun);
   if (!selected) return M.pickOne(noun);
@@ -53,7 +53,7 @@ export function modelReason<M>(options: readonly ToolModelOption<M>[], selected:
   return M.unavailable(selected.provider, selected.why ?? null);
 }
 
-/** 模型一行下面的提醒（设计稿 `ToolModelRow` 的警示）：选中的能用时 null。 */
+/** The warning under the model row (design file `ToolModelRow` warning). null when the selected model is usable. */
 export function modelWarning<M>(selected: ToolModelOption<M> | null): string | null {
   if (!selected || selected.usable) return null;
   if (selected.local && selected.why === localNotDownloaded()) return M.notInstalledWarning(selected.label);
@@ -61,16 +61,16 @@ export function modelWarning<M>(selected: ToolModelOption<M> | null): string | n
   return M.unavailable(nameOf(selected), selected.why ?? null);
 }
 
-/** 一只可用的都没有时那一行（设计稿 `ToolModelRow` 的空态）。`local` 为这种能力有没有本机模型（文本生成没有）。 */
+/** The row when no model is usable (design file `ToolModelRow` empty state). `local` says whether this capability has local models (text generation has none). */
 export function noModelText(noun: string, local = true): string {
   return M.noModel(noun, local);
 }
 
-// ---- 保存位置 ----
+// ---- Save location ----
 
 /**
- * 保存位置的显示名（设计稿 model-tool-save-dir.js `label`）：家目录缩成 `~`，多于三级时只留最后两级、中间写「…」。
- * Windows 路径的反斜杠照原样留着。
+ * Display name of the save location (design file model-tool-save-dir.js `label`): the home directory is shortened to `~`. With more than three levels, only the last two are kept and “…” is written in between.
+ * Backslashes in Windows paths are kept as they are.
  */
 export function saveDirLabel(path: string): string {
   const p = path
@@ -85,14 +85,14 @@ export function saveDirLabel(path: string): string {
 }
 
 /**
- * 这次运行交给 Runtime 的目录（直接任务的 `saveDir`、固定流程的 `outDir`）：「更改…」选过的优先，否则 `tools.list` 给的保存位置；
- * 都没有（Web 服务不给保存位置）时不给，由 Runtime 用它自己的缺省（直接任务不写副本，流程写到保存位置）。
+ * The directory handed to Runtime for this run (`saveDir` for direct tasks, `outDir` for fixed flows): the one chosen with “Change…” takes priority; otherwise the save location given by `tools.list`.
+ * If neither exists (the web service does not provide a save location), nothing is passed, and Runtime uses its own default (direct tasks do not write a copy; flows write to the save location).
  */
 export function saveTarget(saveDirectory: string | null, override: string | null): string | undefined {
   return override?.trim() || saveDirectory || undefined;
 }
 
-/** 直接任务的请求带上 `saveDir`（有目录时）。 */
+/** The request for a direct task includes `saveDir` (when there is a directory). */
 export function withSaveDir<T extends object>(request: T, saveDir: string | undefined): T & { saveDir?: string } {
   return saveDir ? { ...request, saveDir } : request;
 }

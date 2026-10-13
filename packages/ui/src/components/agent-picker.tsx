@@ -46,27 +46,27 @@ const labelText = style({
   whiteSpace: 'nowrap',
   maxWidth: { default: '[180px]', isCompact: '[120px]' },
 });
-/** 第一级当前那一行的勾：图标槽给了 Agent 图标，勾放在名字右边、子菜单箭头前面（原型 ui-spectrum.jsx 同样的放法）。 */
+/** The check on the current row at the first level: the icon slot holds the Agent icon, so the check goes to the right of the name, before the submenu arrow (the prototype ui-spectrum.jsx places it the same way). */
 const rowCheck = style({ display: 'flex', alignItems: 'center', color: 'accent' });
 
 export interface AgentPickerProps {
   drivers: readonly DriverInfo[] | null;
-  /** 当前用的 Agent（会话上的，或新会话草稿上的选择，再不然默认的那个）。 */
+  /** The Agent in use: the one on the session, or the choice on the new-session draft, or else the default one. */
   driverId: DriverId | null;
-  /** null = Agent 默认模型。 */
+  /** null = the Agent's default model. */
   model: string | null;
-  /** null = 模型自己的默认强度。 */
+  /** null = the model's own default reasoning effort. */
   effort: string | null;
-  /** 会话有过任务后 Agent 固定成这一个；其他 Agent 标出原因、不能选。 */
+  /** Once the session has had a task, the Agent is fixed to this one; other Agents show the reason and cannot be picked. */
   lockedTo: DriverId | null;
-  /** 窄的时候 Agent 只剩图标，模型只留级别名（`compactHarnessLabel`）。 */
+  /** When narrow, the Agent keeps only its icon and the model keeps only its tier name (`compactHarnessLabel`). */
   compact?: boolean;
   onChange(change: AgentChange): void;
 }
 
 /**
- * 编码 Agent · 模型 · 推理强度（原型 agent-picker.jsx、model-agent.js `providerRows` / `modelRows`）。
- * 第一级每个 Agent 一行：能用的展开第二级选模型与推理强度；用不了的写原因，点了去设置 › Agent。
+ * Coding Agent · model · reasoning effort (prototype agent-picker.jsx, model-agent.js `providerRows` / `modelRows`).
+ * The first level has one row per Agent: usable ones expand to a second level for choosing the model and reasoning effort; unusable ones state the reason, and clicking goes to 设置 › Agent (Settings › Agent).
  */
 export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compact, onChange }: AgentPickerProps) {
   const go = useShell((s) => s.go);
@@ -120,7 +120,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
           </Header>
           {rows.map((row) => {
             const driver = list.find((d) => d.id === row.id)!;
-            // 原型：每行前面是 Agent 的图标，当前的那个名字右边打勾；用不了的行尾按原因画「下载 / 警示 / 设置」（能用的行尾是 S2 自带的子菜单箭头）。
+            // Prototype: each row starts with the Agent's icon, with a check to the right of the current one's name; unusable rows end with a “下载 / 警示 / 设置” (download / warning / settings) icon depending on the reason (usable rows end with S2's built-in submenu arrow).
             const item = (id: string) => (
               <MenuItem key={id} id={id} textValue={row.name}>
                 <AgentProviderIcon driver={driver} />
@@ -144,7 +144,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
             );
             if (row.locked) return item(`driver:${row.id}`);
             if (!row.ready) return item(`setup:${row.id}`);
-            // 当前这个 Agent 用会话上的选择；别的 Agent 显示换过去会用的（它在偏好里的默认）。
+            // The current Agent uses the choice on the session; other Agents show what they would use if switched to (their default in preferences).
             const own = row.selected ? { model, effort } : draftSelection(driver, undefined);
             return (
               <SubmenuTrigger key={row.id}>
@@ -166,7 +166,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
   );
 }
 
-/** 第二级：「模型」打头是「Agent 默认模型」，再是它的模型表；下面是这个模型的推理强度（没有就不出）。 */
+/** Second level: the first item is labelled “模型” (Model), meaning the Agent's default model, followed by its model list; below that are the reasoning effort options for this model (omitted if there are none). */
 function ModelMenu({
   driver,
   model,

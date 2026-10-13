@@ -14,7 +14,7 @@ import { pl } from './general-settings-copy.pl.ts';
 import { tr } from './general-settings-copy.tr.ts';
 import { vi } from './general-settings-copy.vi.ts';
 
-/** 设置 › 通用的文案（英文是键与类型的来源，译文在 `general-settings-copy.<语言>.ts`）。 */
+/** Copy for Settings › General (English is the source of keys and types; translations live in `general-settings-copy.<language>.ts`). */
 const en = {
   interfaceGroup: 'Interface',
   language: 'Language',
@@ -29,7 +29,7 @@ const en = {
   autoOpenNote: "Not hooked up yet: after transcription you always stay on your current page; the video doesn't open automatically.",
   lineLength: 'Subtitle line length',
   lineLengthDesc: "Sets the target length for automatic line breaks. Lines you've edited by hand aren't affected.",
-  /** `custom` 是存着的自定义值的文字，没有时为 null。 */
+  /** `custom` is the text of the saved custom value; null when there is none. */
   lineLengthNote: (maxChars: number, custom: string | null) =>
     `Not hooked up yet: automatic line breaks are currently fixed at ${maxChars} half-width characters per line (each CJK character counts as two).${custom ? ` The saved value is custom (${custom}).` : ''}`,
   cueShading: 'Cue shading in the transcript',
@@ -65,11 +65,11 @@ const en = {
   trashDaysDesc: (fallback: number | null) =>
     `Items that have been in Trash longer than this and aren't referenced, and deleted videos, are deleted permanently (checked at startup and every 6 hours after). Items still referenced are kept. Clear it to reset to the default${fallback ? ` of ${fallback} days` : ''}.`,
 
-  /** 浏览器里改不了的行（Web 白名单不含 `settings.set`）：置灰，行下写这一句。 */
+  /** Rows that cannot be changed in the browser (the web allowlist does not include `settings.set`): greyed out, with this sentence written below the row. */
   webNote: 'A browser can’t change this setting. Change it in the CucCut desktop app.',
-  /** 浏览器里只能看、不能改的一节：置灰，节下写这一句。 */
+  /** A section that can only be viewed, not changed, in the browser: greyed out, with this sentence written below the section. */
   webViewOnly: 'In a browser you can only view this. Make changes in the CucCut desktop app.',
-  /** 浏览器拿不到数据的一节（Web 订阅不了它的主题，如用户库、数据外发授权）：替换「加载中」。 */
+  /** A section whose data the browser cannot get (the web cannot subscribe to its topic, such as the user library or data egress grants): replaces “Loading”. */
   webUnavailable: 'This isn’t available in a browser. Use the CucCut desktop app.',
 };
 

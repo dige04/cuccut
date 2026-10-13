@@ -26,13 +26,12 @@ import { useSubmitFailed } from './use-tool-records.ts';
 import { RUN_COPY } from './tools-copy.ts';
 
 /**
- * 视频工具页的本机状态（不持久化）：每个工具正在看哪一次运行、这台电脑提交时记下的名字（摘要里只有 ID）、
- * 「接着做」带过去的视频，以及各页填到一半的表单（离开再回来还在）。转录用哪个语音模型存在 tools-store（持久化）。
+ * Local state of the video tool pages (not persisted): which run each tool is viewing, the name recorded when this computer submitted it (the summary has only IDs), the video carried over by “接着做” (continue), and each page's half-filled form (kept when leaving and coming back). The speech model for transcription is stored in tools-store (persisted).
  */
 
-/** 来源：本机文件、Space（媒体条目或可编辑的视频）、链接。 */
+/** Sources: local file, Space (a media entry or an editable video), link. */
 export type TranscribeSource = 'file' | 'space' | 'link';
-/** 来源：Space（有文稿的视频或字幕条目）、本机字幕文件。 */
+/** Sources: Space (a video with a transcript or a subtitle entry), local subtitle file. */
 export type TranslateSource = 'space' | 'file';
 
 export interface TranscribeDraft {
@@ -41,42 +40,42 @@ export interface TranscribeDraft {
   url: string;
   entryId: Id | null;
   projectId: Id | null;
-  /** 不写进视频时：只生成文稿和字幕（`none`，缺省），或新建视频放进项目（`create`）。 */
+  /** When not writing into the video: only generate the transcript and subtitles (`none`, the default), or create a new video and put it in the project (`create`). */
   target: 'none' | 'create';
-  /** 视频已有文稿时选的落点与新视频的名字（产品设计：重新转录）；只对 `entryId` 那部视频有效，换了视频回到缺省。 */
+  /** When the video already has a transcript: the chosen destination and the new video's name (product design: re-transcribe); only valid for the video `entryId`; switching to another video returns it to the default. */
   dest: { entryId: Id; destination: TranscribeDestination; name: string } | null;
-  /** 「重试转录…」带来的失败任务：这部视频还选着时显示上次失败的说明。 */
+  /** The failed job from “重试转录…” (retry transcription…): while this video is still selected, shows why it failed last time. */
   retry: { entryId: Id; jobId: Id } | null;
 }
 
 export interface TranslateDraft {
   source: TranslateSource;
   entryId: Id | null;
-  /** 选的文稿；没选时用最近的一份。 */
+  /** The chosen transcript; when none is chosen, the most recent one is used. */
   documentId: Id | null;
-  /** 字幕文件的本机路径。 */
+  /** Local path of the subtitle file. */
   file: string | null;
   lang: string | null;
   bilingual: boolean;
-  /** 文本模型（`providerId/modelId`）；没选时用生效的默认值。 */
+  /** Text model (`providerId/modelId`); when none is chosen, the effective default is used. */
   model: string | null;
 }
 
 export interface DubDraft {
   entryId: Id | null;
-  /** 用哪份已有的译文；`new` 是先翻译一份；null 时按有没有译文取缺省。 */
+  /** Which existing translation to use; `new` means translate a new one first; with null, the default depends on whether translations exist. */
   translation: Id | 'new' | null;
   lang: string | null;
   original: OriginalAudio;
-  /** 配音引擎（语音合成模型，`providerId/modelId`）；没选时用生效的默认值。 */
+  /** Dubbing engine (speech synthesis model, `providerId/modelId`); when none is chosen, the effective default is used. */
   engine: string | null;
-  /** 先翻译时用的文本模型。 */
+  /** The text model used when translating first. */
   textModel: string | null;
 }
 
 export interface LinkDraft {
   url: string;
-  /** 「网站登录」勾选的浏览器；提交时按检测到的顺序排（就是尝试的顺序），都不勾是匿名下载。 */
+  /** Browsers ticked for “网站登录” (website login); on submit they are sorted by detected order, which is the order tried; none ticked means anonymous download. */
   cookieBrowsers: LinkCookieBrowser[];
   target: ToolTargetKey;
   entryId: Id | null;
@@ -95,22 +94,21 @@ export interface ToolPreset {
   tool: ToolId;
   entryId: Id;
   retryJobId?: Id;
-  /**
-   * 编辑器 AI 工具「生成配乐」：给哪部视频配乐、它的时长（秒）与按它预填的目标时长（已夹进模型的范围；视频比单次上限长时是上限，
-   * 做好后循环铺满，工具页按 `videoSec` 与选中模型的上限决定横幅写不写循环）。
+  /*
+   * Editor AI tool “生成配乐” (generate score): which video to score, its duration in seconds, and the target duration pre-filled from it (clamped to the model's range; when the video is longer than a single run's limit, the limit is used, and after it is made it loops to fill the whole video; the tool page decides from `videoSec` and the selected model's limit whether the banner says it loops).
    */
   soundtrack?: { videoId: Id; videoName: string; videoSec: number; targetDurationSec: number };
 }
 
 interface VideoToolsState extends Drafts {
-  /** 每个工具正在看的运行（父任务 ID）；null 是表单。 */
+  /** The run each tool is viewing (parent job ID); null is the form. */
   views: Partial<Record<VideoToolId, Id | null>>;
   meta: Record<Id, RunMeta>;
-  /** 「接着做」「用工具处理…」：进下一个工具时预选的 Space 条目；`retryJobId` 是「重试转录…」那条失败的任务。 */
+  /** The Space entry pre-selected when moving to the next tool via “接着做” (continue) or “用工具处理…” (process with tool…); `retryJobId` is the failed job from “重试转录…” (retry transcription…). */
   preset: ToolPreset | null;
-  /** 「再做一次 / 重试」（Space 查看器、后台任务详情）：进工具页时照这条任务的参数填好表单。 */
+  /** “再做一次 / 重试” (do again / retry) from the Space viewer or background job details: when entering the tool page, fills the form with this job's parameters. */
   rerun: { tool: ToolId; jobId: Id } | null;
-  /** 新建视频上一次放进的项目。 */
+  /** The project the new video was last put into. */
   lastProject: Id | null;
   setView(tool: VideoToolId, jobId: Id | null): void;
   remember(jobId: Id, meta: RunMeta): void;
@@ -138,39 +136,38 @@ export const useVideoTools = create<VideoToolsState>()((set) => ({
   patch: (tool, patch) => set((s) => ({ [tool]: { ...s[tool], ...patch } }) as Partial<VideoToolsState>),
 }));
 
-/** 新建视频放进哪个项目的缺省：上次用的还在就用它，否则第一个。 */
+/** Default project for a new video: the last one used if it still exists, otherwise the first. */
 export function defaultProject(projects: readonly { id: Id }[], last: Id | null): Id | null {
   if (last && projects.some((p) => p.id === last)) return last;
   return projects[0]?.id ?? null;
 }
 
 interface Ask {
-  /** 提交时表单的样子：表单改了，这次授权请求作废。 */
+  /** What the form looked like at submit time: if the form changes, this authorization request is void. */
   key: string;
   request: PipelineRequest;
   commandId: string;
   items: GrantRequestItem[];
   meta: RunMeta;
-  /** 这一轮（同一个 commandId）发放过的项。 */
+  /** The items issued in this round (same commandId). */
   granted: Set<string>;
 }
 
 export interface ToolStart {
-  /** 当前表单被当场授权拒绝、等用户同意的那几项；表单改了就没了。 */
+  /** The items refused on the spot by authorization and awaiting the user's consent; they are gone once the form changes. */
   asking: GrantRequestItem[] | null;
   busy: boolean;
   start(request: PipelineRequest, meta: RunMeta, key: string): void;
-  /** 同意：逐项发放，再用同一个 commandId 重提。 */
+  /** Agree: issue each item, then resubmit with the same commandId. */
   agree(): void;
-  /** 取代被改过的文稿被拒（`TRANSCRIPT_EDITED`）、等用户确认；表单改了就没了。 */
+  /** A refused replacement of an edited transcript (`TRANSCRIPT_EDITED`), awaiting the user's confirmation; gone once the form changes. */
   edited: boolean;
-  /** 仍要取代：带上 `acceptEdited: true` 重新提交。 */
+  /** Replace anyway: resubmit with `acceptEdited: true`. */
   acceptEdited(): void;
 }
 
 /**
- * 视频工具的提交：每次开始一个新的 commandId；被当场授权拒绝时把待批准项交给页面（授权卡），用户同意后发放并用同一个
- * commandId 重提。启动成功就切到这次运行的页面。`key` 是表单的样子（不同的输入、参数），改了就作废这次授权请求。
+ * Submitting a video tool: each submit starts a new commandId; when authorization is refused on the spot, the pending items are handed to the page (grant card), and after the user agrees they are issued and resubmitted with the same commandId. On a successful start, switches to this run's page. `key` is the form's shape (different inputs, parameters); changing it voids this authorization request.
  */
 export function useToolStart(tool: VideoToolId, key: string): ToolStart {
   const session = useRuntime();
@@ -251,15 +248,14 @@ export function useToolStart(tool: VideoToolId, key: string): ToolStart {
 
 export interface RunRetry {
   busy: boolean;
-  /** 重试被当场授权拒绝、等用户同意的那几项。 */
+  /** The items refused on the spot during a retry, awaiting the user's consent. */
   asking: GrantRequestItem[] | null;
   retry(): void;
   agree(): void;
 }
 
 /**
- * 从停下的那一步重试（`pipelines.retry`，任务 ID 不变、做完的步骤不重做）。被当场授权拒绝时交回待批准项；
- * 用户同意后逐项发放再重试，发放过还被拒时说明、不再循环。
+ * Retries from the step where it stopped (`pipelines.retry`; the job ID is unchanged, completed steps are not redone). If refused on the spot, the pending items are handed back; after the user agrees, each is issued and the retry runs again; if it is still refused after issuing, it explains and does not loop.
  */
 export function useRunRetry(jobId: Id): RunRetry {
   const session = useRuntime();

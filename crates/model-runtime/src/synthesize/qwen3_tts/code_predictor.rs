@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/CodePredictor.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/CodePredictor.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Code Predictor：5 层 Qwen3 解码器 + 15 张 codec 嵌入表 + 15 个 lm_head，
-//! 从 Talker 的隐状态与第一个 codebook 逐组预测其余 15 个 codebook。
+//! Code Predictor: 5-layer Qwen3 decoder + 15 codec embedding tables + 15 lm_heads,
+//! which predicts the remaining 15 codebooks group by group from the Talker's hidden state and the first codebook.
 
 use crate::synthesize::tensor::ops;
 use crate::synthesize::tensor::ops::indexing::IndexOp;
@@ -28,7 +28,7 @@ pub struct CodePredictor {
 }
 
 impl CodePredictor {
-    /// `weights` 已剥掉 `talker.code_predictor.` 前缀。
+    /// `weights` already has the `talker.code_predictor.` prefix stripped.
     pub fn load(weights: &mut Weights, config: &CodePredictorConfig) -> Result<Self> {
         let dims = AttentionDims {
             num_heads: config.num_heads,
@@ -75,12 +75,12 @@ impl CodePredictor {
         self.num_groups
     }
 
-    /// 第 `group` 组（0 = codebook 2）的嵌入：`ids [B, S]` → `[B, S, D]`。
+    /// Embedding of group `group` (0 = codebook 2): `ids [B, S]` → `[B, S, D]`.
     pub fn embed_group(&self, ids: &Array, group: usize) -> Array {
         self.codec_embeddings[group].forward(ids)
     }
 
-    /// 15 个 token（每组一个）的嵌入之和：`[1, 1, D]`。
+    /// Sum of the embeddings of the 15 tokens (one per group): `[1, 1, D]`.
     pub fn batch_embed_all_groups(&self, tokens: &[i32]) -> Result<Array> {
         if tokens.len() != self.num_groups {
             bail!("Code Predictor 需要 {} 个 token，实际 {}", self.num_groups, tokens.len());
@@ -92,7 +92,7 @@ impl CodePredictor {
         Ok(sum)
     }
 
-    /// 单组前向：返回 `(logits [B,S,vocab], cache)`。
+    /// Single-group forward pass: returns `(logits [B,S,vocab], cache)`.
     fn forward(&self, inputs_embeds: &Array, group: usize, cache: Option<&[KvCache]>) -> Result<(Array, Vec<KvCache>)> {
         let mut hidden = match &self.small_to_mtp_projection {
             Some(proj) => proj.forward(inputs_embeds)?,
@@ -111,8 +111,7 @@ impl CodePredictor {
         Ok((logits, new_cache))
     }
 
-    /// 输入 Talker 最后隐状态
-    /// `[1,1,D]` 与第一个 codebook 的嵌入 `[1,1,D]`，逐组自回归采样 15 个 token。
+    /// Takes the Talker's last hidden state `[1,1,D]` and the first codebook's embedding `[1,1,D]`, and autoregressively samples 15 tokens, one group at a time.
     pub fn predict_frame(
         &self,
         hidden_state: &Array,
@@ -137,7 +136,7 @@ impl CodePredictor {
     }
 }
 
-/// 在 host 侧对单组 logits 采样（`[1,1,vocab]` → token）。
+/// Samples on the host side from one group's logits (`[1,1,vocab]` → token).
 fn sample_group(logits: &Array, sampling: &SamplingConfig, rng: &mut Rng) -> Result<i32> {
     let flat = logits.as_dtype(Dtype::Float32)?;
     flat.eval()?;

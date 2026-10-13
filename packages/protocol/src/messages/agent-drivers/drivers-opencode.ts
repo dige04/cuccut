@@ -14,7 +14,7 @@ import { pl } from './drivers-opencode.pl.ts';
 import { tr } from './drivers-opencode.tr.ts';
 import { vi } from './drivers-opencode.vi.ts';
 
-/** OpenCode Driver：预设说明、探测结果、`opencode serve` 与会话的提示和错误。`name` 是 Agent 的名字（OpenCode）。 */
+/** OpenCode Driver: preset description, probe results, and hints and errors from `opencode serve` and sessions. `name` is the Agent's name (OpenCode). */
 const en = {
   plan: 'Model accounts in OpenCode',
   installHint: 'Install 2.x with npm install -g @opencode/cli',
@@ -30,7 +30,7 @@ const en = {
   externalDirectory: 'Access a location outside the working directory',
   directoryNotReady: (p: { seconds: string; directory: string }) =>
     `OpenCode didn't get the directory ${p.directory} ready within ${p.seconds} seconds`,
-  /** `tag`、`detail` 为空时不带。 */
+  /** `tag` and `detail` are left out when empty. */
   httpFailed: (p: { operation: string; status: string; tag: string; detail: string }) =>
     `OpenCode ${p.operation} failed (HTTP ${p.status}${p.tag ? ` ${p.tag}` : ''})${p.detail ? `: ${p.detail}` : ''}`,
   htmlResponse: 'Got a web page instead of the v2 API (incompatible version?)',

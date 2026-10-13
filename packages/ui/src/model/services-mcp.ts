@@ -18,11 +18,10 @@ import { M } from './services-mcp-copy.ts';
 import type { ServiceState } from './services.ts';
 
 /**
- * MCP 服务页的纯模型（原型 designs/cuccut/app/model-services.js 的 MCP 部分、model-mcp-tools.js；架构设计 §4.8、§12.8）：
- * 访问等级三档、开放范围的一句话、服务卡副行、工具目录与去向、最近请求的一行、服务审批的倒计时。
+ * Pure model for the MCP service page (prototype designs/cuccut/app/model-services.js, MCP part, and model-mcp-tools.js; architecture design §4.8, §12.8): three access levels, the one-line description of scope, the sub-line on the service card, the tool catalog and its destinations, the one-line description of a recent request, and the countdown for service approvals.
  */
 
-/** 允许的操作三档（原型 `MCP_ACCESS`）；Runtime 的等级同名：`read` / `ask` / `auto`。 */
+/** The three tiers of allowed operations (prototype `MCP_ACCESS`); the Runtime levels have the same names: `read` / `ask` / `auto`. */
 export const MCP_LEVELS: readonly { level: ServiceLevel; title: string; desc: string }[] = (['read', 'ask', 'auto'] as const).map((level) => ({
   level,
   get title() {
@@ -37,7 +36,7 @@ export function levelTitle(level: ServiceLevel): string {
   return MCP_LEVELS.find((l) => l.level === level)?.title ?? level;
 }
 
-/** 范围里能选的视频：已登记项目里的视频（Space 的视频条目，不含回收站与不属于项目的）。服务的范围也只认这些（service-scope.ts）。 */
+/** Videos that can be chosen in scope: videos in registered projects (the video entries of the Space, excluding the trash and anything not belonging to a project). The service's scope also recognizes only these (service-scope.ts). */
 export interface ScopeVideo {
   videoId: Id;
   name: string;
@@ -56,7 +55,7 @@ export function scopeVideos(entries: readonly SpaceEntry[]): ScopeVideo[] {
   return out.sort((a, b) => a.name.localeCompare(b.name, intlLocale()));
 }
 
-/** 开放范围的一句话（原型 `mcpScope`）：「所有视频（N）」「「标题」」「其中 N 个视频」。 */
+/** The one-line description of scope (prototype `mcpScope`): “所有视频（N）”（all videos), “「标题」”（one video, by title), “其中 N 个视频”（N videos included). */
 export function mcpScope(videos: ServicePolicy['videos'], total: number, nameOf: (id: Id) => string | undefined): string {
   if (videos === 'all') return M.scopeAll(total);
   const ids = videos.ids;
@@ -66,9 +65,7 @@ export function mcpScope(videos: ServicePolicy['videos'], total: number, nameOf:
 }
 
 /**
- * 「只开放勾选的视频」菜单勾完之后的范围（原型 `mcpToggleProject`）：勾满了等于「所有视频」（以后新建的也算进去）；
- * 从「所有视频」点一个，就只剩那一个。取消到一个不剩时是空名单（范围里没有视频）——原型在这里回到「所有视频」，
- * 这里不悄悄放宽范围。
+ * The scope after ticking items in the “只开放勾选的视频” menu (prototype `mcpToggleProject`): ticking every item equals “All videos” (including ones created later); picking one from “All videos” leaves only that one. Unticking down to none leaves an empty list (no videos in scope): the prototype goes back to “All videos” here, but this does not quietly widen the scope.
  */
 export function pickedScope(picked: Iterable<Id>, all: readonly Id[]): ServicePolicy['videos'] {
   const ids = [...new Set(picked)].filter((id) => all.includes(id));
@@ -76,7 +73,7 @@ export function pickedScope(picked: Iterable<Id>, all: readonly Id[]): ServicePo
   return { ids };
 }
 
-/** 服务卡副行（原型 `mcpSub`）：关着时说起了会开放什么；开着时说开放了哪些视频、什么权限。Runtime 总是要令牌。 */
+/** Sub-line of a service card (prototype `mcpSub`): when off, it says what would be opened if it were turned on; when on, it says which videos are opened and with what permissions. Runtime always requires a token. */
 export function mcpSub(state: ServiceState, scope: string, level: ServiceLevel): string {
   const access = M.access(levelTitle(level));
   if (state === 'on') return M.subOn(scope, access);
@@ -84,7 +81,7 @@ export function mcpSub(state: ServiceState, scope: string, level: ServiceLevel):
   return M.subOff(scope, access);
 }
 
-// ---- 工具目录 ----
+// ---- Tool catalog ----
 
 export type McpToolGroup = 'read' | 'edit' | 'job' | 'generate';
 
@@ -92,11 +89,11 @@ export interface McpTool {
   name: string;
   title: string;
   group: McpToolGroup;
-  /** `read` 任何等级都在目录里；`write` 只在 `ask` 与 `auto` 下出现。 */
+  /** `read` is in the catalog at every level; `write` appears only under `ask` and `auto`. */
   access: 'read' | 'write';
 }
 
-/** 工具分组（原型 model-mcp-tools.js `GROUPS`）。 */
+/** Tool groups (prototype model-mcp-tools.js `GROUPS`). */
 export const MCP_TOOL_GROUPS: readonly { group: McpToolGroup; label: string; hint: string }[] = (['read', 'edit', 'job', 'generate'] as const).map(
   (group) => ({
     group,
@@ -110,7 +107,7 @@ export const MCP_TOOL_GROUPS: readonly { group: McpToolGroup; label: string; hin
 );
 
 
-/** 目录项的效果对应的分组：查询是读取，合成语音与出图是生成，其余后台任务（含取消任务）是任务，别的写入是编辑。 */
+/** The group for a catalog item's effect: querying is read; synthesizing speech and generating images are generate; other background tasks (including cancelling tasks) are tasks; other writes are edit. */
 function toolGroup(tool: McpServiceTool): McpToolGroup {
   if (tool.effect === 'query') return 'read';
   if (tool.name === 'speak' || tool.name === 'image') return 'generate';
@@ -119,8 +116,7 @@ function toolGroup(tool: McpServiceTool): McpToolGroup {
 }
 
 /**
- * MCP 服务开放的工具：由协议常量 `MCP_SERVICE_TOOL_NAMES` 推出（Runtime 按工具目录的 surfaces 推出同一份，测试保证两边一致；
- * 架构设计 §4.8）。名字与参数是对外合同，改了要升 `MCP_INTERFACE_VERSION`。标题在 services-mcp-copy.ts，没有条目的新工具用协议里的标题。
+ * Tools exposed by the MCP service: derived from the protocol constant `MCP_SERVICE_TOOL_NAMES` (Runtime derives the same list from the catalog's surfaces, and a test keeps the two in agreement; architecture design §4.8). Names and parameters are a public contract; changing them requires bumping `MCP_INTERFACE_VERSION`. Titles are in services-mcp-copy.ts; new tools with no entry there use the protocol's title.
  */
 export const MCP_TOOLS: readonly McpTool[] = MCP_SERVICE_TOOL_NAMES.map((tool) => ({
   name: tool.name,
@@ -135,7 +131,7 @@ export function mcpToolTitle(name: string): string {
   return MCP_TOOLS.find((t) => t.name === name)?.title ?? name;
 }
 
-/** 工具的去向（原型 `gate`，没有逐个工具的开关所以没有 `off`）：直接应答 / 直接执行 / 调用前询问 / 只读权限下不提供。 */
+/** Destination of a tool (prototype `gate`; there is no per-tool switch, so no `off`): reply directly / execute directly / ask before calling / not offered under read-only permission. */
 export type McpToolGate = 'answer' | 'auto' | 'ask' | 'hidden';
 
 export function toolGate(tool: McpTool, level: ServiceLevel): McpToolGate {
@@ -146,7 +142,7 @@ export function toolGate(tool: McpTool, level: ServiceLevel): McpToolGate {
 
 export const GATE_LABEL: Readonly<Record<McpToolGate, string>> = live(() => M.gates);
 
-/** 工具段标题旁的一句（原型 `summary`）：「提供 N / N 个工具 · M 个调用前询问」。 */
+/** One sentence beside the tool section heading (prototype `summary`): “提供 N / N 个工具 · M 个调用前询问”（offering N of N tools · M ask before calling). */
 export function toolsSummary(level: ServiceLevel): string {
   const exposed = MCP_TOOLS.filter((t) => toolGate(t, level) !== 'hidden');
   const ask = exposed.filter((t) => toolGate(t, level) === 'ask').length;
@@ -154,9 +150,9 @@ export function toolsSummary(level: ServiceLevel): string {
   return M.toolsSummary(exposed.length, MCP_TOOLS.length, ask, writes);
 }
 
-// ---- 最近请求与审批 ----
+// ---- Recent requests and approvals ----
 
-/** 结果的说法：`ok` 是成功；其余是错误码，常见的几种说人话。 */
+/** Result wording: `ok` means success; the others are error codes, with the common ones spelled out in plain words. */
 export function outcomeLabel(outcome: string): string {
   if (outcome === 'ok') return M.outcomes.ok;
   if (outcome === 'SERVICE_APPROVAL_DENIED') return M.outcomes.denied;
@@ -165,39 +161,38 @@ export function outcomeLabel(outcome: string): string {
   return outcome;
 }
 
-/** 最近请求的一行：工具（中文名）与目标视频；视频不在列表里时写 ID。 */
+/** One line for a recent request: the tool (its display name) and the target video; if the video is not in the list, the ID is written. */
 export function requestLine(record: ServiceRequestRecord, nameOf: (id: Id) => string | undefined): string {
   const tool = record.tool;
   if (!record.videoId) return tool;
   return M.requestLine(tool, nameOf(record.videoId) ?? record.videoId);
 }
 
-/** 审批还剩几秒（服务审批 50 秒时限）；过了就是 0。 */
+/** Seconds left on an approval (the service approval has a 50-second time limit); 0 once it has passed. */
 export function approvalSecondsLeft(approval: Pick<ServiceApproval, 'expiresAt'>, now: number): number {
   const at = Date.parse(approval.expiresAt);
   if (Number.isNaN(at)) return 0;
   return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
-/** 只给某个服务的、还没过时限的审批，旧的在前。 */
+/** Only the approvals for one service that have not yet timed out, oldest first. */
 export function liveApprovals(approvals: readonly ServiceApproval[], serviceId: ServiceApproval['serviceId'], now: number): ServiceApproval[] {
   return approvals.filter((a) => a.serviceId === serviceId && approvalSecondsLeft(a, now) > 0);
 }
 
-/** 所有服务里还没过时限的审批数（rail 角标）。 */
+/** The number of unexpired approvals across all services (the rail badge). */
 export function liveApprovalCount(approvals: readonly ServiceApproval[], now: number): number {
   return approvals.filter((a) => approvalSecondsLeft(a, now) > 0).length;
 }
 
 /**
- * 服务审批要外发、还没有授权覆盖的数据：`services` 主题的审批不带 `grants`，同一条审批在 `tasks` 主题的统一列表里
- * （`PendingApproval.grants`），按 `approvalId` 找。
+ * Data a service approval would send outside that is not yet covered by an authorization: approvals in the `services` topic carry no `grants`; the same approval appears in the unified list of the `tasks` topic (`PendingApproval.grants`), looked up by `approvalId`.
  */
 export function approvalGrants(pending: readonly PendingApproval[], approvalId: Id): GrantRequestItem[] {
   return pending.find((a) => a.approvalId === approvalId)?.grants ?? [];
 }
 
-/** 外发授权的一句：「要把音频发给 openai（转录）· 约 0.02 USD」。 */
+/** One line for outbound authorization: “要把音频发给 openai（转录）· 约 0.02 USD”（send the audio to openai (transcription) · about 0.02 USD). */
 export function grantLine(item: GrantRequestItem): string {
   const kinds = M.joinKinds(item.dataKinds.map((k) => GRANT_DATA_KIND_LABELS[k]));
   return M.grantLine(kinds, item.recipient, localizeText(item.purpose, item.purposeRef), item.estimate);

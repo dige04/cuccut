@@ -1,52 +1,30 @@
-//! `core/crates/ccut-editor-core/src/shape_paths.rs` 与
-//! `designs/cuccut/app/model-shape-paths.js` 的生成器——20 份 `outline`
-//! 形状配方的**归一化几何表**（设计 §13 P7a 留言①，P7b-client 落地）。
+//! Generator for `core/crates/ccut-editor-core/src/shape_paths.rs` and `designs/cuccut/app/model-shape-paths.js`: the **normalized geometry table** of 20 `outline` shape recipes (design §13 P7a note ①, landed by P7b-client).
 //!
-//! 为什么是 codegen 而不是夹具：`gen_element_catalogue.rs` 发的是**契约夹具**
-//! （测试期读、逐行对拍），因为那张表的消费者是属性面板，面板只需要"这是哪一
-//! 类几何"。几何**点列**不一样——它是**运行期渲染数据**，产品代码要在画每一帧
-//! 时读到它。原型侧是 `file://` 打开的 `<script>` 清单，fetch 一份 JSON 会被
-//! CORS 挡掉。所以是生成的源文件，不是一份共享 JSON——**同一个生成器、同一次
-//! 写盘**，两端不可能各自漂移。
+//! Why codegen rather than a fixture: `gen_element_catalogue.rs` emits a **contract fixture** (read at test time and compared line by line) because the consumer of that table is the property panel, which only needs "which class of geometry this is". Geometry **point lists** are different: they are **runtime rendering data**, which product code reads on every frame drawn. On the prototype side, the `<script>` manifest is opened via `file://`, so fetching a JSON would be blocked by CORS. Therefore it is a generated source file, not a shared JSON: **the same generator, the same write to disk**, so the two ends can never drift apart separately.
 //!
-//! App v2（`apps/cuccut`）经 `ccut-editor-core` 消费这张表（M4 B0）。它**画每一
-//! 帧**走的是内核（`ccut-timeline-render` 的 `outline_path`），并不需要这张表；
-//! 需要它的是 B3 的形状选择器——那 24 个缩略图是 GPUI 自己描的路径，与原型的
-//! canvas 2D 同一处境。所以生成物落在纯层（不认识 gpui），由 `ui/` 侧按
-//! `x = box.x + box.w * px` 描进 GPUI 的 `Path`。
+//! App v2 (`apps/cuccut`) consumes this table through `ccut-editor-core` (M4 B0). When it **draws each frame** it goes through the kernel (`outline_path` of `ccut-timeline-render`) and does not need this table. What needs it is B3's shape picker: those 24 thumbnails are paths GPUI draws itself, in the same situation as the prototype's canvas 2D. So the generated output lives in the pure layer (which does not know about gpui), and the `ui/` side traces it into GPUI's `Path` via `x = box.x + box.w * px`.
 //!
-//! `designs/cuccut` 是第二个消费者（第 60.2 轮）。它此前有**自己一份手描几何**
-//! （第 39 轮照截图描的 24 条 `d=`），于是同一个 id 在原型上与在核心
-//! 上画出来的是两个东西。第二份生成物就是来终结那份孪生的：它发的不是
-//! 0..1 点列而是一条 **0..100 视框里的 `d=`**，因为原型画形状靠 `<svg viewBox>`
-//! 缩放，不像另一端那样由消费者自己映射每个点。
+//! `designs/cuccut` is the second consumer (round 60.2). It previously had **its own hand-drawn geometry** (24 `d=` traced by eye from screenshots in round 39), so the same id drew as two different things in the prototype and in the core. The second generated output exists to end that twinning. It emits not 0..1 point lists but a **`d=` string within a 0..100 viewbox**, because the prototype draws shapes by scaling through `<svg viewBox>`, rather than the consumer mapping each point as on the other side.
 //!
-//! 段表的表达一致到字段名：`{verb, pts}`，verb 用 manifest 的拼写
-//! （`move` / `line` / `quad` / `cubic` / `close`），点是**元素盒 0..1 归一化**
-//! 坐标（左上原点），与 `motion::preset_registry::PathSegment`、
-//! `ccut-timeline-render` 的 `outline_path` 同一口径。消费者（GPUI 的 `Path`、
-//! 原型的 canvas 2D 描点）只做 `x = box.x + box.w * px` 的线性映射。
+//! The segment table's expression is consistent down to field names: `{verb, pts}`, with verb in the manifest's spelling (`move` / `line` / `quad` / `cubic` / `close`). Points are **normalized element-box 0..1** coordinates (origin top-left), in the same convention as `motion::preset_registry::PathSegment` and `outline_path` of `ccut-timeline-render`. Consumers (GPUI's `Path`, the prototype's canvas 2D point tracing) only do the linear mapping `x = box.x + box.w * px`.
 //!
-//! 跑法（`#[ignore]`，日常 `cargo test` 不写盘）：
+//! How to run (`#[ignore]`; daily `cargo test` does not write to disk):
 //!
 //! ```sh
-//! # 写盘（两端）
+//! # write to disk (both ends)
 //! cargo test -p ccut-motion --test gen_element_shape_paths -- --ignored
-//! # 门禁：只比对，不写盘
+//! # gate: compare only, no writing to disk
 //! cargo test -p ccut-motion --test gen_element_shape_paths
 //! ```
 //!
-//! **只发 `outline`**。`rect` / `ellipse` / `segment` 三类的几何是**参数化**的
-//! （盒子本身、内切椭圆、`ShapeProps` 的两个端点），两端早就各自画得出来，把它们
-//! 也铺成点列只会让 4 份配方多一条没人读的表。
+//! **Only `outline` is emitted.** The geometry of the `rect` / `ellipse` / `segment` kinds is **parameterized** (the box itself, the inscribed ellipse, the two endpoints of `ShapeProps`). Both ends already draw them on their own, and spreading them into point lists too would only add one more unread table to the 4 recipes.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use motion::preset_registry::{CatalogueRecipe, PathSegment, ShapePath, timeline_shapes};
 
-/// P7a 冻结：24 份形状配方里恰好 20 份是 `outline`。生成器不替谁做决定——
-/// 新增一份 outline 配方要么改这里，要么就是漏了一次同步。
+/// P7a freeze: exactly 20 of the 24 shape recipes are `outline`. The generator does not decide for anyone: adding a new outline recipe means either changing this place, or it was a missed sync.
 const FROZEN_OUTLINES: usize = 20;
 
 const RUST_OUTPUT: &str = "../ccut-editor-core/src/shape_paths.rs";
@@ -56,10 +34,10 @@ fn output_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
 }
 
-// ── double 发射 ──────────────────────────────────────────────────────
+// ── double emission ──────────────────────────────────────────────────────
 
-/// 最短往返十进制，并当场验证它 parse 回来逐位相同（同 `gen_anim_presets.rs`）。
-/// Rust 与 JS 的数值字面量语法在这个子集上重合，所以一个函数发两边。
+/// Shortest round-trip decimal, and on the spot verify that parsing it back gives bit-identical values (same as `gen_anim_presets.rs`).
+/// Rust and JS numeric literal syntax coincide on this subset, so one function emits for both.
 fn double(value: f64) -> String {
     assert!(value.is_finite(), "配方里出现了非有限数 {value}");
     assert!(
@@ -76,11 +54,10 @@ fn double(value: f64) -> String {
     text
 }
 
-// ── 段表 ────────────────────────────────────────────────────────────
+// ── segment table ────────────────────────────────────────────────────────────
 
-/// 一段的 verb 名与**展平**的坐标（`[x, y]` / `[cx, cy, x, y]` / …）。
-/// 展平是刻意的：两端的消费者都是 `ctx.bezierCurveTo(...pts)` 这种位置参数调用，
-/// 嵌套一层点对只会让每个调用点多一次解包。
+/// A segment's verb name and its **flattened** coordinates (`[x, y]` / `[cx, cy, x, y]` / …).
+/// Flattening is deliberate: both ends' consumers are positional-argument calls like `ctx.bezierCurveTo(...pts)`, and nesting one more level of point pairs would add an unpacking step at every call site.
 fn flatten(segment: &PathSegment) -> (&'static str, Vec<f64>) {
     match segment {
         PathSegment::Move(p) => ("move", vec![p[0], p[1]]),
@@ -91,8 +68,7 @@ fn flatten(segment: &PathSegment) -> (&'static str, Vec<f64>) {
     }
 }
 
-/// 目录顺序 = manifest 的 `order`（面板下拉的顺序），同 order 再按 id 兜底，
-/// 与 `gen_element_catalogue.rs` 同一条排序，生成物的行序因此与夹具一致。
+/// Catalogue order = the manifest's `order` (the panel dropdown order). Equal orders fall back to id, the same sort as `gen_element_catalogue.rs`, so the generated row order matches the fixture.
 fn outline_rows() -> Vec<(&'static str, &'static [PathSegment])> {
     let mut rows: Vec<&CatalogueRecipe> = timeline_shapes()
         .iter()
@@ -223,16 +199,13 @@ pub fn map_point(px: f64, py: f64, x: f32, y: f32, w: f32, h: f32) -> (f32, f32)
     )
 }
 
-// ── SVG d（designs/cuccut 原型） ────────────────────────────────────
+// ── SVG d (designs/cuccut prototype) ────────────────────────────────────
 
-/// 归一化坐标 → 原型视框（0..100）里的一个 SVG 数字。
+/// Normalized coordinate → an SVG number within the prototype viewbox (0..100).
 ///
-/// 前三份生成物发的是 0..1 点列，因为它们的消费者自己做 `x = box.x + box.w * px`
-/// 的映射。这一份发的是一条 `d=` 字符串：原型的形状是 `<svg viewBox="-6 -6 112
-/// 112"><path d=…>`，缩放归 viewBox 管，路径本身必须已经在 0..100 里。
+/// The first three generated outputs emit 0..1 point lists, because their consumers do the `x = box.x + box.w * px` mapping themselves. This one emits a `d=` string: the prototype's shape is `<svg viewBox="-6 -6 112 112"><path d=…>`, scaling is handled by the viewBox, so the path itself must already lie within 0..100.
 ///
-/// 四位小数不是取舍：manifest 存的是六位小数的归一化值，×100 之后恰好是四位。
-/// 断言把这条守住——将来有人往配方里写第七位小数，这里红，而不是悄悄丢精度。
+/// Four decimal places are not a trade-off: the manifest stores six-decimal normalized values, which after ×100 are exactly four decimals. The assertion guards this. If someone later writes a seventh decimal into a recipe, this goes red rather than silently losing precision.
 fn svg_number(normalised: f64) -> String {
     assert!(normalised.is_finite(), "配方里出现了非有限数 {normalised}");
     let scaled = normalised * 100.0;
@@ -251,8 +224,7 @@ fn svg_number(normalised: f64) -> String {
     text
 }
 
-/// 一份轮廓 → 一条 `d=`。verb 与 SVG 命令一一对应，全用绝对坐标，
-/// 不做 `H`/`V`/`S` 之类的缩写：省下的几个字节换不来第二种读法。
+/// One outline → one `d=`. Verbs map one-to-one to SVG commands, all using absolute coordinates. No `H`/`V`/`S`-style abbreviations: the few bytes saved are not worth a second way of reading it.
 fn svg_d(segments: &[PathSegment]) -> String {
     let mut out = String::new();
     let n = |p: &[f64; 2]| format!("{} {}", svg_number(p[0]), svg_number(p[1]));
@@ -348,9 +320,9 @@ window.BC_SHAPE = (() => {{
     )
 }
 
-// ── 写盘与门禁 ──────────────────────────────────────────────────────
+// ── write to disk and gate ──────────────────────────────────────────────────
 
-/// 两份生成物的写盘与门禁共用同一张清单——加一个消费者只改这里一行。
+/// Writing and gating both generated outputs share the same manifest. Adding a consumer only changes one line here.
 fn generated_outputs() -> [(&'static str, String); 2] {
     [
         (RUST_OUTPUT, render_rust()),
@@ -358,9 +330,9 @@ fn generated_outputs() -> [(&'static str, String); 2] {
     ]
 }
 
-/// 几何变化时重写两份生成物。
+/// Rewrites both generated outputs when the geometry changes.
 ///
-/// `#[ignore]` 是刻意的：日常 `cargo test` 不该写产品目录。
+/// `#[ignore]` is deliberate: the daily `cargo test` should not write to the product directory.
 #[test]
 #[ignore = "写盘：cargo test -p ccut-motion --test gen_element_shape_paths -- --ignored"]
 fn emit_element_shape_paths() {
@@ -371,8 +343,7 @@ fn emit_element_shape_paths() {
     }
 }
 
-/// 日常门禁：两份生成物与注册表必须逐字节一致。改了 manifest 却没跑生成器，
-/// 这里红。
+/// Daily gate: both generated outputs must match the registry byte for byte. If the manifest was changed without running the generator, this goes red.
 #[test]
 #[ignore = "对拍 v2 的生成物 ccut-editor-core/src/shape_paths.rs 与 designs/cuccut/app/model-shape-paths.js：待 ccut-editor-core 移植"]
 fn element_shape_paths_are_up_to_date() {
@@ -389,8 +360,7 @@ fn element_shape_paths_are_up_to_date() {
     }
 }
 
-/// 生成表覆盖的正是"注册表里所有 outline 形状"，一个不多一个不少——这是三端
-/// 场景层开 `outline` 门的前提（缺一份配方就等于一个画不出来的下拉项）。
+/// The generated table covers exactly "all outline shapes in the registry", neither more nor fewer. This is the precondition for the three ends' scene layers to enable the `outline` gate (a missing recipe means a dropdown item that cannot be drawn).
 #[test]
 fn every_outline_recipe_has_geometry() {
     let rows = outline_rows();
@@ -418,7 +388,7 @@ fn every_outline_recipe_has_geometry() {
             );
         }
     }
-    // 每份配方的第一段必须是 `move`（解析期已校验），消费者因此不必防守。
+    // Each recipe's first segment must be `move` (already verified at parse time), so consumers need not defend against it.
     for (id, segments) in rows {
         assert!(
             matches!(segments.first(), Some(PathSegment::Move(_))),

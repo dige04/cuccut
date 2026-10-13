@@ -22,7 +22,7 @@ import {
   translationOptions,
 } from './tool-targets.ts';
 
-/* 设计稿 model-tool-targets.test.js 的思路：能选的在前、置灰写原因、标注与「不覆盖」提示、译文的「第 N 份」。 */
+/* Idea from the design draft model-tool-targets.test.js: selectable items first, disabled items give a reason, labels and the "does not overwrite" hint, and the “第 N 份” (copy N) numbering for translations. */
 
 function doc(patch: Partial<ToolCandidateDocument> = {}): ToolCandidateDocument {
   return {
@@ -276,7 +276,7 @@ describe('Space 视频条目的转录动作（产品设计 §4.4）', () => {
     expect(failedTranscribeJob('vid_1', [parent, job({ jobId: 'ok', state: 'completed', updatedAt: '2026-10-04T00:00:00Z' })])).toBeNull();
     expect(failedTranscribeJob(null, [parent])).toBeNull();
     expect(retryParamsOf(parent)).toEqual({ provider: 'openai', model: 'gpt-4o-transcribe', language: 'en', diarize: true });
-    // 流程父任务记录上的 Provider 与模型不是转写用的：参数里没写时不拿它们兜底。
+    // The provider and model on the flow's parent task record are not for transcription: don't fall back to them when the parameters don't specify them.
     expect(
       retryParamsOf(job({ kind: 'pipeline', pipeline: { name: 'transcribe', params: {} } as unknown as JobRecord['pipeline'] })),
     ).toEqual({

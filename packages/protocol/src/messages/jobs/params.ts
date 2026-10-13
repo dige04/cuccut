@@ -14,7 +14,7 @@ import { pl } from './params.pl.ts';
 import { tr } from './params.tr.ts';
 import { vi } from './params.vi.ts';
 
-/** `packages/jobs/src/pipelines/params.ts` 等流程参数校验的文字：`invalid(key, JobsParams.x())` 拼成「参数 key 问题」。 */
+/** Parameter validation text for flows such as `packages/jobs/src/pipelines/params.ts`: `invalid(key, JobsParams.x())` builds “parameter key problem”. */
 const en = {
   unknownParam: (p: { key: string }) => `Unknown parameter ${p.key}`,
   invalidParam: (p: { key: string; problem: string }) => `Parameter ${p.key} ${p.problem}`,

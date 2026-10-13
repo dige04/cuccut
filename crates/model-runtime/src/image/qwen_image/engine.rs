@@ -1,8 +1,6 @@
-//! Qwen-Image-2.1 的 MLX 引擎：加载（只核对清单、读分词表与调度器配置，不读权重）与一次生成的三段编排。
+//! The MLX engine for Qwen-Image-2.1: loading (it only checks the manifest and reads the tokenizer vocabulary and scheduler config; it does not read the weights) and the orchestration of the three stages of one generation.
 //!
-//! MLX 是进程级单例，生成唯一动到的进程级状态是缓存上限，由 [`CacheLimit`] 进门设、出门还原；引擎析构后活跃内存回落到
-//! [`UNLOADED_ACTIVE_MAX`] 以下（真跑测试核对）。与 v2 不同：权重文件经 [`VerifiedFiles`] 按清单取出；开发自检用的
-//! 混搭精度选项（另给文本编码器 / DiT 目录）没有移植。
+//! MLX is a process-level singleton. The only process-level state a generation touches is the cache limit, which is set on entry via [`CacheLimit`] and restored on exit. After the engine is dropped, active memory falls back below [`UNLOADED_ACTIVE_MAX`] (checked by the real-run test). Differences from v2: weight files are fetched by manifest via [`VerifiedFiles`]. The mixed-precision development self-check option (which takes separate text-encoder and DiT directories) is not ported.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -19,20 +17,17 @@ use crate::bundle::{FAMILY_QWEN_IMAGE, VerifiedFiles};
 use crate::image::{Cancelled, ImageEngine, ImageProgress, ImageRequest, RawImage};
 use crate::protocol::{ErrorBody, codes};
 
-/// DiT 阶段（含文本编码）的 MLX 空闲缓冲上限。footprint = 活跃 + 缓存，运行时缺省（物理内存 / 8，16 GB 机器上 2 GB）
-/// 会让 footprint 比活跃内存高出整整 2 GB；每层权重与激活的尺寸逐层重复，256 MB 足够让分配器复用。
+/// The MLX free-buffer cap for the DiT stage (including text encoding). footprint = active + cache. The runtime default (physical memory / 8, which is 2 GB on a 16 GB machine) would make the footprint 2 GB higher than active memory. Each layer's weights and activations repeat layer by layer in the same sizes, so 256 MB is enough for the allocator to reuse them.
 pub const DIT_CACHE_LIMIT: usize = 256 << 20;
 
-/// VAE 阶段不留空闲缓冲：各块、各条带的张量尺寸都不同，缓存几乎复用不上，只会把 footprint 顶高（v2 实测 512²
-/// 0.99 → 0.71 GB，解码耗时不变）。DiT 不用 0：它每步会慢约 5%，而 footprint 峰值并不在 DiT 阶段。
+/// The VAE stage keeps no free buffers. Each block's and strip's tensor sizes differ, so the cache is almost never reused and would only push the footprint up (v2 measured at 512²: 0.99 → 0.71 GB, with decoding time unchanged). DiT does not use 0: it would be about 5% slower per step, and the footprint peak is not in the DiT stage anyway.
 pub const VAE_CACHE_LIMIT: usize = 0;
 
 #[cfg(test)]
-/// 引擎析构之后 MLX 活跃内存的上限：三段权重、条件与 latent 都已析构，只剩 MLX 自己的小常驻；门槛留到 64 MB 容抖动。
+/// The upper bound on MLX active memory after the engine is dropped. The three weight sets, the conditions and the latents have all been dropped, leaving only MLX's own small residue. The threshold is 64 MB to tolerate jitter.
 pub const UNLOADED_ACTIVE_MAX: usize = 64 << 20;
 
-/// 缓存上限的 RAII：进门记下进程当前上限并换成本阶段的，出门（正常返回、`?` 提前返回、panic 展开都算）先等 GPU
-/// 做完已提交的工作，再还原原上限、清空缓存。还原是必须的：同一 Worker 之后的任务不能继承 VAE 阶段的 0。
+/// RAII for the cache limit. On entry it records the process's current limit and replaces it with this stage's. On exit (normal return, early return via `?`, and panic unwinding all count) it waits for the GPU to finish the work already submitted, then restores the original limit and clears the cache. Restoring is required: a later task on the same Worker must not inherit the VAE stage's 0.
 pub struct CacheLimit {
     previous: usize,
 }
@@ -43,13 +38,13 @@ impl CacheLimit {
         Self { previous }
     }
 
-    /// 换阶段：设新上限并把旧阶段留下的空闲缓冲还给系统。
+    /// Switches stage: sets the new limit and returns the free buffers left by the old stage to the system.
     pub fn phase(&self, limit: usize) -> Result<()> {
         memory::set_cache_limit(limit);
         clear_memory_cache()
     }
 
-    /// 进门前的上限（出门时还原成它）。
+    /// The limit before entry (restored to this value on exit).
     #[cfg(test)]
     pub fn previous(&self) -> usize {
         self.previous
@@ -64,18 +59,18 @@ impl Drop for CacheLimit {
     }
 }
 
-/// 等缺省 stream 上已提交的工作做完：eval 提交的命令可能仍持有数组，不等的话它们会在 clear 之后才回到缓存。
+/// Waits for the work already submitted on the default stream to finish. Commands submitted by eval may still hold arrays; without waiting, they would return to the cache only after the clear.
 fn synchronize() {
     let stream = mlx_rs::Stream::task_local_or_default();
-    // SAFETY: stream 在本调用期间存活；只等待该 stream 上已提交的工作。
+    // SAFETY: the stream lives for the duration of this call; it waits only for work already submitted on that stream.
     unsafe {
         let _ = mlx_sys::mlx_synchronize(stream.as_ptr());
     }
 }
 
-/// 进程当前与生命周期最大的 phys_footprint（活动监视器里「内存」一栏的口径，含 Metal 缓冲）。
+/// The process's current and lifetime-maximum phys_footprint (the basis of the “Memory” column in Activity Monitor, including Metal buffers).
 pub fn footprint() -> (u64, u64) {
-    // SAFETY: rusage_info_v4 是纯数据结构，零初始化合法；proc_pid_rusage 按 flavor 写满它。
+    // SAFETY: rusage_info_v4 is a plain data structure, so zero-initialization is valid; proc_pid_rusage fills it in for the flavor.
     unsafe {
         let mut info: libc::rusage_info_v4 = std::mem::zeroed();
         let rc = libc::proc_pid_rusage(
@@ -90,12 +85,12 @@ pub fn footprint() -> (u64, u64) {
     }
 }
 
-/// 新阶段开始：MLX 峰值从这里重新计，[`mem`] 报的 peak 就是本阶段的。
+/// A new stage begins: the MLX peak is measured afresh from here, so the peak reported by [`mem`] is this stage's.
 fn phase_start() {
     memory::reset_peak_memory();
 }
 
-/// 计时开关打开时打一行内存快照。
+/// When the timing switch is on, prints one line of memory snapshot.
 fn mem(tag: &str) {
     if !super::timing() {
         return;
@@ -113,7 +108,7 @@ fn mem(tag: &str) {
     );
 }
 
-/// `[1,H,W,4]`、范围 [-1,1] 的 VAE 输出 → 8 位 RGBA。
+/// `[1,H,W,4]`, range [-1,1] VAE output → 8-bit RGBA.
 fn to_rgba(x: &Array) -> Result<RawImage> {
     if x.ndim() != 4 || x.dim(3) != 4 {
         return Err(anyhow!("VAE 输出形状不是 [1,H,W,4]：{:?}", x.shape()));
@@ -133,18 +128,18 @@ fn to_rgba(x: &Array) -> Result<RawImage> {
     })
 }
 
-/// 生产配置（v2 `QwenOptions` 的缺省值；开发自检的对照项没有移植）。
+/// Production configuration (the default values of v2's `QwenOptions`; the development self-check comparison items are not ported).
 #[derive(Debug, Clone)]
 struct Options {
-    /// `None` = auto：按本机实测在 f16 / bf16 里选（[`Precision::probe`]，每只引擎量一次）。
+    /// `None` = auto: picks between f16 and bf16 based on measurements on this machine ([`Precision::probe`], measured once per engine).
     dit_dtype: Option<Dtype>,
-    /// 量化层整层解量化后按 dense 乘。缺省关。
+    /// Quantized layers are fully dequantized and then multiplied as dense. Off by default.
     dit_dequant: bool,
-    /// DiT 每层按多少个图像 token 分块算。
+    /// The number of image tokens per block in DiT's per-layer computation.
     dit_chunk: usize,
-    /// 往返 PSNR 与 f32 一致，比 bf16 快（M2 没有原生 bf16 运算）；f16 解码出现非有限值时自动改 bf16 重解。
+    /// The round-trip PSNR matches f32 and it is faster than bf16 (the M2 has no native bf16 arithmetic). If f16 decoding produces non-finite values, it is automatically re-decoded in bf16.
     vae_dtype: Dtype,
-    /// VAE 尾段每条带的行数，`None` 自动选。
+    /// Number of rows per strip in the VAE tail; `None` = chosen automatically.
     vae_tail_rows: Option<usize>,
 }
 
@@ -160,7 +155,7 @@ impl Default for Options {
     }
 }
 
-/// 按清单取出的文件。
+/// Files fetched by manifest.
 struct Files {
     text_encoder: Vec<PathBuf>,
     transformer: Vec<PathBuf>,
@@ -168,13 +163,13 @@ struct Files {
     vae_config: PathBuf,
 }
 
-/// Qwen-Image-2.1 引擎。加载时不读权重：三段权重在每次生成里按阶段打开、用完即丢。
+/// Qwen-Image-2.1 engine. Loading does not read the weights: the three weight sets are opened per stage during each generation and dropped after use.
 pub struct QwenImage {
     options: Options,
     files: Files,
     prompter: Prompter,
     scheduler: SchedulerConfig,
-    /// auto 精度的探测结果；同一只引擎只量一次。
+    /// The result of auto precision probing; measured once per engine.
     picked: Option<Dtype>,
 }
 
@@ -190,7 +185,7 @@ fn owned(files: Vec<&std::path::Path>) -> Vec<PathBuf> {
 }
 
 impl QwenImage {
-    /// 先核对清单（缺文件是 `MODEL_NOT_INSTALLED`），再确认 Metal 设备，最后读分词表与调度器配置。
+    /// Checks the manifest first (a missing file is `MODEL_NOT_INSTALLED`), then confirms the Metal device, and finally reads the tokenizer vocabulary and scheduler config.
     pub fn load(files: &VerifiedFiles) -> Result<Self> {
         let tokenizer = files.require("processor/tokenizer.json")?.to_path_buf();
         let scheduler = files.require("scheduler/scheduler_config.json")?.to_path_buf();
@@ -242,7 +237,7 @@ impl QwenImage {
         check(cancel)?;
         let compute = self.compute_dtype()?;
 
-        // 1. 文本编码
+        // 1. Text encoding
         progress(ImageProgress::EncodingPrompt);
         let t0 = Instant::now();
         phase_start();
@@ -259,7 +254,7 @@ impl QwenImage {
         mem("after text");
         check(cancel)?;
 
-        // 2. DiT 去噪
+        // 2. DiT denoising
         phase_start();
         let sigmas = self.scheduler.sigmas(steps, gh * gw);
         let prec = Precision {
@@ -267,7 +262,7 @@ impl QwenImage {
             dequant: self.options.dit_dequant,
         };
         let latents = match self.denoise(&cond, &sigmas, prec, request, progress, cancel) {
-            // f16 只有 5 位指数；万一溢出就用与参考管线相同的 bf16 从头重跑（同一 seed）。
+            // f16 has only a 5-bit exponent. If it overflows, rerun from scratch in bf16, which matches the reference pipeline (same seed).
             Err(e) if e.downcast_ref::<Overflow>().is_some() => {
                 trace!("[dit] {e}，改用 bf16 重跑");
                 clear_memory_cache()?;
@@ -283,7 +278,7 @@ impl QwenImage {
         check(cancel)?;
         guard.phase(VAE_CACHE_LIMIT)?;
 
-        // 3. VAE 解码
+        // 3. VAE decoding
         progress(ImageProgress::Decoding);
         let t2 = Instant::now();
         phase_start();
@@ -296,7 +291,7 @@ impl QwenImage {
         };
         let vae_dtype = self.options.vae_dtype;
         let image = match decode(vae_dtype) {
-            // f16 只有 5 位指数；万一上溢就用与 f32 同指数范围的 bf16 重解。
+            // f16 has only a 5-bit exponent. If it overflows upward, re-decode in bf16, which has the same exponent range as f32.
             Err(e) if vae_dtype == Dtype::Float16 => {
                 trace!("[vae] {e:#}，改用 bf16 重解");
                 clear_memory_cache()?;
@@ -455,7 +450,7 @@ mod tests {
         assert!(error.message.contains("scheduler/scheduler_config.json"), "{}", error.message);
     }
 
-    /// 按 `.ccut-manifest.json` 拼 `image` 组件（只读；不写安装记录）。
+    /// Assembles the `image` component from `.ccut-manifest.json` (read-only; does not write install records).
     fn installed(root: &std::path::Path) -> VerifiedFiles {
         let dir = root.join("mlx-community/Qwen-Image-2.1-MLX-4bit");
         let manifest: serde_json::Value =
@@ -480,7 +475,7 @@ mod tests {
         .unwrap()
     }
 
-    /// 真跑（要装好的权重，约 1 分钟）：256² 2 步生成一张，核对尺寸、阶段、缓存上限已还原、引擎析构后活跃内存回落。
+    /// Real run (needs installed weights; about 1 minute): generates one 256² image with 2 steps, and checks the size, the stages, that the cache limit was restored, and that active memory falls back after the engine is dropped.
     ///
     /// ```sh
     /// CUCCUT_TEST_MODELS_DIR=/path/to/models cargo test -p model-runtime --lib -- --ignored \
@@ -492,7 +487,7 @@ mod tests {
         let _lock = lock();
         let root = std::env::var("CUCCUT_TEST_MODELS_DIR").expect("CUCCUT_TEST_MODELS_DIR");
         let files = installed(std::path::Path::new(&root));
-        // 量峰值时可以换尺寸：`CUCCUT_TEST_IMAGE_EDGE=1024`（正方形，2 步；峰值与步数无关）。
+        // To measure peak memory, the size can be changed: `CUCCUT_TEST_IMAGE_EDGE=1024` (square, 2 steps; the peak is independent of the step count).
         let edge: u32 = std::env::var("CUCCUT_TEST_IMAGE_EDGE")
             .ok()
             .and_then(|v| v.parse().ok())

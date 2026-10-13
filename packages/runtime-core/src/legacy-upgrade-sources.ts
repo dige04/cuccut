@@ -128,8 +128,8 @@ export async function discoverLegacyProjects(source: LegacySource, platform = pr
 }
 
 /**
- * 导入询问里的一行（§2.7）：旧标题取索引条目，没有时读 v2 的 `project.json`，再没有用目录名；上次编辑是项目文件的修改时间。
- * 只在询问时读，读不到不算错。
+ * One row in the import prompt (§2.7). The old title comes from the index entry; if there is none, read v2's `project.json`; if there is none, use the directory name. The last edit is the modification time of the project file.
+ * Only read when the prompt is shown. Failing to read is not an error.
  */
 export async function summarizeLegacyProject(
   dir: string,
@@ -148,15 +148,15 @@ export async function summarizeLegacyProject(
       if (!title && name === 'project.json') title = named((await readJson<LegacyObject>(file))?.title);
       break;
     } catch {
-      /* 读不到就用目录名、不给时间 */
+      /* If it cannot be read, use the directory name, and give no time */
     }
   }
   return { path: dir, title: title || path.basename(dir), editedAt };
 }
 
 /**
- * 旧项目的最近活动（§2.7）：旧版索引里的上次打开（v2 `lastOpenedAt` 是 Unix 秒，v1 记 `modifiedAt`）与项目文件的修改时间，取最晚的。
- * 都读不到时为 null。
+ * Recent activity of an old project (§2.7): the last-opened time in the old index (v2 `lastOpenedAt` is Unix seconds; v1 records `modifiedAt`) and the modification time of the project file, whichever is later.
+ * null when neither can be read.
  */
 export async function legacyActivityAt(dir: string, entry: LegacyObject, platform = process.platform): Promise<Date | null> {
   const { editedAt } = await summarizeLegacyProject(dir, entry, platform);
@@ -164,7 +164,7 @@ export async function legacyActivityAt(dir: string, entry: LegacyObject, platfor
   return times.length ? new Date(Math.max(...times)) : null;
 }
 
-/** 索引里的时间：数字小于 1e11 当秒、否则当毫秒，字符串按 ISO 解析。 */
+/** Times in the index: a number below 1e11 is seconds, otherwise milliseconds. Strings are parsed as ISO. */
 function instant(value: unknown): number | null {
   const at = typeof value === 'number' ? (value < 1e11 ? value * 1000 : value) : typeof value === 'string' ? Date.parse(value) : NaN;
   return Number.isFinite(at) && at > 0 ? at : null;

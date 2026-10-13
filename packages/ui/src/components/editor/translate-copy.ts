@@ -18,11 +18,10 @@ const sentences = (n: number) => `${n} sentence${n === 1 ? '' : 's'}`;
 const subtitles = (n: number) => `${n} subtitle${n === 1 ? '' : 's'}`;
 
 /**
- * 字幕翻译的文案（设置页、运行态、回执、双语对照）。原型：panel-aitools-flows.jsx `TranslateFlow`、panel-translate.jsx、
- * panel-substrip.jsx、model-trans-run.js。译文在 `translate-copy.zh-Hans.ts`。
+ * Copy for subtitle translation (settings page, running state, receipts, bilingual view). Prototypes: panel-aitools-flows.jsx `TranslateFlow`, panel-translate.jsx, panel-substrip.jsx, model-trans-run.js. The translations are in `translate-copy.zh-Hans.ts`.
  */
 const en = {
-  // 设置页（TranslateFlow）
+  // Settings page (TranslateFlow)
   title: 'Translate to a new language',
   back: 'Back to Subtitles',
   target: 'Target language',
@@ -67,7 +66,7 @@ const en = {
   readOnly: 'The video is read-only, so it can’t be translated.',
   allTaken: 'All common languages already have translations.',
 
-  // 运行态
+  // Running state
   submitting: 'Submitting translation',
   queued: 'Queued',
   running: (from: string, to: string) => `Translating · ${from} → ${to}`,
@@ -81,7 +80,7 @@ const en = {
   agentSession: 'An Agent session is running this translation. To stop it, stop the session.',
   chipTip: (step: string) => `Translating · ${step}`,
 
-  // 问题
+  // Issues
   notConfigured: (reason: string) => `Can’t translate yet · ${reason}`,
   submitFailed: 'Couldn’t start translation',
   failed: 'Translation failed',
@@ -101,7 +100,7 @@ const en = {
     'No clip on the timeline uses this asset, so the subtitles can’t be placed on screen. The translation is saved in the video; click “Place on screen” in the comparison list.',
   badDocument: 'The translation or transcript format isn’t recognized, so it can’t be split into subtitles.',
 
-  // 回执
+  // Receipts
   applied: (language: string, count: number) => `Applied · translated to ${language} · ${subtitles(count)}`,
   appliedNote: (bilingual: boolean): string =>
     bilingual
@@ -113,14 +112,14 @@ const en = {
   undoneNote: 'The original wasn’t touched; the translation stays in the video, and you can “Place on screen” again from the comparison list.',
   undoFailed: 'Couldn’t undo: the video changed after this step. Undo in the editor.',
 
-  // 放到画面上
+  // Put on screen
   place: 'Place on screen',
   placing: 'Placing on screen',
   unnamed: 'Translation',
   placed: (language: string, count: number) => `Placed the ${language} translation on screen · ${subtitles(count)}`,
   notPlaced: 'This translation isn’t on screen yet.',
 
-  // 对照条与列表
+  // Comparison bar and list
   list: 'List',
   modes: { src: 'Original only', bi: 'Original + translation', trans: 'Translation only' },
   compareLanguage: 'Translation to compare',
@@ -185,7 +184,7 @@ const en = {
 export type TranslateMessages = typeof en;
 export const TRANSLATE_COPY = defineMessages(en, { 'zh-Hans': zhTranslate, 'zh-Hant': zhHantTranslate, ja: jaTranslate, ko: koTranslate, es: esTranslate, fr: frTranslate, de: deTranslate, nl: nlTranslate, 'pt-BR': ptBRTranslate, it: itTranslate, ru: ruTranslate, pl: plTranslate, tr: trTranslate, vi: viTranslate });
 
-/** `CAPABILITY_NOT_CONFIGURED` 的原因（协议 `CapabilityNotConfiguredReason`），翻译用的是文本生成。 */
+/** The reason behind `CAPABILITY_NOT_CONFIGURED` (protocol `CapabilityNotConfiguredReason`). Translation uses text generation. */
 const notConfigured: Record<CapabilityNotConfiguredReason, string> = {
   'no-default': 'No model chosen for text generation yet',
   'missing-credential': 'The text model’s provider has no key yet',

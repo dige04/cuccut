@@ -22,17 +22,14 @@ import { RcCommon, RcExport, RcPackage } from '@cuccut/protocol/messages/runtime
 import { TarWriter, ustarProblem } from './package-archive.ts';
 
 /**
- * 便携包的冻结、预检与写出（架构设计 §5.8，视频格式规范 §8）。
+ * Freezing, preflight, and writing of portable packages (architecture design §5.8, video format spec §8).
  *
- * - **冻结**：引擎在一次请求里给出快照、每个文档版本的正文原文与每个素材版本的位置（`exports.package`）。文档版本与
- *   收进视频的 blob 不再改变；链接素材在写进包的同时按登记的摘要核对，变了就失败，不把别的 bytes 写进去。
- * - **内容**：快照（素材全部改成收进视频，`managed`）、全部文档版本、全部素材版本的 bytes；不含密钥、授权、任务账本、
- *   会话与用户库（音色的参考录音只有已经是视频里的素材时才在包里）。
- * - **本机路径**：快照里链接素材的位置换掉；其余字段里出现本机根目录（主目录、视频目录、来源目录、素材所在目录、来源记下的原文件所在目录）的字符串
- *   换成占位并记警告；文档正文改不了（摘要按原文算），出现时在预检里逐项拒绝。
+ * - **Freeze**: in one request, the engine provides the snapshot, the original text of each document version, and the location of each asset version (`exports.package`). Document versions and blobs collected into the video no longer change. Linked assets are verified against their registered digest while being written into the package, and if one has changed the export fails rather than writing different bytes into the package.
+ * - **Contents**: the snapshot (all assets converted to collected into the video, `managed`), all document versions, and the bytes of all asset versions. Excludes keys, authorization, the task ledger, sessions, and the user library. Voice reference recordings are included only when they are already assets in the video.
+ * - **Local paths**: the locations of linked assets in the snapshot are replaced. In other fields, strings containing a local root directory (home directory, video directory, source directory, the directory containing assets, and the directory of the original file recorded by the source) are replaced with a placeholder and a warning is logged. Document text cannot be changed (its digest is computed over the original), so if it contains such a path, preflight rejects it item by item.
  */
 
-/** 引擎冻结给出的一个文档版本。 */
+/** A document version as frozen by the engine. */
 export interface FrozenDocument {
   documentId: Id;
   revision: string;
@@ -42,7 +39,7 @@ export interface FrozenDocument {
   text: string;
 }
 
-/** 引擎冻结给出的一个素材版本。读不到时带 `missing`。 */
+/** An asset version as frozen by the engine. Carries `missing` when it cannot be read. */
 export interface FrozenAsset {
   assetId: Id;
   revision: string;
@@ -64,7 +61,7 @@ export interface PackageFreeze {
   assets: FrozenAsset[];
 }
 
-/** 要写进包的一个素材版本：一个文件，或一个目录（代码包）的各个文件。 */
+/** An asset version to be written into the package: one file, or the individual files of a directory (a code package). */
 interface PlannedAsset {
   asset: FrozenAsset;
   files: Array<{ packagePath: string; source: string; size: number }>;
@@ -76,13 +73,13 @@ export interface PortablePlan {
   documents: FrozenDocument[];
   assets: PlannedAsset[];
   entries: PackageEntry[];
-  /** 包里各个文件的字节数之和（不含 tar 头与清单）。 */
+  /** The sum of the byte counts of the files in the package (excluding tar headers and the manifest). */
   bytes: number;
   warnings: JobWarning[];
   manifestBase: Omit<PackageManifest, 'files' | 'entries' | 'createdAt'>;
 }
 
-/** 预检的一项问题。 */
+/** One problem found by preflight. */
 interface Problem {
   assetId?: Id;
   documentId?: Id;
@@ -92,12 +89,11 @@ interface Problem {
   path?: string;
 }
 
-/** 空间预检留的余量：tar 头、清单与文件系统的开销。 */
+/** Margin reserved by the space preflight for tar headers, the manifest, and filesystem overhead. */
 const SPACE_MARGIN = 64 * 1024 * 1024;
 
 /**
- * 本机根目录：主目录、视频目录、来源目录、链接素材所在的目录，以及来源记下的原文件所在的目录（从本机媒体新建的视频，
- * `source.path`；素材之后收进视频或重新链接到别处时它不跟着变），含真实路径。太短的（如 `/`）不算。
+ * Local root directories: the home directory, the video directory, the source directory, the directory where linked assets are located, and the directory of the original file recorded by the source (for a video created from local media, `source.path`; it does not change when the asset is later collected into the video or relinked elsewhere), including their real paths. Overly short ones (such as `/`) don't count.
  */
 export async function localRoots(freeze: PackageFreeze, extra: string[]): Promise<string[]> {
   const candidates = new Set<string>([os.homedir(), freeze.videoDir, path.dirname(freeze.videoDir), ...extra]);
@@ -123,7 +119,7 @@ function containsRoot(text: string, roots: string[]): boolean {
 }
 
 /**
- * 把值里含本机根目录的字符串换成占位（`placeholder`，写进包里的文字，按导出时的当前语言），返回换掉了几处与它们在哪里。
+ * Replaces strings containing a local root directory in the value with the placeholder (`placeholder`, the text written into the package, in the language current at export time). Returns how many replacements were made and where they were.
  */
 function scrub(value: unknown, roots: string[], placeholder: string, where: string, hits: string[]): unknown {
   if (typeof value === 'string') {
@@ -138,7 +134,7 @@ function scrub(value: unknown, roots: string[], placeholder: string, where: stri
   return value;
 }
 
-/** 记一条任务警告：文字按当前语言，另带引用。 */
+/** Records a task warning. The text is in the current language, with a reference attached. */
 function warn(warnings: JobWarning[], code: string, detail: Localized): void {
   warnings.push({ code, detail: detail.text, detailRef: refOf(detail) });
 }
@@ -160,9 +156,7 @@ async function readable(file: string, expectDir: boolean): Promise<{ ok: true; s
 }
 
 /**
- * 预检并排出要写的内容。读不到的素材（不在、不可读、长度不是登记时的）默认逐项拒绝（`ASSET_MISSING`，`details.items`）；
- * `skip` 时不收进包，清单与快照如实标缺失。文档正文含本机路径时逐项拒绝（`EXPORT_PACKAGE_LOCAL_PATH`），
- * tar 写不下的（路径太长、单个文件 8 GiB 以上）逐项拒绝（`EXPORT_PACKAGE_UNSUPPORTED`）。
+ * Runs preflight and assembles what is to be written. Assets that cannot be read (missing, unreadable, or with a length different from the one registered) are rejected item by item by default (`ASSET_MISSING`, `details.items`). With `skip`, they are not collected into the package, and the manifest and snapshot honestly mark them as missing. Document text that contains a local path is rejected item by item (`EXPORT_PACKAGE_LOCAL_PATH`). Anything tar cannot hold (paths that are too long, single files of 8 GiB or more) is rejected item by item (`EXPORT_PACKAGE_UNSUPPORTED`).
  */
 export async function planPortable(freeze: PackageFreeze, roots: string[], missingAssets: 'fail' | 'skip'): Promise<PortablePlan> {
   const problems: Problem[] = [];
@@ -220,7 +214,7 @@ export async function planPortable(freeze: PackageFreeze, roots: string[], missi
     });
   }
 
-  // 文档正文：按原文收，摘要要对；含本机路径的拒绝。
+  // Document text: collected as the original, the digest must match. Those containing a local path are rejected.
   const localPath: Problem[] = [];
   for (const doc of freeze.documents) {
     if (sha256Text(doc.text) !== doc.contentHash) {
@@ -239,7 +233,7 @@ export async function planPortable(freeze: PackageFreeze, roots: string[], missi
     });
   }
 
-  // 快照：素材改成收进视频；读不到的成为只有文件名的链接素材（打开包之后用 relinkAsset 找回）。
+  // Snapshot: assets are converted to collected into the video. Those that can't be read become linked assets with only a file name (recovered after opening the package with relinkAsset).
   const snapshot = structuredClone(freeze.snapshot);
   const entries: PackageEntry[] = [];
   for (const [assetId, asset] of Object.entries(snapshot.assets)) {
@@ -325,7 +319,7 @@ export async function planPortable(freeze: PackageFreeze, roots: string[], missi
   };
 }
 
-/** 预检：目标卷放得下这个包。 */
+/** Preflight: the target volume can hold this package. */
 export async function checkSpace(
   dir: string,
   bytes: number,
@@ -350,7 +344,7 @@ function formatBytes(n: number): string {
   return `${Math.ceil(n / 1024 ** 2)} MB`;
 }
 
-/** 写包时发现素材与冻结时不一样（链接的文件被改了，或收进视频的 blob 坏了）。 */
+/** Found while writing the package that an asset differs from when it was frozen (a linked file was changed, or a blob collected into the video is corrupt). */
 export class PackageAssetChanged extends Error {
   readonly assetId: Id;
   readonly revision: string;
@@ -364,8 +358,7 @@ export class PackageAssetChanged extends Error {
 }
 
 /**
- * 把排好的内容写进 `target`（新建，已经存在时失败）：快照、文档版本、素材，最后是清单。每个文件边写边算摘要；
- * 素材的摘要与登记的不符时抛 `PackageAssetChanged`。返回清单。
+ * Writes the assembled contents to `target` (a new file; fails if it already exists): the snapshot, document versions, assets, and finally the manifest. The digest of each file is computed while it is written. If an asset's digest differs from the registered one, throws `PackageAssetChanged`. Returns the manifest.
  */
 export async function writePortable(
   plan: PortablePlan,
@@ -407,7 +400,7 @@ export async function writePortable(
         );
         step(f.size);
       }
-      // 单个文件的摘要就是版本的内容摘要；目录的摘要是每个文件一行「摘要 长度 相对路径」整体的摘要（视频格式规范 §4.3）。
+      // A single file's digest is the version's content digest. A directory's digest is the digest of the whole set of lines, one per file, of the form "digest length relative-path" (video format spec §4.3).
       const digest = item.tree ? sha256Text(lines.join('')) : files.at(-1)!.sha256;
       if (digest !== item.asset.contentHash) {
         throw new PackageAssetChanged(
@@ -427,7 +420,7 @@ export async function writePortable(
   }
 }
 
-/** 整个文件的 sha256（导出结果的 `artifactId`：包写在产物库之外）。 */
+/** The sha256 of the whole file (the export result's `artifactId`: the package is written outside the artifact library). */
 export async function sha256OfFile(file: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);

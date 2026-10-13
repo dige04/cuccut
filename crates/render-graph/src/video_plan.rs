@@ -1,10 +1,8 @@
-//! 画面的区间概览（架构设计 §9.11、§9.13 的成片导出）：一段序列范围里会出现哪些画面层、哪些转场，要用哪些素材与文档。
+//! Overview of picture intervals (architecture design §9.11, §9.13 finished export): which picture layers and transitions appear in a sequence range, and which assets and documents they need.
 //!
-//! 成片导出逐帧调 [`plan_frame`](super::plan_frame)，画面的规则只有那一份；这里只在启动时回答「这段范围要冻结什么、
-//! 预检要查什么」：每个在范围里出现的视觉实例取它第一次出现的那一帧的层（含效果栈与内容），转场的另一侧也算；
-//! 窗口与范围相交的转场各列一次。层上的 `transition` 去掉了（另一侧单独列出），不代表任何一帧的画面。
+//! The finished export calls [`plan_frame`](super::plan_frame) frame by frame, so the picture rules exist in one place only. Here, at startup, we only answer "what must be frozen for this range, and what must the preflight check": for each visual instance that appears in the range, take the layer from the first frame where it appears (including its effect stack and content), and include the other side of any transition. Each transition whose window intersects the range is listed once. The `transition` on a layer is removed (the other side is listed separately) and does not represent the picture on any frame.
 //!
-//! 输出尺寸与画面在输出里的位置也在这里定（[`output_geometry`]）。
+//! Output size and the picture's position within the output are also determined here ([`output_geometry`]).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -22,13 +20,13 @@ pub struct VideoPlan {
     pub range: PlanRange,
     pub fps: Rate,
     pub canvas: PlanCanvas,
-    /// 范围里出现的画面层，每个实例一次（它第一次出现的那一帧），按实例 ID 排序。
+    /// Picture layers that appear in the range, one per instance (the frame where it first appears), sorted by instance ID.
     pub layers: Vec<VisualLayer>,
-    /// 窗口与范围相交的转场。
+    /// Transitions whose window intersects the range.
     pub transitions: Vec<PlannedTransition>,
-    /// 画面要用的素材版本（视频、图片、预渲染替身与代码包，以及 Lottie 贴纸参数里的素材），去重、排序。
+    /// Asset versions the picture needs (video, images, pre-rendered substitutes and code packages, plus assets in Lottie sticker parameters), deduplicated and sorted.
     pub assets: Vec<VersionRef>,
-    /// 范围里的字幕实例要读的文档与样式文档，去重、排序。
+    /// Documents and style documents read by caption instances in the range, deduplicated and sorted.
     pub documents: Vec<Id>,
 }
 
@@ -37,12 +35,12 @@ pub struct VideoPlan {
 pub struct PlannedTransition {
     pub id: Id,
     pub kind: String,
-    /// 认不出的种类：画面按硬切。
+    /// Unrecognized kinds: the picture is hard-cut.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
 }
 
-/// 序列 `sequence_id` 在 `range`（序列时间）里的画面概览。范围的规则与 [`plan_audio`](super::audio_plan::plan_audio) 相同。
+/// Picture overview of sequence `sequence_id` within `range` (sequence time). The range rules are the same as [`plan_audio`](super::audio_plan::plan_audio).
 pub fn plan_video(video: VideoView<'_>, sequence_id: &str, range: Option<(Ratio, Ratio)>) -> Result<VideoPlan, PlanError> {
     let sequence = video
         .sequences
@@ -50,7 +48,7 @@ pub fn plan_video(video: VideoView<'_>, sequence_id: &str, range: Option<(Ratio,
         .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
     let fps = checked_fps(sequence)?;
     let (start, end) = resolve_range(sequence, range)?;
-    // 范围覆盖的帧 `[f0, f1)`：起点所在的帧到终点之前的最后一帧。
+    // Frames covered by the range `[f0, f1)`: from the frame where the start lies up to the last frame before the end.
     let f0 = frame_index(frames_at(start, fps).map(|f| f.floor()))?;
     let f1 = frame_index(frames_at(end, fps).map(|f| f.ceil()))?;
     let at = |frame: i64| -> Result<Ratio, PlanError> {
@@ -124,7 +122,7 @@ pub fn plan_video(video: VideoView<'_>, sequence_id: &str, range: Option<(Ratio,
     })
 }
 
-/// 生成器层参数里引用的素材（Lottie 贴纸的 `asset`）：层本身不带素材，但导出要冻结它，帧光栅从字节读。
+/// Assets referenced by generator layer parameters (the `asset` of a Lottie sticker). The layer itself carries no asset, but export must freeze it, since frame rasterization reads from bytes.
 fn generator_asset(layer: &VisualLayer) -> Option<VersionRef> {
     match &layer.content {
         Some(LayerContent::Generator { parameters, .. }) => parameters.get("asset").cloned().and_then(|v| serde_json::from_value(v).ok()),
@@ -132,15 +130,15 @@ fn generator_asset(layer: &VisualLayer) -> Option<VersionRef> {
     }
 }
 
-/// 成片的输出尺寸与画面在其中的位置（像素）。
+/// Output size of the finished export and the picture's position within it (pixels).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputGeometry {
     pub width: u32,
     pub height: u32,
-    /// 画面（按画布画出来的那一块）：与输出同尺寸时铺满；要的宽高比与画布不同时是居中的一块，其余是黑边。
+    /// The picture (the part drawn onto the canvas). It fills the output when the sizes match; when the desired aspect ratio differs from the canvas, it is a centered piece with black bars around it.
     pub picture: PictureRect,
-    /// 输出宽高与要的（或画布的）不一样：取偶数时调过。
+    /// Output width or height differs from the desired (or canvas) one: adjusted to even numbers.
     pub adjusted: bool,
 }
 
@@ -153,11 +151,10 @@ pub struct PictureRect {
     pub height: u32,
 }
 
-/// 成片的输出尺寸（宽高都取偶数，yuv420p 的要求；不小于 2）。
+/// Output size of the finished export (width and height both made even, as yuv420p requires; not less than 2).
 ///
-/// - 都不给：画布尺寸；只给高：宽按画布比例；只给宽：高按画布比例。这三种画面铺满输出。
-/// - 宽高都给：输出就是这个尺寸；画面是放得下的最大的画布比例的一块（放不满的那一边取偶数），居中，其余是黑边
-///   （画布比输出宽是上下黑边，窄是左右黑边）。画面里的排版按画布摆在这一块里，不按输出的比例重排。
+/// - Neither given: canvas size. Only height given: width follows the canvas ratio. Only width given: height follows the canvas ratio. In these three cases the picture fills the output.
+/// - Both given: the output is that size. The picture is the largest piece at the canvas ratio that fits (a dimension that cannot be filled is made even), centered, with black bars elsewhere (a wider canvas gives top and bottom bars, a narrower one gives left and right bars). Layout inside the picture follows the canvas and is not rescaled to the output's ratio.
 pub fn output_geometry(canvas_width: u32, canvas_height: u32, width: Option<u32>, height: Option<u32>) -> OutputGeometry {
     let even = |v: f64| ((v / 2.0).round() * 2.0).max(2.0) as u32;
     let (cw, ch) = (f64::from(canvas_width.max(1)), f64::from(canvas_height.max(1)));
@@ -171,7 +168,7 @@ pub fn output_geometry(canvas_width: u32, canvas_height: u32, width: Option<u32>
         (Some(w), Some(h)) => {
             let (out_w, out_h) = (even(f64::from(w)), even(f64::from(h)));
             let (fw, fh) = (f64::from(out_w), f64::from(out_h));
-            // 画布相对更宽：宽铺满、高按比例；否则高铺满、宽按比例。按比例的一边不超过输出（输出是偶数，就近取偶不会越过）。
+            // If the canvas is relatively wider: width fills and height follows the ratio; otherwise height fills and width follows the ratio. The dimension that follows the ratio does not exceed the output (the output is even, so rounding to even will not overshoot).
             let (pw, ph) = if cw * fh >= ch * fw {
                 (out_w, even(ch * fw / cw).min(out_h))
             } else {

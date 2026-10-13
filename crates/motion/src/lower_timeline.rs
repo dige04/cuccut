@@ -1,8 +1,8 @@
-//! Timeline 0.1 动画槽 → `MotionProgram`（设计 §5.7）。
+//! Timeline 0.1 animation slot → `MotionProgram` (design §5.7).
 //!
-//! 这里的每一个表达式形状都必须与 `ccut-timeline/src/motion.rs` 的旧实现逐位一致，
-//! `core/fixtures/motion/` 的阶段 0 golden 是硬门。关键取舍见计划 §2.1–§2.10，
-//! 逐条在下面的注释里标了出处。
+//! Every expression shape here must match the old implementation in `ccut-timeline/src/motion.rs` bit for bit,
+//! and the phase-0 golden in `core/fixtures/motion/` is a hard gate. For the key trade-offs see plan §2.1–§2.10;
+//! each one is annotated with its source in the comments below.
 
 use std::ops::Range;
 
@@ -23,8 +23,8 @@ use crate::text_parts::{
 };
 use crate::value::{MotionValue, PropertyId};
 
-/// `AnimationSlot` 的借用视图。`ccut-motion` 因此不依赖 `ccut-timeline::schema`
-/// （依赖方向 `ccut-timeline → ccut-motion`，ADR-M01）。
+/// Borrowed view of `AnimationSlot`. This is why `ccut-motion` does not depend on `ccut-timeline::schema`
+/// (the dependency direction is `ccut-timeline → ccut-motion`, ADR-M01).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SlotInput<'a> {
     pub preset: &'a str,
@@ -54,10 +54,10 @@ pub struct Window {
     pub project_end: f64,
 }
 
-/// 元素自身尺寸，单位是**画布短边的倍数**（与 pose 的 `dx`/`dy` 同一坐标系）。
-/// 配方 `basis` 为 `selfWidth` / `selfHeight` 时（元素动画：x:1 = 一个元素宽），
-/// lowering 用它把位移换算成短边比例；调用方不给（`None`）时按 1 短边近似
-/// （2026-09-08 起 `ccut-timeline::resolve_animation_pose` 仍走这条近似，见台账）。
+/// The element's own size, in **multiples of the canvas short edge** (same coordinate system as the pose's `dx`/`dy`).
+/// When the recipe `basis` is `selfWidth` / `selfHeight` (element animation: x:1 = one element width),
+/// lowering uses this to convert displacement into short-edge ratios. When the caller passes nothing (`None`),
+/// it approximates with 1 short edge (since 2026-09-08 `ccut-timeline::resolve_animation_pose` still uses this approximation, see the ledger).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ElementExtent {
     pub width: f64,
@@ -72,7 +72,7 @@ fn translate_factor(basis: LengthBasis, extent: Option<ElementExtent>) -> f64 {
     }
 }
 
-/// 通道 identity 表（`AnimationPose::IDENTITY`）。`reveal` 不在里面：它是 optional 轨。
+/// Channel identity table (`AnimationPose::IDENTITY`). `reveal` is not in it: it is an optional track.
 const POSE_CHANNELS: &[(&str, f64)] = &[
     ("opacity", 1.0),
     ("dx", 0.0),
@@ -90,14 +90,14 @@ pub fn slot_duration(slot: &SlotInput<'_>, recipe: &SlotRecipe) -> f64 {
     slot.dur.unwrap_or(recipe.duration).max(0.0)
 }
 
-/// `motion.rs:412-442`。四个容易丢的细节：
-/// 1. 显式 `exit.preset == "none"` 阻断推导，返回 `None`；
-/// 2. 显式 exit 的 preset 在 **exit 表**里没有配方（`drop`/`pop`/`blurIn`/
-///    `typewriter`/`riseWords`/`bounce`）时同样是 `None`——完全没有退场；
-/// 3. 推导出的 `dur` 取 **enter 的有效时长** × 0.75，不是 enter 配方的缺省时长；
-/// 4. `delay: Some(0.0)`、`ease: None`（用户的入场 ease 被有意丢弃），
-///    `stagger`/`staggerFrom`/`period`/`phase` 全为 `None`，
-///    `intensity`/`seed`/`presetVersion` 继承。
+/// `motion.rs:412-442`. Four details that are easy to get wrong:
+/// 1. An explicit `exit.preset == "none"` blocks derivation and returns `None`;
+/// 2. An explicit exit preset that has no recipe in the **exit table** (`drop`/`pop`/`blurIn`/
+///    `typewriter`/`riseWords`/`bounce`) is likewise `None`, meaning there is no exit at all;
+/// 3. The derived `dur` is the **effective enter duration** × 0.75, not the enter recipe's default duration;
+/// 4. `delay: Some(0.0)` and `ease: None` (the user's enter ease is deliberately dropped),
+///    `stagger`/`staggerFrom`/`period`/`phase` are all `None`,
+///    and `intensity`/`seed`/`presetVersion` are inherited.
 pub fn effective_exit<'a>(
     animation: &AnimationInput<'a>,
 ) -> Option<(SlotInput<'a>, &'static SlotRecipe)> {
@@ -132,8 +132,8 @@ pub fn effective_exit<'a>(
     ))
 }
 
-/// 一个 enter/exit 槽编译出来的逐通道 tween。段布局（`MotionProgram`）与文字
-/// 级联（逐 part 进度）共用它，两条路径因此不可能算出不同的 double。
+/// The per-channel tween compiled from one enter/exit slot. Both the segment layout (`MotionProgram`) and the
+/// text cascade (per-part progress) share it, so the two paths cannot compute different doubles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SlotTween {
     pub atoms: Vec<TweenAtom>,
@@ -148,8 +148,8 @@ pub struct TweenAtom {
     pub curve: CurveSpec,
     pub post: PostOp,
     pub optional: bool,
-    /// 多关键帧链（2026-09-08）。非空时 `from`/`to`/`curve` 只是首尾摘要，
-    /// 求值按相邻关键帧逐段 tween（段缓动 = 段末帧 curve）；冻结配方此表恒空。
+    /// Multi-keyframe chain (2026-09-08). When non-empty, `from`/`to`/`curve` are only a summary of the first and last
+    /// keyframes; evaluation tweens segment by segment between adjacent keyframes (segment easing = the curve of the segment's end frame). Frozen recipes always leave this table empty.
     pub keys: Vec<ChannelKey>,
 }
 
@@ -169,7 +169,7 @@ impl TweenAtom {
 }
 
 impl SlotTween {
-    /// 直接把某个进度的整套 pose 写进 `out`（文字级联逐 part 用）。
+    /// Writes the full pose for a given progress directly into `out` (used for per-part text cascades).
     pub fn write_into(&self, out: &mut PoseBuffer, progress: f64) {
         for atom in &self.atoms {
             out.write(
@@ -183,13 +183,13 @@ impl SlotTween {
     }
 }
 
-/// `motion.rs:783-841`。
+/// `motion.rs:783-841`.
 ///
-/// - `intensity <= 0.0` 返回 `None` = **整套 IDENTITY**，包括 `reveal: None`
-///   （计划 §2.3）：逐通道展开会让 `wipe` 得到 `reveal = Some(1.0)`，
-///   那是可观测的差异（CLI 的 reveal pass 与 GPUI 的 `is_identity` 分支）。
-/// - 曲线按通道分配：`opacity → opacity_curve`、`blur`/`reveal → safe_curve`、
-///   其余 → `curve`（计划 §2.7）。
+/// - `intensity <= 0.0` returns `None`, meaning the **whole set is IDENTITY**, including `reveal: None`
+///   (plan §2.3). Expanding per channel would give `wipe` `reveal = Some(1.0)`,
+///   which is an observable difference (the CLI's reveal pass and the GPUI `is_identity` branch).
+/// - Curves are assigned per channel: `opacity → opacity_curve`, `blur`/`reveal → safe_curve`,
+///   everything else → `curve` (plan §2.7).
 pub fn compile_slot_tween(
     slot: &SlotInput<'_>,
     recipe: &SlotRecipe,
@@ -198,8 +198,8 @@ pub fn compile_slot_tween(
     compile_slot_tween_with(slot, recipe, entering, None)
 }
 
-/// [`compile_slot_tween`] 加元素尺寸：只影响 `basis` 为 `selfWidth`/`selfHeight`
-/// 的配方（冻结目录全是 `canvasShortEdge`，结果逐位不变）。
+/// [`compile_slot_tween`] plus element size: only affects recipes whose `basis` is `selfWidth`/`selfHeight`
+/// (the frozen catalogue is all `canvasShortEdge`, so the result is bit-for-bit unchanged).
 pub fn compile_slot_tween_with(
     slot: &SlotInput<'_>,
     recipe: &SlotRecipe,
@@ -228,7 +228,7 @@ pub fn compile_slot_tween_with(
     } else {
         curve.clone()
     };
-    // 注意 `unwrap_or(curve)`：配方没有 opacityCurve 时回落到**用户覆盖过的**曲线。
+    // Note `unwrap_or(curve)`: when the recipe has no opacityCurve it falls back to the **user-overridden** curve.
     let opacity_curve = recipe
         .opacity_curve
         .clone()
@@ -239,9 +239,9 @@ pub fn compile_slot_tween_with(
         opacity_curve
     };
 
-    // 配方没声明的通道，`far == identity`，采样结果恒等于 base，因此不发轨。
-    // 唯一例外是 NaN intensity：旧实现会让**每个**通道变成 NaN
-    // （`identity + 0.0 * NaN`），保留这个分支才是逐位一致。
+    // For channels the recipe does not declare, `far == identity`, so the sampled result always equals the base and no track is emitted.
+    // The only exception is a NaN intensity: the old implementation turned **every** channel into NaN
+    // (`identity + 0.0 * NaN`), so keeping this branch is what makes it bit-for-bit identical.
     let emit_all = !intensity.is_finite();
     let mut atoms = Vec::new();
     for (channel, identity) in POSE_CHANNELS {
@@ -293,16 +293,16 @@ pub fn compile_slot_tween_with(
     Some(SlotTween { atoms })
 }
 
-/// 多关键帧配方（元素动画）的编译：
+/// Compilation of multi-keyframe recipes (element animations):
 ///
-/// - 每通道一条 [`TweenAtom`]，`keys[i].value = identity + (v_i − identity)·intensity`，
-///   关键帧没写的通道取 identity；`dx`/`dy` 先按配方 `basis` 换算成短边比例。
-/// - `keys[i].curve` 是**到达第 i 帧**那一段的缓动。
-///   用户 `ease` 覆盖时整条链都用它；`opacity`/`blur`/`reveal` 遇到过冲曲线降级
-///   （与两点式同一条规则）。
-/// - 关键帧按配方自己的槽方向书写。`entering` 与 `recipe.slot` 不一致（镜像回落）
-///   时把链倒过来：`at' = 1 − at`，段缓动随段走。
-/// - NaN intensity 与两点式一样让每个通道都发轨（`identity + 0·NaN`）。
+/// - One [`TweenAtom`] per channel, `keys[i].value = identity + (v_i − identity)·intensity`;
+///   channels a keyframe does not specify take identity; `dx`/`dy` are first converted to short-edge ratios per the recipe `basis`.
+/// - `keys[i].curve` is the easing of the segment **arriving at** frame i.
+///   When the user `ease` overrides, the whole chain uses it; `opacity`/`blur`/`reveal` downgrade when they meet an overshooting curve
+///   (the same rule as the two-point form).
+/// - Keyframes are written in the recipe's own slot direction. When `entering` differs from `recipe.slot` (mirrored fallback),
+///   the chain is reversed: `at' = 1 − at`, and the segment easing travels with its segment.
+/// - NaN intensity, as in the two-point form, makes every channel emit a track (`identity + 0·NaN`).
 fn compile_keyframe_tween(
     slot: &SlotInput<'_>,
     recipe: &SlotRecipe,
@@ -324,8 +324,8 @@ fn compile_keyframe_tween(
         recipe.keyframes.iter().rev().collect()
     };
     let curve_for = |index: usize, channel: &str| -> CurveSpec {
-        // 正向：段 [k_{i-1}, k_i] 用 k_i.curve；反向后第 m 帧对应原第 n−m 帧，
-        // 段 [r_{m-1}, r_m] 是原 [k_{n−m}, k_{n−m+1}]，缓动是 k_{n−m+1}.curve。
+        // Forward: segment [k_{i-1}, k_i] uses k_i.curve. After reversal, frame m corresponds to original frame n−m,
+        // and segment [r_{m-1}, r_m] is the original [k_{n−m}, k_{n−m+1}], with easing k_{n−m+1}.curve.
         let curve = match user_curve.as_ref() {
             Some(curve) => curve.clone(),
             None if index == 0 => CurveSpec::from_name("linear"),
@@ -402,7 +402,7 @@ fn compile_keyframe_tween(
     SlotTween { atoms }
 }
 
-/// `motion.rs:893-976` 的编译期部分。返回逐通道内核；空 = 该刻恒等。
+/// The compile-time part of `motion.rs:893-976`. Returns per-channel kernels; empty = identity for this moment.
 fn compile_loop_kernels(
     slot: &SlotInput<'_>,
     recipe: &LoopRecipe,
@@ -418,8 +418,8 @@ fn compile_loop_kernels(
     let emit_all = !intensity.is_finite();
     let mut kernels = Vec::new();
     if !recipe.keyframes.is_empty() {
-        // 关键帧循环：逐通道把关键帧折算成 `identity + (v − identity)·intensity`，
-        // 不走波形、没有 seed/包络（周期内精确插值，关键帧处逐位等于声明值）。
+        // Keyframe loop: per channel, the keyframes are converted to `identity + (v − identity)·intensity`.
+        // No waveform and no seed/envelope (exact interpolation within the period; at keyframes it equals the declared value bit for bit).
         for (channel, identity) in POSE_CHANNELS {
             let Some(ordinal) = channel_ordinal(channel) else {
                 continue;
@@ -471,13 +471,13 @@ fn compile_loop_kernels(
     }
     for (channel, identity) in POSE_CHANNELS {
         let Some(ordinal) = channel_ordinal(channel) else {
-            continue; // blur 不参与循环（`motion.rs:958`）
+            continue; // blur does not take part in the loop (`motion.rs:958`)
         };
         let declared = recipe.amplitudes.get(channel);
         if declared.is_none() && !emit_all {
             continue;
         }
-        // amp * intensity 先乘，与 `motion.rs:952-957` 的左结合顺序一致。
+        // amp * intensity is multiplied first, matching the left-associative order in `motion.rs:952-957`.
         let amplitude = declared.unwrap_or(0.0) * intensity;
         kernels.push((
             PropertyId::parse(channel),
@@ -504,7 +504,7 @@ fn compile_loop_kernels(
 #[derive(Clone, Debug, PartialEq)]
 pub struct TimelineProgram {
     pub lifetime: f64,
-    /// `TimeBase::ElementLocal`：窗口全部相对 `start`（计划 §2.1）。
+    /// `TimeBase::ElementLocal`: all windows are relative to `start` (plan §2.1).
     pub program: MotionProgram,
 }
 
@@ -536,8 +536,8 @@ impl TrackBuilder {
         self.tracks.push(PropertyTrack {
             target: TargetId::SELF,
             property: property.clone(),
-            // Timeline 0.1 每属性恰好一条 Replace 轨（ADR-M08 冻结）：enter / loop /
-            // exit 三段推进同一条轨且时间互斥，`effective_exit` 的镜像也不例外。
+            // Timeline 0.1 has exactly one Replace track per property (ADR-M08 freeze): the enter / loop /
+            // exit segments advance along the same track with mutually exclusive times, and the mirror of `effective_exit` is no exception.
             composite: CompositeMode::Replace,
             order: 0,
             base: MotionValue::Scalar(identity),
@@ -565,10 +565,10 @@ fn tween_segment(atom: &TweenAtom, t0: f64, t1: f64, before: Fill, after: Fill) 
     }
 }
 
-/// 一个 atom 在 `[t0, t1]` 上的段列表：两点式恰好一段（逐位等于 [`tween_segment`]）；
-/// 关键帧链按 `at` 切成首尾相接的子窗口，每段 `[t0 + at_i·dur, t0 + at_{i+1}·dur]`
-/// 用第 i+1 帧的缓动。填充：首段继承槽的 `before`、末段继承 `after`，中段 Off/Off
-/// （相邻段共享端点，`[t0, t1)` 语义下不重叠）。零长段跳过，填充顺延。
+/// The segment list of one atom over `[t0, t1]`: the two-point form has exactly one segment (bit for bit equal to [`tween_segment`]);
+/// a keyframe chain is cut by `at` into head-to-tail sub-windows, each segment `[t0 + at_i·dur, t0 + at_{i+1}·dur]`
+/// uses the easing of frame i+1. Padding: the first segment inherits the slot's `before`, the last segment inherits `after`, and middle segments are Off/Off
+/// (adjacent segments share endpoints, so they do not overlap under `[t0, t1)` semantics). Zero-length segments are skipped, and the padding moves on to the next segment.
 fn chain_segments(
     atom: &TweenAtom,
     t0: f64,
@@ -612,7 +612,7 @@ fn chain_segments(
     segments
 }
 
-/// `motion.rs:500-567` 的编译期部分。`None` = lifetime 非法 → 调用方返回 IDENTITY。
+/// The compile-time part of `motion.rs:500-567`. `None` = illegal lifetime → the caller returns IDENTITY.
 pub fn lower_timeline_animation(
     animation: &AnimationInput<'_>,
     win: Window,
@@ -620,8 +620,8 @@ pub fn lower_timeline_animation(
     lower_timeline_animation_with(animation, win, None)
 }
 
-/// [`lower_timeline_animation`] 加元素尺寸（见 [`ElementExtent`]）。冻结目录的
-/// 配方不读 `extent`，两条入口对它们逐位一致。
+/// [`lower_timeline_animation`] plus element size (see [`ElementExtent`]). The frozen catalogue's
+/// recipes do not read `extent`, so the two entry points are bit-for-bit identical for them.
 pub fn lower_timeline_animation_with(
     animation: &AnimationInput<'_>,
     win: Window,
@@ -663,8 +663,8 @@ pub fn lower_timeline_animation_with(
     let mut builder = TrackBuilder::new();
     let mut program = MotionProgram::new(TimeBase::ElementLocal);
 
-    // ① 入场：`[begin, finish)`，左侧 Hold（`local < begin` 时进度夹到 0），
-    //    右侧 Off（`local >= finish` 交给 loop / exit / identity）。
+    // ① Enter: `[begin, finish)`, Hold on the left (progress clamped to 0 when `local < begin`),
+    //    Off on the right (`local >= finish` is handed to loop / exit / identity).
     if let Some((begin, finish, slot, recipe)) = enter_window {
         program.sources.push(PresetRef {
             id: format!("timeline.enter.{}", recipe.id),
@@ -686,11 +686,11 @@ pub fn lower_timeline_animation_with(
         }
     }
 
-    // ② idle 循环：`[idle_begin, idle_end]`。右端点只在**没有退场**时由 fill_after
-    //    覆盖——退场缺席时 `idle_end == lifetime`，而 `local == lifetime` 仍走循环
-    //    分支（`motion.rs:566`）。有退场时必须是 Off：退场配方可能不驱动某条通道
-    //    （`fade` 只动 opacity），那条通道上循环段就是最后一段，Hold 会把循环值
-    //    一直拖到元素末尾。
+    // ② Idle loop: `[idle_begin, idle_end]`. The right endpoint is covered by fill_after only when there is **no exit**:
+    //    when the exit is absent, `idle_end == lifetime`, and `local == lifetime` still takes the loop
+    //    branch (`motion.rs:566`). When there is an exit it must be Off: the exit recipe may not drive some channel
+    //    (`fade` only moves opacity), so on that channel the loop segment is the last segment, and Hold would drag the loop value
+    //    all the way to the end of the element.
     if let Some(slot) = animation.r#loop.filter(|slot| slot.preset != "none")
         && idle_end > idle_begin
         && let Some(recipe) = timeline_loop(slot.preset)
@@ -727,7 +727,7 @@ pub fn lower_timeline_animation_with(
         }
     }
 
-    // ③ 退场：`[begin, finish]`，右侧 Hold（`local > finish` 时进度夹到 1）。
+    // ③ Exit: `[begin, finish]`, Hold on the right (progress clamped to 1 when `local > finish`).
     if let (Some((slot, recipe)), Some((begin, finish))) = (exit.as_ref(), exit_window) {
         program.sources.push(PresetRef {
             id: format!("timeline.exit.{}", recipe.id),
@@ -753,12 +753,12 @@ pub fn lower_timeline_animation_with(
     Some(TimelineProgram { lifetime, program })
 }
 
-/// 文字级联的 lowering 结果。三个出口与 `motion.rs:574-678` 的三条回落一一对应。
+/// The lowering result for text cascades. The three exits correspond one-to-one to the three fallbacks in `motion.rs:574-678`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TextLowering {
-    /// 回落到 `resolve_animation_pose`（整容器）。
+    /// Falls back to `resolve_animation_pose` (the whole container).
     Container,
-    /// 回落到 `AnimationPose::IDENTITY`。
+    /// Falls back to `AnimationPose::IDENTITY`.
     Identity,
     Cascade(TextCascade),
 }
@@ -768,14 +768,14 @@ pub struct TextCascade {
     pub unit: PartUnit,
     pub ranges: Vec<Range<usize>>,
     pub lifetime: f64,
-    /// 级联结束时刻（元素局部时间）；`local >= finish` 时回落到容器。
+    /// The moment the cascade ends (element-local time); when `local >= finish`, falls back to the container.
     pub finish: f64,
     pub plan: PartPlan,
-    /// `None` = `intensity <= 0`，逐 part 恒等。
+    /// `None` = `intensity <= 0`, identity for every part.
     pub tween: Option<SlotTween>,
 }
 
-/// `motion.rs:574-678` 的编译期部分。
+/// The compile-time part of `motion.rs:574-678`.
 pub fn lower_timeline_text(
     animation: &AnimationInput<'_>,
     win: Window,
@@ -807,8 +807,8 @@ pub fn lower_timeline_text(
         .min((lifetime * 0.5 - duration).max(0.0));
     let finish = delay + duration;
     let count = ranges.len();
-    // `0.5`（级联总跨度上限）与 `0.01`（part 时长下限）是内核策略常量，
-    // 每个级联配方共用；只有 `partDur`/`stagger`/`unit` 是配方数据（计划 §2.10）。
+    // `0.5` (the upper limit on the cascade's total span) and `0.01` (the lower limit on part duration) are kernel policy constants
+    // shared by every cascade recipe; only `partDur`/`stagger`/`unit` are recipe data (plan §2.10).
     let part_duration = plan
         .part_dur
         .max(PART_DURATION_FLOOR)
@@ -866,9 +866,9 @@ mod tests {
         buf
     }
 
-    /// ADR-M08 冻结守卫：Timeline 0.1 的全部配方组合都必须落成
-    /// **每属性恰好一条 `Replace` 轨**。新 family 的 add / multiply 不得渗进这里，
-    /// 否则「旧项目像素不变」立刻失守。
+    /// ADR-M08 freeze guard: every recipe combination in Timeline 0.1 must lower to
+    /// **exactly one `Replace` track per property**. The add / multiply of new families must not leak in here,
+    /// otherwise “old projects render pixel-identical” breaks immediately.
     #[test]
     fn every_timeline_program_stays_single_replace_per_property() {
         let enters = crate::preset_registry::ids(crate::preset_registry::Domain::TimelineEnter);
@@ -918,7 +918,7 @@ mod tests {
 
     #[test]
     fn enter_and_exit_windows_never_overlap() {
-        // 计划 §2.4 的性质测试：确定性伪随机遍历。
+        // Property test from plan §2.4: a deterministic pseudo-random traversal.
         let mut state = 0x2545_F491_4F6C_DD1Du64;
         let mut next = || {
             state ^= state << 13;
@@ -973,7 +973,7 @@ mod tests {
             project_end: 4.0,
         };
         assert_eq!(pose(&animation, win, 0.0, 60.0).scalar("reveal"), Some(0.0));
-        // 入场结束后 reveal 必须重新缺席（`sample_loop` 分支不产出 reveal）。
+        // After the enter ends, reveal must be absent again (the `sample_loop` branch does not produce reveal).
         assert_eq!(pose(&animation, win, 2.0, 60.0).scalar("reveal"), None);
     }
 
@@ -1075,8 +1075,8 @@ mod tests {
         assert!(first.scalar_or("dx", 0.0) != first.scalar_or("dy", 0.0));
     }
 
-    /// 回归：`fade` 退场只驱动 opacity，因此 `float` 的 dy 轨上循环段是最后一段。
-    /// 它的右端点必须是 Off，否则循环值会被一路 Hold 到元素末尾。
+    /// Regression: the `fade` exit only drives opacity, so on `float`'s dy track the loop segment is the last segment.
+    /// Its right endpoint must be Off, otherwise the loop value would be held all the way to the end of the element.
     #[test]
     fn a_loop_channel_the_exit_does_not_drive_stops_at_the_idle_end() {
         let animation = AnimationInput {
@@ -1089,7 +1089,7 @@ mod tests {
             end: Some(5.0),
             project_end: 10.0,
         };
-        // lifetime 4 / half 2：入场 [0, 0.4]、idle [0.4, 3.7]、退场 [3.7, 4.0]
+        // lifetime 4 / half 2: enter [0, 0.4], idle [0.4, 3.7], exit [3.7, 4.0]
         assert!(pose(&animation, win, 4.6, 30.0).scalar_or("dy", 0.0) != 0.0);
         for t in [4.7, 4.8, 4.9, 5.0] {
             assert_eq!(
@@ -1100,7 +1100,7 @@ mod tests {
         }
     }
 
-    /// 反过来：没有退场时 `local == lifetime` 仍然落在循环里。
+    /// The reverse: when there is no exit, `local == lifetime` still falls inside the loop.
     #[test]
     fn without_an_exit_the_loop_still_covers_the_last_instant() {
         let animation = AnimationInput {
@@ -1113,7 +1113,7 @@ mod tests {
             end: Some(3.0),
             project_end: 3.0,
         };
-        // period 2.4：idle_local = 3.0 → phase 1.25 → rem_euclid 0.25 → 正峰
+        // period 2.4: idle_local = 3.0 → phase 1.25 → rem_euclid 0.25 → positive peak
         assert!(pose(&animation, win, 3.0, 30.0).scalar_or("dy", 0.0) > 0.0);
     }
 
@@ -1184,7 +1184,7 @@ mod tests {
         assert_eq!(&opacity[2..], &[0.0, 0.0, 0.0]);
     }
 
-    // ---- 2026-09-08 元素动画目录：多关键帧形态 ----
+    // ---- 2026-09-08 element animation catalogue: multi-keyframe shapes ----
 
     fn scalar(buf: &PoseBuffer, prop: &str) -> f64 {
         buf.get(prop)
@@ -1211,8 +1211,8 @@ mod tests {
         project_end: 10.0,
     };
 
-    /// `pop`：`scale 0 → 1.2@0.7 → 0.95@0.8 → 1@1`，关键帧处逐位等于声明值，
-    /// 段内按段末帧缓动（sinInOut）。
+    /// `pop`: `scale 0 → 1.2@0.7 → 0.95@0.8 → 1@1`; at the keyframes it equals the declared values bit for bit,
+    /// and within a segment it eases by the segment's end frame (sinInOut).
     #[test]
     fn keyframe_enter_hits_declared_values_at_key_times() {
         let anim = enter_only("elPop");
@@ -1220,7 +1220,7 @@ mod tests {
         assert_eq!(scalar(&pose(&anim, WIN, 0.8, 1000.0), "scaleY"), 0.95);
         assert_eq!(scalar(&pose(&anim, WIN, 0.0, 1000.0), "scaleX"), 0.0);
         assert_eq!(scalar(&pose(&anim, WIN, 1.0, 1000.0), "scaleX"), 1.0);
-        // 0.35 是首段（0→0.7，sinInOut）中点：eased = 0.5，值 = 0.6。
+        // 0.35 is the midpoint of the first segment (0→0.7, sinInOut): eased = 0.5, value = 0.6.
         let mid = scalar(&pose(&anim, WIN, 0.35, 1000.0), "scaleX");
         assert!((mid - 0.6).abs() < 1e-12, "{mid}");
 
@@ -1235,7 +1235,7 @@ mod tests {
         assert_eq!(scalar(&pose(&anim, WIN, 0.0, 1000.0), "opacity"), 0.0);
     }
 
-    /// `selfWidth` 基准：给了元素尺寸时 `dx` 按元素宽换算；没给时按 1 短边近似。
+    /// `selfWidth` basis: when the element size is given, `dx` is converted by element width; when not given, it is approximated with 1 short edge.
     #[test]
     fn element_extent_scales_self_relative_translate() {
         let anim = enter_only("elSlideL");
@@ -1251,14 +1251,14 @@ mod tests {
         let mut buf = PoseBuffer::identity();
         sample(&lowered.program, TargetId::SELF, 0.0, &mut buf);
         assert_eq!(scalar(&buf, "dx"), 1.0);
-        // 冻结配方不读 extent：slideL 的 dx 是 canvasShortEdge。
+        // Frozen recipes do not read extent: slideL's dx is canvasShortEdge.
         let frozen = enter_only("slideL");
         let a = lower_timeline_animation_with(&frozen, WIN, Some(extent)).unwrap();
         let b = lower_timeline_animation(&frozen, WIN).unwrap();
         assert_eq!(a, b);
     }
 
-    /// intensity 只缩放对 identity 的偏离：elPop@0.7 在 0.5 强度下是 1.1。
+    /// Intensity only scales the deviation from identity: elPop@0.7 at 0.5 intensity is 1.1.
     #[test]
     fn keyframe_intensity_scales_deviation_from_identity() {
         let mut anim = enter_only("elPop");
@@ -1266,8 +1266,8 @@ mod tests {
         assert_eq!(scalar(&pose(&anim, WIN, 0.7, 1000.0), "scaleX"), 1.1);
     }
 
-    /// 关键帧配方的段布局：首段 Hold-before、末段继承槽的 after、中段 Off/Off、
-    /// 相邻段共享端点。
+    /// Segment layout of keyframe recipes: the first segment uses Hold-before, the last segment inherits the slot's after, middle segments are Off/Off,
+    /// and adjacent segments share endpoints.
     #[test]
     fn keyframe_chain_segments_are_contiguous_with_slot_fills() {
         let anim = enter_only("elPop");
@@ -1286,7 +1286,7 @@ mod tests {
         assert_eq!(track.segments[2].fill_after, Fill::Off);
     }
 
-    /// 镜像回落：enter 配方倒放成退场时链反转（`at' = 1 − at`）。
+    /// Mirror fallback: when an enter recipe is played backwards as an exit, the chain is reversed (`at' = 1 − at`).
     #[test]
     fn keyframe_recipe_reverses_when_used_against_its_slot() {
         let recipe = timeline_enter("elPop").unwrap();
@@ -1304,7 +1304,7 @@ mod tests {
         assert_eq!(atom.value_at(1.0).as_f64(), Some(0.0));
     }
 
-    /// 关键帧循环：周期内精确插值，关键帧处逐位等于声明值，`intensity` 缩放偏离。
+    /// Keyframe loop: exact interpolation within the period; at the keyframes it equals the declared value bit for bit, and `intensity` scales the deviation.
     #[test]
     fn keyframe_loop_is_exact_at_key_phases() {
         let anim = AnimationInput {
@@ -1333,7 +1333,7 @@ mod tests {
         assert_eq!(scalar(&pose(&spin, WIN, 1.0, 1000.0), "rotation"), 180.0);
     }
 
-    /// 元素目录的每一行都能编译，enter 都有同名 exit 镜像，且 `surface` 正确。
+    /// Every row of the element catalogue compiles, every enter has a same-named exit mirror, and `surface` is correct.
     #[test]
     fn element_catalogue_rows_are_keyframed_and_mirrored() {
         use crate::preset_registry::{Domain, RecipeSurface, ids, timeline_loop};

@@ -3,7 +3,7 @@ import { webVideoHref, type FileTarget } from '@cuccut/protocol';
 import { HOME, hasSidebar, hrefFor, migrateShell, parseHref, useShell, type Route } from './shell-store.ts';
 import { itemKey } from '../model/workspace.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
@@ -198,7 +198,7 @@ describe('Home 功能区标签', () => {
     expect(view()).toEqual({ hidden: true, full: false });
     toggleWorkspace();
     expect(view()).toBeUndefined();
-    // 从侧栏点回只有会话的位置：标签组记下 files；再显示时回到它。
+    // Returning to a conversation-only position from the sidebar: the tab group records files; showing it again returns to that position.
     go({ tab: 'home', conversationId: 'c1', projectId: null });
     expect(useShell.getState().workspaces.c1).toEqual({ tabs: [video, files], active: null, last: 'files' });
     useShell.getState().toggleWorkspace();
@@ -238,21 +238,21 @@ describe('Home 功能区标签', () => {
     go({ tab: 'home', conversationId: 'c1', projectId: null });
     openPane(video);
     openPane(files);
-    // 分屏可见：完整视图里是当前标签。
+    // Split view visible: in full view, it is the current tab.
     toggleWorkspaceFull();
     expect(view()).toEqual({ hidden: false, full: true });
-    // 完整视图里标签页按钮回到分屏。
+    // In full view, the tabs button returns to split view.
     toggleWorkspace();
     expect(view()).toBeUndefined();
     expect(useShell.getState().route).toEqual({ tab: 'home', conversationId: 'c1', projectId: null, pane: files });
-    // 功能区收起：完整视图里是会话；退出后分屏回来。
+    // Side panel collapsed: in full view it is the conversation; after exiting, split view comes back.
     toggleWorkspace();
     toggleWorkspaceFull();
     expect(view()).toEqual({ hidden: true, full: true });
     toggleWorkspaceFull();
     expect(view()).toBeUndefined();
     expect(useShell.getState().route).toEqual({ tab: 'home', conversationId: 'c1', projectId: null, pane: files });
-    // 路由上没有标签时进入完整视图选着会话，退出时回到记下的标签。
+    // With no tab on the route, entering full view selects the conversation; on exit it returns to the recorded tab.
     go({ tab: 'home', conversationId: 'c1', projectId: null });
     toggleWorkspaceFull();
     expect(view()).toEqual({ hidden: true, full: true });
@@ -300,7 +300,7 @@ describe('Home 功能区标签', () => {
     expect(useShell.getState().route).toEqual({ tab: 'home', conversationId: 'c1', projectId: 'p1', pane: files });
     expect(useShell.getState().back.length).toBe(back);
 
-    // 再开一个新标签页，换成一个已经开着的标签：挪到起始页的位置，不留两份。
+    // Opening a new tab page and switching to a tab that is already open: move it to the start page's position so there are no two copies.
     const second = { kind: 'web', id: 'w3', url: '' } as const;
     openPane(second);
     useShell.getState().movePane(itemKey(second), itemKey(video), false);
@@ -308,7 +308,7 @@ describe('Home 功能区标签', () => {
     expect(useShell.getState().workspaces.c1?.tabs.map(itemKey)).toEqual(['files', itemKey(video), 'web:w2']);
     expect(useShell.getState().route).toMatchObject({ pane: files });
 
-    // 起始页已经不在（比如被关掉）：照常打开。
+    // The start page is already gone (e.g. closed): open as usual.
     replaceWorkspaceTab('web:gone', page);
     expect(useShell.getState().workspaces.c1?.tabs.map(itemKey)).toEqual(['files', itemKey(video), 'web:w2', itemKey(page)]);
     expect(useShell.getState().route).toMatchObject({ pane: page });

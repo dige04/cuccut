@@ -8,8 +8,8 @@ import GlobeGrid from '@react-spectrum/s2/icons/GlobeGrid';
 import type { ServiceId } from '../../model/services.ts';
 
 /**
- * MCP 协议标识：S2 workflow 图标里没有，按原型 designs/cuccut/app/icons.jsx `mcp` 的描边几何画在 20×20 网格上，
- * 1.5 笔宽、只吃 currentColor；只用于 MCP 服务入口（产品设计 §2.1）。
+ * MCP protocol mark: not in the S2 workflow icons, so it is drawn with the stroke geometry of the prototype designs/cuccut/app/icons.jsx `mcp` on a 20×20 grid,
+ * 1.5 stroke width, using only currentColor. It is used only for the MCP service entry (product design §2.1).
  */
 export const McpIcon = createIcon((props) => (
   <svg {...props} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
@@ -19,7 +19,7 @@ export const McpIcon = createIcon((props) => (
   </svg>
 ));
 
-/** 停止：原型 icons.jsx `stop`（Pause 派生的空心圆角方框）；S2 没有对应的 workflow 图标。 */
+/** Stop: prototype icons.jsx `stop` (a hollow rounded square derived from Pause); S2 has no matching workflow icon. */
 export const StopIcon = createIcon((props) => (
   <svg {...props} viewBox="0 0 20 20" fill="currentColor">
     <path d="M15.75,18H4.25c-1.24072,0-2.25-1.00977-2.25-2.25V4.25c0-1.24023,1.00928-2.25,2.25-2.25h11.5c1.24072,0,2.25,1.00977,2.25,2.25v11.5c0,1.24023-1.00928,2.25-2.25,2.25ZM4.25,3.5c-.41357,0-.75.33691-.75.75v11.5c0,.41309.33643.75.75.75h11.5c.41357,0,.75-.33691.75-.75V4.25c0-.41309-.33643-.75-.75-.75H4.25Z" />
@@ -27,8 +27,8 @@ export const StopIcon = createIcon((props) => (
 ));
 
 /**
- * 四项服务的标识（原型 page-services.jsx `ServiceIcon`）：MCP 用协议标识，远端算力是多屏，Web 是地球；
- * 模型接口原型里没有自己的图标（它是 Web 服务页的一节），用 S2 的 Code（接口）。出错时换成警告。
+ * Marks for the four services (prototype page-services.jsx `ServiceIcon`): MCP uses the protocol mark, remote compute is multiple screens, Web is a globe.
+ * The model API has no icon of its own in the prototype (it is a section of the Web service page), so it uses S2's Code (interface). It switches to a warning on error.
  */
 export const SERVICE_ICON = { mcp: McpIcon, remote: DeviceMultiscreen, web: GlobeGrid, 'model-api': Code } as const;
 

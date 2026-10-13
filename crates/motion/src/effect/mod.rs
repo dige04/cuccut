@@ -1,15 +1,15 @@
-//! Effect 词汇（设计 §6.3 / §1.1 的第三条决策：manifest 与效果标识住在
-//! **纯函数层** `ccut-motion`，`ccut-render` 只持有 CPU 实现）。
+//! Effect vocabulary (design §6.3 / decision 3 in §1.1: the manifest and effect identifiers live in the **pure function layer**
+//! `ccut-motion`; `ccut-render` only holds the CPU implementations).
 //!
-//! 本模块只有**值类型**：效果引用、uniform、确定性等级、颜色契约、混合模式。
-//! manifest 解析与内置注册表见同目录的后续文件；CPU 参考实现见
-//! `ccut-render::effects`。
+//! This module contains only **value types**: effect references, uniforms, determinism levels, color contracts, blend modes.
+//! Manifest parsing and the built-in registry are in the follow-up files in this directory; the CPU reference implementation
+//! is in `ccut-render::effects`.
 //!
-//! 三条纪律：
-//! 1. `BlendMode` 是**封闭枚举 + 稳定 u8 编号**——DrawOp v3 的
-//!    `PushLayer{blend}` 与 `composite/blend.json` 都从这里取号，不许出现第二张表。
-//! 2. `UniformMap` 用 `BTreeMap` ⇒ 键序天然有序，编码/指纹无需再排序。
-//! 3. 浮点 uniform 在编码时把 `-0.0` 归一到 `+0.0`（与 DrawOp 同规则）。
+//! Three disciplines:
+//! 1. `BlendMode` is a **closed enum with stable u8 numbers**. DrawOp v3's `PushLayer{blend}` and `composite/blend.json` both
+//!    take their numbers from here; a second table must not appear.
+//! 2. `UniformMap` uses `BTreeMap`, so key order is inherently sorted and encoding / fingerprinting needs no extra sort.
+//! 3. When encoding, float uniforms normalize `-0.0` to `+0.0` (the same rule as DrawOp).
 
 pub mod manifest;
 pub mod registry;
@@ -21,7 +21,7 @@ pub use registry::{
 
 use std::collections::BTreeMap;
 
-/// 效果引用：`(id, version)` 冻结，`pkg_hash` 供第三方包使用（阶段 7）。
+/// Effect reference: `(id, version)` is frozen; `pkg_hash` is for third-party packages (stage 7).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EffectRef {
     pub id: String,
@@ -38,13 +38,13 @@ impl EffectRef {
         }
     }
 
-    /// `"filter.blur@1"`——诊断与夹具目录名的规范写法。
+    /// `"filter.blur@1"`: the canonical form for diagnostics and fixture directory names.
     pub fn qualified(&self) -> String {
         format!("{}@{}", self.id, self.version)
     }
 }
 
-/// uniform 取值。刻意封闭：BCF 里不允许表达式，效果参数只能是这几种字面量。
+/// Uniform value. Deliberately closed: BCF does not allow expressions, so effect parameters can only be these literal kinds.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniformValue {
     Scalar(f64),
@@ -52,7 +52,7 @@ pub enum UniformValue {
     Bool(bool),
     Vec2([f64; 2]),
     Vec4([f64; 4]),
-    /// 非预乘 RGBA，0..1。
+    /// Non-premultiplied RGBA, 0..1.
     Color([f64; 4]),
     Text(String),
 }
@@ -83,7 +83,7 @@ impl UniformValue {
         }
     }
 
-    /// 编码期的类型标签（进指纹，避免 `Scalar(1.0)` 与 `Int(1)` 撞码）。
+    /// Type tag at encoding time (goes into the fingerprint, so `Scalar(1.0)` and `Int(1)` do not collide).
     pub fn tag(&self) -> u8 {
         match self {
             UniformValue::Scalar(_) => 0,
@@ -97,7 +97,7 @@ impl UniformValue {
     }
 }
 
-/// 有序 uniform 表。`BTreeMap` ⇒ 迭代序 = 键的字典序，编码天然确定。
+/// Ordered uniform table. `BTreeMap` ⇒ iteration order is the lexicographic order of the keys, so encoding is deterministic by nature.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UniformMap(BTreeMap<String, UniformValue>);
 
@@ -151,7 +151,7 @@ impl FromIterator<(String, UniformValue)> for UniformMap {
     }
 }
 
-/// 确定性等级（ADR-M05）。`strict` 必须有 CPU reference executor。
+/// Determinism level (ADR-M05). `strict` must have a CPU reference executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Determinism {
     #[default]
@@ -187,8 +187,8 @@ impl Determinism {
     }
 }
 
-/// 效果运算的颜色空间。v1 的迁移配方一律 `srgb-premultiplied`——那是
-/// `studio_export` 现有实现的事实，改成 linear 就是改像素（设计 §15 阶段 4 记录）。
+/// Color space for effect operations. v1 migration recipes always use `srgb-premultiplied`. That is a fact of the existing
+/// `studio_export` implementation; switching to linear would change pixels (recorded in design §15 stage 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ColorSpace {
     #[default]
@@ -251,7 +251,7 @@ impl Precision {
     }
 }
 
-/// manifest 必须声明的颜色契约（设计 §6.3）。
+/// Color contract the manifest must declare (design §6.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ColorContract {
     pub space: ColorSpace,
@@ -265,8 +265,8 @@ impl ColorContract {
     };
 }
 
-/// 混合模式。**编号是持久契约**：DrawOp v3 的 `PushLayer{blend}` 与
-/// `core/presets/builtin/composite/blend.json` 都引用这张表，不许重排。
+/// Blend mode. **The numbering is a persistent contract**: DrawOp v3's `PushLayer{blend}` and
+/// `core/presets/builtin/composite/blend.json` both reference this table; do not reorder it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum BlendMode {
     #[default]
@@ -281,7 +281,7 @@ pub enum BlendMode {
     Plus,
 }
 
-/// 声明序 = 编号序；`BlendMode::ALL[i].code() == i`（有测试守）。
+/// Declaration order = numbering order; `BlendMode::ALL[i].code() == i` (guarded by a test).
 impl BlendMode {
     pub const ALL: [BlendMode; 9] = [
         BlendMode::Normal,

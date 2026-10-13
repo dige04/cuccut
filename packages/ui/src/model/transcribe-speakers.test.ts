@@ -63,10 +63,10 @@ describe('识别说话人的开关', () => {
     );
     expect(pack).toEqual({ name: '说话人区分', size: '34 MB' });
     expect(speakerPackFacts(null, mb)).toEqual({ name: '说话人区分', size: null });
-    // 没有下载计划时用随附清单估的体积。
+    // Without a download plan, estimate the size from the bundled manifest.
     const estimated = bundle(PACK, { capability: 'diarize', label: '说话人区分', estimatedBytes: 31 * 1024 * 1024 });
     expect(speakerPackFacts(estimated, mb).size).toBe('31 MB');
-    // 有组件信息时只算缺的（权重在、缺公共组件的只写缺的那一件）。
+    // When component info is available, only count what is missing (weights present, and a missing shared component: only that item is written).
     const half = bundle(PACK, {
       capability: 'diarize',
       state: 'not-installed',

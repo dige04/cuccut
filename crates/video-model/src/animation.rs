@@ -1,15 +1,14 @@
-//! 关键帧与元素动画（视频格式规范 §3.15）。
+//! Keyframes and element animation (video format spec §3.15).
 //!
-//! 元素动画的三槽是实例的正式字段，原样保存，渲染时由 `motion` 取样；预设名、区间与缓动名以
-//! `timeline::schema` 的 `Animation::validate` 为准。关键帧是序列上的 `AnimationBinding`：时刻是实例
-//! 局部的帧或实例长度的百分比，校验时换成 `timeline::keyframes::Keyframes` 交给 `timeline`。
+//! The three element-animation slots are formal fields of the instance, stored as they are and sampled by `motion` at render time; preset names, ranges and easing names are defined by
+//! `Animation::validate` in `timeline::schema`. A keyframe is an `AnimationBinding` on the sequence: its time is a frame local to the instance or a percentage of the instance length, and at validation it is converted to `timeline::keyframes::Keyframes` and handed to `timeline`.
 
 use message_ref::{Text, msg};
 use serde::{Deserialize, Serialize};
 
 use crate::Id;
 
-/// 元素动画的三槽。
+/// The three slots of element animation.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Animation {
@@ -79,7 +78,7 @@ impl AnimationSlot {
     }
 }
 
-/// 一条关键帧绑定：一个画面实例的一个属性。
+/// One keyframe binding: one property of one picture instance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnimationBinding {
@@ -89,7 +88,7 @@ pub struct AnimationBinding {
     pub keyframes: Vec<Keyframe>,
 }
 
-/// 关键帧的属性：与 `place` 的同名字段一一对应。音量的关键帧是混音的包络（§3.9），不在这里。
+/// Keyframe properties: one-to-one with the same-named fields of `place`. Volume keyframes are the mix envelope (§3.9) and are not here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum KeyframeProperty {
     #[serde(rename = "x")]
@@ -109,7 +108,7 @@ pub enum KeyframeProperty {
 }
 
 impl KeyframeProperty {
-    /// `timeline::keyframes::KEYFRAME_PROPS` 里的名字。
+    /// The names in `timeline::keyframes::KEYFRAME_PROPS`.
     pub fn as_str(self) -> &'static str {
         match self {
             KeyframeProperty::X => "x",
@@ -123,24 +122,24 @@ impl KeyframeProperty {
     }
 }
 
-/// 一个关键帧。`localFrame` 与 `percent` 二选一。
+/// One keyframe. Exactly one of `localFrame` and `percent`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Keyframe {
-    /// 实例局部的帧，序列编辑网格，≥ 0。
+    /// A frame local to the instance, on the sequence edit grid, ≥ 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_frame: Option<i64>,
-    /// 实例长度的百分比，[0, 100]。
+    /// A percentage of the instance length, [0, 100].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<f64>,
     pub value: f64,
-    /// 进入这一帧的那一段的缓动，缺省 `linear`；名字取 `motion` 的缓动表。
+    /// The easing of the segment that leads into this frame; default `linear`; names are taken from `motion`'s easing table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ease: Option<String>,
 }
 
-/// 把一个实例上的绑定换成 v2 的 `Keyframes`：`localFrame` 按 `fps`（帧每秒）换成实例局部的秒，
-/// 百分比写成 `"N%"`。同时有 `localFrame` 与 `percent`、或两者都没有的帧返回错误。
+/// Converts a binding on an instance into v2's `Keyframes`: `localFrame` is converted to seconds local to the instance using `fps` (frames per second),
+/// and percentages are written as `"N%"`. A frame that has both `localFrame` and `percent`, or neither, returns an error.
 pub fn bindings_to_timeline<'a>(
     bindings: impl IntoIterator<Item = &'a AnimationBinding>,
     fps: f64,

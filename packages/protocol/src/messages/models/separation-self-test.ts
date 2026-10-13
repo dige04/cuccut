@@ -14,7 +14,7 @@ import { pl } from './separation-self-test.pl.ts';
 import { tr } from './separation-self-test.tr.ts';
 import { vi } from './separation-self-test.vi.ts';
 
-/** `packages/models/src/separation-self-test.ts` 人声分离自检没通过的原因。 */
+/** Reasons why the vocal separation self-test in `packages/models/src/separation-self-test.ts` failed. */
 const en = {
   vocals: 'vocal track',
   background: 'background track',

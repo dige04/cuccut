@@ -14,7 +14,7 @@ import { pl } from './asr-result.pl.ts';
 import { tr } from './asr-result.tr.ts';
 import { vi } from './asr-result.vi.ts';
 
-/** `packages/models/src/asr-result.ts` 校验 `cuccut.asr-result/v1` 时列出的问题。 */
+/** Problems listed when `packages/models/src/asr-result.ts` validates `cuccut.asr-result/v1`. */
 const en = {
   notObject: 'The result is not an object',
   schemaShouldBe: (p: { schema: string }) => `schema should be ${p.schema}`,

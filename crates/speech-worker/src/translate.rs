@@ -1,14 +1,13 @@
-//! 一份转写的翻译（架构设计 §7.9）：简报 → 分页翻译 → 质检与修复 → 对齐 → 黏结收尾 → 目标语字幕的时间投影 → 写出。
+//! Translation of one transcript (architecture design §7.9): brief → paged translation → quality check and repair → alignment → row-sticking tail → time projection of target-language subtitles → write-out.
 //!
-//! 编排照 v2 `ccut-engine/src/flows/translate.rs` 的 `translate_cmd_core` 移植，取它的缺省档：不跑全文 analysis、
-//! 译向简报单页且无术语时跳过、融合草稿 `rows`、对齐 `manyToOne` + 块对齐边、密度 `auto`、主对齐一轮修复、黏结收尾轮、
-//! 中文标点自动校正。缺省每次执行都是新的一份译文（§7.9），所以目标语言那一格从空开始（检查点除外）。
+//! The orchestration is ported from `translate_cmd_core` in v2 `ccut-engine/src/flows/translate.rs`, taking its default profile: no full-text analysis,
+//! the target-direction brief is skipped when it fits on a single page and has no terms, fused draft `rows`, alignment with `manyToOne` + block alignment edges, density `auto`, one repair round for the main alignment, the row-sticking tail round,
+//! and automatic correction of Chinese punctuation. By default every run produces a fresh translation (§7.9), so the target-language slot starts empty (checkpoints excepted).
 //!
-//! 就地刷新（输入带 `translation` 与 `sentences`）：底稿读进目标语言那一格，只重译点名的句子，对齐与黏结收尾也只碰
-//! 这些句子，不跑译向简报；写回时以底稿为准（单元 ID、顺序、审阅状态与扩展字段照旧），`sourceBasis` 换成这次的原文。
+//! In-place refresh (input carries `translation` and `sentences`): the base draft is read into the target-language slot, and only the named sentences are re-translated. Alignment and the row-sticking tail also touch only those sentences, and no target-direction brief is run. On write-back the base draft governs (unit IDs, order, review status and extension fields are kept as they are), and `sourceBasis` is replaced with this run's source text.
 //!
-//! 产出都写在 staging：`translation.json`（`cuccut.translation/2` 正文，经 speech-doc-bridge 写出）、`cues.json`（目标语字幕）、
-//! `report.json`（统计与提示）。Worker 不写视频目录，Runtime 校验之后经 VideoEngine 写入。
+//! All outputs are written to staging: `translation.json` (the `cuccut.translation/2` body, written out via speech-doc-bridge), `cues.json` (target-language subtitles),
+//! `report.json` (statistics and hints). The Worker does not write to the video directory; the Runtime writes it through VideoEngine after validating it.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -46,10 +45,10 @@ pub const TRANSLATION_FILE: &str = "translation.json";
 pub const CUES_FILE: &str = "cues.json";
 pub const REPORT_FILE: &str = "report.json";
 pub const CUES_SCHEMA: &str = "cuccut.speech-worker.cues/1";
-// 规则名与 `editViewHash` 用桥的那一份：界面与 Node 经 `bindings/editor-wasm` 算的是同一个。
+// The rule names and `editViewHash` use the bridge's copy: the UI and Node compute the same thing via `bindings/editor-wasm`.
 pub use speech_doc_bridge::sentences::{SENTENCE_DERIVATION, edit_view_hash};
 
-/// 跑一次翻译；`Ok` 是 `translate` 请求的结果。
+/// Runs one translation. `Ok` is the result of the `translate` request.
 pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> Result<Value, Failure> {
     let input = TranslateInput::load(input_path)?;
     std::fs::create_dir_all(staging).map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("建不了 staging：{error}")))?;
@@ -81,14 +80,14 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
         return Err(Failure::new("INPUT_UNREADABLE", "转写里没有可翻译的句子"));
     }
     let total = sentences.len();
-    // 就地刷新的句子；`None` 是整篇新译。
+    // Sentences for an in-place refresh; `None` means a whole new translation.
     let targets: Option<BTreeSet<String>> = input.sentences.as_ref().map(|ids| ids.iter().cloned().collect());
     if let Some(targets) = &targets
         && let Some(unknown) = targets.iter().find(|id| !sentences.iter().any(|sentence| &sentence.id == *id))
     {
         return Err(Failure::new("INPUT_UNREADABLE", format!("要重译的句子 {unknown} 不在转写里")));
     }
-    // 进度的分母：刷新时是要重译的句数，按页报的进度只在整篇新译时有意义。
+    // Progress denominator: during a refresh it is the number of sentences to re-translate. Per-page progress only makes sense for a whole new translation.
     let goal = targets.as_ref().map_or(total, BTreeSet::len);
 
     let instructions = input.params.instructions.clone().filter(|value| !value.trim().is_empty());
@@ -112,11 +111,11 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
     let translate_budget = budgets::TRANSLATE_ROWS_WORDS;
     let mut report = Report::default();
 
-    // 译向简报：只在第一次定下，续跑沿用检查点里的。
+    // Target-direction brief: settled only the first time. Resumed runs reuse the one in the checkpoint.
     if checkpoint.phase == Phase::Brief {
         progress("brief", 0, goal);
         let seed = glossary_context(&doc, &input, &lang);
-        // 刷新几句不值得为整篇再做一次简报：术语照用，语境靠送翻页里冻结的相邻译句。
+        // Refreshing a few sentences is not worth a whole new brief: terms are reused, and context comes from the adjacent translated sentences frozen into the translate page being sent.
         let skip = targets.is_some() || brief_skippable_for_single_page(&sentences, translate_budget);
         let from_seed = |seed: &Option<TargetContext>| seed.as_ref().map(|context| brief_from_target_context(context, None));
         checkpoint.brief = if skip {
@@ -190,7 +189,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
                 &mut llm,
                 &options,
                 &mut |doc| {
-                    // 每页之后：存检查点，再报进度。存不下时停在下一次模型调用之前。
+                    // After each page: save the checkpoint, then report progress. If it cannot be saved, stop before the next model call.
                     checkpoint.pages += 1;
                     checkpoint.capture(doc, lang, false);
                     if save_failure.is_none() {
@@ -251,7 +250,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
     };
     if checkpoint.phase == Phase::Translating {
         progress("align", 0, goal);
-        // 刷新时只对齐重译的句子（它们的译文都换了，已有的切分一律重做）；别的句子的对齐不动。
+        // On refresh, only the re-translated sentences are aligned (their translations have all changed, so existing splits are all redone). The alignment of other sentences is left alone.
         let main = AlignOptions {
             sentences: targets.clone(),
             force: targets.is_some(),
@@ -281,7 +280,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
         );
     }
 
-    // 黏结收尾轮：一条译文钉住多行源字幕时，按 paired 密度定向重切一次（固定一轮，不带修复预算）。
+    // Row-sticking tail round: when one translation is pinned to multiple source subtitle lines, re-split once in a targeted way by paired density (a fixed single round, with no repair budget).
     if checkpoint.phase == Phase::Aligned {
         if let Ok(plan) = plan_row_repair_tail(
             &doc,
@@ -346,7 +345,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
         .into_iter()
         .find(|body| body.language == lang)
         .ok_or_else(|| Failure::new("MODEL_OUTPUT_INVALID", "没有得到目标语言的译文"))?;
-    // 底稿沿用它自己的 sourceBasis（桥的规则）；这里写的是这次读的原文。glossaryRef 记的是整份译文翻译时的术语，刷新几句不换。
+    // The base draft keeps its own sourceBasis (the bridge's rule); what is written here is the source text read this time. glossaryRef records the terms in effect when the whole translation was translated, and refreshing a few sentences does not change it.
     body.source_basis = basis;
     if input.translation.is_none() {
         body.glossary_ref = input.glossary_ref.clone();
@@ -408,7 +407,7 @@ fn progress(stage: &str, done: usize, total: usize) {
     event("progress", json!({ "stage": stage, "done": done, "total": total }));
 }
 
-/// 核心以终止或取消离开：照 Runtime 给的错误报（预算、授权、停止屏障……），检查点保留。
+/// The core exits by termination or cancellation. Reports the error given by the Runtime (budget, authorization, stop barrier, ...); the checkpoint is kept.
 fn stopped(error: LlmError, llm: &StdioLlm, control: &Rc<RefCell<Control>>, checkpoint: &TranslateCheckpoint) -> Failure {
     let details = json!({ "phase": checkpoint.phase, "translatedSentences": checkpoint.trans.len(), "pages": checkpoint.pages });
     if let Some(reply) = &llm.terminal {
@@ -429,7 +428,7 @@ fn stopped(error: LlmError, llm: &StdioLlm, control: &Rc<RefCell<Control>>, chec
             Failure::with_details("CANCELLED", message, details)
         }
         LlmError::Terminal(message) => Failure::with_details("PROVIDER_REJECTED", message, details),
-        // 可重试的失败用完了核心的重试次数。
+        // Retryable failures have used up the core's retry count.
         LlmError::Http { status, message } => Failure::with_details(
             "PROVIDER_UNAVAILABLE",
             message,
@@ -439,8 +438,8 @@ fn stopped(error: LlmError, llm: &StdioLlm, control: &Rc<RefCell<Control>>, chec
     }
 }
 
-/// 检查点的指纹：词流、目标语言与影响译文的冻结参数（风格提示、术语；刷新时还有底稿与要重译的句子）。任何一个变了，
-/// 旧检查点作废。
+/// Checkpoint fingerprint: the word stream, the target language, and the frozen parameters that affect the translation (style hint, terms; during a refresh also the base draft and the sentences to re-translate). If any of them changes,
+/// the old checkpoint is voided.
 fn checkpoint_key(doc: &TranscriptDoc, input: &TranslateInput, instructions: Option<&str>) -> String {
     let mut settings = vec![format!("instructions={}", instructions.unwrap_or_default())];
     if let (Some(base), Some(sentences)) = (&input.translation, &input.sentences) {
@@ -463,7 +462,7 @@ fn checkpoint_key(doc: &TranscriptDoc, input: &TranslateInput, instructions: Opt
     )
 }
 
-/// 冻结的术语作为目标语上下文的用户行（`Origin=user`，不锁）：简报保留它们的译名，没有简报时直接成为翻译的术语表。
+/// Frozen terms are passed as user lines in the target-language context (`Origin=user`, not locked). The brief keeps their target-language renderings, and when there is no brief they become the translation's glossary directly.
 fn glossary_context(doc: &TranscriptDoc, input: &TranslateInput, lang: &str) -> Option<TargetContext> {
     let glossary: Vec<BilingualTerm> = input
         .glossary
@@ -490,7 +489,7 @@ fn glossary_context(doc: &TranscriptDoc, input: &TranslateInput, lang: &str) -> 
     })
 }
 
-/// 单页文档跳过译向简报（v2 `brief_skippable_for_single_page`；不跑 analysis，所以只看是否一页装得下）。
+/// A single-page document skips the target-direction brief (v2 `brief_skippable_for_single_page`; analysis is not run, so the only check is whether it fits on one page).
 fn brief_skippable_for_single_page(sentences: &[Sentence], page_budget: usize) -> bool {
     let words: usize = sentences.iter().map(|sentence| word_count(&sentence.source_text)).sum();
     fits_single_translate_page(sentences.len(), words, page_budget)
@@ -517,7 +516,7 @@ fn media_seconds(input: &TranslateInput) -> Result<f64, String> {
     Ok(ticks / duration.timescale as f64)
 }
 
-/// 目标语字幕投影到转写的刻度：时间取整、夹在素材时长之内、按时间排序且互不重叠，取整后没有长度的一条丢掉。
+/// Projects target-language subtitles onto the transcript's timeline: times are rounded, clamped within the media duration, sorted by time and non-overlapping. Any cue left with zero length after rounding is dropped.
 fn project_cues(stream: &[TransCue], body: &TranslationBody, timescale: i64, duration: f64) -> Result<Vec<Value>, Failure> {
     let unit_of = |sentence_id: &str| {
         body.units

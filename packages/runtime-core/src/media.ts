@@ -10,13 +10,12 @@ import type { PlaybackPreparation } from './media-analysis.ts';
 import { RcRuntime } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 媒体通道（架构设计 §4.5、§5.6）：界面的 `<video>`、`<img>` 不能带令牌头，所以 Runtime 为单个文件
- * 发一个不可猜的受限句柄，句柄本身就是凭证。
+ * Media channel (architecture design §4.5, §5.6): the `<video>` and `<img>` in the UI cannot send a token header, so the Runtime issues an unguessable restricted handle for each file, and the handle itself is the credential.
  *
- * - 只能发给来源目录里的文件：两边都取真实路径后做前缀检查，符号链接逃不出去。
- * - 句柄有期限；每次使用顺延，长视频看到一半不会失效。
- * - 支持 HTTP Range（206/416）与 HEAD，播放器才能拖动。
- * - 日志里不写路径。
+ * - Only files inside the source directory can be served: both sides are resolved to real paths and then prefix-checked, so symlinks cannot escape.
+ * - Handles expire; each use extends the expiry, so a long video does not stop working halfway through.
+ * - Supports HTTP Range (206/416) and HEAD, so players can seek.
+ * - Paths are not written to logs.
  */
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -61,7 +60,7 @@ export function mimeTypeOf(fileName: string): string {
   return MIME_BY_EXT[path.extname(fileName).slice(1).toLowerCase()] ?? 'application/octet-stream';
 }
 
-/** 解析单段 `Range: bytes=…`。没有或看不懂返回 null（按整文件给）；越界返回 'unsatisfiable'。 */
+/** Parses a single `Range: bytes=…` segment. Returns null if it is absent or unreadable (the whole file is served); returns 'unsatisfiable' if out of bounds. */
 export function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
   if (!header) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
@@ -80,7 +79,7 @@ export function parseRange(header: string | undefined, size: number): { start: n
   return { start, end };
 }
 
-/** 取 `target` 的真实路径，并确认它在 `root` 之内、是普通文件。 */
+/** Resolves the real path of `target` and checks that it is inside `root` and is a regular file. */
 export async function resolveInside(root: string, target: string): Promise<{ realPath: string; size: number }> {
   let rootReal: string;
   let realPath: string;
@@ -100,15 +99,15 @@ export async function resolveInside(root: string, target: string): Promise<{ rea
 const SUBTITLE_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa']);
 const MAX_SUBTITLES = 50;
 
-/** 去掉最后一个扩展名：`a.zh.srt` → `a.zh`。 */
+/** Strips the last extension: `a.zh.srt` → `a.zh`. */
 function stem(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
   return dot > 0 ? fileName.slice(0, dot) : fileName;
 }
 
 /**
- * 与 `target` 放在同一目录里的字幕文件。`relPath` 相对 `root`，用 `/` 分隔，可以直接再拿去取媒体地址。
- * 与视频同名的排前面：完全同名的（`a.srt`）最先，带标记的（`a.zh.srt`）其次，其余按文件名。
+ * Subtitle files in the same directory as `target`. `relPath` is relative to `root` and uses `/` separators, so it can be passed straight back to get a media URL.
+ * Files named like the video come first: an exact match (`a.srt`) first, a tagged one (`a.zh.srt`) next, and the rest by file name.
  */
 export async function findSubtitles(
   root: string,
@@ -155,7 +154,7 @@ interface Grant {
 export interface MediaRegistryOptions {
   log: Logger;
   ttlMs?: number;
-  /** 与网关相同的来源规则，用于 CORS（界面要用 fetch 读字幕与文档）。 */
+  /** Same origin rules as the gateway, used for CORS (the UI reads subtitles and documents with fetch). */
   originAllowed: (origin: string | undefined) => boolean;
   maxGrants?: number;
 }
@@ -200,7 +199,7 @@ export class MediaRegistry {
   }
 
   /**
-   * 播放地址（架构设计 §4.5）：只认已签发的句柄，缓存路径不经控制通道。不是 WebM、或 `prepare` 说客户端能直接放原文件时给原句柄。
+   * Playback URL (architecture design §4.5): only accepts issued handles; the cached path does not go through the control channel. The original handle is given when the file is not WebM, or when `prepare` says the client can play the original file directly.
    */
   async playback(url: string, prepare: (file: string) => Promise<PlaybackPreparation>): Promise<MediaPlayback> {
     const base = new URL(this.#baseUrl || '/', 'http://localhost');
@@ -222,7 +221,7 @@ export class MediaRegistry {
     return { status: 'ready', media: { ...media, fileName: grant.handle.fileName } };
   }
 
-  /** 处理 `/media/<句柄>/<文件名>`。不是这个前缀返回 false。 */
+  /** Handles `/media/<handle>/<file name>`. Returns false for any other prefix. */
   handle(request: IncomingMessage, response: ServerResponse): boolean {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const match = /^\/media\/([A-Za-z0-9_-]+)(?:\/[^/]*)?$/.exec(url.pathname);
@@ -256,7 +255,7 @@ export class MediaRegistry {
       response.writeHead(404).end();
       return;
     }
-    // 发句柄之后路径上的某一段可能被换成了符号链接：再取一次真实路径，对不上就不给。
+    // A segment of the path may have been replaced with a symlink after the handle was issued: resolve the real path again, and refuse if it no longer matches.
     const realPath = await fsp.realpath(grant.realPath).catch(() => null);
     const stat = realPath === grant.realPath ? await fsp.stat(realPath).catch(() => null) : null;
     if (!stat?.isFile()) {
@@ -272,7 +271,7 @@ export class MediaRegistry {
       'Cache-Control': 'private, no-cache',
       'Last-Modified': stat.mtime.toUTCString(),
       'X-Content-Type-Options': 'nosniff',
-      // 文件内容不当页面执行（例如 SVG 被直接打开）。
+      // Do not run file contents as a page (for example, when an SVG is opened directly).
       'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
       ...(download ? { 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(grant.fileName).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase())}` } : {}),
     };
@@ -302,7 +301,7 @@ export class MediaRegistry {
   #prune(): void {
     const now = Date.now();
     for (const [id, grant] of this.#grants) if (grant.expiresAt <= now) this.#grants.delete(id);
-    // 超过上限时丢掉最早发的。
+    // When the limit is exceeded, drop the earliest issued ones.
     while (this.#grants.size >= this.#maxGrants) {
       const oldest = this.#grants.keys().next().value;
       if (oldest === undefined) break;

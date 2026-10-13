@@ -1,9 +1,6 @@
-//! 写入时的实例校验（视频格式规范 §3.4–§3.9、§3.15、§3.16）。
+//! Validation of instances on write (video format spec §3.4–§3.9, §3.15, §3.16).
 //!
-//! 画面元素的参数取 v2 的元素模型，校验也只有一份：把实例换成 `timeline::schema::Element`，调
-//! `Element::validate_fields`（字段的适用范围、`element-props-mismatch`、role 与种类的搭配、三张动画预设表、
-//! 取值区间），关键帧与音量包络换成 `timeline::keyframes::Keyframes` 交给它校验。这里只补 v2 没有的部分：
-//! 容器（时间、轨道、素材的种类）、合成实例（不是 v2 的种类）、`fx` 里并进来的三种字段、裁剪、跟随策略。
+//! Parameters of visual elements follow v2's element model, and validation exists in only one place: an instance is converted into `timeline::schema::Element`, and `Element::validate_fields` is called (applicability of fields, `element-props-mismatch`, the pairing of role and kind, the three animation preset tables, and value ranges). Keyframes and the volume envelope are converted into `timeline::keyframes::Keyframes` and handed to it for validation. This file adds only what v2 does not have: the container (time, track, asset kind), composition instances (not a v2 kind), the three fields merged into `fx`, cropping, and the follow policy.
 
 use editor_semantics::{MediaTime, Ratio};
 use render_graph::envelope::{envelope_keyframes, envelope_points};
@@ -15,10 +12,10 @@ use crate::error::{EngineResult, ErrorBody, Text, kinds, msg};
 use crate::model::*;
 use crate::state::VideoState;
 
-/// 文字样式对象的上限（序列化后的字节数）。
+/// Upper limit on a text style object (in serialized bytes).
 pub const MAX_STYLE_BYTES: usize = 64 * 1024;
 
-/// 校验视频里的一个实例（写入之后、事务提交之前调用）。
+/// Validates an instance in the video (called after writing, before the transaction is committed).
 pub(crate) fn check_item(state: &VideoState, item_id: &str) -> EngineResult<()> {
     let placed = state.items.get(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     let header = &state.sequence(&placed.sequence_id)?.header;
@@ -61,8 +58,7 @@ pub(crate) fn check_item(state: &VideoState, item_id: &str) -> EngineResult<()> 
     }
 }
 
-/// 音画联动组里的合成与音频（规范 §3.7「声音」）：同一组里的音频实例是合成声音单独放的一份，合成自己的声音（用替身时是
-/// 替身的音轨）必须关掉，不得两处同时出声。组只在同一条序列里算；合成的 `audio` 省略或 `enabled: false` 都算关着。
+/// Composition and audio in an audio-video linked group (spec §3.7 “sound”): an audio instance in the same group is a separately placed copy of the composition's sound, and the composition's own sound (when a stand-in is used, the stand-in's audio track) must be turned off; both must not sound at once. A group is only evaluated within the same sequence. A composition whose `audio` is omitted or has `enabled: false` counts as off.
 fn check_link_group_sound(state: &VideoState, sequence_id: &str, item: &TimelineItem) -> EngineResult<()> {
     let Some(group) = item.base().link_group_id.as_deref() else {
         return Ok(());
@@ -91,7 +87,7 @@ fn check_link_group_sound(state: &VideoState, sequence_id: &str, item: &Timeline
     Ok(())
 }
 
-/// 去掉目标实例已经不在的关键帧绑定（删除、波纹删除之后）。
+/// Removes keyframe bindings whose target instance is no longer present (after deletion or ripple-delete).
 pub(crate) fn prune_bindings(state: &mut VideoState) {
     let live: std::collections::BTreeSet<Id> = state.items.keys().cloned().collect();
     for sequence in state.sequences.values_mut() {
@@ -101,7 +97,7 @@ pub(crate) fn prune_bindings(state: &mut VideoState) {
     }
 }
 
-/// 把 v3 的实例换成 v2 的元素：只用于校验，时间字段不参与（时间是 v3 的容器）。
+/// Converts a v3 instance into a v2 element: only for validation; the time fields do not take part (time is v3's container).
 fn to_element(item: &TimelineItem, keyframes: Keyframes) -> Element {
     let base = item.base();
     let kind = match item {
@@ -119,7 +115,7 @@ fn to_element(item: &TimelineItem, keyframes: Keyframes) -> Element {
         TimelineItem::Whiteboard(_) => ElementKind::Whiteboard,
         TimelineItem::Composition(_) | TimelineItem::Caption(_) => unreachable!("不是 v2 的元素种类"),
     };
-    // 五个校验搭配的 role 交给 v2；其余是开放词表，照常保留。
+    // The five roles that are paired for validation are handed to v2. The rest are an open vocabulary and are kept as they are.
     let role = base
         .role
         .as_deref()
@@ -205,7 +201,7 @@ fn to_element(item: &TimelineItem, keyframes: Keyframes) -> Element {
     element
 }
 
-/// v2 没有、v3 要求的字段规则。
+/// Field rules that v3 requires but v2 does not have.
 fn check_v3_fields(item: &TimelineItem) -> Result<(), Text> {
     if let Some(fx) = item.fx() {
         fx.check_v3_fields()?;
@@ -257,7 +253,7 @@ fn check_v3_fields(item: &TimelineItem) -> Result<(), Text> {
     Ok(())
 }
 
-/// 合成不是 v2 的种类：几何、动画、效果与遮罩分别交给 `timeline` 的同名类型校验。
+/// Composition is not a v2 kind: its geometry, animation, effects and mask are each validated by the same-named types in `timeline`.
 fn check_composition(item_id: &str, c: &CompositionItem, keyframes: Keyframes) -> Result<(), Text> {
     let text = |e: TimelineError| Text::plain(e.to_string());
     c.place.to_timeline().validate(item_id).map_err(text)?;
@@ -281,7 +277,7 @@ fn check_composition(item_id: &str, c: &CompositionItem, keyframes: Keyframes) -
         fx.to_timeline().validate(item_id).map_err(text)?;
         fx.check_v3_fields()?;
     }
-    // 圆角关键帧只用于视觉媒体（§3.15），合成没有。
+    // Corner-radius keyframes are used only for visual media (§3.15); compositions do not have them.
     let caps = KeyframeCaps {
         transform: true,
         radius: false,
@@ -299,7 +295,7 @@ fn check_composition(item_id: &str, c: &CompositionItem, keyframes: Keyframes) -
     Ok(())
 }
 
-/// 规范的取值区间比 v2 严：`place.opacity` 在 [0, 1]（§3.5；v2 只要求有限）。
+/// The spec's value ranges are stricter than v2: `place.opacity` is in [0, 1] (§3.5; v2 only requires it to be finite).
 fn check_place(place: &Place) -> Result<(), Text> {
     if let Some(opacity) = place.opacity
         && !(0.0..=1.0).contains(&opacity)
@@ -309,7 +305,7 @@ fn check_place(place: &Place) -> Result<(), Text> {
     Ok(())
 }
 
-/// 遮罩羽化是 540 短边下的像素，≥ 0（§3.9；v2 不查）。
+/// Mask feather is in pixels at a 540 short side, ≥ 0 (§3.9; v2 does not check it).
 fn check_mask(mask: Option<&Mask>) -> Result<(), Text> {
     if let Some(feather) = mask.and_then(|m| m.feather)
         && !(feather.is_finite() && feather >= 0.0)
@@ -336,7 +332,7 @@ fn check_volume_and_fades(volume: f64, fade_in: Option<&MediaTime>, fade_out: Op
     Ok(())
 }
 
-/// 跟随策略的写法（§3.16）。锚点的求值随编辑语义接上；这里只查形状。
+/// The form of a follow policy (§3.16). Evaluation of anchors is connected along with the editing semantics; here only the shape is checked.
 fn check_follow(item: &TimelineItem) -> Result<(), Text> {
     let base = item.base();
     match &base.follow_policy {
@@ -359,7 +355,7 @@ fn check_follow(item: &TimelineItem) -> Result<(), Text> {
     Ok(())
 }
 
-/// 素材的种类与版本（§3.4、§3.7）。
+/// The kind and version of an asset (§3.4, §3.7).
 fn check_assets(state: &VideoState, item: &TimelineItem) -> EngineResult<()> {
     for asset_ref in item.asset_refs() {
         let asset = state

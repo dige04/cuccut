@@ -3,22 +3,19 @@ import type { AsrResult } from '@cuccut/models';
 import { JobsSpeechDocument as J } from '@cuccut/protocol/messages/jobs/speech-document.ts';
 
 /**
- * `asr-result` → `speech` 文档（架构设计 §6.6 的「应用到视频」）。正文与旧工程导入器写的 `cuccut.speech/1` 一致
- * （`scripts/legacy-import/ccut-project.ts`）：词表、说话人、`sentences: null`（句子切分由后续步骤补）、空章节。
- * 每段的词按顺序接在词表里；某段没有词级时间时，整段文本作为一个词，覆盖这一段，标 `timingQuality: 'missing'`。
- * 词时间不可信（`estimated` 插值、`missing`）的词带上 `timingQuality`，导出据此不把它们当逐词同步（验收 AT-05）；
- * 对齐的与服务商给的词不写这个字段。
+ * `asr-result` → `speech` document (the “apply to video” step in architecture design §6.6). The body matches the `cuccut.speech/1` written by the legacy project importer (`scripts/legacy-import/ccut-project.ts`): the vocabulary, speakers, `sentences: null` (sentence segmentation is filled in by a later step), and empty chapters. The words of each segment are appended in order to the vocabulary. When a segment has no word-level timing, the whole segment text is taken as one word that covers this segment, marked `timingQuality: 'missing'`.
+ * Words whose timing is untrustworthy (`estimated` interpolation, `missing`) carry `timingQuality`, so export does not treat them as word-synced (acceptance AT-05). Aligned words and words provided by the service do not write this field.
  */
 
 export interface SpeechDocumentContext {
   assetId: Id;
   jobId: Id;
-  /** 执行这次转写的 Provider（`local` 或 `node:<nodeId>`）：文档记的是任务经过的路由，不是节点自报的名字。 */
+  /** The Provider that ran this transcription (`local` or `node:<nodeId>`): the document records the route the job took, not a name the node reported about itself. */
   providerId: string;
   inputHash: string;
   rawResultArtifactId: string;
   createdAt: string;
-  /** 词 ID 的前缀，缺省 `w-`。换用文稿时另给一个，新词的 ID 不与旧文稿的重复（视频格式规范 §5.3）。 */
+  /** Prefix for word IDs, default `w-`. When a different transcript is used, supply another one so new word IDs do not duplicate the old transcript's (video format spec §5.3). */
   wordIdPrefix?: string;
 }
 
@@ -28,7 +25,7 @@ export interface SpeechWord {
   end: number;
   text: string;
   speaker?: string;
-  /** 只在词时间不可信时出现。 */
+  /** Only appears when word timing is untrustworthy. */
   timingQuality?: 'estimated' | 'missing';
 }
 
@@ -46,7 +43,7 @@ export function speechWords(result: AsrResult, prefix = 'w-'): SpeechWord[] {
   };
   for (const segment of result.segments) {
     if (segment.words.length === 0) push(segment.start, segment.end, segment.text.trim(), segment.speakerId, 'missing');
-    // 说话人区分给词标了说话人（§6.6）时按词，否则取段的。
+    // When speaker diarization has tagged words with speakers (§6.6), use the per-word speaker; otherwise use the segment's.
     else for (const word of segment.words) push(word.start, word.end, word.text, word.speakerId ?? segment.speakerId, word.timingQuality);
   }
   return words;

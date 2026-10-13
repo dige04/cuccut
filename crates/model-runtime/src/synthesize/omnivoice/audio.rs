@@ -1,14 +1,8 @@
-//! OmniVoice 的音频前后处理，逐条对照官方 `omnivoice/utils/audio.py`：
-//! 参考音频去静音 / 截长、生成结果去长静音、淡入淡出补边、分段交叉淡化，
-//! 以及音频分词器里 24 kHz → 16 kHz 的 torchaudio 重采样。
+//! OmniVoice's audio pre- and post-processing, checked line by line against the official `omnivoice/utils/audio.py`: trimming silence from reference audio / cutting long audio, removing long silences from generated results, fade-in/fade-out padding, cross-fading between segments, and the 24 kHz → 16 kHz torchaudio resampling in the audio tokenizer.
 //!
-//! 官方去静音走 pydub（`split_on_silence` / `detect_leading_silence`，毫秒粒度、
-//! 先量化成 int16 再算 RMS）。这里按 pydub 源码复刻它的整数 RMS、毫秒切片（含切片越界
-//! 时最多 2 ms 的补零）、静音区间合并与 `keep_silence` 对半分的规则，所以输出与官方
-//! 一样经过 int16 量化。RMS 用平方前缀和求窗口和：int16 平方和在 f64 里是精确整数，
-//! 与 `audioop.rms` 逐样本累加的结果逐位相同。
+//! Official silence removal uses pydub (`split_on_silence` / `detect_leading_silence`, at millisecond granularity, quantized to int16 before computing RMS). Here, pydub's integer RMS, millisecond slicing (including zero-padding of up to 2 ms when a slice runs past the end), silence-range merging, and the `keep_silence` half-and-half split rule are reproduced, so the output, like the official one, goes through int16 quantization. RMS uses prefix sums of squares to compute window sums: the sum of int16 squares is an exact integer in f64, and it matches `audioop.rms`'s sample-by-sample accumulation bit for bit.
 
-/// float32 → pydub 的 int16：`(x * 32768).clip(-32768, 32767).astype(int16)`（向零截断）。
+/// float32 → pydub's int16: `(x * 32768).clip(-32768, 32767).astype(int16)` (truncated toward zero).
 fn to_pcm16(audio: &[f32]) -> Vec<i16> {
     audio.iter().map(|&x| (x * 32768.0).clamp(-32768.0, 32767.0) as i16).collect()
 }
@@ -18,12 +12,12 @@ fn from_pcm16(samples: &[i16]) -> Vec<f32> {
     samples.iter().map(|&s| f32::from(s) / 32768.0).collect()
 }
 
-/// 单声道 16-bit 的 pydub `AudioSegment`。
+/// A mono 16-bit pydub `AudioSegment`.
 #[derive(Clone)]
 struct Segment {
     samples: Vec<i16>,
     rate: u32,
-    /// `prefix[i]` = 前 i 个样本的平方和（精确整数）。
+    /// `prefix[i]` = sum of squares of the first i samples (exact integer).
     prefix: Vec<u64>,
 }
 
@@ -39,18 +33,17 @@ impl Segment {
         Self { samples, rate, prefix }
     }
 
-    /// `len(seg)`：`round(1000 * frames / rate)`（Python 的银行家舍入）。
+    /// `len(seg)`: `round(1000 * frames / rate)` (Python's banker's rounding).
     fn len_ms(&self) -> i64 {
         (1000.0 * (self.samples.len() as f64 / f64::from(self.rate))).round_ties_even() as i64
     }
 
-    /// `frame_count(ms)` 取整：`int(ms * rate / 1000.0)`。
+    /// `frame_count(ms)` truncated: `int(ms * rate / 1000.0)`.
     fn frame_at(&self, ms: i64) -> usize {
         (ms as f64 * (f64::from(self.rate) / 1000.0)) as usize
     }
 
-    /// `seg[start:end]` 的样本区间与补零数（切片端点先夹到 `len(seg)`；数据不够而切片
-    /// 非空时尾部补零，pydub 保证不超过 2 ms）。
+    /// Sample range of `seg[start:end]` and the number of zeros to pad (the slice endpoints are first clamped to `len(seg)`; when the data is insufficient but the slice is non-empty, the tail is zero-padded, which pydub guarantees to be no more than 2 ms).
     fn span(&self, start_ms: i64, end_ms: i64) -> (usize, usize, usize) {
         let len = self.len_ms();
         let start = self.frame_at(start_ms.min(len));
@@ -69,7 +62,7 @@ impl Segment {
         Segment::new(samples, self.rate)
     }
 
-    /// `seg[start:end].rms`（`audioop.rms`：平方均值开方后截成整数，空片段为 0）。
+    /// `seg[start:end].rms` (`audioop.rms`: square root of the mean of squares, truncated to an integer; 0 for an empty segment).
     fn rms(&self, start_ms: i64, end_ms: i64) -> u32 {
         let (lo, hi, missing) = self.span(start_ms, end_ms);
         let n = hi - lo + missing;
@@ -80,13 +73,13 @@ impl Segment {
         (sum / n as f64).sqrt() as u32
     }
 
-    /// `seg[start:end].dBFS`：`20·log(rms/32768, 10)`，静音为 −∞。
+    /// `seg[start:end].dBFS`: `20·log(rms/32768, 10)`; −∞ for silence.
     fn dbfs(&self, start_ms: i64, end_ms: i64) -> f64 {
         let rms = self.rms(start_ms, end_ms);
         if rms == 0 {
             return f64::NEG_INFINITY;
         }
-        // Python `math.log(x, 10)` 是 `ln(x) / ln(10)`，不是 log10。
+        // Python's `math.log(x, 10)` is `ln(x) / ln(10)`, not log10.
         20.0 * ((f64::from(rms) / 32768.0).ln() / 10f64.ln())
     }
 
@@ -157,7 +150,7 @@ fn detect_nonsilent(seg: &Segment, min_len: i64, thresh_db: f64, step: i64) -> V
     out
 }
 
-/// `pydub.silence.split_on_silence`（`keep_silence` 为毫秒数）。
+/// `pydub.silence.split_on_silence` (`keep_silence` is in milliseconds).
 fn split_on_silence(seg: &Segment, min_len: i64, thresh_db: f64, keep: i64, step: i64) -> Vec<Segment> {
     let mut ranges: Vec<(i64, i64)> = detect_nonsilent(seg, min_len, thresh_db, step)
         .into_iter()
@@ -187,7 +180,7 @@ fn detect_leading_silence(seg: &Segment, thresh_db: f64) -> i64 {
     trim.min(len)
 }
 
-/// 官方 `remove_silence_edges`：首尾各留 `lead` / `trail` 毫秒静音。
+/// Official `remove_silence_edges`: keeps `lead` / `trail` milliseconds of silence at the start / end.
 fn remove_silence_edges(seg: &Segment, lead: i64, trail: i64, thresh_db: f64) -> Segment {
     let start = (detect_leading_silence(seg, thresh_db) - lead).max(0);
     let seg = seg.slice(start, seg.len_ms()).reversed();
@@ -195,8 +188,8 @@ fn remove_silence_edges(seg: &Segment, lead: i64, trail: i64, thresh_db: f64) ->
     seg.slice(start, seg.len_ms()).reversed()
 }
 
-/// 官方 `remove_silence`：`mid_sil > 0` 时把长于它的中段静音压到它的长度，再修首尾。
-/// 阈值恒为 −50 dBFS、步长 10 ms。输出经过 int16 量化（与官方一致）。
+/// Official `remove_silence`: when `mid_sil > 0`, middle silences longer than it are compressed to its length, then the edges are fixed.
+/// The threshold is always −50 dBFS with a 10 ms step. The output goes through int16 quantization (matching the official one).
 pub fn remove_silence(audio: &[f32], rate: u32, mid_sil: i64, lead_sil: i64, trail_sil: i64) -> Vec<f32> {
     let mut seg = Segment::new(to_pcm16(audio), rate);
     if mid_sil > 0 {
@@ -207,8 +200,7 @@ pub fn remove_silence(audio: &[f32], rate: u32, mid_sil: i64, lead_sil: i64, tra
     from_pcm16(&remove_silence_edges(&seg, lead_sil, trail_sil, -50.0).samples)
 }
 
-/// 官方 `trim_long_audio`（`max 15 s / min 3 s / 阈值 20 s`）：超过 20 秒的参考音频在
-/// 15 秒内最靠后的一段有声起点处截断；找不到合适切点（早于 3 秒）就硬截 15 秒。
+/// Official `trim_long_audio` (`max 15 s / min 3 s / threshold 20 s`): reference audio longer than 20 seconds is cut at the start of the last voiced segment within the first 15 seconds; if no suitable cut point is found (earlier than 3 seconds), it is hard-cut at 15 seconds.
 pub fn trim_long_audio(audio: &[f32], rate: u32) -> Vec<f32> {
     const MAX_MS: i64 = 15_000;
     const MIN_MS: i64 = 3_000;
@@ -236,7 +228,7 @@ pub fn trim_long_audio(audio: &[f32], rate: u32) -> Vec<f32> {
     from_pcm16(&seg.slice(0, best).samples)
 }
 
-/// `np.linspace(start, stop, n, dtype=float32)`：float64 里算好再转 float32，末项恰为 `stop`。
+/// `np.linspace(start, stop, n, dtype=float32)`: computed in float64, then converted to float32; the last item is exactly `stop`.
 fn linspace(start: f64, stop: f64, n: usize) -> Vec<f32> {
     if n == 0 {
         return Vec::new();
@@ -250,8 +242,7 @@ fn linspace(start: f64, stop: f64, n: usize) -> Vec<f32> {
     out
 }
 
-/// 官方 `fade_and_pad_audio`：首尾各 `fade` 秒线性淡入淡出（不超过一半长度），
-/// 再两侧各补 `pad` 秒静音。
+/// Official `fade_and_pad_audio`: linear fade-in and fade-out of `fade` seconds at each end (not exceeding half the length), then `pad` seconds of silence on both sides.
 pub fn fade_and_pad(audio: &[f32], pad_seconds: f64, fade_seconds: f64, rate: u32) -> Vec<f32> {
     if audio.is_empty() {
         return Vec::new();
@@ -280,8 +271,7 @@ pub fn fade_and_pad(audio: &[f32], pad_seconds: f64, fade_seconds: f64, rate: u3
     out
 }
 
-/// 官方 `cross_fade_chunks`（`silence_duration = 0.3`）：相邻两段之间，前段尾部
-/// 淡出 0.1 秒、插 0.1 秒静音、后段头部淡入 0.1 秒。
+/// Official `cross_fade_chunks` (`silence_duration = 0.3`): between two adjacent segments, the tail of the earlier one fades out over 0.1 s, 0.1 s of silence is inserted, and the head of the later one fades in over 0.1 s.
 pub fn cross_fade_chunks(chunks: &[Vec<f32>], rate: u32) -> Vec<f32> {
     const SILENCE_SECONDS: f64 = 0.3;
     let Some((first, rest)) = chunks.split_first() else {
@@ -323,10 +313,7 @@ fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// `torchaudio.functional.resample` 的默认配置（`sinc_interp_hann`、
-/// `lowpass_filter_width = 6`、`rolloff = 0.99`）：核按 torchaudio
-/// `_get_sinc_resample_kernel` 的步骤以输入 dtype（f32）逐步计算，输入左补 `width`、
-/// 右补 `width + orig` 个零后按步长 `orig` 卷积，输出截到 `ceil(new · len / orig)`。
+/// Default configuration of `torchaudio.functional.resample` (`sinc_interp_hann`, `lowpass_filter_width = 6`, `rolloff = 0.99`): the kernel is computed step by step as in torchaudio's `_get_sinc_resample_kernel`, in the input dtype (f32); the input is padded with `width` zeros on the left and `width + orig` zeros on the right, convolved with stride `orig`, and the output is truncated to `ceil(new · len / orig)`.
 pub fn resample(audio: &[f32], orig_rate: u32, new_rate: u32) -> Vec<f32> {
     const WIDTH_ZEROS: f64 = 6.0;
     const ROLLOFF: f64 = 0.99;
@@ -375,13 +362,12 @@ pub fn resample(audio: &[f32], orig_rate: u32, new_rate: u32) -> Vec<f32> {
 mod tests {
     use super::*;
 
-    /// 期望值由官方 `omnivoice/utils/audio.py` 的函数体（配 pydub 源码 + Python 3.12 audioop）
-    /// 跑出，生成脚本 `omni_audio_golden.py` 与输入信号的整数生成器逐位一致。
+    /// Expected values were produced by running the function bodies of the official `omnivoice/utils/audio.py` (with the pydub source and Python 3.12 audioop); the generator script `omni_audio_golden.py` matches the integer signal generator of the input bit for bit.
     fn golden() -> serde_json::Value {
         serde_json::from_str(include_str!("testdata/audio_golden.json")).unwrap()
     }
 
-    /// 三角波 + LCG 噪声的整数信号，与 golden 脚本的 `int_signal` 逐位一致。
+    /// Integer signal of a triangle wave plus LCG noise, bit-for-bit identical to the golden script's `int_signal`.
     fn int_signal(rate: i64, plan: &serde_json::Value) -> Vec<f32> {
         let mut state: i64 = 12_345;
         let mut out = Vec::new();
@@ -461,8 +447,7 @@ mod tests {
         assert!(fade_and_pad(&[], 0.1, 0.1, 24_000).is_empty());
     }
 
-    /// 期望值来自按 torchaudio `_get_sinc_resample_kernel` / `_apply_sinc_resample_kernel`
-    /// 源码步骤写的 numpy f32 复刻（离线环境没有 torchaudio 二进制可对拍）。
+    /// Expected values come from a numpy f32 reproduction written following the steps of torchaudio's `_get_sinc_resample_kernel` / `_apply_sinc_resample_kernel` source (no torchaudio binary was available offline for cross-checking).
     #[test]
     fn resample_matches_torchaudio_formula() {
         let golden = golden();
@@ -475,11 +460,11 @@ mod tests {
 
     #[test]
     fn pydub_len_and_slice_semantics() {
-        // 24 013 帧 → round(1000.54) = 1001 ms；切到末尾补 11 帧零。
+        // 24,013 frames → round(1000.54) = 1001 ms; slicing to the end pads 11 frames of zeros.
         let seg = Segment::new(vec![1; 24_013], 24_000);
         assert_eq!(seg.len_ms(), 1001);
         assert_eq!(seg.slice(0, 1001).samples.len(), 24_024);
-        // 越过末尾的空片段不补零。
+        // An empty segment past the end is not zero-padded.
         assert!(seg.slice(1001, 1001).samples.is_empty());
         assert_eq!(seg.rms(0, 10), 1);
         assert_eq!(Segment::new(vec![], 24_000).rms(0, 10), 0);

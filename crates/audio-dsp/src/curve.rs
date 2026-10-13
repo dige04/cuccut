@@ -1,14 +1,14 @@
-//! 曲线：关键帧插值（smoothstep 分段 / 线性分段）与随机漂移（Catmull-Rom 样条）。
+//! Curves: keyframe interpolation (smoothstep segments / linear segments) and random drift (Catmull-Rom spline).
 
 use crate::math::smoothstep;
 use crate::rng::Rng;
 
-/// 分段 smoothstep 关键帧：`(t, v)` 按 `t` 升序；两端外保持端值。参考工程 `keys()`。
+/// Piecewise smoothstep keyframes: `(t, v)` in ascending `t`; held at the end values outside both ends. Reference project `keys()`.
 pub fn keys_smooth(points: &[(f64, f64)], t: f64) -> f64 {
     keys_with(points, t, |u| smoothstep(0.0, 1.0, u))
 }
 
-/// 分段线性关键帧。
+/// Piecewise linear keyframes.
 pub fn keys_linear(points: &[(f64, f64)], t: f64) -> f64 {
     keys_with(points, t, |u| u)
 }
@@ -25,7 +25,7 @@ fn keys_with(points: &[(f64, f64)], t: f64, shape: impl Fn(f64) -> f64) -> f64 {
             if t >= last.0 {
                 return last.1;
             }
-            // 最后一个 `t_k ≤ t` 的段（与 `searchsorted(side='right') - 1` 一致）。
+            // The last segment with `t_k ≤ t` (consistent with `searchsorted(side='right') - 1`).
             let mut i = 0;
             while i + 2 < points.len() && points[i + 1].0 <= t {
                 i += 1;
@@ -38,18 +38,17 @@ fn keys_with(points: &[(f64, f64)], t: f64, shape: impl Fn(f64) -> f64) -> f64 {
     }
 }
 
-/// 在 `[t0, t0 + n/sr)` 上逐采样取 smoothstep 关键帧（`points` 用绝对时间）。
+/// Sample smoothstep keyframes per sample over `[t0, t0 + n/sr)` (`points` use absolute time).
 pub fn keys_curve(points: &[(f64, f64)], n: usize, sr: f64, t0: f64) -> Vec<f32> {
     (0..n)
         .map(|i| keys_smooth(points, t0 + i as f64 / sr) as f32)
         .collect()
 }
 
-/// 平滑随机曲线：约每秒变化 `rate` 次，取值在 `[lo, hi]`。
+/// Smooth random curve: changes about `rate` times per second, with values in `[lo, hi]`.
 ///
-/// 撒 `k = max(4, ⌊dur·rate⌋ + 4)` 个 `[0, 1)` 随机点，用 Catmull-Rom 样条在第 1..k−2 个点之间
-/// 均匀取 `n` 个值，夹到 `[0, 1]` 再映射到 `[lo, hi]`（参考工程 `wander()` 用三次样条，这里
-/// 换成局部的 Catmull-Rom：不用解三对角方程，形状一样平滑）。
+/// Scatter `k = max(4, ⌊dur·rate⌋ + 4)` random points in `[0, 1)`, use a Catmull-Rom spline to take `n` evenly spaced values between points 1..k−2,
+/// clamp to `[0, 1]` and map to `[lo, hi]`. The reference project's `wander()` uses a cubic spline; here it is replaced by a local Catmull-Rom: no need to solve a tridiagonal system, and the shape is equally smooth.
 pub fn wander(n: usize, sr: f64, rate: f64, lo: f64, hi: f64, rng: &mut Rng) -> Vec<f32> {
     let k = 4usize.max((n as f64 / sr * rate) as usize + 4);
     let p: Vec<f64> = (0..k).map(|_| rng.unit()).collect();

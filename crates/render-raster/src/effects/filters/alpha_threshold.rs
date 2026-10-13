@@ -1,8 +1,7 @@
-//! Alpha 阈值（`filter.alphaThreshold@1`）。
+//! Alpha threshold (`filter.alphaThreshold@1`).
 //!
-//! `softness = 0` 是硬二值化；`softness > 0` 时在
-//! `[threshold - softness, threshold + softness]` 内线性过渡。
-//! 覆盖率乘在预乘四通道上。
+//! `softness = 0` is hard binarization; when `softness > 0`, it transitions linearly within `[threshold - softness, threshold + softness]`.
+//! The coverage is multiplied into the premultiplied four channels.
 
 use super::mask_shape::multiply_pixel_coverage;
 

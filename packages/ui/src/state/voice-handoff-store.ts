@@ -2,25 +2,25 @@ import { create } from 'zustand';
 import type { Route } from './shell-store.ts';
 
 /**
- * 去「我的声音」克隆一只新音色、存好再带回来（设计稿 store 的 `voiceHandoff`）：试听面板点「克隆新音色…」时记下从哪儿来、
- * 回哪儿去；我的声音存好后补上 `voiceId`，回到原处的那一块认领它（选上这只音色）后清掉。
+ * Go to "My voice" to clone a new voice, save it and bring it back (design store's `voiceHandoff`): when "Clone new voice…" is clicked in the preview panel, it records where it came from
+ * and where to return; after My voice saves it, `voiceId` is filled in, and the part at the original place claims it (selects this voice) and then clears it.
  *
- * 另一个方向是「我的声音」的「试听克隆」：记下要在本地模型页展开哪一行的试听、选上哪只音色，那一行认领后清掉。
- * 都只在这次运行里有效，不落盘。
+ * The other direction is "Preview clone" from "My voice": it records which preview row to expand on the local models page and which voice to select; that row claims it and then clears it.
+ * Both are valid only for this run, not saved to disk.
  */
 export interface VoiceHandoff {
-  /** 谁在等：`quick:<bundleId>` 是本地模型页那一行的试听。 */
+  /** Who is waiting: `quick:<bundleId>` is the audition row on the local model page. */
   key: string;
-  /** 回程条上的「从哪儿过来」：试听那一行的模型名（「Qwen3-TTS 0.6B Base」），句子由回程条的文案拼。 */
+  /** The "where it came from" on the return bar: the model name of the audition row ("Qwen3-TTS 0.6B Base"); the sentence is assembled by the return bar's copy. */
   from: string;
   route: Route;
-  /** 存好的音色；还没存时没有。 */
+  /** The saved voice; absent until one is saved. */
   voiceId?: string;
 }
 
 export interface VoiceAuditionFocus {
   bundleId: string;
-  /** 试听面板的音色键（`my:<id>`）。 */
+  /** Voice key of the audition panel (`my:<id>`). */
   voice: string;
 }
 
@@ -28,7 +28,7 @@ export interface VoiceHandoffStore {
   handoff: VoiceHandoff | null;
   focus: VoiceAuditionFocus | null;
   setHandoff(handoff: VoiceHandoff | null): void;
-  /** 我的声音存好了一只：有人在等时记下它。 */
+  /** My voice saved one: record it when someone is waiting. */
   saved(voiceId: string): void;
   setFocus(focus: VoiceAuditionFocus | null): void;
 }

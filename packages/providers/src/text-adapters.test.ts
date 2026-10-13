@@ -23,8 +23,7 @@ import {
 } from './testing/fake-provider-server.ts';
 
 /**
- * 文本模型的适配器（`generateText`，架构设计 §6.4）对着本机的假供应商：请求形状、响应解析、结束原因、错误分类、
- * `Retry-After`、取消、并发上限，以及 `models.refreshProvider` 的列模型。从不连接真实的云服务；密钥是这里编的字符串。
+ * Text model adapters (`generateText`, architecture design §6.4) run against the local fake provider: request shape, response parsing, finish reasons, error classification, `Retry-After`, cancellation, concurrency limits, and model listing through `models.refreshProvider`. It never connects to a real cloud service; the keys here are made-up strings.
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-text-0123456789abcdef';
@@ -125,7 +124,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
       max_completion_tokens: 256,
       reasoning_effort: 'high',
     });
-    // 密钥只在认证头里。
+    // The key appears only in the auth header.
     expect(request!.path).not.toContain(OPENAI_KEY);
     expect(request!.body.toString('utf8')).not.toContain(OPENAI_KEY);
   });
@@ -205,7 +204,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
       expect(error.details).toMatchObject(details);
       expect(error.message).not.toContain(OPENAI_KEY);
       expect(JSON.stringify(error.details)).not.toContain(OPENAI_KEY);
-      // 额度用尽与太久的 Retry-After 都不重试。
+      // Quota exhaustion and an overly long Retry-After are not retried.
       expect(server.requests.length - before).toBe(1);
     }
   });
@@ -377,7 +376,7 @@ describe('OpenAI 兼容端点的文本', () => {
       acceptsSeed: false,
     });
     expect(models[1]).toMatchObject({ contextTokens: 8192, maxOutputTokens: 1024, efforts: [], structuredOutput: false });
-    // 没给 finish_reason 当作正常结束。
+    // No finish_reason given: treated as a normal stop.
     expect(await call(adapter, cfg, 'qwen3', params({ effort: 'high', requestedEffort: 'high', temperature: 0.5 }))).toMatchObject({
       text: 'ok',
       finishReason: 'stop',
@@ -484,7 +483,7 @@ describe('TextRunner 与在线 Provider', () => {
     limit = 1;
     pending.shift()!();
     await calls[0];
-    // 上限改成 1：第一个完成后、第二个还在进行，第三个继续等。
+    // Limit set to 1: after the first finishes, the second is still in progress, and the third keeps waiting.
     await new Promise((r) => setTimeout(r, 50));
     expect(server.requests).toHaveLength(2);
     pending.shift()!();
@@ -605,7 +604,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
         unavailableReason: 'unsupported',
       });
 
-      // 记在配置文件里，重开之后还在；文件里没有密钥。
+      // Recorded in the config file, still there after reopening; the file contains no key.
       const file = await fs.readFile(path.join(dir, 'model-services.json'), 'utf8');
       expect(file).not.toContain(OPENAI_KEY);
       expect(file).not.toContain(ELEVENLABS_KEY);

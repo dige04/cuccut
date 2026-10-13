@@ -1,6 +1,6 @@
 /**
- * `packages/runtime-storage` 给人看的文字（message-ref.ts）。每个区域一个 `<区域>.ts` 与它的译文 `<区域>.zh-Hans.ts`，在这里 export 登记。
- * 包外按 `@cuccut/protocol/messages/runtime-storage` 引用。
+ * Human-facing text for `packages/runtime-storage` (message-ref.ts). Each area has one `<area>.ts` and its translation `<area>.zh-Hans.ts`, registered here by export.
+ * Outside the package, reference it as `@cuccut/protocol/messages/runtime-storage`.
  */
 export * from './runtime-storage-credentials.ts';
 export * from './runtime-storage-files.ts';

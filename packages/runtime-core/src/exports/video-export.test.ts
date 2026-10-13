@@ -31,10 +31,8 @@ import {
 } from './video-export.ts';
 
 /**
- * 成片导出（架构设计 §9.13）。端到端：真实的 Runtime、视频引擎、Render Worker 与 ffmpeg；素材是 ffmpeg 现场生成的
- * 纯色画面加正弦音。导入 → 剪 → 叠一张图片 → 交叉淡化 → 导出 MP4，ffprobe 读流与帧数，解码回来按像素查颜色、
- * 按频率查声音；导出途中编辑不影响结果（冻结）；取消不留半个文件；画不出来的内容默认拒绝、`skip` 时跳过并警告。
- * 缺 engine-host、export-worker 或 ffmpeg 时跳过端到端部分。
+ * Video export (architecture design §9.13). End to end: a real Runtime, video engine, Render Worker, and ffmpeg. The assets are solid-colour frames with a sine tone, generated on the spot by ffmpeg. Import → cut → overlay an image → cross-fade → export MP4. Read the streams and frame count with ffprobe, decode back and check colours per pixel and sound frequencies. Edits made during export don't affect the result (frozen). Cancellation leaves no half-written file. Content that can't be drawn is rejected by default, and with `skip` it is skipped with a warning.
+ * The end-to-end part is skipped when engine-host, export-worker, or ffmpeg is missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -143,7 +141,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-/** 纯色画面 + 正弦音的视频素材（H.264 太依赖本机编码器，用 mpeg4 高质量）。 */
+/** A video asset of solid-colour frames with a sine tone (H.264 depends too much on the local encoder, so use mpeg4 at high quality). */
 function colorClip(file: string, color: string, frequency: number, seconds: number): void {
   execFileSync('ffmpeg', [
     ...['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${color}:size=320x180:rate=30:duration=${seconds}`],
@@ -152,7 +150,7 @@ function colorClip(file: string, color: string, frequency: number, seconds: numb
   ]);
 }
 
-/** 第 `k` 帧的 RGB（整帧，rgb24）。 */
+/** The RGB of frame `k` (whole frame, rgb24). */
 function frameAt(file: string, k: number, fps: number, width: number, height: number): Buffer {
   const raw = execFileSync(
     'ffmpeg',
@@ -176,7 +174,7 @@ function samples(file: string): Float32Array {
   return Float32Array.from(ints, (v) => v / 32768);
 }
 
-/** `at` 秒附近 50 毫秒里频率为 `f` 的分量的振幅。 */
+/** The amplitude of the component at frequency `f` within 50 ms around `at` seconds. */
 function tone(pcm: Float32Array, f: number, at: number): number {
   const from = Math.round((at - 0.025) * SAMPLE_RATE);
   const n = Math.round(0.05 * SAMPLE_RATE);
@@ -224,7 +222,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       path.join(fixtures, 'logo.svg'),
       '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0"/></svg>',
     );
-    // 声波用：前 1 秒静音、之后 300 Hz 的单声道 WAV；另一段 200 Hz 的嗡声。
+    // For the waveform: silent for the first second, then a 300 Hz mono WAV. Another, a 200 Hz hum.
     const wav = (name: string, expression: string, seconds: number) =>
       execFileSync('ffmpeg', [
         ...['-v', 'error', '-y', '-f', 'lavfi', '-i', `aevalsrc=${expression}:s=${SAMPLE_RATE}:d=${seconds}`],
@@ -232,7 +230,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       ]);
     wav('tone.wav', 'if(gte(t\\,1)\\,0.6*sin(2*PI*300*t)\\,0)', 3);
     wav('hum.wav', '0.5*sin(2*PI*200*t)', 1);
-    // 导入不解析 SVG（只认扩展名），到导出预检才发现解不开。
+    // Import doesn't parse SVG (it only checks the extension), so the failure to decode is found only at export preflight.
     await fs.writeFile(path.join(fixtures, 'broken.svg'), 'not an svg');
   });
 
@@ -301,8 +299,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   }
 
   /**
-   * 换一个注入了字体目录与假下载的 Runtime（同一个 Runtime Home）：字体目录只有探针字体 ColrProbe 一个族，Google Fonts 的
-   * 地址改写到本机的假服务 `origin`。
+   * Swaps in a Runtime injected with a font directory and a fake download (same Runtime Home). The font directory holds only one family, the probe font ColrProbe, and Google Fonts addresses are rewritten to the local fake service at `origin`.
    */
   async function restartWithFontDownloads(origin: string): Promise<void> {
     client.close();
@@ -334,14 +331,14 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     await client.connect();
   }
 
-  /** 新建视频，画布 320×180。 */
+  /** Creates a new video with a 320×180 canvas. */
   async function newVideo(name: string): Promise<string> {
     const { ref } = await client.request('videos.create', { projectId: project.id, name });
     await edit(ref.videoId, [{ type: 'updateSequence', sequenceId: video(ref.videoId).sequenceId, canvas: { width: 320, height: 180 } }]);
     return ref.videoId;
   }
 
-  /** 新加一条视觉轨道（排在最上面），返回它的 ID。 */
+  /** Adds a new visual track (placed at the top) and returns its ID. */
   async function overlayTrack(videoId: string): Promise<string> {
     const before = new Set(video(videoId).tracks.map((t) => t.id));
     await edit(videoId, [{ type: 'addTrack', kind: 'visual' }]);
@@ -349,9 +346,8 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   }
 
   /**
-   * 红（440 Hz）[0, 2) 与蓝（1000 Hz，取源的 1–3 秒）[2, 4) 首尾相接，中间 0.5 秒交叉淡化；
-   * 上层一张绿色图片（32×32 的正方形）摆成画中画：中心在 (40, 40)、宽 48，也就是左上角在 (16, 16)、48×48，[0, 4)。
-   * 位置按画幅的百分比写：x = 40 / 320、y = 40 / 180、w = 48 / 320。
+   * Red (440 Hz) over [0, 2) and blue (1000 Hz, from the source's 1–3 seconds) over [2, 4) join end to end, with a 0.5-second cross-fade between them. On top, a green image (a 32×32 square) is placed as picture-in-picture: centred at (40, 40) with width 48, so its top-left is at (16, 16) and it is 48×48, over [0, 4).
+   * The positions are written as percentages of the frame: x = 40 / 320, y = 40 / 180, w = 48 / 320.
    */
   async function cutVideo(): Promise<{ videoId: string; image: string }> {
     const videoId = await newVideo('成片');
@@ -396,7 +392,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     return { videoId, image: image.id };
   }
 
-  // v2 0d60e31a3 的源编码回归：源素材不必与输出编码相同，未剪辑也不能被原生输入限制挡住。
+  // v2 0d60e31a3 source-encoding regression: the source asset need not match the output encoding, and an uncut clip must not be blocked by native input restrictions.
   it.each([
     ['VP9/AAC MP4', 'libvpx-vp9', 'aac', 'mp4', 'vp9', 'aac'],
     ['VP9/Opus WebM', 'libvpx-vp9', 'libopus', 'webm', 'vp9', 'opus'],
@@ -421,7 +417,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       { type: 'addItem', sequenceId, asset: { ref: 'source' }, at: at(0), alignment: 'nearest-frame' },
     ]);
     const revision = video(videoId).revision;
-    // 不给 codec、画质、尺寸、帧率或范围；完整地走 Runtime 预检、Worker 与发布校验。
+    // No codec, quality, size, frame rate, or range is given. It goes fully through the Runtime preflight, the Worker, and publish verification.
     const job = await exportOnce({ videoId, settings: { kind: 'video', format: 'mp4' } });
     const output = job.result!.outputs![0]!;
     expect(output.media).toMatchObject({ kind: 'video', width: 320, height: 180, videoCodec: 'h264', audioCodec: 'aac' });
@@ -439,7 +435,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(video(videoId).revision).toBe(revision);
   }, 120_000);
 
-  // 两次导出：单跑约 7 秒，整套测试一起跑时机器忙，留出余量。
+  // Two exports: alone, about 7 seconds. When the whole suite runs together the machine is busy, so leave a margin.
   it('视频 + 图片 + 交叉淡化 + 声音：MP4，流、帧数、颜色与声音都对（A11）', async () => {
     const { videoId } = await cutVideo();
     const { fps } = video(videoId);
@@ -468,18 +464,18 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const blue = frameAt(out!.path!, Math.round(3.5 * rate), rate, 320, 180);
     near(pixel(blue, 320, 200, 120), [0, 0, 255]);
     near(pixel(blue, 320, 40, 40), [0, 255, 0]);
-    // 交叉淡化的中点：红蓝各一半（在 sRGB 编码值上混合，与 Canvas 2D 一致）。
+    // The midpoint of the cross-fade: half red and half blue (blended on sRGB-encoded values, consistent with Canvas 2D).
     const middle = frameAt(out!.path!, Math.round(2 * rate), rate, 320, 180);
     near(pixel(middle, 320, 200, 120), [128, 0, 128], 45);
 
-    // ffmpeg 的正弦音振幅是 1/8。
+    // ffmpeg's sine amplitude is 1/8.
     const pcm = samples(out!.path!);
     expect(tone(pcm, 440, 0.5)).toBeGreaterThan(0.1);
     expect(tone(pcm, 1000, 0.5)).toBeLessThan(0.01);
     expect(tone(pcm, 1000, 3.5)).toBeGreaterThan(0.1);
     expect(tone(pcm, 440, 3.5)).toBeLessThan(0.01);
 
-    // 范围、输出高度与帧率：1.5–2.5 秒，90 高，15 fps → 15 帧、160×90；WebM（VP9 + Opus）。
+    // Range, output height, and frame rate: 1.5–2.5 seconds, 90 high, 15 fps → 15 frames, 160×90. WebM (VP9 + Opus).
     const part = await exportOnce({
       videoId,
       settings: { kind: 'video', format: 'webm', range: { start: 1.5, end: 2.5 }, height: 90, fps: { num: 15, den: 1 } },
@@ -496,7 +492,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       audioCodec: 'opus',
     });
 
-    // 宽高都给、比例与画布不同：160×160 的输出里画面 160×90 居中（上下各 35 的黑边），画面里的摆放按画布缩放、不重排。
+    // Width and height both given, with an aspect ratio different from the canvas: in the 160×160 output, the 160×90 picture is centred (35 of black bar above and below). Placement within the picture scales with the canvas and is not reflowed.
     const boxed = await exportOnce({
       videoId,
       settings: { kind: 'video', format: 'mp4', range: { start: 0, end: 1 }, width: 160, height: 160, fps: { num: 15, den: 1 } },
@@ -508,10 +504,10 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     near(pixel(frame, 160, 80, 10), [0, 0, 0], 20);
     near(pixel(frame, 160, 80, 150), [0, 0, 0], 20);
     near(pixel(frame, 160, 100, 35 + 60), [255, 0, 0]);
-    // 画中画的绿图：画布上中心在 (40, 40)，缩一半落在画面的 (20, 20)，也就是输出的 (20, 55)。
+    // The green picture-in-picture image: centred at (40, 40) on the canvas, halved, it lands at (20, 20) in the picture, i.e. (20, 55) in the output.
     near(pixel(frame, 160, 20, 35 + 20), [0, 255, 0]);
 
-    // HEVC：原生写入器只编 H.264，这一路回落 ffmpeg（libx265）编码，成片照样完整（本机 ffmpeg 没有 libx265 时略过）。
+    // HEVC: the native writer only encodes H.264, so this path falls back to ffmpeg (libx265) encoding. The output is still complete (skipped when the local ffmpeg has no libx265).
     const encoders = execFileSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' });
     if (encoders.includes('libx265')) {
       const hevc = await exportOnce({
@@ -553,7 +549,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     }
   }, 60_000);
 
-  // 母带在 debug 构建的 Worker 里跑，比别的用例慢。
+  // The master runs inside the Worker in a debug build, so it is slower than the other cases.
   it('声音的响度母带：成片的声音做到目标响度与真峰值，实测写进校验', async () => {
     const { videoId } = await cutVideo();
     const job = await exportOnce({
@@ -578,7 +574,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const rate = before.fps.num / before.fps.den;
     const frame = frameAt(job.result!.outputs![0]!.path!, Math.round(0.5 * rate), rate, 320, 180);
     expect(pixel(frame, 320, 200, 120)[0]).toBeGreaterThan(200);
-    // 现在序列是空的：范围为空。
+    // The sequence is empty now: the range is empty.
     const empty = await rejection(client.request('exports.create', { videoId, settings: { kind: 'video', format: 'mp4' } }));
     expect(empty.details).toMatchObject({ code: 'EXPORT_RANGE_EMPTY' });
   });
@@ -608,8 +604,8 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   it.skipIf(process.platform === 'win32')(
     'Worker 崩溃（被 SIGKILL）：任务失败，staging 清掉，它启动的 ffmpeg 随进程组一起停下',
     async () => {
-      // 原生编解码不起 ffmpeg 子进程：这里关掉原生（`CUCCUT_EXPORT_NATIVE=0`），让 Worker 走 ffmpeg 兜底，
-      // 测的是兜底路径上的子进程随进程组收掉。Worker 继承本进程的环境。
+      // Native encoding and decoding don't start ffmpeg subprocesses. Native is turned off here (`CUCCUT_EXPORT_NATIVE=0`), so the Worker takes the ffmpeg fallback.
+      // What is tested is that the subprocesses on the fallback path are reaped along with the process group. The Worker inherits this process's environment.
       const previousNative = process.env.CUCCUT_EXPORT_NATIVE;
       process.env.CUCCUT_EXPORT_NATIVE = '0';
       onTestFinished(() => {
@@ -628,7 +624,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
         const job = await client.request('exports.get', { jobId });
         return job.progress?.unit === 'frames' && job.progress.done > 0;
       });
-      // 这次渲染的 Worker（本进程的子进程、自成进程组）与组里的 ffmpeg。
+      // This render's Worker (a child process of this process, in its own process group) and the ffmpeg in that group.
       const processes = () =>
         execFileSync('ps', ['-A', '-o', 'pid=,ppid=,pgid=,command='], { encoding: 'utf8' })
           .split('\n')
@@ -642,7 +638,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       expect(children.some((p) => p.command.includes('ffmpeg'))).toBe(true);
 
       const staging = path.join(resolveRuntimeHome({ CUCCUT_HOME: dir }).stagingDir, 'jobs', jobId);
-      // 先把 ffmpeg 停住：停住的进程不会因为管道断了自己退出，只有 Runtime 杀掉进程组才收得掉（否则就是孤儿）。
+      // Freeze the ffmpeg first: a frozen process doesn't exit on its own when the pipe breaks, so only the Runtime killing the process group can reap it (otherwise it becomes an orphan).
       for (const child of children) process.kill(child.pid, 'SIGSTOP');
       process.kill(renderer!.pid, 'SIGKILL');
       const alive = (pid: number) => {
@@ -654,14 +650,14 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
         }
       };
       onTestFinished(() => {
-        // 测试失败时也不把停住的进程留在机器上。
+        // If the test fails, don't leave the frozen processes on the machine either.
         for (const child of children.filter((c) => alive(c.pid))) process.kill(child.pid, 'SIGKILL');
       });
       const failed = await finish(jobId);
       expect(failed.state).toBe('failed');
       expect(failed.error).toMatchObject({ code: 'EXPORT_RENDER_FAILED' });
       expect(JSON.stringify(failed.error)).toContain('SIGKILL');
-      // 任务结束时组已经被杀掉：ffmpeg 不再存在（给内核一点时间回收）。
+      // Once the job ends, the group has already been killed: ffmpeg no longer exists (give the kernel a moment to reclaim it).
       await until(() => children.every((p) => !alive(p.pid)), 3_000);
       await until(async () => !(await fs.stat(staging).catch(() => null)));
       expect(await fs.readdir(path.join(project.path, 'exports')).catch(() => [])).toEqual([]);
@@ -669,7 +665,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   );
 
   it.skipIf(process.platform === 'win32')('Worker 在提交之后不见了：任务失败，错误指向 Render Worker 而不是叫人装 ffmpeg', async () => {
-    // 预检时跑真的 Worker，跑完把自己删掉：任务开始后再启动它就找不到了（像是构建产物在排队期间被清掉）。
+    // Preflight runs the real Worker and then deletes it, so starting it after the job begins finds nothing (as if the build output were cleared while the job was queued).
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-worker-gone-'));
     const script = path.join(tmp, 'export-worker');
     await fs.writeFile(script, `#!/bin/sh\n"${worker}" "$@"\nstatus=$?\nrm -f "$0"\nexit $status\n`, { mode: 0o755 });
@@ -696,7 +692,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const track = await overlayTrack(videoId);
     const textTrack = await overlayTrack(videoId);
     const span = { fromFrame: 0, durationFrames: 30 };
-    // 位置按画幅（320×180）的百分比：x、y 是框中心，w 是框宽。
+    // Positions are percentages of the frame (320×180): x and y are the box centre, and w is the box width.
     const place = (x: number, y: number, w: number) => ({ x: (x / 320) * 100, y: (y / 180) * 100, w: (w / 320) * 100 });
     await edit(videoId, [
       {
@@ -722,15 +718,15 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       },
     ]);
     const range = { start: 0, end: 0.5 };
-    // 字体随渲染内核发布，没有系统字体的机器也画得出文字。
+    // Fonts ship with the rendering core, so machines without system fonts can still draw text.
     const job = await exportOnce({ videoId, settings: { kind: 'video', format: 'mp4', range } });
     const rate = video(videoId).fps.num / video(videoId).fps.den;
     const frame = frameAt(job.result!.outputs![0]!.path!, 0, rate, 320, 180);
-    // 红方块中心在画布 (60, 90)，边长 80；方块外是黑底。
+    // The red square's centre is at canvas (60, 90), with side 80. Outside the square is a black background.
     const [r, g, b] = pixel(frame, 320, 60, 90);
     expect(r > 200 && g < 50 && b < 50, `${[r, g, b]}`).toBe(true);
     expect(pixel(frame, 320, 10, 90)[0]).toBeLessThan(40);
-    // 文字框中心在 (220, 90)：框里有亮的笔画，框外仍是黑的。
+    // The text box's centre is at (220, 90): there are bright strokes inside the box, and outside it is still black.
     let bright = 0;
     for (let y = 60; y < 120; y++) for (let x = 160; x < 280; x++) if (pixel(frame, 320, x, y)[1] > 200) bright++;
     expect(bright).toBeGreaterThan(100);
@@ -738,7 +734,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   });
 
   it('本机字体：内置字体之外的族在本机找到的 face 冻结进快照、画进成片，变了以 FONT_MISSING 失败；预览拿得到同一个 face；找不到的照回退字体画并警告', async () => {
-    // 本机字体库只扫这个临时目录（测试钩子，引擎与 Render Worker 启动时带上），不依赖这台机器装了什么字体。
+    // The local font library scans only this temp directory (a test hook that the engine and Render Worker take at startup), so the test doesn't depend on what fonts this machine has installed.
     const fonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
     process.env.CUCCUT_FONT_DIRS = fonts;
@@ -750,7 +746,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const videoId = await newVideo('本机字体');
     const { sequenceId } = video(videoId);
     const textTrack = await overlayTrack(videoId);
-    // 探针字体 ColrProbe（render-raster 的测试夹具）的「A」是红菱形加蓝三角；回退字体画的是白字。
+    // The “A” of the probe font ColrProbe (a test fixture of render-raster) is a red diamond plus a blue triangle. A fallback font draws white text.
     await edit(videoId, [
       {
         type: 'insertItems',
@@ -794,10 +790,10 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     );
     const found = await exported();
     expect(found.notes).toEqual([]);
-    // 画的是探针字体的彩色图形，不再是白字（画面小、色度抽样后红色的像素不多）。
+    // It draws the probe font's coloured shapes, not white text (the picture is small, and after chroma subsampling there are few red pixels).
     expect(found.white).toBeLessThan(missing.white / 4);
     expect(found.red).toBeGreaterThan(5);
-    // 冻结快照记下用到的那个 face：文件、第几个与整个文件的摘要；没找到时记的是回退。
+    // The frozen snapshot records the face used: the file, its index within the file, and the digest of the whole file. When none is found, a fallback is recorded.
     const probe = await fs.readFile(path.join(fonts, 'probe.ttf'));
     const snapshotOf = async (job: JobRecord) =>
       JSON.parse((await runtime.models.jobs.artifacts.read(job.export!.snapshotArtifactId))!.toString('utf8')) as ExportSnapshot;
@@ -813,7 +809,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
         byteLength: probe.length,
       },
     ]);
-    // 冻结之后字体文件变了：执行时按摘要核对出来，整个任务以 FONT_MISSING 失败，不悄悄换成别的字体。
+    // The font file changed after freezing: this is detected by digest at execution, and the whole job fails with FONT_MISSING rather than quietly swapping in another font.
     if (process.platform !== 'win32') {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-font-changed-'));
       const script = path.join(tmp, 'export-worker');
@@ -838,7 +834,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       expect(failed.error!.message).toContain('字体无法复现');
       await fs.writeFile(file, probe);
     }
-    // 预览按 face 要字体：引擎用同一份解析找到同一个文件里的同一个 face，发读取句柄与抽法；找不到的给出原因。
+    // The preview asks for fonts by face. The engine uses the same resolution to find the same face in the same file, and sends a read handle and how to draw it. A face that can't be found gives the reason.
     const resolved = await client.request('fonts.resolve', {
       faces: [
         { family: 'ColrProbe', weight: 400, italic: false },
@@ -848,7 +844,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(resolved.missing).toEqual([{ family: 'Nowhere Sans', weight: 700, italic: false, reason: 'not-found' }]);
     const [face] = resolved.faces;
     expect([face!.family, face!.file.fileName, face!.faceIndex, face!.fileSize]).toEqual(['ColrProbe', 'probe.ttf', 0, probe.length]);
-    // 按区间只取一张表：206，字节与文件里那一段相同。
+    // Only one table by range: 206, with bytes identical to that section of the file.
     const table = face!.tables[0]!;
     const response = await fetch(face!.file.url, { headers: { Range: `bytes=${table.from}-${table.from + table.length - 1}` } });
     expect(response.status).toBe(206);
@@ -857,7 +853,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   });
 
   it('按需下载的字体：目录里有、本机没有的族在导出任务里下载、冻结、画进成片；关了自动下载时照回退字体画并说明原因', async () => {
-    // 本机字体库是空的临时目录；字体服务是本机的假服务，给的是探针字体 ColrProbe（字体目录是注入的，只有它一个族）。
+    // The local font library is an empty temp directory. The font service is a local fake that serves the probe font ColrProbe (the font directory is injected, and it holds only this one family).
     const systemFonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
     process.env.CUCCUT_FONT_DIRS = systemFonts;
@@ -921,11 +917,11 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       const warnings = (job.warnings ?? []).filter((w) => w.code === 'FONT_NOT_DOWNLOADED' || w.detail?.includes('ColrProbe'));
       return { red, job, snapshot, warnings };
     };
-    // 视频用到的字体：Render Worker 排一遍字清点（随内核的族也在，带回退族）；不带 download 时不下载。
+    // The video's fonts: the Render Worker takes a glyph census (families bundled with the core are included too, along with the fallback families). Without download, nothing is downloaded.
     const before = await client.request('fonts.usage', { videoId });
     expect(before.families.map((f) => [f.family, f.status.state, f.fallback])).toEqual([['ColrProbe', 'downloadable', 'Noto Sans SC']]);
     expect(requests).toEqual([]);
-    // 第一次：冻结时还没下载，快照记「要下载」；任务里下载好、冻结进渲染，画的是探针字体。
+    // First time: at freeze time nothing is downloaded yet, so the snapshot records “to be downloaded”. It is downloaded during the job and frozen into the render, and the picture draws the probe font.
     const first = await exported();
     expect(first.snapshot.fonts).toEqual([{ family: 'ColrProbe', weight: 400, italic: false, download: 'google-fonts' }]);
     expect(first.warnings).toEqual([]);
@@ -933,7 +929,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(requests).toEqual(['/css2?family=ColrProbe:wght@400', '/s/colrprobe/v1/a.ttf']);
     const { faces } = await client.request('fonts.downloaded', {});
     expect(faces).toMatchObject([{ family: 'ColrProbe', weight: 400, italic: false, licence: 'OFL-1.1', sizeBytes: probe.length }]);
-    // 第二次：缓存里有了，冻结时就记下文件（`source: 'downloaded'`），不再请求。
+    // Second time: the cache already has it, so freezing records the file (`source: 'downloaded'`) and makes no request.
     const second = await exported();
     expect(second.snapshot.fonts).toEqual([
       {
@@ -951,7 +947,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(requests).toHaveLength(2);
     const resolved = await client.request('fonts.resolve', { faces: [{ family: 'ColrProbe', weight: 400, italic: false }] });
     expect(resolved.faces.map((f) => [f.family, f.source])).toEqual([['ColrProbe', 'downloaded']]);
-    // 关了自动下载、清空缓存：照回退字体画，警告说明为什么没下载。
+    // Auto-download is off and the cache is emptied: it draws with the fallback font, and the warning explains why nothing was downloaded.
     await client.request('settings.set', { values: { 'fonts.autoDownload': false } });
     expect(await client.request('fonts.clear', {})).toMatchObject({ removed: [{ family: 'ColrProbe' }], kept: [] });
     const off = await exported();
@@ -966,7 +962,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       fallback: 'Noto Sans SC',
       reason: expect.stringContaining('自动下载字体已关闭'),
     });
-    // 视频用到的字体（Render Worker 清点）：关着自动下载时 download 也不下载，状态是可下载、由回退族代替。
+    // The video's fonts (Render Worker census): with auto-download off, download doesn't download either. The status is downloadable, and the fallback family stands in for it.
     const usage = await client.request('fonts.usage', { videoId, download: true });
     expect(usage).toEqual({
       fallback: 'Noto Sans SC',
@@ -988,7 +984,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const previous = process.env.CUCCUT_FONT_DIRS;
     process.env.CUCCUT_FONT_DIRS = systemFonts;
     const probe = await fs.readFile(new URL('../../../../crates/render-raster/tests/fixtures/fonts/ColrProbe.ttf', import.meta.url));
-    // 慢的字体文件：每 100 毫秒一小段（`slow` 关掉之后一次给完）。
+    // Slow font file: one small chunk every 100 ms (once `slow` is turned off, it is all delivered at once).
     const state = { slow: true, files: 0 };
     const server = http.createServer((req, res) => {
       if (req.url!.startsWith('/css2?')) {
@@ -1047,7 +1043,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       videoId,
       settings: { kind: 'video', format: 'mp4', range: { start: 0, end: 0.5 } },
     });
-    // 导出停在下载字体的阶段、已经收到字节：这个族是下载中，下载记在导出任务上。
+    // The export stops during the font-download stage with bytes already received. The family is downloading, and the download is recorded on the export job.
     await until(async () => {
       const job = await client.request('exports.get', { jobId });
       return job.phase === 'downloading' && job.progress?.unit === 'bytes' && job.progress.done > 0;
@@ -1060,13 +1056,13 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     const cancelled = await finish(jobId);
     expect(cancelled.state).toBe('cancelled');
     expect(cancelled.result).toBeNull();
-    // 下载停下：临时文件删掉，缓存里没有，族不再是下载中（记为取消，可以重试）。
+    // The download stops: the temp file is deleted, nothing is in the cache, and the family is no longer downloading (recorded as cancelled, so it can be retried).
     await until(async () => (await fs.readdir(staging)).length === 0);
     expect((await client.request('fonts.downloaded', {})).faces).toEqual([]);
     expect(await status()).toMatchObject({ state: 'failed', job: null, error: { code: 'CANCELLED' } });
     expect(await fs.readdir(path.join(project.path, 'exports')).catch(() => [])).toEqual([]);
 
-    // 再下载一次：从头下，下完进缓存。
+    // Download again: starts from the beginning, and goes into the cache once complete.
     state.slow = false;
     const again = await client.request('fonts.download', { family: 'ColrProbe' });
     expect(again.jobId).not.toBeNull();
@@ -1104,7 +1100,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     await restartWithFontDownloads(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
     ({ project } = await client.request('projects.create', { name: '字幕字体' }));
 
-    // 字幕样式用 ColrProbe；画面上没有别的文字。
+    // Subtitle style uses ColrProbe. There is no other text on the picture.
     const videoId = await newVideo('字幕字体');
     const { sequenceId } = video(videoId);
     const caption = {
@@ -1164,11 +1160,11 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       },
     ]);
     const families = async () => (await client.request('fonts.usage', { videoId })).families.map((f) => [f.family, f.fallback]);
-    // 一个素材都没有：只有文字。
+    // No assets at all: only text.
     expect(Object.keys(runtime.videos.mirror(videoId)!.video.assets)).toEqual([]);
     const textOnly = await families();
     expect(textOnly).toEqual([['Noto Sans SC', null]]);
-    // 链接的视频与图片素材放进序列，再把文件删掉、改掉：导出会以 ASSET_MISSING / ASSET_CHANGED 拒绝，清点字体不受影响。
+    // Linked video and image assets are put into the sequence, then the files are deleted or changed. The export is rejected with ASSET_MISSING / ASSET_CHANGED, and the font census is unaffected.
     const red = await fixture('red.mp4');
     const green = await fixture('green.png');
     const { sequenceId } = video(videoId);
@@ -1213,14 +1209,14 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       for (let y = 130; y < 180; y++) for (let x = 0; x < 320; x++) if (pixel(frame, 320, x, y)[1] > 128) count++;
       return count;
     };
-    // 字号 30（540 短边）在 180 高的画布上是 10 像素；字在 y≈155 附近。
+    // Font size 30 (short side 540) on a 180-high canvas is 10 pixels. The text sits near y≈155.
     expect(bright(job.result!.outputs![0]!.path!)).toBeGreaterThan(20);
-    // 默认文件名带上烧进画面的字幕语言；不烧时没有后缀。
+    // The default file name carries the subtitle language burned into the picture. Without burning in, there is no suffix.
     expect(path.basename(job.result!.outputs![0]!.path!)).toBe('字幕.zh.mp4');
     const off = await exportOnce({ videoId, settings: { kind: 'video', format: 'mp4', range, burnCaptions: false } });
     expect(bright(off.result!.outputs![0]!.path!)).toBe(0);
     expect(path.basename(off.result!.outputs![0]!.path!)).toBe('字幕.mp4');
-    // 导出面板的字体清点跟着同一个选择：字幕不烧进画面时，只给字幕用的族不在清单里。
+    // The export panel's font census follows the same selection: when subtitles aren't burned into the picture, families used only for subtitles aren't in the list.
     const families = async (burnCaptions?: boolean) =>
       (await client.request('fonts.usage', { videoId, ...(burnCaptions === undefined ? {} : { burnCaptions }) })).families.map(
         (f) => f.family,
@@ -1262,7 +1258,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       { type: 'importAsset', path: tone, ref: 't' },
       { type: 'importAsset', path: hum, ref: 'h' },
       { type: 'addItem', sequenceId, asset: { ref: 't' }, at: at(0), alignment: 'nearest-frame' },
-      // 嗡声在导出范围之外：声波听整条序列，它的素材也要冻结、也要算频谱。
+      // The hum is outside the export range. The waveform listens to the whole sequence, so its assets must also be frozen and their spectrum computed.
       { type: 'addItem', sequenceId, asset: { ref: 'h' }, at: at(4), alignment: 'nearest-frame' },
     ]);
     const track = await overlayTrack(videoId);
@@ -1291,7 +1287,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
       for (let i = 0; i < frame.length; i += 3) if (frame[i]! > 200 && frame[i + 1]! > 200 && frame[i + 2]! > 200) n++;
       return n;
     };
-    // 输出第 0 帧是序列的 0.5 秒（静音），第 30 帧是 1.5 秒（300 Hz 在响）。
+    // Output frame 0 is sequence time 0.5 seconds (silent), and frame 30 is 1.5 seconds (300 Hz sounding).
     const quiet = bright(frameAt(file, 0, rate, 320, 180));
     const loud = bright(frameAt(file, Math.round(1.0 * rate), rate, 320, 180));
     expect(loud, `${quiet} → ${loud}`).toBeGreaterThan(quiet + 200);

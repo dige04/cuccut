@@ -1,14 +1,14 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/ForcedAligner.swift`。
+//! Parts of this file are implemented with reference to speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/ForcedAligner.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; scope of sources: see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! Qwen3 强制对齐器（candle），镜像 mlx 后端 `aligner.rs`。
-//! 非自回归：单次前向后在时间戳槽位上取 argmax。
+//! Qwen3 forced aligner (candle), mirroring the mlx backend `aligner.rs`.
+//! Non-autoregressive: a single forward pass, then argmax over the timestamp slots.
 //!
-//! v3 只改边界（同 MLX）：文件按模型包清单取（[`VerifiedFiles`]），量化位数从 `quantize_config.json` 读。
+//! v3 only changes the boundary (same as MLX): files are taken per the model pack manifest ([`VerifiedFiles`]), and the quantization bit width is read from `quantize_config.json`.
 
 use anyhow::{Context, Result};
 use candle_core::{D, Device, IndexOp, Tensor};
@@ -39,8 +39,7 @@ pub struct ForcedAligner {
 }
 
 impl ForcedAligner {
-    /// 从 `aligner` 组件的文件加载：目录顶层的 `*.safetensors`、`vocab.json`（必需），`merges.txt`、
-    /// `tokenizer_config.json`、`quantize_config.json`（列出了才读）。
+    /// Loads from the files of the `aligner` component: top-level `*.safetensors` and `vocab.json` in the directory (required), plus `merges.txt`, `tokenizer_config.json`, and `quantize_config.json` (read only if listed).
     pub fn load(files: &VerifiedFiles, device: &Device) -> Result<Self> {
         Self::load_inner(files, device).map_err(super::annotate_out_of_memory)
     }
@@ -60,7 +59,7 @@ impl ForcedAligner {
         Ok(Self {
             audio_encoder,
             text_decoder,
-            // 只保存 [hidden, classes] 一份（gemm 直接可用的布局）。
+            // Only one copy of [hidden, classes] is stored (the layout gemm can use directly).
             classify_weight_t: classify_weight.t()?.contiguous()?,
             classify_bias,
             tokenizer,
@@ -91,8 +90,7 @@ impl ForcedAligner {
         let after = input_embeddings.i((.., audio_end.., ..))?;
         let input_embeddings = Tensor::cat(&[&before, &audio_embeddings, &after], 1)?;
         let (hidden, _) = self.text_decoder.decode(&input_embeddings, None, None)?;
-        // 只在时间戳位置上计算分类 logits：先按位置取 hidden 再投影，
-        // 避免整个序列 × 词表的大 matmul。
+        // Classification logits are computed only at the timestamp positions: hidden states are gathered by position first and then projected, avoiding a large matmul of the whole sequence × vocabulary.
         let positions = input
             .timestamp_positions
             .iter()

@@ -1,44 +1,27 @@
-//! 编辑器预览的 WASM 入口（架构设计 §2「纯语义模块编译为 WASM」、§9.7、§13.1）。
+//! Editor preview WASM entry (architecture design §2 “pure semantic modules compile to WASM”, §9.7, §13.1).
 //!
-//! 界面把视频快照送进来，每一帧按播放头取一份 render-graph 的帧计划，再把计划交给 frame-render 画成一帧 RGBA。
-//! 计划与像素都和原生导出出自同一个实现；界面只负责把媒体元素这一刻的画面（视频与位图）、Lottie 与 SVG 图片素材的
-//! 字节与字体送进来（SVG 在这里按输出的长边光栅，贴纸的换色也在这里做，与导出同一份）。
+//! The UI sends in the video snapshot; for each frame, a frame plan from render-graph is taken at the playhead, then handed to frame-render to paint one RGBA frame.
+//! The plan and the pixels come from the same implementation as native export; the UI only supplies the media element's picture at this moment (video and bitmaps), the bytes of Lottie and SVG image assets, and fonts (SVG is rasterized here at the output's long edge, and sticker recoloring is also done here, the same as export).
 //!
-//! 不用 wasm-bindgen：只有几个函数，数据经线性内存进出，构建只需要 rustup 的 `wasm32-unknown-unknown`
-//! 目标，不依赖与 crate 版本严格对齐的 CLI。约定：
+//! Wasm-bindgen is not used: there are only a few functions, data goes in and out through linear memory, and the build only needs the rustup `wasm32-unknown-unknown` target, with no dependence on a CLI that must match the crate version exactly. Conventions:
 //!
-//! - `bc_alloc(len)` / `bc_free(ptr, len)`：宿主写入输入用的缓冲；
-//! - `bc_set_video(ptr, len)`：`{"video": VideoSnapshot, "sequenceId"?: Id}`；
-//! - `bc_plan(seconds)`：当前视频在这一刻的计划；
-//! - `bc_font_files()`：要注入的字体文件名（JSON 数组，次序即注入次序，第一份是回退字体）；
-//! - `bc_add_font(ptr, len)`：按上面的次序逐份注入字体字节；缓冲（`bc_alloc` 来的）交给内核，宿主不再 `bc_free`
-//!   （本机的大字体集合不再多拷一份）；
-//! - `bc_set_documents(ptr, len)`：字幕与字幕样式文档的冻结正文（`FrozenDocument` 数组）；
-//! - `bc_set_speech(ptr, len)`：视频里的转写（`[{documentId, sourceAssetId?, body}]`）：投到序列上的有效词流是按文稿
-//!   触发的闪避的触发区间，计划与导出的声音计划用同一份（`render_graph::audio_plan::speech_activity`）；按说话人分开的
-//!   区间（`speaker_activity`）给声波的 `speaker`，与导出同一份。一份转写都没有时声波当作视频里没有转写。字幕的词也从这里
-//!   取（字幕文档的 `sourceDocumentId` 指向的转写，与导出冻结的同一份），不另送一遍；
-//! - `bc_set_picture(key_ptr, key_len, ptr, len, width, height)`：实例这一刻的画面（非预乘 RGBA，键是实例 ID）；
-//!   `bc_clear_pictures()` 清掉上一帧的；
-//! - `bc_set_asset(key_ptr, key_len, ptr, len)`：素材字节（键是 `素材ID@版本`，Lottie 与 SVG 图片要读）；
-//! - `bc_set_spectrum(key_ptr, key_len, ptr, len)`：声波实例现成的整轨频谱（BCS1，键是实例 ID，缩略图用）；
-//!   `bc_clear_spectra()` 全清；
-//! - `bc_set_audio_spectrum(key_ptr, key_len, ptr, len)`：素材频谱（BCS1，键是 `素材ID@版本`），声波按序列的声音计划拼；
-//!   `bc_clear_audio_spectra()` 全清；
-//! - `bc_spectrum_begin()` / `bc_spectrum_push(ptr, len)` / `bc_spectrum_finish()`：算素材频谱。按块送 48 kHz 单声道
-//!   的 f32 小端样本，结束时输出区是 BCS1 字节（与原生导出同一份分析）；
-//! - `bc_render(seconds, width, height, flags)`：求这一刻的计划并画出来，输出区是
-//!   `{plan, warnings, skipped, spectra, fonts, faces}`，画面在 `bc_frame_ptr` / `bc_frame_len`。`spectra` 是声波用到、还没送进来的
-//!   素材频谱（`[{itemId, asset}]`）；`fonts` 是这一帧用到、字体库里没有的字体族名；`faces` 是到目前为止排字时点了名的
-//!   face（`[{family, weight, italic}]`，常设）：宿主对照报过缺的族去要本机字体的那一个 face，经 `bc_add_font` 送进来再画。
-//!   `flags` 的第 0 位：画字幕层；第 1 位：不铺背景（缩略图），画面是非预乘的 RGBA，
-//!   否则是不透明的 RGBA。
-//! - `bc_measure_text(ptr, len)`：`{text, style, wrapWidth?, canvas: {width, height}}`，输出区是文字元素要多大的框
-//!   `{width, height}`（序列像素，`frame_render::text_measure`）：与画字同一台排版引擎、同一批字体，要先注入字体。
-//! - 返回 0 表示成功，输出区（`bc_output_ptr` / `bc_output_len`）是结果 JSON；否则输出区是 `{code, message}`。
+//! - `bc_alloc(len)` / `bc_free(ptr, len)`: buffers the host writes input into;
+//! - `bc_set_video(ptr, len)`: `{"video": VideoSnapshot, "sequenceId"?: Id}`;
+//! - `bc_plan(seconds)`: the current video's plan at this moment;
+//! - `bc_font_files()`: font file names to inject (JSON array; the order is the injection order, and the first one is the fallback font);
+//! - `bc_add_font(ptr, len)`: inject font bytes one at a time in the order above; the buffer (from `bc_alloc`) is handed to the kernel, and the host no longer calls `bc_free` on it (so the large local font collection is not copied again);
+//! - `bc_set_documents(ptr, len)`: frozen bodies of subtitles and subtitle style documents (`FrozenDocument` array);
+//! - `bc_set_speech(ptr, len)`: transcripts in the video (`[{documentId, sourceAssetId?, body}]`). The effective word stream projected onto the sequence gives the trigger ranges for script-triggered ducking; the plan and the export's audio plan use the same one (`render_graph::audio_plan::speech_activity`). Per-speaker ranges (`speaker_activity`) feed the waveform's `speaker`, the same as export. When there is no transcript at all, the waveform is treated as having no speech in the video. Subtitle words are also taken from here (the transcript that the subtitle document's `sourceDocumentId` points to, the same frozen one that export uses), not sent again;
+//! - `bc_set_picture(key_ptr, key_len, ptr, len, width, height)`: the instance's picture at this moment (non-premultiplied RGBA; the key is the instance ID); `bc_clear_pictures()` clears the previous frame's;
+//! - `bc_set_asset(key_ptr, key_len, ptr, len)`: asset bytes (the key is `assetID@version`; Lottie and SVG images read it);
+//! - `bc_set_spectrum(key_ptr, key_len, ptr, len)`: a ready-made whole-track spectrum for a waveform instance (BCS1, the key is the instance ID; used for thumbnails); `bc_clear_spectra()` clears all;
+//! - `bc_set_audio_spectrum(key_ptr, key_len, ptr, len)`: asset spectrum (BCS1, the key is `assetID@version`); the waveform stitches it together according to the sequence's audio plan; `bc_clear_audio_spectra()` clears all;
+//! - `bc_spectrum_begin()` / `bc_spectrum_push(ptr, len)` / `bc_spectrum_finish()`: compute an asset spectrum. Send 48 kHz mono f32 little-endian samples in blocks; at the end the output area holds BCS1 bytes (the same analysis as native export);
+//! - `bc_render(seconds, width, height, flags)`: compute the plan at this moment and paint it; the output area is `{plan, warnings, skipped, spectra, fonts, faces}`, and the picture is at `bc_frame_ptr` / `bc_frame_len`. `spectra` are the asset spectra the waveform needs that have not been sent in (`[{itemId, asset}]`); `fonts` are the font family names used in this frame that are not in the font library; `faces` are the faces named during typesetting so far (`[{family, weight, italic}]`, persistent): the host checks the families reported missing, requests the one face from local fonts, sends it via `bc_add_font`, and then paints again. `flags` bit 0: paint the subtitle layer; bit 1: do not fill the background (thumbnail), in which case the picture is non-premultiplied RGBA; otherwise it is opaque RGBA.
+//! - `bc_measure_text(ptr, len)`: `{text, style, wrapWidth?, canvas: {width, height}}`; the output area is the box `{width, height}` that a text element needs (sequence pixels, `frame_render::text_measure`). It uses the same typesetting engine and font set as painting, so fonts must be injected first.
+//! - Return 0 on success; the output area (`bc_output_ptr` / `bc_output_len`) is the result JSON; otherwise the output area is `{code, message}`.
 //!
-//! 渲染器按输出尺寸留两台（播放中的降分辨率与停住时的原尺寸来回切，不重建排版与缓存），送进来的字体、文档、转写与
-//! 频谱的作废对每一台都做。
+//! The renderer keeps two instances per output size (playback at reduced resolution and stopped at original size switch back and forth, without rebuilding layout and caches). Invalidation of injected fonts, documents, transcripts and spectra applies to each of them.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -79,7 +62,7 @@ struct SetVideo {
     sequence_id: Option<String>,
 }
 
-/// 界面送进来的画面、素材字节与频谱。
+/// Frames, asset bytes and spectra sent in by the UI.
 #[derive(Default)]
 struct Media {
     pictures: HashMap<String, Pixmap>,
@@ -106,7 +89,7 @@ impl LayerMedia for Media {
     }
 }
 
-/// 一份转写：文档 ID、它描述的素材与当前版本的正文。
+/// One transcript: its document ID, the asset it describes, and the body of its current version.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SpeechInput {
@@ -117,7 +100,7 @@ struct SpeechInput {
 }
 
 impl SpeechInput {
-    /// 存成渲染器读的冻结文档（字幕取词与投词流共用一份正文）。
+    /// Stored as a frozen document that the renderer reads (subtitle lookup and the word stream share one body).
     fn frozen(self) -> Arc<FrozenDocument> {
         Arc::new(FrozenDocument {
             document_id: self.document_id,
@@ -131,7 +114,7 @@ impl SpeechInput {
     }
 }
 
-/// 投词流只读记录的 ID、种类与素材，其余字段留空。
+/// The word stream only reads the record's ID, kind and asset; other fields are left empty.
 fn speech_record(document: &FrozenDocument) -> DocumentRecord {
     DocumentRecord {
         id: document.document_id.clone(),
@@ -146,7 +129,7 @@ fn speech_record(document: &FrozenDocument) -> DocumentRecord {
     }
 }
 
-/// 渲染器读的文档：字幕与样式文档，加上转写（同一个 ID 时字幕那一侧为准）。
+/// Documents the renderer reads: subtitle and style documents, plus transcripts (when the IDs are the same, the subtitle side wins).
 fn renderer_documents(documents: &[Arc<FrozenDocument>], speech: &[Arc<FrozenDocument>]) -> Documents {
     Documents::shared(speech.iter().chain(documents).cloned())
 }
@@ -155,29 +138,27 @@ fn renderer_documents(documents: &[Arc<FrozenDocument>], speech: &[Arc<FrozenDoc
 struct State {
     video: Option<(PlanDocument, String)>,
     speech_documents: Vec<Arc<FrozenDocument>>,
-    /// 有效词流在序列上的区间：视频或转写换了就作废，下一次求计划时重算。
+    /// The effective word stream's range on the sequence: invalidated when the video or transcript changes; recomputed at the next plan request.
     speech: Option<Vec<(f64, f64)>>,
-    /// 各说话人的区间（外层 `None` 是还没算；内层 `None` 是一份转写都没有），与 `speech` 一起作废。
+    /// Per-speaker ranges (outer `None` means not yet computed; inner `None` means there is no transcript at all); invalidated together with `speech`.
     speakers: Option<Option<Arc<SpeakerActivity>>>,
-    /// 注入的字体（内置的一批，加上宿主按族名送来的本机字体）；渲染器与这里共享字节。
+    /// Injected fonts (the built-in batch, plus the local fonts the host sends by family name); the renderer and this code share the bytes.
     fonts: Vec<Arc<Vec<u8>>>,
     documents: Vec<Arc<FrozenDocument>>,
-    /// 按输出尺寸留着的渲染器，最近画过的在末尾（[`frame`] 取它的画面），最多 [`RENDERER_SLOTS`] 台。
+    /// Renderers kept per output size; the most recently painted one is at the end ([`frame`] takes its picture); at most [`RENDERER_SLOTS`] renderers.
     renderers: Vec<FrameRenderer>,
     media: Media,
     output: Vec<u8>,
-    /// 正在算的素材频谱。
+    /// The asset spectrum currently being computed.
     analysis: Option<SpectrumStream>,
-    /// 透明底那一帧还原成非预乘的字节；不透明的帧直接用渲染器的画面，这里是空的。
+    /// Restores the transparent-background frame to non-premultiplied bytes; an opaque frame uses the renderer's picture directly, so this is empty.
     straight: Vec<u8>,
 }
 
-/// 同时留着几台渲染器：预览播放与停住各用一种尺寸（`render-planner` 的播放画质），来回切时各自的排版、字幕编译与
-/// 素材缓存都还在；改尺寸（`FrameRenderer::resize`）会把它们全部作废，要重建零点几秒到一秒多。
+/// Keep several renderers at once: preview playback and stopped each use one size (`render-planner`'s playback quality), so each one's typesetting, subtitle compilation and asset cache survive switching back and forth; changing the size (`FrameRenderer::resize`) invalidates all of them, and rebuilding takes from a fraction of a second to more than one second.
 const RENDERER_SLOTS: usize = 2;
 
-/// 把画 `width`×`height` 的那台渲染器挪到末尾（最近用过）。没有这个尺寸的：不满就新建一台，满了就把最久没用的那台
-/// 改成这个尺寸。返回是不是换了一台（末尾原来不是它）。
+/// Move the renderer for `width`×`height` to the end (most recently used). If there is none at this size: create one if not full; if full, change the least recently used one to this size. Returns whether a different renderer was swapped in (the end was not it before).
 fn renderer_for(
     renderers: &mut Vec<FrameRenderer>,
     width: u32,
@@ -213,7 +194,7 @@ fn failure(code: &str, message: impl Into<String>) -> PlanError {
     }
 }
 
-/// 送进一个视频；没有指定序列时用根序列。
+/// Send in a video; when no sequence is specified, use the root sequence.
 pub fn set_video(input: &[u8]) -> Result<(), PlanError> {
     let request: SetVideo = serde_json::from_slice(input).map_err(|error| failure("INVALID_VIDEO", format!("视频快照读不懂：{error}")))?;
     let sequence_id = request.sequence_id.unwrap_or_else(|| request.video.root_sequence_id.clone());
@@ -224,7 +205,7 @@ pub fn set_video(input: &[u8]) -> Result<(), PlanError> {
         state.video = Some((request.video, sequence_id));
         state.speech = None;
         state.speakers = None;
-        // 渲染器按剪辑记下的字幕签名随新快照作废。
+        // The renderer invalidates on a new snapshot according to the subtitle signature recorded per clip.
         for renderer in &mut state.renderers {
             renderer.sequence_changed();
         }
@@ -232,7 +213,7 @@ pub fn set_video(input: &[u8]) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// 换一批转写（视频里 `kind: speech` 的文档）。
+/// Replace the set of transcripts (documents with `kind: speech` in the video).
 pub fn set_speech(input: &[u8]) -> Result<(), PlanError> {
     let documents: Vec<SpeechInput> =
         serde_json::from_slice(input).map_err(|error| failure("INVALID_DOCUMENTS", format!("转写读不懂：{error}")))?;
@@ -247,7 +228,7 @@ pub fn set_speech(input: &[u8]) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// 当前视频的有效词流（算过就用缓存的）。
+/// The current video's effective word stream (uses the cached one if already computed).
 fn speech_of<'a>(
     video: &PlanDocument,
     sequence_id: &str,
@@ -266,7 +247,7 @@ fn speech_of<'a>(
     Ok(cache.as_deref().unwrap_or_default())
 }
 
-/// 当前视频各说话人的区间（算过就用缓存的）；一份转写都没有时是 `None`。
+/// Each speaker's ranges for the current video (uses the cache if already computed); `None` when there is no transcript at all.
 fn speakers_of(
     video: &PlanDocument,
     sequence_id: &str,
@@ -285,7 +266,7 @@ fn speakers_of(
     Ok(cache.clone().flatten())
 }
 
-/// 当前视频在 `seconds` 的计划（JSON）。
+/// The current video's plan at `seconds` (JSON).
 pub fn plan(seconds: f64) -> Result<String, PlanError> {
     STATE.with_borrow_mut(|state| {
         let State {
@@ -301,13 +282,12 @@ pub fn plan(seconds: f64) -> Result<String, PlanError> {
     })
 }
 
-/// 要注入的字体文件名（JSON）。
+/// Font file names to inject (JSON).
 pub fn font_files() -> String {
     serde_json::to_string(frame_render::BUNDLED_FONT_FILES).expect("字符串数组总能序列化")
 }
 
-/// 注入一份字体：先按 [`font_files`] 的次序注入内置的一批；之后宿主按 `render` 报的缺字体族与用到的 face 送来本机字体
-/// 的那一个 face（与导出同一份解析与抽法）。已经建好的渲染器装上它，下一帧按新的字体库重排。
+/// Inject a font: first inject the built-in batch in the order of [`font_files`]; afterwards the host sends the one face of a local font that matches the missing font families and faces reported by `render` (with the same resolution and extraction as export). An already-built renderer picks it up, and the next frame re-typesets with the new font library.
 pub fn add_font(bytes: Vec<u8>) -> Result<(), PlanError> {
     if bytes.is_empty() {
         return Err(failure("INVALID_FONT", "字体是空的"));
@@ -322,7 +302,7 @@ pub fn add_font(bytes: Vec<u8>) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// 换一批字幕与字幕样式文档。
+/// Replace the set of subtitle and subtitle style documents.
 pub fn set_documents(input: &[u8]) -> Result<(), PlanError> {
     let documents: Vec<FrozenDocument> =
         serde_json::from_slice(input).map_err(|error| failure("INVALID_DOCUMENTS", format!("文档读不懂：{error}")))?;
@@ -335,7 +315,7 @@ pub fn set_documents(input: &[u8]) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// 送进实例这一刻的画面（非预乘 RGBA）。
+/// Send the instance's picture at this moment (non-premultiplied RGBA).
 pub fn set_picture(key: &str, rgba: Vec<u8>, width: u32, height: u32) -> Result<(), PlanError> {
     if rgba.len() != width as usize * height as usize * 4 {
         return Err(failure("INVALID_PICTURE", format!("画面 {key} 的字节数与 {width}×{height} 不符")));
@@ -349,12 +329,12 @@ pub fn clear_pictures() {
     STATE.with_borrow_mut(|state| state.media.pictures.clear());
 }
 
-/// 送进素材字节（键是 `素材ID@版本`）。
+/// Send asset bytes (the key is `assetID@version`).
 pub fn set_asset(key: &str, bytes: Vec<u8>) {
     STATE.with_borrow_mut(|state| state.media.assets.insert(key.to_string(), bytes));
 }
 
-/// 送进声波实例的整轨频谱（BCS1，键是实例 ID）：已推好的频谱轨作废。
+/// Send the whole-track spectrum for a waveform instance (BCS1, the key is the instance ID): an already-assembled spectrum track is invalidated.
 pub fn set_spectrum(item_id: &str, bytes: Vec<u8>) {
     STATE.with_borrow_mut(|state| {
         state.media.spectra.insert(item_id.to_string(), bytes);
@@ -364,7 +344,7 @@ pub fn set_spectrum(item_id: &str, bytes: Vec<u8>) {
     });
 }
 
-/// 清掉全部频谱。
+/// Clear all spectra.
 pub fn clear_spectra() {
     STATE.with_borrow_mut(|state| {
         state.media.spectra.clear();
@@ -374,7 +354,7 @@ pub fn clear_spectra() {
     });
 }
 
-/// 送进素材频谱（BCS1，键是 `素材ID@版本`）：已拼好的频谱轨作废。
+/// Send an asset spectrum (BCS1, the key is `assetID@version`): an already-assembled spectrum track is invalidated.
 pub fn set_audio_spectrum(key: &str, bytes: Vec<u8>) {
     STATE.with_borrow_mut(|state| {
         state.media.audio_spectra.insert(key.to_string(), bytes);
@@ -384,7 +364,7 @@ pub fn set_audio_spectrum(key: &str, bytes: Vec<u8>) {
     });
 }
 
-/// 清掉全部素材频谱。
+/// Clear all asset spectra.
 pub fn clear_audio_spectra() {
     STATE.with_borrow_mut(|state| {
         state.media.audio_spectra.clear();
@@ -394,12 +374,12 @@ pub fn clear_audio_spectra() {
     });
 }
 
-/// 开始算一份素材频谱（丢掉没算完的）。
+/// Begin computing an asset spectrum (discarding any unfinished one).
 pub fn spectrum_begin() {
     STATE.with_borrow_mut(|state| state.analysis = Some(SpectrumStream::new()));
 }
 
-/// 接着送一块 48 kHz 单声道样本（f32 小端）。
+/// Send the next block of 48 kHz mono samples (f32 little-endian).
 pub fn spectrum_push(bytes: &[u8]) -> Result<(), PlanError> {
     if !bytes.len().is_multiple_of(4) {
         return Err(failure("INVALID_AUDIO", "样本字节数不是 4 的倍数"));
@@ -416,21 +396,20 @@ pub fn spectrum_push(bytes: &[u8]) -> Result<(), PlanError> {
     })
 }
 
-/// 送完了：交出 BCS1 字节。
+/// Finished: hand out the BCS1 bytes.
 pub fn spectrum_finish() -> Result<Vec<u8>, PlanError> {
     let stream = STATE
         .with_borrow_mut(|state| state.analysis.take())
         .ok_or_else(|| failure("NO_ANALYSIS", "还没有开始算频谱"))?;
-    // 解码是浏览器做的：头里的来源记成纯 Rust 解码（BCS1 只分这两种，内容一样）。
+    // Decoding is done by the browser: the source recorded in the header is pure-Rust decoding (BCS1 distinguishes only these two; the content is the same).
     stream
         .finish(SpectrumBackend::Symphonia)
         .map_err(|error| failure("INVALID_AUDIO", format!("{error:#}")))
 }
 
-/// 求 `seconds` 这一刻的计划并画出来（`width`×`height`，与序列画布同比例）。画不出来的东西跳过、报在 `skipped` 里，
-/// 预览照常出画面。`transparent` 时不铺背景，画面是非预乘的 RGBA（缩略图）。返回 `{plan, warnings, skipped, spectra, fonts, faces, captionHits}`
-/// （`spectra` 是还没送进来的素材频谱，`fonts` 是这一帧用到、字体库里没有的字体族，`faces` 是排字时点了名的 face）；
-/// `captionHits` 是这一帧字幕行的序列画布几何与所属实例；画面经 [`frame`] 取。
+/// Compute the plan at `seconds` and paint it (`width`×`height`, same aspect ratio as the sequence canvas). Anything that cannot be painted is skipped and reported in `skipped`; the preview still shows the picture as usual. With `transparent`, the background is not filled and the picture is non-premultiplied RGBA (thumbnail). Returns `{plan, warnings, skipped, spectra, fonts, faces, captionHits}`
+/// (`spectra` are asset spectra not yet sent in, `fonts` are font families used in this frame that are not in the font library, `faces` are faces named during typesetting);
+/// `captionHits` is the sequence-canvas geometry of this frame's subtitle lines and their owning instances; the picture is taken via [`frame`].
 pub fn render(seconds: f64, width: u32, height: u32, captions: bool, transparent: bool) -> Result<String, PlanError> {
     STATE.with_borrow_mut(|state| {
         let State {
@@ -470,7 +449,7 @@ pub fn render(seconds: f64, width: u32, height: u32, captions: bool, transparent
         renderer.set_collect_caption_hits(true);
         renderer.set_transparent(transparent);
         renderer.set_speakers(speakers);
-        // 换了一台：声波的频谱轨与尺寸无关，从上一次画的那台拿过来，不重拼。
+        // Switched to a different renderer: the waveform's spectrum track does not depend on size, so it is taken from the renderer used for the previous paint rather than reassembled.
         if switched && let Some(previous) = others.last() {
             renderer.share_spectra_from(previous);
         }
@@ -503,7 +482,7 @@ pub fn render(seconds: f64, width: u32, height: u32, captions: bool, transparent
     })
 }
 
-/// 量一段文字作为文字元素要多大的框（`{width, height}`，序列像素）。还没画过帧时先建渲染器（尺寸随下一次画帧改）。
+/// Measure how large a box a piece of text needs as a text element (`{width, height}`, sequence pixels). If no frame has been painted yet, create the renderer first (its size changes with the next frame paint).
 pub fn measure_text(input: &[u8]) -> Result<String, PlanError> {
     let input: MeasureText =
         serde_json::from_slice(input).map_err(|error| failure("INVALID_PARAMS", format!("量字的参数读不懂：{error}")))?;
@@ -523,7 +502,7 @@ pub fn measure_text(input: &[u8]) -> Result<String, PlanError> {
             renderers,
             ..
         } = state;
-        // 量字与尺寸无关：用最近画过的那一台，不改次序（[`frame`] 还是上一次画的）。
+        // Measurement does not depend on size: use the most recently painted renderer, without changing the order ([`frame`] is still the one from the last paint).
         if renderers.is_empty() {
             renderers.push(
                 FrameRenderer::with_shared_fonts(
@@ -550,7 +529,7 @@ pub fn measure_text(input: &[u8]) -> Result<String, PlanError> {
     })
 }
 
-/// 上一次 [`render`] 画好的帧。
+/// The frame painted by the last [`render`].
 pub fn frame() -> Vec<u8> {
     STATE.with_borrow(|state| frame_bytes(state).to_vec())
 }
@@ -572,7 +551,7 @@ fn finish(result: Result<Vec<u8>, PlanError>) -> u32 {
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     if len == 0 {
         &[]
@@ -590,7 +569,7 @@ pub extern "C" fn bc_alloc(len: usize) -> *mut u8 {
 }
 
 /// # Safety
-/// `ptr` 与 `len` 必须来自同一次 `bc_alloc`。
+/// `ptr` and `len` must come from the same `bc_alloc` call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
@@ -599,7 +578,7 @@ pub unsafe extern "C" fn bc_free(ptr: *mut u8, len: usize) {
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_video(ptr: *const u8, len: usize) -> u32 {
     finish(set_video(unsafe { bytes(ptr, len) }).map(|()| Vec::new()))
@@ -615,10 +594,10 @@ pub extern "C" fn bc_font_files() -> u32 {
     finish(Ok(font_files().into_bytes()))
 }
 
-/// 缓冲直接成为字体的存储（本机字体集合可达几十 MB，拷一份会让线性内存的高水位翻倍，而线性内存不会缩回去）。
+/// The buffer itself becomes the font storage (a local font collection can reach tens of MB; copying it would double the linear memory high-water mark, and linear memory does not shrink back).
 ///
 /// # Safety
-/// `ptr` 与 `len` 必须来自同一次 `bc_alloc` 且已写满；调用之后缓冲归内核，宿主不得再 `bc_free`。
+/// `ptr` and `len` must come from the same `bc_alloc` call and be fully written; after the call the buffer belongs to the kernel, and the host must not call `bc_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_add_font(ptr: *mut u8, len: usize) -> u32 {
     let bytes = if ptr.is_null() {
@@ -630,21 +609,21 @@ pub unsafe extern "C" fn bc_add_font(ptr: *mut u8, len: usize) -> u32 {
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_documents(ptr: *const u8, len: usize) -> u32 {
     finish(set_documents(unsafe { bytes(ptr, len) }).map(|()| Vec::new()))
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_speech(ptr: *const u8, len: usize) -> u32 {
     finish(set_speech(unsafe { bytes(ptr, len) }).map(|()| Vec::new()))
 }
 
 /// # Safety
-/// 两段输入各自指向已写入的字节。
+/// Each of the two inputs points to bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_picture(key_ptr: *const u8, key_len: usize, ptr: *const u8, len: usize, width: u32, height: u32) -> u32 {
     let key = String::from_utf8_lossy(unsafe { bytes(key_ptr, key_len) }).into_owned();
@@ -657,7 +636,7 @@ pub extern "C" fn bc_clear_pictures() {
 }
 
 /// # Safety
-/// 两段输入各自指向已写入的字节。
+/// Each of the two inputs points to bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_asset(key_ptr: *const u8, key_len: usize, ptr: *const u8, len: usize) {
     let key = String::from_utf8_lossy(unsafe { bytes(key_ptr, key_len) }).into_owned();
@@ -665,7 +644,7 @@ pub unsafe extern "C" fn bc_set_asset(key_ptr: *const u8, key_len: usize, ptr: *
 }
 
 /// # Safety
-/// 两段输入各自指向已写入的字节。
+/// Each of the two inputs points to bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_spectrum(key_ptr: *const u8, key_len: usize, ptr: *const u8, len: usize) {
     let key = String::from_utf8_lossy(unsafe { bytes(key_ptr, key_len) }).into_owned();
@@ -678,7 +657,7 @@ pub extern "C" fn bc_clear_spectra() {
 }
 
 /// # Safety
-/// 两段输入各自指向已写入的字节。
+/// Each of the two inputs points to bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_set_audio_spectrum(key_ptr: *const u8, key_len: usize, ptr: *const u8, len: usize) {
     let key = String::from_utf8_lossy(unsafe { bytes(key_ptr, key_len) }).into_owned();
@@ -696,7 +675,7 @@ pub extern "C" fn bc_spectrum_begin() {
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_spectrum_push(ptr: *const u8, len: usize) -> u32 {
     finish(spectrum_push(unsafe { bytes(ptr, len) }).map(|()| Vec::new()))
@@ -713,7 +692,7 @@ pub extern "C" fn bc_render(seconds: f64, width: u32, height: u32, flags: u32) -
 }
 
 /// # Safety
-/// `ptr` 指向 `len` 个已写入的字节。
+/// `ptr` points to `len` bytes already written.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bc_measure_text(ptr: *const u8, len: usize) -> u32 {
     finish(measure_text(unsafe { bytes(ptr, len) }).map(String::into_bytes))

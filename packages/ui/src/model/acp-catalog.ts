@@ -1,8 +1,6 @@
 /**
- * 设置 › Agent「添加更多 Agent」里可一键添加的 ACP 智能体目录（原型 designs/cuccut/app/data.js 的 `ACP_CATALOG`，产品设计 §7.6）。
- * 不含 CucCut 内置的九家。`command` 是 CucCut 启动它用的命令数组（`npx -y 包@版本` 钉住版本）；`env` 是启动时附加的环境变量；
- * `version` 是目录记的版本（null = 由它自己的安装方式决定）；`docs` 是它的官方说明。介绍是 CucCut 自己写的一句话。
- * 这些智能体 CucCut 没有逐家验证过：能不能用以它自己的说明与探测结果为准。
+ * Catalog of ACP agents that can be added in one click from Settings › Agent “Add more agents” (prototype designs/cuccut/app/data.js `ACP_CATALOG`, product design §7.6). The nine agents built into CucCut are not included. `command` is the command array CucCut uses to start it (`npx -y pkg@version`, with the version pinned); `env` holds extra environment variables added at startup; `version` is the version recorded in the catalog (null = determined by its own install method); `docs` is its official documentation. The one-line descriptions are written by CucCut itself.
+ * CucCut has not verified each of these agents individually: whether one works is decided by its own documentation and probe results.
  */
 import { defineMessages } from '@cuccut/protocol';
 import { zhHans } from './acp-catalog.zh-Hans.ts';
@@ -20,7 +18,7 @@ import { pl } from './acp-catalog.pl.ts';
 import { tr } from './acp-catalog.tr.ts';
 import { vi } from './acp-catalog.vi.ts';
 
-/** 目录里各家的一句话介绍（英文是键与类型的来源，译文在 `acp-catalog.zh-Hans.ts`）。名字、命令、地址不翻。 */
+/** One-line description of each agent in the catalog (the English is the source of keys and types; translations are in `acp-catalog.zh-Hans.ts`). Names, commands, and addresses are not translated. */
 const en = {
   descriptions: {
     'amp-acp': 'A community adapter that wraps the Amp coding agent in ACP.',

@@ -1,4 +1,4 @@
-//! 测试钩子：设了 `CUCCUT_FONT_DIRS` 时本机字体库只扫它列出的目录。环境变量是进程级的，这个文件只放这一个测试。
+//! Test hook: when `CUCCUT_FONT_DIRS` is set, the local font library scans only the directories it lists. Environment variables are process-wide, so this file holds only this one test.
 
 use font_files::{FONT_DIRS_ENV, FaceQuery, FontLibrary, Missing};
 
@@ -9,7 +9,7 @@ fn the_font_dirs_variable_replaces_system_scanning() {
     std::fs::copy(source, dir.path().join("marker.ttf")).unwrap();
     let empty = tempfile::tempdir().unwrap();
     let dirs = std::env::join_paths([empty.path(), dir.path()]).unwrap();
-    // SAFETY: 这个测试二进制里只有这一个测试，设变量时没有别的线程读环境。
+    // SAFETY: this test binary contains only this one test, so no other thread reads the environment while the variable is set.
     unsafe { std::env::set_var(FONT_DIRS_ENV, dirs) };
     let library = FontLibrary::system();
     let face = |family: &str| {
@@ -20,7 +20,7 @@ fn the_font_dirs_variable_replaces_system_scanning() {
         })
     };
     assert_eq!(face("Permanent Marker").unwrap().path, dir.path().join("marker.ttf"));
-    // 本机装着的字体一个也不扫。
+    // Scan none of the fonts installed on this machine.
     assert_eq!(face("Helvetica"), Err(Missing::NotFound));
     assert_eq!(face("Arial"), Err(Missing::NotFound));
 }

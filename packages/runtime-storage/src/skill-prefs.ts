@@ -1,7 +1,7 @@
 import { SKILL_ID_PATTERN } from '@cuccut/protocol';
 import { JsonStoreFile, type StoreOptions } from './store-file.ts';
 
-/** skill 开关的存储形态：`enabled` 只放用户改过、与来源默认值不同的那些。 */
+/** Storage shape of skill toggles: `enabled` holds only the ones the user changed that differ from the source default. */
 export interface SkillPrefs {
   enabled: Record<string, boolean>;
 }
@@ -11,9 +11,8 @@ interface SkillPrefsFile extends SkillPrefs {
 }
 
 /**
- * Agent skill 的开关（架构设计 §3.8）。只存相对来源默认值的差量：默认值以后改了，用户没动过的 skill 跟着新默认走。
- * 整份读进内存，改一次写一次；写串行。文件里不认识或坏掉的条目丢掉，不拦住 Runtime 启动；整个文件不是 JSON 时改名保留、
- * 从空开始，更新版本写下的不改写（`store-file.ts`）。
+ * Agent skill toggles (architecture design §3.8). Stores only the delta from the source default. If the default changes later, skills the user has not touched follow the new default.
+ * The whole file is read into memory and written once per change. Writes are serialized. Unknown or broken entries in the file are dropped and do not block Runtime startup. If the whole file is not JSON, it is renamed and kept, and the store starts empty. Files written by a newer version are not rewritten (`store-file.ts`).
  */
 export class SkillPrefsStore {
   readonly #file: JsonStoreFile;
@@ -34,12 +33,12 @@ export class SkillPrefsStore {
     return structuredClone(this.#prefs);
   }
 
-  /** 用户设的开关；没设过时为 undefined（用来源的默认值）。 */
+  /** The user's toggle. undefined if it was never set (the source default applies). */
   override(id: string): boolean | undefined {
     return Object.hasOwn(this.#prefs.enabled, id) ? this.#prefs.enabled[id] : undefined;
   }
 
-  /** 记下一个开关：等于默认值时删掉差量。 */
+  /** Records a toggle. Deletes the delta when it equals the default. */
   set(id: string, enabled: boolean, defaultEnabled: boolean): Promise<SkillPrefs> {
     return this.#update((prefs) => {
       if (enabled === defaultEnabled) delete prefs.enabled[id];
@@ -47,7 +46,7 @@ export class SkillPrefsStore {
     });
   }
 
-  /** 移除 skill 时一并忘掉它的开关。没有记录时不写盘。 */
+  /** When a skill is removed, forget its toggle too. Nothing is written if there is no record. */
   async forget(id: string): Promise<SkillPrefs> {
     if (!Object.hasOwn(this.#prefs.enabled, id)) return this.get();
     return this.#update((prefs) => {

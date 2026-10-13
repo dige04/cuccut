@@ -5,10 +5,10 @@ import { readJson } from './json-file.ts';
 import { JsonlCorruptError, appendJsonl, compactJsonl, quarantineFile, readJsonl } from './jsonl-file.ts';
 
 /**
- * 会话的持久形态（Runtime Store，架构设计 §3.10）。
+ * The persisted form of a conversation (Runtime Store, architecture design §3.10).
  *
- * `agent.persistence` 是 Driver 给出的原生恢复句柄（例如 Codex 的 threadId）；
- * Runtime 只保存、不解释它。
+ * `agent.persistence` is the native resume handle given by the Driver (for example Codex's threadId).
+ * The Runtime stores it but does not interpret it.
  */
 export interface ConversationRecord {
   schemaVersion: 1;
@@ -17,24 +17,24 @@ export interface ConversationRecord {
   seq: Seq;
   agent: { driverId: DriverId; persistence: unknown };
   /**
-   * 任务合同（架构设计 §3.2），按任务：全部修订（旧的在前，只追加）与验收检查的结果。0.x 早先写下的记录没有，
-   * 读入时为它的任务补上默认合同，不升记录版本。
+   * The task contract (architecture design §3.2), per task: all revisions (old ones first, append-only) and the results of acceptance checks. Records written early in 0.x do not have one;
+   * when read, a default contract is filled in for their tasks, without bumping the record version.
    */
   tasks?: Record<Id, TaskContractLog>;
 }
 
-/** 一个任务的合同修订与检查结果。 */
+/** A task's contract revisions and check results. */
 export interface TaskContractLog {
   revisions: TaskContract[];
   checkResults: CheckResult[];
 }
 
-/** 会话日志的文件头（第一行）。 */
+/** The header line (first line) of a conversation log. */
 export const CONVERSATION_LOG_HEADER = { op: 'header', formatVersion: 2 } as const;
 
 /**
- * 会话日志 `<id>.jsonl` 的行（文件头之后）。第一行总是 `snapshot`（完整记录，压缩后的基线）；之后的行按顺序重放：
- * `item` 按 `item.id` 原地替换或追加到末尾，`meta` 替换给出的字段，`tasks` 按 taskId 整体替换。
+ * Lines of the conversation log `<id>.jsonl` (after the header). The first line is always `snapshot` (the complete record, the baseline after compaction). Later lines are replayed in order:
+ * an `item` replaces the matching entry in place by `item.id`, or is appended to the end; `meta` replaces the fields given; `tasks` replaces the whole set by taskId.
  */
 export type ConversationLogLine =
   | ({ op: 'snapshot' } & ConversationRecord)
@@ -57,31 +57,31 @@ export interface ConversationStoreOptions {
 }
 
 const SAVE_DELAY_MS = 150;
-/** 行数超过 `活的条目数 × 倍数 + 余量` 时压缩。 */
+/** Compacts when the line count exceeds `live entries × multiplier + margin`. */
 const COMPACT_LINE_FACTOR = 4;
 const COMPACT_LINE_SLACK = 64;
-/** 字节超过 `活的记录字节 × 倍数 + 余量` 时压缩（流式回复每次都写整条 item，字节涨得比行数快）。 */
+/** Compacts when the byte count exceeds `live record bytes × multiplier + margin` (a streaming reply writes the whole item every time, so bytes grow faster than lines). */
 const COMPACT_BYTE_FACTOR = 4;
 const COMPACT_BYTE_SLACK = 256 * 1024;
 
-/** 上次落盘的样子：逐项的 JSON 串，用来只写变化的行。 */
+/** The state as last written to disk: a JSON string per item, used to write only the changed lines. */
 interface Persisted {
   conversation: string;
   seq: string;
   agent: string;
   items: Map<Id, string>;
-  /** 落盘的 item 顺序；新 item 只能追加在末尾。 */
+  /** The order of items as written to disk. A new item can only be appended at the end. */
   order: Id[];
   tasks: Map<Id, string>;
-  /** 文件现有的非空行数与字节数。 */
+  /** The file's current count of non-empty lines and bytes. */
   lines: number;
   bytes: number;
 }
 
 /**
- * 内存为主、写后落盘。每个会话一个追加写的 JSONL 日志：150ms 合并窗口到期时只追加变化了的条目与元数据，
- * 日志膨胀到阈值时把完整记录写成单行快照原子替换（压缩）。追加与压缩走同一个会话的串行写链；
- * 停止时 `flush()` 等所有挂起的写入完成（架构设计 §2.4「持久化任务…」一步）。
+ * Memory first, written to disk after changes. Each conversation has one append-only JSONL log. When the 150ms coalescing window expires, only the changed entries and metadata are appended.
+ * When the log grows past a threshold, the complete record is written as a single snapshot line that atomically replaces the file (compaction). Appends and compaction share the same conversation's serial write chain.
+ * On stop, `flush()` waits for all pending writes to complete (architecture design §2.4, the step “persist tasks…”).
  */
 export class ConversationStore {
   readonly #dir: string;
@@ -198,7 +198,7 @@ export class ConversationStore {
       this.#log?.warn('Conversation log has an unknown schema version; skipped', { file: name, schemaVersion: record.schemaVersion });
       return;
     }
-    // 末尾残行：跳过，且不记落盘副本——下次保存写快照整份替换，残行不会留成中间的坏行。
+    // A partial line at the end: skipped, and no on-disk copy is recorded. The next save writes the whole snapshot to replace the file, so the partial line does not remain as a bad line in the middle.
     if (read.truncatedTail) this.#log?.warn('Conversation log ends with a partial line; skipped it', { file: name });
     if (read.skipped > 0) this.#log?.warn('Conversation log has unreadable lines; skipped them', { file: name, count: read.skipped });
     const index = new Map(record.items.map((item, i) => [item.id, i]));
@@ -223,7 +223,7 @@ export class ConversationStore {
     if (!read.truncatedTail) this.#persisted.set(id, { ...persistedOf(record), lines: read.lines, bytes: read.bytes });
   }
 
-  /** 旧格式 `<id>.json`（整份记录）：写成 `<id>.jsonl` 的快照行，再把旧文件改名为 `.json.migrated`。 */
+  /** The old format `<id>.json` (the whole record): written as a snapshot line in `<id>.jsonl`, then the old file is renamed to `.json.migrated`. */
   async #migrate(file: string): Promise<void> {
     const name = path.basename(file);
     const record = await readJson<ConversationRecord>(file);
@@ -282,7 +282,7 @@ export class ConversationStore {
         return;
       }
     }
-    // 新会话、顺序变了（删除或插队）、或日志太长：整份记录写成一行快照，原子替换。
+    // New conversation, changed order (a deletion or an insertion), or a log that is too long: the whole record is written as one snapshot line, replacing the file atomically.
     const bytes = await writeSnapshot(this.#file(id), record);
     this.#persisted.set(id, { ...now, lines: 1, bytes });
   }
@@ -310,8 +310,8 @@ function persistedOf(record: ConversationRecord): Omit<Persisted, 'lines' | 'byt
 }
 
 /**
- * 上次落盘到现在要追加的行；返回 null 表示追加重放不出现在的样子（item 被删或换了顺序、任务被删、
- * 记录有了重复的 item id），要写快照。
+ * The lines to append since the last disk write. Returns null when the state cannot be reproduced by appending and replaying (an item was deleted or reordered, a task was deleted,
+ * or the record has duplicate item ids). In that case a snapshot must be written.
  */
 function diff(before: Persisted, now: Omit<Persisted, 'lines' | 'bytes'>, record: ConversationRecord): ConversationLogLine[] | null {
   if (now.order.length < before.order.length || now.items.size !== now.order.length) return null;
@@ -341,7 +341,7 @@ function liveSize(now: Omit<Persisted, 'lines' | 'bytes'>): number {
   return bytes;
 }
 
-/** 文件头加一行快照，原子替换（不 fsync：会话不要求断电后也在）。 */
+/** Writes a snapshot line as the file's header, replacing the file atomically (no fsync: a conversation does not need to survive power loss). */
 function writeSnapshot(file: string, record: ConversationRecord): Promise<number> {
   return compactJsonl(file, [JSON.stringify({ op: 'snapshot', ...record })], { header: CONVERSATION_LOG_HEADER, durable: false });
 }

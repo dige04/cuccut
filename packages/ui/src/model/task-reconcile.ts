@@ -2,17 +2,16 @@ import type { JobReconcileDecision, JobRecord } from '@cuccut/protocol';
 import { jobRetrying } from './task-list.ts';
 
 /**
- * 任务详情里给用户的对账决定（架构设计 §7.5，`jobs.reconcile`）。照 Runtime 的 `reconcileChoices`（packages/jobs 的
- * job-reconcile.ts）从记录上能看到的事实推算；Runtime 才是准的：看不到的条件（例如托管的执行方式）由它以
- * `RECONCILE_NOT_ALLOWED` 拒绝，界面如实提示。
+ * Reconciliation choices offered to the user in task details (architecture design §7.5, `jobs.reconcile`). Derived from the facts visible in the record, in line with the Runtime's `reconcileChoices` (job-reconcile.ts in packages/jobs);
+ * the Runtime is the authority: conditions it cannot see (for example, the hosted execution mode) are rejected by it with `RECONCILE_NOT_ALLOWED`, and the UI reports that honestly.
  *
- * - `retry`：`needs-reconciliation` 或 `interrupted` 的生成任务与有视频的转写，不是固定流程的一步、不是远端节点提交的；
- * - `discard`：`needs-reconciliation`；
- * - `apply`：`failed` 或 `cancelled`，产物在、有视频，最近一次应用是 `stale-input`、`rejected` 或 `cancelled`。
+ * - `retry`: generation tasks in `needs-reconciliation` or `interrupted`, and transcriptions with a video, that are not a step of a fixed pipeline and were not submitted by a remote node;
+ * - `discard`: `needs-reconciliation`;
+ * - `apply`: `failed` or `cancelled`, with the output present and a video, and the most recent apply was `stale-input`, `rejected` or `cancelled`.
  */
 export function reconcileOptions(job: JobRecord): JobReconcileDecision[] {
   const options: JobReconcileDecision[] = [];
-  // 崩溃后正在自动重跑的（`interrupted`、没有 `endedAt`）还没结束，不给决定。
+  // A task automatically rerunning after a crash (`interrupted`, no `endedAt`) has not ended yet, so no decision is offered.
   if (jobRetrying(job)) return options;
   if ((job.state === 'needs-reconciliation' || job.state === 'interrupted') && retryable(job)) options.push('retry');
   if (job.state === 'needs-reconciliation') options.push('discard');
@@ -36,7 +35,7 @@ function retryable(job: JobRecord): boolean {
   return job.kind === 'transcribe' && job.videoId !== null;
 }
 
-/** 交给在线或智能体 Provider 的调用（数据外发、可能计费）；本机与远端节点不是。 */
+/** Calls handed to an online or agent Provider (data is sent out, and may be billed); this machine and remote nodes are not. */
 export function chargesOnRetry(job: Pick<JobRecord, 'providerId'>): boolean {
   return job.providerId !== 'local' && !job.providerId.startsWith('node:');
 }

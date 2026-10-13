@@ -96,7 +96,7 @@ describe('buildSidebar', () => {
       ],
       'name',
     );
-    // 按拼音：开场 < 配音 < 字幕；归档项目里的会话不进单表。
+    // Sorted by pinyin: 开场 (opening) < 配音 (voiceover) < 字幕 (subtitles); sessions in archived projects do not go into the single list.
     expect(tree.projects[0]?.conversations.map((c) => c.id)).toEqual(['c2', 'c1']);
     expect(tree.flat.map((c) => c.id)).toEqual(['c2', 'c3', 'c1']);
     const recent = buildSidebar([project('p1')], [conversation('a', { projectId: 'p1', updatedAt: '2026-10-01T09:00:00.000Z' }), conversation('b')]);

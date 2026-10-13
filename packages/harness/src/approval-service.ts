@@ -18,8 +18,8 @@ import {
 import { HarnessAgents as HA } from '@cuccut/protocol/messages/harness';
 
 /**
- * 一条审批的结局。`forSession`：用户选了「这个任务里不再问同一种动作」（只有会话审批用到）。
- * `grant`：带外发授权的审批允许时用户的选择（只这一次，或同时发放持续授权，§12.5）；没有选择时按只这一次。
+ * The outcome of an approval. `forSession`: the user chose "don't ask again for this kind of action in this task" (used only for session approvals).
+ * `grant`: the user's choice when allowing an approval that requires outbound-send authorization: just this once, or also issue an ongoing grant (§12.5); if no choice was made, it is treated as just this once.
  */
 export interface ApprovalResolution {
   outcome: ApprovalOutcome;
@@ -32,15 +32,15 @@ export interface ApprovalRequestInput {
   action: ApprovalAction;
   risk: RiskLevel;
   basis: ApprovalBasis;
-  /** 时限（毫秒），到时按 `timeout` 结束（调用方按拒绝处理）；null 不超时（会话审批）。 */
+  /** Time limit (milliseconds); on expiry it ends per `timeout` (callers treat it as a denial); null means no timeout (session approvals). */
   timeoutMs: number | null;
-  /** 中止（外部请求断开）时按取消处理。 */
+  /** On abort (external request disconnected), treated as cancelled. */
   signal?: AbortSignal;
-  /** 沿用调用方的审批号（Driver 的、服务审批的）；已被占用或没给时另起一个。 */
+  /** Reuses the caller's approval id (the Driver's, or the service approval's); if already taken or not given, another is generated. */
   approvalId?: Id;
-  /** 结束时同步调用，先于 `respond` 返回：调用方在这里更新会话条目、回答 Driver。 */
+  /** Called synchronously at the end, before `respond` returns: callers update the session entry and answer the Driver here. */
   onSettled?: (resolution: ApprovalResolution) => void;
-  /** 这次动作要外发、还没有授权覆盖的数据（§12.5）：允许时可以带上授权的选择。 */
+  /** This action needs to send data outside and is not yet covered by an authorization (§12.5): on allow, the authorization choice may be included. */
   grants?: GrantRequestItem[];
 }
 
@@ -53,24 +53,24 @@ interface Entry {
 }
 
 /**
- * ApprovalService（架构设计 §3.12、§4.8）：会话里的动作与对外服务的请求共用的审批。
+ * ApprovalService (architecture design §3.12, §4.8): approvals shared by in-session actions and requests from external services.
  *
- * - `decide`：访问模式（或服务等级）× 风险等级查表，得到自动、询问或拒绝；
- * - `request`：生成一条待处理的审批并等待：用户允许或拒绝、超时（只有服务审批有时限）、取消（停止、打断、断开）；
- * - 待处理的审批在一处列出（`pending`），出现与结束经 `subscribe` 通知（Harness 送到 `tasks` 主题）。
+ * - `decide`: looks up access mode (or service level) × risk level, yielding auto, ask, or deny;
+ * - `request`: creates a pending approval and waits: the user allows or denies, it times out (only service approvals have a time limit), or it is cancelled (stop, interrupt, disconnect);
+ * - pending approvals are listed in one place (`pending`); their appearance and ending are notified via `subscribe` (the Harness forwards them to the `tasks` topic).
  *
- * 这里只管待处理的审批与结局；会话条目、Driver 的回答与服务主题由各自的调用方在 `onSettled` 与通知里处理。
+ * This only handles pending approvals and their outcomes; session entries, Driver answers, and service topics are handled by their respective callers in `onSettled` and notifications.
  */
 export class ApprovalService {
   readonly #pending = new Map<Id, Entry>();
   readonly #listeners = new Set<(event: ApprovalServiceEvent) => void>();
 
-  /** 查表：会话按模式，对外服务按等级。 */
+  /** Lookup: sessions by mode, external services by level. */
   decide(basis: ApprovalBasis, risk: RiskLevel): ApprovalVerdict {
     return basis.kind === 'mode' ? decideApproval(basis.mode, risk) : decideServiceApproval(basis.level, risk);
   }
 
-  /** 生成一条待处理的审批。`resolution` 在用户处理、超时或取消时兑现，从不拒绝。 */
+  /** Creates a pending approval. `resolution` settles when the user acts, on timeout, or on cancellation; it never rejects. */
   request(input: ApprovalRequestInput): { approvalId: Id; resolution: Promise<ApprovalResolution> } {
     const approvalId = input.approvalId && !this.#pending.has(input.approvalId) ? input.approvalId : newId('apv');
     const now = Date.now();
@@ -113,9 +113,8 @@ export class ApprovalService {
   }
 
   /**
-   * 用户的决定。已经处理过、超时、取消的与不存在的都返回 `already-resolved`。
-   * `grant` 只用于带外发授权的审批（不带的给了是 `invalid-request`）；带外发授权的审批不能「这个任务里不再问」：
-   * 每一次外发都要有授权覆盖（§12.5）。
+   * The user's decision. Those already handled, timed out, cancelled, or nonexistent all return `already-resolved`.
+   * `grant` is only for approvals that require outbound-send authorization (if omitted when required, `invalid-request`); such approvals cannot be "don't ask again in this task": every outbound send must be covered by an authorization (§12.5).
    */
   respond(
     approvalId: Id,
@@ -135,7 +134,7 @@ export class ApprovalService {
     return { status: outcome };
   }
 
-  /** 取消一条（停止、打断、Driver 自己撤回）。不在待处理里时为 false。 */
+  /** Cancels one (stop, interrupt, or the Driver withdraws it itself). False if not pending. */
   cancel(approvalId: Id): boolean {
     const entry = this.#pending.get(approvalId);
     if (!entry) return false;
@@ -143,7 +142,7 @@ export class ApprovalService {
     return true;
   }
 
-  /** 取消符合条件的全部（会话的任务结束、服务停止），返回取消的条数。 */
+  /** Cancels all matching ones (session task ends, service stops); returns the count cancelled. */
   cancelWhere(predicate: (approval: PendingApproval) => boolean): number {
     let count = 0;
     for (const entry of [...this.#pending.values()]) {
@@ -154,7 +153,7 @@ export class ApprovalService {
     return count;
   }
 
-  /** 待处理的审批，旧的在前。 */
+  /** Pending approvals, oldest first. */
   pending(): PendingApproval[] {
     return [...this.#pending.values()].map((entry) => structuredClone(entry.approval));
   }
@@ -174,7 +173,7 @@ export class ApprovalService {
       try {
         listener(event);
       } catch {
-        // 订阅方的错误不影响审批本身。
+        // An error from a subscriber does not affect the approval itself.
       }
     }
   }

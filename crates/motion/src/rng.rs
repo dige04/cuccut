@@ -1,18 +1,13 @@
-//! 确定性随机（规范 §7.3）。
+//! Deterministic randomness (spec §7.3).
 //!
-//! **splitmix64 是新配方的唯一 PRNG**。已发布的 `timeline.loop.jitter@1` 继续走
-//! `loop_kernel::noise_hash`（murmur3 finalizer 风格，缺省 seed 17）——ADR-M08
-//! 「已发布配方冻结」，改它等于移动旧项目的像素。新配方与 `animate.flow` 的
-//! `noise` op 一律 splitmix64，缺省 seed **0**（规范 §7.3：省略 seed 时编译期写死
-//! 默认值，而不是运行时取随机源）。
+//! **splitmix64 is the only PRNG for new recipes.** The published `timeline.loop.jitter@1` keeps using `loop_kernel::noise_hash` (murmur3-finalizer style, default seed 17). ADR-M08 says published recipes are frozen, and changing it would move pixels in old projects. New recipes and the `noise` op of `animate.flow` all use splitmix64, with default seed **0** (spec §7.3: when the seed is omitted, a compile-time fixed default is used, rather than taking a random source at runtime).
 //!
-//! 本模块没有任何隐藏状态：所有入口都是 `(seed, index) → value` 的纯函数，
-//! 乱序采样与顺序采样逐位相同。
+//! This module has no hidden state: every entry point is a pure function of `(seed, index) → value`, so out-of-order and sequential sampling are bit-identical.
 
-/// 规范 §7.3 的 splitmix64：各端位一致的 64 位状态推进器。
+/// The splitmix64 of spec §7.3: a 64-bit state advancer that gives the same result on all platforms.
 ///
-/// 参考实现（Vigna, public domain）：`state += GOLDEN; z = state;
-/// z = (z ^ (z >> 30)) * C1; z = (z ^ (z >> 27)) * C2; return z ^ (z >> 31)`。
+/// Reference implementation (Vigna, public domain): `state += GOLDEN; z = state;
+/// z = (z ^ (z >> 30)) * C1; z = (z ^ (z >> 27)) * C2; return z ^ (z >> 31)`.
 pub fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *state;
@@ -21,11 +16,11 @@ pub fn splitmix64(state: &mut u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// `(seed, index)` → `[0, 1)`。`index` 是晶格点序号，可为负。
+/// `(seed, index)` → `[0, 1)`. `index` is the lattice point index and may be negative.
 pub fn splitmix64_unit(seed: u64, index: i64) -> f64 {
     let mut state = seed ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let bits = splitmix64(&mut state);
-    // 取高 53 位 → 双精度尾数宽度，映到 [0, 1)。
+    // Take the high 53 bits → the double-precision mantissa width, mapped to [0, 1).
     (bits >> 11) as f64 / (1u64 << 53) as f64
 }
 
@@ -34,12 +29,10 @@ pub fn splitmix64_signed(seed: u64, index: i64) -> f64 {
     splitmix64_unit(seed, index) * 2.0 - 1.0
 }
 
-/// 晶格噪声的顶点值（`splitmix64-v1`）。
+/// Lattice noise vertex values (`splitmix64-v1`).
 ///
-/// 两条与 `lattice-murmur-v1` 共享的契约（[`crate::loop_kernel::noise_hash`]）：
-/// 顶点按 `lattice` 取模 ⇒ 一个周期首尾相接（无缝循环）；**0 号顶点钉为 0**
-/// ⇒ 相位 0 处的取值恒为 0，噪声轨作为 `add` 通道时从单位元起步、不会在入场瞬间
-/// 跳一下。
+/// Two contracts shared with `lattice-murmur-v1` ([`crate::loop_kernel::noise_hash`]):
+/// vertices are taken modulo `lattice` ⇒ one period joins end to end (seamless loop); **vertex 0 is pinned to 0** ⇒ the value at phase 0 is always 0, so when the noise track is used as an `add` channel it starts from the identity and does not jump at the moment of entry.
 pub fn splitmix64_lattice(seed: u64, index: i64, lattice: i64) -> f64 {
     let index = index.rem_euclid(lattice.max(1));
     if index == 0 {
@@ -52,7 +45,7 @@ pub fn splitmix64_lattice(seed: u64, index: i64, lattice: i64) -> f64 {
 mod tests {
     use super::*;
 
-    /// Vigna 参考实现对 seed 0 的前 8 个输出（其它语言的移植普遍以它对拍）。
+    /// The first 8 outputs of Vigna's reference implementation for seed 0 (ports in other languages are commonly cross-checked against it).
     #[test]
     fn splitmix64_matches_the_reference_vector_for_seed_zero() {
         let mut state = 0u64;
@@ -92,7 +85,7 @@ mod tests {
         assert_ne!(splitmix64_lattice(3, 1, 8), splitmix64_lattice(4, 1, 8));
     }
 
-    /// 不同 seed 必须给出不同序列（否则「同 seed 同输出」是空洞的）。
+    /// Different seeds must give different sequences (otherwise "same seed, same output" would be an empty claim).
     #[test]
     fn different_seeds_give_different_sequences() {
         let a: Vec<f64> = (1..16).map(|i| splitmix64_signed(0, i)).collect();

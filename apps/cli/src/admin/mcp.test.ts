@@ -12,7 +12,7 @@ let home: string;
 let env: NodeJS.ProcessEnv;
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-mcp-install-'));
-  // PATH 为空：不会调到本机的 claude。
+  // PATH is empty, so the local claude will not be reached.
   env = { HOME: home, PATH: '' };
 });
 afterEach(() => {
@@ -167,11 +167,11 @@ describe('cuccut mcp install', () => {
     fs.mkdirSync(path.join(home, '.cursor'));
     fs.writeFileSync(path.join(home, '.cursor', 'mcp.json'), '{ broken');
     const fake = fakeRuntime();
-    // 读配置时就失败：在发令牌之前。
+    // Fails while reading the config, before any token is issued.
     await expect(run(['install'], { agent: 'cursor' }, fake).done).rejects.toThrow(/不是合法的 JSON/);
     expect(fake.calls).toEqual([]);
 
-    // 发令牌之后才失败：吊销它，配置不动。
+    // Fails after the token was issued: revoke it, and leave the config untouched.
     const again = fakeRuntime();
     again.methods['services.mcp.connectionInfo'] = () => {
       throw new Error('连接信息取不到');
@@ -186,7 +186,7 @@ describe('cuccut mcp install', () => {
     const fake = fakeRuntime({ ...off, state: 'on', autostart: true });
     const { capture, done } = run(['install'], { agent: 'claude-code' }, fake);
     expect(await done).toBe(0);
-    // 已开着、已随 Runtime 启动、没给等级：不改服务。
+    // Already open, already started with the Runtime, and no level given: the service is not changed.
     expect(fake.calls.map((call) => call.method)).toEqual([
       'services.list',
       'projects.list',

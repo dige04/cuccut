@@ -4,7 +4,7 @@ interface PlaybackClient {
   request(method: 'media.playback', params: { url: string; playable?: PlaybackCodec[] }): Promise<MediaPlayback>;
 }
 
-/** `canPlayType` 的探测串：带上编码，浏览器才答得准（能放是 'probably'）。 */
+/** Probe string for `canPlayType`: include the codec so the browser can answer accurately (playable is 'probably'). */
 const CODEC_TYPES: Record<PlaybackCodec, string> = {
   vp8: 'video/webm; codecs="vp8"',
   vp9: 'video/webm; codecs="vp9"',
@@ -15,7 +15,7 @@ const CODEC_TYPES: Record<PlaybackCodec, string> = {
 
 let detected: PlaybackCodec[] | null = null;
 
-/** 这个浏览器能原生解码的 WebM 编码（Chromium 与 Electron 全都能，Safari 看版本）。没有 DOM 时是空的。 */
+/** The WebM codecs this browser can decode natively (Chromium and Electron support all of them; Safari depends on version). Empty when there is no DOM. */
 export function playableCodecs(): PlaybackCodec[] {
   if (detected) return detected;
   if (typeof document === 'undefined') return [];

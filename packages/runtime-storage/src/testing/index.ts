@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import { crc32 } from 'node:zlib';
 
-/** 测试用的假凭据助手脚本的绝对路径（`node <path> <目录>` 运行，绝不访问系统的钥匙串）。 */
+/** Absolute path of the fake credential helper script for tests (run as `node <path> <directory>`; never touches the system keychain). */
 export const FAKE_CREDENTIAL_HELPER = fileURLToPath(new URL('./fake-credential-helper.ts', import.meta.url));
 
-/** 手拼一个只用「存储」方式的 zip（`[名字, 内容]`），给 `.lottie` 压缩包的测试用。 */
+/** Hand-builds a zip using only the "store" method (`[name, content]`), for tests of `.lottie` archives. */
 export function storedZip(files: [string, string | Uint8Array][]): Buffer {
   const local: Buffer[] = [];
   const central: Buffer[] = [];

@@ -2,30 +2,30 @@ import { create } from 'zustand';
 import { newId, type AttachmentRef } from '@cuccut/protocol';
 
 /**
- * 输入区里还没发出去的图片，按草稿键分（会话 ID 或新会话的草稿键）。
- * 只在这个窗口里：File 与预览地址存不进 localStorage，刷新后就没了。
+ * Images in the input area that have not been sent yet, keyed by draft key (session ID, or the draft key of a new session).
+ * Only in this window: File objects and preview URLs cannot be stored in localStorage, so they are gone after a refresh.
  */
 export interface DraftImage {
   id: string;
   file: File;
-  /** 缩略图用的本地地址（object URL），移除时收回。 */
+  /** Local address for the thumbnail (object URL), revoked on removal. */
   url: string;
-  /** 正在上传时的进度 0–100；没在传为 null。 */
+  /** Upload progress 0–100 while uploading. null when not uploading. */
   progress: number | null;
   error: string | null;
-  /** 已经上传完：再发时不重复上传。 */
+  /** Already fully uploaded: do not upload again when sending again. */
   ref: AttachmentRef | null;
 }
 
 interface DraftImagesStore {
   images: Record<string, DraftImage[]>;
-  /** 加进来的图片已经有了 id 与预览地址（PromptField 粘贴、拖放时自己建的；「+」菜单选的用 `imageEntry`）。 */
+  /** Images that were added already have an id and a preview address (created by PromptField on paste or drag-and-drop; those chosen from the "+" menu use `imageEntry`). */
   add(draftKey: string, entries: readonly Pick<DraftImage, 'id' | 'file' | 'url'>[]): void;
   remove(draftKey: string, id: string): void;
   patch(draftKey: string, id: string, patch: Partial<Pick<DraftImage, 'progress' | 'error' | 'ref'>>): void;
-  /** 发出去了，或放弃了：收回预览地址。 */
+  /** Sent or abandoned: revoke the preview address. */
   clear(draftKey: string): void;
-  /** 新会话建好了、第一句却没发出去：图片跟着文字搬到那个会话的输入框。 */
+  /** A new session was created but the first message was not sent: the images move with the text to that session's input box. */
   move(from: string, to: string): void;
 }
 
@@ -76,7 +76,7 @@ export const useDraftImages = create<DraftImagesStore>()((set, get) => ({
     }),
 }));
 
-/** 自己选的文件：建一个预览地址。 */
+/** A file the user picked: create a preview address for it. */
 export function imageEntry(file: File): Pick<DraftImage, 'id' | 'file' | 'url'> {
   return { id: newId('img'), file, url: URL.createObjectURL(file) };
 }
@@ -86,8 +86,8 @@ export function useDraftImageList(draftKey: string): DraftImage[] {
 }
 
 /**
- * 把这个草稿里还没上传的图片传上去，返回全部图片的引用（按添加顺序）。
- * 每张图的进度、失败写回 store；有一张失败就抛出第一个错误，已经传完的下次不再传。
+ * Upload the images in this draft that have not been uploaded yet, and return references for all images (in the order added).
+ * Each image's progress and failure are written back to the store. If one fails, throw the first error; images already uploaded are not uploaded again next time.
  */
 export async function uploadDraftImages(
   draftKey: string,

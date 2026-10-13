@@ -1,27 +1,19 @@
-//! MP4 合成：帧级并行渲染（确定性 ⇒ 任意帧独立），平台原生编码为主、ffmpeg 兜底。
-//! DrawOp 指纹做静止帧缓存（opencat 场景快照的合成期形态）：
-//! 指纹相同的帧直接复用已光栅化的 RGBA，dead-air 段零光栅化成本。
+//! MP4 composition: frame-level parallel rendering (deterministic, so any frame is independent), with native platform encoding as the primary path and ffmpeg as the fallback.
+//! A DrawOp fingerprint drives the still-frame cache (the composition-time form of opencat's scene snapshot):
+//! frames with the same fingerprint reuse the already rasterized RGBA, so dead-air segments cost zero rasterization.
 //!
-//! ## 编码后端：原生为主、ffmpeg 兜底（WP6b）
+//! ## Encode backends: native first, ffmpeg fallback (WP6b)
 //!
-//! 成片过去一律由 `ffmpeg -f rawvideo … -c:v libx264 -crf 18` 管道编码。现在先试
-//! [`media_native::open_mp4_writer`]（macOS = AVFoundation/VideoToolbox、
-//! Windows = Media Foundation），开不了才回落到原来那条 ffmpeg 管道。回落是
-//! **静默且自动**的：
+//! Final output used to be encoded always through the `ffmpeg -f rawvideo … -c:v libx264 -crf 18` pipe. Now [`media_native::open_mp4_writer`] is tried first (macOS = AVFoundation/VideoToolbox, Windows = Media Foundation), and the original ffmpeg pipe is used only if that cannot be opened. The fallback is **silent and automatic**:
 //!
-//! | 情况 | 后端 |
+//! | Case | Backend |
 //! | --- | --- |
-//! | macOS / Windows，偶数画布 | 原生 |
-//! | 奇数画布（H.264 的 4:2:0 要求偶数；ffmpeg 那条路同样编不出来，回落只是把报错留给它） | ffmpeg |
-//! | 本机没有可用的 H.264 / AAC 编码器 | ffmpeg |
-//! | Linux（[`media_native::encode_available`] 为 false） | ffmpeg |
+//! | macOS / Windows, even-sized canvas | native |
+//! | Odd-sized canvas (H.264 4:2:0 requires even dimensions; the ffmpeg path cannot encode it either, so the fallback only passes the error on to it) | ffmpeg |
+//! | No usable H.264 / AAC encoder on this machine | ffmpeg |
+//! | Linux ([`media_native::encode_available`] is false) | ffmpeg |
 //!
-//! 与解码侧（`media.rs`）的差别在于**质量目标的表达方式**：ffmpeg 那条路是
-//! `-crf 18`（质量导向，码率由内容长出来），硬件编码器没有 CRF，只能给平均码率，
-//! 所以质量目标翻译成一条按分辨率与帧率缩放的码率曲线
-//! （`media_native::video_bitrate`）。按 `docs/design/bcf/cuccut-format-spec.md` §15.1，
-//! **导出编码的字节本来就不承诺可复现**，两条路径的产物只需语义等价。实际用了
-//! 哪个后端由 [`RenderStats::encode_backend`] 交出。
+//! The difference from the decode side (`media.rs`) lies in **how the quality target is expressed**: the ffmpeg path uses `-crf 18` (quality-oriented, bitrate grows out of the content), while hardware encoders have no CRF and can only take an average bitrate. So the quality target is translated into a bitrate curve that scales with resolution and frame rate (`media_native::video_bitrate`). Per `docs/design/bcf/cuccut-format-spec.md` §15.1, **the bytes of an export encode were never promised to be reproducible**, so the two paths only need to produce semantically equivalent output. Which backend was actually used is reported through [`RenderStats::encode_backend`].
 
 use crate::assets::LoadedAssets;
 use crate::fonts::TextEngine;
@@ -38,32 +30,30 @@ use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
-/// ffmpeg 兜底后端的标识。原生后端的标识来自
-/// [`media_native::encode_backend`]（`avfoundation` / `media-foundation`）。
-/// 与解码侧的 [`crate::media::FFMPEG_BACKEND`] 同名同值：同一个 ffmpeg。
+/// Identifier of the ffmpeg fallback backend. The identifier of the native backend comes from [`media_native::encode_backend`] (`avfoundation` / `media-foundation`).
+/// Same name and same value as [`crate::media::FFMPEG_BACKEND`] on the decode side: it is the same ffmpeg.
 pub const FFMPEG_BACKEND: &str = crate::media::FFMPEG_BACKEND;
 
-/// 两条编码后端各自的质量目标。[`VideoWriter::open`] 用 [`Self::EXPORT`]。
+/// Quality targets for each of the two encode backends. [`VideoWriter::open`] uses [`Self::EXPORT`].
 ///
-/// 两边口径不同（见模块说明）：原生编码器只能给平均码率，ffmpeg 兜底是 CRF。
-/// 需要更高保真的调用方（BCF 预览代理，导出还可能再编一次）两边各自上调。
+/// The two sides use different measures (see the module doc): the native encoder can only take an average bitrate, while the ffmpeg fallback uses CRF.
+/// Callers that need higher fidelity (the BCF preview proxy, and exports that may be encoded again) raise each side separately.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EncodeQuality {
-    /// 原生平均码率相对 `media_native::video_bitrate` 曲线的倍数；乘出来仍夹在
-    /// 曲线自己的 60 Mb/s 上限之内。
+    /// Multiplier applied to the native average bitrate relative to the `media_native::video_bitrate` curve. The product is still clamped to the curve's own 60 Mb/s cap.
     pub bitrate_scale: f64,
-    /// ffmpeg（libx264）兜底的 `-crf`。
+    /// `-crf` for the ffmpeg (libx264) fallback.
     pub crf: u8,
 }
 
 impl EncodeQuality {
-    /// 成片导出：码率曲线原值、`-crf 18`。
+    /// Final export: the unmodified bitrate curve, `-crf 18`.
     pub const EXPORT: Self = Self {
         bitrate_scale: 1.0,
         crf: 18,
     };
 
-    /// 交给原生写入器的码率；`None` = 曲线原值（与 [`VideoWriter::open`] 逐字相同）。
+    /// Bitrate handed to the native writer; `None` = the unmodified curve value (identical to [`VideoWriter::open`]).
     pub fn native_bitrate(&self, width: u32, height: u32, fps: f64) -> Option<u32> {
         (self.bitrate_scale != 1.0).then(|| {
             let base = f64::from(media_native::video_bitrate(width, height, fps));
@@ -72,19 +62,18 @@ impl EncodeQuality {
     }
 }
 
-/// 成片写入器：平台原生优先，开不了才回落 ffmpeg 管道。
+/// Final-output writer: the platform-native writer is preferred, and the ffmpeg pipe is used only if the native one cannot be opened.
 ///
-/// 两条路径的消费方式一样（逐帧喂 RGBA、`finish` 收尾），差别只在字节层。
+/// Both paths are consumed the same way (RGBA is fed frame by frame, and `finish` closes the output); they differ only at the byte level.
 pub enum VideoWriter {
-    /// 平台原生 MP4 写入（AVFoundation / Media Foundation）。
+    /// Platform-native MP4 writing (AVFoundation / Media Foundation).
     Native(media_native::Mp4Writer),
-    /// `ffmpeg -f rawvideo … -c:v libx264 -crf 18` 管道。
+    /// `ffmpeg -f rawvideo … -c:v libx264 -crf 18` pipe.
     Ffmpeg(FfmpegWriter),
 }
 
 impl VideoWriter {
-    /// 打开写入器。原生路径失败（不支持的几何、没有编码器、非 macOS/Windows）
-    /// 时静默回落 ffmpeg，与解码侧 `MediaStore` 的回落同一条规矩。
+    /// Opens the writer. If the native path fails (unsupported geometry, no encoder, or not macOS/Windows), it silently falls back to ffmpeg, following the same rule as the fallback in the decode-side `MediaStore`.
     pub fn open(
         out: &Path,
         width: u32,
@@ -95,7 +84,7 @@ impl VideoWriter {
         Self::open_with_quality(out, width, height, fps, audio_pcm, EncodeQuality::EXPORT)
     }
 
-    /// 同 [`Self::open`]，按 `quality` 定两条后端各自的质量目标。
+    /// Same as [`Self::open`], but sets each backend's quality target from `quality`.
     pub fn open_with_quality(
         out: &Path,
         width: u32,
@@ -120,7 +109,7 @@ impl VideoWriter {
             .map(VideoWriter::Ffmpeg)
     }
 
-    /// 实际在用的编码后端（§15.1 可观测条款）。
+    /// The encode backend actually in use (the observability clause of §15.1).
     pub fn backend(&self) -> &'static str {
         match self {
             VideoWriter::Native(writer) => writer.backend(),
@@ -260,17 +249,13 @@ impl PartialOrd for OrderedFrame {
 }
 impl Ord for OrderedFrame {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.0.cmp(&self.0) // 小顶堆
+        other.0.cmp(&self.0) // Min-heap
     }
 }
 
-/// 跨 worker 共享的「输出 surface 指纹 → RGBA」缓存（小 LRU；静止段跨线程
-/// 也能命中）。这是 [`crate::plan::SurfaceCache`] 的**特例**：只缓存输出
-/// surface，而且直接存已经 `take()` 出来的 RGBA——命中时零拷贝送进编码器，
-/// 换成 `Pixmap` 每命中一帧就要多一次 8.3MB（1080p）memcpy。
+/// Cache of “output surface fingerprint → RGBA” shared across workers (a small LRU; static segments can hit across threads too). This is a **special case** of [`crate::plan::SurfaceCache`]: it caches only output surfaces, and stores the RGBA that has already been `take()`n out directly. A hit is passed to the encoder with zero copies; wrapping it in a `Pixmap` would cost an extra 8.3 MB (1080p) memcpy on every hit.
 ///
-/// 帧数 + 字节双上限（设计 §6.6 / §12）：4K 一帧 33MB，只按帧数限容会驻留
-/// 数百 MB。
+/// Capped by both frame count and bytes (design §6.6 / §12): one 4K frame is 33 MB, so limiting only by frame count would keep several hundred MB resident.
 struct FrameCache {
     entries: Mutex<VecDeque<(u64, Arc<Vec<u8>>)>>,
     cap: usize,
@@ -314,21 +299,18 @@ impl FrameCache {
     }
 }
 
-/// 帧缓存的字节上限（128MB：1080p 约 15 帧，4K 约 3 帧）。
+/// Byte cap for the frame cache (128 MB: about 15 frames at 1080p, about 3 at 4K).
 const FRAME_CACHE_BYTES: usize = 128 << 20;
 
 pub struct RenderStats {
     pub total_frames: usize,
-    /// 指纹命中而免于光栅化的帧数（静止段）
+    /// Number of frames that skipped rasterization due to a fingerprint hit (static segments)
     pub reused_frames: usize,
-    /// FramePlan 中间 surface 的复用次数（无 effect 的文档恒为 0：计划折叠成
-    /// 单个 Draw pass，根本不存在中间 surface）
+    /// Number of reuses of FramePlan intermediate surfaces (always 0 for a document without effects: the plan folds into a single Draw pass, so no intermediate surface exists at all)
     pub reused_surfaces: usize,
-    /// 逐帧指纹（帧号序；渲染清单 §15 用）。**取值是 FramePlan 输出 surface
-    /// 的内容指纹**，不再是 DrawOp 原语指纹——见 `plan::frame_plan` 的三层指纹。
+    /// Per-frame fingerprints (in frame-number order; used by the render manifest §15). **The value is the content fingerprint of the FramePlan output surface**, no longer the DrawOp primitive fingerprint; see the three-layer fingerprint in `plan::frame_plan`.
     pub fingerprints: Vec<u64>,
-    /// 实际写出成片的编码后端（§15.1「后端必须可观测」）：`avfoundation` /
-    /// `media-foundation` / `ffmpeg`。
+    /// The encode backend that actually wrote the final output (§15.1 “backends must be observable”): `avfoundation` / `media-foundation` / `ffmpeg`.
     pub encode_backend: &'static str,
 }
 
@@ -345,7 +327,7 @@ fn write_mixed_audio_temp(bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
     Ok(file)
 }
 
-/// 并行渲染全片 → MP4。每 worker 一个 TextEngine（字体系统非 Sync）+ MediaStore。
+/// Renders the whole film in parallel to MP4. Each worker gets one TextEngine (the font system is not Sync) plus a MediaStore.
 pub fn render_video(
     ir: &Ir,
     renderer: &FrameRenderer,
@@ -360,10 +342,8 @@ pub fn render_video(
     })
 }
 
-/// 与 [`render_video`] 相同，但进度回调可在安全帧边界请求取消。
-/// 返回 `false` 后收束写入器（原生路径把已写入的帧封成容器、ffmpeg 路径关 stdin
-/// 并等待子进程退出——两边都会留下一个"截到取消点"的合法 MP4），并返回带
-/// `cancelled:` 前缀的错误；调用方负责删除或保留输出临时文件。
+/// Same as [`render_video`], except that the progress callback can request cancellation at safe frame boundaries.
+/// After it returns `false`, the writer is finalized: the native path wraps the frames already written into a container, and the ffmpeg path closes stdin and waits for the child process to exit. Both leave a valid MP4 “truncated at the cancel point”. An error with a `cancelled:` prefix is returned, and the caller is responsible for deleting or keeping the temporary output file.
 pub fn render_video_cancellable(
     ir: &Ir,
     renderer: &FrameRenderer,
@@ -375,8 +355,7 @@ pub fn render_video_cancellable(
     render_video_with_motion_blur(ir, renderer, assets, out, jobs, 1, progress)
 }
 
-/// 与 [`render_video_cancellable`] 相同，外加运动模糊子帧数（`ccut render --motion-blur`，
-/// 口径见 [`crate::motion_blur`]）。`motion_blur = 1` 时与前者逐字节、逐指纹相同。
+/// Same as [`render_video_cancellable`], plus the number of motion-blur sub-frames (`ccut render --motion-blur`; for the definition see [`crate::motion_blur`]). With `motion_blur = 1` the output is byte-for-byte and fingerprint-for-fingerprint identical to the former.
 pub fn render_video_with_motion_blur(
     ir: &Ir,
     renderer: &FrameRenderer,
@@ -390,9 +369,8 @@ pub fn render_video_with_motion_blur(
     let total_frames = (ir.total * ir.fps).round() as usize;
     let jobs = jobs.max(1).min(total_frames.max(1));
 
-    // 音频混音（有 audio clip 时在系统临时目录生成 PCM 编码输入）：裸 f32le、
-    // 48 kHz、立体声交织，两条编码路径读的是同一份格式。
-    // 不得把可重建的原始音频写进项目输出目录。
+    // Audio mix (when there is an audio clip, the PCM encoder input is generated in the system temp directory): raw f32le, 48 kHz, interleaved stereo; both encode paths read the same format.
+    // Rebuildable raw audio must not be written into the project output directory.
     let audio_pcm = match crate::audio::mix_audio(ir, &assets)? {
         Some(bytes) => Some(write_mixed_audio_temp(&bytes)?),
         None => None,
@@ -407,12 +385,12 @@ pub fn render_video_with_motion_blur(
     )?;
     let encode_backend = writer.backend();
     let cache = FrameCache::new(4, FRAME_CACHE_BYTES);
-    // 中间 surface 缓存（转场两侧、效果链）。无 effect 的文档不会产生条目。
+    // Intermediate surface cache (both sides of transitions, effect chains). A document without effects produces no entries.
     let surfaces = SurfaceCache::with_frame_cap(8);
-    // Preflight 在逐帧之前跑完（设计 §6.5）：能力、尺寸、效果版本都在这里定案。
+    // Preflight runs to completion before the per-frame work (design §6.5): capabilities, dimensions, and effect versions are all settled here.
     let planner = FramePlanner::cpu(ir)?;
 
-    // 有界通道限制内存（1080p RGBA ≈ 8.3MB/帧）
+    // A bounded channel limits memory (1080p RGBA ≈ 8.3 MB/frame)
     let (tx, rx) = mpsc::sync_channel::<OrderedFrame>(jobs * 2);
 
     let mut fingerprints = vec![0u64; total_frames];
@@ -443,7 +421,7 @@ pub fn render_video_with_motion_blur(
                             t,
                             motion_blur,
                         ) else {
-                            return; // 主线程按帧数缺口报错
+                            return; // The main thread reports an error on a frame-count gap
                         };
                         if tx.send(OrderedFrame(f, rgba, fp)).is_err() {
                             return;
@@ -452,10 +430,9 @@ pub fn render_video_with_motion_blur(
                         continue;
                     }
                     let plan = planner.plan(renderer, ir, &mut engine, t);
-                    // 帧指纹与执行器的中间 surface 缓存键出自同一张表：算一次
-                    // 交给执行器复用，非折叠计划才不会每帧编码两遍指令流。
+                    // The frame fingerprint and the executor's intermediate-surface cache keys come from the same table: compute once and hand it to the executor for reuse. Only for a non-folded plan would the instruction stream otherwise be encoded twice per frame.
                     let Ok((fp, fingerprints)) = plan.frame_fingerprints() else {
-                        return; // 主线程按帧数缺口报错
+                        return; // The main thread reports an error on a frame-count gap
                     };
                     let rgba: Arc<Vec<u8>> = match cache.get(fp) {
                         Some(hit) => hit,
@@ -468,7 +445,7 @@ pub fn render_video_with_motion_blur(
                                 &fingerprints,
                             ) {
                                 Ok(p) => p,
-                                Err(_) => return, // 主线程按帧数缺口报错
+                                Err(_) => return, // The main thread reports an error on a frame-count gap
                             };
                             let data = Arc::new(pixmap.take());
                             cache.put(fp, data.clone());
@@ -476,7 +453,7 @@ pub fn render_video_with_motion_blur(
                         }
                     };
                     if tx.send(OrderedFrame(f, rgba, fp)).is_err() {
-                        return; // 写端已关闭
+                        return; // Write end is closed
                     }
                     f += jobs;
                 }
@@ -484,7 +461,7 @@ pub fn render_video_with_motion_blur(
         }
         drop(tx);
 
-        // 按帧号重排序后顺序写入编码器
+        // Reorder by frame number, then write to the encoder in order
         let mut heap: BinaryHeap<OrderedFrame> = BinaryHeap::new();
         let mut next = 0usize;
         for frame in rx {
@@ -522,8 +499,8 @@ pub fn render_video_with_motion_blur(
     })
 }
 
-/// 一帧运动模糊：子帧逐个走计划与执行器（中间 surface 缓存照用），平均后按合成指纹进帧缓存。
-/// 相邻子帧指纹相同就只画一次、按次数计权——静止段不付 N 倍。
+/// Motion blur for one frame: each sub-frame goes through the plan and executor one at a time (the intermediate-surface cache still applies), then they are averaged and stored in the frame cache under the composite fingerprint.
+/// Adjacent sub-frames with the same fingerprint are drawn only once and weighted by count, so static segments do not pay N times the cost.
 #[allow(clippy::too_many_arguments)]
 fn blurred_frame(
     planner: &FramePlanner,

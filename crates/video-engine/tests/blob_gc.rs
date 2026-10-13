@@ -1,5 +1,4 @@
-//! `blobs/` 的 GC（`Video::gc_blobs`，架构设计 §5.2、§5.5）：库里任何记录（素材的全部版本、撤销记录、当前实体）
-//! 还提到的 blob 留着，没有引用的删掉；staging 里过了宽限期的删掉、新鲜的留着；不像 blob 的条目不碰。
+//! GC for `blobs/` (`Video::gc_blobs`, architecture design §5.2, §5.5): any blob still mentioned by any record in the library (all versions of assets, undo records, current entities) is kept; unreferenced ones are deleted; staging entries past the grace period are deleted and fresh ones are kept; entries that are not blobs are not touched.
 
 #![allow(clippy::result_large_err)]
 
@@ -83,7 +82,7 @@ fn import_bundle(video: &mut Video, root: &Path, name: &str) -> String {
     apply(video, &format!("cmd_bundle_{name}"), vec![op]).receipt.refs["b"].clone()
 }
 
-/// 素材当前版本在视频目录里的 blob 路径（受管理时才在）。
+/// The blob path of an asset's current version in the video directory (only when managed).
 fn blob_of(video: &Video, asset_id: &str) -> PathBuf {
     let asset = &video.state().assets[asset_id];
     let rev = &asset.revisions[&asset.current_revision];
@@ -100,7 +99,7 @@ fn referenced_blobs_survive_and_orphans_go() {
     let root = tempfile::tempdir().unwrap();
     let mut video = new_video(&root.path().join("m"));
 
-    // 一个受管理的素材，删掉后又撤销；另一个删掉不撤销：两者的版本记录都还在，blob 都留着。
+    // One managed asset, deleted and then undone; another deleted and not undone: the version records of both remain, and all blobs are kept.
     let kept = import_svg(&mut video, root.path(), "kept", "managed");
     let removed = import_svg(&mut video, root.path(), "removed", "managed");
     let kept_blob = blob_of(&video, &kept);
@@ -118,7 +117,7 @@ fn referenced_blobs_survive_and_orphans_go() {
     );
     assert!(!video.state().assets.contains_key(&removed));
 
-    // 链接后收进来：版本记录写着 linked，实体里才是 managed。blob 必须留着。
+    // Linked, then collected in: the version record says linked, but the entity says managed. The blob must be kept.
     let collected = import_svg(&mut video, root.path(), "collected", "linked");
     apply(
         &mut video,
@@ -128,7 +127,7 @@ fn referenced_blobs_survive_and_orphans_go() {
     let collected_blob = blob_of(&video, &collected);
     assert!(collected_blob.is_file());
 
-    // 两个代码包（目录素材），删掉其中一个：都留着。
+    // Two code bundles (directory assets), one of them deleted: both are kept.
     let bundle_a = import_bundle(&mut video, root.path(), "bundle-a");
     let bundle_b = import_bundle(&mut video, root.path(), "bundle-b");
     let bundle_a_dir = blob_of(&video, &bundle_a);
@@ -139,7 +138,7 @@ fn referenced_blobs_survive_and_orphans_go() {
         vec![json!({ "type": "removeAssets", "assetIds": [bundle_b] })],
     );
 
-    // 崩溃留下的孤儿：一个文件 blob、一个目录 blob。还有一个不归视频管理的文件。
+    // Orphans left by a crash: one file blob, one directory blob. There is also one file that the video does not manage.
     let blobs = video.dir().join("blobs");
     let orphan_file = blobs.join(format!("{}.png", "1".repeat(64)));
     fs::write(&orphan_file, b"orphan bytes").unwrap();
@@ -150,7 +149,7 @@ fn referenced_blobs_survive_and_orphans_go() {
     let stray = blobs.join("notes.txt");
     fs::write(&stray, b"user notes").unwrap();
 
-    // staging：过期的文件与目录（目录按最新的后代算）删掉；新鲜的、深处有新文件的目录留着。
+    // Staging: expired files and directories (a directory is judged by its newest descendant) are deleted; fresh ones, and directories with new files deep inside, are kept.
     let staging = blobs.join(".staging");
     let old_file = staging.join("import_old");
     fs::write(&old_file, b"half written").unwrap();
@@ -199,11 +198,11 @@ fn referenced_blobs_survive_and_orphans_go() {
     assert_eq!(report.skipped, vec!["blobs/notes.txt".to_string()]);
     assert!(report.failed.is_empty());
 
-    // 撤销记录引用的素材还能放回来、bytes 还在。
+    // The asset referenced by an undo record can still be restored, and its bytes are still there.
     let resolved = video.resolve_asset(&kept, None).unwrap();
     assert!(resolved.path.is_file());
 
-    // 再跑一次没有可删的。
+    // Running again: nothing left to delete.
     let again = video.gc_blobs(STAGING_GRACE).unwrap();
     assert!(again.removed.is_empty() && again.staging_removed.is_empty() && again.freed_bytes == 0);
 }

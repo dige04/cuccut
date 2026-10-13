@@ -1,6 +1,6 @@
-//! 原地替换代码画面（`replaceCodeBundle`，代码包规范 §3.3）：只换代码包版本与替身，实例的其余部分不变；
-//! 长度跟新版本走，变短裁掉、变长撞上后面的实例就拒绝；参数 Schema 变了要给新参数。
-//! 替身的测试用 ffmpeg 现场生成视频，没有 ffmpeg 时跳过并打印原因。
+//! In-place replacement of a code picture (`replaceCodeBundle`, code bundle spec §3.3): only the code bundle version and the stand-in are swapped; the rest of the instance does not change;
+//! the length follows the new version: if it is shortened, the excess is trimmed; if it is lengthened and collides with the instances after it, it is rejected; if the parameter schema changed, new parameters must be given.
+//! The stand-in tests generate video with ffmpeg on the spot; without ffmpeg they are skipped and the reason is printed.
 
 #![allow(clippy::result_large_err)]
 
@@ -61,7 +61,7 @@ fn track(video: &Video, name: &str) -> String {
         .unwrap()
 }
 
-/// 一个代码包目录：内容不同就是不同的素材。清单的 intrinsic 是 30 fps 下的帧数。
+/// A code bundle directory: different content makes a different asset. The manifest's intrinsic is the frame count at 30 fps.
 fn bundle_dir(root: &Path, name: &str, frames: i64, schema: Option<&str>) -> (PathBuf, Value) {
     let dir = root.join(name);
     fs::create_dir_all(&dir).unwrap();
@@ -76,7 +76,7 @@ fn bundle_dir(root: &Path, name: &str, frames: i64, schema: Option<&str>) -> (Pa
     (dir, manifest)
 }
 
-/// 导入一个代码包，返回它当前版本的引用。
+/// Imports a code bundle and returns a reference to its current version.
 fn import_bundle(video: &mut Video, root: &Path, name: &str, frames: i64, schema: Option<&str>) -> Value {
     let (dir, manifest) = bundle_dir(root, name, frames, schema);
     let committed = apply(
@@ -101,7 +101,7 @@ fn bundle_ref(c: &CompositionItem) -> &VersionRef {
     asset_ref
 }
 
-/// 时间线上的一个合成：第 60 帧起，长 `frames` 帧，带参数。
+/// A composition on the timeline: starts at frame 60, is `frames` frames long, and has parameters.
 fn place_composition(video: &mut Video, bundle: &Value, frames: i64, params: Value) -> String {
     let s = seq(video);
     let item = json!({
@@ -138,7 +138,7 @@ fn replace_keeps_the_clip_and_swaps_only_the_source() {
     let before = composition(&video, &id);
     let bindings_before = video.snapshot().sequences[&seq(&video)].header.animation_bindings.clone();
 
-    // 新版本短一半：没有替身时长度取清单的 intrinsic；参数 Schema 没变，旧参数原样保留。
+    // The new version is half as long: with no stand-in, the length comes from the manifest's intrinsic; the parameter schema has not changed, so the old parameters are kept as they are.
     let committed = apply(
         &mut video,
         "cmd_replace",
@@ -159,17 +159,17 @@ fn replace_keeps_the_clip_and_swaps_only_the_source() {
         "起点不变，变短就裁掉"
     );
     assert!(matches!(&after.time_map, TimeMap::Linear { source_in, rate } if source_in.ticks == "0" && rate.num == rate.den));
-    // 其余部分不变：ID、轨道、名字、几何与不透明度、效果、参数、开关与锁、跟随、lineage。
+    // Everything else is unchanged: ID, track, name, geometry and opacity, effects, parameters, enable and lock, follow, and lineage.
     assert_eq!(after.base, before.base);
     assert_eq!(after.place, before.place);
     assert_eq!(after.fx, before.fx);
     assert_eq!(after.mask, before.mask);
     assert_eq!(after.audio, before.audio);
     assert_eq!(after.parameter_values, json!({ "title": "你好" }));
-    // 关键帧都在新窗口之内：原样保留。
+    // Keyframes are all inside the new window: kept as they are.
     assert_eq!(video.snapshot().sequences[&seq(&video)].header.animation_bindings, bindings_before);
 
-    // 回执说明改的是源这一层，以及长度从 120 帧变成 60 帧。
+    // The receipt says the change is at the source level, and that the length went from 120 frames to 60 frames.
     let impact = serde_json::to_value(&committed.receipt.impact).unwrap();
     assert_eq!(
         impact["codeEdits"],
@@ -181,7 +181,7 @@ fn replace_keeps_the_clip_and_swaps_only_the_source() {
         }])
     );
 
-    // 撤销换回旧版本与旧长度。
+    // Undo swaps back to the old version and the old length.
     video
         .undo(&UndoRequest {
             command_id: "cmd_undo".into(),
@@ -226,7 +226,7 @@ fn a_longer_version_that_runs_into_the_next_clip_is_refused() {
     assert!(recovery.contains("moveItem") && recovery.contains("deleteItems"), "{recovery}");
     assert_eq!(video.revision(), before);
 
-    // 后面的实例挪开之后就能换，长度变成 120 帧。
+    // After the later instances are moved away, the replacement can be made; the length becomes 120 frames.
     apply(
         &mut video,
         "cmd_move",
@@ -275,20 +275,20 @@ fn only_composition_clips_and_bundle_assets_are_accepted() {
 
     let before = video.revision();
     let cases = [
-        // 不是合成实例。
+        // Not a composition instance.
         json!({ "type": "replaceCodeBundle", "itemId": text_id, "assetRef": rev1 }),
-        // 素材不是代码包。
+        // The asset is not a code bundle.
         json!({ "type": "replaceCodeBundle", "itemId": id, "assetRef": image }),
-        // 替身不是视频。
+        // The stand-in is not a video.
         json!({ "type": "replaceCodeBundle", "itemId": id, "assetRef": rev1, "prerender": image }),
-        // 参数不是对象。
+        // The parameters are not an object.
         json!({ "type": "replaceCodeBundle", "itemId": id, "assetRef": rev1, "parameterValues": [] }),
     ];
     for (n, op) in cases.into_iter().enumerate() {
         let err = apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err();
         assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个：{}", err.message);
     }
-    // 版本不存在。
+    // The version does not exist.
     let err = apply(
         &mut video,
         "cmd_missing",
@@ -298,7 +298,7 @@ fn only_composition_clips_and_bundle_assets_are_accepted() {
     assert_eq!(err.code, "ASSET_MISSING");
     assert_eq!(video.revision(), before);
 
-    // 锁定的片段不能换。
+    // A locked clip cannot be replaced.
     apply(
         &mut video,
         "cmd_lock",
@@ -336,7 +336,7 @@ fn changed_parameter_schema_needs_new_parameter_values() {
     }
     assert_eq!(video.revision(), before);
 
-    // 同时给出新参数就可以换。
+    // The replacement can be made when new parameters are given at the same time.
     apply(
         &mut video,
         "cmd_with_values",
@@ -345,7 +345,7 @@ fn changed_parameter_schema_needs_new_parameter_values() {
     .unwrap();
     assert_eq!(composition(&video, &id).parameter_values, json!({ "headline": "新的" }));
 
-    // 没有参数的片段不受这条限制。
+    // A clip with no parameters is not subject to this restriction.
     let plain = import_bundle(&mut video, root.path(), "rev4", 30, Some("params-v1.json"));
     apply(
         &mut video,
@@ -361,7 +361,7 @@ fn changed_parameter_schema_needs_new_parameter_values() {
     .unwrap();
 }
 
-/// 2 秒 30 fps 的视频（60 帧），当作预渲染替身。
+/// A 2-second, 30 fps video (60 frames), used as a pre-rendered stand-in.
 fn prerender_clip(dir: &Path) -> Option<PathBuf> {
     let path = dir.join("prerender.mp4");
     let ok = Command::new("ffmpeg")
@@ -392,7 +392,7 @@ fn the_prerender_sets_the_new_length() {
     let Some(clip) = prerender_clip(root.path()) else { return };
     let mut video = new_video(&root.path().join("m"));
     let rev1 = import_bundle(&mut video, root.path(), "rev1", 120, None);
-    // 清单写 120 帧，替身只有 60 帧：长度以替身为准。
+    // The manifest says 120 frames, but the stand-in has only 60: the stand-in's length wins.
     let rev2 = import_bundle(&mut video, root.path(), "rev2", 120, None);
     let id = place_composition(&mut video, &rev1, 120, json!({}));
     let prerender = apply(
@@ -418,7 +418,7 @@ fn the_prerender_sets_the_new_length() {
     assert_eq!(impact["codeEdits"][0]["newDurationFrames"], 60);
     assert_eq!(impact["codeEdits"][0]["prerender"], prerender);
 
-    // `prerender: null` 去掉替身，长度回到清单的 intrinsic。
+    // `prerender: null` removes the stand-in, and the length goes back to the manifest's intrinsic.
     apply(
         &mut video,
         "cmd_drop_prerender",

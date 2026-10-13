@@ -1,11 +1,11 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/VoxCPM2TTS/Configuration.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/VoxCPM2TTS/Configuration.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the relevant Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! `config.json`（aufklarer VoxCPM2 MLX 导出）。对照 speech-swift `Configuration.swift`。
+//! `config.json` (aufklarer VoxCPM2 MLX export). Corresponds to speech-swift `Configuration.swift`.
 
 use std::path::Path;
 
@@ -66,7 +66,7 @@ pub struct RopeScaling {
     pub original_max_position_embeddings: usize,
 }
 
-/// 局部编码器 / 局部 DiT 的 MiniCPM 尺寸（头数与 kv 头数沿用 `lm_config`）。
+/// MiniCPM sizes for the local encoder / local DiT (head count and kv head count follow `lm_config`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlockConfig {
     pub hidden_dim: usize,
@@ -123,7 +123,7 @@ pub struct Quantization {
 }
 
 impl VoxCpm2Config {
-    /// 读清单列出的 `config.json`。
+    /// Reads the `config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("读取 VoxCPM2 配置 {}", path.display()))?;
         serde_json::from_str(&text).with_context(|| format!("解析 VoxCPM2 配置 {}", path.display()))

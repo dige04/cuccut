@@ -1,13 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/Configuration.swift`。
+//! This file's partial implementation references speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/Configuration.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packages and transcription interface; the original upstream source attribution is retained.
+//! Full text of the original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` at the repository root.
 //!
-//! Qwen3-ASR 与 Qwen3-ForcedAligner 的后端无关部分：`config.json` 的核对、分词器文件、提示词模板的 token、音频塔的结构
-//! 与模型输出的语言前缀。MLX（`backend::mlx::qwen3`）与 candle（`backend::candle`）两个后端共用这一份；各自的文本解码器
-//! 配置（量化参数的类型不同）留在后端里。
+//! The backend-independent parts of Qwen3-ASR and Qwen3-ForcedAligner: checking `config.json`, the tokenizer files, the prompt template tokens, the audio tower structure and the language prefix in the model output. The MLX (`backend::mlx::qwen3`) and candle (`backend::candle`) backends share this one; each backend's own text decoder configuration (its quantization parameter types differ) stays in the backend.
 
 use std::path::Path;
 
@@ -15,7 +13,7 @@ use serde_json::Value;
 
 use super::decoding::AsrModelSize;
 
-// 提示词模板与生成用到的特殊 token。
+// Prompt template and the special tokens used in generation.
 pub(crate) const EOS_TOKEN: i32 = 151_645;
 pub(crate) const IM_START: i32 = 151_644;
 pub(crate) const AUDIO_START: i32 = 151_669;
@@ -27,7 +25,7 @@ pub(crate) const SYSTEM: i32 = 8_948;
 pub(crate) const USER: i32 = 872;
 pub(crate) const ASSISTANT: i32 = 77_091;
 
-/// 音频塔的结构（Qwen3-ASR 两档与强制对齐器）。
+/// Structure of the audio tower (the two Qwen3-ASR sizes and the forced aligner).
 #[derive(Debug, Clone, Copy)]
 pub struct AudioEncoderConfig {
     pub d_model: usize,
@@ -66,7 +64,7 @@ impl AudioEncoderConfig {
         transpose_pytorch_conv: true,
     };
 
-    /// 尺寸档对应的音频塔。
+    /// Audio tower for each size tier.
     pub fn for_size(size: AsrModelSize) -> Self {
         match size {
             AsrModelSize::Small => Self::SMALL,
@@ -75,7 +73,7 @@ impl AudioEncoderConfig {
     }
 }
 
-/// 尺寸档的文本解码器隐层宽度（两个后端的 `TextDecoderConfig::small` / `large` 与此一致）。
+/// Hidden width of the text decoder for each size tier (`TextDecoderConfig::small` / `large` in both backends match this).
 pub fn text_hidden_size(size: AsrModelSize) -> usize {
     match size {
         AsrModelSize::Small => 1024,
@@ -83,7 +81,7 @@ pub fn text_hidden_size(size: AsrModelSize) -> usize {
     }
 }
 
-/// 从 `config.json` 读出、加载前要核对的形状与量化参数。
+/// Shape and quantization parameters read from `config.json`, checked before loading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Qwen3Config {
     pub size: AsrModelSize,
@@ -92,8 +90,8 @@ pub struct Qwen3Config {
 }
 
 impl Qwen3Config {
-    /// 尺寸按音频塔 d_model 与文本隐层认：0.6B 是 896 / 1024，1.7B 是 1024 / 2048，别的组合拒绝。
-    /// 量化位数取 `quantization.bits`，没有量化时按浮点权重。
+    /// The size is identified from the audio tower d_model and the text hidden width: 0.6B is 896 / 1024, 1.7B is 1024 / 2048; other combinations are rejected.
+    /// The quantization bit width is taken from `quantization.bits`; without quantization, float weights are used.
     pub fn parse(config: &Value) -> Result<Self, String> {
         let thinker = config.get("thinker_config").ok_or("config.json has no thinker_config")?;
         let audio_width = thinker.pointer("/audio_config/d_model").and_then(Value::as_u64);
@@ -126,18 +124,18 @@ impl Qwen3Config {
     }
 }
 
-/// tokenizer 的三个文件。
+/// The three tokenizer files.
 pub struct TokenizerFiles<'a> {
     pub vocabulary: &'a Path,
     pub merges: Option<&'a Path>,
     pub config: Option<&'a Path>,
 }
 
-/// 对齐器清单里没有 `quantize_config.json` 时的量化位数（v2 认不出仓库名里的位数时也按 4）。
+/// Quantization bit width when the aligner manifest has no `quantize_config.json` (if v2 cannot recognize the bit width from the repo name, it also uses 4).
 pub const ALIGNER_DEFAULT_BITS: i32 = 4;
 
-/// 对齐器 `quantize_config.json` 的 `quantization.bits`；没列出这个文件（`None`）时按 [`ALIGNER_DEFAULT_BITS`]。
-/// v2 认的位数（4、5、8）之外的拒绝。
+/// `quantization.bits` from the aligner's `quantize_config.json`; when this file is not listed (`None`), uses [`ALIGNER_DEFAULT_BITS`].
+/// Bit widths other than those v2 accepts (4, 5, 8) are rejected.
 pub fn aligner_quantization_bits(quantize_config: Option<&Path>) -> anyhow::Result<i32> {
     use anyhow::Context;
     let Some(path) = quantize_config else {
@@ -152,7 +150,7 @@ pub fn aligner_quantization_bits(quantize_config: Option<&Path>) -> anyhow::Resu
     }
 }
 
-/// `language English<asr_text>Hello.` → (`Hello.`, `English`)。没有 `<asr_text>` 时整段是文本。
+/// `language English<asr_text>Hello.` → (`Hello.`, `English`). Without `<asr_text>`, the whole string is the text.
 pub fn split_language_prefix(raw: &str) -> (String, Option<String>) {
     match raw.split_once("<asr_text>") {
         Some((prefix, text)) => {
@@ -218,7 +216,7 @@ mod tests {
                 group_size: 64
             })
         );
-        // 两档的宽度不能交叉组合。
+        // The two tiers' widths must not be combined across each other.
         assert!(Qwen3Config::parse(&config(896, 2048, json!({ "bits": 4 }))).is_err());
         assert!(Qwen3Config::parse(&config(1024, 1024, json!({ "bits": 4 }))).is_err());
         assert!(Qwen3Config::parse(&config(896, 1024, json!({ "bits": 3 }))).is_err());

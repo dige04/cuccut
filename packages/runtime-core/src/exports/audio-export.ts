@@ -14,17 +14,16 @@ import { RcCommon, RcExport } from '@cuccut/protocol/messages/runtime-core';
 import type { AudioPlan, AudioSegment, PlannedAsset } from './export-plan.ts';
 
 /**
- * 音频导出（架构设计 §9.13）：引擎给出声音的区间计划（哪些实例发声、取素材的哪一段、放在哪里、增益与淡变，
- * `render-graph` 的 `audio_plan`，与预览同一套发声规则），这里只把它翻成 ffmpeg 的滤镜图：
+ * Audio export (architecture design §9.13): the engine gives an interval plan for the sound (which instances sound, which part of the source to take, where to place it, gain and fades;
+ * `render-graph`'s `audio_plan`, using the same sounding rules as the preview). Here it is only translated into an ffmpeg filter graph:
  *
- * 1. 混音：一路精确长度的静音打底，每段 `-ss/-t` 取源 → 统一采样率与声道 → `atempo`（速度与预览一样保持音高）
- *    → 按样本数裁齐 → 增益（dB）→ 逐样本的振幅系数（淡变线性、淡入淡出重叠时取较小的；转场的声音交叉淡化等功率；
- *    闪避压低量按折点线性插值；三者相乘，与计划的 `gain_db_at` 一致）→ 按样本数延迟到位置，
- *    `amix normalize=0` 直接相加，写成 staging 里的 32 位浮点 WAV；
- * 2. 响度标准化（开了时）：Render Worker 的 `master` 子命令把混音做成目标响度（v2 的母带链：BS.1770 积分响度归一与
- *    真峰值限幅交替三轮，再按真峰值静态兜底，逐位确定），写成 staging 里的 32 位浮点裸 PCM，实测写进校验结果；
- * 3. 编码：WAV（16 位）、MP3（libmp3lame）或 M4A（AAC）；
- * 4. 校验：ffprobe 解码整个文件，时长在容差内、采样率与声道数符合设置。
+ * 1. Mixing: a silent base of exact length; each segment takes its source with `-ss/-t` → unify sample rate and channels → `atempo` (speed, with pitch kept as in the preview)
+ *    → trim to a whole sample count → gain (dB) → a per-sample amplitude coefficient (linear fades; when a fade-in and fade-out overlap, take the smaller; a transition's sound cross-fades with equal power;
+ *    duck attenuation is linearly interpolated between breakpoints; the three multiply, consistent with the plan's `gain_db_at`) → delay to position by sample count,
+ *    `amix normalize=0` adds directly, written as a 32-bit float WAV in staging;
+ * 2. Loudness normalization (when on): the Render Worker's `master` subcommand turns the mix into the target loudness (v2 mastering chain: three alternating rounds of BS.1770 integrated-loudness normalization and true-peak limiting, followed by a static true-peak fallback, bit-deterministic), written as 32-bit float raw PCM in staging; the measurement is written into the verification result;
+ * 3. Encoding: WAV (16-bit), MP3 (libmp3lame), or M4A (AAC);
+ * 4. Verification: ffprobe decodes the whole file; the duration is within tolerance, and the sample rate and channel count match the settings.
  */
 
 export interface ToolCommand {
@@ -50,12 +49,12 @@ const ENCODERS: Record<AudioExportFormat, { encoder: string; muxer: string; extr
   m4a: { encoder: 'aac', muxer: 'ipod', extra: ['-movflags', '+faststart'] },
 };
 
-/** 时长的容差：WAV 是采样精确的，有损格式有编码器的前后填充。 */
+/** Duration tolerance: WAV is sample-exact; lossy formats have encoder padding at the start and end. */
 const TOLERANCE_SEC: Record<AudioExportFormat, number> = { wav: 0.01, mp3: 0.1, m4a: 0.1 };
 
 export class ToolFailure extends Error {
   readonly kind: 'missing' | 'failed' | 'aborted';
-  /** 出事的是哪个工具（可执行文件名，如 `ffmpeg`、`export-worker`）；取消时没有。 */
+  /** Which tool failed (the executable name, such as `ffmpeg` or `export-worker`); absent when canceled. */
   readonly tool: string | null;
   readonly messageRef: MessageRef | undefined;
   constructor(kind: 'missing' | 'failed' | 'aborted', message: string | Localized, tool: string | null = null) {
@@ -66,7 +65,7 @@ export class ToolFailure extends Error {
   }
 }
 
-/** 跑一个外部工具：取消信号到时杀掉进程。stderr 只留最后 64 KB。 */
+/** Runs an external tool: when the cancel signal arrives, kills the process. Only the last 64 KB of stderr is kept. */
 export function runTool(
   tool: ToolCommand,
   args: string[],
@@ -104,8 +103,8 @@ export function runTool(
 }
 
 /**
- * 预检：ffmpeg 与 ffprobe 在不在，ffmpeg 有没有要用的编码器与滤镜（`amix` 的 `normalize` 要 ffmpeg 4.4 以上）。
- * 返回缺的东西（可执行文件名，或说明缺哪个编码器、滤镜的文字）；都在时 null。
+ * Preflight: whether ffmpeg and ffprobe exist, and whether ffmpeg has the encoders and filters needed (`amix`'s `normalize` requires ffmpeg 4.4 or later).
+ * Returns what is missing (an executable name, or text saying which encoder or filter is missing); null when everything is present.
  */
 export async function missingAudioTools(
   ffmpeg: ToolCommand,
@@ -143,7 +142,7 @@ function fixed(value: number): string {
   return Number(value.toFixed(6)).toString();
 }
 
-/** `atempo` 链：老版本每级只接受 0.5–2，超出的拆成几级。 */
+/** `atempo` chain: older versions accept only 0.5–2 per stage, so values out of range are split across several stages. */
 function tempoChain(rate: number): string[] {
   if (Math.abs(rate - 1) < 1e-9) return [];
   const chain: string[] = [];
@@ -160,7 +159,7 @@ function tempoChain(rate: number): string[] {
   return chain;
 }
 
-/** 淡变的逐样本增益：`t` 是这一段里的秒（从 0 开始）。 */
+/** Per-sample gain for fades: `t` is seconds within this segment (starting from 0). */
 function fadeExpression(segment: AudioSegment): string | null {
   const terms: string[] = [];
   if (segment.fadeIn) {
@@ -177,7 +176,7 @@ function fadeExpression(segment: AudioSegment): string | null {
   return terms.length === 1 ? terms[0]! : `min(${terms[0]},${terms[1]})`;
 }
 
-/** 转场交叉淡化的逐样本振幅（等功率，与帧计划同一条曲线）。 */
+/** Per-sample amplitude for transition cross-fades (equal power, same curve as the frame plan). */
 function crossfadeExpression(segment: AudioSegment): string[] {
   return (segment.crossfades ?? [])
     .filter((fade) => fade.end > fade.start)
@@ -189,12 +188,12 @@ function crossfadeExpression(segment: AudioSegment): string[] {
 }
 
 /**
- * 折点 `[秒, 值]` 连成的分段线性函数，写成 ffmpeg 表达式：按折点切成区间，用二分嵌套的 `if(lt(t,…))` 选区间，
- * 每个样本只比较 log₂(区间数) 次。第一个折点之前取 `before`，最后一个之后保持最后的值；同一时刻两个折点时，到了那一刻
- * 取后一个；值相同的区间不带插值项。`t` 是这一段里的秒，折点已换到这个时钟。
+ * A piecewise-linear function formed by breakpoints `[seconds, value]`, written as an ffmpeg expression: split into intervals by breakpoint, and select the interval with nested binary `if(lt(t,…))`,
+ * so each sample compares only log₂(number of intervals) times. Before the first breakpoint, take `before`; after the last, hold the last value. When two breakpoints share a time, at that moment take the later one;
+ * intervals with equal values have no interpolation term. `t` is seconds within this segment, and the breakpoints have already been converted to this clock.
  */
 function piecewiseExpression(knots: ReadonlyArray<readonly [number, number]>, before: number): string {
-  // pieces[j] 管 [bounds[j-1], bounds[j])。
+  // pieces[j] covers [bounds[j-1], bounds[j]).
   const bounds: number[] = [knots[0]![0]];
   const pieces: string[] = [fixed(before)];
   for (let i = 0; i + 1 < knots.length; i++) {
@@ -214,7 +213,7 @@ function piecewiseExpression(knots: ReadonlyArray<readonly [number, number]>, be
 }
 
 /**
- * 闪避压低量（dB）随 `t` 的表达式：第一个折点之前是 0。语义与 `render-graph` 的 `knots_at` 相同。没有压低时 null。
+ * Expression for duck attenuation (dB) as a function of `t`: 0 before the first breakpoint. Same semantics as `knots_at` in `render-graph`. null when there is no attenuation.
  */
 export function duckingExpression(segment: Pick<AudioSegment, 'start' | 'ducking'>): string | null {
   const knots = (segment.ducking ?? []).map(([at, db]) => [at - segment.start, db] as const);
@@ -223,8 +222,8 @@ export function duckingExpression(segment: Pick<AudioSegment, 'start' | 'ducking
 }
 
 /**
- * 音量包络（线性倍数）随 `t` 的表达式：两端保持第一个与最后一个折点的值，语义与 `render-graph` 的 `envelope_at`
- * （预览用的 `GainEnvelope::at`）相同。只有一个值时是常数；没有包络或处处是 1 时 null。
+ * Expression for the volume envelope (linear multiplier) as a function of `t`: holds the first and last breakpoint values at the ends; same semantics as `envelope_at` in `render-graph`
+ * (`GainEnvelope::at`, used by the preview). With only one value it is a constant; null when there is no envelope or it is 1 everywhere.
  */
 export function envelopeExpression(segment: Pick<AudioSegment, 'start' | 'envelope'>): string | null {
   const knots = (segment.envelope ?? []).map(([at, gain]) => [at - segment.start, gain] as const);
@@ -233,7 +232,7 @@ export function envelopeExpression(segment: Pick<AudioSegment, 'start' | 'envelo
   return piecewiseExpression(knots, knots[0]![1]);
 }
 
-/** 这一段逐样本的振幅系数：包络 × 淡变 × 交叉淡化 × 闪避；都没有时 null。实例的固定增益另用 `volume`。 */
+/** The per-sample amplitude coefficient for this segment: envelope × fade × cross-fade × duck; null if none apply. The instance's fixed gain is separately given by `volume`. */
 export function gainExpression(segment: AudioSegment): string | null {
   const factors: string[] = [];
   const envelope = envelopeExpression(segment);
@@ -247,19 +246,19 @@ export function gainExpression(segment: AudioSegment): string | null {
 }
 
 /**
- * ffmpeg 从文件读滤镜图的选项：7.0 起是 `-/filter_complex <文件>`（`-filter_complex_script` 弃用），更早的版本只认
- * `-filter_complex_script <文件>`。
+ * The ffmpeg option for reading a filter graph from a file: since 7.0 it is `-/filter_complex <file>` (`-filter_complex_script` is deprecated); earlier versions only accept
+ * `-filter_complex_script <file>`.
  */
 export type FilterScriptOption = '-/filter_complex' | '-filter_complex_script';
 
-/** 按 `ffmpeg -h long` 的说明挑：说明里提到 `-/filter_complex`（旧选项的弃用说明）的认新写法，否则用旧选项。 */
+/** Choose per the description in `ffmpeg -h long`: if it mentions `-/filter_complex` (the deprecation note for the old option), use the new form; otherwise use the old option. */
 export function filterScriptOption(help: string): FilterScriptOption {
   return /-\/filter_complex\b/.test(help) ? '-/filter_complex' : '-filter_complex_script';
 }
 
 const scriptOptions = new Map<string, Promise<FilterScriptOption>>();
 
-/** 这个 ffmpeg 认哪种写法（按命令缓存；问不出来时用旧选项，不缓存）。 */
+/** Which form this ffmpeg accepts (cached per command; if it cannot be determined, the old option is used and nothing is cached). */
 export function detectFilterScriptOption(ffmpeg: ToolCommand): Promise<FilterScriptOption> {
   const known = scriptOptions.get(ffmpeg.command);
   if (known) return known;
@@ -275,11 +274,11 @@ export function detectFilterScriptOption(ffmpeg: ToolCommand): Promise<FilterScr
 }
 
 /**
- * 混音的 ffmpeg 参数（纯函数，便于测试）：输出是 `outFile`（32 位浮点 WAV），长度是范围的样本数。
- * `assets` 以 `<assetId>@<revision>` 为键。
+ * The ffmpeg arguments for mixing (pure function, for testing): the output is `outFile` (32-bit float WAV), and its length is the range's sample count.
+ * `assets` are keyed by `<assetId>@<revision>`.
  *
- * 滤镜图不放在命令行上：烘焙得很密的音量包络与闪避能让它长到几百 KB 以上，超过单个参数（Linux 128 KiB）或整条命令行
- * （macOS 1 MiB、Windows 32K 字符）的上限。调用方把 `graph` 写进 `script.file`，参数里只有读它的选项与文件名。
+ * The filter graph is not put on the command line: a densely baked volume envelope and ducking can grow it to hundreds of KB or more, past the limit for a single argument (Linux 128 KiB) or for the whole command line
+ * (macOS 1 MiB, Windows 32K characters). The caller writes `graph` into `script.file`, so the arguments hold only the option that reads it and the file name.
  */
 export function mixArgs(
   plan: AudioPlan,
@@ -299,11 +298,11 @@ export function mixArgs(
     const asset = assets.get(`${segment.asset.id}@${segment.asset.revision}`);
     if (!asset) throw new Error(RcExport.planAssetNotFrozen({ assetId: segment.asset.id }).text);
     const length = segment.end - segment.start;
-    // 多取一点源，裁齐由 atrim 按样本数做。
+    // Take a little extra source; trimming to the exact sample count is done by atrim.
     args.push('-ss', fixed(segment.sourceStart), '-t', fixed(length * segment.sourceRate + 0.1), '-i', `file:${asset.path}`);
     const chain: string[] = [];
     const sourceChannels = asset.audio?.channels ?? 2;
-    // 浏览器把单声道放到两个声道上（不衰减），立体声缩混成单声道取平均；ffmpeg 默认的上下混不同，显式写出来。
+    // The browser places mono on both channels (no attenuation), and downmixes stereo to mono by averaging; ffmpeg's default downmix differs, so it is written out explicitly.
     if (channels === 2 && sourceChannels === 1) chain.push('pan=stereo|c0=c0|c1=c0');
     else if (channels === 1 && sourceChannels === 2) chain.push('pan=mono|c0=0.5*c0+0.5*c1');
     chain.push(`aresample=${sampleRate}`, `aformat=sample_fmts=fltp:sample_rates=${sampleRate}:channel_layouts=${layout}`);
@@ -327,7 +326,7 @@ export function mixArgs(
   return { args, graph: filters.join(';') };
 }
 
-/** 编码的 ffmpeg 参数：输入是混音的 WAV，或母带写出的裸 PCM（`f32le`，交错，采样率与声道同输出）。 */
+/** The ffmpeg arguments for encoding: the input is the mixed WAV, or the raw PCM written by mastering (`f32le`, interleaved, with sample rate and channels the same as the output). */
 function encodeArgs(input: string, output: string, settings: AudioOutputSettings, raw: boolean): string[] {
   const { encoder, muxer, extra } = ENCODERS[settings.format];
   return [
@@ -353,13 +352,13 @@ function encodeArgs(input: string, output: string, settings: AudioOutputSettings
   ];
 }
 
-/** 母带的请求（Render Worker `master` 的输入，`cuccut` 内部格式，不认识的字段 Worker 拒绝）。 */
+/** The request for mastering (input to the Render Worker's `master`, `cuccut` internal format; the Worker rejects fields it does not recognize). */
 export interface MasterRequest {
-  /** 混音：32 位浮点的 WAV。 */
+  /** Mix: 32-bit float WAV. */
   input: string;
-  /** 写出的裸 PCM（`f32le`，交错）。 */
+  /** Written raw PCM (`f32le`, interleaved). */
   output: string;
-  /** 中间文件放在这里。 */
+  /** Intermediate files go here. */
   staging: string;
   sampleRate: number;
   channels: 1 | 2;
@@ -367,7 +366,7 @@ export interface MasterRequest {
   truePeak: number;
 }
 
-/** 母带实测（Worker 的 `mastered` 一行）：响度测不出时 `inputLufs` 是 −200，这时不做响度归一，只做真峰值限幅与兜底。 */
+/** Mastering measurement (the Worker's `mastered` line): when loudness cannot be measured, `inputLufs` is −200; in that case no loudness normalization is done, only true-peak limiting and the fallback. */
 export interface MasterMeasure {
   inputLufs: number;
   lufs: number;
@@ -375,7 +374,7 @@ export interface MasterMeasure {
   staticGainDb: number;
 }
 
-/** 跑一次母带：写好输入文件之后调用 Worker（`runWorker(worker, 'master', …)`）。`onProgress` 是 Worker 报的已处理量与总量。 */
+/** Runs mastering once: after the input file is written, calls the Worker (`runWorker(worker, 'master', …)`). `onProgress` is the processed amount and total reported by the Worker. */
 export type MasterRunner = (
   inputFile: string,
   signal: AbortSignal,
@@ -383,12 +382,12 @@ export type MasterRunner = (
 ) => Promise<MasterMeasure>;
 
 /**
- * 开了响度标准化时，一段输出的进度条里混音占的份额，其余归母带。是进度条上的分配，不是实测的耗时比例：
- * 两步都按各自的完成比例往前走，母带跑的时候进度条不再停在混音结束处。
+ * When loudness normalization is on, the share of an output's progress bar taken by mixing; the rest goes to mastering. This is an allocation on the progress bar, not a measured time ratio:
+ * both steps advance by their own completion ratios, so while mastering runs the progress bar does not stop at the end of mixing.
  */
 export const MIX_PROGRESS_SHARE = 0.5;
 
-/** 低于它的积分响度算测不出（`audio-dsp` 的 `SILENCE_LUFS` 是 −200）。 */
+/** An integrated loudness below this counts as unmeasurable (`SILENCE_LUFS` in `audio-dsp` is −200). */
 const UNMEASURABLE_LUFS = -199;
 
 function round2(value: number): number {
@@ -402,22 +401,21 @@ export interface AudioRenderResult {
   warnings: JobWarning[];
 }
 
-/** 混音 → （测量响度）→ 编码 → ffprobe 校验。不通过时抛 `AudioValidationError`。 */
+/** Mix → (measure loudness) → encode → ffprobe verification. Throws `AudioValidationError` if verification fails. */
 export async function renderAudio(options: {
   plan: AudioPlan;
   assets: Map<string, PlannedAsset>;
   settings: AudioOutputSettings;
   staging: string;
-  /** staging 里的输出文件名（带扩展名）。 */
+  /** Output file name in staging (with extension). */
   outName: string;
   ffmpeg: ToolCommand;
   ffprobe: ToolCommand;
-  /** 开了响度标准化时必须给。 */
+  /** Required when loudness normalization is on. */
   master?: MasterRunner;
   signal: AbortSignal;
   /**
-   * 这段输出做到哪儿，按输出的秒数计（0 到时长）。开了响度标准化时混音走到 `MIX_PROGRESS_SHARE` 处，母带按它报的完成比例
-   * 走完其余的部分。
+   * How far this output has progressed, in output seconds (0 to duration). When loudness normalization is on, mixing goes up to `MIX_PROGRESS_SHARE`, and mastering covers the rest according to the completion ratio it reports.
    */
   progress?: (doneSeconds: number) => void;
 }): Promise<AudioRenderResult> {
@@ -473,7 +471,7 @@ export async function renderAudio(options: {
     }
   }
   await runTool(ffmpeg, encodeArgs(encodeInput, outFile, settings, encodeInput !== mixFile), signal);
-  // 中间文件用完就删：几段范围依次导出时 staging 只留编码好的输出。
+  // Intermediate files are deleted once used: when several ranges are exported in turn, staging keeps only the encoded outputs.
   await Promise.all([graphFile, mixFile, encodeInput].map((file) => rm(file, { force: true })));
 
   const probed = await probeAudio(options.ffprobe, outFile, settings.format, signal);
@@ -514,7 +512,7 @@ export class AudioValidationError extends Error {
 
 const DEMUXERS: Record<AudioExportFormat, string> = { wav: 'wav', mp3: 'mp3', m4a: 'mov,mp4,m4a,3gp,3g2,mj2' };
 
-/** ffprobe 解码整个文件：有音频帧、时长、采样率与声道。 */
+/** ffprobe decodes the whole file: checks that there are audio frames, and reads the duration, sample rate and channels. */
 async function probeAudio(
   ffprobe: ToolCommand,
   file: string,

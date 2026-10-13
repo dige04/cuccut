@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { until } from '../agent-tools/testing/fake-agent.ts';
 import { CommandOutput, runCommand } from './tool-command.ts';
 
-/** 代用户执行命令（架构设计 §12.9）：输出的整理与截断、退出码、停止时连同子进程一起结束、超时、不能启动。 */
+/** Runs a command on the user's behalf (architecture design §12.9): output cleanup and truncation, exit codes, stopping ends the child processes along with it, timeouts, and failure to start. */
 
 describe('命令输出', () => {
   it('合并换行写法，\\r 改写的进度行只留最后一次，去掉终端颜色；只数写完的行', () => {
@@ -105,7 +105,7 @@ describe('执行命令', () => {
     const spawnFn = (command: string, args: readonly string[], options: SpawnOptions) => {
       calls.push({ command, args, options });
       if (calls.length === 1) return child;
-      // taskkill 结束了整棵树。
+      // taskkill ended the whole process tree.
       setTimeout(() => child.emit('close', 1, null), 1);
       return new EventEmitter() as ChildProcess;
     };

@@ -21,31 +21,31 @@ import { tr } from './element-catalog.tr.ts';
 import { vi } from './element-catalog.vi.ts';
 
 /**
- * 元素面板的格子（照旧版 ccut-editor-core `element_tiles` 与 `default_place_of`、原型 `model-elpanel.js`）：
- * 贴纸、动态贴纸（彩纸）、形状、可视化（进度条、计时、声波）。只收画得出来的那几款；每格自带默认外观、长度与落位。
+ * Tiles in the element panel (following the old ccut-editor-core `element_tiles` and `default_place_of`, and the prototype `model-elpanel.js`):
+ * stickers, animated stickers (confetti), shapes, and visualizations (progress bars, timers, waveforms). Only the styles that can be drawn are included; each tile carries its own default look, length and placement.
  */
 
 export type ElementGroup = 'sticker' | 'confetti' | 'shape' | 'progress' | 'counter' | 'wave';
 
 export interface ElementTile {
-  /** 全局唯一（同一个形状占两格时靠它区分）。 */
+  /** Globally unique (used to tell them apart when one shape takes two tiles). */
   key: string;
   group: ElementGroup;
   label: string;
-  /** 新建时落多长：秒数，或跟着整部片子（`film`）。 */
+  /** Default length when created: a number of seconds, or follows the whole film (`film`). */
   seconds: number | 'film';
-  /** 进度网格里横跨两列（条形的两款，设计稿的 `isSquare` 为假）。 */
+  /** Spans two columns in the progress grid (the two bar styles; `isSquare` is false in the design draft). */
   wide?: boolean;
-  /** 彩纸的款式：缩略图按它现算一帧，不走新建的那一层（那一层每次带一枚新种子）。 */
+  /** Confetti style: the thumbnail computes one frame from it, not from the newly created layer (that layer gets a fresh seed each time). */
   confetti?: string;
-  /** 新建的那一层（画布决定布局框）。 */
+  /** The newly created layer (the canvas determines the layout box). */
   layer(canvas: { width: number; height: number }): VisualLayer;
 }
 
-/** 画布无关的落位：中心与框宽（画幅百分比）。 */
+/** Canvas-independent placement: center and box width (percent of the frame). */
 type At = { x: number; y: number; w?: number };
 
-/** 色板的槽位（显示名在目录的 `colors` 里）。 */
+/** Palette slot (display names are in the catalog's `colors`). */
 type ColorSlot =
   | 'bar'
   | 'track'
@@ -64,7 +64,7 @@ type ColorSlot =
   | 'ribbonA'
   | 'ribbonB';
 
-/** 元素目录的显示名（英文是键与类型的来源，译文在 `element-catalog.zh-Hans.ts`）。新建实例的名字按建的那一刻的界面语言写。 */
+/** Display names for the element catalog (English is the source of keys and types; translations are in `element-catalog.zh-Hans.ts`). The name of a newly created instance is written in the UI language at the moment it is created. */
 const en = {
   stickers: {
     badge_check: 'Check badge',
@@ -172,12 +172,12 @@ const en = {
 export type ElementCatalogMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 内置贴纸（`sticker-templates.ts` 的十款），宽 18%，正方。 */
+/** Built-in stickers (the ten in `sticker-templates.ts`), 18% wide, square. */
 const STICKERS: readonly string[] = Object.keys(en.stickers);
 
 export const SHAPE_NAMES: Record<string, string> = live(() => M.shapes);
 
-/** 按格子下标取模的五色环（填充、描边）：颜色是网格位置的属性，不是形状的。 */
+/** A five-color cycle (fill, stroke) indexed by tile index modulo 5: color is a property of the grid position, not of the shape. */
 const COLOR_CYCLE: [string, string][] = [
   ['#FF4C45', '#E43A33'],
   ['#3CADFF', '#3598DF'],
@@ -187,8 +187,8 @@ const COLOR_CYCLE: [string, string][] = [
 ];
 
 /**
- * 形状网格的 24 格（`[形状, 圆角]`），下标就是取色下标。第二格是圆角矩形（540 短边上 14.4 像素）；
- * 第 11 格的箭头是端点形状、不出格，留在表里只为占住取色下标。
+ * The 24 cells of the shape grid (`[shape, corner radius]`); the index is the color index. The second cell is a rounded rectangle (14.4 pixels at a 540 short edge);
+ * the arrow in cell 11 is an endpoint-type shape and is not shown as a tile; it stays in the table only to hold its color index.
  */
 const SHAPE_ORDER: [string, number | null][] = [
   ['rect', null],
@@ -217,7 +217,7 @@ const SHAPE_ORDER: [string, number | null][] = [
   ['sharp2', null],
 ];
 
-/** 一款可视化样式在界面上的名字与各色板的名字（设计稿 `model-elements.js` 的 PROGRESS / WAVES 表）；色板为空的那几款没有颜色控件。 */
+/** The UI name of a visualization style and the names of each of its palettes (the PROGRESS / WAVES tables in the design draft's `model-elements.js`); styles with an empty palette have no color control. */
 export interface StyleKind {
   key: string;
   label: string;
@@ -235,7 +235,7 @@ const styleKinds = (rows: readonly [string, readonly ColorSlot[]][], labels: () 
     },
   }));
 
-/** 进度条 14 款，次序是核心的 `order`（属性页样式目录照它排）。 */
+/** 14 progress bar styles; the order is the core's `order` (the inspector's style catalog is sorted by it). */
 export const PROGRESS_KINDS: readonly StyleKind[] = styleKinds(
   [
     ['normal', ['bar', 'track']],
@@ -256,7 +256,7 @@ export const PROGRESS_KINDS: readonly StyleKind[] = styleKinds(
   () => M.progress,
 );
 
-/** 声波 10 款，次序是核心的 `order`。 */
+/** 10 waveform styles; the order is the core's `order`. */
 export const WAVE_KINDS: readonly StyleKind[] = styleKinds(
   [
     ['bars', ['bars']],
@@ -273,7 +273,7 @@ export const WAVE_KINDS: readonly StyleKind[] = styleKinds(
   () => M.waves,
 );
 
-/** 进度网格的次序（固定网格序去掉计时两格）；计时那两格插在第 11 格（`snake`）之后。 */
+/** Order of the progress grid (the fixed grid order with the two timer tiles removed); the two timer tiles are inserted after cell 11 (`snake`). */
 const PROGRESS_GRID = [
   'rounded',
   'normal',
@@ -293,8 +293,8 @@ const PROGRESS_GRID = [
 const COUNTER_AT = 11;
 
 /**
- * 进度条与声波的默认落位：种类的缺省框（`render-graph` 的 `place_defaults`，经 `editor-wasm`）——进度条 80% 宽、画幅高的 5%，
- * 声波贴底铺满、画幅高的 20%。帧计划按种类定框，不看款式的宽高比，方形与边框款也落在这个框里。
+ * Default placement for progress bars and waveforms: the kind's default box (`place_defaults` in `render-graph`, via `editor-wasm`). Progress bars are 80% wide and 5% of frame height;
+ * waveforms sit flush at the bottom, spanning the full width, at 20% of frame height. The frame plan sets the box by kind and ignores the style's aspect ratio; square and bordered styles also fit in this box.
  */
 function kindPlace(type: 'progress' | 'visualizer'): At {
   const { x, y, w } = placeDefault(type);
@@ -339,7 +339,7 @@ function waveTile(style: string): ElementTile {
       type: 'visualizer',
       name: M.waveName(labelOf(WAVE_KINDS, style)),
       place: placeBox(kindPlace('visualizer')),
-      // dB 窗跟着款走：示波器与环形波是 −120 / −10 那扇窄窗。
+      // The dB window follows the style: the oscilloscope and the circular wave use the narrow −120 / −10 window.
       visualizer: {
         style,
         mainColor: preset.mainColor,
@@ -351,12 +351,12 @@ function waveTile(style: string): ElementTile {
   };
 }
 
-/** 彩纸新建多长（设计稿 `NEW_SPAN`）：时长任意，粒子按片段时长算。 */
+/** Default length for new confetti (design draft `NEW_SPAN`): any duration; particles are computed from the clip duration. */
 const CONFETTI_SECONDS = 5;
 
 /**
- * 彩纸（设计稿 `newElement` 的 confetti 分支）：落那一款的配方缺省，种子在点下这一刻随机写入（之后换款也留着）；
- * 铺满画面——它是一层粒子场，不是一枚贴纸。跟配方走的起点、方向、扇面不写（缺省就是跟配方）。
+ * Confetti (the confetti branch of `newElement` in the design draft): placed with that style's recipe defaults; the seed is written randomly at the moment of the click (and kept if the style is later changed);
+ * it fills the frame: it is a particle field, not a sticker. The start point, direction and spread that follow the recipe are not written (the default is to follow the recipe).
  */
 function confettiTile(styleKey: string): ElementTile {
   return {
@@ -379,7 +379,7 @@ function confettiTile(styleKey: string): ElementTile {
   };
 }
 
-/** 计时数字的样式（540 短边上的字号）。 */
+/** Style of the timer digits (font size at a 540 short edge). */
 const COUNTER_FONT = 48;
 export const COUNTER_STYLE = {
   fontSize: COUNTER_FONT,
@@ -426,7 +426,7 @@ function counterTile(mode: 'countdown' | 'countup'): ElementTile {
       return M[mode];
     },
     seconds: 10,
-    // 计时是文字实例的计时读数：框按文字的口径（宽 28%，高由种类推出）。
+    // A timer is a timing readout on a text instance: the box follows text sizing (28% wide; height derived from the kind).
     layer: () => ({
       type: 'text',
       name: M[mode],
@@ -437,7 +437,7 @@ function counterTile(mode: 'countdown' | 'countup'): ElementTile {
   };
 }
 
-/** 进度网格（计时两格夹在里面）、再是声波：可视化子页照这个次序摆。 */
+/** The progress grid (with the two timer tiles in between), then waveforms: the visualization sub-page is arranged in this order. */
 const PROGRESS_TILES = lazyArray(() => PROGRESS_GRID.map(progressTile));
 const COUNTER_TILES = (['countdown', 'countup'] as const).map(counterTile);
 
@@ -466,7 +466,7 @@ export const ELEMENT_TILES: readonly ElementTile[] = lazyArray(() => [
   ...WAVE_KINDS.map((kind) => waveTile(kind.key)),
 ]);
 
-/** 目录页可视化那一段的四格（设计稿 `VIZ_PICK`，手挑的）：两款进度 ＋ 一款声波 ＋ 一款计时。 */
+/** The four tiles of the visualization section on the catalog page (design draft `VIZ_PICK`, hand-picked): two progress styles, one waveform and one timer. */
 export const VISUALIZER_PEEK: readonly string[] = ['progress.rainbow_border', 'progress.rounded', 'wave.ribbons', 'counter.countdown'];
 
 export interface ElementSection {
@@ -477,8 +477,8 @@ export interface ElementSection {
 }
 
 /**
- * 目录页的分节（原型：贴纸 → 动态贴纸 → 形状 → 可视化），可视化里进度、计时、声波挨着排。搜索时没有命中的一段不摆，
- * `keep` 里的除外（品牌库贴纸不在这张表里，它们命中了，那一段就得留着）。
+ * Sections of the catalog page (prototype: stickers → animated stickers → shapes → visualizations); within visualizations, progress, timers and waveforms sit next to each other. During a search, a section with no matches is not shown,
+ * except those listed in `keep` (brand-library stickers are not in this table; when they match, that section must stay).
  */
 export function elementSections(query = '', keep: readonly ElementSection['key'][] = []): ElementSection[] {
   const q = query.trim().toLowerCase();
@@ -496,7 +496,7 @@ export function elementSections(query = '', keep: readonly ElementSection['key']
   ].filter((section) => section.tiles.length > 0 || keep.includes(section.key));
 }
 
-// i18n-ignore-start: 检索关键词，中英两种说法都收，与界面语言无关
+// i18n-ignore-start: search keywords; both the Chinese and English terms are accepted, independent of the UI language
 const GROUP_WORDS: Record<ElementGroup, string> = {
   sticker: 'sticker',
   confetti: '彩纸 confetti 粒子 particles',
@@ -507,7 +507,7 @@ const GROUP_WORDS: Record<ElementGroup, string> = {
 };
 // i18n-ignore-end
 
-/** 属性页「形状」下拉的选项：矩形、椭圆与 20 款轮廓（不含端点形状）。 */
+/** Options in the inspector's “Shape” dropdown: rectangle, ellipse and 20 outline styles (excluding endpoint shapes). */
 export const SHAPE_CHOICES = Object.keys(en.shapes).map((key) => ({
   key,
   get label() {

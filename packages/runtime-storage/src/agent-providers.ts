@@ -7,11 +7,10 @@ interface AgentProvidersFile {
 }
 
 /**
- * 用户添加的 ACP 智能体（`<home>/store/agent-providers.json`，架构设计 §3.11），按添加顺序。
- * 整份读进内存，改一次写一次（原子写，写串行，后一次覆盖前一次）；`env` 可能含密钥，文件权限 0600。
+ * ACP agents added by the user (`<home>/store/agent-providers.json`, architecture design §3.11), in the order they were added.
+ * The whole file is read into memory; each change writes once (atomic write; writes are serial, and a later write overwrites an earlier one). `env` may contain secrets, so the file permission is 0600.
  *
- * 文件坏了改名保留、当没有（不拦住 Runtime 启动），更新版本写下的不改写（`store-file.ts`）；单条不合法（id 写法不对、
- * 与内置的或前面的重名、命令为空）的丢掉。
+ * A broken file is renamed and kept, and treated as absent (it does not block Runtime startup). Content written by a newer version is not rewritten (`store-file.ts`). An invalid entry (malformed id, a name that clashes with a built-in or an earlier entry, an empty command) is dropped.
  */
 export class AgentProviderStore {
   readonly #file: JsonStoreFile;
@@ -48,7 +47,7 @@ export class AgentProviderStore {
     return found ? structuredClone(found) : null;
   }
 
-  /** 加一条并落盘。id 已存在时抛错（调用方先查）。 */
+  /** Adds one entry and writes to disk. Throws if the id already exists (the caller checks first). */
   async add(provider: CustomAgentProvider): Promise<void> {
     const normalized = normalize(provider);
     if (!normalized) throw new Error(`Invalid agent provider config: ${provider.id}`);
@@ -57,7 +56,7 @@ export class AgentProviderStore {
     await this.#save();
   }
 
-  /** 删一条并落盘；没有这一条返回 false，不写文件。 */
+  /** Deletes one entry and writes to disk. Returns false without writing the file if there is no such entry. */
   async remove(id: string): Promise<boolean> {
     if (!this.#providers.some((p) => p.id === id)) return false;
     this.#providers = this.#providers.filter((p) => p.id !== id);

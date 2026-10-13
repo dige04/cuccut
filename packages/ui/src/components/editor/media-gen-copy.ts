@@ -15,9 +15,9 @@ import { trAudioGen, trImageGen, trMark } from './media-gen-copy.tr.ts';
 import { viAudioGen, viImageGen, viMark } from './media-gen-copy.vi.ts';
 
 /**
- * 素材面板里「生成语音 / 克隆声音」与「AI 生成」的文案（设计稿 panel-tts.jsx、panel-image-gen.jsx、panel-media.jsx 原文；
- * 本机引擎、注音、情绪、按句放到时间轴这些这一版没有合同的不搬）。与工具页共用的句子直接用 tools-copy.ts。
- * 译文在 `media-gen-copy.zh-Hans.ts`。
+ * Copy for “Generate voice / Clone voice” and “AI generate” in the media panel (original text from the design drafts panel-tts.jsx, panel-image-gen.jsx, panel-media.jsx;
+ * the local engine, phonetic annotation, emotion, and placing per-line audio on the timeline are not carried over, since this version has no contract for them). Sentences shared with the tools page come directly from tools-copy.ts.
+ * Translations are in `media-gen-copy.zh-Hans.ts`.
  */
 
 const audio = {
@@ -91,5 +91,5 @@ const mark = { generated: 'Generated' };
 export type GeneratedMarkMessages = typeof mark;
 const MARK = defineMessages(mark, { 'zh-Hans': zhMark, 'zh-Hant': zhHantMark, ja: jaMark, ko: koMark, es: esMark, fr: frMark, de: deMark, nl: nlMark, 'pt-BR': ptBRMark, it: itMark, ru: ruMark, pl: plMark, tr: trMark, vi: viMark });
 
-/** 素材卡上生成来的那一枚标记。 */
+/** The badge on a media card for generated media. */
 export const generatedMark = () => MARK.generated;

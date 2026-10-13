@@ -1,10 +1,10 @@
-//! Speech Worker（架构设计 §7.9、§13.1）：字幕与翻译核心（`speech-doc`）的独立进程。固定流程的一步启动一个，
-//! 跑完退出；协议见命令协议规范 §4.5。
+//! Speech Worker (architecture design §7.9, §13.1): a separate process for the subtitle and translation core (`speech-doc`). One is started per step of a fixed flow;
+//! it exits when it finishes. The protocol is in the command protocol spec §4.5.
 //!
-//! - stdin / stdout 是 JSON 行：`hello`、`translate`（冻结的输入与 staging 目录）、`llm.reply`、`cancel`；
-//!   Worker 推 `llm.request`、`progress`、`checkpoint`、`resumed` 事件，任务以 `translate` 的结果或错误结束。
-//! - 模型调用一律交回 Runtime（`llm.request` → `llm.reply`），Worker 不联网、不持有密钥，只写 staging。
-//! - stdin 关闭（Runtime 退出或放弃这个进程）时：正在跑的任务停在下一次模型调用或退避之前，检查点保留，进程退出。
+//! - stdin / stdout carry JSON lines: `hello`, `translate` (frozen input and the staging directory), `llm.reply`, `cancel`;
+//!   the Worker pushes `llm.request`, `progress`, `checkpoint`, and `resumed` events, and a task ends with the result or error of `translate`.
+//! - All model calls are handed back to the Runtime (`llm.request` → `llm.reply`). The Worker does no networking, holds no keys, and only writes to staging.
+//! - When stdin closes (the Runtime exits or gives up on this process), the running task stops before the next model call or backoff, the checkpoint is kept, and the process exits.
 
 mod checkpoint;
 mod input;
@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use protocol::{Control, Inbound, hello, respond, respond_error};
 
-/// 失败：协议的错误码与说明。
+/// Failure: the protocol's error codes and descriptions.
 #[derive(Debug)]
 pub struct Failure {
     pub code: String,
@@ -60,7 +60,7 @@ fn main() -> ExitCode {
             Inbound::Malformed { line } => eprintln!("speech-worker: 读不懂的一行输入（{} 字节）", line.len()),
             Inbound::Request { id, method, params } => match method.as_str() {
                 "hello" => respond(&id, hello()),
-                // 空闲时的取消：没有要停的任务。
+                // Cancel while idle: there is no task to stop.
                 "cancel" => {
                     if !id.is_null() {
                         respond(&id, json!({}));

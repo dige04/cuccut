@@ -14,15 +14,15 @@ import { pl } from './tools-tts-copy.pl.ts';
 import { tr } from './tools-tts-copy.tr.ts';
 import { vi } from './tools-tts-copy.vi.ts';
 
-/** 一位小数的秒数（按界面语言写数字）。 */
+/** Seconds to one decimal place (numbers formatted for the UI language). */
 export function oneDecimal(n: number): string {
   return new Intl.NumberFormat(intlLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }).format(n);
 }
 
-/** 生成语音工作台的文案（译文在 `tools-tts-copy.<语言>.ts`）。 */
+/** Copy for the speech generation workspace (translations are in `tools-tts-copy.<language>.ts`). */
 const en = {
   emptyText: 'Write the text to read first',
-  /** 念法卡：`name` 是卡上的名字，`style` 填进「风格」，也原样作为风格说明发给模型。 */
+  /** Delivery style card: `name` is the name on the card; `style` fills 「风格」 (Style), and is also sent to the model unchanged as the style instruction. */
   vibes: {
     radio: { name: 'Late-night radio', style: 'Like late-night radio: a little slower, voice kept low' },
     launch: { name: 'Product launch', style: 'A product launch: warmer and more energetic, stressing the key points' },

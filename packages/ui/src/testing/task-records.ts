@@ -1,6 +1,6 @@
 import type { JobRecord, TaskSummary } from '@cuccut/protocol';
 
-/** 任务表测试共用的记录。 */
+/** Record shared by the task table tests. */
 export function job(patch: Partial<JobRecord> & Pick<JobRecord, 'jobId'>): JobRecord {
   return {
     kind: 'transcribe',

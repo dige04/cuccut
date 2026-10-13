@@ -14,7 +14,7 @@ import { pl } from './tasks-copy.pl.ts';
 import { tr } from './tasks-copy.tr.ts';
 import { vi } from './tasks-copy.vi.ts';
 
-/** 后台任务详情（含从链接导入）的文案。英文写在这里，译文在 `tasks-copy.zh-Hans.ts`。 */
+/** Copy for background task details (including link imports). English is written here; the translations are in `tasks-copy.zh-Hans.ts`. */
 const en = {
   progress: (title: string, label: string) => `“${title}” ${label}`,
   imageRunning: 'Drawing',

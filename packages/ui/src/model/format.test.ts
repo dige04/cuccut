@@ -27,10 +27,10 @@ describe('formatTenths（原型 model-time.test.js 的 timecode）', () => {
     expect(formatTenths(3600)).toBe('1:00:00.0');
     expect(formatTenths(3723.5)).toBe('1:02:03.5');
     expect(formatTenths(-5.5)).toBe('-00:05.5');
-    // 先量化再拆位：两个浮点秒相减（22.4 − 12.4）是 9.999999999999998，不能写成「00:010.0」。
+    // Quantize first, then split into fields: subtracting two float seconds (22.4 − 12.4) gives 9.999999999999998, which must not be written as “00:010.0”.
     expect(formatTenths(22.4 - 12.4)).toBe('00:10.0');
     expect(formatTenths(9.999999)).toBe('00:10.0');
-    // 秒进位带着分走，分进位带着小时走。
+    // A carry from seconds rolls into minutes; a carry from minutes rolls into hours.
     expect(formatTenths(59.99)).toBe('01:00.0');
     expect(formatTenths(3599.99)).toBe('1:00:00.0');
   });

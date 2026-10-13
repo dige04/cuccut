@@ -16,7 +16,7 @@ import type { ImageCandidate } from '../model/image-preview.ts';
 import { PANEL as M } from './panel-copy.ts';
 import './thread/markdown.css';
 
-/** 文本预览的上限：再大就只给「在文件夹中显示」。 */
+/** Text preview limit: beyond this, only "Show in folder" is offered. */
 const PdfPreview = lazy(() => import('./pdf-preview.tsx'));
 const richFrame = style({ display: 'flex', flexDirection: 'column', width: 'full', height: 'full', minHeight: 160, overflow: 'auto' });
 
@@ -39,8 +39,7 @@ type State =
   | { status: 'error'; message: string };
 
 /**
- * 一个文件的预览（Space 的查看框与会话的文件查看器共用）。经媒体通道取受限地址（架构设计 §4.5），
- * 图片、音视频用浏览器元素，字幕与文档按文字显示；预览不了的如实说。
+ * Preview of one file (shared by Space's viewer box and the session's file viewer). Gets a restricted address through the media channel (architecture design §4.5); images, audio and video use browser elements, and subtitles and documents are shown as text. What cannot be previewed is stated honestly.
  */
 export function FilePreview({ target, fileName, sourceMode, playback, onResolved, imagePanel, resolvedHandle, active = true, filePath }: {
   filePath?:string; resolvedHandle?:MediaHandle; active?:boolean;
@@ -90,7 +89,7 @@ export function FilePreview({ target, fileName, sourceMode, playback, onResolved
       cancelled = true;
       abort.abort();
     };
-    // target 由 key 唯一确定，不把每次新建的对象放进依赖。
+    // The target is uniquely determined by the key; a freshly created object is not put into the dependencies.
   }, [runtime, key, legacyMode, fileName, resolvedHandle]);
 
   if (state.status === 'loading') {

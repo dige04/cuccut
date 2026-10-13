@@ -17,12 +17,12 @@ import { EXPORT_COPY } from '../export/export-copy.ts';
 import { mediaCandidates } from './transcribe-run.ts';
 
 /**
- * 结果页与父视频「切出的短视频」一组对还没在编辑器里开着的子视频做的事：读它的派生来源、眼下的时长与开头那一句、改名、
- * 逐支导出（「全部导出…」）。都在后台打开视频、做完再关掉
- * （同 components/thread/change-undo.ts `undoInBackground`）；编辑器此刻占着那部视频时不替它关。
+ * Operations on child videos that are not open in the editor, for the result page and the “切出的短视频”(shorts cut from this video) group in the parent video: reading each one's derived source, its current duration and opening sentence, renaming, and
+ * exporting them one by one (“全部导出…”(export all…)). Each one opens the video in the background and closes it again when done
+ * (same as `undoInBackground` in components/thread/change-undo.ts). If the editor is holding that video at the moment, it is not closed on its behalf.
  *
- * 未验证：后台打开期间编辑器恰好开始打开同一部视频时，这里的关闭可能先落到 Runtime，编辑器会收到 `video.closed` 再自己重新打开，
- * 画面闪一下，不丢数据（同 change-undo.ts 的说明）。
+ * Unverified: if, while the background open is in progress, the editor happens to start opening the same video, this close may reach the Runtime first. The editor will then receive `video.closed` and reopen the video itself,
+ * causing a brief flicker of the picture but no data loss (same note as in change-undo.ts).
  */
 
 function editorHolds(target: FileTarget, videoId: Id): boolean {
@@ -41,17 +41,17 @@ async function withVideo<T>(runtime: RuntimeSession, target: FileTarget, run: (v
 
 const open = (runtime: RuntimeSession, target: FileTarget) => runtime.client.request('videos.open', target);
 
-/** 子视频卡上的「起止 · 时长」与「开头」：派生来源里的区间，它剪辑后眼下的时长（秒），开头那一句。 */
+/** On the child video card, the “起止 · 时长”(range · duration) and “开头”(opening): the range in the derived source, its current duration after editing (seconds), and the opening sentence. */
 export interface ShortFacts {
   derivation: ShortsDerivation | null;
   seconds: number | null;
-  /** 开头那一句：派生时给了 `hook` 就是它，否则是保留段的第一句；没有文稿或还没读到时 null。 */
+  /** The opening sentence: if `hook` was given at derivation, it is that; otherwise it is the first sentence of the kept segments. Null when there is no script or it has not been read yet. */
   opening: string | null;
 }
 
 /**
- * 保留段的第一句：主素材（时间线上最早出现、有转写的那段）的转写投到序列上，第一个留下的词所在那一句（`openingSentence`）。
- * 要读转写正文：只在派生时没给 `hook` 时读。
+ * The first sentence of the kept segments: the transcript of the main footage (the segment that appears earliest on the timeline and has a transcript) is projected onto the sequence, and this is the sentence containing the first kept word (`openingSentence`).
+ * The transcript text is read only when `hook` was not given at derivation.
  */
 async function readOpening(runtime: RuntimeSession, videoId: Id, video: VideoSnapshot): Promise<string | null> {
   const derivation = readDerivation(video.documents);
@@ -76,8 +76,8 @@ async function factsOf(runtime: RuntimeSession, videoId: Id, video: VideoSnapsho
 const facts = new Map<string, Promise<ShortFacts>>();
 
 /**
- * 读一支子视频的派生来源与眼下的时长；`withOpening` 时另读开头那一句（没有 `hook` 时要读转写正文）。
- * 按 `key`（条目 id 加最近活动时间）缓存：子视频改过之后最近活动变了，再读一次。
+ * Reads a child video's derived source and current duration. With `withOpening`, it also reads the opening sentence (which requires reading the transcript text when there is no `hook`).
+ * Cached by `key` (the item id plus last activity time): after the child video is edited, the last activity changes, so it is read again.
  */
 export function peekShort(runtime: RuntimeSession, target: FileTarget, key: string, withOpening = true): Promise<ShortFacts> {
   const slot = `${key}|${withOpening ? 'opening' : 'plain'}`;
@@ -91,7 +91,7 @@ export function peekShort(runtime: RuntimeSession, target: FileTarget, key: stri
   return pending;
 }
 
-/** 改一支子视频的名字（`renameVideo`）：编辑器开着它就走编辑器的命令队列，没开着就在后台打开、改、关。 */
+/** Renames a child video (`renameVideo`). If the editor has it open, the rename goes through the editor's command queue; otherwise the video is opened in the background, renamed, and closed. */
 export async function renameShort(runtime: RuntimeSession, target: FileTarget, videoId: Id, name: string): Promise<void> {
   const operations = [{ type: 'renameVideo' as const, name }];
   if (useVideo.getState().video?.videoId === videoId) {
@@ -108,7 +108,7 @@ export async function renameShort(runtime: RuntimeSession, target: FileTarget, v
   });
 }
 
-/** 开着的那一支的开头那一句：按视频版本读一次。 */
+/** The opening sentence of the clip that is open: read once per video version. */
 const openings = new Map<string, Promise<string | null>>();
 function liveOpening(runtime: RuntimeSession, videoId: Id, video: VideoSnapshot): Promise<string | null> {
   const key = `${videoId}@${video.revision}`;
@@ -124,8 +124,8 @@ function liveOpening(runtime: RuntimeSession, videoId: Id, video: VideoSnapshot)
 }
 
 /**
- * 一支子视频的派生来源、眼下的时长与开头那一句：编辑器开着它时读编辑器里的快照，其余在后台读一次（`peekShort`）。
- * 结果页的卡片与父视频「切出的短视频」一组共用。
+ * A child video's derived source, current duration and opening sentence: when the editor has it open, the editor's snapshot is read; otherwise it is read once in the background (`peekShort`).
+ * Shared by the result page cards and the “切出的短视频”(shorts cut from this video) group in the parent video.
  */
 export function useShortFacts(entry: SpaceEntry, withOpening = true): ShortFacts {
   const runtime = useRuntime();
@@ -133,7 +133,7 @@ export function useShortFacts(entry: SpaceEntry, withOpening = true): ShortFacts
   const live = useVideo((s) => (s.video && s.video.videoId === videoId && s.video.status === 'ready' ? (s.video.state?.video ?? null) : null));
   const [peeked, setPeeked] = useState<ShortFacts | null>(null);
   const [opening, setOpening] = useState<{ revision: string; text: string | null } | null>(null);
-  // `entry` 换了对象但 `key` 没变时不用再读：目标按 `key` 记下来。
+  // When `entry` is a new object but `key` is unchanged, there is no need to read again: the target is recorded by `key`.
   const key = `${entry.id}@${entry.lastActivityAt}`;
   const target = useMemo(() => videoTargetOf(entry), [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const isLive = !!live;
@@ -159,15 +159,15 @@ export function useShortFacts(entry: SpaceEntry, withOpening = true): ShortFacts
     if (!live) return null;
     const root = rootSequence(live);
     const derivation = readDerivation(live.documents);
-    // 新版本的开头还在读时先用上一版的，免得每改一次闪一下。
+    // While the opening of the new version is still being read, use the previous version's, so it does not flash on every edit.
     return { derivation, seconds: root ? durationSeconds(root) : null, opening: derivation?.hook ?? opening?.text ?? null };
   }, [live, opening]);
   return liveFacts ?? peeked ?? { derivation: null, seconds: entry.media?.durationSec ?? null, opening: null };
 }
 
-// ---- 全部导出（结果页「全部导出…」） ----
+// ---- Export all (“全部导出…” on the result page) ----
 
-/** 逐支导出的结果：发起了几条导出任务、跳过了哪几支（名字与原因）；桌面端没选存放位置时 `cancelled`。 */
+/** Result of exporting one by one: how many export tasks were started, and which clips were skipped (name and reason). `cancelled` is set when no save location was chosen on desktop. */
 export interface ShortsExportOutcome {
   started: Id[];
   skipped: { name: string; reason: string }[];
@@ -175,10 +175,10 @@ export interface ShortsExportOutcome {
 }
 
 /**
- * 「全部导出…」：给每支子视频各发起一次成片导出（`exports.create`，缺省设置：MP4、画质标准、跟随画布、烧进字幕），
- * 各是一条导出任务，进度在任务列表里（开着的那一支另在视频栏的导出按钮上）。桌面端先选一次存放的文件夹（只有一支时选文件），
- * Web 交给 Runtime 的缺省位置。编辑器正在打开的那一支、后台打不开或预检被拒的那一支跳过，原因记进结果。
- * Runtime 冻结快照后才建任务，任务不再读打开着的视频，所以后台打开的那一支建好任务就关掉。
+ * “全部导出…”(export all…): starts one final export for each child video (`exports.create`, default settings: MP4, standard quality, follow canvas, burn in captions).
+ * Each is its own export task, with progress shown in the task list (the clip that is open is also shown on the export button in the video bar). On desktop, a save folder is chosen first (a file is chosen instead when there is only one clip).
+ * On the web, the Runtime's default location is used. A clip the editor is holding, and any clip that cannot be opened in the background or is rejected by the pre-check, is skipped, and the reason is recorded in the result.
+ * The Runtime freezes a snapshot before creating a task, and the task no longer reads the open video, so a clip opened in the background is closed as soon as its task has been created.
  */
 export async function exportShorts(runtime: RuntimeSession, entries: readonly SpaceEntry[], labels: { opening: string }): Promise<ShortsExportOutcome> {
   const outcome: ShortsExportOutcome = { started: [], skipped: [], cancelled: false };

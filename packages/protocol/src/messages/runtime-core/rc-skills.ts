@@ -14,13 +14,13 @@ import { pl } from './rc-skills.pl.ts';
 import { tr } from './rc-skills.tr.ts';
 import { vi } from './rc-skills.vi.ts';
 
-/** 技能（skills/）的错误。英文是键与类型的来源，译文在 `rc-skills.<语言>.ts`。 */
+/** Errors for skills (skills/). English is the source of keys and types; translations are in `rc-skills.<language>.ts`. */
 const en = {
   cliOnlyPageLink: (p: { page: string }) => `Linked page ${p.page} is unavailable on the tool interface: it only has a CLI surface, so links to it must be in the CLI surface`,
 
   guideIdConflict: (p: { id: string }) => `ID "${p.id}" belongs to a CucCut guide page, so this copy was not loaded. Rename the folder`,
 
-  // 目录与校验（skill-catalog / skill-frontmatter）
+  // Catalog and validation (skill-catalog / skill-frontmatter)
   builtinConflict: (p: { id: string }) => `A built-in skill with the id "${p.id}" already exists, so this copy wasn't loaded. Rename the folder and add it again`,
   skillNotFound: (p: { id: string }) => `Skill not found: ${p.id}`,
   fileNotInSkill: (p: { id: string; file: string }) => `Skill "${p.id}" has no file ${p.file}`,
@@ -46,7 +46,7 @@ const en = {
   frontmatterUnclosed: 'The front matter has no closing ---',
   frontmatterBadLine: (p: { line: number; text: string }) => `Can't read line ${p.line} of the front matter: ${p.text}`,
 
-  // GitHub 导入（skill-github）
+  // GitHub import (skill-github)
   urlEmpty: 'Enter a repository address, such as owner/repo',
   urlNotGithub: 'Only GitHub repository addresses are supported',
   urlNeedsOwnerRepo: 'Write the address as owner/repo or https://github.com/owner/repo',
@@ -78,7 +78,7 @@ const en = {
   downloadTooLarge: (p: { what: string; limit: number }) =>
     `${p.what} exceeds the ${p.limit}-byte limit (the file is larger than GitHub listed, or the total exceeds the skill limit)`,
 
-  // 添加、导入与移除（skill-installer）
+  // Add, import and remove (skill-installer)
   builtinNotRemovable: (p: { name: string }) => `"${p.name}" is a built-in skill and can't be removed. You can turn it off`,
   notInUserDir: (p: { dir: string }) => `The skill folder isn't under ${p.dir}, so it wasn't deleted`,
   sourceFolderNotFound: (p: { path: string }) => `Folder not found: ${p.path}`,
@@ -93,8 +93,8 @@ const en = {
   skillExists: (p: { id: string; path: string }) => `A skill with the id "${p.id}" already exists (${p.path}). Remove it first or give another id`,
   writtenNotLoaded: (p: { path: string }) => `The skill was written to ${p.path} but couldn't be loaded. See diagnostics in skills.list`,
 
-  // CucCut skill（说明书，agent-skill-renderer）的标记法错误与 catalog.agentSkill
-  /** 渲染错误带上文件与行号；`message` 是下面的某一条。 */
+  // Markup errors of a CucCut skill (instruction document, agent-skill-renderer) and catalog.agentSkill
+  /** Render errors carry the file and line number; `message` is one of the entries below. */
   renderErrorAt: (p: { file: string; line: number; message: string }) => `${p.file}:${p.line}: ${p.message}`,
   renderErrorIn: (p: { file: string; message: string }) => `${p.file}: ${p.message}`,
   agentSkillNoSymlinks: "The CucCut skill folder can't contain symbolic links",

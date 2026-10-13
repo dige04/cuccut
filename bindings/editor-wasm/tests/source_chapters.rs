@@ -1,10 +1,10 @@
-//! 来源自带章节：结构化 `chapters[]`、简介里的时间戳大纲与显式大纲三种来源，吸附到转写的结构起点（matched / ambiguous /
-//! unanchored），以及清洗后的行。
+//! Chapters bundled with the source: three sources (structured `chapters[]`, the timestamped outline in the description, and an explicit outline) snapped to the transcript's structural starts (matched / ambiguous /
+//! unanchored), plus the cleaned lines.
 
 use editor_wasm::source_chapters::source_chapters;
 use serde_json::{Value, json};
 
-/// 一段转写（毫秒刻度）：0 秒起说话人 a 两句；120 秒起说话人 b 一句；300 秒 a、301 秒 b 各一句（同一秒窗里两个段落起点）。
+/// One transcript (millisecond ticks): speaker a has two sentences starting at 0 s; speaker b has one sentence at 120 s; speaker a at 300 s and speaker b at 301 s, one sentence each (two paragraph starts within the same one-second window).
 fn speech() -> Value {
     let words = [
         ("w0", 0, 400, "Hello", "a"),
@@ -62,7 +62,7 @@ fn structured_chapters_snap_to_paragraph_starts() {
     assert_eq!(result["sourceChapters"][0], json!({ "start": 0.0, "end": 119.0, "title": "Intro" }));
     assert_eq!(statuses(&result), vec!["matched", "matched", "ambiguous", "unanchored"]);
 
-    // 119 → 段落起点 120（作者的时间写早了一秒）。
+    // 119 → paragraph start 120 (the author's timestamp was one second early).
     let goodbye = &result["entries"][1];
     assert_eq!(goodbye["source"], json!({ "start": 119.0, "title": "Goodbye" }));
     assert_eq!(goodbye["at"], 120.0);
@@ -70,13 +70,13 @@ fn structured_chapters_snap_to_paragraph_starts() {
     assert_eq!(goodbye["anchor"]["id"], "p-w4");
     assert!(goodbye["anchor"]["snippet"].as_str().unwrap().starts_with("Bye now."));
 
-    // 300：同一秒窗里两个段落起点，缺省取最近的，候选都列出来。
+    // 300: two paragraph starts in the same one-second window; the default takes the nearest one, and all candidates are listed.
     let debate = &result["entries"][2];
     assert_eq!(debate["at"], 300.0);
     assert_eq!(debate["candidates"].as_array().unwrap().len(), 2);
     assert_eq!(debate["candidates"][1]["time"], 301.0);
 
-    // 500：附近没有任何结构起点，保留原时间、没有锚。
+    // 500: no structural start nearby; keep the original time, no anchor.
     let silence = &result["entries"][3];
     assert_eq!(silence["at"], 500.0);
     assert!(silence.get("anchor").is_none());
@@ -109,12 +109,12 @@ fn the_wide_window_only_takes_paragraph_and_sentence_starts() {
         "durationSeconds": 600.0,
     }));
     assert_eq!(statuses(&result), vec!["matched", "snapped", "unanchored"]);
-    // 116：同一秒窗 [115, 118] 里没有起点，放宽窗 [112, 122] 里有 120 的段落起点。
+    // 116: no start in the same one-second window [115, 118]; the widened window [112, 122] contains the paragraph start at 120.
     let early = &result["entries"][1];
     assert_eq!(early["at"], 120.0);
     assert_eq!(early["anchor"]["tier"], "paragraph");
     assert_eq!(early["candidates"].as_array().unwrap().len(), 1);
-    // 124.3：放宽窗 [120.3, 130.3] 里只有词起点（120.4 的 now.），词不进放宽窗；同一秒窗里也没有词，保留原时间。
+    // 124.3: the widened window [120.3, 130.3] contains only a word start (120.4, “now.”); words do not enter the widened window, and the same one-second window has no words either, so the original time is kept.
     assert_eq!(result["entries"][2]["at"], 124.3);
     assert_eq!(
         result["summary"],
@@ -152,7 +152,7 @@ fn an_explicit_outline_wins_over_the_source() {
         rows["sourceChapters"],
         json!([{ "start": 1.0, "title": "Opening" }, { "start": 299.5, "title": "Debate" }])
     );
-    // 首章钳到 0，状态仍是它自己那一条的。
+    // The first chapter is clamped to 0; its status is still its own.
     assert_eq!(
         rows["rows"][0],
         json!({ "title": "Opening", "start": 0.0, "end": 300.0, "status": "matched" })

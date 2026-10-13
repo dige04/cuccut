@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cookieDatabaseRules, detectCookieBrowsers, type CookieHost } from './cookie-browsers.ts';
 
-/** 本机浏览器的 Cookie 库（架构设计 §7.9）：在临时目录里造各平台的目录树，不看这台机器真实的浏览器。 */
+/** Browser cookie stores on this machine (architecture design §7.9). Builds directory trees for each platform in a temp directory; does not look at the real browsers on this machine. */
 
 let root: string;
 

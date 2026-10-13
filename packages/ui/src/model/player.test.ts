@@ -157,7 +157,7 @@ describe('悬停气泡的那一格画面', () => {
         clip('off', 'v2', 0, 300, 'cover', linear(0), false),
       ],
     );
-    // 100 秒的片子按 1 秒取整：4.6 秒落在 4 秒那一格。
+    // A 100-second piece rounded to 1 second: 4.6 s falls in the 4 s cell.
     expect(seekFrame(seq, assets, 4.6)).toEqual({ asset: { id: 'movie', revision: '1' }, at: 14 });
     expect(seekFrame(seq, assets, 12.5)).toEqual({ asset: { id: 'cover', revision: '1' }, at: 4 });
     expect(seekFrame(seq, assets, 120)).toBeNull();

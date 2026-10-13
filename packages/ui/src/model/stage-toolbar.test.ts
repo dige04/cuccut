@@ -28,11 +28,11 @@ const image = () => ({ id: 'i', type: 'image', mode: 'pip', place }) as unknown 
 const shape = (value: unknown = { shape: 'rect', fill: '#3B63FB' }) =>
   ({ id: 's', type: 'shape', place, shape: value }) as unknown as PlacedItem;
 const composition = (source: unknown) => ({ id: 'c', type: 'composition', place, source, timeMap: linear }) as unknown as PlacedItem;
-/** 元素实例（贴纸、进度条、声波……）与带计时读数的文字。 */
+/** Element instances (stickers, progress bars, waveforms, ...) and text with a timer readout. */
 const element = (type: string, more: Record<string, unknown> = {}) => ({ id: 'e', type, place, ...more }) as unknown as PlacedItem;
 const sticker = () => element('sticker', { sticker: { source: 'template', templateId: 'heart' } });
 const counter = () => element('text', { counter: { mode: 'countdown' }, style: {} });
-/** 片段画的素材：缺省是收进视频目录的（存不进品牌库）。 */
+/** Assets drawn by the clip: by default they are collected into the video folder (they cannot be saved to the brand library). */
 const media = (kind: AssetRecord['kind'], patch: Partial<AssetRevision> = {}): AssetRecord => ({
   id: `asset_${kind}`,
   kind,
@@ -188,7 +188,7 @@ describe('每一格做什么', () => {
     expect(find(toolbarFor(muted, { asset: withSound }), 'detach-audio')?.action).toEqual({ kind: 'off', reason: OFF_REASON.sound });
   });
 
-  // CucCut v2 已上线的条子（stage-toolbar.logic.ts 的 MEDIA_MORE / PLAIN_MORE）：除视频外每一类的菜单都有不透明度与「隐藏」。
+  // The toolbars already shipped in CucCut v2 (MEDIA_MORE / PLAIN_MORE in stage-toolbar.logic.ts): every category except video has opacity and “Hide” in its menu.
   it('对照 v2：除视频外每一类的菜单里都有不透明度（下钻）与停用片段（命令，删除前一格）', () => {
     for (const item of SAMPLES) {
       const spec = toolbarFor(item);

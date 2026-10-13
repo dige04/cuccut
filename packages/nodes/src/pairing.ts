@@ -1,41 +1,40 @@
 import crypto from 'node:crypto';
 
 /**
- * 配对与令牌（节点协议规范 §4）。
+ * Pairing and tokens (node protocol spec §4).
  *
- * - 配对码：6 位十进制数字（`crypto.randomInt`），默认 10 分钟有效，一次性。配对码与锁定只在内存里。
- * - 任意来源累计输错 5 次：锁定 10 分钟，当前配对码作废。`newCode()` 作废旧码、解除锁定并清零计数。
- * - 令牌：`<clientId>.<secret>`，`secret` 是 32 字节随机数的 base64url。只保存每个客户端的盐与 `sha256(盐 ‖ secret)`，
- *   比较用 `crypto.timingSafeEqual`。同一个 `clientId` 再次配对替换原来的令牌。
+ * - Pairing code: 6 decimal digits (`crypto.randomInt`), valid for 10 minutes by default, single-use. The pairing code and the lockout live in memory only.
+ * - After 5 wrong entries from any source: locked for 10 minutes, and the current pairing code is invalidated. `newCode()` invalidates the old code, clears the lockout and resets the count.
+ * - Token: `<clientId>.<secret>`, where `secret` is the base64url of 32 random bytes. Only each client's salt and `sha256(salt ‖ secret)` are stored; comparison uses `crypto.timingSafeEqual`. Pairing the same `clientId` again replaces its previous token.
  *
- * 令牌与配对码不进日志：本模块不写日志，调用方也只记 `clientId`。
+ * Tokens and pairing codes are not logged: this module writes no logs, and callers record only the `clientId`.
  */
 
 export interface Clock {
-  /** 毫秒时间戳。 */
+  /** Millisecond timestamp. */
   now(): number;
 }
 
 export const systemClock: Clock = { now: () => Date.now() };
 
-/** 持久保存的已配对客户端（`node-share.json`）：没有令牌明文。 */
+/** A paired client persisted in `node-share.json`: no plaintext token. */
 export interface PairedClient {
   clientId: string;
   name: string;
   /** base64 */
   salt: string;
-  /** `sha256(盐 ‖ secret)` 的小写十六进制 */
+  /** Lowercase hex of `sha256(salt ‖ secret)` */
   hash: string;
   pairedAt: string;
   lastSeenAt: string | null;
 }
 
 export interface PairingLimits {
-  /** 配对码有效期（默认 10 分钟）。 */
+  /** Validity period of the pairing code (default 10 minutes). */
   codeTtlMs: number;
-  /** 输错多少次锁定（默认 5）。 */
+  /** Number of wrong entries that triggers a lockout (default 5). */
   maxFailures: number;
-  /** 锁定多久（默认 10 分钟）。 */
+  /** Duration of the lockout (default 10 minutes). */
   lockMs: number;
 }
 
@@ -64,7 +63,7 @@ export class Pairing {
     for (const client of clients) this.#clients.set(client.clientId, { ...client });
   }
 
-  /** 作废旧配对码并生成新的，同时解除锁定、清零输错计数。 */
+  /** Invalidates the old pairing code and generates a new one, also clearing the lockout and the wrong-entry count. */
   newCode(): { code: string; expiresAt: string } {
     const value = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const expiresAt = this.#clock.now() + this.#limits.codeTtlMs;
@@ -74,7 +73,7 @@ export class Pairing {
     return { code: value, expiresAt: new Date(expiresAt).toISOString() };
   }
 
-  /** 作废当前配对码（共享关闭时）。锁定不变。 */
+  /** Invalidates the current pairing code (when sharing is turned off). The lockout is unchanged. */
   clearCode(): void {
     this.#code = null;
   }
@@ -87,7 +86,7 @@ export class Pairing {
     return null;
   }
 
-  /** 用配对码换令牌。成功时配对码用掉；同一个 `clientId` 的旧令牌失效。 */
+  /** Exchanges a pairing code for a token. On success the pairing code is used up; the old token of the same `clientId` becomes invalid. */
   pair(code: string, clientId: string, clientName: string): PairOutcome {
     const now = this.#clock.now();
     this.#expire(now);
@@ -117,14 +116,14 @@ export class Pairing {
     return { ok: true, client: { ...client }, token: `${clientId}.${secret.toString('base64url')}` };
   }
 
-  /** 验证令牌，返回它所属的客户端（并记下最近一次出现的时间）；无效或已吊销返回 null。 */
+  /** Verifies a token and returns the client it belongs to (and records when it was last seen); returns null if the token is invalid or revoked. */
   verify(token: string): PairedClient | null {
     const dot = token.indexOf('.');
     if (dot <= 0) return null;
     const client = this.#clients.get(token.slice(0, dot));
     const text = token.slice(dot + 1);
     const secret = Buffer.from(text, 'base64url');
-    // 只接受规范的 base64url：同一串字节只有一种写法。
+    // Accept only canonical base64url: each byte string has exactly one spelling.
     if (!client || secret.length !== SECRET_BYTES || secret.toString('base64url') !== text) return null;
     const expected = Buffer.from(client.hash, 'hex');
     const actual = digest(Buffer.from(client.salt, 'base64'), secret);
@@ -158,7 +157,7 @@ function digest(salt: Buffer, secret: Buffer): Buffer {
   return crypto.createHash('sha256').update(salt).update(secret).digest();
 }
 
-/** 常量时间比较配对码（长度不同直接不等：长度不是秘密）。 */
+/** Constant-time comparison of pairing codes (different lengths are unequal immediately: length is not secret). */
 function sameCode(given: string, expected: string): boolean {
   const a = Buffer.from(given, 'utf8');
   const b = Buffer.from(expected, 'utf8');

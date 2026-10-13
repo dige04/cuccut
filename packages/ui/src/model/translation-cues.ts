@@ -15,27 +15,25 @@ import {
 import { unitText, type TranslationUnit } from './translation-doc.ts';
 
 /**
- * 译文 → 字幕（产品设计 S02、架构设计 §10.3）：一句译文的时间取原文那一句的成员词的时间（素材时钟，与生成的原文字幕
- * 同一个时钟，经作用实例投到序列上，剪切、拆分、删除媒体后跟着走）。译文按 speech-cues.ts 的同一套规则切条
- * （`splitUntimed` 按空白与标点拆开、时间按显示宽度插值，`deriveCues` 贪心切条、一条不超过 7 秒），所以译文的条数
- * 与断行可以和原文不同，但不会跨出原文那一句。
+ * Translation → captions (product design S02, architecture design §10.3): the timing of a translated sentence is taken from the timing of the member words of that source sentence (asset clock, the same clock as the generated source captions,
+ * projected onto the sequence through the instance, and following along when media is cut, split or deleted). Translated text is cut into cues by the same rules as speech-cues.ts
+ * (`splitUntimed` splits on whitespace and punctuation, timing is interpolated by display width, `deriveCues` cuts greedily, no cue longer than 7 seconds), so the number of translated cues
+ * and their line breaks may differ from the source, but a cue never crosses out of its source sentence.
  *
- * 字幕条的 ID 是 `q-<单元 ID>`，后面可能跟 `~n`（同一句拆出来的第 n 块起头的一条）。改一句译文时按这个前缀找到它的
- * 几条，只换这几条（`retextCaption`）。
+ * A caption cue's ID is `q-<unit ID>`, optionally followed by `~n` (the cue that starts the n-th block split out of the same sentence). When a translated sentence is edited, its
+ * cues are found by this prefix and only those cues are replaced (`retextCaption`).
  *
- * 智能体的 `captions_create` 在 Runtime 里用同一套切法：`packages/jobs/src/pipelines/caption-cues.ts` 的 `translationCues`
- * 是这里的移植，事务与 `translationCaptionOperations` 相同（`caption-layer.ts`）。没有合成一份：界面不能依赖只在 Node 里
- * 跑的 jobs，jobs 也不依赖界面（架构设计 §14「转录工具的字幕层」）；改切法时两处一起改。
+ * The agent's `captions_create` uses the same cutting in the Runtime: `translationCues` in `packages/jobs/src/pipelines/caption-cues.ts` is a port of this, and the transaction is the same as `translationCaptionOperations` (`caption-layer.ts`). They are not merged into one copy: the UI cannot depend on jobs that only run in Node, and jobs do not depend on the UI (architecture design §14 “caption layer for transcription tools”); when the cutting changes, both places change together.
  */
 
 type Json = Record<string, unknown>;
 
 export const TRANSLATION_CAPTION_EXTENSION = 'cuccut.translationCues';
 
-/** `w12~3`（没有词时间的段拆出来的块）→ `w12`。 */
+/** `w12~3` (a block split out of a paragraph with no word timing) → `w12`. */
 const baseWordId = (id: string) => id.replace(/~\d+$/, '');
 
-/** 译文单元 → 字幕条（素材时钟，秒）。标了过期的与没有译文的单元不出字幕（与文本导出同一条规矩）；原句的词都找不到的也没有。 */
+/** Translation unit → caption cues (asset clock, seconds). Units marked stale and units without a translation produce no captions (same rule as text export); nor do units whose source words cannot all be found. */
 export function translationCues(speech: SpeechWords, units: readonly TranslationUnit[], params: CueParams = CUE_PARAMS): DerivedCue[] {
   const byBase = new Map<string, SpeechWord[]>();
   for (const word of speech.words) {
@@ -58,7 +56,7 @@ export function translationCues(speech: SpeechWords, units: readonly Translation
         end: piece.end,
         text: piece.text.trim(),
         ...(speaker !== undefined ? { speaker } : {}),
-        // 一句译文自成一句：不和相邻的译文接成一条。
+        // A translated sentence stands on its own: it is not joined into one cue with adjacent translations.
         sentenceId: unit.id,
         paragraphStart: false,
       });
@@ -67,7 +65,7 @@ export function translationCues(speech: SpeechWords, units: readonly Translation
   return deriveCues(pseudo, params);
 }
 
-/** 字幕条是不是这一句译文的：`q-<单元 ID>` 之后要么结束，要么紧跟 `~`（`t-s-w1` 不吞掉 `t-s-w10`）。 */
+/** Whether a caption cue belongs to this translated sentence: after `q-<unit ID>` it either ends, or is immediately followed by `~` (so `t-s-w1` does not swallow `t-s-w10`). */
 export function cueOfUnit(cueId: string, unitId: Id): boolean {
   const base = `q-${unitId}`;
   if (!cueId.startsWith(base)) return false;
@@ -84,15 +82,15 @@ interface BodyCue {
 }
 
 /**
- * 改了一句译文之后的字幕正文：去掉这一句原来的几条，按新译文重新切出的几条放回原处（没有原来的就按时间插进去），
- * 再照 `speechCaptionBody` 的取整规矩修掉重叠。别的条原样不动（手工改过的字也保留）。
+ * Caption body after a translated sentence is edited: removes the sentence's original cues, puts back the cues re-cut from the new translation in their place (if there were none, inserts them by time),
+ * then fixes overlaps using the rounding rules of `speechCaptionBody`. Other cues are left untouched, including text that was edited by hand.
  */
 export function retextCaption(body: Json, unitId: Id, fresh: readonly DerivedCue[], speakers: ReadonlyMap<string, string>): Json {
   const scale = typeof body.timescale === 'number' && body.timescale > 0 ? body.timescale : 1000;
   const cues = (Array.isArray(body.cues) ? body.cues : []) as BodyCue[];
   const firstOld = cues.findIndex((cue) => typeof cue.id === 'string' && cueOfUnit(cue.id, unitId));
   const kept = cues.filter((cue) => !(typeof cue.id === 'string' && cueOfUnit(cue.id, unitId)));
-  // 只有原来写了说话人时新条才写（一个人说话的视频不写说话人）。
+  // New cues get a speaker only if the original had one (a video with one speaker does not write one).
   const withSpeaker = cues.some((cue) => typeof cue.speaker === 'string');
   const made: BodyCue[] = fresh.map((cue) => ({
     id: cue.id,
@@ -119,7 +117,7 @@ export function retextCaption(body: Json, unitId: Id, fresh: readonly DerivedCue
 }
 
 /**
- * 和译文配对的原文字幕：从同一份转写生成的那条；没有时画面上的第一条原文。都没有时 null。
+ * The source caption paired with a translation: the one generated from the same transcript; otherwise the first source caption on the picture. null when neither exists.
  */
 export function pairedOriginal(chips: readonly CaptionChip[], documents: Record<Id, DocumentRecord>, speechDocumentId: Id): CaptionChip | null {
   const originals = chips.filter((chip) => chip.kind === 'original');
@@ -137,9 +135,9 @@ export interface TranslationCaptionSource {
   speechRevision: string;
   assetId: Id;
   language: string;
-  /** 字幕文档、字幕实例与新轨道的名字。 */
+  /** Names for the caption document, the caption instance and the new track. */
   name: string;
-  /** 和原文一起显示（双语）；否则只显示译文，原文从画面上拿下来（不删）。 */
+  /** Shown together with the source (bilingual); otherwise only the translation is shown, and the source is taken off the picture (not deleted). */
   bilingual: boolean;
 }
 
@@ -148,13 +146,13 @@ const DOCUMENT_REF = 'translation-caption';
 const STYLE_REF = 'translation-style';
 
 /**
- * 把译文放到画面上的一笔事务（撤销一次就全回去）：新建一条字幕轨（一门语言一条），写字幕文档（素材时钟，派生自译文文档，
- * 记下素材与来自哪份译文、转写的哪个版本），放一个字幕实例：作用实例与区间同生成的原文字幕（`captionPlacement`）。
+ * A single transaction that puts the translation on the picture (one undo reverts it all): creates a new caption track (one per language), writes the caption document (asset clock, derived from the translation document,
+ * recording the asset and which translation and transcript version it came from), and places a caption instance: the target instance and range are those of the source captions generated together (`captionPlacement`).
  *
- * 渲染内核按样式文档把字幕叠成一组（`crates/frame-render` 的 `styleDocumentId ?? itemId`），所以：
- * - 双语：和配对的原文共用一份样式——原文有就用它的，没有就新建一份默认样式，原文与译文一起用上；原文被拿下的放回来。
- * - 只看译文：配对的原文从画面上拿下；原文有样式时译文也用它，之后放回原文就自然叠成双语。
- * 配对的原文锁住时不动它（引擎会拒绝），只在它有样式时共用。
+ * The render kernel stacks captions into a group by style document (`styleDocumentId ?? itemId` in `crates/frame-render`), so:
+ * - Bilingual: shares one style with the paired source. It uses the source's style if it has one, otherwise creates a default style; source and translation are both used, and a source that was taken off is put back.
+ * - Translation only: the paired source is taken off the picture. If the source has a style, the translation uses it too, so putting the source back later naturally stacks them into bilingual.
+ * When the paired source is locked, it is not touched (the engine would reject it); it is only shared when it has a style.
  */
 export function translationCaptionOperations(
   sequence: Sequence,
@@ -223,7 +221,7 @@ export function translationCaptionOperations(
   return operations;
 }
 
-/** 字幕文档是不是从这份译文生成的（只有这种改译文时跟着改；别人生成的切法不同，不去动）。 */
+/** Whether the caption document was generated from this translation (only then is it updated along with translation edits; captions cut differently by someone else are left alone). */
 export function derivedFrom(record: DocumentRecord, translationDocumentId: Id): boolean {
   const ext = record.extensions?.[TRANSLATION_CAPTION_EXTENSION] as { translationDocumentId?: unknown } | undefined;
   return record.kind === 'caption' && record.sourceDocumentId === translationDocumentId && ext?.translationDocumentId === translationDocumentId;

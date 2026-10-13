@@ -16,7 +16,7 @@ import { vi } from './tools-transcode-copy.vi.ts';
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** 文件转码工具（压缩、合并、提取音频）的文案（英文是键与类型的来源，译文在 `tools-transcode-copy.<语言>.ts`）。 */
+/** Copy for file transcode tools (compress, merge, extract audio) (English is the source of keys and types; translations in `tools-transcode-copy.<语言>.ts`). */
 const en = {
   quality: {
     smaller: { name: 'Smaller', sub: 'Good enough for messaging and cloud storage' },
@@ -30,14 +30,14 @@ const en = {
     hevc: '40% smaller at the same quality; older devices may not play it',
   },
 
-  // 加文件
+  // Add files
   notVideoFiles: (names: readonly string[]) => `${names.join(', ')} ${plural(names.length, 'is not a video file', 'are not video files')}`,
   notAbsolute: (paths: readonly string[]) => `${paths.join(', ')} ${plural(paths.length, 'is not an absolute path', 'are not absolute paths')}`,
   alreadyListed: (names: readonly string[]) => `${names.join(', ')} ${plural(names.length, 'is already in the list', 'are already in the list')}`,
   overflow: (limit: number, extra: number) => `Up to ${limit} files at a time; ${extra} more ${plural(extra, 'was', 'were')} not added`,
   joinNotices: (bits: readonly string[]) => bits.join('; '),
 
-  // 提交前的问题
+  // Questions before submitting
   needTwoVideos: 'Add at least two videos',
   needMediaFile: 'Choose a video or audio file first',
   needVideoFile: 'Choose a video file first',
@@ -56,7 +56,7 @@ const en = {
   ffmpegOutdated: (version: string) => `ffmpeg${version} is too old`,
   ffmpegCannotRun: 'ffmpeg can’t run',
 
-  // 记录
+  // Records
   filesTitle: (first: string, count: number) => `${first} and ${count - 1} more`,
   defaultTitle: 'File conversion',
   mergeTitle: (first: string, more: number) => `${first} + ${more} more`,
@@ -80,7 +80,7 @@ const en = {
   stateQueued: 'Queued',
   stateProcessing: 'Processing',
 
-  // 没做成
+  // Not completed
   remedyThenRetry: (remedy: string) => `${remedy}, then try again`,
   inputUnreadable: 'Couldn’t read any frames from this file. Make sure it plays in a media player, or choose another file',
   transcodeFailed: 'ffmpeg failed partway; the original output is below. If the disk is full, free up space; if a source file moved, choose it again',

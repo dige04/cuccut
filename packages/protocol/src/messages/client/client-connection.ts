@@ -14,7 +14,7 @@ import { pl } from './client-connection.pl.ts';
 import { tr } from './client-connection.tr.ts';
 import { vi } from './client-connection.vi.ts';
 
-/** 客户端与 Runtime 连接的错误与断开原因（`packages/client`）。 */
+/** Connection errors and disconnect reasons between the client and the Runtime (`packages/client`). */
 const en = {
   closed: 'The client is closed',
   disconnected: 'The connection to the Runtime was lost',

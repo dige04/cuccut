@@ -1,10 +1,8 @@
-// OpenAI 转写适配器（架构设计 §6.4）。2026-10-03 读过的文档：
+// OpenAI transcription adapter (architecture design §6.4). Docs read on 2026-10-03:
 //   https://developers.openai.com/api/docs/guides/speech-to-text
 //   https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create
-// 文档确认的：whisper-1 支持 `verbose_json` 与 `timestamp_granularities[]`（词、段）；gpt-4o-transcribe 与
-// gpt-4o-mini-transcribe 只支持 `json`/`text`，没有时间戳，用量是 token；文件 ≤ 25 MB；接受 m4a；`prompt` 用于术语提示。
-// 没能确认的：gpt-4o 系列单次请求的时长上限（这里按 120 秒切片，既避开可能的上限，也让插值的词时间不太粗）；
-// 指南里的 `gpt-transcribe` 没有在参考文档里给出参数，没有列入。
+// Confirmed by the docs: whisper-1 supports `verbose_json` and `timestamp_granularities[]` (words, segments); gpt-4o-transcribe and gpt-4o-mini-transcribe support only `json`/`text`, have no timestamps, and bill by token; files are ≤ 25 MB; m4a is accepted; `prompt` is used for terminology hints.
+// Not confirmed: the per-request duration limit of the gpt-4o series. Here audio is sliced into 120-second chunks, which avoids a possible limit and keeps interpolated word times from being too coarse. `gpt-transcribe` from the guide has no parameters in the reference docs, so it is not listed.
 import type { TranscribeModelInfo } from '@cuccut/protocol';
 import type { ChunkFormat } from '../audio/audio-prep.ts';
 import type { AdapterConfig, AdapterHttp, ChunkRequest, ChunkTranscript, TranscribeAdapter } from '../adapter.ts';
@@ -13,7 +11,7 @@ import { openAiTranscribeChunk, openAiValidate } from './openai-transcription.ts
 export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const LABEL = 'OpenAI';
 const MAX_BYTES = 25_000_000;
-/** 不返回时间的模型按这个长度切片。 */
+/** Models that do not return timing are sliced to this length. */
 const TIMELESS_CHUNK_SEC = 120;
 
 const MODELS: TranscribeModelInfo[] = [

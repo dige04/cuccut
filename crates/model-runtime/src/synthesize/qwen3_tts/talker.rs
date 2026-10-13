@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! Talker：28 层 Qwen3 解码器，输入是文本 / codec 嵌入之和，输出第一个
-//! codebook 的 logits 与最后隐状态（喂给 Code Predictor）。
+//! Talker: 28-layer Qwen3 decoder. Its input is the sum of the text and codec embeddings. It outputs the first
+//! codebook's logits and the last hidden state (fed to the Code Predictor).
 
 use crate::synthesize::tensor::Array;
 use crate::synthesize::tensor::nn::silu;
@@ -40,7 +40,7 @@ pub struct Talker {
 }
 
 impl Talker {
-    /// `weights` 已剥掉 `talker.` 前缀（且不含 `code_predictor.`）。
+    /// `weights` already has the `talker.` prefix stripped (and excludes `code_predictor.`).
     pub fn load(weights: &mut Weights, config: &TalkerConfig) -> Result<Self> {
         let dims = AttentionDims {
             num_heads: config.num_heads,
@@ -75,7 +75,7 @@ impl Talker {
         })
     }
 
-    /// 文本 token `[B, S]` → 投影后的嵌入 `[B, S, hidden]`。
+    /// Text tokens `[B, S]` → projected embeddings `[B, S, hidden]`.
     pub fn embed_text(&self, ids: &Array) -> Result<Array> {
         let embeds = self.text_embedding.forward(ids);
         self.text_projection.forward(&embeds)
@@ -86,8 +86,8 @@ impl Talker {
         self.codec_embedding.forward(ids)
     }
 
-    /// 前向：返回 `(logits [B,S,codec_vocab], hidden [B,S,H], cache)`。
-    /// `offset` 是 RoPE 位置偏移；`mask` 为空时 S>1 走因果掩码。
+    /// Forward pass: returns `(logits [B,S,codec_vocab], hidden [B,S,H], cache)`.
+    /// `offset` is the RoPE position offset. When `mask` is empty, S>1 uses a causal mask.
     pub fn forward(
         &self,
         inputs_embeds: &Array,

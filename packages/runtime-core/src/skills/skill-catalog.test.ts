@@ -26,7 +26,7 @@ describe('skill id', () => {
     expect(normalizeSkillId('Ünïcode')).toBe('ünïcode');
     expect(normalizeSkillId('---')).toBeNull();
     expect(normalizeSkillId('x'.repeat(100))).toHaveLength(SKILL_LIMITS.id);
-    // macOS 的文件名可能是分解形式：规范成 NFC，与组合形式得到同一个 id。
+    // macOS filenames may be in decomposed form. Normalize to NFC so that it yields the same id as the composed form.
     expect(normalizeSkillId('Café')).toBe(normalizeSkillId('Café'));
   });
 });

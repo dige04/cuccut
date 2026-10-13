@@ -1,10 +1,8 @@
-//! 人脸检测：YuNet（OpenCV Zoo 的 `face_detection_yunet_2023mar.onnx`，MIT）经 tract 推理。
+//! Face detection: YuNet (`face_detection_yunet_2023mar.onnx` from the OpenCV Zoo, MIT) run via tract inference.
 //!
-//! 模型的输入固定为 `[1, 3, 640, 640]`：帧按比例缩到能放进 640 × 640，贴在左上角，其余补 0（与 OpenCV `FaceDetectorYN`
-//! 向右、向下补齐的做法一致）；像素是 BGR、0–255 的浮点，不减均值不除方差（`blobFromImage` 的缺省）。输出按 8、16、32
-//! 三档步长各有 cls / obj / bbox / kps 四个张量，解码与 OpenCV `modules/objdetect/src/face_detect.cpp` 的 `postProcess` 相同：
-//! 分数 `sqrt(cls · obj)`，框心 `(列 + dx) · 步长`、`(行 + dy) · 步长`，宽高 `exp(dw) · 步长`、`exp(dh) · 步长`，再做 NMS。
-//! 结果换回原帧的坐标并按帧的宽高归一化到 0–1，与取帧时缩到多大无关。
+//! The model input is fixed at `[1, 3, 640, 640]`: the frame is scaled proportionally to fit in 640 × 640 and pinned to the top-left corner, with the rest padded with 0 (consistent with OpenCV `FaceDetectorYN`, which pads rightward and downward). Pixels are BGR, float 0–255, with no mean subtraction or variance division (the `blobFromImage` default). The output has cls / obj / bbox / kps tensors for each of the three strides 8, 16, 32. Decoding is the same as `postProcess` in OpenCV `modules/objdetect/src/face_detect.cpp`:
+//! score `sqrt(cls · obj)`, box center `(col + dx) · stride`, `(row + dy) · stride`, width and height `exp(dw) · stride`, `exp(dh) · stride`, followed by NMS.
+//! Results are mapped back to the original frame's coordinates and normalized to 0–1 by the frame's width and height, independent of how large the frame was scaled when it was sampled.
 
 use std::path::Path;
 
@@ -12,18 +10,18 @@ use image::{DynamicImage, RgbImage, imageops::FilterType};
 use serde::Serialize;
 use tract_onnx::prelude::*;
 
-/// 模型的输入边长（像素）。
+/// Model input edge length (pixels).
 pub const INPUT_SIZE: usize = 640;
-/// 三档步长，与模型输出的顺序一致。
+/// The three strides, in the same order as the model's output.
 const STRIDES: [usize; 3] = [8, 16, 32];
-/// 低于这个分数的候选不要。OpenCV Zoo 的示例用 0.9；访谈里侧脸的分数常在 0.7–0.9，取 0.6 以免漏掉侧脸，误检靠 NMS 与面积筛掉。
+/// Candidates scoring below this are discarded. OpenCV Zoo's examples use 0.9. Profile faces in interviews often score 0.7–0.9, so 0.6 is used to avoid missing them; false positives are filtered out by NMS and by area.
 pub const SCORE_THRESHOLD: f32 = 0.6;
-/// NMS 的 IoU 阈值（OpenCV Zoo 示例的缺省）。
+/// NMS IoU threshold (the default in OpenCV Zoo's examples).
 pub const NMS_THRESHOLD: f32 = 0.3;
-/// 一帧最多报这么多张脸（按分数从高到低）。
+/// At most this many faces are reported per frame (by score, highest first).
 pub const MAX_FACES: usize = 20;
 
-/// 一张脸：框的左上角与宽高，按帧的宽高归一化到 0–1；`score` 是 0–1 的置信度。
+/// One face: the top-left corner and width/height of the box, normalized to 0–1 by the frame's width and height. `score` is the confidence, 0–1.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Face {
     pub x: f64,
@@ -35,13 +33,13 @@ pub struct Face {
 
 type Plan = Arc<TypedRunnableModel>;
 
-/// 载入好的检测器：一次载入，逐帧调用。
+/// Loaded detector: loaded once, called per frame.
 pub struct FaceDetector {
     plan: Plan,
 }
 
 impl FaceDetector {
-    /// 从 ONNX 文件载入并优化模型。
+    /// Loads and optimizes the model from an ONNX file.
     pub fn load(model: &Path) -> TractResult<Self> {
         let size = INPUT_SIZE as i64;
         let plan = tract_onnx::onnx()
@@ -52,14 +50,14 @@ impl FaceDetector {
         Ok(Self { plan })
     }
 
-    /// 检测一个图片文件（PNG 或 JPEG）。返回脸与图片的像素尺寸。
+    /// Detects faces in an image file (PNG or JPEG). Returns the faces and the image's pixel size.
     pub fn detect_file(&self, file: &Path) -> TractResult<(Vec<Face>, u32, u32)> {
         let image = image::open(file).map_err(|error| anyhow::anyhow!("cannot decode {}: {error}", file.display()))?;
         let (width, height) = (image.width(), image.height());
         Ok((self.detect(&image)?, width, height))
     }
 
-    /// 检测一帧。
+    /// Detects faces in one frame.
     pub fn detect(&self, image: &DynamicImage) -> TractResult<Vec<Face>> {
         let (width, height) = (image.width(), image.height());
         if width == 0 || height == 0 {
@@ -86,7 +84,7 @@ impl FaceDetector {
             decode(*stride, cls, obj, bbox, &mut candidates)?;
         }
         let kept = nms(candidates, NMS_THRESHOLD, MAX_FACES);
-        // 640 × 640 里的像素 → 原帧的 0–1：除以贴进去的那块（缩小后的整帧）的宽高。
+        // Pixels in the 640 × 640 space → 0–1 of the original frame: divide by the width and height of the block that was pasted in (the whole scaled-down frame).
         let (span_w, span_h) = (fit_w as f32, fit_h as f32);
         Ok(kept
             .into_iter()
@@ -107,7 +105,7 @@ impl FaceDetector {
     }
 }
 
-/// 640 × 640 里的一个候选框（像素）。
+/// One candidate box in the 640 × 640 space (pixels).
 #[derive(Debug, Clone, Copy)]
 struct Candidate {
     x: f32,
@@ -117,7 +115,7 @@ struct Candidate {
     score: f32,
 }
 
-/// 贴到 640 × 640 的左上角，其余补 0；NCHW、BGR、0–255。
+/// Pasted at the top-left of 640 × 640, rest zero-padded; NCHW, BGR, 0–255.
 fn letterbox(rgb: &RgbImage) -> Tensor {
     let plane = INPUT_SIZE * INPUT_SIZE;
     let mut data = vec![0f32; 3 * plane];
@@ -159,7 +157,7 @@ fn decode(stride: usize, cls: &[f32], obj: &[f32], bbox: &[f32], out: &mut Vec<C
     Ok(())
 }
 
-/// 贪心 NMS：按分数从高到低，与已留下的框 IoU 超过阈值的丢掉。
+/// Greedy NMS: by score from highest to lowest; drops any box whose IoU with an already kept box exceeds the threshold.
 fn nms(mut candidates: Vec<Candidate>, threshold: f32, limit: usize) -> Vec<Candidate> {
     candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
     let mut kept: Vec<Candidate> = Vec::new();
@@ -184,7 +182,7 @@ fn iou(a: &Candidate, b: &Candidate) -> f32 {
     if union <= 0.0 { 0.0 } else { inter / union }
 }
 
-/// 留 `digits` 位小数（在 f64 里取整，JSON 里不带 f32 的尾数）。
+/// Keeps `digits` decimal places (rounded in f64, so the JSON does not carry the f32 mantissa).
 fn round(value: f32, digits: i32) -> f64 {
     let scale = 10f64.powi(digits);
     (f64::from(value) * scale).round() / scale
@@ -215,7 +213,7 @@ mod tests {
 
     #[test]
     fn decode_follows_the_yunet_layout() {
-        // 步长 32：20 × 20 个格子；在第 2 行第 3 列放一个分数 0.81 的候选，框心偏移 (0.5, 0.5)，宽高 exp(0) · 32。
+        // Stride 32: a 20 × 20 grid. Place a candidate with score 0.81 at row 2, column 3, with center offset (0.5, 0.5), and width and height exp(0) · 32.
         let cells = 20 * 20;
         let mut cls = vec![0.0; cells];
         let mut obj = vec![0.0; cells];

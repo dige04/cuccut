@@ -1,16 +1,16 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucsTransformer.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucsTransformer.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-bundle interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! HTDemucs 的跨域 transformer，逐一对照 speech-swift `HTDemucsTransformer.swift`
-//! （dense attention；htdemucs_ft：dim 512、8 头、FFN 2048、5 层、norm_first、
-//! norm_out=GroupNorm、layer_scale、sin 位置编码、gelu；层序 0,2,4 自注意力，1,3 交叉注意力）。
+//! HTDemucs's cross-domain transformer, checked line by line against speech-swift `HTDemucsTransformer.swift`
+//! (dense attention; htdemucs_ft: dim 512, 8 heads, FFN 2048, 5 layers, norm_first,
+//! norm_out=GroupNorm, layer_scale, sin positional encoding, gelu; layers 0, 2, 4 are self-attention, 1 and 3 are cross-attention).
 //!
-//! 权重键沿用 torch 导出名：`self_attn` / `cross_attn` 带打包的 `in_proj_weight` /
-//! `in_proj_bias` 与 `out_proj`，`linear1/2`、`norm1/2[/3]`、`norm_out`、`gamma_1/2`。
+//! Weight keys keep the torch export names: `self_attn` / `cross_attn` with the packed `in_proj_weight` /
+//! `in_proj_bias` and `out_proj`, `linear1/2`, `norm1/2[/3]`, `norm_out`, `gamma_1/2`.
 
 use super::layers::{LayerScale, gelu};
 use super::tensor::ops::indexing::IndexOp;
@@ -19,7 +19,7 @@ use super::weights::WeightStore;
 use anyhow::{Result, bail};
 use std::cell::RefCell;
 
-/// `create_sin_embedding`：返回 `[1, T, C]` 布局的数据；前半 cos，后半 sin。
+/// `create_sin_embedding`: returns data in `[1, T, C]` layout; first half cos, second half sin.
 pub fn sin_embedding_1d(t_len: usize, channels: usize, max_period: f32) -> Vec<f32> {
     let half = channels / 2;
     let mut data = vec![0.0f32; t_len * channels];
@@ -33,9 +33,9 @@ pub fn sin_embedding_1d(t_len: usize, channels: usize, max_period: f32) -> Vec<f
     data
 }
 
-/// `create_2d_sin_embedding` 直接产成 transformer 使用的 `[1, T1*Fr, C]` 序列布局
-/// （token 序号 = t * Fr + h）：通道 0..C/2 编码时间位置、C/2..C 编码频率位置，
-/// 每半内偶数通道 sin、奇数通道 cos。
+/// `create_2d_sin_embedding` directly produces the `[1, T1*Fr, C]` sequence layout used by the transformer
+/// (token index = t * Fr + h): channels 0..C/2 encode the time position, C/2..C encode the frequency position,
+/// with even channels in each half using sin and odd channels using cos.
 pub fn sin_embedding_2d(channels: usize, fr: usize, t1: usize, max_period: f32) -> Vec<f32> {
     let half = channels / 2;
     let n = half / 2;
@@ -57,7 +57,7 @@ pub fn sin_embedding_2d(channels: usize, fr: usize, t1: usize, max_period: f32) 
     data
 }
 
-/// torch 布局的线性层：`weight [out, in]`，`bias [out]`。
+/// Linear layer in torch layout: `weight [out, in]`, `bias [out]`.
 struct Linear {
     weight_t: Array,
     bias: Array,
@@ -97,8 +97,8 @@ impl LayerNorm {
     }
 }
 
-/// demucs `MyGroupNorm`（GroupNorm(1, C) 的子类）：在 `[B, S, C]` 上按样本对 (S, C)
-/// 全体求统计量，再逐通道仿射。
+/// demucs `MyGroupNorm` (a subclass of GroupNorm(1, C)): on `[B, S, C]`, it computes statistics per sample over all of (S, C)
+/// and then applies a per-channel affine transform.
 struct MyGroupNorm {
     weight: Array,
     bias: Array,
@@ -120,7 +120,7 @@ impl MyGroupNorm {
     }
 }
 
-/// torch 打包投影的多头注意力：`in_proj_weight [3d, d]`（q|k|v 叠放）、`in_proj_bias [3d]`。
+/// Multi-head attention with torch's packed projection: `in_proj_weight [3d, d]` (q|k|v stacked), `in_proj_bias [3d]`.
 struct Attention {
     nhead: i32,
     dim: i32,
@@ -168,7 +168,7 @@ impl Attention {
     }
 }
 
-/// 自注意力层（idx 0,2,4），norm_first 路径。
+/// Self-attention layer (idx 0, 2, 4), norm_first path.
 struct SelfAttnLayer {
     attn: Attention,
     linear1: Linear,
@@ -203,7 +203,7 @@ impl SelfAttnLayer {
     }
 }
 
-/// 交叉注意力层（idx 1,3）：q 来自本域，k/v 来自另一域。
+/// Cross-attention layer (idx 1, 3): q comes from this domain, k/v come from the other domain.
 struct CrossAttnLayer {
     attn: Attention,
     linear1: Linear,
@@ -246,7 +246,7 @@ enum Layer {
     Cross(CrossAttnLayer),
 }
 
-/// 位置编码缓存：同一形状的窗口反复推理时不必重算。
+/// Positional-encoding cache: windows of the same shape do not need to be recomputed when inferred repeatedly.
 struct PosEmbCache {
     key: (usize, usize, usize),
     pe2d: Array,
@@ -320,7 +320,7 @@ impl CrossTransformerEncoder {
         Ok((pe2d, pe1d))
     }
 
-    /// `x [B, C, Fr, T1]`（频域）、`xt [B, C, T2]`（时域），返回同形状的一对。
+    /// `x [B, C, Fr, T1]` (frequency domain), `xt [B, C, T2]` (time domain); returns a pair of the same shapes.
     pub fn forward(&self, x_in: &Array, xt_in: &Array) -> Result<(Array, Array)> {
         let (b, c, fr, t1) = (x_in.dim(0), x_in.dim(1), x_in.dim(2), x_in.dim(3));
         let t2 = xt_in.dim(2);

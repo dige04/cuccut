@@ -82,10 +82,10 @@ function composition(id: string, trackId: string, fromFrame: number, source: Com
   };
 }
 
-/** 合成只有代码包一种来源。 */
+/** A composition has only one source: a code bundle. */
 const BUNDLE: CompositionItem['source'] = { kind: 'bundle', assetRef: { id: 'asset_b', revision: '1' } };
 
-/** 元素实例（贴纸、进度条、声波……）：只用到类型与素材引用。 */
+/** Element instances (stickers, progress bars, waveforms, ...): only the type and the asset reference are used. */
 function element(type: 'sticker' | 'progress' | 'visualizer' | 'confetti', patch: Record<string, unknown> = {}): SequenceItem {
   return {
     ...itemBase,
@@ -273,19 +273,19 @@ describe('编辑器模型', () => {
     expect(rulerLabel(65, 5)).toBe('1:05');
     expect(rulerLabel(1.5, 0.5)).toBe('0:01.5');
     expect(formatTimecode(5 + 12 / 30, fps)).toBe('00:00:05:12');
-    // 29.97 fps：3661 秒落在一帧的中间，那一帧从 3660.99 秒开始，按真实时间显示（不是丢帧时码）。
+    // 29.97 fps: 3661 seconds falls in the middle of a frame, which starts at 3660.99 seconds and is displayed by real time (not drop-frame timecode).
     expect(formatTimecode(3661, { num: 30000, den: 1001 })).toBe('01:01:00:29');
   });
 
   it('播放键三态：在播是暂停，停在片尾（差不到 0.05 秒）是重播', () => {
     expect(playButtonState({ playing: false, playhead: 0, duration: 10 })).toBe('play');
     expect(playButtonState({ playing: true, playhead: 3, duration: 10 })).toBe('pause');
-    // 在播时到了片尾也是暂停：引擎播到头才停。
+    // While playing, the button still shows pause at the end: the engine stops only once playback has reached the end.
     expect(playButtonState({ playing: true, playhead: 10, duration: 10 })).toBe('pause');
     expect(playButtonState({ playing: false, playhead: 10, duration: 10 })).toBe('replay');
     expect(playButtonState({ playing: false, playhead: 9.96, duration: 10 })).toBe('replay');
     expect(playButtonState({ playing: false, playhead: 9.9, duration: 10 })).toBe('play');
-    // 空时间线（总长 0）无所谓片尾：显示播放，不显示重播。
+    // An empty timeline (total length 0) has no end to speak of: show play, not replay.
     expect(playButtonState({ playing: false, playhead: 0, duration: 0 })).toBe('play');
   });
 

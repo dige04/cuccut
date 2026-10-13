@@ -25,10 +25,7 @@ import { handToAgent } from './ai-tools-handoff.ts';
 import { TRANSLATE_COPY as C } from './translate-copy.ts';
 
 /**
- * 译文对照列表上的动作（产品设计 §5.10「逐句与过期译文」，原型 panel-translate.jsx 的统计条与 ⋯ 菜单）：一行的统计条
- * （左边句数与要处理的计数、右边一枚 AI 钮），一句的 ⋯ 菜单，以及两条重译的路——用模型 API（Runtime 的 `translate` 就地
- * 刷新）与交给 Agent（发到这部视频当前的会话）。两条路的说明一行写清差别：直接调哪只模型、按用量计费；在当前会话里做、用
- * Agent 订阅。网页宿主没有这些要调模型或会话的入口，只留过期标记与复制。
+ * Actions on the translation comparison list (product design §5.10 “per-sentence and stale translations”, prototype panel-translate.jsx stats bar and ⋯ menu): a stats bar row (sentence count and count to process on the left, an AI button on the right), a ⋯ menu per sentence, and two ways to re-translate: via the model API (Runtime's `translate` refreshes in place) and by handing off to the Agent (sent to this video's current session). A one-line note states the difference: which model is called directly and billed by usage, versus done in the current session using the Agent subscription. Web hosts have no entry points that call models or sessions, so they keep only stale markers and copy.
  */
 
 const statbar = style({
@@ -62,8 +59,8 @@ const warn = style({ color: 'orange-1000', fontWeight: 'medium' });
 const fresh = style({ color: 'green-1000' });
 
 /**
- * 直接重译用哪只文本模型：同翻译设置页的缺省（文本生成的默认值，不能用时第一只能用的；翻译要结构化输出）。
- * 能力还没读到、或一只能用的都没有时 `ref` 为 null，由 Runtime 用默认值或以「没有配置」拒绝（问题卡给去处）。
+ * Which text model direct re-translation uses: the same default as the translation settings page (the text-generation default; if that cannot be used, the first usable one; translation needs structured output).
+ * When capabilities have not been read yet, or no model is usable, `ref` is null: the Runtime uses its default, or rejects with “没有配置” (not configured), and the issue card gives the place to go.
  */
 export function useRetranslateModel(): { ref: { providerId: string; modelId: string } | null; name: string | null } {
   const view = useModels((s) => s.capabilities);
@@ -76,8 +73,7 @@ export function useRetranslateModel(): { ref: { providerId: string; modelId: str
 }
 
 /**
- * 交给 Agent 重译：发到这部视频当前的会话（Home 左侧那条，或 Space 里这个视频的悬浮会话最近发起的那条，且与视频同属一个
- * 项目或工作目录），没有就新开一条；挂上翻译的 skill，留在原地不切走（`stay`）。Agent 用不了时说清楚并带去设置。
+ * Re-translate by handing off to the Agent: sent to this video's current session (the one on the left of Home, or the one most recently started from this video's floating session in Space, provided it is in the same project or working directory as the video). If there is none, a new one is opened. The translation skill is attached, and the user stays in place rather than switching away (`stay`). If the Agent cannot be used, say so clearly and link to settings.
  */
 export function useAgentRetranslate(videoId: Id): (prompt: { language: string; scope?: { time: string | null; text: string } | null; count?: number }) => void {
   const runtime = useRuntime();
@@ -98,7 +94,7 @@ export function useAgentRetranslate(videoId: Id): (prompt: { language: string; s
       go({ tab: 'settings', section: 'agent' });
       return;
     }
-    // 只认眼前这条（不退到项目里最近的那条）：不是当前会话就新开一条，免得发进一条用户没在看的旧会话。
+    // Only accept the session in front of the user (do not fall back to the most recent session in the project): if it is not the current session, start a new one, so as not to send into an old session the user is not watching.
     const here = currentConversation({ source: ref?.source ?? null, current, conversations: conversations.filter((c) => c.id === current) });
     const skill = TOOL_SKILL.stale;
     void handToAgent(runtime, {
@@ -115,13 +111,13 @@ export function useAgentRetranslate(videoId: Id): (prompt: { language: string; s
 
 export interface StatbarProps {
   stats: PairStats;
-  /** 整句的画面都剪掉了的句数（时间线上用到了这份转写时才算）。 */
+  /** Number of sentences whose whole frame has been cut (counted only when this transcript is used on the timeline). */
   cut: number;
-  /** 要重译的句数：过期的与还没有译文的。 */
+  /** Number of sentences to re-translate: the stale ones and those with no translation yet. */
   todo: number;
-  /** 正在重译：句数（别处发起、没点名句子时 null）；没在重译时 undefined。 */
+  /** Re-translation in progress: sentence count (null when started elsewhere without naming sentences); undefined when not re-translating. */
   refreshing: number | null | undefined;
-  /** 网页宿主：只有计数，提示去 Agent 或 App 里重译。 */
+  /** Web host: count only; prompts to re-translate in the Agent or in the app. */
   web: boolean;
   editable: boolean;
   modelName: string | null;
@@ -131,7 +127,7 @@ export interface StatbarProps {
   onTranslateTool(): void;
 }
 
-/** 统计条（原型 `.statbar--one`）：一行放下，左边句数与计数（全称在提示里），右边一枚 AI 钮收下所有要调模型或会话的动作。 */
+/** Stats bar (prototype `.statbar--one`): fits in one row. On the left, sentence count and counts (full wording in the tooltip); on the right, one AI button that gathers all actions that call a model or session. */
 export function TranslationStatbar(p: StatbarProps) {
   const { stats, cut, todo } = p;
   const ai = !p.web && p.editable;
@@ -225,7 +221,7 @@ export function TranslationStatbar(p: StatbarProps) {
   );
 }
 
-/** 一句的 ⋯ 菜单里能做的（TranslationList 每次渲染换成最新的一份，卡经 ref 调）。 */
+/** What a sentence's ⋯ menu can do (TranslationList supplies the latest version on every render; cards call it via ref). */
 export interface UnitMenuActions {
   direct(row: PairRow): void;
   agent(row: PairRow): void;
@@ -233,8 +229,7 @@ export interface UnitMenuActions {
 }
 
 /**
- * 一句的 ⋯ 菜单（原型 `moreFor`）：用模型 API 重译这一句、交给 Agent 重译这一句（只在桌面端），标为过期或去掉过期标记，
- * 复制译文。原句没了的只能复制；只读时只能复制。
+ * A sentence's ⋯ menu (prototype `moreFor`): re-translate this sentence via the model API, hand this sentence to the Agent to re-translate (desktop only), mark it as stale or clear the stale mark, copy the translation. If the original sentence is gone, only copy is offered; in read-only mode, only copy.
  */
 export function UnitMenu({
   row,
@@ -249,11 +244,11 @@ export function UnitMenu({
   row: PairRow;
   index: number;
   text: string;
-  /** 桌面端：能调模型与会话。 */
+  /** Desktop: can call models and sessions. */
   ai: boolean;
-  /** 这一行能改：视频可改、原句还在。 */
+  /** This row is editable: the video is editable and the original sentence still exists. */
   editable: boolean;
-  /** 这份译文正在重译：不再发一次。 */
+  /** This translation is being re-translated: do not send another request. */
   busy: boolean;
   modelName: string | null;
   actions: RefObject<UnitMenuActions>;

@@ -5,7 +5,7 @@ import { useExportSubmit, type ExportEnv } from './use-export-submit.ts';
 const mocks = vi.hoisted(() => ({
   pickSavePath: vi.fn(), pickDirectory: vi.fn(), createExport: vi.fn(), negative: vi.fn(),
 }));
-// 直接验证提交入口，状态渲染不属于这组测试的范围。
+// Tests the submit entry point directly; rendering of state is outside the scope of this group of tests.
 vi.mock('react', async (original) => ({
   ...await original<typeof import('react')>(),
   useState: (value: unknown) => [value, vi.fn()],

@@ -1,46 +1,39 @@
-//! 元素级参数的纯函数重映射：canonical dB 窗 → 元素 dB 窗、指数平滑与 gain。
+//! Pure-function remapping of element-level parameters: canonical dB window → element dB window, exponential smoothing and gain.
 //!
-//! 这些参数**不进缓存**。一个项目可以有多个 visualizer 各带不同的
-//! `minDb` / `maxDb` / `smoothing` / `gain`，参数进缓存就要缓存多份 STFT；
-//! canonical 窗 + 本模块让一份 BCS1 服务任意参数组合。
+//! These parameters **are not cached**. A project can have several visualizers, each with different `minDb` / `maxDb` / `smoothing` / `gain`. If the parameters were in the cache, one STFT would have to be cached per combination. The canonical window plus this module lets one BCS1 serve any combination of parameters.
 //!
-//! 平滑天然是递推的（`m̂[n] = τ·m̂[n-1] + (1-τ)·m[n]`，`m̂[-1] = 0`），而且
-//! Web Audio 在**线性幅度域**推进，之后才转 dB。因此它属于 host preflight 的
-//! 一次性整轨计算，不能塞进 `sample(t)`——后者会引入状态并破坏乱序采样一致性。
+//! Smoothing is inherently recursive (`m̂[n] = τ·m̂[n-1] + (1-τ)·m[n]`, `m̂[-1] = 0`), and Web Audio advances it in the **linear amplitude domain** before converting to dB. So it belongs to a one-time, whole-track computation in host preflight. It cannot go into `sample(t)`, which would introduce state and break consistency under out-of-order sampling.
 
 use crate::bcs1::{CANONICAL_MAX_DB, CANONICAL_MIN_DB};
 
-/// canonical 字节 → dB：`-120 + byte * 160 / 255`。
+/// canonical byte → dB: `-120 + byte * 160 / 255`.
 pub fn canonical_db(byte: u8) -> f64 {
     let span = CANONICAL_MAX_DB - CANONICAL_MIN_DB;
     CANONICAL_MIN_DB + f64::from(byte) * span / 255.0
 }
 
-/// canonical 字节 → 线性幅度。BCS1 只量化未平滑的 dB，派生阶段先恢复幅度，
-/// 才能复刻 `AnalyserNode.smoothingTimeConstant` 的递推域。
+/// canonical byte → linear amplitude. BCS1 quantizes only the unsmoothed dB, so the derivation stage first recovers the amplitude, in order to reproduce the recursion domain of `AnalyserNode.smoothingTimeConstant`.
 pub fn canonical_magnitude(byte: u8) -> f64 {
     10.0f64.powf(canonical_db(byte) / 20.0)
 }
 
-/// canonical 字节 → 元素 dB 窗字节（§6.2 逐字公式）。
+/// canonical byte → element dB-window byte (the formula verbatim from §6.2).
 pub fn remap(byte: u8, min_db: f64, max_db: f64) -> u8 {
     remap_value(byte, min_db, max_db).round() as u8
 }
 
-/// 同 [`remap`]，但保留未取整的 0..255 实数值。
+/// Same as [`remap`], but keeps the unrounded real-valued 0..255 result.
 ///
-/// 平滑要在**取整前**递推：先四舍五入再平滑会把 1/255 的量化误差一路累积进
-/// 递推状态。取整只发生在最后一步。
+/// Smoothing must recurse **before rounding**: rounding first and then smoothing would carry the 1/255 quantization error through the recursion state. Rounding happens only at the last step.
 pub fn remap_value(byte: u8, min_db: f64, max_db: f64) -> f64 {
     remap_decibels_value(canonical_db(byte), min_db, max_db)
 }
 
-/// 已经得到的 dB → 元素窗下未取整的 0..255 值。
+/// dB already obtained → the unrounded 0..255 value under the element window.
 fn remap_decibels_value(decibels: f64, min_db: f64, max_db: f64) -> f64 {
     let span = max_db - min_db;
     if !(span > 0.0) {
-        // 退化窗（上下沿相等或倒置）没有线性映射可言：按阈值给两端值，
-        // 保持对 dB 单调不减，绝不产生 NaN。
+        // A degenerate window (upper and lower edges equal, or inverted) has no meaningful linear mapping. It gives the two ends by threshold, keeping the mapping monotonically non-decreasing in dB and never producing NaN.
         return if decibels >= max_db.max(min_db) {
             255.0
         } else {
@@ -50,16 +43,14 @@ fn remap_decibels_value(decibels: f64, min_db: f64, max_db: f64) -> f64 {
     (255.0 * (decibels - min_db) / span).clamp(0.0, 255.0)
 }
 
-/// 线性幅度域的指数时间平滑（Web Audio `smoothingTimeConstant` 的离线等价）。
+/// Exponential time smoothing in the linear amplitude domain (the offline equivalent of Web Audio's `smoothingTimeConstant`).
 pub fn smooth(previous: f64, current: f64, tau: f64) -> f64 {
     tau * previous + (1.0 - tau) * current
 }
 
-/// 一条频域行的顺序推进器：canonical dB → 线性幅度 → 平滑 → dB 重映射 → gain。
+/// A sequential advancer for one frequency-domain row: canonical dB → linear amplitude → smoothing → dB remapping → gain.
 ///
-/// `gain` 是 CucCut 自有字段，来自 Mac 的 `WaveformConfig`，
-/// **在重映射后、绘制前**乘上。每个 bin 各有独立的平滑状态，因此推进器持有
-/// 一整行的 `previous`。
+/// `gain` is a CucCut-specific field, from the Mac's `WaveformConfig`, and is multiplied **after remapping and before drawing**. Each bin has its own smoothing state, so the advancer holds `previous` for a whole row.
 #[derive(Debug, Clone)]
 pub struct Remapper {
     min_db: f64,
@@ -70,7 +61,7 @@ pub struct Remapper {
 }
 
 impl Remapper {
-    /// `bins` 是每帧的行宽；`tau` 钳制到 0..1，`gain` 非有限或负数按 1.0 处理。
+    /// `bins` is the row width of each frame. `tau` is clamped to 0..1; a non-finite or negative `gain` is treated as 1.0.
     pub fn new(bins: usize, min_db: f64, max_db: f64, smoothing: f64, gain: f64) -> Self {
         Self {
             min_db,
@@ -97,16 +88,15 @@ impl Remapper {
         self.gain
     }
 
-    /// 重置递推状态到 `m̂[-1] = 0`，用于重新从帧 0 推进。
+    /// Resets the recursion state to `m̂[-1] = 0`, for advancing again from frame 0.
     pub fn reset(&mut self) {
         self.previous.fill(0.0);
     }
 
-    /// 推进一帧：`row` 是 canonical 字节行，输出写进 `out`（长度必须相同）。
+    /// Advances one frame: `row` is a canonical byte row, and the output is written to `out` (which must have the same length).
     ///
     /// # Panics
-    /// `row` 或 `out` 的长度与构造时的 `bins` 不一致时 panic——这是调用方的
-    /// 编程错误，不是数据错误。
+    /// Panics when the length of `row` or `out` does not match `bins` given at construction. This is a programming error by the caller, not a data error.
     pub fn push_row(&mut self, row: &[u8], out: &mut [u8]) {
         assert_eq!(row.len(), self.previous.len(), "canonical 行宽不匹配");
         assert_eq!(out.len(), self.previous.len(), "输出行宽不匹配");
@@ -124,7 +114,7 @@ impl Remapper {
         }
     }
 
-    /// [`Remapper::push_row`] 的分配版本。
+    /// The allocating version of [`Remapper::push_row`].
     pub fn map_row(&mut self, row: &[u8]) -> Vec<u8> {
         let mut out = vec![0u8; row.len()];
         self.push_row(row, &mut out);
@@ -147,18 +137,18 @@ mod tests {
 
     #[test]
     fn remap_hits_the_element_window_endpoints() {
-        // 元素窗与 canonical 窗相同 → 恒等映射。
+        // Element window same as the canonical window → identity mapping.
         for byte in [0u8, 1, 64, 128, 200, 255] {
             assert_eq!(remap(byte, -120.0, 40.0), byte);
         }
-        // -80/+40 是新建默认：canonical byte 63.75 正好是 -80 dB，窗口下沿之下全 0。
+        // -80/+40 is the default for new items: canonical byte 63.75 is exactly -80 dB, so everything below the window's lower edge is 0.
         assert_eq!(remap(0, -80.0, 40.0), 0);
         assert_eq!(remap(63, -80.0, 40.0), 0);
         assert_eq!(remap(64, -80.0, 40.0), 0);
         assert_eq!(remap(255, -80.0, 40.0), 255);
-        // canonical byte 128 ≈ -39.69 dB，在 -80/+40 窗里落到 86。
+        // Canonical byte 128 ≈ -39.69 dB, which lands at 86 in the -80/+40 window.
         assert_eq!(remap(128, -80.0, 40.0), 86);
-        // -120/-10 是 bicubic 全 bin 类样式的覆写窗。
+        // -120/-10 is the override window for bicubic-style, all-bin looks.
         assert_eq!(remap(0, -120.0, -10.0), 0);
         assert_eq!(remap(255, -120.0, -10.0), 255);
         assert_eq!(remap(200, -120.0, -10.0), 255);
@@ -186,7 +176,7 @@ mod tests {
     fn degenerate_windows_never_produce_nan() {
         assert_eq!(remap(0, -40.0, -40.0), 0);
         assert_eq!(remap(255, -40.0, -40.0), 255);
-        // 倒置窗按阈值处理，仍然单调不减。
+        // An inverted window is handled by threshold and is still monotonically non-decreasing.
         let mut previous = 0u8;
         for byte in 0..=255u8 {
             let value = remap(byte, 40.0, -120.0);
@@ -201,12 +191,12 @@ mod tests {
         assert_eq!(smooth(10.0, 200.0, 1.0), 10.0);
         assert_eq!(smooth(0.0, 200.0, 0.5), 100.0);
 
-        // τ = 0：透传重映射结果。
+        // τ = 0: the remapping result passes through.
         let mut passthrough = Remapper::new(1, -120.0, 40.0, 0.0, 1.0);
         assert_eq!(passthrough.map_row(&[200]), vec![200]);
         assert_eq!(passthrough.map_row(&[10]), vec![10]);
 
-        // τ = 1：y[-1] = 0 意味着永远停在 0。
+        // τ = 1: y[-1] = 0 means it stays at 0 forever.
         let mut frozen = Remapper::new(1, -120.0, 40.0, 1.0, 1.0);
         assert_eq!(frozen.map_row(&[255]), vec![0]);
         assert_eq!(frozen.map_row(&[255]), vec![0]);
@@ -218,7 +208,7 @@ mod tests {
         let magnitude = canonical_magnitude(200);
         let expected =
             |linear: f64| remap_decibels_value(20.0 * linear.log10(), -120.0, 40.0).round() as u8;
-        // 在线性幅度域：m0 = 0.5x，m1 = 0.75x，m2 = 0.875x。
+        // In the linear amplitude domain: m0 = 0.5x, m1 = 0.75x, m2 = 0.875x.
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.5 * magnitude)]);
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.75 * magnitude)]);
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.875 * magnitude)]);
@@ -233,7 +223,7 @@ mod tests {
         assert_eq!(doubled.map_row(&[50, 200]), vec![100, 255]);
         let mut halved = Remapper::new(1, -120.0, 40.0, 0.0, 0.5);
         assert_eq!(halved.map_row(&[100]), vec![50]);
-        // gain 不进递推状态：下一帧仍从未放大的 y 推进。
+        // gain is not in the recursion state: the next frame still advances from the un-amplified y.
         let mut smoothed = Remapper::new(1, -120.0, 40.0, 0.5, 2.0);
         let magnitude = canonical_magnitude(100);
         let mapped = |linear: f64| remap_decibels_value(20.0 * linear.log10(), -120.0, 40.0);
@@ -245,7 +235,7 @@ mod tests {
             smoothed.map_row(&[100]),
             vec![(mapped(0.75 * magnitude) * 2.0).round() as u8]
         );
-        // 非法参数回落到安全缺省。
+        // Illegal parameters fall back to safe defaults.
         let fallback = Remapper::new(1, -120.0, 40.0, f64::NAN, -3.0);
         assert_eq!(fallback.tau(), 0.0);
         assert_eq!(fallback.gain(), 1.0);

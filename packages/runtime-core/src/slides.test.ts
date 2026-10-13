@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RpcError, type DesignSystemAnnotation, type FileTarget, type SlideAnnotation } from '@cuccut/protocol';
 import { resolveDesignSystemAnnotations, resolveSlideAnnotations } from './slides.ts';
 
-/** 消息带的幻灯片标注：deck 换成相对会话工作目录的路径（docs/design/slides §9）。 */
+/** Slide annotations carried by a message: the deck is replaced with a path relative to the session's working directory (docs/design/slides §9). */
 
 const cwd = path.resolve('/work/project');
 const other = path.resolve('/work/other');

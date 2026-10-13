@@ -1,21 +1,20 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/ForcedAligner.swift`。
+//! Parts of this file reference speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/ForcedAligner.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backends, model bundles and transcription interfaces; the original upstream source notice is kept.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 强制对齐器的后端无关编排逻辑：`align_long` 的平台检测分段循环。移植自 v2 `ccut-speech`。
+//! The backend-independent orchestration logic of the forced aligner: the segmented loop with platform detection for `align_long`. Ported from v2 `ccut-speech`.
 //!
-//! 后端各自实现 `align_once`（一次非自回归前向 + 单调化），
-//! 长音频（>240 s，超出 0.08 s × 5000 类的量程）的分段驱动在这里共享。
+//! Each backend implements `align_once` (one non-autoregressive forward pass + monotonization), and the segment-driving for long audio (>240 s, beyond the 0.08 s × 5000-class range) is shared here.
 
 use anyhow::Result;
 
 use super::AlignedWord;
 
-/// 用 `align_once` 驱动长音频对齐：检测尾部“平台”（多个词挤在同一时间），
-/// 保留可信前缀，对剩余音频 × 剩余词重新对齐并加偏移，最多 10 轮。
+/// Drives long-audio alignment with `align_once`: detects a trailing “plateau” (several words squeezed into the same time),
+/// keeps the trustworthy prefix, and realigns the remaining audio × remaining words with an offset applied, for at most 10 rounds.
 pub fn align_long_with<F>(mut align_once: F, audio: &[f32], text: &str, language: &str) -> Result<Vec<AlignedWord>>
 where
     F: FnMut(&[f32], &str, &str) -> Result<Vec<AlignedWord>>,

@@ -15,15 +15,15 @@ import { tr } from './tts-quick-test-copy.tr.ts';
 import { vi } from './tts-quick-test-copy.vi.ts';
 
 /**
- * 本地语音合成「试听」的文案（model/tts-quick-test.ts；英文是键与类型的来源，译文在 `tts-quick-test-copy.<语言>.ts`）。
- * 现成的音色描述与语气说明既显示在界面上，也原样作为 `voiceDescription` / `instructions` 交给模型。
+ * Copy for the local speech synthesis “Preview” (model/tts-quick-test.ts; English is the source of keys and types, translations are in `tts-quick-test-copy.<lang>.ts`).
+ * The ready-made voice descriptions and tone notes are both shown in the UI and passed as-is to the model as `voiceDescription` / `instructions`.
  */
 const en = {
   kindIntro: 'Intro',
   kindNumbers: 'Numbers',
   kindMood: 'Tone',
 
-  /** Qwen3-TTS CustomVoice 说话人的听感（名字本身不翻译）。 */
+  /** How each Qwen3-TTS CustomVoice speaker sounds (the names themselves are not translated). */
   presetSub: {
     Vivian: 'Female · Bright',
     Serena: 'Female · Calm',
@@ -36,7 +36,7 @@ const en = {
     Sohee: 'Female · Korean',
   } as Readonly<Record<string, string>>,
 
-  /** 内置音色的名字。 */
+  /** Names of the built-in voices. */
   builtinVoice: {
     'zh-female': 'Chinese female',
     'zh-male': 'Chinese male',

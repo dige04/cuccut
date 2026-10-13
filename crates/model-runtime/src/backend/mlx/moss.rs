@@ -1,9 +1,9 @@
-//! MOSS-Transcribe-Diarize 的 MLX 引擎，从 v2 `ccut-speech` 原样移植。
+//! MOSS-Transcribe-Diarize's MLX engine, ported unchanged from v2 `ccut-speech`.
 //!
-//! 模型自己产生 `[start][Sxx]text[end]` 时间戳与说话人标签，因此不经外部 VAD。跨块的说话人合并（WeSpeaker）
-//! 与长行的词时间精修（强制对齐器）在 `job.run` 的编排里做（[`crate::transcribe`]），用的是模型包的可选组件。
-//! 文件一律按 `asr` 组件的清单取（`config.json`、`processor_config.json`、`vocab.json`、`merges.txt`、
-//! `tokenizer_config.json`、`*.safetensors`），不扫描目录。
+//! The model itself produces `[start][Sxx]text[end]` timestamps and speaker labels, so no external VAD is used. Cross-chunk speaker merging (WeSpeaker)
+//! and word-timing refinement for long lines (forced aligner) are done in the orchestration of `job.run` ([`crate::transcribe`]), using the model pack's optional components.
+//! Files are always taken from the manifest of the `asr` component (`config.json`, `processor_config.json`, `vocab.json`, `merges.txt`,
+//! `tokenizer_config.json`, `*.safetensors`), not by scanning the directory.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -31,17 +31,17 @@ use crate::speech::moss_parse::{MossGenerationPlan, MossStreamDecoder, moss_quan
 use crate::speech::tokenizer::Qwen3Tokenizer;
 use crate::speech::{SegmentedTranscription, SegmentingCallbacks, SegmentingRecognizer};
 
-/// 量化偏好固定为 v2 的 `speed`：解码器 8 bit（`CCUT_MOSS_QUANT` 仍可改成 4 或 8，诊断用）。
+/// The quantization preference is fixed to v2's `speed`: decoder at 8 bit (`CCUT_MOSS_QUANT` can still change it to 4 or 8, for diagnostics).
 pub const QUANTIZATION_PREFERENCE: &str = "speed";
 
 const GENERATION_CACHE_CLEAR_INTERVAL: usize = 256;
 
 pub struct MossTranscribeDiarize {
     config: MossConfig,
-    /// 释放音频前端之后，重切失败的块时要从这些权重分片把它重新装回来。
+    /// After the audio front end is released, reloading the weight shards is needed when a failed chunk is re-split.
     weights: Vec<PathBuf>,
-    // 一次性 CLI 在生成音频嵌入后可以释放这两块约 615 MB 的 BF16 权重；
-    // 常驻 worker 仍保留它们以复用模型。
+    // A one-shot CLI can release these two BF16 blocks, about 615 MB, after generating the audio embeddings;
+    // a resident worker keeps them to reuse the model.
     whisper_encoder: Option<WhisperEncoder>,
     adaptor: Option<VqAdaptor>,
     decoder: TextDecoder,
@@ -62,14 +62,14 @@ struct PreparedChunk {
 }
 
 impl MossTranscribeDiarize {
-    /// 从 `asr` 组件的文件加载，量化偏好固定为 [`QUANTIZATION_PREFERENCE`]。缺文件是 `MODEL_NOT_INSTALLED`
-    /// （错误能 `downcast_ref` 出 [`crate::protocol::ErrorBody`]）。
+    /// Loads from the files of the `asr` component; the quantization preference is fixed to [`QUANTIZATION_PREFERENCE`]. A missing file is `MODEL_NOT_INSTALLED`
+    /// (the error can be `downcast_ref`'d to [`crate::protocol::ErrorBody`]).
     pub fn load(files: &VerifiedFiles) -> Result<Self> {
         Self::load_with_preference(files, QUANTIZATION_PREFERENCE)
     }
 
     pub fn load_with_preference(files: &VerifiedFiles, preference: &str) -> Result<Self> {
-        // 先按清单取齐文件，缺了不必碰 Metal 与权重。
+        // Check that all files are present per the manifest first; if any is missing, don't touch Metal or the weights.
         let config_path = files.require("config.json")?;
         let vocabulary = files.require("vocab.json")?;
         let weights = files
@@ -126,7 +126,7 @@ impl MossTranscribeDiarize {
                 Ok((digit, encoded[0]))
             })
             .collect::<Result<HashMap<_, _>>>()?;
-        // lm_head（ tied embedding 模式）及索引元数据不参与推理。
+        // lm_head (tied embedding mode) and the index metadata do not take part in inference.
         let _unused_checkpoint_metadata = store.remaining();
         if speech_timing_enabled() {
             let (active, cache, peak) = memory_snapshot();
@@ -168,9 +168,9 @@ impl MossTranscribeDiarize {
         self.transcribe_diarized_with_release(audio, language, false, callbacks)
     }
 
-    /// 一次性转录可以在生成全部分块的输入嵌入后释放音频前端，再进入耗时更长的
-    /// 文本生成阶段。预先物化的输入与原路径逐值相同；常驻 worker 传 `false`，
-    /// 保留前端以服务下一任务。
+    /// A one-shot transcription can release the audio front end after generating the input embeddings for all chunks, before entering the
+    /// longer text-generation stage. The pre-materialized inputs are value-for-value identical to the original path. A resident worker passes `false`
+    /// and keeps the front end to serve the next task.
     pub fn transcribe_diarized_with_release(
         &mut self,
         audio: &[f32],
@@ -184,7 +184,7 @@ impl MossTranscribeDiarize {
             return Ok(MossTranscription::default());
         }
         let total_duration = audio.len() as f64 / SAMPLE_RATE as f64;
-        // 实验旋钮：缩短分块可换取更短的注意力上下文，缺省时与固定 CHUNK_DURATION 完全一致。
+        // Experimental knob: shorter chunks trade for a shorter attention context; by default it matches the fixed CHUNK_DURATION exactly.
         let chunk_seconds = MossGenerationPlan::chunk_duration_from_env(std::env::var("CCUT_MOSS_CHUNK_SECONDS").ok().as_deref());
         let plan = MossGenerationPlan::make_with_chunk_duration(total_duration, chunk_seconds);
         let chunks = split_audio_at_low_energy(audio, plan.chunk_duration, 5.0, 0.1);
@@ -208,8 +208,8 @@ impl MossTranscribeDiarize {
                 .and_then(|index| prepared_chunks.get_mut(index))
                 .and_then(Option::take);
             if prepared.is_none() {
-                // 重切出来的子块没有预先物化的输入；一次性转录此时已经放掉了音频
-                // 前端，按需装回来（只在失败重切这条罕见路径上多花几秒）。
+                // Sub-chunks produced by re-splitting have no pre-materialized inputs. In a one-shot transcription the audio front end has already been released at this point,
+                // so it is loaded back on demand (this costs a few extra seconds only on this rare re-split-after-failure path).
                 self.ensure_audio_frontend()?;
             }
             let output = self.generate_chunk(request.samples, &instruction, prepared, request.max_tokens, stream);
@@ -218,7 +218,7 @@ impl MossTranscribeDiarize {
         })
     }
 
-    /// 音频前端被 `release_audio_frontend` 放掉后重新装回。
+    /// Reloads the audio front end after `release_audio_frontend` has released it.
     fn ensure_audio_frontend(&mut self) -> Result<()> {
         if self.whisper_encoder.is_some() && self.adaptor.is_some() {
             return Ok(());
@@ -278,7 +278,7 @@ impl MossTranscribeDiarize {
         let detail = std::env::var("CCUT_SPEECH_TIMING").is_ok_and(|value| value == "2");
         let (mut item_seconds, mut build_seconds, mut dispatch_seconds) = (0.0_f64, 0.0, 0.0);
         let mut generated = Vec::with_capacity(maximum_tokens.min(4_096));
-        // 增量解析供实时预览与循环检测使用；最终文本仍从完整 token 串解码。
+        // Incremental parsing serves live preview and loop detection; the final text is still decoded from the complete token sequence.
         let mut decoder = MossStreamDecoder::default();
         let mut streamed = 0_usize;
         let mut stop_reason = GenerationStopReason::TokenLimit;
@@ -375,7 +375,7 @@ impl MossTranscribeDiarize {
     fn prepare_generation_inputs(&mut self, audio: &[f32], instruction: &str) -> Result<(Vec<i32>, Array)> {
         let timing = speech_timing_enabled();
         let chunks = audio.chunks(WHISPER_WINDOW_SAMPLES).collect::<Vec<_>>();
-        // token 长度只依赖窗口样本数，串行算掉它就不必让 mel 线程借用 self。
+        // The token length depends only on the window sample count; computing it serially means the mel thread does not need to borrow self.
         let feature_lengths = chunks
             .iter()
             .map(|chunk| self.compute_audio_token_length(chunk.len().max(1)))
@@ -394,8 +394,8 @@ impl MossTranscribeDiarize {
             .context("MOSS 音频编码器已释放")?
             .forward(&input_features)?;
         let audio_embeddings = self.audio_embeddings(&encoded, &feature_lengths)?;
-        // MLX 惰性求值：不在这里强制物化就无法把 encode 与 inject 的耗时分开。
-        // 只在计时开关下多做这一次 eval，生产路径的调度完全不变。
+        // MLX is lazily evaluated: without forcing materialization here, the time spent in encode and inject cannot be separated.
+        // This extra eval runs only under the timing switch; the production scheduling is entirely unchanged.
         if timing {
             audio_embeddings.eval()?;
         }
@@ -490,7 +490,7 @@ impl MossTranscribeDiarize {
     }
 }
 
-/// 常驻 Worker 保留音频前端，下一条任务直接复用（v2 常驻节点同样传 `false`）。
+/// A resident worker keeps the audio front end, which the next task reuses directly (v2's resident node also passes `false`).
 impl SegmentingRecognizer for MossTranscribeDiarize {
     fn transcribe(
         &mut self,
@@ -641,7 +641,7 @@ impl WhisperEncoder {
 }
 
 fn load_conv1d(store: &mut WeightStore, prefix: &str, stride: i32) -> Result<Conv1d> {
-    // 官方 checkpoint 是 PyTorch [out, in, kernel]，MLX Conv1d 要 [out, kernel, in]。
+    // The official checkpoint is PyTorch [out, in, kernel]; MLX Conv1d needs [out, kernel, in].
     let weight = store.take(&format!("{prefix}.weight"))?.transpose_axes(&[0, 2, 1])?;
     Ok(Conv1d {
         weight: Param::new(weight),
@@ -653,8 +653,8 @@ fn load_conv1d(store: &mut WeightStore, prefix: &str, stride: i32) -> Result<Con
     })
 }
 
-/// 逐 30 s 窗口提取 Whisper mel。每个窗口的结果只依赖该窗口自身的样本，`extract` 也只借
-/// `&self`，因此可以直接多线程分片；输出写回按窗口序号切好的连续切片，与串行版本逐字节一致。
+/// Extracts the Whisper mel per 30 s window. Each window's result depends only on that window's own samples, and `extract` borrows only `&self`,
+/// so it can be split across threads directly. The output is written back into contiguous slices cut by window index, byte-for-byte identical to the serial version.
 fn extract_mel_windows(mel: &WhisperFeaturePipeline, windows: &[&[f32]], mel_bins: usize) -> Result<Vec<f32>> {
     const TIME_FRAMES: usize = 3_000;
     let stride = TIME_FRAMES * mel_bins;
@@ -713,8 +713,8 @@ fn extract_mel_windows(mel: &WhisperFeaturePipeline, windows: &[&[f32]], mel_bin
 }
 
 fn inject_audio_embeddings(prompt_ids: &[i32], text_embeddings: &Array, audio_embeddings: &Array, audio_token_id: i32) -> Result<Array> {
-    // 防御：音频嵌入必须与文本嵌入同 dtype，否则 concat 会把整个 prompt
-    // （进而 KV cache 与整个自回归解码）提升到更宽的精度。
+    // Defensive: the audio embeddings must have the same dtype as the text embeddings; otherwise concat would promote the whole prompt
+    // (and with it the KV cache and the entire autoregressive decode) to the wider precision.
     let audio_embeddings = &audio_embeddings.as_dtype(text_embeddings.dtype())?;
     let positions = prompt_ids
         .iter()

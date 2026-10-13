@@ -4,8 +4,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 /**
- * 找 Agent 的命令行：登录 shell 的环境与 PATH、可执行检查、多个安装里挑版本最新的、给子进程的环境。
- * Claude、Codex 与 ACP 的 Driver 共用。
+ * Finds the agent command line: the login shell's environment and PATH, executable checks, picking the newest version among several installs, and the environment for child processes.
+ * Shared by the Claude, Codex, and ACP Drivers.
  */
 
 const run = promisify(execFile);
@@ -13,15 +13,14 @@ const MARK = '__CUCCUT_ENV__';
 
 let loginShell: Promise<Record<string, string> | null> | null = null;
 
-/** 登录 shell 自己维护的状态，不是用户配的环境：不带过来。 */
+/** State maintained by the login shell itself, not environment the user configured: not carried over. */
 const SHELL_STATE_ENV = new Set(['PWD', 'OLDPWD', 'SHLVL', '_', 'CUCCUT_LOGIN_SHELL_PROBE']);
 
 /**
- * 登录 shell 的整份环境（`$SHELL -ilc` 里 `env -0` 的结果），失败或 Windows 上为 null。只取一次。
+ * The login shell's full environment (the result of `env -0` run via `$SHELL -ilc`); null on failure or on Windows. Fetched only once.
  *
- * 从 Finder / Dock 启动的桌面应用拿不到 shell 配置里加的 PATH（例如 `~/.bun/bin`）与变量（`GEMINI_API_KEY`、
- * `XAI_API_KEY` 这类智能体自己读的密钥），在终端里开发时这个问题会被掩盖。做法参照 VS Code 的 shellEnv
- * （paseo 的 login-shell-env.ts 同样整份导入）；这里用 `env -0` 而不是再起一个 node，NUL 分隔，多行的值也不会切错。
+ * Desktop apps launched from Finder or the Dock do not get the PATH entries added in shell config (for example `~/.bun/bin`), or variables (`GEMINI_API_KEY`, `XAI_API_KEY`, keys that the agents read themselves). This problem is hidden when developing in a terminal. The approach follows VS Code's shellEnv
+ * (paseo's login-shell-env.ts likewise imports the whole environment). Here `env -0` is used instead of starting another node; NUL-separated, so multi-line values are not split incorrectly.
  */
 export function resolveLoginShellEnv(): Promise<Record<string, string> | null> {
   loginShell ??= (async () => {
@@ -42,7 +41,7 @@ export function resolveLoginShellEnv(): Promise<Record<string, string> | null> {
   return loginShell;
 }
 
-/** `env -0` 的输出 → 变量表，去掉 shell 自己的状态（`SHELL_STATE_ENV`）。 */
+/** `env -0` output → variable table, with the shell's own state (`SHELL_STATE_ENV`) removed. */
 export function parseEnv0(text: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const entry of text.split('\0')) {
@@ -55,8 +54,8 @@ export function parseEnv0(text: string): Record<string, string> {
 }
 
 /**
- * 登录 shell 的环境与当前进程的合并：当前进程已有的变量以当前为准（Runtime 启动时给定的 `CUCCUT_*` 之类不被
- * shell 配置改掉），只在登录 shell 里有的补上；PATH 两边合并，登录 shell 的在前。
+ * Merges the login shell environment with the current process: variables the current process already has take priority (values such as `CUCCUT_*` given by the Runtime at startup are not overridden by
+ * shell config); only variables present in the login shell alone are added. PATH is merged from both sides, with the login shell's first.
  */
 export function mergeLoginEnv(login: Record<string, string> | null, current: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const merged: NodeJS.ProcessEnv = { ...login, ...current };
@@ -65,7 +64,7 @@ export function mergeLoginEnv(login: Record<string, string> | null, current: Nod
   return merged;
 }
 
-/** 登录 shell 的 PATH 与当前进程的 PATH 合并（登录 shell 的在前）；取不到登录 shell 时只用当前 PATH。 */
+/** Merges the login shell's PATH with the current process's PATH (login shell first); when the login shell cannot be read, only the current PATH is used. */
 export async function resolveLoginShellPath(): Promise<string> {
   const login = await resolveLoginShellEnv();
   return mergePath(login?.PATH ?? '', process.env.PATH ?? '');
@@ -86,24 +85,23 @@ function mergePath(...lists: string[]): string {
 }
 
 /**
- * 宿主 Claude Code 会话留下的变量。Runtime 自己若是从 Claude Code 里启动的（开发、测试时），这些会漏给子进程，
- * 让 claude 以为自己嵌在别的会话里（"cannot be launched inside another session"），或带上宿主的强度、账号、
- * 文件检查点之类的开关（实测漏过 `CLAUDE_EFFORT`、`CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL`、
- * `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`、`CLAUDE_CODE_USER_EMAIL` 等十几个）。宿主会加新的，所以按前缀清：
- * `CLAUDE_*` 与 `CLAUDECODE*` 一律去掉，只留下面白名单里用户自己会配的。`ANTHROPIC_*` 不在清理范围内，原样保留。
+ * Variables left by the host Claude Code session. If the Runtime itself was launched from within Claude Code (during development or testing), these leak to child processes,
+ * making claude think it is embedded in another session ("cannot be launched inside another session"), or carrying the host's effort, account, file checkpoint, and similar switches (real tests leaked more than a dozen, including `CLAUDE_EFFORT`, `CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL`,
+ * `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`, `CLAUDE_CODE_USER_EMAIL`). The host will add new ones, so they are cleared by prefix:
+ * all `CLAUDE_*` and `CLAUDECODE*` are removed, keeping only what users configure themselves, from the allowlist below. `ANTHROPIC_*` is outside the cleanup scope and is kept as-is.
  *
- * 限制：从 Claude Code 里启动 Runtime 时，宿主注入的 `ANTHROPIC_*`（例如 `ANTHROPIC_BASE_URL`）与用户自己配的分不出来，照样传下去。
+ * Limitation: when the Runtime is launched from Claude Code, the `ANTHROPIC_*` variables injected by the host (for example `ANTHROPIC_BASE_URL`) cannot be told apart from ones the user configured, so they are passed down anyway.
  */
 const HOST_ENV_PREFIXES = ['CLAUDE_', 'CLAUDECODE'];
 
 /**
- * 按前缀清理时保留的 `CLAUDE_*`：都是用户在自己的 shell 里配、宿主会话不会设的（名字都在 claude 2.1.281 的二进制里核对过）。
- * 强度（`CLAUDE_EFFORT`、`CLAUDE_CODE_EFFORT_LEVEL`）不留：CucCut 每一轮自己给。
+ * `CLAUDE_*` variables kept during prefix cleanup: all are set by the user in their own shell, and host sessions do not set them (the names were checked against the claude 2.1.281 binary).
+ * Effort (`CLAUDE_EFFORT`, `CLAUDE_CODE_EFFORT_LEVEL`) is not kept: CucCut sets it on each turn itself.
  */
 export const USER_CLAUDE_ENV = new Set([
-  // 配置目录
+  // Config directory
   'CLAUDE_CONFIG_DIR',
-  // 选用哪家云或网关，以及跳过 CLI 自己的云鉴权（由外部代理或网关代为鉴权）
+  // Which cloud or gateway to use, and skipping the CLI's own cloud auth (auth is handled by an external proxy or gateway)
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
   'CLAUDE_CODE_USE_FOUNDRY',
@@ -117,28 +115,28 @@ export const USER_CLAUDE_ENV = new Set([
   'CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH',
   'CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH',
   'CLAUDE_CODE_SKIP_MANTLE_AUTH',
-  // 凭据：`claude setup-token` 生成的长期令牌；apiKeyHelper 的缓存时长
+  // Credentials: the long-lived token generated by `claude setup-token`; cache duration for apiKeyHelper
   'CLAUDE_CODE_OAUTH_TOKEN',
   'CLAUDE_CODE_API_KEY_HELPER_TTL_MS',
-  // 企业网络：mTLS 客户端证书、证书库
+  // Enterprise network: mTLS client certificate, certificate store
   'CLAUDE_CODE_CLIENT_CERT',
   'CLAUDE_CODE_CLIENT_KEY',
   'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
   'CLAUDE_CODE_CERT_STORE',
-  // 请求与输出
+  // Requests and output
   'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
   'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
   'CLAUDE_CODE_MAX_RETRIES',
   'CLAUDE_CODE_SUBAGENT_MODEL',
-  // 命令执行的环境（Windows 上 Git Bash 的位置）
+  // Environment for command execution (location of Git Bash on Windows)
   'CLAUDE_CODE_SHELL',
   'CLAUDE_CODE_SHELL_PREFIX',
   'CLAUDE_CODE_GIT_BASH_PATH',
   'CLAUDE_CODE_TMPDIR',
 ]);
 
-/** 去掉宿主 Claude Code 会话的变量（见 `HOST_ENV_PREFIXES`），返回新对象，不改传入的。 */
+/** Removes the host Claude Code session variables (see `HOST_ENV_PREFIXES`); returns a new object and does not modify the one passed in. */
 export function stripHostSessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
@@ -148,7 +146,7 @@ export function stripHostSessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
-/** 给 Agent 子进程的环境：登录 shell 的环境补上当前进程没有的变量（`mergeLoginEnv`），去掉宿主会话的变量。 */
+/** Environment for agent child processes: the login shell environment, with variables the current process lacks added (`mergeLoginEnv`), and the host session variables removed. */
 export async function agentEnv(): Promise<NodeJS.ProcessEnv> {
   return stripHostSessionEnv(mergeLoginEnv(await resolveLoginShellEnv(), process.env));
 }
@@ -180,7 +178,7 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
- * 几个安装位置里挑版本最新、能读出版本的那个；都读不出版本时取第一个（让探测报出错原文，而不是「没装」）。
+ * Among several install locations, picks the one with the newest version that can report its version. If none can report a version, takes the first, so that the probe reports the raw error rather than "not installed".
  */
 export async function pickNewest<T extends { version: string | null }>(
   candidates: Iterable<string>,

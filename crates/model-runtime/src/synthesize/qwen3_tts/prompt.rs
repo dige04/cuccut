@@ -1,20 +1,20 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! 提示构造的纯逻辑部分：聊天模板 token 序列、codec 前缀、说话人解析与
-//! 最大 token 上限（普通与 ICL 两条路径）。
+//! Pure-logic part of prompt construction: the chat-template token sequence, codec prefix, speaker resolution, and
+//! the max-token cap (both the normal and ICL paths).
 //!
-//! 嵌入拼接（需要 MLX 数组）在 `talker.rs` 里做，这里只产出 token 序列与
-//! 长度信息，方便无权重单测。
+//! Embedding concatenation (which needs MLX arrays) is done in `talker.rs`. This module only produces the token sequence and
+//! length information, so it can be unit-tested without weights.
 
 use super::config::SpeakerConfig;
 use super::tokens::*;
 
-/// CustomVoice 无显式 instruct 时自动补的默认指令（防止短句啰嗦）。
+/// Default instruction automatically added for CustomVoice when no explicit instruct is given (prevents rambling on short sentences).
 pub const DEFAULT_INSTRUCT: &str = "Speak naturally.";
 
 /// `<|im_start|>assistant\n{text}<|im_end|>\n<|im_start|>assistant\n`。
@@ -35,7 +35,7 @@ pub fn instruct_tokens(instruct_ids: &[i32]) -> Vec<i32> {
     tokens
 }
 
-/// 角色前缀 `<|im_start|>assistant\n`（ICL 路径单独使用）。
+/// Assistant role prefix `<|im_start|>assistant\n` (used separately on the ICL path).
 pub fn role_tokens() -> [i32; 3] {
     [IM_START, ASSISTANT, NEWLINE]
 }
@@ -51,10 +51,10 @@ pub fn codec_prefix(language_id: i32, speaker_token: Option<i32>) -> Vec<i32> {
     prefix
 }
 
-/// ICL 路径的 codec 前缀（不含说话人 token，说话人嵌入在向量层插入）：
-/// 有语言时 `[think, think_bos, lang, think_eos, pad, bos]`，说话人插在下标 4；
-/// 无语言（auto）时 `[nothink, think_bos, think_eos, pad, bos]`，插在下标 3。
-/// 返回 `(tokens, speaker_insert_index)`。
+/// Codec prefix for the ICL path (excludes the speaker token; the speaker embedding is inserted at the vector level):
+/// with a language, `[think, think_bos, lang, think_eos, pad, bos]`, with the speaker inserted at index 4;
+/// without a language (auto), `[nothink, think_bos, think_eos, pad, bos]`, with the speaker inserted at index 3.
+/// Returns `(tokens, speaker_insert_index)`.
 pub fn icl_codec_prefix(language_id: Option<i32>) -> (Vec<i32>, usize) {
     match language_id {
         Some(lang) => (vec![CODEC_THINK, CODEC_THINK_BOS, lang, CODEC_THINK_EOS, CODEC_PAD, CODEC_BOS], 4),
@@ -62,23 +62,22 @@ pub fn icl_codec_prefix(language_id: Option<i32>) -> (Vec<i32>, usize) {
     }
 }
 
-/// 说话人解析结果。
+/// Speaker resolution result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedSpeaker {
-    /// 说话人 codec token；模型无说话人表或名字未知时为 `None`。
+    /// Speaker codec token; `None` when the model has no speaker table or the name is unknown.
     pub token: Option<i32>,
-    /// 生效语言名（方言说话人且调用方未显式指定语言时被方言覆盖）。
+    /// Effective language name (overridden by the dialect when the speaker is a dialect speaker and the caller did not explicitly specify a language).
     pub language: String,
-    /// 未找到说话人时的提示（可用于告警或报错）。
+    /// Hint emitted when no speaker is found (can be used for a warning or an error).
     pub warning: Option<String>,
 }
 
-/// CustomVoice 的 9 只说话人：名单是纯数据，住在 `synthesize::voices`（不加载引擎也要能列）。
+/// The 9 CustomVoice speakers. The roster is pure data and lives in `synthesize::voices`, so it can be listed without loading the engine.
 pub use crate::synthesize::voices::CUSTOM_VOICE_SPEAKERS;
 
-/// CustomVoice 的 9 只说话人里，各语言的默认那只（小写名，对照 `speaker_ids` 的键）。
-/// 日语、韩语各有本语的女声，中文用 Vivian，其余拉丁语系用 Serena——与内置音色
-/// 「女声优先」是同一条规矩（`crate::synthesize::voices::default_for`）。
+/// Of CustomVoice's 9 speakers, the default for each language (lowercase name, matching the keys of `speaker_ids`).
+/// Japanese and Korean each have a female voice in their own language, Chinese uses Vivian, and the other Latin-script languages use Serena. This is the same "female voice first" rule as the built-in voices (`crate::synthesize::voices::default_for`).
 const DEFAULT_SPEAKERS: &[(&str, &str)] = &[
     ("chinese", "vivian"),
     ("beijing_dialect", "vivian"),
@@ -88,9 +87,8 @@ const DEFAULT_SPEAKERS: &[(&str, &str)] = &[
     ("english", "serena"),
 ];
 
-/// 内置音色 id → CustomVoice 里**就近**的那只说话人。CustomVoice 不能克隆，
-/// 随包录音在它身上用不上；名字一路带过来时不报错，挑个同语言同性别的顶上。
-/// 日语男声与西语两只模型里没有，只能拿英语的顶——日志里会说。
+/// Built-in voice id → the **nearest** CustomVoice speaker. CustomVoice cannot clone, so the recording bundled with the pack has no use on it. When the name is passed through, no error is raised; a same-language, same-gender speaker is picked.
+/// Neither model has a Japanese male voice or the Spanish voices, so English stands in for them; the log says so.
 const BUILTIN_NEAR: &[(&str, &str)] = &[
     ("zh-female", "vivian"),
     ("zh-male", "uncle_fu"),
@@ -102,8 +100,7 @@ const BUILTIN_NEAR: &[(&str, &str)] = &[
     ("es-male", "ryan"),
 ];
 
-/// 没指定说话人时 CustomVoice 用哪只：先按语言查表，表里没有（或模型没装这只）
-/// 就落到说话人表的第一只。模型没有说话人表时给 `None`（Base 走克隆那条路）。
+/// The speaker CustomVoice uses when none is specified: look up by language first. If the table has no entry (or the model lacks that speaker), fall back to the first speaker in the speaker table. When the model has no speaker table, give `None` (Base takes the cloning path).
 pub fn default_speaker(language: &str, config: Option<&SpeakerConfig>) -> Option<String> {
     let config = config?;
     let wanted = DEFAULT_SPEAKERS
@@ -118,7 +115,7 @@ pub fn default_speaker(language: &str, config: Option<&SpeakerConfig>) -> Option
     config.available_speakers().into_iter().next()
 }
 
-/// 内置音色 id → 这只模型里就近的说话人；不是内置音色、或模型没装那只，给 `None`。
+/// Built-in voice id → the nearest speaker in this model. If it is not a built-in voice, or the model lacks that speaker, give `None`.
 pub fn nearest_speaker(id: &str, config: &SpeakerConfig) -> Option<&'static str> {
     let id = crate::synthesize::voices::find(id)?.id;
     BUILTIN_NEAR
@@ -128,8 +125,8 @@ pub fn nearest_speaker(id: &str, config: &SpeakerConfig) -> Option<&'static str>
         .filter(|speaker| config.speaker_ids.contains_key(*speaker))
 }
 
-/// 小写查表；方言说话人在 `language_explicit == false`
-/// 时把语言改为方言。
+/// Lowercase lookup. For dialect speakers, when `language_explicit == false`,
+/// the language is changed to the dialect.
 pub fn resolve_speaker(speaker: Option<&str>, config: Option<&SpeakerConfig>, language: &str, language_explicit: bool) -> ResolvedSpeaker {
     let Some(name) = speaker else {
         return ResolvedSpeaker {
@@ -170,43 +167,41 @@ pub fn resolve_speaker(speaker: Option<&str>, config: Option<&SpeakerConfig>, la
     }
 }
 
-/// 上限的下限：125 帧 = 10 s。
+/// Lower bound of the cap: 125 frames = 10 s.
 ///
-/// 上限只该拦住不收尾的失控生成，不该截断念得慢的正常句子。原先的
-/// 75 帧（6 s）在短句上就是实际上限：18 个字、带三处顿号的一句念慢一点就要 6 s
-/// 以上，被从中间切断、只在 stderr 留一行警告（2026-09-23 语速排查实测）。
+/// The cap should only stop runaway generation that never ends. It should not truncate a normal sentence spoken slowly. The original 75 frames (6 s) was in practice the cap for short sentences: an 18-character sentence with three enumeration commas (、) spoken a bit slowly runs past 6 s, gets cut mid-way, and leaves only a warning line on stderr (measured during a speaking-rate investigation on 2026-09-23).
 pub const MIN_TOKEN_CAP: usize = 125;
 
-/// 普通合成的 token 上限：`min(max_tokens, max(125, 文本 token 数 × 8))`，
-/// 再被生成循环的安全上限 2048 截断。每 token 8 帧（0.64 s）是正常语速的两倍多。
+/// Token cap for normal synthesis: `min(max_tokens, max(125, text token count × 8))`,
+/// further truncated by the generation loop's safety cap of 2048. 8 frames per token (0.64 s) is more than twice the duration of normal speech.
 pub fn max_token_cap(text_token_count: usize, max_tokens: usize) -> usize {
     max_tokens.min((text_token_count * 8).max(MIN_TOKEN_CAP))
 }
 
-/// ICL 合成的 token 上限：`min(max_tokens, max(125, 目标文本 token 数 × 8))`。
+/// Token cap for ICL synthesis: `min(max_tokens, max(125, target text token count × 8))`.
 pub fn icl_max_token_cap(target_token_count: usize, max_tokens: usize) -> usize {
     max_tokens.min((target_token_count * 8).max(MIN_TOKEN_CAP))
 }
 
-/// 生成循环的硬上限（对照参考实现的 2048）。
+/// Hard cap on the generation loop (matches the reference implementation's 2048).
 pub const SAFE_MAX_TOKENS: usize = 2048;
 
-/// 普通路径拖尾文本的 token 下标区间 `[4, len-5)`；
-/// 区间为空时只剩 `tts_eos`。
+/// Token index range `[4, len-5)` for the trailing text on the normal path.
+/// When the range is empty, only `tts_eos` remains.
 pub fn trailing_text_range(text_token_len: usize) -> Option<std::ops::Range<usize>> {
     let start = 4usize;
     let end = text_token_len.saturating_sub(5);
     (end > start).then_some(start..end)
 }
 
-/// ICL 路径的文本 / codec 对齐：返回 `(overlay_len, trailing_kind)`。
-/// 文本比 codec 长：前 `codec_len` 个文本嵌入与 codec 叠加，其余作拖尾；
-/// 否则文本右侧补 `tts_pad` 到 `codec_len`，拖尾只有一个 `tts_pad`。
+/// Text/codec alignment on the ICL path: returns `(overlay_len, trailing_kind)`.
+/// When the text is longer than the codec, the first `codec_len` text embeddings are overlaid onto the codec and the rest form the trailing part.
+/// Otherwise the text is right-padded with `tts_pad` to `codec_len`, and the trailing part is a single `tts_pad`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IclTrailing {
-    /// 拖尾为文本嵌入 `[codec_len, text_len)`。
+    /// The trailing part is the text embeddings `[codec_len, text_len)`.
     TextFrom(usize),
-    /// 文本不够长：补 `pad_count` 个 `tts_pad`，拖尾为单个 `tts_pad`。
+    /// Text is too short: pad with `pad_count` `tts_pad` tokens, and the trailing part is a single `tts_pad`.
     Padded { pad_count: usize },
 }
 
@@ -220,8 +215,8 @@ pub fn icl_alignment(text_len_with_eos: usize, codec_len: usize) -> IclTrailing 
     }
 }
 
-/// ICL 解码后从波形前部裁掉参考部分的采样数：
-/// `cut = ref_frames * total_samples / total_frames`，仅当 `0 < cut < total_samples`。
+/// Number of samples to trim from the front of the waveform after ICL decoding, to remove the reference portion:
+/// `cut = ref_frames * total_samples / total_frames`, applied only when `0 < cut < total_samples`.
 pub fn icl_reference_cut(ref_frames: usize, total_frames: usize, total_samples: usize) -> usize {
     if total_frames == 0 {
         return 0;
@@ -256,9 +251,9 @@ mod tests {
         assert_eq!(default_speaker("japanese", Some(&config)).as_deref(), Some("ono_anna"));
         assert_eq!(default_speaker("korean", Some(&config)).as_deref(), Some("sohee"));
         assert_eq!(default_speaker("chinese", Some(&config)).as_deref(), Some("vivian"));
-        // 表里没有 serena：落到说话人表的第一只（BTreeMap 字典序）
+        // No serena in the table: fall back to the first speaker in the speaker table (BTreeMap lexicographic order)
         assert_eq!(default_speaker("english", Some(&config)).as_deref(), Some("eric"));
-        // 没有说话人表就是 Base，走克隆那条路
+        // No speaker table means Base, which takes the cloning path
         assert_eq!(default_speaker("chinese", None), None);
     }
 
@@ -267,14 +262,14 @@ mod tests {
         let config = speaker_config();
         assert_eq!(nearest_speaker("zh-female", &config), Some("vivian"));
         assert_eq!(nearest_speaker("ja-female", &config), Some("ono_anna"));
-        // 就近那只这个模型里没装（uncle_fu）：不硬塞
+        // The nearest speaker is not installed in this model (uncle_fu): don't force it
         assert_eq!(nearest_speaker("zh-male", &config), None);
         assert_eq!(nearest_speaker("Vivian", &config), None);
-        // 未知说话人若是内置音色 id，解析时就近顶上、不报错
+        // An unknown speaker that is a built-in voice id is resolved to the nearest speaker at parse time, with no error
         let resolved = resolve_speaker(Some("zh-female"), Some(&config), "chinese", true);
         assert_eq!(resolved.token, Some(3065));
         assert!(resolved.warning.is_none());
-        // 既不是说话人也不是内置音色：照旧给告警
+        // Neither a speaker nor a built-in voice: warn as before
         assert!(resolve_speaker(Some("女性-温柔"), Some(&config), "chinese", true).warning.is_some());
     }
 
@@ -288,7 +283,7 @@ mod tests {
             ]
         );
         assert_eq!(trailing_text_range(tokens.len()), Some(4..6));
-        // 单 token 文本：[4, 4) 为空，只剩 tts_eos。
+        // Single-token text: [4, 4) is empty, only tts_eos remains.
         assert_eq!(trailing_text_range(text_tokens(&[10]).len()), None);
         assert_eq!(instruct_tokens(&[7]), vec![IM_START, USER, NEWLINE, 7, IM_END, NEWLINE]);
     }
@@ -329,7 +324,7 @@ mod tests {
     #[test]
     fn token_caps() {
         assert_eq!(max_token_cap(5, 4096), 125);
-        // 「工具是它的双手，能搜索、点击、下单；」约 12 个 token：旧上限 75 帧把它截在 6 s。
+        // "工具是它的双手，能搜索、点击、下单；" ("Tools are its hands: it can search, click and place orders;"), about 12 tokens: the old 75-frame cap cut it off at 6 s.
         assert_eq!(max_token_cap(12, 4096), 125);
         assert_eq!(max_token_cap(100, 4096), 800);
         assert_eq!(max_token_cap(1000, 500), 500);
@@ -347,7 +342,7 @@ mod tests {
         assert_eq!(icl_reference_cut(40, 40, 100), 0);
     }
 
-    /// 默认说话人与就近表里的名字都在对外公布的名单里（名单是小写查表的另一种写法）。
+    /// The default speaker and the names in the nearest-voice table are both in the publicly listed roster (the roster is another way of writing the lowercase lookup).
     #[test]
     fn speaker_tables_point_into_the_published_list() {
         let published: Vec<String> = CUSTOM_VOICE_SPEAKERS.iter().map(|name| name.to_lowercase()).collect();

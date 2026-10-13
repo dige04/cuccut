@@ -18,25 +18,20 @@ import { DUB_EXTENSION } from './pipelines/dub.ts';
 import { TRANSLATION_SCHEMA, type TranslationBody, type TranslationUnit } from './pipelines/translation-document.ts';
 
 /**
- * 换用文稿（架构设计 §6.6；转录流程的 `destination: 'replace'`）：转写 Job 应用结果时，一笔事务写已有 `speech` 文档的新版本，
- * 并结转依赖它的内容。这里只算操作，不提交；Application 照常校验版本、提交、记回执。
+ * Switching the transcript (architecture design §6.6; `destination: 'replace'` in the transcription flow): when the transcription Job applies its result, one transaction writes a new revision of the existing `speech` document and carries over the content that depends on it. This only computes the operations and does not commit; Application validates the revision, commits, and records the receipt as usual.
  *
- * - 手工修改闸门：应用前重读当前文稿，全文指纹（与 `stages.asr` 同一种写法）不再是提交时的那个就拒绝
- *   （`TRANSCRIPT_EDITED`）；提交时的 `acceptEdited` 只覆盖提交那一刻的指纹。
- * - 译文（视频格式规范 §5.3「源文稿换版本时的结转」）：新旧句子按素材时钟的重叠贪心配对，规范化原文相同的保留译文与状态、
- *   对齐降为句级；变了的、新句没配上的标过期；旧句没配上的不结转。每种语言写同一份文档的新版本。
- * - 字幕：派生自这份文稿与结转了的译文的字幕文档按新文稿重新切条（与流程建字幕层同一份切法），正文里别的字段与样式不动。
- * - 正文的 `userBreaks`、`paragraphBreaks`（§5.5）按时间重锚：旧词源时间区间的中点落在哪个新词里、两词规范化文本相同就换成
- *   那个新词，否则条目原样留着（指向不存在的词，不生效），记为 `orphaned`。`layoutProfileId` 原样带过去。
- * - 配音计划（§7.2）随译文结转：原文没变的单元换成新 ID 与新句，音频与其余字段保留；原文变了的标过期、去掉台词。
+ * - Manual-edit gate: before applying, re-read the current transcript. If its full-text fingerprint (same method as `stages.asr`) is no longer the one from commit time, reject it (`TRANSCRIPT_EDITED`). The `acceptEdited` passed at commit only covers the fingerprint at that moment.
+ * - Translations (video format spec §5.3, "carry-over when the source transcript gets a new revision"): old and new sentences are paired greedily by overlap on the media clock. Pairs whose normalized source text is identical keep their translation and status, and their alignment is downgraded to sentence level. Changed sentences, and new sentences left unpaired, are marked stale. Old sentences left unpaired are not carried over. Each language writes a new revision of the same document.
+ * - Subtitles: subtitle documents derived from this transcript and from the carried-over translations are re-cut against the new transcript (same cutting method as the flow uses when creating the subtitle track). Other fields and styles in the body are left alone.
+ * - The body's `userBreaks` and `paragraphBreaks` (§5.5) are re-anchored by time. If the midpoint of an old word's source time interval falls within a new word, and the two words have identical normalized text, the entry moves to that new word. Otherwise the entry stays as-is (it points at a nonexistent word, so it has no effect) and is counted as `orphaned`. `layoutProfileId` is carried over unchanged.
+ * - The dubbing plan (§7.2) is carried over with the translation. Units whose source is unchanged get new IDs and new sentences, with audio and other fields kept. Units whose source changed are marked stale and lose their dialogue.
  *
- * 版本号：同一笔事务里后面的操作要引用文稿与译文的新版本号（`speechRef.revision`、`translationRef.revision`），而版本号由引擎
- * 分配。这里按文档记录里最大的数字版本 + 1 预测（引擎的规则；撤销过的版本另有下限，记录里看不到，那时预测会偏小）。
+ * Version numbers: later operations in the same transaction must reference the new revision numbers of the transcript and translations (`speechRef.revision`, `translationRef.revision`), but revision numbers are assigned by the engine. Here they are predicted as the largest numeric revision in the document record + 1 (the engine's rule). Revisions that were undone impose a separate floor that is not visible in the record, so in that case the prediction can come out low.
  */
 
 export const TRANSCRIPT_SWITCH_EXTENSION = 'cuccut.transcriptSwitch';
 
-/** 换用要读的视频能力。 */
+/** Video capability to read when switching transcripts. */
 export interface SwitchVideos {
   state?(videoId: Id): { revision: string; documents: Record<Id, DocumentRecord> } | null;
   document?(videoId: Id, documentId: Id, revision?: string): Promise<{ revision: string; body: unknown }>;
@@ -65,26 +60,26 @@ interface SpeechBody {
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** 转写正文的全文指纹（核心的 `fingerprint`，含隐藏的词）。WASM 没有构建或正文读不出时抛 `EditorWasmError`。 */
+/** Full-text fingerprint of the transcript body (the core `fingerprint`, including hidden words). Throws `EditorWasmError` when the WASM build is missing or the body cannot be read. */
 export function contentFingerprint(body: unknown): string {
   return speechSentences(body).contentFingerprint;
 }
 
-/** 正文记下的 `stages.asr`；没有时 null（例如这个 Runtime 早先写的转写，当作没改过）。 */
+/** The `stages.asr` recorded on the body; null when absent (for example, a transcript written earlier by this Runtime, which is treated as unedited). */
 export function asrStage(body: unknown): string | null {
   const stages = isObject(body) ? body.stages : undefined;
   const asr = isObject(stages) ? stages.asr : undefined;
   return typeof asr === 'string' && asr !== '' ? asr : null;
 }
 
-/** 规范化文本（§5.3）：去掉标点与空白，做 NFKC，再做大小写折叠（先转大写再转小写，近似 Unicode 的完全折叠）。 */
+/** Normalized text (§5.3): strips punctuation and whitespace, applies NFKC, then case folding (uppercase, then lowercase, approximating Unicode full case folding). */
 export function normalizeText(text: string): string {
   const strip = (s: string) => s.replace(/[\p{P}\s]/gu, '');
-  // NFKC 会把全角、兼容字符换成可能是标点或空白的写法，换过之后再去一次。
+  // NFKC can turn full-width or compatibility characters into punctuation or whitespace forms, so strip again after it runs.
   return strip(strip(text).normalize('NFKC').toUpperCase().toLowerCase());
 }
 
-/** 文档的下一个版本号（引擎的规则：记录里最大的数字版本 + 1；撤销留下的下限看不到）。 */
+/** The next revision number of a document (the engine's rule: largest numeric revision in the record + 1; the floor left by undone revisions is not visible). */
 export function nextRevision(record: DocumentRecord): string {
   const numbers = Object.keys(record.revisions)
     .map((r) => Number(r))
@@ -93,8 +88,7 @@ export function nextRevision(record: DocumentRecord): string {
 }
 
 /**
- * 新旧句子配对（§5.3）：按素材时钟（秒，各按自己的 `timescale`）；有重叠的是候选，重叠不到两句中较短那句时长的一半不算；
- * 在全部候选里先配重叠最长的一对，配上的两句不再参与。返回 新句下标 → 旧句下标。同样长的重叠按旧句、新句的先后。
+ * Pairs old and new sentences (§5.3) by media clock (seconds, each in its own `timescale`). Sentences that overlap are candidates. An overlap shorter than half the duration of the shorter of the two sentences does not count. Among all candidates, the pair with the longest overlap is paired first, and paired sentences take no further part. Returns new-sentence index → old-sentence index. For equal overlaps, order follows old sentences first, then new sentences.
  */
 export function pairSentences(
   previous: readonly Pick<SourceSentence, 'start' | 'end'>[],
@@ -127,7 +121,7 @@ export function pairSentences(
   return pairs;
 }
 
-/** 旧单元换到哪个新单元：新句、原文是否没变。 */
+/** Which new unit an old unit maps to: the new sentence, and whether its source text is unchanged. */
 export interface UnitMove {
   unitId: Id;
   sentence: SourceSentence;
@@ -135,8 +129,7 @@ export interface UnitMove {
 }
 
 /**
- * 一种语言的译文结转（§5.3）。`speechRevision` 是新文稿的版本号，`editViewHash` 按新句子重算的。返回新正文、计数与旧单元 →
- * 新单元的对应（配音计划用）。
+ * Carries over the translation for one language (§5.3). `speechRevision` is the new transcript's revision number; `editViewHash` is recomputed from the new sentences. Returns the new body, the counts, and the mapping from old units to new units (used by the dubbing plan).
  */
 export function carryTranslation(
   body: TranslationBody,
@@ -174,7 +167,7 @@ export function carryTranslation(
     }
     const same = normalizeText(previous[i!]!.text) === normalizeText(sentence.text);
     moves.set(old.id, { unitId: id, sentence, same });
-    // 单元里认不得的字段原样带过去；ID、原句、对齐与状态按规则换。
+    // Fields in a unit that are not recognized are carried over as-is. IDs, source sentence, alignment and status are replaced according to the rules.
     const { displayRewrite, alignment: oldAlignment, ...rest } = old;
     if (same) {
       const status = old.status;
@@ -211,8 +204,8 @@ export function carryTranslation(
 }
 
 /**
- * `userBreaks` 与 `paragraphBreaks` 按时间重锚（§5.5）。换不上的条目原样留着（新词全是新 ID，所以它们不生效）。
- * 旧词没有源时间（`timingQuality: 'missing'`）时锚不上。旧正文里已经指向不存在的词的条目原样留着、不计数。
+ * `userBreaks` and `paragraphBreaks` are re-anchored by time (§5.5). Entries that cannot be re-anchored are kept as-is (all new words have new IDs, so they have no effect).
+ * An old word with no source time (`timingQuality: 'missing'`) cannot be anchored. Entries in the old body that already point at nonexistent words are kept as-is and not counted.
  */
 export function reanchorBreaks(
   previous: SpeechBody,
@@ -240,7 +233,7 @@ export function reanchorBreaks(
     const breaks: Record<string, 'break' | 'no-break'> = {};
     for (const [wordId, value] of Object.entries(previous.userBreaks)) {
       const key = move(wordId);
-      // 两个旧词锚到同一个新词：先到的留着。
+      // Two old words anchor to the same new word: the one that comes first is kept.
       if (!(key in breaks)) breaks[key] = value;
     }
     out.userBreaks = breaks;
@@ -262,7 +255,7 @@ function matchWord(old: Word, oldScale: number, words: readonly Word[], scale: n
   return undefined;
 }
 
-/** 配音计划随译文结转（§7.2）。返回新正文与计数；没配上的单元不结转。 */
+/** The dubbing plan is carried over with the translation (§7.2). Returns the new body and the counts; units that were not paired are not carried over. */
 export function carryDubPlan(
   body: Record<string, unknown>,
   moves: ReadonlyMap<Id, UnitMove>,
@@ -306,9 +299,8 @@ export function carryDubPlan(
 }
 
 /**
- * 换用文稿那一笔事务的全部操作。`speech` 是新转写的 `putDocument`（`speechDocumentOperation` 的结果，词 ID 已与旧文稿不同）；
- * 返回的第一个操作是写成已有文档新版本的它，之后是结转。闸门不通过时抛 `ApplyRejected`（`TRANSCRIPT_EDITED`），文稿不在、
- * 读不出时抛 `StaleInput`。
+ * All operations of the transaction that switches transcripts. `speech` is the new transcription's `putDocument` (the result of `speechDocumentOperation`, whose word IDs already differ from the old transcript).
+ * The first operation returned writes it as a new revision of the existing document; the carry-overs follow. Throws `ApplyRejected` (`TRANSCRIPT_EDITED`) when the gate fails, and `StaleInput` when the transcript is missing or cannot be read.
  */
 export async function planTranscriptSwitch(
   videos: SwitchVideos,
@@ -338,7 +330,7 @@ export async function planTranscriptSwitch(
   const previous = current.body as SpeechBody;
   const speechRef = { id: record.id, revision: nextRevision(record) };
 
-  // 新正文：重锚的换行与分段、排版方案、`stages.asr`（新词的全文指纹；对齐等别的阶段不带过去）。
+  // New body: re-anchored line breaks and paragraphs, the layout profile, and `stages.asr` (the full-text fingerprint of the new words; other stages such as alignment are not carried over).
   const fresh = input.speech.body as SpeechBody;
   const breaks = reanchorBreaks(previous, fresh);
   const body: SpeechBody = {
@@ -354,7 +346,7 @@ export async function planTranscriptSwitch(
   const operations: EditOperation[] = [];
   const translations: TranscriptCarryTranslation[] = [];
   const dubs: TranscriptCarryDub[] = [];
-  /** 结转了的译文：文档 → 新版本号、新单元与旧单元的去向。 */
+  /** Carried-over translations: document → new revision number, and where the new and old units went. */
   const carried = new Map<Id, { revision: string; units: TranslationUnit[]; moves: Map<Id, UnitMove> }>();
   const documents = Object.values(state.documents).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
@@ -363,7 +355,7 @@ export async function planTranscriptSwitch(
       if (doc.kind !== 'translation' || doc.sourceDocumentId !== record.id) continue;
       const content = await read(videoId, doc.id);
       const translation = content.body as TranslationBody;
-      // 旧项目的 `/1` 译文按句子 ID 配，格式与 `/2` 的对齐不能换算：不结转，留在旧版本上。
+      // Old-project `/1` translations are paired by sentence ID, and their format cannot be converted to the alignment in `/2`. They are not carried over and stay on the old revision.
       if (!isObject(translation) || translation.schema !== TRANSLATION_SCHEMA || !Array.isArray(translation.units)) continue;
       const result = carryTranslation(translation, previousSentences.sentences, nextSentences, pairs, speechRef);
       const revision = nextRevision(doc);
@@ -382,7 +374,7 @@ export async function planTranscriptSwitch(
     }
   }
 
-  // 字幕：派生自这份文稿的、派生自结转了的译文的，按新正文重新切条。
+  // Subtitles: those derived from this transcript and from the carried-over translations are re-cut against the new body.
   const words = readSpeechWords(body);
   for (const doc of documents) {
     if (doc.kind !== 'caption' || !doc.sourceDocumentId || !words) continue;
@@ -415,7 +407,7 @@ export async function planTranscriptSwitch(
     });
   }
 
-  // 配音计划：随结转了的译文。
+  // Dubbing plan: carried over together with the carried-over translation.
   for (const doc of documents) {
     if (doc.kind !== 'dubbing-plan' || !doc.sourceDocumentId) continue;
     const translation = carried.get(doc.sourceDocumentId);
@@ -443,7 +435,7 @@ export async function planTranscriptSwitch(
     captionPins: { reanchored: breaks.reanchored, orphaned: breaks.orphaned },
     dubs,
   };
-  // 文稿名字保留用户的；换用的影响与之前的版本记在扩展里（与这一版本同一笔事务落下，流程的摘要读它）。
+  // The transcript name keeps the user's name. The impact of the switch and the previous revision are recorded in the extension (written in the same transaction as this revision; the flow's summary reads it).
   const { name: _name, ...speech } = input.speech;
   operations.unshift({
     ...speech,

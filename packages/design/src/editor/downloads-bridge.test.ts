@@ -24,7 +24,7 @@ describe('createDownloadsBridge', () => {
     const data = new Uint8Array([60, 104, 49, 62]).buffer;
     const done = downloads.capability.save({ filename: 'Landing.html', data, request: 'r'.repeat(20) });
     expect(parent.sent).toEqual([{ type: 'editor:save-file', requestId: 's1', filename: 'Landing.html', data }]);
-    // 别的请求的回应不算
+    // Responses to other requests do not count
     parent.deliver({ type: 'editor:save-file-result', requestId: 'other', outcome: 'failed' });
     parent.deliver({ type: 'editor:save-file-result', requestId: 's1', outcome: 'saved' });
     await expect(done).resolves.toBeUndefined();

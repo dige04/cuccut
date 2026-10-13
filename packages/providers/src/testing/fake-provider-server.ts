@@ -5,27 +5,26 @@ import { mp3Fixture, pngFixture, wavFixture } from './media-fixtures.ts';
 export * from './media-fixtures.ts';
 
 /**
- * 测试用的假供应商：只监听本机回环地址的临时端口，记下收到的每个请求（含请求头，用来检查密钥只出现在该出现的地方），
- * 按脚本回复（正常结果、401、5xx、挂起、重定向……）。测试永远不连真实的云服务。
+ * Fake provider for tests. It listens only on a temporary port on the loopback address, records every request it receives (including headers, to check that the key appears only where it should), and replies from a script (normal results, 401, 5xx, hanging, redirects, ...). Tests never connect to a real cloud service.
  */
 
 export interface RecordedRequest {
   method: string;
-  /** 路径（含查询串）。 */
+  /** Path, including the query string. */
   path: string;
   headers: http.IncomingHttpHeaders;
   body: Buffer;
-  /** multipart 请求的文本字段（同名多值）。 */
+  /** Text fields of a multipart request (repeated names hold multiple values). */
   fields: Record<string, string[]>;
-  /** multipart 请求里的文件。 */
+  /** Files in a multipart request. */
   file: { name: string; type: string; size: number } | null;
-  /** JSON 请求体。 */
+  /** JSON request body. */
   json: unknown;
 }
 
 export type FakeReply =
   | { status: number; json?: unknown; text?: string; bytes?: Buffer; headers?: Record<string, string> }
-  /** 不回复，直到客户端断开。 */
+  /** Does not reply until the client disconnects. */
   | 'hang';
 
 export type FakeHandler = (request: RecordedRequest, server: FakeProviderServer) => FakeReply | Promise<FakeReply>;
@@ -34,12 +33,12 @@ export interface FakeProviderServer {
   /** `http://127.0.0.1:<port>`。 */
   origin: string;
   requests: RecordedRequest[];
-  /** 没有回复完、客户端就断开的请求数（取消时连接应当关闭）。 */
+  /** Number of requests that had not been fully answered when the client disconnected (on cancel, the connection should be closed). */
   closedEarly: number;
   handler: FakeHandler;
-  /** 等到收到第 n 个请求。 */
+  /** Waits until the nth request is received. */
   waitForRequests(count: number, timeoutMs?: number): Promise<void>;
-  /** 等到有 n 个请求被客户端提前断开。 */
+  /** Waits until n requests have been disconnected early by the client. */
   waitForClosedEarly(count: number, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -145,9 +144,9 @@ async function record(req: http.IncomingMessage, body: Buffer): Promise<Recorded
   return recorded;
 }
 
-// ---- 各供应商的默认回复 ----
+// ---- Default replies for each provider ----
 
-/** OpenAI `POST /audio/transcriptions` 的回复：`verbose_json` 时带段与词，`json` 时只有文本。 */
+/** Reply to OpenAI `POST /audio/transcriptions`: includes segments and words for `verbose_json`, text only for `json`. */
 export function openAiTranscriptionReply(request: RecordedRequest, text = 'hello world'): FakeReply {
   const words = text.split(' ');
   if (request.fields.response_format?.[0] === 'verbose_json') {
@@ -167,14 +166,14 @@ export function openAiTranscriptionReply(request: RecordedRequest, text = 'hello
   return { status: 200, json: { text, usage: { type: 'tokens', input_tokens: 10, output_tokens: 3, total_tokens: 13 } } };
 }
 
-/** 按格式回一段能解码的音频（flac 没有现成的样本：回 WAV 的字节，只用在不解码的测试里）。 */
+/** Replies with a decodable audio clip in the requested format. There is no ready-made flac sample, so it returns WAV bytes; used only in tests that do not decode. */
 export function audioReply(format: string): FakeReply {
   if (format.startsWith('mp3')) return { status: 200, bytes: mp3Fixture(), headers: { 'content-type': 'audio/mpeg' } };
   if (format.startsWith('flac')) return { status: 200, bytes: wavFixture(), headers: { 'content-type': 'audio/flac' } };
   return { status: 200, bytes: wavFixture(), headers: { 'content-type': 'audio/wav' } };
 }
 
-/** OpenAI `POST /images/generations` 的回复：`n` 张内容各不相同的 PNG（第 i 张是 `pngFixture(16, 9, i)`）的 `b64_json`。 */
+/** Reply to OpenAI `POST /images/generations`: `b64_json` for `n` PNGs, each with different content (the i-th is `pngFixture(16, 9, i)`). */
 export function openAiImagesReply(request: RecordedRequest): FakeReply {
   const body = (request.json ?? {}) as { n?: number };
   const n = body.n ?? 1;
@@ -189,15 +188,15 @@ export function openAiImagesReply(request: RecordedRequest): FakeReply {
 }
 
 export interface TextReplyOptions {
-  /** OpenAI 的 `finish_reason`（默认 `stop`）或 Gemini 的 `finishReason`（默认 `STOP`）。 */
+  /** OpenAI's `finish_reason` (default `stop`) or Gemini's `finishReason` (default `STOP`). */
   finishReason?: string | null;
-  /** 响应里的模型版本（默认 `<请求的模型>-2026-09-01`）。 */
+  /** Model version in the response (default `<requested model>-2026-09-01`). */
   modelVersion?: string;
   inputTokens?: number;
   outputTokens?: number;
 }
 
-/** OpenAI（与兼容端点）`POST /chat/completions` 的回复。 */
+/** Reply to OpenAI (and compatible endpoints) `POST /chat/completions`. */
 export function chatCompletionReply(request: RecordedRequest, content: string, options: TextReplyOptions = {}): FakeReply {
   const model = String((request.json as { model?: unknown } | undefined)?.model ?? 'model');
   return {
@@ -218,7 +217,7 @@ export function chatCompletionReply(request: RecordedRequest, content: string, o
   };
 }
 
-/** Gemini `POST /models/<model>:generateContent` 的回复：一段思考摘要（应当被跳过）加上正文。 */
+/** Reply to Gemini `POST /models/<model>:generateContent`: a thought summary (which should be skipped) followed by the body. */
 export function geminiTextReply(request: RecordedRequest, text: string, options: TextReplyOptions = {}): FakeReply {
   const model = /\/models\/([^/:]+):generateContent/.exec(request.path)?.[1] ?? 'model';
   return {
@@ -241,7 +240,7 @@ export function geminiTextReply(request: RecordedRequest, text: string, options:
   };
 }
 
-/** 假 OpenAI：`/models`、`/audio/transcriptions`、`/audio/speech`、`/images/generations` 与 `/chat/completions`。 */
+/** Fake OpenAI: `/models`, `/audio/transcriptions`, `/audio/speech`, `/images/generations`, and `/chat/completions`. */
 export function fakeOpenAiHandler(text = 'hello world'): FakeHandler {
   return (request) => {
     if (request.method === 'GET' && request.path.endsWith('/models')) return { status: 200, json: { object: 'list', data: [] } };
@@ -255,7 +254,7 @@ export function fakeOpenAiHandler(text = 'hello world'): FakeHandler {
   };
 }
 
-/** 假 ElevenLabs：`GET /models`、`GET /voices` 与 `POST /text-to-speech/<voice_id>?output_format=…`。 */
+/** Fake ElevenLabs: `GET /models`, `GET /voices`, and `POST /text-to-speech/<voice_id>?output_format=…`. */
 export function fakeElevenLabsHandler(): FakeHandler {
   return (request) => {
     const url = new URL(request.path, 'http://fake');
@@ -268,7 +267,7 @@ export function fakeElevenLabsHandler(): FakeHandler {
   };
 }
 
-/** Gemini 生图的回复：一个带中间图的 `thought` step，加上带最终图片的 `model_output` step。 */
+/** Gemini image generation reply: a `thought` step with an intermediate image, plus a `model_output` step with the final image. */
 export function googleImageReply(request: RecordedRequest, image: Buffer = pngFixture()): FakeReply {
   const format = (request.json as { response_format?: { mime_type?: string } } | undefined)?.response_format;
   const mimeType = format?.mime_type ?? 'image/png';
@@ -292,7 +291,7 @@ export function googleImageReply(request: RecordedRequest, image: Buffer = pngFi
   };
 }
 
-/** 假 Gemini：Interactions（转写模型回词级标注，通用模型回结构化的段；生图），与文本的 `generateContent`。 */
+/** Fake Gemini: Interactions (the transcription model replies with word-level annotations, the general model with structured segments; image generation), and text `generateContent`. */
 export function fakeGoogleHandler(text = 'hello world'): FakeHandler {
   return (request) => {
     if (request.method === 'GET' && new URL(request.path, 'http://fake').pathname.endsWith('/models')) {

@@ -1,5 +1,4 @@
-// `npm run dev` 的入口：在 dev-process-group.mjs 的监管下跑 `electron-vite dev`（命令行参数原样传过去）。关掉终端、Ctrl+C 或
-// 上层按 pid 停止时 electron-vite、Electron 与 Runtime 一起收尾，卡住的强杀。
+// Entry point for `npm run dev`: runs `electron-vite dev` under the supervision of dev-process-group.mjs (command-line arguments are passed through unchanged). When the terminal is closed, Ctrl+C is pressed, or the upper layer stops it by pid, electron-vite, Electron and the Runtime shut down together, and anything stuck is force-killed.
 
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -7,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { superviseDevProcess } from './dev-process-group.mjs';
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// 直接用当前的 Node 跑 electron-vite 的入口：不经 `node_modules/.bin`（Windows 上是 .cmd，要经 shell）。
+// Runs electron-vite's entry point directly with the current Node: it does not go through `node_modules/.bin` (on Windows that is a .cmd file, which would need a shell).
 const require = createRequire(import.meta.url);
 const manifestPath = require.resolve('electron-vite/package.json');
 const entry = path.join(path.dirname(manifestPath), require(manifestPath).bin['electron-vite']);

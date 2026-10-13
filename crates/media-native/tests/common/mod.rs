@@ -1,10 +1,8 @@
-//! 原生解码验收共用的夹具与判读工具（单帧抽取与顺序帧流两个测试目标共享）。
+//! Shared fixtures and judging tools for native decode acceptance (used by both the single-frame extraction and the sequential frame stream test targets).
 //!
-//! 夹具由 ffmpeg 现生成，因此断言可以是**可判读的颜色谓词**而不是像素 golden
-//! ——按 `docs/design/bcf/cuccut-format-spec.md` §15.1，视频帧解码像素只承诺语义等价 +
-//! 容差。探测不到 ffmpeg 就整体跳过（仓库既有礼节：无夹具不算失败）。
+//! Fixtures are generated fresh by ffmpeg, so the assertions can be **readable color predicates** rather than pixel goldens. Per `docs/design/bcf/cuccut-format-spec.md` §15.1, decoded video frame pixels only promise semantic equivalence plus tolerance. If ffmpeg cannot be detected, the whole test is skipped. This is the repository's existing courtesy: no fixture is not a failure.
 
-// 每个集成测试目标都把这个模块整份编进去，各自只用其中一部分。
+// Each integration test target compiles this whole module in, and each uses only part of it.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -14,9 +12,9 @@ use media_native::RgbaFrame;
 
 pub const WIDTH: u32 = 320;
 pub const HEIGHT: u32 = 180;
-/// 三段纯色的时长（秒），顺序为红 / 绿 / 蓝。
+/// Duration of the three solid-color segments (seconds), in the order red / green / blue.
 pub const SEGMENT: f64 = 1.0;
-/// 夹具的源帧率。
+/// Source frame rate of the fixture.
 pub const SOURCE_FPS: f64 = 30.0;
 
 pub fn ffmpeg_available() -> bool {
@@ -29,32 +27,23 @@ pub fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
-/// 红 / 绿 / 蓝各 1 秒、30fps、每秒一个关键帧的 320x180 H.264。
+/// A 320x180 H.264 clip with 1 second each of red / green / blue at 30 fps, one keyframe per second.
 ///
-/// 每段一秒是刻意的：段边界处取帧只要串了段，颜色谓词立刻失败——这比"时间戳
-/// 差了多少毫秒"更能说明"取的是不是覆盖 t 的那一帧"。
+/// Each segment is deliberately one second long. If a fetch at a segment boundary grabs a frame from the wrong segment, the color predicate fails immediately. That says more about "whether the fetched frame is the one covering t" than how many milliseconds the timestamp is off.
 ///
-/// 每段压一条**从左到右的线性亮度斜坡**（0.2 → 1.0 倍），原因有两条：
+/// Each segment is encoded with a **left-to-right linear luminance ramp** (0.2 → 1.0 times), for two reasons:
 ///
-/// 1. **纯色画面是 SSIM 的病态输入**。窗口内方差为零时 SSIM 退化成纯亮度比，
-///    而"整幅小幅偏置"恰恰是 §15.1 明说 SSIM 不该敏感、要交给逐通道偏差去看的
-///    那一类差异（纯蓝的灰度只有 29，几个色阶的矩阵差异就能把亮度比压到 0.8）。
-///    斜坡让结构项有内容，SSIM 才在量它该量的东西。
-/// 2. **不能用硬边**。早期版本用的是左白右黑两条色块，实测把跨后端 SSIM 压到
-///    0.91、逐通道最大偏差 99——根因不是解码质量（平坦区最大偏差只有 1），而是
-///    4:2:0 的色度只有一半水平分辨率，AVFoundation 与 swscale 在色度上采样与
-///    缩放边缘各自的插值不同，滑窗 SSIM 会把这条过渡带放大。换成连续斜坡后
-///    实测 SSIM ≥ 0.976、最大偏差 ≤ 15，两条路径的差异回到色彩矩阵实现这个
-///    量级——那才是 §15.1 想量的东西。
+/// 1. **Solid-color frames are a pathological input for SSIM.** When the variance inside the window is zero, SSIM degenerates into a pure luminance ratio. A "small whole-frame offset" is exactly the kind of difference that §15.1 says SSIM should not be sensitive to, and should be left to per-channel deviation to catch. (The gray level of pure blue is only 29, so a few levels of matrix difference can drag the luminance ratio down to 0.8.) The ramp gives the structure term something to measure, so SSIM measures what it should.
+/// 2. **Hard edges cannot be used.** An early version used two color blocks, white on the left and black on the right. It measured cross-backend SSIM at 0.91 with a per-channel maximum deviation of 99. The root cause was not decode quality (the maximum deviation in flat areas is only 1). It was that 4:2:0 chroma has only half the horizontal resolution, and AVFoundation and swscale each interpolate chroma sampling and edge scaling differently, which the sliding-window SSIM magnifies at that transition band. After switching to a continuous ramp, measured SSIM is ≥ 0.976 and the maximum deviation is ≤ 15. The difference between the two paths is back to the magnitude of color-matrix implementation differences, which is what §15.1 is meant to measure.
 ///
-/// 三通道等比缩放，主导色判定不受影响（[`dominant`] 看的是通道间的相对关系）。
+/// The three channels are scaled by the same factor, so dominant-color judgment is unaffected ([`dominant`] looks at the relative relationship between channels).
 pub fn fixture() -> Option<(tempfile::TempDir, PathBuf)> {
     if !ffmpeg_available() {
         return None;
     }
     let dir = tempfile::tempdir().ok()?;
     let media = dir.path().join("rgb-segments.mp4");
-    // 逐像素乘一条水平线性斜坡（0.2 → 1.0）。三通道同一个系数。
+    // Multiply each pixel by a horizontal linear ramp (0.2 → 1.0). The same coefficient is used for all three channels.
     let ramp = |channel: char| format!("{channel}='{channel}(X,Y)*(0.2+0.8*X/W)'");
     let gradient = format!("geq={}:{}:{}", ramp('r'), ramp('g'), ramp('b'));
     let source = |color: &str| {
@@ -78,10 +67,8 @@ pub fn fixture() -> Option<(tempfile::TempDir, PathBuf)> {
             "libx264",
             "-g",
             "30",
-            // 显式写全色彩标签。不写时容器里是 `unknown`，ffmpeg 按分辨率猜
-            // BT.601、AVFoundation 按自己的规则猜——两边猜的矩阵不同，纯色块的
-            // YUV→RGB 结果能差出几十个色阶，量到的就不再是解码质量而是标签缺失。
-            // 真实素材都是带标签的，夹具没有理由比它更差。
+            // Write out the full color tags explicitly. If they are not written, the container holds `unknown`. ffmpeg guesses BT.601 from the resolution, while AVFoundation guesses by its own rules. The two guess different matrices, so the YUV→RGB result of solid-color blocks can differ by dozens of levels, and what gets measured is no longer decode quality but missing tags.
+            // Real material is always tagged, so the fixture has no reason to be worse than that.
             "-color_primaries",
             "bt709",
             "-color_trc",
@@ -99,7 +86,7 @@ pub fn fixture() -> Option<(tempfile::TempDir, PathBuf)> {
     (status.success() && media.is_file()).then_some((dir, media))
 }
 
-/// 迁移前的 ffmpeg 提帧配方（`-ss` 在 `-i` 前），解成裸 RGBA 供对拍。
+/// The ffmpeg frame-extraction recipe from before the migration (`-ss` before `-i`), decoded to raw RGBA for cross-checking.
 pub fn ffmpeg_frame(media: &Path, time: f64, width: u32) -> Option<RgbaFrame> {
     let output = Command::new("ffmpeg")
         .args([
@@ -123,8 +110,7 @@ pub fn ffmpeg_frame(media: &Path, time: f64, width: u32) -> Option<RgbaFrame> {
     RgbaFrame::new(width, height, output.stdout).ok()
 }
 
-/// 迁移前 `ccut-render::media::VideoReader` 的顺序解码配方：`-ss` 在 `-i` 前、
-/// 输出重采样到合成 fps 的裸 RGBA 流。返回按输出顺序切好的整帧。
+/// The sequential decode recipe from before the migration in `ccut-render::media::VideoReader`: `-ss` before `-i`, with output resampled to the composition fps as a raw RGBA stream. Returns whole frames, cut in output order.
 pub fn ffmpeg_frame_stream(media: &Path, from: f64, fps: f64) -> Option<Vec<RgbaFrame>> {
     let output = Command::new("ffmpeg")
         .args([
@@ -161,8 +147,7 @@ pub fn ffmpeg_frame_stream(media: &Path, from: f64, fps: f64) -> Option<Vec<Rgba
     )
 }
 
-/// 主导色判定：三通道里谁明显最大。纯色段经 H.264 4:2:0 往返后不会是精确的
-/// 255/0/0，但主导关系是稳的，跨解码器也稳。
+/// Dominant-color judgment: which of the three channels is clearly the largest. A solid-color segment will not be exactly 255/0/0 after an H.264 4:2:0 round trip, but the dominance relation is stable, and it is stable across decoders.
 pub fn dominant(frame: &RgbaFrame) -> &'static str {
     let mut totals = [0_u64; 3];
     for pixel in frame.data.chunks_exact(4) {
@@ -171,7 +156,7 @@ pub fn dominant(frame: &RgbaFrame) -> &'static str {
         totals[2] += u64::from(pixel[2]);
     }
     let max = totals.iter().copied().max().unwrap_or(0);
-    // 主导通道必须比次高通道高出一大截，否则说明帧不是纯色（串段/混帧）。
+    // The dominant channel must exceed the second-highest channel by a wide margin. Otherwise the frame is not solid color (it crosses segments or mixes frames).
     let second = totals.iter().copied().filter(|value| *value != max).max();
     if second.is_some_and(|second| max < second * 3 / 2) {
         return "mixed";
@@ -184,9 +169,7 @@ pub fn dominant(frame: &RgbaFrame) -> &'static str {
     }
 }
 
-/// `RgbaFrame`（straight alpha，视频帧恒不透明）→ `tiny_skia::Pixmap`
-/// （premultiplied）。alpha 恒为 255 时两种约定按字节相同，直接搬字节即可，
-/// 不需要真的跑一遍预乘。
+/// `RgbaFrame` (straight alpha; video frames are always opaque) → `tiny_skia::Pixmap` (premultiplied). When alpha is always 255, the two conventions are byte-identical, so the bytes can be copied directly without actually running premultiplication.
 pub fn to_pixmap(frame: &RgbaFrame) -> tiny_skia::Pixmap {
     let size = tiny_skia::IntSize::from_wh(frame.width, frame.height).expect("非零尺寸");
     tiny_skia::Pixmap::from_vec(frame.data.clone(), size).expect("RGBA 字节数与尺寸相符")

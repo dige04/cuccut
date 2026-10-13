@@ -21,9 +21,9 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { listArchive, readEntry } from './package-archive.ts';
 
 /**
- * 端到端：便携包与工程导出（架构设计 §5.8、§9.13）。真实的 Runtime、网关与视频引擎；素材是 ffmpeg 现场生成的小文件。
- * 导出 → 打开得到同样的内容与素材摘要；包里没有本机路径；预检（缺失、不可读、被改、目标已存在）、跳过缺失、取消。
- * 缺 engine-host 或 ffmpeg 时跳过。
+ * End to end: portable packages and project export (architecture design §5.8, §9.13). Uses a real Runtime, gateway, and video engine. The assets are small files generated on the spot by ffmpeg.
+ * Export → open yields the same contents and asset digests. The package has no local paths. Preflight (missing, unreadable, changed, target already exists), skipping missing items, and cancellation.
+ * Skipped when engine-host or ffmpeg is missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -40,10 +40,10 @@ if (!ffmpeg) console.warn('跳过便携包端到端测试：没有 ffmpeg');
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
-/** 命令行入口（apps/cli）：测试里用 node 直接跑源文件。 */
+/** Command-line entry point (apps/cli): the tests run the source file directly with node. */
 const CLI_MAIN = fileURLToPath(new URL('../../../../apps/cli/src/main.ts', import.meta.url));
 
-/** 跑一次 CLI，只给它 PATH 与指向测试目录的 HOME、CUCCUT_HOME：经 runtime.json 找到测试里的 Runtime。 */
+/** Runs the CLI once, giving it only PATH, plus HOME and CUCCUT_HOME pointing at the test directory, so it finds the test's Runtime through runtime.json. */
 function cli(home: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     execFile(
@@ -96,7 +96,7 @@ function clip(file: string, seconds: number): void {
   ]);
 }
 
-/** 值里所有的字符串（含对象的键）。 */
+/** All strings in a value (including object keys). */
 function strings(value: unknown, out: string[] = []): string[] {
   if (typeof value === 'string') out.push(value);
   else if (Array.isArray(value)) for (const v of value) strings(v, out);
@@ -109,7 +109,7 @@ function strings(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-/** 看起来像本机绝对路径的字符串：`/` 开头、`~/` 开头、Windows 盘符、`file:` URL。 */
+/** Strings that look like local absolute paths: starting with `/`, starting with `~/`, Windows drive letters, and `file:` URLs. */
 function looksAbsolute(text: string): boolean {
   return text.startsWith('/') || text.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(text) || text.startsWith('file:');
 }
@@ -148,7 +148,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     ({ project } = await client.request('projects.create', { name: '便携包测试' }));
   });
 
-  /** 在 `dir` 上启动 Runtime 并连上（重启也用它）。 */
+  /** Starts a Runtime on `dir` and connects to it (also used for restarts). */
   async function boot(): Promise<void> {
     runtime = await startRuntime({
       home: resolveRuntimeHome({ CUCCUT_HOME: dir }),
@@ -174,7 +174,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 素材复制到项目目录的 media/ 里（链接素材留在那里）。 */
+  /** Copies assets into the project directory's media/ folder (linked assets stay there). */
   async function fixture(name: string): Promise<string> {
     const target = path.join(project.path, 'media', name);
     await fs.mkdir(path.dirname(target), { recursive: true });
@@ -209,8 +209,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     };
 
   /**
-   * 一个视频：链接的录音（项目里）、收进视频的视频片段（来自项目之外，出处里写着本机路径）、收进视频的另一段（像从本机媒体
-   * 新建的视频那样，来源记着原文件的路径，原文件在项目、主目录之外）、代码包目录、两个版本的转写文档；时间线上有视频与录音两个实例。
+   * One video: a linked recording (in the project), a video clip collected into the video (from outside the project, with a local path in its provenance), another segment collected into the video (like a video created from local media, whose source records the original file's path, which is outside the project and the home directory), the code package directory, and two versions of a transcript document. The timeline has a video instance and a recording instance.
    */
   async function richVideo(): Promise<{ videoId: string; documentId: string }> {
     const a = await fixture('a.wav');
@@ -268,11 +267,11 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect(output!.validation!.package).toMatchObject({ files: expect.any(Number) });
     expect(output!.validation!.package!.verifiedFiles).toBe(output!.validation!.package!.files);
     expect((await fs.stat(output!.path!)).size).toBe(output!.byteLength);
-    // 出处里的本机路径换成了占位，并且有警告。
+    // Local paths in the provenance were replaced with placeholders, and there is a warning.
     expect(job.warnings.map((w) => w.code)).toContain('PACKAGE_LOCAL_PATH_REMOVED');
-    // 目标目录里没有留下临时文件。
+    // No temp files were left in the target directory.
     expect((await fs.readdir(path.join(project.path, 'exports'))).filter((f) => f.startsWith('.'))).toEqual([]);
-    // Space 里是这个视频导出的一个便携包条目，带文件大小（测试里不监听目录，先重扫一次）。
+    // Space holds one portable package entry for this video export, with its file size (the test doesn't watch the directory, so rescan once first).
     await client.request('space.rescan', {});
     const listed = await until(async () => {
       const { entries } = await client.request('space.list', { videoId, kind: 'package' });
@@ -287,7 +286,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
       media: { mediaType: 'application/x-cuccut-package' },
     });
 
-    // 包里的清单、快照与文档：没有一处像绝对路径，也不含主目录、临时目录与项目目录。
+    // The manifest, snapshot, and documents in the package: nothing looks like an absolute path, and none contain the home directory, the temp directory, or the project directory.
     const file = output!.path!;
     const manifest = await readJsonEntry<PackageManifest>(file, 'video.manifest.json');
     const snapshot = await readJsonEntry<VideoSnapshot>(file, 'video.snapshot.json');
@@ -305,11 +304,11 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
         expect(text.includes(local), local).toBe(false);
       }
     }
-    // 没有密钥、任务与会话：包里只有固定布局的文件。
+    // No keys, jobs, or sessions: the package holds only files in the fixed layout.
     for (const entry of entries) expect(entry.path).toMatch(/^(video\.manifest\.json|video\.snapshot\.json|assets\/.+|documents\/.+)$/);
     expect(Object.values(snapshot.assets).every((a) => Object.values(a.revisions).every((r) => r.storage.mode === 'managed'))).toBe(true);
 
-    // 打开到另一个项目里。
+    // Opened into another project.
     const { project: other } = await client.request('projects.create', { name: '另一个项目' });
     const opened = await client.request('videos.importPackage', { projectId: other.id, path: file });
     expect(opened.ref.videoId).not.toBe(videoId);
@@ -340,7 +339,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const status = await client.request('videos.assetStatus', { videoId: opened.ref.videoId });
     expect(status).toMatchObject({ missing: [] });
 
-    // 再导出打开的视频：文档与素材文件逐个相同。
+    // Re-exporting the opened video: the documents and asset files are identical one by one.
     const again = await exportOnce({ videoId: opened.ref.videoId, settings: { kind: 'portable' } });
     const second = await readJsonEntry<PackageManifest>(again.result!.outputs![0]!.path!, 'video.manifest.json');
     const digests = (m: PackageManifest) =>
@@ -350,7 +349,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
         .sort();
     expect(digests(second)).toEqual(digests(manifest));
 
-    // 坏包：改掉一个字节，打开时以摘要不符拒绝，不留下视频目录。
+    // Bad package: one byte changed. Opening rejects it on digest mismatch and leaves no video directory behind.
     const broken = path.join(other.path, 'broken.cuccut');
     const bytes = await fs.readFile(file);
     const docEntry = entries.find((e) => e.path.startsWith('documents/'))!;
@@ -380,7 +379,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const reasons = Object.fromEntries(refused.items!.map((i) => [i.name, i.reason]));
     const root = process.getuid?.() === 0;
     expect(reasons).toEqual({ 'a.wav': 'missing', 'b.wav': root ? 'changed' : 'unreadable', 'c.wav': 'changed' });
-    // 预检不过：没有建任务，也没有写任何文件。
+    // Preflight fails: no task is created and no files are written.
     expect(await fs.readdir(path.join(project.path, 'exports')).catch(() => [])).toEqual([]);
 
     const job = await exportOnce({ videoId, settings: { kind: 'portable', missingAssets: 'skip' } });
@@ -396,7 +395,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
       }
     }
 
-    // 目标已存在：指定的文件名拒绝，默认名加序号。
+    // Target already exists: a specified file name is rejected, and the default name gets a sequence number.
     const taken = await codeOf({
       videoId,
       settings: { kind: 'portable', missingAssets: 'skip' },
@@ -406,7 +405,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const second = await exportOnce({ videoId, settings: { kind: 'portable', missingAssets: 'skip' } });
     expect(second.result!.outputs![0]!.path).toBe(path.join(project.path, 'exports', '缺素材 (2).cuccut'));
 
-    // 打开跳过了素材的包：视频照样建出来，那些素材是缺失的链接素材。
+    // Opening a package that skipped assets: the video is still created, and those assets are missing linked assets.
     const opened = await client.request('videos.importPackage', { projectId: project.id, path: out.path! });
     const imported = snapshotOf(opened.ref.videoId);
     for (const asset of Object.values(imported.assets)) {
@@ -473,7 +472,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const out = job.result!.outputs![0]!;
     expect(out.path).toBe(path.join(project.path, 'exports', '工程.xmeml.xml'));
     expect(out.mediaType).toBe('application/xml');
-    // 视频片段、它的内嵌声音、录音：三个片段。
+    // Video clip, its embedded sound, and the recording: three clips.
     expect(out.media).toMatchObject({ kind: 'project', clips: 3 });
     const xml = await fs.readFile(out.path!, 'utf8');
     expect(xml).toContain('<xmeml version="5">');
@@ -483,11 +482,11 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect(xml).toContain(`<start>${clipItem.type === 'video' ? clipItem.span.fromFrame : 0}</start>`);
     const omitted = job.warnings.filter((w) => w.code === 'PROJECT_ITEM_OMITTED');
     expect(omitted.some((w) => w.detail?.includes('音量'))).toBe(true);
-    // 文字没有写进工程，警告点名到实例。
+    // The text was not written into the project, and the warning names the instance.
     const text = snapshotOf(videoId).sequences[sequenceId]!.items.find((i) => i.type === 'text')!;
     expect(omitted.find((w) => w.detail?.includes(text.id))?.detail).toContain('文字');
     expect(xml).not.toContain('标题</name>');
-    // 序列为空（只剩文字）时没有能写进工程的片段：预检拒绝。
+    // With an empty sequence (only text left) there are no clips that can be written into the project: preflight rejects it.
     const others = snapshotOf(videoId)
       .sequences[sequenceId]!.items.filter((i) => i.type !== 'text')
       .map((i) => i.id);
@@ -505,13 +504,13 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const run = await cli(dir, ['videos', 'import-package', file, '--project', target]);
     expect(run.stderr).toBe('');
     expect(run.code).toBe(0);
-    // 目录派生的命令：stdout 不是 TTY 时是一行信封，结果是与 videos inspect 相同的摘要。
+    // Directory-derived command: when stdout is not a TTY, the output is a one-line envelope, and the result is the same summary as videos inspect.
     const envelope = JSON.parse(run.stdout.trim()) as { ok: boolean; result: { videoId: string; name: string; video: string } };
     expect(envelope.ok).toBe(true);
     const printed = envelope.result;
     expect(printed.videoId).not.toBe(videoId);
     expect(printed.name).toBe('便携');
-    // 项目是 --project 那个目录（没登记过的目录由命令登记）；视频目录是项目里的 result.video。
+    // The project is the directory given by --project (a directory not registered yet is registered by the command). The video directory is result.video in the project.
     const { projects } = await client.request('projects.list', {});
     const realTarget = await fs.realpath(target);
     const projectId = (await Promise.all(projects.map(async (p) => ((await fs.realpath(p.path)) === realTarget ? p.id : null)))).find(
@@ -519,14 +518,14 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     )!;
     expect(projectId).toBeTruthy();
     await fs.access(path.join(target, printed.video, 'video.db'));
-    // 新视频的内容与原视频相同，素材都收进了视频。
+    // The new video's content matches the original's, and all assets are collected into the video.
     const opened = await client.request('videos.open', { projectId, path: printed.video });
     expect(opened.ref.videoId).toBe(printed.videoId);
     expect(opened.snapshot.video.sequences).toEqual(original.sequences);
     expect(Object.keys(opened.snapshot.video.assets).sort()).toEqual(Object.keys(original.assets).sort());
     expect(await client.request('videos.assetStatus', { videoId: printed.videoId })).toMatchObject({ missing: [] });
 
-    // 不是 CucCut 包：非零退出，错误码在 stderr，不建视频目录。
+    // Not a CucCut package: non-zero exit, the error code is on stderr, and no video directory is created.
     const bogus = path.join(dir, 'bogus.cuccut');
     await fs.writeFile(bogus, 'not a package');
     const before = await fs.readdir(target);
@@ -542,7 +541,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     const job = await exportOnce({ videoId, settings: { kind: 'portable' } });
     const exportsDir = path.join(project.path, 'exports');
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    // 模拟强杀：发布之前的隐藏临时文件、解到一半的暂存目录，都是很久以前留下的。
+    // Simulated forced kill: the hidden temp files from before publishing, and the half-unpacked staging directory, were left a long time ago.
     const leftoverTemp = path.join(exportsDir, '.便携.cuccut.0a1b2c3d.tmp');
     await fs.writeFile(leftoverTemp, 'partial');
     await fs.utimes(leftoverTemp, old, old);
@@ -551,7 +550,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     await fs.mkdir(path.join(leftoverStaging, 'assets'), { recursive: true });
     await fs.writeFile(path.join(leftoverStaging, 'assets', 'half.bin'), 'x');
     await fs.utimes(leftoverStaging, old, old);
-    // 不该动的：刚写的临时文件、名字对不上的、用户自己的文件。
+    // Must not be touched: freshly written temp files, files whose names don't match, and the user's own files.
     const fresh = path.join(exportsDir, '.便携.cuccut.89abcdef.tmp');
     await fs.writeFile(fresh, 'new');
     const userFile = path.join(exportsDir, '.便携.cuccut.notmine.tmp');

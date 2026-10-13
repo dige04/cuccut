@@ -14,12 +14,12 @@ import { pl } from './engineHost.pl.ts';
 import { tr } from './engineHost.tr.ts';
 import { vi } from './engineHost.vi.ts';
 
-/** 参数是标量，或嵌套的引用（展开之后的文字）。 */
+/** The parameter is a scalar, or a nested reference (the text after expansion). */
 type P<K extends string> = Record<K, string | number>;
 
 /**
- * `crates/engine-host` 自己发出的错误（参数、路径、导出计划、字体）。
- * 英文条目与 Rust `msg!` 的模板一字不差（`tools/rust-messages.test.ts` 核对）；改英文要两边一起改，键发布后不改名、不复用。
+ * Errors emitted by `crates/engine-host` itself (parameters, paths, export plan, fonts).
+ * The English entries match the Rust `msg!` templates word for word (checked by `tools/rust-messages.test.ts`). When the English changes, change both sides together. Keys are not renamed or reused after release.
  */
 const en = {
   runGenerationNotInteger: 'runGeneration must be a decimal integer',

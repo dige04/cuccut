@@ -2,18 +2,18 @@ import type { Logger } from '@cuccut/harness';
 import { NodeInitiator, defaultDiscoverer, noDiscoverer, type Discoverer, type RemoteTiming } from '@cuccut/nodes';
 import type { CredentialStore, RuntimeHome } from '@cuccut/runtime-storage';
 
-/** `startRuntime` 的发起端选项：生产用默认值，测试换成假的发现与短的期限。 */
+/** Initiator options for `startRuntime`: production defaults; tests swap in a fake discovery and short deadlines. */
 export interface NodeInitiatorRuntimeOptions {
-  /** 发现；不给时按平台（macOS 用 `dns-sd`），null 表示不浏览。 */
+  /** Discovery; when not given, it depends on the platform (macOS uses `dns-sd`); null means no browsing. */
   discoverer?: Discoverer | null;
-  /** 远端任务的期限与退避（测试用短的）。 */
+  /** Deadline and backoff for remote jobs (short in tests). */
   timing?: Partial<RemoteTiming>;
-  /** 配对时告诉节点的名字；默认主机名。 */
+  /** Name given to the node when pairing; defaults to the hostname. */
   clientName?: string;
   probeTimeoutMs?: number;
 }
 
-/** 组装发起端：已配对节点存在 `<home>/store/nodes.json`，令牌在凭据存储里，远端节点 Provider 交给 JobManager。 */
+/** Assembles the initiator: paired nodes are stored in `<home>/store/nodes.json`, tokens in the credential store, and the remote node provider is handed to the JobManager. */
 export function openNodeInitiator(
   home: RuntimeHome,
   credentials: CredentialStore,

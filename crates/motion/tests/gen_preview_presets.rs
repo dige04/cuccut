@@ -1,18 +1,14 @@
-//! `core/runtime/preview/vendor/presets.json` 的生成器（预览壳内嵌进 `ccut serve`）。
+//! Generator for `core/runtime/preview/vendor/presets.json` (the preview shell is embedded into `ccut serve`).
 //!
-//! 浏览器预览曾经是 BCF 内置配方的**第四份实现**（`preview/core.js` 里手写的 5 个
-//! `BUILTIN_PRESETS`）。阶段 2 新增的 canonical family 落地后，预览对 `motion.*`
-//! 直接报 `preset-unknown`（设计 §9 / §15 阶段 2「已知缺口」）。处置不是把数值表
-//! 手抄第二遍，而是**从同一批 manifest 生成一份数据**：`core.js` 只保留展开算法，
-//! 一个数字都不复制。
+//! The browser preview used to be the **fourth implementation** of the BCF built-in recipes (the 5 hand-written `BUILTIN_PRESETS` in `preview/core.js`). After the canonical family added in phase 2 landed, the preview reported `preset-unknown` directly for `motion.*` (design §9 / §15 phase 2 “known gap”). The fix is not to copy the value table by hand a second time, but to **generate the data from the same set of manifests**: `core.js` keeps only the expansion algorithm and copies not a single number.
 //!
-//! 跑法（`#[ignore]`，日常 `cargo test` 不写盘）：
+//! How to run (`#[ignore]`; the routine `cargo test` does not write to disk):
 //!
 //! ```sh
 //! cargo test -p ccut-motion --test gen_preview_presets -- --ignored emit_preview_presets_json
 //! ```
 //!
-//! 日常门禁是同文件的 `preview_presets_json_is_up_to_date`：渲染到内存后逐字节比对。
+//! The routine gate is `preview_presets_json_is_up_to_date` in the same file: it renders into memory and compares byte for byte.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -31,7 +27,7 @@ fn target_path() -> PathBuf {
     repo_root().join("core/runtime/preview/vendor/presets.json")
 }
 
-/// 生成 JSON 文本。数值全部来自 `core/presets/builtin/motion/motion.*.json` 原文。
+/// Generates the JSON text. All numbers come verbatim from `core/presets/builtin/motion/motion.*.json`.
 fn render() -> String {
     let dir = repo_root().join("core/presets/builtin/motion");
     let mut presets: BTreeMap<String, Value> = BTreeMap::new();
@@ -96,8 +92,8 @@ fn preview_presets_json_is_up_to_date() {
     );
 }
 
-/// 预览的展开器只认 `tracks` / `compose`；`ops` 体它会给出明确提示而不是画错。
-/// 这条测试保证「哪些配方在预览里可用」是**可枚举**的，而不是碰运气。
+/// The preview expander only accepts `tracks` / `compose`; for an `ops` body it gives an explicit hint instead of rendering wrongly.
+/// This test guarantees that which recipes are available in the preview is **enumerable**, rather than left to chance.
 #[test]
 #[ignore = "读 v2 的预览壳生成物 core/runtime/preview/vendor/presets.json：v3 没有这份文件，待预览 WASM 批次决定去留"]
 fn the_generated_registry_declares_which_recipes_the_preview_can_expand() {

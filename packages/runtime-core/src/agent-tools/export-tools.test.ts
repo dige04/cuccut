@@ -12,8 +12,7 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, tool, until, type Loose, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * `export` 端到端：假智能体经真实的 MCP 端点导出字幕；权限（规划模式只读）、目标目录的约束（不出工作目录、
- * 不进视频目录）与预检错误的形态（错误码 + next）。需要 engine-host 与 ffmpeg，缺了就跳过。
+ * `export` end to end: a fake agent exports subtitles through the real MCP endpoint. Covers permissions (plan mode is read-only), the constraints on the target directory (it must not leave the working directory or enter the video directory), and the shape of pre-check errors (error code + next). Needs engine-host and ffmpeg; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -111,7 +110,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
       commandId: newId('cmd'),
       ...(autonomy ? { autonomy } : {}),
     });
-    // 换了自主级别的回合可能是新的原生会话：取正在回合里的那个。
+    // A turn that changed the autonomy level may be a new native session: take the one currently in the turn.
     const session = await until(() => driver.sessions.find((s) => s.turnId));
     await until(() => runtime.harness.agentRun(conversationId).taskId);
     return session;
@@ -132,7 +131,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     plan.finish();
     await until(() => runtime.harness.agentRun(conversationId).taskId === null);
 
-    // 发送时给出的模式切换了会话的模式：切回 auto 才能修改。
+    // The mode given at send time switched the session's mode: it must be switched back to auto before it can modify anything.
     const session = await send('auto');
     const submitted = await tool(session, 'export', { video: videoPath, kind: 'subtitles', format: 'srt' });
     expect(submitted.isError).toBe(false);
@@ -151,7 +150,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect(job.next).toContain('Export completed');
     expect(await fs.readFile(job.outputs[0].path, 'utf8')).toContain('Hello there.');
 
-    // 工作目录里已有的目录与文件名。
+    // Existing directories and file names in the working directory.
     await fs.mkdir(path.join(project.path, 'out'));
     const named = await tool(session, 'export', {
       video: videoId,
@@ -164,7 +163,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     const namedJob = await settle(session, named.body.jobId);
     expect(namedJob.outputs[0].path).toBe(path.join(await fs.realpath(project.path), 'out', '稿子.txt'));
 
-    // 允许覆盖已有文件是 high：默认的 auto 模式下也要问，拒绝时不提交。
+    // Allowing an existing file to be overwritten is high risk: it asks even in the default auto mode, and on refusal nothing is committed.
     const overwriting = tool(session, 'export', {
       video: videoId,
       kind: 'transcript',
@@ -178,8 +177,8 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     await client.request('approvals.respond', { approvalId: pending.approvalId, decision: 'deny' });
     expect((await overwriting).body.error).toMatchObject({ code: 'APPROVAL_DENIED', mode: 'auto', risk: 'high' });
 
-    // 成片同一条规则：覆盖时 high，确认里的摘要写明是成片。
-    // 声音来源与输出宽高不改变风险：只要原声、横屏出 9:16（加黑边）的成片，覆盖时同样是 high，摘要写明尺寸与来源。
+    // The same rule applies to the finished video: on overwrite it is high, and the confirmation summary states that it is the finished video.
+    // The audio source and the output width and height do not change the risk: even when the output is original audio and landscape is letterboxed to 9:16, overwriting is still high, and the summary states the size and the source.
     const overwritingVideo = tool(session, 'export', {
       video: videoId,
       kind: 'video',
@@ -248,7 +247,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
       ],
     });
     expect(put.isError).toBe(false);
-    // alignment 写成 null 的单元由 Runtime 按句子补成句级对齐（双语导出与 captions_create 按它取成员与时间）。
+    // Units whose alignment is null are given sentence-level alignment by the Runtime (bilingual export and captions_create use it to get members and timing).
     expect(put.body.filledAlignments).toBe(1);
     const after = await tool(session, 'videos_inspect', { video: videoPath });
     expect(after.body.documents).toContainEqual(
@@ -269,7 +268,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect((await codeOf({ format: 'wav' })).code).toBe('INVALID_ARGUMENTS');
     expect((await codeOf({ kind: 'audio', format: 'srt' })).code).toBe('INVALID_ARGUMENTS');
     expect((await codeOf({ source: 'original' })).code).toBe('INVALID_ARGUMENTS');
-    // 文稿独有的选项给了字幕：拒绝，不悄悄丢掉。
+    // Options that exist only for the script were given together with subtitles: rejected, not silently dropped.
     expect((await codeOf({ chapters: true })).code).toBe('INVALID_ARGUMENTS');
     expect((await codeOf({ skipCut: false })).code).toBe('INVALID_ARGUMENTS');
     expect((await codeOf({ kind: 'video', format: 'mp4', width: 9000 })).code).toBe('INVALID_ARGUMENTS');
@@ -277,7 +276,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     const notFound = await codeOf({ language: 'fr' });
     expect(notFound).toMatchObject({ code: 'EXPORT_SOURCE_NOT_FOUND', next: expect.any(String) });
 
-    // 两份转写：列出候选。
+    // Two transcripts: list the candidates.
     const mirror = runtime.videos.mirror(videoId)!;
     await client.request('edits.apply', {
       videoId,
@@ -338,7 +337,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     await client.request('approvals.respond', { approvalId: pending.approvalId, decision: 'deny' });
     expect((await overwriting).body.error).toMatchObject({ code: 'APPROVAL_DENIED', risk: 'high' });
 
-    // 链接的录音不见了：拒绝，items 里有原因与名字，没有绝对路径。
+    // The linked recording is missing: rejected. items contain the reason and the name, with no absolute path.
     await fs.rename(audio, `${audio}.gone`);
     try {
       const missing = (await tool(session, 'export', { video: videoPath, kind: 'portable', format: 'cuccut' })).body.error;

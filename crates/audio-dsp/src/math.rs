@@ -1,14 +1,14 @@
-//! 标量小工具：dB ↔ 线性、MIDI → Hz、smoothstep、秒 → 采样数。全部走 `libm`。
+//! Scalar helpers: dB ↔ linear, MIDI → Hz, smoothstep, seconds → sample count. All go through `libm`.
 
-/// π 的两倍。
+/// Twice π.
 pub const TAU: f64 = core::f64::consts::TAU;
 
-/// dB → 线性幅度增益（`10^(db/20)`）。
+/// dB → linear amplitude gain (`10^(db/20)`).
 pub fn db_to_gain(db: f64) -> f64 {
     libm::exp(db * (core::f64::consts::LN_10 / 20.0))
 }
 
-/// 线性幅度 → dB（`20·log10`）。`0` 与负数给 `-inf`。
+/// Linear amplitude → dB (`20·log10`). `0` and negative values give `-inf`.
 pub fn gain_to_db(gain: f64) -> f64 {
     if gain > 0.0 {
         20.0 * libm::log10(gain)
@@ -17,18 +17,18 @@ pub fn gain_to_db(gain: f64) -> f64 {
     }
 }
 
-/// MIDI 音符号 → 频率（A4 = 69 = 440 Hz），允许小数（弯音）。
+/// MIDI note number → frequency (A4 = 69 = 440 Hz); fractional values are allowed (pitch bend).
 pub fn mtof(midi: f64) -> f64 {
     440.0 * libm::exp2((midi - 69.0) / 12.0)
 }
 
-/// 秒 → 采样数（四舍五入，负数夹到 0）。
+/// Seconds → sample count (rounded; negative values clamp to 0).
 pub fn samples(seconds: f64, sr: f64) -> usize {
     let n = libm::round(seconds * sr);
     if n > 0.0 { n as usize } else { 0 }
 }
 
-/// 三次 smoothstep：`x ≤ a` 为 0，`x ≥ b` 为 1，中间 `u²(3−2u)`。`a == b` 时是阶跃。
+/// Cubic smoothstep: 0 for `x ≤ a`, 1 for `x ≥ b`, and `u²(3−2u)` in between. When `a == b` it is a step.
 pub fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     if b <= a {
         return if x < a { 0.0 } else { 1.0 };
@@ -37,7 +37,7 @@ pub fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     u * u * (3.0 - 2.0 * u)
 }
 
-/// 线性插值。
+/// Linear interpolation.
 pub fn lerp(a: f64, b: f64, u: f64) -> f64 {
     a + (b - a) * u
 }

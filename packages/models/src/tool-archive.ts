@@ -4,13 +4,12 @@ import path from 'node:path';
 import { createGunzip, inflateRawSync } from 'node:zlib';
 
 /**
- * 预编译工具的压缩包（受管外部工具，架构设计 §12.9；模型包的发布页组件，§6.3）：核对过 sha256 的 `.tar.gz` 或 `.zip`，只解开包根
- * 目录里的普通文件，进程内完成，不调用系统的 tar 或 unzip（Windows 上 PATH 里的 tar 可能是不认 zip 的 GNU tar）。
+ * Archives of prebuilt tools (managed external tools, architecture design §12.9; the release-page component for model packages, §6.3): a `.tar.gz` or `.zip` whose sha256 has been checked. Only the regular files in the archive's root
+ * directory are extracted. This is done in-process, without calling the system's tar or unzip (on Windows, the tar on PATH may be GNU tar, which does not understand zip).
  *
- * - 只认根目录（可带 `./` 前缀）下的普通文件；子目录、目录项、链接、设备文件一律略过，名字里有 `..`、反斜杠、绝对路径或盘符的
- *   也略过，所以写不出目标目录。macOS 打包时附带的 AppleDouble 文件（`._` 开头）也略过。
- * - `skip` 里的文件（同包的其他工具）不解开。
- * - tar 按流解开，不整包读进内存；保留可执行位（没有的按 0644）。zip 读中央目录，只支持「不压缩」与 deflate，不支持 ZIP64 与加密。
+ * - Only regular files directly in the root directory (optionally with a `./` prefix) are recognized. Subdirectories, directory entries, links and device files are always skipped. Names containing `..`, backslashes, absolute paths or drive letters are also skipped, so nothing can be written outside the target directory. AppleDouble files (starting with `._`) that macOS packaging adds are also skipped.
+ * - Files in `skip` (other tools in the same package) are not extracted.
+ * - tar is extracted as a stream, without reading the whole archive into memory; executable bits are kept (files without them get 0644). zip reads the central directory and supports only “stored” (uncompressed) and deflate, not ZIP64 or encryption.
  */
 
 export interface ToolArchiveSpec {
@@ -25,7 +24,7 @@ export class ToolArchiveError extends Error {
   }
 }
 
-/** 把 `archive` 根目录里的普通文件解开到 `dest`（已存在的空目录）；返回解开的文件名。 */
+/** Extracts the regular files in the root directory of `archive` into `dest` (an existing empty directory); returns the extracted file names. */
 export async function extractToolArchive(archive: string, spec: ToolArchiveSpec, dest: string, signal?: AbortSignal): Promise<string[]> {
   const skip = new Set(spec.skip);
   const names = spec.format === 'zip' ? await extractZip(archive, dest, skip, signal) : await extractTarGz(archive, dest, skip, signal);
@@ -33,7 +32,7 @@ export async function extractToolArchive(archive: string, spec: ToolArchiveSpec,
   return names;
 }
 
-/** 包里的名字 → 根目录里的文件名；不在根目录、或名字不安全时 null。 */
+/** Name in the archive → file name in the root directory; null when it is not in the root directory, or the name is unsafe. */
 export function rootEntryName(raw: string): string | null {
   const name = raw.replace(/^(\.\/)+/, '');
   if (!name || name === '.' || name === '..') return null;
@@ -54,7 +53,7 @@ function tarString(header: Buffer, offset: number, length: number): string {
 
 function tarNumber(header: Buffer, offset: number, length: number): number {
   const field = header.subarray(offset, offset + length);
-  // GNU 的 base-256 写法（最高位为 1）：大文件才用。
+  // GNU base-256 encoding (highest bit set): used only for large files.
   if (field[0]! & 0x80) {
     let value = field[0]! & 0x7f;
     for (let i = 1; i < length; i++) value = value * 256 + field[i]!;
@@ -64,7 +63,7 @@ function tarNumber(header: Buffer, offset: number, length: number): number {
   return text ? Number.parseInt(text, 8) : 0;
 }
 
-/** pax 扩展头里的 `path`（覆盖下一项的名字）。 */
+/** `path` in a pax extended header (overrides the name of the next entry). */
 function paxPath(data: Buffer): string | null {
   let rest = data.toString('utf8');
   let found: string | null = null;
@@ -83,7 +82,7 @@ function paxPath(data: Buffer): string | null {
 async function extractTarGz(archive: string, dest: string, skip: Set<string>, signal?: AbortSignal): Promise<string[]> {
   const extracted: string[] = [];
   let buffer: Buffer = Buffer.alloc(0);
-  /** 正在读的那一项：剩余的数据字节、补齐到块边界的字节、写到哪里（null 表示丢弃）或收集到内存（扩展头）。 */
+  /** The entry being read: remaining data bytes, padding bytes up to the block boundary, where to write (null means discard), or collected into memory (extended header). */
   let entry: { remaining: number; padding: number; handle: fs.FileHandle | null; collect: Buffer[] | null; kind: string } | null = null;
   let nextName: string | null = null;
   let ended = false;
@@ -154,7 +153,7 @@ async function extractTarGz(archive: string, dest: string, skip: Set<string>, si
     stream.destroy();
   }
   if (entry && (entry as { remaining: number }).remaining > 0) throw new ToolArchiveError('archive ends in the middle of a file');
-  // 解开后再设一次权限（umask 可能去掉了可执行位）。
+  // Set the permissions again after extraction (the umask may have removed the executable bit).
   for (const name of extracted) {
     const stat = await fs.stat(path.join(dest, name));
     if (stat.mode & 0o100) await fs.chmod(path.join(dest, name), 0o755);
@@ -197,7 +196,7 @@ async function extractZip(archive: string, dest: string, skip: Set<string>, sign
     const raw = data.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
     offset += 46 + nameLength + extraLength + commentLength;
     const unixMode = external >>> 16;
-    // 目录项、链接（Unix 的 S_IFLNK）不解开。
+    // Directory entries and links (Unix S_IFLNK) are not extracted.
     if (raw.endsWith('/') || (unixMode & 0o170000) === 0o120000) continue;
     const name = rootEntryName(raw);
     if (!name || skip.has(name)) continue;

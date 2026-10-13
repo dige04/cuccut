@@ -30,7 +30,7 @@ import {
   type MusicOption,
 } from './tools-music.ts';
 
-// i18n-ignore-start: 断言中文界面的文案
+// i18n-ignore-start: assertions on the Chinese UI copy
 function yue(patch: Partial<MusicModelInfo> = {}): MusicModelInfo {
   return {
     modelId: 'yue2-3b@audio-cpp-q8',

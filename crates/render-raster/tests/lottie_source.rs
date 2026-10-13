@@ -1,20 +1,15 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering pipeline and host byte layer), and does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! Lottie 子集渲染器的常开门（夹具进仓库，不依赖语料）。
+//! The always-on gate for the Lottie subset renderer (fixtures are checked in, no dependence on the corpus).
 //!
-//! 三件事：
+//! Three things:
 //!
-//! 1. `core/fixtures/lottie/cases/` 里每个特性一份最小 bodymovin 文档，
-//!    DrawOp 输出对 `cases-golden.json` 做**字节级**比对——golden 里既有
-//!    `drawOpFingerprint`（BCOP 编码字节的 FNV-1a，真正的字节判据），也有
-//!    逐条指令的文本反汇编（让 diff 能读，而不是一串换了值的十六进制）。
-//! 2. `core/fixtures/lottie/samples/` 的三个冒烟样本走诊断路径：
-//!    `shapes-only.json` 必须能渲染，另两个必须给出预期的 warn / fail。
-//! 3. `lottie` 元素在 BCF 里的端到端：资源加载 → resolve → 录制 → 光栅化。
+//! 1. One minimal bodymovin document per feature in `core/fixtures/lottie/cases/`; DrawOp output is compared **byte for byte** against `cases-golden.json`. The golden holds both a `drawOpFingerprint` (FNV-1a over the BCOP-encoded bytes, the real byte-level criterion) and a per-instruction textual disassembly (so diffs are readable rather than a string of hex with changed values).
+//! 2. The three smoke samples in `core/fixtures/lottie/samples/` go through the diagnostic path: `shapes-only.json` must render, and the other two must produce the expected warn / fail.
+//! 3. End-to-end for the `lottie` element in BCF: asset loading → resolve → record → rasterize.
 //!
-//! 重生成：`CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-render --test lottie_source`
+//! Regenerate: `CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-render --test lottie_source`
 
 use render_raster::drawop::{self, DrawOp, FrameBuilder, FrameOps, PaintData};
 use render_raster::source::lottie::Lottie;
@@ -32,7 +27,7 @@ fn updating() -> bool {
     std::env::var("CCUT_UPDATE_GOLDEN").is_ok_and(|v| v != "0")
 }
 
-/// 夹具文件名（排序，确定性）。
+/// Fixture file names (sorted, for determinism).
 const CASES: [&str; 8] = [
     "dash-caps.json",
     "gradients.json",
@@ -68,7 +63,7 @@ fn load_case(name: &str) -> Lottie {
 }
 
 fn f(v: f32) -> String {
-    // -0.0 归一：编码器也这么做，反汇编跟着走才不会出现"值一样、文本不同"
+    // Normalize -0.0: the encoder does the same, so the disassembly follows suit and “same value, different text” cannot occur
     let v = if v == 0.0 { 0.0 } else { v };
     format!("{v}")
 }
@@ -123,7 +118,7 @@ fn paint(data: &PaintData) -> String {
     }
 }
 
-/// 指令流的文本反汇编（golden 的可读半边）。
+/// Textual disassembly of the instruction stream (the human-readable half of the golden).
 fn disassemble(frame: &FrameOps) -> Vec<String> {
     frame
         .ops
@@ -319,7 +314,7 @@ fn recording_a_case_twice_gives_identical_bytes_and_survives_shuffling() {
             backward.into_iter().rev().collect::<Vec<_>>(),
             "{name}：乱序录制必须逐字节等于顺序录制"
         );
-        // 同一时刻两次录制
+        // Record twice at the same time
         assert_eq!(
             drawop::encode(&record(&lottie, total / 3)),
             drawop::encode(&record(&lottie, total / 3)),
@@ -398,7 +393,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
         })
         .expect("虚线夹具必须发出描边");
     assert_eq!((stroke.1, stroke.2), (0, 0), "lc=1/lj=1 ⇒ butt / miter");
-    // 周长 (80+40)*2 = 240，10 开 6 关 ⇒ 15 段，每段一个 move
+    // Perimeter (80+40)*2 = 240; 10 on, 6 off ⇒ 15 segments, one move per segment
     let moves = dashed.paths[stroke.0 as usize]
         .0
         .iter()
@@ -409,8 +404,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
 
 #[test]
 fn the_keyframe_dialects_actually_animate() {
-    // 这份夹具专治两类"静默变 0"：属性带关键帧却**省略 `a` 标志**，以及
-    // 老格式 `{s, e, t}` 的**纯终止符末项**。两者都曾让整条属性退化成常量。
+    // This fixture targets two kinds of “silently becomes 0”: a property that has keyframes but **omits the `a` flag**, and a **terminator-only last entry** in the old `{s, e, t}` format. Both once degraded the whole property to a constant.
     let lottie = load_case("keyframe-dialects.json");
     let total = lottie.metadata().total_ms();
     let fingerprints: Vec<u64> = [0, total / 3, total * 2 / 3, total - 1]
@@ -426,7 +420,7 @@ fn the_keyframe_dialects_actually_animate() {
         "四个时刻必须各不相同——相同就说明动画又被判成了常量"
     );
 
-    // 本帧所有离屏层的不透明度（图层 alpha < 1 才起层）
+    // Opacity of all off-screen layers in this frame (a layer is only given its own offscreen buffer when its alpha < 1)
     let opacities = |ms: i64| -> Vec<f32> {
         record(&lottie, ms)
             .ops
@@ -441,19 +435,19 @@ fn the_keyframe_dialects_actually_animate() {
 
     let start = opacities(0);
     let finish = opacities(total - 1);
-    // 缺 `a` 标志的图层：不透明度 100 → 20。起点满不透明（不起层），末帧 ~0.23
+    // Layer missing the `a` flag: opacity 100 → 20. Starts fully opaque (no offscreen layer), last frame ~0.23
     assert!(
         !start.iter().any(|o| *o < 0.29),
         "起点该层满不透明、不该起离屏层，实际 {start:?}"
     );
     assert!(near(&finish, 0.227), "末帧应当 ~0.23，实际 {finish:?}");
-    // 老格式 `{s, e, t}`：不透明度 30 → 100。起点 0.3，终止符之后冻结在 100（不起层）
+    // Old format `{s, e, t}`: opacity 30 → 100. Start 0.3; frozen at 100 after the terminator (no offscreen layer)
     assert!(near(&start, 0.3), "老格式起值 30%，实际 {start:?}");
     assert!(
         !near(&finish, 0.3),
         "老格式末端应当冻结在前一帧的 `e`（100%），实际 {finish:?}"
     );
-    // 而且该层**还在画**——踩过的坑是末端归零，整层被 alpha <= 0 跳过
+    // And this layer is **still drawn** — the pitfall that was hit was the end value dropping to zero, so the whole layer was skipped by the alpha <= 0 check
     assert!(
         record(&lottie, total - 1)
             .ops
@@ -462,7 +456,7 @@ fn the_keyframe_dialects_actually_animate() {
         "老格式图层在末端必须仍然出画"
     );
 
-    // st ≠ 0 的预合成：内部关键帧写在内部时间轴上，靠 st 对齐才动得起来
+    // Precomp with st ≠ 0: its internal keyframes are written on the internal timeline and only animate correctly when aligned by st
     let pixels = |ms: i64| {
         lottie
             .sample(MediaTime::from_millis(ms))
@@ -474,7 +468,7 @@ fn the_keyframe_dialects_actually_animate() {
     assert_ne!(pixels(0), pixels(total / 3), "画面必须在动");
 }
 
-// ── 冒烟样本的诊断路径 ─────────────────────────────────────────────
+// ── Diagnostic path for smoke samples ─────────────────────────────
 
 fn sample_bytes(name: &str) -> Vec<u8> {
     std::fs::read(fixtures().join("samples").join(name)).expect("读冒烟样本")
@@ -504,7 +498,7 @@ fn the_gradient_matte_precomp_sample_renders_and_warns_about_nothing_unexpected(
     let name = "gradient-matte-precomp.json";
     let lottie = Lottie::parse("smoke", name, &sample_bytes(name))
         .unwrap_or_else(|e| panic!("{name} 应当落在子集内（渐变/遮罩/预合成都支持）：{e:#}"));
-    // 它刻意含渐变、轨道遮罩、图层遮罩、预合成、时间重映射、非 normal 混合与 markers
+    // It deliberately contains gradients, track mattes, layer masks, precomps, time remapping, non-normal blend modes and markers
     let frame = record(&lottie, 0);
     assert!(frame.ops.iter().any(|op| matches!(op, DrawOp::PushMatte)));
     assert!(!lottie.markers().is_empty(), "markers 必须被读出来");
@@ -552,7 +546,7 @@ fn an_expression_control_group_warns_but_still_renders() {
     );
 }
 
-// ── BCF `lottie` 元素端到端 ────────────────────────────────────────
+// ── BCF `lottie` element end-to-end ────────────────────────────────
 
 fn bcf_document(fit: &str) -> Value {
     json!({
@@ -563,8 +557,7 @@ fn bcf_document(fit: &str) -> Value {
         "scenes": [{"id": "s1", "dur": 1.0, "desc": "Lottie 元素端到端夹具"}],
         "tracks": [{"id": "main", "clips": [{
             "id": "c1", "scene": "s1",
-            // 外面套一层 box：`style.x` / `style.y` 是**父级布局**给孩子定位的，
-            // clip 的根节点没有父级，写了也不生效（layout::is_absolute）
+            // Wrap it in a box: `style.x` / `style.y` are used by the **parent layout** to position the child; the root node of a clip has no parent, so setting them has no effect (layout::is_absolute)
             "element": {"id": "root", "type": "box",
                 "style": {"width": 160, "height": 120},
                 "children": [{"id": "e1", "type": "lottie", "src": "$assets.badge",
@@ -615,10 +608,10 @@ fn a_lottie_element_renders_inside_its_box_and_scales_with_it() {
         let i = ((y * pixmap.width() + x) * 4) as usize;
         pixmap.data()[i..i + 4].try_into().unwrap()
     };
-    // 盒子是 [40,20]–[120,100]；盒外必须还是背景色（黑、不透明）
+    // The box is [40,20]–[120,100]; outside the box must still be the background colour (black, opaque)
     assert_eq!(at(5, 5), [0, 0, 0, 255], "盒外不该被画到");
     assert_eq!(at(150, 110), [0, 0, 0, 255]);
-    // 盒内应当有非背景像素
+    // There should be non-background pixels inside the box
     let mut painted = 0;
     for y in 20..100 {
         for x in 40..120 {
@@ -637,7 +630,7 @@ fn cover_fit_clips_the_overflow_back_to_the_element_box() {
         let i = ((y * pixmap.width() + x) * 4) as usize;
         pixmap.data()[i..i + 4].try_into().unwrap()
     };
-    // 素材是 120×90、盒子 80×80 ⇒ cover 会横向溢出，必须被裁回盒子
+    // The asset is 120×90 and the box is 80×80 ⇒ cover overflows horizontally and must be clipped back to the box
     for y in [21u32, 60, 98] {
         assert_eq!(at(38, y), [0, 0, 0, 255], "盒左侧越界");
         assert_eq!(at(122, y), [0, 0, 0, 255], "盒右侧越界");
@@ -646,12 +639,12 @@ fn cover_fit_clips_the_overflow_back_to_the_element_box() {
 
 #[test]
 fn the_element_freezes_and_loops_like_an_animated_image() {
-    // loop: true ⇒ 1s 的合成在 1s 的 clip 里正好走一遍；t=0 与 t=0.99 应当不同
+    // loop: true ⇒ a 1 s composition plays exactly once through in a 1 s clip; t=0 and t=0.99 should differ
     let (a, _) = render_bcf("contain", 0.0);
     let (b, _) = render_bcf("contain", 0.9);
     assert_ne!(a.data(), b.data(), "带旋转关键帧的素材应当逐帧变化");
-    // 同一帧窗口内两次渲染逐字节相同（10fps ⇒ 100ms 一帧）
-    // 量化用的是**素材**的帧表（30fps ⇒ 33ms 一帧），不是项目 fps
+    // Two renders within the same frame window are byte-identical (10 fps ⇒ one frame per 100 ms)
+    // Quantization uses the **asset's** frame table (30 fps ⇒ one frame per 33 ms), not the project fps
     let (c, _) = render_bcf("contain", 0.41);
     let (d, _) = render_bcf("contain", 0.42);
     assert_eq!(c.data(), d.data(), "同一素材帧窗口必须逐字节相同");

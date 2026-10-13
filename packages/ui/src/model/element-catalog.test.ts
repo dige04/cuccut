@@ -18,7 +18,7 @@ import { poseOf, type PlacedItem } from './stage-pose.ts';
 
 const canvas = { width: 1920, height: 1080 };
 const layerOf = (key: string) => ELEMENT_TILES.find((tile) => tile.key === key)!.layer(canvas);
-/** 这一层在画布上的框（像素，中心与宽高），与舞台、帧计划同一套推法。 */
+/** This layer's box on the canvas (pixels; center and width/height), derived the same way as the stage and the frame plan. */
 const boxOf = (key: string, size = canvas) => {
   const { cx, cy, w, h } = poseOf(ELEMENT_TILES.find((tile) => tile.key === key)!.layer(size) as unknown as PlacedItem, size);
   return { cx, cy, w, h };
@@ -65,7 +65,7 @@ describe('元素目录', () => {
       expect(layerOf(key).place).toEqual({ x: 50, y: 85, w: 100 });
       expect(boxOf(key)).toEqual({ cx: 960, cy: 918, w: 1920, h: 216 });
     }
-    // 落位与画幅无关：竖屏也是同一组百分比。
+    // Placement is independent of aspect ratio: portrait uses the same set of percentages.
     const portrait = ELEMENT_TILES.find((tile) => tile.key === 'wave.ring_bars')!.layer({ width: 1080, height: 1920 });
     expect(portrait.place).toEqual({ x: 50, y: 85, w: 100 });
   });
@@ -73,7 +73,7 @@ describe('元素目录', () => {
   it('进度与声波的样式都画得出来，默认色与 dB 窗取样式自己的；只有条形两款横跨两列', () => {
     expect(PROGRESS_KINDS.map((kind) => kind.key)).toEqual(Object.keys(PROGRESS_STYLES));
     expect(WAVE_KINDS.map((kind) => kind.key)).toEqual(Object.keys(WAVE_STYLES));
-    // 色板的名字是界面文案，个数跟配方走（两款彩虹边框一个也没有）。
+    // Palette names are UI copy, and the count follows the recipe (the two rainbow-border styles have none).
     for (const kind of PROGRESS_KINDS) expect(kind.colors).toHaveLength(PROGRESS_STYLES[kind.key]!.numColors);
     for (const kind of WAVE_KINDS) expect(kind.colors).toHaveLength(WAVE_STYLES[kind.key]!.numColors);
     expect(ELEMENT_TILES.filter((tile) => tile.wide).map((tile) => tile.key)).toEqual(['progress.rounded', 'progress.normal']);
@@ -156,7 +156,7 @@ describe('元素目录', () => {
       ['progress.rainbow_border', 'progress.reverse_rainbow_border', 'progress.snake_rainbow', 'progress.snake_spin_rainbow'],
     ]);
     expect(elementSections('没有这个')).toEqual([]);
-    // 品牌库贴纸命中时那一段留着，内置格照样按词筛（这里一格没有）。
+    // When a brand-library sticker matches, that section stays; the built-in tiles are still filtered by keyword (none here).
     expect(elementSections('没有这个', ['sticker', 'dynamic']).map((section) => [section.key, section.tiles.length])).toEqual([
       ['sticker', 0],
       ['dynamic', 0],

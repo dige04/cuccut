@@ -69,7 +69,7 @@ describe('design-annotations', () => {
     expect(boardOfDetail('screens/Phone_2.dc.html')).toBe('screens/Phone_2.dc.html');
     expect(boardOfDetail('Area over Main.dc.html (part): #1 text "Hi"')).toBe('Main.dc.html');
     expect(boardOfDetail('Area over Main.dc.html (whole)')).toBe('Main.dc.html');
-    // 跨几块画板、画布上的空白处、便签：没有单一的画板
+    // Spans several artboards, blank space on the canvas, or sticky notes: no single artboard.
     expect(boardOfDetail('Area over A.dc.html (whole); B.dc.html (part)')).toBeUndefined();
     expect(boardOfDetail('canvas 120,40')).toBeUndefined();
     expect(boardOfDetail('note "Flows"')).toBeUndefined();

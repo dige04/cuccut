@@ -1,8 +1,6 @@
-// Mac `CaptionProgramCompiler` + `CaptionFrameResolver` 的跨平台纯函数移植。
+// Cross-platform pure-function port of Mac's `CaptionProgramCompiler` + `CaptionFrameResolver`.
 //
-// 16 个 recipe 描述子直接编译自 Mac 规范资源；这里把 cue、用户设计参数与
-// captionEmphasis 编译为任意时刻的逐词 channel 状态。绘制层只消费
-// `CaptionRecipeResolvedWord`，不再为每个配方另写一套时间逻辑。
+// The 16 recipe descriptors are compiled directly from the Mac spec resources. Here the cue, the user's design parameters and captionEmphasis are compiled into per-word channel state at any moment. The drawing layer only consumes `CaptionRecipeResolvedWord` and no longer writes separate timing logic for each recipe.
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,9 +32,7 @@ pub struct CaptionRecipeDescriptor {
     pub assets: Vec<CaptionRecipeAsset>,
     #[serde(default)]
     pub fonts: Vec<CaptionRecipeFont>,
-    /// 能力门（倒鸭子设计稿 §5.2）：`scope: "sequence"` 的配方由跨句序列编译器
-    /// （`compiler: "typography-world"`）接管整条原文轨，而不是逐 cue 的 channel
-    /// 事件。不认识 `compiler` 的客户端不列这份样式，把已保存的项目当普通字幕画。
+    /// Capability gate (Daoyazi design doc §5.2): a recipe with `scope: "sequence"` is handled by the cross-sentence sequence compiler (`compiler: "typography-world"`) for the whole source track, rather than by per-cue channel events. Clients that do not recognise `compiler` do not list this style and draw saved projects as ordinary captions.
     #[serde(default)]
     pub execution: Option<CaptionRecipeExecution>,
 }
@@ -51,7 +47,7 @@ pub struct CaptionRecipeExecution {
 }
 
 impl CaptionRecipeDescriptor {
-    /// 这份配方是否由本内核认得的跨句序列编译器执行。
+    /// Whether this recipe is executed by a cross-sentence sequence compiler that this kernel recognises.
     pub fn is_sequence(&self) -> bool {
         self.execution.as_ref().is_some_and(|execution| {
             execution.scope == CAPTION_SEQUENCE_SCOPE
@@ -59,7 +55,7 @@ impl CaptionRecipeDescriptor {
         })
     }
 
-    /// 序列配方在这一画幅下的排版 token；描述符没写的槽位取内核默认。
+    /// Typography tokens for a sequence recipe at this aspect ratio; slots the descriptor does not specify fall back to kernel defaults.
     pub fn sequence_layout_tokens(&self, frame_width: u32, frame_height: u32) -> SeqLayoutTokens {
         let fallback = caption_sequence_layout_tokens(frame_width, frame_height);
         caption_recipe_layout_token(self, frame_width, frame_height).map_or(fallback, |token| {
@@ -80,7 +76,7 @@ pub struct CaptionRecipeLayoutToken {
     pub min_font_size: f64,
     pub max_height: f64,
     pub band_gap: f64,
-    /// 序列配方的字幕区域（画幅比例 `[x, y, w, h]`）、疏密与贴合（§7.1）。
+    /// Caption region of a sequence recipe (aspect-ratio `[x, y, w, h]`), density and fit (§7.1).
     #[serde(default)]
     pub viewport: Option<[f64; 4]>,
     #[serde(default)]
@@ -787,7 +783,7 @@ pub fn caption_recipe_seeded_unit(seed: u64, phase: usize) -> f64 {
 }
 
 pub fn caption_recipe_noise(seed: u64) -> f64 {
-    // Mac `AnimNoise.value(seed:at: 0.5)`：lattice=8，因此正好采第 4 个格点。
+    // Mac `AnimNoise.value(seed:at: 0.5)`: lattice=8, so it samples the 4th lattice point exactly.
     let mut hash = seed
         .wrapping_mul(0x9E3779B1)
         .wrapping_add(4_u64.wrapping_mul(0x85EBCA77));
@@ -901,12 +897,9 @@ pub fn caption_recipe_default_emoji(text: &str) -> &'static str {
     "✨"
 }
 
-/// 返回一个词在本配方中**可能**画出的稳定 emoji 文本。用户覆盖在所有 Designed
-/// Caption 中都优先；只有描述子真的声明 `emojiPop` 时，缺省词才补语义 emoji。
+/// Returns the stable emoji text a word **may** be drawn with in this recipe. A user override takes precedence in all Designed Captions; a default semantic emoji is filled in for words without one only if the descriptor actually declares `emojiPop`.
 ///
-/// CPU resolver 只在效果活动时把缺省 emoji 写进逐帧状态；retained scene 则需要
-/// 提前光栅并缓存同一字形，再用透明 uniform 控制未活动帧。因此两条路径必须共用
-/// 这个选择函数，不能各猜一次默认值。
+/// The CPU resolver writes the default emoji into the per-frame state only while the effect is active. The retained scene must rasterise and cache the same glyph ahead of time, then use a transparent uniform to control inactive frames. So both paths must share this selection function rather than each guessing the default.
 pub fn caption_recipe_word_emoji(
     design: &DesignedCaption,
     item: &TimedItem,
@@ -982,7 +975,7 @@ mod caption_recipe_tests {
         assert_eq!(descriptors[2].id, "caption-daoyazi");
         assert_eq!(descriptors[16].id, "caption-weight-shift");
         assert!(descriptors.iter().all(|descriptor| descriptor.version == 1));
-        // 跨句序列配方没有逐词事件表，画面由 `execution` 指向的编译器接管。
+        // A cross-sentence sequence recipe has no per-word event table; the drawing is taken over by the compiler that `execution` points to.
         assert!(
             descriptors
                 .iter()

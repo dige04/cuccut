@@ -12,7 +12,7 @@ import { emptyText, textStats, VIBES } from './tools-tts.ts';
 import { tooLong } from './tools-text.ts';
 import { voiceConsentStatement } from './voices-library.ts';
 
-/** 界面模型层（link-import 之后的模块）在英文下的文案：切换语言后，常量导出与函数都读到英文。 */
+/** UI model layer (modules after link-import) copy in English: after switching language, both the exported constants and the functions read English. */
 describe('model copy in English', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

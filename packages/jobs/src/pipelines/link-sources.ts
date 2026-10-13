@@ -3,21 +3,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * 原始链接的暂存（架构设计 §7.9）：规范化去掉了查询参数（签名、令牌）的链接，下载时仍要原样的那一个。它不进任务记录
- * （`jobs.*` 读得到冻结的参数），只存在这个文件里（权限 0600），按摘要（`sourceRef`）引用。
+ * Staging for the original link (architecture design §7.9): the link normalized with query parameters (signatures, tokens) removed, the one download still needs unchanged. It does not go into the task record (`jobs.*` can read the frozen parameters); it exists only in this file (permission 0600), referenced by digest (`sourceRef`).
  *
- * 生命周期：提交时写入；流程完成时删除；Runtime 启动时只留下还没完成的从链接导入流程引用的（失败、取消、中断的还能重试），
- * 其余删掉。
+ * Lifecycle: written at submission; deleted when the pipeline completes. At Runtime startup, only references for link-import pipelines that have not completed are kept (failed, cancelled and interrupted ones can be retried); the rest are deleted.
  */
 export interface LinkSources {
   put(ref: string, url: string): Promise<void>;
   get(ref: string): Promise<string | null>;
   delete(ref: string): Promise<void>;
-  /** 只留下 `keep` 里的。 */
+  /** Keeps only those in `keep`. */
   prune(keep: ReadonlySet<string>): Promise<void>;
 }
 
-/** 文件实现：整个文件一个 JSON 对象，原子写。 */
+/** File implementation: the whole file is one JSON object, written atomically. */
 export class FileLinkSources implements LinkSources {
   readonly #file: string;
   #chain: Promise<unknown> = Promise.resolve();

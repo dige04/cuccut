@@ -1,10 +1,10 @@
 /**
- * 设计系统标注位置标签里的词（docs/design/canvas §10.6），跟随 CucCut 的界面语言（编辑器地址上的 `?lang=`）。
- * `label` 给人看（批注框、输入框上的标注、发出的消息），`detail` 给智能体定位，保持英文，不经这里（comment-targets.ts）。
+ * Words in the design system's annotation position labels (docs/design/canvas §10.6), following CucCut's UI language (the `?lang=` on the editor address).
+ * `label` is for people (comment boxes, annotations on input fields, sent messages); `detail` is for the agent to locate, stays in English, and does not go through here (comment-targets.ts).
  *
- * 键是设计系统运行时标目标用的前缀（editor/comment-anchors.ts 的 `commentTargetProps(prefix, name)` / `commentTargetId`）：
- * token、颜色组、文字样式组与文字样式、字体、样式设置与样式编辑、取色器、组件与它的属性、素材组与素材、文档、对话框、
- * 素材预览、用法说明、章节标题；`ds` 前缀是整套设计系统的几处（封面、字体文件），按名字取 `specials`。表里没有的前缀写 `element`。
+ * The keys are the prefixes the design system runtime uses when marking targets (`commentTargetProps(prefix, name)` / `commentTargetId` in editor/comment-anchors.ts):
+ * token, color group, text style group and text styles, fonts, style settings and style editing, color picker, components and their properties, asset groups and assets, documents, dialogs,
+ * asset preview, usage notes, section titles. The `ds` prefix covers a few places in the whole design system (cover, font files), looked up by name in `specials`. Prefixes not in the table are written as `element`.
  */
 import { DEFAULT_LOCALE, defineMessages, setLocale, type Locale } from '@cuccut/protocol/i18n';
 import { zhHans } from './comment-labels.zh-Hans.ts';
@@ -23,7 +23,7 @@ import { tr } from './comment-labels.tr.ts';
 import { vi } from './comment-labels.vi.ts';
 
 const en = {
-  /** 目标的种类，按前缀。 */
+  /** Kind of target, by prefix. */
   kinds: {
     token: 'Token',
     cgroup: 'Color group',
@@ -45,14 +45,14 @@ const en = {
     note: 'Usage note',
     page: 'Section title',
   } as Readonly<Record<string, string>>,
-  /** `ds` 前缀的几处，按名字。 */
+  /** The few places under the `ds` prefix, by name. */
   specials: {
     cover: 'Cover',
     'font-files': 'Font files',
   } as Readonly<Record<string, string>>,
-  /** 前缀认不出时。 */
+  /** When the prefix is not recognized. */
   element: 'Element',
-  /** 标签里引用目标的名字。 */
+  /** The name of the target, referenced in the label. */
   quote: (name: string) => `“${name}”`,
 };
 
@@ -60,16 +60,16 @@ export type CommentLabelMessages = typeof en;
 
 const LABELS = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 标注层拼 `label` 时用的词。 */
+/** Words used by the annotation layer when assembling `label`. */
 export interface DesignSystemCommentLabels {
-  /** 这个前缀的种类；认不出时是 `element`。 */
+  /** The kind for this prefix; `element` when not recognized. */
   kind(prefix: string): string;
-  /** `ds` 前缀的一处；认不出时 undefined。 */
+  /** One of the places under the `ds` prefix; undefined when not recognized. */
   special(name: string): string | undefined;
   quote(name: string): string;
 }
 
-/** 按界面语言给词；`locale` 为 null 时用英文。页面里只有一个编辑器，直接设整页的当前语言（同幻灯片的 comment-labels.ts）。 */
+/** Gives the words in the UI language; `locale` null means English. There is only one editor on the page, so set the current language of the whole page directly (same as comment-labels.ts for slides). */
 export function createCommentLabels(locale: Locale | null): DesignSystemCommentLabels {
   setLocale(locale ?? DEFAULT_LOCALE);
   return {

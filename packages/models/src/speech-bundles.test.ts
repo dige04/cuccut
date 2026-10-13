@@ -11,7 +11,7 @@ import { SPEECH_BUNDLES } from './speech-bundles.ts';
 import { BUILTIN_VOICES } from './speech-voices.ts';
 import { SPEECH_COMPONENTS } from './worker-contract.ts';
 
-/** 本地语音合成模型包的登记（架构设计 §6.3）：每个文件有哈希与大小，共用组件按引用保留，许可随模型描述给出。 */
+/** Registration of local speech synthesis model packages (architecture design §6.3): each file has a hash and size, shared components are kept by reference, and licences are given with the model description. */
 
 const MLX_IDS = [
   'qwen3-tts-0.6b-base@mlx-8bit',
@@ -25,7 +25,7 @@ const MLX_IDS = [
   'voxcpm2@mlx-int8',
   'omnivoice@mlx-int8',
 ];
-/** 每个 MLX 模型包都有 candle 变体：同一仓库，Apple Silicon 以外的平台列出。 */
+/** Every MLX model package has a candle variant: same repository, listed on platforms other than Apple Silicon. */
 const CANDLE_IDS = MLX_IDS.map((id) => `${id.split('@')[0]}@candle`);
 const EXPECTED_IDS = [...MLX_IDS, ...CANDLE_IDS];
 
@@ -63,7 +63,7 @@ describe('本地语音合成模型包的登记', () => {
         expect(manifest!.estimatedBytes).toBe(total);
       }
     }
-    // 同一仓库版本只登记一次。
+    // The same repository revision is registered only once.
     const keys = REPO_MANIFESTS.map((m) => `${m.repo}@${m.revision}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -126,9 +126,9 @@ describe('本地语音合成模型包的登记', () => {
 
     it('常驻量：candle 变体按参数个数 × 计算精度（CPU 计在内存，CUDA 计在 GPU 内存）；MLX 的合成按固定的需求（null）', async () => {
       const win = new ModelCatalog({ root: dir, platform: 'win32', arch: 'x64', workerAvailable: () => true });
-      // 0.6B Base（8 位，914.6M 参数）加共用的编解码器（f32，170.6M 参数）：CPU 上 f32。
+      // 0.6B Base (8-bit, 914.6M parameters) plus the shared codec (f32, 170.6M parameters): f32 on CPU.
       expect(await win.workerFootprint('qwen3-tts-0.6b-base@candle')).toEqual({ bytes: (914_643_008 + 170_557_441) * 4, pool: 'memory' });
-      // IndexTTS 2.5：主模型加 IndexTTS2 仓库 `aux/` 下的辅助权重。
+      // IndexTTS 2.5: the main model plus auxiliary weights under `aux/` in the IndexTTS2 repository.
       expect(await win.workerFootprint('index-tts2.5@candle')).toEqual({ bytes: (966_515_596 + 699_767_331) * 4, pool: 'memory' });
       win.setWorkerDevice('candle', 'cuda');
       expect(await win.workerFootprint('voxcpm2@candle')).toEqual({ bytes: 2_383_791_364 * 2, pool: 'gpuMemory' });
@@ -189,10 +189,10 @@ describe('本地语音合成模型包的登记', () => {
         const note = of(id, on('cpu'));
         expect(note).toMatch(/^在本机的 CPU 上合成，只用到一两个核，/);
         expect(note).toContain('CUDA');
-        // 每只模型都有自己的一句，不落到兜底。
+        // Every model has its own sentence; none falls back to the default.
         expect(note).not.toContain('一句要等几分钟；');
         expect(of(id, on('cuda'))).toBeUndefined();
-        // 状态没报设备时按登记的设备（cpu）算。
+        // When the status does not report a device, the registered device (cpu) is used.
         expect(of(id, status)).toBe(note);
       }
       expect(of('qwen3-tts-0.6b-base@candle', on('cpu'))).toContain('约 55 倍');
@@ -214,9 +214,9 @@ describe('本地语音合成模型包的登记', () => {
 });
 
 describe('引擎的语言表与旋钮区间', () => {
-  // 与 model-runtime 的引擎常量对照的同一份夹具（crates/model-runtime/tests/synthesize_engine_limits.rs）。
+  // The same fixture as the engine constants in model-runtime (crates/model-runtime/tests/synthesize_engine_limits.rs).
   const LIMITS_FILE = new URL('../../../crates/model-runtime/tests/fixtures/speech-engine-limits.json', import.meta.url);
-  // 按模型包 ID 的 `@` 前一段：MLX 与 candle 变体是同一只引擎。
+  // Keyed by the part before `@` in the model package ID: the MLX and candle variants are the same engine.
   const ENGINE_OF: Record<string, string> = {
     voxcpm2: 'voxcpm2',
     omnivoice: 'omnivoice',

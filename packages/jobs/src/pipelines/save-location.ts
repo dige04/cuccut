@@ -6,14 +6,12 @@ import { PipelineStepError } from './pipeline.ts';
 import { sanitizeFileName } from './yt-dlp.ts';
 
 /**
- * 保存位置（架构设计 §7.9「保存位置」）：没有视频的结果落在一个目录里。目录在提交时确定并冻结，不存在时创建，
- * 不能写入是 `OUTPUT_DESTINATION_UNAVAILABLE`。目录怎么选（调用给的、设置、主机的下载文件夹）由 Runtime 决定，
- * 这里只负责「建好、确认能写」与可读的文件名。
+ * Save location (architecture design §7.9, “Save location”): results without a video land in a directory. The directory is chosen at submission and frozen; it is created if it does not exist. If it cannot be written, the error is `OUTPUT_DESTINATION_UNAVAILABLE`. How the directory is chosen (given by the call, from settings, or the host's downloads folder) is decided by the Runtime. This code only handles “create it and confirm it is writable”, along with readable file names.
  */
 
 export const OUTPUT_DESTINATION_UNAVAILABLE = 'OUTPUT_DESTINATION_UNAVAILABLE';
 
-/** 建好目录并确认能写；不行时返回原因，否则 null。 */
+/** Creates the directory and confirms it is writable. Returns the reason if it is not; otherwise null. */
 export async function writableDirectoryProblem(dir: string): Promise<string | null> {
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -26,7 +24,7 @@ export async function writableDirectoryProblem(dir: string): Promise<string | nu
   }
 }
 
-/** 提交时（`prepare`、直接任务的提交）：目录建不了或不能写时以 `conflict` 拒绝，不建任务。 */
+/** At submission (`prepare`, and the submission of direct tasks): if the directory cannot be created or written, it is rejected with `conflict` and no task is created. */
 export async function ensureSaveDirectory(dir: string): Promise<void> {
   const problem = await writableDirectoryProblem(dir);
   if (problem !== null) {
@@ -34,18 +32,18 @@ export async function ensureSaveDirectory(dir: string): Promise<void> {
   }
 }
 
-/** 发布时（流程的一步）：目录在提交之后被挪走或改了权限，这一步以 `OUTPUT_DESTINATION_UNAVAILABLE` 失败，可以重试。 */
+/** At publish time (a step of the pipeline): if the directory was moved or its permissions changed after submission, this step fails with `OUTPUT_DESTINATION_UNAVAILABLE` and can be retried. */
 export async function ensureSaveDirectoryForStep(dir: string): Promise<void> {
   const problem = await writableDirectoryProblem(dir);
   if (problem !== null) throw new PipelineStepError(OUTPUT_DESTINATION_UNAVAILABLE, JobsSaveLocation.unwritable({ dir, problem }), { dir, reason: problem });
 }
 
-/** 取自提示词或原文开头的字数上限：够认出是哪一份，又不至于成一长串。 */
+/** The upper limit on characters taken from a prompt or from the start of a text: enough to tell which one it is, without making a long string. */
 const TITLE_CHARS = 40;
 
 /**
- * 可读的文件名（不含扩展名）：取文字开头一段（空白合成一个空格），按下载的文件同样的规则清理（`sanitizeFileName`）；
- * 文字是空的时用 `fallback`。
+ * A readable file name (without the extension): takes the opening part of the text (runs of whitespace become one space) and cleans it with the same rules used for downloaded files (`sanitizeFileName`).
+ * When the text is empty, `fallback` is used.
  */
 export function readableStem(text: string, fallback: string): string {
   const head = [...text.replace(/\s+/g, ' ').trim()].slice(0, TITLE_CHARS).join('');

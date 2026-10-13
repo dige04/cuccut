@@ -21,7 +21,7 @@ describe('compositionHostScript', () => {
 
   it('开关后面的下一个参数是脚本', () => {
     expect(compositionHostScript(['/app/CucCut', '--composition-host', '/c/host-1.cjs'])).toBe('/c/host-1.cjs');
-    // 开发态的 default_app 把应用文件放在前面；Chromium 也可能在前面插开关。
+    // In dev mode, default_app puts the app files first. Chromium may also insert switches in front.
     expect(compositionHostScript(['/e/Electron', '/repo/out/main/index.js', '--no-sandbox', '--composition-host', 'C:\\c\\host.cjs'])).toBe(
       'C:\\c\\host.cjs',
     );

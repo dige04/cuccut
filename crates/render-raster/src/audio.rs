@@ -1,23 +1,11 @@
-//! 音频混音（规范 §8.4）：clip 解码为 f32 PCM，
-//! 音量包络在 Rust 侧逐样施加（sample_frames 纯函数 ⇒ 混音确定性），
-//! 多 clip 叠加 → f32le 主混音 → 编码期作为第二输入合流进 MP4。
+//! Audio mixing (spec §8.4): clips are decoded to f32 PCM, the volume envelope is applied sample by sample on the Rust side (sample_frames is a pure function, so mixing is deterministic), multiple clips are summed into an f32le master mix, and that is merged into the MP4 as a second input during encoding.
 //!
-//! ## 解码后端：常速走 Symphonia、变速留给 ffmpeg（WP6a）
+//! ## Decoding backend: constant speed via Symphonia, variable speed left to ffmpeg (WP6a)
 //!
-//! - **常速 clip（`rate == 1`）**：[`decode`] 用 Symphonia 解码 + 多相 sinc 重
-//!   采样到 48 kHz 立体声，纯 Rust、不起子进程。解不了（容器/编码不支持、
-//!   3 声道以上要下混矩阵）就回落 ffmpeg。
-//! - **变速 clip（`rate != 1`）**：仍然是 `ffmpeg -filter:a atempo`。保音高时间
-//!   拉伸没有可放心接入的纯 Rust 实现：调研过的候选里，`wsola`（唯一纯 Rust 且
-//!   质量对得上 atempo 的）只有一个 0.1.0 版本、上游是个人仓库且 crate 包里没
-//!   带 LICENSE 文件（crate 元数据写 MIT、仓库写 Apache-2.0）；`signalsmith-
-//!   stretch` 质量与性能都更好但是 C++ FFI，会给每个平台的构建加上 C++ 编译器
-//!   与 libclang 依赖（Windows CI 的 locked build 首当其冲）；`timestretch` 在
-//!   0.25x 上实测半数输出是静音；`rubato` 是采样率转换、根本不保音高。**变速素材
-//!   在 BCF 里是少数**，为它引入这些代价不划算，留 ffmpeg 是明确的取舍而不是遗漏。
+//! - **Constant-speed clips (`rate == 1`)**: [`decode`] uses Symphonia to decode, then polyphase sinc resampling to 48 kHz stereo. It is pure Rust and spawns no subprocess. Where it cannot (container or codec unsupported, or 3+ channels that need a downmix matrix), it falls back to ffmpeg.
+//! - **Variable-speed clips (`rate != 1`)**: still `ffmpeg -filter:a atempo`. There is no pure Rust pitch-preserving time stretch that can be adopted safely. Among the candidates investigated: `wsola` (the only pure Rust one with quality comparable to atempo) has a single 0.1.0 release, its upstream is a personal repository, and the crate package ships no LICENSE file (the crate metadata says MIT, the repository says Apache-2.0). `signalsmith-stretch` has better quality and performance but is C++ FFI, which would add a C++ compiler and libclang dependency to every platform build (the Windows locked-build CI would be hit first). `timestretch` measured half of its output as silence at 0.25x. `rubato` is sample-rate conversion and does not preserve pitch at all. **Variable-speed material is a minority in BCF**, so it is not worth taking on these costs for it. Keeping ffmpeg is a deliberate trade-off, not an oversight.
 //!
-//! 每个 clip 实际用了哪个后端由 [`mix_audio_reported`] 交出
-//! （`docs/design/bcf/cuccut-format-spec.md` §15.1「解码后端必须可观测」）。
+//! Which backend each clip actually used is reported by [`mix_audio_reported`] (`docs/design/bcf/cuccut-format-spec.md` §15.1, "the decoding backend must be observable").
 
 mod chain;
 mod decode;
@@ -33,37 +21,35 @@ use scene_primitives::sample::sample_frames;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHANNELS: usize = 2;
 
-/// 纯 Rust 解码后端标识。
+/// Identifier of the pure Rust decoding backend.
 pub const SYMPHONIA_BACKEND: &str = "symphonia";
-/// ffmpeg 兜底解码后端标识（与 [`crate::media::FFMPEG_BACKEND`] 同名）。
+/// Identifier of the ffmpeg fallback decoding backend (same name as [`crate::media::FFMPEG_BACKEND`]).
 pub const FFMPEG_BACKEND: &str = "ffmpeg";
 
-/// 一个 audio clip 的解码记录。
+/// The decoding record for one audio clip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipDecodeRecord {
     pub clip_id: String,
-    /// [`SYMPHONIA_BACKEND`] 或 [`FFMPEG_BACKEND`]。
+    /// [`SYMPHONIA_BACKEND`] or [`FFMPEG_BACKEND`].
     pub backend: &'static str,
 }
 
-/// 一次全片混音的产物。
+/// The output of one full-timeline mix.
 pub struct AudioMix {
-    /// f32le 交错立体声字节。
+    /// f32le interleaved stereo bytes.
     pub pcm: Vec<u8>,
-    /// 逐 clip 的解码后端（顺序与 `ir.audio_clips` 一致，跳过零时长与静音轨的 clip）。
+    /// Decoding backend per clip (same order as `ir.audio_clips`; zero-duration and muted clips are skipped).
     pub clips: Vec<ClipDecodeRecord>,
-    /// 文档写了 `audio.master` 时的母带实测。
+    /// Mastering measurements, when the document specifies `audio.master`.
     pub master: Option<MasterMeasure>,
 }
 
-/// 这份 IR 要不要走混音链（§4 `audio`、§8.4 淡入淡出 / 声像）。不要时走旧路径，
-/// 输出与没有这些字段之前逐位相同。`muted` 的 clip 两条路径都直接跳过。
+/// Whether this IR goes through the mixing chain (§4 `audio`, §8.4 fades and panning). When it does not, the old path is used, and the output is bit-identical to what it was before these fields existed. Muted clips are skipped directly on both paths.
 fn needs_chain(ir: &Ir) -> bool {
     ir.audio.is_some() || ir.audio_clips.iter().any(|c| !c.muted && !c.is_plain())
 }
 
-/// 对一段已经混好的整片 PCM（48 kHz 交错立体声 f32）做母带：响度归一与真峰值限幅交替三轮，
-/// 再按真峰值静态兜底。`ccut export --loudness / --true-peak` 用它。
+/// Mastering for an already-mixed full PCM (48 kHz interleaved stereo f32): loudness normalization and true-peak limiting alternate over three rounds, followed by a static true-peak fallback. Used by `ccut export --loudness / --true-peak`.
 pub fn master_interleaved(
     pcm: &[f32],
     target: scene_primitives::audio_mix::MasterTarget,
@@ -112,32 +98,26 @@ pub fn master_interleaved(
     Ok((out, measure))
 }
 
-/// 纯 Rust 解码 `path` 的第一条音轨在 `[start, start + duration)` 上的样本，
-/// 交出 48 kHz 交错立体声 f32（[`SAMPLE_RATE`] / [`CHANNELS`]）。
+/// Decodes the samples of the first audio track of `path` over `[start, start + duration)` in pure Rust, yielding 48 kHz interleaved stereo f32 ([`SAMPLE_RATE`] / [`CHANNELS`]).
 ///
-/// 语义对齐 `ffmpeg -ss <start> -t <duration> -i <src> -f f32le -ac 2 -ar 48000 -`。
-/// `Err` 一律代表「这条片源纯 Rust 路径解不了」（容器/编码不支持、3 声道以上要
-/// 下混矩阵），调用方据此回落 ffmpeg——**不保音高变速仍然没有纯 Rust 实现**，
-/// 变速素材不要送进来。
+/// The semantics match `ffmpeg -ss <start> -t <duration> -i <src> -f f32le -ac 2 -ar 48000 -`. `Err` always means "this source cannot be handled by the pure Rust path" (container or codec unsupported, or 3+ channels that need a downmix matrix), and the caller then falls back to ffmpeg. **Pitch-preserving speed change still has no pure Rust implementation**, so variable-speed material must not be passed in here.
 ///
-/// 除本模块的混音外，`apps/cli` 的时间轴装配（`services/timeline_media`）也用它
-/// 铺主轨与音频元素：两条链路都要「48 kHz 立体声 f32 窗口」，不该各写一份。
+/// Besides this module's mixing, the timeline assembly in `apps/cli` (`services/timeline_media`) also uses it to lay out the main track and audio elements. Both paths need a "48 kHz stereo f32 window", so it should not be written twice.
 pub fn decode_stereo_48k(path: &std::path::Path, start: f64, duration: f64) -> Result<Vec<f32>> {
     decode::decode_stereo_48k(path, start, duration)
 }
 
-/// 纯 Rust 解码 `path` 的整条第一音轨，交出 48 kHz 单声道 f32：各声道取平均，单声道源原样。声波的频谱（BCS1）
-/// 从它算。`Err` 时调用方回落 ffmpeg。
+/// Decodes the whole first audio track of `path` in pure Rust, yielding 48 kHz mono f32: channels are averaged, and a mono source is used as-is. The spectrum of the sound wave (BCS1) is computed from it. On `Err` the caller falls back to ffmpeg.
 pub fn decode_mono_48k(path: &std::path::Path) -> Result<Vec<f32>> {
     decode::decode_mono_48k(path)
 }
 
-/// 全片混音 → f32le 交错立体声字节。无 audio clip 时返回 None。
+/// Full-timeline mix → f32le interleaved stereo bytes. Returns None when there are no audio clips.
 pub fn mix_audio(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Vec<u8>>> {
     Ok(mix_audio_reported(ir, assets)?.map(|mix| mix.pcm))
 }
 
-/// 同 [`mix_audio`]，另带逐 clip 的解码后端记录。
+/// Same as [`mix_audio`], also carrying the per-clip decoding backend record.
 pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<AudioMix>> {
     if ir.audio_clips.is_empty() {
         return Ok(None);
@@ -153,7 +133,7 @@ pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Audio
         if clip.muted {
             continue;
         }
-        // withAudio 展开的 clip 引用 video 资产：音轨直接取自视频文件（§6.5）
+        // Clips expanded from withAudio reference a video asset: the audio track is taken directly from the video file (§6.5).
         let path = assets
             .audios
             .get(&clip.asset_id)
@@ -164,14 +144,14 @@ pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Audio
             continue;
         }
         let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
-        // 源侧需要 dur × rate 秒素材（atempo 之后回到 dur 秒）
+        // The source side needs dur × rate seconds of material (back to dur seconds after atempo).
         let source_seconds = dur * rate;
         let constant_rate = (rate - 1.0).abs() <= 1e-9;
         let (samples, backend) = match constant_rate
             .then(|| decode::decode_stereo_48k(path, clip.media_start, source_seconds))
         {
             Some(Ok(samples)) => (samples, SYMPHONIA_BACKEND),
-            // 纯 Rust 解不了（或本来就是变速 clip）：回落 ffmpeg。
+            // Pure Rust cannot handle it (or it is a variable-speed clip to begin with): fall back to ffmpeg.
             _ => (
                 decode_with_ffmpeg(&clip.id, path, clip.media_start, source_seconds, rate)?,
                 FFMPEG_BACKEND,
@@ -194,7 +174,7 @@ pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Audio
             continue;
         }
 
-        // 音量包络：64 帧（≈1.3ms）一个块采样，块内恒定
+        // Volume envelope: sampled in blocks of 64 frames (≈1.3 ms), constant within each block
         const BLOCK: usize = 64;
         let mut i = 0usize;
         while i < clip_frames {
@@ -253,7 +233,7 @@ pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Audio
     }))
 }
 
-/// ffmpeg 兜底解码：`-ss`/`-t` 截窗，变速时叠 `atempo`，输出 48 kHz 立体声 f32。
+/// ffmpeg fallback decoding: `-ss`/`-t` for windowing, `atempo` stacked when the speed changes, output 48 kHz stereo f32.
 fn decode_with_ffmpeg(
     clip_id: &str,
     path: &std::path::Path,
@@ -301,7 +281,7 @@ fn ffmpeg_decode_command(
     cmd
 }
 
-/// ffmpeg atempo 滤镜单级仅接受 [0.5, 100]；低于 0.5 的倍速用级联表达。
+/// A single ffmpeg atempo filter stage only accepts [0.5, 100]; speeds below 0.5 are expressed by cascading stages.
 fn atempo_chain(rate: f64) -> String {
     let mut stages: Vec<String> = Vec::new();
     let mut r = rate;

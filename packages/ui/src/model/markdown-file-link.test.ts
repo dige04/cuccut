@@ -98,7 +98,7 @@ describe('产物链接目标', () => {
       expect(markdownOpenAction('../c2/clip.mp4', scope, [], dirs, desktop)).toEqual({ kind: 'pane', target: { localPath: '/scratch/c2/clip.mp4' } });
       expect(markdownOpenAction('C:\\Exports\\成片.mp4', { conversationId: 'c1', cwd: 'C:\\work' }, [], dirs, desktop))
         .toEqual({ kind: 'pane', target: { localPath: 'C:\\Exports\\成片.mp4' } });
-      // 回收站里的条目不算登记：同样按本机路径只读预览。
+      // Entries in the trash do not count as registered: they are likewise previewed read-only by local path.
       expect(markdownOpenAction('/Downloads/成片.mp4', scope, [{ ...exported, user: { ...exported.user, trashedAt: 'now' } }], dirs, desktop))
         .toEqual({ kind: 'pane', target: { localPath: '/Downloads/成片.mp4' } });
     });

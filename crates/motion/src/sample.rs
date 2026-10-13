@@ -1,4 +1,4 @@
-//! 纯函数采样：`(program, t)` → `PoseBuffer`（设计 §5.3）。
+//! Pure-function sampling: `(program, t)` → `PoseBuffer` (design §5.3).
 
 use crate::composite::PoseBuffer;
 use crate::curve::sample_curve;
@@ -8,8 +8,7 @@ use crate::value::MotionValue;
 
 const EPSILON: f64 = 1e-9;
 
-/// 逐式来自 `ccut-timeline/src/motion.rs:702-708`。调用方负责用同一张 fps 网格
-/// 量化，`MotionProgram::sample` 只接收已量化的 t（ADR-M10）。
+/// Taken verbatim from `ccut-timeline/src/motion.rs:702-708`. The caller quantizes on the same fps grid; `MotionProgram::sample` only receives an already-quantized t (ADR-M10).
 pub fn quantize_time(time: f64, fps: f64) -> f64 {
     if time.is_finite() && fps.is_finite() && fps > 0.0 {
         (time * fps + EPSILON).floor() / fps
@@ -18,8 +17,7 @@ pub fn quantize_time(time: f64, fps: f64) -> f64 {
     }
 }
 
-/// 段内进度。`t1 == t0` 时取 `1.0` —— 零长段采样的是**已落定**端点，
-/// 不是 `0/0 = NaN`（`motion.rs:544-549`、`:556-560`）。
+/// Progress within a segment. When `t1 == t0`, take `1.0`: a zero-length segment samples the **settled** endpoint, not `0/0 = NaN` (`motion.rs:544-549`, `:556-560`).
 fn segment_progress(segment: &MotionSegment, t: f64) -> f64 {
     if segment.t1 > segment.t0 {
         ((t - segment.t0) / (segment.t1 - segment.t0)).clamp(0.0, 1.0)
@@ -51,11 +49,9 @@ fn eval_segment(program: &MotionProgram, segment: &MotionSegment, t: f64) -> Opt
     }
 }
 
-/// `None` = 该刻这条轨没有输出，pose 字段保持 base / 缺席。
+/// `None` = this track has no output at this moment; pose fields keep base / stay absent.
 ///
-/// 边界规则（计划 §2.5）：取**最后一个** `t0 <= t` 的段；段内是 `[t0, t1)`，
-/// 右端点归下一段。因此 `enter.finish == exit.begin == half` 时退场赢，
-/// 与 `motion.rs:543-566` 的 `local < finish` / `local >= begin` 一致。
+/// Boundary rule (plan §2.5): take the **last** segment with `t0 <= t`. A segment spans `[t0, t1)`, and the right endpoint belongs to the next segment. Therefore when `enter.finish == exit.begin == half`, exit wins, consistent with `local < finish` / `local >= begin` in `motion.rs:543-566`.
 pub fn sample_track(program: &MotionProgram, track: &PropertyTrack, t: f64) -> Option<MotionValue> {
     let index = track.segments.partition_point(|segment| segment.t0 <= t);
     if index == 0 {
@@ -75,22 +71,21 @@ pub fn sample_track(program: &MotionProgram, track: &PropertyTrack, t: f64) -> O
     None
 }
 
-/// 把 `target` 在 `t` 的全部轨写入 `out`。不分配堆内存。
+/// Writes all tracks of `target` at `t` into `out`. Does not allocate heap memory.
 pub fn sample(program: &MotionProgram, target: TargetId, t: f64, out: &mut PoseBuffer) {
     for track in &program.property_tracks {
         if track.target != target {
             continue;
         }
         track.assert_segments_agree();
-        // `base` 先落进槽位：add / multiply 轨需要一个单位元起点（规范 §7.7 第 1 步）。
+        // `base` is first placed into the slot: add / multiply tracks need an identity starting point (spec §7.7 step 1).
         if !track.optional {
             out.write_base(&track.property, track.base.clone());
         }
         let Some(value) = sample_track(program, track, t) else {
             continue;
         };
-        // `post` 交给 `PoseBuffer` 在**合成之后**施加（规范 §7.7 第 5 步）；
-        // 单 replace 轨下两者等价，这是阶段 0/1 golden 逐位不变的论据。
+        // `post` is handed to `PoseBuffer` to apply **after compositing** (spec §7.7 step 5). With a single replace track the two are equivalent, which is the argument for stage 0/1 goldens staying bit-identical.
         out.write(
             &track.property,
             value,

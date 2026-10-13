@@ -1,4 +1,4 @@
-//! 错误合同（命令与协议规范 §11）：每个错误都有 code、实体、输入版本、可否重试与细节。
+//! Error contract (command and protocol spec §11): every error has a code, an entity, the input version, whether it can be retried, and details.
 
 use editor_semantics::TimeError;
 pub use message_ref::{MessageRef, Text, msg};
@@ -20,7 +20,7 @@ pub enum Retryability {
 #[serde(rename_all = "camelCase")]
 pub struct ErrorBody {
     pub code: String,
-    /// 英文说明（缺省与兜底）；界面用 `messageRef` 按自己的语言重新生成（§11.1）。
+    /// English description (default and fallback); the UI regenerates it in the user's own language from `messageRef` (§11.1).
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_ref: Option<MessageRef>,
@@ -69,7 +69,7 @@ impl ErrorBody {
         self
     }
 
-    /// 说明连同引用，用来嵌进别的说明。
+    /// The description together with its reference, for embedding in other descriptions.
     pub fn message_text(&self) -> Text {
         Text {
             text: self.message.clone(),
@@ -82,7 +82,7 @@ impl ErrorBody {
         self
     }
 
-    // —— 规范里定义的错误码 ——
+    // —— Error codes defined in the spec ——
 
     pub fn revision_conflict(video_id: &str, expected: &str, current: &str) -> ErrorBody {
         ErrorBody::new(
@@ -180,9 +180,9 @@ impl ErrorBody {
             .recovery(msg!("engine.assetMissingRecovery", "Import or relink it again"))
     }
 
-    // —— 本实现补全的错误码（规范 §11.6：每个都给出条件与恢复）——
+    // —— Error codes filled in by this implementation (spec §11.6: each gives its condition and recovery) ——
 
-    /// 操作的结构不合法、类型未知，或目标的种类不对。
+    /// The structure of the operation is invalid, the type is unknown, or the target is of the wrong kind.
     pub fn invalid_operation(message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("INVALID_OPERATION", message, Retryability::Never).recovery(msg!(
             "engine.invalidOperationRecovery",
@@ -190,21 +190,21 @@ impl ErrorBody {
         ))
     }
 
-    /// 目标实体在当前版本里不存在。`kind` 用 [`kinds`] 里的名字。
+    /// The target entity does not exist in the current version. `kind` uses the names in [`kinds`].
     pub fn not_found(kind: Text, id: &str) -> ErrorBody {
         ErrorBody::new("ENTITY_NOT_FOUND", msg!("engine.notFound", "{kind} {id} does not exist", kind, id), Retryability::AfterRefresh)
             .entities([id])
             .recovery(msg!("engine.notFoundRecovery", "Re-read the video, then choose the target again"))
     }
 
-    /// 目标或目标轨道被锁定（视频格式规范 §3.10）。
+    /// The target or target track is locked (video format spec §3.10).
     pub fn locked(ids: Vec<Id>, message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("TARGET_LOCKED", message, Retryability::AfterUserAction)
             .entities(ids)
             .recovery(msg!("engine.lockedRecovery", "Unlock it explicitly first"))
     }
 
-    /// 同一轨道上的两个实例在时间上重叠。
+    /// Two instances on the same track overlap in time.
     pub fn overlap(ids: Vec<Id>) -> ErrorBody {
         ErrorBody::new(
             "TIMELINE_OVERLAP",
@@ -215,19 +215,19 @@ impl ErrorBody {
             .recovery(msg!("engine.overlapRecovery", "Choose another position or track"))
     }
 
-    /// 撤销的对象之后又被修改过，补偿会覆盖别人的修改（命令与协议规范 §8.3）。
+    /// The object being undone has been modified since; compensation would overwrite someone else's change (command and protocol spec §8.3).
     pub fn undo_conflict(ids: Vec<Id>, message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("UNDO_CONFLICT", message, Retryability::AfterUserAction)
             .entities(ids)
             .recovery(msg!("engine.undoConflictRecovery", "Deal with the later edits first, or change it back by hand"))
     }
 
-    /// 这笔事务没有可用的补偿（已经撤销过，或不存在）。
+    /// This transaction has no usable compensation (already undone, or does not exist).
     pub fn undo_unavailable(transaction_id: &str, reason: Text) -> ErrorBody {
         ErrorBody::new("UNDO_UNAVAILABLE", reason, Retryability::Never).details(json!({ "transactionId": transaction_id }))
     }
 
-    /// 视频的写锁由另一个进程持有（验收 C02、C03）。
+    /// The video's write lock is held by another process (acceptance C02, C03).
     pub fn video_locked(holder: Value) -> ErrorBody {
         ErrorBody::new(
             "VIDEO_LOCKED",
@@ -238,19 +238,19 @@ impl ErrorBody {
             .recovery(msg!("engine.videoLockedRecovery", "Close the other CucCut that has it open, or open it read-only"))
     }
 
-    /// 以只读方式打开的视频收到了修改。
+    /// A video opened read-only received a modification.
     pub fn read_only() -> ErrorBody {
         ErrorBody::new("VIDEO_READ_ONLY", msg!("engine.readOnly", "The video is open read-only"), Retryability::AfterUserAction)
             .recovery(msg!("engine.readOnlyRecovery", "Reopen it after acquiring the write lock"))
     }
 
-    /// 视频目录不是可识别的视频，或格式版本不支持。
+    /// The video directory is not a recognizable video, or its format version is not supported.
     pub fn unsupported_video(message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("VIDEO_UNSUPPORTED", message, Retryability::Never)
             .recovery(msg!("engine.unsupportedVideoRecovery", "Open it with a version of CucCut that supports it"))
     }
 
-    /// 读取媒体信息失败或没有探测工具。
+    /// Reading media info failed, or there is no probe tool.
     pub fn probe_failed(message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("MEDIA_PROBE_FAILED", message, Retryability::AfterUserAction).recovery(msg!(
             "engine.probeFailedRecovery",
@@ -258,7 +258,7 @@ impl ErrorBody {
         ))
     }
 
-    /// 磁盘、数据库等存储错误。事务没有提交。
+    /// Storage errors such as disk or database errors. The transaction was not committed.
     pub fn storage(message: impl Into<Text>) -> ErrorBody {
         ErrorBody::new("STORAGE_FAILED", message, Retryability::SameCommand).recovery(msg!(
             "engine.storageRecovery",
@@ -285,7 +285,7 @@ impl From<std::io::Error> for ErrorBody {
     }
 }
 
-/// 错误说明里提到的实体种类（`not_found` 的 `kind`）。
+/// The kind of entity mentioned in the error description (the `kind` of `not_found`).
 pub mod kinds {
     use super::{Text, msg};
 

@@ -1,16 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2Wav2Vec2Bert.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2Wav2Vec2Bert.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! w2v-BERT 2.0 编码器（对照 speech-swift `IndexTTS2Wav2Vec2Bert.swift`）。
+//! w2v-BERT 2.0 encoder (cross-checked against speech-swift `IndexTTS2Wav2Vec2Bert.swift`).
 //!
-//! 只用到前 17 层的隐状态；相对位置注意力按 HF `Wav2Vec2BertSelfAttention`
-//! 的 `relative_key` 方式实现：`ids = clamp(j - i, -64, 8) + 64`。Swift 版把
-//! `q[..., None, :] * pos` 广播后求和，T≈750 时会分配 ~2 GB 中间量；这里改成
-//! 等价的批量矩阵乘（`rel[b,h,i,j] = Σ_d q[b,h,i,d]·pos[i,j,d]`），结果一致。
+//! Only the hidden states of the first 17 layers are used. Relative position attention follows the `relative_key` approach of HF `Wav2Vec2BertSelfAttention`:
+//! `ids = clamp(j - i, -64, 8) + 64`. The Swift version broadcasts `q[..., None, :] * pos` and sums it, which allocates ~2 GB of intermediate data at T≈750; here it is replaced by an
+//! equivalent batched matrix multiply (`rel[b,h,i,j] = Σ_d q[b,h,i,d]·pos[i,j,d]`), with identical results.
 
 use super::layers::{Conv1d, LayerNorm, Linear, act};
 use super::weights::WeightMap;
@@ -69,7 +68,7 @@ impl ConvModule {
     fn forward(&self, x: &Array) -> Result<Array> {
         let h = self.layer_norm.forward(x)?;
         let h = self.pointwise_conv1.forward_nlc(&h)?;
-        // GLU：前一半乘 sigmoid(后一半)。
+        // GLU: the first half is multiplied by sigmoid(second half).
         let gate = h.index((.., .., 0..HIDDEN)) * ops::sigmoid(h.index((.., .., HIDDEN..(HIDDEN * 2))))?;
         let h = ops::pad(&gate, &[(0, 0), (CONV_KERNEL - 1, 0), (0, 0)], None, None)?;
         let h = self.depthwise_conv.forward_nlc(&h)?;
@@ -119,8 +118,8 @@ impl SelfAttention {
             .transpose_axes(&[0, 2, 1, 3])?;
 
         let rel = self.relative_key_scores(&q, b, t)? * scale;
-        // SDPA 内部 softmax 以 f32 计算，浮点 mask 为加性偏置：等价于
-        // softmax(q·kᵀ·scale + rel·scale)。
+        // The softmax inside SDPA is computed in f32, and the float mask is an additive bias: equivalent to
+        // softmax(q·kᵀ·scale + rel·scale).
         let out = fast::scaled_dot_product_attention(&q, &k, &v, scale, ScaledDotProductAttentionMask::Array(&rel), None)?;
         let out = out.transpose_axes(&[0, 2, 1, 3])?.reshape(&[b, t, HIDDEN])?;
         self.linear_out.forward(&out)
@@ -198,7 +197,7 @@ impl Wav2Vec2Bert {
         })
     }
 
-    /// 输入 `[B, T, 160]` 的 SeamlessM4T 特征，返回第 17 层隐状态 `[B, T, 1024]`（f32）。
+    /// Takes SeamlessM4T features `[B, T, 160]` and returns the layer-17 hidden states `[B, T, 1024]` (f32).
     pub fn hidden_state_17(&self, features: &Array) -> Result<Array> {
         let mut h = self
             .feature_projection

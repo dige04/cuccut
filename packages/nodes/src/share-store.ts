@@ -3,14 +3,13 @@ import { readJsonOrQuarantine, writeJsonAtomic, type StoreLog } from '@cuccut/ru
 import type { PairedClient } from './pairing.ts';
 
 /**
- * 共享状态的持久文件（节点协议规范 §11）：`<home>/store/node-share.json`，权限 0600。
- * 开关、`nodeId`、名字、端口、`allowAnySource`、各能力的开关与已配对客户端（盐与哈希，没有令牌明文）。配对码与锁定不落盘。
+ * Persistent file for shared state (node protocol spec §11): `<home>/store/node-share.json`, mode 0600.
+ * The sharing switch, `nodeId`, name, port, `allowAnySource`, the on/off switch for each capability, and the paired clients (salts and hashes, no plaintext tokens). Pairing codes and lockouts are not written to disk.
  *
- * 里面有配对客户端，不能静默丢：文件读不了、不是 JSON、认不出或由更新的版本写下时不改名、不从空开始，`loadShareFile`
- * 返回 `unreadable`，节点服务进入降级状态（共享关着、不能修改，`ShareStatus.error` 说明原因），文件原样留着。
+ * It holds paired clients, so it must not be silently dropped: if the file cannot be read, is not JSON, is not recognized, or was written by a newer version, it is not renamed and loading does not start from empty. `loadShareFile` returns `unreadable`, the node service enters a degraded state (sharing off, cannot be changed, `ShareStatus.error` explains why), and the file is left in place.
  */
 
-/** 能力分项开关之前写下的文件里没有 `capabilities`：那一版只能共享这些能力，而且一律开着。 */
+/** A file written before the per-capability switches has no `capabilities`: that version could only share these capabilities, and they were always on. */
 const LEGACY_CAPABILITIES = ['transcribe'];
 
 export type ShareCapabilities = Record<string, { enabled: boolean }>;
@@ -18,21 +17,21 @@ export type ShareCapabilities = Record<string, { enabled: boolean }>;
 export interface ShareFile {
   formatVersion: 1;
   enabled: boolean;
-  /** 第一次开启共享时生成，之后不变。 */
+  /** Generated the first time sharing is turned on, unchanged afterwards. */
   nodeId: string | null;
-  /** null 表示用主机名。 */
+  /** null means use the hostname. */
   name: string | null;
   port: number;
   allowAnySource: boolean;
   /**
-   * 各能力的开关。null 表示还没有开启过共享：第一次开启时，节点此刻支持的能力全部打开。
-   * 不是 null 时，表里没有的能力（之后版本新加的）算关闭。
+   * On/off switch for each capability. null means sharing has never been turned on: when it is first turned on, every capability the node supports at that moment is turned on.
+   * When not null, a capability missing from the table (added in a later version) counts as off.
    */
   capabilities: ShareCapabilities | null;
   clients: PairedClient[];
 }
 
-/** 读共享状态：没有（或空文件）时 null；读不了或认不出时 `{ unreadable: 原因 }`。 */
+/** Reads the sharing state: null if there is no file (or it is empty); `{ unreadable: reason }` if it cannot be read or recognized. */
 export async function loadShareFile(file: string, log?: StoreLog): Promise<ShareFile | { unreadable: string } | null> {
   try {
     const read = await readJsonOrQuarantine(file, { log, version: { key: 'formatVersion', known: 1 }, quarantine: false, recognize: parseShareFile });
@@ -71,9 +70,9 @@ function parseShareFile(raw: Record<string, unknown>): ShareFile | null {
 }
 
 /**
- * - 没有这个键（能力分项开关之前的文件）：开启过共享（有 `nodeId`）就按那一版的规则——当时的能力全开；没开启过为 null；
- * - null：还没有开启过共享；
- * - 表：逐项读 `enabled`；形状不对的项丢掉（按关闭算），整个不是表时全部关闭。
+ * - No such key (file from before the per-capability switches): if sharing was ever turned on (there is a `nodeId`), follow that version's rules, where all capabilities at the time were on; if it was never turned on, null;
+ * - null: sharing has never been turned on;
+ * - table: read `enabled` for each entry; an entry with the wrong shape is dropped (counts as off); if the whole value is not a table, all capabilities are off.
  */
 function loadCapabilities(data: Record<string, unknown>): ShareCapabilities | null {
   if (!('capabilities' in data) || data.capabilities === undefined) {
@@ -90,7 +89,7 @@ function loadCapabilities(data: Record<string, unknown>): ShareCapabilities | nu
   return capabilities;
 }
 
-/** 串行写入：后发起的写一定落在后面。 */
+/** Serialized writes: a write started later always lands after the earlier one. */
 export class ShareStore {
   readonly file: string;
   #chain: Promise<void> = Promise.resolve();
@@ -103,7 +102,7 @@ export class ShareStore {
     const snapshot = structuredClone(data);
     const next = this.#chain.then(async () => {
       await writeJsonAtomic(this.file, snapshot, { mode: 0o600 });
-      // 先前以别的权限创建过的文件也收紧（rename 保留的是临时文件的权限，这里只是保险）。
+      // Files previously created with other permissions are also tightened (rename keeps the temp file's permissions; this is only a safeguard).
       await fs.chmod(this.file, 0o600);
     });
     this.#chain = next.catch(() => {});

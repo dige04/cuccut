@@ -1,9 +1,8 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/acp-agent.ts 的 createLoggedNdJsonStream / normalizeACPIncomingMessage
- * （容忍非 JSON 行的 NDJSON 流）、summarizeACPRequestError / extractACPErrorDataMessage（错误原文）、
- * buildACPClientCapabilities（不提供文件读写与终端）、rejectOnSpawnError、terminateChildProcess。
- * 改成 CucCut 的 Logger 与中文说明，去掉诊断表与导入历史。
+ * Part of the mechanism is ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * packages/server/src/server/agent/providers/acp-agent.ts's createLoggedNdJsonStream / normalizeACPIncomingMessage
+ * (an NDJSON stream that tolerates non-JSON lines), summarizeACPRequestError / extractACPErrorDataMessage (the original error text), buildACPClientCapabilities (no file read/write and no terminal), rejectOnSpawnError, terminateChildProcess.
+ * Adapted to use CucCut's Logger and Chinese comments, and the diagnostics table and import history were removed.
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
@@ -19,27 +18,26 @@ import { RUNTIME_VERSION, type Localized } from '@cuccut/protocol';
 import { DriversAcp, DriversCommon } from '@cuccut/protocol/messages/agent-drivers';
 import type { Logger } from '@cuccut/harness';
 
-/** ACP 的「需要登录」（`RequestError.authRequired`）。 */
+/** ACP's “login required” (`RequestError.authRequired`). */
 export const ACP_AUTH_REQUIRED = -32000;
 const METHOD_NOT_FOUND = -32601;
 
 const STDERR_TAIL_BYTES = 4096;
 
 /**
- * POSIX 上智能体进程自成一个进程组（`detached`），收拾时整组结束：智能体派生的进程不会因为只结束了智能体本身而留成孤儿。
- * cursor-agent 一启动就在工作目录里跑 `rg --files --follow` 为 @ 文件建索引，收到 SIGTERM 就退出、不管这个 rg；探测在家目录里
- * 起它，rg 卡在 iCloud 云盘目录的 `stat` 上时会一直留下去。Windows 没有进程组：按进程树结束（`taskkill /T /F`）。
+ * On POSIX the agent process forms its own process group (`detached`), and on cleanup the whole group is ended, so processes the agent spawns do not become orphans when only the agent itself is ended.
+ * cursor-agent, as soon as it starts, runs `rg --files --follow` in the working directory to index files for @, and exits on SIGTERM without ending that rg. The probe starts it in the home directory, and an rg stuck on a `stat` in an iCloud Drive directory would keep running indefinitely.
+ * Windows has no process groups: it ends the process tree instead (`taskkill /T /F`).
  */
 const PROCESS_GROUPS = process.platform !== 'win32';
-/** 请停（SIGTERM）之后等多久强杀。 */
+/** How long to wait after a polite stop (SIGTERM) before force-killing. */
 const STOP_GRACE_MS = 2_000;
-/** 强杀之后最多等进程组消失多久（SIGKILL 不能被忽略，正常几毫秒就结束；这只是不让异常情况挂住关闭）。 */
+/** After force-killing, the maximum time to wait for the process group to disappear. SIGKILL cannot be ignored and normally finishes within milliseconds; this only keeps an abnormal case from hanging the close. */
 const KILL_WAIT_MS = 5_000;
 const GROUP_POLL_MS = 20;
 
 /**
- * 还没收拾完的智能体进程。Runtime 退出时（包括停止途中还没探完的探测）同步强杀：自成一组的进程不随 Runtime 结束，
- * 有的智能体 stdin 关了也不退出（cursor-agent 就会一直留着）。
+ * Agent processes not yet cleaned up. When the Runtime exits (including probes still running when it stops), they are force-killed synchronously. Processes that form their own group do not end with the Runtime, and some agents do not exit even after stdin is closed (cursor-agent would keep running).
  */
 const live = new Set<AcpProcess>();
 let exitHookInstalled = false;
@@ -67,7 +65,7 @@ export function isMethodNotFound(error: unknown): boolean {
   return isAcpError(error) && error.code === METHOD_NOT_FOUND;
 }
 
-/** 错误原文：JSON-RPC 错误带上 `data` 里的说明（`details`、`message` 之类），别的取 message。 */
+/** Original error text: JSON-RPC errors carry the explanation in `data` (`details`, `message`, and the like). Otherwise use `message`. */
 export function acpErrorMessage(error: unknown): string {
   if (isAcpError(error)) {
     const detail = dataMessage(error.data);
@@ -86,7 +84,7 @@ function dataMessage(data: unknown): string | null {
   return dataMessage(record.error);
 }
 
-/** 超时就以 `message` 失败。 */
+/** On timeout, fail with `message`. */
 export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -96,8 +94,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
 }
 
 /**
- * stdio 上的 JSON 行。SDK 自带的 `ndJsonStream` 遇到不是 JSON 的行会打到 console；有的智能体会往 stdout 混进日志行，
- * 这里记一条警告后跳过。字符串形式的数字 id 换回数字（有的智能体这样回应答）。
+ * JSON lines over stdio. The SDK's built-in `ndJsonStream` prints to the console when it hits a line that is not JSON. Some agents mix log lines into stdout, so here a warning is logged and the line is skipped. A numeric id sent as a string is converted back to a number (some agents respond this way).
  */
 export function acpNdJsonStream(output: WritableStream<Uint8Array>, input: ReadableStream<Uint8Array>, log: Logger): Stream {
   const encoder = new TextEncoder();
@@ -159,30 +156,29 @@ export interface AcpProcessOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   log: Logger;
-  /** 给人看的名字，用在错误说明里。 */
+  /** Human-readable name, used in error explanations. */
   label: string;
-  /** 处理智能体发来的请求与通知。 */
+  /** Handles requests and notifications sent by the agent. */
   client: Client;
-  /** 启动到 `initialize` 应答的时限，默认 20 秒。 */
+  /** Time limit from startup to the `initialize` response. Default 20 seconds. */
   initTimeoutMs?: number;
 }
 
 /**
- * 一个以 ACP 运行的智能体进程：spawn、接上连接、`initialize`。不提供文件读写与终端（智能体自己读写、自己跑命令），
- * 审批经 `session/request_permission` 回到 CucCut。
+ * An agent process running over ACP: spawn, attach the connection, `initialize`. It provides no file read/write and no terminal (the agent reads and writes files and runs commands itself). Approvals come back to CucCut via `session/request_permission`.
  */
 export class AcpProcess {
   readonly child: ChildProcess;
   readonly connection: ClientSideConnection;
   init!: InitializeResponse;
-  /** 进程退出时 resolve：正常退出为 null，否则是说明（退出码、信号与 stderr 的结尾）。 */
+  /** Resolves when the process exits: null for a normal exit, otherwise an explanation (the exit code, the signal, and the tail of stderr). */
   readonly exited: Promise<Localized | null>;
   readonly #log: Logger;
   readonly #label: string;
   #stderr = '';
   #closing = false;
   #exitedFlag = false;
-  /** 进程组（Windows 上是进程树）已经收拾完：不再发信号，免得进程号被重用后误伤别的进程。 */
+  /** The process group (the process tree on Windows) has already been cleaned up. No more signals are sent, so that a reused process ID does not hit an unrelated process. */
   #treeGone = false;
 
   private constructor(options: AcpProcessOptions) {
@@ -207,7 +203,7 @@ export class AcpProcess {
         resolve(DriversCommon.startFailed({ name: this.#label, error: error.message }));
       });
       this.child.once('exit', (code, signal) => {
-        // 自己退出的（崩溃、stdin 关闭后退出）：它留下的进程已经没有用，立即强杀。关闭途中的由 close() 收拾。
+        // If it exited on its own (a crash, or an exit after stdin closed), the processes it left behind are useless now, so force-kill them immediately. Those during close() are cleaned up by close().
         if (!this.#closing) void this.#killLeftovers();
         if (this.#exitedFlag) return;
         this.#exitedFlag = true;
@@ -248,7 +244,7 @@ export class AcpProcess {
       return proc;
     } catch (error) {
       exitedEarly.catch(() => undefined);
-      // 连接先断、退出事件后到：等一下退出原因（带 stderr 的结尾），比「connection closed」有用。
+      // The connection dropped first and the exit event arrives later: wait briefly for the exit reason (with the tail of stderr), which is more useful than “connection closed”.
       const reason = await withTimeout(proc.exited, 500, 'alive').catch(() => null);
       await proc.close();
       throw reason ? new Error(String(reason)) : error;
@@ -259,7 +255,7 @@ export class AcpProcess {
     return this.#exitedFlag;
   }
 
-  /** stderr 的最后一行非空内容（错误说明用）。 */
+  /** The last non-empty line of stderr (used in error explanations). */
   stderrTail(): string {
     const lines = this.#stderr
       .split('\n')
@@ -269,8 +265,7 @@ export class AcpProcess {
   }
 
   /**
-   * 关掉进程，连同它派生的进程：关 stdin，整组 SIGTERM，2 秒后组里还有进程就整组 SIGKILL，等到组里没有进程。智能体已经自己
-   * 退出了也照样收拾它留下的进程。Windows 上按进程树强杀（那里的 SIGTERM 本来就等于强杀）。
+   * Shut down the process, along with the processes it spawned: close stdin, SIGTERM the whole group, and after 2 seconds SIGKILL the whole group if processes remain in it, then wait until the group has no processes. Even if the agent has already exited on its own, its leftover processes are still cleaned up. On Windows, the process tree is force-killed (SIGTERM there is already equivalent to a force-kill).
    */
   async close(): Promise<void> {
     this.#closing = true;
@@ -287,7 +282,7 @@ export class AcpProcess {
     await this.exited;
   }
 
-  /** 智能体自己退出后，强杀它留在组里的进程（Windows 上进程树随智能体断开，找不到了）。 */
+  /** After the agent exits on its own, force-kill the processes it left in the group. On Windows the process tree is disconnected along with the agent, so they can no longer be found. */
   async #killLeftovers(): Promise<void> {
     if (!PROCESS_GROUPS) return this.#markTreeGone();
     this.#signalGroup('SIGKILL');
@@ -300,11 +295,11 @@ export class AcpProcess {
     try {
       process.kill(-pid, signal);
     } catch {
-      // ESRCH：组里已经没有进程
+      // ESRCH: no processes are left in the group
     }
   }
 
-  /** 等进程组里没有进程，最多等 `ms`；返回是否已经没有。 */
+  /** Waits until the process group has no processes, for at most `ms`. Returns whether it is now empty. */
   async #groupGone(ms: number): Promise<boolean> {
     const deadline = performance.now() + ms;
     for (;;) {
@@ -313,7 +308,7 @@ export class AcpProcess {
       try {
         process.kill(-pid, 0);
       } catch (error) {
-        // ESRCH：组里没有进程了。EPERM 时还有：macOS 上组里的进程正在退出时是这样（也可能属于别的用户），接着等。
+        // ESRCH: no processes are left in the group. EPERM means processes are still there: this happens on macOS while processes in the group are exiting (or they may belong to another user), so keep waiting.
         if ((error as NodeJS.ErrnoException).code !== 'EPERM') {
           this.#markTreeGone();
           return true;
@@ -324,7 +319,7 @@ export class AcpProcess {
     }
   }
 
-  /** Windows：`taskkill /T` 顺着还在的智能体找到它派生的进程一起结束；taskkill 不可用时只结束智能体本身。 */
+  /** Windows: `taskkill /T` follows the still-running agent to find the processes it spawned and ends them too. If taskkill is unavailable, only the agent itself is ended. */
   async #killTree(): Promise<void> {
     const pid = this.child.pid;
     if (!this.#exitedFlag && pid !== undefined) {
@@ -345,7 +340,7 @@ export class AcpProcess {
     live.add(proc);
     if (exitHookInstalled) return;
     exitHookInstalled = true;
-    // 退出途中只能同步：POSIX 上整组强杀；Windows 上只结束智能体本身，不再等 taskkill。
+    // While exiting, only synchronous work is possible: on POSIX, force-kill the whole group; on Windows, end only the agent itself, without waiting for taskkill.
     process.once('exit', () => {
       for (const p of live) {
         const pid = p.child.pid;
@@ -354,7 +349,7 @@ export class AcpProcess {
           if (PROCESS_GROUPS) process.kill(-pid, 'SIGKILL');
           else if (!p.#exitedFlag) p.child.kill('SIGKILL');
         } catch {
-          // ESRCH：已经不在
+          // ESRCH: already gone
         }
       }
     });

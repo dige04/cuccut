@@ -3,21 +3,16 @@ import type { Localized } from '@cuccut/protocol';
 import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 在线 Provider 的 HTTP 请求（架构设计 §6.4）：全局 `fetch`，加上这几条规矩。
+ * HTTP requests for online providers (architecture design §6.4): the global `fetch`, plus these rules.
  *
- * - **密钥**只放在 `auth` 指定的请求头里，只发往原始请求的源（scheme + host + port）。错误信息、`details` 与抛出的文本
- *   都先去掉密钥（原样出现的、以及形如 `sk-…`、`sk_…`、`AIza…` 的串），再截短。
- * - **响应体**整个读进内存，不超过 64 MB（语音、图片的二进制响应也一样，按字节计）。
- * - **重定向**手动处理（`redirect: 'manual'`），最多 3 次：同源照常带上密钥；跨源的 GET 去掉密钥再跟；跨源的 POST
- *   不跟——那会把素材送到用户没有配置的地址——直接以 `PROVIDER_REJECTED` 失败；跨源的 DELETE 同样不跟。
- * - **重试**：连不上、超时、5xx 退避重试，一共 3 次，仍然不行是 `unavailable-remote`（`PROVIDER_UNAVAILABLE`，
- *   `details.reason` 为 `unreachable`、`timeout` 或 `server-error`）。响应带 `Retry-After` 时按它等（至多 30 秒）而不是按退避。
- *   4xx 不重试：401/403 是 `PROVIDER_AUTH_FAILED`；429 是 `PROVIDER_QUOTA_EXCEEDED`（限速与额度用尽都是 429）——只有带
- *   `Retry-After` 且不超过 30 秒的 429（限速）按它等过之后在同样的 3 次之内重试，没带或更久的（额度用尽）立即失败，
- *   `details.retryAfterSec` 记下供应商给的秒数；其余 4xx 是 `PROVIDER_REJECTED`。适配器可以在 `classify` 里改写
- *   （例如 Google 的 400 `API_KEY_INVALID` 是认证失败，上下文过长是 `INPUT_TOO_LONG`），并给出 `details.reason`。
- *   每次重试之前调用 `onRetry`（计数用）。
- * - **取消**：`signal` 中止时立即中止在途请求（连接随之关闭），抛 `ProviderAborted`。
+ * - **Keys** are sent only in the header named by `auth`, and only to the origin of the original request (scheme + host + port). Error messages, `details` and thrown text
+ *   all have keys removed first (both literal occurrences and strings shaped like `sk-…`, `sk_…`, `AIza…`), and are then truncated.
+ * - **Response bodies** are read fully into memory, up to 64 MB (binary responses such as speech and images too, counted in bytes).
+ * - **Redirects** are handled manually (`redirect: 'manual'`), at most 3: same-origin redirects keep the key as usual; cross-origin GET redirects drop the key before following; cross-origin POST redirects are not followed, because that would send material to an address the user did not configure, and fail directly with `PROVIDER_REJECTED`; cross-origin DELETE is not followed either.
+ * - **Retries**: connection failures, timeouts and 5xx are retried with backoff, 3 attempts in total; if still failing, it is `unavailable-remote` (`PROVIDER_UNAVAILABLE`, with `details.reason` of `unreachable`, `timeout` or `server-error`). When a response carries `Retry-After`, wait for that (at most 30 seconds) instead of the backoff.
+ *   4xx is not retried: 401/403 is `PROVIDER_AUTH_FAILED`; 429 is `PROVIDER_QUOTA_EXCEEDED` (both rate limiting and quota exhaustion are 429). Only a 429 with a `Retry-After` of no more than 30 seconds (rate limiting) waits that long and then retries within the same 3 attempts; one without it, or with a longer one (quota exhaustion), fails immediately, and `details.retryAfterSec` records the number of seconds the provider gave. Other 4xx are `PROVIDER_REJECTED`. Adapters can rewrite the classification in `classify` (for example, Google's 400 `API_KEY_INVALID` is an authentication failure, and context too long is `INPUT_TOO_LONG`) and supply `details.reason`.
+ *   `onRetry` is called before each retry (for counting).
+ * - **Cancellation**: when `signal` aborts, the in-flight request is aborted immediately (the connection closes with it), and `ProviderAborted` is thrown.
  */
 
 export class ProviderAborted extends Error {
@@ -28,48 +23,48 @@ export class ProviderAborted extends Error {
 }
 
 export interface ProviderHttpOptions {
-  /** 给人看的 Provider 名字，用在错误信息里。 */
+  /** Human-readable provider name, used in error messages. */
   label: string;
-  /** 要从错误信息里去掉的密钥。 */
+  /** Keys to strip from error messages. */
   secrets: readonly string[];
-  /** 第 n 次失败之后等多久再试（毫秒）；默认 500·2^(n-1) 加抖动。测试注入。 */
+  /** How long to wait before retrying after the nth failure (milliseconds); default 500·2^(n-1) plus jitter. Injected by tests. */
   backoffMs?: (attempt: number) => number;
-  /** 一共试几次（默认 3）。 */
+  /** Total number of attempts (default 3). */
   attempts?: number;
 }
 
 export interface ProviderRequest {
   method: 'GET' | 'POST' | 'DELETE';
   url: string;
-  /** 不含密钥的请求头。 */
+  /** Request headers without the key. */
   headers?: Record<string, string>;
-  /** 带密钥的请求头：只发往原始请求的源。 */
+  /** Request headers including the key: sent only to the origin of the original request. */
   auth?: { header: string; value: string } | null;
-  /** 每次尝试都重新构造（重试与重定向都要新的请求体）。 */
+  /** Rebuilt on every attempt (retries and redirects both need a fresh request body). */
   body?: () => BodyInit | Promise<BodyInit>;
-  /** 单次尝试的期限。 */
+  /** Time limit for a single attempt. */
   timeoutMs: number;
   signal: AbortSignal;
-  /** 适配器改写 4xx 的分类（可以带上 `details.reason`）；返回 null 用默认分类。 */
+  /** Lets an adapter rewrite the 4xx classification (may include `details.reason`); return null to use the default classification. */
   classify?: (status: number, body: string) => RejectionCode | { code: RejectionCode; reason?: string } | null;
-  /** 每次退避重试之前调用一次。 */
+  /** Called once before each backoff retry. */
   onRetry?: () => void;
 }
 
 export type RejectionCode = 'PROVIDER_AUTH_FAILED' | 'PROVIDER_QUOTA_EXCEEDED' | 'PROVIDER_REJECTED' | 'INPUT_TOO_LONG';
 
-/** 按 `Retry-After` 至多等这么久（秒）；更久的 429 当作额度用尽，不重试。 */
+/** Maximum time to wait per `Retry-After` (seconds); a 429 that asks for longer is treated as quota exhaustion and is not retried. */
 export const MAX_RETRY_AFTER_SEC = 30;
 
 class AttemptTimeout extends Error {}
 
 export interface ProviderResponse {
   status: number;
-  /** 响应体的原始字节（语音等二进制响应用它）。 */
+  /** Raw bytes of the response body (used for binary responses such as speech). */
   bytes: Buffer;
-  /** `content-type` 响应头；没有时 null。 */
+  /** The `content-type` response header; null if absent. */
   contentType: string | null;
-  /** 响应体按 UTF-8 解成的文本。 */
+  /** Response body decoded as UTF-8 text. */
   readonly text: string;
   json<T = unknown>(): T;
 }
@@ -120,7 +115,7 @@ export async function providerFetch(options: ProviderHttpOptions, request: Provi
     }
     const classified = request.classify?.(status, text) ?? defaultClassify(status);
     const { code, reason } = typeof classified === 'string' ? { code: classified, reason: undefined } : classified;
-    // 限速：带了不太久的 Retry-After，等过之后在同样的次数之内再试。
+    // Rate limit: with a Retry-After that is not too long, wait it out and retry within the same attempt budget.
     if (
       code === 'PROVIDER_QUOTA_EXCEEDED' &&
       reason !== 'insufficient-quota' &&
@@ -152,7 +147,7 @@ export async function providerFetch(options: ProviderHttpOptions, request: Provi
   );
 }
 
-/** `Retry-After`：秒数或 HTTP 日期；认不出时 null。 */
+/** `Retry-After`: seconds or an HTTP date; null if it cannot be parsed. */
 export function retryAfterSeconds(value: string | null, now: number = Date.now()): number | null {
   if (value === null) return null;
   const trimmed = value.trim();
@@ -162,7 +157,7 @@ export function retryAfterSeconds(value: string | null, now: number = Date.now()
   return Math.max(0, Math.ceil((date - now) / 1000));
 }
 
-/** 一次尝试：手动跟重定向。 */
+/** One attempt: follows redirects manually. */
 async function send(options: ProviderHttpOptions, request: ProviderRequest): Promise<Response> {
   const origin = new URL(request.url).origin;
   let url = request.url;
@@ -200,13 +195,13 @@ async function send(options: ProviderHttpOptions, request: ProviderRequest): Pro
     if (method !== 'GET' && next.origin !== origin) {
       throw failure(options, PH.redirectOrigin({ label: options.label }).text);
     }
-    // 301/302/303 按惯例改为 GET；307/308 保持方法与请求体。
+    // 301/302/303 switch to GET by convention; 307/308 keep the method and request body.
     if (method === 'POST' && (response.status === 301 || response.status === 302 || response.status === 303)) method = 'GET';
     url = next.toString();
   }
 }
 
-/** 一句说明，有原话时接在后面。 */
+/** A short explanation, followed by the original text when there is one. */
 function described(text: Localized, message: string | null | undefined): string {
   return (message ? PH.withMessage({ text, message }) : text).text;
 }
@@ -228,7 +223,7 @@ async function readBody(response: Response): Promise<Buffer> {
     throw new ProviderFailure('protocol', PH.responseTooLarge().text);
   }
   if (!response.body) return Buffer.alloc(0);
-  // 边读边数：没有 content-length（分块传输）时也不越过上限。
+  // Count while reading: even without content-length (chunked transfer), do not exceed the limit.
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of response.body) {
@@ -262,7 +257,7 @@ function wrap(status: number, bytes: Buffer, contentType: string | null, options
   };
 }
 
-/** 供应商错误体里给人看的那句话（OpenAI 与 Google 都是 `{ error: { message } }`），去掉密钥并截短。 */
+/** The human-readable message from a provider's error body (OpenAI and Google both use `{ error: { message } }`), with keys removed and truncated. */
 function providerMessage(text: string, secrets: readonly string[]): string {
   let message = text;
   try {
@@ -270,12 +265,12 @@ function providerMessage(text: string, secrets: readonly string[]): string {
     const candidate = typeof parsed.error === 'string' ? parsed.error : (parsed.error?.message ?? parsed.message);
     if (typeof candidate === 'string') message = candidate;
   } catch {
-    // 不是 JSON：用原文。
+    // Not JSON: use the raw text.
   }
   return redact(message.replace(/\s+/g, ' ').trim(), secrets);
 }
 
-/** 去掉密钥：原样出现的，以及常见的密钥形状；再截短到 300 字符。 */
+/** Remove keys: both literal occurrences and common key shapes; then truncate to 300 characters. */
 export function redact(text: string, secrets: readonly string[]): string {
   let out = text;
   for (const secret of secrets) if (secret) out = out.split(secret).join('[REDACTED]');

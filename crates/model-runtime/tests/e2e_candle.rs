@@ -1,9 +1,9 @@
-//! candle 后端的带权重 e2e（全平台，Windows / Linux 上的验收入口；移植自 v2 `ccut-speech` 的 `e2e_candle`）：
+//! candle backend e2e with weights (all platforms; the acceptance entry point on Windows / Linux; ported from v2 `ccut-speech`'s `e2e_candle`):
 //!
 //! CUCCUT_TEST_MODELS_DIR=… cargo test -p model-runtime --no-default-features --features backend-candle \
 //!   --test e2e_candle -- --ignored --test-threads=1 --nocapture
 //!
-//! 一律跑在 CPU 上。权重按 `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` 核对后加载，不在时打印原因后跳过。
+//! Always runs on CPU. Weights are checked against `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` and loaded; if absent, the reason is printed and the test is skipped.
 
 #![cfg(feature = "backend-candle")]
 
@@ -97,7 +97,7 @@ impl JobSink for Sink {
     fn memory(&mut self, _snapshot: MemorySnapshot) {}
 }
 
-/// 完整流水线（Silero + Qwen3-ASR + 对齐器，candle CPU）给出合契约的 `aligned` 词时间。
+/// The full pipeline (Silero + Qwen3-ASR + aligner, candle CPU) produces `aligned` word times that meet the contract.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Qwen3-ASR 0.6B, Silero and the forced aligner installed"]
 fn candle_full_pipeline_produces_contract_valid_word_timestamps() {
@@ -158,7 +158,7 @@ fn audio(name: &str) -> Vec<f32> {
     decode_mono(&fixture(name), 16_000).expect("decode fixture")
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造协议里的 `ModelFiles`；权重不在时给 `None` 并打印原因。
+/// Builds the `ModelFiles` from the protocol from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn model_files(repo: &str, family: &str) -> Option<Value> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");

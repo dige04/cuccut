@@ -40,25 +40,25 @@ import { CHAPTER_COPY as C } from './chapter-copy.ts';
 import { useEditorActions } from './editor-context.tsx';
 
 /**
- * 时间线顶部的章节条（设计稿 timeline.jsx `ChapterBand`，Mac ChapterScrubberView 形态）：整条宽度就是整片，不随缩放；
- * 一章一段，段里填着播放进度；悬停变粗，浮出起止时间与标题；点一段跳到这一章开头，点没有章节的空当按位置定位。
- * 按下即取消时间线上的选中（与标尺、轨道空白同一条规矩）。
+ * Chapter bar at the top of the timeline (design timeline.jsx `ChapterBand`, Mac ChapterScrubberView style): the full bar width is the whole program and does not scale with zoom;
+ * one segment per chapter, each filled with playback progress; it thickens on hover and shows the start and end times and the title; clicking a segment jumps to the start of that chapter, and clicking an empty gap positions by location.
+ * Pressing clears the timeline selection (same rule as the ruler and empty track area).
  *
- * 设计稿的章节条只看不改；这里按合同（`upsertChapter` / `removeChapter`）补上编辑，每一步是一笔可撤销的事务：
- * - 每章起点左右各 4px 是拖边区，拖动改起点（夹在上一章与下一章之间，6px 内吸附播放头，Esc 取消）；
- * - 右键：在播放头处加章节、改标题、删除这一章；
- * - 条右端的「＋」在播放头处加章节。加与改名都在同一个小浮层里起名。
- * 视频只读时（导入中、别处在改）编辑入口都置灰，点击定位照常。
+ * The design's chapter bar is view-only; here editing is added according to the contract (`upsertChapter` / `removeChapter`), and each step is one undoable transaction:
+ * - Each chapter's start has a 4px drag zone on each side; dragging changes the start (clamped between the previous and next chapters; within 6px it snaps to the playhead; Esc cancels);
+ * - Right-click: add a chapter at the playhead, rename it, or delete this chapter;
+ * - The “＋” at the right end of the bar adds a chapter at the playhead. Both adding and renaming enter the name in the same small popover.
+ * When the video is read-only (importing, or being changed elsewhere), all editing entry points are greyed out, while click-to-seek still works.
  */
 
 const BAND_H = 24;
-/** 段与段之间的缝（设计稿 gap 4px）：每段在内侧边界各让 2px。 */
+/** Gap between segments (design gap 4px): each segment gives up 2px at its inner boundary. */
 const SEAM = 2;
-/** 拖边区的半宽（像素）。 */
+/** Half-width of the drag zone (pixels). */
 const EDGE_PX = 4;
-/** 拖起点时吸附播放头的距离（像素）。 */
+/** Distance (pixels) within which a dragged start snaps to the playhead. */
 const SNAP_PX = 6;
-/** 按下后移动超过这么多像素才算拖动，否则当成点击。 */
+/** Moving more than this many pixels after pressing counts as a drag; otherwise it is treated as a click. */
 const DRAG_PX = 3;
 const BUBBLE_W = 200;
 const TOAST_MS = 2500;
@@ -127,7 +127,7 @@ const formButtons = style({ display: 'flex', justifyContent: 'end', gap: 8 });
 
 interface Drag {
   chapterId: Id;
-  /** 在 `sequenceChapters` 里的下标（拖动期间章节不变）。 */
+  /** Index into `sequenceChapters` (chapters do not change during a drag). */
   index: number;
   x0: number;
   frame: number;
@@ -135,14 +135,14 @@ interface Drag {
   snapped: boolean;
 }
 
-/** 右键的地方：哪一章（空当是 null），指针在哪（视口坐标）。 */
+/** Where the right-click happened: which chapter (null for an empty gap), and the pointer position (viewport coordinates). */
 interface MenuTarget {
   chapterId: Id | null;
   x: number;
   y: number;
 }
 
-/** 起名浮层：加（在哪一帧）或改名（哪一章），锚在哪（视口坐标）。 */
+/** Naming popover: for adding (at which frame) or renaming (which chapter), and its anchor position (viewport coordinates). */
 type FormTarget = { mode: 'add'; frame: number; x: number; y: number } | { mode: 'rename'; chapterId: Id; x: number; y: number };
 
 export function TimelineChapters({ sequence }: { sequence: Sequence }) {
@@ -154,13 +154,13 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
   const totalFrames = sequenceDurationFrames(sequence);
   const chapters = useMemo(() => sequenceChapters(sequence), [sequence]);
   const [drag, setDragState] = useState<Drag | null>(null);
-  // 指针事件可能比重绘来得快：手势以 ref 为准，state 只用来重画。
+  // Pointer events can arrive faster than redraws: gestures are tracked by ref, and state is only used to trigger redraws.
   const dragRef = useRef<Drag | null>(null);
   const setDrag = (next: Drag | null) => {
     dragRef.current = next;
     setDragState(next);
   };
-  // 拖动中按拖到的位置重排（与提交后的结果同一口径：上一章跟着伸缩）。
+  // While dragging, rearrange by the position dragged to (same as the committed result: the previous chapter stretches or shrinks along with it).
   const shown = useMemo(
     () =>
       drag?.moved
@@ -187,7 +187,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * duration;
   };
 
-  // ---- 拖起点 ----
+  // ---- Drag start ----
 
   const onEdgeDown = (event: ReactPointerEvent, chapter: ChapterSpan) => {
     if (event.button !== 0) return;
@@ -217,7 +217,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
     setDrag(null);
     const chapter = done ? chapters[done.index] : undefined;
     if (!done || !chapter) return;
-    // 没拖开就是点了一下：跳到这一章开头。
+    // If it was not dragged apart, it was just a click: jump to the start of this chapter.
     if (!done.moved) actions.seek(chapter.start);
     else void moveChapter(actions, sequence, chapter, done.frame);
   };
@@ -254,7 +254,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
     };
   }, [dragging]);
 
-  // ---- 加、改名、删除 ----
+  // ---- Add, rename, delete ----
 
   const openAdd = (x: number, y: number) => {
     const frame = frameAt(useEditor.getState().playhead, fps);
@@ -290,7 +290,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
     openAdd(rect ? rect.left + rect.width / 2 : 0, rect ? rect.bottom : 0);
   };
 
-  // ---- 浮出的起止与标题：悬停的那一段，拖动时是拖着的那一章 ----
+  // ---- Floating start/end and title: the hovered segment, or the chapter being dragged ----
 
   let tip: { at: number; time: string; title: string } | null = null;
   if (drag?.moved) {
@@ -439,7 +439,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
   );
 }
 
-/** 一段：章或空当，里面填着播放进度。点一下（不是拖）才定位。 */
+/** A segment: a chapter or an empty gap, filled with playback progress. Only a click (not a drag) positions the playhead. */
 function Segment({
   segment,
   left,
@@ -468,13 +468,13 @@ function Segment({
   );
 }
 
-/** 播放进度单独订阅：播放时只重画进度条。 */
+/** Playback progress subscribes separately: during playback only the progress bar is redrawn. */
 function SegmentFill({ start, end }: { start: number; end: number }) {
   const done = useEditor((s) => (end > start ? Math.min(1, Math.max(0, (s.playhead - start) / (end - start))) : 0));
   return <div className={fill} style={{ width: `${done * 100}%` }} />;
 }
 
-/** 章节条的右键菜单：在播放头处加章节；右键在一章上时还有改标题、删除这一章。开在指针那一点（同 timeline-menu）。 */
+/** Right-click menu for the chapter bar: add a chapter at the playhead; right-clicking on a chapter also offers rename and delete for that chapter. Opens at the pointer position (same as timeline-menu). */
 function ChapterMenu({
   target,
   chapter,
@@ -490,7 +490,7 @@ function ChapterMenu({
   onClose(): void;
   onAction(key: 'add' | 'rename' | 'remove'): void;
 }) {
-  // 关上时的淡出还要画上一次的内容。
+  // The fade-out on close still needs to draw the previous content.
   const last = useRef<{ target: MenuTarget; chapter: ChapterSpan | null; addRefusal: keyof typeof C.refusal | null } | null>(null);
   if (target) last.current = { target, chapter, addRefusal };
   const at = last.current;

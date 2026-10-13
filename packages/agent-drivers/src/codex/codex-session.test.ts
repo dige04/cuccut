@@ -8,8 +8,8 @@ import { createFakeCodex, type FakeCodex, type FakeCodexScenario } from '../test
 import { CodexDriver } from './codex-driver.ts';
 
 /**
- * Codex 会话对着假 codex：每个访问模式实际发出的审批策略与审批人、图片输入、插话（turn/steer）与错误码。
- * 假 codex 在进程启动时读场景，所以改场景之后要新开会话。
+ * Codex session tests against a fake codex: the approval policy and reviewer actually sent for each access mode, image input, steering (turn/steer), and error codes.
+ * The fake codex reads its scenario at process start, so a new session must be opened after the scenario changes.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_000): Promise<T> {
@@ -73,7 +73,7 @@ describe('CodexSession（假 codex）', () => {
         developerInstructions: null,
       });
       const { turnId } = await session.startTurn({ text: 'hi' }, { accessMode: mode, model: 'fake-sol', effort: 'high' });
-      // 沙箱和线程的一样：这一轮不另带 sandboxPolicy。
+      // Same as the sandbox and thread: this turn does not carry a separate sandboxPolicy.
       expect(lastParams('turn/start'), mode).toEqual({
         threadId: 'thr_fake',
         input: [{ type: 'text', text: 'hi', text_elements: [] }],

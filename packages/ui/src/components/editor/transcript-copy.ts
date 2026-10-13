@@ -15,13 +15,13 @@ import { plSeconds, plTranscript, plTranscriptTools } from './transcript-copy.pl
 import { trSeconds, trTranscript, trTranscriptTools } from './transcript-copy.tr.ts';
 import { viSeconds, viTranscript, viTranscriptTools } from './transcript-copy.vi.ts';
 
-/** 秒数的短写：不足 10 秒留一位小数。 */
+/** Short form of seconds: below 10 seconds, keep one decimal place. */
 const enSeconds = (seconds: number): string =>
   seconds < 10 ? `${(Math.round(seconds * 10) / 10).toFixed(1)}s` : `${Math.round(seconds)}s`;
 
 const UNITS = defineMessages({ seconds: enSeconds }, { 'zh-Hans': { seconds: zhSeconds }, 'zh-Hant': { seconds: zhHantSeconds }, ja: { seconds: jaSeconds }, ko: { seconds: koSeconds }, es: { seconds: esSeconds }, fr: { seconds: frSeconds }, de: { seconds: deSeconds }, nl: { seconds: nlSeconds }, 'pt-BR': { seconds: ptBRSeconds }, it: { seconds: itSeconds }, ru: { seconds: ruSeconds }, pl: { seconds: plSeconds }, tr: { seconds: trSeconds }, vi: { seconds: viSeconds } });
 
-/** 秒数的短写（按当前语言）：不足 10 秒留一位小数。 */
+/** Short form of seconds (in the current language): below 10 seconds, keep one decimal place. */
 export function secondsLabel(seconds: number): string {
   return UNITS.seconds(seconds);
 }
@@ -29,15 +29,15 @@ export function secondsLabel(seconds: number): string {
 const words = (n: number) => `${n} word${n === 1 ? '' : 's'}`;
 
 /**
- * 文稿面板与时间线剪口的文案。原型：panels.jsx `TranscriptPanel`、panel-transcript-cut.jsx（CutBar、CutFloat、CutMenu）。
- * 模式名照产品设计 §5.7 的表：「改原文」「剪辑音画」。英文在这里，译文在 `transcript-copy.zh-Hans.ts`。
+ * Copy for the transcript panel and the timeline cut markers. Prototypes: panels.jsx `TranscriptPanel`, panel-transcript-cut.jsx (CutBar, CutFloat, CutMenu).
+ * The mode names follow the table in product design §5.7: “改原文” (edit source text) and “剪辑音画” (cut audio and picture). English is here; the translations are in `transcript-copy.zh-Hans.ts`.
  */
 const en = {
   title: 'Transcript',
   modes: 'Transcript editing mode',
   modeEdit: 'Edit text',
   modeCut: 'Cut media',
-  /** 模式标签下面那一句：这个模式改的是什么、⌫ 做什么（§5.7：同一个删除键在不同模式下含义不同）。 */
+  /** The line under a mode label: what this mode changes, and what ⌫ does (§5.7: the same delete key means different things in different modes). */
   hintEdit: 'Changes the transcribed text only; video and audio stay as they are. Double-click a word to edit it; ⌫ deletes text only.',
   hintCut: 'Select some text and press ⌫ to cut it from the video, audio, and subtitles together. Cut words stay struck through and can be restored.',
 
@@ -51,13 +51,13 @@ const en = {
   noWords: 'This transcript has no words to show.',
   notSpeech: 'This transcript’s format isn’t recognized.',
 
-  /** 一份转写的小标题：素材名 + 统计。 */
+  /** Subtitle for one transcript: asset name plus stats. */
   stats: (count: number, cut: number) => (cut ? `${words(count)} · ${cut} cut` : words(count)),
   jump: 'Jump here',
   cutWordTitle: 'Cut from the timeline',
   partialWordTitle: 'A cut falls inside this word; only part of it is left on the timeline',
 
-  // 选区条
+  // Selection bar
   selected: (count: number, seconds: number | null) =>
     seconds === null ? `${words(count)} selected` : `${words(count)} selected · ${secondsLabel(seconds)}`,
   cut: 'Cut',
@@ -68,7 +68,7 @@ const en = {
   aiFind: 'Find cuts',
   aiFindHint: 'Or let AI find filler words and pauses first',
 
-  // 结果
+  // Result
   cutDone: (seconds: number, ranges: number) =>
     ranges > 1 ? `Cut ${secondsLabel(seconds)} · ${ranges} ranges` : `Cut ${secondsLabel(seconds)}`,
   cutNothing: 'The selected words are no longer on the timeline; there’s nothing to cut.',
@@ -81,21 +81,21 @@ const en = {
   } satisfies Record<RestoreRefusal, string>,
   textSaved: 'Text updated · video and audio unchanged',
   textDeleted: (count: number) => `Deleted the text of ${words(count)} · video and audio unchanged`,
-  /** 改原文之后，由旧版本生成的字幕过期了；不自动重新生成（任务约定）。 */
+  /** After the source text is edited, captions generated from the older version are stale. They are not regenerated automatically (task convention). */
   stale: (count: number) =>
     count === 1 ? '1 subtitle track was made from an older transcript and wasn’t updated.' : `${count} subtitle tracks were made from an older transcript and weren’t updated.`,
   gotoCaptions: 'Open Subtitles',
   undo: 'Undo',
 
-  // 时间线剪口
+  // Timeline cut markers
   seamLabel: (seconds: number) => `Cut ${secondsLabel(seconds)} · click to restore`,
 
-  // 转录中的实时文稿（原型 panels.jsx `LiveTranscript`）：只读，转录完成后才能编辑。
+  // Live transcript while transcribing (prototype panels.jsx `LiveTranscript`): read-only; it becomes editable only after transcription finishes.
   liveCopy: 'Copy what’s transcribed so far',
   liveCopied: 'Copied what’s transcribed so far · transcription is still running',
-  /** 实时段落还没有说话人。 */
+  /** Live paragraphs do not have a speaker yet. */
   liveSpeaker: 'Recognizing',
-  /** 还一段都没有：不流式返回的服务要到最后才一起给，不许诺「几秒后」。 */
+  /** No paragraphs at all yet: services that do not return results as a stream only send everything at the end, so do not promise “in a few seconds.” */
   liveWaiting: 'Recognized text appears here as it comes in. Some services return it all when they finish.',
   liveNote: 'Recognized text appears paragraph by paragraph. You can edit it when transcription finishes.',
   liveJump: 'Jump to latest',
@@ -106,21 +106,20 @@ export type TranscriptMessages = typeof en;
 export const TRANSCRIPT_COPY = defineMessages(en, { 'zh-Hans': zhTranscript, 'zh-Hant': zhHantTranscript, ja: jaTranscript, ko: koTranscript, es: esTranscript, fr: frTranscript, de: deTranscript, nl: nlTranscript, 'pt-BR': ptBRTranscript, it: itTranscript, ru: ruTranscript, pl: plTranscript, tr: trTranscript, vi: viTranscript });
 
 /**
- * 文稿的查找替换、复制、语言视图、段落行与章节头菜单。原型：panels.jsx `TranscriptPanel`（页头的查找、复制、语言钮）、
- * `ParaRow`（↑ ↓、播放、⋯）、`ScopeMenu`（复制这一段 / 这一章）。
+ * Transcript find and replace, copy, language view, paragraph rows, and the chapter header menu. Prototypes: panels.jsx `TranscriptPanel` (page header find, copy, language button), `ParaRow` (↑ ↓, play, ⋯), `ScopeMenu` (copy this paragraph / this chapter).
  */
 const tools = {
-  // 查找替换
+  // Find and replace
   findTip: 'Find and replace · ⌘F',
   findLabel: 'Find and replace',
   findPlaceholder: 'Find in transcript',
-  /** 当前命中改不了的原因（设计稿 `lockHint`）：译文只查不改；转写的新版本还没取到时先不改，免得盖掉新版本。 */
+  /** Why the current match cannot be changed (design `lockHint`): translation is find-only, and while a newer transcript version has not been fetched yet, replacing is held back so it does not overwrite that version. */
   lockTranslation: 'Translations can be searched but not edited here—the Transcript panel only edits the original',
   lockLoading: 'A newer version of this transcript is still loading; replace after it finishes',
   replaceDone: (count: number) => `Replaced ${count} ${count === 1 ? 'match' : 'matches'} · video and audio unchanged`,
   replaceNothing: 'No matches need changing',
 
-  // 复制
+  // Copy
   copyMenu: 'Copy transcript',
   copyAllHead: (lang: string) => `Copy all · ${lang}`,
   copyText: 'Copy text',
@@ -142,7 +141,7 @@ const tools = {
   copySelection: 'Copy',
   copySelectionTip: 'Copy selected text · ⌘C',
 
-  // 语言视图（设计稿 `langShort` 与「文稿语言」菜单）
+  // Language view (design `langShort` and the “Transcript language” menu)
   langLabel: 'Transcript language',
   langSource: 'Original',
   langTranslation: 'Translation',
@@ -156,7 +155,7 @@ const tools = {
   translationOnly: 'You can’t edit or cut while viewing only a translation; switch back to the original or side by side to edit.',
   noParagraphTranslation: 'This paragraph has no translation',
 
-  // 段落行（设计稿 `ParaRow`）
+  // Paragraph row (design `ParaRow`)
   paraMenu: 'This paragraph…',
   moveUp: 'Move to previous chapter',
   moveDown: 'Move to next chapter',
@@ -164,7 +163,7 @@ const tools = {
   moveHead: 'Move to chapter',
   moveTo: (title: string) => `Move to “${title}”`,
   moveWith: (count: number) => (count > 1 ? `Moves together with its neighbors on that side, ${count} paragraphs in all` : 'Moves only this paragraph'),
-  /** 挪不了的原因：章节是连续的时间区间，只挪跨过的那一条边界。 */
+  /** Cannot move: chapters are contiguous time ranges, so only the boundary being crossed moves. */
   noPrev: 'There’s no chapter before this paragraph',
   noNext: 'There’s no chapter after this paragraph',
   moveBlocked: 'Moving it would leave this chapter empty or cross the start of the neighboring chapter',
@@ -172,7 +171,7 @@ const tools = {
   cutPara: 'Cut this paragraph',
   cutParaHint: 'Cuts video, audio, and subtitles together; can be restored',
 
-  // 章节头「这一章…」
+  // Chapter header “This chapter…”
   chapterMenu: 'This chapter…',
   renameChapter: 'Rename…',
   cutChapter: 'Cut this chapter',

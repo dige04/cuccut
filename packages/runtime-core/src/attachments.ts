@@ -18,20 +18,18 @@ import { RcWeb } from '@cuccut/protocol/messages/runtime-core';
 import type { HarnessAttachments, Logger } from '@cuccut/harness';
 
 /**
- * 消息附件（产品设计 §3.2.4，`attachments.prepare`）：界面先登记一张图片，拿到一次性的上传地址，把原始字节
- * `PUT` 到网关同一端口上的 `/attachments/<令牌>`；发送时 Harness 把附件 ID 换成本地文件交给 Driver。
+ * Message attachments (product design §3.2.4, `attachments.prepare`): the UI first registers an image and gets a one-time upload address, then `PUT`s the raw bytes to `/attachments/<token>` on the same port as the gateway. At send time the Harness swaps the attachment ID for a local file and hands it to the Driver.
  *
- * - 令牌是 32 字节随机数，只能用一次，约 10 分钟内有效；上传地址就是凭证，不带别的令牌头。
- * - 文件存成 `<attachmentsDir>/<附件 ID>/image.<扩展名>`，不用用户给的文件名：文件名只用来显示。
- * - 边收边写 `.part`，字节数对不上或超过声明的大小就中止、删掉半个文件；传完才改名成正式文件。
- * - 传完没发出去的登记约 24 小时后清掉；发出去的跟着会话走，会话删除时一起删。登记只在内存里，
- *   Runtime 重启后没被任何会话引用的目录在启动时清掉。
+ * - The token is 32 random bytes, usable once, and valid for about 10 minutes. The upload address is itself the credential; no other token header is carried.
+ * - Files are stored as `<attachmentsDir>/<attachment ID>/image.<extension>`. The user's file name is not used: the file name is for display only.
+ * - Bytes are written to `.part` as they arrive. If the byte count does not match, or exceeds the declared size, the upload is aborted and the half-written file is deleted. The file is renamed to its final name only once the upload completes.
+ * - A registration that finished uploading but was never sent is cleared after about 24 hours. Sent ones follow the session and are deleted with it. Registrations live only in memory; after a Runtime restart, attachment directories not referenced by any session are cleared at startup.
  */
 
 export interface AttachmentStoreOptions {
   dir: string;
   log: Logger;
-  /** 与网关相同的来源规则，用于 CORS（界面在网页里用 fetch 上传）。 */
+  /** The same origin rules as the gateway, for CORS (the UI uploads from a web page using fetch). */
   originAllowed: (origin: string | undefined) => boolean;
   uploadTtlMs?: number;
   unsentTtlMs?: number;
@@ -59,7 +57,7 @@ interface Entry {
   dir: string;
   file: string;
   state: EntryState;
-  /** 上传地址的期限（还没传完时）或没发出去的登记的期限（传完之后）。发出去之后不再过期。 */
+  /** Expiry of the upload address (if the upload is not yet finished), or of an unsent registration (after the upload). Sent attachments no longer expire. */
   expiresAt: number;
 }
 
@@ -90,7 +88,7 @@ export class AttachmentStore implements HarnessAttachments {
     this.#baseUrl = url;
   }
 
-  /** 登记一张图片：检查大小、格式与文件名，返回附件与一次性的上传地址。 */
+  /** Register an image: checks size, format and file name; returns the attachment and a one-time upload address. */
   async prepare(params: { fileName: string; mimeType: string; size: number }): Promise<{ attachment: AttachmentRef; uploadUrl: string }> {
     const fileName = checkFileName(params.fileName);
     if (!(ATTACHMENT_UPLOAD_MIME_TYPES as readonly string[]).includes(params.mimeType)) {
@@ -111,14 +109,14 @@ export class AttachmentStore implements HarnessAttachments {
     return { attachment: ref, uploadUrl: `${this.#baseUrl}${PREFIX}${token}` };
   }
 
-  /** 处理 `/attachments/<令牌>`。不是这个前缀返回 false。 */
+  /** Handles `/attachments/<token>`. Returns false if it does not have this prefix. */
   handle(request: IncomingMessage, response: ServerResponse): boolean {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith(PREFIX)) return false;
     const token = url.pathname.slice(PREFIX.length);
     const origin = request.headers.origin;
     if (origin !== undefined) {
-      // 别的网页不能往这里传东西：令牌之外再按来源挡一层。
+      // Other web pages cannot upload here: a check on the origin sits on top of the token.
       if (!this.#originAllowed(origin)) {
         request.resume();
         response.writeHead(403, { Connection: 'close' }).end();
@@ -165,7 +163,7 @@ export class AttachmentStore implements HarnessAttachments {
       return refuse(400, RcWeb.contentLengthMismatch({ size: entry.ref.size }).text);
     }
 
-    // 令牌从这里起作废：同一个地址的第二次上传一律拒绝（409），这一次失败也要重新登记。
+    // The token is invalidated from this point: a second upload to the same address is always rejected (409), and this failure also requires registering again.
     entry.state = 'uploading';
     entry.expiresAt = Date.now() + this.#uploadTtlMs;
     const part = `${entry.file}.part`;
@@ -179,7 +177,7 @@ export class AttachmentStore implements HarnessAttachments {
     let overflow = false;
     const limit = entry.ref.size;
     try {
-      // 边收边写；超过登记的大小立刻中止（连接随之断开），客户端中途断开同样中止。
+      // Bytes are written as they arrive; exceeding the registered size aborts at once (the connection is dropped); the client disconnecting midway also aborts.
       await pipeline(
         request,
         async function* (source: AsyncIterable<Buffer>) {
@@ -204,7 +202,7 @@ export class AttachmentStore implements HarnessAttachments {
     response.writeHead(204).end();
   }
 
-  /** 发送时：附件都要已经传完。不认识的是 `not-found`，还没传完的是 `invalid-request`。 */
+  /** At send time, the attachments must all be fully uploaded. An unknown one is `not-found`; one not yet fully uploaded is `invalid-request`. */
   async resolve(ids: Id[]): Promise<{ ref: AttachmentRef; path: string }[]> {
     const resolved: { ref: AttachmentRef; path: string }[] = [];
     for (const id of ids) {
@@ -227,8 +225,8 @@ export class AttachmentStore implements HarnessAttachments {
   }
 
   /**
-   * 已经发出去的附件在磁盘上的位置（媒体通道读它用）：按会话记录里的 `AttachmentRef` 算，不查内存登记——
-   * Runtime 重启之后登记不在了，文件还跟着会话。附件属不属于哪条会话由调用方核对；这里只认附件 ID 的样子。
+   * The location on disk of attachments already sent (the media channel reads from it): computed from the `AttachmentRef` in the session record, not looked up in memory,
+   * since after a Runtime restart the registration is gone but the file stays with the session. The caller checks whether an attachment belongs to a given session; here only the shape of the attachment ID is checked.
    */
   fileOf(ref: AttachmentRef): { root: string; file: string } {
     if (!ATTACHMENT_ID.test(ref.id)) throw new RpcError('not-found', RcWeb.attachmentNotFound());
@@ -245,13 +243,13 @@ export class AttachmentStore implements HarnessAttachments {
     }
   }
 
-  /** 会话删除时：它的消息里的附件一并删掉（别的会话还引用的由调用方排除）。 */
+  /** When a session is deleted, the attachments in its messages are deleted too (those still referenced by other sessions are excluded by the caller). */
   async discard(ids: Id[]): Promise<void> {
-    // 重启之后登记已经不在内存里，按目录删；ID 来自会话记录，仍然只认附件 ID 的样子。
+    // After a restart the registration is no longer in memory, so deletion goes by directory; the ID comes from the session record, and only the attachment ID shape is accepted.
     for (const id of ids) if (ATTACHMENT_ID.test(id)) await this.#drop(id, true);
   }
 
-  /** 启动时：删掉没有任何会话引用、也没有登记的附件目录（上次没发出去的、会话删除时没删干净的）。 */
+  /** At startup: delete attachment directories that no session references and that have no registration (left over from an upload never sent, or not fully cleaned up when its session was deleted). */
   async removeOrphans(keep: ReadonlySet<Id>): Promise<number> {
     const entries = await fsp.readdir(this.#dir, { withFileTypes: true }).catch(() => []);
     let removed = 0;
@@ -265,7 +263,7 @@ export class AttachmentStore implements HarnessAttachments {
     return removed;
   }
 
-  /** 过期的登记：上传地址没用的、上传卡住的、传完没发出去的。 */
+  /** Expired registrations: upload addresses never used, uploads that got stuck, and uploads that finished but were never sent. */
   async sweep(): Promise<void> {
     const now = Date.now();
     for (const [id, entry] of [...this.#byId]) {
@@ -286,7 +284,7 @@ export class AttachmentStore implements HarnessAttachments {
   }
 }
 
-/** 文件名只用来显示：不能带路径分隔符与控制字符，不能是 `.` 或 `..`。 */
+/** The file name is for display only: it must not contain path separators or control characters, and must not be `.` or `..`. */
 function checkFileName(value: unknown): string {
   const name = typeof value === 'string' ? value.trim() : '';
   if (!name || name.length > MAX_FILE_NAME) throw new RpcError('invalid-request', RcWeb.fileNameLength({ max: MAX_FILE_NAME }));

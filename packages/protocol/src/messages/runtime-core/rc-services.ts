@@ -14,7 +14,7 @@ import { pl } from './rc-services.pl.ts';
 import { tr } from './rc-services.tr.ts';
 import { vi } from './rc-services.vi.ts';
 
-/** 对外服务（services/ 的服务管理、范围、MCP、客户端）的错误与说明。英文是键与类型的来源，译文在 `rc-services.<语言>.ts`。 */
+/** Errors and descriptions for external services (services/: service management, scope, MCP, clients). English is the source of keys and types; translations are in `rc-services.<language>.ts`. */
 const en = {
   mcpServiceLabel: 'MCP service',
   nodeServiceLabel: 'LAN node',

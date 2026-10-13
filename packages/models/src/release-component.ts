@@ -4,41 +4,38 @@ import type { ComponentRelease, ComponentReleaseAsset } from './bundle-registry.
 import { removeEmptyParents } from './model-staging.ts';
 
 /**
- * 来自 GitHub 发布页的组件（`BundleComponentSource.release`，目前只有音乐模型包的 audio.cpp 引擎；架构设计 §6.3）的位置与地址。
+ * The location and address of a component from a GitHub release page (`BundleComponentSource.release`; currently only the audio.cpp engine of music model packages; architecture design §6.3).
  *
- * - 组件目录：`<toolsDir>/<name>/<version>/`（Runtime Home 的 `tools/`，不在模型目录里，移动模型目录时不跟着走）。解开的文件旁边
- *   写一份 `.ccut-manifest.json`（每个文件的大小与 sha256），装没装好、校验与修复照旧按清单判断。
- * - 暂存区：`<toolsDir>/.ccut-staging/<name>@<version>/`，与组件目录在同一个卷上（发布是改名）。里面是压缩包（没下完的是
- *   `<文件名>.part`）与解开中的 `unpacked/`。
- * - 下载地址：给了工具下载镜像（设置 `tools.downloadEndpoint` 或 `CUCCUT_TOOLS_ENDPOINT`）时是 `<基址>/<name>/<version>/<文件名>`，
- *   否则是登记的官方地址模板（与受管外部工具的规则相同）。
+ * - Component directory: `<toolsDir>/<name>/<version>/` (the Runtime Home's `tools/`, not in the model directory; it does not move with the model directory). Beside the unpacked files, a `.ccut-manifest.json` is written (the size and sha256 of each file). Whether it is properly installed, and verification and repair, are still judged against the manifest.
+ * - Staging area: `<toolsDir>/.ccut-staging/<name>@<version>/`, on the same volume as the component directory (publishing is a rename). Inside are the archive (an unfinished one is `<filename>.part`) and the `unpacked/` directory being unpacked.
+ * - Download address: when a tool download mirror is given (setting `tools.downloadEndpoint` or `CUCCUT_TOOLS_ENDPOINT`), it is `<base>/<name>/<version>/<filename>`; otherwise, the registered official address template (the same rules as managed external tools).
  */
 
 export const TOOLS_STAGING_DIR = '.ccut-staging';
-/** 暂存区里解开中的目录名。 */
+/** Name of the directory being unpacked in the staging area. */
 export const UNPACK_DIR = 'unpacked';
 
-/** 主机的平台键：`<process.platform>-<process.arch>`，如 `darwin-arm64`、`win32-x64`。 */
+/** The host's platform key: `<process.platform>-<process.arch>`, e.g. `darwin-arm64`, `win32-x64`. */
 export function hostPlatformKey(platform: string = process.platform, arch: string = process.arch): string {
   return `${platform}-${arch}`;
 }
 
-/** 这个平台的压缩包；没有时 null（这个平台不支持）。 */
+/** The archive for this platform; null if there is none (platform not supported). */
 export function releaseAsset(release: ComponentRelease, platformKey: string): ComponentReleaseAsset | null {
   return release.assets[platformKey] ?? null;
 }
 
-/** 组件目录：`<toolsDir>/<name>/<version>/`。 */
+/** Component directory: `<toolsDir>/<name>/<version>/`. */
 export function releaseDir(toolsDir: string, release: ComponentRelease): string {
   return path.join(toolsDir, release.name, release.version);
 }
 
-/** 暂存目录：`<toolsDir>/.ccut-staging/<name>@<version>/`。 */
+/** Staging directory: `<toolsDir>/.ccut-staging/<name>@<version>/`. */
 export function releaseStagingDir(toolsDir: string, release: ComponentRelease): string {
   return path.join(toolsDir, TOOLS_STAGING_DIR, `${release.name}@${release.version}`);
 }
 
-/** 压缩包的下载地址：镜像 `<基址>/<name>/<version>/<文件名>`，没有镜像时按官方地址模板。 */
+/** Archive download address: with a mirror, `<base>/<name>/<version>/<filename>`; without one, the official address template. */
 export function releaseUrl(release: ComponentRelease, asset: ComponentReleaseAsset, toolsEndpoint: string | null | undefined): string {
   if (toolsEndpoint) {
     const base = toolsEndpoint.replace(/\/+$/, '');
@@ -47,7 +44,7 @@ export function releaseUrl(release: ComponentRelease, asset: ComponentReleaseAss
   return release.urlTemplate.replace('{version}', encodeURIComponent(release.version)).replace('{file}', encodeURIComponent(asset.fileName));
 }
 
-/** 安装计划里的来源（不含凭据）：镜像的基址，或官方地址模板里文件之前的部分（发布页）。 */
+/** The source in the install plan (without credentials): the mirror's base, or, for the official address template, the part before the file (the release page). */
 export function releaseSource(release: ComponentRelease, toolsEndpoint: string | null | undefined): string {
   if (toolsEndpoint) return toolsEndpoint.replace(/\/+$/, '');
   const template = release.urlTemplate.replace('{version}', release.version);
@@ -55,7 +52,7 @@ export function releaseSource(release: ComponentRelease, toolsEndpoint: string |
   return cut > 0 ? template.slice(0, cut) : template.slice(0, template.lastIndexOf('/'));
 }
 
-/** 暂存区里已经收到的压缩包字节（核对过的整份或没下完的 `.part`）；没有时 0。 */
+/** Archive bytes already received in the staging area (a fully verified copy, or an unfinished `.part`); 0 when there are none. */
 export async function releaseStagedBytes(toolsDir: string, release: ComponentRelease, asset: ComponentReleaseAsset): Promise<number> {
   const stage = releaseStagingDir(toolsDir, release);
   for (const name of [asset.fileName, `${asset.fileName}.part`]) {
@@ -65,7 +62,7 @@ export async function releaseStagedBytes(toolsDir: string, release: ComponentRel
   return 0;
 }
 
-/** 删掉一个发布页组件的暂存目录（连同空了的暂存区）。 */
+/** Deletes the staging directory of a release-page component (along with the staging area itself if it is left empty). */
 export async function discardReleaseStaging(toolsDir: string, release: ComponentRelease): Promise<void> {
   const stage = releaseStagingDir(toolsDir, release);
   await fs.rm(stage, { recursive: true, force: true });

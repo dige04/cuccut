@@ -2,43 +2,42 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * `<runtime-home>/cache/` 的总大小上限（架构设计 §5.1「派生缓存」）。缓存里的东西都能删掉后重建，但没有人清，
- * 素材分析（波形、缩略图、帧）与播放转码会一直涨。超过上限时按修改时间从旧到新删文件，降到上限的 `targetRatio`（默认 90%）。
+ * The total size limit for `<runtime-home>/cache/` (architecture design §5.1, “derived cache”). Everything in the cache can be deleted and rebuilt, but nothing cleans it up,
+ * so media analysis (waveforms, thumbnails, frames) and playback transcodes keep growing. When over the limit, files are deleted from oldest to newest by modification time, down to `targetRatio` of the limit (default 90%).
  *
- * 不删的：
- * - `content-index/`：跨视频检索的 SQLite 库（`index.db` 与 `-wal`、`-shm`）。运行中删掉会弄坏打开着的库；它自己在启动时清理
- *   遗留的临时文件（§5.11）。
- * - `cuccut-composition-host/`：代码画面宿主的脚本，活着的宿主进程正在用它，很小。
- * - 修改时间在宽限期（1 小时）内的临时文件（名字含 `.tmp`）：正在写的转码与分析结果。
+ * Not deleted:
+ * - `content-index/`: the SQLite database for cross-video search (`index.db` with `-wal` and `-shm`). Deleting it while open would corrupt the database; it cleans up its own leftover temporary files at startup (§5.11).
+ * - `cuccut-composition-host/`: the scripts of the code-picture host. A live host process is using them, and they are small.
+ * - Temporary files (names containing `.tmp`) modified within the grace period (1 hour): transcodes and analysis results being written.
  *
- * 这些文件仍然计入总大小（上限是整个目录的），只是不在可删的候选里。删空的子目录（修改时间超过宽限期的）一并删掉。
+ * These files still count toward the total size (the limit covers the whole directory); they are just not candidates for deletion. Subdirectories that have become empty (modified longer ago than the grace period) are deleted too.
  */
 
-/** `cache/` 下不参与淘汰的顶层子目录。 */
+/** Top-level subdirectories under `cache/` that do not take part in eviction. */
 export const CACHE_PROTECTED_DIRS: readonly string[] = ['content-index', 'cuccut-composition-host'];
 
 const TEMPORARY_GRACE_MS = 60 * 60 * 1000;
 
 export interface CacheTrimOptions {
-  /** 上限，字节。 */
+  /** The limit, in bytes. */
   maxBytes: number;
-  /** 超限时降到上限的多少（0–1），默认 0.9。 */
+  /** When over the limit, the fraction (0–1) to reduce to. Default 0.9. */
   targetRatio?: number;
-  /** 不参与淘汰的顶层子目录名，默认 `CACHE_PROTECTED_DIRS`。 */
+  /** Names of top-level subdirectories that do not take part in eviction. Default `CACHE_PROTECTED_DIRS`. */
   protectedDirs?: readonly string[];
   now?: number;
 }
 
 export interface CacheTrimResult {
-  /** 清理前的总大小（含受保护的文件）。 */
+  /** Total size before cleanup (including protected files). */
   totalBytes: number;
-  /** 受保护的文件的大小。 */
+  /** Size of the protected files. */
   protectedBytes: number;
   removed: number;
   removedBytes: number;
-  /** 删不掉的文件数（被占用、没有权限）。 */
+  /** Number of files that could not be deleted (in use, or no permission). */
   failed: number;
-  /** 清理后的总大小。 */
+  /** Total size after cleanup. */
   remainingBytes: number;
 }
 
@@ -48,7 +47,7 @@ interface CacheFile {
   mtimeMs: number;
 }
 
-/** 把 `dir` 降到上限之内。目录不存在时什么也不做。 */
+/** Reduces `dir` to within the limit. Does nothing if the directory does not exist. */
 export async function trimCache(dir: string, options: CacheTrimOptions): Promise<CacheTrimResult> {
   const now = options.now ?? Date.now();
   const protectedDirs = new Set(options.protectedDirs ?? CACHE_PROTECTED_DIRS);
@@ -101,7 +100,7 @@ export async function trimCache(dir: string, options: CacheTrimOptions): Promise
   }
   result.remainingBytes = remaining;
 
-  // 删空了的子目录（深的在前）；刚建的留着，写入方可能正要往里放文件。
+  // Subdirectories that became empty (deepest first). A newly created one is kept, since the writer may be about to put files in it.
   if (result.removed > 0) {
     for (const entry of dirs.sort((a, b) => b.dir.length - a.dir.length)) {
       if (entry.mtimeMs > now - TEMPORARY_GRACE_MS) continue;

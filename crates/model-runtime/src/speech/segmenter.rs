@@ -1,9 +1,8 @@
-//! 语音区间 → 识别段：超过 [`MAX_SPAN`] 的区间在最后 [`CUT_SEARCH`] 秒里能量最低的 60 ms 窗口处切开，
-//! 每段至少 [`MIN_PIECE`]；之后两侧各补 [`PAD`]（不越过相邻区间）。
+//! Speech spans → recognition segments: a span longer than [`MAX_SPAN`] is cut at the 60 ms window of lowest energy within the last [`CUT_SEARCH`] seconds; each segment is at least [`MIN_PIECE`]. Afterwards [`PAD`] is added to both sides (without crossing adjacent spans).
 
 use super::vad_stream::VadConfig;
 
-/// 相对解码起点的语音区间（f64 秒）。
+/// A speech span relative to the decode start (f64 seconds).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpeechSpan {
     pub start: f64,
@@ -118,8 +117,8 @@ pub fn padded(spans: &[SpeechSpan], duration: f64) -> Vec<SpeechSpan> {
         .collect()
 }
 
-/// 补边之后相邻段可能重叠（前一段的补边上限是后一段补边前的起点，反之亦然）。输出合同要求段不重叠：
-/// 在重叠区的中点把两段分开。中点落在两段补边前的静音之间，不会让任何一段变空。
+/// After padding, adjacent segments may overlap (the previous segment's padding limit is the next segment's start before its padding, and vice versa). The output contract requires that segments do not overlap:
+/// the two segments are split at the midpoint of the overlap. The midpoint falls between the silences before each segment's padding, so neither segment becomes empty.
 pub fn resolve_overlaps(spans: &mut [SpeechSpan]) {
     for index in 1..spans.len() {
         let (left, right) = spans.split_at_mut(index);
@@ -152,7 +151,7 @@ mod tests {
     fn long_spans_are_cut_at_the_quietest_window() {
         let rate = 16_000.0;
         let mut samples = vec![0.5_f32; (40.0 * rate) as usize];
-        // 12.0–12.1 s 是静音：第一刀应当落在这里（搜索区间 [10.5, 14.5]）。
+        // 12.0–12.1 s is silence: the first cut should fall here (search range [10.5, 14.5]).
         for sample in &mut samples[(12.0 * rate) as usize..(12.1 * rate) as usize] {
             *sample = 0.0;
         }

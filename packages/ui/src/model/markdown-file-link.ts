@@ -1,7 +1,7 @@
 import type { FileTarget, MediaTarget, SpaceEntry } from '@cuccut/protocol';
 import { entryPath, previewModeOfFileName } from './space.ts';
 
-/** Markdown 的显式文件链接允许空格、裸文件名与任意扩展名；不把网页、设置路由或锚点当文件。 */
+/** Explicit file links in Markdown allow spaces, bare file names and any extension; web pages, settings routes and anchors are not treated as files. */
 export function markdownFilePath(href: string): string | null {
   let raw = href.trim();
   if (!raw || /[\u0000-\u001f\u007f]/.test(raw) || /^(?:#|\?|\/\/)/.test(raw)) return null;
@@ -27,7 +27,7 @@ export function markdownFilePath(href: string): string | null {
   return raw || null;
 }
 
-/** 只用来匹配目录镜像，不替代 Runtime 的真实路径与权限检查。 */
+/** Used only to match the directory mirror; it does not replace the Runtime's real path and permission checks. */
 export function markdownAbsolutePath(path: string, cwd: string | null): string | null {
   let value = path.replaceAll('\\', '/');
   if (!/^(?:\/|[a-z]:\/)/i.test(value)) {
@@ -43,7 +43,7 @@ export function markdownAbsolutePath(path: string, cwd: string | null): string |
   return `${drive}/${parts.join('/')}`;
 }
 
-/** 下载目录中的交付物必须按 Space entry 打开；会话路径句柄仍只允许访问工作目录。 */
+/** Deliverables in the download directory must be opened by their Space entry; session path handles still allow access only to the working directory. */
 export function markdownFileTarget(
   path: string,
   scope: { conversationId: string; cwd: string | null },
@@ -65,13 +65,13 @@ export function markdownFileOutsideScope(path: string, cwd: string | null): bool
   return absolute !== null && (root === null || (absolute !== root && !absolute.startsWith(`${root.replace(/\/$/, '')}/`)));
 }
 
-/** 点了回复里的文件链接（或行内路径）怎么打开：功能区的文件标签，或交给系统默认应用。 */
+/** What happens when a file link (or an inline path) in a reply is clicked: a file tab in the side panel, or the system's default app. */
 export type MarkdownOpenAction = { kind: 'pane'; target: MediaTarget } | { kind: 'system'; path: string };
 
 /**
- * 回复里的文件链接（产品设计 §3.2.2）：登记过的交付物按条目打开；工作目录里的按会话路径打开。工作目录之外、没有条目的：
- * 桌面端在文件标签里按本机路径只读预览（`{ localPath }`，Runtime 只对桌面客户端发放），查看器不支持的类型才交给系统默认应用；
- * 浏览器没有这个能力，照旧按会话路径请求，由 Runtime 的访问范围在查看器里报告不可用。
+ * File links in replies (product design §3.2.2): registered deliverables open by their entry; those in the working directory open by session path. Those outside the working directory with no entry:
+ * on the desktop, they are previewed read-only in a file tab by local path (`{ localPath }`, which the Runtime grants only to the desktop client); only types the viewer does not support are handed to the system's default app;
+ * the browser has no such capability, so it still requests by session path as before, and the Runtime's access scope reports it as unavailable in the viewer.
  */
 export function markdownOpenAction(
   path: string,
@@ -83,7 +83,7 @@ export function markdownOpenAction(
   const target = markdownFileTarget(path, scope, entries, dirs);
   if ('entryId' in target || !host.desktop || !markdownFileOutsideScope(path, scope.cwd)) return { kind: 'pane', target };
   const absolute = markdownAbsolutePath(path, scope.cwd)!;
-  // 本机路径交给 Runtime 时保留原来的写法（Windows 的盘符与反斜杠），只补全相对路径。
+  // When a local path is handed to the Runtime, keep its original form (drive letter and backslashes on Windows); only relative paths are completed.
   const local = /^(?:\/|[a-z]:[\\/]|\\\\)/i.test(path) ? path : absolute;
   const name = absolute.slice(absolute.lastIndexOf('/') + 1);
   return previewModeOfFileName(name) ? { kind: 'pane', target: { localPath: local } } : { kind: 'system', path: absolute };

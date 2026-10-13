@@ -1,9 +1,9 @@
-//! 播种随机：splitmix64（与 `ccut-motion::rng` 同一算法与常数），外加均匀 / 正态 / 指数分布。
+//! Seeded random: splitmix64 (same algorithm and constants as `ccut-motion::rng`), plus uniform / normal / exponential distributions.
 //!
-//! 每个合成器都从一个 `u64` 种子起一只 [`Rng`]，顺序抽样；没有全局状态，也不读系统熵。
-//! 正态分布用 Box–Muller（`libm::log` / `sqrt` / `sincos`），两个一组、第二个缓存到下一次。
+//! Each synthesizer starts an [`Rng`] from a `u64` seed and draws samples in order. There is no global state, and it does not read system entropy.
+//! Normal distribution uses Box–Muller (`libm::log` / `sqrt` / `sincos`), generating two at a time and caching the second for the next call.
 
-/// splitmix64 推进一步（Vigna 参考实现）。
+/// Advances splitmix64 by one step (Vigna's reference implementation).
 pub fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *state;
@@ -12,14 +12,13 @@ pub fn splitmix64(state: &mut u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// 把一个种子与一个「盐」混成新种子：同一乐器的第 k 个音、同一总线的第 k 次发声各拿一颗，
-/// 互不相关，且与抽样顺序无关。
+/// Mixes a seed with a “salt” into a new seed: the k-th note of the same instrument and the k-th voice on the same bus each get their own, unrelated to each other and independent of draw order.
 pub fn derive(seed: u64, salt: u64) -> u64 {
     let mut state = seed ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
     splitmix64(&mut state)
 }
 
-/// 顺序抽样的随机源。
+/// Random source that draws samples in sequence.
 #[derive(Clone, Debug)]
 pub struct Rng {
     state: u64,
@@ -38,23 +37,23 @@ impl Rng {
         splitmix64(&mut self.state)
     }
 
-    /// `[0, 1)`，53 位精度。
+    /// `[0, 1)`, with 53-bit precision.
     pub fn unit(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    /// `[lo, hi)` 均匀。
+    /// Uniform over `[lo, hi)`.
     pub fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
         lo + (hi - lo) * self.unit()
     }
 
-    /// `[lo, hi)` 的整数（`hi > lo`）。
+    /// Integer in `[lo, hi)` (`hi > lo`).
     pub fn int_range(&mut self, lo: i64, hi: i64) -> i64 {
         let span = (hi - lo).max(1) as u64;
         lo + (self.next_u64() % span) as i64
     }
 
-    /// 标准正态。
+    /// Standard normal.
     pub fn normal(&mut self) -> f64 {
         if let Some(v) = self.spare.take() {
             return v;
@@ -67,12 +66,12 @@ impl Rng {
         r * c
     }
 
-    /// 均值为 `mean` 的指数分布（泊松过程的间隔）。
+    /// Exponential distribution with mean `mean` (the intervals of a Poisson process).
     pub fn exponential(&mut self, mean: f64) -> f64 {
         -mean * libm::log(1.0 - self.unit())
     }
 
-    /// `n` 个标准正态样本。
+    /// `n` standard normal samples.
     pub fn normals(&mut self, n: usize) -> Vec<f32> {
         (0..n).map(|_| self.normal() as f32).collect()
     }

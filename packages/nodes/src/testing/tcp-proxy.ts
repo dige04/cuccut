@@ -1,17 +1,17 @@
 import net from 'node:net';
 
 /**
- * 测试工具：发起端与节点之间的回环 TCP 代理，用来模拟网络故障而不动节点本身。
+ * Test utility: a loopback TCP proxy between the initiator and the node, used to simulate network failures without touching the node itself.
  *
- * - `dropOnce(match, afterMs)`：下一条请求行匹配的连接，在节点开始回数据 `afterMs` 之后被切断（事件流断一次）；
- * - `down()`：切断所有连接，之后的新连接一接上就断（节点「死了」或网络断了）；`up()` 恢复；
- * - `retarget(port)`：换一个上游端口（节点重启后换了端口）。
+ * - `dropOnce(match, afterMs)`: for the next connection whose request line matches, cut it `afterMs` after the node starts replying (the event stream breaks once);
+ * - `down()`: cut all connections, and any new connection is dropped as soon as it connects (the node "died" or the network went down); `up()` restores it;
+ * - `retarget(port)`: switch to a different upstream port (after the node restarts on another port).
  *
- * 只听 127.0.0.1，端口由系统分配。
+ * Listens only on 127.0.0.1, with the port assigned by the system.
  */
 export interface TcpProxy {
   readonly port: number;
-  /** 经过代理的每条连接的第一行（HTTP 请求行）。 */
+  /** The first line (the HTTP request line) of each connection that passes through the proxy. */
   readonly requests: string[];
   dropOnce(match: (requestLine: string) => boolean, afterMs?: number): void;
   down(): void;

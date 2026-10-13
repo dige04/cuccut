@@ -4,19 +4,19 @@ import { effectiveDefaultModel, modelTierOf } from '../../model/agent-choice.ts'
 import { M } from './agent-setup-copy.ts';
 
 /**
- * 设置 › Agent 提供方的纯层（设计稿 designs/cuccut/app/model-agent-setup.js）：一个 Agent 现在处于什么状态、
- * 该给用户看哪句话和哪颗按钮、排查清单怎么列、默认模型与强度有哪些选项、装与升级给哪条命令。视图只组合，不在 JSX 里判断。
+ * The pure layer of Settings › Agent providers (design mockup designs/cuccut/app/model-agent-setup.js): what state an agent is in now,
+ * which sentence and which button to show the user, how the troubleshooting checklist is laid out, what options the default model and effort have, and which command installs and upgrades it. Views only compose; they make no decisions in JSX.
  *
- * 状态本身由 Runtime 按设计稿的优先级算好（`DriverState`：没装 > 出错 > 版本太旧 > 没登录 > 已停用 > 可用），
- * 这里只把它翻成标签、色调与修法，不重算。
+ * The state itself is computed by the Runtime using the design mockup’s priority order (`DriverState`: not installed > error > version too old > not logged in > disabled > available).
+ * Here it is only turned into labels, tones and fixes, and not recomputed.
  */
 
 export type AgentTone = 'positive' | 'notice' | 'negative' | 'neutral';
 
-/** 设计稿的状态优先级（model-agent-setup.js:13），从最需要处理的到可用。 */
+/** The design mockup’s status priority (model-agent-setup.js:13), from the most urgent to available. */
 export const STATE_PRIORITY: readonly DriverState[] = ['not-installed', 'error', 'outdated', 'signed-out', 'disabled', 'ready'];
 
-/** 版本号逐段按数字比：`2.1.284` < `2.2.0`；非数字的段（`-rc.2`）按 parseInt 截断。 */
+/** Version numbers are compared segment by segment as numbers: `2.1.284` < `2.2.0`. Non-numeric segments (`-rc.2`) are truncated by parseInt. */
 export function compareVersions(a: string | null | undefined, b: string | null | undefined): number {
   const pa = String(a || '0').split('.');
   const pb = String(b || '0').split('.');
@@ -29,12 +29,12 @@ export function compareVersions(a: string | null | undefined, b: string | null |
 
 type Probe = Pick<DriverInfo, 'state' | 'version' | 'latestVersion'>;
 
-/** 装着、知道上游最新版本、而且比本机新。有新版本不是问题，只换一个状态词。 */
+/** Installed, the upstream latest version is known, and it is newer than the local one. A newer version is not a problem; it only changes the status word. */
 export function hasUpdate(driver: Probe): boolean {
   return driver.state !== 'not-installed' && !!driver.version && !!driver.latestVersion && compareVersions(driver.version, driver.latestVersion) < 0;
 }
 
-/** 装着却用不了（出错、版本太旧、没登录）：启用开关置灰，新会话跳过它。 */
+/** Installed but unusable (error, version too old, not logged in): the enable toggle is greyed out and new sessions skip it. */
 export function isBlocked(driver: Pick<DriverInfo, 'state'>): boolean {
   return driver.state === 'error' || driver.state === 'outdated' || driver.state === 'signed-out';
 }
@@ -44,8 +44,8 @@ export function isInstalled(driver: Pick<DriverInfo, 'state'>): boolean {
 }
 
 /**
- * CLI 能用，但它配置里的默认模型这一版不认得（`configModelKnown === false`，model-agent-setup.js:55-58）。
- * 不挡发送，只有选了「Agent 默认模型」的会话会撞上，所以单独一条提示。`latest`：确实有更新的版本时才给。
+ * The CLI works, but the default model in its config is not recognized by this version (`configModelKnown === false`, model-agent-setup.js:55-58).
+ * It does not block sending. Only sessions that chose “Agent default model” run into it, so it gets its own hint. `latest`: given only when a newer version really exists.
  */
 export function configModelGate(
   driver: Pick<DriverInfo, 'state' | 'version' | 'latestVersion' | 'configModel' | 'configModelKnown'>,
@@ -63,8 +63,8 @@ const BADGE_TONE: Record<Exclude<DriverState, 'ready'>, AgentTone> = {
 };
 
 /**
- * 卡头那枚状态词（model-agent-setup.js:73-85）。默认模型要更新的 CLI 优先于「有新版本」。
- * 用户添加的没检测到时说「还没检测」：npx 现取现用的谈不上「安装」（产品设计 §7.6）。
+ * The status word in the card header (model-agent-setup.js:73-85). A CLI whose default model needs updating takes priority over “new version available”.
+ * A user-added agent that has not been detected says “Not detected yet” (还没检测). An agent fetched on demand by npx has nothing to “install” (product design §7.6).
  */
 export function agentBadge(driver: Parameters<typeof configModelGate>[0] & Partial<Pick<DriverInfo, 'source'>>): {
   label: string;
@@ -77,8 +77,8 @@ export function agentBadge(driver: Parameters<typeof configModelGate>[0] & Parti
 }
 
 /**
- * 在终端里登录的命令；Driver 没给就直接起 CLI，它没登录时自己会引导（model-agent-setup.js:340-343）。
- * 用户添加的、由 npx / uvx 现取现用的起它自己的包（不带 ACP 的参数）。
+ * The command that logs in from the terminal. If the Driver does not supply one, the CLI itself is launched, and it guides the user through login when not logged in (model-agent-setup.js:340-343).
+ * For user-added agents fetched on demand by npx / uvx, it launches their own package (without the ACP arguments).
  */
 export function loginCommandOf(driver: Pick<DriverInfo, 'loginCommand' | 'command'> & Partial<Pick<DriverInfo, 'custom'>>): string {
   if (driver.loginCommand) return driver.loginCommand;
@@ -86,8 +86,7 @@ export function loginCommandOf(driver: Pick<DriverInfo, 'loginCommand' | 'comman
 }
 
 /**
- * 问题条的修法（model-agent-setup.js:88-94）：`diagnose` 重新检测并列出排查清单；`upgrade` 展开详情，
- * 升级命令能在应用内运行（brew、npm）时直接弹出运行确认，否则露出命令给用户复制；`login` 打开系统终端运行登录命令。
+ * The fixes for the problem bar (model-agent-setup.js:88-94): `diagnose` re-detects and lists the troubleshooting checklist. `upgrade` expands the details, and when the upgrade command can run inside the app (brew, npm) it pops up a run confirmation directly; otherwise it shows the command for the user to copy. `login` opens the system terminal and runs the login command.
  */
 export type ProblemAction = 'diagnose' | 'upgrade' | 'login';
 
@@ -100,7 +99,7 @@ export interface AgentProblem {
   cta: string;
 }
 
-/** 卡头下面那条问题说明：一句发生了什么、一句怎么办、一颗主按钮（model-agent-setup.js:88-94）。没问题返回 null。 */
+/** The problem line under the card header: one sentence on what happened, one on what to do, and one primary button (model-agent-setup.js:88-94). Returns null when there is no problem. */
 export function agentProblem(
   driver: Pick<DriverInfo, 'state' | 'name' | 'version' | 'minVersion' | 'latestVersion' | 'detail' | 'detailRef' | 'loginCommand' | 'command'>,
 ): AgentProblem | null {
@@ -121,7 +120,7 @@ export function agentProblem(
       kind: 'outdated',
       tone: 'negative',
       title: M.outdatedTitle(name, driver.version || null),
-      // Driver 给了说明就用它（OpenCode 1.x 换了发行包、要改装 @opencode/cli，探测结果里没有单独的字段，只在 detail 里说）。
+      // If the Driver provides an explanation, use it. (OpenCode 1.x switched its distribution package and must be reinstalled as @opencode/cli. The detection result has no separate field for this, so it only says so in detail.)
       body: M.outdatedBody(detail ? detail.trim() : null, driver.minVersion),
       action: 'upgrade',
       cta: M.outdatedCta(driver.latestVersion || driver.minVersion),
@@ -140,7 +139,7 @@ export function agentProblem(
   return null;
 }
 
-// ---- 排查清单 ----
+// ---- Troubleshooting checklist ----
 
 export type DiagnosisStepKey = 'find' | 'run' | 'version' | 'login' | 'models';
 
@@ -152,8 +151,8 @@ export interface DiagnosisStep {
 }
 
 /**
- * 五步按依赖顺序排（model-agent-setup.js:96-117）：前一步不过，后面的没法测，标 skip 而不是 fail——
- * 用户只需要看第一条红的。全部来自探测结果，不另外跑命令。
+ * Five steps in dependency order (model-agent-setup.js:96-117). If a step fails, the later ones cannot be tested, so they are marked skip rather than fail:
+ * the user only needs to look at the first red one. Everything comes from the detection result; no extra commands are run.
  */
 export function diagnose(
   driver: Pick<DriverInfo, 'state' | 'command' | 'executable' | 'version' | 'minVersion' | 'detail' | 'detailRef' | 'account' | 'accountRef' | 'models'>,
@@ -185,32 +184,32 @@ export function diagnose(
   ];
 }
 
-/** 排查结果一句话：全过，或卡在哪一步。 */
+/** The troubleshooting result in one sentence: all passed, or where it got stuck. */
 export function diagnosisVerdict(steps: readonly DiagnosisStep[]): { ok: boolean; text: string } {
   const bad = steps.find((s) => s.state === 'fail');
   return bad ? { ok: false, text: M.verdictFail(bad.label, bad.detail) } : { ok: true, text: M.verdictOk };
 }
 
-// ---- 页顶状态卡与卡片次序 ----
+// ---- Top-of-page status card and card order ----
 
-/** 装了的在前，其余保持 Runtime 给的次序（`DRIVER_IDS` 的顺序，model-agent-setup.js:358-368）。 */
+/** Installed agents come first; the rest keep the order the Runtime gives (the order of `DRIVER_IDS`, model-agent-setup.js:358-368). */
 export function orderDrivers<T extends Pick<DriverInfo, 'state'>>(drivers: readonly T[]): T[] {
   return [...drivers.filter(isInstalled), ...drivers.filter((d) => !isInstalled(d))];
 }
 
 export interface DriverGroups<T> {
-  /** 主列表：检测到的（在前）、常驻的内置几家里没装的、用户添加的（没检测到也不折叠）。 */
+  /** Main list: detected agents (first), built-in agents that are always shown but not installed, and user-added agents (not collapsed even when undetected). */
   main: T[];
-  /** 「更多」折叠段：收进「更多」的四家里没检测到的。装上任何一家它就自己挪进主列表。 */
+  /** The “More” collapsed section: the agents among the four tucked into “More” that are not detected. Once any of them is installed, it moves into the main list by itself. */
   more: T[];
-  /** 内置的家数与用户添加的家数。 */
+  /** The number of built-in agents and the number of user-added agents. */
   builtin: number;
   added: number;
-  /** 检测到的家数。 */
+  /** The number of detected agents. */
   found: number;
 }
 
-/** 完整 Agent 表的分组（model-agent-setup.js `groups`，产品设计 §7.6）。次序保持 Runtime 给的。 */
+/** Grouping of the full agent table (`groups` in model-agent-setup.js, product design §7.6). The order keeps what the Runtime gives. */
 export function groupDrivers<T extends Pick<DriverInfo, 'id' | 'state' | 'source'>>(drivers: readonly T[]): DriverGroups<T> {
   const found = drivers.filter(isInstalled);
   const missing = drivers.filter((d) => !isInstalled(d));
@@ -224,7 +223,7 @@ export function groupDrivers<T extends Pick<DriverInfo, 'id' | 'state' | 'source
   };
 }
 
-/** 「更多」折叠段标题里点名的前三家。 */
+/** The first three agents named in the title of the “More” section. */
 export function moreSummary(more: readonly Pick<DriverInfo, 'name'>[]): string {
   return M.moreSummary(
     more.slice(0, 3).map((d) => d.name),
@@ -234,24 +233,24 @@ export function moreSummary(more: readonly Pick<DriverInfo, 'name'>[]): string {
 
 export interface AgentOverview {
   state: 'ready' | 'attention' | 'off' | 'missing';
-  /** 这句话说的是哪一个 Agent；没检测到任何 Agent 时为 null。 */
+  /** Which agent this sentence is about; null when no agent is detected. */
   driverId: DriverInfo['id'] | null;
   title: string;
   body: string;
-  /** `start` 去新会话，`enable` 启用它，`open` 展开那一张卡。 */
+  /** `start` goes to a new session, `enable` turns it on, `open` expands that card. */
   action: 'start' | 'enable' | 'open' | null;
   cta: string | null;
 }
 
-/** 新会话默认用哪个模型的说法：指定了的用模型名，没指定是「Agent 默认模型」。 */
+/** The wording for which model new sessions use by default: the model name if one was set, otherwise “Agent default model”. */
 export function defaultModelLabel(driver: Pick<DriverInfo, 'id' | 'models' | 'defaultModel'>): string {
-  // 新会话实际用的模型：偏好里的模型消失了就说推荐模型（见 `effectiveDefaultModel`）。
+  // The model new sessions actually use: if the model in the preferences has disappeared, it falls back to the recommended model (see `effectiveDefaultModel`).
   const model = effectiveDefaultModel(driver);
   if (!model) return M.agentDefaultModel;
   return driver.models.find((m) => m.id === model)?.label ?? model;
 }
 
-/** 页顶状态卡（model-agent-setup.js:346-356）：有能用的就说准备好了；否则先说出问题的那一家，再说停用的，最后才是都没装。 */
+/** Top-of-page status card (model-agent-setup.js:346-356): if any agent is usable, it says ready. Otherwise it names the agent with a problem first, then the disabled ones, and only last says none are installed. */
 export function agentOverview(drivers: readonly DriverInfo[]): AgentOverview {
   const list = orderDrivers(drivers);
   const usable = list.filter((d) => d.state === 'ready');
@@ -299,16 +298,15 @@ export function agentOverview(drivers: readonly DriverInfo[]): AgentOverview {
   };
 }
 
-// ---- 安装与升级 ----
+// ---- Install and upgrade ----
 
 type InstallKind = DriverInstallOption['kind'];
 
 const norm = (raw: string | null | undefined) => String(raw ?? '').replace(/\\/g, '/').toLowerCase();
 
 /**
- * 已装那一份归谁管：看**真实位置**（链接解析到底），不看链接本身（model-agent-setup.js:169-223 的简化版）。
- * 只认得出 Driver 给得出命令的三种（官方脚本、Homebrew、npm）；版本管理器的 shim、bun / pnpm / yarn / volta
- * 装的认不出就是 null，让用户自己选——给一条升不到这一份的命令只会再装一份。
+ * Which manager owns the installed copy: check the **real location** (the link resolved all the way), not the link itself (a simplified version of model-agent-setup.js:169-223).
+ * Only the three kinds the Driver can give commands for (official script, Homebrew, npm) are recognized. A copy installed by a version manager’s shim, or by bun / pnpm / yarn / volta, that cannot be recognized is null, leaving the choice to the user. Offering an upgrade command that does not reach this copy would only install another one.
  */
 export function installKindOf(executable: string | null, realExecutable: string | null): InstallKind | null {
   const link = norm(executable);
@@ -329,30 +327,30 @@ export function installKindOf(executable: string | null, realExecutable: string 
 export interface InstallChoice {
   kind: InstallKind;
   label: string;
-  /** 前提，例如 Homebrew、Node.js。 */
+  /** A prerequisite, for example Homebrew or Node.js. */
   needs: string | null;
-  /** 原样展示的命令：没装时是安装命令，装了是升级命令。 */
+  /** The command shown as is: the install command when not installed, the upgrade command when installed. */
   command: string;
-  /** 从网络下载脚本再交给 shell 运行（`curl … | bash`）：提醒用户复制后自己运行。 */
+  /** Downloads a script from the network and hands it to the shell (`curl … | bash`): reminds the user to copy it and run it themselves. */
   downloadsScript: boolean;
   /**
-   * 能在设置页里直接运行（▶，`agents.runSetup`）：只有 brew、npm 这类。官方脚本类（`script`）一律不行，
-   * 连它的 `claude update` 也只给复制——Runtime 按类别拒绝，这里与它一致（设计稿 `S.runnable` 只看 `| bash`）。
+   * Can run directly from the settings page (▶, `agents.runSetup`): only things like brew and npm. Official-script types (`script`) are never allowed.
+   * Even its own `claude update` is copy-only. The Runtime rejects by category, and this matches it (the design mockup’s `S.runnable` only checks for `| bash`).
    */
   runnable: boolean;
 }
 
 export interface InstallPlan {
-  /** 装了就是升级。 */
+  /** If installed, it is an upgrade. */
   upgrading: boolean;
   choices: InstallChoice[];
-  /** 从可执行文件的真实位置认出来的安装方式（只在升级、且方式表里有它时给）。 */
+  /** The install method recognized from the executable’s real location (given only when upgrading, and only when the method table includes it). */
   detected: InstallKind | null;
-  /** 分段起手选哪一种：认出来的那一种，否则第一种。 */
+  /** The option the segmented control starts on: the recognized one, otherwise the first. */
   initial: InstallKind | null;
 }
 
-/** 安装或升级这一段给哪些命令（model-agent-setup.js:260-278）：命令一律用 Driver 给的原文，不推导新命令。 */
+/** Which commands this install or upgrade section offers (model-agent-setup.js:260-278). Commands always use the Driver’s exact text; no new commands are derived. */
 export function installPlan(driver: Pick<DriverInfo, 'state' | 'install' | 'executable' | 'realExecutable'>): InstallPlan {
   const upgrading = isInstalled(driver);
   const choices = driver.install.map((option) => {
@@ -372,14 +370,14 @@ export function installPlan(driver: Pick<DriverInfo, 'state' | 'install' | 'exec
   return { upgrading, choices, detected, initial: detected ?? choices[0]?.kind ?? null };
 }
 
-// ---- 应用内运行（agents.runSetup） ----
+// ---- Run inside the app (agents.runSetup) ----
 
-/** 这个 Agent 最近的一次运行（快照与事件都是新的在前）。 */
+/** This agent’s most recent run (both the snapshot and the events list the newest first). */
 export function latestSetupRun(runs: readonly AgentSetupRun[], driverId: DriverInfo['id']): AgentSetupRun | null {
   return runs.find((run) => run.driverId === driverId) ?? null;
 }
 
-/** 日志框的内容：第一行是 `$ 命令`（设计稿 useCmdRun），之后是输出；更早的行被丢掉时先说一句。 */
+/** Log box content: the first line is `$ command` (design mockup useCmdRun), followed by the output. If earlier lines were dropped, say so first. */
 export function setupLog(run: Pick<AgentSetupRun, 'command' | 'output' | 'droppedLines'>): string {
   const head = [`$ ${run.command}`];
   if (run.droppedLines) head.push(M.logDropped(run.droppedLines));
@@ -387,8 +385,8 @@ export function setupLog(run: Pick<AgentSetupRun, 'command' | 'output' | 'droppe
 }
 
 /**
- * 运行成功、重新探测之后的那句 toast（settings-agent-provider.jsx:126-139）。失败与停止不弹（结果留在日志框里）。
- * 装好了但还是没检测到（例如装进了不在 PATH 上的目录）时，提示去手动指定位置。
+ * The toast message shown after a successful run and re-detection (settings-agent-provider.jsx:126-139). Failures and stops do not pop up a toast; the result stays in the log box.
+ * When it is installed but still not detected (for example, it was installed into a directory that is not on PATH), the message prompts the user to set the location manually.
  */
 export function setupDoneToast(
   run: Pick<AgentSetupRun, 'action' | 'state'>,
@@ -403,30 +401,30 @@ export function setupDoneToast(
   return { tone: 'positive', text: M.doneUpgraded(driver.name, version) };
 }
 
-// ---- 默认模型与强度 ----
+// ---- Default model and effort ----
 
-/** Picker 的键必须是字符串：「Agent 默认模型」（不传模型）与「模型默认强度」各用一个不会撞上原生 id 的哨兵。 */
+/** Picker keys must be strings. “Agent default model” (no model passed) and “Default model effort” each use a sentinel that will not collide with a native id. */
 export const AGENT_DEFAULT_MODEL_KEY = '__agent-default__';
 export const MODEL_DEFAULT_EFFORT_KEY = '__model-default__';
 
-/** 模型的定位（model-agent-setup.js:122-126）。 */
+/** How a model is positioned (model-agent-setup.js:122-126). */
 export const TIER_COPY: Record<ModelTier, { label: string; description: string }> = live(() => M.tier);
 
 export interface ModelChoice {
   key: string;
-  /** 交给 `agents.configure` 的 `defaultModel`；null = Agent 默认模型。 */
+  /** The `defaultModel` passed to `agents.configure`; null means the Agent default model. */
   model: string | null;
   label: string;
   tag: string | null;
   description: string | null;
-  /** 偏好里的模型已经不在模型表里：原样露出、注明新会话改用推荐模型，不能再选。 */
+  /** The model in the preferences is no longer in the model list: it is shown as is, noted that new sessions will use the recommended model instead, and cannot be selected anymore. */
   missing: boolean;
 }
 
 /**
- * 默认模型下拉：「Agent 默认模型」打头，再是模型表（与会话里的模型菜单同一个次序，设计稿 model-agent.js:712-724）；
- * 偏好里的模型从模型表里消失了也要原样露出来。模型表为空时只有「Agent 默认模型」一项。
- * 「推荐」只标推荐的那一个（设计稿 model-agent-setup.js `modelChoices`，见 `modelTierOf`）。
+ * The default model dropdown starts with “Agent default model”, followed by the model list (same order as the model menu in sessions, design mockup model-agent.js:712-724).
+ * A model in the preferences that has disappeared from the model list is still shown as is. When the model list is empty, there is only the “Agent default model” item.
+ * Only the one that is recommended gets the “Recommended” tag (design mockup model-agent-setup.js `modelChoices`, see `modelTierOf`).
  */
 export function modelChoices(
   driver: Pick<DriverInfo, 'id' | 'state' | 'version' | 'latestVersion' | 'models' | 'defaultModel' | 'configModel' | 'configModelKnown'>,
@@ -454,12 +452,12 @@ export function modelChoices(
   return rows;
 }
 
-/** 选中的是新会话实际会用的模型：偏好里的模型消失了就是推荐模型，不选那条停用的「已不在模型表里」。 */
+/** The selected item is the model new sessions will actually use. If the preferred model has disappeared, it is the recommended model, and the disabled “No longer in the model list” entry is not selected. */
 export function selectedModelKey(driver: Pick<DriverInfo, 'id' | 'models' | 'defaultModel'>): string {
   return effectiveDefaultModel(driver) ?? AGENT_DEFAULT_MODEL_KEY;
 }
 
-/** 推理强度的名字；认不得的 id 用 Driver 给的标签。 */
+/** Names of reasoning effort levels; an unrecognized id uses the label the Driver provides. */
 export const EFFORT_LABEL: Record<string, string> = live(() => M.effort);
 
 export function effortLabel(effort: { id: string; label: string }): string {
@@ -474,8 +472,8 @@ export interface EffortChoice {
 }
 
 /**
- * 默认强度下拉。只有指定了模型、而且这个模型分强度时才有；否则返回 null，界面不显示这一项
- * （Agent 默认模型由 CLI 自己决定强度）。
+ * The default effort dropdown. It exists only when a model has been specified and that model has effort levels. Otherwise it returns null, and the UI does not show this item
+ * (for the Agent default model, the CLI decides the effort itself).
  */
 export function effortChoices(driver: Pick<DriverInfo, 'id' | 'models' | 'defaultModel' | 'defaultEffort'>): EffortChoice[] | null {
   const current = effectiveDefaultModel(driver);
@@ -496,16 +494,16 @@ export function selectedEffortKey(driver: Pick<DriverInfo, 'defaultEffort'>): st
   return driver.defaultEffort ?? MODEL_DEFAULT_EFFORT_KEY;
 }
 
-// ---- 「总是允许」的规则 ----
+// ---- “Always allow” rules ----
 
 export interface RulesView {
-  /** 去重、去掉空串，保持添加顺序；移除时原样交回 `agents.removeRule`。 */
+  /** Removes duplicates and empty strings, keeping the order they were added. When removed, the value is passed back unchanged to `agents.removeRule`. */
   rules: string[];
   title: string;
   body: string;
 }
 
-/** 规则列表（page-settings-agent.jsx:162-166）。 */
+/** The rule list (page-settings-agent.jsx:162-166). */
 export function rulesView(rules: readonly string[] | null | undefined): RulesView {
   const list = [...new Set((rules ?? []).filter((r) => r.length > 0))];
   return {
@@ -515,9 +513,9 @@ export function rulesView(rules: readonly string[] | null | undefined): RulesVie
   };
 }
 
-// ---- 高级 › 技术信息 ----
+// ---- Advanced › Technical info ----
 
-/** 「复制诊断信息」的文本：每个 Agent 一行，状态、版本与路径（page-settings-agent.jsx:174-176）。 */
+/** The text for “Copy diagnostic info”: one line per agent, with its status, version and path (page-settings-agent.jsx:174-176). */
 export function diagnosticsText(drivers: readonly Pick<DriverInfo, 'name' | 'state' | 'version' | 'executable' | 'realExecutable'>[]): string {
   return drivers
     .map((d) => {

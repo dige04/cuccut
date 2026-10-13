@@ -16,13 +16,9 @@ import { resolveBuiltinTemplatesDir } from './templates/template-catalog.ts';
 import { resolveEngineHostCommand } from './videos/engine-host.ts';
 
 /**
- * Runtime 的自检（`runtime --self-check [--probe]`）：不启动 Runtime，只用它找东西的同一批解析函数，报告随应用分发的原生程序
- * （Worker、凭据助手）、内置模板与 skill、模型数据、Web 客户端与 `editor.wasm` 解析到哪里、在不在。给了 `probe` 时再把每个原生程序
- * 起一次、走一遍它的握手，证明在这台机器上能启动（缺 DLL、架构不对都在这里暴露）；代码包的 Electron 离屏宿主也起一次、等到 ready 再关掉
- * （`probeCompositionHost`），打包后走的是主进程入口的 `--composition-host` 分支。
+ * Self-check of the Runtime (`runtime --self-check [--probe]`): without starting the Runtime, it uses the same resolution functions the Runtime uses to find things, and reports where the native programs shipped with the app (Worker, credential helper), the built-in templates and skills, the model data, the Web client and `editor.wasm` resolve to, and whether they exist. When `probe` is given, it also launches each native program once and goes through its handshake, proving it can start on this machine (a missing DLL or a wrong architecture shows up here); the Electron off-screen host of the code package is also launched once, waited on until `ready`, then closed (`probeCompositionHost`). In a packaged app, this goes through the `--composition-host` branch of the main process entry.
  *
- * 主要给打包产物用：桌面应用的检查脚本（`apps/desktop/tools/check-packaged-app.mjs`）以应用的可执行文件按 Node 方式运行打进
- * asar 的 `runtime.js`，环境变量与主进程启动 Runtime 时给的一样。不碰 Runtime Home、不联网。
+ * Mainly for packaged builds: the desktop app's check script (`apps/desktop/tools/check-packaged-app.mjs`) runs the app's executable in Node mode on the `runtime.js` packed into the asar, with the same environment variables the main process gives when it starts the Runtime. It does not touch the Runtime Home and makes no network calls.
  */
 
 export interface SelfCheckProbe {
@@ -38,7 +34,7 @@ export interface SelfCheckReport {
   dirs: Record<string, string | null>;
   editorWasm: string | null;
   probes: Record<string, SelfCheckProbe>;
-  /** 不对的项；空表示通过。 */
+  /** The items that are wrong; empty means pass. */
   problems: string[];
 }
 
@@ -46,11 +42,11 @@ const PROBE_TIMEOUT_MS = 20_000;
 
 interface ProbeSpec {
   args: string[];
-  /** 写给它的一行请求；null 表示不写，只关掉 stdin 看退出码。 */
+  /** The one-line request written to it; null means write nothing, and only close stdin and check the exit code. */
   request: unknown;
-  /** 回复算不算成功。 */
+  /** Whether a reply counts as success. */
   accept?: (reply: unknown) => boolean;
-  /** 不写请求时期望的退出码。 */
+  /** The expected exit code when no request is written. */
   exitCode?: number;
 }
 
@@ -71,7 +67,7 @@ function probe(command: string, spec: ProbeSpec): Promise<SelfCheckProbe> {
       stderr = (stderr + chunk.toString('utf8')).slice(-2000);
     });
     child.once('error', (error) => finish({ ok: false, detail: `failed to start: ${error.message}` }));
-    // 用 close（stdio 都关了之后）而不是 exit：答一行就退出的程序，回复要先读到。Windows 上缺 DLL 是 0xC0000135（-1073741515）。
+    // Use close (after all stdio is closed) rather than exit: for a program that quits after answering one line, the reply must be read first. On Windows, a missing DLL gives 0xC0000135 (-1073741515).
     child.once('close', (code, signal) => {
       if (spec.request === null && code === spec.exitCode) finish({ ok: true, detail: `exit code ${code}` });
       else finish({ ok: false, detail: `exited (${signal ?? `exit code ${code}`}): ${stderr.trim()}` });
@@ -96,8 +92,8 @@ function probe(command: string, spec: ProbeSpec): Promise<SelfCheckProbe> {
 }
 
 /**
- * 离屏宿主：按 Runtime 同样的方式（`resolveElectronBinary`、`CompositionHost.start` 的默认超时）拉起，等到 `ready` 再关掉。
- * 宿主脚本与它的 Electron 数据目录写在系统临时目录（不给 `cacheDir`），不碰 Runtime Home。
+ * Off-screen host: launched the same way the Runtime does (`resolveElectronBinary`, the default timeout of `CompositionHost.start`), and closed once `ready` arrives.
+ * The host script and its Electron data directory are written to the system temp directory (no `cacheDir` given), and do not touch the Runtime Home.
  */
 export async function probeCompositionHost(env: NodeJS.ProcessEnv = process.env): Promise<SelfCheckProbe> {
   if (!resolveElectronBinary(env)) return { ok: false, detail: 'Electron was not found; set CUCCUT_ELECTRON to the Electron executable' };
@@ -116,7 +112,7 @@ export async function probeCompositionHost(env: NodeJS.ProcessEnv = process.env)
   return { ok: true, detail: `ready in ${readyMs} ms` };
 }
 
-/** JSON 行 Worker 的回复：有 `result`、没有 `error`。 */
+/** A reply from the JSON-line Worker: has `result` and no `error`. */
 function hasResult(reply: unknown): boolean {
   return typeof reply === 'object' && reply !== null && 'result' in reply && !('error' in reply && (reply as { error?: unknown }).error);
 }
@@ -130,7 +126,7 @@ export async function runtimeSelfCheck(options: { probe?: boolean; env?: NodeJS.
     'model-worker': resolveModelWorkerCommand(env)?.command ?? null,
     'speech-worker': resolveSpeechWorkerCommand(engineHost, env),
     'credential-helper': resolveCredentialHelperCommand(env)?.command ?? null,
-    // 代码包的离屏宿主用的 Electron：打包后是应用自己的可执行文件。
+    // The Electron used by the code package's off-screen host: in a packaged app, it is the app's own executable.
     electron: resolveElectronBinary(env),
   };
   const dirs: Record<string, string | null> = {
@@ -166,9 +162,9 @@ export async function runtimeSelfCheck(options: { probe?: boolean; env?: NodeJS.
         accept: hasResult,
       },
       'speech-worker': { args: [], request: { id: 1, method: 'hello', params: {} }, accept: hasResult },
-      // Render Worker 每次一个命令、没有握手：不给参数时打印用法并以 2 退出，足以证明能启动。
+      // The Render Worker takes one command at a time and has no handshake: with no arguments it prints usage and exits with 2, which is enough to prove it can start.
       'export-worker': { args: [], request: null, exitCode: 2 },
-      // 凭据助手答一行就退出。macOS 以外答 unsupported 也算能启动：凭据不可用由 Runtime 如实报告（架构设计 §6.8）。
+      // The credential helper answers one line and exits. Answering unsupported outside macOS also counts as able to start: credential unavailability is reported honestly by the Runtime (architecture design §6.8).
       'credential-helper': {
         args: [],
         request: { op: 'has', key: 'cuccut.self-check' },

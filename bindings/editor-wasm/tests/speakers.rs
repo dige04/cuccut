@@ -1,10 +1,10 @@
-//! 已有转写的识别说话人：提案（聚类复用已有说话人、新说话人编号、译文重切的试算）与应用（改名、切句、译文重切）。
+//! Identified speakers in an existing transcript: the proposal (reuse of existing speakers by clustering, numbering of new speakers, dry run of translation re-splitting) and apply (renaming, sentence splitting, translation re-splitting).
 
 use editor_wasm::speakers::{apply_speakers, speaker_proposal};
 use editor_wasm::speech_sentences;
 use serde_json::{Value, json};
 
-/// 两句：「Hello there, how are you?」与「Fine.」；词时间连续（不因停顿断句）。
+/// Two sentences: “Hello there, how are you?” and “Fine.”; word times are continuous (not split at pauses).
 fn speech(speaker: Option<&str>) -> Value {
     let texts = ["Hello", "there,", "how", "are", "you?", "Fine."];
     let words: Vec<Value> = texts
@@ -12,7 +12,7 @@ fn speech(speaker: Option<&str>) -> Value {
         .enumerate()
         .map(|(index, text)| {
             let start = index as i64 * 500;
-            // 前两词与末词长，中间三词短：聚类 A 与已有说话人重叠最多。
+            // The first two words and the last word are long; the middle three are short: cluster A overlaps most with the existing speaker.
             let end = start + if (2..5).contains(&index) { 200 } else { 450 };
             let mut word = json!({ "id": format!("w{index}"), "start": start, "end": end, "text": text });
             if let Some(speaker) = speaker {
@@ -28,7 +28,7 @@ fn speech(speaker: Option<&str>) -> Value {
     body
 }
 
-/// 每句一条已审的中文译文，指纹按句子规则现算（新鲜的译文）。
+/// One reviewed Chinese translation per sentence; fingerprints are computed from the sentence rules (fresh translations).
 fn translation(speech: &Value) -> Value {
     let sentences: Value = serde_json::from_str(&speech_sentences(speech.to_string().as_bytes()).unwrap()).unwrap();
     let texts = ["你好，你最近怎么样？", "还好。"];
@@ -121,7 +121,7 @@ fn a_new_speaker_boundary_splits_the_sentence_and_its_translation_without_retran
             .collect::<Vec<_>>(),
         [
             (json!("a"), json!("说话人 1"), json!(false)),
-            // 「说话人 1」这个名字已被占用：ID 与名字都往后排。
+            // The name “说话人 1” (Speaker 1) is already taken: both the ID and the name move on to the next free value.
             (json!("spk-2"), json!("说话人 2"), json!(true)),
         ]
     );
@@ -155,7 +155,7 @@ fn a_new_speaker_boundary_splits_the_sentence_and_its_translation_without_retran
     assert_eq!(applied["sentencesSplit"], 1);
     assert_eq!(applied["dropped"], json!([]));
 
-    // 译文：原来的第一句切成两句，各自带上新句子的指纹，拼起来还是原来的译文。
+    // Translation: the original first sentence was split into two, each carrying the new sentence's fingerprint; joined together they still make the original translation.
     let translations = applied["translations"].as_array().unwrap();
     assert_eq!(translations.len(), 1);
     let units = translations[0]["units"].as_array().unwrap();
@@ -195,7 +195,7 @@ fn a_transcript_without_speakers_gets_numbered_speakers_in_order_of_appearance()
         speakers.iter().map(|s| (s["id"].clone(), s["name"].clone())).collect::<Vec<_>>(),
         [(json!("spk-1"), json!("说话人 1")), (json!("spk-2"), json!("说话人 2"))]
     );
-    // 拿不到证据的词保持原样（没有说话人）。
+    // Words with no evidence are kept as they are (no speaker).
     assert!(proposal["wordSpeakers"].get("w4").is_none());
     assert_eq!(proposal["relabeled"], 5);
     assert_eq!(proposal["translationsSplit"], 0);

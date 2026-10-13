@@ -1,17 +1,16 @@
 /**
- * 旧样式（`cuccut.legacy-studio-style/0.1` 的字幕与元素模型文字实例的 `style`）解成一行文字的画法。
+ * Converts an old style (`cuccut.legacy-studio-style/0.1`: the `style` of caption and element-model text instances) into how one line of text is drawn.
  *
- * 照旧版渲染器（ccut-subtitle-render `resolve_line_style`）的口径：字号以 540 短边为基准随画布缩放，
- * 描边、阴影、底板留白都按这一行自己的字号折算。旧数据原样保存，所以这里读它的原始字段。
+ * It follows the old renderer's rules (ccut-subtitle-render `resolve_line_style`): the font size scales with the canvas, based on a 540 short side. The outline, shadow and background padding are converted per line, based on that line's own font size. Old data is kept as it is, so the raw fields are read directly here.
  */
 
 export type Json = Record<string, unknown>;
 export type LineKind = 'original' | 'translation';
 
-/** Studio 字幕样式（旧版字幕的样式文档）的 schema。 */
+/** Schema of the Studio caption style (the style document of old captions). */
 export const STUDIO_STYLE = 'cuccut.legacy-studio-style/0.1';
 
-/** 颜色，`a` 是不透明度（0–1）。 */
+/** Color; `a` is opacity (0–1). */
 export interface Rgba {
   r: number;
   g: number;
@@ -20,9 +19,9 @@ export interface Rgba {
 }
 
 export interface LineStyle {
-  /** CSS 的 font-family（已带回退）。 */
+  /** CSS font-family (fallbacks already included). */
   fontFamily: string;
-  /** 字号（序列像素）。 */
+  /** Font size (sequence pixels). */
   fontSize: number;
   fontWeight: number;
   italic: boolean;
@@ -32,13 +31,13 @@ export interface LineStyle {
   lineHeight: number;
   textTransform: string;
   textAlign: 'left' | 'center' | 'right';
-  /** 描边：`width` 是整条居中线宽。 */
+  /** Outline: `width` is the full centered line width. */
   outline: { color: string; width: number } | null;
-  /** 阴影或发光（旧版两者共用一个槽位，发光优先）。 */
+  /** Shadow or glow (the old version shared one slot for both; glow takes priority). */
   effect: { color: string; x: number; y: number; blur: number } | null;
-  /** 底板：`block` 是整块一张（否则逐行一张），`minWidth` 是它的最小宽。 */
+  /** Background plate: `block` means one plate for the whole block (otherwise one plate per line); `minWidth` is its minimum width. */
   plate: { color: string; radius: number; block: boolean; minWidth: number } | null;
-  /** 底板的横竖留白：底板关掉时照样撑开字幕行的槽位。 */
+  /** Horizontal and vertical padding of the plate. The caption line's slot is still sized when the plate is turned off. */
   padH: number;
   padV: number;
 }
@@ -55,7 +54,7 @@ const FONT_ALIASES: Record<string, string> = {
   lexend: 'Lexend Deca',
   serif: 'Source Serif 4',
 };
-/** 本机没有的字体落到系统字体上；中文走苹方 / 思源黑体。 */
+/** Fonts not available locally fall back to system fonts; Chinese text uses PingFang / Source Han Sans (思源黑体). */
 const FALLBACK = '"PingFang SC", "Noto Sans SC", system-ui, sans-serif';
 
 export function fontStack(value: unknown): string {
@@ -64,14 +63,14 @@ export function fontStack(value: unknown): string {
   return !name || name === 'system' ? FALLBACK : `"${name}", ${FALLBACK}`;
 }
 
-/** 文字行的样式：根样式叠上 `origStyle` / `transStyle` 的覆盖。 */
+/** Style of a text line: the root style with the overrides of `origStyle` / `transStyle` layered on top. */
 export function mergedLineStyle(root: Json, kind: LineKind): Json {
   const overrides = root[kind === 'original' ? 'origStyle' : 'transStyle'];
   return isObject(overrides) ? { ...root, ...overrides } : root;
 }
 
 /**
- * 一行文字的画法。`canvas` 是序列画布；`compactOriginal` 是双语时原文按 `bilingualOrigScale` 缩小。
+ * Drawing of one line of text. `canvas` is the sequence canvas. `compactOriginal` means that in bilingual mode the original text is scaled down by `bilingualOrigScale`.
  */
 export function resolveLineStyle(
   root: Json,
@@ -169,7 +168,7 @@ export function resolveLineStyle(
 const WHITE: Rgba = { r: 255, g: 255, b: 255, a: 1 };
 const BLACK: Rgba = { r: 0, g: 0, b: 0, a: 1 };
 
-/** `#rgb`、`#rgba`、`#rrggbb`、`#rrggbbaa`、`rgb()`、`rgba()` 与 `transparent`；认不出是 null。 */
+/** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()` and `transparent`; returns null if unrecognized. */
 export function parseColor(value: unknown): Rgba | null {
   if (typeof value !== 'string') return null;
   const input = value.trim().toLowerCase();
@@ -195,7 +194,7 @@ export function css({ r, g, b, a }: Rgba): string {
   return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${Number(a.toFixed(4))})`;
 }
 
-/** 文字的字形变换（`uppercase` / `lowercase` / `capitalize`）。 */
+/** Text case transform (`uppercase` / `lowercase` / `capitalize`). */
 export function transformText(text: string, transform: string): string {
   if (transform === 'uppercase') return text.toUpperCase();
   if (transform === 'lowercase') return text.toLowerCase();
@@ -212,7 +211,7 @@ export function weightOf(value: unknown): number {
   return { medium: 500, semibold: 600, bold: 700, extrabold: 800, heavy: 800, black: 900 }[value] ?? 400;
 }
 
-/** 旧版判断「看得见」的口径：透明度不到 252/255。 */
+/** The old version's rule for “visible”: opacity below 252/255. */
 function visible(color: Rgba): boolean {
   return color.a > 3 / 255;
 }

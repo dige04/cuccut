@@ -148,7 +148,7 @@ describe('交换文件的导入与导出', () => {
   };
 
   it('按内容识别，不看扩展名', async () => {
-    // 术语表放在 .png 里，图片放在 .md 里。
+    // Glossary inside a .png, image inside a .md.
     const glossary = await importFile('terms.png', encodeGlossaryMarkdown(translation));
     expect(glossary).toMatchObject({ library: 'glossaries', content: translation });
     const image = await importFile('logo.md', PNG);
@@ -219,12 +219,12 @@ describe('交换文件的导入与导出', () => {
     expect((await writeLibraryExport(store, voice, packageFile)).format).toBe('voice-package');
     const json = JSON.parse(await fs.readFile(packageFile, 'utf8'));
     expect(json).toMatchObject({ format: 'cuccut.voice-package', version: 1, reference: { mediaType: 'audio/wav', fileName: 'ref.wav' } });
-    // 克隆不导出。
+    // Clones are not exported.
     expect(JSON.stringify(json)).not.toContain('v-1');
 
     const back = await importFile('whatever.zip', await fs.readFile(packageFile));
     expect(back.library).toBe('voices');
-    // 内容（含授权时间与参考录音的摘要）与原来的相同；克隆没有带过来。
+    // Content (including the consent time and the digest of the reference recording) is the same as before. The clone was not carried over.
     expect(back.contentHash).toBe(voice.contentHash);
     expect(back.clones).toEqual({});
 

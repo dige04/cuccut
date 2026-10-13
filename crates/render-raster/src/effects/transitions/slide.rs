@@ -1,7 +1,6 @@
-//! `transition.slide@1`：两张画面一起朝 `direction` 推走一整屏。
+//! `transition.slide@1`: the two pictures are pushed together in `direction` by a full screen.
 //!
-//! 每个输出像素是**整像素拷贝**（没有混合、没有重采样），因此这条转场在
-//! 任何 progress 上都不引入新颜色，端点自然逐字节等于输入。
+//! Each output pixel is a **whole-pixel copy** (no blending, no resampling). The transition therefore introduces no new colors at any progress, and the endpoints equal the input byte for byte.
 
 use super::Direction;
 
@@ -20,13 +19,13 @@ pub fn slide(
     } else {
         f64::from(height)
     };
-    // 位移取整：整像素拷贝的前提。
+    // The offset is rounded to integers. Whole-pixel copies require this.
     let shift = (progress * span).round() as i64;
     let (w, h) = (width as i64, height as i64);
 
     for y in 0..h {
         for x in 0..w {
-            // `u` 是沿推进方向的坐标，`span_i` 是该轴长度。
+            // `u` is the coordinate along the push direction. `span_i` is the length of that axis.
             let (u, span_i) = match direction {
                 Direction::Left => (x, w),
                 Direction::Right => (w - 1 - x, w),
@@ -34,7 +33,7 @@ pub fn slide(
                 Direction::Down => (h - 1 - y, h),
             };
             let out_offset = ((y * w + x) * 4) as usize;
-            // 前 `span − shift` 列还是离场画面（整体前移 shift），其后是入场画面。
+            // The first `span − shift` columns are still the outgoing picture (moved forward by `shift`). The rest is the incoming picture.
             let (source, source_u) = if u < span_i - shift {
                 (from, u + shift)
             } else {

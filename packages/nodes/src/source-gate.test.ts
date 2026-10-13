@@ -44,9 +44,9 @@ describe('来源门', () => {
     '::2',
     '::ffff:8.8.8.8',
     '::ffff:0808:0808',
-    // IPv4 兼容（已废弃）不是映射：不按 IPv4 判断。
+    // IPv4-compatible (deprecated) is not a mapping: it is not judged as IPv4.
     '::127.0.0.1',
-    // NAT64 前缀里嵌着私有地址也不行。
+    // An IPv4 address embedded in a NAT64 prefix is not allowed either.
     '64:ff9b::192.168.1.1',
     'fec0::1',
     'ff02::1',

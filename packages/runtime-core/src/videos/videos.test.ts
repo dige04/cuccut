@@ -13,8 +13,8 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { resolveEngineHostCommand } from './engine-host.ts';
 
 /**
- * 端到端：真实的 Runtime、网关、客户端与 Rust 视频引擎进程。
- * 需要先 `npm run build:engine`，素材用 ffmpeg 现场生成；缺任何一个就跳过（并在输出里说明）。
+ * End to end: the real Runtime, gateway, client, and Rust video engine process.
+ * Requires `npm run build:engine` first. Media is generated on the spot with ffmpeg; if either is missing, skip (and say so in the output).
  */
 
 const engine = resolveEngineHostCommand();
@@ -29,7 +29,7 @@ const ffmpeg = (() => {
 if (!engine) console.warn('跳过视频端到端测试：没有构建 engine-host（npm run build:engine）');
 if (!ffmpeg) console.warn('跳过视频端到端测试：没有 ffmpeg');
 
-/** 直接读视频库的 meta 表（只读）：所属项目与曾用的 videoId 不在公共协议里。别的读者（Space 的扫描、引擎）正占着锁时等它放开。 */
+/** Reads the video library's meta table directly (read-only): the owning project and previously used videoId are not in the public protocol. When another reader (Space's scan, the engine) holds the lock, wait for it to be released. */
 function videoMeta(videoDir: string): Record<string, string | undefined> {
   const db = new DatabaseSync(path.join(videoDir, 'video.db'), { readOnly: true, timeout: 5000 });
   try {
@@ -126,7 +126,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     return next;
   }
 
-  /** 经订阅维护的镜像，与界面拿到的一致。 */
+  /** A mirror kept up to date by subscription, consistent with what the UI gets. */
   function watch(target: CucCutClient, videoId: string) {
     let current: VideoTopicSnapshot | null = null;
     const events: VideoTopicEvent['type'][] = [];
@@ -177,13 +177,13 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await fs.writeFile(orphan, 'orphan');
     await fs.writeFile(fresh, 'being written');
 
-    // 有租约：打开者走了也不关闭，不清理。
+    // With a lease: the opener leaving does not close it, and it is not cleaned up.
     runtime.videos.retain(ref.videoId);
     await client.request('videos.close', { videoId: ref.videoId });
     expect(runtime.videos.mirror(ref.videoId)).not.toBeNull();
     await expect(fs.stat(orphan)).resolves.toBeTruthy();
 
-    // 租约放下后按宽限期关闭，关闭前清理。
+    // Once the lease is released, close after the grace period, cleaning up before closing.
     runtime.videos.release(ref.videoId);
     await until(() => runtime.videos.mirror(ref.videoId) === null);
     await until(() => !existsSync(orphan));
@@ -202,15 +202,15 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await view.ready;
     const { receipt, replayed } = await importClip(ref.videoId, snapshot.video.revision);
     expect(replayed).toBe(false);
-    // 引擎起的修改名是英文与引用，界面按读者的语言显示（命令与协议规范 §3.1）。
+    // The rename the engine makes is in English with a reference; the UI shows it in the reader's language (commands and protocol spec §3.1).
     expect([receipt.label, receipt.labelRef]).toEqual(['Add clip', { key: 'engine.labelAddClip' }]);
     expect(receipt.actor).toEqual({ kind: 'user', id: 'user_local' });
-    // 事件先于响应：拿到回执时镜像已经是新版本（产品设计：收到回执之前不显示「已保存」）。
+    // Events come before the response: when the receipt arrives, the mirror is already at the new version (product design: “Saved” is not shown before the receipt arrives).
     expect(view.get()!.video.revision).toBe(receipt.videoRevision);
     expect(view.get()!.eventSeq).toBe(receipt.eventSeq);
     expect(runtime.videos.mirror(ref.videoId)).toEqual(view.get());
 
-    // 关掉再打开：引擎从磁盘读出的快照与镜像一致。
+    // Close and reopen: the snapshot the engine reads from disk matches the mirror.
     const before = view.get()!;
     await client.request('videos.close', { videoId: ref.videoId });
     expect(runtime.videos.mirror(ref.videoId)).toBeNull();
@@ -220,7 +220,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(reopened.ref.path).toBe(ref.path);
     expect(reopened.snapshot).toEqual(before);
 
-    // Space 把视频目录列成一个条目。
+    // Space lists the video directory as one entry.
     await runtime.space.rescan();
     const entries = runtime.space.snapshot().entries.filter((e) => e.source.projectId === project.id);
     expect(entries.map((e) => [e.kind, e.relPath])).toEqual([['video', '第一部']]);
@@ -367,7 +367,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await expect(client.request('documents.read', { videoId: ref.videoId, documentId: 'doc_missing' })).rejects.toThrow();
   });
 
-  /** 视频目录 `blobs/` 下复制进来的 bytes（不含 `.staging`）。 */
+  /** Bytes copied in under the video directory's `blobs/` (excluding `.staging`). */
   async function collectedBlobs(videoDir: string): Promise<string[]> {
     const names = await fs.readdir(path.join(videoDir, 'blobs')).catch(() => [] as string[]);
     return names.filter((name) => name !== '.staging');
@@ -393,7 +393,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     const added = await importClip(ref.videoId, snapshot.video.revision);
     const assetId = added.receipt.createdIds.find((id) => id.startsWith('asset'))!;
     const [opener] = runtime.videos.usage(ref.videoId)!.openers;
-    // 请求先到引擎、还没回话时关掉视频（空闲关闭就是这样落在一批 media.resolve 中间的）：等一轮事件循环让它先发出去。
+    // A request reached the engine and the video is closed before it replies (this is how idle close lands in the middle of a batch of media.resolve): wait one event-loop turn so it is sent out first.
     const refused = rejection(runtime.videos.assetFile(ref.videoId, assetId));
     await new Promise((resolve) => setImmediate(resolve));
     await runtime.videos.close(ref.videoId, { connectionId: opener!, kind: 'desktop', name: 'test' });
@@ -421,7 +421,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     const handle = await client.request('media.resolve', { videoId: ref.videoId, assetId });
     expect((await fetch(handle.url)).status).toBe(200);
 
-    // 显式 managed 要求绝对路径。
+    // An explicit managed path requires an absolute path.
     const relative = await rejection(
       client.request('edits.apply', {
         videoId: ref.videoId,
@@ -509,7 +509,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect([handle.fileName, handle.mimeType]).toEqual(['alias.mp4', 'video/mp4']);
     expect((await fetch(handle.url)).status).toBe(200);
 
-    // 换成指向一份同样长度、却不是媒体的文件：引擎的长度核对拦不住，扩展名不对就不放行。
+    // Swapped for a file of the same length that is not media: the engine's length check cannot catch it, and a wrong extension is not allowed through.
     const secret = path.join(fixtures, 'secret.txt');
     await fs.writeFile(secret, Buffer.alloc((await fs.stat(clip)).size, 0x61));
     await fs.rm(alias);
@@ -544,13 +544,13 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     const body = missing.details as EngineErrorBody;
     expect(body.code).toBe('ASSET_MISSING');
     expect(body.details).toMatchObject({ reason: 'missing', path: away });
-    // 不必等到取用失败：素材状态直接列出缺失的版本，收进视频的不在其中。
+    // No need to wait until fetching fails: the asset status lists the missing versions directly; the ones collected into the video are not among them.
     expect(await client.request('videos.assetStatus', { videoId: ref.videoId })).toEqual({
       missing: [{ assetId: imported.receipt.refs!.away!, revision: '1', reason: 'missing', path: away }],
     });
     const handle = await client.request('media.resolve', { videoId: ref.videoId, assetId: imported.receipt.refs!.kept! });
     expect((await fetch(handle.url)).status).toBe(200);
-    // 照样能编辑。
+    // Still editable.
     await client.request('edits.apply', {
       videoId: ref.videoId,
       commandId: newId('cmd'),
@@ -578,7 +578,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     const assets = runtime.videos.mirror(ref.videoId)!.video.assets;
     const storageOf = (id: string) => assets[id]!.revisions[assets[id]!.currentRevision]!.storage;
     expect(storageOf(insideId)).toMatchObject({ mode: 'linked', locator: { path: '../素材/logo.svg' } });
-    // 项目外的文件仍记绝对路径。
+    // Files outside the project still record absolute paths.
     expect(storageOf(outsideId)).toMatchObject({ mode: 'linked', locator: { path: clip } });
     await client.request('videos.close', { videoId: ref.videoId });
 
@@ -643,7 +643,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(handle.mimeType).toBe('application/zip');
     expect((await fetch(handle.url)).status).toBe(200);
 
-    // 原处换成一份长度相同、却不是 Lottie 的 zip：不放行。
+    // Replaced in place with a zip of the same length that is not Lottie: not allowed through.
     const bytes = await fs.readFile(archive);
     const other = storedZip([
       ['manifest.json', '{"animations":[{"id":"wave"}]}'],
@@ -654,7 +654,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     const refused = await rejection(client.request('media.resolve', { videoId: ref.videoId, assetId }));
     expect(refused.code).toBe('forbidden');
 
-    // 读不开的 `.lottie` 不收。
+    // A `.lottie` that cannot be opened is not collected.
     const broken = path.join(fixtures, 'broken.lottie');
     await fs.writeFile(broken, storedZip([['manifest.json', '{}']]));
     const failed = await rejection(
@@ -711,7 +711,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await until(() => runtime.videos.mirror(ref.videoId) === null);
     const closed = await rejection(importClip(ref.videoId, snapshot.video.revision));
     expect(closed.code).toBe('not-found');
-    // 锁已经释放：可以重新打开并编辑。
+    // The lock is released: it can be reopened and edited.
     await client.request('videos.open', { projectId: project.id, path: ref.relPath });
     await importClip(ref.videoId, snapshot.video.revision);
   });
@@ -732,7 +732,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await fs.cp(project.path, copyDir, { recursive: true });
     const { project: copy } = await client.request('projects.open', { path: copyDir });
     expect(copy.id).not.toBe(project.id);
-    // 打开项目时在后台预处理；接上那一趟（或再跑一趟）后，库里已经换了标识。
+    // Preprocessing runs in the background when the project is opened; after that pass (or another pass) finishes, the library has a new identifier.
     await runtime.videos.claimProjectVideos(copy);
     const meta = videoMeta(path.join(copy.path, '样片'));
     expect(meta.projectId).toBe(copy.id);
@@ -744,7 +744,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(copied.snapshot.video).toMatchObject({ name: '改过的', revision: '1' });
     expect((await client.request('videos.history', { videoId: copied.ref.videoId })).entries).toEqual(history.entries);
 
-    // 原视频的 id 不变，两个同时打开互不相干。
+    // The original video's id does not change; two that are open at the same time do not interfere with each other.
     const original = await client.request('videos.open', { projectId: project.id, path: '样片' });
     expect(original.ref.videoId).toBe(ref.videoId);
     expect(original.ref.path).not.toBe(copied.ref.path);

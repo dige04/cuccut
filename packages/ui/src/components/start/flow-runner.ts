@@ -25,12 +25,12 @@ import { ST } from './start-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * 链接导入之后的跟进（原先也是首页固定流程的执行；首页的固定流程已经退场，现在只有任务详情的「用下载的文件新建视频」
- * 经 `adoptDownload` 起一次运行）：建视频、进编辑器、（可选地）提交转录（字幕面板的 transcribe-run）；翻译在转录完成后自动接着起
- * （字幕面板的 translate-run），链接导入在 `link-import` 流程完成之后用下载的文件建视频。
+ * Follow-up after a link import (this used to be the execution of the home page's fixed flow too; the home page's fixed flow has now been retired, and only the task detail's “用下载的文件新建视频” (Create video from downloaded file) starts a run, via `adoptDownload`):
+ * creates the video, enters the editor, and (optionally) submits transcription (the subtitle panel's transcribe-run). Translation starts automatically after transcription completes
+ * (the subtitle panel's translate-run). The link import creates the video from the downloaded file after the `link-import` flow finishes.
  *
- * 状态放在模块级的 store 里：开始之后页面可能切走（链接导入会去任务详情），执行不能因此断了线。只在这次运行里：
- * 应用重启之后，下载完成的导入在任务详情里给「用下载的文件新建视频」，转录与翻译的任务照常在后台任务里。
+ * State lives in a module-level store: after starting, the page may switch away (a link import goes to the task detail), and execution must not break because of that. It applies only to this run:
+ * after an app restart, a completed download appears in the task detail as “用下载的文件新建视频” (Create video from downloaded file); transcription and translation tasks continue in the background task list as usual.
  */
 
 export interface FlowOptions {
@@ -38,11 +38,11 @@ export interface FlowOptions {
   bg: BgHue;
   wave: boolean;
   subs: boolean;
-  /** 翻译的目标语言（BCP 47）。 */
+  /** Target language for translation (BCP 47). */
   target: string;
-  /** 译文字幕和原文一起显示。 */
+  /** Translated subtitles are shown together with the original. */
   bilingual: boolean;
-  /** 翻译用的文本模型（页面上门槛卡看的那一只）；null 时由 Runtime 用默认值。 */
+  /** Text model used for translation (the one the page's gate card shows); null means the Runtime uses its default. */
   textModel: ModelRef | null;
   transcribe: Pick<TranscribeParams, 'provider' | 'model' | 'language' | 'hint'>;
 }
@@ -50,11 +50,11 @@ export interface FlowOptions {
 export type RunStage = 'downloading' | 'creating' | 'transcribing' | 'translating' | 'done' | 'failed';
 
 export interface FlowRun {
-  /** 链接导入是父任务 ID；本地文件是生成的键。 */
+  /** For a link import this is the parent task ID; for a local file it is a generated key. */
   key: string;
   flow: FlowKey;
   projectId: Id;
-  /** 视频名（文件名去掉扩展名，或链接的标题）。 */
+  /** Video name (the filename without its extension, or the link's title). */
   name: string;
   options: FlowOptions;
   linkJobId: Id | null;
@@ -64,7 +64,7 @@ export interface FlowRun {
   assetId: Id | null;
   transcribeJobId: Id | null;
   translateJobId: Id | null;
-  /** 翻译提交成功了：之后 translate-run 里没有这一轮时看收据或问题卡。 */
+  /** Translation submission succeeded: afterwards, if translate-run has no such round, check the receipt or the issue card. */
   translateStarted: boolean;
   failedAt: 'video' | 'subs' | 'translate' | null;
   error: string | null;
@@ -90,7 +90,7 @@ let deps: RunnerDeps | null = null;
 let unwatch: (() => void) | null = null;
 let unwatchTranslate: (() => void) | null = null;
 
-/** 任务详情挂上时绑定（连同转录与翻译的执行）；第一次绑定时开始盯 `jobs` 主题与翻译的运行状态。 */
+/** Bound when the task detail mounts (together with the transcription and translation runs); the first binding starts watching the `jobs` topic and the translation run status. */
 export function bindFlowRunner(next: RunnerDeps): void {
   deps = next;
   const toast = (kind: 'positive' | 'neutral' | 'negative', message: string, undo?: () => void) =>
@@ -113,7 +113,7 @@ function patch(key: string, change: Partial<FlowRun>): FlowRun | null {
   return next;
 }
 
-/** 链接导入的跟进到哪了（任务详情的三步用）；不是这次运行里从首页起的时 null。 */
+/** How far the link import's follow-up has got (used by the task detail's three steps); null when it was not started from the home page in this run. */
 export function followOf(run: FlowRun | null | undefined): FollowUp | null {
   if (!run) return null;
   const video: FollowUp['video'] =
@@ -136,7 +136,7 @@ export function runOfLink(jobId: Id): FlowRun | null {
   return useFlowRuns.getState().runs[jobId] ?? null;
 }
 
-/** 绑定时给的提示：Spectrum 的 toast，带按钮的多留一会儿。 */
+/** Hint given on binding: a Spectrum toast; ones with buttons stay longer. */
 export function flowToast(kind: ToastKind, message: string, action?: { label: string; run: () => void }): void {
   ToastQueue[kind](message, action ? { timeout: 6000, actionLabel: action.label, onAction: action.run, shouldCloseOnAction: true } : { timeout: 5000 });
 }
@@ -171,7 +171,7 @@ function blankRun(key: string, input: StartInput, projectId: Id, name: string, l
   };
 }
 
-/** 建视频（必要时铺背景与声波），打开它，再提交转录。`link` 是链接导入下载的文件的素材名与来源（视频详情的「来源信息」）。 */
+/** Create the video (adding a background and a waveform if needed), open it, then submit transcription. `link` is the media name and source of the file downloaded by the link import (the video details' “来源信息” (Source info)). */
 async function createAndGo(
   key: string,
   path: string | null,
@@ -254,8 +254,8 @@ async function createAndGo(
 }
 
 /**
- * 下载完成之后要不要直接打开视频：用户还在这次导入的任务详情、或在起始页时打开；在别处（编辑别的东西、看别的页）时不打断，
- * 提示里给「打开视频」。
+ * Whether to open the video directly after the download completes: it opens if the user is still on this import's task detail or on the start page. If they are elsewhere (editing something else, viewing another page), it does not interrupt,
+ * and the notice offers “打开视频” (Open video).
  */
 function shouldOpen(run: FlowRun): boolean {
   const { route } = useShell.getState();
@@ -263,7 +263,7 @@ function shouldOpen(run: FlowRun): boolean {
   return route.tab === 'home' && route.conversationId === null && !route.pane;
 }
 
-/** 盯着这次运行里起的任务：链接导入完成就建视频，转录完成就接翻译，翻译完成就报告。每一步先同步改状态，只收一次。 */
+/** Watches the tasks started in this run: when a link import completes, create the video; when transcription completes, continue to translation; when translation completes, report. Each step first updates state synchronously and is handled only once. */
 function settle(jobs: readonly JobRecord[]): void {
   for (const run of Object.values(useFlowRuns.getState().runs)) {
     if (run.stage === 'downloading' && run.linkJobId) {
@@ -302,7 +302,7 @@ function settle(jobs: readonly JobRecord[]): void {
       continue;
     }
     if (run.stage === 'translating' && run.translateStarted && run.videoId) {
-      // 翻译由 translate-run 收尾（放到画面上、收据或问题卡）；它的这一轮结束了再报告。
+      // Translation is wrapped up by translate-run (shown on screen, with a receipt or an issue card); report once its round has ended.
       const translating = useTranslateRun.getState();
       if (translating.runs[run.videoId]) continue;
       const target = run.target;
@@ -317,11 +317,11 @@ function settle(jobs: readonly JobRecord[]): void {
       } else if (problem) {
         const why = ST.flow.reason([problem.title, problem.message].filter(Boolean));
         patch(run.key, { stage: 'failed', failedAt: 'translate', error: why });
-        // 编辑器开着别的视频时 translate-run 已经提示过「在对照列表里放到画面上」。
+        // When the editor has another video open, translate-run has already suggested “在对照列表里放到画面上” (Show it on screen in the comparison list).
         const told = problem.kind === 'pending' && useVideo.getState().video?.videoId !== run.videoId;
         if (!told) deps?.toast('negative', ST.flow.translateNotPlaced(run.name || ST.flow.video, why), open);
       } else {
-        // 取消了（translate-run 已经提示）。
+        // Cancelled (translate-run has already notified).
         patch(run.key, { stage: 'failed', failedAt: 'translate', error: ST.flow.translateCancelled });
       }
     }
@@ -329,8 +329,8 @@ function settle(jobs: readonly JobRecord[]): void {
 }
 
 /**
- * 起翻译（字幕面板的 `startTranslate`）：`translate` 流程要视频在 Runtime 里开着。用户把它关了（编辑器换了别的视频）时
- * 被拒，提示里给「打开视频并翻译」。没有配置文本模型等原因留在字幕面板的问题卡上。
+ * Start translation (the subtitle panel's `startTranslate`): the `translate` flow requires the video to be open in the Runtime. If the user has closed it (the editor switched to another video), it is rejected,
+ * and the notice offers “打开视频并翻译” (Open video and translate). Reasons such as no text model being configured stay on the subtitle panel's issue card.
  */
 async function translate(key: string, documentId: Id): Promise<void> {
   const bound = deps;
@@ -348,7 +348,7 @@ async function translate(key: string, documentId: Id): Promise<void> {
   const state = useTranslateRun.getState();
   const jobId = state.runs[videoId]?.jobId ?? null;
   if (started) {
-    // 提交成功之后才看结果（之前 translate-run 里还没有这一轮）；已经收完尾时照收据或问题卡报告。
+    // Look at the result only after submission succeeds (before that, translate-run has no such round yet); if wrap-up has already finished, report with the receipt or the issue card.
     patch(key, { translateJobId: jobId, translateStarted: true });
     settle(useJobs.getState().jobs);
     return;
@@ -397,8 +397,8 @@ function waitForVideo(videoId: Id, ms = 10_000): Promise<boolean> {
 }
 
 /**
- * 应用重启过（或别处起的导入）：下载完成了、这次运行里没有跟进。用下载的文件建一个视频并打开，不自动转录
- * （进编辑器后在字幕面板里点「生成字幕」）。下载目录属于哪个项目取冻结参数里的；没有项目时不能建。
+ * After an app restart (or an import started elsewhere): the download has completed and this run has no follow-up. Create a video from the downloaded file and open it, without automatic transcription
+ * (after entering the editor, click “生成字幕” (Generate subtitles) in the subtitle panel). The project the download directory belongs to comes from the frozen parameters; if there is no project, the video cannot be created.
  */
 export async function adoptDownload(job: JobRecord): Promise<{ ok: true } | { ok: false; error: string }> {
   const bound = deps;

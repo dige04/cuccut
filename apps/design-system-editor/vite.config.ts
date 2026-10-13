@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { bundledPackageDirs, thirdPartyLicenses } from './licenses.mjs';
 
-/** 按 Node 的查找方式，从本目录往上找一个包装在哪（npm 别名包没有可解析的入口，不能用 require.resolve）。 */
+/** Finds where a package is installed by walking up from this directory the way Node looks things up (npm alias packages have no resolvable entry, so require.resolve cannot be used). */
 function packageDir(name: string): string {
   for (let dir = import.meta.dirname; ; dir = dirname(dir)) {
     const candidate = join(dir, 'node_modules', name);
@@ -13,8 +13,7 @@ function packageDir(name: string): string {
 }
 
 /**
- * 组件预览用的 React 18.3.1 UMD（npm 别名 react-18 / react-dom-18 的原文件）。运行时原本从 jsDelivr 加载，
- * CucCut 改成页面自带的这两份（packages/design-system-runtime/src/model/libraries.ts），放在 artifact-type/vendor/。
+ * React 18.3.1 UMD for component previews (the original files of the npm aliases react-18 / react-dom-18). The runtime originally loaded them from jsDelivr; CucCut instead uses these two files bundled with the page (packages/design-system-runtime/src/model/libraries.ts), placed in artifact-type/vendor/.
  */
 const VENDOR_FILES = [
   { fileName: 'artifact-type/vendor/react.production.min.js', source: () => join(packageDir('react-18'), 'umd', 'react.production.min.js') },
@@ -31,7 +30,7 @@ function previewVendorFiles(): Plugin {
   };
 }
 
-/** 页面与上面两个文件打进去的第三方代码的原始许可，放在产物根目录的 third-party-licenses.txt。 */
+/** Original licenses for the third-party code bundled into the page and the two files above, placed in third-party-licenses.txt at the output root. */
 function editorLicenses(): Plugin {
   return {
     name: 'cuccut-design-system-editor-licenses',
@@ -44,9 +43,8 @@ function editorLicenses(): Plugin {
 }
 
 /**
- * 设计系统编辑器页面（docs/design/canvas §10.2）：由 Runtime 在 `/design-system/<grant>/` 下提供，所以资源用相对地址。
- * 运行时是工作区里的 @cuccut/design-system-runtime，页面模板是本目录的 index.html；public/artifact-type/run.html 是预览的
- * runner，原样拷进产物。
+ * Design system editor page (docs/design/canvas §10.2): served by the Runtime under `/design-system/<grant>/`, so resources use relative URLs.
+ * The runtime is @cuccut/design-system-runtime in the workspace; the page template is index.html in this directory; public/artifact-type/run.html is the preview runner, copied into the output as is.
  */
 export default defineConfig({
   root: import.meta.dirname,
@@ -56,10 +54,10 @@ export default defineConfig({
     target: 'es2022',
     outDir: resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
-    // 运行时本身就是一个大包（React、各章节的编辑器、预览与文件表）
+    // The runtime is itself one large bundle (React, the editors for each section, the preview and the file table)
     chunkSizeWarningLimit: 4000,
     rollupOptions: {
-      // @base-ui 等依赖带 "use client" 指令，打成单包时 Rollup 会逐个警告，这里没有意义。
+      // Dependencies such as @base-ui carry a "use client" directive, so Rollup warns about each one when bundling into a single package; those warnings are meaningless here.
       onwarn(warning, warn) {
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE') return;
         warn(warning);

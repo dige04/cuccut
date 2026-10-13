@@ -13,8 +13,8 @@ import { probeMedia } from './pipelines/ffmpeg.ts';
 import { PipelineStepError } from './pipelines/pipeline.ts';
 
 /**
- * 本地人声分离（架构设计 §6.1 `separateAudio`、Model Worker 协议规范 §2.5.4）：本地 Provider 的 `separate()` 在假的
- * Model Worker 里执行，配音的分离执行者（`localDubSeparator`）把输出补齐到容器时长。模型包是测试用的 candle 包。
+ * Local vocal separation (architecture design §6.1 `separateAudio`, Model Worker protocol spec §2.5.4): the local Provider's `separate()` runs in a fake
+ * Model Worker. The dub separation executor (`localDubSeparator`) pads the output to the container duration. The model package is a test candle package.
  */
 
 const BUNDLE = 'sep@cpu';

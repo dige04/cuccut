@@ -73,7 +73,7 @@ describe('license and third-party notice distribution', () => {
       const header = readFileSync(resolve(root, path), 'utf8').split('\n').slice(0, 15).join('\n');
       expect(header, path).toContain('Copyright 2025 Ivan Digital');
       expect(header, path).toContain('SPDX-License-Identifier: Apache-2.0');
-      expect(header, path).toContain('修改：');
+      expect(header, path).toMatch(/\b(Changes:|with modifications:)/);
       expect(header, path).toContain('speech-swift');
     }
   });

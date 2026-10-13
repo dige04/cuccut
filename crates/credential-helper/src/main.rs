@@ -1,6 +1,6 @@
-//! 凭据助手进程入口（架构设计 §6.8）。读 stdin 的第一行请求，向 stdout 写一行响应后退出。
+//! Entry point of the credential helper process (architecture design §6.8). Reads the first request line from stdin, writes one response line to stdout, then exits.
 //!
-//! 不读命令行参数与环境变量里的任何密钥；不往 stderr 写请求或响应的内容。
+//! Does not read any secret from command-line arguments or environment variables; does not write request or response content to stderr.
 
 use std::io::{self, BufRead, Read, Write};
 
@@ -9,7 +9,7 @@ use credential_helper::{MAX_REQUEST_BYTES, handle_line};
 
 fn main() {
     let stdin = io::stdin();
-    // 多读一个字节：超过上限的请求由协议层按不合规回答。
+    // Read one extra byte: a request over the limit is answered as invalid by the protocol layer.
     let mut reader = stdin.lock().take(MAX_REQUEST_BYTES as u64 + 1);
     let mut line = String::new();
     let response = match reader.read_line(&mut line) {

@@ -1,4 +1,4 @@
-//! 冻结的输入：Runtime 在启动这一步时写进 staging 的 JSON（命令协议规范 §4.5）。
+//! Frozen input: the JSON that the Runtime writes into staging when it starts this step (command protocol spec §4.5).
 
 use std::path::Path;
 
@@ -18,24 +18,24 @@ pub const INPUT_SCHEMA: &str = "cuccut.speech-worker.translate/1";
 pub struct TranslateInput {
     pub schema: String,
     pub media: Media,
-    /// 转写文档头的 `language`；不知道时 null。
+    /// The `language` in the transcript document header. Null when unknown.
     pub source_language: Option<String>,
     pub speech_ref: VersionRef,
     pub sequence_id: Id,
     pub speech: SpeechBody,
     pub target_language: String,
-    /// 启动时冻结的术语（调用时给的与视频里启用的，已去重）。
+    /// Glossary terms frozen at start (those passed in the call and those enabled in the video, deduplicated).
     #[serde(default)]
     pub glossary: Vec<GlossaryTerm>,
-    /// 原样写进译文正文的 `glossaryRef`（§5.3）；没有术语表时 null。
+    /// The `glossaryRef` written verbatim into the translation body (§5.3). Null when there is no glossary.
     #[serde(default)]
     pub glossary_ref: Option<Value>,
     #[serde(default)]
     pub params: Params,
-    /// 就地刷新时的底稿：这门语言已有的译文（`cuccut.translation/2`）。与 `sentences` 同给同不给。
+    /// The base draft for an in-place refresh: this language's existing translation (`cuccut.translation/2`). Given together with `sentences`, or both omitted.
     #[serde(default)]
     pub translation: Option<TranslationBody>,
-    /// 就地刷新时要重译的句子 ID（字幕与翻译核心的句子）；底稿里别的单元原样写回。
+    /// IDs of the sentences to re-translate during an in-place refresh (sentences of the subtitle and translation core). Other units in the base draft are written back as-is.
     #[serde(default)]
     pub sentences: Option<Vec<Id>>,
 }
@@ -64,10 +64,10 @@ pub struct GlossaryTerm {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
-    /// 风格提示（`translate` 的 `style`），进核心的显式用户指令。
+    /// Style hint (`translate`'s `style`), passed into the core as an explicit user instruction.
     #[serde(default)]
     pub instructions: Option<String>,
-    /// 退避时长的倍数（默认 1）；测试给 0。
+    /// Multiplier for the backoff duration (default 1). Tests pass 0.
     #[serde(default = "one")]
     pub backoff_scale: f64,
 }

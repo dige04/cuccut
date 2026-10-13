@@ -1,7 +1,6 @@
-//! `transition.circleCrop@1`：一个（可羽化的）圆从圆心张开。
+//! `transition.circleCrop@1`: a (feathered) circle opens outward from its center.
 //!
-//! 与 [`super::wipe`] 共用同一条扫掠式，只是把「沿轴坐标」换成「到圆心的
-//! 距离」。`invert` 把距离取反（`R − d`），圆因此变成收缩——端点纪律不变。
+//! It shares the same sweep form as [`super::wipe`]. The only change is that the "coordinate along the axis" becomes the "distance to the center". `invert` negates the distance (`R − d`), so the circle shrinks instead of growing. The endpoint discipline is unchanged.
 
 use super::{composite_by_coverage, sweep_coverage, sweep_edge};
 
@@ -20,7 +19,7 @@ pub fn circle_crop(
 ) {
     let (w, h) = (f64::from(width), f64::from(height));
     let (center_x, center_y) = (cx.clamp(0.0, 1.0) * w, cy.clamp(0.0, 1.0) * h);
-    // R = 圆心到最远画布角的距离：progress = 1 时圆必须盖住整幅画面。
+    // R = distance from the circle center to the farthest canvas corner. At progress = 1 the circle must cover the whole frame.
     let radius_max = [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h)]
         .into_iter()
         .map(|(x, y)| ((x - center_x).powi(2) + (y - center_y).powi(2)).sqrt())

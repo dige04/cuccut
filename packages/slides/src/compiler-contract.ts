@@ -1,13 +1,13 @@
 /**
- * 运行时编译器在 CucCut 里用到的那几个入口的类型（slides_check 经 slides-compiler.ts 调构建好的 dist/node/compiler.cjs）。
- * 这里按源码手写 CucCut 用到的形状：
+ * Types for the entry points of the runtime compiler that CucCut uses (slides_check calls the built dist/node/compiler.cjs through slides-compiler.ts).
+ * The shapes CucCut uses are hand-written here from the source:
  *   compiler/html.ts        compileSlideHtml
  *   serialization/html.ts   serializeSlideHtml
  *   model/deck-metadata.ts  normalizeDeckMetadata
- * 路径相对 packages/slides-runtime/src。Node 里不直接导入运行时源码：它要经编辑器构建打包（含 PptxGenJS 补丁）。
+ * Paths are relative to packages/slides-runtime/src. Node does not import the runtime source directly: it goes through the editor build bundle (which includes the PptxGenJS patch).
  */
 
-/** 编译器报告的位置都指向传入 HTML 的行列（从 1 开始）。 */
+/** Positions reported by the compiler point to the line and column of the input HTML (1-based). */
 export interface SourcePosition {
   line: number;
   col: number;
@@ -17,26 +17,26 @@ export interface CompileDiagnostic extends SourcePosition {
   message: string;
 }
 
-/** 同一类提示合并后的说明，count 是出现次数。 */
+/** Merged explanation for one kind of message; count is the number of occurrences. */
 export interface CompileNote extends SourcePosition {
   key: string;
   count: number;
 }
 
-/** 页面引用、但不在 fileMap 里的文件（collectFiles: true 时收集）。 */
+/** Files referenced by a page but not in fileMap (collected when collectFiles: true). */
 export interface CompileFileRef extends SourcePosition {
   ref: string;
   kind: 'image' | 'font' | (string & {});
 }
 
 export interface CompileOptions {
-  /** deck.json 的 lists；只有 "css" 有意义。 */
+  /** The lists in deck.json; only "css" is meaningful. */
   lists?: 'css';
   collectFiles?: boolean;
   fileMap?: ReadonlyMap<string, string>;
 }
 
-/** 编译后的单页。字段很多且随版本变，这里只声明本站读的。 */
+/** A compiled single page. Its many fields change between versions, so only those this site reads are declared. */
 export interface CompiledSlide {
   readonly id: string;
   readonly [field: string]: unknown;
@@ -50,19 +50,19 @@ export interface CompiledDeck {
 
 export interface CompileResult {
   content: CompiledDeck;
-  /** <head><title> 的内容。 */
+  /** Content of `<head><title>`. */
   title?: string;
   warnings: CompileDiagnostic[];
-  /** 写法错误，这一页会编译失败或缺内容。 */
+  /** Writing error: this page will fail to compile or will be missing content. */
   errors: CompileDiagnostic[];
-  /** 被编译器丢弃的写法（不支持的 CSS、标签）。 */
+  /** Constructs discarded by the compiler (unsupported CSS, tags). */
   unsupported: CompileDiagnostic[];
-  /** 为了让表格行列对齐而删掉的单元格数量。 */
+  /** Number of cells removed to keep table rows and columns aligned. */
   cellRemovals: number;
-  /** 移到 <head> 的元素个数。 */
+  /** Number of elements moved into `<head>`. */
   hoisted: number;
   notes: CompileNote[];
-  /** 排版建议（比如文字会在词中间断行），不影响编译。 */
+  /** Layout suggestion (e.g. text will break in the middle of a word); does not affect compilation. */
   lints: CompileDiagnostic[];
   files: CompileFileRef[];
 }
@@ -73,7 +73,7 @@ export interface NormalizedDeckFace {
   src?: string;
 }
 
-/** normalizeDeckMetadata 的输出：缺省字段补齐，非法项丢掉。 */
+/** Output of normalizeDeckMetadata: missing fields filled in, invalid items dropped. */
 export interface NormalizedDeckMetadata {
   v: number;
   title: string;

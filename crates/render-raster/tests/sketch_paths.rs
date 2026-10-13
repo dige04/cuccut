@@ -1,12 +1,11 @@
 #![cfg(feature = "media")]
 
-//! 手绘能力的渲染契约（规范 §6.2.1 / §6.3 / §7.10，设计稿
-//! `ccut-hand-drawn-animation-design.md`）：
+//! Rendering contract for hand-drawn capabilities (spec §6.2.1 / §6.3 / §7.10, design draft `ccut-hand-drawn-animation-design.md`):
 //!
-//! - path：填充 → 纹理 → 描边的固定绘制顺序；`fillRule`、`lineCap/lineJoin`、`dash`；
-//! - 纹理：无时间依赖、与采样顺序无关、跟随刚性变换；
-//! - `clipPath {shape:"path"}` 与 `anchor: [x, y]`；
-//! - `cadence` 采样域：绝对项目时间网格、逐级覆盖、媒体与字幕不量化。
+//! - path: fixed draw order of fill, then texture, then stroke; `fillRule`, `lineCap` / `lineJoin`, `dash`;
+//! - texture: time-independent, independent of sampling order, follows rigid transforms;
+//! - `clipPath {shape:"path"}` and `anchor: [x, y]`;
+//! - `cadence` sampling domain: absolute project-time grid, per-level override; media and subtitles are not quantized.
 
 use render_raster::drawop::{DrawOp, encode};
 use render_raster::plan::{CapabilityProfile, CpuExecutor, FramePlanner, execute_plan};
@@ -33,7 +32,7 @@ fn doc(meta_extra: Value, element: Value) -> Value {
     })
 }
 
-/// 240×160 的 svg，viewBox 同尺寸 ⇒ 路径坐标就是像素。
+/// 240×160 svg with a viewBox of the same size, so path coordinates are pixels.
 fn svg(paths: Vec<Value>) -> Value {
     json!({
         "type": "svg", "id": "art", "viewBox": "0 0 240 160",
@@ -112,7 +111,7 @@ fn kinds(ops: &[DrawOp]) -> Vec<&'static str> {
 
 const SQUARE: &str = "M40 30 L140 30 L140 130 L40 130 Z";
 
-// ── 填充 / 描边 ───────────────────────────────────────────────────────
+// ── Fill / stroke ─────────────────────────────────────────────────────────
 
 #[test]
 fn stroke_only_path_still_records_the_v3_stroke_op() {
@@ -146,7 +145,7 @@ fn fill_only_fill_and_stroke_and_draw_order() {
             "stroke": "#000000", "strokeWidth": 6
         })]),
     ));
-    // 填充 → 纹理（裁剪在形状内）→ 描边
+    // Fill, then texture (clipped inside the shape), then stroke
     assert_eq!(
         kinds(&both.ops(0.0)),
         ["fill", "clip", "stroke", "popClip", "stroke"]
@@ -177,7 +176,7 @@ fn z_closes_the_outline() {
         ]),
     ));
     let data = stage.pixels(0.0);
-    // 左边（x=40）只有 Z 补回的那一段会经过
+    // Left edge (x=40): only the segment that Z patches back passes through
     assert_eq!(px(&data, 40, 80), [0, 0, 0, 255]);
 }
 
@@ -235,7 +234,7 @@ fn unknown_path_style_values_are_schema_errors() {
     }
 }
 
-// ── 纹理 ──────────────────────────────────────────────────────────────
+// ── Texture ───────────────────────────────────────────────────────────────
 
 fn textured(finish: &str) -> Value {
     doc(
@@ -257,7 +256,7 @@ fn static_textures_are_byte_identical_across_time_and_sampling_order() {
         for t in [0.01, 0.5, 1.37, 3.99] {
             assert_eq!(forward.bytes(t), reference, "{finish} @ {t}");
         }
-        // 乱序、换一个渲染器实例（没有缓存可用）也一样
+        // Out of order, and with a new renderer instance (no cache available), same result
         let mut shuffled = Stage::new(textured(finish));
         for t in [3.2, 0.0, 2.5, 0.01] {
             assert_eq!(shuffled.bytes(t), reference, "{finish} 乱序 @ {t}");
@@ -278,7 +277,7 @@ fn flat_finish_adds_nothing() {
 
 #[test]
 fn texture_geometry_rides_the_rigid_transform() {
-    // 纹理在路径局部坐标里生成：节点平移 / 旋转只改 tf，侧表里的几何逐字节不变。
+    // The texture is generated in path-local coordinates: node translation and rotation only change tf, and the geometry in the side table stays byte-identical.
     let moving = |animate: Value| {
         doc(
             json!({}),
@@ -323,9 +322,7 @@ fn background_texture_covers_the_canvas() {
     assert!(speckled > 50, "纸面应当有颗粒（{speckled}）");
 }
 
-/// 背景纸的光栅缓存（`FrameOps::static_prefix`）：录制器只给有纹理的文档设提示；
-/// 设了提示的帧无论首次（未命中、画完存一张）还是之后（命中、拷贝缓存）都与
-/// 不设提示从头重放逐像素相同，纸面上的运动元素照常逐帧变化；分层计划同样一致。
+/// Raster cache for the paper background (`FrameOps::static_prefix`): the recorder only sets the hint for documents with a texture. For frames with the hint set, whether first (a miss: render and store one picture) or later (a hit: copy the cache), the result is pixel-identical to replaying from scratch without the hint, while moving elements on the paper still change frame by frame. Layered plans are likewise consistent.
 #[test]
 fn background_texture_raster_cache_is_pixel_exact() {
     let mover = json!({
@@ -342,7 +339,7 @@ fn background_texture_raster_cache_is_pixel_exact() {
             .is_none()
     );
 
-    // 种子取本测试独有的值：进程级缓存里不会有别的测试先放进同一张纸。
+    // The seed takes a value unique to this test, so no other test in the process-level cache will have put the same paper in first.
     let mut paper = Stage::new(doc(
         json!({"background": {"color": "#fbf3e2", "texture": {"finish": "grain", "color": "#7a6a4f", "seed": 4242}}}),
         mover,
@@ -386,7 +383,7 @@ fn background_texture_raster_cache_is_pixel_exact() {
     );
 }
 
-// ── clipPath path 形状 / anchor 数组 ──────────────────────────────────
+// ── clipPath path shape / anchor array ────────────────────────────────────
 
 #[test]
 fn clip_path_shape_path_clips_to_the_polygon() {
@@ -396,7 +393,7 @@ fn clip_path_shape_path_clips_to_the_polygon() {
             "type": "box", "id": "b",
             "style": {
                 "width": 200, "height": 100, "background": "#ff0000",
-                // 左上三角
+                // Upper-left triangle
                 "clipPath": {"shape": "path", "d": "M0 0 L1 0 L0 1 Z"}
             }
         }),
@@ -408,7 +405,7 @@ fn clip_path_shape_path_clips_to_the_polygon() {
 
 #[test]
 fn clip_path_shape_path_is_static_only() {
-    // 通道取值在 lint 拦（录制期没有 `Result`）
+    // Channel values are checked by lint, since there is no `Result` at recording time
     let diagnostics = scene_primitives::lint::lint(&doc(
         json!({}),
         json!({
@@ -485,13 +482,13 @@ fn cadence_holds_frames_on_the_absolute_project_grid() {
         json!({}),
     ));
     let hold = stage.bytes(1.0);
-    // 1.0 与 1.0 + 1/12 之间的所有 60fps 输出帧都等于格点帧
+    // All 60 fps output frames between 1.0 and 1.0 + 1/12 equal the grid-point frame
     for k in 1..5 {
         assert_eq!(stage.bytes(1.0 + f64::from(k) / 60.0), hold, "k={k}");
     }
     assert!(stage.bytes(1.0 + 5.0 / 60.0) != hold, "下一个绘制帧");
 
-    // 与输出帧率无关：24 / 30 / 60fps 的时间戳落在同一格 ⇒ 同一帧
+    // Independent of output frame rate: timestamps at 24, 30 and 60 fps fall in the same cell ⇒ same frame
     for fps in [24.0, 30.0, 60.0] {
         for n in 0..(4.0 * fps) as u32 {
             let t = f64::from(n) / fps;
@@ -500,7 +497,7 @@ fn cadence_holds_frames_on_the_absolute_project_grid() {
         }
     }
 
-    // 乱序采样：新实例、倒着取，结果一样
+    // Out-of-order sampling: new instance, fetched in reverse, same result
     let mut other = Stage::new(slider(
         json!({"cadence": {"fps": 12}}),
         json!({}),
@@ -546,8 +543,7 @@ fn cadence_overrides_cascade_meta_clip_node() {
 
 #[test]
 fn cadence_never_samples_before_the_clip_starts() {
-    // clip 起点 0.30 不在 12fps 格上（格点 0.25 / 0.333）：首帧按 clip 起点采样，
-    // 而不是回到 0.25——那时 clip 还不存在。
+    // The clip start 0.30 is not on the 12 fps grid (grid points 0.25 and 0.333): the first frame samples at the clip start rather than falling back to 0.25, because at that time the clip does not yet exist.
     let mut document = slider(
         json!({"cadence": {"fps": 12}}),
         json!({"start": 0.30}),
@@ -576,10 +572,10 @@ fn boil_reseeds_on_draw_frames_and_static_wobble_does_not() {
     assert_eq!(still.bytes(0.0), still.bytes(3.0));
 
     let mut boil = Stage::new(wobbly(2));
-    // every=2 ⇒ 每 2 个绘制帧（1/6s）换一次
+    // every=2 ⇒ changes every 2 drawn frames (1/6 s)
     assert_eq!(boil.bytes(1.0), boil.bytes(1.0 + 1.0 / 12.0 + 0.01));
     assert!(boil.bytes(1.0) != boil.bytes(1.0 + 2.0 / 12.0 + 0.01));
-    // 纯函数：回到同一时刻得到同一帧
+    // Pure function: returning to the same instant gives the same frame
     let again = boil.bytes(1.0);
     boil.bytes(2.5);
     assert_eq!(boil.bytes(1.0), again);

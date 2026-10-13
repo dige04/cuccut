@@ -4,26 +4,26 @@ import type { DownloadedFontFace, FontLicence } from '@cuccut/protocol';
 import { JsonStoreFile, type StoreLog } from '@cuccut/runtime-storage';
 
 /**
- * 下载的字体的缓存（架构设计 §9.1），在 Runtime Home 的 `fonts/` 下，不在项目目录里：
+ * Cache for downloaded fonts (architecture design §9.1), under `fonts/` in the Runtime Home, not in the project directory:
  *
- * - `files/<族>/<族>-<字重>[i]-<摘要前 12 位>.ttf`：字体文件。引擎按这个目录挑 face（本机没有的族），预览与导出用同一个文件。
- * - `index.json`：每个 face 一条（族、字重、斜体、许可、sha256、大小、文件、下载时间），不记下载地址。
- * - `.staging/`：下载中的临时文件（核对过才改名进 `files/`）。
+ * - `files/<family>/<family>-<weight>[i]-<first 12 characters of the digest>.ttf`: font files. The engine picks faces from this directory (for families not installed locally), and preview and export use the same file.
+ * - `index.json`: one entry per face (family, weight, italic, license, sha256, size, file, download time); does not record download URLs.
+ * - `.staging/`: temporary files during download (moved into `files/` only after verification).
  *
- * 文件名里有内容摘要：同一个 face 换了内容是另一个文件，冻结了旧文件的导出不受影响。
+ * The file name contains a content digest: changing the content of a face produces a different file, so exports that froze the old file are not affected.
  */
 
 const INDEX_VERSION = 1;
 const INDEX_SCHEMA = `cuccut.font-cache/${INDEX_VERSION}`;
 
-/** `cuccut.font-cache/<n>` → n；别的写法 null。 */
+/** `cuccut.font-cache/<n>` → n; anything else → null. */
 function indexVersion(value: unknown): number | null {
   const match = typeof value === 'string' ? /^cuccut\.font-cache\/(\d+)$/.exec(value) : null;
   return match ? Number(match[1]) : null;
 }
 
 export interface FontCacheEntry extends DownloadedFontFace {
-  /** 相对 `files/` 的路径。 */
+  /** Path relative to `files/`. */
   file: string;
 }
 
@@ -38,7 +38,7 @@ export function faceKey(face: { family: string; weight: number; italic: boolean 
   return keyOf(face.family.trim(), face.weight, face.italic);
 }
 
-/** 族名做目录名与文件名：小写字母与数字，其余写成 `-`。 */
+/** Family names become directory and file names: lowercase letters and digits; everything else is written as `-`. */
 export function familySlug(family: string): string {
   const slug = family
     .toLowerCase()
@@ -62,11 +62,11 @@ export class FontCache {
     this.#index = new JsonStoreFile(path.join(root, 'index.json'), options.log);
   }
 
-  /** 读索引（第一次时）：文件不见了的条目去掉。 */
+  /** Reads the index (on first use): entries whose files are missing are removed. */
   async #load(): Promise<FontCacheEntry[]> {
     if (this.#faces) return this.#faces;
     await fs.mkdir(this.filesDir, { recursive: true });
-    // 索引坏了改名保留、从空开始（文件还在 `files/` 里，下次用到时重新下载登记）；更新版本写下的不改写（`store-file.ts`）。
+    // A corrupt index is renamed and kept, and it starts empty (the files are still in `files/`, and they are downloaded and registered again when next needed). An index written by a newer version is not rewritten (`store-file.ts`).
     const { value } = await this.#index.read({
       version: { key: 'schema', known: INDEX_VERSION, parse: indexVersion },
       recognize: (raw) => (raw.schema === INDEX_SCHEMA && Array.isArray(raw.faces) ? (raw.faces as FontCacheEntry[]) : null),
@@ -83,13 +83,13 @@ export class FontCache {
     return this.#faces;
   }
 
-  /** 缓存里的全部 face（按族名、斜体、字重排）。 */
+  /** All faces in the cache (sorted by family name, italic, then weight). */
   async list(): Promise<FontCacheEntry[]> {
     const faces = await this.#load();
     return [...faces].sort((a, b) => a.family.localeCompare(b.family) || Number(a.italic) - Number(b.italic) || a.weight - b.weight);
   }
 
-  /** 这个 face 在不在（按族名不分大小写）；文件被外面删了时当作不在。 */
+  /** Whether this face exists (family name matched case-insensitively); treated as absent if its file was deleted externally. */
   async find(family: string, weight: number, italic: boolean): Promise<FontCacheEntry | null> {
     const key = keyOf(family.trim(), weight, italic);
     const found = (await this.#load()).find((face) => faceKey(face) === key) ?? null;
@@ -104,7 +104,7 @@ export class FontCache {
     return path.join(this.filesDir, face.file);
   }
 
-  /** 下载好的临时文件（已核对）改名进 `files/`，记进索引；同一个 face 原来的条目换掉（旧文件删掉）。 */
+  /** Moves the downloaded temp file (already verified) into `files/` and records it in the index; the existing entry for the same face is replaced (the old file is deleted). */
   async add(
     temp: string,
     face: { family: string; weight: number; italic: boolean; licence: FontLicence; sha256: string; sizeBytes: number },
@@ -132,7 +132,7 @@ export class FontCache {
     return entry;
   }
 
-  /** 删掉这些 face 的文件与条目（空了的族目录一并删掉）。 */
+  /** Deletes the files and entries for these faces (family directories that become empty are deleted too). */
   async remove(entries: readonly FontCacheEntry[]): Promise<void> {
     if (entries.length === 0) return;
     const files = new Set(entries.map((e) => e.file));

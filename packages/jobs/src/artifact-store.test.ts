@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactStore, collectArtifactIds } from './artifact-store.ts';
 
 /**
- * 产物库的写入持久性：临时文件写完 fsync → rename → fsync 目录。按发生顺序记下 open、sync 与 rename。
+ * Write durability of the artifact store: temp file is fully written and fsync'd → rename → fsync the directory. Records open, sync and rename in the order they happen.
  */
 describe('ArtifactStore 写入 fsync', () => {
   let dir: string;
@@ -45,7 +45,7 @@ describe('ArtifactStore 写入 fsync', () => {
   });
 
   const store = () => new ArtifactStore(path.join(dir, 'artifacts'));
-  /** 路径的类别：产物目录、临时文件、产物文件。 */
+  /** Categories of paths: artifact directory, temp file, artifact file. */
   function label(file: string | undefined): string {
     if (!file) return '?';
     if (file === path.join(dir, 'artifacts')) return 'dir';
@@ -107,7 +107,7 @@ describe('ArtifactStore.sweep', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 把文件的修改时间往前拨。 */
+  /** Moves a file's modification time backward. */
   const age = async (file: string, ms: number) => {
     const at = new Date(Date.now() - ms);
     await fs.utimes(file, at, at);

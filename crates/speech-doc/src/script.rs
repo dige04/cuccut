@@ -1,22 +1,13 @@
-//! `ccut transcribe --script` 的文稿读取：纯文本 / LRC / SRT·VTT / JSON 四种形状，
-//! 以及「每行落在音频哪一段」的时间窗推导。
+//! Script reading for `ccut transcribe --script`: four shapes (plain text / LRC / SRT·VTT / JSON), plus derivation of the time window of the audio that each line falls in.
 //!
-//! 纯函数、不做 I/O：调用方读文件、按扩展名给格式提示、拿到行再去对齐。
+//! Pure functions with no I/O. The caller reads the file, gives a format hint from the extension, gets the lines, then aligns them.
 //!
-//! - **纯文本**：按行切，行内再按句末标点切（见 [`split_plain`]）；整行是 `[Chorus]`
-//!   这类方括号标记的行是段落标签、不是唱词，丢掉。
-//! - **LRC**：`[mm:ss.xx]` 行时间；同一行多个时间标签（副歌复用）各算一行；
-//!   `[offset:±ms]` 生效；只有时间标签的空行是上一行的终点；增强 LRC 的
-//!   `<mm:ss.xx>` 词标签给出逐词时间。
-//! - **SRT / WebVTT**：cue 的起止就是行窗，多行正文并成一行，`<i>` / `{\an8}`
-//!   一类标签剥掉。
-//! - **JSON**：顶层数组，或 `lines` / `segments` / `cues` 数组；每项是字符串（无时间）
-//!   或 `{text, start, end, words?}`（`t0`/`t1` 同义，词的文本键 `text` 或 `word`）。
+//! - **Plain text**: split by line, then within each line by sentence-final punctuation (see [`split_plain`]). Lines that consist entirely of a bracketed marker such as `[Chorus]` are section labels, not lyrics, and are dropped.
+//! - **LRC**: `[mm:ss.xx]` line timestamps. Several timestamps on one line (a reused chorus) each count as a separate line. `[offset:±ms]` takes effect. A blank line containing only timestamps marks the end of the previous line. The `<mm:ss.xx>` word tags of enhanced LRC give per-word timing.
+//! - **SRT / WebVTT**: the start and end of a cue are the line window. Multi-line bodies are merged into one line. Tags such as `<i>` and `{\an8}` are stripped.
+//! - **JSON**: a top-level array, or a `lines` / `segments` / `cues` array. Each item is either a string (no timing) or `{text, start, end, words?}` (`t0`/`t1` are synonyms; the word text key is `text` or `word`).
 //!
-//! 行窗由 [`resolve_windows`] 补齐：有起点没终点的接下一行起点，连续没时间的行按
-//! 字数均分前后两个已知时刻之间的空档。没有任何时间的纯文本可以借一份已有转录
-//! 的词做锚点（[`anchor_windows`]）：按词序 LCS 把文稿词对到转录词上，每行取对上
-//! 的那几处时间。
+//! [`resolve_windows`] fills in the line windows. A line with a start but no end takes the next line's start. Consecutive untimed lines split the gap between the surrounding known times evenly by character count. Plain text with no timing at all can borrow words from an existing transcript as anchors ([`anchor_windows`]): script words are matched to transcript words by word-order LCS, and each line takes the times of the matched words.
 
 use std::collections::HashMap;
 
@@ -25,7 +16,7 @@ use serde_json::Value;
 use crate::atomize::{is_cjk_char, unspaced_pair};
 use crate::lcs::{LCS_CELL_CAP, lcs_matches};
 
-/// 文稿格式。
+/// Script format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptFormat {
     Text,
@@ -44,7 +35,7 @@ impl ScriptFormat {
         }
     }
 
-    /// 按扩展名判格式；认不出的扩展名返回 `None`，交给 [`detect`] 嗅探。
+    /// Determines the format from the extension. An unrecognized extension returns `None`, and [`detect`] sniffs the content instead.
     pub fn from_extension(extension: &str) -> Option<Self> {
         match extension.to_ascii_lowercase().as_str() {
             "lrc" => Some(Self::Lrc),
@@ -56,7 +47,7 @@ impl ScriptFormat {
     }
 }
 
-/// 带时间的词（秒）。
+/// A timed word (seconds).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimedWord {
     pub start: f64,
@@ -64,7 +55,7 @@ pub struct TimedWord {
     pub text: String,
 }
 
-/// 一行文稿：文本，可选的行窗，可选的逐词时间。
+/// One script line: its text, an optional line window, and optional per-word times.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptLine {
     pub text: String,
@@ -84,8 +75,7 @@ impl ScriptLine {
     }
 }
 
-/// 扩展名优先；认不出就看内容：像 JSON 就是 JSON，有 `-->` 的是 SRT / VTT，
-/// 有 `[mm:ss` 行首标签的是 LRC，其余按纯文本。
+/// The extension takes priority. If it is not recognized, look at the content: JSON-looking content is JSON, content containing `-->` is SRT / VTT, lines starting with a `[mm:ss` tag are LRC, and anything else is plain text.
 pub fn detect(text: &str, extension: Option<&str>) -> ScriptFormat {
     if let Some(format) = extension.and_then(ScriptFormat::from_extension) {
         return format;
@@ -108,7 +98,7 @@ pub fn detect(text: &str, extension: Option<&str>) -> ScriptFormat {
     ScriptFormat::Text
 }
 
-/// 按格式解析成行。空文稿返回空 `Vec`（由调用方报错），格式本身坏了返回 `Err`。
+/// Parses into lines by format. An empty script returns an empty `Vec` (the caller reports the error). A malformed format returns `Err`.
 pub fn parse(text: &str, format: ScriptFormat) -> Result<Vec<ScriptLine>, String> {
     let text = text.trim_start_matches('\u{feff}');
     match format {
@@ -122,15 +112,12 @@ pub fn parse(text: &str, format: ScriptFormat) -> Result<Vec<ScriptLine>, String
     }
 }
 
-/// 看起来像歌词 / 诗行的文稿至少这么多行……
+/// A script that looks like lyrics or verse, with at least this many lines...
 const VERSE_MIN_LINES: usize = 4;
-/// ……且至少 4/5 的行不宽于这个显示宽度（CJK 记 2）：这时一行就是一段，不再按句末切。
+/// ...and at least 4/5 of its lines no wider than this display width (CJK counts as 2): in that case a line is one segment, and it is not split again at sentence-final punctuation.
 const VERSE_LINE_WIDTH: usize = 60;
 
-/// 文稿 → 行：按换行切，行内再按句末标点切（ASCII 的 `. ! ? ;` 只在后面是空白 /
-/// 行尾时算句末，`3.5` 不切；`Dr. Li` 这类缩写会切，只影响行边界不影响词）。空行
-/// 与整行方括号标记（`[Chorus]`、`[Verse 1]`）丢弃。整篇都是短行（歌词、诗）时
-/// 行内不切：`What did Ilya see? We'll never know.` 是一行歌词，不是两句台词。
+/// Script to lines: split by newline, then within each line by sentence-final punctuation. ASCII `. ! ? ;` count as sentence-final only when followed by whitespace or the end of the line, so `3.5` is not split. Abbreviations such as `Dr. Li` do get split, but that affects only line boundaries, not words. Empty lines and whole-line bracketed markers (`[Chorus]`, `[Verse 1]`) are discarded. When the whole script consists of short lines (lyrics, poems), sentences are not split within a line: `What did Ilya see? We'll never know.` is one lyric line, not two lines of dialogue.
 pub fn split_plain(text: &str) -> Vec<String> {
     let raw_lines: Vec<&str> = text
         .lines()
@@ -175,14 +162,14 @@ fn display_width(line: &str) -> usize {
         .sum()
 }
 
-/// 整行都在一对方括号里（歌词网站的段落标记）。
+/// The whole line is inside one pair of square brackets (a section marker from a lyrics site).
 fn is_section_tag(line: &str) -> bool {
     line.starts_with('[') && line.ends_with(']') && line[1..line.len() - 1].find(']').is_none()
 }
 
 // ---------------------------------------------------------------- LRC
 
-/// 行首 `[mm:ss]` / `[mm:ss.xx]` / `[mm:ss:xx]`：返回秒与标签后的剩余文本。
+/// A leading `[mm:ss]` / `[mm:ss.xx]` / `[mm:ss:xx]` tag at the start of a line: returns the seconds and the remaining text after the tag.
 fn parse_lrc_time_tag(line: &str) -> Option<(f64, &str)> {
     let rest = line.strip_prefix('[')?;
     let close = rest.find(']')?;
@@ -190,7 +177,7 @@ fn parse_lrc_time_tag(line: &str) -> Option<(f64, &str)> {
     Some((seconds, &rest[close + 1..]))
 }
 
-/// `mm:ss(.xx)`，也收 `hh:mm:ss(.xx)` 与 `mm:ss:xx`（部分 LRC 编辑器写的小数分隔）。
+/// `mm:ss(.xx)`. Also accepts `hh:mm:ss(.xx)` and `mm:ss:xx` (some LRC editors write a colon as the decimal separator).
 fn parse_clock(text: &str) -> Option<f64> {
     let text = text.trim();
     if text.is_empty()
@@ -236,7 +223,7 @@ fn parse_lrc(text: &str) -> Vec<ScriptLine> {
                 rest = after.trim_start();
                 continue;
             }
-            // `[ti:…]` / `[offset:+120]` 这类元数据标签。
+            // Metadata tags such as `[ti:…]` and `[offset:+120]`.
             if let Some(tag) = rest.strip_prefix('[')
                 && let Some(close) = tag.find(']')
                 && let Some((key, value)) = tag[..close].split_once(':')
@@ -264,9 +251,9 @@ fn parse_lrc(text: &str) -> Vec<ScriptLine> {
             });
         }
     }
-    // 稳定排序：同一时刻的两行保持文件里的先后。
+    // Stable sort: two lines at the same time keep their order in the file.
     entries.sort_by(|a, b| a.time.total_cmp(&b.time));
-    // LRC 规定正 offset 让歌词提前出现。
+    // LRC specifies that a positive offset makes the lyrics appear earlier.
     let shift = |time: f64| round_ms((time - offset).max(0.0));
     let mut lines = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
@@ -305,8 +292,7 @@ fn parse_lrc(text: &str) -> Vec<ScriptLine> {
     lines
 }
 
-/// 增强 LRC：`<00:12.30>I <00:12.60>see` → 行文本 + (词起点, 词)。最后一个只有标签
-/// 没有字的 `<…>` 是末词的终点，以空词记下。没有词标签时 `words` 为 `None`。
+/// Enhanced LRC: `<00:12.30>I <00:12.60>see` becomes line text plus (word start, word) pairs. A final `<…>` that has a tag but no text is the end time of the last word, and is recorded as an empty word. When there are no word tags, `words` is `None`.
 fn lrc_words(text: &str) -> (String, Option<Vec<(f64, String)>>) {
     if !text.contains('<') {
         return (collapse_spaces(text), None);
@@ -369,15 +355,14 @@ fn parse_srt(text: &str) -> Vec<ScriptLine> {
     lines
 }
 
-/// 一个空行分隔的块：有 `-->` 的那一行是时间，之后的行是正文；序号行、`WEBVTT`、
-/// `NOTE` / `STYLE` 块没有时间行，整块跳过。
+/// A block separated by blank lines. The line containing `-->` is the timing line, and the lines after it are the body. Sequence-number lines, `WEBVTT`, and `NOTE` / `STYLE` blocks have no timing line, so the whole block is skipped.
 fn srt_block(block: &[&str], lines: &mut Vec<ScriptLine>) {
     let Some(position) = block.iter().position(|line| line.contains("-->")) else {
         return;
     };
     let (from, to) = block[position].split_once("-->").expect("contains -->");
     let start = parse_subtitle_clock(from);
-    // VTT 的 cue 设置（`align:start` …）跟在终点后面。
+    // VTT cue settings (`align:start` …) follow the end time.
     let end = parse_subtitle_clock(to.split_whitespace().next().unwrap_or(""));
     let body: Vec<String> = block[position + 1..]
         .iter()
@@ -407,7 +392,7 @@ fn parse_subtitle_clock(text: &str) -> Option<f64> {
     }
 }
 
-/// 剥 `<i>` / `<c.color>` / `<00:01.000>` 一类 HTML·VTT 标签与 `{\an8}` 一类 ASS 覆写。
+/// Strips HTML/VTT tags such as `<i>`, `<c.color>` and `<00:01.000>`, and ASS overrides such as `{\an8}`.
 fn strip_markup(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut depth_angle = false;
@@ -499,7 +484,7 @@ fn seconds_of(map: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<f64
         .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
-/// 词都得有起止才算数；缺一个就整行不要逐词时间（交给对齐器）。
+/// A word counts only if it has both a start and an end. If one is missing, the whole line gets no per-word timing and is left to the aligner.
 fn json_words(words: &[Value]) -> Option<Vec<TimedWord>> {
     let mut out = Vec::with_capacity(words.len());
     for word in words {
@@ -522,15 +507,14 @@ fn json_words(words: &[Value]) -> Option<Vec<TimedWord>> {
     (!out.is_empty()).then_some(out)
 }
 
-// ---------------------------------------------------------------- 行窗
+// ---------------------------------------------------------------- line windows
 
-/// 补齐每一行的 `(start, end)`：
+/// Fills in `(start, end)` for every line:
 ///
-/// - 有起点没终点：接下一个已知时刻（下一行的起点），再没有就到 `duration`；
-/// - 没起点：一段连续没时间的行按字数均分前一个已知终点与后一个已知起点之间的空档
-///   （两头都没有就是 0 与 `duration`）。
+/// - A line with a start but no end takes the next known time (the next line's start). If there is none, it takes `duration`.
+/// - A line with no start: a run of consecutive untimed lines splits the gap between the previous known end and the next known start evenly by character count. If neither side has a time, the gap runs from 0 to `duration`.
 ///
-/// 结果单调不减、落在 `[0, duration]` 内；终点不早于起点。
+/// The result is non-decreasing and lies within `[0, duration]`; each end is no earlier than its start.
 pub fn resolve_windows(lines: &[ScriptLine], duration: f64) -> Vec<(f64, f64)> {
     let duration = duration.max(0.0);
     let count = lines.len();
@@ -601,29 +585,25 @@ pub fn resolve_windows(lines: &[ScriptLine], duration: f64) -> Vec<(f64, f64)> {
         .collect()
 }
 
-/// 用已有转录的词给无时间的文稿行定锚。
+/// Anchors untimed script lines using the words of an existing transcript.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnchorOutcome {
-    /// 每行的 `(start, end)`；没对上任何词的行是 `None`（交给 [`resolve_windows`] 均分）。
+    /// `(start, end)` for each line. A line that matched no word is `None` (left to [`resolve_windows`] to split evenly).
     pub windows: Vec<Option<(f64, f64)>>,
-    /// 文稿词里对上转录词的比例。
+    /// Share of script words that matched transcript words.
     pub matched: f64,
 }
 
-/// 行首 / 行尾没对上的词按多长估：每词至少这么多秒……
+/// Unmatched words at the start or end of a line are estimated at no less than this many seconds per word...
 const MISSING_WORD_MIN: f64 = 0.35;
-/// ……长词按字符数算（唱得比说得慢）……
+/// ...long words are estimated by character count (sung slower than spoken)...
 const MISSING_WORD_PER_CHAR: f64 = 0.09;
-/// ……再放宽这么多倍，窗宁宽勿窄：对齐器在窗里能找对位置，窗外的词只能挤进边缘。
+/// ...and then widened by this factor. Wider windows are better than narrow ones: the aligner can find the right position within a window, whereas words outside the window can only be squeezed into the edge.
 const MISSING_SLACK: f64 = 1.5;
 
-/// 文稿行 × 转录词：规范化成词元（小写、去标点；CJK 逐字），按词序做 LCS，每行
-/// 取对上的词的时间范围。离群的零星匹配（副歌里的 `my` / `the` 对到别处）用中位数
-/// 附近的一簇收掉。
+/// Script lines × transcript words: normalized to tokens (lowercased, punctuation stripped, CJK one character per token), aligned by LCS in word order, and each line takes the time range of its matched words. Stray outlier matches (the `my` / `the` of a chorus matched somewhere else) are discarded by keeping the cluster near the median.
 ///
-/// 行首几个词没对上（识别漏了、听错了）时，那几个词唱在第一个对上的词**之前**：
-/// 窗的起点按它们的估计时长往前放进行间空档，最早到上一行对上的终点；行尾同理往后放、
-/// 最晚到下一行的起点。不放的话它们只能挤进对齐的边距里，变成十几毫秒的词、整行晚一截。
+/// When the first few words of a line are unmatched (recognition missed them or misheard them), those words are sung **before** the first matched word. The window start is pushed earlier by their estimated duration into the gap between lines, but no earlier than the end of the previous line's match. The same applies at the end of the line: it is pushed later, but no later than the start of the next line. Otherwise those words would be squeezed into the alignment margin, become words lasting tens of milliseconds, and the whole line would lag behind.
 pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome {
     let mut vocabulary: HashMap<String, u32> = HashMap::new();
     let mut intern = |token: String| -> u32 {
@@ -633,7 +613,7 @@ pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome 
     let mut script_tokens: Vec<u32> = Vec::new();
     let mut script_line: Vec<usize> = Vec::new();
     let mut script_pos: Vec<usize> = Vec::new();
-    // 每行每个词元的估计时长（秒），给没对上的行首 / 行尾估窗用。
+    // Estimated duration per token of each line (seconds), used to estimate windows for unmatched leading and trailing words.
     let mut line_estimates: Vec<Vec<f64>> = vec![Vec::new(); lines.len()];
     for (index, line) in lines.iter().enumerate() {
         for (pos, token) in tokens(line).into_iter().enumerate() {
@@ -662,13 +642,13 @@ pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome 
     let Some(pairs) = lcs_matches(&script_tokens, &anchor_tokens, LCS_CELL_CAP) else {
         return empty;
     };
-    // (起, 止, 行内词元序号)
+    // (start, end, token index within the line)
     let mut per_line: Vec<Vec<(f64, f64, usize)>> = vec![Vec::new(); lines.len()];
     for (script_index, anchor_index) in &pairs {
         let (start, end) = anchor_time[*anchor_index];
         per_line[script_line[*script_index]].push((start, end, script_pos[*script_index]));
     }
-    // 对上的范围，外加行首 / 行尾没对上的那几个词的估计时长。
+    // The matched range, plus the estimated durations of the unmatched leading and trailing words.
     let matched_spans: Vec<Option<(f64, f64, f64, f64)>> = per_line
         .iter()
         .zip(&line_estimates)
@@ -679,7 +659,7 @@ pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome 
             let mut starts: Vec<f64> = times.iter().map(|(start, _, _)| *start).collect();
             starts.sort_by(f64::total_cmp);
             let median = starts[starts.len() / 2];
-            // 一行唱不了多久：一词 0.8 秒、至少 4 秒的半径以外算离群。
+            // A line cannot last long: a radius beyond 0.8 s per word, with a minimum of 4 s, counts as an outlier.
             let radius = (estimates.len() as f64 * 0.8).max(4.0);
             let kept: Vec<&(f64, f64, usize)> = times
                 .iter()
@@ -723,7 +703,7 @@ pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome 
         let widened_end = (end + tail).min(ceiling).max(end);
         windows[*index] = Some((widened_start, widened_end));
     }
-    // 两行都往同一段空档里放时，在中间分开，不让窗互相盖住。
+    // When two lines both place their words in the same gap, split the gap between them so that the windows do not overlap.
     for pair in known.windows(2) {
         let (Some((_, previous_end)), Some((next_start, _))) = (windows[pair[0]], windows[pair[1]])
         else {
@@ -751,7 +731,7 @@ pub fn anchor_windows(lines: &[String], anchors: &[TimedWord]) -> AnchorOutcome 
     }
 }
 
-/// 匹配用词元：小写，字母数字以外都当分隔；CJK 字符各自成一个词元。
+/// Tokens for matching: lowercased. Anything other than letters and digits is a separator. Each CJK character is its own token.
 fn tokens(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -764,7 +744,7 @@ fn tokens(text: &str) -> Vec<String> {
         } else if ch.is_alphanumeric() {
             current.extend(ch.to_lowercase());
         } else if ch == '\'' || ch == '’' {
-            // `that's` / `don't` 在转录里常被写成 `thats` / 拆开，都并成一个词元。
+            // `that's` and `don't` are often transcribed as `thats` or split apart in transcripts; they are merged into one token.
         } else if !current.is_empty() {
             out.push(std::mem::take(&mut current));
         }
@@ -779,8 +759,7 @@ fn collapse_spaces(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 词拼回行文本：两侧是不留空格的文字（汉字 / 假名）时不加空格；韩文的词
-/// 是어절，词间加空格。
+/// Joins words back into line text. No space is added where both sides are scripts without spaces between words (Han / kana). Korean words are eojeol, so spaces are added between them.
 pub fn join_words<'a>(words: impl Iterator<Item = &'a str>) -> String {
     let mut out = String::new();
     for word in words {
@@ -841,7 +820,7 @@ mod tests {
             ]
         );
         assert!(split_plain("  \n\t\n").is_empty());
-        // 整篇短行（歌词）：行内的句末不切。
+        // For a script of short lines (lyrics), sentence-final punctuation inside a line is not split.
         assert_eq!(
             split_plain(
                 "I see sparks\nNo surprise\nWhat did Ilya see? We'll never know.\nWas it all for show?\n"
@@ -853,7 +832,7 @@ mod tests {
                 "Was it all for show?"
             ]
         );
-        // 方括号只占行首一段的不是标记。
+        // Brackets that cover only part of the line's start are not a marker.
         assert_eq!(split_plain("[laughs] okay"), vec!["[laughs] okay"]);
     }
 
@@ -890,10 +869,10 @@ mod tests {
         );
         assert_eq!(lines[0].start, Some(4.25));
         assert_eq!(lines[0].end, Some(7.85));
-        // 空标签行是上一行的终点。
+        // An empty tag line is the end of the previous line.
         assert_eq!(lines[1].end, Some(9.81));
         assert_eq!(lines[2].end, Some(62.0));
-        // 最后一行没有终点，交给 resolve_windows。
+        // The last line has no end and is left to resolve_windows.
         assert_eq!(lines[3].start, Some(62.0));
         assert_eq!(lines[3].end, None);
     }
@@ -985,9 +964,9 @@ mod tests {
         ];
         let windows = resolve_windows(&lines, 20.0);
         assert_eq!(windows[0], (0.0, 2.0));
-        // 有起点没终点：接下一个已知起点。
+        // Has a start but no end: take the next known start.
         assert_eq!(windows[1], (2.0, 10.0));
-        // 这两行夹在 10.0（bb 的终点）与 10.0 之间：空档为零，照样单调。
+        // These two lines lie between 10.0 (the end of bb) and 10.0, so the gap is zero, which still keeps the sequence monotonic.
         assert_eq!(windows[2], (10.0, 10.0));
         assert_eq!(windows[4], (10.0, 11.0));
         assert_eq!(windows[5], (12.0, 20.0));
@@ -1009,7 +988,7 @@ mod tests {
             word("of", 5.4, 5.6),
             word("AGI", 5.6, 6.5),
             word("your", 7.9, 8.2),
-            word("circus", 8.2, 8.8), // ASR 听错：不影响行窗
+            word("circus", 8.2, 8.8), // ASR misheard the words: this does not affect the line windows.
             word("make", 8.8, 9.0),
             word("me", 9.0, 9.2),
             word("nervous", 9.2, 9.8),
@@ -1031,7 +1010,7 @@ mod tests {
         assert_eq!(outcome.windows[1], Some((7.9, 9.8)));
         assert_eq!(outcome.windows[2], Some((9.9, 11.0)));
         assert_eq!(outcome.windows[3], None);
-        // 15 个文稿词元里 12 个对上。
+        // 12 of the 15 script tokens matched.
         assert!(
             (outcome.matched - 12.0 / 15.0).abs() < 1e-9,
             "{}",
@@ -1047,11 +1026,11 @@ mod tests {
             start,
             end: start + 0.3,
         };
-        // 「my」在 30 秒外又出现一次，LCS 可能把它配过去——窗不该被拉长到 30 秒。
+        // “my” appears again 30 s away, and LCS might match it there. The window must not be stretched to 30 s.
         let asr = vec![word("upping", 1.0), word("doom", 1.6), word("my", 31.0)];
         let lines = vec!["upping doom my".to_owned()];
         let outcome = anchor_windows(&lines, &asr);
-        // 离群的 `my` 不拉长窗；它算行尾没对上的词，窗只往后放它的估计时长（0.35 × 1.5）。
+        // A stray `my` does not stretch the window. It counts as an unmatched word at the end of the line, and the window is extended only by its estimated duration (0.35 × 1.5).
         assert_eq!(outcome.windows[0], Some((1.0, 2.425)));
     }
 
@@ -1062,8 +1041,7 @@ mod tests {
             start,
             end,
         };
-        // 识别漏了第二行的「orthogonality thesis」、第三行的「dense」：
-        // 只对上 `blues` 与 `post chinchilla super`。
+        // Recognition missed “orthogonality thesis” on line 2 and “dense” on line 3, so only `blues` and `post chinchilla super` matched.
         let asr = vec![
             word("we", 4.0, 4.3),
             word("had", 4.3, 4.6),
@@ -1087,13 +1065,13 @@ mod tests {
         .collect();
         let outcome = anchor_windows(&lines, &asr);
         assert_eq!(outcome.windows[0], Some((4.0, 6.0)));
-        // 行首两词估 (13 × 0.09 + 6 × 0.09) × 1.5 = 2.565 s：起点从 10.0 放到 7.435。
+        // The two leading words are estimated at (13 × 0.09 + 6 × 0.09) × 1.5 = 2.565 s, so the start moves from 10.0 to 7.435.
         assert_eq!(outcome.windows[1], Some((7.435, 10.5)));
-        // 行尾 `dense` 估 0.45 × 1.5 = 0.675 s，但下一行 12.8 起：止于 12.8。
+        // The trailing `dense` is estimated at 0.45 × 1.5 = 0.675 s, but the next line starts at 12.8, so the window ends at 12.8.
         assert_eq!(outcome.windows[2], Some((11.0, 12.8)));
         assert_eq!(outcome.windows[3], Some((12.8, 13.1)));
 
-        // 行间空档不够放时，最早到上一行的终点，窗不重叠。
+        // When the gap between lines is not large enough, the window extends at most to the previous line's end, so the windows do not overlap.
         let tight = vec![word("run", 5.4, 6.0), word("blues", 6.3, 6.8)];
         let lines = vec!["run".to_owned(), "orthogonality thesis blues".to_owned()];
         let outcome = anchor_windows(&lines, &tight);

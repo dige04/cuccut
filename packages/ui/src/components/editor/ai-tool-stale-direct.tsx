@@ -15,10 +15,8 @@ import { TRANSLATE_COPY as T } from './translate-copy.ts';
 import { useDocumentBody } from './use-document-body.ts';
 
 /*
- * 刷新过期译文「用 › 直接调模型」（产品设计 §5.10「直接调模型」「逐句与过期译文」）：不走 `ai-tool`，走 `translate` 流程就地刷新
- * 选中的那份译文，不点名句子，由 Runtime 挑过期、原句改过与还没有译文的——与字幕面板 AI 钮的「用模型 API 重译这 N 句」是同一次刷新、
- * 同一份运行态（`useTranslateRun.refreshes`），两处互相看得见。这条路不带提示词、附件与 Skill，参数页不出提示词框；
- * 原文被剪切的句子要按剪后的原文重译，Runtime 判不出，只能交给 Agent。
+ * Refresh stale translations, 「用 › 直接调模型」 (Use › Call model directly) (product design §5.10 「直接调模型」 and 「逐句与过期译文」): does not go through `ai-tool`; the `translate` flow refreshes the selected translation in place, without naming sentences; the Runtime picks the stale ones, the ones whose source was edited, and the ones with no translation yet. It is the same refresh and the same run state as the subtitle panel's AI button 「用模型 API 重译这 N 句」 (retranslate these N sentences with the model API) (`useTranslateRun.refreshes`), and the two places see each other.
+ * This path carries no prompt, attachments or Skill, and the parameters page shows no prompt box. Sentences whose source was cut must be retranslated against the cut source, which the Runtime cannot tell, so those can only be handed to an Agent.
  */
 
 const stack = style({ display: 'flex', flexDirection: 'column', gap: 12 });
@@ -43,16 +41,16 @@ const field = style({ width: 'full' });
 
 export interface StaleDirect {
   translations: DocumentRecord[];
-  /** 要刷新的那份；视频里没有译文时 null。 */
+  /** The one to refresh; null when the video has no translation. */
   record: DocumentRecord | null;
   pick(id: Id): void;
-  /** 译文的语言（就地刷新要与它一致）；读不出时空串。 */
+  /** The translation's language (in-place refresh must match it); empty string when it cannot be read. */
   language: string;
-  /** 要重译几句；正文还没读到时 null。 */
+  /** How many sentences to retranslate; null when the body text has not been read yet. */
   counts: { todo: number; stale: number; untranslated: number } | null;
 }
 
-/** 刷新哪一份、要重译几句（口径同字幕面板的统计条）。 */
+/** Which one to refresh and how many sentences to retranslate (counted the same way as the subtitle panel's stats bar). */
 export function useStaleDirect(documents: Record<Id, DocumentRecord>, preset: AiToolPreset | null, enabled: boolean): StaleDirect {
   const translations = useMemo(() => (enabled ? refreshableTranslations(documents) : []), [documents, enabled]);
   const [picked, setPicked] = useState<Id | null>(null);
@@ -73,19 +71,19 @@ export function useStaleDirect(documents: Record<Id, DocumentRecord>, preset: Ai
   };
 }
 
-/** 要重译的句数拆成「N 过期 · N 未翻译」（同字幕面板统计条的短计数），零的不写。 */
+/** Splits the number of sentences to retranslate into 「N 过期」 · 「N 未翻译」 (N stale · N untranslated) (the short counts of the subtitle panel's stats bar); zero counts are omitted. */
 export function refreshParts(counts: { stale: number; untranslated: number }): string {
   return [counts.stale ? T.staleShort(counts.stale) : '', counts.untranslated ? T.untranslatedShort(counts.untranslated) : ''].filter(Boolean).join(' · ');
 }
 
-/** 译文在菜单与提示里的名字：语言名；同一门语言有几份时接上文档名。 */
+/** The translation's name in menus and hints: the language name; when the same language has several, the document name is appended. */
 export function translationLabel(record: DocumentRecord, all: readonly DocumentRecord[]): string {
   const language = record.language ? languageName(record.language) : T.unnamed;
   const twins = all.filter((t) => t.language === record.language).length > 1;
   return twins && record.name ? `${language} · ${record.name}` : language;
 }
 
-/** 正在就地刷新这份译文：从这里或字幕面板提交的（回执到之前也算），或别处发起的。没有时 null。 */
+/** This translation is being refreshed in place: submitted from here or from the subtitle panel (counts even before the receipt arrives), or started elsewhere. null when none. */
 export function useStaleRefreshLive(translationId: Id | null) {
   const own = useTranslateRun((s) => (translationId ? (s.refreshes[translationId] ?? null) : null));
   const jobs = useJobs((s) => s.jobs);
@@ -100,8 +98,8 @@ export function useStaleRefreshLive(translationId: Id | null) {
 }
 
 /**
- * 参数页下半截（代替提示词框）：说明这条路不带提示词、模型选择与门卡、主按钮「重译 N 句」与一行去向。没有要重译的句子时
- * 主按钮置灰并写原因。模型不能用时不灰掉按钮：按下说清差什么（`onNotReady`），并把门卡带到眼前。
+ * The lower half of the parameters page (in place of the prompt box): explains that this path carries no prompt, shows the model picker and gate, the main button 「重译 N 句」 (Retranslate N sentences), and a line stating where the result goes. When there are no sentences to retranslate, the main button is greyed out with the reason.
+ * When the model cannot be used the button is not greyed out: pressing it says what is missing (`onNotReady`) and brings the gate into view.
  */
 export function StaleDirectStart({
   videoId,
@@ -150,7 +148,7 @@ export function StaleDirectStart({
   );
 }
 
-/** 就地刷新跑着时参数页原地换成进度：重译几句、百分比与第几批、取消；任务在后台，回列表也接着跑。完成后回到参数页，提示里给撤销。 */
+/** While the in-place refresh runs, the parameters page turns into progress in place: how many sentences are being retranslated, the percentage and which batch, and cancel. The task runs in the background and keeps going when returning to the list. On completion it returns to the parameters page, and the message offers undo. */
 export function StaleRefreshView({ live }: { live: NonNullable<ReturnType<typeof useStaleRefreshLive>> }) {
   const { job, progress } = live;
   const submitting = !job;

@@ -110,20 +110,20 @@ const ALL = 'all';
 const speakerKey = (name: string) => `speaker:${name}`;
 
 /**
- * 内容命中（架构设计 §5.11）：搜索框里有字时，同时查视频的内容索引（转录、字幕、译文、章节），列在条目列表上面。
- * 停下打字 300ms 再查；只用最后一次的结果。点一条打开那个视频，序列时间的命中跳到那一处。
+ * Content hits (architecture design §5.11): when the search box has text, also search the videos' content index (transcript, subtitles, translation, chapters) and list the results above the item list.
+ * Wait 300ms after typing stops before searching; only the last result is used. Clicking one opens that video; a hit at sequence time moves the playhead to that spot.
  *
- * 结果按视频分组（设计稿 page-projects.jsx HitGroup）：组头打开视频、不挪播放头；每组先给十条，「再显示 N 条」再放十条。
- * 可按文档种类、说话人筛（合同 `kinds`、`speaker`）：说话人的选项来自这个词搜到过的命中；Runtime 按「名字里含有」找，
- * 这里再按整串对一遍。设计稿没有这两个筛选控件，样子照 Space 页现有的筛选 Picker。
+ * Results are grouped by video (design draft page-projects.jsx HitGroup): the group header opens the video without moving the playhead; each group first shows ten, and “再显示 N 条” (Show N more) adds ten more.
+ * They can be filtered by document kind and speaker (contract `kinds`, `speaker`): the speaker options come from hits this term found; the Runtime matches “name contains”,
+ * and here the whole string is matched again. The design draft has no control for these two filters, so the look follows the existing filter Picker on the Space page.
  */
 export function SpaceSearchHits({ query, projectId, entries }: { query: string; projectId: Id | 'none' | null; entries: readonly SpaceEntry[] }) {
   const runtime = useRuntime();
   const [state, setState] = useState<SearchState | null>(null);
   const [filter, setFilter] = useState<HitFilter>(ANY_HIT);
-  // 这个词（与项目）搜到过的说话人；换词时重来。
+  // Speakers found by this term (and project); reset when the term changes.
   const [speakers, setSpeakers] = useState<{ key: string; names: string[] }>({ key: '', names: [] });
-  // 每组放到第几条；换词、换筛选时重来。
+  // How many items each group is showing; reset when the term or the filter changes.
   const [shown, setShown] = useState<{ key: string; counts: Record<string, number> }>({ key: '', counts: {} });
   const seq = useRef(0);
   const q = query.trim();
@@ -263,7 +263,7 @@ export function SpaceSearchHits({ query, projectId, entries }: { query: string; 
   );
 }
 
-/** 点组头：打开视频，不挪播放头（设计稿：没有落点的不硬编一个）。 */
+/** Clicking the group header opens the video without moving the playhead (the design draft does not invent a landing point where there is none). */
 function openGroup(group: HitGroup, entries: readonly SpaceEntry[]): void {
   const target = hitTarget(group.hits[0]!, entries);
   if (!target) {
@@ -274,8 +274,8 @@ function openGroup(group: HitGroup, entries: readonly SpaceEntry[]): void {
 }
 
 /**
- * 打开命中所在的视频。序列时间的命中先把编辑器的播放头放到那一秒（编辑器换到这个视频时不再归零，按它定位），
- * 视频打开后版本和建索引时不同就说一声；源时间的命中只打开视频，如实说位置要自己找。
+ * Open the video where the hit is. For a hit at sequence time, first set the editor's playhead to that second (when the editor switches to this video it no longer resets to zero; it positions by this).
+ * After the video opens, say so if its version differs from when the index was built. A hit at source time only opens the video, and honestly says the position must be found by hand.
  */
 function openHit(hit: SpaceSearchHit, entries: readonly SpaceEntry[]): void {
   const target = hitTarget(hit, entries);
@@ -294,7 +294,7 @@ function openHit(hit: SpaceSearchHit, entries: readonly SpaceEntry[]): void {
     ToastQueue.neutral(COPY.hitSourceClock, { timeout: 5000 });
     return;
   }
-  // 打开后对一下版本：建索引之后改过的，位置可能有偏差。等不到就算了。
+  // After opening, check the version: if it was edited after indexing, the position may be off. If that check doesn't arrive, give up.
   const check = () => {
     const video = useVideo.getState().video;
     if (video?.videoId !== hit.videoId || video.status !== 'ready' || !video.state) return false;

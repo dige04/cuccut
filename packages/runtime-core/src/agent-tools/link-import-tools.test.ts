@@ -5,8 +5,7 @@ import { ToolError } from './tool-catalog.ts';
 import { toolRisk, type ToolConfirmation, type ToolPrincipal } from './tool-scope.ts';
 
 /**
- * 从链接下载的落点检查与参数（`download`、`transcribe` 给 `url`）：对外服务的 `newVideo` 要给 `project`，流程新建的视频
- * 一出现就登记进服务的范围；转写的参数原样交给流程。yt-dlp、流程与任务都是假的。
+ * Destination checks and parameters for downloads from links (`download`, and `transcribe` given a `url`). `newVideo` for the external service requires `project`; a video the flow creates is registered into the service's scope as soon as it appears; transcription parameters are passed to the flow as given. yt-dlp, the flow and the job are all fakes.
  */
 
 const LINK = 'https://video.example.com/watch?v=abc';
@@ -96,7 +95,7 @@ describe('download：对外服务的落点', () => {
     expect(result.jobId).toBe('job_1');
     expect(started[0]).toMatchObject({ url: LINK, target: { create: { projectId: 'prj_1' } }, saveTo: 'project' });
     expect(adopted).toEqual([]);
-    // 别的任务的变化不算。
+    // Changes from other tasks do not count.
     for (const listener of [...listeners]) listener({ jobId: 'job_2', videoId: 'vid_other', state: 'running' } as unknown as JobRecord);
     emit({ phase: 'downloading' } as Partial<JobRecord>);
     expect(adopted).toEqual([]);

@@ -2,11 +2,11 @@ import { localizeText, type JobRecord } from '@cuccut/protocol';
 import { M } from '../cli-copy.ts';
 
 /**
- * 等任务时的进度（Agent 面设计 §5.1、§5.4），一律写 stderr，不碰 stdout 的 JSON：
+ * Progress while waiting for a task (agent-surface design §5.1, §5.4), always written to stderr, never touching the stdout JSON:
  *
- * - `--progress jsonl`：每行一个事件 `{ type: 'progress' | 'artifact' | 'warning' | 'done', jobId, … }`；`progress` 带
- *   `state`、`stage`（任务的阶段）与 `pct`（没有总量时 null）。
- * - 默认：stderr 是 TTY 时一行原地刷新，否则状态变化时写一行。
+ * - `--progress jsonl`: one event per line `{ type: 'progress' | 'artifact' | 'warning' | 'done', jobId, … }`; `progress` carries
+ *   `state`, `stage` (the task's stage) and `pct` (null when there is no total).
+ * - Default: when stderr is a TTY, one line refreshed in place; otherwise one line written on each state change.
  */
 export type ProgressMode = 'jsonl' | 'text';
 
@@ -27,7 +27,7 @@ export class ProgressReporter {
     this.#tty = Boolean(stream.isTTY);
   }
 
-  /** 任务记录有变化。 */
+  /** The task record changed. */
   update(job: JobRecord): void {
     const pct = percent(job);
     if (this.#mode === 'jsonl') {
@@ -71,7 +71,7 @@ export class ProgressReporter {
     else this.#close();
   }
 
-  /** 一行说明（取消中、等待超时）。 */
+  /** One line of explanation (cancelling, wait timed out). */
   note(text: string): void {
     if (this.#mode === 'jsonl') return;
     this.#message(text);

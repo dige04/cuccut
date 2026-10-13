@@ -44,7 +44,7 @@ const empty = style({ font: 'ui-sm', color: 'gray-600', paddingX: 8, marginTop: 
  */
 const drawer =
   'flex w-72 shrink-0 flex-col overflow-hidden rounded-3xl border border-border/60 bg-card p-3 [--cc-row-current:rgb(255_255_255/0.1)] [--cc-row-hover:rgb(255_255_255/0.05)]';
-/** S2 的 SideNav 默认撑满父级高度；下面还有空列表提示，按内容高度排，滚动交给外层。 */
+/** S2's SideNav fills its parent's height by default; there is an empty-list hint below it too, so size it to the content and leave scrolling to the outer container. */
 const nav = style({ height: 'auto' });
 
 type DialogState = { kind: 'new-project' } | { kind: 'rename-project'; project: Project } | null;
@@ -72,11 +72,11 @@ export function HomeSidebar({ className }: { className?: string }) {
   const now = useNow(60_000);
 
   const tree = useMemo(() => buildSidebar(projects, conversations, sort), [projects, conversations, sort]);
-  // 打开着视频时侧栏仍指向那条会话：选中位置不带视频参数。
+  // While a video is open, the sidebar still points at that session: the selected position carries no video parameter.
   const selectedRoute =
     route.tab === 'home' ? hrefFor({ tab: 'home', conversationId: route.conversationId, projectId: route.projectId }) : undefined;
 
-  // 当前会话所在的项目展开着，新会话在侧栏里才看得见。
+  // The project of the current session stays expanded, so the new session is visible in the sidebar.
   const currentProject =
     route.tab === 'home' ? (route.projectId ?? conversations.find((c) => c.id === route.conversationId)?.projectId ?? null) : null;
   useEffect(() => {
@@ -246,8 +246,8 @@ export function HomeSidebar({ className }: { className?: string }) {
 }
 
 /**
- * 段头：段名 + 折叠钮（展开箭头只在悬停、聚焦或已折叠时出现），右边可以挂这一段的操作。
- * 段头里的控件自己处理焦点与按键，不让 SideNav 把它们转给某一行。
+ * Section header: the section name plus a collapse button (the expand arrow only shows on hover, on focus, or when collapsed); actions for this section can be placed on the right.
+ * Controls in the header handle focus and keys themselves, so SideNav does not forward them to a row.
  */
 function SectionHead({ label, collapsed, onToggle, children }: { label: string; collapsed: boolean; onToggle: () => void; children?: ReactNode }) {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
@@ -276,7 +276,7 @@ function SectionHead({ label, collapsed, onToggle, children }: { label: string; 
   );
 }
 
-/** 项目段头的「⋯」：整理侧栏（按项目分组 / 在一个列表中）与会话排序。 */
+/** The "⋯" on the project header: tidy the sidebar (group by project / one list) and sort sessions. */
 function OrganizeMenu() {
   const grouping = useShell((s) => s.sidebarGrouping);
   const sort = useShell((s) => s.sidebarSort);

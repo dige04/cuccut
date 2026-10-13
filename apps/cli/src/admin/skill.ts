@@ -7,12 +7,11 @@ import { AGENT_HOSTS, HOST_LABELS, hostSkillsDir, parseAgentHost, type AgentHost
 import { defineNoun } from './context.ts';
 import { M } from './skills-copy.ts';
 
-/** 说明书在宿主 skills 目录里的目录名（与 Runtime 给的 `id` 相同）。 */
+/** The directory name of the instructions in the host's skills directory (same as the `id` given by the Runtime). */
 const SKILL_ID = 'cuccut';
 
 /**
- * 管理桶 `cuccut skill install|path`（Agent 面设计 §8.6）：把给外部 Agent 的说明书装进宿主的 skills 目录。单数，与目录里的
- * `skills list|read`（CucCut 自己的 craft）分开。渲染在 Runtime 那边（`catalog.agentSkill`，CLI 只经协议）；`path` 不连 Runtime。
+ * Admin bucket `cuccut skill install|path` (agent-surface design §8.6): installs the instructions for external agents into the host's skills directory. Singular, separate from `skills list|read` in the directory (CucCut's own craft). Rendering happens on the Runtime side (`catalog.agentSkill`; the CLI only goes through the protocol); `path` does not connect to the Runtime.
  */
 export const skill = defineNoun({
   name: 'skill',
@@ -70,7 +69,7 @@ export interface SkillTargetState {
   linkTarget?: string;
 }
 
-/** 目标现在是什么（不跟随链接）；不存在时 null。 */
+/** What the target is now (does not follow links); null if it does not exist. */
 export function describeTarget(target: string): SkillTargetState | null {
   let stat;
   try {
@@ -83,8 +82,7 @@ export function describeTarget(target: string): SkillTargetState | null {
 }
 
 /**
- * 写说明书：先写进同一目录下的临时目录，再替换目标（已有的目标此时才删：是链接只删链接）。`linkDir` 给出时渲染结果写进它
- * （整个换掉），目标放指向它的链接（Windows 用 junction，不要管理员权限；`platform` 只给测试换平台用）。
+ * Writes the instructions: first writes into a temporary directory next to the same target, then replaces the target (an existing target is deleted only at this point: if it is a link, only the link is deleted). When `linkDir` is given, the rendered result is written into it (replacing the whole thing), and the target gets a link pointing to it (on Windows a junction, which does not need administrator rights; `platform` is only for tests to swap the platform).
  */
 export function installAgentSkill(
   skill: Pick<CatalogAgentSkill, 'files'>,
@@ -114,7 +112,7 @@ function writeFiles(dir: string, files: CatalogAgentSkill['files']): void {
   }
 }
 
-/** 在 `target` 旁边做好 `staging`，再删掉旧的、换上新的。做 staging 失败时旧的不动。 */
+/** Prepares `staging` next to `target`, then removes the old one and puts the new one in place. If preparing staging fails, the old one is left untouched. */
 function replaceWith(target: string, make: (staging: string) => void): void {
   const staging = path.join(path.dirname(target), `.${path.basename(target)}.cuccut-${process.pid}-${Date.now()}`);
   try {
@@ -127,7 +125,7 @@ function replaceWith(target: string, make: (staging: string) => void): void {
   fs.renameSync(staging, target);
 }
 
-/** 删掉目标：链接只删链接本身，不碰它指向的目录。 */
+/** Deletes the target: for a link, only the link itself is removed, not the directory it points to. */
 function removeTarget(target: string): void {
   const state = describeTarget(target);
   if (!state) return;
@@ -136,9 +134,9 @@ function removeTarget(target: string): void {
 }
 
 export interface SkillPaths {
-  /** 说明书的来源（`<…>/skills/cuccut`）；找不到时 null。 */
+  /** Source of the instructions (`<…>/skills/cuccut`); null if not found. */
   sourceDir: string | null;
-  /** `--link` 时渲染结果放的位置。 */
+  /** Where the rendered result goes with `--link`. */
   linkDir: string;
   hosts: { agent: AgentHost; target: string; installed: SkillTargetState | null }[];
 }

@@ -14,16 +14,16 @@ import { pl } from './link-import-copy.pl.ts';
 import { tr } from './link-import-copy.tr.ts';
 import { vi } from './link-import-copy.vi.ts';
 
-/** 失败的标题与说明（补救按钮是数据，留在 link-import.ts）。 */
+/** The failure title and description (the remedy buttons are data and stay in link-import.ts). */
 export interface LinkIssueText {
   title: string;
   body: string;
 }
 
-/** 句末补一个句号（原话已经有结尾标点时不补）。 */
+/** Adds a full stop at the end of the sentence (not added when the original already ends with punctuation). */
 const endSentence = (text: string): string => (/[.!?。！？]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
-/** 把几句话接成一段（Runtime 的原话与补救说明），每句补齐句号；空的跳过。 */
+/** Joins several sentences into one paragraph (the Runtime's original text and the remedy explanation), adding the full stop to each; empty ones are skipped. */
 const joinSentences = (parts: readonly (string | null | undefined)[]): string =>
   parts
     .filter((p): p is string => !!p?.trim())
@@ -31,7 +31,7 @@ const joinSentences = (parts: readonly (string | null | undefined)[]): string =>
     .join(' ');
 
 /**
- * 从链接导入的文案（model/link-import.ts；英文是键与类型的来源，译文在 `link-import-copy.<语言>.ts`）。
+ * Copy for importing from a link (model/link-import.ts; English is the source for keys and types; translations are in `link-import-copy.<语言>.ts`).
  */
 const en = {
   title: (name: string | null) => (name ? `Import from link · ${name}` : 'Import from link'),

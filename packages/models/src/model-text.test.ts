@@ -5,7 +5,7 @@ import { CAPABILITY_LABELS, capabilityLabel } from './model-selection.ts';
 import { modelDetail } from './model-text.ts';
 import { TextGenerationError } from './text-generation.ts';
 
-/** 测试中途换成中文：`CUCCUT_LOCALE` 优先于 `setLocale`，两个一起换。 */
+/** Switches to Chinese mid-test: `CUCCUT_LOCALE` takes precedence over `setLocale`, so both are switched together. */
 function toChinese(): void {
   vi.stubEnv('CUCCUT_LOCALE', 'zh-Hans');
   setLocale('zh-Hans');
@@ -27,7 +27,7 @@ describe('模型文字的多语言', () => {
     expect(error.message).toBe("OpenAI's content filter blocked this output");
     expect(error.messageRef?.key).toBe('modelsTextGeneration.contentFiltered');
     expect(formatRef(error.messageRef!, error.message, 'zh-Hans')).toBe('OpenAI 的内容过滤拦下了这次输出');
-    // 第三方原话没有引用。
+    // Third-party original wording is not quoted.
     expect(new TextGenerationError('PROVIDER_UNAVAILABLE', 'upstream said no').messageRef).toBeUndefined();
   });
 

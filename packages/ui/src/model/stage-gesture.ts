@@ -33,12 +33,10 @@ import {
 } from './stage-pose.ts';
 
 /**
- * 舞台上的一次手势（原型 stage-objects.jsx 的 `gesture` 与 stage-marquee.jsx 的 MultiBox）：起手冻住每件的盒，
- * 指针每动一下按同一份起手状态算出这一刻的盒（不累积误差），松手把盒换回 `place`、生成一笔事务的操作。
- * 全是序列画布像素；屏幕上的阈值由调用方给出「一个屏幕像素合多少画布像素」（`pxScale`）。
+ * A single gesture on the stage (`gesture` in the prototype stage-objects.jsx and MultiBox in stage-marquee.jsx): at the start, each item's box is frozen; each pointer move computes that moment's box from the same starting state (so errors do not accumulate); on release the boxes are converted back to `place`, producing one transaction of operations. Everything is in sequence canvas pixels; the on-screen thresholds are given by the caller as “how many canvas pixels make up one screen pixel” (`pxScale`).
  */
 
-/** 参与手势的一件：实例、起手时的盒、移动限位，以及推盒用的素材表（媒体的框高按源的宽高比）。 */
+/** One item taking part in the gesture: the instance, its box at the start, the move limits, and the asset table used to push boxes (a media box's height follows the source's aspect ratio). */
 export interface Member {
   item: PlacedItem;
   start: Pose;
@@ -51,7 +49,7 @@ export type Gesture =
   | { kind: 'edge'; member: Member; handle: Handle; p0: Point }
   | { kind: 'corner'; member: Member; handle: Handle; p0: Point }
   | { kind: 'rotate'; member: Member; pivot: Point; p0: Point }
-  /** 平移取景：铺满、`cover`、带裁剪的视频，拖动只挪裁剪窗口（`source` 是源的显示尺寸，不知道时 null）。 */
+  /** Pan framing: for full-frame, `cover`, or cropped videos, dragging only moves the crop window (`source` is the source's display size; null when unknown). */
   | { kind: 'pan'; member: Member & { item: PannableVideo }; source: { width: number; height: number } | null; p0: Point }
   | { kind: 'group-move'; members: Member[]; p0: Point }
   | { kind: 'group-scale'; members: Member[]; bounds: Rect; p0: Point };
@@ -61,14 +59,14 @@ export interface Modifiers {
   alt: boolean;
 }
 
-/** 手势所在的画布：尺寸、参与吸附的其它对象（未旋转的盒）、一个屏幕像素合多少画布像素。 */
+/** The canvas the gesture happens on: its size, the other objects that take part in snapping (unrotated boxes), and how many canvas pixels make up one screen pixel. */
 export interface StageEnv {
   canvas: CanvasSize;
   others: Rect[];
   pxScale: number;
 }
 
-/** 这一刻的结果：每件的盒（与成员同序）、等比倍率（文字连字号一起放大用）、参考线；平移取景时另有新的裁剪（盒不动）。 */
+/** The result for this moment: each item's box (in the same order as the members), the uniform scale factor (used to scale text font size along with it), and the guide lines; for pan framing, there is a new crop instead (the box does not move). */
 export interface GestureFrame {
   poses: Pose[];
   factor: number;
@@ -85,7 +83,7 @@ export function membersOf(gesture: Gesture): Member[] {
   return 'members' in gesture ? gesture.members : [gesture.member];
 }
 
-/** 指针到了 `p`（画布像素）：按起手状态算这一刻。⌥ 关吸附；旋转 ⇧ / ⌥ 自由。 */
+/** Pointer is at `p` (canvas pixels): computes this moment from the start state. ⌥ turns off snapping; when rotating, ⇧ / ⌥ make the angle free. */
 export function stepGesture(gesture: Gesture, p: Point, mods: Modifiers, env: StageEnv): GestureFrame {
   const { canvas, others, pxScale } = env;
   const dx = p.x - gesture.p0.x;
@@ -118,7 +116,7 @@ export function stepGesture(gesture: Gesture, p: Point, mods: Modifiers, env: St
     case 'rotate': {
       const { start } = gesture.member;
       const rotation = dragRotation(start.rotation, gesture.pivot, gesture.p0, p, mods.shift || mods.alt);
-      // 元素模型绕框中心转：中心与大小不动，只换角度。
+      // The element model rotates around the box center: the center and size stay put, only the angle changes.
       return { poses: [{ ...start, rotation }], factor: 1, guides: [] };
     }
     case 'pan': {
@@ -147,14 +145,14 @@ export function stepGesture(gesture: Gesture, p: Point, mods: Modifiers, env: St
   }
 }
 
-/** 等比缩放时文字的字号跟着乘（夹在 1–400，取一位小数）；样式不是旧版文字样式的不动它。 */
+/** When scaling uniformly, text font size is multiplied by the same factor (clamped to 1–400, one decimal place); styles that are not the legacy text style are left alone. */
 export function scaledFontSize(item: PlacedItem, factor: number): number | null {
   if (item.type !== 'text' || factor === 1 || !editableTextStyle(item.style)) return null;
   const size = num(asObject(item.style).fontSize, 30);
   return Math.min(400, Math.max(1, round1(size * factor)));
 }
 
-/** 拖动中叠给预览与属性页的草稿；平移取景只叠裁剪。 */
+/** Draft layered on top for the preview and the properties panel during the drag; pan framing only layers the crop. */
 export function gesturePatch(item: PlacedItem, pose: Pose, factor: number, canvas: CanvasSize, assets?: Assets, crop?: Crop): ItemPatch {
   if (crop) return { crop };
   const fontSize = scaledFontSize(item, factor);
@@ -164,7 +162,7 @@ export function gesturePatch(item: PlacedItem, pose: Pose, factor: number, canva
   };
 }
 
-/** 松手：每件只写变了的 `place` 字段，文字等比缩放时再改字号；什么都没变就是空表（不提交）。 */
+/** On release: each item writes only the `place` fields that changed, and text font size is changed as well when scaled uniformly; if nothing changed, the result is an empty table (nothing is committed). */
 export function gestureOperations(
   sequenceId: Id,
   members: readonly Member[],
@@ -189,13 +187,13 @@ export function gestureOperations(
 const sameCrop = (a: Crop | undefined, b: Crop) =>
   !!a && a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
 
-/** 平移取景松手（或「套到整支」）：把裁剪写进一件视频；和原来一样时是空表（不提交）。 */
+/** On release of pan framing (or “Apply to whole clip”): writes the crop into one video item; an empty table (nothing committed) if it is unchanged. */
 export function cropOperations(sequenceId: Id, item: PlacedItem, crop: Crop): EditOperation[] {
   if (item.type !== 'video' || sameCrop(item.crop, crop)) return [];
   return [{ type: 'setStyle', sequenceId, itemId: item.id, crop: { ...crop } }];
 }
 
-/** 方向键微调：一组实例平移同一个位移（限位按全组夹），只夹不吸。 */
+/** Arrow-key nudge: a group of instances moves by the same displacement (limits are clamped for the whole group); clamping only, no snapping. */
 export function nudgeOperations(
   sequenceId: Id,
   items: readonly PlacedItem[],
@@ -214,12 +212,12 @@ export function nudgeOperations(
   return gestureOperations(sequenceId, members, poses, 1, canvas);
 }
 
-/** 双击旋转钮归零：只改角度（绕中心）。已经是 0° 的不提交。 */
+/** Double-clicking the rotation handle resets it to zero: only the angle changes (around the center). Items already at 0° are not committed. */
 export function resetRotation(sequenceId: Id, item: PlacedItem): EditOperation[] {
   return item.place.rot ? [{ type: 'setTransform', sequenceId, itemId: item.id, rot: 0 }] : [];
 }
 
-/** 按在一件可平移取景的视频上：起一次平移（源尺寸从素材表里取）。 */
+/** Pressing on a video item that supports pan framing starts a pan (the source size is taken from the asset table). */
 export function panGesture(item: PannableVideo, p0: Point, canvas: CanvasSize, assets?: Assets): Extract<Gesture, { kind: 'pan' }> {
   return { kind: 'pan', member: { ...memberOf(item, canvas, assets), item }, source: sourceSize(item, assets), p0 };
 }

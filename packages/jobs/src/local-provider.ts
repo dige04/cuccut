@@ -59,49 +59,42 @@ import { silentLog, type JobsLogger } from './jobs-logger.ts';
 import { modelWorkerHolder } from './resource-profiles.ts';
 
 /**
- * 本地 Provider：按模型包管理 Model Worker 进程（架构设计 §6.5）。
+ * Local Provider: manages Model Worker processes per model package (architecture design §6.5).
  *
- * - 一个模型包最多一个进程，按需启动：`worker.hello`（5 秒）→ `model.load`（不限时）→ `job.run`；
- *   一个进程一次只跑一个任务（排队在 JobManager）。
- * - 空闲 `idleMs`（默认 10 分钟）后 `model.unload` 再关 stdin；下一个任务等它真的退出后再起新进程。
- * - 取消：`job.cancel`，期限（默认 5 秒）内 `job.run` 没有以 `cancelled` 返回就结束进程；进程下次按需再起。
- * - 崩溃：任务进行中进程退出，或 `job.run` 返回 `WORKER_PANIC` / `INFERENCE_FAILED` / `DECODE_FAILED`，
- *   计一次崩溃；`crashWindowMs` 内达到 `crashLimit` 次就停用模型包（`error` / `resource`），直到 `enable`。
- *   输出写不进 staging（`OUTPUT_WRITE_FAILED`）是磁盘的问题，是 `output-unwritable`，不计崩溃。
- * - 加载失败（`MODEL_NOT_INSTALLED` / `MODEL_UNSUPPORTED` / `MODEL_RESOURCE`）记到模型目录，不重试。
- * - 资源（§7.7）：进程从启动起持有这个模型包在调度里的 holder 的一份，进程真的退出后才归还；空闲时被要求让位就卸载模型包。
- * - 识别（`transcribe`）、本地语音合成（`synthesize`，经 `speechGenerator()`）与本地文生图（`image`，经 `imageGenerator()`）
- *   共用同一套进程管理。识别的模型包要求 `worker.hello` 报告 `transcribe` 且 `transcribeFamilies` 列出它的 `asr` family，
- *   合成的模型包要求报告 `synthesize` 且 `synthesizeFamilies` 列出它的 `tts` family，文生图的模型包要求报告 `image` 且
- *   `imageFamilies` 列出它的 `image` family，否则是 `load-failed`（`unsupported` / `capability-missing`），不发
- *   `model.load`，也不停用模型包（换了 Worker 就能用）。
- * - 人声分离（`separate`，经 `separate()`，翻译配音的分离一步直接调用）同样共用：分离的模型包（只带 `separator` 组件）要求
- *   报告 `separate` 且 `separateFamilies` 列出它的 family，规则同上。
- * - 已有转写的说话人区分（`diarize`，经 `diarize()`，识别说话人的流程直接调用）同样共用：「说话人区分」模型包单独加载（只带
- *   `segmentation` 与 `speaker` 组件），要求报告 `diarize`，规则同上。
- * - 合成结果的 `readingsDropped`（念不了的读音标注）逐条转成任务的 `reading-dropped` 警告，不静默丢弃。
+ * - At most one process per model package, started on demand: `worker.hello` (5 seconds) → `model.load` (no time limit) → `job.run`;
+ *   one process runs one job at a time (queued in JobManager).
+ * - After `idleMs` (default 10 minutes) of idleness, `model.unload`, then stdin is closed; the next job waits for the process to actually exit before starting a new one.
+ * - Cancellation: `job.cancel`; if `job.run` has not returned `cancelled` within the deadline (default 5 seconds), the process is ended. It is started again on demand next time.
+ * - Crash: the process exits while a job is in progress, or `job.run` returns `WORKER_PANIC` / `INFERENCE_FAILED` / `DECODE_FAILED`; this counts as one crash. Reaching `crashLimit` crashes within `crashWindowMs` disables the model package (`error` / `resource`) until `enable`.
+ *   Output that cannot be written to staging (`OUTPUT_WRITE_FAILED`) is a disk problem: `output-unwritable`, not counted as a crash.
+ * - Load failures (`MODEL_NOT_INSTALLED` / `MODEL_UNSUPPORTED` / `MODEL_RESOURCE`) are recorded in the model catalog and not retried.
+ * - Resources (§7.7): the process holds one share of the model package's holder in scheduling from start, returned only after the process actually exits; when asked to yield while idle, the model package is unloaded.
+ * - Recognition (`transcribe`), local speech synthesis (`synthesize`, via `speechGenerator()`) and local text-to-image (`image`, via `imageGenerator()`) share the same process management. A recognition model package requires `worker.hello` to report `transcribe` and `transcribeFamilies` to list its `asr` family; a synthesis package requires reporting `synthesize` and `synthesizeFamilies` listing its `tts` family; an image package requires reporting `image` and `imageFamilies` listing its `image` family. Otherwise it is `load-failed` (`unsupported` / `capability-missing`): no `model.load` is sent, and the model package is not disabled (a different Worker can use it).
+ * - Vocal separation (`separate`, via `separate()`, called directly by the separation step of translation dubbing) shares the same process management: a separation package (carrying only the `separator` component) requires reporting `separate` and `separateFamilies` listing its family; the same rules apply.
+ * - Speaker diarization of an existing transcript (`diarize`, via `diarize()`, called directly by the speaker-identification flow) shares it too: the “speaker diarization” package is loaded separately (carrying only the `segmentation` and `speaker` components); it requires reporting `diarize`; the same rules apply.
+ * - The `readingsDropped` of a synthesis result (pronunciation annotations that cannot be read) is turned one by one into the job's `reading-dropped` warning, not silently dropped.
  */
 
-/** 进程持有资源调度里的 holder（`ResourceScheduler.retain`）。 */
+/** The holder the process holds in the resource scheduling (`ResourceScheduler.retain`). */
 export interface ProcessResources {
   retain(holder: string, evict?: () => void): (() => void) | null;
 }
 
 export interface LocalProviderOptions {
   catalog: ModelCatalog;
-  /** Worker 可执行文件；null 表示本地推理不可用。 */
+  /** The Worker executable; null means local inference is unavailable. */
   command: () => { command: string; args?: readonly string[] } | null;
-  /** 启动 Worker 的环境（登录 shell 的 PATH，与 Engine Host 相同）。 */
+  /** The environment that starts the Worker (the login shell's PATH, same as the Engine Host). */
   env: () => Promise<NodeJS.ProcessEnv>;
   log?: JobsLogger;
   idleMs?: number;
   cancelGraceMs?: number;
-  /** Intel Mac 的首次 Metal 内核编译可能超过 5 秒；默认等 60 秒，其他平台等 5 秒。 */
+  /** The first Metal kernel compile on an Intel Mac can exceed 5 seconds; by default it waits 60 seconds, and 5 seconds on other platforms. */
   helloTimeoutMs?: number;
   closeGraceMs?: number;
   crashLimit?: number;
   crashWindowMs?: number;
-  /** 资源调度：不给时进程不计入（单独使用、测试）。 */
+  /** Resource scheduling: when not given, processes are not counted (standalone use, tests). */
   resources?: ProcessResources;
 }
 
@@ -112,35 +105,35 @@ interface Loaded {
 
 interface ActiveJob {
   jobId: string;
-  /** 这个任务的 Worker 事件（`job.*`）。 */
+  /** The Worker events (`job.*`) for this job. */
   route(event: WorkerEventParams): void;
 }
 
-/** 一次 `job.run`：Worker 以 `cancelled` 返回或在途被取消，或者完成（输出已核对不为空）。 */
+/** One `job.run`: the Worker returns `cancelled` or is cancelled in flight, or it completes (output checked to be non-empty). */
 type RunOutcome<R, O = JobOutput> =
   { outcome: 'cancelled'; workerVersion: string | null } | { outcome: 'completed'; result: R; output: O; workerVersion: string };
 
-/** 本地人声分离的一次调用（`job.run` 的 `separate`，Model Worker 协议规范 §2.5.4）。 */
+/** One local vocal separation call (`job.run` `separate`, Model Worker protocol spec §2.5.4). */
 export interface LocalSeparateRun {
   bundleId: string;
   jobId: string;
-  /** 整段输入：文件的绝对路径与内容摘要，`track` 是第几条音轨。 */
+  /** The whole input: the absolute path of the file and its content digest; `track` is the audio track number. */
   input: { file: string; contentHash: string; track: number };
-  /** 输出的采样率；null 为模型的工作采样率。 */
+  /** The sample rate of the output; null means the model's working sample rate. */
   sampleRate: number | null;
-  /** 输出写在这里（绝对路径，已存在的目录）。 */
+  /** The output is written here (absolute path, an existing directory). */
   staging: string;
 }
 
 export type LocalSeparateOutcome =
   { outcome: 'cancelled' } | { outcome: 'completed'; vocals: string; background: string; result: SeparateRunResult; workerVersion: string };
 
-/** 已有转写的说话人区分的一次调用（`job.run` 的 `diarize`，Model Worker 协议规范 §2.5.5）。 */
+/** One call of speaker diarization on an existing transcript (`job.run` `diarize`, Model Worker protocol spec §2.5.5). */
 export interface LocalDiarizeRun {
   bundleId: string;
   jobId: string;
   input: { file: string; contentHash: string; track: number };
-  /** 转写的词在素材时间上的起止（`timescale` 下的刻度），按转写里的次序。 */
+  /** The start and end of the transcript's words in source time (in ticks of `timescale`), in transcript order. */
   timescale: number;
   words: Array<[number, number]>;
   staging: string;
@@ -156,9 +149,9 @@ interface RunSpec {
   loading(): void;
   expectedWorkerVersion?: string | undefined;
   params: JobRunParams;
-  /** `INPUT_UNREADABLE` 时的说明（识别的素材、合成的参考录音）。 */
+  /** The explanation for `INPUT_UNREADABLE` (the recognized source, the synthesis reference recording). */
   inputLabel: JobText;
-  /** `INPUT_UNREADABLE` 时并进 `details` 的内容（内置音色的录音读不出来时带 `code: 'APP_FILE_MISSING'`）。 */
+  /** Content merged into `details` on `INPUT_UNREADABLE` (when a built-in voice's recording cannot be read, it carries `code: 'APP_FILE_MISSING'`). */
   inputDetails?: Record<string, unknown>;
 }
 
@@ -166,7 +159,7 @@ interface Slot {
   bundleId: string;
   loaded: Loaded | null;
   acquiring: Promise<Loaded> | null;
-  /** 空闲卸载或取消时结束的进程：新进程要等它真的退出。 */
+  /** A process ended on idle unload or cancellation: a new process waits for it to actually exit. */
   retiring: Promise<unknown> | null;
   job: ActiveJob | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
@@ -206,7 +199,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     this.#crashWindowMs = options.crashWindowMs ?? 5 * 60_000;
   }
 
-  /** 测试与诊断：某个模型包的 Worker 进程号。 */
+  /** For tests and diagnostics: the process ID of a model package's Worker. */
   workerPid(bundleId: string): number | null {
     return this.#slots.get(bundleId)?.loaded?.worker.pid ?? null;
   }
@@ -217,8 +210,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   /**
-   * 卸载一个模型包（删除模型包之前，架构设计 §6.3）：空闲的 Worker 按 `model.unload` 正常退出，等它真的退出。
-   * 正在执行任务时不动它，返回 false；没有任务、只是还在加载（任务在加载时被取消）时等加载结束再卸载。
+   * Unloads a model package (before deleting the model package, architecture design §6.3): an idle Worker exits normally via `model.unload`, and it is waited on until it actually exits.
+   * When a job is executing, it is left alone and the method returns false. When there is no job but it is still loading (the job was cancelled during loading), it waits for loading to finish and then unloads.
    */
   async unload(bundleId: string): Promise<boolean> {
     const slot = this.#slots.get(bundleId);
@@ -259,8 +252,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   /**
-   * 本地语音合成的一次尝试（架构设计 §6.1、§6.5）：冻结的参数换成 `job.run`（`synthesize`），输出是 staging 里的 WAV，
-   * 由 JobManager 按生成任务的规则校验与发布。参考录音在执行前按提交时的摘要再核对一次，变了就不合成（不换声音）。
+   * One attempt of local speech synthesis (architecture design §6.1, §6.5): frozen parameters become `job.run` (`synthesize`); the output is the WAV in staging,
+   * validated and published by JobManager under the rules for generation jobs. The reference recording is checked again against the digest from submission right before execution; if it changed, nothing is synthesized (no voice substitution).
    */
   async synthesize(run: GenerationRun, sink: GenerationSink, signal: AbortSignal): Promise<GenerationAttempt> {
     const parameters = run.parameters;
@@ -269,7 +262,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     }
     if (signal.aborted) return { outcome: 'cancelled' };
     const { input, options } = synthesizeRunOf(parameters);
-    // 读不出来时：内置音色的录音是安装不完整（`APP_FILE_MISSING`），请求给出的文件说出文件名。
+    // When it cannot be read: a built-in voice's recording means the installation is incomplete (`APP_FILE_MISSING`); a requested file names its filename.
     const unreadable = input
       ? parameters.reference?.source === 'builtin'
         ? builtinUnreadable(input.file)
@@ -305,7 +298,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     if (outcome.outcome === 'cancelled') return { outcome: 'cancelled' };
     for (const dropped of outcome.result.readingsDropped ?? []) sink.warning?.(readingDropped(dropped));
     const output = outcome.output;
-    // Worker 报告绝对路径（与识别相同）；生成任务的输出是相对 staging 的路径，且只能是 `speech.wav`。
+    // The Worker reports absolute paths (same as recognition); the output of a generation job is a path relative to staging, and it can only be `speech.wav`.
     const relative = path.relative(run.staging, path.resolve(run.staging, output.path));
     if (relative !== SPEECH_OUTPUT_FILE) {
       throw new ProviderFailure('protocol', L.speechOutputWrong({ file: SPEECH_OUTPUT_FILE }), { path: output.path });
@@ -318,8 +311,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   /**
-   * 本地人声分离（架构设计 §6.1 `separateAudio`）：整段输入分成人声与背景，两个 WAV 写在 `run.staging` 里。
-   * 输出必须正好是 staging 里的 `vocals.wav` 与 `background.wav`，否则是协议错误。
+   * Local vocal separation (architecture design §6.1 `separateAudio`): the whole input is split into vocals and background, and the two WAVs are written into `run.staging`.
+   * The output must be exactly `vocals.wav` and `background.wav` in staging; otherwise it is a protocol error.
    */
   async separate(
     run: LocalSeparateRun,
@@ -366,8 +359,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   /**
-   * 给已有转写区分说话人（架构设计 §6.6）：加载「说话人区分」模型包本身，词时间交给 Worker，结果是 staging 里的
-   * `speakers.json`；不是它时是协议错误。`onProgress` 报告区分的窗口进度。
+   * Speaker diarization of an existing transcript (architecture design §6.6): loads the “speaker diarization” model package itself, word timings are handed to the Worker, and the result is `speakers.json` in staging;
+   * anything else is a protocol error. `onProgress` reports the diarization window progress.
    */
   async diarize(
     run: LocalDiarizeRun,
@@ -414,7 +407,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     };
   }
 
-  /** 生成类能力的门面：`local` Provider 的 `synthesizeSpeech`。进程由识别的 Provider 一起关闭。 */
+  /** The facade of the generation capabilities: the `local` Provider's `synthesizeSpeech`. The process is closed together with the recognition Provider. */
   speechGenerator(): GenerationProvider {
     return {
       id: this.id,
@@ -424,8 +417,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   /**
-   * 本地文生图的一次尝试（架构设计 §6.1、§6.5）：冻结的参数（尺寸与 seed 都在提交时决定）换成 `job.run`（`image`），输出是
-   * staging 里的 `image.png`，由 JobManager 按生成任务的规则校验与发布。`steps` 只有模型包自检会给。
+   * One attempt of local text-to-image (architecture design §6.1, §6.5): frozen parameters (size and seed are decided at submission) become `job.run` (`image`), and the output is
+   * `image.png` in staging, validated and published by JobManager under the rules for generation jobs. `steps` is only given by the model package self-check.
    */
   async generateImage(
     run: GenerationRun,
@@ -469,7 +462,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     };
   }
 
-  /** 生成类能力的门面：`local` Provider 的 `generateImage`。进程由识别的 Provider 一起关闭。 */
+  /** The facade of the generation capabilities: the `local` Provider's `generateImage`. The process is closed together with the recognition Provider. */
   imageGenerator(): GenerationProvider {
     return {
       id: this.id,
@@ -485,7 +478,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     return this.#runWith<R, JobOutput>(spec, signal, (result) => result.output);
   }
 
-  /** `#run` 的一般形式：`outputOf` 取出完成结果里的输出，为 null 时是协议错误。 */
+  /** The general form of `#run`: `outputOf` extracts the output from a completed result; when it is null, it is a protocol error. */
   async #runWith<R extends { outcome: 'completed' | 'cancelled' }, O>(
     spec: RunSpec,
     signal: AbortSignal,
@@ -509,7 +502,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
       const acquiring = this.#acquire(slot, spec.loading);
       const raced = await raceAbort(acquiring, signal);
       if (raced === ABORTED) {
-        // 加载在后台继续：模型留在内存里，下一个任务直接用。
+        // Loading continues in the background: the model stays in memory, and the next job uses it directly.
         slot.job = null;
         acquiring.then(
           () => this.#scheduleIdle(slot),
@@ -582,7 +575,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
           });
         }
         const workerDetails = error.body.details !== undefined ? { workerDetails: error.body.details } : {};
-        // 加载过的模型包却不支持这次任务（例如合成还没接上推理）：与加载失败同类，不重试，也不停用模型包。
+        // A model package that has been loaded but does not support this job (e.g. synthesis not yet wired to inference) is in the same class as a load failure: not retried, and the model package is not disabled.
         if (error.code === 'MODEL_UNSUPPORTED') {
           throw new ProviderFailure('load-failed', L.workerUnsupported({ message: error.body.message }), {
             reason: 'unsupported',
@@ -616,7 +609,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     );
   }
 
-  // ---- 进程 ----
+  // ---- Processes ----
 
   #slot(bundleId: string): Slot {
     let slot = this.#slots.get(bundleId);
@@ -637,13 +630,13 @@ export class LocalTranscribeProvider implements TranscribeProvider {
   }
 
   async #spawnAndLoad(slot: Slot): Promise<Loaded> {
-    // 在任何 await 之前、任务还拿着租约时持有 holder 的一份：任务在加载时被取消、先归还了租约，正在启动的进程照样计入。
+    // Holds one share of the holder before any await, while the job still holds the lease: if the job is cancelled during loading and returns the lease first, the process being started still counts.
     const share = this.#options.resources?.retain(modelWorkerHolder(slot.bundleId), () => void this.unload(slot.bundleId)) ?? null;
     let started = false;
     try {
       const loaded = await this.#startAndLoad(slot, (worker) => {
         started = true;
-        // 进程真的退出（`close`）之后才归还。
+        // Returned only after the process actually exits (`close`).
         void worker.exited.then(() => share?.());
       });
       return loaded;
@@ -708,8 +701,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
       );
     }
 
-    // 后端与设备以握手为准（架构设计 §6.5）：Worker 没编进或用不了这个后端时不去加载（也不停用模型包，换了 Worker 就能用）；
-    // candle 与 GGML 用 Worker 报告的首选设备（有 CUDA 时是 `cuda`；GGML 另可能是 `vulkan`），并记进模型目录给状态显示。
+    // The backend and device follow the handshake (architecture design §6.5): when the Worker was not built with this backend or cannot use it, do not load (and do not disable the model package; a different Worker can use it);
+    // candle and GGML use the device the Worker reports as preferred (`cuda` when CUDA is available; GGML may also be `vulkan`), recorded in the model catalog for status display.
     const def = this.#catalog.definition(slot.bundleId);
     const backend = def ? hello.backends?.find((b) => b.id === def.backend) : undefined;
     if (def && backend) this.#catalog.setWorkerDevice(def.backend, backend.available ? (backend.devices[0] ?? null) : null);
@@ -730,9 +723,8 @@ export class LocalTranscribeProvider implements TranscribeProvider {
         slot.bundleId,
         device && (def?.backend === 'candle' || def?.backend === 'ggml') ? { device } : {},
       );
-      // 合成的模型包要 Worker 声明 `synthesize` 且列出这个 family，分离的要声明 `separate` 且列出 `separator` 的 family，文生图的
-      // 要声明 `image` 且列出 `image` 的 family，识别的要声明 `transcribe` 且列出 `asr` 的 family：不认识的 Worker 不去试
-      // （`model.load` 的 `MODEL_UNSUPPORTED` 会停用模型包），也不停用模型包（换了 Worker 就能用）。
+      // A synthesis package requires the Worker to declare `synthesize` and list this family; separation requires declaring `separate` and listing the `separator` family; image requires declaring `image` and listing the `image` family; recognition requires declaring `transcribe` and listing the `asr` family. An unrecognized Worker is not tried
+      // (`MODEL_UNSUPPORTED` from `model.load` would disable the model package), and the model package is not disabled (a different Worker can use it).
       if (bundle.components.separator) {
         const family = bundle.components.separator.family;
         const families = hello.separateFamilies ?? [];
@@ -762,7 +754,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
           );
         }
       } else if (!bundle.components.asr && bundle.components.segmentation) {
-        // 「说话人区分」模型包单独加载（给已有转写区分说话人，§2.5.5）。
+        // The “speaker diarization” model package is loaded separately (for diarizing speakers of an existing transcript, §2.5.5).
         if (!hello.capabilities.includes('diarize')) {
           return fail(
             new ProviderFailure('load-failed', L.cannotDiarize(), {
@@ -851,7 +843,7 @@ export class LocalTranscribeProvider implements TranscribeProvider {
     if (!exit.expected && !slot.job) this.#log.warn('Idle Model Worker exited', { bundleId: slot.bundleId, ...exit });
   }
 
-  /** 让一个进程退出：先从槽位上摘下来，新任务等它真的退出后再起新进程（架构设计 §6.5「加载新的模型包之前」）。 */
+  /** Ends a process: it is first removed from the slot, and a new job waits for it to actually exit before a new process starts (architecture design §6.5 “before loading a new model package”). */
   #retire(slot: Slot, worker: JsonLineWorker, how: 'kill' | 'unload' | 'close'): Promise<unknown> {
     if (slot.loaded?.worker === worker) slot.loaded = null;
     this.#clearIdle(slot);
@@ -928,7 +920,7 @@ function routeTranscribe(sink: TranscribeSink, event: WorkerEventParams): void {
   }
 }
 
-/** 念不了的读音标注 → 任务警告。`detail` 只说位置与读音，不带文字本身。 */
+/** A pronunciation annotation that cannot be read → a job warning. `detail` says only the position and the pronunciation, not the text itself. */
 function readingDropped(dropped: DroppedReading): JobWarning {
   const { reading, origin } = dropped;
   const detail =
@@ -938,7 +930,7 @@ function readingDropped(dropped: DroppedReading): JobWarning {
   return jobWarning('reading-dropped', detail);
 }
 
-/** 合成的事件：进入 `synthesizing` 就是生成阶段；合成阶段有总数的进度（步数）转给生成任务。 */
+/** Synthesis events: entering `synthesizing` is the generation stage; progress with a total (steps) during the synthesis stage is passed to the generation job. */
 function routeSynthesize(sink: GenerationSink, event: WorkerEventParams): void {
   if (event.event === 'job.phase' && event.params.phase === 'synthesizing') sink.generating();
   else if (
@@ -983,7 +975,7 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | typ
   });
 }
 
-/** 内置音色的录音读不出来（提交之后被删、或在 Worker 读不到的位置）：与提交时同一句话与错误码（`APP_FILE_MISSING`）。 */
+/** A built-in voice's recording cannot be read (deleted after submission, or in a location the Worker cannot read): the same message and error code as at submission (`APP_FILE_MISSING`). */
 function builtinUnreadable(file: string): { message: JobText; details: Record<string, unknown> } {
   const error = appFileMissing(BUILTIN_REFERENCE_LABEL, null, file);
   return { message: errorText(error), details: error.details as Record<string, unknown> };

@@ -31,15 +31,14 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { pipelineTargets } from '../videos/pipeline-targets.ts';
 
 /**
- * 转录流程与翻译的字幕层（架构设计 §7.9）经网关端到端，真实引擎，假的在线转写与文本模型（本机回环地址上的假 OpenAI）：
+ * The transcription pipeline and the subtitle layer of translation (architecture design §7.9) end to end through the gateway, with a real engine and a fake online transcription and text model (a fake OpenAI on a loopback address):
  *
- * - `target.create.media`：本地生成的小音频 → 项目里新建一个视频，素材放上时间线，一份文稿、一层字幕；Space 记下来源。
- * - `entryId` 指向没打开的视频、这份素材已有转写：缺省在同一项目新建一部视频（链接同一份素材），原视频不动。
- * - `destination: 'replace'`：一笔事务换成文稿的新版本，译文结转、字幕重切；撤销那笔事务回到旧文稿；文稿被改过时拒绝。
- * - 翻译（真的 Speech Worker）：`captions: true` 时建，字幕条是 Worker 切好的；只显示译文（配对的原文字幕层拿下），
- *   撤销那笔事务时字幕层没了、译文还在；双语时共用样式、原文放回来；流程参数默认不建。
+ * - `target.create.media`: a small locally generated audio file → a new video created in the project, the material placed on the timeline, one transcript, one caption layer. Space records the source.
+ * - `entryId` points to a video that is not open, and this material already has a transcript: by default, a new video is created in the same project (linked to the same material file); the original video is untouched.
+ * - `destination: 'replace'`: one transaction swaps in a new version of the transcript; translations carry over and captions are re-split. Undoing that transaction returns to the old transcript; it is rejected if the transcript has been edited.
+ * - Translation (real Speech Worker): with `captions: true` it is created, and the caption cues are the ones the Worker split. Only the translation is shown (the paired source caption layer is removed). Undoing that transaction removes the caption layer while the translation stays. In bilingual mode the layers share a style and the source comes back. Pipeline parameter defaults do not create it.
  *
- * 密钥是测试里编的字符串。没有 engine-host、speech-worker、ffmpeg 时跳过。
+ * The keys are made-up strings in the test. Skipped when engine-host, speech-worker or ffmpeg is missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -57,7 +56,7 @@ if (!engine) console.warn('跳过转录流程的端到端测试：没有构建 e
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-transcribe-0123456789';
 
-/** 假 OpenAI：转写回「hello world.」，翻译按 Speech Worker 的请求答（`fakeSpeechAnswer`）。 */
+/** Fake OpenAI: transcription returns “hello world.”; translation answers according to the Speech Worker's request (`fakeSpeechAnswer`). */
 function fakeOpenAi(): FakeHandler {
   return (request) => {
     if (request.method === 'GET' && request.path.endsWith('/models')) return { status: 200, json: { object: 'list', data: [] } };
@@ -129,7 +128,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
 
   const start = (pipeline: string, params: Record<string, unknown>) => client.request('pipelines.start', { pipeline, params });
 
-  /** 打开视频（已经开着时接上），读快照。 */
+  /** Opens the video (attaches if it is already open), and reads the snapshot. */
   async function snapshot(videoId: Id, relPath: string): Promise<VideoSnapshot> {
     const opened = await client.request('videos.open', { projectId: project.id, path: relPath });
     expect(opened.ref.videoId).toBe(videoId);
@@ -140,7 +139,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     video.sequences[video.rootSequenceId]!.items.filter((item): item is CaptionItem => item.type === 'caption');
 
   it('从本机媒体新建视频：导入、放上时间线、转写、建字幕层；再转写另建视频；翻译建目标语言字幕层；取代文稿结转译文', async () => {
-    // 1. 新建视频。
+    // 1. Create a new video.
     const created = await start('transcribe', { target: { create: { projectId: project.id, media } } });
     const first = await settled(created.jobId);
     expect(first).toMatchObject({ state: 'completed', providerId: 'openai', pipeline: { stoppedAt: null } });
@@ -158,7 +157,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
       captions: { status: 'created', enabled: true, cueCount: 1 },
     });
     const videoId = summary.videoId;
-    // 转写是流程提交的一个 transcribe Job。
+    // Transcription is a transcribe Job submitted by the pipeline.
     expect(runtime.models.jobs.inspect(summary.transcribeJobId)).toMatchObject({
       kind: 'transcribe',
       state: 'completed',
@@ -181,11 +180,11 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     const captionDoc = video.documents[layer!.documentId]!;
     expect(captionDoc).toMatchObject({ kind: 'caption', sourceDocumentId: summary.documentId, sourceAssetId: summary.assetId });
     expect(captionDoc.extensions).toMatchObject({ pipeline: { name: 'transcribe', jobId: created.jobId, actor: 'system:pipeline' } });
-    // 同一份文稿已经有字幕层：重跑这一步会跳过（`when` 用的同一个判断）。
+    // The same transcript already has a caption layer: rerunning this step is skipped (the same check `when` uses).
     expect(existingCaptionLayer(root, video.documents, summary.documentId)).toMatchObject({ documentId: layer!.documentId });
     const history = await client.request('videos.history', { videoId });
     expect(history.entries[0]).toMatchObject({ actor: { kind: 'system', id: 'system:pipeline' } });
-    // 摘要带着建字幕层的那笔事务（编辑器的「撤销」按它撤）。
+    // The summary carries the transaction that created the caption layer (the editor's “undo” undoes it).
     expect(history.entries.find((e) => e.transactionId === summary.captions.transactionId)).toMatchObject({
       label: '建立字幕层',
       actor: { kind: 'system', id: 'system:pipeline' },
@@ -194,7 +193,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     await client.request('videos.close', { videoId });
     await until(() => runtime.videos.ref(videoId) === null);
 
-    // Space：视频条目的来源是这次运行。
+    // Space: the video entry's source is this run.
     await client.request('space.rescan', {});
     await runtime.space.idle();
     const entry = (await client.request('space.list', { videoId, kind: 'video' })).entries[0]!;
@@ -206,7 +205,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
       capability: 'transcribe',
     });
 
-    // 2. 按条目再转写（视频没打开）：这份素材已有文稿，缺省另建一部视频，链接同一份素材文件；原视频不动。
+    // 2. Transcribe again by entry (video not open): this material already has a transcript, so by default a new video is created that links the same material file. The original video is untouched.
     const again = await start('transcribe', { target: { entryId: entry.id } });
     const second = await settled(again.jobId);
     expect(second.state, JSON.stringify(second.error)).toBe('completed');
@@ -225,7 +224,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(Object.values(video.documents).filter((d) => d.kind === 'speech')).toHaveLength(1);
     expect(captions(video)).toHaveLength(1);
 
-    // 3. 翻译第一份文稿：默认只显示译文，配对的原文字幕层拿下（不删）。
+    // 3. Translate the first transcript: by default only the translation is shown, and the paired source caption layer is removed (not deleted).
     const translated = await settled(
       (await start('translate', { videoId, documentId: summary.documentId, targetLanguage: 'zh-Hans', captions: true })).jobId,
     );
@@ -241,7 +240,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(afterTranslate.find((c) => c.id === layer!.id)!.enabled).toBe(false);
     const trTrack = video.sequences[video.rootSequenceId]!.tracks.find((t) => t.id === trLayer.trackId)!;
     expect(trTrack).toMatchObject({ kind: 'subtitle' });
-    // 字幕条是 Speech Worker 切好的：转写的刻度，ID 是 q-<译文单元>。
+    // The caption cues are the ones the Speech Worker split: the transcription's timing, with the ID q-<translation unit>.
     const trCaption = await client.request('documents.read', { videoId, documentId: trLayer.documentId });
     const trBody = trCaption.body as { timescale: number; cues: Array<{ id: string; text: string; start: number; end: number }> };
     const speechBody = (await client.request('documents.read', { videoId, documentId: summary.documentId })).body as { timescale: number };
@@ -249,7 +248,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(trBody.cues.length).toBeGreaterThan(0);
     expect(trBody.cues.every((cue) => cue.id.startsWith('q-t-s-') && cue.text === '你好世界' && Number.isInteger(cue.start))).toBe(true);
 
-    // 撤销建字幕层的那笔事务：字幕层没了、配对的原文字幕层放回来，译文文档还在。
+    // Undo the transaction that created the caption layer: the caption layer is gone, the paired source caption layer comes back, and the translation document remains.
     const trHistory = await client.request('videos.history', { videoId });
     expect(trHistory.entries.find((e) => e.transactionId === tr.captions!.transactionId)).toMatchObject({
       label: '建立字幕层',
@@ -262,7 +261,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(captions(video).find((c) => c.id === layer!.id)!.enabled).toBe(true);
     expect(video.documents[tr.documentId]).toMatchObject({ kind: 'translation' });
 
-    // 4. 双语：新的译文层与原文共用一份样式，原文放回来。
+    // 4. Bilingual: the new translation layer shares one style with the source, and the source comes back.
     const bilingual = await settled(
       (await start('translate', { videoId, documentId: summary.documentId, targetLanguage: 'zh-Hans', captions: true, bilingual: true }))
         .jobId,
@@ -276,7 +275,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(original.styleDocumentId).toBeDefined();
     expect(biLayer.styleDocumentId).toBe(original.styleDocumentId);
 
-    // 5. 不给 captions（流程参数默认）：只写译文，不建字幕层。
+    // 5. No captions (the pipeline parameter default): only the translation is written; no caption layer is created.
     const before = captions(video).length;
     const plain = await settled((await start('translate', { videoId, documentId: summary.documentId, targetLanguage: 'zh-Hans' })).jobId);
     expect(plain.pipeline!.steps.at(-1)).toMatchObject({ name: 'captions', status: 'skipped' });
@@ -284,7 +283,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     video = (await client.request('videos.open', { projectId: project.id, path: '采访 片段' })).snapshot.video;
     expect(captions(video)).toHaveLength(before);
 
-    // 6. 取代当前文稿：一笔事务写同一份文稿的新版本，三份译文结转（原文没变，状态保留），派生的字幕重切。
+    // 6. Replace the current transcript: one transaction writes a new version of the same transcript. The three translations carry over (the source is unchanged and their state is kept), and the derived captions are re-split.
     const oldSpeech = (await client.request('documents.read', { videoId, documentId: summary.documentId })) as {
       revision: string;
       body: { words: Array<{ id: string }>; stages?: { asr?: string } };
@@ -326,12 +325,12 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     const replacedHistory = await client.request('videos.history', { videoId });
     expect(replacedHistory.entries.find((e) => e.transactionId === rs.replaced!.transactionId)).toMatchObject({ undoAvailable: true });
 
-    // 撤销那笔事务：文稿回到旧版本。
+    // Undo that transaction: the transcript goes back to the old version.
     await client.request('edits.undo', { videoId, commandId: newId('cmd'), target: { transaction: rs.replaced!.transactionId! } });
     const undone = (await client.request('documents.read', { videoId, documentId: summary.documentId })) as typeof oldSpeech;
     expect(undone.body.words.map((w) => w.id)).toEqual(oldSpeech.body.words.map((w) => w.id));
 
-    // 7. 改过的文稿（全文指纹与 stages.asr 不再一致）：取代以 TRANSCRIPT_EDITED 拒绝，不建任务；acceptEdited 时照做。
+    // 7. Edited transcript (the full-text fingerprint no longer matches stages.asr): replace is rejected with TRANSCRIPT_EDITED and no job is created. With acceptEdited, it proceeds.
     const editedBody = structuredClone(undone.body) as { words: Array<{ id: string; text: string }> };
     editedBody.words[0]!.text = 'Howdy';
     video = (await client.request('videos.open', { projectId: project.id, path: '采访 片段' })).snapshot.video;
@@ -360,7 +359,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     }
     await client.request('videos.close', { videoId });
 
-    // 密钥不进任务记录。
+    // The key does not go into the job record.
     expect(JSON.stringify(await client.request('jobs.list', { children: true }))).not.toContain(OPENAI_KEY);
   });
 
@@ -373,7 +372,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     });
     const place = await targets.reserve({ projectId: project.id, name: '访谈' });
     expect(place).toMatchObject({ file: '访谈', scope: { projectId: project.id } });
-    // 占下的目录让别的新建跳过它。
+    // The reserved directory makes other creations skip it.
     const other = await client.request('videos.create', { projectId: project.id, name: '访谈' });
     expect(other.ref.relPath).toBe('访谈 2');
     await client.request('videos.close', { videoId: other.ref.videoId });
@@ -381,12 +380,12 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     const first = await targets.create({ projectId: project.id, name: '访谈', commandId: 'job_x:create', place });
     first.release();
     await until(() => runtime.videos.ref(first.videoId) === null);
-    // 重试（新的进程里命令记录不在了）：同一个位置上已经有视频，认回它。
+    // Retry (the command record is gone in the new process): a video already exists at the same location, so claim it.
     const again = await targets.create({ projectId: project.id, name: '访谈', commandId: 'job_x:create:again', place });
     expect(again.videoId).toBe(first.videoId);
     again.release();
     expect((await fs.readdir(project.path)).filter((n) => !n.startsWith('.')).sort()).toEqual(['访谈', '访谈 2']);
-    // 别的项目的位置拒绝。
+    // A location belonging to another project is rejected.
     await expect(targets.create({ projectId: 'prj_other', name: 'x', commandId: 'c', place })).rejects.toMatchObject({
       code: 'invalid-request',
     });
@@ -450,11 +449,11 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
         recipient: 'openai',
         dataKinds: ['audio'],
         videoId: null,
-        // 用途是 Runtime 写的：带着引用，界面按自己的语言重新生成。
+        // The purpose is written by the Runtime with a reference; the UI regenerates it in its own language.
         purposeRef: expect.objectContaining({ key: 'rcGrants.pipelinePurpose' }),
       }),
     ]);
-    // 拒绝不发放授权、不新建视频、不建任务。
+    // A rejection grants no authorization, creates no video, and creates no job.
     expect((await client.request('grants.list', { includeEnded: true })).grants).toHaveLength(before);
     expect((await fs.readdir(project.path)).filter((n) => !n.startsWith('.'))).toEqual([]);
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });

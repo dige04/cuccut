@@ -3,7 +3,7 @@ import { refOf, type ExternalToolStatus, type ExternalToolUpdatePlan } from '@cu
 import { RcExternalTools } from '@cuccut/protocol/messages/runtime-core';
 import { exitCodeText, hasUpdateSection, manualUpdateCommands, updateBefore, updateLog, updateSectionCopy, updateSummary } from './tool-update.ts';
 
-/** 按原安装方式更新下载工具（产品设计 §2.7）：有没有「更新」一节、它的文案、输出框的文字与结束后的一句话。 */
+/** Update a downloaded tool using its original install method (product design §2.7): whether there is an "Update" section, its copy, the output box text, and the one-line result after finishing. */
 
 const brew: ExternalToolUpdatePlan = {
   method: 'homebrew',
@@ -55,11 +55,11 @@ describe('「更新」一节', () => {
     const admin = updateSectionCopy({ ...brew, method: 'standalone', runnable: false, reason: '这份 yt-dlp 所在的 /usr/local/bin 要管理员权限才能改写，CucCut 不替你提权。' });
     expect(admin.label).toBe('在终端里更新');
     expect(admin.hint).toBe('这份 yt-dlp 所在的 /usr/local/bin 要管理员权限才能改写，CucCut 不替你提权。在终端里执行这条命令，完成后点「重新检测」。');
-    // Runtime 的原因（带引用）里已经说了怎么执行时不重复；按读者的语言重新生成原因。
+    // When the Runtime's reason (with its reference) already says how to run it, don't repeat it; regenerate the reason in the reader's language.
     const reason = RcExternalTools.chocolateyAdmin();
     const win = updateSectionCopy({ ...brew, runnable: false, reason: 'stale text', reasonRef: refOf(reason) });
     expect(win.hint).toBe(`${reason.text}完成后点「重新检测」。`);
-    // 默认原因里的「不能代为执行这条命令」不是在说怎么执行，照样补上「在终端里执行」。
+    // The default reason's “cannot run this command on your behalf” isn't about how to run it, so still add “run it in a terminal”.
     expect(updateSectionCopy({ ...brew, runnable: false, reason: null }).hint).toBe('CucCut 不能代为执行这条命令。在终端里执行这条命令，完成后点「重新检测」。');
     expect(updateSectionCopy({ ...brew, method: 'winget' }).label).toBe('用 winget 更新');
     expect(updateSectionCopy({ ...brew, method: 'scoop' }).label).toBe('用 Scoop 更新');
@@ -106,7 +106,7 @@ describe('更新的结果', () => {
     expect(updateLog({ ...cmd, truncated: true }, 'running', true)).toMatch(/^…（前面的输出已省略/);
     expect(updateLog(null, null, true)).toBe('…');
     expect(updateLog({ ...cmd, output: '', exitCode: 127 }, 'failed', false)).toBe('（退出码 127）');
-    // winget 没有可升级的版本：Runtime 算成功，退出码按十六进制写。
+    // winget has no version to upgrade to: the Runtime counts it as success, and the exit code is written in hex.
     expect(updateLog({ ...cmd, output: 'No available upgrade found.\n', exitCode: 0x8a15002b }, 'completed', false)).toBe('No available upgrade found.\n（退出码 0x8A15002B）');
   });
 

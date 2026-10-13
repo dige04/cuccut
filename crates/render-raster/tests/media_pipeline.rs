@@ -1,10 +1,10 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer`
+//! (the BCF document rendering path and the host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! 媒体管线集成测试（自生成资产，需要 PATH 中有 ffmpeg/ffprobe）：
-//! 资源加载 + hash 校验 / 文档字体 strict / image·svg·video 光栅化 /
-//! DrawOp 字节级确定性 / 音频混音包络。
+//! Media pipeline integration tests (self-generated assets; requires ffmpeg/ffprobe on PATH):
+//! asset loading + hash verification / strict document fonts / image, svg and video rasterization /
+//! byte-level determinism of DrawOps / audio mix envelope.
 
 use render_raster::{FrameRenderer, MediaStore, TextEngine, drawop, load_assets};
 use serde_json::{Value, json};
@@ -35,7 +35,7 @@ fn find_font() -> PathBuf {
     panic!("找不到系统字体");
 }
 
-/// 生成一次性测试资产目录（进程内幂等）
+/// Generate the one-off test asset directory (idempotent within the process)
 fn assets_dir() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(make_assets_dir).clone()
@@ -173,7 +173,7 @@ fn build() -> (
 #[test]
 fn drawops_are_byte_deterministic() {
     let (ir, assets, _e, renderer) = build();
-    // 两个全新引擎分别录制同一帧 → 编码字节必须完全一致
+    // Two fresh engines recording the same frame → the encoded bytes must be exactly identical
     let mut e1 = TextEngine::with_document_fonts(&assets.fonts);
     let mut e2 = TextEngine::with_document_fonts(&assets.fonts);
     for t in [1.0, 4.5] {
@@ -182,7 +182,7 @@ fn drawops_are_byte_deterministic() {
         assert_eq!(a, b, "t={t} 两次录制字节不一致");
         assert_eq!(drawop::fnv1a64(&a), drawop::fnv1a64(&b));
     }
-    // 不同帧指纹应不同（视频媒体时刻在变）
+    // Different frame fingerprints should differ (the video media time is changing)
     let f1 = drawop::fingerprint(&renderer.record(&ir, &mut e1, 4.5));
     let f2 = drawop::fingerprint(&renderer.record(&ir, &mut e1, 4.6));
     assert_ne!(f1, f2);
@@ -193,24 +193,24 @@ fn media_rasterizes() {
     let (ir, assets, mut engine, renderer) = build();
     let mut media = MediaStore::new(assets.clone(), ir.fps);
 
-    // t=1.0：png 卡片区域应是 #3a6ea5
+    // t=1.0: the png card area should be #3a6ea5
     let pm = renderer.draw(&ir, &mut engine, &mut media, 1.0).unwrap();
     let px = |pm: &tiny_skia::Pixmap, x: u32, y: u32| {
         let i = ((y * pm.width() + x) * 4) as usize;
         (pm.data()[i], pm.data()[i + 1], pm.data()[i + 2])
     };
-    let (r, g, b) = px(&pm, 200, 200); // 卡片内部
+    let (r, g, b) = px(&pm, 200, 200); // Inside the card
     assert!(
         (r as i32 - 0x3a).abs() < 8 && (g as i32 - 0x6e).abs() < 8 && (b as i32 - 0xa5).abs() < 8,
         "卡片像素 {r:02x}{g:02x}{b:02x} ≠ 3a6ea5"
     );
-    let (r2, g2, _b2) = px(&pm, 650, 150); // svg logo 圆角矩形内部 #e8906a
+    let (r2, g2, _b2) = px(&pm, 650, 150); // Inside the svg logo's rounded rectangle, #e8906a
     assert!(
         (r2 as i32 - 0xe8).abs() < 8 && (g2 as i32 - 0x90).abs() < 8,
         "svg 像素不符"
     );
 
-    // t=4.5：testsrc 视频铺满画面，中心不可能等于背景色 #101014
+    // t=4.5: the testsrc video fills the frame, so the center cannot equal the background color #101014
     let pm2 = renderer.draw(&ir, &mut engine, &mut media, 4.5).unwrap();
     let (r3, g3, b3) = px(&pm2, 480, 270);
     assert!(

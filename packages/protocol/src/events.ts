@@ -11,26 +11,24 @@ import type { ServicesEvent, ServicesSnapshot } from './services.ts';
 import type { VideoTopicEvent, VideoTopicSnapshot } from './video.ts';
 
 /**
- * 订阅的主题（架构设计 §4.4、§4.5）：按资源订阅，一条连接多路复用。
+ * Topics to subscribe to (architecture design §4.4, §4.5): subscribe per resource; one connection multiplexes them.
  *
- * - `directory`：项目与会话列表（侧栏的投影）。
- * - `tasks`：所有会话的任务（任务中心与标题栏的进度），以及会话与对外服务的待处理审批。
- * - `space`：Space 目录（架构设计 §5.7）。
- * - `jobs`：长计算（语音识别等）的状态、阶段与进度（架构设计 §7）。
- * - `models`：模型服务的能力视图（`models.capabilities`，架构设计 §6.8）；配置、默认值、模型包或节点变化时送达新视图。
- * - `settings`：Runtime 持有的偏好设置（架构设计 §5.10）；快照是全部键的有效值与默认值，之后每次变化送 `settings.updated`。
- * - `services`：对外服务的状态与待处理的服务审批（架构设计 §4.8）。
- * - `library`：用户库的条目（架构设计 §5.9）。
- * - `grants`：数据外发的授权与用量（架构设计 §12.5）；快照是全部授权，之后每条授权的变化（发放、用量、撤销）送 `grant.upsert`。
- * - `agent-setup`：应用内运行的 Agent 安装与升级命令（`agents.runSetup`，架构设计 §12.9）的状态与输出。
- * - `agents`：Agent（Driver）的探测结果与偏好（`agents.list` 的视图，架构设计 §3.11）；快照是上次的结果（启动时来自磁盘缓存），
- *   每个 Driver 的后台探测完成、偏好变化时送 `agents.updated`。
- * - `legacy-import`：旧版项目的导入询问与这次启动里的导入（架构设计 §2.7，`legacy-import.ts`）；快照是等回答的询问与导入的进展，
- *   询问出现或消失时送 `prompt.updated`，导入每有进展送 `run.updated`。
- * - `conversation:<id>`：一个会话的内容（卡片投影）。
- * - `video:<id>`：一个已打开的视频的投影（命令与协议规范 §10）。
+ * - `directory`: project and session lists (the projection behind the sidebar).
+ * - `tasks`: tasks of all sessions (the task center and the progress in the title bar), plus pending approvals for sessions and external services.
+ * - `space`: Space directory (architecture design §5.7).
+ * - `jobs`: state, stage and progress of long computations (speech recognition, etc.) (architecture design §7).
+ * - `models`: capability view of model services (`models.capabilities`, architecture design §6.8); a new view is delivered when configuration, defaults, model packs or nodes change.
+ * - `settings`: preferences held by the Runtime (architecture design §5.10); the snapshot holds the effective values and defaults of all keys, and each later change sends `settings.updated`.
+ * - `services`: state of external services and pending service approvals (architecture design §4.8).
+ * - `library`: entries of the user library (architecture design §5.9).
+ * - `grants`: authorizations and usage for sending data out (architecture design §12.5); the snapshot is all grants, and each later change to a grant (issued, used, revoked) sends `grant.upsert`.
+ * - `agent-setup`: state and output of the install and upgrade commands for in-app Agents (`agents.runSetup`, architecture design §12.9).
+ * - `agents`: probe results and preferences of Agents (Drivers) (the view of `agents.list`, architecture design §3.11); the snapshot is the last result (loaded from the disk cache at startup), and each Driver's background probe completion or preference change sends `agents.updated`.
+ * - `legacy-import`: import prompts for legacy projects and the imports running in this launch (architecture design §2.7, `legacy-import.ts`); the snapshot is the prompt awaiting an answer and the import progress; `prompt.updated` is sent when a prompt appears or disappears, and `run.updated` is sent on each import progress.
+ * - `conversation:<id>`: content of one session (card projection).
+ * - `video:<id>`: projection of one opened video (command and protocol spec §10).
  *
- * 每个主题有自己的序号，彼此不共用游标。
+ * Each topic has its own sequence number; topics do not share a cursor.
  */
 export type Topic =
   | 'directory'
@@ -77,8 +75,8 @@ export type DirectoryEvent =
 export interface TasksSnapshot {
   tasks: TaskSummary[];
   /**
-   * 待处理的审批，会话的与对外服务的都在这里（架构设计 §3.12），旧的在前。Runtime 总是给出；
-   * 可选只是为了让只认任务的旧镜像（没有这个字段）照样能套用 `tasks` 主题的事件。
+   * Pending approvals, both the session's and the external services' (architecture design §3.12), oldest first. The Runtime always supplies this;
+   * it is optional only so that older task-only mirrors (without this field) can still apply the events of the `tasks` topic.
    */
   approvals?: PendingApproval[];
 }
@@ -92,11 +90,11 @@ export type TasksEvent =
 export interface SpaceSnapshot {
   entries: SpaceEntry[];
   issues: SpaceScanIssue[];
-  /** 首次扫描还没完成。 */
+  /** The first scan has not finished yet. */
   scanning: boolean;
 }
 
-/** 增量；整体重扫时发一条 `catalog.replaced`，客户端不必逐条比对。 */
+/** Incremental; a full rescan sends one `catalog.replaced`, so clients need not compare entries one by one. */
 export type SpaceEvent =
   | { type: 'entry.upsert'; entry: SpaceEntry }
   | { type: 'entry.removed'; entryId: Id }
@@ -104,13 +102,13 @@ export type SpaceEvent =
 
 export interface ConversationSnapshot {
   conversation: Conversation;
-  /** 按出现顺序排列。 */
+  /** In order of appearance. */
   items: TimelineItem[];
 }
 
 /**
- * 会话主题的事件。流式文本以 `item.append` 增量送达，但保留条目身份与完成边界：
- * 终态总以一条 `item.upsert` 收尾（架构设计 §4.5）。
+ * Events for the conversation topic. Streamed text arrives as incremental `item.append` events, but entry identity and completion boundaries are kept:
+ * a final state is always closed by one `item.upsert` (architecture design §4.5).
  */
 export type ConversationEvent =
   | { type: 'item.upsert'; item: TimelineItem }
@@ -119,24 +117,24 @@ export type ConversationEvent =
   | { type: 'conversation.removed' };
 
 /**
- * `agent-setup` 主题。不做成 Job（`jobs` 主题）：JobRecord 没有输出行，必填的是模型计算的字段
- * （内容哈希、Provider、模型包、输入哈希），Job 还会持久化进账本、出现在 `jobs.list` 与智能体的任务工具里。
- * 运行记录只在内存里，留最近的若干次（新的在前）。
+ * The `agent-setup` topic. It is not made a Job (the `jobs` topic): JobRecord has no output lines, and what is required are the fields the model computes
+ * (content hash, Provider, model pack, input hash). A Job would also be persisted to the ledger and appear in `jobs.list` and in the agent's task tools.
+ * Run records live in memory only, keeping the most recent few (newest first).
  */
 export interface AgentSetupSnapshot {
   runs: AgentSetupRun[];
 }
 
 export type AgentSetupEvent =
-  /** 新的一次运行，或状态变了（运行中 → 终态）；带完整的记录。 */
+  /** A new run, or a change of state (running → terminal); carries the full record. */
   | { type: 'setup.updated'; run: AgentSetupRun }
-  /** 追加的输出行。客户端追加后只留最后 `AGENT_SETUP_OUTPUT_LINES` 行。 */
+  /** Appended output lines. After appending, the client keeps only the last `AGENT_SETUP_OUTPUT_LINES` lines. */
   | { type: 'setup.output'; runId: Id; lines: string[] };
 
-/** `agents` 主题：快照就是 `agents.list` 的视图；`checking` 列出还没有任何探测结果、正在首次探测的 Driver（它们不在 `drivers` 里）。 */
+/** `agents` topic: the snapshot is the view of `agents.list`; `checking` lists the Drivers that have no probe result yet and are being probed for the first time (they are not in `drivers`). */
 export type AgentsSnapshot = AgentsView;
 export type AgentsEvent =
-  /** 某个 Driver 的探测完成（含后台刷新与纠正）或偏好变化；带完整的新视图，客户端整体替换。 */
+  /** A Driver's probe has finished (including background refresh and correction) or a preference has changed; carries the full new view, which the client replaces wholesale. */
   { type: 'agents.updated'; view: AgentsView };
 
 export interface TopicMap {
@@ -217,7 +215,7 @@ export interface SequencedEvent<E> {
 }
 
 /**
- * 订阅的首个结果：同一水位的快照，或从客户端游标之后的补发（架构设计 §4.4）。
- * 服务端无法证明能补齐时一律给快照，客户端不在缺事件的镜像上继续。
+ * The first result of a subscription: either a snapshot at the same watermark, or a replay of what follows the client's cursor (architecture design §4.4).
+ * When the server cannot prove the replay is complete, it always sends a snapshot; a client does not keep going on a mirror that is missing events.
  */
 export type SubscribeResult<S, E> = { mode: 'snapshot'; seq: Seq; snapshot: S } | { mode: 'replay'; seq: Seq; events: SequencedEvent<E>[] };

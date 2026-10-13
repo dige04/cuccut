@@ -1,13 +1,11 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/OmniVoiceTTS/Configuration.swift`。
+//! Some implementations are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/OmniVoiceTTS/Configuration.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-bundle interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! OmniVoice 的两份配置：主模型 `config.json`（aufklarer MLX int8 导出，Qwen3 底座 +
-//! 8 码本音频头）与 `audio_tokenizer/config.json`（Higgs Audio v2 分词器）。
-//! 只取推理要用的字段，其余忽略。
+//! OmniVoice's two configs: the main model `config.json` (aufklarer MLX int8 export, Qwen3 base + 8-codebook audio head) and `audio_tokenizer/config.json` (Higgs Audio v2 tokenizer). Only the fields needed for inference are read; the rest are ignored.
 
 use std::path::Path;
 
@@ -37,7 +35,7 @@ pub struct LlmConfig {
     #[serde(default)]
     pub head_dim: Option<usize>,
     pub rms_norm_eps: f32,
-    /// transformers 5 把 `rope_theta` 挪进了 `rope_parameters`；两处都认。
+    /// transformers 5 moved `rope_theta` into `rope_parameters`; both places are accepted.
     #[serde(default)]
     pub rope_theta: Option<f32>,
     #[serde(default)]
@@ -82,7 +80,7 @@ impl LlmConfig {
 }
 
 impl OmniVoiceConfig {
-    /// 读清单列出的 `config.json`。
+    /// Reads the `config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 OmniVoice 配置 {}", path.display()))?;
         Self::parse(&text).with_context(|| format!("解析 OmniVoice 配置 {} 失败", path.display()))
@@ -99,13 +97,13 @@ impl OmniVoiceConfig {
         Ok(config)
     }
 
-    /// `(group_size, bits)`；未量化时 `bits = 0`。
+    /// `(group_size, bits)`; `bits = 0` when not quantized.
     pub fn quant(&self) -> (usize, u32) {
         self.quantization.map_or((64, 0), |q| (q.group_size, q.bits))
     }
 }
 
-/// Higgs Audio v2 分词器配置。
+/// Higgs Audio v2 tokenizer config.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CodecConfig {
     pub sample_rate: u32,
@@ -131,7 +129,7 @@ pub struct AcousticConfig {
     pub encoder_hidden_size: usize,
     pub decoder_hidden_size: usize,
     pub hidden_size: usize,
-    /// 导出里带的冗余字段；HF 实际用 `downsampling_ratios` 之积，两者须一致。
+    /// Redundant field present in the export; HF actually uses the product of `downsampling_ratios`, and the two must match.
     #[serde(default)]
     pub hop_length: Option<usize>,
     pub downsampling_ratios: Vec<usize>,
@@ -168,7 +166,7 @@ fn default_feat_norm() -> String {
 }
 
 impl CodecConfig {
-    /// 读清单列出的 `audio_tokenizer/config.json`。
+    /// Reads the `audio_tokenizer/config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 OmniVoice 音频分词器配置 {}", path.display()))?;
         Self::parse(&text).with_context(|| format!("解析 OmniVoice 音频分词器配置 {} 失败", path.display()))
@@ -206,12 +204,12 @@ impl CodecConfig {
         Ok(config)
     }
 
-    /// 编码一帧 token 对应的 24 kHz 样本数（960）：HF `prod(downsampling_ratios)`。
+    /// Number of 24 kHz samples per encoded token frame (960): HF `prod(downsampling_ratios)`.
     pub fn hop_length(&self) -> usize {
         self.acoustic_model_config.downsampling_ratios.iter().product()
     }
 
-    /// token 帧率（25 Hz）：HF `ceil(sample_rate / hop_length)`。
+    /// Token frame rate (25 Hz): HF `ceil(sample_rate / hop_length)`.
     pub fn frame_rate(&self) -> usize {
         (self.sample_rate as usize).div_ceil(self.hop_length())
     }
@@ -222,8 +220,8 @@ impl CodecConfig {
         ((self.hop_length() as f64 / ratio) / self.downsample_factor as f64) as usize
     }
 
-    /// 量化器个数（HF `num_quantizers`：`1000·最高带宽 // (帧率 · ceil(log2 码本))`），
-    /// 编码默认用最高带宽，即全部量化器。
+    /// Number of quantizers (HF `num_quantizers`: `1000·highest bandwidth // (frame rate · ceil(log2 codebook size))`).
+    /// Encoding uses the highest bandwidth by default, i.e. all quantizers.
     pub fn num_quantizers(&self) -> usize {
         let bandwidth = self.target_bandwidths.last().copied().unwrap_or(0.0);
         let nbits = (self.codebook_size as f64).log2().ceil();
@@ -281,7 +279,7 @@ mod tests {
         assert_eq!(config.hop_length(), 960);
         assert_eq!(config.frame_rate(), 25);
         assert_eq!(config.semantic_downsample_factor(), 2);
-        // 2 kbps / (log2(1024) · 25 / 1000) = 8 个量化器。
+        // 2 kbps / (log2(1024) · 25 / 1000) = 8 quantizers.
         assert_eq!(config.num_quantizers(), 8);
     }
 }

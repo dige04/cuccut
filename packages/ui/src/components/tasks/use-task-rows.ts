@@ -8,7 +8,7 @@ import { useLegacyImport } from '../../state/legacy-import-store.ts';
 import { useTasks } from '../../state/tasks-store.ts';
 import { useVideo } from '../../state/video-store.ts';
 
-/** 编辑器打开的视频里给任务表用的几样：名字、所在项目、素材名。 */
+/** A few fields for the task table, taken from the video open in the editor: its name, its project, and the asset name. */
 export function useOpenVideoFacts(): OpenVideoFacts | null {
   const videoId = useVideo((s) => s.video?.videoId ?? null);
   const name = useVideo((s) => s.video?.state?.video.name ?? s.video?.ref?.name ?? null);
@@ -21,8 +21,8 @@ export function useOpenVideoFacts(): OpenVideoFacts | null {
 }
 
 /**
- * 后台任务的统一表：Agent 任务与 Job，后起的在前。任务页、侧栏与任务胶囊共用。
- * 这次启动导入旧版项目的那一轮（只在桌面端有）也是一行，按它开始的时间排进去。
+ * The unified background task table: agent tasks and Jobs, with the newer ones first. Shared by the tasks page, the sidebar and the task pill.
+ * The round that imports legacy projects at this launch (desktop only) is also one row, placed by the time it started.
  */
 export function useTaskRows(options: TaskRowsOptions = {}): { rows: TaskRow[]; ready: boolean } {
   const fold = options.fold ?? true;

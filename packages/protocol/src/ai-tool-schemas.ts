@@ -5,8 +5,8 @@ import { languageTag } from './language-schemas.ts';
 import { skillSendListSchema } from './skill-schemas.ts';
 
 /**
- * `ai-tool` 流程的参数（`pipelines.start` 的 `params`，产品设计 §5.10）：流程的 `parse` 用它校验，界面与测试也用它。
- * `chapters` 总是整篇：给了范围时拒绝。
+ * Parameters for the `ai-tool` flow (`params` of `pipelines.start`, product design §5.10): the flow's `parse` validates with it, and the UI and tests use it too.
+ * `chapters` always covers the whole piece: a range given with it is rejected.
  */
 export const aiToolParamsSchema = z
   .object({

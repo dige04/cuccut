@@ -1,12 +1,8 @@
-//! CJK ⇄ Latin 字幕文本自动排版。
+//! Automatic typesetting for CJK ⇄ Latin subtitle text.
 //!
-//! 从 voice-ink `Pipeline/Text/AutoCorrect` 移植，规则源自
-//! `huacnlee/autocorrect` v2.16.3 的纯文本核心。这里不处理 Markdown、代码或
-//! LaTeX；输入始终是 transcript/translation 的普通正文。
+//! Ported from voice-ink `Pipeline/Text/AutoCorrect`. The rules derive from the plain-text core of `huacnlee/autocorrect` v2.16.3. Markdown, code and LaTeX are not handled here; the input is always ordinary body text from transcripts or translations.
 //!
-//! 与上游一致的规则包括 CJK/Latin 间距、CJ 语境中的安全全角标点、全角字母
-//! 数字归一化和技术词大小写。全角字母数字在其他规则之前归一化，保证
-//! `format(format(text)) == format(text)`。
+//! The rules that match upstream include CJK/Latin spacing, safe full-width punctuation in a CJ context, full-width letter and digit normalization, and technical-term casing. Full-width letters and digits are normalized before the other rules, so that `format(format(text)) == format(text)`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
@@ -20,12 +16,7 @@ use crate::split::primary_subtag;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Options {
     pub word_case: bool,
-    /// 谚文是否参与「CJK ⇄ 西文」的空格规则。缺省 `true`（沿用 voice-ink 的
-    /// 行为，中文 / 日文文本里夹着的谚文照旧）；韩文译文由
-    /// [`format_translation_with_options`] 关掉。原文一侧取 `false`（[`Options::source`]）：韩文按
-    /// 空格分词，一个词里常有数字或拉丁字母（`2박`、`600원`、`AI가`），而原文的
-    /// 词表是真相——排版不得改动含谚文的文本里的空白，既不往词里塞空格，
-    /// 也不把两个词并成一个。全角字母数字归一化与技术词大小写照常。
+    /// Whether Hangul takes part in the “CJK ⇄ Western text” spacing rules. The default is `true`, which keeps voice-ink's behaviour: Hangul embedded in Chinese or Japanese text stays as it is. Hangul translations turn it off in [`format_translation_with_options`]. The source side uses `false` ([`Options::source`]). Hangul is split on spaces, and a word often contains digits or Latin letters (`2박`, `600원`, `AI가`), and the source word list is the truth. Typesetting must not change whitespace in text containing Hangul: it must neither insert spaces into a word nor merge two words into one. Full-width letter and digit normalization and technical-term casing still apply as usual.
     pub hangul_spacing: bool,
 }
 
@@ -39,8 +30,7 @@ impl Default for Options {
 }
 
 impl Options {
-    /// 原文（transcript 词文本、润色后的原文句）用的排版：见
-    /// [`Options::hangul_spacing`]。
+    /// Typesetting for the source text (transcript word text, polished source sentences): see [`Options::hangul_spacing`].
     pub fn source() -> Self {
         Self {
             word_case: true,
@@ -49,13 +39,12 @@ impl Options {
     }
 }
 
-/// 格式化普通字幕文本。该操作是幂等的。
+/// Formats ordinary subtitle text. The operation is idempotent.
 pub fn format(text: &str) -> String {
     format_with_options(text, Options::default())
 }
 
-/// 字幕显示用的间距投影：只补 CJK ⇄ ASCII 字母数字间距，不改大小写或标点。
-/// 沿用原文排版的片段边界与韩文保护；含谚文的片段、路径和 URL 原样保留。
+/// Spacing projection for subtitle display. It only adds CJK ⇄ ASCII letter and digit spacing, and does not change case or punctuation. It follows the segment boundaries and the Hangul protection of the source typesetting. Segments containing Hangul, paths and URLs are kept as they are.
 pub fn display_spacing(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     for part in text.split_inclusive([' ', '\n', '\r']) {
@@ -79,13 +68,12 @@ pub fn format_with_options(text: &str, options: Options) -> String {
     if text.is_empty() {
         return String::new();
     }
-    // voice-ink 的刻意偏差：halfwidth-word 是前置步骤，避免全角 ASCII
-    // 到第二轮才获得 CJK/Latin 间距。
+    // A deliberate deviation from voice-ink: halfwidth-word is a preliminary step, so full-width ASCII gets CJK/Latin spacing in the first pass rather than only in the second.
     let mut output = halfwidth_word(text);
-    // 原文一侧：含谚文的片（一个韩文词）与含谚文的整段都不动空白。
+    // Source side: segments containing Hangul (one Hangul word), and whole sentences containing Hangul, do not move any whitespace.
     let frozen = |text: &str| !options.hangul_spacing && contains_hangul(text);
     if contains_cjk_script(&output) {
-        // 按空格/换行分片并保留尾随分隔符；全角标点规则会吸收其后的空格。
+        // Split by space or newline, keeping trailing separators. The full-width punctuation rule absorbs the space that follows it.
         let mut result = String::with_capacity(output.len() + 8);
         let mut part = String::new();
         let mut flush = |part: &mut String, result: &mut String| {
@@ -118,21 +106,17 @@ pub fn format_with_options(text: &str, options: Options) -> String {
     output
 }
 
-/// VoiceInk 只在 CJK 目标语言的自动管线中格式化译文。
+/// VoiceInk formats translations only in the automatic pipeline for CJK target languages.
 pub fn is_cjk_language(lang: &str) -> bool {
     matches!(primary_subtag(lang).as_str(), "zh" | "yue" | "ja" | "ko")
 }
 
-/// 词与词之间不留空格的 CJK 语言：中文（含粤语）与日文。韩文不在其中——
-/// 它算 CJK 排版（[`is_cjk_language`]），但按空格分词。
+/// CJK languages that leave no space between words: Chinese (including Cantonese) and Japanese. Hangul is not among them. It counts as CJK typesetting ([`is_cjk_language`]) but is split on spaces.
 pub fn is_unspaced_cjk_language(lang: &str) -> bool {
     matches!(primary_subtag(lang).as_str(), "zh" | "yue" | "ja")
 }
 
-/// CJK 之外、词与词之间同样不留空格的书写语言：泰、老挝、缅甸、高棉、藏
-/// （含宗喀）——[`crate::atomize::spaced_script_letter`] 排除的那几段文字。
-/// 这些语言里空格是短语或分句的停顿，不是词界，所以代码不能替它补空格；
-/// 未列出的语言一律按「词间有空格」处理。
+/// Non-CJK scripts that also write without spaces between words: Thai, Lao, Burmese, Khmer, and Tibetan (including Zongkha), which are the scripts excluded by [`crate::atomize::spaced_script_letter`]. In these languages a space is a pause in a phrase or clause, not a word boundary, so the code must not add spaces in its place. Languages not listed here are treated as having spaces between words.
 pub fn is_unspaced_script_language(lang: &str) -> bool {
     matches!(
         primary_subtag(lang).as_str(),
@@ -140,14 +124,13 @@ pub fn is_unspaced_script_language(lang: &str) -> bool {
     )
 }
 
-/// 源文门：至少一半词原子含 CJK，避免一个偶发汉字把英文文档切到 CJK 路径。
+/// Source gate: at least half of the word atoms must contain CJK. This keeps a stray Han character from switching an English document onto the CJK path.
 pub fn source_is_cjk(words: &[Word]) -> bool {
     !words.is_empty()
         && words.iter().filter(|word| is_cjk_text(&word.text)).count() * 2 >= words.len()
 }
 
-/// 逐词排版原文词原子，返回改动的词数。调用方先过 [`source_is_cjk`] 门。
-/// 词里不许有空白：排版结果带空白的词保持原样。
+/// Typesets source word atoms word by word, and returns the number of words changed. The caller passes the [`source_is_cjk`] gate first. No whitespace is allowed within a word: a word whose typeset result would contain whitespace is kept as it is.
 pub fn format_words(words: &mut [Word]) -> usize {
     let mut changed = 0;
     for word in words {
@@ -162,14 +145,12 @@ pub fn format_words(words: &mut [Word]) -> usize {
     changed
 }
 
-/// 格式化目标语译文。非 CJK 目标保持逐字不变；韩文目标不动空白
-/// （[`Options::hangul_spacing`]）。
+/// Formats the target-language translation. Non-CJK targets are kept character for character unchanged. Hangul targets do not change whitespace ([`Options::hangul_spacing`]).
 pub fn format_translation(text: &str, lang: &str) -> String {
     format_translation_with_options(text, lang, &[], Options::default())
 }
 
-/// 受保护词条逐字保持；只格式化词条之间的文本，并补足词条边缘的
-/// CJK ⇄ ASCII 字母数字间距。
+/// Protected terms are kept character for character. Only the text between terms is formatted, and CJK ⇄ ASCII letter and digit spacing is added at the edges of terms.
 pub fn format_translation_with_options(
     text: &str,
     lang: &str,
@@ -179,8 +160,7 @@ pub fn format_translation_with_options(
     if !is_cjk_language(lang) {
         return text.to_owned();
     }
-    // 韩文译文：助词与量词直接贴在前面的拉丁词或数字上（`AI가`、`2박 3일`），
-    // 空白就是词界，不过间距规则；其余归一化照常。
+    // Hangul translations: particles and classifiers attached directly to a Latin word or a digit (`AI가`, `2박 3일`). Whitespace is the word boundary here, so the spacing rules do not apply. Other normalization proceeds as usual.
     let korean = primary_subtag(lang) == "ko";
     let options = Options {
         hangul_spacing: options.hangul_spacing && !korean,
@@ -239,8 +219,7 @@ fn simplified_chinese(lang: &str) -> bool {
         && !subtags.iter().any(|subtag| subtag == "hant")
 }
 
-/// 能确定性裁决的简中目标排版在落 `trans` 前收敛；代码/URL 样片由既有
-/// `path_re` 保护。直引号等可能是数据的字符不在这里改写，交给 check advisory。
+/// Simplified Chinese target typesetting that can be decided deterministically converges before it is written to `trans`. Code and URL samples are protected by the existing `path_re`. Characters that may be data, such as straight quotes, are not rewritten here and are left to the check advisory.
 fn target_policy_format(text: &str, lang: &str) -> String {
     if !simplified_chinese(lang) || text.is_empty() {
         return text.to_owned();
@@ -281,7 +260,7 @@ fn target_policy_format(text: &str, lang: &str) -> String {
     output
 }
 
-/// 原地格式化一张目标语译文表，返回实际改变的条数。
+/// Formats a target-language translation table in place, and returns the number of entries actually changed.
 pub fn format_translation_map(
     map: &mut BTreeMap<String, String>,
     lang: &str,
@@ -333,9 +312,7 @@ fn format_part(part: &str) -> String {
     fullwidth_punctuation(&output)
 }
 
-/// voice-ink 保留了 huacnlee/autocorrect 的 regexp! 文本替换行为。特别是
-/// `CJK` 会展开成未分组的 alternation，`CJ` 出现在 `[]` 内时会留下字面 `|`；
-/// 这些看似奇怪的优先级会影响既有输出，不能在移植时“修正”。
+/// voice-ink preserves the regexp! text-replacement behaviour of huacnlee/autocorrect. In particular, `CJK` expands into an ungrouped alternation, and when `CJ` appears inside `[]` it leaves a literal `|`. These seemingly odd priorities affect existing output, and must not be “corrected” during porting.
 fn rx(pattern: &str) -> Regex {
     let pattern = pattern
         .replace(
@@ -755,8 +732,7 @@ mod tests {
         );
     }
 
-    /// 原文排版不动含谚文的文本里的空白：不往韩文词里塞空格，也不把引号
-    /// 两侧的词并成一个；汉字 / 假名文本与缺省排版逐字相同。
+    /// Source-side typesetting does not move whitespace in text containing Hangul. It neither inserts spaces into Hangul words nor merges words on either side of a quote. Han and kana text is character-for-character identical to the default typesetting.
     #[test]
     fn source_format_leaves_hangul_whitespace_alone() {
         let source = Options::source();
@@ -769,7 +745,7 @@ mod tests {
         ] {
             assert_eq!(format_with_options(text, source), text, "{text}");
         }
-        // 独立成词的技术词大小写与全角字母数字归一化照常。
+        // Technical-term casing for standalone words, and full-width letter and digit normalization, still apply as usual.
         assert_eq!(
             format_with_options("ios 앱을 ＡＩ가 씁니다", source),
             "iOS 앱을 AI가 씁니다"
@@ -782,7 +758,7 @@ mod tests {
         ] {
             assert_eq!(format_with_options(text, source), format(text), "{text}");
         }
-        // 译文排版不变（voice-ink 的既有向量）。
+        // Translation typesetting is unchanged (voice-ink's existing vectors).
         assert_eq!(format("한국어hello"), "한국어 hello");
     }
 
@@ -809,8 +785,7 @@ mod tests {
         assert_eq!(display_spacing("中文ios，ＡＩ！"), "中文 ios，ＡＩ！");
     }
 
-    /// 韩文译文：助词、量词贴着拉丁词或数字写，排版不拆开，也不动模型写下的
-    /// 空格；受保护词条两侧同样不补。中文 / 日文目标不变。
+    /// Hangul translations: particles and classifiers are written attached to a Latin word or a digit. Typesetting does not split them, and does not change spaces the model wrote. Protected terms on either side are not padded either. Chinese and Japanese targets are unchanged.
     #[test]
     fn korean_translation_keeps_its_own_word_spacing() {
         for text in [
@@ -853,7 +828,7 @@ mod tests {
         let texts: Vec<&str> = korean.iter().map(|word| word.text.as_str()).collect();
         assert_eq!(texts, ["2박", "3일", "600원이라는", "6시쯤", "iOS"]);
 
-        // 词原子里混着汉字与西文时（切词没拆开的情形）同样不塞空格。
+        // Even when a word atom mixes Han characters and Western text (the case where tokenization did not split it), no space is inserted.
         let mut mixed: Vec<Word> = ["3月", "ｉｏｓ", "你", "好,"]
             .into_iter()
             .map(word)

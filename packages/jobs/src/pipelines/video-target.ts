@@ -7,59 +7,50 @@ import { invalid } from './params.ts';
 import type { PipelineStep } from './pipeline.ts';
 
 /**
- * 视频工具的目标（架构设计 §7.9）：`{ videoId }`、`{ entryId }` 或 `{ create }`。`entryId` 由 `PipelineRunner` 在提交时
- * 解析成视频并以 Runtime 的租约打开（流程结束、取消或失败后放下），记成流程的第一步 `target`；之后的步骤只认 `videoId`。
- * `create` 由接受它的流程自己的步骤新建，在项目里或会话的来源目录里（从链接导入在下载之后新建，名字取页面标题；转录给了
- * `media` 时新建并导入那个文件）。
+ * Targets for video tools (architecture design §7.9): `{ videoId }`, `{ entryId }` or `{ create }`. On submit, `PipelineRunner` resolves `entryId` to a video and opens it under a Runtime lease (released when the pipeline ends, is cancelled, or fails), and records it as the pipeline's first step `target`. Later steps recognize only `videoId`.
+ * `create` is made by the step of the pipeline that accepts it, in the project or in the session's source directory (link import creates it after the download, named from the page title; transcription with `media` given creates it and imports that file).
  */
 
-/** 解析目标这一步的名字：接受 `target` 的流程把 `targetStep()` 放在第一步。 */
+/** Name of the target-resolving step: pipelines that accept `target` put `targetStep()` first. */
 export const TARGET_STEP = 'target';
 
-/** 流程持有的一个视频的租约：视频、它的位置（重试时按它重新打开）与放下租约。 */
+/** A video lease held by a pipeline: the video, its location (used to reopen it on retry), and the release of the lease. */
 export interface VideoLease {
   videoId: Id;
   place: VideoPlace;
   release(): void;
 }
 
-/** Runtime 给流程的视频目标：找到 Space 条目的位置、以租约打开、在项目或会话里新建。 */
+/** Video target the Runtime gives a pipeline: finds the location of a Space entry, opens it under a lease, and creates one in a project or session. */
 export interface PipelineTargets {
   /**
-   * Space 里的视频条目的位置，不打开视频。条目不存在 `not-found`，在回收站里 `conflict`（`SPACE_ENTRY_TRASHED`），
-   * 不是视频 `invalid-request`（`SPACE_ENTRY_NOT_VIDEO`）。
+   * Locates a video entry in the Space without opening the video. A missing entry gives `not-found`. An entry in the trash gives `conflict` (`SPACE_ENTRY_TRASHED`). An entry that is not a video gives `invalid-request` (`SPACE_ENTRY_NOT_VIDEO`).
    */
   entry(entryId: Id): Promise<VideoPlace>;
   /**
-   * 以 Runtime 的租约打开这个位置上的视频（与重启恢复同一条路径）：别的连接已经打开着时直接用那一份；被别的进程锁着时
-   * 抛 `conflict`（`VIDEO_LOCKED`）；不在了 `not-found`。
+   * Opens the video at this location under a Runtime lease (the same path as recovery after a restart). If another connection already has it open, that instance is used directly. When another process holds the lock, throws `conflict` (`VIDEO_LOCKED`). If it no longer exists, `not-found`.
    */
   lease(place: VideoPlace): Promise<VideoLease>;
   /**
-   * 在项目目录（或会话的来源目录：会话属于项目时是项目目录，否则是会话的工作目录）里占下新视频的目录（与 `videos.create`
-   * 同样按名字挑一个还不存在的目录，先建成空目录）。占下之后别的新建都会跳过它，所以之后在这个位置上出现的视频只能是按这次
-   * 占位新建的：流程先把位置记下再新建，重试时按它认回已经建好的视频（`video-create.ts`）。
+   * Reserves a directory for a new video in the project directory (or the session's source directory: the project directory when the session belongs to a project, otherwise the session's working directory). As with `videos.create`, it picks a name whose directory does not exist yet and creates it as an empty directory first. Once reserved, other creations skip it, so any video that later appears at this location can only be one created by this reservation. The pipeline records the location before creating, and on retry uses it to adopt a video that was already created (`video-create.ts`).
    */
   reserve(request: PipelineCreateScope & { name: string }): Promise<VideoPlace>;
   /**
-   * 在项目或会话的来源目录里新建一个视频并持有它的租约（与 `videos.create`、智能体的 `videos_create` 同一条路径，视频登记在
-   * 同一个范围里）。同一个 `commandId` 在一次运行里只新建一次。给了 `place`（`reserve` 占下的）时建在那里；那里已经有视频时
-   * （上次新建之后、记下产出之前中断了）认回它，不再新建。
+   * Creates a video in the project or session's source directory and holds its lease (the same path as `videos.create` and the agent's `videos_create`; the video is registered in the same scope). The same `commandId` creates only once per run. When `place` is given (reserved by `reserve`), the video is created there. If a video is already there (interrupted after creation and before the output was recorded), it is adopted and not created again.
    */
   create(request: PipelineCreateScope & { name: string; commandId: Id; place?: VideoPlace }): Promise<VideoLease>;
 }
 
-/** 流程声明它接受哪些目标：`create` 为 false 时 `{ create }` 以 `PIPELINE_TARGET_UNSUPPORTED` 拒绝。 */
+/** Declares which targets a pipeline accepts. When `create` is false, `{ create }` is rejected with `PIPELINE_TARGET_UNSUPPORTED`. */
 export interface PipelineTargetSupport {
   create: false | { media: boolean };
 }
 
-/** 校验过的目标（`videoId` 与 `target` 合在一起）；都没给时 null。 */
+/** Validated target (`videoId` and `target` combined). null when neither is given. */
 export type ResolvedTargetParam = { videoId: Id } | { entryId: Id } | { create: PipelineCreateTarget };
 
 /**
- * 读 `pipelines.start` 参数里的 `target` 与顶层 `videoId`：形状不合 `invalid-request`；两者都给且不是同一个视频时
- * `invalid-request`（`entryId` 要解析之后才知道，由调用方再比）；流程不接受新建时 `PIPELINE_TARGET_UNSUPPORTED`。
+ * Reads `target` and the top-level `videoId` from the `pipelines.start` parameters. A bad shape gives `invalid-request`. When both are given and refer to different videos, `invalid-request` (`entryId` is known only after resolution, so the caller compares again). When the pipeline does not accept creation, `PIPELINE_TARGET_UNSUPPORTED`.
  */
 export function readVideoTarget(raw: Record<string, unknown>, support: PipelineTargetSupport): ResolvedTargetParam | null {
   const videoId = raw.videoId;
@@ -92,8 +83,7 @@ function checkTarget(value: unknown, support: PipelineTargetSupport): PipelineVi
 }
 
 /**
- * `target.create` 的形状：`projectId` 与 `conversationId` 给且只给一个（新建在项目里，或会话的来源目录里），`name` 可选；
- * `media` 只在流程接受时可以给。
+ * Shape of `target.create`: exactly one of `projectId` and `conversationId` is given (created in the project, or in the session's source directory). `name` is optional. `media` may be given only when the pipeline accepts it.
  */
 export function readCreateTarget(value: unknown, media: boolean): PipelineCreateTarget {
   if (!isRecord(value)) throw invalid('target.create', JobsVideoTarget.createShape());
@@ -128,14 +118,13 @@ function createScope(key: 'projectId' | 'conversationId', id: Id): PipelineCreat
   return key === 'projectId' ? { projectId: id } : { conversationId: id };
 }
 
-/** 新建目标的所在（去掉名字与媒体）。 */
+/** Where the new target goes (without the name and media). */
 export function createScopeOf(create: PipelineCreateTarget): PipelineCreateScope {
   return create.projectId !== undefined ? { projectId: create.projectId } : { conversationId: create.conversationId };
 }
 
 /**
- * 解析目标这一步：由 `PipelineRunner` 在提交时完成（`entryId` 的目标记为完成，产出 `{ entryId, videoId, place }`；
- * 别的记为跳过），执行时不会走到 `run`。
+ * The target-resolving step: completed by `PipelineRunner` on submit (an `entryId` target is marked complete with output `{ entryId, videoId, place }`; others are marked skipped). It never reaches `run` when executed.
  */
 export function targetStep<P>(): PipelineStep<P> {
   return {
@@ -147,8 +136,7 @@ export function targetStep<P>(): PipelineStep<P> {
 }
 
 /**
- * `target` 参数的 JSON Schema（`pipelines.list` 交出）：`create` 只在流程接受新建时列出，`media` 只在流程接受媒体时列出；
- * `create` 的 `projectId` 与 `conversationId` 给且只给一个。
+ * JSON Schema of the `target` parameter (returned by `pipelines.list`). `create` is listed only when the pipeline accepts creation, and `media` only when it accepts media. For `create`, exactly one of `projectId` and `conversationId` is given.
  */
 export function targetSchema(
   description: string,
@@ -163,7 +151,7 @@ export function targetSchema(
   return {
     description,
     oneOf: [
-      // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+      // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
       one('videoId', { type: 'string', description: '已打开的视频' }),
       one('entryId', { type: 'string', description: 'Space 里的视频条目（不要求已打开）' }),
       // i18n-ignore-end

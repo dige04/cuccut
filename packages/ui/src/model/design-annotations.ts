@@ -3,18 +3,18 @@ import type { EditorThread } from '@cuccut/slides/editor-messages';
 import { targetKey } from './workspace.ts';
 
 /**
- * 会话里的设计稿标注（docs/design/canvas §8.2、§9）：草稿的增删、编辑器里的编号标记与发送时交出去的那一份。
- * 移植自原型 designs/cuccut/app/model-home-design.js（`add`、`remove`、`pins`），与幻灯片标注（slide-annotations.ts）同一套规则。
- * 纯函数，无 React、无 DOM。编号是在这个会话的设计稿标注草稿里的序号；幻灯片标注各自编号。
+ * Design draft annotations in a session (docs/design/canvas §8.2, §9): adding and removing drafts, the numbered markers in the editor, and the copy handed over when sending.
+ * Ported from the prototype designs/cuccut/app/model-home-design.js (`add`, `remove`, `pins`), following the same rules as slide annotations (slide-annotations.ts).
+ * Pure functions, no React, no DOM. Numbers are the ordinal within this session's design annotation drafts; slide annotations are numbered separately.
  */
 
-/** 草稿里的一条：协议的 `DesignAnnotation` 加一个只在界面里用的 id（删除、编辑器的编号标记、跳转用）。 */
+/** One entry in the draft: the protocol's `DesignAnnotation` plus a UI-only id (used for deletion, editor number markers and jumping). */
 export type DraftDesignAnnotation = DesignAnnotation & { id: string };
 
-/** 加不进去的原因：空的、超长的、超过条数的。 */
+/** Reasons an entry cannot be added: empty, too long, or over the count limit. */
 export type DesignAnnotationError = 'empty' | 'too-long' | 'too-many';
 
-/** 新加一条：批注去掉首尾空白；空的、超长的、超过条数的都不收。 */
+/** Adds one entry: the annotation is trimmed of leading and trailing whitespace; empty, too-long, or over-the-limit entries are not accepted. */
 export function addDesignAnnotation(
   list: readonly DraftDesignAnnotation[],
   note: DraftDesignAnnotation,
@@ -30,13 +30,13 @@ export function removeDesignAnnotation(list: readonly DraftDesignAnnotation[], i
   return list.some((n) => n.id === id) ? list.filter((n) => n.id !== id) : list;
 }
 
-/** 编辑器里这份设计稿的编号标记：编号是在整份草稿里的序号，与 composer 列表一致。 */
+/** Number markers for this design draft in the editor: the number is the ordinal across the whole draft, matching the composer list. */
 export function canvasThreads(list: readonly DraftDesignAnnotation[], canvas: FileTarget): EditorThread[] {
   const key = targetKey(canvas);
   return list.flatMap((n, i) => (targetKey(n.canvas) === key ? [{ id: n.id, anchor: n.anchor, n: i + 1 }] : []));
 }
 
-/** 随消息交出去的那一份：去掉界面里的 id，字段按协议排。 */
+/** The copy handed over with the message: UI ids removed, fields ordered per the protocol. */
 export function sentDesignAnnotations(list: readonly DraftDesignAnnotation[]): DesignAnnotation[] {
   return list.map(({ canvas, anchor, board, label, detail, area, text }) => ({
     canvas,
@@ -49,15 +49,15 @@ export function sentDesignAnnotations(list: readonly DraftDesignAnnotation[]): D
   }));
 }
 
-/** 画板文件的路径（相对设计稿目录）：每段以字母、数字或 `_` 开头，以 `.dc.html` 结尾（设计稿的格式，skill design SKILL.md）。 */
+/** Path of an artboard file (relative to the design draft directory): each segment starts with a letter, digit or `_`, and ends with `.dc.html` (the design draft format, skill design SKILL.md). */
 const BOARD = String.raw`(?:[A-Za-z0-9_][A-Za-z0-9_.-]*/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\.dc\.html`;
 const ELEMENT_DETAIL = new RegExp(`^(${BOARD})(?::\\s|$)`);
 const AREA_DETAIL = new RegExp(`^Area over (${BOARD}) \\([^)]*\\)(?::[^;]*)?$`);
 
 /**
- * 运行时给模型的定位描述里的画板文件：元素与整块画板是 `Main.dc.html: #… button "…"` / `Main.dc.html`，
- * 只落在一块画板上的区域是 `Area over Main.dc.html (part): …`（运行时 comments/labels.ts）。
- * 跨几块画板的区域、画布上的空白处与便签没有单一的画板，返回 undefined。
+ * Artboard file in the location description given to the model at runtime: an element or a whole artboard is `Main.dc.html: #… button "…"` / `Main.dc.html`,
+ * and a region falling on just one artboard is `Area over Main.dc.html (part): …` (runtime comments/labels.ts).
+ * A region across several artboards, blank space on the canvas, and sticky notes have no single artboard, so it returns undefined.
  */
 export function boardOfDetail(detail: string | undefined): string | undefined {
   if (!detail) return undefined;

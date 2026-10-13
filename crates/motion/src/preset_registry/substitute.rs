@@ -1,15 +1,14 @@
-//! `"{param}"` 替换（规范 §7.4：**只替换、不算术**）。
+//! `"{param}"` substitution (spec §7.4: **substitute only, no arithmetic**).
 //!
-//! 这里的语义必须与 `ccut-core/src/resolve.rs::resolve_ref` 的 `'{'` 分支**逐式相同**：
-//! 项目级 preset 走那条路径、内置 manifest 走这条，同一个模板必须给同一个结果。
-//! 一致性由 `ccut-motion/tests/substitute_parity.rs` 在两侧对拍。
+//! The semantics here must be **identical, expression for expression,** to the `'{'` branch of `ccut-core/src/resolve.rs::resolve_ref`:
+//! project-level presets take that path, built-in manifests take this one, and the same template must give the same result.
+//! Consistency is checked on both sides by `ccut-motion/tests/substitute_parity.rs`.
 //!
-//! 与 `resolve_ref` 的唯一差别：这里不认 `$vars/$theme/$assets` 引用——manifest 是
-//! 仓库内的数据，没有文档上下文可查。
+//! The only difference from `resolve_ref`: this does not recognize `$vars/$theme/$assets` references, because a manifest is data inside the repository and there is no document context to look them up in.
 
 use serde_json::{Map, Value};
 
-/// 单个值的替换。非字符串原样返回。
+/// Substitutes a single value. Non-string values are returned unchanged.
 pub fn substitute(v: &Value, params: &Map<String, Value>) -> Value {
     let Some(s) = v.as_str() else {
         return v.clone();
@@ -17,7 +16,7 @@ pub fn substitute(v: &Value, params: &Map<String, Value>) -> Value {
     if !s.contains('{') {
         return v.clone();
     }
-    // 整串就是 "{name}" 且 name 全 [A-Za-z0-9_] → 返回参数原值（保类型）
+    // Whole string is "{name}" and name is all [A-Za-z0-9_] → return the parameter's original value (type preserved)
     if let Some(inner) = s.strip_prefix('{').and_then(|t| t.strip_suffix('}')) {
         if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             if let Some(pv) = params.get(inner) {
@@ -25,7 +24,7 @@ pub fn substitute(v: &Value, params: &Map<String, Value>) -> Value {
             }
         }
     }
-    // 字符串模板："共 {value} 人"
+    // String template: "共 {value} 人"
     let mut out = s.to_string();
     for (k, pv) in params {
         let needle = format!("{{{k}}}");
@@ -49,7 +48,7 @@ pub fn substitute(v: &Value, params: &Map<String, Value>) -> Value {
     Value::from(out)
 }
 
-/// 递归替换（数组 / 对象逐键），镜像 `deep_resolve`。
+/// Recursive substitution (arrays / objects key by key), mirroring `deep_resolve`.
 pub fn deep_substitute(v: &Value, params: &Map<String, Value>) -> Value {
     match v {
         Value::String(_) => substitute(v, params),

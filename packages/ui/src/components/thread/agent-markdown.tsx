@@ -16,15 +16,13 @@ import './agent-thread.css';
 import { openMarkdownPath, ThreadMediaPreview } from './thread-media-preview.tsx';
 
 /**
- * Agent 回复正文（产品设计 §3.2.2）：逐字匀速显示，按 Markdown 块渲染。
+ * Agent reply body (product design §3.2.2): revealed character by character at an even pace, rendered as Markdown blocks.
  *
- * - 全文留在 store，`useRevealedText` 只放出一截：每帧按积压成比例前进（`revealStep`），切点落在字素簇边界；
- *   流式结束立刻显示全文，挂载时已经写完的消息整段显示。
- * - 回复按块拆开（`splitBlocks`），每块一个 memo 组件：流式时只有最后一块的文字在变，前面的块不重新解析；
- *   最后一块先经 `closeStreamingTail` 补齐没写完的标记再渲染。
+ * - The full text stays in the store; `useRevealedText` only reveals a slice. Each frame advances in proportion to the backlog (`revealStep`), and the cut point falls on a grapheme cluster boundary. Once streaming ends, the full text shows at once; a message that was already fully written when mounted is shown in full.
+ * - The reply is split into blocks (`splitBlocks`), each block being a memo component. While streaming, only the text of the last block changes, so earlier blocks are not re-parsed. The last block first goes through `closeStreamingTail`, which closes any markers still open, before it is rendered.
  */
 
-/** 60Hz 上限：高刷屏上隔帧推进。 */
+/** 60Hz cap: on high-refresh displays, advance every other frame. */
 const FRAME_MS = 1000 / 60 - 0.5;
 
 export function useRevealedText(text: string, streaming: boolean): string {
@@ -62,10 +60,10 @@ export function useRevealedText(text: string, streaming: boolean): string {
   return streaming ? text.slice(0, Math.min(shown, text.length)) : text;
 }
 
-/** 正文里的路径相对哪个会话的工作目录打开。 */
+/** Paths in the body are opened relative to the working directory of which session. */
 const PathScope = createContext<{ conversationId: string; cwd: string | null; mediaGroup: string }>({ conversationId: '', cwd: null, mediaGroup: '' });
 
-/** hast 节点里的文字。 */
+/** Text inside a hast node. */
 function textOf(node: unknown): string {
   const n = node as { type?: string; value?: string; children?: unknown[] } | undefined;
   if (!n) return '';
@@ -73,7 +71,7 @@ function textOf(node: unknown): string {
   return (n.children ?? []).map(textOf).join('');
 }
 
-/** 代码块：hover 出复制按钮；复制时去掉尾部换行。长行换行，不横滚。 */
+/** Code block: a copy button appears on hover; trailing newlines are removed when copying. Long lines wrap instead of scrolling horizontally. */
 function CodeBlock({ code }: { code: string }) {
   const body = code.replace(/\n+$/, '');
   return (
@@ -88,7 +86,7 @@ function CodeBlock({ code }: { code: string }) {
   );
 }
 
-/** 正文里的文件路径：点了在功能区打开文件查看器；tooltip 是相对路径与行范围。 */
+/** File paths in the body: clicking opens the file viewer in the feature area; the tooltip shows the relative path and line range. */
 function PathLink({ raw, token }: { raw: string; token: PathToken }) {
   const scope = useContext(PathScope);
   const { cwd } = scope;
@@ -108,11 +106,11 @@ function PathLink({ raw, token }: { raw: string; token: PathToken }) {
   );
 }
 
-/** 显式产物链接和行内路径一样进入右侧查看器，不能让浏览器导航到本机路径。 */
+/** Explicit artifact links go into the right-hand viewer, just like inline paths, so the browser must not navigate to a local path. */
 function MarkdownLink({ href, children, title }: { href?: string; children?: ReactNode; title?: string }) {
   const scope = useContext(PathScope);
   const runtime = useRuntime();
-  // 设置路径优先于外部网页与文件；浏览器和未知设置路径只显示文字（§3.2.2）。
+  // Settings paths take priority over external web pages and files; for the browser and unknown settings paths, only the text is shown (§3.2.2).
   if (href && /^\/settings(?:\/|$)/.test(href)) {
     const hit = runtime.host.platform !== 'web' ? settingsLink(href) : null;
     if (!hit) return <span>{children}</span>;
@@ -161,7 +159,7 @@ const components: Components = {
   ),
 };
 
-/** 一块 Markdown：文字不变就不重渲。 */
+/** One Markdown block: not re-rendered while its text is unchanged. */
 const MarkdownBlock = memo(function MarkdownBlock({ src, gap }: { src: string; gap: number }) {
   return (
     <div className="cc-amd-block" style={gap ? { marginTop: gap } : undefined}>

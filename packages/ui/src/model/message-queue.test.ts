@@ -48,26 +48,26 @@ describe('排队的增删改', () => {
     expect(isQueuedMessage({ id: 'a', text: 'x' })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), attachments: [{}] })).toBe(false);
     expect(isQueuedMessage(null)).toBe(false);
-    // 点选的 skill 随排队消息一起存；形状不对的不要。
+    // A picked skill is stored with the queued message; discard it if its shape is wrong.
     expect(isQueuedMessage({ ...msg('a'), skill: { id: 'subtitle-style' } })).toBe(true);
     expect(isQueuedMessage({ ...msg('a'), skill: 'subtitle-style' })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), skill: {} })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), skills: [{ id: 'a' }, { id: 'b' }] })).toBe(true);
     expect(isQueuedMessage({ ...msg('a'), skills: [{ id: 'a' }, {}] })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), skills: { id: 'a' } })).toBe(false);
-    // 加进对话的幻灯片标注也随排队消息存。
+    // Slide annotations added to the conversation are also stored with the queued message.
     const note = { deck: { conversationId: 'c1', path: 'talk/deck.json' }, anchor: 's1#title', slideId: 's1', label: 'Slide 1 › Title', text: '改短' };
     expect(isQueuedMessage({ ...msg('a'), slideAnnotations: [note, { ...note, detail: 'Slide 1 #s1', area: true }] })).toBe(true);
     expect(isQueuedMessage({ ...msg('a'), slideAnnotations: [{ ...note, text: 1 }] })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), slideAnnotations: [{ ...note, deck: 'talk/deck.json' }] })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), slideAnnotations: note })).toBe(false);
-    // 设计稿标注同样。
+    // Design-canvas annotations likewise.
     const design = { canvas: { conversationId: 'c1', path: 'designs/landing' }, anchor: 'a:Main.dc.html#0.1', board: 'Main.dc.html', label: 'Main › Button', text: '大一点' };
     expect(isQueuedMessage({ ...msg('a'), designAnnotations: [design, { ...design, detail: 'Main.dc.html: #0.1 button', area: true }] })).toBe(true);
     expect(isQueuedMessage({ ...msg('a'), designAnnotations: [{ ...design, board: 1 }] })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), designAnnotations: [{ ...design, canvas: 'designs/landing' }] })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), designAnnotations: design })).toBe(false);
-    // 设计系统标注同样。
+    // Design-system annotations likewise.
     const system = { system: { conversationId: 'c1', path: 'spectrum-2' }, anchor: 'comp-Button', section: 'components', label: 'Components › Button', text: '圆角改小' };
     expect(isQueuedMessage({ ...msg('a'), designSystemAnnotations: [system, { ...system, section: undefined, detail: 'Component "Button"' }] })).toBe(true);
     expect(isQueuedMessage({ ...msg('a'), designSystemAnnotations: [{ ...system, section: 1 }] })).toBe(false);

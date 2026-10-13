@@ -46,15 +46,15 @@ import { SpaceThumbnailCache } from './space-thumbnails.ts';
 import { VideoController, targetOf, transactionLabel } from './video-controller.ts';
 
 /**
- * 界面与 Runtime 之间的唯一通道：把订阅灌进 Zustand 镜像，把用户操作变成公共命令。
- * 组件不直接碰 WebSocket，也不在本地改业务状态（架构设计 §11.1）。
+ * The only channel between the UI and the Runtime: feeds subscriptions into the Zustand mirror, and turns user actions into public commands.
+ * Components do not touch the WebSocket directly, and do not change business state locally (architecture design §11.1).
  */
 export class RuntimeSession {
   readonly client: CucCutClient;
   readonly host: HostBridge;
-  /** 编辑器打开的视频。 */
+  /** The video open in the editor. */
   readonly videos: VideoController;
-  /** Space 网格与列表的缩略图（`space.thumbnail`）。 */
+  /** Thumbnails for the Space grid and list (`space.thumbnail`). */
   readonly spaceThumbnails: SpaceThumbnailCache;
   readonly #watchers = new Map<Id, { count: number; unsubscribe: () => void }>();
   #disposers: (() => void)[] = [];
@@ -76,14 +76,13 @@ export class RuntimeSession {
         this.videos.onConnection(state);
         if (state.status === 'connected') this.spaceThumbnails.revive();
       }),
-      // Agent 列表与偏好：快照先给上次的探测结果（Runtime 存在磁盘上），后台刷新、纠正与偏好变化都推整份新视图。
-      // 断线重连后客户端会重新订阅、重取快照。
+      // Agent list and preferences: the snapshot first gives the last probe result (the Runtime stores it on disk); background refreshes, corrections and preference changes all push a whole new view.
+      // After a dropped connection reconnects, the client subscribes again and fetches the snapshot again.
       this.client.subscribeAgents({
         snapshot: (view) => useConnection.getState().setAgents(view),
         event: (event) => useConnection.getState().setAgents(event.view),
       }),
-      // 用户去终端登录或装好 Agent 再回来：窗口重新获得焦点时拉一次 `agents.list`，Runtime 据此对缓存说不可用的
-      // Driver 做便宜的纠正（架构设计 §3.11），结果经主题推送，这里不用返回值。
+      // When the user goes to the terminal to log in or install an Agent and comes back: when the window regains focus, `agents.list` is fetched once, and the Runtime uses it to make a cheap correction to the cached “unavailable” Driver state (architecture design §3.11). The result is pushed through the topic, so no return value is used here.
       this.#onWindowFocus(() => {
         if (useConnection.getState().state.status !== 'connected') return;
         void this.client.request('agents.list', {}).catch(() => {});
@@ -112,7 +111,7 @@ export class RuntimeSession {
         snapshot: (snapshot) => useSettings.getState().replace(snapshot),
         event: (event) => useSettings.getState().apply(event),
       }),
-      // 用户库只订阅这一次：各个库的镜像在 library-feed 里登记（同一主题再 subscribe 会顶掉这一次）。
+      // The user library subscribes just once: each library's mirror is registered in library-feed (subscribing to the same topic again would replace this one subscription).
       this.client.subscribe<import('@cuccut/protocol').LibrarySnapshot, import('@cuccut/protocol').LibraryEvent>('library', libraryFeed),
       this.client.subscribe<import('@cuccut/protocol').GrantsSnapshot, import('@cuccut/protocol').GrantsEvent>('grants', {
         snapshot: (snapshot) => useGrants.getState().replace(snapshot),
@@ -137,7 +136,7 @@ export class RuntimeSession {
     this.client.close();
   }
 
-  /** 打开一个会话的内容订阅；引用计数，最后一个使用者离开时退订。 */
+  /** Open a content subscription for a session; reference-counted, unsubscribed when the last user leaves. */
   watchConversation(id: Id): () => void {
     let watcher = this.#watchers.get(id);
     if (!watcher) {
@@ -157,11 +156,10 @@ export class RuntimeSession {
     };
   }
 
-  // ---- 命令 ----
+  // ---- Commands ----
 
   /**
-   * 不给的字段用 Runtime 记着的偏好：上次的访问模式、默认 Agent 及它的默认模型与推理强度。`folderOf`：与那条无项目会话共用
-   * 工作目录（从不属于项目的视频新开会话，架构设计 §3.10）。
+   * Fields not given use the preferences the Runtime remembers: the last access mode, the default Agent and its default model and reasoning effort. `folderOf`: shares the working directory with that project-less session (a new session opened for a video that does not belong to a project, architecture design §3.10).
    */
   async createConversation(
     projectId: Id | null,
@@ -172,14 +170,14 @@ export class RuntimeSession {
   }
 
   /**
-   * `context`：编辑器当时的状态（打开的视频、版本、选区、播放头），随消息交给智能体。
-   * `attachments`：已经上传完的图片（`uploadAttachment` 返回的 id）。
-   * `template`：挂着的场景模板（模板包规范 §5.2），Runtime 据此给智能体拼简报引导与模板正文；`text` 仍是用户自己的话。
-   * `skills`：输入框「+ › 使用 Skill」点选的 skill（产品设计 §6.9），按挂上的顺序；Runtime 把每个的 `SKILL.md` 正文附给智能体，
-   * 消息上另带标记。空的不传。
-   * `slideAnnotations`：幻灯片标签里加进对话的标注（docs/design/slides §8.2、§9），Runtime 按 deck 拼成给智能体的段落。空的不传。
-   * `designAnnotations`：设计稿标签里加进对话的标注（docs/design/canvas §8.2、§9），同上，按设计稿拼段。空的不传。
-   * `designSystemAnnotations`：设计系统标签里加进对话的标注（docs/design/canvas §10.6），同上，按设计系统拼段。空的不传。
+   * `context`: the editor's state at the time (open video, version, selection, playhead), handed to the agent with the message.
+   * `attachments`: images already uploaded (the ids returned by `uploadAttachment`).
+   * `template`: the attached scene template (template pack spec §5.2); the Runtime uses it to build the agent's briefing guidance and template body; `text` remains the user's own words.
+   * `skills`: skills picked from the input box's “+ › 使用 Skill” (+ › Use Skill) menu (product design §6.9), in the order attached; the Runtime attaches each one's `SKILL.md` body for the agent,
+   * with a marker added to the message. Omitted when empty.
+   * `slideAnnotations`: annotations added to the conversation from the slide tags (docs/design/slides §8.2, §9); the Runtime builds them into paragraphs for the agent, per deck. Omitted when empty.
+   * `designAnnotations`: annotations added to the conversation from the design-canvas tags (docs/design/canvas §8.2, §9); same as above, built into paragraphs per design. Omitted when empty.
+   * `designSystemAnnotations`: annotations added to the conversation from the design-system tags (docs/design/canvas §10.6); same as above, built into paragraphs per design system. Omitted when empty.
    */
   async send(
     conversationId: Id,
@@ -207,7 +205,7 @@ export class RuntimeSession {
     return taskId;
   }
 
-  /** 插进正在运行的回合；Agent 不支持、或已经没有在跑的回合时如实返回，由调用方决定排队还是直接发。 */
+  /** Interject into the running turn; if the Agent does not support it, or no turn is running any more, report that honestly and let the caller decide whether to queue or send directly. */
   async steer(
     conversationId: Id,
     text: string,
@@ -228,7 +226,7 @@ export class RuntimeSession {
     return status;
   }
 
-  /** 上传一张要随消息发送的图片：先登记拿到一次性地址，再 PUT 原始字节（Content-Type 与登记时一致）。 */
+  /** Upload one image to be sent with a message: first register to get a one-time address, then PUT the raw bytes (Content-Type matches the registration). */
   async uploadAttachment(file: File, onProgress?: (percent: number) => void, signal?: AbortSignal): Promise<AttachmentRef> {
     const { attachment, uploadUrl } = await this.client.request('attachments.prepare', {
       fileName: file.name || 'image',
@@ -251,7 +249,7 @@ export class RuntimeSession {
     await this.client.request('agents.respondToApproval', { conversationId, approvalId, decision });
   }
 
-  /** 让用户选一个目录并登记为项目；取消时返回 null。 */
+  /** Let the user pick a folder and register it as a project; returns null if cancelled. */
   async openProjectFromDialog(): Promise<Project | null> {
     const dir = await this.host.pickDirectory();
     if (!dir) return null;
@@ -259,7 +257,7 @@ export class RuntimeSession {
     return project;
   }
 
-  /** 新建项目：在项目目录下建一个新目录（产品设计 §3.1）。 */
+  /** Create a new project: makes a new folder inside the project directory (product design §3.1). */
   async createProject(name: string): Promise<Project> {
     const { project } = await this.client.request('projects.create', { name: name.trim() || undefined, commandId: newId('cmd') });
     return project;
@@ -298,7 +296,7 @@ export class RuntimeSession {
     await this.client.request('space.rescan', {});
   }
 
-  /** 媒体地址（架构设计 §4.5）：受限句柄，有期限，只指向这一个文件。 */
+  /** Media address (architecture design §4.5): a restricted handle with an expiry, pointing only at this one file. */
   async resolveMedia(target: MediaTarget): Promise<MediaHandle> {
     return this.client.request('media.resolve', target);
   }
@@ -307,7 +305,7 @@ export class RuntimeSession {
     return preparePlaybackMedia(this.client, handle, signal);
   }
 
-  /** 与视频同一目录里的字幕文件。 */
+  /** Subtitle file in the same directory as the video. */
   async listSubtitles(target: FileTarget): Promise<SubtitleTrack[]> {
     const { tracks } = await this.client.request('media.subtitles', target);
     return tracks;
@@ -317,24 +315,24 @@ export class RuntimeSession {
     await this.client.request('conversations.delete', { conversationId });
   }
 
-  /** 取消一个 Job（转录、配音、生成）。已经结束的如实返回它的终态，不报错。 */
+  /** Cancel a Job (transcription, dubbing, generation). For a job that has already ended, report its final state honestly; no error. */
   async cancelJob(jobId: Id): Promise<void> {
     await this.client.request('jobs.cancel', { jobId });
   }
 
-  /** 处理重启后结果不明、中断或没有写进视频的任务（架构设计 §7.5）。只由用户决定，智能体不能调。 */
+  /** Handle tasks after a restart whose result is unknown, that were interrupted, or whose output was never written into the video (architecture design §7.5). Only the user decides; the agent cannot call it. */
   async reconcileJob(jobId: Id, decision: JobReconcileDecision): Promise<void> {
     await this.client.request('jobs.reconcile', { jobId, decision });
   }
 
-  /** 产物的受限地址（架构设计 §4.5）：有期限，只指向这一个产物。 */
+  /** Restricted address of an output (architecture design §4.5): has an expiry, and points only at this one output. */
   async openArtifact(artifactId: string): Promise<MediaHandle> {
     return this.client.request('artifacts.openHandle', { artifactId });
   }
 
   /**
-   * 项目文件浏览（架构设计 §11.2）：会话所属项目目录（无项目时是会话工作目录）里的一层，或给了 `query` 时按名字查找。
-   * 文件内容走 `resolveMedia({ conversationId, path })`。
+   * Project file browsing (architecture design §11.2): one level inside the session's project directory (the session working directory when there is no project), or, when `query` is given, a lookup by name.
+   * File contents go through `resolveMedia({ conversationId, path })`.
    */
   async listProjectFiles(params: {
     conversationId: Id;
@@ -346,8 +344,8 @@ export class RuntimeSession {
   }
 
   /**
-   * 在项目目录（无项目时是会话工作目录）里独占新建一个文本文件，重名自动加序号（新标签页起始页的「新建网页」）。
-   * 返回新文件的定位（交给文件页签）与条目。
+   * Exclusively create a new text file in the project directory (the session working directory when there is no project); a duplicate name automatically gets a number suffix (the “新建网页” (New web page) on the new-tab start page).
+   * Returns the new file's location (handed to the file tab) and its entry.
    */
   async createProjectFile(
     params: ({ conversationId: Id } | { projectId: Id }) & { name: string; content: string; dir?: string },
@@ -355,9 +353,9 @@ export class RuntimeSession {
     return this.client.request('projects.files.create', params);
   }
 
-  // ---- 模型页（架构设计 §6）：新视图都经 `models` 主题送达 `useModels`，这里不另写 ----
+  // ---- Models page (architecture design §6): new views all reach `useModels` through the `models` topic; nothing is written separately here ----
 
-  /** 设置或清除（`providerId: null`）一种能力的默认模型。 */
+  /** Set or clear (`providerId: null`) the default model for one capability. */
   async setModelDefault(
     capability: import('@cuccut/protocol').ModelServiceCapability,
     providerId: string | null,
@@ -367,7 +365,7 @@ export class RuntimeSession {
     return ref;
   }
 
-  /** 设置文本生成的参数默认值（推理强度、并发上限）：给出的字段替换，null 恢复出厂值，不给不变。返回补全后的值。 */
+  /** Set the default parameters for text generation (reasoning effort, concurrency limit): given fields replace the current values, null restores factory values, and omitted fields stay unchanged. Returns the completed values. */
   async setCapabilityParameters(
     request: import('@cuccut/protocol').SetCapabilityParametersRequest,
   ): Promise<import('@cuccut/protocol').TextCapabilityParameters> {
@@ -375,7 +373,7 @@ export class RuntimeSession {
     return parameters;
   }
 
-  /** 配置一个在线 Provider（连接、换密钥、声明模型）。`verify` 不过时 Runtime 以 `conflict` 拒绝，不保存。 */
+  /** Configure an online provider (connection, key change, declared models). If `verify` fails, the Runtime rejects with `conflict` and does not save. */
   async configureModelProvider(
     request: import('@cuccut/protocol').ConfigureProviderRequest,
   ): Promise<import('@cuccut/protocol').ProviderView> {
@@ -383,83 +381,83 @@ export class RuntimeSession {
     return provider;
   }
 
-  /** 删除一个自建服务商与它的密钥。 */
+  /** Delete a self-built provider and its key. */
   async removeModelProvider(providerId: string): Promise<void> {
     await this.client.request('models.removeProvider', { providerId });
   }
 
-  /** 向一家在线服务商取模型与音色列表（`models.refreshProvider`）。取不到时 `ok: false`，结果也记在它的配置里。 */
+  /** Fetch the model and voice lists from an online provider (`models.refreshProvider`). If they cannot be fetched, `ok: false`, and the result is also recorded in its configuration. */
   async refreshModelProvider(providerId: string): Promise<import('@cuccut/protocol').ProviderRefreshStatus> {
     const { refreshed } = await this.client.request('models.refreshProvider', { providerId });
     return refreshed;
   }
 
-  /** 本机的模型包与状态。 */
+  /** The model bundles on this machine and their status. */
   async listModelBundles(): Promise<import('@cuccut/protocol').ModelBundleStatus[]> {
     const { bundles } = await this.client.request('models.list', {});
     return bundles;
   }
 
-  /** 重新启用一个停用或加载失败的模型包。 */
+  /** Re-enable a model bundle that was disabled or failed to load. */
   async enableModelBundle(bundleId: string): Promise<import('@cuccut/protocol').ModelBundleStatus> {
     const { bundle } = await this.client.request('models.enable', { bundleId });
     return bundle;
   }
 
-  /** 合成一段语音，返回任务 ID；进度与结果经 `jobs` 主题送达。 */
+  /** Synthesize a speech clip; returns a task ID; progress and results arrive through the `jobs` topic. */
   async synthesizeSpeech(request: Omit<import('@cuccut/protocol').SynthesizeSpeechRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('models.synthesizeSpeech', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 生成图片，返回任务 ID；进度与结果经 `jobs` 主题送达。 */
+  /** Generate an image; returns a task ID; progress and results arrive through the `jobs` topic. */
   async generateImage(request: Omit<import('@cuccut/protocol').GenerateImageRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('models.generateImage', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 生成一段音乐，返回任务 ID；进度与结果经 `jobs` 主题送达。 */
+  /** Generate a piece of music; returns a task ID; progress and results arrive through the `jobs` topic. */
   async generateMusic(request: Omit<import('@cuccut/protocol').GenerateMusicRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('models.generateMusic', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 调用一次文本模型，返回任务 ID；全文是结果里的产物，进度与结果经 `jobs` 主题送达。 */
+  /** Call a text model once; returns a task ID; the full text is an output in the result; progress and results arrive through the `jobs` topic. */
   async generateText(request: Omit<import('@cuccut/protocol').GenerateTextRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('models.generateText', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
   /**
-   * 启动一个固定流程（`pipelines.start`），返回父任务 ID；各步的进度与结果经 `jobs` 主题送达。参数在 Runtime 校验并冻结，
-   * 不合法、输入不存在或执行工具不可用时直接拒绝（不建任务）。
+   * Start a fixed pipeline (`pipelines.start`); returns the parent task ID; progress and results of each step arrive through the `jobs` topic. The Runtime validates and freezes the parameters;
+   * if they are invalid, the input does not exist, or the execution tool is unavailable, the call is rejected directly (no task is created).
    */
   async startPipeline(pipeline: string, params: Record<string, unknown>): Promise<Id> {
     const { jobId } = await this.client.request('pipelines.start', { pipeline, params, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 检测一个外部工具（`externalTools.detect`，只在本机跑 `--version`、不联网）；登记表里没有时 null。 */
+  /** Detect an external tool (`externalTools.detect`; only runs `--version` locally, no network access); null if it is not in the registry. */
   async detectExternalTool(name: string): Promise<import('@cuccut/protocol').ExternalToolStatus | null> {
     const { tools } = await this.client.request('externalTools.detect', { name });
     return tools.find((t) => t.name === name) ?? null;
   }
 
   /**
-   * 本机哪些浏览器有 Cookie 库（`externalTools.cookieBrowsers`，只看文件在不在、什么时候改过，不读 Cookie），最近用过的在前；
-   * `platform` 是 Runtime 所在主机的平台，系统授权的提示看它。
+   * Which browsers on this machine have a cookie store (`externalTools.cookieBrowsers`; it only checks whether the files exist and when they were last modified, and does not read cookies), most recently used first;
+   * `platform` is the platform of the host the Runtime runs on; the system authorization prompt depends on it.
    */
   async cookieBrowsers(): Promise<{ platform: string; browsers: import('@cuccut/protocol').CookieBrowserInfo[] }> {
     return this.client.request('externalTools.cookieBrowsers', {});
   }
 
-  // ---- 远端算力（节点协议规范 §10）：共享这台 Mac 与使用其他电脑。没有订阅主题，服务页按需轮询 status。 ----
+  // ---- Remote compute (node protocol spec §10): share this Mac and use other computers. There is no subscription topic; the services page polls status on demand. ----
 
   async shareStatus(): Promise<import('@cuccut/protocol').ShareStatus> {
     return this.client.request('nodes.share.status', {});
   }
 
-  /** 开启共享并监听；端口被占用时照常返回，`listening` 为 false、`error` 说明原因。每次开启都生成新的配对码。 */
+  /** Turn on sharing and listen; if the port is in use, it still returns normally, with `listening` false and `error` giving the reason. Each time sharing is turned on, a new pairing code is generated. */
   async startShare(params: import('@cuccut/protocol').ShareStartParams = {}): Promise<import('@cuccut/protocol').ShareStatus> {
     return this.client.request('nodes.share.start', params);
   }
@@ -468,7 +466,7 @@ export class RuntimeSession {
     return this.client.request('nodes.share.stop', {});
   }
 
-  /** 作废旧配对码并生成新的，同时解除配对锁定；共享没开时 `conflict`。 */
+  /** Invalidate the old pairing code, generate a new one, and lift the pairing lock; `conflict` when sharing is off. */
   async renewPairingCode(): Promise<import('@cuccut/protocol').ShareStatus> {
     return this.client.request('nodes.share.pairingCode', {});
   }
@@ -482,8 +480,8 @@ export class RuntimeSession {
   }
 
   /**
-   * 旧版项目的导入询问与这次启动里的导入（架构设计 §2.7）：只有桌面界面订阅，Web 服务不开放这个主题。每次变化给出完整的状态。
-   * 断线重连后客户端重新订阅、重取快照，Runtime 换了（重启）时询问与导入的标识跟着换。同一个主题只有一个订阅者（后订的顶掉先订的）。
+   * Import prompts for legacy projects and the imports during this launch (architecture design §2.7): only the desktop UI subscribes; the Web service does not expose this topic. Each change gives the full state.
+   * After a dropped connection reconnects, the client subscribes again and fetches the snapshot again; when the Runtime is replaced (restarted), the identifiers of the prompts and imports change with it. A topic has only one subscriber (a later subscriber replaces the earlier one).
    */
   watchLegacyImport(onChange: (state: import('@cuccut/protocol').LegacyImportSnapshot) => void): () => void {
     let state: import('@cuccut/protocol').LegacyImportSnapshot = { prompt: null, run: null };
@@ -497,17 +495,17 @@ export class RuntimeSession {
     await this.client.request('legacyImport.answer', answer);
   }
 
-  /** 重试没导入的旧版项目（`paths` 缺省 = 全部没导入的）；点名的跳过项改为导入。返回重新排队的个数。 */
+  /** Retry legacy projects not yet imported (when `paths` is omitted, all not-yet-imported ones); named skipped items are changed to imports. Returns the number re-queued. */
   async retryLegacyImport(paths?: string[]): Promise<number> {
     return (await this.client.request('legacyImport.retry', paths ? { paths } : {})).queued;
   }
 
-  /** 跳过没导入的旧版项目（以后不再自动导入），或撤销跳过。返回改了的个数。 */
+  /** Skip legacy projects not yet imported (they will not be imported automatically later), or undo the skip. Returns the number changed. */
   async skipLegacyImport(paths: string[], skipped: boolean): Promise<number> {
     return (await this.client.request('legacyImport.setSkipped', { paths, skipped })).changed;
   }
 
-  /** 在局域网里找开着共享的节点（不含这台电脑）。 */
+  /** Find nodes on the local network that have sharing turned on (excluding this computer). */
   async discoverNodes(timeoutMs?: number): Promise<import('@cuccut/protocol').DiscoveredNode[]> {
     const { nodes } = await this.client.request('nodes.discover', timeoutMs === undefined ? {} : { timeoutMs });
     return nodes;
@@ -518,7 +516,7 @@ export class RuntimeSession {
     return node;
   }
 
-  /** 已配对的节点，每个带一次实时探测（2 秒超时）。 */
+  /** Paired nodes, each with one live probe (2-second timeout). */
   async listNodes(): Promise<import('@cuccut/protocol').PairedNode[]> {
     const { nodes } = await this.client.request('nodes.list', {});
     return nodes;
@@ -528,27 +526,27 @@ export class RuntimeSession {
     await this.client.request('nodes.remove', { nodeId });
   }
 
-  // ---- 转录（字幕面板「生成字幕」） ----
+  // ---- Transcription (subtitle panel “生成字幕” (Generate subtitles)) ----
 
   /**
-   * 转录一个素材，返回任务 ID；进度与结果经 `jobs` 主题送达，完成后 Runtime 把 `speech` 文档写进视频。
-   * 没有配置转录时以 `CAPABILITY_NOT_CONFIGURED`（`conflict`）拒绝，details 带 `remedy`。
+   * Transcribe an asset; returns a task ID; progress and results arrive through the `jobs` topic, and when it completes the Runtime writes the `speech` document into the video.
+   * If transcription is not configured, it is rejected with `CAPABILITY_NOT_CONFIGURED` (`conflict`), with `remedy` in details.
    */
   async transcribe(request: Omit<import('@cuccut/protocol').TranscribeRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('models.transcribe', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 读一份文档某个版本的正文（不给版本时读当前版本）。不进预览用的文档缓存。 */
+  /** Read the body of one version of a document (when no version is given, read the current version). Does not go into the document cache used for previews. */
   async readDocument(videoId: Id, documentId: Id, revision?: string): Promise<import('@cuccut/protocol').DocumentContent> {
     return this.client.request('documents.read', revision === undefined ? { videoId, documentId } : { videoId, documentId, revision });
   }
 
-  // ---- 翻译（字幕面板「翻译成…」） ----
+  // ---- Translation (subtitle panel “翻译成…” (Translate to…)) ----
 
   /**
-   * 启动翻译流程，返回父任务 ID；进度与结果经 `jobs` 主题送达，完成后 Runtime 把 `translation` 文档写进视频。
-   * 文本模型没有配置时以 `CAPABILITY_NOT_CONFIGURED` 拒绝，details 带 `remedy`。
+   * Start the translation pipeline; returns the parent task ID; progress and results arrive through the `jobs` topic, and when it completes the Runtime writes the `translation` document into the video.
+   * If no text model is configured, it is rejected with `CAPABILITY_NOT_CONFIGURED`, with `remedy` in details.
    */
   async startTranslate(params: import('@cuccut/protocol').TranslateParams): Promise<Id> {
     const { jobId } = await this.client.request('pipelines.start', {
@@ -559,60 +557,60 @@ export class RuntimeSession {
     return jobId;
   }
 
-  /** 从失败、取消或中断的那一步重跑一个流程，任务 ID 不变；已经完成的步骤不重做。 */
+  /** Re-run a pipeline from the step where it failed, was cancelled, or was interrupted; the task ID stays the same, and steps already completed are not redone. */
   async retryPipeline(jobId: Id): Promise<void> {
     await this.client.request('pipelines.retry', { jobId });
   }
 
-  /** 视频里启用的库条目（`library-selection` 文档）：哪一步用哪几张术语表、哪个说话人用哪个音色。 */
+  /** Library entries enabled in the video (`library-selection` document): which glossaries each step uses, and which voice each speaker uses. */
   async getVideoSelection(videoId: Id): Promise<import('@cuccut/protocol').VideoLibrarySelection> {
     return this.client.request('library.getVideoSelection', { videoId });
   }
 
-  /** 改视频里启用的条目：一笔普通的编辑事务（能撤销）；给了的字段整体替换，没给的照旧。 */
+  /** Change the entries enabled in the video: one ordinary editing transaction (can be undone); given fields are replaced as a whole, omitted ones stay as they are. */
   async setVideoSelection(
     params: Omit<import('@cuccut/protocol').LibrarySetSelectionParams, 'commandId'>,
   ): Promise<import('@cuccut/protocol').LibrarySetSelectionResult> {
     return this.client.request('library.setVideoSelection', { ...params, commandId: newId('cmd') });
   }
 
-  // ---- Space（产品设计 §4、架构设计 §5.5、§5.7、§5.11） ----
+  // ---- Space (product design §4, architecture design §5.5, §5.7, §5.11) ----
 
-  /** 跨视频的内容检索：查派生的内容索引，不打开视频。索引没追平的视频列在 `pendingVideos` 里。 */
+  /** Cross-video content search: queries the derived content index without opening videos. Videos whose index has not caught up are listed in `pendingVideos`. */
   async searchSpace(params: import('@cuccut/protocol').SpaceSearchParams): Promise<import('@cuccut/protocol').SpaceSearchResult> {
     return this.client.request('space.search', params);
   }
 
-  /** 把一个文件登记为项目的素材，不放进任何视频；项目之外的文件先复制进项目的 `imports/`（`copied`）。 */
+  /** Register a file as an asset of the project without putting it in any video; files from outside the project are first copied into the project's `imports/` (`copied`). */
   async importToSpace(projectId: Id, path: string, name?: string): Promise<{ entry: SpaceEntry; copied: boolean }> {
     return this.client.request('space.import', { projectId, path, ...(name ? { name } : {}) });
   }
 
-  /** 显示名；`null` 恢复文件名。 */
+  /** Display name; `null` restores the file name. */
   async renameSpaceEntry(entryId: Id, name: string | null): Promise<SpaceEntry> {
     const { entry } = await this.client.request('space.rename', { entryId, name });
     return entry;
   }
 
-  /** 物理删除回收站里的条目（失败的占位直接清除）；仍被引用时不删，返回阻止删除的引用。 */
+  /** Permanently delete entries in the trash (failed placeholders are cleared directly); not deleted while still referenced, and the references that block deletion are returned. */
   async purgeSpaceEntry(entryId: Id): Promise<import('@cuccut/protocol').SpacePurgeResult> {
     return this.client.request('space.purge', { entryId });
   }
 
   /**
-   * 条目的缩略图（网格卡片与列表名称列）：图片（base64）、文字摘要或 `none`。读不了、解不了的都是 `none`，不报错；
-   * 条目不在了是 `not-found`。按需取（卡片可见时），不要一次取全部。
+   * Thumbnail of an entry (grid card and the name column of the list): an image (base64), a text summary, or `none`. Anything that cannot be read or decoded is `none`, without an error;
+   * if the entry no longer exists, it is `not-found`. Fetch on demand (when the card is visible); do not fetch them all at once.
    */
   async spaceThumbnail(entryId: Id): Promise<import('@cuccut/protocol').SpaceThumbnail> {
     return this.client.request('space.thumbnail', { entryId });
   }
 
-  /** 从条目回到可以编辑的视频：只回答去哪里，不打开视频。 */
+  /** From an entry, go back to the video that can be edited: only answers where to go, and does not open the video. */
   async openSpaceEntryForEdit(entryId: Id): Promise<import('@cuccut/protocol').SpaceOpenForEditResult> {
     return this.client.request('space.openForEdit', { entryId });
   }
 
-  /** 从条目继续一段会话：只建会话、附上条目的引用，不启动任务（下一条消息带上引用）。 */
+  /** Continue a conversation from an entry: only creates the session and attaches a reference to the entry; does not start a task (the next message carries the reference). */
   async continueSpaceEntry(entryId: Id, conversationId?: Id): Promise<import('@cuccut/protocol').SpaceContinueResult> {
     return this.client.request('space.continueInConversation', {
       entryId,
@@ -621,21 +619,21 @@ export class RuntimeSession {
     });
   }
 
-  /** 丢掉派生的目录与内容索引，从权威来源重建；收藏、显示名、回收站不受影响。 */
+  /** Drop the derived catalog and content index and rebuild them from the authoritative source; favorites, display names and the trash are not affected. */
   async rebuildSpaceIndex(): Promise<import('@cuccut/protocol').SpaceRebuildResult> {
     return this.client.request('space.rebuildIndex', {});
   }
 
-  /** 去掉会话里还没随消息发出的 Space 引用（Runtime 只支持一起去掉）。 */
+  /** Remove Space references in the session that have not yet been sent with a message (the Runtime only supports removing them all together). */
   async clearPendingReferences(conversationId: Id): Promise<Conversation> {
     const { conversation } = await this.client.request('conversations.update', { conversationId, pendingReferences: null });
     return conversation;
   }
 
   /**
-   * 以一个文件为素材新建视频（原型 page-space.jsx「从文件新建视频」、架构设计 §5.7「以它为素材新建视频」）：
-   * 新建空视频，再用一笔事务导入这个文件并放上主序列（与编辑器从电脑里拖入文件同一套操作）。返回打开它用的定位。
-   * 新建失败照常抛出；视频建好了但导入被拒时不抛，`importError` 带上原因（视频是空的，由调用方如实告诉用户）。
+   * Create a new video using a file as the asset (prototype page-space.jsx “从文件新建视频” (New video from file); architecture design §5.7 “以它为素材新建视频” (Create a video using it as the asset)):
+   * create an empty video, then import this file in one transaction and place it on the main sequence (the same operation as dragging a file into the editor from the computer). Returns the location used to open it.
+   * A failure to create is thrown as usual; if the video was created but the import is rejected, nothing is thrown, and `importError` carries the reason (the video is empty; the caller tells the user honestly).
    */
   async createVideoFromFile(
     scope: { projectId?: Id; conversationId?: Id },
@@ -662,19 +660,19 @@ export class RuntimeSession {
   }
 
   /**
-   * 把便携包打开成一个新视频（`videos.importPackage`，架构设计 §5.8）：建在给的项目或会话工作目录里并打开，返回打开它用的目标。
-   * 版本更高、摘要不符、路径越界时 Runtime 拒绝，不留下视频目录。
+   * Open a portable package as a new video (`videos.importPackage`, architecture design §5.8): it is created in the given project or the session working directory and opened; returns the target used to open it.
+   * If the version is newer, the digest does not match, or the path is out of bounds, the Runtime rejects it and leaves no video directory behind.
    */
   async importPackage(scope: { projectId: Id } | { conversationId: Id }, path: string): Promise<FileTarget> {
     const { ref } = await this.client.request('videos.importPackage', { ...scope, path, commandId: newId('cmd') });
     return targetOf(ref);
   }
 
-  // ---- 对外服务（架构设计 §4.8、§3.12；服务页） ----
+  // ---- External services (architecture design §4.8, §3.12; services page) ----
 
   /**
-   * 订阅 `services` 主题（快照与事件交给调用方，界面把它灌进 services-store）。客户端每个主题只留一个订阅，
-   * 所以只由常驻的 rail 调一次；重连后客户端自己续订。返回退订函数。
+   * Subscribe to the `services` topic (snapshots and events are handed to the caller, and the UI feeds them into services-store). The client keeps only one subscription per topic,
+   * so it is called only once, by the always-present rail; after reconnecting, the client renews the subscription itself. Returns an unsubscribe function.
    */
   watchServices(handlers: {
     snapshot: (snapshot: import('@cuccut/protocol').ServicesSnapshot) => void;
@@ -688,7 +686,7 @@ export class RuntimeSession {
     return services;
   }
 
-  /** 开启一项服务。端口被占用时照常返回，状态是 `error`、`error` 字段说明原因；这个版本没有的服务以 `SERVICE_NOT_AVAILABLE` 拒绝。 */
+  /** Turn on a service. If the port is in use, it still returns normally, with status `error` and the `error` field explaining why; a service this version does not have is rejected with `SERVICE_NOT_AVAILABLE`. */
   async startService(serviceId: import('@cuccut/protocol').ServiceId): Promise<import('@cuccut/protocol').ServiceStatus> {
     const { service } = await this.client.request('services.start', { serviceId });
     return service;
@@ -699,15 +697,15 @@ export class RuntimeSession {
     return service;
   }
 
-  /** 改配置并落盘，立即生效；改了端口且服务开着时 Runtime 按新端口重开。节点服务以 `invalid-request` 拒绝（它用 `nodes.share.*`）。 */
+  /** Change the configuration and save it to disk; it takes effect immediately. If the port is changed while the service is on, the Runtime reopens it on the new port. The node service is rejected with `invalid-request` (it uses `nodes.share.*`). */
   async configureService(params: import('@cuccut/protocol').ServiceConfigureParams): Promise<import('@cuccut/protocol').ServiceStatus> {
     const { service } = await this.client.request('services.configure', params);
     return service;
   }
 
   /**
-   * 处理一条待处理的审批（统一入口，服务审批与会话审批都行）。带外发授权（`grants`）的审批允许时可以给 `grant`。
-   * 已经处理过、超时或取消的返回 `already-resolved`。
+   * Handle one pending approval (a single entry point for both service approvals and session approvals). An approval that carries an outbound-data grant (`grants`) may be given a `grant` when it is allowed.
+   * If it has already been handled, timed out, or was cancelled, it returns `already-resolved`.
    */
   async respondToPendingApproval(
     approvalId: Id,
@@ -718,7 +716,7 @@ export class RuntimeSession {
     return status;
   }
 
-  /** 发放一个 MCP 客户端令牌：明文只在这里返回一次，调用方只能放在组件局部状态里给用户看一次。 */
+  /** Issue an MCP client token: the plaintext is returned here only once, and the caller may only keep it in local component state to show the user once. */
   async createMcpClient(name: string): Promise<{ client: import('@cuccut/protocol').ServiceClient; token: string }> {
     return this.client.request('services.mcp.createClient', { name });
   }
@@ -733,12 +731,12 @@ export class RuntimeSession {
     return clients;
   }
 
-  /** 连接信息（令牌用占位符）。给 `clientId` 时片段里写上客户端名。 */
+  /** Connection info (the token is a placeholder). When `clientId` is given, the client name is written into the snippet. */
   async mcpConnectionInfo(clientId?: string): Promise<import('@cuccut/protocol').McpConnectionInfo> {
     return this.client.request('services.mcp.connectionInfo', clientId === undefined ? {} : { clientId });
   }
 
-  /** 发放一个模型接口客户端令牌：规则同 MCP，两个服务的令牌互不通用。 */
+  /** Issue a model-API client token: same rules as MCP; the tokens of the two services are not interchangeable. */
   async createModelApiClient(name: string): Promise<{ client: import('@cuccut/protocol').ServiceClient; token: string }> {
     return this.client.request('services.modelApi.createClient', { name });
   }
@@ -757,7 +755,7 @@ export class RuntimeSession {
     return this.client.request('services.modelApi.connectionInfo', clientId === undefined ? {} : { clientId });
   }
 
-  /** 设一条别名（同名替换）；`modelId` 不给时用该 Provider 的默认模型。返回整张别名表。 */
+  /** Set an alias (a same-name alias is replaced); when `modelId` is not given, the provider's default model is used. Returns the whole alias table. */
   async setModelApiAlias(params: {
     alias: string;
     capability: import('@cuccut/protocol').OnlineCapability;
@@ -773,7 +771,7 @@ export class RuntimeSession {
     return aliases;
   }
 
-  /** 浏览器访问链接（一次性代码在 fragment 里，2 分钟内有效）。Web 服务没开时以 `conflict`（`SERVICE_NOT_RUNNING`）拒绝。 */
+  /** Browser access link (the one-time code is in the fragment and valid for 2 minutes). When the Web service is off, it is rejected with `conflict` (`SERVICE_NOT_RUNNING`). */
   async createWebAccessLink(): Promise<import('@cuccut/protocol').WebAccessLink> {
     return this.client.request('services.web.createAccessLink', {});
   }
@@ -788,18 +786,18 @@ export class RuntimeSession {
     return sessions;
   }
 
-  // ---- 导出（架构设计 §9.11、§9.13）：一次导出是一个 Job，进度经 jobs 主题进 jobs-store，取消用 cancelJob。 ----
+  // ---- Export (architecture design §9.11, §9.13): one export is one Job; progress goes through the jobs topic into jobs-store, and cancellation uses cancelJob. ----
 
   /**
-   * 提交一次导出；预检不过时抛 RPC 错误（`details.code` 是拒绝码），不建任务。每次一个新的 commandId：
-   * 被拒后按补救改了设置重提（跳过画不出来的内容、跳过缺失的素材、换位置）是另一次提交。
+   * Submit one export; if the pre-check fails, it throws an RPC error (`details.code` is the rejection code) and no task is created. Each submission uses a new commandId:
+   * after a rejection, resubmitting with settings changed per the remedy (skipping content that cannot be rendered, skipping missing assets, changing the location) is a separate submission.
    */
   async createExport(request: Omit<ExportCreateRequest, 'commandId'>): Promise<Id> {
     const { jobId } = await this.client.request('exports.create', { ...request, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 字幕或文稿的正文，不写文件（导出面板文稿页的预览与「复制文本」）：与同样设置导出的文件逐字节相同；预检不过时抛同样的拒绝。 */
+  /** The body of subtitles or a script, without writing a file (the preview and “复制文本” (Copy text) on the script page of the export panel): byte-for-byte identical to the file exported with the same settings; if the pre-check fails, it throws the same rejection. */
   async renderTextExport(
     request: import('@cuccut/protocol').ExportRenderTextRequest,
   ): Promise<import('@cuccut/protocol').ExportRenderTextResult> {
@@ -815,9 +813,9 @@ export class RuntimeSession {
     return jobs;
   }
 
-  // ---- 本地模型包的安装管理（架构设计 §6.3）：状态与进度经 `models` 主题的 `bundle.updated` 送达 ----
+  // ---- Installation management of local model bundles (architecture design §6.3): status and progress arrive through the `bundle.updated` event on the `models` topic ----
 
-  /** 安装：不给 `confirmBytes` 时只返回计划；交回计划里的 `confirmBytes` 才提交安装任务。 */
+  /** Install: without `confirmBytes`, it only returns the plan; the install task is submitted only when the `confirmBytes` from the plan is passed back. */
   async installModelBundle(bundleId: string, confirmBytes?: number): Promise<import('@cuccut/protocol').ModelInstallResult> {
     return this.client.request(
       'models.install',
@@ -825,7 +823,7 @@ export class RuntimeSession {
     );
   }
 
-  /** 修复：逐个文件校验，只重下缺的与坏的。两步确认同安装。 */
+  /** Repair: verify file by file, and re-download only the missing and corrupt ones. Two-step confirmation, same as install. */
   async repairModelBundle(bundleId: string, confirmBytes?: number): Promise<import('@cuccut/protocol').ModelInstallResult> {
     return this.client.request(
       'models.repair',
@@ -833,35 +831,35 @@ export class RuntimeSession {
     );
   }
 
-  /** 停下安装：默认保留已经收到的部分（下次续传），`discard` 时一并删掉。 */
+  /** Stop an install: by default keeps the parts already received (resumed next time); with `discard`, deletes them too. */
   async cancelModelInstall(bundleId: string, discard = false): Promise<import('@cuccut/protocol').ModelBundleStatus> {
     const { bundle } = await this.client.request('models.cancelInstall', discard ? { bundleId, discard: true } : { bundleId });
     return bundle;
   }
 
-  /** 删除模型包：别的模型包还在用的共享组件保留；有任务在用时 `MODEL_IN_USE`。 */
+  /** Delete a model bundle: shared components still used by other model bundles are kept; `MODEL_IN_USE` when a task is using it. */
   async removeModelBundle(bundleId: string): Promise<import('@cuccut/protocol').ModelRemoveResult> {
     return this.client.request('models.remove', { bundleId });
   }
 
-  /** 检查：固定样本走一遍完整流程，返回任务 ID；结论记在模型包的 `selfTest` 上。 */
+  /** Check: run a fixed sample through the full pipeline; returns a task ID; the conclusion is recorded in the bundle's `selfTest`. */
   async testModelBundle(bundleId: string): Promise<Id> {
     const { jobId } = await this.client.request('models.test', { bundleId, commandId: newId('cmd') });
     return jobId;
   }
 
-  // ---- 模型目录（架构设计 §6.3）：目录换了时 `models` 主题对每个模型包发 `bundle.updated` ----
+  // ---- Model catalog (architecture design §6.3): when the catalog changes, the `models` topic sends `bundle.updated` for each model bundle ----
 
   async getModelsDir(): Promise<import('@cuccut/protocol').ModelsDirInfo> {
     return this.client.request('models.getDir', {});
   }
 
-  /** 只读地查看一个文件夹；`null` 是缺省位置。 */
+  /** View a folder read-only; `null` is the default location. */
   async inspectModelsDir(path: string | null): Promise<import('@cuccut/protocol').ModelsDirInspection> {
     return this.client.request('models.inspectDir', { path });
   }
 
-  /** 更改模型目录：`move` 有要搬的东西时返回移动任务的 `jobId`。 */
+  /** Change the model catalog: when `move` has something to move, returns the `jobId` of the move task. */
   async setModelsDir(
     path: string | null,
     mode: import('@cuccut/protocol').ModelsDirMode,
@@ -869,14 +867,14 @@ export class RuntimeSession {
     return this.client.request('models.setDir', { path, mode, commandId: newId('cmd') });
   }
 
-  // ---- 用户库（架构设计 §5.9）：条目摘要经 `library` 主题送达，这里是读写 ----
+  // ---- User library (architecture design §5.9): entry summaries arrive through the `library` topic; this part is reads and writes ----
 
   async getLibraryEntry(ref: import('@cuccut/protocol').LibraryEntryRef): Promise<import('@cuccut/protocol').LibraryEntry> {
     const { entry } = await this.client.request('library.get', ref);
     return entry;
   }
 
-  /** 新建或修改一个条目；改已有条目时带上 `expectedVersion`，别处先改了时 `LIBRARY_VERSION_CONFLICT`。 */
+  /** Create or update an entry; when changing an existing entry, pass `expectedVersion`; if it was changed elsewhere first, `LIBRARY_VERSION_CONFLICT`. */
   async putLibraryEntry(
     params: Omit<import('@cuccut/protocol').LibraryPutParams, 'commandId'>,
   ): Promise<{ entry: import('@cuccut/protocol').LibraryEntry; created: boolean; changed: boolean }> {
@@ -887,13 +885,13 @@ export class RuntimeSession {
     await this.client.request('library.remove', { library, id });
   }
 
-  /** 导入一个交换文件（音色包 `.bcvoice`、术语表……），按内容识别。 */
+  /** Import an exchange file (voice pack `.bcvoice`, glossary, …), recognized by content. */
   async importLibraryFile(path: string): Promise<import('@cuccut/protocol').LibraryEntry> {
     const { entry } = await this.client.request('library.import', { path, commandId: newId('cmd') });
     return entry;
   }
 
-  /** 把一个条目写成交换文件；目标已存在时 `conflict`，不覆盖。 */
+  /** Write an entry out as an exchange file; `conflict` if the target already exists, and it is not overwritten. */
   async exportLibraryEntry(
     entry: import('@cuccut/protocol').LibraryEntryRef,
     path: string,
@@ -901,77 +899,77 @@ export class RuntimeSession {
     return this.client.request('library.export', { entry, path });
   }
 
-  /** 条目文件（音色的参考录音）的受限地址。 */
+  /** Restricted address of an entry's file (a voice's reference recording). */
   async openLibraryHandle(ref: import('@cuccut/protocol').LibraryEntryRef): Promise<MediaHandle> {
     return this.client.request('library.openHandle', ref);
   }
 
-  /** 在一个 Provider 上克隆库里的音色：会上传参考录音，返回任务 ID。 */
+  /** Clone a library voice on a provider: uploads the reference recording; returns a task ID. */
   async createVoiceClone(id: Id, providerId: string): Promise<Id> {
     const { jobId } = await this.client.request('library.createVoiceClone', { id, providerId, commandId: newId('cmd') });
     return jobId;
   }
 
-  /** 删除一个克隆：先删远端；远端删不掉时记录保留、以 Provider 的错误码报告。`localOnly` 只清本机记录。 */
+  /** Delete a clone: delete the remote one first; if the remote cannot be deleted, the record is kept and reported with the provider's error code. `localOnly` only clears the local record. */
   async removeVoiceClone(id: Id, providerId: string, localOnly = false): Promise<import('@cuccut/protocol').VoiceCloneRemoveResult> {
     return this.client.request('library.removeVoiceClone', localOnly ? { id, providerId, localOnly: true } : { id, providerId });
   }
 
-  // ---- 数据外发授权（架构设计 §12.5）：列表走 grants 主题，这里只有撤销 ----
+  // ---- Outbound data grants (architecture design §12.5): the list comes through the grants topic; only revocation is here ----
 
-  /** 撤销一条授权：之后的新调用与排队中的调用被拒绝；已经交出与计费的部分如实报告。 */
+  /** Revoke a grant: later new calls and queued calls are rejected; the parts already handed over and billed are reported honestly. */
   async revokeGrant(grantId: Id): Promise<import('@cuccut/protocol').GrantRevokeResult> {
     return this.client.request('grants.revoke', { grantId });
   }
 
-  // ---- 首页的固定流程与从链接导入（设计稿 page-new.jsx、import-flow.jsx；启动与重试流程用上面的 startPipeline / retryPipeline / detectExternalTool） ----
+  // ---- Home page fixed pipelines and import from a link (design files page-new.jsx, import-flow.jsx; the start and retry flows use startPipeline / retryPipeline / detectExternalTool above) ----
 
   /**
-   * 用户点了「同意并安装 / 更新」：记下同意（`via: 'app'`）并提交安装任务（`kind: 'toolInstall'`，进度经 `jobs` 主题）。
-   * 只能由用户的这一下触发；清单不全、严格离线时 Runtime 以 `conflict` 拒绝。
+   * The user clicked “同意并安装 / 更新” (Agree and install / update): records the consent (`via: 'app'`) and submits the install task (`kind: 'toolInstall'`; progress through the `jobs` topic).
+   * This can only be triggered by that one user action; if the manifest is incomplete or the app is strictly offline, the Runtime rejects it with `conflict`.
    */
   async installExternalTool(name: string): Promise<import('@cuccut/protocol').ExternalToolInstallResult> {
     return this.client.request('externalTools.install', { name, consent: true, via: 'app', commandId: newId('cmd') });
   }
 
   /**
-   * 用户点了更新命令旁的执行：按原安装方式更新系统里的那一份（`externalTools.update`，提交 `kind: 'toolUpdate'` 任务，
-   * 输出经 `jobs` 主题）。交回的是界面上显示的那条命令，就是用户的确认；办法已经变了时 Runtime 以 `conflict`
-   * （`TOOL_UPDATE_CONFIRM_REQUIRED`，`details.update` 是此刻的办法）拒绝，不执行。
+   * The user clicked the run button next to the update command: updates the copy installed on the system using the original install method (`externalTools.update`; submits a `kind: 'toolUpdate'` task;
+   * output through the `jobs` topic). What is handed back is the command shown on the UI, which is the user's confirmation; if the method has changed, the Runtime rejects with `conflict`
+   * (`TOOL_UPDATE_CONFIRM_REQUIRED`; `details.update` is the method as of now) and does not run it.
    */
   async updateExternalTool(name: string, command: string): Promise<import('@cuccut/protocol').ExternalToolUpdateResult> {
     return this.client.request('externalTools.update', { name, command, commandId: newId('cmd') });
   }
 
-  /** 记下（或撤回）用户对一个外部工具的同意：只由用户在界面上点了才调。 */
+  /** Record (or withdraw) the user's consent for an external tool: called only when the user clicks in the UI. */
   async consentExternalTool(name: string, grant: boolean): Promise<import('@cuccut/protocol').ExternalToolStatus> {
     const { tool } = await this.client.request('externalTools.consent', { name, grant, via: 'app' });
     return tool;
   }
 
-  /** 指定（`null` 清除）用户自己装的那一份；Runtime 先跑一次 `--version` 核对，不能运行时 `invalid-request`。 */
+  /** Specify (`null` clears) the copy the user installed themselves; the Runtime first runs `--version` to verify it, and if it cannot run, `invalid-request`. */
   async setExternalToolPath(name: string, path: string | null): Promise<import('@cuccut/protocol').ExternalToolStatus> {
     const { tool } = await this.client.request('externalTools.setPath', { name, path });
     return tool;
   }
 
   /**
-   * 固定流程建视频：（按画幅）新建视频，再用一笔事务（可选地）设背景、导入素材放上主序列；要声波时再用一笔事务在整部片子上
-   * 加一层声波（时长取上一笔回执里的新时长）。新建失败照常抛出；视频建好之后的失败不抛，如实带回（视频照常可用）。
-   * 返回打开它用的定位与导入的素材 ID（转录要用）。
+   * Fixed pipeline to create a video: create a new video (by aspect ratio), then in one transaction (optionally) set the background and import assets onto the main sequence; if a waveform is wanted, add a waveform layer over the whole piece in another transaction
+   * (the duration is taken from the new duration in the previous transaction's receipt). A failure to create is thrown as usual; failures after the video has been created are not thrown, and are reported honestly (the video is still usable).
+   * Returns the location used to open it and the IDs of the imported assets (needed for transcription).
    */
   async createFlowVideo(
     scope: { projectId?: Id; conversationId?: Id },
     options: {
       name?: string;
-      /** 画幅；不给时用 Runtime 的默认画布。 */
+      /** Aspect ratio; when not given, the Runtime's default canvas is used. */
       width?: number;
       height?: number;
-      /** 要导入的素材；`name`、`provenance` 是导入方已知的素材名与来源（链接导入下载的文件）。 */
+      /** Assets to import; `name` and `provenance` are the asset name and source known to the importer (files downloaded by link import). */
       file?: { path: string; kind: 'video' | 'audio'; name?: string; provenance?: { origin: string; source?: unknown } };
-      /** 画布底色 `#RRGGBB`。 */
+      /** Canvas background color `#RRGGBB`. */
       background?: string;
-      /** 整部片子的声波（元素面板的那一层）。 */
+      /** Waveform for the whole piece (the layer in the elements panel). */
       wave?: VisualLayer;
     },
   ): Promise<{ target: FileTarget; videoId: Id; assetId: Id | null; importError: string | null; waveError: string | null }> {
@@ -1024,19 +1022,19 @@ export class RuntimeSession {
   }
 
   /**
-   * 发放一条数据外发授权（`grants.create`，用户在界面上明确确认之后才调）：数据种类、接收方、范围、用途与预算方式照传。
-   * 翻译配音第一次被 `GRANT_REQUIRED` 拒绝时由用户确认发放，之后重新提交。
+   * Issue an outbound data grant (`grants.create`; called only after the user explicitly confirms in the UI): data kind, recipient, scope, purpose and budget method are passed through as given.
+   * When translation dubbing is first rejected with `GRANT_REQUIRED`, the user confirms the grant is issued, and the request is then submitted again.
    */
   async createGrant(params: import('@cuccut/protocol').GrantCreateParams): Promise<import('@cuccut/protocol').Grant> {
     const { grant } = await this.client.request('grants.create', params);
     return grant;
   }
 
-  // ---- 翻译配音（工具页 › 翻译配音） ----
+  // ---- Translation dubbing (Tools page › Translation dubbing) ----
 
   /**
-   * 启动翻译配音流程（`pipelines.start` 的 `dub`），返回父任务 ID；进度与结果经 `jobs` 主题送达，完成时 Runtime 在一笔事务里
-   * 新增一组配音。没有授权覆盖外发时以 `GRANT_REQUIRED`（`forbidden`）拒绝，details 带 `remedy`。
+   * Start the translation dubbing pipeline (`dub` of `pipelines.start`); returns the parent task ID; progress and results arrive through the `jobs` topic, and on completion the Runtime adds a set of dubbing in one transaction.
+   * If no grant covers the outbound data, it is rejected with `GRANT_REQUIRED` (`forbidden`), with `remedy` in details.
    */
   async startDub(params: import('@cuccut/protocol').DubParams): Promise<Id> {
     const { jobId } = await this.client.request('pipelines.start', {
@@ -1047,34 +1045,34 @@ export class RuntimeSession {
     return jobId;
   }
 
-  // ---- 工具目录（工具页的视频工具，架构设计 §7.9） ----
+  // ---- Tool catalog (video tools on the Tools page, architecture design §7.9) ----
 
-  /** `tools.list`：工具注册表加上此刻能不能用（不能用的原因、受限的输入），与保存位置（Web 服务不给）。 */
+  /** `tools.list`: the tool registry plus whether each tool can be used right now (the reason it cannot, and restricted inputs), and the save location (the Web service does not provide it). */
   async listTools(): Promise<import('@cuccut/protocol').ToolsListResult> {
     return this.client.request('tools.list', {});
   }
 
-  /** `pipelines.list`：Runtime 注册了哪些固定流程（目录列了工具、执行它的流程还没有时按不了）。 */
+  /** `pipelines.list`: which fixed pipelines the Runtime has registered (a tool the catalog lists but whose executing pipeline does not exist yet cannot be used). */
   async listPipelines(): Promise<import('@cuccut/protocol').PipelineInfo[]> {
     const { pipelines } = await this.client.request('pipelines.list', {});
     return pipelines;
   }
 
-  /** `tools.candidates`：某个视频工具能选的视频与文稿（读 Space 目录与内容索引，不打开视频）。 */
+  /** `tools.candidates`: the videos and scripts a video tool can choose from (reads the Space catalog and content index, without opening videos). */
   async toolCandidates(params: import('@cuccut/protocol').ToolCandidatesParams): Promise<import('@cuccut/protocol').ToolCandidatesResult> {
     return this.client.request('tools.candidates', params);
   }
 
   /**
-   * 用调用方给的 `commandId` 启动固定流程：工具页被当场授权拒绝（`pendingGrants`）、用户确认并发放授权之后，
-   * 用同一个 `commandId` 重新提交（Runtime 按它去重，被拒绝的那次不占用它）。
+   * Start a fixed pipeline with the `commandId` given by the caller: after the Tools page is rejected on the spot for lack of a grant (`pendingGrants`) and the user confirms and issues the grant,
+   * resubmit with the same `commandId` (the Runtime de-duplicates by it, and the rejected attempt does not use it).
    */
   async startPipelineWithCommand(pipeline: string, params: Record<string, unknown>, commandId: string): Promise<Id> {
     const { jobId } = await this.client.request('pipelines.start', { pipeline, params, commandId });
     return jobId;
   }
 
-  /** `jobs.inspect`：一条任务的完整记录（含固定流程的步骤与摘要）。 */
+  /** `jobs.inspect`: the full record of one task (including the fixed pipeline's steps and summary). */
   async inspectJob(jobId: Id): Promise<JobRecord> {
     return this.client.request('jobs.inspect', { jobId });
   }

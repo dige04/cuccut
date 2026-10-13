@@ -8,11 +8,9 @@ import { findBundledBinary } from '@cuccut/process-host';
 import { RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Engine Host 子进程的客户端（架构设计 §2.3）。
+ * Client for the Engine Host child process (architecture design §2.3).
  *
- * 协议是 stdin/stdout 上的 JSON 行：请求 `{id, method, params}`，响应 `{id, result}` / `{id, error}`，
- * 推送 `{event: "video.event", params}`。引擎总是先写事件、再写触发它的响应，这里按行顺序处理，
- * 所以调用方拿到回执时，镜像已经应用过对应的事件。
+ * The protocol is JSON lines over stdin/stdout: requests `{id, method, params}`, responses `{id, result}` / `{id, error}`, pushes `{event: "video.event", params}`. The engine always writes events first, then the response that triggers them. They are handled here in line order, so when a caller gets the receipt, the matching event has already been applied to the mirror.
  */
 
 export interface EngineHostOptions {
@@ -20,7 +18,7 @@ export interface EngineHostOptions {
   env?: NodeJS.ProcessEnv;
   log: Logger;
   onEvent: (event: VideoEvent) => void;
-  /** 进程意外退出（不是 `close()` 引起的）。 */
+  /** The process exited unexpectedly (not caused by `close()`). */
   onExit: (info: { code: number | null; signal: NodeJS.Signals | null }) => void;
 }
 
@@ -30,7 +28,7 @@ interface Pending {
   reject: (error: Error) => void;
 }
 
-/** 引擎错误码到协议错误码（命令与协议规范 §11）。原样的错误体放在 `details` 里。 */
+/** Engine error codes mapped to protocol error codes (command and protocol spec §11). The original error body is kept in `details`. */
 const CODE_MAP: [RegExp, RpcErrorCode][] = [
   [
     /^(PROJECT_REVISION_CONFLICT|IDEMPOTENCY_CONFLICT|UNDO_CONFLICT|UNDO_UNAVAILABLE|TIMELINE_OVERLAP|TARGET_LOCKED|VIDEO_LOCKED)$/,
@@ -39,13 +37,13 @@ const CODE_MAP: [RegExp, RpcErrorCode][] = [
   [/^(ENTITY_NOT_FOUND|VIDEO_NOT_OPEN)$/, 'not-found'],
   [/^(INVALID_|TIME_|SOURCE_|MEDIA_|ASSET_|PACKAGE_|UNKNOWN_METHOD)/, 'invalid-request'],
   [/^VIDEO_READ_ONLY$/, 'forbidden'],
-  // 停止屏障（§7.4）：不是冲突，不能按冲突重试。
+  // Stop barrier (§7.4): not a conflict, so it must not be retried as one.
   [/^TASK_STOPPED$/, 'forbidden'],
 ];
 
 export function engineError(body: EngineErrorBody): RpcError {
   const code = CODE_MAP.find(([pattern]) => pattern.test(body.code))?.[1] ?? 'internal';
-  // 引擎只给英文缺省文字与引用（命令与协议规范 §11.1）；按 Runtime 的语言展开，引用随错误一起交给客户端。
+  // The engine gives only English default text and references (command and protocol spec §11.1); they are expanded in the Runtime's language, and the references are handed to the client with the error.
   return new RpcError(code, localizeText(body.message, body.messageRef), body, body.messageRef);
 }
 
@@ -112,7 +110,7 @@ export class EngineHost {
     });
   }
 
-  /** 关上 stdin：引擎处理完已收到的请求后退出，锁随进程释放。超时就强制结束。 */
+  /** Close stdin: the engine exits after finishing the requests it has already received, and the lock is released with the process. Force-terminate on timeout. */
   async close(timeoutMs = 5_000): Promise<void> {
     if (!this.#alive) return;
     this.#closing = true;
@@ -151,9 +149,9 @@ export class EngineHost {
 }
 
 /**
- * 找 Engine Host 可执行文件：`CUCCUT_ENGINE_HOST` 环境变量；随应用分发的原生程序目录（`CUCCUT_BIN_DIR`、打包后的 `<resources>/bin`）；
- * 或者从本模块往上找 cargo 产物目录里的 `{release,debug}/engine-host`（开发时由 `npm run build:engine` 构建；目录跟随
- * `.cargo/config*.toml` 的 `build.target-dir`）。
+ * Finding the Engine Host executable: the `CUCCUT_ENGINE_HOST` environment variable; the directory of native programs shipped with the app (`CUCCUT_BIN_DIR`, the packaged `<resources>/bin`);
+ * or, walking up from this module, `{release,debug}/engine-host` in the cargo output directory (built in development by `npm run build:engine`; the directory follows
+ * `build.target-dir` in `.cargo/config*.toml`).
  */
 export function resolveEngineHostCommand(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.CUCCUT_ENGINE_HOST) return env.CUCCUT_ENGINE_HOST;

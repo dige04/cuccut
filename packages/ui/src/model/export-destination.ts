@@ -1,7 +1,7 @@
 import type { ExportDestination } from '@cuccut/protocol';
 import type { HostBridge } from '../host.ts';
 
-/** null 是用户取消；Web 没有本机保存能力，仍由 Runtime 保存。 */
+/** null means the user cancelled; the web has no native save capability, so the Runtime still does the saving. */
 export async function pickExportDestination(
   host: HostBridge,
   names: readonly string[],
@@ -24,10 +24,10 @@ export async function pickExportDestination(
   });
   if (!file) return null;
   const cut = host.platform === 'win32' ? Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')) : file.lastIndexOf('/');
-  // 根目录需保留分隔符（/ 与 C:\）；UNC / 扩展路径前缀原样交给 Runtime。
+  // A root directory must keep its separator (/ and C:\); UNC / extended-path prefixes are passed to the Runtime unchanged.
   const root = cut === 0 || (cut === 2 && /^[A-Za-z]:/.test(file));
   const fileName = file.slice(cut + 1);
-  // Runtime 会补上格式扩展名；补出的另一个文件未经系统窗口确认，不能替换它。
+  // The Runtime appends the format extension; the other file it appends was not confirmed in a system dialog, so it must not replace the existing file.
   const overwrite = fileName.toLowerCase().endsWith(`.${extension.toLowerCase()}`);
   return { dir: file.slice(0, cut + (root ? 1 : 0)), fileName, overwrite };
 }

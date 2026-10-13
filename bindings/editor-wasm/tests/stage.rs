@@ -1,4 +1,4 @@
-//! 舞台的框经 WASM 入口：草稿层（缺 `span` 等字段、属性不全）也能算，素材只传引用的那一个。
+//! Stage boxes through the WASM entry: the draft layer (missing `span` and other fields, incomplete properties) can also be computed; only the referenced asset is passed.
 
 use editor_wasm::stage::{place_default, stage_box, stage_place};
 use serde_json::{Value, json};

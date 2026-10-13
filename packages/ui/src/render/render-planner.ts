@@ -3,7 +3,7 @@ import type { FramePlan, PlanErrorBody } from './frame-plan.ts';
 import type { LocalFont } from './local-fonts.ts';
 import { R } from './render-copy.ts';
 
-/** `bindings/preview-wasm` 导出的函数。JSON 与字节经线性内存进出，返回 0 表示成功。 */
+/** Functions exported by `bindings/preview-wasm`. JSON and bytes go in and out through linear memory; returns 0 on success. */
 interface PreviewExports {
   memory: WebAssembly.Memory;
   bc_alloc(len: number): number;
@@ -32,34 +32,34 @@ interface PreviewExports {
   bc_output_len(): number;
 }
 
-/** 一份转写：文档 ID、它描述的素材与当前版本的正文（与 `bindings/preview-wasm` 的 `SpeechInput` 对应）。 */
+/** A transcript: document ID, the asset it describes, and the body of its current version (corresponds to `SpeechInput` in `bindings/preview-wasm`). */
 export interface SpeechTranscript {
   documentId: Id;
   sourceAssetId?: Id;
   body: unknown;
 }
 
-/** 合成要读的文档（字幕与字幕样式）的冻结正文，与 Rust `frame_render::FrozenDocument` 对应。正文还没取到时是 `null`。 */
+/** Frozen body of the documents a composition reads (captions and caption styles), corresponding to Rust `frame_render::FrozenDocument`. `null` while the body has not been fetched yet. */
 export interface FrozenDocument {
   documentId: Id;
   kind?: string;
   schema?: string;
-  /** 字幕行是原文还是译文（派生自译文的字幕是 `translation`）。 */
+  /** Whether a caption line is the original text or the translation (captions derived from a translation are `translation`). */
   lineKind?: 'original' | 'translation';
-  /** 文档头的 `sourceDocumentId`：字幕的句子用 `words` 指向这份转写里的词（转写经 `setSpeech` 送进去）。 */
+  /** `sourceDocumentId` in the document header: a caption's sentences use `words` to point to words in this transcript (the transcript is sent in through `setSpeech`). */
   sourceDocumentId?: Id;
-  /** 文档头的 `sourceAssetId`。 */
+  /** `sourceAssetId` in the document header. */
   sourceAssetId?: Id;
   body: unknown;
 }
 
-/** 渲染内核的提示（字体替换、缺字、没有频谱的声波等），画面照常出。 */
+/** Hints from the render kernel (font substitution, missing glyphs, waveforms without a spectrum, etc.); the picture is still output. */
 export interface RenderWarning {
   code: string;
   detail: string;
 }
 
-/** 这一帧没画的东西（`frame_render::UnsupportedItem`）：整层不画、跳过一个效果、转场按硬切，或素材解不出来。 */
+/** Things not drawn in this frame (`frame_render::UnsupportedItem`): a whole layer not drawn, an effect skipped, a transition turned into a hard cut, or an asset that could not be decoded. */
 export interface SkippedItem {
   itemId: Id;
   scope: 'layer' | 'effect' | 'transition' | 'asset';
@@ -71,15 +71,15 @@ export interface SkippedItem {
   message: string;
 }
 
-/** 声波用到、还没送进来的素材频谱（`setAudioSpectrum`）。 */
+/** Asset spectra needed by waveforms that have not been sent in yet (`setAudioSpectrum`). */
 export interface MissingSpectrum {
   itemId: Id;
   asset: VersionRef;
 }
 
-/** 字幕渲染器给出的真实行框，坐标是序列画布像素；旋转绕行中心。 */
+/** Real line boxes given by the caption renderer, in sequence canvas pixels; rotation is around the center. */
 export interface CaptionHit {
-  /** 同组字幕只在第一层合成，命中也用这一层的叠放顺序。 */
+  /** Captions in the same group are composited only at the first layer, and hit-testing uses that layer's stacking order. */
   layerId: Id;
   itemId: Id;
   documentId: Id;
@@ -91,28 +91,26 @@ export interface CaptionHit {
   rotation: number;
 }
 
-/** 一帧画完：这一刻的计划，与画的时候报出来的东西。画面经 `frame()` 取。 */
+/** A frame is finished: the plan for this moment, and what was reported while drawing. The picture is fetched through `frame()`. */
 export interface RenderedFrame {
   plan: FramePlan;
   warnings: RenderWarning[];
   skipped: SkippedItem[];
   spectra: MissingSpectrum[];
-  /** 这一帧用到、字体库里没有的字体族（照回退字体画了，`warnings` 里有提示）。 */
+  /** Font families used by this frame that are not in the font library (drawn with the fallback font; `warnings` has a note). */
   fonts: string[];
   /**
-   * 到目前为止排字时点了名的 face（常设，含字幕与模板层）：界面对照报过缺的族去要本机字体的那一个 face，
-   * `addLocalFont` 送进来再画。
+   * Faces named during typesetting so far (kept, including those for captions and template layers). The UI checks which families were reported missing and asks for the local font for that face; once `addLocalFont` sends it in, it is drawn.
    */
   faces?: FontFaceQuery[];
   captionHits?: CaptionHit[];
 }
 
-/** 一次送进 WASM 的样本数（10 秒）：算频谱时 WASM 里只留一个窗口，不放整段声音。 */
+/** Number of samples sent into WASM at once (10 seconds): when computing the spectrum, WASM keeps only one window, not the whole audio. */
 const SPECTRUM_BLOCK = 480_000;
 
 /**
- * 计划失败：`code` 来自 Rust（`SEQUENCE_NOT_FOUND`、`INVALID_VIDEO` 之类），或者是 `PLANNER_CRASHED`
- * （WASM 陷阱，正在重新载入）。
+ * Planning failed: `code` comes from Rust (`SEQUENCE_NOT_FOUND`, `INVALID_VIDEO`, and similar), or is `PLANNER_CRASHED` (a WASM trap; reloading).
  */
 export class PlanFailure extends Error {
   readonly code: string;
@@ -122,7 +120,7 @@ export class PlanFailure extends Error {
   }
 }
 
-/** 计划只读序列与素材；其余文档不送进 WASM。 */
+/** The plan reads only sequences and assets; other documents are not sent into WASM. */
 export interface PlanVideo {
   sequence: Sequence;
   assets: Record<Id, AssetRecord>;
@@ -132,22 +130,18 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /**
- * 帧计划器与画帧：Rust 的 `render-graph` 与 `frame-render` 编成 WASM（架构设计 §2「纯语义模块编译为 WASM」），
- * 预览每一帧问它一次。计划与像素都和导出出自同一个实现；WASM 不持有视频的写入权，视频随快照整份送进来，
- * 媒体元素这一刻的画面、Lottie 的字节与字体由界面送进来。
+ * Frame planner and frame renderer: Rust's `render-graph` and `frame-render` compiled to WASM (architecture design §2, “pure semantic modules compile to WASM”). Preview asks it once per frame. The plan and the pixels both come from the same implementation as export. WASM does not hold write access to video; video is sent in whole with the snapshot, while the current frame of a media element, the Lottie bytes and the fonts are sent in by the UI.
  *
- * Rust 里的 panic 在 WASM 里是陷阱，之后实例的状态不可信：丢掉它，从已编译的模块重新实例化，把字体、视频、文档、
- * 转写、素材字节、频谱与素材频谱送回去（画面每一帧都重送；本机字体不留字节，按 `LocalFont.load` 重新要），好了之后调用 `onRecovered`。重新载入期间的调用抛 `PLANNER_CRASHED`，
- * 要等的调用方用 `recovered()`。
+ * A panic in Rust is a trap in WASM, after which the instance's state cannot be trusted. So it is discarded and re-instantiated from the compiled module, and the fonts, video, documents, transcripts, asset bytes, spectra and asset spectra are sent back (the pictures are re-sent every frame; local fonts keep no bytes and are requested again through `LocalFont.load`). Then `onRecovered` is called. Calls during reloading throw `PLANNER_CRASHED`; callers that need to wait use `recovered()`.
  */
 export class RenderPlanner {
   readonly #module: WebAssembly.Module;
   #exports: PreviewExports | null;
-  /** 随内核发布的字体（几 MB，留着字节）。 */
+  /** Fonts shipped with the kernel (several MB; the bytes are kept). */
   #fonts: Uint8Array[] = [];
-  /** 送进来过的本机字体：不留字节（大的字体集合抽出来的一个 face 也有十几 MB），要再送时按 `load` 重新要。 */
+  /** Local fonts that have been sent in: bytes are not kept (a single face extracted from a large font collection can also be over 10 MB). They are requested again through `load` when they need to be sent again. */
   readonly #local = new Map<string, LocalFont>();
-  /** 从这个实例分出去的实例（缩略图）：之后送进来的本机字体也送给它们。 */
+  /** Instances split off this one (thumbnails): local fonts sent in later are also sent to them. */
   readonly #forks = new Set<RenderPlanner>();
   #videoInput: Uint8Array | null = null;
   #documentsInput: Uint8Array | null = null;
@@ -155,9 +149,9 @@ export class RenderPlanner {
   readonly #assets = new Map<string, Uint8Array>();
   readonly #spectra = new Map<string, Uint8Array>();
   readonly #audioSpectra = new Map<string, Uint8Array>();
-  /** 在等重新载入的 `recovered()`。 */
+  /** The `recovered()` that is being waited on during reloading. */
   readonly #waiting: { resolve: () => void; reject: (error: unknown) => void }[] = [];
-  /** 重新载入失败的原因：之后实例不再能用，`recovered()` 一律拒绝。 */
+  /** Reason reloading failed: later instances are no longer usable, and `recovered()` rejects every time. */
   #lost: { error: unknown } | null = null;
   onRecovered: (() => void) | null = null;
 
@@ -173,8 +167,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 同一个已编译模块的另一个实例（缩略图用，不与预览抢视频），字体照样注入：内置的一批照送，已经送进来的本机字体
-   * 重新要一次再送（要不到的跳过）；之后送进这个实例的本机字体也送给它。
+   * Another instance of the same compiled module (for thumbnails, so it does not compete with the preview for video). Fonts are still injected: the built-in batch is sent as usual, and local fonts already sent in are requested again and sent (any that cannot be obtained are skipped). Local fonts sent to this instance later are also sent to it.
    */
   async fork(): Promise<RenderPlanner> {
     const planner = await RenderPlanner.instantiate(this.#module);
@@ -184,13 +177,13 @@ export class RenderPlanner {
     return planner;
   }
 
-  /** 要注入的字体文件名，次序即注入次序（第一份是回退字体）。 */
+  /** Font file names to inject; the order is the injection order (the first one is the fallback font). */
   fontFiles(): string[] {
     return JSON.parse(this.#call((exports) => exports.bc_font_files())) as string[];
   }
 
   /**
-   * 注入随内核发布的字体：按 `fontFiles()` 的次序注入，全部注入之后再画。重新载入时按注入的次序全部送回去。
+   * Injects the fonts shipped with the kernel: they are injected in `fontFiles()` order, and drawing happens only after all of them are injected. On reload, they are all sent back in injection order.
    */
   addFonts(fonts: readonly Uint8Array[]): void {
     for (const font of fonts) {
@@ -200,9 +193,8 @@ export class RenderPlanner {
   }
 
   /**
-   * 注入一个本机字体 face（按 `RenderedFrame.faces` 要来的），下一帧按新的字体库重排；分出去的实例也送一份。字节拷进
-   * WASM 之后这里不留（调用方也不必留）：重新载入或新分实例时按 `font.load` 重新要。同一个 `key` 只送一次，送了返回 true。
-   * 正在重新载入时只记下，重新载入时一并要回来。
+   * Injects one local font face (as requested through `RenderedFrame.faces`). The next frame is laid out again with the new font library, and split-off instances receive it too. The bytes are not kept here once copied into WASM (and the caller need not keep them either): on reload or when a new instance is split off, they are requested again through `font.load`. The same `key` is sent only once; returns true if it was sent.
+   * During reloading, it is only recorded and requested back together with the reload.
    */
   addLocalFont(font: LocalFont, bytes: Uint8Array): boolean {
     if (this.#local.has(font.key)) return false;
@@ -213,17 +205,17 @@ export class RenderPlanner {
     return true;
   }
 
-  /** 送进视频。之后的计划都按这个序列求。 */
+  /** Sends in the video. Later plans are computed against this sequence. */
   setVideo(video: PlanVideo): void {
     const { sequence, assets } = video;
     const document = { rootSequenceId: sequence.id, sequences: { [sequence.id]: sequence }, assets };
     const input = encoder.encode(JSON.stringify({ video: document, sequenceId: sequence.id }));
     this.#call((exports) => withBytes(exports, input, (ptr, len) => exports.bc_set_video(ptr, len)));
-    // 送不进去的视频不记：WASM 那边还是上一个，重新载入时也送上一个。
+    // A video that cannot be sent in is not recorded: WASM keeps the previous one, and reloading also sends the previous one.
     this.#videoInput = input;
   }
 
-  /** 换一批字幕与字幕样式文档。 */
+  /** Replaces the batch of caption and caption style documents. */
   setDocuments(documents: readonly FrozenDocument[]): void {
     const input = encoder.encode(JSON.stringify(documents));
     this.#call((exports) => withBytes(exports, input, (ptr, len) => exports.bc_set_documents(ptr, len)));
@@ -231,8 +223,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 视频里的转写（`kind: speech` 的文档，当前版本的正文）。投到序列上的有效词流是按文稿触发的闪避的触发区间，
-   * 与导出的声音计划同一份，所以预览与导出在同一时刻压低得一样多。
+   * Transcript of the video (a `kind: speech` document, the body of its current version). The effective word stream projected onto the sequence gives the trigger ranges for script-triggered ducking. It is the same as the export's sound plan, so preview and export duck by the same amount at the same moment.
    */
   setSpeech(transcripts: readonly SpeechTranscript[]): void {
     const input = encoder.encode(JSON.stringify(transcripts));
@@ -240,7 +231,7 @@ export class RenderPlanner {
     this.#speechInput = input;
   }
 
-  /** 实例这一刻的画面（非预乘的 RGBA，`width`×`height`）。键是实例 ID。 */
+  /** The instance's picture at this moment (non-premultiplied RGBA, `width`×`height`). Keys are instance IDs. */
   setPicture(itemId: Id, rgba: Uint8Array | Uint8ClampedArray, width: number, height: number): void {
     const key = encoder.encode(itemId);
     this.#call((exports) =>
@@ -250,12 +241,12 @@ export class RenderPlanner {
     );
   }
 
-  /** 清掉上一帧送进来的画面。 */
+  /** Clears the pictures sent in for the previous frame. */
   clearPictures(): void {
     this.#call((exports) => (exports.bc_clear_pictures(), 0));
   }
 
-  /** 素材的原始字节（Lottie 要读）。 */
+  /** Raw bytes of the asset (Lottie needs to read them). */
   setAsset(asset: VersionRef, bytes: Uint8Array): void {
     const name = assetKey(asset);
     if (this.#assets.get(name) === bytes) return;
@@ -268,7 +259,7 @@ export class RenderPlanner {
     this.#assets.set(name, bytes);
   }
 
-  /** 声波实例的整轨频谱（BCS1，键是实例 ID）。同一份字节再送不重推。 */
+  /** Whole-track spectrum (BCS1) for waveform instances, keyed by instance ID. Bytes sent again are not processed again. */
   setSpectrum(itemId: string, bytes: Uint8Array): void {
     if (this.#spectra.get(itemId) === bytes) return;
     const key = encoder.encode(itemId);
@@ -280,7 +271,7 @@ export class RenderPlanner {
     this.#spectra.set(itemId, bytes);
   }
 
-  /** 清掉全部频谱。 */
+  /** Clears all spectra. */
   clearSpectra(): void {
     if (this.#spectra.size === 0) return;
     this.#call((exports) => (exports.bc_clear_spectra(), 0));
@@ -288,8 +279,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 素材频谱（BCS1，`analyzeAudio` 算的）。声波按序列的声音计划从它拼出自己听到的声音，与导出同一份代码。
-   * 同一份字节再送不重拼（返回 false）。
+   * Asset spectrum (BCS1, computed by `analyzeAudio`). Waveforms build the sound they hear from the sequence's sound plan using this, with the same code as export. Bytes sent again are not reassembled (returns false).
    */
   setAudioSpectrum(asset: VersionRef, bytes: Uint8Array): boolean {
     const name = assetKey(asset);
@@ -304,7 +294,7 @@ export class RenderPlanner {
     return true;
   }
 
-  /** 清掉全部素材频谱。 */
+  /** Clears all asset spectra. */
   clearAudioSpectra(): void {
     if (this.#audioSpectra.size === 0) return;
     this.#call((exports) => (exports.bc_clear_audio_spectra(), 0));
@@ -312,9 +302,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 算一份素材频谱：`channels` 是 48 kHz 的各声道样本，单声道原样、多声道取平均，按块送进同一模块的一个临时实例
-   * （分析用的内存随实例丢掉，不留在画帧的实例里）。分析与导出是同一份 Rust 代码；解码不是（这里是浏览器解的），
-   * 有损格式的样本与导出那边略有出入，频谱因此相近而不逐字节相同。
+   * Computes one asset spectrum. `channels` are the 48 kHz samples of each channel: mono is passed through as-is, multi-channel is averaged, and the result is sent in blocks into a temporary instance of the same module. The memory used for analysis is dropped with that instance and is not kept in the instance that draws frames. Analysis is the same Rust code as export; decoding is not (here the browser decodes), so lossy formats differ slightly from export, and the spectrum is close but not byte-identical.
    */
   async analyzeAudio(channels: readonly Float32Array[]): Promise<Uint8Array> {
     const instance = await WebAssembly.instantiate(this.#module, {});
@@ -342,8 +330,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 一段文字作为文字元素在 `canvas`（序列画布）上要多大的框（序列像素，含底板留白）：与画字同一台排版引擎、同一批字体
-   * （`frame_render::text_measure`）。给了 `wrapWidth` 就按它折行、框宽就是它；否则排成不折的一块。要先注入字体。
+   * How large a box a piece of text needs as a text element on `canvas` (the sequence canvas), in sequence pixels, including background padding. It uses the same typesetting engine and the same fonts as drawing the text (`frame_render::text_measure`). If `wrapWidth` is given, the text wraps to it and the box width is that width; otherwise it is laid out as one unwrapped block. Fonts must be injected first.
    */
   measureText(
     text: string,
@@ -359,8 +346,8 @@ export class RenderPlanner {
   }
 
   /**
-   * 求 `seconds` 这一刻的计划并画成 `width`×`height`（与序列画布同比例）。画不出来的东西跳过，报在结果里。
-   * `captions: false` 不画字幕层；`transparent` 不铺背景（缩略图）。
+   * Computes the plan at `seconds` and draws it at `width`×`height` (same aspect ratio as the sequence canvas). Things that cannot be drawn are skipped and reported in the result.
+   * `captions: false` does not draw the caption layer; `transparent` does not fill the background (thumbnails).
    */
   render(seconds: number, width: number, height: number, options: { captions?: boolean; transparent?: boolean } = {}): RenderedFrame {
     const flags = (options.captions === false ? 0 : 1) | (options.transparent ? 2 : 0);
@@ -368,8 +355,7 @@ export class RenderPlanner {
   }
 
   /**
-   * 上一次 `render` 画好的帧：非预乘的 RGBA（不铺背景时有透明处，否则不透明）。是 WASM 内存的视图，不复制：
-   * 下一次调用 WASM 之前用完（内存增长时旧视图会失效）。
+   * The frame drawn by the last `render`: non-premultiplied RGBA (transparent where there is no background fill, otherwise opaque). This is a view into WASM memory, not a copy: use it before the next call into WASM, because when memory grows the old view becomes invalid.
    */
   frame(): Uint8ClampedArray<ArrayBuffer> {
     const exports = this.#exports;
@@ -377,19 +363,18 @@ export class RenderPlanner {
     return new Uint8ClampedArray(exports.memory.buffer as ArrayBuffer, exports.bc_frame_ptr(), exports.bc_frame_len());
   }
 
-  /** `seconds` 这一刻的计划。 */
+  /** The plan at `seconds`. */
   planAt(seconds: number): FramePlan {
     return JSON.parse(this.planJson(seconds)) as FramePlan;
   }
 
-  /** 计划的 JSON 原文（与原生 Rust 的输出逐字节一致，金标准测试用）。 */
+  /** Raw JSON of the plan (byte-identical to native Rust output; used by the gold-standard test). */
   planJson(seconds: number): string {
     return this.#call((exports) => exports.bc_plan(seconds));
   }
 
   /**
-   * 实例能用时兑现：平时立刻兑现；抛过 `PLANNER_CRASHED` 之后等重新载入好了（在 `onRecovered` 之前），
-   * 重新载入失败时（之后也一样）拒绝。不占用 `onRecovered`（那是预览引擎的）。
+   * Resolves when the instance is usable. Normally it resolves right away. After a `PLANNER_CRASHED` has been thrown, it waits until reloading finishes (before `onRecovered`), and rejects if reloading fails (and every time after that). It does not occupy `onRecovered`, which belongs to the preview engine.
    */
   recovered(): Promise<void> {
     if (this.#exports) return Promise.resolve();
@@ -397,7 +382,7 @@ export class RenderPlanner {
     return new Promise((resolve, reject) => this.#waiting.push({ resolve, reject }));
   }
 
-  /** 调一次导出函数，读输出区；失败时抛 `PlanFailure`。 */
+  /** Calls one export function and reads the output area; throws `PlanFailure` on failure. */
   #call(invoke: (exports: PreviewExports) => number): string {
     const exports = this.#exports;
     if (!exports) throw new PlanFailure({ code: 'PLANNER_CRASHED', message: R.planner.reloading });
@@ -409,7 +394,7 @@ export class RenderPlanner {
       this.#restart();
       throw new PlanFailure({ code: 'PLANNER_CRASHED', message: R.planner.crashed(error.message) });
     }
-    // 内存可能在调用中增长，旧的 ArrayBuffer 会失效：每次都从 memory.buffer 重新取。
+    // Memory may grow during a call, which invalidates old ArrayBuffers, so it is fetched from memory.buffer each time.
     const output = decoder.decode(new Uint8Array(exports.memory.buffer, exports.bc_output_ptr(), exports.bc_output_len()));
     if (status !== 0) throw new PlanFailure(JSON.parse(output) as PlanErrorBody);
     return output;
@@ -417,11 +402,11 @@ export class RenderPlanner {
 
   #restart(): void {
     this.#exports = null;
-    // 模块已经编译过，重新实例化很快；主线程上只能异步做。
+    // The module is already compiled, so re-instantiation is fast; it can only be done asynchronously on the main thread.
     const restored = WebAssembly.instantiate(this.#module, {}).then(async (instance) => {
       const exports = instance.exports as unknown as PreviewExports;
       for (const font of this.#fonts) giveBytes(exports, font, (ptr, len) => exports.bc_add_font(ptr, len));
-      // 本机字体不留字节：重新要（要的期间又送来的也要），要不到的跳过（照回退字体画，缺字体的提示照报）。
+      // Local fonts keep no bytes: they are requested again (including any sent during the request). Those that cannot be obtained are skipped (drawn with the fallback font; the missing-font notices are still reported).
       const given = new Set<string>();
       for (;;) {
         const todo = [...this.#local.values()].filter((font) => !given.has(font.key));
@@ -467,12 +452,12 @@ export class RenderPlanner {
   }
 }
 
-/** 素材字节的键（与 Rust 那边一致）。 */
+/** Keys for asset bytes (same as on the Rust side). */
 export function assetKey(asset: VersionRef): string {
   return `${asset.id}@${asset.revision}`;
 }
 
-/** 把字节写进 WASM 的一块缓冲交给 `invoke`，之后缓冲归 WASM（`bc_add_font`：大字体不再多拷一份），不释放。 */
+/** Hands a buffer, into which the bytes were written in WASM memory, to `invoke`. Afterwards the buffer belongs to WASM and is not freed (`bc_add_font`: large fonts are not copied an extra time). */
 function giveBytes(exports: PreviewExports, input: Uint8Array, invoke: (ptr: number, len: number) => number): number {
   const ptr = exports.bc_alloc(input.length);
   try {
@@ -484,7 +469,7 @@ function giveBytes(exports: PreviewExports, input: Uint8Array, invoke: (ptr: num
   return invoke(ptr, input.length);
 }
 
-/** 把字节写进 WASM 的一块临时缓冲，调用完释放。 */
+/** Writes bytes into a temporary WASM buffer, and frees it after the call. */
 function withBytes(exports: PreviewExports, input: Uint8Array | Uint8ClampedArray, invoke: (ptr: number, len: number) => number): number {
   const ptr = exports.bc_alloc(input.length);
   try {

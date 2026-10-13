@@ -1,12 +1,11 @@
-//! 转录行与词的输入契约：词化构建器（[`crate::build`]）与说话人、初始分段等
-//! 模块读的 ASR 行。
+//! Input contract for transcript rows and words: the ASR rows that the word builder ([`crate::build`]), the speaker and initial-segmentation modules, and others read.
 //!
-//! 移植自 CucCut v2 `ccut-speech-core`：`RowIn` / `WordIn` 来自 `types.rs`，
-//! `RowSegmentation` 来自 `transcript.rs`，内容原样。
+//! Ported from CucCut v2 `ccut-speech-core`: `RowIn` / `WordIn` come from `types.rs`,
+//! `RowSegmentation` comes from `transcript.rs`, content unchanged.
 
 use serde::{Deserialize, Serialize};
 
-/// 应用层词时间（绝对 f64 秒）。
+/// Application-layer word time (absolute f64 seconds).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WordIn {
     pub start: f64,
@@ -14,7 +13,7 @@ pub struct WordIn {
     pub text: String,
 }
 
-/// 统一转录行。没有真实词时间时 `words` 为 `None`。
+/// Unified transcript row. `words` is `None` when there are no real word times.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RowIn {
     pub start: f64,
@@ -38,10 +37,9 @@ impl RowIn {
     }
 }
 
-/// `ai/asr-rows.json` 中行边界的实际来源。
+/// Source of the row boundaries in `ai/asr-rows.json`.
 ///
-/// 这不是段落语义，只让首个生产读者判断这些 row 是否适合生成转录完成后的
-/// 初始软分段。字段可选，旧审计产物保持可读。
+/// This is not paragraph semantics. It only lets the first production reader judge whether these rows are suitable for generating the initial soft segmentation after transcription completes. The field is optional, so older audit artifacts remain readable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RowSegmentation {

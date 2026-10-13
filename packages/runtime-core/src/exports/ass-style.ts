@@ -1,8 +1,8 @@
 /**
- * 字幕样式 → ASS 的 `[V4+ Styles]`（基础映射）。认得的是预览在用的 `cuccut.legacy-studio-style/0.1`
- * （口径同 `packages/ui/src/render/text-style.ts`：字号以 540 短边为基准随画布缩放）：字体、字号、颜色、粗斜体与下划线、
- * 字距、描边、阴影、底板（ASS 的不透明框）、水平对齐、位置与宽度。ASS 表达不了的（发光、字形变换、行高、圆角、
- * 逐行底板、显示时机、标点处理……）与认不出的样式整份列在 `unmapped` 里，由导出写进报告，不静默丢弃。
+ * Subtitle style → ASS `[V4+ Styles]` (basic mapping). The recognized style is `cuccut.legacy-studio-style/0.1`, which the preview uses
+ * (same basis as `packages/ui/src/render/text-style.ts`: font size scales with the canvas, using a 540 short edge as the baseline): font, size, color, bold and italic, underline,
+ * letter spacing, outline, shadow, background box (ASS's opaque box), horizontal alignment, position and width. Whatever ASS cannot express (glow, glyph transforms, line height, rounded corners,
+ * per-line background boxes, display timing, punctuation handling, ...) and unrecognized styles are listed in full in `unmapped`, which the export writes into the report instead of dropping silently.
  */
 
 import { RcExport } from '@cuccut/protocol/messages/runtime-core';
@@ -21,7 +21,7 @@ const FONT_ALIASES: Record<string, string> = {
   serif: 'Source Serif 4',
 };
 const SYSTEM_FONT = 'PingFang SC';
-/** 映射了的字段；其余出现了的字段列为未映射。 */
+/** Fields that were mapped; any other fields that appear are listed as unmapped. */
 const MAPPED = new Set([
   'fontFamily',
   'fontSize',
@@ -54,7 +54,7 @@ const MAPPED = new Set([
 
 export interface AssStyleMapping {
   styles: { default: string; translation: string };
-  /** 译文排在原文上面（`order: 'trans'`，预览的默认）。 */
+  /** Translation placed above the original (`order: 'trans'`, the preview default). */
   translationFirst: boolean;
   unmapped: string[];
 }
@@ -71,7 +71,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** CSS 颜色 → `&HAABBGGRR`（ASS 的 alpha 是透明度：00 不透明）。认不出时用 `fallback`。 */
+/** CSS color → `&HAABBGGRR` (in ASS, alpha is transparency: 00 is opaque). Uses `fallback` when the color is not recognized. */
 export function assColor(value: unknown, fallback: string, alpha?: number): string {
   const rgba = parseColor(value);
   if (!rgba) return fallback;
@@ -173,7 +173,7 @@ function styleLine(
   let borderStyle = 1;
   let shadowDepth = 0;
   if (backgroundOn) {
-    // 不透明框：ASS 用描边色画框。
+    // Opaque box: ASS draws the box in the outline color.
     borderStyle = 3;
     back = assColor(style.backgroundColor ?? root.backgroundColor, '&H33000000');
   } else if (shadowOn) {
@@ -209,7 +209,7 @@ function styleLine(
   return `Style: ${fields.join(',')}`;
 }
 
-/** 样式文档的正文（可能为 null）→ ASS 的两个样式（原文 `Default`、译文 `Translation`）与未映射的字段。 */
+/** The body of the style document (may be null) → the two ASS styles (original `Default`, translation `Translation`) and the unmapped fields. */
 export function assStyleMapping(body: unknown, canvas: { width: number; height: number }): AssStyleMapping {
   const unmapped: string[] = [];
   let root: Json = {};

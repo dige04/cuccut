@@ -1,13 +1,8 @@
-//! Windows 实时播放帧服务器：`IMFMediaEngine` → 可共享 D3D11 BGRA 纹理。
+//! Windows real-time playback frame server: `IMFMediaEngine` → shareable D3D11 BGRA texture.
 //!
-//! 这是统一渲染 R4 的平台边界，不是另一条 CPU 解码器：Media Foundation 在
-//! frame-server 模式直接写调用方拥有的 DXGI surface，随后用共享 D3D11 fence
-//! 发布完成值。D3D12/wgpu 消费端应先等待 [`DxgiVideoFrame::ready_fence_value`]，
-//! 再采样 [`DxgiVideoFrame::texture_handle`] 打开的资源。
+//! This is the platform boundary of unified rendering R4, not another CPU decoder: in frame-server mode, Media Foundation writes directly into a DXGI surface owned by the caller, then publishes the completion value with a shared D3D11 fence. A D3D12/wgpu consumer should first wait for [`DxgiVideoFrame::ready_fence_value`], then sample the resource opened from [`DxgiVideoFrame::texture_handle`].
 //!
-//! 帧服务器与创建它的线程绑定（COM/MF 生命周期必须在同一线程配对）。每一帧
-//! 可以跨线程交给 GPU 消费端；三槽纹理池都仍被占用时，新帧按非阻塞背压丢弃，
-//! 不覆盖在途纹理，也不回退到 CPU readback。latest-wins 邮箱属于上层调度器。
+//! The frame server is bound to the thread that creates it (COM/MF lifetime must be paired on the same thread). Each frame may be handed to a GPU consumer on another thread. When all three texture-pool slots are still occupied, a new frame is dropped with non-blocking backpressure, without overwriting in-flight textures and without falling back to CPU readback. The latest-wins mailbox belongs to the upper-layer scheduler.
 
 use std::marker::PhantomData;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
@@ -104,16 +99,16 @@ struct SharedFence {
     handle: OwnedHandle,
 }
 
-/// 创建播放纹理的 DXGI adapter 标识。
+/// DXGI adapter identifier used to create the playback textures.
 ///
-/// D3D12/wgpu 消费端必须使用同一 LUID；不匹配时应明确拒绝导入，而不是复制到 CPU。
+/// A D3D12/wgpu consumer must use the same LUID. On a mismatch, the import should be explicitly rejected, not copied to the CPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DxgiAdapterLuid {
     pub low_part: u32,
     pub high_part: i32,
 }
 
-/// `IMFMediaEngine` 的平台观测态。App 只做同名映射，不自行猜测 ready/seek/ended。
+/// Platform-observed state of `IMFMediaEngine`. The app only maps it by name and does not guess ready/seek/ended on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DxgiPlaybackState {
     Playing,
@@ -122,11 +117,9 @@ pub enum DxgiPlaybackState {
     Ended,
 }
 
-/// 一帧已经由 Media Foundation 写好的 GPU surface。
+/// A GPU surface for one frame, already written by Media Foundation.
 ///
-/// 句柄只在本值存活期间保证有效；D3D12/wgpu 消费端应打开纹理与 fence 后再
-/// 释放本值。打开 fence 后等待 [`ready_fence_value`](Self::ready_fence_value)，
-/// 才能读取对应纹理。类型内没有 CPU 像素缓冲。
+/// The handle is only guaranteed valid while this value lives. A D3D12/wgpu consumer should open the texture and fence, then release this value. After opening the fence, wait for [`ready_fence_value`](Self::ready_fence_value) before reading the corresponding texture. The type holds no CPU pixel buffer.
 #[derive(Clone)]
 pub struct DxgiVideoFrame {
     surface: Arc<SharedSurface>,
@@ -150,13 +143,13 @@ impl std::fmt::Debug for DxgiVideoFrame {
 }
 
 impl DxgiVideoFrame {
-    /// 进程内稳定的 surface 身份，供 D3D12 importer 缓存已打开的 COM resource。
-    /// 与 NT handle 数值不同：server 析构后 Windows 可以复用 handle 数值。
+    /// Process-stable surface identity, so the D3D12 importer can cache the opened COM resource.
+    /// This differs from the NT handle value: after the server is destroyed, Windows may reuse the handle value.
     pub fn surface_id(&self) -> u64 {
         self.surface.id
     }
 
-    /// 进程内稳定的 shared fence 身份，供 importer 缓存已打开的 fence。
+    /// Process-stable shared fence identity, so the importer can cache the opened fence.
     pub fn synchronization_id(&self) -> u64 {
         self.fence.id
     }
@@ -169,7 +162,7 @@ impl DxgiVideoFrame {
         self.surface.height
     }
 
-    /// Media Foundation 的呈现时间戳，单位为 100ns。
+    /// Media Foundation presentation timestamp, in 100 ns units.
     pub fn timestamp_hns(&self) -> i64 {
         self.timestamp_hns
     }
@@ -178,17 +171,17 @@ impl DxgiVideoFrame {
         self.timestamp_hns as f64 / 10_000_000.0
     }
 
-    /// `IDXGIResource1::CreateSharedHandle` 产生的 NT handle。
+    /// NT handle produced by `IDXGIResource1::CreateSharedHandle`.
     pub fn texture_handle(&self) -> RawHandle {
         self.surface.handle.as_raw_handle()
     }
 
-    /// `ID3D11Fence::CreateSharedHandle` 产生的 NT handle。
+    /// NT handle produced by `ID3D11Fence::CreateSharedHandle`.
     pub fn ready_fence_handle(&self) -> RawHandle {
         self.fence.handle.as_raw_handle()
     }
 
-    /// 消费端读取纹理之前必须等待的 fence 值。
+    /// Fence value the consumer must wait for before reading the texture.
     pub fn ready_fence_value(&self) -> u64 {
         self.ready_fence_value
     }
@@ -198,10 +191,9 @@ impl DxgiVideoFrame {
     }
 }
 
-/// `IMFMediaEngine` 播放器。视频使用三槽共享纹理池；纯音频只保留播放时钟。
+/// `IMFMediaEngine` player. Video uses a three-slot shared texture pool; audio-only keeps just the playback clock.
 ///
-/// 本类型刻意不是 `Send` / `Sync`：创建、控制和析构都要留在同一 COM 线程。
-/// 返回的 [`DxgiVideoFrame`] 可以移交给渲染线程。
+/// This type is deliberately not `Send` / `Sync`: creation, control and destruction must all stay on the same COM thread. The returned [`DxgiVideoFrame`] may be handed to the render thread.
 pub struct DxgiFrameServer {
     engine: IMFMediaEngine,
     context: ID3D11DeviceContext4,
@@ -225,7 +217,7 @@ pub struct DxgiFrameServer {
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
-/// 打开本地媒体，等待元数据；有视频轨时建立 frame-server 的共享 GPU surface 池。
+/// Opens local media and waits for metadata. If there is a video track, sets up the frame server's shared GPU surface pool.
 pub fn open_dxgi_frame_server(path: &Path) -> Result<DxgiFrameServer> {
     if !path.is_file() {
         bail!("媒体文件不存在：{}", path.display());
@@ -288,8 +280,8 @@ unsafe fn open_inner(runtime: Runtime, path: &Path) -> Result<DxgiFrameServer> {
         }
         .map_err(|error| media_feature_error("打开播放媒体", error))?;
         let engine_ex: IMFMediaEngineEx = engine.cast().context("Media Engine 缺少扩展接口")?;
-        // `wide_path` 已规范化 verbatim prefix 且末尾带 NUL；BSTR 自带长度，不含 NUL。
-        // 直接保留 UTF-16，避免 Windows 路径先经过 lossy UTF-8 往返。
+        // `wide_path` is already normalized to a verbatim prefix and ends with NUL. BSTR carries its own length, which excludes the NUL.
+        // Keep the UTF-16 as is, to avoid round-tripping the Windows path through lossy UTF-8.
         let source_url = BSTR::from_wide(&wide[..wide.len() - 1]);
         unsafe { engine_ex.SetSourceFromByteStream(&byte_stream, &source_url) }
             .map_err(|error| media_feature_error("设置播放媒体", error))?;
@@ -381,7 +373,7 @@ impl DxgiFrameServer {
         self.duration_seconds
     }
 
-    /// 因三槽都仍在消费而被丢弃的解码帧数。
+    /// Number of decoded frames dropped because all three slots were still held by consumers.
     pub fn dropped_frame_count(&self) -> u64 {
         self.dropped_frames
     }
@@ -394,8 +386,7 @@ impl DxgiFrameServer {
         unsafe { self.engine.GetCurrentTime() }
     }
 
-    /// 即时读取 Media Engine 状态。错误事件优先于普通状态返回；seeking 或播放意图
-    /// 已生效但还没有 future data 时属于 buffering。
+    /// Reads the Media Engine state immediately. Error events take precedence over ordinary state. Seeking, or a play intent that is in effect but has no future data yet, counts as buffering.
     pub fn playback_state(&self) -> Result<DxgiPlaybackState> {
         self.ensure_no_media_error()?;
         if unsafe { self.engine.IsEnded().as_bool() } {
@@ -445,11 +436,9 @@ impl DxgiFrameServer {
             .context("Media Engine 设置播放速率失败")
     }
 
-    /// 取一帧已经完成 GPU 写入的 surface。
+    /// Takes one frame whose GPU write has completed.
     ///
-    /// 没有新帧，或三槽都还被消费端持有时返回 `Ok(None)`。后者是有意的
-    /// 非阻塞背压：实时预览宁可丢掉当前帧，不等待 UI/GPU，也不做 CPU 回读。
-    /// 上层 latest-wins 邮箱应及时释放被替换的旧帧。
+    /// Returns `Ok(None)` when there is no new frame, or when all three slots are still held by consumers. The latter is intentional non-blocking backpressure: real-time preview prefers dropping the current frame over waiting on UI/GPU, and does no CPU readback. The upper-layer latest-wins mailbox should release the replaced old frame promptly.
     pub fn try_acquire_frame(&mut self) -> Result<Option<DxgiVideoFrame>> {
         self.ensure_no_media_error()?;
         if !self.has_video() {

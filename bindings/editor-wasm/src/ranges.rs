@@ -1,6 +1,6 @@
-//! 引擎校验用的取值区间与缺省值：界面的数字框按它们封顶、按它们给初值，不在 TS 里另抄一份数字。
+//! The value ranges and defaults used by engine validation: the UI's number inputs are capped by them and take their initial values from them, so the numbers are not copied again in TS.
 //!
-//! 只有引擎的规则在这里；滑杆的常用范围、步长、读数的倍率是界面的设计，留在界面。区间都含两端，写成 `[下限, 上限]`。
+//! Only the engine's rules live here; the slider's common ranges, step sizes and readout multipliers are UI design and stay in the UI. Ranges include both ends and are written as `[min, max]`.
 
 use serde::Serialize;
 use timeline::animations::{DURATION_MAX, DURATION_MIN, INTENSITY_MAX, INTENSITY_MIN, PERIOD_MAX, PERIOD_MIN};
@@ -26,14 +26,14 @@ const fn range((lo, hi): (f64, f64)) -> Range {
 struct Ranges {
     fx: FxRanges,
     ducking: DuckingRanges,
-    /// 实例音量与音量包络（线性倍数）。
+    /// Instance volume and volume envelopes (linear multipliers).
     volume: Range,
     keyframes: KeyframeRanges,
     animation: AnimationRanges,
     confetti: ConfettiRanges,
 }
 
-/// `fx`（视频格式规范 §3.9）。
+/// `fx` (video format spec §3.9).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FxRanges {
@@ -42,22 +42,22 @@ struct FxRanges {
     /// `brightness`、`contrast`、`exposure`、`hue`、`saturation`。
     adjust: Range,
     temperature: Range,
-    /// `blur`（540 短边下的像素）。
+    /// `blur` (pixels at a 540 short side).
     blur: Range,
-    /// `shadow.blur`（540 短边下的像素）。
+    /// `shadow.blur` (pixels at a 540 short side).
     shadow_blur: Range,
     /// `shadow.opacity`。
     shadow_opacity: Range,
-    /// `stroke.width` 的上限（540 短边下的像素），下限不含 0。
+    /// The upper limit of `stroke.width` (pixels at a 540 short side); the lower bound excludes 0.
     stroke_width_max: f64,
 }
 
-/// 闪避（§3.9）：压低多少 dB、起落多少秒，以及 `setDucking` 不给时的缺省。
+/// Ducking (§3.9): how many dB to lower, how many seconds the attack and release take, and the default when `setDucking` gives none.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DuckingRanges {
     depth: Range,
-    /// `attack` 与 `release`。
+    /// `attack` and `release`.
     time: Range,
     defaults: DuckingDefaults,
 }
@@ -70,7 +70,7 @@ struct DuckingDefaults {
     release: f64,
 }
 
-/// 关键帧：每个属性最多几个，各属性的取值。
+/// Keyframes: the maximum number per property, and the values for each property.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyframeRanges {
@@ -80,7 +80,7 @@ struct KeyframeRanges {
     percent: Range,
 }
 
-/// 入场、出场与循环动画的时长（秒）、周期（秒）与强度。
+/// The durations (seconds), periods (seconds) and intensities of the enter, exit and loop animations.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AnimationRanges {
@@ -89,37 +89,37 @@ struct AnimationRanges {
     intensity: Range,
 }
 
-/// 彩纸（`confetti`）的参数：倍率、风、不透明度、发射与起点的区间，色板上限与形状的封闭取值。
+/// The parameters of confetti (`confetti`): multipliers, wind, opacity, the ranges for emission and origin, the palette limit, and the closed set of shape values.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConfettiRanges {
-    /// 色板最多几种颜色。
+    /// The maximum number of colors in a palette.
     max_colors: usize,
-    /// 12 种单位形（属性页的次序）。
+    /// The 12 unit shapes (in the property page's order).
     shapes: &'static [&'static str],
     size: Range,
     speed: Range,
     gravity: Range,
     drift: Range,
     spin: Range,
-    /// 参考 540 短边下的 px/s²。
+    /// px/s² at the 540 short-side reference.
     wind: Range,
     opacity: Range,
-    /// `emit.rate`（粒/秒）。
+    /// `emit.rate` (particles per second).
     rate: Range,
-    /// `emit.count`（每次爆发枚数）。
+    /// `emit.count` (the number per burst).
     count: Range,
-    /// `emit.interval`（秒，0 = 只放一次）。
+    /// `emit.interval` (seconds; 0 = emit once only).
     interval: Range,
-    /// 发射方向（度）。
+    /// Emission direction (degrees).
     angle: Range,
-    /// 发射扇面（度）。
+    /// Emission fan angle (degrees).
     spread: Range,
-    /// `origin.x` 与 `origin.y`（盒内 %）。
+    /// `origin.x` and `origin.y` (% within the box).
     origin: Range,
 }
 
-/// 输入不看（约定传 `{}`），结果是上面的整张表。
+/// The input is not read (by convention pass `{}`); the result is the whole table above.
 pub fn engine_ranges(_input: &[u8]) -> Result<String, EntryError> {
     let ranges = Ranges {
         fx: FxRanges {

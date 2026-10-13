@@ -25,7 +25,7 @@ import { useConversationMeta, useProject } from '../../state/directory-store.ts'
 import { useNow } from '../use-now.ts';
 import { KIND_ICON } from '../space/space-list.tsx';
 
-/** 搜索框停下多久再查。 */
+/** How long the search box must stay idle before searching. */
 const SEARCH_DEBOUNCE_MS = 200;
 
 const root = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, minHeight: 0 });
@@ -57,24 +57,24 @@ const centered = style({ display: 'flex', flexGrow: 1, alignItems: 'center', jus
 type Load = { status: 'loading' } | { status: 'ready'; result: ProjectFilesList } | { status: 'error'; message: string };
 
 export interface ProjectFilesProps {
-  /** 哪条会话的文件：属于项目时列项目目录，否则列会话工作目录。 */
+  /** Which conversation's files to show: if it belongs to a project, list the project directory; otherwise list the conversation's working directory. */
   conversationId: Id;
-  /** 点文件：交出 `{ conversationId, path }`（可以直接给 `media.resolve`、FilePreview、播放器）与条目本身。 */
+  /** On file click: hand out `{ conversationId, path }` (usable directly for `media.resolve`, FilePreview and the player) and the entry itself. */
   onOpenFile?: (target: FileTarget, entry: ProjectFileEntry) => void;
-  /** 点视频目录（含 `video.db`）。不给时视频目录按普通文件夹进入。 */
+  /** On click of a video directory (one containing `video.db`). When not provided, video directories open as ordinary folders. */
   onOpenVideo?: (target: FileTarget, entry: ProjectFileEntry) => void;
-  /** 点幻灯片目录（含 `deck.json`）。不给时按普通文件夹进入。 */
+  /** On click of a slides directory (one containing `deck.json`). When not provided, it opens as an ordinary folder. */
   onOpenSlides?: (target: FileTarget, entry: ProjectFileEntry) => void;
-  /** 点设计稿目录（含 `canvas.json`）。不给时按普通文件夹进入。 */
+  /** On click of a design canvas directory (one containing `canvas.json`). When not provided, it opens as an ordinary folder. */
   onOpenDesign?: (target: FileTarget, entry: ProjectFileEntry) => void;
-  /** 点设计系统目录（含 `design-system.json`）。不给时按普通文件夹进入。 */
+  /** On click of a design system directory (one containing `design-system.json`). When not provided, it opens as an ordinary folder. */
   onOpenDesignSystem?: (target: FileTarget, entry: ProjectFileEntry) => void;
 }
 
 /**
- * 功能区的「项目文件」标签（产品设计 §3.3，原型 home-workspace.jsx `WorkspaceFiles`）：
- * 会话所属项目目录里的文件，一层一层进入；搜索框按名字在整个项目里找（`projects.files.list`）。
- * 只读：打开文件交给调用方（单文件标签、视频、幻灯片、设计稿或设计系统）。没有后端时显示真实的空态与错误，不造数据。
+ * The “Project files” tab in the workspace area (product design §3.3, prototype home-workspace.jsx `WorkspaceFiles`):
+ * files in the project directory the conversation belongs to, browsed level by level. The search box looks up files by name across the whole project (`projects.files.list`).
+ * Read-only: opening a file is handed to the caller (single-file tab, video, slides, design canvas or design system). With no backend, it shows real empty states and errors rather than made-up data.
  */
 export function ProjectFiles({ conversationId, onOpenFile, onOpenVideo, onOpenSlides, onOpenDesign, onOpenDesignSystem }: ProjectFilesProps) {
   const runtime = useRuntime();
@@ -89,7 +89,7 @@ export function ProjectFiles({ conversationId, onOpenFile, onOpenVideo, onOpenSl
   const rootLabel = project?.name ?? COPY.scratchRoot;
   const searching = query.length > 0;
 
-  // 换会话或会话绑定了项目（工作目录换了，架构设计 §3.10）时回到根目录、清掉搜索。
+  // When the conversation changes, or the conversation gets bound to a project (the working directory changes; architecture design §3.10), return to the root and clear the search.
   const projectId = conversation?.projectId ?? null;
   useEffect(() => {
     setDir('');
@@ -105,7 +105,7 @@ export function ProjectFiles({ conversationId, onOpenFile, onOpenVideo, onOpenSl
   }, [input, query]);
 
   useEffect(() => {
-    // 晚到的旧响应不覆盖新的：每次请求只认自己这一轮。
+    // A late, stale response must not overwrite a newer one: each request only accepts the response for its own round.
     let current = true;
     setLoad({ status: 'loading' });
     runtime

@@ -1,49 +1,47 @@
 import type { FileTarget } from './methods.ts';
 
 /**
- * 会话里的设计系统（docs/design/canvas §10）：设计系统是会话工作目录或项目目录里的一个目录（`design-system.json` v3、
- * `layout: "files"`，加 README.md、tokens.json、components/、assets/、fonts/），在功能区的设计系统标签里用设计系统编辑器打开。
+ * A design system in a session (docs/design/canvas §10): a design system is a directory in the session working directory or the project directory (`design-system.json` v3, `layout: "files"`, plus README.md, tokens.json, components/, assets/, fonts/). It is opened in the design system editor from the design system tab of the feature area.
  */
 
-/** 设计系统的概要（读 `design-system.json`）。 */
+/** Summary of a design system (read from `design-system.json`). */
 export interface DesignSystemInfo {
-  /** `design-system.json` 的 `title`，去掉首尾空白；没有时用目录名。 */
+  /** The `title` of `design-system.json`, trimmed; the directory name when there is none. */
   title: string;
-  /** 组件包的全局名（`window.<namespace>`）；索引里没有或不合规则时为 null。 */
+  /** The global name of the component bundle (`window.<namespace>`); null when the index does not have it or it is not valid. */
   namespace: string | null;
 }
 
-/** `designSystem.open` 的结果。 */
+/** Result of `designSystem.open`. */
 export interface DesignSystemOpenResult {
   /**
-   * 编辑器页面的地址，以 `/` 结尾：`<网关 HTTP 基址>/design-system/<grant>/`；Web 服务里是相对地址 `/design-system/<grant>/`，
-   * 由 Web 客户端换到另一个回环主机名再加载（docs/design/canvas §10.4）。界面加载时另加 `?path=<FileTarget.path>&lang=…`。
-   * grant 只在 Runtime 的内存里，Runtime 重启后要重新打开。
+   * Address of the editor page, ending with `/`: `<gateway HTTP base URL>/design-system/<grant>/`. In the web service it is the relative address `/design-system/<grant>/`, which the web client swaps for another loopback hostname before loading (docs/design/canvas §10.4). The UI appends `?path=<FileTarget.path>&lang=…` when it loads.
+   * The grant lives only in the Runtime's memory; after the Runtime restarts it must be opened again.
    */
   url: string;
   system: DesignSystemInfo;
-  /** 这台机器有没有构建编辑器（`npm run build:design-system-editor`）。没有时界面显示不可用的说明，不加载 `url`。 */
+  /** Whether the editor has been built on this machine (`npm run build:design-system-editor`). When it has not, the UI shows an explanation that it is unavailable and does not load `url`. */
   editorAvailable: boolean;
 }
 
-/** 设计系统标注的上限（docs/design/canvas §10.6）：与设计稿标注相同。 */
+/** Annotation limit for design systems (docs/design/canvas §10.6): the same as for design annotations. */
 export const DESIGN_SYSTEM_ANNOTATION_LIMITS = { perMessage: 20, text: 2000 } as const;
 
 /**
- * 一条设计系统标注（docs/design/canvas §10.6）：用户在设计系统标签里点一处（token、颜色组、文字样式、组件、素材、文档…）写的批注。
- * 随 `conversations.send` / `steer` 挂在消息上，Runtime 发送时拼成一段文字交给智能体；会话里的用户消息上另带一份。
+ * One design system annotation (docs/design/canvas §10.6): a comment the user writes after clicking a spot in the design system tab (a token, color group, text style, component, asset, document…).
+ * It is attached to the message with `conversations.send` / `steer`; when sending, the Runtime turns it into text for the agent. The user message in the session carries a copy as well.
  */
 export interface DesignSystemAnnotation {
-  /** 设计系统目录，与 `designSystem.open` 的 target 相同。 */
+  /** Design system directory; same as the target of `designSystem.open`. */
   system: FileTarget;
-  /** 运行时标在目标上的 `data-id`（`<前缀>-<名字或哈希>`），用来在编辑器里重新定位与画标记；智能体不需要读懂。 */
+  /** The `data-id` the runtime puts on the target (`<prefix>-<name or hash>`), used to relocate it in the editor and draw markers; the agent does not need to understand it. */
   anchor: string;
-  /** 目标所在的章节 id（`colors`、`components`…）；跳回去时先到这一章。 */
+  /** Id of the section the target is in (`colors`, `components`…); jumping back goes to that section first. */
   section?: string;
-  /** 给人看的位置，例如 `设计系统「Spectrum 2」 › Components › 组件 “Button”`。 */
+  /** Location for people to read, e.g. `设计系统「Spectrum 2」 › Components › 组件 “Button”` (design system “Spectrum 2” › Components › component “Button”). */
   label: string;
-  /** 为模型生成的定位描述（英文，带所在文件与锚点）。 */
+  /** Location description generated for the model (English, with the file it is in and its anchor). */
   detail?: string;
-  /** 用户写的批注，去掉首尾空白。 */
+  /** The comment the user wrote, trimmed. */
   text: string;
 }

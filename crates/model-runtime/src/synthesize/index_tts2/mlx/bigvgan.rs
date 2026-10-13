@@ -1,17 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift`。
+//! Parts of the implementation are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources see `THIRD_PARTY_NOTICES.md` at the root.
 //!
-//! BigVGAN v2 声码器（对照 speech-swift `IndexTTS2BigVGAN.swift`）。
+//! BigVGAN v2 vocoder (corresponds to speech-swift `IndexTTS2BigVGAN.swift`).
 //!
-//! 结构：`conv_pre`(80→1536, k7) → 6 级转置卷积上采样（4,4,2,2,2,2）×
-//! 每级 3 个 AMPBlock1（核 3/7/11，膨胀 1/3/5）取平均 → `activation_post`
-//! → `conv_post`(24→1, k7) → clamp [-1, 1]。抗混叠激活 `Activation1d`：
-//! FIR 2 倍上采样 → SnakeBeta → FIR 2 倍下采样。所有权重先按 `weight_norm`
-//! 融合成 f32；全程 `[B, T, C]` 布局。
+//! Structure: `conv_pre` (80→1536, k7) → 6 transposed-convolution upsampling stages (4,4,2,2,2,2) × 3 AMPBlock1 per stage
+//! (kernels 3/7/11, dilations 1/3/5) averaged → `activation_post` → `conv_post` (24→1, k7) → clamp [-1, 1]. Anti-aliased activation `Activation1d`:
+//! FIR 2× upsampling → SnakeBeta → FIR 2× downsampling. All weights are first fused into f32 by `weight_norm`; the layout is `[B, T, C]` throughout.
 
 use super::layers::Conv1d;
 use super::weights::WeightMap;
@@ -47,7 +45,7 @@ impl SnakeBeta {
     }
 }
 
-/// 逐通道同一 FIR 核：以 depthwise 卷积实现（等价于 Swift 把通道折进 batch 的写法）。
+/// Same FIR kernel for every channel: implemented as a depthwise convolution (equivalent to Swift folding channels into the batch).
 struct FirFilter {
     /// `[C, K, 1]`
     weight: Array,
@@ -67,7 +65,7 @@ impl FirFilter {
     }
 }
 
-/// 时间轴复制填充。
+/// Replicate padding along the time axis.
 fn replicate_pad_time(x: &Array, left: i32, right: i32) -> Result<Array> {
     if left == 0 && right == 0 {
         return Ok(x.clone());
@@ -118,7 +116,7 @@ impl Activation1d {
         let b = padded.dim(0);
         let t = padded.dim(1);
         let c = padded.dim(2);
-        // 零插值：在时间维后插 factor-1 个零帧，再裁到 (T-1)·factor+1。
+        // Zero insertion: insert factor-1 zero frames after each frame along the time axis, then crop to (T-1)·factor+1.
         let zeros = ops::zeros_like(&padded)?;
         let stretched = ops::stack_axis(&[&padded, &zeros], 2)?.reshape(&[b, t * factor, c])?;
         let trimmed = stretched.index((.., ..((t - 1) * factor + 1), ..));
@@ -185,7 +183,7 @@ impl AmpBlock1 {
     }
 }
 
-/// 转置卷积；权重内部布局 `[Cout, K, Cin]`（f32）。
+/// Transposed convolution; internal weight layout `[Cout, K, Cin]` (f32).
 struct ConvTranspose1d {
     weight: Array,
     bias: Option<Array>,
@@ -195,7 +193,7 @@ struct ConvTranspose1d {
 
 impl ConvTranspose1d {
     fn load_weight_norm(w: &mut WeightMap, prefix: &str, stride: i32, padding: i32) -> Result<Self> {
-        // PyTorch 布局 `[Cin, Cout, K]` → `[Cout, K, Cin]`。
+        // PyTorch layout `[Cin, Cout, K]` → `[Cout, K, Cin]`.
         let weight = w.take_weight_norm(prefix)?.transpose_axes(&[1, 2, 0])?;
         let bias = w.take_optional_f32(&format!("{prefix}.bias"))?;
         Ok(Self {
@@ -260,7 +258,7 @@ impl BigVgan {
         })
     }
 
-    /// 输入梅尔谱 `[B, T, 80]`，输出波形 `[B, T·256]`。
+    /// Input mel spectrogram `[B, T, 80]`, output waveform `[B, T·256]`.
     pub fn forward(&self, mel: &Array) -> Result<Array> {
         debug_assert_eq!(mel.dim(2), self.input_channels);
         let dtype = self.conv_pre.weight.dtype();

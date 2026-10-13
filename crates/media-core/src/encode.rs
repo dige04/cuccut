@@ -1,8 +1,8 @@
-//! 编码：原始 RGBA 帧写进 ffmpeg 的标准输入，按 bt709 转成 yuv420p 编码，混好的声音文件一并封装。
+//! Encoding: raw RGBA frames are written to ffmpeg's stdin, converted to bt709 and encoded as yuv420p, and the mixed audio file is muxed in alongside.
 //!
-//! 声音补静音、截到画面的长度（帧数 ÷ 帧率），两条流等长。取消时杀掉编码器（不让它收尾写出半个文件）并删掉输出。
-//! [`QueuedEncoder`] 把写管道挪到单独的线程，合成不等编码器读完一帧。写线程独占的输出是一个 [`FrameSink`]：
-//! ffmpeg 的 [`Encoder`]，或调用方在写线程里打开的平台原生写入器（[`QueuedEncoder::spawn`]）。
+//! Audio is padded with silence and cut to the picture length (frame count ÷ frame rate), so the two streams are the same length. On cancel, the encoder is killed (so it does not finish writing a half-finished file) and the output is deleted.
+//! [`QueuedEncoder`] moves the write pipe to its own thread, so compositing does not wait for the encoder to read a frame. The output owned by the write thread is a [`FrameSink`]:
+//! either ffmpeg's [`Encoder`], or a platform-native writer that the caller opens on the write thread ([`QueuedEncoder::spawn`]).
 
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -39,7 +39,7 @@ impl VideoCodec {
         }
     }
 
-    /// 用的 ffmpeg 编码器。只用软件编码器：结果可复现，参数（CRF）在各平台含义相同。
+    /// The ffmpeg encoder used. Software encoders only: the results are reproducible, and the parameter (CRF) means the same thing on every platform.
     pub fn encoder(self) -> &'static str {
         match self {
             VideoCodec::H264 => "libx264",
@@ -48,7 +48,7 @@ impl VideoCodec {
         }
     }
 
-    /// 不给码率也不给 CRF 时的 CRF。
+    /// The CRF used when neither a bitrate nor a CRF is given.
     pub fn default_crf(self) -> u32 {
         match self {
             VideoCodec::H264 => 20,
@@ -57,7 +57,7 @@ impl VideoCodec {
         }
     }
 
-    /// CRF 的取值上限（下限是 0）。
+    /// Upper limit of the CRF value (the lower limit is 0).
     pub fn max_crf(self) -> u32 {
         match self {
             VideoCodec::H264 | VideoCodec::Hevc => 51,
@@ -81,7 +81,7 @@ impl Container {
         }
     }
 
-    /// 封装能放的视频编码。
+    /// The video codecs the container can hold.
     pub fn accepts(self, codec: VideoCodec) -> bool {
         match self {
             Container::Mp4 => matches!(codec, VideoCodec::H264 | VideoCodec::Hevc),
@@ -96,7 +96,7 @@ impl Container {
         }
     }
 
-    /// 声音的编码器：MP4 用 AAC，WebM 用 Opus。
+    /// Audio encoder: AAC for MP4, Opus for WebM.
     pub fn audio_encoder(self) -> &'static str {
         match self {
             Container::Mp4 => "aac",
@@ -127,12 +127,12 @@ pub struct EncodeSettings {
     pub container: Container,
     pub quality: Quality,
     pub audio: Option<AudioTrack>,
-    /// 画面的长度（帧数 ÷ 帧率，秒）：声音补齐或截到这个长度。
+    /// Length of the picture (frame count ÷ frame rate, seconds): audio is padded or cut to this length.
     pub duration_seconds: f64,
 }
 
 impl EncodeSettings {
-    /// ffmpeg 的参数（不含可执行文件）。
+    /// ffmpeg arguments (excluding the executable).
     pub fn arguments(&self, output: &Path) -> Vec<String> {
         let mut args: Vec<String> = ["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-y"]
             .map(String::from)
@@ -212,7 +212,7 @@ impl EncodeSettings {
     }
 }
 
-/// 一个正在编码的输出。
+/// One output being encoded.
 pub struct Encoder {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -246,7 +246,7 @@ impl Encoder {
         })
     }
 
-    /// 写一帧（RGBA，`width`×`height`）。
+    /// Write one frame (RGBA, `width`×`height`).
     pub fn write(&mut self, rgba: &[u8]) -> Result<(), MediaError> {
         if rgba.len() != self.frame_bytes {
             return Err(MediaError::new("EXPORT_ENCODE_FAILED", "帧的大小与输出尺寸不符"));
@@ -269,7 +269,7 @@ impl Encoder {
         }
     }
 
-    /// 写完了：关掉输入，等编码器收尾。
+    /// Done writing: close the input and wait for the encoder to finish.
     pub fn finish(mut self) -> Result<(), MediaError> {
         drop(self.stdin.take());
         let status = self
@@ -284,7 +284,7 @@ impl Encoder {
         Ok(())
     }
 
-    /// 放弃：杀掉编码器，删掉输出。
+    /// Abandon: kill the encoder and delete the output.
     pub fn abort(mut self) {
         drop(self.stdin.take());
         let _ = self.child.kill();
@@ -298,9 +298,9 @@ impl Encoder {
     }
 }
 
-/// [`QueuedEncoder`] 写线程独占的编码输出：ffmpeg 的 [`Encoder`]，或调用方给的原生写入器。
+/// The encoding output owned by the [`QueuedEncoder`] write thread: ffmpeg's [`Encoder`], or a native writer supplied by the caller.
 ///
-/// 约定同 [`Encoder`]：`write` 收一整帧 RGBA；`finish` 收尾，失败时不留半个文件；`abort` 停下并删掉输出。
+/// Same contract as [`Encoder`]: `write` takes one whole RGBA frame; `finish` wraps up, and on failure leaves no half-written file; `abort` stops and deletes the output.
 pub trait FrameSink {
     fn write(&mut self, rgba: &[u8]) -> Result<(), MediaError>;
     fn finish(self: Box<Self>) -> Result<(), MediaError>;
@@ -331,14 +331,14 @@ impl Drop for Encoder {
     }
 }
 
-/// 在单独的线程里写编码器：合成线程把整帧交进有界队列就去画下一帧，不等管道。
+/// Writes the encoder on a separate thread: the compositing thread hands a whole frame into a bounded queue and goes on to draw the next one, without waiting for the pipe.
 ///
-/// 帧缓冲是一个固定的池（队列深度加一个），用过的经回收通道送回来，逐帧不分配。池里的缓冲一开始铺满 `fill`
-/// （一个 RGBA 像素），之后原样回收、保留上一次写进去的内容：只写画面那一块的调用方（黑边），黑边只铺一次。
+/// The frame buffers are a fixed pool (queue depth plus one). Used buffers come back through a recycling channel, so nothing is allocated per frame. Buffers in the pool are initially filled with `fill`
+/// (one RGBA pixel), and afterwards are recycled as they are, keeping whatever was last written into them: a caller that writes only the picture area (the letterboxing) fills the bars only once.
 ///
-/// 写线程独占 [`Encoder`]：要过 [`finish`](Self::finish) 时写完队列再收尾，否则（[`abort`](Self::abort) 或直接丢掉）
-/// 不再写排着的帧，杀掉编码器、删掉输出。编码器中途失败时写线程放弃并退出，合成线程下一次取缓冲或交帧就失败，
-/// 拿到的是写线程的错误。
+/// The write thread owns the [`Encoder`]. When going through [`finish`](Self::finish), it writes out the queue before wrapping up. Otherwise (with [`abort`](Self::abort), or simply dropping it)
+/// it stops writing the queued frames, kills the encoder and deletes the output. If the encoder fails midway, the write thread gives up and exits; the next time the compositing thread takes a buffer or hands in a frame, it fails
+/// and gets the write thread's error.
 pub struct QueuedEncoder {
     frames: Option<SyncSender<Vec<u8>>>,
     empty: Receiver<Vec<u8>>,
@@ -349,7 +349,7 @@ pub struct QueuedEncoder {
 }
 
 impl QueuedEncoder {
-    /// `depth` 是排队等着写的帧数（至少 1）。
+    /// `depth` is the number of frames queued waiting to be written (at least 1).
     pub fn new(encoder: Encoder, depth: usize, fill: [u8; 4]) -> QueuedEncoder {
         let frame_bytes = encoder.frame_bytes;
         let opened = QueuedEncoder::spawn(frame_bytes, depth, fill, move || Ok(Box::new(encoder) as Box<dyn FrameSink>));
@@ -359,8 +359,8 @@ impl QueuedEncoder {
         }
     }
 
-    /// 在写线程里打开编码输出（`open`），打开成功才返回；打开失败原样返回错误，调用方可以换一种输出再来。
-    /// 输出在写线程里构造并只在那里用，不要求 `Send`（平台写入器常常不是）。`frame_bytes` 是一帧 RGBA 的字节数。
+    /// Open the encoding output (`open`) on the write thread; returns only once it has opened successfully. If opening fails, the error is returned as is, and the caller may try again with a different output.
+    /// The output is constructed on the write thread and used only there, so it does not need `Send` (platform writers often are not). `frame_bytes` is the byte count of one RGBA frame.
     pub fn spawn<F>(frame_bytes: usize, depth: usize, fill: [u8; 4], open: F) -> Result<QueuedEncoder, MediaError>
     where
         F: FnOnce() -> Result<Box<dyn FrameSink>, MediaError> + Send + 'static,
@@ -392,7 +392,7 @@ impl QueuedEncoder {
                     encoder.abort();
                     return Err(e);
                 }
-                // 合成线程不再取缓冲（放弃中）时送不回去，丢掉即可。
+                // If the compositing thread no longer takes buffers (it is abandoning), they cannot be sent back, so just drop them.
                 let _ = recycle.send(frame);
             }
             if finish.load(Ordering::SeqCst) && !abort.load(Ordering::SeqCst) {
@@ -424,7 +424,7 @@ impl QueuedEncoder {
         })
     }
 
-    /// 取一个帧缓冲（长度是一帧，内容是上一次用它时留下的）。缓冲都在队列里时等写线程写完一帧。
+    /// Take a frame buffer (its length is one frame; its contents are whatever was left from its last use). If all buffers are in the queue, wait for the write thread to write one frame.
     pub fn buffer(&mut self) -> Result<Vec<u8>, MediaError> {
         if self.writer.is_none() {
             return Err(MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"));
@@ -435,7 +435,7 @@ impl QueuedEncoder {
         }
     }
 
-    /// 把画好的一帧交给写线程；队列满时等。
+    /// Hand a drawn frame to the write thread; wait if the queue is full.
     pub fn submit(&mut self, frame: Vec<u8>) -> Result<(), MediaError> {
         if frame.len() != self.frame_bytes {
             return Err(MediaError::new("EXPORT_ENCODE_FAILED", "帧的大小与输出尺寸不符"));
@@ -444,14 +444,14 @@ impl QueuedEncoder {
         if sent { Ok(()) } else { Err(self.writer_error()) }
     }
 
-    /// 写完了：等队列里的帧写完、编码器收尾。
+    /// Done writing: wait for the queued frames to be written and for the encoder to finish.
     pub fn finish(mut self) -> Result<(), MediaError> {
         self.finishing.store(true, Ordering::SeqCst);
         drop(self.frames.take());
         self.join()
     }
 
-    /// 放弃：排着的帧不写了，杀掉编码器、删掉输出。返回时编码器已经停了、输出已经删了。
+    /// Abandon: the queued frames are not written; kill the encoder and delete the output. When it returns, the encoder has stopped and the output has been deleted.
     pub fn abort(mut self) {
         self.stop();
     }
@@ -471,7 +471,7 @@ impl QueuedEncoder {
         }
     }
 
-    /// 写线程已经退出（编码器失败）：等它结束，拿它的错误。
+    /// The write thread has already exited (encoder failure): wait for it to finish and take its error.
     fn writer_error(&mut self) -> MediaError {
         drop(self.frames.take());
         match self.join() {

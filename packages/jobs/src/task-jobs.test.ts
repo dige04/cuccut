@@ -6,8 +6,7 @@ import { ModelCatalog } from '@cuccut/models';
 import { JobManager, TaskFailure, type JobVideos, type TaskRun, type TaskSubmission, type TranscribeRouter } from './job-manager.ts';
 
 /**
- * 不经模型的任务（导出）在 JobManager 里的生命周期：排队、staging、取消、失败与重启。执行函数是假的；
- * 真实的导出在 runtime-core 的端到端测试里。
+ * Lifecycle in JobManager of tasks that do not go through a model (export): queueing, staging, cancel, failure, and restart. The execution function is fake; real export is covered by the end-to-end tests in runtime-core.
  */
 
 const videos: JobVideos = {

@@ -5,19 +5,19 @@ import { DriversCommon } from '@cuccut/protocol/messages/agent-drivers';
 import { diffBodyLines, diffPath } from '../unified-diff.ts';
 
 /**
- * Claude Agent SDK 的消息 → 驱动无关的 AgentItem / AgentEvent（架构设计 §3.1）。
+ * Maps Claude Agent SDK messages to driver-independent AgentItem / AgentEvent (architecture design §3.1).
  *
- * 打开 `includePartialMessages` 后，一段回复先以 `stream_event`（Messages API 的流式事件）逐字到达，
- * 每个内容块结束后 CLI 再发一条 `assistant` 消息带上这个块的全文（一条 API 消息拆成几条，`message.id` 相同）。
- * 投影器按 `${turnId}/${itemId}` 合并条目，所以流式 delta 与随后的完成事件必须用同一个 itemId：
- * 在 `content_block_start` 时按块的种类排队一个 id，`assistant` 消息里同种类的块按先后顺序认领。
- * 工具调用直接用 `tool_use` 的 id；它的结果在随后一条 `user` 消息的 `tool_result` 块里，不是用户发言。
+ * With `includePartialMessages` enabled, a reply first arrives character by character as `stream_event` (Messages API streaming events).
+ * When each content block ends, the CLI sends one `assistant` message carrying the full text of that block (one API message is split into several messages, all with the same `message.id`).
+ * The projector merges items by `${turnId}/${itemId}`, so streaming deltas and the completion event that follows must use the same itemId:
+ * on `content_block_start`, an id is queued by block kind, and `assistant` messages claim blocks of the same kind in order.
+ * Tool calls use the `tool_use` id directly; their result is in the `tool_result` block of a later `user` message, not a user utterance.
  *
- * 子智能体（`parent_tool_use_id` 不为空）的帧不进时间线：它们在父级的那一个工具调用（Task / Agent）里。
+ * Frames from sub-agents (non-empty `parent_tool_use_id`) do not enter the timeline: they live inside the single tool call (Task / Agent) of the parent.
  *
- * 改文件的工具（Edit / Write / MultiEdit）成功时，`output` 是 unified diff：它们的 tool_result 只是一句确认。
- * SDK 的结构化结果带补丁时按它拼（`structuredPatchLines`，真实行号与上下文），没有时从工具输入合成（`fileChangeDiff`）。
- * 失败、拒绝与中断时仍是 tool_result 的原文。
+ * For file-changing tools (Edit / Write / MultiEdit), on success `output` is a unified diff: their tool_result is only a confirmation sentence.
+ * When the SDK's structured result carries a patch, the diff is assembled from it (`structuredPatchLines`, with real line numbers and context); otherwise it is synthesized from the tool input (`fileChangeDiff`).
+ * On failure, rejection and interruption, it remains the raw tool_result text.
  */
 
 type Block = { type: string; [key: string]: unknown };
@@ -30,22 +30,22 @@ interface OpenTool {
   startedAt: number;
 }
 
-/** 一个回合内的映射状态。每个回合新建一个。 */
+/** Mapping state within one turn. A new one is created for each turn. */
 export class ClaudeItemMapper {
   readonly #turnId: string;
   readonly #now: () => number;
-  /** 会话的工作目录：diff 文件头里的路径相对它。 */
+  /** Working directory of the session: paths in diff file headers are relative to it. */
   readonly #cwd: string | null;
-  /** 当前流式消息的 id（`message_start` 给出）。 */
+  /** Id of the current streaming message (given by `message_start`). */
   #messageId: string | null = null;
-  /** 流式开过、还没被 `assistant` 消息认领的条目 id：messageId → 种类 → id 队列。 */
+  /** Ids of items started by streaming but not yet claimed by an `assistant` message: messageId → kind → queue of ids. */
   readonly #streamed = new Map<string, { text: string[]; thinking: string[] }>();
-  /** 流式块的 index → 条目 id，供 delta 查找。 */
+  /** Streaming block index → item id, used to look up deltas. */
   readonly #blockIds = new Map<number, { id: string; channel: 'text' | 'reasoning' }>();
   readonly #tools = new Map<string, OpenTool>();
-  /** 用户拒绝过的 tool_use id：它的 tool_result 记为 declined，不是 failed。 */
+  /** tool_use ids the user has rejected: their tool_result is recorded as declined, not failed. */
   readonly #declined = new Set<string>();
-  /** 回合在中断中：之后出错的工具结果记为 interrupted。 */
+  /** The turn is being interrupted: tool results that error after this point are recorded as interrupted. */
   #interrupting = false;
   #seq = 0;
 
@@ -63,7 +63,7 @@ export class ClaudeItemMapper {
     this.#interrupting = true;
   }
 
-  /** 还没拿到结果的工具调用。 */
+  /** Tool calls that have not yet received a result. */
   openTools(): Array<Extract<AgentItem, { kind: 'tool-call' }>> {
     return [...this.#tools.values()].map((t) => t.item);
   }
@@ -73,7 +73,7 @@ export class ClaudeItemMapper {
       case 'stream_event':
         return message.parent_tool_use_id ? [] : this.#onStream(message.event);
       case 'assistant':
-        // 出错的回合里那条「API Error …」是 CLI 合成的，错误原文随 turn.completed 带出，这里不重复成一条回复。
+        // The “API Error …” message in a failed turn is synthesized by the CLI; the original error text comes with turn.completed, so it is not repeated here as a reply.
         if (message.parent_tool_use_id || message.error) return [];
         return this.#onAssistant(message.message.id, message.message.content as unknown as Block[]);
       case 'user':
@@ -122,7 +122,7 @@ export class ClaudeItemMapper {
           break;
         }
         case 'thinking': {
-          // 思考内容可能被省略（只有签名）：流式没出过字、全文也为空时不留一条空的「思考」。
+          // Thinking content may be omitted (signature only): when streaming produced no text and the full text is empty, do not leave an empty “thinking” entry.
           const id = this.#claim(messageId, 'thinking');
           const text = String(block.thinking ?? '');
           if (id.streamed || text) events.push(this.#completed({ kind: 'reasoning', id: id.id, text }));
@@ -138,14 +138,14 @@ export class ClaudeItemMapper {
           break;
         }
         default:
-          // redacted_thinking、服务端工具块等不进时间线。
+          // redacted_thinking, server tool blocks, etc. do not enter the timeline.
           break;
       }
     }
     return events;
   }
 
-  /** `toolUseResult`：SDK 附在这条消息上的结构化工具输出（只在一条消息只答一个工具时用得上）。 */
+  /** `toolUseResult`: the structured tool output the SDK attaches to this message (only useful when one message answers exactly one tool). */
   #onUser(content: unknown, toolUseResult: unknown): AgentEvent[] {
     if (!Array.isArray(content)) return [];
     const events: AgentEvent[] = [];
@@ -225,7 +225,7 @@ export class ClaudeItemMapper {
   }
 }
 
-/** 工具名 → 时间线上的工具种类。 */
+/** Tool name → tool kind on the timeline. */
 export function claudeToolKind(name: string): ToolCallKind {
   if (name === 'Bash') return 'command';
   if (FILE_TOOLS.has(name)) return 'file-change';
@@ -234,22 +234,22 @@ export function claudeToolKind(name: string): ToolCallKind {
   return 'other';
 }
 
-/** 改文件的自带工具：审批是 `file-change`，「自动接受修改」档由原生的 acceptEdits 放行。 */
+/** Built-in file-editing tools: approval is `file-change`; the “auto-accept edits” level is passed through by the native acceptEdits mode. */
 export const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-/** `mcp__server__tool` → `{ server, tool }`。不是 MCP 工具时为 null。 */
+/** `mcp__server__tool` → `{ server, tool }`. Null when it is not an MCP tool. */
 export function splitMcpTool(name: string): { server: string; tool: string } | null {
   const match = /^mcp__(.+?)__(.+)$/.exec(name);
   return match ? { server: match[1]!, tool: match[2]! } : null;
 }
 
-/** 工具要改的文件。 */
+/** File the tool is going to change. */
 export function toolFiles(input: Record<string, unknown>): string[] {
   const file = str(input.file_path) ?? str(input.notebook_path) ?? str(input.path);
   return file ? [file] : [];
 }
 
-/** 工具输入的一行简述：审批卡片与时间线标题共用。 */
+/** One-line summary of the tool input: shared by the approval card and the timeline title. */
 export function summarizeToolInput(name: string, input: Record<string, unknown>): string {
   return inputSummary(name, input) || name;
 }
@@ -293,7 +293,7 @@ function toolCallItem(id: string, name: string, input: Record<string, unknown>):
     kind: 'tool-call',
     id,
     tool,
-    // 读、搜一类的标题带上工具名，免得只剩一个路径看不出做了什么。
+    // Titles for read and search tools include the tool name, so that a bare path does not leave it unclear what was done.
     title: READ_TOOLS.has(name) ? `${name} ${inputSummary(name, input)}`.trim() : summarizeToolInput(name, input),
     detail: toolDetail(name, input),
     output: null,
@@ -310,9 +310,9 @@ function toolDetail(name: string, input: Record<string, unknown>): string | null
   if (FILE_TOOLS.has(name)) return `${name} ${toolFiles(input)[0] ?? ''}`.trim();
   if (name === 'WebFetch') return str(input.prompt);
   if (name.startsWith('mcp__')) return JSON.stringify(input);
-  // 计划全文：标题只放得下第一行，用户要在时间线上读完整的方案再决定批不批。
+  // Full plan text: a title only fits the first line, and the user needs to read the complete plan on the timeline before deciding whether to approve it.
   if (name === 'ExitPlanMode') return str(input.plan)?.trim() ?? null;
-  // Claude 本想问的问题与选项（这个工具会被拒绝，见 claude-session.ts 的 ASK_USER_QUESTION），留着让用户看得到。
+  // The question and options Claude wanted to ask (this tool is rejected, see ASK_USER_QUESTION in claude-session.ts) are kept so the user can see them.
   if (name === 'AskUserQuestion') {
     const lines = askedQuestions(input).flatMap((q) => [q.question, ...q.options.map((o) => `  - ${o}`)]);
     return lines.length ? lines.join('\n') : null;
@@ -321,8 +321,8 @@ function toolDetail(name: string, input: Record<string, unknown>): string | null
 }
 
 /**
- * AskUserQuestion 的输入：`{ questions: [{ question, header?, options: [{ label, description? }], multiSelect? }] }`
- * （SDK sdk-tools.d.ts 的 AskUserQuestionInput）。选项也可能是字符串。
+ * Input of AskUserQuestion: `{ questions: [{ question, header?, options: [{ label, description? }], multiSelect? }] }`
+ * (AskUserQuestionInput in the SDK's sdk-tools.d.ts). An option may also be a string.
  */
 function askedQuestions(input: Record<string, unknown>): Array<{ question: string; options: string[] }> {
   if (!Array.isArray(input.questions)) return [];
@@ -348,8 +348,8 @@ interface Hunk {
 }
 
 /**
- * SDK 结构化结果里的补丁（`structuredPatch`：每块 `oldStart` / `oldLines` / `newStart` / `newLines` 与带前缀的 `lines`）
- * → 块头加正文的各行，带真实行号与上下文。没有、为空、指向别的文件或形状不对时为 null，改从工具输入合成。
+ * Patch in the SDK's structured result (`structuredPatch`: per hunk `oldStart` / `oldLines` / `newStart` / `newLines` and prefixed `lines`)
+ * → hunk header plus the body lines, with real line numbers and context. Null when it is missing, empty, points to another file, or has the wrong shape; the diff is then synthesized from the tool input instead.
  */
 function structuredPatchLines(toolUseResult: unknown, file: string): string[] | null {
   const result = toolUseResult as { filePath?: unknown; structuredPatch?: unknown } | null | undefined;
@@ -370,9 +370,9 @@ function structuredPatchLines(toolUseResult: unknown, file: string): string[] | 
 }
 
 /**
- * 从工具输入合成的 unified diff：`--- a/<路径>`、`+++ b/<路径>` 文件头，每处改动一个块。
- * 输入里没有行号：Edit / MultiEdit 的块头写 `@@ -0,0 +0,0 @@`，上下文只有被替换的那两段本身；
- * Write 全是新增行，块头 `@@ -0,0 +1,N @@`。新建的文件旧侧是 `/dev/null`；覆盖已有文件时拿不到旧内容，只写 `+++` 头。
+ * Unified diff synthesized from the tool input: `--- a/<path>` and `+++ b/<path>` file headers, one hunk per change.
+ * The input has no line numbers: Edit / MultiEdit hunk headers are written as `@@ -0,0 +0,0 @@`, and the context is only the two replaced segments themselves;
+ * Write is all added lines, with hunk header `@@ -0,0 +1,N @@`. For a newly created file the old side is `/dev/null`; when overwriting an existing file the old content is unavailable, so only the `+++` header is written.
  */
 function fileChangeDiff(file: { a: string; b: string }, hunks: Hunk[], write?: 'created' | 'overwritten'): string {
   const lines: string[] = [];
@@ -393,9 +393,9 @@ function editHunk(edit: Record<string, unknown>): Hunk {
 }
 
 /**
- * Write 是不是新建了文件：先看 SDK 的结构化结果（`type: 'create' | 'update'`），没有时看确认文字
- * （未验证：「File created successfully」按 Claude Code 的输出习惯推断，没跑真实回合核对）。
- * 两样都没有时按覆盖处理：只少一个 `---` 头，diff 照样成立。
+ * Whether Write created a new file: first check the SDK's structured result (`type: 'create' | 'update'`); if absent, check the confirmation text
+ * (unverified: “File created successfully” is inferred from Claude Code's output habits, not checked against a real turn).
+ * If neither is present, treat it as an overwrite: only the `---` header is missing, and the diff still holds.
  */
 function writeCreated(toolUseResult: unknown, resultText: string): boolean {
   const type = (toolUseResult as { type?: unknown } | null | undefined)?.type;
@@ -403,7 +403,7 @@ function writeCreated(toolUseResult: unknown, resultText: string): boolean {
   return /^File created successfully/i.test(resultText.trim());
 }
 
-/** `tool_result.content`：字符串，或文本 / 图片块的数组。图片记成占位。 */
+/** `tool_result.content`: a string, or an array of text / image blocks. Images are recorded as placeholders. */
 function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -414,8 +414,8 @@ function toolResultText(content: unknown): string {
 }
 
 /**
- * Bash 的退出码。Claude Code 的 tool_result 不带结构化的退出码：成功记 0；失败时内容以「Exit code N」开头就取 N
- * （未验证：按 Claude Code 的输出习惯推断，没跑真实回合核对）。
+ * Bash exit code. Claude Code's tool_result has no structured exit code: on success record 0; on failure, if the content starts with “Exit code N”, take N
+ * (unverified: inferred from Claude Code's output habits, not checked against a real turn).
  */
 function bashExitCode(isError: boolean, output: string): number | null {
   if (!isError) return 0;

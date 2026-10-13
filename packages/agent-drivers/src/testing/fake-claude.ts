@@ -16,26 +16,24 @@ import { inspectClaude, type ClaudeAuthStatus, type ClaudeInstall } from '../cla
 import type { ClaudeQuery, ClaudeQueryFactory, ClaudeQueryParams } from '../claude/claude-query.ts';
 
 /**
- * 测试用的假 Claude：
+ * Fake Claude for tests:
  *
- * - `createFakeClaude()` 给出一个 Query 工厂，交给 `ClaudeDriver` / `ClaudeSession`。它产出的假 Query 本身是 async generator，
- *   带 `interrupt`、`setPermissionMode`、`setModel`、`supportedModels`、`streamInput`、`close`，按回合脚本回放 SDK 消息，
- *   能在 `canUseTool` 处停下等 CucCut 答复。不起进程、不联网、不需要登录。
- * - `createFakeClaudeCli()` 是探测用的假 claude 可执行文件，只回答 `--version` 与 `auth status`。
+ * - `createFakeClaude()` gives a Query factory for `ClaudeDriver` / `ClaudeSession`. The fake Query it produces is itself an async generator, with `interrupt`, `setPermissionMode`, `setModel`, `supportedModels`, `streamInput` and `close`. It replays SDK messages according to a per-turn script, and can pause at `canUseTool` to wait for CucCut's reply. It starts no process, makes no network calls and needs no login.
+ * - `createFakeClaudeCli()` is the fake claude executable used for probing. It only answers `--version` and `auth status`.
  */
 
-// ---- 假 Query ----
+// ---- Fake Query ----
 
-/** 一轮怎么回应。每收到一条「空闲时到达」的用户消息跑一次；回合中途到达的（steer）记进 `steered`。 */
+/** How a turn responds. Runs once for each user message that arrives “while idle”; messages arriving mid-turn (steer) are recorded in `steered`. */
 export type FakeTurnScript = (turn: FakeTurn) => Promise<void> | void;
 
 export interface FakeClaudeOptions {
   models?: ModelInfo[];
-  /** 新会话的 id；默认随机。 */
+  /** The id of the new session; random by default. */
   sessionId?: string;
-  /** 能恢复的原生会话；不在其中的 `resume` 会收到「No conversation found」。默认都能恢复。 */
+  /** Native sessions that can be resumed. A `resume` not in this set gets “No conversation found”. All can be resumed by default. */
   resumable?: (sessionId: string) => boolean;
-  /** 拒绝的权限模式：`setPermissionMode` 抛错（模拟 CLI 不支持 auto）。 */
+  /** Rejected permission modes: `setPermissionMode` throws (simulates a CLI that does not support auto). */
   rejectModes?: PermissionMode[];
   turn?: FakeTurnScript;
 }
@@ -87,10 +85,10 @@ export const FAKE_CLAUDE_MODELS: ModelInfo[] = [
 
 export interface FakeClaude {
   factory: ClaudeQueryFactory;
-  /** 按创建顺序的所有假 Query（会话重启、探测各起一个）。 */
+  /** All fake Queries, in creation order (session restarts and probes each start one). */
   queries: FakeClaudeQuery[];
   last(): FakeClaudeQuery;
-  /** 换掉之后各轮的脚本。 */
+  /** Replaces the script for subsequent turns. */
   onTurn(script: FakeTurnScript): void;
 }
 
@@ -120,34 +118,34 @@ export function createFakeClaude(options: FakeClaudeOptions = {}): FakeClaude {
   };
 }
 
-/** 一个回合的脚本上下文。 */
+/** Script context for one turn. */
 export interface FakeTurn {
   readonly message: SDKUserMessage;
   readonly query: FakeClaudeQuery;
-  /** 这一轮里追加（steer）进来的消息。 */
+  /** Messages appended mid-turn (steer). */
   readonly steered: SDKUserMessage[];
   emit(message: SDKMessage): void;
-  /** 一段文字回复：先流式发两段 delta，再发整块的 assistant 消息。 */
+  /** A text reply: streams two delta chunks first, then sends a whole assistant message. */
   text(text: string): void;
   thinking(text: string): void;
-  /** 发起一次工具调用（assistant 的 tool_use 块），返回它的 id。 */
+  /** Starts a tool call (the assistant's tool_use block) and returns its id. */
   toolUse(name: string, input: Record<string, unknown>, id?: string): string;
   toolResult(id: string, content: string, isError?: boolean): void;
-  /** 像 CLI 那样问 `canUseTool`，等 CucCut 答复。中断会撤回这次请求（signal abort）。 */
+  /** Asks `canUseTool` as the CLI does, and waits for CucCut's reply. Interrupting withdraws this request (signal abort). */
   ask(name: string, input: Record<string, unknown>, toolUseId?: string): Promise<PermissionResult | null>;
-  /** CLI 合成的出错回复（`SDKAssistantMessage.error`）。 */
+  /** An error reply synthesized by the CLI (`SDKAssistantMessage.error`). */
   apiError(error: SDKAssistantMessageError, text: string): void;
   result(patch?: Record<string, unknown>): void;
-  /** 等到这一轮里 `interrupt()` 被调用（已经调用过就立即返回）。 */
+  /** Waits until `interrupt()` is called in this turn (returns immediately if it has already been called). */
   interrupted(): Promise<void>;
-  /** 等到收到一条追加的消息。 */
+  /** Waits until an appended message is received. */
   nextSteer(): Promise<SDKUserMessage>;
 }
 
 export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, void> {
   readonly options: Options;
   readonly sessionId: string;
-  /** 收到的所有用户消息（含追加的）。 */
+  /** All user messages received (including appended ones). */
   readonly inputs: SDKUserMessage[] = [];
   readonly calls: Array<{ method: string; args: unknown[] }> = [];
   closed = false;
@@ -173,7 +171,7 @@ export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, v
     void this.#consume(params.prompt);
   }
 
-  // -- AsyncGenerator 的形状 --
+  // -- Shape of AsyncGenerator --
 
   [Symbol.asyncIterator](): this {
     return this;
@@ -196,7 +194,7 @@ export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, v
     throw error;
   }
 
-  // -- Query 的控制方法 --
+  // -- Query control methods --
 
   async interrupt(): Promise<unknown> {
     this.calls.push({ method: 'interrupt', args: [] });
@@ -236,19 +234,19 @@ export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, v
     this.end();
   }
 
-  /** 进程正常退出：输出流结束。 */
+  /** The process exited normally: the output stream ends. */
   end(): void {
     this.#outDone = true;
     for (const reader of this.#readers.splice(0)) reader.resolve({ value: undefined, done: true });
   }
 
-  /** 进程出错退出：输出流抛错。 */
+  /** The process exited with an error: the output stream throws. */
   crash(error: Error): void {
     this.#outError = error;
     for (const reader of this.#readers.splice(0)) reader.reject(error);
   }
 
-  /** 方法被调用过的参数，按顺序。 */
+  /** The arguments each method was called with, in order. */
   callsOf(method: string): unknown[][] {
     return this.calls.filter((c) => c.method === method).map((c) => c.args);
   }
@@ -260,7 +258,7 @@ export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, v
     else this.#out.push(message);
   }
 
-  // -- 回合 --
+  // -- Turn --
 
   async #consume(prompt: AsyncIterable<SDKUserMessage>): Promise<void> {
     for await (const message of prompt) this.#receive(message);
@@ -439,14 +437,14 @@ function resultMessage(sessionId: string, patch: Record<string, unknown>): SDKMe
   } as unknown as SDKMessage;
 }
 
-// ---- 探测用的假 claude 可执行文件 ----
+// ---- Fake claude executable for probing ----
 
 export interface FakeClaudeCliScenario {
-  /** false：`locate` 返回 null（没有安装）。 */
+  /** false: `locate` returns null (not installed). */
   installed: boolean;
-  /** `--version` 输出的版本；null：`--version` 以非 0 退出。 */
+  /** The version printed by `--version`; null: `--version` exits with a non-zero code. */
   version: string | null;
-  /** `auth status` 输出的 JSON；null：没有这个子命令（旧版本）。 */
+  /** The JSON printed by `auth status`; null: no such subcommand (old version). */
   auth: ClaudeAuthStatus | null;
 }
 
@@ -455,7 +453,7 @@ export interface FakeClaudeCli {
   command: string;
   locate: () => Promise<ClaudeInstall | null>;
   scenario(patch: Partial<FakeClaudeCliScenario>): void;
-  /** 每次调用的参数。 */
+  /** The arguments of each call. */
   calls(): string[][];
 }
 
@@ -470,14 +468,14 @@ const CLI_ENTRY = fileURLToPath(new URL('./fake-claude-cli.ts', import.meta.url)
 export async function createFakeClaudeCli(dir: string, scenario: Partial<FakeClaudeCliScenario> = {}): Promise<FakeClaudeCli> {
   await fs.mkdir(dir, { recursive: true });
   const command = path.join(dir, 'claude');
-  // 假 claude 是 .ts：22.18 之前的 Node 要显式打开类型剥离（之后默认打开，这个标志无害）；环境被收窄过，不能靠 NODE_OPTIONS。
+  // The fake claude is a .ts file: Node versions before 22.18 need type stripping turned on explicitly (it is on by default after that, so this flag is harmless). The environment is narrowed, so NODE_OPTIONS cannot be used.
   await fs.writeFile(command, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types --no-warnings "${CLI_ENTRY}" "$@"\n`, { mode: 0o755 });
   const scenarioFile = path.join(dir, 'scenario.json');
   const logFile = path.join(dir, 'log.jsonl');
   let current: FakeClaudeCliScenario = { ...DEFAULT_CLI, ...scenario };
   const write = () => writeFileSync(scenarioFile, JSON.stringify(current));
   write();
-  // 只给假 claude 它需要的环境：PATH（shell 要）与它自己的目录。CLAUDE_CONFIG_DIR 指向空目录，不读本机的 ~/.claude。
+  // Only give the fake claude the environment it needs: PATH (the shell needs it) and its own directory. CLAUDE_CONFIG_DIR points to an empty directory, so the machine's ~/.claude is not read.
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin', FAKE_CLAUDE_DIR: dir, CLAUDE_CONFIG_DIR: path.join(dir, 'config') };
   return {
     dir,

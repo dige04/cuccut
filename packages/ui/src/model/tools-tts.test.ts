@@ -62,7 +62,7 @@ const draft = (patch: Partial<TtsDraft> = {}): TtsDraft => ({ ...BLANK_TTS, mode
 describe('文字', () => {
   it('分段与估算时长（设计稿 model-tts.js 的口径）', () => {
     expect(segments('第一句。第二句！\nThird one. Fourth?')).toEqual(['第一句。', '第二句！', 'Third one.', 'Fourth?']);
-    // 8 个汉字 / 4.2 + 1 个停顿 × 0.18 = 2.08…
+    // 8 Chinese characters / 4.2 + 1 pause × 0.18 = 2.08…
     expect(estimateDuration('欢迎使用宝玉剪辑。')).toBe(2.1);
     expect(estimateDuration('  ')).toBe(0);
   });
@@ -106,7 +106,7 @@ describe('音色', () => {
     expect(speechModelLine(speechModel('v', [], { voiceModes: ['custom'], languages: 'any', maxInputChars: 5000 }))).toBe(
       '手填音色 ID · 多种语言 · 一次最多 5000 字',
     );
-    // 模型描述的 notes（本地 candle 在 CPU 上的耗时）写在最前面。
+    // The model description's notes (local candle timing on CPU) are written first.
     expect(speechModelLine({ ...rich, notes: '在本机的 CPU 上合成' })).toMatch(/^在本机的 CPU 上合成 · 2 个预置音色/);
   });
 
@@ -128,7 +128,7 @@ describe('音色', () => {
       format: null,
       language: '',
     });
-    // 我的声音跟着人走：换模型时留着，用不用得了由选择器与校验说清。
+    // My voice follows the person: it is kept when switching models; whether it can be used is explained by the picker and validation.
     expect(switchModel(draft({ voice: 'library:v1' }), eleven).voice).toBe('library:v1');
   });
 });

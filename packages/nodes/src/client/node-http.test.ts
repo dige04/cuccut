@@ -16,7 +16,7 @@ import {
   versionCompatible,
 } from './node-http.ts';
 
-/** 节点 HTTP 客户端：对着一个按路径回固定响应的回环服务器。 */
+/** Node HTTP client: runs against a loopback server that returns a fixed response per path. */
 
 const TOKEN = 'c_http_test.super-secret-value';
 
@@ -49,7 +49,7 @@ describe('NodeClient', () => {
         res.writeHead(200, { 'content-type': 'application/x-ndjson' });
         res.write('{"type":"heartbeat"}\n{"seq":1,"type":"language","tag":"en","confidence":null}\n');
         if (url.includes('since=7')) res.write('not json\n');
-        // 之后不再写：空闲期限到了由客户端断开。
+        // Nothing more is written afterwards: the client disconnects when the idle deadline arrives.
         return;
       }
       json(404, { error: { code: 'JOB_NOT_FOUND', message: '任务不存在' } });
@@ -64,7 +64,7 @@ describe('NodeClient', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 抛出的错误（含说明与详情）里没有令牌。 */
+  /** The thrown error (its message and details) contains no token. */
   async function rejection(promise: Promise<unknown>): Promise<Error> {
     const error = await promise.then(
       () => {

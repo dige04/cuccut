@@ -1,8 +1,7 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * - packages/server/src/server/agent/providers/claude/models.ts 的 CLAUDE_SETTINGS_MODEL_ENV_KEYS 与 readClaudeSettingsModels
- *   （读 settings.json 的 model 与 env 里的模型）
- * - packages/server/src/server/agent/providers/claude/query.ts 的 spawnClaudeCodeProcess（Windows 上不经 cmd.exe 起 claude）
+ * Some mechanisms are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * - CLAUDE_SETTINGS_MODEL_ENV_KEYS and readClaudeSettingsModels in packages/server/src/server/agent/providers/claude/models.ts (reads the models from the model and env in settings.json)
+ * - spawnClaudeCodeProcess in packages/server/src/server/agent/providers/claude/query.ts (starts claude on Windows without going through cmd.exe)
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -22,10 +21,9 @@ export interface ClaudeInstall {
 }
 
 /**
- * 在 PATH 上找的文件名，与 PATH 上找不到时（例如没进登录 shell 的配置）再看的常见位置。
- * - macOS / Linux：官方脚本（`~/.local/bin`）、旧版本地安装（`~/.claude/local`）、Homebrew。
- * - Windows：官方脚本装的 `%USERPROFILE%\.local\bin\claude.exe`；npm 全局安装的批处理垫片 `%APPDATA%\npm\claude.cmd`
- *   （见 `resolveCmdShim`）。未在 Windows 上验证。
+ * The file name searched for on PATH, plus common locations to check when it is not found on PATH (for example, when the login shell's configuration was not loaded).
+ * - macOS / Linux: the official script (`~/.local/bin`), the legacy local install (`~/.claude/local`), Homebrew.
+ * - Windows: `%USERPROFILE%\.local\bin\claude.exe` installed by the official script; the batch shim `%APPDATA%\npm\claude.cmd` from a global npm install (see `resolveCmdShim`). Not verified on Windows.
  */
 export function claudeSearch(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): { names: string[]; locations: string[] } {
   if (platform === 'win32') {
@@ -48,11 +46,8 @@ export function claudeSearch(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, 
 }
 
 /**
- * npm 在 Windows 上装的 `claude.cmd` 是批处理垫片。Node 20.12 / 18.20.2 起不经 shell 不能直接 `execFile` / `spawn` 一个 .cmd（EINVAL），
- * 经 cmd.exe 又会弄坏 SDK 传给 CLI 的带引号的 JSON 参数（paseo 的 claude/query.ts 因此用 `shell: false`）。所以从垫片里读出
- * 它真正启动的文件：npm cmd-shim 写成 `"%dp0%\<相对路径>"`，取最后一个（前面可能是 `%dp0%\node.exe`）。
- * `.exe` 直接用；`.js` 用 node 跑（见 `claudeExec`；SDK 遇到 `.js` 的 pathToClaudeCodeExecutable 也自己用 node 起）。
- * 读不出时为 null。未在 Windows 上验证。
+ * The `claude.cmd` that npm installs on Windows is a batch shim. Since Node 20.12 / 18.20.2, a .cmd cannot be run directly with `execFile` / `spawn` without a shell (EINVAL), and going through cmd.exe breaks the quoted JSON arguments the SDK passes to the CLI (so paseo's claude/query.ts uses `shell: false`). So the file it actually starts is read from the shim: npm's cmd-shim writes `"%dp0%\<relative path>"`, and the last one is taken (there may be a `%dp0%\node.exe` before it).
+ * An `.exe` is used directly; a `.js` is run with node (see `claudeExec`; the SDK also starts a `.js` pathToClaudeCodeExecutable with node itself). When it cannot be read, it returns null. Not verified on Windows.
  */
 export function parseCmdShimTarget(content: string, shimDir: string): string | null {
   const targets = [...content.matchAll(/"%~?dp0%?\\([^"%]+)"/gi)].map((m) => m[1]!).filter((rel) => !/^node\.exe$/i.test(rel));
@@ -60,7 +55,7 @@ export function parseCmdShimTarget(content: string, shimDir: string): string | n
   return last ? path.win32.join(shimDir, last) : null;
 }
 
-/** `.cmd` 换成垫片指向的文件；不是 `.cmd`、读不出时原样返回（探测随后报 `--version` 没有正常退出）。 */
+/** Replaces a `.cmd` with the file the shim points to; if it is not a `.cmd` or cannot be read, it is returned as is (the probe then reports that `--version` did not exit normally). */
 export async function resolveCmdShim(file: string): Promise<string> {
   if (!/\.cmd$/i.test(file)) return file;
   try {
@@ -71,7 +66,7 @@ export async function resolveCmdShim(file: string): Promise<string> {
   }
 }
 
-/** 跑 claude 的子命令（`--version`、`auth status`）用的程序与前置参数：`.js` 入口交给 node。 */
+/** The program and leading arguments for running claude subcommands (`--version`, `auth status`): a `.js` entry is handed to node. */
 export function claudeExec(command: string): { file: string; args: string[] } {
   return /\.[cm]?js$/i.test(command) ? { file: 'node', args: [command] } : { file: command, args: [] };
 }
@@ -79,8 +74,8 @@ export function claudeExec(command: string): { file: string; args: string[] } {
 let located: { at: number; result: Promise<ClaudeInstall | null> } | null = null;
 
 /**
- * `CUCCUT_CLAUDE_PATH` 优先；否则在登录 shell 的 PATH 与常见安装位置里取版本最新的一个。
- * 结果缓存 30 秒，避免每次开会话都跑一遍 `--version`。
+ * `CUCCUT_CLAUDE_PATH` takes precedence; otherwise, among the login shell's PATH and common install locations, the newest version is taken.
+ * The result is cached for 30 seconds, to avoid running `--version` every time a session opens.
  */
 export function locateClaude(): Promise<ClaudeInstall | null> {
   if (!located || Date.now() - located.at > 30_000) {
@@ -107,18 +102,18 @@ async function findClaude(): Promise<ClaudeInstall | null> {
   return pickNewest(resolved, (command) => inspectClaude(command, env));
 }
 
-/** 用户手动指定的 claude：只认这一个，不再到别处找。不存在或不可执行时为 null。 */
+/** The claude path the user specified manually: only this one is used, and nowhere else is searched. null if it does not exist or is not executable. */
 export async function claudeAt(command: string): Promise<ClaudeInstall | null> {
   if (!(await isExecutable(command))) return null;
   return inspectClaude(process.platform === 'win32' ? await resolveCmdShim(command) : command, await agentEnv());
 }
 
-/** 跑一次 `--version`，读不出版本时 version 为 null（探测报「出错」）。 */
+/** Runs `--version` once; version is null when it cannot be read (the probe reports "error"). */
 export async function inspectClaude(command: string, env: NodeJS.ProcessEnv): Promise<ClaudeInstall> {
   return { command, version: await readClaudeVersion(command, env), env };
 }
 
-/** `claude --version` 输出 `2.1.284 (Claude Code)`。 */
+/** `claude --version` prints `2.1.284 (Claude Code)`. */
 export function parseClaudeVersion(output: string): string | null {
   return /(\d+\.\d+\.\d+)/.exec(output)?.[1] ?? null;
 }
@@ -133,7 +128,7 @@ async function readClaudeVersion(command: string, env: NodeJS.ProcessEnv): Promi
   }
 }
 
-/** `claude auth status` 的 JSON（2.1.284 实测与二进制里的字段）。 */
+/** The JSON from `claude auth status` (fields verified on 2.1.284 and in the binary). */
 export interface ClaudeAuthStatus {
   loggedIn?: boolean;
   /** `none` / `claude.ai` / `api_key` / `api_key_helper` / `oauth_token` / `third_party` */
@@ -146,16 +141,16 @@ export interface ClaudeAuthStatus {
 }
 
 export interface ClaudeLogin {
-  /** null：读不出登录状态（旧版本没有 `auth status`、输出不是 JSON）。 */
+  /** null: the login status cannot be read (older versions have no `auth status`, or the output is not JSON). */
   loggedIn: boolean | null;
-  /** 已登录的账号描述，例如「Claude Pro 订阅」。不含邮箱。CucCut 写的是 `Localized`，第三方云的名字是原话。 */
+  /** Description of the logged-in account, for example "Claude Pro subscription". No email. CucCut writes this as `Localized`; third-party cloud names are verbatim. */
   account: DriverText | null;
   detail: string | null;
 }
 
 /**
- * `claude auth status`：stdout 是 JSON；已登录时退出码 0，没登录时 1（stdout 照样是 JSON），所以退出码非 0 也要解析。
- * 不登录、不输入凭据，只读状态。
+ * `claude auth status`: stdout is JSON; the exit code is 0 when logged in and 1 when not (stdout is still JSON), so a non-zero exit code is parsed too.
+ * It only reads the status; it does not log in or input credentials.
  */
 export async function readClaudeLogin(install: ClaudeInstall): Promise<ClaudeLogin> {
   let stdout = '';
@@ -174,7 +169,7 @@ export async function readClaudeLogin(install: ClaudeInstall): Promise<ClaudeLog
   } catch {
     return { loggedIn: null, account: null, detail: failure || stdout.trim() || null };
   }
-  // 第三方云（Bedrock、Vertex……）的鉴权在 CLI 之外，不看 loggedIn（未验证：手上没有这类账号）。
+  // Authentication for third-party clouds (Bedrock, Vertex, …) happens outside the CLI, so loggedIn is not checked (unverified: no such account is at hand).
   const loggedIn = status.loggedIn === true || status.authMethod === 'third_party';
   return { loggedIn, account: loggedIn ? claudeAccount(status) : null, detail: null };
 }
@@ -194,7 +189,7 @@ function subscription(type: string | undefined): DriverText | undefined {
   }
 }
 
-/** 第三方云的名字：产品名照原样，带说明的由 CucCut 写。 */
+/** Names of third-party clouds: product names as they are; any annotations are written by CucCut. */
 function provider(name: string | undefined): DriverText | undefined {
   switch (name) {
     case 'bedrock':
@@ -213,8 +208,7 @@ function provider(name: string | undefined): DriverText | undefined {
 }
 
 /**
- * 登录方式 → 设置页上的账号描述。邮箱不放进来：它会出现在日志与快照里。CucCut 写的说明是 `Localized`（探测结果带
- * `accountRef`），没认出的第三方云照 CLI 给的原名。
+ * Login method → account description on the settings page. No email is included: it would appear in logs and snapshots. The CucCut-written explanation is `Localized` (the probe result carries `accountRef`); an unrecognized third-party cloud keeps the original name given by the CLI.
  */
 export function claudeAccount(status: ClaudeAuthStatus): DriverText {
   if (status.apiProvider === 'gateway') return DriversClaude.enterpriseGateway();
@@ -233,19 +227,19 @@ export function claudeAccount(status: ClaudeAuthStatus): DriverText {
   }
 }
 
-/** `claudeAccount` 的文字（当前语言）。 */
+/** The `claudeAccount` text (in the current language). */
 export function describeClaudeAccount(status: ClaudeAuthStatus): string {
   return String(claudeAccount(status));
 }
 
-/** Claude Code 的配置目录：`CLAUDE_CONFIG_DIR`，默认 `~/.claude`。 */
+/** Claude Code's config directory: `CLAUDE_CONFIG_DIR`, default `~/.claude`. */
 export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
 /**
- * 用户设置里指定模型的 `env` 键（会话加载 user 层，见 claude-session.ts 的 `claudeSettingsOptions`，这些会生效）。
- * `ANTHROPIC_SMALL_FAST_MODEL` 是后台用的小模型，不是可选的主模型，不收。
+ * Models specified by `env` keys in the user settings (the user layer is loaded in a session, see `claudeSettingsOptions` in claude-session.ts, and these take effect).
+ * `ANTHROPIC_SMALL_FAST_MODEL` is the small model used for background work, not an optional main model, so it is not collected.
  */
 export const CLAUDE_SETTINGS_MODEL_ENV_KEYS = [
   'ANTHROPIC_MODEL',
@@ -256,13 +250,13 @@ export const CLAUDE_SETTINGS_MODEL_ENV_KEYS = [
 ] as const;
 
 export interface ClaudeSettingsModels {
-  /** `settings.json` 的 `model`。没写为 null。 */
+  /** `model` in `settings.json`. null if not set. */
   model: string | null;
-  /** `settings.json` 的 `env` 里指定的模型，按 `CLAUDE_SETTINGS_MODEL_ENV_KEYS` 的顺序，去重。 */
+  /** Models specified in `env` in `settings.json`, in the order of `CLAUDE_SETTINGS_MODEL_ENV_KEYS`, de-duplicated. */
   envModels: Array<{ key: (typeof CLAUDE_SETTINGS_MODEL_ENV_KEYS)[number]; id: string }>;
 }
 
-/** 用户设置里的模型（`settings.json` 的 `model` 与 `env`）。读不到、不是 JSON 时什么都没有。 */
+/** Models in the user settings (`model` and `env` in `settings.json`). When the file cannot be read or is not JSON, nothing is returned. */
 export async function readClaudeSettingsModels(file: string): Promise<ClaudeSettingsModels> {
   const none: ClaudeSettingsModels = { model: null, envModels: [] };
   let settings: { model?: unknown; env?: unknown };

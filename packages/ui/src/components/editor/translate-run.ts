@@ -41,36 +41,32 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import { jobErrorText, remedyHintText } from '../../model/localized-text.ts';
 
 /**
- * 字幕面板的「翻译成…」（原型 panel-aitools-flows.jsx `TranslateFlow`、panel-translate.jsx 的运行态与收据）：
- * 提交 `pipelines.start`（`translate`，带 `captions: true` 与用户选的 `bilingual`），经 `jobs` 主题跟住父任务。流程写好
- * `translation` 文档之后自己建这门语言的字幕层（jobs 的 caption-layer.ts，与 `translationCaptionOperations` 同一套放法）；
- * 完成后照 `summary.captions` 留一张带「撤销」的收据（撤的是流程建字幕层的那笔事务）。失败、中断给原因与「重试」
- * （`pipelines.retry`，同一个任务从停下的那一步接着做）。
+ * “Translate to…” in the subtitle panel (prototype panel-aitools-flows.jsx `TranslateFlow`, and the running state and receipt in panel-translate.jsx):
+ * submits `pipelines.start` (`translate`, with `captions: true` and the user's `bilingual` choice), and follows the parent job through the `jobs` topic. After the flow writes the `translation` document, it creates this language's caption layer itself (caption-layer.ts in jobs, placed the same way as `translationCaptionOperations`). On completion it leaves a receipt with an “Undo” from `summary.captions` (undoing the flow's caption-layer transaction). On failure or interruption, it gives the reason and a “Retry” (`pipelines.retry`, which resumes the same job from the step where it stopped).
  *
- * 状态放在模块级 store 里（同 transcribe-run.ts）：样式入口卡会切到属性页、「去模型页」会离开编辑器，翻译不能因此断线。
- * 别处（智能体、命令行）发起的只显示进度；没建字幕层的译文在对照列表里「放到画面上」（`putOnScreen`，编辑器自己放）。
- * 流程的父任务不会是 `needs-reconciliation`（Runtime 重启时记为 `interrupted`），这里照样防御着指到后台任务。
- * 不自动重试：重跑「翻译」这一步会再调一次在线模型。
+ * The state lives in a module-level store (the same as transcribe-run.ts): the style entry card switches to the properties page, and “go to the Models page” leaves the editor, and translation must not drop because of that.
+ * Runs started elsewhere (agents, the CLI) only show progress. A translation without a caption layer is “Put on screen” from the comparison list (`putOnScreen`, done by the editor itself).
+ * The flow's parent job will never be `needs-reconciliation` (Runtime marks it `interrupted` on restart), but this still guards against pointing at a background task.
+ * No automatic retry: re-running the “Translate” step calls the online model again.
  */
 
 export type TranslateRunStatus = 'submitting' | 'running';
 
-/** 翻译开始时的设置：完成后照它放到画面上。 */
+/** The settings at the start of a translation: used to put it on screen when it completes. */
 export interface TranslateIntent {
   videoId: Id;
   speechDocumentId: Id;
   targetLanguage: string;
-  /** 和原文一起显示。 */
+  /** Show alongside the original. */
   bilingual: boolean;
 }
 
 export interface TranslateRun extends TranslateIntent {
-  /** 提交成功之前为 null。 */
+  /** null until submit succeeds. */
   jobId: Id | null;
   status: TranslateRunStatus;
   /**
-   * 重试时任务的 `updatedAt`：`pipelines.retry` 回来时镜像里可能还是那条已经结束的记录，有别的任务事件进来时
-   * 不能把它当成这一次的结果再收一遍尾。记录一变（开始重跑）就不再相等。
+   * The task's `updatedAt` at retry. When `pipelines.retry` returns, the mirror may still hold the ended record, and when another task event arrives it must not be taken as this run's result and finalized again. Once the record changes (the re-run has started), this no longer matches.
    */
   retriedAt: string | null;
 }
@@ -81,17 +77,17 @@ export interface TranslateProblem {
   kind: TranslateProblemKind;
   title: string;
   message: string;
-  /** 去模型页、设置或后台任务的补救。 */
+  /** Remedies from the Models page, settings, or background tasks. */
   remedy: Remedy | null;
-  /** 能重试的流程：同一个任务；`note` 说重试会不会再计费。 */
+  /** A flow that can be retried: the same task. `note` says whether a retry will be billed again. */
   retry: { jobId: Id; note: 'charges' | 'free' | null; intent: TranslateIntent } | null;
-  /** 就地刷新这份译文没走通（字幕面板与刷新过期译文的工具页都挂）；新翻译的问题没有。 */
+  /** The in-place refresh of this translation failed (both the subtitle panel and the outdated-translation tool page attach it). A new translation has no such issue. */
   refresh?: Id;
 }
 
-/** 一次翻译放到画面上之后的收据（原型 `DoneView`）：一次 AI run 收尾一定留一个能撤销的出口。 */
+/** The receipt after a translation is put on screen (prototype `DoneView`): an AI run always leaves an exit that can be undone when it finishes. */
 export interface TranslateReceipt {
-  /** 建字幕层的那笔事务；Runtime 没给时 null（不给「撤销」）。 */
+  /** The transaction that created the caption layer. null when Runtime did not provide one (no “Undo”). */
   transactionId: Id | null;
   language: string;
   translationDocumentId: Id;
@@ -102,34 +98,33 @@ export interface TranslateReceipt {
 
 export type CompareMode = 'src' | 'bi' | 'trans';
 
-/** 对照条（原型 panel-subtitle.jsx `ListBar`）：列表看原文、原文＋译文还是只看译文，对照哪一份译文。 */
+/** Comparison bar (prototype panel-subtitle.jsx `ListBar`): the list shows the original, the original plus the translation, or the translation only, and which translation it is compared against. */
 export interface ComparePref {
   mode: CompareMode;
-  /** 对照的 `translation` 文档；没选时 null（取第一份）。 */
+  /** The `translation` document compared against. null when none is selected (the first one is used). */
   documentId: Id | null;
 }
 
 /**
- * 就地刷新一份译文（对照列表的「用模型 API 重译」，产品设计 §5.10「逐句与过期译文」）：`translate` 流程带 `translationId`，
- * 只重译点名的句子（不点名时是过期与还没有译文的），写成同一份译文的新版本，字幕层里只换这几句。按译文记，同一份同时只刷一次。
+ * In-place refresh of one translation (“Re-translate with model API” in the comparison list, product design §5.10 “sentence-level and outdated translations”): a `translate` flow with `translationId`. It re-translates only the named sentences (when none are named, the outdated and not-yet-translated ones), and writes the result as a new version of the same translation document. In the caption layer only those sentences change. It is tracked per translation, so only one refresh of the same translation runs at a time.
  */
 export interface RefreshRun {
   videoId: Id;
   translationId: Id;
-  /** 提交成功之前为 null。 */
+  /** null until submit succeeds. */
   jobId: Id | null;
-  /** 要重译的句数（统计条写「正在重译 N 句」）。 */
+  /** The number of sentences to re-translate (the stats bar says “正在重译 N 句” (Re-translating N sentences)). */
   count: number;
 }
 
 interface TranslateRunState {
   runs: Record<Id, TranslateRun>;
-  /** 按译文文档记的就地刷新。 */
+  /** The in-place refresh, recorded per translation document. */
   refreshes: Record<Id, RefreshRun>;
   problems: Record<Id, TranslateProblem>;
   receipts: Record<Id, TranslateReceipt>;
   compare: Record<Id, ComparePref>;
-  /** 设置页开着（面板卸载再挂回来时还在，比如从模型页配好文本模型回来）。 */
+  /** The settings page is open (kept when the panel unmounts and mounts again, for example after configuring the text model on the Models page and coming back). */
   flow: Record<Id, boolean>;
 }
 
@@ -137,7 +132,7 @@ const EMPTY: TranslateRunState = { runs: {}, refreshes: {}, problems: {}, receip
 
 export const useTranslateRun = create<TranslateRunState>()(() => ({ ...EMPTY }));
 
-/** 用到的会话能力；测试给假的。 */
+/** The session capability used. Tests supply a fake. */
 export interface TranslateDeps {
   runtime: {
     startTranslate(params: TranslateParams): Promise<Id>;
@@ -149,20 +144,20 @@ export interface TranslateDeps {
       undo(target: UndoTarget): Promise<TransactionReceipt | null>;
     };
   };
-  /** `undo` 有值时提示带「撤销」。 */
+  /** When `undo` has a value, the notice includes “Undo.” */
   toast(kind: 'positive' | 'neutral' | 'negative', message: string, undo?: () => void): void;
 }
 
 let deps: TranslateDeps | null = null;
 let unwatch: (() => void) | null = null;
 
-/** 面板挂上时绑定会话与提示；第一次绑定时开始盯 `jobs` 主题。 */
+/** On panel mount, bind the session and the notices. The first binding starts watching the `jobs` topic. */
 export function bindTranslate(next: TranslateDeps): void {
   deps = next;
   unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
 }
 
-/** 测试用：解绑并清空状态。 */
+/** For tests: unbind and clear the state. */
 export function resetTranslate(): void {
   unwatch?.();
   unwatch = null;
@@ -221,7 +216,7 @@ function isNotConfigured(details: unknown): details is CapabilityNotConfiguredDe
   );
 }
 
-/** 提交时被拒：没有配置文本模型时就地给原因、`remedy.hint` 与去模型页的路；别的（模型不支持结构化输出等）照原话。 */
+/** When submit is rejected: if no text model is configured, give the reason in place, with `remedy.hint` and a route to the Models page. Other rejections (the model does not support structured output, and so on) show the original message. */
 export function translateSubmitProblem(error: unknown): TranslateProblem {
   const message = messageOf(error);
   const details = error instanceof RpcError ? error.details : (error as { details?: unknown } | null)?.details;
@@ -237,7 +232,7 @@ export function translateSubmitProblem(error: unknown): TranslateProblem {
   return { kind: 'failed', title: C.submitFailed, message, remedy: null, retry: null };
 }
 
-/** 提交翻译。同一个视频同时只翻一门（「一门语言一条轨」，并发的两门会抢同一份原文的配对）。 */
+/** Submit a translation. Only one language can be translated per video at a time (“one language, one track”: two at once would race for the pairing of the same source). */
 export async function startTranslate(setup: TranslateSetup & { bilingual: boolean }): Promise<boolean> {
   const bound = deps;
   const { videoId } = setup;
@@ -251,10 +246,10 @@ export async function startTranslate(setup: TranslateSetup & { bilingual: boolea
   setRun({ ...intent, jobId: null, status: 'submitting', retriedAt: null });
   useTranslateRun.setState((s) => ({ receipts: without(s.receipts, videoId) }));
   try {
-    // 字幕层由流程建（`captions: true`），双语与否照用户选的。
+    // The caption layer is created by the flow (`captions: true`); bilingual follows the user's choice.
     const jobId = await bound.runtime.startTranslate({ ...translateParams(setup), captions: true, bilingual: setup.bilingual, captionStyle: newCaptionStyle() });
     patchRun(videoId, { jobId, status: 'running' });
-    // 任务事件可能比回执先到；这是新任务，镜像里不会有它结束了的旧记录。
+    // Task events can arrive before the reply. This is a new task, so the mirror has no old record of it that already ended.
     settle(useJobs.getState().jobs);
     return true;
   } catch (error) {
@@ -264,18 +259,18 @@ export async function startTranslate(setup: TranslateSetup & { bilingual: boolea
 }
 
 /**
- * 就地重译一份译文：给了 `sentences` 时只重译这几句（译文新鲜的也重译），不给时由 Runtime 挑过期与还没有译文的。
- * 字幕面板不弹参数页，模型照翻译设置页缺省的那只；刷新过期译文的工具页用它自己选的那只（调用方给；null 时用文本生成的默认值）。
- * 被拒时问题卡挂在字幕面板与工具页上（带 `refresh`）。
+ * Re-translate one translation in place. When `sentences` is given, only those sentences are re-translated (even ones that are current). Otherwise Runtime picks the outdated and not-yet-translated ones.
+ * The subtitle panel does not open a parameters page, so the model is the one the translation settings page defaults to. The outdated-translation tool page uses the model it selects (passed in by the caller; null means the text generation default).
+ * When rejected, the issue card is attached to the subtitle panel and the tool page (with `refresh`).
  */
 export async function startRefresh(o: {
   videoId: Id;
-  /** 译文文档。 */
+  /** The translation document. */
   record: DocumentRecord;
-  /** 译文的语言（就地刷新要求与它一致）。 */
+  /** The translation's language (the in-place refresh must match it). */
   language: string;
   sentences?: readonly Id[];
-  /** 要重译的句数。 */
+  /** The number of sentences to re-translate. */
   count: number;
   model: { providerId: string; modelId: string } | null;
 }): Promise<boolean> {
@@ -307,7 +302,7 @@ function endRefresh(translationId: Id): void {
   useTranslateRun.setState((s) => ({ refreshes: without(s.refreshes, translationId) }));
 }
 
-/** 就地刷新收尾：完成给一条带「撤销」的提示（撤的是写译文连同字幕的那一笔）；失败、中断挂问题卡（从菜单再来一次）。 */
+/** The outcome of the in-place refresh. On success, a notice with “Undo” (undoes the write of the translation together with the captions). On failure or interruption, an issue card (retry from the menu). */
 function finishRefresh(run: RefreshRun, job: JobRecord): void {
   endRefresh(run.translationId);
   if (job.state === 'cancelled') {
@@ -351,7 +346,7 @@ function finishRefresh(run: RefreshRun, job: JobRecord): void {
   );
 }
 
-/** 从停下的那一步重跑同一个任务（`pipelines.retry`），完成后照当初的设置放到画面上。 */
+/** Re-run the same task from the step where it stopped (`pipelines.retry`). On completion, put it on screen per the original settings. */
 export async function retryTranslate(videoId: Id): Promise<void> {
   const bound = deps;
   const retry = useTranslateRun.getState().problems[videoId]?.retry;
@@ -362,7 +357,7 @@ export async function retryTranslate(videoId: Id): Promise<void> {
     await bound.runtime.retryPipeline(retry.jobId);
     patchRun(videoId, { status: 'running', retriedAt: before?.updatedAt ?? null });
   } catch (error) {
-    // 还能再试：留着「重试」。
+    // It can still be retried: keep “Retry.”
     endRun(videoId, { kind: 'failed', title: C.failed, message: C.retryFailed(messageOf(error)), remedy: null, retry });
   }
 }
@@ -375,7 +370,7 @@ export async function cancelTranslate(jobId: Id): Promise<void> {
   }
 }
 
-/** 盯着从这里提交的任务：结束了就收尾。每一轮只收一次——先同步改掉状态，后面的事件看到不是 `running` 就跳过。 */
+/** Watches the task submitted from here and wraps up when it ends. Each round is handled only once: the state is changed synchronously first, so later events that see it is no longer `running` skip it. */
 function settle(jobs: readonly JobRecord[]): void {
   for (const run of Object.values(useTranslateRun.getState().refreshes)) {
     if (!run.jobId) continue;
@@ -386,7 +381,7 @@ function settle(jobs: readonly JobRecord[]): void {
     if (run.status !== 'running' || !run.jobId) continue;
     const job = jobs.find((candidate) => candidate.jobId === run.jobId);
     if (!job || isJobLive(job)) continue;
-    // 重试之前那条已经结束的记录：等它变。
+    // Before a retry, wait for the previous ended record to change.
     if (run.retriedAt !== null && job.updatedAt === run.retriedAt) continue;
     finish(run, job);
   }
@@ -419,7 +414,7 @@ function finish(run: TranslateRun, job: JobRecord): void {
       kind: 'failed',
       title: job.state === 'interrupted' ? C.interrupted : C.failed,
       message: jobErrorText(job.error) ?? '',
-      // 父任务的种类是 `pipeline`，补救按它用的文本模型找（凭据、配置问题去模型页）。
+      // The parent task's kind is `pipeline`. Remedies look up the text model it uses (credential and configuration problems go to the Models page).
       remedy: jobRemedy({ kind: 'generateText', providerId: job.providerId, error: job.error }),
       retry: { jobId: job.jobId, note: retryNote(job), intent },
     });
@@ -438,7 +433,7 @@ function finish(run: TranslateRun, job: JobRecord): void {
     return;
   }
   if (captions?.status !== 'created' && captions?.status !== 'existing') {
-    // 投不到画面上（素材不在时间线上），或流程没建字幕层：译文在视频里，留一句在对照列表里「放到画面上」。
+    // It cannot be put on screen (the asset is not on the timeline), or the flow did not create a caption layer: the translation is in the video, so leave a line in the comparison list, “Put on screen.”
     endRun(run.videoId, {
       kind: 'pending',
       title: C.pendingTitle,
@@ -448,7 +443,7 @@ function finish(run: TranslateRun, job: JobRecord): void {
     });
     return;
   }
-  // `existing`：执行期间别处已经给这份译文建了字幕层，收据指向它、不给撤销。
+  // `existing`: during the run, another path already created a caption layer for this translation. The receipt points to it and offers no undo.
   const receipt: TranslateReceipt = {
     transactionId: captions.status === 'created' ? (captions.transactionId ?? null) : null,
     language,
@@ -465,7 +460,7 @@ function finish(run: TranslateRun, job: JobRecord): void {
   if (captions.documentId) focusDocument(run.videoId, captions.documentId);
 }
 
-/** 快照里一份字幕文档当前版本的条数；读不到时 0。 */
+/** The number of cues in the current version of one caption document in the snapshot; 0 when it cannot be read. */
 function cueCountOf(videoId: Id, documentId: Id | null): number {
   const video = useVideo.getState().video;
   const record = documentId && video?.videoId === videoId ? video.state?.video.documents[documentId] : undefined;
@@ -481,9 +476,8 @@ const pending = (message: string = C.pending): PlaceOutcome => ({
 });
 
 /**
- * 把一份已经在视频里的译文放到画面上（对照列表的「放到画面上」，一笔事务）：读译文与它译自的转写，按原句成员词的时间
- * 切成字幕，新建这门语言的字幕轨。视频没开着、只读、或等不到译文进快照时不写，留一句「在对照列表里放到画面上」。
- * 从这里提交的翻译不走这里：字幕层由流程建。
+ * Put a translation already in the video onto the screen (“Put on screen” in the comparison list, one transaction). It reads the translation and the transcript it was translated from, cuts subtitles by the timing of each sentence's member words, and creates a new caption track for this language. It does not write if the video is not open, is read-only, or the translation does not reach the snapshot in time. In that case it leaves the line “Put on screen from the comparison list.”
+ * Translations submitted from here do not go through this path, since the flow creates their caption layer.
  */
 async function place(videoId: Id, translationDocumentId: Id, bilingual: boolean): Promise<PlaceOutcome> {
   const bound = deps;
@@ -523,7 +517,7 @@ async function place(videoId: Id, translationDocumentId: Id, bilingual: boolean)
       },
       paired,
     );
-    // 失败时编辑器已经提示了引擎的原话；译文还在视频里，留一句怎么接着做。
+    // On failure the editor has already shown the engine's own message. The translation is still in the video, so leave a note on how to continue.
     const receipt = await bound.runtime.videos.apply(withNewCaptionStyle(operations, newCaptionStyle()), EditLabel.translateTo({ language: language ? label : EditLabel.unnamedTranslation() }));
     if (!receipt) return pending();
     return {
@@ -535,7 +529,7 @@ async function place(videoId: Id, translationDocumentId: Id, bilingual: boolean)
   }
 }
 
-/** 收据上的「撤销」：撤掉放到画面上的那一笔（新轨、字幕文档、实例与原文的显示变化）；译文文档是 Runtime 另写的，留着。 */
+/** Undo on the receipt: reverts the put-on-screen transaction (the new track, the caption document, the instances, and the display change to the original). The translation document was written separately by Runtime, so it stays. */
 export async function undoReceipt(videoId: Id): Promise<void> {
   const bound = deps;
   const receipt = useTranslateRun.getState().receipts[videoId];
@@ -548,7 +542,7 @@ export async function undoReceipt(videoId: Id): Promise<void> {
   useTranslateRun.setState((s) => (s.receipts[videoId] ? { receipts: { ...s.receipts, [videoId]: { ...s.receipts[videoId]!, undone: true } } } : {}));
 }
 
-/** 已经在视频里、还没放到画面上的译文（别处翻的、撤销过的）：放上去，提示带「撤销」。 */
+/** A translation already in the video but not yet on screen (translated elsewhere, or undone): put it on, with a notice that has “Undo.” */
 export async function putOnScreen(videoId: Id, translationDocumentId: Id, bilingual = true): Promise<void> {
   const bound = deps;
   if (!bound) return;
@@ -567,20 +561,19 @@ export async function putOnScreen(videoId: Id, translationDocumentId: Id, biling
 
 export interface TranslationEdit {
   videoId: Id;
-  /** 译文文档。 */
+  /** The translation document. */
   record: DocumentRecord;
   body: TranslationBody;
   sentences: readonly SourceSentence[];
   row: PairRow;
   text: string;
-  /** 译文译自的转写：重新切这一句的字幕用。 */
+  /** The transcript the translation was translated from. Used to re-cut the subtitles of this sentence. */
   speech: SpeechWords;
   documents: Record<Id, DocumentRecord>;
 }
 
 /**
- * 一句译文改动的那一笔：译文文档的新版本；`retext` 时连同从它生成的字幕文档里这一句的几条（`retextCaption`，别的条不动）。
- * 撤销一次两边一起回去。
+ * The transaction for changing one sentence of a translation: a new version of the translation document. With `retext`, the cues of that sentence in the caption document generated from it are also changed (`retextCaption`; other cues are untouched). Undo restores both sides together.
  */
 async function translationOperations(
   bound: TranslateDeps,
@@ -618,8 +611,8 @@ async function translationOperations(
 }
 
 /**
- * 就地改一句译文（单击译文侧、失焦提交）：一笔事务写译文文档的新版本，连同从它生成的字幕文档里这一句的几条。
- * 改过的就是审过的，过期标记随这一笔去掉（`editUnit`）。返回新的正文（面板在新版本取回来之前先用它）；没改动时 null。
+ * Edit one sentence of a translation in place (click the translation side, commit on blur). One transaction writes a new version of the translation document, plus the cues of that sentence in the caption document generated from it.
+ * Editing clears the stale mark, since the edited text is now reviewed (`editUnit`). Returns the new body (the panel uses it before the new version is fetched); null when nothing changed.
  */
 export async function editTranslation(edit: TranslationEdit): Promise<TranslationBody | null> {
   const bound = deps;
@@ -640,8 +633,7 @@ export async function editTranslation(edit: TranslationEdit): Promise<Translatio
 }
 
 /**
- * 标为过期或去掉过期标记（一句的 ⋯ 菜单）：一笔事务写译文文档的新版本，进撤销历史。字幕文字不变，不碰字幕；去掉标记时
- * 原句改过的单元换了词成员，字幕里这一句的几条跟着按新的词重切（`markUnit` 的 `rebound`）。返回新的正文；没改动时 null。
+ * Mark a sentence as stale, or clear the stale mark (the sentence's ⋯ menu). One transaction writes a new version of the translation document and goes into the undo history. Caption text does not change, so captions are not touched. When the mark is cleared and the source sentence's words changed, the cues of that sentence are re-cut with the new words (`rebound` of `markUnit`). Returns the new body; null when nothing changed.
  */
 export async function markTranslation(edit: Omit<TranslationEdit, 'text' | 'sentences'> & { on: boolean }): Promise<TranslationBody | null> {
   const bound = deps;

@@ -32,7 +32,7 @@ import { agoLabel, shortenPath } from '../model/format.ts';
 import { conversationStatus, sessionStatus, type ProjectRow } from '../model/sidebar.ts';
 import { hrefFor } from '../state/shell-store.ts';
 
-/** SideNav 把文字放在 auto 宽的网格列里：允许它收窄，标题才会省略而不是溢出到行尾按钮下面。 */
+/** SideNav puts the text in an auto-width grid column: allow it to shrink, so titles are truncated instead of overflowing under the trailing row buttons. */
 const fit = style({ minWidth: 0 });
 const line = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, width: 'full' });
 const lineTitle = style({ flexGrow: 1, flexBasis: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
@@ -49,7 +49,7 @@ const tail = style({
 const unreadDot = style({ size: 8, borderRadius: 'full', backgroundColor: 'green-900' });
 const tailIcon = iconStyle({ size: 'S' });
 
-/** 会话行尾的状态：进行中是加载环，等批准与失败各有形状不同的图标，做完未读是一颗绿点（产品设计 §3.1 用户修订）。 */
+/** The trailing status of a session row: in progress is a loading ring; awaiting approval and failed each have a different icon; done-but-unread is a green dot (product design §3.1, user revision). */
 function SessionTail({ conversation }: { conversation: Conversation }) {
   const status = sessionStatus(conversation);
   if (!status) return null;
@@ -74,8 +74,8 @@ export interface ConversationRowActions {
 }
 
 /**
- * 会话行（置顶、项目下、最近、单表四处同一个）：单行标题 + 行尾状态；完整状态、项目与时间放在悬停说明里。
- * 悬停或聚焦时行尾出现置顶与归档。置顶的会话带一个对话气泡图标。
+ * Session row (pinned, under a project, recent, and the flat list: the same one in all four places): a single-line title plus the trailing status; the full status, project and time are in the hover tooltip.
+ * On hover or focus, pin and archive appear at the trailing end. Pinned sessions get a chat bubble icon.
  */
 export function conversationItem(
   conversation: Conversation,
@@ -122,7 +122,7 @@ export function conversationItem(
 }
 
 /**
- * 一个项目：单行文件夹行 + 它的会话；状态汇总与路径在悬停说明里。行尾的项目菜单与展开钮悬停或聚焦时才出现。
+ * One project: a single-line folder row plus its sessions; the status summary and path are in the hover tooltip. The project menu and expand button at the trailing end only appear on hover or focus.
  */
 export function ProjectItem({
   id,

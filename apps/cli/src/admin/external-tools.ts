@@ -16,8 +16,8 @@ import {
 } from './external-tools-output.ts';
 
 /**
- * `cuccut external-tools …`：受管的外部工具（yt-dlp、ffmpeg；架构设计 §12.9），与协议的 `externalTools.*` 对应。
- * 安装先打印来源、版本、大小与许可，同意（终端里回答，或 `--yes`）之后才下载，并跟着任务的进度。
+ * `cuccut external-tools …`: managed external tools (yt-dlp, ffmpeg; Architecture design §12.9), corresponding to the protocol's `externalTools.*`.
+ * Install first prints the source, version, size and license. Only after consent (answered in the terminal, or with `--yes`) does it download, following the task's progress.
  */
 export const externalTools = defineNoun({
   name: 'external-tools',
@@ -103,7 +103,7 @@ async function installTool(ctx: Ctx, name: string, yes: boolean): Promise<ExitCo
   );
 }
 
-/** `update <名字>`：打印安装方式与完整命令，确认之后提交；命令的输出逐行打出（`--json` 时写 stderr），结果里带全部输出。 */
+/** `update <name>`: prints the install method and the full command, and submits it after confirmation. The command's output is printed line by line (to stderr with `--json`), and the result carries all of the output. */
 async function updateTool(ctx: Ctx, name: string, yes: boolean): Promise<ExitCode> {
   const { client } = ctx;
   const { tools: all } = await client.request('externalTools.detect', { name });
@@ -128,7 +128,7 @@ async function updateTool(ctx: Ctx, name: string, yes: boolean): Promise<ExitCod
     }
     for (const line of formatToolUpdatePlan(status, plan)) ctx.log(line);
     if (!plan.runnable) {
-      // 要管理员权限等：只能由用户在终端里自己执行。
+      // Requires administrator rights, etc., so it can only be run by the user in a terminal.
       return ctx.fail({
         code: 'TOOL_UPDATE_MANUAL',
         message: M.updateManual(status.label, plan.command),

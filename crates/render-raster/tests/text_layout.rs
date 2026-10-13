@@ -139,9 +139,7 @@ fn gradient_strokes_are_recorded_before_glyph_fills() {
     assert!(strokes.iter().all(|i| *i < first_fill));
 }
 
-/// 内容轨 `text` 换成更长的字符串、又没写 `width`：元素盒按所有关键帧字符串里
-/// 最宽的一个定，长字符串从 `style.x` 起笔而不是居中溢出到盒子左边（常驻 HUD 的
-/// 章节名）。写了 `width` 的照作者的宽度。
+/// When the content track's `text` is replaced with a longer string and no `width` is set, the element box is sized to the widest of all the keyframed strings, and the long string starts drawing at `style.x` instead of being centered and overflowing past the left edge of the box (the chapter name of a persistent HUD). When `width` is set, the author's width is used.
 #[test]
 fn a_text_track_sizes_the_auto_box_by_its_widest_string() {
     let hud = |style: Value| {
@@ -168,7 +166,7 @@ fn a_text_track_sizes_the_auto_box_by_its_widest_string() {
             frame.w,
             long.width
         );
-        // 旧行为：盒宽按初始的短串定，长串居中后从盒子左缘外面起笔。
+        // Old behavior: the box width was sized from the initial short string, so the long string, once centered, started drawing outside the left edge of the box.
         let left = frame.x as f32;
         let at_long = min_x(renderer.record(&ir, &mut engine, 1.2));
         assert!(
@@ -185,7 +183,7 @@ fn a_text_track_sizes_the_auto_box_by_its_widest_string() {
             );
         }
     }
-    // 写了 width：盒宽不动。
+    // With `width` set: the box width stays unchanged.
     let (ir, _, _) = prepare(hud(
         json!({"x":70,"y":60,"font":"Poppins","fontSize":26,"width":90}),
     ));

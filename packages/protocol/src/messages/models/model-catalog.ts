@@ -14,7 +14,7 @@ import { pl } from './model-catalog.pl.ts';
 import { tr } from './model-catalog.tr.ts';
 import { vi } from './model-catalog.vi.ts';
 
-/** `packages/models/src/model-catalog.ts` 给人看的文字：模型包不可用的原因与取模型包描述时的错误。 */
+/** `packages/models/src/model-catalog.ts`: text shown to people for why a model bundle is unavailable, and for errors when fetching model bundle descriptions. */
 const en = {
   backendUnsupported: (p: { backend: string; platform: string; arch: string }) => `The ${p.backend} backend does not support ${p.platform}/${p.arch}`,
   relocating: "The models folder is being moved; it can't be used until the move finishes",

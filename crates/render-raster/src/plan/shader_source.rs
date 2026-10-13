@@ -1,40 +1,26 @@
-//! WGSL 源的登记与组装（元素方案 §8.6）。
+//! Registration and assembly of WGSL sources (element plan §8.6).
 //!
-//! 参考实现用 `#include "wgpu/<group>/<file>.wgsl"` 这条**它自己的**预处理指令
-//! 拼源码。CucCut 不复制那套机制，也不引入 shader 预处理器依赖：源文件用
-//! `include_str!` 编进二进制，组装就是**前缀字符串拼接**——
+//! The reference implementation assembles sources with its own preprocessor directive, `#include "wgpu/<group>/<file>.wgsl"`. CucCut does not copy that mechanism and does not add a shader preprocessor dependency. Source files are embedded in the binary with `include_str!`, and assembly is simply **string prefix concatenation**:
 //!
 //! ```text
 //! common.wgsl  ‖  <domain>/_prelude.wgsl  ‖  <style>.wgsl
 //! ```
 //!
-//! `common.wgsl` 是无 binding 的纯函数；`_prelude.wgsl` 是该 domain 的 §8.1 /
-//! §8.2 binding 面与顶点着色器；样式文件只写 fragment 与它自己的
-//! `@group(3)` 配方 struct。
+//! `common.wgsl` is pure functions with no bindings. `_prelude.wgsl` is the §8.1 / §8.2 binding surface and vertex shader of that domain. A style file contains only its fragment and its own `@group(3)` recipe struct.
 //!
-//! **本模块不挂 `gpu` feature**：没有 GPU 的构建也要能做源码一致性检查（哪些
-//! 样式有 shader、manifest 的 `shader` 字段是否对得上），而 naga 静态校验与
-//! 真正的编译才需要 feature。
+//! **This module is not gated behind the `gpu` feature**: builds without a GPU must also be able to run the source-consistency checks (which styles have a shader, and whether the manifest's `shader` field matches), while the naga static validation and the actual compilation do need the feature.
 //!
-//! ## 一个家族一份源码
+//! ## One source per family
 //!
-//! `SHADER_SOURCES` 是**按算法家族**登记的，不是按样式：`bar-v1` 两种的差异
-//! 全在 `@group(3)` 的配方 uniform 里，源码逐字相同。14 个 progress 样式因此只有
-//! 4 份文件，manifest 的 `shader` 字段指向所属家族的那一份。
+//! `SHADER_SOURCES` is registered **by algorithm family**, not by style. The two `bar-v1` variants differ entirely in the `@group(3)` recipe uniform, and their source is identical word for word. The 14 progress styles therefore have only 4 files, and the manifest's `shader` field points to the file of the family each belongs to.
 //!
-//! **visualizer 没有源码登记项**：声波 10 款自 2026-09 重设计起全部是 CPU 矢量
-//! 配方（manifest `shader: null`），`shader_for(Visualizer, ·)` 恒为 `None`，host
-//! 走矢量层。`ShaderDomain::Visualizer` 与它的 `_prelude.wgsl` 作为 §8.1 / §8.2
-//! 的冻结契约保留。
+//! **Visualizer has no source registry entry.** Since the 2026-09 redesign, all 10 visualizer styles are CPU vector recipes (manifest `shader: null`), so `shader_for(Visualizer, ·)` is always `None`, and the host uses the vector layer. `ShaderDomain::Visualizer` and its `_prelude.wgsl` are kept as the frozen contract of §8.1 / §8.2.
 //!
-//! `tests/shader_wgsl.rs` 遍历整张表做 naga 校验 + GLSL ES 300 转译，另有一条
-//! 断言要求"注册表里的每个 progress 样式都能在这里查到源码"——加样式忘了加行
-//! 会立刻红。
+//! `tests/shader_wgsl.rs` iterates over the whole table for naga validation and GLSL ES 300 transpilation. Another assertion requires that "every progress style in the registry can be looked up here", so adding a style and forgetting its row turns red immediately.
 
 use std::fmt;
 
-/// shader 的 domain。两个 domain 的 `@group(1)` 布局不同（§8.2：8 项 vs 9 项），
-/// 因此 prelude 也是两份。
+/// The domain of a shader. The `@group(1)` layouts of the two domains differ (§8.2: 8 items vs 9), so there are two preludes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ShaderDomain {
     Visualizer,
@@ -49,8 +35,7 @@ impl ShaderDomain {
         }
     }
 
-    /// 该 domain 的 binding 面与顶点着色器源码（§8.1 / §8.2 的落点）。
-    /// 公开是为了让契约测试能拿它与 Rust 侧的 uniform 表逐行对拍。
+    /// The binding surface and vertex shader source of this domain (where §8.1 / §8.2 land). Public so that contract tests can cross-check it line by line against the Rust-side uniform table.
     pub fn prelude(self) -> &'static str {
         match self {
             ShaderDomain::Visualizer => VISUALIZER_PRELUDE,
@@ -65,29 +50,29 @@ impl fmt::Display for ShaderDomain {
     }
 }
 
-/// 顶点入口名（两个 prelude 共用）。
+/// Vertex entry point name (shared by both preludes).
 pub const VERTEX_ENTRY: &str = "vertexMain";
-/// fragment 入口名（每份样式源共用）。
+/// Fragment entry point name (shared by every style source).
 pub const FRAGMENT_ENTRY: &str = "fragmentMain";
 
-/// 无 binding 的公共件。
+/// Common pieces with no bindings.
 pub const COMMON_WGSL: &str = include_str!("../../shaders/common.wgsl");
 const VISUALIZER_PRELUDE: &str = include_str!("../../shaders/visualizer/_prelude.wgsl");
 const PROGRESS_PRELUDE: &str = include_str!("../../shaders/progress/_prelude.wgsl");
 
-/// 一份样式 shader 源。
+/// One style shader source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShaderSource {
     pub domain: ShaderDomain,
-    /// 文件名，与 manifest 的 `shader` 字段逐字相同。
+    /// File name, identical word for word to the manifest's `shader` field.
     pub file: &'static str,
-    /// 本源码服务的样式 id（目录里的面值 id，如 `normal`）。
+    /// The style id this source serves (the face-value id in the directory, e.g. `normal`).
     pub styles: &'static [&'static str],
     body: &'static str,
 }
 
 impl ShaderSource {
-    /// `common ‖ prelude ‖ body`。每段之间补一个换行，源文件本身不必以换行结尾。
+    /// `common ‖ prelude ‖ body`. A newline is added between segments, so the source files themselves do not need to end with one.
     pub fn assemble(&self) -> String {
         let mut out = String::with_capacity(
             COMMON_WGSL.len() + self.domain.prelude().len() + self.body.len(),
@@ -101,7 +86,7 @@ impl ShaderSource {
         out
     }
 
-    /// 诊断用的稳定标签，也是 naga 校验测试里的用例名。
+    /// A stable label for diagnostics, also the case name in the naga validation tests.
     pub fn label(&self) -> String {
         format!("{}/{}", self.domain.as_str(), self.file)
     }
@@ -118,9 +103,9 @@ macro_rules! shader {
     };
 }
 
-/// 14 个 progress 样式的 shader，按算法家族归成 4 份源码。
+/// The shaders of the 14 progress styles, grouped by algorithm family into 4 source files.
 pub const SHADER_SOURCES: &[ShaderSource] = &[
-    // ── progress：4 个算法家族，14 个样式。
+    // ── progress: 4 algorithm families, 14 styles.
     shader!(
         ShaderDomain::Progress,
         "progress",
@@ -154,7 +139,7 @@ pub const SHADER_SOURCES: &[ShaderSource] = &[
     ),
 ];
 
-/// 按 `(domain, 样式 id)` 找源码；没有落地的样式返回 `None`（host 据此回退 CPU）。
+/// Looks up the source by `(domain, style id)`. Styles not yet implemented return `None`, and the host falls back to CPU on that basis.
 pub fn shader_for(domain: ShaderDomain, style: &str) -> Option<&'static ShaderSource> {
     SHADER_SOURCES
         .iter()
@@ -165,13 +150,12 @@ pub fn shader_for(domain: ShaderDomain, style: &str) -> Option<&'static ShaderSo
 mod tests {
     use super::*;
 
-    /// 组装出来的源码里不得残留参考实现的 `#include`——那是它的预处理指令，
-    /// CucCut 走字符串拼接（§8.6）。
+    /// The assembled source must not contain leftover `#include` from the reference implementation. That is its preprocessor directive; CucCut uses string concatenation (§8.6).
     #[test]
     fn the_assembled_sources_carry_no_preprocessor_directives() {
         for source in SHADER_SOURCES {
             let text = source.assemble();
-            // 注释里提到 `#include` 是在解释"我们为什么不用它"，不算残留。
+            // Mentioning `#include` in a comment is explaining why we don't use it; it is not a leftover.
             let code: String = text
                 .lines()
                 .map(|line| line.split("//").next().unwrap_or(""))
@@ -195,12 +179,9 @@ mod tests {
         }
     }
 
-    /// 注册表里的 **14 个 progress 样式一个不漏**都能查到源码，且每份源码只被
-    /// 登记一次；**10 个 visualizer 样式一个都查不到**（它们是 CPU 矢量配方）。
+    /// Every one of the **14 progress styles in the registry** must be findable with its source, and each source is registered only once. **None of the 10 visualizer styles can be found** (they are CPU vector recipes).
     ///
-    /// 与下一条互为反向：那一条查"登记的样式确实存在且 manifest 指得对"，
-    /// 这一条查"存在的样式确实被登记了"。少了这一条，新样式忘了加行会静默地
-    /// 落回 CPU（`shader_for` 返回 `None` ⇒ 回退），没有任何测试会红。
+    /// This is the reverse of the next test: that one checks that a registered style really exists and the manifest points to it correctly, while this one checks that an existing style really got registered. Without this one, a new style forgotten in the table would silently fall back to CPU (`shader_for` returns `None`, which means fallback), and no test would turn red.
     #[test]
     fn every_catalogue_style_has_a_shader() {
         let mut seen: Vec<String> = Vec::new();
@@ -225,7 +206,7 @@ mod tests {
             "每份源码都至少服务一个样式"
         );
 
-        // 同一个样式 id 不得在两份源码里各登记一次。
+        // The same style id must not be registered in two source files.
         let mut styles: Vec<(ShaderDomain, &str)> = SHADER_SOURCES
             .iter()
             .flat_map(|source| {
@@ -242,14 +223,13 @@ mod tests {
         assert_eq!(total, 14);
     }
 
-    /// 每份源码服务的样式都在注册表里，且 manifest 的 `shader` 字段与文件名
-    /// 逐字相同——这条抓的是"文件加了、manifest 没指过来"。
+    /// Every style served by each source is in the registry, and the manifest's `shader` field matches the file name word for word. This catches "the file was added but the manifest does not point to it".
     #[test]
     fn every_registered_style_matches_its_manifest_shader_field() {
         for source in SHADER_SOURCES {
             for style in source.styles {
                 let declared = match source.domain {
-                    // visualizer 配方的 `shader` 恒为 `null`，登记表里也不该有它。
+                    // The `shader` of visualizer recipes is always `null`, so the registry should not contain them either.
                     ShaderDomain::Visualizer => None,
                     ShaderDomain::Progress => motion::preset_registry::timeline_progress(style)
                         .and_then(|recipe| recipe.progress())
@@ -267,17 +247,17 @@ mod tests {
 
     #[test]
     fn the_lookup_is_keyed_by_domain_and_style() {
-        // 家族共用一份源码：两种 `bar-v1` 查到的是同一个文件。
+        // A family shares one source: both `bar-v1` variants look up the same file.
         let normal = shader_for(ShaderDomain::Progress, "normal").unwrap();
         let rounded = shader_for(ShaderDomain::Progress, "rounded").unwrap();
         assert_eq!(normal.file, rounded.file);
         assert_eq!(normal.file, "normal.wgsl");
-        // domain 不能串：progress 的 `normal` 不是 visualizer 的样式。
+        // Domains must not cross: progress's `normal` is not a visualizer style.
         assert!(shader_for(ShaderDomain::Visualizer, "normal").is_none());
-        // visualizer 样式没有 WGSL：host 据此走矢量层。
+        // Visualizer styles have no WGSL, so the host uses the vector layer for them.
         assert!(shader_for(ShaderDomain::Visualizer, "bars").is_none());
         assert!(shader_for(ShaderDomain::Progress, "bars").is_none());
-        // 不存在的样式返回 `None`，host 据此回退 CPU 而不是拿到一份空壳。
+        // A nonexistent style returns `None`, and the host falls back to CPU on that basis instead of getting an empty shell.
         assert!(shader_for(ShaderDomain::Progress, "zz_not_a_style").is_none());
     }
 }

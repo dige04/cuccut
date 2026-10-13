@@ -14,9 +14,9 @@ import { pl } from './stage-toolbar-copy.pl.ts';
 import { tr } from './stage-toolbar-copy.tr.ts';
 import { vi } from './stage-toolbar-copy.vi.ts';
 
-/** 画布浮动工具条的文案（英文是键与类型的来源，译文在 `stage-toolbar-copy.<语言>.ts`）。 */
+/** Copy for the floating canvas toolbar (English is the source of the keys and types; translations are in `stage-toolbar-copy.<language>.ts`). */
 const en = {
-  /** 每一格的显示名；图标钮的名字是悬停提示。 */
+  /** Display name of each cell; for icon buttons, the name is the hover tooltip. */
   toolLabel: {
     color: 'Color',
     font: 'Font',
@@ -68,7 +68,7 @@ const en = {
     case: 'Case',
     'hide-subs': 'Hide subtitles',
   },
-  /** 不能用的几格为什么不能用：协议里还没有对应操作、素材取不到原文件、浏览器里没有品牌库等。 */
+  /** Why some cells are unavailable: no matching operation in the protocol yet, the source file for the asset cannot be obtained, no brand library in the browser, etc. */
   offReason: {
     animation: "Animations can't be picked in the editor yet.",
     brand: "This clip's media can't be stored in the brand kit.",
@@ -81,7 +81,7 @@ const en = {
     brandText: 'The brand kit has no section for text styles yet.',
     brandWeb: 'The brand kit is only available in the desktop app and the CLI.',
   },
-  /** 「层级」下钻页的四行与这一笔的名字。 */
+  /** The four rows of the “Layer” drill-down page and the name of this operation. */
   arrange: {
     front: 'Bring to front',
     forward: 'Bring forward',
@@ -89,11 +89,11 @@ const en = {
     back: 'Send to back',
     label: 'Change stacking order',
   },
-  /** 字幕工具条的名字（读屏）。 */
+  /** Name of the subtitle toolbar (for screen readers). */
   subtitleBar: 'Subtitle toolbar',
-  /** 从画布工具条停用片段之后的提示（带撤销）：片段从画面上消失，说清楚去哪重新启用。 */
+  /** Notice after disabling a clip from the canvas toolbar (with undo): the clip disappears from the frame; say clearly where to re-enable it. */
   disabledNotice: 'Clip disabled. Right-click it on the timeline to enable it again.',
-  /** 分离音频之后的提示（带撤销）：新音频在哪、视频片段怎么了。 */
+  /** Notice after separating audio (with undo): where the new audio is, and what happened to the video clip. */
   detachedNotice: 'Detached the sound to a new audio track. The video clip is muted.',
   textStyleLocked: (schema: string) => `This text uses the ${schema} style format and cannot be edited here yet.`,
 };

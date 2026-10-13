@@ -4,41 +4,41 @@ import { formatInvalid } from './library-errors.ts';
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 术语表的交换格式（架构设计 §5.9）：带 front matter 的 Markdown，正文一张表。
+ * Exchange format for glossaries (architecture design §5.9): Markdown with front matter, with one table in the body.
  *
  * ```markdown
  * ---
  * format: cuccut.glossary
  * version: 1
  * name: "产品术语"
- * kind: transcription          # 或 translation
- * language: zh                 # transcription：适用语言，可省
- * source: zh                   # translation：源语言，可省
- * target: en                   # translation：目标语言，必填
- * default: true                # 新视频是否默认启用
+ * kind: transcription          # or translation
+ * language: zh                 # transcription: applicable language, may be omitted
+ * source: zh                   # translation: source language, may be omitted
+ * target: en                   # translation: target language, required
+ * default: true                # whether new videos enable it by default
  * ---
  *
- * | Term | Misheard |           # transcription：规范写法 | 常见误写（逗号或顿号分隔）
+ * | Term | Misheard |           # transcription: canonical spelling | common mishearings (separated by commas or 、(enumeration comma))
  * | --- | --- |
  * | CucCut | 宝卡特, 包cut |
  *
- * | Source | Target | Note |    # translation：源词 | 译法 | 说明（可空）
+ * | Source | Target | Note |    # translation: source term | translation | note (may be empty)
  * ```
  *
- * - 标识是 front matter 里的 `format: cuccut.glossary`，与扩展名无关；`version` 现在是 1，更高的版本拒绝。
- * - 值可以写成 JSON 字符串（带双引号）；写出时名字总是 JSON 字符串。
- * - 单元格里的 `|`、`\` 写成 `\|`、`\\`；误写里的分隔符 `,`、`，`、`、` 本身写成 `\,` 等。
- * - 表头大小写不敏感，列不能多也不能少；表格之前可以有标题与说明文字，正文只能有一张表。
+ * - The identifier is `format: cuccut.glossary` in the front matter, independent of the file extension. `version` is 1 for now, and higher versions are rejected.
+ * - Values may be written as JSON strings (in double quotes). When written out, the name is always a JSON string.
+ * - In cells, write `|` and `\` as `\|` and `\\`. Separators inside mishearings, `,`, `，` and `、` themselves, are written as `\,` and so on.
+ * - Header matching is case-insensitive, and the number of columns must match exactly. A title and explanatory text may come before the table, but the body may contain only one table.
  */
 
 export const GLOSSARY_FORMAT = 'cuccut.glossary';
 export const GLOSSARY_FORMAT_VERSION = 1;
-/** 术语表文件的上限。 */
+/** Upper limit for a glossary file. */
 export const GLOSSARY_MAX_BYTES = 4 * 1024 * 1024;
 
 const TRANSCRIPTION_COLUMNS = ['term', 'misheard'];
 const TRANSLATION_COLUMNS = ['source', 'target', 'note'];
-// i18n-ignore: 解析用户写的误听词，认中英文的分隔符
+// i18n-ignore: parses the mishearing words the user wrote, recognizes both Chinese and English separators
 const MISHEARD_SEPARATORS = [',', '，', '、'];
 
 export function encodeGlossaryMarkdown(content: GlossaryContent): string {
@@ -63,13 +63,13 @@ export function encodeGlossaryMarkdown(content: GlossaryContent): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** 文本是不是术语表（只看 front matter 的标识）。 */
+/** Whether the text is a glossary (checks only the front matter identifier). */
 export function looksLikeGlossaryMarkdown(text: string): boolean {
   const fm = splitFrontMatter(text);
   return fm !== null && fm.fields.get('format') === GLOSSARY_FORMAT;
 }
 
-/** `fallbackName`：front matter 没有 `name` 时用的名字（导入时是文件名）。 */
+/** `fallbackName`: the name used when the front matter has no `name` (on import, the file name). */
 export function decodeGlossaryMarkdown(text: string, fallbackName?: string): GlossaryContent {
   const fm = splitFrontMatter(text);
   if (!fm) throw formatInvalid(SL.glossaryNoFrontMatter());
@@ -178,7 +178,7 @@ function readTable(body: string[], firstLine: number, columns: string[]): { line
   });
 }
 
-/** 按没有转义的 `|` 切开一行；转义原样留在单元格里，由 `unescapeCell` 处理。 */
+/** Splits a line at unescaped `|`. Escapes stay in the cell as written and are handled by `unescapeCell`. */
 function splitRow(line: string): string[] {
   let s = line.trim();
   if (s.startsWith('|')) s = s.slice(1);
@@ -199,7 +199,7 @@ function splitRow(line: string): string[] {
       cell += c;
     }
   }
-  // 行尾的 `|` 只是收尾，不开新的一列。
+  // A trailing `|` at the end of a line only closes the row. It does not open a new column.
   if (!closed || cell.trim()) cells.push(cell);
   return cells;
 }

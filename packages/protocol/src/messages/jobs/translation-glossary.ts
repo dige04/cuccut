@@ -14,7 +14,7 @@ import { pl } from './translation-glossary.pl.ts';
 import { tr } from './translation-glossary.tr.ts';
 import { vi } from './translation-glossary.vi.ts';
 
-/** `packages/jobs/src/pipelines/translation-glossary.ts`：翻译用术语表的解析与校验。 */
+/** `packages/jobs/src/pipelines/translation-glossary.ts`: parsing and validation of translation glossaries. */
 const en = {
   serviceClient: "Service clients can't use glossaries from the user library",
   noLibrary: "This Runtime has no user library, so library glossaries can't be used",

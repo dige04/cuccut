@@ -1,18 +1,12 @@
-//! 声波实例的声音（格式规范 §3.7）：把素材的频谱（BCS1，按素材的源时间排）按序列的声音计划拼成这个实例在序列时间上的
-//! 一条频谱，第 k 帧是序列时刻 `k / 60` 听到的声音，内核按序列时刻取样。
+//! Sound for a waveform instance (format spec §3.7): the asset's spectrum (BCS1, ordered by the asset's source time) is assembled according to the sequence's sound plan into one spectrum on this instance's sequence timeline. Frame k is the sound heard at sequence time `k / 60`, and the kernel samples by sequence time.
 //!
-//! - `audio: 'project'`（缺省）是这条序列混好的声音：每一刻在响的每一段声音（[`render_graph::audio_plan`]，与导出的混音
-//!   同一份计划：增益、淡变、交叉淡化与闪避都算进去，按文稿触发的闪避除外）取它源时刻的那一帧，频域按功率相加、时域按
-//!   振幅相加；
-//! - `audio` 是一个素材 ID 时只听这个素材：每一刻取正在播它的那一段的源时刻（两段相接时取后一段），不乘增益；这一刻没有
-//!   在播它就是静音；
-//! - 素材频谱按素材版本算一次（导出由 Render Worker 解码素材文件，预览由界面解码后经预览 WASM 算），拼接只是查表，
-//!   预览与导出用同一份代码。
+//! - `audio: 'project'` (default) is the sequence's mixed sound: at each moment, every segment that is sounding ([`render_graph::audio_plan`], the same plan as the export mix, with gain, fades, crossfades and ducking all applied, except script-triggered ducking) contributes the frame at its source time. Frequency domain adds by power, time domain adds by amplitude;
+//! - when `audio` is an asset ID, only that asset is heard: at each moment it takes the source time of the segment playing it (the later segment when two segments abut), with no gain applied. If it is not playing at that moment, it is silence;
+//! - asset spectra are computed once per asset version (export: the Render Worker decodes the asset file; preview: the UI decodes it and computes via the preview WASM). Assembly is only a table lookup, and preview and export use the same code.
 //!
-//! 频谱的 dB 是 BCS1 的 canonical 窗（[-120, 40]），字节 0 当作没有能量。
+//! The dB values of the spectrum use BCS1's canonical window ([-120, 40]); byte 0 is treated as no energy.
 //!
-//! 说话人与显隐（§3.7 的 `speaker`、`alwaysShow`）在派生好的轨上做（[`gate`]、[`audible_frames`]），规则见
-//! [`SPEAKER_HOLD`]。
+//! Speakers and visibility (§3.7 `speaker`, `alwaysShow`) are applied on the derived track ([`gate`], [`audible_frames`]); the rules are in [`SPEAKER_HOLD`].
 
 use std::collections::BTreeMap;
 
@@ -25,12 +19,12 @@ use waveform::bcs1::{
 };
 use waveform::remap::canonical_db;
 
-/// 声波听哪一路声音。
+/// Which sound channel the waveform listens to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Route {
-    /// 这条序列混好的声音。
+    /// The sequence's mixed sound.
     Project,
-    /// 只听这个素材。
+    /// Listen to this asset only.
     Asset(String),
 }
 
@@ -44,12 +38,12 @@ impl Route {
     }
 }
 
-/// 素材频谱的键：`素材ID@版本`。
+/// Key for an asset spectrum: `asset ID@version`.
 pub fn asset_key(asset: &VersionRef) -> String {
     format!("{}@{}", asset.id, asset.revision)
 }
 
-/// `route` 在序列时间 `[start, end)` 里要用到的声音段（序列时间从 0 起，即整条序列的声音计划）。
+/// The sound segments that `route` uses in sequence time `[start, end)` (sequence time starts at 0, i.e. the whole sequence's sound plan).
 pub fn segments_for<'a>(segments: &'a [AudioSegment], route: &Route, start: f64, end: f64) -> Vec<&'a AudioSegment> {
     segments
         .iter()
@@ -61,7 +55,7 @@ pub fn segments_for<'a>(segments: &'a [AudioSegment], route: &Route, start: f64,
         .collect()
 }
 
-/// 要读的素材频谱（去重，按键排）。
+/// Asset spectra to read (deduplicated, sorted by key).
 pub fn sources_of(segments: &[&AudioSegment]) -> Vec<VersionRef> {
     let mut seen = BTreeMap::new();
     for segment in segments {
@@ -70,14 +64,13 @@ pub fn sources_of(segments: &[&AudioSegment]) -> Vec<VersionRef> {
     seen.into_values().collect()
 }
 
-/// 每位说话人在序列上说话的区间（秒，按开始时刻排；`render_graph::audio_plan::speaker_activity`）。
+/// The intervals in which each speaker talks on the sequence (seconds, sorted by start time; `render_graph::audio_plan::speaker_activity`).
 pub type SpeakerActivity = BTreeMap<String, Vec<(f64, f64)>>;
 
-/// 说话人与 `alwaysShow: false` 的保持时间（秒）：同一位说话人的两个词相隔不超过它就当作一直在说（与按文稿触发的
-/// 闪避合并触发区间的下限相同）；`alwaysShow: false` 的声波静了这么久才隐去，一出声就出现。
+/// Hold time (seconds) for speakers and `alwaysShow: false`: two words from the same speaker no more than this far apart count as continuous speech (same lower bound as the merged trigger intervals for script-triggered ducking). A waveform with `alwaysShow: false` hides only after it has been silent this long, and appears as soon as sound starts.
 pub const SPEAKER_HOLD: f64 = 0.5;
 
-/// 一位说话人的词区间并成说话的段：相隔不超过 [`SPEAKER_HOLD`] 的接起来。
+/// Merges one speaker's word intervals into speech segments: segments no more than [`SPEAKER_HOLD`] apart are joined.
 pub fn speaking_spans(intervals: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut sorted: Vec<(f64, f64)> = intervals.iter().copied().filter(|(s, e)| e > s).collect();
     sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -91,8 +84,7 @@ pub fn speaking_spans(intervals: &[(f64, f64)]) -> Vec<(f64, f64)> {
     spans
 }
 
-/// 只留说话的段里的帧（第 k 帧在序列时刻 `k / 分析帧率`，落在某段 `[start, end)` 里），其余换成静音帧
-/// （[`VizTrack::silent_frame`]）。`spans` 为 `None` 时整条都是静音。
+/// Keeps only the frames inside the speech segments (frame k is at sequence time `k / analysis frame rate` and falls within some `[start, end)` segment); all other frames are replaced with silent frames ([`VizTrack::silent_frame`]). When `spans` is `None`, the whole track is silent.
 pub fn gate(track: &VizTrack, spans: Option<&[(f64, f64)]>) -> Option<VizTrack> {
     let rate = f64::from(track.analysis_rate());
     let silent = track.silent_frame();
@@ -106,12 +98,11 @@ pub fn gate(track: &VizTrack, spans: Option<&[(f64, f64)]>) -> Option<VizTrack> 
             }
         })
         .collect();
-    // 内容指纹由帧算出（来源的 hash 只是其中一项），这里没有单独的来源。
+    // The content fingerprint is computed from the frames (the source hash is just one item in it); there is no separate source here.
     VizTrack::assemble(track.analysis_rate(), frames, track.params(), 0).ok()
 }
 
-/// 每一帧算不算有声（`alwaysShow: false` 时只画有声的帧）：这一帧或它之前 [`SPEAKER_HOLD`] 之内有一帧的频域行
-/// 不全是 0。
+/// Whether each frame counts as sounding (with `alwaysShow: false`, only sounding frames are drawn): this frame, or some frame within [`SPEAKER_HOLD`] before it, has a frequency row that is not all 0.
 pub fn audible_frames(track: &VizTrack) -> Vec<bool> {
     let hold = (SPEAKER_HOLD * f64::from(track.analysis_rate())).round() as usize;
     let mut last: Option<usize> = None;
@@ -125,8 +116,8 @@ pub fn audible_frames(track: &VizTrack) -> Vec<bool> {
         .collect()
 }
 
-/// 拼出 `route` 在序列时间 `[start, end)` 上的频谱（BCS1，第 k 帧是序列时刻 `k / 60`；`start` 之前的帧是静音）。
-/// `sources` 按 [`asset_key`] 给素材频谱，必须包含 [`sources_of`] 列出的每一份；读不懂的素材频谱是错误。
+/// Assembles the spectrum for `route` over sequence time `[start, end)` (BCS1; frame k is at sequence time `k / 60`; frames before `start` are silent).
+/// `sources` supplies asset spectra by [`asset_key`] and must contain every one listed by [`sources_of`]; an asset spectrum that cannot be read is an error.
 pub fn compose(
     segments: &[&AudioSegment],
     route: &Route,
@@ -158,7 +149,7 @@ pub fn compose(
         let out = &mut payload[k * FRAME_LEN..(k + 1) * FRAME_LEN];
         match route {
             Route::Asset(_) => {
-                // 两段相接（或交叉淡化重叠）时取后开始的一段。
+                // When two segments abut (or overlap in a crossfade), the one that starts later is used.
                 let Some(segment) = segments
                     .iter()
                     .filter(|s| s.start <= t && t < s.end)
@@ -226,25 +217,25 @@ pub fn compose(
     bcs1::encode(&Bcs1Header::new(backend, frames as u32, hash.finish()), &payload).map_err(|e| format!("{e:#}"))
 }
 
-/// 段在序列时刻 `t` 取素材的哪一帧（越过素材末尾时没有）。
+/// Which asset frame a segment takes at sequence time `t` (none past the end of the asset).
 fn source_frame<'a>(view: &bcs1::Bcs1View<'a>, segment: &AudioSegment, t: f64) -> Option<&'a [u8]> {
     let source = segment.source_start + (t - segment.start) * segment.source_rate;
     if !source.is_finite() || source < 0.0 {
         return None;
     }
-    // 浮点误差不让正好落在帧边界上的时刻掉到前一帧。
+    // Floating-point error must not drop a time that falls exactly on a frame boundary to the previous frame.
     let index = (source * f64::from(view.header().analysis_rate) + 1e-6).floor() as usize;
     view.frame(index)
 }
 
-/// dB → canonical 字节（与 BCS1 的分析同一个公式）。
+/// dB → canonical byte (same formula as the BCS1 analysis).
 fn canonical_byte(decibels: f64) -> u8 {
     (255.0 * (decibels - CANONICAL_MIN_DB) / (CANONICAL_MAX_DB - CANONICAL_MIN_DB))
         .clamp(0.0, 255.0)
         .round() as u8
 }
 
-/// 素材文件 → BCS1：纯 Rust 解码成 48 kHz 单声道，解不了时用 `ffmpeg`（`-ac 1 -ar 48000`）。没有音频是错误。
+/// Asset file → BCS1: decodes to 48 kHz mono in pure Rust, falling back to `ffmpeg` (`-ac 1 -ar 48000`) when that fails. No audio is an error.
 #[cfg(feature = "host")]
 pub fn analyze_file(path: &std::path::Path, ffmpeg: &std::path::Path) -> anyhow::Result<Vec<u8>> {
     use anyhow::Context;

@@ -1,11 +1,11 @@
-// 设计稿编辑器打进去的第三方代码的原始许可（THIRD_PARTY_NOTICES.md「设计稿编辑器」）。
-// npm 包按构建实际打进的模块收集，不手列：Vite 打的页面、build.mjs 用 esbuild 打的画板运行时 / 注入脚本 / Worker，
-// 以及原样拷进去的 React 18 UMD 文件（build.mjs 把它们的包目录一并记下）。
+// Original licenses for the third-party code bundled into the design editor (THIRD_PARTY_NOTICES.md, section “设计稿编辑器” (design editor)).
+// npm packages are collected from the modules the build actually bundles, not listed by hand: the page built by Vite, the canvas runtime / injected script / Worker built by esbuild in build.mjs,
+// and the React 18 UMD files copied in as they are (build.mjs also records their package directories).
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-/** 从打进包里的模块路径找出所属的 npm 包目录（嵌套的 node_modules 取最里层）。 */
+/** Finds the npm package directory that a bundled module path belongs to (for nested node_modules, the innermost one). */
 export function bundledPackageDirs(moduleIds) {
   const dirs = new Set();
   for (const id of moduleIds) {
@@ -17,8 +17,8 @@ export function bundledPackageDirs(moduleIds) {
 }
 
 /**
- * 包目录 → 许可文本：包自带的许可文件原文；包里没有许可文件时只写 package.json 的许可标识。
- * 同名同版本的包（例如 npm 别名 react-18 与嵌套安装的 react@18.3.1）只写一次。
+ * Package directory → license text: the package's own license file verbatim; when the package has no license file, only the license identifier from package.json is written.
+ * A package with the same name and version (for example the npm alias react-18 and a nested install of react@18.3.1) is written only once.
  */
 export function thirdPartyLicenses(packageDirs) {
   const sections = new Map();
@@ -26,7 +26,7 @@ export function thirdPartyLicenses(packageDirs) {
     const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
     const key = `${pkg.name}@${pkg.version}`;
     if (sections.has(key)) continue;
-    // 老的包把许可写在 licenses 数组里（gradient-parser）
+    // Old packages put their license in a licenses array (gradient-parser)
     const license =
       typeof pkg.license === 'string' ? pkg.license : Array.isArray(pkg.licenses) ? pkg.licenses.map((entry) => entry.type).join(' OR ') : 'see package';
     const file = readdirSync(dir).find((name) => /^(licen[cs]e|copying)(\.|-|$)/i.test(name));

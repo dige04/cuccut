@@ -1,7 +1,6 @@
-//! 整段概率 → 语音区间的批量二值化（滞回 + 时长过滤）与重叠窗口的帧聚合。移植自 v2 `ccut-speech-core`。
+//! Batch binarization of whole-audio probabilities into speech spans (hysteresis + duration filtering), and frame aggregation for overlapping windows. Ported from v2 `ccut-speech-core`.
 //!
-//! [`VadConfig`] 的结构体沿用 [`super::vad_stream`] 里的那一份，这里只补 v2 的预设与帧长；流式转写路径
-//! 用的是 [`super::segmenter::VAD_CONFIG`]，与这里的 [`VadConfig::SILERO_DEFAULT`] 是两组参数。
+//! The [`VadConfig`] struct follows the one in [`super::vad_stream`]; this file adds only v2's presets and frame length. The streaming transcription path uses [`super::segmenter::VAD_CONFIG`], which is a different parameter set from [`VadConfig::SILERO_DEFAULT`] here.
 
 use super::SpeechSegment;
 use super::vad_stream::VadConfig;
@@ -105,7 +104,7 @@ pub fn filter_durations(segments: &[SpeechSegment], config: VadConfig) -> Vec<Sp
     out
 }
 
-/// 把相互重叠的窗口概率平均投影到全局帧轴。
+/// Projects the probabilities of overlapping windows onto the global frame axis by averaging.
 pub fn aggregate_frames(
     window_probs: &[Vec<f32>],
     positions: &[(usize, usize)],

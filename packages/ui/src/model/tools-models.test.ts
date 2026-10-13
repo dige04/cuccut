@@ -62,7 +62,7 @@ describe('本机模型', () => {
     const all = modelOptions(view, 'synthesizeSpeech');
     expect(all.slice(-2).map((o) => o.key)).toEqual(['local/kokoro-82m', 'local/index-tts2']);
     expect(all.filter((o) => !o.local).length).toBeGreaterThan(0);
-    // 文本生成没有本机 Provider。
+    // Text generation has no local provider.
     expect(localModelOptions(view, 'generateText')).toEqual([]);
   });
 

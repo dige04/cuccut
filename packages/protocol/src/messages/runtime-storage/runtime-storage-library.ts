@@ -15,8 +15,8 @@ import { tr } from './runtime-storage-library.tr.ts';
 import { vi } from './runtime-storage-library.vi.ts';
 
 /**
- * 用户库（术语表、音色、品牌库）的内容校验、导入导出与条目读写的错误说明（`packages/runtime-storage/src/library`）。
- * `field` 是字段路径（如 `terms[0].canonical`），原样出现。
+ * Errors for content validation, import and export, and entry reads and writes in the user library (glossaries, voices, brand libraries) (`packages/runtime-storage/src/library`).
+ * `field` is the field path (e.g. `terms[0].canonical`) and appears as is.
  */
 const en = {
   fieldNotText: (p: { field: string }) => `${p.field} must be text`,

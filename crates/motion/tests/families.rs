@@ -1,8 +1,6 @@
-//! 阶段 2 验收：**UI 可组合 ≥30 个视觉变体，而 canonical family ≤ ~12**
-//! （设计 §10 阶段 2 / §5.4.3）。
+//! Stage 2 acceptance: **the UI can compose ≥30 visual variants, while canonical families stay ≤ ~12** (design §10 stage 2 / §5.4.3).
 //!
-//! 「变体」的判据不是卡片数量，而是**展开后的轨集合两两不同**——同一个 family 换个
-//! 参数如果给出逐位相同的轨，那它不是一个变体，是一张重复的卡片。
+//! The criterion for a "variant" is not the card count but that **the expanded track sets are pairwise different**. If the same family with different parameters gives bit-identical tracks, it is not a variant, it is a duplicated card.
 
 use std::collections::BTreeSet;
 
@@ -15,7 +13,7 @@ fn params(value: Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap()
 }
 
-/// 展开结果的规范化文本。相对长度对象仍未求值（布局之后才求值），因此它也进签名。
+/// Normalized text of the expansion result. Relative length objects are not yet evaluated (only after layout), so they are included in the signature too.
 fn signature(id: &str, p: Value) -> String {
     let out = expand(id, None, &params(p), &ExpandCtx::with_dur(0.5))
         .unwrap_or_else(|error| panic!("{id}: {error}"));
@@ -160,7 +158,7 @@ fn every_manifest_expands_with_its_defaults() {
                 track.prop
             );
         }
-        // 展开结果不残留 preset 名，provenance 只在 sources 里
+        // The expansion result does not retain preset names; provenance is only in sources
         assert!(!out.sources.is_empty(), "{id}");
     }
 }

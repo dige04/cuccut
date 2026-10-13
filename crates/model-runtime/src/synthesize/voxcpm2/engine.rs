@@ -1,21 +1,20 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/VoxCPM2TTS/VoxCPM2TTS.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/VoxCPM2TTS/VoxCPM2TTS.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! `VoxCpm2` 引擎：把 MiniCPM4 底座、局部扩散与 AudioVAE 接到 `TtsEngine`。
-//! 生成流程对照 speech-swift `VoxCPM2TTS.swift::generateVoxCPM2`，护栏对照官方
-//! `VoxCPM2Model.generate`（`max_len = 文本 token × 6 + 10`、撞上限视为坏例重采）。
+//! The `VoxCpm2` engine: connects the MiniCPM4 backbone, local diffusion and AudioVAE to `TtsEngine`.
+//! The generation flow follows speech-swift `VoxCPM2TTS.swift::generateVoxCPM2`; the guardrails follow the official
+//! `VoxCPM2Model.generate` (`max_len = text tokens × 6 + 10`; hitting the limit counts as a bad case and is resampled).
 //!
-//! 音色三条路：
-//! - 参考音频带原文、且没有 `instruct` → 「高保真克隆」：同一段音频既作 ref 前缀
-//!   （右补零）又作续写 prompt（左补零），prompt 原文拼在目标文本前，出声后裁掉
-//!   续写种子对应的开头；
-//! - 参考音频不带原文，或带了 `instruct` → 仅参考音频（官方「可控克隆」）：
-//!   `(instruct)` 拼在目标文本前。官方 demo 在高保真模式下会清空 control，这里一致；
-//! - 内置音色与 `Clone` 一样走上面两条（内置音色都带原文）。
+//! Three voice paths:
+//! - Reference audio that comes with its transcript and has no `instruct` → “high-fidelity cloning”: the same clip is used both as the ref prefix
+//!   (right-padded with zeros) and as the continuation prompt (left-padded with zeros). The prompt transcript is prepended to the target text; once the audio is out, the part corresponding to the continuation seed is cut from the start;
+//! - Reference audio without its transcript, or with `instruct` → reference audio only (the official “controllable cloning”):
+//!   `(instruct)` is prepended to the target text. The official demo clears control in high-fidelity mode; this matches that;
+//! - Built-in voices take the same two paths as `Clone` (built-in voices all come with their transcript).
 
 use super::audio_vae::AudioVae;
 use super::config::VoxCpm2Config;
@@ -41,17 +40,17 @@ use anyhow::{Context, Result, bail, ensure};
 pub const ENGINE_NAME: &str = "VoxCPM2";
 pub const SAMPLE_RATE: u32 = 48_000;
 const ABORT_MESSAGE: &str = "合成已取消";
-/// 文本结束（`audio_start`）、参考音频起止 token。
+/// Token marking the end of the text (`audio_start`), and the start and end tokens of the reference audio.
 const AUDIO_START: i32 = 101;
 const REF_START: i32 = 103;
 const REF_END: i32 = 104;
-/// 官方 `retry_badcase_ratio_threshold`：生成 patch 数 ≥ 文本 token × 6 视为没收住。
+/// Official `retry_badcase_ratio_threshold`: a generation with a patch count ≥ text tokens × 6 counts as a runaway generation.
 const BADCASE_RATIO: usize = 6;
 const BADCASE_RETRIES: usize = 3;
-/// 官方 `generate` 的 `max_len` / `min_len` 默认。
+/// Official defaults for `max_len` / `min_len` in `generate`.
 const DEFAULT_MAX_PATCHES: usize = 4096;
 const MIN_PATCHES: usize = 2;
-/// 官方 `streaming_prefix_len - 1`：续写时用 prompt 末尾多少个 patch 做种子。
+/// Official `streaming_prefix_len - 1`: how many trailing prompt patches to use as the seed when continuing.
 const CONTINUATION_PATCHES: usize = 3;
 
 pub struct VoxCpm2 {
@@ -71,15 +70,15 @@ pub struct VoxCpm2 {
     stop_proj: Linear,
     stop_head: Linear,
     vae: AudioVae,
-    /// 最后一个字段：权重先析构，再等 GPU 并清缓存。
+    /// Last field: the weights are dropped first, then wait for the GPU and clear the cache.
     _cache_guard: ModelMemoryCacheGuard,
 }
 
-/// 编好的参考音频：`[N, patch, latent]`。
+/// Encoded reference audio: `[N, patch, latent]`.
 pub(crate) enum VoicePlan {
-    /// 仅参考音频（可带 instruct）。
+    /// Reference audio only (may carry instruct).
     Reference { reference: Array },
-    /// 高保真克隆：ref 前缀 + 续写 prompt。
+    /// High-fidelity cloning: ref prefix + continuation prompt.
     Continuation {
         reference: Array,
         prompt: Array,
@@ -87,7 +86,7 @@ pub(crate) enum VoicePlan {
     },
 }
 
-/// 一次生成的采样参数。
+/// Sampling parameters for one generation.
 #[derive(Clone, Copy)]
 pub(crate) struct Sampling {
     pub cfg: f32,
@@ -95,7 +94,7 @@ pub(crate) struct Sampling {
     pub max_patches: usize,
 }
 
-/// 生成结果：解码后的波形与生成的 patch 数（坏例判定用）。
+/// Generation result: the decoded waveform and the number of generated patches (used to detect bad cases).
 struct Generated {
     samples: Vec<f32>,
     patches: usize,
@@ -115,8 +114,8 @@ fn dims(hidden: usize, heads: usize, kv_heads: usize, head_dim: usize, layers: u
 }
 
 impl VoxCpm2 {
-    /// 按清单加载：`config.json`、`tokenizer.json`、`model.safetensors`。缺文件是 `MODEL_NOT_INSTALLED`，
-    /// 在碰 Metal 之前就报。
+    /// Loads from the manifest: `config.json`, `tokenizer.json`, `model.safetensors`. A missing file is `MODEL_NOT_INSTALLED`,
+    /// and is reported before touching Metal.
     pub fn load(model: &VerifiedFiles) -> Result<Self> {
         Self::load_with_progress(model, &mut |_| true)
     }
@@ -136,7 +135,7 @@ impl VoxCpm2 {
         let tokenizer = Tokenizer::load(tokenizer_path)?;
         ensure_device()?;
         configure_memory_cache()?;
-        // 先建守卫：后面任何一步加载失败，展开时也会等 GPU 并清掉已分配的缓存。
+        // Create the guard first: if any later load step fails, unwinding will also wait for the GPU and clear the cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
         stage("weights")?;
         let mut weights =
@@ -145,7 +144,7 @@ impl VoxCpm2 {
         let leftover = weights.keys();
         ensure!(leftover.is_empty(), "{ENGINE_NAME} 有未使用的权重：{}", leftover.join(", "));
         drop(weights);
-        // 加载期的守卫在这里析构：等 GPU 并清缓存（v2 在这里调 `clear_memory_cache`）；模型自己的守卫管卸载。
+        // The load-time guard is dropped here: it waits for the GPU and clears the cache (v2 calls `clear_memory_cache` here); the model's own guard handles unloading.
         drop(cache_guard);
         Ok(model)
     }
@@ -256,7 +255,7 @@ impl VoxCpm2 {
         self.config.patch_size
     }
 
-    /// 参考波形（`vae.sample_rate`）补零到 `patch × hop` 的整数倍后编码成 `[N, patch, latent]`。
+    /// The reference waveform (at `vae.sample_rate`) is zero-padded to an integer multiple of `patch × hop` and then encoded into `[N, patch, latent]`.
     pub(crate) fn encode_audio(&self, samples: &[f32], pad_left: bool) -> Result<Array> {
         ensure!(!samples.is_empty(), "{ENGINE_NAME} 参考音频为空");
         let unit = self.patch() * self.vae.hop;
@@ -279,7 +278,7 @@ impl VoxCpm2 {
         Ok(ops::zeros::<f32>(&[n as i32, self.patch() as i32, self.vae.latent_dim as i32])?)
     }
 
-    /// 组装一段文本的前缀：token、音频特征、文本 / 音频掩码，并返回续写种子 patch 数。
+    /// Builds the prefix for one text: tokens, audio features, text/audio masks; also returns the number of continuation-seed patches.
     fn build_inputs(&self, text: &str, plan: Option<&VoicePlan>) -> Result<(Vec<i32>, Array, Vec<f32>, Vec<f32>)> {
         let text_ids = |text: &str| -> Vec<i32> {
             let mut ids = self.tokenizer.encode(text);
@@ -338,7 +337,7 @@ impl VoxCpm2 {
         let count = dim * self.patch();
         let mut values = Vec::with_capacity(count);
         while values.len() < count {
-            // Box–Muller：主机侧出噪声，MLX 与 Candle 同一种子同一串。
+            // Box–Muller: noise is generated on the host, so MLX and Candle produce the same sequence from the same seed.
             let u1 = rng.next_f64().max(f64::MIN_POSITIVE);
             let u2 = rng.next_f64();
             let r = (-2.0 * u1.ln()).sqrt();
@@ -359,7 +358,7 @@ impl VoxCpm2 {
         Ok((lm_hidden, res_out.index((.., -1, ..)), lm_cache, res_cache))
     }
 
-    /// 一段文本的一次完整生成（前缀 → 逐 patch 扩散 → VAE 解码）。
+    /// One complete generation for a text (prefix → per-patch diffusion → VAE decode).
     fn generate(
         &self,
         text: &str,
@@ -398,7 +397,7 @@ impl VoxCpm2 {
         let (res_out, mut res_cache) = self.residual_lm.forward(&fused, None, true)?;
         let mut res_hidden = res_out.index((.., -1, ..));
 
-        // 续写：prompt 末尾几个 patch 先放进输出序列，解码后连同对应的样本一起裁掉。
+        // Continuation: the last few prompt patches go into the output sequence first; after decoding, they are trimmed off along with their corresponding samples.
         let mut sequence: Vec<Array> = Vec::new();
         if matches!(plan, Some(VoicePlan::Continuation { .. })) {
             let audio_positions: Vec<i32> = audio_mask
@@ -457,7 +456,7 @@ impl VoxCpm2 {
         Ok(Generated { samples, patches })
     }
 
-    /// 带坏例重采的一段合成：撞上 `文本 token × 6` 视为没收住，最多再采 3 次。
+    /// Synthesis of one segment with bad-case resampling: hitting `text tokens × 6` counts as a runaway, and it is resampled up to 3 more times.
     pub(crate) fn synthesize_text(
         &self,
         text: &str,
@@ -509,7 +508,7 @@ impl VoxCpm2 {
     }
 }
 
-/// 官方 `generate` 的文本预处理：换行换空格、连续空白合一。
+/// Official text preprocessing in `generate`: newlines become spaces and runs of whitespace collapse into one.
 fn normalize_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -533,7 +532,7 @@ impl TtsEngine for VoxCpm2 {
         SAMPLE_RATE
     }
 
-    /// 模型没有说话人表；露出来的是随包的内置音色（`VoiceSpec::Preset` 的取值）。
+    /// The model has no speaker table; what is exposed are the built-in voices bundled with the package (the values of `VoiceSpec::Preset`).
     fn preset_speakers(&self) -> Vec<String> {
         crate::synthesize::voices::ids()
     }
@@ -554,7 +553,7 @@ impl TtsEngine for VoxCpm2 {
         let plan = self.plan_voice(&reference.audio, reference.text.as_deref(), instruct.is_none())?;
         let mut rng = Rng::from_optional_seed(request.sampling.seed);
 
-        // 块与块之间的停顿与响度由拼接统一定（`synthesize::stitch`）。
+        // Pauses and loudness between chunks are set uniformly by stitching (`synthesize::stitch`).
         let count = chunks.len();
         let mut stitcher = crate::synthesize::stitch::Stitcher::new(SAMPLE_RATE, count);
         for (index, chunk) in chunks.iter().enumerate() {
@@ -614,7 +613,7 @@ mod tests {
     fn prefix_layout_follows_reference_and_continuation_modes() {
         let _mlx = super::super::tests::mlx_lock();
         let model = super::super::tests::tiny_model();
-        // 30 个 16 kHz 样本 → 补到 patch(2)·hop(6) 的倍数 36 → 3 个 patch。
+        // 30 samples at 16 kHz → padded to 36, a multiple of patch(2)·hop(6) → 3 patches.
         let wave: Vec<f32> = (0..30).map(|i| (i as f32 * 0.3).sin() * 0.5).collect();
         let reference = model.encode_audio(&wave, false).unwrap();
         let prompt = model.encode_audio(&wave, true).unwrap();
@@ -640,7 +639,7 @@ mod tests {
             prompt_text: "a".into(),
         };
         let (ids, feats, text_mask, audio_mask) = model.build_inputs("bc", Some(&plan)).unwrap();
-        // 「a」+「bc」一起分词：▁a b c，再接 101 和 3 个 prompt 占位。
+        // “a” + “bc” tokenized together: ▁a b c, then 101 and 3 prompt placeholders.
         assert_eq!(ids, vec![REF_START, 0, 0, 0, REF_END, 5, 3, 4, AUDIO_START, 0, 0, 0]);
         assert_eq!(feats.shape(), vec![12, 2, 3]);
         assert_eq!(text_mask, vec![1., 0., 0., 0., 1., 1., 1., 1., 1., 0., 0., 0.]);
@@ -676,7 +675,7 @@ mod tests {
             prompt: model.encode_audio(&wave, true).unwrap(),
             prompt_text: "a".into(),
         };
-        // 续写种子（3 个 prompt patch）解码后被裁掉，剩下的正好是新生成的 patch。
+        // The continuation seed (3 prompt patches) is trimmed after decoding, leaving exactly the newly generated patches.
         let (c, patches) = run(Some(&plan), 3);
         assert_eq!(c.len(), patches * per_patch);
     }

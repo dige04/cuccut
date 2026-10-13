@@ -29,7 +29,7 @@ describe('效果', () => {
       grayscale: 1,
       shadow: { offsetX: 0, offsetY: 8, blur: 12, color: '#000000', opacity: 0.8 },
     });
-    // 颜色校正：改的那项写上，其余四项按 0 补齐（卡开着就是五项都在）。
+    // Color correction: the item that was changed is written; the other four are filled in as 0 (when the card is open, all five are present).
     expect(withEffect(undefined, 'color-adjust', { hue: 0.2 })).toEqual({
       brightness: 0,
       contrast: 0,

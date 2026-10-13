@@ -3,34 +3,34 @@ import { M } from './tools-image-copy.ts';
 import { cloudModelOptions, codePoints, localModelOptions, localNotDownloaded, modelKeyOf, parseSeed, type ToolModelOption } from './tools-models.ts';
 
 /**
- * 生成图片工作台（设计稿 tool-image.jsx、image-gen.jsx `ImageGenForm`、model-cloud-image.js 的云端与本机部分）：
- * 提示词、模型、画幅、数量、种子，本机模型另有步数。参考图、局域网节点这一版没有后端，页面上置灰写原因；Codex 画图在会话里用。
+ * Image generation workbench (design mocks tool-image.jsx, image-gen.jsx `ImageGenForm`, and the cloud and local parts of model-cloud-image.js):
+ * prompt, model, aspect ratio, count, seed; local models also have steps. Reference images and LAN nodes have no backend in this version, so they are greyed out on the page with a reason. Codex image generation is used in the session.
  */
 
 export type ImageOption = ToolModelOption<ImageModelInfo>;
 
 export { localNotDownloaded };
 
-/** 本机的文生图模型包：都列出来（没装的也列，选中时给下载卡），名字用模型的名字。 */
+/** Local image model packs: all are listed (uninstalled ones too; choosing one shows a download card), named with the model's name. */
 export function localImageOptions(view: ModelCapabilitiesView): ImageOption[] {
   return localModelOptions(view, 'generateImage');
 }
 
-/** 生图的模型菜单：云端在前、本机在后（设计稿的三组里 Codex 这一版不在工具页）。 */
+/** Model menu for image generation: cloud first, then local (of the three groups in the design, Codex is not on the tools page in this version). */
 export function imageModelOptions(view: ModelCapabilitiesView): ImageOption[] {
   return [...cloudModelOptions(view, 'generateImage'), ...localImageOptions(view)];
 }
 
-/** 开页的回落只落到云端（设计稿 `preferred`）：本机模型要用户自己选或设为默认。 */
+/** The fallback when the page opens only goes to cloud (design `preferred`): local models must be chosen by the user or set as default. */
 export const imageFallback = (option: ImageOption): boolean => !option.local;
 
-/** 没写提示词时那一句（设计稿 model-cloud-image.js `EMPTY_PROMPT`）。 */
+/** The sentence shown when no prompt is written (design mock model-cloud-image.js `EMPTY_PROMPT`). */
 export function emptyPrompt(): string {
   return M.emptyPrompt;
 }
 
-/** 「填一句示例」轮着给（设计稿 image-gen.jsx `SAMPLES`）：中英两种提示词混着给，不随界面语言变。 */
-// i18n-ignore-start: 示例提示词有意中英混排，展示两种语言都能写
+/** "Fill in a sample" cycles through the samples (design mock image-gen.jsx `SAMPLES`): Chinese and English prompts are mixed, and they don't change with the UI language. */
+// i18n-ignore-start: sample prompts deliberately mix Chinese and English, to show that both languages work
 export const IMAGE_SAMPLES = [
   'A paper crane on a wooden desk, soft morning light, shallow depth of field',
   '一间明亮的播客工作室，木质桌面上放着麦克风与一杯咖啡，插画风格，暖色',
@@ -41,30 +41,30 @@ export const IMAGE_SAMPLES = [
 
 export interface ImageDraft {
   prompt: string;
-  /** `providerId/modelId`；null 为还没选。 */
+  /** `providerId/modelId`; null means none chosen yet. */
   model: string | null;
-  /** 画幅：宽高比 `W:H` 或尺寸 `WIDTHxHEIGHT`；null 为模型的默认。 */
+  /** Aspect ratio: `W:H` aspect ratio or `WIDTHxHEIGHT` size; null means the model's default. */
   size: string | null;
   count: number;
   seed: string;
-  /** 「高级」展开了没有。 */
+  /** Whether "Advanced" is expanded. */
   advanced: boolean;
-  /** 本机模型的去噪步数；null 为模型的默认。 */
+  /** Denoising steps for a local model; null means the model's default. */
   steps: number | null;
 }
 
 export const BLANK_IMAGE: ImageDraft = { prompt: '', model: null, size: null, count: 1, seed: '', advanced: false, steps: null };
 
-// ---- 画幅 ----
+// ---- Aspect ratio ----
 
 export interface AspectOption {
-  /** 交给 Runtime 的 `size`：宽高比或尺寸。 */
+  /** The `size` handed to the Runtime: an aspect ratio or a size. */
   key: string;
-  /** 宽高比（`16:9`）。 */
+  /** Aspect ratio (`16:9`). */
   label: string;
-  /** 像素尺寸（`1792×1024`）；不知道时 null。 */
+  /** Pixel size (`1792×1024`); null when unknown. */
   sub: string | null;
-  /** 示意框的宽高比（宽 / 高）。 */
+  /** Aspect ratio of the preview box (width / height). */
   ratio: number;
 }
 
@@ -92,7 +92,7 @@ function ratioNumber(ratio: string): number {
 
 const times = (size: string) => size.replace(/x/i, '×');
 
-/** 画幅选项：模型给了宽高比就列宽高比（带它的默认尺寸），否则列它收的尺寸。都没有时为空（尺寸由供应商定）。 */
+/** Aspect ratio options: if the model gives aspect ratios, list them (with their default size); otherwise list the sizes it accepts. Empty when neither is given (the provider decides the size). */
 export function aspectOptions(info: Pick<ImageModelInfo, 'aspectRatios' | 'sizes'>): AspectOption[] {
   if (info.aspectRatios.length) {
     return info.aspectRatios.map((a) => ({ key: a.ratio, label: a.ratio, sub: times(a.size), ratio: ratioNumber(a.ratio) }));
@@ -100,7 +100,7 @@ export function aspectOptions(info: Pick<ImageModelInfo, 'aspectRatios' | 'sizes
   return info.sizes.map((size) => ({ key: size, label: ratioOfSize(size), sub: times(size), ratio: ratioNumber(ratioOfSize(size)) }));
 }
 
-/** 草稿的画幅在这只模型下成不成立；不成立时用模型的默认（默认尺寸对应的宽高比，或默认尺寸本身），再不行取第一项。 */
+/** Whether the draft's aspect ratio is valid for this model; if not, use the model's default (the aspect ratio of its default size, or the default size itself); failing that, take the first option. */
 export function sizeKeyFor(draft: Pick<ImageDraft, 'size'>, info: ImageModelInfo): string | null {
   const options = aspectOptions(info);
   if (!options.length) return null;
@@ -114,7 +114,7 @@ export function countFor(draft: Pick<ImageDraft, 'count'>, info: Pick<ImageModel
   return Math.min(Math.max(1, info.maxCount), Math.max(1, Math.round(draft.count) || 1));
 }
 
-/** 本机模型的步数：草稿的（夹进范围），没有时模型的默认；不收步数的模型 null。 */
+/** Steps for a local model: the draft's (clamped to range), otherwise the model's default; null for models that don't take steps. */
 export function stepsFor(draft: Pick<ImageDraft, 'steps'>, info: Pick<ImageModelInfo, 'local'>): number | null {
   const range = info.local?.steps;
   if (!range) return null;
@@ -122,12 +122,12 @@ export function stepsFor(draft: Pick<ImageDraft, 'steps'>, info: Pick<ImageModel
   return Math.min(range.max, Math.max(range.min, Math.round(draft.steps)));
 }
 
-/** 换一只模型：画幅与张数回到这只认的范围，提示词与种子留着。 */
+/** Switching models: the aspect ratio and count go back to the range this model accepts; the prompt and seed are kept. */
 export function switchImageModel(draft: ImageDraft, option: ImageOption): Partial<ImageDraft> {
   return { model: option.key, size: sizeKeyFor({ size: draft.size }, option.info), count: countFor(draft, option.info) };
 }
 
-// ---- 校验与请求 ----
+// ---- Validation and request ----
 
 export function imageProblems(draft: ImageDraft, option: ImageOption | null): string[] {
   const problems: string[] = [];
@@ -142,7 +142,7 @@ export function imageProblems(draft: ImageDraft, option: ImageOption | null): st
   return problems;
 }
 
-/** `models.generateImage` 的参数：不导入任何视频。 */
+/** Parameters for `models.generateImage`: imports no video. */
 export function imageRequest(draft: ImageDraft, option: ImageOption): Omit<GenerateImageRequest, 'commandId'> {
   const info = option.info;
   const size = sizeKeyFor(draft, info);
@@ -159,7 +159,7 @@ export function imageRequest(draft: ImageDraft, option: ImageOption): Omit<Gener
   };
 }
 
-/** 主按钮旁那句（设计稿 image-gen.jsx `statusOf`）。 */
+/** The sentence beside the main button (design mock image-gen.jsx `statusOf`). */
 export function imageStatus(draft: ImageDraft, option: ImageOption | null, tried: boolean): { text: string; bad: boolean } {
   if (!option) return { text: M.pickModel, bad: true };
   if (!option.usable) {
@@ -172,7 +172,7 @@ export function imageStatus(draft: ImageDraft, option: ImageOption | null, tried
   if (problem) return { text: problem, bad: true };
   const size = sizeKeyFor(draft, option.info);
   if (option.local) {
-    // 耗时随机器差很多，这一版没有实测的每步耗时可查（设计稿 `statusLine` 没有实测时的那一句）。
+    // Time varies a lot from machine to machine, and this version has no measured per-step time to look up (the design's `statusLine` sentence for when nothing has been measured).
     const steps = stepsFor(draft, option.info);
     return {
       text: [M.local, size ? times(size) : null, steps ? M.steps(steps) : null, M.deviceTime, M.offline].filter(Boolean).join(' · '),
@@ -183,7 +183,7 @@ export function imageStatus(draft: ImageDraft, option: ImageOption | null, tried
   return { text: [option.modelId, size ? times(size) : null, M.images(count)].filter(Boolean).join(' · '), bad: false };
 }
 
-/** 模型那一行右边的一句（设计稿 image-gen.jsx `ModelLine` 的 `m.desc`）：从能力描述里来——画幅几种、一次几张、收不收种子。 */
+/** The sentence at the right of the model line (design mock image-gen.jsx `ModelLine`'s `m.desc`): derived from the capability description: how many aspect ratios, how many per run, whether it takes a seed. */
 export function imageModelLine(info: ImageModelInfo): string {
   const aspects = aspectOptions(info).length;
   return [
@@ -196,25 +196,25 @@ export function imageModelLine(info: ImageModelInfo): string {
     .join(' · ');
 }
 
-/** 页头那枚标签（设计稿 model-cloud-image.js `headerChip`）：走谁的服务。计费口径各家不同，只说「按用量计费」。 */
+/** The header chip (design mock model-cloud-image.js `headerChip`): who serves it. Billing differs by provider, so it only says “billed by usage”. */
 export function imageHeaderChip(option: Pick<ImageOption, 'provider' | 'local'> | null): string | null {
   if (!option) return null;
   return option.local ? M.localChip : M.cloudChip(option.provider);
 }
 
-// ---- 记录 ----
+// ---- Records ----
 
 export interface ImageResult {
   artifactId: string;
   width: number;
   height: number;
-  /** 「图片 1」。 */
+  /** "Image 1". */
   name: string;
-  /** 「1024×1024 · 种子 42」（没有种子时只写尺寸）。 */
+  /** "1024×1024 · seed 42" (only the size when there is no seed). */
   meta: string;
 }
 
-/** 生成好的图（只取图片输出）。 */
+/** The generated image (only the image output is taken). */
 export function imageResults(job: JobRecord): ImageResult[] {
   const g = job.generation?.capability === 'generateImage' ? job.generation : null;
   const seed = g?.seed ?? null;
@@ -234,8 +234,8 @@ export function imageResults(job: JobRecord): ImageResult[] {
 }
 
 /**
- * 本机生图在跑时的一句（设计稿 model-cloud-image.js `phase` 的本机分支）：去噪按步报（`steps`），步数走完是解码。
- * 没有按步的进度（云端，或本机还在加载模型、编码提示词）时 null，用通用的阶段说法。
+ * The line shown while a local image generation is running (the local branch of the design mock model-cloud-image.js `phase`): denoising reports progress per step (`steps`), and once all steps are done it is decoding.
+ * null when there is no per-step progress (cloud, or a local model still loading or encoding the prompt): use the generic stage wording.
  */
 export function imageStepPhase(job: Pick<JobRecord, 'progress'>): string | null {
   const p = job.progress;
@@ -243,12 +243,12 @@ export function imageStepPhase(job: Pick<JobRecord, 'progress'>): string | null 
   return p.done >= p.total ? M.decoding : M.stepOf(Math.max(1, p.done), p.total);
 }
 
-/** 生图任务的提示词。 */
+/** The prompt for an image generation task. */
 export function imagePrompt(job: Pick<JobRecord, 'generation'>): string {
   return job.generation?.capability === 'generateImage' ? job.generation.prompt : '';
 }
 
-/** 一批结果的小标题（设计稿 `IM.recordMeta`）：「OpenAI · gpt-image-1 · 16:9 · 2 张」。 */
+/** Subheading for a batch of results (design mock `IM.recordMeta`): "OpenAI · gpt-image-1 · 16:9 · 2 images". */
 export function imageBatchMeta(job: JobRecord, provider: string): string {
   const g = job.generation?.capability === 'generateImage' ? job.generation : null;
   return [
@@ -261,7 +261,7 @@ export function imageBatchMeta(job: JobRecord, provider: string): string {
     .join(' · ');
 }
 
-/** 「再来一版」：这一版的提示词与设置回到表单，种子留空重新随机。 */
+/** "Another version": this version's prompt and settings go back to the form, and the seed is cleared to randomize again. */
 export function againDraft(job: JobRecord): Partial<ImageDraft> | null {
   const g = job.generation?.capability === 'generateImage' ? job.generation : null;
   if (!g) return null;
@@ -275,7 +275,7 @@ export function againDraft(job: JobRecord): Partial<ImageDraft> | null {
   };
 }
 
-/** 「再试一次」：照冻结的参数原样再提交一次（同一个 Provider 与模型）。 */
+/** "Try again": resubmits the frozen parameters unchanged (same provider and model). */
 export function retryRequest(job: JobRecord): Omit<GenerateImageRequest, 'commandId'> | null {
   const g = job.generation?.capability === 'generateImage' ? job.generation : null;
   if (!g) return null;
@@ -292,7 +292,7 @@ export function retryRequest(job: JobRecord): Omit<GenerateImageRequest, 'comman
   };
 }
 
-/** 生图下载的文件名：「图片 1.png」按产物的类型取扩展名。 */
+/** Filename for image downloads: "Image 1.png", with the extension taken from the output type. */
 export function imageFileName(name: string, mediaType: string): string {
   const ext = mediaType === 'image/jpeg' ? 'jpg' : mediaType === 'image/webp' ? 'webp' : 'png';
   return `${name}.${ext}`;

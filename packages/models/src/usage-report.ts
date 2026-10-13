@@ -15,24 +15,24 @@ import { CAPABILITY_LABELS } from './model-selection.ts';
 import { modelPrice, type ModelUnitPrice } from './model-prices.ts';
 
 /**
- * `models.usage` 的汇总（架构设计 §6.10），纯函数：读出的账本记录 → `UsageReport`。
+ * Summary for `models.usage` (architecture design §6.10), a pure function: read ledger records → `UsageReport`.
  *
- * - 时段按 Runtime 所在机器的本地日期：`today` 从今天零点起，`7d` / `30d` 是含今天在内的最近 7 / 30 天，`all` 不限
- *   （`from` 是最早一条记录的时间，没有记录时同 `to`）。
- * - 金额：一条记录有供应商报告的金额就用它；否则价目表（`model-prices.ts`）有这个模型的单价、所需的用量也齐全时估算；
- *   否则是未知，计入 `unknownCalls`。验证密钥（`source: 'verify'`）不计费用，也不算未知。不同币种分别汇总，不换算。
- * - 金额用百万分之一的整数（bigint）累加，最后才转回十进制字符串。
+ * - Time ranges follow the local date of the machine running the Runtime: `today` starts at midnight today; `7d` / `30d` are the last 7 / 30 days including today; `all` is unbounded
+ *   (`from` is the time of the earliest record; the same as `to` when there are no records).
+ * - Amounts: a record that has a provider-reported amount uses it. Otherwise, if the price table (`model-prices.ts`) has this model's unit price and the required usage is complete, it is estimated.
+ *   Otherwise it is unknown and counted in `unknownCalls`. Verification keys (`source: 'verify'`) are not charged and are not counted as unknown. Different currencies are totaled separately, without conversion.
+ * - Amounts are accumulated as integers in millionths (bigint), and only converted back to a decimal string at the end.
  */
 
 export interface UsageReportOptions {
   period: UsagePeriod;
   providerId?: string;
   now?: Date;
-  /** 价目表（测试替换）；默认 `model-prices.ts`。 */
+  /** Price table (replaceable in tests); defaults to `model-prices.ts`. */
   price?: (providerId: string, modelId: string) => ModelUnitPrice | null;
-  /** Provider 的显示名；不给时用 `providerId`。 */
+  /** The Provider's display name; uses `providerId` when not given. */
   providerLabel?: (providerId: string) => string;
-  /** 账号的显示名（名字，没有时掩码）；账号已经删掉时 null，按 `accountId` 列出。 */
+  /** The account's display name (the name, or a masked form when there is none); null when the account has been deleted, and it is then listed by `accountId`. */
   accountLabel?: (providerId: string, accountId: string) => string | null;
 }
 
@@ -120,7 +120,7 @@ export function buildUsageReport(records: readonly UsageRecord[], options: Usage
   };
 }
 
-/** 时段的起点（本地零点）；`all` 为 null。 */
+/** Start of the time range (local midnight); null for `all`. */
 export function periodStart(period: UsagePeriod, now: Date): Date | null {
   if (period === 'all') return null;
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -131,7 +131,7 @@ export function periodStart(period: UsagePeriod, now: Date): Date | null {
 
 type RecordCost = { kind: 'reported' | 'estimated'; currency: string; micros: bigint } | 'unknown' | 'none';
 
-/** 一条记录的金额：报告的、估算的、未知，或不计（验证）。 */
+/** A record's amount: reported, estimated, unknown, or not counted (verification). */
 export function costOf(record: UsageRecord, price: (providerId: string, modelId: string) => ModelUnitPrice | null): RecordCost {
   if (record.cost.kind === 'reported') {
     return { kind: 'reported', currency: record.cost.currency, micros: moneyToMicros(record.cost.amount) };
@@ -144,7 +144,7 @@ export function costOf(record: UsageRecord, price: (providerId: string, modelId:
   return micros === null ? 'unknown' : { kind: 'estimated', currency: unit.currency, micros };
 }
 
-/** 按单价估算（百万分之一）；所需的用量或单价缺一样就是 null。 */
+/** Estimate from the unit price (in millionths); null if either the required usage or the unit price is missing. */
 function estimateMicros(capability: ModelServiceCapability, units: UsageUnits, unit: ModelUnitPrice): bigint | null {
   const p = (value: string | undefined) => (value === undefined ? null : moneyToMicros(value));
   switch (capability) {
@@ -163,7 +163,7 @@ function estimateMicros(capability: ModelServiceCapability, units: UsageUnits, u
     case 'transcribe': {
       const perMinute = p(unit.audioPerMinute);
       if (perMinute === null || units.audioSeconds === undefined) return null;
-      // 按毫秒算，避免浮点的秒数。
+      // Compute in milliseconds, to avoid floating-point seconds.
       return divRound(BigInt(Math.round(units.audioSeconds * 1000)) * perMinute, 60_000n);
     }
     case 'synthesizeSpeech': {
@@ -216,7 +216,7 @@ function addUnits(into: UsageUnits, units: UsageUnits): void {
   }
 }
 
-/** 秒数相加的浮点误差收在毫秒。 */
+/** Floating-point error from summing seconds is rounded to milliseconds. */
 function roundUnit(n: number): number {
   return Math.round(n * 1000) / 1000;
 }

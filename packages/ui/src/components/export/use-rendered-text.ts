@@ -4,21 +4,21 @@ import { explainExportError, type ExportProblem } from '../../model/export-rejec
 import { useRuntime } from '../../runtime/context.tsx';
 import type { ExportEnv } from './use-export-submit.ts';
 
-/** 改设置之后等这么久再去排：连着点几个开关只排最后一次。 */
+/** After a settings change, wait this long before rendering again: clicking several toggles in a row renders only the last one. */
 const DEBOUNCE_MS = 150;
 
 export interface RenderedText {
-  /** 与当前设置对应的正文；还没排好、被拒或没有设置时 null。 */
+  /** The body text matching the current settings; null when it is not rendered yet, was rejected, or there are no settings. */
   output: RenderedTextOutput | null;
-  /** 上一次排好的正文（设置刚改、新的还没回来时先留着它，预览不闪）。 */
+  /** The last rendered body (kept while new settings are still coming back, so the preview does not flicker). */
   shown: RenderedTextOutput | null;
   loading: boolean;
   problem: ExportProblem | null;
 }
 
 /**
- * 按导出设置取字幕或文稿的正文（`exports.renderText`，不写文件）：与同样设置导出的文件逐字节相同。
- * 设置、序列或文档换了版本时重排；晚到的旧结果丢掉。`documentIds` 是正文取自的文档，它们的版本进重排的依据。
+ * Gets the subtitle or transcript body text according to the export settings (`exports.renderText`, writes no file): byte-identical to the file exported with the same settings.
+ * Re-renders when the settings, the sequence or a document version changes; late stale results are dropped. `documentIds` are the documents the body is taken from; their versions are the basis for re-rendering.
  */
 export function useRenderedText(env: ExportEnv, settings: ExportSettings | null, documentIds: readonly string[]): RenderedText {
   const runtime = useRuntime();
@@ -57,7 +57,7 @@ export function useRenderedText(env: ExportEnv, settings: ExportSettings | null,
       live = false;
       clearTimeout(timer);
     };
-    // `key` 已经包含了设置与版本；`settings`、`env.documents` 每次渲染都是新对象，不进依赖。
+    // `key` already contains the settings and versions; `settings` and `env.documents` are new objects on every render, so they are not in the dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, key]);
 

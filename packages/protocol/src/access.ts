@@ -6,29 +6,29 @@ import type { Localized } from './message-ref.ts';
 import { ProtocolLabels } from './messages/protocol/protocol-labels.ts';
 
 /**
- * 访问模式与统一审批（架构设计 §3.12、§4.8）。
+ * Access modes and unified approval (architecture design §3.12, §4.8).
  *
- * - 四档访问模式决定会话里的动作要不要逐项确认；`plan`（先给方案）是独立的一档，不执行写操作。
- * - 每个动作带一个风险等级；访问模式（或对外服务的等级）× 风险等级查表得到「自动」「询问」或「拒绝」。
- * - 旧值仍被接受：`controlled` → `ask`，`authorized` → `fullAccess`，`plan` 不变（`normalizeAgentMode`）。
+ * - The four access modes decide whether actions in a session need confirmation one by one; `plan` (propose a plan first) is a separate mode that does not perform write operations.
+ * - Each action carries a risk level; looking up access mode (or the public service level) × risk level gives "auto", "ask", or "deny".
+ * - Old values are still accepted: `controlled` → `ask`, `authorized` → `fullAccess`, `plan` is unchanged (`normalizeAgentMode`).
  */
 
-/** 四档访问模式，从严到宽。 */
+/** The four access modes, from strictest to most permissive. */
 export const ACCESS_MODES = ['ask', 'autoAcceptEdits', 'auto', 'fullAccess'] as const;
 export type AccessMode = (typeof ACCESS_MODES)[number];
 
-/** 会话的模式：四档访问模式，加上独立的「先给方案」。 */
+/** The session's mode: the four access modes, plus the separate "propose a plan first" mode. */
 export const AGENT_MODES = ['plan', ...ACCESS_MODES] as const;
 export type AgentMode = (typeof AGENT_MODES)[number];
 
-/** 仍被接受的旧值（0.1 的自主模式）。 */
+/** Old values still accepted (the autonomous mode of 0.1). */
 export const LEGACY_AGENT_MODES = ['controlled', 'authorized'] as const;
 
-/** 新会话的默认模式（`agent.defaultAccessMode` 的默认值）。 */
+/** Default mode for new sessions (the default value of `agent.defaultAccessMode`). */
 export const DEFAULT_AGENT_MODE: AgentMode = 'auto';
 
 /**
- * 给人看的名字（会话里的切换提示、CLI），带消息引用：嵌进 Runtime 的句子时把它作为参数传，界面能按自己的语言重新生成。
+ * Human-readable name (session switch hints, CLI), with a message reference: when it is embedded in a Runtime sentence, pass it as an argument so the UI can regenerate it in its own language.
  */
 export function agentModeLabel(mode: AgentMode): Localized {
   switch (mode) {
@@ -45,12 +45,12 @@ export function agentModeLabel(mode: AgentMode): Localized {
   }
 }
 
-/** 给人看的名字的当前语言文字（读的时候取当前语言）。 */
+/** The text of the human-readable name in the current language (read in the current language at read time). */
 export const AGENT_MODE_LABELS: Readonly<Record<AgentMode, string>> = live(
   () => Object.fromEntries(AGENT_MODES.map((mode) => [mode, agentModeLabel(mode).text])) as Record<AgentMode, string>,
 );
 
-/** 旧值换成新值；新值原样返回。 */
+/** Maps an old value to a new one; a new value is returned unchanged. */
 export function normalizeAgentMode(mode: AgentMode | Autonomy): AgentMode {
   if (mode === 'controlled') return 'ask';
   if (mode === 'authorized') return 'fullAccess';
@@ -62,30 +62,30 @@ export function isAgentMode(value: unknown): value is AgentMode | Autonomy {
 }
 
 /**
- * 动作的风险等级（封闭枚举，§3.12）：
- * - `read`：查询；
- * - `edit`：对文件与视频的可逆修改；
- * - `command`：运行命令与其他一般动作（取消任务、经已授权的 Provider 生成）；
- * - `high`：写项目目录之外、删除视频或项目、不可逆的覆盖、需要新授权的数据外发或付费调用。
+ * Risk level of an action (closed enum, §3.12):
+ * - `read`: query;
+ * - `edit`: reversible changes to files and videos;
+ * - `command`: running commands and other general actions (cancelling a job, generating through an authorized Provider);
+ * - `high`: writing outside the project directory, deleting videos or projects, irreversible overwrites, and sending data out or paid calls that need new authorization.
  */
 export const RISK_LEVELS = ['read', 'edit', 'command', 'high'] as const;
 export type RiskLevel = (typeof RISK_LEVELS)[number];
 
-/** 查表的结果：自动执行、生成待处理的审批，或直接拒绝（`plan` 下的写操作）。 */
+/** Result of the lookup: run automatically, create a pending approval, or deny outright (write operations under `plan`). */
 export type ApprovalVerdict = 'allow' | 'ask' | 'deny';
 
 /**
- * 决策表（§3.12）。`read` 在任何模式下都自动。
+ * Decision table (§3.12). `read` is automatic in every mode.
  *
- * | 模式 | edit | command | high |
+ * | Mode | edit | command | high |
  * | --- | --- | --- | --- |
- * | plan | 拒绝 | 询问 | 拒绝 |
- * | ask | 询问 | 询问 | 询问 |
- * | autoAcceptEdits | 自动 | 询问 | 询问 |
- * | auto | 自动 | 自动 | 询问 |
- * | fullAccess | 自动 | 自动 | 自动 |
+ * | plan | deny | ask | deny |
+ * | ask | ask | ask | ask |
+ * | autoAcceptEdits | auto | ask | ask |
+ * | auto | auto | auto | ask |
+ * | fullAccess | auto | auto | auto |
  *
- * `plan` 下的 `command` 只出自 Driver：它在只读沙箱里运行命令前来问，照旧交给用户；CucCut 的写工具在 `plan` 下直接拒绝。
+ * `command` under `plan` comes only from the Driver: it asks before running a command in a read-only sandbox, and that still goes to the user as before; CucCut's own write tools are denied directly under `plan`.
  */
 export function decideApproval(mode: AgentMode, risk: RiskLevel): ApprovalVerdict {
   if (risk === 'read') return 'allow';
@@ -104,8 +104,7 @@ export function decideApproval(mode: AgentMode, risk: RiskLevel): ApprovalVerdic
 }
 
 /**
- * 对外服务的等级用同一张表（§4.8）：`ask` 与访问模式 `ask` 相同，逐次确认；`auto` 直接执行（与 `fullAccess` 相同，
- * 数据外发另由 Provider 的启用把关）；`read` 只有查询，写工具不在目录里，这里再拒绝一次。
+ * Public service levels use the same table (§4.8): `ask` is the same as access mode `ask`, confirming each action; `auto` runs directly (the same as `fullAccess`; sending data out is still gated by whether the Provider is enabled); `read` has only queries, and write tools are not in its directory, so they are denied again here.
  */
 export function decideServiceApproval(level: ServiceLevel, risk: RiskLevel): ApprovalVerdict {
   if (risk === 'read') return 'allow';
@@ -113,14 +112,14 @@ export function decideServiceApproval(level: ServiceLevel, risk: RiskLevel): App
   return level === 'auto' ? 'allow' : 'ask';
 }
 
-/** 审批的主体：会话（智能体）或对外服务的客户端。 */
+/** The principal of an approval: the session (agent) or the public service's client. */
 export type ApprovalSubject =
   | { kind: 'conversation'; conversationId: Id; conversationTitle: string; projectId: Id | null; taskId: Id }
   | { kind: 'service'; serviceId: ServiceId; clientId: string; clientName: string };
 
 /**
- * 要确认的动作。`kind`：CucCut 工具调用、Driver 报上来的命令或文件修改；`name` 是工具名（命令与文件修改为 kind 本身）；
- * `targets` 是目标（视频、文件或命令），`summary` 是给人看的一句参数摘要。
+ * The action to confirm. `kind`: a CucCut tool call, or a command or file change reported by the Driver; `name` is the tool name (for commands and file changes it is the kind itself);
+ * `targets` are the targets (videos, files, or commands), and `summary` is a one-sentence summary of the arguments for people to read.
  */
 export interface ApprovalAction {
   kind: 'tool' | 'command' | 'file-change';
@@ -129,10 +128,10 @@ export interface ApprovalAction {
   summary: string;
 }
 
-/** 依据：会话当时的模式，或服务当时的等级。 */
+/** Basis: the session's mode at that time, or the service's level at that time. */
 export type ApprovalBasis = { kind: 'mode'; mode: AgentMode } | { kind: 'service'; level: ServiceLevel };
 
-/** 一条待处理的审批（统一列表，`tasks` 主题与 `approvals.list`）。会话审批没有时限，`expiresAt` 为 null。 */
+/** A pending approval (the unified list, the `tasks` topic and `approvals.list`). Session approvals have no time limit, so `expiresAt` is null. */
 export interface PendingApproval {
   approvalId: Id;
   subject: ApprovalSubject;
@@ -142,14 +141,13 @@ export interface PendingApproval {
   createdAt: string;
   expiresAt: string | null;
   /**
-   * 这次动作要外发、还没有授权覆盖的数据（架构设计 §12.5）。有它时允许可以带上 `grant`（`approvals.respond`）：
-   * 只这一次，或同时发放持续授权。一个任务需要的几项授权合并在同一条审批里。
+   * This action sends out data that is not yet covered by an authorization (architecture design §12.5). When present, allowing may carry a `grant` (`approvals.respond`): either this time only, or also issue an ongoing authorization. Several authorizations needed by one task are merged into the same approval.
    */
   grants?: GrantRequestItem[];
 }
 
-/** 审批的结局：允许、拒绝、超时（只有服务审批）或取消（停止、打断、断开）。 */
+/** The outcome of an approval: allowed, denied, timed out (service approvals only), or cancelled (stop, interrupt, disconnect). */
 export type ApprovalOutcome = 'allowed' | 'denied' | 'timeout' | 'cancelled';
 
-/** 统一入口 `approvals.respond` 的决定。 */
+/** The decision for the unified entry point `approvals.respond`. */
 export type PendingApprovalDecision = 'allow' | 'deny';

@@ -27,7 +27,7 @@ import { pl } from './space-search.pl.ts';
 import { tr } from './space-search.tr.ts';
 import { vi } from './space-search.vi.ts';
 
-/** 内容命中的文案（译文在 `space-search.<语言>.ts`）。 */
+/** Copy for content matches (translations are in `space-search.<locale>.ts`). */
 const en = {
   documentKind: { speech: 'Transcript', caption: 'Subtitles', translation: 'Translation', chapter: 'Chapter' } satisfies Record<
     SpaceSearchDocumentKind,
@@ -37,7 +37,7 @@ const en = {
     `The content index for ${count} ${count === 1 ? 'video' : 'videos'} hasn’t finished updating; results may be missing videos or out of date`,
   indexUpdating: 'The content index is updating; results may be out of date',
   truncated: (count: number) => `Too many matches; showing only the first ${count}`,
-  /** 几条说明连成一句。 */
+  /** Joins several notes into one sentence. */
   notes: (notes: readonly string[]) => `${notes.join('; ')}.`,
   sourceTime: (clock: string) => `Asset time ${clock}`,
 };
@@ -45,18 +45,18 @@ export type SpaceSearchMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * Space 的内容命中（架构设计 §5.11 跨视频的内容检索）：搜索框里的词同时查条目名（本地筛选）与视频的内容索引
- * （`space.search`：转录、字幕、译文、章节）。这里只决定命中怎么写、点了去哪里。
+ * Content matches in Space (architecture design §5.11, cross-video content search): the words in the search box are checked against item names (local filter) and against the video's content index
+ * (`space.search`: transcript, subtitles, translations, chapters). This only decides how a match is written and where a click goes.
  */
 
-/** 输入停下多久再去查内容索引。 */
+/** How long to stop typing before querying the content index. */
 export const SEARCH_DEBOUNCE_MS = 300;
-/** 一次最多要多少条内容命中：按视频分组、每组分页显示，取到合同的上限，少让一个视频的命中把别的视频挤出结果。 */
+/** The most content matches wanted at once: grouped by video, paged within each group, up to the contract's limit, so that one video's matches do not push other videos out of the results. */
 export const SEARCH_LIMIT = SPACE_SEARCH_MAX_LIMIT;
 
 export const DOCUMENT_KIND_LABEL: Record<SpaceSearchDocumentKind, string> = live(() => M.documentKind);
 
-/** 片段按命中位置切开：命中的部分标出来。位置是 UTF-16 下标，越界与重叠的收拢。 */
+/** Splits a snippet at the match position so the matched part can be marked. Positions are UTF-16 indices; out-of-range and overlapping ones are clamped. */
 export function snippetParts(snippet: string, highlights: readonly [number, number][]): { text: string; hit: boolean }[] {
   const ranges = highlights
     .map(([a, b]) => [Math.max(0, Math.min(a, snippet.length)), Math.max(0, Math.min(b, snippet.length))] as const)
@@ -79,19 +79,19 @@ export function snippetParts(snippet: string, highlights: readonly [number, numb
   return parts;
 }
 
-/** 打开命中所在的视频用的定位：Space 条目，或按 videoId 找到的视频条目；视频此刻不在任何来源目录里时 null。 */
+/** The locator used to open the video a match is in: a Space item, or a video entry found by videoId; null when the video is not in any source directory at the moment. */
 export function hitTarget(hit: Pick<SpaceSearchHit, 'entryId' | 'videoId'>, entries: readonly SpaceEntry[]): FileTarget | null {
   const entry = entries.find((e) => (hit.entryId ? e.id === hit.entryId : !!e.ref && 'videoId' in e.ref && e.ref.videoId === hit.videoId));
   if (entry && entry.kind === 'video' && !entry.user.trashedAt) return videoTargetOf(entry);
   return hit.entryId && !entry ? { entryId: hit.entryId } : null;
 }
 
-/** 打开后跳到哪一秒：只有序列时间能直接跳；源时间不跳。 */
+/** Which second to jump to after opening: only sequence time can be jumped to directly; source time does not jump. */
 export function seekSeconds(hit: Pick<SpaceSearchHit, 'time'>): number | null {
   return hit.time.clock === 'sequence' ? hit.time.start : null;
 }
 
-/** 结果不全时的一句说明（索引在重建或增量更新、命中太多）。全的时候 null。 */
+/** A sentence explaining that results are incomplete (the index is being rebuilt or incrementally updated, or there are too many matches). null when complete. */
 export function searchNote(result: Pick<SpaceSearchResult, 'complete' | 'pendingVideos' | 'truncated' | 'hits'>): string | null {
   const notes: string[] = [];
   if (!result.complete) {
@@ -103,21 +103,21 @@ export function searchNote(result: Pick<SpaceSearchResult, 'complete' | 'pending
   return notes.length ? M.notes(notes) : null;
 }
 
-/* ---------- 过滤与分组（设计稿 model-project-search.js 的字段标签与 planRows，page-projects.jsx 的 HitGroup） ---------- */
+/* ---------- Filtering and grouping (design mock model-project-search.js field labels and planRows, HitGroup in page-projects.jsx) ---------- */
 
-/** 文档种类：全部，或只看一种（合同 `kinds`）。 */
+/** Document kind: all, or just one kind (contract `kinds`). */
 export type HitKindFilter = 'all' | SpaceSearchDocumentKind;
 export const HIT_KIND_FILTERS: readonly HitKindFilter[] = ['all', 'speech', 'caption', 'translation', 'chapter'];
 
 export interface HitFilter {
   kind: HitKindFilter;
-  /** 只看这位说话人（从命中里认出来的名字）；null 是不限。 */
+  /** Only this speaker (a name recognized from the matches); null means no limit. */
   speaker: string | null;
 }
 
 export const ANY_HIT: HitFilter = { kind: 'all', speaker: null };
 
-/** `space.search` 的参数：全部种类不传 `kinds`，不限说话人不传 `speaker`；`projectId` 为 null 是全部项目，'none' 是不属于项目的视频。 */
+/** Arguments of `space.search`: for all kinds, `kinds` is not passed; for no speaker limit, `speaker` is not passed; `projectId` null means all projects, and 'none' means videos not in any project. */
 export function searchRequest(query: string, projectId: Id | 'none' | null, filter: HitFilter): SpaceSearchParams {
   return {
     query,
@@ -128,19 +128,19 @@ export function searchRequest(query: string, projectId: Id | 'none' | null, filt
   };
 }
 
-/** Runtime 按「名字里含有」找说话人；下拉里选的是一个确切的名字，「宝玉」不该带出「宝玉的嘉宾」。 */
+/** The Runtime finds speakers by “name contains”; the dropdown picks one exact name, and “宝玉” (a name) should not bring up “宝玉的嘉宾” (Baoyu's guest). */
 export function exactSpeaker(hits: readonly SpaceSearchHit[], speaker: string | null): SpaceSearchHit[] {
   return speaker ? hits.filter((hit) => hit.speaker === speaker) : [...hits];
 }
 
-/** 这批命中里的说话人，并进已经见过的（同一个词换种类时下拉不缩水）。 */
+/** The speakers in this batch of matches are merged into those already seen (so the dropdown does not shrink when the same term switches kind). */
 export function collectSpeakers(seen: readonly string[], hits: readonly Pick<SpaceSearchHit, 'speaker'>[]): string[] {
   const names = new Set(seen);
   for (const hit of hits) if (hit.speaker) names.add(hit.speaker);
   return names.size === seen.length ? [...seen] : [...names];
 }
 
-/** 说话人下拉的选项：见过的加上已选的，按名字排。 */
+/** Speaker dropdown options: those already seen plus the selected ones, sorted by name. */
 export function speakerOptions(seen: readonly string[], selected: string | null): string[] {
   const names = new Set(seen);
   if (selected) names.add(selected);
@@ -154,8 +154,8 @@ export interface HitGroup {
 }
 
 /**
- * 按视频分组（设计稿：同一个视频里命中十几条时，平铺会把别的视频挤出去，「哪些视频里有这个词」才是这一屏要回答的）。
- * 组按第一次出现的先后，组里保持 Runtime 给的顺序（按时间）。
+ * Grouped by video (design mock: when one video has a dozen matches, a flat list pushes other videos out; “which videos contain this word” is what this screen should answer).
+ * Groups are in order of first appearance; within a group the order the Runtime gives (by time) is kept.
  */
 export function groupHits(hits: readonly SpaceSearchHit[]): HitGroup[] {
   const groups = new Map<Id, HitGroup>();
@@ -167,23 +167,23 @@ export function groupHits(hits: readonly SpaceSearchHit[]): HitGroup[] {
   return [...groups.values()];
 }
 
-/** 每组先给几条，「再显示 N 条」一次再放这么多（设计稿 PAGE）。 */
+/** Each group first shows a few; “show N more” shows that many again (design mock PAGE). */
 export const GROUP_PAGE = 10;
 
-/** 一组显示到哪（设计稿 `planRows`）：`shown` 没给时一页；`more` 是下一次再放几条，`next` 是放完之后的条数。 */
+/** How far a group is shown (design mock `planRows`): `shown` defaults to one page when not given; `more` is how many more to show next time, and `next` is the count after showing them. */
 export function planGroupRows<T>(rows: readonly T[], shown?: number, pageSize = GROUP_PAGE): { rows: T[]; rest: number; more: number; next: number } {
   const take = Math.max(0, Math.min(shown ?? pageSize, rows.length));
   const rest = rows.length - take;
   return { rows: rows.slice(0, take), rest, more: Math.min(rest, pageSize), next: take + pageSize };
 }
 
-/** 命中行前面的标签（设计稿的 chip）：文档种类，译文带语言（「译文 · en」）。 */
+/** The tag in front of a match row (the design mock's chip): document kind; translations include the language (“译文 · en”, translation · en). */
 export function hitChip(hit: Pick<SpaceSearchHit, 'documentKind' | 'language'>): string {
   const label = DOCUMENT_KIND_LABEL[hit.documentKind];
   return hit.documentKind === 'translation' && hit.language ? `${label} · ${hit.language}` : label;
 }
 
-/** 命中行的位置：时间（源时间如实写「素材时间」）· 说话人。 */
+/** The position of a match row: time (source time is written as “素材时间”, material time) · speaker. */
 export function hitWhere(hit: Pick<SpaceSearchHit, 'time' | 'speaker'>): string {
   const clock = formatClock(hit.time.start);
   const parts = [hit.time.clock === 'sequence' ? clock : M.sourceTime(clock)];

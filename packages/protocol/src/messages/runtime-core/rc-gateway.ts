@@ -14,7 +14,7 @@ import { pl } from './rc-gateway.pl.ts';
 import { tr } from './rc-gateway.tr.ts';
 import { vi } from './rc-gateway.vi.ts';
 
-/** 本机网关（gateway.ts）的错误。英文是键与类型的来源，译文在 `rc-gateway.<语言>.ts`。 */
+/** Errors of the local gateway (gateway.ts). English is the source of keys and types; translations are in `rc-gateway.<language>.ts`. */
 const en = {
   helloTimeout: 'Handshake timed out',
   textFramesOnly: 'Only text frames are accepted',

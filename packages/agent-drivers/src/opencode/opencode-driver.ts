@@ -1,9 +1,9 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/runtime-client.ts 的版本判定（1.x 走旧接口、2.0.10 起走 v2），
- * v2/agent.ts 的 OpenCodeV2AgentClient（fetchCatalog 起 serve 读模型表、createSession / resumeSession）。
- * 改成 CucCut 的 DriverProbe：只接 2.x，1.x 报版本过低；没有账号也算就绪（OpenCode Zen 的免费模型不用登录），
- * 模型表按版本缓存 10 分钟；已在真机（opencode 2.0.24）以免费模型通过集成验收，标 `verified: true`。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra). Modified:
+ * the version check from packages/server/src/server/agent/providers/opencode/runtime-client.ts (1.x uses the old interface, v2 from 2.0.10 on),
+ * and OpenCodeV2AgentClient in v2/agent.ts (fetchCatalog starts a serve to read the model table; createSession / resumeSession).
+ * Changed to CucCut's DriverProbe: accepts only 2.x, and 1.x reports the version as too old. Having no account still counts as ready (OpenCode Zen's free models need no login).
+ * The model table is cached per version for 10 minutes. It passed integration acceptance on a real machine (opencode 2.0.24) with a free model, and is marked `verified: true`.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -19,7 +19,7 @@ import { OPENCODE_PRESET } from './opencode-preset.ts';
 import { OpenCodeServer } from './opencode-server.ts';
 import { OPENCODE_DRIVER_ID, OpenCodeSession, openCodeCapabilities } from './opencode-session.ts';
 
-/** 模型表的缓存：拿到了留 10 分钟；出错 1 分钟后再试。 */
+/** Model table cache: a result is kept for 10 minutes; after an error, retry after 1 minute. */
 const CATALOG_TTL_MS = 10 * 60_000;
 const CATALOG_RETRY_MS = 60_000;
 
@@ -31,24 +31,24 @@ interface OpenCodeCatalogResult {
 }
 
 export interface OpenCodeDriverOptions {
-  /** 找到可执行文件。默认按 `CUCCUT_OPENCODE_PATH`、登录 shell 的 PATH 与已知安装位置找。测试注入假的 opencode。 */
+  /** Finds the executable. By default looks in `CUCCUT_OPENCODE_PATH`, the login shell PATH, and known install locations. Tests inject a fake opencode. */
   locate?: () => Promise<OpenCodeInstall | null>;
-  /** 探测（起 serve、读模型表）与开会话的时限，默认 30 秒。 */
+  /** Time limit for the probe (starting serve, reading the model table) and for opening a session; default 30 seconds. */
   timeoutMs?: number;
 }
 
 /**
- * OpenCode（2.x）的 Driver（架构设计 §3.1）：每个会话起一个 `opencode serve`，经它的 v2 HTTP API 与事件流驱动。
+ * The OpenCode (2.x) Driver (architecture design §3.1): starts one `opencode serve` per session and drives it through its v2 HTTP API and event stream.
  *
- * 已在真机（opencode 2.0.24）以免费模型验证编辑审批、拒绝、中断、恢复与图片回合（D08）：`verified` 为 true。
+ * Verified on a real machine (opencode 2.0.24) with a free model for edit approval, rejection, interruption, resume, and image turns (D08): `verified` is true.
  */
 export class OpenCodeDriver implements AgentDriver {
   readonly id: DriverId = OPENCODE_DRIVER_ID;
-  /** 已在真机以免费模型通过集成验收（架构设计 §3.11 的 D08）。 */
+  /** Passed integration acceptance on a real machine with a free model (architecture design §3.11, D08). */
   readonly verified = true;
-  /** 已在 CucCut 里以真实的 opencode 跑通完整会话。 */
+  /** A full session has been run end to end in CucCut with a real opencode. */
   readonly tested = true;
-  /** 探测要起一个 `opencode serve` 读模型表：`agents.list` 不等它，也不做「便宜的纠正」（§3.11）。 */
+  /** The probe starts an `opencode serve` to read the model table. `agents.list` does not wait for it, and there is no "cheap correction" (§3.11). */
   readonly slowProbe = true;
   readonly #log: Logger;
   readonly #locate: () => Promise<OpenCodeInstall | null>;
@@ -140,7 +140,7 @@ export class OpenCodeDriver implements AgentDriver {
     return executable ? openCodeAt(executable) : this.#locate();
   }
 
-  /** 模型表，按「哪个命令、哪个版本」缓存；同时到来的探测共用一次；`force` 不用缓存。 */
+  /** Model table, cached by "which command, which version"; concurrent probes share one fetch; `force` skips the cache. */
   #catalog(install: OpenCodeInstall, force: boolean): Promise<OpenCodeCatalogResult> {
     const key = `${install.command}\0${install.version ?? ''}`;
     const hit = this.#catalogs.get(key);
@@ -158,7 +158,7 @@ export class OpenCodeDriver implements AgentDriver {
     return entry.result;
   }
 
-  /** 起一个临时的 serve，在用户主目录下读模型表与已启用的 provider，然后关掉。不建会话、不调模型。 */
+  /** Starts a temporary serve, reads the model table and the enabled providers under the user's home directory, then shuts it down. Creates no session and calls no model. */
   async #readCatalog(install: OpenCodeInstall): Promise<OpenCodeCatalogResult> {
     let server: OpenCodeServer | null = null;
     try {
@@ -170,7 +170,7 @@ export class OpenCodeDriver implements AgentDriver {
         startupTimeoutMs: this.#timeoutMs,
       });
       const catalog = await readCatalog(server, os.homedir());
-      // 没有账号也能用：OpenCode 自带 OpenCode Zen 的免费模型，不用登录。如实说明，不报未登录。
+      // Works without an account: OpenCode ships free OpenCode Zen models that need no login. State this honestly; do not report "not logged in".
       const detail = catalog.account
         ? null
         : DriversOpencode.noModelAccount({ command: OPENCODE_PRESET.loginCommand });

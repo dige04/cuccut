@@ -5,39 +5,39 @@ import { mergeDraft, type ItemDraft } from '../model/item-draft.ts';
 import { ZOOM_DEFAULT, ZOOM_MIN, clampZoom } from '../model/timeline-zoom.ts';
 
 /**
- * 编辑器的界面状态：选区、播放头、缩放与面板宽度。只属于这个窗口；
- * 在 Home 与 Space 之间切换、收起或展开会话时保持（产品设计 §5.1）。
+ * Editor UI state: the selection, playhead, zoom and panel width. Belongs only to this window.
+ * Kept when switching between Home and Space, and when the session is collapsed or expanded (product design §5.1).
  */
 
 export { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from '../model/timeline-zoom.ts';
 export const TIMELINE_HEIGHT_DEFAULT = 240;
 export const TIMELINE_HEIGHT_MIN = 140;
 
-/** 右侧面板（原型 model-layout.js 的 pane）：默认 360，300–560；拖到 340 以下收起，展开时回到收起前的宽度。 */
+/** Right panel (prototype model-layout.js pane): default 360, range 300–560. Dragging it below 340 collapses it; expanding returns it to the width it had before collapsing. */
 export const PANEL_WIDTH_DEFAULT = 360;
 export const PANEL_WIDTH_MIN = 300;
 export const PANEL_WIDTH_MAX = 560;
 export const PANEL_COLLAPSE_BELOW = 340;
 
 /**
- * 右侧面板的页：文稿、字幕、AI 工具、元素、文字、三类素材库、品牌与属性（选中片段时是片段的属性，否则是视频的）。
- * `aitools` 是 AI 工具 Tab：列表页与各工具的参数页（产品设计 §5.10），只在桌面端。
+ * Pages of the right panel: script, subtitles, AI tools, elements, text, the three asset libraries, brand, and properties (the clip's properties when a clip is selected, otherwise the video's).
+ * `aitools` is the AI tools tab: the list page and each tool's parameter page (product design §5.10). Desktop only.
  */
 export type PanelTab = 'transcript' | 'subtitle' | 'aitools' | 'elements' | 'text' | 'image' | 'video' | 'audio' | 'brand' | 'props';
 
-/** 网页宿主没有 AI 工具 Tab（原型 model-surface.js `WEB_RAIL_DROP`）：工具栏不显示它，记着的是它时落回文稿。 */
+/** The web host has no AI tools tab (prototype model-surface.js `WEB_RAIL_DROP`). The toolbar does not show it, and if it was the remembered page, it falls back to the script. */
 export function hostPanelTab(tab: PanelTab, web: boolean): PanelTab {
   return web && tab === 'aitools' ? 'transcript' : tab;
 }
 
-/** 拖动中还没提交的字幕样式：预览读这份正文代替文档的 `baseRevision` 版本（见 video-editor 的 DraftDocuments）。 */
+/** Subtitle style being dragged and not yet committed. The preview reads this body in place of the document's `baseRevision` version (see DraftDocuments in video-editor). */
 export interface DocumentDraft {
   documentId: Id;
   baseRevision: Revision;
   body: unknown;
 }
 
-/** 文稿里选中的词：同一份转写里的词下标；`anchor`–`focus` 是正在拖的那一段，`extra` 是 ⌘ 点选攒下的别的几段。 */
+/** Words selected in the script panel: word indexes within the same transcript. `anchor`–`focus` is the span being dragged, and `extra` holds the other spans gathered by ⌘-clicking. */
 export interface WordSelection {
   assetId: Id;
   anchor: number;
@@ -46,33 +46,33 @@ export interface WordSelection {
 }
 
 export interface EditorStore {
-  /** 打开的是哪个视频；换了视频时清掉选区与播放头。 */
+  /** Which video is open. When the video changes, the selection and playhead are cleared. */
   videoId: Id | null;
   selection: Id[];
   /**
-   * 文稿面板里选中的词（不持久化）。与 `selection` 互斥（产品设计 §5.7 不跨模式删除）：选出词时清掉片段选区，
-   * 选中片段时清掉词选区——否则 transport 的删除钮与 ⌫ 删的是片段，不是眼前这段字。清空任一边不动另一边。
+   * Words selected in the script panel (not persisted). They are mutually exclusive with `selection` (product design §5.7: no cross-mode deletion). Selecting words clears the clip selection,
+   * and selecting clips clears the word selection. Otherwise the transport's delete button and ⌫ would delete clips rather than the words in front of you. Clearing either side leaves the other alone.
    */
   wordSelection: WordSelection | null;
-  /** 播放头（秒）。 */
+  /** Playhead (seconds). */
   playhead: number;
   playing: boolean;
-  /** 时间线缩放：每秒多少像素。 */
+  /** Timeline zoom: pixels per second. */
   pxPerSecond: number;
   /**
-   * 缩小的下限（不持久化）：时间线按时长与泳道宽写入（model/timeline-zoom 的 zoomFloor）。
-   * `setZoom` 夹到 [min(ZOOM_MIN, zoomFloor), ZOOM_MAX]，滚轮、按钮、菜单与快捷键都走这一处。
+   * Lower bound for zooming out (not persisted). The timeline writes it from the duration and lane width (zoomFloor in model/timeline-zoom).
+   * `setZoom` clamps to [min(ZOOM_MIN, zoomFloor), ZOOM_MAX]. The wheel, buttons, menus and shortcuts all go through this one place.
    */
   zoomFloor: number;
   timelineHeight: number;
   panelTab: PanelTab;
   panelWidth: number;
-  /** 右侧面板收起：再点一次当前页，或把面板拖窄到收起线以下。工具栏一直在。 */
+  /** Right panel collapsed: click the current page again, or drag the panel narrower than the collapse line. The toolbar always stays visible. */
   panelHidden: boolean;
-  /** 属性页拖动中的草稿（不持久化）：换选区时丢掉。 */
+  /** Draft of the properties page while it is being dragged (not persisted). Dropped when the selection changes. */
   draft: ItemDraft | null;
   documentDraft: DocumentDraft | null;
-  /** 换到另一个视频：选区与播放头归零；给了落点就切到那一页（设计稿：有素材落在文稿，空的落在视频）。同一个视频不动。 */
+  /** Switch to another video: the selection and playhead reset to zero. If a landing spot is given, switch to that page (design: material dropped onto the script; an empty landing goes to the video). The same video is left alone. */
   attach(videoId: Id, landing?: PanelTab): void;
   select(ids: Id[]): void;
   toggleSelect(id: Id): void;
@@ -80,33 +80,33 @@ export interface EditorStore {
   setPlayhead(seconds: number): void;
   setPlaying(playing: boolean): void;
   setZoom(pxPerSecond: number): void;
-  /** 写入新的下限，并把当前缩放重新夹进范围（换了短视频时从长视频的极小缩放回到 ZOOM_MIN）。 */
+  /** Write the new lower bound, and clamp the current zoom back into range. (When switching from a long video to a short one, the very small zoom goes back to ZOOM_MIN.) */
   setZoomFloor(floor: number): void;
   setTimelineHeight(height: number): void;
-  /** 打开某一页；`null` 收起面板。 */
+  /** Open a page. `null` collapses the panel. */
   showPanel(tab: PanelTab | null): void;
-  /** 拖动面板左边的缝：到收起线以下就收起，宽度留着下次展开用。 */
+  /** Dragging the seam on the left edge of the panel: below the collapse line it collapses. The width is kept for the next expand. */
   dragPanel(width: number): void;
-  /** 记下拖动中的值：同一片段同一版本的草稿叠在一起。 */
+  /** Record the value being dragged. Drafts for the same clip and the same version are layered together. */
   setDraft(draft: ItemDraft): void;
   setDocumentDraft(draft: DocumentDraft): void;
-  /** 丢掉草稿（提交失败时回到原值）。 */
+  /** Drop the draft (when the commit fails, return to the original value). */
   clearDrafts(): void;
-  /** ⌥←/→ 连按攒下的时间微调（不持久化）：时间线按它画位移，停手后合成一笔提交。见 timeline-commands 的 nudgeTime。 */
+  /** Time nudge accumulated from repeated ⌥←/→ presses (not persisted). The timeline draws the offset from it, and after a pause it is committed as one combined change. See nudgeTime in timeline-commands. */
   nudge: NudgeDraft | null;
   setNudge(nudge: NudgeDraft | null): void;
-  /** 快捷键清单（`?`）开着。 */
+  /** The shortcut list (`?`) is open. */
   shortcutsOpen: boolean;
   setShortcutsOpen(open: boolean): void;
   /**
-   * 预览在全屏播放（不持久化）：跟着浏览器的 `fullscreenchange` 走（preview.tsx），浏览器自己的 Esc 退出也算。
-   * 全屏时键盘归全屏播放器，编辑器的快捷键让位。
+   * The preview is playing fullscreen (not persisted). It follows the browser's `fullscreenchange` (preview.tsx), and the browser's own Esc exit counts too.
+   * While fullscreen, the keyboard belongs to the fullscreen player, and the editor's shortcuts yield.
    */
   fullscreen: boolean;
   setFullscreen(fullscreen: boolean): void;
   /**
-   * 舞台下沿工具条的观看态（原型 stage.jsx `StageBar`；都不持久化，换视频时复位）：只是这个窗口怎么看，不进视频、不进撤销、
-   * 不影响导出。倍速舞台与全屏播放器共用一份；字幕隐藏只管舞台（全屏有自己的四档）；平台安全区只在竖幅画布上画。
+   * View state of the toolbar along the bottom edge of the stage (prototype stage.jsx `StageBar`; none are persisted, and they reset when the video changes). They only control how this window looks. They do not enter the video or undo history,
+   * and they do not affect export. The speed-stage and the fullscreen player share one set. Hiding subtitles only affects the stage (fullscreen has its own four levels). The platform safe area is drawn only on portrait canvases.
    */
   rate: number;
   setRate(rate: number): void;
@@ -116,13 +116,13 @@ export interface EditorStore {
   setSafeArea(on: boolean): void;
 }
 
-/** 还没提交（或正在提交）的时间微调：哪几件、累计挪了多少帧、按哪个视频版本算的。 */
+/** Time nudges not yet committed (or being committed): which clips, how many frames have accumulated, and which video version they are computed against. */
 export interface NudgeDraft {
   itemIds: Id[];
   deltaFrames: number;
-  /** 视频版本：版本变了（提交落地或别人改了）就不再叠加这段位移。 */
+  /** Video version. When the version changes (a commit landed or someone else edited), the accumulated offset is no longer applied. */
   revision: Revision;
-  /** 已经发出提交，等回执。 */
+  /** Commit already sent, awaiting its receipt. */
   committing: boolean;
 }
 
@@ -166,7 +166,7 @@ export const useEditor = create<EditorStore>()(
           const selection = s.selection.includes(id) ? s.selection.filter((x) => x !== id) : [...s.selection, id];
           return { selection, draft: null, documentDraft: null, ...(selection.length ? { wordSelection: null } : {}) };
         }),
-      // 拖选每过一个词都会写一次：只有真有片段选中时才清，免得每次都换掉 `selection` 让时间线重画。
+      // Every word passed during a drag-select writes this, so only clear when a clip is really selected. Otherwise `selection` is replaced each time and the timeline is redrawn.
       setWordSelection: (next) =>
         set((s) => {
           const wordSelection = typeof next === 'function' ? next(s.wordSelection) : next;

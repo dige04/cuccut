@@ -15,8 +15,8 @@ import { tr } from './rc-model-api.tr.ts';
 import { vi } from './rc-model-api.vi.ts';
 
 /**
- * 模型接口服务（services/model-api-*）的错误。英文是键与类型的来源，译文在 `rc-model-api.<语言>.ts`。
- * 错误体（OpenAI 的 `{ error: { message } }`）只带当前语言的文字，没有引用字段。
+ * Errors of the model API service (services/model-api-*). English is the source of keys and types; translations are in `rc-model-api.<language>.ts`.
+ * The error body (OpenAI's `{ error: { message } }`) carries only text in the current language, with no reference field.
  */
 const en = {
   serviceLabel: 'Model API service',
@@ -46,7 +46,7 @@ const en = {
   speechMissing: 'The synthesized audio is missing',
   imageMissing: 'The generated image is missing',
   textMissing: 'The generated text is missing',
-  // 审批摘要（服务审批里给用户看）。
+  // Approval summary (shown to the user in service approval).
   summaryTranscribe: (p: { size: string; model: string }) => `Transcribe ${p.size} of audio, model ${p.model}`,
   summarySpeech: (p: { model: string; voice: string | null; chars: number }) =>
     `Synthesize speech, model ${p.model}${p.voice ? `, voice ${p.voice}` : ''}, ${p.chars} ${p.chars === 1 ? 'character' : 'characters'}`,
@@ -62,7 +62,7 @@ const en = {
   approvalTimeout:
     "The user didn't confirm this request in time, so it was treated as denied: ask the user to watch for the confirmation in CucCut and try again",
   approvalCancelled: 'This request was cancelled before it was confirmed (the service stopped)',
-  // 请求体字段检查（model-api-openai）。
+  // Request body field checks (model-api-openai).
   fieldMissing: (p: { key: string }) => `Missing ${p.key}`,
   fieldNotString: (p: { key: string }) => `${p.key} must be a string`,
   fieldEmpty: (p: { key: string }) => `${p.key} can't be empty`,
@@ -90,7 +90,7 @@ const en = {
   responseFormatTypeUnsupported: 'response_format.type only supports text, json_object, json_schema',
   transcriptionStreamUnsupported: 'Streaming transcription is not supported',
   granularitiesInvalid: 'timestamp_granularities can only be word, segment',
-  // 模型路由（model-api-routing）。
+  // Model routing (model-api-routing).
   capabilityTranscribe: 'transcription',
   capabilitySynthesizeSpeech: 'speech synthesis',
   capabilityGenerateImage: 'image generation',

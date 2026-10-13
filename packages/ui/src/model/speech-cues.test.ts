@@ -81,7 +81,7 @@ function sequence(items: Sequence['items'], tracks: Track[] = []): Sequence {
 
 type W = [id: string, start: number, end: number, text: string, speaker?: string];
 
-/** 已经在序列上的词（同一个作用实例）。 */
+/** Words already on the sequence (the same effect instance). */
 function placed(list: W[], extra: Partial<PlacedWord>[] = []): PlacedWord[] {
   return list.map(([id, start, end, text, speaker], i) => ({
     id,
@@ -96,12 +96,12 @@ function placed(list: W[], extra: Partial<PlacedWord>[] = []): PlacedWord[] {
   }));
 }
 
-/** 一串词，时间首尾相接（不留停顿）。 */
+/** A run of words whose times join end to end, with no gap. */
 function contiguous(tokens: string[], step: number, prefix = 'w'): PlacedWord[] {
   return placed(tokens.map((text, i): W => [`${prefix}${i}`, i * step, (i + 1) * step, text]));
 }
 
-/** 中文按字切词，标点贴在前一个字上（cue.rs 的夹具这样切）。 */
+/** Chinese is split per character, with punctuation attached to the character before it (the cue.rs fixtures are split this way). */
 function cjkTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const char of text) {
@@ -111,7 +111,7 @@ function cjkTokens(text: string): string[] {
   return tokens;
 }
 
-/** 转写正文：秒写成毫秒刻度。 */
+/** Transcript text: seconds written on a millisecond scale. */
 function speechBody(list: Array<W | [string, number, number, string, string | undefined, { hidden?: boolean; timingQuality?: string }]>, more: Record<string, unknown> = {}) {
   return {
     schema: 'cuccut.speech/1',
@@ -142,7 +142,7 @@ describe('字符规则（与远端导出一致，谚文空格除外）', () => {
     expect(joinWords(['Hello', ',', 'world'], false)).toBe('Hello, world');
     expect(joinWords(['我', '用', 'CucCut', '剪', '。'], false)).toBe('我用CucCut剪。');
     expect(joinWords([' Hello', ' world.'], true)).toBe('Hello world.');
-    // 韩文词之间用空格；挨着汉字的不加。
+    // Korean words are separated by spaces; those next to Chinese characters are not.
     expect(joinWords(['안녕하세요', '여러분', '.'], false)).toBe('안녕하세요 여러분.');
     expect(joinWords(['한국', 'iPhone', '中文'], false)).toBe('한국 iPhone中文');
   });
@@ -300,7 +300,7 @@ describe('读转写', () => {
     expect(wide.map((p) => p.text)).toEqual(['一二三四五六七八', '九十一二三四五六', '七八九十一二三四五']);
     expect(splitUntimed('好', 0, 1, 42)).toEqual([{ text: '好', start: 0, end: 1 }]);
 
-    // 读进来时拆开：ID 依次加 ~2、~3；段首只标在第一块上。
+    // Split when read in: the IDs get ~2 and ~3 in turn; the segment start is marked only on the first piece.
     const body = speechBody([
       ['w1', 0, 8, 'Hello there. This is a long untimed segment, with many words', undefined, { timingQuality: 'missing' }],
       ['w2', 8, 8.5, 'Done.'],
@@ -318,7 +318,7 @@ describe('读转写', () => {
 
   it('零时长的词不丢：后面有空隙就占一小段（至多 0.08 秒），紧挨着下一个词的并进相邻的词', () => {
     const long = sequence([video('v', 0, 600, 0)]);
-    // 真实样本：对齐器把「ask—you」的起止解到同一格，后面有 0.24 秒的空隙。
+    // Real sample: the aligner resolved the start and end of “ask—you” to the same cell, and a 0.24-second gap follows.
     const gap = readSpeechWords(
       speechBody([
         ['w1', 14.716, 14.956, 'just'],
@@ -336,7 +336,7 @@ describe('读转写', () => {
     const cues = deriveCues(projectSpeech(long, 'asset_a', gap));
     expect(cues.map((cue) => [cue.text, cue.wordIds])).toEqual([['just ask—you know,', ['w1', 'w2', 'w3']]]);
 
-    // 没有空隙：前面有词就接到前一个词上，还没有词就接到下一个词的前面；隐藏的词的时间照样算空隙的边界（w4 从 1.3 开始）。
+    // No gap: if there is a word before, the text attaches to the previous word; if there is no word yet, it attaches to the front of the next word. Hidden words' times still count as gap boundaries (w4 starts at 1.3).
     const merged = readSpeechWords(
       speechBody([
         ['w1', 1, 1, 'to'],
@@ -350,7 +350,7 @@ describe('读转写', () => {
       ['w2', 'to be frank,', 1, 1.3],
       ['w5', 'yes.', 1.5, 1.8],
     ]);
-    // 行尾的零时长词补一段名义时长。
+    // A zero-duration word at the end of a line gets a nominal duration.
     const tail = readSpeechWords(
       speechBody([
         ['w1', 0, 0.5, 'Hi'],
@@ -383,7 +383,7 @@ describe('读转写', () => {
       ['s2', false],
     ]);
     expect(texts(deriveCues(projectSpeech(one, 'asset_a', read.words)))).toEqual(['Dr. Smith arrived', 'ok fine']);
-    // 没存句子时按远端的句末正则断（「Dr.」也算），与导出一致。
+    // When no sentences are stored, split with the remote's sentence-end regex (“Dr.” counts too), consistent with the export.
     const bare = readSpeechWords(speechBody(list))!;
     expect(texts(deriveCues(projectSpeech(one, 'asset_a', bare.words)))).toEqual(['Dr.', 'Smith arrived ok fine']);
   });
@@ -400,7 +400,7 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
   )!.words;
 
   it('按入点与裁切换算：范围外的丢掉，跨出点的裁在区间里', () => {
-    // 实例放在 1–3 秒，取源 5–7 秒。
+    // The instance is placed at 1–3 seconds, taking source 5–7 seconds.
     const out = projectSpeech(sequence([video('v', 30, 60, 5)]), 'asset_a', words);
     expect(out.map((word) => word.id)).toEqual(['w1', 'w2']);
     expect(out[0]!.start).toBeCloseTo(1.2);
@@ -411,7 +411,7 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
 
   it('变速：源时间除以速度', () => {
     const out = projectSpeech(sequence([video('v', 0, 60, 4, 2)]), 'asset_a', words);
-    // 源 4–8 秒压进 0–2 秒。
+    // Source 4–8 seconds is compressed into 0–2 seconds.
     expect(out.map((word) => [word.id, +word.start.toFixed(3), +word.end.toFixed(3)])).toEqual([
       ['w0', 0.25, 0.45],
       ['w1', 0.6, 0.8],
@@ -497,7 +497,7 @@ describe('写成字幕文档', () => {
       summary: { cueCount: 2 },
       extensions: { 'cuccut.speechCues': { speechDocumentId: 'doc_s', speechRevision: '3', assetId: 'asset_a' } },
     });
-    // 0.2 秒 → 第 6 帧；2.0 秒 → 第 60 帧。
+    // 0.2 s → frame 6; 2.0 s → frame 60.
     expect(ops[1]).toMatchObject({ items: [{ type: 'caption', trackId: 's1', span: { fromFrame: 6, durationFrames: 54 } }] });
     const fresh = speechCaptionOperations(sequence([], [track('s0', 1, 'subtitle', { locked: true })]), body, source);
     expect(fresh[0]).toMatchObject({ type: 'addTrack', kind: 'subtitle', name: '字幕' });
@@ -507,7 +507,7 @@ describe('写成字幕文档', () => {
   it('事务：作用实例是取用这个素材的实例（按起点排），实例盖住它们；文档记下素材', () => {
     const body = speechCaptionBody(cues, speakers);
     const source = { name: '访谈 字幕', speechDocumentId: 'doc_s', speechRevision: '3', assetId: 'asset_a', trackName: '字幕' };
-    // 两段：3–5 秒与 1–2 秒；别的素材不算。
+    // Two segments: 3–5 seconds and 1–2 seconds; other assets do not count.
     const seq = sequence(
       [video('late', 90, 60, 10), video('early', 30, 30, 0), video('other', 0, 300, 0, 1, 'asset_b')],
       [track('s1', 1, 'subtitle')],
@@ -534,7 +534,7 @@ describe('句数', () => {
 });
 
 describe('投影转写的候选筛选', () => {
-  /** 改之前的写法：每个实例与每个词逐对投影。 */
+  /** The way it was written before: each instance and each word projected pair by pair. */
   function projectAll(seq: Sequence, assetId: string, words: readonly SpeechWord[]): PlacedWord[] {
     const items = seq.items
       .filter((item) => (item.type === 'video' || item.type === 'audio') && item.assetRef.id === assetId)
@@ -618,12 +618,12 @@ describe('投影转写的候选筛选', () => {
       spans.push([from, len]);
       items.push(video(`c${String(k).padStart(3, '0')}`, from, len, sourceIn, rate));
     };
-    // 零点两侧：起点是 -0 与 0 的两段，前面一段止于 +0；有词跨过 0，放下的词起点是 -0。
+    // On both sides of zero: the starts are -0 and 0 in two segments; the earlier segment ends at +0; a word that crosses 0 has its placed start at -0.
     const across = (Math.round(words[50]!.start * 1000) + 10) / 1000;
     add(-0, 40, across, 1);
     add(0, 25, across, 1);
     add(-30, 30);
-    // 之后的实例都不早于 0，免得盖住那个跨过 0 的词。
+    // The later instances are all no earlier than 0, so they do not cover the word that crosses 0.
     const grow = (from: number, len: number) => {
       if (from >= 0) add(from, len);
     };
@@ -631,26 +631,26 @@ describe('投影转写的候选筛选', () => {
       const pick = spans[next(spans.length)]!;
       const [from, len] = pick;
       switch (next(9)) {
-        case 0: // 接在前一段后面，或接在任一段后面
+        case 0: // Attached after the previous segment, or after any segment
           grow(next(2) ? spans.at(-1)![0] + spans.at(-1)![1] : from + len, 1 + next(200));
           break;
-        case 1: // 嵌在前面某段里
+        case 1: // Nested inside an earlier segment
           if (len > 2) {
             const inner = 1 + next(len - 1);
             grow(from + next(len - inner + 1), inner);
           }
           break;
-        case 2: // 与前面某段同一区间
+        case 2: // The same interval as an earlier segment
           grow(from, len);
           break;
         case 3: {
-          // 两段首尾相接，再来一段跨过接缝、被它们盖满
+          // Two segments meet end to end, then another crosses the seam and is covered entirely by them
           const second = 2 + next(100);
           grow(from + len, second);
           grow(from + 1, len + second - 2);
           break;
         }
-        case 4: // 与前面某段的头或尾交叠
+        case 4: // Overlaps the head or the tail of an earlier segment
           grow(from + len - 1 - next(len), 1 + next(150));
           break;
         default:
@@ -678,7 +678,7 @@ describe('投影转写的候选筛选', () => {
       }
       return parts;
     };
-    // ±0：逐对扣时相等的端点留先放进来的那个。区间与探针都按 [起, 止, 起, 止, …] 写。
+    // ±0: when subtracting pair by pair, equal endpoints keep the one that came in first. Intervals and probes are written as [start, end, start, end, …].
     const pairs = (flat: number[]) => Array.from({ length: flat.length / 2 }, (_, k): [number, number] => [flat[2 * k]!, flat[2 * k + 1]!]);
     const probes = pairs([-10, 10, -0, 10, 0, 10, -10, -0, -10, 0]);
     for (const flat of [
@@ -707,25 +707,25 @@ describe('投影转写的候选筛选', () => {
         let end: number;
         const pick = raw.length ? raw[next(raw.length)]! : undefined;
         switch (pick ? next(6) : 5) {
-          case 0: // 接在某段后面或前面
+          case 0: // Attached after or before a segment
             start = next(2) ? pick![1] : pick![0] - 1 - next(20);
             end = next(2) ? start + 1 + next(20) : pick![0];
             if (end <= start) end = start + 1;
             break;
-          case 1: // 嵌在某段里，或与某段同一区间
+          case 1: // Nested inside a segment, or the same interval as a segment
             start = pick![0] + (next(3) ? next(Math.max(1, pick![1] - pick![0])) : 0);
             end = Math.min(pick![1], start + 1 + next(10));
             if (end <= start) end = start + 1;
             break;
-          case 2: // 盖住某段
+          case 2: // Covers a segment
             start = pick![0] - next(15);
             end = pick![1] + next(15);
             break;
-          case 3: // 起点是 -0 或 0
+          case 3: // Start is -0 or 0
             start = next(2) ? -0 : 0;
             end = start + 1 + next(30);
             break;
-          case 4: // 终点是 0
+          case 4: // End is 0
             start = -1 - next(30);
             end = 0;
             break;
@@ -746,17 +746,17 @@ describe('投影转写的候选筛选', () => {
 
   it('区间端点是 NaN 时改回逐对扣', () => {
     const items: Sequence['items'] = [video('c0', 0, 300, 0), video('c1', 200, 300, 5)];
-    // playDuration 不是数：区间的终点是 NaN。
+    // playDuration is not a number: the end of the interval is NaN.
     const broken = audio('c2', 400, 1);
     broken.playDuration = { ticks: 'x', timescale: 48000 };
     items.push(broken, video('c3', 600, 300, 10), video('c4', 300, 200, 20), video('c5', 1200, 60, 30));
     const words: SpeechWord[] = [];
     for (let k = 0; k < 400; k++) words.push({ id: `w${k}`, start: k * 0.1, end: k * 0.1 + 0.08, text: `t${k}`, paragraphStart: false });
     const seq = sequence(items);
-    // 端点是 NaN 的那个实例本身：逐对投影把每个词都放成 NaN，筛词后一个也不放，这里不比它。
+    // The instance itself with a NaN endpoint: pair-by-pair projection makes every word NaN, and after filtering out words none is placed, so this does not compare against it.
     const usable = (list: PlacedWord[]) => list.filter((word) => word.scopeItemId !== 'c2');
     const fast = projectSpeech(seq, 'asset_a', words);
-    // 终点是 NaN 的区间之后的实例逐对扣时一个窗口也不剩（并集会给它们留窗口）。
+    // After an instance whose interval end is NaN, subtracting pair by pair leaves no window at all (the union would leave windows for them).
     expect(fast.some((word) => word.scopeItemId === 'c0')).toBe(true);
     expect(fast.some((word) => word.scopeItemId === 'c3')).toBe(false);
     expect(usable(fast)).toEqual(usable(projectAll(seq, 'asset_a', words)));

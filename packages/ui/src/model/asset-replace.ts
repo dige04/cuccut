@@ -33,35 +33,34 @@ import { tr } from './asset-replace.tr.ts';
 import { vi } from './asset-replace.vi.ts';
 
 /**
- * 替换素材（设计稿 model-video-replace.js 的规则，搬到素材库这一层）：时间线上用到旧素材的每个实例换成新素材，一笔事务——
- * 本地文件先 `importAsset`（带 `ref`），再 `deleteItems` 删掉旧实例、`moveItems` 挪同轨后面的片段、`insertItems` 按原样写回
- * （同轨道、同起点，布局、裁剪、效果、音量、名字、作用与扩展照抄，只换素材与时间映射），撤销一步回去。
+ * Replace asset (rules from the design spec model-video-replace.js, moved to the asset-library layer): every instance on the timeline that uses the old asset is swapped for the new one, in one transaction —
+ * a local file is first `importAsset`ed (with a `ref`), then `deleteItems` removes the old instances, `moveItems` shifts the clips after them on the same track, and `insertItems` writes them back as they were
+ * (same track, same start; layout, crop, effects, volume, name, role and extensions copied as-is, only the asset and time mapping change), so one undo step reverts everything.
  *
- * 时间的规则：
- * - 新素材从 0 秒起（设计稿二次修订去掉了开始时间）；勾了「按原素材时间对齐」且原来取用的那一段在新素材里放得下时，源时间照旧
- *   （设计稿的 `aligned`：同一段内容的另一个版本）。
- * - 片段长度不变；新素材不够长时片段跟着变短（设计稿「片段长度跟着新素材走」只取变短这一半：素材库这一层一次换掉所有用到它的
- *   片段，变长会把拆开的几段都拉成整段新素材），同一条轨道上后面的片段往前挪同样多（ripple），别的轨道不动。
- * - 新素材的时长不知道（本地文件要导入之后才探测）：先保留片段原时长（设计稿 `keep`），新文件不够长时引擎整笔拒绝。
- * - 锁着的片段（或在锁着的轨道上）与合成的预渲染替身保持原样；同轨的波纹挪到锁着的片段为止。
+ * Timing rules:
+ * - The new asset starts at 0 s (the design spec's second revision dropped the start time). When 「按原素材时间对齐」 (Align to the original asset's time) is ticked and the range originally used still fits in the new asset, the source time stays the same
+ *   (the design spec's `aligned`: another version of the same content).
+ * - The clip length does not change; if the new asset is not long enough, the clip gets shorter with it. Later clips on the same track move forward by the same amount (ripple); other tracks stay put.
+ *   (The design spec's 「片段长度跟着新素材走」 (Clip length follows the new asset) only takes the shorter half: at the asset-library layer every clip that uses the asset is replaced at once, and making them longer would stretch every split piece to the full new asset.)
+ * - The duration of the new asset is unknown (a local file is only probed after import), so the clip keeps its original duration for now (design spec `keep`); if the new file is too short, the engine rejects the whole transaction.
+ * - Locked clips (or clips on a locked track) and the pre-rendered stand-ins of compositions stay as they are; the ripple on the same track stops at the next locked clip.
  *
- * 画布工具条上的「替换视频 / 替换图片」只换选中的那一段（`itemId`）：同样的规则，只是用到这个素材的别的片段不动。
+ * The 「替换视频 / 替换图片」 (Replace video / Replace image) buttons on the canvas toolbar replace only the selected segment (`itemId`): same rules, except that other clips using this asset are left alone.
  *
- * 协议里没有「给实例换素材」的操作，删了再写回的实例是新 ID：挂在它们上面的转场被引擎去掉，按它们投影的字幕、
- * 以它们为触发或目标的闪避对不上了。计划里数出这几样，替换框照实写出来。
+ * The protocol has no operation for “swapping the asset on an instance”. An instance that is deleted and written back gets a new ID: transitions attached to it are removed by the engine, subtitles projected from it and ducking rules triggered by or targeting it no longer match. The plan counts these items, and the replace dialog states them plainly.
  */
 
-/** 用来替换的新素材：素材库里已有的同类素材，或要在同一笔事务里导入的本地文件。 */
+/** The new asset used for the replacement: an existing asset of the same kind in the asset library, or a local file to import in the same transaction. */
 export type ReplaceSource = { from: 'library'; asset: AssetRecord } | { from: 'file'; path: string; name: string; kind: PlaceableKind | null };
 
 export interface AssetReplaceInput {
   sequence: Sequence;
-  /** 要换掉的素材。 */
+  /** The asset to replace. */
   asset: AssetRecord;
   source: ReplaceSource;
-  /** 按原素材时间对齐：原来取用的那一段在新素材里放得下时，源时间照旧。 */
+  /** Align to the original asset's time: when the range originally used fits in the new asset, the source time stays the same. */
   align?: boolean;
-  /** 只换这一段（画布工具条）；缺省换掉时间线上用到这个素材的每一段。 */
+  /** Replace only this segment (canvas toolbar); by default, every segment on the timeline that uses this asset is replaced. */
   itemId?: Id;
 }
 
@@ -69,15 +68,15 @@ export interface ReplacedInstance {
   itemId: Id;
   trackId: Id;
   name: string;
-  /** 原来的起止（秒）。 */
+  /** Original start and end (seconds). */
   start: number;
   end: number;
-  /** 换完之后的起点与终点（秒）：同轨前面的片段变短时起点跟着往前。 */
+  /** Start and end after the replacement (seconds): when earlier clips on the same track get shorter, the start moves forward with them. */
   newStart: number;
   newEnd: number;
-  /** 片段长度变了多少秒（≤ 0）。 */
+  /** How many seconds the clip length changed (≤ 0). */
   delta: number;
-  /** 源时间照旧（按原素材时间对齐）。 */
+  /** Source time unchanged (aligned to the original asset's time). */
   aligned: boolean;
 }
 
@@ -93,25 +92,25 @@ export type AssetReplacePlan =
   | { ok: false; reason: string }
   | {
       ok: true;
-      /** 新素材的时长知道（素材库里的）；本地文件为 false。 */
+      /** Whether the duration of the new asset is known (true for assets in the library); false for local files. */
       durationKnown: boolean;
       replaced: ReplacedInstance[];
       kept: KeptInstance[];
-      /** 同轨跟着往前挪的片段数。 */
+      /** Number of clips on the same track that move forward with it. */
       moved: number;
-      /** 所有片段加起来短了多少秒（≤ 0）。 */
+      /** Total seconds by which all the clips together got shorter (≤ 0). */
       delta: number;
-      /** 删了再写回会丢掉的关联：挂在这些片段上的转场、按它们投影的字幕实例、用到它们的闪避规则。 */
+      /** Associations that deleting and rewriting would lose: transitions attached to these clips, subtitle instances projected from them, and ducking rules that use them. */
       transitions: number;
       captions: number;
       ducking: number;
       operations: EditOperation[];
     };
 
-/** 同一笔事务里导入新文件用的 `ref`。 */
+/** The `ref` used to import the new file within the same transaction. */
 export const REPLACE_IMPORT_REF = 'replacement';
 
-// ---- 精确时间：分数（BigInt），与引擎一样按值算，不经浮点 ----
+// ---- Exact time: fractions (BigInt), computed by value as the engine does, without floating point ----
 
 interface Q {
   n: bigint;
@@ -145,18 +144,18 @@ const ceilQ = (a: Q): bigint => -floorQ(q(-a.n, a.d));
 const toTime = (a: Q): MediaTime => ({ ticks: String(a.n), timescale: Number(a.d) });
 const ZERO: Q = { n: 0n, d: 1n };
 
-/** 帧数 → 秒（分数）。 */
+/** Frames → seconds (as a fraction). */
 const framesQ = (frames: number, fps: Rate): Q => q(BigInt(frames) * BigInt(fps.den), BigInt(fps.num));
 
-// ---- 一个实例换成新素材之后的时间 ----
+// ---- Time of an instance after its asset is replaced ----
 
 interface Timing {
-  /** 图片没有时间映射。 */
+  /** Images have no time mapping. */
   timeMap?: TimeMap;
-  /** 新长度：视频按帧，音频按精确时间。 */
+  /** New length: video in frames, audio in exact time. */
   lengthFrames?: number;
   playDuration?: MediaTime;
-  /** 片段变短了几帧（≥ 0）：同轨后面的片段往前挪这么多。 */
+  /** How many frames the clip got shorter (≥ 0): later clips on the same track move forward by this much. */
   shrinkFrames: number;
   aligned: boolean;
 }
@@ -166,20 +165,20 @@ const restartMap = (map: TimeMap): TimeMap =>
     ? { kind: 'linear', sourceIn: { ticks: '0', timescale: map.sourceIn.timescale }, rate: map.rate }
     : { kind: 'hold', sourceAt: { ticks: '0', timescale: map.sourceAt.timescale } };
 
-/** 时间映射在新素材里还成立吗（原来取用的那一段放得下）。 */
+/** Does the time mapping still hold in the new asset (does the range originally used fit)? */
 function fits(map: TimeMap, length: Q, duration: Q): boolean {
   if (map.kind === 'hold') return cmp(ofTime(map.sourceAt), duration) < 0;
   return cmp(add(ofTime(map.sourceIn), mul(length, ofRate(map.rate))), duration) <= 0;
 }
 
-/** 从 0 秒起，新素材能放多长（秒）。 */
+/** How long the new asset is from 0 s (seconds). */
 const reach = (map: TimeMap, duration: Q): Q | null => (map.kind === 'linear' ? div(duration, ofRate(map.rate)) : null);
 
 function videoTiming(item: VideoItem, fps: Rate, duration: Q | null, align: boolean): Timing | null {
   const lengthFrames = item.span.durationFrames;
   const length = framesQ(lengthFrames, fps);
   if (align && duration && fits(item.timeMap, length, duration)) return { timeMap: item.timeMap, lengthFrames, shrinkFrames: 0, aligned: true };
-  // 时长未知：先保留原时长（设计稿 `keep`）；对齐时源时间也照旧。
+  // Duration unknown: keep the original duration for now (design spec `keep`); when aligned, the source time also stays the same.
   if (!duration) return { timeMap: align ? item.timeMap : restartMap(item.timeMap), lengthFrames, shrinkFrames: 0, aligned: align };
   const most = reach(item.timeMap, duration);
   const maxFrames = most ? Number(floorQ(mul(most, ofRate(fps)))) : lengthFrames;
@@ -195,14 +194,14 @@ function audioTiming(item: AudioItem, fps: Rate, duration: Q | null, align: bool
   if (!duration) return { timeMap: align ? item.timeMap : restartMap(item.timeMap), ...keep, aligned: align };
   const most = reach(item.timeMap, duration);
   if (!most || cmp(length, most) <= 0) return { timeMap: restartMap(item.timeMap), ...keep, aligned: false };
-  // 变短整帧数：同轨后面的片段按帧往前挪，不留缝也不重叠（音频的起点可以不在帧上，长度按精确时间减）。
+  // Whole frames shorter: later clips on the same track move forward by whole frames, leaving no gap and no overlap (an audio start need not fall on a frame; its length is subtracted in exact time).
   const shrinkFrames = Number(ceilQ(mul(sub(length, most), ofRate(fps))));
   const next = sub(length, framesQ(shrinkFrames, fps));
   if (cmp(next, ZERO) <= 0) return null;
   return { timeMap: restartMap(item.timeMap), playDuration: toTime(next), shrinkFrames, aligned: false };
 }
 
-/** 片段变短之后淡入淡出放不下时收进新长度（淡出优先），包络去掉超出的点（引擎要求淡入加淡出不超过片段长度）。 */
+/** When the fade-in and fade-out no longer fit after the clip gets shorter, they are fitted into the new length (fade-out takes priority), and envelope points beyond it are removed (the engine requires fade-in plus fade-out not to exceed the clip length). */
 function clampFades<T extends { fadeIn?: MediaTime; fadeOut?: MediaTime }>(fades: T, length: Q): T {
   const out = fades.fadeOut ? minQ(ofTime(fades.fadeOut), length) : null;
   const room = out ? sub(length, out) : length;
@@ -214,9 +213,9 @@ function clampFades<T extends { fadeIn?: MediaTime; fadeOut?: MediaTime }>(fades
 }
 const clampEnvelope = (points: EnvelopePoint[] | undefined, length: Q) => points?.filter((p) => !p.at || cmp(ofTime(p.at), length) <= 0);
 
-// ---- 计划 ----
+// ---- Plan ----
 
-/** 替换素材的文案（英文是键与类型的来源，译文在 `asset-replace.zh-Hans.ts`）。 */
+/** Copy for asset replacement (the English is the source of the keys and types; translations are in `asset-replace.zh-Hans.ts`). */
 const en = {
   cantReplaceKind: 'This kind of asset can’t be replaced yet.',
   sameKind: (kind: PlaceableKind) => `You can only replace it with an asset of the same kind: this needs ${{ video: 'a video', image: 'an image', audio: 'an audio' }[kind]} asset.`,
@@ -257,7 +256,7 @@ const usesAsset = (item: SequenceItem, assetId: Id) =>
   ((item.type === 'video' || item.type === 'image' || item.type === 'audio') && item.assetRef.id === assetId) ||
   (item.type === 'composition' && item.prerender?.id === assetId);
 
-/** 算一次替换：换哪些片段、各变多长、同轨挪哪些，以及那一笔操作。不改时间线，只算。 */
+/** Computes one replacement: which clips are swapped, how long each becomes, which clips on the same track move, and the operation itself. It does not change the timeline; it only computes. */
 export function planAssetReplace({ sequence, asset, source, align = false, itemId }: AssetReplaceInput): AssetReplacePlan {
   const fail = (reason: string) => ({ ok: false as const, reason });
   const kind = asset.kind;
@@ -296,7 +295,7 @@ export function planAssetReplace({ sequence, asset, source, align = false, itemI
   }
   if (!timings.size) return fail(itemId === undefined ? M.allLocked : M.clipLocked);
 
-  // 同轨的波纹：按起点排，变短的片段之后的往前挪累计的帧数；碰到锁着的片段就停（它和它后面的不动）。
+  // Ripple on the same track: sorted by start; clips after a shortened clip move forward by the accumulated frames; stops at a locked clip (it and the clips after it stay put).
   const shiftOf = new Map<Id, number>();
   const moves: { itemId: Id; frames: number }[] = [];
   for (const trackId of new Set(users.filter((i) => timings.has(i.id)).map((i) => i.trackId))) {
@@ -327,7 +326,7 @@ export function planAssetReplace({ sequence, asset, source, align = false, itemI
     const range = itemFrames(item, fps);
     const input = rewrite(item, timing, shift, target, fps);
     if (!input) continue;
-    // 片段名还是旧素材的名字（放上时间线时的默认名）就跟着换成新素材的名字；改过名的保留。
+    // If a clip's name is still the old asset's name (the default name given when placed on the timeline), it changes to the new asset's name; renamed clips keep their name.
     inputs.push(item.name === asset.name ? ({ ...input, name: newName } as SequenceItemInput) : input);
     replaced.push({
       itemId: item.id,
@@ -372,7 +371,7 @@ export function planAssetReplace({ sequence, asset, source, align = false, itemI
   };
 }
 
-/** 按原样写回一个实例：去掉引擎分配的 `id` 与 `lineage`，换素材与时间，起点挪 `shift` 帧。 */
+/** Writes an instance back as it was: drops the engine-assigned `id` and `lineage`, swaps the asset and the time, and moves the start by `shift` frames. */
 function rewrite(
   item: SequenceItem,
   timing: Timing,
@@ -411,7 +410,7 @@ function rewrite(
   return null;
 }
 
-/** 一句话说清这次替换对时间线的影响（设计稿 `describe` 的说法，搬到一次换多段）。 */
+/** One sentence explaining how this replacement affects the timeline (the wording of design spec `describe`, extended to replacing several segments at once). */
 export function describeReplace(plan: AssetReplacePlan): string {
   if (!plan.ok) return plan.reason;
   if (!plan.durationKnown) return M.durationUnknown;
@@ -422,7 +421,7 @@ export function describeReplace(plan: AssetReplacePlan): string {
   return plan.moved ? M.moved(head, plan.moved) : M.trackShorter(head);
 }
 
-/** 删了再写回会丢掉的关联，一样一句；没有时空的。 */
+/** The associations that deleting and rewriting would lose, one sentence each; empty when there are none. */
 export function replaceSideEffects(plan: AssetReplacePlan): string[] {
   if (!plan.ok) return [];
   const out: string[] = [];

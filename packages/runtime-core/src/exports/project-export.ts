@@ -18,15 +18,11 @@ import {
 import { RcExport } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 工程导出（架构设计 §9.13）：把一条序列写成 Final Cut Pro 7 XML（xmeml v5），Premiere Pro 与 DaVinci Resolve 能导入。
- * 单向、有损的交换，不是渲染：
+ * Project export (architecture design §9.13): writes a sequence as Final Cut Pro 7 XML (xmeml v5), which Premiere Pro and DaVinci Resolve can import. It is a one-way, lossy exchange, not a render:
  *
- * - 写出的：视频、图片、音频实例的入出点与在序列上的位置，各在自己的轨道上（视觉轨按 `order` 从下到上）；视频实例的内嵌声音
- *   另起一条音轨；有预渲染替身的合成按替身的视频写出；停用的实例写成 `enabled` 为假；静音的轨道与实例同样。
- * - 表达不了的逐项写进报告（任务警告），不静默丢弃：文字、图形、字幕、生成类元素（贴纸、声波、进度条、手绘、占位框、彩纸、
- *   白板手绘）、没有替身的合成，转场、效果（`fx`）、裁剪、遮罩、圆角、元素动画与关键帧、不铺满画布的摆法（画中画、旋转、镜像、
- *   平铺）、不透明度、音量与淡入淡出、变速与定格、音频实例的亚帧偏移，以及读不到文件的素材。
- * - 素材按引用写出：本机的绝对路径（`file://` URL）。这是给本机或同样路径的机器用的交换文件，不是便携包。
+ * - Written: the in/out points of video, image, and audio instances and their positions on the sequence, each on its own track (video tracks by `order`, bottom to top). The embedded sound of a video instance goes on a separate audio track. A composition with a pre-render stand-in is written as the stand-in's video. Disabled instances are written with `enabled` false, and muted tracks and instances likewise.
+ * - What cannot be expressed is recorded item by item in the report (task warnings) rather than silently dropped: text, graphics, captions, generated elements (stickers, waveforms, progress bars, freehand drawing, placeholder boxes, confetti, whiteboard freehand), compositions without a stand-in, transitions, effects (`fx`), cropping, masks, rounded corners, element animation and keyframes, placements that don't fill the canvas (picture-in-picture, rotation, mirroring, tiling), opacity, volume and fades, speed changes and freeze frames, sub-frame offsets of audio instances, and assets whose files can't be read.
+ * - Assets are written by reference: as absolute local paths (`file://` URLs). This is an exchange file for this machine or for machines with the same paths, not a portable package.
  */
 
 export interface ProjectAsset {
@@ -37,7 +33,7 @@ export interface ProjectAsset {
 export interface ProjectOmission {
   itemId?: Id;
   transitionId?: Id;
-  /** 发出时当前语言的文字；`whatRef` 是它的引用（任务警告的 `detailRef`）。 */
+  /** Text in the language current at emission. `whatRef` is its reference (the task warning's `detailRef`). */
   what: string;
   whatRef?: MessageRef;
 }
@@ -86,7 +82,7 @@ function itemKindLabel(type: SequenceItem['type']): Localized {
   }
 }
 
-/** xmeml 只认得下面这几种：视频、图片、音频与有替身的合成。其余种类整个跳过并报告。 */
+/** xmeml recognizes only these: video, images, audio, and compositions with a stand-in. All other kinds are skipped entirely and reported. */
 const PROJECT_KINDS = new Set<SequenceItem['type']>(['video', 'image', 'audio', 'composition']);
 
 function escapeXml(text: string): string {
@@ -97,7 +93,7 @@ function seconds(time: MediaTime): number {
   return Number(time.ticks) / time.timescale;
 }
 
-/** xmeml 的帧率：整数的 timebase 加 NTSC 标记（x000/1001）。表达不了的帧率按最接近的整数写并报告。 */
+/** xmeml frame rate: an integer timebase plus the NTSC flag (x000/1001). A frame rate that cannot be expressed is written as the nearest integer and reported. */
 export function xmemlRate(fps: Rate): { timebase: number; ntsc: boolean; exact: boolean } {
   if (fps.den === 1001 && fps.num % 1000 === 0) return { timebase: fps.num / 1000, ntsc: true, exact: true };
   const value = fps.num / fps.den;
@@ -108,7 +104,7 @@ function rateXml(rate: { timebase: number; ntsc: boolean }): string {
   return `<rate><timebase>${rate.timebase}</timebase><ntsc>${rate.ntsc ? 'TRUE' : 'FALSE'}</ntsc></rate>`;
 }
 
-/** 本机路径的 `file://localhost/...` URL，每一段按 URL 编码。 */
+/** The `file://localhost/...` URL of a local path, with each segment URL-encoded. */
 export function pathUrl(file: string): string {
   return `file://localhost${file
     .split('/')
@@ -117,8 +113,7 @@ export function pathUrl(file: string): string {
 }
 
 /**
- * 实例是否铺满画布、不转不翻（与渲染的摆法一致）：视频与图片看 `mode`（铺满时 `place` 的位置、宽与缩放不参与，平铺的图片不算）；
- * 合成没有 `mode`，`place` 没写位置与宽时铺满。
+ * Whether an instance fills the canvas and is neither rotated nor flipped (consistent with how it is rendered). For video and images, this depends on `mode`: when filling, the position, width, and scale in `place` don't apply, and tiled images don't count. Compositions have no `mode`, so they fill when `place` gives no position and width.
  */
 function isFullFrame(item: VideoItem | ImageItem | CompositionItem): boolean {
   const place = item.place;
@@ -144,7 +139,7 @@ interface Clip {
   fileKey: string;
 }
 
-/** 把序列写成 xmeml。`assets` 是素材版本（`id@revision`）此刻的位置。 */
+/** Writes the sequence as xmeml. `assets` gives the locations of the asset versions (`id@revision`) at this moment. */
 export function renderXmeml(video: VideoSnapshot, sequenceId: Id, assets: Map<string, ProjectAsset>): ProjectRender {
   const sequence = video.sequences[sequenceId];
   if (!sequence) throw new Error(RcExport.sequenceNotFound({ sequenceId }).text);
@@ -186,7 +181,7 @@ export function renderXmeml(video: VideoSnapshot, sequenceId: Id, assets: Map<st
   let durationFrames = 0;
 
   for (const track of tracks) {
-    // 按在序列上的开始排好（有的软件要求轨道里的片段有序）。
+    // Sorted by start on the sequence (some software requires the clips in a track to be in order).
     const items = sequence.items.filter((i) => i.trackId === track.id).sort((a, b) => startOf(a) - startOf(b));
     const clips: Clip[] = [];
     for (const item of items) {
@@ -233,7 +228,7 @@ export function renderXmeml(video: VideoSnapshot, sequenceId: Id, assets: Map<st
         continue;
       }
       if (item.type !== 'video' && item.type !== 'image' && item.type !== 'composition') continue;
-      // 视频、图片与有替身的合成。
+      // Video, images, and compositions with a stand-in.
       const ref = item.type === 'composition' ? item.prerender! : item.assetRef;
       const key = fileFor(ref, item.id);
       if (!key) {
@@ -282,7 +277,7 @@ export function renderXmeml(video: VideoSnapshot, sequenceId: Id, assets: Map<st
       audioTracks.push({ track, name: track.name ?? 'A', clips: clips.map((c) => ({ ...c, enabled: c.enabled && !track.muted })) });
   }
   if (embedded.length > 0) {
-    // 内嵌声音放在单独的音轨上：同一时间可能有几个视频实例发声，各占一条不重叠的轨道。
+    // The embedded sound goes on its own audio track: several video instances may sound at the same time, so each takes a track that doesn't overlap.
     const lanes: Clip[][] = [];
     for (const clip of [...embedded].sort((a, b) => a.start - b.start)) {
       const lane = lanes.find((l) => l.at(-1)!.end <= clip.start);

@@ -21,8 +21,7 @@ const media = style({ display: 'block', width: 'full', maxWidth: '[480px]', maxH
 const actions = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
 
 /**
- * 打开回复里的文件路径（显式链接、行内路径与正文媒体同一套，见 `markdownOpenAction`）：文件标签，或桌面端查看器不支持的
- * 类型交给系统默认应用（打不开时在文件夹中显示）。
+ * Opening file paths in a reply (explicit links, inline paths and body media all use the same rules; see `markdownOpenAction`): opens a file tab, or hands types that the desktop viewer does not support to the system's default app (if that fails, it shows the file in the folder).
  */
 export function openMarkdownPath(path: string, scope: { conversationId: string; cwd: string | null }, runtime: ReturnType<typeof useRuntime>): void {
   const action = markdownOpenAction(path, scope, useSpace.getState().entries, useDirectory.getState(), { desktop: !!runtime.host.openFile });
@@ -38,8 +37,7 @@ export function openMarkdownPath(path: string, scope: { conversationId: string; 
 }
 
 /**
- * Markdown 本机媒体用受限句柄；点图开文件标签，视频在正文播放。定位与文件链接相同：桌面端工作目录外、没有条目的图片按
- * 本机路径取句柄；浏览器仍按会话路径请求，由 Runtime 报告不可用。查看器不支持的类型不取句柄，按钮交给系统默认应用。
+ * Local media in Markdown uses restricted handles: clicking an image opens a file tab, and videos play in the body. Locating works the same as for file links: on desktop, images outside the working directory that have no entry get their handle by local path; the browser still requests by session path, and the Runtime reports it as unavailable. Types the viewer does not support get no handle, and the button hands them to the system's default app.
  */
 export function ThreadMediaPreview({ src, alt, scope, block, offset }: { block: number; offset: number; src: string; alt: string; scope: { conversationId: string; cwd: string | null; mediaGroup: string } }) {
   const path = markdownFilePath(src);

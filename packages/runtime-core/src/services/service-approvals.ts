@@ -12,30 +12,30 @@ import {
 import { ApprovalService, type ApprovalResolution } from '@cuccut/harness';
 
 /**
- * 服务审批（架构设计 §4.8）：`ask` 等级下，外部请求的写入、任务与生成在执行之前由用户在 CucCut 里逐次允许或拒绝。
- * 没有会话可挂：待处理的审批经 `services` 主题送达（`approval.requested` / `approval.resolved`），用 `services.respondToApproval` 处理。
+ * Service approval (architecture design §4.8): at the `ask` level, writes, jobs and generations requested externally are each allowed or rejected by the user in CucCut before they run.
+ * With no session to attach to, pending approvals are delivered via the `services` topic (`approval.requested` / `approval.resolved`), and handled with `services.respondToApproval`.
  *
- * - 有时限，到时按拒绝处理（`timeout`）；
- * - 外部请求断开、服务停止时取消（`cancelled`），调用方不会在之后被执行。
+ * - Has a time limit; on timeout it is treated as rejection (`timeout`);
+ * - Cancelled when the external request disconnects or the service stops (`cancelled`); the caller is never executed afterwards.
  *
- * 审批本身由统一的 ApprovalService（§3.12）产生与结束：同一条也出现在 `tasks` 主题的待处理列表里，
- * 用 `approvals.respond` 处理与用 `services.respondToApproval` 处理是一回事。这里只维护服务主题需要的形状。
+ * The approval itself is created and ended by the unified ApprovalService (§3.12): the same entry also appears in the pending list under the `tasks` topic.
+ * Handling it with `approvals.respond` or with `services.respondToApproval` is the same thing. This file only maintains the shape the services topic needs.
  */
 
 export interface ServiceApprovalsOptions {
   timeoutMs: number;
-  /** 审批出现与结束：送到 `services` 主题。 */
+  /** An approval appears or ends: sent to the `services` topic. */
   onRequested: (approval: ServiceApproval) => void;
   onResolved: (approvalId: Id, outcome: ServiceApprovalOutcome) => void;
-  /** 统一的审批（Harness 的那一份）。不给时用自己的一份（测试、单独使用）。 */
+  /** The unified approval (the Harness's one). If not given, uses its own (for tests and standalone use). */
   approvals?: ApprovalService;
 }
 
-/** 审批的依据：动作的风险与服务此刻的等级。不给时按 `command` 与 `ask`。 */
+/** The basis for the approval: the action's risk and the service's current level. If not given, uses `command` and `ask`. */
 export interface ServiceApprovalBasis {
   risk?: RiskLevel;
   level?: ServiceLevel;
-  /** 这次请求要外发、还没有授权覆盖的数据（§12.5）：审批里列出，允许时带回授权的选择。 */
+  /** Data this request sends out that is not yet covered by an authorization (§12.5): listed in the approval; when allowed, it carries back the authorization choice. */
   grants?: GrantRequestItem[];
 }
 
@@ -49,12 +49,12 @@ export class ServiceApprovals {
     this.#unified = options.approvals ?? new ApprovalService();
   }
 
-  /** 待处理的审批，旧的在前。 */
+  /** Pending approvals, oldest first. */
   pending(): ServiceApproval[] {
     return [...this.#pending.values()].map((approval) => structuredClone(approval));
   }
 
-  /** 发起一条审批，等用户处理、超时或取消。`signal` 中止（外部请求断开）时按取消处理。 */
+  /** Starts an approval and waits for the user to handle it, time it out, or cancel it. If `signal` aborts (the external request disconnected), it is handled as a cancellation. */
   request(
     input: Omit<ServiceApproval, 'approvalId' | 'createdAt' | 'expiresAt'>,
     signal: AbortSignal | undefined,
@@ -63,7 +63,7 @@ export class ServiceApprovals {
     return this.resolve(input, signal, basis).then((r) => r.outcome);
   }
 
-  /** 同 `request`，结局里带上用户对外发授权的选择（`grant`）。 */
+  /** Same as `request`, but the outcome includes the user's choice of outbound authorization (`grant`). */
   resolve(
     input: Omit<ServiceApproval, 'approvalId' | 'createdAt' | 'expiresAt'>,
     signal: AbortSignal | undefined,
@@ -97,13 +97,13 @@ export class ServiceApprovals {
     return resolution;
   }
 
-  /** 用户的决定。已经处理过、超时或取消的（以及不是服务审批的）返回 `already-resolved`。 */
+  /** The user's decision. Approvals already handled, timed out, or cancelled (and those that are not service approvals) return `already-resolved`. */
   respond(approvalId: Id, decision: ServiceApprovalDecision): { status: 'allowed' | 'denied' | 'already-resolved' } {
     if (!this.#pending.has(approvalId)) return { status: 'already-resolved' };
     return this.#unified.respond(approvalId, decision);
   }
 
-  /** 服务停止：它待处理的审批全部取消。 */
+  /** The service stops: all its pending approvals are cancelled. */
   cancelService(serviceId: ServiceId): void {
     this.#unified.cancelWhere((a) => a.subject.kind === 'service' && a.subject.serviceId === serviceId && this.#pending.has(a.approvalId));
   }

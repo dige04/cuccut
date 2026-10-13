@@ -6,7 +6,7 @@ import { CaptionLoop, type LoopCell } from './caption-loop.ts';
 import { useCanvasSize, useThumbPlanner } from './kernel-thumb.tsx';
 import { captionFrame, captionSample, type CaptionSample } from './thumb-scenes.ts';
 
-/** 缩略图的灰底（原型 .sthumb 的渐变）。 */
+/** The gray background of the thumbnail (the gradient of prototype .sthumb). */
 function backdrop(context: CanvasRenderingContext2D, width: number, height: number): void {
   const fill = context.createLinearGradient(0, 0, width, height);
   fill.addColorStop(0, THUMB_BACKDROP[0]);
@@ -15,17 +15,16 @@ function backdrop(context: CanvasRenderingContext2D, width: number, height: numb
   context.fillRect(0, 0, width, height);
 }
 
-/* ---------- 共用时钟 ----------
-   一屏几十张卡共用一个 requestAnimationFrame、一个原点：同一刻每张卡念到同一个词（原型画廊的共用节拍器），
-   没有卡在动时它自己停。页面藏起来时浏览器不调 rAF，也就不画。 */
+/* ---------- Shared clock ----------
+   Dozens of cards on a screen share one requestAnimationFrame and one origin: at the same moment, each card speaks the same word (the shared metronome of the prototype gallery). A card that is not animating stops on its own. When the page is hidden, the browser does not call rAF, so nothing is drawn. */
 
-/** `seconds` 是从原点算起的时钟；`spare()` 为假时这一下叫内核画帧的时间已经花完，先不换帧。 */
+/** `seconds` is the clock counted from the origin. When `spare()` is false, this tick's budget for kernel frame rendering is already used up, so the frame does not advance yet. */
 type Tick = (seconds: number, spare: () => boolean) => void;
 
 const ticks = new Set<Tick>();
 let request = 0;
 const epoch = performance.now();
-/** 一下时钟里各卡叫内核画帧一共最多花多少毫秒：超了的卡留着上一格，下一下再画，不拖住整页。 */
+/** The maximum total milliseconds all cards may spend calling the render kernel in one tick: cards that go over keep the previous cell and are drawn on the next tick, so the whole page is not held up. */
 const TICK_BUDGET = 6;
 
 function run(now: number): void {
@@ -47,12 +46,10 @@ function onTick(tick: Tick): () => void {
 }
 
 /**
- * 一张字幕样式缩略图（原型 `SubThumb`）：灰底上按这份样式画英中样张，由渲染内核画（与预览、导出同一套字体、描边、
- * 底板与阴影）。大的那一行 `px` 像素；放不下时整体缩小，不折行。
+ * One caption style thumbnail (prototype `SubThumb`): on a gray background, draws sample English and Chinese lines in this style, rendered by the render kernel (the same fonts, strokes, backing panel and shadows as preview and export). The large line is `px` pixels; if it does not fit, the whole thing scales down rather than wrapping.
  *
- * 原文那一句按这份样式的逐词动画一拍一个词地念，念完停一拍再从头（原型 `useSubBeat`）。只有在视野里的卡跟着时钟
- * 走；一圈的帧画过一遍就存着循环贴（`CaptionLoop`），滚出视野就丢掉；没有逐词动画的卡画完一圈就不再走。
- * `prefers-reduced-motion` 下不动，停在第二个词念到三成五的那一格。
+ * The original line is spoken one word per beat following this style's per-word animation, pauses a beat after finishing, then starts over (prototype `useSubBeat`). Only cards in view follow the clock; once a lap's frames have been drawn they are stored and looped as bitmaps (`CaptionLoop`); cards that scroll out of view are dropped; cards without per-word animation stop after one lap.
+ * Under `prefers-reduced-motion` nothing moves; it stays at the cell where the second word is 35% spoken.
  */
 export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly LineKind[]; px: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -70,7 +67,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
     let sample: CaptionSample | null = null;
     let loop: CaptionLoop | null = null;
     let shown = -1;
-    /** 画布上贴着的那一格：下一格是同一份画面（按词变色的一拍里）就不重贴。 */
+    /** The cell pasted onto the canvas: if the next cell is the same frame (within a beat of per-word color change), it is not pasted again. */
     let painted: LoopCell | null = null;
     let visible = false;
     let stop: (() => void) | null = null;
@@ -88,7 +85,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
       try {
         return captionFrame(planner, sample!, seconds, width, height).blits[0]!.image;
       } catch (error) {
-        console.warn('缩略图画不出来', error); // i18n-ignore: 开发日志
+        console.warn('缩略图画不出来', error); // i18n-ignore: dev log
         return null;
       }
     };
@@ -108,7 +105,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
         if (!spare()) return;
         const image = frame(loop.time(index));
         if (!image) {
-          // 画不出来（已经报过）：留着上一格，不再跟着时钟走。
+          // Could not draw (already reported): keep the previous cell and stop following the clock.
           loop = null;
           sync();
           return;
@@ -118,7 +115,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
       if (cell !== painted) paint(cell);
       painted = cell;
       shown = index;
-      // 一圈都是同一份画面（这份样式没有逐词动画）：停在这一格。
+      // All cells in a lap are the same frame (this style has no per-word animation): stay on this cell.
       if (loop.still) {
         loop = null;
         sync();
@@ -141,7 +138,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
       try {
         sample = captionSample(planner, root, lines, px * ratio, width, height);
       } catch (error) {
-        console.warn('缩略图画不出来', error); // i18n-ignore: 开发日志
+        console.warn('缩略图画不出来', error); // i18n-ignore: dev log
         paint(null);
         return;
       }
@@ -151,7 +148,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
     });
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry!.isIntersecting;
-      // 滚出视野的卡不留帧：一屏外的几十张卡不占着内存，滚回来再画。
+      // Cards scrolled out of view keep no frames: dozens of off-screen cards do not hold memory, and they are drawn again when scrolled back.
       if (!visible) loop?.clear();
       sync();
     });

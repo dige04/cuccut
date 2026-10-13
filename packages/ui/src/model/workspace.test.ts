@@ -103,7 +103,7 @@ describe('视频还被哪条会话的标签引用', () => {
     const key = targetKey(video.kind === 'video' ? video.target : { entryId: '' });
     expect(isVideoReferenced({ c1: { tabs: [file], active: null }, c2: { tabs: [video], active: null } }, key)).toBe(true);
     expect(isVideoReferenced({ c1: { tabs: [file], active: null } }, key)).toBe(false);
-    // 同一路径的「文件」标签不算视频。
+    // A “file” tab at the same path does not count as a video.
     expect(isVideoReferenced({ c1: { tabs: [{ kind: 'file', target: { projectId: 'p1', path: '视频/第一部' } }], active: null } }, key)).toBe(false);
   });
 });
@@ -168,7 +168,7 @@ describe('标签名与条目', () => {
     expect(workspaceTitle(files)).toBe('项目文件');
     expect(workspaceTitle(web)).toBe('新标签页');
     expect(workspaceTitle({ kind: 'web', id: 'w', url: 'https://example.com/a' })).toBe('example.com');
-    // 桌面端工作目录之外的本机文件：标签名取路径最后一段，键与会话路径分开。
+    // Local files outside the desktop working directory: the tab name is the last segment of the path, and the key is kept separate from the conversation path.
     const local = { kind: 'file' as const, target: { localPath: 'D:\\Downie\\talk.md' } };
     expect(workspaceTitle(local)).toBe('talk.md');
     expect(workspaceTitle({ kind: 'file', target: { localPath: '/Volumes/SSD/talk.md' } })).toBe('talk.md');
@@ -178,13 +178,13 @@ describe('标签名与条目', () => {
     expect(workspaceTitle(video)).toBe('第一部');
     expect(workspaceTitle({ kind: 'video', target: { entryId: 'e1' } })).toBe('视频不可用');
     expect(workspaceTitle({ kind: 'file', target: { entryId: 'e1' } })).toBe('文件不可用');
-    // 幻灯片（deck 目录）：键按目录，与同一目录的视频、文件分开；名字退到目录名。
+    // Slides (a deck directory): keyed by directory, kept separate from videos and files in the same directory. The name falls back to the directory name.
     const slides = { kind: 'slides' as const, target: { conversationId: 'c1', path: 'decks/talk/' } };
     expect(itemKey(slides)).toBe(`slides:${targetKey(slides.target)}`);
     expect(workspaceTitle(slides)).toBe('talk');
     expect(workspaceTitle(slides, '季度回顾')).toBe('季度回顾');
     expect(workspaceTitle({ kind: 'slides', target: { entryId: 'e1' } })).toBe('幻灯片不可用');
-    // 设计系统（含 design-system.json 的目录）：同一种做法，键与同一目录的设计稿分开。
+    // Design systems (directories containing design-system.json): the same approach. The key is kept separate from design drafts in the same directory.
     const system = { kind: 'design-system' as const, target: { projectId: 'p1', path: 'systems/brand' } };
     expect(itemKey(system)).toBe(`design-system:${targetKey(system.target)}`);
     expect(itemKey(system)).not.toBe(itemKey({ kind: 'design', target: system.target }));

@@ -3,39 +3,39 @@ import { M } from './tools-music-copy.ts';
 import { codePoints, localModelOptions, localNotDownloaded, modelKeyOf, parseSeed, type ToolModelOption } from './tools-models.ts';
 
 /**
- * 本机音乐生成（设计稿 model-music.js、tool-music.jsx、settings-music.jsx）：工具 › 生成音乐、设置 › 音乐生成的「试听」
- * 与编辑器 AI 工具的「生成配乐」共用。表单字段照 `GenerateMusicRequest` 命名（mode / style / lyrics / targetDurationSec /
- * maxDurationSec / planning / seed / model），时长 → 语义 token 与 Runtime 同一条规则（25 token / 秒）。
- * 时长上限、规划方式与步数取模型的能力描述，不写死某一只模型的数。
+ * Local music generation (design mocks model-music.js, tool-music.jsx, settings-music.jsx): Tools › Generate music and the Settings › Music generation "Preview"
+ * share code with the editor's AI tool "Generate soundtrack". Form fields are named after `GenerateMusicRequest` (mode / style / lyrics / targetDurationSec /
+ * maxDurationSec / planning / seed / model); converting duration to semantic tokens follows the same rule as the Runtime (25 tokens per second).
+ * The duration cap, planning method and step count come from the model's capability description, not hard-coded numbers for any one model.
  */
 
 export type MusicOption = ToolModelOption<MusicModelInfo>;
 
 export { localNotDownloaded };
 
-/** 本机的音乐模型包：都列出来（没装的也列，选中时给下载卡）。音乐生成只有本机模型。 */
+/** Local music model packs: all are listed (uninstalled ones too; choosing one shows a download card). Music generation only has local models. */
 export function musicModelOptions(view: ModelCapabilitiesView): MusicOption[] {
   return localModelOptions(view, 'generateMusic');
 }
 
-/** 每秒的语义 token（Runtime 的 `semantic_max_tokens` 按它换算）。 */
+/** Semantic tokens per second (the Runtime's `semantic_max_tokens` is converted with it). */
 export const TOKENS_PER_SEC = 25;
-/** 时长滑块的下限、步长与缺省；上限取模型的 `maxDurationSec`。 */
+/** The duration slider's minimum, step and default; the maximum comes from the model's `maxDurationSec`. */
 export const DURATION = { min: 10, step: 5, dflt: 30 } as const;
-/** 上限缺省比目标多留两成：模型可能写得长一点；到了上限的结果带「被截断」提醒。 */
+/** The default cap leaves 20% more than the target, since the model may write a bit long; a result that hits the cap carries a "truncated" warning. */
 export const MAX_HEADROOM = 1.2;
-/** 预计耗时 = 时长 × 倍数（Apple Silicon 与 CPU）；界面上只说「大约」。 */
+/** Estimated time = duration × factor (Apple Silicon and CPU); the UI only says "about". */
 export const SPEED = { silicon: 6, cpu: 20 } as const;
-/** 模型没说时长上限时用的上限（YuE2 登记的值）。 */
+/** The cap used when the model doesn't state a duration cap (the value registered for YuE2). */
 const FALLBACK_MAX_SEC = 300;
 
 export const MUSIC_MODE_ORDER: readonly MusicMode[] = ['instrumental', 'song'];
-/** 规划的排列（设计稿 `PLANNINGS`）：完整编排、先定旋律、直接生成。 */
+/** Planning arrangements (design `PLANNINGS`): full arrangement, melody first, generate directly. */
 export const MUSIC_PLANNING_ORDER: readonly MusicPlanning[] = ['full', 'melody', 'off'];
 
 export type MusicStyleKey = 'calm-piano' | 'upbeat-pop' | 'lofi' | 'ambient' | 'acoustic' | 'epic';
 
-/** 风格芯片：点一下填进风格框。给模型的是英文描述（YuE2 按英文标签训练），不随界面语言变；芯片上的名字在文案里。 */
+/** Style chips: click to fill the style box. What is sent to the model is an English description (YuE2 is trained on English tags) and does not change with the UI language; the name on the chip is in the copy. */
 export const MUSIC_STYLES: readonly { key: MusicStyleKey; style: string }[] = [
   { key: 'calm-piano', style: 'calm solo piano, slow tempo, soft, cinematic' },
   { key: 'upbeat-pop', style: 'upbeat pop, bright synths, clean drums, 120 bpm' },
@@ -56,11 +56,11 @@ export interface MusicDraft {
   style: string;
   lyrics: string;
   targetDurationSec: number;
-  /** 手改过的上限；null 为跟着目标走（多两成）。 */
+  /** A cap the user has edited by hand; null means it follows the target (20% more). */
   maxDurationSec: number | null;
   planning: MusicPlanning;
   seed: string;
-  /** `providerId/modelId`；null 为还没选。 */
+  /** `providerId/modelId`; null means none chosen yet. */
   model: string | null;
 }
 
@@ -75,14 +75,14 @@ export const BLANK_MUSIC: MusicDraft = {
   model: null,
 };
 
-/** 这只模型的时长上限（秒）。 */
+/** This model's duration cap (seconds). */
 export function maxSecOf(info: Pick<MusicModelInfo, 'maxDurationSec'> | null | undefined): number {
   return info?.maxDurationSec && info.maxDurationSec > 0 ? info.maxDurationSec : FALLBACK_MAX_SEC;
 }
 
 /**
- * 视频时长 → 可用的目标时长：按 5 秒向上取整（音乐不比视频短，铺上去只截不补），夹在范围内；没有时长用缺省
- * （超过上限的长视频夹到上限，加到视频时循环铺满，见 `soundtrackFor` 与 music-bed.ts）。
+ * Video duration → usable target duration: rounded up to a multiple of 5 seconds (music is never shorter than the video, so it is trimmed, not padded), clamped to the range; with no duration, use the default
+ * (a long video above the cap is clamped to the cap, and when added to the video it loops to fill, see `soundtrackFor` and music-bed.ts).
  */
 export function clampDuration(sec: number | null | undefined, max = FALLBACK_MAX_SEC): number {
   const n = Number(sec);
@@ -91,8 +91,8 @@ export function clampDuration(sec: number | null | undefined, max = FALLBACK_MAX
 }
 
 /**
- * 「生成配乐」进来时的那一段（产品设计 §2.7「生成配乐」；设计稿 `soundtrackFor`）：视频不超过这只模型的单次上限时目标时长
- * 按视频预填、一段铺完；超过时预填上限、`loop` 为 true——加到视频时循环铺满、接缝交叉淡化、片尾淡出，横幅要写明。
+ * The part for entering "Generate soundtrack" (product design §2.7 "Generate soundtrack"; design mock `soundtrackFor`): when the video is no longer than this model's single-run cap, the target duration
+ * is prefilled from the video and one piece covers it all; when longer, the cap is prefilled and `loop` is true. When added to the video it loops to fill, with cross-faded seams and a fade-out at the end, and the banner must say so.
  */
 export function soundtrackFor(videoSec: number | null | undefined, max = FALLBACK_MAX_SEC): { targetDurationSec: number; loop: boolean } {
   const v = Number(videoSec);
@@ -100,24 +100,24 @@ export function soundtrackFor(videoSec: number | null | undefined, max = FALLBAC
   return { targetDurationSec: max, loop: true };
 }
 
-/** 上限：手改过的用手改的，否则比目标多两成、不超过模型的上限。 */
+/** Cap: the hand-edited one if set; otherwise 20% more than the target, not exceeding the model's cap. */
 export function maxOf(draft: Pick<MusicDraft, 'targetDurationSec' | 'maxDurationSec'>, max = FALLBACK_MAX_SEC): number {
   if (draft.maxDurationSec) return draft.maxDurationSec;
   return Math.min(max, Math.round((draft.targetDurationSec || DURATION.dflt) * MAX_HEADROOM));
 }
 
-/** 预算：这段音乐最多生成多少语义 token。 */
+/** Budget: the most semantic tokens this piece of music may generate. */
 export function tokens(sec: number): number {
   return Math.max(1, Math.round((sec || 0) * TOKENS_PER_SEC));
 }
 
-/** 这只模型接受的规划方式（按界面的排列）；模型没说时三种都给。 */
+/** Planning methods this model accepts (in the order shown in the UI); when the model doesn't say, all three are offered. */
 export function planningsOf(info: Pick<MusicModelInfo, 'local'> | null | undefined): MusicPlanning[] {
   const allowed = info?.local?.planning.options;
   return MUSIC_PLANNING_ORDER.filter((p) => !allowed || allowed.includes(p));
 }
 
-/** 草稿的规划在这只模型下成不成立；不成立时用模型的默认，再不行取第一种。 */
+/** Whether the draft's planning is valid for this model; if not, use the model's default, failing that the first one. */
 export function planningFor(draft: Pick<MusicDraft, 'planning'>, info: Pick<MusicModelInfo, 'local'> | null | undefined): MusicPlanning {
   const options = planningsOf(info);
   if (options.includes(draft.planning)) return draft.planning;
@@ -125,12 +125,12 @@ export function planningFor(draft: Pick<MusicDraft, 'planning'>, info: Pick<Musi
   return dflt && options.includes(dflt) ? dflt : (options[0] ?? 'melody');
 }
 
-/** 这只模型接受的形式；模型没说时两种都给。 */
+/** Forms this model accepts; when the model doesn't say, both are offered. */
 export function modesOf(info: Pick<MusicModelInfo, 'modes'> | null | undefined): MusicMode[] {
   return MUSIC_MODE_ORDER.filter((m) => !info?.modes.length || info.modes.includes(m));
 }
 
-/** 换一只模型：时长夹进它的上限，规划落到它认的一种。 */
+/** Switching models: the duration is clamped to its cap, and the planning falls back to one it accepts. */
 export function switchMusicModel(draft: MusicDraft, option: MusicOption): Partial<MusicDraft> {
   const max = maxSecOf(option.info);
   return {
@@ -141,14 +141,14 @@ export function switchMusicModel(draft: MusicDraft, option: MusicOption): Partia
   };
 }
 
-/** 改目标时长：手改过的上限比新目标短了，就回到跟着目标走。 */
+/** Changing the target duration: if a hand-edited cap is now shorter than the new target, it goes back to following the target. */
 export function setTarget(draft: Pick<MusicDraft, 'maxDurationSec'>, sec: number): Partial<MusicDraft> {
   return { targetDurationSec: sec, maxDurationSec: draft.maxDurationSec !== null && draft.maxDurationSec < sec ? null : draft.maxDurationSec };
 }
 
-// ---- 校验与请求 ----
+// ---- Validation and request ----
 
-/** 表单的问题，按设计稿 `validate` 的顺序（先模型、再风格、歌词、时长、上限、种子）。 */
+/** The form's problems, in the order of the design mock `validate` (model first, then style, lyrics, duration, cap, seed). */
 export function musicProblems(draft: MusicDraft, option: MusicOption | null): string[] {
   const problems: string[] = [];
   if (!option) return [M.pickModel];
@@ -172,8 +172,8 @@ export function musicProblems(draft: MusicDraft, option: MusicOption | null): st
 }
 
 /**
- * `models.generateMusic` 的参数。纯音乐不带歌词（不是空串：协议拒绝）；种子留空就不带（Runtime 抽一个并冻结）；
- * 工具页不改步数（用模型的默认）。`videoId` 给了时做好的音乐收进那部视频（编辑器「生成配乐」带来的）。
+ * Parameters for `models.generateMusic`. Instrumental carries no lyrics (not an empty string: the protocol rejects that); an empty seed is not sent (the Runtime picks one and freezes it);
+ * the tools page doesn't change the step count (it uses the model's default). `videoId`, when given, puts the finished music into that video (from the editor's "Generate soundtrack").
  */
 export function musicRequest(draft: MusicDraft, option: MusicOption, videoId?: Id | null): Omit<GenerateMusicRequest, 'commandId'> {
   const max = maxSecOf(option.info);
@@ -192,7 +192,7 @@ export function musicRequest(draft: MusicDraft, option: MusicOption, videoId?: I
   };
 }
 
-/** 预计耗时的一句：「本机大约 3 分钟」；`cpu` 用 CPU 的倍数；直接生成快两成。 */
+/** The estimate sentence: "About 3 minutes on this machine"; `cpu` uses the CPU factor; direct generation is 20% faster. */
 export function etaText(sec: number, opts: { cpu?: boolean; planning?: MusicPlanning } = {}): string {
   const mult = opts.cpu ? SPEED.cpu : SPEED.silicon;
   const s = Math.max(1, Math.round((sec || 0) * mult * (opts.planning === 'off' ? 0.8 : 1)));
@@ -200,7 +200,7 @@ export function etaText(sec: number, opts: { cpu?: boolean; planning?: MusicPlan
   return opts.cpu ? M.etaCpu(amount) : M.eta(amount);
 }
 
-/** 主按钮旁那句：有问题写第一条（没提交过时不说「先写风格」），否则写预算与预计耗时。 */
+/** The sentence beside the main button: the first problem if there is one (before any submission, don't say "write a style first"); otherwise the budget and estimated time. */
 export function musicStatus(draft: MusicDraft, option: MusicOption | null, tried: boolean, cpu = false): { text: string; bad: boolean } {
   if (!option) return { text: M.pickModel, bad: true };
   if (!option.usable) {
@@ -212,12 +212,12 @@ export function musicStatus(draft: MusicDraft, option: MusicOption | null, tried
   return { text: `${M.tokens(tokens(max))} · ${etaText(draft.targetDurationSec, { cpu, planning: planningFor(draft, option.info) })}`, bad: false };
 }
 
-/** 页头那枚标签：选好且能用时写模型名与「在本机生成 · 不联网」。 */
+/** The header chip: when a model is chosen and usable, it shows the model name and "Generated on this machine · offline". */
 export function musicHeaderChip(option: Pick<MusicOption, 'label' | 'usable'> | null): string {
   return option?.usable ? M.headerChip(option.label) : M.headerChipNone;
 }
 
-/** 模型那一行右边的一句：时长上限、歌词与种子。 */
+/** The sentence at the right of the model line: the duration cap, lyrics and seed. */
 export function musicModelLine(info: MusicModelInfo): string {
   return [
     info.notes ?? null,
@@ -230,7 +230,7 @@ export function musicModelLine(info: MusicModelInfo): string {
     .join(' · ');
 }
 
-// ---- 记录 ----
+// ---- Records ----
 
 type MusicGeneration = Extract<NonNullable<JobRecord['generation']>, { capability: 'generateMusic' }>;
 
@@ -238,12 +238,12 @@ export function musicGeneration(job: Pick<JobRecord, 'generation'>): MusicGenera
   return job.generation?.capability === 'generateMusic' ? job.generation : null;
 }
 
-/** 记录卡的标题：风格描述。 */
+/** Record card title: the style description. */
 export function musicTitle(job: Pick<JobRecord, 'generation'>): string {
   return musicGeneration(job)?.style ?? '';
 }
 
-/** 记录卡的正文：风格，带唱的接歌词第一行。 */
+/** Record card body: the style, plus the first line of the lyrics if sung. */
 export function musicText(job: Pick<JobRecord, 'generation'>): string {
   const g = musicGeneration(job);
   if (!g) return '';
@@ -251,19 +251,19 @@ export function musicText(job: Pick<JobRecord, 'generation'>): string {
   return first ? `${g.style} — ${first.trim()}…` : g.style;
 }
 
-/** 记录卡下面那一行：「纯音乐 · 30 秒 · 先定旋律 · YuE2 3B · 种子 7」。 */
+/** The line under a record card: "Instrumental · 30 seconds · melody first · YuE2 3B · seed 7". */
 export function musicRecordMeta(job: JobRecord, modelName: string): string {
   const g = musicGeneration(job);
   if (!g) return modelName;
   return [modeLabel(g.mode), M.sec(g.targetDurationSec ?? g.maxDurationSec), planningLabel(g.planning), modelName, M.seed(g.seed)].join(' · ');
 }
 
-/** 做好的结果写到了上限（Runtime 的 `output-truncated` 警告）：提醒加长上限。 */
+/** A finished result hit the cap (the Runtime's `output-truncated` warning): suggests a longer cap. */
 export function musicTruncated(job: Pick<JobRecord, 'warnings'>): boolean {
   return job.warnings.some((w) => w.code === 'output-truncated');
 }
 
-/** 「带回左边再改一版」：这一版的设置回到表单，种子留空重新随机。 */
+/** "Bring back to the left to revise": this version's settings go back to the form, and the seed is cleared to randomize again. */
 export function musicAgainDraft(job: JobRecord): Partial<MusicDraft> | null {
   const g = musicGeneration(job);
   if (!g) return null;
@@ -280,7 +280,7 @@ export function musicAgainDraft(job: JobRecord): Partial<MusicDraft> | null {
   };
 }
 
-/** 「再试一次」：照冻结的参数原样再提交一次（同一只模型、同一个种子）。 */
+/** "Try again": resubmits the frozen parameters unchanged (same model, same seed). */
 export function musicRetryRequest(job: JobRecord): Omit<GenerateMusicRequest, 'commandId'> | null {
   const g = musicGeneration(job);
   if (!g) return null;
@@ -300,7 +300,7 @@ export function musicRetryRequest(job: JobRecord): Omit<GenerateMusicRequest, 'c
   };
 }
 
-/** 下载的文件名：风格头几个字，`music` 兜底。 */
+/** Download filename: the first few characters of the style, with `music` as the fallback. */
 export function musicFileName(style: string): string {
   const stem =
     style
@@ -313,7 +313,7 @@ export function musicFileName(style: string): string {
   return `${stem}.wav`;
 }
 
-// ---- 设置里的「试听」：固定几秒的纯音乐，只挑风格 ----
+// ---- "Preview" in Settings: a few seconds of instrumental, style only ----
 
 export const QUICK = { seconds: 10, steps: 8 } as const;
 
@@ -324,17 +324,17 @@ export interface MusicQuickPick {
 
 export const QUICK_DEFAULTS: MusicQuickPick = { style: 'calm-piano', mode: 'instrumental' };
 
-/** 试听的步数：模型收步数时夹进它的范围，否则不带。 */
+/** Preview steps: clamped to the model's range when it takes steps; otherwise not sent. */
 export function quickSteps(info: Pick<MusicModelInfo, 'local'> | null | undefined): number | null {
   const range = info?.local?.steps;
   if (!range) return null;
   return Math.min(range.max, Math.max(range.min, QUICK.steps));
 }
 
-/** 试听用的歌词（带唱时）：一小段英文，只为听听人声出不出得来，不随界面语言变。 */
+/** Lyrics used for the preview (when sung): a short English passage, only to hear whether vocals come out; it does not change with the UI language. */
 const QUICK_LYRICS = '[verse]\nLa la la, the morning light\n[chorus]\nSing along, everything is bright';
 
-/** 试听的请求：固定 10 秒、直接生成、少几步；只看这只模型与引擎能不能出声。 */
+/** Preview request: fixed at 10 seconds, direct generation, a few steps; it only checks whether this model and engine can produce sound. */
 export function quickRequest(pick: MusicQuickPick, bundleId: string, info: Pick<MusicModelInfo, 'local'> | null | undefined): Omit<GenerateMusicRequest, 'commandId'> {
   const style = (MUSIC_STYLES.find((s) => s.key === pick.style) ?? MUSIC_STYLES[0]!).style;
   const steps = quickSteps(info);
@@ -351,12 +351,12 @@ export function quickRequest(pick: MusicQuickPick, bundleId: string, info: Pick<
   };
 }
 
-/** 试听的那一组设置（换了就是新的一段）。 */
+/** The settings group for the preview (changing it makes a new piece). */
 export function quickKey(pick: MusicQuickPick, bundleId: string): string {
   return `${bundleId}|${pick.mode}|${pick.style}`;
 }
 
-/** 做好后那一行：「Lo-fi 节拍 · 10 秒 · 8 步 · 用了 42 秒」。 */
+/** Line shown when done: "Lo-fi beat · 10 seconds · 8 steps · took 42 seconds". */
 export function quickSummary(pick: MusicQuickPick, steps: number | null, elapsedSec: number): string {
   return [styleLabel(pick.style), M.sec(QUICK.seconds), steps !== null ? M.steps(steps) : null, M.took(Math.max(1, Math.round(elapsedSec || 0)))]
     .filter(Boolean)

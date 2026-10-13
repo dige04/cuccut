@@ -11,8 +11,7 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { LOCAL_DEFAULT_PROJECT_DIR } from './local-scope.ts';
 
 /**
- * 端到端：CLI 连接经网关的 `catalog.list` / `catalog.call` 用 Agent 面的工具目录（架构设计 §3.5、§4.1），主体是 `LocalPrincipal`：
- * 相对路径按 cwd 解析、写入算 `user_local`、不走审批。需要 engine-host 与 ffmpeg，缺了就跳过。
+ * End to end: a CLI connection, through the gateway's `catalog.list` / `catalog.call`, uses the agent-surface tool catalog (architecture §3.5, §4.1), with the principal being `LocalPrincipal`. Relative paths resolve against cwd, writes count as `user_local`, and no approval is asked. Needs engine-host and ffmpeg; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -80,7 +79,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     return client.request('catalog.call', { name, args, cwd, ...extra });
   }
 
-  /** 成功的结果对象；失败时把错误带进断言信息。 */
+  /** A successful result object; on failure, the error is carried into the assertion message. */
   async function ok(name: string, args: unknown, cwd: string): Promise<Record<string, unknown>> {
     const outcome = await call(name, args, cwd);
     if (!outcome.ok) throw new Error(`${name} 失败：${JSON.stringify(outcome.error)}`);
@@ -98,7 +97,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     }
     const names = listed.tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(['videos_create', 'videos_list', 'videos_inspect', 'edits_apply', 'export', 'videos_delete']));
-    // 只给会话里的智能体的工具（surfaces 没有 cli）不在终端的目录里。
+    // Tools only for the in-session agent (surfaces without cli) are not in the terminal's catalog.
     expect(names).not.toEqual(expect.arrayContaining(['tasks_contract']));
     expect(names).not.toEqual(expect.arrayContaining(['grants_request']));
     expect(names).not.toEqual(expect.arrayContaining(['downloads_save']));
@@ -132,7 +131,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
       expect(inspected.name).toBe('终端样片');
     }
 
-    // 视频关掉之后（CLI 断开），videoId 仍能在当前项目里找到并重新打开。
+    // After the video is closed (CLI disconnected), its videoId can still be found in the current project and reopened.
     client.close();
     await until(async () => !runtime.videos.ref(videoId));
     client = await connect('cli');
@@ -161,11 +160,11 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
       { type: 'addItem', asset: { ref: 'a' } },
     ];
 
-    // 项目目录里没有 clip.mp4：按 cwd 解析就找不到。
+    // There is no clip.mp4 in the project directory: resolving against cwd finds nothing.
     const missing = await call('edits_apply', { video: videoId, expectedRevision: revision, label: '导入', operations }, project.path);
     expect(missing.ok).toBe(false);
 
-    // cwd 在 media/（从这里向上找到项目）：同样的相对路径指 media/clip.mp4。
+    // cwd is in media/ (walking up finds the project): the same relative path points to media/clip.mp4.
     const applied = await ok('edits_apply', { video: videoId, expectedRevision: revision, label: '导入', operations }, media);
     expect(applied.approval).toBeUndefined();
     const inspected = await ok('videos_inspect', { video: videoId }, media);
@@ -189,7 +188,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     const noCwd = await call('videos_list', {}, path.join(dir, 'missing'));
     expect(noCwd).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENTS' } });
 
-    // cwd 不是绝对路径：协议层就拒绝。
+    // cwd is not an absolute path: rejected at the protocol layer.
     await expect(client.request('catalog.call', { name: 'videos_list', args: {}, cwd: 'relative' })).rejects.toBeInstanceOf(RpcError);
   });
 

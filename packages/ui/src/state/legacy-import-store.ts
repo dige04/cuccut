@@ -2,13 +2,13 @@ import { create } from 'zustand';
 import type { LegacyImportPrompt, LegacyImportRun } from '@cuccut/protocol';
 
 /**
- * 旧版项目导入（`legacy-import` 主题，架构设计 §2.7）：启动询问与这次启动的导入进度、结果。只有外壳根上的
- * LegacyImportHost 订阅并写这里（一个主题只有一个处理函数）；任务页、Home 顶上那一条与 rail 读这里。Web 一直是空的。
+ * Legacy project import (`legacy-import` topic, architecture design §2.7): the startup prompt, and this launch's import progress and result. Only the LegacyImportHost at the shell root
+ * subscribes to and writes here (a topic has only one handler). The tasks page, the strip at the top of Home and the rail read from here. Web is always empty.
  */
 export interface LegacyImportStore {
   prompt: LegacyImportPrompt | null;
   run: LegacyImportRun | null;
-  /** Home 顶上那一条关掉的是哪一次结果（`runId:finishedAt`）：再有新的结果（重试跑完）会再出来。 */
+  /** Which result the close button on the strip at the top of Home dismissed (`runId:finishedAt`). A new result (for example, a retry that finished) will show up again. */
   bannerClosed: string | null;
   set(state: { prompt: LegacyImportPrompt | null; run: LegacyImportRun | null }): void;
   closeBanner(key: string): void;

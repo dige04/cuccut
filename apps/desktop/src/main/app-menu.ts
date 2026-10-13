@@ -2,9 +2,8 @@ import type { MenuItemConstructorOptions } from 'electron';
 import { M } from './main-copy.ts';
 
 /**
- * 应用菜单的模板：与 Electron 的缺省菜单同样的几组（应用、文件、编辑、显示、窗口），只是标签按当前界面语言取，
- * 快捷键与行为仍由各项的 role 决定。缺省菜单的「帮助」只有 Electron 自己网站的链接，这里不带。
- * 不依赖 Electron 运行时，便于测试；界面语言变了由主进程重新生成并设上（index.ts）。
+ * Template for the app menu: the same groups as Electron's default menu (app, File, Edit, View, Window), except that the labels are taken in the current UI language, while shortcuts and behaviour are still set by each item's role. The default menu's “帮助” (Help) holds only links to Electron's own website, which are not included here.
+ * It does not depend on the Electron runtime, so it is easy to test; when the UI language changes, the main process regenerates it and sets it (index.ts).
  */
 export function appMenuTemplate(platform: NodeJS.Platform, appName: string): MenuItemConstructorOptions[] {
   const mac = platform === 'darwin';
@@ -73,7 +72,7 @@ export function appMenuTemplate(platform: NodeJS.Platform, appName: string): Men
     ],
   };
 
-  // role 'window'：macOS 把它当作「窗口」菜单，在末尾列出打开的窗口。
+  // role 'window': macOS treats it as the “窗口” (Window) menu and lists the open windows at the end.
   const windowMenu: MenuItemConstructorOptions = {
     label: M.windowMenu,
     ...(mac ? { role: 'window' as const } : {}),

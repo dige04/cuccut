@@ -1,5 +1,5 @@
-//! 属性编辑：几何、样式、文字、种类参数、元素动画、关键帧、模板层、字幕样式、片段与视频设置。都经过校验的操作，
-//! 没有任意 Patch；字段的适用范围与取值交给 v2 的元素模型（`timeline`）校验。
+//! Property editing: geometry, style, text, kind parameters, element animation, keyframes, template layers, caption style, clips and video settings. All are validated operations;
+//! there is no arbitrary Patch; the applicable scope and values of fields are validated by the v2 element model (`timeline`).
 
 #![allow(clippy::result_large_err)]
 
@@ -100,7 +100,7 @@ struct Fixture {
     _dir: tempfile::TempDir,
 }
 
-/// 一段文字、一个图形、一个进度条与一段字幕；没有媒体，不需要 ffprobe。
+/// A text, a shape, a progress bar and a caption; no media, so no ffprobe needed.
 fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let mut video = new_video(&dir.path().join("m"));
@@ -152,7 +152,7 @@ fn set_transform_changes_only_the_given_place_fields_and_bumps_the_sequence_revi
         shape,
         ..
     } = fixture();
-    // 省略的 place 存成空对象，几何取按种类的缺省。
+    // An omitted place is stored as an empty object, and the geometry takes the per-kind default.
     assert_eq!(place_of(&video, &shape), Place::default());
 
     let op = json!({ "type": "setTransform", "itemId": text, "x": 40.5, "rot": -30, "flipX": true });
@@ -165,7 +165,7 @@ fn set_transform_changes_only_the_given_place_fields_and_bumps_the_sequence_revi
     );
     assert_eq!(video.snapshot().sequences[&s].revision, video.revision(), "改片段也是改序列");
 
-    // null 去掉字段，回到缺省。
+    // null removes the field and reverts to the default.
     let reset = apply(
         &mut video,
         "cmd_reset",
@@ -174,7 +174,7 @@ fn set_transform_changes_only_the_given_place_fields_and_bumps_the_sequence_revi
     .unwrap();
     assert_eq!(place_of(&video, &text).w, None);
 
-    // 不是数、没有画面的实例、别的序列、旧的布局框字段，都拒绝。
+    // Not a number, an instance with no picture, an instance from another sequence, or the old layout-box fields: all rejected.
     let before = video.revision();
     let caption = find(&video, |i| matches!(i, TimelineItem::Caption(_)));
     for (n, op) in [
@@ -232,7 +232,7 @@ fn style_text_and_props_go_to_the_matching_item_kinds() {
         (Some("#FF0000"), Some(0.5))
     );
 
-    // 计时器是文字的另一种内容：counter 替换 text。
+    // A timer is another kind of text content: counter replaces text.
     apply(
         &mut video,
         "cmd_counter",
@@ -305,7 +305,7 @@ fn animation_keyframes_and_template_layers_are_checked_by_the_element_model() {
     );
     assert!(header.template.is_some());
 
-    // 同一属性再写一次是替换；null 去掉。
+    // Writing the same property again replaces it; null removes it.
     apply(
         &mut video,
         "cmd_kf_again",
@@ -316,12 +316,12 @@ fn animation_keyframes_and_template_layers_are_checked_by_the_element_model() {
 
     let before = video.revision();
     let cases = [
-        // 预设表里没有。
+        // Not in the preset table.
         json!({ "type": "setAnimation", "itemId": text, "animate": { "enter": { "preset": "no-such-preset" } } }),
-        // loop 槽没有 stagger。
+        // The loop slot has no stagger.
         json!({ "type": "setAnimation", "itemId": text, "animate": { "loop": { "preset": "pulse", "stagger": 0.1 } } }),
         json!({ "type": "setAnimation", "itemId": caption, "animate": { "enter": { "preset": "fade" } } }),
-        // 时刻不递增、两种写法混用、没有画面、圆角关键帧用在图形上。
+        // Times not increasing, two notations mixed, no picture, or corner-radius keyframes used on a shape.
         json!({ "type": "setKeyframes", "itemId": shape, "property": "x", "keyframes": [{ "localFrame": 10, "value": 1 }, { "localFrame": 5, "value": 2 }] }),
         json!({ "type": "setKeyframes", "itemId": shape, "property": "x", "keyframes": [{ "localFrame": 1, "percent": 5, "value": 1 }] }),
         json!({ "type": "setKeyframes", "itemId": caption, "property": "x", "keyframes": [{ "localFrame": 0, "value": 1 }] }),
@@ -334,7 +334,7 @@ fn animation_keyframes_and_template_layers_are_checked_by_the_element_model() {
     }
     assert_eq!(video.revision(), before);
 
-    // 删掉实例，它的关键帧绑定跟着去掉。
+    // Deleting an instance also removes its keyframe bindings.
     apply(&mut video, "cmd_delete", vec![json!({ "type": "deleteItems", "itemIds": [shape] })]).unwrap();
     assert!(video.snapshot().sequences[&s].header.animation_bindings.is_empty());
 }
@@ -367,7 +367,7 @@ fn caption_style_documents_are_switched_by_reference() {
     };
     assert_eq!(c.style_document_id.as_deref(), Some(style_doc.as_str()));
 
-    // 只能换成字幕样式文档，只能换字幕实例的。
+    // Can only be replaced with a caption-style document, and only on caption instances.
     let caption_doc = c.document_id.clone();
     let wrong_kind = json!({ "type": "setCaptionStyle", "itemId": caption, "styleDocument": { "documentId": caption_doc } });
     assert_eq!(
@@ -396,7 +396,7 @@ fn boxed_caption_styles_only_take_catalogue_animations() {
             "style": { "fontSize": 43, "animationPresetId": preset },
         } })
     };
-    // 逐词动画目录里的 id 收下；别的 id、别的类型都退回，整笔不提交。
+    // Ids from the per-word animation catalog are accepted; other ids and other types are rejected, and the whole edit is not committed.
     apply(&mut video, "cmd_reveal", vec![boxed(json!("reveal"))]).unwrap();
     let before = video.revision();
     for (n, preset) in [json!("typewriter"), json!(7), json!(null)].into_iter().enumerate() {
@@ -434,7 +434,7 @@ fn locked_items_only_accept_unlocking() {
         );
     }
 
-    // 解锁的同时可以改别的；空名字清掉名字。
+    // Other fields can be changed at the same time as unlocking; an empty name clears the name.
     apply(
         &mut video,
         "cmd_unlock",
@@ -465,7 +465,7 @@ fn canvas_changes_keep_percent_geometry_and_take_a_hex_background() {
         ("竖版", 1080, 1920)
     );
     assert_eq!(header.canvas.background, "#FF8800");
-    // 几何按画幅的百分比保存，换画布不用改写。
+    // Geometry is stored as percentages of the frame, so changing the canvas does not require rewriting it.
     assert_eq!(place_of(&video, &text), before);
 
     let revision = video.revision();
@@ -502,7 +502,7 @@ fn opacity_and_mask_feather_take_the_spec_ranges() {
         shape,
         ..
     } = fixture();
-    // 合成实例带遮罩；代码包是临时目录，不需要 ffprobe。
+    // The composition instance has a mask; the code package is a temporary directory, so no ffprobe is needed.
     let bundle = tempfile::tempdir().unwrap();
     std::fs::write(bundle.path().join("index.html"), "<html></html>").unwrap();
     apply(

@@ -2,7 +2,7 @@ import { defineNoun } from './context.ts';
 import { M } from './grants-copy.ts';
 import { formatGrants, formatRevoke, formatUsage, parseGrantsArgs, type GrantOptions } from './grants-output.ts';
 
-/** 授权相关的旗标（`grants` 与 `approvals allow --persist` 共用）。 */
+/** Grant-related flags (shared by `grants` and `approvals allow --persist`). */
 export const GRANT_OPTIONS = {
   recipient: { type: 'string' },
   data: { type: 'string' },
@@ -34,7 +34,7 @@ export function grantOptions(values: Record<string, unknown>): GrantOptions {
   };
 }
 
-/** `cuccut grants`：数据外发的授权与预算（架构设计 §12.5、§7.8）。 */
+/** `cuccut grants`: grants and budgets for data sent out (Architecture design §12.5, §7.8). */
 export const grants = defineNoun({
   name: 'grants',
   get usage() {

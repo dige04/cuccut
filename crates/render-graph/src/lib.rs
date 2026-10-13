@@ -1,17 +1,11 @@
-//! 帧计划（架构设计 §9.1、§9.4、§9.10）：视频在某一时刻的画面由哪些层叠成、每层怎么摆、取源的哪一刻，
-//! 以及这一刻哪些声音在响。
+//! The frame plan (architecture design §9.1, §9.4, §9.10): which layers are stacked to form the picture at a given moment in the video, how each layer is placed, which source moment it takes, and which sounds are audible at that moment.
 //!
-//! 这是渲染语义的单一实现：编辑器预览经 WASM 调它，原生导出直接链它，两边不各写一套。
-//! 计划只描述「画什么、画在哪」，不解码、不合成；像素由各自的后端按计划去画。
+//! This is the single implementation of render semantics: the editor preview calls it via WASM, native export links it directly, and the two sides do not each write their own version.
+//! The plan only describes “what to draw and where”; it does not decode or composite. Pixels are drawn by each backend according to the plan.
 //!
-//! 覆盖全部实例种类。几何是 v2 元素模型的 `place`（画幅百分比），经 `timeline::geometry` 换成像素框；要解码画面的层
-//! （视频、图片，以及素材贴纸、带素材的占位框、白板、有预渲染替身的合成）给出素材与取源的时刻；文字、图形与字幕给出
-//! 摆放与时刻，内容是正式字段（文字样式、`ShapeProps`）；进度条、声波、彩纸、计数器、模板贴纸、Lottie 贴纸、手绘、
-//! 占位框与模板层按内置生成器给出（参数就是 v2 的 props）。计划给不出画法的——没有预渲染替身的代码包合成、认不出的
-//! 素材贴纸——标成 `unsupported`，由后端明确报出来，不画成空白（格式规范 §3.7）。
-//! 裁剪折进 `sourceRect`；`fx` 按作用顺序列成效果（格式规范 §3.9）。像素由 `frame-render` 按实例本身的字段画（遮罩、
-//! 平铺、元素动画与关键帧都在那里），计划只给层、顺序、时刻与转场。转场与闪避在层与声音上给出（格式规范 §3.5、§3.9）。
-//! 章节不进计划。
+//! It covers all instance kinds. Geometry is the v2 element model's `place` (percent of the frame), converted to pixel boxes via `timeline::geometry`. Layers that need decoded pictures (video, images, and also material stickers, placeholder boxes with material, whiteboards, and compositions with a pre-rendered stand-in) are given their material and source time. Text, shapes and captions are given placement and time, with content as formal fields (text style, `ShapeProps`). Progress bars, waveforms, confetti, counters, template stickers, Lottie stickers, hand-drawn content, placeholder boxes and template layers are given by built-in generators (parameters are the v2 props). For anything the plan cannot draw (code-package compositions without a pre-rendered stand-in, and material stickers that are unrecognized), it marks `unsupported`, so the backend reports it explicitly instead of drawing blank (format spec §3.7).
+//! Cropping is folded into `sourceRect`; `fx` is listed as effects in application order (format spec §3.9). Pixels are drawn by `frame-render` from the instance's own fields (masks, tiling, element animation and keyframes are all handled there); the plan only gives layers, order, time and transitions. Transitions and ducking are given on layers and sounds (format spec §3.5, §3.9).
+//! Chapters are not part of the plan.
 
 pub mod audio_plan;
 pub mod ducking;
@@ -33,13 +27,13 @@ use video_model::{
 use crate::ducking::DuckingEnvelope;
 use crate::item_box::{display_size, item_geometry, pixel_box};
 
-/// 一帧的计划。图层按合成顺序排列：先画的在下面。
+/// The plan for one frame. Layers are in compositing order: the ones drawn first are underneath.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FramePlan {
     pub sequence_id: Id,
     pub sequence_revision: Revision,
-    /// 这一刻所在的视频帧（向下取整）。实例是否在画面上按它判断。
+    /// The video frame at this moment (rounded down). Whether an instance is on the picture is judged by this.
     pub frame: i64,
     pub canvas: PlanCanvas,
     pub layers: Vec<VisualLayer>,
@@ -62,46 +56,42 @@ pub enum LayerKind {
     Image,
     Text,
     Shape,
-    /// 内置生成器按局部时间画出来的画面：进度条、声波、彩纸、计数器、模板贴纸、Lottie 贴纸、手绘、占位框与模板层。
+    /// The picture drawn by built-in generators from local time: progress bars, waveforms, confetti, counters, template stickers, Lottie stickers, hand-drawn content, placeholder boxes and template layers.
     Generator,
-    /// 字幕：铺满画布，位置与外观由样式文档决定。
+    /// Captions: fill the canvas; position and appearance are determined by the style document.
     Caption,
-    /// 这一层该有画面但计划给不出画法（没有预渲染替身的代码包合成、认不出的素材贴纸）：后端要明确报出来，不画成空白。
+    /// This layer should have a picture but the plan cannot give a way to draw it (code-package composition without a pre-rendered stand-in, unrecognized material sticker): the backend must report it explicitly instead of drawing blank.
     Unsupported,
 }
 
-/// 一个画面层。
+/// A picture layer.
 ///
-/// `matrix` 把单位正方形映到画布像素：`x' = a·u + c·v + e`，`y' = b·u + d·v + f`，即 Canvas 2D 的
-/// `setTransform(a, b, c, d, e, f)`。视频与图片把源画面的 `sourceRect`（相对源的显示尺寸归一化的
-/// `[u0, v0, u1, v1]`）画进单位正方形；文字、图形、生成器与不支持的层的单位正方形就是实例的布局框（已含翻转）；
-/// 字幕的单位正方形是整张画布。
+/// `matrix` maps the unit square to canvas pixels: `x' = a·u + c·v + e`, `y' = b·u + d·v + f`, i.e. Canvas 2D's `setTransform(a, b, c, d, e, f)`. Video and images draw the source picture's `sourceRect` (`[u0, v0, u1, v1]`, normalized relative to the source's display size) into the unit square. For text, shapes, generators and unsupported layers the unit square is the instance's layout box (flip already included); for captions the unit square is the whole canvas.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualLayer {
     pub item_id: Id,
     pub kind: LayerKind,
-    /// 取画面的素材：视频、图片，或不支持的代码包本身。
+    /// The material used for the picture: video, image, or the unsupported code package itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset: Option<VersionRef>,
-    /// 视频要取的源时刻（秒）；生成器是合成的局部时刻（经过它的时间映射）。其余没有。
+    /// The source moment (seconds) to fetch for video; for generators, the composition's local moment (after its time mapping). None for the rest.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_seconds: Option<f64>,
-    /// 源时间相对序列时间的速度：播放时媒体元素按它走，定格是 0。
+    /// The speed of source time relative to sequence time: the media element advances at this rate during playback; freeze is 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_rate: Option<f64>,
     pub matrix: [f64; 6],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_rect: Option<[f64; 4]>,
     pub opacity: f64,
-    /// 文字、图形、生成器、字幕与不支持的层要画的内容；视频与图片没有。
+    /// The content to draw for text, shapes, generators, captions and unsupported layers; none for video and images.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<LayerContent>,
-    /// `fx` 的效果，按作用顺序（格式规范 §3.9），长度已从 540 短边换成画布像素。遮罩、平铺、元素动画与关键帧不在这里：
-    /// 后端按实例本身的字段画。
+    /// `fx` effects in application order (format spec §3.9), with lengths converted from the 540 short side to canvas pixels. Masks, tiling, element animation and keyframes are not here: the backend draws them from the instance's own fields.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<LayerEffect>,
-    /// 这一刻这一层在转场里（格式规范 §3.9）。不认识这个字段的后端只画这一层本身，即硬切。
+    /// Whether this layer is in a transition at this moment (format spec §3.9). Backends that do not recognize this field draw only this layer itself, i.e. a hard cut.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition: Option<Box<LayerTransition>>,
 }
@@ -113,14 +103,12 @@ pub struct LayerEffect {
     pub kind: String,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub params: Map<String, Value>,
-    /// 画不出来的原因。眼下 `fx` 的每一步都有画法，计划不再写它；字段留给只在某个后端缺画法的效果。
+    /// The reason it cannot be drawn. Currently every step of `fx` has a drawing method, so the plan no longer writes it; the field is kept for effects that lack a drawing method in only one backend.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
 }
 
-/// 层所在的转场。`progress` 是这一刻在转场窗口里的位置（0 到 1，连续），`eased` 是经过缓动之后的值，
-/// 画法都按 `eased`。两侧转场的另一侧在 `partner` 里给出（它在自己的区间之外，源时刻在 handles 里）；
-/// 单边转场没有 `partner`，另一侧是透明。
+/// The transition this layer belongs to. `progress` is the position at this moment within the transition window (0 to 1, continuous), and `eased` is the value after easing; drawing uses `eased` throughout. The other side of a two-sided transition is given in `partner` (it lies outside its own interval, and its source moment is in handles); a one-sided transition has no `partner`, and the other side is transparent.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerTransition {
@@ -131,11 +119,11 @@ pub struct LayerTransition {
     pub easing: Easing,
     pub progress: f64,
     pub eased: f64,
-    /// 这一层是出场的一侧（`outgoing`）还是入场的一侧（`incoming`）。
+    /// Whether this layer is the outgoing side (`outgoing`) or the incoming side (`incoming`) of the transition.
     pub role: TransitionRole,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partner: Option<Box<VisualLayer>>,
-    /// 认不出的转场种类：后端按硬切画（只画这一层）并报出来。
+    /// An unrecognized transition kind: the backend draws it as a hard cut (only this layer) and reports it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
 }
@@ -147,7 +135,7 @@ pub enum TransitionRole {
     Incoming,
 }
 
-/// 层的内容，按 `kind` 区分。样式、几何与参数原样带上：它们的 schema 由后端解释，认不出的要报出来。
+/// The layer's content, distinguished by `kind`. Style, geometry and parameters are carried over as-is: their schema is interpreted by the backend, and anything unrecognized must be reported.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum LayerContent {
@@ -162,18 +150,18 @@ pub enum LayerContent {
         generator: String,
         version: u32,
         parameters: Value,
-        /// 这一刻离实例开始过了多久、实例一共多长（序列时间，秒）：进度条与计数器按它们算。
+        /// How long since the instance started and how long the instance is in total (sequence time, seconds): progress bars and counters are computed from these.
         elapsed_seconds: f64,
         duration_seconds: f64,
     },
     Caption {
-        /// 字幕实例跟随文档的当前版本，所以给的是文档 ID。
+        /// A caption instance follows the document's current version, so the document ID is given.
         document_id: Id,
         #[serde(skip_serializing_if = "Option::is_none")]
         style_document_id: Option<Id>,
-        /// 这一刻的序列时间：文档在序列时钟上时按它找句子。
+        /// The sequence time at this moment: when the document is on the sequence clock, sentences are found by it.
         sequence_seconds: f64,
-        /// 文档在源素材时钟上时，这一刻经过哪个作用实例、落在它的源的哪一刻（§3.8）。没有作用实例时省略。
+        /// When the document is on the source material clock, which effect instance this moment passes through and which source moment it falls on (§3.8). Omitted when there is no effect instance.
         #[serde(skip_serializing_if = "Option::is_none")]
         scope: Option<CaptionScope>,
     },
@@ -193,9 +181,9 @@ pub struct CaptionScope {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VoiceSource {
-    /// 视频实例自带的声音。
+    /// The sound carried by the video instance itself.
     Embedded,
-    /// 音频轨道上的实例。
+    /// An instance on an audio track.
     Audio,
 }
 
@@ -207,12 +195,12 @@ pub struct AudioVoice {
     pub asset: VersionRef,
     pub source_seconds: f64,
     pub source_rate: f64,
-    /// 这一刻的增益：实例的增益、淡入淡出、转场的声音交叉淡化与闪避都已算进去。
+    /// The gain at this moment: the instance's gain, fades, the transition's sound cross-fade and ducking are all already included.
     pub gain_db: f64,
-    /// 闪避正在压低这个声音时，压低之前的增益（界面据此显示闪避）。没有被压低时省略。
+    /// The gain before ducking, while ducking is attenuating this sound (the UI uses this to show ducking). Omitted when not attenuated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unducked_gain_db: Option<f64>,
-    /// 转场的声音交叉淡化里的声音（两侧都带同一个转场 ID）。
+    /// The sound in a transition's cross-fade (both sides carry the same transition ID).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition_id: Option<Id>,
 }
@@ -249,7 +237,7 @@ impl From<TimeError> for PlanError {
     }
 }
 
-/// 求计划需要的那部分视频：序列与素材。
+/// The part of the video needed to compute the plan: the sequence and the material.
 #[derive(Clone, Copy)]
 pub struct VideoView<'a> {
     pub sequences: &'a BTreeMap<Id, Sequence>,
@@ -265,7 +253,7 @@ impl<'a> From<&'a VideoSnapshot> for VideoView<'a> {
     }
 }
 
-/// 界面送来的视频：与 `VideoSnapshot` 同形，只读计划用得到的字段，其余忽略。
+/// The video as sent by the UI: same shape as `VideoSnapshot`; only the fields the plan uses are read, and the rest are ignored.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanDocument {
@@ -283,13 +271,13 @@ impl PlanDocument {
     }
 }
 
-/// 交互预览（§9.4 Interactive）的入口：宿主时钟给的是浮点秒，先按微秒取近似再求计划。
-/// 严格导出不走这里，按输出帧的精确时刻调 [`plan_frame`]（§9.10）。
+/// The entry point for interactive preview (§9.4 Interactive): the host clock gives floating-point seconds, which are first approximated to microseconds before the plan is computed.
+/// Strict export does not go through here: it calls [`plan_frame`] with the exact moment of each output frame (§9.10).
 pub fn plan_interactive(video: VideoView<'_>, sequence_id: &str, seconds: f64) -> Result<FramePlan, PlanError> {
     plan_interactive_with_speech(video, sequence_id, seconds, None)
 }
 
-/// 同 [`plan_interactive`]；`speech` 见 [`plan_frame_with_speech`]。
+/// Same as [`plan_interactive`]; for `speech`, see [`plan_frame_with_speech`].
 pub fn plan_interactive_with_speech(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -301,8 +289,7 @@ pub fn plan_interactive_with_speech(
     }
     let micros = libm::round(seconds.max(0.0) * 1_000_000.0);
     let t = Ratio::new(micros as i128, 1_000_000).ok_or_else(|| PlanError::overflow("t"))?;
-    // 浮点秒落不到帧边界上（1/30 秒写不成有限小数），离下一个边界不到 1 微秒就算到了：
-    // 否则跳到第 n 帧会拿到第 n − 1 帧的画面。
+    // Floating-point seconds cannot land exactly on a frame boundary (1/30 s cannot be written as a finite decimal); if within 1 microsecond of the next boundary, it counts as having reached it. Otherwise, jumping to frame n would get frame n − 1's picture.
     let fps = match video.sequences.get(sequence_id) {
         Some(sequence) => Some(checked_fps(sequence)?),
         None => None,
@@ -320,13 +307,12 @@ pub fn plan_interactive_with_speech(
     plan_frame_with_speech(video, sequence_id, t, speech)
 }
 
-/// 序列时刻 `t` 的计划。不展开按文稿触发的闪避（没有词流）；要展开时用 [`plan_frame_with_speech`]。
+/// The plan at sequence moment `t`. Does not expand script-triggered ducking (no word stream); to expand it, use [`plan_frame_with_speech`].
 pub fn plan_frame(video: VideoView<'_>, sequence_id: &str, t: Ratio) -> Result<FramePlan, PlanError> {
     plan_frame_with_speech(video, sequence_id, t, None)
 }
 
-/// 序列时刻 `t` 的计划。`speech` 是有效词流在序列上的区间（[`audio_plan::speech_activity`]，与导出的声音计划
-/// 同一份）：给了时按文稿触发的闪避也展开，声音的 `gainDb` 与导出在同一时刻相同。
+/// The plan at sequence moment `t`. `speech` is the effective word stream's intervals on the sequence ([`audio_plan::speech_activity`], the same data as the export sound plan). When given, script-triggered ducking is also expanded, and the sound's `gainDb` matches export at the same moment.
 pub fn plan_frame_with_speech(
     video: VideoView<'_>,
     sequence_id: &str,
@@ -420,7 +406,7 @@ pub fn plan_frame_with_speech(
                     },
                 ));
             }
-            // 有预渲染替身时按视频出画面与声音；没有时标成不支持。
+            // With a pre-rendered stand-in, the picture and sound are output as video; without one, it is marked unsupported.
             TimelineItem::Composition(composition) => {
                 if !covers(composition.span, frame) {
                     continue;
@@ -456,7 +442,7 @@ pub fn plan_frame_with_speech(
                     ));
                 }
             }
-            // 其余视觉实例：画得了的给出画法，画不了的给出不支持的层（`visual_layer` 对每个种类都有答案）。
+            // Other visual instances: those that can be drawn get a drawing method; those that cannot get an unsupported layer (`visual_layer` has an answer for every kind).
             TimelineItem::Image(_)
             | TimelineItem::Text(_)
             | TimelineItem::Shape(_)
@@ -475,8 +461,7 @@ pub fn plan_frame_with_speech(
                     layers.push((LayerOrder::new(track, &base.id, base.paint_order, span), layer));
                 }
             }
-            // 字幕只在自己的区间里显示（§3.8）。文档在源素材时钟上时，经过此刻覆盖着的作用实例投影；
-            // 有作用实例却没有一个覆盖此刻（剪掉的空隙），这一刻就没有字幕。
+            // Captions display only within their own interval (§3.8). When the document is on the source material clock, the effect instance covering this moment is projected; if effect instances exist but none covers this moment (a cut gap), there is no caption at this moment.
             TimelineItem::Caption(caption) => {
                 if !covers(caption.span, frame) || !rules.visible(track) {
                     continue;
@@ -554,11 +539,11 @@ pub fn plan_frame_with_speech(
         }
     }
 
-    // 轨道 `order` 越大越靠上；同一轨道内按 `paintOrder`（格式规范 §3.3），不依赖存储的返回顺序。
+    // A larger track `order` is higher; within the same track, sorting is by `paintOrder` (format spec §3.3), not by the stored return order.
     layers.sort_by(|(a, _), (b, _)| a.cmp(b));
     let mut layers: Vec<VisualLayer> = layers.into_iter().map(|(_, layer)| layer).collect();
-    // 模板层（序列上的对象，§3.17）：每个打开的层是一个生成器层，在自己的框里，按文档的顺序盖在最上面。
-    // 进度类的变量按序列的长度算（最后一个实例的终点）。
+    // Template layers (objects on the sequence, §3.17): each open layer is a generator layer that sits in its own box, drawn on top in document order.
+    // Progress-type variables are computed from the sequence length (the end of the last instance).
     if let Some(template) = &header.template {
         let end = sequence
             .items
@@ -612,9 +597,7 @@ pub fn plan_frame_with_speech(
     })
 }
 
-/// 视觉实例在 `t` 的画面层（含效果栈）。不检查它是否覆盖这一刻、是否启用、轨道是否显示：转场的另一侧
-/// 要在自己的区间之外取画面（源时刻落在 handles 里）。画不出来（全透明、框没有面积）时为 `None`；音频与字幕没有。
-/// 旧画法画不了的种类给出 `Unsupported` 的层，不是 `None`。
+/// The picture layer of a visual instance at `t` (including the effect stack). Does not check whether it covers this moment, whether it is enabled, or whether the track is shown: the other side of a transition needs its picture outside its own interval (source moments fall in handles). `None` when it cannot be drawn (fully transparent, box with no area); audio and captions have none. Kinds the old drawing method could not draw yield an `Unsupported` layer, not `None`.
 fn visual_layer(
     video: VideoView<'_>,
     item: &TimelineItem,
@@ -635,7 +618,7 @@ fn visual_layer(
         };
         Ok((content, elapsed.to_f64()))
     };
-    // 生成器的层：局部时刻就是离实例开始过了多久，速度 1。
+    // Generator layers: the local moment is how long since the instance started, at speed 1.
     let generator_layer = |item_id: &str, pixel: &PixelBox, opacity: f64, (content, elapsed): (LayerContent, f64)| {
         box_layer(item_id, LayerKind::Generator, pixel, opacity, content).map(|mut layer| {
             layer.source_seconds = Some(elapsed);
@@ -652,9 +635,9 @@ fn visual_layer(
         .values()
         .flat_map(|s| &s.header.animation_bindings)
         .any(|b| b.target_id == item.base().id);
-    // 有关键帧时静态的不透明度不作数（这一刻的值由后端求），层不能因为静态的 0 被丢掉。
+    // When keyframes are present, a static opacity does not count: this moment's value is computed by the backend, so a layer must not be dropped because its static value is 0.
     let op = |opacity: f64| if keyframed { 1.0 } else { opacity };
-    // 框只有一份推法（`item_box`）：舞台的选中框与这里画的是同一个。
+    // The box has only one derivation (`item_box`): the stage's selection box and what is drawn here are the same.
     let Some(geometry) = item_geometry(item, video.assets) else {
         return Ok(None);
     };
@@ -695,7 +678,7 @@ fn visual_layer(
         TimelineItem::Text(text) => {
             let style = text.style.clone().unwrap_or_else(|| Value::Object(Map::new()));
             match &text.counter {
-                // 计数器：旧画法的 `cuccut.counter` 读 v2 的 counter 字段、文字与样式。
+                // Counter: the old-style `cuccut.counter` reads the v2 counter field, text and style.
                 Some(counter) => {
                     let mut parameters = match serde_json::to_value(counter) {
                         Ok(Value::Object(map)) => map,
@@ -724,7 +707,7 @@ fn visual_layer(
         TimelineItem::Sticker(sticker) => {
             let asset_kind = sticker.asset_ref.as_ref().and_then(|r| video.assets.get(&r.id)).map(|a| a.kind);
             match (&sticker.asset_ref, asset_kind) {
-                // 视频贴纸（动图转成的带透明的视频）按视频画，取源的时刻按 `sticker.loop`（格式规范 §3.7）。
+                // Video stickers (animated images converted to transparent video) are drawn as video; the source moment taken follows `sticker.loop` (format spec §3.7).
                 (Some(asset), Some(AssetKind::Video)) => {
                     let dims = display_size(video.assets, asset);
                     let start = frame_start(sticker.span, fps)?;
@@ -742,7 +725,7 @@ fn visual_layer(
                         None,
                     )
                 }
-                // 图片贴纸按图片画，框按图片的宽高比。
+                // Image stickers are drawn as images; the box follows the image's aspect ratio.
                 (Some(asset), Some(AssetKind::Image)) => {
                     let dims = display_size(video.assets, asset);
                     media_layer(
@@ -802,7 +785,7 @@ fn visual_layer(
             let made = generator("cuccut.draw", parameters, d.span)?;
             generator_layer(&d.base.id, &pixel, op(d.place.opacity()), made)
         }
-        // 占位框：有素材时按视觉媒体画（图片或视频，框是占位框的缺省落位），没有时画占位的外观。
+        // Placeholder box: with material, it is drawn as visual media (image or video; the box uses the placeholder box's default placement); without material, the placeholder's appearance is drawn.
         TimelineItem::Placeholder(p) => {
             let asset_kind = p.asset_ref.as_ref().and_then(|r| video.assets.get(&r.id)).map(|a| a.kind);
             match (&p.asset_ref, asset_kind) {
@@ -839,7 +822,7 @@ fn visual_layer(
                 }
             }
         }
-        // 白板：图片素材按揭示顺序画出来；要解码的是那张图片。
+        // Whiteboard: image material is drawn in reveal order; the thing to decode is that image.
         TimelineItem::Whiteboard(w) => {
             let dims = display_size(video.assets, &w.asset_ref);
             media_layer(
@@ -893,8 +876,7 @@ fn visual_layer(
     Ok(Some(layer))
 }
 
-/// 视频贴纸在实例里过了 `elapsed` 秒时取源的时刻与速度（`sticker.loop`，格式规范 §3.7）：`loop`（缺省）对素材时长
-/// 取模，`once` 播完停在末尾，`hold` 定格第一帧。不知道素材时长时按经过的时间取。
+/// The source moment and speed for a video sticker `elapsed` seconds into the instance (`sticker.loop`, format spec §3.7): `loop` (default) wraps modulo the material duration, `once` plays through and stops at the end, and `hold` freezes the first frame. When the material duration is unknown, elapsed time is used.
 fn sticker_timing(assets: &BTreeMap<Id, AssetRecord>, asset: &VersionRef, mode: Option<&str>, elapsed: f64) -> (f64, f64) {
     let duration = assets
         .get(&asset.id)
@@ -912,8 +894,7 @@ fn sticker_timing(assets: &BTreeMap<Id, AssetRecord>, asset: &VersionRef, mode: 
     }
 }
 
-/// 层的效果：`fx` 的每一步按作用顺序（格式规范 §3.9 的 1–14，遮罩与揭示除外）列出，省略或恒等值的不列；
-/// 长度从 540 短边换成画布像素，色相从 [-1, 1] 换成度。
+/// The layer's effects: each step of `fx` is listed in application order (format spec §3.9's 1–14, excluding masks and reveal), with identity values omitted. Lengths are converted from the 540 short side to canvas pixels, and hue from [-1, 1] to degrees.
 fn layer_effects(item: &TimelineItem, canvas: (f64, f64)) -> Vec<LayerEffect> {
     let Some(fx) = item.fx() else {
         return Vec::new();
@@ -984,7 +965,7 @@ fn layer_effects(item: &TimelineItem, canvas: (f64, f64)) -> Vec<LayerEffect> {
         .collect()
 }
 
-/// 求转场与声音交叉淡化时要用到的这一帧的上下文。
+/// The context at this frame needed to compute transitions and sound cross-fades.
 struct Scene<'a> {
     video: VideoView<'a>,
     sequence: &'a Sequence,
@@ -997,7 +978,7 @@ struct Scene<'a> {
     canvas: (f64, f64),
 }
 
-/// 覆盖这一帧的转场：两侧实例与窗口里的进度。
+/// The transitions covering this frame: both sides' instances and the progress within the window.
 struct Active<'a> {
     left: Option<&'a TimelineItem>,
     right: Option<&'a TimelineItem>,
@@ -1005,7 +986,7 @@ struct Active<'a> {
 }
 
 impl<'a> Scene<'a> {
-    /// 转场在这一帧是否生效（窗口见 [`transition_window`]）。
+    /// Whether the transition is active at this frame (window: see [`transition_window`]).
     fn active(&self, tr: &Transition) -> Result<Option<Active<'a>>, PlanError> {
         let Some((left, right, start, end)) = transition_window(self.items, tr) else {
             return Ok(None);
@@ -1025,7 +1006,7 @@ impl<'a> Scene<'a> {
         }))
     }
 
-    /// 实例的层这一刻所在的转场（格式规范 §3.9）。两侧转场的另一侧画不出来（停用、全透明）时按硬切，没有转场。
+    /// The transition that this instance's layer is in at this moment (format spec §3.9). When the other side of a two-sided transition cannot be drawn (disabled, fully transparent), it is a hard cut, with no transition.
     fn layer_transition(&self, item_id: &str) -> Result<Option<Box<LayerTransition>>, PlanError> {
         for tr in &self.sequence.transitions {
             if !tr.item_ids().any(|id| id == item_id) {
@@ -1072,9 +1053,7 @@ impl<'a> Scene<'a> {
         Ok(None)
     }
 
-    /// 带 `audioCrossfade` 的两侧转场：两段视频自带的声音在窗口里等功率交叉淡化——出场乘 cos(p·π/2)，
-    /// 入场乘 sin(p·π/2)，p 是线性进度（不经缓动）。另一侧在自己的区间之外，按它的时间映射取 handles 里的声音，
-    /// 不套它自己的淡入淡出。两侧都启用才淡化；某一侧关掉了自带声音时，那一侧是静音，另一侧照样按曲线淡入或淡出。
+    /// A two-sided transition with `audioCrossfade`: the sound each video carries is cross-faded in the window with equal power, the outgoing side multiplied by cos(p·π/2) and the incoming side by sin(p·π/2), where p is linear progress (no easing). The other side lies outside its own interval and takes sound from handles according to its time mapping, without applying its own fade in/out. Cross-fading only happens when both sides are enabled; when one side has its own sound turned off, that side is silent and the other side still fades in or out per its curve as usual.
     fn crossfade_voices(&self, voices: &mut Vec<(i64, AudioVoice)>) -> Result<(), PlanError> {
         for tr in self.sequence.transitions.iter().filter(|tr| tr.audio_crossfade) {
             let Some(active) = self.active(tr)? else {
@@ -1083,7 +1062,7 @@ impl<'a> Scene<'a> {
             let (Some(TimelineItem::Video(left)), Some(TimelineItem::Video(right))) = (active.left, active.right) else {
                 continue;
             };
-            // 有一侧停用时按硬切：另一侧照常发声，不做淡化。
+            // When one side is disabled, it is a hard cut: the other side sounds as usual, with no cross-fade.
             if !left.base.enabled || !right.base.enabled {
                 continue;
             }
@@ -1126,9 +1105,8 @@ impl<'a> Scene<'a> {
     }
 }
 
-/// 转场在时间线上的窗口 `[start, end)`（帧）与两侧实例。计划不信任送进来的视频：实例不在、不在帧网格上、两侧不在同一轨道上
-/// 首尾相接、窗口越出实例的，都当作没有这个转场（硬切）。handles 不在这里查：源时刻越出素材时由后端夹到素材的两端。
-/// 帧计划与音频导出的区间计划（[`audio_plan`]）共用这一份判断。
+/// The transition's window on the timeline `[start, end)` (frames) and its two sides' instances. The plan does not trust the video passed in: if an instance is missing, not on the frame grid, the two sides are not on the same track or not adjacent, or the window extends beyond an instance, the transition is treated as absent (hard cut). Handles are not checked here: when source moments extend past the material, the backend clamps them to the material's ends.
+/// The frame plan and the interval plan for audio export ([`audio_plan`]) share this judgement.
 pub(crate) fn transition_window<'a>(
     items: &HashMap<&'a str, &'a TimelineItem>,
     tr: &Transition,
@@ -1158,7 +1136,7 @@ pub(crate) fn transition_window<'a>(
     Some((left, right, start, end))
 }
 
-/// 轨道的显示与发声规则：隐藏只影响画面，静音只影响声音；Solo 分视觉组与音频组各自生效。
+/// Track display and sound rules: hiding only affects the picture, and muting only affects sound; Solo takes effect separately for the visual group and the audio group.
 pub(crate) struct TrackRules {
     visual_solo: bool,
     audio_solo: bool,
@@ -1203,7 +1181,7 @@ impl<'a> LayerOrder<'a> {
     }
 }
 
-/// 视觉实例占 `[fromFrame, fromFrame + durationFrames)`。
+/// A visual instance occupies `[fromFrame, fromFrame + durationFrames)`.
 fn covers(span: FrameSpan, frame: i64) -> bool {
     span.from_frame <= frame && frame < span.end_frame()
 }
@@ -1212,13 +1190,13 @@ fn frame_start(span: FrameSpan, fps: Rate) -> Result<Ratio, PlanError> {
     frame_time(span.from_frame as i128, fps).ok_or_else(|| PlanError::overflow("fromFrame"))
 }
 
-/// 计划不信任送进来的视频：帧率与速度先校验，非法的分母在下面的有理数运算里会 panic，在 WASM 里就是陷阱。
+/// The plan does not trust the video passed in: frame rate and speed are validated first, since an illegal denominator would panic in the rational arithmetic below, which in WASM is a trap.
 fn checked_fps(sequence: &Sequence) -> Result<Rate, PlanError> {
     sequence.header.fps.validate("fps")?;
     Ok(sequence.header.fps)
 }
 
-/// 源时间相对序列时间的速度。
+/// The speed of source time relative to sequence time.
 fn source_rate(time_map: &TimeMap) -> Result<f64, PlanError> {
     match time_map {
         TimeMap::Linear { rate, .. } => {
@@ -1229,7 +1207,7 @@ fn source_rate(time_map: &TimeMap) -> Result<f64, PlanError> {
     }
 }
 
-/// 音频实例响的区间 `[start, end)`：开始与长度在采样级（格式规范 §2.10），不按帧判断。
+/// The interval `[start, end)` in which an audio instance sounds: its start and length are at sample level (format spec §2.10), not judged by frames.
 pub(crate) fn audio_bounds(audio: &AudioItem, fps: Rate) -> Result<(Ratio, Ratio), PlanError> {
     let offset = audio.subframe_offset.to_ratio("subframeOffset")?;
     let start = frame_time(audio.from_frame as i128, fps)
@@ -1241,14 +1219,13 @@ pub(crate) fn audio_bounds(audio: &AudioItem, fps: Rate) -> Result<(Ratio, Ratio
     Ok((start, end))
 }
 
-/// 帧网格上的实例占的区间 `[start, end)`。
+/// The interval `[start, end)` occupied by an instance on the frame grid.
 pub(crate) fn span_bounds(span: FrameSpan, fps: Rate) -> Result<(Ratio, Ratio), PlanError> {
     let end = frame_time(span.end_frame() as i128, fps).ok_or_else(|| PlanError::overflow("durationFrames"))?;
     Ok((frame_start(span, fps)?, end))
 }
 
-/// 实例在 `t` 这一刻的音量（线性倍数）：有包络时是包络的取样值（取代 `volume`），没有时是 `volume`
-/// （格式规范 §3.9，[`envelope::VolumeCurve`]）。`t` 可以在实例的区间之外（转场取 handles 时），包络在两端外延。
+/// The instance's volume (linear multiplier) at moment `t`: when there is an envelope, it is the envelope's sampled value (replacing `volume`); otherwise it is `volume` (format spec §3.9, [`envelope::VolumeCurve`]). `t` may lie outside the instance's interval (when a transition takes handles), and the envelope is extended at both ends.
 fn volume_at(volume: f64, points: &[EnvelopePoint], (start, end): (Ratio, Ratio), t: Ratio) -> Result<f64, PlanError> {
     if points.is_empty() {
         return Ok(volume);
@@ -1258,8 +1235,7 @@ fn volume_at(volume: f64, points: &[EnvelopePoint], (start, end): (Ratio, Ratio)
     Ok(envelope::VolumeCurve::new(volume, points, duration).at(local))
 }
 
-/// 淡入淡出在 `t` 这一刻折成的增益（dB，叠在 `gainDb` 上）：振幅在淡入段从 0 线性升到 1，在淡出段线性降到 0
-/// （格式规范 §3.9）。两段重叠时取较小的振幅；不在淡变里是 0 dB。
+/// The fade gain at moment `t`, converted to dB (added on top of `gainDb`): amplitude rises linearly from 0 to 1 in the fade-in section and falls linearly to 0 in the fade-out section (format spec §3.9). Where the two sections overlap, the smaller amplitude is taken; outside any fade it is 0 dB.
 fn fade_db((start, end): (Ratio, Ratio), t: Ratio, fade_in: Option<&MediaTime>, fade_out: Option<&MediaTime>) -> Result<f64, PlanError> {
     let since = t.checked_sub(start).ok_or_else(|| PlanError::overflow("t"))?.to_f64();
     let until = end.checked_sub(t).ok_or_else(|| PlanError::overflow("t"))?.to_f64();
@@ -1270,7 +1246,7 @@ fn fade_db((start, end): (Ratio, Ratio), t: Ratio, fade_in: Option<&MediaTime>, 
             amplitude = amplitude.min((distance / length).max(0.0));
         }
     }
-    // -100 dB 已经听不见；不写 -∞，计划要能序列化成 JSON。
+    // −100 dB is already inaudible; −∞ is not written, because the plan must be serializable to JSON.
     Ok(if amplitude >= 1.0 {
         0.0
     } else {
@@ -1278,7 +1254,7 @@ fn fade_db((start, end): (Ratio, Ratio), t: Ratio, fade_in: Option<&MediaTime>, 
     })
 }
 
-/// 音频实例在 `t` 的源时刻与速度；不在它响的区间里时为 `None`。
+/// The source moment and speed of an audio instance at `t`; `None` when outside the interval in which it sounds.
 fn audio_timing(audio: &AudioItem, t: Ratio, fps: Rate) -> Result<Option<(f64, f64)>, PlanError> {
     let (start, end) = audio_bounds(audio, fps)?;
     if t < start || t >= end {
@@ -1288,8 +1264,7 @@ fn audio_timing(audio: &AudioItem, t: Ratio, fps: Rate) -> Result<Option<(f64, f
     Ok(Some((map_time(&audio.time_map, start, t)?.to_f64(), rate)))
 }
 
-/// 字幕的作用实例在 `t` 覆盖着时，它的源在这一刻的位置。只有带时间映射的实例（视频、音频、合成）能投影；
-/// 实例停用或所在轨道隐藏、静音不影响投影，那只决定它自己出不出画面与声音。
+/// When a caption's effect instance covers `t`, the position within its source at this moment. Only instances with a time mapping (video, audio, compositions) can be projected; disabling an instance or hiding/muting its track does not affect the projection, which only decides whether the instance itself shows picture and sound.
 fn scope_at(item: &TimelineItem, frame: i64, t: Ratio, fps: Rate) -> Result<Option<CaptionScope>, PlanError> {
     let (id, asset, seconds) = match item {
         TimelineItem::Video(video) => {
@@ -1321,8 +1296,7 @@ fn scope_at(item: &TimelineItem, frame: i64, t: Ratio, fps: Rate) -> Result<Opti
     }))
 }
 
-/// 实例在画布上的像素框：中心、宽高、旋转（度，绕中心顺时针）与翻转。由 v2 的 `place`（画幅百分比）经
-/// `timeline::geometry` 换算，旧画法按它画。
+/// The instance's pixel box on the canvas: center, width and height, rotation (degrees, clockwise about the center) and flip. Converted from v2's `place` (percent of the frame) via `timeline::geometry`; the old drawing method draws with it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PixelBox {
     cx: f64,
@@ -1348,12 +1322,12 @@ impl PixelBox {
     }
 }
 
-/// 源画面在框里怎么放（v2 缺省 `cover`）。不知道源的尺寸时 [`media_layer`] 铺满框，不看它。
+/// How the source picture is fitted into the box (v2 default `cover`). When the source size is unknown, [`media_layer`] fills the box and ignores this.
 fn fit_of(media: &MediaFields) -> Fit {
     media.fit()
 }
 
-/// 视频与图片层（格式规范 §3.5）：源画面按 `fit` 放进实例的像素框里。不知道源的尺寸时铺满。
+/// Video and image layers (format spec §3.5): the source picture is fitted into the instance's pixel box per `fit`. Fills when the source size is unknown.
 #[allow(clippy::too_many_arguments)]
 fn media_layer(
     item_id: &str,
@@ -1368,11 +1342,11 @@ fn media_layer(
 ) -> Option<VisualLayer> {
     let opacity = drawable(pixel, opacity)?;
     let (bw, bh) = (pixel.width, pixel.height);
-    // 裁剪在适配之前：留下的区域当作源画面去适配，取源的区域再换回整个源的坐标（格式规范 §3.5）。
+    // Cropping comes before fitting: the remaining region is fitted as if it were the source picture, and the source region is mapped back to whole-source coordinates (format spec §3.5).
     let [cl, ct, cr, cb] = crop.filter(|c| c.is_valid()).map_or([0.0, 0.0, 1.0, 1.0], Crop::rect);
     let source = source.map(|(sw, sh)| (sw * (cr - cl), sh * (cb - ct)));
 
-    // 内容在框里的矩形（相对框左上角）与取源的区域。
+    // The rectangle of content within the box (relative to the box's top-left corner) and the source region taken.
     let (cw, ch, ox, oy, rect) = match (fit, source) {
         (_, None) => (bw, bh, 0.0, 0.0, [0.0, 0.0, 1.0, 1.0]),
         (Fit::Contain, Some((sw, sh))) => {
@@ -1416,7 +1390,7 @@ fn media_layer(
     })
 }
 
-/// 内容就是整个像素框的层：文字、图形、生成器与不支持的层。
+/// Layers whose content is the whole pixel box: text, shapes, generators and unsupported layers.
 fn box_layer(item_id: &str, kind: LayerKind, pixel: &PixelBox, opacity: f64, content: LayerContent) -> Option<VisualLayer> {
     let opacity = drawable(pixel, opacity)?;
     Some(VisualLayer {
@@ -1434,7 +1408,7 @@ fn box_layer(item_id: &str, kind: LayerKind, pixel: &PixelBox, opacity: f64, con
     })
 }
 
-/// 画得出来的实例的不透明度：框要是有限的数、要有面积、不能全透明。
+/// Opacity of an instance that can be drawn: the box must be a finite number, have area, and not be fully transparent.
 fn drawable(pixel: &PixelBox, opacity: f64) -> Option<f64> {
     let opacity = if opacity.is_finite() { opacity.clamp(0.0, 1.0) } else { 0.0 };
     let finite = [pixel.width, pixel.height, pixel.cx, pixel.cy, pixel.rotation]
@@ -1443,9 +1417,8 @@ fn drawable(pixel: &PixelBox, opacity: f64) -> Option<f64> {
     (opacity > 0.0 && finite && pixel.width > 0.0 && pixel.height > 0.0).then_some(opacity)
 }
 
-/// 单位正方形 → 画布像素的矩阵（格式规范 §3.5）：框绕自己的中心旋转（角度，顺时针）。
-/// `content` 是内容在框里的矩形（宽、高与相对框左上角的偏移）。翻转是内容绕自己的中心镜像，
-/// 先于旋转生效；内容在框里居中，所以和翻转整个框是一回事。
+/// Matrix from the unit square to canvas pixels (format spec §3.5): the box rotates about its own center (angle, clockwise).
+/// `content` is the rectangle of content within the box (width, height, and offset relative to the box's top-left). Flip is the content mirrored about its own center, applied before rotation; since the content is centered in the box, it is the same as flipping the whole box.
 fn placement(pixel: &PixelBox, content: (f64, f64, f64, f64)) -> [f64; 6] {
     let (cw, ch, ox, oy) = content;
     let (bw, bh) = (pixel.width, pixel.height);
@@ -1460,12 +1433,12 @@ fn placement(pixel: &PixelBox, content: (f64, f64, f64, f64)) -> [f64; 6] {
         px + qx * cos - qy * sin,
         py + qx * sin + qy * cos,
     ];
-    // u → 1 − u：矩阵右乘 [−1, 0, 0, 1, 1, 0]。
+    // u → 1 − u: right-multiply the matrix by [−1, 0, 0, 1, 1, 0].
     if pixel.flip_x {
         (e, f) = (e + a, f + b);
         (a, b) = (-a, -b);
     }
-    // v → 1 − v：矩阵右乘 [1, 0, 0, −1, 0, 1]。
+    // v → 1 − v: right-multiply the matrix by [1, 0, 0, −1, 0, 1].
     if pixel.flip_y {
         (e, f) = (e + c, f + d);
         (c, d) = (-c, -d);
@@ -1473,7 +1446,7 @@ fn placement(pixel: &PixelBox, content: (f64, f64, f64, f64)) -> [f64; 6] {
     [a, b, c, d, e, f].map(clean)
 }
 
-/// 线性音量倍数折成 dB：0 记作 -100 dB（听不见；不写 -∞，计划要能序列化成 JSON）。
+/// Converts a linear volume multiplier to dB: 0 is recorded as −100 dB (inaudible; −∞ is not written, because the plan must be serializable to JSON).
 pub(crate) fn volume_db(volume: f64) -> f64 {
     if !volume.is_finite() {
         return -100.0;
@@ -1481,7 +1454,7 @@ pub(crate) fn volume_db(volume: f64) -> f64 {
     clean(20.0 * libm::log10(volume.max(1e-5)))
 }
 
-/// 角度的正弦与余弦。90° 的倍数给精确值，其余经 libm 求，原生与 wasm32 结果一致。
+/// Sine and cosine of an angle. Exact values at multiples of 90°; otherwise computed via libm, so native and wasm32 results agree.
 fn rotation(degrees: f64) -> (f64, f64) {
     let normalized = libm::fmod(degrees, 360.0);
     let normalized = if normalized < 0.0 { normalized + 360.0 } else { normalized };
@@ -1497,7 +1470,7 @@ fn rotation(degrees: f64) -> (f64, f64) {
     }
 }
 
-/// 去掉 `-0.0`：输出要稳定，同一个计划只有一种写法。
+/// Strips `-0.0`: output must be stable, so the same plan has only one representation.
 pub(crate) fn clean(value: f64) -> f64 {
     if value == 0.0 { 0.0 } else { value }
 }

@@ -3,7 +3,7 @@ import { defineNoun } from './context.ts';
 import { M } from './nodes-copy.ts';
 import { formatShareStatus, parseCapabilitySwitch } from './nodes-output.ts';
 
-/** `cuccut share`：「共享这台电脑」——把本机的能力共享给局域网里配对过的电脑（节点协议规范 §10）。 */
+/** `cuccut share`: “Share this computer”, which shares this machine's capabilities with paired computers on the local network (node protocol spec §10). */
 export const share = defineNoun({
   name: 'share',
   get usage() {

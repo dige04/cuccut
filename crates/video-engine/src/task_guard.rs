@@ -1,14 +1,12 @@
-//! 任务的保护范围（架构设计 §3.2，视频格式规范 §3.10）：只对一个任务生效的「不要改动」。
+//! The protection scope of a task (architecture design §3.2, video format spec §3.10): a “do not change” rule that applies to one task only.
 //!
-//! 它属于 TaskContract，不写入视频：Runtime 在任务里的写入（智能体带 taskId 的提交，任务下的 Job 与流程应用结果）
-//! 时把它随事务交给引擎，引擎在提交前对照这笔事务的实体变化检查，触碰时整笔拒绝（`TASK_PROTECTED`），什么都不写。
-//! 用户与手动的修改不带它，不受限制。
+//! It belongs to TaskContract and is not written into the video. When the Runtime writes within a task (agent submissions carrying taskId, and the Job and flow application results under the task), it hands the protection to the engine along with the transaction. Before commit, the engine checks it against the entity changes of that transaction; if anything is touched, the whole transaction is rejected (`TASK_PROTECTED`) and nothing is written.
+//! User and manual edits do not carry it and are not restricted.
 //!
-//! - `video`：这个视频的任何变化；
-//! - `entity`：这个实体本身的创建、修改与删除（不含它的子实体：保护轨道上的内容用 `interval` 加 `trackIds`）；
-//! - `property`：这个实体上的几个属性（实体 JSON 里以点分隔的路径，如 `text`、`style.fontSize`）；实体被删除算触碰；
-//! - `interval`：序列上的一段帧区间，修改前或修改后与它相交的时间线实例（音频按精确的起止时刻算）；`trackIds` 给了时
-//!   只看这些轨道上的实例。
+//! - `video`: any change to this video;
+//! - `entity`: creating, modifying, and deleting this entity itself (not its child entities; to protect content on a track, use `interval` with `trackIds`);
+//! - `property`: several properties on this entity (dot-separated paths in the entity JSON, such as `text`, `style.fontSize`); deleting the entity counts as touching it;
+//! - `interval`: a frame interval on the sequence; timeline instances that intersect it, before or after the change (audio is measured by its exact start and end times); when `trackIds` is given, only instances on those tracks are checked.
 
 use editor_semantics::{Ratio, frame_time};
 use serde::{Deserialize, Serialize};
@@ -18,7 +16,7 @@ use crate::error::{EngineResult, ErrorBody, Retryability, msg};
 use crate::model::*;
 use crate::state::{EntityChange, EntityKind, VideoState, item_range};
 
-/// 一项任务保护。
+/// A task protection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskProtection {
@@ -48,8 +46,8 @@ pub enum ProtectionTarget {
     },
 }
 
-/// 这笔事务的变化是否触碰任务保护。触碰时返回 `TASK_PROTECTED`：`entityIds` 是被触碰的实体，
-/// `details.protections` 列出被触碰的保护（`protectionId`、`target` 与触碰它的实体）。
+/// Whether the changes in this transaction touch a task protection. When touched, returns `TASK_PROTECTED`: `entityIds` are the touched entities,
+/// and `details.protections` lists the touched protections (`protectionId`, `target`, and the entity that touched it).
 pub fn check(before: &VideoState, after: &VideoState, changes: &[EntityChange], protections: &[TaskProtection]) -> EngineResult<()> {
     if protections.is_empty() || changes.is_empty() {
         return Ok(());
@@ -121,13 +119,13 @@ fn touched(before: &VideoState, after: &VideoState, changes: &[EntityChange], ta
     }
 }
 
-/// 点分隔的属性路径（`style.fontSize`）；数组下标也用点（`keyframes.0`）。不存在时 None。
+/// Dot-separated property path (`style.fontSize`); array indices also use dots (`keyframes.0`). None if it does not exist.
 fn lookup<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
     let segments: Vec<String> = path.split('.').map(|s| s.replace('~', "~0").replace('/', "~1")).collect();
     value.pointer(&format!("/{}", segments.join("/")))
 }
 
-/// 这个状态里的实例在序列的这段帧区间上（相交即算）。区间换算不出来时保守地算在内。
+/// Instances in this state that overlap this frame interval of the sequence (intersecting counts). If the interval cannot be converted, it is conservatively counted as overlapping.
 fn item_in_interval(state: &VideoState, item_id: &str, sequence_id: &str, span: &FrameSpan, track_ids: Option<&[Id]>) -> bool {
     let Some(placed) = state.items.get(item_id) else {
         return false;

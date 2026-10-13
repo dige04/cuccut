@@ -12,23 +12,22 @@ import { agoLabel, formatDuration } from './format.ts';
 import type { ServiceTone } from './services.ts';
 
 /**
- * 远端算力页的纯模型（产品设计 §2.1；原型 designs/cuccut/app/page-shell.jsx `RemotePage`、model-services.js
- * `REMOTE_TASKS`）。读的都是 `nodes.share.status` / `nodes.list` / `nodes.discover` 的真实返回，不编数字。
+ * Pure model for the remote compute page (product design §2.1; prototype designs/cuccut/app/page-shell.jsx `RemotePage` and model-services.js `REMOTE_TASKS`). It reads the real return values of `nodes.share.status` / `nodes.list` / `nodes.discover` and does not invent numbers.
  */
 
-// ---- 共享这台 Mac ----
+// ---- Share this Mac ----
 
-/** 「192.168.1.31:47610」；IPv6 加方括号。 */
+/** “192.168.1.31:47610”; IPv6 addresses are wrapped in brackets. */
 export function hostPort(host: string, port: number): string {
   return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
 }
 
-/** 此刻能连上的地址，一项一个 `host:port`；没在监听时为空。 */
+/** Addresses that can be reached right now, one `host:port` per item; empty when not listening. */
 export function shareAddresses(status: Pick<ShareStatus, 'addresses' | 'port'>): string[] {
   return status.addresses.map((address) => hostPort(address, status.port));
 }
 
-/** 配对码三位一组，好念：「481924」→「481 924」。 */
+/** The pairing code is grouped in threes for readability: “481924” → “481 924”. */
 export function formatPairingCode(code: string): string {
   return /^\d{6}$/.test(code) ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
 }
@@ -44,8 +43,7 @@ export type PairingView =
   | { kind: 'none'; text: string };
 
 /**
- * 配对码块的内容：有码给码与倒计时；输错太多给锁到几点；码用过、过期（本地按 `expiresAt` 判断，不等下一次轮询）
- * 或 Runtime 重启后没有码，给一句为什么，按钮变成「生成配对码」。
+ * Contents of the pairing code block: when there is a code, shows the code and a countdown; when too many wrong attempts have been made, shows the time the lock lifts; when the code has been used, has expired (judged locally by `expiresAt`, without waiting for the next poll), or there is no code after a Runtime restart, gives one sentence on why, and the button becomes “生成配对码”（Generate pairing code).
  */
 export function pairingView(pairing: ShareStatus['pairing'], now: number): PairingView {
   if (pairing && 'lockedUntil' in pairing && Date.parse(pairing.lockedUntil) > now) {
@@ -60,7 +58,7 @@ export function pairingView(pairing: ShareStatus['pairing'], now: number): Pairi
   return { kind: 'none', text: REMOTE_COPY.pairingNone };
 }
 
-/** 本机可用的转录模型（本地 Provider 里可用的模型包），节点接的转录任务就用它们；模型视图还没到时为 null。 */
+/** Transcription models available on this machine (the model packs available in the local Provider); node-received transcription tasks use these. null when the model view has not loaded yet. */
 export function localTranscribeModels(capabilities: ModelCapabilitiesView | null): string[] | null {
   if (!capabilities) return null;
   return capabilities.transcribe.providers
@@ -71,19 +69,17 @@ export function localTranscribeModels(capabilities: ModelCapabilitiesView | null
 export interface RemoteTaskRow {
   key: string;
   name: string;
-  /** 节点协议里的能力名；null = 这个版本不能共享这类任务。 */
+  /** The capability name in the node protocol; null = this version cannot share this kind of task. */
   capability: string | null;
   on: boolean;
   disabled: boolean;
   desc: string | null;
-  /** 这类任务会用到的本机模型（只给转录）。 */
+  /** The local models this kind of task uses (transcription only). */
   models: string[];
 }
 
 /**
- * 「提供给其他电脑的任务」的行，顺序同原型的任务目录。能共享的（`NODE_SHAREABLE_CAPABILITIES`）开关读写
- * `capabilities[...].enabled`；没装模型时不禁用开关（后端照样可以开），只在副文里说对方的任务会失败。
- * 其余几类这个版本没有后端，画成关着的禁用开关并说明原因。
+ * Rows of “tasks offered to other computers”, in the same order as the prototype's task catalog. The shareable ones (`NODE_SHAREABLE_CAPABILITIES`) have toggles that read and write `capabilities[...].enabled`; when no model is installed, the toggle is not disabled (the backend can still be turned on), and the sub-line only says that the other side's tasks will fail. The other kinds have no backend in this version; they are drawn as disabled, switched-off toggles with the reason explained.
  */
 export function remoteTaskRows(
   status: Pick<ShareStatus, 'capabilities'>,
@@ -110,7 +106,7 @@ export function remoteTaskRows(
   });
 }
 
-/** 段标题右侧的汇总：开着的能力数 / 这个版本能共享的能力数。 */
+/** Summary on the right of the section heading: the number of enabled capabilities / the number of capabilities this version can share. */
 export function remoteTaskSummary(rows: RemoteTaskRow[]): string {
   const real = rows.filter((row) => row.capability);
   return REMOTE_COPY.taskSummary(real.filter((row) => row.on).length, real.length);
@@ -124,11 +120,11 @@ export function shareClientMeta(client: ShareStatus['clients'][number], now: num
   return REMOTE_COPY.clientMeta(agoLabel(client.pairedAt, now), client.lastSeenAt ? agoLabel(client.lastSeenAt, now) : null);
 }
 
-// ---- 使用其他电脑 ----
+// ---- Using other computers ----
 
 const OS_LABEL: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
-/** 模型包可用（装好了，不论此刻是否已加载）的状态；`not-installed` 与 `error` 不算。 */
+/** Status of a model pack being usable (installed, whether or not it is currently loaded); `not-installed` and `error` don't count. */
 const USABLE_BUNDLE = new Set(['installed', 'loading', 'ready', 'busy', 'unloading']);
 
 export interface NodeCardView {
@@ -136,7 +132,7 @@ export interface NodeCardView {
   tone: ServiceTone;
   chip: { text: string; variant: 'positive' | 'neutral' | 'notice' };
   meta: string;
-  /** 用不了时的一句「为什么、怎么办」（按 `problem` 拼，不叫诊断）。 */
+  /** One sentence on why it can't be used and what to do about it (assembled from `problem`; not called a diagnosis). */
   problem: string | null;
 }
 
@@ -164,7 +160,7 @@ export function nodeCardView(node: PairedNode): NodeCardView {
   return { address, tone: 'on', chip: { text: REMOTE_COPY.online, variant: 'positive' }, meta: meta.join(' · '), problem: null };
 }
 
-/** 附近的电脑里去掉已经配对的（按 nodeId，没报 nodeId 的按地址）。 */
+/** Removes nearby computers that are already paired (by nodeId; by address for those that did not report a nodeId). */
 export function unpairedNearby(found: DiscoveredNode[], paired: PairedNode[]): DiscoveredNode[] {
   const ids = new Set(paired.map((node) => node.nodeId));
   const addresses = new Set(paired.map((node) => hostPort(node.host, node.port)));
@@ -173,7 +169,7 @@ export function unpairedNearby(found: DiscoveredNode[], paired: PairedNode[]): D
 
 export type ParsedAddress = { host: string; port: number } | { error: string };
 
-/** 「按地址添加」的输入：`host`、`host:port`、`[v6]:port`；可以带 `http://` 与结尾的 `/`。不写端口用节点默认端口。 */
+/** Input for “Add by address”: `host`, `host:port`, `[v6]:port`; may include `http://` and a trailing `/`. Without a port, the node's default port is used. */
 export function parseNodeAddress(text: string): ParsedAddress {
   const raw = text.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   if (!raw) return { error: REMOTE_COPY.addressEmpty };
@@ -200,13 +196,13 @@ export function parseNodeAddress(text: string): ParsedAddress {
   return { host, port };
 }
 
-/** 配对码输入：去掉空格与连字符后必须是 6 位数字。 */
+/** Pairing code input: after removing spaces and hyphens, it must be 6 digits. */
 export function normalizePairingCode(text: string): string | null {
   const code = text.replace(/[\s-]/g, '');
   return /^\d{6}$/.test(code) ? code : null;
 }
 
-/** `nodes.pair` 失败时给人看的话：按 `details.code` / `details.reason` 认得的说清楚怎么办，认不得的带上原话。 */
+/** The message shown to the person when `nodes.pair` fails: for `details.code` / `details.reason` values it recognizes, it explains clearly what to do; for unrecognized ones, it includes the original text. */
 export function pairErrorMessage(error: unknown): string {
   const details = (error as { details?: unknown } | null)?.details;
   if (details && typeof details === 'object') {

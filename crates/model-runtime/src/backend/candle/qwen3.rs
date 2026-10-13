@@ -1,14 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/Qwen3ASR.swift`。
+//! Parts of this file's implementation draw on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/Qwen3ASR.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model pack and transcription interface; the original upstream source attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Qwen3-ASR（candle），镜像 mlx 后端 `qwen3/model.rs`。
+//! Qwen3-ASR (candle), mirroring the mlx backend `qwen3/model.rs`.
 //!
-//! candle 是同步执行，贪心解码不需要 mlx 的 async_eval 双缓冲；提示词模板、`config.json` 的核对与语言前缀
-//! 与 MLX 共用 [`crate::speech::qwen3_asr`]，重复惩罚与退化检测共用 [`crate::speech::decoding`]。
+//! candle runs synchronously, and greedy decoding does not need mlx's async_eval double buffering. The prompt template, the `config.json` check and the language prefix are shared with MLX via [`crate::speech::qwen3_asr`], and the repetition penalty and degeneration detection are shared via [`crate::speech::decoding`].
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -30,7 +29,7 @@ use crate::speech::qwen3_asr::{
 use crate::speech::tokenizer::Qwen3Tokenizer;
 use crate::speech::{Recognition, RecognitionRequest, SpeechRecognizer};
 
-/// 尺寸档对应的音频塔与文本解码器结构。
+/// Audio tower and text decoder structure for each size tier.
 fn configs_for(size: AsrModelSize, bits: usize) -> (AudioEncoderConfig, TextDecoderConfig) {
     match size {
         AsrModelSize::Small => (AudioEncoderConfig::SMALL, TextDecoderConfig::small(bits)),
@@ -54,7 +53,7 @@ impl Qwen3Asr {
 
     fn load_inner(config: Qwen3Config, weights: &[&Path], tokenizer: TokenizerFiles<'_>, device: &Device) -> Result<Self> {
         let mut store = WeightStore::load(weights, device)?;
-        // 浮点权重（`bits` 16）不带 `scales`，不走反量化；位宽只在有 `scales` 时用到。
+        // Floating-point weights (`bits` 16) have no `scales` and skip dequantization; the bit width is only used when `scales` is present.
         let (audio_config, text_config) = configs_for(config.size, config.bits as usize);
         let text_config = TextDecoderConfig {
             group_size: config.group_size as usize,
@@ -64,7 +63,7 @@ impl Qwen3Asr {
         let text_decoder = TextDecoder::load(&mut store, text_config)?;
         let tokenizer =
             Qwen3Tokenizer::load(tokenizer.vocabulary, tokenizer.merges, tokenizer.config).context("loading the Qwen3 tokenizer")?;
-        // 部分仓库带有转换脚本保留的非推理张量；所有必需张量均已由上面逐键校验。
+        // Some repos include non-inference tensors kept by the conversion script; all required tensors have already been checked key by key above.
         let _unused_checkpoint_metadata = store.remaining();
         Ok(Self {
             audio_encoder,
@@ -76,7 +75,7 @@ impl Qwen3Asr {
         })
     }
 
-    /// 预热：一秒静音、最多几个 token（CUDA 上让内核在第一个任务之前就绪，CPU 上摊掉首次分配）。
+    /// Warm-up: one second of silence and at most a few tokens (on CUDA it gets the kernels ready before the first job; on CPU it spreads out the first allocations).
     pub fn warmup(&mut self) -> Result<()> {
         let options = Qwen3DecodingOptions {
             max_tokens: 4,
@@ -117,7 +116,7 @@ impl Qwen3Asr {
         })
     }
 
-    /// 返回识别文本与模型自报的语言名（自动识别时输出形如 `language English<asr_text>…`）。
+    /// Returns the recognized text and the language name the model reports itself (on auto-detection the output looks like `language English<asr_text>…`).
     fn generate(&self, audio_embeddings: &Tensor, options: &Qwen3DecodingOptions) -> Result<(String, Option<String>)> {
         let audio_tokens = audio_embeddings.dim(1)?;
         let mut ids = vec![IM_START, SYSTEM, NEWLINE];
@@ -193,7 +192,7 @@ impl Qwen3Asr {
 }
 
 impl SpeechRecognizer for Qwen3Asr {
-    /// 提示进 system 段（`Qwen3DecodingOptions::context`）；指定语言时用 `language X<asr_text>` 前缀强制。
+    /// The hint goes into the system segment (`Qwen3DecodingOptions::context`); when a language is specified, it is forced with the `language X<asr_text>` prefix.
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> Result<Recognition> {
         let mut options = self.default_options.clone();
         options.context = request
@@ -206,7 +205,7 @@ impl SpeechRecognizer for Qwen3Asr {
     }
 }
 
-/// token 序列 → u32 [1, n]（candle 的 index_select 需要 u32 索引）。
+/// Token sequence → u32 [1, n] (candle's index_select needs u32 indices).
 pub(crate) fn ids_tensor(ids: &[i32], device: &Device) -> Result<Tensor> {
     let ids = ids.iter().map(|id| *id as u32).collect::<Vec<_>>();
     let length = ids.len();
@@ -222,8 +221,7 @@ fn pick_next_token(logits: &Tensor, generated: &[i32], options: &Qwen3DecodingOp
         return argmax_token(logits);
     }
     if options.temperature <= 0.0 {
-        // 惩罚只改写「已生成」与「被 n-gram 禁止」的少数 token，
-        // 就地在设备上改写后再 argmax，避免每步把整个词表搬回 host。
+        // The penalty only rewrites the few tokens that are “already generated” or “banned by n-gram”, and rewrites them in place on the device before argmax, so the whole vocabulary is not copied back to the host at every step.
         return argmax_with_penalties_on_device(logits, generated, options);
     }
     let mut scores = logits.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;

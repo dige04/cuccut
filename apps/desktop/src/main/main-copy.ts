@@ -15,11 +15,11 @@ import { tr } from './main-copy.tr.ts';
 import { vi } from './main-copy.vi.ts';
 
 /**
- * 桌面端主进程的文案：应用菜单、打开 / 存储对话框、Runtime 起不来与网页标签的错误。英文是键与类型的来源，译文在
- * `main-copy.<语言>.ts`。菜单项沿用各平台的固定说法（Electron 缺省菜单的英文）；界面语言变了主进程重建菜单（index.ts）。
+ * Copy for the desktop main process: the app menu, the open / save dialogs, and errors for when the Runtime fails to start or for web tabs. English is the source of keys and types; translations are in
+ * `main-copy.<language>.ts`. Menu items use each platform's fixed wording (the English of Electron's default menu). When the UI language changes, the main process rebuilds the menu (index.ts).
  */
 const en = {
-  // ---- 应用菜单（app-menu.ts）----
+  // ---- App menu (app-menu.ts) ----
   about: (app: string) => `About ${app}`,
   services: 'Services',
   hide: (app: string) => `Hide ${app}`,
@@ -55,7 +55,7 @@ const en = {
   zoom: 'Zoom',
   bringAllToFront: 'Bring All to Front',
 
-  // ---- 对话框（index.ts）----
+  // ---- Dialogs (index.ts) ----
   openProjectTitle: 'Open project folder',
   open: 'Open',
   choose: 'Choose',
@@ -66,13 +66,13 @@ const en = {
   openFileTitle: 'Open file',
   save: 'Save',
 
-  // ---- Runtime 起不来或不再拉起（runtime-supervisor.ts，经 `getConnection` 到界面）----
+  // ---- Runtime fails to start or is no longer launched (runtime-supervisor.ts, reaching the UI via `getConnection`) ----
   runtimeNoDiscovery: 'Runtime started but didn’t write its discovery file',
   runtimeTimeout: 'Runtime took too long to start',
   runtimeExited: (code: number | null) => `Runtime failed to start (exit code ${code})`,
   runtimeQuitting: 'The app is quitting',
 
-  // ---- 网页标签（web-tabs.ts）----
+  // ---- Web tabs (web-tabs.ts) ----
   webCreateNotWindow: 'Only app windows can create web tabs',
   webTooManyTabs: 'Too many web tabs are open',
   webTabMissing: 'This web tab no longer exists',

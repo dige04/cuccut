@@ -14,7 +14,7 @@ import { pl } from './generation-options.pl.ts';
 import { tr } from './generation-options.tr.ts';
 import { vi } from './generation-options.vi.ts';
 
-/** `packages/models/src/generation-options.ts` 给人看的文字：语音合成与文生图的参数检查。 */
+/** `packages/models/src/generation-options.ts`: text shown to people for parameter checks for speech synthesis and text-to-image. */
 const en = {
   notLocalOnly: (p: { modelId: string; key: string }) => `Model ${p.modelId} doesn't accept ${p.key} (only local models do)`,
   textEmpty: "Text can't be empty",

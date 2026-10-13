@@ -12,8 +12,8 @@ const line = style({
 });
 
 /**
- * 编辑器里 Agent 用不了时的那一行（工具页的「用」、右下角悬浮会话）：一句原因加一个去处理的链接。
- * 起始页用整张指引卡（start/gate-card.tsx）；窄面板里放一张橙色卡太重，和周围的设置项不协调。
+ * The line shown in the editor when the Agent cannot be used (the 「用」 (Use) row on the tool page, the floating conversation at the bottom-right): one sentence of reason plus a link to deal with it.
+ * The start page uses the full guide card (start/gate-card.tsx); an orange card in a narrow panel is too heavy and clashes with the settings items around it.
  */
 export function AgentGateLine({ guide }: { guide: GateGuide }) {
   const { busy, fix } = useGateFix(guide);

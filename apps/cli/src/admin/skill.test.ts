@@ -68,7 +68,7 @@ describe('installAgentSkill', () => {
     const linkDir = path.join(home, 'agent-skills', 'cuccut');
     const symlink = vi.spyOn(fs, 'symlinkSync');
     try {
-      // 非 Windows 上 Node 忽略链接类型，这里照样建得出来，只核对传给它的类型。
+      // On non-Windows, Node ignores the link type, so it still gets created here; the test only checks the type passed to it.
       installAgentSkill(rendered, target, linkDir, 'win32');
       expect(symlink).toHaveBeenLastCalledWith(linkDir, expect.any(String), 'junction');
       installAgentSkill(rendered, target, linkDir, 'darwin');

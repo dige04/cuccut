@@ -3,10 +3,9 @@ import { loadRenderPlanner } from './preview-wasm.ts';
 import type { FrozenDocument, RenderPlanner, SpeechTranscript } from './render-planner.ts';
 
 /**
- * 界面里的缩略图（元素格、文字预设卡、字幕样式卡、品牌库的 Lottie 贴纸）也由渲染内核画：把要画的几层摆成一个只有
- * 这几层的序列，交给 WASM 画成透明底的一帧，再裁到格子里。与预览、导出同一个实现，缩略图看到的就是落到画面上的样子。
+ * Thumbnails in the UI (element grid, text preset cards, caption style cards, and the Lottie stickers in the brand library) are also drawn by the render kernel. The layers to draw are placed as a sequence containing only those layers, handed to WASM to draw as one frame on a transparent background, then cropped to the cell. It is the same implementation as preview and export, so a thumbnail shows exactly how it lands on the picture.
  *
- * 缩略图用同一个编译好的模块的另一个实例（字体照样注入），不与预览抢视频与文档。
+ * Thumbnails use another instance of the same compiled module (fonts are still injected), so they do not compete with the preview for video and documents.
  */
 
 let planner: Promise<RenderPlanner> | null = null;
@@ -21,31 +20,31 @@ export function thumbnailPlanner(): Promise<RenderPlanner> {
   return planner;
 }
 
-/** 缩略图里的一层：实例自己的字段（不含 ID、轨道与时间段）。 */
+/** A layer in a thumbnail: the instance's own fields (excluding ID, track and time range). */
 export type ThumbLayer = Record<string, unknown> & { type: string };
 
-/** 要画的场景：一块序列画布上的几层（低层在前，各占一条轨道，都从 0 开始、长 `duration` 秒）。 */
+/** The scene to draw: several layers on one sequence canvas (lower layers first; each occupies a track, and all start at 0 and last `duration` seconds). */
 export interface ThumbScene {
   canvas: { width: number; height: number };
   fps?: Rate;
   layers: readonly ThumbLayer[];
-  /** 画哪一刻（秒）。 */
+  /** Which moment to draw (seconds). */
   seconds: number;
-  /** 各层多长（秒）：进度条、计时与入场出场动画按它算。 */
+  /** How long each layer lasts (seconds): progress bars, timers and in/out animations are computed from it. */
   duration: number;
   documents?: readonly FrozenDocument[];
   assets?: Record<Id, AssetRecord>;
-  /** 素材的字节（Lottie）。 */
+  /** Asset bytes (Lottie). */
   assetBytes?: readonly { asset: VersionRef; bytes: Uint8Array }[];
-  /** 声波层的频谱（BCS1）：给所有声波层。 */
+  /** Spectrum (BCS1) for waveform layers: supplied to all waveform layers. */
   spectrum?: Uint8Array;
-  /** 字幕的词从哪份转写来（字幕文档的 `sourceDocumentId` 指向它）：逐词动画按这些词推进。 */
+  /** Which transcript the caption's words come from (the caption document's `sourceDocumentId` points to it): word-by-word animation advances through these words. */
   speech?: readonly SpeechTranscript[];
 }
 
 const FPS: Rate = { num: 30, den: 1 };
 
-/** 场景摆成的序列。 */
+/** The sequence the scene is arranged as. */
 export function thumbSequence(scene: ThumbScene): Sequence {
   const fps = scene.fps ?? FPS;
   const frames = Math.max(1, Math.round((scene.duration * fps.num) / fps.den));
@@ -60,7 +59,7 @@ export function thumbSequence(scene: ThumbScene): Sequence {
   }));
   const items = scene.layers.map((layer, index) => {
     const fields: Record<string, unknown> = { ...layer };
-    // 缩略图是静止的一格：各层同时出现，不带动画。
+    // A thumbnail is a single still frame: layers appear together, without animation.
     delete fields.delayFrames;
     delete fields.animate;
     return {
@@ -92,10 +91,10 @@ export function thumbSequence(scene: ThumbScene): Sequence {
 
 const NO_SPEECH: readonly SpeechTranscript[] = [];
 
-/** 各实例上一次送进去的场景（只比引用）与转写：同一张缩略图接着画下一刻时不再重送。 */
+/** The scene and transcript last sent to each instance (compared by reference only). When the same thumbnail draws the next moment, they are not sent again. */
 const loaded = new WeakMap<RenderPlanner, { scene: ThumbScene | null; speech: readonly SpeechTranscript[] }>();
 
-/** 两个场景除了画哪一刻都相同（同一份层、文档、素材，同样大小与长度）。 */
+/** Two scenes are identical except for which moment they draw (same layers, documents and assets, same size and length). */
 function sameScene(a: ThumbScene, b: ThumbScene): boolean {
   return (
     a.layers === b.layers &&
@@ -111,8 +110,8 @@ function sameScene(a: ThumbScene, b: ThumbScene): boolean {
 }
 
 /**
- * 把场景画成 `width`×`height` 的透明底画面（与场景画布同比例）。`problems` 是画不出来的东西与内核的提示。
- * 画面复制出来，之后再调 WASM 也不受影响。只换了 `seconds` 的同一个场景（动起来的缩略图）不重送序列与文档。
+ * Draws the scene as a `width`×`height` picture on a transparent background (same aspect ratio as the scene canvas). `problems` lists things that could not be drawn, and hints from the kernel.
+ * The picture is copied, so later WASM calls do not affect it. A scene that differs only in `seconds` (an animated thumbnail) does not re-send the sequence and documents.
  */
 export function renderThumb(
   planner: RenderPlanner,
@@ -124,7 +123,7 @@ export function renderThumb(
   const h = Math.max(1, Math.round(height));
   const last = loaded.get(planner) ?? { scene: null, speech: NO_SPEECH };
   const speech = scene.speech ?? NO_SPEECH;
-  // 转写留在实例里：没带转写的场景要清掉上一张字幕卡送进去的那份。
+  // The transcript stays in the instance: a scene without a transcript must clear the one the previous caption card sent in.
   if (speech !== last.speech) planner.setSpeech(speech);
   if (!last.scene || !sameScene(last.scene, scene)) {
     planner.setVideo({ sequence: thumbSequence(scene), assets: scene.assets ?? {} });
@@ -143,7 +142,7 @@ export function renderThumb(
   return { image, problems };
 }
 
-/** 不透明像素的包围盒（像素）；全透明时是 null。 */
+/** Bounding box of opaque pixels (pixels); null if fully transparent. */
 export function opaqueBounds(image: ImageData): { x: number; y: number; width: number; height: number } | null {
   const { data, width, height } = image;
   let left = width;
@@ -165,8 +164,7 @@ export function opaqueBounds(image: ImageData): { x: number; y: number; width: n
 let stage: CanvasRenderingContext2D | null = null;
 
 /**
- * 把画面的 `source` 区域画到 `context` 的 `target` 区域（缩放、可以越出画面）。经一块不挂到页面上的画布转一道：
- * `putImageData` 不缩放，也不按透明度叠。
+ * Draws the `source` region of the picture onto the `target` region of `context` (scaled; it may extend beyond the picture). It goes through a canvas that is not attached to the page: `putImageData` does not scale and does not blend by alpha.
  */
 export function drawImage(
   context: CanvasRenderingContext2D,
@@ -188,7 +186,7 @@ const queue: (() => void)[] = [];
 let draining = false;
 
 /**
- * 排队画一张缩略图：一次画一张、之间让出主线程，一屏几十个格子不会一口气卡住界面。返回取消函数（还没轮到的不画）。
+ * Queues a thumbnail draw: one at a time, yielding the main thread between them, so dozens of cells on screen do not freeze the UI all at once. Returns a cancel function (draws not yet started are skipped).
  */
 export function scheduleThumb(task: () => void): () => void {
   let live = true;

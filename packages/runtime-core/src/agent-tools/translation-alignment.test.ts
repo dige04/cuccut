@@ -3,7 +3,7 @@ import type { DocumentRecord } from '@cuccut/protocol';
 import { editorWasmAvailable, sha256Hex, sourceSentences } from '@cuccut/jobs';
 import { fillTranslationAlignments } from './translation-alignment.ts';
 
-/** 智能体写译文时 Runtime 按句子补上的句级对齐（视频格式规范 §5.3）。句子经 editor-wasm 派生，没有构建时跳过。 */
+/** Sentence-level alignment that the Runtime fills in when the agent writes a translation (video format spec §5.3). Sentences are derived through editor-wasm; skipped if it is not built. */
 
 const speechBody = {
   schema: 'cuccut.speech/1',
@@ -104,7 +104,7 @@ describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', 
     (missing.body.sourceBasis as { speechRef: { id: string } }).speechRef.id = 'nope';
     expect(await fillTranslationAlignments([missing], documents, readSpeech)).toBe(0);
     expect((missing.body.units[0] as { alignment: unknown }).alignment).toBeNull();
-    // 读不到句子时，写了对齐对象却没写 textHash 的照样补上（它只看译文）。
+    // When sentences cannot be read but an alignment object was written without textHash, it is still filled in (it only looks at the translation).
     const sentence = { basis: 'natural', correspondence: 'sentence', blocks: [], sourceWordIds: ['w1', 'w2'] };
     const hashOnly = put([unit(first!, '你好。', { alignment: sentence })], { sourceDocument: { documentId: 'nope' } });
     (hashOnly.body.sourceBasis as { speechRef: { id: string } }).speechRef.id = 'nope';

@@ -1,13 +1,8 @@
-//! WeSpeaker ResNet34-LM 声纹嵌入（跨平台 candle 后端）。
+//! WeSpeaker ResNet34-LM speaker embedding (cross-platform candle backend).
 //!
-//! fbank 前端、形状常量与余弦距离共用 [`crate::speech::wespeaker_fbank`]，与 MLX 后端
-//! 逐值一致；这里只是同一个 ResNet34 主干的 candle 实现。v3 只改边界（同 MLX）：权重按模型包清单取
-//! （[`VerifiedFiles`]），不扫描目录。
+//! The fbank front end, shape constants and cosine distance are shared with [`crate::speech::wespeaker_fbank`], matching the MLX backend value for value; this is only the candle implementation of the same ResNet34 backbone. v3 changes only the boundary (same as MLX): weights are taken from the model pack's manifest ([`VerifiedFiles`]), and the directory is not scanned.
 //!
-//! 布局差异是移植的全部难点：模型仓库的卷积权重按 mlx-rs Conv2d 的原生 NHWC
-//! 布局 `[O, kH, kW, Cin]` 存放，candle 要 `[O, Cin, kH, kW]`；激活也从 MLX 的
-//! `[B, H, W, C]` 换成 candle 的 `[B, C, H, W]`。统计池化前的展平顺序必须仍是
-//! C·F（见 `forward`），否则嵌入依然是 256 维、依然归一化，只是数值全错。
+//! The layout differences are the whole difficulty of the port: the model repository stores convolution weights in mlx-rs Conv2d's native NHWC layout `[O, kH, kW, Cin]`, while candle needs `[O, Cin, kH, kW]`; activations also change from MLX's `[B, H, W, C]` to candle's `[B, C, H, W]`. The flattening order before statistics pooling must remain C·F (see `forward`); otherwise the embedding would still be 256-dimensional and still normalized, but all the values would be wrong.
 
 use anyhow::{Result, bail};
 use candle_core::{D, Device, Tensor};
@@ -46,9 +41,8 @@ impl Conv2d {
         )?;
         expect_shape(&format!("{prefix}.bias"), &bias, &[output_channels])?;
         Ok(Self {
-            // NHWC `[O, kH, kW, Cin]` → candle NCHW `[O, Cin, kH, kW]`。
-            // `contiguous()` 在这里既是性能也是正确性要求：candle 0.11 的 CPU 卷积走 im2col 时，非连续的
-            // kernel 会被按原始字节当成目标布局读（整理出的连续拷贝没有被用上），结果静默读错。
+            // NHWC `[O, kH, kW, Cin]` → candle NCHW `[O, Cin, kH, kW]`.
+            // `contiguous()` is both a performance and a correctness requirement here: when candle 0.11's CPU convolution takes the im2col path, a non-contiguous kernel is read as the target layout using its raw bytes (the contiguous copy that was prepared is not used), so the results are silently read wrong.
             weight: weight.permute((0, 3, 1, 2))?.contiguous()?,
             bias,
             stride,
@@ -62,8 +56,8 @@ impl Conv2d {
     }
 }
 
-/// BN 已折叠进卷积的 ResNet BasicBlock：两个带 bias 的 3×3 卷积，
-/// stride≠1 或通道变化时 residual 走 1×1 shortcut 卷积（同样带 bias）。
+/// ResNet BasicBlock with BN already folded into the convolutions: two 3×3 convolutions with bias;
+/// when stride≠1 or the channel count changes, the residual goes through a 1×1 shortcut convolution (also with bias).
 struct BasicBlock {
     conv1: Conv2d,
     conv2: Conv2d,
@@ -148,10 +142,10 @@ impl WeSpeakerNetwork {
         })
     }
 
-    /// `mel`：`[1, T, 80]`；返回 `[1, 256]` 的 L2 归一化嵌入。
+    /// `mel`: `[1, T, 80]`; returns an L2-normalized embedding of `[1, 256]`.
     fn forward(&self, mel: &Tensor) -> Result<Tensor> {
-        // Python WeSpeaker 的输入编排是 (B,T,F) → (B,F,T) → (B,1,F,T)：
-        // 频率进 H、时间进 W、通道数 1。candle 本来就是 NCHW，直接 unsqueeze。
+        // The Python WeSpeaker input arrangement is (B,T,F) → (B,F,T) → (B,1,F,T):
+        // frequency goes into H, time into W, and the channel count is 1. candle is already NCHW, so just unsqueeze.
         let mut x = mel.transpose(1, 2)?.unsqueeze(1)?.contiguous()?;
         x = self.conv1.forward(&x)?.relu()?;
         for layer in &self.layers {
@@ -159,7 +153,7 @@ impl WeSpeakerNetwork {
                 x = block.forward(&x)?;
             }
         }
-        // x: [B, C=256, F'=10, T'=T/8]，与 Python 的张量布局完全一致。
+        // x: [B, C=256, F'=10, T'=T/8], exactly matching the Python tensor layout.
         let shape = x.dims().to_vec();
         if shape.len() != 4 || shape[2] != POOLED_FREQUENCY {
             bail!("WeSpeaker 主干输出形状异常：{shape:?}");
@@ -168,15 +162,15 @@ impl WeSpeakerNetwork {
         if time < 1 {
             bail!("WeSpeaker 池化前时间轴为空");
         }
-        // 展平顺序必须是 C·F（Python reshape [B,256,10,T'] → [B,2560,T']），
-        // 之后换到时间主序 [B, T', 2560] 以便沿时间轴统计池化。
+        // The flatten order must be C·F (Python reshape [B,256,10,T'] → [B,2560,T']),
+        // then switch to time-major [B, T', 2560] so statistics pooling can run along the time axis.
         x = x
             .contiguous()?
             .reshape((batch, POOLING_OUTPUT_DIM / 2, time))?
             .transpose(1, 2)?
             .contiguous()?;
 
-        // 统计池化（沿时间轴）：手算 E[x²]-E[x]² 并夹到 ≥0，与 MLX 侧同式。
+        // Statistics pooling (along the time axis): computes E[x²]-E[x]² by hand and clamps it to ≥0, using the same formula as the MLX side.
         let mean = x.mean(1)?;
         let mean_square = x.sqr()?.mean(1)?;
         let variance = (mean_square - mean.sqr()?)?.maximum(0.0_f64)?;
@@ -189,7 +183,7 @@ impl WeSpeakerNetwork {
     }
 }
 
-/// WeSpeaker ResNet34-LM 声纹嵌入器。
+/// WeSpeaker ResNet34-LM speaker embedder.
 pub struct WeSpeakerEmbedder {
     fbank: WeSpeakerFbank,
     network: WeSpeakerNetwork,
@@ -197,7 +191,7 @@ pub struct WeSpeakerEmbedder {
 }
 
 impl WeSpeakerEmbedder {
-    /// 从 `speaker` 组件的文件加载：目录顶层的全部 safetensors 分片。
+    /// Loads from the `speaker` component's files: all safetensors shards at the top level of the directory.
     pub fn load(files: &VerifiedFiles, device: &Device) -> Result<Self> {
         let shards = files.require_extension_in("", "safetensors")?;
         let mut store = WeightStore::load(&shards, device)?;
@@ -213,14 +207,14 @@ impl WeSpeakerEmbedder {
         })
     }
 
-    /// fbank 前端（测试与诊断用）。
+    /// fbank front end (for tests and diagnostics).
     pub fn fbank(&self) -> &WeSpeakerFbank {
         &self.fbank
     }
 
-    /// 对 16 kHz 单声道样本求 256 维 L2 归一化嵌入。
+    /// Computes a 256-dimensional L2-normalized embedding for 16 kHz mono samples.
     ///
-    /// 少于 0.5 秒直接报错——统计池化在这种长度上没有意义，调用方应先过滤。
+    /// Anything shorter than 0.5 seconds is an immediate error: statistics pooling is meaningless at that length, so the caller should filter first.
     pub fn embed(&mut self, samples: &[f32]) -> Result<Vec<f32>> {
         if samples.len() < MINIMUM_SAMPLES {
             bail!("WeSpeaker 需要至少 {MINIMUM_SAMPLES} 个样本（0.5 秒），实际 {}", samples.len());

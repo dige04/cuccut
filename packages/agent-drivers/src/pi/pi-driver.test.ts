@@ -8,7 +8,7 @@ import { parsePiVersion } from './pi-binary.ts';
 import { derivePiModels, parseModelReference, piThinkingLevels } from './pi-models.ts';
 import { PiDriver, PI_MIN_VERSION } from './pi-driver.ts';
 
-/** Pi Driver 的探测对着假 pi：安装、版本、登录状态（按可用模型表）、模型表与缓存。 */
+/** Pi Driver probe against a fake pi: installation, version, login state (judged by the available model table), the model table, and its cache. */
 describe('PiDriver.probe（假 pi）', () => {
   let dir: string;
   let fake: FakePi;
@@ -71,7 +71,7 @@ describe('PiDriver.probe（假 pi）', () => {
         defaultEffort: null,
       },
     ]);
-    // 探测进程：RPC 模式、不写会话文件、在主目录、不查新版本。
+    // Probe process: RPC mode, writes no session file, runs in the home directory, does not check for new versions.
     const start = fake.log().find((e) => e.kind === 'start')!;
     expect(start.args).toEqual(['--mode', 'rpc', '--no-session']);
     expect(start.cwd).toBe(await fs.realpath(os.homedir()));

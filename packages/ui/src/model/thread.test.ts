@@ -142,7 +142,7 @@ describe('工具步骤', () => {
     expect(toolStep(step('other', 'Grep TODO · src'), cwd)).toEqual({ kind: 'search', label: '搜索', summary: 'TODO · src' });
     expect(toolStep(step('other', 'Glob **/*.md'), cwd).kind).toBe('search');
     expect(toolStep(step('web-search', '字幕规范'), cwd)).toEqual({ kind: 'search', label: '搜索', summary: '字幕规范' });
-    // Claude：标题是路径，详情是「<工具名> <路径>」；Codex：详情每行「<类型> <路径>」。
+    // Claude: the title is the path, and the details are “<tool name> <path>”; Codex: each line of the details is “<type> <path>”.
     expect(toolStep(step('file-change', '/work/proj/a.md', 'Edit /work/proj/a.md'), cwd).summary).toBe('a.md');
     expect(toolStep(step('file-change', 'x', 'update /work/proj/a.md\nadd /work/proj/b.md'), cwd)).toEqual({
       kind: 'edit',
@@ -204,9 +204,9 @@ describe('工具步骤', () => {
       '调字幕样式',
       'edit-video',
     ]);
-    // 参数不是 JSON：只给类别名。
+    // Arguments are not JSON: only the category name is given.
     expect(toolStep(step('mcp', 'cuccut.videos_create', 'oops'), cwd)).toMatchObject({ label: '新建视频', summary: '' });
-    // 不认得的 CucCut 工具照原来的写法。
+    // Unrecognized CucCut tools keep their original form.
     expect(toolStep(step('mcp', 'cuccut.something_new'), cwd)).toEqual({
       kind: 'other',
       label: '其他工具',
@@ -351,7 +351,7 @@ describe('审批卡', () => {
   it('决定过的一行：用户点的、总是允许、规则、访问模式、拒绝、停止', () => {
     expect(approvalDecidedLabel(approval(), 'accept')).toBe('已允许');
     expect(approvalDecidedLabel(approval(), 'accept-always')).toBe('已允许 · 之后 npm test 不再问');
-    // 时间线记着点的答案，重新加载之后也认得；早先的记录没有，退回「已允许」。
+    // The timeline records the chosen answer, which is still recognized after reloading; earlier records do not have it, so it falls back to “已允许” (“Allowed”).
     expect(approvalDecidedLabel(approval({ decision: 'accept-always' }), undefined)).toBe('已允许 · 之后 npm test 不再问');
     expect(approvalDecidedLabel(approval({ decision: 'accept' }), undefined)).toBe('已允许');
     expect(approvalDecidedLabel(approval(), undefined)).toBe('已允许');
@@ -382,7 +382,7 @@ describe('changeUndoState', () => {
     expect(changeUndoState({ ...base, history: undone })).toEqual({ state: 'undone', restore: null });
     expect(changeUndoState({ ...base, history: undone, redo: 'U' })).toEqual({ state: 'undone', restore: 'U' });
     expect(changeUndoState({ ...base, history: undone, redo: 'other' })).toEqual({ state: 'undone', restore: null });
-    // 撤销之后又恢复了：生效中。
+    // Undone and then restored again: in effect.
     expect(changeUndoState({ ...base, history: [entry('X', 0, 'U'), entry('U', 1, 'R'), entry('R', 2)] })).toEqual({ state: 'applied' });
     expect(changeUndoState({ ...base, history: [entry('X', 0)], undoneInThread: true })).toEqual({ state: 'applied' });
   });
@@ -397,7 +397,7 @@ describe('changeUndoState', () => {
     expect(changeUndoState({ ...base, local: { kind: 'restore', transactionId: 'R' } })).toEqual({ state: 'applied' });
     expect(changeUndoState({ ...base, undoneInThread: true })).toEqual({ state: 'undone', restore: null });
     expect(changeUndoState(base)).toEqual({ state: 'applied' });
-    // 历史窗口里没有这一笔（太早了）：同样退回。
+    // This entry is not in the history window (too early): it also falls back.
     expect(changeUndoState({ ...base, history: [entry('Y', 0)], undoneInThread: true })).toEqual({ state: 'undone', restore: null });
   });
 });

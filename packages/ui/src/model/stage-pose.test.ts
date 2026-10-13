@@ -37,7 +37,7 @@ const box: Pose = { cx: 500, cy: 300, w: 200, h: 100, rotation: 0 };
 const textLimits = { x: [57.6, 1862.4] as [number, number], y: [43.2, 1036.8] as [number, number] };
 const item = (type: PlacedItem['type']) => ({ type }) as PlacedItem;
 const placed = (fields: Record<string, unknown>) => ({ place: {}, ...fields }) as unknown as PlacedItem;
-/** 竖拍的源（1080 × 1920），版本 1。 */
+/** Portrait source (1080 × 1920), version 1. */
 const assets = {
   tall: {
     id: 'tall',
@@ -48,7 +48,7 @@ const assets = {
   },
 } as unknown as Assets;
 const tallRef = { id: 'tall', revision: 1 };
-/** `place` 叠上 `placeFields` 的结果（引擎落盘之后的样子）。 */
+/** The result of `placeFields` applied on top of `place` (as it looks after the engine writes it to disk). */
 const applied = (it: PlacedItem, fields: Record<string, unknown>) => ({ ...it, place: { ...it.place, ...fields } }) as PlacedItem;
 
 describe('place ↔ 盒', () => {
@@ -66,7 +66,7 @@ describe('place ↔ 盒', () => {
     const pose = poseOf(video, canvas, assets);
     expect(pose).toMatchObject({ cx: 480, cy: 540, w: 576, rotation: 0 });
     expect(pose.h).toBeCloseTo(1024);
-    // 查不到素材时按画布的宽高比。
+    // When the asset cannot be found, the canvas aspect ratio is used.
     expect(poseOf(video, canvas).h).toBeCloseTo(324);
     const target: Pose = { cx: 576, cy: 432, w: 384, h: (384 * 1920) / 1080, rotation: 0 };
     const fields = placeFields(video, target, canvas, assets);
@@ -76,7 +76,7 @@ describe('place ↔ 盒', () => {
     expect(back.cy).toBeCloseTo(target.cy);
     expect(back.w).toBeCloseTo(target.w);
     expect(back.h).toBeCloseTo(target.h);
-    // 只压扁高：写进 scaleY，宽与位置不动。
+    // Only the height is squashed: written to scaleY, width and position unchanged.
     expect(placeFields(video, { ...pose, h: pose.h / 2 }, canvas, assets)).toEqual({ scaleY: 0.5 });
   });
 

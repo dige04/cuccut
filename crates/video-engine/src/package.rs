@@ -1,9 +1,6 @@
-//! 便携包（视频格式规范 §8）在引擎这边的两件事：包里的素材放在哪个相对路径，以及把一个已经解开、清单校验过的包
-//! 建成一个新视频。
+//! Two things the engine does for a portable package (video format spec §8): the relative path where a media asset in the package lives, and building a new video from an already-unpacked package whose manifest has been validated.
 //!
-//! 包的清单与归档由 Runtime 校验（每个文件的长度与摘要、格式版本、路径不越界）。引擎不信任清单：文档正文按登记的
-//! `contentHash` 重算，素材的 bytes 按登记的摘要重算，快照按提交时同样的规则检查（引用、重叠、转场），
-//! 任何一项不符都拒绝，不会建出一个半个或不自洽的视频。
+//! The package manifest and archive are validated by the Runtime (length and digest of each file, format version, paths not escaping the package). The engine does not trust the manifest: document bodies are recomputed against the registered `contentHash`, asset bytes against the registered digest, and the snapshot is checked by the same rules as at commit (references, overlaps, transitions). Any mismatch is rejected, so a half-built or self-inconsistent video is never created.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -21,10 +18,10 @@ use crate::state::{Placed, SequenceEntity, VideoState};
 use crate::store::{DocumentBody, Store};
 use crate::video::{DB_FILE, LOCK_FILE, OpenMode, Video, acquire_lock, sha256_text};
 
-/// 包里的快照文件。
+/// The snapshot file in the package.
 pub const PACKAGE_SNAPSHOT: &str = "video.snapshot.json";
 
-/// 一个素材版本的 bytes 在包里的相对路径：文件是 `assets/<sha256>.<ext>`，目录是 `assets/<sha256>/`。
+/// The relative path in the package for the bytes of one asset version: a file is `assets/<sha256>.<ext>`, a directory is `assets/<sha256>/`.
 pub fn package_asset_path(content_hash: &str, media_type: &str) -> String {
     let hex = content_hash.strip_prefix("sha256:").unwrap_or(content_hash);
     if media_type == DIRECTORY_MEDIA_TYPE {
@@ -33,7 +30,7 @@ pub fn package_asset_path(content_hash: &str, media_type: &str) -> String {
     format!("assets/{hex}.{}", blob_extension(media_type))
 }
 
-/// 一个文档版本的正文在包里的相对路径。
+/// The relative path in the package for the body of one document version.
 pub fn package_document_path(document_id: &str, revision: &str) -> String {
     format!("documents/{document_id}/{revision}.json")
 }
@@ -50,7 +47,7 @@ fn mismatch(message: impl Into<Text>, details: Value) -> ErrorBody {
     ErrorBody::new("PACKAGE_DIGEST_MISMATCH", message, Retryability::Never).details(details)
 }
 
-/// 用作路径一段的 ID 与版本：不能为空、不能是 `.`/`..`、不能带分隔符。
+/// IDs and versions used as a segment of a path: must not be empty, must not be `.` or `..`, and must not contain a separator.
 fn safe_segment(text: &str) -> bool {
     !text.is_empty()
         && text != "."
@@ -59,9 +56,9 @@ fn safe_segment(text: &str) -> bool {
         && !text.chars().any(|c| c == '/' || c == '\\' || c == '\0' || c.is_control())
 }
 
-/// 把解开的包（`package_dir`，里面有 `video.snapshot.json`、`documents/`、`assets/`）建成 `dir` 里的一个新视频。
-/// 新视频有新的 videoId，内容、各个实体的 ID 与修订号沿用包里的；包里收进来的素材全部收进视频（`managed`）。
-/// `dir` 必须还不存在；失败时删掉建了一半的目录。
+/// Build an unpacked package (`package_dir`, containing `video.snapshot.json`, `documents/` and `assets/`) into a new video in `dir`.
+/// The new video gets a new videoId; its content, the ID of each entity and its revision numbers are kept from the package. All assets collected in the package are collected into the video (`managed`).
+/// `dir` must not exist yet; on failure, the half-built directory is deleted.
 pub fn import_package(dir: &Path, package_dir: &Path, project_id: Option<&str>, ffprobe: &Path) -> EngineResult<Video> {
     if dir.exists() {
         return Err(ErrorBody::invalid_operation(msg!("engine.targetExists", "The target directory already exists")).details(json!({ "path": dir })));
@@ -70,7 +67,7 @@ pub fn import_package(dir: &Path, package_dir: &Path, project_id: Option<&str>, 
     if !parent.is_dir() {
         return Err(ErrorBody::not_found(kinds::directory(), &parent.display().to_string()));
     }
-    // 先在不碰目标目录的情况下读完、核对快照与文档：包不对时什么都不建。
+    // Read and check the snapshot and documents first, without touching the target directory: if the package is wrong, nothing is built.
     let (state, documents) = read_package(package_dir)?;
     fs::create_dir(dir)?;
     let result = (|| -> EngineResult<Video> {
@@ -93,7 +90,7 @@ pub fn import_package(dir: &Path, package_dir: &Path, project_id: Option<&str>, 
     result
 }
 
-/// 读出包里的快照，换成新视频的工作态，并读出、核对每个文档版本的正文。
+/// Read the snapshot from the package and turn it into the new video's working state; read and check the body of each document version.
 fn read_package(package_dir: &Path) -> EngineResult<(VideoState, Vec<DocumentBody>)> {
     let text = fs::read_to_string(package_dir.join(PACKAGE_SNAPSHOT)).map_err(|e| invalid(msg!(
             "engine.packageNoSnapshot",
@@ -106,7 +103,7 @@ fn read_package(package_dir: &Path) -> EngineResult<(VideoState, Vec<DocumentBod
     }
     let schema = raw.get("schemaVersion").and_then(Value::as_u64).unwrap_or(0);
     if schema != u64::from(SCHEMA_VERSION) {
-        // 只接受当前版本（视频格式规范 §1.4）：更高的版本不认识，1–2 用的是旧的元素模型，不保留兼容。
+        // Only the current version is accepted (video format spec §1.4): a higher version is not recognized; versions 1–2 use the old element model, and no compatibility is kept.
         let message = if schema > u64::from(SCHEMA_VERSION) {
             msg!(
                 "engine.packageSchemaTooNew",
@@ -190,7 +187,7 @@ fn read_package(package_dir: &Path) -> EngineResult<(VideoState, Vec<DocumentBod
     Ok((state, documents))
 }
 
-/// 快照 → 工作态（`VideoState::snapshot` 的逆）。视频换成新的 ID，修订号沿用。
+/// Snapshot → working state (the inverse of `VideoState::snapshot`). The video gets a new ID; revision numbers are kept.
 fn state_from_snapshot(snapshot: VideoSnapshot) -> EngineResult<VideoState> {
     let revision: i64 = snapshot
         .revision
@@ -286,7 +283,7 @@ fn state_from_snapshot(snapshot: VideoSnapshot) -> EngineResult<VideoState> {
     Ok(state)
 }
 
-/// 提交时成立的规则在导入时同样成立：ID 唯一、引用都在、同一轨道上不重叠、转场两侧成立。
+/// The rules that hold at commit also hold at import: IDs are unique, all references resolve, no overlaps on the same track, and transition sides hold.
 fn validate(state: &VideoState) -> EngineResult<()> {
     if !state.sequences.contains_key(&state.root_sequence_id) {
         return Err(invalid(msg!("engine.rootSequenceMissing", "The root sequence of the snapshot does not exist")));
@@ -295,7 +292,7 @@ fn validate(state: &VideoState) -> EngineResult<()> {
     if name.is_empty() || name.chars().count() > 200 {
         return Err(invalid(msg!("engine.videoNameLength", "The video name must be 1–200 characters")));
     }
-    // 实体在存储里按 ID 存在同一张表里：不同种类之间也不能重复。
+    // Entities are stored in one table keyed by ID, so IDs also cannot repeat across different kinds.
     let counts = [
         state.sequences.len(),
         state.tracks.len(),
@@ -399,7 +396,7 @@ fn validate(state: &VideoState) -> EngineResult<()> {
     Ok(())
 }
 
-/// 把包里收进来的素材按内容地址发布进视频的 `blobs/`，并按登记的摘要核对。没有收进包的（链接、缺失）不动。
+/// Publish the assets collected into the package into the video's `blobs/` by content address, and check them against the registered digest. Assets not collected into the package (links, missing ones) are not touched.
 fn publish_assets(dir: &Path, package_dir: &Path, state: &VideoState) -> EngineResult<()> {
     for (id, asset) in &state.assets {
         for (revision, version) in &asset.revisions {

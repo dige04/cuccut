@@ -23,9 +23,8 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 模型服务（架构设计 §6.1–§6.4）经网关：能力视图、配置、默认值与选择；在线 Provider 对着本机回环地址上的假供应商
- * （`@cuccut/providers/testing`）跑完整的转写：ffmpeg 准备音频 → 假供应商 → 结果校验、发布 → 真实引擎写 speech 文档。
- * 测试从不连接真实的云服务，也不读取任何环境里的密钥；密钥是测试里编的字符串。
+ * Model services (architecture design §6.1–§6.4) through the gateway: capability view, configuration, defaults and selection. Online providers run a full transcription against a fake provider on a loopback address (`@cuccut/providers/testing`): ffmpeg prepares the audio → fake provider → result validated and published → the real engine writes the speech document.
+ * The tests never connect to a real cloud service and never read keys from the environment; the keys are made-up strings in the tests.
  */
 
 const engine = resolveEngineHostCommand();
@@ -37,7 +36,7 @@ const ffmpeg = (() => {
     return false;
   }
 })();
-/** 这台机器上的默认转写模型包：Apple Silicon 是 MLX 的，别的平台是 candle 的（同样的仓库）。 */
+/** Default transcription model pack on this machine: MLX on Apple Silicon, candle on other platforms (same repository). */
 const DEFAULT_TRANSCRIBE_BUNDLE = defaultTranscribeBundle(process.platform, process.arch);
 
 if (!engine) console.warn('跳过在线转写端到端测试：没有构建 engine-host（npm run build:engine）');
@@ -56,7 +55,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件。 */
+/** Writes a synthetic manifest and files for each repository in the default model pack. */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -81,7 +80,7 @@ interface Side {
   home: RuntimeHome;
   runtime: RunningRuntime;
   client: CucCutClient;
-  /** `models` 与 `jobs` 主题上收到的全部内容（密钥检查用）。 */
+  /** Everything received on the `models` and `jobs` topics (for the key check). */
   received: unknown[];
   jobs(): JobsSnapshot | null;
   models(): ModelsSnapshot | null;
@@ -180,7 +179,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     });
     expect(providers.google).toMatchObject({ kind: 'online', available: false, unavailableReason: 'not-configured' });
     expect(providers.openai!.models.find((m) => m.default)).toMatchObject({ modelId: 'whisper-1', wordTimestamps: 'native' });
-    // 生成能力没有出厂默认：列出提供它们的 Provider（本地的合成模型包还没装），都还不可用。
+    // Generation capabilities have no factory default: list the providers that offer them (the local synthetic model pack is not installed yet), all unavailable for now.
     expect(capabilities.synthesizeSpeech).toMatchObject({ default: null, effective: null });
     expect(capabilities.synthesizeSpeech.providers.map((p) => [p.providerId, p.available])).toEqual([
       ['local', false],
@@ -233,7 +232,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
       capabilities: { transcribe: { available: true } },
     });
     expect(JSON.stringify(configured)).not.toContain(OPENAI_KEY);
-    // 验证是一个只读的 GET，密钥只在 Authorization 头里。
+    // Verification is a read-only GET; the key is only in the Authorization header.
     expect(openai.requests).toHaveLength(1);
     expect(openai.requests[0]).toMatchObject({ method: 'GET', path: '/v1/models' });
     expect(openai.requests[0]!.headers.authorization).toBe(`Bearer ${OPENAI_KEY}`);
@@ -247,7 +246,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     expect(capabilities.transcribe.effective).toEqual({ providerId: 'openai', modelId: 'whisper-1', source: 'user-default' });
     await until(() => side!.models()?.capabilities.transcribe.effective?.providerId === 'openai');
 
-    // 换一个会被拒绝的密钥并要求验证：不保存，原来的配置不变。
+    // Swap in a rejected key and require verification: nothing is saved, the original configuration is unchanged.
     openai.handler = () => ({ status: 401, json: { error: { message: 'Incorrect API key provided: sk-wrong-0123456789' } } });
     const rejected = await side.client
       .request('models.configure', { providerId: 'openai', credential: 'sk-wrong-0123456789', verify: true })
@@ -259,7 +258,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     expect((await fs.stat(side.home.modelCredentialsFile)).mode & 0o777).toBe(0o600);
     expect((await fs.stat(side.home.modelServicesFile)).mode & 0o777).toBe(0o600);
 
-    // 停用之后不能被选中：默认值保留，但不再生效。
+    // A disabled provider cannot be selected: the default is kept but no longer takes effect.
     await side.client.request('models.configure', { providerId: 'openai', enabled: false });
     const after = (await side.client.request('models.capabilities', {})).capabilities.transcribe;
     expect(after.default).toEqual({ providerId: 'openai', modelId: 'whisper-1' });
@@ -296,13 +295,13 @@ describe('模型服务（经网关，不需要引擎）', () => {
     expect(view.providers.some((p) => p.providerId === 'custom:studio-asr')).toBe(false);
     const error = await side.client.request('models.transcribe', { videoId: 'mov_1', assetId: 'ast_1' }).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'conflict', details: { code: 'CAPABILITY_NOT_CONFIGURED', providerId: 'custom:studio-asr' } });
-    // 目录里的服务商也能移除（§6.8）：回到没有添加的状态（没有配置、没有账号）；本机 Provider 不能移除。
+    // Catalog providers can also be removed (§6.8): back to the not-added state (no configuration, no account). Local providers cannot be removed.
     expect(await side.client.request('models.removeProvider', { providerId: 'openai' })).toEqual({ removed: true });
     await expect(side.client.request('models.removeProvider', { providerId: 'local' })).rejects.toMatchObject({ code: 'invalid-request' });
     await expect(side.client.request('models.removeProvider', { providerId: 'custom:studio-asr' })).rejects.toMatchObject({
       code: 'not-found',
     });
-    // 自定义端点首次配置要给端点；ID 要合规；内置 Provider 不能声明模型。
+    // The first configuration of a custom endpoint must supply the endpoint; the ID must be valid; built-in providers cannot declare models.
     await expect(side.client.request('models.configure', { providerId: 'custom:new', enabled: true })).rejects.toMatchObject({
       code: 'invalid-request',
     });
@@ -425,7 +424,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     return JSON.parse(await fs.readFile(path.join(side.home.artifactsDir, `${job.result!.artifactId.slice(7)}.json`), 'utf8')) as AsrResult;
   }
 
-  /** 日志、任务账本、主题上的内容与配置文件里都不能出现密钥。 */
+  /** Keys must not appear in logs, the job ledger, topic content, or config files. */
   async function expectNoSecret(secret: string) {
     const files = [path.join(side.home.logsDir, 'runtime.log'), side.home.jobsFile, side.home.modelServicesFile];
     for (const file of files) expect(await fs.readFile(file, 'utf8').catch(() => ''), file).not.toContain(secret);
@@ -469,7 +468,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     expect(result.segments[0]!.words.every((w) => w.timingQuality === 'provider')).toBe(true);
     expect(Number.isInteger(result.segments[0]!.start)).toBe(true);
 
-    // 请求：multipart、m4a、verbose_json 带词与段的时间、提示词放 prompt；密钥只在 Authorization 头。
+    // Request: multipart, m4a, verbose_json with word and segment timestamps, prompt goes in `prompt`; the key is only in the Authorization header.
     const request = openai.requests.find((r) => r.path === '/v1/audio/transcriptions')!;
     expect(request.headers.authorization).toBe(`Bearer ${OPENAI_KEY}`);
     expect(request.fields).toMatchObject({

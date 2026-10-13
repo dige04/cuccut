@@ -19,11 +19,10 @@ import {
 } from '@cuccut/protocol';
 
 /**
- * 代码包的导入检查（代码包规范 §2、§6.2）：读目录、拒绝符号链接与白名单外的文件、算 `contentHash`、
- * 校验或合成清单、静态扫描网络引用。只读源目录；需要合成清单时先把整棵树复制到暂存目录再写。
+ * Import checks for a code bundle (code bundle spec §2, §6.2): reads the directory, rejects symbolic links and files outside the allowlist, computes `contentHash`, validates or synthesizes the manifest, and statically scans for network references. It only reads the source directory. When a manifest has to be synthesized, the whole tree is first copied to a staging directory, and the manifest is written there.
  */
 
-/** 代码包导入、验证、取帧与烘焙的错误；`code` 取自 `CODE_BUNDLE_ERROR_CODES`。 */
+/** Errors from code bundle import, validation, frame fetching and baking. `code` is taken from `CODE_BUNDLE_ERROR_CODES`. */
 export class CodeBundleError extends Error {
   readonly code: CodeBundleErrorCode;
   readonly details?: unknown;
@@ -36,7 +35,7 @@ export class CodeBundleError extends Error {
   }
 }
 
-/** 静态扫描到的一处网络引用。`text` 是命中的 URL（协议相对的引用保留 `//` 开头）。 */
+/** A network reference found by static scanning. `text` is the matched URL (a protocol-relative reference keeps its leading `//`). */
 export interface NetworkReference {
   path: string;
   line: number;
@@ -46,11 +45,11 @@ export interface NetworkReference {
 export type BundleLimits = { [K in keyof typeof CODE_BUNDLE_LIMITS]: number };
 
 export interface ListBundleFilesOptions {
-  /** 覆盖默认上限（测试用）。 */
+  /** Overrides the default limits (for tests). */
   limits?: Partial<BundleLimits>;
 }
 
-/** 合成清单时可以覆盖的值；没给的从入口 HTML 根元素的 `data-*` 读。 */
+/** Values that can be overridden when synthesizing the manifest. Those not given are read from the `data-*` attributes on the root element of the entry HTML. */
 export interface SynthesizeOverrides {
   bundleId?: string;
   revision?: string;
@@ -58,33 +57,33 @@ export interface SynthesizeOverrides {
   contract?: CodeBundleContract;
   width?: number;
   height?: number;
-  /** 帧率：整数比，或数字（29.97 一类按 NTSC 换成 30000/1001）。 */
+  /** The frame rate: an integer ratio, or a number (29.97-style values are converted to 30000/1001 per NTSC). */
   fps?: Rate | number;
   durationFrames?: number;
-  /** 输出带透明；缺省读根元素的 `data-alpha`，再缺省为 false。 */
+  /** Whether the output has transparency. Defaults to the root element's `data-alpha`, otherwise false. */
   alpha?: boolean;
 }
 
 export interface InspectBundleOptions {
-  /** 没有 `bundle.manifest.json` 时合成清单用的覆盖值。 */
+  /** Override values used when synthesizing the manifest, for when there is no `bundle.manifest.json`. */
   manifest?: SynthesizeOverrides;
   compositionId?: string;
-  /** 没有清单时允许合成（默认 true）。 */
+  /** Whether synthesis is allowed when there is no manifest (default true). */
   allowSynthesize?: boolean;
-  /** 合成清单时的暂存目录（默认在系统临时目录下新建）。目录必须不存在或为空。 */
+  /** The staging directory used when synthesizing the manifest (default: a new directory under the system temp directory). The directory must not exist or must be empty. */
   stagingDir?: string;
-  /** 静态扫描到网络引用时抛 `BUNDLE_NETWORK_REFERENCE`（默认 true）；false 时只记在结果里。 */
+  /** When a network reference is found by static scanning, throws `BUNDLE_NETWORK_REFERENCE` (default true). With false, it is only recorded in the result. */
   strictNetwork?: boolean;
   limits?: Partial<BundleLimits>;
 }
 
 export interface InspectedBundle {
-  /** 包的根目录：有清单时是源目录；合成清单时是暂存副本。 */
+  /** The root directory of the bundle. When there is a manifest, it is the source directory. When the manifest is synthesized, it is the staging copy. */
   root: string;
   manifest: CodeBundleManifest;
   entries: CodeBundleFileEntry[];
   totalBytes: number;
-  /** 清单是这里合成的（源目录里没有）。 */
+  /** The manifest was synthesized here (it is not in the source directory). */
   synthesized: boolean;
   networkReferences: NetworkReference[];
   compositionId: string;
@@ -95,7 +94,7 @@ const FILES_MANIFEST_FILE = 'files.manifest.json';
 const DEPENDENCY_LOCK_FILE = 'dependency.lock';
 const BUILD_RECIPE_FILE = 'build.recipe.json';
 
-/** 按名字放行的包内文件（规范 §2.5 的固定文件）。 */
+/** The files inside the bundle that are allowed by name (the fixed files of spec §2.5). */
 const NAMED_FILES = new Set([
   MANIFEST_FILE,
   FILES_MANIFEST_FILE,
@@ -112,8 +111,8 @@ const sha256Hex = (data: string | Buffer) => crypto.createHash('sha256').update(
 const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
 /**
- * 递归列出包内文件（`lstat`，不跟随链接），按 `path` 排序。
- * 符号链接 → `BUNDLE_SYMLINK`；点文件、`node_modules`、白名单外的扩展名 → `BUNDLE_FILE_NOT_ALLOWED`；超上限 → `BUNDLE_TOO_LARGE`。
+ * Recursively lists the files in the bundle (`lstat`, does not follow links), sorted by `path`.
+ * A symbolic link → `BUNDLE_SYMLINK`. Dot files, `node_modules`, and extensions outside the allowlist → `BUNDLE_FILE_NOT_ALLOWED`. Over the limit → `BUNDLE_TOO_LARGE`.
  */
 export async function listBundleFiles(dir: string, options: ListBundleFilesOptions = {}): Promise<CodeBundleFileEntry[]> {
   const limits: BundleLimits = { ...CODE_BUNDLE_LIMITS, ...options.limits };
@@ -174,8 +173,7 @@ export async function listBundleFiles(dir: string, options: ListBundleFilesOptio
 }
 
 /**
- * `'sha256-' + sha256(JSON.stringify(entries))`：按 `path` 排序、键顺序 `path`/`size`/`sha256`、紧凑 JSON，
- * 不含根目录下的 `bundle.manifest.json` 与 `verification.json`（`CODE_BUNDLE_UNHASHED_FILES`）。
+ * `'sha256-' + sha256(JSON.stringify(entries))`: sorted by `path`, key order `path`/`size`/`sha256`, compact JSON, and excluding `bundle.manifest.json` and `verification.json` in the root directory (`CODE_BUNDLE_UNHASHED_FILES`).
  */
 export function computeContentHash(entries: readonly CodeBundleFileEntry[]): string {
   const hashed = entries
@@ -185,9 +183,9 @@ export function computeContentHash(entries: readonly CodeBundleFileEntry[]): str
   return CODE_BUNDLE_HASH_PREFIX + sha256Hex(JSON.stringify(hashed));
 }
 
-// ---- 静态网络扫描 ----
+// ---- Static network scan ----
 
-/** 把注释换成等长的空白（保留换行，行号不变）。 */
+/** Replaces comments with whitespace of the same length (newlines are kept, so line numbers do not change). */
 const blank = (text: string) => text.replace(/[^\n]/g, ' ');
 
 function stripComments(text: string, ext: string): string {
@@ -196,23 +194,23 @@ function stripComments(text: string, ext: string): string {
   if (ext === '.html' || ext === '.htm' || ext === '.svg') out = out.replace(/<!--[\s\S]*?-->/g, blank);
   if (ext === '.svg') return out;
   out = out.replace(/\/\*[\s\S]*?\*\//g, blank);
-  // `//` 行注释：前面不是 `:`、引号、`=`、`(` 或标识符字符，避免误伤 `https://` 与协议相对的 `"//cdn"`。
+  // `//` line comment: the character before it is not `:`, a quote, `=`, `(` or an identifier character, so that `https://` and the protocol-relative `"//cdn"` are not falsely matched.
   out = out.replace(/(^|[^:"'`=(\w\\/])\/\/[^\n]*/gm, (match, lead: string) => lead + blank(match.slice(lead.length)));
   return out;
 }
 
 const ABSOLUTE_URL = /\b(?:https?|wss?):\/\/[^\s"'`)<>\\]+/gi;
-/** 协议相对引用只在会触发加载的位置认：属性、`url(`、`@import`、`import … from`、`import(`、`fetch(`、`new URL(`。 */
+/** Protocol-relative references are only recognized in positions that trigger loading: attributes, `url(`, `@import`, `import … from`, `import(`, `fetch(`, `new URL(`. */
 const PROTOCOL_RELATIVE =
   /(?:\b(?:src|href|srcset|poster|data|action|xlink:href)\s*=\s*["']?|url\(\s*["']?|@import\s+["']|\bfrom\s+["']|\bimport\s*\(\s*["']|\bfetch\s*\(\s*["']|\bnew\s+URL\s*\(\s*["'])(\/\/[^\s"'`)<>\\]+)/gi;
-/** XML 命名空间：只是标识，不会被加载。 */
+/** XML namespaces: they are only identifiers and are never loaded. */
 const XMLNS_ATTRIBUTE = /\bxmlns(?::[\w-]+)?\s*=\s*["'][^"']*["']/g;
 const isNamespaceUri = (url: string) => /^https?:\/\/www\.w3\.org\//i.test(url);
 
 /**
- * 静态扫描文本文件里的网络引用（绝对 URL，以及会触发加载的位置上的协议相对 URL）。
- * 先去掉 HTML、块与行注释再匹配；`xmlns` 属性值与 `http://www.w3.org/…` 命名空间不算。
- * 这是保守的近似：字符串里拼出来的 URL 看不到（运行期拦截兜底），字符串里像注释的片段可能被当成注释去掉。
+ * Statically scans text files for network references (absolute URLs, and protocol-relative URLs in positions that trigger loading).
+ * Strips HTML, block and line comments before matching. `xmlns` attribute values and `http://www.w3.org/…` namespaces do not count.
+ * This is a conservative approximation: URLs assembled inside strings are not visible (the runtime interception is the fallback), and fragments inside strings that look like comments may be stripped as comments.
  */
 export async function scanNetworkReferences(dir: string, entries: readonly CodeBundleFileEntry[]): Promise<NetworkReference[]> {
   const root = path.resolve(dir);
@@ -233,7 +231,7 @@ export async function scanNetworkReferences(dir: string, entries: readonly CodeB
   return found;
 }
 
-// ---- 清单 ----
+// ---- Manifest ----
 
 export interface SynthesizeManifestInput {
   bundleId?: string;
@@ -249,7 +247,7 @@ export interface SynthesizeManifestInput {
   entries: CodeBundleFileEntry[];
 }
 
-/** 按规范 §2.1 填齐必需字段；`contentHash` 由 `entries` 算出。浏览器清单里没有 `compositionId` 字段，这里不写。 */
+/** Fills in the required fields per spec §2.1. `contentHash` is computed from `entries`. The browser manifest has no `compositionId` field, so none is written here. */
 export function synthesizeManifest(input: SynthesizeManifestInput): CodeBundleManifest {
   const contentHash = computeContentHash(input.entries);
   return {
@@ -307,7 +305,7 @@ const manifestSchema = z.strictObject({
   permissions: z.strictObject({ network: z.literal('deny'), assetIds: z.array(z.string()) }),
 });
 
-/** 校验清单形状与第一期支持的范围（浏览器引擎、已知合同、网络 deny）。 */
+/** Validates the manifest's shape and the scope supported in the first phase (browser engine, known contract, network deny). */
 function parseManifest(raw: string): CodeBundleManifest {
   let json: unknown;
   try {
@@ -334,7 +332,7 @@ function parseManifest(raw: string): CodeBundleManifest {
   return manifest;
 }
 
-// ---- 入口 HTML 的根元素 ----
+// ---- Root element of the entry HTML ----
 
 interface RootAttributes {
   compositionId?: string;
@@ -345,7 +343,7 @@ interface RootAttributes {
   alpha?: boolean;
 }
 
-/** 从入口 HTML 里带 `data-composition-id` 的第一个元素读 `data-*`（正则近似，不跑脚本）。 */
+/** Reads the `data-*` attributes from the first element with `data-composition-id` in the entry HTML (a regex approximation; no script is run). */
 export function readRootAttributes(html: string): RootAttributes {
   const tag = /<[a-zA-Z][\w-]*\b[^>]*?\sdata-composition-id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/.exec(html)?.[0];
   if (!tag) return {};
@@ -379,7 +377,7 @@ export function readRootAttributes(html: string): RootAttributes {
 
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
 
-/** 数字帧率换成整数比：整数原样；NTSC 的 23.976/29.97/59.94 一类换成 `n*1000/1001`；其余按千分之一约分。 */
+/** Converts a numeric frame rate to an integer ratio. Integers are kept as they are. NTSC values such as 23.976/29.97/59.94 become `n*1000/1001`. Others are reduced by a factor of one thousandth. */
 export function toRate(fps: number): Rate | null {
   if (!Number.isFinite(fps) || fps <= 0) return null;
   if (Number.isInteger(fps)) return { num: fps, den: 1 };
@@ -390,7 +388,7 @@ export function toRate(fps: number): Rate | null {
   return { num: num / g, den: 1000 / g };
 }
 
-/** `"30"`、`"29.97"`、`"30000/1001"` → 整数比。 */
+/** `"30"`, `"29.97"`, `"30000/1001"` → integer ratio. */
 export function parseRate(text: string): Rate | null {
   const ratio = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(text);
   if (ratio) {
@@ -422,7 +420,7 @@ function pickEntry(entries: readonly CodeBundleFileEntry[], requested?: string):
   );
 }
 
-/** 整棵树复制到暂存目录（源目录已经检查过，没有链接与特殊文件）。 */
+/** Copies the whole tree to the staging directory (the source directory has already been checked and has no links or special files). */
 async function stageCopy(
   root: string,
   entries: readonly CodeBundleFileEntry[],
@@ -449,13 +447,11 @@ async function stageCopy(
 }
 
 /**
- * 检查一个代码包目录。
+ * Checks a code bundle directory.
  *
- * - 有 `bundle.manifest.json`：校验形状（`BUNDLE_MANIFEST_INVALID`）、合同（`BUNDLE_CONTRACT_UNSUPPORTED`）、
- *   `contentHash`（`BUNDLE_HASH_MISMATCH`）与入口（`BUNDLE_ENTRY_MISSING`）。
- * - 没有清单且允许合成：尺寸、帧率与时长来自 `options.manifest`，否则来自入口 HTML 根元素的 `data-*`；
- *   在暂存副本里写 `bundle.manifest.json`、`files.manifest.json`（以及缺的 `dependency.lock`、`build.recipe.json`），不碰源目录。
- * - 静态扫描到网络引用时抛 `BUNDLE_NETWORK_REFERENCE`（`strictNetwork: false` 时只记录）。
+ * - With `bundle.manifest.json`: validates the shape (`BUNDLE_MANIFEST_INVALID`), the contract (`BUNDLE_CONTRACT_UNSUPPORTED`), `contentHash` (`BUNDLE_HASH_MISMATCH`) and the entry (`BUNDLE_ENTRY_MISSING`).
+ * - Without a manifest, and with synthesis allowed: size, frame rate and duration come from `options.manifest`, otherwise from the `data-*` attributes on the root element of the entry HTML. It writes `bundle.manifest.json` and `files.manifest.json` (and the missing `dependency.lock` and `build.recipe.json`) in the staging copy, without touching the source directory.
+ * - When a network reference is found by static scanning, throws `BUNDLE_NETWORK_REFERENCE` (only recorded when `strictNetwork: false`).
  */
 export async function inspectBundle(dir: string, options: InspectBundleOptions = {}): Promise<InspectedBundle> {
   const root = path.resolve(dir);

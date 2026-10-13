@@ -1,11 +1,11 @@
-//! `job.run`（capability `separate`）的编排（Model Worker 协议规范 §2.5.4）：整段输入解成立体声 → 分离 →
-//! `vocals.wav` 与 `background.wav`（`cuccut.stems-wav/v1`）。
+//! Orchestration of `job.run` (capability `separate`) (Model Worker protocol spec §2.5.4): the whole input is decoded to stereo → separated →
+//! `vocals.wav` and `background.wav` (`cuccut.stems-wav/v1`).
 //!
-//! 阶段：`decoding`（整段解进内存；WAV 保留原采样率，其他格式经 ffmpeg 解成模型的工作采样率）→ `separating`
-//! （`job.progress` 的 `steps` 是「窗口 × 子模型」：开始时报 `0/n`，每跑完一个窗口报一次）→ `encoding`
-//! （两路换算到 `options.sampleRate`，写 16-bit PCM 立体声 WAV）。背景声是鼓、贝斯与其他三路之和。
-//! 取消：每个窗口之后看一次取消标志，回 `false` 让模型在下一个窗口前返回；之后结果是 `outcome: 'cancelled'`，不写输出。
-//! 输出写不进 staging 是 `OUTPUT_WRITE_FAILED`（`details.file`），与模型本身的失败（`INFERENCE_FAILED`）分开。
+//! Stages: `decoding` (the whole input is decoded into memory; WAV keeps its original sample rate, other formats are decoded by ffmpeg to the model's working sample rate) → `separating`
+//! (the `steps` in `job.progress` are "windows × sub-models": it reports `0/n` at the start and reports once after each window finishes) → `encoding`
+//! (both outputs are converted to `options.sampleRate` and written as 16-bit PCM stereo WAV). The background is the sum of drums, bass and the other stems.
+//! Cancellation: the cancel flag is checked once after each window; returning `false` makes the model return before the next window; the outcome is then `outcome: 'cancelled'`, and no output is written.
+//! Failing to write the output to staging is `OUTPUT_WRITE_FAILED` (`details.file`), kept separate from failures of the model itself (`INFERENCE_FAILED`).
 
 use std::fs::File;
 use std::io::Write;
@@ -26,7 +26,7 @@ use crate::protocol::{
 };
 use crate::transcribe::JobSink;
 
-/// 跑一个分离任务。返回的错误就是该请求的错误响应。
+/// Runs one separation task. The error returned is the error response for that request.
 pub fn run(
     separator: &mut dyn Separator,
     params: &SeparateRunParams,
@@ -59,7 +59,7 @@ pub fn run(
         right: pcm.right,
         sample_rate: pcm.sample_rate,
     };
-    // 输入在目标采样率上的长度：两路输出按它对齐（重采样的取整差不超过一两个样本）。
+    // Length of the input at the target sample rate: the two outputs are aligned to it (rounding in resampling differs by at most a sample or two).
     let expected_len = ((mix.len() as f64) * f64::from(target_rate) / f64::from(mix.sample_rate)).round() as usize;
     if cancel.load(Ordering::SeqCst) {
         return Ok(cancelled(stats));
@@ -121,7 +121,7 @@ pub fn run(
     })
 }
 
-/// 换算到 `rate`，再补零或截到 `len`（重采样的取整让长度差一两个样本）。
+/// Converts to `rate`, then zero-pads or truncates to `len` (rounding in resampling makes the lengths differ by a sample or two).
 fn to_rate(audio: StereoAudio, rate: u32, len: usize) -> StereoAudio {
     let fit = |channel: Vec<f32>| {
         let mut channel = if audio.sample_rate == rate {
@@ -148,7 +148,7 @@ fn decode_error(error: DecodeError) -> ErrorBody {
             eprintln!("[model-worker] input unreadable: {detail}");
             ErrorBody::new(codes::INPUT_UNREADABLE, "the input file cannot be read or demuxed")
         }
-        // 整段解进内存的路径不看取消标志，走不到这里。
+        // The path that decodes the whole input into memory does not check the cancel flag, so it never gets here.
         DecodeError::Cancelled => ErrorBody::new(codes::INPUT_UNREADABLE, "the input file cannot be read or demuxed"),
         DecodeError::DecodeFailed(detail) => {
             eprintln!("[model-worker] decode failed: {detail}");
@@ -170,7 +170,7 @@ fn write_failed(name: &str, detail: &str) -> ErrorBody {
     ErrorBody::new(codes::OUTPUT_WRITE_FAILED, format!("could not write {name}")).with_details(json!({ "file": name }))
 }
 
-/// 先写临时文件再重命名。路径是绝对路径（staging 是绝对路径）。
+/// Writes to a temporary file first, then renames it. The path is absolute (staging is an absolute path).
 fn write_output(staging: &Path, name: &str, bytes: &[u8]) -> std::io::Result<OutputFile> {
     let path = staging.join(name);
     let temporary = staging.join(format!("{name}.tmp"));
@@ -199,7 +199,7 @@ mod tests {
     use anyhow::bail;
     use serde_json::Value;
 
-    /// 假模型：44.1 kHz；人声 = 混音的一半，鼓 / 贝斯 / 其他各取剩下的三分之一。`windows` 个窗口 × 4 个子模型。
+    /// Fake model: 44.1 kHz; vocals = half of the mix, and drums / bass / other each take a third of the rest. `windows` windows × 4 sub-models.
     struct FakeSeparator {
         windows: usize,
         fail: bool,
@@ -275,7 +275,7 @@ mod tests {
         }
     }
 
-    /// 48 kHz 立体声 0.5 秒：左 0.4、右 -0.2 的直流。
+    /// 0.5 s of 48 kHz stereo: DC at 0.4 on the left and -0.2 on the right.
     fn input_wav(dir: &Path) -> std::path::PathBuf {
         let path = dir.join("input.wav");
         let audio = StereoAudio {
@@ -335,7 +335,7 @@ mod tests {
             let decoded = wav::decode_wav(&bytes).unwrap();
             assert_eq!(decoded.sample_rate, 48_000);
             assert_eq!(decoded.len(), 24_000);
-            // 远离边缘处是直流：人声与背景各占一半。
+            // Away from the edges it is DC: vocals and background each take half.
             let (left, right) = (decoded.left[12_000], decoded.right[12_000]);
             assert!((left - 0.2).abs() < 0.01 && (right + 0.1).abs() < 0.01, "{left} {right}");
         }
@@ -415,7 +415,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(no_staging.code, codes::INVALID_PARAMS);
 
-        // 输出写不进 staging（这里用占住临时文件名的目录模拟）：不是模型的失败，不报 `INFERENCE_FAILED`。
+        // Output cannot be written to staging (simulated here with a directory occupying the temp file name): this is not a model failure, so it does not report `INFERENCE_FAILED`.
         let staging = dir.path().join("blocked");
         std::fs::create_dir_all(staging.join(format!("{VOCALS_OUTPUT_FILE}.tmp"))).unwrap();
         let unwritable = run(&mut fake(), &params(&input, &staging, None), &cancel, &mut Events::default()).unwrap_err();

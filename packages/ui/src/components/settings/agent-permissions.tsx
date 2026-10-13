@@ -17,10 +17,10 @@ import { RowPanel, SettingsRow, SubHeading } from './settings-ui.tsx';
 import { rulesView } from './agent-setup.ts';
 import { M } from './general-settings-copy.ts';
 
-/** 四档各一枚图标（data.js `agent.modes`）：图标是输入框下拉收起后唯一的状态提示，所以不共用。「先给方案」原型没画。 */
+/** One icon for each of the four modes (`agent.modes` in data.js). The icon is the only status hint once the input dropdown is collapsed, so the icons are not shared. The prototype did not draw the 先给方案 (plan-first) mode. */
 const MODE_ICON: Record<AgentMode, ComponentType> = { plan: Visibility, ask: Lock, autoAcceptEdits: Edit, auto: AIMark, fullAccess: LockOpen };
 
-// 行之间的分隔线由面板画（settings-ui.tsx `RowPanel`）。
+// The dividers between rows are drawn by the panel (`RowPanel` in settings-ui.tsx).
 const mode = style({ display: 'flex', alignItems: 'start', gap: 12, paddingY: 16 });
 const modeIcon = style({ display: 'flex', flexShrink: 0, paddingTop: 2, color: 'gray-700' });
 const modeText = style({ flexGrow: 1, minWidth: 0 });
@@ -28,17 +28,17 @@ const modeLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' })
 const modeHint = style({ marginTop: 2, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
 const rules = style({ paddingY: 4, minWidth: 0 });
 const rulesBody = style({ marginTop: 0, marginBottom: 12, font: 'ui-sm', color: 'gray-700' });
-/** 浏览器里为什么开关置灰、规则删不掉：Web 白名单不含 `agents.updatePreferences` / `agents.removeRule`。 */
+/** Why the toggle is greyed out and rules cannot be deleted in the browser: the web allowlist does not include `agents.updatePreferences` / `agents.removeRule`. */
 const webNote = style({ margin: 0, font: 'ui-sm', color: 'gray-800' });
 
-/** Agent 权限（page-settings-agent.jsx 的 AgentPermissionsSection，显示在设置 › 隐私与权限）：访问模式说明、三条放行策略、「总是允许」的规则。 */
+/** Agent permissions (AgentPermissionsSection in page-settings-agent.jsx, shown under Settings › Privacy & permissions): the access mode descriptions, the three allow policies, and the rules under “Always allow” (总是允许). */
 export function AgentPermissions() {
   const runtime = useRuntime();
   const web = runtime.host.platform === 'web';
   const connected = useConnection((s) => s.state.status === 'connected');
   const preferences = useConnection((s) => s.agentPreferences);
   const [pending, setPending] = useState<keyof AgentPolicy | 'rule' | null>(null);
-  // 新会话的默认（设置 `agent.defaultAccessMode`）：在新会话里选过就记成那一档；「首次默认」是它的出厂值。
+  // The default for new sessions (setting `agent.defaultAccessMode`): whatever mode is picked in a new session is saved as that default. “First-time default” (首次默认) is its factory value.
   const settings = useSettings((s) => s.snapshot);
   const firstDefault = settings?.defaults['agent.defaultAccessMode'] ?? DEFAULT_AGENT_MODE;
   const last = settings && settings.settings['agent.defaultAccessMode'] !== firstDefault ? settings.settings['agent.defaultAccessMode'] : null;

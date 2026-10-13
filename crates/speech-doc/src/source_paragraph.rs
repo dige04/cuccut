@@ -1,9 +1,6 @@
-//! 转写段落的结构编辑。
+//! Structural editing of transcript paragraphs.
 //!
-//! Para 与 Cue 一样都是 `words[]` 的派生投影。拆分在光标最近的词边界同时写入
-//! `paraBreaks[next] = true` 与 `breaks[previous] = "break"`；合并只移除段首
-//! paragraph pin，保留 Cue 自己的显式断行。这里不处理正文替换——宿主先在副本
-//! 上应用未提交文本，再把稳定的段落下标交给本模块，整个事务仍保持原子。
+//! Paras, like Cues, are derived projections of `words[]`. A split writes `paraBreaks[next] = true` and `breaks[previous] = "break"` at the word boundary nearest the cursor. A merge only removes the paragraph pin at the start of the segment, and keeps the Cue's own explicit breaks. Text replacement is not handled here. The host first applies the uncommitted text on a copy, then hands the stable paragraph index to this module. The whole transaction stays atomic.
 
 use std::fmt;
 
@@ -67,8 +64,7 @@ fn chapter_of(doc: &TranscriptDoc, time: f64) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// 在派生段落的光标位置拆段。`character_offset` 按 `join_words` 的字符口径；
-/// 等距时由 `split_boundary_at_char` 固定吸附到更早的词边界。
+/// Split a paragraph at the cursor position in the derived paragraph. `character_offset` uses the character basis of `join_words`. On a tie, `split_boundary_at_char` snaps to the earlier word boundary.
 pub fn split_paragraph_at_char(
     doc: &mut TranscriptDoc,
     paragraph_index: usize,
@@ -100,8 +96,7 @@ pub fn split_paragraph_at_char(
     })
 }
 
-/// 向上合并一段。只有同说话人、同章节且当前段首由显式 `paraBreaks` 钉出的
-/// 边界可以移除；Cue break 故意保留。
+/// Merge a segment upward. Only a boundary pinned by an explicit `paraBreaks` at the start of the current segment, within the same speaker and the same chapter, may be removed. Cue breaks are deliberately kept.
 pub fn merge_paragraph_up(
     doc: &mut TranscriptDoc,
     paragraph_index: usize,

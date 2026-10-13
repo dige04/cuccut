@@ -14,7 +14,7 @@ import { pl } from './resource-capacity-copy.pl.ts';
 import { tr } from './resource-capacity-copy.tr.ts';
 import { vi } from './resource-capacity-copy.vi.ts';
 
-/** 设置 ›「资源调度」（resource-capacity.tsx）的文案。英文是键与类型的来源，译文在 `resource-capacity-copy.<语言>.ts`。 */
+/** Copy for Settings › “Resource scheduling” (资源调度) (resource-capacity.tsx). English is the source of keys and types; translations live in `resource-capacity-copy.<language>.ts`. */
 const en = {
   title: 'Resource scheduling',
   resetAll: 'Reset all to automatic',
@@ -22,7 +22,7 @@ const en = {
   disconnected: 'Not connected to Runtime',
   loadFailed: "Couldn't read resource status",
   loading: 'Reading resource status…',
-  /** 输入框的无障碍名：「内存上限（GB）」。 */
+  /** Accessible name of the input: “内存上限（GB）” (memory limit, in GB). */
   limitOf: (label: string, unit: string) => `${label} limit (${unit})`,
   unit: { memoryGB: 'GB', gpuMemoryGB: 'GB', cpuThreads: 'threads' },
   notSettable: "Can't be set by hand",

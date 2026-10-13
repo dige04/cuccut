@@ -5,9 +5,9 @@ import { EXPORT_COPY } from './export-copy.ts';
 import { Note, Quick, QuickField, Sec } from './export-parts.tsx';
 
 /**
- * 「响度」一节（设计稿 export-loudness.jsx，剧情短片 §5.3）：视频页与音频页各放一份、共用一份状态，缺省关。
- * 打开后整片混音统一到目标响度，真峰值不超过上限（`LoudnessTarget`，渲染 worker 的 R128 母带链）。
- * 设计稿缺省峰值 −1.2 dBTP；这里用 Runtime 的缺省 −1.5 dBTP（`DEFAULT_LOUDNESS_TARGET`），两档都能选。
+ * The "Loudness" section (design mockup export-loudness.jsx, feature short film §5.3): one copy on the video page and one on the audio page, sharing one state, off by default.
+ * When on, the whole mix is normalized to the target loudness, and the true peak does not exceed the ceiling (`LoudnessTarget`, the R128 mastering chain of the render worker).
+ * The mockup's default peak is −1.2 dBTP; here the Runtime default of −1.5 dBTP is used (`DEFAULT_LOUDNESS_TARGET`), and both presets can be chosen.
  */
 export function ExportLoudness({ value, onChange }: { value: LoudnessForm; onChange: (next: LoudnessForm) => void }) {
   const set = (patch: Partial<LoudnessForm>) => onChange({ ...value, ...patch });

@@ -1,19 +1,14 @@
-//! sound wave 的 DrawOp golden：10 款 × 5 个时刻的指令流指纹（设计 §11）。
+//! DrawOp golden for the sound wave: instruction-stream fingerprints for 10 styles × 5 instants (design §11).
 //!
-//! **输入沿用 `core/fixtures/visualizer/cases.json`**（P2 冻结，只可追加不可改）：
-//! `sweep` 频谱 + `default` 参数组 + 五个时刻。本文件只追加输出侧的
-//! `expected-draw.json`，比法与 motion 阶段 0 一致——**序列化文本逐字节比对**，
-//! 不是 `Value` 相等（f64 的 1-ULP 差异必须红）。
+//! **Inputs are reused from `core/fixtures/visualizer/cases.json`** (frozen in P2; it may only be appended to, never modified):
+//! the `sweep` spectrum, the `default` parameter group, and five instants. This file only adds the output-side `expected-draw.json`. The comparison method is the same as motion stage 0: **the serialized text is compared byte for byte**, not `Value` equality (a 1-ULP difference in f64 must fail).
 //!
-//! golden 另加一列 `samples`——折线类三个算法（`oscilloscope-v1` /
-//! `spectrum-area-v1` / `ribbons-v1`）的采样密度是**冻结的配方常量**（设计 §7.2：
-//! 这是它们能评 `strict` 的前提），它同时进 golden 的两个地方（显式一列 + 隐式
-//! 决定 path 段数），改 manifest 这份文件必然红。
+//! The golden adds one more column, `samples`. The sampling density of the three polyline algorithms (`oscilloscope-v1` / `spectrum-area-v1` / `ribbons-v1`) is a **frozen recipe constant** (design §7.2: this is the prerequisite for them to be rated `strict`). It enters the golden in two places (an explicit column, and implicitly by deciding the number of path segments), so changing this manifest file must necessarily fail.
 //!
 //! ```bash
 //! cd core
 //! cargo test -p ccut-render --test visualizer_draw
-//! cargo test -p ccut-render --test visualizer_draw -- --ignored   # 确认过再重生成
+//! cargo test -p ccut-render --test visualizer_draw -- --ignored   # regenerate only after confirming
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -24,10 +19,10 @@ use render_raster::source::visualizer::{VisualizerParams, VizBox, VizFrame, VizS
 use render_raster::source::{VizParams, visualizer_frame};
 use serde_json::{Value, json};
 
-/// 与 `cases.json` 的 `instants` 逐字相同（设计 §8.7 冻结的五个时刻）。
+/// Identical, character for character, to the `instants` in `cases.json` (the five instants frozen in design §8.7).
 const INSTANTS: [f64; 5] = [0.0, 0.1, 0.5, 1.0, 2.5];
 
-/// 与 `cases.json` 的 `params[1]`（`"default"`）逐字相同。
+/// Identical, character for character, to `params[1]` (`"default"`) in `cases.json`.
 const PARAMS: VizParams = VizParams {
     min_db: -80.0,
     max_db: 40.0,
@@ -35,11 +30,10 @@ const PARAMS: VizParams = VizParams {
     gain: 1.0,
 };
 
-/// 1080p 上的两只元素盒，直接来自 `ccut_timeline::geometry` 的默认几何表：
-/// 横条类 `100% × 20%`、贴底（y 中心 85%）；正方类 `30% × 30%`、居中。
+/// Two element boxes at 1080p, taken directly from the default geometry table of `ccut_timeline::geometry`: horizontal-bar types are `100% × 20%`, pinned to the bottom (y center at 85%); square types are `30% × 30%`, centered.
 const CANVAS: (f64, f64) = (1920.0, 1080.0);
 
-/// 折线类三个算法：它们的 `samples` 直接决定 path 段数。
+/// The three polyline algorithms: their `samples` directly determine the number of path segments.
 const POLYLINE_ALGORITHMS: [&str; 3] = ["oscilloscope-v1", "spectrum-area-v1", "ribbons-v1"];
 
 fn fixture_dir() -> PathBuf {
@@ -63,8 +57,7 @@ fn element_box(aspect: VisualizerAspect) -> VizBox {
     }
 }
 
-/// 两个已解析好的颜色。刻意不用配方的 `defaultMainColor`——那样每种样式的
-/// 颜色都不同，指纹变化时分不清是"配方改了色"还是"几何改了"。
+/// Two pre-resolved colors. Deliberately not using the recipe's `defaultMainColor`: that would give every style a different color, and when the fingerprint changes you could not tell whether "the recipe changed the color" or "the geometry changed".
 fn params() -> VisualizerParams {
     VisualizerParams {
         main_color: [0.235_294_12, 0.678_431_4, 1.0, 1.0],
@@ -73,8 +66,7 @@ fn params() -> VisualizerParams {
 }
 
 fn track() -> VizTrack {
-    // 生成端与消费端共用同一份夹具字节：`sweep-48k-mono.bcs1` 由
-    // `visualizer_source.rs` 的 `write_visualizer_fixtures` 落盘并逐字节守门。
+    // The generator and the consumer share the same fixture bytes: `sweep-48k-mono.bcs1` is written to disk by `write_visualizer_fixtures` in `visualizer_source.rs`, and guarded byte for byte.
     let bytes = std::fs::read(fixture_dir().join("sweep-48k-mono.bcs1"))
         .expect("sweep-48k-mono.bcs1 缺失（先跑 visualizer_source 的 --ignored）");
     VizTrack::derive(&bytes, PARAMS).expect("派生 sweep 轨")
@@ -111,7 +103,7 @@ fn expected_json() -> Value {
                 .iter()
                 .map(|instant| {
                     let viz = track.sample(*instant).expect("轨非空");
-                    // 时刻既是**取帧**的坐标，也是元素本地时刻：`ribbons-v1` 读后者。
+                    // The instant is both the coordinate for **fetching frames** and the element-local instant: `ribbons-v1` reads the latter.
                     let mut entry = record(recipe, viz, *instant);
                     entry["t"] = json!(instant);
                     entry
@@ -125,10 +117,10 @@ fn expected_json() -> Value {
                     VisualizerAspect::Square => "square",
                     VisualizerAspect::Free => "free",
                 },
-                // 折线类独有；柱状 / 点阵 / 环类没有这一档，记 null。
+                // Exclusive to the polyline types; bar, dot-matrix and ring types do not have this tier, so record null.
                 "samples": body.recipe.integer("samples"),
                 "instants": samples,
-                // 「静音仍有画面」：频域行全 0 时每款都还有指令（设计 §7.2）。
+                // "Silence still has visuals": when the frequency-domain row is all zeros, every style still emits instructions (design §7.2).
                 "silence": record(recipe, &silence, 0.0),
             })
         })
@@ -153,7 +145,7 @@ fn pretty(value: &Value) -> Vec<u8> {
     bytes
 }
 
-/// 重新生成 golden。确认过再跑：
+/// Regenerate the golden. Run only after confirming:
 /// `cargo test -p ccut-render --test visualizer_draw -- --ignored`
 #[test]
 #[ignore]
@@ -165,7 +157,7 @@ fn write_visualizer_draw_fixture() {
     .unwrap();
 }
 
-/// 日常门禁：当场重算再**逐字节**比。
+/// Daily gate: recompute on the spot, then compare **byte for byte**.
 #[test]
 fn the_draw_golden_is_up_to_date() {
     let path = fixture_dir().join("expected-draw.json");
@@ -178,9 +170,7 @@ fn the_draw_golden_is_up_to_date() {
     );
 }
 
-/// **10 款全部真的画东西**，有声与静音都是：静音是每款的"静止形态"
-/// （柱子留 `minHeight`、示波器留中线、点阵留底灯、环停在静止位、丝带收成中线），
-/// 元素在片头 / 无声段不会从画布上消失。
+/// **All 10 styles really draw something**, both with sound and in silence. Silence is each style's "resting form" (bars keep `minHeight`, the oscilloscope keeps its centerline, the dot matrix keeps its base lights, the ring stops at its rest position, and the ribbons collapse to the centerline), so the element does not disappear from the canvas at the intro or in silent sections.
 #[test]
 fn every_style_is_live_in_the_golden() {
     let golden = expected_json();
@@ -198,18 +188,14 @@ fn every_style_is_live_in_the_golden() {
     }
 }
 
-/// **`samples` 守卫**：折线类三个算法的采样密度是冻结常量，改它必然改 golden。
+/// **`samples` guard**: the sampling density of the three polyline algorithms is a frozen constant, and changing it necessarily changes the golden.
 ///
-/// 三条一起钉：① 四款 manifest 都声明了它；② golden 里那一列与注册表逐字相同
-/// （改 manifest 不重生成 ⇒ `the_draw_golden_is_up_to_date` 红）；③ 指令流里
-/// path 的段数确实由它决定，所以它也是**隐式**进 golden 指纹的——两条路都堵上。
+/// Three things are pinned together: ① all four manifests declare it; ② the column in the golden is character-for-character identical to the registry (changing the manifest without regenerating ⇒ `the_draw_golden_is_up_to_date` fails); ③ the number of path segments in the instruction stream is indeed determined by it, so it is also **implicitly** part of the golden fingerprint. Both routes are closed.
 ///
-/// 段数公式按算法：
-/// - `oscilloscope-v1` 线性布局：`samples`（move + n−1 条 line）；极坐标布局
-///   `samples + 1`（多一条 close）；
-/// - `spectrum-area-v1`：面积 path `samples + 3`（折线 + 右下 + 左下 + close），
-///   描边 path `samples`；
-/// - `ribbons-v1`：每条丝带 `samples`。
+/// Segment-count formula by algorithm:
+/// - `oscilloscope-v1` linear layout: `samples` (one move + n−1 lines); polar layout `samples + 1` (one extra close);
+/// - `spectrum-area-v1`: area path `samples + 3` (polyline + bottom-right + bottom-left + close), stroke path `samples`;
+/// - `ribbons-v1`: `samples` per ribbon.
 #[test]
 fn the_polyline_density_is_frozen_by_the_manifest() {
     let track = track();
@@ -261,8 +247,7 @@ fn the_polyline_density_is_frozen_by_the_manifest() {
     );
 }
 
-/// **乱序采样 == 顺序采样**在绘制层同样成立：源是纯查表，绘制是纯函数，
-/// 因此同一时刻的指令流与访问顺序无关（ADR-E04 的可执行形式）。
+/// **Out-of-order sampling == in-order sampling** also holds at the drawing layer: the source is a pure table lookup and drawing is a pure function, so the instruction stream at the same instant is independent of access order (the executable form of ADR-E04).
 #[test]
 fn shuffled_drawing_equals_sorted_drawing() {
     let track = track();
@@ -283,7 +268,7 @@ fn shuffled_drawing_equals_sorted_drawing() {
             fingerprint(&builder.finish())
         })
         .collect();
-    // 固定置换（不是随机）：顺序变了、结果不变才有意义。
+    // Fixed permutation (not random): the order changes, and the result must stay the same, for this to mean anything.
     let order = [3usize, 0, 4, 1, 2];
     let mut shuffled = vec![0u64; INSTANTS.len()];
     for index in order {

@@ -19,8 +19,7 @@ import {
 } from './translation-glossary.ts';
 
 /**
- * 翻译用的术语表（架构设计 §7.9；视频格式规范 §5.3）：语言相配、术语出现的判断、每批带的术语有上限且只带相关的、
- * 去重的优先顺序、`glossaryRef` 与术语表改了之后哪几句过期；库里条目的解析对着临时目录里真实的 `LibraryStore`。
+ * Glossary for translation (architecture design §7.9; video format spec §5.3): language matching, deciding whether a term appears, the cap on terms per batch and carrying only relevant ones, the priority order for deduplication, `glossaryRef`, and which sentences become stale when a glossary changes. Library entry resolution is tested against a real `LibraryStore` in a temporary directory.
  */
 
 const term = (source: string, target: string, entryId: string | null = 'glo_a'): PromptTerm => ({ source, target, entryId });
@@ -57,7 +56,7 @@ describe('术语的出现与每批的上限', () => {
     expect(capped.terms[0]).toBe(many[0]);
     expect(capped.capped).toBe(200 - MAX_TERMS);
 
-    // 字符数也有上限：很长的术语放不下几条。
+    // There is also a character limit: very long terms leave room for only a few.
     const long = Array.from({ length: 40 }, (_, i) => term(`long${i}`, 'x'.repeat(500)));
     const limited = selectTerms(long, long.map((t) => t.source).join(' '));
     expect(limited.terms.length).toBeLessThan(10);
@@ -145,7 +144,7 @@ describe('glossaryRef 与术语表改了之后的过期', () => {
     expect(glossaryChanged(ref, 'Then export.', now('sha256:a3', added))).toBe(true);
 
     expect(glossaryChanged(ref, 'Open the timeline in CucCut.', () => null)).toBe(true);
-    // 调用时直接给的术语不受库的影响。
+    // Terms passed directly in the call are not affected by the library.
     expect(glossaryChanged(ref, 'CucCut only.', () => null)).toBe(false);
   });
 });
@@ -207,14 +206,14 @@ describe('解析库里的术语表', () => {
     const snapshot = glossarySnapshot(library, [], resolved.entries);
     expect(snapshot.entries.map((e) => e.terms[0]!.target)).toEqual(['另一张译', 'zh 表译']);
 
-    // 调用时给的不合时拒绝：语言不符、转写用的、重复。
+    // Terms passed in the call are rejected when invalid: wrong language, used by the transcript, or duplicated.
     for (const explicit of [[{ id: en.id }], [{ id: asr.id }], [{ id: zh.id }, { id: zh.id }]]) {
       expect(() => resolveGlossaries({ ...base, explicit, enabled: [] })).toThrow(expect.objectContaining({ code: 'invalid-request' }));
     }
     expect(() => resolveGlossaries({ ...base, explicit: [{ id: 'glo_gone' }], enabled: [] })).toThrow(
       expect.objectContaining({ code: 'not-found' }),
     );
-    // 对外服务：给了库里的术语表时拒绝；视频启用的不用。
+    // External service: a library glossary passed in the call is rejected. A glossary enabled in the video is not used.
     const service = { kind: 'service', id: 'svc', clientId: 'client_1' } as const;
     expect(() => resolveGlossaries({ ...base, submitter: service, explicit: [{ id: zh.id }], enabled: [] })).toThrow(
       expect.objectContaining({ details: expect.objectContaining({ code: 'LIBRARY_ENTRY_NOT_APPLICABLE' }) }),

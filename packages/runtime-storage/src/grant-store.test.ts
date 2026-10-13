@@ -19,7 +19,7 @@ describe('GrantStore', () => {
   const opened: GrantStore[] = [];
 
   afterEach(async () => {
-    // 写盘在后台串行进行：删目录前等它写完。
+    // Disk writes run serially in the background: wait for them to finish before deleting the directory.
     await Promise.all(opened.splice(0).map((store) => store.flush()));
     await fs.rm(dir, { recursive: true, force: true });
   });
@@ -57,7 +57,7 @@ describe('GrantStore', () => {
 
       expect(store.evaluate(call())).toMatchObject({ status: 'covered', grant: { grantId: grant.grantId } });
       expect(store.evaluate(call({ dataKinds: ['audio', 'transcript'] })).status).toBe('covered');
-      // 批准音频不等于批准原视频。
+      // Approving audio is not the same as approving the original video.
       expect(store.evaluate(call({ dataKinds: ['audio', 'video'] })).status).toBe('none');
       expect(store.evaluate(call({ recipient: 'google' })).status).toBe('none');
       expect(store.evaluate(call({ videoId: 'vid_b' })).status).toBe('none');
@@ -122,10 +122,10 @@ describe('GrantStore', () => {
       expect(store.evaluate(call())).toMatchObject({ status: 'none', revoked: { grantId: grant.grantId } });
       expect(await store.start(queued.reservation.reservationId)).toMatchObject({ ok: false, grant: { grantId: grant.grantId } });
       expect(store.settle(queued.reservation.reservationId, { kind: 'failed' })).toMatchObject({ calls: 0, basis: 'released' });
-      // 已经开始的照常结束并计入用量：已经交出的数据如实报告。
+      // Calls already started finish as usual and count toward usage: data already handed over is reported honestly.
       expect(store.settle(running.reservation.reservationId, { kind: 'completed' })).toMatchObject({ calls: 1, basis: 'unknown' });
       expect(store.get(grant.grantId)!.usage).toMatchObject({ calls: 1, reservedCalls: 0, unknownCostCalls: 1 });
-      // 重复撤销不再加代。
+      // Repeated revocation does not bump the generation again.
       expect(store.revoke(grant.grantId).grant.generation).toBe(2);
       expect(store.revoke(grant.grantId).alreadySent).toMatchObject({ calls: 1, unknownCostCalls: 1 });
     });
@@ -160,7 +160,7 @@ describe('GrantStore', () => {
         measure: 'calls',
         grant: { grantId: grant.grantId },
       });
-      // 没开始就结束的预留全部释放，名额回来。
+      // Reservations that ended without starting are all released, and the quota comes back.
       if (!a.ok) return;
       expect(store.settle(a.reservation.reservationId, { kind: 'failed' })).toMatchObject({ calls: 0, basis: 'released' });
       expect(store.admit(call()).ok).toBe(true);
@@ -202,7 +202,7 @@ describe('GrantStore', () => {
         basis: 'conservative',
       });
       expect(store.get(grant.grantId)!.usage).toMatchObject({ calls: 2, amount: '0.65', reservedAmount: '0.00' });
-      // 还剩 0.35，下一笔 0.40 放不下。
+      // 0.35 remains, so the next 0.40 does not fit.
       expect(store.admit(call({ estimate })).ok).toBe(false);
       expect(store.admit(call({ estimate: { amount: '0.35', currency: 'USD' } })).ok).toBe(true);
     });
@@ -212,7 +212,7 @@ describe('GrantStore', () => {
       persistent(store, { budgetMode: 'estimate-cap', budgetCap: { amount: '5', currency: 'USD' } });
       expect(store.evaluate(call()).status).toBe('unverifiable');
       expect(store.evaluate(call({ estimate: { amount: '0.1', currency: 'EUR' } })).status).toBe('unverifiable');
-      // 另有一条金额未知的授权时用它。
+      // Used when there is another grant whose amount is unknown.
       persistent(store, { budgetMode: 'per-call-unknown-cost' });
       expect(store.evaluate(call()).status).toBe('covered');
     });
@@ -257,12 +257,12 @@ describe('GrantStore', () => {
       const admitted = store.admit(call(), { jobId: 'job_a' });
       if (!admitted.ok) throw new Error('应该覆盖');
       expect(await store.start(admitted.reservation.reservationId)).toEqual({ ok: true });
-      // 不等 flush：start 兑现时磁盘上已经是「已开始」（随后的崩溃丢不掉它）。
+      // Does not wait for flush: when start is honored, disk already shows “started” (a later crash cannot lose it).
       const onDisk = JSON.parse(await fs.readFile(file, 'utf8')) as { reservations: Array<{ reservationId: string; started: boolean }> };
       expect(onDisk.reservations).toContainEqual(
         expect.objectContaining({ reservationId: admitted.reservation.reservationId, started: true }),
       );
-      // 经 open() 打开：结算孤儿预留的后台写盘在删目录前等它写完。
+      // Opened via open(): the background disk write that settles orphaned reservations is waited for before the directory is deleted.
       const reopened = await open();
       expect(reopened.settleOrphans()).toBe(1);
       expect(reopened.get(grant.grantId)!.usage).toMatchObject({ calls: 1, reservedCalls: 0, unknownCostCalls: 1 });
@@ -328,7 +328,7 @@ describe('GrantStore', () => {
       expect([a.ok, b.ok, c.ok]).toEqual([true, true, false]);
       expect('task' in c && c.task).toMatchObject({ status: 'exhausted', measure: 'calls', policy: { taskId: 'task_1' } });
       expect(store.get(google.grantId)!.usage.reservedCalls).toBe(1);
-      // 别的任务、不在任务里的调用不受这个预算限制。
+      // Other tasks, and calls not made inside a task, are not limited by this budget.
       expect(store.admit(call({ taskId: 'task_2' })).ok).toBe(true);
       expect(store.admit(call()).ok).toBe(true);
       expect(store.taskBudget('task_1')!.usage.reservedCalls).toBe(2);
@@ -378,7 +378,7 @@ describe('GrantStore', () => {
         reserved: [],
         unknownCostCalls: 1,
       });
-      // 之后设金额上限：已用里有别的币种与金额未知的调用，总额无法保证。
+      // An amount cap is set afterwards: the used total includes calls in other currencies and calls of unknown amount, so the total cannot be guaranteed.
       store.setTaskBudget('task_1', { maxCalls: null, cap: usd('10') });
       expect(store.evaluateTask({ taskId: 'task_1', estimate: priced('0.01') })).toMatchObject({ status: 'unverifiable' });
     });
@@ -393,7 +393,7 @@ describe('GrantStore', () => {
       await store.start(started.reservation.reservationId);
       await store.flush();
 
-      // 「重启」：从磁盘读回，结算孤儿预留两次。
+      // “Restart”: read back from disk, settling the orphaned reservations twice.
       const reopened = await open();
       expect(reopened.taskBudget('task_1')!.usage.reservedCalls).toBe(2);
       expect(reopened.settleOrphans()).toBe(2);

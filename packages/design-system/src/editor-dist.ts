@@ -1,15 +1,15 @@
 /**
- * 设计系统编辑器的构建产物（docs/design/canvas §10.2）：`npm run build:design-system-editor` 构建到
- * `apps/design-system-editor/dist/`。没构建时这个目录不存在：`designSystem.open` 照常给地址、`editorAvailable` 为 false，页面回 503。
+ * Build output of the design system editor (docs/design/canvas §10.2): `npm run build:design-system-editor` builds into
+ * `apps/design-system-editor/dist/`. When not built, this directory does not exist: `designSystem.open` still gives the address, `editorAvailable` is false, and the page returns 503.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * 找编辑器的构建产物目录（里面有 `index.html`）：`CUCCUT_DESIGN_SYSTEM_EDITOR_DIST` 环境变量；打包后的应用里是
- * `<resources>/design-system-editor`；开发时从本模块往上找仓库里的 `apps/design-system-editor/dist`。都没有时 null。
- * 环境变量指的目录里没有 `index.html` 也是 null。
+ * Finds the editor's build output directory (it contains `index.html`): the `CUCCUT_DESIGN_SYSTEM_EDITOR_DIST` environment variable. In the packaged app it is
+ * `<resources>/design-system-editor`; in development it walks up from this module to find `apps/design-system-editor/dist` in the repo. null if none.
+ * A directory given by the environment variable that has no `index.html` is also null.
  */
 export function resolveDesignSystemEditorDist(env: NodeJS.ProcessEnv = process.env): string | null {
   const given = env.CUCCUT_DESIGN_SYSTEM_EDITOR_DIST;

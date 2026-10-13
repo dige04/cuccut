@@ -25,9 +25,9 @@ export function defaultAgentPreferences(): AgentPreferences {
 }
 
 /**
- * Agent 偏好（设置 › Agent 提供方）。整份读进内存，改一次写一次；写串行，后一次覆盖前一次。
- * 文件里不认识或坏掉的字段按默认值处理，不让一个手改坏的文件拦住 Runtime 启动；整个文件不是 JSON 时改名保留、取默认值，
- * 更新版本写下的不改写（`store-file.ts`）。
+ * Agent preferences (Settings › Agent providers). The whole file is read into memory; each change writes once. Writes are serial, and a later write overwrites an earlier one.
+ * Unrecognized or broken fields in the file fall back to defaults, so a hand-broken file does not block Runtime startup. If the whole file is not JSON, it is renamed to keep it and defaults are used.
+ * Content written by a newer version is not rewritten (`store-file.ts`).
  */
 export class AgentPrefsStore {
   readonly #file: JsonStoreFile;
@@ -52,7 +52,7 @@ export class AgentPrefsStore {
     return { ...DEFAULT_DRIVER_PREFERENCES, ...this.#prefs.drivers[id] };
   }
 
-  /** 改一份偏好并落盘。`update` 收到的是副本，返回新的完整偏好。 */
+  /** Changes one preference and writes it to disk. `update` receives a copy and returns the new complete preferences. */
   async update(update: (prefs: AgentPreferences) => void): Promise<AgentPreferences> {
     const next = this.get();
     update(next);

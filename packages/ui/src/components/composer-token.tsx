@@ -3,7 +3,7 @@ import { ActionButton } from '@react-spectrum/s2';
 import Close from '@react-spectrum/s2/icons/Close';
 import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro' };
 
-// 标记只占内容的宽度（原型 `.home-template-token`、`.cins-token`）：× 是最小号的按钮，图标再小一档；长名字截断，不撑破输入框。
+// The tag takes only the width of its content (prototype `.home-template-token`, `.cins-token`): × is the smallest button and the icon is one size smaller; long names are truncated and do not stretch the input box.
 const chip = style({
   display: 'inline-flex',
   alignSelf: 'start',
@@ -23,7 +23,7 @@ const chipText = style({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpac
 const chipNote = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
 const closeIcon = iconStyle({ size: 'XS' });
 
-/** 输入框正文上方的一枚可移除标记：模板、本机素材、点选的 skill 共用一个样子。 */
+/** A removable tag above the input text: templates, local assets and picked skills share one look. */
 export function ComposerToken({
   icon,
   label,
@@ -35,9 +35,9 @@ export function ComposerToken({
 }: {
   icon: ReactNode;
   label: string;
-  /** 悬停看到的完整说明（例如素材的完整路径）。 */
+  /** Full description shown on hover (for example, the full path of an asset). */
   title?: string;
-  /** 名字后面一句淡色的说明（AI 工具页上「这个工具的做法」）。 */
+  /** A faint one-line description after the name (on the AI tools page, “这个工具的做法” (how this tool works)). */
   note?: string;
   removeLabel: string;
   onRemove(): void;
@@ -64,5 +64,5 @@ export function ComposerToken({
   );
 }
 
-/** 一排标记（起始页的模板与素材，会话输入框上的 skill）。 */
+/** A row of tags (templates and assets on the start page, skills on the session input box). */
 export const composerTokenList = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 });

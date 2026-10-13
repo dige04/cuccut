@@ -7,7 +7,7 @@ import { handToAgent, sendOrQueue } from './ai-tools-handoff.ts';
 
 vi.mock('@react-spectrum/s2', () => ({ ToastQueue: { info: vi.fn(), negative: vi.fn(), neutral: vi.fn() } }));
 
-/** 假的会话：用 RuntimeSession 自己的 `send`，`client.request` 只记下 `conversations.send` 的参数。 */
+/** A fake conversation: uses RuntimeSession's own `send`; `client.request` only records the arguments of `conversations.send`. */
 function fakeRuntime(fail?: unknown) {
   const sent: Record<string, unknown>[] = [];
   const runtime = Object.create(RuntimeSession.prototype) as RuntimeSession;
@@ -58,7 +58,7 @@ describe('交给 Agent：挂着的几个 skill 一起发', () => {
   });
 });
 
-/** 假的会话：`conversations.create` 回一条新会话，`conversations.send` 记下参数；`seen` 是每个方法最近一次的参数。 */
+/** A fake conversation: `conversations.create` returns a new conversation, and `conversations.send` records its arguments; `seen` holds the most recent arguments for each method. */
 function handoffRuntime() {
   const calls: string[] = [];
   const seen: Record<string, Record<string, unknown>> = {};

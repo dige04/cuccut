@@ -1,12 +1,12 @@
-//! 推理线程的调度优先级（架构设计 §6.5「优先级与资源」）：Worker 以低于前台的优先级运行，转写不抢界面。
+//! Scheduling priority of the inference thread (architecture design §6.5, "Priority and resources"): the Worker runs at a lower priority than the foreground, so transcription does not compete with the UI.
 //!
-//! macOS 上把调用线程的 QoS 设为 utility；Windows 上把线程优先级降为 `THREAD_PRIORITY_BELOW_NORMAL`；其他平台先不做
-//! （保守实现）。只影响调用它的线程，所以要在推理线程自己里面调用。
+//! On macOS the calling thread's QoS is set to utility; on Windows the thread priority is lowered to `THREAD_PRIORITY_BELOW_NORMAL`; other platforms are not handled yet (a conservative implementation).
+//! This only affects the calling thread, so it must be called from inside the inference thread itself.
 
-/// 把调用线程降到后台推理的优先级。失败只记日志：优先级是尽力而为，不影响任务能不能跑。
+/// Lowers the calling thread to background inference priority. Failures are only logged: priority is best-effort and does not affect whether the job can run.
 #[cfg(target_os = "macos")]
 pub fn lower_current_thread() {
-    // SAFETY: 只改调用线程自己的 QoS，参数是合法的类别与相对优先级 0。
+    // SAFETY: only changes the calling thread's own QoS; the arguments are a valid class and relative priority 0.
     let code = unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0) };
     if code != 0 {
         eprintln!("[model-worker] cannot set the inference thread QoS to utility (error {code})");
@@ -28,11 +28,11 @@ mod windows_thread {
     }
 }
 
-/// 把调用线程降到后台推理的优先级。失败只记日志：优先级是尽力而为，不影响任务能不能跑。
+/// Lowers the calling thread to background inference priority. Failures are only logged: priority is best-effort and does not affect whether the job can run.
 #[cfg(windows)]
 pub fn lower_current_thread() {
     use windows_thread::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
-    // SAFETY: GetCurrentThread 返回调用线程的伪句柄（不需要关闭）；只改调用线程自己的优先级。
+    // SAFETY: GetCurrentThread returns a pseudo-handle for the calling thread (no need to close it); only changes the calling thread's own priority.
     if unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL) } == 0 {
         let error = std::io::Error::last_os_error();
         eprintln!("[model-worker] cannot lower the inference thread priority ({error})");
@@ -46,11 +46,11 @@ pub fn lower_current_thread() {}
 mod tests {
     use super::*;
 
-    /// 调用线程当前的 QoS 类别。读成 u32：返回值不一定是枚举里的某一项。
+    /// The calling thread's current QoS class. Read as u32, since the return value is not necessarily one of the enum items.
     fn current_qos() -> u32 {
         let mut class: u32 = 0;
         let mut relative: libc::c_int = 0;
-        // SAFETY: 查询自己的线程；`qos_class_t` 是 repr(u32)，输出指针指向有效的 u32。
+        // SAFETY: queries its own thread; `qos_class_t` is repr(u32), and the output pointer points to a valid u32.
         let code = unsafe {
             libc::pthread_get_qos_class_np(
                 libc::pthread_self(),
@@ -82,7 +82,7 @@ mod tests {
     use super::*;
 
     fn current_priority() -> i32 {
-        // SAFETY: 查询调用线程自己的优先级。
+        // SAFETY: queries the calling thread's own priority.
         unsafe { GetThreadPriority(GetCurrentThread()) }
     }
 

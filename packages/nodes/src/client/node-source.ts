@@ -12,18 +12,18 @@ import type { PairedNodeRecord } from './node-store.ts';
 import { NodesClient as NC } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 已配对节点的 Provider 来源（`node:<nodeId>`，架构设计 §6.7）：每个已配对的节点是一个 Provider，模型是节点上的模型包。
+ * Provider source for paired nodes (`node:<nodeId>`, architecture design §6.7): each paired node is a Provider, and its models are the model packs on that node.
  *
- * 可用性分两种取法（见 `DescribeMode`）：
- * - 提交时的选择（`select`）不联网：节点配对着就算可用，连不连得上、模型包就没就绪由尝试前的预检判断
- *   （失败为任务的 `REMOTE_NODE_*`，与以前相同）；
- * - `models.capabilities`（`probe`）对每个节点做一次健康探测（`NodeInitiator.probe`，至多 2 秒，并行），并记下结果；
- *   之后配置变化引起的重算（`view`）沿用最近一次的探测结果，不再联网。
+ * Availability is determined in two ways (see `DescribeMode`):
+ * - Selection at submit time (`select`) makes no network calls: a node counts as available while it is paired. Whether it can be reached and whether its model pack is ready is decided by the pre-attempt check
+ *   (failures are the task's `REMOTE_NODE_*`, as before);
+ * - `models.capabilities` (`probe`) runs one health probe per node (`NodeInitiator.probe`, at most 2 seconds each, in parallel) and records the results;
+ *   later recomputation caused by configuration changes (`view`) reuses the most recent probe results and makes no network calls.
  *
- * 没有探测结果时，模型列表取本机模型包登记里的转写模型包（节点多半装的也是它们），可用性不标。
+ * Without probe results, the model list uses the transcription model packs registered locally on this machine (nodes most likely have those installed too), and availability is not marked.
  */
 
-/** NodeInitiator 里这个来源要用的部分。 */
+/** The part of NodeInitiator that this source needs. */
 export interface NodeSourceInitiator {
   readonly store: {
     list(): PairedNodeRecord[];
@@ -40,7 +40,7 @@ const PREFIX = 'node:';
 export class NodeProviderSource implements ProviderSource {
   readonly kind = 'node' as const;
   readonly #initiator: NodeSourceInitiator;
-  /** 最近一次探测的结果。 */
+  /** Result of the most recent probe. */
   readonly #probed = new Map<string, PairedNode>();
 
   constructor(initiator: NodeSourceInitiator) {
@@ -51,7 +51,7 @@ export class NodeProviderSource implements ProviderSource {
     return providerId.startsWith(PREFIX);
   }
 
-  /** `node:<nodeId 或别名>` → `node:<nodeId>`。 */
+  /** `node:<nodeId or alias>` → `node:<nodeId>`. */
   resolve(providerId: string): string | null {
     if (!this.owns(providerId)) return null;
     const record = this.#initiator.store.resolve(providerId.slice(PREFIX.length));
@@ -61,7 +61,7 @@ export class NodeProviderSource implements ProviderSource {
   async list(mode: DescribeMode): Promise<ProviderView[]> {
     const records = this.#initiator.store.list();
     const views = await Promise.all(records.map((record) => this.#describe(record, mode)));
-    // 已经不再配对的节点不留探测结果。
+    // Nodes that are no longer paired keep no probe results.
     const ids = new Set(records.map((r) => r.nodeId));
     for (const nodeId of this.#probed.keys()) if (!ids.has(nodeId)) this.#probed.delete(nodeId);
     return views;
@@ -77,7 +77,7 @@ export class NodeProviderSource implements ProviderSource {
     return this.owns(providerId) ? this.#initiator.provider : null;
   }
 
-  /** 每个节点一个队列，本机同时只向一个节点交一个任务（节点自己排队）。 */
+  /** One queue per node: this machine submits at most one task at a time to a given node (the node queues on its own). */
   queue(providerId: string): ProviderQueue {
     return { key: providerId, concurrency: 1 };
   }

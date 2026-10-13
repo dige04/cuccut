@@ -1,10 +1,10 @@
-//! 媒体读写（架构设计 §9.13、§13.1）：成片导出经 ffmpeg / ffprobe 子进程解码与编码，不链接 libav。
+//! Media reading and writing (architecture design §9.13, §13.1): the final export decodes and encodes through ffmpeg / ffprobe child processes, without linking libav.
 //!
-//! - 解码：每个视频实例一条顺序的解码流（[`decode::VideoDecoder`]），原始 RGBA 帧经管道读出；按源时刻往前走，
-//!   不逐帧重新定位，只有倒退或大步跳跃时才重开。图片解码一帧（[`decode::decode_still`]），GIF 取第一帧。
-//! - 编码：原始 RGBA 帧写进编码器的标准输入（[`encode::Encoder`]），声音是已经混好的音频文件，一并封装。
+//! - Decoding: one sequential decode stream per video instance ([`decode::VideoDecoder`]), with raw RGBA frames read out through a pipe. It moves forward by source time,
+//!   without repositioning frame by frame, and reopens only on a rewind or a large jump. A still image decodes one frame ([`decode::decode_still`]); GIFs take the first frame.
+//! - Encoding: raw RGBA frames are written to the encoder's stdin ([`encode::Encoder`]); the audio is an already mixed audio file, muxed in alongside.
 //!
-//! 工具的位置由调用方给（Runtime 按 `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE` 与登录 shell 的 PATH 解析）。
+//! The caller supplies the tool locations (the Runtime resolves them from `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE` and the PATH of the login shell).
 
 pub mod decode;
 pub mod encode;
@@ -13,14 +13,14 @@ pub mod probe;
 use std::fmt;
 use std::path::PathBuf;
 
-/// ffmpeg 与 ffprobe 可执行文件。
+/// The ffmpeg and ffprobe executables.
 #[derive(Clone, Debug)]
 pub struct Tools {
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
 }
 
-/// 一帧画面：非预乘的 RGBA，逐行紧排。
+/// One frame of picture: non-premultiplied RGBA, rows packed tightly.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Picture {
     pub width: u32,
@@ -34,7 +34,7 @@ impl Picture {
     }
 }
 
-/// 媒体读写的失败。`code` 是协议里的错误码（`EXPORT_TOOL_MISSING`、`EXPORT_DECODE_FAILED`、`EXPORT_ENCODE_FAILED`……）。
+/// A media read/write failure. `code` is the error code from the protocol (`EXPORT_TOOL_MISSING`, `EXPORT_DECODE_FAILED`, `EXPORT_ENCODE_FAILED`, ...).
 #[derive(Clone, Debug, PartialEq)]
 pub struct MediaError {
     pub code: &'static str,
@@ -66,7 +66,7 @@ impl fmt::Display for MediaError {
 
 impl std::error::Error for MediaError {}
 
-/// 子进程 stderr 的最后几行：出错时放进消息里。
+/// The last few lines of the child process's stderr: included in the message on error.
 pub(crate) fn tail(text: &str, lines: usize) -> String {
     let all: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     all[all.len().saturating_sub(lines)..].join("\n")

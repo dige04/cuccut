@@ -1,5 +1,5 @@
-//! 随应用分发的 YuNet 模型（`packages/models/assets/face-detection/`）真的能载入、能跑；进程的 JSON 行协议（`src/main.rs`）。
-//! 有脸的样本不入库（不提交用户视频的帧）：给 `CUCCUT_FACE_FIXTURE`（一张有人脸的 PNG / JPEG）时才测「找得到脸」，否则跳过。
+//! The YuNet model shipped with the app (`packages/models/assets/face-detection/`) really loads and runs; also the process's JSON-line protocol (`src/main.rs`).
+//! Samples with faces are not checked in (frames from user videos are not committed). "Finds a face" is tested only when `CUCCUT_FACE_FIXTURE` is given (a PNG or JPEG with a face); otherwise it is skipped.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

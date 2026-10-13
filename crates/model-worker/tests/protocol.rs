@@ -1,4 +1,4 @@
-//! 协议层：不需要模型文件，在任何平台上都能跑。
+//! Protocol layer: needs no model files and runs on any platform.
 
 mod support;
 
@@ -9,10 +9,10 @@ use support::{WorkerProcess, error_code, result};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 合成主模型的全部 family（`packages/models` 的 `ModelFamily` 里 tts 那几个）。
+/// All families of the main synthesis model (the tts ones in `ModelFamily` in `packages/models`).
 const SYNTHESIS_FAMILIES: [&str; 6] = ["qwen3-tts", "indextts2", "indextts2.5", "gpt-sovits", "voxcpm2", "omnivoice"];
 
-/// 识别主模型的全部 family（`packages/models` 的 `ModelFamily` 里 asr 那几个）。
+/// All families of the main recognition model (the asr ones in `ModelFamily` in `packages/models`).
 const TRANSCRIPTION_FAMILIES: [&str; 5] = [
     "qwen3-asr",
     "whisper-mlx",
@@ -21,7 +21,7 @@ const TRANSCRIPTION_FAMILIES: [&str; 5] = [
     "moss-transcribe-diarize",
 ];
 
-/// 文生图的全部 family（`packages/models` 的 `ModelFamily` 里 image 那几个）。
+/// All families for text-to-image (the image ones in `ModelFamily` in `packages/models`).
 const IMAGE_FAMILIES: [&str; 1] = ["qwen-image"];
 
 #[test]
@@ -33,7 +33,7 @@ fn hello_reports_version_backends_and_capabilities() {
     assert_eq!(hello["contractVersion"], 1);
     assert_eq!(hello["workerVersion"], env!("CARGO_PKG_VERSION"));
     assert!(hello["pid"].as_u64().is_some_and(|pid| pid > 0));
-    // 合成按 family 声明：能加载的列在 synthesizeFamilies，有一个就声明 synthesize 能力。
+    // Synthesis is declared per family. The loadable families are listed in synthesizeFamilies, and having any one of them declares the synthesize capability.
     let families: Vec<&str> = hello["synthesizeFamilies"]
         .as_array()
         .expect("synthesizeFamilies is always present")
@@ -41,7 +41,7 @@ fn hello_reports_version_backends_and_capabilities() {
         .map(|family| family.as_str().unwrap())
         .collect();
     assert!(families.iter().all(|family| SYNTHESIS_FAMILIES.contains(family)), "{families:?}");
-    // 识别同样按 family 声明（`asr` 组件的 family）。
+    // Recognition is also declared per family (the families of the `asr` component).
     let transcribe: Vec<&str> = hello["transcribeFamilies"]
         .as_array()
         .expect("transcribeFamilies is always present")
@@ -56,19 +56,19 @@ fn hello_reports_version_backends_and_capabilities() {
     if !transcribe.is_empty() {
         expected.push("transcribe");
     }
-    // 对齐器接在 MLX 与 candle 上：Apple Silicon 的构建与带 candle 的构建声明 `align`。
+    // The aligner is wired onto MLX and candle. Apple Silicon builds and builds with candle declare `align`.
     if cfg!(any(
         all(target_os = "macos", target_arch = "aarch64", feature = "backend-mlx"),
         feature = "backend-candle"
     )) {
         expected.push("align");
-        // 说话人区分（Pyannote + WeSpeaker）同样接在 MLX 与 candle 上。
+        // Speaker diarization (Pyannote + WeSpeaker) is likewise wired onto MLX and candle.
         expected.push("diarize");
     }
     if !families.is_empty() {
         expected.push("synthesize");
     }
-    // 分离同样按 family 声明（`separator` 组件的 family）：MLX 与 candle 的构建都接上了 HTDemucs-FT。
+    // Separation is also declared per family (the families of the `separator` component). Both the MLX and candle builds have HTDemucs-FT wired up.
     let separate: Vec<&str> = hello["separateFamilies"]
         .as_array()
         .expect("separateFamilies is always present")
@@ -86,7 +86,7 @@ fn hello_reports_version_backends_and_capabilities() {
     if !separate.is_empty() {
         expected.push("separate");
     }
-    // 文生图同样按 family 声明（`image` 组件的 family）。
+    // Text-to-image is also declared per family (the families of the `image` component).
     let image: Vec<&str> = hello["imageFamilies"]
         .as_array()
         .expect("imageFamilies is always present")
@@ -114,7 +114,7 @@ fn hello_reports_version_backends_and_capabilities() {
         assert_eq!(transcribe, wired);
         assert_eq!(image, ["qwen-image"]);
     }
-    // candle 编进来时 Qwen3-ASR、MOSS 与 Qwen-Image 在任何平台都能加载（macOS 上也报，由 Runtime 决定登不登记 candle 模型包）。
+    // When candle is compiled in, Qwen3-ASR, MOSS and Qwen-Image load on every platform, including macOS. The Runtime decides whether candle bundles are registered.
     #[cfg(feature = "backend-candle")]
     {
         let mut wired = vec!["qwen3-asr"];
@@ -140,7 +140,7 @@ fn hello_reports_version_backends_and_capabilities() {
             assert!(backend["reason"].is_string(), "unavailable backends carry a reason: {backend}");
         }
     }
-    // CoreML 编进来时与 MLX 一样看 Metal（VAD 在 MLX 上）：可用时设备是 `ane`。
+    // When CoreML is compiled in, Metal is checked the same way as with MLX (VAD runs on MLX). When available, the device is `ane`.
     if cfg!(all(target_os = "macos", target_arch = "aarch64", feature = "backend-coreml")) {
         assert_eq!(backends[1]["available"], backends[0]["available"]);
         if backends[1]["available"] == true {
@@ -150,14 +150,14 @@ fn hello_reports_version_backends_and_capabilities() {
         assert_eq!(backends[1]["reason"], "not-compiled");
     }
     if cfg!(feature = "backend-candle") {
-        // candle 不挑机器：可用，CPU 总在设备列表最后（有 CUDA 时排在前面）。
+        // candle does not depend on the machine: it is always available, and CPU is always last in the device list (CUDA, when present, comes before it).
         assert_eq!(backends[2]["available"], true);
         assert_eq!(backends[2]["devices"].as_array().unwrap().last(), Some(&json!("cpu")));
     } else {
         assert_eq!(backends[2]["reason"], "not-compiled");
     }
     if cfg!(feature = "whisper-ggml") {
-        // ggml 同样不挑机器：CPU 总在最后，前面至多一个 GPU（`cuda`、`vulkan` 或 `metal`）。
+        // ggml likewise does not depend on the machine: CPU is always last, with at most one GPU before it (`cuda`, `vulkan` or `metal`).
         assert_eq!(backends[3]["available"], true);
         let devices = backends[3]["devices"].as_array().unwrap();
         assert_eq!(devices.last(), Some(&json!("cpu")));
@@ -194,7 +194,7 @@ fn unknown_methods_and_bad_params_are_protocol_errors() {
     let (_, response) = worker.call("job.cancel", json!({}), TIMEOUT);
     assert_eq!(error_code(&response), "INVALID_PARAMS");
 
-    // 解析不了的行没有 id 可回：记日志、跳过，之后照常工作。
+    // A line that cannot be parsed has no id to reply to. Log it, skip it, and keep working as usual.
     worker.send_raw("{not json");
     let (_, response) = worker.call("worker.status", json!({}), TIMEOUT);
     assert_eq!(result(&response)["state"], "empty");
@@ -266,13 +266,12 @@ fn missing_model_files_are_not_installed() {
         "messages never carry absolute paths: {message}"
     );
 
-    // 失败的加载不留状态。
+    // A failed load leaves no state behind.
     let (_, response) = worker.call("worker.status", json!({}), TIMEOUT);
     assert_eq!(result(&response)["state"], "empty");
 }
 
-/// 合成参数照常先检查；没列在 `synthesizeFamilies` 里的 family 加载时是结构化的 `MODEL_UNSUPPORTED`（`not-wired`），
-/// 列着的 family 照常核对文件（缺文件不是 `not-wired`）；失败的加载都不留状态。
+/// Synthesis parameters are still checked first. A family not listed in `synthesizeFamilies` gives a structured `MODEL_UNSUPPORTED` (`not-wired`) on load. A listed family still has its files checked as usual (missing files are not `not-wired`). Failed loads leave no state behind.
 #[test]
 fn synthesis_is_checked_and_unlisted_families_are_not_wired() {
     let mut worker = WorkerProcess::spawn();
@@ -296,7 +295,7 @@ fn synthesis_is_checked_and_unlisted_families_are_not_wired() {
             "outputContract": "cuccut.speech-wav/v1",
         })
     };
-    // clone 没有参考录音：参数错，先于状态检查。
+    // clone has no reference recording: a parameter error, checked before the state check.
     let (_, response) = worker.call("job.run", run(json!({ "mode": "clone", "transcript": null })), TIMEOUT);
     assert_eq!(error_code(&response), "INVALID_PARAMS");
     let (_, response) = worker.call("job.run", run(json!({ "mode": "preset", "id": "a" })), TIMEOUT);
@@ -344,8 +343,7 @@ fn synthesis_is_checked_and_unlisted_families_are_not_wired() {
     }
 }
 
-/// 分离参数照常先检查（形状 → `INVALID_PARAMS`，没有模型 → `WORKER_BUSY`）；分离的模型包只带 `separator`，
-/// 缺文件是 `MODEL_NOT_INSTALLED`、带了别的组件是 `MODEL_UNSUPPORTED`，失败的加载都不留状态。
+/// Separation parameters are still checked first (shape → `INVALID_PARAMS`, no model → `WORKER_BUSY`). A separation bundle carries only `separator`. Missing files give `MODEL_NOT_INSTALLED`, and carrying other components gives `MODEL_UNSUPPORTED`. Failed loads leave no state behind.
 #[test]
 fn separation_is_checked_before_and_at_load() {
     let mut worker = WorkerProcess::spawn();
@@ -375,7 +373,7 @@ fn separation_is_checked_before_and_at_load() {
     let component =
         |family: &str, files: Value| json!({ "family": family, "revision": "r1", "dir": models.path().to_string_lossy(), "files": files });
     let weights = json!([{ "path": "htdemucs_ft.safetensors", "sha256": "0".repeat(64), "byteLength": 4 }]);
-    // 编进来的后端：Apple Silicon 带 MLX 时用 MLX，否则带 candle 时用 candle 的 CPU；都没有时按 MLX 的模型包报 not-wired。
+    // Compiled-in backends: on Apple Silicon with MLX, MLX is used. Otherwise, with candle, candle's CPU is used. If neither is present, the bundle is reported as `not-wired` against the MLX bundle.
     let (backend, device) = if cfg!(all(target_os = "macos", target_arch = "aarch64", feature = "backend-mlx")) {
         ("mlx", "metal")
     } else if cfg!(feature = "backend-candle") {
@@ -393,7 +391,7 @@ fn separation_is_checked_before_and_at_load() {
             "memoryBudgetBytes": null,
         } })
     };
-    // 清单里有、磁盘上没有的文件：校验阶段就是 MODEL_NOT_INSTALLED，与后端无关。
+    // A file that is in the manifest but missing from disk gives MODEL_NOT_INSTALLED during the validation stage, independent of the backend.
     let missing = json!([{ "path": "htdemucs_ft_config.json", "sha256": "0".repeat(64), "byteLength": 2158 }]);
     let (_, response) = worker.call(
         "model.load",
@@ -402,7 +400,7 @@ fn separation_is_checked_before_and_at_load() {
     );
     assert_eq!(error_code(&response), "MODEL_NOT_INSTALLED", "{response}");
 
-    // 带了识别的组件：分离的模型包不收。
+    // Recognition components present: a separation bundle does not accept them.
     let (_, response) = worker.call(
         "model.load",
         bundle(json!({ "separator": component("htdemucs-ft", weights.clone()), "vad": component("silero-vad", weights.clone()) })),
@@ -412,7 +410,7 @@ fn separation_is_checked_before_and_at_load() {
     let expected_reason = if wired { "unexpected-component" } else { "not-wired" };
     assert_eq!(response["error"]["details"]["reason"], expected_reason, "{response}");
 
-    // 文件齐了但配置缺：后端读不到 htdemucs_ft_config.json（清单里没有它），不是 not-wired。
+    // Files are present but the config is missing: the backend cannot read htdemucs_ft_config.json (it is not in the manifest). This is not `not-wired`.
     let (_, response) = worker.call(
         "model.load",
         bundle(json!({ "separator": component("htdemucs-ft", weights) })),
@@ -426,8 +424,7 @@ fn separation_is_checked_before_and_at_load() {
     assert_eq!(result(&response)["state"], "empty");
 }
 
-/// 文生图参数照常先检查；列在 `imageFamilies` 里的 family 加载时照常核对文件（缺文件是 `MODEL_NOT_INSTALLED`），
-/// 没列的是 `not-wired`；模型包不能混带别的组件。失败的加载都不留状态。
+/// Text-to-image parameters are still checked first. A family listed in `imageFamilies` has its files checked on load as usual (a missing file gives `MODEL_NOT_INSTALLED`). An unlisted family gives `not-wired`. A bundle may not mix in other components. Failed loads leave no state behind.
 #[test]
 fn image_is_checked_and_unlisted_families_are_not_wired() {
     let mut worker = WorkerProcess::spawn();
@@ -448,7 +445,7 @@ fn image_is_checked_and_unlisted_families_are_not_wired() {
             "outputContract": "cuccut.image-png/v1",
         })
     };
-    // 空提示词与零宽：参数错，先于状态检查。
+    // Empty prompt and zero-width: a parameter error, checked before the state check.
     let (_, response) = worker.call("job.run", run("", 256), TIMEOUT);
     assert_eq!(error_code(&response), "INVALID_PARAMS");
     let (_, response) = worker.call("job.run", run("a cat", 0), TIMEOUT);
@@ -467,7 +464,7 @@ fn image_is_checked_and_unlisted_families_are_not_wired() {
         json!({ "family": family, "revision": "r1", "dir": models.path().to_string_lossy(),
                 "files": [{ "path": "processor/tokenizer.json", "sha256": "0".repeat(64), "byteLength": 2 }] })
     };
-    // 编进来的后端（MLX 只有 Apple Silicon；candle 任何平台）各自都核对文件；都没有时按 MLX 的模型包报 not-wired。
+    // Each compiled-in backend checks its own files (MLX only on Apple Silicon; candle on any platform). If neither is present, the bundle is reported as `not-wired` against the MLX bundle.
     let mut backends: Vec<(&str, &str)> = Vec::new();
     if cfg!(all(target_os = "macos", target_arch = "aarch64", feature = "backend-mlx")) {
         backends.push(("mlx", "metal"));
@@ -487,11 +484,11 @@ fn image_is_checked_and_unlisted_families_are_not_wired() {
         } })
     };
     let load = |components: Value| load_on(components, backend, device);
-    // 认不出的 family。
+    // Unrecognized family.
     let (_, response) = worker.call("model.load", load(json!({ "image": component("stable-diffusion") })), TIMEOUT);
     assert_eq!(error_code(&response), "MODEL_UNSUPPORTED");
     assert_eq!(response["error"]["details"]["reason"], "unknown-family", "{response}");
-    // 混带识别组件。
+    // Recognition components mixed in.
     if listed {
         let (_, response) = worker.call(
             "model.load",
@@ -501,7 +498,7 @@ fn image_is_checked_and_unlisted_families_are_not_wired() {
         assert_eq!(error_code(&response), "MODEL_UNSUPPORTED");
         assert_eq!(response["error"]["details"]["reason"], "unexpected-component", "{response}");
     }
-    // 只列了分词表：缺调度器配置是 MODEL_NOT_INSTALLED（权重总量不按 memoryBudgetBytes 查，见 §4.2）；没接上是 not-wired。
+    // Only the tokenizer is listed. A missing scheduler config gives MODEL_NOT_INSTALLED (the total weight size is not checked against memoryBudgetBytes, see §4.2). Not wired up gives not-wired.
     assert_eq!(listed, !backends.is_empty(), "{backends:?}");
     for (backend, device) in &backends {
         let (_, response) = worker.call(
@@ -539,7 +536,7 @@ fn stdin_eof_exits_promptly() {
 
 #[test]
 fn a_dead_parent_makes_the_worker_exit() {
-    // 一个已经退出的进程的 PID：它不是 worker 的父进程，看护线程第一次检查就会发现。
+    // The PID of a process that has already exited. It is not the worker's parent process, so the watchdog thread finds this on its first check.
     let mut short_lived = std::process::Command::new(if cfg!(windows) { "cmd" } else { "true" });
     if cfg!(windows) {
         short_lived.args(["/C", "exit"]);
@@ -550,7 +547,7 @@ fn a_dead_parent_makes_the_worker_exit() {
 
     let started = Instant::now();
     let mut worker = WorkerProcess::spawn_with_parent(dead_pid);
-    // stdin 保持打开：退出只能来自看护。
+    // stdin is kept open: the exit can only come from the watchdog.
     let status = worker.wait_exit(Duration::from_secs(6));
     if cfg!(unix) {
         let status = status.expect("exits once the parent is gone");
@@ -566,14 +563,13 @@ fn oversized_lines_are_a_fatal_protocol_error() {
         "{{\"id\":1,\"method\":\"worker.hello\",\"params\":{{\"pad\":\"{}\"}}}}",
         "x".repeat(16 * 1024 * 1024 + 16)
     );
-    // worker 读满上限就退出，剩下的写入可能撞上断开的管道。
+    // The worker exits once it hits the read limit, and the remaining writes may hit a broken pipe.
     let _ = worker.try_send_raw(&huge);
     let status = worker.wait_exit(Duration::from_secs(5)).expect("exits on an oversized line");
     assert!(!status.success());
 }
 
-/// 识别按 `asr` 的 family 选加载器：没列在 `transcribeFamilies` 里、形状合规的模型包加载时是结构化的
-/// `MODEL_UNSUPPORTED`（`not-wired`）；形状不合（MOSS 带了 VAD）照常报组件。失败的加载都不留状态。
+/// Recognition selects its loader by the `asr` family. A bundle whose shape is valid but whose family is not listed in `transcribeFamilies` gives a structured `MODEL_UNSUPPORTED` (`not-wired`) on load. A bundle with a bad shape (MOSS with VAD) reports the component as usual. Failed loads leave no state behind.
 #[test]
 fn unlisted_transcription_families_are_not_wired() {
     let mut worker = WorkerProcess::spawn();
@@ -626,8 +622,7 @@ fn unlisted_transcription_families_are_not_wired() {
     );
 }
 
-/// Whisper（CoreML）的加载器按清单取文件：`.mlmodelc` 是目录，没列出就是 `MODEL_NOT_INSTALLED`，点名缺的目录；
-/// 设备不是 `ane` 先被拒。都在读任何权重之前，失败的加载不留状态。
+/// The Whisper (CoreML) loader fetches files as listed in the manifest. `.mlmodelc` is a directory, and if it is not listed, that is `MODEL_NOT_INSTALLED`, naming the missing directory. A device other than `ane` is rejected first. All of this happens before any weights are read, and failed loads leave no state behind.
 #[cfg(all(target_os = "macos", target_arch = "aarch64", feature = "backend-coreml"))]
 #[test]
 fn whisper_bundles_name_the_missing_model_directory() {
@@ -671,9 +666,7 @@ fn whisper_bundles_name_the_missing_model_directory() {
     );
 }
 
-/// Whisper（MLX）的加载器按清单取文件：`generation_config.json` 在分词器组件里（mlx-community 的仓库没有它），没列出就是
-/// `MODEL_NOT_INSTALLED`，点名组件与文件；`config.json` 的形状不是 Whisper large-v3 的是 `unsupported-config`。都在读任何
-/// 权重之前，失败的加载不留状态。
+/// The Whisper (MLX) loader fetches files as listed in the manifest. `generation_config.json` belongs in the tokenizer component (the mlx-community repo does not have it). If it is not listed, that is `MODEL_NOT_INSTALLED`, naming the component and file. A `config.json` whose shape is not Whisper large-v3 is `unsupported-config`. All of this happens before any weights are read, and failed loads leave no state behind.
 #[cfg(all(target_os = "macos", target_arch = "aarch64", feature = "backend-mlx"))]
 #[test]
 fn whisper_mlx_bundles_name_the_missing_file() {
@@ -729,8 +722,7 @@ fn whisper_mlx_bundles_name_the_missing_file() {
     assert_eq!(response["error"]["details"]["reason"], "unsupported-config");
 }
 
-/// MOSS 的加载器按清单取文件：可选的对齐器与说话人模型缺文件同样是 `MODEL_NOT_INSTALLED`（不悄悄退回估计的词时间或
-/// 不合并的说话人），都在读任何权重之前；失败的加载不留状态。
+/// The MOSS loader fetches files as listed in the manifest. A missing file for the optional aligner or the speaker model is likewise `MODEL_NOT_INSTALLED`. It does not quietly fall back to estimated word timing or to unmerged speakers. All of this happens before any weights are read, and failed loads leave no state behind.
 #[cfg(all(target_os = "macos", target_arch = "aarch64", feature = "backend-mlx"))]
 #[test]
 fn moss_bundles_name_the_missing_file() {
@@ -772,8 +764,7 @@ fn moss_bundles_name_the_missing_file() {
     );
 }
 
-/// Whisper（GGML）的加载器：设备只认 `cpu` 与握手报的那个 GPU（`cuda`、`vulkan` 或 `metal`，至多一个）；GGML 权重自带词表，带分词器是
-/// 模型包写错了；权重是 `asr` 组件里的单个 `.bin`，没列出就是 `MODEL_NOT_INSTALLED`。都在读任何权重之前，失败的加载不留状态。
+/// The Whisper (GGML) loader: the device must be `cpu` or the GPU reported in the handshake (`cuda`, `vulkan` or `metal`, at most one). GGML weights carry their own vocabulary, so a tokenizer means the bundle was written wrongly. The weights are the single `.bin` in the `asr` component. If it is not listed, that is `MODEL_NOT_INSTALLED`. All of this happens before any weights are read, and failed loads leave no state behind.
 #[cfg(feature = "whisper-ggml")]
 #[test]
 fn ggml_bundles_check_device_components_and_weights() {
@@ -801,7 +792,7 @@ fn ggml_bundles_check_device_components_and_weights() {
     let response = load("ane", bundle.clone());
     assert_eq!(error_code(&response), "MODEL_UNSUPPORTED", "{response}");
     assert_eq!(response["error"]["details"]["reason"], "unsupported-device");
-    // 不是握手报的首选 GPU 的设备都不收。
+    // Devices that are not the preferred GPU reported in the handshake are all rejected.
     for gpu in ["cuda", "vulkan", "metal"].into_iter().filter(|gpu| *gpu != preferred) {
         let response = load(gpu, bundle.clone());
         assert_eq!(error_code(&response), "MODEL_UNSUPPORTED", "{response}");
@@ -832,8 +823,7 @@ fn ggml_bundles_check_device_components_and_weights() {
     );
 }
 
-/// 说话人区分（协议规范 §2.5.5）的参数照常先检查（形状 → `INVALID_PARAMS`，没有模型 → `WORKER_BUSY`）；说话人区分的
-/// 模型包只带 `segmentation` 与 `speaker`，缺 `speaker` 或带了别的组件是 `MODEL_UNSUPPORTED`，失败的加载不留状态。
+/// Speaker-diarization parameters (protocol spec §2.5.5) are still checked first (shape → `INVALID_PARAMS`, no model → `WORKER_BUSY`). A speaker-diarization bundle carries only `segmentation` and `speaker`. A missing `speaker`, or other components present, gives `MODEL_UNSUPPORTED`. Failed loads leave no state behind.
 #[test]
 fn diarization_is_checked_before_and_at_load() {
     let mut worker = WorkerProcess::spawn();

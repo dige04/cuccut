@@ -113,8 +113,8 @@ impl CutSet {
         self.cut_index_containing(source_time, 0.0).is_some()
     }
 
-    /// §3.3-4：词的剪切状态是派生量——词中点落入某 cut 区间（半开 `[t0, t1)`）即被剪。
-    /// 全仓唯一判定入口；锚点求值、投影、翻译可见词都必须走这里。
+    /// §3.3-4: a word's cut state is derived. The word is cut when its midpoint falls within a cut interval (half-open `[t0, t1)`).
+    /// This is the single decision entry point across the whole repository; anchor evaluation, projection and translation of visible words must all go through here.
     pub fn word_is_cut(&self, word_start: f64, word_end: f64) -> bool {
         self.contains_cut((word_start + word_end) / 2.0)
     }
@@ -314,15 +314,13 @@ pub fn restore_cut(cuts: &mut Vec<Cut>, id: &str) -> bool {
     cuts.len() != previous_len
 }
 
-/// 改一个剪口的源区间，`id` 与 `ref`（出处）原样保留。
+/// Changes the source interval of one cut; `id` and `ref` (provenance) are preserved as-is.
 ///
-/// - 找不到 `id` → `Ok(None)`（调用方报 `not_found`）；
-/// - 新区间须 `0 ≤ t0 < t1 ≤ duration`，且不与同源其它剪口重叠（与 [`CutSet::new`] 同判据：
-///   贴边 `t0 == 前一个.t1` 允许）；不合法 → `Err(Invalid)`，`cuts` 不动；
-/// - 成功 → `Ok(Some(改之前的那个剪口))`。区间没变也算成功（调用方据旧值判断）。
+/// - If `id` is not found → `Ok(None)` (the caller reports `not_found`);
+/// - The new interval must satisfy `0 ≤ t0 < t1 ≤ duration` and must not overlap other cuts from the same source (same criterion as [`CutSet::new`]: touching at the edge, `t0 == previous.t1`, is allowed); if invalid → `Err(Invalid)`, and `cuts` is left unchanged;
+/// - On success → `Ok(Some(the cut as it was before the change))`. An unchanged interval also counts as success (the caller judges from the old value).
 ///
-/// 不做 [`insert_cut`] 那样的相邻合并：两边的剪口各有各的 id 与出处，拖边贴上邻居
-/// 不该把邻居吞掉。
+/// Unlike [`insert_cut`], this does not do adjacent merging: each cut on either side has its own id and provenance, and dragging an edge up against a neighbour should not swallow the neighbour.
 pub fn retime_cut(
     cuts: &mut [Cut],
     id: &str,
@@ -456,13 +454,13 @@ mod tests {
         assert_eq!(cuts[0].id, "cut-1");
         assert_eq!(cuts[0].r#ref.as_deref(), Some("prov-1"));
         assert_eq!((cuts[0].t0, cuts[0].t1), (0.5, 3.0));
-        // 贴边允许、不合并：两个剪口各自保留。
+        // Touching at the edges is allowed and not merged: the two cuts are each kept.
         retime_cut(&mut cuts, "cut-1", 0.5, 4.0, 10.0)
             .unwrap()
             .unwrap();
         assert_eq!(cuts.len(), 2);
         CutSet::new(10.0, cuts.clone()).unwrap();
-        // 重叠、越界、空区间都拒绝，且不改动。
+        // Overlapping, out-of-range and empty intervals are all rejected, and nothing is changed.
         let before = cuts.clone();
         assert!(retime_cut(&mut cuts, "cut-1", 0.5, 4.1, 10.0).is_err());
         assert!(retime_cut(&mut cuts, "cut-2", 4.0, 10.5, 10.0).is_err());
@@ -470,7 +468,7 @@ mod tests {
         assert!(retime_cut(&mut cuts, "cut-2", 6.0, 6.0, 10.0).is_err());
         assert_eq!(cuts, before);
         assert_eq!(retime_cut(&mut cuts, "nope", 6.0, 7.0, 10.0).unwrap(), None);
-        // 越过邻居挪到另一侧（不重叠）后仍按 t0 排序。
+        // After moving past a neighbour to the other side (no overlap), it is still sorted by t0.
         retime_cut(&mut cuts, "cut-1", 6.0, 7.0, 10.0)
             .unwrap()
             .unwrap();

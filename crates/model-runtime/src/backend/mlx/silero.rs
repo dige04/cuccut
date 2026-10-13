@@ -1,14 +1,14 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream files: `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Silero VAD v6.2.1 的流式网络（MLX）。
+//! Streaming network of Silero VAD v6.2.1 (MLX).
 //!
-//! 转写流水线只用流式接口（[`StreamingVad`]）；整段检测（[`VoiceActivityDetection`]、`with_config`）移植自 v2，
-//! 供配音的声学定时等批次使用，转写路径不经过它。
+//! The transcription pipeline uses only the streaming interface ([`StreamingVad`]). Whole-segment detection ([`VoiceActivityDetection`], `with_config`) was ported from v2
+//! for batches such as acoustic timing in dubbing; the transcription path does not go through it.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -30,35 +30,32 @@ pub const CONTEXT_SIZE: usize = 64;
 const LSTM_HIDDEN: usize = 128;
 const LSTM_GATES: usize = 4 * LSTM_HIDDEN;
 
-/// Silero v6.2.1 的流式网络。
+/// Streaming network of Silero v6.2.1.
 ///
-/// STFT/编码器卷积批量跑在 MLX/GPU 上（整块一次 eval），128 维 LSTMCell 与
-/// 单神经元 decoder 在 CPU 上顺序执行——逐 32ms 块做 GPU 同步的旧实现每次
-/// `try_item` 都要等 Metal 往返,175s 音频要 5000+ 次同步,占了 VAD 阶段的
-/// 绝大部分时间。
+/// The STFT and encoder convolutions run in batch on MLX/GPU (one eval per whole block), while the 128-dim LSTMCell and the single-neuron decoder run sequentially on the CPU. The old implementation synced the GPU every 32 ms block and waited for a Metal round trip on every `try_item`. For 175 s of audio that meant 5000+ syncs, which took most of the VAD stage's time.
 pub struct SileroVad {
     stft: Conv1d,
     encoder: Vec<Conv1d>,
     lstm_wx: Array,
     lstm_bias: Array,
-    /// CPU 侧 LSTM 循环权重,行主序 [4*hidden][hidden]。
+    /// CPU-side LSTM loop weights, row-major [4*hidden][hidden].
     lstm_wh_host: Vec<f32>,
     decoder_weight_host: Vec<f32>,
     decoder_bias_host: f32,
     hidden: Option<[f32; LSTM_HIDDEN]>,
     cell: Option<[f32; LSTM_HIDDEN]>,
     context: [f32; CONTEXT_SIZE],
-    /// 只给整段检测（[`VoiceActivityDetection`]）用；流式接口不看它。
+    /// Used only for whole-segment detection ([`VoiceActivityDetection`]); the streaming interface does not look at it.
     config: VadConfig,
     // Fields drop in declaration order: release weights before flushing their buffers.
     _memory_cache_guard: ModelMemoryCacheGuard,
 }
 
 impl SileroVad {
-    /// 从列出的 safetensors 文件加载。任何一个权重没有用上都是错误：说明文件不是这个网络。
+    /// Loads from the listed safetensors files. If any weight is left unused, that is an error: it means the file is not this network.
     pub fn load(files: &[&Path]) -> Result<Self> {
         ensure_metal_device()?;
-        // 加载中途出错时也要清掉已读入的权重。
+        // If loading fails midway, also clear the weights that were already read in.
         let memory_cache_guard = ModelMemoryCacheGuard;
         let mut weights = load_safetensors(files)?;
         let stft = conv1d(&mut weights, "stft", 128, 0, false)?;
@@ -118,8 +115,8 @@ impl SileroVad {
         self
     }
 
-    /// 把 N 个完整块的 STFT+编码器+输入投影批量跑在 GPU 上,返回
-    /// [N, 4*hidden] 的门输入(已含 Wx 投影与偏置)。
+    /// Runs the STFT + encoder + input projection for N complete blocks in batch on the GPU, returning
+    /// the [N, 4*hidden] gate inputs (already including the Wx projection and bias).
     fn projected_gates(&mut self, chunks: &[f32], count: usize) -> Result<Vec<f32>> {
         let window = CONTEXT_SIZE + CHUNK_SIZE + CONTEXT_SIZE;
         let mut stacked = Vec::with_capacity(count * window);
@@ -130,7 +127,7 @@ impl SileroVad {
             full[CONTEXT_SIZE..].copy_from_slice(chunk);
             self.context.copy_from_slice(&chunk[CHUNK_SIZE - CONTEXT_SIZE..]);
             stacked.extend_from_slice(&full);
-            // 与参考实现一致的“镜像”尾部：full[574]、full[573]、…、full[511]。
+            // The "mirrored" tail, consistent with the reference implementation: full[574], full[573], …, full[511].
             for offset in 0..CONTEXT_SIZE {
                 stacked.push(full[full.len() - 2 - offset]);
             }
@@ -151,7 +148,7 @@ impl SileroVad {
         Ok(projected.as_slice::<f32>().to_vec())
     }
 
-    /// CPU 上执行单步 LSTMCell + decoder,返回语音概率。
+    /// Runs one LSTMCell step and the decoder on the CPU, returning the speech probability.
     fn lstm_step(&mut self, gates_in: &[f32]) -> f32 {
         let mut gates = [0.0_f32; LSTM_GATES];
         gates.copy_from_slice(gates_in);

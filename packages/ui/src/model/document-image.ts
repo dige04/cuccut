@@ -3,13 +3,10 @@ import { markdownAbsolutePath } from './markdown-file-link.ts';
 import { entryPath } from './space.ts';
 
 /**
- * 文件查看器里 Markdown 文章的相对路径图片（架构设计 §12「文件查看器」）：按文章所在的目录解析成同一种媒体定位，
- * 再经 `media.resolve` 取受限句柄，权限由 Runtime 检查。
+ * Relative-path images in Markdown articles in the file viewer (architecture design §12 “文件查看器” (file viewer)). They are resolved to the same kind of media location based on the article's directory, then `media.resolve` gets a restricted handle. The Runtime checks permissions.
  *
- * - 只处理相对路径（`a.png`、`./img/a.png`、`../a.png`）；带协议的（`http:`、`data:`、`file:`）、协议相对的与绝对路径
- *   返回 null，由调用方按原来的方式处理，不因为文章引用而读本机的任意文件。
- * - 文章是会话或项目里的路径：同一个来源下的相邻路径；是 Space 条目：按条目的来源目录拼，来源目录之外的交付物先找同一
- *   目录里登记过的条目，桌面端再退回本机路径（`{ localPath }`）；是本机文件：同一目录的本机路径。素材与附件没有目录。
+ * - Only relative paths are handled (`a.png`, `./img/a.png`, `../a.png`). Paths with a scheme (`http:`, `data:`, `file:`), protocol-relative paths and absolute paths return null, and the caller handles them as before. An article's reference never reads an arbitrary local file.
+ * - If the article is a path in a session or project, it resolves against the same source, next to adjacent paths. If the article is a Space item, it resolves against the item's source directory. Deliverables outside that directory first look for an entry registered in the same directory, and desktop falls back to the local path (`{ localPath }`). If the article is a local file, it resolves to the local path in the same directory. Assets and attachments have no directory.
  */
 export function siblingMediaTarget(
   base: MediaTarget,
@@ -40,11 +37,11 @@ export function siblingMediaTarget(
   return context.desktop ? { localPath: sibling } : null;
 }
 
-/** 相对路径：去掉 `?`、`#` 后按百分号解码；不是相对路径时 null。 */
+/** Relative path: strip `?` and `#`, then percent-decode. null when it is not a relative path. */
 export function relativeImagePath(src: string): string | null {
   const raw = src.trim();
   if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return null;
-  // 带协议的（含 Windows 盘符）、协议相对的、根路径与 UNC 都不是相对路径。
+  // Paths with a scheme (including Windows drive letters), protocol-relative paths, root paths and UNC paths are not relative paths.
   if (/^[a-z][a-z\d+.-]*:/i.test(raw) || /^[\\/]/.test(raw)) return null;
   let path = raw.split(/[?#]/, 1)[0]!;
   try {

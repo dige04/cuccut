@@ -1,16 +1,13 @@
-//! 文字预设包 ↔ `timeline.json` 的**落地闭环**（`docs/design/app-v2/text-pane-and-groups.md` §6.2）。
+//! The **end-to-end landing loop** from text preset packs to `timeline.json` (`docs/design/app-v2/text-pane-and-groups.md` §6.2).
 //!
-//! 预设住在 `ccut-motion`，那边验的是「注册表内部自洽」（分类闭集、形状名与动画
-//! 名都能查到配方）。它验不了的是这一层：`instantiate` 吐出来的载荷**能不能真
-//! 的落进文档**——`Element` 的 `deny_unknown_fields`、`ENTER_PRESETS` / `EXIT_PRESETS` 闭集、
-//! `dur` 的 0.1..=2.0 区间全在 `ccut-timeline` 这边。
+//! Presets live in `ccut-motion`, and that crate checks that the registry is internally consistent (closed category set, and shape and animation names all resolve to recipes). What it cannot check is this layer: whether the payload `instantiate` produces **can actually land in a document**. The `deny_unknown_fields` on `Element`, the closed `ENTER_PRESETS` / `EXIT_PRESETS` sets, and the 0.1..=2.0 range for `dur` all live on the `ccut-timeline` side.
 //!
-//! 少了这一条，「面板点了一下 → 内核报 invalid」只能等用户来发现。
+//! Without this test, “the panel click → kernel reports invalid” could only be discovered by users.
 
 use motion::preset_registry::{TextPresetCategory, text_presets, textpreset};
 use timeline::schema::{Element, ElementKind, TimeValue, Track, TrackKind};
 
-/// 每一条预设落地后都是**合法文档**：字段名认得、动画在闭集里、时长有序。
+/// Every preset, once landed, is a **valid document**: the field names are recognized, the animation is in the closed set, and the durations are ordered.
 #[test]
 fn every_builtin_text_preset_lands_as_a_valid_document() {
     let presets = text_presets();
@@ -25,7 +22,7 @@ fn every_builtin_text_preset_lands_as_a_valid_document() {
             .enumerate()
             .map(|(index, value)| {
                 let mut value = value.clone();
-                // `addElement` 的 id 由内核分配；这里为了能校验先补一个。
+                // The id for `addElement` is assigned by the kernel; fill one in first so validation can run.
                 value["id"] = serde_json::json!(format!("el-{index}"));
                 serde_json::from_value(value).unwrap_or_else(|error| {
                     panic!("{} 的第 {index} 个元素不是合法 Element：{error}", recipe.id)
@@ -48,7 +45,7 @@ fn every_builtin_text_preset_lands_as_a_valid_document() {
             assert!(start >= 3.0 - 1e-9, "{} 的成员早于预设起点", recipe.id);
         }
 
-        // 整份文档过一遍校验：动画闭集、`dur` 区间、`place` 有限性都在这里红。
+        // Run validation over the whole document: the animation closed set, the `dur` range and `place` finiteness all turn red here.
         let document = document_with(parsed);
         document
             .validate()
@@ -56,8 +53,8 @@ fn every_builtin_text_preset_lands_as_a_valid_document() {
     }
 }
 
-/// 分类分布 = 默认目录（simple 13 / title 10 / lowerThird 20 / other 8）。
-/// 改目录会红——这正是需要被钉住的地方。
+/// Category distribution = the default catalog (simple 13 / title 10 / lowerThird 20 / other 8).
+/// Changing the catalog turns this red, which is exactly what needs to be pinned down.
 #[test]
 fn the_catalogue_keeps_the_ported_category_split() {
     let counts = TextPresetCategory::ALL.map(|category| {
@@ -69,8 +66,7 @@ fn the_catalogue_keeps_the_ported_category_split() {
     assert_eq!(counts, [13, 10, 20, 8]);
 }
 
-/// 每条预设至少有一个文字成员：预设库落地后要认领「第一个文字成员」，
-/// 一条纯形状的预设会让那条认领无声地落空。
+/// Every preset has at least one text member: once the preset library lands, it has to claim “the first text member”, and a purely shape preset would make that claim silently fail.
 #[test]
 fn every_preset_carries_at_least_one_text_member() {
     for recipe in text_presets() {

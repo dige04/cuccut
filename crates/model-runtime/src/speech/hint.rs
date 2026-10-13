@@ -1,27 +1,26 @@
-//! 识别提示（ASR initial prompt / context）的**能力表与载体**。
+//! The **capability table and carrier** for recognition hints (ASR initial prompt / context).
 //!
-//! 「吃不吃得下提示」是语音模型自己的属性，不是一个可以到处打开的开关：后端自报的
-//! `hint_kind` 与这张表说的必须是同一件事。
+//! "Whether the model can take a hint" is a property of the speech model itself, not a switch that can be flipped anywhere: the backend's self-reported
+//! `hint_kind` and what this table says must be the same thing.
 //!
-//! 移植自 v2 `ccut-speech-core`。v2 的 `hint_kind` 是识别 trait 的方法；v3 的
-//! [`SpeechRecognizer`](super::SpeechRecognizer) 还没有它，接入 Whisper / MOSS 的批次再加。
-//! v2 在编辑器纯层另有一张同内容的孪生表并由对拍测试守着；v3 目前只有这一张。
+//! Ported from v2 `ccut-speech-core`. In v2, `hint_kind` is a method of the recognition trait; in v3, [`SpeechRecognizer`](super::SpeechRecognizer) does not have it yet, and it will be added with the batch that wires in Whisper / MOSS.
+//! In v2 there is a twin table with the same content in the editor's pure layer, kept in check by a cross-checking test; v3 currently has only this one.
 
-/// **能力门**：吃不吃提示由语音模型说了算。
+/// **Capability gate**: the speech model decides whether it accepts hints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HintKind {
-    /// Whisper 系的 initial prompt，篇幅有限。模型把它当成**前文**来读，不是指令。
+    /// Whisper-family initial prompt, with limited length. The model reads it as **preceding text**, not as an instruction.
     Prompt,
-    /// Qwen3-ASR 的上下文文本，宽得多；可以写这段录音在讲什么。
+    /// Qwen3-ASR's context text, much longer; it can say what the recording is about.
     Context,
-    /// 这只模型没有提示通道，开关对它无效——页面要直说而不是假装生效。
+    /// This model has no hint channel, so the switch has no effect on it; the page must say so plainly rather than pretend it takes effect.
     None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AsrHint {
     pub kind: HintKind,
-    /// 预算（字符数）。`None` 档是 0。
+    /// Budget (in characters). The `None` tier is 0.
     pub budget: usize,
 }
 
@@ -31,15 +30,14 @@ impl AsrHint {
     }
 }
 
-/// 逐只模型判。判据写在这里而不是模型目录里：目录是「装了什么」，这是「吃不吃得下」，
-/// 两件事换代的节奏不同。
+/// Judged per model. The criterion is written here rather than in the model catalog: the catalog says "what is installed", while this says "whether it can take it"; the two change generations at different paces.
 pub fn asr_hint(model_id: &str) -> AsrHint {
     let id = model_id.to_ascii_lowercase();
-    // 云端 STT 的 id 带家族前缀（`cloud:openai/gpt-4o-transcribe`），本地的不带；
-    // 取最后一段再判，免得前缀参与匹配。
+    // Cloud STT ids carry a family prefix (`cloud:openai/gpt-4o-transcribe`), local ones do not;
+    // take the last segment before judging, so the prefix does not take part in matching.
     let leaf = id.rsplit(['/', ':']).next().unwrap_or(id.as_str());
-    // **不能**只看「含 -transcribe」：本地的 `moss-transcribe-diarize` 也含它，
-    // 而 MOSS 根本不收提示。OpenAI 那一族是 `gpt-*-transcribe` 的后缀形。
+    // **Must not** check only for "contains -transcribe": the local `moss-transcribe-diarize` also contains it,
+    // yet MOSS does not accept hints at all. The OpenAI family is the suffix form `gpt-*-transcribe`.
     let openai_transcribe = leaf.starts_with("gpt-") && leaf.ends_with("-transcribe");
     if leaf.starts_with("whisper") || openai_transcribe {
         AsrHint {
@@ -59,17 +57,16 @@ pub fn asr_hint(model_id: &str) -> AsrHint {
     }
 }
 
-/// Whisper 的 initial prompt 在解码器里占 KV 缓存，上限约 224 token；按字符报的
-/// 预算取保守的 180，留出语言/任务那三个 token 与 CJK 的一字多 token。
+/// Whisper's initial prompt takes up KV cache in the decoder, with a limit of about 224 tokens; the budget reported in characters is set conservatively at 180, leaving room for the three language/task tokens and for CJK characters that take several tokens each.
 pub const PROMPT_BUDGET: usize = 180;
-/// Qwen3-ASR 的上下文写进 system 段，篇幅宽得多。
+/// Qwen3-ASR's context is written into the system segment, which is much longer.
 pub const CONTEXT_BUDGET: usize = 1_200;
 
-/// 送进语音后端的那一份提示。
+/// The hint as sent to the speech backend.
 ///
-/// `kind` 记的是**调用方按哪条通道拼的**（预算不同，拼出来的长度不同）；真正吃不吃
-/// 得下以后端的 `hint_kind` 为准——后端是权威，不匹配不是错误，
-/// 而是「这一只忽略它」，由编排层报出来。
+/// `kind` records **which channel the caller assembled it for** (the budgets differ, so the assembled lengths differ); whether it is actually accepted
+/// is decided by the backend's `hint_kind`, which is authoritative. A mismatch is not an error,
+/// but means "this one ignores it", and the orchestration layer reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscribeHint {
     pub kind: HintKind,
@@ -77,8 +74,8 @@ pub struct TranscribeHint {
 }
 
 impl TranscribeHint {
-    /// 按模型 id 的能力拼一份；文本为空或这只模型没有通道时是 `None`——
-    /// 空提示与「没给提示」必须无法区分，否则后端会为一串空白改变解码。
+    /// Assembles one according to the model id's capability; `None` when the text is empty or the model has no channel:
+    /// an empty hint and "no hint given" must be indistinguishable, otherwise the backend would change decoding for a string of whitespace.
     pub fn for_model(model_id: &str, text: &str) -> Option<Self> {
         let text = text.trim();
         if text.is_empty() {
@@ -108,7 +105,7 @@ mod tests {
         assert_eq!(asr_hint("cloud:openai/whisper-1").kind, HintKind::Prompt);
         assert_eq!(asr_hint("qwen3-asr-0.6b").kind, HintKind::Context);
         assert_eq!(asr_hint("cloud:dashscope/qwen3-asr-flash").kind, HintKind::Context);
-        // 名字里有 transcribe 但根本不收提示的那一只。
+        // The one whose name contains "transcribe" but which does not accept hints at all.
         assert_eq!(asr_hint("moss-transcribe-diarize").kind, HintKind::None);
         assert_eq!(asr_hint("moss-transcribe-diarize").budget, 0);
     }

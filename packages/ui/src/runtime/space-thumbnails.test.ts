@@ -24,7 +24,7 @@ const picture = (data: string): SpaceThumbnail => ({
   height: 180,
 });
 
-/** 手动推进的定时器：重试、复查与合并通知都排在这里。 */
+/** Timers advanced by hand: retries, re-checks and coalesced notifications are all scheduled here. */
 function harness(request: (entryId: string) => Promise<SpaceThumbnail>, options: SpaceThumbnailCacheOptions = {}) {
   let now = 0;
   let timers: { at: number; run: () => void }[] = [];
@@ -65,7 +65,7 @@ describe('Space 缩略图缓存', () => {
     });
     expect(cache.peek('a')).toBe(first);
 
-    // 卸下再挂上、版本没变：不再取。
+    // Unmounted and mounted again with the same version: not fetched again.
     cache.retain('a', 'image', 'v1');
     await settle();
     expect(request).toHaveBeenCalledTimes(1);
@@ -83,13 +83,13 @@ describe('Space 缩略图缓存', () => {
     await settle();
     expect(request.mock.calls.map(([id]) => id)).toEqual(['e', 'd']);
 
-    releases[2]!(); // c 滚走了
+    releases[2]!(); // c scrolled away
     pending.get('e')!.resolve(picture('e'));
     pending.get('d')!.resolve(picture('d'));
     await settle();
     expect(request.mock.calls.map(([id]) => id)).toEqual(['e', 'd', 'b', 'a']);
 
-    // 重新挂上 c 才去取。
+    // Fetch only once c is mounted again.
     cache.retain('c', 'image', 'v1');
     pending.get('b')!.resolve(picture('b'));
     await settle();
@@ -179,7 +179,7 @@ describe('Space 缩略图缓存', () => {
     expect(request).toHaveBeenCalledTimes(4);
     expect(cache.peek('a')).toBeNull();
 
-    // 条目变了再试。
+    // Try again once the entry changes.
     cache.retain('a', 'video-file', 'v2');
     await settle();
     expect(request).toHaveBeenCalledTimes(6);
@@ -248,7 +248,7 @@ describe('Space 缩略图缓存', () => {
     const releaseB = cache.retain('b', 'image', 'v1');
     await settle();
     releaseB();
-    cache.retain('a', 'image', 'v1'); // a 又用到了
+    cache.retain('a', 'image', 'v1'); // a is used again
     cache.retain('c', 'image', 'v1');
     await settle();
     expect(cache.peek('a')).not.toBeNull();

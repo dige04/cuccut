@@ -21,23 +21,23 @@ import { transcribeOptions } from './tools-transcribe.ts';
 import { M } from './transcribe-setup-copy.ts';
 
 /**
- * 字幕面板「生成字幕」的转录设置（原型 glossary-tool.jsx `AsrHintBlock`、tool-transcribe.jsx 的语音模型与语言）：
- * 语言（自动 / 指定）、语音模型、识别提示（视频启用的转录术语表 + 自定义提示词，能不能用由这只模型的 `acceptsHint` 说了算）。
+ * Transcription settings for the subtitle panel's 「生成字幕」 (Generate subtitles) (prototype glossary-tool.jsx `AsrHintBlock`, and the speech model and language in tool-transcribe.jsx):
+ * language (automatic or specified), speech model, and recognition hints (the transcription glossaries enabled for the video, plus the custom prompt; whether they can be used is decided by this model's `acceptsHint`).
  *
- * 默认值等于什么都不设：没挑模型时不传 `provider` / `model`（Runtime 按用户默认值、出厂默认挑，都没有时照旧以
- * `CAPABILITY_NOT_CONFIGURED` 拒绝并给去处）；语言自动时不传 `language`；术语表从不显式传，Runtime 读视频启用的那几张
- * （`library.getVideoSelection` 的 `glossaries.transcribe`）。所以不动设置、直接点「生成字幕」和以前一模一样。
+ * The defaults equal setting nothing: when no model is picked, `provider` / `model` are not sent (the Runtime picks by the user's default, then the factory default; if neither exists, it still rejects with
+ * `CAPABILITY_NOT_CONFIGURED` and gives a next step); when the language is automatic, `language` is not sent; the glossary is never sent explicitly, and the Runtime reads the ones enabled for the video
+ * (`glossaries.transcribe` from `library.getVideoSelection`). So leaving the settings alone and pressing 「生成字幕」 directly behaves exactly as before.
  */
 
-/** 提示（提示词 + 术语）的上限，与 `models.transcribe` 的 `hint` 同（Runtime 的 `TRANSCRIBE_HINT_MAX_CHARS`）。 */
+/** The limit on the hint (prompt + terms), the same as `hint` in `models.transcribe` (the Runtime's `TRANSCRIBE_HINT_MAX_CHARS`). */
 export const TRANSCRIBE_HINT_MAX = 1200;
 
 export interface TranscribeSetup {
-  /** 空串为自动检测。 */
+  /** Empty string means automatic detection. */
   language: string;
-  /** 挑的模型（`providerId/modelId`）；null 为跟随默认。 */
+  /** The chosen model (`providerId/modelId`); null means follow the default. */
   model: string | null;
-  /** 自定义提示词。 */
+  /** Custom prompt. */
   prompt: string;
 }
 
@@ -45,7 +45,7 @@ export const DEFAULT_TRANSCRIBE_SETUP: TranscribeSetup = { language: '', model: 
 
 export type TranscribeModelOption = ToolModelOption<TranscribeModelInfo>;
 
-/** 远端节点上的模型包：节点没连上、模型包不可用的也列，写原因。 */
+/** Model packs on remote nodes: nodes that are not connected and model packs that are unavailable are listed too, with the reason. */
 function nodeOptions(view: ModelCapabilitiesView): TranscribeModelOption[] {
   return view.transcribe.providers
     .filter((p) => p.kind === 'node')
@@ -71,19 +71,19 @@ function nodeOptions(view: ModelCapabilitiesView): TranscribeModelOption[] {
     );
 }
 
-/** 能挑的语音模型：本机的模型包、远端节点、云端（已连接的全列，没连上的只列第一只，与工具页同一套规则）。 */
+/** Speech models that can be picked: local model packs, remote nodes, and cloud (all connected ones are listed; for those not connected, only the first is listed, using the same rule as the tool page). */
 export function transcribeModelOptions(view: ModelCapabilitiesView): TranscribeModelOption[] {
   return [...transcribeOptions(view, 'local'), ...nodeOptions(view), ...cloudModelOptions(view, 'transcribe')];
 }
 
 export interface PickedModel {
-  /** 这次会用的模型；没挑、也没有默认值（或默认值不在清单里）时 null。 */
+  /** The model used this time; null when none is picked and there is no default (or the default is not on the list). */
   option: TranscribeModelOption | null;
-  /** 用户挑的（要传 `provider` / `model`）；跟随默认时 false。 */
+  /** Whether the user picked it (so `provider` / `model` must be sent); false when following the default. */
   explicit: boolean;
 }
 
-/** 这次用哪只：挑过且还在清单里的那只；否则默认值（视图的 `effective`）。 */
+/** Which one is used this time: the one picked, if it is still on the list; otherwise the default (the view's `effective`). */
 export function pickModel(options: readonly TranscribeModelOption[], picked: string | null, effective: ModelRef | null): PickedModel {
   const chosen = picked ? options.find((o) => o.key === picked) : undefined;
   if (chosen) return { option: chosen, explicit: true };
@@ -91,17 +91,17 @@ export function pickModel(options: readonly TranscribeModelOption[], picked: str
   return { option: options.find((o) => o.key === key) ?? null, explicit: false };
 }
 
-/** 语言下拉：自动检测 + 这只模型认的语言（不限时列常用的）。 */
+/** Language dropdown: automatic detection plus the languages this model recognizes (when not restricted, the common ones are listed). */
 export function languageChoices(option: TranscribeModelOption | null): LanguageOption[] {
   return languageOptions(option?.info.languages ?? 'any', M.autoDetect);
 }
 
-/** 选的语言这只模型认不认；换了模型、不认了就回到自动（Runtime 会拒绝它不支持的语言）。 */
+/** Whether this model recognizes the selected language; when the model changes and it no longer does, it returns to automatic (the Runtime rejects languages it does not support). */
 export function effectiveLanguage(language: string, option: TranscribeModelOption | null): string {
   return language && languageChoices(option).some((l) => l.key === language) ? language : '';
 }
 
-/** 识别提示这一块为什么用不上；能用时 null。 */
+/** Why the recognition hint section cannot be used; null when it can be used. */
 export function hintBlock(option: TranscribeModelOption | null, options: readonly TranscribeModelOption[] = []): string | null {
   if (!option) return M.hintNoModel;
   if (option.info.acceptsHint) return null;
@@ -109,7 +109,7 @@ export function hintBlock(option: TranscribeModelOption | null, options: readonl
   return M.hintUnsupported(option.label, alt ? alt.label : null);
 }
 
-/** 按 UTF-16 长度截断（`hint` 的上限按字符串长度检查），不切开代理对。 */
+/** Truncates by UTF-16 length (the `hint` limit is checked by string length), without splitting a surrogate pair. */
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
   let out = '';
@@ -123,8 +123,8 @@ function clip(text: string, max: number): string {
 export type TranscribeOptions = Pick<TranscribeParams, 'provider' | 'model' | 'language' | 'hint'>;
 
 /**
- * 交给转录流程（`pipelines.start` 的 `transcribe`）的选项（`videoId` / `assetId` 之外）。只放偏离默认的：挑过的模型、
- * 指定的语言（断言，与命令行 `--language` 同）、这只模型收得下的提示词。术语表不放，Runtime 用视频启用的。
+ * Options passed to the transcription flow (`transcribe` in `pipelines.start`), apart from `videoId` / `assetId`. Only values that differ from the default are included: the model picked,
+ * the specified language (asserted, the same as the command-line `--language`), and the prompt that this model can accept. The glossary is not included; the Runtime uses the one enabled for the video.
  */
 export function transcribeRequestOptions(setup: TranscribeSetup, picked: PickedModel): TranscribeOptions {
   const { option, explicit } = picked;
@@ -138,18 +138,18 @@ export function transcribeRequestOptions(setup: TranscribeSetup, picked: PickedM
 }
 
 export interface HintBudget {
-  /** 提示词的字数。 */
+  /** Character count of the prompt. */
   custom: number;
-  /** 拼进提示的术语（规范写法）个数，与放不下的个数。 */
+  /** Number of terms (in canonical form) composed into the hint, and the number that do not fit. */
   terms: number;
   dropped: number;
-  /** 拼好之后的字数。 */
+  /** Character count after composing. */
   chars: number;
 }
 
 /**
- * 提示词加术语表拼出来有多长（照抄 Runtime 的 `composeTranscribeHint`：规范写法去重、按表的次序，第一条换行接在提示词后，
- * 之后用顿号；超过上限的舍去）。界面用它说「送给模型的是什么」，真正拼的是 Runtime。
+ * How long the prompt plus the glossary is once composed (copied from the Runtime's `composeTranscribeHint`: canonical spellings de-duplicated and kept in glossary order; the first term follows the prompt after a line break,
+ * and later ones are separated by 、; anything over the limit is dropped). The UI uses it to show 「送给模型的是什么」 (what is sent to the model); the Runtime does the actual composing.
  */
 export function hintBudget(prompt: string, glossaries: readonly Pick<TranscriptionGlossary, 'terms'>[], max = TRANSCRIBE_HINT_MAX): HintBudget {
   const seen = new Set<string>();
@@ -165,7 +165,7 @@ export function hintBudget(prompt: string, glossaries: readonly Pick<Transcripti
   let hint = base;
   let terms = 0;
   for (const term of canonical) {
-    // i18n-ignore: 拼给语音模型的提示，格式照 Runtime 的 composeTranscribeHint（顿号分隔），不是界面文字
+    // i18n-ignore: Hint composed for the speech model, formatted per the Runtime's composeTranscribeHint (、-separated), not UI text
     const next = hint ? (terms === 0 ? `${hint}\n${term}` : `${hint}、${term}`) : term;
     if ([...next].length > max) break;
     hint = next;
@@ -174,29 +174,29 @@ export function hintBudget(prompt: string, glossaries: readonly Pick<Transcripti
   return { custom: [...base].length, terms, dropped: canonical.length - terms, chars: [...hint].length };
 }
 
-/** 预算那一行（原型 `AsrHintBlock` 的 gls-asr__sum）。 */
+/** The budget line (`gls-asr__sum` in the prototype's `AsrHintBlock`). */
 export function budgetLine(model: string, budget: HintBudget): string {
   return M.budget(model, budget, TRANSCRIBE_HINT_MAX);
 }
 
-/** 库里一张术语表的内容：还在读时 `undefined`，读不出来时 null。 */
+/** The contents of one glossary in the library: `undefined` while still loading, null when it cannot be read. */
 export type GlossaryContentState = TranscriptionGlossary | null | undefined;
 
 export interface TranscribeGlossaryRow {
   id: Id;
   name: string;
-  /** 这个视频启用了（`glossaries.transcribe`）。 */
+  /** Enabled for this video (`glossaries.transcribe`). */
   enabled: boolean;
-  /** 转录时用得上：启用了、还在库里、是转录术语表。 */
+  /** Usable for transcription: enabled, still in the library, and a transcription glossary. */
   used: boolean;
-  /** 勾选框下面那行：适用语言与条数，或用不上的原因。 */
+  /** The line below the checkbox: applicable languages and entry count, or the reason it cannot be used. */
   meta: string;
 }
 
 /**
- * 「术语表」一节的行：库里的转录术语表都列（勾选 = 在这个视频启用）；启用了、但这次用不上的（已经不在库里、是翻译术语表）
- * 也列、勾着、写原因——Runtime 合并视频启用的术语表时同样跳过它们。启用的排前面、按启用的次序（靠前的优先进提示），
- * 没启用的照库里的次序。Runtime 不按语言挑表，这里只把适用语言写出来。
+ * Rows of the 「术语表」 (Glossary) section: all transcription glossaries in the library are listed (checked = enabled for this video). Glossaries that are enabled but cannot be used this time (no longer in the library, or translation glossaries)
+ * are also listed, checked, with the reason written; the Runtime skips them in the same way when it merges the glossaries enabled for the video. Enabled ones come first, in the order they were enabled (earlier ones get priority in the hint),
+ * and non-enabled ones keep their order in the library. The Runtime does not pick glossaries by language; here only the applicable languages are written out.
  */
 export function transcribeGlossaryRows(
   library: readonly Pick<LibraryEntrySummary, 'id' | 'name' | 'kind' | 'termCount'>[],
@@ -218,7 +218,7 @@ export function transcribeGlossaryRows(
   return [...enabled.map((id) => row(id, true)), ...rest];
 }
 
-/** 折起来时那行摘要：语言 · 模型 · 识别提示。 */
+/** Summary line when collapsed: language · model · recognition hint. */
 export function setupSummary(setup: TranscribeSetup, picked: PickedModel, glossaries: number, hintBlocked: boolean): string {
   const language = effectiveLanguage(setup.language, picked.option);
   const model = !picked.option ? M.noDefaultModel : picked.explicit ? picked.option.label : M.defaultModel(picked.option.label);
@@ -230,7 +230,7 @@ export function setupSummary(setup: TranscribeSetup, picked: PickedModel, glossa
   return parts.join(' · ');
 }
 
-/** 模型下面那行：跟随默认与否、认哪些语言、收不收提示；不能用时写原因。 */
+/** The line below the model: whether it follows the default, which languages it recognizes, whether it accepts hints; the reason is written when it cannot be used. */
 export function modelFacts(picked: PickedModel): string {
   const { option, explicit } = picked;
   if (!option) return M.noDefaultFacts;

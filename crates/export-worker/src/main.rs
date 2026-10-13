@@ -1,16 +1,14 @@
-//! Render Worker（架构设计 §9.13）：成片导出的独立进程。Runtime 写好冻结的导出输入（JSON 文件），按两步调用：
+//! Render Worker (architecture design §9.13): the standalone process for final export. The Runtime writes the frozen export input (a JSON file) and calls it in two steps:
 //!
-//! - `export-worker preflight <input.json>`：预检，结果是 stdout 上的一个 JSON 对象（帧数、画不出来的项、警告、缺的编码器，
-//!   以及要用到的本机字体 face，Runtime 按它冻结字体）；
-//! - `export-worker render <input.json>`：逐帧求计划（`render-graph`）、画成一帧（`frame-render`）、写进编码器（`media-core`）。
-//!   stdout 是 JSON 行：`progress`（已画完、交给编码队列的帧数与总帧数）、最后一行 `done`、`error` 或 `cancelled`；
-//! - `export-worker census <input.json>`：只排一遍字，清点视频用到的字体（`fonts.usage`）：stdout 上一个 JSON 对象，
-//!   点了名的全部 face（`bundled` 标出随内核发布的）与内核的回退族（`fallback`）；
-//! - `export-worker master <input.json>`：开了响度标准化时，把混好的声音做成目标响度（[`master`]），stdout 同样是 JSON 行，
-//!   最后一行是 `mastered`。
+//! - `export-worker preflight <input.json>`: preflight; the result is one JSON object on stdout (frame count, items that cannot be drawn, warnings, missing encoders,
+//!   and the local font faces to be used, which the Runtime uses to freeze fonts);
+//! - `export-worker render <input.json>`: computes the plan frame by frame (`render-graph`), draws each frame (`frame-render`), and writes it into the encoder (`media-core`).
+//!   stdout is JSON lines: `progress` (frames drawn and handed to the encode queue, and the total frame count), then a final line `done`, `error`, or `cancelled`;
+//! - `export-worker census <input.json>`: lays out text once only, to tally the fonts the video uses (`fonts.usage`). stdout is one JSON object listing all named faces (`bundled` marks those shipped with the kernel) and the kernel's fallback families (`fallback`);
+//! - `export-worker master <input.json>`: when loudness normalization is on, makes the mixed audio reach the target loudness ([`master`]). stdout is likewise JSON lines, with `mastered` as the final line.
 //!
-//! 标准输入收到 `cancel` 一行或被关闭（Runtime 退出）时取消：停下合成，杀掉解码与编码的子进程，删掉没写完的输出。
-//! 独立进程让合成的崩溃与内存不影响 Runtime 与引擎；引擎宿主照常处理编辑请求，导出读的是启动时冻结的输入。
+//! When stdin receives a `cancel` line or is closed (Runtime exits), it cancels: it stops the synthesis, kills the decode and encode child processes, and deletes the unfinished output.
+//! Being a separate process keeps synthesis crashes and memory use from affecting the Runtime and the engine host. The engine host keeps handling edit requests as usual, and the export reads input frozen at startup.
 
 mod delivery;
 mod input;
@@ -26,7 +24,7 @@ use std::process::ExitCode;
 
 use serde_json::{Value, json};
 
-/// 失败：协议的错误码与说明。
+/// Failure: the protocol's error code and description.
 #[derive(Debug)]
 pub struct Failure {
     pub code: String,
@@ -44,7 +42,7 @@ impl Failure {
     }
 }
 
-/// stdout 的一行 JSON。
+/// One line of JSON on stdout.
 pub fn emit(value: &Value) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{value}");

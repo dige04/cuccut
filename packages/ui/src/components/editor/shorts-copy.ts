@@ -15,11 +15,11 @@ import { tr } from './shorts-copy.tr.ts';
 import { vi } from './shorts-copy.vi.ts';
 
 /**
- * 剪成短视频切出来之后的文案（产品设计 §5.10；原型 panel-aitools-shorts-result.jsx、shorts-source.jsx、panel-transcript-cut.jsx）：
- * 结果页、子视频顶上的横幅、文稿里片段外的剪缝。译文在 `shorts-copy.<语言>.ts`。
+ * Copy for the shorts cut from a video after “剪成短视频”(cut into shorts) (product design §5.10; prototypes panel-aitools-shorts-result.jsx, shorts-source.jsx, panel-transcript-cut.jsx):
+ * the result page, the banner at the top of child videos, and the cut seams outside clips in the script. Translations are in `shorts-copy.<语言>.ts`.
  */
 const en = {
-  // 结果页
+  // Result page
   created: (n: number) => `${n} created`,
   pager: (k: number, n: number) => `${k} of ${n}`,
   prev: 'Previous short',
@@ -36,7 +36,7 @@ const en = {
   span: (from: string, to: string, length: string) => `${from} – ${to} · ${length}`,
   hookLabel: 'Opens with',
   reasonLabel: 'Why this one',
-  /** 卡上「取景」那一行（原型 `frameText`）：按镜头分段取景时写几个镜头、去画布上拖哪一段改。 */
+  /** The “取景”(framing) line on the card (prototype `frameText`): when framing is split by shot, it says how many shots there are and which segment to drag on the canvas to adjust. */
   framingLabel: 'Framing',
   framingShots: (n: number) => `Framed per shot (${n} shots) · Open it and drag a part on the canvas to change`,
   rename: 'Click to rename',
@@ -58,12 +58,12 @@ const en = {
   hint: 'Each short is a separate video that uses the same original footage and transcript. Move the ones you don’t want to Trash; you can restore them.',
   backTo: (name: string) => `Back to “${name}”`,
 
-  // 子视频顶上的横幅
+  // Banner at the top of child videos
   bannerFrom: (name: string) => `Short cut from “${name}”`,
   bannerMissing: 'Short · the source video is no longer in the library',
   bannerBack: 'Back to original',
 
-  // 进文稿调起止：横幅那一格、结果页「正在看」那张卡、文稿的提示
+  // Adjusting the cut's start and end from the script: the banner cell, the “正在看”(currently viewing) card on the result page, and the script's hint
   cutAdjust: 'Adjust in transcript',
   cutAdjustTip: 'Bring back text outside the clip in the transcript, or cut a few more sentences',
   cutTrim: 'Trim',
@@ -75,7 +75,7 @@ const en = {
   cutResultTip: 'Open the results of this Cut into shorts session',
   cutHint: 'Text outside the clip is struck out; click it to bring it back',
 
-  // 文稿里片段外的剪缝
+  // Cut seams outside clips in the script
   foldBefore: (length: string) => `${length} earlier is cut`,
   foldAfter: (length: string) => `${length} later is cut`,
   foldBeforeOpen: (n: number) => (n === 1 ? 'The 1 struck sentence before is shown' : `All ${n} struck sentences before are shown`),
@@ -85,7 +85,7 @@ const en = {
   collapse: 'Collapse',
   outsideWord: 'Outside the clip · click to bring it back into this short',
 
-  // 父视频视频面板里「切出的短视频」一组
+  // The “切出的短视频”(shorts cut from this video) group in the parent video's panel
   madeTitle: 'Shorts cut from this video',
   madeCount: (n: number) => (n === 1 ? '1 short' : `${n} shorts`),
   madeFoot: 'Each short is a separate video that uses the same original footage. Click one to open it and keep editing there.',

@@ -136,30 +136,25 @@ const detailLink = style({ color: 'gray-800', overflowWrap: 'anywhere', userSele
 const fold = style({ marginTop: 24 });
 const foldSummary = style({ marginStart: 8, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
 const sideNote = style({ font: 'ui-xs', color: 'gray-600' });
-/** 浏览器里为什么这些按钮是灰的：与通用页、下载来源一行的原因同一档。 */
+/** Why these buttons are greyed out in the browser: same level as the reason given on the general page and the download source row. */
 const webNote = style({ marginTop: 0, marginBottom: 16, font: 'ui-sm', color: 'gray-800', overflowWrap: 'anywhere' });
 const okIcon = iconStyle({ size: 'S', color: 'positive' });
 const missIcon = iconStyle({ size: 'S', color: 'notice' });
 
 type Confirm = { kind: 'remove' | 'discard'; bundle: ModelBundleStatus };
-/** 打开着的下载 / 补齐 / 修复对话框；`note` 是从公共组件那一行借模型补齐时换上的那一句。 */
+/** The open download / complete / repair dialog; `note` is the sentence swapped in when a model is completed by borrowing from the shared components row. */
 type Install = { bundle: ModelBundleStatus; mode: InstallMode; note?: string };
-/** 浏览器里：检查状态与试用的提示里不给「修复」「重新检查」。 */
+/** In the browser: the check status and trial hints do not offer “修复”(Repair) or “重新检查”(Re-check). */
 const NO_CHECK: CheckAbilities = { repair: false, recheck: false };
 
 /**
- * 模型 › 本地模型（设计稿 settings-local.jsx:200-308）：`models` 主题里的模型包按「已安装 / 可下载」分组（权重在、缺公共组件的
- * 也在「已安装」，行上「补齐」），顶上是默认模型，下面是折叠的「公共组件」（这一类两只及以上模型共用的组件；缺的借一只用到它的
- * 模型补齐）。
- * 下载与修复先看计划再确认（install-dialog.tsx）；进度、检查结论与模型包状态都从 `models` / `jobs` 主题读，
- * 这里不轮询、不在本地改状态。现在语音识别、语音合成、图像生成与音源分离有本机模型包，其余类给空态。
- * 音源分离的默认模型与语音识别一样有「自动选择」（配音的分离一步用它）；行与语音识别一样在行上露「检查」。
- * 语音合成（设计稿 settings-tts.jsx）与图像生成的默认模型没有「自动选择」；合成的每一行装好后有「试听」（tts-quick-test.tsx）。
- * 图像生成的「试画」还没做（设计稿 model-local-check.js 的 `TRY.image`），所以它的行像语音识别一样在行上露「检查」。
- * 「检查」与「试听」是两件事（设计稿 model-local-check.js）：试听是行上的主操作，检查在 ⋯ 里紧挨「修复…」；
- * 没有试用的语音识别在行上另有一个安静的「检查」。模型能不能用只写在行上那一条状态里（model-check-line.tsx）。
- * 浏览器里只看与试用（产品设计 §7.6）：Web 白名单不含安装管理（`models.install`、`repair`、`cancelInstall`、`remove`、`test`、
- * `enable`）与 `models.setDefault`，这些按钮与默认模型选择器置灰，页面顶上写一句原因；试听、试画照常。
+ * Models › Local models (design mock settings-local.jsx:200-308): the model packages in the `models` topic are grouped as “installed / downloadable” (models whose weights are present but which lack shared components also appear under “installed”, with “补齐”(Complete) on the row). The default model is at the top, and below it is the collapsed “shared components” section (components used by two or more models; a missing one is completed by borrowing from a model that uses it).
+ * Downloads and repairs show the plan and ask for confirmation first (install-dialog.tsx); progress, check conclusions and model package state are all read from the `models` / `jobs` topics. This code does not poll and does not change state locally. Speech recognition, speech synthesis, image generation and source separation currently have local model packages; the other classes show an empty state.
+ * The default model for source separation has an “自动选择”(Auto select) option, the same as speech recognition (the separation step of dubbing uses it); rows show “检查”(Check) on the row, as with speech recognition.
+ * The default models for speech synthesis (design mock settings-tts.jsx) and image generation do not have “自动选择”(Auto select); after each synthesis row is installed, it has “试听”(Trial listen) (tts-quick-test.tsx).
+ * The image generation “试画”(trial draw) is not done yet (design mock model-local-check.js `TRY.image`), so its row shows “检查”(Check) on the row, as speech recognition does.
+ * “检查”(Check) and “试听”(Trial listen) are two different things (design mock model-local-check.js): trial listen is the main action on the row, and check is in ⋯ next to “修复…”(Repair…); speech recognition, which has no trial, has a separate quiet “检查”(Check) on the row. Whether a model is usable is only stated in the one status line on the row (model-check-line.tsx).
+ * In the browser, only viewing and trial are available (product design §7.6): the Web allowlist does not include install management (`models.install`, `repair`, `cancelInstall`, `remove`, `test`, `enable`) or `models.setDefault`, so these buttons and the default model selector are greyed out and one sentence giving the reason is shown at the top of the page; listen and trial draw still work.
  */
 export function LocalModels({ category }: { category: ModelCategory }) {
   if (category === 'asr') return <LocalPage key="asr" category="asr" kind="transcribe" />;
@@ -182,9 +177,9 @@ function LocalPage({ category, kind }: { category: ModelCategory; kind: LocalDef
   const [busy, setBusy] = useState<string | null>(null);
   const [install, setInstall] = useState<Install | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  // 公共组件区：没动过时有待补全的就展开（设计稿 settings-local.jsx `sharedExpanded`）。
+  // Shared components section: if untouched, expand when there are pending completions (design mock settings-local.jsx `sharedExpanded`).
   const [sharedOpen, setSharedOpen] = useState<boolean | null>(null);
-  // 下载中的行不换组（`localGroups` 的 `placed`）：每次画完记下它们这一次在哪一组。
+  // Rows being downloaded are not moved between groups (`placed` in `localGroups`): each render records which group they are in this time.
   const placed = useRef<ReadonlyMap<string, boolean>>(new Map());
   const groups = localGroups(bundles, category, placed.current);
   useEffect(() => {
@@ -197,7 +192,7 @@ function LocalPage({ category, kind }: { category: ModelCategory; kind: LocalDef
   const setTtsOpen = useTtsQuick((s) => s.setOpen);
   const musicOpen = useMusicQuick((s) => s.open);
   const setMusicOpen = useMusicQuick((s) => s.setOpen);
-  // 试听展开着的行：语音合成与音乐生成各记各的。
+  // Rows with the trial listen panel expanded: speech synthesis and music generation each keep their own.
   const quickOpen = kind === 'music' ? musicOpen : ttsOpen;
   const setQuickOpen = kind === 'music' ? setMusicOpen : setTtsOpen;
   useClaimAudition(kind === 'synthesize' && ready, speech);
@@ -406,15 +401,14 @@ function canCloneModel(model: SpeechModelInfo | undefined): boolean {
   return !!model && canClone(model);
 }
 
-/** 组成明细里的大小：装好的写占了多少，缺的写要下多少（设计稿「缺 · 大小」）；不知道时不写。 */
+/** Size in the component breakdown: when installed, shows how much it takes; when missing, shows how much must be downloaded (design mock “缺 · 大小”(Missing · Size)); not shown if unknown. */
 function componentSize(c: ModelComponentStatus): string | null {
   const bytes = c.state === 'installed' ? c.bytes : (c.estimatedBytes ?? null);
   return bytes !== null ? fmtSize(bytes) : null;
 }
 
 /**
- * 公共组件区的一行（设计稿 settings-local.jsx `SharedCard`）：装没装、名字、做什么与谁在用，右边是已装的大小、借来补齐的那只模型的进度、
- * 「下载 {大小}」（= 补齐 `sharedAction` 挑的那只模型，走同一个确认对话框）或「装模型时一起下载」。组件不单独装。
+ * One row of the shared components section (design mock settings-local.jsx `SharedCard`): whether it is installed, its name, what it does and who uses it. On the right: the installed size, the progress of the borrowed model used to complete it, and either “下载 {大小}”(Download {size}) (= complete using the model chosen by `sharedAction`, through the same confirmation dialog) or “装模型时一起下载”(Downloaded together with the model install). A component is not installed on its own.
  */
 function SharedRow({
   component: c,
@@ -472,14 +466,13 @@ function SharedRow({
   );
 }
 
-/** 试听面板的锚点：「我的声音」的试听克隆与「克隆新音色…」回来时滚到这一行。 */
+/** Anchor for the trial panel: when a trial clone from “我的声音”(My Voices) or a “克隆新音色…”(Clone new voice…) returns, scroll to this row. */
 function quickAnchor(bundleId: string): string {
   return `tts-quick-${bundleId}`;
 }
 
 /**
- * 认领从「我的声音」带过来的音色：「试听克隆」（`focus`）与「克隆新音色…」存好回来（`handoff.voiceId`）都是展开那一行的试听、
- * 选上这只音色、滚过去，然后清掉。模型还没列出来时先不动，等 `models` 主题送到。
+ * Claims a voice brought over from “我的声音”(My Voices): “试听克隆”(Trial clone) (`focus`) and “克隆新音色…”(Clone new voice…) returning after saving (`handoff.voiceId`) both expand the trial of that row, select this voice, scroll to it, and then clear it. If the models are not listed yet, nothing happens until the `models` topic delivers them.
  */
 function useClaimAudition(enabled: boolean, speech: ReadonlyMap<string, SpeechModelInfo>) {
   const focus = useVoiceHandoff((s) => s.focus);
@@ -510,8 +503,7 @@ function useClaimAudition(enabled: boolean, speech: ReadonlyMap<string, SpeechMo
 }
 
 /**
- * 一行模型包：名字与标签、事实、右边的操作；下面是进度、检查状态、上次下载失败的原因与组成明细。语音合成的行多写一句说明、
- * 能做什么、体积与许可，装好后有「试听」。
+ * One model package row: name and tags, facts, and the actions on the right. Below it: progress, check status, the reason the last download failed, and the component breakdown. The speech synthesis row has an extra sentence of description, what it can do, size and license; once installed it has “试听”(Trial listen).
  */
 function BundleRow({
   bundle,
@@ -536,14 +528,14 @@ function BundleRow({
   bundles: readonly ModelBundleStatus[];
   jobs: readonly JobRecord[];
   isDefault: boolean;
-  /** 模型包自己的文件在盘上（`hasOwnFiles`）：权重在、缺组件的给「补齐」不给「下载」。 */
+  /** The model package's own files are on disk (`hasOwnFiles`): weights are present, so a row missing components gets “补齐”(Complete), not “下载”(Download). */
   ownFiles: boolean;
   kind: LocalDefaultCapability;
-  /** 语音合成的行：本机列出的模型（没装好时可能没有）与装好了的克隆模型名；语音识别的行为 null。 */
+  /** Speech synthesis row: the models listed locally (may be none when not installed properly) and the names of installed cloned models; null for speech recognition rows. */
   speech: { model: SpeechModelInfo | null; cloneNames: readonly string[] } | null;
-  /** 图像生成的行：本机列出的模型（没装好时可能没有）；别的行为 null。 */
+  /** Image generation row: the models listed locally (may be none when not installed properly); null for other rows. */
   image: ImageModelInfo | null;
-  /** 音乐生成的行：本机列出的模型（没装好时可能没有）；别的行为 null。 */
+  /** Music generation row: the models listed locally (may be none when not installed properly); null for other rows. */
   music: MusicModelInfo | null;
   quickOpen: boolean;
   onQuick: (open: boolean) => void;
@@ -558,15 +550,15 @@ function BundleRow({
   const [trying, setTrying] = useState(false);
   const actions = bundleActions(bundle, ownFiles);
   const check = useBundleCheck(bundle, kind, jobs, ownFiles);
-  // 浏览器里管不了安装（见 LocalModels）：下面的按钮置灰，检查状态与试用的提示里不给修复与重新检查；取消检查（`jobs.cancel`）照常。
+  // Installation cannot be managed in the browser (see LocalModels): the buttons below are greyed out, and the check status and trial hints do not offer repair or re-check; cancelling a check (`jobs.cancel`) still works.
   const web = runtime.host.platform === 'web';
   const can = web ? NO_CHECK : check.can;
-  // 缺组件的（设计稿 settings-local.jsx 的 `half`）自动展开详情，看得到缺的是哪几件、各多大。
+  // Rows missing components (design mock settings-local.jsx `half`) auto-expand the detail, so you can see which pieces are missing and how big each is.
   const half = missingParts(bundle, ownFiles).length > 0;
   useEffect(() => {
     if (half) setOpen(true);
   }, [half]);
-  // 这一行发起的修复在跑：进度与取消写在检查那一条状态里，不再另起一条下载进度。
+  // A repair started from this row is running: progress and cancel are written on the check status line, not as a separate download progress.
   const repairing = check.state.phase === 'repairing';
   const checkBusy = repairing || check.state.phase === 'checking' || check.starting;
   const progress = bundle.install && !repairing ? installProgressView(bundle.install) : null;
@@ -588,7 +580,7 @@ function BundleRow({
   const model = speech?.model ?? null;
   const canAudition = !!model && model.available && isBundleInstalled(bundle) && bundle.state !== 'error';
   const canTryImage = !!image && image.available !== false && isBundleInstalled(bundle) && bundle.state !== 'error';
-  // 引擎没找到时模型不可用（`available: false`，原因写在模型的 detail 里）：不给试听，原因照实写在行上。
+  // When the engine is not found, the model is unavailable (`available: false`, reason written in the model's detail): no trial listen, and the reason is shown on the row.
   const canTryMusic = !!music && music.available !== false && isBundleInstalled(bundle) && bundle.state !== 'error';
   const musicWhy = music && music.available === false && isBundleInstalled(bundle) ? (localizeText(music.detail, music.detailRef) ?? null) : null;
   // One row of many: every button here stays neutral (one yellow per view).
@@ -619,7 +611,7 @@ function BundleRow({
       </Button>,
     );
   }
-  // 没有试用的（语音识别，或这一刻试不了的图像模型）：检查在行上露一个安静的按钮；有试听、试画的，检查只在 ⋯ 里。
+  // Models without a trial (speech recognition, or an image model that cannot be trialed at this moment): check is a quiet button on the row; those with trial listen or trial draw keep check only in ⋯.
   if (!speech && !canTryImage && !canTryMusic && check.can.recheck) {
     buttons.push(
       <TooltipTrigger key="check" placement="top" delay={300}>
@@ -631,11 +623,10 @@ function BundleRow({
       </TooltipTrigger>,
     );
   }
-  // 下载与补齐的按钮写上还要下多少（设计稿 settings-local.jsx「补齐 {大小}」）；有组件不知道大小时只写动作。
+  // Download and complete buttons show how much is still to download (design mock settings-local.jsx “补齐 {大小}”(Complete {size})); when a component's size is unknown, only the action is shown.
   const need = needBytes(bundle);
   const needSize = need !== null && need > 0 ? fmtSize(need) : null;
-  // 自己的文件在盘上、还缺组件（装好了缺可选的对齐器、说话人模型，或权重在、缺公共组件）：「补齐」只下载缺的那几件，不再给「下载」
-  // （设计稿 settings-local.jsx 的 `half`）。
+  // Own files on disk but still missing components (installed without the optional aligner or speaker model, or weights present but shared components missing): “补齐”(Complete) downloads only the missing pieces and “下载”(Download) is not offered (design mock settings-local.jsx `half`).
   if (actions.complete) {
     buttons.push(
       <Button key="complete" variant="secondary" size="S" isDisabled={web} onPress={() => onInstall('complete')}>
@@ -678,7 +669,7 @@ function BundleRow({
       </ActionButton>,
     );
   }
-  // 「说话人区分」没有检查：⋯ 里只有修复（设计稿 settings-local.jsx）。
+  // Speaker diarization has no check: ⋯ only has repair (design mock settings-local.jsx).
   const checkable = hasCheck(bundle);
   if (actions.repair || check.can.recheck) {
     const disabled = [...(checkBusy || !check.can.recheck ? ['check'] : []), ...(checkBusy || !check.can.repair ? ['repair'] : [])];
@@ -719,7 +710,7 @@ function BundleRow({
   const weights = bundle.license ?? model?.local?.license ?? music?.local?.license ?? null;
   const license = kind !== 'transcribe' ? weights : null;
   const restricted = license && !license.commercialUse ? license : null;
-  // 详情的「许可」一行：所有类都列权重的许可，再加上与它不同或要署名的组件（设计稿 settings-local.jsx `lics`）。
+  // The “许可”(License) line in details: every type lists the weights' license, plus any components whose license differs or that require attribution (design mock settings-local.jsx `lics`).
   const licenses = licenseLines(bundle, weights);
   const engine = model ? familyDesc(model) : null;
 

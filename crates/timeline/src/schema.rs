@@ -7,21 +7,17 @@ use serde_json::{Value, json};
 
 use crate::template::TemplateDoc;
 
-/// 写出版本。读取兼容 [`TIMELINE_VERSIONS`] 的每一个值，写出一律升到这里
-/// （设计 `ccut-element-render-foundation-design.md` §5.3）。
+/// Version written on output. Reading is compatible with every value in [`TIMELINE_VERSIONS`]; output is always upgraded to this value (design `ccut-element-render-foundation-design.md` §5.3).
 pub use crate::protocol::versions::TIMELINE_CURRENT as TIMELINE_VERSION;
 
-/// 可读版本（升序）。`0.1` 是 shape / sticker / visualizer / progress 四种
-/// 元素转正之前的文档；它们没有任何新字段，因此升版是纯粹的版本字符串替换，
-/// 不需要迁移脚本（ADR-E02「迁移负担为零」）。
+/// Readable versions (ascending). `0.1` is the document from before the four element kinds shape / sticker / visualizer / progress were made official. They have no new fields, so upgrading is a pure version-string replacement and needs no migration script (ADR-E02 "zero migration burden").
 pub use crate::protocol::versions::TIMELINE_SUPPORTED as TIMELINE_VERSIONS;
 
-/// `element-props-mismatch`：`kind` 与四组元素 props 必须一一对应。
+/// `element-props-mismatch`: `kind` and the four element props groups must correspond one-to-one.
 ///
-/// 这是 **timeline 侧的 schema 校验码**，不属于 `ccut-core` 的 `LINT_RULES`
-/// 体系（那张表只登记 BCF / motion 侧诊断），所以只在本 crate 的测试里钉住。
+/// This is a **timeline-side schema validation code**. It does not belong to the `LINT_RULES` system of `ccut-core` (that table only registers BCF / motion-side diagnostics), so it is pinned only in this crate's tests.
 pub const ELEMENT_PROPS_MISMATCH: &str = "element-props-mismatch";
-/// 白板手绘元素引用了非 `image` 源（或 main 源）的诊断码（0.8）。
+/// Diagnostic code (0.8) for a whiteboard hand-drawn element that references a source that is not `image` (or the main source).
 pub const WHITEBOARD_SOURCE_KIND: &str = "whiteboard-source-kind";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +60,7 @@ pub struct TimelineDocument {
     pub tracks: Vec<Track>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main: Option<Main>,
-    /// 套在画面上的模板实例（0.4 新增）；`None` = 没套模板。
+    /// Template instance applied over the picture (new in 0.4); `None` = no template applied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<TemplateDoc>,
 }
@@ -82,12 +78,9 @@ impl Default for TimelineDocument {
     }
 }
 
-/// 读取期就地升版：`0.1` / `0.2` / `0.3` → [`TIMELINE_VERSION`]。
+/// Upgrades in place at read time: `0.1` / `0.2` / `0.3` → [`TIMELINE_VERSION`].
 ///
-/// 升版发生在**反序列化**而不是写盘那一刻，因为写路径散落在 CLI / serve /
-/// 客户端里，只有反序列化是所有读者的唯一入口。未知版本原样保留，交给
-/// [`TimelineDocument::validate`] 报 [`TimelineError::UnsupportedVersion`]——
-/// 换成 serde 层报错会把版本错误从 `TimelineError` 降格成 serde 文本错误。
+/// The upgrade happens at **deserialization** rather than at the moment of writing to disk, because write paths are scattered across the CLI / serve / client code, and deserialization is the only entry point every reader goes through. Unknown versions are kept as they are and left to [`TimelineDocument::validate`] to report [`TimelineError::UnsupportedVersion`]. Reporting them at the serde layer would demote the version error from a `TimelineError` to a serde text error.
 fn deserialize_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
@@ -101,13 +94,9 @@ where
 }
 
 impl TimelineDocument {
-    /// 把与项目主媒体同一文件（`hash` 相同）的已登记音视频源并回 `main`。
+    /// Merges registered audio/video sources that are the same file as the project's main media (same `hash`) back into `main`.
     ///
-    /// 空白项目先 `clip add narration.wav`（登记成 `src-aN`）、再对同一文件转录
-    /// 设成项目媒体时，主轨 clip 仍指着副本源；而 `transcript.json` 的词只属于
-    /// `main`，投影找不到承载它们的 clip，字幕在舞台与导出里整层消失。副本源与
-    /// `main` 是同一份媒体，改引用不改变画面与声音。两边都有 cuts 时无法无损合并，
-    /// 保持原样。返回被并掉的源 id。
+    /// In a blank project, first `clip add narration.wav` (registered as `src-aN`), and then the same file is transcribed and set as the project media. The main-track clip still points at the duplicate source, while the words in `transcript.json` belong only to `main`. The projection cannot find a clip carrying them, so the subtitles disappear from the whole layer in the stage and the export. The duplicate source and `main` are the same media, so repointing the reference changes neither picture nor sound. When both sides have cuts it cannot be merged losslessly, so it is left as is. Returns the IDs of the sources that were merged away.
     pub fn fold_main_duplicates(&mut self, main_hash: Option<&str>) -> Vec<String> {
         let Some(main_hash) = main_hash.filter(|hash| !hash.is_empty()) else {
             return Vec::new();
@@ -316,17 +305,15 @@ pub struct Source {
     pub poster: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cuts: Vec<Cut>,
-    /// 素材从哪来（0.11 新增）：目前只有 `"ai"`（图像生成的结果，素材卡出 ✦ 徽标，
-    /// 图像生成设计稿 §7.5）。缺省 = 导入的普通素材。
+    /// Where the asset came from (new in 0.11): currently only `"ai"` (image-generation results; the asset card shows a ✦ badge, image-generation design doc §7.5). Default = an ordinary imported asset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
-    /// 出处侧车路径（0.11 新增）：与 `path` 同一套相对 / 绝对规则，指向同名 `.json`
-    /// （`{"kind":"image-gen","v":1,…}`，`ccut_image::ImageProvenance`）。缺省 = 没有侧车。
+    /// Provenance sidecar path (new in 0.11): uses the same relative / absolute rules as `path`, and points to a same-named `.json` (`{"kind":"image-gen","v":1,…}`, `ccut_image::ImageProvenance`). Default = no sidecar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<String>,
 }
 
-/// `Source.origin` 的闭集（0.11）。
+/// The closed set for `Source.origin` (0.11).
 pub const SOURCE_ORIGINS: &[&str] = &["ai"];
 
 impl Source {
@@ -394,10 +381,7 @@ pub enum SourceKind {
     Video,
     Image,
     Audio,
-    /// bodymovin / Lottie JSON 动画（0.7 起）。只能被 `kind:"sticker"` +
-    /// `sticker.source:"asset"` 的元素引用；不能作主轨 clip，也不能挂到
-    /// `image` / `video` / `audio` 元素上。`duration` 取动画帧表末尾，
-    /// `naturalW/H` 取 `w`/`h`，`hasAudio` 恒 false。
+    /// Bodymovin / Lottie JSON animation (since 0.7). It can only be referenced by an element with `kind:"sticker"` + `sticker.source:"asset"`. It cannot be a main-track clip, nor attach to `image` / `video` / `audio` elements. `duration` is taken from the end of the frame table, `naturalW/H` from `w`/`h`, and `hasAudio` is always false.
     Lottie,
 }
 
@@ -486,12 +470,9 @@ pub struct Element {
     pub end: Option<TimeValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<Place>,
-    /// 垂直锚点：`place.y` 钉住文本块的哪条边（`"top" | "center" | "bottom"`）。
+    /// Vertical anchor: which edge of the text block `place.y` pins (`"top" | "center" | "bottom"`).
     ///
-    /// 与 x/y/rot 并排存在元素记录上，**不放进 `style`**——锚点是几何不是外观，
-    /// 样式预设不能因为夹带一个锚点就把元素搬走。缺席 = center = 历史行为，
-    /// 老文档因此零迁移。（`style.verticalAlign` 是从未被任何渲染路径消费过的
-    /// 死字段，不要复活它。）
+    /// It sits on the element record alongside x/y/rot, **not in `style`**. The anchor is geometry, not appearance, and a style preset must not move an element just because it carries an anchor. Absent = center = the historical behaviour, so old documents need zero migration. (`style.verticalAlign` is a dead field that no rendering path has ever consumed; do not revive it.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertical_align: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -504,14 +485,12 @@ pub struct Element {
     pub muted: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub volume: Option<f64>,
-    /// 音频淡入 / 淡出秒数。仅 audio / video 消费；缺省为 0。
+    /// Audio fade-in / fade-out duration in seconds. Consumed only by audio / video; defaults to 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_fade_in: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_fade_out: Option<f64>,
-    /// `kind == "audio"` 且由动画项目旁白导入：认领的 BCF 音频 clip id（0.10 新增，
-    /// 配音版设计稿 §7.2）。合成音频（播放与 studio 导出混音）剔掉被认领的 clip，
-    /// 元素删掉 / 撤销后 clip 自动回到合成音频里。
+    /// For `kind == "audio"` imported from an animation project's narration: the ID of the claimed BCF audio clip (new in 0.10; voiceover design doc §7.2). The composite audio (playback and the studio export mix) excludes the claimed clip. When the element is deleted or undone, the clip automatically returns to the composite audio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bcf_clip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -537,46 +516,45 @@ pub struct Element {
     /// Independent video entry/exit transitions; never replaces `animate`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transitions: Option<crate::video_transitions::VideoTransitions>,
-    /// 关键帧（0.12）：属性 → `{t, v, ease?}` 串，取样值取代该属性的静态值。
+    /// Keyframes (0.12): property → a series of `{t, v, ease?}`. The sampled value replaces the property's static value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyframes: Option<crate::keyframes::Keyframes>,
-    /// 闪避（0.12）：仅 audio / video。
+    /// Ducking (0.12): audio / video only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duck: Option<crate::duck::Duck>,
-    /// 图片水印来源（`file` / `html`）。渲染仍只消费 `srcId`；该字段用于
-    /// 编辑器判断能否重新打开 HTML 片段。
+    /// Source of an image watermark (`file` / `html`). Rendering still consumes only `srcId`; this field is used by the editor to decide whether an HTML fragment can be reopened.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// `source == html` 时保留的原始片段；实际逐帧渲染使用已注册的 PNG 源。
+    /// The original fragment kept when `source == html`; actual frame-by-frame rendering uses the registered PNG source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<Value>,
-    /// `kind == "text"` 的动态计时文本。与 `text` 严格互斥。
+    /// Dynamically timed text for `kind == "text"`. Strictly mutually exclusive with `text`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counter: Option<CounterProps>,
-    /// `kind == "shape"` 的形状参数（0.2 新增）。
+    /// Shape parameters for `kind == "shape"` (new in 0.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<ShapeProps>,
-    /// `kind == "sticker"` 的贴纸来源（0.2 新增）。
+    /// Sticker source for `kind == "sticker"` (new in 0.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sticker: Option<StickerProps>,
-    /// `kind == "visualizer"` 的音频可视化参数（0.2 新增）。
+    /// Audio visualization parameters for `kind == "visualizer"` (new in 0.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visualizer: Option<VisualizerProps>,
-    /// `kind == "progress"` 的进度条参数（0.2 新增）。
+    /// Progress bar parameters for `kind == "progress"` (new in 0.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<ProgressProps>,
-    /// `kind == "draw"` 的自由绘制笔迹（0.3 新增）。
+    /// Freehand drawing strokes for `kind == "draw"` (new in 0.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draw: Option<DrawProps>,
-    /// `kind == "placeholder"` 的媒体占位框（0.3 新增）。
+    /// Media placeholder frame for `kind == "placeholder"` (new in 0.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<PlaceholderProps>,
-    /// `kind == "confetti"` 的算法彩纸参数（0.6 新增，设计稿 §3）。
+    /// Algorithmic confetti parameters for `kind == "confetti"` (new in 0.6; design doc §3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confetti: Option<ConfettiProps>,
-    /// `kind == "whiteboard"` 的白板手绘参数（0.8 新增，设计稿 §3）。
+    /// Whiteboard hand-drawing parameters for `kind == "whiteboard"` (new in 0.8; design doc §3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whiteboard: Option<WhiteboardProps>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -584,8 +562,7 @@ pub struct Element {
 }
 
 impl Element {
-    /// `kind:"sticker"` 且 `sticker.source:"asset"`：素材贴纸，`srcId` 指向
-    /// `sources{}` 里的 image / video / lottie 源（0.7 起 lottie 只能由它引用）。
+    /// `kind:"sticker"` with `sticker.source:"asset"`: an asset sticker, where `srcId` points to an image / video / lottie source in `sources{}`. Since 0.7, lottie can only be referenced through this kind.
     pub fn is_asset_sticker(&self) -> bool {
         self.kind == ElementKind::Sticker
             && self
@@ -594,8 +571,7 @@ impl Element {
                 .is_some_and(|props| props.source == STICKER_SOURCE_ASSET)
     }
 
-    /// 单个元素的字段校验（适用范围、props 一一对应、role 与 kind、动画预设表、取值区间），
-    /// 不看文档里的其他元素。v3 的 VideoEngine 写入实例时调它，不另写一份。
+    /// Field validation for a single element (applicability, one-to-one props correspondence, role and kind, animation preset table, value ranges), without looking at other elements in the document. The v3 VideoEngine calls it when writing an instance rather than keeping its own copy.
     pub fn validate_fields(&self) -> Result<(), TimelineError> {
         self.validate(&mut HashSet::new())
     }
@@ -649,8 +625,8 @@ impl Element {
         }
         let is_text = self.kind == ElementKind::Text;
         let is_asset_sticker = self.is_asset_sticker();
-        // 白板手绘是一张走 `render_media_element` 的图（0.8）：mode / fit / bg /
-        // mask / fx 与 image 同一套消费路径（设计稿 §3：`mode: fullscreen` 铺满画布）。
+        // A whiteboard hand-drawing is an image that goes through `render_media_element` (0.8). mode / fit / bg /
+        // mask / fx use the same consumption path as image (design doc §3: `mode: fullscreen` fills the canvas).
         let is_visual_media = matches!(
             self.kind,
             ElementKind::Image
@@ -883,8 +859,7 @@ impl Element {
         Ok(())
     }
 
-    /// `kind` 与六组 props 一一对应（§5.1 互斥规则）。出现不匹配的 props
-    /// 直接报错、不静默忽略：静默忽略等于让用户的形状定义消失。
+    /// `kind` corresponds one-to-one with the six props groups (§5.1 mutual-exclusion rule). Mismatched props raise an error directly and are not silently ignored: silently ignoring them would make the user's shape definition disappear.
     fn validate_props(&self) -> Result<(), TimelineError> {
         let expected = self.kind.props_field();
         for (field, present) in [
@@ -943,37 +918,32 @@ impl Element {
     }
 }
 
-/// 元素种类。**封闭枚举 + 版本门**：未知 kind 在解析期报错，不做 open enum
-/// （ADR-E02）——静默把未知 kind 渲染成空会让"我加的形状不见了"变成常态。
+/// Element kinds. **Closed enum + version gate**: unknown kinds raise an error at parse time, and no open enum is used (ADR-E02). Silently rendering an unknown kind as empty would make "我加的形状不见了" ("the shape I added is gone") the norm.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ElementKind {
-    // 0.1 既有
+    // Existing in 0.1
     Text,
     Image,
     Video,
     Audio,
-    // 0.2 新增（ADR-E02）
+    // New in 0.2 (ADR-E02)
     Shape,
     Sticker,
-    /// 音频频谱可视化。**顶层 kind，不是 sticker 子类型**——数据源与属性面板
-    /// 都与贴纸无关（ADR-E02）。
+    /// Audio spectrum visualization. **A top-level kind, not a sticker subtype**: its data source and property panel are both unrelated to stickers (ADR-E02).
     Visualizer,
     Progress,
-    // 0.3 新增
+    // New in 0.3
     Draw,
     Placeholder,
-    /// 算法彩纸粒子（0.6 新增）。**顶层 kind，不是 sticker 子类型**：无 `srcId`，
-    /// 整帧由 `confetti-v1` 运动核按 `(props, t)` 闭式算出（设计稿 ADR-CF01）。
+    /// Algorithmic confetti particles (new in 0.6). **A top-level kind, not a sticker subtype**: no `srcId`. The whole frame is computed in closed form from `(props, t)` by the `confetti-v1` motion kernel (design doc ADR-CF01).
     Confetti,
-    /// 白板手绘（0.8 新增）。**顶层 kind**，走 image 同款的宿主光栅路线：必须有
-    /// `srcId` 且源是 `image`，像素由内核在渲染期从源图推导揭示场后逐帧求值
-    /// （`ccut-whiteboard-animation-design.md` ADR-WB01 / WB02）。
+    /// Whiteboard hand-drawing (new in 0.8). **A top-level kind**, using the same host-rasterization route as image: it must have a `srcId` and the source must be an `image`. The kernel derives the pixels at render time from the source image to build the reveal field, then evaluates it frame by frame (`ccut-whiteboard-animation-design.md` ADR-WB01 / WB02).
     Whiteboard,
 }
 
 impl ElementKind {
-    /// serde 名（诊断信息与 JSON Schema 共用同一张表）。
+    /// serde names (the diagnostics and the JSON Schema share the same table).
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Text => "text",
@@ -991,7 +961,7 @@ impl ElementKind {
         }
     }
 
-    /// 带 props 子对象的元素：kind 与同名 props 一一对应。
+    /// Elements with a props sub-object: kind corresponds one-to-one with the props of the same name.
     pub const fn props_field(self) -> Option<&'static str> {
         match self {
             Self::Shape => Some("shape"),
@@ -1018,64 +988,52 @@ pub const ELEMENT_KINDS: &[&str] = &[
     "progress",
     "draw",
     "placeholder",
-    // 0.6 新增
+    // New in 0.6
     "confetti",
-    // 0.8 新增
+    // New in 0.8
     "whiteboard",
 ];
 
-/// `audioFadeIn` / `audioFadeOut` 的区间（秒）。
+/// Range (in seconds) for `audioFadeIn` / `audioFadeOut`.
 pub const AUDIO_FADE_RANGE: (f64, f64) = (0.0, 5.0);
-/// `verticalAlign` 的封闭取值；缺席 = `center`。
+/// Closed set of values for `verticalAlign`; absent = `center`.
 pub const VERTICAL_ALIGNS: &[&str] = &["top", "center", "bottom"];
-/// `ShapeProps.strokeWidth` 缺省（`ElementModels.swift:205-215`）。
+/// Default for `ShapeProps.strokeWidth` (`ElementModels.swift:205-215`).
 pub const SHAPE_STROKE_WIDTH_DEFAULT: f64 = 2.0;
-/// 首批形状名。P7 分批扩到 23 种基础形状；真相是 preset 注册表的
-/// `Domain::TimelineShape` 目录，这里只是给 schema 与诊断用的镜像。
+/// The first batch of shape names. P7 expanded them in stages to 23 basic shapes. The source of truth is the `Domain::TimelineShape` catalog in the preset registry, and this is only a mirror for the schema and diagnostics.
 pub const SHAPE_NAMES: &[&str] = &["rect", "ellipse", "line", "arrow"];
-/// `ShapeProps.head` 的封闭取值。
+/// Closed set of values for `ShapeProps.head`.
 pub const SHAPE_HEADS: &[&str] = &["arrow", "none"];
-/// `StickerProps.source` 的两个面值。**内置模板库**（`core/presets/builtin/
-/// sticker/`，矢量直出）与 **timeline sources 里的资产**（PNG / JPEG / SVG /
-/// 带 alpha 的循环 WebM，host 解码）走两条完全不同的渲染通路，所以判断源类型
-/// 的地方一律引这两个常量而不是写字面量。
+/// The two values of `StickerProps.source`. The **built-in template library** (`core/presets/builtin/
+/// sticker/`, vector output directly) and **assets in timeline sources** (PNG / JPEG / SVG /
+/// looping WebM with alpha, decoded by the host) take two completely different rendering paths. Anywhere that checks the source type must therefore reference these two constants rather than write literals.
 pub const STICKER_SOURCE_TEMPLATE: &str = "template";
 pub const STICKER_SOURCE_ASSET: &str = "asset";
-/// `StickerProps.source` 的封闭取值。
+/// Closed set of values for `StickerProps.source`.
 pub const STICKER_SOURCES: &[&str] = &[STICKER_SOURCE_TEMPLATE, STICKER_SOURCE_ASSET];
-/// `StickerProps.loop` 的三个面值（P7b 起真正被消费：资产是视频时决定
-/// 媒体时刻怎么取——循环 / 播一次停末帧 / 定格首帧）。
+/// The three values of `StickerProps.loop`. Since P7b they are actually consumed: when the asset is a video, they decide how the media time is taken (loop / play once and stop on the last frame / freeze on the first frame).
 pub const STICKER_LOOP_LOOP: &str = "loop";
 pub const STICKER_LOOP_ONCE: &str = "once";
 pub const STICKER_LOOP_HOLD: &str = "hold";
-/// `StickerProps.loop` 的封闭取值与缺省。
+/// Closed set of values and the default for `StickerProps.loop`.
 pub const STICKER_LOOPS: &[&str] = &[STICKER_LOOP_LOOP, STICKER_LOOP_ONCE, STICKER_LOOP_HOLD];
 pub const STICKER_LOOP_DEFAULT: &str = STICKER_LOOP_LOOP;
-/// `VisualizerProps` 的缺省——取**新建默认**这一组（§5.2）。
+/// Defaults for `VisualizerProps`. This takes the **new-element defaults** group (§5.2).
 pub const VISUALIZER_FFT_SIZES: &[u32] = &[256, 512, 1024, 2048];
 pub const VISUALIZER_FFT_SIZE_DEFAULT: u32 = 1024;
-/// dB 窗的**全表兜底**：注册表里查不到这一款样式时才用。真正的缺省按款取，
-/// 见 [`visualizer_db_window`]——10 款里有 2 款（`oscilloscope` / `ring_wave`）
-/// 用的是 −120 / −10 那扇窗。
+/// The **table-wide fallback** for the dB window, used only when this style cannot be found in the registry. The real default is taken per style, see [`visualizer_db_window`]. Of the 10 styles, 2 (`oscilloscope` / `ring_wave`) use the −120 / −10 window.
 pub const VISUALIZER_MIN_DB_DEFAULT: f64 = -80.0;
 pub const VISUALIZER_MAX_DB_DEFAULT: f64 = 40.0;
 pub const VISUALIZER_SMOOTHING_DEFAULT: f64 = 0.8;
-/// CucCut 自有字段，来自 Mac `WaveformConfig`；重映射后、绘制前相乘。
+/// A CucCut-native field, originating from Mac `WaveformConfig`. Multiplied after remapping and before drawing.
 pub const VISUALIZER_GAIN_DEFAULT: f64 = 1.0;
 pub const VISUALIZER_AUDIO_DEFAULT: &str = "project";
 
-/// 一款声波自带的 dB 窗（`core/presets/builtin/visualizer/*.json` 的
-/// `defaultMinDb` / `defaultMaxDb`），也就是元素没写 `minDb` / `maxDb` 时的缺省。
+/// A style's own dB window (`defaultMinDb` / `defaultMaxDb` in `core/presets/builtin/visualizer/*.json`), i.e. the default used when an element does not write `minDb` / `maxDb`.
 ///
-/// **按款取而不是全表一个数**，与 `mainColor` 的兜底（`ccut-editor-core` 的
-/// `visualizer_defaults`）同一条口径：读时域行的 `oscilloscope-v1` 两款
-/// （`oscilloscope` / `ring_wave`）配的是 −120 / −10 这扇窄而热的窗——时域行
-/// 逐字节原样搬运，dB 窗对它只是注册表里的标签，但保留这一对能让属性面板的
-/// Min / Max dB 读数与配方声明一致；其余 8 款读频域行，用 −80 / 40。
-/// 拿错一扇窗去画频谱类样式，同一个 dB 值映射出来的归一化幅度会差一倍上下。
+/// **Taken per style rather than one value for the whole table**, following the same convention as the `mainColor` fallback (`visualizer_defaults` in `ccut-editor-core`). The two `oscilloscope-v1` styles (`oscilloscope` / `ring_wave`), which read the time-domain row, use the narrow, hot −120 / −10 window. The time-domain row is carried over byte for byte, so the dB window is just a label in the registry for it, but keeping this pair lets the property panel's Min / Max dB readouts match the recipe declaration. The other 8 styles read the frequency-domain row and use −80 / 40. Using the wrong window to draw a spectrum-type style would make the same dB value map to a normalized amplitude that is off by roughly a factor of two.
 ///
-/// 注册表里查不到这一款时回落到 [`VISUALIZER_MIN_DB_DEFAULT`] /
-/// [`VISUALIZER_MAX_DB_DEFAULT`]——那种元素本来也过不了 `style` 校验。
+/// If the style is not found in the registry, it falls back to [`VISUALIZER_MIN_DB_DEFAULT`] / [`VISUALIZER_MAX_DB_DEFAULT`]. Such an element would not pass `style` validation anyway.
 pub fn visualizer_db_window(style: &str) -> (f64, f64) {
     ::motion::preset_registry::timeline_visualizer(style)
         .and_then(|recipe| recipe.visualizer())
@@ -1083,31 +1041,27 @@ pub fn visualizer_db_window(style: &str) -> (f64, f64) {
         .unwrap_or((VISUALIZER_MIN_DB_DEFAULT, VISUALIZER_MAX_DB_DEFAULT))
 }
 
-/// `kind == "shape"` 的形状参数（设计 §5.2）。
+/// Shape parameters for `kind == "shape"` (design §5.2).
 ///
-/// `shape` 名的真相是 preset 注册表的目录型配方（ADR-E05）；schema 层只保证
-/// 它是非空字符串，"引用了注册表里没有的形状"是 lint / resolve 期的
-/// `preset-unknown`，不是这里的解析错误（§5.3 的两个时机两个码）。
+/// The source of truth for `shape` names is the catalog-style recipe in the preset registry (ADR-E05). The schema layer only guarantees that it is a non-empty string. "Referencing a shape that is not in the registry" is a `preset-unknown` at lint / resolve time, not a parse error here (§5.3: two moments, two codes).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeProps {
     pub shape: String,
-    /// `"#RRGGBB"` 或 `"#RRGGBBAA"`。
+    /// `"#RRGGBB"` or `"#RRGGBBAA"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stroke: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stroke_width: Option<f64>,
-    /// 四角独立（`[0,0,0,0]` 顺序）。Mac 历史上的单值
-    /// `radius` 在读取期换算成 `[r,r,r,r]`；与 `Place.radius`（元素级圆角裁切）
-    /// 是两件事，不合并。
+    /// Four corners set independently (`[0,0,0,0]` order). The single-value `radius` from Mac's history is converted to `[r,r,r,r]` at read time. It is a separate thing from `Place.radius` (element-level rounded-corner clipping), and the two are not merged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corner_radius: Option<[f64; 4]>,
-    /// 帧高 %；`None` = 正方（见 `geometry::element_height`）。
+    /// Frame height in %; `None` = square (see `geometry::element_height`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub h: Option<f64>,
-    /// `line` / `arrow` 的端点，元素盒内 %。
+    /// Endpoints of `line` / `arrow`, in % of the element box.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x1: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1145,7 +1099,7 @@ impl ShapeProps {
         self.corner_radius.unwrap_or([0.0; 4])
     }
 
-    /// `line` / `arrow` 的端点，元素盒内 0..100 %。缺省是盒子的水平中线。
+    /// Endpoints of `line` / `arrow`, 0..100 % of the element box. The default is the box's horizontal midline.
     pub fn endpoints(&self) -> [f64; 4] {
         [
             self.x1.unwrap_or(0.0),
@@ -1201,8 +1155,7 @@ impl ShapeProps {
     }
 }
 
-/// `kind == "sticker"` 的贴纸来源（设计 §5.2）。**没有 waveform 子类型**——
-/// 波形已经迁出为独立的 [`ElementKind::Visualizer`]（§5.4 废弃清单）。
+/// Sticker source for `kind == "sticker"` (design §5.2). **There is no waveform subtype.** Waveforms have already moved out into the standalone [`ElementKind::Visualizer`] (§5.4 deprecation list).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StickerProps {
@@ -1212,10 +1165,10 @@ pub struct StickerProps {
     pub template_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// `"loop"` | `"once"` | `"hold"`，缺省 `"loop"`。
+    /// `"loop"` | `"once"` | `"hold"`, default `"loop"`.
     #[serde(default, rename = "loop", skip_serializing_if = "Option::is_none")]
     pub r#loop: Option<String>,
-    /// SVG 资产的精确颜色替换表：原始 `#RRGGBB[AA]` → 目标颜色。
+    /// Exact colour-replacement table for SVG assets: original `#RRGGBB[AA]` → target colour.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fill_overrides: BTreeMap<String, String>,
 }
@@ -1257,11 +1210,11 @@ impl StickerProps {
     }
 }
 
-/// `kind == "visualizer"` 的音频频谱参数（设计 §5.2）。
+/// Audio spectrum parameters for `kind == "visualizer"` (design §5.2).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VisualizerProps {
-    /// 样式 id（注册表校验，15 种）。
+    /// Style ID (validated against the registry; 15 styles).
     pub style: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_color: Option<String>,
@@ -1277,13 +1230,13 @@ pub struct VisualizerProps {
     pub smoothing: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gain: Option<f64>,
-    /// 音频来源；缺省 `"project"`（整片输出音轨）。
+    /// Audio source; default `"project"` (the output track of the whole cut).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<String>,
-    /// 可选说话人 id；由 host 注入的说话人时间段判定当前帧是否可见。
+    /// Optional speaker ID. Whether the current frame is visible is decided by the speaker time spans injected by the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
-    /// 说话人未命中时是否仍显示静音形态；缺省 true。
+    /// Whether the silent form is still shown when the speaker is not matched; default true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub always_show: Option<bool>,
 }
@@ -1309,14 +1262,13 @@ impl VisualizerProps {
         self.fft_size.unwrap_or(VISUALIZER_FFT_SIZE_DEFAULT)
     }
 
-    /// 元素**实际生效**的 dB 窗下沿：写过就按写的，没写按这一款样式的缺省
-    /// （[`visualizer_db_window`]）。渲染与属性面板读的都是这一条。
+    /// The lower edge of the dB window that **actually takes effect** for the element. If written, the written value is used; if not, the default for this style is used ([`visualizer_db_window`]). Both rendering and the property panel read this one.
     pub fn min_db(&self) -> f64 {
         self.min_db
             .unwrap_or_else(|| visualizer_db_window(&self.style).0)
     }
 
-    /// 同 [`Self::min_db`] 的上沿。
+    /// Upper edge, same as [`Self::min_db`].
     pub fn max_db(&self) -> f64 {
         self.max_db
             .unwrap_or_else(|| visualizer_db_window(&self.style).1)
@@ -1367,11 +1319,7 @@ impl VisualizerProps {
         ] {
             finite(element_id, &format!("visualizer.{name}"), value)?;
         }
-        // 校验刻意用**全表兜底**而不是 `min_db()` / `max_db()` 的按款缺省：
-        // 判据只针对文档里真的写下来的那一对，换一款样式不能把一份此前合法的
-        // timeline 变成非法（曲线家族的窗上沿是 −10，−10..0 之间的 `minDb`
-        // 在按款缺省下会突然倒置）。真出现倒置窗时 `ccut-waveform` 的
-        // `remap_decibels_value` 有退化分支，不会产生 NaN。
+        // Validation deliberately uses the **table-wide fallback** rather than the per-style defaults of `min_db()` / `max_db()`. The check applies only to the pair actually written in the document, so switching styles must not turn a previously valid timeline into an invalid one (the curve family's window top is −10, and a `minDb` between −10..0 would suddenly invert under per-style defaults). If an inverted window does occur, `remap_decibels_value` in `ccut-waveform` has a degenerate branch and will not produce NaN.
         if self.min_db.unwrap_or(VISUALIZER_MIN_DB_DEFAULT)
             >= self.max_db.unwrap_or(VISUALIZER_MAX_DB_DEFAULT)
         {
@@ -1402,10 +1350,9 @@ impl VisualizerProps {
     }
 }
 
-/// `kind == "progress"` 的进度条参数（设计 §5.2）。
+/// Progress bar parameters for `kind == "progress"` (design §5.2).
 ///
-/// 数据源是播放头而不是音频（`progress = clamp((t-start)/(end-start), 0, 1)`），
-/// 因此参数集只有样式与两个颜色（ADR-E04）。
+/// The data source is the playhead rather than audio (`progress = clamp((t-start)/(end-start), 0, 1)`), so the parameter set is just the style and two colours (ADR-E04).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgressProps {
@@ -1414,7 +1361,7 @@ pub struct ProgressProps {
     pub main_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_color: Option<String>,
-    /// 归一化起止值；允许 `start > end` 表达倒向进度。
+    /// Normalized start and end values. `start > end` is allowed, to express reverse progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_progress: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1470,43 +1417,43 @@ impl ProgressProps {
     }
 }
 
-/// `confetti.shapes` 的封闭取值（设计稿 §3.3，12 种单位形）。
+/// Closed set of values for `confetti.shapes` (design doc §3.3, 12 unit shapes).
 pub const CONFETTI_SHAPES: &[&str] = &[
     "rect", "strip", "circle", "ellipse", "triangle", "diamond", "star", "starlet", "sparkle",
     "heart", "petal", "ribbon",
 ];
-/// `confetti.colors` 上限（ADR-CF04：面板 8 张色卡封顶）。
+/// Upper limit for `confetti.colors` (ADR-CF04: the panel caps it at 8 colour swatches).
 pub const CONFETTI_MAX_COLORS: usize = 8;
-/// `confetti.emit.rate` 上限（粒/秒）。
+/// Upper limit for `confetti.emit.rate` (particles per second).
 pub const CONFETTI_MAX_RATE: f64 = 400.0;
-/// `confetti.emit.count` 上限（每次爆发枚数）。
+/// Upper limit for `confetti.emit.count` (number per burst).
 pub const CONFETTI_MAX_COUNT: f64 = 500.0;
-/// `confetti.emit.interval` 上限（秒）。
+/// Upper limit for `confetti.emit.interval` (seconds).
 pub const CONFETTI_MAX_INTERVAL: f64 = 60.0;
-/// 倍率字段 `size` / `speed` 的区间。
+/// Range for the multiplier fields `size` / `speed`.
 pub const CONFETTI_SCALE_RANGE: (f64, f64) = (0.25, 4.0);
-/// `gravity` 倍率区间（负值上浮）。
+/// Range for the `gravity` multiplier (negative values float upward).
 pub const CONFETTI_GRAVITY_RANGE: (f64, f64) = (-2.0, 4.0);
-/// `drift` / `spin` 倍率区间（0＝不摆 / 不转）。
+/// Range for the `drift` / `spin` multipliers (0 = no sway / no spin).
 pub const CONFETTI_RATE_SCALE_RANGE: (f64, f64) = (0.0, 3.0);
-/// `wind` 区间（参考 540 短边下的 px/s²）。
+/// Range for `wind` (px/s², referenced to a 540 short side).
 pub const CONFETTI_WIND_RANGE: (f64, f64) = (-600.0, 600.0);
-/// `origin.x` / `origin.y` 区间（盒内 %，可落在画面外）。
+/// Range for `origin.x` / `origin.y` (in % of the box; may fall outside the frame).
 pub const CONFETTI_ORIGIN_RANGE: (f64, f64) = (-20.0, 120.0);
-/// `opacity` 区间。
+/// Range for `opacity`.
 pub const CONFETTI_OPACITY_RANGE: (f64, f64) = (0.0, 1.0);
-/// `angle` 区间（度）。
+/// Range for `angle` (degrees).
 pub const CONFETTI_ANGLE_RANGE: (f64, f64) = (-180.0, 180.0);
-/// `spread` 区间（度）。
+/// Range for `spread` (degrees).
 pub const CONFETTI_SPREAD_RANGE: (f64, f64) = (0.0, 360.0);
-/// `emit.rate` 区间（粒/秒）。
+/// Range for `emit.rate` (particles per second).
 pub const CONFETTI_RATE_RANGE: (f64, f64) = (1.0, CONFETTI_MAX_RATE);
-/// `emit.count` 区间（每次爆发枚数）。
+/// Range for `emit.count` (number per burst).
 pub const CONFETTI_COUNT_RANGE: (f64, f64) = (1.0, CONFETTI_MAX_COUNT);
-/// `emit.interval` 区间（秒，0＝只放一次）。
+/// Range for `emit.interval` (seconds; 0 = fire once).
 pub const CONFETTI_INTERVAL_RANGE: (f64, f64) = (0.0, CONFETTI_MAX_INTERVAL);
 
-/// `confetti.emit.mode`：连续发射或成批爆发。
+/// `confetti.emit.mode`: continuous emission or batched bursts.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfettiEmitMode {
@@ -1523,28 +1470,27 @@ impl ConfettiEmitMode {
     }
 }
 
-/// `confetti.emit`：发射方式。写了与 `mode` 不配套的字段允许存在
-/// （切换模式时保留另一边的值），渲染只读当前模式用到的那几个。
+/// `confetti.emit`: the emission method. Fields that do not match `mode` may still be present (so the other side's values are kept when switching modes). Rendering reads only the ones the current mode uses.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfettiEmit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<ConfettiEmitMode>,
-    /// `continuous`：粒/秒，`1..=400`。
+    /// `continuous`: particles per second, `1..=400`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate: Option<f64>,
-    /// `burst`：每次枚数，`1..=500`。
+    /// `burst`: number per burst, `1..=500`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<f64>,
-    /// `burst`：重复间隔秒，`0..=60`，`0`＝只放一次。
+    /// `burst`: repeat interval in seconds, `0..=60`; `0` = fire once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval: Option<f64>,
-    /// 元素结束前 `lifeMax` 秒停止发射，让画面自然清空。
+    /// Emission stops `lifeMax` seconds before the element ends, so the picture clears naturally.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settle: Option<bool>,
 }
 
-/// `confetti.origin`：把配方的发射器组**替换**成这一枚点（盒内 %）。
+/// `confetti.origin`: **replaces** the recipe's emitter group with this single point (in % of the box).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfettiOrigin {
@@ -1552,22 +1498,20 @@ pub struct ConfettiOrigin {
     pub y: f64,
 }
 
-/// `kind == "confetti"` 的算法彩纸参数（设计稿 §3.2）。
+/// Algorithmic confetti parameters for `kind == "confetti"` (design doc §3.2).
 ///
-/// 只有 `style` 必填；其余全是对配方缺省的覆盖，缺席即取配方值。倍率字段
-/// （`size/speed/gravity/drift/spin`）乘在配方的区间基数上；`wind/rate/count/
-/// interval/angle/spread` 有天然绝对单位故用绝对值（ADR-CF03）。
+/// Only `style` is required. Everything else overrides the recipe defaults, and when absent the recipe value is used. The multiplier fields (`size/speed/gravity/drift/spin`) are applied on top of the recipe's range base. `wind/rate/count/interval/angle/spread` have natural absolute units, so they use absolute values (ADR-CF03).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfettiProps {
     pub style: String,
-    /// 随机种子；缺席按 0。新建时写随机值（ADR-CF06）。
+    /// Random seed; defaults to 0 when absent. A random value is written at creation (ADR-CF06).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
-    /// 粒子调色板 `#RRGGBB(AA)` × 1–8。
+    /// Particle palette `#RRGGBB(AA)` × 1–8.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub colors: Option<Vec<String>>,
-    /// 形状混合，[`CONFETTI_SHAPES`] 的子集 × 1–12。
+    /// Shape mix, a subset of [`CONFETTI_SHAPES`] × 1–12.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shapes: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1580,7 +1524,7 @@ pub struct ConfettiProps {
     pub drift: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spin: Option<f64>,
-    /// 水平常加速度，参考 px/s²（按 `pixelScale` 缩放）。
+    /// Constant horizontal acceleration, referenced in px/s² (scaled by `pixelScale`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wind: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1589,10 +1533,10 @@ pub struct ConfettiProps {
     pub emit: Option<ConfettiEmit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<ConfettiOrigin>,
-    /// 发射方向，度：0 向右、−90 向上、90 向下。
+    /// Emission direction in degrees: 0 is right, −90 is up, 90 is down.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<f64>,
-    /// 发射扇面，度 `0..=360`。
+    /// Emission fan angle in degrees, `0..=360`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread: Option<f64>,
 }
@@ -1679,7 +1623,7 @@ impl ConfettiProps {
         Ok(())
     }
 
-    /// 生效的发射模式（缺席交给配方，返回 `None`）。
+    /// The emission mode in effect (when absent, it is left to the recipe and `None` is returned).
     pub fn emit_mode(&self) -> Option<ConfettiEmitMode> {
         self.emit.as_ref().and_then(|emit| emit.mode)
     }
@@ -1739,16 +1683,13 @@ fn is_counter_seconds(value: &CounterFormat) -> bool {
 }
 
 impl CounterProps {
-    /// 读数在**毫秒栅格**上求值（`docs/design/elements/ccut-counter-element-design.md` §4）：
-    /// `end − time` 这类浮点差在换值点上带残差（`8.05 − 1.05 =
-    /// 7.000000000000001`），直接 `ceil` 会多显示一秒，且残差方向取决于两端
-    /// 各自的浮点表示——不量化的话三端可能在同一帧给出不同读数，违反确定性
-    /// 契约（§15）。先折算到毫秒整数（时间码的显示精度），边界归属就是无歧义的。
+    /// The readout is evaluated on a **millisecond grid** (`docs/design/elements/ccut-counter-element-design.md` §4). Floating-point differences such as `end − time` carry residue at the value-change points (`8.05 − 1.05 =
+    /// 7.000000000000001`). Calling `ceil` directly would show one second too many, and the direction of the residue depends on each end's own floating-point representation. Without quantizing, the three surfaces could give different readouts on the same frame, breaking the determinism contract (§15). Convert first to integer milliseconds (the display precision of the timecode), and boundary ownership is then unambiguous.
     pub fn value_at(&self, start: f64, end: f64, time: f64) -> u64 {
         let ms = |value: f64| (value * 1000.0).round() as i64;
         let (t, s0, s1) = (ms(time), ms(start), ms(end));
         let value = match self.mode {
-            // 整数上的 ceil / floor：半开窗口的锚定端见 ADR-CT02。
+            // ceil / floor on integers. For the anchored end of half-open windows, see ADR-CT02.
             CounterMode::Countdown => ((s1 - t).max(0) + 999) / 1000,
             CounterMode::Countup => (t - s0).max(0) / 1000,
         };
@@ -1889,51 +1830,45 @@ fn finite(element_id: &str, field: &str, value: Option<f64>) -> Result<(), Timel
     }
 }
 
-/// `"#RRGGBB"` / `"#RRGGBBAA"`。颜色一路走到光栅器，格式在契约层就收口，
-/// 免得每个渲染表面各写一份宽松解析。
-/// `kind == "whiteboard"` 的白板手绘参数（设计稿 §3；0.9 扩展见旁白同步设计稿 §5）。
+/// `"#RRGGBB"` / `"#RRGGBBAA"`. The colour goes all the way to the rasterizer, and the format is locked down at the contract layer so that every rendering surface does not write its own loose parser.
+/// Whiteboard hand-drawing parameters for `kind == "whiteboard"` (design doc §3; for the 0.9 extension, see the narration-sync design doc §5).
 ///
-/// 全部可选：缺席即缺省（`hand=marker`、纸色透明、`draw` 按元素时长与自然时长推算、
-/// 先墨线后色块、`pace=stretch`、`strict=false`）。揭示场本身是渲染期派生物，
-/// **不在这里持久化**（ADR-WB02）。0.8 文档不含新字段，读入即 0.9 语义。
+/// All optional. When absent, defaults apply (`hand=marker`, transparent paper colour, `draw` derived from the element duration and natural duration, ink lines before colour blocks, `pace=stretch`, `strict=false`). The reveal field itself is a render-time derived product and is **not persisted here** (ADR-WB02). 0.8 documents contain no new fields and are read with 0.9 semantics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WhiteboardProps {
-    /// 手的样式：`marker` / `pen` / `none`。
+    /// Hand style: `marker` / `pen` / `none`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hand: Option<WhiteboardHand>,
-    /// 纸色 `#RRGGBB(AA)`；缺席透明，让项目背景透出来（ADR-WB06）。
+    /// Paper colour `#RRGGBB(AA)`. Transparent when absent, so the project background shows through (ADR-WB06).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paper: Option<String>,
-    /// 画完全图的秒数（`> 0`）；缺席按 `min(0.8 × 时长, 自然时长)`，超过时长按时长截断。
-    /// 不接受词锚点：完成点由 `ccut whiteboard sync` 算成数字写入，一处真相。
+    /// Seconds to finish drawing the full picture (`> 0`). When absent, `min(0.8 × duration, natural duration)` is used, and values exceeding the duration are truncated to the duration.
+    /// Word anchors are not accepted: the completion point is computed into a number by `ccut whiteboard sync` and written, so there is a single source of truth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draw: Option<f64>,
-    /// 先墨线后色块；缺席 true。
+    /// Ink lines before colour blocks; default true when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ink_first: Option<bool>,
-    /// 0.9：每拍的节奏。`stretch`（缺席）= 组窗撑满，与 0.8 逐字节相同；
-    /// `natural` = 按自然速度画完后定格到组窗结束，装不下时压缩并报
-    /// `whiteboard-window-too-short`。
+    /// 0.9: per-beat pacing. `stretch` (default when absent) = the group window is filled, byte-for-byte identical to 0.8. `natural` = draw at natural speed, then freeze until the group window ends. If it does not fit, it is compressed and `whiteboard-window-too-short` is reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pace: Option<WhiteboardPace>,
-    /// 0.9：`true` 时 `box` 是硬遮罩——像素归属按拍顺序、重叠归后拍、跨 box 的连通域
-    /// 按像素切开、未被任何 box 覆盖的前景排到末拍之后；缺席 `false` = 质心分组。
+    /// 0.9: when `true`, `box` is a hard mask. Pixel ownership follows beat order, overlaps go to the later beat, connected regions spanning several boxes are cut apart by pixel, and foreground not covered by any box is placed after the final beat. Absent `false` = centroid grouping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
-    /// 语义顺序提示：落在 `box` 内的连通域归该节拍，从 `at` 画到 `end`（元素本地秒或词锚点）。
+    /// Semantic order hint: connected regions falling inside `box` belong to that beat and are drawn from `at` to `end` (element-local seconds or word anchors).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub beats: Option<Vec<WhiteboardBeat>>,
 }
 
-/// `whiteboard.pace` 的封闭枚举（0.9）。
+/// Closed enum for `whiteboard.pace` (0.9).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum WhiteboardPace {
-    /// 组窗撑满（缺省 = 0.8 的行为）。
+    /// Group window filled (default = the 0.8 behaviour).
     #[default]
     Stretch,
-    /// 按自然速度画完后定格到组窗结束。
+    /// Draw at natural speed, then freeze until the end of the group window.
     Natural,
 }
 
@@ -1948,7 +1883,7 @@ impl WhiteboardPace {
     }
 }
 
-/// `whiteboard.hand` 的封闭枚举。
+/// Closed enum for `whiteboard.hand`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum WhiteboardHand {
@@ -1970,10 +1905,7 @@ impl WhiteboardHand {
     }
 }
 
-/// 一个节拍：`at` / `end` 是 [`TimeValue`]——数字为元素本地秒（相对 `start`），字符串为
-/// 词锚点（与元素 `start` / `end` 同文法，宿主解析后减元素起点）；`box` 为画面百分比
-/// `[x, y, w, h]`。`end` 缺席 = 下一拍的 `at`，末拍缺席 = `draw`。`label` 只做展示与对拍，
-/// 不参与渲染（≤ [`WHITEBOARD_MAX_LABEL_CHARS`] 字符）。
+/// One beat. `at` / `end` are [`TimeValue`]: a number is element-local seconds (relative to `start`), and a string is a word anchor (same grammar as the element's `start` / `end`; the host resolves it and subtracts the element start). `box` is the picture percentage `[x, y, w, h]`. When `end` is absent it equals the next beat's `at`; when the final beat's `end` is absent it equals `draw`. `label` is for display and alignment checking only and does not take part in rendering (≤ [`WHITEBOARD_MAX_LABEL_CHARS`] characters).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WhiteboardBeat {
@@ -1987,7 +1919,7 @@ pub struct WhiteboardBeat {
 }
 
 impl WhiteboardBeat {
-    /// 数字写法的节拍（0.8 的形状）。
+    /// Beat in numeric form (the 0.8 shape).
     pub fn at_seconds(at: f64, rect: [f64; 4]) -> Self {
         Self {
             at: TimeValue::Seconds(at),
@@ -1997,7 +1929,7 @@ impl WhiteboardBeat {
         }
     }
 
-    /// `at` 是数字时的本地秒；锚点返回 `None`（要靠宿主解析）。
+    /// Local seconds when `at` is a number. Returns `None` for an anchor (the host must resolve it).
     pub fn at_local(&self) -> Option<f64> {
         match &self.at {
             TimeValue::Seconds(value) => Some(*value),
@@ -2005,7 +1937,7 @@ impl WhiteboardBeat {
         }
     }
 
-    /// `end` 是数字时的本地秒；缺席或锚点返回 `None`。
+    /// Local seconds when `end` is a number. Returns `None` when absent or an anchor.
     pub fn end_local(&self) -> Option<f64> {
         match &self.end {
             Some(TimeValue::Seconds(value)) => Some(*value),
@@ -2013,51 +1945,51 @@ impl WhiteboardBeat {
         }
     }
 
-    /// 任一端是词锚点。
+    /// Either end is a word anchor.
     pub fn is_anchored(&self) -> bool {
         matches!(self.at, TimeValue::Anchor(_)) || matches!(self.end, Some(TimeValue::Anchor(_)))
     }
 }
 
-/// `whiteboard.beats` 的上限。
+/// Upper limit for `whiteboard.beats`.
 pub const WHITEBOARD_MAX_BEATS: usize = 64;
-/// `whiteboard.beats[].label` 的字符上限。
+/// Character limit for `whiteboard.beats[].label`.
 pub const WHITEBOARD_MAX_LABEL_CHARS: usize = 80;
 
-/// 白板节拍时序校验码（0.9）：解析后须 `at_g < end_g ≤ at_{g+1}`。
+/// Whiteboard beat timing validation code (0.9): after parsing, it must hold that `at_g < end_g ≤ at_{g+1}`.
 pub const WHITEBOARD_BEAT_WINDOW: &str = "whiteboard-beat-window";
-/// 末拍 `end` 与 `draw` 的关系：`end_末 ≤ draw ≤ 时长`。
+/// Relationship between the final beat's `end` and `draw`: `end_last ≤ draw ≤ duration`.
 pub const WHITEBOARD_BEAT_AFTER_DRAW: &str = "whiteboard-beat-after-draw";
-/// `pace: natural` 下某拍自然时长大于组窗（被压缩）。
+/// Under `pace: natural`, a beat's natural duration is longer than the group window (it is compressed).
 pub const WHITEBOARD_WINDOW_TOO_SHORT: &str = "whiteboard-window-too-short";
-/// `strict` 下有前景像素不在任何 `box` 内（排到末拍之后）。
+/// Under `strict`, some foreground pixels are not inside any `box` (they are placed after the final beat).
 pub const WHITEBOARD_UNASSIGNED_FOREGROUND: &str = "whiteboard-unassigned-foreground";
-/// `strict` 下某个 `box` 被后拍扣空。
+/// Under `strict`, a `box` is emptied out by a later beat.
 pub const WHITEBOARD_EMPTY_BOX: &str = "whiteboard-empty-box";
-/// `ccut whiteboard sync` 没拿到对象映射，用了「阅读序连通域 ∝ 句字数」的兜底。
+/// `ccut whiteboard sync` did not get an object mapping, and fell back to “reading-order connected regions ∝ characters per sentence”.
 pub const WHITEBOARD_BEATS_HEURISTIC: &str = "whiteboard-beats-heuristic";
-/// `label` 与锚点词所在句文本不符（文稿变了、id 漂了）。
+/// `label` does not match the sentence text where the anchor word sits (the script changed, or the id drifted).
 pub const WHITEBOARD_LABEL_MISMATCH: &str = "whiteboard-label-mismatch";
-/// 元素窗内有语音、连续一段没有揭示推进且不在任何拍的 hold 段。
+/// A hold segment: within the element window there is speech, a continuous stretch in which the reveal does not advance, and which is not inside any beat.
 pub const WHITEBOARD_SPEECH_WITHOUT_PROGRESS: &str = "whiteboard-speech-without-progress";
 
 impl WhiteboardProps {
-    /// 缺省 `inkFirst`。
+    /// Default `inkFirst`.
     pub fn ink_first(&self) -> bool {
         self.ink_first.unwrap_or(true)
     }
 
-    /// 缺省 `hand`。
+    /// Default `hand`.
     pub fn hand(&self) -> WhiteboardHand {
         self.hand.unwrap_or_default()
     }
 
-    /// 缺省 `pace`（0.9）。
+    /// Default `pace` (0.9).
     pub fn pace(&self) -> WhiteboardPace {
         self.pace.unwrap_or_default()
     }
 
-    /// 缺省 `strict`（0.9）。
+    /// Default `strict` (0.9).
     pub fn strict(&self) -> bool {
         self.strict.unwrap_or(false)
     }
@@ -2104,7 +2036,7 @@ impl WhiteboardProps {
                         "element {element_id} 的 whiteboard.beats[{index}].label 至多 {WHITEBOARD_MAX_LABEL_CHARS} 字符"
                     )));
                 }
-                // 数字写法在契约层就能校验时序；锚点写法要等宿主解析（同码报到 elementId + field）。
+                // Numeric beat timing can be validated at the contract layer. Anchor forms must wait for the host to resolve them (the same code is reported with elementId + field).
                 if let Some(at) = beat.at_local() {
                     if at < last {
                         return Err(TimelineError::Invalid(format!(
@@ -2216,12 +2148,10 @@ pub struct Place {
     pub rot: Option<f64>,
     pub opacity: Option<f64>,
     pub radius: Option<f64>,
-    /// 四角独立的媒体裁切半径；存在时优先于旧单值 `radius`。
+    /// Media crop radius set independently for each corner. When present it takes precedence over the legacy single-value `radius`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corner_radii: Option<CornerRadii>,
-    /// 水平/垂直镜像（0.2 新增）。**镜像是几何不是外观**，因此归 `Place`
-    /// 而不是无 schema 的 `style`（ADR-E01）。两者都挂 `skip_serializing_if`：
-    /// 不含镜像的旧文档序列化后与 0.1 逐字节相同。
+    /// Horizontal / vertical mirroring (new in 0.2). **Mirroring is geometry, not appearance**, so it belongs to `Place` rather than to the schema-less `style` (ADR-E01). Both carry `skip_serializing_if`: an old document without mirroring serializes byte-for-byte identical to 0.1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flip_x: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2229,7 +2159,7 @@ pub struct Place {
 }
 
 impl Place {
-    /// 镜像后的缩放符号，直接乘进仿射矩阵的 `sx` / `sy`。
+    /// The scale sign after mirroring, multiplied directly into the affine matrix's `sx` / `sy`.
     pub fn flip_signs(&self) -> (f64, f64) {
         (
             if self.flip_x.unwrap_or(false) {
@@ -2300,9 +2230,9 @@ pub enum Fit {
     Contain,
 }
 
-/// 媒体元素的留边 / 画布底：`"blur"`、`"black"` 或 `"#RRGGBB"` 纯色（0.12 起）。
+/// Background behind a media element (its margins / canvas base): `"blur"`, `"black"`, or a solid `"#RRGGBB"` colour (since 0.12).
 ///
-/// 读入大小写不限，写出一律大写 `#RRGGBB`。
+/// Input is case-insensitive; output is always uppercase `#RRGGBB`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Background {
     Blur,
@@ -2311,7 +2241,7 @@ pub enum Background {
 }
 
 impl Background {
-    /// 解析文档里的取值；认不出返回 `None`。
+    /// Parses the value in the document; returns `None` if it is not recognized.
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "blur" => Some(Self::Blur),
@@ -2327,7 +2257,7 @@ impl Background {
         }
     }
 
-    /// 文档里的写法（`blur` / `black` / 大写 `#RRGGBB`）。
+    /// The form written in the document (`blur` / `black` / uppercase `#RRGGBB`).
     pub fn as_string(&self) -> String {
         match self {
             Self::Blur => "blur".into(),
@@ -2336,7 +2266,7 @@ impl Background {
         }
     }
 
-    /// 实色底的 RGB（`black` 是 `[0, 0, 0]`）；`blur` 返回 `None`。
+    /// RGB of a solid background (`black` is `[0, 0, 0]`); `blur` returns `None`.
     pub fn solid_rgb(&self) -> Option<[u8; 3]> {
         match self {
             Self::Blur => None,
@@ -2386,11 +2316,11 @@ pub enum MaskShape {
     Ellipse,
 }
 
-/// `fx` 里强度类字段（grayscale / sharpen / noise / vignette / effectIntensity）的区间。
+/// Range for the intensity-type fields in `fx` (grayscale / sharpen / noise / vignette / effectIntensity).
 pub const FX_AMOUNT_RANGE: (f64, f64) = (0.0, 1.0);
-/// `fx` 里有正负的调色字段（brightness / contrast / exposure / hue / saturation）的区间。
+/// Range for the signed colour-grading fields in `fx` (brightness / contrast / exposure / hue / saturation).
 pub const FX_ADJUST_RANGE: (f64, f64) = (-1.0, 1.0);
-/// `fx.blur` 的区间。
+/// Range for `fx.blur`.
 pub const FX_BLUR_RANGE: (f64, f64) = (0.0, 100.0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2533,8 +2463,7 @@ pub struct AnimationSlot {
     pub seed: Option<u64>,
 }
 
-/// 入场槽（`animate.enter.preset`）的封闭词表 = `ccut-motion` 的 `timeline.enter.*`
-/// 配方表（第 156 轮起两者逐条相等，`preset_lists_frozen` 守住）。
+/// Closed vocabulary for the enter slot (`animate.enter.preset`) = the `timeline.enter.*` recipe table in `ccut-motion`. Since round 156 the two are equal entry by entry, and `preset_lists_frozen` keeps it that way.
 pub const ENTER_PRESETS: &[&str] = &[
     "none",
     "fade",
@@ -2542,8 +2471,7 @@ pub const ENTER_PRESETS: &[&str] = &[
     "drop",
     "slideL",
     "slideR",
-    // 2026-09-05（第 156 轮）：slide 补上下两向（入场 = 从哪一侧来），与注册表
-    // 同位；wave/flipboard/dragonfly/billboard 见表尾。
+    // 2026-09-05 (round 156): slide gains the up and down directions (enter = which side it comes from), in the same position as the registry. wave / flipboard / dragonfly / billboard are at the end of the table.
     "slideUp",
     "slideDown",
     "pop",
@@ -2554,24 +2482,19 @@ pub const ENTER_PRESETS: &[&str] = &[
     "typewriter",
     "riseWords",
     "wipe",
-    // 2026-08-30 对齐文字动画目录（designs/cuccut model-textpresets）：五条
-    // 2D pose 可表达的入场（compress/fall/skid/roll 带出场镜像；bounce 有意
-    // 无出场——弹跳没有对称的离场动作）。配方在
-    // core/presets/builtin/motion/timeline.{enter,exit}.*.json。
+    // 2026-08-30: aligned with the text animation catalog (designs/cuccut model-textpresets). Five entry animations expressible as a 2D pose: compress / fall / skid / roll carry a mirrored exit, and bounce deliberately has no exit (a bounce has no symmetrical leaving motion). The recipes are in
+    // core/presets/builtin/motion/timeline.{enter,exit}.*.json.
     "compress",
     "bounce",
     "fall",
     "skid",
     "roll",
-    // 2026-09-05（第 156 轮）补齐到设计稿 In 19 / Out 16 / Loop 9：wave/
-    // flipboard/dragonfly/billboard 首次落核；`drop` 同时获得同名出场
-    // （设计稿 stomp）。
+    // 2026-09-05 (round 156): filled out to the design doc's In 19 / Out 16 / Loop 9. wave / flipboard / dragonfly / billboard land in the core for the first time, and `drop` also gains an exit of the same name (design doc stomp).
     "wave",
     "flipboard",
     "dragonfly",
     "billboard",
-    // 2026-09-08：元素动画目录（形状/图片/视频，`surface: "element"`，
-    // 多关键帧配方）。文字目录不列这些 id；顺序 = 注册表 `order`。
+    // 2026-09-08: element animation catalog (shape / image / video, `surface: "element"`, multi-keyframe recipes). The text catalog does not list these ids. Order = the registry's `order`.
     "elFade",
     "elFloatL",
     "elFloatR",
@@ -2602,11 +2525,7 @@ pub const ENTER_PRESETS: &[&str] = &[
     "elGentleFloatDown",
 ];
 
-/// 出场槽（`animate.exit.preset`）的封闭词表 = `ccut-motion` 的 `timeline.exit.*`
-/// 配方表，顺序即注册表 `order`。2026-09-05（第 156 轮）之前 exit 槽借用入场
-/// 词表校验，于是 `sink` / `shrink` 这种只有出场配方的 id 写不进文档——引擎按
-/// `mirror` 派生出的「跟随入场」退场一旦被编辑面板实体化（`text_workbench::choose`
-/// 保住已派生的退场再改别的槽），保存就被 `validate` 拒掉。出场词表从此独立。
+/// Closed vocabulary for the exit slot (`animate.exit.preset`) = the `timeline.exit.*` recipe table in `ccut-motion`, in registry `order`. Before 2026-09-05 (round 156) the exit slot borrowed the enter vocabulary for validation. So ids that only have an exit recipe, such as `sink` / `shrink`, could not be written into a document: once the editing panel materialized an exit that the engine had derived as “follow the entrance” via `mirror` (`text_workbench::choose` keeps an already derived exit when a different slot is changed), saving was rejected by `validate`. The exit vocabulary has been independent since then.
 pub const EXIT_PRESETS: &[&str] = &[
     "none",
     "fade",
@@ -2629,8 +2548,7 @@ pub const EXIT_PRESETS: &[&str] = &[
     "flipboard",
     "dragonfly",
     "billboard",
-    // 2026-09-08：元素动画目录（形状/图片/视频，`surface: "element"`，
-    // 多关键帧配方）。文字目录不列这些 id；顺序 = 注册表 `order`。
+    // 2026-09-08: element animation catalog (shape / image / video, `surface: "element"`, multi-keyframe recipes). The text catalog does not list these ids. Order = the registry's `order`.
     "elFade",
     "elFloatL",
     "elFloatR",
@@ -2661,13 +2579,10 @@ pub const EXIT_PRESETS: &[&str] = &[
     "elGentleFloatDown",
 ];
 
-/// Timeline 0.1 时代 exit 槽借用入场词表，这几个名字写进 exit 槽合法但没有出场
-/// 配方（`lower_timeline::effective_exit` 视作无退场）。已发布的封闭枚举不删词
-/// （规范 §19：枚举内加词不升版、删词要升版），所以读入仍接受、语义不变；
-/// 编辑写路径不得再产出它们，`ccut-motion` 的 `textpreset` 解析期也按配方表拒。
+/// In the Timeline 0.1 era the exit slot borrowed the enter vocabulary. These names were legal in the exit slot but had no exit recipe (`lower_timeline::effective_exit` treats them as no exit). A published closed enum does not drop words (spec §19: adding words within an enum does not bump the version, but removing them does), so they are still accepted on input with unchanged meaning. The edit write path must no longer produce them, and `ccut-motion`'s `textpreset` also rejects them at parse time against the recipe table.
 pub const EXIT_LEGACY_PRESETS: &[&str] = &["pop", "blurIn", "typewriter", "riseWords", "bounce"];
 
-/// exit 槽实际接受的 id：配方表 ∪ 0.1 兼容名。
+/// IDs the exit slot actually accepts: the recipe table ∪ the 0.1 compatibility names.
 pub fn exit_preset_accepted(id: &str) -> bool {
     EXIT_PRESETS.contains(&id) || EXIT_LEGACY_PRESETS.contains(&id)
 }
@@ -2678,15 +2593,14 @@ pub const LOOP_PRESETS: &[&str] = &[
     "sway",
     "jitter",
     "blink",
-    // 第 156 轮：设计稿 Loop 目录（rotate 走 ramp 波、heartBeat 走 heartbeat 波）。
+    // Round 156: the design doc's Loop catalog (rotate uses the ramp wave, heartBeat uses the heartbeat wave).
     "rotate",
     "heartBeat",
     "vogue",
     "dragonfly",
     "billboard",
     "roll",
-    // 2026-09-08：元素动画目录（形状/图片/视频，`surface: "element"`，
-    // 多关键帧配方）。文字目录不列这些 id；顺序 = 注册表 `order`。
+    // 2026-09-08: element animation catalog (shape / image / video, `surface: "element"`, multi-keyframe recipes). The text catalog does not list these ids. Order = the registry's `order`.
     "elSpin",
     "elSpinSmooth",
     "elSpin3d",
@@ -2698,7 +2612,7 @@ pub const LOOP_PRESETS: &[&str] = &[
     "elJiggle",
 ];
 
-/// Timeline `ease` 枚举 = 规范附录 A 的封闭表。唯一实现在 `motion::curve`。
+/// The Timeline `ease` enum = the closed table in spec Appendix A. The only implementation is in `motion::curve`.
 pub use ::motion::curve::EASE_NAMES;
 
 impl Animation {
@@ -2802,10 +2716,7 @@ pub struct Main {
     #[serde(default, skip_serializing_if = "is_false")]
     pub muted: bool,
     pub background: Option<Background>,
-    /// 分离文档里普通视频元素所对齐的主源时长（0.10 新增）：拆分时落下，读时对账
-    /// （[`crate::video_elements::follow_main_duration`]）跟着主源刷新。动画项目的主源是
-    /// 现场合成，重渲一次时长就变；源末端正好落在这个值上的 main 视频元素跟到新末端。
-    /// 缺席 = 老文档，不跟随、首次读到就记下当前值。
+    /// The main-source duration that an ordinary video element in a detached document is aligned to (new in 0.10). It is set at split time, and reconciled at read time (`crate::video_elements::follow_main_duration`), following refreshes of the main source. The main source of an animation project is synthesized on site, so its duration changes when re-rendered. A main video element whose source end falls exactly on this value follows to the new end. Absent = an old document: it does not follow, and records the current value the first time it is read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_duration: Option<f64>,
 }
@@ -3074,7 +2985,7 @@ pub fn schema_json() -> Value {
                     {"if": {"required": ["transitions"]}, "then": {"properties": {"kind": {"const": "video"}}}},
                     {"if": {"properties": {"kind": {"const": "text"}}, "required": ["kind"]}, "then": {"oneOf": [{"required": ["text"], "not": {"required": ["counter"]}}, {"required": ["counter"], "not": {"required": ["text"]}}]}},
                     {"if": {"properties": {"kind": {"enum": ["image", "video", "audio", "whiteboard"]}}, "required": ["kind"]}, "then": {"required": ["srcId"]}},
-                    // element-props-mismatch：kind 与八组 props 一一对应（§5.1；0.6 加 confetti，0.8 加 whiteboard）。
+                    // element-props-mismatch: kind corresponds one-to-one with the eight props groups (§5.1; confetti added in 0.6, whiteboard added in 0.8).
                     {"if": {"properties": {"kind": {"const": "shape"}}, "required": ["kind"]},
                      "then": {"required": ["shape"], "not": {"anyOf": [{"required": ["sticker"]}, {"required": ["visualizer"]}, {"required": ["progress"]}, {"required": ["draw"]}, {"required": ["placeholder"]}, {"required": ["confetti"]}, {"required": ["whiteboard"]}]}}},
                     {"if": {"properties": {"kind": {"const": "sticker"}}, "required": ["kind"]},
@@ -3192,21 +3103,18 @@ pub fn schema_json() -> Value {
 mod tests {
     use super::*;
 
-    /// §4 的量化裁决：`end − time` 的浮点差带残差、方向随两端各自的浮点表示
-    /// 走（`8.05 − 1.05 = 7.000000000000001` 抬、`34.12 − 25.12 =
-    /// 8.999999999999996` 压），裸 `ceil` 会在前者上多读一秒，三端可能在
-    /// 同一帧给出不同读数。毫秒栅格上边界归属无歧义。
+    /// The quantization ruling of §4: floating-point differences such as `end − time` carry residue, and the direction follows each end's own floating-point representation (`8.05 − 1.05 = 7.000000000000001`, nudged up; `34.12 − 25.12 =
+    /// 8.999999999999996`, nudged down). A bare `ceil` would read one second too many in the former case, and the three surfaces could give different readouts on the same frame. On the millisecond grid, boundary ownership is unambiguous.
     #[test]
     fn counter_boundaries_are_judged_on_the_millisecond_grid() {
-        // 前提真的成立：这一对的裸浮点差会把 7 抬成 8。
+        // The premise really holds: for this pair, the bare floating-point difference lifts 7 to 8.
         assert_eq!((8.05_f64 - 1.05_f64).ceil(), 8.0);
         let countdown = CounterProps {
             mode: CounterMode::Countdown,
             format: CounterFormat::Seconds,
         };
         assert_eq!(countdown.value_at(1.05, 8.05, 1.05), 7);
-        // §3.1 的 24.12…34.12 算例：起点读满长、中途逐秒、临近终点读 1
-        //（0 属于窗外，由半开窗口裁掉，ADR-CT02）。
+        // The §3.1 example of 24.12…34.12: the start reads the full length, it counts down second by second in the middle, and near the end it reads 1 (0 falls outside the window and is cut off by the half-open window, ADR-CT02).
         assert_eq!(countdown.value_at(24.12, 34.12, 24.12), 10);
         assert_eq!(countdown.value_at(24.12, 34.12, 25.12), 9);
         assert_eq!(countdown.value_at(24.12, 34.12, 34.0), 1);
@@ -3216,13 +3124,11 @@ mod tests {
         };
         assert_eq!(countup.value_at(24.12, 34.12, 25.12), 1);
         assert_eq!(countup.text_at(24.12, 34.12, 25.12), "00:01");
-        // `mm:ss` 不进位到小时（§3）：选了这一档就不该突然冒出小时段。
+        // `mm:ss` does not carry over into hours (§3). Once this format is chosen, an hours segment must not suddenly appear.
         assert_eq!(countup.text_at(0.0, 7000.0, 6000.0), "100:00");
     }
 
-    /// 空白项目先 clip add 旁白、再把同一文件转录成项目媒体：主轨 clip 指着副本源，
-    /// main 的转录词没有承载 clip，字幕整层消失。同 hash 的音视频源并回 main；
-    /// 图片源、别的文件、两边都有 cuts 的源不动。
+    /// In a blank project, first `clip add` the narration and then transcribe the same file as the project media. The main-track clip points at the duplicate source, the transcript words of `main` have no carrying clip, and the subtitles disappear from the whole layer. Audio/video sources with the same hash are merged back into `main`. Image sources, other files, and sources where both sides have cuts are left alone.
     #[test]
     fn a_source_identical_to_the_project_media_folds_back_into_main() {
         let mut document: TimelineDocument = serde_json::from_value(json!({
@@ -3252,7 +3158,7 @@ mod tests {
         assert!(!document.sources.contains_key("src-a1"));
         assert!(document.sources.contains_key("src-a3"));
         assert_eq!(document.sources["main"].cuts[0].id, "cut-1");
-        // 幂等：再跑一次什么也不改。
+        // Idempotent: running it again changes nothing.
         assert!(
             document
                 .fold_main_duplicates(Some("sha256-same"))
@@ -3260,8 +3166,7 @@ mod tests {
         );
     }
 
-    /// `EASE_NAMES` 迁到 `motion::curve` 之后，Timeline 的 JSON Schema
-    /// 契约不得移动：`ccut spec` 的 timelineSchema 是对外承诺。
+    /// After `EASE_NAMES` moved to `motion::curve`, the Timeline JSON Schema contract must not move: the `timelineSchema` from `ccut spec` is a public commitment.
     #[test]
     fn the_ease_enum_in_the_schema_is_the_frozen_appendix_a_table() {
         let expected = json!([
@@ -3297,8 +3202,7 @@ mod tests {
         }
     }
 
-    /// 三个槽各查各的词表：exit 收 `sink`（第 156 轮之前借入场词表校验会拒），
-    /// 0.1 兼容名 `pop` 仍可读入，`wave` 只有入场配方所以 exit 槽拒。
+    /// Each of the three slots checks its own vocabulary. Exit accepts `sink` (before round 156, validation borrowing the enter vocabulary would reject it), the 0.1 compatibility name `pop` is still readable, and `wave` is rejected by the exit slot because it only has an enter recipe.
     #[test]
     fn each_animation_slot_validates_against_its_own_vocabulary() {
         let schema = schema_json();
@@ -3351,8 +3255,7 @@ mod tests {
         );
     }
 
-    /// 0.11：AI 生成的素材带 `origin: "ai"` 与出处侧车路径；缺省时一个键都不写，
-    /// 旧文档读入写出只差版本号。
+    /// 0.11: AI-generated assets carry `origin: "ai"` and a provenance sidecar path. When defaulted, not a single key is written, so an old document differs from its read-and-written output only in the version number.
     #[test]
     fn ai_sources_round_trip_origin_and_provenance() {
         let text = format!(
@@ -3383,9 +3286,7 @@ mod tests {
         );
     }
 
-    /// `element` 同时受 `deny_unknown_fields` 与 schema 的 `additionalProperties: false`
-    /// 约束，两者必须同进同退：手写 schema 漏掉一个字段，Rust 收得下的文档会被
-    /// `ccut spec` 的 timelineSchema 判非法。
+    /// `element` is constrained by both `deny_unknown_fields` and the schema's `additionalProperties: false`, and the two must move together. If the hand-written schema misses a field, a document that Rust accepts would be rejected as invalid by the `timelineSchema` from `ccut spec`.
     #[test]
     fn the_element_schema_carries_the_vertical_anchor_the_struct_accepts() {
         let element: Element = serde_json::from_str(
@@ -3455,8 +3356,7 @@ mod tests {
         }
     }
 
-    /// 0.7 Lottie 源：`sources[].kind:"lottie"` round-trip，只有素材贴纸能引用；
-    /// 主轨 clip 与 image / video / audio 元素引用它都在校验期报错。
+    /// 0.7 Lottie source: `sources[].kind:"lottie"` round-trips, and only asset stickers may reference it. A main-track clip, or an image / video / audio element referencing it, raises an error at validation time.
     #[test]
     fn lottie_sources_are_only_referenced_by_asset_stickers() {
         let source: Source = serde_json::from_str(
@@ -3525,14 +3425,13 @@ mod tests {
         assert!(document.validate().is_err());
     }
 
-    // ── 0.2 元素契约（设计 §5）─────────────────────────────────────────
+    // ── 0.2 element contract (design §5) ─────────────────────────────────────────
 
     fn element(json: &str) -> Element {
         serde_json::from_str(json).unwrap()
     }
 
-    /// 11 值枚举 round-trip：serde 名、`as_str()` 与 JSON Schema 的 enum 是
-    /// **同一张表**，三处任一处漏掉一个值都会让另外两处失真。
+    /// Round-trip of the 11-value enum: the serde names, `as_str()` and the JSON Schema enum are **one and the same table**. If any one of the three misses a value, the other two become inaccurate.
     #[test]
     fn the_element_kind_enum_round_trips_all_twelve_values() {
         let kinds = [
@@ -3562,7 +3461,7 @@ mod tests {
             schema_json()["$defs"]["element"]["properties"]["kind"],
             json!({"enum": ELEMENT_KINDS})
         );
-        // 封闭枚举：未知 kind 在解析期就错，不做 open enum（ADR-E02）。
+        // Closed enum: unknown kinds are an error at parse time, and no open enum is used (ADR-E02).
         assert!(serde_json::from_value::<ElementKind>(json!("motion")).is_err());
         assert!(
             serde_json::from_str::<Element>(r#"{"id":"e1","kind":"motion"}"#).is_err(),
@@ -3570,7 +3469,7 @@ mod tests {
         );
     }
 
-    /// 六组 props 的 serde 名一律 camelCase，且缺省字段不出现在输出里。
+    /// The serde names of the six props groups are always camelCase, and default fields do not appear in the output.
     #[test]
     fn the_six_props_structs_serialize_as_camel_case() {
         let shape = element(
@@ -3612,7 +3511,7 @@ mod tests {
             serde_json::to_value(props).unwrap(),
             json!({"source": "template", "templateId": "box", "loop": "once", "fillOverrides": {"#ffffff": "#112233"}})
         );
-        // 缺省 loop 不写出，读时补 "loop"。
+        // The default loop is not written out; "loop" is filled in at read time.
         assert_eq!(StickerProps::new("asset").loop_mode(), STICKER_LOOP_DEFAULT);
         assert_eq!(
             serde_json::to_value(StickerProps::new("asset")).unwrap(),
@@ -3645,7 +3544,7 @@ mod tests {
         );
         assert_eq!(props.speaker.as_deref(), Some("spk-1"));
         assert!(!props.always_show());
-        // **新建默认**这一组（§5.2）。
+        // This is the **new-element defaults** group (§5.2).
         let bare = VisualizerProps::new("bars");
         assert_eq!(
             (
@@ -3662,21 +3561,21 @@ mod tests {
             serde_json::to_value(&bare).unwrap(),
             json!({"style": "bars"})
         );
-        // dB 窗按款取：示波器两款是 −120 / −10，不是全表那一组。
+        // dB window taken per style: the two oscilloscope styles use −120 / −10, not the table-wide group.
         for style in ["oscilloscope", "ring_wave"] {
             let bare = VisualizerProps::new(style);
             assert_eq!((bare.min_db(), bare.max_db()), (-120.0, -10.0), "{style}");
         }
         assert_eq!(visualizer_db_window("bars"), (-80.0, 40.0));
-        // 旧文档里的旧款名经别名表落到新款，dB 窗跟着新款走。
+        // Old style names in old documents are mapped to the new styles via the alias table, and the dB window follows the new style.
         assert_eq!(visualizer_db_window("beam"), (-120.0, -10.0));
         assert_eq!(visualizer_db_window("formation"), (-80.0, 40.0));
-        // 查不到的样式回落到全表兜底（`style` 校验会先拦下这种元素）。
+        // Styles that cannot be found fall back to the table-wide default (`style` validation catches such an element first).
         assert_eq!(
             visualizer_db_window("nope"),
             (VISUALIZER_MIN_DB_DEFAULT, VISUALIZER_MAX_DB_DEFAULT)
         );
-        // 只写了 `minDb` 的老文档不因按款缺省变成非法（校验只看写下来的那一对）。
+        // An old document that only wrote `minDb` does not become invalid because of the per-style default (validation only looks at the pair that was actually written).
         assert!(
             element(r#"{"id":"e5","kind":"visualizer","visualizer":{"style":"oscilloscope","minDb":-5}}"#)
                 .validate(&mut HashSet::new())
@@ -3710,7 +3609,7 @@ mod tests {
             serde_json::to_value(placeholder.placeholder.as_ref().unwrap()).unwrap(),
             json!({"variant": "screen", "notes": "Demo"})
         );
-        // 每组 props 自己也 deny_unknown_fields。
+        // Each props group also has deny_unknown_fields itself.
         assert!(
             serde_json::from_str::<Element>(
                 r#"{"id":"e7","kind":"progress","progress":{"style":"rounded","bars":16}}"#
@@ -3718,8 +3617,7 @@ mod tests {
             .is_err()
         );
 
-        // 0.6 confetti：只写用户改过的字段，缺席即配方缺省；写错模式的 emit
-        // 字段允许存在（切换模式时保留另一边的值）。
+        // 0.6 confetti: only fields the user has changed are written; when absent, the recipe default applies. Emit fields that belong to the wrong mode may still be present (so the other side's values are kept when switching modes).
         let confetti = element(
             r##"{"id":"e8","kind":"confetti","confetti":{"style":"rainbow-paper","seed":7391026451,"colors":["#FF476F","#FFCA3A"],"shapes":["rect","strip"],"size":1.25,"gravity":-0.5,"wind":40,"emit":{"mode":"burst","rate":60,"count":80,"interval":0,"settle":true},"origin":{"x":-10,"y":110},"angle":-90,"spread":45}}"##,
         );
@@ -3750,7 +3648,7 @@ mod tests {
         );
     }
 
-    /// `kind` 与 props 一一对应；两个方向都报 `element-props-mismatch`。
+    /// `kind` corresponds one-to-one with props. Mismatches in either direction report `element-props-mismatch`.
     #[test]
     fn the_props_are_mutually_exclusive_with_the_kind() {
         for (source, why) in [
@@ -3801,7 +3699,7 @@ mod tests {
                 "{why}: {error}"
             );
         }
-        // 正例：八种 kind 各带自己的 props 就通过。
+        // Positive case: the eight kinds, each carrying its own props, pass.
         for source in [
             r#"{"id":"e1","kind":"shape","shape":{"shape":"rect"}}"#,
             r#"{"id":"e1","kind":"sticker","sticker":{"source":"asset","path":"a.png"}}"#,
@@ -3811,15 +3709,14 @@ mod tests {
             r#"{"id":"e1","kind":"placeholder","placeholder":{"variant":"camera"}}"#,
             r#"{"id":"e1","kind":"confetti","confetti":{"style":"rainbow-paper"}}"#,
             r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"hand":"pen","paper":"#F5EBD7","draw":4,"inkFirst":false,"beats":[{"at":0,"box":[0,0,50,100]},{"at":2,"box":[50,0,50,100]}]}}"##,
-            // 白板与 image 同路：mode / fit / mask / fx 都收（`ccut element add --mode fullscreen`）。
+            // Whiteboard follows the same route as image: mode / fit / mask / fx are all accepted (`ccut element add --mode fullscreen`).
             r#"{"id":"e1","kind":"whiteboard","srcId":"s1","mode":"fullscreen","fit":"contain","mask":{"shape":"ellipse"},"fx":{"grayscale":1},"whiteboard":{}}"#,
         ] {
             element(source).validate(&mut HashSet::new()).unwrap();
         }
     }
 
-    /// Timeline 0.9 白板节拍：`pace` / `strict` / `end` / `label` 与 `at` / `end` 的词锚点写法；
-    /// 0.8 的数字写法原样读入（缺省 = 老行为），不含新字段的元素写出与 0.8 只差 version。
+    /// Timeline 0.9 whiteboard beats: `pace` / `strict` / `end` / `label`, and the word-anchor form of `at` / `end`. The 0.8 numeric form is read in as-is (default = the old behaviour), and an element without new fields differs from 0.8 on output only in the version.
     #[test]
     fn whiteboard_beats_accept_0_9_fields_and_word_anchors() {
         let source = r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"draw":9.2,"pace":"natural","strict":true,"beats":[{"at":"~main:g1.1:start","end":"~main:g1.4:end","box":[0,0,50,100],"label":"第一步"},{"at":3.2,"end":6.3,"box":[50,0,50,100]},{"at":"~main:g2.1:start","box":[0,50,100,50]}]}}"##;
@@ -3836,7 +3733,7 @@ mod tests {
         assert_eq!(beats[1].end_local(), Some(6.3));
         assert!(!beats[1].is_anchored());
         assert!(beats[2].end.is_none());
-        // 往返：字段原样、缺席的键不写出
+        // Round trip: fields unchanged, absent keys not written out
         let value = serde_json::to_value(&parsed).unwrap();
         assert_eq!(value["whiteboard"]["pace"], json!("natural"));
         assert_eq!(value["whiteboard"]["strict"], json!(true));
@@ -3848,7 +3745,7 @@ mod tests {
         assert!(value["whiteboard"]["beats"][1].get("label").is_none());
         assert!(value["whiteboard"]["beats"][2].get("end").is_none());
 
-        // 0.8 的数字写法：缺省 pace=stretch / strict=false
+        // 0.8 numeric form: default pace=stretch / strict=false
         let legacy = element(
             r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":0,"box":[0,0,50,100]},{"at":2,"box":[50,0,50,100]}]}}"##,
         );
@@ -3860,7 +3757,7 @@ mod tests {
             serde_json::to_value(&legacy).unwrap()["whiteboard"],
             json!({"beats":[{"at":0.0,"box":[0.0,0.0,50.0,100.0]},{"at":2.0,"box":[50.0,0.0,50.0,100.0]}]})
         );
-        // 0.8 文档整体读入写出为当前版本
+        // A whole 0.8 document is read in and written out as the current version
         let doc: TimelineDocument = serde_json::from_str(
             r##"{"ccutTimeline":"0.8","sources":{"s1":{"path":"a.png","kind":"image"}},"tracks":[{"id":"t","kind":"overlay","elements":[{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":1,"box":[0,0,50,100]}]}}]}]}"##,
         )
@@ -3873,8 +3770,7 @@ mod tests {
         );
     }
 
-    /// 0.9 白板节拍的契约校验：数字写法的时序在这里就报 `whiteboard-beat-window` /
-    /// `whiteboard-beat-after-draw`；锚点文法、label 长度、pace 枚举也在这里。
+    /// Contract validation of 0.9 whiteboard beats. Timing in numeric form is reported here as `whiteboard-beat-window` / `whiteboard-beat-after-draw`. Anchor grammar, label length and the pace enum are also checked here.
     #[test]
     fn whiteboard_beats_are_time_checked_when_numeric() {
         let cases: [(&str, &str); 8] = [
@@ -3939,7 +3835,7 @@ mod tests {
     #[test]
     fn the_props_values_are_range_checked() {
         for source in [
-            // 颜色必须是 #RRGGBB[AA]
+            // Colour must be #RRGGBB[AA]
             r#"{"id":"e1","kind":"shape","shape":{"shape":"rect","fill":"red"}}"#,
             r#"{"id":"e1","kind":"shape","shape":{"shape":"rect","strokeWidth":-1}}"#,
             r#"{"id":"e1","kind":"shape","shape":{"shape":"rect","cornerRadius":[0,0,0,-2]}}"#,
@@ -3954,7 +3850,7 @@ mod tests {
             r##"{"id":"e1","kind":"draw","draw":{"brush":"round","color":"red","size":4}}"##,
             r##"{"id":"e1","kind":"draw","draw":{"brush":"round","color":"#ffffff","size":0}}"##,
             r##"{"id":"e1","kind":"draw","draw":{"brush":"round","color":"#ffffff","size":4,"strokes":[{"points":[[101,0]]}]}}"##,
-            // confetti（设计稿 §3.5）：越界、空表、未知形状、坏颜色全在解析期报错。
+            // confetti (design doc §3.5): out-of-range values, empty tables, unknown shapes and bad colours are all reported as errors at parse time.
             r#"{"id":"e1","kind":"confetti","confetti":{"style":""}}"#,
             r#"{"id":"e1","kind":"confetti","confetti":{"style":"rainbow-paper","colors":[]}}"#,
             r##"{"id":"e1","kind":"confetti","confetti":{"style":"rainbow-paper","colors":["#111111","#222222","#333333","#444444","#555555","#666666","#777777","#888888","#999999"]}}"##,
@@ -3988,8 +3884,7 @@ mod tests {
         );
     }
 
-    /// `Place.flipX/flipY`：镜像归几何（ADR-E01），且 `skip_serializing_if`
-    /// 保证旧文档序列化字节不变。
+    /// `Place.flipX/flipY`: mirroring belongs to geometry (ADR-E01), and `skip_serializing_if` guarantees that old documents serialize to the same bytes.
     #[test]
     fn the_place_carries_flip_without_changing_old_bytes() {
         let flipped: Place = serde_json::from_str(r#"{"x":50,"flipX":true}"#).unwrap();
@@ -4008,8 +3903,7 @@ mod tests {
         );
     }
 
-    /// 0.1–0.8 版本读取：旧版正常读、写出升当前版本，
-    /// **不含新字段的文档序列化后与 0.1 只差 version 字符串**。
+    /// Reading versions 0.1–0.8: old versions are read normally and written out upgraded to the current version. **A document without new fields differs from 0.1 after serialization only in the version string.**
     #[test]
     fn all_supported_timeline_versions_read_and_everything_writes_as_the_current_one() {
         let source = r#"{"ccutTimeline":"0.1","clips":[{"id":"c1","in":0.0,"out":1.0}]}"#;
@@ -4049,7 +3943,7 @@ mod tests {
             source.replace("0.1", TIMELINE_VERSION),
             "不含新字段的文档只差 version 字符串"
         );
-        // 未知版本原样保留，由 validate 报 UnsupportedVersion（不是 serde 文本错误）。
+        // Unknown versions are kept as-is, and validate reports UnsupportedVersion (not a serde text error).
         let future: TimelineDocument = serde_json::from_str(r#"{"ccutTimeline":"9.9"}"#).unwrap();
         assert_eq!(
             future.validate().unwrap_err(),
@@ -4061,7 +3955,7 @@ mod tests {
         );
     }
 
-    /// 0.4 的 `template`：整份层文档挂在根上，读写对称，校验走 `template::validate`。
+    /// The 0.4 `template`: the whole layer document hangs off the root. Reading and writing are symmetric, and validation goes through `template::validate`.
     #[test]
     fn template_field_round_trips_and_validates() {
         let mut doc = TimelineDocument::default();
@@ -4087,7 +3981,7 @@ mod tests {
         assert!(schema_json()["$defs"]["template"]["properties"]["layers"].is_object());
     }
 
-    /// 新元素在完整文档里的落地：overlay 轨承载、schema 与 struct 同进同退。
+    /// Where a new element lands in the full document: carried on the overlay track, and the schema and the struct move together.
     #[test]
     fn the_new_kinds_survive_a_full_document_round_trip() {
         let source = r##"{
@@ -4111,7 +4005,7 @@ mod tests {
         let again: TimelineDocument =
             serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
         assert_eq!(document, again);
-        // 音轨只放 audio 元素：新 kind 不能溜进音轨。
+        // Audio tracks hold only audio elements: a new kind must not slip into an audio track.
         let on_audio_track = source
             .replace("\"kind\":\"overlay\"", "\"kind\":\"audio\"")
             .replace("\"id\":\"e1\"", "\"id\":\"e9\"");

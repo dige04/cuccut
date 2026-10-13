@@ -18,7 +18,7 @@ describe('连接镜像里的 Agent 列表', () => {
   it('defaultDriver：标了默认的优先；没标默认、又有在检测的，先不下结论', () => {
     expect(defaultDriver(null, [])).toBeNull();
     expect(defaultDriver([driver('claude'), driver('codex', true)], ['claude'])?.id).toBe('codex');
-    // 默认的那个多半还在检测：不拿第一个顶上。
+    // The default one is probably still being detected, so do not substitute the first one.
     expect(defaultDriver([driver('claude')], ['codex'])).toBeNull();
     expect(defaultDriver([driver('claude'), driver('codex')], [])?.id).toBe('claude');
   });

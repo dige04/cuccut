@@ -5,29 +5,23 @@ use render_raster::ShaderQuad;
 use render_raster::drawop::{FrameOps, Mat6};
 use render_raster::plan::TransformUniforms;
 
-/// 单个 glyph scene node 的动态 run 上限。固定预算让桌面/Web 的 uniform texture
-/// 都是 8×1024 RGBA32F（128 KiB），生产者可在进入 GPU 前明确回退。
+/// The dynamic run limit for a single glyph scene node. The fixed budget makes the uniform texture on desktop/Web both 8×1024 RGBA32F (128 KiB), so producers can explicitly fall back before entering the GPU.
 pub const GLYPH_RUN_UNIFORM_LIMIT: usize = 1024;
 
-/// 单层 scene 节点上限。BCS2 编解码与会扩张节点的生产者共用同一预算，避免
-/// native 先认领、跨 wasm wire 时才因包结构过大回退。
+/// The per-layer scene node limit. The BCS2 codec and the producers that expand nodes share the same budget, so that native does not claim a node first and then fall back when crossing the wasm wire because the packet structure is too large.
 pub const SCENE_NODE_LIMIT: usize = 4096;
 
-/// CPU reference `filter.blur@1` 的结构上限。scene 以整数像素冻结半径，GPU
-/// 执行器不得为不同平台另造夹取口径。
+/// The structural limit of the CPU reference `filter.blur@1`. The scene freezes the radius in integer pixels; the GPU executor must not invent its own clamping convention for different platforms.
 pub const SCENE_BLUR_RADIUS_LIMIT: u32 = 256;
 
-/// 单个媒体元素允许冻结的 source effect 数量。Timeline 0.3 的闭集在同时启用
-///四段 filter preset、五段 effect preset 与全部显式字段时最多 18 条；再留六个槽给
-/// 同版本内的兼容扩展，同时阻止损坏输入制造无界 GPU pass 链。
+/// The number of source effects a single media element may freeze. The closed set of Timeline 0.3 reaches at most 18 when the four-stage filter preset, the five-stage effect preset and all explicit fields are enabled at once; six slots are reserved for compatible extensions within the same version, while also preventing corrupt input from creating an unbounded GPU pass chain.
 pub const TEXTURE_EFFECT_LIMIT: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScenePose {
     pub transform: Mat6,
     pub opacity: f32,
-    /// 整组后处理的 box blur 半径（画布像素）。普通 vector/glyph pass 忽略它，
-    /// 只有显式 `BlurredGroup` 消费；放在共享 pose 里可与 transform/opacity 同曲线采样。
+    /// The box blur radius (canvas pixels) for whole-group post-processing. Ordinary vector/glyph passes ignore it; only an explicit `BlurredGroup` consumes it. Placing it in the shared pose lets it be sampled on the same curve as transform/opacity.
     pub blur: f32,
 }
 
@@ -51,8 +45,7 @@ pub enum SceneCurveSolver {
     Caption,
 }
 
-/// 合成器可直接采样的 pose 区间。曲线仍来自共享 `ccut-motion` manifest；
-/// scene 只冻结绝对时间与端点，不复制字幕配方或引入平台时钟。
+/// The pose interval the compositor can sample directly. The curves still come from the shared `ccut-motion` manifest; the scene only freezes absolute times and endpoints, and does not copy subtitle recipes or introduce a platform clock.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneMotion {
     pub start: f64,
@@ -97,8 +90,7 @@ impl SceneMotion {
     }
 }
 
-/// tiny-skia `Transform::post_concat` 的 renderer-neutral Mat6 口径：先应用
-/// `first`，再应用 `second`。vector 与 glyph 执行器必须共用这一份顺序。
+/// The renderer-neutral Mat6 convention of tiny-skia's `Transform::post_concat`: apply `first` first, then `second`. The vector and glyph executors must share this one ordering.
 pub fn post_concat_mat6(first: Mat6, second: Mat6) -> Mat6 {
     let [a, b, c, d, tx, ty] = first;
     let [e, f, g, h, ux, uy] = second;
@@ -112,14 +104,11 @@ pub fn post_concat_mat6(first: Mat6, second: Mat6) -> Mat6 {
     ]
 }
 
-/// 字形光栅结果的宿主内唯一身份。它不进入 BCF / DrawOp 指纹，只用于实时
-/// glyph atlas 的驻留与复用；生产者必须把字体 face、glyph id、离散字号档和
-/// 次像素档都编码进来。
+/// The unique identity, within the host, of a glyph rasterization result. It does not enter the BCF / DrawOp fingerprint; it is used only for residency and reuse in the live glyph atlas. Producers must encode the font face, glyph id, discrete font-size bucket and sub-pixel bucket into it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GlyphKey(pub [u64; 2]);
 
-/// glyph atlas 的像素类型。Alpha 是逐行紧排的 R8 coverage；Color 是
-/// 逐行紧排的 premultiplied RGBA8。
+/// The pixel type of the glyph atlas. Alpha is tightly packed row by row as R8 coverage; Color is tightly packed row by row as premultiplied RGBA8.
 #[derive(Debug, Clone)]
 pub enum GlyphPixels {
     Alpha(Arc<[u8]>),
@@ -138,9 +127,7 @@ impl GlyphPixels {
     }
 }
 
-/// 一个可进入 atlas 的字形图像。像素左上角为原点；`left` / `top` 是
-/// 相对字形基线原点的 swash placement（`top` 向上为正）。历史名称
-/// `GlyphMask` 保持不变，但 pixels 可以是 R8 或彩色 RGBA。
+/// A glyph image that can enter the atlas. The origin is the top-left corner of the pixels; `left` / `top` are the swash placement relative to the glyph's baseline origin (`top` is positive upward). The historical name `GlyphMask` is kept unchanged, but pixels may be R8 or colour RGBA.
 #[derive(Debug, Clone)]
 pub struct GlyphMask {
     pub key: GlyphKey,
@@ -213,9 +200,7 @@ impl GlyphMask {
     }
 }
 
-/// 一个 atlas quad 的稳定几何。`transform` 把字形的**基线原点**映射到未施加
-/// 动态 run pose 的画布坐标；执行器先应用 mask 自带的 `left/-top` placement，
-/// 再应用该变换，最后才取 `uniform_index` 指向的动态 uniform。
+/// The stable geometry of one atlas quad. `transform` maps the glyph's **baseline origin** to canvas coordinates without the dynamic run pose applied. The executor first applies the mask's own `left/-top` placement, then applies this transform, and only last fetches the dynamic uniform pointed to by `uniform_index`.
 #[derive(Debug, Clone)]
 pub struct GlyphInstance {
     pub mask: Arc<GlyphMask>,
@@ -223,17 +208,14 @@ pub struct GlyphInstance {
     pub uniform_index: u32,
 }
 
-/// renderer-neutral 字形图案纹理的内容身份。它与 [`GlyphKey`] 一样只服务
-/// compositor 会话内的驻留/复用，不进入 BCF；生产者必须让 key 覆盖尺寸与全部
-/// premultiplied RGBA8 字节。
+/// The content identity of a renderer-neutral glyph pattern texture. Like [`GlyphKey`], it serves only residency/reuse within a compositor session and does not enter BCF; producers must make the key cover the size and all premultiplied RGBA8 bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GlyphTextureKey(pub [u64; 2]);
 
-/// retained glyph 图案的单边上限；2048² RGBA8 恰好对应 BCS2 的 16 MiB 资源上限。
+/// The per-side limit for a retained glyph pattern; a 2048² RGBA8 texture is exactly the 16 MiB resource limit of BCS2.
 pub const SCENE_GLYPH_TEXTURE_SIZE_LIMIT: u32 = 2048;
 
-/// 一条 glyph run 可选的只读重复图案。像素逐行紧排为 premultiplied RGBA8；
-/// scene 携带内容而不是平台纹理句柄，因此 native / Web 与离线执行器消费同一资源。
+/// An optional read-only repeating pattern for a glyph run. Pixels are tightly packed row by row as premultiplied RGBA8; the scene carries content rather than a platform texture handle, so native, Web and offline executors all consume the same resource.
 #[derive(Debug, Clone)]
 pub struct GlyphTexture {
     pub key: GlyphTextureKey,
@@ -267,10 +249,7 @@ impl GlyphTexture {
     }
 }
 
-/// renderer-neutral 字形填充。`RepeatLinearGradient` 在每个字形的本地轮廓坐标中
-/// 定义一段 A→B→A 的重复线性渐变；`RepeatTexture` 从所属 [`GlyphRun::texture`]
-/// 读取同坐标系的重复图案；`DilatedStroke` 则在稳定 alpha mask 周围按画布像素
-/// 扩张居中描边。三者都让逐词状态只改 uniform、不重写 atlas quad。
+/// Renderer-neutral glyph fills. `RepeatLinearGradient` defines a repeating linear gradient A→B→A in each glyph's local outline coordinates; `RepeatTexture` reads a repeating pattern in the same coordinate system from the owning [`GlyphRun::texture`]; `DilatedStroke` expands a centred stroke by canvas pixels around the stable alpha mask. All three let per-word state change only uniforms, without rewriting the atlas quad.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum GlyphPaint {
     #[default]
@@ -281,21 +260,16 @@ pub enum GlyphPaint {
         first: [f32; 4],
         middle: [f32; 4],
     },
-    /// 以字形本地轮廓坐标重复采样 run 级 premultiplied RGBA8 图案。
+    /// Samples the run-level premultiplied RGBA8 pattern repeatedly in the glyph's local outline coordinates.
     RepeatTexture,
-    /// 对 alpha glyph 做居中描边；`width` 是完整线宽，彩色 glyph 不执行该效果。
-    /// 合成器固定为 mask quad 预留扩边，因此生产者必须遵守
-    /// [`SCENE_GLYPH_STROKE_WIDTH_LIMIT`]。
+    /// Applies a centred stroke to alpha glyphs; `width` is the full stroke width, and colour glyphs do not apply this effect. The compositor reserves a fixed outset for the mask quad, so producers must respect [`SCENE_GLYPH_STROKE_WIDTH_LIMIT`].
     DilatedStroke { width: f32 },
 }
 
-/// retained glyph shader 可在不重建 quad 的前提下表达的最大完整描边线宽。
+/// The maximum full stroke width that the retained glyph shader can express without rebuilding the quad.
 pub const SCENE_GLYPH_STROKE_WIDTH_LIMIT: f32 = 16.0;
 
-/// retained scene 节点与既有目标的逐像素复合方式。`Screen` 在预乘颜色下可严格写成
-/// `source + destination * (1 - source)`，因此四个 wgpu 后端都能用固定混合状态
-/// 执行。`Difference` / `Exclusion` 必须放在顶层 [`BlurredGroup`]，并由宿主提供
-/// 可 `COPY_SRC` 的真实 target；普通透明 overlay target 必须显式回退。
+/// The per-pixel compositing mode of a retained scene node against existing targets. Under premultiplied colour, `Screen` can be written strictly as `source + destination * (1 - source)`, so all four wgpu backends can execute it with a fixed blend state. `Difference` / `Exclusion` must be placed on a top-level [`BlurredGroup`], and the host must supply a real target that supports `COPY_SRC`; ordinary transparent overlay targets must explicitly fall back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SceneCompositeMode {
     #[default]
@@ -305,67 +279,52 @@ pub enum SceneCompositeMode {
     Exclusion,
 }
 
-/// 兼容 R2 首批 glyph-only scene 的公开名称；新节点使用通用枚举。
+/// The public name kept for compatibility with the first glyph-only scenes of R2; new nodes use the general enum.
 pub type GlyphCompositeMode = SceneCompositeMode;
 
-/// 一组字形共享的 run-local 状态。`transform` 在稳定 instance 几何之后、
-/// [`GlyphRun::pose`] 之前应用；颜色是 straight RGBA，fragment shader 内转预乘后
-/// 按 [`GlyphRun::composite`] 合入目标。`clip` 是施加 run transform 之前的画布坐标矩形
-/// `[left, top, right, bottom]`；因此裁剪框会与逐词 pose / scene pose 一起运动，
-/// 但仍只改 uniform。逐词强调不重写字形顶点、更不重新光栅 mask。
+/// The run-local state shared by a group of glyphs. `transform` is applied after the stable instance geometry and before [`GlyphRun::pose`]; the colour is straight RGBA, converted to premultiplied inside the fragment shader and then composited into the target per [`GlyphRun::composite`]. `clip` is a canvas-coordinate rectangle `[left, top, right, bottom]` taken before the run transform is applied, so the clip box moves together with the per-word pose / scene pose while still only changing uniforms. Per-word emphasis neither rewrites glyph vertices nor re-rasterizes the mask.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlyphRunUniform {
     pub transform: Mat6,
     pub color: [f32; 4],
-    /// 不含字色 alpha 的 chunk opacity。彩色字形忽略字色，只消费这个透明度；
-    /// alpha mask 仍使用 `color.a`。
+    /// The chunk opacity excluding the text colour's alpha. Colour glyphs ignore the text colour and consume only this opacity; alpha masks still use `color.a`.
     pub color_opacity: f32,
     pub clip: Option<[f32; 4]>,
     pub paint: GlyphPaint,
 }
 
-/// 保持原始绘制顺序的一批字形。逐词状态更新 `uniforms`，整组入场更新 `pose`
-/// 或由 `motion` 在合成期采样；mask 本身继续命中 atlas，不再重光栅整幅 overlay。
+/// A batch of glyphs that keeps the original draw order. Per-word state updates `uniforms`; whole-group entrance updates `pose`, or is sampled at compositing time by `motion`. The mask itself keeps hitting the atlas, so the overlay is no longer re-rasterized as a whole.
 #[derive(Debug, Clone, Default)]
 pub struct GlyphRun {
     pub glyphs: Arc<[GlyphInstance]>,
     pub uniforms: Vec<GlyphRunUniform>,
-    /// `RepeatTexture` 的单一只读资源。一个 run 只允许一张图案，避免把资源索引
-    /// 塞进逐词 uniform；不同图案必须拆成不同有序 run。
+    /// The single read-only resource for `RepeatTexture`. A run allows only one pattern, to avoid stuffing a resource index into the per-word uniform; different patterns must be split into different ordered runs.
     pub texture: Option<Arc<GlyphTexture>>,
     pub composite: GlyphCompositeMode,
     pub pose: ScenePose,
     pub motion: Option<SceneMotion>,
 }
 
-/// 先把多层 glyph source-over 到透明中间层，再对整层做一次可分离 box blur。
-/// 字幕 shadow/glow 的描边与正文必须在模糊前合并；逐层各糊一次会改变交叠 alpha。
+/// Source-over composites multiple glyph layers onto a transparent intermediate layer first, then applies one separable box blur to the whole layer. The outline of subtitle shadow/glow and the body text must be merged before blurring; blurring each layer separately would change the overlapping alpha.
 #[derive(Debug, Clone, Default)]
 pub struct GlyphEffect {
     pub layers: Vec<Arc<GlyphRun>>,
     pub radius: u32,
 }
 
-/// 先按原始 z 序把子节点画进透明中间层，再对整组做可选 box blur、水平 reveal
-/// 与一次性 composite。字幕入场 `magic-fade` 用它保证底板、shadow/glow、outline
-/// 与 fill 一起变糊；文字元素 `wipe` 在 blur 后裁整层；非 Normal 字幕用半径 0
-/// 保留 CPU 的「先组内 source-over、后整层复合」。
+/// Draws the child nodes into a transparent intermediate layer in their original z order, then applies to the whole group an optional box blur, a horizontal reveal, and a single composite. The subtitle entrance `magic-fade` uses it to ensure the backplate, shadow/glow, outline and fill all blur together; the text element `wipe` clips the whole layer after the blur; non-Normal subtitles use radius 0 to keep the CPU's "source-over within the group first, then composite the whole layer".
 #[derive(Debug, Clone, Default)]
 pub struct BlurredGroup {
     pub nodes: Vec<SceneNode>,
     pub radius: f32,
     pub motion: Option<SceneMotion>,
-    /// blur 后从画布左缘保留的归一化宽度。`None` 表示不裁剪；执行器会把值夹到
-    /// `[0, 1]`，边缘像素使用与 CPU `mask.progress@1` 相同的亚像素 coverage。
+    /// The normalized width kept from the canvas left edge after blur. `None` means no clipping; the executor clamps the value to `[0, 1]`, and edge pixels use the same sub-pixel coverage as the CPU `mask.progress@1`.
     pub reveal: Option<f32>,
-    /// 子节点先按 Normal 合入透明中间层，再把完整层一次性复合到真实 target。
+    /// Child nodes are first merged into a transparent intermediate layer using Normal, then the complete layer is composited onto the real target in one pass.
     pub composite: SceneCompositeMode,
 }
 
-/// 合成期程序化圆角矩形。字幕 plate 的位置、尺寸、圆角与颜色都属于逐帧
-/// uniform；执行器只画一张固定 quad，不为宽度扫入或跨词移动重新 tessellate。
-/// `rect` 是应用 [`Self::pose`] 前的画布像素 `[x, y, width, height]`，颜色是
-/// straight RGBA，最终 opacity 还要乘 pose/motion 的组透明度。
+/// A procedural rounded rectangle at compositing time. The position, size, corner radius and colour of the subtitle plate all belong to the per-frame uniform; the executor draws only one fixed quad, and does not re-tessellate for a width sweep-in or cross-word movement. `rect` is the canvas pixel `[x, y, width, height]` before [`Self::pose`] is applied; the colour is straight RGBA, and the final opacity must also be multiplied by the group opacity of the pose/motion.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoundedRectNode {
     pub rect: [f32; 4],
@@ -375,8 +334,7 @@ pub struct RoundedRectNode {
     pub motion: Option<SceneMotion>,
 }
 
-/// 外部媒体纹理在元素盒内的缩放规则。源像素仍由宿主保管；scene 只冻结
-/// renderer-neutral 的采样语义，Web/Metal/DX12 执行器不得各自重算 cover/contain。
+/// The scaling rule for an external media texture within the element box. The source pixels are still held by the host; the scene only freezes the renderer-neutral sampling semantics, and the Web/Metal/DX12 executors must not each recompute cover/contain on their own.
 #[cfg(feature = "external-media-scene")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureFit {
@@ -384,22 +342,18 @@ pub enum TextureFit {
     Contain,
 }
 
-/// `contain` 留边的合成语义。PIP 的历史行为是透明留边；fullscreen 可选择
-/// 黑色，或让 compositor 以 cover → 局部 box blur → 压暗 → contain 的中间
-/// pass 生成模糊背景。枚举只冻结语义，不携带任何平台纹理。
+/// The compositing semantics of the letterbox margin in `contain`. PIP's historical behaviour is a transparent margin; fullscreen may choose black, or have the compositor generate a blurred background via an intermediate pass of cover → local box blur → darken → contain. The enum only freezes semantics and carries no platform texture.
 #[cfg(feature = "external-media-scene")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureBackground {
     Transparent,
     Black,
     Blur,
-    /// 0.12 的纯色画布背景（`#RRGGBB`，不透明）。`Black` 保留为独立一档，
-    /// 老文档的参数与指纹逐位不变。
+    /// A solid canvas background from 0.12 (`#RRGGBB`, opaque). `Black` is kept as a separate tier, so the parameters and fingerprints of older documents stay bit-identical.
     Color([u8; 3]),
 }
 
-/// 外部纹理在元素局部盒上的解析遮罩。圆角矩形继续使用 [`TextureNode::radius`]；
-/// 椭圆忽略圆角半径，与 `mask.shape@1` 的 CPU reference 一致。
+/// The analytic mask of the external texture over the element's local box. Rounded rectangles continue to use [`TextureNode::radius`]; ellipses ignore the corner radius, consistent with the CPU reference of `mask.shape@1`.
 #[cfg(feature = "external-media-scene")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureMaskShape {
@@ -407,9 +361,7 @@ pub enum TextureMaskShape {
     Ellipse,
 }
 
-/// 在媒体天然尺寸、fit/mask/元素仿射之前执行的有序效果。数组顺序直接来自
-/// `timeline::effects::lower_element_effects`；合成器不得重新分组后改变可见
-/// 的 RGBA8 round-trip 边界。`Blur` 半径已经按画布短边换成天然像素整数。
+/// Ordered effects executed before the media's natural size, fit/mask and element affine transform. The array order comes directly from `timeline::effects::lower_element_effects`; the compositor must not regroup them in a way that changes the visible RGBA8 round-trip boundaries. The `Blur` radius has already been converted to a natural-pixel integer based on the canvas short side.
 #[cfg(feature = "external-media-scene")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TextureEffect {
@@ -427,34 +379,27 @@ pub enum TextureEffect {
     Vignette(f32),
 }
 
-/// 一个宿主纹理的有序采样节点。`texture` 是会话内 key（通常为 Timeline
-/// `srcId`），不携带平台句柄；宿主在提交前只为当前 scene 真正引用的 key 拉取
-/// 解码帧。`transform` 作用于画布像素中的 `rect`，与 DrawOp Mat6 同口径。
+/// An ordered sampling node for one host texture. `texture` is a session key (usually the Timeline `srcId`) and carries no platform handle; before submission, the host fetches decoded frames only for the keys the current scene actually references. `transform` acts on `rect` in canvas pixels, using the same convention as DrawOp Mat6.
 #[cfg(feature = "external-media-scene")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextureNode {
     pub texture: String,
-    /// 源媒体时刻；静态图片为 -1。宿主可据此驱动独立视频解码器，合成器只采样
-    /// 已经到货的纹理，不在 render pass 内做 seek。
+    /// The source media time; -1 for static images. The host may use it to drive an independent video decoder. The compositor only samples textures that have already arrived, and does not seek inside the render pass.
     pub media_ms: i64,
     pub source_width: u32,
     pub source_height: u32,
     pub rect: [f32; 4],
     pub transform: Mat6,
     pub opacity: f32,
-    /// 圆角半径是元素局部像素，应用在 cover/contain 之后、仿射之前。
+    /// The corner radius is in element-local pixels, applied after cover/contain and before the affine transform.
     pub radius: f32,
-    /// `mask.shape@1` 的形状；全屏非平铺媒体会冻结为 RoundedRect，保持历史上
-    /// 不应用局部 shape mask 的语义。
+    /// The shape for `mask.shape@1`. Full-screen non-tiled media is frozen as RoundedRect, keeping the historical semantics of not applying a local shape mask.
     pub mask_shape: TextureMaskShape,
-    /// 遮罩羽化宽度（元素局部像素）。CPU 先在局部画布应用，再做元素仿射；
-    /// compositor 必须保持同一顺序，不能按最终屏幕像素重新解释。
+    /// The mask feather width (element-local pixels). The CPU applies it on the local canvas first, then the element affine transform; the compositor must keep the same order and must not reinterpret it in final screen pixels.
     pub mask_feather: f32,
-    /// 媒体天然尺寸上的有序效果链。共享 lowering 已展开 filter/effect preset；
-    /// 恒等效果被省略，同一链可供 native、Web 与离屏导出逐项执行。
+    /// The ordered effect chain at the media's natural size. The shared lowering has already expanded the filter/effect presets; identity effects are omitted, and the same chain can be executed item by item by native, Web and offscreen export.
     pub source_effects: Arc<[TextureEffect]>,
-    /// `mask.progress@1` 的水平显示比例。1 表示不裁切；coverage 在元素局部
-    /// 像素上求值，并与 shape mask 相乘后再进入元素仿射。
+    /// The horizontal display ratio for `mask.progress@1`. 1 means no cropping; coverage is evaluated on element-local pixels, multiplied with the shape mask, and only then enters the element affine transform.
     pub reveal: f32,
     /// Circular reveal fraction, 1 = the complete local box.
     pub iris: f32,
@@ -462,40 +407,32 @@ pub struct TextureNode {
     pub background: TextureBackground,
 }
 
-/// 一帧场景中的一个有序节点。数组顺序就是 z 序；执行层不得再按节点类型
-/// 重排。`SceneNode` 属于 timeline/render 交汇层，而不是 wgpu 执行层。
+/// An ordered node within one frame's scene. Array order is the z order; the execution layer must not reorder by node type. `SceneNode` belongs to the timeline/render intersection layer, not the wgpu execution layer.
 #[derive(Debug, Clone)]
 pub enum SceneNode {
-    /// CPU reference 与 GPU 矢量执行器共用的既有 DrawOp 指令流。
+    /// The existing DrawOp instruction stream shared by the CPU reference and the GPU vector executor.
     Vectors(Arc<FrameOps>),
-    /// 与 `Vectors` 同一 DrawOp 几何，但额外携带合成期 pose。字幕底板可随 glyph
-    /// motion 连续运动，而求值层只需在离散词边界或 motion 结束时重建 scene。
+    /// The same DrawOp geometry as `Vectors`, but additionally carrying a compositing-time pose. The subtitle backplate can move continuously with glyph motion, while the evaluation layer only needs to rebuild the scene at discrete word boundaries or when the motion ends.
     AnimatedVectors {
         frame: Arc<FrameOps>,
         pose: ScenePose,
         motion: Option<SceneMotion>,
     },
-    /// 程序化 shader 节点显式携带画布变换。`ShaderQuad` 自身的单位变换仍供
-    /// 离屏 conformance 使用，实时场景不靠执行器猜测放置语义。
+    /// A procedural shader node explicitly carries a canvas transform. `ShaderQuad`'s own identity transform is still used for offscreen conformance; the live scene does not rely on the executor guessing placement semantics.
     ShaderQuad {
         quad: Arc<ShaderQuad>,
         transform: TransformUniforms,
     },
-    /// 图片、视频帧与 asset sticker 共用的宿主纹理节点。数组位置就是它与
-    /// vector/glyph/shader 的全局 z 序；执行层不得按资源类型另开一张画布。
+    /// The host texture node shared by images, video frames and asset stickers. Its array position is its global z order relative to vector/glyph/shader; the execution layer must not open a separate canvas per resource type.
     #[cfg(feature = "external-media-scene")]
     Texture(Arc<TextureNode>),
-    /// 共享排版层产出的字形 mask + 逐字形姿态。atlas 与 shader pass 都属于
-    /// compositor；这里不携带任何 wgpu 资源。
+    /// The glyph masks and per-glyph poses produced by the shared typesetting layer. The atlas and shader passes both belong to the compositor; nothing here carries any wgpu resource.
     Glyphs(Arc<GlyphRun>),
-    /// Designed Caption plate 等会逐帧改变盒参数的圆角矩形。固定 quad + fragment
-    /// SDF 保证动画只写 uniform，不回退到每帧 vector tessellation。
+    /// A rounded rectangle for things like the Designed Caption plate, whose box parameters change every frame. A fixed quad plus a fragment SDF ensures the animation only writes uniforms and does not fall back to per-frame vector tessellation.
     RoundedRect(Arc<RoundedRectNode>),
-    /// 多层 glyph 先合成、后模糊，再按 source-over 放到此前节点之上。执行器使用
-    /// 全 GPU 中间纹理；实时路径不得为求包围盒或模糊结果回读。
+    /// Multiple glyph layers are composited first, then blurred, then placed above the preceding nodes with source-over. The executor uses full-GPU intermediate textures; the live path must not read back to compute a bounding box or blur results.
     BlurredGlyphs(Arc<GlyphEffect>),
-    /// 子节点先合成再做整组 blur；`motion` 只在合成期采样半径，子节点各自仍消费
-    /// 同一份 motion 的 transform/opacity 通道。
+    /// Child nodes are composited first, then a whole-group blur is applied. `motion` samples the radius only at compositing time, while each child still consumes the transform/opacity channels of the same motion.
     BlurredGroup(Arc<BlurredGroup>),
 }
 
@@ -536,14 +473,12 @@ impl SceneNode {
     }
 }
 
-/// 求值层交给合成器的逐帧清单。`fingerprint` 沿用既有 DrawOp/计划身份，
-/// 不由 GPU 重算；`next_change` 沿用 OverlayScheduler 的绝对时间语义。
+/// The per-frame manifest that the evaluation layer hands to the compositor. `fingerprint` reuses the existing DrawOp/plan identity and is not recomputed by the GPU; `next_change` follows the absolute-time semantics of OverlayScheduler.
 #[derive(Debug, Clone, Default)]
 pub struct SceneFrame {
     pub nodes: Vec<SceneNode>,
     pub next_change: Option<f64>,
-    /// `Some(t)` 表示当前 scene 在 `t` 前含连续 GPU motion；调度器应按显示刷新率
-    /// 调 `render_at`，但不得重跑求值层。到点后若无其它 dirty 源恢复零帧泵。
+    /// `Some(t)` means the current scene contains continuous GPU motion before `t`; the scheduler should call `render_at` at the display refresh rate, but must not re-run the evaluation layer. Once that time is reached, if no other dirty source exists, zero-frame pumping resumes.
     pub active_until: Option<f64>,
     pub fingerprint: u64,
 }

@@ -1,16 +1,12 @@
-//! 按帧计划画一帧（架构设计 §9.3）。
+//! Draws one frame from the frame plan (architecture design §9.3).
 //!
-//! - 输出是 `width`×`height` 的 RGBA；实例的几何是画布的百分比，内核按输出尺寸排，输出与序列画布同宽高比；
-//! - 先铺黑底（成片没有透明通道），再按 `backgroundAlpha` 铺画布的背景色；
-//! - 图层从下往上画：每一层由内核画成一张与输出等大的透明层（几何、关键帧、元素动画、遮罩、平铺与不透明度都在里面），
-//!   作用描边与阴影，在转场里时按 [`crate::transition`] 与另一侧合起来，再盖到下面；
-//! - 视频与位图的源画面由 [`LayerMedia`] 给出；SVG 图片（素材版本的 `mediaType` 是 `image/svg+xml`）由这里从素材字节
-//!   按输出的长边光栅，是贴纸时先按 `fillOverrides` 换色（`timeline::svg_fill`）；GIF 图片（`image/gif`）由这里从素材
-//!   字节解成动图，按离实例开始过了多久取帧（[`crate::Gif::frame_at`]）。两者预览与导出同一份实现。裁剪之后先作用
-//!   `fx` 的 1–10 再注入内核；没有源画面的种类（模板贴纸、空的占位框）在画好的层上作用 1–10；
-//! - 字幕按样式文档分组，在组里第一层的位置画一次；模板层由内核的模板光栅画；
-//! - 画不出来的东西按 [`crate::support`] 的判断报错，或在跳过模式下不画并记下来；
-//! - 混合在 sRGB 编码值上做，与 Canvas 2D 一致。
+//! - The output is RGBA of `width`×`height`; an instance's geometry is in percentages of the canvas, and the kernel lays it out at the output size, so the output has the same aspect ratio as the sequence canvas;
+//! - First a black background is laid down (the final render has no alpha channel), then the canvas background color is laid down per `backgroundAlpha`;
+//! - Layers are drawn bottom to top: each layer is drawn by the kernel as a transparent layer the same size as the output (geometry, keyframes, element animation, masks, tiling and opacity all happen inside it); stroke and shadow are applied; and during transitions it is combined with the other side per [`crate::transition`] before being composited below;
+//! - Picture sources for video and bitmaps come from [`LayerMedia`]. SVG images (asset version `mediaType` is `image/svg+xml`) are rasterized here from the asset bytes at the output's long edge; for stickers, colors are first replaced per `fillOverrides` (`timeline::svg_fill`). GIF images (`image/gif`) are decoded here from the asset bytes into an animation, and the frame is picked by how long since the instance started ([`crate::Gif::frame_at`]). Preview and export share one implementation for both. After cropping, `fx` 1–10 is applied before injecting into the kernel; kinds with no source picture (template stickers, empty placeholder boxes) have 1–10 applied to the finished layer;
+//! - Captions are grouped by style document and drawn once at the position of the first layer in the group; template layers are drawn by the kernel's template rasterizer;
+//! - Things that cannot be drawn are reported as errors, judged per [`crate::support`], or in skip mode are not drawn and are recorded;
+//! - Blending is done on sRGB-encoded values, consistent with Canvas 2D.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -37,7 +33,7 @@ use crate::template::TemplateScenes;
 use crate::text_measure::{TextBox, measure_text_element};
 use crate::transition::{BoxGeom, compose, effective_progress};
 
-/// 合成失败。`items` 是不跳过时遇到的画不出来的东西（错误码 `EXPORT_UNSUPPORTED_CONTENT`）。
+/// Composition failed. `items` are the things that could not be drawn and were encountered when not skipping (error code `EXPORT_UNSUPPORTED_CONTENT`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderError {
     pub code: String,
@@ -67,33 +63,32 @@ impl std::fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// 合成时报的警告（不影响画面能不能画出来）。
+/// Warnings reported during composition (they do not affect whether the picture can be drawn).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RenderWarning {
     pub code: &'static str,
     pub detail: String,
 }
 
-/// 渲染内核的提示（字体替换、缺字、没有频谱的声波等）。
+/// Notices from the rendering kernel (font substitution, missing glyphs, audio waveforms with no spectrum, and so on).
 pub const RENDER_NOTE: &str = "EXPORT_RENDER_NOTE";
 
-/// 层要的素材从哪里来（导出时是解码器与素材文件，预览时是宿主送进来的帧）。
+/// Where the layer's assets come from (on export, decoders and asset files; in preview, frames the host supplies).
 pub trait LayerMedia {
-    /// 视频或图片层这一刻的画面（按源的显示尺寸，预乘的 RGBA）。`None`：这一层的素材在跳过的清单里，不画。
+    /// The picture of a video or image layer at this moment (at the source's display size, premultiplied RGBA). `None`: this layer's asset is in the skipped list, so it is not drawn.
     fn picture(&mut self, layer: &VisualLayer) -> Result<Option<&Pixmap>, RenderError>;
 
-    /// 素材的原始字节（Lottie 贴纸要读它）。缺省没有。
+    /// Raw bytes of the asset (Lottie stickers read them). None by default.
     fn asset_bytes(&mut self, _asset: &VersionRef) -> Option<Vec<u8>> {
         None
     }
 
-    /// 声波实例现成的整轨频谱（BCS1，第 k 帧是序列时刻 `k / 60`）：有就直接用（界面的缩略图给示意的频谱）。缺省没有，
-    /// 按声音计划从素材的频谱拼（[`crate::spectrum`]）。
+    /// A ready-made full-track spectrum for an audio waveform instance (BCS1; frame k is sequence time `k / 60`): used directly if present (the UI's thumbnails supply an illustrative spectrum). None by default; otherwise it is assembled from the asset's spectrum according to the sound plan ([`crate::spectrum`]).
     fn spectrum(&mut self, _item_id: &str) -> Option<Vec<u8>> {
         None
     }
 
-    /// 素材的频谱（BCS1，按素材的源时间排）。缺省没有：用到它的声波按静态的样子画，并报一条提示。
+    /// The asset's spectrum (BCS1, ordered by the asset's source time). None by default: an audio waveform that uses it is drawn in a static form, and a notice is reported.
     fn audio_spectrum(&mut self, _asset: &VersionRef) -> Option<Vec<u8>> {
         None
     }
@@ -103,13 +98,13 @@ pub trait LayerMedia {
 pub struct RenderOptions {
     pub width: u32,
     pub height: u32,
-    /// 画不出来的东西跳过（不画那一层、跳过那个效果、转场按硬切）并记下来；否则报错。
+    /// Things that cannot be drawn are skipped (the layer is not drawn, the effect is skipped, the transition becomes a hard cut) and recorded; otherwise an error is reported.
     pub skip_unsupported: bool,
-    /// 画字幕层（`burnCaptions`）。关掉时字幕层不画，也不算画不出来。
+    /// Draw the caption layer (`burnCaptions`). When off, the caption layer is not drawn, and this does not count as undrawable.
     pub captions: bool,
 }
 
-/// 画好的一层：与输出等大的透明层，与它的框（转场按框画；模板层没有框）。
+/// A finished layer: a transparent layer the same size as the output, along with its box (transitions are drawn by box; template layers have no box).
 struct DrawnLayer {
     pixmap: Pixmap,
     geom: Option<BoxGeom>,
@@ -118,55 +113,55 @@ struct DrawnLayer {
 pub struct FrameRenderer {
     options: RenderOptions,
     documents: Documents,
-    /// 交给内核的字体字节（共享：几台排版引擎只占一份内存）。
+    /// Font bytes handed to the kernel (shared: several layout engines take up only one copy in memory).
     fonts: Vec<Arc<Vec<u8>>>,
     frame: Pixmap,
-    /// 画实例用的内核计划：编一次，每层把 `elements` 换成那一个实例。
+    /// The kernel plan used to draw instances: compiled once, with each layer swapping `elements` for that instance.
     elements: Option<OverlayRenderPlan>,
     captions: HashMap<String, CaptionPlan>,
-    /// 各 `(字幕文档, 样式文档)` 画不画得出来（[`caption_problem`]）：只随文档变，换文档时清空。
+    /// Whether each `(caption document, style document)` pair can be drawn ([`caption_problem`]): changes only with the documents, and is cleared when documents are swapped.
     caption_checks: HashMap<(String, Option<String>), Option<CaptionProblem>>,
-    /// 各 `(序列, 字幕组)` 的剪辑签名（[`Self::caption_signature`]）：换文档或序列变了（[`Self::sequence_changed`]）时清空。
+    /// The edit signature of each `(sequence, caption group)` ([`Self::caption_signature`]): cleared when the documents or the sequence change ([`Self::sequence_changed`]).
     caption_signatures: HashMap<(String, String), String>,
     collect_caption_hits: bool,
     caption_hits: Vec<CaptionHit>,
     templates: TemplateScenes,
     lotties: HashMap<String, Option<Arc<Lottie>>>,
-    /// SVG 图片按输出长边光栅好的画面（键是 `素材ID@版本`，换过色的是它的变体 ID）；读不出来的是 `None`。换尺寸时作废。
+    /// Pictures of SVG images rasterized at the output long edge (key is `asset ID@version`; a recolored one uses its variant ID); `None` if they cannot be read. Invalidated when the size changes.
     svgs: HashMap<String, Option<Arc<Pixmap>>>,
-    /// 解好的 GIF（键是 `素材ID@版本`）；读不出来的是 `None`。与输出尺寸无关，换尺寸时留着。
+    /// Decoded GIFs (key is `asset ID@version`); `None` if they cannot be read. Independent of output size, so kept when the size changes.
     gifs: HashMap<String, Option<Arc<crate::Gif>>>,
-    /// 声波实例 → 它的频谱轨（键变了就重拼）。
+    /// Audio waveform instance → its spectrum track (reassembled when the key changes).
     viz: HashMap<String, VizEntry>,
-    /// 各说话人在序列上说话的区间（声波的 `speaker` 用）；`None` 是视频里没有转写。
+    /// The intervals in which each speaker talks on the sequence (used by the waveform's `speaker`); `None` means the video has no transcript.
     speakers: Option<Arc<SpeakerActivity>>,
-    /// 这一帧用到、还没有的素材频谱（实例与素材）。
+    /// Asset spectra that this frame uses but that are not yet available (instance and asset).
     missing_spectra: Vec<(String, VersionRef)>,
     warnings: Vec<RenderWarning>,
     skipped: Vec<UnsupportedItem>,
     skipped_keys: HashSet<String>,
-    /// 不铺背景（界面的缩略图要透明底）：帧是预乘的 RGBA。
+    /// No background is laid down (the UI's thumbnails need a transparent background): the frame is premultiplied RGBA.
     transparent: bool,
-    /// 换尺寸、换文档时拆下来的排版引擎：下一份内核计划接着用，不再解析一遍字体。
+    /// Layout engine taken apart when the size or documents change: the next kernel plan reuses it, so fonts are not parsed again.
     engines: Vec<TextEngine>,
-    /// 各文字实例排字时点了名、字体库里没有的族（常设：内核缓存了排好的字，之后的帧不再排，也要照报）。换字体时清空。
+    /// Families named when laying out each text instance that are not in the font library (persistent: the kernel caches laid-out glyphs, and later frames do not lay out again, so these must still be reported). Cleared when fonts change.
     item_fonts: HashMap<String, BTreeSet<String>>,
-    /// 到目前为止画到的层用到、字体库里没有的族（`clear_reports` 清空）。
+    /// Families used by the layers drawn so far that are not in the font library (cleared by `clear_reports`).
     missing_fonts: BTreeSet<String>,
-    /// 排字时点了名的 face（几台排版引擎共用，常设）：宿主按它去本机字体里找 face（[`Self::used_faces`]）。
+    /// Faces named during layout (shared by several layout engines, persistent): the host uses them to look for faces in local fonts ([`Self::used_faces`]).
     face_log: FaceLog,
 }
 
-/// 留几台排版引擎备用（每台都装着全部字体）。
+/// Keeps a few layout engines in reserve (each has all the fonts installed).
 const SPARE_ENGINES: usize = 2;
 
 impl FrameRenderer {
-    /// `fonts` 是交给内核的字体字节，第一份是回退字体（原生导出用 [`crate::bundled_fonts`]，预览由宿主注入同一批）。
+    /// `fonts` are the font bytes handed to the kernel; the first is the fallback font (native export uses [`crate::bundled_fonts`]; the preview has the host inject the same set).
     pub fn new(options: RenderOptions, documents: Documents, fonts: Vec<Vec<u8>>) -> Result<FrameRenderer, RenderError> {
         Self::with_shared_fonts(options, documents, fonts.into_iter().map(Arc::new).collect())
     }
 
-    /// [`Self::new`]，字体字节与调用方共享（预览留着一份字体，渲染器重建时不再复制）。
+    /// [`Self::new`], with font bytes shared with the caller (the preview keeps one copy of the fonts, and rebuilding the renderer does not copy them again).
     pub fn with_shared_fonts(options: RenderOptions, documents: Documents, fonts: Vec<Arc<Vec<u8>>>) -> Result<FrameRenderer, RenderError> {
         let frame = Pixmap::new(options.width, options.height)
             .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("输出尺寸 {}×{} 不可用", options.width, options.height)))?;
@@ -202,8 +197,8 @@ impl FrameRenderer {
         })
     }
 
-    /// 换一份说话人的区间（`render_graph::audio_plan::speaker_activity` 从视频里的转写求出；`None` 是视频里没有转写）。
-    /// 与上一份相同时不动，不同时声波的轨作废、下一帧重拼。
+    /// Replaces the speaker intervals (computed from the video's transcript by `render_graph::audio_plan::speaker_activity`; `None` means the video has no transcript).
+    /// Left alone if identical to the previous set; if different, the waveform tracks are invalidated and reassembled on the next frame.
     pub fn set_speakers(&mut self, speakers: Option<Arc<SpeakerActivity>>) {
         let same = match (&self.speakers, &speakers) {
             (None, None) => true,
@@ -216,7 +211,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 换一批冻结的文档（预览里文档会变）。字幕的编译结果随之作废。
+    /// Replaces a batch of frozen documents (documents change in the preview). Caption compile results are invalidated along with them.
     pub fn set_documents(&mut self, documents: Documents) {
         self.documents = documents;
         self.caption_checks.clear();
@@ -224,26 +219,25 @@ impl FrameRenderer {
         self.drop_captions();
     }
 
-    /// 序列的内容换了（预览送进新的视频快照）。字幕按剪辑记下的签名作废，下一帧重算；签名没变的字幕计划照用。
-    /// 导出的输入不变，不用调。
+    /// The sequence's content changed (the preview supplies a new video snapshot). Captions are invalidated by their recorded edit signature and recomputed on the next frame; caption plans whose signature has not changed are still used.
+    /// Export's inputs do not change, so it does not need to call this.
     pub fn sequence_changed(&mut self) {
         self.caption_signatures.clear();
     }
 
-    /// 一台装好字体的排版引擎：有备用的就用备用的。
+    /// A layout engine with fonts installed: uses a spare one if available.
     fn take_engine(&mut self) -> TextEngine {
         let mut engine = self
             .engines
             .pop()
             .unwrap_or_else(|| TextEngine::with_shared_document_fonts(&self.fonts));
-        // 上一份计划记下的缺字体不算到下一份头上。
+        // Missing fonts recorded by the previous plan are not carried over to the next one.
         engine.take_missing_families();
         engine.set_face_log(Some(self.face_log.clone()));
         engine
     }
 
-    /// 追加字体（宿主按 [`Self::missing_fonts`] 找来的字体文件）。排版引擎与按字体编的内核计划随之作废，下一帧按新的
-    /// 字体库重排；已经报了缺、现在有了的族撤回报告（导出拿到字体后重画这一帧，不留缺字体的提示）。空的字节不收。
+    /// Appends fonts (font files the host found per [`Self::missing_fonts`]). The layout engine and the kernel plans compiled per font are invalidated along with it, and the next frame is laid out again with the new font library; families already reported missing that are now available have their reports withdrawn (export redraws this frame after getting the font, so no missing-font notice remains). Empty bytes are not accepted.
     pub fn add_fonts(&mut self, fonts: Vec<Arc<Vec<u8>>>) {
         let before = self.fonts.len();
         self.fonts.extend(fonts.into_iter().filter(|bytes| !bytes.is_empty()));
@@ -265,21 +259,19 @@ impl FrameRenderer {
         }
     }
 
-    /// 到目前为止画到的层点了名、字体库里没有的字体族（按名字排序；`clear_reports` 清空）。宿主按它去找字体文件，
-    /// 找到的用 [`Self::add_fonts`] 送进来再画；找不到的照回退字体画，并报 [`RENDER_NOTE`] 提示。
+    /// Font families named by the layers drawn so far that are not in the font library (sorted by name; cleared by `clear_reports`). The host uses this to look for font files; those it finds are supplied with [`Self::add_fonts`] and drawn again; those it cannot find are drawn with the fallback font, and a [`RENDER_NOTE`] notice is reported.
     pub fn missing_fonts(&self) -> Vec<String> {
         self.missing_fonts.iter().cloned().collect()
     }
 
-    /// 到目前为止排字时点了名的 face（族名、字重、斜体，常设，按名字排序；含字幕与模板层）。宿主拿它与报过缺的族对照，
-    /// 去本机字体里找那一个 face（与排版同一套匹配），找到的用 [`Self::add_fonts`] 送进来。
+    /// Faces named during layout so far (family name, weight, italic; persistent, sorted by name; includes captions and template layers). The host compares these with the families reported missing, and looks for that specific face in local fonts (using the same matching as layout); those it finds are supplied with [`Self::add_fonts`].
     pub fn used_faces(&self) -> Vec<FaceUse> {
         let mut faces = self.face_log.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
         faces.sort();
         faces
     }
 
-    /// 记下一层排字时缺的族（常设），并报这一层缺的全部族。
+    /// Records the families missing when laying out a layer (persistent), and reports all the families this layer is missing.
     fn note_missing_fonts(&mut self, item_id: &str, fresh: Vec<String>) {
         let families = self.item_fonts.entry(item_id.to_string()).or_default();
         families.extend(fresh);
@@ -299,7 +291,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 量一段文字作为文字元素在 `canvas`（序列画布）上要多大的框（[`measure_text_element`]），用画字的同一批字体。
+    /// Measures how large a box a piece of text needs as a text element on `canvas` (the sequence canvas) ([`measure_text_element`]), using the same fonts used to draw text.
     pub fn measure_text(&mut self, text: &str, style: &Value, wrap_width: Option<f64>, canvas: (u32, u32)) -> TextBox {
         let mut engine = self.take_engine();
         let measured = measure_text_element(&mut engine, text, style, wrap_width, canvas);
@@ -313,7 +305,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 换输出尺寸（预览的画布随窗口变）：按尺寸编的内核计划与按长边光栅的 SVG 随之作废，Lottie 与频谱留着。
+    /// Changes the output size (the preview canvas changes with the window): kernel plans compiled for the size and SVGs rasterized at the long edge are invalidated along with it; Lottie and spectra are kept.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), RenderError> {
         if (width, height) == (self.options.width, self.options.height) {
             return Ok(());
@@ -331,17 +323,17 @@ impl FrameRenderer {
         Ok(())
     }
 
-    /// 画不画字幕层（预览里随「烧字幕」开关变）。
+    /// Whether to draw the caption layer (in the preview, it changes with the “burn captions” toggle).
     pub fn set_captions(&mut self, on: bool) {
         self.options.captions = on;
     }
 
-    /// 不铺背景，帧留透明底（界面的元素与字幕样式缩略图）。导出不用。
+    /// No background is laid down: the frame keeps a transparent base (for the UI's element and caption style thumbnails). Not used for export.
     pub fn set_transparent(&mut self, on: bool) {
         self.transparent = on;
     }
 
-    /// 清掉记下的警告与跳过的东西（预览每一帧只报这一帧的）。
+    /// Clears the recorded warnings and skipped items (the preview reports only those of the current frame).
     pub fn clear_reports(&mut self) {
         self.missing_spectra.clear();
         self.missing_fonts.clear();
@@ -350,22 +342,22 @@ impl FrameRenderer {
         self.skipped_keys.clear();
     }
 
-    /// 到目前为止的警告（去重）。
+    /// Warnings so far (de-duplicated).
     pub fn warnings(&self) -> &[RenderWarning] {
         &self.warnings
     }
 
-    /// 跳过模式下到目前为止跳过的东西（去重）。
+    /// Items skipped so far in skip mode (de-duplicated).
     pub fn skipped(&self) -> &[UnsupportedItem] {
         &self.skipped
     }
 
-    /// 到目前为止声波用到、调用方还没给的素材频谱（实例 ID 与素材，去重）。预览按它去算，算好了送进来再画。
+    /// Asset spectra that waveforms have used so far and the caller has not yet supplied (instance ID and asset, de-duplicated). The preview computes them from this and supplies them back before drawing.
     pub fn missing_spectra(&self) -> &[(String, VersionRef)] {
         &self.missing_spectra
     }
 
-    /// 预览需要字幕拾取；导出默认不求交互几何。
+    /// The preview needs caption picking; export does not compute interactive geometry by default.
     pub fn set_collect_caption_hits(&mut self, on: bool) {
         self.collect_caption_hits = on;
     }
@@ -378,7 +370,7 @@ impl FrameRenderer {
         &self.frame
     }
 
-    /// 画一帧，返回 RGBA 字节（不透明，预乘与否相同；[`Self::set_transparent`] 时是预乘的）。`seconds` 是这一帧的序列时间。
+    /// Draws one frame and returns RGBA bytes (opaque; premultiplied or not makes no difference; premultiplied when [`Self::set_transparent`] is set). `seconds` is this frame's sequence time.
     pub fn render(&mut self, video: VideoView, plan: &FramePlan, seconds: f64, media: &mut dyn LayerMedia) -> Result<&[u8], RenderError> {
         let sequence = video
             .sequences
@@ -386,7 +378,7 @@ impl FrameRenderer {
             .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("序列 {} 不在了", plan.sequence_id)))?;
         self.caption_hits.clear();
         self.frame.fill(if self.transparent { Color::TRANSPARENT } else { Color::BLACK });
-        // 背景色读不懂时保持黑色。
+        // Keep black when the background color cannot be read.
         let [r, g, b, a] = hex_rgba(&plan.canvas.background).unwrap_or([0, 0, 0, 255]);
         let alpha = (f64::from(a) / 255.0 * plan.canvas.background_alpha.clamp(0.0, 1.0)) as f32;
         if alpha > 0.0 && !self.transparent {
@@ -394,7 +386,7 @@ impl FrameRenderer {
             fill(&mut self.frame, colour);
         }
         let mut context = SequenceContext::new(sequence, video.assets);
-        // 声波按序列的声音计划取素材频谱（整条序列，时间从 0 起）；没有声波的帧不求。
+        // Audio waveforms take asset spectra from the sequence's sound plan (the whole sequence, time starting at 0); frames with no waveform do not compute it.
         let visualizer = |layer: &VisualLayer| matches!(&layer.content, Some(LayerContent::Generator { generator, .. }) if generator == "cuccut.audio-visualizer");
         if plan
             .layers
@@ -409,7 +401,7 @@ impl FrameRenderer {
         let mut caption_groups: HashSet<&str> = HashSet::new();
         for layer in &plan.layers {
             if layer.kind == LayerKind::Caption {
-                // 共用样式文档的字幕是一组，在组里第一层的位置画一次。
+                // Captions that share a style document form a group and are drawn once at the position of the group's first layer.
                 if self.options.captions && caption_groups.insert(caption_group(layer)) {
                     self.draw_captions(video, sequence, plan, caption_group(layer), context.fps)?;
                 }
@@ -444,7 +436,7 @@ impl FrameRenderer {
             };
             let two_sided = partner.is_some();
             let e = effective_progress(tr, two_sided);
-            // 两侧：A 是出场的一侧，B 是入场的一侧。单侧：B 是这一层（出场按逆过程 e′ 画）。
+            // Two sides: A is the outgoing side, B the incoming side. Single side: B is this layer (outgoing is drawn using the reverse process e′).
             let (a, b) = match (tr.role, &partner) {
                 (TransitionRole::Outgoing, Some(other)) => (Some(&own), other),
                 (TransitionRole::Incoming, Some(other)) => (Some(other), &own),
@@ -457,7 +449,7 @@ impl FrameRenderer {
         Ok(self.frame.data())
     }
 
-    /// 画一层（不含转场）。整层不画（素材在跳过清单里、实例不在了）时为 `None`。
+    /// Draws one layer (excluding transitions). `None` when the whole layer is not drawn (its asset is in the skip list, or the instance no longer exists).
     fn draw_layer(
         &mut self,
         context: &SequenceContext,
@@ -509,7 +501,7 @@ impl FrameRenderer {
         let Some(mut element) = visual_element(item, context.fps, bindings) else {
             return Ok(None);
         };
-        // 两侧转场的另一侧在自己的区间之外：几何与动画按区间里最近的一刻求，源画面取计划给的时刻。
+        // The other side of a two-sided transition lies outside its own interval: geometry and animation are evaluated at the nearest moment within the interval, and the source picture is taken at the time the plan gives.
         let eval = seconds.clamp(element.start, (element.end - 1e-6).max(element.start));
         let fx = item.fx().map(|fx| without(fx, skipped_effects));
         let short_edge = f64::from(size.0.min(size.1));
@@ -528,7 +520,7 @@ impl FrameRenderer {
                     let Some(gif) = self.gif(layer, media)? else {
                         return Ok(None);
                     };
-                    // 图片实例的动图一直循环；贴纸按 `sticker.loop`。
+                    // Animated GIFs in image instances loop continuously; stickers follow `sticker.loop`.
                     let mode = element
                         .sticker
                         .as_ref()
@@ -627,7 +619,7 @@ impl FrameRenderer {
         Ok(Some(DrawnLayer { pixmap, geom: Some(geom) }))
     }
 
-    /// 画实例用的内核计划（第一次用时编）。
+    /// The kernel plan used to draw instances (compiled on first use).
     fn element_plan(&mut self, context: &SequenceContext) -> Result<&mut OverlayRenderPlan, RenderError> {
         if self.elements.is_none() {
             let includes = OverlayIncludes {
@@ -649,17 +641,16 @@ impl FrameRenderer {
                 engine,
             )
             .map_err(RenderError::render)?;
-            // 画出的层不读 DrawOp 指纹：动态栅格的资源名不必逐帧哈希整帧像素。
+            // Drawn layers do not read the DrawOp fingerprint: the resource names of dynamic rasters need not hash the whole frame's pixels every frame.
             plan.set_dynamic_asset_names(DynamicAssetNames::Slot);
-            // 源画面每次画前注入、画完清空：计划可以独占它，不再复制一份。
+            // The source picture is injected before each draw and cleared after: the plan can own it exclusively, so it is not copied again.
             plan.set_consume_injected_sources(true);
             self.elements = Some(plan);
         }
         Ok(self.elements.as_mut().expect("刚编好"))
     }
 
-    /// Lottie 贴纸的源（按素材版本与换色表缓存，内嵌图片挂好、换好色，见 [`crate::load_lottie`]）。读不到或解不开时
-    /// 按选项报错或跳过（`asset`）。
+    /// The source for a Lottie sticker (cached by asset version and color-replacement table; embedded images attached and recolored, see [`crate::load_lottie`]). When it cannot be read or decoded, it reports an error or skips, depending on the option (`asset`).
     fn lottie(
         &mut self,
         layer: &VisualLayer,
@@ -698,9 +689,7 @@ impl FrameRenderer {
         Ok(self.lotties.get(&key).cloned().flatten())
     }
 
-    /// SVG 图片的画面：素材字节按输出的长边光栅（[`crate::decode_svg`]），贴纸带 `fillOverrides` 时先换色
-    /// （[`timeline::svg_fill::apply_overrides`]，与贴纸面板的色卡同一份分组）。按素材版本与换色表缓存。读不到或解不开时
-    /// 按选项报错或跳过（`asset`、`asset-undecodable`）；不是 UTF-8 的 SVG 换不了色，按原色画并提示。
+    /// The picture of an SVG image: the asset bytes rasterized at the output long edge ([`crate::decode_svg`]); for stickers with `fillOverrides`, colors are replaced first ([`timeline::svg_fill::apply_overrides`], using the same grouping as the sticker panel's swatches). Cached by asset version and color-replacement table. When it cannot be read or decoded, it reports an error or skips, depending on the option (`asset`, `asset-undecodable`); an SVG that is not UTF-8 cannot be recolored, so it is drawn in its original colors with a notice.
     fn svg(
         &mut self,
         layer: &VisualLayer,
@@ -761,8 +750,7 @@ impl FrameRenderer {
         }
     }
 
-    /// GIF 图片：素材字节解成动图（[`crate::load_gif`]），按素材版本缓存。读不到或连第一帧也解不开时按选项报错或跳过
-    /// （`asset-undecodable`）；超过上限只画第一帧时给一条提示。
+    /// GIF image: asset bytes decoded into an animation ([`crate::load_gif`]), cached by asset version. When it cannot be read or even its first frame cannot be decoded, it reports an error or skips, depending on the option (`asset-undecodable`); when over the limit and only the first frame is drawn, a notice is given.
     fn gif(&mut self, layer: &VisualLayer, media: &mut dyn LayerMedia) -> Result<Option<Arc<crate::Gif>>, RenderError> {
         let asset = layer.asset.as_ref().expect("调用方查过是 GIF 素材");
         let key = format!("{}@{}", asset.id, asset.revision);
@@ -802,10 +790,9 @@ impl FrameRenderer {
         }
     }
 
-    /// 声波实例的频谱轨：调用方给了现成的就用它，否则按声音计划从素材频谱拼（[`crate::spectrum`]）。按实例缓存，参数、
-    /// 用到的声音段或素材变了才重拼。缺素材频谱时没有轨（内核按静态的样子画并报提示），缺的记进 [`Self::missing_spectra`]。
-    /// 写了 `speaker` 时只留这位说话人说话的段（[`spectrum::gate`]），没有转写或转写里没有这位说话人时整条静音并报提示；
-    /// `alwaysShow: false` 时另记每一帧有没有声（[`spectrum::audible_frames`]），没声的帧不画。
+    /// The spectrum track for an audio waveform instance: uses the caller's ready-made one if given; otherwise assembles it from the asset spectrum according to the sound plan ([`crate::spectrum`]). Cached per instance; reassembled only when parameters, the sound segments used, or the asset change. When the asset spectrum is missing there is no track (the kernel draws a static form and reports a notice), and the missing one is recorded in [`Self::missing_spectra`].
+    /// When `speaker` is set, only the segments this speaker talks in are kept ([`spectrum::gate`]); when there is no transcript, or the transcript has no such speaker, the whole thing is silent and a notice is reported;
+    /// when `alwaysShow: false`, whether each frame has sound is also recorded ([`spectrum::audible_frames`]), and frames without sound are not drawn.
     fn visualizer_track(&mut self, element: &TimelineVisualElement, context: &SequenceContext, media: &mut dyn LayerMedia) {
         let Some(props) = element.visualizer.as_ref() else {
             return;
@@ -919,7 +906,7 @@ impl FrameRenderer {
         );
     }
 
-    /// 声波这一刻画不画：`alwaysShow: false` 时只有有声的帧画（[`spectrum::audible_frames`]；没有轨就是没有声）。
+    /// Whether the waveform is drawn at this moment: with `alwaysShow: false`, only frames with sound are drawn ([`spectrum::audible_frames`]; no track means no sound).
     fn visualizer_shown(&self, item_id: &str, at: f64) -> bool {
         let Some(entry) = self.viz.get(item_id) else {
             return true;
@@ -942,13 +929,12 @@ impl FrameRenderer {
         }
     }
 
-    /// 宿主换了声波或素材的频谱：缓存的频谱轨作废，下一帧重新取、重新拼。
+    /// The host changed the spectrum of a waveform or asset: cached spectrum tracks are invalidated, and the next frame fetches and reassembles them.
     pub fn clear_spectra(&mut self) {
         self.viz.clear();
     }
 
-    /// 拿另一台渲染器拼好的频谱轨（与输出尺寸无关；预览按尺寸留几台渲染器，长视频的频谱轨拼一次要几百毫秒）。另一台是
-    /// 更近画过的那台：它有的实例以它的为准，键对不上的下一帧照样重拼。说话人的区间不同时不拿。
+    /// Takes spectrum tracks already assembled by another renderer (independent of output size; the preview keeps several renderers by size, and assembling a long video's spectrum track takes hundreds of milliseconds). The other renderer is the one that drew more recently: for instances it has, its tracks take precedence; keys that do not match are still reassembled on the next frame. Not taken when the speaker intervals differ.
     pub fn share_spectra_from(&mut self, other: &FrameRenderer) {
         let same = match (&self.speakers, &other.speakers) {
             (None, None) => true,
@@ -963,7 +949,7 @@ impl FrameRenderer {
         }
     }
 
-    /// 画一组字幕：组里画不出来的层按选项报错或跳过，其余的一起排、一起画。
+    /// Draws a group of captions: layers in the group that cannot be drawn are reported as errors or skipped, depending on the option, and the rest are laid out and drawn together.
     fn draw_captions(&mut self, video: VideoView, sequence: &Sequence, plan: &FramePlan, group: &str, fps: f64) -> Result<(), RenderError> {
         let mut admitted = Vec::new();
         for layer in plan
@@ -1017,7 +1003,7 @@ impl FrameRenderer {
             let Ok(style) = CaptionStyle::read(style_document_id.as_deref().and_then(|id| self.documents.get(id))) else {
                 return Ok(());
             };
-            // 同一组按旧的剪辑编的计划不再用。
+            // A plan compiled for the same group from an old edit is no longer used.
             let stale: Vec<String> = self.captions.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
             for old in stale {
                 if let Some(plan) = self.captions.remove(&old) {
@@ -1029,7 +1015,7 @@ impl FrameRenderer {
             for id in &document_ids {
                 let Some(document) = self.documents.get(id) else { continue };
                 let Some(mut track) = read_captions(&document.body) else { continue };
-                // 句子的词（逐词动画、强调）：原文字幕从它指向的转写里取有效词流里的词。
+                // Sentence words (word-by-word animation, emphasis): original captions take words from the transcript they point to, from the effective word stream.
                 if !is_translation(document)
                     && let Some(speech) = document.source_document_id.as_deref().and_then(|s| self.documents.get(s))
                     && let Some(words) = SpeechWords::read(&speech.body)
@@ -1053,7 +1039,7 @@ impl FrameRenderer {
         }
         let captions = self.captions.get_mut(&key).expect("刚编好");
         captions.avoid_template(sequence.header.template.as_ref());
-        // 一组按第一层的时钟取时刻：源素材时钟上没有作用实例时这一刻不画。
+        // A group takes its times from the first layer's clock: when there is no acting instance on the source media clock, this moment is not drawn.
         let at = if captions.sequence_clock {
             Some(*sequence_seconds)
         } else {
@@ -1075,7 +1061,7 @@ impl FrameRenderer {
                 };
                 hit.layer_id = first.item_id.clone();
                 hit.item_id = layer.item_id.clone();
-                // 统一回序列画布像素：预览质量、设备像素比与缩放不改变拾取位置。
+                // Unified back to sequence canvas pixels: preview quality, device pixel ratio and zoom do not change the picking position.
                 let kx = f64::from(plan.canvas.width) / f64::from(self.options.width);
                 let ky = f64::from(plan.canvas.height) / f64::from(self.options.height);
                 hit.cx *= kx;
@@ -1085,7 +1071,7 @@ impl FrameRenderer {
                 self.caption_hits.push(hit);
             }
         }
-        // 字幕的提示是常设的：内核只在编译时报一次，预览每帧清掉报告后也要照报（与导出一致）。
+        // Caption notices are persistent: the kernel reports them only once at compile time, and the preview must still report them after clearing reports each frame (consistent with export).
         let (notes, missing) = captions.notes();
         for note in notes {
             self.warn(RENDER_NOTE, format!("{}：{note}", first.item_id));
@@ -1095,7 +1081,7 @@ impl FrameRenderer {
             let opacity = first.opacity.clamp(0.0, 1.0) as f32 * style_opacity;
             let pixmap = PixmapRef::from_bytes(&layer.rgba, layer.width, layer.height)
                 .ok_or_else(|| RenderError::render(anyhow::anyhow!("字幕层的尺寸不对")))?;
-            // 字幕层大片透明：只在内核给的字外包矩形里叠（与整幅画逐字节相同），不复制、不重扫。
+            // Caption layers are mostly transparent: they are composited only within the glyph bounding rectangle the kernel gives (byte-for-byte identical to compositing the full image), without copying or rescanning.
             if render_raster::plan::composite_bounded_rect(&mut self.frame, pixmap, layer.rect, opacity, layer.blend).is_none() {
                 self.frame.draw_pixmap(
                     0,
@@ -1114,8 +1100,7 @@ impl FrameRenderer {
         Ok(())
     }
 
-    /// 字幕编译结果依赖的剪辑：组里有字幕从转写取词时，词的去留与时刻随取用素材的实例与字幕实例变。只看这些实例，
-    /// 改文字、贴纸等不让字幕重编。
+    /// The edits that caption compile results depend on: when a caption in the group takes words from a transcript, whether each word is kept and its timing change with the instances that use the source media and with the caption instances. Only these instances are checked, so changing text, stickers and so on does not force captions to recompile.
     fn caption_signature(&self, sequence: &Sequence, document_ids: &[&str]) -> String {
         use std::hash::{DefaultHasher, Hash, Hasher};
         let worded = document_ids.iter().any(|id| {
@@ -1139,7 +1124,7 @@ impl FrameRenderer {
         format!("{:016x}", hasher.finish())
     }
 
-    /// 这一层画不画：画不出来的部分按选项报错或跳过。整层不画时为 `None`，否则给出跳过的效果种类。
+    /// Whether this layer is drawn: the parts that cannot be drawn are reported as errors or skipped, depending on the option. `None` when the whole layer is not drawn; otherwise gives the kinds of effects that were skipped.
     fn admit(&mut self, layer: &VisualLayer, sequence: &Sequence) -> Result<Option<HashSet<String>>, RenderError> {
         let items = check_layer(layer, &self.documents, sequence.header.template.as_ref());
         if items.is_empty() {
@@ -1178,28 +1163,28 @@ impl FrameRenderer {
     }
 }
 
-/// 一帧里序列的只读上下文。
+/// The read-only context of the sequence within one frame.
 struct SequenceContext<'a> {
     sequence: &'a Sequence,
     assets: &'a BTreeMap<Id, AssetRecord>,
     items: HashMap<&'a str, &'a TimelineItem>,
     fps: f64,
-    /// 序列的终点（秒，格式规范 §2.10：固定长度按帧，派生长度取实例的尾端）：元素动画与模板的进度、章节按它算。
+    /// The sequence end (seconds; format spec §2.10: fixed length is by frame, derived length takes the end of the last instance). Element animation progress, template progress and chapters are computed from it.
     duration: f64,
-    /// 整条序列的声音计划（这一帧有声波时才求）。
+    /// The sound plan for the whole sequence (computed only when this frame has a waveform).
     audio: Option<Vec<AudioSegment>>,
 }
 
-/// 一个声波实例的频谱轨与它的来历。
+/// The spectrum track of one waveform instance, and where it came from.
 #[derive(Clone)]
 struct VizEntry {
     key: String,
     track: Option<Arc<VizTrack>>,
-    /// 拼它时缺的素材频谱。
+    /// Asset spectra missing when assembling it.
     missing: Vec<VersionRef>,
-    /// 每一帧都要报的提示（说话人对不上）。
+    /// A notice that must be reported on every frame (speaker mismatch).
     notes: Vec<String>,
-    /// `alwaysShow: false` 时每一帧有没有声；`None` 是一直画。
+    /// Whether each frame has sound when `alwaysShow: false`; `None` means always drawn.
     audible: Option<Vec<bool>>,
 }
 
@@ -1211,7 +1196,7 @@ impl<'a> SequenceContext<'a> {
         } else {
             30.0
         };
-        // 帧计划已经按同一份序列算过，这里的溢出只在计划之外调用时出现：退回按帧网格上的实例尾端算。
+        // The frame plan has already been computed from the same sequence, so an overflow here only occurs when called outside the plan: fall back to computing from the instance end on the frame grid.
         let duration = render_graph::audio_plan::sequence_end(sequence)
             .map(|end| end.to_f64())
             .unwrap_or_else(|_| {
@@ -1236,12 +1221,12 @@ impl<'a> SequenceContext<'a> {
 }
 
 impl SequenceContext<'_> {
-    /// 素材版本是不是 SVG 图片（按版本记录的 `mediaType`，不看字节）。
+    /// Whether the asset version is an SVG image (by the `mediaType` recorded for the version, not by inspecting the bytes).
     fn is_svg(&self, asset: Option<&VersionRef>) -> bool {
         self.media_type_is(asset, SVG_MEDIA_TYPE)
     }
 
-    /// 素材版本是不是 GIF 图片（同上）。
+    /// Whether the asset version is a GIF image (same as above).
     fn is_gif(&self, asset: Option<&VersionRef>) -> bool {
         self.media_type_is(asset, GIF_MEDIA_TYPE)
     }
@@ -1253,13 +1238,13 @@ impl SequenceContext<'_> {
     }
 }
 
-/// SVG 图片素材的媒体类型。
+/// The media type of SVG image assets.
 pub const SVG_MEDIA_TYPE: &str = "image/svg+xml";
 
-/// GIF 图片素材的媒体类型：画面由帧光栅从素材字节解（动图按时刻取帧）。
+/// The media type of GIF image assets: the picture is decoded by the frame rasterizer from the asset bytes (animation frames are picked by time).
 pub const GIF_MEDIA_TYPE: &str = "image/gif";
 
-/// 字幕层所在的组：样式文档的 ID，没有样式文档时是实例自己。
+/// The group a caption layer belongs to: the style document's ID; when there is no style document, the instance itself.
 fn caption_group(layer: &VisualLayer) -> &str {
     match &layer.content {
         Some(LayerContent::Caption {
@@ -1283,8 +1268,7 @@ fn asset_item(layer: &VisualLayer, reason: &str, message: String) -> Unsupported
     }
 }
 
-/// Lottie 在实例里过了 `elapsed` 秒时取的时刻（`sticker.loop`，格式规范 §3.7）：`loop`（缺省）对时长取模，
-/// `once` 播完停在末尾，`hold` 定格第一帧。
+/// The time a Lottie takes when `elapsed` seconds have passed in the instance (`sticker.loop`, format spec §3.7): `loop` (default) takes the duration modulo; `once` stops at the end after playing; `hold` freezes on the first frame.
 fn lottie_time(parameters: &Value, elapsed: f64, duration: f64) -> f64 {
     let elapsed = if elapsed.is_finite() { elapsed.max(0.0) } else { 0.0 };
     let mode = parameters
@@ -1296,13 +1280,13 @@ fn lottie_time(parameters: &Value, elapsed: f64, duration: f64) -> f64 {
     }
     match mode {
         timeline::schema::STICKER_LOOP_HOLD => 0.0,
-        // 末帧：时长减去不到一毫秒，落在最后一帧里。
+        // Last frame: the duration minus less than a millisecond, which falls within the final frame.
         timeline::schema::STICKER_LOOP_ONCE => elapsed.min((duration - 0.0005).max(0.0)),
         _ => elapsed.rem_euclid(duration),
     }
 }
 
-/// 视频与图片实例的裁剪。
+/// Cropping for video and image instances.
 fn crop_of(item: &TimelineItem) -> Option<[f64; 4]> {
     let crop = match item {
         TimelineItem::Video(v) => v.crop.as_ref(),
@@ -1312,7 +1296,7 @@ fn crop_of(item: &TimelineItem) -> Option<[f64; 4]> {
     (crop.is_valid() && !crop.is_empty()).then(|| crop.rect())
 }
 
-/// 源画面按裁剪留下的区域复制一份（没有裁剪时整张复制）。
+/// Copies the region of the source picture left by cropping (when there is no crop, the whole picture is copied).
 fn cropped(picture: &Pixmap, rect: Option<[f64; 4]>) -> Option<Pixmap> {
     let Some([u0, v0, u1, v1]) = rect else {
         return Some(picture.clone());
@@ -1325,7 +1309,7 @@ fn cropped(picture: &Pixmap, rect: Option<[f64; 4]>) -> Option<Pixmap> {
     picture.clone_rect(tiny_skia::IntRect::from_xywh(x as i32, y as i32, cw as u32, ch as u32)?)
 }
 
-/// 去掉跳过的效果之后的 `fx`。种类名与帧计划的效果种类相同。
+/// The `fx` after skipped effects are removed. Kind names are the same as the frame plan's effect kinds.
 fn without(fx: &Fx, skipped: &HashSet<String>) -> Fx {
     let mut fx = fx.clone();
     for kind in skipped {
@@ -1351,7 +1335,7 @@ fn without(fx: &Fx, skipped: &HashSet<String>) -> Fx {
 }
 
 fn over(target: &mut Pixmap, layer: &Pixmap) {
-    // 整幅不透明的层（整幅视频）原样拷过去；别的层（一行字、一张贴纸）只在非零像素的外包矩形里叠。都与下面逐字节相同。
+    // A full-frame opaque layer (a whole video) is copied as is; other layers (a line of text, a sticker) are composited only within the bounding rectangle of non-zero pixels. Both are byte-for-byte identical to the code below.
     if render_raster::raster::copy_over(target, layer.as_ref(), Transform::identity())
         || render_raster::plan::composite_bounded(target, layer, 1.0, BlendMode::SourceOver).is_some()
     {
@@ -1379,7 +1363,7 @@ fn fill(target: &mut Pixmap, color: Color) {
     }
 }
 
-/// 缺字体的提示（与字幕内核编译时报的同一句）。
+/// Missing-font notice (the same sentence the caption kernel reports at compile time).
 pub fn missing_font_note(family: &str) -> String {
     format!("字体 {family:?} 在当前字体库中不可用，将使用 Noto Sans SC fallback")
 }

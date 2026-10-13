@@ -14,7 +14,7 @@ const ERROR_TEXT: Record<SlideAnnotationError, () => string> = {
   'too-many': () => SLIDES.tooMany(SLIDE_ANNOTATION_LIMITS.perMessage),
 };
 
-/** 幻灯片标签的那几样：`slides.open`、「N 页」、幻灯片标注的草稿（docs/design/slides §8）。 */
+/** The pieces of the slides tab: `slides.open`, “N pages”, and the draft slide annotations (docs/design/slides §8). */
 const SLIDES_PANE: EditorPaneKind = {
   kind: 'slides',
   icon: <Layout styles={headIcon} />,
@@ -48,8 +48,8 @@ const SLIDES_PANE: EditorPaneKind = {
 };
 
 /**
- * 功能区的幻灯片标签（docs/design/slides §8.1）：Slides 编辑器的 iframe 加标注（§8.2）。
- * 标签的通用部分（打开、消息往来、发送前保存、跳转、批注框）在 `EditorPane`。
+ * The slides tab in the workspace area (docs/design/slides §8.1): the Slides editor's iframe plus annotations (§8.2).
+ * The tab's shared parts (open, message exchange, save before sending, jump, comment boxes) live in `EditorPane`.
  */
 export function SlidesPane({ target, conversationId, active }: { target: FileTarget; conversationId: Id | null; active: boolean }) {
   return <EditorPane spec={SLIDES_PANE} target={target} conversationId={conversationId} active={active} />;

@@ -8,8 +8,8 @@ import { useLibrary } from '../state/library-store.ts';
 type Ref = Pick<LibraryEntrySummary, 'library' | 'id' | 'version'>;
 
 /**
- * 一条用户库条目的完整内容（摘要里没有术语、色值与文件）。跟着摘要的版本走：主题送来新版本就重读。
- * `reload` 读当前版本（版本冲突之后用：主题的新版本可能还没到）。
+ * The full content of one user library entry (the summary has no terms, colour values or files). It follows the summary's version: re-read when the topic delivers a new version.
+ * `reload` reads the current version (used after a version conflict, when the topic's new version may not have arrived yet).
  */
 export function useLibraryEntry(ref: Ref | null): { entry: LibraryEntry | null; error: string | null; reload(): void } {
   const runtime = useRuntime();
@@ -23,7 +23,7 @@ export function useLibraryEntry(ref: Ref | null): { entry: LibraryEntry | null; 
   useEffect(() => {
     if (!ref || !key) return;
     let live = true;
-    // 重读时不带版本，拿 Runtime 里的当前版本。ref 的内容就是 key。
+    // Re-reads without a version, taking the Runtime's current one. The ref's content is the key.
     getLibraryEntry(runtime, { library: ref.library, id: ref.id, ...(attempt ? {} : { version: ref.version }) }).then(
       (entry) => live && setState({ key, entry, error: null }),
       (error: Error) => live && setState({ key, entry: null, error: error.message }),
@@ -42,7 +42,7 @@ export interface BrandColor {
   value: string;
 }
 
-/** 品牌库里的颜色（取色面板用）：摘要里没有色值，逐条读出来（按版本缓存，各个取色面板共用）。 */
+/** Brand colours in the library (for the colour picker): the summary has no colour values, so each is read out (cached by version and shared by all colour pickers). */
 export function useBrandColors(): BrandColor[] {
   const runtime = useRuntime();
   const summaries = useLibrary((s) => s.brand);
@@ -66,14 +66,14 @@ export function useBrandColors(): BrandColor[] {
     return () => {
       live = false;
     };
-    // signature 概括了 colors。
+    // The signature summarises colors.
   }, [runtime, signature]);
   return colors.length && values.signature === signature ? values.list : EMPTY;
 }
 
 const EMPTY: BrandColor[] = [];
 
-/** 带文件的品牌条目的读取地址（缩略图、字体预览）；取不到时 null。 */
+/** The read address for brand entries that have files (thumbnails, font previews); null when it cannot be obtained. */
 export function useLibraryFileUrl(ref: Ref | null): string | null {
   const runtime = useRuntime();
   const key = ref ? entryKey(ref) : null;

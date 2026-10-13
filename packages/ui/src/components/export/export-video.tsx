@@ -31,16 +31,14 @@ import { ExportRangeSection, type RangeBundle } from './export-range.tsx';
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 「视频」页（设计稿 export.jsx 的 `VideoPage`）：左边范围、画质与体积、响度、摘要；右边「画面里有什么」。
+ * The "Video" page (design mockup export.jsx `VideoPage`): on the left, range, quality and size, loudness, summary; on the right, "what is in the picture".
  *
- * 与设计稿的出入（Runtime 做不到的照实置灰）：
- * - 右栏的轨道开关只读，跟着时间轴的显示 / 静音 / 独显；唯一能单独定的是字幕烧不烧进画面（`burnCaptions`）。
- *   设计稿的逐轨覆盖与「同步到时间轴」没有接上。
- * - 画幅：缺省跟随画布；换成 16:9、9:16、1:1、4:5 时加黑边（画面居中、不裁切、不重排），设计稿是按新画幅裁切。
- * - 体积三档落成恒定质量（crf），没有码率与体积、耗时预估。
- * - 设计稿左上的小预览（export-preview.jsx）没有做：弹层下面就是编辑器的预览，导出画的就是它。
- * - 「配音声道」只有「一条声道」：落成与音频导出相同的声音来源（`source`），默认是成片混音；
- *   「每种一条」（MP4 多音轨）Runtime 还没有实现，置灰。
+ * Differences from the mockup (things the Runtime cannot do are disabled and stated plainly):
+ * - The track switches on the right are read-only and follow the timeline's show / mute / solo; the only one that can be set individually is whether subtitles are burned into the picture (`burnCaptions`). The mockup's per-track override and "sync to timeline" are not wired up.
+ * - Aspect ratio: the default follows the canvas; when changed to 16:9, 9:16, 1:1 or 4:5, black bars are added (the picture is centered, not cropped or reflowed). The mockup crops to the new ratio instead.
+ * - The three size levels map to constant quality (crf); there is no bitrate, file size or time estimate.
+ * - The small preview at the top left of the mockup (export-preview.jsx) is not built: below the panel is the editor's preview, and the export renders what it shows.
+ * - "Dub audio track" has only "one track", mapped to the same sound source as the audio export (`source`), with the full mix as the default. "One per kind" (MP4 with multiple audio tracks) is not yet implemented in the Runtime, so it is disabled.
  */
 
 const cols = style({ display: 'grid', gridTemplateColumns: '[minmax(0, 1fr) 260px]', gap: 20, alignItems: 'start' });
@@ -234,7 +232,7 @@ export function ExportVideoTab({
   );
 }
 
-/** 一条轨道这次进不进成片。字幕轨的开关就是 `burnCaptions`（几条字幕轨共用一个）；别的轨只读，跟着时间轴。 */
+/** Whether a track goes into the output. The switch for subtitle tracks is `burnCaptions` (several subtitle tracks share one); other tracks are read-only and follow the timeline. */
 function PictureLane({ lane, burn, onBurn }: { lane: ExportLane; burn: boolean; onBurn: (on: boolean) => void }) {
   if (lane.kind === 'subtitle') {
     const on = lane.picture === true && burn;
@@ -260,7 +258,7 @@ function PictureLane({ lane, burn, onBurn }: { lane: ExportLane; burn: boolean; 
   );
 }
 
-/** 画布的画幅：「16:9」「9:16」「1:1」，约不尽时写宽高。 */
+/** Canvas aspect ratio: "16:9", "9:16", "1:1"; when it does not reduce evenly, write the width and height. */
 function ratioLabel(width: number, height: number): string {
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
   const g = gcd(width, height) || 1;

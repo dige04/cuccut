@@ -13,10 +13,10 @@ import { M } from './general-settings-copy.ts';
 import { Panel, PanelHeading, RowList, SettingsRow } from './settings-ui.tsx';
 
 /*
- * 设置 → 隐私 →「数据外发授权」（架构设计 §12.5；设计稿没有这一块）：列出发给云端服务商的持续授权，可以撤销。
- * 发放只在两处：启用服务商时默认一条、审批时选「以后都允许」。这里不新建也不改（`grants.create/update` 没有界面）。
- * 分组与行的样式与设置页的 Group / Row 相同。浏览器里没有这一节的数据：Web 白名单不含 `grants.*`，订阅不了 `grants` 主题，
- * 那里不写「加载中」，直接说浏览器里没有。
+ * Settings → Privacy → “Data egress grants” (数据外发授权) (architecture design §12.5; the design mockup has no such section): lists the ongoing grants to cloud providers, which can be revoked.
+ * Grants are created in only two places: one by default when a provider is enabled, and one when approving, choosing “Always allow” (以后都允许). Nothing is created or changed here (`grants.create/update` have no UI).
+ * Groups and rows are styled the same as the Group / Row of the settings page. There is no data for this section in the browser: the web allowlist does not include `grants.*`, and the `grants` topic cannot be subscribed to.
+ * So it does not show “Loading” there; it simply says the section is not available in the browser.
  */
 
 export function DataGrants() {

@@ -14,7 +14,7 @@ import { pl } from './video-target.pl.ts';
 import { tr } from './video-target.tr.ts';
 import { vi } from './video-target.vi.ts';
 
-/** `packages/jobs/src/pipelines/video-target.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/video-target.ts`. */
 const en = {
   stepLabel: 'Resolve target',
   notSameVideo: 'refers to a different video than videoId',

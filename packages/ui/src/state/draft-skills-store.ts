@@ -2,18 +2,18 @@ import { create } from 'zustand';
 import { appendSkillId } from '../model/agent-skills.ts';
 
 /**
- * 输入框「+ › 使用 Skill」点选的 skill（产品设计 §3.2.3、§6.9），按草稿键分（会话 ID 或新会话的草稿键）；一条消息可以挂几个，
- * 按挂上的顺序，再选已经挂着的不重复添加，每个可以单独摘掉。
- * 只在这个窗口里，不持久化（同附图与起始页的模板）。换项目、新会话建好却没发出去时跟着输入框的话一起搬。
+ * Skills picked from the input box's "+ › Use Skill" (product design §3.2.3, §6.9), keyed by draft key (session ID, or the draft key of a new session). One message can attach several,
+ * kept in the order attached. Picking one that is already attached does not add it again, and each can be removed individually.
+ * Only in this window, not persisted (same as attached images and the templates on the start page). When the project changes, or a new session is created but not yet sent, they move with the input box.
  */
 interface DraftSkillsStore {
-  /** 草稿键 → 按挂上顺序的 skill id。 */
+  /** Draft key → skill ids, in the order attached. */
   skills: Record<string, string[]>;
-  /** 接在后面挂一个；已经挂着的不动。 */
+  /** Attach one at the end. One that is already attached is left alone. */
   add(draftKey: string, id: string): void;
-  /** 摘掉一个。 */
+  /** Remove one. */
   remove(draftKey: string, id: string): void;
-  /** 整组换成 `ids`（去重、保持顺序）；空的就是全部摘掉。 */
+  /** Replace the whole group with `ids` (de-duplicated, order kept). Empty removes them all. */
   set(draftKey: string, ids: readonly string[]): void;
   move(from: string, to: string): void;
 }
@@ -51,7 +51,7 @@ export const useDraftSkills = create<DraftSkillsStore>()((set) => {
   };
 });
 
-/** 这个草稿键挂着的 skill，按挂上的顺序；没有时是同一个空数组（订阅不抖）。 */
+/** The skills attached to this draft key, in the order attached. When there are none, the same empty array is returned (so subscribers don't churn). */
 export function useDraftSkillIds(draftKey: string): readonly string[] {
   return useDraftSkills((s) => s.skills[draftKey] ?? EMPTY);
 }

@@ -13,7 +13,7 @@ import {
 
 const keys = (n: number) => Array.from({ length: n }, (_, i) => `k${i}`);
 const NONE = new Map<string, number>();
-/** 每行 50px 估计、外加量过的几行。 */
+/** Estimate of 50px per row, plus a few rows measured. */
 const layoutOf = (n: number, measured: Record<string, number> = {}) => layoutRows(keys(n), new Map(Object.entries(measured)), () => 50);
 const gaps = (segments: RowSegment[]) => segments.flatMap((s) => ('gap' in s ? [s.gap] : []));
 const rows = (segments: RowSegment[]) => segments.flatMap((s) => ('index' in s ? [s.index] : []));
@@ -52,14 +52,14 @@ describe('不定高的虚拟列表：排版', () => {
   it('窗口是与视口加前后余量相交的行；只挂几十行', () => {
     const layout = layoutOf(5000);
     expect(rowRange(layout, 0, 600, 0)).toEqual([0, 12]);
-    // 上沿正好在一行的下沿：那一行不算。
+    // The top edge is exactly at the bottom edge of a row: that row does not count.
     expect(rowRange(layout, 100, 600, 0)).toEqual([2, 14]);
     expect(rowRange(layout, 125, 600, 0)).toEqual([2, 15]);
     const [start, end] = rowRange(layout, 100_000, 600, 600);
     expect(start).toBe((100_000 - 600) / 50);
     expect(end).toBe((100_000 + 1200) / 50);
     expect(end - start).toBe(36);
-    // 滚过头也至少有一行。
+    // Even when scrolled past, there is at least one row.
     expect(rowRange(layout, 1e9, 600, 0)).toEqual([4999, 5000]);
   });
 });
@@ -158,11 +158,11 @@ describe('不定高的虚拟列表：锚点补偿', () => {
   it('只补锚点上方的变化', () => {
     const before = layoutOf(100);
     const after = layoutOf(100, { k5: 80, k30: 20, k60: 200 });
-    // 锚点是第 50 行：上面第 5 行 +30、第 30 行 −30，抵消。
+    // The anchor is row 50: row 5 above is +30 and row 30 is −30, so they cancel out.
     expect(anchorShift(before, after, 50)).toBe(0);
     expect(anchorShift(before, after, 10)).toBe(30);
     expect(anchorShift(before, after, 31)).toBe(0);
-    // 锚点自己与下面的行变高：不补。
+    // The anchor itself and the rows below it changing height: no compensation.
     expect(anchorShift(before, after, 60)).toBe(0);
     expect(anchorShift(before, after, 5)).toBe(0);
     expect(anchorShift(before, after, 6)).toBe(30);
@@ -189,7 +189,7 @@ describe('不定高的虚拟列表：锚点补偿', () => {
 describe('行数粗估', () => {
   it('拉丁按半个字宽、CJK 按一个字宽，显式换行各起一行', () => {
     expect(estimateLines('', 300, 14)).toBe(1);
-    // 300px / 14px ≈ 21.4em：42 个拉丁字一行，43 个折两行。
+    // 300px / 14px ≈ 21.4em: 42 Latin letters fit on one line, 43 wrap to two lines.
     expect(estimateLines('a'.repeat(42), 300, 14)).toBe(1);
     expect(estimateLines('a'.repeat(43), 300, 14)).toBe(2);
     expect(estimateLines('字'.repeat(21), 300, 14)).toBe(1);

@@ -182,7 +182,7 @@ describe('localDefaultPicker', () => {
     ]);
     view.separateAudio.default = { providerId: 'local', modelId: SEP };
     expect(localDefaultPicker(view, all, 'separate').selectedKey).toBe(SEP);
-    // 语音识别的菜单不受影响。
+    // Voice recognition menus are unaffected.
     expect(localDefaultPicker(view, all).items.map((i) => i.key)).toEqual([AUTO_DEFAULT, QWEN]);
   });
 });
@@ -234,7 +234,7 @@ describe('许可行', () => {
       components: [comp('segmentation'), comp('speaker', lic('CC-BY-4.0'))],
     });
     expect(parts(licenseLines(pack, lic('MIT')))).toEqual(['模型权重:MIT', '声纹嵌入:CC-BY-4.0']);
-    // 没有权重许可时组件的都列；都没有时空表。
+    // Without weight licenses, list the components; with none at all, an empty table.
     expect(parts(licenseLines(pack, null))).toEqual(['声纹嵌入:CC-BY-4.0']);
     expect(licenseLines(bundle('x', { components: [comp('asr')] }), null)).toEqual([]);
     expect(parts(licenseLines(bundle('y', { components: [comp('other', lic('BSD'))] }), null))).toEqual(['other:BSD']);
@@ -261,8 +261,8 @@ describe('公共组件', () => {
     sharedWith: [],
     ...patch,
   });
-  // MOSS 装好了、缺可选的对齐器与声纹；Whisper 权重在、缺必需的分词器（incomplete）；Qwen 只有别人装上的 VAD；
-  // 说话人区分包一件自己的都没有。
+  // MOSS is installed but lacks the optional aligner and voiceprint; Whisper weights are present but the required tokenizer is missing (incomplete); Qwen only has a VAD installed by someone else;
+  // the speaker-diarization pack has none of its own files.
   const moss = (patch: Partial<Parameters<typeof bundle>[1]> = {}) =>
     bundle('moss@mlx', {
       components: [
@@ -306,10 +306,10 @@ describe('公共组件', () => {
     const shared = sharedComponents([whisper(), pack, qwen(), moss()], 'asr');
     expect(shared.map((c) => c.component)).toEqual(['vad', 'aligner', 'speaker']);
     expect(byComponent(shared, 'aligner').users.map((b) => b.bundleId)).toEqual(['moss@mlx', 'qwen@mlx', 'whisper@coreml']);
-    // 装好的写占了多少，缺的写要下多少。
+    // How much the installed files take up, and how much the missing files still need to download.
     expect(byComponent(shared, 'vad')).toMatchObject({ installed: true, bytes: 2 });
     expect(byComponent(shared, 'aligner')).toMatchObject({ installed: false, bytes: 300 });
-    // 别的类、没有组件信息的旧快照没有公共组件。
+    // Other classes, and old snapshots without component info, have no common components.
     expect(sharedComponents([moss(), qwen()], 'tts')).toEqual([]);
     expect(sharedComponents([bundle('a'), bundle('b')], 'asr')).toEqual([]);
   });
@@ -362,16 +362,16 @@ describe('公共组件', () => {
       return action.kind === 'get' ? `get:${action.target.bundleId}` : action.kind === 'running' ? `running:${action.bundle.bundleId}` : action.kind;
     };
     expect(pick([moss(), whisper(), qwen()], 'vad')).toBe('installed');
-    // 权重在、缺必需分词器的 Whisper 也能借；它要下的更少。没有自己文件的 Qwen 不借。
+    // Whisper with weights present but a missing required tokenizer can also borrow; it has less to download. Qwen with no files of its own does not borrow.
     expect(pick([moss(), whisper(), qwen()], 'aligner')).toBe('get:whisper@coreml');
     expect(pick([moss(), whisper(50), qwen()], 'aligner')).toBe('get:moss@mlx');
     expect(pick([moss(), whisper(null), qwen()], 'aligner')).toBe('get:moss@mlx');
     expect(pick([moss(), pack], 'speaker')).toBe('get:moss@mlx');
-    // 跑不了的不借；没有能借的就等装模型时一起下载。
+    // Anything that can't run is not borrowed; if nothing can be borrowed, it waits to download together with the model install.
     expect(pick([moss({ reason: 'unsupported' }), pack], 'speaker')).toBe('later');
     const bare = bundle('x@mlx', { state: 'not-installed', components: [part('vad', 'installed', { bytes: 2 }), part('aligner', 'missing')] });
     expect(pick([qwen(), bare], 'aligner')).toBe('later');
-    // 用到它的模型正在下载：显示它的进度；停在一半的不算。
+    // A model that uses it is downloading: show its progress; a half-finished one doesn't count.
     const downloading = { jobId: 'job_1', state: 'downloading' as const, receivedBytes: 1, totalBytes: 10 };
     expect(pick([moss(), whisper(), qwen({ install: downloading })], 'aligner')).toBe('running:qwen@mlx');
     expect(pick([moss(), whisper(), qwen({ install: { ...downloading, jobId: null, state: 'paused' } })], 'aligner')).toBe('get:whisper@coreml');

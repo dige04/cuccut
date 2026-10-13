@@ -6,10 +6,10 @@ export interface TopicSubscription<S, E> {
 }
 
 /**
- * 一个主题的有序事件流（架构设计 §4.4）。
+ * Ordered event stream of one topic (architecture design §4.4).
  *
- * - 状态变更与 `publish` 在同一个同步段里完成，所以「快照 + 其后的事件」天然同一水位。
- * - 保留最近一段事件用于断线补发；补不齐时给快照，不在缺事件的镜像上继续。
+ * - State changes and `publish` complete in the same synchronous section, so “snapshot + the events after it” naturally share one watermark.
+ * - Keeps a recent window of events for replay after disconnection. When the gap cannot be filled, a snapshot is given instead; it does not continue on a mirror with missing events.
  */
 export class TopicLog<S, E> {
   readonly #snapshot: () => S;
@@ -57,7 +57,7 @@ export class TopicLog<S, E> {
     return { mode: 'snapshot', seq: this.#seq, snapshot: this.#snapshot() };
   }
 
-  /** 主题被删除时断开所有订阅者。 */
+  /** When a topic is deleted, all subscribers are disconnected. */
   clear(): void {
     this.#listeners.clear();
   }

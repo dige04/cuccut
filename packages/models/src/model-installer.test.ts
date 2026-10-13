@@ -120,7 +120,7 @@ describe('ModelInstaller', () => {
       ['vad', 'keep'],
     ]);
     expect(detail.plan.downloadBytes).toBe(bytesOf(asrB));
-    // 另一个模型包只缺一部分组件：报告 incomplete 并点名缺的组件。
+    // Another model package is only partly missing a component: report incomplete and name the missing component.
     const status = await catalog.status('test-b@mlx');
     expect(status).toMatchObject({ state: 'not-installed', reason: 'incomplete' });
     expect(status!.detail).toContain('asr');
@@ -187,7 +187,7 @@ describe('ModelInstaller', () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     const asrDir = catalog.repoDir(asrA.repo);
-    // 同样大小、内容坏了：只有修复的 sha256 校验看得出来。
+    // Same size, corrupted content: only the sha256 check during repair can detect it.
     const weights = path.join(asrDir, 'model.safetensors');
     const bad = Buffer.from(asrA.files['model.safetensors']!);
     bad[10] = bad[10]! ^ 0xff;
@@ -237,7 +237,7 @@ describe('ModelInstaller', () => {
     expect(error).toBeInstanceOf(DownloadError);
     expect((error as DownloadError).code).toBe('MODEL_DOWNLOAD_NO_SPACE');
     expect((error as DownloadError).details).toEqual({ requiredBytes: bytesOf(asrA) + bytesOf(vad), availableBytes: 1000 });
-    // 补救是给人看的一句话：不出现字段名（要多少、剩多少由界面与 CLI 按 details 念出来）。
+    // The remedy is a one-line message for people: no field names appear (how much is needed and how much is left are spoken by the UI and CLI from `details`).
     expect((error as DownloadError).remedy).toBe(
       '模型目录所在的磁盘空间不足：清理出足够的空间（或在设置里把模型目录换到别的磁盘）后再安装',
     );
@@ -317,7 +317,7 @@ describe('ModelInstaller', () => {
     expect(ranged).toHaveLength(4);
     expect(ranged.every((r) => r.range === 'bytes=0-0')).toBe(true);
 
-    // ModelScope 的小文件：回 200、`Content-Length` 是 1，但带 `Content-Range`。
+    // ModelScope's small files: return 200 with a `Content-Length` of 1, but with a `Content-Range`.
     const quirky: typeof fetch = async (input, init) => {
       const response = await sizeless(input, init);
       return response.status === 206 ? new Response(await response.arrayBuffer(), { status: 200, headers: response.headers }) : response;
@@ -399,8 +399,8 @@ describe('ModelInstaller', () => {
 });
 
 /**
- * 发布页组件（audio.cpp 引擎，架构设计 §6.3）：按主机平台下载压缩包，核对大小与 sha256，解开、写清单、原子地发布到工具目录；
- * 坏包不留半个目录；最后一个持有者删除时回收；旧版装下（没有清单）的不重新下载。压缩包由本机回环地址上的小服务器给出。
+ * Release-page component (audio.cpp engine, architecture design §6.3): downloads the archive for the host platform, checks size and sha256, unpacks it, writes the manifest, and publishes atomically to the tools directory;
+ * a bad archive leaves no half-directory; it is reclaimed when the last holder deletes it; an old install without a manifest is not downloaded again. The archive is served by a small server on the local loopback address.
  */
 describe('ModelInstaller 发布页组件', () => {
   let root: string;
@@ -445,7 +445,7 @@ describe('ModelInstaller 发布页组件', () => {
     await fs.rm(work, { recursive: true, force: true });
   });
 
-  /** 打一个像上游发布包的 tar.gz：引擎、同包的其他工具、库、许可与一个子目录。 */
+  /** Build a tar.gz that looks like an upstream release package: the engine, other tools in the same package, a library, a license, and a subdirectory. */
   function packRelease(script: string): Buffer {
     const dir = path.join(work, `pack-${crypto.randomUUID()}`);
     fsSync.mkdirSync(path.join(dir, 'tools'), { recursive: true });
@@ -521,7 +521,7 @@ describe('ModelInstaller 发布页组件', () => {
     ]);
     expect(detail.plan.downloadBytes).toBe(bytesOf(asrA) + body.length);
     expect(detail.plan.confirmBytes).toBe(bytesOf(asrA) + body.length);
-    // 官方地址的来源是 `/download/` 之前的部分（发布页）。
+    // The source for the official address is the part before `/download/` (the release page).
     expect(detail.plan.source).toBe(`${source.endpoint} + ${base}`);
     expect(requests).toEqual([]);
     const outcome = await installer.install(detail, { signal: new AbortController().signal });
@@ -536,9 +536,9 @@ describe('ModelInstaller 发布页组件', () => {
     expect(await catalog.status('music-a@audio-cpp')).toMatchObject({ state: 'installed' });
     expect(catalog.engineExecutable('music-a@audio-cpp')).toBe(path.join(engineDir, 'audiocpp_cli'));
     expect((await catalog.verify('music-a@audio-cpp')).ok).toBe(true);
-    // 暂存区收拾干净。
+    // Clean up the staging area.
     expect(await fs.readdir(path.join(root, '.ccut-tools'))).toEqual(['audiocpp']);
-    // 第二个模型包共用这份引擎：只下载自己的权重。
+    // A second model package shares this engine: download only its own weights.
     const second = await installer.plan('music-b@audio-cpp');
     expect(second.plan.components.map((c) => [c.component, c.action])).toEqual([
       ['music', 'download'],
@@ -637,7 +637,7 @@ describe('ModelInstaller 发布页组件', () => {
     await installer.install(repair, { signal: new AbortController().signal });
     expect(requests).toEqual(['/download/v0.9.1/audio-test-bin.tar.gz']);
     expect(await fs.stat(path.join(engineDir, '.ccut-manifest.json'))).toBeTruthy();
-    // 有清单之后修复按清单核对，完好的不再下载。
+    // With a manifest, repair verifies against the manifest; intact files are not downloaded again.
     const again = await installer.plan('music-a@audio-cpp', { repair: true });
     expect(again.plan.components.map((c) => c.action)).toEqual(['keep', 'keep']);
   });
@@ -670,7 +670,7 @@ describe('ModelInstaller 发布页组件', () => {
     await installer.install(detail, { signal: new AbortController().signal });
     expect(requests).toEqual([]);
     expect(await catalog.status('music-a@audio-cpp')).toMatchObject({ state: 'installed' });
-    // 没有 override 时这个平台没有引擎包：拒绝计划。
+    // Without an override, this platform has no engine package: reject the plan.
     const plain = new ModelCatalog({ root, platform: 'linux', arch: 'arm64', bundles, manifests });
     await expect(new ModelInstaller({ catalog: plain, endpoint: () => source.endpoint, manifests }).plan('music-a@audio-cpp', { repair: true })).rejects.toMatchObject({
       code: 'MODEL_DOWNLOAD_SOURCE',

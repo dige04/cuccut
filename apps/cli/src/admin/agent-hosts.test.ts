@@ -14,7 +14,7 @@ import {
   writeMcpEntry,
 } from './agent-hosts.ts';
 
-/** 每个用例一个临时 HOME：位置全从这份环境变量算，不碰真实的宿主配置。 */
+/** One temporary HOME per case: every location is computed from this environment variable, so the real host config is never touched. */
 let home: string;
 let env: NodeJS.ProcessEnv;
 beforeEach(() => {
@@ -178,7 +178,7 @@ describe('旧条目的令牌与配置的格式', () => {
     writeMcpEntry('claude-code', env, { ...entry, token: 'mcl_d.c2VjcmV0' }, { runClaude: null });
     expect(readMcpEntryToken('claude-code', env)).toBe('mcl_d.c2VjcmV0');
 
-    // Codex 的子表写法也认。
+    // Codex's sub-table form is also accepted.
     const codex = path.join(home, '.codex', 'config.toml');
     fs.writeFileSync(
       codex,

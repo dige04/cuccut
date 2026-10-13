@@ -1,4 +1,4 @@
-/** 应用级快捷键（原型 main.jsx）。编辑器、输入框自己的键不在这里。 */
+/** App-level keyboard shortcuts (prototype main.jsx). The keys of the editor and input fields are not here. */
 export type ShellAction = 'back' | 'forward' | 'new' | 'space' | 'tasks' | 'settings' | 'sidebar';
 
 export interface KeyLike {
@@ -11,8 +11,8 @@ export interface KeyLike {
 }
 
 /**
- * macOS 用 ⌘；Windows 与 Linux 用 Ctrl，后退前进用 Alt+←/→。
- * 字母按物理键（`code`）判断，输入法与 Shift 改写 `key` 时也认得出。
+ * macOS uses ⌘; Windows and Linux use Ctrl; back and forward use Alt+←/→.
+ * Letters are matched by physical key (`code`), so they are recognized even when the IME or Shift rewrites `key`.
  */
 export function shellShortcut(event: KeyLike, mac: boolean): ShellAction | null {
   const mod = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;

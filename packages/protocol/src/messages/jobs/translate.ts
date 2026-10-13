@@ -14,7 +14,7 @@ import { pl } from './translate.pl.ts';
 import { tr } from './translate.tr.ts';
 import { vi } from './translate.vi.ts';
 
-/** `packages/jobs/src/pipelines/translate.ts`：「翻译」流程的名字、步骤、错误与写进视频的名字。 */
+/** `packages/jobs/src/pipelines/translate.ts`: the name, steps, errors, and the names written into the video for the “translate” flow. */
 const en = {
   label: 'Translate',
   description:
@@ -40,16 +40,16 @@ const en = {
   sameLanguage: (p: { source: string; target: string }) =>
     `The transcript language ${p.source} is the same as the target language ${p.target}, so no translation is needed`,
   workerMissing: "Couldn't find the Speech Worker (speech-worker). Run npm run build:engine first.",
-  /** 写进视频的名字：新的译文文档。 */
+  /** Name written into the video: the new translation document. */
   documentName: (p: { language: string }) => `Translation ${p.language}`,
   videoClosedKept: 'The video was closed. The translation is kept in the outputs.',
   sourceChanged:
     'The source document changed during translation, so nothing was written to the video. Retrying translates the current version of the source document.',
-  /** 写进视频的编辑历史：写入译文的事务标签。 */
+  /** Edit-history entry written into the video: the transaction label for writing the translation. */
   transactionLabel: (p: { language: string }) => `Translate to ${p.language}`,
   noDocumentId: "The translation was written to the video, but its document ID wasn't returned",
   rejected: 'The transaction to write to the video was rejected. The translation is kept in the outputs.',
-  // 就地刷新一份译文（参数 translationId）。
+  // Refresh a translation in place (parameter translationId).
   sentencesNeedTranslation: "Parameter sentences can only be given together with translationId",
   refreshNoCaptions: "Parameters captions, captionStyle and bilingual can't be used with translationId. Subtitle layers made from this translation are updated in place.",
   notTranslation: (p: { documentId: string; kind: string }) => `Document ${p.documentId} is ${p.kind}, not a translation`,

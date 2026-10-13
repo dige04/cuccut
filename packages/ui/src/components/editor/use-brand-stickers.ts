@@ -9,13 +9,12 @@ import { useLibrary } from '../../state/library-store.ts';
 export interface BrandSticker {
   summary: LibraryEntrySummary;
   entry: LibraryEntry;
-  /** 进「动态贴纸」那一页（Lottie）；否则进「贴纸」那一页。 */
+  /** Goes to the “动态贴纸” (Animated stickers) page (Lottie); otherwise goes to the “贴纸” (Stickers) page. */
   dynamic: boolean;
 }
 
 /**
- * 品牌库里的贴纸（元素页的「我的贴纸」）：摘要里没有文件类型，分不出图片与 Lottie，逐条读出来（按版本缓存）。
- * 读不出来的那条不摆。`ready` 之前别说「还没有」：库的快照或条目还在路上。次序同品牌页（按名字）。
+ * Stickers in the brand library (the element page's “我的贴纸” (My stickers)): the summary has no file type, so images and Lottie cannot be told apart. Each one is read individually (cached per version). An entry that cannot be read is not shown. Before `ready`, do not say “还没有” (none yet): the library snapshot or entries are still on the way. Order matches the brand page (by name).
  */
 export function useBrandStickers(): { ready: boolean; stickers: BrandSticker[] } {
   const runtime = useRuntime();
@@ -43,11 +42,11 @@ export function useBrandStickers(): { ready: boolean; stickers: BrandSticker[] }
     return () => {
       live = false;
     };
-    // signature 概括了 list。
+    // signature summarizes list.
   }, [runtime, signature]);
   if (!list.length) return { ready: libraryReady, stickers: EMPTY };
   if (loaded.signature === signature) return { ready: true, stickers: loaded.stickers };
-  // 库里刚多了、少了或改了一条：新的一批读回来之前，先摆上一批里还在库里的，网格不闪空。
+  // The library just gained, lost or changed an entry: until the new batch is read back, show the entries from the previous batch that are still in the library, so the grid does not flash empty.
   const ids = new Set(list.map((summary) => summary.id));
   return { ready: false, stickers: loaded.stickers.filter((sticker) => ids.has(sticker.summary.id)) };
 }

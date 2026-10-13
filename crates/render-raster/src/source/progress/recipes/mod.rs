@@ -1,7 +1,6 @@
-//! progress 的绘制配方（设计 §7.4 的封闭算法名，一个算法名一个模块）。
+//! Drawing recipes for progress (the closed set of algorithm names in design §7.4; one algorithm name per module).
 //!
-//! P3 落地三种（覆盖 6 个样式），P4 落地 `snake-v1`（覆盖 2 个）；rainbow /
-//! strobe 四种是 P5（它们复用 `frame-v1` / `snake-v1` 的骨架，只换 `colorMode`）。
+//! P3 delivers three (covering 6 styles). P4 delivers `snake-v1` (covering 2). The four rainbow and strobe styles are P5: they reuse the skeleton of `frame-v1` / `snake-v1` and only swap `colorMode`.
 
 pub(crate) mod bar_v1;
 pub(crate) mod frame_v1;
@@ -11,11 +10,9 @@ pub(crate) mod snake_v1;
 use crate::drawop::PathSeg;
 use crate::source::kernel::DrawBox;
 
-/// 四角等半径的圆角矩形（顺时针，起点在左上角圆弧结束处）。
+/// A rounded rectangle with the same radius at all four corners (clockwise, starting where the top-left corner arc ends).
 ///
-/// 与 `apps/cli` 的 `element_draw::rounded_rect_path` 同形；那一份支持四角独立
-/// 半径、服务 `ShapeProps.cornerRadius`，本函数只服务 `bar-v1` 的胶囊遮罩。
-/// 设计 §9.1 要把 `element_draw` 整体下沉进本 crate，届时两者合并。
+/// Same shape as `rounded_rect_path` in `apps/cli`'s `element_draw`. That one supports independent radii per corner and serves `ShapeProps.cornerRadius`, while this function serves only the `bar-v1` capsule mask. Design §9.1 plans to move `element_draw` down into this crate as a whole, and at that point the two will merge.
 pub(crate) fn rounded_rect(bbox: DrawBox, radius: f64) -> Vec<PathSeg> {
     const KAPPA: f64 = 0.552_284_749_830_793_6;
     let DrawBox { x, y, w, h } = bbox;

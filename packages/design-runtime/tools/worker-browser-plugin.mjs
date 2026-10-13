@@ -1,12 +1,11 @@
-// 快速编辑 Worker（src/worker/sandbox.ts）的 esbuild 插件：Worker 里用 happy-dom 跑画板，
-// 它要的 Node 内置模块都换成 src/worker/browser-node-shims.ts 里的浏览器实现（I/O 一律不可用）。
-// apps/design-editor/build.mjs 打 fast-edit-worker.js 时用。
+// esbuild plugin for the fast-edit Worker (src/worker/sandbox.ts): the Worker runs the canvas with happy-dom, and the Node built-in modules it needs are all swapped for the browser implementations in src/worker/browser-node-shims.ts (I/O is unavailable throughout).
+// Used by apps/design-editor/build.mjs when building fast-edit-worker.js.
 
 import { fileURLToPath } from 'node:url';
 
 const adapter = fileURLToPath(new URL('../src/worker/browser-node-shims.ts', import.meta.url));
 
-/** Node 内置模块 → 从适配文件里转出的名字。 */
+/** Node built-in module → the name exported from the shim file. */
 const modules = {
   buffer: 'export {Buffer, Blob}',
   crypto: 'export {cryptoShim as default, webcrypto}',

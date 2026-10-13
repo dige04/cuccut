@@ -18,14 +18,14 @@ import { pl } from './tool-outputs.pl.ts';
 import { tr } from './tool-outputs.tr.ts';
 import { vi } from './tool-outputs.vi.ts';
 
-/** 产物行的文案（译文在 `tool-outputs.<语言>.ts`）。 */
+/** Copy for output rows (translations are in `tool-outputs.<lang>.ts`). */
 const en = {
   actionLabel: { 'open-movie': 'Open in editor', 'new-movie': 'New video from this' },
   blockTextOnly: 'Transcripts and subtitles need a video or audio file to make a new video; that isn’t possible from here yet',
   blockTrashed: 'Restore this item from the Trash first',
   blockGenerating: 'Still generating; available when it’s done',
   blockMissing: 'Can’t find this result’s file on this computer',
-  /** 「交给 Agent」预填的那句话：用户改写后发送。 */
+  /** The sentence pre-filled by “Hand to Agent”: the user edits it, then sends it. */
   handover: {
     subtitle: 'Translate these subtitles into another language, keeping the timecodes unchanged.',
     document: 'Write a summary of this transcript.',
@@ -41,14 +41,13 @@ export type ToolOutputsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /*
- * 工具结果的产物行（产品设计 §2.7「结果与下一步」，设计稿 tool-frame.jsx `ToolOutputRow`、model-tool-runs.js `followUps`、
- * model-tool-handover.js）：一次运行发布进 Space 的条目、每个条目能接着做什么、「交给 Agent」预填的那句话。
- * 结果页、任务详情与生成记录共用。
+ * Output rows for tool results (product design §2.7 “results and next steps”; design file tool-frame.jsx `ToolOutputRow`, model-tool-runs.js `followUps`, model-tool-handover.js): the items one run published into Space, what each item can do next, and the sentence pre-filled by “Hand to Agent”.
+ * Shared by the result page, the task details, and the generation records.
  */
 
 /**
- * 一次运行的产物：`origin.jobId` 是这几个任务之一的 Space 条目（直接任务的结果、文件到文件的流程发布的文件）。
- * 回收站里的、还在生成或失败的占位（`ref.jobId`）、新建的视频（由「打开编辑」负责）不列。按名字排。
+ * The outputs of one run. `origin.jobId` is one of these tasks’ Space items (the result of a direct task, or the file published by a file-to-file flow).
+ * Placeholders in the trash, placeholders that are still generating or failed (`ref.jobId`), and new videos (handled by “Open editor”) are not listed. Sorted by name.
  */
 export function entriesOfJob(entries: readonly SpaceEntry[], jobIds: readonly Id[]): SpaceEntry[] {
   const ids = new Set(jobIds);
@@ -61,7 +60,7 @@ export function entriesOfJob(entries: readonly SpaceEntry[], jobIds: readonly Id
     .sort((a, b) => a.name.localeCompare(b.name, intlLocale(), { numeric: true }));
 }
 
-/** 产物所在的目录：都在同一个目录时给它（结果页头上写「保存在 …」），否则 null。 */
+/** The directory the outputs are in: given when they are all in the same directory (the result page header says “Saved in …”); otherwise null. */
 export function outputsDir(entries: readonly Pick<SpaceEntry, 'file'>[]): string | null {
   const dirs = new Set(entries.map((e) => (e.file?.path ? dirOf(e.file.path) : null)));
   if (dirs.size !== 1) return null;
@@ -72,7 +71,7 @@ function dirOf(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, '');
 }
 
-/** 产物行的第二行：种类 · 大小 · 时长或画幅 · 所在目录。 */
+/** The second line of an output row: kind · size · duration or frame size · directory. */
 export function outputDetail(entry: SpaceEntry): string {
   const path = entry.file?.path ?? null;
   const dir = path ? dirOf(path) : null;
@@ -99,7 +98,7 @@ const FOLLOW: Partial<Record<SpaceEntryKind, readonly FollowId[]>> = {
 };
 
 /**
- * 写进视频之后：转录接翻译字幕与翻译配音，翻译字幕接翻译配音，只下载没转写的视频接转录（下载时一起转写的按转录算）。
+ * What follows writing into a video: transcription is followed by translate captions and translate dubbing; translate captions is followed by translate dubbing; a video that was only downloaded (not transcribed) is followed by transcription. A video transcribed during download counts as transcribed.
  */
 const FOLLOW_MOVIE: Partial<Record<ToolId, readonly FollowId[]>> = {
   transcribe: ['translate-subtitles', 'dub'],
@@ -108,8 +107,7 @@ const FOLLOW_MOVIE: Partial<Record<ToolId, readonly FollowId[]>> = {
 };
 
 /**
- * 一个产物接着能做什么。工具项只在那个工具收这种条目时才列（与工具目录的 Space 输入一致）；「在 Space 中查看」
- * 「在文件夹中显示」「交给 Agent」每行都有，不在这里。写进视频的结果（视频条目）先给「打开编辑」，再按产出它的工具接着做。
+ * What an output can do next. Tool items are listed only when that tool accepts this kind of item (consistent with the tool catalog’s Space input). “View in Space”, “Show in folder”, and “Hand to Agent” are on every row and are not defined here. A result written into a video (video item) offers “Open editor” first, then continues with the tool that produced it.
  */
 export function followUps(entry: Pick<SpaceEntry, 'kind'>, fromTool?: ToolId | null): FollowUp[] {
   const ids = entry.kind === 'video' ? ['open-movie' as const, ...((fromTool && FOLLOW_MOVIE[fromTool]) || [])] : (FOLLOW[entry.kind] ?? []);
@@ -121,8 +119,7 @@ export function followUps(entry: Pick<SpaceEntry, 'kind'>, fromTool?: ToolId | n
 }
 
 /**
- * 「以此新建视频」为什么做不了；能做时 null。音频、图片与视频文件直接成为新视频的素材（素材留在原处，只做链接）；
- * 文稿与字幕要先配一份视频或音频，Runtime 还没有这样新建的方法。
+ * Why “Create new video from this” cannot be done; null when it can. Audio, images, and video files become material of the new video directly (the material stays where it is; only a link is made). Scripts and captions need a video or audio to pair with first, and the Runtime has no method yet to create them this way.
  */
 export function newMovieBlock(entry: Pick<SpaceEntry, 'kind' | 'status' | 'user'>, path: string | null): string | null {
   if (entry.kind === 'document' || entry.kind === 'subtitle') return M.blockTextOnly;
@@ -132,7 +129,7 @@ export function newMovieBlock(entry: Pick<SpaceEntry, 'kind' | 'status' | 'user'
   return null;
 }
 
-/** 「交给 Agent」预填的那句话：按结果种类给一句缺省意图，由用户改写后发送，不自动发送。句子里不写路径，引用会带上位置。 */
+/** The sentence pre-filled by “Hand to Agent”: a default intent based on the result kind. The user rewrites it and sends it; it is not sent automatically. The sentence does not include a path, since the reference carries the location. */
 export function handoverText(entry: Pick<SpaceEntry, 'kind'>): string {
   return M.handover[entry.kind] ?? M.handoverDefault;
 }

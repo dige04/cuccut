@@ -14,7 +14,7 @@ import { pl } from './harness-agents.pl.ts';
 import { tr } from './harness-agents.tr.ts';
 import { vi } from './harness-agents.vi.ts';
 
-/** Agent、发送、任务合同与审批相关的拒绝原因（`packages/harness`）。`agent` 是 Agent 的显示名。 */
+/** Rejection reasons for agents, sending, task contracts and approvals (`packages/harness`). `agent` is the agent's display name. */
 const en = {
   listSeparator: ', ',
   noDriver: (p: { id: string }) => `No Agent is registered with id ${p.id}`,

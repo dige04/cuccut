@@ -11,7 +11,7 @@ describe('ModelServiceStore', () => {
   let dir: string;
   let paths: ModelServiceStorePaths;
   let credentialsFile: string;
-  /** 每次打开用一个新的文件后端：重开时从文件读。 */
+  /** Each open uses a new file backend: reopening reads from the file. */
   const open = () => ModelServiceStore.open(paths, new FileCredentialStore(credentialsFile));
 
   beforeEach(async () => {
@@ -60,7 +60,7 @@ describe('ModelServiceStore', () => {
       formatVersion: 2,
       credentials: { 'provider:openai/main': KEY },
     });
-    // 临时文件加改名：不留下中间文件。
+    // Temp file plus rename: leave no intermediate file behind.
     expect((await fs.readdir(path.dirname(paths.modelServicesFile))).sort()).toEqual(['model-credentials.json', 'model-services.json']);
   });
 
@@ -84,7 +84,7 @@ describe('ModelServiceStore', () => {
     expect((await open()).configView('openai').credential).toBe('set');
     await store.updateProvider('openai', { enabled: false });
     expect(store.configView('openai')).toEqual({ enabled: false, enabledAt: null, credential: 'set', accounts: [account] });
-    // `credential: null`（`models.configure` 的写法）删掉第一个账号。
+    // `credential: null` (the form used by `models.configure`) deletes the first account.
     await store.updateProvider('openai', { credential: null, endpoint: 'http://127.0.0.1:9/v1' });
     expect(store.configView('openai')).toEqual({
       enabled: false,
@@ -136,7 +136,7 @@ describe('ModelServiceStore', () => {
     expect(store.getDefault('generateImage')).toEqual({ providerId: 'ok', modelId: 'm' });
     expect(store.hasCredential('ok')).toBe(false);
     expect(store.credentialProblem('ok')).not.toBeNull();
-    // 凭据文件原样留着。
+    // The credentials file is left as is.
     expect(await fs.readFile(credentialsFile, 'utf8')).toBe('{not json');
   });
 
@@ -175,7 +175,7 @@ describe('ModelServiceStore', () => {
     const store = await open();
     expect(store.configView('openai')).toMatchObject({ credential: 'set', accounts: [{ accountId: 'main', masked: 'sk-…6789' }] });
     expect(store.configView('custom:box')).toMatchObject({ credential: 'set', accounts: [{ accountId: 'main', masked: '••••••••' }] });
-    // 没有凭据的 Provider 不建账号。
+    // A provider without a credential does not create an account.
     expect(store.configView('google')).toMatchObject({ credential: 'missing', accounts: [] });
     expect(await store.credential('openai')).toBe(KEY);
     expect(await store.credential('custom:box')).toBe('box-key');
@@ -187,7 +187,7 @@ describe('ModelServiceStore', () => {
     expect(written.formatVersion).toBe(2);
     expect(written.providers.openai).not.toHaveProperty('legacyCredential');
     expect(JSON.stringify(written)).not.toContain(KEY);
-    // 再开一次结果相同（迁移只做一次）。
+    // Reopening gives the same result (migration runs only once).
     const reopened = await open();
     expect(reopened.configView('openai').accounts).toHaveLength(1);
     expect(await reopened.credential('openai')).toBe(KEY);
@@ -261,7 +261,7 @@ describe('ModelServiceStore', () => {
     ]);
     expect(await store.resolveCredential('deepseek')).toEqual({ accountId: 'main', secret: 'sk-first-0000aaaa' });
 
-    // 停用第一个：用第二个。调整顺序：第二个在前。
+    // Disable the first and use the second. Reorder: the second goes first.
     await store.updateAccount('deepseek', 'main', { enabled: false });
     expect((await store.resolveCredential('deepseek'))?.accountId).toBe(b);
     await store.updateAccount('deepseek', 'main', { enabled: true });
@@ -273,7 +273,7 @@ describe('ModelServiceStore', () => {
       details: { code: 'ACCOUNT_NOT_FOUND', providerId: 'deepseek', accountId: 'nope' },
     });
 
-    // 状态只记录最近一次结果：限速之后照样用它（不换账号）。
+    // Status records only the most recent result: after rate limiting, keep using it (no account switch).
     store.recordAccountResult('deepseek', b, '2026-10-06T00:00:00.000Z', {
       state: 'rate-limited',
       at: '2026-10-06T00:00:00.000Z',
@@ -286,13 +286,13 @@ describe('ModelServiceStore', () => {
       status: { state: 'rate-limited', until: '2026-10-06T00:01:00.000Z' },
     });
     expect((await store.resolveCredential('deepseek'))?.accountId).toBe(b);
-    // 换密钥：状态回到 unknown，掩码重算。
+    // Key replaced: status returns to unknown, mask recomputed.
     await store.updateAccount('deepseek', b, { credential: 'sk-third-2222cccc' });
     expect(store.configView('deepseek').accounts?.[0]).toMatchObject({ masked: 'sk-…cccc', status: { state: 'unknown' } });
     await store.flush();
     expect(await fs.readFile(paths.modelServicesFile, 'utf8')).not.toContain('sk-third-2222cccc');
 
-    // 删掉全部账号：Provider 还在，只是没有密钥。
+    // Delete all accounts: the provider remains, just without a key.
     await store.removeAccount('deepseek', b);
     await store.removeAccount('deepseek', 'main');
     expect(store.configView('deepseek')).toMatchObject({ credential: 'missing', accounts: [] });
@@ -342,7 +342,7 @@ describe('ModelServiceStore', () => {
       details: { code: 'CREDENTIAL_UNAVAILABLE', reason: 'unavailable' },
     });
     expect(store.providerIds()).toEqual(['openai']);
-    // 不回退：明文文件里的密钥还在，但这个存储读不到它。
+    // No fallback: the key in the plaintext file is still there, but this store cannot read it.
     expect(JSON.parse(await fs.readFile(credentialsFile, 'utf8')).credentials['provider:openai/main']).toBe(KEY);
   });
 

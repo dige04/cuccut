@@ -1,25 +1,24 @@
 /**
- * 设计系统运行时（@cuccut/design-system-runtime）从 globalThis.designSystemHost 读取的宿主能力（docs/design/canvas §10.3）。
- * 原运行时读 globalThis.claude；移植时把这些读取点都改成了 designSystemHost，每处带 `CucCut:` 注释。
+ * Host capabilities that the design system runtime (@cuccut/design-system-runtime) reads from globalThis.designSystemHost (docs/design/canvas §10.3).
+ * The original runtime read globalThis.claude. When porting, all of these read points were changed to designSystemHost, each marked with a `CucCut:` comment.
  *
- * 宿主对象基于设计稿与幻灯片编辑器的 connectEditorHost（@cuccut/slides/editor），去掉标注、标注标签与 `use`，
- * 另给 `user.name()`。各能力在运行时里的读取点（路径相对 packages/design-system-runtime/src）：
- *   artifact / self  files/browser-port.ts（publish 批量写文件，带 ifMatch）、documents/self-publish.ts（有 publish 才允许保存）
- *   user             host/user-api.ts：id / canEdit / can；name 给 lastChange.by（manifest.json），取 `__deck/session` 的
- *                    `userName`，没有时为空串，运行时当作取不到名字；不提供 isOwner，运行时当作不是所有者
- *   assets           media/assets.ts、model/asset-store.ts（上传图片、字体等，返回 /_blob/<id>；`name` 不用，只转交 `type`）
- *   chat             editor/claude-delivery.tsx 的 resolvePromptSuggestion（「Ask the agent」类请求：owner 口吻的提示放进
- *                    会话的输入框，由用户发送）；页面不在 CucCut 的 iframe 里时没有，运行时退回复制到剪贴板
- * 不提供（运行时都有兜底，见 packages/design-system-runtime/README.md）：
- *   use        按名字异步取能力（host/claude-capabilities.ts）；没有时直接读上面的字段。提供了会让编辑器在页面声明了
- *              downloads 而宿主不给时判为不许下载（editor/download-permission.tsx）
- *   comments   运行时不调它（只在 DOM 上标目标）；标注的桥交给宿主自己的目标层（comment-targets.ts，docs/design/canvas §10.6）。
- *              也不提供 sendToClaude / anchorFor，claude-delivery 于是跳过评论线程这条路
- *   room       多人在线与会话路由（editor/claude-delivery.tsx 的 resolveClaudeRoom）；单用户，提示走 chat
- *   hot        外部改动就地应用（host/hot-reload.ts）；CucCut 先发布未保存的改动再重新载入（同幻灯片 6.5）
- *   db         旧的数据库存储；运行时按文件模式工作
- *   downloads  同设计稿：导出与下载退回浏览器下载
- *   commentLabels 只有幻灯片运行时会问
+ * The host object is based on connectEditorHost from the design canvas and slide editors (@cuccut/slides/editor), with annotations, annotation labels and `use` removed,
+ * and `user.name()` added. Where each capability is read in the runtime (paths relative to packages/design-system-runtime/src):
+ *   artifact / self  files/browser-port.ts (publish batch-writes files, with ifMatch), documents/self-publish.ts (saving is allowed only if publish exists)
+ *   user             host/user-api.ts: id / canEdit / can. name goes to lastChange.by (manifest.json), taken from `userName` of `__deck/session`,
+ *                    an empty string if missing, which the runtime treats as no name available. isOwner is not provided, so the runtime treats the user as not the owner.
+ *   assets           media/assets.ts, model/asset-store.ts (uploads images, fonts, etc., returning /_blob/<id>; `name` is unused, only `type` is passed on)
+ *   chat             editor/claude-delivery.tsx resolvePromptSuggestion ("Ask the agent"-style requests: owner-voiced prompts are placed in the session's
+ *                    input box for the user to send). When the page is not in CucCut's iframe this is absent, and the runtime falls back to copying to the clipboard.
+ * Not provided (the runtime has fallbacks for all of them, see packages/design-system-runtime/README.md):
+ *   use        asynchronously gets a capability by name (host/claude-capabilities.ts); without it, the fields above are read directly. Providing it would make the editor treat downloads as not permitted when the page declares downloads and the host does not provide them (editor/download-permission.tsx).
+ *   comments   the runtime does not call it (it only marks targets on the DOM); the annotation bridge is handed to the host's own target layer (comment-targets.ts, docs/design/canvas §10.6).
+ *              sendToClaude and anchorFor are not provided either, so claude-delivery skips the comment-thread path.
+ *   room       multi-user online and session routing (resolveClaudeRoom in editor/claude-delivery.tsx); single user, so prompts go through chat.
+ *   hot        applies external changes in place (host/hot-reload.ts); CucCut first publishes unsaved changes and then reloads (same as slides 6.5).
+ *   db         the old database storage; the runtime works in file mode.
+ *   downloads  same as the design canvas: export and download fall back to the browser download.
+ *   commentLabels only the slide runtime asks for this.
  */
 import type { HostUserCapability, SlidesHost } from '@cuccut/slides/editor';
 
@@ -28,12 +27,12 @@ type UploadOptions = NonNullable<Parameters<SlidesUpload>[1]>;
 type UploadResult = Awaited<ReturnType<SlidesUpload>>;
 
 export interface DesignSystemUserCapability extends HostUserCapability {
-  /** 本机用户名（`__deck/session` 的 `userName`）；没有时为空串。 */
+  /** Local user name (`userName` of `__deck/session`); empty string if missing. */
   name(): Promise<string>;
 }
 
 export interface DesignSystemUploadOptions extends UploadOptions {
-  /** 运行时给的文件名；CucCut 的素材按内容寻址（`_blobs/<id>.<ext>`），不用它。 */
+  /** Filename given by the runtime. CucCut's assets are content-addressed (`_blobs/<id>.<ext>`), so it is not used. */
   name?: string;
 }
 
@@ -47,7 +46,7 @@ export type DesignSystemHost = Omit<SlidesHost, 'comments' | 'commentLabels' | '
 };
 
 /**
- * 装了宿主的窗口。这里不用 `declare global` 声明 designSystemHost：运行时自己的类型（contracts/platform-host.ts 的
- * ProtocolGlobal）已经声明了它，两份声明放进同一个检查（packages/design-system-runtime/tsconfig.json 连同页面入口一起查）会冲突。
+ * The window that has the host installed. `declare global` is not used here to declare designSystemHost: the runtime's own type (ProtocolGlobal in contracts/platform-host.ts)
+ * already declares it, and two declarations checked together (packages/design-system-runtime/tsconfig.json checks them along with the page entry) would conflict.
  */
 export type DesignSystemHostWindow = Window & typeof globalThis & { designSystemHost?: DesignSystemHost };

@@ -15,8 +15,8 @@ import { tr } from './transcribe-copy.tr.ts';
 import { vi } from './transcribe-copy.vi.ts';
 
 /**
- * 字幕面板「生成字幕」的转录设置的文案（原型 glossary-tool.jsx `AsrHintBlock`、tool-transcribe.jsx）。
- * 与 `subtitle-copy.ts` 分开放：那份里还有翻译的文案，两边各改各的。译文在 `transcribe-copy.zh-Hans.ts`。
+ * Copy for the transcription settings of “Generate subtitles” in the subtitle panel (prototype glossary-tool.jsx `AsrHintBlock`, tool-transcribe.jsx).
+ * Kept separate from `subtitle-copy.ts`: that file also has translation copy, and each is edited on its own. The translations are in `transcribe-copy.zh-Hans.ts`.
  */
 const en = {
   title: 'Transcription settings',
@@ -24,7 +24,7 @@ const en = {
   model: 'Speech model',
   manageModels: 'Manage speech models',
   modelsLoading: 'Loading speech models…',
-  /** 在菜单里点了还没装的本机模型：下载开始时的提示与模型下拉下面那一行（设计稿 panel-aitools.jsx「下完自动选中」）。 */
+  /** Hint shown when a local model that isn't installed yet is picked from the menu and its download starts. It is also the line under the model dropdown (design draft panel-aitools.jsx, “下完自动选中”: selected automatically once downloaded). */
   downloadThenSelect: (name: string, pct: number | null) =>
     `Downloading ${name}${pct === null ? '' : ` · ${pct}%`} · it’ll be selected when done`,
   noDefault: 'No default speech model yet',

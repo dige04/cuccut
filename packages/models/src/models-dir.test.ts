@@ -114,7 +114,7 @@ describe('模型目录的盘上操作', () => {
       expect(Object.keys((await readInstallRecord(to)).bundles).sort()).toEqual(['asr@mlx', 'other@mlx']);
       expect(progress.at(-1)).toBe(plan.bytes);
       expect(await exists(path.join(to, MOVING_DIR))).toBe(false);
-      // 日志留到换过去之后；不认识的仓库不动。
+      // The log is kept until after the switch-over; unrecognised repositories are left alone.
       expect(await exists(path.join(from, MOVE_JOURNAL_FILE))).toBe(true);
       expect(await exists(path.join(from, 'someone', 'else'))).toBe(true);
       expect(await exists(path.join(from, 'test', 'asr'))).toBe(!same);
@@ -170,7 +170,7 @@ describe('模型目录的盘上操作', () => {
 
   it('跨盘复制出来的文件校验不符时失败并回滚', async () => {
     const plan = await planMove(from, to, BUNDLES);
-    // 原目录里的文件被改坏（大小不变）：复制出来的与清单对不上。
+    // A file in the original directory was corrupted (size unchanged): the copy does not match the manifest.
     const file = path.join(from, 'test', 'vad', 'model.bin');
     const bytes = await fs.readFile(file);
     bytes[0] = bytes[0]! ^ 0xff;
@@ -184,7 +184,7 @@ describe('模型目录的盘上操作', () => {
   });
 
   it('启动时按日志回滚上次没做完的移动：同一块盘时改名回来', async () => {
-    // 假装改名过去了一个仓库就崩溃了。
+    // Crashes after pretending a repository was renamed over.
     await fs.writeFile(
       path.join(from, MOVE_JOURNAL_FILE),
       JSON.stringify({ format_version: 1, to, sameVolume: true, repos: ['test/asr', 'test/vad'] }),

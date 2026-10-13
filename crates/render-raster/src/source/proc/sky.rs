@@ -1,6 +1,4 @@
-//! `proc:"sky"`：夜空。自下而上五层——竖向渐变底、银河（低分辨率噪声位图）、
-//! 闪烁的星、月（光晕 + 月面 + 月海）、飘动的云（逐帧低分辨率噪声位图，
-//! 靠近月亮的云边被照亮）。星的闪烁与云的漂移都是 `τ` 的闭式函数。
+//! `proc:"sky"`: night sky. Five layers from bottom to top: a vertical gradient base, the Milky Way (a low-resolution noise bitmap), twinkling stars, the moon (halo, disc and maria), and drifting clouds (a low-resolution noise bitmap regenerated per frame; cloud edges near the moon are lit). Star twinkle and cloud drift are both closed-form functions of `τ`.
 use super::{circle, color, fill, mat, noise, push_box_clip, rect, unit};
 use crate::drawop::{BitmapData, DrawOp, FrameBuilder, GradientStop, PaintData, PathData};
 use scene_primitives::Rgba;
@@ -8,11 +6,11 @@ use scene_primitives::proc::{MAX_STARS, Moon, Sky};
 use std::sync::Arc;
 use tiny_skia::Transform;
 
-/// 1080p 盒、stars = 1 时的星数。
+/// Number of stars for a 1080p box at stars = 1.
 const STARS_AT_FULL_HD: f64 = 900.0;
-/// 星按亮度分桶：同桶一条 `FillPath`。
+/// Stars are bucketed by brightness: one `FillPath` per bucket.
 const STAR_LEVELS: usize = 8;
-/// 噪声位图的长边像素（再由 DrawBitmap 双线性放大到盒子）。
+/// Long-edge pixel size of the noise bitmap (then upscaled to the box by DrawBitmap, bilinearly).
 const FIELD_LONG_SIDE: f64 = 256.0;
 
 pub(super) fn record(
@@ -103,7 +101,7 @@ fn put(out: &mut Vec<u8>, rgb: [f64; 3], alpha: f64) {
     out.push((a * 255.0).round() as u8);
 }
 
-/// 银河：从左下斜贯右上的一条光带，噪声调制亮度，中线偏一点有一道暗尘带。
+/// Milky Way: a band of light running diagonally from bottom-left to top-right. Noise modulates the brightness, and a dark dust lane sits slightly off the centerline.
 fn milky_way(sky: &Sky, seed: u64, fw: u32, fh: u32, aspect: f64) -> Vec<u8> {
     let tilt = 0.35 + 0.3 * unit(seed, 0, 0x6D77);
     let mut out = Vec::with_capacity((fw * fh * 4) as usize);
@@ -111,7 +109,7 @@ fn milky_way(sky: &Sky, seed: u64, fw: u32, fh: u32, aspect: f64) -> Vec<u8> {
         for i in 0..fw {
             let u = (f64::from(i) + 0.5) / f64::from(fw) * aspect;
             let v = (f64::from(j) + 0.5) / f64::from(fh);
-            // 到直线 v = 0.85 − tilt·u 的有向距离
+            // Signed distance to the line v = 0.85 − tilt·u
             let d = (v - (0.85 - tilt * u)) / libm::sqrt(1.0 + tilt * tilt);
             let band = libm::exp(-(d / 0.13) * (d / 0.13));
             let grain = noise::fbm(seed ^ 0x6D69_6C6B, u * 7.0, v * 7.0, 5);
@@ -148,7 +146,7 @@ fn stars(sky: &Sky, seed: u64, w: f64, h: f64, time: f64, tf: Transform, b: &mut
         let base = 0.3 + 0.7 * unit(seed, i, 14);
         let rate = 1.2 + 3.0 * unit(seed, i, 15);
         let phase = core::f64::consts::TAU * unit(seed, i, 16);
-        // 近地平线（盒底）雾气压暗星光
+        // Haze near the horizon (box bottom) dims the starlight
         let haze = 0.35 + 0.65 * (1.0 - y / h).clamp(0.0, 1.0);
         let twinkle = 0.72 + 0.28 * libm::sin(time * rate + phase);
         let bright = (base * twinkle * haze).clamp(0.0, 1.0);
@@ -207,7 +205,7 @@ fn draw_moon(moon: &Moon, seed: u64, w: f64, h: f64, tf: Transform, b: &mut Fram
     let mut disc = Vec::new();
     circle(&mut disc, cx, cy, r, r);
     fill(disc.clone(), color(&moon.color, 1.0), tf, b);
-    // 月海：裁在月面里的几团暗斑，位置由 seed 定。
+    // Maria: a few dark patches clipped inside the moon disc; positions set by seed.
     let clip = b.path_id(PathData(disc.clone()));
     b.push(DrawOp::ClipPath {
         path: clip,
@@ -226,7 +224,7 @@ fn draw_moon(moon: &Moon, seed: u64, w: f64, h: f64, tf: Transform, b: &mut Fram
         a: 1.0,
     };
     fill(maria, color(&dark, 0.35), tf, b);
-    // 临边昏暗
+    // Darkening toward the limb
     let path = b.path_id(PathData(disc));
     let limb = Rgba {
         r: 40.0,
@@ -258,7 +256,7 @@ fn draw_moon(moon: &Moon, seed: u64, w: f64, h: f64, tf: Transform, b: &mut Fram
     b.push(DrawOp::PopClip);
 }
 
-/// 云：横向拉长的 fbm，`cover` 定阈值，`drift` 让噪声场随时间平移。
+/// Clouds: horizontally stretched fbm. `cover` sets the threshold, and `drift` translates the noise field over time.
 fn clouds(sky: &Sky, seed: u64, fw: u32, fh: u32, w: f64, h: f64, time: f64) -> Vec<u8> {
     let aspect = w / h;
     let shift = sky.drift * time * aspect * 2.2;
@@ -283,7 +281,7 @@ fn clouds(sky: &Sky, seed: u64, fw: u32, fh: u32, w: f64, h: f64, time: f64) -> 
         for i in 0..fw {
             let u = (f64::from(i) + 0.5) / f64::from(fw) * aspect;
             let v = (f64::from(j) + 0.5) / f64::from(fh);
-            // fbm 值集中在 0.5 附近，先拉开再按云量取阈
+            // fbm values cluster around 0.5; stretch them out first, then apply the threshold from cloud cover
             let n = noise::fbm(seed ^ 0x636C_6F75, (u - shift) * 2.2, v * 4.5, 5);
             let n = ((n - 0.5) * 1.8 + 0.5).clamp(0.0, 1.0);
             let t = ((n - lo) / (hi - lo)).clamp(0.0, 1.0);
@@ -292,7 +290,7 @@ fn clouds(sky: &Sky, seed: u64, fw: u32, fh: u32, w: f64, h: f64, time: f64) -> 
                 out.extend_from_slice(&[0, 0, 0, 0]);
                 continue;
             }
-            // 厚处发暗；靠近月亮的云被照亮，薄边（银边）更亮
+            // Thick parts are darkened; clouds near the moon are lit, and thin edges (the silver lining) are brighter.
             let mut rgb = base.map(|c| c * (1.0 - 0.35 * density));
             if let Some((mx, my, reach, glow, tint)) = moon {
                 let d2 = ((u - mx) * (u - mx) + (v - my) * (v - my)) / (reach * reach);

@@ -25,7 +25,7 @@ describe('信封与退出码', () => {
     expect(exitCodeFor('INVALID_ARGUMENTS')).toBe(EXIT.invalidArguments);
     expect(exitCodeFor('CONFIRMATION_REQUIRED')).toBe(EXIT.invalidArguments);
     expect(exitCodeFor('VIDEO_NOT_FOUND')).toBe(EXIT.failed);
-    // 任务的错误码：要用户做事的仍是 2，其余至少是 1。
+    // Task error codes: those requiring user action remain 2; the rest are at least 1.
     expect(exitCodeForJob('TOOL_CONSENT_REQUIRED')).toBe(EXIT.actionRequired);
     expect(exitCodeForJob('INVALID_ARGUMENTS')).toBe(EXIT.failed);
     expect(exitCodeForJob(null)).toBe(EXIT.failed);

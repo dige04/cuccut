@@ -14,9 +14,9 @@ import { pl } from './thread-copy.pl.ts';
 import { tr } from './thread-copy.tr.ts';
 import { vi } from './thread-copy.vi.ts';
 
-/** 会话线程里执行步骤的文案（model/thread.ts；译文在 `thread-copy.<语言>.ts`）。 */
+/** Copy for executed steps in the session thread (model/thread.ts; translations are in `thread-copy.<语言>.ts`). */
 const en = {
-  /** CucCut 自己的视频工具（MCP 服务名 `cuccut`）写成动作。 */
+  /** CucCut's own video tools (MCP server name `cuccut`) are written as actions. */
   videoTools: {
     videos_list: 'List videos',
     videos_create: 'New video',
@@ -24,10 +24,10 @@ const en = {
     edits_apply: 'Edit video',
     edits_undo: 'Undo edits',
   } as Record<string, string>,
-  /** 视频工具的动作带上它的说明。 */
+  /** Video tool actions carry their description. */
   toolTitle: (action: string, label: string) => `${action}: ${label}`,
   steps: { command: 'Run command', read: 'Read file', edit: 'Edit file', search: 'Search', other: 'Other tool' },
-  /** 组头摘要的各个短语（按首次出现的顺序由 `summary` 连起来）。 */
+  /** The phrases of the group header summary (joined by `summary` in order of first appearance). */
   phrase: {
     command: 'ran commands',
     read: (count: number) => `read ${count} ${count === 1 ? 'file' : 'files'}`,

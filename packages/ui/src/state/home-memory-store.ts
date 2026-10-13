@@ -3,10 +3,10 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Id } from '@cuccut/protocol';
 
 /**
- * 起始页记住的两样选择（产品设计 §3.2.1；原型 prefs.newProject 的 `dir`、`targetName`），记在这台电脑上（同模板网格）：
- * - `project`：托盘上次选的项目，null = 不用项目。只在托盘上选时记；别处带着项目来（侧栏「在这里新建会话」）只管那一次。
- * - `target`：「转录并翻译」上次填的目标语言（用户的原话，不是语言代码），没填过是 null。
- * 不放进 Runtime 的设置：这是界面上的顺手记忆，Web 会话也不能改设置。
+ * The two choices the start page remembers (product design §3.2.1; prototype prefs.newProject's `dir` and `targetName`), recorded on this computer, as with the template grid:
+ * - `project`: the project last chosen on the tray, or null for no project. It is recorded only when chosen on the tray. When the project comes from elsewhere (the sidebar's "create a session here"), it applies to that one time only.
+ * - `target`: the target language last entered for "transcribe and translate" (the user's own words, not a language code). null if it was never entered.
+ * Not put in the Runtime's settings. This is a convenience memory of the interface, and Web sessions cannot change settings either.
  */
 interface HomeMemoryStore {
   project: Id | null;
@@ -15,7 +15,7 @@ interface HomeMemoryStore {
   setTarget(target: string): void;
 }
 
-/** 读出来的记忆只认非空字符串，别的一律当没有。 */
+/** Only a non-empty string read back counts. Anything else is treated as absent. */
 export function memoryOf(persisted: unknown): { project: Id | null; target: string | null } {
   const value = (persisted ?? {}) as { project?: unknown; target?: unknown };
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);

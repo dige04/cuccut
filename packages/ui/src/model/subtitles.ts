@@ -1,13 +1,13 @@
 /**
- * 字幕文件的解析（产品设计 §11.1 的 0.3：播放器叠加显示字幕文件）。只读：
- * SRT、WebVTT、ASS / SSA 解析成同一种句子列表，时间以秒计。样式与位置不保留，
- * 只留文字和换行；看不懂的块跳过，不让整份文件失败。
+ * Parsing of subtitle files (product design §11.1, item 0.3: the player overlays subtitle files). Read-only:
+ * SRT, WebVTT, and ASS / SSA are parsed into the same sentence list, with times in seconds. Styling and position are not kept,
+ * only the text and line breaks; blocks that cannot be understood are skipped rather than failing the whole file.
  */
 
 export type SubtitleFormat = 'srt' | 'vtt' | 'ass';
 
 export interface Cue {
-  /** 排序后的序号，从 1 开始。 */
+  /** Sorted index, starting from 1. */
   index: number;
   start: number;
   end: number;
@@ -23,8 +23,8 @@ export function subtitleFormatOf(fileName: string): SubtitleFormat | null {
 }
 
 /**
- * 字幕文件的字节转文字。UTF-8 优先；不是合法 UTF-8 时按 GB18030（兼容 GBK，中文字幕常见）；
- * 有 UTF-16 的 BOM 时按 UTF-16。
+ * Converts subtitle file bytes to text. UTF-8 is tried first; if it is not valid UTF-8, GB18030 is used (compatible with GBK, common for Chinese subtitles);
+ * a UTF-16 BOM means UTF-16.
  */
 export function decodeSubtitleText(bytes: Uint8Array): string {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
@@ -47,7 +47,7 @@ export function parseSubtitles(source: string, format: SubtitleFormat): Cue[] {
 
 type RawCue = Omit<Cue, 'index'>;
 
-/** `01:02:03,456`、`02:03.4`、`1:02:03.45` 都认；毫秒位数不足按小数补齐。 */
+/** Accepts `01:02:03,456`, `02:03.4` and `1:02:03.45`; missing millisecond digits are padded as decimals. */
 const TIME = /(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:[,.](\d{1,3}))?/;
 const TIMING = new RegExp(`^\\s*${TIME.source}\\s*-->\\s*${TIME.source}`);
 
@@ -60,7 +60,7 @@ function parseBlocks(text: string, format: 'srt' | 'vtt'): RawCue[] {
   for (const block of text.split(/\n[ \t]*\n/)) {
     const lines = block.replace(/^\s*\n/, '').split('\n');
     const at = lines.findIndex((line) => TIMING.test(line));
-    // VTT 的文件头、NOTE、STYLE、REGION 块没有时间行，自然跳过。
+    // VTT header, NOTE, STYLE and REGION blocks have no timing line, so they are skipped naturally.
     if (at < 0 || at > 1) continue;
     const m = TIMING.exec(lines[at]!)!;
     cues.push({
@@ -77,7 +77,7 @@ const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', nbsp: ' 
 function cleanMarkup(text: string, format: 'srt' | 'vtt'): string {
   let out = text
     .replace(/<[^>\n]*>/g, '')
-    // 有些 SRT 带着 ASS 的定位标记，例如 `{\an8}`。
+    // Some SRT files carry ASS positioning tags, such as `{\an8}`.
     .replace(/\{\\[^}]*\}/g, '');
   if (format === 'vtt') out = out.replace(/&(amp|lt|gt|nbsp|quot|apos|lrm|rlm);/g, (_, name: string) => ENTITIES[name]!);
   return out
@@ -87,7 +87,7 @@ function cleanMarkup(text: string, format: 'srt' | 'vtt'): string {
     .trim();
 }
 
-/** ASS 的默认列（没有 Format 行时）：第一列是 Layer（ASS）或 Marked（SSA），最后一列是文字。 */
+/** ASS default columns (when there is no Format line): the first column is Layer (ASS) or Marked (SSA), and the last column is the text. */
 const ASS_DEFAULT_FORMAT = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
 const ASS_TIME = /^(\d+):(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?$/;
 
@@ -111,7 +111,7 @@ function parseAss(text: string): RawCue[] {
       continue;
     }
     if (kind !== 'dialogue') continue;
-    // 文字是最后一列，里面可以有逗号：只切出前面的列。
+    // The text is the last column and may contain commas, so only the preceding columns are split off.
     const fields: string[] = [];
     let rest = body;
     for (let i = 0; i < format.length - 1; i++) {
@@ -146,8 +146,8 @@ function cleanAss(text: string): string {
 }
 
 /**
- * `time` 时正在显示的句子（可以有几句重叠），按开始时间排。
- * 句子已按开始时间排好：只看开始不晚于 `time` 的那一段。
+ * Sentences being displayed at `time` (several may overlap), ordered by start time.
+ * Sentences are already sorted by start time, so only the segment whose start is not later than `time` is examined.
  */
 export function activeCues(cues: readonly Cue[], time: number): Cue[] {
   const active: Cue[] = [];
@@ -158,7 +158,7 @@ export function activeCues(cues: readonly Cue[], time: number): Cue[] {
   return active;
 }
 
-/** 列表该停在哪一句（序号）：正在显示的那句；两句之间取下一句；过了最后一句取最后一句。没有句子时为 null。 */
+/** Which sentence (index) the list should stop on: the sentence being displayed; between two sentences, the next one; past the last sentence, the last one. null when there are no sentences. */
 export function nearIndex(cues: readonly Cue[], time: number): number | null {
   if (!cues.length) return null;
   let next = 0;
@@ -168,7 +168,7 @@ export function nearIndex(cues: readonly Cue[], time: number): number | null {
   return cues[Math.min(next, cues.length - 1)]!.index;
 }
 
-/** 字幕列表里点一句时定位到哪里：句首稍后一点，避开与上一句结束重合的那一刻。 */
+/** Where to seek when a sentence is clicked in the subtitle list: a little after the start of the sentence, avoiding the moment that coincides with the end of the previous sentence. */
 export function seekTimeOf(cue: Cue): number {
   return Math.min(cue.start + 0.001, cue.end);
 }

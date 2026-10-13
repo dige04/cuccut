@@ -8,10 +8,9 @@ import { PlannedNote, SectionHead } from './service-parts.tsx';
 import { MCP_COPY } from './services-copy.ts';
 
 /*
- * MCP 服务 › 工具（原型 designs/cuccut/app/page-services-mcp-tools.jsx `McpToolsSection`）：tools/list 里会出现什么、
- * 每个工具的去向（直接应答 / 直接执行 / 调用前询问 / 只读权限下不提供）。目录由协议常量 MCP_SERVICE_TOOL_NAMES 推出
- * （model/services-mcp.ts）。原型能逐个开关工具、展开看参数并「复制定义」「复制 tools/list」；Runtime 没有逐个工具的开关，
- * 也没有把工具目录与参数提供给界面，所以开关置灰、不展开参数、复制按钮置灰，原因写在下面。
+ * MCP service › Tools (prototype designs/cuccut/app/page-services-mcp-tools.jsx `McpToolsSection`): what appears in tools/list, and where each tool goes (answered directly / executed directly / asked before calling / not offered under read-only permission). The catalog is derived from the protocol constant MCP_SERVICE_TOOL_NAMES
+ * (model/services-mcp.ts). The prototype can toggle each tool individually, expand to see parameters, and “Copy definition” / “Copy tools/list”. The Runtime has no per-tool toggle,
+ * and it does not expose the tool catalog or parameters to the UI, so the toggles are greyed out, parameters are not expandable, the copy buttons are greyed out, and the reason is written below.
  */
 
 const BADGE: Record<McpToolGate, 'positive' | 'notice' | 'neutral'> = { answer: 'neutral', auto: 'positive', ask: 'notice', hidden: 'neutral' };

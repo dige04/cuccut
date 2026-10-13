@@ -1,9 +1,9 @@
-//! chinese-hubert-base（HF `HubertModel`，`feat_extract_norm="group"`，post-norm 编码器），
-//! 只输出 `last_hidden_state`。
+//! chinese-hubert-base (HF `HubertModel`, `feat_extract_norm="group"`, post-norm encoder),
+//! outputting only `last_hidden_state`.
 //!
-//! 官方推理（`inference_webui.py` / `TTS_infer_pack/TTS.py`）直接调用
-//! `cnhubert_model.model(wav16k)`，绕过了 `Wav2Vec2FeatureExtractor`，所以输入
-//! 波形**不做**零均值单位方差归一化。
+//! Official inference (`inference_webui.py` / `TTS_infer_pack/TTS.py`) calls
+//! `cnhubert_model.model(wav16k)` directly, bypassing `Wav2Vec2FeatureExtractor`, so the input
+//! waveform is **not** normalized to zero mean and unit variance.
 
 use super::layers::{Conv1d, LayerNorm, Linear, act};
 use super::weights::WeightMap;
@@ -86,7 +86,7 @@ impl Hubert {
         let projection_norm = LayerNorm::load(&mut w, "feature_projection.layer_norm", LAYER_NORM_EPS)?;
         let projection = Linear::load(&mut w, "feature_projection.projection")?;
 
-        // `weight_norm(conv, name="weight", dim=2)`：范数在第 0、1 维上求。
+        // `weight_norm(conv, name="weight", dim=2)`: the norm is computed over dimensions 0 and 1.
         let g = w.take_f32("encoder.pos_conv_embed.conv.weight_g")?;
         let v = w.take_f32("encoder.pos_conv_embed.conv.weight_v")?;
         let norm = v.square()?.sum_axis(0, true)?.sum_axis(1, true)?.sqrt()?;
@@ -111,14 +111,14 @@ impl Hubert {
         })
     }
 
-    /// 16 kHz 单声道波形 → `last_hidden_state` `[1, T, 768]`（约 50 Hz）。
+    /// 16 kHz mono waveform → `last_hidden_state` `[1, T, 768]` (about 50 Hz).
     pub fn forward(&self, samples: &[f32]) -> Result<Array> {
         ensure!(samples.len() >= 400, "HuBERT 输入太短（{} 个样本）", samples.len());
         let mut x = Array::from_slice(samples, &[1, samples.len() as i32, 1]);
         for (i, conv) in self.convs.iter().enumerate() {
             x = conv.forward_nlc(&x)?;
             if i == 0 {
-                // GroupNorm(512 组 / 512 通道)：每个通道在时间维上单独归一化。
+                // GroupNorm (512 groups / 512 channels): each channel is normalized separately along the time dimension.
                 let mean = x.mean_axis(1, true)?;
                 let var = x.var_axis(1, true, 0)?;
                 x = (&x - mean) / (var + LAYER_NORM_EPS).sqrt()? * &self.group_norm_weight + &self.group_norm_bias;
@@ -129,7 +129,7 @@ impl Hubert {
         let x = self.projection.forward(&self.projection_norm.forward(&x)?)?;
 
         let frames = x.dim(1);
-        // 偶数卷积核：`HubertSamePadLayer` 去掉最后一帧。
+        // Even kernel size: `HubertSamePadLayer` drops the last frame.
         let pos = self.pos_conv.forward_nlc(&x)?.index((.., ..frames, ..));
         let mut x = self.encoder_norm.forward(&(&x + act::gelu(&pos)?))?;
         for layer in &self.layers {

@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-bundle interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! HTDemucs-FT 的分离器：bag 加载、窗口切分、逐声部推理（对照 speech-swift `HTDemucsSeparator.swift`）。
-//! 与模型图一样按所在模块的 `tensor` 编译两份（MLX 与 candle，见 [`super`]）。
+//! The HTDemucs-FT separator: bag loading, window splitting, per-stem inference (cross-referenced with speech-swift `HTDemucsSeparator.swift`).
+//! As with the model graph, it is compiled twice against the module's `tensor` (MLX and candle, see [`super`]).
 
 use super::model::HtDemucsModel;
 use super::tensor::{MemoryCacheGuard, configure_memory_cache, ensure_device, load_safetensors_deferred};
@@ -19,12 +19,12 @@ use crate::separate::types::{SeparatedStems, SeparationProgress, StereoAudio};
 use crate::separate::{ProgressSink, Separator};
 use anyhow::{Context, Result, bail};
 
-/// bag 里每个子模型的权重前缀。
+/// Weight prefix of each sub-model in the bag.
 fn model_prefix(index: usize) -> String {
     format!("model_{index}.")
 }
 
-/// 窗口重叠比例（demucs `apply_model` 默认 0.25）。
+/// Window overlap ratio (the default for demucs `apply_model`, 0.25).
 const OVERLAP: f32 = 0.25;
 
 pub struct HtDemucs {
@@ -33,8 +33,8 @@ pub struct HtDemucs {
 }
 
 impl HtDemucs {
-    /// 从模型包的 `separator` 组件加载：`htdemucs_ft_config.json` + `htdemucs_ft.safetensors`。
-    /// 四个子模型一次性加载并常驻（f32 约 670 MB，是 fp16 文件的两倍），逐窗推理时无需再读盘。
+    /// Loads from the model bundle's `separator` component: `htdemucs_ft_config.json` + `htdemucs_ft.safetensors`.
+    /// All four sub-models are loaded once and kept resident (about 670 MB in f32, twice the size of the fp16 file), so per-window inference does not need to read from disk.
     pub fn load(files: &VerifiedFiles) -> Result<Self> {
         ensure_device()?;
         let config = HtDemucsConfig::load(files.require("htdemucs_ft_config.json")?)?;
@@ -124,7 +124,7 @@ impl Separator for HtDemucs {
 
         let channels = [left, right];
         let mut outputs: Vec<Option<StereoAudio>> = (0..sources).map(|_| None).collect();
-        // 与参考实现一致：第 s 个子模型只保留第 s 个声部。
+        // Matches the reference implementation: sub-model s keeps only stem s.
         for (s, model) in self.models.iter().enumerate() {
             let mut acc = OverlapAdd::new(2, length, segment_len);
             for window in &windows {

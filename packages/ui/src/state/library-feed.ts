@@ -1,13 +1,13 @@
 import type { LibraryEntrySummary, LibraryEvent, LibrarySnapshot } from '@cuccut/protocol';
 
 /**
- * `library` 主题（架构设计 §5.9）的唯一入口：`RuntimeSession.start()` 只订阅一次，把快照与事件交给这里，
- * 各个库的镜像（我的声音、术语表、品牌库……）用 `onLibraryEntries` 登记，拿到的是全部库的条目，自己按 `library` 挑。
+ * The single entry point for the `library` topic (architecture design §5.9). `RuntimeSession.start()` subscribes only once and hands snapshots and events here.
+ * Each library's mirror (my voices, glossary, brand kit, ...) registers with `onLibraryEntries`, receives the entries of all libraries, and selects its own by `library`.
  *
- * 为什么不各自订阅：`CucCutClient` 每个主题只记一组回调，第二次 `subscribe('library')` 会顶掉第一次的。
+ * Why not subscribe in each one: `CucCutClient` records only one set of callbacks per topic, so a second `subscribe('library')` would replace the first.
  */
 
-/** 主题里一条事件之后的条目表：`entry.upsert` 按库与 ID 替换或追加，`entry.removed` 拿掉。 */
+/** The entry table after an event on the topic. `entry.upsert` replaces or appends by library and ID, and `entry.removed` removes one. */
 export function applyLibraryEvent(entries: readonly LibraryEntrySummary[], event: LibraryEvent): LibraryEntrySummary[] {
   switch (event.type) {
     case 'entry.upsert': {
@@ -33,20 +33,20 @@ function emit(): void {
   for (const listener of listeners) listener(current);
 }
 
-/** 交给 `client.subscribe('library', libraryFeed)`。 */
+/** Passed to `client.subscribe('library', libraryFeed)`. */
 export const libraryFeed = {
   snapshot(snapshot: LibrarySnapshot): void {
     current = snapshot.entries.slice();
     emit();
   },
   event(event: LibraryEvent): void {
-    // 快照到之前不会有事件；真来了也只是先记下这一条。
+    // No events arrive before the snapshot. If one does come, just record it first.
     current = applyLibraryEvent(current ?? [], event);
     emit();
   },
 };
 
-/** 登记一个镜像：已经有快照时立刻收到一次，之后每次变化都收到全部条目。返回取消登记。 */
+/** Register a mirror. If a snapshot already exists, it receives everything once immediately, and after each change it receives all entries. Returns the unregister function. */
 export function onLibraryEntries(listener: Listener): () => void {
   listeners.add(listener);
   if (current) listener(current);

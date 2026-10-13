@@ -22,14 +22,14 @@ import {
 import { HarnessAgents as HA } from '@cuccut/protocol/messages/harness';
 
 /**
- * 任务合同的建立与修订（架构设计 §3.2）。纯函数：存放与事件由 Harness 负责。
+ * Creation and revision of task contracts (architecture design §3.2). Pure functions: storage and events are the Harness's responsibility.
  *
- * - 默认合同：目标是用户的消息，范围来自编辑器上下文，有打开的视频时交付是「写进视频的修改」，没有约束、保护与检查；
- * - 修订只追加：给出的字段整体替换，`revision` 加一，`change` 记下谁改了哪些字段；
- * - 保护的来源：新加的记下加入时的修订，沿用的（同一个 `protectionId`）保留原来的来源。
+ * - Default contract: the goal is the user's message, the scope comes from the editor context, and when a video is open the deliverable is “changes written into the video”; no constraints, protections or checks;
+ * - Revisions are append-only: the fields given are replaced as a whole, `revision` goes up by one, and `change` records who changed which fields;
+ * - Source of protections: newly added ones record the revision at which they were added; carried-over ones (same `protectionId`) keep their original source.
  */
 
-/** 任务预算的账本（Runtime 的授权服务）。Harness 不知道它的实现，只在建立与修改合同时读写。 */
+/** Task budget ledger (the Runtime's authorization service). The Harness does not know its implementation, and reads and writes it only when creating and modifying contracts. */
 export interface TaskBudgetPort {
   taskBudget(taskId: Id): TaskBudgetPolicy | null;
   setTaskBudget(taskId: Id, limits: TaskBudgetLimits): TaskBudgetPolicy;
@@ -73,7 +73,7 @@ export function buildContract(input: {
   };
 }
 
-/** 智能体改了它不能改的字段时拒绝（`CONTRACT_FIELD_READONLY`）。 */
+/** Rejects when the agent changes a field it may not change (`CONTRACT_FIELD_READONLY`). */
 export function assertAgentPatch(patch: TaskContractPatch): void {
   const fields = Object.keys(patch).filter((key) => (AGENT_READONLY_CONTRACT_FIELDS as readonly string[]).includes(key));
   if (fields.length > 0) {
@@ -84,7 +84,7 @@ export function assertAgentPatch(patch: TaskContractPatch): void {
   }
 }
 
-/** 由上一个修订与修改得出下一个修订。 */
+/** Derives the next revision from the previous revision and the change. */
 export function reviseContract(
   previous: TaskContract,
   patch: TaskContractPatch,
@@ -108,7 +108,7 @@ export function reviseContract(
   return next;
 }
 
-/** 改变目标时由旧合同派生新任务的合同输入：范围、约束、保护、交付、检查照搬，预算上限照搬（用量从零计）。 */
+/** Contract input for a new task derived from the old contract when the goal changes: scope, constraints, protections, deliverable and checks are copied as they are; the budget limit is copied too (usage starts from zero). */
 export function carriedInput(previous: TaskContract, budget: TaskBudgetPolicy | null): TaskContractInput {
   return {
     scope: structuredClone(previous.scope),
@@ -125,7 +125,7 @@ export function carriedInput(previous: TaskContract, budget: TaskBudgetPolicy | 
   };
 }
 
-/** 交给引擎的保护：只要这个视频的。 */
+/** The protection handed to the engine: only this video's. */
 export function engineProtections(contract: TaskContract | null, videoId: Id): Array<Pick<ProtectionRef, 'protectionId' | 'target'>> {
   if (!contract) return [];
   return contract.protectedRefs

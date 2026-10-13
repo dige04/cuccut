@@ -14,7 +14,7 @@ import { pl } from './state-copy.pl.ts';
 import { tr } from './state-copy.tr.ts';
 import { vi } from './state-copy.vi.ts';
 
-/** 界面状态层（任务镜像等）的文案。英文写在这里，译文在 `state-copy.zh-Hans.ts`。 */
+/** Copy for the UI state layer (task mirror, etc.). English is written here; translations are in `state-copy.zh-Hans.ts`. */
 const en = {
   task: {
     running: 'In progress',

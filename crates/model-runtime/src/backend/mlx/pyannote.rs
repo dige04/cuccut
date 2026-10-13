@@ -1,8 +1,7 @@
-//! Pyannote PyanNet 说话人分段（Apple Silicon / MLX）。移植自 v2 `ccut-speech` 的 `pyannote.rs`。
+//! Pyannote PyanNet speaker segmentation (Apple Silicon / MLX). Ported from v2 `ccut-speech`'s `pyannote.rs`.
 //!
-//! v3 只改边界：权重按模型包清单取（`segmentation` 组件的 [`VerifiedFiles`]，声纹用 `speaker` 组件），不扫描目录；
-//! 外加 [`DiarizerSlot`]：识别的模型包带了说话人区分时，任务里第一次要用才加载、任务结束放掉（同 v2：识别完成后才
-//! 加载 Pyannote，用完即丢）。网络、解码与聚类原样保留。
+//! v3 changes only the boundary: weights are taken from the model pack manifest (the `segmentation` component's [`VerifiedFiles`]; the voice embedding uses the `speaker` component), not by scanning the directory.
+//! Plus [`DiarizerSlot`]: when the recognition model pack includes speaker diarization, it is loaded the first time a task needs it and released when the task ends (as in v2: Pyannote is loaded only after recognition finishes, and discarded after use). The network, decoding and clustering are kept as they are.
 
 use std::collections::HashMap;
 
@@ -97,8 +96,8 @@ impl SincNet {
 }
 
 struct LstmLayer {
-    /// 预转置并求值的权重：MLX 的 `.t()` 是惰性的，放在时间步循环里会让每层每
-    /// 方向重复构建 589 次转置算子节点。
+    /// Weights pre-transposed and evaluated: MLX's `.t()` is lazy, and placing it inside the time-step loop would build the transpose op node 589 times per layer per
+    /// direction.
     wx_t: Array,
     wh_t: Array,
     bias: Array,
@@ -207,9 +206,8 @@ impl SegmentationNetwork {
         })
     }
 
-    /// 返回每个窗口的原始 powerset logits（`FRAMES_PER_WINDOW * CLASS_COUNT`，
-    /// 帧在外、类在内）。**这里刻意不做 argmax**：softmax、按说话人求和、迟滞
-    /// 二值化全部交给 `pyannote_common`，两个后端共用同一份解码。
+    /// Returns the raw powerset logits per window (`FRAMES_PER_WINDOW * CLASS_COUNT`, frames outer, classes inner). **Argmax is deliberately not done here**: softmax, summing per speaker, and hysteresis
+    /// binarization are all left to `pyannote_common`, which both backends share for the same decoding.
     pub(crate) fn frame_logits(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<f32>>> {
         let _cache_guard = MemoryCacheGuard::new();
         let batch = i32::try_from(batch_size).context("Pyannote batch 超出 i32")?;
@@ -239,7 +237,7 @@ pub struct PyannoteDiarizer {
 }
 
 impl PyannoteDiarizer {
-    /// 只加载分割模型；没有声纹阶段，全局身份退化为 IoU 链式传递。
+    /// Loads only the segmentation model. There is no embedding stage, so global identity degrades to chained IoU matching.
     pub fn load(segmentation: &VerifiedFiles) -> Result<Self> {
         Ok(Self {
             network: SegmentationNetwork::load(segmentation)?,
@@ -247,7 +245,7 @@ impl PyannoteDiarizer {
         })
     }
 
-    /// 同时加载 WeSpeaker 声纹模型，启用声纹再识别（推荐路径）。
+    /// Also loads the WeSpeaker voice embedding model, enabling speaker re-identification (the recommended path).
     pub fn load_with_embedding(segmentation: &VerifiedFiles, speaker: &VerifiedFiles) -> Result<Self> {
         Ok(Self {
             network: SegmentationNetwork::load(segmentation)?,
@@ -261,7 +259,7 @@ impl PyannoteDiarizer {
         options: &PyannoteOptions,
         callbacks: &mut PyannoteCallbacks<'_>,
     ) -> Result<Vec<DiarizedSegment>> {
-        // 两个闭包分别可变借用不同字段，必须先解构 self。
+        // The two closures mutably borrow different fields, so self must be destructured first.
         let Self { network, embedder } = self;
         let mut embed_fn;
         let embed: Option<&mut dyn FnMut(&[f32]) -> Option<Vec<f32>>> = match embedder.as_mut() {
@@ -280,13 +278,13 @@ impl PyannoteDiarizer {
         )
     }
 
-    /// 跨后端对拍入口：一批窗口的原始 powerset logits（帧在外、类在内）。
+    /// Cross-backend comparison entry point: the raw powerset logits for a batch of windows (frames outer, classes inner).
     pub fn frame_logits(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<f32>>> {
         self.network.frame_logits(packed, batch_size)
     }
 
-    /// 跨后端对拍入口：逐帧 powerset 胜出类别。**不参与实际解码**，只用于把
-    /// 后端差异定位到网络层。
+    /// Cross-backend comparison entry point: the winning powerset class per frame. **Not used in actual decoding**; it only serves to locate
+    /// backend differences down to the network layer.
     pub fn class_ids(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<u8>>> {
         Ok(self
             .network
@@ -308,8 +306,8 @@ impl SpeakerDiarization for PyannoteDiarizer {
     }
 }
 
-/// 识别的模型包里的说话人区分（`segmentation` + 可选的 `speaker`）：加载模型包时只核对文件，任务里第一次要用时才加载，
-/// 任务结束（[`DiarizerSlot::release`]）放掉。加载失败时同一任务不再重试。
+/// Speaker diarization within a recognition model pack (`segmentation` + optional `speaker`): when the model pack is loaded, only the files are checked; it is loaded the first time a task needs it
+/// and released when the task ends ([`DiarizerSlot::release`]). If loading fails, there is no retry within the same task.
 pub struct DiarizerSlot {
     segmentation: Option<VerifiedFiles>,
     speaker: Option<VerifiedFiles>,
@@ -318,7 +316,7 @@ pub struct DiarizerSlot {
 }
 
 impl DiarizerSlot {
-    /// 按清单核对文件：缺文件是 `MODEL_NOT_INSTALLED`（不悄悄退回不区分说话人）。
+    /// Checks files against the manifest: a missing file is `MODEL_NOT_INSTALLED` (no silent fallback to not distinguishing speakers).
     pub fn new(bundle: &VerifiedBundle) -> Result<Self, ErrorBody> {
         if let Some(files) = &bundle.segmentation {
             files.require_extension_in("", "safetensors")?;
@@ -356,7 +354,7 @@ impl DiarizerSlot {
         self.loaded.as_mut().map(|diarizer| diarizer as &mut dyn SpeakerDiarization)
     }
 
-    /// 放掉加载了的模型；返回这次是否真的放掉了（调用方据此清 MLX 缓存）。
+    /// Releases the loaded models. Returns whether they were actually released this time (the caller uses this to clear the MLX cache).
     pub fn release(&mut self) -> bool {
         self.failed = false;
         self.loaded.take().is_some()

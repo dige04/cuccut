@@ -20,12 +20,11 @@ import { ExportVideoTab } from './export-video.tsx';
 import { useExportSubmit, type ExportEnv } from './use-export-submit.ts';
 
 /**
- * 导出弹层（设计稿 export.jsx `ExportPopover`，产品设计 §17.1）：顶上「导出」与五页切换（视频 / 音频 / 字幕 / 文稿 / 工程），
- * 下面是这一页的设置，或这一页正在盯着的那次导出（运行 / 完成 / 失败 / 取消）。
+ * Export panel (design mockup export.jsx `ExportPopover`, product design §17.1): at the top, "Export" and five page tabs (Video / Audio / Subtitles / Transcript / Project); below, either this page's settings, or the export this page is watching (running / done / failed / cancelled).
  *
- * - 每页各盯各的：提交成功后这一页换成进度；打开弹层时，各页接上这个视频还没结束的那次导出（谁提交的都算）。
- * - 视频页与音频页共用一份范围与响度（设计稿同一份 `range` / `loudness`）。
- * - 关掉弹层不停导出；弹层卸载后盯着的状态随之丢掉，下次打开再从任务记录接上还在跑的。
+ * - Each page watches its own export: after a successful submit that page switches to progress; when the panel opens, each page attaches to this video's export that has not yet ended (no matter who submitted it).
+ * - The Video and Audio pages share one range and one loudness (the mockup's single `range` / `loudness`).
+ * - Closing the panel does not stop the export; after the panel unmounts, the watched state is dropped, and next time it reattaches to still-running jobs from the job records.
  */
 
 const panel = style({
@@ -40,7 +39,7 @@ const header = style({ display: 'flex', alignItems: 'center', justifyContent: 's
 const title = style({ margin: 0, font: 'title', color: 'gray-900' });
 const waitBar = style({ marginTop: 16 });
 
-/** 打开时各页盯哪一次：每页这个视频最近一次还没结束的导出；指定了某一次（从失败提示点进来）就盯它。 */
+/** Which export each page watches when opened: this video's most recent export for that page that has not ended; if a specific one is given (opened from a failure notice), that one is watched. */
 function initialWatch(jobs: readonly JobRecord[], videoId: Id, focus: JobRecord | null): Partial<Record<ExportTab, Id>> {
   const watch: Partial<Record<ExportTab, Id>> = {};
   for (const job of videoExports(jobs, videoId)) {
@@ -65,7 +64,7 @@ export function ExportPanel({ env, initialJobId, onClose }: { env: ExportEnv; in
     return live?.export ? tabOfKind(live.export.settings.kind) : 'video';
   });
 
-  // 范围与响度：视频页与音频页共用（设计稿 export.jsx 把 `range` / `loudness` 放在弹层这一级）。
+  // Range and loudness: shared by the Video and Audio pages (the mockup's export.jsx keeps `range` / `loudness` at panel level).
   const chapters = useMemo(() => chapterPieces(env.sequence), [env.sequence]);
   const clips = useMemo(() => clipPieces(env.sequence, env.assets, env.documents), [env.sequence, env.assets, env.documents]);
   const duration = durationSeconds(env.sequence);
@@ -117,7 +116,7 @@ export function ExportPanel({ env, initialJobId, onClose }: { env: ExportEnv; in
         watched ? (
           <ExportJobView job={watched} env={env} submitter={submitter} onReset={reset} onClose={onClose} />
         ) : (
-          // 提交成功、任务记录还没经 jobs 主题到达的那一下。
+          // Right after a successful submit, before the job record has arrived through the jobs topic.
           <>
             <Note>{EXPORT_COPY.waiting}</Note>
             <div className={waitBar}>

@@ -23,7 +23,7 @@ import { startCheck } from '../components/models/start-check.ts';
 import { useModelCheck } from '../state/model-check-store.ts';
 import { useModels } from '../state/models-store.ts';
 
-/** 本地模型的「检查」：说法、状态行、试用面板的提醒与失败（设计稿 model-local-check.test.js 的各条，换成真实的代码与任务）。 */
+/** Local model “检查” (check): wording, status line, and the trial panel's reminder and failures (each case from design model-local-check.test.js, with real code and tasks substituted). */
 
 const TTS = 'qwen3-tts-0.6b-base@mlx-8bit';
 const ASR = 'qwen3-asr-0.6b@mlx-4bit';
@@ -153,7 +153,7 @@ describe('状态行', () => {
     expect(view.head).toBe('修复中…');
     expect(view.actions.map((a) => a.k)).toEqual(['cancel']);
 
-    // 取消（丢掉这次下载）后不再跟踪这次修复：回到修复前没通过的那一条。
+    // After cancelling (discarding this download), this repair is no longer tracked: it goes back to the failed check from before the repair.
     const { install: _, ...settled } = damaged;
     expect(checkState({ bundle: settled, jobs: [{ ...repair, state: 'cancelled' }], subject: 'synthesize' }).phase).toBe('failed');
 
@@ -237,7 +237,7 @@ describe('没通过', () => {
       'file: sample.wav',
     ]);
 
-    // 之后的一次通过盖过它。
+    // A later pass overrides it.
     const later = bundle(ASR, { selfTest: { state: 'passed', jobId: 'job_new', at: ago(0) } });
     expect(checkState({ bundle: later, jobs: [job], subject: 'transcribe' }).phase).toBe('passed');
   });

@@ -1,32 +1,17 @@
-//! macOS 原生解码：单帧抽取走 `AVAssetImageGenerator`，顺序帧流走 `AVAssetReader`。
+//! macOS native decoding: single-frame extraction uses `AVAssetImageGenerator`, and sequential frame streams use `AVAssetReader`.
 //!
-//! ## 两条路径为什么不共用一个对象
+//! ## Why the two paths do not share one object
 //!
-//! `AVAssetReader` 是为顺序流设计的：建一次 reader 只值得读一长串帧。缩略图与
-//! filmstrip 恰恰相反——随机时间点、一次一帧。`AVAssetImageGenerator` 就是系统
-//! 给后一个场景准备的接口（内部自己管解码器与 seek），把
-//! `requestedTimeToleranceBefore/After` 置零后取帧是**精确**的，等价于迁移前
-//! `ffmpeg -ss <t> -i <src> -frames:v 1` 的语义（快 seek 到关键帧再解到 t）。
-//! 渲染管线的逐帧供片走下半个文件的 `AVAssetReader` 顺序流。
+//! `AVAssetReader` is designed for sequential streams: building a reader is only worth it when reading a long run of frames. Thumbnails and filmstrips are the opposite: random time points, one frame at a time. `AVAssetImageGenerator` is the interface the system provides for the latter scenario, and it manages decoders and seeking internally. With `requestedTimeToleranceBefore/After` set to zero, the frame fetch is **exact**, equivalent to the pre-migration `ffmpeg -ss <t> -i <src> -frames:v 1` semantics (a fast seek to the keyframe, then decoding forward to t).
+//! Sequential frame supply for the render pipeline uses the `AVAssetReader` stream in the lower half of this file.
 //!
-//! ## 旋转
+//! ## Rotation
 //!
-//! 竖屏手机素材要摆正到显示方向：ffmpeg CLI 的 autorotate 默认开启，兜底路径的
-//! 输出本来就是摆正的，两条路径必须一致。单帧路径靠
-//! `appliesPreferredTrackTransform = YES`，顺序流没有这个开关，改从
-//! `preferredTransform` 读出象限自己转。（这与 `ccut-media-probe` 的
-//! `naturalW/H` 不含旋转是两回事：那是元数据口径，这是像素口径。）
+//! Portrait phone footage has to be rotated upright to display orientation. ffmpeg CLI's autorotate is on by default, and the fallback path's output is already upright, so the two paths must agree. The single-frame path relies on `appliesPreferredTrackTransform = YES`. The sequential stream has no such switch, so it reads the quadrant from `preferredTransform` and rotates the pixels itself. (This is a different matter from `naturalW/H` in `ccut-media-probe`, which excludes rotation. That one is a metadata basis, and this one is a pixel basis.)
 //!
-//! ## 尺寸
+//! ## Size
 //!
-//! 单帧路径的 `maximumSize` 只是**快路径提示**：它让系统在解码链路上就把帧缩
-//! 下来，省掉整幅 4K 位图。但它只缩不放、且遵守自己的取整规则，所以最终尺寸由
-//! 位图上下文说了算——按 [`crate::scaled_height`] 算出目标高，建一个恰好
-//! `w × h` 的 RGBA 上下文，让 CoreGraphics 把 CGImage 画进去。上下文的第一行
-//! 内存就是图像顶行，因此不需要额外翻转。顺序流缺省不缩放（`ccut-render` 的帧流
-//! 要源尺寸原样）；成片导出的顺序解码器（[`crate::SequentialDecoder`]）给了交付
-//! 尺寸时，`AVAssetReaderTrackOutput` 的输出设置带上宽高，解码链路直接交那个尺寸
-//! （移植自 v2 `native_video.rs` 的 `reader_pixel_settings`）。
+//! The `maximumSize` on the single-frame path is only a **fast-path hint**. It lets the system scale the frame down within the decode pipeline, which avoids a full 4K bitmap. But it only scales down and follows its own rounding rules, so the final size is decided by the bitmap context. The target height is computed by [`crate::scaled_height`], an RGBA context of exactly `w × h` is created, and CoreGraphics draws the CGImage into it. The first row of the context's memory is the top row of the image, so no extra flip is needed. The sequential stream does not scale by default, because `ccut-render`'s frame stream wants the source size as-is. When the sequential decoder used for video export ([`crate::SequentialDecoder`]) is given a delivery size, the `AVAssetReaderTrackOutput` output settings carry the width and height, and the decode pipeline delivers that size directly. (Ported from v2 `native_video.rs`'s `reader_pixel_settings`.)
 
 #![allow(deprecated)]
 
@@ -67,8 +52,7 @@ use objc2_video_toolbox::{VTDecodeFrameFlags, VTDecodeInfoFlags, VTDecompression
 use crate::frames::{DecodedFrame, DecodedInto, FrameSource};
 use crate::{RgbaFrame, scale};
 
-/// 取帧时间的时基。600 是 24/25/30/60 fps 的公倍数，Apple 自家示例的惯用值：
-/// 常见帧率的帧边界都能被精确表示，不会因为时基取整落到相邻帧。
+/// The timebase for frame-fetch times. 600 is a common multiple of 24, 25, 30 and 60 fps, and it is the idiomatic value in Apple's own samples. Frame boundaries at common frame rates can be represented exactly, and timebase truncation does not push them onto adjacent frames.
 const TIMESCALE: i32 = 600;
 
 pub(crate) fn extract_frame_rgba(
@@ -79,8 +63,7 @@ pub(crate) fn extract_frame_rgba(
     if !path.is_file() {
         bail!("媒体文件不存在：{}", path.display());
     }
-    // AVFoundation 内部大量使用 autorelease；每次取帧自带一个池，filmstrip 连抓
-    // 几十格时临时对象不会攒到线程退出。
+    // AVFoundation uses autorelease heavily. Each frame fetch gets its own pool, so temporary objects do not pile up until the thread exits, even when a filmstrip fetches dozens of cells in a row.
     objc2::rc::autoreleasepool(|_| unsafe { extract_inner(path, time_seconds, target_width) })
 }
 
@@ -90,12 +73,10 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
     let generator = unsafe { AVAssetImageGenerator::assetImageGeneratorWithAsset(&asset) };
     unsafe {
         generator.setAppliesPreferredTrackTransform(true);
-        // 容差置零 = 精确取帧。留着默认的 kCMTimePositiveInfinity 容差时系统会
-        // 直接给最近的关键帧，长 GOP 素材上能差出好几秒，filmstrip 会出现一串
-        // 完全相同的格子。
+        // Zero tolerance means exact frame fetching. With the default kCMTimePositiveInfinity tolerance, the system returns the nearest keyframe directly. On long-GOP material that can be several seconds off, and the filmstrip would show a run of identical cells.
         generator.setRequestedTimeToleranceBefore(CMTime::with_seconds(0.0, TIMESCALE));
         generator.setRequestedTimeToleranceAfter(CMTime::with_seconds(0.0, TIMESCALE));
-        // 宽度约束的快路径提示：高度给一个不会成为约束的大值，让系统按宽缩放。
+        // A fast-path hint for the width constraint: the height is set to a large value that will not become the constraint, so the system scales by width.
         generator.setMaximumSize(CGSize {
             width: f64::from(target_width),
             height: f64::from(u16::MAX),
@@ -119,18 +100,15 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
     draw_into_rgba(&image, target_width, height)
 }
 
-/// CGImage → 恰好 `width × height` 的 top-down RGBA8。
+/// CGImage → top-down RGBA8 of exactly `width × height`.
 ///
-/// 位图上下文的数据缓冲第一行就是图像顶行（CGBitmapContext 的既定内存布局），
-/// 把 CGImage 画进 `(0, 0, w, h)` 矩形即得正立的 top-down 图，无需再翻转。
-/// 缩放交给 CoreGraphics（高质量插值），不走本 crate 的 CPU 盒式滤波。
+/// The first row of the bitmap context's data buffer is the top row of the image (the established memory layout of CGBitmapContext). Drawing the CGImage into the `(0, 0, w, h)` rectangle gives an upright, top-down image, with no flip needed. Scaling is left to CoreGraphics (high-quality interpolation), not this crate's CPU box filter.
 fn draw_into_rgba(image: &CGImage, width: u32, height: u32) -> Result<RgbaFrame> {
     let (pixel_width, pixel_height) = (width as usize, height as usize);
     let stride = pixel_width * 4;
     let mut data = vec![0_u8; stride * pixel_height];
     let color_space = CGColorSpace::new_device_rgb().context("创建 sRGB 设备色彩空间失败")?;
-    // RGBA8：alpha 在末位、32 位大端序（即字节顺序 R,G,B,A）。视频帧不透明，
-    // premultiplied 与否不影响结果；下面仍会把 alpha 统一压成 255。
+    // RGBA8: alpha is in the last position, 32-bit big-endian (that is, byte order R,G,B,A). Video frames are opaque, so premultiplication does not change the result. Below, alpha is still uniformly forced to 255.
     let bitmap_info = CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0;
     let context = unsafe {
         CGBitmapContextCreate(
@@ -156,7 +134,7 @@ fn draw_into_rgba(image: &CGImage, width: u32, height: u32) -> Result<RgbaFrame>
         },
         Some(image),
     );
-    // 上下文还持有 `data` 的指针；显式丢弃，之后才动缓冲。
+    // The context still holds a pointer to `data`. Explicitly drop it before the buffer is touched.
     drop(context);
     for pixel in data.chunks_exact_mut(4) {
         pixel[3] = 255;
@@ -164,27 +142,20 @@ fn draw_into_rgba(image: &CGImage, width: u32, height: u32) -> Result<RgbaFrame>
     RgbaFrame::new(width, height, data)
 }
 
-// ── 顺序帧流（WP6a）：`AVAssetReader` + `AVAssetReaderTrackOutput`
+// ── Sequential frame stream (WP6a): `AVAssetReader` + `AVAssetReaderTrackOutput`
 //
-// ## 为什么不是 image generator
+// ## Why not an image generator
 //
-// 单帧路径每次都建解码器再精确 seek；整片渲染逐帧那么干，成本是纯粹的浪费。
-// `AVAssetReader` 正是"建一次、一路读到底"的接口：`timeRange` 限定起点，之后
-// `copyNextSampleBuffer` 顺序吐 `CMSampleBuffer`。
+// The single-frame path builds a decoder and does an exact seek every time. Doing that for every frame of a whole-timeline render is pure waste. `AVAssetReader` is exactly the interface for "build once, read straight through". `timeRange` bounds the start point, and then `copyNextSampleBuffer` hands out `CMSampleBuffer`s in order.
 //
-// ## 摆正得自己来
+// ## Rotation has to be done by ourselves
 //
-// track output **没有** `appliesPreferredTrackTransform`（那是 image generator /
-// video composition 的能力）。这里从 `preferredTransform` 读出旋转象限，在
-// CPU 上转（[`scale::rotate_rgba`]），与 ffmpeg CLI 的 autorotate 对齐。
-// 非"纯 90 度倍数旋转"的仿射变换（镜像、任意角）直接判 unsupported 让调用方
-// 回落 ffmpeg——猜错方向比不解更糟。
+// The track output does **not** have `appliesPreferredTrackTransform`. That is a capability of the image generator and video composition. Here the rotation quadrant is read from `preferredTransform` and applied on the CPU ([`scale::rotate_rgba`]), which aligns with ffmpeg CLI's autorotate. Affine transforms that are not "pure 90-degree-multiple rotations" (mirroring, arbitrary angles) are reported directly as unsupported, so the caller falls back to ffmpeg. Guessing the wrong direction is worse than not decoding at all.
 
-/// 摆正后的输出像素格式：32BGRA。选 BGRA 而不是 RGBA 是因为它是 VideoToolbox
-/// 的原生输出格式之一（不用多一次转换），字节序换算只是逐像素交换 R/B。
+/// The output pixel format after rotation: 32BGRA. BGRA was chosen over RGBA because it is one of VideoToolbox's native output formats, so no extra conversion is needed. The byte-order conversion is just swapping R and B per pixel.
 const OUTPUT_PIXEL_FORMAT: u32 = kCVPixelFormatType_32BGRA;
 
-/// `size` 是想要的交付尺寸（摆正后的显示方向）：给了就让解码链路直接交这个尺寸（见 [`start_reader`]）。
+/// `size` is the desired delivery size (display orientation, after rotation). If given, the decode pipeline is asked to deliver this size directly (see [`start_reader`]).
 pub(crate) fn open_frame_source(
     path: &Path,
     from_seconds: f64,
@@ -211,11 +182,7 @@ unsafe fn open_inner(
 
     let natural = unsafe { track.naturalSize() };
     let rotation = rotation_quadrant(unsafe { track.preferredTransform() })?;
-    // 每帧的呈现时长。`AVAssetReaderTrackOutput` 交出的 `CMSampleBuffer`
-    // **不带有效 duration**（`CMSampleBufferGetDuration` 给 kCMTimeInvalid，
-    // 换算成秒是 NaN），所以时长只能从轨道属性来：`minFrameDuration` 就是
-    // CFR 素材的帧长，拿不到再退回 `nominalFrameRate` 的倒数。没有它
-    // `FrameStream` 判不出片尾，输出帧数会比 ffmpeg `-r` 少一到两帧。
+    // Per-frame presentation duration. The `CMSampleBuffer`s handed out by `AVAssetReaderTrackOutput` **do not carry a valid duration**. `CMSampleBufferGetDuration` returns kCMTimeInvalid, and converting it to seconds gives NaN. So the duration can only come from track properties. `minFrameDuration` is the frame length for CFR material. If it is unavailable, fall back to the reciprocal of `nominalFrameRate`. Without it, `FrameStream` cannot detect the tail, and the output frame count would be one or two frames fewer than ffmpeg `-r`.
     let track_frame_duration = unsafe { track.minFrameDuration().seconds() }
         .filter_positive()
         .or_else(|| {
@@ -234,8 +201,7 @@ unsafe fn open_inner(
         None if matches!(rotation, 90 | 270) => (coded_height, coded_width),
         None => (coded_width, coded_height),
     };
-    // 解码端交付尺寸是编码方向（摆正之前）：90/270 度的素材宽高对调（v2 `EncodeTarget::decoded_size`）。
-    // 与源尺寸相同就不请求，免得解码器多走一次缩放。
+    // The decoder's delivery size is the encoded orientation, before rotation. For 90/270-degree material, width and height are swapped (v2 `EncodeTarget::decoded_size`). If it equals the source size, nothing is requested, so the decoder does not take an extra scaling pass.
     let delivery = size
         .map(|(w, h)| {
             if matches!(rotation, 90 | 270) {
@@ -265,17 +231,14 @@ unsafe fn open_inner(
     }))
 }
 
-/// `kCVPixelBuffer…Key` 这类 `CFStringRef` 与 `NSString *` toll-free bridged
-/// （Apple 平台的既定 ABI），直接按指针换类型即可当字典键用。
+/// `CFStringRef` keys such as `kCVPixelBuffer…Key` are toll-free bridged with `NSString *` (the established ABI on Apple platforms). So the pointer can be cast directly and used as a dictionary key.
 fn cf_key(key: &CFString) -> &NSString {
     unsafe { &*ptr::from_ref(key).cast::<NSString>() }
 }
 
-/// 顺序流的像素输出设置：32BGRA，给了 `delivery`（编码方向的宽高）时再带上宽高，让解码链路直接交这个尺寸。
+/// The pixel output settings for the sequential stream: 32BGRA. If `delivery` (the width and height in encoded orientation) is given, the width and height are included too, so the decode pipeline delivers that size directly.
 ///
-/// 移植自 v2 `native_video.rs` 的 `reader_pixel_settings`：成片导出每帧要的是画面里的尺寸，4K 素材在解码端就缩到
-/// 1080p，省掉一次整幅 4K 的 BGRA 搬运与 CPU 重采样。不给宽高时交源尺寸原样（`ccut-render` 的帧流要的是这个）。
-/// `kCVPixelBuffer…Key` 是 `CFStringRef`，与 `NSString *` toll-free bridged，直接按指针换类型（[`cf_key`]）。
+/// Ported from v2 `native_video.rs`'s `reader_pixel_settings`. For video export, each frame needs the size as it appears in the picture. For 4K material, the decoder scales down to 1080p, which saves a full 4K BGRA transfer and a CPU resample. If no width and height are given, the source size is delivered as-is, which is what `ccut-render`'s frame stream needs. `kCVPixelBuffer…Key` is a `CFStringRef`, toll-free bridged with `NSString *`, so the pointer is cast directly ([`cf_key`]).
 unsafe fn reader_pixel_settings(
     delivery: Option<(u32, u32)>,
 ) -> Retained<NSDictionary<NSString, AnyObject>> {
@@ -302,10 +265,9 @@ unsafe fn reader_pixel_settings(
     )
 }
 
-/// 在已解析的 `asset` / `track` 上建一个从 `from_seconds` 起读的 reader。
+/// Builds a reader that starts from `from_seconds` on an already-parsed `asset` / `track`.
 ///
-/// 拆出来是为了 [`AssetReaderFrames::reopen`]：随机访问跳转只换 reader，不重
-/// 解析容器、不重新找轨（那两步是完整重开里最贵的部分）。
+/// It is split out for [`AssetReaderFrames::reopen`]. Random-access jumps only swap the reader, without re-parsing the container or re-finding the track. Those two steps are the most expensive part of a full reopen.
 unsafe fn start_reader(
     asset: &AVURLAsset,
     track: &AVAssetTrack,
@@ -321,16 +283,14 @@ unsafe fn start_reader(
             Some(&settings),
         )
     };
-    // 我们在下一次 `copyNextSampleBuffer` 之前就把像素拷进自己的 `Vec`，
-    // 不需要 AVFoundation 再复制一份。
+    // The pixels are copied into our own `Vec` before the next `copyNextSampleBuffer`, so AVFoundation does not need to make another copy.
     unsafe { output.setAlwaysCopiesSampleData(false) };
     if !unsafe { reader.canAddOutput(&output) } {
         bail!("unsupported: AVAssetReader 不接受该视频轨的 32BGRA 输出（交付尺寸 {delivery:?}）");
     }
     unsafe { reader.addOutput(&output) };
     if from_seconds > 0.0 {
-        // 起点之后一直读到片尾。AVAssetReader 会交出**与区间相交**的样本，
-        // 也就是覆盖起点的那一帧也在内——正是 ffmpeg `-ss` 的语义。
+        // Read from the start point all the way to the end of the clip. AVAssetReader hands out samples that **intersect the range**, so the frame that covers the start point is included too. That is exactly the semantics of ffmpeg `-ss`.
         unsafe {
             reader.setTimeRange(CMTimeRange {
                 start: CMTime::with_seconds(from_seconds, TIMESCALE),
@@ -347,8 +307,7 @@ unsafe fn start_reader(
     Ok((reader, output))
 }
 
-/// `Option<f64>` 的"只留有限正值"。`CMTimeGetSeconds` 用 NaN 表示无效时间，
-/// 单独一个扩展比在四处各写一遍 `is_finite() && > 0.0` 清楚。
+/// For `Option<f64>`, "keep only finite positive values". `CMTimeGetSeconds` uses NaN for invalid times. A single extension is clearer than writing `is_finite() && > 0.0` in four places.
 trait FilterPositive {
     fn filter_positive(self) -> Option<f64>;
     fn filter_finite(self) -> Option<f64>;
@@ -363,12 +322,9 @@ impl FilterPositive for f64 {
     }
 }
 
-/// `preferredTransform` → 顺时针旋转象限（0 / 90 / 180 / 270）。
+/// `preferredTransform` → clockwise rotation quadrant (0 / 90 / 180 / 270).
 ///
-/// 只认纯旋转：矩阵必须是 `[a b; c d]` 里恰好两个 ±1、另外两个 0，且行列式为 +1
-/// （镜像的行列式是 −1）。角度取 `atan2(b, a)`——竖屏手机素材的
-/// `preferredTransform` 是 `[0 1; -1 0]`，得 90，正是 ffmpeg autorotate 会顺时针
-/// 转的角度。
+/// Only pure rotations are accepted. The matrix `[a b; c d]` must have exactly two entries that are ±1 and two entries that are 0, with determinant +1 (a mirror has determinant −1). The angle is `atan2(b, a)`. The `preferredTransform` of portrait phone footage is `[0 1; -1 0]`, which gives 90. That is exactly the angle ffmpeg autorotate turns clockwise.
 fn rotation_quadrant(transform: CGAffineTransform) -> Result<u16> {
     const TOLERANCE: f64 = 1e-3;
     let CGAffineTransform { a, b, c, d, .. } = transform;
@@ -393,52 +349,46 @@ fn rotation_quadrant(transform: CGAffineTransform) -> Result<u16> {
 }
 
 struct AssetReaderFrames {
-    /// `reopen` 的新 reader 与关键帧解码器的样本生成器都挂在同一个 asset 上。
+    /// The new reader from `reopen` and the sample generator of the keyframe decoder are both attached to the same asset.
     asset: Retained<AVURLAsset>,
-    /// 视频轨：`reopen` 在它上面建新的 output，`sync_sample_at_or_before`
-    /// 用它的 sample cursor 找关键帧。
+    /// The video track. `reopen` builds a new output on it, and `sync_sample_at_or_before` uses its sample cursor to find keyframes.
     track: Retained<AVAssetTrack>,
     reader: Retained<AVAssetReader>,
     output: Retained<AVAssetReaderTrackOutput>,
     width: u32,
     height: u32,
-    /// 摆正**前**的编码尺寸：关键帧解码器要按它约束输出像素缓冲，才与
-    /// `AVAssetReaderTrackOutput` 交出的帧同尺寸（clean aperture 已裁掉）。
+    /// The encoded size **before** rotation. The keyframe decoder must constrain its output pixel buffers to this size, so that they match the frames delivered by `AVAssetReaderTrackOutput` (the clean aperture has already been cropped).
     coded_width: u32,
     coded_height: u32,
-    /// 向解码端请求的交付尺寸（编码方向）；`None` = 源尺寸原样。`reopen` 沿用。
+    /// The delivery size requested from the decoder (encoded orientation). `None` = the source size as-is. `reopen` reuses it.
     delivery: Option<(u32, u32)>,
     rotation: u16,
-    /// 轨道级的帧时长（秒）；样本自带的 duration 无效时用它。
+    /// The track-level frame duration in seconds. Used when a sample's own duration is invalid.
     track_frame_duration: Option<f64>,
     finished: bool,
-    /// 拖动中的常驻关键帧解码器，第一次用到才建。
+    /// The resident keyframe decoder used during scrubbing. It is created the first time it is needed.
     keyframes: Option<KeyframeDecoder>,
-    /// 关键帧解码器失败过一次就永久让位给「重开 + 解一帧」，不反复试。
+    /// Once the keyframe decoder has failed, it permanently yields to "reopen + decode one frame" and does not retry.
     keyframes_disabled: bool,
 }
 
-/// 拖动中的关键帧解码器：`AVSampleBufferGenerator` 从容器里直接抓出关键帧的
-/// **压缩**样本，交给一个常驻的 `VTDecompressionSession` 解。
+/// The keyframe decoder used during scrubbing. `AVSampleBufferGenerator` takes the **compressed** samples of keyframes straight out of the container, and hands them to a resident `VTDecompressionSession` to decode.
 ///
-/// `AVAssetReader` 每次重开都要重新建解码会话，1080p H.264 上第一帧要付
-/// ≈ 50 ms 的冷启动（之后每帧 2 ms）；拖 playhead 一旦跨 GOP 就得付这个价，
-/// 缩小时间轴后每次移动都跨 GOP，拖动就被钉在 12–15 fps。常驻会话只在
-/// 格式描述变了才重建，关键帧本身是完全同步样本，一次 `DecodeFrame` 就出图。
+/// `AVAssetReader` has to rebuild the decode session on every reopen. On 1080p H.264, the first frame pays a cold start of about 50 ms (each frame after that takes 2 ms). Dragging the playhead across a GOP boundary incurs this cost. When the timeline is zoomed out, every move crosses GOPs, which pins scrubbing at 12–15 fps. A resident session is rebuilt only when the format description changes. The keyframes themselves are fully sync samples, so one `DecodeFrame` produces the picture.
 struct KeyframeDecoder {
     generator: Retained<AVSampleBufferGenerator>,
-    /// 当前会话与它接受的格式描述；样本换了格式且会话吃不下时重建。
+    /// The current session and the format description it accepts. It is rebuilt when a sample's format changes and the session cannot take it.
     session: Option<(
         CFRetained<VTDecompressionSession>,
         CFRetained<CMFormatDescription>,
     )>,
-    /// 目标像素缓冲属性：32BGRA、编码尺寸（让 VT 自己把 clean aperture 裁掉）。
+    /// Target pixel buffer attributes: 32BGRA, and the encoded size (so VT crops the clean aperture itself).
     destination: Retained<NSDictionary<NSString, AnyObject>>,
 }
 
 impl KeyframeDecoder {
     unsafe fn new(asset: &AVURLAsset, coded_width: u32, coded_height: u32) -> Self {
-        // timebase 为 nil：请求默认 immediate 模式，样本数据同步加载。
+        // timebase is nil: the default immediate mode is requested, and sample data is loaded synchronously.
         let generator = unsafe {
             AVSampleBufferGenerator::initWithAsset_timebase(
                 AVSampleBufferGenerator::alloc(),
@@ -468,7 +418,7 @@ impl KeyframeDecoder {
         }
     }
 
-    /// 能解 `format` 的会话：手上的能用就复用，否则作废重建。
+    /// A session that can decode `format`: reuse the one in hand if it works, otherwise invalidate it and rebuild.
     unsafe fn session_for(
         &mut self,
         format: &CMFormatDescription,
@@ -487,7 +437,7 @@ impl KeyframeDecoder {
             let attributes: &CFDictionary =
                 unsafe { &*ptr::from_ref(&*self.destination).cast::<CFDictionary>() };
             let mut raw: *mut VTDecompressionSession = ptr::null_mut();
-            // 不挂会话级回调：解帧走 `…WithOutputHandler`，回调随调用给。
+            // No session-level callback is attached. Frame decoding uses `…WithOutputHandler`, and the callback is supplied with each call.
             let status = unsafe {
                 VTDecompressionSession::create(
                     None,
@@ -517,8 +467,7 @@ impl Drop for KeyframeDecoder {
     }
 }
 
-/// 游标落在"呈现时刻 ≤ t 的最后一个样本"上，再沿解码顺序往回走到第一个
-/// 完全同步样本——就是解码器要从哪一帧起解才能给出 t 的画面。
+/// The cursor is placed on "the last sample whose presentation time ≤ t", then walks back in decode order to the first fully sync sample. That is the frame the decoder must start from to produce the picture at t.
 unsafe fn sync_cursor_at_or_before(
     track: &AVAssetTrack,
     time_seconds: f64,
@@ -545,8 +494,7 @@ unsafe fn sync_cursor_at_or_before(
     Some(cursor)
 }
 
-/// 一次 `copyNextSampleBuffer` 的三种结局。用枚举而不是 `Option`＋哨兵错误，
-/// 是因为"没有像素的样本"和"流结束"必须分得开：前者要继续读，后者才检查状态。
+/// The three outcomes of one `copyNextSampleBuffer`. An enum is used instead of `Option` plus a sentinel error, because "a sample with no pixels" and "end of stream" must be kept apart. The former means keep reading. Only the latter triggers a status check.
 enum ReadStep {
     Frame(DecodedFrame),
     Skip,
@@ -554,7 +502,7 @@ enum ReadStep {
 }
 
 impl AssetReaderFrames {
-    /// 没读完就丢弃时显式取消，别让解码器把剩下的片源读完才收工。
+    /// If it is discarded before being fully read, cancel it explicitly, so the decoder does not read the rest of the source before finishing.
     fn cancel(&mut self) {
         if !self.finished {
             unsafe { self.reader.cancelReading() };
@@ -562,8 +510,7 @@ impl AssetReaderFrames {
         }
     }
 
-    /// 常驻解码器解出 `time_seconds` 之前最近关键帧那一张；`Ok(None)` 只在轨道
-    /// 给不出 sample cursor 时出现，其余失败都是 `Err`。
+    /// The resident decoder decodes the nearest keyframe at or before `time_seconds`. `Ok(None)` only occurs when the track cannot provide a sample cursor. All other failures are `Err`.
     unsafe fn decode_keyframe(&mut self, time_seconds: f64) -> Result<Option<(f64, RgbaFrame)>> {
         let Some(cursor) = (unsafe { sync_cursor_at_or_before(&self.track, time_seconds) }) else {
             return Ok(None);
@@ -600,7 +547,7 @@ impl AssetReaderFrames {
         let format = unsafe { sample.format_description() }
             .context("unsupported: 关键帧样本没有格式描述")?;
         let session = unsafe { decoder.session_for(&format)? };
-        // 同步解码（不开异步位）：回调在 `DecodeFrame` 返回前跑完，槽里就有帧。
+        // Synchronous decoding (no async flag): the callback finishes before `DecodeFrame` returns, so the frame is in the slot.
         let slot: Arc<Mutex<Option<Result<RgbaFrame>>>> = Arc::new(Mutex::new(None));
         let sink = Arc::clone(&slot);
         let rotation = self.rotation;
@@ -634,7 +581,7 @@ impl AssetReaderFrames {
         if status != 0 {
             bail!("unsupported: VTDecompressionSessionDecodeFrame 失败（OSStatus {status}）");
         }
-        // 解码器有权异步交帧；等它把所有在飞的帧都回调完再看槽。
+        // The decoder may deliver frames asynchronously. Wait until it has called back for all in-flight frames before checking the slot.
         unsafe { session.wait_for_asynchronous_frames() };
         let frame = slot
             .lock()
@@ -660,8 +607,7 @@ impl Drop for AssetReaderFrames {
     }
 }
 
-/// 向解码顺序前方找关键帧时最多走多少个样本。H.264/HEVC 的 GOP 通常在几十
-/// 到几百帧；这个上限只防病态片源（全片没有 sync 样本）把游标走到片头。
+/// The maximum number of samples to walk when searching forward in decode order for a keyframe. H.264/HEVC GOPs are usually a few dozen to a few hundred frames. This limit only guards against pathological sources (no sync samples at all) walking the cursor back to the start of the file.
 const SYNC_SEARCH_LIMIT: u32 = 4096;
 
 impl FrameSource for AssetReaderFrames {
@@ -694,9 +640,7 @@ impl FrameSource for AssetReaderFrames {
         let decoded = objc2::rc::autoreleasepool(|_| unsafe { self.decode_keyframe(time_seconds) });
         match decoded {
             Ok(found) => Ok(found),
-            // 常驻解码器答不了这条片源（VT 不认的编码、尺寸对不上……）：让位给
-            // 「重开 + 解一帧」，那条路语义相同只是慢；不把错误往上抛，否则
-            // 上层会把整条片源降级到 ffmpeg。
+            // The resident decoder cannot handle this source (a codec VT does not accept, a size mismatch, ...). Yield to "reopen + decode one frame", which has the same semantics but is slower. Do not propagate the error upward, or the caller would demote the whole source to ffmpeg.
             Err(_) => {
                 self.keyframes_disabled = true;
                 self.keyframes = None;
@@ -710,7 +654,7 @@ impl FrameSource for AssetReaderFrames {
             return Ok(None);
         }
         loop {
-            // 每帧一个 autorelease 池（同 `next_decoded`）。
+            // One autorelease pool per frame (same as `next_decoded`).
             let step = objc2::rc::autoreleasepool(|_| -> Result<Option<Option<DecodedInto>>> {
                 let Some(sample) = (unsafe { self.output.copyNextSampleBuffer() }) else {
                     return Ok(None);
@@ -724,7 +668,7 @@ impl FrameSource for AssetReaderFrames {
                     return Ok(Some(None));
                 };
                 let (width, height) = if self.rotation == 0 {
-                    // 不转的素材（绝大多数）直接从像素缓冲换进调用方的缓冲：不分配、不再复制一遍。
+                    // Material that does not rotate (the vast majority) is swapped straight from the pixel buffer into the caller's buffer, with no allocation and no extra copy.
                     unsafe { pixel_buffer_into_rgba(image.as_ref(), data)? }
                 } else {
                     let frame = unsafe { pixel_buffer_to_rgba(image.as_ref(), self.rotation)? };
@@ -760,20 +704,19 @@ impl FrameSource for AssetReaderFrames {
             return Ok(None);
         }
         loop {
-            // 每帧一个 autorelease 池：AVFoundation 内部的临时对象不会攒到线程退出。
+            // One autorelease pool per frame, so AVFoundation's internal temporary objects do not pile up until the thread exits.
             let step = objc2::rc::autoreleasepool(|_| -> Result<ReadStep> {
                 let Some(sample) = (unsafe { self.output.copyNextSampleBuffer() }) else {
                     return Ok(ReadStep::End);
                 };
                 let pts_seconds =
                     unsafe { CMSampleBufferGetPresentationTimeStamp(&sample).seconds() };
-                // `CMTimeGetSeconds` 对 invalid / indefinite 的 CMTime 给 NaN。
-                // asset reader 的样本实测就是这种，所以退回轨道级帧长。
+                // `CMTimeGetSeconds` returns NaN for invalid or indefinite CMTime. Asset reader samples have been measured to be like this, so it falls back to the track-level frame duration.
                 let duration_seconds = unsafe { CMSampleBufferGetDuration(&sample).seconds() }
                     .filter_positive()
                     .or(self.track_frame_duration);
                 let Some(image) = (unsafe { CMSampleBufferGetImageBuffer(&sample) }) else {
-                    // 没有像素的样本（格式变更等标记）：跳过，不算 EOF。
+                    // A sample with no pixels (a marker such as a format change): skip it. Do not treat it as EOF.
                     return Ok(ReadStep::Skip);
                 };
                 let frame = unsafe { pixel_buffer_to_rgba(image.as_ref(), self.rotation)? };
@@ -788,7 +731,7 @@ impl FrameSource for AssetReaderFrames {
                 ReadStep::Skip => continue,
                 ReadStep::End => {
                     self.finished = true;
-                    // 读完了才有资格问状态：`Completed` 之外都是真失败。
+                    // Only check the status after reading is complete. Anything other than `Completed` is a real failure.
                     if unsafe { self.reader.status() } != AVAssetReaderStatus::Completed {
                         let detail = unsafe { self.reader.error() }
                             .map(|error| error.to_string())
@@ -802,9 +745,9 @@ impl FrameSource for AssetReaderFrames {
     }
 }
 
-/// `CVPixelBuffer`（32BGRA）→ 摆正后的 top-down RGBA8。
+/// `CVPixelBuffer` (32BGRA) → upright top-down RGBA8.
 ///
-/// `bytesPerRow` 通常带对齐补白（16/64 字节），**不能**当成 `width * 4`。
+/// `bytesPerRow` usually includes alignment padding (16 or 64 bytes). It **must not** be treated as `width * 4`.
 unsafe fn pixel_buffer_to_rgba(
     buffer: &objc2_core_video::CVPixelBuffer,
     rotation: u16,
@@ -829,7 +772,7 @@ unsafe fn pixel_buffer_to_rgba(
         }
         RgbaFrame::new(width as u32, height as u32, data)
     };
-    // 解锁无条件执行，不因上面的错误提前返回而漏掉。
+    // Unlock unconditionally, so it is not skipped by an early return from the errors above.
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     let frame = outcome?;
     if unlocked != 0 {
@@ -838,7 +781,7 @@ unsafe fn pixel_buffer_to_rgba(
     Ok(scale::rotate_rgba(&frame, rotation))
 }
 
-/// `CVPixelBuffer`（32BGRA、不需要摆正）→ 紧排的 top-down RGBA8，写进 `data`（长度改成一帧）。返回宽高。
+/// `CVPixelBuffer` (32BGRA, no rotation needed) → tightly packed top-down RGBA8, written into `data` (its length is changed to one frame). Returns the width and height.
 unsafe fn pixel_buffer_into_rgba(
     buffer: &objc2_core_video::CVPixelBuffer,
     data: &mut Vec<u8>,
@@ -863,7 +806,7 @@ unsafe fn pixel_buffer_into_rgba(
         }
         Ok((width as u32, height as u32))
     };
-    // 解锁无条件执行，不因上面的错误提前返回而漏掉。
+    // Unlock unconditionally, so it is not skipped by an early return from the errors above.
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     let size = outcome?;
     if unlocked != 0 {
@@ -872,12 +815,9 @@ unsafe fn pixel_buffer_into_rgba(
     Ok(size)
 }
 
-/// 一行 32BGRA → RGBA（alpha 压成 255）。
+/// One row of 32BGRA → RGBA (alpha forced to 255).
 ///
-/// 内存序 B,G,R,A → R,G,B,A。视频帧不透明，alpha 一律压成 255：平台可能把它
-/// 留成未定义字节，漏下去合成时会变成黑图。按 `u32` 整像素换算而不是逐字节
-/// 搬——1080p 一帧 200 万像素，逐字节循环在 debug 构建里要 15 ms 以上，是
-/// 预览取帧路径里仅次于解码的开销；整字换算能让编译器直接向量化。
+/// Memory order B,G,R,A → R,G,B,A. Video frames are opaque, so alpha is uniformly forced to 255. The platform may leave it as undefined bytes, and if they leaked through, compositing would turn the frame black. The conversion works on whole `u32` pixels, not byte by byte. A 1080p frame has 2 million pixels, and a per-byte loop in a debug build takes over 15 ms. That is the second-largest overhead on the preview frame-fetch path, after decoding. Whole-word conversion lets the compiler vectorize it directly.
 fn swizzle_bgra_to_rgba_row(source: &[u8], target: &mut [u8]) {
     debug_assert_eq!(source.len(), target.len());
     for (bgra, rgba) in source.chunks_exact(4).zip(target.chunks_exact_mut(4)) {
@@ -891,7 +831,7 @@ fn swizzle_bgra_to_rgba_row(source: &[u8], target: &mut [u8]) {
 mod tests {
     use super::*;
 
-    /// 整字换算与逐字节交换逐字节相同（含 alpha 压 255）。
+    /// Whole-word conversion is byte-for-byte identical to swapping byte by byte (including forcing alpha to 255).
     #[test]
     fn swizzle_matches_byte_wise_swap() {
         let source: Vec<u8> = (0..64_u8).map(|i| i.wrapping_mul(37)).collect();
@@ -907,8 +847,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// 四个象限的 `preferredTransform` 与 ffmpeg autorotate 同口径；镜像与任意角
-    /// 判 unsupported（让调用方回落 ffmpeg，而不是猜一个方向转出去）。
+    /// The `preferredTransform` of the four quadrants uses the same basis as ffmpeg autorotate. Mirroring and arbitrary angles are reported as unsupported, so the caller falls back to ffmpeg instead of guessing a direction to rotate by.
     #[test]
     fn preferred_transforms_map_to_clockwise_quadrants() {
         let make = |a, b, c, d| CGAffineTransform {
@@ -923,7 +862,7 @@ mod tests {
         assert_eq!(rotation_quadrant(make(0.0, 1.0, -1.0, 0.0)).unwrap(), 90);
         assert_eq!(rotation_quadrant(make(-1.0, 0.0, 0.0, -1.0)).unwrap(), 180);
         assert_eq!(rotation_quadrant(make(0.0, -1.0, 1.0, 0.0)).unwrap(), 270);
-        // 水平镜像（行列式 −1）与 45 度：都不接。
+        // Horizontal mirroring (determinant −1) and 45 degrees: neither is accepted.
         assert!(rotation_quadrant(make(-1.0, 0.0, 0.0, 1.0)).is_err());
         let half = std::f64::consts::FRAC_1_SQRT_2;
         assert!(rotation_quadrant(make(half, half, -half, half)).is_err());

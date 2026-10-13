@@ -1,24 +1,22 @@
 /**
- * 编辑器页面（iframe 里的宿主 shim）与 CucCut 界面（父窗口）之间的 postMessage 协议（docs/design/slides §5、§8.2）。
- * 幻灯片与设计稿编辑器用同一套消息（docs/design/canvas §5），父窗口按消息来自哪个 iframe 区分。
- * 两边都只认这里列出的消息类型；消息里只有标注要的位置与文字，不带 deck 或设计稿文件的内容。
- * 例外是设计稿编辑器导出的文件（`editor:save-file`）：运行时的 `downloads` 能力把导出结果交给父窗口保存（docs/design/canvas §4、§8.3）。
+ * postMessage protocol between the editor page (the host shim in the iframe) and the CucCut UI (the parent window) (docs/design/slides §5, §8.2).
+ * The slides and design canvas editors use the same messages (docs/design/canvas §5); the parent window tells them apart by which iframe the message came from.
+ * Both sides accept only the message types listed here. Messages carry only the positions and text that annotations need, not the contents of the deck or design canvas file.
+ * The exception is the file exported by the design canvas editor (`editor:save-file`): the runtime's `downloads` capability hands the export to the parent window for saving (docs/design/canvas §4, §8.3).
  *
- * - iframe → 父窗口用 `targetOrigin: "*"`（桌面端父页面是 file://，origin 为 null），父窗口按
- *   `event.source === iframe.contentWindow` 认消息；父窗口 → iframe 指定编辑器地址的 origin，shim 按
- *   `event.source === window.parent` 认消息。
- * - 本文件不依赖 DOM 与 Node，界面与编辑器两边都能导入（`@cuccut/slides/editor-messages`）。
+ * - iframe → parent window uses `targetOrigin: "*"` (on desktop the parent page is file://, so its origin is null); the parent window checks messages by `event.source === iframe.contentWindow`. Parent window → iframe uses the origin of the editor address; the shim checks messages by `event.source === window.parent`.
+ * - This file depends on neither the DOM nor Node, so both the UI and the editor can import it (`@cuccut/slides/editor-messages`).
  */
 
-/** 批注框旁边要的位置：iframe 视口里的坐标（CSS 像素）。 */
+/** Position needed next to the comment box: coordinates in the iframe viewport (CSS pixels). */
 export interface EditorPoint {
   x: number;
   y: number;
 }
 
 /**
- * 运行时为一处标注给出的描述。`label` 给人看，`detail` 给模型看，`area` 表示框选的区域。
- * `section` 是设计系统编辑器里目标所在的章节 id（docs/design/canvas §10.6）：章节按需挂载，跳回去时要先到那一章；幻灯片与设计稿不给。
+ * Description the runtime gives for one annotation. `label` is for people, `detail` is for the model, and `area` marks a box-selected region.
+ * `section` is the id of the section containing the target in the design system editor (docs/design/canvas §10.6). Sections are mounted on demand, so going back has to open that section first. Decks and design canvases do not give it.
  */
 export interface AnchorDescription {
   label: string;
@@ -27,7 +25,7 @@ export interface AnchorDescription {
   section?: string;
 }
 
-/** 编辑器里画编号标记用的一条标注：`n` 是在整份草稿里的序号（与 composer 列表一致）；`section` 同 `AnchorDescription`。 */
+/** One annotation used to draw a numbered marker in the editor: `n` is its index in the whole draft (matching the composer list); `section` is the same as in `AnchorDescription`. */
 export interface EditorThread {
   id: string;
   anchor: string;
@@ -35,43 +33,43 @@ export interface EditorThread {
   section?: string;
 }
 
-/** iframe → 父窗口。 */
+/** iframe → parent window. */
 export type EditorToHostMessage =
-  /** 运行时启动了；`canEdit` 为 false 时编辑器只读（Web 服务的只读模式）。 */
+  /** The runtime has started; when `canEdit` is false the editor is read-only (the web service's read-only mode). */
   | { type: 'editor:ready'; canEdit: boolean }
-  /** 标注模式开关变了（运行时自己的按钮、快捷键 C，或父窗口的 `editor:set-mode`）。 */
+  /** Annotation mode changed (the runtime's own button, shortcut C, or the parent's `editor:set-mode`). */
   | { type: 'editor:mode'; on: boolean }
-  /** 用户点了一个元素或框了一块区域：父窗口在 `point` 旁弹出批注框，并回 `editor:compose-result`。 */
+  /** The user clicked an element or box-selected an area: the parent window opens a comment box next to `point` and replies with `editor:compose-result`. */
   | ({ type: 'editor:compose'; requestId: string; anchor: string; point: EditorPoint } & AnchorDescription)
-  /** 回应 `editor:flush`：未保存的改动都发布完了（`saved` 为 false 表示有改动没能保存）。 */
+  /** Reply to `editor:flush`: all unsaved changes have been published (`saved` false means some changes could not be saved). */
   | { type: 'editor:flushed'; requestId: string; saved: boolean }
-  /** deck 被编辑器以外的东西改了，编辑器要重新载入。 */
+  /** The deck was changed by something other than the editor, so the editor must reload it. */
   | { type: 'editor:external-change'; paths: string[] }
-  /** 运行时请父窗口把一段提示放进这个会话的输入框（「让智能体修好这页」等），父窗口回 `editor:suggest-prompt-result`。 */
+  /** The runtime asks the parent window to put a prompt into this session's input box, such as “让智能体修好这页” (“have the agent fix this page”); the parent replies with `editor:suggest-prompt-result`. */
   | { type: 'editor:suggest-prompt'; requestId: string; prompt: string }
-  /** 设计稿编辑器导出了一个文件，请父窗口保存（Web 交给浏览器下载，桌面端弹存储对话框），父窗口回 `editor:save-file-result`。 */
+  /** The design canvas editor exported a file and asks the parent window to save it (on web it goes to the browser download; on desktop it opens a save dialog); the parent replies with `editor:save-file-result`. */
   | { type: 'editor:save-file'; requestId: string; filename: string; data: ArrayBuffer | Blob };
 
-/** 父窗口 → iframe。 */
+/** Parent window → iframe. */
 export type HostToEditorMessage =
-  /** 当前会话草稿里属于这份 deck 的标注，编辑器据此画编号标记。 */
+  /** Annotations in the current session draft that belong to this deck; the editor uses them to draw numbered markers. */
   | { type: 'editor:threads'; threads: EditorThread[] }
-  /** 批注框打开了没有（没打开时运行时撤掉选中）。 */
+  /** Whether the comment box is open (when it is closed, the runtime clears the selection). */
   | { type: 'editor:compose-result'; requestId: string; opened: boolean }
-  /** 批注框关了（添加或取消），运行时结束这一次标注。 */
+  /** The comment box was closed (added or cancelled); the runtime ends this annotation. */
   | { type: 'editor:composer-closed'; requestId: string }
-  /** 跳到这条标注所在的页。 */
+  /** Jump to the page where this annotation is. */
   | { type: 'editor:reveal'; id: string }
-  /** 打开或关上标注模式（标签条上的标注开关）。 */
+  /** Turn annotation mode on or off (the annotation switch on the tab bar). */
   | { type: 'editor:set-mode'; on: boolean }
-  /** 发送消息前：把编辑器里未保存的改动发布完再回 `editor:flushed`。 */
+  /** Before sending a message: publish the unsaved changes in the editor, then reply with `editor:flushed`. */
   | { type: 'editor:flush'; requestId: string }
-  /** 回应 `editor:suggest-prompt`：提示放进输入框了没有（标签页不属于会话时为 false，运行时改为复制到剪贴板）。 */
+  /** Reply to `editor:suggest-prompt`: whether the prompt was put in the input box (false when the tab does not belong to the session; the runtime then copies it to the clipboard instead). */
   | { type: 'editor:suggest-prompt-result'; requestId: string; ok: boolean }
-  /** 回应 `editor:save-file`：`saved` 交出去了，`declined` 用户在存储对话框里取消了，`failed` 没能保存。 */
+  /** Reply to `editor:save-file`: `saved` means it was handed off, `declined` means the user cancelled in the save dialog, `failed` means it could not be saved. */
   | { type: 'editor:save-file-result'; requestId: string; outcome: SaveFileOutcome };
 
-/** 父窗口保存导出文件的结果（`editor:save-file-result`）。 */
+/** The parent window's result for saving an exported file (`editor:save-file-result`). */
 export type SaveFileOutcome = 'saved' | 'declined' | 'failed';
 
 const EDITOR_TYPES = new Set<EditorToHostMessage['type']>([
@@ -95,15 +93,15 @@ const HOST_TYPES = new Set<HostToEditorMessage['type']>([
 ]);
 const SAVE_FILE_OUTCOMES = new Set<SaveFileOutcome>(['saved', 'declined', 'failed']);
 
-/** `editor:suggest-prompt` 的提示最长多少字符（运行时的修复提示远小于这个数）。 */
+/** Maximum number of characters in an `editor:suggest-prompt` prompt (the runtime's fix prompts are much shorter than this). */
 export const SUGGESTED_PROMPT_MAX = 20_000;
 
-/** `editor:save-file` 的文件最大多少字节（整份设计稿的 HTML 内嵌画板运行时与素材，远小于这个数）。 */
+/** Maximum size in bytes of an `editor:save-file` file (a whole design canvas's HTML, with the inlined canvas runtime and assets, is much smaller than this). */
 export const SAVE_FILE_MAX_BYTES = 512 * 1024 * 1024;
 
 /**
- * 父窗口肯保存的扩展名与对应的文件类型：设计稿运行时允许交给宿主保存的那些（packages/design-runtime/src/export/downloads.tsx）。
- * 文件名的其余部分由父窗口清理（`saveFileName`）；浏览器下载时按扩展名给类型，运行时交来的类型不一定对。
+ * File extensions the parent window will save, with their file types: those the design canvas runtime is allowed to hand to the host for saving (packages/design-runtime/src/export/downloads.tsx).
+ * The rest of the file name is cleaned up by the parent window (`saveFileName`). Browser downloads assign the type by extension, and the type the runtime hands over may not be correct.
  */
 export const SAVE_FILE_TYPES: Readonly<Record<string, string>> = {
   gif: 'image/gif',
@@ -128,9 +126,9 @@ export const SAVE_FILE_TYPES: Readonly<Record<string, string>> = {
   zip: 'application/zip',
 };
 
-/** 去掉文件名里不能出现在本机文件名里的字符（路径分隔符、Windows 保留字符、控制字符），首尾的空白与点；扩展名不在允许的范围里时返回 null。 */
+/** Removes characters that cannot appear in a local file name (path separators, Windows reserved characters, control characters), and leading and trailing whitespace and dots. Returns null when the extension is not in the allowed set. */
 export function saveFileName(name: string): string | null {
-  // eslint-disable-next-line no-control-regex -- 去掉控制字符
+  // eslint-disable-next-line no-control-regex -- strip control characters
   const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
   const dot = cleaned.lastIndexOf('.');
   if (dot <= 0 || !Object.hasOwn(SAVE_FILE_TYPES, cleaned.slice(dot + 1).toLowerCase())) return null;
@@ -140,17 +138,17 @@ export function saveFileName(name: string): string | null {
 const isFileData = (value: unknown): value is ArrayBuffer | Blob =>
   value instanceof ArrayBuffer ? value.byteLength <= SAVE_FILE_MAX_BYTES : typeof Blob === 'function' && value instanceof Blob && value.size <= SAVE_FILE_MAX_BYTES;
 
-/** 编辑器地址上带 CucCut 界面语言的查询参数（值是 `Locale`，如 `zh-Hans`）：标注位置标签按它写（editor/comment-labels.ts）。 */
+/** The editor address carries a query parameter with CucCut's UI language (the value is a `Locale`, such as `zh-Hans`); annotation position labels are written in that language (editor/comment-labels.ts). */
 export const EDITOR_LOCALE_PARAM = 'lang';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isString = (value: unknown, max = 4096): value is string => typeof value === 'string' && value.length <= max;
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-/** 设计系统章节 id 的长度上限（内置章节与 `family-<名字>`）。 */
+/** Maximum length of a design system section id (the built-in sections and `family-<name>`). */
 const SECTION_MAX = 200;
 const isSection = (value: unknown): value is string | undefined => value === undefined || isString(value, SECTION_MAX);
 
-/** 父窗口收到的数据是不是一条合法的编辑器消息（字段类型与长度都核对，不信任 iframe）。 */
+/** Whether data received by the parent window is a valid editor message (field types and lengths are checked; the iframe is not trusted). */
 export function readEditorMessage(data: unknown): EditorToHostMessage | null {
   if (!isRecord(data) || !EDITOR_TYPES.has(data.type as EditorToHostMessage['type'])) return null;
   switch (data.type) {
@@ -195,7 +193,7 @@ export function readEditorMessage(data: unknown): EditorToHostMessage | null {
   }
 }
 
-/** 编辑器收到的数据是不是一条合法的父窗口消息。 */
+/** Whether data received by the editor is a valid parent window message. */
 export function readHostMessage(data: unknown): HostToEditorMessage | null {
   if (!isRecord(data) || !HOST_TYPES.has(data.type as HostToEditorMessage['type'])) return null;
   switch (data.type) {

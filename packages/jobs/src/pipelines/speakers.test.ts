@@ -16,7 +16,7 @@ import {
   type SpeakersDeps,
 } from './speakers.ts';
 
-/** 两句：「Hello there, how are you?」与「Fine.」，都是已有的说话人 a。 */
+/** Two sentences, “Hello there, how are you?” and “Fine.”, both for the existing speaker a. */
 const TEXTS = ['Hello', 'there,', 'how', 'are', 'you?', 'Fine.'];
 const speech = {
   schema: 'cuccut.speech/1',

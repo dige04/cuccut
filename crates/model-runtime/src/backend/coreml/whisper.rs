@@ -1,19 +1,16 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/WhisperASR/WhisperCoreMLRuntime.swift`。
+//! Parts of this file's implementation draw on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/WhisperASR/WhisperCoreMLRuntime.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model pack and transcription interface; the original upstream source attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Whisper large-v3 / large-v3 Turbo 的原生 CoreML 流水线（从 v2 `ccut-speech` 原样移植）。
+//! The native CoreML pipeline for Whisper large-v3 / large-v3 Turbo (ported unchanged from v2 `ccut-speech`).
 //!
-//! 张量名、KV 缓存布局与解码策略逐项对应 CucCut 早先 Swift 版的
-//! `WhisperCoreMLRuntime`。本模块只在 Apple Silicon macOS 且启用
-//! `backend-coreml` feature 时编译。
+//! Tensor names, KV cache layout and decoding strategy correspond item by item to the earlier Swift version of CucCut, `WhisperCoreMLRuntime`. This module is compiled only on Apple Silicon macOS and with the `backend-coreml` feature enabled.
 //!
-//! v3 的边界：文件由 Runtime 显式列出（[`WhisperFiles`]，取自 [`crate::bundle::VerifiedFiles`]），
-//! 不再按目录找；识别经 [`SpeechRecognizer`] 接进转写流水线，提示（`hint`）作 initial prompt。
-#![allow(deprecated)] // CoreML 传统模型仍以 MLMultiArray.dataPointer 交换定长缓存。
+//! v3 boundary: files are listed explicitly by the Runtime ([`WhisperFiles`], taken from [`crate::bundle::VerifiedFiles`]) and are no longer looked up by directory; recognition is plugged into the transcription pipeline via [`SpeechRecognizer`], and the hint (`hint`) is used as the initial prompt.
+#![allow(deprecated)] // Legacy CoreML models still exchange fixed-length caches via MLMultiArray.dataPointer.
 
 use std::path::{Path, PathBuf};
 
@@ -37,15 +34,15 @@ const MAX_AUDIO_SAMPLES: usize = WINDOW_SAMPLES;
 const DEFAULT_CACHE_DIM: usize = 5_120;
 const DEFAULT_CACHE_LENGTH: usize = DECODER_TOKEN_BUDGET;
 const DEFAULT_VOCAB_SIZE: usize = 51_866;
-/// context prefill 模型写进缓存的 token 数：`<|startoftranscript|><|lang|><|transcribe|>`。
+/// Number of tokens the context prefill model writes into the cache: `<|startoftranscript|><|lang|><|transcribe|>`.
 const PREFILL_CACHE_TOKEN_COUNT: usize = 3;
-/// context prefill 模型的 `task` 输入：它按 `(language − 50259) × 2 + task` 查表，每种语言两行，
-/// 第 0 行是 `<|transcribe|>`、第 1 行是 `<|translate|>`（与 token id 的次序相反）。v2 用
-/// `transcribe − 50359`（large-v3 上是 1），查到的其实是翻译那一行；见
-/// `turbo_prefill_task_index_selects_transcribe` 的实测。
+/// The `task` input of the context prefill model: it looks up a table by `(language − 50259) × 2 + task`, with two rows per language;
+/// row 0 is `<|transcribe|>` and row 1 is `<|translate|>` (the reverse of the token id order). v2 used
+/// `transcribe − 50359` (which is 1 on large-v3), so it actually looked up the translate row; see the measurement in
+/// `turbo_prefill_task_index_selects_transcribe`.
 const TRANSCRIBE_TASK_INDEX: i32 = 0;
 
-/// CoreML Whisper 的句级转录器。词级时间由统一 forced aligner 补齐。
+/// The sentence-level transcriber for CoreML Whisper. Word-level timing is filled in by the unified forced aligner.
 pub struct WhisperCoreMl {
     mel_model: Retained<MLModel>,
     encoder_model: Retained<MLModel>,
@@ -58,15 +55,15 @@ pub struct WhisperCoreMl {
     vocab_size: usize,
 }
 
-/// 一个 Whisper CoreML 模型包要的文件：三只（Turbo 是四只）`.mlmodelc` 目录、`generation_config.json`
-/// 与取自 `openai/whisper-large-v3` 的 `tokenizer.json`。v2 按「权重目录 + 分词器目录」拼出这些路径，
-/// v3 由加载器从清单里取（[`super::whisper_files`]）。
+/// The files a Whisper CoreML model pack needs: three `.mlmodelc` directories (four for Turbo), `generation_config.json`,
+/// and `tokenizer.json` taken from `openai/whisper-large-v3`. v2 built these paths from “weight directory + tokenizer directory”;
+/// v3 has the loader take them from the manifest ([`super::whisper_files`]).
 #[derive(Debug, Clone)]
 pub struct WhisperFiles {
     pub mel: PathBuf,
     pub encoder: PathBuf,
     pub decoder: PathBuf,
-    /// `TextDecoderContextPrefill.mlmodelc`：Turbo 有，标准 large-v3 的 WhisperKit 导出没有。
+    /// `TextDecoderContextPrefill.mlmodelc`: Turbo has it; the standard large-v3 WhisperKit export does not.
     pub decoder_prefill: Option<PathBuf>,
     pub generation_config: PathBuf,
     pub tokenizer: PathBuf,
@@ -127,8 +124,8 @@ impl WhisperCoreMl {
         })
     }
 
-    /// 预热（v3 新增）：在一秒静音上把 mel、编码器、一步解码器（Turbo 还有 context prefill）各跑一遍，
-    /// 让 CoreML 在加载阶段完成首次推理的设备特化，而不是拖到第一段识别。
+    /// Warm-up (new in v3): runs mel, the encoder and one decoder step (plus context prefill on Turbo) over one second of silence,
+    /// so CoreML completes its device specialization for the first inference during loading rather than delaying it until the first recognition.
     pub fn warmup(&self) -> Result<()> {
         let audio_array = make_audio_array(&vec![0.0; SAMPLE_RATE as usize])?;
         let mel_output = predict(&self.mel_model, &[("audio", &audio_array)])?;
@@ -140,7 +137,7 @@ impl WhisperCoreMl {
         Ok(())
     }
 
-    /// 识别提示 → 解码器前缀 token（规则见 [`prompt_tokens`]，预算是这只解码器的缓存长度）。
+    /// Recognition hint → decoder prefix tokens (rules in [`prompt_tokens`]; the budget is this decoder's cache length).
     fn prompt_tokens(&self, prompt: Option<&str>) -> Vec<i32> {
         prompt_tokens(&self.tokenizer, &self.generation, prompt, self.cache_length)
     }
@@ -176,11 +173,10 @@ impl WhisperCoreMl {
             .unwrap_or(self.generation.english_token()))
     }
 
-    /// 播种解码器的 KV 缓存，返回 `(state, 已播种的 token 数)`。
+    /// Seeds the decoder's KV cache, returning `(state, number of seeded tokens)`.
     ///
-    /// 没有识别提示时与接提示通道之前逐值相同（优先走 context prefill 模型）。
-    /// 有提示时必须走手工播种那一支：prefill 模型只会吐固定的三个 token，塞不进
-    /// `<|startofprev|> … <|startoftranscript|>` 这条更长的前缀。
+    /// Without a recognition hint, the result is value-for-value identical to before the hint channel was added (the context prefill model is preferred).
+    /// With a hint, the manual seeding branch must be used: the prefill model only emits a fixed three tokens and cannot fit the longer prefix `<|startofprev|> … <|startoftranscript|>`.
     fn make_decoder_state(
         &self,
         encoder_embeds: &MLMultiArray,
@@ -202,8 +198,8 @@ impl WhisperCoreMl {
         } else {
             // The standard WhisperKit large-v3 export has no dedicated context
             // prefill model. Seed the prompt tokens through the decoder one at
-            // a time and retain their KV updates. `prompt_tokens` 为空时这正是
-            // 原来的三个 token；带识别提示时前面多一段 `<|startofprev|> …`。
+            // a time and retain their KV updates. When `prompt_tokens` is empty, this is exactly the original
+            // three tokens; with a recognition hint, a `<|startofprev|> …` segment is prepended.
             let seed = prompt_tokens
                 .iter()
                 .copied()
@@ -364,14 +360,14 @@ impl WhisperCoreMl {
     }
 }
 
-/// v2 `TranscriptionResult` 里 Whisper 用到的两项：句级文本与识别出的语言码。
+/// The two Whisper fields used from v2's `TranscriptionResult`: the sentence-level text and the detected language code.
 struct TranscriptionResult {
     text: String,
     language: Option<String>,
 }
 
-/// 转写流水线的一段：断言的语言作语言 token，识别提示作 initial prompt（v2 的 `HintKind::Prompt`）。
-/// Whisper 报的是语言码（`en`、`yue`），不是 Qwen3-ASR 那样的语言名。
+/// A segment of the transcription pipeline: the asserted language is used as the language token, and the recognition hint is used as the initial prompt (v2's `HintKind::Prompt`).
+/// Whisper reports language codes (`en`, `yue`), not language names like Qwen3-ASR does.
 impl SpeechRecognizer for WhisperCoreMl {
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> Result<Recognition> {
         let result = self.transcribe_audio(audio, request.language, request.context)?;
@@ -572,7 +568,7 @@ fn number_array(array: &NSArray<NSNumber>) -> Vec<usize> {
 mod tests {
     use super::*;
 
-    /// 前 `positions` 个位置的 KV（`[1, dim, 1, n]` 按通道 × 位置展开），布局与 prefill 模型的输出一致。
+    /// KV for the first `positions` positions (`[1, dim, 1, n]`, expanded as channel × position), with a layout matching the prefill model's output.
     fn cache_positions(cache: &MLMultiArray, positions: usize) -> Vec<f32> {
         let (shape, strides) = (dimensions(cache), strides(cache));
         let pointer = unsafe { cache.dataPointer().as_ptr().cast::<f16>() };
@@ -586,9 +582,9 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum::<f32>() / a.len() as f32
     }
 
-    /// 真实录音的识别计时（`--release` 跑），与 MLX 版 `transcribes_a_real_recording` 同一口径：加载、预热单独计，
-    /// 识别跑两遍。`CUCCUT_WHISPER_COREML_DIR` 是 WhisperKit 的 Turbo 导出目录（只读），`CUCCUT_WHISPER_AUDIO` 是
-    /// 16 kHz 单声道 WAV。
+    /// Recognition timing on a real recording (run with `--release`), using the same basis as the MLX version `transcribes_a_real_recording`: loading and warm-up are timed separately,
+    /// and recognition runs twice. `CUCCUT_WHISPER_COREML_DIR` is the WhisperKit Turbo export directory (read-only), and `CUCCUT_WHISPER_AUDIO` is a
+    /// 16 kHz mono WAV.
     #[test]
     #[ignore = "needs CUCCUT_WHISPER_COREML_DIR and CUCCUT_WHISPER_AUDIO"]
     fn times_a_real_recording() {
@@ -636,10 +632,8 @@ mod tests {
         );
     }
 
-    /// Turbo 的 context prefill 模型按 `(language − 50259) × 2 + task` 查表。核对 [`TRANSCRIBE_TASK_INDEX`]
-    /// 查到的就是 `<|startoftranscript|><|lang|><|transcribe|>` 的 KV：与逐个 token 播种的结果比，第 0 层（只依赖
-    /// token，不依赖编码器输出）应当逐值一致，`<|translate|>` 那一行则不一致。实测（en、zh、ja 相同）：task 0 与
-    /// transcribe、task 1 与 translate 的第 0 层平均差约 0.0002，交叉比较约 0.16。
+    /// Turbo's context prefill model looks up a table by `(language − 50259) × 2 + task`. To verify, the KV that [`TRANSCRIBE_TASK_INDEX`]
+    /// looks up should be that of `<|startoftranscript|><|lang|><|transcribe|>`: compared with the result of seeding token by token, layer 0 (which depends only on the tokens, not on the encoder output) should match value for value, while the `<|translate|>` row does not. Measured (identical for en, zh and ja): the mean layer-0 difference between task 0 and transcribe, and between task 1 and translate, is about 0.0002, while the cross comparison is about 0.16.
     #[test]
     #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Whisper large-v3-turbo (CoreML)"]
     fn turbo_prefill_task_index_selects_transcribe() {
@@ -658,7 +652,7 @@ mod tests {
         assert_eq!(generation.transcribe_token, 50_360);
         assert_eq!(TRANSCRIBE_TASK_INDEX, 0);
         let translate_token = generation.transcribe_token - 1;
-        let layer = model.cache_dim / 4; // Turbo 的解码器 4 层，KV 按层拼在通道上。
+        let layer = model.cache_dim / 4; // Turbo's decoder has 4 layers, and KV is concatenated across layers along the channel axis.
 
         let audio = make_audio_array(&vec![0.0; SAMPLE_RATE as usize]).unwrap();
         let mel = output_array(&predict(&model.mel_model, &[("audio", &audio)]).unwrap(), "melspectrogram_features").unwrap();

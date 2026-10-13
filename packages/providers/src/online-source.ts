@@ -65,45 +65,45 @@ import { COMPAT_VENDOR_IDS, COMPAT_VENDORS, type CompatVendorId } from './vendor
 import { ProvidersConfig as PC, ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 在线 Provider 来源（架构设计 §6.4）：服务商目录里的内置服务商与用户添加的 OpenAI 兼容端点 `custom:<slug>`。
+ * Online provider sources (architecture design §6.4): the built-in providers from the provider catalog, and the OpenAI-compatible endpoints `custom:<slug>` that users add.
  *
- * - 能力：`openai` 有 transcribe、synthesizeSpeech、generateImage、generateText；`google` 有 transcribe、generateImage、
- *   generateText；`elevenlabs` 只有 synthesizeSpeech；`anthropic`（Messages 原生适配器）与目录里的兼容文本服务商
- *   （`vendor-catalog.ts`）只有 generateText（目录标 P1 的能力不报告）。自定义端点按声明的模型的 `capability` 提供
- *   （一个模型也没声明时只列 transcribe）。
- * - 账号（§6.8）：一次调用用第一个启用且有密钥的账号，失败不换账号；调用结束时写一条用量（§6.10）并按结果记下那个
- *   账号的状态。基址：账号的改写优先，其次是服务商的端点，最后是目录的预设（有国际与中国两个基址的按账号的 `region`）。
- * - `refresh()`（`models.refreshProvider`）向供应商取模型（与音色）列表，记在配置里：取到的列表只用来标注内置的模型——
- *   不在列表里的报告为不可用（`unsupported`），账号里的音色补进没有预置音色的语音模型；取不到时照旧用内置列表并标明。
- * - 可用 = 用户启用了它（启用即是持续的授权，§6.2）且有密钥；自定义端点密钥可选，但那种能力要声明了模型。
- * - 配置与密钥在 `ModelServiceStore` 里；这里的视图只报告密钥有没有，从不回显。密钥在执行时才从凭据存储取；
- *   凭据存储不可用时 Provider 报告为不可用（`missing-credential`，`detail` 写明原因），不回退到别的存放。
- * - 每个 Provider 一个队列（各种能力共用），默认同时运行 2 个任务；`generateText` 另有自己的并发上限（能力参数，§6.8）。
- * - 选择与执行都不联网；只有 `models.configure` 带 `verify: true` 与 `models.refreshProvider` 时向供应商发只读请求。
+ * - Capabilities: `openai` has transcribe, synthesizeSpeech, generateImage and generateText; `google` has transcribe, generateImage and
+ *   generateText; `elevenlabs` has only synthesizeSpeech; `anthropic` (the native Messages adapter) and the compatible text providers in the catalog
+ *   (`vendor-catalog.ts`) have only generateText (capabilities the catalog marks P1 are not reported). Custom endpoints provide the capability declared by each model's `capability`
+ *   (if no model is declared, only transcribe is listed).
+ * - Accounts (§6.8): a call uses the first enabled account that has a key; an account failure does not switch accounts. At the end of a call, one usage entry is written (§6.10) and that
+ *   account's status is recorded according to the result. Base URL: the account's override takes precedence, then the provider's endpoint, and finally the catalog preset (for providers with international and China base URLs, chosen by the account's `region`).
+ * - `refresh()` (`models.refreshProvider`) fetches the model (and voice) list from the provider and records it in the configuration. The fetched list is used only to annotate built-in models:
+ *   models not on the list are reported as unavailable (`unsupported`), and voices on the account are added to speech models without preset voices; if the fetch fails, the built-in list is used as before and this is noted.
+ * - Available = the user has enabled it (enabling is a standing authorization, §6.2) and it has a key; the key is optional for custom endpoints, but that capability must declare a model.
+ * - Configuration and keys live in `ModelServiceStore`. The view here reports only whether a key exists and never echoes it. Keys are fetched from the credential store only at execution time;
+ *   when the credential store is unavailable, the provider reports as unavailable (`missing-credential`, with the reason in `detail`) and does not fall back to other storage.
+ * - One queue per provider (shared across capabilities), running 2 tasks at a time by default; `generateText` has its own concurrency limit (a capability parameter, §6.8).
+ * - Neither selection nor execution touches the network; only `models.configure` with `verify: true` and `models.refreshProvider` send read-only requests to the provider.
  */
 
 export interface OnlineSourceOptions {
   store: ModelServiceStore;
   ffmpeg: FfmpegResolver;
-  /** 改写内置 Provider 的默认基址（测试指向本机的假服务）。用户在配置里改写的端点优先。 */
+  /** Overrides the default base URL of built-in providers (tests point it at a local fake service). An endpoint the user overrides in configuration takes precedence. */
   baseUrls?: Partial<Record<BuiltinId, string>>;
-  /** 每个 Provider 同时运行的任务数（默认 2）。 */
+  /** Number of tasks each provider runs at once (default 2). */
   concurrency?: number;
-  /** 请求的调节项（测试注入更短的退避）。 */
+  /** Request tuning options (tests inject shorter backoffs). */
   http?: AdapterHttp;
-  /** 用量账本（§6.10）；不给时不记用量（账号状态照样记）。 */
+  /** Usage ledger (§6.10); when not provided, no usage is recorded (account status is still recorded). */
   usage?: UsageLedger;
 }
 
 type BuiltinId = 'openai' | 'google' | 'elevenlabs' | 'anthropic' | CompatVendorId;
 
-/** 一个 Provider 上的音色克隆（`voiceCloner()`）：密钥在执行时取，不经调用方。 */
+/** Voice cloning on a provider (`voiceCloner()`): the key is fetched at execution time and does not pass through the caller. */
 export interface VoiceCloner {
   providerId: string;
   label: string;
-  /** 适配器的版本（记在任务的告警与日志里）。 */
+  /** Adapter version (recorded in the task's warnings and logs). */
   version: string;
-  /** 此刻启用着且有密钥。 */
+  /** Currently enabled and has a key. */
   available(): boolean;
   create(input: {
     name: string;
@@ -116,29 +116,29 @@ export interface VoiceCloner {
   remove(voiceId: string, signal: AbortSignal): Promise<'deleted' | 'not-found'>;
 }
 
-/** 用这份配置向供应商发一个只读请求（`models.configure` 带 `verify: true`）。 */
+/** Sends one read-only request to the provider with this configuration (`models.configure` with `verify: true`). */
 interface CredentialValidator {
   validateCredential(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp): Promise<void>;
 }
 
-/** 一个 Provider 的各种能力的适配器；没有那种能力时 null。 */
+/** Adapters for a provider's capabilities; null when it lacks that capability. */
 interface AdapterSet {
   transcribe: TranscribeAdapter | null;
   speech: SpeechAdapter | null;
   image: ImageAdapter | null;
   text: TextAdapter | null;
   validator: CredentialValidator;
-  /** `models.refreshProvider` 用：列出供应商的模型（与音色）。 */
+  /** Used by `models.refreshProvider`: lists the provider's models (and voices). */
   lister: ModelLister;
-  /** 音色克隆（§5.9）：只有真的提供克隆接口的供应商才有。 */
+  /** Voice cloning (§5.9): only providers that actually offer a cloning API have it. */
   clone?: VoiceCloneAdapter;
 }
 
 interface BuiltinEntry {
   label: string;
-  /** 缺省的基址（有地区的服务商是第一个地区的）。 */
+  /** Default base URL (for providers with regions, the first region's). */
   baseUrl: string;
-  /** 地区 → 基址（只有国际与中国两个基址的服务商有）。 */
+  /** Region → base URL (only providers with international and China base URLs have this). */
   regions?: Record<string, string>;
   vendor: ProviderVendorInfo;
   adapters: () => AdapterSet;
@@ -148,7 +148,7 @@ function compatEntry(id: CompatVendorId): BuiltinEntry {
   const entry = COMPAT_VENDORS[id];
   const regions = Object.keys(entry.regions);
   return {
-    // 读取时取：名字随界面语言。
+    // Taken at read time: the name follows the UI language.
     get label() {
       return entry.label;
     },
@@ -269,7 +269,7 @@ export class OnlineProviderSource implements ProviderSource {
         providerId,
         label: this.#label(providerId),
         adapter,
-        // 执行时再读一次配置：排队期间被停用或删掉密钥的，不再发出请求。
+        // Re-read the configuration at execution time: if it was disabled or its key deleted while queued, no request is sent.
         config: async () => (this.#availability(providerId, 'transcribe').available ? this.#config(providerId) : null),
         report: this.#reporter(providerId),
         ffmpeg: this.#options.ffmpeg,
@@ -290,7 +290,7 @@ export class OnlineProviderSource implements ProviderSource {
         providerId,
         label: () => this.#label(providerId),
         adapter,
-        // 执行时再读一次配置：排队期间被停用或删掉密钥的，不再发出请求。
+        // Re-read the configuration at execution time: if it was disabled or its key deleted while queued, no request is sent.
         config: async () => (this.#availability(providerId, 'generateText').available ? this.#config(providerId) : null),
         report: this.#reporter(providerId),
         ...(this.#options.http ? { http: this.#options.http } : {}),
@@ -302,7 +302,7 @@ export class OnlineProviderSource implements ProviderSource {
 
   generator(providerId: string, capability: GenerationCapability): GenerationProvider | null {
     if (!this.resolve(providerId)) return null;
-    // 文本生成的任务执行者由 ModelServices 用 `textProvider()` 组装（与进程内调用共用并发上限）。
+    // The text generation task executor is assembled by ModelServices with `textProvider()` (sharing the concurrency limit with in-process calls).
     if (capability === 'generateText') return null;
     const adapters = this.#adapterSet(providerId);
     if (!(capability === 'synthesizeSpeech' ? adapters.speech : adapters.image)) return null;
@@ -313,7 +313,7 @@ export class OnlineProviderSource implements ProviderSource {
         label: () => this.#label(providerId),
         speech: adapters.speech,
         image: adapters.image,
-        // 执行时再读一次配置：排队期间被停用或删掉密钥的，不再发出请求。
+        // Re-read the configuration at execution time: if it was disabled or its key deleted while queued, no request is sent.
         config: async () => (this.#availability(providerId).available ? this.#config(providerId) : null),
         report: this.#reporter(providerId),
         ...(this.#options.http ? { http: this.#options.http } : {}),
@@ -324,8 +324,8 @@ export class OnlineProviderSource implements ProviderSource {
   }
 
   /**
-   * 一个 Provider 的音色克隆（§5.9）：没有克隆接口的供应商（`openai`、`google`、自定义端点）返回 null。
-   * 执行时再读一次配置：没有启用或没有密钥时以 `unavailable` 失败，不发出请求。
+   * Voice cloning for a provider (§5.9): providers without a cloning API (`openai`, `google`, custom endpoints) return null.
+   * Re-reads the configuration at execution time: if it is not enabled or has no key, it fails with `unavailable` and sends no request.
    */
   voiceCloner(providerId: string): VoiceCloner | null {
     if (!this.resolve(providerId)) return null;
@@ -383,7 +383,7 @@ export class OnlineProviderSource implements ProviderSource {
     }
 
     if (request.verify) {
-      // 没给新密钥时验证已保存的（第一个启用且有密钥的账号）；新密钥还没保存，用量记录的账号为 null。
+      // When no new key is given, the saved one is verified (the first enabled account with a key). A new key is not saved yet, so the account recorded for usage is null.
       const saved = request.credential === undefined ? await this.#storedCredential(id) : null;
       const credential = request.credential === undefined ? (saved?.secret ?? null) : request.credential;
       if (!custom && !credential) throw new RpcError('invalid-request', PC.noKeyToVerify());
@@ -410,7 +410,7 @@ export class OnlineProviderSource implements ProviderSource {
     });
   }
 
-  /** `models.addAccount`（§6.8）：加在最后；带 `verify` 时先用新的密钥验证，不通过不保存。 */
+  /** `models.addAccount` (§6.8): appends the account at the end; with `verify`, the new key is checked first, and nothing is saved if it fails. */
   async addAccount(request: AddProviderAccountRequest): Promise<void> {
     const id = this.#accountProvider(request.providerId);
     this.#checkRegion(id, request.region);
@@ -440,8 +440,7 @@ export class OnlineProviderSource implements ProviderSource {
   }
 
   /**
-   * `models.updateAccount`（§6.8）。带 `verify` 时先验证：换了密钥的验证新的密钥（还没保存），没换的验证这个账号已保存的
-   * 密钥；用改后的 region 与端点。不通过不保存。
+   * `models.updateAccount` (§6.8). With `verify`, verification happens first: if the key was changed, the new key is verified (not yet saved); if not, the account's saved key is verified. The updated region and endpoint are used. Nothing is saved if it fails.
    */
   async updateAccount(request: UpdateProviderAccountRequest): Promise<void> {
     const id = this.#accountProvider(request.providerId);
@@ -518,7 +517,7 @@ export class OnlineProviderSource implements ProviderSource {
       const listing = await this.#adapterSet(id).lister.listModels(config, AbortSignal.timeout(REFRESH_TIMEOUT_MS), http);
       discovered = { at, ok: true, models: listing.models, ...(listing.voices ? { voices: listing.voices } : {}) };
     } catch (error) {
-      // `ProviderFailure` 的文本已经去掉了密钥；别的错误也再去一次。
+      // The text of a `ProviderFailure` has already had keys removed; other errors get the same treatment.
       const message = error instanceof Error ? error.message : String(error);
       discovered = { at, ok: false, error: redact(message, secret ? [secret] : []).slice(0, 500) };
     }
@@ -526,12 +525,11 @@ export class OnlineProviderSource implements ProviderSource {
   }
 
   /**
-   * 移除服务商（§6.8）：自定义端点删除整个配置；目录里的服务商删掉配置（停用）与全部账号的凭据，回到没有添加的状态，
-   * 没有配置过时什么也不做。指向它的默认值保留。
+   * Remove a provider (§6.8): for a custom endpoint, the whole configuration is deleted. For a provider from the catalog, its configuration is deleted (disabled) along with all account credentials, returning it to the not-added state. If it was never configured, nothing is done. Default values that point to it are kept.
    */
   async remove(providerId: string): Promise<boolean> {
     if (!this.owns(providerId)) return false;
-    // 执行者与适配器留着：它们每次都从配置里读端点、密钥与名字，删掉之后读不到配置，排队的任务不再发出请求。
+    // Executors and adapters are kept: each time, they read the endpoint, key and name from the configuration. Once it is deleted, the configuration can no longer be read, and queued tasks stop sending requests.
     const removed = await this.#store.removeProvider(providerId);
     return removed || isBuiltin(providerId);
   }
@@ -548,7 +546,7 @@ export class OnlineProviderSource implements ProviderSource {
       const { available, reason, detail } = this.#availability(providerId, capability);
       return { models, available, ...(reason ? { unavailableReason: reason } : {}), ...(detail ? modelDetail(detail) : {}) };
     };
-    // 自定义端点只列声明了模型的能力；一个模型也没声明时列 transcribe（等着声明）。
+    // Custom endpoints list only capabilities that have declared models; if no model is declared, transcribe is listed (awaiting a declaration).
     const declares = (capability: ModelServiceCapability) =>
       !custom || declaredOf(config, capability).length > 0 || (capability === 'transcribe' && config.declared.length === 0);
     if (adapters.transcribe && declares('transcribe')) capabilities.transcribe = offer('transcribe', adapters.transcribe.models(config));
@@ -569,7 +567,7 @@ export class OnlineProviderSource implements ProviderSource {
     };
   }
 
-  /** 不给 `capability` 时只看启用、端点与密钥（执行时用：模型是否声明由执行者按冻结的模型查）。 */
+  /** When no `capability` is given, only enabled state, endpoint and key are checked (used at execution time: whether a model is declared is checked by the executor against the frozen model). */
   #availability(
     providerId: string,
     capability?: ModelServiceCapability,
@@ -589,7 +587,7 @@ export class OnlineProviderSource implements ProviderSource {
     return { available: true };
   }
 
-  /** 不含密钥的配置：描述与列模型用（基址按第一个启用且有密钥的账号）。 */
+  /** Configuration without the key, used for descriptions and model listing (the base URL follows the first enabled account that has a key). */
   #settings(providerId: string): AdapterConfig {
     const stored = this.#store.provider(providerId);
     return {
@@ -600,7 +598,7 @@ export class OnlineProviderSource implements ProviderSource {
     };
   }
 
-  /** 执行用的配置：取第一个启用且有密钥的账号的密钥（§6.8）。取不到时以 `unavailable` 失败，原因里没有密钥。 */
+  /** Configuration for execution: uses the key of the first enabled account that has one (§6.8). If none can be obtained, it fails with `unavailable`, and the reason does not include the key. */
   async #config(providerId: string): Promise<AdapterConfig> {
     let resolved: { accountId: string; secret: string } | null;
     try {
@@ -620,7 +618,7 @@ export class OnlineProviderSource implements ProviderSource {
     };
   }
 
-  /** `verify` 没有给新密钥时用已保存的；凭据存储不可用时以 `conflict`（`CREDENTIAL_UNAVAILABLE`）拒绝。 */
+  /** `verify` uses the saved key when no new key is given; if the credential store is unavailable, it is rejected with `conflict` (`CREDENTIAL_UNAVAILABLE`). */
   async #storedCredential(providerId: string): Promise<{ accountId: string; secret: string } | null> {
     try {
       return await this.#store.resolveCredential(providerId);
@@ -630,7 +628,7 @@ export class OnlineProviderSource implements ProviderSource {
     }
   }
 
-  /** 一个账号已保存的密钥（验证用）；凭据存储不可用时以 `conflict`（`CREDENTIAL_UNAVAILABLE`）拒绝。 */
+  /** An account's saved key (for verification); if the credential store is unavailable, it is rejected with `conflict` (`CREDENTIAL_UNAVAILABLE`). */
   async #accountSecret(providerId: string, accountId: string): Promise<string | null> {
     try {
       return await this.#store.accountCredential(providerId, accountId);
@@ -641,8 +639,7 @@ export class OnlineProviderSource implements ProviderSource {
   }
 
   /**
-   * 连通性测试（§6.8）：用这份配置向供应商发一个只读请求（列模型）。写一条用量（`verify`，用量为空、不计费用）；验证的是
-   * 已保存的密钥（`saved`）时按结果记下账号的状态。不通过时以 `conflict` 拒绝，`details.code` 是 `PROVIDER_*`。
+   * Connectivity test (§6.8): sends one read-only request (listing models) to the provider with this configuration. Writes one usage entry (`verify`, with empty usage and no cost). When verifying the saved key (`saved`), records the account's status according to the result. On failure, it is rejected with `conflict`, and `details.code` is `PROVIDER_*`.
    */
   async #verify(config: AdapterConfig, saved: boolean): Promise<void> {
     const startedAt = Date.now();
@@ -674,13 +671,13 @@ export class OnlineProviderSource implements ProviderSource {
     if (failure === undefined) return;
     if (failure instanceof ProviderFailure) {
       const code = typeof failure.details.code === 'string' ? failure.details.code : 'PROVIDER_REJECTED';
-      // `ProviderFailure` 的文本已经去掉了密钥。
+      // The text of a `ProviderFailure` has already had keys removed.
       throw new RpcError('conflict', PC.verifyFailed({ message: failure.message }), { code, providerId: config.providerId });
     }
     throw new RpcError('conflict', PC.verifyFailed({ message: PH.requestIncomplete() }), { code: 'PROVIDER_UNAVAILABLE', providerId: config.providerId });
   }
 
-  /** 执行者在调用结束时的报告：写一条用量，按结果记下用的账号的状态（只记录，不换账号，§6.2）。 */
+  /** Report from the executor at the end of a call: writes one usage entry and records the status of the account used according to the result (recording only; does not switch accounts, §6.2). */
   #reporter(providerId: string): CallReporter {
     return (report) => {
       const at = new Date().toISOString();
@@ -706,7 +703,7 @@ export class OnlineProviderSource implements ProviderSource {
     void this.#options.usage?.append(record);
   }
 
-  /** 账号方法的 Provider：目录里的服务商或已有的自定义端点。 */
+  /** Providers that support account methods: catalog providers or existing custom endpoints. */
   #accountProvider(providerId: string): string {
     if (isBuiltin(providerId)) return providerId;
     if (providerId.startsWith(CUSTOM_PREFIX)) {
@@ -716,7 +713,7 @@ export class OnlineProviderSource implements ProviderSource {
     throw new RpcError('invalid-request', PC.noAccounts({ id: providerId }));
   }
 
-  /** `region` 要是目录里这家服务商的地区之一；没有地区的服务商不接受 `region`。 */
+  /** `region` must be one of this catalog provider's regions; providers without regions do not accept `region`. */
   #checkRegion(providerId: string, region: string | undefined): void {
     if (region === undefined) return;
     const regions = isBuiltin(providerId) ? BUILTINS[providerId].regions : undefined;
@@ -728,8 +725,7 @@ export class OnlineProviderSource implements ProviderSource {
   }
 
   /**
-   * 基址（§6.4）：账号的改写优先，其次是服务商的端点，最后是目录的预设——有地区的按账号的 `region`（测试的 `baseUrls`
-   * 改写预设）。
+   * Base URL (§6.4): the account's override takes precedence, then the provider's endpoint, and finally the catalog preset. For providers with regions, the account's `region` is used (tests override the presets via `baseUrls`).
    */
   #baseUrl(providerId: string, endpoint: string | undefined, account?: Pick<StoredAccount, 'region' | 'endpoint'>): string {
     let preset = '';
@@ -772,8 +768,8 @@ export class OnlineProviderSource implements ProviderSource {
 }
 
 /**
- * 用取到的列表标注模型（就地修改）：不在列表里的报告为不可用；账号里的音色补进没有预置音色、接受自定义音色的语音模型。
- * 列表里多出来的模型不加进来：没有它们的限制与特性。
+ * Annotates models using the fetched list (modifies in place): models not in the list are reported as unavailable, and voices on the account are added to speech models that have no preset voices and accept custom voices.
+ * Models that appear only in the list are not added, since their limits and features are not known here.
  */
 function annotate(models: ModelInfoBase[], discovered: DiscoveredList): void {
   const listed = new Set(discovered.models ?? []);

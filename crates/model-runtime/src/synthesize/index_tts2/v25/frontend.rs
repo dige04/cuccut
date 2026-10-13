@@ -1,11 +1,9 @@
-//! IndexTTS 2.5 文本前端：语言判定 → 字符清洗 → 文本规整 → 大小写 → 发音标注 →
-//! 日语分词 → 特殊 token 大写 → 按 GPT 位置预算切段 → 带语言前缀编码。
+//! IndexTTS 2.5 text frontend: language detection → character cleaning → text normalization → casing → pronunciation annotation →
+//! Japanese tokenization → uppercasing of special tokens → segmentation by the GPT position budget → encoding with a language prefix.
 //!
-//! 顺序对照官方 `indextts/infer_v2_5.py`（index-tts 9c87c46）第 700–719 行，
-//! 自动语言判定与切段对照 mlx-indextts `text_frontend_v25.py`。两处已知差异：
-//! 日语官方用 MeCab 形态素分词后以空格拼接，这里按字形类别切换插空格近似
-//! （汉字接平假名的送假名 / 助词不拆开，`<|…|>` 片段保持整体）；西语官方的
-//! NeMo 规整在未装 NeMo 时本来就原样透传，这里同样透传。
+//! The order follows the official `indextts/infer_v2_5.py` (index-tts 9c87c46), lines 700–719; automatic language detection and segmentation follow mlx-indextts `text_frontend_v25.py`. Two known differences:
+//! the official Japanese path uses MeCab morphological tokenization and joins the results with spaces; here, spaces are inserted at glyph-category switches as an approximation
+//! (kanji followed by hiragana okurigana, and particles, are not split; `<|…|>` segments are kept whole). The official NeMo normalization for Spanish already passes text through unchanged when NeMo is not installed, and here it is likewise passed through.
 
 use super::tiktoken::{RELEASED_LANGUAGES, TiktokenTokenizer, language_id};
 use crate::synthesize::index_tts2::normalizer::TextNormalizer;
@@ -14,11 +12,11 @@ use anyhow::{Result, bail};
 use fancy_regex::{Captures, Regex};
 use std::sync::LazyLock;
 
-/// `gpt.text_pos_embedding` 的行数（`max_text_tokens + 2`）。
+/// Number of rows in `gpt.text_pos_embedding` (`max_text_tokens + 2`).
 pub const TEXT_POSITION_CAPACITY: usize = 602;
-/// 官方 `max_text_tokens_per_segment` 缺省值。
+/// Default value of the official `max_text_tokens_per_segment`.
 pub const DEFAULT_MAX_SEGMENT_TOKENS: usize = 120;
-/// 每段编码末尾追加的停止 id（`F.pad(toks, (0, 1), value=1)`）。
+/// Stop id appended to the end of each encoded segment (`F.pad(toks, (0, 1), value=1)`).
 pub const STOP_TEXT_TOKEN: u32 = 1;
 
 static PRONUNCIATION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<([^|>\n]+)\|([^>\n]+)>").expect("静态正则"));
@@ -29,7 +27,7 @@ static SPECIAL_TOKEN_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanguageResolution {
     pub language: &'static str,
-    /// 只有拉丁字母、没有西语特征字符时判成英语，调用方应提示可能是其他拉丁语种。
+    /// Classified as English only when there are Latin letters and no Spanish-specific characters; the caller should warn that it may be another Latin-script language.
     pub ambiguous: bool,
 }
 
@@ -40,11 +38,11 @@ pub struct PreparedText {
     pub language_ambiguous: bool,
     pub normalized_text: String,
     pub segments: Vec<String>,
-    /// 每段 `encode("<|lang|> " + 段落) + [1]`。
+    /// Each segment is `encode("<|lang|> " + segment) + [1]`.
     pub token_ids: Vec<Vec<u32>>,
 }
 
-/// 把显式语言参数归一到公开 2.5 支持的五种语言码。
+/// Normalizes the explicit language argument to one of the five language codes publicly supported by 2.5.
 pub fn normalize_language(requested: &str) -> Result<&'static str> {
     let lowered = requested.trim().to_lowercase().replace('_', "-");
     let aliased = match lowered.as_str() {
@@ -65,7 +63,7 @@ pub fn normalize_language(requested: &str) -> Result<&'static str> {
     }
 }
 
-/// 显式语言优先（`auto` 视同未指定）；否则按字形自动判定。
+/// An explicit language takes priority (`auto` is treated as unspecified); otherwise the language is detected automatically from the glyphs.
 pub fn resolve_language(text: &str, requested: Option<&str>) -> Result<LanguageResolution> {
     if let Some(requested) = requested.map(str::trim)
         && !requested.is_empty()
@@ -101,7 +99,7 @@ pub fn resolve_language(text: &str, requested: Option<&str>) -> Result<LanguageR
     Ok(LanguageResolution { language, ambiguous })
 }
 
-/// 官方送入前端前的 `clean_pattern`：`char_rep_map` 按字典序逐位置首个命中。
+/// The official `clean_pattern` applied before the frontend: `char_rep_map`, first match at each position in dictionary order.
 pub fn clean_characters(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     let mut rest = text;
@@ -119,8 +117,8 @@ pub fn clean_characters(text: &str) -> String {
     output
 }
 
-/// 中英文走 2.0 同款数字规整与标点改写，`<字|读音>` 标注先换成纯字母占位符
-/// 保护起来（官方 `_protect_pronunciation_annotations`），其余语言原样返回。
+/// Chinese and English use the same number normalization and punctuation rewriting as 2.0; `<字|读音>` annotations are first swapped for pure-letter placeholders
+/// to protect them (official `_protect_pronunciation_annotations`); other languages are returned unchanged.
 pub fn normalize_text(text: &str, language: &str) -> String {
     if !matches!(language, "zh" | "en") {
         return text.to_string();
@@ -138,7 +136,7 @@ pub fn normalize_text(text: &str, language: &str) -> String {
     normalized
 }
 
-/// `<字|读音>` → 特殊 token 包裹的大写读音；纯假名读音直接以空格隔开写回。
+/// `<字|读音>` → uppercase reading wrapped in special tokens; a pure-kana reading is written back directly, separated by spaces.
 pub fn apply_pronunciation_annotations(text: &str) -> String {
     replace_captures(&PRONUNCIATION_PATTERN, text, |captures| {
         let pronunciation = captures[2].to_uppercase();
@@ -154,10 +152,10 @@ pub fn apply_pronunciation_annotations(text: &str) -> String {
     })
 }
 
-/// 近似官方 `process_ja_text`（`g2p_ratio=0`，只分词不换读音）：保留原有空格，
-/// 其余片段在字形类别切换处插空格，发音标注片段整体当作一个词。
+/// Approximates the official `process_ja_text` (`g2p_ratio=0`, tokenization only, no reading substitution): existing spaces are kept,
+/// spaces are inserted where the glyph category changes in the remaining segments, and a pronunciation-annotated segment is treated as a single word as a whole.
 pub fn segment_japanese(text: &str) -> String {
-    // 类别为 None 的项是原文空格。
+    // Items with category None are original spaces.
     let mut items: Vec<(Option<Script>, String)> = Vec::new();
     let mut cursor = 0;
     for found in PROTECTED_PATTERN.find_iter(text) {
@@ -180,15 +178,15 @@ pub fn segment_japanese(text: &str) -> String {
     output
 }
 
-/// `<|x|>` 里的名字转大写。
+/// Names inside `<|x|>` are converted to uppercase.
 pub fn uppercase_special_tokens(text: &str) -> String {
     replace_captures(&SPECIAL_TOKEN_PATTERN, text, |captures| {
         format!("<|{}|>", captures[1].to_uppercase())
     })
 }
 
-/// 官方 `split_text_by_tokens`：整段不超预算就不切；否则发音标注片段保持整体，
-/// 其余在标点后断开、超长片段逐字贪心切，再贪心合并回不超预算的段落。
+/// Official `split_text_by_tokens`: if the whole text is within budget, it is not split; otherwise pronunciation-annotated segments are kept whole,
+/// the rest is broken after punctuation, over-long segments are greedily split character by character, and then greedily merged back into paragraphs that stay within budget.
 pub fn split_text_by_tokens(text: &str, count: &dyn Fn(&str) -> usize, max_tokens: usize, prefix: &str, capacity: usize) -> Vec<String> {
     let budget = max_tokens.min(capacity.saturating_sub(2)).saturating_sub(count(prefix)).max(1);
     if count(text) <= budget {
@@ -246,7 +244,7 @@ pub fn split_text_by_tokens(text: &str, count: &dyn Fn(&str) -> usize, max_token
     if segments.is_empty() { vec![text.to_string()] } else { segments }
 }
 
-/// 按官方顺序准备 GPT 输入。只含空白的段落不送去生成；全部为空时报错。
+/// Prepares the GPT input in the official order. Paragraphs that contain only whitespace are not sent for generation; an error is raised if all are empty.
 pub fn prepare(
     text: &str,
     requested_language: Option<&str>,
@@ -308,7 +306,7 @@ fn replace_captures(pattern: &Regex, text: &str, mut replace: impl FnMut(&Captur
     output
 }
 
-/// 官方 `_idx_to_alpha`：0→a、25→z、26→aa。
+/// Official `_idx_to_alpha`: 0→a, 25→z, 26→aa.
 fn placeholder_tag(mut index: usize) -> String {
     let mut letters = Vec::new();
     loop {
@@ -321,7 +319,7 @@ fn placeholder_tag(mut index: usize) -> String {
     letters.iter().rev().collect()
 }
 
-/// `re.split(r'(?<=[，。！？、；：,\.!\?;:\n])')`，去掉空片段。
+/// `re.split(r'(?<=[，。！？、；：,\.!\?;:\n])')`, with empty pieces removed.
 fn split_after_punctuation(text: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -361,7 +359,7 @@ fn push_japanese_plain(piece: &str, items: &mut Vec<(Option<Script>, String)>) {
             .last()
             .and_then(|(script, _)| *script)
             .filter(|script| *script != Script::Protected);
-        // 长音符与叠字符沿用前一个字的类别。
+        // Long-vowel marks and iteration marks take the category of the preceding character.
         let script = japanese_script(c).unwrap_or(previous.unwrap_or(Script::Symbol));
         let joins = previous.is_some_and(|previous| previous == script || (previous == Script::Kanji && script == Script::Hiragana));
         match items.last_mut() {
@@ -397,7 +395,7 @@ fn is_han(c: char) -> bool {
     matches!(c, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}')
 }
 
-/// 官方 `is_kana`：整串都是平假名，或整串都是片假名。
+/// Official `is_kana`: the whole string is hiragana, or the whole string is katakana.
 fn is_single_kana_script(text: &str) -> bool {
     !text.is_empty()
         && (text.chars().all(|c| ('\u{3040}'..='\u{309f}').contains(&c)) || text.chars().all(|c| ('\u{30a0}'..='\u{30ff}').contains(&c)))
@@ -475,7 +473,7 @@ mod tests {
     #[test]
     fn splits_within_token_budget() {
         let count = |text: &str| text.chars().count();
-        // 前缀 7 个字符，预算 17 - 7 = 10。
+        // Prefix of 7 characters, budget 17 - 7 = 10.
         assert_eq!(
             split_text_by_tokens("一二三四五，六七八九十，甲乙丙", &count, 17, "<|zh|> ", 602),
             vec!["一二三四五，", "六七八九十，甲乙丙"]

@@ -5,12 +5,12 @@ import { refOf, type Localized, type MessageRef } from '@cuccut/protocol';
 import { RcWeb } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 流式读取 `multipart/form-data` 请求体（模型接口服务的转写上传，架构设计 §4.8、§12.8）：
+ * Streams a `multipart/form-data` body (the transcription upload of the model API service, architecture design §4.8, §12.8):
  *
- * - 唯一的文件字段边读边写到调用方给的 staging 文件，不整个放进内存；
- * - 文本字段留在内存，每个至多 `MAX_FIELD_BYTES`，个数至多 `MAX_FIELDS`；
- * - 请求体总长超过上限时立即停止并抛 `UploadTooLarge`（`Content-Length` 已经超出时一个字节也不读）；
- * - 写法不对时抛 `MalformedUpload`。文件名只记下，不用来拼路径。
+ * - The only file field is written to the staging file given by the caller as it is read, not held entirely in memory;
+ * - Text fields stay in memory, each at most `MAX_FIELD_BYTES`, and at most `MAX_FIELDS` of them;
+ * - When the total body length exceeds the limit, stop immediately and throw `UploadTooLarge` (if `Content-Length` already exceeds it, do not read a single byte);
+ * - Throws `MalformedUpload` when the format is wrong. The file name is only recorded, not used to build paths.
  */
 
 const MAX_FIELD_BYTES = 64 * 1024;
@@ -28,24 +28,24 @@ export class MalformedUpload extends Error {
 }
 
 export interface UploadedFile {
-  /** 字段名（模型接口服务只认 `file`）。 */
+  /** Field name (the model API service only accepts `file`). */
   field: string;
-  /** 客户端给的文件名（只用于展示与猜格式）。 */
+  /** The file name given by the client (used only for display and format guessing). */
   filename: string | null;
-  /** 客户端给的媒体类型；没给时 null。 */
+  /** The media type given by the client; null if not given. */
   contentType: string | null;
-  /** 写入的 staging 文件。 */
+  /** The staging file written. */
   path: string;
   size: number;
 }
 
 export interface MultipartResult {
-  /** 文本字段（同名多值，按出现顺序）。 */
+  /** Text fields (the same name may repeat; in order of appearance). */
   fields: Map<string, string[]>;
   file: UploadedFile | null;
 }
 
-/** `Content-Type` 里的 boundary；不是 multipart/form-data 时为 null。 */
+/** The boundary in `Content-Type`; null if it is not multipart/form-data. */
 export function multipartBoundary(contentType: string | undefined): string | null {
   if (!contentType || !/^multipart\/form-data\s*(;|$)/i.test(contentType)) return null;
   const match = /;\s*boundary=(?:"([^"]{1,200})"|([^\s;]{1,200}))/i.exec(contentType);
@@ -53,8 +53,8 @@ export function multipartBoundary(contentType: string | undefined): string | nul
 }
 
 /**
- * 读完整个请求体。文件写到 `filePath`（目录要已经存在）；调用方负责删除它（包括抛出之后）。
- * `maxBytes` 是整个请求体的上限。
+ * Reads the whole body. The file is written to `filePath` (the directory must already exist); the caller is responsible for deleting it (including after a throw).
+ * `maxBytes` is the limit for the whole body.
  */
 export async function readMultipart(
   request: IncomingMessage,
@@ -68,7 +68,7 @@ export async function readMultipart(
   let file: UploadedFile | null = null;
   let handle: fs.FileHandle | null = null;
   let fieldCount = 0;
-  // 在最前面补一个 CRLF：第一个分隔符与之后的写法相同。
+  // Prepend a CRLF at the front: the first delimiter is written the same way as the later ones.
   let buffer: Buffer = Buffer.from('\r\n');
   let total = 0;
   let state: 'preamble' | 'after-delimiter' | 'headers' | 'body' | 'done' = 'preamble';
@@ -100,13 +100,13 @@ export async function readMultipart(
     part = null;
   };
 
-  /** 处理缓冲区里能处理的部分；需要更多数据时返回。 */
+  /** Processes the processable part of the buffer; returns when more data is needed. */
   const drain = async () => {
     for (;;) {
       if (state === 'preamble') {
         const at = buffer.indexOf(delimiter);
         if (at < 0) {
-          // 前导部分没用：只留下可能是分隔符开头的尾巴。
+          // The leading part is useless: keep only the tail that may begin a delimiter.
           buffer = buffer.subarray(Math.max(0, buffer.length - delimiter.length + 1));
           return;
         }
@@ -119,7 +119,7 @@ export async function readMultipart(
           state = 'done';
           return;
         }
-        // 分隔符之后可以有空白，然后是 CRLF。
+        // After the delimiter there may be whitespace, then CRLF.
         const eol = buffer.indexOf('\r\n');
         if (eol < 0) {
           if (buffer.length > 256) throw new MalformedUpload(RcWeb.noNewlineAfterBoundary());
@@ -158,7 +158,7 @@ export async function readMultipart(
       } else if (state === 'body') {
         const at = buffer.indexOf(delimiter);
         if (at < 0) {
-          // 尾巴可能是下一个分隔符的开头，留着。
+          // The tail may be the start of the next delimiter; keep it.
           const keep = delimiter.length - 1;
           if (buffer.length > keep) {
             await emit(buffer.subarray(0, buffer.length - keep));
@@ -192,8 +192,8 @@ export async function readMultipart(
 }
 
 /**
- * 逐块处理请求体（处理完一块再读下一块）。处理出错时停止读取、丢弃之后的数据，不销毁连接：调用方还要回答
- * （例如 413，带 `Connection: close`）。连接在读完之前断开时抛出。
+ * Processes the body chunk by chunk (one chunk is processed before the next is read). On a processing error, it stops reading and discards the remaining data without destroying the connection: the caller still needs to answer
+ * (e.g. 413, with `Connection: close`). Throws if the connection drops before the body is fully read.
  */
 export function consume(request: IncomingMessage, onChunk: (chunk: Buffer) => Promise<void>): Promise<void> {
   return new Promise<void>((resolve, reject) => {

@@ -10,8 +10,8 @@ import {
 import { M } from './jobs-copy.ts';
 
 /**
- * 管理桶 `cuccut jobs resources|reconcile` 的参数与输出（架构设计 §7.1–§7.7）：资源调度的现状、对账，以及应用与取消的事实。
- * 任务的列出、查看、等待、取消与重试在 Agent 面（`jobs list|inspect|wait|cancel|retry`）。
+ * Admin bucket `cuccut jobs resources|reconcile`: arguments and output (Architecture design §7.1–§7.7). Covers the current state of resource scheduling, reconciliation, and the facts of applying and cancelling.
+ * Listing, inspecting, waiting on, cancelling and retrying tasks are on the Agent surface (`jobs list|inspect|wait|cancel|retry`).
  */
 
 export type JobsCommand = { kind: 'resources' } | { kind: 'reconcile'; jobId: string; decision: JobReconcileDecision };
@@ -33,12 +33,12 @@ export function jobStateLabel(state: JobRecord['state']): string {
   return M.jobStates[state];
 }
 
-/** 取消的三件事实，分开写（§7.4）。 */
+/** The three facts of a cancellation, written separately (§7.4). */
 export function describeCancellation(cancellation: JobCancellation): string {
   return M.cancellation(Boolean(cancellation.localStoppedAt), M.remoteStates[cancellation.remote], M.costStates[cancellation.cost]);
 }
 
-/** `jobs reconcile` 之后的结果。 */
+/** The result after `jobs reconcile`. */
 export function formatReconcileResult(decision: JobReconcileDecision, job: JobRecord): string[] {
   const lines: string[] = [];
   if (decision === 'retry') lines.push(M.requeued(job.attempt, job.jobId));
@@ -77,7 +77,7 @@ function demand(value: ResourceDemand): string {
   return parts.length > 0 ? parts.join(M.listSep) : M.demandNone;
 }
 
-/** `cuccut jobs resources`：容量与来源、预留、已租出与还能用的量、租约、常驻进程与排队（架构设计 §7.6、§7.7）。 */
+/** `cuccut jobs resources`: capacity and its source, reservations, the amount leased out and still available, leases, resident processes and queues (Architecture design §7.6, §7.7). */
 export function formatResources(snapshot: ResourcesSnapshot): string[] {
   const { capacity } = snapshot;
   const sources = M.sources;

@@ -14,12 +14,12 @@ import { pl } from './rc-fonts.pl.ts';
 import { tr } from './rc-fonts.tr.ts';
 import { vi } from './rc-fonts.vi.ts';
 
-/** 字体（fonts/）的错误、补救与跳过原因。英文是键与类型的来源，译文在 `rc-fonts.<语言>.ts`。 */
+/** Errors, remedies and skip reasons for fonts (fonts/). English is the source of keys and types; translations are in `rc-fonts.<language>.ts`. */
 const en = {
   manageOnlyInAppOrCli: 'Fonts can only be downloaded, deleted, and checked in the desktop app or the CLI',
   catalogueInvalid: "The font catalog's format is wrong",
 
-  // 补救（按错误码）
+  // Remedies (by error code)
   remedyNetwork:
     'The network is unreachable or the download was interrupted. Check the network and download again, or switch mirrors in "Stylesheet URL" and "Font file URL" under Settings › Fonts',
   remedySource: "The font service didn't provide a file for this font. Check the family name and weight, or the mirror addresses in Settings",
@@ -27,13 +27,13 @@ const en = {
     "The download isn't a usable font (wrong family name, unreadable, or too large). The bad file was deleted; switch to another mirror and download again",
   remedyNoSpace: 'The disk with the Runtime Home is out of space. Free up space, then download again',
 
-  // 下载（font-download）
+  // Download (font-download)
   diskFullWriting: (p: { what: string }) => `The disk filled up while writing ${p.what}`,
   sourceHttpStatus: (p: { what: string; status: number }) => `The font service returned HTTP ${p.status} for ${p.what}`,
   downloadFailed: (p: { what: string; reason: string }) => `Downloading ${p.what} failed: ${p.reason}`,
   overByteLimit: (p: { what: string; limit: number }) => `${p.what} exceeds the ${p.limit}-byte limit`,
 
-  // 服务（font-service）
+  // Service (font-service)
   downloadCancelled: 'Font download cancelled',
   cancelled: 'Download cancelled',
   offlineStrict: "Fonts aren't downloaded in strict offline mode",
@@ -44,14 +44,14 @@ const en = {
     `"${p.family}" ${p.bundled ? 'comes with the app' : 'is already installed on this computer'}, so it doesn't need to be downloaded`,
   inUseByExport: (p: { family: string }) => `"${p.family}" is in use by an unfinished export. Delete it after the export ends`,
 
-  // 样张
+  // Specimen
   sampleLabel: (p: { family: string }) => `the ${p.family} sample`,
   sampleCss: (p: { label: string }) => `the stylesheet for ${p.label}`,
   noSampleBlock: (p: { label: string }) => `The font service's response doesn't include ${p.label}`,
   sampleNotOnHost: (p: { label: string }) => `${p.label} isn't on the configured font file host`,
   sampleNotUsable: (p: { label: string }) => `The downloaded ${p.label} isn't a usable font`,
 
-  // 字形（一个字重/斜体）
+  // Glyphs (one weight/italic)
   faceLabel: (p: { family: string; weight: number; italic: boolean }) => `${p.family} ${p.weight}${p.italic ? ' Italic' : ''}`,
   faceCss: (p: { label: string }) => `the font stylesheet for ${p.label}`,
   noFaceBlock: (p: { label: string }) => `The font service's response doesn't include ${p.label}`,

@@ -16,10 +16,10 @@ import { vi } from './tool-catalog-copy.vi.ts';
 
 type Artifact = 'audio' | 'image' | 'doc' | 'final' | 'subtitle';
 
-/** 产出条目在英文句子里的说法（小写名词）。 */
+/** How output items are referred to in an English sentence (lowercase noun). */
 const ARTIFACT_NOUN: Record<Artifact, string> = { audio: 'audio', image: 'image', doc: 'document', final: 'video file', subtitle: 'subtitle' };
 
-/** 工具目录的文案：工具名与说明、输入输出的说法、卡片上的结果句（英文是键与类型的来源，译文在 `tool-catalog-copy.<语言>.ts`）。 */
+/** Copy for the tool catalog: tool names and descriptions, input and output wording, and the result sentences on cards. English is the source of the keys and types; translations are in `tool-catalog-copy.<lang>.ts`. */
 const en = {
   inputLabels: {
     file: 'Local file',
@@ -89,7 +89,7 @@ const en = {
       desc: 'Download, compress and merge videos and extract audio with yt-dlp and ffmpeg on this computer. Results are video file and audio items.',
     },
   },
-  /** 产出条目的说法：「文档与字幕条目」「音频条目」。 */
+  /** How output items are named: “document and caption items”, “audio items”. */
   artifactItems: (artifacts: readonly Artifact[]) => (artifacts.length ? `${artifacts.map((a) => ARTIFACT_NOUN[a]).join(' and ')} items` : 'output items'),
   resultWritesVideo: 'Result: written into the video you choose',
   resultInSpace: (items: string) => `Result: ${items} in Library`,

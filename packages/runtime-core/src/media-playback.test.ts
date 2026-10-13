@@ -82,7 +82,7 @@ describe.skipIf(!tools)('WebM playback compatibility', () => {
       const raw = await registry.issue(root, source);
       const playable = (codecs: string[]) => (file: string) => analysis.playback(file, codecs);
       expect(await registry.playback(raw.url, playable(['vp9', 'opus']))).toEqual({ status: 'ready', media: raw });
-      // 声音的编码不在里面：照旧做兼容副本。
+      // Audio codecs are not detected here: still make a compatibility copy.
       expect(await registry.playback(raw.url, playable(['vp9']))).toMatchObject({ status: 'pending' });
       const deadline = Date.now() + 15_000;
       let result = await registry.playback(raw.url, playable(['vp9']));
@@ -92,16 +92,16 @@ describe.skipIf(!tools)('WebM playback compatibility', () => {
         result = await registry.playback(raw.url, playable(['vp9']));
       }
       expect(result.media.mimeType).toBe('video/mp4');
-      // 有了兼容副本，能直接放的客户端仍拿原文件。
+      // With a compatibility copy in place, clients that can play the file directly still get the original.
       expect(await registry.playback(raw.url, playable(['vp8', 'vp9', 'opus']))).toEqual({ status: 'ready', media: raw });
-      // 没有 ffprobe 认不出编码：一律做兼容副本。
+      // Without ffprobe the codec cannot be identified, so always make a compatibility copy.
       expect(await blind.playback(await fs.realpath(source), ['vp9', 'opus'])).toMatchObject({ status: 'pending' });
     } finally { analysis.close(); blind.close(); await fs.rm(root, { recursive: true, force: true }); }
   }, 30_000);
 
   it.skipIf(process.platform === 'win32')('reports the copy\'s encode progress against the probed duration', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-playback-progress-'));
-    // 假的 ffmpeg：报一次编到 1 秒，然后一直编下去（关掉时被杀）。
+    // Fake ffmpeg: reports progress up to 1 second once, then keeps encoding until it is killed on shutdown.
     const fake = path.join(root, 'ffmpeg');
     await fs.writeFile(fake, "#!/bin/sh\nprintf 'frame=10\\nout_time_us=1000000\\nprogress=continue\\n'\nexec sleep 30\n", { mode: 0o755 });
     const analysis = new MediaAnalysis({

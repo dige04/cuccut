@@ -9,8 +9,8 @@ macro_rules! unary {
 }
 unary!(exp:exp,sin:sin,square:sqr,sqrt:sqrt,tanh:tanh,erf:erf,reciprocal:recip);
 pub use super::nn::sigmoid;
-/// MLX `round`：`decimals` 位小数，恰在 .5 上时取偶（与 MLX / NumPy 同为银行家舍入；
-/// Candle 的 `round` 是远离零，VoxCPM2 FSQ 的 `round(tanh(x)*9)/9` 要跟 MLX 对齐）。
+/// MLX `round`: rounds to `decimals` decimal places, with ties going to the even value (banker's rounding, as in MLX / NumPy;
+/// candle's `round` rounds half away from zero, so the VoxCPM2 FSQ `round(tanh(x)*9)/9` must be aligned with MLX).
 pub fn round(x: impl Borrow<Array>, decimals: impl Into<Option<i32>>) -> Result<Array> {
     let x = &x.borrow().0;
     let mult = 10f64.powi(decimals.into().unwrap_or(0));
@@ -99,9 +99,9 @@ pub fn zeros_dtype(s: &[i32], d: Dtype) -> Result<Array> {
 pub fn zeros_like(x: impl Borrow<Array>) -> Result<Array> {
     Ok(Array(x.borrow().0.zeros_like()?))
 }
-/// MLX `dequantize`：仿射量化权重（U32 打包，末维按 `group_size` 分组）还原成浮点。
-/// 前导维度任意（先按行展平成二维，再还原形状），用于先按 id 取行、再只反量化取出的行。
-/// `biases` 为空时按 MLX 语义报错（仿射量化必须带偏置）。
+/// MLX `dequantize`: restores affine-quantized weights (packed in U32, last dimension grouped by `group_size`) to floats.
+/// Leading dimensions are arbitrary (flattened to 2D by row first, then the shape is restored); used for rows that are first fetched by id and then dequantized only for those rows.
+/// When `biases` is empty, raises an error per MLX semantics (affine quantization must carry biases).
 pub fn dequantize<'a>(
     w: impl Borrow<Array>,
     scales: impl Borrow<Array>,

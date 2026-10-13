@@ -1,18 +1,13 @@
-//! 来源自带章节的解析与吸附（架构设计 §3.5、§7.9）：从链接导入的素材在 `provenance.source` 里带着平台给的章节
-//! （`chapters[]`）与简介（`description`，里面常有时间戳大纲），智能体的 `chapters_adopt` 与 `videos_inspect` 用这里的
-//! 同一份规则（`speech_doc::source_chapters`，从旧版本原样移植）。
+//! Parsing and snapping of chapters the source provides (architecture design §3.5, §7.9): material imported from a link carries, in `provenance.source`, the chapters the platform supplies (`chapters[]`) and the description (`description`, which often contains a timestamped outline). The agent's `chapters_adopt` and `videos_inspect` use the same rules here (`speech_doc::source_chapters`, ported unchanged from the old version).
 //!
-//! - 来源章节：显式大纲（`outline`，数组或原文）优先；否则读来源元数据，先取结构化 `chapters[]`（认 `start_time|start`、
-//!   `end_time|end`、`title`），没有再从 `description` 解析时间戳大纲（至少两条）。清洗：丢空标题与非法时间、排序、同起点去重、
-//!   截条数。
-//! - 吸附：作者的时间戳最多精确到秒，常比真正的话题起点早几秒，把每条吸到转写最近的结构起点（段落 > 句 > cue > 词）：
-//!   同一秒窗 `[t-1, t+2]`（含两端）依次找段落、句、cue 起点，同层只有一个候选是 `matched`，多个是 `ambiguous`（缺省取
-//!   最近的，同距离取时间戳之后的）；没有时放宽到 `[t-4, t+6]`，只认段落与句起点、取最近的（`snapped`）；再没有时找同一秒窗里的
-//!   词起点；都没有时保留原时间（`unanchored`）。
-//! - 行：按时间版的确定性清洗（`resolve_rows`）出最终的章节：丢空标题、按起点排序、同起点去重、首章钳到 0、丢非严格递增，
-//!   终点回填为下一章的起点，末章为 `durationSeconds`。
+//! - Source chapters: an explicit outline (`outline`, an array or raw text) takes priority. Otherwise read the source metadata: take the structured `chapters[]` first (recognizing `start_time|start`, `end_time|end`, `title`), and if there are none, parse a timestamped outline from `description` (at least two entries). Cleanup: drop empty titles and invalid times, sort, deduplicate by start, and cap the count.
+//! - Snapping: an author's timestamp is accurate to the second at most and is often a few seconds earlier than the real start of the topic, so each one is snapped to the nearest structural start in the transcript (paragraph > sentence > cue > word):
+//!   within the one-second window `[t-1, t+2]` (inclusive), look for paragraph, sentence and cue starts in turn; if one candidate is at a level it is `matched`; if there are several it is `ambiguous` (the default is the nearest; at equal distance, the one after the timestamp);
+//!   if none is found, widen to `[t-4, t+6]`, considering only paragraph and sentence starts, and take the nearest (`snapped`); if still none, look for a word start in the same one-second window; if there are none at all, keep the original time (`unanchored`).
+//! - Rows: the final chapters come from the deterministic cleanup of the timed version (`resolve_rows`): drop empty titles, sort by start, deduplicate by start, clamp the first chapter to 0, and drop any that are not strictly increasing;
+//!   each end is backfilled from the next chapter's start, and the last chapter ends at `durationSeconds`.
 //!
-//! 时间都是素材（源）时间的秒；投影到时间线由宿主做。没有来源章节时返回空的结果，不报错（错误码由宿主决定）。
+//! All times are seconds of source (media) time; projecting them onto the timeline is done by the host. With no source chapters, it returns an empty result without an error (the error codes are decided by the host).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,18 +24,18 @@ use crate::{EntryError, invalid_input};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SourceChaptersInput {
-    /// 素材的转写正文；没有转写（或 `snap: false`）时省略，所有条目按原时间（`unanchored`）。
+    /// The material's transcript body; omitted when there is no transcript (or `snap: false`), in which case all entries keep their original time (`unanchored`).
     #[serde(default)]
     speech: Option<SpeechBody>,
-    /// 素材的来源元数据（`provenance.source`）。
+    /// The material's source metadata (`provenance.source`).
     #[serde(default)]
     source: Option<Value>,
-    /// 显式大纲，优先于 `source`：`[{ at, title }]`，或一段原文（按简介的时间戳大纲解析）。
+    /// An explicit outline, which takes priority over `source`: `[{ at, title }]`, or raw text (parsed as a timestamped outline from the description).
     #[serde(default)]
     outline: Option<Outline>,
-    /// 素材时长（秒）：末章的终点。
+    /// The material's duration (seconds): the end of the last chapter.
     duration_seconds: f64,
-    /// 默认 true；false 时只解析、不吸附。
+    /// Default true; false means parse only, without snapping.
     #[serde(default)]
     snap: Option<bool>,
 }
@@ -73,7 +68,7 @@ struct SourceChaptersOutput {
 struct EntryOutput {
     source: SourceRef,
     status: SnapStatus,
-    /// 吸附后的起点（源时间秒）；`unanchored` 时就是作者的原时间。
+    /// The snapped start (source time in seconds); when `unanchored`, the author's original time.
     at: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     anchor: Option<AnchorOutput>,
@@ -124,7 +119,7 @@ fn anchor_output(anchor: &Anchor) -> AnchorOutput {
     }
 }
 
-/// 来源章节：显式大纲优先，其次来源元数据。
+/// Source chapters: an explicit outline takes priority, then the source metadata.
 fn chapters_of(input: &SourceChaptersInput) -> Vec<SourceChapter> {
     match &input.outline {
         Some(Outline::Rows(rows)) => normalize(
@@ -141,12 +136,12 @@ fn chapters_of(input: &SourceChaptersInput) -> Vec<SourceChapter> {
     }
 }
 
-/// 转写的四层锚点；没有转写或不吸附时为空。
+/// The four-layer anchors of the transcript; empty when there is no transcript or snapping is off.
 fn anchors_of(input: &SourceChaptersInput) -> Result<Vec<Anchor>, EntryError> {
     let Some(speech) = input.speech.as_ref().filter(|_| input.snap != Some(false)) else {
         return Ok(Vec::new());
     };
-    // 时长取末词的终点（核心的校验要求词不越出时长）；素材时长只用于末章的终点。
+    // The duration takes the end of the last word (core validation requires words not to run past the duration); the material's duration is used only for the last chapter's end.
     let media = media_for(speech);
     let doc = to_transcript_doc(&V3Documents {
         media: &media,
@@ -161,7 +156,7 @@ fn anchors_of(input: &SourceChaptersInput) -> Result<Vec<Anchor>, EntryError> {
     Ok(doc_anchors(&doc))
 }
 
-/// 一行清洗后的章节对应哪一条：首行的起点被钳到 0，按标题取起点最早的那条；其余按（标题, 起点）对上。
+/// Which entry each cleaned row corresponds to: the first row's start is clamped to 0 and matched by title to the entry with the earliest start; the rest are matched by (title, start).
 fn row_status(plan: &SnapPlan, index: usize, title: &str, start: f64) -> SnapStatus {
     let mut same_title = plan.entries.iter().filter(|entry| entry.source.title.trim() == title);
     let entry = if index == 0 {
@@ -172,7 +167,7 @@ fn row_status(plan: &SnapPlan, index: usize, title: &str, start: f64) -> SnapSta
     entry.map_or(SnapStatus::Unanchored, |entry| entry.status)
 }
 
-/// 来源章节的解析与吸附（JSON）。输入读不懂是 `INVALID_INPUT`；转写正文不合格式是 `INVALID_SPEECH`。
+/// Parsing and snapping of source chapters (JSON). Input that cannot be read is `INVALID_INPUT`; a transcript body in the wrong format is `INVALID_SPEECH`.
 pub fn source_chapters(input: &[u8]) -> Result<String, EntryError> {
     let input: SourceChaptersInput = serde_json::from_slice(input).map_err(invalid_input)?;
     let chapters = chapters_of(&input);

@@ -44,13 +44,13 @@ const bar = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap
 const search = style({ flexGrow: 1, flexBasis: 160, minWidth: 0, maxWidth: 280 });
 const spacer = style({ flexGrow: 1 });
 const webNote = style({ marginTop: -4, marginBottom: 16, font: 'ui-sm', color: 'gray-600' });
-// 两列卡片，正文那一栏窄时一列（滚动区是 inline-size 容器，量它而不是视口）。
+// Two-column cards. When the body column is narrow, it becomes one column. The scroll area is an inline-size container, so measure it rather than the viewport.
 const grid = style({
   display: 'grid',
   gridTemplateColumns: { default: ['minmax(0, 1fr)', 'minmax(0, 1fr)'], '@container (max-width: 640px)': ['minmax(0, 1fr)'] },
   gap: 12,
 });
-// 卡片：整块是「查看详情」的按钮，开关叠在右上角，不嵌在按钮里（原型 `.skl-card`）。
+// Card: the whole block is a “View details” button, with the toggle overlaid in the top-right corner, not nested inside the button (prototype `.skl-card`).
 const card = style({
   position: 'relative',
   minWidth: 0,
@@ -119,10 +119,10 @@ const externalTitle = style({ margin: 0, font: 'ui-sm', fontWeight: 'medium', co
 const externalBody = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
 
 /**
- * 设置 › Skills（产品设计 §6.9；原型 settings-agent-skills.jsx `AgentSkillsManager`，按后端支持的范围简化）：
- * 一句导语 → 工具条（搜索、按来源筛选、添加）→ 两列卡片 → 跳过的文件夹（有才出现）→ 页底一小段「给终端里的 Agent 装 CucCut 的 skill」。
- * 点卡片开详情（agent-skill-detail.tsx），开关在卡片右上角。浏览器里只能看与开关，不显示添加与移除。
- * 列表、开关与变更都经 runtime/skill-commands.ts，结果写回 state/skills-store。
+ * Settings › Skills (product design §6.9; prototype settings-agent-skills.jsx `AgentSkillsManager`, simplified to the scope the backend supports):
+ * an intro line → toolbar (search, filter by source, add) → two-column cards → skipped folders (shown only when there are some) → a short section at the bottom, “给终端里的 Agent 装 CucCut 的 skill” (install the CucCut skill for terminal agents).
+ * Clicking a card opens its details (agent-skill-detail.tsx); the toggle is in the card’s top-right corner. In the browser you can only view and toggle; add and remove are not shown.
+ * The list, toggles and changes all go through runtime/skill-commands.ts, and results are written back to state/skills-store.
  */
 export function AgentSkills() {
   const runtime = useRuntime();
@@ -147,7 +147,7 @@ export function AgentSkills() {
       (error) => ToastQueue.negative(skillErrorMessage(error, 'toggle'), { timeout: 5000 }),
     );
 
-  // 从本地文件夹添加：系统的文件夹选择 → `skills.add`；成了就打开它的详情（详情里写着放在哪里）。
+  // Add from a local folder: the system folder picker → `skills.add`. Once added, its details open (the details say where it is stored).
   const addFolder = async () => {
     const path = await runtime.host.pickDirectory();
     if (!path) return;
@@ -197,7 +197,7 @@ export function AgentSkills() {
       </div>
     );
   } else if (!list.skills.length) {
-    // 真的一个都没有（目前应用不自带 skill）：说清 skill 是什么，给两个添加入口；浏览器里只说明去桌面应用。
+    // When there truly are none (the app does not bundle any skill at the moment): explain what a skill is and offer two add entries. In the browser, only point to the desktop app.
     body = (
       <div className={`${empty} ${PANEL}`}>
         <h2 className={emptyTitle}>{SKILLS_COPY.emptyTitle}</h2>

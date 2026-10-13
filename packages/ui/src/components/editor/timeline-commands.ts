@@ -19,16 +19,15 @@ import type { EditorActions } from './editor-context.tsx';
 import { TIMELINE_RIPPLE_COPY as RIPPLE } from './timeline-ripple-copy.ts';
 
 /**
- * 时间线上对选中片段的命令：快捷键（video-editor 的 useEditorKeys）与右键菜单（timeline-menu）走同一份，
- * 同一条撤销记录、同一批提示（原型 editor-keys.jsx 的 clipboard，timeline-menu.jsx 里的 `ctx.clipboard`）。
- * 都在事件里读最新的视频与选区，不靠渲染时的闭包。
+ * Commands on selected clips on the timeline: keyboard shortcuts (video-editor's useEditorKeys) and the context menu (timeline-menu) share the same set, with the same undo record and the same notices (prototype editor-keys.jsx clipboard, `ctx.clipboard` in timeline-menu.jsx).
+ * Both read the latest video and selection inside the event, rather than relying on closures from render time.
  */
 
-/** 修饰键的写法：macOS 是 ⌘，其余是 Ctrl+。 */
+/** Modifier key: ⌘ on macOS, Ctrl+ elsewhere. */
 export const MOD_KEY = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 const TOAST_MS = 2500;
-/** ⌥←/→ 连按的合并窗口：停手这么久才提交（原型 history 的合并口径）。 */
+/** Merge window for repeated ⌥←/→ presses: the change is committed only after this long without input (prototype history merge rule). */
 export const NUDGE_WINDOW_MS = 900;
 
 interface Live {
@@ -46,7 +45,7 @@ function live(): Live | null {
   return { videoId: video.videoId, snapshot, sequence, editable: canEdit(video) };
 }
 
-/** 选中的片段，按轨道自下而上、时间先后：粘贴时低层先放，新建的轨道也就保持原来的上下次序。 */
+/** Selected clips, ordered by track from bottom to top and by time: on paste the lower layers are placed first, so newly created tracks keep their original vertical order. */
 function picked(sequence: Sequence): SequenceItem[] {
   const ids = new Set(useEditor.getState().selection);
   const order = new Map(sequence.tracks.map((track) => [track.id, track.order]));
@@ -63,10 +62,10 @@ function say(message: string): void {
   ToastQueue.neutral(message, { timeout: TOAST_MS });
 }
 
-/** 上一条带撤销的提示：S2 带操作的提示不会自己消失（给读屏留时间），新的一条出来时收掉旧的，不越堆越多。 */
+/** The previous notice with Undo: S2 notices with actions do not disappear on their own (leaving time for screen readers); when a new one appears, the old one is dismissed so they do not pile up. */
 let closeUndoToast: (() => void) | null = null;
 
-/** 带「撤销」的提示：撤的是这一笔事务，不是栈顶（期间可能又做了别的）。 */
+/** Notice with “撤销” (Undo): undoes this transaction, not the top of the stack (other things may have happened in the meantime). */
 function undoToast(actions: EditorActions, message: string, receipt: TransactionReceipt): void {
   closeUndoToast?.();
   const close = ToastQueue.positive(message, {
@@ -80,7 +79,7 @@ function undoToast(actions: EditorActions, message: string, receipt: Transaction
   closeUndoToast = close;
 }
 
-/** ⌘C：选中的片段放进剪贴板。返回复制了几件。 */
+/** ⌘C: puts the selected clips on the clipboard. Returns how many were copied. */
 export function copySelection(): number {
   const ctx = live();
   if (!ctx) return 0;
@@ -94,7 +93,7 @@ export function copySelection(): number {
   return items.length;
 }
 
-/** ⌘X：复制再删除，一笔事务，提示带撤销。 */
+/** ⌘X: copy then delete, one transaction, with an undo notice. */
 export async function cutSelection(actions: EditorActions): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -111,8 +110,8 @@ export async function cutSelection(actions: EditorActions): Promise<void> {
 }
 
 /**
- * Delete：删除选中的片段，删掉的那几段里所有轨道都空了的部分一并合拢（model/timeline-ripple.ts），同一笔事务、一条撤销记录，
- * 提示带撤销。键盘、走带、检查器与右键菜单都走这一条，可删的片段由 `deletableItemIds` 定。
+ * Delete: deletes the selected clips, and any stretches among the deleted ones where every track is now empty are closed up as well (model/timeline-ripple.ts). Same transaction, one undo record,
+ * with an undo notice. Keyboard, transport, inspector and the context menu all go through this one path; which clips can be deleted is determined by `deletableItemIds`.
  */
 export async function deleteSelection(actions: EditorActions): Promise<void> {
   const ctx = live();
@@ -124,8 +123,8 @@ export async function deleteSelection(actions: EditorActions): Promise<void> {
 }
 
 /**
- * 删掉这几件并合拢空出来的那几段。合拢的段后面有锁住的轨道或片段时不合拢（引擎会整笔拒绝，删除也跟着丢），照删、提示里说一声。
- * 提交成功返回 true。
+ * Deletes these items and closes up the gaps they leave. If a locked track or clip sits after a gap to be closed, the gap is not closed (the engine would reject the whole change, and the deletion would be lost along with it); the items are still deleted, and the notice says so.
+ * Returns true if the commit succeeds.
  */
 async function removeItems(actions: EditorActions, ctx: Live, itemIds: readonly Id[]): Promise<boolean> {
   const plan = rippleOperations(ctx.sequence, gapsAfterDelete(ctx.sequence, itemIds), itemIds);
@@ -142,8 +141,8 @@ async function removeItems(actions: EditorActions, ctx: Live, itemIds: readonly 
 }
 
 /**
- * ⇧Delete 与右键菜单的「从所有轨道删除这一段」：选中片段（字幕实例除外）盖住的时间从每一条轨上拿掉，后面的内容与章节前移、
- * 总长变短，等于框选所有轨道再删。一笔事务，提示带撤销。后面有锁住的轨道或片段时整件不做，说明要先解锁。
+ * ⇧Delete and the context menu's “从所有轨道删除这一段” (delete this span from all tracks): the time covered by the selected clips (subtitle instances excepted) is removed from every track, content and chapters after it move forward,
+ * and the total length shrinks, the same as box-selecting all tracks and deleting. One transaction, with an undo notice. If a locked track or clip sits after it, nothing is done, and the notice says to unlock first.
  */
 export async function removeSelectionSpan(actions: EditorActions): Promise<void> {
   const ctx = live();
@@ -158,12 +157,12 @@ export async function removeSelectionSpan(actions: EditorActions): Promise<void>
   undoToast(actions, RIPPLE.removed((plan.frames * ctx.sequence.fps.den) / ctx.sequence.fps.num), receipt);
 }
 
-/** 选中的片段里有没有能「从所有轨道删除」的（右键菜单的那一项灰不灰）：只有字幕时没有。 */
+/** Whether any selected clip can be “从所有轨道删除” (delete from all tracks) (whether that context-menu item is greyed out): none when only subtitles are selected. */
 export function canRemoveSelectionSpan(sequence: Sequence): boolean {
   return selectionSpans(sequence, useEditor.getState().selection).length > 0;
 }
 
-/** 拿掉了几段时播放头跟着内容走：段后的前移，落在段里的回到段首（原型 `ripple` 的 `shiftTime`）。 */
+/** When segments are removed, the playhead moves with the content: a playhead after a removed segment shifts forward, and one inside it goes back to the segment's start (prototype `ripple`'s `shiftTime`). */
 function followPlayhead(actions: EditorActions, sequence: Sequence, spans: readonly FrameSpan[]): void {
   if (!spans.length) return;
   const perSecond = sequence.fps.num / sequence.fps.den;
@@ -172,7 +171,7 @@ function followPlayhead(actions: EditorActions, sequence: Sequence, spans: reado
   if (to !== at) actions.seek(to);
 }
 
-/** ⌘V：把剪贴板粘回复制它的那个视频。 */
+/** ⌘V: pastes the clipboard back into the video it was copied from. */
 export async function pasteClipboard(actions: EditorActions): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -182,7 +181,7 @@ export async function pasteClipboard(actions: EditorActions): Promise<void> {
   await spawn(actions, ctx, entries, EditLabel.pasteClips(), COPY.pasted);
 }
 
-/** ⌘D：选中的片段原样再来一份（不经剪贴板）。 */
+/** ⌘D: duplicates the selected clips as they are (without going through the clipboard). */
 export async function duplicateSelection(actions: EditorActions): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -191,7 +190,7 @@ export async function duplicateSelection(actions: EditorActions): Promise<void> 
   await spawn(actions, ctx, items, EditLabel.duplicateClips(), COPY.duplicated);
 }
 
-/** 造副本（原型 spawn）：整批一笔事务、一条撤销记录，之后选中新副本。 */
+/** Create copies (prototype spawn): the whole batch is one transaction and one undo record, and the new copies are selected afterwards. */
 async function spawn(
   actions: EditorActions,
   ctx: Live,
@@ -214,7 +213,7 @@ async function spawn(
   undoToast(actions, message(plan.count), receipt);
 }
 
-/** 在播放头处拆分：给了片段就只拆它们，否则按选区（没有选中时拆所有跨过播放头的）。 */
+/** Split at the playhead: if clips are given, only split those; otherwise split by selection (with nothing selected, split every clip that crosses the playhead). */
 export function splitAtPlayhead(actions: EditorActions, itemIds?: readonly Id[]): void {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -222,14 +221,14 @@ export function splitAtPlayhead(actions: EditorActions, itemIds?: readonly Id[])
   if (splits.length) void actions.apply(splits, EditLabel.splitClip());
 }
 
-/** 这件片段能不能在播放头处拆开（右键菜单的那一项）。 */
+/** Whether this clip can be split at the playhead (that context-menu item). */
 export function canSplitAt(sequence: Sequence, itemId: Id, playhead: number): boolean {
   return splitOperations(sequence, [itemId], frameAt(playhead, sequence.fps)).length > 0;
 }
 
 /**
- * 停用或启用一件片段：还在时间线上，画面与导出都跳过（`updateItem.enabled`）。
- * 给了 `notice` 时提交后出一条带撤销的提示（画布工具条上停用：片段从画面上消失，要说清楚去哪重新启用）。
+ * Disables or enables a clip: it stays on the timeline, and both the picture and export skip it (`updateItem.enabled`).
+ * If `notice` is given, an undo notice appears after the commit (disabling from the canvas toolbar makes the clip vanish from the picture, so the notice must explain where to re-enable it).
  */
 export async function setItemEnabled(actions: EditorActions, itemId: Id, enabled: boolean, notice?: string): Promise<void> {
   const ctx = live();
@@ -238,14 +237,14 @@ export async function setItemEnabled(actions: EditorActions, itemId: Id, enabled
   if (receipt && notice) undoToast(actions, notice, receipt);
 }
 
-/** 分离音频（画布工具条）：一笔里新建音频轨放这一段的声音、关掉视频自带的声音（detach-audio.ts）；提示带撤销。 */
+/** Detach audio (canvas toolbar): in one change, create an audio track carrying this clip's sound and mute the video's own sound (detach-audio.ts); with an undo notice. */
 export async function detachAudio(actions: EditorActions, sequence: Sequence, item: VideoItem, notice: string): Promise<void> {
   if (!live()?.editable) return;
   const receipt = await actions.apply(detachAudioOperations(sequence, item), EditLabel.detachAudio());
   if (receipt) undoToast(actions, notice, receipt);
 }
 
-/** ⌘A：选中播放头下的片段（原型 selectAll）。 */
+/** ⌘A: selects the clips under the playhead (prototype selectAll). */
 export function selectAtPlayhead(): void {
   const ctx = live();
   if (!ctx) return;
@@ -254,15 +253,15 @@ export function selectAtPlayhead(): void {
   say(ids.length ? COPY.selectedAtPlayhead(ids.length) : COPY.nothingAtPlayhead);
 }
 
-// ---- ⌥←/→：连按合成一笔 ----
-// 每按一次只改编辑器里的草稿（时间线照它画位移），停手 900ms、按了别的键、点了别处、换了选区或离开编辑器时才提交，
-// 所以一串微调只占一条撤销记录。草稿还没提交时按 ⌘Z 直接丢掉草稿。
+// ---- ⌥←/→: repeated presses combined into one change ----
+// Each press only changes the draft in the editor (the timeline draws the offset from it). The draft is committed only after 900ms without input, or when another key is pressed, the user clicks elsewhere, the selection changes, or the editor is left,
+// so a run of nudges takes up only one undo record. If ⌘Z is pressed before the draft is committed, the draft is simply discarded.
 
 let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const sameIds = (a: readonly Id[], b: readonly Id[]) => a.length === b.length && a.every((id, index) => id === b[index]);
 
-/** 选中的片段在时间上再挪 `step` 帧（挪不动时不变）。 */
+/** Moves the selected clips by another `step` frames in time (no change if they cannot move). */
 export function nudgeTime(actions: EditorActions, step: number): void {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -281,7 +280,7 @@ export function nudgeTime(actions: EditorActions, step: number): void {
   nudgeTimer = setTimeout(() => flushNudge(actions), NUDGE_WINDOW_MS);
 }
 
-/** 提交攒下的微调。提交落地（视频版本变了）之后才清掉草稿，时间线不会先弹回原处再跳过去。 */
+/** Commits the accumulated nudges. The draft is cleared only after the commit lands (the video version changes), so the timeline does not snap back to its original position before jumping to the new one. */
 export function flushNudge(actions: EditorActions): void {
   if (nudgeTimer) clearTimeout(nudgeTimer);
   nudgeTimer = null;
@@ -311,7 +310,7 @@ export function flushNudge(actions: EditorActions): void {
   });
 }
 
-/** 丢掉还没提交的微调（⌘Z）。丢掉了返回 true；已经在提交的不算。 */
+/** Discards uncommitted nudges (⌘Z). Returns true if something was discarded; a commit already in progress does not count. */
 export function dropNudge(): boolean {
   const draft = useEditor.getState().nudge;
   if (!draft || draft.committing) return false;
@@ -321,10 +320,10 @@ export function dropNudge(): boolean {
   return true;
 }
 
-// ---- 画布浮动工具条与多选页 ----
-// 工具条只对选中框里的那一件下手：选区里可能还带着主视频（⇧ 点过它），所以按片段 ID，不按选区。
+// ---- Canvas floating toolbar and multi-select page ----
+// The toolbar only acts on the one item inside the selection box: the selection may still include the main video (if ⇧-clicked), so act by clip ID, not by selection.
 
-/** 工具条的「复制一份」：这几件原样再来一份，与 ⌘D 同一条路（一笔事务、选中新副本、提示带撤销）。 */
+/** The toolbar's “复制一份” (duplicate): duplicates these items as they are, along the same path as ⌘D (one transaction, the new copies selected, with an undo notice). */
 export async function duplicateItems(actions: EditorActions, itemIds: readonly Id[]): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -334,8 +333,8 @@ export async function duplicateItems(actions: EditorActions, itemIds: readonly I
 }
 
 /**
- * 画布上的「层级」（工具条菜单与 F / B / ⌘↑ / ⌘↓）：换一层是一笔，⌘Z 撤销。叠放次序就是轨道的上下，引擎按需要拆轨道或整条
- * 轨道挪位（命令协议规范 §4.2 `arrangeItem`）；已经在最前 / 最后时什么都不做（菜单里那一项灰着）。
+ * “层级” (layer order) on the canvas (toolbar menu and F / B / ⌘↑ / ⌘↓): changing layer is one change, undone with ⌘Z. The stacking order is the track order from top to bottom; the engine splits tracks or moves whole tracks as needed
+ * (command protocol spec §4.2 `arrangeItem`); if already at the front / back, nothing happens (that menu item is greyed out).
  */
 export function arrangeItem(actions: EditorActions, itemId: Id, direction: ArrangeDirection): void {
   const ctx = live();
@@ -345,8 +344,8 @@ export function arrangeItem(actions: EditorActions, itemId: Id, direction: Arran
 }
 
 /**
- * 「层级」的快捷键：选区恰好是画布上的一件时接下（返回 true），别的情况（没选、多选、选的是声音或字幕）让给原来的键
- * （F 是全屏播放）。选中了却不能改（视频只读）也算接下，不去全屏。
+ * Shortcuts for “层级” (layer order): handled when the selection is exactly one item on the canvas (returns true); in other cases (nothing selected, several selected, or the selection is audio or subtitles) the key is passed on to its original binding
+ * (F is fullscreen playback). If something is selected but cannot be changed (video is read-only), it still counts as handled, and does not go fullscreen.
  */
 export function arrangeSelection(actions: EditorActions, direction: ArrangeDirection): boolean {
   const ctx = live();
@@ -359,7 +358,7 @@ export function arrangeSelection(actions: EditorActions, direction: ArrangeDirec
   return true;
 }
 
-/** 工具条的「删除」：删掉这几件（空出来的那几段同 Delete 一样合拢），选区里去掉它们，提示带撤销。 */
+/** The toolbar's “删除” (delete): deletes these items (the gaps they leave are closed up, as with Delete), removes them from the selection, with an undo notice. */
 export async function deleteItems(actions: EditorActions, itemIds: readonly Id[]): Promise<void> {
   const ctx = live();
   if (!ctx?.editable || !itemIds.length) return;
@@ -368,7 +367,7 @@ export async function deleteItems(actions: EditorActions, itemIds: readonly Id[]
   select(selection.filter((id) => !itemIds.includes(id)));
 }
 
-/** 多选页的对齐与分布：整批一笔事务、一步撤销，提示带撤销；没有要挪的就只说一声，不提交空事务。 */
+/** Alignment and distribution on the multi-select page: the whole batch is one transaction and one undo step, with an undo notice; if nothing needs to move, it just says so and does not commit an empty transaction. */
 export async function applyArrangement(
   actions: EditorActions,
   operations: Parameters<EditorActions['apply']>[0],
@@ -383,10 +382,10 @@ export async function applyArrangement(
   if (receipt) undoToast(actions, done, receipt);
 }
 
-// ---- 配音块（时间线的块菜单，timeline-dub.tsx；设计稿 timeline-dub.jsx `DubBlockMenu`）----
-// 都只作用于选中的配音块，选区里别的实例不管；每个命令一笔事务、一条撤销记录。
+// ---- Dub blocks (the timeline's block menu, timeline-dub.tsx; design timeline-dub.jsx `DubBlockMenu`) ----
+// All of these act only on the selected dub blocks; other instances in the selection are ignored. Each command is one transaction and one undo record.
 
-/** 静音或取消静音这几块配音。 */
+/** Mutes or unmutes these dub blocks. */
 export async function muteDubBlocks(actions: EditorActions, itemIds: readonly Id[], muted: boolean): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -396,7 +395,7 @@ export async function muteDubBlocks(actions: EditorActions, itemIds: readonly Id
   if (receipt) say(muted ? DUB.muted(itemIds.length) : DUB.unmuted(itemIds.length));
 }
 
-/** 删除这几块配音（只删实例；配音计划与别的块不动），提示带撤销。 */
+/** Deletes these dub blocks (only the instances; the dub plan and other blocks are left alone), with an undo notice. */
 export async function deleteDubBlocks(actions: EditorActions, itemIds: readonly Id[]): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -410,9 +409,9 @@ export async function deleteDubBlocks(actions: EditorActions, itemIds: readonly 
 }
 
 /**
- * 移除整组配音：走翻译配音收据「撤销这组配音」撤不了时的那条反向操作（model/dub-undo.ts）——一笔事务里删掉这一组的实例
- * （含分离出来的背景声）、恢复这次静音的原声、去掉以配音轨为触发的闪避。这次静音了哪些实例记在配音计划正文里，
- * `readPlan` 取它；取不到时别的照做、提示原声没恢复。空的配音轨与配音计划文档留下（协议没有删轨道与删文档的操作）。
+ * Removes a whole dub group: the reverse operation used when “撤销这组配音” (undo this dub group) on the translation dub receipt cannot undo it (model/dub-undo.ts). In one transaction it deletes this group's instances
+ * (including the separated background sound), restores the original sound that was muted by this, and removes the ducking triggered by the dub track. Which instances were muted is recorded in the dub plan body, and
+ * `readPlan` retrieves it; if it cannot be retrieved, the rest proceeds and the notice says the original sound was not restored. Empty dub tracks and the dub plan document are left in place (the protocol has no operations to delete tracks or documents).
  */
 export async function deleteDubGroup(actions: EditorActions, groupId: string, readPlan: () => Promise<unknown>): Promise<void> {
   if (!live()?.editable) return;
@@ -436,12 +435,12 @@ export async function deleteDubGroup(actions: EditorActions, groupId: string, re
   if (unread) say(DUB.planUnread);
 }
 
-/** 正在试听的那一段：再试听一段时先撤掉上一次的监听。 */
+/** The segment currently being previewed: when previewing another segment, first remove the previous listener. */
 let stopAudition: (() => void) | null = null;
 
 /**
- * 试听一段（「听这一句」）：播放头跳到开头、没在播就开播，播到结尾停下。中途用户暂停或跳到这一段之前就不再管。
- * 播放头的更新来自预览引擎，可能晚一拍：先看到它落进这一段才开始盯结尾。
+ * Preview a segment (“听这一句” (listen to this line)): the playhead jumps to the start, starts playing if it was not playing, and stops at the end. If the user pauses midway or jumps out of this segment, stop watching.
+ * Playhead updates come from the preview engine and may lag a beat: wait until it is seen to land inside this segment before watching for the end.
  */
 export function auditionRange(actions: EditorActions, start: number, end: number): void {
   stopAudition?.();

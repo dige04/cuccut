@@ -1,28 +1,17 @@
-//! 渲染内核需要、但**不属于**渲染内核的两条项目级投影。
+//! Two project-level projections that the render kernel needs but that **do not belong** to the render kernel.
 //!
-//! overlay 的两处需要 timeline 投影：
+//! The overlay needs a timeline projection in two places:
 //!
-//! - [`OverlayHost::studio_timeline_projection`]——`overlay_document_with_live_timeline`
-//!   把「当前时间轴」并进 Studio 正文（剪切后的词时钟、元素轨道）。
-//! - [`OverlayHost::project_timeline_projection`]——visualizer 元素的采样时刻折算表。
+//! - [`OverlayHost::studio_timeline_projection`]: `overlay_document_with_live_timeline` merges the current timeline into the Studio body (the word clock after cutting, the element tracks).
+//! - [`OverlayHost::project_timeline_projection`]: the conversion table for the sample times of visualizer elements.
 //!
-//! 这两条投影的实现要读 `.ccut/id-sequences.json` 与历史快照
-//! （CLI 的 `ProjectTimeline::load` → `IdAllocator` → `HistoryStore`），
-//! 那是 D2 第三刀 `ccut-workspace` 的地盘，M1 搬进来是越界。**注入而不是下沉**：
-//! 它们不是「第二份实现」的风险点——CLI 与 App 都会 link 同一个 workspace crate，
-//! 只是时间未到。相反 [`crate::paths`] 里的路径解析必须下沉，因为注入它
-//! 等于要求每个 host 自己复刻命名规则。
+//! Implementing these two projections requires reading `.ccut/id-sequences.json` and the history snapshots (the CLI's `ProjectTimeline::load` → `IdAllocator` → `HistoryStore`). That is the territory of the third cut of D2, `ccut-workspace`, so moving it into M1 would overstep. **Inject rather than sink down.** They are not a risk point for a "second implementation": the CLI and the App will both link the same workspace crate, it is just not time yet. By contrast, the path resolution in [`crate::paths`] must sink down, because injecting it would require every host to replicate the naming rules itself.
 //!
-//! # 为什么是进程默认实例而不是函数参数
+//! # Why a process-default instance rather than a function parameter
 //!
-//! 沿用 [`ccut_jobs`](https://docs.rs/) 的第二条纪律：不要把单例冻进公共 API。
-//! 这里的取舍多一层——把 host 串成 `compile_project*` 的参数，会改到
-//! `serve/endpoints/media.rs`、`studio_export/video.rs` 与几十处测试的调用点，
-//! 而这些调用点跟本次下沉毫无关系。于是保留 [`register`] 的进程默认实例，
-//! 公共 API 一字不动。
+//! Following the second discipline of [`ccut_jobs`](https://docs.rs/): do not freeze a singleton into the public API. The trade-off here has one more layer. Threading the host through as a parameter of `compile_project*` would change the call sites in `serve/endpoints/media.rs`, `studio_export/video.rs` and dozens of tests, and those call sites have nothing to do with this sinking. So the process-default instance from [`register`] is kept, and the public API does not change by a single character.
 //!
-//! **未注册时一律报错，绝不静默返回空投影**：静默的空投影会让 visualizer
-//! 元素画不出来而没有任何提示，正好是这类下沉最容易埋的雷。
+//! **When nothing is registered, always error. Never silently return an empty projection.** A silent empty projection would make visualizer elements fail to draw with no hint, which is exactly the landmine this kind of sinking most easily buries.
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -31,63 +20,47 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 use timeline::arrange::TimelineProjection;
 
-/// 由 host（CLI / App v2）提供的项目级时间轴投影。
+/// Project-level timeline projection provided by the host (CLI / App v2).
 pub trait OverlayHost: Send + Sync + 'static {
-    /// Studio 正文里的 `timeline` 字段：剪切后的元素轨道与源表。
+    /// The `timeline` field in the Studio body: the cut element tracks and the source table.
     fn studio_timeline_projection(&self, project: &Path) -> Result<Value>;
 
-    /// 词/元素时钟映射；visualizer 的采样时刻按它折算回源时间。
+    /// Word/element clock mapping. The visualizer's sample times are converted back to source time through it.
     fn project_timeline_projection(&self, project: &Path) -> Result<TimelineProjection>;
 
-    /// 按目标语言重投影 `studio/data.json` 的正文；`None` = 该语言无译文。
+    /// Re-projects the body of `studio/data.json` for the target language. `None` = this language has no translation.
     ///
-    /// 投影本身要读 transcript、算内容指纹并落 `studio/`，属于 workspace 层。
-    /// **host 的实现应当是只读的**（主方案 §9.1-b）：`load_preview_document_for_lang`
-    /// 是预览与导出的读路径，在这里落盘等于用户没请求就改了项目状态。
-    /// CLI 今天走的 `studio::project_language` 会申请项目锁并补齐 `studio/` 骨架，
-    /// 是历史包袱，不是这个接口的语义。
+    /// The projection itself has to read the transcript, compute a content fingerprint and write into `studio/`, so it belongs to the workspace layer. **The host's implementation should be read-only** (main plan §9.1-b). `load_preview_document_for_lang` is the read path for preview and export, and writing to disk here would change project state the user did not request. The `studio::project_language` that the CLI uses today takes the project lock and fills in the `studio/` skeleton. That is historical baggage, not the meaning of this interface.
     fn reproject_language(&self, project: &Path, lang: &str) -> Result<Option<Value>>;
 
-    /// 项目套用的模板层（`timeline.json` 的 `template`）连同它引用的项目侧事实
-    /// （输出时钟上的章节、项目标题、台标图片）；`Ok(None)` = 没套模板。
+    /// The template layer applied to the project (the `template` in `timeline.json`), together with the project-side facts it references (chapters on the output clock, the project title, the logo image). `Ok(None)` = no template applied.
     ///
-    /// 读 timeline.json、transcript.json 的章节表并走时间轴投影，是 workspace 的
-    /// 地盘；渲染内核只负责把交回来的场景逐帧画成一层前景。
+    /// Reading timeline.json and the chapter table of transcript.json, and running the timeline projection, is the territory of the workspace. The render kernel only draws the returned scenes frame by frame as one foreground layer.
     ///
-    /// **没有默认实现是刻意的**：静默 `Ok(None)` 的代价是模板套上去画面毫无变化
-    /// 而没有任何提示——正是本文件开头那条「绝不静默返回空投影」要防的雷。
+    /// **Having no default implementation is deliberate.** Silently returning `Ok(None)` would apply the template with the picture not changing at all and no hint anywhere. That is exactly the landmine that the “never silently return an empty projection” rule at the top of this file is meant to prevent.
     fn template_scene(&self, project: &Path) -> Result<Option<TemplateScene>>;
 
-    /// 渲染时在**内置字体之外**还要装载的字体来源（用户导入库）。
+    /// Font sources to load at render time, in addition to the **built-in fonts** (the user's imported library).
     ///
-    /// 默认 [`BundledFontSource`]：只有编进二进制的内置字体。有配置根的宿主
-    /// （CLI / `ccut serve` / App v2 都经 `ccut_workspace::timeline::overlay`
-    /// 注册同一个实现）覆盖它。
+    /// The default [`BundledFontSource`] has only the built-in fonts compiled into the binary. Hosts that have a configuration root (the CLI, `ccut serve` and App v2 all register the same implementation through `ccut_workspace::timeline::overlay`) override it.
     ///
-    /// 这条**有**默认实现，与上面几条「绝不静默」的接口不同：导入字体库缺席的
-    /// 后果是字幕回退到内置字族——画面照出，只是字体不对；而投影缺席是整层
-    /// 消失。默认值本身就是「没有导入库」这个合法状态。
+    /// This one **does** have a default implementation, unlike the interfaces above that all say “never silently”. If the imported font library is absent, subtitles fall back to the built-in font family: the picture still renders, only with a different font. If the projection is absent, the whole layer disappears. The default value itself represents the legitimate state of “no imported library”.
     fn font_source(&self) -> &dyn FontSource {
         &BUNDLED_FONT_SOURCE
     }
 }
 
-/// 渲染要用的**额外**字体字节来源（提案 §5.2：`ccut-subtitle-render` 的字体库
-/// 依赖改为注入的 `FontSource`）。
+/// Extra font byte sources to use for rendering (proposal §5.2: the font library dependency of `ccut-subtitle-render` changes to an injected `FontSource`).
 ///
-/// # 为什么是「一次交出整份字节集」而不是 `(family, weight, style) → 字节`
+/// # Why hand over the entire set of bytes at once, rather than `(family, weight, style) → bytes`
 ///
-/// 消费点只有一个：`TextEngine::with_system_and_fonts(&fonts)` 收的是**整份**
-/// 字体字节集，由排版层自己做 family/weight/style 匹配与 fallback。做成按三元组
-/// 查询的接口，等于把字体匹配从排版层挪到注入层再实现一遍——那会动到字形选择
-/// 语义，正好是「golden 指纹不许变」要防的东西。所以接口按真实消费形状定义。
+/// There is only one consumption point. `TextEngine::with_system_and_fonts(&fonts)` takes the **whole** set of font bytes, and the typesetting layer does the family/weight/style matching and fallback itself. An interface that queried by the triple would move font matching out of the typesetting layer into the injection layer and re-implement it there. That would change glyph selection semantics, which is exactly what “the golden fingerprints must not change” is meant to guard against. So the interface is defined by the real consumption shape.
 pub trait FontSource: Send + Sync {
-    /// 内置字体之外要一并装进文本引擎的字体字节；顺序即优先级。
+    /// Font bytes to load into the text engine in addition to the built-in fonts. Order is priority.
     fn extra_fonts(&self) -> Vec<Vec<u8>>;
 }
 
-/// 默认字体来源：只有内置字体（`core/assets/fonts/`，见
-/// [`crate::bundled_studio_fonts`]），没有用户导入库。
+/// Default font source: only the built-in fonts (`core/assets/fonts/`, see [`crate::bundled_studio_fonts`]). There is no user imported library.
 pub struct BundledFontSource;
 
 impl FontSource for BundledFontSource {
@@ -115,21 +88,19 @@ pub(crate) fn live_document(project: &Path) -> Result<Option<Value>> {
         .map_or(Ok(None), |provider| provider(project))
 }
 
-/// 宿主合成源为谁准备：舞台预览按渲染计划的宽度出帧，导出交出成片画布，
-/// 由宿主按源在画布里要占的宽度决定用什么分辨率出帧。
+/// How the host prepares a composite source. The stage preview renders frames at the width of the render plan, while export hands over the finished-video canvas. The host decides which resolution to render frames at based on the width the source will occupy on the canvas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoSourceUse {
-    /// 预览（`SkipFailedElement`）：计划宽度，即舞台的 backing 像素宽。
+    /// Preview (`SkipFailedElement`): the planned width, i.e. the backing pixel width of the stage.
     Preview { width: u32 },
-    /// 导出（`Strict`）：成片画布，即编码尺寸。
+    /// Export (`Strict`): the finished-video canvas, i.e. the encoding size.
     Export {
         canvas_width: u32,
         canvas_height: u32,
     },
 }
 
-/// BCF 等宿主合成源的准备入口。`None` 表示普通视频，继续走原解码器。
-/// 已识别为合成源后，准备失败必须返回错误，不能退回旧成片。
+/// Preparation entry point for host composite sources such as BCF. `None` means an ordinary video, which continues through the original decoder. Once a source is recognized as composite, a preparation failure must return an error. It must not fall back to the old finished video.
 pub type VideoSourceProvider = fn(
     &Path,
     &str,
@@ -154,8 +125,7 @@ pub(crate) fn prepare_video_source(
     }
 }
 
-/// 注册进程默认 host。重复注册是 no-op（返回 `false`），不 panic：
-/// 测试二进制里多个测试都会走这条路。
+/// Registers the process-default host. Repeated registration is a no-op (returns `false`) and does not panic, because several tests in the same test binary go through this path.
 pub fn register(host: Box<dyn OverlayHost>) -> bool {
     HOST.set(host).is_ok()
 }
@@ -185,8 +155,7 @@ pub(crate) fn template_scene(project: &Path) -> Result<Option<TemplateScene>> {
     host()?.template_scene(project)
 }
 
-/// 注册 host 提供的额外字体；**未注册时是空**而不是报错——只有内置字体也能
-/// 出画，理由见 [`OverlayHost::font_source`]。
+/// Registers extra fonts provided by the host. **When nothing is registered, the set is empty** rather than an error. The built-in fonts alone can still render. For the reasoning, see [`OverlayHost::font_source`].
 pub fn extra_fonts() -> Vec<Vec<u8>> {
     HOST.get()
         .map(|host| host.font_source().extra_fonts())

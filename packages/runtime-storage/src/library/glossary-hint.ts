@@ -1,11 +1,10 @@
 import type { TranscriptionGlossary } from '@cuccut/protocol';
 
-/** 识别提示的上限，与 `models.transcribe` 的 `hint` 相同。 */
+/** Upper limit for the recognition hint, same as `hint` of `models.transcribe`. */
 export const TRANSCRIBE_HINT_MAX_CHARS = 1200;
 
 /**
- * 把识别用术语表的规范写法接在用户的提示之后（架构设计 §5.9）：按术语表的顺序、去重，用「、」连接，
- * 整体不超过上限；放不下的舍去并计数。用户的提示原样在前，不被截断。
+ * Appends the canonical forms of the recognition glossary after the user's hint (architecture design §5.9). Terms follow the glossary order, are de-duplicated, and are joined with 「、」(enumeration comma). The whole must not exceed the limit. Terms that do not fit are dropped and counted. The user's hint comes first, unchanged and never truncated.
  */
 export function composeTranscribeHint(
   userHint: string | undefined,
@@ -25,7 +24,7 @@ export function composeTranscribeHint(
   let hint = base;
   let terms = 0;
   for (const term of canonical) {
-    // i18n-ignore: 交给转写模型的提示词，按术语原文的习惯分隔，不随界面语言变化
+    // i18n-ignore: prompt text for the transcription model, separated by the usual convention for the terms' source text, does not change with the UI language
     const next = hint ? (terms === 0 ? `${hint}\n${term}` : `${hint}、${term}`) : term;
     if ([...next].length > max) break;
     hint = next;

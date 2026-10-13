@@ -1,13 +1,13 @@
 import type { Segment } from './worker-contract.ts';
 
 /**
- * 词时间的插值与单调修正，与 Rust 端（`crates/model-runtime/src/speech/word_timing.rs`、`text_prep.rs`、
- * `asr_result.rs` 的 `fix_word_times`）同一规则（架构设计 §6.6 第 5、6 步）。在线 Provider 只给段级时间时用它把
- * 词按字符长度插进段里并标 `estimated`。
+ * Interpolation and monotonic correction of word timings, using the same rules as the Rust side (`crates/model-runtime/src/speech/word_timing.rs`, `text_prep.rs`,
+ * `fix_word_times` in `asr_result.rs`) (architecture design §6.6, steps 5 and 6). When an online Provider gives only segment-level timings, this is used to insert
+ * the words into the segment by character length and mark them `estimated`.
  *
- * 分词：空格分词的语言按空白切，中间的汉字逐字成词；日、韩、泰等无空格语言用 `Intl.Segmenter` 分词（Rust 端是 ICU4X，
- * 两者的词典不完全一致，词的切分可能略有出入，时间规则相同）。每个词保留原样的 `surface`（含贴在后面的标点）与只留
- * 字母、数字、附加符号与撇号的 `cleaned`；权重是 `cleaned` 的字符数（至少 1）。
+ * Word splitting: for languages that use spaces, text is split on whitespace, and Han characters in between each become a word; for languages without spaces, such as Japanese, Korean and Thai, `Intl.Segmenter` is used (the Rust side uses ICU4X;
+ * the two dictionaries are not completely identical, so word boundaries may differ slightly, but the timing rules are the same). Each word keeps its `surface` as-is (including trailing punctuation) and a `cleaned` form that keeps only
+ * letters, digits, combining marks, and apostrophes. The weight is the number of characters in `cleaned` (at least 1).
  */
 
 export interface WordPair {
@@ -39,7 +39,7 @@ const DICTIONARY_LANGUAGES = [
   'tibetan',
 ];
 
-/** 留下的字符：撇号与 Unicode 的字母（L*）、数字（Nd、Nl、No）、附加符号（M*）。 */
+/** Characters kept: apostrophes, Unicode letters (L*), digits (Nd, Nl, No), and combining marks (M*). */
 const KEPT = /[\p{L}\p{N}\p{M}']/u;
 const KEPT_GLOBAL = /[\p{L}\p{N}\p{M}']/gu;
 
@@ -51,7 +51,7 @@ export function cleanToken(token: string): string {
   return (token.match(KEPT_GLOBAL) ?? []).join('');
 }
 
-/** 假名、谚文、泰文、老挝文、高棉文、缅文、藏文。 */
+/** Kana, Hangul, Thai, Lao, Khmer, Burmese, Tibetan. */
 function needsDictionarySegmentation(char: string): boolean {
   const c = char.codePointAt(0)!;
   return (
@@ -78,7 +78,7 @@ export function isHanIdeograph(char: string): boolean {
   );
 }
 
-/** 文本 → 词。`language` 是语言码或语言名；没有时按字符本身判断要不要走词典分词。 */
+/** Text → words. `language` is a language code or language name; when absent, whether to use dictionary segmentation is decided from the characters themselves. */
 export function splitIntoWordPairs(text: string, language?: string | null): WordPair[] {
   let native: boolean;
   if (language) {
@@ -116,7 +116,7 @@ export function tokenizeSpaceLanguagePairs(text: string): WordPair[] {
   for (const segment of text.split(/\s+/u).filter(Boolean)) {
     const before = pairs.length;
     appendSpaceSegment(segment, pairs);
-    // 整段都是标点：贴到前一个词上。
+    // The whole segment is punctuation: attach it to the previous word.
     if (pairs.length === before && pairs.length > 0) pairs[pairs.length - 1]!.surface += segment;
   }
   return pairs;
@@ -154,7 +154,7 @@ function flushNonHan(buffer: { value: string }, pairs: WordPair[], pairStart: nu
     } else if (!beforeHan) {
       buffer.value = '';
     }
-    // 在汉字之前、且这一段还没有词：留着，作为下一个汉字的前缀。
+    // Before a Han character, with no word yet in this segment: keep it as a prefix for the next Han character.
     return;
   }
   pairs.push({ surface: buffer.value, cleaned });
@@ -162,7 +162,7 @@ function flushNonHan(buffer: { value: string }, pairs: WordPair[], pairStart: nu
 }
 
 /**
- * 把一段文本的词按字符长度插进 `[start, end]`（秒）。最后一个词结束于段尾；分不出词时整段文本算一个词；空文本没有词。
+ * Inserts the words of a segment of text into `[start, end]` (seconds), by character length. The last word ends at the end of the segment; when no words can be split out, the whole text counts as one word; empty text has no words.
  */
 export function estimateWords(text: string, language: string | null | undefined, start: number, end: number): EstimatedWord[] {
   const trimmed = text.trim();
@@ -184,15 +184,15 @@ export function estimateWords(text: string, language: string | null | undefined,
   return words;
 }
 
-/** 秒 → 整数 tick（四舍五入；负数与非有限值按 0）。 */
+/** Seconds → integer ticks (rounded; negative and non-finite values count as 0). */
 export function secondsToTicks(seconds: number, timescale: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
   return Math.round(seconds * timescale);
 }
 
 /**
- * 词时间的单调修正：词在段内、起止不倒挂、后一个词不早于前一个词结束。被修正的词保留原来的 `timingQuality`；
- * `missing` 的词固定在段起点。返回是否改动过有时间的词（改动过时调用方加 `timing-adjusted` 警告）。
+ * Monotonic correction of word timings: words lie within the segment, start and end are not inverted, and each word does not end before the previous word ends. Corrected words keep their original `timingQuality`;
+ * `missing` words are pinned to the segment start. Returns whether any timed word was changed (if so, the caller adds a `timing-adjusted` warning).
  */
 export function fixWordTimes(segment: Segment): boolean {
   const { start, end } = segment;

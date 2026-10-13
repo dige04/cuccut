@@ -15,8 +15,8 @@ import { resolveWebDist } from './web-static.ts';
 import { ToolDriver, until } from '../agent-tools/testing/fake-agent.ts';
 
 /**
- * Web 服务（架构设计 §4.8、§12.8）：访问链接与会话、来源检查、白名单、媒体与静态文件、安全头。
- * 只用回环地址、系统挑的端口、临时的 Runtime Home 与临时的构建产物目录；不打开浏览器。
+ * Web service (architecture design §4.8, §12.8): access links and sessions, origin checks, allowlist, media and static files, security headers.
+ * Uses only loopback addresses, a system-chosen port, a temporary Runtime Home and a temporary build-output directory. Does not open a browser.
  */
 
 interface Reply {
@@ -25,7 +25,7 @@ interface Reply {
   body: string;
 }
 
-/** 原样发一个 HTTP 请求（fetch 不让改 Host）。 */
+/** Sends one HTTP request as-is (fetch does not allow changing Host). */
 function send(url: string, options: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Reply> {
   const target = new URL(url);
   return new Promise((resolve, reject) => {
@@ -51,7 +51,7 @@ function send(url: string, options: { method?: string; headers?: Record<string, 
   });
 }
 
-/** WebSocket 升级的结果：101 表示接受，其余是拒绝时的 HTTP 状态。 */
+/** Result of a WebSocket upgrade: 101 means accepted; anything else is the HTTP status of the rejection. */
 function upgrade(url: string, headers: Record<string, string>): Promise<number> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url, { headers });
@@ -67,7 +67,7 @@ function upgrade(url: string, headers: Record<string, string>): Promise<number> 
   });
 }
 
-/** 带 Origin 与会话 cookie 的 WebSocket（浏览器会自动带上这两个头）。 */
+/** A WebSocket with an Origin and the session cookie (the browser sends both headers automatically). */
 function browserSocket(origin: string, cookie: string): typeof globalThis.WebSocket {
   class BrowserSocket extends WebSocket {
     constructor(address: string) {
@@ -98,7 +98,7 @@ describe('Web 服务', () => {
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-web-'));
     home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home') });
-    // 一份假的构建产物：入口页、一个脚本、一个隐藏文件；目录外面还有一个文件。
+    // A fake build output: an entry page, one script, one hidden file. There is also a file outside the directory.
     dist = path.join(dir, 'dist');
     await fs.mkdir(path.join(dist, 'assets'), { recursive: true });
     await fs.writeFile(
@@ -143,7 +143,7 @@ describe('Web 服务', () => {
     return desktop;
   }
 
-  /** 开启 Web 服务（系统挑的端口），返回它的来源 `http://127.0.0.1:<端口>`。 */
+  /** Starts the web service on a system-chosen port and returns its origin, `http://127.0.0.1:<port>`. */
   async function openWeb(): Promise<string> {
     await desktop.request('services.configure', { serviceId: 'web', port: 0 });
     const { service } = await desktop.request('services.start', { serviceId: 'web' });
@@ -167,7 +167,7 @@ describe('Web 服务', () => {
     });
   }
 
-  /** 走一遍登录：取访问链接、换会话。返回 `Cookie` 请求头的值。 */
+  /** Goes through the login: gets the access link and exchanges it for a session. Returns the value of the `Cookie` request header. */
   async function login(origin: string): Promise<string> {
     const reply = await exchange(origin, await accessCode());
     expect(reply.status).toBe(204);
@@ -216,7 +216,7 @@ describe('Web 服务', () => {
     expect(service).toMatchObject({ state: 'error', endpoint: null });
     expect(service.error).toContain('npm run build:web');
     expect((await desktop.request('runtime.info', {})).instanceId).toBeTruthy();
-    // 没开着时不发访问链接。
+    // The access link is not sent while the service is not running.
     expect(details(await desktop.request('services.web.createAccessLink', {}).catch((e: unknown) => e))).toMatchObject({
       code: 'conflict',
       details: { code: 'SERVICE_NOT_RUNNING' },
@@ -238,7 +238,7 @@ describe('Web 服务', () => {
     const script = await send(`${origin}/_auth/login.js`);
     expect(script.status).toBe(200);
     expect(script.headers['content-type']).toContain('text/javascript');
-    // 登录页有一个输入框，给 `cuccut web open --launch`（浏览器打开不带代码的地址，代码粘进来）。
+    // The login page has an input box for `cuccut web open --launch`. The browser opens the address without a code, and the code is pasted in.
     expect(page.body).toMatch(/<input id="code"[^>]*type="text" autocomplete="one-time-code"/);
     expect(page.headers['content-security-policy']).toContain("form-action 'none'");
 
@@ -249,7 +249,7 @@ describe('Web 服务', () => {
       expect(refused.headers['content-security-policy'], target).toContain("frame-ancestors 'none'");
     }
     expect((await send(`${origin}/`, { method: 'POST' })).status).toBe(405);
-    // 界面内链接（访问链接直达视频时的 /home?video=…）没登录时同样是登录页，不是 401。
+    // An in-UI link (/home?video=… when an access link goes straight to a video) also shows the login page when not logged in, not a 401.
     for (const target of ['/home?video=%7B%22entryId%22%3A%22e1%22%7D', '/c/conv_1', '/space/video']) {
       const login = await send(`${origin}${target}`);
       expect(login.status, target).toBe(200);
@@ -314,7 +314,7 @@ describe('Web 服务', () => {
     wholeLink.submit(`${origin}/#code=${code}`);
     expect(wholeLink.posted).toEqual([['/_auth/session', { code }]]);
 
-    // 登录成功后回到访问链接的路径与查询（直达视频时是 /home?video=…），不是根路径。
+    // After login, returns to the path and query of the access link (/home?video=… when going straight to a video), not the root path.
     const search = '?video=%7B%22entryId%22%3A%22e1%22%7D';
     const deep = run(`#code=${code}`, { pathname: '/home', search }, true);
     expect(deep.replaced).toEqual(['/home' + search]);
@@ -337,7 +337,7 @@ describe('Web 服务', () => {
       (await send(`${origin}/_auth/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'text/plain' }, body: code }))
         .status,
     ).toBe(415);
-    // 来源不对的请求没有碰到代码：这里第一次兑换成功，第二次就失败。
+    // A request with the wrong origin never touches the code: the first exchange here succeeds, and the second one fails.
     const first = await exchange(origin, code);
     expect(first.status).toBe(204);
     const cookie = first.headers['set-cookie']![0]!;
@@ -348,9 +348,9 @@ describe('Web 服务', () => {
     expect(again.status).toBe(401);
     expect(JSON.parse(again.body)).toEqual({ error: 'ACCESS_CODE_INVALID' });
 
-    // 不认识的代码同样 401……
+    // An unknown code is also a 401……
     expect((await exchange(origin, 'not-a-real-code-at-all')).status).toBe(401);
-    // ……过期的代码也是。
+    // ……and so is an expired code.
     const late = await accessCode();
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect((await exchange(origin, late)).status).toBe(401);
@@ -363,7 +363,7 @@ describe('Web 服务', () => {
     expect(
       details(await desktop.request('services.web.createAccessLink', { video: 'video_0123456789abcdef' }).catch((e: unknown) => e)),
     ).toMatchObject({ code: 'not-found', details: { code: 'VIDEO_NOT_FOUND', videoId: 'video_0123456789abcdef' } });
-    // 不给 video 时照旧是根路径。
+    // Without a video parameter, it is still the root path.
     expect((await desktop.request('services.web.createAccessLink', {})).url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#code=[A-Za-z0-9_-]+$/);
   });
 
@@ -374,7 +374,7 @@ describe('Web 服务', () => {
     const cookie = await login(origin);
     const ws = `${origin.replace('http:', 'ws:')}/ws`;
 
-    // 登录后的入口页是客户端，带客户端自己的 CSP。
+    // The entry page after login is the client, with the client's own CSP.
     const index = await send(`${origin}/`, { headers: { Cookie: cookie } });
     expect(index.status).toBe(200);
     expect(index.body).toContain('id="root"');
@@ -385,7 +385,7 @@ describe('Web 服务', () => {
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(index.headers).toMatchObject(SECURITY_HEADERS);
     expect((await send(`${origin}/assets/app.js`, { headers: { Cookie: cookie, Host: `localhost:${port}` } })).status).toBe(200);
-    // 界面内链接是同一个客户端页面（带客户端的 CSP），由客户端按路径与查询去对应的界面；带扩展名的仍按文件找。
+    // An in-UI link is the same client page (with the client's CSP). The client maps the path and query to the UI. Links with an extension are still resolved as files.
     for (const target of ['/home?video=%7B%22entryId%22%3A%22e1%22%7D', '/c/conv_1', '/settings/models/asr']) {
       const routed = await send(`${origin}${target}`, { headers: { Cookie: cookie } });
       expect(routed.status, target).toBe(200);
@@ -395,12 +395,12 @@ describe('Web 服务', () => {
     expect((await send(`${origin}/assets/missing.js`, { headers: { Cookie: cookie } })).status).toBe(404);
     expect((await send(`${origin}/.env`, { headers: { Cookie: cookie } })).status).toBe(404);
 
-    // DNS 重绑定：Host 不是自己的回环地址。
+    // DNS rebinding: the Host is not its own loopback address.
     for (const host of ['evil.example', `evil.example:${port}`, `127.0.0.1:${Number(port) + 1}`]) {
       expect((await send(`${origin}/assets/app.js`, { headers: { Cookie: cookie, Host: host } })).status, host).toBe(403);
       expect(await upgrade(ws, { Origin: origin, Cookie: cookie, Host: host }), host).toBe(403);
     }
-    // 跨来源：Origin 不对，或浏览器标明是别的站点发起的。
+    // Cross-origin: the Origin is wrong, or the browser marks the request as initiated by another site.
     for (const other of ['http://evil.example', `http://127.0.0.1:${Number(port) + 1}`, 'null']) {
       expect((await send(`${origin}/assets/app.js`, { headers: { Cookie: cookie, Origin: other } })).status, other).toBe(403);
       expect(await upgrade(ws, { Origin: other, Cookie: cookie }), other).toBe(403);
@@ -414,7 +414,7 @@ describe('Web 服务', () => {
     expect(await upgrade(ws, { Origin: `http://localhost:${port}`, Cookie: cookie })).toBe(101);
     expect(await upgrade(`${origin.replace('http:', 'ws:')}/other`, { Origin: origin, Cookie: cookie })).toBe(404);
 
-    // 构建产物目录之外与隐藏文件不给。
+    // Files outside the build-output directory and hidden files are not served.
     for (const target of ['/.env', '/%2e%2e/outside.txt', '/assets/%2e%2e/%2e%2e/outside.txt', '/nope.js']) {
       expect((await send(`${origin}${target}`, { headers: { Cookie: cookie } })).status, target).toBe(404);
     }
@@ -435,25 +435,25 @@ describe('Web 服务', () => {
     const listed = (await desktop.request('services.list', {})).services.find((s) => s.serviceId === 'web')!;
     expect(listed.clients).toEqual([expect.objectContaining({ clientId: sessionId, name: '浏览器会话' })]);
 
-    // 吊销：连接断开，cookie 不再能连网关或取文件。
+    // Revocation: the connection drops, and the cookie can no longer connect to the gateway or fetch files.
     const other = await login(origin);
     const otherPage = await browser(origin, other);
     expect((await desktop.request('services.web.revokeSession', { sessionId })).sessions.map((s) => s.sessionId)).not.toContain(sessionId);
     await until(() => page.state.status === 'disconnected');
     expect(await upgrade(`${origin.replace('http:', 'ws:')}/ws`, { Origin: origin, Cookie: cookie })).toBe(401);
     expect((await send(`${origin}/assets/app.js`, { headers: { Cookie: cookie } })).status).toBe(401);
-    // 别的会话不受影响。
+    // Other sessions are not affected.
     expect((await otherPage.request('runtime.info', {})).instanceId).toBeTruthy();
     expect(details(await desktop.request('services.web.revokeSession', { sessionId }).catch((e: unknown) => e))).toMatchObject({
       code: 'not-found',
     });
 
-    // 会话过期：连着的连接上的请求也被拒绝。
+    // Session expiry: requests on an open connection are rejected too.
     await new Promise((resolve) => setTimeout(resolve, 1600));
     expect(details(await otherPage.request('runtime.info', {}).catch((e: unknown) => e))).toMatchObject({ code: 'unauthenticated' });
     expect((await send(`${origin}/assets/app.js`, { headers: { Cookie: other } })).status).toBe(401);
 
-    // 服务停止：会话与代码随之作废。
+    // Service stop: sessions and codes are invalidated with it.
     const third = await login(origin);
     void third;
     await desktop.request('services.stop', { serviceId: 'web' });
@@ -469,14 +469,14 @@ describe('Web 服务', () => {
     expect((await page.request('projects.list', {})).projects).toEqual([]);
     expect((await page.request('settings.get', {})).settings).toBeTruthy();
     expect((await page.request('models.capabilities', {})).capabilities).toBeTruthy();
-    // 用量（§6.10）在默认集合里：只读、不含密钥。
+    // Usage (§6.10) is in the default set: read-only, and contains no keys.
     expect((await page.request('models.usage', { period: '7d' })).totals.calls).toBe(0);
     expect(Array.isArray((await page.request('skills.list', {})).skills)).toBe(true);
     const refused: [string, unknown][] = [
       ['settings.set', { patch: {} }],
       ['models.configure', { providerId: 'openai', enabled: true }],
       ['models.removeProvider', { providerId: 'openai' }],
-      // 账号的写方法与 models.configure 一样不开放（§6.4）。
+      // Account write methods are not exposed, the same as models.configure (§6.4).
       ['models.addAccount', { providerId: 'openai', credential: 'sk-test-web' }],
       ['models.updateAccount', { providerId: 'openai', accountId: 'main', enabled: false }],
       ['models.removeAccount', { providerId: 'openai', accountId: 'main' }],
@@ -519,13 +519,13 @@ describe('Web 服务', () => {
     let forbidden = 0;
     for (const [method, params] of refused) {
       const error = await page.request(method as 'services.list', params as Record<string, never>).catch((e: unknown) => e);
-      // 参数不合法的会先在网关被拒（invalid-request），同样没有执行；参数合法的都是 forbidden。
+      // Invalid parameters are rejected at the gateway first (invalid-request) and are not executed. Valid parameters all get forbidden.
       if (error instanceof RpcError && error.code === 'invalid-request') continue;
       expect(details(error), method).toMatchObject({ code: 'forbidden', details: { code: 'WEB_METHOD_NOT_ALLOWED', method } });
       forbidden++;
     }
     expect(forbidden).toBeGreaterThanOrEqual(refused.length - 3);
-    // 受管外部工具连状态也不给浏览器：状态里有本机路径，安装与同意决定这台机器执行哪个程序（§12.9）。
+    // Managed external tools do not expose their status to the browser either. The status contains local paths, and installation and consent decide which program this machine runs (§12.9).
     expect(details(await page.request('externalTools.list', {}).catch((e: unknown) => e))).toMatchObject({
       code: 'forbidden',
       details: { code: 'WEB_METHOD_NOT_ALLOWED', method: 'externalTools.list' },
@@ -538,7 +538,7 @@ describe('Web 服务', () => {
       code: 'forbidden',
       details: { code: 'WEB_TOPIC_NOT_ALLOWED', topic: 'services' },
     });
-    // 用户库还没有对浏览器开放：方法与主题都拒绝。
+    // The user library is not yet exposed to the browser: both methods and topics are rejected.
     expect(details(await page.request('library.list', {}).catch((e: unknown) => e))).toMatchObject({
       code: 'forbidden',
       details: { code: 'WEB_METHOD_NOT_ALLOWED' },
@@ -547,7 +547,7 @@ describe('Web 服务', () => {
       code: 'forbidden',
       details: { code: 'WEB_TOPIC_NOT_ALLOWED', topic: 'library' },
     });
-    // 数据外发的授权不对浏览器开放：查看、发放、撤销与主题都拒绝。
+    // Authorization for sending data out is not exposed to the browser: viewing, granting, revoking and the topic are all rejected.
     for (const [method, params] of [
       ['grants.list', {}],
       ['grants.create', { recipient: 'openai', dataKinds: ['audio'], purpose: '转写', budgetMode: 'per-call-unknown-cost' }],
@@ -564,10 +564,10 @@ describe('Web 服务', () => {
     });
     expect(await page.request('subscribe', { topic: 'directory' })).toMatchObject({ mode: 'snapshot' });
     expect(await page.request('subscribe', { topic: 'settings' })).toMatchObject({ mode: 'snapshot' });
-    // Agent 的视图随 `agents.list` 开放（§3.11）。
+    // The agent's view is exposed through `agents.list` (§3.11).
     expect(await page.request('subscribe', { topic: 'agents' })).toMatchObject({ mode: 'snapshot' });
 
-    // 配置只能在默认集合之内收紧；Web 服务没有访问等级与视频范围。
+    // Configuration can only be tightened within the default set. The web service has no access level and no video scope.
     for (const methods of [['settings.*'], ['services.list'], ['projects.*'], ['nodes.share.status']]) {
       expect(
         details(await desktop.request('services.configure', { serviceId: 'web', methods }).catch((e: unknown) => e)),
@@ -582,7 +582,7 @@ describe('Web 服务', () => {
       code: 'invalid-request',
     });
 
-    // 收紧：已有连接断开，重新连上后按新的白名单。
+    // Tightening: existing connections drop. After reconnecting, the new allowlist applies.
     const narrowed = await desktop.request('services.configure', {
       serviceId: 'web',
       methods: ['runtime.info', 'projects.list', 'conversations.*'],
@@ -599,12 +599,12 @@ describe('Web 服务', () => {
       details: { code: 'WEB_TOPIC_NOT_ALLOWED' },
     });
 
-    // 只读：写入被拒绝，读取照常；恢复默认之后写入可用。
+    // Read-only: writes are rejected and reads proceed as usual. Writes work again after restoring the defaults.
     await desktop.request('services.configure', { serviceId: 'web', methods: null, readOnly: true });
     await until(() => page.state.status === 'disconnected');
     page = await browser(origin, cookie);
     expect((await page.request('projects.list', {})).projects).toEqual([]);
-    // 用量也在只读集合里。
+    // Usage is also in the read-only set.
     expect((await page.request('models.usage', { period: 'all' })).byProvider).toEqual([]);
     expect(details(await page.request('projects.create', { name: '只读' }).catch((e: unknown) => e))).toMatchObject({
       code: 'forbidden',
@@ -613,7 +613,7 @@ describe('Web 服务', () => {
     expect(details(await page.request('conversations.create', {}).catch((e: unknown) => e))).toMatchObject({
       details: { code: 'WEB_READ_ONLY' },
     });
-    // 导出：查询在只读下照常，新建是写入。
+    // Export: queries work under read-only. Creating is a write.
     expect(details(await page.request('exports.list', { videoId: 'vid_none' }).catch((e: unknown) => e))).not.toMatchObject({
       code: 'forbidden',
     });
@@ -624,7 +624,7 @@ describe('Web 服务', () => {
           .catch((e: unknown) => e),
       ),
     ).toMatchObject({ code: 'forbidden', details: { code: 'WEB_READ_ONLY', method: 'exports.create' } });
-    // 只排正文、不写文件：只读下照常（视频没打开是 not-found）。
+    // Only excludes the body without writing a file, so it works under read-only (no video open gives not-found).
     expect(
       details(
         await page
@@ -632,18 +632,18 @@ describe('Web 服务', () => {
           .catch((e: unknown) => e),
       ),
     ).toMatchObject({ code: 'not-found', details: { code: 'VIDEO_NOT_OPEN' } });
-    // Space 条目的缩略图是读取：只读下照常（不存在的条目是 not-found，不是 WEB_READ_ONLY）。
+    // The thumbnail of a Space entry is a read, so it works under read-only (a nonexistent entry gives not-found, not WEB_READ_ONLY).
     expect(details(await page.request('space.thumbnail', { entryId: 'sp_none' }).catch((e: unknown) => e))).toMatchObject({
       code: 'not-found',
     });
-    // 任务对账是写入：只读下拒绝。
+    // Task reconciliation is a write: rejected under read-only.
     expect(
       details(await page.request('jobs.reconcile', { jobId: 'job_none', decision: 'discard' }).catch((e: unknown) => e)),
     ).toMatchObject({
       code: 'forbidden',
       details: { code: 'WEB_READ_ONLY', method: 'jobs.reconcile' },
     });
-    // 删除与恢复视频、从 Space 条目继续会话、改 Space 标记都是写入：只读下拒绝（space.update 转删除视频，不能借它绕过）。
+    // Deleting and restoring videos, continuing a session from a Space entry, and changing Space tags are all writes: rejected under read-only. space.update turns into a video deletion, so it cannot be used to bypass this.
     for (const [method, params] of [
       ['videos.delete', { entryId: 'sp_none' }],
       ['videos.restore', { entryId: 'sp_none' }],
@@ -656,7 +656,7 @@ describe('Web 服务', () => {
         details: { code: 'WEB_READ_ONLY', method },
       });
     }
-    // 任务合同（§3.2）：只读下能查看，不能建立、修改、换目标与记录检查结果。
+    // Task contract (§3.2): under read-only it can be viewed, but it cannot be created, modified, retargeted, or have check results recorded.
     for (const [method, params] of [
       ['tasks.getContract', { taskId: 'task_none' }],
       ['tasks.listContracts', { taskId: 'task_none' }],
@@ -684,14 +684,14 @@ describe('Web 服务', () => {
     await until(() => page.state.status === 'disconnected');
     page = await browser(origin, cookie);
     expect((await page.request('projects.create', { name: '浏览器建的' })).project.name).toBe('浏览器建的');
-    // 写入类调用留下审计。
+    // Write-type calls leave an audit trail.
     const web = (await desktop.request('services.list', {})).services.find((s) => s.serviceId === 'web')!;
     expect(web.recentRequests[0]).toMatchObject({ clientName: '浏览器会话', tool: 'projects.create', outcome: 'ok' });
-    // 不是只读时，删除视频与从条目继续会话在默认集合里（这里是不存在的条目，请求到达处理函数）。
+    // When not read-only, deleting videos and continuing a session from an entry are in the default set (here the entry does not exist, so the request reaches the handler).
     for (const method of ['videos.delete', 'space.continueInConversation'] as const) {
       expect(details(await page.request(method, { entryId: 'sp_none' }).catch((e: unknown) => e))).toMatchObject({ code: 'not-found' });
     }
-    // 非只读：修改合同到达处理函数（这里是不存在的任务）。
+    // Not read-only: a contract modification reaches the handler (here the task does not exist).
     expect(
       details(
         await page
@@ -699,7 +699,7 @@ describe('Web 服务', () => {
           .catch((e: unknown) => e),
       ),
     ).toMatchObject({ code: 'not-found' });
-    // 默认集合里有任务对账（`jobs.*`）：请求到达处理函数（这里是不存在的任务）；retry 照常经授权与预算准入。
+    // Task reconciliation (`jobs.*`) is in the default set: the request reaches the handler (here the task does not exist). Retry still goes through authorization and budget admission.
     expect(details(await page.request('jobs.reconcile', { jobId: 'job_none', decision: 'retry' }).catch((e: unknown) => e))).toMatchObject({
       code: 'not-found',
     });
@@ -710,7 +710,7 @@ describe('Web 服务', () => {
   it('工具目录：浏览器能读目录与候选输入；执行方法不在白名单或只读时标为不可用；外部工具的问题不带本机路径与补救', async () => {
     const emptyPath = path.join(dir, 'empty-path');
     await fs.mkdir(emptyPath);
-    // PATH 只有一个空目录、不读真实环境里的覆盖：外部工具都是没装。
+    // PATH has only one empty directory and does not read overrides from the real environment, so all external tools are not installed.
     await boot({ dist }, { externalTools: { env: async () => ({ PATH: emptyPath }), overrides: {} } });
     const origin = await openWeb();
     const cookie = await login(origin);
@@ -731,7 +731,7 @@ describe('Web 服务', () => {
       'merge-video',
       'extract-audio',
     ]);
-    // 固定流程（pipelines.start）不对浏览器开放；直接任务（models.*）在默认集合里。
+    // The fixed flow (pipelines.start) is not exposed to the browser. Direct tasks (models.*) are in the default set.
     for (const id of ['transcribe', 'translate-subtitles', 'dub', 'link-import', 'compress-video', 'merge-video', 'extract-audio']) {
       expect(byId(id), id).toMatchObject({ available: false });
       expect(byId(id).problems, id).toContainEqual(expect.objectContaining({ code: 'WEB_METHOD_NOT_ALLOWED' }));
@@ -749,11 +749,11 @@ describe('Web 服务', () => {
       messageRef: { key: 'rcWeb.externalToolUnavailable', params: { tool: 'ffmpeg' } },
     });
     expect(JSON.stringify(tools)).not.toContain(emptyPath);
-    // 保存位置是本机路径：浏览器拿不到，桌面拿到解析好的目录（没有设置时是主机的下载文件夹）。
+    // The save location is a local path: the browser cannot get it. The desktop gets the resolved directory (the host's Downloads folder when not set).
     expect('saveDirectory' in (await page.request('tools.list', {}))).toBe(false);
     expect((await desktop.request('tools.list', {})).saveDirectory).toBe(process.env.CUCCUT_DOWNLOADS_DIR);
-    // 保存位置（测试里是临时的下载文件夹）不在项目目录里：只写到保存位置的流程不可用，还能写进视频的只是受限；
-    // 直接任务的结果在产物库里，不受影响。直接任务的 saveDir 在浏览器里只能是项目目录里的目录。
+    // A save location outside the project directory (here, a temporary Downloads folder): flows that write only to the save location are unavailable, and writing into the video is restricted.
+    // The result of a direct task is in the asset library and is unaffected. A direct task's saveDir in the browser can only be a directory inside the project directory.
     expect(byId('compress-video').problems).toContainEqual(expect.objectContaining({ code: 'PATH_OUTSIDE_PROJECT' }));
     expect(byId('transcribe').limitations).toContainEqual(expect.objectContaining({ code: 'PATH_OUTSIDE_PROJECT' }));
     expect(byId('generate-text').problems.map((p) => p.code)).not.toContain('PATH_OUTSIDE_PROJECT');
@@ -765,12 +765,12 @@ describe('Web 服务', () => {
     await desktop.request('settings.set', { values: { 'downloads.directory': path.join(project.path, '新建的输出') } });
     const inside = (await page.request('tools.list', {})).tools;
     expect(JSON.stringify(inside)).not.toContain('PATH_OUTSIDE_PROJECT');
-    // 项目目录里（还不存在的子目录也算）的 saveDir 到达处理函数（这里没有配置文本模型）。
+    // A saveDir inside the project directory (subdirectories that do not exist yet count too) reaches the handler. No text model is configured here.
     expect(
       details(await page.request('models.generateText', { ...prompt, saveDir: path.join(project.path, 'a', 'b') }).catch((e: unknown) => e)),
     ).toMatchObject({ details: { code: 'CAPABILITY_NOT_CONFIGURED' } });
     await desktop.request('settings.set', { values: { 'downloads.directory': null } });
-    // 桌面照常拿到补救。
+    // The desktop still gets the remedy.
     const desktopTools = (await desktop.request('tools.list', {})).tools;
     expect(desktopTools.find((t) => t.id === 'compress-video')!.problems).toEqual([
       expect.objectContaining({ code: 'TOOL_NOT_INSTALLED', tool: 'ffmpeg', remedy: expect.any(String) }),
@@ -781,7 +781,7 @@ describe('Web 服务', () => {
       code: 'not-found',
     });
 
-    // 只读：目录与候选输入照常可读，直接任务标为只读。
+    // Read-only: directories and candidate inputs stay readable, and direct tasks are marked read-only.
     await desktop.request('services.configure', { serviceId: 'web', readOnly: true });
     await until(() => page.state.status === 'disconnected');
     page = await browser(origin, cookie);
@@ -823,7 +823,7 @@ describe('Web 服务', () => {
     expect((await send(`${origin}${handle.url}`)).status).toBe(401);
     expect((await send(`${origin}${handle.url}`, { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
 
-    // 浏览器的句柄只在 Web 服务的端口上有效；桌面的媒体通道不认它。
+    // The browser's handles are valid only on the web service's port. The desktop's media channel does not accept them.
     const gateway = runtime!.discovery.endpoint.replace('ws:', 'http:');
     expect((await send(`${gateway}${handle.url}`)).status).toBe(404);
     const desktopHandle = await desktop.request('media.resolve', { projectId: project.id, path: 'notes.txt' });
@@ -836,11 +836,11 @@ describe('Web 服务', () => {
     await expect(readonlyPage.request('media.playback', { url: desktopHandle.url })).rejects.toMatchObject({ code: 'not-found' });
     await expect(desktop.request('media.playback', { url: handle.url })).rejects.toMatchObject({ code: 'not-found' });
     expect((await send(`${origin}${new URL(desktopHandle.url).pathname}`, { headers: { Cookie: cookie } })).status).toBe(404);
-    // 项目目录之外的文件不能取。
+    // Files outside the project directory cannot be fetched.
     expect(
       details(await readonlyPage.request('media.resolve', { projectId: project.id, path: '../outside.txt' }).catch((e: unknown) => e)),
     ).not.toBeNull();
-    // 本机路径（{ localPath }）只发给桌面客户端：浏览器按 Runtime 的访问范围拒绝，不扩大本机文件权限。
+    // A local path ({ localPath }) is sent only to the desktop client. The browser rejects it according to the Runtime's access scope, and local file permissions are not expanded.
     const local = path.join(project.path, 'notes.txt');
     expect((await desktop.request('media.resolve', { localPath: local })).fileName).toBe('notes.txt');
     expect(details(await readonlyPage.request('media.resolve', { localPath: local }).catch((e: unknown) => e))).toMatchObject({ code: 'forbidden' });
@@ -880,7 +880,7 @@ describe('Web 服务', () => {
     expect(editorPage.headers['x-content-type-options']).toBe('nosniff');
     expect((await send(`${origin}${opened.url}`)).status).toBe(401);
     expect((await send(`${origin}${opened.url}`, { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
-    // 不带会话的根级素材请求只在设计稿里找（docs/design/canvas §6.2），这里没有，是 404；跨站的照样拒绝。
+    // A root-level asset request without a session is only looked up in design drafts (docs/design/canvas §6.2). There are none here, so it is a 404. Cross-site requests are rejected too.
     expect((await send(`${origin}/_blob/${'0'.repeat(32)}`)).status).toBe(404);
     expect((await send(`${origin}/_blob/${'0'.repeat(32)}`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
     expect((await send(`${origin}/_blob/${'0'.repeat(32)}`, { headers: { Cookie: cookie } })).status).toBe(404);
@@ -944,7 +944,7 @@ describe('Web 服务', () => {
       details: { code: 'DESIGN_NOT_A_CANVAS' },
     });
 
-    // 另一个主机名上没有会话 cookie：页面照样给，CSP 不带哈希、放行 eval，嵌入只放行这个服务的两个回环源。
+    // On another hostname there is no session cookie. The page is still served, the CSP carries no hashes and allows eval, and embedding allows only the two loopback origins of this service.
     const onOther = (route: string, headers: Record<string, string> = {}, method = 'GET', body?: string) =>
       send(`${origin}${route}`, { method, headers: { Host: `localhost:${port}`, ...headers }, ...(body ? { body } : {}) });
     const editorPage = await onOther(opened.url, { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'iframe' });
@@ -960,14 +960,14 @@ describe('Web 服务', () => {
     const listing = JSON.parse((await onOther(`${opened.url}_files.json`, { 'Sec-Fetch-Site': 'same-origin' })).body) as { files: object };
     expect(Object.keys(listing.files).sort()).toEqual(['project/Main.dc.html', 'project/canvas.json']);
 
-    // 不带会话的根级 /_blob/ 只在设计稿里找；带会话时与幻灯片一样在所有打开的里找。
+    // A root-level /_blob/ without a session is only looked up in design drafts. With a session, it is looked up in all open ones, the same as slides.
     expect((await onOther(`/_blob/${blob}`)).status).toBe(200);
     expect((await onOther(`/_blob/${deckBlob}`)).status).toBe(404);
     expect((await onOther(`${opened.url}_blob/${blob}`)).status).toBe(200);
     expect((await send(`${origin}/_blob/${deckBlob}`, { headers: { Cookie: cookie } })).status).toBe(200);
     expect((await send(`${origin}/_blob/${blob}`, { headers: { Cookie: cookie } })).status).toBe(200);
 
-    // 写请求要同源：Origin 与 Host 一致。
+    // Write requests must be same-origin: Origin and Host match.
     const publish = (text: string, from: string) =>
       onOther(
         `${opened.url}__deck/publish`,
@@ -980,7 +980,7 @@ describe('Web 服务', () => {
     expect((await publish('<x-dc>x</x-dc>', origin)).status).toBe(403);
     expect(await fs.readFile(path.join(canvas, 'Main.dc.html'), 'utf8')).toBe('<x-dc>v2</x-dc>');
 
-    // Web 客户端页面的 CSP 允许把另一个主机名嵌进来。
+    // The web client page's CSP allows embedding from another hostname.
     const app = await send(`${origin}/`, { headers: { Cookie: cookie } });
     expect(app.headers['content-security-policy']).toContain(`frame-src 'self' blob: ${origin} ${other}`);
 
@@ -992,7 +992,7 @@ describe('Web 服务', () => {
     expect(JSON.parse((await onOther(`${opened.url}__deck/session`)).body)).toEqual({ canEdit: false });
   });
 
-  /** 设计稿与设计系统：两种编辑器在 Web 上走同一个隔离主机名（docs/design/canvas §6.2、§10.4），下面的断言对两种都成立。 */
+  /** Design drafts and design systems: both editors use the same isolated hostname on the web (docs/design/canvas §6.2, §10.4). The assertions below hold for both. */
   const ISOLATED_KINDS = [
     {
       kind: 'design',
@@ -1064,7 +1064,7 @@ describe('Web 服务', () => {
     const csp = editorPage.headers['content-security-policy'] as string;
     expect(csp).toContain(`frame-ancestors ${origin} ${other}`);
     expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:");
-    // 编辑器里嵌的 run.html 是同源的 iframe 导航
+    // The run.html embedded in the editor is a same-origin iframe navigation
     const run = await onOther(`${opened.url}artifact-type/run.html`, { 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'iframe' });
     expect(run.status).toBe(200);
     expect(run.headers['content-security-policy']).toBe(csp);
@@ -1073,7 +1073,7 @@ describe('Web 服务', () => {
     const listing = JSON.parse((await onOther(`${opened.url}_files.json`, { 'Sec-Fetch-Site': 'same-origin' })).body) as { files: object };
     expect(Object.keys(listing.files)).toContain(spec.file);
 
-    // grant 跨种类：同一个 grant 换到另一种路由下是 404，跨站导航也一样
+    // Cross-kind grants: the same grant under another route is a 404, and cross-site navigation gives the same result
     const swapped = (url: string, to: string) => url.replace(/^\/[a-z-]+\//, `/${to}/`);
     expect((await onOther(swapped(opened.url, spec.other), { 'Sec-Fetch-Site': 'same-origin' })).status).toBe(404);
     expect((await onOther(swapped(opened.url, spec.other), navigate)).status).toBe(404);
@@ -1104,7 +1104,7 @@ describe('Web 服务', () => {
 
     const blobs = async () => [(await onOther(`/_blob/${canvasBlob}`)).status, (await onOther(`/_blob/${systemBlob}`)).status];
     expect(await blobs()).toEqual([200, 200]);
-    // 带会话时与幻灯片一样在所有打开的里找
+    // With a session, it is looked up in all open ones, the same as slides
     expect((await send(`${origin}/_blob/${systemBlob}`, { headers: { Cookie: cookie } })).status).toBe(200);
     expect((await send(`${origin}/_blob/${canvasBlob}`, { headers: { Cookie: cookie } })).status).toBe(200);
     const base = ['runtime.info', 'projects.list', 'conversations.*', 'slides.open'];
@@ -1156,7 +1156,7 @@ describe('Web 服务', () => {
   });
 });
 
-// ---- 需要真实引擎与 ffmpeg 的部分 ----
+// ---- Parts that need the real engine and ffmpeg ----
 
 const engine = resolveEngineHostCommand();
 const ffmpeg = (() => {
@@ -1260,7 +1260,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     expect(link.pathname + link.search).toBe(webVideoHref({ projectId: project.id, path: relPath }));
     expect(JSON.parse(link.searchParams.get('video')!)).toEqual({ projectId: project.id, path: relPath });
     expect(link.hash).toMatch(/^#code=[A-Za-z0-9_-]+$/);
-    // 浏览器断开、视频关上之后，从 Space 的登记里找到同一个位置。
+    // After the browser disconnects and the video is closed, the same position is found from Space's registry.
     page.close();
     await until(() => runtime.videos.ref(videoId) === null);
     await runtime.space.rescan();
@@ -1296,7 +1296,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
         .catch((e: unknown) => e);
       expect(details(error), file).toMatchObject({ code: 'forbidden', details: { code: 'PATH_OUTSIDE_PROJECT', index: 0 } });
     }
-    // 桌面能撤销浏览器里的编辑：同一个用户、同一条撤销栈。
+    // The desktop can undo edits made in the browser: same user, same undo stack.
     expect((await desktop.request('edits.undoState', { videoId })).undo).toEqual({
       transactionId: applied.receipt.transactionId,
       label: '放入 clip.mp4',
@@ -1317,7 +1317,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     });
     const settings = { kind: 'audio', format: 'wav' } as const;
     await fs.symlink(fixtures, path.join(project.path, 'link'));
-    // 成片与其他种类走同一条目录约束（在导出服务之前）。
+    // Finished output and other kinds go through the same directory constraint (before the export service).
     const video = { kind: 'video', format: 'mp4' } as const;
     const portable = { kind: 'portable' } as const;
     const xmeml = { kind: 'project', format: 'xmeml' } as const;
@@ -1368,7 +1368,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
   });
 
   it('便携包：浏览器只能打开项目目录里的包（不能经符号链接出去）；项目里的照常建成新视频', async () => {
-    // 桌面把包导出到项目之外。
+    // The desktop exports the package outside the project.
     const outside = path.join(dir, 'outside');
     await fs.mkdir(outside);
     const { jobId } = await desktop.request('exports.create', { videoId, settings: { kind: 'portable' }, destination: { dir: outside } });
@@ -1395,7 +1395,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
   });
 });
 
-// ---- 真实的构建产物（npm run build:web 之后）：入口页引用的脚本与样式都能取到 ----
+// ---- Real build output (after npm run build:web): the scripts and styles referenced by the entry page can be fetched ----
 
 const built = resolveWebDist({});
 if (!built) console.warn('跳过 Web 客户端构建产物的冒烟测试：没有 apps/web/dist（先运行 npm run build:web）');

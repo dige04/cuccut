@@ -1,8 +1,6 @@
-//! `ccut-motion::curve` 的 easing 实现必须与 `ccut-core::ease` 逐位相同。
+//! The easing implementation of `ccut-motion::curve` must be bit-identical to `ccut-core::ease`.
 //!
-//! 搬迁（`ease.rs` → `curve.rs`）以这条测试为证据：`ccut-core` 改成 re-export
-//! 之后它退化为对 re-export 本身的检查，仍然有意义（防止未来有人在任一侧写回
-//! 一份本地副本）。
+//! The move (`ease.rs` → `curve.rs`) is evidenced by this test. After `ccut-core` is changed to re-export, the test degrades into a check of the re-export itself, which is still meaningful: it prevents anyone from writing a local copy back on either side.
 
 use motion::curve::{EASE_NAMES, apply_ease};
 

@@ -1,4 +1,4 @@
-//! 用强制对齐给没有词时间的长行补词时间，并把词起点展开为严格递增。移植自 v2 `ccut-speech-core`。
+//! Uses forced alignment to add word timings to long lines that have no word timings, and expands word start times to be strictly increasing. Ported from v2 `ccut-speech-core`.
 
 use anyhow::Result;
 
@@ -6,15 +6,13 @@ use super::{AlignedWord, RowIn, WordIn};
 
 pub const MIN_ROW_DURATION: f64 = 5.0;
 
-/// 对齐器的时间格（秒）。零时长的词补到一格（至多到下一个词的起点）；`align` 的一段只有零长的词时，段尾往后补一格。
+/// The aligner's time grid (seconds). A zero-duration word is padded to one grid cell (at most up to the next word's start); when a segment of `align` contains only zero-length words, one cell is added after the segment end.
 pub const ALIGNER_GRID_SECONDS: f64 = 0.08;
 
-/// 将量化到同一时间格的词起点稳定地展开为严格递增序列，并给零时长的词补上时长。
+/// Stably expands word starts that were quantized to the same time cell into a strictly increasing sequence, and gives zero-duration words a duration.
 ///
-/// forced aligner 的时间格是 80 ms，连续短词可能得到相同起点；落盘契约要求
-/// `words[].t` 严格递增，因此只加不影响字幕可见时间的亚毫秒偏移。
-/// 起止塌成一点的词（对齐器把两个时间槽解到同一格）补到一个对齐格，不越过下一个词的起点与行尾：
-/// 下游按 `end > start` 认词，零时长的词会从字幕与导出里消失。
+/// The forced aligner's time cell is 80 ms, so consecutive short words may get the same start. The on-disk contract requires `words[].t` to be strictly increasing, so a sub-millisecond offset is added that does not affect the visible subtitle timing.
+/// A word whose start and end collapse to one point (the aligner resolved two time slots to the same cell) is padded to one alignment cell, without crossing the next word's start or the end of the line. Downstream identifies words by `end > start`; zero-duration words would disappear from subtitles and exports.
 pub fn enforce_strict_word_times(words: &mut [WordIn], row_start: f64, row_end: f64) {
     if words.is_empty() || row_end <= row_start {
         return;
@@ -30,7 +28,7 @@ pub fn enforce_strict_word_times(words: &mut [WordIn], row_start: f64, row_end: 
         word.end = word.end.clamp(word.start, row_end);
         previous = word.start;
     }
-    // 起点已严格递增且最后一个起点 ≤ row_end − epsilon，所以上限总在起点之后。
+    // Starts are already strictly increasing and the last start is ≤ row_end − epsilon, so the upper bound always lies after the start.
     for index in 0..count {
         if words[index].end > words[index].start {
             continue;
@@ -180,7 +178,7 @@ mod tests {
         );
     }
 
-    /// 真实样本（qwen3-asr + 强制对齐）：`ask—you` 的两个时间槽解到同一格，起止塌成一点，后面有 0.24 秒的空隙。
+    /// Real sample (qwen3-asr + forced alignment): the two time slots of `ask—you` resolve to the same cell, so start and end collapse to one point, and there is a 0.24 s gap after it.
     #[test]
     fn zero_duration_word_takes_one_grid_from_the_following_gap() {
         let word = |start: f64, end: f64, text: &str| WordIn {
@@ -199,7 +197,7 @@ mod tests {
         assert!((words[1].end - 15.036).abs() < 1e-9, "{words:?}");
         assert_eq!(words[2].start, 15.196);
 
-        // 空隙比一格窄：只补到下一个词的起点；行尾的零时长词补到行尾为止。
+        // The gap is narrower than one cell: pad only up to the next word's start; a zero-duration word at the end of the line is padded up to the end of the line.
         let mut tight = vec![word(1.0, 1.0, "to"), word(1.03, 1.3, "be"), word(1.3, 1.3, "frank.")];
         enforce_strict_word_times(&mut tight, 1.0, 1.35);
         assert!((tight[0].end - 1.03).abs() < 1e-9, "{tight:?}");

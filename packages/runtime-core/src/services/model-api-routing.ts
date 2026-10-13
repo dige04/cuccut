@@ -12,23 +12,23 @@ import { RcModelApi } from '@cuccut/protocol/messages/runtime-core';
 import { ApiError } from './model-api-errors.ts';
 
 /**
- * 模型接口服务的路由（架构设计 §4.8）：OpenAI 形状的模型名 → 一种能力下的 Provider 与模型。
+ * Routing of the model API service (architecture design §4.8): an OpenAI-shaped model name → a provider and model under one capability.
  *
- * - 名字的三种写法，按顺序：别名表里的别名；规范写法 `<providerId>/<modelId>`；能力视图里的模型名（多个 Provider 都有时
- *   按视图的顺序取第一个可用的，本机在前）。
- * - 只路由到允许的 Provider：`local` 总是允许；`online`、`node`、`agent` 各看服务配置里的开关。不允许的那一类
- *   对这个服务不存在：不在 `/v1/models` 里，按名访问是 404。
- * - 这种能力此刻没有任何可路由、可用的模型时回答 503（`CAPABILITY_NOT_CONFIGURED`），说明怎么开启；
- *   有，但名字不是其中之一时 404（`MODEL_NOT_FOUND`）。
+ * - Three ways to write a name, tried in order: an alias in the alias table; the canonical form `<providerId>/<modelId>`; a model name in the capability view (when several providers have it,
+ *   the first available one in the view's order is taken; local comes first).
+ * - Routes only to allowed providers: `local` is always allowed; `online`, `node`, and `agent` each depend on their switch in the service config. A class that is not allowed
+ *   does not exist for this service: it is not in `/v1/models`, and access by name is 404.
+ * - When this capability has no routable, available model at the moment, answer 503 (`CAPABILITY_NOT_CONFIGURED`) and explain how to enable it;
+ *   if there is one but the name is not one of them, 404 (`MODEL_NOT_FOUND`).
  */
 
 export interface ModelApiTarget {
   providerId: string;
-  /** null：这个 Provider 的默认模型（选择规则见 §6.2）。 */
+  /** null: this provider's default model (selection rules in §6.2). */
   modelId: string | null;
 }
 
-/** `/v1/models` 的一项。 */
+/** One entry of `/v1/models`. */
 export interface ListedModel {
   id: string;
   capability: ModelServiceCapability;
@@ -37,7 +37,7 @@ export interface ListedModel {
   alias: boolean;
 }
 
-/** 能力的叫法（嵌进错误说明里）。 */
+/** The name of the capability (embedded in error explanations). */
 function capabilityText(capability: ModelServiceCapability): Localized {
   switch (capability) {
     case 'transcribe':
@@ -82,10 +82,10 @@ function modelUsable(provider: ProviderCapabilityView, modelId: string | null): 
   return models.some((m) => m.modelId === modelId && m.available !== false);
 }
 
-/** 服务此刻能路由到的模型：别名在前，然后是 `<providerId>/<modelId>`。只列可用的。 */
+/** The models this service can route to at the moment: aliases first, then `<providerId>/<modelId>`. Only available ones are listed. */
 export function listModels(view: ModelCapabilitiesView, routing: ModelApiRouting, aliases: ModelApiAlias[]): ListedModel[] {
   const listed: ListedModel[] = [];
-  // 人声分离只在本机、没有对应的接口，不列。
+  // Human voice separation is local-only and has no corresponding interface, so it is not listed.
   const capabilities = ONLINE_CAPABILITIES;
   for (const alias of aliases) {
     const provider = usableProviders(view, alias.capability, routing).find((p) => p.providerId === alias.providerId);
@@ -109,7 +109,7 @@ export function listModels(view: ModelCapabilitiesView, routing: ModelApiRouting
   return listed;
 }
 
-/** 请求里的模型名 → Provider 与模型。找不到时 404，这种能力没有可路由的模型时 503。 */
+/** Model name in the request → provider and model. 404 when not found; 503 when the capability has no routable model. */
 export function resolveModel(
   name: string,
   capability: ModelServiceCapability,

@@ -4,22 +4,22 @@ import type { GeneratedOutput } from '@cuccut/protocol';
 import { JobsMediaProbe as M } from '@cuccut/protocol/messages/jobs/media-probe.ts';
 
 /**
- * 生成输出的解码校验（架构设计 §7.3）：发布之前先按文件头认出格式，与 Provider 声明的媒体类型核对，再用 ffprobe
- * 按这种格式（指定解复用器，不猜）把整个文件解一遍。音频要有帧、时长、采样率与声道，图片要有宽高。
- * 不合的输出不发布（`MODEL_OUTPUT_INVALID`）。
+ * Decode validation of generation output (architecture design §7.3): before publishing, the format is identified from the file header and checked against the media type the Provider declared; then the whole file is decoded with ffprobe
+ * using that format (the demuxer is specified, not guessed). Audio must have frames, duration, sample rate and channels; images must have width and height.
+ * Output that fails is not published (`MODEL_OUTPUT_INVALID`).
  */
 
 export type MediaFacts = GeneratedOutput['media'];
 
 export type MediaProbeResult = { ok: true; media: MediaFacts } | { ok: false; problems: string[] };
 
-/** 校验一个输出文件；`mediaType` 是 Provider 声明的。 */
+/** Validates one output file; `mediaType` is the one the Provider declared. */
 export type MediaProbe = (file: string, mediaType: string) => Promise<MediaProbeResult>;
 
-/** ffprobe 的命令与环境（Runtime 用 `CUCCUT_FFPROBE` 或 PATH 里的 ffprobe）。 */
+/** The command and environment for ffprobe (the Runtime uses `CUCCUT_FFPROBE`, or ffprobe on PATH). */
 export type ProbeToolResolver = () => Promise<{ command: string; env?: NodeJS.ProcessEnv }>;
 
-/** 认得的媒体类型 → ffprobe 的解复用器与种类。 */
+/** Recognized media types → ffprobe's demuxer and kind. */
 const FORMATS: Record<string, { demuxer: string; kind: 'audio' | 'image' }> = {
   'audio/mpeg': { demuxer: 'mp3', kind: 'audio' },
   'audio/wav': { demuxer: 'wav', kind: 'audio' },
@@ -32,7 +32,7 @@ const FORMATS: Record<string, { demuxer: string; kind: 'audio' | 'image' }> = {
 const PROBE_TIMEOUT_MS = 60_000;
 const SNIFF_BYTES = 16;
 
-/** 按文件头认格式；认不出时 null。 */
+/** Identifies the format from the file header; null if it is not recognized. */
 export function sniffMediaType(head: Uint8Array): string | null {
   const ascii = (start: number, text: string) => text.split('').every((c, i) => head[start + i] === c.charCodeAt(0));
   if (
@@ -51,7 +51,7 @@ export function sniffMediaType(head: Uint8Array): string | null {
   if (head.length >= 12 && ascii(0, 'RIFF') && ascii(8, 'WAVE')) return 'audio/wav';
   if (head.length >= 4 && ascii(0, 'fLaC')) return 'audio/flac';
   if (head.length >= 3 && ascii(0, 'ID3')) return 'audio/mpeg';
-  // MPEG 音频帧同步字：11 个 1。
+  // MPEG audio frame sync word: eleven 1 bits.
   if (head.length >= 2 && head[0] === 0xff && (head[1]! & 0xe0) === 0xe0) return 'audio/mpeg';
   return null;
 }
@@ -140,7 +140,7 @@ function runProbe(
     child.on('close', (code, signal) => {
       clearTimeout(timer);
       if (code === 0) return resolve({ ok: true, stdout: Buffer.concat(stdout).toString('utf8') });
-      // 只留第一行：错误信息里不该有路径之外的东西，路径也不往外报。
+      // Keep only the first line: the error message should contain nothing beyond the path, and the path is not reported outward either.
       const first = stderr.split('\n').find((line) => line.trim()) ?? '';
       const reason = signal ? M.killedBy({ signal }) : M.exitCode({ code: String(code) });
       const output = first ? first.replaceAll(args.at(-1)!.slice('file:'.length), '<output>').replaceAll('file:<output>', '<output>').slice(0, 200) : '';
@@ -152,5 +152,5 @@ function runProbe(
   });
 }
 
-/** 没有配置 ffprobe 时：一律不通过（不发布没有校验过的输出）。 */
+/** When ffprobe is not configured: always fail (output that has not been validated is not published). */
 export const unavailableProbe: MediaProbe = async () => ({ ok: false, problems: [M.noProbe().text] });

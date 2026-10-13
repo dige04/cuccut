@@ -14,40 +14,40 @@ import {
 } from './transcript-cut.ts';
 
 /**
- * 时间线上的剪口带（原型 timeline-cutbands.jsx；model-cut.js 的 `dragEdge` / `dragSlotEdge` / `retime`）。
+ * Cut bands on the timeline (prototype timeline-cutbands.jsx; `dragEdge` / `dragSlotEdge` / `retime` in model-cut.js).
  *
- * - 带从时间线推导（`cutSeams`）：视频与链接的音频在同一处各有一个接缝，并成一条贯穿各轨的带。恢复与改范围按素材的剪口集合
- *   （视频格式规范 §6.7）找盖住这处接缝的剪口；不是剪口剪掉的接缝照实拒绝。
- * - 时间线是成片：剪掉的内容不占时间。拖两缘用的坐标是「把这一处恢复之后」的序列帧，以剪口为 0：剪掉的那段在
- *   `[0, frames)`，左边的实例在它前面，右边的实例在它后面。
- * - 改范围 = 一笔事务：`restoreCut` 放回这一处的剪口，再 `addCuts` 剪新的素材区间，撤销一步回去；拖到零宽 = 只恢复。
- * - 缺省吸附词边界：左缘吸词的开头、右缘吸词的结尾，留 `WORD_PAD` 余量并对齐到帧，不越过相邻的词（不切半个词）；
- *   按住 Alt 自由落点，只对齐到帧。两缘夹在相邻实例之内：至少给邻居留一帧，邻居的另一头也是剪口时可以整段剪掉（两处剪口并成一处）。
+ * - Bands are derived from the timeline (`cutSeams`): the video and its linked audio each have a seam at the same place, and these combine into one band running across the tracks. Restoring and changing a range finds the cuts covering that seam
+ *   from the media's cut set (video format spec §6.7); a seam not made by a cut is refused as is.
+ * - The timeline is the finished cut: removed content takes no time. The coordinates used when dragging the two edges are the sequence frames after restoring this one, with the cut at 0: the removed span is at
+ *   `[0, frames)`, the instance on the left is before it, and the instance on the right is after it.
+ * - Changing a range = one transaction: `restoreCut` puts back the cut at this point, then `addCuts` cuts the new media range; undo steps back one; dragging to zero width = restore only.
+ * - Snapping to word boundaries by default: the left edge snaps to the start of a word and the right edge to the end of a word, keeping a `WORD_PAD` margin and aligned to frames, and never crossing an adjacent word (so no half-word is cut);
+ *   holding Alt drops freely, aligned only to frames. Both edges are clamped within the adjacent instances: at least one frame is left for the neighbour, and if the neighbour's other end is also a cut, the whole thing can be removed (the two cuts merge into one).
  */
 
 const EPS = 1e-6;
 
-/** 吸附时词前后留的余量（素材秒，同内核 `ccut-timeline::words::DEFAULT_WORD_PAD`）。 */
+/** Margin kept before and after a word when snapping (media seconds; same as the kernel `ccut-timeline::words::DEFAULT_WORD_PAD`). */
 export const WORD_PAD = 0.05;
 
 export interface CutBand {
   key: string;
   assetId: Id;
-  /** 代表剪口的左右实例（视频优先，其次轨道次序靠前的）：恢复从左实例往后拉，链接的实例跟着。 */
+  /** The left and right instances representing the cut (video first, then the earliest in track order): restoring extends from the left instance, and the linked instance follows. */
   leftId: Id;
   rightId: Id;
-  /** 这一处在哪些轨道上有剪口（按轨道次序）。 */
+  /** Which tracks have a cut at this point (in track order). */
   trackIds: Id[];
-  /** 剪口在序列上的位置（帧，音频可以有小数）。 */
+  /** Position of the cut on the sequence (frames; audio may be fractional). */
   frame: number;
-  /** 剪掉的素材区间（秒，素材时钟）：左实例的出点到右实例的入点。 */
+  /** The removed media range (seconds, media clock): from the left instance's out point to the right instance's in point. */
   from: number;
   to: number;
-  /** 素材秒 / 序列秒。 */
+  /** Media seconds / sequence seconds. */
   rate: number;
-  /** 剪掉的长度（序列帧，取整与恢复插回的帧数一致）。 */
+  /** Removed length (sequence frames; rounded so it matches the number of frames put back on restore). */
   frames: number;
-  /** 左缘最早、右缘最晚能拖到哪（恢复之后的帧，相对剪口）。 */
+  /** The earliest the left edge and the latest the right edge can be dragged to (frames after restoring, relative to the cut). */
   lo: number;
   hi: number;
 }
@@ -60,13 +60,13 @@ function linearRate(item: SequenceItem): number {
   return 1;
 }
 
-/** 时间线上的剪口带：同一素材、同一位置（取整到帧）的剪口并成一条，按位置排。 */
+/** Cut band on the timeline: cuts on the same media at the same position (rounded to frames) are merged into one, sorted by position. */
 export function cutBands(sequence: Sequence): CutBand[] {
   const perSecond = sequence.fps.num / sequence.fps.den;
   const seams = cutSeams(sequence);
   const items = new Map(sequence.items.map((item) => [item.id, item]));
   const order = new Map(sequence.tracks.map((track) => [track.id, track.order]));
-  // 开头 / 结尾本身也是剪口的实例：拖到头可以把它整段剪掉，两处剪口并成一处。
+  // Instances that are themselves cuts at the start or end: dragging to the edge can remove the whole thing, merging the two cuts into one.
   const startsAtSeam = new Set(seams.map((seam) => seam.rightId));
   const endsAtSeam = new Set(seams.map((seam) => seam.leftId));
   const groups = new Map<string, CutSeam[]>();
@@ -108,7 +108,7 @@ export function cutBands(sequence: Sequence): CutBand[] {
   return bands.sort((a, b) => a.frame - b.frame);
 }
 
-/** 被剪掉的文字：至少一半落在 `[from, to)`（素材秒）里的词，按先后拼起来；拼词规则同文稿。 */
+/** The text being cut: the words with at least half falling within `[from, to)` (media seconds), joined in order; the joining rule is the same as in the transcript. */
 export function cutText(words: readonly SpeechWord[], from: number, to: number): string {
   const inside = words
     .filter((word) => Math.min(word.end, to) - Math.max(word.start, from) >= (word.end - word.start) / 2 - EPS)
@@ -119,23 +119,23 @@ export function cutText(words: readonly SpeechWord[], from: number, to: number):
   );
 }
 
-// ---- 拖两缘 ----
+// ---- Dragging the two edges ----
 
-/** 词换到这一处的拖动坐标（恢复之后的帧，相对剪口），按开始时刻排。 */
+/** Drag coordinates of words mapped to this point (frames after restoring, relative to the cut), sorted by start time. */
 export interface WordMark {
   t0: number;
   t1: number;
   word: SpeechWord;
 }
 
-/** 素材秒 → 这一处的拖动坐标：剪口左边按左实例、右边按右实例、剪掉的那段按比例摊进 `[0, frames]`。 */
+/** Media seconds → drag coordinate at this point: left of the cut uses the left instance, right of it uses the right instance, and the removed span is spread proportionally across `[0, frames]`. */
 function bandFrame(band: CutBand, seconds: number, perSecond: number): number {
   if (seconds <= band.from) return ((seconds - band.from) / band.rate) * perSecond;
   if (seconds >= band.to) return band.frames + ((seconds - band.to) / band.rate) * perSecond;
   return ((seconds - band.from) / (band.to - band.from)) * band.frames;
 }
 
-/** 这份转写里能吸附的词（只留两缘够得着的那一截，前后各多留一个当相邻词）。 */
+/** The words in this transcript that can be snapped to (only the stretch reachable from the two edges is kept, plus one extra word on each side as the adjacent word). */
 export function bandWordMarks(band: CutBand, words: readonly SpeechWord[], fps: Rate): WordMark[] {
   const perSecond = fps.num / fps.den;
   const marks = words
@@ -148,7 +148,7 @@ export function bandWordMarks(band: CutBand, words: readonly SpeechWord[], fps: 
   return marks.slice(Math.max(0, first - 1), Math.min(marks.length, last + 2));
 }
 
-/** 「从第 i 个词起剪」的起点：不越过前一个词的尾，留 `pad` 帧，先向外（向前）取整到帧，越回前一个词时改向内（内核 `word_span_start`）。 */
+/** Start point for “cut from word i”: does not go past the end of the previous word, keeps `pad` frames, rounds outward (earlier) to a frame first, and if that lands back inside the previous word, rounds inward instead (kernel `word_span_start`). */
 function spanStart(marks: readonly WordMark[], i: number, pad: number): number {
   const prevEnd = i > 0 ? marks[i - 1]!.t1 : -Infinity;
   const raw = Math.max(prevEnd, marks[i]!.t0 - pad);
@@ -156,7 +156,7 @@ function spanStart(marks: readonly WordMark[], i: number, pad: number): number {
   return out < prevEnd - EPS ? Math.ceil(raw - EPS) : out;
 }
 
-/** 「剪到第 i 个词为止」的终点（`spanStart` 的镜像，内核 `word_span_end`）。 */
+/** End point for “cut up to word i” (the mirror of `spanStart`, kernel `word_span_end`). */
 function spanEnd(marks: readonly WordMark[], i: number, pad: number): number {
   const nextStart = i + 1 < marks.length ? marks[i + 1]!.t0 : Infinity;
   const raw = Math.min(nextStart, marks[i]!.t1 + pad);
@@ -164,7 +164,7 @@ function spanEnd(marks: readonly WordMark[], i: number, pad: number): number {
   return out > nextStart + EPS ? Math.floor(raw + EPS) : out;
 }
 
-/** 在 `[lo, hi]` 里找离 `target` 最近的词边界：二分定位后向两侧走到越界即停。 */
+/** Finds the word boundary nearest to `target` within `[lo, hi]`: binary search to locate it, then walks outward on both sides until it goes out of bounds. */
 function snapEdge(
   marks: readonly WordMark[],
   edge: 'start' | 'end',
@@ -199,7 +199,7 @@ function snapEdge(
       if (at <= target) break;
     }
   }
-  // 一样近时取先找到的（目标之后的那个），同原型。
+  // On a tie, takes the one found first (the one after the target), same as the prototype.
   const best = found.reduce<{ at: number; word: SpeechWord } | null>(
     (pick, next) => (!pick || Math.abs(next.at - target) < Math.abs(pick.at - target) ? next : pick),
     null,
@@ -207,19 +207,19 @@ function snapEdge(
   return best ? { at: Math.min(hi, Math.max(lo, best.at)), word: best.word } : null;
 }
 
-/** 拖动中的新区间（恢复之后的帧，相对剪口）。`start === end` 是拖到了零宽：松手就是恢复。 */
+/** The new range while dragging (frames after restoring, relative to the cut). `start === end` means it was dragged to zero width: releasing restores it. */
 export interface BandDrag {
   edge: 'start' | 'end';
   start: number;
   end: number;
-  /** 吸附到的词；自由落点、没有词、或贴在极限上时没有。 */
+  /** The word snapped to; absent when dropped freely, when there is no word, or when it sits at a limit. */
   word: SpeechWord | null;
   changed: boolean;
 }
 
 /**
- * 拖一处剪口的一条边：`delta` 是指针从按下处挪了多少帧（序列帧）。只动被拖的那条边；左缘夹在 `[lo, end]`、右缘夹在
- * `[start, hi]`，越界贴住极限。缺省吸词边界，`free`（按住 Alt）时自由落点；都对齐到帧。没挪动时原样（单击不让旧边被吸走）。
+ * Drags one edge of a cut: `delta` is how many frames (sequence frames) the pointer has moved from where it was pressed. Only the dragged edge moves; the left edge is clamped to `[lo, end]` and the right edge to
+ * `[start, hi]`, and anything past the bounds sticks to the limit. Snaps to word boundaries by default, and drops freely when `free` (Alt held); both are aligned to frames. Unchanged if it did not move (a single click does not let the old edge get snapped away).
  */
 export function dragBandEdge(band: CutBand, marks: readonly WordMark[], edge: 'start' | 'end', delta: number, free: boolean, fps: Rate): BandDrag {
   if (!Number.isFinite(delta) || delta === 0) return { edge, start: 0, end: band.frames, word: null, changed: false };
@@ -241,19 +241,19 @@ export function dragBandEdge(band: CutBand, marks: readonly WordMark[], edge: 's
   return { edge, start, end, word, changed: start !== 0 || end !== band.frames };
 }
 
-// ---- 一笔事务 ----
+// ---- One transaction ----
 
-/** 带上的一点（恢复之后的帧，相对剪口）→ 素材秒：`bandFrame` 的逆。 */
+/** A point on the band (frames after restoring, relative to the cut) → media seconds: the inverse of `bandFrame`. */
 function bandSource(band: CutBand, at: number, perSecond: number): number {
   if (at <= 0) return band.from + (at / perSecond) * band.rate;
   if (at >= band.frames) return band.to + ((at - band.frames) / perSecond) * band.rate;
   return band.from + (at / band.frames) * (band.to - band.from);
 }
 
-/** 接缝在素材里的容差：半帧（素材秒）。剪口按最近的帧落到实例上，接缝两侧与剪口的边差不超过它。 */
+/** Seam tolerance in the media: half a frame (media seconds). A cut lands on the instance at the nearest frame, and the edges on either side of the seam differ from the cut's edges by no more than this. */
 const seamTolerance = (band: CutBand, perSecond: number) => (band.rate / perSecond) * 0.5 + EPS;
 
-/** 恢复这一处：放回盖住接缝的剪口（`restoreCut`）。没有剪口盖住时照实拒绝。 */
+/** Restores this point: puts back the cut covering the seam (`restoreCut`). Refused as is when no cut covers it. */
 export function bandRestore(sequence: Sequence, band: CutBand, cuts: readonly TrackedCut[]): RestorePlan {
   const perSecond = sequence.fps.num / sequence.fps.den;
   return restoreOperations(sequence, band.assetId, cuts, [{ from: band.from, to: band.to }], seamTolerance(band, perSecond));
@@ -262,18 +262,18 @@ export function bandRestore(sequence: Sequence, band: CutBand, cuts: readonly Tr
 export type RetimePlan =
   | {
       ok: true;
-      /** 前一半：恢复这一处。 */
+      /** First half: restore this point. */
       restore: Extract<RestorePlan, { ok: true }>;
       operations: EditOperation[];
-      /** 新的剪切长度（帧）；0 表示只恢复。 */
+      /** New cut length (frames); 0 means restore only. */
       frames: number;
     }
   | { ok: false; reason: RestoreRefusal };
 
 /**
- * 改一处剪口的范围 → 一笔事务：放回这一处的剪口（`restoreCut`），再 `addCuts` 剪 `[start, end)`（相对剪口的帧）换成的素材区间。
- * 这处接缝要正好是剪口剪掉的（剪口的并集在半帧之内对上接缝两侧），不然拖动的坐标对不上，照实拒绝（`partial`）。
- * 范围没变返回 null（不写）。
+ * Changes the range of a cut at one point → one transaction: puts back the cut at this point (`restoreCut`), then `addCuts` cuts the media range that corresponds to `[start, end)` (frames relative to the cut).
+ * The seam here must be exactly what the cuts removed (the union of the cuts must match both sides of the seam within half a frame); otherwise the drag coordinates would not line up, so it is refused as is (`partial`).
+ * Returns null (nothing written) when the range is unchanged.
  */
 export function retimeOperations(
   sequence: Sequence,

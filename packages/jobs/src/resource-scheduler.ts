@@ -19,54 +19,50 @@ import { MachineCapacity, type CapacitySource } from './machine-capacity.ts';
 import { defaultReserves, type ResourceReserves } from './resource-profiles.ts';
 
 /**
- * 资源调度（架构设计 §7.6、§7.7）：重的本机工作先按峰值需求准入，拿到租约才开始，结束后归还。
+ * Resource scheduling (architecture design §7.6, §7.7): heavy local work is first admitted by its peak demand, starts only once it holds a lease, and returns the lease when it ends.
  *
- * - **并发队列**：每项工作可以属于一个队列（同一个模型包、同一个在线 Provider……），同一队列按先后、不超过它的并发上限。
- *   这就是原来 JobManager 的按队列并发，现在是调度的一个约束，不是另一套系统。在线 Provider 的调用只有这一个约束。
- * - **峰值准入**：需求按维度（内存、GPU 内存、CPU 线程、staging 磁盘）计，放得下才开始；放不下时排队并记下在等什么。
- *   单个需求比这台机器能给的还大时直接拒绝（`RESOURCE_ADMISSION_UNSATISFIABLE`），不无限等。
- * - **不插队**：在等某些维度的工作挡住后来的、也要这些维度的工作；后来的只在不碰这些维度时可以先开始。
- * - **交互优先**：`interactive` 的排在 `background` 前面，并且可以用交互预留；后台工作不能吃掉交互预留。
- *   不抢占正在执行的工作（§7.6「不假定可以强行抢占」）。
- * - **共用的常驻进程（holder）**：一个模型包的 Model Worker 被几个任务先后使用，量只计一次。任务的租约与进程各持有一份：
- *   任务结束后进程还在时照样计入，进程真的退出（或模型卸载）后才归还（§7.7「发出释放请求不等于资源已经归还」）。
- *   空闲的 holder 在有工作等它占着的资源时按最久未用先驱逐。
+ * - **Concurrency queues**: each job may belong to a queue (the same model package, the same online provider, …). Within a queue, order is first-come first-served and it does not exceed the queue's concurrency limit. This is the original JobManager per-queue concurrency, now one constraint of scheduling rather than a separate system. Online provider calls have only this one constraint.
+ * - **Peak admission**: demand is measured per dimension (memory, GPU memory, CPU threads, staging disk). A job starts only if it fits; if it does not fit, it queues and records what it is waiting for. If a single demand is larger than this machine can ever provide, it is rejected directly (`RESOURCE_ADMISSION_UNSATISFIABLE`) rather than waiting forever.
+ * - **No queue-jumping**: a job waiting on some dimensions blocks later jobs that also need those dimensions. Later jobs may start first only if they do not touch those dimensions.
+ * - **Interactive first**: `interactive` goes ahead of `background`, and may use the interactive reserve; background work cannot consume the interactive reserve. It does not preempt running work (§7.6 “do not assume forced preemption is possible”).
+ * - **Shared resident process (holder)**: one model package's Model Worker is used by several tasks in turn, and its amount is counted once. The task lease and the process each hold a share: when the task ends but the process is still there, it is still counted; the amount is returned only when the process actually exits (or the model is unloaded) (§7.7 “sending a release request does not mean the resources have been returned”).
+ * - An idle holder is evicted in least-recently-used order when queued work needs the resources it holds.
  */
 
 export interface ResourceRequest {
-  /** 任务的 `jobId`。 */
+  /** The task's `jobId`. */
   owner: string;
-  /** 给人看的种类。 */
+  /** Kind, for display to people. */
   label: string;
   priority?: ResourcePriority;
   queue?: { key: string; concurrency: number } | null;
-  /** 这项工作自己的峰值需求。 */
+  /** This job's own peak demand. */
   demand?: ResourceDemand;
-  /** 用到的共用 holder：还没有时连同它的量一起准入，已经有时不再计。 */
+  /** The shared holder used: admitted together with its amount if it does not exist yet; not counted again if it already exists. */
   holder?: { id: string; demand: ResourceDemand } | null;
 }
 
 export interface ResourceLease {
   readonly leaseId: string;
-  /** 归还（幂等）。只在资源真的放下之后调用。 */
+  /** Return (idempotent). Only called after the resources have actually been released. */
   release(): void;
 }
 
 export interface ResourceTicket {
-  /** 撤回还在等的请求（已经准入或拒绝时什么也不做）。 */
+  /** Withdraws a request that is still waiting (does nothing if it has already been admitted or rejected). */
   withdraw(): void;
 }
 
 export interface ResourceHandlers {
-  /** 准入：同步调用，拿到租约。 */
+  /** Admission: a synchronous call that returns a lease. */
   admit(lease: ResourceLease): void;
-  /** 需求超过这台机器能给的量，永远放不下。 */
+  /** The demand exceeds what this machine can provide; it can never fit. */
   reject(error: ResourceExceedsCapacity): void;
-  /** 在等什么变了（null：不再等，马上准入）。 */
+  /** What is being waited on has changed (null: no longer waiting, admit immediately). */
   wait?(wait: JobWait | null): void;
 }
 
-/** 超过容量的维度：需求与这个优先级最多能用的量。 */
+/** Dimensions over capacity: the demand and the most this priority can use. */
 export interface ExceededDimension {
   dimension: ResourceDimension;
   demand: number;
@@ -85,11 +81,11 @@ export class ResourceExceedsCapacity extends LocalizedError {
 }
 
 export interface ResourceSchedulerOptions {
-  /** 容量来源；不给时按本机（不含磁盘）。 */
+  /** Capacity source; when not given, uses this machine (excluding disk). */
   capacity?: CapacitySource;
-  /** 预留；不给时按 `defaultReserves`。 */
+  /** Reserves; when not given, uses `defaultReserves`. */
   reserves?: (capacity: ResourceCapacity) => ResourceReserves;
-  /** 磁盘等会变的容量多久刷新一次（默认 2 秒，只在有准入或归还时刷新）。 */
+  /** How often capacity that changes, such as disk, is refreshed (default 2 seconds; refreshed only on admission or return). */
   refreshMs?: number;
   log?: JobsLogger;
 }
@@ -139,7 +135,7 @@ export class ResourceScheduler {
   readonly #waiters: Waiter[] = [];
   readonly #leases = new Map<string, Lease>();
   readonly #holders = new Map<string, Holder>();
-  /** 每个队列正在运行的租约数与并发上限（最近一次请求给的）。 */
+  /** Running lease count and concurrency limit of each queue (from the most recent request). */
   readonly #queues = new Map<string, { concurrency: number; running: number }>();
   #seq = 0;
   #pumping = false;
@@ -148,8 +144,7 @@ export class ResourceScheduler {
   #refreshedAt = -Infinity;
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * 上次探测磁盘以来租出的磁盘量的峰值：探测到的可用空间可能已经扣掉了这些租约写下的文件，它们归还之后、下次探测之前，
-   * 判断「永远放不下」时仍按这个量加回去，免得拿过时的可用空间误拒。
+   * Peak disk amount leased since the last disk probe. The probed free space may already have had the files written under these leases subtracted. After they are returned and before the next probe, when deciding “never fits”, this amount is still added back, to avoid wrongly rejecting based on stale free space.
    */
   #diskPeak = 0;
 
@@ -160,7 +155,7 @@ export class ResourceScheduler {
     this.#log = options.log ?? silentLog;
   }
 
-  /** 排队请求：放得下时同步准入（`admit` 在返回之前调用）。 */
+  /** Queued request: admitted synchronously when it fits (`admit` is called before returning). */
   request(request: ResourceRequest, handlers: ResourceHandlers): ResourceTicket {
     const waiter: Waiter = { seq: ++this.#seq, request, handlers, wait: null };
     this.#waiters.push(waiter);
@@ -175,7 +170,7 @@ export class ResourceScheduler {
     };
   }
 
-  /** `request` 的 Promise 写法：中止时撤回并以中止的原因拒绝，超过容量时以 `ResourceExceedsCapacity` 拒绝。 */
+  /** Promise form of `request`: on abort, withdraws and rejects with the abort reason; when over capacity, rejects with `ResourceExceedsCapacity`. */
   acquire(
     request: ResourceRequest,
     options: { signal?: AbortSignal; onWait?: (wait: JobWait | null) => void } = {},
@@ -207,7 +202,7 @@ export class ResourceScheduler {
     });
   }
 
-  /** 提交时的检查：这项需求在这台机器上是否永远放不下（不算现在已经租出的）。 */
+  /** Check at submission: whether this demand can never fit on this machine (not counting what is currently leased). */
   check(request: ResourceRequest): ResourceExceedsCapacity | null {
     const capacity = this.#capacity.current();
     const exceeded = this.#exceeded(this.#additional(request, capacity), request.priority ?? 'background', capacity);
@@ -215,8 +210,7 @@ export class ResourceScheduler {
   }
 
   /**
-   * 常驻进程持有 holder 的一份（例如启动 Model Worker 时）：进程真的退出后调用返回的函数归还。holder 不存在时（没有经过
-   * 调度的使用）返回 null。`evict` 是空闲时被要求让位的办法（例如卸载模型包）：它只发出请求，真正归还仍然等进程退出。
+   * A resident process holds one share of a holder (for example, when starting a Model Worker). After the process actually exits, call the returned function to release it. Returns null when there is no holder (no use going through scheduling). `evict` is the method requested when idle to yield (for example, unloading a model package): it only sends a request, and the actual release still waits for the process to exit.
    */
   retain(holderId: string, evict?: () => void): (() => void) | null {
     const holder = this.#holders.get(holderId);
@@ -233,13 +227,13 @@ export class ResourceScheduler {
     };
   }
 
-  /** 容量或预留可能变了（改了设置）：重新看一遍排队的工作。 */
+  /** Capacity or reserves may have changed (settings were changed): re-examine the queued work. */
   recheck(): void {
     this.#refreshedAt = -Infinity;
     this.#pump();
   }
 
-  /** 现在的租约数加上 holder 数（测试用：全部归还后为 0）。 */
+  /** The current lease count plus the holder count (for tests: 0 once everything is returned). */
   get outstanding(): number {
     return this.#leases.size + this.#holders.size;
   }
@@ -295,7 +289,7 @@ export class ResourceScheduler {
     };
   }
 
-  // ---- 准入 ----
+  // ---- Admission ----
 
   #pump(): void {
     if (this.#pumping) {
@@ -314,16 +308,16 @@ export class ResourceScheduler {
     this.#maybeRefresh();
   }
 
-  /** 先交互后后台、各自按先后看一遍排队的工作。 */
+  /** Looks at the queued work once, in order: interactive first, then background, each by arrival order. */
   #pass(): void {
     const capacity = this.#capacity.current();
     const reserves = this.#reserves(capacity);
     const leased = this.#leased(capacity);
-    /** 前面有工作在等的维度：后来的不能拿这些维度（不插队）。 */
+    /** Dimensions that earlier waiting work is blocked on: later work cannot take these (no queue-jumping). */
     const blocked = new Set<ResourceDimension>();
-    /** 每个队列前面还在等的数目。 */
+    /** The number of items waiting ahead in each queue. */
     const queued = new Map<string, number>();
-    /** 队列没满、但前面同一队列的工作在等资源时，它在等的维度（后来的同样算等资源）。 */
+    /** When the queue is not full but earlier work in the same queue is waiting for resources, the dimensions it is waiting on (later work counts as waiting for resources too). */
     const queueBlockedOn = new Map<string, ResourceDimension[]>();
     let resourceAhead = 0;
     for (const waiter of this.#ordered()) {
@@ -451,7 +445,7 @@ export class ResourceScheduler {
     this.#pump();
   }
 
-  /** 空闲的 holder（没有任务在用、进程还在）挡住了排队的工作时，请最久没用的那个让位（一次一个）。 */
+  /** When an idle holder (no task using it, process still alive) blocks queued work, asks the least recently used one to yield (one at a time). */
   #maybeEvict(blocked: Set<ResourceDimension>, capacity: ResourceCapacity): void {
     if (blocked.size === 0) return;
     if ([...this.#holders.values()].some((h) => h.evicting)) return;
@@ -470,7 +464,7 @@ export class ResourceScheduler {
     this.#call(() => victim.evict!());
   }
 
-  /** 磁盘这类会变的容量：有准入或归还时刷新（至多每 `refreshMs` 一次）；有工作在等磁盘时到期自己再刷新一次。 */
+  /** Capacity that changes, such as disk: refreshed on admission or return (at most once per `refreshMs`); when work is waiting on disk, refreshed once more when it expires. */
   #maybeRefresh(): void {
     const refresh = this.#capacity.refresh;
     if (!refresh || this.#refreshing) return;
@@ -498,9 +492,9 @@ export class ResourceScheduler {
       });
   }
 
-  // ---- 计量 ----
+  // ---- Metering ----
 
-  /** 准入这项工作要新增的量：自己的需求，加上还不存在的 holder 的量。 */
+  /** The amount this work adds on admission: its own demand, plus the amount of any holder that does not exist yet. */
   #additional(request: ResourceRequest, capacity: ResourceCapacity): Amounts {
     const own = chargeOf(request.demand ?? {}, capacity);
     const holder = request.holder && !this.#holders.has(request.holder.id) ? chargeOf(request.holder.demand, capacity) : ZERO;
@@ -510,7 +504,7 @@ export class ResourceScheduler {
     return total;
   }
 
-  /** 已经租出的量：每份租约自己的，加上每个 holder 的（只计一次）。 */
+  /** The amount already leased: each lease's own amount, plus each holder's (counted once). */
   #leased(capacity: ResourceCapacity): Amounts {
     const total: Amounts = { ...ZERO };
     const add = (demand: ResourceDemand) => {
@@ -524,8 +518,7 @@ export class ResourceScheduler {
   }
 
   /**
-   * 这个优先级最多能用到的量：容量减系统预留，后台再减交互预留。磁盘的容量是此刻的可用空间，已经租出的部分可能已经写了
-   * 一些，所以磁盘的上限把已租出的加回去（保守地按全部还没写算）。
+   * The most this priority can use: capacity minus the system reserve, and for background additionally minus the interactive reserve. For disk, the capacity is the current free space. Since leased work may already have written some of it, the disk ceiling adds the leased amount back (conservatively assuming none of it has been written).
    */
   #line(priority: ResourcePriority, capacity: ResourceCapacity, reserves: ResourceReserves): Amounts {
     const line = {} as Amounts;
@@ -539,7 +532,7 @@ export class ResourceScheduler {
   }
 
   /**
-   * 什么都不租出时也放不下的维度（磁盘按探测到的可用空间加上探测以来租出的峰值）。CPU 不会超：需求按上限截断，只是变慢。
+   * The dimensions that cannot fit even with nothing leased (disk uses the probed free space plus the peak leased since the probe). CPU does not overflow: demand is capped at the limit, so the work just runs slower.
    */
   #exceeded(additional: Amounts, priority: ResourcePriority, capacity: ResourceCapacity): ExceededDimension[] {
     const line = this.#line(priority, capacity, this.#reserves(capacity));
@@ -553,13 +546,13 @@ export class ResourceScheduler {
     return result;
   }
 
-  /** CPU 线程的上限：后台能用的线程数（至少 1）。 */
+  /** The CPU thread limit: the number of threads background work can use (at least 1). */
   #cpuCeiling(capacity: ResourceCapacity): number {
     const reserves = this.#reserves(capacity);
     return Math.max(1, capacity.cpuThreads - reserves.system.cpuThreads - reserves.interactive.cpuThreads);
   }
 
-  // ---- 杂项 ----
+  // ---- Miscellaneous ----
 
   #ordered(): Waiter[] {
     const rank = (w: Waiter) => ((w.request.priority ?? 'background') === 'interactive' ? 0 : 1);
@@ -611,7 +604,7 @@ export class ResourceScheduler {
   }
 }
 
-/** 一项需求在各维度上计入的量：统一内存的机器上 GPU 内存同时计入内存。 */
+/** The amount one demand counts on each dimension: on a unified-memory machine, GPU memory is also counted in memory. */
 function chargeOf(demand: ResourceDemand, capacity: ResourceCapacity): Amounts {
   const charge: Amounts = { ...ZERO };
   for (const d of RESOURCE_DIMENSIONS) charge[d] = Math.max(0, demand[d] ?? 0);
@@ -619,7 +612,7 @@ function chargeOf(demand: ResourceDemand, capacity: ResourceCapacity): Amounts {
   return charge;
 }
 
-/** 容量未知的维度不按它准入。 */
+/** A dimension whose capacity is unknown is not used for admission. */
 function enforced(dimension: ResourceDimension, capacity: ResourceCapacity): boolean {
   return capacity[dimension] !== null;
 }
@@ -633,7 +626,7 @@ function resourceDetail(dimensions: ResourceDimension[], behind: boolean): Local
   return behind ? J.waitingBehind({ dimensions: keys }) : J.waitingShort({ dimensions: keys });
 }
 
-/** `JobWait` 的 `detail` 与它的引用。 */
+/** `JobWait`'s `detail` and its reference. */
 function waitDetail(detail: Localized): Pick<JobWait, 'detail' | 'detailRef'> {
   const { text, ref } = textParts(detail);
   return ref ? { detail: text, detailRef: ref } : { detail: text };

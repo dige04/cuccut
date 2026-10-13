@@ -3,15 +3,15 @@ import { fromVideoId, KIND_LABEL, kindOfFileName } from './space.ts';
 import { M } from './space-actions-copy.ts';
 
 /**
- * Space 条目上的动作能不能做、做不了时为什么（产品设计 §4.6、§4.7、§4.9；架构设计 §5.5、§5.7）。
- * 做不了的按钮置灰并写一句真实原因（照 tools-gallery 的 plannedReason），不假装做了。
+ * Whether an action on a Space item can be done, and if not, why (product design §4.6, §4.7, §4.9; architecture design §5.5, §5.7).
+ * A button that cannot be done is greyed out with one real reason (following tools-gallery's plannedReason); it does not pretend the action was done.
  */
 
 /**
- * 二次编辑的去处（产品设计 §4.6、原型 model-space.js 的 editRoute）：
- * 视频直接进编辑器；有来源视频的成片与产物回到来源视频；成片或视频素材没有来源视频时以它为素材新建视频；
- * 字幕、文档改文字；图片、音频、模板另存一份再改。视频包（便携包）没有二次编辑。
- * 只是按条目猜的去处，真正去哪里由 `space.openForEdit` 回答。
+ * Where secondary editing goes (product design §4.6; prototype model-space.js editRoute):
+ * a video goes straight into the editor; a finished cut or product with a source video goes back to that source video; a finished cut or video material with no source video creates a new video using it as material;
+ * subtitles and documents edit their text; images, audio, and templates are saved as a copy first and then edited. Video packages (portable packages) have no secondary editing.
+ * This is only a guess at the destination from the item; where it really goes is answered by `space.openForEdit`.
  */
 export type EditRoute = 'video' | 'source-video' | 'new-video' | 'text' | 'version';
 
@@ -26,23 +26,23 @@ export function editRoute(entry: Pick<SpaceEntry, 'kind' | 'origin'>): EditRoute
 
 export const EDIT_LABEL: Record<EditRoute, string> = live(() => M.edit);
 
-/** 失败的生成占位：没有文件，只能清除（`space.purge` 直接清掉）。 */
+/** A failed generation placeholder: it has no file, so it can only be cleared (`space.purge` clears it directly). */
 export function isFailedPlaceholder(entry: Pick<SpaceEntry, 'status' | 'ref'>): boolean {
   return entry.status === 'failed' && !!entry.ref && 'jobId' in entry.ref;
 }
 
-/** 条目对应的任务：占位的任务，或生成、导出它的任务（任务页按 jobId 也能定位）。 */
+/** The task for this item: the placeholder's task, or the task that generated or exported it (the task page can also locate it by jobId). */
 export function entryJobId(entry: Pick<SpaceEntry, 'ref' | 'origin'>): Id | null {
   if (entry.ref && 'jobId' in entry.ref) return entry.ref.jobId;
   return entry.origin?.jobId ?? null;
 }
 
-/** 条目来自哪个会话：bytes 在会话工作目录里的看来源，产物看 `origin`。 */
+/** Which session the item came from: for bytes, look at the source in the session working directory; for products, look at `origin`. */
 export function entryConversationId(entry: Pick<SpaceEntry, 'source' | 'origin'>): Id | null {
   return entry.source.conversationId ?? entry.origin?.conversationId ?? null;
 }
 
-/** 状态挡住的编辑：回收站、生成中、缺失、失败。没挡住时 null。 */
+/** Edits blocked by state: in the trash, generating, missing, or failed. null when not blocked. */
 function stateBlock(entry: Pick<SpaceEntry, 'status' | 'user'>): string | null {
   if (entry.user.trashedAt) return M.trashed;
   if (entry.status === 'generating') return M.editGenerating;
@@ -52,10 +52,10 @@ function stateBlock(entry: Pick<SpaceEntry, 'status' | 'user'>): string | null {
 }
 
 /**
- * 二次编辑为什么做不了；能做时 null。`path` 是条目在磁盘上的绝对路径（只有来源目录里的文件才知道）。
- * - 字幕、文档：Runtime 还没有保存新版本的命令（产物不可变，不能覆盖原条目）。
- * - 图片、音频、模板：手工修改还没有开放（模型辅助修改是 P1）。
- * - 以它为素材新建视频：要导入文件的路径；不在项目或会话目录里的产物（Artifact Store、目录之外的导出）界面拿不到路径。
+ * Why secondary editing cannot be done; null when it can. `path` is the item's absolute path on disk (only known for files in a source directory).
+ * - Subtitles and documents: the Runtime has no command yet to save a new version (products are immutable, so the original item cannot be overwritten).
+ * - Images, audio, and templates: manual editing is not yet open (model-assisted editing is P1).
+ * - Creating a new video from it as material: needs the file's path to import; products outside the project or session directories (Artifact Store, exports outside the directory) do not give the UI a path.
  */
 export function editBlock(entry: Pick<SpaceEntry, 'kind' | 'origin' | 'status' | 'user' | 'source'>, path: string | null): string | null {
   const route = editRoute(entry);
@@ -71,8 +71,8 @@ export function editBlock(entry: Pick<SpaceEntry, 'kind' | 'origin' | 'status' |
 }
 
 /**
- * 便携包「打开成新视频」为什么做不了（架构设计 §5.8 `videos.importPackage`）；能做时 null。
- * 新视频建在包所在的项目或会话工作目录里，所以要知道包在磁盘上的路径和它属于哪个目录。
+ * Why “open as new video” from a portable package cannot be done (architecture design §5.8 `videos.importPackage`); null when it can.
+ * The new video is built in the project or session working directory where the package is, so the package's path on disk and the directory it belongs to must be known.
  */
 export function packageBlock(entry: Pick<SpaceEntry, 'status' | 'user' | 'source'>, path: string | null): string | null {
   if (entry.user.trashedAt) return M.trashed;
@@ -83,21 +83,21 @@ export function packageBlock(entry: Pick<SpaceEntry, 'status' | 'user' | 'source
   return null;
 }
 
-/** 包所在的目录：新视频建在这里（`videos.importPackage` 要 projectId 或 conversationId 其中一个）。 */
+/** The directory the package is in: the new video is built here (`videos.importPackage` needs either projectId or conversationId). */
 export function packageScope(entry: Pick<SpaceEntry, 'source'>): { projectId: Id } | { conversationId: Id } | null {
   if (entry.source.projectId) return { projectId: entry.source.projectId };
   if (entry.source.conversationId) return { conversationId: entry.source.conversationId };
   return null;
 }
 
-/** 「在会话中继续」为什么做不了（产品设计 §4.7：回收站里的条目要先恢复才能带入）。 */
+/** Why “continue in session” cannot be done (product design §4.7: items in the trash must be restored before they can be brought in). */
 export function continueBlock(entry: Pick<SpaceEntry, 'user'>): string | null {
   return entry.user.trashedAt ? M.continueTrashed : null;
 }
 
 /**
- * 「彻底删除」为什么做不了（架构设计 §5.5）：只删回收站里的条目；失败的占位直接清除；生成中的先取消任务。
- * 被引用时 Runtime 拒绝并列出引用，那要等调用之后才知道。
+ * Why “permanently delete” cannot be done (architecture design §5.5): only items in the trash are deleted; failed placeholders are cleared directly; items being generated have their task cancelled first.
+ * When an item is referenced, the Runtime refuses and lists the references; that is only known after the call.
  */
 export function purgeBlock(entry: Pick<SpaceEntry, 'status' | 'user' | 'ref'>): string | null {
   if (entry.status === 'generating') return M.purgeGenerating;
@@ -106,20 +106,20 @@ export function purgeBlock(entry: Pick<SpaceEntry, 'status' | 'user' | 'ref'>): 
   return null;
 }
 
-/** 阻止删除的引用的种类（架构设计 §5.5 的引用图）。 */
+/** Kinds of reference that block deletion (the reference graph in architecture design §5.5). */
 export const REFERENCE_KIND_LABEL: Record<SpaceReference['kind'], string> = live(() => M.referenceKind);
 
-/** 删除视频时一起列出的条目（产品设计 §4.9）：由它导出、生成的条目留在 Space 里。与卡片上收进视频的是同一条判定（`fromVideoId`）。 */
+/** Items listed together when deleting a video (product design §4.9): items it exported or generated stay in Space. This is the same rule as the one for cards folding files into a video (`fromVideoId`). */
 export function relatedEntries(entries: readonly SpaceEntry[], videoId: Id): SpaceEntry[] {
   return entries.filter((entry) => fromVideoId(entry) === videoId);
 }
 
-/** 视频条目的 videoId；不是视频或还没打开过（没有 ref）时 null。 */
+/** The videoId of a video item; null when the item is not a video, or has not been opened yet (no ref). */
 export function videoIdOf(entry: Pick<SpaceEntry, 'ref'>): Id | null {
   return entry.ref && 'videoId' in entry.ref ? entry.ref.videoId : null;
 }
 
-/** 导入素材后的一句话：几个成功（几个复制进了 imports/）、几个失败。 */
+/** One sentence after importing material: how many succeeded (how many were copied into imports/) and how many failed. */
 export function importSummary(results: readonly ({ ok: true; copied: boolean } | { ok: false; error: string })[]): {
   text: string;
   tone: 'positive' | 'negative' | 'neutral';
@@ -137,14 +137,14 @@ export function importSummary(results: readonly ({ ok: true; copied: boolean } |
   return { text: parts.join(' · '), tone: failed ? 'neutral' : 'positive' };
 }
 
-/** 放上时间线用的素材种类（`importAndPlace` 的 kind）：按扩展名分视频、音频、图片；别的文件放不上时间线时 null。 */
+/** The kind of material placed on the timeline (`importAndPlace`'s kind): by extension, video, audio, or image; null for other files that cannot be placed on the timeline. */
 export function placeKindOf(fileName: string): 'video' | 'audio' | 'image' | null {
   const kind = kindOfFileName(fileName);
   return kind === 'video-file' ? 'video' : kind === 'audio' || kind === 'image' ? kind : null;
 }
 
 /**
- * 随消息带上的 Space 条目（架构设计 §5.7「从条目继续会话」）写成一行：已发消息下面那一行用。最多写出前两个名字。
+ * A Space item carried with a message (architecture design §5.7 “continue the session from an item”) written as one line, for the line under the sent message. At most the first two names are written.
  */
 export function referencesText(refs: readonly Pick<SpaceEntryReference, 'name'>[]): string {
   return M.references(
@@ -153,12 +153,12 @@ export function referencesText(refs: readonly Pick<SpaceEntryReference, 'name'>[
   );
 }
 
-/** 一个引用的说明（输入框上方标签的提示）：类型与位置；不在来源目录里的产物写「产物」。 */
+/** A description of a reference (the hint on the label above the input box): type and location; products outside the source directory are written as “product”. */
 export function referenceDescription(ref: Pick<SpaceEntryReference, 'kind' | 'relPath'>): string {
   return `${KIND_LABEL[ref.kind]} · ${ref.relPath ?? M.referenceOutput}`;
 }
 
-/** 路径里的文件名去掉扩展名：从文件新建视频时用作视频名。 */
+/** The filename in the path with its extension removed: used as the video name when creating a video from a file. */
 export function videoNameOf(path: string): string {
   const file = path.split(/[\\/]/).pop() || path;
   const dot = file.lastIndexOf('.');
@@ -166,8 +166,8 @@ export function videoNameOf(path: string): string {
 }
 
 /**
- * Space 列表与卡片的集合依赖键：react-aria 集合按条目对象缓存每项的渲染，条目没变时不重渲染。菜单里随别的数据变的部分
- * （转录动作看后到的候选与 `jobs`，「在文件夹中显示」看保存位置，表格的来源列看保存位置与视频名）写成一个字符串，变了才让缓存失效，不是每次渲染都失效。
+ * Collection dependency key for Space lists and cards: react-aria collections cache each item's render per item object, so an unchanged item is not re-rendered. Parts of the menu that change with other data
+ * (the transcribe action looks at candidates that arrive later and at `jobs`; “show in folder” looks at the save location; the source column of the table looks at the save location and the video name) are combined into one string, so the cache is invalidated only when they change, not on every render.
  */
 export function entryMenuKey(
   entries: readonly SpaceEntry[],

@@ -16,26 +16,26 @@ import { sourceAllowed } from './source-gate.ts';
 import { NodesServer as NS } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 节点服务的 HTTP 端点（节点协议规范 §2–§7）。每个请求依次过三道门，前一道不过就不看后一道：
+ * HTTP endpoints of the node service (node protocol spec §2–§7). Each request passes three gates in order; if one fails, the later ones are not checked:
  *
- * 1. 来源门：只看 `socket.remoteAddress`（`allowAnySource` 时跳过）；
- * 2. 版本门：`X-CucCut-Node-Protocol`，`GET /v1/health` 不过这道门；
- * 3. 令牌门：`Authorization: Bearer <令牌>`，`GET /v1/health` 与 `POST /v1/pair` 不过这道门。
+ * 1. Source gate: looks only at `socket.remoteAddress` (skipped when `allowAnySource`);
+ * 2. Version gate: `X-CucCut-Node-Protocol`; `GET /v1/health` does not pass this gate;
+ * 3. Token gate: `Authorization: Bearer <token>`; `GET /v1/health` and `POST /v1/pair` do not pass this gate.
  *
- * 这里没有管理端点：配对码、吊销与开关只经本机网关。未知的路径回 `404 INVALID_REQUEST`，已知路径上不支持的方法回
- * `405 INVALID_REQUEST`（规范的错误表里没有专门的码）。
+ * There are no management endpoints here: pairing codes, revocation and switches go only through the local gateway. Unknown paths return `404 INVALID_REQUEST`, and unsupported methods on known paths return
+ * `405 INVALID_REQUEST` (the spec's error table has no dedicated code).
  */
 
 export interface NodeApiDeps {
   jobs: NodeJobs;
   health(): Promise<NodeHealth>;
-  /** 配对：成功返回令牌；失败抛 `NodeHttpError`。 */
+  /** Pairing: returns the token on success; throws `NodeHttpError` on failure. */
   pair(code: string, clientId: string, clientName: string): Promise<NodePairResponse>;
-  /** 令牌 → clientId；无效返回 null。 */
+  /** Token → clientId; returns null if the token is invalid. */
   authenticate(token: string): string | null;
   allowAnySource(): boolean;
   log?: NodeLogger;
-  /** 事件流的心跳间隔（默认 15 秒）。 */
+  /** Heartbeat interval for the event stream (default 15 seconds). */
   heartbeatMs?: number;
 }
 
@@ -55,12 +55,12 @@ export function createNodeRequestHandler(deps: NodeApiDeps): (request: http.Inco
   const heartbeatMs = deps.heartbeatMs ?? 15_000;
 
   const handle = async (request: http.IncomingMessage, response: http.ServerResponse, url: URL): Promise<void> => {
-    // 1. 来源门
+    // 1. Source gate
     if (!sourceAllowed(request.socket.remoteAddress, deps.allowAnySource())) {
       throw new NodeHttpError(NODE_ERROR.SOURCE_NOT_ALLOWED, NS.sourceNotAllowed().text);
     }
     const route = routeOf(request.method ?? 'GET', url.pathname);
-    // 2. 版本门
+    // 2. Version gate
     if (route.kind !== 'health') {
       const raw = request.headers[NODE_PROTOCOL_HEADER.toLowerCase()];
       const version = typeof raw === 'string' && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : null;
@@ -74,7 +74,7 @@ export function createNodeRequestHandler(deps: NodeApiDeps): (request: http.Inco
       if (!body.success) throw new NodeHttpError(NODE_ERROR.INVALID_REQUEST, NS.pairRequestInvalid().text);
       return sendJson(response, 200, await deps.pair(body.data.code, body.data.clientId, body.data.clientName));
     }
-    // 3. 令牌门
+    // 3. Token gate
     const auth = request.headers.authorization;
     const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : '';
     const clientId = token ? deps.authenticate(token) : null;
@@ -105,7 +105,7 @@ export function createNodeRequestHandler(deps: NodeApiDeps): (request: http.Inco
       case 'input': {
         const header = request.headers['content-length'];
         if (typeof header !== 'string' || !/^\d+$/.test(header) || request.headers['transfer-encoding']) {
-          // 没有读请求体：回完就关连接。
+          // The request body was not read: close the connection after responding.
           response.setHeader('Connection', 'close');
           throw new NodeHttpError(NODE_ERROR.INVALID_REQUEST, NS.contentLengthRequired().text);
         }
@@ -205,7 +205,7 @@ function sendError(response: http.ServerResponse, error: NodeHttpError, status?:
     error: { code: error.code, message: error.message, ...(error.details !== undefined ? { details: error.details } : {}) },
   };
   const code = status ?? error.status;
-  // 请求体没读完时不留着连接（例如上传之前就拒绝了）。
+  // If the request body has not been fully read, do not keep the connection open (e.g. when a request is rejected before upload).
   if (!response.req.complete) response.setHeader('Connection', 'close');
   if (error.code === NODE_ERROR.PAIRING_LOCKED && typeof error.details?.retryAfterMs === 'number') {
     response.setHeader('Retry-After', String(Math.ceil(error.details.retryAfterMs / 1000)));
@@ -282,7 +282,7 @@ function sendResult(
   stream.pipe(response);
 }
 
-/** 单段 `Range: bytes=a-b`（含 `a-`、`-n`）；多段或不认识的写法当作没有 Range。 */
+/** A single `Range: bytes=a-b` (including `a-` and `-n`); multi-range or unrecognized forms are treated as no Range. */
 export function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
   if (!header) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());

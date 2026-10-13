@@ -16,7 +16,7 @@ import { pl } from './home-brief.pl.ts';
 import { tr } from './home-brief.tr.ts';
 import { vi } from './home-brief.vi.ts';
 
-/** 起始页简报的文案（英文是键与类型的来源，译文在 `home-brief.zh-Hans.ts`）。 */
+/** Copy for the start page brief (the English is the source of keys and types; translations are in `home-brief.zh-Hans.ts`). */
 const en = {
   about: (minutes: number, seconds: number) =>
     `About ${[minutes ? `${minutes} min` : '', seconds ? `${seconds} sec` : ''].filter(Boolean).join(' ')}`,
@@ -38,13 +38,12 @@ export type HomeBriefMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * Home 起始页交给 Agent 的那段话（产品设计 §3.2.1；原型 designs/cuccut/app/model-newproject.js
- * `homePrompt`、`canStart`、`aiGate`、`gateGuide`）。画幅与时长不在起始页设：Agent 从用户的话里看出来，没说的按内容决定。
- * 场景模板（model/home-templates.ts）发送时以 `conversations.send` 的 `template` 交给 Runtime，
- * 模板的默认画幅与时长、提示词正文与简报引导都由 Runtime 拼（模板包规范 §5.2），不写进这段话，也不代替用户要讲的内容。
+ * The text the Home start page hands to the Agent (product design §3.2.1; prototype designs/cuccut/app/model-newproject.js
+ * `homePrompt`, `canStart`, `aiGate`, `gateGuide`). Aspect ratio and duration are not set on the start page: the Agent works them out from the user's words, and if not mentioned, decides them from the content.
+ * When a scene template (model/home-templates.ts) is sent, it goes to the Runtime as the `template` of `conversations.send`; the template's default aspect ratio and duration, the prompt body and the brief guidance are assembled by the Runtime (template pack spec §5.2), so they are not written into this text, and they do not replace what the user wants to say.
  */
 
-/** 模板卡片上的时长：「约 1 分钟」「约 1 分钟 30 秒」「约 45 秒」；没写（或不是正数）时为 null。 */
+/** Duration on template cards: “约 1 分钟” (about 1 minute), “约 1 分钟 30 秒” (about 1 minute 30 seconds), “约 45 秒” (about 45 seconds); null when not given (or not a positive number). */
 export function lengthLabel(seconds: number | null | undefined): string | null {
   if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0) return null;
   const minutes = Math.floor(seconds / 60);
@@ -53,17 +52,17 @@ export function lengthLabel(seconds: number | null | undefined): string | null {
 }
 
 export interface HomeBriefOptions {
-  /** 随消息附上的图片张数。 */
+  /** Number of images attached to the message. */
   images: number;
-  /** 交给 Agent 的本机素材路径（视频、音频、文档）。 */
+  /** Local material paths handed to the Agent (videos, audio, documents). */
   materials: readonly string[];
 }
 
 /**
- * 发给 Agent 的正文：用户自己的话（没写、只附了材料时补一句，挂没挂模板都一样：规范 §5.2 的 `text` 照常必填）、材料行。
- * 挂着的场景模板不写进来：它随 `conversations.send` 的 `template` 走，会话里的消息另带模板标记。
- * 材料按本机绝对路径写进正文：Agent 用 CucCut 的导入工具按路径把文件收进项目（项目外的路径要先经你同意）。
- * 没填的待填项 `{{label}}` 写成「[label]」（规范 §5.5）：不拦发送，Agent 把它当作简报缺项先问。
+ * The body sent to the Agent: the user's own words (if none were written and only material was attached, one sentence is added; this applies whether or not a template is attached: `text` is still required per spec §5.2), plus the material lines.
+ * An attached scene template is not written in here: it travels with the `template` of `conversations.send`, and the message in the session carries a template marker separately.
+ * Material is written into the body by its absolute local path: the Agent uses CucCut's import tool to bring the files into the project by path (paths outside the project require your agreement first).
+ * An unfilled slot `{{label}}` is written as “[label]” (spec §5.5): sending is not blocked, and the Agent treats it as a missing brief item and asks first.
  */
 export function homeBrief(text: string, options: HomeBriefOptions): string {
   const own = templateUnfilledText(text).trim();
@@ -75,7 +74,7 @@ export function homeBrief(text: string, options: HomeBriefOptions): string {
   return parts.filter(Boolean).join('\n');
 }
 
-/** 起始页能不能开始：Agent 可用，并且写了话或附了材料。只选模板不算——模板不代替你要讲的内容。 */
+/** Whether the start page can begin: an Agent is available, and the user has written something or attached material. Choosing a template alone does not count: a template does not replace what you want to say. */
 export function canStartHome(input: { text: string; images: number; materials: number; gate: HomeGate | null }): {
   ok: boolean;
   why: string | null;
@@ -86,9 +85,9 @@ export function canStartHome(input: { text: string; images: number; materials: n
 }
 
 /**
- * 有没有一个 Agent 能用（原型 `aiGate`）：有一个就绪就行。
- * 都不行时分两种：装好了只是在设置里停用了（`disabled` 只在探测就绪、偏好停用时出现）→ 启用它；
- * 其余（没装、版本旧、没登录、出错）→ 去设置 › Agent 连接。
+ * Whether any Agent is usable (prototype `aiGate`): one ready Agent is enough.
+ * When none are usable there are two cases: installed but only disabled in Settings (`disabled` appears only when detection is ready and the preference is disabled) → enable it;
+ * everything else (not installed, outdated version, not signed in, error) → go to Settings › Agent connection.
  */
 export type HomeGate =
   | { ok: true }
@@ -96,8 +95,8 @@ export type HomeGate =
   | { ok: false; reason: 'agent-missing' };
 
 /**
- * `drivers` 为 null（还没拿到列表）时不下结论；已有一个就绪就算能用。都不就绪、但还有 Driver 在首次探测（`checking`）时
- * 也不下结论：它可能就是能用的那个，不先闪一下「装 Agent」的指引卡。
+ * When `drivers` is null (the list has not been fetched yet), no conclusion is drawn; if one is already ready, that counts as usable. When none is ready but some driver is still in its first detection (`checking`),
+ * no conclusion is drawn either: it may be the one that works, so the “装 Agent” (Install an Agent) guidance card does not flash first.
  */
 export function homeGate(
   drivers: readonly Pick<DriverInfo, 'id' | 'name' | 'state'>[] | null,
@@ -114,12 +113,12 @@ export function homeGate(
 export interface GateGuide {
   title: string;
   body: string;
-  /** 主按钮：启用那个停用的 Agent，或去设置 › Agent。 */
+  /** Primary button: enables the disabled Agent, or goes to Settings › Agent. */
   action: string;
   enable: { id: DriverId; name: string } | null;
 }
 
-/** Agent 用不了时起始页下面那张指引卡（原型 `gateGuide` 的 agent-off / agent-missing）。 */
+/** The guidance card below the start page when the Agent cannot be used (prototype `gateGuide`'s agent-off / agent-missing). */
 export function gateGuide(gate: HomeGate | null): GateGuide | null {
   if (!gate || gate.ok) return null;
   if (gate.reason === 'agent-off') {
@@ -138,28 +137,28 @@ export function gateGuide(gate: HomeGate | null): GateGuide | null {
   };
 }
 
-/** 起始页上还没发出去的设置：选的模板，以及交给 Agent 的本机素材。 */
+/** Settings on the start page not yet sent: the chosen template, and the local material handed to the Agent. */
 export interface HomeBriefState {
-  /** 挂着的场景模板的 id（模板目录里的，model/home-templates.ts）。作品示例不挂：它的提示词直接放进输入框。 */
+  /** ID of the attached scene template (from the template catalogue, model/home-templates.ts). Example works are not attached: their prompt goes straight into the input box. */
   template: string | null;
   materials: readonly HomeMaterial[];
 }
 
 export const EMPTY_HOME_BRIEF: HomeBriefState = { template: null, materials: [] };
 
-/** 挂上或摘掉场景模板（原型 page-new.jsx `pickScene`）；素材不动。 */
+/** Attaches or removes a scene template (prototype page-new.jsx `pickScene`); material is left unchanged. */
 export function pickTemplate(state: HomeBriefState, template: Pick<HomeTemplate, 'id'> | null): HomeBriefState {
   return { ...state, template: template ? template.id : null };
 }
 
-/** 交给 Agent 的一份本机素材。 */
+/** One local material item handed to the Agent. */
 export interface HomeMaterial {
   path: string;
   name: string;
   kind: 'media' | 'image' | 'document';
 }
 
-/** 一次最多带几份素材（原型 `AgentHero` 同样是 8 份）。 */
+/** Maximum number of material items per send (the prototype `AgentHero` is also 8). */
 export const MAX_HOME_MATERIALS = 8;
 
 export function materialOf(path: string): HomeMaterial {
@@ -168,7 +167,7 @@ export function materialOf(path: string): HomeMaterial {
   return { path, name, kind: kind === 'video-file' || kind === 'audio' ? 'media' : kind === 'image' ? 'image' : 'document' };
 }
 
-/** 并进新的素材：同一路径只留一份，超过上限的不收，并说退回了几份。 */
+/** Merges in new material: each path is kept only once, items beyond the limit are not accepted, and the number returned is reported. */
 export function addMaterials(list: readonly HomeMaterial[], paths: readonly string[]): { list: HomeMaterial[]; rejected: number } {
   const next = [...list];
   let rejected = 0;
@@ -181,8 +180,8 @@ export function addMaterials(list: readonly HomeMaterial[], paths: readonly stri
 }
 
 /**
- * 新建项目的名称校验（原型 model-agent-projects.js `dirCreationError` 的名称部分）：空的、`.`/`..`、带斜杠或控制字符的不收。
- * 保存位置由 Runtime 定在项目根目录下（`projects.create` 只收名称），这里不校验父目录。
+ * Name validation for creating a new project (the name part of the prototype model-agent-projects.js `dirCreationError`): empty names, `.`/`..`, and names with slashes or control characters are rejected.
+ * The save location is set by the Runtime under the project root (`projects.create` takes only a name), so the parent directory is not validated here.
  */
 export function projectNameError(name: string): string | null {
   const trimmed = name.trim();

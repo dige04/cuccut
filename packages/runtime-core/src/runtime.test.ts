@@ -36,8 +36,8 @@ import { SpaceCatalog } from './space-catalog.ts';
 import { ServiceManager } from './services/service-manager.ts';
 
 /**
- * 端到端：真实的 Runtime、网关与客户端，Driver 换成脚本化的假实现。
- * 用户消息决定假智能体的行为：`hello` 流式回复后结束；`approve` 先要一次审批再结束。
+ * End to end: a real Runtime, gateway and client, with the Driver replaced by a scripted fake.
+ * The user's message decides how the fake agent behaves: `hello` streams a reply and then ends; `approve` first asks for one approval before ending.
  */
 
 const capabilities: DriverProbe['capabilities'] = { steer: false, approvals: true, resume: false, images: false };
@@ -46,7 +46,7 @@ class FakeSession implements AgentSession {
   readonly id = newId('fake');
   readonly capabilities = capabilities;
   readonly calls: string[] = [];
-  /** 每一轮带来的访问模式（`TurnSettings.accessMode`）：模式按轮生效，不重开原生会话。 */
+  /** The access mode carried by each turn (`TurnSettings.accessMode`): the mode takes effect per turn, without reopening the native session. */
   readonly turnModes: TurnSettings['accessMode'][] = [];
   readonly #listeners = new Set<(event: AgentEvent) => void>();
   #turn = 0;
@@ -102,7 +102,7 @@ class FakeSession implements AgentSession {
   }
 }
 
-/** 假智能体按消息发出的审批请求：命令、工作目录内外的文件修改、越出沙箱的命令（Codex 的 on-request）。 */
+/** Approval requests the fake agent emits, per message: commands, file changes inside and outside the working directory, and commands that escape the sandbox (Codex's on-request). */
 const DRIVER_REQUESTS: Record<string, { request: Extract<AgentEvent, { type: 'approval.requested' }>['request']; escalation?: true }> = {
   approve: { request: { kind: 'command', command: 'touch notes.txt', cwd: null, reason: null, rule: 'touch' } },
   'approve-file': { request: { kind: 'file-change', files: ['notes.txt'], reason: null } },
@@ -180,7 +180,7 @@ describe('Runtime（假 Driver）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 经订阅维护的会话镜像，与界面拿到的一致。 */
+  /** A session mirror kept up through a subscription, matching what the UI receives. */
   function mirror(conversationId: Id) {
     let current: ConversationSnapshot | null = null;
     const updates: string[] = [];
@@ -229,7 +229,7 @@ describe('Runtime（假 Driver）', () => {
     const first = await client.request('conversations.send', { conversationId: conversation.id, text: 'hello', commandId });
     const second = await client.request('conversations.send', { conversationId: conversation.id, text: 'hello', commandId });
     expect(second.taskId).toBe(first.taskId);
-    // 原生会话在 send 返回之后异步创建（要先读开着的 skill），等它出现再数。
+    // The native session is created asynchronously after send returns (it first reads the open skill), so wait for it to appear before counting.
     const session = await until(() => driver.sessions[0]?.calls.some((c) => c.startsWith('startTurn')) && driver.sessions[0]);
     expect(session.calls.filter((c) => c.startsWith('startTurn'))).toHaveLength(1);
   });
@@ -460,7 +460,7 @@ describe('Runtime（假 Driver）', () => {
 
   it('访问模式跟随设置；「总是允许」：规则归 CucCut 存，原生侧只按会话级放行，之后同一条规则自动答应；默认 Agent 存在设置里', async () => {
     const { conversation } = await client.request('conversations.create', {});
-    // 没有切换过的会话跟随设置 agent.defaultAccessMode（默认 auto）。
+    // A session that has not been switched follows the setting agent.defaultAccessMode (default auto).
     expect(conversation).toMatchObject({ driverId: 'codex', model: null, effort: null, accessMode: null });
     const { conversation: switched } = await client.request('conversations.update', { conversationId: conversation.id, accessMode: 'ask' });
     expect(switched.accessMode).toBe('ask');
@@ -474,7 +474,7 @@ describe('Runtime（假 Driver）', () => {
       decidedBy: 'user',
       decision: 'accept-always',
     });
-    // 假智能体只在 `accept` 后结束回合；会话级放行之后由停止收尾。
+    // The fake agent ends a turn only after `accept`; after a session-level allow, it wraps up on stop.
     await client.request('tasks.stop', { taskId });
     await until(() => runtime.harness.getConversation(conversation.id).conversation.activity === 'idle');
 
@@ -482,7 +482,7 @@ describe('Runtime（假 Driver）', () => {
     expect(view.preferences).toMatchObject({ rules: ['touch'] });
     expect(view.drivers).toEqual([expect.objectContaining({ id: 'codex', state: 'ready', enabled: true, isDefault: true })]);
 
-    // 另一个会话里同一条规则：「询问」档也自动答应，时间线上记成按规则。
+    // Same rule in another session: the “ask” tier also auto-approves, and the timeline records it as by rule.
     const { conversation: other } = await client.request('conversations.create', {});
     await client.request('conversations.send', { conversationId: other.id, text: 'approve', commandId: newId('cmd'), accessMode: 'ask' });
     const ruled = await until(() => runtime.harness.getConversation(other.id).items.find((i) => i.kind === 'approval'));
@@ -491,14 +491,14 @@ describe('Runtime（假 Driver）', () => {
     await until(() => runtime.harness.getConversation(other.id).conversation.activity === 'idle');
     expect((await client.request('agents.removeRule', { rule: 'touch' })).preferences.rules).toEqual([]);
 
-    // 默认 Agent：agents.setDefault 写的是设置 agent.defaultDriver。
+    // Default Agent: agents.setDefault writes the setting agent.defaultDriver.
     await client.request('agents.setDefault', { driverId: 'codex' });
     expect((await client.request('settings.get', {})).settings['agent.defaultDriver']).toBe('codex');
 
-    // 原生会话不能跨 Agent 续：有过任务的会话不能换。
+    // A native session cannot continue across Agents: a session that has had tasks cannot be switched.
     const error = await rejection(client.request('conversations.update', { conversationId: conversation.id, driverId: 'claude' }));
     expect(error.code).toBe('conflict');
-    // 停用之后不再是可用的默认。
+    // Once disabled, it is no longer a valid default.
     const disabled = await client.request('agents.configure', { driverId: 'codex', enabled: false });
     expect(disabled.drivers[0]).toMatchObject({ state: 'disabled', status: 'unavailable', enabled: false });
   });
@@ -587,7 +587,7 @@ describe('Runtime（假 Driver）', () => {
     const read = await client.request('conversations.markRead', { conversationId: conversation.id });
     expect(read.conversation).toMatchObject({ unread: false, updatedAt: before });
 
-    // 会话删除后，它的任务从任务中心消失。
+    // After a session is deleted, its tasks disappear from the task center.
     await client.request('conversations.delete', { conversationId: conversation.id });
     await until(() => tasks?.tasks.length === 0);
   });
@@ -644,15 +644,15 @@ describe('Runtime（假 Driver）', () => {
     await until(() => space?.entries.find((e) => e.id === video.id)?.user.favorite);
     const trashed = await client.request('space.update', { entryId: video.id, trashed: true });
     expect(trashed.entry.user.trashedAt).not.toBeNull();
-    // 回收站只写标记，文件还在。
+    // The trash only writes a marker; the file is still there.
     await fs.access(path.join(project, 'clips', 'a.mp4'));
 
-    // 标记在重扫后保留。
+    // The marker survives a rescan.
     await client.request('space.rescan', {});
     expect(space!.entries.find((e) => e.id === video.id)).toMatchObject({ name: '开场', user: { favorite: true } });
 
     const handle = await client.request('media.resolve', { entryId: video.id });
-    // 夹具是十个 ASCII 字节：目录分类仍看扩展名，查看器必须按内容判断。
+    // The fixture is ten ASCII bytes. Directory classification still goes by extension, so the viewer must judge by content.
     expect(handle).toMatchObject({ mimeType: 'text/plain; charset=utf-8', contentKind: 'text', size: 10, fileName: 'a.mp4' });
     expect(handle.url).not.toContain(project);
     expect(await client.request('media.playback', { url: handle.url })).toMatchObject({ status: 'ready', media: handle });
@@ -672,7 +672,7 @@ describe('Runtime（假 Driver）', () => {
     const forged = await fetch(handle.url.replace(/\/media\/[^/]+/, '/media/not-a-handle'));
     expect(forged.status).toBe(404);
 
-    // 删掉文件后条目消失。
+    // Deleting the file removes the entry.
     await fs.rm(path.join(project, 'notes.md'));
     await client.request('space.rescan', {});
     expect(space!.entries.map((e) => e.relPath)).toEqual(['clips/a.mp4']);
@@ -710,7 +710,7 @@ describe('Runtime（假 Driver）', () => {
     await client.request('space.rescan', {});
     const entry = runtime.space.snapshot().entries.find((e) => e.relPath === 'notes.md')!;
 
-    // 属于项目的条目：在那个项目里新建会话。同一个 commandId 重试拿到同一个会话，引用不重复。
+    // An entry that belongs to a project: a session is created in that project. A retry with the same commandId gets the same session, and the reference is not duplicated.
     const commandId = newId('cmd');
     const first = await client.request('space.continueInConversation', { entryId: entry.id, commandId });
     expect(first).toMatchObject({
@@ -722,22 +722,22 @@ describe('Runtime（假 Driver）', () => {
     const again = await client.request('space.continueInConversation', { entryId: entry.id, commandId });
     expect(again).toMatchObject({ created: false, conversation: { id: first.conversation.id } });
     expect(again.conversation.pendingReferences).toHaveLength(1);
-    // 只挂引用，不启动任务。
+    // Only attaches the reference; does not start a task.
     expect(driver.created).toEqual([]);
     expect(runtime.harness.getConversation(first.conversation.id).items).toEqual([]);
 
-    // 指定会话：要看得到这个条目。不属于项目的会话看不到项目里的条目。
+    // Specified session: it must be able to see the entry. A session outside the project cannot see the project's entries.
     const { conversation: loose } = await client.request('conversations.create', {});
     const mismatch = await rejection(client.request('space.continueInConversation', { entryId: entry.id, conversationId: loose.id }));
     expect(mismatch.details).toMatchObject({ code: 'SPACE_CONVERSATION_MISMATCH' });
     const { conversation: sibling } = await client.request('conversations.create', { projectId: opened.id });
     const into = await client.request('space.continueInConversation', { entryId: entry.id, conversationId: sibling.id });
     expect(into).toMatchObject({ created: false, conversation: { id: sibling.id, pendingReferences: [{ entryId: entry.id }] } });
-    // 用户在输入框里去掉了引用。
+    // The user removed the reference in the input box.
     const cleared = await client.request('conversations.update', { conversationId: sibling.id, pendingReferences: null });
     expect(cleared.conversation.pendingReferences).toBeUndefined();
 
-    // 发送：引用附在发给智能体的文字后面，记在用户消息上，然后清掉；文件内容不在里面。
+    // Send: the reference is appended to the text sent to the agent, recorded on the user message, and then cleared. The file content is not in it.
     await client.request('conversations.send', {
       conversationId: first.conversation.id,
       text: '接着整理这份笔记',
@@ -756,7 +756,7 @@ describe('Runtime（假 Driver）', () => {
       references: [{ entryId: entry.id }],
     });
 
-    // 回收站里的条目不能拿来继续。
+    // An entry in the trash cannot be continued.
     await client.request('space.trash', { entryId: entry.id });
     const trashed = await rejection(client.request('space.continueInConversation', { entryId: entry.id }));
     expect(trashed.details).toMatchObject({ code: 'SPACE_ENTRY_TRASHED' });
@@ -839,7 +839,7 @@ describe('Runtime（假 Driver）', () => {
     expect((await fetch(opened.url)).status).toBe(503);
     expect(Object.keys(((await (await fetch(`${opened.url}_files.json`)).json()) as { files: object }).files)).toEqual(['project/deck.json']);
 
-    // Space 里 deck 目录是一个幻灯片条目，用条目打开得到同一个地址。
+    // In Space, a deck directory is a slide entry; opening it from the entry gives the same address.
     await runtime.space.ready;
     await client.request('space.rescan', {});
     const entries = runtime.space.snapshot().entries.filter((e) => e.source.conversationId === conversation.id);
@@ -898,10 +898,10 @@ describe('Runtime（假 Driver）', () => {
     expect(await page.text()).toBe('Design editor is not built');
     const listing = (await (await fetch(`${opened.url}_files.json`)).json()) as { files: object };
     expect(Object.keys(listing.files).sort()).toEqual(['project/Main.dc.html', 'project/canvas.json', 'project/screens/Cart.dc.html']);
-    // grant 只对发它的那个种类有效。
+    // A grant is valid only for the kind that issued it.
     expect((await fetch(opened.url.replace('/design/', '/slides/'))).status).toBe(404);
 
-    // Space 里设计稿目录是一个设计稿条目，用条目打开得到同一个地址；目录里的画板不另成条目。
+    // In Space, a design canvas directory is a design entry; opening it from the entry gives the same address. The artboards inside are not separate entries.
     await runtime.space.ready;
     await client.request('space.rescan', {});
     const entries = runtime.space.snapshot().entries.filter((e) => e.source.conversationId === conversation.id && e.relPath.startsWith('poster'));
@@ -966,11 +966,11 @@ describe('Runtime（假 Driver）', () => {
     const listing = (await (await fetch(`${opened.url}_files.json`)).json()) as { files: object };
     expect(Object.keys(listing.files).sort()).toEqual(['project/README.md', 'project/assets/Logos/mark.svg', 'project/design-system.json']);
     expect((await fetch(`${opened.url}_blob/${'ab'.repeat(16)}`)).status).toBe(200);
-    // grant 只对发它的那个种类有效。
+    // A grant is valid only for the kind that issued it.
     expect((await fetch(opened.url.replace('/design-system/', '/design/'))).status).toBe(404);
     expect((await fetch(opened.url.replace('/design-system/', '/slides/'))).status).toBe(404);
 
-    // Space 里设计系统目录是一个设计系统条目（名字是标题），用条目打开得到同一个地址；目录里的文件不另成条目。
+    // In Space, a design system directory is a design system entry (its name is the title); opening it from the entry gives the same address. The files inside are not separate entries.
     await runtime.space.ready;
     await client.request('space.rescan', {});
     const entries = runtime.space.snapshot().entries.filter((e) => e.source.conversationId === conversation.id && e.relPath.startsWith('brand'));
@@ -1010,17 +1010,17 @@ describe('Runtime（假 Driver）', () => {
       const handle = await desktop.request('media.resolve', { localPath: article });
       expect(handle).toMatchObject({ fileName: 'talk.blog.zh-CN.md', contentKind: 'text', size: Buffer.byteLength('# 标题\n') });
       expect(await (await fetch(handle.url)).text()).toBe('# 标题\n');
-      // 目录、不存在的、相对路径都不发；指到别的目录的符号链接按真实路径拒绝。
+      // A directory, a nonexistent path, or a relative path is not issued. A symlink pointing into another directory is rejected by its real path.
       expect((await rejection(desktop.request('media.resolve', { localPath: path.join(downloads, 'folder') }))).code).toBe('not-found');
       expect((await rejection(desktop.request('media.resolve', { localPath: path.join(downloads, 'nope.md') }))).code).toBe('not-found');
       expect((await rejection(desktop.request('media.resolve', { localPath: 'talk.blog.zh-CN.md' }))).code).toBe('not-found');
       expect((await rejection(desktop.request('media.resolve', { localPath: path.join(downloads, 'link.md') }))).code).toBe('forbidden');
-      // 不能和别的定位混用。
+      // Cannot be mixed with other locations.
       expect((await rejection(desktop.request('media.resolve', { localPath: article, entryId: 'sp_x' } as never))).code).toBe('invalid-request');
     } finally {
       desktop.close();
     }
-    // 不是桌面客户端（CLI）：按原来的访问范围拒绝。
+    // Not the desktop client (CLI): rejected under the original access scope.
     expect((await rejection(client.request('media.resolve', { localPath: article }))).code).toBe('forbidden');
   });
 
@@ -1044,7 +1044,7 @@ describe('Runtime（假 Driver）', () => {
     const handle = await client.request('media.resolve', tracks[2]!.target);
     expect(await (await fetch(handle.url)).text()).toBe('talk.zh.vtt');
 
-    // 从 Space 条目来：字幕的定位落在条目的项目上。
+    // From a Space entry: the subtitle's location falls on the entry's project.
     let space: SpaceSnapshot | null = null;
     client.subscribeSpace({
       snapshot: (snapshot) => {
@@ -1089,7 +1089,7 @@ describe('Runtime（假 Driver）', () => {
     expect(some).toEqual({ settings: { 'offline.strict': false }, defaults: { 'offline.strict': false } });
     expect((await rejection(client.request('settings.get', { keys: ['nope' as 'offline.strict'] }))).code).toBe('invalid-request');
 
-    // 一个坏值让整批都不生效，也不落盘。
+    // One bad value makes the whole batch take no effect, and nothing is written to disk.
     const settingsFile = path.join(dir, 'store', 'settings.json');
     const bad = await rejection(
       client.request('settings.set', { values: { 'offline.strict': true, 'agent.defaultAccessMode': 'nope' as 'plan' } }),
@@ -1110,7 +1110,7 @@ describe('Runtime（假 Driver）', () => {
       changed: { 'offline.strict': true, 'captions.maxLineLength': { cjk: 18, other: 40 } },
     });
 
-    // 没有变化的修改不发事件；null 恢复默认。
+    // A change with no effect emits no event; null restores the default.
     await client.request('settings.set', { values: { 'offline.strict': true } });
     const reset = await client.request('settings.set', { values: { 'offline.strict': null } });
     expect(reset.settings['offline.strict']).toBe(false);
@@ -1140,7 +1140,7 @@ describe('Runtime（假 Driver）', () => {
     client.close();
     await runtime.close();
 
-    // 旧版本写下的记录：会话上是旧值，任务卡片上也是旧值。
+    // Records written by an old version: the session carries the old value, and so does the task card.
     const conversationsDir = resolveRuntimeHome({ CUCCUT_HOME: dir }).conversationsDir;
     const store = new ConversationStore(conversationsDir);
     await store.load();
@@ -1204,7 +1204,7 @@ describe('Runtime（假 Driver）', () => {
     expect(taskOf(first.taskId)).toMatchObject({ autonomy: { mode: 'auto', source: 'default' } });
     await idle();
 
-    // 旧值 authorized 按 fullAccess 存；会话没有切换过，跟着设置走。命令自动放行，回合照常完成。
+    // The old value `authorized` is stored as fullAccess. The session was never switched, so it follows the setting. Commands are auto-approved, and the turn completes as usual.
     await client.request('settings.set', { values: { 'agent.defaultAccessMode': 'authorized' } });
     const second = await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -1222,7 +1222,7 @@ describe('Runtime（假 Driver）', () => {
       risk: 'command',
     });
 
-    // 发送时给出模式（这里是旧字段 autonomy）：会话切到 plan，记一条提示；之后不给时沿用会话的模式。
+    // A mode given when sending (here the old field `autonomy`): the session switches to plan and a hint is recorded. Afterwards, when no mode is given, the session's mode is used.
     const third = await client.request('conversations.send', {
       conversationId: conversation.id,
       text: 'hello',
@@ -1240,7 +1240,7 @@ describe('Runtime（假 Driver）', () => {
     expect(taskOf(fourth.taskId)).toMatchObject({ autonomy: { mode: 'plan', source: 'conversation' } });
     await idle();
 
-    // 旧值 controlled 即 ask。
+    // The old value `controlled` means ask.
     const fifth = await client.request('conversations.send', {
       conversationId: conversation.id,
       text: 'hello',
@@ -1250,7 +1250,7 @@ describe('Runtime（假 Driver）', () => {
     expect(taskOf(fifth.taskId)).toMatchObject({ autonomy: { mode: 'ask', source: 'request' } });
     await idle();
 
-    // conversations.update 给 null：回到跟随设置。
+    // conversations.update with null: back to following the setting.
     const { conversation: back } = await client.request('conversations.update', { conversationId: conversation.id, accessMode: null });
     expect(back.accessMode).toBeNull();
     expect(runtime.harness.conversationMode(conversation.id)).toBe('fullAccess');
@@ -1275,7 +1275,7 @@ describe('Runtime 启动失败', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 占住一个回环端口，返回端口号。 */
+  /** Occupies a loopback port and returns the port number. */
   async function occupyPort(): Promise<number> {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -1296,7 +1296,7 @@ describe('Runtime 启动失败', () => {
     });
   }
 
-  /** 期限内没落定就算失败：修复前网关端口被占时启动永远挂着。 */
+  /** If it has not settled within the deadline, it counts as a failure. Before the fix, startup hung forever when the gateway port was taken. */
   async function startupError(promise: Promise<RunningRuntime>, ms = 3_000): Promise<unknown> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -1330,7 +1330,7 @@ describe('Runtime 启动失败', () => {
     }
   });
 
-  /** 记下各个服务的停止方法被调用的顺序（照常执行原方法）。 */
+  /** Records the order in which each service's stop method is called (the original method still runs). */
   function recordStops(): string[] {
     const calls: string[] = [];
     const track = (name: string, proto: object, method: string) => {
@@ -1352,7 +1352,7 @@ describe('Runtime 启动失败', () => {
     return calls;
   }
 
-  /** 记下 Space 开的目录监视（它们不阻止进程退出，`getActiveResourcesInfo` 里看不到），返回还没关的那些。 */
+  /** Records the directory watches Space opened (they do not block process exit and are not visible in `getActiveResourcesInfo`), and returns those not yet closed. */
   function trackWatchers(): { opened: () => number; open: Set<fsSync.FSWatcher> } {
     const open = new Set<fsSync.FSWatcher>();
     let opened = 0;
@@ -1371,13 +1371,13 @@ describe('Runtime 启动失败', () => {
     return { opened: () => opened, open };
   }
 
-  /** 本进程的子进程（引擎、Model Worker 等）。 */
+  /** This process's child processes (the engine, Model Worker, and so on). */
   async function childProcesses(): Promise<string[]> {
     try {
       const { stdout } = await promisify(execFile)('pgrep', ['-P', String(process.pid)]);
       return stdout.split('\n').filter(Boolean);
     } catch (error) {
-      // pgrep 没找到时退出码是 1。
+      // pgrep exits with code 1 when it finds nothing.
       if ((error as { code?: number }).code === 1) return [];
       throw error;
     }
@@ -1399,7 +1399,7 @@ describe('Runtime 启动失败', () => {
     return port;
   }
 
-  /** 准备一个开着共享（节点服务监听 `sharePort`）、有一个项目目录的 Runtime Home。 */
+  /** Prepares a Runtime Home with sharing on (the node service listens on `sharePort`) and one project directory. */
   async function prepareHome(): Promise<{ sharePort: number }> {
     const sharePort = await freePort();
     const runtime = await boot();
@@ -1429,7 +1429,7 @@ describe('Runtime 启动失败', () => {
     const error = await startupError(boot({ host: '127.0.0.1', port: taken, watchSpace: true }));
     expect(error).toMatchObject({ code: 'EADDRINUSE' });
     expect(calls).toEqual(STARTED_STOPS);
-    // Space 确实开过目录监视，失败后都关了。
+    // Space did open directory watches, and all of them were closed after the failure.
     expect(watchers.opened()).toBeGreaterThan(0);
     expect(watchers.open.size).toBe(0);
     expect(await portFree(sharePort)).toBe(true);
@@ -1447,7 +1447,7 @@ describe('Runtime 启动失败', () => {
 
   it('启动中途失败（Space 标记文件读不了）：已经起来的服务停掉，没起来的不碰', async () => {
     const { sharePort } = await prepareHome();
-    // 文件系统层面读不了（这里是同名目录）：不当作坏文件改名，启动失败。
+    // It cannot be read at the filesystem level (here, a same-named directory): it is not treated as a bad file to rename, so startup fails.
     await fs.mkdir(home.spaceFile, { recursive: true });
     const calls = recordStops();
 
@@ -1540,7 +1540,7 @@ describe('CLI 拉起的 Runtime（§2.2）', () => {
     return client;
   }
 
-  /** 断开在服务端落定（连接数变了）之后再往下走。 */
+  /** Waits until the disconnect has settled on the server side (the connection count changed) before continuing. */
   async function connectionsSettle(client: CucCutClient, done: (c: { desktop: number; cli: number }) => boolean): Promise<void> {
     const deadline = Date.now() + 3000;
     while (!done((await client.request('runtime.status', {})).connections)) {

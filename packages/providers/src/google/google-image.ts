@@ -1,17 +1,17 @@
-// Google Gemini 图片生成适配器（架构设计 §6.4）。2026-10-03 读过的文档：
+// Google Gemini image generation adapter (architecture design §6.4). Documentation read on 2026-10-03:
 //   https://ai.google.dev/gemini-api/docs/image-generation
 //   https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image
 //   https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image
 //   https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image
-// 文档确认的：`POST {base}/interactions`，请求头 `x-goog-api-key` 与 `Api-Revision`；`input: [{ type: 'text', text }]`；
-// 顶层 `response_format: { type: 'image', mime_type, aspect_ratio, image_size }`（`image_size` 取 '512'、'1K'、'2K'、'4K'，
-// K 大写）；结果在 `steps[]` 里 `type: 'model_output'` 的 `content[]`，图片块 `{ type: 'image', data（base64）, mime_type }`，
-// `type: 'thought'` 的 step 里是不收费的中间图（不取）；各模型的宽高比与像素尺寸表（这里照抄）；3.1 Flash Image 输入上限
-// 131,072 token，3 Pro Image 与 3.1 Flash Lite Image 65,536；参考图 3.x 最多 14 张、2.5 最多 3 张（这一版不用）；
-// gemini-2.5-flash-image 只接受 `aspect_ratio`。
-// 没能确认的：一次请求出几张图（文档没有张数参数，所以一张一次请求，最多 4 张是我们的上限）；`seed`（不开放）；
-// `mime_type: 'image/webp'`（不提供）；3.1 Flash Lite Image 各宽高比的像素尺寸（文档只给了宽高比，按 3.1 Flash Image 的 1K
-// 尺寸声明）；提示词按字符的上限（按 32000 字符声明，远低于 token 上限）。
+// Confirmed by the docs: `POST {base}/interactions`, with the `x-goog-api-key` and `Api-Revision` request headers; `input: [{ type: 'text', text }]`;
+// top-level `response_format: { type: 'image', mime_type, aspect_ratio, image_size }` (`image_size` is '512', '1K', '2K' or '4K',
+// with K in uppercase); the result is in `content[]` of the `steps[]` entries with `type: 'model_output'`, as an image block `{ type: 'image', data (base64), mime_type }`;
+// steps with `type: 'thought'` hold unbilled intermediate images (not taken); each model's aspect ratio and pixel size table (copied here as is); the 3.1 Flash Image input limit
+// is 131,072 tokens, and 3 Pro Image and 3.1 Flash Lite Image are 65,536; reference images: 3.x allows up to 14, 2.5 up to 3 (not used in this version);
+// gemini-2.5-flash-image only accepts `aspect_ratio`.
+// Not confirmed: how many images one request returns (the docs have no count parameter, so one image per request, with a maximum of 4 as our own limit); `seed` (not exposed);
+// `mime_type: 'image/webp'` (not offered); the pixel sizes for each aspect ratio of 3.1 Flash Lite Image (the docs give only aspect ratios, so the 1K sizes of 3.1 Flash Image are declared);
+// the prompt length limit in characters (declared as 32000 characters, far below the token limit).
 import { ProviderFailure } from '@cuccut/models';
 import type { ImageAspectRatio, ImageFormat, ImageModelInfo } from '@cuccut/protocol';
 import {
@@ -30,7 +30,7 @@ const LABEL = 'Google Gemini';
 const RESOLUTIONS = ['512', '1K', '2K', '4K'] as const;
 type Resolution = (typeof RESOLUTIONS)[number];
 
-/** 3.x 的尺寸表：宽高比 → 各分辨率的像素尺寸（3 Pro Image 与 3.1 Flash Image 在 1K/2K/4K 上相同）。 */
+/** Size table for 3.x: aspect ratio → pixel size at each resolution (3 Pro Image and 3.1 Flash Image are the same at 1K/2K/4K). */
 const GEMINI_3_SIZES: Record<string, Record<Resolution, string>> = {
   '1:1': { '512': '512x512', '1K': '1024x1024', '2K': '2048x2048', '4K': '4096x4096' },
   '1:4': { '512': '256x1024', '1K': '512x2048', '2K': '1024x4096', '4K': '2048x8192' },
@@ -50,7 +50,7 @@ const GEMINI_3_SIZES: Record<string, Record<Resolution, string>> = {
 
 const TEN_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
-/** gemini-2.5-flash-image：每个宽高比一个固定尺寸。 */
+/** gemini-2.5-flash-image: one fixed size per aspect ratio. */
 const GEMINI_25_SIZES: Record<string, string> = {
   '1:1': '1024x1024',
   '2:3': '832x1248',
@@ -64,7 +64,7 @@ const GEMINI_25_SIZES: Record<string, string> = {
   '21:9': '1536x672',
 };
 
-/** 一个尺寸在请求里怎么说。 */
+/** How a size is expressed in the request. */
 interface SizeSpec {
   aspectRatio: string;
   imageSize: Resolution | null;
@@ -90,7 +90,7 @@ function model(
   referenceImages: number,
   extra: Partial<ImageModelInfo> = {},
 ): GoogleImageModel {
-  // 宽高比的写法取 1K（2.5 是唯一的尺寸）。
+  // The aspect-ratio form uses 1K (2.5 has only one size).
   const aspectRatios: ImageAspectRatio[] = [];
   for (const [size, spec] of sizes) {
     if ((spec.imageSize === '1K' || spec.imageSize === null) && !aspectRatios.some((a) => a.ratio === spec.aspectRatio)) {
@@ -156,7 +156,7 @@ export class GoogleImageAdapter implements ImageAdapter {
         ...(spec?.imageSize ? { image_size: spec.imageSize } : {}),
       },
     });
-    // 文档没有张数参数：一张一次请求，依次发出（同一个 Provider 的队列已经限了并发）。
+    // The docs have no count parameter: one image per request, sent in sequence (the queue for the same provider already limits concurrency).
     const images: Buffer[] = [];
     const usage: unknown[] = [];
     for (let i = 0; i < parameters.count; i++) {
@@ -179,7 +179,7 @@ export class GoogleImageAdapter implements ImageAdapter {
   }
 }
 
-/** 取最后一个 `model_output` step 里的最后一张图；中间的 `thought` 图不算。 */
+/** Takes the last image in the last `model_output` step; intermediate `thought` images are not counted. */
 export function parseImageInteraction(value: unknown, format: ImageFormat): { image: Buffer; usage?: unknown } {
   if (!isObject(value)) throw new ProviderFailure('protocol', PH.notObject({ label: LABEL }).text);
   if (value.status === 'failed' || value.status === 'cancelled') {
@@ -195,7 +195,7 @@ export function parseImageInteraction(value: unknown, format: ImageFormat): { im
     }
   }
   if (!found) {
-    // 模型拒绝生成时只回文字（例如内容政策）：按被拒绝处理，带上一小段原话。
+    // When the model refuses to generate and returns only text (for example, due to a content policy), it is treated as a rejection, with a short excerpt of the original text attached.
     const said = texts.join(' ').trim().slice(0, 200);
     throw new ProviderFailure('rejected', (said ? PH.noImageReturnedSaid({ label: LABEL, said }) : PH.noImageReturned({ label: LABEL })).text, { code: 'PROVIDER_REJECTED' });
   }

@@ -75,7 +75,7 @@ export function CompactPlayer({
   onOpenTab?: () => void;
   path?: string;
   subtitles?: React.ReactNode;
-  /** 用户点了播放才挂上播放器（如对话里的视频卡片）：元数据就绪后开播一次。 */
+  /** Only mounts the player once the user presses play (for example, a video card in the chat): starts playing once when the metadata is ready. */
   autoPlay?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false),
@@ -175,7 +175,7 @@ function PlayerSurface({
       if (initialized.current && !handedOff.current) positions.set(memoryKey, snapshot(e));
     }
   };
-  // 只开播一次；浏览器拒绝自动播放时留在暂停，用户点控制条即可，不弹错误。
+  // Starts playback only once; if the browser refuses autoplay, it stays paused and the user clicks the control bar. No error is shown.
   const start = (e: HTMLMediaElement) => {
     if (!autoPlay || !active || started.current) return;
     started.current = true;

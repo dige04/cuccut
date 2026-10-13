@@ -4,14 +4,11 @@ import path from 'node:path';
 import type { CookieBrowserInfo, LinkCookieBrowser } from '@cuccut/protocol';
 
 /**
- * 这台机器上哪些浏览器有 Cookie 库（`externalTools.cookieBrowsers`，架构设计 §7.9）：下载视频的「网站登录」只列出这些，
- * 不让用户选一个没装的浏览器。
+ * Which browsers on this machine have a cookie store (`externalTools.cookieBrowsers`, architecture design §7.9). The “网站登录” (website login) option for video downloads lists only these, so the user cannot pick a browser that is not installed.
  *
- * - 位置按 yt-dlp 读 `--cookies-from-browser` 时的查找规则：Chromium 系是数据目录下 `[<Profile>/][Network/]Cookies`，
- *   Firefox 是配置根下 `[<Profile>/|Profiles/<Profile>/]cookies.sqlite`，Safari（只有 macOS）是固定位置的
- *   `Cookies.binarycookies`。找不到库的浏览器不列出：yt-dlp 同样找不到它。
- * - 只看文件在不在与修改时间（`stat` 与列出数据目录的直接子目录），不打开、不读 Cookie，不运行下载工具。
- * - 最近改过的排在前面（最近在用的浏览器最可能登录着目标网站），下载按这个顺序逐个尝试；时间相同或读不到时按固定顺序。
+ * - Locations follow yt-dlp's lookup rules for `--cookies-from-browser`: for Chromium-based browsers it is `[<Profile>/][Network/]Cookies` under the data directory; for Firefox it is `[<Profile>/|Profiles/<Profile>/]cookies.sqlite` under the config root; Safari (macOS only) is the fixed file `Cookies.binarycookies`. Browsers whose store cannot be found are not listed, because yt-dlp cannot find them either.
+ * - Only checks whether the files exist and their modification times (`stat`, and listing the direct children of the data directory). Does not open or read cookies, and does not run the download tool.
+ * - The most recently modified come first (the browser most recently used is the most likely to be logged in to the target site). Downloads try them one by one in this order. When times are equal or unreadable, a fixed order applies.
  */
 
 export const COOKIE_BROWSER_LABELS: Readonly<Record<LinkCookieBrowser, string>> = {
@@ -26,14 +23,14 @@ export const COOKIE_BROWSER_LABELS: Readonly<Record<LinkCookieBrowser, string>> 
   whale: 'Whale',
 };
 
-/** 去哪里找：探测用的主机信息。测试传一棵临时目录树。 */
+/** Where to look: the host information used for probing. Tests pass in a temp directory tree. */
 export interface CookieHost {
   platform: NodeJS.Platform;
   home: string | null;
   env: { LOCALAPPDATA?: string | undefined; APPDATA?: string | undefined; XDG_CONFIG_HOME?: string | undefined };
 }
 
-/** 一个浏览器的 Cookie 库的查找规则：Chromium 系的数据目录、Firefox 的配置根，或固定的文件。 */
+/** Lookup rule for one browser's cookie store: a Chromium-style data directory, Firefox's config root, or a fixed file. */
 export interface CookieDatabaseRule {
   id: LinkCookieBrowser;
   chromium?: string;
@@ -45,7 +42,7 @@ export function currentCookieHost(): CookieHost {
   return { platform: process.platform, home: os.homedir() || null, env: process.env };
 }
 
-/** 各平台的查找规则，顺序就是时间相同时的顺序。纯函数：只拼路径，不碰文件。 */
+/** Lookup rules for each platform. The order is the order used when times are equal. Pure function: it only builds paths and does not touch files. */
 export function cookieDatabaseRules(host: CookieHost): CookieDatabaseRule[] {
   const { home, env } = host;
   const at = (base: string | null | undefined, ...segments: string[]) => (base ? path.join(base, ...segments) : undefined);
@@ -110,7 +107,7 @@ export function cookieDatabaseRules(host: CookieHost): CookieDatabaseRule[] {
   return rules;
 }
 
-/** 这台机器上找得到 Cookie 库的浏览器，最近改过的在前。 */
+/** Browsers on this machine whose cookie store can be found, most recently modified first. */
 export async function detectCookieBrowsers(host: CookieHost = currentCookieHost()): Promise<CookieBrowserInfo[]> {
   const rules = cookieDatabaseRules(host);
   const found = await Promise.all(rules.map(async (rule, order) => ({ rule, order, seen: await lastChange(rule) })));
@@ -125,8 +122,7 @@ export async function detectCookieBrowsers(host: CookieHost = currentCookieHost(
 }
 
 /**
- * 这条规则下 Cookie 库最近的修改时间（毫秒）：找不到库时 undefined；固定位置的文件在、但没有权限看（macOS 的 Safari 要
- * 「完全磁盘访问权限」）时 null——库在，只是不知道时间。
+ * The most recent modification time (ms) of the cookie store under this rule. undefined if the store is not found. null if the store is at a fixed location and exists, but there is no permission to look at it (macOS Safari needs “Full Disk Access”): the store exists, but its time is unknown.
  */
 async function lastChange(rule: CookieDatabaseRule): Promise<number | null | undefined> {
   const candidates: string[] = [];

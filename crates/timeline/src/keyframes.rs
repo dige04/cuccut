@@ -1,37 +1,30 @@
-//! 元素关键帧（`ccutTimeline` 0.12，BCF 规范 §19.x「关键帧」）。
+//! Element keyframes (`ccutTimeline` 0.12, BCF spec §19.x “Keyframes”).
 //!
-//! 元素上的 `keyframes` 是「属性 → 一串 `{t, v, ease?}`」，属性闭集见
-//! [`KEYFRAME_PROPS`]。叠加顺序（规范性）：有关键帧的属性，取样值**取代**该属性的
-//! 静态值（`place.*` 或 `volume`），成为基础姿态；入场 / 出场 / 循环三槽照旧在
-//! 基础姿态之上叠加。没有关键帧的元素，每一个取样入口都原样返回静态值，渲染结果
-//! 逐位不变。
+//! An element's `keyframes` maps each property to a series of `{t, v, ease?}`; the closed set of properties is in
+//! [`KEYFRAME_PROPS`]. Layering order (normative): for a property that has keyframes, the sampled value **replaces** that property's static value (`place.*` or `volume`) and becomes the base pose; the entrance / exit / loop slots are still layered on top of the base pose as before. For an element without keyframes, every sampling entry point returns the static value unchanged, so the rendered result stays bit-for-bit identical.
 //!
-//! 时间写法两种，同一个属性里只能用一种：数字 = 从元素起点算的秒；`"N%"` = 元素
-//! 时长的比例（修剪 / 跟随改了时长之后自动跟着）。秒写法超出元素末尾的帧不生效。
-//! 缓动写在**目标帧**上：从帧 i−1 到帧 i 的那一段用帧 i 的 `ease`，缺省线性；
-//! 第一帧之前取第一帧的值，最后一帧之后取最后一帧的值。
+//! There are two time notations, and a single property may use only one: a number means seconds from the element's start; `"N%"` means a proportion of the element's duration (it follows automatically when trimming or following changes the duration). Frames in seconds notation that fall beyond the element's end have no effect. Easing is written on the **target frame**: the segment from frame i−1 to frame i uses frame i's `ease`, linear by default; before the first frame the first frame's value is used, and after the last frame the last frame's value is used.
 //!
-//! 本模块只做纯函数：取样、换算、校验与露底判定。宿主（CPU / GPU / wasm / App
-//! 预览、导出混音）都经这里取值，不各写一遍。
+//! This module contains only pure functions: sampling, conversion, validation and exposed-edge detection. Every host (CPU / GPU / wasm / App preview, export mixdown) reads values through here instead of each writing its own copy.
 
 use serde::{Deserialize, Serialize};
 
 use crate::schema::{ElementKind, Place, TimelineError};
 
-/// 属性闭集（文档里的键名，顺序即 schema 与 `spec` 的列出顺序）。
+/// The closed set of properties (the key names used in the document; the order is the order they are listed in the schema and `spec`).
 pub const KEYFRAME_PROPS: &[&str] = &[
     "x", "y", "scale", "scaleY", "rot", "opacity", "radius", "volume",
 ];
-/// 单个属性最多多少帧。
+/// Maximum number of frames for a single property.
 pub const KEYFRAMES_MAX_PER_PROP: usize = 256;
-/// `opacity`（静态值与关键帧同一区间）。
+/// `opacity` (the static value and the keyframes share the same range).
 pub const OPACITY_RANGE: (f64, f64) = (0.0, 1.0);
-/// 元素音量（线性倍数；静态值与关键帧同一区间，导出混音也夹到这里）。
+/// Element volume (linear multiplier; the static value and the keyframes share the same range, and export mixdown is clamped to it too).
 pub const VOLUME_RANGE: (f64, f64) = (0.0, 4.0);
-/// 百分比写法的区间。
+/// Range for the percentage notation.
 pub const PERCENT_RANGE: (f64, f64) = (0.0, 100.0);
 
-/// 关键帧时刻：秒（从元素起点算）或元素时长的百分比。
+/// Keyframe time: seconds (from the element's start) or a percentage of the element's duration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum KeyTime {
@@ -40,7 +33,7 @@ pub enum KeyTime {
 }
 
 impl KeyTime {
-    /// 百分比写法的数值（`"25%"` → 25）；秒写法或写错返回 `None`。
+    /// The numeric value of the percentage notation (`"25%"` → 25); returns `None` for seconds notation or malformed input.
     pub fn percent(&self) -> Option<f64> {
         match self {
             Self::Percent(text) => parse_percent(text),
@@ -48,7 +41,7 @@ impl KeyTime {
         }
     }
 
-    /// 换算成元素本地秒。`duration` 是元素的时长（开放结尾按项目末尾算）。
+    /// Converts to element-local seconds. `duration` is the element's duration (an open-ended element is measured to the end of the project).
     pub fn local_seconds(&self, duration: f64) -> f64 {
         match self {
             Self::Seconds(value) => *value,
@@ -69,7 +62,7 @@ fn parse_percent(text: &str) -> Option<f64> {
     body.parse::<f64>().ok().filter(|value| value.is_finite())
 }
 
-/// 一个关键帧。`ease` 是进入这一帧的那一段的缓动（缺省线性）。
+/// A keyframe. `ease` is the easing of the segment that enters this frame (linear by default).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Keyframe {
@@ -79,7 +72,7 @@ pub struct Keyframe {
     pub ease: Option<String>,
 }
 
-/// 元素上的 `keyframes`。缺席的属性用静态值。
+/// The `keyframes` on an element. Properties that are absent use their static values.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Keyframes {
@@ -102,7 +95,7 @@ pub struct Keyframes {
 }
 
 impl Keyframes {
-    /// `(属性名, 帧)`，顺序同 [`KEYFRAME_PROPS`]。
+    /// `(property name, frames)`, in the same order as [`KEYFRAME_PROPS`].
     pub fn tracks(&self) -> [(&'static str, Option<&Vec<Keyframe>>); 8] {
         [
             ("x", self.x.as_ref()),
@@ -123,7 +116,7 @@ impl Keyframes {
             .and_then(|(_, frames)| frames)
     }
 
-    /// 换掉（`Some`）或清掉（`None`）一个属性的整串帧。未知属性名返回 `false`。
+    /// Replaces (`Some`) or clears (`None`) the whole frame series of a property. Returns `false` for an unknown property name.
     pub fn set(&mut self, prop: &str, frames: Option<Vec<Keyframe>>) -> bool {
         let slot = match prop {
             "x" => &mut self.x,
@@ -144,14 +137,14 @@ impl Keyframes {
         self.tracks().iter().all(|(_, frames)| frames.is_none())
     }
 
-    /// 有没有影响画面的属性（除 `volume` 之外的任一个）。
+    /// Whether any property affects the picture (any property other than `volume`).
     pub fn has_visual(&self) -> bool {
         self.tracks()
             .iter()
             .any(|(name, frames)| *name != "volume" && frames.is_some())
     }
 
-    /// 所有属性、所有生效帧的本地秒，升序去重。重绘节拍与露底取样用。
+    /// Element-local seconds of all effective frames across all properties, sorted ascending and de-duplicated. Used for the repaint cadence and exposed-edge sampling.
     pub fn times(&self, duration: f64, visual_only: bool) -> Vec<f64> {
         let mut out = Vec::new();
         for (name, frames) in self.tracks() {
@@ -170,12 +163,12 @@ impl Keyframes {
         out
     }
 
-    /// 某属性在元素本地时刻 `local` 的取样值；该属性没有关键帧（或全部超出末尾）时为 `None`。
+    /// The sampled value of a property at element-local time `local`; `None` if the property has no keyframes (or all of them lie beyond the end).
     pub fn sample(&self, prop: &str, local: f64, duration: f64) -> Option<f64> {
         sample(self.get(prop)?, local, duration)
     }
 
-    /// 校验。`caps` 描述元素可以带哪些属性。
+    /// Validation. `caps` describes which properties the element may carry.
     pub fn validate(&self, element_id: &str, caps: KeyframeCaps) -> Result<(), TimelineError> {
         let invalid = |message: String| Err(TimelineError::Invalid(message));
         if self.is_empty() {
@@ -256,7 +249,7 @@ impl Keyframes {
 
 const TIME_EPSILON: f64 = 1e-9;
 
-/// 一个属性的取值是否合法（与静态值同一处常量）。
+/// Whether a property's value is valid (uses the same constants as the static value).
 pub fn value_in_range(prop: &str, value: f64) -> bool {
     if !value.is_finite() {
         return false;
@@ -269,14 +262,14 @@ pub fn value_in_range(prop: &str, value: f64) -> bool {
     }
 }
 
-/// 元素能带哪些关键帧属性。
+/// Which keyframe properties an element can carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyframeCaps {
-    /// `x y scale scaleY rot opacity`：一切有画面的元素。
+    /// `x y scale scaleY rot opacity`: every element that has a picture.
     pub transform: bool,
-    /// `radius`：图片 / 视频 / 占位 / 白板 / 素材贴纸（与 `place.radius` 的消费者一致）。
+    /// `radius`: images / videos / placeholders / whiteboards / asset stickers (consistent with the consumers of `place.radius`).
     pub radius: bool,
-    /// `volume`：音频 / 视频。
+    /// `volume`: audio / video.
     pub volume: bool,
 }
 
@@ -300,8 +293,7 @@ impl KeyframeCaps {
     }
 }
 
-/// 一串帧在元素本地时刻 `local` 的取样值。秒写法超出元素末尾的帧不生效；全部
-/// 不生效或空串时返回 `None`（该属性回到静态值）。
+/// The sampled value of a series of frames at element-local time `local`. Frames in seconds notation that fall beyond the element's end have no effect; when all of them have no effect, or the series is empty, returns `None` (the property falls back to its static value).
 pub fn sample(frames: &[Keyframe], local: f64, duration: f64) -> Option<f64> {
     let mut previous: Option<(f64, f64)> = None;
     for frame in frames {
@@ -327,10 +319,9 @@ pub fn sample(frames: &[Keyframe], local: f64, duration: f64) -> Option<f64> {
     previous.map(|(_, value)| value)
 }
 
-/// 把关键帧取样值代入静态位置，得到这一刻的基础姿态。`keyframes` 为 `None` 或
-/// 没有画面属性时返回 `None`——调用方原样用静态 `place`，保证逐位不变。
+/// Substitutes the keyframe sampled values into the static position to get the base pose at this moment. Returns `None` when `keyframes` is `None` or there is no picture property; the caller then uses the static `place` as is, which keeps the result bit-for-bit identical.
 ///
-/// `radius` 的关键帧取代四角的全部半径（写入 `radius` 并清掉 `cornerRadii`）。
+/// Keyframes for `radius` replace all four corner radii (writes `radius` and clears `cornerRadii`).
 pub fn place_at(
     place: Option<&Place>,
     keyframes: Option<&Keyframes>,
@@ -361,8 +352,7 @@ pub fn place_at(
     touched.then_some(out)
 }
 
-/// 元素在本地时刻 `local` 的音量（线性倍数，夹在 [`VOLUME_RANGE`]）：有 `volume`
-/// 关键帧取样值，没有用静态值。
+/// The element's volume at element-local time `local` (linear multiplier, clamped to [`VOLUME_RANGE`]): uses the sampled value of the `volume` keyframes if present, otherwise the static value.
 pub fn volume_at(
     static_volume: f64,
     keyframes: Option<&Keyframes>,
@@ -375,25 +365,23 @@ pub fn volume_at(
         .clamp(VOLUME_RANGE.0, VOLUME_RANGE.1)
 }
 
-/// 露底判定的容差（像素）：盒的取整与浮点误差不算露底。
+/// Tolerance in pixels for the exposed-edge check: rounding and floating-point error in the box do not count as exposure.
 pub const UNCOVERED_TOLERANCE_PX: f64 = 0.5;
-/// 露底判定最多取样多少个时刻（超出时加大步长）。
+/// The exposed-edge check samples at most this many moments (the step size is increased when there would be more).
 pub const UNCOVERED_MAX_SAMPLES: usize = 20_000;
 
-/// 关键帧运动露出画布底的第一处。
+/// The first place where keyframe motion exposes the bottom of the canvas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Uncovered {
-    /// 元素本地秒。
+    /// Element-local seconds.
     pub at: f64,
-    /// 差多少像素才盖满（画布四角到盒边的最远距离）。
+    /// How many pixels are needed to fully cover (the farthest distance from the canvas corners to the box edge).
     pub gap_px: f64,
 }
 
-/// 露底检查：图片 / 视频元素的**静态**位置盖满画布时，关键帧运动的全过程也必须
-/// 盖满。按帧网格（`fps`）与每个关键帧时刻取样（缓动的极值点落在网格上，越界的
-/// 缓动也被取到）。静态就没盖满、没有画面关键帧、平铺或不是图片 / 视频时返回 `None`。
+/// Exposed-edge check: when an image / video element's **static** position fully covers the canvas, the whole course of the keyframe motion must also fully cover it. Sampling is done on the frame grid (`fps`) and at every keyframe moment (easing extrema fall on the grid, and out-of-range easing is sampled too). Returns `None` if the static position does not cover the canvas to begin with, if there are no picture keyframes, if the element is tiled, or if it is not an image / video.
 ///
-/// `natural` 是媒体像素尺寸，`canvas` 是画布像素尺寸，`duration` 是元素时长。
+/// `natural` is the media's pixel size, `canvas` is the canvas pixel size, and `duration` is the element's duration.
 pub fn keyframes_uncover(
     element: &crate::schema::Element,
     natural: (f64, f64),
@@ -447,26 +435,25 @@ pub fn keyframes_uncover(
     })
 }
 
-/// 一件元素的窗口被跟随 / 分割改动之后，新元素相对旧元素的取景（BCF §19.3「关键帧、纯色画布与闪避」的「关键帧与跟随」）。
+/// After an element's window is changed by following or splitting, the framing of the new element relative to the old one (BCF §19.3 “Keyframes and following” within “Keyframes, solid canvas and dodging”).
 ///
-/// 新本地时刻 = (旧本地时刻 − `head`) × `scale`。
+/// New local time = (old local time − `head`) × `scale`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rewindow {
-    /// 旧元素时长（秒）。
+    /// Old element duration (seconds).
     pub old_duration: f64,
-    /// 新元素本地 0 对应的旧本地时刻（负数 = 新窗口往前多出一段）。
+    /// The old local time that corresponds to new-element local 0 (a negative value means the new window extends further back).
     pub head: f64,
-    /// 新元素时长（秒）。
+    /// New element duration (seconds).
     pub new_duration: f64,
-    /// 旧本地时间走 1 秒、新本地时间走多少秒（片段倍速改了才不是 1）。
+    /// How many seconds of new local time elapse while the old local time advances 1 second (this is not 1 only when the clip speed has changed).
     pub scale: f64,
-    /// 一件分成了几件（分割、剪口把片段画面切成几段）：百分比写法按这一件分到的那一份
-    /// 改写；否则百分比原样，随新时长伸缩。
+    /// The number of pieces an element has been split into (a split or cut point divides the clip's picture into several segments): percentage notation is rewritten to this piece's share; otherwise the percentages stay as they are and scale with the new duration.
     pub divided: bool,
 }
 
 impl Rewindow {
-    /// 只改了起点（`head` 秒被去掉）与时长、倍速不变、没有分件——跟随里的一般修剪。
+    /// Only the start point (`head` seconds removed) and the duration changed, speed unchanged, no pieces: an ordinary trim within following.
     pub fn trim(old_duration: f64, head: f64, new_duration: f64) -> Self {
         Self {
             old_duration,
@@ -484,17 +471,14 @@ impl Rewindow {
     }
 }
 
-/// 改写后的秒数取到微秒，免得浮点噪声让「没变」看起来变了。
+/// Rewritten seconds are rounded to microseconds, so floating-point noise does not make “unchanged” look changed.
 const REWINDOW_EPSILON: f64 = 1e-6;
 
-/// 把关键帧对到新窗口上（跟随与分割共用）。规则：
+/// Maps the keyframes onto the new window (shared by following and splitting). Rules:
 ///
-/// - **秒写法**跟着内容走：时刻按 [`Rewindow`] 换算；落到新窗口之前的帧去掉，并在 0 处
-///   补一帧取样值；落到新窗口之后（或旧元素末尾之后本就不生效）的帧去掉，并在新末尾
-///   补一帧取样值（沿用下一帧的缓动）——看得见的那一段动画保持原样。
-/// - **百分比写法**在元素仍是一件时原样（随新时长伸缩，「随裁剪 / 剪口走」）；一件分成
-///   几件时按秒写法同样换算后再折回这一件的百分比，两半在接缝处连续。
-/// - 取样值夹回该属性的取值范围；换算后时刻重合的帧只留后一帧的值，保证严格递增。
+/// - **Seconds notation** follows the content: times are converted per [`Rewindow`]; frames that fall before the new window are dropped, and a sampled-value frame is added at 0; frames that fall after the new window (or that already had no effect beyond the old element's end) are dropped, and a sampled-value frame is added at the new end (using the next frame's easing), so the visible part of the animation stays as it was.
+/// - **Percentage notation** stays as is while the element is still one piece (it scales with the new duration, “follows the crop / cut” 随裁剪 / 剪口走); when the element has been split into several pieces, times are converted the same way as seconds notation and then folded back into this piece's percentage, so the two halves stay continuous at the seam.
+/// - Sampled values are clamped back into the property's value range; where frames coincide after conversion, only the later frame's value is kept, which keeps the times strictly increasing.
 pub fn rewindow(keyframes: &Keyframes, window: Rewindow) -> Keyframes {
     if window.is_identity() {
         return keyframes.clone();
@@ -585,16 +569,14 @@ fn rewindow_track(prop: &str, frames: &[Keyframe], window: Rewindow) -> Vec<Keyf
     result
 }
 
-/// `"N%"`，最多四位小数、去掉尾随的 0（[`parse_percent`] 读得回来）。
+/// `"N%"`, with at most four decimal places and trailing zeros removed (readable back by [`parse_percent`]).
 fn format_percent(value: f64) -> String {
     let text = format!("{:.4}", value.clamp(PERCENT_RANGE.0, PERCENT_RANGE.1) + 0.0);
     let text = text.trim_end_matches('0').trim_end_matches('.');
     format!("{text}%")
 }
 
-/// 分割（BCF §19.3「分割、合并与修剪」）：时长 `duration` 的元素在本地 `cut` 处切成两半，
-/// 关键帧按两半各自的新窗口改写（[`rewindow`] 的分件规则：秒写法跟内容走，百分比写法折回
-/// 这一半分到的那一份，接缝处各补一帧取样值）。返回 `(左半, 右半)`。
+/// Split (BCF §19.3 “Splitting, merging and trimming”): an element of duration `duration` is cut into two halves at local `cut`, and the keyframes are rewritten to each half's new window (the piece rules of [`rewindow`]: seconds notation follows the content; percentage notation folds back into the share belonging to this half; a sampled-value frame is added at each side of the seam). Returns `(left half, right half)`.
 pub fn split_keyframes(keyframes: &Keyframes, duration: f64, cut: f64) -> (Keyframes, Keyframes) {
     let half = |head: f64, new_duration: f64| Rewindow {
         old_duration: duration,
@@ -609,11 +591,7 @@ pub fn split_keyframes(keyframes: &Keyframes, duration: f64, cut: f64) -> (Keyfr
     )
 }
 
-/// 合并（[`split_keyframes`] 的逆）：时间上靠前的一半（时长 `early_duration`）与靠后的一半
-/// 拼回一件。每个属性试着去掉分割补的接缝帧，拼出的那串再切一次必须逐帧对得上两半（时刻
-/// 容差约 0.1 毫秒，值容差百万分之一），对得上就是还原；任何一个属性对不上（不是同一次分割
-/// 切出来的两半、秒写法与百分比写法混用、只有一半有某个属性）返回 `None`。两半都没有关键帧
-/// 返回 `Some(None)`。百分比写法拼回后按合并后的时长折算（四位小数）。
+/// Merge (the inverse of [`split_keyframes`]): the earlier-in-time half (duration `early_duration`) and the later half are joined back into one element. For each property, try removing the seam frames that splitting added; the joined series, when split again, must match the two halves frame by frame (time tolerance about 0.1 ms, value tolerance one part in a million). If it matches, that is the restoration; if any property does not match (the halves are not from the same split, seconds and percentage notation are mixed, or only one half has a given property), returns `None`. If neither half has keyframes, returns `Some(None)`. After joining, percentage notation is recalculated against the merged duration (four decimal places).
 pub fn join_keyframes(
     early: Option<&Keyframes>,
     early_duration: f64,
@@ -663,7 +641,7 @@ fn join_track(
     let late_at = |frame: &Keyframe| frame.t.local_seconds(late_duration);
     let early_seam = (early_at(early.last()?) - early_duration).abs() <= tolerance;
     let late_seam = late_at(&late[0]).abs() <= tolerance;
-    // 先试「两侧接缝帧都是补的」，再试只有一侧是补的（另一侧是原有的帧恰好落在切点上）。
+    // First try “both seam frames were added”, then try “only one side was added” (the other side has an original frame that happens to fall on the cut point).
     let candidates = [
         (early_seam, late_seam),
         (false, late_seam),
@@ -747,7 +725,7 @@ fn join_track(
     None
 }
 
-/// 合并时判「两串帧是同一串」的时刻容差（秒）：百分比写法存四位小数带来的误差远小于它。
+/// Time tolerance in seconds for deciding during a merge that “the two frame series are the same series”: the error from storing percentages to four decimal places is far smaller than this.
 const JOIN_TIME_TOLERANCE: f64 = 1e-4;
 
 fn tracks_match(left: &[Keyframe], right: &[Keyframe], duration: f64, tolerance: f64) -> bool {
@@ -760,7 +738,7 @@ fn tracks_match(left: &[Keyframe], right: &[Keyframe], duration: f64, tolerance:
         })
 }
 
-/// 从 JSON 解出 `keyframes`（宿主手里只有原始文档时用）。形状不对返回 `None`。
+/// Parses `keyframes` from JSON (for hosts that only have the raw document). Returns `None` if the shape is wrong.
 pub fn from_json(value: Option<&serde_json::Value>) -> Option<Keyframes> {
     let value = value.filter(|value| value.is_object())?;
     serde_json::from_value::<Keyframes>(value.clone())
@@ -768,7 +746,7 @@ pub fn from_json(value: Option<&serde_json::Value>) -> Option<Keyframes> {
         .filter(|keyframes| !keyframes.is_empty())
 }
 
-/// 线性倍数 → dB（`0` → `-inf`）。
+/// Linear multiplier → dB (`0` → `-inf`).
 pub fn volume_to_db(volume: f64) -> f64 {
     if volume <= 0.0 {
         f64::NEG_INFINITY
@@ -777,7 +755,7 @@ pub fn volume_to_db(volume: f64) -> f64 {
     }
 }
 
-/// dB → 线性倍数。
+/// dB → linear multiplier.
 pub fn db_to_volume(db: f64) -> f64 {
     if db == f64::NEG_INFINITY {
         0.0
@@ -806,7 +784,7 @@ mod tests {
             rewindow(&keyframes, Rewindow::trim(4.0, 0.0, 4.0)),
             keyframes
         );
-        // 一件分成三份的中间一份：百分比最多四位小数，读得回来、校验通过。
+        // The middle piece of an element split into three: the percentage has at most four decimal places, so it reads back and passes validation.
         let middle = rewindow(
             &keyframes,
             Rewindow {
@@ -838,7 +816,7 @@ mod tests {
         assert_eq!(sample(&track, 2.0, 4.0), Some(1.5));
         assert_eq!(sample(&track, 4.0, 4.0), Some(2.0));
         assert_eq!(sample(&track, 9.0, 4.0), Some(2.0));
-        // 时长变了（修剪 / 跟随），百分比跟着铺满。
+        // The duration changed (trim / follow), so the percentages are stretched to fill it again.
         assert_eq!(sample(&track, 5.0, 10.0), Some(1.5));
     }
 
@@ -856,7 +834,7 @@ mod tests {
     #[test]
     fn seconds_frames_past_the_end_do_not_apply() {
         let track = frames(json!([{"t": 0, "v": 1.0}, {"t": 5, "v": 3.0}]));
-        // 元素只有 2 秒：5 秒那一帧不生效，停在第一帧。
+        // The element is only 2 seconds long: the 5-second frame has no effect, so it stays at the first frame.
         assert_eq!(sample(&track, 1.0, 2.0), Some(1.0));
         let late = frames(json!([{"t": 5, "v": 3.0}]));
         assert_eq!(sample(&late, 1.0, 2.0), None);
@@ -938,7 +916,7 @@ mod tests {
             serde_json::from_value(value).unwrap()
         };
         let canvas = (1920.0, 1080.0);
-        // pip，宽 100%，16:9 源：静态盖满；x 从 50 挪到 70 必露。
+        // PiP, width 100%, 16:9 source: fully covers statically; moving x from 50 to 70 will necessarily expose the edge.
         let moving = element(json!({
             "id": "img", "kind": "image", "srcId": "s", "place": {"x": 50, "y": 50, "w": 100},
             "keyframes": {"x": [{"t": "0%", "v": 50}, {"t": "100%", "v": 70}]}
@@ -946,7 +924,7 @@ mod tests {
         let hit = keyframes_uncover(&moving, (1920.0, 1080.0), canvas, 4.0, 30.0).unwrap();
         assert!(hit.at > 0.0 && hit.at < 0.1, "{hit:?}");
         assert!(hit.gap_px > UNCOVERED_TOLERANCE_PX);
-        // 放大 1.2 再平移 5%：盒比画布宽 384 px，挪 96 px 仍盖满。
+        // Scale up 1.2 then shift 5%: the box is 384 px wider than the canvas, so moving it 96 px still covers the canvas.
         let zoomed = element(json!({
             "id": "img", "kind": "image", "srcId": "s", "place": {"x": 50, "y": 50, "w": 100, "scale": 1.2},
             "keyframes": {"x": [{"t": "0%", "v": 50}, {"t": "100%", "v": 55}]}
@@ -955,14 +933,14 @@ mod tests {
             keyframes_uncover(&zoomed, (1920.0, 1080.0), canvas, 4.0, 30.0),
             None
         );
-        // 铺满模式里 x 不参与盒位置；缩小到 0.9 才露。
+        // In fill mode x does not take part in the box position; it only exposes when scaled down to 0.9.
         let full = element(json!({
             "id": "img", "kind": "image", "srcId": "s", "mode": "fullscreen",
             "keyframes": {"scale": [{"t": 0, "v": 1.0}, {"t": 2, "v": 0.9}]}
         }));
         let hit = keyframes_uncover(&full, (800.0, 800.0), canvas, 4.0, 30.0).unwrap();
         assert!(hit.at > 0.0 && hit.at < 0.1);
-        // 静态就没盖满：不检查。
+        // Does not fully cover statically: not checked.
         let small = element(json!({
             "id": "img", "kind": "image", "srcId": "s", "place": {"w": 40},
             "keyframes": {"x": [{"t": 0, "v": 0}, {"t": 1, "v": 100}]}

@@ -14,11 +14,11 @@ import { pl } from './drivers-codex.pl.ts';
 import { tr } from './drivers-codex.tr.ts';
 import { vi } from './drivers-codex.vi.ts';
 
-/** Codex Driver：账号描述、探测结果与 app-server 连接的错误。 */
+/** Codex Driver: account description, probe results, and errors from the app-server connection. */
 const en = {
   plan: 'ChatGPT Plus or Pro subscription',
   installHint: 'Install Codex CLI',
-  /** `detail` 是 `codex login status` 的原文，为空时不带。 */
+  /** `detail` is the raw output of `codex login status`. It is left out when empty. */
   signedOut: (p: { detail: string }) => `Codex isn't signed in. Run codex login in a terminal.${p.detail ? ` (${p.detail})` : ''}`,
   chatgptAccount: 'ChatGPT account',
   apiKey: 'OpenAI API key',
@@ -27,7 +27,7 @@ const en = {
   codexAccount: 'Codex account',
   steerMismatch: (p: { expected: string; received: string }) =>
     `Codex gave an unexpected turn/steer reply: expected turn ${p.expected}, got ${p.received}`,
-  /** `stderr` 为空时不带。 */
+  /** Left out when `stderr` is empty. */
   appServerExited: (p: { code: string; signal: string; stderr: string }) =>
     `codex app-server exited (code ${p.code}, signal ${p.signal})${p.stderr ? `\n${p.stderr}` : ''}`,
   connectionClosed: 'The codex app-server connection is closed',

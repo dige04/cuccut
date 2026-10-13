@@ -23,40 +23,34 @@ import {
 import { RcRuntime } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Agent 的安装、升级与登录动作（架构设计 §12.9「安装动作」）：
+ * Install, upgrade and login actions for Agents (architecture design §12.9, “Install actions”):
  *
- * - **命令只从探测结果里取**。客户端只说「哪个 Agent、做什么、哪种方式」，Runtime 在当前的 `agents.list`
- *   里找 `install[].command` / `upgrade` / `loginCommand`；找不到就 `invalid-request`。Renderer 只是半可信的。
- * - **应用内运行**（`agents.runSetup`）只收 brew、npm 这类：`script` 类（从网络下载脚本交给 shell）拒绝，
- *   只能复制或在系统终端里由用户自己运行。stdin 关闭、没有控制终端，要密码的会直接失败，界面提示去终端里运行；
- *   CucCut 不提权。用户逐次确认由界面负责（确认时显示完整命令）。
- * - **输出**合并 stdout 与 stderr，按行经 `agent-setup` 主题送达（约 100 毫秒一批），只留最后
- *   `AGENT_SETUP_OUTPUT_LINES` 行；结束时整段记入日志，连同命令、退出码与耗时。
- * - **结束后重新探测**（与 `agents.detect { driverId }` 相同：强制探测这个 Agent），再送出终态；探测结果经 `agents` 主题推送，
- *   界面收到终态后读 `agents.list` 也是新结果。
- * - **系统终端**（`agents.openTerminal`）：登录、`script` 类安装、需要管理员权限的，都交给用户自己的终端。
+ * - **Commands come only from the probe results.** The client says only which Agent, what to do, and which method. The Runtime finds `install[].command` / `upgrade` / `loginCommand` in the current `agents.list`, and returns `invalid-request` if it finds nothing. The Renderer is only semi-trusted.
+ * - **In-app runs** (`agents.runSetup`) accept only commands such as brew and npm. `script`-kind commands (downloading a script from the network and handing it to the shell) are rejected; they can only be copied, or run by the user in the system terminal. stdin is closed and there is no controlling terminal, so anything that asks for a password fails directly, and the UI tells the user to run it in a terminal. CucCut does not elevate privileges. The UI handles per-run user confirmation (the confirmation shows the full command).
+ * - **Output** merges stdout and stderr and is delivered line by line over the `agent-setup` topic (in batches of about 100 milliseconds). Only the last `AGENT_SETUP_OUTPUT_LINES` lines are kept. When the run ends, the whole output is written to the log, together with the command, exit code and duration.
+ * - **After the run, re-probe** (the same as `agents.detect { driverId }`: force a probe of this Agent), then send the terminal state. The probe result is pushed over the `agents` topic, so when the UI receives the terminal state and reads `agents.list`, it gets the new result.
+ * - **System terminal** (`agents.openTerminal`): login, `script`-kind installs, and anything that needs administrator privileges are handed to the user's own terminal.
  *
- * 不做成 Job：JobRecord 没有输出行，必填字段是模型计算的语义，还会持久化进账本、出现在 `jobs.list` 与智能体的任务工具里。
- * 运行记录只在内存里，留最近 `keepRuns` 次。
+ * Not made into a Job: JobRecord has no output lines, its required fields are semantics computed by the model, and it would be persisted in the ledger and appear in `jobs.list` and the agent's task tools.
+ * Run records are kept in memory only, and the last `keepRuns` runs are kept.
  *
- * 权限：网关的 principal 在 0.1 只用于日志（见 handlers.ts），这里同样不按连接类型限制；
- * 防线是「命令只从探测结果取、script 类不在应用内运行、stdin 关闭」。
+ * Permissions: in 0.1 the gateway's principal is used only for logging (see handlers.ts), and it is not restricted by connection type here either. The defences are: commands come only from probe results, `script`-kind commands do not run in the app, and stdin is closed.
  */
 
-/** 从网络下载脚本交给 shell 执行的命令：即使探测结果把它标成别的类别，也不在应用内运行。 */
+/** A command that downloads a script from the network and hands it to the shell. It is not run in the app, even if the probe result labels it as another category. */
 const PIPES_TO_SHELL = /\|\s*(ba|z)?sh\b/;
 
 export interface AgentSetupOptions {
-  /** 当前的 Agent 列表（`Harness.agents`）；`fresh` 时强制重新探测（给了 `driverId` 只探那一个）。 */
+  /** The current Agent list (`Harness.agents`). When `fresh`, forces a re-probe (if `driverId` is given, only that one is probed). */
   agents: (options?: { fresh?: boolean; driverId?: DriverId }) => Promise<AgentsView>;
   log: Logger;
-  /** 应用内运行用的环境（默认 `agentEnv()`：登录 shell 的环境，去掉宿主 Claude Code 会话的变量）。 */
+  /** Environment for in-app runs (default `agentEnv()`: the login shell's environment, with the host Claude Code session's variables removed). */
   env?: () => Promise<NodeJS.ProcessEnv>;
-  /** 打开系统终端（默认 `openSystemTerminal`）。测试注入假的，不真的打开终端。 */
+  /** Opens the system terminal (default `openSystemTerminal`). Tests inject a fake, so no terminal actually opens. */
   openTerminal?: (command: string) => Promise<SystemTerminalResult>;
-  /** 内存里留几次运行记录（默认 20）；运行中的不算在内、不会被丢掉。 */
+  /** How many run records to keep in memory (default 20). Runs still in progress are not counted and are never dropped. */
   keepRuns?: number;
-  /** 输出攒多久送一批（默认 100 毫秒）。 */
+  /** How long output is accumulated before a batch is sent (default 100 milliseconds). */
   flushMs?: number;
 }
 
@@ -65,7 +59,7 @@ interface Entry {
   process: ShellCommandRun | null;
   pending: string[];
   flushTimer: NodeJS.Timeout | null;
-  /** 进程结束、重新探测、终态送出之后才 resolve。 */
+  /** Resolves only after the process ends, the re-probe finishes, and the terminal state is sent. */
   done: Promise<void>;
   cancelRequested: boolean;
 }
@@ -78,7 +72,7 @@ export class AgentSetup {
   readonly #openTerminal: (command: string) => Promise<SystemTerminalResult>;
   readonly #keepRuns: number;
   readonly #flushMs: number;
-  /** 插入顺序 = 开始顺序；快照里倒过来，新的在前。 */
+  /** Insertion order is start order; snapshots reverse it so the newest comes first. */
   readonly #runs = new Map<Id, Entry>();
   readonly #byCommand = new Map<Id, Promise<{ run: AgentSetupRun }>>();
   #closing = false;
@@ -97,18 +91,18 @@ export class AgentSetup {
     return this.topic.subscribe(afterSeq, listener);
   }
 
-  /** `agents.runSetup`。同一个 `commandId` 返回同一次运行（当前状态）。 */
+  /** `agents.runSetup`. The same `commandId` returns the same run (its current state). */
   run(params: RpcParams<'agents.runSetup'>): Promise<RpcResult<'agents.runSetup'>> {
     const known = this.#byCommand.get(params.commandId);
     if (known) return known.then(({ run }) => ({ run: copyRun(this.#runs.get(run.runId)?.run ?? run) }));
     const started = this.#start(params);
     this.#byCommand.set(params.commandId, started);
-    // 被拒绝的请求不占这个 commandId：改了参数可以再试。
+    // A rejected request does not take this commandId, so it can be retried with changed parameters.
     started.catch(() => this.#byCommand.delete(params.commandId));
     return started;
   }
 
-  /** `agents.cancelSetup`。已经做了的部分不回退。 */
+  /** `agents.cancelSetup`. Parts already done are not rolled back. */
   cancel(runId: Id): RpcResult<'agents.cancelSetup'> {
     const entry = this.#runs.get(runId);
     if (!entry) throw new RpcError('not-found', RcRuntime.noSuchRun({ runId }));
@@ -135,7 +129,7 @@ export class AgentSetup {
     return { status: result.status, command };
   }
 
-  /** Runtime 停止：结束还在运行的命令，等它们收尾（不再重新探测）。 */
+  /** Runtime stop: ends the commands still running and waits for them to wrap up (no re-probe). */
   async shutdown(): Promise<void> {
     this.#closing = true;
     const running = [...this.#runs.values()].filter((entry) => entry.run.state === 'running');
@@ -161,7 +155,7 @@ export class AgentSetup {
       throw new RpcError('invalid-request', RcRuntime.scriptNotRun());
     }
     const env = await this.#env();
-    // 检查与登记在同一个同步段里：两个并发的请求不会都通过。
+    // The check and the registration are in the same synchronous section, so two concurrent requests cannot both pass.
     if (this.#closing) throw new RpcError('busy', RcRuntime.runtimeStopping());
     for (const entry of this.#runs.values()) {
       if (entry.run.driverId === driver.id && entry.run.state === 'running') {
@@ -194,7 +188,7 @@ export class AgentSetup {
     entry.process = runShellCommand({ command, env, onLines: (lines) => this.#queue(entry, lines) });
     void entry.process.exited.then(async (exit) => {
       this.#flush(entry);
-      // 重新探测在终态之前：界面收到终态时读 `agents.list` 就是新的。Runtime 停止时不探测。
+      // The re-probe comes before the terminal state: when the UI receives the terminal state and reads `agents.list`, the result is new. The Runtime does not probe when it is stopping.
       if (!this.#closing) {
         await this.#agents({ fresh: true, driverId: run.driverId }).catch((error: unknown) => this.#log.warn('Re-detecting agents after the run failed', { runId: run.runId, error: String(error) }));
       }
@@ -227,7 +221,7 @@ export class AgentSetup {
 
   #queue(entry: Entry, lines: string[]): void {
     entry.pending.push(...lines);
-    // 攒着的也有上限：一次刷屏的输出不在内存里堆起来。
+    // Accumulated output is capped too, so a flood of output does not pile up in memory.
     if (entry.pending.length > AGENT_SETUP_OUTPUT_LINES) {
       const dropped = entry.pending.length - AGENT_SETUP_OUTPUT_LINES;
       entry.pending.splice(0, dropped);
@@ -236,7 +230,7 @@ export class AgentSetup {
     entry.flushTimer ??= setTimeout(() => this.#flush(entry), this.#flushMs);
   }
 
-  /** 把攒着的行并进记录并送出（同一个同步段：快照与之后的事件同一水位）。 */
+  /** Merges the accumulated lines into the record and sends them. This is in the same synchronous section, so the snapshot and later events share one watermark. */
   #flush(entry: Entry): void {
     if (entry.flushTimer) clearTimeout(entry.flushTimer);
     entry.flushTimer = null;
@@ -253,7 +247,7 @@ export class AgentSetup {
     this.topic.publish({ type: 'setup.output', runId: entry.run.runId, lines });
   }
 
-  /** 只留最近 `keepRuns` 次结束了的记录。 */
+  /** Keeps only the last `keepRuns` finished records. */
   #prune(): void {
     const finished = [...this.#runs.values()].filter((entry) => entry.run.state !== 'running');
     const excess = this.#runs.size - this.#keepRuns;
@@ -261,7 +255,7 @@ export class AgentSetup {
   }
 }
 
-/** 探测结果里这个 Agent、这种方式的安装或升级命令；没有就 `invalid-request`。 */
+/** The install or upgrade command for this Agent and method in the probe result. If there is none, `invalid-request`. */
 function commandOf(driver: DriverInfo, action: AgentSetupAction, kind: DriverInstallOption['kind']): string {
   const option = driver.install.find((candidate) => candidate.kind === kind);
   if (!option) throw new RpcError('invalid-request', RcRuntime.noInstallKind({ agent: driver.name, kind }));

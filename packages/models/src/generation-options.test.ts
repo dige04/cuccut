@@ -3,7 +3,7 @@ import type { ImageModelInfo, ProviderView, SpeechModelInfo } from '@cuccut/prot
 import { codePointLength, imageParameters, speechParameters } from './generation-options.ts';
 import { selectModel, type ModelChoice } from './model-selection.ts';
 
-/** 生成请求的提交时检查与选择（架构设计 §6.2、§6.6）：不合的拒绝，不悄悄改参数；这两种能力没有出厂默认。 */
+/** Submission-time checks and selection for generation requests (architecture design §6.2, §6.6). Incompatible requests are rejected, and parameters are not silently changed. These two capabilities have no factory defaults. */
 
 const speechModel = (extra: Partial<SpeechModelInfo> = {}): SpeechModelInfo => ({
   modelId: 'tts',
@@ -87,7 +87,7 @@ describe('speechParameters', () => {
     expect(() => speechParameters(speech, { text: 'hi', instructions: 'calm' })).toThrow(invalid());
     expect(() => speechParameters(speech, { text: 'hi', speed: 3 })).toThrow(invalid({ speedRange: { min: 0.5, max: 2 } }));
     expect(() => speechParameters(speech, { text: 'hi', seed: 1 })).toThrow(invalid());
-    // 只有空白的语气说明当作没给。
+    // A tone note that is only whitespace is treated as not given.
     expect(speechParameters(speech, { text: 'hi', instructions: '  ' }).instructions).toBeNull();
   });
 

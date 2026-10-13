@@ -1,11 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/QuantizedTextDecoder.swift`。
+//! Parts of this file's implementation draw on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/QuantizedTextDecoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model pack and transcription interface; the original upstream source attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Qwen3 文本解码器（candle），镜像 mlx 后端 `qwen3/text_decoder.rs`。
+//! Qwen3 text decoder (candle), mirroring the mlx backend `qwen3/text_decoder.rs`.
 
 use super::layers::{Dense, RmsNorm, RopeCache, TokenEmbedding, causal_mask, scaled_dot_product_attention};
 use super::thinker_weights::ThinkerWeights;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 const KV_CACHE_STEP: usize = 256;
 
-/// 按固定步长扩容的 KV cache，避免自回归生成时每个 token 都复制整段缓存。
+/// KV cache that grows in fixed steps, so autoregressive generation does not copy the whole cache for every token.
 pub struct KvCache {
     keys: Option<Tensor>,
     values: Option<Tensor>,
@@ -47,8 +47,8 @@ impl KvCache {
         if required > capacity {
             let (batch, heads, _, key_width) = keys.dims4()?;
             let value_width = values.dim(3)?;
-            // 按步长向上取整，同时至少翻倍：长上下文下避免每 KV_CACHE_STEP 个
-            // token 就整段重新分配并拷贝一次缓存。
+            // Round up to the step, and at least double: with long contexts, this avoids reallocating and copying the whole cache once every KV_CACHE_STEP
+            // tokens.
             let grown = required.div_ceil(KV_CACHE_STEP) * KV_CACHE_STEP;
             let grown = grown.max(capacity * 2);
             let device = keys.device();
@@ -190,9 +190,8 @@ impl TextAttention {
         let (cached_key, cached_value) = if let Some(cache) = cache {
             cache.update(key, value)?
         } else {
-            // 无 cache 时 key/value 还是 `transpose(1, 2)` 的视图；candle 的批量
-            // matmul 只接受连续的 rhs（batch > 1 时直接报 MatMulUnexpectedStriding）。
-            // 走 cache 的路径由 `KvCache::update` 里的 `contiguous()` 保证，这里补上。
+            // Without a cache, key/value are still views from `transpose(1, 2)`; candle's batched matmul only accepts a contiguous rhs (with batch > 1 it fails immediately with MatMulUnexpectedStriding).
+            // The cached path is guaranteed by `contiguous()` in `KvCache::update`; it is added here.
             (key.contiguous()?, value.contiguous()?)
         };
         let scale = (self.config.head_dim as f64).sqrt().recip();
@@ -326,12 +325,11 @@ impl TextDecoder {
         Ok((self.norm.forward(&hidden)?, cache))
     }
 
-    /// 无 KV cache 的一次性 prefill，返回末层归一化后的 hidden（**不过** lm_head）。
+    /// A one-shot prefill without a KV cache, returning the hidden state after the final normalization (**not** passed through lm_head).
     ///
-    /// 供 embedding / reranker 这类"只前向一次、只读某个位置"的用法：`decode`
-    /// 走 [`KvCache`]，而 KV cache 只支持 batch size 1，无法批量左 padding。
-    /// `attention_mask` 是可广播到 `[batch, heads, sequence, sequence]` 的**加性**
-    /// 掩码（自带因果与 padding 语义）；为 `None` 时按纯因果掩码处理。
+    /// For embedding / reranker-style use, which runs a single forward pass and reads only one position: `decode`
+    /// goes through [`KvCache`], but the KV cache supports only batch size 1 and cannot do batched left padding.
+    /// `attention_mask` is an **additive** mask broadcastable to `[batch, heads, sequence, sequence]` (it carries the causal and padding semantics itself); when `None`, a pure causal mask is used.
     pub fn forward_hidden(&self, input_embeddings: &Tensor, attention_mask: Option<&Tensor>) -> Result<Tensor> {
         let sequence = input_embeddings.dim(1)?;
         let generated_mask = if attention_mask.is_none() && sequence > 1 {

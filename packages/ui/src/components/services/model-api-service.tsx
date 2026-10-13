@@ -33,13 +33,13 @@ import { COMMON_COPY, MODEL_API_COPY } from './services-copy.ts';
 import { copyText, useConfigureService, useFlipService } from './use-service-actions.ts';
 
 /*
- * 模型接口服务详情页（原型 designs/cuccut/app/page-services-api.jsx `ApiSection`、page-services-api-map.jsx；架构设计 §4.8）。
- * 原型里它是 Web 服务页的一节「OpenAI 兼容 API」（开关 + key + 地址 + 端点 + 模型映射）；Runtime 把它做成独立的服务，
- * 有自己的端口、令牌、等级、路由与别名，所以单独成一页，排在 Web 服务后面。与原型的不同：
- * - 原型一把可换的全局 key、可关——Runtime 按客户端发令牌、总是要：「需要 API key」开着且置灰；
- * - 原型每一类能力能单独关、能挂独立端口——Runtime 没有：开关与「独立端口」置灰；
- * - 原型点端点进详情页看参数、「试一试」——没有端点文档的数据，界面也拿不到令牌明文发请求：省略，原因写在端点段；
- * - 原型只用本机模型——Runtime 能把请求路由到在线服务、局域网节点与智能体，各有开关（「路由」段）。
+ * Model API service detail page (prototype designs/cuccut/app/page-services-api.jsx `ApiSection`, page-services-api-map.jsx; architecture design §4.8).
+ * In the prototype this is a section of the Web service page, “OpenAI-compatible API” (toggle + key + address + endpoints + model mapping). The Runtime makes it a standalone service
+ * with its own port, token, tier, routes and aliases, so it gets its own page after the Web service page. Differences from the prototype:
+ * - The prototype has one swappable global key that can be turned off. The Runtime issues tokens per client and always requires them, so “Requires API key” is on and greyed out;
+ * - The prototype lets each capability be turned off individually and given a separate port. The Runtime does not: the toggles and “Separate port” are greyed out;
+ * - The prototype lets you click an endpoint to see its parameters and “Try it”. Without endpoint documentation data, and with the UI having no access to the plaintext token needed to send requests, this is omitted; the reason is written in the endpoints section;
+ * - The prototype only uses local models. The Runtime can route requests to online services, LAN nodes and agents, each with its own toggle (the “Routes” section).
  */
 
 const methodBadge = style({ flexShrink: 0, width: 40, font: 'code-xs', fontWeight: 'bold', color: { default: 'gray-700', isGet: 'informative-900' } });
@@ -177,7 +177,7 @@ export function ModelApiServicePage() {
   );
 }
 
-/** 允许的操作、路由与并发：立即生效。 */
+/** Allowed operations, routes and concurrency: these take effect immediately. */
 function ApiAccess({ status }: { status: ServiceStatus }) {
   const configure = useConfigureService();
   const level = status.policy?.level ?? 'ask';
@@ -231,7 +231,7 @@ function ApiAccess({ status }: { status: ServiceStatus }) {
   );
 }
 
-/** 端点：按能力分组，每组写此刻能路由到几个模型。能力开关与独立端口置灰（Runtime 没有）。 */
+/** Endpoints: grouped by capability; each group states how many models it can currently route to. Capability toggles and the separate port are greyed out (the Runtime does not have them). */
 function ApiEndpoints({ api }: { api: ModelApiStatus | undefined }) {
   const view = useModels((s) => s.capabilities);
   const routing = api?.routing ?? DEFAULT_ROUTING;

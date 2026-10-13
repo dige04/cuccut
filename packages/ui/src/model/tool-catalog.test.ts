@@ -17,7 +17,7 @@ import {
   toolIdOf,
 } from './tool-catalog.ts';
 
-/* 设计稿 model-tools.test.js 第 19–64 行的用例，工具 ID 换成 Runtime 注册表的 ID。 */
+/* Cases from design file model-tools.test.js, lines 19–64, with the tool IDs replaced by the IDs in the Runtime registry. */
 
 describe('工具目录', () => {
   it('按处理的对象分四组：语音与字幕、文字与图片、音乐、视频文件（产品设计 §2.7，`TOOL_CATEGORIES` 的顺序）', () => {
@@ -50,7 +50,7 @@ describe('工具目录', () => {
         expect(['video', 'artifact']).toContain(i.output);
       }
       for (const a of t.artifacts) expect(ARTIFACT_LABELS[a]).toBeTruthy();
-      // 只写进视频的工具（翻译配音）不产出条目；其余缺省产出 Space 里的条目。
+      // Tools that only write into the video (dubbing translation) produce no items; all others produce items in Space by default.
       if (t.output === 'video') expect(t.artifacts).toEqual([]);
       else expect(t.artifacts.length).toBeGreaterThan(0);
     }
@@ -72,7 +72,7 @@ describe('工具目录', () => {
     expect(toolById('tts')?.id).toBe('synthesize-speech');
     expect(isVideoTool('dub')).toBe(true);
     expect(isVideoTool('generate-text')).toBe(false);
-    // 「视频工具」是页面机制（视频选择器、运行页），与分组无关：下载视频在视频文件组里，照样是。
+    // “Video tools” are a page mechanism (video picker, run page), independent of grouping: downloading a video is in the video files group, and it is still a video tool.
     expect(isVideoTool('link-import')).toBe(true);
     expect(isVideoTool('extract-audio')).toBe(false);
     expect(['compress-video', 'merge-video', 'extract-audio'].every((id) => isFileVideoTool(id as 'extract-audio'))).toBe(true);
@@ -91,7 +91,7 @@ describe('工具目录', () => {
     expect(inputOptions('dub').map((o) => o.key)).toEqual(['video']);
     expect(outputOf('transcribe', 'link')).toBe('artifact');
     expect(inputOptions('synthesize-speech').map((o) => o.key)).toEqual(['text', 'space']);
-    // 文本生成的 Space 条目是附带的素材，不是另一种来源：不进切换，但收的种类照样算。
+    // Text-generation items in Space are incidental material, not another source: they are not part of the switch, but the kinds they accept still count.
     expect(inputOptions('generate-text').map((o) => o.key)).toEqual(['text']);
     expect(spaceKindsOf('generate-text')).toEqual(['document', 'subtitle']);
     expect(spaceKindsOf('extract-audio')).toEqual(['video-file', 'export', 'audio']);

@@ -5,90 +5,90 @@ import type { ResourceCapacitySetting } from './resources.ts';
 import { SETTING_DESCRIPTION_MESSAGES } from './settings-copy.ts';
 
 /**
- * Runtime 持有的偏好设置（架构设计 §5.10）：键、取值类型、默认值与说明是合同的一部分。
+ * Preferences held by the Runtime (architecture design §5.10): keys, value types, defaults and descriptions are part of the contract.
  *
- * 规则：
- * - 键用点分的小写名，一旦发布不改名；未知的键被拒绝（`invalid-request`），不静默保存。
- * - 取值按 `@cuccut/protocol/schemas` 里的 `settingValueSchemas` 校验；不合的整批拒绝，一个也不落盘。
- * - `settings.set` 里给 `null` 表示恢复默认值；等于默认值的取值不另存，所以「是默认值」与「没有改过」是同一件事。
- * - 凭据不属于偏好设置（§6.8）：注册表里不放密钥、令牌或密码。
- * - 模型能力的默认 Provider 与模型由 `models.setDefault` 管（§6.8），不在这里。
+ * Rules:
+ * - Keys are lowercase dotted names; once published, a key is never renamed. Unknown keys are rejected (`invalid-request`), not silently saved.
+ * - Values are validated against `settingValueSchemas` in `@cuccut/protocol/schemas`; a batch with any invalid value is rejected as a whole, and none of it is written to disk.
+ * - `null` in `settings.set` restores the default. A value equal to the default is not stored separately, so "is the default" and "never changed" are the same thing.
+ * - Credentials are not preferences (§6.8): the registry holds no keys, tokens or passwords.
+ * - The default provider and model for model capabilities are managed by `models.setDefault` (§6.8), not here.
  *
- * 校验用的 zod schema 在 `schemas.ts`：这个文件随主入口进界面，不带 zod。
+ * The zod schemas used for validation are in `schemas.ts`: this file ships with the main entry into the UI, without zod.
  */
 
-/** 转写完成后的后续动作。 */
+/** The follow-up action after transcription completes. */
 export type TranscribeAfterComplete = 'open-video' | 'notify' | 'nothing';
 
-/** 自动断行的目标行长（字符数），按语言类别：`cjk` 是中日韩文字，`other` 是其余按空格分词的文字。 */
+/** Target line length (in characters) for automatic line breaks, by language class: `cjk` is Chinese, Japanese and Korean script; `other` is the rest, which is split into words by spaces. */
 export interface CaptionLineLength {
   cjk: number;
   other: number;
 }
 
 export interface SettingValues {
-  /** 新会话用的 Driver；null 表示内置默认（`codex`）。 */
+  /** Driver for new sessions; null means the built-in default (`codex`). */
   'agent.defaultDriver': string | null;
-  /** 新会话的模型；null 表示 Driver 自己的默认模型。 */
+  /** Model for new sessions; null means the driver's own default model. */
   'agent.defaultModel': string | null;
-  /** 新会话的推理强度；null 表示 Driver 自己的默认值。 */
+  /** Reasoning effort for new sessions; null means the driver's own default. */
   'agent.defaultEffort': string | null;
-  /** 还没切换过模式的会话用它（架构设计 §3.12）。旧值（controlled、authorized）读写时换成新值。 */
+  /** Used by sessions that have not switched modes yet (architecture design §3.12). Old values (controlled, authorized) are converted to new ones on read and write. */
   'agent.defaultAccessMode': AgentMode;
   /**
-   * 界面语言：`system` 跟随这台电脑的系统语言（没有对应的出货语言时英文），否则是一种出货语言。Runtime 给人看的文字
-   * （错误原因、任务说明）按它生成；已经存下的文字保留生成时的语言。桌面界面把自己的选择写到这里（架构设计 §5.10）。
+   * Interface language: `system` follows the computer's system language (English if there is no matching shipped language); otherwise it is one shipped language. Runtime text shown to people
+   * (error reasons, task descriptions) is generated in it; text already stored keeps the language it was generated in. The desktop UI writes its own choice here (architecture design §5.10).
    */
   'ui.language': LanguagePreference;
   'captions.maxLineLength': CaptionLineLength;
   'transcribe.afterComplete': TranscribeAfterComplete;
   /**
-   * 默认保存位置：工具没有视频的结果、从链接下载的媒体与 downloads_save 交出的文件都放这里。绝对路径；
-   * null 表示当前主机的 ~/Downloads，独立于项目归属。
+   * Default save location: results from tools without a video, media downloaded from links, and files handed over by downloads_save all go here. Absolute path;
+   * null means ~/Downloads on the current host, independent of project ownership.
    */
   'downloads.directory': string | null;
   /**
-   * 本地模型的下载来源（基址，`http(s)://`，不含凭据）；null 为公共模型仓库（`https://huggingface.co`），
-   * `https://www.modelscope.cn` 从 ModelScope 下载。环境变量 `CUCCUT_MODELS_ENDPOINT` 优先于它（架构设计 §6.3）。
+   * Source for downloading local models (base URL, `http(s)://`, no credentials). null is the public model repository (`https://huggingface.co`);
+   * `https://www.modelscope.cn` downloads from ModelScope. The environment variable `CUCCUT_MODELS_ENDPOINT` takes precedence over it (architecture design §6.3).
    */
   'models.downloadEndpoint': string | null;
   /**
-   * 模型目录：绝对路径；null 为缺省的 `<runtime-home>/models`。环境变量 `CUCCUT_MODELS_DIR` 优先于它（这时它不生效）。
-   * 只经 `models.setDir` 更改（要先确认没有任务在用、卸下 Worker、选择移动还是只换位置），`settings.set` 不接受这个键（架构设计 §6.3）。
+   * Model directory: absolute path; null is the default `<runtime-home>/models`. The environment variable `CUCCUT_MODELS_DIR` takes precedence over it (in which case this setting has no effect).
+   * It is changed only through `models.setDir` (which first checks that no job is using it, unloads Workers, and asks whether to move or only change the location). `settings.set` does not accept this key (architecture design §6.3).
    */
   'models.dir': string | null;
   /**
-   * 受管外部工具的下载来源（镜像的基址，`http(s)://`，不含凭据）：文件取自 `<基址>/<工具>/<版本>/<文件名>`；null 为工具的
-   * 官方发布地址。环境变量 `CUCCUT_TOOLS_ENDPOINT` 优先于它（架构设计 §12.9）。
+   * Download source for managed external tools (mirror base URL, `http(s)://`, no credentials): files are fetched from `<base>/<tool>/<version>/<filename>`; null is the tool's
+   * official release address. The environment variable `CUCCUT_TOOLS_ENDPOINT` takes precedence over it (architecture design §12.9).
    */
   'tools.downloadEndpoint': string | null;
   /**
-   * 排字用到、随内核与本机都没有、字体目录里有的族自动下载（预览与成片导出，架构设计 §9.1）。关掉时照回退字体画并提示，
-   * 可以在选字列表里手动下载。
+   * Font families used for typesetting that are neither bundled with the kernel nor on the machine, but are present in the font directory, are downloaded automatically (for preview and final-render export, architecture design §9.1). When off, rendering falls back to a substitute font with a notice,
+   * and the font can be downloaded manually from the font picker list.
    */
   'fonts.autoDownload': boolean;
-  /** 字体 CSS 接口的基址（镜像，`https://`）；null 为 `https://fonts.googleapis.com`。请求是 `<基址>/css2?family=…`。 */
+  /** Base URL of the font CSS API (mirror, `https://`); null is `https://fonts.googleapis.com`. Requests are `<base>/css2?family=…`. */
   'fonts.cssEndpoint': string | null;
-  /** 字体文件的基址（镜像，`https://`）：只从它下面取文件；null 为 `https://fonts.gstatic.com`。 */
+  /** Base URL of font files (mirror, `https://`): files are fetched only from under it; null is `https://fonts.gstatic.com`. */
   'fonts.fileEndpoint': string | null;
   /**
-   * Space 回收站的保留天数（架构设计 §5.7）：移入回收站超过这么多天、没有引用的条目在启动时与之后定期物理删除，
-   * 删除的视频也一样；有引用的留着。整数 1–3650。
+   * Retention days for the Space trash (architecture design §5.7): entries moved to the trash more than this many days ago, with no references, are physically deleted at startup and periodically afterwards;
+   * deleted videos likewise. Entries with references are kept. Integer 1–3650.
    */
   'space.trashRetentionDays': number;
   /**
-   * Runtime Home 里 `cache/` 的总大小上限（MiB，架构设计 §5.1）：超过时按修改时间从旧到新删缓存文件，降到上限的 90%。
-   * 跨视频检索的内容索引（`cache/content-index/`）不删，但计入总大小。整数 256–1048576。
+   * Total size cap for `cache/` in the Runtime Home (MiB, architecture design §5.1): when exceeded, cache files are deleted oldest-modified first, down to 90% of the cap.
+   * The cross-video content index (`cache/content-index/`) is not deleted, but it counts toward the total size. Integer 256–1048576.
    */
   'cache.maxSizeMiB': number;
   /**
-   * 资源调度用的机器容量（架构设计 §7.6、§7.7）：null 为自动探测（内存与 CPU 线程取自系统，Apple 芯片的 GPU 内存按统一内存估计，
-   * 其余机器的 GPU 内存未知、不按它准入）。某一项为 null 时那一项照旧自动。
+   * Machine capacity used by resource scheduling (architecture design §7.6, §7.7): null is auto-detect (memory and CPU threads come from the system; Apple chip GPU memory is estimated as unified memory;
+   * on other machines GPU memory is unknown and is not used for admission). When one field is null, that field is still automatic.
    */
   'resources.capacity': ResourceCapacitySetting | null;
   /**
-   * CLI 拉起的 Runtime（架构设计 §2.2）空闲多少分钟后自己退出：没有本机网关连接、没有排队或运行中的任务、没有开着的对外服务。
-   * 整数 1–1440。桌面端与手动启动的 Runtime 不受它影响。
+   * Minutes after which a Runtime started by the CLI (architecture design §2.2) exits on its own when idle: no local gateway connection, no queued or running jobs, and no external service turned on.
+   * Integer 1–1440. The desktop app and a Runtime started manually are not affected.
    */
   'runtime.idleExitMinutes': number;
   'updates.autoCheck': boolean;
@@ -99,7 +99,7 @@ export interface SettingValues {
 
 export type SettingKey = keyof SettingValues;
 
-/** 注册表的顺序就是列表与 CLI 输出的顺序。 */
+/** The order in the registry is the order in lists and CLI output. */
 export const SETTING_KEYS = [
   'agent.defaultDriver',
   'agent.defaultModel',
@@ -150,58 +150,58 @@ export const SETTING_DEFAULTS: Readonly<SettingValues> = Object.freeze({
   'offline.strict': false,
 });
 
-/** 给人看的一句说明（设置页与 `cuccut settings` 用）。读属性时取当前语言，文案在 `settings-copy.ts`。 */
+/** One-sentence description for people (used by the settings page and `cuccut settings`). Reading the property returns the text in the current language; the copy is in `settings-copy.ts`. */
 export const SETTING_DESCRIPTIONS: Readonly<Record<SettingKey, string>> = SETTING_DESCRIPTION_MESSAGES;
 
-/** 一个键给人看的说明（当前语言）。 */
+/** Description of a key for people (current language). */
 export function settingDescription(key: SettingKey): string {
   return SETTING_DESCRIPTION_MESSAGES[key];
 }
 
-/** 不能经 `settings.set` 改的键：各有专门的方法（`models.dir` 用 `models.setDir`）。 */
+/** Keys that cannot be changed through `settings.set`: each has a dedicated method (`models.dir` uses `models.setDir`). */
 export const SETTING_MANAGED_BY: Readonly<Partial<Record<SettingKey, string>>> = { 'models.dir': 'models.setDir' };
 
 export function isSettingKey(key: string): key is SettingKey {
   return (SETTING_KEYS as readonly string[]).includes(key);
 }
 
-/** `settings.get` / `settings.set` 的结果，也是 `settings` 主题的快照：当前的有效值与默认值。 */
+/** Result of `settings.get` / `settings.set`, and also the snapshot for the `settings` topic: the current effective values and defaults. */
 export interface SettingsView {
   settings: Partial<SettingValues>;
   defaults: Partial<SettingValues>;
 }
 
-/** 完整的视图（不按键过滤时）。 */
+/** The full view (when not filtered by key). */
 export interface SettingsSnapshot {
   settings: SettingValues;
   defaults: SettingValues;
 }
 
-/** `settings.set` 能写入的取值：访问模式另外接受旧值（§3.12）。 */
+/** Values `settings.set` can write: the access mode also accepts old values (§3.12). */
 export type SettingInputValues = Omit<SettingValues, 'agent.defaultAccessMode'> & {
   'agent.defaultAccessMode': AgentMode | Autonomy;
 };
 
-/** 有效值变化时发一条，只带变了的键与它们的新有效值（恢复默认时是默认值）。 */
+/** Sent when effective values change, carrying only the changed keys and their new effective values (the default values when restored to default). */
 export type SettingsEvent = { type: 'settings.updated'; changed: Partial<SettingValues> };
 
-/** 一个取值从哪里来：用户设过，或是默认值。 */
+/** Where a value came from: set by the user, or the default. */
 export type SettingSource = 'user' | 'default';
 
 /**
- * 任务创建时冻结的一组取值（§5.10「任务在创建时冻结它用到的取值」）：之后改设置不影响它。
+ * A set of values frozen when a task is created (§5.10 "tasks freeze the values they use at creation"): later changes to settings do not affect it.
  */
 export interface FrozenSettings<K extends SettingKey> {
   values: Pick<SettingValues, K>;
   sources: Record<K, SettingSource>;
 }
 
-/** 能冻结取值的一方（Runtime 的设置存储）。Harness 只依赖这个形状。 */
+/** The party that can freeze values (the Runtime's settings store). The Harness depends only on this shape. */
 export interface SettingsReader {
   snapshot<K extends SettingKey>(keys: readonly K[]): FrozenSettings<K>;
 }
 
-/** 没有设置存储时（测试、单独使用 Harness）按默认值冻结。 */
+/** When there is no settings store (tests, or the Harness used on its own), values are frozen to the defaults. */
 export function defaultSettingsSnapshot<K extends SettingKey>(keys: readonly K[]): FrozenSettings<K> {
   const values = {} as Pick<SettingValues, K>;
   const sources = {} as Record<K, SettingSource>;

@@ -15,8 +15,8 @@ import path from 'node:path';
 import { JsonStoreFile, type StoreOptions } from './store-file.ts';
 
 /**
- * Space 派生条目时从一个任务读的事实（架构设计 §5.7）：正好是 `space-derive` 用到的字段，`JobRecord` 可以直接当它用。
- * 生成参数（原文、提示词）、用户库、授权、流程与取消的细节、警告都不在里面，文本结果只留媒体类型与长度。
+ * The facts Space reads from a task when it derives artifact entries (architecture design §5.7). These are exactly the fields `space-derive` uses, so `JobRecord` can be used directly as this type.
+ * Generation parameters (source text, prompts), the user library, consent, details of the flow and cancellation, and warnings are not included. For text results, only the media type and length are kept.
  */
 export interface SpaceJobFacts {
   jobId: Id;
@@ -38,28 +38,26 @@ export interface SpaceJobFacts {
     text?: { mediaType: TextJobResult['mediaType']; byteLength: number };
   } | null;
   export?: { settings: ExportSettings; videoRevision: string; destination: { files: string[] } };
-  /** 只留最后一次应用的状态与原因。 */
+  /** Keeps only the last applied state and its reason. */
   applications?: { state: ApplicationState; error: { code: string; message: string } | null }[];
   /**
-   * 流程的名字与步骤（Job Ledger 里的流程才有；新建视频的步骤给出视频条目的来源，§7.9）。产物记录里有两种流程：文件到文件的
-   * 保留名字与显式项目归属（下载转录）；新建了视频的，步骤只留完成了的 `create`、产出只留 `videoId`：Job Ledger 修剪掉这次运行之后，视频条目的来源照样在。
-   */
+   * The flow's name and steps (only for flows in the Job Ledger). For flows that create a video, the steps give the source of the video entry (§7.9). The artifact record holds two kinds of flows. File-to-file flows keep their name and explicit project assignment (download transcription). Flows that created a video keep only the completed `create` step, and the output keeps only `videoId`. After the Job Ledger prunes this run, the source of the video entry still remains.
+ */
   pipeline?: { name: string; steps?: PipelineRun['steps']; params?: { projectId?: unknown } };
 }
 
-/** 会留下产物条目的任务种类。 */
+/** Task kinds that leave artifact entries. */
 const ARTIFACT_KINDS = new Set<JobKind>(['synthesizeSpeech', 'generateImage', 'generateMusic', 'generateText', 'export']);
 const TERMINAL = new Set<JobState>(['completed', 'failed', 'cancelled', 'interrupted', 'needs-reconciliation']);
 
 /**
- * 文件到文件的流程（架构设计 §7.9）：输出发布成文件（`outputs[].path`），记为没有视频的生成记录；与生成的产物一样
- * 派生 Space 条目、留进产物记录。`downloads-save` 是智能体用 `downloads_save` 交出的文件（§3.5）：不经 Job Ledger，
- * 直接写进产物记录，派生方式相同。
+ * File-to-file flows (architecture design §7.9): the output is published as files (`outputs[].path`) and recorded as a generation record without a video. Like generated artifacts,
+ * they derive Space entries and are kept in the artifact record. `downloads-save` is a file the agent handed over with `downloads_save` (§3.5). It does not go through the Job Ledger and is written directly into the artifact record. It is derived the same way.
  */
 export const FILE_PIPELINES: ReadonlySet<string> = new Set(['transcode', 'translate-subtitles', 'link-import', 'downloads-save']);
 
 /**
- * 文件到文件的流程的任务。转录只在只给文件时（结果有发布的文件）算：给了视频的转录写进视频，不留产物条目。
+ * Tasks for file-to-file flows. A transcription counts only when only a file was given (the result has published files). A transcription given a video is written into the video and leaves no artifact entry.
  */
 export function isFilePipelineJob(job: {
   kind: JobKind;
@@ -72,9 +70,9 @@ export function isFilePipelineJob(job: {
 }
 
 /**
- * 一个任务要不要留进产物记录：结束了、有结果、是会留下产物的种类。要留的返回它的派生用事实，否则 null。
- * 失败而没有结果的不留：它们只是占位，随 Job Ledger 修剪消失不丢东西。
- * 另外留新建了视频的流程（结束了、`create` 步骤完成了）：只为视频条目的来源，没有产物，也不随产物的清除去掉。
+ * Whether a task should be kept in the artifact record: it has finished, has a result, and is a kind that leaves artifacts. Tasks that should be kept return the facts used for derivation. Otherwise null.
+ * Failed tasks with no result are not kept. They are only placeholders, and they disappear with Job Ledger pruning without losing anything.
+ * Flows that created a video are also kept (finished, with the `create` step completed). They are kept only for the video entry's source. They have no artifacts and are not removed when artifacts are cleared.
  */
 export function spaceJobFacts(job: JobRecord): SpaceJobFacts | null {
   if (job.kind === 'pipeline' && !isFilePipelineJob(job)) return createdVideoFacts(job);
@@ -123,7 +121,7 @@ export function spaceJobFacts(job: JobRecord): SpaceJobFacts | null {
   };
 }
 
-/** 新建了视频的流程的事实：结果与产物都不留，步骤只留完成了的 `create` 与它新建的视频。 */
+/** Facts for a flow that created a video: neither the result nor the artifacts are kept. The steps keep only the completed `create` step and the video it created. */
 function createdVideoFacts(job: JobRecord): SpaceJobFacts | null {
   if (!TERMINAL.has(job.state) || !job.pipeline) return null;
   const create = job.pipeline.steps.find((step) => step.name === 'create' && step.status === 'completed');
@@ -148,7 +146,7 @@ function createdVideoFacts(job: JobRecord): SpaceJobFacts | null {
   };
 }
 
-/** 一条记录里的全部产物 id（生成的输出、文本全文、导出的文件）。 */
+/** All artifact ids in a record (generated outputs, full text, exported files). */
 export function artifactIdsOf(facts: SpaceJobFacts): string[] {
   if (!facts.result) return [];
   const ids = new Set<string>();
@@ -158,9 +156,8 @@ export function artifactIdsOf(facts: SpaceJobFacts): string[] {
 }
 
 /**
- * 只为产物库的清扫保留的引用（架构设计 §7.3）：一个结束了的任务的结果、流程步骤的产出与应用里出现过的全部产物 id。
- * 不是 Space 的条目来源，不参与派生、不进目录：配音的句子音频、原始转写结果、流程的中间产物这些内部产物只靠它在
- * Job Ledger 修剪之后仍被引用（视频文档里的配音版本、`rawResultArtifactId` 还指着它们，清扫看不到视频文档）。
+ * References kept only for artifact library sweeping (architecture design §7.3): a finished task's results, the outputs of flow steps, and all artifact ids that appeared in the app.
+ * They are not a source of Space entries. They do not take part in derivation or appear in the catalog. Internal artifacts such as dubbed sentence audio, raw transcription results, and intermediate flow artifacts stay referenced after Job Ledger pruning only because of these. Dub versions in video documents and `rawResultArtifactId` still point to them, and the sweep cannot see video documents.
  */
 export interface RetainedArtifactRefs {
   jobId: Id;
@@ -172,15 +169,15 @@ export interface RetainedArtifactRefs {
 
 const ARTIFACT_ID = /sha256:[0-9a-f]{64}/g;
 
-/** 文本里的全部 `sha256:<64 位 hex>`。 */
+/** All `sha256:<64-digit hex>` strings in the text. */
 function artifactIdsInText(text: string, into: Set<string>): Set<string> {
   for (const match of text.matchAll(ARTIFACT_ID)) into.add(match[0]);
   return into;
 }
 
 /**
- * 一个任务要留下的产物引用：结束了、结果（含输出）、流程步骤或应用里出现了产物 id。只看这几处，不看 `inputHash`、
- * `contentHash` 这类同样写成 `sha256:` 的摘要。没有时 null。
+ * The artifact references a task must keep: it has finished, and it has a result (including outputs), flow steps, or artifact ids that appeared in the app. Only these places are checked, not `inputHash`,
+ * `contentHash`, or other digests that are also written as `sha256:`. null if there are none.
  */
 export function artifactRefsOf(job: JobRecord): RetainedArtifactRefs | null {
   if (!TERMINAL.has(job.state)) return null;
@@ -193,26 +190,23 @@ export function artifactRefsOf(job: JobRecord): RetainedArtifactRefs | null {
 interface SpaceArtifactsFile {
   schemaVersion: 1;
   jobs: unknown[];
-  /** 只为清扫保留的引用（`RetainedArtifactRefs`）；旧文件没有。 */
+  /** References kept only for sweeping (`RetainedArtifactRefs`). Old files do not have them. */
   references?: unknown[];
   /**
-   * 产物库清扫的起点（ISO 时间）：修改时间早于它的产物不删。旧文件没有它，读入时补成当时：开始保留引用之前修剪掉的任务的
-   * 产物无从知道还有没有人用，一律留着。
+   * The starting point (ISO time) for artifact library sweeping. Artifacts modified earlier than it are not deleted. Old files do not have it. When read, it is filled in with the current time. Artifacts of tasks that were pruned before reference retention began cannot be known to be unused, so they are all kept.
    */
   sweepSince?: string;
 }
 
 /**
- * Space 的产物记录（架构设计 §5.7、§14「Space 与 Job Ledger 的保留」）：产出产物的任务的派生用事实，按 `jobId`。
- * Job Ledger 只留最近的若干个任务，修剪掉的任务的产物 bytes 还在，条目却会跟着消失；这里另留一份，不随修剪丢失。
- * 新建了视频的流程也留一条（没有产物），视频条目的来源（§7.9）不随修剪丢失。
+ * The Space artifact record (architecture design §5.7 and §14 "Space and Job Ledger retention"): the derivation facts of tasks that produced artifacts, keyed by `jobId`.
+ * The Job Ledger keeps only the most recent few tasks. Pruned tasks' artifact bytes still exist, but their entries would disappear. This keeps a separate copy that pruning does not lose.
+ * Flows that created a video also get a record (with no artifacts), so the source of the video entry (§7.9) is not lost when pruning happens.
  *
- * - 任务结束且有结果时写入（`SpaceCatalog` 订阅任务变化，启动时也从 Job Ledger 补一遍）；
- * - 一条记录的产物全部被物理删除或清除之后去掉；
- * - 另有 `references`：任何结束了、留下了产物的任务的产物 id（`RetainedArtifactRefs`），只为产物库清扫，不参与派生，
- *   随任务结束写入，目前不去掉；
- * - 不是缓存：`space.rebuildIndex` 不删它。读坏了的行跳过，整个文件认不出时改名留存、从空的开始；更新版本写下的不改写
- *   （`store-file.ts`）。
+ * - Written when a task finishes with a result. `SpaceCatalog` subscribes to task changes, and it also backfills from the Job Ledger at startup.
+ * - Removed once all artifacts of a record have been physically deleted or cleared.
+ * - It also has `references`: the artifact ids of every finished task that left artifacts (`RetainedArtifactRefs`). These are only for artifact library sweeping and do not take part in derivation. They are written when the task finishes and are not removed for now.
+ * - It is not a cache: `space.rebuildIndex` does not delete it. Broken rows are skipped. If the whole file cannot be recognized, it is renamed and kept, and the store starts empty. Files written by a newer version are not rewritten (`store-file.ts`).
  */
 export class SpaceArtifactStore {
   readonly #file: JsonStoreFile;
@@ -227,7 +221,7 @@ export class SpaceArtifactStore {
     this.#path = file;
   }
 
-  /** 读入记录。返回跳过的行数与（整个文件认不出时）留存的文件名，供日志。 */
+  /** Reads the record in. Returns the number of skipped rows and, if the whole file cannot be recognized, the name of the retained file, for logs. */
   async load(): Promise<{ skipped: number; quarantined: string | null }> {
     const read = await this.#file.read({
       recognize: (raw) =>
@@ -252,7 +246,7 @@ export class SpaceArtifactStore {
       if (isRefs(row)) this.#refs.set(row.jobId, row);
       else skipped++;
     }
-    // 起点要先落盘：之后的清扫都以它为准，不能每次启动往后挪。
+    // The starting point must be written to disk first. Later sweeps depend on it, so it must not move forward on every startup.
     if (since === null && read.status !== 'newer-version') await this.#save().catch(() => {});
     return { skipped, quarantined: read.status === 'quarantined' ? read.renamedTo : null };
   }
@@ -265,7 +259,7 @@ export class SpaceArtifactStore {
     return this.#jobs.get(jobId) ?? null;
   }
 
-  /** 写入或更新一批记录；没有变化时不落盘。 */
+  /** Writes or updates a batch of records. No disk write if nothing changed. */
   put(records: readonly SpaceJobFacts[]): Promise<void> {
     let changed = false;
     for (const record of records) {
@@ -277,17 +271,17 @@ export class SpaceArtifactStore {
     return changed ? this.#save() : this.#saving;
   }
 
-  /** 产物库清扫的起点（毫秒）：修改时间早于它的产物不删。 */
+  /** Starting point for artifact library sweeping (milliseconds). Artifacts modified earlier than it are not deleted. */
   sweepSince(): number {
     return Date.parse(this.#sweepSince);
   }
 
-  /** 只为清扫保留的引用。 */
+  /** References kept only for sweeping. */
   references(): RetainedArtifactRefs[] {
     return [...this.#refs.values()];
   }
 
-  /** 写入或更新一批只为清扫保留的引用；没有变化时不落盘。 */
+  /** Writes or updates a batch of references kept only for sweeping. No disk write if nothing changed. */
   putReferences(records: readonly RetainedArtifactRefs[]): Promise<void> {
     let changed = false;
     for (const record of records) {
@@ -300,9 +294,8 @@ export class SpaceArtifactStore {
   }
 
   /**
-   * 产物库清扫要保留的全部产物 id（架构设计 §7.3）：内存里的记录与引用，加上磁盘上这个文件与改名留存的
-   * `<文件>.corrupt-*` 的文本里出现的每个 `sha256:<hex>`。读坏了改名留存的、更新的版本写下而没有读进来的、读入时跳过的行
-   * 里的引用都还算数：宁多勿少，不因为一次读不懂就让下一轮清扫删掉它们。
+   * All artifact ids that artifact library sweeping must keep (architecture design §7.3). These are the records and references in memory, plus every `sha256:<hex>` that appears in the text of this file on disk and of the renamed-and-kept `<file>.corrupt-*` files.
+ * References in a file that was corrupt and renamed, in a newer-version file that was written but not read in, and in rows skipped on read all still count. When in doubt, keep more. A single read failure must not let the next sweep delete them.
    */
   async referencedArtifactIds(): Promise<Set<string>> {
     const ids = artifactIdsInText(JSON.stringify({ jobs: this.list(), references: this.references() }), new Set());
@@ -366,7 +359,7 @@ function isFacts(row: unknown): row is SpaceJobFacts {
   if (!common) return false;
   const filePipeline = isFilePipelineJob(r as { kind: JobKind; pipeline?: { name: string }; result?: { outputs?: unknown[] } | null });
   if (r.kind === 'pipeline' && (!filePipeline || !r.result)) {
-    // 新建了视频的流程：步骤里有完成了的 `create` 与它的 `videoId`。
+    // Flows that created a video: the steps contain the completed `create` step and its `videoId`.
     const pipeline = r.pipeline as { name?: unknown; steps?: unknown } | undefined;
     if (!pipeline || typeof pipeline.name !== 'string' || !Array.isArray(pipeline.steps)) return false;
     return pipeline.steps.some((step) => {

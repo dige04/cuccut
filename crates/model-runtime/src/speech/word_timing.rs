@@ -1,8 +1,8 @@
-//! 没有对齐器时的词时间：按每个词的字符数在段内按比例插值。结果的 `timingQuality` 一律是 `estimated`。
+//! Word timing without an aligner: word times are interpolated proportionally within the segment by each word's character count. The resulting `timingQuality` is always `estimated`.
 
 use super::text_prep::split_into_word_pairs;
 
-/// 一个估算出来的词（f64 秒，与段同一时钟）。
+/// An estimated word (f64 seconds, on the same clock as the segment).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EstimatedWord {
     pub text: String,
@@ -10,8 +10,7 @@ pub struct EstimatedWord {
     pub end: f64,
 }
 
-/// 把 `text` 切成词，按清理后的字符数把 `[start, end]` 分给它们。首词从 `start` 开始，末词在 `end` 结束，
-/// 相邻词首尾相接。切不出词（全是标点）时整段文本算一个词；文本为空时没有词。
+/// Splits `text` into words and divides `[start, end]` among them by their cleaned character counts. The first word starts at `start`, the last word ends at `end`, and adjacent words are joined end to end. If no words can be split out (all punctuation), the whole text counts as one word; if the text is empty, there are no words.
 pub fn estimate(text: &str, language: Option<&str>, start: f64, end: f64) -> Vec<EstimatedWord> {
     let text = text.trim();
     if text.is_empty() {
@@ -60,7 +59,7 @@ mod tests {
             words.iter().map(|word| word.text.as_str()).collect::<Vec<_>>(),
             ["ab", "abcd,", "ab"]
         );
-        // 2 + 4 + 2 = 8 个字符，1.6 秒：每字符 0.2 秒。
+        // 2 + 4 + 2 = 8 characters, 1.6 seconds: 0.2 seconds per character.
         let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
         assert!(close(words[0].start, 1.0) && close(words[0].end, 1.4));
         assert!(close(words[1].start, 1.4) && close(words[1].end, 2.2));
@@ -86,7 +85,7 @@ mod tests {
                 end: 0.75
             }]
         );
-        // 段长为零时所有词都塌在一点上，仍然单调。
+        // When the segment has zero length, all words collapse to one point, which is still monotonic.
         let collapsed = estimate("a b", None, 2.0, 1.0);
         assert!(collapsed.iter().all(|word| word.start == 2.0 && word.end == 2.0));
     }

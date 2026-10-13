@@ -1,73 +1,57 @@
-//! 说话人区间 → 词的投影。移植自 v2 `ccut-kernel` 的 `cmd/media/support.rs`（`project_speaker_clusters` 及其辅助函数）。
+//! Projection of speaker spans onto words. Ported from `cmd/media/support.rs` in v2 `ccut-kernel` (`project_speaker_clusters` and its helper functions).
 //!
-//! 输入是 Pyannote 分段 + 声纹聚类得到的全局说话人区间（[`SpeakerRange`]），输出是每个词的簇号。v3 只改边界：
-//! 函数挪进 `speech`，由转录作业在识别完成后调用；投影逻辑、常量与测试原样保留。
+//! The input is the global speaker spans ([`SpeakerRange`]) obtained from Pyannote segmentation plus voiceprint clustering, and the output is the cluster number of each word. v3 changes only the boundaries: the functions move into `speech`, and the transcription job calls them after recognition completes. The projection logic, constants and tests are kept as they were.
 
 use super::SpeakerRange;
 
-// ── 词 → 说话人投影层 ──
+// ── Word → speaker projection layer ──
 //
-// 区间是「谁在什么时候发声」的证据，词流是「文本在什么时候出现」的事实，两者
-// 由不同模型产出，边界从不严格对齐。逐词取最大重叠会把区间的每一次抖动原样搬进
-// transcript：诊断显示同一个 ASR 连续发言段内出现 ≥2 个说话人标签的情况多达
-// 上百处，是这一层唯一能止血的错误形态。下面的常量都是形态假设（人说话的节奏、
-// 抢话至少多长），不是对某个视频调出来的数值。
+// Spans are the evidence of “who speaks when”, and the word stream is the fact of “when the text appears”. The two come from different models, and their boundaries never line up strictly.
+// Taking the maximum overlap word by word carries every jitter in the spans straight into the transcript: diagnostics showed as many as a hundred-odd places within one continuous ASR utterance that carry two or more speaker labels. This is the one error pattern this layer can actually stem.
+// The constants below are shape assumptions (the rhythm of human speech, how long an interruption must be at least), not values tuned on any particular video.
 
-/// 发言段切分阈值：相邻词的时间间隔达到这个秒数就开新段。
+/// Utterance-segmentation threshold: when the gap between adjacent words reaches this many seconds, a new segment starts.
 ///
-/// 取 0.8s 是保守端：常见 diarization 的换人停顿在 0.5–1.0s，中文连续朗读的
-/// 词间隙通常远小于 0.5s。取小值会让「一段」更短，投票能抹平的范围更小；
-/// 真正的快速换人由下面的抢话逃生口而不是段边界来保住。
+/// 0.8 s is the conservative end: common diarization speaker-change pauses last 0.5–1.0 s, while the gaps between words in continuous Chinese reading are usually well under 0.5 s. A smaller value would make “a segment” shorter, and voting could smooth over less. Genuine quick speaker changes are preserved by the interruption escape hatch below, not by segment boundaries.
 const UTTERANCE_GAP_SECONDS: f64 = 0.8;
 
-/// 最近区间兜底的距离上限。超过它不再吸附，交给发言段投票或邻段继承。
+/// Distance cap for the nearest-span fallback. Beyond it, no snapping happens; the word is left to segment voting or to neighbour inheritance.
 ///
-/// 比段切分阈值略大：段内因非语音判定被区间漏掉的词（换气、笑声、气口）仍能
-/// 吸附回本段的区间；离最近区间 1.5s 以上的词已经跨过了至少一次段边界，
-/// 那时的「最近」不再是证据。
+/// Slightly larger than the segmentation threshold: a word inside a segment that the spans missed because of non-speech detection (breaths, laughter, pauses) can still snap back to that segment's span. A word more than 1.5 s from the nearest span has already crossed at least one segment boundary, and “nearest” is no longer evidence there.
 const NEAREST_RANGE_MAX_GAP_SECONDS: f64 = 1.5;
 
-/// 重叠区打分时参考的前后词数。
+/// Number of neighbouring words before and after that are considered when scoring overlap regions.
 const CONTINUITY_WINDOW_WORDS: usize = 3;
 
-/// 邻词一致性对重叠时长的最大加成比例。
+/// Maximum bonus ratio that neighbour-label consistency may add to the overlap duration.
 ///
-/// 0.25 表示只有当两个候选簇的重叠时长相差不到 25% 时，邻词标签才可能翻盘；
-/// 重叠证据显著占优时连续性一律让位，避免把真实的并发说话人抹成一个人。
+/// 0.25 means the neighbouring words' label can flip the result only when the two candidate clusters' overlap durations differ by less than 25%. When the overlap evidence clearly favours one cluster, continuity always yields, so genuinely concurrent speakers are not flattened into one person.
 const CONTINUITY_SCORE_WEIGHT: f64 = 0.25;
 
-/// 判定一个词的归属「无歧义」（可以给邻居当参考）所需的领先倍数。
+/// The lead multiple required for a word's attribution to count as “unambiguous” (so that it can serve as a reference for its neighbours).
 const CLEAR_DOMINANCE_RATIO: f64 = 2.0;
 
-/// 抢话逃生口：段内连续子段要保住与段主标签不同的标签，必须同时满足
-/// 词数、时长、覆盖率三条。0.6s 的中文大约是 3–4 个字，已经是一句能听清的插话；
-/// 覆盖率要求该子段跨度的 60% 以上真的落在那个簇的区间里，排除只擦到边角的情况。
+/// Interruption escape hatch: a continuous sub-segment inside a segment keeps a label different from the segment's main label only if it satisfies all three of: word count, duration and coverage.
+/// 0.6 s of Chinese is about 3–4 characters, already an interjection that can be heard clearly. Coverage requires that more than 60% of the sub-segment's span really falls within that cluster's spans, which excludes cases that only graze the edge.
 ///
-/// 词数下限是 1 而不是 2：真实插话（「对」「是啊」「哈哈」）常常只有一个词，
-/// 2 会把它们整段抹成邻居的标签。实测收益随上游参数而变——`DOMINANCE_MARGIN`
-/// 取 0.10 时，53 处真实插话的宽松口径保留数由 16 升到 19；取当前的 0.20 时保留数
-/// 不变（仍是 16），但词层簇数由 6 恢复到 7，即至少一个纯插话簇不再被抹平。两种
-/// 情形下时长与覆盖率两条都仍挡住区间抖动，碎片化和 purity 均未回退。
-/// 时长/覆盖率再放宽（0.4s / 50%）只多救 2 处插话，却让碎片化从 59 涨到
-/// 61 turns、purity 掉 0.06pp，不划算。
+/// The word-count floor is 1, not 2: real interjections such as 对 (yes), 是啊 (yeah) and 哈哈 (haha) are often a single word, and a floor of 2 would wipe them out entirely into the neighbour's label. The measured gain depends on upstream parameters. With `DOMINANCE_MARGIN` at 0.10, the number of the 53 real interjections retained under the lenient criterion rose from 16 to 19; at the current 0.20 the retained count stays the same (still 16), but the word-level cluster count recovers from 6 to 7, so at least one pure-interjection cluster is no longer flattened. In both cases the duration and coverage criteria still block span jitter, and neither fragmentation nor purity regressed.
+/// Loosening duration and coverage further (0.4 s / 50%) saves only 2 more interjections, but raises fragmentation from 59 to 61 turns and costs 0.06 pp of purity, so it is not worth it.
 const INTERJECTION_MIN_WORDS: usize = 1;
 const INTERJECTION_MIN_SECONDS: f64 = 0.6;
 const INTERJECTION_MIN_COVERAGE: f64 = 0.6;
 
-/// 零长词的探测窗：`t1 == t0` 的词与任何区间的重叠都是 0，给它一个厘秒窗口
-/// 才能拿到证据。
+/// Probe window for zero-length words: a word with `t1 == t0` has zero overlap with any span, so it is given a centisecond window to obtain evidence.
 const WORD_PROBE_MIN_SECONDS: f64 = 0.01;
 
-/// 把说话人区间投影到词流，返回每个词的簇号（`None` = 没有任何证据可用）。
+/// Projects speaker spans onto the word stream and returns the cluster number of each word (`None` = no evidence available).
 ///
-/// 纯函数，只吃时间：`spans` 是词的 `(t0, t1)`，`ranges` 是识别出的说话人区间。
-/// 三个阶段依次是——
-/// 1. 逐词重叠打分，重叠区结合邻词标签连续性（`CONTINUITY_SCORE_WEIGHT`）；
-/// 2. 按词间隔切出连续发言段，段内做时长加权多数投票并统一标签；
-/// 3. 段内与主标签不同、且证据够强的连续子段保留自己的标签（抢话逃生口）。
+/// This is a pure function that takes only time: `spans` are each word's `(t0, t1)`, and `ranges` are the recognised speaker spans.
+/// The three stages, in order:
+/// 1. Score each word by overlap; within overlap regions, combine with the label continuity of neighbouring words (`CONTINUITY_SCORE_WEIGHT`);
+/// 2. Cut continuous utterance segments at inter-word gaps, and within each segment take a duration-weighted majority vote and unify the label;
+/// 3. Within a segment, a continuous sub-segment whose label differs from the main label and whose evidence is strong enough keeps its own label (interruption escape hatch).
 ///
-/// 没有任何重叠证据的段先用有上限的最近区间兜底，仍拿不到就继承最近的已定段；
-/// 只有整份词流都没有证据时才整体返回 `None`。
+/// A segment with no overlap evidence first falls back to the nearest span within a capped distance; if that still yields nothing, it inherits the nearest already-decided segment. Only when the whole word stream has no evidence at all does it return `None` overall.
 pub fn project_speaker_clusters(spans: &[(f64, f64)], ranges: &[SpeakerRange]) -> Vec<Option<usize>> {
     if spans.is_empty() {
         return Vec::new();
@@ -94,8 +78,8 @@ pub fn project_speaker_clusters(spans: &[(f64, f64)], ranges: &[SpeakerRange]) -
         .collect::<Vec<_>>();
     let segments = utterance_segments(&probes);
 
-    // 第一遍只看重叠，产出「无歧义」参考标签；第二遍才让歧义词参考邻居，
-    // 因此结果与遍历顺序无关。
+    // The first pass looks only at overlap and produces “unambiguous” reference labels; only the second pass lets ambiguous words refer to their neighbours,
+    // so the result does not depend on traversal order.
     let plain = overlaps.iter().map(heaviest_cluster).collect::<Vec<_>>();
     let clear = overlaps.iter().map(is_clear_overlap).collect::<Vec<_>>();
     let mut labels = plain.clone();
@@ -117,7 +101,7 @@ pub fn project_speaker_clusters(spans: &[(f64, f64)], ranges: &[SpeakerRange]) -
             }
         }
         if weights.is_empty() {
-            // 整段都没有重叠证据：这时才动用最近区间兜底，且必须在距离上限内。
+            // No overlap evidence across the whole segment: only then is the nearest-span fallback used, and it must be within the distance cap.
             for index in segment.clone() {
                 if let Some(cluster) = nearest_range_cluster(ranges, probes[index].0, probes[index].1, NEAREST_RANGE_MAX_GAP_SECONDS) {
                     *weights.entry(cluster).or_default() += word_weight(probes[index]);
@@ -144,7 +128,7 @@ pub fn project_speaker_clusters(spans: &[(f64, f64)], ranges: &[SpeakerRange]) -
         }
     }
 
-    // 仍未定的段（没有重叠、最近区间也超限）继承最近的已定段：先向前找，再向后找。
+    // Segments still undecided (no overlap, and the nearest span is also beyond the limit) inherit the nearest already-decided segment: search backward first, then forward.
     for (slot, segment) in segments.iter().enumerate() {
         if majorities[slot].is_some() {
             continue;
@@ -164,12 +148,12 @@ pub fn project_speaker_clusters(spans: &[(f64, f64)], ranges: &[SpeakerRange]) -
     projected
 }
 
-/// 词在投票里的权重：词时长，零长词按探测窗算，保证每个词都有话语权。
+/// The weight of a word in voting is its duration; zero-length words are weighted by the probe window, so every word has a say.
 fn word_weight((start, end): (f64, f64)) -> f64 {
     (end - start).max(WORD_PROBE_MIN_SECONDS)
 }
 
-/// 按簇归并区间并合并同簇内互相重叠的部分，避免重叠时长被重复计入。
+/// Groups the spans by cluster and merges the parts of the same cluster that overlap each other, so overlap duration is not counted twice.
 fn merged_cluster_intervals(ranges: &[SpeakerRange]) -> std::collections::BTreeMap<usize, Vec<(f64, f64)>> {
     let mut by_cluster: std::collections::BTreeMap<usize, Vec<(f64, f64)>> = std::collections::BTreeMap::new();
     for range in ranges {
@@ -191,7 +175,7 @@ fn merged_cluster_intervals(ranges: &[SpeakerRange]) -> std::collections::BTreeM
     by_cluster
 }
 
-/// 一组互不重叠区间与 `[start, end)` 的重叠总秒数。
+/// The total number of seconds that a set of non-overlapping spans overlaps `[start, end)`.
 fn interval_overlap(intervals: &[(f64, f64)], start: f64, end: f64) -> f64 {
     intervals
         .iter()
@@ -199,8 +183,8 @@ fn interval_overlap(intervals: &[(f64, f64)], start: f64, end: f64) -> f64 {
         .sum()
 }
 
-/// 按词间隔切出连续发言段。间隔按「此前所有词的最大结束时间」算并夹到非负，
-/// 这样一个乱序或零长的 ASR 词不会凭空切开一段。
+/// Cuts continuous utterance segments at inter-word gaps. A gap is measured against the latest end time of all earlier words and clamped to non-negative,
+/// so an out-of-order or zero-length ASR word does not cut a segment out of nothing.
 fn utterance_segments(probes: &[(f64, f64)]) -> Vec<std::ops::Range<usize>> {
     let mut segments = Vec::new();
     let mut start = 0usize;
@@ -217,7 +201,7 @@ fn utterance_segments(probes: &[(f64, f64)]) -> Vec<std::ops::Range<usize>> {
     segments
 }
 
-/// 权重最大的簇；平票取簇号小者（BTreeMap 升序 + `>=` 保留先到者），保证确定性。
+/// The cluster with the largest weight. On a tie the smaller cluster number wins (ascending BTreeMap + `>=` keeps the first one seen), so the result is deterministic.
 fn heaviest_cluster(weights: &std::collections::BTreeMap<usize, f64>) -> Option<usize> {
     weights
         .iter()
@@ -228,7 +212,7 @@ fn heaviest_cluster(weights: &std::collections::BTreeMap<usize, f64>) -> Option<
         .map(|(cluster, _)| cluster)
 }
 
-/// 归属是否足够干净，可以给邻居当参考：只压到一个簇，或领先第二名一倍以上。
+/// Whether the attribution is clean enough to serve as a reference for neighbours: it reduces to a single cluster, or leads the runner-up by more than a factor of two.
 fn is_clear_overlap(overlaps: &std::collections::BTreeMap<usize, f64>) -> bool {
     let mut sorted = overlaps.values().copied().collect::<Vec<_>>();
     sorted.sort_by(|left, right| right.total_cmp(left));
@@ -239,7 +223,7 @@ fn is_clear_overlap(overlaps: &std::collections::BTreeMap<usize, f64>) -> bool {
     }
 }
 
-/// 重叠区打分：在重叠时长上叠加同段前后邻词的标签一致性加成。
+/// Overlap-region scoring: adds a label-consistency bonus from the neighbouring words before and after within the same segment to the overlap duration.
 fn continuity_cluster(
     overlaps: &std::collections::BTreeMap<usize, f64>,
     index: usize,
@@ -274,8 +258,8 @@ fn continuity_cluster(
     heaviest_cluster(&scored)
 }
 
-/// 段内按标签切出连续子段，返回 `(首词下标, 末词下标, 簇号)`。
-/// 没有标签的词不打断子段——它会随所在子段的裁决一起走。
+/// Within a segment, cuts continuous sub-segments by label and returns `(first word index, last word index, cluster number)`.
+/// A word without a label does not break a sub-segment; it follows the ruling of the sub-segment it sits in.
 fn labeled_runs(segment: std::ops::Range<usize>, labels: &[Option<usize>]) -> Vec<(usize, usize, usize)> {
     let mut runs: Vec<(usize, usize, usize)> = Vec::new();
     for index in segment {
@@ -290,7 +274,7 @@ fn labeled_runs(segment: std::ops::Range<usize>, labels: &[Option<usize>]) -> Ve
     runs
 }
 
-/// 抢话逃生口：够长、够多词、且真的被那个簇的区间覆盖，才允许在段内换标签。
+/// Interruption escape hatch: a segment may switch labels only when the sub-segment is long enough, has enough words, and is genuinely covered by that cluster's spans.
 fn interjection_survives(
     start: usize,
     end: usize,
@@ -313,12 +297,11 @@ fn interjection_survives(
     interval_overlap(list, span_start, span_end) >= span * INTERJECTION_MIN_COVERAGE
 }
 
-/// 词与所有说话人区间都不重叠时的兜底：取时间距离最近的区间。
+/// Fallback for a word that overlaps none of the speaker spans: take the span nearest in time.
 ///
-/// 距离超过 `max_gap` 不再吸附——无上限的吸附会把远处的静音、笑声、非语音
-/// 强行记到某个说话人名下（历史行为）。调用方只在整段都没有重叠证据时才用它，
-/// 拿不到结果时由发言段继承邻段裁决，因此不会退化成 `Word::sp` 的默认 "s1"。
-/// 平票（等距）取 cluster 序号最小者，保证确定性。
+/// Beyond `max_gap` it no longer snaps. Unbounded snapping would forcibly attribute distant silence, laughter and non-speech to some speaker (the historical behaviour).
+/// The caller uses this only when the whole segment has no overlap evidence. If it yields nothing, the segment inherits its neighbour's ruling, so it does not degrade into the default “s1” of `Word::sp`.
+/// On a tie (equal distance) the smallest cluster number wins, so the result is deterministic.
 fn nearest_range_cluster(ranges: &[SpeakerRange], start: f64, end: f64, max_gap: f64) -> Option<usize> {
     let mut best: Option<(f64, usize)> = None;
     for range in ranges {
@@ -356,35 +339,33 @@ mod tests {
         }
     }
 
-    /// 0.3 秒一格、首尾相接的合成词流：格点用整数除法算，边界与区间端点严格相等，
-    /// 断言不受浮点误差影响。
+    /// A synthetic word stream of 0.3-second cells, contiguous end to end. Grid points are computed with integer division, and boundaries and span endpoints are exactly equal,
+    /// so the assertions are not affected by floating-point error.
     fn word_grid(count: usize) -> Vec<(f64, f64)> {
         (0..count)
             .map(|index| ((index * 3) as f64 / 10.0, ((index + 1) * 3) as f64 / 10.0))
             .collect()
     }
 
-    /// P3：段内一两个词的标签抖动被时长加权多数投票抹平，不再穿透到 transcript。
+    /// P3: a one- or two-word label jitter within a segment is smoothed out by duration-weighted majority voting and no longer passes through to the transcript.
     #[test]
     fn speaker_projection_smooths_short_label_flicker() {
         let spans = word_grid(10);
-        // s0 占满全段，只在 1.2–1.5（第 5 个词）被切出一个 0.3s 的异标签碎片。
+        // s0 covers the whole segment; only 1.2–1.5 (the 5th word) is cut out as a 0.3 s fragment with a different label.
         let ranges = vec![speaker_range(0.0, 1.2, 0), speaker_range(1.2, 1.5, 1), speaker_range(1.5, 3.0, 0)];
         assert_eq!(project_speaker_clusters(&spans, &ranges), vec![Some(0); 10]);
 
-        // 单个词只要够长（≥0.6s）且证据够足就保留：真实插话（「对」「是啊」）
-        // 常常只有一个词，词数下限是 1。
+        // A single word is kept as long as it is long enough (≥0.6 s) and its evidence is strong enough. Real interjections such as 对 (yes) and 是啊 (yeah) are often just one word, which is why the word-count floor is 1.
         let long_flicker = vec![(0.0, 0.9), (0.9, 1.8), (1.8, 2.7)];
         let ranges = vec![speaker_range(0.0, 0.9, 0), speaker_range(0.9, 1.8, 1), speaker_range(1.8, 2.7, 0)];
         assert_eq!(project_speaker_clusters(&long_flicker, &ranges), vec![Some(0), Some(1), Some(0)]);
 
-        // 同样是单个词，短于 0.6s 就仍被判成区间抖动抹平。
+        // A single word shorter than 0.6 s is still judged to be span jitter and is smoothed out.
         let short_flicker = vec![(0.0, 0.9), (0.9, 1.4), (1.4, 2.3)];
         let ranges = vec![speaker_range(0.0, 0.9, 0), speaker_range(0.9, 1.4, 1), speaker_range(1.4, 2.3, 0)];
         assert_eq!(project_speaker_clusters(&short_flicker, &ranges), vec![Some(0); 3]);
 
-        // 词数、时长都够，但异标签只擦到子段跨度的 1/3（三段 0.1s 的碎区间），
-        // 覆盖率门槛把它判成区间抖动。
+        // The word count and duration are both sufficient, but the different label only grazes 1/3 of the sub-segment's span (three 0.1 s fragments of spans); the coverage threshold judges it to be span jitter.
         let spans = word_grid(6);
         let ranges = vec![
             speaker_range(0.0, 0.6, 0),
@@ -396,11 +377,11 @@ mod tests {
         assert_eq!(project_speaker_clusters(&spans, &ranges), vec![Some(0); 6]);
     }
 
-    /// P3 逃生口：真实的快速插话（≥2 词、≥0.6s、覆盖率 ≥60%）必须活着穿过投票。
+    /// P3 escape hatch: real quick interjections (≥2 words, ≥0.6 s, coverage ≥60%) must survive the voting.
     #[test]
     fn speaker_projection_keeps_real_interjection() {
         let spans = word_grid(10);
-        // 1.2–2.1 是 3 个词、0.9s、完全被 s1 覆盖的插话，段主标签仍是 s0。
+        // 1.2–2.1 is a 3-word, 0.9 s interjection fully covered by s1; the segment's main label is still s0.
         let ranges = vec![speaker_range(0.0, 1.2, 0), speaker_range(1.2, 2.1, 1), speaker_range(2.1, 3.0, 0)];
         assert_eq!(
             project_speaker_clusters(&spans, &ranges),
@@ -418,7 +399,7 @@ mod tests {
             ]
         );
 
-        // 两个词、0.7s 的插话正好在门槛之上，也必须活下来。
+        // A 2-word, 0.7 s interjection just above the threshold must also survive.
         let spans = vec![(0.0, 1.0), (1.0, 1.35), (1.35, 1.7), (1.7, 2.7), (2.7, 3.7)];
         let ranges = vec![speaker_range(0.0, 1.0, 0), speaker_range(1.0, 1.7, 1), speaker_range(1.7, 3.7, 0)];
         assert_eq!(
@@ -427,12 +408,12 @@ mod tests {
         );
     }
 
-    /// P5：并发区里重叠时长打平时，由前后邻词的标签一致性决定归属。
+    /// P5: in a concurrent region where the overlap durations tie, the attribution is decided by the label consistency of the neighbouring words.
     #[test]
     fn speaker_projection_uses_neighbor_continuity_in_overlap() {
         let spans = word_grid(10);
-        // 1.2–2.1 是两人并发区：区内每个词与两簇的重叠完全相等，
-        // 纯「最大重叠」会一律判给簇号小的 s0，连续性把靠后的词交给 s1。
+        // 1.2–2.1 is a two-person concurrent region: within it, each word's overlap with the two clusters is exactly equal.
+        // Pure “maximum overlap” would always assign them to the smaller cluster number s0, while continuity hands the later words to s1.
         let ranges = vec![speaker_range(0.0, 2.1, 0), speaker_range(1.2, 3.0, 1)];
         let projected = project_speaker_clusters(&spans, &ranges);
         assert_eq!(projected[4], Some(0), "并发区靠前的词跟随前文 {projected:?}");
@@ -454,22 +435,22 @@ mod tests {
         );
     }
 
-    /// P4：最近区间兜底有距离上限；超限的词由发言段继承邻段，绝不静默落到 s1。
+    /// P4: the nearest-span fallback has a distance cap. Words beyond the cap inherit from the neighbouring segment and never silently fall to s1.
     #[test]
     fn speaker_projection_caps_nearest_range_fallback() {
         let ranges = vec![speaker_range(0.0, 1.0, 0), speaker_range(5.0, 6.0, 1)];
 
-        // 上限内（间隔 1.0s < 1.5s）仍然吸附。
+        // Within the cap (gap 1.0 s < 1.5 s) it still snaps.
         assert_eq!(project_speaker_clusters(&[(2.0, 2.5)], &ranges), vec![Some(0)]);
-        // 超过上限且整份词流没有别的证据：保持无归属，让调用方保留原值。
+        // Beyond the cap, with no other evidence anywhere in the word stream: remain unattributed, so the caller keeps the original value.
         assert_eq!(project_speaker_clusters(&[(20.0, 20.5)], &ranges), vec![None]);
 
-        // 超限的段继承最近的已定段，而不是被记到 0 号说话人名下。
+        // A segment beyond the limit inherits the nearest already-decided segment, rather than being recorded under speaker 0.
         let spans = vec![(0.2, 0.8), (5.2, 5.8), (20.0, 20.5), (20.6, 21.0)];
         assert_eq!(project_speaker_clusters(&spans, &ranges), vec![Some(0), Some(1), Some(1), Some(1)]);
     }
 
-    /// 没有区间时投影是纯粹的 no-op：不能给任何词编造说话人。
+    /// With no spans, projection is a pure no-op: it must not invent a speaker for any word.
     #[test]
     fn speaker_projection_without_ranges_is_a_no_op() {
         assert_eq!(project_speaker_clusters(&word_grid(3), &[]), vec![None, None, None]);

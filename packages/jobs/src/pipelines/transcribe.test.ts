@@ -14,8 +14,8 @@ import type { PipelineTranscriber } from './video-create.ts';
 import type { PipelineTargets, VideoLease } from './video-target.ts';
 
 /**
- * 转录流程（架构设计 §7.9）的步骤与重试，用假的视频、转写与目标：新建视频在「建好、还没记下」之间中断时重试不多建，
- * 导入按命令认回，转写按 Job Ledger 认回。真实引擎上的字幕层见 runtime-core 的 `transcribe-pipeline.test.ts`。
+ * Steps and retries of the transcription flow (architecture design §7.9), using fake video, transcription and targets: if a new video is interrupted between “created” and “not yet recorded”, a retry does not create another;
+ * imports are recognized by command, and transcription is recognized by the Job Ledger. The subtitle layer on the real engine is covered by `transcribe-pipeline.test.ts` in runtime-core.
  */
 
 describe('转录的参数', () => {
@@ -25,7 +25,7 @@ describe('转录的参数', () => {
       captions: false,
       language: 'en',
     });
-    // 识别提示去掉首尾空白，同 `models.transcribe`。
+    // Recognition hints are trimmed, the same as `models.transcribe`.
     expect(parseTranscribeParams({ videoId: 'v1', hint: ' 播客 ' })).toEqual({ videoId: 'v1', hint: '播客' });
     expect(parseTranscribeParams({ target: { create: { projectId: 'p1', media: '/a/b.mp4' } } })).toEqual({
       create: { projectId: 'p1', media: '/a/b.mp4' },
@@ -41,7 +41,7 @@ describe('转录的参数', () => {
       { target: { create: { projectId: 'p1', media: 'relative.mp4' } } },
       { videoId: 'v1', target: { create: { projectId: 'p1', media: '/a.mp4' } } },
       { assetId: 'a1', target: { create: { projectId: 'p1', media: '/a.mp4' } } },
-      // 落点只给已有视频；名字只给新视频，译文与改动的确认只给取代。
+      // The destination is given only for an existing video; the name is given only for a new video, and the translation and edit confirmation are given only for replace.
       { destination: 'replace', target: { create: { projectId: 'p1', media: '/a.mp4' } } },
       { videoId: 'v1', destination: 'elsewhere' },
       { videoId: 'v1', destination: 'replace', name: '新名字' },
@@ -119,11 +119,11 @@ describe('转录的参数', () => {
   });
 });
 
-/** 假视频：文档、主轨上的实例；`apply` 记下命令，`receipt` 按命令认回。 */
+/** Fake video: a document and an instance on the main track; `apply` records the command, and `receipt` recognizes it by command. */
 class FakeVideos {
   videos = new Map<Id, { revision: number; documents: Record<Id, DocumentRecord>; items: Array<{ assetId: Id }> }>();
   applied: Array<{ videoId: Id; commandId: Id; operations: EditOperation[] }> = [];
-  /** 下一次 `apply` 写进去之后抛错（模拟提交了、回执没收到就中断）。 */
+  /** Throws after the next `apply` writes (simulates a submission whose receipt never arrives, then an interruption). */
   crashAfterApply = false;
 
   add(videoId: Id, items: Array<{ assetId: Id }> = []): void {
@@ -154,7 +154,7 @@ class FakeVideos {
     } as unknown as Sequence;
   }
 
-  /** 文档正文；没放的给一个读不出分句的占位。 */
+  /** Document body; when none is supplied, a placeholder that cannot be split into sentences is used. */
   bodies = new Map<Id, unknown>();
   async document(_videoId: Id, documentId: Id) {
     return { revision: 'd1', body: this.bodies.get(documentId) ?? { documentId } };
@@ -191,12 +191,12 @@ class FakeVideos {
   }
 }
 
-/** 假转写：提交时（完成时）把一份 speech 文档写进视频，像真的 Job 一样；记下 Ledger 里的记录。 */
+/** Fake transcription: on submission (when complete), writes a speech document into the video, just like a real Job; records the entry in the Ledger. */
 class FakeTranscriber implements PipelineTranscriber {
   records: JobRecord[] = [];
   submitted: Array<{ commandId?: Id; assetId: Id; videoId: Id; hint?: string; replace?: unknown }> = [];
   outcome: JobState = 'completed';
-  /** 写进文稿概要的说话人数；不给时文档没有版本概要。 */
+  /** The speaker count written into the transcript summary; when not given, the document has no version summary. */
   speakerCount: number | undefined = undefined;
   readonly videos: FakeVideos;
   constructor(videos: FakeVideos) {
@@ -234,7 +234,7 @@ class FakeTranscriber implements PipelineTranscriber {
     return { jobId };
   }
 
-  /** 只给文件的转写：把一份 ASR 结果放进产物库，像完成了的 Job。 */
+  /** File-only transcription: puts an ASR result into the artifact store, like a completed Job. */
   artifacts: { put(bytes: Uint8Array, extension: 'json'): Promise<{ artifactId: string }> } | null = null;
   files: Array<{ file: string; language?: string; hint?: string }> = [];
   async submitFile(request: { file: string; language?: string; hint?: string }, submitter: JobRecord['submitter']) {
@@ -272,7 +272,7 @@ class FakeTranscriber implements PipelineTranscriber {
   }
 }
 
-/** 假目标：占位时真的建空目录；新建时在目录里放一个 `video.db` 标记，已经有标记时认回（数一下各几次）。 */
+/** Fake target: on placeholder, really creates an empty directory; on creation, puts a `video.db` marker in the directory, and recognizes it when the marker already exists (counts how many times each happens). */
 class FakeTargets implements Pick<PipelineTargets, 'reserve' | 'create' | 'entry' | 'lease'> {
   created = 0;
   reopened = 0;
@@ -418,11 +418,11 @@ describe('转录流程', () => {
       captions: { status: 'disabled', documentId: null, cueCount: null, enabled: null },
     });
     expect(record.result).toEqual({ documentId: 'doc_job_t1', artifactId: 'art_job_t1' });
-    // 流程自己不写视频：文档由转写 Job 写入。
+    // The flow itself does not write the video: the document is written by the transcription Job.
     expect(videos.applied).toEqual([]);
   });
 
-  /** 一份能分句的转写正文；`asr` 是转写时记下的全文指纹（不给时没有 `stages`）。 */
+  /** A transcript body that can be split into sentences; `asr` is the full-text fingerprint recorded at transcription time (when not given, there are no `stages`). */
   const speechBody = (text: string[], asr?: (body: unknown) => string) => {
     const body: Record<string, unknown> = {
       schema: 'cuccut.speech/1',
@@ -455,10 +455,10 @@ describe('转录流程', () => {
     expect(summary).toMatchObject({ videoId: 'vid_new_1', createdVideo: true, target: 'new-video', replaced: null, captionPins: null });
     expect((summary.newVideo as { videoId: Id; name: string }).videoId).toBe('vid_new_1');
     expect((summary.newVideo as { name: string }).name).toContain('原片');
-    // 原视频不动。
+    // The original video is left untouched.
     expect(Object.keys(videos.videos.get('vid_1')!.documents)).toEqual(['doc_old']);
 
-    // 给了名字时用它。
+    // Use the given name when one is provided.
     const named = await finished((await start({ videoId: 'vid_1', captions: false, name: '第二版' })).jobId);
     expect(named.pipeline!.summary).toMatchObject({ target: 'new-video', newVideo: { videoId: 'vid_new_2', name: '第二版' } });
   });
@@ -505,7 +505,7 @@ describe('转录流程', () => {
       dubs: [],
     });
 
-    // 没改过（stages.asr 与正文的指纹一致）：不用确认。没有 stages.asr 的旧文稿当作没改过。
+    // Not edited (stages.asr matches the fingerprint of the body): no confirmation needed. Older transcripts without stages.asr are treated as unedited.
     videos.bodies.set('doc_old', speechBody(['Hello', ' world.'], contentFingerprint));
     await expect(start({ videoId: 'vid_1', destination: 'replace', captions: false })).resolves.toMatchObject({
       jobId: expect.any(String),
@@ -582,7 +582,7 @@ describe('转录流程', () => {
   });
 
   it('新建之后、记下产出之前中断：重试认回占下的目录里的视频，导入按命令认回，不多建、不多导入', async () => {
-    // 新建成功，导入提交了却没拿到回执：这一步失败，产出没有记下。
+    // Creation succeeded, but the import was submitted and no receipt came back: this step fails, and the output is not recorded.
     videos.crashAfterApply = true;
     const { jobId } = await start({ target: { create: { projectId: 'p1', media, name: '我的视频' } }, captions: false });
     const failed = await finished(jobId);
@@ -590,7 +590,7 @@ describe('转录流程', () => {
     expect(failed.pipeline!.steps.find((s) => s.name === 'create')!.output).toBeNull();
     expect(targets.created).toBe(1);
     expect(videos.applied).toHaveLength(1);
-    // 意图留在 staging 里（失败时保留）。
+    // The intent stays in staging (kept on failure).
     const intent = JSON.parse(await fs.readFile(path.join(dir, 'staging', 'pipelines', jobId, 'create-intent.json'), 'utf8'));
     expect(intent).toEqual({ place: { root: path.join(dir, 'project'), file: '我的视频', scope: { projectId: 'p1' } } });
 
@@ -616,8 +616,8 @@ describe('转录流程', () => {
     expect(await finished(jobId)).toMatchObject({ state: 'completed' });
     expect(transcriber.submitted.map((s) => s.commandId)).toEqual([`${jobId}:transcribe`, `${jobId}:transcribe:2`]);
 
-    // Ledger 里已经有这次运行完成了的转写（上次完成之后、记下产出之前中断）：认回，不再提交。提交时这份素材还没有文稿
-    // （不然落点是新视频），之后才出现。
+    // The Ledger already has a completed transcription for this run (interrupted after the last completion, before the output was recorded): recognize it, and do not submit again. At submission time this material does not yet have a transcript
+    // (otherwise the destination would be a new video); it appears afterwards.
     const documents = videos.videos.get('vid_1')!.documents;
     videos.videos.get('vid_1')!.documents = {};
     const second = await start({ videoId: 'vid_1', captions: false });
@@ -636,7 +636,7 @@ describe('转录流程', () => {
 
   it('上次的转写写入的文档被删了：重试时重新转写', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
-    // 字幕层这一步读不了假的正文，失败在这一步（转写已经完成）。
+    // The subtitle layer step cannot read the fake body, so it fails at this step (transcription has already completed).
     const { jobId } = await start({ videoId: 'vid_1' });
     const failed = await finished(jobId);
     expect(failed).toMatchObject({ state: 'failed', pipeline: { stoppedAt: 'captions' }, error: { code: 'INPUT_UNREADABLE' } });
@@ -674,7 +674,7 @@ describe('转录流程', () => {
     expect(videos.applied).toEqual([]);
     expect(Object.keys(videos.videos.get('vid_1')!.documents)).toEqual([]);
 
-    // 取消了的转写不认回：重试换一个命令提交，接着做完。
+    // A cancelled transcription is not recognized: a retry submits with a different command and carries on to completion.
     transcriber.outcome = 'completed';
     delete (transcriber as Partial<FakeTranscriber>).settled;
     delete (transcriber as Partial<FakeTranscriber>).cancel;

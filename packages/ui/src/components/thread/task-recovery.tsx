@@ -34,10 +34,8 @@ const retryRow = style({ display: 'flex' });
 const menu = style({ width: 320, maxWidth: '[calc(100vw - 32px)]' });
 
 /**
- * 任务失败后的恢复区（原型 agent-thread.jsx `ErrorMsg`）：按 Runtime 给的错误码给出路。
- * 要登录：打开系统终端运行探测到的登录命令（经 Runtime 的 `agents.openTerminal`；CucCut 不经手账号密码），
- * 打不开就退回复制命令，回到窗口时重新检测一次；模型用不了：换个模型再把这一轮原样重发；
- * 其余：重试，把这一轮的那句话原样重发（不带当时的编辑器状态，那已经过时了）。
+ * Recovery area after a task fails (prototype agent-thread.jsx `ErrorMsg`): offers a way forward based on the error code from the Runtime.
+ * Login required: open the system terminal and run the detected login command (via the Runtime's `agents.openTerminal`; CucCut never handles account passwords). If the terminal cannot be opened, fall back to copying the command; when the window regains focus, detection runs again. Model unavailable: switch to another model and resend this turn as it was. Otherwise: retry, resending that turn's message as it was (without the editor state at the time, which is now out of date).
  */
 export function TaskRecovery({ item, conversationId }: { item: Task; conversationId: Id }) {
   const runtime = useRuntime();
@@ -60,7 +58,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
     setPending(true);
     try {
       await before?.();
-      // 那一轮点选的 skill 也按原顺序一起重发（只带 id，Runtime 读它当前的 SKILL.md）；幻灯片、设计稿与设计系统标注原样重发。
+      // The skills selected in that turn are also resent together in their original order (carrying only the id; the Runtime reads its current SKILL.md); slide, design-draft and design-system annotations are resent as they were.
       await runtime.send(
         conversationId,
         message.text,
@@ -78,7 +76,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
       setPending(false);
     }
   };
-  // 终端里登录完回到这个窗口时重新检测，Agent 的登录状态跟着变。
+  // When you finish logging in in the terminal and return to this window, detection runs again, so the agent's login status is updated accordingly.
   const recheckOnReturn = (driverId: DriverId) => {
     stopWatchingReturn.current?.();
     const onFocus = () => {
@@ -101,7 +99,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
   };
   const openLogin = async () => {
     if (!driver) return;
-    // 探测结果里没有登录命令时 Runtime 不收，退回复制直接起 CLI 的命令（同设置 › Agent）。
+    // When the detection result has no login command, the Runtime does not accept it; fall back to copying the command that launches the CLI directly (same as Settings › Agent).
     if (!driver.loginCommand) return void copyLogin(driver.command);
     try {
       const result = await openAgentTerminal(runtime, driver.id, 'login');

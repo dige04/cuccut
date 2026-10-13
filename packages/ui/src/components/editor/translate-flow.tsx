@@ -43,7 +43,7 @@ import { TRANSLATE_COPY as C } from './translate-copy.ts';
 import { startTranslate, useTranslateRun } from './translate-run.ts';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
-/** 一节的小标题（原型 SecHead）。 */
+/** Small heading for a section (prototype SecHead). */
 const secHead = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
 const hint = style({ margin: 0, marginTop: '[6px]', font: 'ui-xs', color: 'gray-600', lineHeight: '[1.5]' });
@@ -69,12 +69,12 @@ const alertActions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTo
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** 文本模型：翻译要结构化输出，不支持的那只列着但标明用不了（Runtime 也会拒）。 */
+/** Text model: translation needs structured output. A model without it is listed but marked as unusable (Runtime rejects it too). */
 function translateModelOptions(options: ToolModelOption<TextModelInfo>[]): ToolModelOption<TextModelInfo>[] {
   return options.map((o) => (o.usable && o.info.structuredOutput === false ? { ...o, usable: false, why: C.noStructured } : o));
 }
 
-/** 库里的翻译用术语表（`library` 主题的摘要，再按版本读内容拿方向与词条）。 */
+/** The glossary used in library translation (the summary of the `library` topic; then read the content of each version for direction and entries). */
 function useTranslationGlossaries(runtime: RuntimeSession): { ready: boolean; candidates: GlossaryCandidate[] } {
   const [summaries, setSummaries] = useState<{ id: Id; name: string; version: number }[] | null>(null);
   const [contents, setContents] = useState<Record<string, GlossaryCandidate['content']>>({});
@@ -87,7 +87,7 @@ function useTranslationGlossaries(runtime: RuntimeSession): { ready: boolean; ca
       ),
     [],
   );
-  // 读过（或正在读）的版本记一笔：换了摘要时只读新的；在读的不会因为重排被丢下。
+  // Record a version as read (or being read). When the summary changes, read only the new one. A read in progress is not dropped by a re-render.
   const requested = useRef(new Set<string>());
   const mounted = useRef(true);
   useEffect(() => {
@@ -120,8 +120,7 @@ function useTranslationGlossaries(runtime: RuntimeSession): { ready: boolean; ca
 }
 
 /**
- * 视频里启用的条目（`library.getVideoSelection`）：跟着视频里那份 `library-selection` 文档的版本重读，
- * 撤销、别处改了都跟得上；界面不另存一份。
+ * Entries enabled in the video (`library.getVideoSelection`). They are re-read following the version of the `library-selection` document in the video, so undo and changes made elsewhere are picked up. The UI keeps no separate copy.
  */
 export function useVideoSelection(runtime: RuntimeSession, videoId: Id, documents: Record<Id, DocumentRecord>) {
   const doc = Object.values(documents).find((d) => d.kind === 'library-selection');
@@ -137,14 +136,13 @@ export function useVideoSelection(runtime: RuntimeSession, videoId: Id, document
       alive = false;
     };
   }, [runtime, videoId, key]);
-  // 换了版本、新的还没读回来时先用上一份，免得勾选框闪一下。
+  // When the version changes and the new one has not been read back yet, use the previous one first, so the checkboxes do not flicker.
   return state;
 }
 
 /**
- * 翻译设置页（原型 panel-aitools-flows.jsx `TranslateFlow`）：目标语言、原文、文本模型、风格提示、视频启用的术语表、
- * 双语显示，「翻译成 X」提交 `pipelines.start`。自成一页：从字幕轨条的「＋ 翻译成…」推进来，工具页的「翻译字幕」也挂它。
- * 文本模型没配置时就地说明、给去「模型 › 文本生成」的路，开始按钮不灰掉。
+ * Translation settings page (prototype panel-aitools-flows.jsx `TranslateFlow`): target language, source, text model, style hints, glossary entries enabled for the video, and bilingual display. “Translate to X” submits `pipelines.start`. It is a page of its own: it is entered from the subtitle track bar's “＋ 翻译成…” (Add: translate to…), and the tools page's “Translate subtitles” also leads here.
+ * If no text model is configured, it explains that in place and gives a route to “Models › Text generation”. The start button is not greyed out.
  */
 export function TranslateFlow({
   videoId,
@@ -156,9 +154,9 @@ export function TranslateFlow({
   videoId: Id;
   documents: Record<Id, DocumentRecord>;
   onBack(): void;
-  /** 提交成功：字幕面板收起这一页回到列表（进度在轨条与列表上）。 */
+  /** On successful submit, the subtitle panel closes this page and returns to the list (progress shows on the track bar and the list). */
   onStarted(): void;
-  /** 页头返回钮的说明；从工具页推进来时是工具页的「返回」。 */
+  /** The explanation for the page header's back button. When entered from the tools page, it is that page's “Back.” */
   backLabel?: string;
 }) {
   const runtime = useRuntime();
@@ -216,7 +214,7 @@ export function TranslateFlow({
   const start = async () => {
     if (!target || busy || submitting) return;
     if (!ready) {
-      // 不灰掉按钮：说清楚差什么，把模型那一节带到眼前。
+      // Don't grey the button out: say what is missing, and bring the model section into view.
       modelSection.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       ToastQueue.neutral(options.length ? (option?.why ?? C.notConfiguredTitle) : C.notConfiguredTitle, { timeout: 4000 });
       return;
@@ -232,7 +230,7 @@ export function TranslateFlow({
       bilingual,
     });
     setSubmitting(false);
-    // 被拒时问题卡挂在字幕面板上（带原因与去处）；这一页照样收起，免得盖住它。
+    // When rejected, the issue card is attached to the subtitle panel (with the reason and where to go). This page still closes, so it does not cover the card.
     if (ok || useTranslateRun.getState().problems[videoId]) onStarted();
   };
 
@@ -359,7 +357,7 @@ export function TranslateFlow({
   );
 }
 
-/** 术语表一节：勾选 = 在这个视频启用（`library.setVideoSelection`，一笔能撤销的编辑）；启用了但这次用不上的写原因。 */
+/** Glossary section: a check mark means enabled in this video (`library.setVideoSelection`, an undoable edit). Entries that are enabled but not usable this time say why. */
 export function GlossarySection({
   runtime,
   videoId,

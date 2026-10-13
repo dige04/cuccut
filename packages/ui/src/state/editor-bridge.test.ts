@@ -7,7 +7,7 @@ describe('editor-bridge', () => {
     const offA = registerEditorFlush('a', { flush: async () => (calls.push('a'), true), name: () => '甲' });
     const offB = registerEditorFlush('b', { flush: async () => (calls.push('b'), false), name: () => '乙' });
     const offC = registerEditorFlush('c', { flush: () => Promise.reject(new Error('gone')), name: () => '丙' });
-    // 同一份 deck 开在两个标签里：都没保存成也只写一次名字
+    // The same deck open in two tabs: when neither has been saved, the name is still written only once
     const offC2 = registerEditorFlush('c', { flush: async () => false, name: () => '丙' });
     expect(await flushEditors([])).toEqual([]);
     expect(await flushEditors(['a', 'a', 'missing'])).toEqual([]);

@@ -1,6 +1,5 @@
-//! 引擎常量与 `tests/fixtures/speech-engine-limits.json` 一致：同一份夹具也由 `packages/models` 的
-//! `speech-bundles.test.ts` 对照 Runtime 的模型包描述，两侧改了一边另一边的测试就会失败。
-//! 语言表里的每个码引擎自己都认（v2 `language_codes_are_accepted_by_the_engines`）。
+//! Engine constants match `tests/fixtures/speech-engine-limits.json`. The same fixture is also checked by `speech-bundles.test.ts` in `packages/models` against the Runtime's model-pack descriptions, so if one side changes and the other doesn't, the test fails.
+//! Every code in the language table is accepted by its own engine (v2 `language_codes_are_accepted_by_the_engines`).
 
 use std::path::Path;
 
@@ -69,7 +68,7 @@ fn knob_ranges_and_defaults_match_the_shared_fixture() {
         "omnivoice steps",
     );
 
-    // IndexTTS 2.5 的引擎只有区间，步长与默认值（1 倍）只在 Runtime 一侧。
+    // The IndexTTS 2.5 engine only has a range; the step and the default value (1×) exist only on the Runtime side.
     let [min, max, ..] = range(&limits, "index-tts2.5", "speed");
     let (engine_min, engine_max) = index_tts2::SPEAKING_RATE_RANGE;
     assert_eq!((f64::from(engine_min), f64::from(engine_max)), (min, max));
@@ -87,7 +86,7 @@ fn language_codes_are_accepted_by_the_engines() {
     for code in languages(&limits, "gpt-sovits") {
         assert!(Language::resolve(Some(code), "text").is_ok(), "GPT-SoVITS does not know {code}");
     }
-    // 严格的引擎拒绝表外的语言；地区与书写变体归到主语言。
+    // Strict engines reject languages outside the table; regional and written-variant tags are folded into the main language.
     assert!(Language::resolve(Some("ja"), "text").is_err());
     assert_eq!(Language::resolve(Some("zh-Hans"), "text").unwrap(), Language::Zh);
     assert!(qwen3_tts::tokens::language_id("ar").is_none());

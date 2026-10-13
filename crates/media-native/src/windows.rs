@@ -1,25 +1,17 @@
-//! Windows 原生解码：Media Foundation `IMFSourceReader` + `MFVideoFormat_RGB32`。
-//! 单帧抽取与顺序帧流共用同一套 reader 搭建与像素搬运，区别只在读法。
+//! Windows native decoding: Media Foundation `IMFSourceReader` + `MFVideoFormat_RGB32`.
+//! Single-frame extraction and sequential frame streaming share the same reader setup and pixel transfer. They differ only in how they read.
 //!
-//! ## 已知坑：`SetCurrentPosition` 只到关键帧
+//! ## Known pitfall: `SetCurrentPosition` only seeks to a keyframe
 //!
-//! MF 的 seek 语义是「定位到不晚于目标的那个关键帧」，长 GOP 素材上能落在目标
-//! 前好几秒。**seek 之后必须循环 `ReadSample` 比对时间戳推进到目标帧**，否则
-//! filmstrip 会出现一长串完全相同的格子。这是与 macOS `AVAssetImageGenerator`
-//! （容差置零就精确）最大的实现差异，也是本模块存在的主要复杂度。
+//! MF's seek semantics are "position to the keyframe no later than the target". On long-GOP material that keyframe can land several seconds before the target. **After a seek you must loop over `ReadSample` and compare timestamps to advance to the target frame**; otherwise the filmstrip shows a long run of identical cells. This is the biggest implementation difference from macOS `AVAssetImageGenerator` (exact when tolerance is zero), and the main complexity of this module.
 //!
-//! ## 缩放在 CPU 上做
+//! ## Scaling is done on the CPU
 //!
-//! 理论上可以给 reader 设一个目标尺寸的输出媒体类型，让 advanced video
-//! processing 顺手缩放。实践上这条路对格式协商很挑剔（不同解码器接受的目标
-//! 尺寸集合不同），失败方式还是安静的——协商不成时它会给回原尺寸。缩略图一次
-//! 只解一帧，CPU 上做一次盒式下采样（[`crate::resize_rgba`]）的成本可以忽略，
-//! 换来的是"尺寸契约永远成立"。顺序帧流根本不缩放：渲染管线要的就是源尺寸。
+//! In theory the reader could be given a target-size output media type so that advanced video processing scales along the way. In practice this path is very picky about format negotiation (different decoders accept different sets of target sizes), and the failure is silent: when negotiation fails, it returns the original size. Thumbnails decode only one frame, so one box downsample on the CPU ([`crate::resize_rgba`]) costs negligible time, and in return the "size contract always holds". The sequential frame stream does not scale at all: the render pipeline wants the source size.
 //!
-//! ## 旋转
+//! ## Rotation
 //!
-//! MF 不会自动摆正：旋转角从原生媒体类型的 `MF_MT_VIDEO_ROTATION` 读出，在
-//! 像素搬运时应用（与 `apps/cli` 的 MF 导出后端同一条规矩）。
+//! MF does not orient frames automatically. The rotation angle is read from the native media type's `MF_MT_VIDEO_ROTATION` and applied during pixel transfer (the same rule as the MF export backend in `apps/cli`).
 
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
@@ -36,9 +28,7 @@ const HNS_PER_SECOND: f64 = 10_000_000.0;
 const VIDEO_STREAM: u32 = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
 const ALL_STREAMS: u32 = MF_SOURCE_READER_ALL_STREAMS.0 as u32;
 
-/// 一次原生媒体操作（抽帧、顺序流、MP4 写入）期间的 COM + Media Foundation
-/// 生命周期。解码与编码共用同一份：两边都要 `CoInitializeEx` + `MFStartup`，
-/// 各写一份只会让 `MFShutdown` 的配对更难看清。
+/// The COM + Media Foundation lifetime during one native media operation (frame extraction, sequential stream, MP4 write). Decoding and encoding share this one: both sides need `CoInitializeEx` + `MFStartup`, and writing it separately on each side would only make the `MFShutdown` pairing harder to see.
 pub(crate) struct Runtime;
 
 impl Runtime {
@@ -71,8 +61,7 @@ pub(crate) fn media_feature_error(context: &str, error: windows::core::Error) ->
     )
 }
 
-/// `\\?\` 前缀的路径 MF 的 URL 解析器不认（会当成网络地址），与导出后端同一条
-/// 规范化规则。
+/// Paths with the `\\?\` prefix are not recognized by MF's URL parser (it treats them as network addresses), so the same normalization rule as the export backend applies.
 pub(crate) fn wide_path(path: &Path) -> Vec<u16> {
     let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     let verbatim = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
@@ -139,7 +128,7 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
         .unwrap_or(0)
         .rem_euclid(360) as u16;
 
-    // 只解视频轨：音频轨一起解只是白花时间。
+    // Decode only the video track. Decoding the audio track too would just waste time.
     unsafe {
         reader.SetStreamSelection(ALL_STREAMS, false)?;
         reader.SetStreamSelection(VIDEO_STREAM, true)?;
@@ -162,9 +151,7 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
         })?;
     }
 
-    // seek 只保证落在目标之前的关键帧上；这里逐帧推进到「覆盖 t 的那一帧」，
-    // 也就是最后一个时间戳 ≤ t 的帧。第一帧就晚于 t（seek 过头 / t 在首帧之前）
-    // 时用它本身，不然会交出一个空帧。
+    // A seek only guarantees landing on a keyframe before the target. Here we advance frame by frame to "the frame that covers t", that is, the last frame whose timestamp is ≤ t. If the first frame is already later than t (the seek overshot, or t is before the first frame), use that frame itself, or an empty frame would be returned.
     let mut held: Option<IMFSample> = None;
     loop {
         let (flags, timestamp, sample) = unsafe { read_sample(&reader)? };
@@ -172,7 +159,7 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
             break;
         }
         let Some(sample) = sample else {
-            // 流间隙 / 格式变更通知：没有样本，继续读。
+            // Stream gap / format change notification: no sample, keep reading.
             continue;
         };
         if timestamp > target_hns {
@@ -219,11 +206,9 @@ unsafe fn read_sample(reader: &IMFSourceReader) -> Result<(u32, i64, Option<IMFS
     Ok((flags, timestamp, sample))
 }
 
-/// RGB32 样本 → 摆正后的 top-down RGBA8（源尺寸，尚未缩放）。
+/// RGB32 sample → upright, top-down RGBA8 (source size, not yet scaled).
 ///
-/// 2D 缓冲的 `Lock2D` 是行序与行距的唯一权威：`scanline0` 永远指向**第一视觉
-/// 行**，`pitch` 是到下一视觉行的字节步长，负值表示底部朝上。拿不到 2D 缓冲才
-/// 退回连续缓冲，按 RGB32 的历史默认处理（bottom-up、行距 = 宽×4）。
+/// The 2D buffer's `Lock2D` is the sole authority on row order and row pitch: `scanline0` always points to the **first visual row**, and `pitch` is the byte step to the next visual row. A negative value means bottom-up. If no 2D buffer is available, fall back to the contiguous buffer and handle it with RGB32's historical default (bottom-up, pitch = width × 4).
 unsafe fn sample_to_rgba(
     sample: &IMFSample,
     width: usize,
@@ -237,7 +222,7 @@ unsafe fn sample_to_rgba(
         let mut scanline0: *mut u8 = std::ptr::null_mut();
         let mut pitch = 0_i32;
         unsafe { buffer.Lock2D(&mut scanline0, &mut pitch)? };
-        // Lock2D 与 Unlock2D 之间不用 `?`：结果先落进 `outcome`，解锁无条件执行。
+        // Between Lock2D and Unlock2D, do not use `?`: the result first lands in `outcome`, and the unlock runs unconditionally.
         let outcome = if scanline0.is_null() || (pitch.unsigned_abs() as usize) < width * 4 {
             Err(anyhow!("Media Foundation 返回了不完整的 RGB32 视频帧"))
         } else {
@@ -257,7 +242,7 @@ unsafe fn sample_to_rgba(
     let outcome = if (current as usize) < stride * height {
         Err(anyhow!("Media Foundation 返回了不完整的 RGB32 视频帧"))
     } else {
-        // 连续缓冲的 RGB32 是 bottom-up：第一视觉行在缓冲末尾，步长取负。
+        // A contiguous RGB32 buffer is bottom-up: the first visual row is at the end of the buffer, so the stride is negative.
         let first_visual_row = unsafe { pointer.add(stride * (height - 1)) };
         Ok(unsafe {
             copy_rows(
@@ -275,11 +260,9 @@ unsafe fn sample_to_rgba(
     Ok(frame)
 }
 
-/// 逐视觉行搬运 RGB32（内存序 B,G,R,X）→ RGBA8，同时应用旋转。
+/// Transfers RGB32 (memory order B,G,R,X) → RGBA8 one visual row at a time, applying rotation at the same time.
 ///
-/// `first_row` 指向第一视觉行，`pitch` 是到下一视觉行的字节步长（可为负）。
-/// 旋转后的输出尺寸在 90/270 下宽高互换。alpha 一律 255：MF 的 RGB32 常把
-/// alpha 字节留成 0。
+/// `first_row` points to the first visual row. `pitch` is the byte step to the next visual row (may be negative). After rotation the output width and height swap for 90/270. Alpha is always 255, because MF's RGB32 often leaves the alpha byte as 0.
 unsafe fn copy_rows(
     first_row: *const u8,
     pitch: isize,
@@ -297,7 +280,7 @@ unsafe fn copy_rows(
         let row = unsafe { first_row.offset(pitch * y as isize) };
         for x in 0..width {
             let pixel = unsafe { std::slice::from_raw_parts(row.add(x * 4), 4) };
-            // 顺时针旋转 `rotation` 度后，源 (x, y) 落到的目标坐标。
+            // After rotating clockwise by `rotation` degrees, the target coordinate where source (x, y) lands.
             let (tx, ty) = match rotation {
                 90 => (height - 1 - y, x),
                 180 => (width - 1 - x, height - 1 - y),
@@ -318,16 +301,12 @@ unsafe fn copy_rows(
     }
 }
 
-// ── 顺序帧流（WP6a）
+// ── Sequential frame stream (WP6a)
 //
-// 与单帧抽取共用 reader 搭建与 `sample_to_rgba`，区别只有两点：
+// It shares the reader setup and `sample_to_rgba` with single-frame extraction. There are only two differences:
 //
-// 1. **不缩放**：渲染管线要的是源尺寸原样。
-// 2. **不在这里挑帧**：`FrameStream` 按时间戳做帧率重采样与起点对齐，本模块
-//    只负责"按解码顺序交出下一帧 + 它的时间戳与时长"。唯一的例外是 seek 之后
-//    那批**完全早于起点**的帧——MF 的 `SetCurrentPosition` 只保证落到不晚于
-//    目标的关键帧，长 GOP 上能多出几十帧。它们注定会被丢掉，在这里按时间戳
-//    跳过就省掉了同样多次 RGB32 → RGBA 搬运。
+// 1. **No scaling**: the render pipeline wants the source size as is.
+// 2. **No frame selection here**: `FrameStream` does frame-rate resampling and start alignment by timestamp. This module only hands out "the next frame in decode order, with its timestamp and duration". The one exception is the batch of frames right after a seek that lie **entirely before the start point**. MF's `SetCurrentPosition` only guarantees landing on a keyframe no later than the target, and on a long GOP that can add dozens of frames. They are bound to be dropped, so skipping them here by timestamp saves the same number of RGB32 → RGBA transfers.
 
 pub(crate) fn open_frame_source(
     path: &Path,
@@ -367,8 +346,7 @@ unsafe fn open_inner(
     let rotation = unsafe { native.GetUINT32(&MF_MT_VIDEO_ROTATION) }
         .unwrap_or(0)
         .rem_euclid(360) as u16;
-    // 轨道级帧长：样本自带的 duration 无效时用它判片尾（macOS 那边同样的坑，
-    // 见 `frames::DecodedFrame::duration_seconds`）。
+    // Track-level frame duration: used to detect the end of the stream when the sample's own duration is invalid. The same pitfall exists on macOS, see `frames::DecodedFrame::duration_seconds`.
     let track_frame_duration = unsafe { native.GetUINT64(&MF_MT_FRAME_RATE) }
         .ok()
         .map(unpack_ratio)
@@ -420,22 +398,17 @@ struct SourceReaderFrames {
     reader: IMFSourceReader,
     encoded_width: usize,
     encoded_height: usize,
-    /// 摆正后的输出尺寸。
+    /// Output size after orientation correction.
     width: u32,
     height: u32,
     rotation: u16,
-    /// 流的起始媒体时刻（hns）。完全早于它的帧在搬像素之前就跳过。
+    /// Start media time of the stream (hns). Frames that lie entirely before it are skipped before their pixels are transferred.
     from_hns: i64,
     track_frame_duration: Option<f64>,
     finished: bool,
-    /// COM + Media Foundation 的生命周期跟着流走（`Drop` 里 `MFShutdown` +
-    /// `CoUninitialize`）。
+    /// The COM + Media Foundation lifetime follows the stream (`MFShutdown` + `CoUninitialize` in `Drop`).
     ///
-    /// **必须是最后一个字段**：Rust 按声明顺序析构字段，放在 `reader` 前面
-    /// 就会先 `MFShutdown` 再 Release 源读取器，等于在 MF 关停之后回调已经
-    /// 卸载的解码器 MFT——实测 `ccut export` 收尾必崩 `0xC0000005`
-    /// （`msmpeg2vdec.dll_unloaded`，调用方 `mfreadwrite.dll`），MP4 已经写
-    /// 完整但退出码是访问违例。同理见 `encode_windows.rs` 的 `SinkWriter`。
+    /// **Must be the last field.** Rust drops fields in declaration order. If it were placed before `reader`, MF would shut down first and then the source reader would be released, so the decoder MFT would get a callback after its module was already unloaded. Measured: `ccut export` always crashed on exit with `0xC0000005` (`msmpeg2vdec.dll_unloaded`, called from `mfreadwrite.dll`). The MP4 was fully written, but the exit code was an access violation. See also `SinkWriter` in `encode_windows.rs`.
     _runtime: Runtime,
 }
 
@@ -455,7 +428,7 @@ impl crate::frames::FrameSource for SourceReaderFrames {
                 return Ok(None);
             }
             let Some(sample) = sample else {
-                // 流间隙 / 格式变更通知：没有样本，继续读。
+                // Stream gap / format change notification: no sample, keep reading.
                 continue;
             };
             let duration_hns = unsafe { sample.GetSampleDuration() }.ok();
@@ -463,8 +436,7 @@ impl crate::frames::FrameSource for SourceReaderFrames {
                 .filter(|value| *value > 0)
                 .map(|value| value as f64 / HNS_PER_SECOND)
                 .or(self.track_frame_duration);
-            // seek 落点到起点之间那批注定被丢掉的帧：整帧**完全早于**起点才跳，
-            // 覆盖起点的那一帧（ts ≤ from < ts + dur）必须留下。
+            // The frames between the seek landing point and the start point that are bound to be dropped: skip a frame only when it lies **entirely before** the start. The frame that covers the start (ts ≤ from < ts + dur) must be kept.
             if let Some(duration) = duration_hns.filter(|value| *value > 0)
                 && timestamp + duration <= self.from_hns
             {
@@ -489,15 +461,9 @@ impl crate::frames::FrameSource for SourceReaderFrames {
 
 #[cfg(test)]
 mod tests {
-    /// Media Foundation 的关停必须晚于它发出的每一个 COM 接口：`Runtime` 的
-    /// `Drop` 会 `MFShutdown` + `CoUninitialize`，而 Rust 按**声明顺序**析构
-    /// 字段，所以持有它的结构体必须把它写在最后一个字段。
+    /// Media Foundation must shut down after every COM interface it has issued. `Runtime`'s `Drop` runs `MFShutdown` + `CoUninitialize`, and Rust drops fields in **declaration order**, so the struct that holds it must list it as the last field.
     ///
-    /// 曾经 `SourceReaderFrames` 把 `_runtime` 放在 `reader` 前面：MF 先关停，
-    /// 随后才 Release 源读取器，`mfreadwrite.dll` 回调到已卸载的解码器 MFT，
-    /// `ccut export` 每次收尾都以 `0xC0000005` 退出（MP4 其实已经写完整，只是
-    /// 退出码是访问违例，调用方一律当成导出失败）。字段顺序没有类型能表达，
-    /// 只能扫源码钉住。
+    /// Once, `SourceReaderFrames` had `_runtime` placed before `reader`. MF shut down first, and only then was the source reader released. `mfreadwrite.dll` called back into the unloaded decoder MFT, and `ccut export` exited with `0xC0000005` every time it finished. The MP4 was actually fully written, but the exit code was an access violation, and callers treated every such exit as an export failure. No type can express field order, so it can only be pinned by scanning the source.
     #[test]
     fn every_media_foundation_runtime_is_declared_as_the_last_droppable_field() {
         for file in ["windows.rs", "encode_windows.rs", "playback_windows.rs"] {
@@ -511,8 +477,7 @@ mod tests {
                 if line.trim() != "_runtime: Runtime," {
                     continue;
                 }
-                // 后面只允许再出现没有析构行为的字段（当前只有 PhantomData），
-                // 然后就必须是结构体的收尾 `}`。
+                // After this, only fields without any drop behavior may appear (currently only PhantomData), and then the struct's closing `}` must come.
                 let rest = source
                     .lines()
                     .skip(index + 1)

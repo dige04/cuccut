@@ -1,4 +1,4 @@
-//! IndexTTS2 / IndexTTS 2.5 共用的模型图（目录名沿用 MLX 来源，张量后端由 `synthesize::tensor` 分派）。
+//! Model graph shared by IndexTTS2 / IndexTTS 2.5 (the directory name is inherited from the MLX origin; the tensor backend is dispatched by `synthesize::tensor`).
 
 pub mod bigvgan;
 pub mod campplus;

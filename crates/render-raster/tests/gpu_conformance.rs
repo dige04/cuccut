@@ -1,50 +1,36 @@
-//! GPU ↔ CPU conformance（元素方案 §8.7 / §10 P5 的验收点）。
+//! GPU ↔ CPU conformance (acceptance point of the element plan, §8.7 / P5 in §10).
 //!
-//! 同一组参数 + `progress ∈ {0, 0.25, 0.5, 0.75, 1}` 五个取值，GPU 输出与 CPU
-//! reference 逐像素比对，**且各取值乱序执行一遍**。CPU 永远是 strict reference
-//! （ADR-M05），GPU 只是加速器。
+//! The same set of parameters with the five values `progress ∈ {0, 0.25, 0.5, 0.75, 1}`: GPU output is compared pixel by pixel against the CPU
+//! reference, **and each value is also run once in shuffled order**. The CPU is always the strict reference
+//! (ADR-M05); the GPU is only an accelerator.
 //!
-//! **对拍面只有 progress 的 14 款。** visualizer 自 2026-09 重设计起 10 款全部是
-//! CPU 矢量配方（`source/visualizer/recipes/`），没有 WGSL 实现，`shader_for`
-//! 对它恒返回 `None`、host 记一条 `ShaderMissing` 回退——这条通路由文末的
-//! 回退测试钉住，不再有逐像素对拍。
+//! **The comparison surface covers only the 14 progress styles.** Since the visualizer redesign of 2026-09, all 10 visualizer styles are CPU vector recipes (`source/visualizer/recipes/`) with no WGSL implementation; `shader_for` always returns `None` for them, and the host records a `ShaderMissing` fallback. That path is pinned by the fallback test at the end of the file, and there is no longer a pixel-by-pixel comparison for them.
 //!
 //! ```bash
 //! cd core
 //! cargo test -p ccut-render --features gpu --test gpu_conformance -- --nocapture
 //! ```
 //!
-//! ## strict 判据（§8.7 的**一次性修正**，P5b 落地后冻结）
+//! ## strict criteria (the **one-time correction** to §8.7, frozen after P5b landed)
 //!
-//! §12 的风险表允许"在 P5 实施记录里按测量结果修正一次"。P5a 测出的事实是：
-//! CPU 参照是**矢量**路径，边是硬边；GPU 画的是连续的 `factor`（软边）。两条
-//! **不同的抗锯齿函数**在过渡带上必然差出上百个灰阶，而色块中心与背景逐位相同。
-//! 全分辨率 SSIM 衡量的正是"两侧抗锯齿函数是否相同"，而那本来就不相同——它因此
-//! 不是一条有意义的硬门。
+//! §12's risk table allows “one correction, based on measured results, recorded in the P5 implementation log”. The fact measured in P5a: the CPU reference is a **vector** path with hard edges, while the GPU draws a continuous `factor` (soft edges). Two **different anti-aliasing functions** necessarily differ by hundreds of grey levels across the transition band, while the centres of the colour blocks and the background are bit-identical. Full-resolution SSIM measures exactly “whether the two sides use the same anti-aliasing function”, which they never do — so it is not a meaningful hard gate.
 //!
-//! 修正后的 strict 判据是三条**结构性**指标：
+//! The corrected strict criteria are three **structural** metrics:
 //!
-//! 1. **平坦区逐通道 ≤ 2/255**（[`FLAT_CHANNEL_BUDGET`]，就是 §8.7 原文那个 2）：
-//!    只看两幅图 3×3 邻域都恒定的像素，即"不在任何一条边上"的像素；
-//! 2. **过渡带像素占比 ≤ 20%**（[`EDGE_PIXEL_SHARE`]）：挡住"整幅画都偏了"这种
-//!    真回归，而不是挡住"边缘两像素不同"这种设计使然；
-//! 3. **4× 降采样后 SSIM ≥ 0.98**（[`SSIM_FLOOR_STRICT`]）：降采样正是"把过渡带
-//!    按面积摊平"的操作，它衡量的是"这两幅图在观感上是不是同一幅"。
+//! 1. **Per-channel ≤ 2/255 in flat regions** ([`FLAT_CHANNEL_BUDGET`], the same 2 as in the original text of §8.7):
+//!    only pixels whose 3×3 neighbourhood is constant in both images are checked, i.e. pixels that are “not on any edge”;
+//! 2. **Share of transition-band pixels ≤ 20%** ([`EDGE_PIXEL_SHARE`]): this catches a real regression such as “the whole picture is shifted”, rather than rejecting “two edge pixels differ”, which is by design;
+//! 3. **SSIM ≥ 0.98 after 4× downsampling** ([`SSIM_FLOOR_STRICT`]): downsampling is precisely the operation that “spreads the transition band out by area”; it measures whether the two images look like the same image.
 //!
-//! 全分辨率 SSIM **仍然逐条打印**，作为诊断而不是硬门。
+//! Full-resolution SSIM is **still printed for each case**, as a diagnostic rather than a hard gate.
 //!
-//! ## visual 判据（§8.7 原值，未修订）
+//! ## visual criteria (original values of §8.7, not revised)
 //!
-//! `visual` 档的 CPU 参照按定义就是降采样 / 查表近似，判据是 **SSIM ≥ 0.96**
-//! （[`SSIM_FLOOR_VISUAL`]），比法与 strict 的第 3 条一样落在 4× 降采样上——
-//! 理由同上，而且 §8.7 那句"不追求逐像素"说的就是这件事。
+//! By definition the CPU reference for the `visual` tier is a downsampled / lookup-table approximation, and the criterion is **SSIM ≥ 0.96** ([`SSIM_FLOOR_VISUAL`]). Like the third strict criterion, it is measured after 4× downsampling — for the same reason as above; and the §8.7 sentence “does not pursue pixel-level accuracy” is exactly about this.
 //!
-//! ## 这条判据不放过什么
+//! ## What this criterion does not let slip through
 //!
-//! `progress.normal` 的颜色分界是竖直硬边、`progress × 宽度` 落在像素边界上，
-//! 两边**逐字节相同**；这一条用 `assert_eq!(max_deviation, 0)` 单独钉住，是
-//! "GPU 路径本身是对的"（单 quad、y-flip、uniform 顺序、premultiplied 输出、
-//! `DiscardClip`、回读换算全链路）最硬的证据。
+//! The colour boundary of `progress.normal` is a vertical hard edge and `progress × width` falls on pixel boundaries, so the two sides are **byte-identical**. This is pinned on its own with `assert_eq!(max_deviation, 0)`, and it is the strongest evidence that “the GPU path itself is correct” (single quad, y-flip, uniform order, premultiplied output, `DiscardClip`, and the full readback conversion chain).
 #![cfg(feature = "gpu")]
 
 use std::sync::Arc;
@@ -60,44 +46,43 @@ use render_raster::source::{ProgressParams, progress_frame};
 use render_raster::{GpuExecutor, plan::gpu_fallback::GpuBackendReport};
 use tiny_skia::Pixmap;
 
-// ── 输入侧，与 `core/fixtures/progress/cases.json` 逐字相同。
+// ── Input side, identical word for word to `core/fixtures/progress/cases.json`.
 
-/// `cases.json` 的 `progress` 与 `times` 两列。
+/// The `progress` and `times` columns of `cases.json`.
 const PROGRESS_VALUES: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 const PROGRESS_TIMES: [f64; 5] = [0.0, 0.75, 1.5, 2.25, 3.0];
 
-/// `#3CADFF` / `#C4E6FF`（夹具的 `mainColor` / `secondaryColor`）。
+/// `#3CADFF` / `#C4E6FF` (the fixture's `mainColor` / `secondaryColor`).
 const MAIN: [f32; 4] = [0.235_294_12, 0.678_431_4, 1.0, 1.0];
 const SECONDARY: [f32; 4] = [0.768_627_5, 0.901_960_8, 1.0, 1.0];
 const TF: Mat6 = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
-// ── §8.7 的判据（见文件头）。
+// ── §8.7 criteria (see the file header).
 
-/// strict 档的 **4× 降采样 SSIM** 下界（§8.7 修正后的第 3 条）。
+/// Lower bound for **4× downsampled SSIM** in the strict tier (the third criterion of §8.7 after correction).
 const SSIM_FLOOR_STRICT: f64 = 0.98;
 
-/// `visual` 档的 SSIM 下界（§8.7 **原值**，未修订）。
+/// SSIM lower bound for the `visual` tier (the **original** value in §8.7, not revised).
 const SSIM_FLOOR_VISUAL: f64 = 0.96;
 
-/// §8.7 的 "逐通道 ≤ 2/255" 在**平坦区**上的形式。这个 2 就是原文那个 2。
+/// The form of §8.7's “per-channel ≤ 2/255” over **flat regions**. This 2 is the same 2 as in the original text.
 ///
-/// 算法收敛进 [`imgcmp`]（WP5b）：这里直接复用 [`imgcmp::FLAT_CHANNEL_BUDGET`]，
-/// 不留第二份可能漂移的定义。
+/// The algorithm has been consolidated into [`imgcmp`] (WP5b); here [`imgcmp::FLAT_CHANNEL_BUDGET`] is reused directly,
+/// so that no second definition is kept that could drift.
 const FLAT_CHANNEL_BUDGET: u8 = imgcmp::FLAT_CHANNEL_BUDGET;
 
-/// 过渡带占比上界（§8.7 修正后的第 2 条）。
+/// Upper bound on the share of transition-band pixels (the second criterion of §8.7 after correction).
 const EDGE_PIXEL_SHARE: f64 = 0.20;
 
-/// 超采样倍率。1× 是"参考实现原样"，4× 是"给 GPU 侧补一条与光栅器可比的
-/// 抗锯齿"——两者都测，实测数字一起打出来。
+/// Supersampling factor. 1× is “the reference implementation as-is”, 4× is “add anti-aliasing on the GPU side comparable to the rasterizer”. Both are measured, and the measured numbers are printed together.
 const SUPERSAMPLE: u32 = 4;
 
-/// `aspect: "bar"` 的盒子：与夹具的几何默认表同尺寸，落点归零。
+/// The box for `aspect: "bar"`: same size as the fixture's geometry default table, origin reset to zero.
 ///
-/// `progress` 夹具的 `bar` 盒是 1080p 上的 `80% × 5%` = **1536 × 54**——宽高都
-/// 恰好是整数像素，`progress × 1536` 也全落在像素边界上。GPU 的渲染目标只能是
-/// 整数尺寸，因此这里只把落点挪到原点（quad 自己那块画面的合成是调用方的事），
-/// **尺寸与夹具一致**。
+/// The `bar` box of the `progress` fixture is `80% × 5%` at 1080p = **1536 × 54** — both width and height are
+/// exactly integer pixels, and `progress × 1536` also falls entirely on pixel boundaries. The GPU render target can only be
+/// integer-sized, so here only the position is moved to the origin (compositing the quad's own picture is the caller's job),
+/// and the **size matches the fixture**.
 const PROGRESS_BOX: DrawBox = DrawBox {
     x: 0.0,
     y: 0.0,
@@ -105,12 +90,12 @@ const PROGRESS_BOX: DrawBox = DrawBox {
     h: 54.0,
 };
 
-/// `aspect: "square"` 的盒子：几何默认表的 `30% × 30%`（1080p 上 576 × 324）
-/// 收成内切正方形 **324 × 324**。
+/// The box for `aspect: "square"`: the geometry default table's `30% × 30%` (576 × 324 at 1080p)
+/// is shrunk to the inscribed square **324 × 324**.
 ///
-/// 不能拿横条盒的内切正方形（54）凑合：那只只有 54 px 见方，4× 降采样后是
-/// 13 × 13、连两个 SSIM 窗口都排不下，一圈抗锯齿就能把分数拉到 0.91——那衡量的
-/// 是夹具太小，不是实现有问题。
+/// Do not make do with the inscribed square of the bar box (54): that is only 54 px on a side, and after 4× downsampling it is
+/// 13 × 13, not even big enough for two SSIM windows, and a single ring of anti-aliasing could drag the score down to 0.91 — which would measure
+/// that the fixture is too small, not that the implementation is wrong.
 const SQUARE_BOX: DrawBox = DrawBox {
     x: 0.0,
     y: 0.0,
@@ -118,8 +103,8 @@ const SQUARE_BOX: DrawBox = DrawBox {
     h: 324.0,
 };
 
-/// `aspect: "frame"` 的盒子：几何默认表的整幅。conformance 用 4 分之一分辨率
-/// （480 × 270），边框粗细是**相对量**（`borderSize · max(w, h)`），换算不受影响。
+/// The box for `aspect: "frame"`: the whole frame from the geometry default table. Conformance uses quarter resolution
+/// (480 × 270); border thickness is a **relative quantity** (`borderSize · max(w, h)`), so the conversion is unaffected.
 const FRAME_BOX: DrawBox = DrawBox {
     x: 0.0,
     y: 0.0,
@@ -127,7 +112,7 @@ const FRAME_BOX: DrawBox = DrawBox {
     h: 270.0,
 };
 
-/// 指令流里没有 `DrawMedia`：真被调到就是这条测试的前提坏了。
+/// The instruction stream contains no `DrawMedia`: if it is actually called, the precondition of this test is broken.
 struct NoMedia;
 
 impl FrameMedia for NoMedia {
@@ -144,11 +129,10 @@ fn progress_params() -> ProgressParams {
     }
 }
 
-/// `aspect: "square"` 的样式在盒内取内切正方形再画（CPU 与 GPU 同一条规则）。
+/// A style with `aspect: "square"` takes the inscribed square inside the box and draws there (same rule for CPU and GPU).
 ///
-/// GPU 的渲染目标只有 quad 自己那块画面（`QuadTarget::from_box` 取的就是内切
-/// 正方形），因此 CPU 参照必须光栅化到**同一只盒子**，否则比的是两幅不同尺寸的
-/// 图。落点一律归零：合成是调用方的事。
+/// The GPU render target is only the quad's own picture (`QuadTarget::from_box` takes the inscribed
+/// square), so the CPU reference must be rasterized into the **same box**, otherwise two images of different sizes would be compared. Positions are always reset to zero: compositing is the caller's job.
 fn progress_box(style: &str) -> DrawBox {
     let recipe = timeline_progress(style).expect("样式已登记");
     match recipe.progress().expect("progress 配方").aspect {
@@ -193,12 +177,11 @@ fn progress_quad(style: &str, progress: f64, time: f64) -> ShaderQuad {
     .unwrap_or_else(|error| panic!("{style} 建 quad 失败：{error}"))
 }
 
-// ── 比较：算法收敛进 `render_raster::imgcmp`（WP5b），本文件只留判定阈值
-// 与三条断言逻辑——那是 GPU 抗锯齿这个特定问题的判据，不是共享算法契约。
+// ── Comparison: the algorithm is consolidated in `render_raster::imgcmp` (WP5b); this file keeps only the decision thresholds
+// and the three assertion pieces of logic — those are criteria for this specific GPU anti-aliasing problem, not a shared algorithm contract.
 
-/// 薄包装：这里的两侧图像永远同尺寸（CPU 参照与 GPU 渲染画的是同一只盒子），
-/// `imgcmp::compare` 的尺寸错误因此退化成 `expect`——真触发就是这条测试的
-/// 前提坏了，值得直接崩而不是悄悄跳过。
+/// Thin wrapper: the two images here are always the same size (the CPU reference and the GPU render are drawn into the same box),
+/// so `imgcmp::compare`'s size error degrades to `expect`. If it actually fires, the precondition of this test is broken, and it is worth crashing outright rather than silently skipping.
 fn compare(cpu: &Pixmap, gpu: &Pixmap) -> Comparison {
     imgcmp::compare(cpu, gpu).expect("两侧尺寸必须一致")
 }
@@ -214,8 +197,8 @@ fn executor() -> Option<GpuExecutor> {
             Some(executor)
         }
         Err(error) => {
-            // 没有 GPU 的机器上这条测试**跳过而不是失败**（§8.7：CI 只在固定
-            // runner 上跑 GPU conformance，失败不阻塞 CPU 路径）。
+            // On machines without a GPU this test is **skipped rather than failed** (§8.7: CI runs GPU conformance only on fixed
+            // runners, and a failure does not block the CPU path).
             let report = GpuBackendReport::default();
             println!("跳过 GPU conformance：{error}；报告 {:?}", report.records);
             None
@@ -232,7 +215,7 @@ fn assert_within_budget(label: &str, measured: Comparison, ssim_floor: f64) {
         measured.flat_max_deviation,
         measured.edge_share * 100.0
     );
-    // 判据落在**降采样**的 SSIM 上；全分辨率那个数只打印，见文件头。
+    // The criterion rests on **downsampled** SSIM; the full-resolution number is only printed, see the file header.
     assert!(
         measured.ssim_downsampled >= ssim_floor,
         "{label}: 4× 降采样 SSIM {:.6} < {ssim_floor}",
@@ -251,8 +234,7 @@ fn assert_within_budget(label: &str, measured: Comparison, ssim_floor: f64) {
     );
 }
 
-/// `visual` 档只吃 SSIM 一条（§8.7：CPU 参照是降采样近似，平坦区与过渡带那两条
-/// 结构性判据对它没有意义——它的"平坦区"本来就与 GPU 的连续场不是同一件事）。
+/// The `visual` tier uses only the SSIM criterion (§8.7: the CPU reference is a downsampled approximation, so the two structural criteria for flat regions and transition bands are meaningless for it — its “flat regions” were never the same thing as the GPU's continuous field).
 fn assert_visual(label: &str, measured: Comparison) {
     println!(
         "  {label:26} ssim={:.4} ssim@4x={:.4} max={:>3} flat={:>3} edge={:>6.3}%",
@@ -269,16 +251,15 @@ fn assert_visual(label: &str, measured: Comparison) {
     );
 }
 
-/// 一个样式的 determinism 档。目录型配方复用注册表那个枚举（§7.3）。
+/// The determinism tier of one style. Catalogue-type recipes reuse the registry's enum (§7.3).
 fn is_strict(determinism: motion::preset_registry::Determinism) -> bool {
     determinism == motion::preset_registry::Determinism::Strict
 }
 
-// ── 全量对拍：14 种 progress。
+// ── Full comparison: 14 progress styles.
 
-/// `progress.normal` 的颜色分界是**竖直硬边**，`progress × 1536` 恰好落在像素
-/// 边界上，两边因此都没有抗锯齿——这一条能做到**逐字节相同**，是"GPU 路径本身
-/// 是对的"最硬的证据（见文件头）。
+/// The colour boundary of `progress.normal` is a **vertical hard edge**, and `progress × 1536` falls exactly on pixel
+/// boundaries, so neither side has anti-aliasing. This one can achieve **byte-identical** output and is the strongest evidence that “the GPU path itself is correct” (see the file header).
 #[test]
 fn the_pixel_aligned_progress_bar_matches_byte_for_byte() {
     let Some(mut gpu) = executor() else { return };
@@ -296,7 +277,7 @@ fn the_pixel_aligned_progress_bar_matches_byte_for_byte() {
     }
 }
 
-/// **14 种 progress 全量**：strict 走三条结构性判据，visual 走 SSIM ≥ 0.96。
+/// **All 14 progress styles**: strict uses the three structural criteria, visual uses SSIM ≥ 0.96.
 #[test]
 fn every_progress_style_matches_the_cpu_reference() {
     let Some(mut gpu) = executor() else { return };
@@ -323,11 +304,11 @@ fn every_progress_style_matches_the_cpu_reference() {
     }
 }
 
-/// 超采样版：给 GPU 侧补一条与光栅器可比的抗锯齿，数字进 §13 的实施记录。
+/// Supersampled version: adds anti-aliasing on the GPU side comparable to the rasterizer; the numbers go into the §13 implementation log.
 ///
-/// 结论（P5a 已测、P5b 复核）：**超采样帮不上忙**——边的羽化来自 shader 自己的
-/// alpha 斜坡，不是锯齿，4× 的数字与 1× 基本重合。留着它是为了让"这条差异不是
-/// 采样不足"这一点可复现。`rounded` 的圆角端是这一族里唯一有斜边的地方。
+/// Conclusion (measured in P5a, re-checked in P5b): **supersampling does not help** — the edge feathering comes from the shader's own
+/// alpha ramp, not from aliasing, and the 4× numbers nearly coincide with 1×. It is kept so that “this difference is not due to insufficient
+/// sampling” can be reproduced. The rounded caps of `rounded` are the only place in this family with slanted edges.
 #[test]
 fn the_supersampled_rounded_bar_reports_its_own_distribution() {
     let Some(mut gpu) = executor() else { return };
@@ -346,12 +327,12 @@ fn the_supersampled_rounded_bar_reports_its_own_distribution() {
     }
 }
 
-// ── §8.7 的"乱序执行一遍"。
+// ── §8.7's “run once in shuffled order”.
 
-/// 五个取值**乱序**跑一遍，逐帧字节必须与顺序跑的结果相同。
+/// The five values are run in **shuffled** order, and the per-frame bytes must match the results of the in-order run.
 ///
-/// 这是 ADR-E04 那条"乱序采样 = 顺序采样"契约在 **GPU 执行器**上的形式：
-/// 管线缓存、uniform 写入都不得让上一帧影响下一帧。
+/// This is the form, on the **GPU executor**, of the ADR-E04 contract that “shuffled sampling = in-order sampling”:
+/// neither pipeline caching nor uniform writes may let the previous frame affect the next one.
 #[test]
 fn shuffled_instants_render_the_same_bytes_as_sorted_ones() {
     let Some(mut gpu) = executor() else { return };
@@ -362,7 +343,7 @@ fn shuffled_instants_render_the_same_bytes_as_sorted_ones() {
     let sorted: Vec<Vec<u8>> = (0..PROGRESS_VALUES.len())
         .map(|index| render(&mut gpu, index))
         .collect();
-    // `cases.json` 的置换是 40 项的，这里只需要五个取值的一个真置换。
+    // The permutation over `cases.json` has 40 entries; here only a true permutation of the five values is needed.
     const SHUFFLE: [usize; 5] = [3, 0, 4, 1, 2];
     let mut shuffled = vec![Vec::new(); PROGRESS_VALUES.len()];
     for index in SHUFFLE {
@@ -374,20 +355,20 @@ fn shuffled_instants_render_the_same_bytes_as_sorted_ones() {
             "progress={progress} 的乱序结果不同"
         );
     }
-    // 置换是**真置换**（不是恒等），否则这条测试什么都没测。
+    // The permutation must be a **real permutation** (not the identity), otherwise this test checks nothing.
     let mut seen = SHUFFLE;
     seen.sort_unstable();
     assert_eq!(seen, [0, 1, 2, 3, 4]);
     assert_ne!(SHUFFLE, [0, 1, 2, 3, 4]);
 }
 
-// ── 回退骨架。
+// ── Fallback skeleton.
 
-/// 拿不到 WGSL 的样式：`shader_for` 是 `None`，host 据此记一条回退并走 CPU。
+/// Styles for which no WGSL is available: `shader_for` is `None`, and the host records a fallback on that basis and goes to the CPU.
 ///
-/// 回退面现在有两块：注册表里没有的样式，以及 **visualizer 的全部 10 款**
-/// （CPU 矢量配方，没有源码）。两种都走同一条 `ShaderMissing` 通路，画面都不
-/// 受影响；progress 的 14 款则一个不漏都能查到源码。
+/// There are now two fallback surfaces: styles missing from the registry, and **all 10 visualizer styles**
+/// (CPU vector recipes, with no shader source). Both take the same `ShaderMissing` path, and the picture is unaffected either way;
+/// all 14 progress styles, by contrast, can be looked up in source without exception.
 #[test]
 fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
     use render_raster::plan::gpu_fallback::GpuFallbackReason;
@@ -426,9 +407,9 @@ fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
     assert!(shader_for(ShaderDomain::Progress, "zz_not_a_style").is_none());
 }
 
-// ── 诊断（`--ignored`）：把一条扫描线的两侧剖面打出来。
+// ── Diagnostics (`--ignored`): print the cross-sections on both sides of one scanline.
 //
-// 调 shader 时用它看"差在哪里"，而不是只看一个 SSIM 数字。
+// Use it when tuning a shader to see “where the difference is”, rather than looking at a single SSIM number.
 
 /// ```bash
 /// cargo test -p ccut-render --features gpu --test gpu_conformance -- --ignored --nocapture profile
@@ -473,10 +454,10 @@ fn print_a_scanline_profile() {
     }
 }
 
-/// 诊断：把某个样式的 CPU / GPU 差异画成 ASCII 图，外加中线上的一条 R 通道剖面。
+/// Diagnostic: draws the CPU / GPU difference for a given style as an ASCII map, plus an R-channel cross-section along the midline.
 ///
-/// 调 shader 时用它看"差在哪里"，而不是只看一个 SSIM 数字——结构性偏移
-/// （错位、翻转、接缝）都会先在这张图上露出来。
+/// Use it when tuning a shader to see “where the difference is”, rather than looking at a single SSIM number — structural offsets
+/// (misalignment, flips, seams) show up on this map first.
 ///
 /// ```bash
 /// CCUT_DIFF_STYLE=circle cargo test -p ccut-render --features gpu \
@@ -494,7 +475,7 @@ fn print_a_diff_map() {
     let (w, h) = (reference.width() as usize, reference.height() as usize);
     let cell = (w / 60).max(1);
     println!("{style}: {w}x{h}, cell={cell}");
-    // `#` 两边都有、`.` 两边都没有、`C` 只有 CPU、`G` 只有 GPU（按 R 通道过半）。
+    // `#` present on both sides, `.` on neither side, `C` only in the CPU, `G` only in the GPU (judged by the R channel crossing half).
     for row in (0..h).step_by(cell) {
         let mut line = String::new();
         for col in (0..w).step_by(cell) {
@@ -509,7 +490,7 @@ fn print_a_diff_map() {
         }
         println!("{line}");
     }
-    // 中线上的一条剖面：结构性偏移在这里表现为"整条曲线错开一两格"。
+    // A cross-section along the midline: a structural offset shows up here as “the whole curve shifted by a cell or two”.
     let mid = h / 2;
     let window = (w / 4)..(w / 4 + 60).min(w);
     for (label, pixmap) in [("cpu", &reference), ("gpu", &rendered)] {

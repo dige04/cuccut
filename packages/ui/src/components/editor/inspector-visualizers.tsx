@@ -13,15 +13,13 @@ import { ColorField, Note, PRow, Sec, SecHead, ValueRow } from './inspector-cont
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
- * 进度条与声波的参数（设计稿 panel-element-style.jsx 的颜色段与样式段、panel-element-edit.jsx 的样式目录）：
- * 颜色行的个数与名字跟着样式走（两款彩虹边框一行也没有）；「样式」一行点开是与元素页同一份缩略图的目录，
- * 悬停先叠给预览、点下才提交，换款时主副色（声波还有 dB 窗）一并换成那一款的默认值。
+ * Parameters for progress bars and waveforms (design panel-element-style.jsx's color and style sections, and panel-element-edit.jsx's style catalog). The number and names of the color rows follow the style (the two rainbow-border styles have no rows at all). The “样式” (style) row opens a catalog with the same thumbnails as the elements page. Hover previews first, and a click commits. When the style changes, the primary and secondary colors (the waveform also has a dB window) are replaced with that style's defaults.
  */
 
 export interface VisualParamProps {
   values: Json;
   isDisabled: boolean;
-  /** 画幅：目录缩略图按它摆（方形款的边长是画幅短边的 30%）。 */
+  /** Aspect ratio: the catalog thumbnails are laid out by it (the square style's side is 30% of the aspect ratio's short side). */
   canvas: { width: number; height: number };
   live(patch: Json): void;
   commit(patch: Json): void;
@@ -64,7 +62,7 @@ const drillName = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900' }
 const drillNote = style({ font: 'ui-xs', color: 'gray-600' });
 const drillChevron = style({ display: 'flex', color: 'gray-500', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
 const catalogBox = style({ display: 'flex', flexDirection: 'column', gap: 12, width: '[288px]' });
-/** 与元素页同一套格子：进度三列、条形两款横跨两列；声波两列 2:1 宽格。 */
+/** The same grid as the elements page: progress bars in three columns, with the bar styles spanning two columns; waveforms in two columns of 2:1 wide cells. */
 const progressGrid = style({ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridAutoFlow: 'row dense', gap: 8 });
 const waveGrid = style({ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 });
 const span2 = style({ gridColumnEnd: 'span 2' });
@@ -111,7 +109,7 @@ const tileLabel = style({
 const tileOf = (catalog: Catalog, key: string): ElementTile | undefined => ELEMENT_TILES.find((t) => t.key === `${catalog}.${key}`);
 const kindOf = (kinds: readonly StyleKind[], key: string): StyleKind => kinds.find((k) => k.key === key) ?? kinds[0]!;
 
-/** 换到某一款时一并写下的参数：主副色跟着款走；声波的 dB 窗也跟着款走（示波器与环形波是 −120 / −10 那扇窄窗）。 */
+/** Parameters written together with a style when it is chosen: the primary and secondary colors follow the style, and the waveform's dB window also follows the style (the oscilloscope and circular wave use the narrow −120 / −10 window). */
 function stylePatch(catalog: Catalog, key: string): Json {
   if (catalog === 'wave') {
     const preset = WAVE_STYLES[key]!;
@@ -121,7 +119,7 @@ function stylePatch(catalog: Catalog, key: string): Json {
   return { style: key, mainColor: preset.mainColor, secondaryColor: preset.secondaryColor };
 }
 
-/** 进度条：颜色、样式、区间（起点、终点 0–100%，终点可以小于起点：倒着走）。 */
+/** Progress bar: color, style, range (start and end, 0–100%; the end may be less than the start, so it runs backward). */
 export function ProgressParams(props: VisualParamProps) {
   const { values, isDisabled, live, commit } = props;
   const key = typeof values.style === 'string' && PROGRESS_STYLES[values.style] ? values.style : 'normal';
@@ -160,8 +158,7 @@ export function ProgressParams(props: VisualParamProps) {
 }
 
 /**
- * 声波：颜色、样式、控制（dB 窗最低 −120–0、最高 −40–60，平滑 0–99%；示波器与环形波画的是波形，没有 dB 两行）。
- * 声波听的是这一刻在响的声音。平滑到 100% 时频谱就停在第一帧，所以封顶 99%。
+ * Waveform: color, style, controls (dB window minimum −120–0, maximum −40–60, smoothing 0–99%). The oscilloscope and circular wave draw the waveform, so they have no dB rows. The waveform listens to the sound playing at that moment. At 100% smoothing the spectrum would freeze on the first frame, so the maximum is capped at 99%.
  */
 export function VisualizerParams(props: VisualParamProps) {
   const { values, isDisabled, live, commit } = props;
@@ -214,7 +211,7 @@ export function VisualizerParams(props: VisualParamProps) {
   );
 }
 
-/** 颜色段：一色一行（`mainColor`，第二色是 `secondaryColor`）；这一款没有颜色控件时说明为什么。 */
+/** Color section: one row per color (`mainColor`; the second color is `secondaryColor`). When this style has no color control, the section explains why. */
 function ColorRows({ kind, main, secondary, values, isDisabled, live, commit }: VisualParamProps & { kind: StyleKind; main: string; secondary: string }) {
   if (!kind.colors.length) {
     return (
@@ -252,7 +249,7 @@ function ColorRows({ kind, main, secondary, values, isDisabled, live, commit }: 
   );
 }
 
-/** 样式段：当前那一款的缩略图、名字与「N 种 · 点开选」，点开是目录。 */
+/** Style section: the current style's thumbnail and name, plus “N 种 · 点开选” (N styles · click to choose). Clicking it opens the catalog. */
 function StylePicker({ catalog, current, isDisabled, canvas, live, commit }: VisualParamProps & { catalog: Catalog; current: string }) {
   const [open, setOpen] = useState(false);
   const kinds = catalog === 'wave' ? WAVE_KINDS : PROGRESS_KINDS;
@@ -289,8 +286,7 @@ function StylePicker({ catalog, current, isDisabled, canvas, live, commit }: Vis
 }
 
 /**
- * 目录里的悬停预览：`peek` 记下叠过草稿，`unpeek` 撤掉（清编辑器的草稿），目录卸载（点外面、Esc、选中换了）时也撤；
- * `keep` 用在点下提交时——草稿留着等新版本到来（失败时编辑器自己丢草稿），免得画面先闪回旧款。
+ * Hover preview in a catalog: `peek` records the draft that was overlaid, and `unpeek` removes it (clearing the editor's draft). The draft is also removed when the catalog unmounts (clicking outside, Esc, or the selection changing). `keep` is used when a click commits: the draft is kept until the new version arrives (on failure the editor discards the draft itself), so the picture does not flash back to the old style first.
  */
 export function usePeekDraft(): { peek(): void; keep(): void; unpeek(): void } {
   const peeked = useRef(false);
@@ -312,8 +308,7 @@ export function usePeekDraft(): { peek(): void; keep(): void; unpeek(): void } {
 }
 
 /**
- * 样式目录：悬停的那一格先叠给预览（草稿），移出目录或关掉目录就撤掉；点下提交。选中框停在打开目录时的那一款上，
- * 不跟着悬停走（属性页看到的值叠了草稿，悬停时会变成悬停的那一款）。
+ * Style catalog: the cell under the pointer is first overlaid on the preview as a draft. Moving out of the catalog or closing it removes the draft, and a click commits. The selection frame stays on the style that was current when the catalog opened and does not follow the hover. The value the properties page sees is overlaid with the draft, so during a hover it would otherwise become the hovered style.
  */
 function StyleCatalog({
   catalog,
@@ -329,7 +324,7 @@ function StyleCatalog({
   current: string;
   canvas: { width: number; height: number };
   onPeek(key: string): void;
-  /** 选了另一款（点回打开时那一款不算）。 */
+  /** Selecting a different style. (Clicking back on the style that was current when the catalog opened does not count.) */
   onPick(key: string): void;
   onClose(): void;
 }) {

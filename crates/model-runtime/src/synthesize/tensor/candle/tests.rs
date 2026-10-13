@@ -118,7 +118,7 @@ fn rope_incremental_offset_equals_full_sequence() {
     }
 }
 
-// GELU 走的是合成图里的实现：只有门面落到 candle 时它才吃这里的 `Array`。
+// GELU uses the implementation in the synthesis graph: only when the facade lands on candle does it accept the `Array` here.
 #[cfg(not(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn normalization_uses_population_variance_and_gelu_accepts_negative_values() {
@@ -168,7 +168,7 @@ fn max_axis_matches_mlx_keep_dims_semantics() {
 
 #[test]
 fn dequantize_restores_gathered_rows_with_leading_dims() {
-    // 8 bit、group 4：每个 u32 打包 4 个值（低位在前），每行 8 列 = 2 个 u32、2 组。
+    // 8 bit, group 4: each u32 packs 4 values (low bits first); each row has 8 columns = 2 u32s, 2 groups.
     let pack = |v: [u32; 4]| v[0] | (v[1] << 8) | (v[2] << 16) | (v[3] << 24);
     let w = Array::from_slice(
         &[pack([0, 1, 2, 3]), pack([4, 5, 6, 7]), pack([10, 20, 30, 40]), pack([1, 1, 1, 1])],

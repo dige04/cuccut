@@ -1,99 +1,93 @@
-//! TTS 合成前注音的内联语法 `<表面|读音>`（架构设计 §6.1「读音标注」），移植自 v2 `ccut-lang::readings`。
+//! Inline annotation syntax `<surface|reading>` for TTS pre-synthesis annotation (architecture design §6.1, “reading annotation”), ported from v2 `ccut-lang::readings`.
 //!
-//! 这里只放语法本身：解析、去注记、原样拼回。v2 把它放在语言目录那一层，是因为语速口径要按
-//! 去注记后的表面文字数（`<行|xing2>` 不能多算五个单位）；v3 的语速口径还没移植，语法先随合成住在这里，
-//! 去掉了只给线上 schema 用的 `JsonSchema` 派生。词典判定、按引擎渲染在上一层 [`super`]。
+//! This file holds only the syntax itself: parsing, stripping, and re-emitting verbatim. v2 placed it in the language directory layer because the speaking-rate measure must count the surface text after annotations are stripped (`<行|xing2>` must not count as five extra units). v3's speaking-rate measure has not been ported yet, so for now the syntax lives with synthesis, and the `JsonSchema` derive that existed only for the online schema has been removed. Dictionary decisions and per-engine rendering are in the layer above, [`super`].
 //!
-//! 读音是拼音，一个注记可以盖一个字或一个词，多字读音用空格分（`<银行|yin2 hang2>`），读音数必须等于表面字数。
-//! 每个音节两种写法都收，可以在同一个注记里混用（`<银行|yín hang2>`）：
+//! A reading is pinyin. One annotation can cover one character or one word; multi-character readings are separated by spaces (`<银行|yin2 hang2>` (bank)), and the number of readings must equal the number of surface characters.
+//! Each syllable accepts both notations, and they can be mixed within one annotation (`<银行|yín hang2>`):
 //!
-//! - 声调数字：ASCII 字母 + `1`–`5`（`hang2`，轻声 `5`），ü 写 `v` 或 `ü`；
-//! - 带调拼音：声调标在元音上（`háng`、`lǜ`），不标调就是轻声（`le` → `le5`），ü 可以不带调（`nü` → `nv5`）。
-//!   只认预组合字符（`á`、`ǘ`，以及 `ń ň ǹ ḿ`），不认组合附加符；一个音节两个调号、调号与声调数字同时出现都不合法。
+//! - Tone numbers: ASCII letters + `1`–`5` (`hang2`; neutral tone is `5`); ü is written `v` or `ü`;
+//! - Tone-marked pinyin: the tone mark is placed on the vowel (`háng`, `lǜ`); no tone mark means neutral tone (`le` → `le5`), and ü may be left without a tone (`nü` → `nv5`).
+//!   Only precomposed characters are accepted (`á`, `ǘ`, and `ń ň ǹ ḿ`); combining diacritics are not accepted. One syllable with two tone marks, or a tone mark together with a tone number, is invalid.
 //!
-//! 解析时一律规范成声调数字的写法：大小写不分（统一成小写），`ü` 折成 `v`，j / q / x / y 后的 `v` 折成 `u`
-//! （与 pypinyin `Style.TONE3` 同形）；所以引擎、存储与之后的流程只见到 `hang2` / `lv4` / `le5`。
-//! 音节只按形状判断（去调后 1–6 个字母、含元音或是 `m n ng hm hng`），不对照拼音音节表。
+//! Parsing always normalizes to the tone-number form: case is ignored (folded to lowercase), `ü` is folded to `v`, and `v` after j / q / x / y is folded to `u` (the same form as pypinyin `Style.TONE3`). So the engine, storage and later processing only ever see `hang2` / `lv4` / `le5`.
+//! Syllables are judged only by shape (1–6 letters after the tone is removed, containing a vowel, or being `m n ng hm hng`); they are not checked against the pinyin syllable table.
 //!
-//! 只有表面含汉字、读音只由 ASCII 字母数字、空格、`ü` 与带调元音组成的尖括号才可能是拼音注记：
-//! 读音里有声调数字或调号的，读音不合法（调号与数字并存、两个调号、不像音节、读音数不符）时整条按字面留在表面文字里，
-//! 并记进 [`Annotated::malformed`]；既没有数字也没有调号的（`<了|le>`）只在整条合法时才是注记，
-//! 否则（`<中文|Chinese>`）按字面保留、不报。
-//! 别的尖括号（英文 ARPAbet、日文假名、不成对的 `<`）一律按字面保留、不报。
+//! Only angle brackets whose surface contains Han characters, and whose reading consists only of ASCII letters and digits, spaces, `ü`, and tone-marked vowels, can be pinyin annotations. A reading that has tone digits or tone marks and is invalid (tone mark together with digit, two tone marks, not syllable-shaped, wrong number of readings) keeps the whole thing literal in the surface text and is recorded in [`Annotated::malformed`]. One with neither digits nor tone marks (`<了|le>` (particle)) is an annotation only when the whole thing is valid; otherwise (`<中文|Chinese>` (Chinese)) it is kept literal and not reported.
+//! Other angle brackets (English ARPAbet, Japanese kana, unpaired `<`) are always kept literal and not reported.
 
 use serde::{Deserialize, Serialize};
 
-/// 注记的来源。渲染层据此区分：Qwen3-TTS 不替换 `Phrase`（词组本来就会念对）。
+/// The source of an annotation. The rendering layer uses it to tell them apart: Qwen3-TTS does not replace `Phrase` (a phrase reading is already pronounced correctly).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Origin {
-    /// 用户（或 Agent）在文字里手写的注记。
+    /// An annotation hand-written by the user (or agent) in the text.
     User,
-    /// 词组表命中定下的读音。
+    /// A reading fixed by a phrase-table match.
     Phrase,
-    /// 单字按词典默认读音。
+    /// A single character, using its dictionary default reading.
     Dict,
-    /// LLM 按上下文定下的读音。
+    /// A reading decided by an LLM from context.
     Llm,
 }
 
-/// 一条注记：表面文字 `[start, end)`（Unicode 标量偏移）读作 `reading`。
+/// One annotation: the surface text `[start, end)` (Unicode scalar offsets) is read as `reading`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reading {
     pub start: usize,
     pub end: usize,
-    /// 规范化后的读音，多字用单个空格分（`yin2 hang2`）；畸形注记是原文读音。
+    /// The normalized reading, with multiple readings separated by a single space (`yin2 hang2`); for a malformed annotation, the original reading text.
     pub reading: String,
     pub origin: Origin,
 }
 
 impl Reading {
-    /// 逐字读音。
+    /// Per-character readings.
     pub fn syllables(&self) -> impl Iterator<Item = &str> {
         self.reading.split(' ')
     }
 }
 
-/// 一个语境多音字候选：词组表没能定下读音、要看上下文的单字。
+/// A context-dependent polyphonic single-character candidate: a character whose reading the phrase table could not fix, and which depends on context.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
     pub start: usize,
     pub end: usize,
-    /// 词典默认读音。
+    /// The dictionary default reading.
     pub default: String,
-    /// 全部读音（默认读音在前）。
+    /// All readings (default reading first).
     pub readings: Vec<String>,
 }
 
-/// 解析结果：去注记后的表面文字与落在它上面的注记。
+/// Parse result: the surface text with annotations stripped, and the annotations that fall on it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Annotated {
     pub surface: String,
-    /// 按 `start` 升序、互不重叠。
+    /// Sorted by `start` in ascending order, non-overlapping.
     pub readings: Vec<Reading>,
-    /// 看得出是拼音注记但读音不合法的，按字面留在 `surface` 里；偏移指向其中的表面文字。
+    /// Something recognized as a pinyin annotation but with an invalid reading is kept literal in `surface`; the offsets point to its surface text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub malformed: Vec<Reading>,
-    /// `annotate` 给的语境多音字候选（`parse` 不产生）。
+    /// Context-dependent polyphonic candidates given by `annotate` (`parse` does not produce these).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidates: Vec<Candidate>,
 }
 
 impl Annotated {
-    /// 没有任何注记（也没有畸形注记）。
+    /// No annotations at all (and no malformed annotations).
     pub fn is_plain(&self) -> bool {
         self.readings.is_empty() && self.malformed.is_empty()
     }
 
-    /// `[start, end)` 的表面文字。
+    /// The surface text of `[start, end)`.
     pub fn slice(&self, start: usize, end: usize) -> String {
         self.surface.chars().skip(start).take(end.saturating_sub(start)).collect()
     }
 
-    /// 把注记原样拼回 `<表面|读音>`（IndexTTS 2.5 直接吃这个语法）；`parse(to_text())` 与自身相等。
+    /// Re-emits annotations verbatim as `<surface|reading>` (IndexTTS 2.5 consumes this syntax directly); `parse(to_text())` equals the original.
     pub fn to_text(&self) -> String {
         let mut out = String::with_capacity(self.surface.len() + self.readings.len() * 12);
         let mut next = self.readings.iter().peekable();
@@ -123,7 +117,7 @@ impl Annotated {
     }
 }
 
-/// 去掉注记，只留表面文字（`<行|xing2>` → `行`）。
+/// Removes annotations, keeping only the surface text (`<行|xing2>` → `行`).
 pub fn strip(text: &str) -> String {
     if !text.contains('<') {
         return text.to_owned();
@@ -131,12 +125,12 @@ pub fn strip(text: &str) -> String {
     parse(text).surface
 }
 
-/// 文字里有没有合法的拼音注记。
+/// Whether the text contains any valid pinyin annotation.
 pub fn has_readings(text: &str) -> bool {
     text.contains('<') && !parse(text).readings.is_empty()
 }
 
-/// 解析 `<表面|读音>` 注记；手写的一律记 [`Origin::User`]。
+/// Parses `<surface|reading>` annotations; hand-written ones are always recorded as [`Origin::User`].
 pub fn parse(text: &str) -> Annotated {
     let mut out = Annotated::default();
     if !text.contains('<') {
@@ -155,7 +149,7 @@ pub fn parse(text: &str) -> Annotated {
             if is_pinyin_attempt(face, &raw) {
                 let reading = normalize(&raw, face.len());
                 if reading.is_none() && !has_tone(&raw) {
-                    // 不带声调的读音（`<中文|Chinese>`）不合法时不像拼音注记：字面、不报。
+                    // A reading without tones (`<中文|Chinese>` (Chinese)) that is invalid does not look like a pinyin annotation: kept literal, not reported.
                     out.surface.push(chars[i]);
                     surface_len += 1;
                     i += 1;
@@ -194,7 +188,7 @@ pub fn parse(text: &str) -> Annotated {
     out
 }
 
-/// `chars[open] == '<'` 起的 `<表面|读音>`：返回 `|` 与 `>` 的下标。两段都非空、不含 `< > | 换行`。
+/// For `<surface|reading>` starting at `chars[open] == '<'`: returns the indices of `|` and `>`. Both parts must be non-empty, and must not contain `< > |` or a newline.
 fn bracket(chars: &[char], open: usize) -> Option<(usize, usize)> {
     let stop = |c: char| matches!(c, '<' | '>' | '|' | '\n');
     let bar = open + 1 + chars[open + 1..].iter().position(|&c| stop(c))?;
@@ -212,7 +206,7 @@ fn is_han(c: char) -> bool {
     ('\u{3400}'..='\u{9FFF}').contains(&c) || ('\u{20000}'..='\u{2FFFF}').contains(&c)
 }
 
-/// 带调字母（已转小写）→ 去调的 ASCII 字母与声调（`ü` 不带调，声调为 0）。
+/// A toned letter (already lowercased) → the ASCII letter with the tone removed, and the tone (`ü` carries no tone, so the tone is 0).
 fn fold_marked(c: char) -> Option<(char, u8)> {
     const TABLE: [(char, [char; 4]); 8] = [
         ('a', ['ā', 'á', 'ǎ', 'à']),
@@ -233,7 +227,7 @@ fn fold_marked(c: char) -> Option<(char, u8)> {
     })
 }
 
-/// 读音里的一个字符转小写后（拉丁大写字母只有一个小写形式）。
+/// One character of the reading, after lowercasing (the uppercase Latin letters each have only one lowercase form).
 fn lower(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
@@ -242,7 +236,7 @@ fn is_pinyin_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == ' ' || fold_marked(lower(c)).is_some()
 }
 
-/// 读音带声调数字或调号：看得出是在写拼音注记（不合法时报 malformed）。
+/// The reading has tone digits or a tone mark: this shows a pinyin annotation is being written (reported as malformed if invalid).
 fn has_tone(raw: &str) -> bool {
     raw.chars()
         .any(|c| c.is_ascii_digit() || fold_marked(lower(c)).is_some_and(|(_, tone)| tone > 0))
@@ -252,7 +246,7 @@ fn is_pinyin_attempt(face: &[char], raw: &str) -> bool {
     face.iter().any(|&c| is_han(c)) && raw.chars().all(is_pinyin_char)
 }
 
-/// 一个音节 → `hang2` 这样的规范写法；须是 1–6 个字母、含元音（或是成音节的 `m n ng hm hng`），声调来自末尾的数字 1–5、唯一的调号或轻声。
+/// One syllable → canonical form such as `hang2`. Must be 1–6 letters and contain a vowel (or be a syllabic `m n ng hm hng`); the tone comes from a trailing digit 1–5, a single tone mark, or neutral tone.
 fn normalize_syllable(raw: &str) -> Option<String> {
     let mut body = String::with_capacity(raw.len());
     let mut mark = None;
@@ -292,7 +286,7 @@ fn normalize_syllable(raw: &str) -> Option<String> {
     Some(format!("{body}{tone}"))
 }
 
-/// 规范化读音；每个音节见 [`normalize_syllable`]，个数等于表面字数。
+/// Normalizes a reading; each syllable is handled per [`normalize_syllable`], and the number of syllables equals the number of surface characters.
 fn normalize(raw: &str, count: usize) -> Option<String> {
     let syllables = raw.split_whitespace().map(normalize_syllable).collect::<Option<Vec<_>>>()?;
     (syllables.len() == count).then(|| syllables.join(" "))
@@ -347,31 +341,31 @@ mod tests {
 
     #[test]
     fn malformed_annotations_stay_literal() {
-        // 缺 `|`：不是注记，按字面保留、不报。
+        // No `|`: not an annotation, kept literal and not reported.
         let a = parse("<行xing2>走");
         assert_eq!(a.surface, "<行xing2>走");
         assert!(a.is_plain());
-        // 读音数不符：整条按字面保留，报进 malformed，偏移指向表面文字。
+        // Wrong number of readings: the whole thing is kept literal and reported as malformed; the offsets point to the surface text.
         let a = parse("去<银行|hang2>办事");
         assert_eq!(a.surface, "去<银行|hang2>办事");
         assert!(a.readings.is_empty());
         assert_eq!(a.malformed, [user(2, 4, "hang2")]);
         assert_eq!(a.slice(2, 4), "银行");
-        // 声调数字多一个：读音数不符以外的畸形同样报。
+        // One extra tone digit: malformations other than a wrong reading count are reported the same way.
         assert_eq!(parse("<行|xing22>").malformed.len(), 1);
-        // 不带声调、又不合法的读音（读音数不符、超过 6 个字母）不像拼音注记：字面、不报。
+        // A reading without tones that is also invalid (wrong number of readings, more than 6 letters) does not look like a pinyin annotation: kept literal, not reported.
         assert!(parse("<中文|Chinese>").is_plain());
         assert!(parse("<好|hello world>").is_plain());
         assert!(parse("<行|xyz>").is_plain());
-        // 带声调但没有元音的音节不合法（成音节的 m / n / ng / hm / hng 除外）。
+        // A toned syllable without a vowel is invalid (syllabic m / n / ng / hm / hng excepted).
         assert_eq!(parse("<行|xyz2>").malformed.len(), 1);
         assert_eq!(parse("<呣|m2>").readings, [user(0, 1, "m2")]);
         assert_eq!(parse("<哼|hng>").readings, [user(0, 1, "hng5")]);
-        // 嵌套：外层 `<` 按字面，内层照常解析。
+        // Nesting: the outer `<` is literal; the inner one is parsed as usual.
         let a = parse("<外<行|xing2>|x>");
         assert_eq!(a.surface, "<外行|x>");
         assert_eq!(a.readings, [user(2, 3, "xing2")]);
-        // 空读音、日文假名：字面。
+        // Empty reading, or Japanese kana: literal.
         assert!(parse("<行|>").is_plain());
         assert!(parse("<今日|きょう>").is_plain());
     }
@@ -383,21 +377,21 @@ mod tests {
         let readings: Vec<_> = a.readings.iter().map(|r| r.reading.as_str()).collect();
         assert_eq!(readings, ["hang2", "yin2 hang2", "lv4", "le5", "nv3", "lv2", "nv5", "ng2"]);
         assert!(a.malformed.is_empty());
-        // j / q / x / y 后的 ü 折成 u，与数字写法同形。
+        // ü after j / q / x / y is folded to u, the same form as the digit notation.
         assert_eq!(parse("<句|jǜ>").readings, [user(0, 1, "ju4")]);
         assert_eq!(parse("<雨|yǔ>").readings, [user(0, 1, "yu3")]);
-        // 不标调的单字：轻声。
+        // A single untoned character: neutral tone.
         assert_eq!(parse("<行|xing>").readings, [user(0, 1, "xing5")]);
     }
 
     #[test]
     fn mixed_and_uppercase_syllables() {
-        // 每个音节各自认写法，可以混用。
+        // Each syllable's notation is recognized separately, so they may be mixed.
         assert_eq!(parse("<银行|yín hang2>").readings, [user(0, 2, "yin2 hang2")]);
         assert_eq!(parse("<银行|yin2 háng>").readings, [user(0, 2, "yin2 hang2")]);
-        // 数字写法里不带数字的音节同样是轻声。
+        // In the digit notation, a syllable without a digit is likewise neutral tone.
         assert_eq!(parse("<东西|dong1 xi>").readings, [user(0, 2, "dong1 xi5")]);
-        // 大写一律折成小写，带调的大写字母也一样。
+        // Uppercase is always folded to lowercase, including uppercase toned letters.
         assert_eq!(parse("<行|HÁNG>").readings, [user(0, 1, "hang2")]);
         assert_eq!(parse("<银行|Yín Háng>").readings, [user(0, 2, "yin2 hang2")]);
         assert_eq!(parse("<绿|LǛ>").readings, [user(0, 1, "lv4")]);
@@ -407,20 +401,20 @@ mod tests {
     #[test]
     fn invalid_tone_marks_stay_literal() {
         for text in [
-            "<行|háng2>",       // 调号与数字同时出现
-            "<行|hángá>",       // 一个音节两个调号
-            "<银行|yín>",       // 读音数不符
-            "<行|zhuángáng>",   // 去调后超过 6 个字母
-            "<银行|yín 2háng>", // 数字不在末尾
+            "<行|háng2>",       // Tone mark and tone digit both present
+            "<行|hángá>",       // Two tone marks in one syllable
+            "<银行|yín>",       // Wrong number of readings
+            "<行|zhuángáng>",   // More than 6 letters after the tone is removed
+            "<银行|yín 2háng>", // Digit not at the end
         ] {
             let a = parse(text);
             assert_eq!(a.surface, text, "{text}");
             assert!(a.readings.is_empty(), "{text}");
             assert_eq!(a.malformed.len(), 1, "{text}");
         }
-        // 畸形注记记的是原文读音。
+        // A malformed annotation records the original reading.
         assert_eq!(parse("<行|háng2>").malformed[0].reading, "háng2");
-        // 组合附加符（`a` + U+0301）不认：不是拼音字符，字面、不报。
+        // A combining diacritic (`a` + U+0301) is not accepted: it is not a pinyin character, so it is kept literal and not reported.
         assert!(parse("<行|ha\u{301}ng>").is_plain());
     }
 

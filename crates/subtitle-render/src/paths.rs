@@ -1,19 +1,12 @@
-//! 项目媒体路径与派生缓存路径的**唯一**解析实现。
+//! The **only** resolution implementation for project media paths and derived cache paths.
 //!
-//! 三段内容分别搬自 `core/crates/ccut-kernel/src/project_source_path.rs`（整文件）、
-//! `core/crates/ccut-kernel/src/services/waveform.rs`（`project_media_path` / `media_fingerprint`）
-//! 与 `core/crates/ccut-kernel/src/services/spectrum.rs`（`cache_path` / `CACHE_SUFFIX`）。
+//! The three pieces of content were moved from `core/crates/ccut-kernel/src/project_source_path.rs` (the whole file), `core/crates/ccut-kernel/src/services/waveform.rs` (`project_media_path` / `media_fingerprint`) and `core/crates/ccut-kernel/src/services/spectrum.rs` (`cache_path` / `CACHE_SUFFIX`).
 //!
-//! 它们必须跟渲染内核在同一个 crate 里：`ccut spectrum`、
-//! `GET /__ccut/spectrum`、导出与 App 预览都按同一条路径去找 BCS1 缓存，
-//! 换一条解析就会算出另一个文件名——「命令刚生成过、渲染却说找不到」就是
-//! 这么来的。注入它等于要求每个 host 自己复刻弱指纹与命名，那正是 D2 禁止的
-//! 第二份实现，而且扫描测试抓不到。CLI 侧的 `waveform` / `spectrum` 从这里转发。
+//! They must live in the same crate as the render kernel. `ccut spectrum`, `GET /__ccut/spectrum`, export and the App preview all look up BCS1 caches by the same path rules. With a different resolution, one would compute a different filename, and “the command just generated it but rendering says it cannot be found” is exactly how that happens. Injecting it would require every host to replicate the weak fingerprint and naming. That is the second implementation D2 forbids, and the scan test would not catch it. The CLI side's `waveform` / `spectrum` forward from here.
 //!
-//! The timeline contract stores relative source paths from the project root
-//! (`media/...`). CucCut Mac 1.0.7 briefly wrote image-watermark sources as
-//! media-directory-relative paths (`watermark/...`). Prefer the canonical path,
-//! but fall back to that legacy spelling so existing projects remain exportable.
+//! The timeline contract stores relative source paths from the project root (`media/...`). CucCut Mac 1.0.7 briefly wrote image-watermark sources as media-directory-relative paths (`watermark/...`). Prefer the canonical path, but fall back to that legacy spelling so existing projects remain exportable.
+//!
+//! The timeline contract stores relative source paths from the project root (`media/...`). CucCut Mac 1.0.7 briefly wrote image-watermark sources as media-directory-relative paths (`watermark/...`). Prefer the canonical path, but fall back to that legacy spelling so existing projects remain exportable.
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -34,10 +27,10 @@ pub fn resolve(project: &Path, raw: &str) -> PathBuf {
     if legacy.is_file() { legacy } else { canonical }
 }
 
-/// 缓存文件名的 BCS1 类型后缀（原 `spectrum::CACHE_SUFFIX`）。
+/// BCS1 type suffix of the cache filename (originally `spectrum::CACHE_SUFFIX`).
 pub const SPECTRUM_CACHE_SUFFIX: &str = ".spectrum.bin";
 
-/// 项目媒体文件：main 来自 project.json；附加源来自 timeline.json sources。
+/// Project media files: main comes from project.json, and additional sources come from the sources in timeline.json.
 pub fn project_media_path(root: &Path, source_id: &str) -> Result<PathBuf> {
     let raw = if source_id == "main" {
         let manifest_path = root.join("project.json");
@@ -73,7 +66,7 @@ pub fn project_media_path(root: &Path, source_id: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// 路径 + 大小 + mtime 的快速媒体指纹。避免为 GB 级媒体计算内容 hash。
+/// Fast media fingerprint made from path, size and mtime. Avoids computing a content hash for GB-scale media.
 pub fn media_fingerprint(path: &Path) -> Result<String> {
     let metadata =
         std::fs::metadata(path).with_context(|| format!("读取媒体元数据 {}", path.display()))?;
@@ -98,10 +91,9 @@ pub fn media_fingerprint(path: &Path) -> Result<String> {
     Ok(format!("{hash:016x}"))
 }
 
-/// `<project>/cache/{media_stem}.{fingerprint}.spectrum.bin`。
+/// `<project>/cache/{media_stem}.{fingerprint}.spectrum.bin`.
 ///
-/// 指纹是路径 + 大小 + mtime 的弱指纹（与 BCW1 同一实现），**只用于选文件**；
-/// 进渲染指纹的是 BCS1 header 里的内容 hash。
+/// The fingerprint is a weak fingerprint of path, size and mtime (same implementation as BCW1), **used only to select the file**. What goes into the render fingerprint is the content hash in the BCS1 header.
 pub fn spectrum_cache_path(project: &Path, media: &Path) -> Result<PathBuf> {
     let fingerprint = media_fingerprint(media)?;
     let stem = media

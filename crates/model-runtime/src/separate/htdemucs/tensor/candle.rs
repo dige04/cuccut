@@ -2,20 +2,17 @@
 //! The checkpoint stores MLX channel-last convolution kernels. Only the
 //! convolution boundary changes layout; activations stay on the chosen device.
 //!
-//! 移植自 v2 `ccut-separate` 的 `htdemucs/tensor/candle.rs`。与 v2 不同处：设备不是进程默认设备一个定死，而是由
-//! candle 后端按模型包的 `device` 在加载前设定（[`use_device`]）；没设定时用 [`crate::backend::candle::default_device`]
-//! （`cuda` feature、`CUCCUT_GPU`、CUDA 失败回退 CPU 都在那里）。另补了 MLX 词汇里有、v2 适配层没有的 `Array::eval`
-//! 与 `load_safetensors_deferred`。
+//! Ported from v2 `ccut-separate`'s `htdemucs/tensor/candle.rs`. Differences from v2: the device is not one fixed process-wide default; instead the candle backend sets it before loading, according to the bundle's `device` ([`use_device`]). If none is set, [`crate::backend::candle::default_device`] is used (the `cuda` feature, `CUCCUT_GPU`, and falling back to CPU when CUDA fails are all handled there). It also adds `Array::eval` and `load_safetensors_deferred`, which are in the MLX vocabulary but missing from v2's adapter layer.
 
 use anyhow::{Result, bail};
 use candle_core::{DType, Device, Tensor, WithDType};
 use std::sync::RwLock;
 use std::{collections::HashMap, path::Path};
 
-/// 本进程分离用的设备。一个 Worker 一次只加载一个模型包，加载前设定一次。
+/// The device used for separation in this process. A worker loads only one model bundle at a time, so it is set once before loading.
 static DEVICE: RwLock<Option<Device>> = RwLock::new(None);
 
-/// 设定之后加载与分离用的设备（candle 后端按模型包的 `device` 调用）。
+/// The device used for loading and separation once set (the candle backend calls this with the bundle's `device`).
 pub fn use_device(device: Device) {
     *DEVICE.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(device);
 }
@@ -36,8 +33,8 @@ pub fn ensure_device() -> Result<()> {
     Ok(())
 }
 
-/// 读取 safetensors（只留 `keep` 认的键）。candle 没有惰性求值：权重读进来就在设备上，fp16 → f32 的上转换在
-/// `WeightStore::take` 里逐个做、fp16 原件随即释放。
+/// Reads safetensors (keeping only the keys that `keep` accepts). Candle has no lazy evaluation: weights are on the device as soon as they are read, and the fp16 → f32 upcast is done one at a time in
+/// `WeightStore::take`, with the fp16 original released right away.
 pub fn load_safetensors_deferred(files: &[&Path], keep: impl Fn(&str) -> bool) -> Result<HashMap<String, Array>> {
     let mut all = HashMap::new();
     for file in files {
@@ -228,7 +225,7 @@ impl Array {
     pub fn divide(&self, rhs: impl Into<Self>) -> Result<Self> {
         Ok(Self(self.0.broadcast_div(&rhs.into().0)?))
     }
-    /// MLX 的 `eval` 物化惰性图；candle 立即求值，这里什么都不做。
+    /// MLX's `eval` materializes the lazy graph; candle evaluates immediately, so nothing is done here.
     pub fn eval(&self) -> Result<()> {
         Ok(())
     }

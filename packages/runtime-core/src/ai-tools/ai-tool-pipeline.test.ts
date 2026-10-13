@@ -10,8 +10,7 @@ import { aiToolPipeline, parseAiToolParams, polishedBody, type AiToolDeps } from
 import { aiToolMessages, chapterDrafts, parseTimestamp, polishBatches, polishEdits, type ContextWord } from './ai-tool-prompt.ts';
 
 /**
- * AI 工具「直接调模型」（产品设计 §5.10）：交给模型的消息（系统提示词是 skill、用户消息是提示词与上下文）、润色与章节的
- * 校验，以及对着假的视频、假的文本模型跑完整条流程：只给结果的工具不写视频；润色与章节一笔写进视频；文稿中途改了不写。
+ * AI tool "direct model call" (product design §5.10): the messages handed to the model (system prompt is the skill; user message is the prompt and context), the validation of polishing and chapters, and the full pipeline run against a fake video and a fake text model. Tools that only return a result do not write the video; polishing and chapters are each written into the video in one transaction; a script changed midway is not written.
  */
 
 const word = (id: string, text: string, start: number, paragraphStart = false): ContextWord => ({ id, text, start, paragraphStart });
@@ -314,7 +313,7 @@ describe('ai-tool 流程', () => {
     expect(record.state).toBe('failed');
     expect(record.error).toMatchObject({ code: 'STALE_JOB_INPUT' });
     expect(applied).toEqual([]);
-    // 重试：从当前版本重新收集、重新调用；skill 与附件沿用冻结的，不再读。
+    // Retry: recollect from the current version and call again; the skill and attachments reuse the frozen ones and are not read again.
     const before = skillCalls;
     reply = () => ({ json: { edits: [{ n: 1, text: 'Hello' }] } });
     await runner.retry(record.jobId);
@@ -346,7 +345,7 @@ describe('ai-tool 流程', () => {
   it('润色与章节要模型支持结构化输出：不支持时启动就拒绝', async () => {
     structured = false;
     await expect(runner.start({ pipeline: 'ai-tool', params: { videoId: 'vid_1', tool: 'chapters', prompt: '' } }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({ code: 'invalid-request' });
-    // 正文工具不要求结构化输出。
+    // Body-text tools do not require structured output.
     expect((await run({ tool: 'title' })).state).toBe('completed');
   });
 

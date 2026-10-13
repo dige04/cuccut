@@ -77,7 +77,7 @@ const cardTitle = style({
 });
 const renameField = style({ flexGrow: 1, minWidth: 0 });
 const cardSpan = style({ font: 'ui-xs', color: 'gray-600' });
-/** 「开头」「为什么挑它」两行（原型 .sc-quote / .sc-why）：左边小字标签，右边正文。 */
+/** The “opening” and “why this one” rows (prototype .sc-quote / .sc-why): small label on the left, body text on the right. */
 const line = style({ display: 'flex', alignItems: 'baseline', gap: 8, font: 'ui-sm', lineHeight: '[1.5]' });
 const lineLabel = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
 const quote = style({ minWidth: 0, color: 'gray-900' });
@@ -116,7 +116,7 @@ const chev = style({ display: 'flex', flexShrink: 0, color: 'gray-500' });
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const fail = (error: unknown) => ToastQueue.negative(S.failed(reasonOf(error)), { timeout: 6000 });
 
-/** 打开另一部视频，右侧面板落在 AI 工具 Tab 的 `page`（结果页或参数页）。 */
+/** Opens another video; the right panel lands on the AI tools tab's `page` (result page or parameter page). */
 function openWithPage(entry: SpaceEntry, page: AiToolPage): void {
   const id = entryVideoId(entry);
   if (!id) return;
@@ -125,7 +125,7 @@ function openWithPage(entry: SpaceEntry, page: AiToolPage): void {
   useShell.getState().openVideo(videoTargetOf(entry));
 }
 
-/** 等编辑器换下这部视频（打开了别的）：移入回收站前先让出来；最多等 `ms`。 */
+/** Waits for the editor to switch away from this video (when another one was opened), so it gives it up before moving it to the trash; waits at most `ms`. */
 function released(videoId: Id, ms = 4000): Promise<void> {
   return new Promise((resolve) => {
     if (useVideo.getState().video?.videoId !== videoId) return resolve();
@@ -142,13 +142,10 @@ function released(videoId: Id, ms = 4000): Promise<void> {
 }
 
 /**
- * 剪成短视频的结果页（原型 panel-aitools-shorts-result.jsx `ShortsCutResult`，产品设计 §5.10「结果页」）：这一轮会话切出的子视频，
- * 每支一张卡——标题（点一下改名，`renameVideo`）、在原片里的起止与眼下的时长、开头那一句、为什么挑它与提示牌（派生来源文档里有才显示）、「正在看」、「打开」「不要这支」。头上「已创建 N 支」
- * 与「第 k/N ‹ ›」逐支翻。「打开」在同一个编辑器里换成那一支，右侧仍是这一页、那张卡亮着；「不要这支」移入回收站，提示里可撤销。
- * 下面「接下来」：再切几支（回参数页，勾上「已经切过的不再找」）、在 Space 里看这几支（按来源筛好）、全部导出…（每支各发起一次成片导出，`exportShorts`）。
+ * Result page for cutting shorts (prototype panel-aitools-shorts-result.jsx `ShortsCutResult`, product design §5.10 “result page”): the sub-videos cut in this session run, one card each: title (click to rename, `renameVideo`), start and end in the source and current duration, the opening line, why it was picked and a badge (shown only when the source document provides one), “now watching”, “Open” and “Don't keep this one”. At the top, “N created” and “k/N ‹ ›” to step through them. “Open” switches to that one in the same editor; the result page stays on the right with that card highlighted. “Don't keep this one” moves it to the trash, with undo offered in the toast.
+ * Below, “Next”: cut more (back to the parameter page, with “skip ones already cut” checked), watch these in Space (filtered by source), export all… (starts one final-render export per sub-video, `exportShorts`).
  *
- * 这一页属于那一轮会话、挂在父视频（`host`）上：开着父视频或其中任何一支子视频都画同一份。认这一轮靠本机记下的那次交接
- * （`useShortsRuns`）；没有记录（比如在 Space 里直接打开了一支子视频）时列出这部父视频派生的全部子视频。
+ * This page belongs to that run and is attached to the parent video (`host`): opening the parent or any of its sub-videos shows the same page. The run is recognized by the handoff recorded on this machine (`useShortsRuns`); with no record (for example, a sub-video opened directly in Space), all sub-videos derived from this parent video are listed.
  */
 export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
   const runtime = useRuntime();
@@ -187,7 +184,7 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
     if (run) focusShortsRun(run.conversationId, id);
     if (id !== videoId) openWithPage(entry, resultPage);
   };
-  // 「返回」：在父视频里回参数页（设置保留在本机草稿里）；在子视频里回父视频，结果页仍在那里。
+  // “Back”: in the parent video, returns to the parameter page (settings are kept in the local draft); in a sub-video, returns to the parent video, where the result page is still there.
   const back = () => {
     if (!inChild) setAiToolPage(videoId, { tool: 'shortscut', preset: null, phase: 'setup' });
     else if (hostEntry) openWithPage(hostEntry, resultPage);
@@ -198,7 +195,7 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
     else if (hostEntry) openWithPage(hostEntry, page);
   };
   const inSpace = () => useShell.getState().go({ tab: 'space', category: 'all', projectId: null, from: host });
-  // 「全部导出…」：这一轮没移进回收站的每一支各发起一次成片导出（`exportShorts`），进度在任务列表里；开着的那一支另打开它的导出弹层盯着。
+  // “Export all…”: each sub-video from this run that has not been moved to the trash starts its own final-render export (`exportShorts`); progress shows in the task list, and the sub-video that is open gets its export dialog opened to watch it.
   const [exporting, setExporting] = useState(false);
   const exportAll = () => {
     if (exporting || !live.length) return;
@@ -230,7 +227,7 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
           }),
         )
         .catch(fail);
-    // 正开着这一支：先回父视频（结果页还在那里），让出来再移入回收站。
+    // The sub-video that is open: first go back to the parent video (the result page is still there), let go, then move it to the trash.
     if (id === videoId && hostEntry) {
       openWithPage(hostEntry, resultPage);
       void released(videoId).then(trash);
@@ -332,7 +329,7 @@ function ShortCard({
   n: number;
   current: boolean;
   onOpen(): void;
-  /** 「正在看」那一支去文稿调起止（同子视频横幅的「去文稿调整」，shorts-entry.ts）。 */
+  /** The “now watching” sub-video goes to the transcript to adjust its start and end (same as the sub-video banner's “Adjust in transcript”, shorts-entry.ts). */
   onTrim(): void;
   onDiscard(): void;
 }) {
@@ -414,7 +411,7 @@ function ShortCard({
         </div>
       ) : null}
       <div className={cardActs}>
-        {/* 「正在看」那一支：起止在文稿里调（产品设计 §4.6 / §5.10），这里只给入口 */}
+        {/* For the “now watching” sub-video, start and end are adjusted in the transcript (product design §4.6 / §5.10); this only provides the entry point */}
         {current ? (
           <TooltipTrigger>
             <Button size="S" variant="secondary" onPress={onTrim}>

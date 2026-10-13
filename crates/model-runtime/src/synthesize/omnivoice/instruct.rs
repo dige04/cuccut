@@ -1,31 +1,31 @@
-//! OmniVoice 声音设计 `instruct` 的受限词表与校验。
+//! Restricted vocabulary and validation for the OmniVoice voice-design `instruct`.
 //!
-//! 对照官方 `omnivoice/utils/voice_design.py`（词表）与
-//! `omnivoice/models/omnivoice.py::_resolve_instruct`（校验与归一）：
-//! - 词条用半角或全角逗号分隔，英文不分大小写；
-//! - 不在词表里的词条整体报错，并用 difflib（`get_close_matches(n=1, cutoff=0.6)`）给出最接近的建议；
-//! - 方言只能配中文、口音只能配英文，二者不能同时出现；
-//! - 有方言 → 全部换成中文词；有口音 → 全部换成英文词；都没有时按合成文本是否含汉字决定；
-//! - 同一类别（性别 / 年龄 / 音高 / 风格 / 口音 / 方言）最多一个；
-//! - 输出中文用全角逗号「，」连接，英文用「, 」连接。
+//! Checked against the upstream `omnivoice/utils/voice_design.py` (vocabulary) and
+//! `omnivoice/models/omnivoice.py::_resolve_instruct` (validation and normalization):
+//! - Terms are separated by half-width or full-width commas; English is case-insensitive.
+//! - If a term is not in the vocabulary, the whole instruct is rejected, and difflib (`get_close_matches(n=1, cutoff=0.6)`) suggests the closest match.
+//! - Dialect may only go with Chinese, and accent only with English; the two cannot appear together.
+//! - With a dialect, all terms are replaced by Chinese terms; with an accent, all terms are replaced by English terms; with neither, the choice depends on whether the synthesis text contains Han characters.
+//! - At most one term per category (gender / age / pitch / style / accent / dialect).
+//! - Chinese output joins terms with the full-width comma “，”, English output with “, ”.
 //!
-//! 与官方的唯一差别：报错文案是中文（信息与官方一致：原词、归一后的词、建议、完整词表）。
+//! The only difference from upstream: the error messages are in Chinese (the content matches upstream: the original term, the normalized term, the suggestion, and the full vocabulary).
 
 use anyhow::{Result, bail};
 
-/// 性别（英文 / 中文一一对应，互斥）。
+/// Gender (English and Chinese terms correspond one-to-one; mutually exclusive).
 pub const GENDER_EN: [&str; 2] = ["male", "female"];
 pub const GENDER_ZH: [&str; 2] = ["男", "女"];
-/// 年龄（互斥）。
+/// Age (mutually exclusive).
 pub const AGE_EN: [&str; 5] = ["child", "teenager", "young adult", "middle-aged", "elderly"];
 pub const AGE_ZH: [&str; 5] = ["儿童", "少年", "青年", "中年", "老年"];
-/// 音高（互斥）。
+/// Pitch (mutually exclusive).
 pub const PITCH_EN: [&str; 5] = ["very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"];
 pub const PITCH_ZH: [&str; 5] = ["极低音调", "低音调", "中音调", "高音调", "极高音调"];
-/// 风格（耳语）。
+/// Style (whisper).
 pub const STYLE_EN: [&str; 1] = ["whisper"];
 pub const STYLE_ZH: [&str; 1] = ["耳语"];
-/// 口音：只有英文词，用于英文语音（互斥）。
+/// Accent: English terms only, for English speech (mutually exclusive).
 pub const ACCENT_EN: [&str; 10] = [
     "american accent",
     "british accent",
@@ -38,7 +38,7 @@ pub const ACCENT_EN: [&str; 10] = [
     "russian accent",
     "japanese accent",
 ];
-/// 方言：只有中文词，用于中文语音（互斥）。
+/// Dialect: Chinese terms only, for Chinese speech (mutually exclusive).
 pub const DIALECT_ZH: [&str; 12] = [
     "河南话",
     "陕西话",
@@ -54,7 +54,7 @@ pub const DIALECT_ZH: [&str; 12] = [
     "东北话",
 ];
 
-/// 有中英对照的类别：`(英文, 中文)`，顺序即官方 `_INSTRUCT_CATEGORIES` 的顺序。
+/// Categories with a Chinese–English pair: `(English, Chinese)`, in the order of the upstream `_INSTRUCT_CATEGORIES`.
 fn paired_categories() -> [(&'static [&'static str], &'static [&'static str]); 4] {
     [
         (&GENDER_EN, &GENDER_ZH),
@@ -64,8 +64,8 @@ fn paired_categories() -> [(&'static [&'static str], &'static [&'static str]); 4
     ]
 }
 
-/// 词表的一类，能力表 `instructVocabulary[]` 的一项：客户端据此出「按类挑项」的选择器，
-/// 不另抄词表。`en[i]` 与 `zh[i]` 是同一个词；口音只有 `en`、方言只有 `zh`。
+/// One category of the vocabulary, an item of the capability table `instructVocabulary[]`: the client builds its per-category picker from this instead of copying the vocabulary.
+/// `en[i]` and `zh[i]` are the same term; accent has only `en`, dialect has only `zh`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct VocabularyCategory {
     /// `gender` / `age` / `pitch` / `style` / `accent` / `dialect`。
@@ -74,7 +74,7 @@ pub struct VocabularyCategory {
     pub zh: &'static [&'static str],
 }
 
-/// 按官方类别次序列出的全部词表（口音、方言在最后）。
+/// The full vocabulary, listed in upstream category order (accent and dialect last).
 pub fn vocabulary() -> [VocabularyCategory; 6] {
     [
         VocabularyCategory {
@@ -110,7 +110,7 @@ pub fn vocabulary() -> [VocabularyCategory; 6] {
     ]
 }
 
-/// 全部合法词条（官方 `_INSTRUCT_ALL_VALID`）。
+/// All valid terms (upstream `_INSTRUCT_ALL_VALID`).
 pub fn all_items() -> Vec<&'static str> {
     let mut items = Vec::new();
     for (en, zh) in paired_categories() {
@@ -126,14 +126,14 @@ fn has_cjk(s: &str) -> bool {
     s.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
 }
 
-/// 合法英文词条（按码位排序，与官方 `sorted(_INSTRUCT_VALID_EN)` 同序）。
+/// Valid English terms (sorted by code point, in the same order as upstream `sorted(_INSTRUCT_VALID_EN)`).
 pub fn valid_english() -> Vec<&'static str> {
     let mut items: Vec<_> = all_items().into_iter().filter(|s| !has_cjk(s)).collect();
     items.sort_unstable();
     items
 }
 
-/// 合法中文词条（按码位排序）。
+/// Valid Chinese terms (sorted by code point).
 pub fn valid_chinese() -> Vec<&'static str> {
     let mut items: Vec<_> = all_items().into_iter().filter(|s| has_cjk(s)).collect();
     items.sort_unstable();
@@ -152,7 +152,7 @@ fn zh_to_en(item: &str) -> Option<&'static str> {
         .find_map(|(en, zh)| zh.iter().position(|z| *z == item).map(|i| en[i]))
 }
 
-/// 互斥类别（官方 `_INSTRUCT_MUTUALLY_EXCLUSIVE`），用于冲突检查。
+/// Mutually exclusive categories (upstream `_INSTRUCT_MUTUALLY_EXCLUSIVE`), used for conflict checks.
 fn exclusive_categories() -> Vec<Vec<&'static str>> {
     let mut out: Vec<Vec<&'static str>> = paired_categories()
         .into_iter()
@@ -163,8 +163,8 @@ fn exclusive_categories() -> Vec<Vec<&'static str>> {
     out
 }
 
-/// 官方 `_resolve_instruct`：校验并归一一条 instruct；空串 / 全空白返回 `None`。
-/// `use_zh`：合成文本含汉字（`[一-鿿]`）时为真。
+/// Upstream `_resolve_instruct`: validates and normalizes one instruct; an empty or all-whitespace string returns `None`.
+/// `use_zh`: true when the synthesis text contains Han characters (`[一-鿿]`).
 pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<String>> {
     let Some(raw) = instruct else {
         return Ok(None);
@@ -258,7 +258,7 @@ fn close_match<'a>(word: &str, possibilities: &[&'a str]) -> Option<&'a str> {
         if score < 0.6 {
             continue;
         }
-        // heapq.nlargest 按 (score, x) 取最大：同分时取字符串较大者。
+        // heapq.nlargest takes the maximum by (score, x): on a tie, the larger string wins.
         let better = match best {
             None => true,
             Some((s, y)) => score > s || (score == s && x > y),
@@ -270,8 +270,7 @@ fn close_match<'a>(word: &str, possibilities: &[&'a str]) -> Option<&'a str> {
     best.map(|(_, x)| x)
 }
 
-/// `SequenceMatcher(None, a, b).get_matching_blocks()` 的匹配字符总数（无 junk；
-/// 词条都短于 200，不触发 autojunk）。
+/// Total number of matched characters from `SequenceMatcher(None, a, b).get_matching_blocks()` (no junk; the terms are all shorter than 200, so autojunk is not triggered).
 fn matching_chars(a: &[char], b: &[char]) -> usize {
     let mut total = 0;
     let mut queue = vec![(0usize, a.len(), 0usize, b.len())];
@@ -290,7 +289,7 @@ fn matching_chars(a: &[char], b: &[char]) -> usize {
     total
 }
 
-/// `SequenceMatcher.find_longest_match`：最长公共子串，平手取 a 里最靠前、再取 b 里最靠前。
+/// `SequenceMatcher.find_longest_match`: longest common substring; on a tie, the earliest in a, then the earliest in b.
 fn longest_match(a: &[char], b: &[char], alo: usize, ahi: usize, blo: usize, bhi: usize) -> (usize, usize, usize) {
     let (mut besti, mut bestj, mut bestsize) = (alo, blo, 0);
     let mut prev = vec![0usize; b.len() + 1];
@@ -343,14 +342,14 @@ mod tests {
             if !category.en.is_empty() && !category.zh.is_empty() {
                 assert_eq!(category.en.len(), category.zh.len(), "{}", category.id);
             }
-            // 每类任挑一项都能单独过校验（客户端按类挑项的前提）。
+            // Each category's pick must pass validation on its own (the premise of the client's per-category picking).
             for item in category.en.iter().chain(category.zh.iter()) {
                 assert!(resolve_instruct(Some(item), false).is_ok(), "{item}");
             }
         }
     }
 
-    // 期望值由官方 `_resolve_instruct` 跑出（python3，omnivoice 源码）。
+    // Expected values were produced by upstream `_resolve_instruct` (python3, omnivoice source).
     #[test]
     fn normalises_like_the_official_resolver() {
         assert_eq!(ok("", false), None);

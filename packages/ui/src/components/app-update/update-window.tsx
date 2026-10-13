@@ -10,9 +10,8 @@ import { U } from './update-copy.ts';
 import { useUpdateActions } from './use-update-actions.ts';
 
 /*
- * 更新窗（设计稿 settings-update.jsx `UpdateWindow`、settings-update.css `.upddlg`）：模态，宽 480。头是标题、
- * 「CucCut 2.3.0 · Build 57」与关闭；正文是当前版本一句（已下载时接着说退出时也会装）、「更新内容」与全部说明（可滚）；
- * 底栏随态。×、Esc、点背景、「稍后」都只关窗；「重启并更新」与关于页、toast 走同一个动作。
+ * Update window (design settings-update.jsx `UpdateWindow`, settings-update.css `.upddlg`): modal, 480 wide. The header is the title,
+ * “CucCut 2.3.0 · Build 57” and close; the body is one line on the current version (when already downloaded, it also says it will install on quit), “更新内容” (what's new) and all release notes (scrollable); the footer changes with the state. ×, Esc, clicking the backdrop and “稍后” (later) only close the window; “重启并更新” (restart and update) uses the same action as the About page and toast.
  *
  * The surface is agentcut's dialog (cc/ui/dialog.tsx): 20px corners, near-black translucent material, a fine lit
  * edge, a blurred dim backdrop; the footer sits on a darker strip under a fine line.
@@ -30,7 +29,7 @@ const notes = style({ marginTop: 8, marginBottom: 0, paddingStart: 20, font: 'bo
 const note = style({ marginTop: { default: 0, ':nth-child(n+2)': 4 } });
 const left = style({ display: 'flex', alignItems: 'center', gap: 8, flexGrow: 1, minWidth: 0 });
 const progress = style({ width: 120, flexShrink: 0 });
-/** 按钮不让位：左边的进度、出错与等待说明换行，按钮的字不折。 */
+/** Buttons do not give way: the progress, error and waiting text on the left wraps, while the button labels do not wrap. */
 const actions = style({ display: 'flex', gap: 8, flexShrink: 0 });
 const leftText = style({ font: 'ui-sm', color: { default: 'gray-700', isError: 'negative-900' }, fontVariantNumeric: 'tabular-nums' });
 

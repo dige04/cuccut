@@ -1,10 +1,8 @@
-//! 转写正文的句子与原文指纹（视频格式规范 §5.2、§5.3；架构设计 §7.9）。
+//! Sentences and source fingerprints of the transcript body (video format spec §5.2, §5.3; architecture design §7.9).
 //!
-//! 句子由字幕与翻译核心的 `derive_sentences` 从词派生（句末标点、停顿不少于 1.8 秒、换说话人、句内 80 词、
-//! 分段与章节边界；隐藏的词不进句子），指纹是核心的 FNV 内容指纹。翻译、译文核对、配音与内容索引都经这里取句子，
-//! 规则只有这一份：原生的调用方直接链接，界面与 Node 经 `bindings/editor-wasm`。
+//! Sentences are derived from words by the subtitle and translation core's `derive_sentences` (sentence-ending punctuation, a pause of at least 1.8 seconds, speaker changes, at most 80 words per sentence, paragraph and chapter boundaries; hidden words do not enter sentences). The fingerprint is the core's FNV content fingerprint. Translation, review, dubbing and content indexing all get sentences through here, so there is only one copy of the rules: native callers link it directly, while the UI and Node go through `bindings/editor-wasm`.
 //!
-//! 正文里存下的 `sentences` 不参与：句子总是按核心的规则从词得出。时间不经浮点：句子的起止取首词与末词在正文里的刻度。
+//! The `sentences` stored in the body do not take part: sentences are always derived from words under the core's rules. Time never goes through floating point: a sentence's start and end are the ticks in the body of its first and last word.
 
 use editor_semantics::MediaTime;
 use serde_json::{Value, json};
@@ -16,43 +14,43 @@ use video_model::speech::SpeechBody;
 use crate::time::FRESH_TIMESCALE;
 use crate::{BridgeError, MediaFacts, speech};
 
-/// 句子派生规则的名字（进 `sourceBasis.editViewHash`）：字幕与翻译核心的 `derive_sentences`。
+/// Name of the sentence-derivation rule (goes into `sourceBasis.editViewHash`): the subtitle and translation core's `derive_sentences`.
 pub const SENTENCE_DERIVATION: &str = "speech-doc/sentences";
 
-/// 一句原文。
+/// One source sentence.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceSentence {
-    /// `s-<首词 ID>`。
+    /// `s-<first word ID>`.
     pub id: Id,
-    /// 句内可见的词，按词序。
+    /// Visible words in the sentence, in word order.
     pub word_ids: Vec<Id>,
     pub text: String,
-    /// 核心的内容指纹：`<词数>:<首词 ID>:<末词 ID>:<FNV-1a 的 36 进制>`。
+    /// The core's content fingerprint: `<word count>:<first word ID>:<last word ID>:<FNV-1a in base 36>`.
     pub fingerprint: String,
-    /// 首词的说话人；没有说话人时没有。不进指纹。
+    /// Speaker of the first word; absent when there is no speaker. Not included in the fingerprint.
     pub speaker: Option<Id>,
-    /// 首词的起点与末词的终点，正文 `timescale` 下的刻度。
+    /// Start of the first word and end of the last word, in ticks at the body's `timescale`.
     pub start: i64,
     pub end: i64,
 }
 
-/// 一份转写的全部句子。
+/// All sentences of one transcript.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceSentences {
     pub derivation: &'static str,
-    /// 正文的 `timescale`（没有时按 1 000 000）。
+    /// The body's `timescale` (1 000 000 when absent).
     pub timescale: i64,
-    /// 派生规则与全部句子的 ID、指纹的摘要（`sourceBasis.editViewHash`）。
+    /// Digest of the derivation rule and of all sentence IDs and fingerprints (`sourceBasis.editViewHash`).
     pub edit_view_hash: String,
-    /// 全文的内容指纹（核心的 `fingerprint`，算全部的词、含隐藏的）：与 `stages.asr` 同一种写法，比较二者就知道转写之后
-    /// 有没有人改过原文（视频格式规范 §5.5，换用文稿的手工修改闸门）。
+    /// Content fingerprint of the full text (the core's `fingerprint`, computed over all words including hidden ones): same format as `stages.asr`. Comparing the two shows whether anyone edited the source text after transcription (video format spec §5.5; this is the gate for manual script edits).
+    ///
     pub content_fingerprint: String,
     pub sentences: Vec<SourceSentence>,
 }
 
-/// 转写正文的句子。正文不是 `cuccut.speech/1`、词没有源时间或说话人不合法时报错。
+/// Sentences of a transcript body. Errors if the body is not `cuccut.speech/1`, if words lack source times, or if a speaker is invalid.
 pub fn source_sentences(body: &SpeechBody) -> Result<SourceSentences, BridgeError> {
-    // 句子只看词、隐藏、分段与章节；素材的事实与语言不参与，用占位。
+    // Sentences look only at words, hiding, paragraphs and chapters; asset facts and language do not take part, so placeholders are used.
     let media = MediaFacts {
         asset_id: None,
         path: None,
@@ -77,7 +75,7 @@ pub fn source_sentences(body: &SpeechBody) -> Result<SourceSentences, BridgeErro
                 text: sentence.source_text.clone(),
                 fingerprint: sentence.src_fingerprint.clone(),
                 speaker: (!speaker.is_empty()).then_some(speaker),
-                // `to_doc` 已经确认每个词都有源时间。
+                // `to_doc` has already confirmed that every word has a source time.
                 start: first.start.unwrap_or_default(),
                 end: last.end.unwrap_or_default(),
             }
@@ -92,13 +90,13 @@ pub fn source_sentences(body: &SpeechBody) -> Result<SourceSentences, BridgeErro
     })
 }
 
-/// `sourceBasis.editViewHash`：`'sha256:'` + `{"derivation":<规则名>,"sentences":[[<ID>,<指纹>],…]}` 的 UTF-8 的 sha256。
+/// `sourceBasis.editViewHash`: `'sha256:'` + the sha256 of the UTF-8 of `{"derivation":<rule name>,"sentences":[[<ID>,<fingerprint>],…]}`.
 pub fn edit_view_hash(sentences: &[Sentence]) -> String {
     let pairs: Vec<Value> = sentences
         .iter()
         .map(|sentence| json!([sentence.id, sentence.src_fingerprint]))
         .collect();
-    // 手写键序，不依赖 serde_json 的 Map 是否保序。
+    // Keys are written by hand, in order; this does not depend on whether serde_json's Map preserves order.
     let canonical = format!(
         "{{\"derivation\":{},\"sentences\":{}}}",
         Value::String(SENTENCE_DERIVATION.into()),
@@ -126,11 +124,11 @@ mod tests {
                 { "id": "w0", "start": 0, "end": 400, "text": "Hello", "speaker": "a" },
                 { "id": "w1", "start": 500, "end": 900, "text": " there;", "speaker": "a" },
                 { "id": "w2", "start": 1000, "end": 1300, "text": " friend", "speaker": "a" },
-                // 1.7 秒的停顿不断句（核心是 1.8 秒）。
+                // A 1.7-second pause does not split a sentence (the core uses 1.8 seconds).
                 { "id": "w3", "start": 3000, "end": 3200, "text": " one.", "speaker": "a" },
                 { "id": "w4", "start": 3300, "end": 3500, "text": " Two", "speaker": "a" },
                 { "id": "w5", "start": 3600, "end": 3700, "text": " hidden", "speaker": "a", "hidden": true },
-                // 隐藏的词不算：上一个可见的词之后 1.9 秒，断句。
+                // Hidden words do not count: 1.9 seconds after the last visible word, split the sentence.
                 { "id": "w6", "start": 5400, "end": 5600, "text": " three", "speaker": "a" },
                 { "id": "w7", "start": 5700, "end": 5900, "text": " four" }
             ],
@@ -140,7 +138,7 @@ mod tests {
         assert_eq!(result.derivation, SENTENCE_DERIVATION);
         assert_eq!(result.timescale, 1000);
         let ids: Vec<&str> = result.sentences.iter().map(|s| s.id.as_str()).collect();
-        // 分号不断句；存下的句子不参与；换说话人断句。
+        // A semicolon does not split a sentence; stored sentences do not take part; a speaker change splits.
         assert_eq!(ids, ["s-w0", "s-w4", "s-w6", "s-w7"]);
         let first = &result.sentences[0];
         assert_eq!(first.word_ids, ["w0", "w1", "w2", "w3"]);
@@ -151,7 +149,7 @@ mod tests {
         assert_eq!(result.sentences[1].word_ids, ["w4"]);
         assert_eq!(result.sentences[3].speaker, None);
         assert!(result.edit_view_hash.starts_with("sha256:"));
-        // 全文指纹算全部的词（含隐藏的），与 `stages.asr` 同一种写法。
+        // The full-text fingerprint covers all words (including hidden ones), in the same format as `stages.asr`.
         assert!(result.content_fingerprint.starts_with("8:w0:w7:"), "{}", result.content_fingerprint);
     }
 

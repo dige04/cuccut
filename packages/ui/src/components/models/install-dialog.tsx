@@ -48,12 +48,10 @@ type Phase =
   | { kind: 'failed'; message: string };
 
 /**
- * 下载 / 补齐 / 修复的确认（架构设计 §6.3 的两步）：打开时只要计划（不下载），给人看要下载多少、续传多少、磁盘还剩多少、从哪儿下；
- * 确认时把 `confirmBytes` 原样交回去。大小变了时换成新计划再问一次，不关对话框。磁盘明显不够时不让确认。
- * 不许商用的模型（设计稿 panel-tts-local.jsx `withModelLicense`）下载前先写清许可，确认按钮写「我知道了，下载」；补齐与修复不再问
- * （权重已在，设计稿 settings-local.jsx）。补齐只下载缺的组件，先说一句装好的不动。
- * 修复（设计稿 settings-local.jsx 的修复确认）写明修好后会自动再检查一次；文件都完好时给「重新检查」。
- * 状态放在 Dialog 外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+ * Confirmation for download / complete / repair (the two steps of architecture design §6.3): when opened, only the plan is fetched (nothing downloaded). It shows how much will be downloaded, how much will resume, how much disk space is left, and where it comes from. On confirm, `confirmBytes` is passed back unchanged. If the size has changed, a new plan replaces the old one and the question is asked again, without closing the dialog. If disk space is clearly insufficient, confirmation is not allowed.
+ * Models not licensed for commercial use (design mock panel-tts-local.jsx `withModelLicense`) state the license before download, and the confirm button reads “我知道了，下载”(I understand, download). Complete and repair do not ask again (weights are already present, design mock settings-local.jsx). Complete downloads only the missing components, and first says that what is installed is left alone.
+ * Repair (design mock settings-local.jsx, repair confirmation) states that after repair it will automatically check again; when all files are intact, it shows “重新检查”(Re-check).
+ * State is kept in the outer layer of the Dialog: S2's Dialog renders its children once in each of several slots.
  */
 export function InstallDialog({
   bundleId,
@@ -67,18 +65,18 @@ export function InstallDialog({
   onRecheck,
 }: {
   bundleId: string;
-  /** 标题与提示里的名字，默认是模型包 ID。 */
+  /** Name used in the title and prompts; defaults to the model package ID. */
   name?: string;
   license?: ModelLicense | null;
-  /** 不许商用时那一句「用它做出的东西也只能……」，默认是语音合成的说法。 */
+  /** The sentence “用它做出的东西也只能……”(things made with it may only be…) used when the model is not licensed for commercial use; defaults to the speech synthesis wording. */
   licenseUse?: string;
   mode: InstallMode;
-  /** 补齐时换掉默认那一句（从公共组件那一行借这只模型补齐时，说清只补它缺的）。 */
+  /** Replaces the default sentence when completing (when a model is completed by borrowing a shared component from the shared components row, state that only what is missing gets downloaded). */
   note?: string;
   onClose: () => void;
-  /** 提交了任务（修复时由行记下，修完自动检查；给了它就不再弹「开始下载」）。 */
+  /** A task was submitted (for repair, the row records it and checks again automatically when it finishes; when given, the “开始下载”(Start download) prompt is not shown again). */
   onStarted?: (jobId: string) => void;
-  /** 修复时文件都完好：给「重新检查」。 */
+  /** For repair when the files are all intact: shows “重新检查”(Re-check). */
   onRecheck?: () => void;
 }) {
   const runtime = useRuntime();

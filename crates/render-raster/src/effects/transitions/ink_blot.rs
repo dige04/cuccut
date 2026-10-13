@@ -1,14 +1,12 @@
-//! `transition.inkBlot@1`：一团墨从圆心洇开——`circleCrop` 加上带 seed 的毛边。
+//! `transition.inkBlot@1`: a blot of ink spreads out from the center. It is `circleCrop` plus a rough edge driven by the seed.
 //!
-//! 沿用同一条扫掠式，只把「到圆心的距离」按**方向**取的噪声放缩：
-//! `u = d·(1 + r·(2n(dir) − 1))`，`n ∈ [0, 1]`——墨团的形状固定，只是整体变大。噪声是二维 value noise，取样点是单位方向向量，
-//! 全程只有加减乘除与 `sqrt`（没有 `sin` / `atan2`），所以跨平台逐字节一致。
+//! It uses the same sweep form. Only the "distance to the center" is scaled by noise sampled by **direction**: `u = d·(1 + r·(2n(dir) − 1))`, `n ∈ [0, 1]`. The blot's shape stays fixed and only grows overall. The noise is 2D value noise, sampled at unit direction vectors. The whole path uses only addition, subtraction, multiplication, division and `sqrt` (no `sin` / `atan2`), so it is byte-for-byte identical across platforms.
 
 use super::{composite_by_coverage, sweep_coverage, sweep_edge};
 use motion::rng::splitmix64_unit;
 
 fn lattice(seed: u64, ix: i64, iy: i64) -> f64 {
-    // 方向向量乘频率后落在很小的整数范围里，线性编号不会撞格
+    // Multiplying the direction vector by the frequency gives a very small integer range, so the linear index does not collide between cells.
     splitmix64_unit(seed, ix * 4099 + iy)
 }
 
@@ -22,7 +20,7 @@ fn value_noise(seed: u64, x: f64, y: f64) -> f64 {
     top * (1.0 - sy) + bottom * sy
 }
 
-/// 方向噪声，`[0, 1]`。两个倍频：大的管「几瓣」，小的管毛刺。
+/// Directional noise, `[0, 1]`. Two octaves: the large one controls the "lobes", and the small one controls the jagged edges.
 fn edge_noise(seed: u64, dir_x: f64, dir_y: f64) -> f64 {
     0.65 * value_noise(seed, dir_x * 1.7 + 11.0, dir_y * 1.7 + 11.0)
         + 0.35
@@ -52,8 +50,7 @@ pub fn ink_blot(
     let (center_x, center_y) = (cx.clamp(0.0, 1.0) * w, cy.clamp(0.0, 1.0) * h);
     let softness = softness.max(0.0);
     let roughness = roughness.clamp(0.0, 0.9);
-    // 每个像素的 u 只算一遍；扫掠跨度取全画面 u 的最大值，这样 progress 均匀地
-    // 铺满 [0, 1]，而 progress = 0 / 1 时整幅画面仍然逐字节等于 from / to。
+    // Each pixel's u is computed once. The sweep span is the maximum of u over the whole frame, so progress covers [0, 1] evenly. At progress = 0 and 1 the whole frame is still byte-for-byte equal to `from` and `to`.
     let mut field = Vec::with_capacity((width as usize) * (height as usize));
     let mut span = 0.0f64;
     for y in 0..height {

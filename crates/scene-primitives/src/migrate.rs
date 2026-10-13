@@ -1,14 +1,9 @@
-//! BCF 文档版本与 `0.1 → 0.2` 迁移（ADR-M13，规范 §4 / §16）。
+//! BCF document version and `0.1 → 0.2` migration (ADR-M13, spec §4 / §16).
 //!
-//! 0.2 做的**只有一件事**：把 0.1 草稿里标着「实验」的字段转正式
-//! （`animate.flow` / `animate.parts` / `split` / `effects` / `style.blendMode` /
-//! 结构化曲线 / `states` / `constraints` / `layoutStates`），并要求配方引用写死
-//! 版本。语义一个字节都没变——**0.1 文档永远可读**，legacy 四槽、alias、
-//! 旧字段名全部保留。
+//! 0.2 does **only one thing**: it promotes fields marked "experimental" in 0.1 drafts to formal
+//! (`animate.flow` / `animate.parts` / `split` / `effects` / `style.blendMode` / structured curves / `states` / `constraints` / `layoutStates`), and requires recipe references to pin a version. Semantics have not changed by a single byte — **0.1 documents remain readable forever**; the legacy four slots, aliases, and old field names are all kept.
 //!
-//! 迁移因此是**非破坏性**的：只写 `ccut` / `motionVersion` 两个顶层键，
-//! 并给已经引用了配方却没写 `presetVersion` 的地方补上当前实现版本。
-//! 不重排字段、不删 legacy、不改任何取值。
+//! Migration is therefore **non-destructive**: it only writes the two top-level keys `ccut` / `motionVersion`, and fills in `presetVersion` with the current implementation version wherever a recipe is already referenced without one. It does not reorder fields, delete legacy entries, or change any value.
 
 use anyhow::{Result, bail};
 use serde_json::{Map, Value};
@@ -16,19 +11,19 @@ use serde_json::{Map, Value};
 use crate::json::JsonExt;
 use crate::lint::{Diagnostic, Severity};
 
-/// 本实现能读的全部 BCF 文档版本。**只增不删**：0.1 永远在列。
+/// All BCF document versions this implementation can read. **Only additions, never removals**: 0.1 is always listed.
 pub use crate::bcf_version::BCF_SUPPORTED as BCF_VERSIONS;
 
-/// 新文档默认写的版本（`ccut migrate --to` 的缺省目标）。
+/// Version newly written documents default to (the default target of `ccut migrate --to`).
 pub use crate::bcf_version::BCF_CURRENT;
 
-/// 缺 `ccut` 键的文档按这个版本读（`bcf-version-missing`，warn）。
+/// Documents missing the `ccut` key are read as this version (`bcf-version-missing`, warn).
 pub const BCF_FALLBACK: &str = "0.1";
 
-/// 0.2 文档声明的动画内核版本（`motionVersion`）。
+/// Animation kernel version declared by 0.2 documents (`motionVersion`).
 pub const MOTION_VERSION: u64 = 1;
 
-/// 文档声明的版本；缺键按 [`BCF_FALLBACK`]。
+/// The version declared by the document; when the key is missing, [`BCF_FALLBACK`] applies.
 pub fn doc_version(doc: &Value) -> &str {
     doc.gstr("ccut").unwrap_or(BCF_FALLBACK)
 }
@@ -37,10 +32,10 @@ pub fn is_supported(version: &str) -> bool {
     BCF_VERSIONS.contains(&version)
 }
 
-/// `0.1 → 0.2` 迁移（ADR-M13）。
+/// `0.1 → 0.2` migration (ADR-M13).
 ///
-/// `from` 为 `None` 时按文档自身声明；`to` 为 `None` 时按 [`BCF_CURRENT`]。
-/// 返回迁移后的文档与过程诊断（补了哪些 `presetVersion`）。
+/// When `from` is `None`, it follows the document's own declaration; when `to` is `None`, it uses [`BCF_CURRENT`].
+/// Returns the migrated document and process diagnostics (which `presetVersion`s were filled in).
 pub fn migrate_doc(
     doc: &Value,
     from: Option<&str>,
@@ -95,11 +90,9 @@ pub fn migrate_doc(
     Ok((migrated, diagnostics))
 }
 
-/// 递归补 `presetVersion`。
+/// Recursively fill in `presetVersion`.
 ///
-/// 判定刻意保守：只认「**同一个对象**里既有字符串 `preset`、又没有
-/// `presetVersion`」这一种形状，并且只在注册表真的认识这个 id 时才写。
-/// 项目自定义 `presets` 里的 id 查不到版本，原样留空（它们没有版本序列）。
+/// The judgment is deliberately conservative: it only recognizes the one shape where **the same object** has a string `preset` and no `presetVersion`, and only writes when the registry really recognizes that id. Ids in project-defined `presets` have no version to look up and are left empty (they have no version sequence).
 fn backfill_preset_versions(value: &mut Value, ptr: &str, out: &mut Vec<Diagnostic>) {
     match value {
         Value::Object(map) => {
@@ -136,13 +129,13 @@ fn preset_version_for(map: &Map<String, Value>) -> Option<u32> {
     if map.get("presetVersion").is_some_and(|v| !v.is_null()) {
         return None;
     }
-    // 动画配方（含 alias）优先；再查效果注册表。
+    // Animation recipes (including aliases) take priority; then the effect registry is consulted.
     let canonical = motion::preset_registry::canonical_id(id);
     if let Some(manifest) = motion::preset_registry::manifest(canonical) {
         return Some(manifest.version);
     }
     if motion::preset_registry::bcf_preset(canonical).is_some() {
-        // 冻结的 `bcf.*` 配方只有 @1。
+        // Frozen `bcf.*` recipes are only @1.
         return Some(1);
     }
     motion::effect::builtin_registry()
@@ -181,7 +174,7 @@ mod tests {
         assert!(diagnostics.len() >= 3);
     }
 
-    /// 非破坏性：除了新增的三个键，其余逐字节不变。
+    /// Non-destructive: except for the three newly added keys, everything else is byte-identical.
     #[test]
     fn migration_touches_nothing_else() {
         let before = doc();
@@ -227,7 +220,7 @@ mod tests {
         doc["ccut"] = Value::from("0.9");
         let error = migrate_doc(&doc, None, None).unwrap_err().to_string();
         assert!(error.starts_with("bcf-version-unsupported"), "{error}");
-        // `--from` 与文档声明不符时不猜。
+        // When `--from` does not match the document's declaration, nothing is guessed.
         let doc = super::tests::doc();
         let error = migrate_doc(&doc, Some("0.2"), None)
             .unwrap_err()

@@ -14,7 +14,7 @@ import { pl } from './entry-input.pl.ts';
 import { tr } from './entry-input.tr.ts';
 import { vi } from './entry-input.vi.ts';
 
-/** `packages/jobs/src/pipelines/entry-input.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/entry-input.ts`. */
 const en = {
   unresolvedEntry: 'is a Space entry; submit it through pipelines.start so the Runtime replaces it with a file path',
 };

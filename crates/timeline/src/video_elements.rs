@@ -6,8 +6,7 @@ use crate::{ElementKind, TimelineDocument, TimelineError, TimelineProjection};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 
-/// 「源末端落在记下的主源时长上」的判等窗：远小于一帧，又盖得住帧量化与合成总长的
-/// 浮点尾数（同一稿子 IR 总长 `73.8333` 与成片探测 `73.833375` 差 7.5e-5）。
+/// The equality window for "the source end falls on the recorded main-source duration": much smaller than one frame, yet still covering the floating-point tail of frame quantisation and the composite total length (for the same draft, the IR total length `73.8333` and the probed length of the finished video `73.833375` differ by 7.5e-5).
 const FOLLOW_EPS: f64 = 1e-3;
 
 pub fn detach_main_video(
@@ -92,7 +91,7 @@ pub fn detach_main_video(
     Ok(true)
 }
 
-/// 分离出来的一件片段画面：`(srcStart, start, end)` 取自片段投影的一段。
+/// A separated clip picture: `(srcStart, start, end)`, taken from a segment of the clip projection.
 fn picture_json(
     id: &str,
     src_id: &str,
@@ -107,7 +106,7 @@ fn picture_json(
         "mode":"pip", "fit":"contain", "bg":background, "place":place})
 }
 
-/// 分离文档里新加的片段按分离的缺省新建的画面（跟随规则 2）：有声、`place.w` 取源的宽度。
+/// The picture created for a clip newly added in a separated document, using the separation defaults (following rule 2): with sound, and `place.w` taken from the source width.
 pub fn default_picture_element(
     id: &str,
     src_id: &str,
@@ -129,18 +128,12 @@ pub fn default_picture_element(
     .expect("valid default picture element")
 }
 
-/// 主源时长变了，让「一直放到主源末尾」的 main 视频元素跟到新末尾。
+/// When the main source duration changes, move the main video elements that "play until the end of the main source" to the new end.
 ///
-/// 分离文档里的视频元素是拆分那一刻按当时的主源时长落下的；动画项目的主源是现场合成，
-/// 作者改稿重渲一次时长就变，不对账的话成片会停在旧长度、尾巴被截掉（旁白同步是动画
-/// 项目最常见的第一笔元素写入，拆分就发生在那时）。`main.sourceDuration` 记着这份排布
-/// 对齐的主源时长：源末端（`srcStart + (end − start) × rate`）正好落在它上面的元素改到
-/// 新末端，剪短过的不动；然后把记录刷成当前值。
+/// The video elements in a separated document were placed at the moment of splitting, according to the main source duration at that time. In an animation project the main source is composed on the spot: when the author revises the script and re-renders, the duration changes, and if this is not reconciled the finished video would stop at the old length and the tail would be cut off (narration sync is the most common first element written in an animation project, and splitting happens at that point). `main.sourceDuration` records the main-source duration this layout was aligned to: elements whose source end (`srcStart + (end − start) × rate`) falls exactly on it move to the new end; elements that were shortened are left alone; then the record is refreshed to the current value.
 ///
-/// 读时归一化（同 `fold_main_duplicates`）：纯内存，下一次写事务一并落盘；记录跟着
-/// 文档走，撤销回旧文档再读也按当时的记录对账。只做分离文档；`current` 不是正有限值
-/// （没有主媒体、合成还没算出来）时什么都不改，免得一个看不见合成的进程把记录写成 0。
-/// 返回文档有没有变。
+/// Normalised on read (same as `fold_main_duplicates`): in memory only, and persisted together with the next write transaction. The record travels with the document, so undoing back to an older document and reading it again also reconciles against the record at that time. Applies only to separated documents. When `current` is not a positive finite value (no main media, or the composition has not been computed yet), nothing is changed, so that a process that cannot see the composition does not write the record as 0.
+/// Returns whether the document changed.
 pub fn follow_main_duration(document: &mut TimelineDocument, current: f64) -> bool {
     if !document.is_detached() || !current.is_finite() || current <= 0.0 {
         return false;
@@ -227,8 +220,7 @@ mod tests {
             .collect()
     }
 
-    /// 动画项目：拆分那一刻合成 60 s，重渲成 70 s / 50 s，放到头的视频元素跟着走；
-    /// 旁边一条剪短过的（末端不在记录上）不动；撤销回拆分时的文档再读，照样对上当前长度。
+    /// Animation project: at the moment of splitting the composition was 60 s; re-rendered to 70 s or 50 s, the video element that played to the end follows; a neighbouring element that was shortened (its end is not on the record) stays put; undoing back to the document as it was at split time and reading it again still matches the current length.
     #[test]
     fn detached_video_that_ran_to_the_source_end_follows_a_rerendered_composition() {
         let mut doc: TimelineDocument =
@@ -257,7 +249,7 @@ mod tests {
         assert_eq!(ends(&undone), vec![50.0, 20.0]);
     }
 
-    /// 变速与分割：末段按 rate 换算源末端；没有记录的老文档只记下当前值，不猜。
+    /// Speed change and splitting: the last segment converts to its source end using the rate; an old document with no record only stores the current value, without guessing.
     #[test]
     fn follow_honours_rate_and_leaves_unrecorded_or_legacy_documents_alone() {
         let mut doc: TimelineDocument = serde_json::from_value(json!({"ccutTimeline":"0.4",

@@ -26,7 +26,7 @@ import { tr } from './voice-picker.tr.ts';
 import { vi } from './voice-picker.vi.ts';
 import { VOICE_CLONE_PROVIDERS } from './voices-library.ts';
 
-/** 音色选择器的文案（译文在 `voice-picker.<语言>.ts`）。「我的声音」是设置里那一页的名字。 */
+/** Copy for the voice picker (translations are in `voice-picker.<language>.ts`). 「我的声音」(My voices) is the name of that page in settings. */
 const en = {
   clonedOn: (provider: string) => `Cloned on ${provider} · synthesized with this clone`,
   defaultVoice: 'Default voice',
@@ -51,17 +51,17 @@ export type VoicePickerMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 共享音色选择器的分组（设计稿 voice-picker.jsx、model-cloud-tts.js `pickerGroups` / `valueLine`）：云端模型下是
- * 默认 · 我的声音（按这家的克隆状态置灰，末尾「克隆新音色…」）· 这家的音色 · 手填音色 ID · 临时用一段。
- * 「克隆新音色…」只是去 设置 › 模型 › 语音合成 › 我的声音（克隆在那里建）；「临时用一段」这一版的合成接口不收临时参考音频，置灰写原因。
+ * Groups for the shared voice picker (design mockup voice-picker.jsx; model-cloud-tts.js `pickerGroups` / `valueLine`). Under a cloud model, the groups are:
+ * Default · 「我的声音」(My voices; greyed out according to this provider's clone status, with “Clone new voice…” at the end) · this provider's voices · a manually entered voice ID · a temporary reference clip.
+ * “Clone new voice…” only goes to 设置 › 模型 › 语音合成 › 我的声音 (Settings › Models › Speech synthesis › My voices), where cloning is created. “Temporary reference clip”: this version's synthesis API does not accept a temporary reference audio, so it is greyed out with the reason.
  */
 
-/** 不是音色、是动作的两项。 */
+/** The two items that are actions, not voices. */
 export const CLONE_NEW = 'clone-new';
 export const TEMP_REFERENCE = 'temp-reference';
 
 export interface VoicePickerItem {
-  /** 音色的选法（`VoiceKey`），或 `CLONE_NEW` / `TEMP_REFERENCE`。 */
+  /** How a voice is chosen (`VoiceKey`), or `CLONE_NEW` / `TEMP_REFERENCE`. */
   key: string;
   label: string;
   description: string | null;
@@ -70,7 +70,7 @@ export interface VoicePickerItem {
 
 export interface VoicePickerGroup {
   id: 'default' | 'mine' | 'presets' | 'other';
-  /** 默认那一组不写标题。 */
+  /** The default group has no heading. */
   title: string | null;
   items: VoicePickerItem[];
 }
@@ -79,18 +79,18 @@ function presetName(option: SpeechOption, voiceId: string): string {
   return option.info.voices.find((v) => v.voiceId === voiceId)?.label ?? voiceId;
 }
 
-/** 这家能不能克隆：Runtime 现在只有 ElevenLabs 有克隆接口。 */
+/** Whether this provider can clone: the Runtime currently has a cloning API only for ElevenLabs. */
 function canClone(option: Pick<SpeechOption, 'providerId'>): boolean {
   return VOICE_CLONE_PROVIDERS.includes(option.providerId);
 }
 
-/** 我的声音里一只的说明：用得了时说用哪家的克隆，用不了时就是原因。 */
+/** The note under a voice in My voices: when it can be used, says which provider's clone to use; when it cannot, the reason. */
 export function libraryVoiceLine(voice: LibraryEntrySummary, option: SpeechOption): { ok: boolean; line: string } {
   const block = libraryVoiceBlock(voice, option);
   return block ? { ok: false, line: block } : { ok: true, line: M.clonedOn(option.provider) };
 }
 
-/** 选择器的分组。`voices` 为 null（还没读到我的声音）时那一组只留「克隆新音色…」并写「正在读取」。 */
+/** The groups in the picker. When `voices` is null (My voices not read yet), that group keeps only “Clone new voice…” and shows “Loading”. */
 export function voicePickerGroups(option: SpeechOption, voices: MyVoices): VoicePickerGroup[] {
   const info = option.info;
   const groups: VoicePickerGroup[] = [];
@@ -124,7 +124,7 @@ export function voicePickerGroups(option: SpeechOption, voices: MyVoices): Voice
   return groups;
 }
 
-/** 选择器上选中的那一项：我的声音里删了的那只不在清单里，返回 null（控件显示占位）。 */
+/** The item selected in the picker. If the voice was deleted from My voices, it is not in the list, so return null (the control shows a placeholder). */
 export function pickerSelection(draft: Pick<TtsDraft, 'voice'>, option: SpeechOption, voices: MyVoices): VoiceKey | null {
   const key = voiceKeyFor(draft, option.info);
   const id = libraryIdOf(key);
@@ -132,7 +132,7 @@ export function pickerSelection(draft: Pick<TtsDraft, 'voice'>, option: SpeechOp
   return voicePickerGroups(option, voices).some((g) => g.items.some((i) => i.key === key && !i.disabled)) ? key : null;
 }
 
-/** 选中后写在控件下面的一句（设计稿 `valueLine`）：这只模型会怎么用它。 */
+/** The sentence written below the control after selection (`valueLine`): how this model will use it. */
 export function voiceValueLine(draft: Pick<TtsDraft, 'voice'>, option: SpeechOption, voices: MyVoices): string {
   const info = option.info;
   const key = voiceKeyFor(draft, info);
@@ -151,7 +151,7 @@ export function voiceValueLine(draft: Pick<TtsDraft, 'voice'>, option: SpeechOpt
   return info.defaultVoice ? M.defaultLine(option.provider, presetName(option, info.defaultVoice)) : M.noDefault;
 }
 
-/** 「克隆声音」进来时先选哪只：草稿里已经是我的声音就留着；否则这家用得了的第一只，再是第一只；一只都没有时 null。 */
+/** Which voice is picked first when “Clone voice” opens: keep it if the draft already uses one of my voices; otherwise the first one this provider can use, and then the first one; null if there are none. */
 export function cloneVoiceKey(draft: Pick<TtsDraft, 'voice'>, option: SpeechOption | null, voices: MyVoices): VoiceKey | null {
   if (libraryIdOf(draft.voice) !== null) return draft.voice;
   if (!voices?.length) return null;

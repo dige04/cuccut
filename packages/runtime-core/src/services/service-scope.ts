@@ -33,17 +33,16 @@ import type { ServiceApprovals } from './service-approvals.ts';
 import { GRANT_NEXT, grantRequiredDetails } from '../grants/grant-errors.ts';
 
 /**
- * 对外服务的权限与范围（架构设计 §4.8、§12.8）：外部请求没有会话、没有 TaskContract，访问策略取代它们的位置。
+ * Permissions and scope for external services (architecture design §4.8, §12.8): an external request has no session and no TaskContract; the access policy takes their place.
  *
- * - **范围**：已登记项目里的视频，全部或一份 videoId 名单。范围之外的视频对这个服务不存在：列表里没有，
- *   按 ID 或路径访问都回答 `VIDEO_NOT_FOUND`，也不会因此被打开或生成审批。判断用引擎的只读查看，不取写入锁。
- * - **等级**：`read` 只有查询（写工具不在目录里，这里再拒绝一次）；`ask` 的写入、任务与生成逐次生成服务审批，
- *   有时限，超时、拒绝与取消都以 `SERVICE_APPROVAL_DENIED` 回答；`auto` 直接执行。
- * - **任务**：提交者是 `{ kind: 'service', id: <serviceId>, clientId }`；客户端只看得到自己提交的任务与它们的产物。
- *   幂等键按客户端隔开，不会撞上别人的提交。
- * - **文件**：`importAsset.path` 相对视频所在的项目目录，不能指向项目目录之外；导出只写进项目的 `exports/`。
- * - **新建视频**：`videos_create` 必须给已登记项目的 id（或目录），建在那个项目里；新视频登记进服务的视频名单（`allowVideo`）。
- * - 写入以 `external:<serviceId>` 为操作者，走与界面相同的命令入口；不在任何会话里放变更卡（审计记在服务里）。
+ * - **Scope**: videos in registered projects, either all of them or a list of videoIds. Videos outside the scope do not exist for this service: they are not in lists, and access by ID or by path both answer `VIDEO_NOT_FOUND`, and nothing is opened or sent for approval because of them. The check uses the engine's read-only view and does not take the write lock.
+ * - **Level**: `read` only allows queries (write tools are not in the catalog, but are rejected again here); at `ask`, writes, jobs, and generations each require a service approval,
+ *   which has a time limit; timeout, rejection, and cancellation all answer `SERVICE_APPROVAL_DENIED`; `auto` executes directly.
+ * - **Jobs**: the submitter is `{ kind: 'service', id: <serviceId>, clientId }`; a client sees only the jobs it submitted and their outputs.
+ *   Idempotency keys are separated per client, so they never collide with another client's submissions.
+ * - **Files**: `importAsset.path` is relative to the project directory containing the video, and cannot point outside it; exports are written only into the project's `exports/`.
+ * - **New videos**: `videos_create` must be given the id (or directory) of a registered project, and creates the video there; the new video is added to the service's video list (`allowVideo`).
+ * - Writes use `external:<serviceId>` as the operator and go through the same command entry as the UI; no change card is placed in any session (audit is recorded in the service).
  */
 
 export interface ServiceAccess extends ToolAccess {
@@ -56,13 +55,13 @@ export interface ServiceScopeDeps {
   videos: VideoService;
   jobs: JobManager;
   approvals: ServiceApprovals;
-  /** 服务此刻的访问策略：改配置立即生效。 */
+  /** The service's current access policy: config changes take effect immediately. */
   policy: (serviceId: ServiceId) => ServicePolicy;
-  /** 把服务自己新建的视频加进它的范围（策略是名单时写进名单并持久化）。 */
+  /** Adds a video the service itself created to its scope (if the policy is a list, it is written into the list and persisted). */
   allowVideo?: (serviceId: ServiceId, videoId: Id) => Promise<void>;
 }
 
-/** 一个范围之内的视频在哪里。 */
+/** Where a video within the scope is. */
 interface Located {
   project: Project;
   dir: string;
@@ -72,7 +71,7 @@ interface Located {
 
 export class ServiceScope implements ToolScope<ServiceAccess> {
   readonly #deps: ServiceScopeDeps;
-  /** videoId → 视频目录：列表与按路径访问时记下，按 ID 访问时先查这里。 */
+  /** videoId → video directory: recorded when listing and when accessing by path; checked first when accessing by ID. */
   readonly #index = new Map<Id, { projectId: Id; dir: string }>();
 
   constructor(deps: ServiceScopeDeps) {
@@ -88,14 +87,14 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
   }
 
   /**
-   * `ask` 等级下生成一条服务审批并等待；目标视频先按范围解析，范围之外的直接回答不存在。审批由统一的 ApprovalService
-   * 产生（§3.12），带上动作的风险等级，同一条也出现在 `tasks` 主题的待处理列表里。
+   * At the `ask` level, generates a service approval and waits. The target video is first resolved against the scope; one outside the scope is answered as nonexistent directly. The approval is created by the unified ApprovalService
+   * (§3.12), with the action's risk level attached; the same entry also appears in the pending list under the `tasks` topic.
    */
   async confirm(access: ServiceAccess, request: ToolConfirmation): Promise<ToolApprovalNote | void> {
     const located = request.video !== undefined ? await this.#locate(request.video, access) : null;
     const policy = this.#deps.policy(access.principal.serviceId);
     const outbound = request.grants?.length ? request.grants : null;
-    // `auto` 等级免的是逐次确认，不是数据外发的授权（§4.8、§12.5）：没有授权覆盖的外发直接拒绝。
+    // The auto level skips per-request confirmation, not the authorization for sending data out (§4.8, §12.5): outbound without a covering authorization is rejected directly.
     if (policy.level === 'auto' && outbound) {
       const { message, details } = grantRequiredDetails(outbound);
       const { code, ...extra } = details;
@@ -127,7 +126,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     throw new ToolError('SERVICE_APPROVAL_DENIED', message, { serviceId: principal.serviceId, reason: outcome });
   }
 
-  /** 范围之内的视频：已登记项目里的视频目录，各带 videoId（不打开视频）。 */
+  /** Videos within the scope: the video directories of registered projects, each with its videoId (does not open the video). */
   async listVideos(access: ServiceAccess): Promise<Record<string, unknown>> {
     const videos: Record<string, unknown>[] = [];
     let skipped = 0;
@@ -158,7 +157,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     };
   }
 
-  /** 新建视频的位置：调用方给的已登记项目（id，或项目目录的路径）。不给时 `INVALID_ARGUMENTS`，没有这个项目时 `PROJECT_NOT_FOUND`。 */
+  /** Where a new video goes: the registered project given by the caller (its id, or the path of the project directory). If not given, `INVALID_ARGUMENTS`; if there is no such project, `PROJECT_NOT_FOUND`. */
   createRoot(_access: ServiceAccess, project?: string): { root: string; scope: { projectId: Id } } {
     const projects = this.#deps.harness.listProjects();
     if (project === undefined) {
@@ -173,13 +172,13 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return { root: found.path, scope: { projectId: found.id } };
   }
 
-  /** 服务新建的视频：加进它的范围，之后列表与按 ID 访问都看得见。 */
+  /** A video the service created: added to its scope, and visible afterwards in lists and by ID access. */
   async recordCreated(access: ServiceAccess, created: VideoCreated): Promise<void> {
     access.principal.audit.videoId = created.videoId;
     if (access.policy.videos !== 'all') await this.#deps.allowVideo?.(access.principal.serviceId, created.videoId);
   }
 
-  /** 服务启动的流程新建的视频（从链接下载）：同样加进范围；调用早已返回，不改审计。 */
+  /** A video created by the service's start flow (downloaded from a link): likewise added to the scope; the call has already returned, so the audit is not changed. */
   async adoptCreatedVideo(access: ServiceAccess, videoId: Id): Promise<void> {
     if (access.policy.videos !== 'all') await this.#deps.allowVideo?.(access.principal.serviceId, videoId);
   }
@@ -196,7 +195,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
       if (error instanceof RpcError && (error.code === 'not-found' || error.code === 'forbidden')) throw videoNotFound(video);
       throw error;
     }
-    // 副本在打开时换了标识：换过之后的视频也要在范围里。
+    // The copy changed its identifier on open: the video after the change must also be in scope.
     if (!inPolicy(opened.ref.videoId, access.policy)) {
       await this.#deps.videos.close(opened.ref.videoId, access.principal);
       throw videoNotFound(video);
@@ -205,14 +204,14 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return opened;
   }
 
-  /** `importAsset.path` 相对视频所在的项目目录，且只能是项目目录里的文件（§12.8）。 */
+  /** `importAsset.path` is relative to the project directory containing the video, and must be a file inside that project directory (§12.8). */
   importBase(_access: ServiceAccess, opened: VideoOpenResult): { cwd: string; confine: string | null } {
     const project = this.#deps.harness.listProjects().find((p) => p.id === opened.ref.source.projectId);
     if (!project) throw videoNotFound(opened.ref.videoId);
     return { cwd: project.path, confine: project.path };
   }
 
-  /** 对外服务没有本机路径的入口（§4.8）：文件只能经范围之内的视频或链接进来。 */
+  /** External services have no local-path entry point (§4.8): files can only come in through videos or links within the scope. */
   fileBase(): never {
     throw new ToolError('INVALID_ARGUMENTS', 'An external service cannot give local file paths (file, files, outDir)', {
       next: 'Give video (a video within your scope, a videoId listed by videos_list) or url (a link, landing in video or project); files can only be written into the exports/ of the video\'s project (export).',
@@ -234,14 +233,14 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return record;
   }
 
-  /** `jobs_list`：这个客户端自己提交的任务。 */
+  /** `jobs_list`: the jobs this client itself submitted. */
   async visibleJobs(access: ServiceAccess): Promise<JobRecord[]> {
     return this.#deps.jobs.list().filter((record) => this.owns(record, access));
   }
 
   /**
-   * `projects_list`：范围之内的视频所属的项目，带范围之内的视频数；访问策略是全部视频时列出全部已登记项目（没有视频的也列，
-   * `videos_create` 要用它的 id）。不给项目目录的路径。读不了的项目在全部视频时照列、不带视频数。
+   * `projects_list`: the projects that the in-scope videos belong to, with the count of in-scope videos. When the access policy is all videos, it lists all registered projects (including those with no videos, since `videos_create` needs their ids).
+   * It does not take a project directory path. Projects that cannot be read are still listed under all-videos, without a video count.
    */
   async listProjects(access: ServiceAccess): Promise<ScopedProject[]> {
     const listed: ScopedProject[] = [];
@@ -272,7 +271,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     );
   }
 
-  /** 这个客户端自己提交的任务。 */
+  /** The jobs this client itself submitted. */
   owns(record: JobRecord, access: ServiceAccess): boolean {
     const { submitter } = record;
     return submitter.kind === 'service' && submitter.id === access.principal.serviceId && submitter.clientId === access.principal.clientId;
@@ -280,7 +279,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
 
   recordChange(): void {}
 
-  /** 只为范围里的视频写文件（`videos_frames`）：视频所属项目的 `exports/`。不针对视频的（把产物写成文件）不提供。 */
+  /** Writes files only for in-scope videos (`videos_frames`): into the `exports/` of the video's project. Those not targeting a video (writing output as a file) are not provided. */
   saveRoot(_access: ServiceAccess, opened?: VideoOpenResult): string {
     if (!opened) throw new ToolError('UNKNOWN_TOOL', 'This service cannot write artifacts out as files');
     const project = this.#deps.harness.listProjects().find((p) => p.id === opened.ref.source.projectId);
@@ -288,16 +287,16 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return path.join(project.path, 'exports');
   }
 
-  /** 导出只能写进视频所属项目的 `exports/`（及其中已有的子目录）。 */
+  /** Exports can only be written into the `exports/` of the video's project (and its existing subdirectories). */
   exportBase(_access: ServiceAccess, opened: VideoOpenResult): { base: string; within: string; ownDefault: boolean } {
     const project = this.#deps.harness.listProjects().find((p) => p.id === opened.ref.source.projectId);
     if (!project) throw videoNotFound(opened.ref.videoId);
     return { base: path.join(project.path, 'exports'), within: project.path, ownDefault: true };
   }
 
-  // ---- 定位 ----
+  // ---- Locating ----
 
-  /** 视频参数 → 范围之内的视频。按 videoId（打开的或之前列出过的，找不到时重新扫一遍）或 `<projectId>/<相对路径>`。 */
+  /** Video parameter → in-scope video. By videoId (one opened or listed earlier; rescanned if not found), or by `<projectId>/<relative path>`. */
   async #locate(video: string, access: ServiceAccess): Promise<Located> {
     const projects = await this.#projects();
     let located: Located | null = null;
@@ -333,7 +332,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return null;
   }
 
-  /** 已登记的项目，路径换成真实路径（视频的位置都是真实路径）。 */
+  /** Registered projects, with paths converted to real paths (video locations are all real paths). */
   async #projects(): Promise<Map<Id, Project>> {
     const projects = new Map<Id, Project>();
     for (const project of this.#deps.harness.listProjects()) {
@@ -343,7 +342,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return projects;
   }
 
-  /** 只读地看一个视频目录（按真实路径）。不是项目里的视频目录时为空。 */
+  /** Reads a video directory (by real path) read-only. Empty if it is not a video directory inside a project. */
   async #peek(project: Project, target: string): Promise<Located | null> {
     const dir = await fs.realpath(target).catch(() => null);
     if (!dir || !inside(dir, project.path) || dir === project.path) return null;

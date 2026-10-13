@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CredentialStoreError, FileCredentialStore, type CredentialStore } from '@cuccut/runtime-storage';
 import { CLIENT_ID_PATTERN, NodeStore } from './node-store.ts';
 
-/** 凭据存储的替身：内存里存放，可以让 `set` 对某些 key 失败。 */
+/** Stand-in for the credential store: keeps values in memory, and can make `set` fail for some keys. */
 class MemoryCredentials implements CredentialStore {
   readonly kind = 'keychain' as const;
   readonly items = new Map<string, string>();
@@ -113,7 +113,7 @@ describe('NodeStore', () => {
     expect(await credentials.get('node:node_a')).toBe('tok-node_a');
     expect(await store.token('node_a')).toBe('tok-node_a');
     expect(store.get('node_a')).not.toHaveProperty('token');
-    // 并发写串行，最后的状态完整。
+    // Concurrent writes are serialized, so the final state is complete.
     await Promise.all(['b', 'c', 'd', 'e'].map((x) => store.upsert(node(`node_${x}`, `N${x}`))));
     const reopened = await NodeStore.open(file, credentials);
     expect(reopened.list().map((n) => n.nodeId)).toEqual(['node_a', 'node_b', 'node_c', 'node_d', 'node_e']);
@@ -142,7 +142,7 @@ describe('NodeStore', () => {
     expect(replaced).toMatchObject({ alias: 'mine', name: 'Studio Renamed', host: '10.0.0.9' });
     expect(await store.token('node_a')).toBe('tok-new');
     expect(store.list()).toHaveLength(1);
-    // 自己的别名不算冲突。
+    // One's own alias is not a conflict.
     expect((await store.upsert(node('node_a', 'Studio', { alias: 'mine' }))).alias).toBe('mine');
     expect((await store.upsert(node('node_a', 'Studio', { alias: 'other' }))).alias).toBe('other');
   });
@@ -181,7 +181,7 @@ describe('NodeStore', () => {
     expect(await store.token('node_b')).toBe('c_legacy.secret-b');
     expect(await fs.readFile(file, 'utf8')).not.toContain('secret');
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
-    // 再打开一次：照常可用，不重复迁移。
+    // Open it again: it works as usual, with no duplicate migration.
     expect(await (await NodeStore.open(file, credentials)).token('node_a')).toBe('c_legacy.secret-a');
   });
 
@@ -205,12 +205,12 @@ describe('NodeStore', () => {
       ['node_a', null],
       ['node_b', 'c_legacy.secret-b'],
     ]);
-    // 没迁走的令牌不回退到文件：凭据存储里没有就是没有。
+    // A token that has not been migrated does not fall back to the file: if it is not in the credential store, it is simply absent.
     expect(store.credentialProblem('node_b')).toContain('拒绝');
     expect(await store.token('node_b')).toBeNull();
     expect(lines.join('\n')).toContain('node_b');
     expect(lines.join('\n')).not.toContain('secret');
-    // 下次启动再试，成功后文件里没有令牌了。
+    // Retry on the next start; after a successful retry, the file no longer contains the token.
     memory.failSet = () => false;
     const again = await NodeStore.open(file, memory);
     expect(await again.token('node_b')).toBe('c_legacy.secret-b');

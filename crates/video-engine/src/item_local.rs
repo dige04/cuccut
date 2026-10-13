@@ -1,12 +1,9 @@
-//! `item-local` 的跟随（视频格式规范 §3.16）：实例保持它相对目标实例的位置。每笔编辑事务的最后，按事务之前与之后的
-//! 时间线、拆分的 lineage 补算：
+//! Follow for `item-local` (video format spec §3.16): an instance keeps its position relative to its target instance. At the end of every edit transaction, positions are recomputed from the timeline before and after the transaction and from the split lineage:
 //!
-//! - 锚点时刻是跟随者的起点。目标带线性的源时钟时，锚点换成目标上的源时刻，在事务之后的目标（含拆出来的几段）上找回：
-//!   落在哪一段里就跟着那一段，跟随策略改指那一段；源时刻被修剪掉或剪掉时，移到它之后最近的那一段的起点（目标的新起点）；
-//!   在所有段之后时按最后一段外推。跟随者在目标起点之前时，保持到目标新起点的距离。
-//! - 没有源时钟的目标：整体移动时跟着移动；只改起点时跟随者不动，起点越过锚点时移到目标的新起点；拆开时跟着锚点所在的那一段。
-//! - 目标被删掉（拆出来的也一段不剩）时跟随者一起删掉，列在回执的 `impact.removedWithTarget`；跟着它的再一起删。
-//! - 跟随者自己在这笔事务里被移动、修剪过，或者跟随策略是这笔事务写下的，不再补算。只移动，不改长度；锁着时整笔拒绝。
+//! - The anchor moment is the follower's start point. If the target has a linear source clock, the anchor becomes the source moment on the target, found again on the target after the transaction (including the segments split from it): if the moment falls inside a segment, follow that segment and point the follow policy at it; if the source moment was trimmed or cut away, move to the start of the nearest segment after it (the target's new start); if it lies after all segments, extrapolate from the last segment. If the follower is before the target's start, keep the distance to the target's new start.
+//! - A target with no source clock: when the target is moved as a whole, the follower moves with it; when only the start changes, the follower stays put, and if the start passes the anchor it moves to the target's new start; when split, it follows the segment containing the anchor.
+//! - If the target is deleted (no segment left, including split-out ones), the follower is deleted with it, listed in the receipt's `impact.removedWithTarget`; followers of that follower are deleted too.
+//! - If the follower itself was moved or trimmed in this transaction, or its follow policy was written by this transaction, it is not recomputed. It only moves and does not change length; the whole transaction is rejected if it is locked.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -17,7 +14,7 @@ use crate::model::*;
 use crate::ops::{EditContext, ItemMove, delete_items, move_item, overflow};
 use crate::state::{VideoState, item_range};
 
-/// 跟随的目标。
+/// The target to follow.
 fn target_of(item: &TimelineItem) -> Option<&Id> {
     match &item.base().follow_policy {
         FollowPolicy::ItemLocal { item_id } => Some(item_id),
@@ -33,7 +30,7 @@ fn fps_of(state: &VideoState, sequence_id: &str) -> EngineResult<Rate> {
         .ok_or_else(|| ErrorBody::not_found(kinds::sequence(), sequence_id))
 }
 
-/// 线性源时钟：`(sourceIn, rate)`。
+/// Linear source clock: `(sourceIn, rate)`.
 fn linear(item: &TimelineItem) -> EngineResult<Option<(Ratio, Ratio)>> {
     let map = match item {
         TimelineItem::Video(v) => &v.time_map,
@@ -47,7 +44,7 @@ fn linear(item: &TimelineItem) -> EngineResult<Option<(Ratio, Ratio)>> {
     })
 }
 
-/// 事务之后代表目标的实例：目标本身与 lineage 里由它拆出来的（逐层），只取还在的。
+/// The instances representing the target after the transaction: the target itself and those split from it through the lineage (layer by layer), keeping only those that still exist.
 fn pieces(next: &VideoState, roots: &[&Id], lineage: &BTreeMap<Id, Vec<Id>>, sequence_id: &str) -> Vec<Id> {
     let mut seen: BTreeSet<Id> = BTreeSet::new();
     let mut queue: VecDeque<Id> = roots.iter().map(|id| (*id).clone()).collect();
@@ -64,9 +61,9 @@ fn pieces(next: &VideoState, roots: &[&Id], lineage: &BTreeMap<Id, Vec<Id>>, seq
         .collect()
 }
 
-/// 补算 `next` 里 `item-local` 跟随者的位置；返回随目标删掉的实例。
+/// Recompute the positions of `item-local` followers in `next`; returns the instances deleted along with their target.
 pub(crate) fn settle(before: &VideoState, next: &mut VideoState, ctx: &mut EditContext<'_>) -> EngineResult<Vec<Id>> {
-    // 这笔事务写下的跟随策略：目标必须在同一个序列上。
+    // Follow policy written by this transaction: the target must be on the same sequence.
     for placed in next.items.values() {
         let Some(target) = target_of(&placed.value) else { continue };
         let id = &placed.value.base().id;
@@ -101,7 +98,7 @@ pub(crate) fn settle(before: &VideoState, next: &mut VideoState, ctx: &mut EditC
         .collect();
 
     let mut removed: Vec<Id> = Vec::new();
-    // 先补算目标不是待补算跟随者的那些（跟随者的跟随者在它之后）；成环的不动。
+    // Recompute targets that are not themselves pending followers first (a follower's follower comes after it); cycles are left untouched.
     loop {
         let ready: Vec<Id> = pending
             .iter()
@@ -125,7 +122,7 @@ pub(crate) fn settle(before: &VideoState, next: &mut VideoState, ctx: &mut EditC
     Ok(removed)
 }
 
-/// 跟随者在事务前后的区间与轨道都没变。
+/// The follower's range and track are unchanged before and after the transaction.
 fn same_range(before: &VideoState, old: &TimelineItem, next: &VideoState, new: &TimelineItem, sequence_id: &str) -> bool {
     let (Ok(a), Ok(b)) = (fps_of(before, sequence_id), fps_of(next, sequence_id)) else {
         return false;
@@ -133,7 +130,7 @@ fn same_range(before: &VideoState, old: &TimelineItem, next: &VideoState, new: &
     matches!((item_range(old, a), item_range(new, b)), (Ok(x), Ok(y)) if x == y)
 }
 
-/// 补算一个跟随者；目标没了、跟随者被删掉时返回 true。
+/// Recompute one follower; returns true when the target is gone and the follower is deleted.
 fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditContext<'_>) -> EngineResult<bool> {
     let Some(placed) = next.items.get(id) else { return Ok(false) };
     let sequence_id = placed.sequence_id.clone();
@@ -162,7 +159,7 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
     let earliest = ranges.iter().min_by(|a, b| a.1.cmp(&b.1)).expect("至少一段").clone();
 
     let (piece, start) = if anchor < s0 {
-        // 跟随者在目标起点之前：保持到目标新起点的距离。
+        // Follower is before the target's start: keep the distance to the target's new start.
         let offset = anchor.checked_sub(s0).ok_or_else(overflow)?;
         (earliest.0.clone(), earliest.1.checked_add(offset).ok_or_else(overflow)?)
     } else if let Some((source_in, rate)) = linear(&target_was.value)? {
@@ -177,7 +174,7 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
             .ok_or_else(overflow)?;
         by_source(next, &ranges, source)?.unwrap_or_else(|| (earliest.0.clone(), earliest.1))
     } else if ranges.len() > 1 {
-        // 没有源时钟的目标拆开了：跟着锚点所在的那一段。
+        // Target without a source clock was split: follow the segment containing the anchor.
         let holder = ranges
             .iter()
             .find(|(_, s, e)| *s <= anchor && anchor < *e)
@@ -190,7 +187,7 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
         if Some(moved) == e1.checked_sub(e0) {
             (ranges[0].0.clone(), anchor.checked_add(moved).ok_or_else(overflow)?)
         } else {
-            // 只改了起点：越过锚点时移到新起点。
+            // Only the start changed: move to the new start when the anchor is passed.
             (ranges[0].0.clone(), anchor.max(*s1))
         }
     };
@@ -213,8 +210,8 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
     Ok(false)
 }
 
-/// 源时刻 `source` 在事务之后的几段上的位置：落在哪段里取哪段；落在段与段之间或所有段之前时取之后最近一段的起点；
-/// 在所有段之后时按最后一段外推。
+/// Position of source moment `source` on the segments after the transaction: if it falls inside a segment, take that segment; if it falls between segments or before all of them, take the start of the nearest segment after it;
+/// if it lies after all segments, extrapolate from the last segment.
 fn by_source(next: &VideoState, ranges: &[(Id, Ratio, Ratio)], source: Ratio) -> EngineResult<Option<(Id, Ratio)>> {
     let mut later: Option<(Ratio, &(Id, Ratio, Ratio))> = None;
     let mut earlier: Option<(Ratio, Ratio, &(Id, Ratio, Ratio))> = None;

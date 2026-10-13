@@ -15,13 +15,12 @@ import { tr } from './fullscreen-player-copy.tr.ts';
 import { vi } from './fullscreen-player-copy.vi.ts';
 
 /**
- * 编辑器全屏播放器（fullscreen-player.tsx）的文案。播放、静音、倍速、退出全屏等通用叫法用媒体播放器的那份（player-copy），
- * 上一章 / 下一章用 chapter-copy。英文写在这里，译文在 `fullscreen-player-copy.zh-Hans.ts` 等。
+ * Copy for the editor's fullscreen player (fullscreen-player.tsx). Common terms such as play, mute, playback speed and exit fullscreen use the media player's copy (player-copy); previous and next chapter use chapter-copy. English is written here; translations are in `fullscreen-player-copy.zh-Hans.ts` and so on.
  */
 const en = {
-  /** 全屏播放器的读屏名。 */
+  /** Screen-reader names for the fullscreen player. */
   region: 'Full-screen player',
-  /** 预览顶上的入口钮。 */
+  /** The entry button at the top of the preview. */
   enter: 'Full-screen playback',
   enterTip: 'Full-screen playback (F)',
   captions: 'Subtitles',
@@ -29,9 +28,9 @@ const en = {
   captionMode: { off: 'Subtitles off', source: 'Original', trans: 'Translation', both: 'Bilingual' },
   keysTip: 'Keyboard shortcuts (?)',
   keysTitle: 'Keyboard shortcuts',
-  /** 键表底下的一行：只在 Esc 归播放器时显示（浏览器给了键盘锁定）。 */
+  /** The line under the key table: shown only when Esc returns to the player (the browser granted keyboard lock). */
   keysFooter: 'Press Esc to close this sheet, then Esc again to leave full screen.',
-  /** 键表各行（model/player 的 `PLAYER_KEYS`，按动作取）。 */
+  /** The rows of the key table (`PLAYER_KEYS` in model/player, taken by action). */
   keys: {
     play: 'Play / pause (same as a single click on the picture)',
     exit: 'Leave full screen (same as a double click on the picture)',

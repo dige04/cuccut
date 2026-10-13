@@ -1,32 +1,31 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/runtime-client.ts 的版本格式（`opencode v2.0.24` 或 `1.18.34`）
- * 与 v2 的最低版本（2.0.10），v2/runtime.ts 的 `serve` 启动参数与密码环境变量。
- * 改成 CucCut 的预设常量：名称、订阅说明照原型 designs/cuccut/app/data.js 的 MORE_HARNESSES；只认 2.x。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra). Modified:
+ * the version format from packages/server/src/server/agent/providers/opencode/runtime-client.ts (`opencode v2.0.24` or `1.18.34`)
+ * and the minimum v2 version (2.0.10), and the `serve` launch arguments and password environment variable from v2/runtime.ts.
+ * Changed to CucCut's preset constants: the name and subscription note follow MORE_HARNESSES in the prototype designs/cuccut/app/data.js; only 2.x is accepted.
  */
 import type { DriverInstallOption } from '@cuccut/protocol';
 import { DriversOpencode } from '@cuccut/protocol/messages/agent-drivers';
 
 /**
- * OpenCode 的预设（写法同 `acp/acp-presets.ts`）。只接 2.x：2.x 的 `opencode serve` 提供 v2 HTTP API（`/api/...`）与
- * 事件流；1.x 是另一套接口，不做兼容，探测时报版本过低。
+ * OpenCode's preset (same format as `acp/acp-presets.ts`). Only 2.x is accepted: 2.x's `opencode serve` provides the v2 HTTP API (`/api/...`) and
+ * the event stream. 1.x is a different interface; it is not supported for compatibility, and the probe reports the version as too old.
  */
 export const OPENCODE_PRESET = {
   name: 'OpenCode',
-  /** 终端里敲的名字。2.x 的 npm 包（`@opencode/cli`）同时装 `opencode` 与 `opencode2` 两个名字，两个都找。 */
+  /** The name typed in the terminal. The 2.x npm package (`@opencode/cli`) installs both the `opencode` and `opencode2` names; both are searched. */
   command: 'opencode',
   commandAliases: ['opencode2'],
-  /** v2 API 的最低版本：移植来源记录的、session v2 接口齐全的版本。 */
+  /** Minimum version of the v2 API: the version recorded as the source of the port, where the session v2 interfaces are complete. */
   minVersion: '2.0.10',
-  /** 订阅说明（随语言变，读的时候再取）。 */
+  /** Subscription note (varies by language; read when needed). */
   get plan() {
     return DriversOpencode.plan();
   },
-  /** 登录模型账号：`opencode auth login`（不登录也能用 OpenCode Zen 的免费模型）。 */
+  /** Sign in to a model account: `opencode auth login` (OpenCode Zen's free models work without signing in). */
   loginCommand: 'opencode auth login',
   /**
-   * 安装方式。原型写的是官方脚本与 `npm install -g opencode-ai`，但这两条（2026-10 实测）装的都是 1.x（脚本取 GitHub 最新
-   * 发行版 v1.18.34，npm 包 `opencode-ai` 也是 1.18.34）；2.x 只在 npm 包 `@opencode/cli` 里。这里只给能装出 2.x 的一条。
+   * Install method. The prototype lists the official script and `npm install -g opencode-ai`, but both (checked 2026-10) install 1.x (the script fetches the latest GitHub release, v1.18.34, and the npm package `opencode-ai` is also 1.18.34); 2.x is only in the npm package `@opencode/cli`. Only the entry that installs 2.x is given here.
    */
   install: [
     {
@@ -40,15 +39,15 @@ export const OPENCODE_PRESET = {
   get installHint() {
     return DriversOpencode.installHint();
   },
-  /** PATH 之外的已知安装位置（`~` 开头的相对于用户主目录）。 */
+  /** Known install locations outside PATH (paths starting with `~` are relative to the user's home directory). */
   knownLocations: ['~/.opencode/bin/opencode', '~/.local/bin/opencode', '/opt/homebrew/bin/opencode', '/usr/local/bin/opencode'],
 } as const;
 
-/** 覆盖可执行文件位置的环境变量。 */
+/** Environment variable that overrides the executable location. */
 export const OPENCODE_PATH_VARIABLE = 'CUCCUT_OPENCODE_PATH';
 
 /**
- * 给 `opencode serve` 的环境：不自动升级（升级会换掉正在用的可执行文件）。密码另由 `OpenCodeServer` 每次随机生成。
+ * Environment for `opencode serve`: no automatic upgrade (an upgrade would replace the executable in use). The password is generated randomly for each launch by `OpenCodeServer`, separately.
  */
 export const OPENCODE_ENV: Record<string, string> = {
   OPENCODE_DISABLE_AUTOUPDATE: '1',

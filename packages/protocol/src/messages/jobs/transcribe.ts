@@ -14,7 +14,7 @@ import { pl } from './transcribe.pl.ts';
 import { tr } from './transcribe.tr.ts';
 import { vi } from './transcribe.vi.ts';
 
-/** `packages/jobs/src/pipelines/transcribe.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/transcribe.ts`. */
 const en = {
   label: 'Transcribe',
   description:

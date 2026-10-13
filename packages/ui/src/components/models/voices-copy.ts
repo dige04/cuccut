@@ -15,9 +15,8 @@ import { tr } from './voices-copy.tr.ts';
 import { vi } from './voices-copy.vi.ts';
 
 /**
- * 模型 › 语音合成 › 我的声音（设计稿 settings-voices.jsx）的文字。页标题与导语在 models-copy.ts 的 `VOICES_COPY`；
- * 这里是列表、对话框与提示。录音与「从视频里分人取一段」还没有接上，置灰的原因写成如实的一句。
- * 英文是键与类型的来源，译文在 `voices-copy.<语言>.ts`。
+ * Text for Models › Speech synthesis › My voices (design mock settings-voices.jsx). The page title and intro are in `VOICES_COPY` in models-copy.ts; this file has the list, dialogs and hints. Recording and “从视频里分人取一段”(Take a segment by speaker from a video) are not connected yet; the greyed-out reasons are written as one honest sentence.
+ * English is the source of keys and types; translations are in `voices-copy.<语言>.ts`.
  */
 const en = {
   myVoices: {
@@ -30,7 +29,7 @@ const en = {
     record: 'Record with microphone',
     recordWhy:
       'Recording in the app isn’t available yet: a recording has to be saved as a file before it can go to the Runtime, and that step isn’t built. Record with another app first (WAV, MP3 or FLAC), then use “New from audio file”.',
-    /** `recordWhy` 加上导入音色包为什么不可用（窗口不能打开文件对话框时）。 */
+    /** `recordWhy`, plus why importing a voice package is unavailable (when the window cannot open a file dialog). */
     recordWhyNoPicker:
       'Recording in the app isn’t available yet: a recording has to be saved as a file before it can go to the Runtime, and that step isn’t built. Record with another app first (WAV, MP3 or FLAC), then use “New from audio file”. Importing a voice pack: this window can’t open the system file dialog; use the desktop app.',
     noPicker: 'This window can’t open the system file dialog; use the desktop app.',
@@ -45,7 +44,7 @@ const en = {
     foot:
       'A voice = a reference recording + what it says + a consent statement. The reference recording stays on this computer; an exported voice pack (name.bcvoice) includes the recording and can be sent to others to import, but clones don’t travel with it. ' +
       'Voices without a statement on whether they’re the speaker’s own are never uploaded to any third party.',
-    // 一行
+    // Row
     play: (name: string) => `Preview ${name}`,
     stop: (name: string) => `Stop previewing ${name}`,
     playFailed: (text: string) => `Couldn't preview: ${text}`,
@@ -60,7 +59,7 @@ const en = {
     cloning: (label: string) => `Uploading to ${label} to clone…`,
     cloneFailed: (label: string, text: string) => `The last clone on ${label} didn't succeed: ${text}`,
     loadingMeta: 'Loading…',
-    // 新建与编辑
+    // Create and edit
     createTitle: 'New voice',
     editTitle: (name: string) => `Edit “${name}”`,
     referenceFile: (file: string) => `Reference recording: ${file}`,
@@ -78,7 +77,7 @@ const en = {
     saved: (name: string) => `Saved “${name}” · available when generating speech and voice-overs`,
     updated: (name: string) => `Saved “${name}”`,
     unchanged: 'No changes',
-    // 克隆
+    // Clone
     uploadTitle: (label: string) => `Upload to ${label}?`,
     upload: 'Upload',
     cloneStarted: (label: string) => `Uploading to ${label} · progress is in Background tasks`,
@@ -90,16 +89,16 @@ const en = {
     cloneRemoved: (label: string) => `Deleted the clone from ${label}`,
     cloneGoneRemote: (label: string) => `${label} no longer has this clone; the record on this computer was cleared too`,
     cloneRemoveFailed: (text: string) => `Couldn't delete the clone: ${text}`,
-    // 导出
+    // Export
     exportTitle: 'Export voice pack',
     exportButton: 'Export',
     exported: (path: string) => `Exported to ${path}`,
     exportFailed: (text: string) => `Couldn't export: ${text}`,
     exportExists: 'CucCut doesn’t overwrite existing files. Choose another name or location and export again.',
-    /** 目标已存在时的整句（`exportFailed` 加上 `exportExists`）。 */
+    /** The full sentence when the target already exists (`exportFailed` plus `exportExists`). */
     exportFailedExists: (text: string) =>
       `Couldn't export: ${text}. CucCut doesn’t overwrite existing files. Choose another name or location and export again.`,
-    // 删除
+    // Delete
     deleteTitle: (name: string) => `Delete “${name}”?`,
     deleteConfirm: 'Delete',
     deleted: (name: string) => `Deleted “${name}”`,

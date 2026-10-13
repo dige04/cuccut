@@ -18,7 +18,7 @@ import type { HelpGuide, HelpIcon } from '../../model/help-guides.ts';
 import { AgentIcon } from '../agent-icon.tsx';
 import { EDGE, INSET, ROW_EDGE, ROW_FILL } from './dialog-fills.ts';
 
-/** 指南的图标（原型 model-help.js 的 `icon`，换成 S2 图标；Agent 用自绘的机器人，同设置页）。 */
+/** Guide icons (prototype model-help.js `icon`, swapped for S2 icons; the Agent uses a hand-drawn robot, same as the settings page). */
 const ICONS: Record<HelpIcon, ComponentType> = {
   upload: Upload,
   captions: CloseCaptions,
@@ -34,13 +34,13 @@ const ICONS: Record<HelpIcon, ComponentType> = {
   download: Download,
 };
 
-/** 指南图标；颜色跟着外层的文字走（外层样式把 `--iconPrimary` 设成 currentColor，原型的图标都是 currentColor）。 */
+/** Guide icon; the colour follows the surrounding text (the outer style sets `--iconPrimary` to currentColor; the prototype's icons are all currentColor). */
 export function GuideIcon({ icon }: { icon: HelpIcon }) {
   const Icon = ICONS[icon];
   return <Icon />;
 }
 
-/** 指南 / 常见问题的列表行（原型 .help-list / .help-row）：图标、标题与一句话、阅读时长、箭头。 */
+/** Guide and FAQ list rows (prototype .help-list / .help-row): icon, title and one-line summary, reading time, arrow. */
 export function GuideList({ guides, onRead }: { guides: readonly HelpGuide[]; onRead(guide: HelpGuide): void }) {
   return (
     <div className={`${list} ${EDGE} ${INSET}`}>
@@ -63,7 +63,7 @@ export function GuideList({ guides, onRead }: { guides: readonly HelpGuide[]; on
   );
 }
 
-/** 节标题行（原型 .help-section-heading）：左边标题，右边一个动作或计数。 */
+/** Section heading row (prototype .help-section-heading): title on the left, one action or count on the right. */
 export const sectionHeading = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -77,7 +77,7 @@ export const subTitle = style({ margin: 0, font: 'ui', fontWeight: 'bold', color
 export const intro = style({ marginTop: 8, marginBottom: 24, font: 'ui-sm', lineHeight: '[1.6]', color: 'gray-700' });
 export const detail = style({ font: 'ui-sm', color: 'gray-600' });
 export const kbd = style({ flexShrink: 0, font: 'code-xs', color: 'gray-600', whiteSpace: 'nowrap' });
-/** 原型 .help-eyebrow：12px 粗体蓝字。 */
+/** Prototype .help-eyebrow: 12px bold blue text. */
 export const eyebrow = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -87,7 +87,7 @@ export const eyebrow = style({
   color: 'blue-1000',
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** 原型 .help-link：蓝色小字链接，带箭头。 */
+/** Prototype .help-link: small blue text link, with an arrow. */
 export const textLink = style({
   display: 'inline-flex',
   alignItems: 'center',

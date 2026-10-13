@@ -2,10 +2,10 @@ import type { LibraryName, SpeakerVoiceBinding, VideoLibrarySelection } from '@c
 import { M } from './library-copy.ts';
 
 /**
- * `cuccut library` 管理命令的参数与输出（架构设计 §5.9）。列出与查看条目是派生命令（`library list|show`）。
+ * Arguments and output of the `cuccut library` admin commands (Architecture design §5.9). Listing and viewing entries are derived commands (`library list|show`).
  */
 
-/** 库名：`glossaries | voices | brand`。 */
+/** Library names: `glossaries | voices | brand`. */
 export function parseLibraryName(text: string | undefined): LibraryName {
   if (text === 'glossaries' || text === 'voices' || text === 'brand') return text;
   throw new Error(M.unknownLibrary(text));
@@ -15,7 +15,7 @@ export function libraryLabel(library: LibraryName): string {
   return M.libraryLabels[library];
 }
 
-/** `--speaker-voice <转写 id>:<说话人>=<音色>[@<Provider>]`：`library:` 音色不带 Provider。 */
+/** `--speaker-voice <transcript id>:<speaker>=<voice>[@<Provider>]`: `library:` voices carry no Provider. */
 export function parseSpeakerVoice(text: string): SpeakerVoiceBinding {
   const colon = text.indexOf(':');
   const equals = text.indexOf('=', colon + 1);
@@ -31,7 +31,7 @@ export function parseSpeakerVoice(text: string): SpeakerVoiceBinding {
   return { documentId, speakerId, voice, ...(providerId ? { providerId } : {}) };
 }
 
-/** 逗号分隔的条目 ID；空字符串表示清空。 */
+/** Comma-separated entry IDs. An empty string means clear. */
 export function parseIdList(text: string): string[] {
   return text
     .split(',')
@@ -39,7 +39,7 @@ export function parseIdList(text: string): string[] {
     .filter((s) => s !== '');
 }
 
-/** `cuccut library video-selection` 的输出：每一步启用的术语表与说话人的音色。 */
+/** Output of `cuccut library video-selection`: for each step, the glossaries enabled and the voices of the speakers. */
 export function formatVideoSelection(result: VideoLibrarySelection): string[] {
   const { selection } = result;
   const list = (ids: string[]) => (ids.length > 0 ? ids.join(M.listSep) : M.none);

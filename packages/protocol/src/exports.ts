@@ -3,108 +3,108 @@ import type { JobWarning } from './jobs.ts';
 import type { DocumentRecord, Sequence } from './video.ts';
 
 /**
- * 导出（架构设计 §9.11、§9.13）：冻结 → 预检 → 在 staging 里生成 → 校验 → 原子发布。一次导出是一个 Job
- * （`kind: 'export'`），`exports.create` 立即返回 `jobId`，进度与结果经 `jobs` 主题送达，取消用 `jobs.cancel`。
+ * Export (architecture design §9.11, §9.13): freeze → preflight → generate in staging → verify → publish atomically. One export is one Job
+ * (`kind: 'export'`). `exports.create` returns a `jobId` immediately; progress and results arrive through the `jobs` topic; cancel with `jobs.cancel`.
  *
- * 交付字幕、文稿、音频、成片（`video`）、便携包（`portable`，视频格式规范 §8）与工程（`project`，其他剪辑软件的交换文件）。
+ * Delivers captions, transcripts, audio, the finished video (`video`), the portable package (`portable`, video format spec §8), and the project (`project`, an exchange file for other editing software).
  */
 
 export type ExportKind = 'subtitles' | 'transcript' | 'audio' | 'video' | 'project' | 'portable';
 
-/** 这个版本实现了的种类。 */
+/** The kinds implemented in this version. */
 export const SUPPORTED_EXPORT_KINDS = ['subtitles', 'transcript', 'audio', 'video', 'portable', 'project'] as const;
 
-/** 字幕：SRT、VTT、ASS（基础样式映射）与带词时间的 JSON。 */
+/** Captions: SRT, VTT, ASS (basic style mapping), and JSON with word timings. */
 export type SubtitleExportFormat = 'srt' | 'vtt' | 'ass' | 'json';
-/** 文稿：Markdown、纯文本与带词时间的 JSON。 */
+/** Transcripts: Markdown, plain text, and JSON with word timings. */
 export type TranscriptExportFormat = 'md' | 'txt' | 'json';
 export type AudioExportFormat = 'wav' | 'mp3' | 'm4a';
-/** 成片：MP4（H.264 或 HEVC，AAC 声音）与 WebM（VP9，Opus 声音）。 */
+/** Finished video: MP4 (H.264 or HEVC, AAC audio) and WebM (VP9, Opus audio). */
 export type VideoExportFormat = 'mp4' | 'webm';
 export type VideoExportCodec = 'h264' | 'hevc' | 'vp9';
 
-/** 一行的最大宽度（默认值）：按显示宽度计，全角字（中日韩文字与全角标点）算 2，其余算 1。 */
+/** Maximum width of one line (default): measured in display width, where full-width characters (CJK text and full-width punctuation) count as 2 and everything else as 1. */
 export const EXPORT_MAX_CHARS_PER_LINE = 42;
-/** 一条字幕最多几行；放不下时拆成几条。 */
+/** Maximum number of lines per caption; when it does not fit, it is split into several captions. */
 export const EXPORT_MAX_LINES_PER_CUE = 2;
-/** 由词拼成的一条字幕最长几秒；更长时在词之间拆开。 */
+/** Maximum length in seconds of a caption made of words; longer captions are split between words. */
 export const EXPORT_MAX_CUE_SECONDS = 7;
 /**
- * 文稿的分段（编辑器文稿面板与文稿导出同一套）：标了段首、换了说话人、停顿 `pauseSec` 以上时断；
- * 句末处够长了（`maxWidth` 字符）或停顿稍长（`sentencePauseSec`）且不太短（`minWidth` 字符）也断。宽度按字符数估。
+ * Transcript segmentation (the editor's transcript panel and the transcript export share the same logic): break at a paragraph start, at a speaker change, or at a pause of `pauseSec` or more;
+ * also break when the sentence end is reached and the segment is long enough (`maxWidth` characters), or when the pause is somewhat long (`sentencePauseSec`) and the segment is not too short (`minWidth` characters). Width is estimated by character count.
  */
 export const TRANSCRIPT_PARAGRAPH = { pauseSec: 2, sentencePauseSec: 0.6, minWidth: 60, maxWidth: 240 } as const;
 
-/** 序列时间的一段 `[start, end)`，秒。 */
+/** A `[start, end)` span of sequence time, in seconds. */
 export interface ExportRange {
   start: number;
   end: number;
 }
 
-/** 范围与序列：不给 `range` / `ranges` 时是整条序列；`ranges` 的每一段各出一个文件（同一个导出 Job 的多个产物）。 */
+/** Ranges and sequences: without `range` / `ranges` the whole sequence is exported; each segment in `ranges` produces its own file (several outputs of the same export Job). */
 export interface ExportScope {
-  /** 不给时是视频的主序列。 */
+  /** When not given, the video's main sequence is used. */
   sequenceId?: Id;
   range?: ExportRange;
   ranges?: ExportRange[];
 }
 
-/** 字幕与文稿的参数。 */
+/** Options for captions and transcripts. */
 export interface TextExportOptions {
   /**
-   * 主文档：`speech`（转写）或 `caption`（字幕）。不给时依次取：序列里启用的字幕实例显示的文档、唯一的 `speech` 文档
-   * （给了 `language` 时只看这种语言的）；仍然确定不了时以 `EXPORT_SOURCE_AMBIGUOUS` 拒绝，`details.candidates` 列出候选（显示着的字幕与转写都列上）。
+   * Primary document: `speech` (transcription) or `caption` (captions). When not given, the following are tried in order: the document shown by the enabled caption instance in the sequence, the only `speech` document
+   * (when `language` is given, only documents in that language are considered). If it still cannot be determined, reject with `EXPORT_SOURCE_AMBIGUOUS`; `details.candidates` lists the candidates (both displayed captions and transcriptions are listed).
    */
   documentId?: Id;
-  /** 只在不给 `documentId` 时用来挑文档（BCP 47）。 */
+  /** Used to pick a document only when `documentId` is not given (BCP 47). */
   language?: string;
   /**
-   * 双语合并：`true` 时取主文档的译文（`translation` 文档，`sourceDocumentId` 指向主文档；有几份时要 `language`
-   * 或显式的 `documentId`），也可以直接给另一份文档（译文，或另一种语言的字幕 / 转写）。没有可用的另一份时拒绝。
+   * Bilingual merge: when `true`, take the translation of the primary document (a `translation` document, with `sourceDocumentId` pointing to the primary document; when there are several, `language`
+   * or an explicit `documentId` is required). Alternatively, give another document directly (a translation, or a caption or transcription in another language). Reject when no other usable document is available.
    */
   bilingual?: boolean | { documentId?: Id; language?: string };
-  /** 一行的最大宽度，默认 `EXPORT_MAX_CHARS_PER_LINE`。 */
+  /** Maximum width of one line; defaults to `EXPORT_MAX_CHARS_PER_LINE`. */
   maxCharsPerLine?: number;
-  /** 文稿（Markdown、纯文本）在每段末尾写这一段开始的时间（`[mm:ss]`，满一小时 `[hh:mm:ss]`），默认不写。 */
+  /** In transcripts (Markdown, plain text), write the start time of each paragraph at its end (`[mm:ss]`, or `[hh:mm:ss]` past one hour). Off by default. */
   timestamps?: boolean;
-  /** 只经这些实例投影（源素材时钟的文档）。不给时按字幕实例、再按引用文档来源素材的实例。 */
+  /** Project only through these instances (documents with the source material's clock). When not given, use caption instances first, then instances of the source material referenced by the document. */
   scopeItemIds?: Id[];
 }
 
 /**
- * 文稿独有的选项（命令与协议规范 §4.4）。默认值保持智能体与 CLI 原来的结果：不写文首元信息与章节小标题，写说话人，跳过剪掉的部分。
+ * Options specific to transcripts (command and protocol spec §4.4). The defaults keep the result the agent and CLI produced before: no front-matter header and no chapter subheadings, speakers written, cut portions skipped.
  */
 export interface TranscriptExportOptions {
   /**
-   * Markdown 的文首元信息（YAML，`---` 之间）：title、description、source、author、published、platform、duration、language、
-   * translation，之后是正文里的说话人与章节表；缺的字段不写。纯文本与 JSON 不写。默认 false。
+   * Front matter for Markdown (YAML, between `---` lines): title, description, source, author, published, platform, duration, language,
+   * translation, followed by speakers in the body and a chapter table. Fields that are missing are not written. Plain text and JSON do not write it. Default false.
    */
   frontmatter?: boolean;
-  /** 章节小标题：序列上 `kind: 'chapter'` 的标记，写在这一章的第一段前面（没有段落的章不写）。默认 false。 */
+  /** Chapter subheadings: the `kind: 'chapter'` marker on the sequence, written before the first paragraph of that chapter (chapters with no paragraphs are not written). Default false. */
   chapters?: boolean;
-  /** 说话人：段里有说话人时每段都写（Markdown `**名字:**`，纯文本 `名字: `；JSON 的 `speaker`）。默认 true。 */
+  /** Speakers: when a segment has a speaker, every segment writes it (Markdown `**name:**`, plain text `name: `; the JSON `speaker` field). Default true. */
   speakers?: boolean;
   /**
-   * 跳过剪掉的部分，默认 true：正文来自时间线投影，剪掉的词不出现，时间是时间线时间。false 时不经投影取文档的原文
-   * （隐藏的词仍然不写），时间是文档的时钟（素材时间）；给了范围时取这段范围投影到的第一个与最后一个词之间的原文。
+   * Skip the cut portions, default true: the body comes from the timeline projection, so cut words do not appear, and the times are timeline times. When false, the document's original text is taken without the projection
+   * (hidden words are still not written), and the times are the document's clock (source-material time). When a range is given, take the original text between the first and last word that this range projects onto.
    */
   skipCut?: boolean;
 }
 
 /**
- * 响度标准化的目标（架构设计 §9.13 的母带）：BS.1770 综合响度归一与真峰值限幅交替三轮，再按真峰值静态兜底；
- * 测量值与施加的增益写进校验结果。综合响度在 [−70, 0] LUFS，真峰值上限在 [−20, 0] dBTP。
+ * Target for loudness normalization (the master of architecture design §9.13): alternate three rounds of BS.1770 integrated-loudness normalization and true-peak limiting, then a static fallback by true peak;
+ * the measured values and the applied gain are written into the verification result. Integrated loudness is in [−70, 0] LUFS, and the true-peak ceiling is in [−20, 0] dBTP.
  */
 export interface LoudnessTarget {
-  /** 综合响度，LUFS。 */
+  /** Integrated loudness, in LUFS. */
   integratedLufs: number;
-  /** 真峰值上限，dBTP。 */
+  /** True-peak ceiling, in dBTP. */
   truePeakDb: number;
 }
 
 /**
- * 文稿里的时刻（向下取整到秒）：不满一小时 `mm:ss`，满一小时 `hh:mm:ss`（小时补到两位）。导出文稿的段末时间戳、章节、
- * 文首的时长与章节表，以及编辑器文稿面板的复制与引用都用它。
+ * A time point in a transcript (rounded down to the second): `mm:ss` under one hour, `hh:mm:ss` at one hour or more (hours padded to two digits). The exported transcript's end-of-segment timestamps, chapters,
+ * the duration and chapter table in the front matter, and the editor transcript panel's copy and quote all use it.
  */
 export function transcriptStamp(seconds: number): string {
   const total = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
@@ -114,20 +114,20 @@ export function transcriptStamp(seconds: number): string {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(total % 60)}` : `${pad(m)}:${pad(total % 60)}`;
 }
 
-/** Markdown 文稿里的文字（正文、说话人、章节名）：转义 Markdown 的标记字符。导出的文稿与编辑器文稿面板的复制同一个写法。 */
+/** Text in a Markdown transcript (body, speaker, chapter name): escape Markdown marker characters. The exported transcript and the editor transcript panel's copy use the same format. */
 export function transcriptMarkdownText(text: string): string {
   return text.replace(/([\\`*_[\]<>#|])/g, '\\$1');
 }
 
-/** 空白（含换行）折成一个空格：文稿的小标题、文首的值都只占一行。 */
+/** Whitespace (including newlines) collapses to one space: transcript subheadings and front-matter values each take only one line. */
 export function transcriptOneLine(text: string): string {
   return text.split(/\s+/).filter(Boolean).join(' ');
 }
 
 /**
- * 成片画面里烧着的字幕是哪些语言（成片的默认文件名后缀，命令与协议规范 §4）：启用的字幕实例所在的字幕轨这次画进画面
- * （可见；有视觉组的轨在独显时只算独显的），取它们字幕文档的语言。按时间线从上到下排，去重；没写语言的文档不算。
- * 导出面板的预计文件名与 Runtime 的默认命名读同一份。
+ * Which languages the captions burned into the finished video's picture use (the default filename suffix for the finished video, command and protocol spec §4): the caption track of an enabled caption instance is rendered into the picture this time
+ * (visible; on tracks with a visual group, only the discrete GPU's member counts when the discrete GPU is in use). Take the languages of their caption documents. Sort top to bottom along the timeline and de-duplicate; documents with no language written are not counted.
+ * The export panel's expected filename and the Runtime's default naming read the same source.
  */
 export function burnedCaptionLanguages(sequence: Pick<Sequence, 'tracks' | 'items'>, documents: Readonly<Record<Id, Pick<DocumentRecord, 'language'>>>): string[] {
   const visualSolo = sequence.tracks.some((t) => t.solo.enabled && t.solo.group === 'visual');
@@ -148,75 +148,74 @@ export function burnedCaptionLanguages(sequence: Pick<Sequence, 'tracks' | 'item
 export const DEFAULT_LOUDNESS_TARGET: Required<LoudnessTarget> = { integratedLufs: -16, truePeakDb: -1.2 };
 
 export interface AudioExportOptions {
-  /** 默认 48000。 */
+  /** Default 48000. */
   sampleRate?: number;
-  /** 默认 2。 */
+  /** Default 2. */
   channels?: 1 | 2;
-  /** MP3 与 M4A 的码率，默认 192；WAV 不接受。 */
+  /** Bitrate for MP3 and M4A, default 192; not accepted for WAV. */
   bitrateKbps?: number;
-  /** 响度标准化；默认关闭，按视频里的混音原样导出。 */
+  /** Loudness normalization; off by default, so the audio is exported as mixed in the video. */
   loudness?: LoudnessTarget | null;
 }
 
 /**
- * 音频导出的声音来源（架构设计 §9.13）：`mix`（默认）是时间线的混音；`original` 只要原声：去掉全部配音（带 `cuccut.dub`
- * 标记的实例，含分离出的背景），配音静音掉的原声恢复，配音触发的压低随之消失；`{ dubGroupId }` 只要这一组配音
- * （实例的 `extensions['cuccut.dub'].groupId`），原声、音乐与别的配音都不要。用于 `kind: 'audio'` 与 `kind: 'video'`：
- * 只改这一次导出的声音计划（成片的画面不受影响），不改视频。
+ * The audio source for audio export (architecture design §9.13): `mix` (default) is the timeline mix; `original` takes only the original sound: all dubbing is removed (instances with the `cuccut.dub`
+ * marker, including the separated background), the original sound muted by dubbing is restored, and the ducking triggered by dubbing goes away with it; `{ dubGroupId }` takes only that one dubbing group
+ * (the instance's `extensions['cuccut.dub'].groupId`), with the original sound, music and other dubbing all left out. Used for `kind: 'audio'` and `kind: 'video'`:
+ * it changes only the sound plan of this one export (the finished video's picture is not affected), and does not change the video.
  */
 export type AudioExportSource = 'mix' | 'original' | { dubGroupId: string };
 
 /**
- * 成片的参数（架构设计 §9.13）。画面由原生合成按帧计划逐帧画出（与预览同一份计划），声音是音频导出的混音。
- * 画不出来的内容（没有预渲染替身的代码包、只有预览实现的内置生成器、认不出的效果与转场、解不出画面的素材……）
- * 在提交时逐项列出：默认以 `EXPORT_UNSUPPORTED_CONTENT` 拒绝（`details.items`）；`onUnsupported: 'skip'` 时跳过它们
- * （整层不画、跳过那个效果、转场按硬切），每一项记一条任务警告。
+ * Parameters for the finished video (architecture design §9.13). The picture is drawn frame by frame by native composition from the frame plan (the same plan as the preview), and the sound is the audio export's mix.
+ * Content that cannot be drawn (code packages with no pre-rendered stand-in, built-in generators that exist only as preview implementations, effects and transitions that are not recognized, media whose picture cannot be decoded, ...)
+ * is listed item by item at submission: by default it is rejected with `EXPORT_UNSUPPORTED_CONTENT` (`details.items`); with `onUnsupported: 'skip'` those items are skipped
+ * (the whole layer is not drawn, the effect is skipped, transitions become hard cuts), and each item records one task warning.
  */
 export interface VideoExportOptions {
-  /** MP4 默认 `h264`，可选 `hevc`；WebM 只有 `vp9`。本机 ffmpeg 没有对应的编码器时以 `EXPORT_TOOL_MISSING` 拒绝。 */
+  /** MP4 defaults to `h264`, with `hevc` as an option; WebM only has `vp9`. Rejected with `EXPORT_TOOL_MISSING` when the local ffmpeg lacks the corresponding encoder. */
   codec?: VideoExportCodec;
   /**
-   * 输出宽度（像素）。只给宽时高度按画布比例；与 `height` 都给时输出就是这个尺寸，画面按画布比例放到放得下的最大
-   * （居中），其余是黑边，排版不按输出的比例重排。宽高都取偶数（yuv420p 的要求），调整过时记一条警告。
+   * Output width (pixels). When only the width is given, the height follows the canvas aspect ratio. When both `height` and width are given, the output is exactly this size: the picture is scaled to the largest size that fits, keeping the canvas aspect ratio (centered), with black bars for the rest; the layout is not reflowed to the output's aspect ratio. Both width and height are rounded to even numbers (a requirement of yuv420p); a warning is recorded when an adjustment is made.
    */
   width?: number;
-  /** 输出高度（像素）；只给高时宽度按画布比例。宽高都取偶数，调整过时记一条警告。都不给时是画布尺寸。 */
+  /** Output height (pixels); when only the height is given, the width follows the canvas aspect ratio. Both width and height are rounded to even numbers; a warning is recorded when an adjustment is made. When neither is given, the canvas size is used. */
   height?: number;
-  /** 输出帧率；默认是序列帧率。不同时按输出帧的精确时刻取画面（架构设计 §9.10）。 */
+  /** Output frame rate; defaults to the sequence frame rate. When they differ, the picture is taken at the exact times of the output frames (architecture design §9.10). */
   fps?: { num: number; den: number };
-  /** 恒定质量（H.264 / HEVC 0–51，VP9 0–63；默认 20 / 23 / 32）。与 `bitrateKbps` 只能给一个。 */
+  /** Constant quality (H.264 / HEVC 0–51, VP9 0–63; defaults 20 / 23 / 32). Only one of this and `bitrateKbps` may be given. */
   crf?: number;
-  /** 视频的目标码率（kbps）。 */
+  /** Target video bitrate (kbps). */
   bitrateKbps?: number;
-  /** 把时间线上的字幕画进画面，默认 `true`；只影响这一次导出。 */
+  /** Draw the timeline's captions into the picture; default `true`. Affects only this export. */
   burnCaptions?: boolean;
-  /** 画不出来的内容：`fail`（默认）拒绝，`skip` 跳过并逐项警告。 */
+  /** Content that cannot be drawn: `fail` (default) rejects it; `skip` skips it and warns item by item. */
   onUnsupported?: 'fail' | 'skip';
-  /** 声音：与音频导出相同的参数（码率默认 MP4 192、WebM 128 kbps）。 */
+  /** Sound: the same parameters as audio export (bitrate defaults to MP4 192, WebM 128 kbps). */
   audio?: AudioExportOptions;
 }
 
 /**
- * 便携包（架构设计 §5.8，视频格式规范 §8）：一个 `.cuccut` 文件，里面是视频的快照、全部文档版本的正文与全部素材版本的 bytes
- * （链接的素材也收进来），连同逐个文件的长度与 sha256。不带本机路径、密钥、授权、任务记录与会话。
+ * Portable package (architecture design §5.8, video format spec §8): a single `.cuccut` file containing a snapshot of the video, the body of every document version, and the bytes of every media version
+ * (linked media is included as well), together with the length and sha256 of each file. It carries no local paths, keys, authorizations, task records, or sessions.
  */
 export interface PortableExportOptions {
   /**
-   * 读不到的素材版本（文件不在、已经不是登记时的内容、相对路径越出项目）：`fail`（默认）在提交时逐项拒绝；
-   * `skip` 不收进包，清单里如实标 `missing`，打开包得到的视频里它们是缺失的链接素材。
+   * Media versions that cannot be read (file missing, no longer the content recorded when registered, relative path escapes the project): `fail` (default) rejects each item at submission;
+   * `skip` does not include it in the package, honestly marks it `missing` in the manifest, and when the package is opened, those are missing linked media in the resulting video.
    */
   missingAssets?: 'fail' | 'skip';
 }
 
 /**
- * 工程导出的格式（架构设计 §9.13）：`xmeml` 是 Final Cut Pro 7 XML（xmeml v5），Premiere Pro 与 DaVinci Resolve 能导入。
- * 素材按引用写出（本机的绝对路径）；表达不了的对象逐项写进任务警告。
+ * Format of the project export (architecture design §9.13): `xmeml` is Final Cut Pro 7 XML (xmeml v5), which Premiere Pro and DaVinci Resolve can import.
+ * Media is written by reference (absolute local paths); objects that cannot be expressed are written item by item into the task warnings.
  */
 export type ProjectExportFormat = 'xmeml';
 
 /**
- * `preview` 是智能体内部检查的文件，不作为会话交付，也不进 Space；不给目录时写到来源目录下的 `.cuccut-out/exports/`。
- * 省略时按 `deliverable` 处理。
+ * `preview` is a file for the agent's internal checks: it is not delivered as a session output and does not enter the Space. When no directory is given, it is written to `.cuccut-out/exports/` under the source directory.
+ * When omitted, it is treated as `deliverable`.
  */
 export type ExportPurpose = 'deliverable' | 'preview';
 
@@ -230,15 +229,15 @@ export type ExportSettings = { purpose?: ExportPurpose } & (
 );
 
 /**
- * 输出的位置。不给 `dir` 时是视频来源目录（项目目录；不在项目里的视频是视频目录的上一级）下的 `exports/`（`preview` 的是
- * `.cuccut-out/exports/`）；
- * 给了的 `dir` 必须是已经存在、可写的绝对路径。文件名默认是「视频名.种类后缀.扩展名」（成片的后缀是画面里烧着的字幕语言，
- * 没有时不加，见 `burnedCaptionLanguages`），重名时加序号；
- * 给了 `fileName` 而文件已经存在时，除非 `overwrite`，以 `EXPORT_DESTINATION_EXISTS` 拒绝。
+ * The output location. When `dir` is not given, it is `exports/` under the video's source directory (the project directory; for a video outside a project, the parent of the video directory), and `preview` uses
+ * `.cuccut-out/exports/`.
+ * A given `dir` must be an absolute path that already exists and is writable. The default filename is "video name.kind suffix.extension" (the suffix for the finished video is the language of the captions burned into the picture;
+ * when there are none, no suffix is added, see `burnedCaptionLanguages`). On a name clash, a sequence number is added.
+ * When `fileName` is given and the file already exists, it is rejected with `EXPORT_DESTINATION_EXISTS` unless `overwrite` is set.
  */
 export interface ExportDestination {
   dir?: string;
-  /** 只在只出一个文件时可用；不含目录。扩展名不对时补上正确的。 */
+  /** Only usable when a single file is produced; no directory included. The correct extension is appended if the given one is wrong. */
   fileName?: string;
   overwrite?: boolean;
 }
@@ -250,41 +249,41 @@ export interface ExportCreateRequest {
   commandId?: Id;
 }
 
-/** 字幕与文稿的设置：`exports.renderText` 只接受这两种。 */
+/** Settings for captions and transcripts: `exports.renderText` accepts only these two kinds. */
 export type TextExportSettings = Extract<ExportSettings, { kind: 'subtitles' | 'transcript' }>;
 
 /**
- * `exports.renderText`：不写文件、不建任务，按与 `exports.create` 相同的冻结、预检与写法排出正文（导出面板文稿页的预览与
- * 「复制文本」）。拿到的正文与同样设置导出的文件逐字节相同。
+ * `exports.renderText`: writes no file and creates no task; it renders the text with the same freezing, preflight, and writing as `exports.create` (the preview on the transcript page of the export panel and "copy text").
+ * The text obtained is byte-for-byte identical to the file exported with the same settings.
  */
 export interface ExportRenderTextRequest {
   videoId: Id;
   settings: TextExportSettings;
 }
 
-/** 排出来的一份：几段范围时每段一份，与导出的文件一一对应。 */
+/** One rendered result: with several ranges, one per range, matching the exported files one to one. */
 export interface RenderedTextOutput {
-  /** 默认目标下预计的文件名（重名时真正导出会再加序号）。 */
+  /** The expected filename under the default destination (on a name clash, the actual export will add a sequence number). */
   fileName: string;
   format: SubtitleExportFormat | TranscriptExportFormat;
   mediaType: string;
   content: string;
-  /** 条数：字幕是条，JSON 是句子，Markdown 与纯文本是段落。 */
+  /** Count of items: captions are entries, JSON is sentences, Markdown and plain text are paragraphs. */
   entries: number;
-  /** 最后一条的结束时间（秒，相对范围起点）。 */
+  /** End time of the last item (seconds, relative to the range start). */
   durationSec: number;
-  /** 主文档正文（不含标题、说话人、时间码与译文）里的拉丁词数与汉字数，给界面说篇幅。 */
+  /** Counts of Latin words and Han characters in the body of the primary document (excluding headings, speakers, timecodes, and translations), for showing the length in the UI. */
   words: number;
   cjkCharacters: number;
 }
 
 export interface ExportRenderTextResult {
   outputs: RenderedTextOutput[];
-  /** 与导出任务相同的警告；几段范围时 `segmentId` 是那一份的文件名。 */
+  /** Same warnings as the export task; with several ranges, `segmentId` is the filename of that segment. */
   warnings: JobWarning[];
 }
 
-/** 冻结的素材版本：位置与指纹。链接的素材在预检与执行前各按内容摘要核对一次。 */
+/** A frozen media version: location and fingerprint. Linked media is checked against its content digest once before preflight and once before execution. */
 export interface ExportAssetVersion {
   assetId: Id;
   revision: string;
@@ -296,13 +295,10 @@ export interface ExportAssetVersion {
 }
 
 /**
- * 成片冻结的本机字体 face（架构设计 §9.11 的「字体」）：随渲染内核发布的字体之外、成片排字点了名的「族名、字重、斜体」，
- * 冻结时在本机找到的那一个 face——所在文件、文件里第几个与整个文件的摘要和字节数（执行时按它核对，变了以
- * `FONT_MISSING` 失败）；找不到的记 `fallback`（照回退字体画，结果里有提示）。
+ * The local font faces frozen for the finished video (the "fonts" in architecture design §9.11): apart from the fonts shipped with the render kernel, the font family name, weight, and italic style named by the typesetting of the finished video.
+ * The one face found on this machine at freeze time: the file it is in, its index within the file, and the digest and byte count of the whole file (checked against these at execution; if it has changed, it fails with `FONT_MISSING`). A face that cannot be found is recorded as `fallback` (rendered with the fallback font, and the result carries a hint).
  *
- * 按需下载的字体（§9.1）：冻结时下载缓存里已有的照样记文件（`source: 'downloaded'`）；字体目录里有、还没下载的记
- * `download`，任务开始画之前下载（进度与取消随导出任务），下载好的按同样的写法冻结进这次渲染，下载不成或不下载（自动
- * 下载关着、严格离线）时记 `fallback: 'not-downloaded'`，照回退字体画、警告 `FONT_NOT_DOWNLOADED` 说明原因。
+ * On-demand fonts (§9.1): at freeze time, a face already in the download cache is still recorded as a file (`source: 'downloaded'`). A face present in the font directory but not yet downloaded is recorded as `download`, and it is downloaded before rendering begins (progress and cancellation follow the export task). A downloaded face is frozen into this render in the same way. When the download fails or is not attempted (automatic download is off, or strictly offline), it is recorded as `fallback: 'not-downloaded'`, rendered with the fallback font, with the warning `FONT_NOT_DOWNLOADED` explaining the reason.
  */
 export type ExportFontFace = { family: string; weight: number; italic: boolean } & (
   | { path: string; faceIndex: number; contentHash: string; byteLength: number; source?: 'local' | 'downloaded' }
@@ -310,7 +306,7 @@ export type ExportFontFace = { family: string; weight: number; italic: boolean }
   | { download: 'google-fonts' }
 );
 
-/** 冻结的文档版本。 */
+/** A frozen document version. */
 export interface ExportDocumentVersion {
   documentId: Id;
   revision: string;
@@ -320,8 +316,8 @@ export interface ExportDocumentVersion {
 }
 
 /**
- * 导出启动时的冻结（架构设计 §9.11）：之后的编辑不影响这个导出。作为 JSON 产物存下（`JobRecord.export.snapshotArtifactId`）；
- * `parts` 是引擎按这一个视频版本求出的计划（每个输出范围一份：声音的区间计划，或文档在时间线上的投影）。
+ * The freeze at export start (architecture design §9.11): later edits do not affect this export. It is stored as a JSON artifact (`JobRecord.export.snapshotArtifactId`).
+ * `parts` is the plan the engine derived for this one video version (one per output range: either the audio's interval plan, or the document's projection onto the timeline).
  */
 export interface ExportSnapshot {
   schema: 'cuccut.export-snapshot/1';
@@ -332,37 +328,37 @@ export interface ExportSnapshot {
   sequenceRevision: string;
   settings: ExportSettings;
   assets: ExportAssetVersion[];
-  /** 成片：用到的本机字体（其它种类的导出没有）。 */
+  /** Finished video: the local fonts used (other kinds of export have none). */
   fonts?: ExportFontFace[];
   documents: ExportDocumentVersion[];
-  /** 每个输出一份：范围（秒）、目标文件名与引擎给出的计划。 */
+  /** One per output: the range (seconds), the target filename, and the plan given by the engine. */
   parts: Array<{ range: ExportRange; fileName: string; plan: unknown }>;
-  /** 成片：Render Worker 逐帧求计划用的那部分视频（序列与素材记录）与要画的字幕文档正文。 */
+  /** Finished video: the part of the video (sequence and media records) that the Render Worker needs to derive the plan frame by frame, and the body of the caption documents to be drawn. */
   render?: { document: unknown; documents: unknown[] };
   output: { dir: string; overwrite: boolean };
   frozenAt: string;
 }
 
-/** 公开记录里的导出信息。 */
+/** Export information in the public record. */
 export interface ExportJobInfo {
   settings: ExportSettings;
   snapshotArtifactId: string;
   videoRevision: string;
   sequenceId: Id;
-  /** 目标目录与各个输出的文件名（发布时重名会再加序号，实际路径以 `result.outputs[].path` 为准）。 */
+  /** The target directory and the filename of each output (on a name clash at publish, a sequence number is added; the actual path is `result.outputs[].path`). */
   destination: { dir: string; files: string[]; overwrite: boolean };
 }
 
-/** 一个输出发布前的校验：解析得出、条数与时长对得上；音频与成片由 ffprobe 读。便携包没有时长，时长的三项为 0。 */
+/** Verification of one output before publishing: the parsed result must match the count and duration; audio and finished video are read by ffprobe. A package has no duration, so its three duration fields are 0. */
 export interface ExportValidation {
-  /** 做过的检查项（全部通过才发布）。 */
+  /** The checks performed (all must pass before publishing). */
   checks: string[];
   expectedDurationSec: number;
   durationSec: number;
   toleranceSec: number;
   expectedEntries?: number;
   entries?: number;
-  /** 成片：期望的与读到的帧数、尺寸、帧率（`num/den`）与流。 */
+  /** Finished video: expected and read frame count, dimensions, frame rate (`num/den`), and streams. */
   video?: {
     expectedFrames: number;
     frames: number;
@@ -371,11 +367,11 @@ export interface ExportValidation {
     fps: string;
     streams: string[];
   };
-  /** 便携包：发布前从写好的归档里重新读出、按清单核对过长度与 sha256 的文件数与总字节数。 */
+  /** Portable package: the number of files and total bytes, re-read from the written archive before publishing and checked against the manifest's length and sha256. */
   package?: { files: number; verifiedFiles: number; bytes: number };
   /**
-   * 响度标准化：目标、实测与施加的静态增益。`measured.inputLufs` 是母带前的综合响度，`integratedLufs` 与 `truePeakDb`
-   * 是母带后的；`gainDb` 是各轮响度归一的静态增益之和（限幅另算）。
+   * Loudness normalization: target, measurement, and applied static gain. `measured.inputLufs` is the integrated loudness before mastering; `integratedLufs` and `truePeakDb`
+   * are after mastering; `gainDb` is the sum of the static gains from each loudness normalization round (limiting is counted separately).
    */
   loudness?: {
     target: Required<LoudnessTarget>;
@@ -384,41 +380,41 @@ export interface ExportValidation {
   };
 }
 
-// ---- 便携包（视频格式规范 §8）----
+// ---- Portable package (video format spec §8) ----
 
 export const PACKAGE_FORMAT = 'cuccut.package';
-/** 这个版本写出与能读的打包版本。更高的版本以 `PACKAGE_VERSION_UNSUPPORTED` 拒绝。 */
+/** The package version this version writes and can read. A higher version is rejected with `PACKAGE_VERSION_UNSUPPORTED`. */
 export const PACKAGE_VERSION = 1;
 export const PACKAGE_EXTENSION = 'cuccut';
 export const PACKAGE_MANIFEST_FILE = 'video.manifest.json';
 
-/** 清单里的一个素材版本或文档版本。 */
+/** A media version or document version in the manifest. */
 export interface PackageEntry {
   ref: { id: Id; revision: string };
   kind: 'asset' | 'document';
-  /** 包里的相对路径；没有收进包的没有。 */
+  /** The relative path inside the package; entries not included in the package have none. */
   path?: string;
   contentHash: string;
   byteLength: number;
-  /** `included` 收进了包；`missing` 导出时读不到（`missingAssets: 'skip'`）。`linked`、`excluded-license` 为以后的链接式包保留。 */
+  /** `included` means it was packed; `missing` means it could not be read at export (`missingAssets: 'skip'`). `linked` and `excluded-license` are reserved for future linked-style packages. */
   inclusion: 'included' | 'linked' | 'missing' | 'excluded-license';
   note?: string;
 }
 
-/** 包里的一个文件（清单自己除外）：路径、长度与 sha256。打开时逐个核对，多出或缺少的文件都拒绝。 */
+/** A file inside the package (the manifest itself excluded): path, length, and sha256. Checked file by file on open; extra or missing files are both rejected. */
 export interface PackageFile {
   path: string;
   byteLength: number;
   sha256: string;
 }
 
-/** `video.manifest.json`（视频格式规范 §8.1）。 */
+/** `video.manifest.json` (video format spec §8.1). */
 export interface PackageManifest {
   format: typeof PACKAGE_FORMAT;
   packageVersion: number;
   videoSchemaVersion: number;
   timeContractVersion: number;
-  /** 导出时的视频身份与版本。打开包得到的是一个新视频，有新的 videoId。 */
+  /** The video's identity and version at export time. Opening the package yields a new video, with a new videoId. */
   videoId: Id;
   videoName: string;
   videoRevision: string;

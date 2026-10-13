@@ -26,8 +26,7 @@ import { usePeekDraft } from './inspector-visualizers.tsx';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
- * 彩纸的参数（设计稿 panel-element-confetti.jsx）：款式 → 颜色 → 形状 → 粒子运动 → 发射 → 随机。每一笔都把整份参数
- * 补齐、夹回范围后写回（`normalizeConfetti`）；跟配方走的起点、方向、扇面写 null。换款回到那一款的缺省，只留种子。
+ * Confetti parameters (design panel-element-confetti.jsx): style → color → shape → particle motion → emission → randomness. Each edit fills in the whole parameter set, clamps it back into range, and writes it back (`normalizeConfetti`). Recipe-driven origin, direction and fan angle are written as null. Switching style returns to that style's defaults, keeping only the seed.
  */
 
 interface ParamProps {
@@ -38,7 +37,7 @@ interface ParamProps {
 }
 
 const styleRow = style({ display: 'flex', alignItems: 'center', gap: 12 });
-/** 彩纸格（设计稿 .stile--cft）：深底衬亮色粒子，悬停加深并播起来。 */
+/** Confetti cell (design .stile--cft): dark background with bright particles; darkens on hover and starts playing. */
 const darkFace = style({
   display: 'block',
   boxSizing: 'border-box',
@@ -113,7 +112,7 @@ export function ConfettiParams({ values, isDisabled, live: liveRaw, commit: comm
   const sameShapes = cf.shapes.join() === recipe.shapes.join();
   const R = CONFETTI_RANGES;
 
-  /** 倍率一行：0.05 步进，读数就是倍数（1 是配方原样，节头写明）。 */
+  /** Multiplier row: steps of 0.05, and the readout is the multiple (1 is the recipe unchanged; the section header states this). */
   const multiplier = (label: string, key: 'size' | 'speed' | 'gravity' | 'drift' | 'spin') => (
     <ValueRow
       label={label}
@@ -134,7 +133,7 @@ export function ConfettiParams({ values, isDisabled, live: liveRaw, commit: comm
         {IC.cfStyle}
       </SecHead>
       <div className={styleRow}>
-        {/* 当前那一格也能点开目录；目录挂在「更换款式」上。 */}
+        {/* The currently selected cell can also open the catalog; the catalog is attached to “更换款式” (change style). */}
         <RACButton className={currentTile} isDisabled={isDisabled} aria-label={IC.cfStyleTile(recipe.name)} onPress={() => setOpen(true)}>
           {({ isHovered }) => (
             <span className={darkFace({ isHovered })}>
@@ -232,7 +231,7 @@ export function ConfettiParams({ values, isDisabled, live: liveRaw, commit: comm
               isSelected={on}
               isDisabled={isDisabled}
               onChange={() => {
-                // 至少留一种：最后那一种点不掉。
+                // Keep at least one: the last one cannot be deselected.
                 if (on && cf.shapes.length <= 1) return;
                 commit({ shapes: on ? cf.shapes.filter((s) => s !== shape) : CONFETTI_SHAPES.filter((s) => s === shape || cf.shapes.includes(s)) });
               }}>
@@ -412,8 +411,7 @@ export function ConfettiParams({ values, isDisabled, live: liveRaw, commit: comm
 }
 
 /**
- * 款式目录（设计稿的款式抽屉，这里与进度、声波的样式目录一样是弹层）：十格与元素页同一份缩略图，悬停即播、先叠给预览，
- * 点下提交；选中框停在打开目录时的那一款上。
+ * Style catalog (the design's style drawer; like the progress and waveform style catalogs, it is a popover here): ten cells with the same thumbnails as the elements page. Hover plays, the hovered style is previewed first, and a click commits. The selection frame stays on the style that was current when the catalog was opened.
  */
 function ConfettiCatalog({ current, onPeek, onPick, onClose }: { current: string; onPeek(key: string): void; onPick(key: string): void; onClose(): void }) {
   const [opened] = useState(current);

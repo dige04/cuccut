@@ -1,12 +1,8 @@
-//! BCF 通道 ↔ `MotionProgram` 的无损往返（计划 §4.4）。
+//! Lossless round trip between BCF channels and `MotionProgram` (plan §4.4).
 //!
-//! 语料就是阶段 0 的 golden 语料：`tests/fixtures/media-demo.ccut.json`
-//! 与 `tests/fixtures/launch-golden/launch.ccut.json` resolve 之后的全部通道，
-//! 包含 visual clip 的节点通道与 wrap（转场）通道、camera 与 audio 通道。
+//! The corpus is the stage-0 golden corpus: all channels after resolving `tests/fixtures/media-demo.ccut.json` and `tests/fixtures/launch-golden/launch.ccut.json`, including the node channels of visual clips, the wrap (transition) channels, and the camera and audio channels.
 //!
-//! 不变量：`to_channels(to_program(chs)) == chs`，**逐字节**。这是
-//! `ccut render` 输出不变的构造性证明——整数 `0` 一直是 `Number(0)`，
-//! 不会在往返中变成 `0.0`。
+//! Invariant: `to_channels(to_program(chs)) == chs`, **byte for byte**. This is the constructive proof that the output of `ccut render` is unchanged: the integer `0` has always been `Number(0)` and does not become `0.0` in the round trip.
 
 use std::path::PathBuf;
 
@@ -20,7 +16,7 @@ fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-/// media-demo 的宿主元数据：与 `motion_channels_baseline.rs` 同一组固定值。
+/// Host metadata for media-demo: the same fixed values as `motion_channels_baseline.rs`.
 fn media_demo_inputs() -> HostInputs {
     let mut inputs = HostInputs::default();
     inputs.insert_image("card", 640.0, 360.0);
@@ -86,7 +82,7 @@ fn assert_round_trip(label: &str, channels: &[Channel]) {
     let corpus: Vec<ChannelIr> = channels.iter().map(to_ir).collect();
     let program = to_program(&corpus);
     assert_eq!(to_channels(&program), corpus, "{label}: 往返不无损");
-    // 数值通道的强类型视角必须与原文数字一致
+    // The strongly typed view of numeric channels must match the source numbers
     for channel in &corpus {
         for frame in &channel.frames {
             if let Some(n) = frame.v.as_f64() {
@@ -107,7 +103,7 @@ fn media_demo_channels_round_trip_through_the_motion_program() {
     assert_round_trip("media-demo", &all_channels(&ir));
 }
 
-/// `tests/fixtures/launch-golden/launch.ccut.json` 是跟踪进版本库的 fixture。
+/// `tests/fixtures/launch-golden/launch.ccut.json` is a fixture tracked in the repository.
 #[test]
 fn launch_channels_round_trip_through_the_motion_program() {
     let ir = resolve("launch-golden/launch.ccut.json").expect("launch.ccut.json");
@@ -128,7 +124,7 @@ fn two_scenes_with_transition(preset: &str) -> Value {
     })
 }
 
-/// 转场分支的错误串是 lint / 诊断契约，必须逐字节不变。
+/// The error strings of the transition branch are a lint / diagnostic contract and must stay byte-for-byte unchanged.
 #[test]
 fn unknown_transitions_keep_their_diagnostic_string() {
     let mut resolver =
@@ -140,9 +136,7 @@ fn unknown_transitions_keep_their_diagnostic_string() {
     assert_eq!(error.to_string(), "transition-unknown: \"notATransition\"");
 }
 
-/// 规范 §9 的全部 Motion Transition 词汇都必须能物化出通道——阶段 5 之前
-/// `wipeLeft` / `wipeRight` / `zoomThrough` / `whipPan` 四个词在这里报
-/// `transition-unknown`。
+/// Every Motion Transition term in spec §9 must be able to materialize channels. Before stage 5, the four terms `wipeLeft` / `wipeRight` / `zoomThrough` / `whipPan` report `transition-unknown` here.
 #[test]
 fn the_whole_spec_section_nine_vocabulary_resolves() {
     let expected: &[(&str, &[&str], &[&str])] = &[
@@ -175,7 +169,7 @@ fn the_whole_spec_section_nine_vocabulary_resolves() {
         };
         assert_eq!(props("a"), *out_props, "{preset} 的 out 通道");
         assert_eq!(props("b"), *in_props, "{preset} 的 in 通道");
-        // 交叠窗口对称展开，与词汇无关。
+        // Overlapping windows expand symmetrically, independent of the vocabulary.
         let a = ir.visual_clips.iter().find(|c| c.id == "a").unwrap();
         let b = ir.visual_clips.iter().find(|c| c.id == "b").unwrap();
         if *preset == "cut" {

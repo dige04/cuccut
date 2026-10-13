@@ -1,7 +1,6 @@
-//! 帧计划对夹具视频的行为，以及与 WASM 预览共用的金标准输出。
+//! Frame-plan behavior on the fixture video, and the golden output shared with the WASM preview.
 //!
-//! 金标准 `fixtures/plan-golden.txt` 每行是 `秒数\t计划 JSON`，界面的 vitest 用编出来的 WASM 逐字节比对同一份文件：
-//! 预览与导出出自同一个实现，两个目标上的输出也必须一致。改了计划规则之后用 `UPDATE_GOLDEN=1 cargo test` 重新生成。
+//! Each line of the golden file `fixtures/plan-golden.txt` is `seconds\tplan JSON`. The UI's vitest compares the same file byte for byte against the WASM build: the preview and export come from the same implementation, so the output must match on both targets. After changing the plan rules, regenerate it with `UPDATE_GOLDEN=1 cargo test`.
 
 use std::path::PathBuf;
 
@@ -10,7 +9,7 @@ use render_graph::ducking::DuckingEnvelope;
 use render_graph::{FramePlan, LayerContent, LayerKind, TransitionRole, VideoView, VisualLayer, VoiceSource, plan_interactive};
 use video_model::{Fit, SoloGroup, TimelineItem, VideoSnapshot, VisualMode};
 
-/// 覆盖片段边界、子帧音频起止、定格与浮点帧边界的采样时刻。
+/// Sample times covering clip boundaries, sub-frame audio starts and ends, freeze frames, and floating-point frame boundaries.
 const SAMPLE_SECONDS: &[f64] = &[
     0.0,
     1.0 / 30.0,
@@ -64,7 +63,7 @@ fn layer<'a>(plan: &'a FramePlan, item_id: &str) -> &'a VisualLayer {
         .unwrap_or_else(|| panic!("{item_id} 在画面上"))
 }
 
-/// 线性倍数换成 dB：与计划器同一个公式，结果逐位相等。
+/// Linear multiplier converted to dB, using the same formula as the planner; results are bit-identical.
 fn db(volume: f64) -> f64 {
     20.0 * volume.log10()
 }
@@ -81,7 +80,7 @@ fn hidden_tracks_still_sound_and_disabled_items_are_skipped() {
     assert_eq!(layer_ids(&start), ["item_land_a"]);
     assert_eq!(voice_ids(&start), ["item_land_a", "item_hidden"]);
     assert_eq!(start.voices[1].source, VoiceSource::Embedded);
-    // 音量是线性倍数 0.5，计划里换成 dB。
+    // The volume is the linear multiplier 0.5; the plan converts it to dB.
     assert_eq!(start.voices[1].gain_db, db(0.5));
     assert_eq!(start.canvas.background, "#101820");
 }
@@ -91,7 +90,7 @@ fn layers_stack_by_track_order_then_paint_order() {
     let video = fixture();
     let middle = plan(&video, 1.5);
     assert_eq!(middle.frame, 45);
-    // V1（order 0）在下，V2（order 1）里 paintOrder 小的先画；视频源时刻按时间映射：sourceIn 1 秒 + 1.5 秒。
+    // V1 (order 0) is below, V2 (order 1) is above; in V2 the one with the smaller paintOrder draws first. The video source time follows the time mapping: sourceIn 1 s + 1.5 s.
     assert_eq!(layer_ids(&middle), ["item_land_a", "item_port", "item_logo"]);
     assert_eq!(middle.layers[0].source_seconds, Some(2.5));
     assert_eq!(middle.layers[0].source_rate, Some(1.0));
@@ -107,7 +106,7 @@ fn rotated_portrait_video_is_contained_in_its_box() {
         .into_iter()
         .find(|layer| layer.item_id == "item_port")
         .expect("竖屏片段在画面上");
-    // 画中画的框按源的宽高比定高：宽 15% = 288，1080×1920 的源高 512；中心在 (60%, 40%) = (1152, 432)，顺时针转 90°。
+    // The picture-in-picture box's height follows the source aspect ratio: width 15% = 288, and the 1080×1920 source has height 512. The center is at (60%, 40%) = (1152, 432), rotated 90° clockwise.
     assert_eq!(port.matrix, [0.0, 288.0, -512.0, 0.0, 1408.0, 288.0]);
     assert_eq!(port.source_rect, Some([0.0, 0.0, 1.0, 1.0]));
     assert_eq!(port.opacity, 0.5);
@@ -116,7 +115,7 @@ fn rotated_portrait_video_is_contained_in_its_box() {
 
 #[test]
 fn cover_crops_the_source_around_its_center() {
-    // 画中画的框与源同比例，适配只在铺满画布时起作用：把竖屏片段改成铺满。
+    // The PiP box keeps the source's proportions; fit only takes effect when filling the canvas, so the portrait clip is changed to fill.
     let mut video = fixture();
     for item in &mut video.sequences.get_mut("seq_main").unwrap().items {
         if let TimelineItem::Video(port) = item
@@ -131,7 +130,7 @@ fn cover_crops_the_source_around_its_center() {
         .into_iter()
         .find(|layer| layer.item_id == "item_port")
         .expect("竖屏片段在画面上");
-    // 1080×1920 铺满 1920×1080：宽对齐，取中间 (1080/1920)² 那么高。
+    // 1080×1920 filling 1920×1080: width aligns, and the middle part is taken with height (1080/1920)².
     let [u0, v0, u1, v1] = port.source_rect.expect("视频有取源区域");
     let kept = (1080.0f64 / 1920.0).powi(2);
     assert_eq!((u0, u1), (0.0, 1.0));
@@ -151,7 +150,7 @@ fn frame_boundaries_survive_float_seconds() {
 #[test]
 fn audio_starts_and_ends_on_samples_not_frames() {
     let video = fixture();
-    // 从第 15 帧再晚 1/48000 秒开始，响 3 秒。
+    // Starts 1/48000 s later than frame 15 and sounds for 3 s.
     assert!(!voice_ids(&plan(&video, 0.50002)).contains(&"item_music"));
     let started = plan(&video, 0.50003);
     let music = started
@@ -190,8 +189,8 @@ fn fades_ramp_the_gain_linearly_in_amplitude() {
             .map(|voice| voice.gain_db)
             .expect("音乐在响")
     };
-    // 音乐从 0.5 + 1/48000 秒开始，响 3 秒：淡入一半时振幅 0.5（−6.02 dB），中段只剩音量（0.5 倍），淡出还剩 0.25 秒时又是一半。
-    // 交互入口按微秒取近似，所以只比到千分之一 dB。
+    // Music starts at 0.5 + 1/48000 s and sounds for 3 s. At half of the fade-in the amplitude is 0.5 (−6.02 dB); in the middle only the volume applies (0.5×); when 0.25 s of fade-out remains it is half again.
+    // The interactive entry point uses microsecond approximations, so the comparison is only to the nearest thousandth of a dB.
     let start = 0.5 + 1.0 / 48000.0;
     let half = db(0.5);
     assert!((gain(start + 0.5) - (db(0.5) + half)).abs() < 1e-3);
@@ -227,7 +226,7 @@ fn solo_groups_apply_separately() {
     }
     let soloed = plan(&video, 1.5);
     assert_eq!(layer_ids(&soloed), ["item_port", "item_logo"]);
-    // 音频组 Solo 之后，视频自带的声音也停了，只剩独奏轨道。
+    // After the audio group is soloed, the video's own sound also stops; only the soloed track remains.
     assert_eq!(voice_ids(&soloed), ["item_music"]);
 }
 
@@ -252,7 +251,7 @@ fn errors_name_the_problem() {
 
 #[test]
 fn malformed_rates_are_errors_not_panics() {
-    // 在 WASM 里 panic 是陷阱：计划器只能重新载入，再遇到同一个视频又会陷进去。
+    // A panic in WASM is a trap: the planner can only reload, and hitting the same video again would trap again.
     let mut video = fixture();
     video.sequences.get_mut("seq_main").unwrap().header.fps.num = 0;
     assert_eq!(
@@ -285,7 +284,7 @@ fn text_shape_and_generators_fill_their_box() {
     let video = fixture();
     let plan = plan(&video, 8.0);
     assert_eq!(plan.frame, 240);
-    // 生成器轨道（order 3）在视频之上，字幕轨道（order 4）再往上。
+    // The generator track (order 3) is above the video, and the caption track (order 4) is above that.
     assert_eq!(
         layer_ids(&plan),
         ["item_talk_a", "item_title", "item_badge", "item_meter", "item_caption"]
@@ -293,7 +292,7 @@ fn text_shape_and_generators_fill_their_box() {
 
     let title = layer(&plan, "item_title");
     assert_eq!(title.kind, LayerKind::Text);
-    // 文字的框是正方形（v2 的元素几何）：宽 50% = 960，中心在 (50%, 20%) = (960, 216)。
+    // The text box is square (v2 element geometry): width 50% = 960, center at (50%, 20%) = (960, 216).
     assert_eq!(title.matrix, [960.0, 0.0, 0.0, 960.0, 480.0, -264.0]);
     assert_eq!((title.asset.as_ref(), title.source_rect), (None, None));
     let Some(LayerContent::Text { text, style }) = &title.content else {
@@ -305,7 +304,7 @@ fn text_shape_and_generators_fill_their_box() {
     let badge = layer(&plan, "item_badge");
     assert_eq!(badge.kind, LayerKind::Shape);
     assert_eq!(badge.opacity, 0.8);
-    // 宽 10% = 192、高 10% = 108，中心在 (192, 216)，绕中心顺时针转 90°。
+    // Width 10% = 192, height 10% = 108, center at (192, 216), rotated 90° clockwise around the center.
     assert_eq!(badge.matrix, [0.0, 192.0, -108.0, 0.0, 246.0, 120.0]);
     let Some(LayerContent::Shape { shape }) = &badge.content else {
         panic!("图形层带图形");
@@ -326,7 +325,7 @@ fn text_shape_and_generators_fill_their_box() {
     assert_eq!(generator, "cuccut.progress");
     assert!((elapsed_seconds - 10.0 / 30.0).abs() < 1e-12);
     assert_eq!(*duration_seconds, 3.0);
-    // 进度条没有时间映射：局部时刻就是实例里经过的时间，速度 1。
+    // The progress bar has no time mapping: local time is the time elapsed in the instance, at speed 1.
     assert!((meter.source_seconds.unwrap() - 10.0 / 30.0).abs() < 1e-12);
     assert_eq!(meter.source_rate, Some(1.0));
 }
@@ -355,7 +354,7 @@ fn flips_mirror_the_content_in_place() {
         .into_iter()
         .find(|l| l.item_id == "item_mirror")
         .expect("镜像图片在画面上");
-    // 宽 20% = 384、按 640×360 的源高 216，中心在 (576, 540)：u 从右往左走。
+    // Width 20% = 384; with a 640×360 source the height is 216. The center is at (576, 540), and u runs from right to left.
     assert_eq!(mirror.matrix, [-384.0, 0.0, 0.0, 216.0, 768.0, 432.0]);
 }
 
@@ -380,11 +379,11 @@ fn captions_project_through_the_covering_scope_item() {
         ("doc_caption", Some("doc_caption_style"))
     );
     assert_eq!(*sequence_seconds, 7.0);
-    // 第 210 帧在 item_talk_a 里：源从 10 秒开始，过了 10 帧。
+    // Frame 210 is in item_talk_a: the source starts at 10 s, and 10 frames have passed.
     assert_eq!(scope.item_id, "item_talk_a");
     assert!((scope.source_seconds - (10.0 + 10.0 / 30.0)).abs() < 1e-12);
 
-    // 两段之间的空隙里没有作用实例覆盖，字幕不出。
+    // In the gap between the two segments no active instance covers, so no caption appears.
     assert!(plan(&video, 8.9).layers.iter().all(|l| l.item_id != "item_caption"));
 
     let later = plan(&video, 9.5);
@@ -394,7 +393,7 @@ fn captions_project_through_the_covering_scope_item() {
     assert_eq!(scope.item_id, "item_talk_b");
     assert!((scope.source_seconds - (20.0 + 10.0 / 30.0)).abs() < 1e-12);
 
-    // 没有作用实例的字幕按序列时间走，只在自己的区间里出现。
+    // Captions with no active instance follow sequence time and appear only within their own span.
     let note = plan(&video, 9.8);
     let Some(LayerContent::Caption { scope, .. }) = &layer(&note, "item_note").content else {
         panic!("字幕层");
@@ -406,9 +405,9 @@ fn captions_project_through_the_covering_scope_item() {
 #[test]
 fn transitions_carry_both_sides_at_the_midpoint() {
     let video = fixture();
-    // 居中的 30 帧溶解在 [75, 105)：第 90 帧（3 秒）正好一半。
+    // The 30-frame centered dissolve within [75, 105): frame 90 (3 s) is exactly halfway.
     let mid = plan(&video, 3.0);
-    // 层列表本身仍是硬切的结果：不认识 `transition` 的后端照旧画出入场的一侧。
+    // The layer list itself is still the hard-cut result: a backend that does not recognize `transition` still draws the incoming side as before.
     assert_eq!(layer_ids(&mid), ["item_land_b", "item_logo"]);
     let tr = mid.layers[0].transition.as_ref().expect("在转场里");
     assert_eq!(
@@ -418,11 +417,11 @@ fn transitions_carry_both_sides_at_the_midpoint() {
     assert_eq!((tr.progress, tr.eased), (0.5, 0.5));
     let partner = tr.partner.as_ref().expect("另一侧");
     assert_eq!(partner.item_id, "item_land_a");
-    // 出场的一侧在自己的结尾之后继续取源：sourceIn 1 秒 + 3 秒。
+    // The outgoing side keeps taking source after its own end: sourceIn 1 s + 3 s.
     assert_eq!(partner.source_seconds, Some(4.0));
     assert!(partner.transition.is_none());
 
-    // 前一帧是出场的一侧在槽位上，另一侧是入场的一侧。
+    // In the frame before, the outgoing side is in the slot and the other side is the incoming side.
     let before = plan(&video, 2.999);
     let tr = before.layers[0].transition.as_ref().unwrap();
     assert_eq!(
@@ -432,7 +431,7 @@ fn transitions_carry_both_sides_at_the_midpoint() {
     assert!((tr.progress - 0.499).abs() < 1e-9);
     assert_eq!(tr.partner.as_ref().unwrap().source_seconds, Some(3.999));
 
-    // 声音等功率交叉淡化：中点两侧都是 −3.01 dB，带同一个转场 ID。
+    // Audio equal-power crossfade: at the midpoint both sides are −3.01 dB, with the same transition ID.
     let voices: Vec<_> = mid
         .voices
         .iter()
@@ -446,7 +445,7 @@ fn transitions_carry_both_sides_at_the_midpoint() {
         assert!((v.gain_db - 20.0 * std::f64::consts::FRAC_1_SQRT_2.log10()).abs() < 1e-9);
     }
 
-    // 窗口之外没有转场。
+    // No transition outside the window.
     assert!(plan(&video, 3.5).layers[0].transition.is_none());
     assert!(plan(&video, 2.0).voices.iter().all(|v| v.transition_id.is_none()));
 }
@@ -460,7 +459,7 @@ fn transitions_fall_back_to_a_hard_cut() {
             item.base_mut().enabled = false;
         }
     }
-    // 另一侧画不出来：没有转场，也没有交叉淡化的声音。
+    // The other side cannot be drawn: no transition, and no audio crossfade.
     let mid = plan(&video, 3.0);
     assert!(mid.layers[0].transition.is_none());
     assert!(
@@ -469,7 +468,7 @@ fn transitions_fall_back_to_a_hard_cut() {
         mid.voices
     );
 
-    // 两侧不再相接（夹具被别的写入方改坏）：同样按硬切。
+    // The two sides no longer touch (the fixture was corrupted by another writer): also a hard cut.
     let mut video = fixture();
     let sequence = video.sequences.get_mut("seq_main").unwrap();
     for item in &mut sequence.items {
@@ -479,7 +478,7 @@ fn transitions_fall_back_to_a_hard_cut() {
     }
     assert!(plan(&video, 2.9).layers[0].transition.is_none());
 
-    // 认不出的种类：标成不支持，没有另一侧，后端按硬切画并报出来。
+    // Unrecognized kind: marked unsupported with no other side. The backend hard-cuts it and reports it.
     let video = fixture();
     let out = plan(&video, 9.8);
     let tr = layer(&out, "item_talk_b").transition.as_ref().unwrap();
@@ -495,7 +494,7 @@ fn layers_list_fx_steps_in_spec_order() {
     let video = fixture();
     let held = plan(&video, 5.5);
     let effects = &held.layers[0].effects;
-    // `fx` 的每一步按格式规范 §3.9 的顺序单独列出（饱和度、色温、暗角），都有画法。
+    // Each step of `fx` is listed separately in the order of format spec §3.9 (saturation, color temperature, vignette), and each has a way to draw it.
     assert_eq!(
         effects.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
         ["fx.saturation", "fx.temperature", "fx.vignette"]
@@ -503,7 +502,7 @@ fn layers_list_fx_steps_in_spec_order() {
     assert_eq!(effects[0].params["amount"], -0.5);
     assert_eq!(effects[1].params["amount"], 0.3);
     assert!(effects.iter().all(|e| e.unsupported.is_none()));
-    // 没有效果的层不写这个字段。
+    // Layers without effects do not write this field.
     let json = serde_json::to_value(plan(&video, 1.5)).unwrap();
     assert!(json["layers"][0].get("effects").is_none());
 }
@@ -512,7 +511,7 @@ fn layers_list_fx_steps_in_spec_order() {
 fn crop_is_folded_into_the_source_rect() {
     let video = fixture();
     let land_b = plan(&video, 4.0).layers.into_iter().find(|l| l.item_id == "item_land_b").unwrap();
-    // 左右各裁 10%：留下 1536×1080，contain 进 1920×1080 的框，左右各留 192。
+    // Cropping 10% from each side leaves 1536×1080, contained in a 1920×1080 frame with 192 left on each side.
     assert_eq!(land_b.source_rect, Some([0.1, 0.0, 0.9, 1.0]));
     assert_eq!(land_b.matrix, [1536.0, 0.0, 0.0, 1080.0, 192.0, 0.0]);
 }
@@ -527,8 +526,8 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
             .find(|v| v.item_id == "item_hidden")
             .expect("隐藏轨道照样发声")
     };
-    // 音乐（A1）从 0.5 + 1/48000 秒响到 3.5 + 1/48000 秒；规则压低 12 dB，attack 0.25 秒，release 0.5 秒。
-    // 斜坡在增益上线性：中点的增益是 1 与 10^(−12/20) 的平均，约 −4.07 dB（不是 dB 的一半 −6）。
+    // Music (A1) sounds from 0.5 + 1/48000 s to 3.5 + 1/48000 s. The rule lowers it 12 dB, with attack 0.25 s and release 0.5 s.
+    // The ramp is linear in gain: the gain at the midpoint is the average of 1 and 10^(−12/20), about −4.07 dB (not half of the dB value, −6).
     let start = 0.5 + 1.0 / 48000.0;
     let base = db(0.5);
     let mid_db = 20.0 * ((1.0 + 10f64.powf(-12.0 / 20.0)) / 2.0).log10();
@@ -539,11 +538,11 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
     let mid_release = hidden(start + 3.0 + 0.25);
     assert!((mid_release.gain_db - (base + mid_db)).abs() < 0.05, "{}", mid_release.gain_db);
     assert_eq!(hidden(4.5).unducked_gain_db, None);
-    // 触发的一方自己不被压低。
+    // The triggering side is not itself lowered.
     let music = plan(&video, 2.0).voices.into_iter().find(|v| v.item_id == "item_music").unwrap();
     assert_eq!((music.gain_db, music.unducked_gain_db), (db(0.5), None));
 
-    // 包络的折点：上升、保持、下降，斜坡烘焙成不超过 0.02 秒一个的折点，与逐帧的值一致。
+    // Envelope breakpoints: rise, hold, fall. The ramp is baked into breakpoints no more than 0.02 s apart, matching the per-frame values.
     let sequence = &video.sequences["seq_main"];
     let item = sequence.items.iter().find(|i| i.base().id == "item_hidden").unwrap();
     let envelope = DuckingEnvelope::for_item(sequence, item, sequence.header.fps).unwrap();
@@ -562,7 +561,7 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
 
 #[test]
 fn new_element_kinds_are_generators_or_reported_never_blank() {
-    // 手绘、模板贴纸与声波是生成器；白板按它的图片素材解码，揭示由后端按实例字段画。
+    // Hand-drawn, template stickers and waveforms are generators. The whiteboard is decoded from its image asset; the reveal is drawn by the backend from instance fields.
     let text = std::fs::read_to_string(fixture_path("video.json")).expect("读夹具视频");
     let mut value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
     let base = |id: &str, extra: serde_json::Value| {
@@ -625,14 +624,14 @@ fn new_element_kinds_are_generators_or_reported_never_blank() {
     let board = layer(&plan, "new_board");
     assert_eq!(board.kind, LayerKind::Image);
     assert_eq!(board.asset.as_ref().map(|a| a.id.as_str()), Some("asset_logo"));
-    // 占位框：空的画占位外观，填了图片素材的按图片解码。
+    // Placeholder frame: an empty frame shows the empty placeholder look; one with an image asset filled in is decoded from the image.
     assert_eq!(kind("new_slot"), (LayerKind::Generator, "cuccut.placeholder".into()));
     let filled = layer(&plan, "new_slot_filled");
     assert_eq!(
         (filled.kind, filled.asset.as_ref().map(|a| a.id.as_str())),
         (LayerKind::Image, Some("asset_logo"))
     );
-    // 模板层：打开的层是生成器，盖在最上面；关掉的层没有。
+    // Template layer: an open layer is a generator and sits on top; a closed layer has none.
     assert_eq!(kind("tpl_bar"), (LayerKind::Generator, "cuccut.template".into()));
     assert_eq!(plan.layers.last().map(|l| l.item_id.as_str()), Some("tpl_bar"));
     assert!(plan.layers.iter().all(|l| l.item_id != "tpl_off"));

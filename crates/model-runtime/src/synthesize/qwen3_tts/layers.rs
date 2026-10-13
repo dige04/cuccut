@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift`。
+//! Partly implemented by rewriting speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` at the repo root.
 //!
-//! Qwen3-TTS 共用层：线性 / 量化线性、RMSNorm、LayerNorm、Embedding、
-//! GQA 注意力（RoPE + KV cache）、SwiGLU MLP 与因果卷积辅助。
+//! Shared Qwen3-TTS layers: linear / quantized linear, RMSNorm, LayerNorm, Embedding,
+//! GQA attention (RoPE + KV cache), SwiGLU MLP, and causal convolution helpers.
 
 use crate::synthesize::tensor::fast::{self, ScaledDotProductAttentionMask};
 use crate::synthesize::tensor::nn::silu;
@@ -17,8 +17,8 @@ use anyhow::{Result, bail};
 
 use super::weights::Weights;
 
-/// 普通或量化线性层，按是否存在 `{prefix}.scales` 自动选择（对应 `makeMaybeQuantizedLinear`
-/// 加上 `applyQuantizedLinearWeights`）。
+/// Plain or quantized linear layer, chosen automatically by whether `{prefix}.scales` exists (corresponds to `makeMaybeQuantizedLinear`
+/// plus `applyQuantizedLinearWeights`).
 pub enum Linear {
     Float {
         weight: Array,
@@ -225,8 +225,8 @@ impl Attention {
         })
     }
 
-    /// `offset` 是 RoPE 位置偏移；`mask` 为显式加性掩码（`[1,1,S,T]`），为空时
-    /// S>1 用因果掩码、S==1 不用掩码（等价于手工构造的 `-1e9` 掩码）。
+    /// `offset` is the RoPE position offset; `mask` is an explicit additive mask (`[1,1,S,T]`). When empty, S>1 uses a causal mask and
+    /// S==1 uses no mask (equivalent to a hand-built `-1e9` mask).
     pub fn forward(&self, hidden: &Array, offset: i32, mask: Option<&Array>, cache: Option<&KvCache>) -> Result<(Array, KvCache)> {
         let batch = hidden.dim(0);
         let seq_len = hidden.dim(1);
@@ -273,7 +273,7 @@ impl Attention {
     }
 }
 
-/// Qwen3 pre-norm 解码层（Talker 与 Code Predictor 共用结构）。
+/// Qwen3 pre-norm decoder layer (structure shared by the Talker and the Code Predictor).
 pub struct DecoderLayer {
     self_attn: Attention,
     mlp: SwigluMlp,
@@ -301,7 +301,7 @@ impl DecoderLayer {
     }
 }
 
-/// 因果 Conv1d（左侧补 `(k-1)*dilation`），输入 `[B, T, C]`，权重 MLX 布局 `[out, k, in]`。
+/// Causal Conv1d (left-pads with `(k-1)*dilation`); input `[B, T, C]`, weight in MLX layout `[out, k, in]`.
 pub struct CausalConv1d {
     weight: Array,
     bias: Option<Array>,
@@ -325,7 +325,7 @@ impl CausalConv1d {
         self.weight.dim(1)
     }
 
-    /// 左侧补 `(k-1)*dilation` 个零的因果卷积。
+    /// Causal convolution that left-pads with `(k-1)*dilation` zeros.
     pub fn forward(&self, x: &Array) -> Result<Array> {
         let pad_total = (self.kernel_size() - 1) * self.dilation;
         if pad_total == 0 {
@@ -335,7 +335,7 @@ impl CausalConv1d {
         self.forward_padded(&padded)
     }
 
-    /// 不补零，直接卷积（输入已由调用方补好）。
+    /// No padding; convolves directly (the caller has already padded the input).
     pub fn forward_padded(&self, x: &Array) -> Result<Array> {
         let out = ops::conv1d(x, &self.weight, self.stride, 0, self.dilation, self.groups)?;
         Ok(match &self.bias {
@@ -345,7 +345,7 @@ impl CausalConv1d {
     }
 }
 
-/// 因果 ConvTranspose1d：全量转置卷积后裁掉右侧 `k - stride` 个样本。
+/// Causal ConvTranspose1d: full transposed convolution, then trims the rightmost `k - stride` samples.
 pub struct CausalConvTranspose1d {
     weight: Array,
     bias: Option<Array>,
@@ -374,7 +374,7 @@ impl CausalConvTranspose1d {
     }
 }
 
-/// 把 host 侧 i32 序列变成 `[1, S]` Int32 数组。
+/// Converts a host-side i32 sequence into a `[1, S]` Int32 array.
 pub fn token_array(tokens: &[i32]) -> Array {
     Array::from_slice(tokens, &[1, tokens.len() as i32])
 }

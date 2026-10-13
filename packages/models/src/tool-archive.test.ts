@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ToolArchiveError, extractToolArchive, rootEntryName } from './tool-archive.ts';
 
 /**
- * 受管工具压缩包的解开（架构设计 §12.9）：包在测试里逐字节拼出来，覆盖穿越目录的名字、链接、子目录、跳过列表、pax 长名字、
- * 可执行位，以及 zip 的「不压缩」与 deflate。
+ * Extraction of managed tool archives (architecture design §12.9): the archives are assembled byte by byte in the tests, covering names that escape the directory, links, subdirectories, the skip list, long pax names,
+ * executable bits, and zip's “stored” (uncompressed) and deflate modes.
  */
 
 interface TarEntry {

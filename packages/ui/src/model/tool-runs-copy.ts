@@ -16,11 +16,11 @@ import { vi } from './tool-runs-copy.vi.ts';
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** 视频工具一次运行的文案：进度短语、授权卡、结果页（英文是键与类型的来源，译文在 `tool-runs-copy.<语言>.ts`）。 */
+/** Copy for one run of a video tool: progress phrases, the authorization card, the result page. English is the source of the keys and types; translations are in `tool-runs-copy.<lang>.ts`. */
 const en = {
   diarizeStep: 'Identify speakers',
 
-  // 进度
+  // Progress
   phaseDone: 'Done',
   phaseQueued: 'Queued',
   phaseCancelled: 'Cancelled',
@@ -35,7 +35,7 @@ const en = {
   stepRunning: 'In progress',
   stepWaiting: 'Waiting',
 
-  // 授权卡
+  // Authorization card
   costEstimate: (amount: number | string, currency: string) => `About ${amount} ${currency}`,
   costSubscription: (recipient: string) => `Included in your ${recipient} subscription`,
   costFree: 'Free',
@@ -45,7 +45,7 @@ const en = {
 
   noStructuredOutput: 'This model doesn’t support structured output, so it can’t translate',
 
-  // 结果页：字幕层
+  // Result page: caption layer
   captionsCreated: (p: { language: string | null; bilingual: boolean; disabled: boolean }) =>
     `Created ${p.language ? `a ${p.language} subtitle layer` : 'an editable subtitle layer'}${p.bilingual ? ', shown bilingually' : ''}${
       p.disabled ? ' (this asset already shows subtitles, so the new layer starts turned off)' : ''
@@ -56,7 +56,7 @@ const en = {
   captionsEmpty: 'There are no subtitles to show, so no subtitle layer was created',
   originalAudio: { duck: 'Original audio ducked', mute: 'Original audio muted', keep: 'Original audio kept' },
 
-  // 结果页：各流程
+  // Result page: flows
   thisVideo: 'this video',
   newVideo: 'New video',
   fallbackVideo: 'Video',

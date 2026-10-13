@@ -3,34 +3,34 @@ import { jobLive } from './task-list.ts';
 import { chargesOnRetry } from './task-reconcile.ts';
 
 /**
- * 翻译流程（`pipelines.start` 的 `translate`，架构设计 §7.9）在字幕面板上的进度与结果：父任务（`kind: 'pipeline'`）
- * 记着四步（读取原文 → 翻译 → 组装译文 → 写入视频），翻译那一步的子任务按句报进度（`unit: 'units'`）。
- * 原型 model-trans-run.js 按四段阶梯与在飞批次画进度；这里只有父任务与子任务的真实数字，不造批次。
+ * Progress and result of the translation pipeline (`translate` in `pipelines.start`, architecture design §7.9) on the caption panel: the parent job (`kind: 'pipeline'`)
+ * records four steps (read source → translate → assemble translation → write to video); the subtask for the translate step reports progress by sentence (`unit: 'units'`).
+ * The prototype model-trans-run.js draws progress as a four-stage ladder with in-flight batches; here there are only the real numbers of the parent and subtask, and no batches are made up.
  *
- * 会话里的智能体自己翻译（`kind: 'agentTranslate'`）也算这个视频的翻译：它只是一条进度记录，没有步骤、没有百分比
- * （原型 model-trans-run.js `selfRun`），范围记在 `JobRecord.translation`。
+ * A translation the agent does itself in the session (`kind: 'agentTranslate'`) also counts as this video's translation: it is only a progress record, with no steps and no percentage
+ * (prototype model-trans-run.js `selfRun`), and its scope is recorded in `JobRecord.translation`.
  */
 
 export const TRANSLATE_PIPELINE = 'translate';
 
-/** 各步占总进度的份量：几乎全部时间花在逐批调用模型上。认不出的步骤按 5 算。 */
+/** Weight of each step in the total progress: almost all the time goes to calling the model batch by batch. An unrecognised step counts as 5. */
 const STEP_WEIGHT: Record<string, number> = { 'freeze-source': 5, translate: 85, assemble: 5, write: 5 };
 const weightOf = (name: string) => STEP_WEIGHT[name] ?? 5;
 
-/** 智能体在会话里自己翻译的那条进度记录（不是翻译流程）。 */
+/** The progress record for the agent's own translation in the session (not a translation pipeline). */
 export function isAgentTranslate(job: JobRecord): boolean {
   return job.kind === 'agentTranslate';
 }
 
-/** 这个视频的翻译：翻译流程（不论从哪里发起：字幕面板、智能体、命令行），或智能体自己翻译。 */
+/** This video's translation: a translation pipeline (wherever it was started: caption panel, agent or command line), or the agent's own translation. */
 export function isTranslateJob(job: JobRecord, videoId: Id | null): boolean {
   if (videoId === null || job.videoId !== videoId) return false;
   return (job.kind === 'pipeline' && job.pipeline?.name === TRANSLATE_PIPELINE) || isAgentTranslate(job);
 }
 
 /**
- * 就地刷新一份译文的翻译流程（参数给了 `translationId`，产品设计 §5.10「逐句与过期译文」）：不新增译文、不建字幕层，
- * 进度画在那份译文的对照列表的统计条上，不占轨条与运行态头。
+ * A translation pipeline that refreshes one existing translation in place (`translationId` is given; product design §5.10 “Sentence-by-sentence and stale translations”): it adds no translation and creates no caption layer,
+ * and its progress is drawn on the stats bar of that translation's comparison list, taking up no track bar or running-state header.
  */
 export function refreshOf(job: JobRecord): Id | null {
   if (job.kind !== 'pipeline' || job.pipeline?.name !== TRANSLATE_PIPELINE) return null;
@@ -38,7 +38,7 @@ export function refreshOf(job: JobRecord): Id | null {
   return typeof id === 'string' && id ? id : null;
 }
 
-/** 正在就地刷新这份译文的那个任务（不论从哪里发起）；点名了几句时带句数。 */
+/** The task currently refreshing this translation in place (wherever it was started); includes the sentence count when specific sentences were named. */
 export function liveRefresh(jobs: readonly JobRecord[], translationId: Id): { job: JobRecord; count: number | null } | null {
   const job = jobs.find((j) => refreshOf(j) === translationId && jobLive(j));
   if (!job) return null;
@@ -46,24 +46,24 @@ export function liveRefresh(jobs: readonly JobRecord[], translationId: Id): { jo
   return { job, count: Array.isArray(sentences) ? sentences.length : null };
 }
 
-/** 正在翻的（排队、在跑、崩溃后自动重跑）。 */
+/** Ones being translated (queued, running, or automatically re-run after a crash). */
 export function liveTranslations(jobs: readonly JobRecord[], videoId: Id | null): JobRecord[] {
   return jobs.filter((job) => isTranslateJob(job, videoId) && jobLive(job));
 }
 
-/** 冻结参数里的目标语言；智能体自己翻译的读 `translation`。 */
+/** Target language from the frozen parameters; for the agent's own translation, read `translation`. */
 export function targetOf(job: JobRecord): string | null {
   const target = job.pipeline?.params.targetLanguage ?? job.translation?.targetLanguage;
   return typeof target === 'string' && target ? target : null;
 }
 
-/** 冻结参数里的原文（`speech` 文档）；智能体自己翻译的读 `translation`。 */
+/** Source text from the frozen parameters (`speech` document); for the agent's own translation, read `translation`. */
 export function sourceOf(job: JobRecord): Id | null {
   const id = job.pipeline?.params.documentId ?? job.translation?.sourceDocumentId;
   return typeof id === 'string' && id ? id : null;
 }
 
-/** 完成时写进视频的 `translation` 文档：`result.documentId`，没有时读 `pipeline.summary`。 */
+/** The `translation` document written into the video on completion: `result.documentId`; when absent, read `pipeline.summary`. */
 export function translationOf(job: JobRecord): Id | null {
   const fromResult = job.result?.documentId;
   if (fromResult) return fromResult;
@@ -72,20 +72,20 @@ export function translationOf(job: JobRecord): Id | null {
 }
 
 export interface TranslateProgress {
-  /** 0–100；还没开始时 0，没完成时最多 99。智能体自己翻译没有百分比：在跑时 null。 */
+  /** 0–100; 0 before it starts, at most 99 until it completes. The agent's own translation has no percentage: null while running. */
   percent: number | null;
-  /** 正在执行的那一步（Runtime 给的步骤名）；排队、还没有步骤时 null。 */
+  /** The step currently executing (step name given by the Runtime); null while queued or before any step exists. */
   step: string | null;
-  /** 翻译那一步的句数；还没报时 null。 */
+  /** Sentence count of the translate step; null until reported. */
   units: { done: number; total: number | null } | null;
   queued: boolean;
-  /** 智能体自己翻译：要译的句数（没有逐句进度）；翻译流程为 null。 */
+  /** The agent's own translation: number of sentences to translate (no per-sentence progress); null for a translation pipeline. */
   agent: { sentences: number } | null;
 }
 
 /**
- * 总进度：完成（或跳过）的步骤算满，正在跑的步骤按子任务报来的 `done / total` 算一部分。子任务不在镜像里或没有总数时
- * 那一步按 0 算——宁可慢，不猜。
+ * Total progress: completed (or skipped) steps count in full, and the running step counts partly by the `done / total` its subtask reports. When the subtask is not in the mirror or has no total,
+ * that step counts as 0 — better slow than guessed.
  */
 export function translateProgress(parent: JobRecord, jobs: readonly JobRecord[]): TranslateProgress {
   if (isAgentTranslate(parent)) {
@@ -116,10 +116,10 @@ export function translateProgress(parent: JobRecord, jobs: readonly JobRecord[])
 }
 
 /**
- * 重试会不会再花钱：`pipelines.retry` 从停下的那一步接着做，前面完成的步骤复用产出。
- * - 停在「翻译」：这一步整个重跑，已经翻过的批次会再调一次在线模型（`charges`；本机与节点的不计费，null）。
- * - 停在「翻译」之后：译文已经在产物里，不再调用模型（`free`）。
- * - 停在「翻译」之前：还没调过模型，谈不上「再」花钱（null）。
+ * Whether a retry costs money again: `pipelines.retry` resumes from the step where it stopped, reusing the output of the steps already completed.
+ * - Stopped at “translate”: this step reruns entirely, and batches already translated call the online model again (`charges`; local and node runs are not charged, null).
+ * - Stopped after “translate”: the translation is already in the output, and the model is not called again (`free`).
+ * - Stopped before “translate”: the model has not been called yet, so there is no “again” to pay for (null).
  */
 export function retryNote(job: JobRecord): 'charges' | 'free' | null {
   const steps = job.pipeline?.steps ?? [];

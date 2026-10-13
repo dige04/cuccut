@@ -1,27 +1,23 @@
-//! `program` 资产的路径规则（规范 §6.5.3）：`src`、`imports`、`files`、模块里的相对导入与
-//! `asset()` 都以**文档所在目录**为边界，不能用 `..` 走出去。
+//! Path rules for the `program` asset (spec §6.5.3): `src`, `imports`, `files`, relative imports inside modules, and `asset()` are all bounded by the **directory containing the document**. `..` may not be used to climb out.
 //!
-//! 规范化与越界消息只有这一份：`ccut lint` 查静态看得到的 `src` / `imports` / `files`，
-//! 资源加载期（ccut-compile 的模块图、ccut-render 的 `asset()`）查只有求值时才知道的路径，
-//! 两处报同一个码 [`PATH_ESCAPE`]、同一句话。纯函数，不碰磁盘；符号链接指到目录外属于
-//! 读盘时才看得到的另一回事，由加载期按 `program-invalid` 报。
+//! There is only one copy of the normalization and out-of-bounds message. `ccut lint` checks the `src` / `imports` / `files` that are visible statically, while load time (ccut-compile's module graph, ccut-render's `asset()`) checks the paths that only become known at evaluation time. Both report the same code [`PATH_ESCAPE`] with the same wording. These are pure functions and do not touch the disk. A symlink that points outside the directory is a different matter: it is only visible when reading from disk, and load time reports it as `program-invalid`.
 
-/// 路径用 `..` 越出文档所在目录。
+/// The path uses `..` to climb out of the document's directory.
 pub const PATH_ESCAPE: &str = "program-path-escape";
 
-/// [`normalize`] 拒绝的三种路径。
+/// The three kinds of path rejected by [`normalize`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathError {
-    /// 用了 `\` 分隔。
+    /// Uses `\` as the separator.
     Backslash,
-    /// `..` 越出了文档所在目录（报 [`PATH_ESCAPE`]）。
+    /// `..` climbed out of the document's directory (reports [`PATH_ESCAPE`]).
     Escape,
-    /// 规范化之后什么都不剩。
+    /// Nothing is left after normalization.
     Empty,
 }
 
 impl PathError {
-    /// 不带码的说明；[`PathError::Escape`] 的完整说法用 [`escape_message`]。
+    /// Explanation without a code. For the full wording of [`PathError::Escape`], use [`escape_message`].
     pub fn describe(self, rel: &str) -> String {
         match self {
             PathError::Backslash => format!("路径 \"{rel}\" 须用 / 分隔"),
@@ -31,8 +27,7 @@ impl PathError {
     }
 }
 
-/// `dir`（文档目录下的规范目录名，`""` 即文档目录本身）里的 `rel` → 规范名：`/` 分隔、
-/// 没有 `.` / `..`、不越出文档目录。
+/// `rel` within `dir` → normalized name. `dir` is a normalized directory name under the document directory (`""` is the document directory itself). The result is `/`-separated, has no `.` / `..`, and does not climb out of the document directory.
 pub fn normalize(dir: &str, rel: &str) -> Result<String, PathError> {
     if rel.contains('\\') {
         return Err(PathError::Backslash);
@@ -55,14 +50,13 @@ pub fn normalize(dir: &str, rel: &str) -> Result<String, PathError> {
     Ok(parts.join("/"))
 }
 
-/// 只问「是否用 `..` 越出文档目录」：反斜杠、空路径等别的毛病不算（它们各有自己的码）。
+/// Only asks "does it use `..` to climb out of the document directory?" Other faults such as backslashes or an empty path do not count, since each has its own code.
 pub fn escapes(dir: &str, rel: &str) -> bool {
     normalize(dir, rel) == Err(PathError::Escape)
 }
 
-/// [`PATH_ESCAPE`] 的消息（不带码）：边界是哪、违规的是哪条路径、怎么改。
-/// `subject` 说明路径出自哪里，如 `src`、`imports.remotion`、`files[0]`、
-/// `film/Film.tsx 里的 import`、`asset()`。
+/// Message for [`PATH_ESCAPE`] (without the code): which boundary it is, which path violated it, and how to fix it.
+/// `subject` says where the path came from, e.g. `src`, `imports.remotion`, `files[0]`, `import in film/Film.tsx`, `asset()`.
 pub fn escape_message(subject: &str, rel: &str) -> String {
     format!(
         "{subject} 的路径 \"{rel}\" 用 .. 越出了文档所在目录。program 的 src、imports、files、\
@@ -85,7 +79,7 @@ mod tests {
         assert_eq!(normalize("", "../film/X.tsx"), Err(PathError::Escape));
         assert_eq!(normalize("", "a\\b"), Err(PathError::Backslash));
         assert_eq!(normalize("", "./"), Err(PathError::Empty));
-        // 先下去再上来、没出边界的不算越界
+        // Going down and then back up without leaving the boundary is not an escape
         assert_eq!(normalize("", "film/../x.tsx").unwrap(), "x.tsx");
         assert!(escapes("", "../x"));
         assert!(!escapes("", "a\\..\\x"), "反斜杠是另一种错");

@@ -149,7 +149,7 @@ fn fnv1a_matches_the_standard_test_vector() {
     assert_eq!(drawop::fnv1a64(b"hello"), 0xa430_d846_80aa_bd0b);
 }
 
-// ── v3 解码器 ────────────────────────────────────────────────────────
+// ── v3 decoder ────────────────────────────────────────────────────────
 
 fn v3_frame() -> FrameOps {
     FrameOps {
@@ -210,11 +210,11 @@ fn decode_round_trips_every_v3_opcode() {
     assert_eq!(decoded.strings, frame.strings);
     assert_eq!(decoded.paths, frame.paths);
     assert_eq!(decoded.ops, frame.ops);
-    // 解码 → 重编码必须逐字节回到原信封（编码器是唯一真相）。
+    // Decode → re-encode must return the original envelope byte for byte (the encoder is the only source of truth).
     assert_eq!(drawop::encode(&decoded), drawop::encode(&frame));
 }
 
-/// 手写一个 v2 信封：`PushLayer` 只有 opacity，没有 blend 字节。
+/// Hand-written v2 envelope: `PushLayer` has only opacity, with no blend byte.
 fn v2_envelope() -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&0x42_43_4f_50u32.to_le_bytes()); // BCOP
@@ -242,7 +242,7 @@ fn decode_reads_v2_and_treats_missing_blend_as_normal() {
             DrawOp::PopLayer,
         ]
     );
-    // v2 里没有 ClipPath/PopClip 的 opcode，重编码得到的是等价的 v3。
+    // v2 has no opcodes for ClipPath/PopClip, so re-encoding yields an equivalent v3.
     assert_eq!(
         u32::from_le_bytes(drawop::encode(&frame)[4..8].try_into().unwrap()),
         3
@@ -259,7 +259,7 @@ fn decode_rejects_v3_only_opcodes_inside_a_v2_envelope() {
     tail.extend_from_slice(&0u32.to_le_bytes());
     tail.extend_from_slice(&0u32.to_le_bytes());
     tail.extend_from_slice(&1u32.to_le_bytes());
-    tail.push(8); // PopClip：v3 才有
+    tail.push(8); // PopClip: only in v3
     let error = drawop::decode(&tail).unwrap_err().to_string();
     assert!(error.contains("bcop-op-unknown"), "{error}");
 }
@@ -346,7 +346,7 @@ fn blend_mode_changes_the_fingerprint() {
     );
 }
 
-// ── v4：paint 侧表与遮罩原语（ADR-M11）─────────────────────────────
+// ── v4: paint side table and mask primitives (ADR-M11) ─────────────────────────────
 
 fn v4_frame() -> FrameOps {
     FrameOps {
@@ -415,8 +415,8 @@ fn v4_frame() -> FrameOps {
 
 #[test]
 fn a_frame_without_v4_primitives_still_encodes_as_v3() {
-    // 这是「既有 golden 逐字节不变」的那条承诺：渲染器学会画渐变之后，
-    // 一条 v4 原语都没有的帧仍然产出与从前完全相同的字节。
+    // This is the promise that existing goldens stay byte-identical: after the renderer learns to draw gradients,
+    // a frame that uses no v4 primitive still produces exactly the same bytes as before.
     let frame = FrameOps {
         static_prefix: None,
         strings: vec![],
@@ -436,7 +436,7 @@ fn a_frame_without_v4_primitives_still_encodes_as_v3() {
         3,
         "v3 帧的信封版本必须还是 3"
     );
-    // v3 帧没有 paints 节：strings(0) + paths(1 条 2 段) + ops(1 条)
+    // A v3 frame has no paints section: strings(0) + paths(1 path, 2 segments) + ops(1 op)
     let (version, back) = drawop::decode(&encoded).unwrap();
     assert_eq!(version, 3);
     assert!(back.paints.is_empty());
@@ -494,7 +494,7 @@ fn an_unknown_matte_mode_is_refused() {
     assert!(error.contains("bcop-matte-mode-unknown"), "实际 {error}");
 }
 
-// ── v5：位图侧表与 DrawBitmap（BCF 文字的彩色字形）──────────────────
+// ── v5: bitmap side table and DrawBitmap (color glyphs of BCF text) ──────────────────
 
 fn bitmap(width: u32, height: u32, fill: u8) -> BitmapData {
     BitmapData {
@@ -533,8 +533,8 @@ fn bitmaps_lift_the_envelope_to_v5_and_round_trip() {
 
 #[test]
 fn a_frame_without_bitmaps_keeps_its_v3_or_v4_bytes() {
-    // 渲染器学会画彩色字形之后，没有彩色字形的帧不得换信封版本——
-    // 既有 golden 与 `core/fixtures/motion/` 指纹靠这条。
+    // After the renderer learns to draw color glyphs, a frame without color glyphs must not change envelope version —
+    // the existing goldens and the `core/fixtures/motion/` fingerprints depend on this.
     let v4 = v4_frame();
     assert_eq!(drawop::required_version(&v4), 4);
     assert_eq!(
@@ -558,7 +558,7 @@ fn bitmap_pixels_are_part_of_the_fingerprint() {
 fn the_bitmap_side_table_deduplicates_by_content_not_by_pointer() {
     let mut builder = FrameBuilder::default();
     let first = bitmap(2, 2, 7);
-    // 同内容、另一个 Arc：字形缓存淘汰后重光栅化就是这种情形。
+    // Same content, different Arc: this is what happens when a glyph is re-rasterized after its cache entry is evicted.
     let same_content = BitmapData {
         rgba: Arc::from(first.rgba.to_vec()),
         ..first.clone()
@@ -567,7 +567,7 @@ fn the_bitmap_side_table_deduplicates_by_content_not_by_pointer() {
     assert_eq!(builder.bitmap_id(first), 0);
     assert_eq!(builder.bitmap_id(bitmap(2, 2, 8)), 1);
     assert_eq!(builder.bitmap_id(same_content), 0);
-    // 字节相同、尺寸不同（2×2 与 1×4）是两张位图。
+    // Same bytes but different dimensions (2×2 and 1×4) are two different bitmaps.
     assert_eq!(builder.bitmap_id(bitmap(1, 4, 7)), 2);
     assert_eq!(builder.finish().bitmaps.len(), 3);
 }
@@ -585,7 +585,7 @@ fn a_v4_envelope_refuses_the_bitmap_opcode() {
     };
     let mut encoded = drawop::encode(&frame);
     assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 5);
-    // 改写成 v4：v4 信封没有位图节，也不认 13 号操作码。
+    // Rewritten as v4: a v4 envelope has no bitmap section and does not recognize opcode 13.
     encoded[4..8].copy_from_slice(&4u32.to_le_bytes());
     let bitmaps_at = encoded.len() - (4 + 1 + 4 + 4 + 24) - 4;
     encoded.drain(bitmaps_at..bitmaps_at + 4);
@@ -600,7 +600,7 @@ fn truncated_or_empty_bitmaps_are_refused() {
         ..FrameOps::default()
     };
     let encoded = drawop::encode(&only);
-    // 末尾 4 字节是 ops 计数；再往前 10 字节落在位图像素里。
+    // The last 4 bytes are the ops count; the 10 bytes before that fall within the bitmap pixels.
     let error = drawop::decode(&encoded[..encoded.len() - 14])
         .unwrap_err()
         .to_string();

@@ -1,8 +1,6 @@
-//! 画得出来什么（格式规范 §3.7 的原则：画不出来的要明确报出来，不画成空白）。
+//! What can be drawn (format spec §3.7 principle: what cannot be drawn must be reported explicitly, not drawn as blank).
 //!
-//! 预检与逐帧合成用同一份判断：预检把范围里每个画不出来的东西列出来（默认拒绝导出）；跳过模式下合成时不画它们，
-//! 各自报一条警告。三种粒度：整层不画（`layer`）、跳过一个效果（`effect`）、转场按硬切（`transition`）；
-//! 素材解不出画面是第四种（`asset`，由取画面的一方判断）。
+//! Preflight and per-frame composition use the same judgment. Preflight lists everything in range that cannot be drawn (export is refused by default). In skip mode, composition does not draw these items and reports one warning for each. There are three granularities: the whole layer is not drawn (`layer`), one effect is skipped (`effect`), a transition becomes a hard cut (`transition`). An asset whose picture cannot be decoded is a fourth kind (`asset`), judged by whoever fetches the picture.
 
 use render_graph::{LayerContent, LayerKind, VisualLayer};
 use serde::Serialize;
@@ -12,19 +10,19 @@ use timeline::template::TemplateDoc;
 use crate::captions::{CaptionStyle, read_captions};
 use crate::documents::Documents;
 
-/// 画不出来的一项。
+/// One item that cannot be drawn.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnsupportedItem {
     pub item_id: String,
-    /// `layer`：整层不画；`effect`：跳过这个效果；`transition`：按硬切；`asset`：素材解不出来，整层不画。
+    /// `layer`: the whole layer is not drawn; `effect`: skip this effect; `transition`: hard cut; `asset`: the asset cannot be decoded, so the whole layer is not drawn.
     pub scope: &'static str,
     pub layer_kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition_id: Option<String>,
-    /// 种类：效果、转场的种类名，或层的内容种类（生成器、字幕与样式的 schema）。
+    /// Kind: the kind name of an effect or transition, or the content kind of a layer (the schema of generators, captions and styles).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     pub reason: String,
@@ -32,7 +30,7 @@ pub struct UnsupportedItem {
 }
 
 impl UnsupportedItem {
-    /// 去重用的键：同一实例的同一项只报一次；转场按转场本身（两侧各自的层报的是同一项）。
+    /// Dedup key: the same item in the same instance is reported only once. Transitions are keyed by the transition itself (the layers on both sides report the same item).
     pub fn key(&self) -> String {
         if let (Some(transition), "transition") = (&self.transition_id, self.scope) {
             return format!("transition|{transition}");
@@ -46,7 +44,7 @@ impl UnsupportedItem {
         )
     }
 
-    /// 整层不画（`layer` 与 `asset`）。
+    /// The whole layer is not drawn (`layer` and `asset`).
     pub fn drops_layer(&self) -> bool {
         matches!(self.scope, "layer" | "asset")
     }
@@ -77,7 +75,7 @@ pub fn kind_name(kind: LayerKind) -> &'static str {
     }
 }
 
-/// 有画法的生成器。
+/// Generators that have a drawing method.
 pub const GENERATORS: &[&str] = &[
     "cuccut.counter",
     "cuccut.audio-visualizer",
@@ -90,18 +88,17 @@ pub const GENERATORS: &[&str] = &[
     "cuccut.template",
 ];
 
-/// 有画法的转场（格式规范 §3.9 的全部种类）。
+/// Transitions that have a drawing method (all kinds in format spec §3.9).
 pub const SUPPORTED_TRANSITIONS: &[&str] = &["dissolve", "wipe", "slide", "zoom", "iris", "dip-to-color", "push"];
 
-/// 一层（不含它的转场）画不出来的地方。`template` 是序列的模板文档（模板层要查它的台标）。
+/// Where one layer (excluding its transition) cannot be drawn. `template` is the sequence's template document (template layers look up its logo).
 pub fn check_layer(layer: &VisualLayer, documents: &Documents, template: Option<&TemplateDoc>) -> Vec<UnsupportedItem> {
     check_layer_with(layer, template, &mut |document_id, style_document_id| {
         caption_problem(documents, document_id, style_document_id)
     })
 }
 
-/// [`check_layer`]，字幕层画不画得出来问 `caption`（`(字幕文档, 样式文档)` → [`caption_problem`]）：渲染器按文档记住
-/// 答案，不必每帧重读整份字幕与样式。
+/// [`check_layer`]. Whether a caption layer can be drawn is asked of `caption` (`(caption document, style document)` → [`caption_problem`]). The renderer remembers the answer per document, so it does not re-read the whole caption and style documents every frame.
 pub fn check_layer_with(
     layer: &VisualLayer,
     template: Option<&TemplateDoc>,
@@ -129,7 +126,7 @@ pub fn check_layer_with(
     items
 }
 
-/// 一种转场画不出来的原因（`unsupported` 是计划标的原因）。预检按转场清单、合成按层上的转场，都问这一处。
+/// Why a transition cannot be drawn (`unsupported` is the reason the plan gives). Preflight checks the transition list, and composition checks the transition on the layer; both ask here.
 pub fn transition_problem(kind: &str, unsupported: Option<&str>) -> Option<String> {
     match unsupported {
         Some(reason) => Some(format!("transition-{reason}")),
@@ -138,7 +135,7 @@ pub fn transition_problem(kind: &str, unsupported: Option<&str>) -> Option<Strin
     }
 }
 
-/// 层的转场画不出来时的一项（按硬切画）。
+/// The item reported when a layer's transition cannot be drawn (drawn as a hard cut).
 pub fn check_transition(layer: &VisualLayer) -> Option<UnsupportedItem> {
     let transition = layer.transition.as_ref()?;
     let reason = transition_problem(&transition.kind, transition.unsupported.as_deref())?;
@@ -154,8 +151,7 @@ pub fn check_transition(layer: &VisualLayer) -> Option<UnsupportedItem> {
     })
 }
 
-/// 形状与生成器引用的目录项（形状、贴纸模板、声波、进度条、彩纸的样式）在不在随内核发布的目录里。
-/// 不在、或者根本没写（贴纸的 `templateId` 可以缺）时内核只能跳过不画，所以在这里报出来：`(目录项, 原因, 说明)`。
+/// Whether the shape and generator-referenced catalog entries (shape, sticker template, waveform, progress bar, confetti styles) exist in the catalog shipped with the kernel. If they do not, or are simply not written (a sticker's `templateId` may be missing), the kernel can only skip drawing them, so they are reported here: `(catalog entry, reason, description)`.
 fn catalogue_problem(layer: &VisualLayer) -> Option<(Option<String>, &'static str, String)> {
     let text = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
     let (id, found, what) = match &layer.content {
@@ -250,7 +246,7 @@ fn check_content(
     }
 }
 
-/// 帧计划或这里标成不支持的原因给人看的说明。
+/// Human-readable description of the frame plan's unsupported reason or of the reason marked unsupported here.
 fn unsupported_message(reason: &str) -> &'static str {
     match reason {
         "bundle-without-prerender" => "没有预渲染替身的代码包合成画不出来（先生成预渲染替身）",
@@ -262,11 +258,11 @@ fn unsupported_message(reason: &str) -> &'static str {
     }
 }
 
-/// 字幕层画不出来的原因：`(认出的种类, 原因, 说明)`。
+/// Why a caption layer cannot be drawn: `(recognized kind, reason, description)`.
 pub type CaptionProblem = (Option<String>, &'static str, String);
 
-/// 字幕层画不画得出来：字幕文档与样式文档都在、认得出，样式有画法。只看文档，与层无关。
-/// 认不出的样式不替人换成缺省样式：预览跳过这组字幕并报出来，导出拒绝并说明。
+/// Whether a caption layer can be drawn: the caption document and style document both exist and are recognized, and the style has a drawing method. Looks only at the documents, not at the layer.
+/// A style that is not recognized is not silently replaced with the default style: preview skips this group of captions and reports it, and export is refused with an explanation.
 pub fn caption_problem(documents: &Documents, document_id: &str, style_document_id: Option<&str>) -> Option<CaptionProblem> {
     let Some(document) = documents.get(document_id) else {
         return Some((None, "caption-document-missing", format!("字幕文档 {document_id} 不在了")));

@@ -1,11 +1,8 @@
-//! 说话人派生：轮次序列、payload 软标记用的稳定短标签，以及实名候选。
+//! Speaker derivation: turn sequences, the stable short labels used for payload soft markers, and real-name candidates.
 //!
-//! 实名候选对拍 CucCut `CLISpeakerProposeNames` 的窄启发式：只产出证据，
-//! 不猜声音身份。英文/中文自我介绍捕获到的名字必须与 analysis 的
-//! namedEntities 交叉验证，才标为 high confidence。
+//! Real-name candidates follow the narrow heuristic of CucCut's `CLISpeakerProposeNames`. They only produce evidence and do not guess voice identity. A name captured from an English or Chinese self-introduction must be cross-checked against the analysis's namedEntities before it is marked high confidence.
 //!
-//! 轮次（[`speaker_turns`]）与标签（[`SpeakerLabels`]）是纯派生：`words[].sp`
-//! 是说话人的唯一真相，两者都不落盘、不进输出。
+//! Turns ([`speaker_turns`]) and labels ([`SpeakerLabels`]) are pure derivations. `words[].sp` is the only source of truth for speakers. Neither is persisted or included in output.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -16,10 +13,9 @@ use crate::cue::join_words;
 use crate::doc::{TranscriptDoc, Word};
 use crate::row_mapping::{row_has_atoms, row_index_of, sorted_nonempty_rows};
 
-/// 说话人轮次：`sp` 相同的极大连续词段（左闭右开）。
+/// Speaker turns: the maximal consecutive word runs with the same `sp` (half-open, left-closed).
 ///
-/// 空词流返回空表；全篇同一个 `sp`（含"没有说话人信息"的常见形态）返回
-/// **恰好一个**轮次——调用方以 `len() > 1` 判定"这篇有说话人信息"。
+/// An empty word stream returns an empty table. A single `sp` across the whole document (including the common form of "no speaker information") returns **exactly one** turn. Callers use `len() > 1` to decide whether "this document has speaker information".
 pub fn speaker_turns(words: &[Word]) -> Vec<Range<usize>> {
     let mut turns: Vec<Range<usize>> = Vec::new();
     let mut start = 0usize;
@@ -35,35 +31,30 @@ pub fn speaker_turns(words: &[Word]) -> Vec<Range<usize>> {
     turns
 }
 
-/// 说话人 → payload 软标记里的稳定短标签（`S1` / `S2` …）。
+/// Speaker → stable short label in the payload soft markers (`S1` / `S2` …).
 ///
-/// 规则（确定性，只看本次投影的词切片，不读 `speakers` 表）：
+/// Rules (deterministic. They look only at the word slice of this projection and do not read the `speakers` table):
 ///
-/// 1. 按**首次出现顺序**收集所有 `sp`；
-/// 2. 少于 2 个说话人 ⇒ 空表——单说话人的文档不会有说话人切换，也就没有
-///    标记可标；
-/// 3. 若每个 id 都形如 `s<digits>`（大小写不敏感、1–4 位数字、去重后互不
-///    相同）⇒ 标签取该数字：`s2` → `S2`，与三端 UI 的说话人编号一致；
-/// 4. 否则整表回落到首次出现序号：`S1`、`S2`……
+/// 1. Collect all `sp` values in **order of first appearance**.
+/// 2. Fewer than 2 speakers ⇒ empty table. A single-speaker document has no speaker switches, so there is nothing to mark.
+/// 3. If every id has the form `s<digits>` (case-insensitive, 1–4 digits, distinct after deduplication) ⇒ the label takes that number: `s2` → `S2`, consistent with the speaker numbering in the UI across all three clients.
+/// 4. Otherwise the whole table falls back to first-appearance ordinals: `S1`, `S2`, …
 ///
-/// 同一份词流恒得同一张表，因此同一说话人在所有页里的标签一致；标签只进
-/// payload 副本，禁止进入输出（返回侧由 [`crate::engines::markers`] 剥除）。
+/// The same word stream always yields the same table, so a speaker's label is consistent across all pages. Labels go only into the payload copy and must not enter output (they are stripped on the return side by [`crate::engines::markers`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpeakerLabels {
     labels: BTreeMap<String, String>,
 }
 
 impl SpeakerLabels {
-    /// 从词切片派生标签表（规则见结构体文档）。
+    /// Derive the label table from a word slice (see the struct docs for the rules).
     pub fn from_words(words: &[Word]) -> Self {
         Self::derive(words, 2)
     }
 
-    /// [`Self::from_words`] 的**单说话人也出标签**形态（编号规则完全相同）。
+    /// The **single-speaker-also-gets-a-label** form of [`Self::from_words`]. The numbering rules are exactly the same.
     ///
-    /// payload 软标记要的是"哪里换人"，单说话人没有切换点，所以
-    /// [`Self::from_words`] 直接返回空表。但实名推断要的是"这个声音叫什么"，
-    /// 独白同样需要一个可寻址的标签（`S1`）——两者的需求不同，编号规则相同。
+    /// A payload soft marker says "where the speaker changes", and a single speaker has no switch point, so [`Self::from_words`] returns an empty table. Real-name inference asks "what this voice is called", and a monologue likewise needs an addressable label (`S1`). The two needs differ, but the numbering rule is the same.
     pub fn from_words_allow_single(words: &[Word]) -> Self {
         Self::derive(words, 1)
     }
@@ -107,22 +98,22 @@ impl SpeakerLabels {
         Self { labels }
     }
 
-    /// 该说话人的标签；单说话人文档恒为 `None`。
+    /// The label of this speaker. Always `None` for a single-speaker document.
     pub fn label(&self, speaker: &str) -> Option<&str> {
         self.labels.get(speaker).map(String::as_str)
     }
 
-    /// 是否没有任何标签（单说话人或空词流）。
+    /// Whether there are no labels at all (single speaker or empty word stream).
     pub fn is_empty(&self) -> bool {
         self.labels.is_empty()
     }
 
-    /// 全部标签，按说话人 id 升序（`BTreeMap` 顺序）。
+    /// All labels, ordered by speaker id ascending (`BTreeMap` order).
     pub fn all_labels(&self) -> Vec<&str> {
         self.labels.values().map(String::as_str).collect()
     }
 
-    /// 标签 → 说话人 id（大小写不敏感：`s2` / `S2` 都认）；不在表里为 `None`。
+    /// Label → speaker id (case-insensitive: `s2` and `S2` both match). `None` if not in the table.
     pub fn speaker_for_label(&self, label: &str) -> Option<&str> {
         let wanted = label.trim().to_ascii_uppercase();
         self.labels
@@ -143,9 +134,9 @@ pub struct SpeakerNameCandidate {
     pub quote: String,
 }
 
-/// 名字是否仍是占位：等于说话人 id 本身、`s<数字>` 或 `speaker <数字>`。
+/// Whether the name is still a placeholder: equal to the speaker id itself, `s<digits>`, or `speaker <digits>`.
 ///
-/// 用户改过的名字永远不满足这个判据——所有自动命名路径都以它为写入闸门。
+/// A name the user has edited never satisfies this check. Every automatic naming path uses it as its write gate.
 pub fn is_placeholder_name(name: &str, id: &str) -> bool {
     let lower = name.trim().to_ascii_lowercase();
     lower == id.to_ascii_lowercase()
@@ -205,14 +196,13 @@ fn cjk_name_after(text: &str, marker: &str) -> Option<String> {
 }
 
 fn self_intro(text: &str) -> Option<String> {
-    // 优先精确的实名句式，避免把 "I'm one of…" 里的 one 当成人名。
+    // Prefer precise real-name patterns, so that "one" in "I'm one of…" is not taken as a person's name.
     latin_name_after(text, "my name is ")
         .or_else(|| cjk_name_after(text, "我是"))
         .or_else(|| cjk_name_after(text, "我叫"))
 }
 
-/// 每个 placeholder speaker 最多返回一个候选。扫描该声音开头最多 240 字符，
-/// 因为常见的 "Hi everybody." 会把实名推到第二个字幕 cue。
+/// Each placeholder speaker returns at most one candidate. Scans at most the first 240 characters of that voice, because a common "Hi everybody." would push the real name into a second subtitle cue.
 pub fn propose_names(doc: &TranscriptDoc, entities: &[String]) -> Vec<SpeakerNameCandidate> {
     let mut out = Vec::new();
     for (id, speaker) in &doc.speakers {
@@ -241,57 +231,45 @@ pub fn propose_names(doc: &TranscriptDoc, entities: &[String]) -> Vec<SpeakerNam
     out
 }
 
-// ── 行归属还原（联合模型行级说话人 → 词 sp）──
+// ── Row attribution restoration (row-level speaker from the joint model → word sp) ──
 
-/// 一次行归属还原能触碰的失配串上限：只还原"吸附挪过头 / 岛屿被吸收"这种
-/// 形态（Pass 2 的搜索窗是 ±1s，Pass 1 的岛 ≤4 词 ≤1.2s），更长的失配串是
-/// 用户或事后 reidentify 的有意 relabel，不动。
+/// Upper bound on the mismatched run that one row-attribution restoration may touch. It only restores the shape of "snapping moved too far" or "an island was absorbed" (Pass 2's search window is ±1s, and Pass 1's islands are ≤4 words and ≤1.2s). Longer mismatched runs are intentional relabels by the user or by a later reidentify, and are left alone.
 pub const ROW_REALIGN_MAX_RUN_WORDS: usize = 6;
 pub const ROW_REALIGN_MAX_RUN_SECONDS: f64 = 1.5;
-/// 全篇失配率超过此值 ⇒ 说话人归属已被整体改写（reidentify 提案已 accept、
-/// 或用户批量改名后重编 id），整次还原跳过——逐串还原只会和那次改写打架。
+/// If the mismatch rate across the whole document exceeds this value ⇒ speaker attribution has been rewritten wholesale (a reidentify proposal was accepted, or the user batch-renamed and re-numbered the ids). The whole restoration is skipped, because restoring run by run would fight that rewrite.
 pub const ROW_REALIGN_MAX_DIVERGENCE: f64 = 0.05;
 
-/// [`realign_to_row_speakers`] 的账目。
+/// Accounting for [`realign_to_row_speakers`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RowRealignReport {
-    /// 能映射回原始行的词数（`g<行>.<列>` 系 id）。
+    /// Number of words that can be mapped back to their original row (`g<row>.<col>`-style ids).
     pub row_words: usize,
-    /// 其中 `sp` 与所属行说话人不一致的词数（还原前）。
+    /// Of those, the number of words whose `sp` does not match the speaker of their row (before restoration).
     pub mismatched_words: usize,
-    /// 实际改回行说话人的词数（含夹在失配串里、由邻居推断归属的重绑词）。
+    /// Number of words actually changed back to the row's speaker (including rebound words sandwiched in a mismatch run, whose attribution is inferred from neighbors).
     pub realigned_words: usize,
-    /// 实际改回的失配串数。
+    /// Number of mismatch runs actually changed back.
     pub realigned_runs: usize,
-    /// 因超过串长/时长上限而保留的失配串数。
+    /// Number of mismatch runs kept because they exceed the run-length or duration limit.
     pub kept_runs: usize,
-    /// 整次跳过的原因：`no-speaker-rows` / `speaker-table-diverged` /
-    /// `row-ownership-diverged`；`None` 表示正常执行（哪怕一处都不用改）。
+    /// Reason for skipping the whole restoration: `no-speaker-rows` / `speaker-table-diverged` /
+    /// `row-ownership-diverged`. `None` means it ran normally, even if nothing needed changing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
 }
 
-/// 把词的 `sp` 还原成它所属原始行（`ai/asr-rows.json`）的说话人。
+/// Restore a word's `sp` to the speaker of the original row it belongs to (`ai/asr-rows.json`).
 ///
-/// 只对**行级说话人权威**的引擎（MOSS 一类联合模型）有意义：这些行是模型的
-/// 文本归属判决，而 [`crate::build::build_doc`] 的两遍吸附（2026-08 前对
-/// MOSS 同样生效）会把答句开头的语气词挪给提问者、把无标点分块里的整行应答
-/// 并进对方的句子。词 id `g<行>.<列>[~k]` 天然指回行号（行序 = 与 `build_doc`
-/// 相同的"去空行、按起点稳定排序"），说话人 id 也按 `build_doc` 的首次出现
-/// 顺序重建，因此不依赖 `speakers` 表的显示名（用户可能已改名）。
+/// This only matters for engines with **row-level speaker authority** (joint models such as MOSS). Those rows are the model's textual attribution verdict. The two-pass snapping in [`crate::build::build_doc`] (which also applied to MOSS before 2026-08) moves a particle at the start of an answer to the questioner, and merges a whole-line reply inside an unpunctuated chunk into the other speaker's sentence. Word ids `g<row>.<col>[~k]` point back to the row number naturally (row order is the same as `build_doc`: remove empty rows, stable-sort by start). Speaker ids are also rebuilt in the first-appearance order of `build_doc`, so this does not depend on the display names in the `speakers` table, which the user may have renamed.
 ///
-/// 三道闸门（任一不满足即整次跳过，`report.skipped` 给出原因）：
+/// Three gates. If any one is not met, the whole restoration is skipped, and `report.skipped` gives the reason:
 ///
-/// 1. 行里根本没有说话人标签 ⇒ `no-speaker-rows`；
-/// 2. 重建出的说话人 id 有不在 `doc.speakers` 里的 ⇒ `speaker-table-diverged`；
-/// 3. 失配词占可映射词的比例 > [`ROW_REALIGN_MAX_DIVERGENCE`] ⇒
-///    `row-ownership-diverged`（归属已被整体改写，不该逐串纠正）。
+/// 1. No speaker labels in the rows at all ⇒ `no-speaker-rows`.
+/// 2. A rebuilt speaker id is not in `doc.speakers` ⇒ `speaker-table-diverged`.
+/// 3. The ratio of mismatched words to mappable words > [`ROW_REALIGN_MAX_DIVERGENCE`] ⇒ `row-ownership-diverged` (attribution has been rewritten wholesale, so it should not be corrected run by run).
 ///
-/// 通过闸门后按失配串还原：串 ≤ [`ROW_REALIGN_MAX_RUN_WORDS`] 词或 ≤
-/// [`ROW_REALIGN_MAX_RUN_SECONDS`] 秒才改，更长的保留（计 `kept_runs`）。
-/// 重绑过的词（`w…` id，没有行号）夹在失配串里时随串处理：前后最近的可映射
-/// 词行说话人一致才把它算进这一串，否则不动。
+/// After the gates pass, restoration works by mismatch run. A run of ≤ [`ROW_REALIGN_MAX_RUN_WORDS`] words or ≤ [`ROW_REALIGN_MAX_RUN_SECONDS`] seconds is changed. Longer runs are kept (counted in `kept_runs`). Rebound words (`w…` ids, which have no row number) sandwiched inside a mismatch run are handled with that run. They are included only if the nearest mappable words on either side agree on the row's speaker. Otherwise they are left alone.
 pub fn realign_to_row_speakers(
     doc: &mut TranscriptDoc,
     rows: &[crate::asr_rows::RowIn],
@@ -301,7 +279,7 @@ pub fn realign_to_row_speakers(
         report.skipped = Some("no-speaker-rows".to_owned());
         return report;
     }
-    // 与 build_doc 同一套行序与说话人 id 分配。
+    // Same row order and speaker-id assignment as build_doc.
     let sorted = sorted_nonempty_rows(rows);
     let mut speaker_ids: BTreeMap<String, String> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();
@@ -334,7 +312,7 @@ pub fn realign_to_row_speakers(
         return report;
     }
 
-    // 每个词的期望说话人：行 id 直接查表；重绑词由前后最近的行词推断。
+    // Expected speaker of each word: row ids are looked up directly. Rebound words are inferred from the nearest row words on either side.
     let mut expected: Vec<Option<String>> = doc
         .words
         .iter()
@@ -357,7 +335,7 @@ pub fn realign_to_row_speakers(
         report.skipped = Some("row-ownership-diverged".to_owned());
         return report;
     }
-    // 重绑词的期望：前一个行词与后一个行词的期望一致才继承，否则不动。
+    // Expectation for a rebound word: it inherits only if the expectations of the previous and next row words agree. Otherwise it is left alone.
     let mut previous: Option<String> = None;
     let mut fill: Vec<Option<String>> = vec![None; expected.len()];
     for (index, value) in expected.iter().enumerate() {
@@ -383,7 +361,7 @@ pub fn realign_to_row_speakers(
         }
     }
 
-    // 失配串：连续的「期望有值且 ≠ 当前 sp」的词。
+    // Mismatch run: consecutive words where an expectation exists and ≠ the current sp.
     let mut index = 0;
     while index < doc.words.len() {
         let mismatch = expected[index]
@@ -501,16 +479,16 @@ mod tests {
 
     #[test]
     fn labels_follow_speaker_ids_and_fall_back_to_first_use_order() {
-        // 单说话人没有切换点，也就没有标签。
+        // A single speaker has no switch point, and therefore no labels.
         assert!(SpeakerLabels::from_words(&spoken(&["s1", "s1"])).is_empty());
 
-        // 规范 id：标签取 id 里的数字，与 UI 编号一致（首次出现顺序无关）。
+        // Canonical id: the label takes the number in the id, consistent with the UI numbering (independent of first-appearance order).
         let canonical = SpeakerLabels::from_words(&spoken(&["s2", "s1", "s2"]));
         assert_eq!(canonical.label("s2"), Some("S2"));
         assert_eq!(canonical.label("s1"), Some("S1"));
         assert_eq!(canonical.label("s3"), None);
 
-        // 非规范 id（或数字冲突）：整表回落到首次出现序号。
+        // Non-canonical id (or a number conflict): the whole table falls back to first-appearance ordinals.
         let fallback = SpeakerLabels::from_words(&spoken(&["host", "s1", "host"]));
         assert_eq!(fallback.label("host"), Some("S1"));
         assert_eq!(fallback.label("s1"), Some("S2"));
@@ -528,7 +506,7 @@ mod tests {
         assert!(propose_names(&doc, &[]).is_empty());
     }
 
-    // ── 行归属还原 ──
+    // ── Row attribution restoration ──
 
     use crate::asr_rows::{RowIn, WordIn};
 
@@ -583,8 +561,7 @@ mod tests {
         )
     }
 
-    /// 夹具 = MOSS 7h 访谈原始行（719s 的"呃"、154s 的整行"嗯"）。用吸附策略
-    /// 建出来的旧项目，经行归属还原后与行级权威策略建出的结果逐词一致。
+    /// Fixture = the original MOSS 7-hour interview rows ("呃" (filler) at 719s, a whole-line "嗯" (filler) at 154s). A project built with the snapping strategy, after row attribution restoration, matches word-for-word the result built with the row-authority strategy.
     #[test]
     fn realign_restores_snapped_fillers_and_absorbed_backchannels() {
         let mut answer = cjk_row(719.41, 724.99, "呃很多啊打DOTA啊什么的", "S02");
@@ -615,13 +592,13 @@ mod tests {
         assert!(report.mismatched_words >= 2);
         assert_eq!(report.realigned_words, report.mismatched_words);
         assert_eq!(turn_texts(&legacy), turn_texts(&authoritative));
-        // 幂等：再跑一次一处都不改。
+        // Idempotent: running it again changes nothing.
         let again = realign_to_row_speakers(&mut legacy, &rows);
         assert_eq!(again.realigned_words, 0);
         assert_eq!(again.mismatched_words, 0);
     }
 
-    /// 重绑过的词（`w…` id）夹在失配串里：前后行词的期望一致才随串还原。
+    /// Rebound words (`w…` ids) sandwiched in a mismatch run are restored with that run only if the expectations of the row words on either side agree.
     #[test]
     fn realign_carries_rebound_words_inside_a_run_by_their_neighbours() {
         let rows = vec![
@@ -629,8 +606,7 @@ mod tests {
             cjk_row(3.0, 6.0, "呃我们开始今天的话题吧好不好呀", "S02"),
         ];
         let mut doc = built(&rows, crate::build::SpeakerBoundaryPolicy::RowAuthoritative);
-        // 模拟旧吸附 + 润色重绑："呃我" 被挪给 S01，其中"我"被重绑成新 id
-        // （没有行号，只能靠前后行词"呃""们"的期望一致来推断归属）。
+        // Simulates legacy snapping plus a polish rebinding. "呃我" (filler + "我", "I") was moved to S01, and the "我" was rebound to a new id. It has no row number, so its attribution can only be inferred from the agreeing expectations of the neighboring row words "呃" (filler) and "们" (plural suffix).
         let filler = doc.words.iter().position(|word| word.text == "呃").unwrap();
         doc.words[filler].sp = "s1".to_owned();
         doc.words[filler + 1].sp = "s1".to_owned();
@@ -647,7 +623,7 @@ mod tests {
             cjk_row(0.0, 2.0, "第一句话说得很长很长", "S01"),
             cjk_row(2.0, 4.0, "第二句话也说得很长很长", "S02"),
         ];
-        // 整篇 relabel（reidentify 已 accept）：失配率远超 5% ⇒ 跳过。
+        // Whole-document relabel (reidentify already accepted): the mismatch rate is far above 5% ⇒ skip.
         let mut rewritten = built(&rows, crate::build::SpeakerBoundaryPolicy::RowAuthoritative);
         for word in &mut rewritten.words {
             word.sp = "s1".to_owned();
@@ -656,13 +632,13 @@ mod tests {
         assert_eq!(report.skipped.as_deref(), Some("row-ownership-diverged"));
         assert!(rewritten.words.iter().all(|word| word.sp == "s1"));
 
-        // 长失配串（用户有意改了整句）保留，不算跳过。
+        // Long mismatch runs (the user intentionally changed a whole sentence) are kept and are not counted as skipped.
         let mut edited = built(&rows, crate::build::SpeakerBoundaryPolicy::RowAuthoritative);
-        edited.words[0].sp = "s2".to_owned(); // 单个词：短串，会被还原
+        edited.words[0].sp = "s2".to_owned(); // A single word: a short run, and it will be restored
         let report = realign_to_row_speakers(&mut edited, &rows);
         assert_eq!(report.realigned_runs, 1);
 
-        // 行里没有说话人标签：无事可做。
+        // No speaker labels in the rows: nothing to do.
         let plain = vec![RowIn::new(0.0, 1.0, "hello there")];
         let mut doc = built(
             &plain,
@@ -671,7 +647,7 @@ mod tests {
         let report = realign_to_row_speakers(&mut doc, &plain);
         assert_eq!(report.skipped.as_deref(), Some("no-speaker-rows"));
 
-        // 说话人表被重编（id 不在表里）：跳过。
+        // Speaker table renumbered (id not in the table): skip.
         let mut renamed = built(&rows, crate::build::SpeakerBoundaryPolicy::RowAuthoritative);
         let s2 = renamed.speakers.remove("s2").unwrap();
         renamed.speakers.insert("guest".to_owned(), s2);

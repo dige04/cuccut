@@ -1,4 +1,4 @@
-//! BCF 无宿主 I/O 路径：本文件同时以默认和 --no-default-features 构建运行。
+//! BCF host-I/O-free path: this file runs in both the default build and the --no-default-features build.
 
 use anyhow::{Result, bail};
 use render_raster::{CapabilityProfile, FrameMedia, PreparedBcf, RenderPass, TextEngine};
@@ -58,7 +58,7 @@ fn random_access_keeps_effects_and_identical_pixels() {
     );
     let expected = runtime.render_cpu(0.7, &mut NoMedia).unwrap();
     assert!(start.data() != expected.data(), "不同时间应有不同位置");
-    // 画面实际经过 grayscale；不是只创建了没执行的 Filter pass。
+    // The frame actually goes through grayscale; it is not merely a Filter pass that was created but never executed.
     let colored = expected.pixels().iter().find(|p| p.red() > 0).unwrap();
     assert_eq!(colored.red(), colored.green());
     assert_eq!(colored.green(), colored.blue());

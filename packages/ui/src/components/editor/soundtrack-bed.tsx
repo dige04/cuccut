@@ -11,10 +11,10 @@ import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 import { useEditorActions } from './editor-context.tsx';
 
 /**
- * 「生成配乐」做好后直接加进这部视频的音乐轨（产品设计 §2.7「生成配乐」、架构设计 §7.9「生成配乐的铺轨」）：Runtime 只把结果导入为素材，
- * 铺到时间线是界面在编辑器里提交的一笔编辑——按做出来的实际时长循环铺满、接缝交叉淡化、片尾淡出（music-bed.ts）。
- * 视频开着时任务一完成就铺；没开着时下次打开它再铺。一部视频只留一床配乐：再生成一段就换掉上一床（同一笔事务）。铺过的任务记在
- * 本机（soundtrack-store.ts）并标在实例的扩展里，素材已经在时间线上的也不再铺；铺不上去时编辑器统一提示、不再重试。吐司写明铺法，可以一步撤销。
+ * Once “生成配乐”(generate soundtrack) finishes, the result is added directly to this video's music track (product design §2.7 “生成配乐”, architecture design §7.9 “生成配乐的铺轨”(laying down the generated soundtrack)). The Runtime only imports the result as an asset.
+ * Laying it on the timeline is an edit the UI commits in the editor: it is looped to fill the actual generated duration, with cross-faded seams and a fade-out at the end (music-bed.ts).
+ * If the video is open when the task completes, it is laid down right away; if not, it is laid down the next time the video is opened. A video keeps only one soundtrack bed: generating another one replaces the previous bed (in the same transaction). Tasks already laid down are recorded
+ * on this machine (soundtrack-store.ts) and marked in the instance's extension. If the asset is already on the timeline it is not laid down again. If it cannot be laid down, the editor shows one unified notice and does not retry. The toast states how it was laid, and it can be undone in one step.
  */
 export function SoundtrackBed({ videoId, sequence, assets }: { videoId: Id; sequence: Sequence; assets: Record<Id, AssetRecord> }) {
   const { apply, undo } = useEditorActions();
@@ -26,10 +26,10 @@ export function SoundtrackBed({ videoId, sequence, assets }: { videoId: Id; sequ
     const job = jobs.find((j) => soundtrackReady(j, videoId) && !placed[j.jobId]);
     if (!job) return;
     const asset = assets[audioOutput(job)!.assetId!];
-    // 任务完成到素材出现在快照里有一拍，等下一次。
+    // There is a beat between the task completing and the asset appearing in the snapshot; wait for the next one.
     if (!asset) return;
     const { markPlaced } = useSoundtrackStore.getState();
-    // 时间线上已经有这个任务铺的（另一个窗口铺的、或本机记录丢了），或用户自己把这段素材放上去了：不再铺。
+    // The timeline already has this task's bed (laid down by another window, or the local record was lost), or the user placed this material there themselves: do not lay it down again.
     if (placedSoundtrackJobs(sequence).has(job.jobId) || assetOnTimeline(sequence, asset.id)) {
       markPlaced(job.jobId);
       return;
@@ -50,7 +50,7 @@ export function SoundtrackBed({ videoId, sequence, assets }: { videoId: Id; sequ
   return null;
 }
 
-/** 这部视频的「生成配乐」任务做好了、结果已导入为素材。 */
+/** This video's “生成配乐”(generate soundtrack) task is done, and its result has been imported as an asset. */
 export function soundtrackReady(job: JobRecord, videoId: Id): boolean {
   return job.kind === 'generateMusic' && job.videoId === videoId && job.state === 'completed' && !!audioOutput(job)?.assetId;
 }

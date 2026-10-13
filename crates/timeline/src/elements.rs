@@ -110,13 +110,13 @@ pub fn add_element(
     Ok(document.tracks[track_index].elements.len() - 1)
 }
 
-/// RFC 7396 JSON Merge Patch：对象逐键合并，`null` 删键，标量整体替换。
+/// RFC 7396 JSON Merge Patch: objects merge key by key, `null` deletes a key, scalars are replaced wholesale.
 ///
-/// 目标位置尚不存在（或不是对象）而补丁是对象时，必须**先立一个空对象再逐键
-/// 合并**，不能把补丁原样拷过去——原样拷会把补丁里表示「删键」的 `null` 连同
-/// 键一起带进目标，随后反序列化成 `BTreeMap<String, String>` 之类的强类型字段
-/// 时就会炸成 `invalid type: null, expected a string`（贴纸首次改色时
-/// `sticker.fillOverrides` 还不存在，正是这一步）。
+/// When the target position does not yet exist (or is not an object) and the patch is an object, you must **first create an empty object, then merge key by key**.
+/// Do not copy the patch over as-is — copying would carry the `null` that means "delete this key" into the target along with the key,
+/// and deserializing into a strongly typed field such as `BTreeMap<String, String>` would then blow up with
+/// `invalid type: null, expected a string` (this is exactly what happens when a sticker's colour is first changed,
+/// because `sticker.fillOverrides` does not exist yet).
 pub fn merge_patch(target: &mut Value, patch: &Value) {
     let Value::Object(patch) = patch else {
         *target = patch.clone();
@@ -209,10 +209,10 @@ pub fn remove_element(
     Ok(document.tracks[track_index].elements.remove(element_index))
 }
 
-/// 元素的**轨内**重排（z 序 = `tracks[]` 顺序 × 轨内 `elements[]` 顺序，本函数
-/// 只动后者；跨轨层级归 `moveTrack`）。`to` 是同一条轨 `elements[]` 的 0 基目标
-/// 下标——与 `moveTrack` 同一条约定：「上移一层」是往数组**后面**挪，方向由
-/// 客户端换算成下标，这里只认下标。返回 `(元素 id, 轨 id, 原下标)`。
+/// Reordering an element **within its track** (z order = `tracks[]` order × in-track `elements[]` order; this function
+/// only moves the latter; cross-track layering belongs to `moveTrack`). `to` is the 0-based target index in the same track's `elements[]` —
+/// the same convention as `moveTrack`: "move up one layer" means moving **later** in the array, the direction is converted into an index by the client,
+/// and this function only accepts the index. Returns `(element id, track id, original index)`.
 pub fn reorder_element(
     document: &mut TimelineDocument,
     selector: &str,
@@ -241,12 +241,12 @@ pub fn reorder_element(
     Ok((id, track_id, element_index))
 }
 
-/// 把元素挪到**另一条**已有的轨，落在目标轨的下标 `to`（数组越靠后越在上层；
-/// `to == 目标轨元素数` = 最上层）。目标轨就是原轨时等价于 [`reorder_element`]。
+/// Moves an element to **another** existing track, landing at index `to` on the target track (the later in the array, the higher the layer;
+/// `to == number of elements on the target track` = topmost). When the target track is the original track, it is equivalent to [`reorder_element`].
 ///
-/// 两条轨都不能锁定；目标轨必须已经存在（挪进一条不存在的轨几乎都是笔误，不像
-/// [`add_element`] 那样顺手建轨），种类要与元素相容（音频元素只进音频轨）。
-/// 返回 `(元素 id, 原轨 id, 原轨内下标)`。
+/// Neither track may be locked; the target track must already exist (moving into a non-existent track is almost always a typo, unlike
+/// [`add_element`], which creates tracks along the way), and the kind must be compatible with the element (audio elements go only into audio tracks).
+/// Returns `(element id, original track id, original index within that track)`.
 pub fn move_element_to_track(
     document: &mut TimelineDocument,
     selector: &str,
@@ -322,14 +322,14 @@ pub fn patch_main(
 }
 
 // ---------------------------------------------------------------------------
-// 元素的分割 / 修剪 / 合并：时钟算术与合并判据
+// Splitting / trimming / joining elements: clock arithmetic and join criteria
 // ---------------------------------------------------------------------------
 //
-// App / Web 的时间轴手势（`ccut-editor-core::timeline_edit`）与 `ccut element
-// split|trim|join` 共用这里的算术：播放倍率、左修边后的源入点、切点是否留得下
-// 两段。只剩这一份。
+// The App / Web timeline gestures (`ccut-editor-core::timeline_edit`) and `ccut element
+// split|trim|join` share the arithmetic here: playback rate, the source in-point after a left trim, and whether a cut point leaves
+// room for both halves. There is only one copy of this.
 
-/// 媒体元素的播放倍率（每时间轴秒走过的源秒）：缺席、非有限或不为正都按 1×。
+/// Playback rate of a media element (source seconds consumed per timeline second): if absent, non-finite or not positive, it is 1×.
 pub fn media_play_rate(rate: Option<f64>) -> f64 {
     match rate {
         Some(rate) if rate.is_finite() && rate > 0.0 => rate,
@@ -337,7 +337,7 @@ pub fn media_play_rate(rate: Option<f64>) -> f64 {
     }
 }
 
-/// 带源时钟的种类：切开或左修边时 `srcStart` 跟着前进（`video` / `audio`）。
+/// Kinds with a source clock: when cutting or trimming the left edge, `srcStart` advances along with it (`video` / `audio`).
 pub fn carries_source_clock(kind: crate::schema::ElementKind) -> bool {
     matches!(
         kind,
@@ -345,29 +345,29 @@ pub fn carries_source_clock(kind: crate::schema::ElementKind) -> bool {
     )
 }
 
-/// 元素在时间轴上的起点从 `old_start` 挪到 `new_start` 后新的 `srcStart`：
-/// 每时间轴秒烧掉 `rate` 源秒。不夹取，需要夹到 ≥ 0 的调用方自己夹。
+/// The new `srcStart` of an element after its start on the timeline moves from `old_start` to `new_start`:
+/// every timeline second burns `rate` source seconds. Not clamped; callers that need clamping to ≥ 0 must clamp themselves.
 pub fn shifted_src_start(src_start: f64, old_start: f64, new_start: f64, rate: f64) -> f64 {
     src_start + (new_start - old_start) * rate
 }
 
-/// 在 `at` 处切开 `[start, end)` 能不能让两段都不短于 `minimum`（负数按 0）：
-/// `start + minimum ≤ at ≤ end − minimum`；`end` 缺席（跟片尾）只查左边界。
+/// Whether cutting `[start, end)` at `at` leaves both halves no shorter than `minimum` (a negative number counts as 0):
+/// `start + minimum ≤ at ≤ end − minimum`; when `end` is absent (follows the tail), only the left boundary is checked.
 pub fn split_point_inside(start: f64, end: Option<f64>, at: f64, minimum: f64) -> bool {
     let minimum = minimum.max(0.0);
     at.is_finite() && at >= start + minimum && end.is_none_or(|end| at <= end - minimum)
 }
 
-/// 把元素在成片时刻 `at` 切成两段：原件（id 不变）的 `end` 改成 `at`；右半是
-/// 原件的完整副本，换成 `new_id`、`start = at`、`end` 照抄（原件跟片尾则右半也
-/// 跟片尾），紧挨着放在原件之上（同一条轨、下标 +1，z 序与 App 分割一致）。带源
-/// 时钟的种类右半 `srcStart` 前进 `(at − start) × rate`。
+/// Cuts an element into two halves at timeline moment `at`: the original (id unchanged) has its `end` changed to `at`; the right half is a
+/// complete copy of the original, given `new_id`, `start = at`, and `end` copied as-is (if the original follows the tail, the right half also follows the tail),
+/// placed right next to the original on top of it (same track, index +1, so the z order matches the App split). For kinds with a source clock,
+/// the right half's `srcStart` advances by `(at − start) × rate`.
 ///
-/// 关键帧（0.12）按两半各自的新窗口改写（[`crate::keyframes::split_keyframes`]）；闪避、
-/// 静态音量等其余属性两半照抄。
+/// Keyframes (0.12) are rewritten for each half's new window ([`crate::keyframes::split_keyframes`]); ducking, static volume and other
+/// properties are copied as-is to both halves.
 ///
-/// `start` / `end` 是原件解算后的起止（词锚已解，跟片尾的按片尾）；切点是否留得下两段由
-/// 调用方用 [`split_point_inside`] 判定。返回右半。
+/// `start` / `end` are the resolved start and end of the original (word anchors already resolved; tail-following resolved to the tail). Whether the cut point leaves
+/// room for both halves is checked by the caller with [`split_point_inside`]. Returns the right half.
 pub fn split_element(
     document: &mut TimelineDocument,
     selector: &str,
@@ -419,43 +419,43 @@ pub fn split_element(
     Ok(right)
 }
 
-/// `join` 在两件元素属性不一致时保留哪一边（按命令里给出的先后）。
+/// Which side `join` keeps when the two elements' attributes disagree (according to the order given in the command).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JoinKeep {
     First,
     Second,
 }
 
-/// `join` 拒绝的原因。`Attributes` 可以用 [`JoinKeep`] 显式选一边放行，其余不行。
+/// Reasons `join` rejects. `Attributes` can be explicitly allowed through by choosing a side with [`JoinKeep`]; the others cannot.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JoinRefusal {
-    /// 种类不同。
+    /// Different kinds.
     Kind,
-    /// 时间上不首尾相接：`gap` = 后者起点 − 前者终点（负数是重叠）。
+    /// Not touching end to start on the timeline: `gap` = start of the later one − end of the earlier one (a negative value means overlap).
     NotAdjacent { gap: f64 },
-    /// 源不同，或播放倍率不同（`key` 是 `srcId` / `rate`）。
+    /// Different sources, or different playback rates (`key` is `srcId` / `rate`).
     Source { key: &'static str },
-    /// 源时间不连续：后者的 `srcStart` 应为 `expected`。
+    /// Source time is discontinuous: the later one's `srcStart` should be `expected`.
     SourceGap { expected: f64, actual: f64 },
-    /// 其余属性不一致的键（按字母序）。
+    /// Keys of the remaining attributes that disagree (in alphabetical order).
     Attributes { keys: Vec<String> },
 }
 
-/// 首尾相接、源时间连续的判定容差（秒）。
+/// Tolerance in seconds for judging that the ends touch and the source time is continuous.
 pub const JOIN_EPSILON: f64 = 1e-3;
 
-/// 不参与 `join` 属性比较的键：两段本来就该不同的时间与身份，外加名字（名字只是
-/// 标签，不影响画面，合并后取保留那一边的）。
+/// Keys not compared for `join` attributes: the times and identities that are supposed to differ between the two halves, plus the name (the name is only a
+/// label and does not affect the picture; after merging, the one that is kept is used).
 const JOIN_OWN_KEYS: [&str; 5] = ["id", "name", "start", "end", "srcStart"];
 
-/// 两件元素合并成一件（[`split_element`] 的逆）：按解算后的时间排出前后，要求种类
-/// 相同、首尾相接（容差 [`JOIN_EPSILON`]）、带源时钟的同源同倍率且源时间连续、其
-/// 余属性一致。属性不一致时 `keep` 选一边的属性。
+/// Merges two elements into one (the inverse of [`split_element`]): orders them by their resolved times, and requires the same kind,
+/// touching ends (tolerance [`JOIN_EPSILON`]), and for source-clocked kinds the same source and same rate with continuous source time, and
+/// all other attributes matching. When attributes disagree, `keep` selects one side's attributes.
 ///
-/// 结果沿用**时间上靠前**那件的 id、`start`（原样，词锚不解开）与 `srcStart`，
-/// `end` 取靠后那件的（原样，跟片尾的仍跟片尾）；其余属性取 `keep` 那一边，一致时
-/// 取靠前那件。`first` / `second` 与 `keep` 同序（命令里给出的先后），`*_span` 是
-/// 两件解算后的 `(start, end)`。同一条轨由调用方判定。
+/// The result keeps the id and `start` of the element that is **earlier on the timeline** (as-is, word anchor not unresolved), and `srcStart`;
+/// `end` is taken from the later element (as-is; tail-following stays tail-following); other attributes are taken from the side `keep` selects, or from the earlier one if they agree.
+/// `first` / `second` are in the same order as `keep` (the order given in the command), and `*_span` is the resolved `(start, end)` of the two elements.
+/// Which track they are on is decided by the caller.
 pub fn join_elements(
     first: &Element,
     first_span: (f64, f64),
@@ -497,8 +497,8 @@ pub fn join_elements(
             return Err(JoinRefusal::SourceGap { expected, actual });
         }
     }
-    // 关键帧（0.12）是分割切开的两半时拼回原样，不参与属性比较；拼不回时按普通属性比
-    // （两边一有关键帧就算不一致，`keep` 取那一边的原样）。
+    // Keyframes (0.12) are concatenated back to the original as-is when split into two halves, and do not take part in attribute comparison;
+    // if they cannot be concatenated back, they are compared as ordinary attributes (if either side has keyframes, they count as disagreeing, and `keep` takes that side's as-is value).
     let joined_keyframes = crate::keyframes::join_keyframes(
         early.keyframes.as_ref(),
         (early_span.1 - early_span.0).max(0.0),
@@ -629,8 +629,8 @@ mod tests {
         assert!(main.muted);
     }
 
-    /// 0.12：改别的属性（面板拖位置、改文字）不碰 `keyframes` / `duck`；按属性
-    /// 合并与清除走同一条 merge-patch。
+    /// 0.12: changing other properties (dragging position in the panel, editing text) does not touch `keyframes` / `duck`; per-property
+    /// merging and clearing go through the same merge-patch.
     #[test]
     fn keyframes_and_duck_survive_unrelated_patches_and_merge_per_property() {
         let mut document = TimelineDocument::default();
@@ -660,7 +660,7 @@ mod tests {
         let updated =
             patch_element(&mut document, "el-1", &json!({"keyframes": {"x": null}})).unwrap();
         assert!(updated.keyframes.as_ref().unwrap().get("x").is_none());
-        // 文字元素不能带 volume 关键帧，也不能闪避。
+        // Text elements cannot carry volume keyframes, and cannot be ducked.
         assert!(
             patch_element(
                 &mut document,
@@ -674,9 +674,9 @@ mod tests {
         );
     }
 
-    /// 贴纸**首次**改色：元素序列化后根本没有 `sticker.fillOverrides` 这一键
-    /// （`skip_serializing_if = BTreeMap::is_empty`），补丁里同色分组写的
-    /// `null`（RFC 7396 的「删键」）必须被吃掉，而不是原样拷进目标再炸掉反序列化。
+    /// **First** colour change on a sticker: after serialization the element has no `sticker.fillOverrides` key at all
+    /// (`skip_serializing_if = BTreeMap::is_empty`), so the `null` written in the patch for the same-colour group (RFC 7396's "delete key") must be consumed,
+    /// not copied as-is into the target, where it would blow up deserialization.
     #[test]
     fn merge_patch_drops_nulls_when_creating_a_missing_object() {
         use crate::schema::StickerProps;
@@ -710,7 +710,7 @@ mod tests {
             Some("#ff0000")
         );
 
-        // 第二次：把已有的一组改回原色（null 删键）、另一组换色。
+        // Second time: restore one existing group to its original colour (null deletes the key), and change the other group's colour.
         let updated = patch_element(
             &mut document,
             "st-1",
@@ -725,7 +725,7 @@ mod tests {
         );
     }
 
-    /// 标量位置遇到对象补丁：先立空对象再合并，`null` 同样不落地。
+    /// A scalar position meets an object patch: first create an empty object and merge; `null` likewise does not land.
     #[test]
     fn merge_patch_replaces_a_scalar_with_a_fresh_object() {
         let mut target = json!({"a": 1});
@@ -743,7 +743,7 @@ mod tests {
         add_element(&mut document, "text", None, text("el-2", None)).unwrap();
         add_element(&mut document, "text", None, text("el-3", None)).unwrap();
 
-        // 「移到最前」= 挪到数组末尾（数组顺序就是 z 序，越靠后越靠上）。
+        // "Move to front" = move to the end of the array (array order is the z order; the later, the higher).
         let (id, track_id, from) = reorder_element(&mut document, "el-1", 2).unwrap();
         assert_eq!((id.as_str(), track_id.as_str(), from), ("el-1", "text", 0));
         let order: Vec<&str> = document.tracks[0]
@@ -753,11 +753,11 @@ mod tests {
             .collect();
         assert_eq!(order, ["el-2", "el-3", "el-1"]);
 
-        // 原地不动是合法的 no-op。
+        // Not moving it in place is a valid no-op.
         reorder_element(&mut document, "el-3", 1).unwrap();
         assert_eq!(document.tracks[0].elements[1].id, "el-3");
 
-        // 越界与锁轨都拒绝。
+        // Both out-of-range and locked tracks are rejected.
         assert!(reorder_element(&mut document, "el-1", 3).is_err());
         document.tracks[0].locked = true;
         assert!(reorder_element(&mut document, "el-1", 0).is_err());
@@ -770,7 +770,7 @@ mod tests {
         add_element(&mut document, "b", None, text("el-2", None)).unwrap();
         add_element(&mut document, "b", None, text("el-3", None)).unwrap();
 
-        // 挪进 b 的最底层。
+        // Move into the bottom layer of b.
         let (id, from, index) = move_element_to_track(&mut document, "el-1", "b", 0).unwrap();
         assert_eq!((id.as_str(), from.as_str(), index), ("el-1", "a", 0));
         assert!(document.tracks[0].elements.is_empty());
@@ -781,11 +781,11 @@ mod tests {
             .collect();
         assert_eq!(order, ["el-1", "el-2", "el-3"]);
 
-        // 同一条轨 = 轨内重排。
+        // Same track = reorder within the track.
         move_element_to_track(&mut document, "el-1", "b", 2).unwrap();
         assert_eq!(document.tracks[1].elements[2].id, "el-1");
 
-        // 不存在的轨、越界、锁轨、种类不符都拒绝。
+        // Non-existent track, out-of-range, locked track, and kind mismatch are all rejected.
         assert!(matches!(
             move_element_to_track(&mut document, "el-1", "missing", 0),
             Err(TimelineError::Unmapped(_))
@@ -858,7 +858,7 @@ mod tests {
         assert_eq!(elements[1].id, "el-1-2", "右半紧挨在原件之上");
 
         let (left, right) = (elements[0].clone(), elements[1].clone());
-        // 两种先后都合回原件：沿用时间上靠前那件的 id。
+        // Both orders merge back into the original: keeps the id of the element that is earlier on the timeline.
         for (a, a_span, b, b_span) in [
             (&left, (10.0, 12.0), &right, (12.0, 20.0)),
             (&right, (12.0, 20.0), &left, (10.0, 12.0)),
@@ -867,9 +867,9 @@ mod tests {
         }
     }
 
-    /// 0.12：关键帧按两半各自的窗口切开（百分比折回各自那一份、秒写法跟内容走，接缝补一帧
-    /// 取样值），闪避与静态音量照抄；合回去逐字还原——包括带缓动的段、恰好落在切点上的原有帧、
-    /// 跟片尾的元素。不是同一次分割切出来的关键帧不能悄悄拼，要 `keep`。
+    /// 0.12: keyframes are cut into each half's own window (percentages fold back into their own share, second-based notation follows the content, and the seam gets a sampled value for one frame);
+    /// ducking and static volume are copied as-is. Joining them back restores the original exactly — including segments with easing, original keyframes that fall exactly on the cut point, and elements that follow the tail.
+    /// Keyframes that were not produced by the same split cannot be silently stitched together; use `keep`.
     #[test]
     fn split_then_join_restores_keyframes_and_duck() {
         use crate::schema::TimeValue;
@@ -906,8 +906,7 @@ mod tests {
         add_element(&mut document, "audio", None, music).unwrap();
         add_element(&mut document, "text", None, title).unwrap();
 
-        // 音乐在 14 秒（本地 4 秒，40%）切；文字跟片尾（按 30 秒解算），在 12 秒——恰好是
-        // x 的一帧——切。
+        // Music is cut at 14 seconds (4 seconds local, 40%); the text, following the tail (resolved at 30 seconds), is cut at 12 seconds — exactly one frame of x.
         for (id, span, at) in [("bgm", (10.0, 20.0), 14.0), ("title", (10.0, 30.0), 12.0)] {
             let original = document
                 .tracks
@@ -933,7 +932,7 @@ mod tests {
                     serde_json::to_value(element.keyframes.as_ref().unwrap().get("volume").unwrap())
                         .unwrap()
                 };
-                // 左半是原来的 0–40%：50% 那帧落在右半，接缝补取样值。
+                // The left half is the original 0–40%: the frame at 50% falls in the right half, and the seam gets a sampled value.
                 assert_eq!(volume(&left)[0], json!({"t": "0%", "v": 0.2}));
                 assert_eq!(volume(&left)[1]["t"], json!("100%"));
                 assert_eq!(volume(&right)[0]["t"], json!("0%"));
@@ -949,12 +948,12 @@ mod tests {
             assert_eq!(joined, original, "{id}：split→join 回原状");
             let swapped = join_elements(&right, right_span, &left, left_span, None).unwrap();
             assert_eq!(swapped, original);
-            // 把两半撤回原样，下一件接着切。
+            // Revert the two halves to the original, then the next one is cut.
             remove_element(&mut document, &new_id).unwrap();
             replace_element(&mut document, id, original).unwrap();
         }
 
-        // 两件关键帧相同、但不是同一次分割切出来的：拼不回，算属性不一致，`keep` 取一边原样。
+        // Two elements with identical keyframes that were not produced by the same split: they cannot be concatenated back, so attributes count as disagreeing, and `keep` takes one side as-is.
         let mut a = audio("a", 10.0, 12.0, 3.0);
         let ramp = serde_json::from_value::<crate::keyframes::Keyframes>(
             json!({"volume": [{"t": "0%", "v": 0.2}, {"t": "100%", "v": 1.0}]}),

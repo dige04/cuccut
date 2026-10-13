@@ -16,18 +16,17 @@ import { tr } from './timeline-ripple-copy.tr.ts';
 import { vi } from './timeline-ripple-copy.vi.ts';
 
 /**
- * 时间线「删掉一段并前移」的文案（原型 editor-keys.jsx 的 `del` / `removeRange`、timeline-menu.jsx 的那一项）：
- * 删除后合拢空隙的提示，右键菜单与 ⇧Delete 的「从所有轨道删除这一段」。译文在 `timeline-ripple-copy.zh-Hans.ts`。
+ * Copy for “delete a range and shift the rest forward” on the timeline (prototype editor-keys.jsx `del` / `removeRange`, and the item in timeline-menu.jsx): the hint shown after deleting and closing the gap; the context menu item and ⇧Delete's “Delete this range from all tracks”. The translations are in `timeline-ripple-copy.zh-Hans.ts`.
  */
 const en = {
-  /** 右键菜单的一项。 */
+  /** One item in the right-click menu. */
   removeSpan: 'Delete span from all tracks',
   removeSpanHint: 'Later content moves up · total gets shorter',
-  /** 选中的只有字幕时：字幕铺满整条轨，不拿它的区间。 */
+  /** When only subtitles are selected: subtitles fill the whole track, so their range is not taken. */
   removeSpanCaptions: 'Subtitles span the whole video · Select a clip',
-  /** 删除后合拢了空隙；`deleted` 是「已删除 N 个片段」那一句。 */
+  /** The gap was closed after deleting; `deleted` is the sentence “已删除 N 个片段” (N clips deleted). */
   closed: (deleted: string, seconds: number) => `${deleted} · Closed the ${secondsLabel(seconds)} gap`,
-  /** 删除了，但空隙后面有锁住的轨道或片段，没有合拢。 */
+  /** Deleted, but the gap is followed by a locked track or clip, so it was not closed. */
   gapKept: (deleted: string) => `${deleted} · Gap kept: a track or clip after it is locked`,
   removed: (seconds: number) => `Deleted ${secondsLabel(seconds)} from all tracks · Later content moved up`,
   pickSpan: 'Select a clip on the timeline first, then delete its span from all tracks',

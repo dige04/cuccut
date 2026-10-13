@@ -4,7 +4,7 @@ import { defineNoun } from './context.ts';
 import { M } from './fonts-copy.ts';
 import { formatDownloadedFonts, formatFontFamilies, formatFontRemoval, parseFontsArgs } from './fonts-output.ts';
 
-/** `cuccut fonts …`：按需下载的字体（架构设计 §9.1）。下载跟着任务的进度；已经下载好的不再下载。 */
+/** `cuccut fonts …`: fonts downloaded on demand (Architecture design §9.1). Downloads follow the task's progress. Fonts already downloaded are not downloaded again. */
 export const fonts = defineNoun({
   name: 'fonts',
   get usage() {

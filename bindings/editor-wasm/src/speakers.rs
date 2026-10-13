@@ -1,14 +1,14 @@
-//! 已有转写的「识别说话人」（架构设计 §6.6）：把声纹区分投影到词上的结果做成提案，用户确认后再应用。
+//! Speaker identification for an existing transcript (architecture design §6.6): the speaker-embedding clusters projected onto words become a proposal, which is applied only after the user confirms.
 //!
-//! - [`speaker_proposal`]：转写正文 + 各语言译文 + 每个词投影到的声纹聚类（Model Worker 的 `cuccut.speakers/v1`）→
-//!   提案：哪些词换说话人、每位说话人的句数与试听片段、有几条译文会按新边界重切。聚类按重叠时长一对一复用已有的
-//!   说话人（保留它的 ID 与名字，库里的音色绑定与配音的说话人绑定因此不断），复用不上的新建 `spk-<n>`、名字
-//!   「说话人 n」。规则从旧版本的 `speakers reidentify` 原样移植；没有说话人的词（保留的 `""`）不参与复用。
-//! - [`apply_speakers`]：正文 + 译文 + 提案的换人表 + 说话人表（用户在确认页改过的名字）→ 写回的正文与有变化的译文。
-//!   应用由字幕与翻译核心的 `apply_speaker_proposal` 完成：新的说话人边界切开句子时，已有译文按目标语的自然缝重切，
-//!   不重新翻译。
+//! - [`speaker_proposal`]: transcript body + translations in each language + the speaker-embedding cluster each word projects to (`cuccut.speakers/v1` from the Model Worker) →
+//!   a proposal: which words change speaker, each speaker's sentence count and preview clips, and how many translation entries will be re-split at the new boundaries. Clusters are matched one-to-one with existing speakers by overlap duration, reusing them
+//!   (keeping their ID and name, so the voice bindings in the library and the dubbing speaker bindings stay intact); unmatched clusters get a new `spk-<n>`, named
+//!   “说话人 n” (Speaker n). The rules are ported unchanged from the older version's `speakers reidentify`; words with no speaker (the reserved `""`) do not take part in reuse.
+//! - [`apply_speakers`]: transcript body + translations + the proposal's speaker-change table + the speaker table (names the user edited on the confirmation page) → the body and the changed translations to write back.
+//!   Applying is done by `apply_speaker_proposal` in the subtitle and translation core: when new speaker boundaries split a sentence, existing translations are re-split at natural break points in the target language,
+//!   without re-translating.
 //!
-//! 两个都是纯函数；提案是应用的一次试算（同一个函数），所以确认页的数字就是应用后的数字。
+//! Both are pure functions. A proposal is a dry run of the apply step (the same function), so the numbers on the confirmation page are the numbers after applying.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -25,11 +25,11 @@ use video_model::translation::TranslationBody;
 
 use crate::{EntryError, invalid_input};
 
-/// 没有说话人的词用的保留 ID（视频格式规范 §5.2）。
+/// Reserved ID for words with no speaker (video format spec §5.2).
 const NO_SPEAKER: &str = "";
-/// 每位说话人给几段试听。
+/// Number of preview clips per speaker.
 const CLIPS_PER_SPEAKER: usize = 3;
-/// 试听片段优先选不短于这个时长的句子（秒）。
+/// Preview clips prefer sentences at least this long (seconds).
 const CLIP_MIN_SECONDS: f64 = 1.5;
 
 #[derive(Deserialize)]
@@ -38,7 +38,7 @@ struct ProposalInput {
     speech: SpeechBody,
     #[serde(default)]
     translations: Vec<TranslationBody>,
-    /// 与 `speech.words` 一一对应：这个词投影到的声纹聚类，拿不到证据的词为 null。
+    /// Parallel to `speech.words`: the speaker-embedding cluster each word projects to; null for words with no evidence.
     labels: Vec<Option<String>>,
 }
 
@@ -48,9 +48,9 @@ struct ApplyInput {
     speech: SpeechBody,
     #[serde(default)]
     translations: Vec<TranslationBody>,
-    /// 换说话人的词：词 ID → 说话人 ID。
+    /// Words that change speaker: word ID → speaker ID.
     word_speakers: BTreeMap<String, String>,
-    /// 提案里的说话人与名字（确认页改过的名字在这里）；没列出的已有说话人保持原样。
+    /// Speakers and names in the proposal (names edited on the confirmation page are here); existing speakers not listed are left unchanged.
     speakers: Vec<SpeakerName>,
 }
 
@@ -64,13 +64,13 @@ struct SpeakerName {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProposalOutput {
-    /// 换说话人的词：词 ID → 说话人 ID（只列有变化的）。
+    /// Words that change speaker: word ID → speaker ID (changed words only).
     word_speakers: BTreeMap<String, String>,
-    /// 应用后的说话人，按在正文里第一次出现的次序。
+    /// Speakers after applying, in order of first appearance in the body.
     speakers: Vec<ProposedSpeaker>,
-    /// 换了说话人的词数；0 表示提案与现状相同。
+    /// Number of words whose speaker changed; 0 means the proposal matches the current state.
     relabeled: usize,
-    /// 会按新边界重切的译文条数（各语言相加）。
+    /// Number of translation entries that will be re-split at the new boundaries (summed across languages).
     translations_split: usize,
 }
 
@@ -79,10 +79,10 @@ struct ProposalOutput {
 struct ProposedSpeaker {
     id: String,
     name: String,
-    /// 正文里原来没有的说话人。
+    /// Speakers not present in the body before.
     is_new: bool,
     words: usize,
-    /// 这位说话人的词的总时长（秒）。
+    /// Total duration of this speaker's words (seconds).
     seconds: f64,
     sentences: usize,
     clips: Vec<Clip>,
@@ -92,7 +92,7 @@ struct ProposedSpeaker {
 #[serde(rename_all = "camelCase")]
 struct Clip {
     sentence_id: String,
-    /// 正文 `timescale` 下的刻度。
+    /// Ticks in the body's `timescale`.
     start: i64,
     end: i64,
     text: String,
@@ -102,12 +102,12 @@ struct Clip {
 #[serde(rename_all = "camelCase")]
 struct ApplyOutput {
     speech: Value,
-    /// 与输入的译文一一对应：有变化的是整份新正文，没变的为 null。
+    /// Parallel to the input translations: the whole new body where changed, null where unchanged.
     translations: Vec<Option<Value>>,
     relabeled: usize,
     translations_split: usize,
     sentences_split: usize,
-    /// 写回时 v3 格式装不下而丢掉的内容（正常应为空）。
+    /// Content that the v3 format cannot hold and was dropped on write-back (should normally be empty).
     dropped: Vec<String>,
 }
 
@@ -125,7 +125,7 @@ fn invalid_proposal(message: impl Into<String>) -> EntryError {
     }
 }
 
-/// 句子与说话人只看词；素材的事实用占位，时长取末词的终点（核心的校验要求词不越出时长）。
+/// Sentences and speakers look only at words; the source-media facts are placeholders, and the duration is the end of the last word (the core requires words not to exceed the duration).
 pub(crate) fn media_for(body: &SpeechBody) -> MediaFacts {
     let timescale = body.timescale.unwrap_or(1_000_000);
     let end = body.words.iter().filter_map(|word| word.end).max().unwrap_or(0);
@@ -141,8 +141,8 @@ pub(crate) fn media_for(body: &SpeechBody) -> MediaFacts {
     }
 }
 
-/// 同一份转写可以有几份同语言的译文（每次翻译新建一份），字幕与翻译核心按语言分表：进核心前把语言换成按次序的键，
-/// 写回后换回来。
+/// One transcript can have several translations in the same language (each translation run creates a new one). The subtitle and translation core keys by language, so before entering the core the language is swapped for an ordinal key,
+/// and swapped back after write-back.
 fn keyed(translations: &[TranslationBody]) -> Vec<TranslationBody> {
     translations
         .iter()
@@ -165,7 +165,7 @@ fn load(speech: &SpeechBody, translations: &[TranslationBody]) -> Result<Transcr
     .map_err(|error| invalid_speech(error.message))
 }
 
-/// 聚类 → 说话人：按重叠时长从大到小一对一复用已有说话人，复用不上的新建。
+/// Clusters → speakers: match existing speakers one-to-one by overlap duration, largest first; create new ones for unmatched clusters.
 fn map_clusters(doc: &TranscriptDoc, labels: &[Option<String>]) -> (BTreeMap<String, String>, BTreeMap<String, Speaker>) {
     let mut overlap: BTreeMap<(&str, &str), f64> = BTreeMap::new();
     for (word, label) in doc.words.iter().zip(labels) {
@@ -190,7 +190,7 @@ fn map_clusters(doc: &TranscriptDoc, labels: &[Option<String>]) -> (BTreeMap<Str
         claimed.insert(speaker);
     }
 
-    // 新说话人按聚类第一次出现的次序编号，接在已有的 `spk-<n>` 后面。
+    // New speakers are numbered in the order their clusters first appear, continuing after the existing `spk-<n>`.
     let mut new_speakers = BTreeMap::new();
     let mut next_number = doc
         .speakers
@@ -205,7 +205,7 @@ fn map_clusters(doc: &TranscriptDoc, labels: &[Option<String>]) -> (BTreeMap<Str
         if !seen.insert(cluster.as_str()) || cluster_to_speaker.contains_key(cluster) {
             continue;
         }
-        // ID 与名字都不与已有的撞（旧项目导入的说话人可能叫「说话人 1」而 ID 不是 `spk-1`）。
+        // Neither the ID nor the name may collide with existing ones (speakers imported from an old project may be named “说话人 1” (Speaker 1) with an ID that is not `spk-1`).
         while doc.speakers.contains_key(&format!("spk-{next_number}")) || names.contains(&format!("说话人 {next_number}")) {
             next_number += 1;
         }
@@ -223,7 +223,7 @@ fn map_clusters(doc: &TranscriptDoc, labels: &[Option<String>]) -> (BTreeMap<Str
     (cluster_to_speaker, new_speakers)
 }
 
-/// 应用一次（提案的试算与真正的应用共用）。返回应用后的文稿与核心的报告。
+/// Applies once (shared by the proposal's dry run and the real apply). Returns the document after applying and the core's report.
 fn run_apply(
     doc: &TranscriptDoc,
     word_speakers: &BTreeMap<String, String>,
@@ -234,7 +234,7 @@ fn run_apply(
     Ok((next, report))
 }
 
-/// 各语言被切开的原译文条数：切开的句子里，这种语言原来有译文的。
+/// Original translation entries split per language: among split sentences, those that had a translation in that language.
 fn split_count(before: &TranscriptDoc, report: &SpeakerApplyReport) -> usize {
     before
         .trans
@@ -265,7 +265,7 @@ fn write_back(
     .map_err(|error| invalid_speech(error.message))
 }
 
-/// 提案（JSON）。正文读不懂是 `INVALID_SPEECH`；`labels` 与词数不符是 `INVALID_PROPOSAL`。
+/// Proposal (JSON). A body that cannot be parsed is `INVALID_SPEECH`; `labels` whose length differs from the word count is `INVALID_PROPOSAL`.
 pub fn speaker_proposal(input: &[u8]) -> Result<String, EntryError> {
     let input: ProposalInput = serde_json::from_slice(input).map_err(invalid_input)?;
     if input.labels.len() != input.speech.words.len() {
@@ -338,7 +338,7 @@ pub fn speaker_proposal(input: &[u8]) -> Result<String, EntryError> {
     Ok(serde_json::to_string(&output).expect("提案总能序列化"))
 }
 
-/// 试听片段：这位说话人的句子里均匀取几句，优先不太短的。
+/// Preview clips: pick several sentences evenly from this speaker's sentences, preferring ones that are not too short.
 fn pick_clips(sentences: &[&speech_doc_bridge::sentences::SourceSentence], timescale: f64) -> Vec<Clip> {
     let long = sentences
         .iter()
@@ -372,7 +372,7 @@ fn pick_clips(sentences: &[&speech_doc_bridge::sentences::SourceSentence], times
         .collect()
 }
 
-/// 应用（JSON）。换人表引用不认识的说话人、或说话人 ID 为空是 `INVALID_PROPOSAL`。
+/// Apply (JSON). A speaker table that references an unknown speaker, or an empty speaker ID, is `INVALID_PROPOSAL`.
 pub fn apply_speakers(input: &[u8]) -> Result<String, EntryError> {
     let input: ApplyInput = serde_json::from_slice(input).map_err(invalid_input)?;
     let keyed_translations = keyed(&input.translations);

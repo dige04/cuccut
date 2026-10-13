@@ -14,7 +14,7 @@ import { pl } from './translate-subtitles.pl.ts';
 import { tr } from './translate-subtitles.tr.ts';
 import { vi } from './translate-subtitles.vi.ts';
 
-/** `packages/jobs/src/pipelines/translate-subtitles.ts`：「翻译字幕文件」流程的名字、步骤、错误与警告。 */
+/** `packages/jobs/src/pipelines/translate-subtitles.ts`: the name, steps, errors and warnings of the “translate subtitle file” flow. */
 const en = {
   label: 'Translate subtitle file',
   description:

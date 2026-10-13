@@ -8,8 +8,8 @@ import { TILE_FILL } from './dialog-fills.ts';
 import { GuideIcon, GuideList, detail, eyebrow, kbd, sectionHeading, subTitle, textLink } from './help-guide-list.tsx';
 
 /**
- * 快速上手（原型 help-center.jsx 的 `section === 'start'`）：欢迎块、入门路径卡、「你可能还想了解」、底部提示。
- * 步数与总阅读时长从快速上手的指南算（原型写死「4 步 · 约 7 分钟阅读」）。
+ * Quick start (prototype help-center.jsx `section === 'start'`): welcome block, getting-started path cards, "You might also want to know", and a bottom tip.
+ * The step count and total reading time are computed from the quick-start guides (the prototype hard-codes "4 steps · about 7 minutes reading").
  */
 export function HelpStart({ onRead, onChoose }: { onRead(guide: HelpGuide): void; onChoose(section: 'guide' | 'keys'): void }) {
   const quick = quickStart();
@@ -76,7 +76,7 @@ const welcomeTitle = style({
 const welcomeBody = style({ marginTop: 8, marginBottom: 20, font: 'body-sm', lineHeight: '[1.6]', color: 'gray-700' });
 const welcomeAction = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 12 });
 const duration = style({ font: 'ui-sm', color: 'gray-600' });
-/** 原型 .help-path 写死 4 列；这里快速上手有几篇就排几列（等宽），窄窗两列折行。 */
+/** The prototype's .help-path hard-codes 4 columns; here there is one column per quick-start guide (equal width), and on a narrow window it wraps to two columns. */
 const path = style({
   display: 'grid',
   gridAutoFlow: { default: 'column', '@media (max-width: 760px)': 'row' },

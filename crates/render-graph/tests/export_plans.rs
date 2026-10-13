@@ -1,4 +1,4 @@
-//! 导出用的区间计划：声音的区间计划与文字的时间线投影（剪切、变速、静音、范围、重复使用、句级与词级）。
+//! Interval plans for export: the audio interval plan and the text timeline projection (cuts, speed changes, mute, range, repeated use, sentence level and word level).
 
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ use render_graph::{VideoView, plan_frame_with_speech};
 use serde_json::{Value, json};
 use video_model::{DocumentRecord, VideoSnapshot};
 
-/// 夹具视频换成自己的轨道与实例：30 fps；`asset_a` 与 `asset_b` 是有声的素材，`asset_mute` 没有音频流。
+/// The fixture video replaced by its own tracks and instances: 30 fps. `asset_a` and `asset_b` are assets with audio; `asset_mute` has no audio stream.
 fn video(items: Value) -> VideoSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/video.json");
     let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具")).expect("JSON");
@@ -54,12 +54,12 @@ fn merge(mut a: Value, b: Value) -> Value {
     a
 }
 
-/// 线性倍数换成 dB：与计划器同一个公式。
+/// Linear multiplier converted to dB, with the same formula as the planner.
 fn db(volume: f64) -> f64 {
     20.0 * volume.log10()
 }
 
-/// 视频实例：`[from, from + frames)`，铺满画布，从源的 `source_in` 秒开始，速度 `num/den`。
+/// Video instance: `[from, from + frames)`, fills the canvas, starts at `source_in` seconds in the source, speed `num/den`.
 fn clip(id: &str, track: &str, asset: &str, from: i64, frames: i64, source_in: i64, rate: (i64, i64)) -> Value {
     merge(
         base(id, track),
@@ -100,7 +100,7 @@ fn audio_plan_follows_cuts_speed_mute_gain_and_fades() {
     hold["timeMap"] = json!({ "kind": "hold", "sourceAt": { "ticks": "1", "timescale": 1 } });
     let video = video(json!([
         clip("first", "v1", "asset_a", 0, 60, 0, (1, 1)),
-        // 剪掉源的 [2, 4) 秒之后接上：第二段从源 4 秒开始，2 倍速。
+        // Cut source [2, 4) seconds and rejoin: the second segment starts at source 4 seconds, at 2× speed.
         clip("second", "v1", "asset_a", 60, 60, 4, (2, 1)),
         clip("silent", "v2", "asset_mute", 0, 30, 0, (1, 1)),
         hold,
@@ -110,10 +110,10 @@ fn audio_plan_follows_cuts_speed_mute_gain_and_fades() {
     ]));
     let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
 
-    // 整条序列：视觉尾端 150 帧 = 5 秒；音乐在 0.5 秒 + 1/48000 处响 3 秒，比它短。
+    // Whole sequence: the visual tail is 150 frames = 5 seconds; the music sounds for 3 seconds starting at 0.5 s + 1/48000, which is shorter than that.
     assert_eq!(plan.range.start_seconds, 0.0);
     assert_eq!(plan.range.end_seconds, 5.0);
-    // 与逐帧计划的 voices 同序：轨道 order，再按实例 ID。
+    // Same order as the voices of the per-frame plan: track order, then instance ID.
     let ids: Vec<&str> = plan.segments.iter().map(|s| s.item_id.as_str()).collect();
     assert_eq!(ids, ["first", "music", "second"]);
     let second = &plan.segments[2];
@@ -125,7 +125,7 @@ fn audio_plan_follows_cuts_speed_mute_gain_and_fades() {
     let start = 24001.0 / 48000.0;
     near(music.start, start);
     near(music.end, start + 3.0);
-    // 包络取代 `volume`：唯一的点 0.7 管整段，静态增益记 0 dB。
+    // The envelope replaces `volume`: the single point 0.7 applies to the whole span; the static gain is recorded as 0 dB.
     assert_eq!(music.gain_db, 0.0);
     assert!(!music.envelope.is_empty() && music.envelope.iter().all(|k| k.1 == 0.7));
     near(music.gain_db_at(music.start + 1.0), db(0.7));
@@ -149,7 +149,7 @@ fn audio_plan_clips_to_the_range_and_rejects_empty_ranges() {
     let plan = plan_audio(VideoView::from(&video), "seq_main", range).expect("计划");
     assert_eq!(plan.range.duration_seconds, 1.0);
     let pieces: Vec<(f64, f64, f64)> = plan.segments.iter().map(|s| (s.start, s.end, s.source_start)).collect();
-    // 第一段从源 11.5 秒取半秒；第二段从它的开头（源 4 秒）取半秒，2 倍速。
+    // The first segment takes half a second from source 11.5 s; the second segment takes half a second from its start (source 4 s), at 2× speed.
     assert_eq!(pieces, [(0.0, 0.5, 11.5), (0.5, 1.0, 4.0)]);
 
     for empty in [(seconds(2), seconds(2)), (seconds(9), seconds(10)), (seconds(3), seconds(1))] {
@@ -158,7 +158,7 @@ fn audio_plan_clips_to_the_range_and_rejects_empty_ranges() {
     }
 }
 
-/// 帧计划的夹具（带声音交叉淡化的转场 `tr_land`、压低 `item_hidden` 的闪避规则），给 `asset_land` 补上音频流，再按 `edit` 改。
+/// Frame-plan fixture (the transition `tr_land` with an audio crossfade, the ducking rule that lowers `item_hidden`). Adds an audio stream to `asset_land`, then modifies it per `edit`.
 fn frame_fixture(edit: impl FnOnce(&mut Value)) -> VideoSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/video.json");
     let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具")).expect("JSON");
@@ -167,13 +167,12 @@ fn frame_fixture(edit: impl FnOnce(&mut Value)) -> VideoSnapshot {
     serde_json::from_value(value).expect("视频快照")
 }
 
-/// 在范围里逐个时刻核对：逐帧计划的每个声音（定格不出声的除外）恰好落在区间计划的一段里，源时刻与增益（振幅）相同；
-/// 区间计划里没有多出来的声音。
+/// Checked moment by moment across the range: each sound in the per-frame plan (except frozen frames, which are silent) falls exactly within one segment of the interval plan, with the same source time and gain (amplitude). The interval plan has no extra sounds.
 fn assert_matches_frame_plan(video: &VideoSnapshot, plan: &AudioPlan) {
     assert_matches_frame_plan_with_speech(video, plan, None);
 }
 
-/// 同上；`speech` 是交给两份计划的同一份有效词流（预览把它交给逐帧计划）。
+/// Same as above. `speech` is the same effective word stream handed to both plans (the preview hands it to the per-frame plan).
 fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan, speech: Option<&[(f64, f64)]>) {
     let (start, end) = (plan.range.start_seconds, plan.range.end_seconds);
     let (first, last) = ((start * 600.0).round() as i128, (end * 600.0).round() as i128);
@@ -226,12 +225,12 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
 
 #[test]
 fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
-    // 夹具原样：居中 30 帧的 tr_land 在 [2.5, 3.5) 交叉淡化；音乐压低隐藏轨道上的 item_hidden。
+    // Fixture as-is: the 30-frame centered tr_land crossfades within [2.5, 3.5); the music ducks item_hidden on a hidden track.
     let video = frame_fixture(|_| {});
     let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
     assert_matches_frame_plan(&video, &plan);
     let find = |item: &str, handle: bool| plan.segments.iter().find(|s| s.item_id == item && s.handle == handle).expect(item);
-    // 出场的一侧：自己的段带 cos 曲线，剪切点之后取 handles（源 4 秒起，不套淡变）。
+    // The outgoing side: its own segment has a cos curve; after the cut point it uses handles (from source 4 s, without a fade).
     let own = find("item_land_a", false);
     assert_eq!((own.start, own.end, own.crossfades[0].role), (0.0, 3.0, CrossfadeRole::Outgoing));
     let tail = find("item_land_a", true);
@@ -241,10 +240,9 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
         (head.start, head.end, head.source_start, head.crossfades[0].role),
         (2.5, 3.0, 3.5, CrossfadeRole::Incoming)
     );
-    // 等功率：中点两侧都是 −3.01 dB。
+    // Equal power: at the midpoint, both sides are −3.01 dB.
     near(own.crossfades[0].amplitude(3.0), std::f64::consts::FRAC_1_SQRT_2);
-    // 闪避只给被压低的实例，折点覆盖它的整段：从 0 dB 起、回到 0 dB，平台是 12 dB；斜坡在增益上线性，
-    // 烘焙成不超过 0.02 秒一个的折点（attack 0.25 秒、release 0.5 秒）。
+    // Ducking only applies to the instance being lowered, with breakpoints covering its whole span: it starts at 0 dB, returns to 0 dB, and the plateau is 12 dB. The ramp is linear in gain, baked into breakpoints no more than 0.02 seconds apart (attack 0.25 s, release 0.5 s).
     let hidden = find("item_hidden", false);
     let reductions: Vec<f64> = hidden.ducking.iter().map(|k| k.1).collect();
     assert_eq!((reductions.first(), reductions.last()), (Some(&0.0), Some(&0.0)));
@@ -256,10 +254,10 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
             .filter(|s| s.item_id != "item_hidden")
             .all(|s| s.ducking.is_empty())
     );
-    // 定格不出声，照旧报出来。
+    // A freeze frame makes no sound; it is still reported as before.
     assert!(plan.notes.iter().any(|n| n.code == "HOLD_IS_SILENT" && n.item_id == "item_hold"));
 
-    // 闪避也压低交叉淡化的两侧（attack 为 0 是台阶）；出场的一侧自己有淡出与增益；只导出一段范围。
+    // Ducking also lowers both sides of a crossfade (attack 0 is a step). The outgoing side has its own fade-out and gain. Only one segment of the range is exported.
     let video = frame_fixture(|v| {
         let sequence = &mut v["sequences"]["seq_main"];
         sequence["ducking"].as_array_mut().unwrap().push(json!({
@@ -283,7 +281,7 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
     assert_eq!((tail.start, tail.end, tail.gain_db, tail.fade_out), (1.0, 1.5, db(0.8), None));
     assert!(!tail.ducking.is_empty());
 
-    // 某一侧关掉自带声音：那一侧没有声音，另一侧照样按曲线淡出；转场不做声音交叉淡化时是硬切。
+    // When one side has its own sound turned off, that side is silent and the other side still fades out along its curve. When the transition does no sound crossfade, it is a hard cut.
     let video = frame_fixture(|v| {
         for item in v["sequences"]["seq_main"]["items"].as_array_mut().unwrap() {
             if item["id"] == "item_land_b" {
@@ -304,21 +302,20 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
     assert!(plan.segments.iter().all(|s| s.crossfades.is_empty() && !s.handle));
 }
 
-/// 包络取代 `volume`，逐帧计划（预览）与区间计划（导出）逐点相同：线性段、带缓动的段、超出终点的点、百分比的点、
-/// 与淡入和闪避相乘、交叉淡化的 handle、裁出一段范围（v2 `export_gain_envelope_matches_the_preview_envelope_point_for_point`）。
+/// The envelope replaces `volume`. The per-frame plan (preview) and the interval plan (export) are identical point for point: linear segments, segments with easing, points past the end, percentage points, multiplication with fade-in and ducking, crossfade handles, and clipping to a range (v2 `export_gain_envelope_matches_the_preview_envelope_point_for_point`).
 #[test]
 fn volume_envelopes_replace_volume_in_both_plans() {
     let at = |s: i64| json!({ "ticks": s.to_string(), "timescale": 1 });
     let video = frame_fixture(|v| {
         for item in v["sequences"]["seq_main"]["items"].as_array_mut().unwrap() {
-            // 3 秒的实例：0.2 线性升到 1 秒的 1.0，再按 easeInQuad 降到 2 秒的 0.5；10 秒的点超出终点，不生效。
+            // 3-second instance: 0.2 rises linearly to 1.0 at 1 s, then falls with easeInQuad to 0.5 at 2 s. The point at 10 s is past the end and has no effect.
             if item["id"] == "item_land_a" {
                 item["embeddedAudio"] = json!({ "enabled": true, "volume": 0.8, "envelope": [
                     { "at": at(0), "volume": 0.2 }, { "at": at(1), "volume": 1.0 },
                     { "at": at(2), "volume": 0.5, "ease": "easeInQuad" }, { "at": at(10), "volume": 4.0 },
                 ] });
             }
-            // 5 秒、被音乐压低的实例：百分比的点 0.5 → 1.0，再乘半秒淡入。
+            // 5-second instance lowered by music: percentage point 0.5 → 1.0, then multiplied by a half-second fade-in.
             if item["id"] == "item_hidden" {
                 item["embeddedAudio"] = json!({ "enabled": true, "volume": 0.5, "fadeIn": { "ticks": "1", "timescale": 2 }, "envelope": [
                     { "percent": 0, "volume": 0.5 }, { "percent": 100, "volume": 1.0 },
@@ -339,16 +336,16 @@ fn volume_envelopes_replace_volume_in_both_plans() {
     let own = find(&plan, "item_land_a", false);
     assert_eq!(own.gain_db, 0.0);
     close(envelope_at(&own.envelope, 0.5), 0.6);
-    // 缓动在后一点上：1.5 秒是 1.0 → 0.5 这一段的一半，easeInQuad 走了 1/4。
+    // The easing is on the later point: 1.5 s is halfway through the 1.0 → 0.5 segment, and easeInQuad covers 1/4 of it.
     close(envelope_at(&own.envelope, 1.5), 0.875);
     close(envelope_at(&own.envelope, 2.8), 0.5);
-    // 剪切点之后的 handle 停在最后一个生效的点上。
+    // After the cut point, the handle stays on the last effective point.
     let tail = find(&plan, "item_land_a", true);
     close(envelope_at(&tail.envelope, 3.2), 0.5);
     let hidden = find(&plan, "item_hidden", false);
     close(envelope_at(&hidden.envelope, 2.5), 0.75);
     assert!(!hidden.ducking.is_empty() && hidden.fade_in.is_some());
-    // 没有包络的段不带折点，增益照旧是 `volume`。
+    // A segment without an envelope has no breakpoints; its gain is still `volume`.
     assert!(
         plan.segments
             .iter()
@@ -356,7 +353,7 @@ fn volume_envelopes_replace_volume_in_both_plans() {
             .all(|s| s.envelope.is_empty())
     );
 
-    // 只导出 [1.5, 4.5)：折点换到范围的时钟，第一个折点不晚于范围起点，逐点仍对得上。
+    // Export only [1.5, 4.5): the breakpoints move to the range's clock. The first breakpoint is not later than the range start, and point by point they still match.
     let plan = plan_audio(
         VideoView::from(&video),
         "seq_main",
@@ -372,7 +369,7 @@ fn volume_envelopes_replace_volume_in_both_plans() {
 
 #[test]
 fn speech_ducking_follows_the_effective_word_stream() {
-    // 两段画面取同一个有声素材：first 是源 [0, 2) 秒，second 从源 4 秒起 2 倍速；音乐在 A1 上响 4 秒，按文稿压低 10 dB。
+    // Two picture segments use the same asset with audio: the first is source [0, 2) s; the second starts at source 4 s at 2× speed. The music on A1 sounds for 4 s and is lowered 10 dB per the script.
     let music = merge(
         base("music", "a1"),
         json!({
@@ -386,7 +383,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
         clip("first", "v1", "asset_a", 0, 60, 0, (1, 1)),
         clip("second", "v1", "asset_a", 60, 60, 4, (2, 1)),
         music,
-        // 字幕只在第一秒显示这份转写：说话照样按整条时间线算。
+        // Captions show this transcript only in the first second; speech is still computed across the whole timeline.
         caption_item("cap", "doc_speech", 0, 30, &["first"])
     ]));
     let rule = json!({
@@ -400,7 +397,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
         .ducking
         .push(serde_json::from_value(rule).expect("闪避规则"));
 
-    // 有效词流：w3 在剪掉的源 [2, 4) 里；w4 经 2 倍速落在序列 [2.5, 3)；另一份文档的素材不在时间线上，跳过；字幕文档不算。
+    // Effective word stream: w3 is inside the cut source [2, 4); w4 at 2× speed lands at sequence [2.5, 3). Another document's asset is not on the timeline, so it is skipped. Caption documents do not count.
     let word = |id: &str, start: i64, end: i64| json!({ "id": id, "start": start, "end": end, "text": id });
     let speech = json!({ "schema": "cuccut.speech/1", "clock": "source-asset", "timescale": 1000,
         "words": [word("w1", 0, 400), word("w2", 400, 900), word("w3", 2500, 3000), word("w4", 5000, 6000)] });
@@ -419,7 +416,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
     )
     .expect("词流");
     assert_eq!(activity, [(0.0, 0.4), (0.4, 0.9), (2.5, 3.0)]);
-    // 按说话人分开：同一份词流，只算写了 `speaker` 的词。
+    // Split by speaker: the same word stream, counting only words that have a `speaker`.
     let mut attributed = speech.clone();
     attributed["words"][0]["speaker"] = json!("spk_a");
     attributed["words"][1]["speaker"] = json!("spk_b");
@@ -429,7 +426,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
     assert_eq!(speakers["spk_a"], [(0.0, 0.4), (2.5, 3.0)]);
     assert_eq!(speakers["spk_b"], [(0.4, 0.9)]);
 
-    // 施加 v2 的曲线：[0, 0.9] 与 [2.5, 3] 相隔 1.6 秒（> 0.5 秒），是两段；只压低目标。
+    // Applying the v2 curve: [0, 0.9] and [2.5, 3] are 1.6 s apart (> 0.5 s), so they are two segments. Only the target is lowered.
     let plan = plan_audio_with_speech(VideoView::from(&video), "seq_main", None, &activity).expect("计划");
     let ducked = plan.segments.iter().find(|s| s.item_id == "music").expect("音乐");
     near(ducked.gain_db_at(0.5), -10.0);
@@ -438,10 +435,10 @@ fn speech_ducking_follows_the_effective_word_stream() {
     near(ducked.gain_db_at(3.5), 0.0);
     assert!(plan.segments.iter().filter(|s| s.item_id != "music").all(|s| s.ducking.is_empty()));
     assert!(plan.notes.is_empty(), "{:?}", plan.notes);
-    // 预览把同一份词流交给逐帧计划：逐时刻的增益（含斜坡上）与导出相同。
+    // The preview hands the same word stream to the per-frame plan: the gain at each moment (including on the ramp) is the same as in export.
     assert_matches_frame_plan_with_speech(&video, &plan, Some(&activity));
 
-    // 词流为空：不压低，报 `DUCK_NO_SPEECH`；与逐帧计划一致。
+    // Empty word stream: no ducking, and it reports `DUCK_NO_SPEECH`; consistent with the per-frame plan.
     let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
     assert!(plan.segments.iter().all(|s| s.ducking.is_empty()));
     let codes: Vec<(&str, &str)> = plan.notes.iter().map(|n| (n.code.as_str(), n.item_id.as_str())).collect();
@@ -451,7 +448,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
 
 #[test]
 fn crossfade_handles_past_the_source_are_reported() {
-    // item_land_b 从源 0.25 秒开始：入场一侧要的 handles 是源的 [−0.25, 0.25)，0 秒之前不存在，段从 2.75 秒开始。
+    // item_land_b starts at source 0.25 s: the incoming side needs source handles [−0.25, 0.25), and nothing exists before 0 s, so the segment starts at 2.75 s.
     let video = frame_fixture(|v| {
         let sequence = &mut v["sequences"]["seq_main"];
         for item in sequence["items"].as_array_mut().unwrap() {
@@ -470,7 +467,7 @@ fn crossfade_handles_past_the_source_are_reported() {
         .filter(|n| n.code == "CROSSFADE_HANDLE_SHORT")
         .map(|n| n.item_id.as_str())
         .collect();
-    // 出场的一侧要源的 [4, 4.5)，素材只有 4 秒。
+    // The outgoing side needs source [4, 4.5), but the asset is only 4 seconds long.
     assert!(codes.contains(&"item_land_a") && codes.contains(&"item_land_b"), "{codes:?}");
     let json = serde_json::to_value(&plan).unwrap();
     let segment = json["segments"]
@@ -514,7 +511,7 @@ fn caption_cues_follow_cuts_speed_and_repeated_sources() {
     let video = video(json!([
         clip("first", "v1", "asset_a", 0, 60, 0, (1, 1)),
         clip("second", "v1", "asset_a", 60, 60, 4, (2, 1)),
-        // 同一段源再用一次（另一条轨道，时间上不重叠）。
+        // The same source is used again (another track, not overlapping in time).
         clip("again", "v2", "asset_a", 150, 30, 0, (1, 1)),
         caption_item("cap", "doc_cap", 0, 180, &["first", "second", "again"]),
     ]));
@@ -539,7 +536,7 @@ fn caption_cues_follow_cuts_speed_and_repeated_sources() {
             ("again:c1", 5.5, 6.0, true),
         ]
     );
-    // c2 整句剪掉；零长与空白的句子本来就不算。
+    // c2 is cut as a whole sentence; zero-length and blank sentences were never counted.
     assert_eq!((plan.source_count, plan.omitted_count), (4, 1));
     assert!(plan.entries.iter().all(|e| !e.word_timing));
 }
@@ -548,8 +545,7 @@ fn caption_cues_follow_cuts_speed_and_repeated_sources() {
 fn overlapping_scopes_project_once_like_the_frame_plan() {
     let body =
         json!({ "schema": "cuccut.caption/1", "clock": "source-asset", "timescale": 1000, "cues": [cue("c1", 0, 2000, "两层都覆盖")] });
-    // 视频与它拆出来的音频叠在同一个位置：字幕只出现一次（逐帧计划取列表里第一个覆盖着的实例；按素材找到的实例
-    // 按起点、再按 ID 排，音频在前）。
+    // The video and the audio split from it overlap at the same position: captions appear only once (the per-frame plan takes the first covering instance in the list; instances found by asset are sorted by start, then by ID, with audio first).
     let audio = merge(
         base("audio", "a1"),
         json!({
@@ -629,7 +625,7 @@ fn speech_words_drop_cut_words_and_keep_timing_quality() {
     );
     assert_eq!(plan.omitted_count, 1);
 
-    // 范围：时间相对范围的起点，范围外的词不出现。
+    // Range: time is relative to the range start; words outside the range do not appear.
     let range = Some((seconds(2), seconds(3)));
     let ranged = plan_text(
         VideoView::from(&video),
@@ -644,7 +640,7 @@ fn speech_words_drop_cut_words_and_keep_timing_quality() {
     assert_eq!(ids, [("w4", 0.1), ("w6", 0.5)]);
 }
 
-/// 真实样本（qwen3-asr + 强制对齐）里有起止塌成一点的词：后面有空隙的占一格，紧挨着下一个词的略过。
+/// Real samples (qwen3-asr with forced alignment) contain words whose start and end collapse to one point: those with a gap after them take one slot; those right next to the next word are skipped.
 #[test]
 fn zero_duration_words_take_a_slot_from_the_following_gap() {
     let word = |id: &str, start: i64, end: i64, text: &str| json!({ "id": id, "start": start, "end": end, "text": text });

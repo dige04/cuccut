@@ -12,9 +12,8 @@ import {
 import { M, type ServicesApiMessages } from './services-api-copy.ts';
 
 /**
- * 模型接口服务页的纯模型（原型 designs/cuccut/app/page-services-api.jsx、page-services-api-map.jsx；架构设计 §4.8）：
- * 端点目录、路由开关、每种能力此刻能路由到的模型、别名表的说明与校验、添加别名时的目标选项。
- * 路由规则照 Runtime 的 model-api-routing.ts：本机（`local`）总在；在线、节点、智能体 Provider 要分别打开路由开关；只算可用的。
+ * Pure model for the model API service page (prototype designs/cuccut/app/page-services-api.jsx and page-services-api-map.jsx; architecture design §4.8): the endpoint catalog, routing switches, the models each capability can currently route to, the description and validation of the alias table, and the target options when adding an alias.
+ * Routing rules follow Runtime's model-api-routing.ts: the local machine (`local`) is always on; online, node and agent providers each need their routing switch turned on separately; only the available ones count.
  */
 
 export const CAPABILITY_LABEL: Readonly<Record<OnlineCapability, string>> = live(() => M.capabilities);
@@ -25,11 +24,11 @@ export interface ApiEndpoint {
   method: 'GET' | 'POST';
   path: string;
   title: string;
-  /** 这个端点用哪种能力；查询类为 null。 */
+  /** Which capability this endpoint uses; null for query endpoints. */
   capability: OnlineCapability | null;
 }
 
-/** 端点（Runtime model-api-service.ts 的路由表）：路径与 OpenAI 相同，外加 CucCut 自己的信息端点。 */
+/** Endpoints (the routing table in Runtime's model-api-service.ts): paths are the same as OpenAI's, plus CucCut's own info endpoints. */
 const ENDPOINT_ROWS: readonly (readonly [ApiEndpoint['method'], string, keyof ServicesApiMessages['endpoints'], OnlineCapability | null])[] = [
   ['GET', '/models', 'models', null],
   ['GET', '/models/{model}', 'model', null],
@@ -70,7 +69,7 @@ function providers(view: ModelCapabilitiesView, capability: OnlineCapability): P
   return view[capability].providers as ProviderCapabilityView[];
 }
 
-/** 这种能力此刻能路由到的模型数（`/v1/models` 里会列出的 `<providerId>/<modelId>`）。 */
+/** The number of models this capability can currently route to (the `<providerId>/<modelId>` entries that will be listed by `/v1/models`). */
 export function routableModelCount(view: ModelCapabilitiesView, capability: OnlineCapability, routing: ModelApiRouting): number {
   let n = 0;
   for (const p of providers(view, capability)) {
@@ -80,7 +79,7 @@ export function routableModelCount(view: ModelCapabilitiesView, capability: Onli
   return n;
 }
 
-/** 一种能力的一句：「3 个模型可用」或为什么没有（没有可用的、或可用的都没打开路由）。 */
+/** One sentence per capability: “3 个模型可用”（3 models available), or why not (none available, or the available ones have routing switched off). */
 export function capabilityLine(view: ModelCapabilitiesView, capability: OnlineCapability, routing: ModelApiRouting): string {
   const n = routableModelCount(view, capability, routing);
   if (n) return M.modelsAvailable(n);
@@ -92,12 +91,12 @@ export interface AliasView {
   alias: string;
   capability: string;
   target: string;
-  /** 外部程序此刻能不能用这个名字；不能时 `why` 说原因（Runtime 不检查，请求时回答 404 或 503）。 */
+  /** Whether an external program can use this name right now; when it cannot, `why` gives the reason (Runtime does not check, so the request is answered with 404 or 503). */
   usable: boolean;
   why: string | null;
 }
 
-/** 别名表的一行：名字 → 能力 · Provider 与模型；目标不可用或没打开路由时说明。 */
+/** One row of the alias table: name → capability · provider and model; explains when the target is unavailable or routing is off. */
 export function aliasView(alias: ModelApiAlias, view: ModelCapabilitiesView | null, routing: ModelApiRouting): AliasView {
   const capability = CAPABILITY_LABEL[alias.capability];
   const provider = view ? providers(view, alias.capability).find((p) => p.providerId === alias.providerId) : undefined;
@@ -114,16 +113,16 @@ export function aliasView(alias: ModelApiAlias, view: ModelCapabilitiesView | nu
 }
 
 export interface AliasTargetOption {
-  /** `<providerId>\u0000<modelId 或空>`：选项的键。 */
+  /** `<providerId>\u0000<modelId or empty>`: the key of the option. */
   key: string;
   providerId: string;
   modelId: string | null;
   label: string;
-  /** 现在不能路由时的说明（选得了，只是请求会失败）。 */
+  /** Explanation when it cannot be routed right now (it can be selected, but the request will fail). */
   note: string | null;
 }
 
-/** 添加别名时的目标选项：每个 Provider 一项「默认模型」，再列它的各个模型。只列这种能力下的 Provider。 */
+/** Target options when adding an alias: one “默认模型”（default model) item per provider, followed by each of its models. Lists only the providers under this capability. */
 export function aliasTargets(view: ModelCapabilitiesView, capability: OnlineCapability, routing: ModelApiRouting): AliasTargetOption[] {
   const out: AliasTargetOption[] = [];
   for (const p of providers(view, capability)) {
@@ -146,7 +145,7 @@ export function targetKey(providerId: string, modelId: string | null): string {
   return `${providerId}\u0000${modelId ?? ''}`;
 }
 
-/** 别名名字的校验（与协议的 `modelApiAlias` 同规则）：字母或数字开头，只含字母、数字与 `. _ : -`，不超过 100 个字符。 */
+/** Alias name validation (same rules as the protocol's `modelApiAlias`): starts with a letter or digit, contains only letters, digits and `. _ : -`, and is at most 100 characters. */
 export function aliasNameError(name: string, existing: readonly ModelApiAlias[]): string | null {
   const t = name.trim();
   if (!t) return M.aliasNameEmpty;
@@ -157,8 +156,7 @@ export function aliasNameError(name: string, existing: readonly ModelApiAlias[])
 }
 
 /**
- * 不带客户端时 connectionInfo 用的令牌占位符（`rcServices.tokenPlaceholderGeneric`）。Runtime 按它自己的语言写，可能与界面
- * 语言不同（浏览器客户端），所以每种出货语言的写法都认。
+ * Token placeholder used by connectionInfo when there is no client (`rcServices.tokenPlaceholderGeneric`). Runtime writes it in its own language, which may differ from the UI language (browser clients), so every shipped language's form is recognized.
  */
 export function tokenPlaceholders(): string[] {
   const ref = { key: 'rcServices.tokenPlaceholderGeneric' };
@@ -166,14 +164,13 @@ export function tokenPlaceholders(): string[] {
 }
 
 /**
- * 连接信息片段（不带 `clientId` 取的那一份）里的占位符换成令牌明文：只在创建客户端的那一刻、只进剪贴板。
- * 带客户端名的占位符（`<名字 的令牌>`）名字里可能有任何字符，不去猜，所以要用不带客户端的那份。
+ * In the connection-info snippet (the version obtained without a `clientId`), the placeholder is replaced with the plaintext token: only at the moment the client is created, and only into the clipboard. Placeholders that carry the client name (`<名字 的令牌>`, i.e. “<name>'s token”) may contain any characters in the name, so they are not guessed at; the version without a client is used instead.
  */
 export function withToken(snippet: string, token: string): string {
   return tokenPlaceholders().reduce((text, placeholder) => text.split(placeholder).join(token), snippet);
 }
 
-/** 字节数 → 「256 MB」。 */
+/** Byte count → “256 MB”. */
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${Math.round(bytes / (1024 * 1024 * 1024))} GB`;
   if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;

@@ -72,13 +72,13 @@ const webNote = style({ margin: 0, font: 'ui-sm', color: 'gray-800' });
 
 const L = () => GLOSSARY_COPY.list;
 
-/** 从文件导入的文件类型（Runtime 按内容认格式，这里只收窄对话框里的候选）。 */
+/** File types for importing from a file (the Runtime recognizes the format by content; here it only narrows the candidates in the dialog). */
 const importFilters = () => [{ name: GLOSSARY_COPY.list.importFilter, extensions: ['md', 'markdown', 'txt'] }];
 
 /**
- * 设置 › 术语库（产品设计 §15.10，设计稿 settings-glossary.jsx）：转录与翻译各用各的表。列表跟着 `library` 主题走；
- * 点进一张表编辑。每个视频用哪几张表在那个视频自己的转录、翻译设置里选，不在这里。
- * 浏览器里没有这一页的数据：Web 白名单不含 `library.*`，订阅不了 `library` 主题，那里不写「加载中」，直接说浏览器里没有，也不给导入。
+ * Settings › Glossary (product design §15.10, design mockup settings-glossary.jsx): transcription and translation each have their own tables. The list follows the `library` topic.
+ * Clicking into a table edits it. Which tables each video uses is chosen in that video’s own transcription and translation settings, not here.
+ * There is no data for this page in the browser: the web allowlist does not include `library.*`, so the `library` topic cannot be subscribed to. It does not show “Loading” there; it simply says it is not available in the browser, and offers no import.
  */
 export function GlossarySettings() {
   const ready = useLibrary((s) => s.ready);
@@ -202,7 +202,7 @@ function Cards({ items, empty, onOpen }: { items: LibraryEntrySummary[]; empty: 
   );
 }
 
-/** 一张表一行（设计稿 `PackCard`）：名字、方向、条数与更新时间；右边是「新视频默认用」与进入详情。 */
+/** One table per row (design mockup `PackCard`): name, direction, entry count and updated time. On the right are “Use for new videos by default” (新视频默认用) and entering the details. */
 function GlossaryCard({ summary, onOpen }: { summary: LibraryEntrySummary; onOpen(): void }) {
   const runtime = useRuntime();
   const { entry, reload } = useLibraryEntry(summary);
@@ -253,7 +253,7 @@ function GlossaryCard({ summary, onOpen }: { summary: LibraryEntrySummary; onOpe
   );
 }
 
-/** 新建翻译表先问方向——方向是这张表的身份，不是以后再补的属性（设计稿 `NewTrans`）。 */
+/** Creating a translation table asks for the direction first. The direction is the table’s identity, not a property to add later (design mockup `NewTrans`). */
 function NewTranslation({ onCreate, onCancel }: { onCreate(from: string | null, to: string): Promise<void>; onCancel(): void }) {
   const [from, setFrom] = useState<string | null>('en');
   const [to, setTo] = useState('zh');

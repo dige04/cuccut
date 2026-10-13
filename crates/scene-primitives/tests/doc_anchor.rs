@@ -1,10 +1,10 @@
-//! `@doc` 保留锚点（§3.3）：整篇文档窗口求值 + `scene-id-reserved` lint。
+//! `@doc` reserved anchor (§3.3): evaluates the window of the whole document, plus the `scene-id-reserved` lint.
 
 use scene_primitives::Resolver;
 use scene_primitives::lint::{Severity, lint};
 use serde_json::{Value, json};
 
-/// 两个场景共 10s 的最小文档
+/// Minimal document with two scenes totaling 10s
 fn doc() -> Value {
     json!({
         "meta": { "id": "d", "width": 1920, "height": 1080, "fps": 30 },
@@ -40,7 +40,7 @@ fn doc_anchor_spans_the_whole_document() {
 #[test]
 fn doc_anchor_stretches_with_reflow() {
     let mut d = doc();
-    d["scenes"][1]["dur"] = json!(16); // 总长 4 + 16 = 20
+    d["scenes"][1]["dur"] = json!(16); // Total length 4 + 16 = 20
     let r = resolved(d);
     assert_eq!(at(&r, "@doc.end"), 20.0);
     assert_eq!(at(&r, "@doc.50%"), 10.0);
@@ -76,6 +76,6 @@ fn scene_id_doc_is_reserved() {
     assert_eq!(hit[0].severity, Severity::Error);
     assert_eq!(hit[0].pointer, "/scenes/0/id");
 
-    // 正常场景 id 不触发
+    // A normal scene id does not trigger it
     assert!(!lint(&doc()).iter().any(|x| x.rule == "scene-id-reserved"));
 }

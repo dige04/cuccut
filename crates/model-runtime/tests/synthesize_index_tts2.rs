@@ -1,11 +1,9 @@
-//! IndexTTS2 与 IndexTTS 2.5 真权重合成：两只模型各用内置音色念一句中文、一句英文，再各带一次
-//! 情绪预设向量（八维滑块的一维拉满 + 官方缺省情感权重）、各念一句带 `<行|hang2>` 注音的中文；2.5 另测一次
-//! 语速旋钮。检查时长合理、不是静音、没有严重削波、注音没被丢，并把 WAV 写到仓库外供试听。
+//! IndexTTS2 and IndexTTS 2.5 real-weight synthesis: each of the two models speaks one Chinese and one English sentence with built-in voices. Each then runs once with an emotion preset vector (one of the eight slider dimensions at full, plus the official default emotion weight) and speaks one Chinese sentence with a `<行|hang2>` pronunciation annotation. 2.5 additionally tests the speech-rate knob once. Checks: duration is reasonable, the output is not silent, there is no severe clipping, the annotations are not dropped. The WAVs are written outside the repo for listening.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test synthesize_index_tts2 -- --ignored --test-threads=1 --nocapture
 //!
-//! WAV 写到 `CUCCUT_TEST_OUTPUT_DIR`（没设时是系统临时目录下的 `cuccut-tts-listen/`）。
+//! WAVs are written to `CUCCUT_TEST_OUTPUT_DIR` (if unset, to the `cuccut-tts-listen/` directory under the system temp directory).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -26,10 +24,10 @@ const INDEX_TTS25_REPO: &str = "mlx-community/IndexTTS-2.5-fp16";
 const ZH: &str = "今天下午三点，我们在会议室讨论新版本的发布计划。";
 const EN: &str = "The quick brown fox jumps over the lazy dog near the river bank.";
 const ZH_HAPPY: &str = "太好了，我们终于把这个版本按时发布了！";
-/// 「行」在这里读 hang2；不注音时模型多半念成 xing2。
+/// “行” is read as hang2 here; without the annotation the model mostly says xing2.
 const ZH_READING: &str = "他在这一<行|hang2>做了十年，经验很丰富。";
 
-/// 八维情感滑块的次序：happy, angry, sad, afraid, disgusted, melancholic, surprised, calm。
+/// Order of the eight emotion sliders: happy, angry, sad, afraid, disgusted, melancholic, surprised, calm.
 const HAPPY: [f32; 8] = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
 fn fixture(name: &str) -> PathBuf {
@@ -48,7 +46,7 @@ fn output_dir() -> PathBuf {
     dir
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验一个组件的文件清单。
+/// Builds and validates a component's file manifest from `<models-root>/<repo>/.ccut-manifest.json`.
 fn verified(repo: &str, family: &str, component: &'static str) -> VerifiedFiles {
     let dir = models_root().join(repo);
     let manifest: Value =
@@ -73,7 +71,7 @@ fn verified(repo: &str, family: &str, component: &'static str) -> VerifiedFiles 
     .expect("verify bundle files")
 }
 
-/// 时长合理（每句 0.5–20 s）、峰值与 RMS 都不是静音、削波（|x| ≥ 0.999）的样本不到 0.1%。
+/// Samples with reasonable duration (0.5–20 s per sentence), with peak and RMS that are not silent, and with fewer than 0.1% clipped samples (|x| ≥ 0.999).
 fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     assert_eq!(audio.sample_rate, 22_050);
     let seconds = audio.samples.len() as f32 / audio.sample_rate as f32;
@@ -95,7 +93,7 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     path
 }
 
-/// 2.0 只有主模型组件；2.5 另带 `aux` 组件（整个 IndexTTS2 仓库）。
+/// 2.0 has only the main model component; 2.5 additionally has an `aux` component (the whole IndexTTS2 repo).
 fn load(kind: TtsEngineKind) -> Box<dyn TtsEngine> {
     let (model, aux) = match kind {
         TtsEngineKind::IndexTts2 => (verified(INDEX_TTS2_REPO, FAMILY_INDEX_TTS2, "tts"), None),
@@ -143,7 +141,7 @@ fn speak_audio(engine: &mut dyn TtsEngine, request: &TtsRequest, name: &str) -> 
     audio
 }
 
-/// 用内置音色（`Default` 按语言挑）各念一句中文、一句英文，再用中文内置音色带「开心」预设念一句。
+/// Speaks one Chinese and one English sentence with the built-in voices (`Default` picks by language), then one Chinese sentence with the “happy” preset on the Chinese built-in voice.
 fn synthesize_set(engine: &mut dyn TtsEngine, label: &str) {
     for (lang, text) in [("zh", ZH), ("en", EN)] {
         let mut request = TtsRequest::new(text, VoiceSpec::Default);
@@ -166,7 +164,7 @@ fn synthesize_set(engine: &mut dyn TtsEngine, label: &str) {
     });
     speak(engine, &request, &format!("{label}-emotion-happy-zh"));
 
-    // 注音：2.0 换成词表拼音片，2.5 原样吃 `<字|读音>`；两者都不该报 dropped。
+    // Annotations: 2.0 swaps in vocabulary pinyin pieces; 2.5 consumes `<字|读音>` as is. Neither should report dropped.
     let mut request = TtsRequest::new(ZH_READING, VoiceSpec::Default);
     request.language = Some("zh".to_owned());
     request.sampling.seed = Some(7);
@@ -191,7 +189,7 @@ fn index_tts25_speaks_with_builtin_voices_an_emotion_preset_and_a_speed_knob() {
     let mut engine = load(TtsEngineKind::IndexTts25);
     synthesize_set(engine.as_mut(), "index-tts2.5");
 
-    // 语速只缩放长度规整的目标帧数：同一句、同一种子，1.4 倍语速明显更短。
+    // Speech rate only scales the length-normalized target frame count: same sentence, same seed, and 1.4× speech rate is clearly shorter.
     let mut request = TtsRequest::new(ZH, VoiceSpec::Default);
     request.language = Some("zh".to_owned());
     request.sampling.seed = Some(7);
@@ -201,7 +199,7 @@ fn index_tts25_speaks_with_builtin_voices_an_emotion_preset_and_a_speed_knob() {
     println!("语速 1.0 → {normal:.2} s，1.4 → {fast:.2} s");
     assert!(fast < normal * 0.9, "1.4 倍语速没有变短：{normal:.2} s → {fast:.2} s");
 
-    // 越界的语速在装参考音频之前就被拒绝。
+    // An out-of-range speech rate is rejected before the reference audio is loaded.
     request.speed = Some(3.0);
     assert!(engine.synthesize(&request, &mut |_| true).is_err());
 }
@@ -220,14 +218,14 @@ fn index_tts2_clones_a_file_takes_emotion_from_audio_and_cancels() {
     request.sampling.seed = Some(7);
     speak(engine.as_mut(), &request, "index-tts2-clone-zh");
 
-    // 情感参考音频按 alpha 与音色参考混合。
+    // The emotion reference audio is mixed with the timbre reference according to alpha.
     request.emotion = Some(EmotionSpec::Audio {
         reference_audio: fixture("test-sample.wav"),
         alpha: 0.5,
     });
     speak(engine.as_mut(), &request, "index-tts2-clone-emotion-audio-zh");
 
-    // 进度回调返回 false：在下一个安全点停下并报取消。
+    // The progress callback returns false: stop at the next safe point and report cancellation.
     let error = engine
         .synthesize(
             &request,

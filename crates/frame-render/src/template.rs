@@ -1,8 +1,6 @@
-//! 模板层（格式规范 §3.17）：序列上的模板文档每个打开的层是帧计划里的一个生成器层（`cuccut.template`），
-//! 按 `timeline` 的模板文档由渲染内核的 `template_layer::raster` 画——画法与 v2 的舞台、导出与缩略图是同一个函数。
+//! Template layers (format spec §3.17): each open layer of the sequence's template document is a generator layer (`cuccut.template`) in the frame plan. It is drawn by the render kernel's `template_layer::raster` according to the template document's `timeline`. The drawing method is the same function that v2's stage, export and thumbnails use.
 //!
-//! 章节类的层读序列的章节标记（标记的帧到下一个章节、或到序列的终点），`{title}` 是序列的名字。台标只画文字台标：
-//! 图片台标（品牌库的台标、项目里的文件）在 v3 没有对应的素材，报出来，不画。
+//! Chapter-type layers read the sequence's chapter markers (from a marker's frame to the next chapter, or to the end of the sequence), and `{title}` is the sequence's name. Logos are drawn as text logos only. Image logos (from the brand library, or files in the project) have no matching asset in v3, so they are reported and not drawn.
 
 use std::collections::HashMap;
 
@@ -13,7 +11,7 @@ use timeline::template::{ChapterSpan, LayerKind as TemplateLayerKind, LogoSrc, T
 use tiny_skia::Pixmap;
 use video_model::Sequence;
 
-/// 一个模板层画不出来的原因（`None` 是画得出来）。
+/// Why a template layer cannot be drawn (`None` means it can be drawn).
 pub fn unsupported_reason(doc: &TemplateDoc, layer_id: &str) -> Option<&'static str> {
     let layer = doc.layers.iter().find(|l| l.id == layer_id)?;
     match &layer.kind {
@@ -25,7 +23,7 @@ pub fn unsupported_reason(doc: &TemplateDoc, layer_id: &str) -> Option<&'static 
     }
 }
 
-/// 序列的章节：章节标记按帧排序，每章到下一章开始（或标记自己的长度、序列的终点）为止。
+/// Sequence chapters: chapter markers sorted by frame. Each chapter lasts until the next one starts (or the marker's own length, or the end of the sequence).
 pub fn chapters(sequence: &Sequence, fps: f64, end_seconds: f64) -> Vec<ChapterSpan> {
     let mut marks: Vec<_> = sequence.markers.iter().filter(|m| m.is_chapter()).collect();
     marks.sort_by_key(|m| m.frame);
@@ -49,14 +47,14 @@ pub fn chapters(sequence: &Sequence, fps: f64, end_seconds: f64) -> Vec<ChapterS
         .collect()
 }
 
-/// 模板层的场景缓存：按序列版本与层 ID 记住（场景要算指纹，不逐帧重建）。
+/// Scene cache for template layers, keyed by sequence version and layer ID (scenes compute a fingerprint, so they are not rebuilt every frame).
 #[derive(Default)]
 pub struct TemplateScenes {
     scenes: HashMap<(String, String), TemplateScene>,
 }
 
 impl TemplateScenes {
-    /// 画一个模板层：与输出等大的透明画布。
+    /// Draws one template layer on a transparent canvas the same size as the output.
     #[allow(clippy::too_many_arguments)]
     pub fn raster(
         &mut self,

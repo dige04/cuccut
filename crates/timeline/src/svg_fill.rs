@@ -1,36 +1,27 @@
-//! 矢量素材的**填充色分组**（第 122 轮，§14.4）。
+//! **Fill-colour grouping** for vector assets (round 122, §14.4).
 //!
-//! 逐条照原型 `designs/cuccut/app/model-svgfill.js`。机制是：
+//! Follows the prototype `designs/cuccut/app/model-svgfill.js` line by line. The mechanism:
 //!
-//! * **颜色不是目录声明的，是把素材解析出来的**：遍历 [`TAGS`] 这八个标签，依次
-//!   取 `fill` 属性 → `style` 里的 `fill:` 声明 → `stop-color`，抓其中的 hex。
-//! * **同一个默认 hex 的节点归一组**；组数 = 素材里不同填充色的个数，与元素类型
-//!   无关。
-//! * **两条排除**：素材里含 `<image>`（位图套壳）→ 一张卡都不给；不同色
-//!   **> [`MAX_COLORS`]** → 一张卡都不给（那是插画，逐色改没有意义）。
-//! * 否则取**前 [`MAX_SWATCHES`] 组**作为默认色卡。
+//! * **Colours are not declared by the catalogue; they are parsed out of the asset**: walk the eight tags in [`TAGS`], and for each take the `fill` attribute → the `fill:` declaration in `style` → `stop-color`, extracting the hex from each.
+//! * **Nodes with the same default hex are grouped together**; the number of groups = the number of distinct fill colours in the asset, regardless of element type.
+//! * **Two exclusions**: if the asset contains an `<image>` (a bitmap wrapper) → no swatches at all; if there are **more than [`MAX_COLORS`]** distinct colours → no swatches at all (that is an illustration, and recolouring it colour by colour is meaningless).
+//! * Otherwise take the **first [`MAX_SWATCHES`] groups** as the default swatches.
 //!
-//! ## 三条规则（原型已经拍过，这里照抄，别在别处再判一遍）
+//! ## Three rules (settled in the prototype; copied here, do not re-judge them elsewhere)
 //!
-//! 1. **组的次序按文档出现次序**，不按标签分批。
-//! 2. **改色作用到组里的每一个节点**，不按标签过滤——否则跨标签的同色组只会换一半。
-//! 3. **`style` 里只认 / 只改 `fill:` 那一条声明**（拿整个 `style` 串撞 hex、
-//!    换色时覆写整个属性，会把 `fill-rule` / `stroke` 一起弄丢）。
+//! 1. **Group order follows document order of first appearance**, not tag batches.
+//! 2. **A recolour applies to every node in the group**, not filtered by tag; otherwise a same-colour group spanning tags would only be half recoloured.
+//! 3. **In `style`, only the `fill:` declaration is recognised and changed** (matching hex against the whole `style` string, or overwriting the whole attribute when recolouring, would also lose `fill-rule` / `stroke`).
 //!
-//! `#RGB` 一律补齐成 `#RRGGBB` 再比，所以 `#fff` 与 `#FFFFFF` 是同一组。
+//! `#RGB` is always expanded to `#RRGGBB` before comparing, so `#fff` and `#FFFFFF` are the same group.
 //!
-//! ## 这一层为什么不解析 DOM
+//! ## Why this layer does not parse the DOM
 //!
-//! 换色是**按绝对偏移原地替换**：重新序列化一遍会把注释、缩进、`xml:space` 全洗
-//! 掉，而这一份文本还要拿去和素材原文对拍。所以扫描是一次确定性的标签 / 属性
-//! 扫描（等价于原型那三支正则），不引入 xml crate，wasm 可编。
+//! Recolouring **replaces in place at absolute offsets**: re-serialising would wash out comments, indentation and `xml:space`, and this same text is still compared byte-for-byte against the original asset. So scanning is a single deterministic tag and attribute scan (equivalent to the prototype's three regexes), without introducing an xml crate, so it compiles to wasm.
 //!
-//! ## 与文档存储的关系（D1）
+//! ## Relationship to document storage (D1)
 //!
-//! 画面上的真相是核心的 `sticker.fillOverrides`（**按源 hex 键**，
-//! `ccut_timeline::schema` 的 `StickerProps`）。UI 那一侧只是把 [`fills_of`] 的
-//! 次序摆成「第 N 组」几张卡；两者的翻译住在 [`fills_to_overrides`] 与
-//! [`fill_list_from_overrides`]，App 与 Web 都读这一份，不各写一遍。
+//! The on-screen truth is the core `sticker.fillOverrides` (**keyed by source hex**, `StickerProps` in `ccut_timeline::schema`). The UI side only lays out the order of [`fills_of`] as the "group N" cards; the translation between the two lives in [`fills_to_overrides`] and [`fill_list_from_overrides`], which both App and Web read, rather than each writing its own.
 
 use std::collections::BTreeMap;
 
@@ -45,36 +36,36 @@ pub fn sample_animation(svg: &str, seconds: f64) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 只有这八个标签的填充色进色卡。
+/// Only the fill colours of these eight tags go into the swatches.
 pub const TAGS: [&str; 8] = [
     "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "stop",
 ];
-/// 默认色卡最多几张。
+/// Maximum number of default swatches.
 pub const MAX_SWATCHES: usize = 5;
-/// 超过这么多种不同色就一张卡都不给。
+/// If there are more distinct colours than this, no swatches are given at all.
 pub const MAX_COLORS: usize = 15;
 
-/// 一组同色节点在原文里的一处承载（绝对字节偏移，左闭右开）。
+/// One place in the source text where a same-colour group's node carries its colour (absolute byte offsets, half-open range).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
 
-/// 一组同默认色的节点。
+/// A group of nodes sharing the same default colour.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FillGroup {
-    /// 归一后的默认色（`#RRGGBB` 或 `#RRGGBBAA`，大写）。
+    /// The normalised default colour (`#RRGGBB` or `#RRGGBBAA`, uppercase).
     pub hex: String,
-    /// 这一组**第一个**节点的标签（见模块头规则 2）。
+    /// The tag of the **first** node in this group (see module header rule 2).
     pub tag: String,
-    /// 这一组有几个节点。
+    /// How many nodes are in this group.
     pub count: usize,
-    /// 换色时要原地替换的全部位置（一个节点可能有 `fill` ＋ `style` 两处）。
+    /// All positions to replace in place when recolouring (one node may have both a `fill` and a `style` entry).
     pub spans: Vec<Span>,
 }
 
-/// 面板上的一张色卡（`fillsOf` 的形状）。
+/// One swatch on the panel (the shape of `fillsOf`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FillCard {
     pub hex: String,
@@ -82,7 +73,7 @@ pub struct FillCard {
     pub count: usize,
 }
 
-/// 内置矢量贴纸的一层（核心 `sticker/*.json` 的 `layers`）。
+/// One layer of a built-in vector sticker (the `layers` in core `sticker/*.json`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BuiltinLayer<'a> {
     pub d: &'a str,
@@ -92,12 +83,12 @@ pub struct BuiltinLayer<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// 色值
+// Colour values
 // ---------------------------------------------------------------------------
 
-/// 填充键的归一：补齐三位简写并统一大写，好让 `#fff` 与 `#FFFFFF` 认成同一组。
-/// 八位（带 alpha）原样保留——覆盖表按它做键。不做校验；用户输入的色值走
-/// `ccut_editor_core::color::norm_hex`（校验 + 丢 alpha），那条也建在这上面。
+/// Normalising a fill key: expands the three-digit shorthand and uppercases everything, so that `#fff` and `#FFFFFF` are recognised as the same group.
+/// Eight-digit values (with alpha) are kept as they are, since the override table is keyed by them. No validation is done here; colour values typed by the user go through
+/// `ccut_editor_core::color::norm_hex` (validation and dropping alpha), which is also built on top of this.
 pub fn norm_fill_hex(hex: &str) -> String {
     let upper = hex.to_ascii_uppercase();
     let bytes = upper.as_bytes();
@@ -113,10 +104,10 @@ pub fn norm_fill_hex(hex: &str) -> String {
     upper
 }
 
-/// 一个色值串里的 hex（`none` / `currentColor` / 渐变引用都读不出色）。
+/// The hex in a colour-value string (`none` / `currentColor` / gradient references yield no colour).
 ///
-/// 三种写法依次试：8 位（带 alpha）→ 6 位 → 3 位简写。不加词边界是
-/// 刻意的——四位写法（`#RGBA`）读出来的就是前三位。
+/// The three forms are tried in order: 8 digits (with alpha), then 6 digits, then the 3-digit shorthand. Not adding a word boundary is
+/// deliberate: the four-digit form (`#RGBA`) reads back as its first three digits.
 pub fn hex_in(value: &str) -> Option<String> {
     let cleaned = strip_url(value);
     find_hex(&cleaned, 8)
@@ -124,7 +115,7 @@ pub fn hex_in(value: &str) -> Option<String> {
         .or_else(|| find_hex(&cleaned, 3))
 }
 
-/// `/url\([^)]*\)/g → ' '`：渐变 / 图案引用里的 `#id` 不是颜色。
+/// `/url\([^)]*\)/g → ' '`: the `#id` inside gradient / pattern references is not a colour.
 fn strip_url(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
@@ -141,7 +132,7 @@ fn strip_url(value: &str) -> String {
     out
 }
 
-/// 串里第一个 `#` ＋ `n` 位十六进制。
+/// The first `#` followed by `n` hex digits in the string.
 fn find_hex(value: &str, digits: usize) -> Option<String> {
     let bytes = value.as_bytes();
     for (index, byte) in bytes.iter().enumerate() {
@@ -160,13 +151,13 @@ fn find_hex(value: &str, digits: usize) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 扫描（等价于原型的 TAG_RE / ATTR_RE）
+// Scanning (equivalent to the prototype's TAG_RE / ATTR_RE)
 // ---------------------------------------------------------------------------
 
 struct Attr {
     name: String,
     value: String,
-    /// 值（不含引号）在原文里的绝对起点。
+    /// Absolute start position in the source text of the value (excluding quotes).
     start: usize,
 }
 
@@ -217,7 +208,7 @@ fn scan(text: &str) -> Scan {
             cursor += 1;
         }
         let tag = text[name_start..cursor].to_ascii_lowercase();
-        // 属性区：`>` 由引号吃掉，未闭合的标签整条不算匹配（与正则同解）。
+        // Attribute area: a `>` inside quotes is consumed by the quotes; a tag that is never closed does not match at all (same as the regex).
         let attrs_start = cursor;
         let mut scan_at = cursor;
         let mut closed = None;
@@ -260,7 +251,7 @@ fn scan(text: &str) -> Scan {
     Scan { image, nodes }
 }
 
-/// 一段属性区里的全部 `name="value"`（值的绝对起点跟着记下来）。
+/// All `name="value"` pairs in an attribute area (the absolute start of each value is recorded alongside).
 fn scan_attrs(text: &str, from: usize, to: usize) -> Vec<Attr> {
     let bytes = text.as_bytes();
     let mut out: Vec<Attr> = Vec::new();
@@ -307,7 +298,7 @@ fn scan_attrs(text: &str, from: usize, to: usize) -> Vec<Attr> {
             value: text[value_start..value_end].to_owned(),
             start: value_start,
         };
-        // 同名属性后写覆盖先写（JS 的 `attrs[name] = …`）。
+        // For a duplicate attribute name, the later one overwrites the earlier (as JS `attrs[name] = …`).
         if let Some(slot) = out.iter_mut().find(|old| old.name == attr.name) {
             *slot = attr;
         } else {
@@ -318,8 +309,8 @@ fn scan_attrs(text: &str, from: usize, to: usize) -> Vec<Attr> {
     out
 }
 
-/// 一个节点上所有**承载填充色**的位置：`fill` 属性 / `style` 的 fill 声明 /
-/// `stop-color`。次序即读默认色的次序。
+/// All positions on a node that **carry a fill colour**: the `fill` attribute, the fill declaration in `style`, and
+/// `stop-color`. The order is the order in which default colours are read.
 fn carriers(node: &Node) -> Vec<(Span, String)> {
     let mut out = Vec::new();
     if let Some(fill) = node.attr("fill") {
@@ -363,10 +354,9 @@ fn carriers(node: &Node) -> Vec<(Span, String)> {
     out
 }
 
-/// `style` 串里第一条 `fill:` 声明的值（返回值在串内的偏移与值本身）。
+/// The value of the first `fill:` declaration in the `style` string (returns its offset within the string and the value itself).
 ///
-/// 等价于原型的 `/(^|;)([ \t]*)fill[ \t]*:[ \t]*([^;]*)/i`：候选起点只有串首与
-/// 每个 `;`，所以 `fill-rule:` / `fill-opacity:` 不会被误认。
+/// Equivalent to the prototype's `/(^|;)([ \t]*)fill[ \t]*:[ \t]*([^;]*)/i`: the only candidate start positions are the beginning of the string and each `;`, so `fill-rule:` and `fill-opacity:` are not mistaken for it.
 fn style_fill(style: &str) -> Option<(usize, &str)> {
     let bytes = style.as_bytes();
     let mut starts = vec![0usize];
@@ -406,10 +396,10 @@ fn style_fill(style: &str) -> Option<(usize, &str)> {
 }
 
 // ---------------------------------------------------------------------------
-// 分组与色卡
+// Grouping and swatches
 // ---------------------------------------------------------------------------
 
-/// 同色归一组，组的次序 = 第一次出现的次序。含 `<image>` 直接返回空表。
+/// Groups by normalised colour; group order = order of first appearance. If it contains `<image>`, returns an empty table directly.
 pub fn groups_of(svg: &str) -> Vec<FillGroup> {
     let scanned = scan(svg);
     if scanned.image {
@@ -442,8 +432,8 @@ pub fn groups_of(svg: &str) -> Vec<FillGroup> {
     groups
 }
 
-/// 色卡表。含 `<image>` 或超过 [`MAX_COLORS`] 种色 → 空表；否则最多
-/// [`MAX_SWATCHES`] 组。
+/// The swatch table. If it contains `<image>` or more than [`MAX_COLORS`] colours, the table is empty; otherwise it has at most
+/// [`MAX_SWATCHES`] groups.
 pub fn fills_of(svg: &str) -> Vec<FillCard> {
     let groups = groups_of(svg);
     if groups.len() > MAX_COLORS {
@@ -460,12 +450,12 @@ pub fn fills_of(svg: &str) -> Vec<FillCard> {
         .collect()
 }
 
-/// 默认色卡（元素首次选中时的那一份）。
+/// The default swatches (the set used when the element is first selected).
 pub fn default_fills(svg: &str) -> Vec<String> {
     fills_of(svg).into_iter().map(|card| card.hex).collect()
 }
 
-/// 与默认色逐项相等 = 这张素材还没被改过色，画面上直接用原 URL。
+/// Equal item by item to the default colours means this asset has not been recoloured yet, so the original URL is used directly on screen.
 pub fn is_default(svg: &str, fill_list: &[Option<String>]) -> bool {
     if fill_list.is_empty() {
         return true;
@@ -478,7 +468,7 @@ pub fn is_default(svg: &str, fill_list: &[Option<String>]) -> bool {
         })
 }
 
-/// 按色卡换色：第 i 张卡只换第 i 组那些节点的填充色，别处一个字符都不动。
+/// Recolour by swatch: swatch i only changes the fill colours of the nodes in group i; not a single character elsewhere is touched.
 pub fn apply_fills(svg: &str, fill_list: &[Option<String>]) -> String {
     if fill_list.is_empty() {
         return svg.to_owned();
@@ -513,13 +503,9 @@ pub fn apply_fills(svg: &str, fill_list: &[Option<String>]) -> String {
     out
 }
 
-/// 按 `sticker.fillOverrides` 换色：覆盖表的键是**源 hex**，命中哪一组就换哪一组。
+/// Recolour by `sticker.fillOverrides`: the override table is keyed by **source hex**, and whichever group it matches gets recoloured.
 ///
-/// 这是画面侧的入口（`ccut-subtitle-render` 光栅资产贴纸前先过这一道），与面板
-/// 侧的 [`apply_fills`]「按第 N 张卡」是同一套 span 编辑的两种索引方式：面板知道
-/// 卡的次序，渲染链只有文档里那张表。两者必须给出同一张图，否则「预览＝导出」
-/// 在换过色的贴纸上就破了——[`apply_fills`] 的卡序正是 [`groups_of`] 的组序，
-/// 所以这里直接按组的默认色查表。
+/// This is the on-screen entry point (`ccut-subtitle-render` runs raster asset stickers through this step before rendering). It and the panel-side [`apply_fills`] ("by swatch N") are two ways of indexing the same span edit: the panel knows the swatch order, while the render chain only has the table in the document. The two must produce the same image, otherwise "preview equals export" breaks on a recoloured sticker. The swatch order in [`apply_fills`] is exactly the group order of [`groups_of`], so here the lookup is done directly by each group's default colour.
 pub fn apply_overrides(svg: &str, overrides: &BTreeMap<String, String>) -> String {
     if overrides.is_empty() {
         return svg.to_owned();
@@ -537,13 +523,12 @@ pub fn apply_overrides(svg: &str, overrides: &BTreeMap<String, String>) -> Strin
 }
 
 // ---------------------------------------------------------------------------
-// D1：色卡 ↔ `sticker.fillOverrides`
+// D1: swatches ↔ `sticker.fillOverrides`
 // ---------------------------------------------------------------------------
 
-/// 面板上的几张卡 → 文档里的覆盖表（**键是源 hex**，`schema::StickerProps`）。
+/// The swatches on the panel → the override table in the document (**keys are source hex**, `schema::StickerProps`).
 ///
-/// 只写「真的改过」的那几组：与默认色相等的一律不落键，否则文档里会堆一份与
-/// 素材同值的噪声，`is_default` 那一档也就永远判不出「没改过」。
+/// Only the groups that were actually changed are written: any group equal to its default colour gets no key. Otherwise the document would fill up with noise duplicating the asset's own values, and the `is_default` check could never tell "not changed".
 pub fn fills_to_overrides(
     fills: &[FillCard],
     edits: &[Option<String>],
@@ -562,10 +547,9 @@ pub fn fills_to_overrides(
     out
 }
 
-/// 反向读：文档里的覆盖表 → 面板上那几张卡此刻各是什么色。
+/// Reverse read: the override table in the document → what colour each swatch on the panel is right now.
 ///
-/// 没有覆盖的那一组读回默认色，所以这一份恒与 [`fills_of`] 等长——面板不必再
-/// 判「第 N 组有没有被改过」。
+/// A group with no override reads back its default colour, so this list is always the same length as [`fills_of`]. The panel does not need to check again whether "group N has been changed".
 pub fn fill_list_from_overrides(
     fills: &[FillCard],
     overrides: &BTreeMap<String, String>,
@@ -583,13 +567,12 @@ pub fn fill_list_from_overrides(
 }
 
 // ---------------------------------------------------------------------------
-// 交给渲染器的形态
+// Form handed to the renderer
 // ---------------------------------------------------------------------------
 
-/// 盒子被拉成任意宽高时，SVG 自己的 `preserveAspectRatio` 优先级高于
-/// `object-fit`，图会在被拉长的盒子里留黑边。拉伸这一档因此要改素材本身：给根
-/// `<svg>` 写上 `preserveAspectRatio="none"`（已有就替换）。只动根标签的属性区，
-/// 内部嵌套的 `<image preserveAspectRatio>` 不碰。
+/// When the box is stretched to an arbitrary width and height, the SVG's own `preserveAspectRatio` takes priority over
+/// `object-fit`, and the image would leave black bars inside the stretched box. So the stretch mode has to change the asset itself: write `preserveAspectRatio="none"` on the root
+/// `<svg>` (replacing it if present). Only the attribute area of the root tag is touched; a nested `<image preserveAspectRatio>` inside is left alone.
 pub fn stretch(svg: &str) -> String {
     let Some((start, end)) = root_svg_tag(svg) else {
         return svg.to_owned();
@@ -608,7 +591,7 @@ pub fn stretch(svg: &str) -> String {
     out
 }
 
-/// `/<svg\b[^>]*>/i` 的那一段（左闭右开的字节区间）。
+/// The span matched by `/<svg\b[^>]*>/i` (a half-open byte range).
 fn root_svg_tag(svg: &str) -> Option<(usize, usize)> {
     let bytes = svg.as_bytes();
     let mut at = 0usize;
@@ -618,7 +601,7 @@ fn root_svg_tag(svg: &str) -> Option<(usize, usize)> {
         };
         if lt + 4 <= bytes.len() && svg[lt..lt + 4].eq_ignore_ascii_case("<svg") {
             let after = bytes.get(lt + 4).copied();
-            // `\b`：`<svg` 后面必须是非词字符（`<svgfoo` 不算）。
+            // `\b`: `<svg` must be followed by a non-word character (`<svgfoo` does not count).
             if after.is_none_or(|byte| !byte.is_ascii_alphanumeric() && byte != b'_') {
                 let gt = bytes[lt..]
                     .iter()
@@ -648,7 +631,7 @@ fn strip_preserve_aspect(attrs: &str) -> String {
                 Some(index) => index,
                 None => break,
             };
-        // 名字前的空白也一起吃掉（正则的 `\s*`）。
+        // Leading whitespace before the name is also consumed (the regex's `\s*`).
         let mut lead = name_at;
         while lead > kept && bytes[lead - 1].is_ascii_whitespace() {
             lead -= 1;
@@ -688,12 +671,12 @@ fn strip_preserve_aspect(attrs: &str) -> String {
     out
 }
 
-/// 换过色的素材交给渲染器的形态（base64 data URI）。
+/// The form in which a recoloured asset is handed to the renderer (base64 data URI).
 pub fn data_uri(svg: &str) -> String {
     format!("data:image/svg+xml;base64,{}", base64(svg.as_bytes()))
 }
 
-/// 标准 base64（无换行）。这一层不引依赖，编码本身十行。
+/// Standard base64 (no line breaks). This layer adds no dependency; the encoding itself is ten lines.
 fn base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -718,8 +701,7 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// 内置矢量贴纸（核心 `sticker/*.json` 的 `layers`）直译成一份 SVG 文本，色卡与
-/// 换色就都是上面那几件，不用为「路径数组」再写第二份分组逻辑。
+/// A built-in vector sticker (the `layers` in core `sticker/*.json`) is translated directly into one SVG text. Its swatches and recolouring are then the same pieces as above, so there is no need to write a second grouping logic for the "path array".
 pub fn builtin_svg(layers: &[BuiltinLayer<'_>]) -> String {
     let mut body = String::new();
     for layer in layers {
@@ -736,9 +718,9 @@ pub fn builtin_svg(layers: &[BuiltinLayer<'_>]) -> String {
     )
 }
 
-/// 内置矢量贴纸画的是 `layers` 本身（不走文本替换，因为盒子高度那一档要靠
-/// `preserveAspectRatio`），所以这里给出「第 i 层此刻该用哪个填充色」：层的原色
-/// 在色卡表里排第几，就取色卡的第几张。分组判据仍然是上面那一份。
+/// The built-in vector sticker draws the `layers` themselves (no text substitution, because the box-height case relies on
+/// `preserveAspectRatio`). So this gives "which fill colour layer i should use right now": the layer's original colour
+/// is found at some position in the swatch table, and the swatch at that position is taken. The grouping criterion is still the one above.
 pub fn layer_fill(
     layers: &[BuiltinLayer<'_>],
     fill_list: &[Option<String>],
@@ -759,7 +741,7 @@ pub fn layer_fill(
 mod tests {
     use super::*;
 
-    /// 拿 `n` 种互不相同的色拼一份 SVG。
+    /// Builds one SVG out of `n` distinct colours.
     fn rainbow(n: usize) -> String {
         let mut body = String::new();
         for i in 0..n {
@@ -768,8 +750,8 @@ mod tests {
         format!("<svg>{body}</svg>")
     }
 
-    /// 超过 15 种色 = 一张卡都不给。这不是
-    /// 「截到 15」——那种素材（照片描摹、渐变网格）逐色改根本没有意义。
+    /// More than 15 colours means no swatches at all. This is not
+    /// "truncate to 15"; for that kind of asset (traced photos, gradient meshes), recolouring colour by colour is meaningless in the first place.
     #[test]
     fn too_many_colours_yield_no_swatches_at_all() {
         assert_eq!(groups_of(&rainbow(MAX_COLORS)).len(), MAX_COLORS);
@@ -778,7 +760,7 @@ mod tests {
         assert!(default_fills(&rainbow(MAX_COLORS + 1)).is_empty());
     }
 
-    /// 15 种以内也只摆前 5 张——卡是 5 张，组仍然是全的（换色要按组走）。
+    /// Even within 15 colours, only the first 5 swatches are shown. There are 5 cards, but the groups are still complete (recolouring works by group).
     #[test]
     fn swatches_are_capped_but_groups_are_not() {
         let svg = rainbow(9);
@@ -786,8 +768,8 @@ mod tests {
         assert_eq!(groups_of(&svg).len(), 9);
     }
 
-    /// 一个节点可能有两处承载（`fill` ＋ `style`），换色要把两处一起改，否则
-    /// `style` 那条会按 CSS 优先级把新色盖回去。
+    /// A node may carry its colour in two places (`fill` and `style`). Recolouring must change both together, otherwise
+    /// the `style` one would, by CSS precedence, override the new colour back.
     #[test]
     fn one_node_can_carry_the_colour_in_two_places() {
         let svg = "<svg><path fill=\"#fff\" style=\"fill: #FFFFFF\" d=\"M0 0\"/></svg>";
@@ -801,8 +783,7 @@ mod tests {
         assert!(!out.contains("#FFFFFF") && !out.contains("#fff\""));
     }
 
-    /// `fill-rule` / `fill-opacity` 不是填充色——正则那侧靠 `(^|;)` 锚住，这里
-    /// 靠候选起点闭集，判据必须一致。
+    /// `fill-rule` and `fill-opacity` are not fill colours. The regex side anchors on `(^|;)`, while here it relies on the closed set of candidate start positions; the criteria must match.
     #[test]
     fn fill_rule_and_fill_opacity_are_not_fills() {
         let svg = "<svg><path style=\"fill-rule:evenodd;fill-opacity:.5\" d=\"M0 0\"/></svg>";
@@ -811,7 +792,7 @@ mod tests {
         assert_eq!(groups_of(svg)[0].hex, "#00AA00");
     }
 
-    /// 渐变的 `stop-color` 也是承载：不收它，渐变贴纸的色卡会整片空掉。
+    /// A gradient's `stop-color` is also a carrier. If it is not collected, the swatches of a gradient sticker would be entirely empty.
     #[test]
     fn gradient_stops_are_carriers_too() {
         let svg = "<svg><stop stop-color=\"#123456\"/><stop stop-color=\"#123456\"/></svg>";
@@ -821,7 +802,7 @@ mod tests {
         assert_eq!(groups[0].count, 2);
     }
 
-    /// 位图贴纸（含 `<image>`）一张卡都不给：能改的是矢量填充，位图改不了。
+    /// Bitmap stickers (containing `<image>`) get no swatches at all: what can be changed is vector fills, and bitmaps cannot be recoloured.
     #[test]
     fn a_bitmap_sticker_offers_nothing() {
         let svg = "<svg><path fill=\"#fff\" d=\"M0 0\"/><image href=\"a.png\"/></svg>";
@@ -829,8 +810,8 @@ mod tests {
         assert!(fills_of(svg).is_empty());
     }
 
-    /// 内置矢量贴纸走 `layers` 直译，色卡与分组复用同一份判据；`layer_fill`
-    /// 按「原色排第几」取色，没改过就退回层自己的原色。
+    /// Built-in vector stickers go through the direct `layers` translation; swatches and grouping reuse the same criterion. `layer_fill`
+    /// picks the colour by "which position the original colour occupies", and if the sticker has not been changed, it falls back to the layer's own original colour.
     #[test]
     fn builtin_layers_reuse_the_same_grouping() {
         let layers = [
@@ -862,21 +843,20 @@ mod tests {
         );
         assert_eq!(cards[0].count, 2);
 
-        // 没改过：各层照原色。
+        // Not changed: each layer keeps its original colour.
         let none: [Option<String>; 0] = [];
         assert_eq!(layer_fill(&layers, &none, 0), "#FFCC00");
         assert_eq!(layer_fill(&layers, &none, 1), "#000000");
-        // 改第 0 张卡：同组的第 2 层跟着变，另一组不动。
+        // Changing swatch 0: layer 2 of the same group changes along with it; the other group stays put.
         let list = [Some("#FF0000".to_owned())];
         assert_eq!(layer_fill(&layers, &list, 0), "#FF0000");
         assert_eq!(layer_fill(&layers, &list, 2), "#FF0000");
         assert_eq!(layer_fill(&layers, &list, 1), "#000000");
-        // 越界的层不 panic，给 `none`。
+        // An out-of-range layer does not panic; it gets `none`.
         assert_eq!(layer_fill(&layers, &list, 9), "none");
     }
 
-    /// 空串是「这一格没设」，不是「设成了空色」——否则 `fill_list` 里一个洞会
-    /// 把层刷成透明。
+    /// An empty string means "this slot is not set", not "set to an empty colour". Otherwise one hole in `fill_list` would make the layer render transparent.
     #[test]
     fn an_empty_slot_means_unset_not_transparent() {
         let layers = [BuiltinLayer {
@@ -889,8 +869,8 @@ mod tests {
         assert_eq!(layer_fill(&layers, &[None], 0), "#FFCC00");
     }
 
-    /// 覆盖表按**源色**键，不按索引——D1 的存储裁决；卡序变了旧文档也还认得。
-    /// 与默认色相等的一律不落键，否则 `is_default` 永远判不出「没改过」。
+    /// The override table is keyed by **source colour**, not by index. This is the storage decision for D1: even if the swatch order changes, old documents are still recognised.
+    /// Anything equal to the default colour gets no key, otherwise `is_default` could never tell "not changed".
     #[test]
     fn overrides_are_keyed_by_the_source_colour() {
         let svg = "<svg><path fill=\"#fff\" d=\"M0 0\"/><path fill=\"#000\" d=\"M1 1\"/></svg>";
@@ -903,7 +883,7 @@ mod tests {
             Some("#FF0000")
         );
 
-        // 回程恒与色卡等长：没被覆盖的读回默认色，面板不必自己判「改过没有」。
+        // The return trip is always the same length as the swatches: unoverridden entries read back their default colour, so the panel does not have to work out for itself whether it was changed.
         let back = fill_list_from_overrides(&cards, &overrides);
         assert_eq!(
             back,
@@ -913,8 +893,8 @@ mod tests {
         assert!(!is_default(svg, &back));
     }
 
-    /// 渲染链的入口与面板入口给出同一张图：`fillOverrides` 按源 hex 命中组，
-    /// 没命中的组一个字符都不动。
+    /// The render-chain entry point and the panel entry point produce the same image: `fillOverrides` matches groups by source hex,
+    /// and groups that are not matched are left untouched.
     #[test]
     fn apply_overrides_matches_the_card_ordered_edit() {
         use std::collections::BTreeMap;
@@ -933,9 +913,9 @@ mod tests {
             "未被覆盖的组不能动"
         );
 
-        // 面板那一侧同一份编辑（第 1 张卡换色、第 2 张卡留默认）必须给出同一张
-        // 图。两者的字节不必相同：面板路径把没改过的组也重写成归一化后的默认
-        // 色，这里则一个字符都不动——组序与最终色一致就够了。
+        // The panel side, given the same edit (swatch 1 recoloured, swatch 2 left at default), must produce the same
+        // image. The bytes need not be identical: the panel path also rewrites unchanged groups to the normalised default
+        // colour, whereas here not a single character is touched. It is enough that the group order and final colours agree.
         let cards = super::fills_of(svg);
         let by_cards =
             super::apply_fills(svg, &super::fill_list_from_overrides(&cards, &overrides));

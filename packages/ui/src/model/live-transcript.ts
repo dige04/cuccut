@@ -3,19 +3,19 @@ import { deriveCues, projectableItems, projectSpeech, readSpeechWords, type Spee
 import { jobLive } from './task-list.ts';
 
 /*
- * 转录中的实时文稿（原型第 220 轮，model-transcript.js `liveSlice` / `liveTrackSlice`；架构设计 §6.6「实时文稿」）。
+ * The live script during transcription (prototype round 220, model-transcript.js `liveSlice` / `liveTrackSlice`; architecture design §6.6 “实时文稿” (live script)).
  *
- * 实时段落是任务事件流的投影，不是项目内容：只读、不进撤销栈、没有 cue id。三段语义照原型：
- *   · settled：已经收到的段落——照常画；
- *   · inflight：原型在 `at` 落在一条 cue 中间时只露前缀。真实数据没有半段文字，所以没有前缀，只在最后一段末尾挂光标；
- *   · pending：`at` 到素材末尾，还没转录到——时间线画「转录中」待定带。
- * `at` = max(最后一段的终点, 进度换算的秒数)：`seconds` 进度的 `done` 就是秒；`segments`（VAD 切出的片段）按
- * `done / total × 时长` 只当下限。不流式返回的服务（在线、节点、整段模型）到结束前一段也没有：只有待定带与骨架，不造假数据。
+ * Live paragraphs are a projection of the task event stream, not project content: they are read-only, not in the undo stack, and have no cue ID. The three states follow the prototype:
+ *   · settled: paragraphs already received — drawn as usual;
+ *   · inflight: when the prototype's `at` falls in the middle of a cue, only a prefix is shown. Real data has no half-text, so there is no prefix; only a cursor is attached at the end of the last paragraph;
+ *   · pending: `at` through the end of the material, not yet transcribed — the timeline draws a “转录中” (transcribing) pending band.
+ * `at` = max(end of the last paragraph, seconds converted from progress): for `seconds` progress, `done` is already seconds; `segments` (clips cut by VAD) are converted only as a lower bound, as
+ * `done / total × duration`. Services that do not return results as a stream (online, nodes, whole-clip models) have no paragraphs before the end either: only the pending band and the skeleton are shown, and no fake data is made.
  */
 
 const EMPTY: readonly JobLiveSegment[] = Object.freeze([]);
 
-/** 转录到了素材的第几秒（素材自己的时钟）。`done` 时（转写做完、流程还在建字幕层）就是素材末尾。 */
+/** How many seconds of the material have been transcribed (the material's own clock). When `done` (transcription finished, flow still building the caption layer), it is the end of the material. */
 export function liveAt(segments: readonly JobLiveSegment[], progress: JobProgress | null, duration: number | null, done = false): number {
   const limit = duration != null && duration > 0 ? duration : Infinity;
   if (done) return limit === Infinity ? Math.max(0, lastEnd(segments)) : limit;
@@ -32,30 +32,30 @@ function lastEnd(segments: readonly JobLiveSegment[]): number {
   return end;
 }
 
-/** 还没转录到的那一段（素材时钟）；转完了是 null。时长不明时一直延到无穷远，由时间线上的实例区间裁住。 */
+/** The part of the material not yet transcribed (material clock); null when fully transcribed. When the duration is unknown it extends to infinity, and the instance ranges on the timeline clip it. */
 export function livePending(at: number, duration: number | null, done = false): { start: number; end: number } | null {
   if (done) return null;
   const end = duration != null && duration > 0 ? duration : Infinity;
   return at < end ? { start: at, end } : null;
 }
 
-// ---- 哪一次转录属于哪个素材 ----
+// ---- Which transcription belongs to which material ----
 
-/** 视频里一个素材正在进行的转录。 */
+/** An in-progress transcription of a material in the video. */
 export interface LiveTranscription {
   assetId: Id;
-  /** 跑识别的转写 Job：实时段落按它的 `jobId` 记，进度也画它的。 */
+  /** The transcribe Job that runs recognition: live paragraphs are recorded by its `jobId`, and the progress shown is its progress. */
   step: JobRecord;
-  /** 提交它的固定流程（转录、从链接导入）；直接提交的转写没有。 */
+  /** The fixed flow that submitted it (transcription, import from a link); transcriptions submitted directly do not have one. */
   parent: JobRecord | null;
-  /** 转写还在跑（排队、执行、自动重跑）。false 时转写已经做完，流程还在往下走（建字幕层）。 */
+  /** Whether the transcription is still running (queued, executing, auto re-run). false means the transcription has finished and the flow is still moving on (building the caption layer). */
   running: boolean;
 }
 
 /**
- * 这个视频里每个素材正在进行的转录（每个素材一条，重试过时取最新的）。转录流程与从链接导入都把识别交给一个 `transcribe`
- * Job（`submitter` 指回流程父任务），所以从转写 Job 找起，同时认得出编辑器里提交的、智能体与命令行提交的。
- * 转写做完、父任务还在跑（字幕层还没建好）的也算，免得在识别结果与字幕轨之间空出一拍。
+ * The in-progress transcription of each material in this video (one per material; the latest if it was retried). The transcription flow and import from a link both hand recognition to a `transcribe`
+ * Job (its `submitter` points back to the flow's parent task), so it starts from the transcribe Job, and recognizes those submitted from the editor, by agents, and from the command line too.
+ * A transcription that has finished while its parent task is still running (caption layer not yet built) also counts, so there is no gap between the recognition result and the caption track.
  */
 export function liveTranscriptions(jobs: readonly JobRecord[], videoId: Id | null): LiveTranscription[] {
   if (!videoId) return [];
@@ -71,7 +71,7 @@ export function liveTranscriptions(jobs: readonly JobRecord[], videoId: Id | nul
   return [...byAsset.values()];
 }
 
-/** 时间线上有没有这个素材的字幕（字幕实例的文档是从这个素材转出来的）。 */
+/** Whether the timeline has captions for this material (the caption instance documents are converted from this material). */
 export function assetCaptioned(sequence: Sequence, documents: Record<Id, DocumentRecord>, assetId: Id): boolean {
   return sequence.items.some((item) => {
     if (item.type !== 'caption') return false;
@@ -80,7 +80,7 @@ export function assetCaptioned(sequence: Sequence, documents: Record<Id, Documen
   });
 }
 
-/** 这次转录开始之前，素材已经有转写（是重新转录）。 */
+/** The material already had a transcript before this transcription started (it is a re-transcription). */
 export function transcribedBefore(documents: Record<Id, DocumentRecord>, assetId: Id, since: string): boolean {
   return Object.values(documents).some(
     (record) =>
@@ -91,9 +91,9 @@ export function transcribedBefore(documents: Record<Id, DocumentRecord>, assetId
 }
 
 /**
- * 时间线要不要画临时的转录行（v2 的规矩：只有第一次转录才画）。第一次转录时还没有字幕轨——流程最后一步才建——所以这一行
- * 不属于哪条轨，占在字幕行的位置上。转写做完以后，识别结果先落成转写文档、字幕轨稍后才建：这中间照旧画着，直到字幕轨出现
- * 或流程结束（不建字幕层的流程，例如从链接导入默认不建，结束时这一行就收起）。转写做完却一段也没有时不画空行。
+ * Whether the timeline should draw the temporary transcription line (v2 rule: drawn only for the first transcription). During the first transcription there is no caption track yet — the flow creates it in its last step — so this line
+ * does not belong to any track; it takes the caption row's place. After the transcription finishes, the recognition result is first written as a transcript document and the caption track is created later, so the line keeps drawing in between,
+ * until the caption track appears or the flow ends (flows that do not build a caption layer, such as import from a link, which does not build one by default, collapse the line when they end). When the transcription has finished but there are no paragraphs at all, no empty line is drawn.
  */
 export function liveRowShown(facts: { running: boolean; segments: number; captioned: boolean; transcribedBefore: boolean }): boolean {
   if (facts.captioned || facts.transcribedBefore) return false;
@@ -101,19 +101,19 @@ export function liveRowShown(facts: { running: boolean; segments: number; captio
 }
 
 /**
- * 文稿面板要不要切到只读的实时态（原型 panels.jsx：转录在跑就切，重新转录也一样）。转写做完以后等转写文档落进视频再切回来，
- * 免得中间闪一下「还没有文稿」。
+ * Whether the script panel switches to the read-only live state (prototype panels.jsx: it switches while a transcription is running, and likewise for a re-transcription). After the transcription finishes, it waits for the transcript document to land in the video before switching back,
+ * so “还没有文稿” (no script yet) does not flash in between.
  */
 export function liveTranscriptShown(facts: { running: boolean; segments: number; documentLanded: boolean }): boolean {
   if (facts.running) return true;
   return facts.segments > 0 && !facts.documentLanded;
 }
 
-// ---- 保留段落 ----
+// ---- Retained paragraphs ----
 
 /**
- * 转写 Job 结束时客户端丢掉它的实时段落（`applyJobsEvent`），可流程还在建字幕层：这段时间里临时行与文稿要接着画。
- * 这里把刚被丢掉、且 Job 已完成、父任务还在跑的段落留住；父任务结束（或 Job 不在列表里了）就放掉。没有变化时返回原对象。
+ * When a transcription Job ends, the client drops its live paragraphs (`applyJobsEvent`), but the flow is still building the caption layer: during that time the temporary line and the script must keep drawing.
+ * Here the paragraphs that were just dropped, whose Job has completed while the parent task is still running, are retained; when the parent task ends (or the Job is no longer in the list), they are released. Returns the original object when nothing changed.
  */
 export function holdSegments(
   previous: Readonly<Record<Id, readonly JobLiveSegment[]>>,
@@ -142,9 +142,9 @@ export function holdSegments(
   return out ?? (held as Record<Id, readonly JobLiveSegment[]>);
 }
 
-// ---- 投到时间线上 ----
+// ---- Projection onto the timeline ----
 
-/** 投到序列上的一段（秒）。跨剪辑点的段落裁成几块，`key` 各不相同，`index` 是它在全部段落里的序号。 */
+/** One piece of a paragraph projected onto the sequence (seconds). A paragraph that crosses a clip boundary is cut into several pieces, each with a different `key`; `index` is its position among all the paragraphs. */
 export interface PlacedSegment {
   key: string;
   index: number;
@@ -156,8 +156,8 @@ export interface PlacedSegment {
 const placedCache = new WeakMap<readonly JobLiveSegment[], WeakMap<Sequence, Map<Id, readonly PlacedSegment[]>>>();
 
 /**
- * 实时段落在序列上的位置：与生成字幕同一套投影（`projectSpeech`，素材时钟 → 时间线上取用这个素材的实例），裁掉、错开的
- * 实例照样放对。按段落数组（同一个数组就是同一批段落）与序列版本缓存。
+ * Where live paragraphs sit on the sequence: the same projection as generated captions (`projectSpeech`: material clock → the instances on the timeline that use this material), so trimmed and shifted instances still land in the right place.
+ * Cached by the paragraph array (the same array means the same paragraphs) and the sequence version.
  */
 export function placeSegments(sequence: Sequence, assetId: Id, segments: readonly JobLiveSegment[]): readonly PlacedSegment[] {
   if (!segments.length) return EMPTY as readonly never[];
@@ -186,7 +186,7 @@ export function placeSegments(sequence: Sequence, assetId: Id, segments: readonl
   return placed;
 }
 
-/** 待定带在序列上的几块（素材剪成几段放在时间线上时，每段一块）。 */
+/** The pieces of the pending band on the sequence (when the material is cut into several segments on the timeline, one piece per segment). */
 export function placePending(
   sequence: Sequence,
   assetId: Id,
@@ -200,19 +200,19 @@ export function placePending(
   }));
 }
 
-// ---- 只读的文稿行 ----
+// ---- Read-only script rows ----
 
-/** 只读文稿行的一行：素材与它最新的那份转写。 */
+/** One row of the read-only script: the material and its latest transcript. */
 export interface TranscriptRowSource {
   assetId: Id;
   speech: DocumentRecord;
 }
 
 /**
- * 时间线上只读的「文稿」行（原型 model-timeline.js `rows` 的 `transcript`；产品设计 §5.7）：视频转录过、却一条字幕轨都没有
- * （转录时没建字幕层，例如从链接导入默认不建；或字幕轨都删了）——文稿照样落在字幕行的位置上，看得见哪里在说话。
- * 每个转录过、时间线上取用了的素材一行（最新那份转写），按在时间线上第一次出现的先后排；正画着临时转录行的素材不重复画。
- * 它不是轨：没有开关、不进导出、不可选中。
+ * The read-only “文稿” (script) row on the timeline (prototype model-timeline.js `rows` `transcript`; product design §5.7): a video that has been transcribed but has no caption track at all
+ * (captions were not built during transcription, e.g. import from a link does not build them by default; or every caption track was deleted). The script still sits in the caption row's place, so you can see where speech happens.
+ * One row per transcribed material used on the timeline (its latest transcript), in order of first appearance on the timeline; materials already showing the temporary transcription line are not drawn twice.
+ * It is not a track: it has no toggle, is not exported, and cannot be selected.
  */
 export function transcriptRows(
   sequence: Sequence,
@@ -237,8 +237,8 @@ export function transcriptRows(
 const startFrame = (item: Sequence['items'][number]) => ('span' in item ? item.span.fromFrame : item.fromFrame);
 
 /**
- * 文稿行里的句子块：转写正文（`cuccut.speech/1`）按字幕同一套断句（`deriveCues`）切成句，经取用这个素材的实例投到序列上，
- * 剪掉的部分不出现、跨剪辑点的句子裁成几块。正文还没取到或不是转写时没有块。
+ * The sentence blocks in a script row: the transcript body (`cuccut.speech/1`) is split into sentences with the same segmentation as captions (`deriveCues`), and projected onto the sequence through the instances that use this material;
+ * cut-away parts do not appear, and a sentence that crosses a clip boundary is cut into pieces. There are no blocks when the body has not been fetched or is not a transcript.
  */
 export function placeTranscript(sequence: Sequence, assetId: Id, body: unknown): readonly PlacedSegment[] {
   const speech = readSpeechWords(body);

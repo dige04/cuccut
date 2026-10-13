@@ -14,7 +14,7 @@ import { pl } from './player-copy.pl.ts';
 import { tr } from './player-copy.tr.ts';
 import { vi } from './player-copy.vi.ts';
 
-/** 媒体播放器（播放区、字幕列表、控制条）的文案。英文写在这里，译文在 `player-copy.zh-Hans.ts`。 */
+/** Copy for the media player (playback area, subtitle list, control bar). English is written here; translations are in `player-copy.zh-Hans.ts`. */
 const en = {
   surface: (fileName: string) => `${fileName}: Space to play or pause, Left and Right arrows to skip back or forward`,
   loading: 'Loading',

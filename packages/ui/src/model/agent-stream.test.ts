@@ -60,7 +60,7 @@ describe('splitBlocks', () => {
   it('围栏代码块里的空行不拆', () => {
     const md = '说明\n\n```sh\necho a\n\necho b\n```\n\n结尾';
     expect(splitBlocks(md)).toEqual(['说明', '```sh\necho a\n\necho b\n```', '结尾']);
-    // 没闭合的围栏：后面全归它。
+    // An unclosed fence: everything after it belongs to it.
     expect(splitBlocks('```\na\n\nb')).toEqual(['```\na\n\nb']);
   });
 
@@ -78,7 +78,7 @@ describe('closeStreamingTail', () => {
     expect(closeStreamingTail('~~删')).toBe('~~删~~');
     expect(closeStreamingTail('运行 `ccut in')).toBe('运行 `ccut in`');
     expect(closeStreamingTail('**先跑 `ccut')).toBe('**先跑 `ccut`**');
-    // 收尾标记写到一半：补成完整的。
+    // A closing marker that was only half written is completed.
     expect(closeStreamingTail('**加粗*')).toBe('**加粗**');
   });
 
@@ -111,7 +111,7 @@ describe('closeStreamingTail', () => {
     expect(closeStreamingTail(tilde)).toBe(tilde);
     const closed = '```\n**x\n```\n';
     expect(closeStreamingTail(closed)).toBe(closed);
-    // 围栏闭合以后的新段落照常补。
+    // New paragraphs after a fence closes are completed as usual.
     expect(closeStreamingTail('```\n**x\n```\n然后 **加')).toBe('```\n**x\n```\n然后 **加**');
   });
 

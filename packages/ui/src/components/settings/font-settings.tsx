@@ -43,10 +43,9 @@ import { Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './sett
 import { useSaveSettings, useSettingsReady } from './save-settings.ts';
 
 /*
- * 设置 › 字体（产品设计 §5.9「字体」、§7.6；原型 settings-fonts.jsx）：下载一组（自动下载的开关、样式表与字体文件两个镜像
- * 地址，只接受 https，不合规的当场说、不保存），已下载的字体一组（总大小与族数，每个族一行可以删除，全部清空先确认）。
- * 还没结束的导出在用的族标「导出在用」、删除钮不可点（`fonts.downloaded` 的 `inUse`，Runtime 删除时拒绝为 `FONT_IN_USE`）。
- * 只在桌面端出现：浏览器会话没有 `fonts.*`。
+ * Settings › Fonts (product design §5.9 “Fonts” and §7.6; prototype settings-fonts.jsx): a download group (the auto-download toggle and two mirror addresses, one for the stylesheet and one for the font files; only https is accepted, and anything non-compliant is flagged on the spot and not saved), and a group of downloaded fonts (total size and number of families; each family has a row that can be deleted; clearing everything asks for confirmation first).
+ * A family still in use by an export that has not finished is labeled “In use for export” (导出在用), and its delete button is disabled (`inUse` from `fonts.downloaded`; the Runtime rejects deletion with `FONT_IN_USE`).
+ * Shown only on desktop: a browser session has no `fonts.*`.
  */
 
 const mirror = style({ display: 'flex', flexDirection: 'column', gap: 4, width: 280, maxWidth: 'full' });
@@ -62,7 +61,7 @@ const family = style({
   whiteSpace: 'nowrap',
 });
 const facts = style({ font: 'ui-sm', color: 'gray-600' });
-// 行之间的分隔线由 RowList 画（settings-ui.tsx）。
+// The dividers between rows are drawn by RowList (settings-ui.tsx).
 const row = style({ display: 'flex', alignItems: 'center', gap: 8, paddingY: 12 });
 
 export function FontSettings() {
@@ -117,7 +116,7 @@ export function FontSettings() {
   );
 }
 
-/** 镜像地址：不合规的当场说（字段下一行），不保存；失焦时保存，留空存为 null（用默认）。 */
+/** Mirror addresses: a non-compliant one is flagged on the spot (on the line below the field) and not saved. Saved on blur; if left empty, it is stored as null (use the default). */
 function MirrorField({
   label,
   placeholder,

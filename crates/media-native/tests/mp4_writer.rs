@@ -1,11 +1,8 @@
-//! 原生 MP4 写入验收（WP6b）。
+//! Native MP4 write acceptance (WP6b).
 //!
-//! 口径按 `docs/design/bcf/cuccut-format-spec.md` §15.1 与 `apps/cli` 的 `studio_export`
-//! 测试：**导出编码的字节不承诺可复现**，所以这里断言的是存在性、帧数与时长
-//! 容差、尺寸、后端标识、语义化颜色谓词与音频 RMS/频率，**不做像素 golden**。
+//! Per `docs/design/bcf/cuccut-format-spec.md` §15.1 and the `studio_export` tests in `apps/cli`, **the bytes of export encoding do not promise to be reproducible**. So what is asserted here is existence, frame count and duration tolerance, dimensions, backend identifier, semantic color predicates, and audio RMS/frequency, **with no pixel golden**.
 //!
-//! 素材全部程序化生成（分段纯色 + 水平渐变的 RGBA 帧、正弦 PCM），不依赖
-//! ffmpeg：夹具生成与判读都在本仓库自己手里，编码器不可用时按仓库礼节跳过。
+//! All material is generated programmatically (segmented solid colors plus horizontal-gradient RGBA frames, and sine PCM), without depending on ffmpeg. Fixture generation and judging are entirely in this repository's hands. When the encoder is unavailable, the test is skipped per repository convention.
 
 use std::path::Path;
 
@@ -13,25 +10,23 @@ use media_native::{RgbaFrame, encode_available, encode_backend, extract_frame_rg
 
 mod common;
 
-/// 输出几何：偶数宽高（H.264 4:2:0 的硬要求）。
+/// Output geometry: even width and height (a hard requirement of H.264 4:2:0).
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 180;
 const FPS: f64 = 30.0;
-/// 三段纯色各 1 秒，顺序红 / 绿 / 蓝。
+/// Three solid-color segments of 1 second each, in the order red / green / blue.
 const SEGMENT_SECONDS: f64 = 1.0;
 const SEGMENTS: usize = 3;
 const TOTAL_FRAMES: usize = (SEGMENT_SECONDS as usize) * SEGMENTS * (FPS as usize);
 const TOTAL_SECONDS: f64 = SEGMENT_SECONDS * SEGMENTS as f64;
 
-/// 正弦音的频率与幅度。440 Hz 远离 48 kHz 的任何折叠点，AAC 往返后仍然是
-/// 一根干净的谱线；0.5 的幅度不会触发编码器的削波保护。
+/// The frequency and amplitude of the sine tone. 440 Hz stays far from any folding point of 48 kHz, so after an AAC round trip it is still a clean spectral line. An amplitude of 0.5 does not trigger the encoder's clipping protection.
 const TONE_HZ: f64 = 440.0;
 const TONE_AMPLITUDE: f32 = 0.5;
 
-/// 第 `index` 帧的 RGBA：按段取主导色，横向压一条 0.2 → 1.0 的线性亮度斜坡。
+/// RGBA of frame `index`: takes the dominant color of its segment, and lays a 0.2 → 1.0 linear luminance ramp across it horizontally.
 ///
-/// 斜坡的作用与解码侧夹具（`common::fixture`）一致：纯色画面是压缩与相似度
-/// 判定的病态输入，给结构项一点内容，颜色谓词量到的才是"这一段是不是那个颜色"。
+/// The ramp serves the same purpose as the decode-side fixture (`common::fixture`). Solid-color pictures are a pathological input for compression and similarity judgment. Giving the structure term some content lets the color predicate measure "whether this segment is that color".
 fn frame_rgba(index: usize) -> Vec<u8> {
     let segment = (index / (FPS as usize)).min(SEGMENTS - 1);
     let base = match segment {
@@ -52,7 +47,7 @@ fn frame_rgba(index: usize) -> Vec<u8> {
     data
 }
 
-/// 整片正弦 PCM（裸 f32le、48 kHz、立体声交织），写进临时文件。
+/// The whole sine PCM (raw f32le, 48 kHz, interleaved stereo), written to a temporary file.
 fn write_tone_pcm(path: &Path) {
     let frames = (TOTAL_SECONDS * f64::from(media_native::AUDIO_SAMPLE_RATE)) as usize;
     let mut bytes = Vec::with_capacity(frames * 8);
@@ -66,14 +61,14 @@ fn write_tone_pcm(path: &Path) {
     std::fs::write(path, bytes).expect("写正弦 PCM");
 }
 
-/// 写一段测试 MP4；编码器不可用时返回 `None`（仓库礼节：无后端不算失败）。
+/// Writes a test MP4. Returns `None` when the encoder is unavailable (repository convention: no backend is not a failure).
 fn write_fixture(out: &Path, audio: Option<&Path>) -> Option<()> {
     if !encode_available() {
         return None;
     }
     let mut writer = match media_native::open_mp4_writer(out, WIDTH, HEIGHT, FPS, audio) {
         Ok(writer) => writer,
-        // 本机没有可用的 H.264 / AAC 编码器：跳过而不是判失败。
+        // There is no usable H.264 / AAC encoder on this machine, so skip rather than fail.
         Err(error) if format!("{error:#}").contains("unsupported") => return None,
         Err(error) => panic!("打开原生 MP4 写入器失败：{error:#}"),
     };
@@ -85,7 +80,7 @@ fn write_fixture(out: &Path, audio: Option<&Path>) -> Option<()> {
     Some(())
 }
 
-/// 解回整条音轨（48 kHz 交错立体声 f32）。
+/// Decodes back the whole audio track (48 kHz interleaved stereo f32).
 fn decode_audio(path: &Path) -> Vec<f32> {
     use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::formats::probe::Hint;
@@ -135,7 +130,7 @@ fn decode_audio(path: &Path) -> Vec<f32> {
     out
 }
 
-/// 左声道在 `[start, end)` 秒窗口上的 RMS 与过零率推出的基频。
+/// The RMS of the left channel over the window `[start, end)` seconds, and the fundamental frequency derived from the zero-crossing rate.
 fn tone_metrics(samples: &[f32], start: f64, end: f64) -> (f64, f64) {
     let rate = f64::from(media_native::AUDIO_SAMPLE_RATE);
     let first = (start * rate) as usize;
@@ -143,7 +138,7 @@ fn tone_metrics(samples: &[f32], start: f64, end: f64) -> (f64, f64) {
     assert!(last > first, "窗口内没有样本");
     let left: Vec<f64> = (first..last).map(|i| f64::from(samples[i * 2])).collect();
     let rms = (left.iter().map(|value| value * value).sum::<f64>() / left.len() as f64).sqrt();
-    // 过零计数：正弦一个周期恰好两次上/下穿零，噪声在这个信噪比下不会额外穿。
+    // Zero-crossing count: a sine crosses zero exactly twice per period, once up and once down. Noise at this SNR does not add extra crossings.
     let crossings = left
         .windows(2)
         .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
@@ -183,7 +178,7 @@ fn each_colour_segment_decodes_back_to_its_own_dominant_channel() {
         eprintln!("跳过：当前平台没有原生 MP4 编码后端");
         return;
     }
-    // 每段取中点，避开段边界（那里编码器的 B 帧参考可能混两段）。
+    // Take the midpoint of each segment, avoiding the segment boundaries (where the encoder's B-frame references may mix two segments).
     for (index, expected) in ["red", "green", "blue"].iter().enumerate() {
         let time = index as f64 * SEGMENT_SECONDS + SEGMENT_SECONDS / 2.0;
         let frame: RgbaFrame = extract_frame_rgba(&out, time, WIDTH).expect("解回单帧");
@@ -217,7 +212,7 @@ fn the_mixed_audio_track_survives_the_aac_round_trip() {
 
     let samples = decode_audio(&out);
     assert!(!samples.is_empty(), "音轨应当解得出样本");
-    // 掐头去尾 0.3 秒：AAC 的编码器预热样本与末尾补零都在这两段里。
+    // Trim 0.3 seconds from each end. The encoder's AAC warm-up samples and the trailing zero padding both lie within those two parts.
     let (rms, frequency) = tone_metrics(&samples, 0.3, TOTAL_SECONDS - 0.3);
     let expected_rms = f64::from(TONE_AMPLITUDE) / std::f64::consts::SQRT_2;
     assert!(
@@ -244,8 +239,7 @@ fn the_encode_backend_label_matches_platform_availability() {
     }
 }
 
-/// 29.97 fps 写出来必须读回 30000/1001，而不是 30：AVAssetWriter 缺省的 600 时基会把
-/// 1001/30000 的帧长取整成 20/600，下一道导出据此按 30 fps 铺网格（播客 Shorts 实测）。
+/// Written at 29.97 fps, it must read back as 30000/1001, not 30. AVAssetWriter's default 600 timescale rounds the frame duration of 1001/30000 to 20/600, and the next export step laid out the grid at 30 fps based on that (measured on a podcast Shorts clip).
 #[test]
 fn ntsc_frame_rates_survive_the_container_timebase() {
     if !encode_available() {

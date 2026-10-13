@@ -1,2 +1,2 @@
-/** `crates/video-model` 给人看的文字（message-ref.ts）。每个区域一个 `<区域>.ts` 与它的译文 `<区域>.zh-Hans.ts`，在这里 import 登记。 */
+/** Human-facing text of `crates/video-model` (message-ref.ts). Each area has one `<area>.ts` and its translation `<area>.zh-Hans.ts`, imported here to register. */
 import './videoModel.ts';

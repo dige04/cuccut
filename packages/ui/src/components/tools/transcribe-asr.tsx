@@ -13,13 +13,13 @@ import { detail, Section } from './tool-parts.tsx';
 import { GALLERY_COPY, TRANSCRIBE_TOOL_COPY } from './tools-copy.ts';
 
 /*
- * 转录页的语音模型一块（设计稿 tool-transcribe.jsx `AsrFields`）：本机 / 在线、模型、转录语言、现状一行与去模型页的链接；
- * 记着的选择在 tools-store（跨次保留）。「识别说话人」只在写进视频时有（只给文件的转录不收 `diarize`）。
+ * The speech-model block of the transcription page (design mockup tool-transcribe.jsx `AsrFields`): local or online, model, transcription language, a status line, and a link to the models page;
+ * the remembered choice is kept in tools-store (kept across sessions). “识别说话人” (identify speakers) only appears when writing into a video (transcribing a file only does not accept `diarize`).
  */
 
 const field = style({ width: 'full' });
 
-// ---- 语音模型 ----
+// ---- Speech model ----
 
 export interface AsrPick {
   view: ReturnType<typeof useModels.getState>['capabilities'];
@@ -27,15 +27,15 @@ export interface AsrPick {
   options: TranscribeOption[];
   option: TranscribeOption | null;
   languages: ReturnType<typeof languageOptions>;
-  /** 空串是自动检测。 */
+  /** An empty string means auto-detect. */
   language: string;
-  /** 「更多选项 › 识别说话人」。 */
+  /** "More options › Identify speakers". */
   speakers: SpeakerState;
-  /** 模型给人看的名字（本机的取模型包的名字，开关下面那一句用）。 */
+  /** The model's display name (for local models, the name from the model package; used in the line under the switch). */
   name: string;
 }
 
-/** 用哪种方式、哪只模型、什么语言：记着的选择（tools-store，跨次保留）还在就用它，否则落到生效的默认值。 */
+/** Which method, which model, and which language: if the remembered choice (tools-store, kept across sessions) is still there, use it; otherwise fall back to the effective default. */
 export function useAsrPick(): AsrPick {
   const view = useModels((s) => s.capabilities);
   const saved = useTools((s) => s.transcribe);
@@ -54,7 +54,7 @@ export function useAsrPick(): AsrPick {
   return { view, mode, options, option, languages, language, speakers, name };
 }
 
-/** 语音模型一块（设计稿 `AsrFields`）：本机 / 在线、模型、转录语言、现状一行与去模型页的链接。 */
+/** Speech-model block (design mockup `AsrFields`): local or online, model, transcription language, a status line, and a link to the models page. */
 export function AsrFields({ pick: p, speakers: showSpeakers = true }: { pick: AsrPick; speakers?: boolean }) {
   const go = useShell((s) => s.go);
   const patch = useTools((s) => s.patchTranscribe);

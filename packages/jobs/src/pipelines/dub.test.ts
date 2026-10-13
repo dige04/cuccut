@@ -160,7 +160,7 @@ describe('句级重配的冻结（进程内的假视频与假合成）', () => {
       separatorId: null,
       regroup: { groupId: 'dub_1', units: ['u1', 'u2'], planDocumentId: 'doc_p', trackId: 'track_dub', seed: 7 },
     });
-    // 重配的内容摘要与同一份译文的整组配音不同。
+    // The content digest of a sentence-level re-dub differs from that of the whole dub set for the same translation.
     const whole = await setup(true).pipeline.prepare(parseDubParams({ videoId: 'vid_1', translationId: 'doc_t' }), { retry: false });
     expect(frozen.contentHash).not.toBe(whole.contentHash);
   });
@@ -199,19 +199,19 @@ describe('句级重配的冻结（进程内的假视频与假合成）', () => {
       demand: { memory: 2 * 1024 ** 3, scratchDisk: 2 * 1024 ** 3 },
       holder: { id: 'model-worker:sep-a', demand: { memory: 1024 ** 3, gpuMemory: 4 * 1024 ** 3, cpuThreads: 2 } },
     });
-    // 旧的冻结参数没有模型包：只算这一步自己的。
+    // An old frozen parameter has no model pack: only this step's own is computed.
     expect(step.resources!({ ...frozen.params, separatorModel: undefined }, {})).toEqual({
       demand: { memory: 2 * 1024 ** 3, scratchDisk: 2 * 1024 ** 3 },
     });
 
-    // 没有可用的分离模型包：照常接受，分离一步跳过。
+    // No usable separation model pack: accepted as usual; the separation step is skipped.
     const none = await setup(true, async () => null).pipeline.prepare(
       parseDubParams({ videoId: 'vid_1', translationId: 'doc_t', separateBackground: true }),
       { retry: false },
     );
     expect(none.params).toMatchObject({ separatorId: null, separatorModel: null });
 
-    // 原声不动：分出来的两轨没有地方用，要求了也不分离、不选模型包。
+    // Original kept as-is: the two separated tracks would have nowhere to be used, so even if requested, do not separate and do not choose a model pack.
     asked.length = 0;
     const keep = await pipeline.prepare(
       parseDubParams({ videoId: 'vid_1', translationId: 'doc_t', originalAudio: 'keep', separateBackground: true }),
@@ -254,9 +254,9 @@ describe('配音在序列上的起点', () => {
   it('拆成粗帧与一帧之内的余数（约分）', () => {
     expect(audioStart(0, { num: 30, den: 1 })).toEqual({ fromFrame: 0, subframeOffset: { ticks: '0', timescale: 1 } });
     expect(audioStart(1_500_000, { num: 30, den: 1 })).toEqual({ fromFrame: 45, subframeOffset: { ticks: '0', timescale: 1 } });
-    // 1.01 秒 @ 30 fps：第 30 帧，余 0.01 秒。
+    // 1.01 seconds @ 30 fps: frame 30, with 0.01 seconds left over.
     expect(audioStart(1_010_000, { num: 30, den: 1 })).toEqual({ fromFrame: 30, subframeOffset: { ticks: '1', timescale: 100 } });
-    // 29.97 fps：1 秒落在第 29 帧，余 1 − 29·1001/30000 秒。
+    // 29.97 fps: 1 second falls on frame 29, with 1 − 29·1001/30000 seconds left over.
     const start = audioStart(1_000_000, { num: 30_000, den: 1001 });
     expect(start.fromFrame).toBe(29);
     expect(Number(start.subframeOffset.ticks) / start.subframeOffset.timescale).toBeCloseTo(1 - (29 * 1001) / 30_000, 9);
@@ -277,7 +277,7 @@ describe('应用配音的事务：原声与分离出的两轨', () => {
     timeMap,
     embeddedAudio: { enabled, volume },
   });
-  // item_v：分离的那份素材（视频，带声音）；item_a：别的素材上的原句；item_m：分离的素材、配音前已经静音。
+  // item_v: the separated asset (video, with sound); item_a: the original sentence on another asset; item_m: the separated asset, already muted before dubbing.
   const sequence = {
     fps: { num: 30, den: 1 },
     items: [

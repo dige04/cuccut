@@ -1,16 +1,16 @@
 import { shortenPath } from './format.ts';
 
 /*
- * 旧版项目导入询问的纯逻辑（设计稿 model-legacy-import.js；架构设计 §2.7）。询问本身由 Runtime 给出（`legacy-import` 主题），
- * 默认目录也是 Runtime 算的（系统「文稿 / 文档」文件夹下的 `CucCut`）；这一层只算回答发什么、目录怎么写给人看。
+ * Pure logic for the legacy project import prompt (design draft model-legacy-import.js; architecture design §2.7). The prompt itself is given by the Runtime (`legacy-import` topic),
+ * and the default directory is also computed by the Runtime (the `CucCut` folder under the system “Documents” folder); this layer only computes what answer to send and how the directory is written for people to read.
  */
 
-/** 对话框上的两个按钮；关掉对话框按「跳过」算。 */
+/** The two buttons on the dialog; closing the dialog counts as “skip”. */
 export type LegacyImportChoice = 'import' | 'skip';
 
 /**
- * 回答 → 发给 Runtime 的决定。null 表示不发：这次跳过，询问留在 Runtime 里，界面这次启动不再弹、下次启动再问。
- * 勾了「不再提醒」又点「导入」：照常导入——导入之后本来就不会再问。
+ * Answer → decision sent to the Runtime. null means send nothing: this time is skipped, the prompt stays in the Runtime, the UI does not pop it up again this launch, and it asks again on the next launch.
+ * Ticked “不再提醒” and clicked “导入”: import as usual — after importing, it would not ask again anyway.
  */
 export function legacyImportDecision(choice: LegacyImportChoice, never: boolean): 'import' | 'never' | null {
   if (choice === 'import') return 'import';
@@ -18,8 +18,8 @@ export function legacyImportDecision(choice: LegacyImportChoice, never: boolean)
 }
 
 /**
- * 导入目录给人看的写法：macOS 与 Linux 把家目录缩成 `~`；Windows 没有 `~` 的说法，原样写盘符与反斜杠。
- * 都去掉结尾的分隔符（根目录除外）。
+ * How the import directory is written for people to read: macOS and Linux shorten the home directory to `~`; Windows has no `~`, so the drive letter and backslashes are written as they are.
+ * The trailing separator is removed in both cases (except for the root directory).
  */
 export function displayDirectory(dir: string, platform: string): string {
   const trimmed = dir.replace(/[\\/]+$/, '');

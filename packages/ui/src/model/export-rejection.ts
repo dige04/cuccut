@@ -17,7 +17,7 @@ import { tr } from './export-rejection.tr.ts';
 import { vi } from './export-rejection.vi.ts';
 import { refIn, remedyText } from './localized-text.ts';
 
-/** 导出被拒或失败的文案（英文是键与类型的来源，译文在 `export-rejection.zh-Hans.ts`）。Runtime 的原话不经这里。 */
+/** Copy for export rejection or failure (English is the source of keys and types; translations are in `export-rejection.zh-Hans.ts`). The Runtime's own wording does not pass through here. */
 const en = {
   portableReason: {
     missing: 'File not found',
@@ -70,33 +70,33 @@ export type ExportRejectionMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 导出被拒或失败时，界面上说什么、能做什么（架构设计 §9.11 的预检与失败码，Runtime 的 export-service.ts）。
+ * What the UI says and can do when an export is rejected or fails (the preflight and failure codes in architecture design §9.11, and the Runtime's export-service.ts).
  *
- * - 提交时被拒：`exports.create` 抛 RPC 错误，`details.code` 是导出的拒绝码，没有建任务。
- * - 跑到一半失败：任务记录的 `error.code` 是 `TaskFailure` 的码（渲染、校验、发布失败，或只发布了一部分）。
+ * - Rejected at submission: `exports.create` throws an RPC error, `details.code` is the export's rejection code, and no job is created.
+ * - Failed partway through: the job record's `error.code` is the code of a `TaskFailure` (render, validation or publish failure, or only part was published).
  *
- * 两种都整理成同一个形状：一句标题、Runtime 原话、逐项清单、Runtime 给的补救说明（`details.remedy` / `details.recovery`），
- * 以及界面能直接做的那一步（跳过画不出来的内容重提、跳过缺失的素材重提、换个位置、指定一份文档）。
+ * Both are normalized to the same shape: a one-line title, the Runtime's own wording, an itemized list, the Runtime's remedy note (`details.remedy` / `details.recovery`),
+ * and the step the UI can take directly (resubmit skipping what cannot be drawn, resubmit skipping missing assets, choose another location, pick one document).
  */
 
 export type ExportRemedy =
-  /** 成片：`onUnsupported: 'skip'` 重提，画不出来的逐项跳过并记警告。 */
+  /** Final video: resubmit with `onUnsupported: 'skip'`; each item that cannot be drawn is skipped and a warning is logged. */
   | { kind: 'skip-unsupported' }
-  /** 便携包：`missingAssets: 'skip'` 重提，清单里如实标缺失。 */
+  /** Portable package: resubmit with `missingAssets: 'skip'`; missing items are honestly marked in the manifest. */
   | { kind: 'skip-missing-assets' }
-  /** 换一个导出位置。 */
+  /** Choose a different export location. */
   | { kind: 'pick-dir' }
-  /** 有几份文档都能导出：选一份。 */
+  /** Several documents can be exported: choose one. */
   | { kind: 'choose-document'; candidates: { documentId: Id; name: string; language: string | null }[] };
 
 export interface ExportProblem {
   code: string | null;
   title: string;
-  /** Runtime 的原话。 */
+  /** The Runtime's own wording. */
   message: string;
-  /** 逐项：画不出来的内容、读不到的素材、没保存成的文件…… */
+  /** Itemized: content that cannot be drawn, assets that cannot be read, files that were not saved, ... */
   items: string[];
-  /** Runtime 给的补救说明（原话）。 */
+  /** The Runtime's remedy note (verbatim). */
   hint: string | null;
   remedy: ExportRemedy | null;
 }
@@ -111,7 +111,7 @@ const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'obje
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
 const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.map(record) : []);
 
-/** 提交时 RPC 错误的拒绝码在 `details.code`；任务失败的码在 `error.code`。 */
+/** For a submission-time RPC error, the rejection code is in `details.code`; for a failed job, the code is in `error.code`. */
 export function exportErrorCode(error: unknown): string | null {
   const e = record(error);
   return text(record(e.details).code) ?? (typeof e.code === 'string' && /^[A-Z_]+$/.test(e.code) ? e.code : null);
@@ -121,12 +121,12 @@ const PORTABLE_REASON: Record<string, string> = live(() => M.portableReason);
 
 const TITLES: Record<string, string> = live(() => M.titles);
 
-/** 资源准入缺的维度（架构设计 §7.7，Runtime 的 `ResourceDimension`）。 */
+/** The resource-admission dimension that is missing (architecture design §7.7, the Runtime's `ResourceDimension`). */
 const RESOURCE_LABEL: Record<string, string> = live(() => M.resources);
 
 export interface ExplainContext {
   kind: ExportKind;
-  /** 是提交时被拒（还没建任务）还是任务失败。 */
+  /** Whether it was rejected at submission (no job created yet) or the job failed. */
   stage: 'rejected' | 'failed';
   documents?: Record<Id, DocumentRecord>;
 }
@@ -136,9 +136,9 @@ export function explainExportError(error: ErrorLike | unknown, ctx: ExplainConte
   const details = record(e.details);
   const code = exportErrorCode(error);
   const message = localizeText(text(e.message), refIn(e.messageRef)) ?? '';
-  // Runtime 的补救说明（`remedyRef`）与引擎的（`recoveryRef`）带引用，按当前语言显示。
+  // The Runtime's remedy note (`remedyRef`) and the engine's (`recoveryRef`) carry references and are shown in the current language.
   const hint = remedyText(details) ?? text(localizeText(text(details.recovery), refIn(details.recoveryRef)));
-  // 任务失败（TaskFailure）时没保存成的文件逐个列在 `details.failed`。
+  // When a job fails (TaskFailure), each file that was not saved is listed individually in `details.failed`.
   const failed = list(details.failed).map((f) => {
     const problems = Array.isArray(f.problems) ? (f.problems as unknown[]).filter((p) => typeof p === 'string').join(M.problemSeparator) : '';
     const fileName = text(f.fileName);

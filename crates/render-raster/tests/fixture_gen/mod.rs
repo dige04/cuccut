@@ -1,27 +1,23 @@
-//! `core/fixtures/animated/` 的**生成端**：程序合成的极小 GIF / APNG /
-//! 动画 WebP（都是 8×8），逐帧颜色、逐帧时长、disposal 与 loop count 全部写死。
+//! The **generator** for `core/fixtures/animated/`: tiny programmatically synthesized GIF / APNG / animated WebP (all 8×8), with per-frame colour, per-frame duration, disposal and loop count all hard-coded.
 //!
-//! 为什么不像 `core/fixtures/gen.sh` 那样用 ffmpeg：那条路给不了逐帧 disposal
-//! 与 loop count 的精确控制，而这两项正是 §7 要求"保留"的东西。用 crate 生成
-//! 还有个好处——夹具能在测试里**当场重算**，`animated_fixtures_are_up_to_date`
-//! 因此是一条真门禁，而不是"跑一次脚本然后祈祷"。
+//! Why not use ffmpeg as `core/fixtures/gen.sh` does: that route cannot give precise control of per-frame disposal and loop count, and those two are exactly what §7 requires to be “preserved”. Generating with a crate has another benefit: the fixtures can be **recomputed on the spot** in tests, so `animated_fixtures_are_up_to_date` is a real gate, rather than “run a script and hope”.
 
 use std::io::Cursor;
 
-/// stripes.gif 的四帧颜色（RGB）
+/// Colours of the four frames of stripes.gif (RGB)
 pub const STRIPE_COLOURS: [[u8; 3]; 4] = [
     [0xe0, 0x20, 0x20],
     [0x20, 0xc0, 0x20],
     [0x20, 0x40, 0xe0],
     [0xf0, 0xd0, 0x00],
 ];
-/// stripes.gif 的四条 delay（GIF 的 10ms 单位）→ 100 / 200 / 300 / 400 ms
+/// The four delays of stripes.gif (in GIF's 10 ms units) → 100 / 200 / 300 / 400 ms
 pub const STRIPE_DELAYS_CS: [u16; 4] = [10, 20, 30, 40];
 
 const W: u16 = 8;
 const H: u16 = 8;
 
-/// 全部夹具（文件名 → 字节）。顺序固定，`expected.json` 的键序依赖它。
+/// All fixtures (file name → bytes). The order is fixed; the key order of `expected.json` depends on it.
 pub fn fixtures() -> Vec<(String, Vec<u8>)> {
     vec![
         (
@@ -36,7 +32,7 @@ pub fn fixtures() -> Vec<(String, Vec<u8>)> {
 
 // ── GIF ─────────────────────────────────────────────────────────────
 
-/// 四帧整幅纯色，逐帧 delay 不同，全部 `DisposalMethod::Any`。
+/// Four full-frame solid colours, each frame with a different delay, all `DisposalMethod::Any`.
 pub fn stripes_gif(colours: [[u8; 3]; 4], delays_cs: [u16; 4], repeat: gif::Repeat) -> Vec<u8> {
     let palette: Vec<u8> = colours.iter().flatten().copied().collect();
     let mut out = Vec::new();
@@ -59,17 +55,16 @@ pub fn stripes_gif(colours: [[u8; 3]; 4], delays_cs: [u16; 4], repeat: gif::Repe
     out
 }
 
-/// disposal 语义的取证夹具，loop count 有限（2 遍）：
-/// 帧 0 整幅红 `Keep` → 帧 1 中间 4×4 绿块（红底透出）`Background`
-/// → 帧 2 左上 4×4 蓝块（红底已被抹掉，画布透明）。
+/// Forensic fixture for disposal semantics, with a finite loop count (2 passes):
+/// frame 0 is full-frame red, `Keep` → frame 1 has a 4×4 green block in the middle (red base shows through), `Background`
+/// → frame 2 has a 4×4 blue block at top-left (the red has been cleared, canvas transparent).
 pub fn disposal_gif() -> Vec<u8> {
-    // 调色板第 3 项留作透明色（GIF 需要一个索引承载"透明"，本夹具用不到
-    // 局部透明，但保留它让调色板长度是 4 的幂次，避免编码器补位差异）
+    // Palette entry 3 is reserved as the transparent colour (GIF needs an index to carry “transparent”; this fixture does not use partial transparency, but keeping it makes the palette length a power of 4, avoiding encoder padding differences)
     let palette: Vec<u8> = vec![
-        0xe0, 0x20, 0x20, // 0 红
-        0x20, 0xc0, 0x20, // 1 绿
-        0x20, 0x40, 0xe0, // 2 蓝
-        0x00, 0x00, 0x00, // 3 占位
+        0xe0, 0x20, 0x20, // 0 red
+        0x20, 0xc0, 0x20, // 1 green
+        0x20, 0x40, 0xe0, // 2 blue
+        0x00, 0x00, 0x00, // 3 placeholder
     ];
     let mut out = Vec::new();
     {
@@ -114,8 +109,8 @@ pub fn disposal_gif() -> Vec<u8> {
 
 // ── APNG ────────────────────────────────────────────────────────────
 
-/// 三帧整幅纯色，分数延时（1/25、1/10、3/50 秒 → 40 / 100 / 60 ms），
-/// `num_plays = 1`（有限循环）。
+/// Three full-frame solid colours with fractional delays (1/25, 1/10, 3/50 s → 40 / 100 / 60 ms),
+/// `num_plays = 1` (finite loop).
 pub fn pulse_apng() -> Vec<u8> {
     const COLOURS: [[u8; 4]; 3] = [
         [0x00, 0xc8, 0xd0, 0xff],
@@ -149,7 +144,7 @@ pub fn pulse_apng() -> Vec<u8> {
     out
 }
 
-/// 静态 PNG（拒绝路径用）。
+/// Static PNG (for the rejection path).
 pub fn static_png() -> Vec<u8> {
     let mut out = Vec::new();
     {
@@ -165,13 +160,11 @@ pub fn static_png() -> Vec<u8> {
     out
 }
 
-// ── 动画 WebP ───────────────────────────────────────────────────────
+// ── Animated WebP ───────────────────────────────────────────────────────
 
-/// 三帧整幅纯色，delay 50 / 100 / 150 ms，无限循环。
+/// Three full-frame solid colours, delays 50 / 100 / 150 ms, infinite loop.
 ///
-/// `image` 只有**静态**无损 WebP 编码器，所以这里逐帧编成独立的无损 WebP、
-/// 抠出各自的 `VP8L` 子块，再按 RIFF 规范手工装配 `VP8X` + `ANIM` + `ANMF`
-/// 容器。装配是几十行纯字节拼接，比引入一个 C 依赖划算得多。
+/// `image` only has a **static** lossless WebP encoder, so here each frame is encoded as a separate lossless WebP, its `VP8L` sub-chunk is extracted, and then the `VP8X` + `ANIM` + `ANMF` container is assembled by hand per the RIFF spec. The assembly is a few dozen lines of plain byte concatenation, far cheaper than adding a C dependency.
 pub fn wave_webp() -> Vec<u8> {
     const COLOURS: [[u8; 4]; 3] = [
         [0x20, 0x80, 0xff, 0xff],
@@ -181,12 +174,12 @@ pub fn wave_webp() -> Vec<u8> {
     const DELAYS_MS: [u32; 3] = [50, 100, 150];
 
     let mut body = Vec::new();
-    // VP8X：仅置 ANIMATION 位（0x02），canvas 尺寸按"减一"编码
+    // VP8X: only the ANIMATION bit (0x02) is set; the canvas size is encoded as “minus one”
     let mut vp8x = vec![0x02u8, 0, 0, 0];
     vp8x.extend_from_slice(&u24(W as u32 - 1));
     vp8x.extend_from_slice(&u24(H as u32 - 1));
     body.extend_from_slice(&chunk(b"VP8X", &vp8x));
-    // ANIM：背景色 BGRA + loop_count（0 = 无限）
+    // ANIM: background colour BGRA + loop_count (0 = infinite)
     let mut anim = vec![0u8, 0, 0, 0];
     anim.extend_from_slice(&0u16.to_le_bytes());
     body.extend_from_slice(&chunk(b"ANIM", &anim));
@@ -202,12 +195,12 @@ pub fn wave_webp() -> Vec<u8> {
         image::codecs::webp::WebPEncoder::new_lossless(&mut still)
             .encode(&rgba, W as u32, H as u32, image::ExtendedColorType::Rgba8)
             .expect("无损 WebP 编码");
-        // "RIFF" + size + "WEBP" 之后就是单个 VP8L 子块，整块搬进 ANMF
+        // After "RIFF" + size + "WEBP" comes a single VP8L sub-chunk; the whole chunk is moved into ANMF
         let vp8l = &still[12..];
         assert_eq!(&vp8l[..4], b"VP8L", "静态 WebP 应当只有一个 VP8L 子块");
 
         let mut anmf = Vec::new();
-        anmf.extend_from_slice(&u24(0)); // frame_x（2 像素单位）
+        anmf.extend_from_slice(&u24(0)); // frame_x (in units of 2 pixels)
         anmf.extend_from_slice(&u24(0)); // frame_y
         anmf.extend_from_slice(&u24(W as u32 - 1));
         anmf.extend_from_slice(&u24(H as u32 - 1));
@@ -225,7 +218,7 @@ pub fn wave_webp() -> Vec<u8> {
     out
 }
 
-/// RIFF 子块：fourcc + 小端长度 + 载荷（奇数长度补一个 0 字节）。
+/// RIFF sub-chunk: fourcc + little-endian length + payload (odd lengths are padded with one 0 byte).
 fn chunk(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(payload.len() + 9);
     out.extend_from_slice(fourcc);
@@ -237,7 +230,7 @@ fn chunk(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// WebP 的 24 位小端整数。
+/// A 24-bit little-endian integer as used in WebP.
 fn u24(v: u32) -> [u8; 3] {
     [v as u8, (v >> 8) as u8, (v >> 16) as u8]
 }

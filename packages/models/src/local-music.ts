@@ -7,21 +7,19 @@ import type { BundleDefinition, MusicBundleProfile } from './bundle-registry.ts'
 import { MUSIC_OUTPUT_FILE } from './worker-contract.ts';
 
 /**
- * 本地音乐生成（架构设计 §6.1、§6.3）：模型包的描述、提交时冻结的 seed，与冻结参数到 audio.cpp 引擎命令行的换算。
- * 引擎（`audiocpp_cli`）每个任务起一个进程，读模型包目录里的 GGUF，把 WAV 写进 staging；没有 Model Worker 参与。
+ * Local music generation (architecture design §6.1, §6.3): the model pack description, the seed frozen at submission, and the conversion from frozen parameters to the audio.cpp engine command line.
+ * The engine (`audiocpp_cli`) starts one process per task, reads the GGUF in the model pack directory, and writes a WAV into staging. No Model Worker is involved.
  */
 
 export type MusicParameters = Extract<GenerationParameters, { capability: 'generateMusic' }>;
 
-/** 引擎可执行文件的环境变量：给了就只用它（开发时指向自己构建或下载的 `audiocpp_cli`；目录的 `engineOverride`），不看 PATH。 */
+/** Environment variable for the engine executable: when given, it is used exclusively (for development, point to your own build or downloaded `audiocpp_cli`; the directory's `engineOverride`), and PATH is ignored. */
 export const AUDIO_CPP_CLI_ENV = 'CUCCUT_AUDIOCPP_CLI';
-/** 引擎后端的环境变量（`metal` / `cuda` / `vulkan` / `cpu`）：不给时由引擎按构建自己选。 */
+/** Environment variable for the engine backend (`metal` / `cuda` / `vulkan` / `cpu`): when not given, the engine chooses according to its build. */
 export const AUDIO_CPP_BACKEND_ENV = 'CUCCUT_AUDIOCPP_BACKEND';
 
 /**
- * `generateMusic` 的模型描述：歌曲与纯音乐、只出 WAV、接受 seed 与步数；上限来自模型包登记的特性。`engine` 是引擎组件的可执行
- * 文件（`ModelCatalog.engineExecutable`；没装时 null，模型整体不可用，`unavailableReason` 由调用方给）。引擎是模型包的必需组件，
- * 没装的说明就是模型包状态的 `detail`。
+ * The model description for `generateMusic`: songs and instrumental tracks, WAV output only, accepts seed and steps. Limits come from the features the model pack registers. `engine` is the engine component's executable (`ModelCatalog.engineExecutable`; null when not installed, in which case the model is entirely unavailable, and the caller supplies `unavailableReason`). The engine is a required component of the model pack; when it is not installed, the explanation is the `detail` of the model pack's status.
  */
 export function localMusicModelInfo(def: BundleDefinition, status: ModelBundleStatus, usable: boolean, engine: string | null): MusicModelInfo {
   const profile = def.music!;
@@ -56,30 +54,28 @@ export function localMusicModelInfo(def: BundleDefinition, status: ModelBundleSt
 }
 
 /**
- * 本地音乐的 seed 在提交时冻结：请求没给时在这里抽一个（`0..2^32-1`）。重试与重新执行用同一个，同一台机器上得到同一段。
+ * The music seed is frozen at submission: if the request doesn't give one, one is drawn here (`0..2^32-1`). Retries and re-runs use the same one, so on the same machine they produce the same piece.
  */
 export function localMusicSeed(seed: number | undefined | null): number {
   return seed ?? randomInt(0, 2 ** 32);
 }
 
-/** `maxDurationSec` → 引擎的语义 token 上限（整数，至少 1）。 */
+/** `maxDurationSec` → the engine's semantic token limit (integer, at least 1). */
 export function semanticMaxTokens(maxDurationSec: number, profile: Pick<MusicBundleProfile, 'semanticTokensPerSec'>): number {
   return Math.max(1, Math.round(maxDurationSec * profile.semanticTokensPerSec));
 }
 
 export interface MusicEngineRun {
-  /** 引擎的命令行参数（不含可执行文件）。 */
+  /** Engine command-line arguments (excluding the executable). */
   args: string[];
-  /** 输出文件（绝对路径，在 staging 里）。 */
+  /** Output file (absolute path, in staging). */
   output: string;
-  /** 交给引擎的 token 上限（判断有没有撞上限）。 */
+  /** Token limit passed to the engine (used to tell whether it hit the limit). */
   semanticMaxTokens: number;
 }
 
 /**
- * 冻结的参数 → audio.cpp 引擎的命令行（上游 `audiocpp_cli --task gen --family yue2`）。纯音乐是空歌词；编排是 `cot`；时长没有直接的
- * 参数，按语义帧率换成 `semantic_max_tokens`。步数取冻结的 `steps`，没有时取调用方给的（模型包自检用少步数出一小段），都没有时
- * 不传（引擎用默认值）。`backend` 不给时由引擎按构建自己选。
+ * Frozen parameters → audio.cpp engine command line (upstream `audiocpp_cli --task gen --family yue2`). Instrumental tracks use empty lyrics; arrangement is `cot`. There is no direct duration parameter, so duration is converted to `semantic_max_tokens` by the semantic frame rate. Steps take the frozen `steps`; if absent, take the caller's value (the model-pack self-test uses few steps for a short clip); if neither, do not pass it (the engine uses its default). If `backend` is not given, the engine chooses according to its build.
  */
 export function musicEngineRunOf(
   parameters: MusicParameters,
@@ -108,7 +104,7 @@ export function musicEngineRunOf(
     '--request-option',
     `semantic_max_tokens=${tokens}`,
     ...(steps !== null ? ['--request-option', `num_inference_steps=${steps}`] : []),
-    // 引擎要求 GGUF 的路径相对于 `--model` 给的模型根（绝对路径被拒：`yue2.model_gguf must be relative to the Yue2 model root`）。
+    // The engine requires the GGUF path to be relative to the model root given by `--model` (absolute paths are rejected: `yue2.model_gguf must be relative to the Yue2 model root`).
     '--session-option',
     `${profile.family}.model_gguf=${profile.files.model}`,
     '--session-option',

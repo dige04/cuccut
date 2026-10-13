@@ -22,8 +22,7 @@ import { MODEL_WORKER_DEMAND, modelWorkerHolder, type ResourceReserves } from '.
 import { ResourceScheduler } from './resource-scheduler.ts';
 
 /**
- * JobManager 经资源调度（架构设计 §7.6、§7.7）准入，对着假的 Model Worker 跑：等待原因、超过容量的拒绝、取消与崩溃时
- * 租约不泄漏也不提前归还、空闲的 Model Worker 让位。容量是注入的假值：内存 1.5 GiB、不留预留，正好放得下一个 Model Worker。
+ * JobManager admits through resource scheduling (architecture design §7.6, §7.7), run against a fake Model Worker: wait reasons, rejection beyond capacity, cancellation and crashes without leases leaking or being returned early, and an idle Model Worker yielding. Capacity is injected fake values: 1.5 GiB of memory, no reservation, exactly enough for one Model Worker.
  */
 
 const MiB = 1024 * 1024;
@@ -126,7 +125,7 @@ function alive(pid: number): boolean {
   }
 }
 
-/** 可以从外面结束的任务。 */
+/** Jobs that can be ended from outside. */
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => {
@@ -142,9 +141,9 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
   let scheduler: ResourceScheduler;
   let manager: JobManager;
   let events: JobRecord[];
-  /** 进程持有的份额归还时，那个进程是否还活着（每个进程一条）。 */
+  /** Whether the process that holds a share is still alive when the share is returned (one per process). */
   let releasedWhileAlive: boolean[];
-  /** 测试里此刻唯一的 Model Worker 进程号（归还时检查它）。 */
+  /** The only Model Worker process ID in the test at this moment (checked on return). */
   let currentPid: number | null;
 
   async function start(
@@ -199,7 +198,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
   const submit = (bundleId = 'fake@cpu') =>
     manager.submitTranscribe({ videoId: 'mov_1', assetId: 'ast_1', bundleId }, { kind: 'connection', id: 'conn_1' });
 
-  /** 不经模型的任务：`gate` 兑现前一直运行。 */
+  /** A job not going through a model: runs until `gate` fulfills. */
   const task = (gate: Promise<void>, patch: Partial<TaskSubmission> = {}) =>
     manager.submitTask(
       {
@@ -249,7 +248,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(waiting).toMatchObject({ state: 'queued', wait: { reason: 'resources', dimensions: ['memory'], ahead: 0 } });
     expect(waiting.wait!.detail).toContain('内存');
     expect(events.some((e) => e.jobId === b.jobId && e.wait?.reason === 'resources')).toBe(true);
-    // c 的队列没满，排在等内存的 b 后面：同样算等资源。
+    // c's queue is not full, but it sits behind b, which waits for memory: also counts as waiting for resources.
     expect(manager.inspect(c.jobId).wait).toMatchObject({ reason: 'resources', dimensions: ['memory'], ahead: 1 });
     expect(scheduler.snapshot().waiting.map((w) => w.owner)).toEqual([b.jobId, c.jobId]);
 
@@ -263,7 +262,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await manager.settled(c.jobId);
     expect(manager.inspect(c.jobId)).toMatchObject({ state: 'completed' });
     expect(manager.inspect(c.jobId).wait).toBeUndefined();
-    // 租约在执行（含收尾）结束之后归还，可能晚于终态。
+    // The lease is returned after execution (including cleanup) ends, possibly later than the terminal state.
     await until(() => scheduler.outstanding === 0);
   });
 
@@ -344,10 +343,10 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
       await until(() => scheduler.outstanding === 0);
       return demand;
     };
-    // 对齐器没装：只有 300 MiB 的必需组件，加 1 GiB，计在内存、不占 GPU 内存（这台机器只有 1.5 GiB）。
+    // Aligner not installed: only the 300 MiB of required components, plus 1 GiB, counted in memory and not in GPU memory (this machine has only 1.5 GiB).
     expect(await catalog.workerWeightBytes('fake@cpu')).toBe(300 * MiB);
     expect(await holderDemand()).toEqual({ ...MODEL_WORKER_DEMAND, memory: 1 * GiB + 300 * MiB, gpuMemory: 0 });
-    // 装上之后的提交把它算进去。
+    // The submission after installation counts it.
     await writeRepo(path.join(dir, 'models'), 'test/aligner', 'r-aligner');
     expect(await catalog.workerWeightBytes('fake@cpu')).toBe(450 * MiB);
     expect(await holderDemand()).toEqual({ ...MODEL_WORKER_DEMAND, memory: 1 * GiB + 450 * MiB, gpuMemory: 0 });
@@ -368,7 +367,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     const { jobId } = await submit(bundleId);
     currentPid = await until(() => manager.inspect(jobId).phase === 'transcribing' && provider.workerPid(bundleId));
     const cancelled = manager.cancel(jobId);
-    // 取消发出了，进程还活着：租约与 holder 都还在。
+    // Cancellation sent, process still alive: the lease and the holder are both still there.
     expect(scheduler.snapshot().leases.map((l) => l.owner)).toEqual([jobId]);
     expect(scheduler.snapshot().holders).toMatchObject([{ holder: modelWorkerHolder(bundleId), processes: 1 }]);
     expect(await cancelled).toEqual({ state: 'cancelled' });
@@ -395,7 +394,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     currentPid = provider.workerPid(bundleId);
     await provider.unload(bundleId);
     await until(() => scheduler.outstanding === 0);
-    // 崩溃的那个进程退出时也归还了它的一份（那时它已经不在了）。
+    // The crashed process returned its share when it exited (by then it was already gone).
     expect(releasedWhileAlive).toEqual([false, false]);
   });
 
@@ -409,7 +408,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     const snapshot = scheduler.snapshot();
     expect(snapshot.leases).toEqual([]);
     expect(snapshot.holders).toMatchObject([{ holder: modelWorkerHolder(bundleId), users: 0, processes: 1 }]);
-    // 加载在后台完成，进程留着；卸载之后才归还。
+    // Loading completes in the background and the process stays; it is returned only after unloading.
     currentPid = await until(() => provider.workerPid(bundleId));
     await provider.unload(bundleId);
     await until(() => scheduler.outstanding === 0);
@@ -424,7 +423,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     const second = await submit('other@cpu');
     await manager.settled(second.jobId);
     expect(manager.inspect(second.jobId).state).toBe('completed');
-    // 第二个任务等过内存（容量只放得下一个 Model Worker），等到第一个进程退出。
+    // The second job waited for memory (capacity fits only one Model Worker), until the first process exits.
     expect(events.some((e) => e.jobId === second.jobId && e.wait?.reason === 'resources')).toBe(true);
     expect(releasedWhileAlive[0]).toBe(false);
     expect(alive(currentPid)).toBe(false);
@@ -447,7 +446,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await start();
     const running = await submit('fake@cpu#slow');
     await until(() => manager.inspect(running.jobId).phase === 'transcribing');
-    // 另一个模型包的 Model Worker 放不下（正在用的那个不能让位）。
+    // A Model Worker for another model package does not fit (the one in use cannot yield).
     const queued = await submit('other@cpu');
     expect(manager.inspect(queued.jobId).wait).toMatchObject({ reason: 'resources', dimensions: ['memory'] });
     await manager.shutdown();

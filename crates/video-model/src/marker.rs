@@ -1,4 +1,4 @@
-//! 序列上的标记（视频格式规范 §3.13）。章节是 `kind: 'chapter'` 的标记。
+//! Markers on a sequence (video format spec §3.13). Chapters are markers with `kind: 'chapter'`.
 
 use serde::{Deserialize, Serialize};
 
@@ -8,18 +8,18 @@ use crate::{Id, VersionRef};
 #[serde(rename_all = "camelCase")]
 pub struct Marker {
     pub id: Id,
-    /// 序列帧。固定在序列时间上，不跟着实例移动。
+    /// Sequence frame. Fixed to sequence time; does not move with instances.
     pub frame: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_frames: Option<i64>,
-    /// 标记的文字；章节的标题。
+    /// The marker's text; the chapter's title.
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<MarkerKind>,
-    /// 章节的简介。
+    /// The chapter's description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// 章节的缩略图：一个图片素材版本。省略时界面用章节开始那一帧的画面。
+    /// The chapter's thumbnail: an image material version. When omitted, the UI uses the picture of the frame where the chapter starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbnail: Option<VersionRef>,
 }

@@ -1,17 +1,16 @@
-//! 真峰值（4× 过采样）与前瞻限幅器。
+//! True peak (4× oversampling) and a look-ahead limiter.
 //!
-//! 过采样用 Kaiser 窗 sinc 插值：每个相位（1/4、1/2、3/4）32 个抽头（前后各 16），
-//! β = 8，截止在原奈奎斯特，每个相位的直流增益各自归一到 1。整数相位就是原样本本身。
-//! 第 `i` 组 = 原样本 `i` 与它后面三个插值点，组内取绝对值最大（参考工程 `resample_poly`
-//! 之后 `reshape(-1, 4).max` 同口径）。
+//! Oversampling uses Kaiser-windowed sinc interpolation: 32 taps per phase (1/4, 1/2, 3/4) (16 on each side),
+//! β = 8, cutoff at the original Nyquist, with each phase's DC gain normalized to 1 separately. The integer phase is the original sample itself.
+//! Group `i` = original sample `i` and the three interpolated points after it; within the group, take the largest absolute value (the same convention as the reference project's `reshape(-1, 4).max` after `resample_poly`).
 
 use crate::math::{db_to_gain, gain_to_db, samples};
 use crate::stereo::Stereo;
 
 const HALF: usize = 16;
 
-/// [`oversampled_peaks`] 第 `i` 个值只看 `x[i − HALF + 1 ..= i + HALF]`：分窗处理整片时，
-/// 每侧多带这么多采样的上下文，窗内结果就与整条信号一次算逐位相同。
+/// The `i`-th value of [`oversampled_peaks`] only looks at `x[i − HALF + 1 ..= i + HALF]`. When a whole piece is processed in windows,
+/// each side carries this many samples of context, so the results within a window are bit-identical to computing over the whole signal at once.
 pub const PEAK_CONTEXT: usize = HALF;
 const BETA: f64 = 8.0;
 
@@ -29,7 +28,7 @@ fn bessel_i0(x: f64) -> f64 {
     sum
 }
 
-/// 三个分数相位的插值抽头：`taps[p][k]` 乘以 `x[i + k − HALF + 1]`，得到 `i + (p+1)/4` 处的值。
+/// Interpolation taps for the three fractional phases: `taps[p][k]` multiplied by `x[i + k − HALF + 1]` gives the value at `i + (p+1)/4`.
 fn phase_taps() -> [[f64; 2 * HALF]; 3] {
     let mut taps = [[0.0; 2 * HALF]; 3];
     let i0b = bessel_i0(BETA);
@@ -37,7 +36,7 @@ fn phase_taps() -> [[f64; 2 * HALF]; 3] {
         let frac = (p + 1) as f64 / 4.0;
         let mut sum = 0.0;
         for (k, t) in row.iter_mut().enumerate() {
-            // 抽头 k 对应的原样本相对插值点的距离。
+            // Distance from the interpolation point to the original sample for tap k.
             let d = (k as f64 - HALF as f64 + 1.0) - frac;
             let sinc = if d == 0.0 {
                 1.0
@@ -60,10 +59,10 @@ fn phase_taps() -> [[f64; 2 * HALF]; 3] {
     taps
 }
 
-/// 每个原样本位置（含其后三个插值点）的绝对值峰（线性）。
+/// Absolute-value peak (linear) at each original sample position (including the three interpolated points after it).
 pub fn oversampled_peaks(x: &[f32]) -> Vec<f64> {
     let taps = phase_taps();
-    // 两端补零，内层循环就是定长切片点积。
+    // Zero-pad both ends so the inner loop is a fixed-length slice dot product.
     let mut padded = vec![0.0f64; x.len() + 2 * HALF];
     for (p, v) in padded[HALF..].iter_mut().zip(x) {
         *p = *v as f64;
@@ -71,7 +70,7 @@ pub fn oversampled_peaks(x: &[f32]) -> Vec<f64> {
     (0..x.len())
         .map(|i| {
             let mut m = (x[i] as f64).abs();
-            // 抽头 k 乘 x[i + k − HALF + 1] = padded[i + k + 1]。
+            // Tap k multiplies x[i + k − HALF + 1] = padded[i + k + 1].
             let win = &padded[i + 1..i + 1 + 2 * HALF];
             for row in &taps {
                 let v: f64 = row.iter().zip(win).map(|(t, s)| t * s).sum();
@@ -82,7 +81,7 @@ pub fn oversampled_peaks(x: &[f32]) -> Vec<f64> {
         .collect()
 }
 
-/// 多声道真峰值（线性）。
+/// Multi-channel true peak (linear).
 pub fn true_peak(chans: &[&[f32]]) -> f64 {
     chans
         .iter()
@@ -90,18 +89,18 @@ pub fn true_peak(chans: &[&[f32]]) -> f64 {
         .fold(0.0, f64::max)
 }
 
-/// 多声道真峰值（dBTP）。
+/// Multi-channel true peak (dBTP).
 pub fn true_peak_db(chans: &[&[f32]]) -> f64 {
     gain_to_db(true_peak(chans))
 }
 
-/// 限幅器参数。
+/// Limiter parameters.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Limiter {
     pub ceiling_db: f64,
-    /// 平滑窗（秒），须小于 `hold`。
+    /// Smoothing window (seconds); must be less than `hold`.
     pub look: f64,
-    /// 保持窗（秒），居中：既往前看 `hold/2`，也保持 `hold/2`。
+    /// Hold window (seconds), centered: it looks ahead `hold/2`, and also holds for `hold/2`.
     pub hold: f64,
 }
 
@@ -115,7 +114,7 @@ impl Default for Limiter {
     }
 }
 
-/// 居中滑动最小值（窗 `2·half + 1`，边界处只看界内）。单调队列，O(n)。
+/// Centered sliding minimum (window `2·half + 1`; at the edges only in-bounds samples are considered). Monotonic queue, O(n).
 fn min_filter(g: &[f64], half: usize) -> Vec<f64> {
     let n = g.len();
     let mut out = vec![0.0; n];
@@ -139,7 +138,7 @@ fn min_filter(g: &[f64], half: usize) -> Vec<f64> {
     out
 }
 
-/// 居中滑动平均（窗 `2·half + 1`，边界处取界内均值）。
+/// Centered sliding average (window `2·half + 1`; at the edges, the average of in-bounds samples).
 fn box_filter(g: &[f64], half: usize) -> Vec<f64> {
     let n = g.len();
     let mut prefix = vec![0.0f64; n + 1];
@@ -154,15 +153,15 @@ fn box_filter(g: &[f64], half: usize) -> Vec<f64> {
         .collect()
 }
 
-/// [`limiter_gain`] 第 `i` 个值依赖的输入半径（采样）：保持窗半宽 + 平均窗半宽 + 过采样上下文。
-/// 分窗限幅时每侧带这么多上下文，窗内增益与整条信号一次算逐位相同。
+/// Input radius (in samples) that the `i`-th value of [`limiter_gain`] depends on: half the hold window + half the average window + the oversampling context.
+/// When limiting in windows, each side carries this much context, so the gain within a window is bit-identical to computing over the whole signal at once.
 pub fn limiter_context(sr: f64, lim: Limiter) -> usize {
     let hold = samples(lim.hold, sr) / 2;
     hold + (samples(lim.look, sr) / 2).min(hold) + PEAK_CONTEXT
 }
 
-/// 限幅增益曲线：所需增益 `min(1, ceiling / tp[i])` → 居中最小值（hold）→ 居中平均（look）。
-/// 平均窗比最小值窗短，所以平均后的每个值都不高于该样本所需的增益。
+/// Limiter gain curve: required gain `min(1, ceiling / tp[i])` → centered minimum (hold) → centered average (look).
+/// The average window is shorter than the minimum window, so every averaged value is no higher than the gain that sample requires.
 pub fn limiter_gain(chans: &[&[f32]], sr: f64, lim: Limiter) -> Vec<f64> {
     let n = chans.iter().map(|c| c.len()).min().unwrap_or(0);
     if n == 0 {
@@ -186,20 +185,20 @@ pub fn limiter_gain(chans: &[&[f32]], sr: f64, lim: Limiter) -> Vec<f64> {
     )
 }
 
-/// 就地限幅立体声。单遍不保证插值峰也压住（增益曲线本身会改变插值），母带链跑三遍再静态兜底。
+/// Limits the stereo signal in place. A single pass does not guarantee that interpolated peaks are also held down (the gain curve itself changes the interpolation), so the mastering chain runs three passes, then a static fallback.
 pub fn limit(x: &mut Stereo, sr: f64, lim: Limiter) {
     let g = limiter_gain(&x.channels(), sr, lim);
     let g: Vec<f32> = g.into_iter().map(|v| v as f32).collect();
     x.apply_gain(&g);
 }
 
-/// 静态兜底：真峰值高于上限时整体降到上限。返回施加的增益（dB，≤ 0）。
+/// Static fallback: when the true peak exceeds the ceiling, the whole signal is lowered to the ceiling. Returns the applied gain (dB, ≤ 0).
 pub fn trim_to_ceiling(x: &mut Stereo, ceiling_db: f64) -> f64 {
     let tp = true_peak_db(&x.channels());
     if tp <= ceiling_db {
         return 0.0;
     }
-    // 多留 0.001 dB，免得 f32 舍入把结果推回上限之上。
+    // Leave an extra 0.001 dB of margin so f32 rounding does not push the result back above the ceiling.
     let g = ceiling_db - tp - 0.001;
     x.scale(db_to_gain(g));
     g
@@ -220,7 +219,7 @@ mod tests {
             .collect();
         let sample_peak = gain_to_db(crate::stereo::peak(&x));
         assert!((sample_peak + 3.01).abs() < 0.02, "{sample_peak}");
-        // 取中段：信号在两端被硬截断，截断处的吉布斯过冲不是被测对象。
+        // Measure the middle section: the signal is hard-truncated at both ends, and the Gibbs overshoot at those cuts is not what is being measured.
         let tp = gain_to_db(
             oversampled_peaks(&x)[1000..47_000]
                 .iter()
@@ -264,7 +263,7 @@ mod tests {
         for _ in 0..3 {
             limit(&mut s, SR, lim);
         }
-        // 离冲击足够远的安静段增益恰好是 1（静态兜底之前）。
+        // Far enough from the impulse, the gain in the quiet section is exactly 1 (before the static fallback).
         assert_eq!(s.l[..20_000], before.l[..20_000]);
         trim_to_ceiling(&mut s, lim.ceiling_db);
         assert!(true_peak_db(&s.channels()) <= lim.ceiling_db + 1e-6);

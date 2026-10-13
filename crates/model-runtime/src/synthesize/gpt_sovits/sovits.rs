@@ -1,8 +1,7 @@
-//! SoVITS v2 解码器（`s2G2333k`），对照 `GPT_SoVITS/module/models.py::SynthesizerTrn`
-//! 的 `decode` / `extract_latent`，以及 `attentions.py`、`modules.py`、`mrte_model.py`。
+//! SoVITS v2 decoder (`s2G2333k`), matching `decode` / `extract_latent` in `GPT_SoVITS/module/models.py::SynthesizerTrn`, as well as `attentions.py`, `modules.py` and `mrte_model.py`.
 //!
-//! 内部统一用 NLC 布局（`[1, T, C]`）：通道维上的 split / flip / LayerNorm 都落在
-//! 最后一维。batch 恒为 1，上游的长度掩码全是 1，这里省略。
+//! Internally everything uses the NLC layout (`[1, T, C]`): the split / flip / LayerNorm along the channel dimension all act on
+//! the last dimension. The batch is always 1, and the upstream length masks are all 1, so they are omitted here.
 
 use super::layers::{Conv1d, LayerNorm, Linear, act};
 use super::spec::Spectrogram;
@@ -16,14 +15,14 @@ const HIDDEN: i32 = 192;
 const HALF: i32 = INTER / 2;
 const ENCODER_HEADS: i32 = 2;
 const ENCODER_LAYERS: usize = 6;
-/// 相对位置注意力的窗口（`emb_rel_k` 第 1 维 = 2·4 + 1）。
+/// Window of the relative-position attention (dimension 1 of `emb_rel_k` = 2·4 + 1).
 const WINDOW: i32 = 4;
 const LAYER_NORM_EPS: f32 = 1e-5;
 const SSL_DIM: i32 = 768;
 const CODEBOOK_SIZE: usize = 1024;
 const MRTE_HIDDEN: i32 = 512;
 const MRTE_HEADS: i32 = 4;
-/// v2 的 `ref_enc` 只看线性谱的前 704 个频点。
+/// The v2 `ref_enc` looks only at the first 704 frequency bins of the linear spectrogram.
 const STYLE_BINS: usize = 704;
 const STYLE_HIDDEN: i32 = 128;
 const STYLE_HEADS: i32 = 2;
@@ -34,14 +33,14 @@ const UPSAMPLE_KERNELS: [i32; 5] = [16, 16, 8, 2, 2];
 const RESBLOCK_KERNELS: [i32; 3] = [3, 7, 11];
 const RESBLOCK_DILATIONS: [i32; 3] = [1, 3, 5];
 const LRELU_SLOPE: f32 = 0.1;
-/// `SynthesizerTrn.decode` 的默认 `noise_scale`。
+/// The default `noise_scale` of `SynthesizerTrn.decode`.
 pub const NOISE_SCALE: f32 = 0.5;
 
 fn leaky_relu(x: &Array, slope: f32) -> Result<Array> {
     Ok(ops::maximum(x, &(x * slope))?)
 }
 
-/// 沿最后一维切成 `[..at]` 与 `[at..]`。
+/// Splits along the last dimension into `[..at]` and `[at..]`.
 fn split_last(x: &Array, at: i32) -> (Array, Array) {
     (x.index((.., .., ..at)), x.index((.., .., at..)))
 }
@@ -57,7 +56,7 @@ fn from_heads(x: &Array) -> Result<Array> {
     Ok(x.transpose_axes(&[0, 2, 1, 3])?.reshape(&[1, t, heads * d])?)
 }
 
-/// `modules.LayerNorm`（通道维，参数名 gamma / beta）。
+/// `modules.LayerNorm` (over the channel dimension, parameter names gamma / beta).
 fn channel_norm(w: &mut WeightMap, prefix: &str) -> Result<LayerNorm> {
     Ok(LayerNorm {
         weight: Some(w.take_f32(&format!("{prefix}.gamma"))?),
@@ -66,7 +65,7 @@ fn channel_norm(w: &mut WeightMap, prefix: &str) -> Result<LayerNorm> {
     })
 }
 
-/// 与卷积核匹配的 same padding（奇数核两侧对称）。
+/// Same padding matching the convolution kernel (symmetric on both sides for odd kernels).
 fn same_padding(conv: Conv1d) -> Conv1d {
     let kernel = conv.weight.dim(1);
     let dilation = conv.dilation;
@@ -74,7 +73,7 @@ fn same_padding(conv: Conv1d) -> Conv1d {
 }
 
 // ---------------------------------------------------------------------------
-// 相对位置自注意力（`attentions.MultiHeadAttention`，window_size = 4，heads_share）
+// Relative-position self-attention (`attentions.MultiHeadAttention`, window_size = 4, heads_share)
 
 struct RelAttention {
     q: Conv1d,
@@ -119,7 +118,7 @@ impl RelAttention {
     }
 }
 
-/// `_get_relative_embeddings`：`[1, 2W+1, d]` → `[1, 2T-1, d]`（先补零再切片）。
+/// `_get_relative_embeddings`: `[1, 2W+1, d]` → `[1, 2T-1, d]` (zero-pad first, then slice).
 fn relative_embeddings(embeddings: &Array, length: i32) -> Result<Array> {
     let pad = (length - (WINDOW + 1)).max(0);
     let start = ((WINDOW + 1) - length).max(0);
@@ -132,8 +131,8 @@ fn relative_embeddings(embeddings: &Array, length: i32) -> Result<Array> {
     Ok(padded.index((.., start..end, ..)))
 }
 
-/// `_relative_position_to_absolute_position`：`[b, h, l, 2l-1]` → `[b, h, l, l]`，
-/// 即 `abs[i][j] = rel[i][j - i + l - 1]`。
+/// `_relative_position_to_absolute_position`: `[b, h, l, 2l-1]` → `[b, h, l, l]`,
+/// i.e. `abs[i][j] = rel[i][j - i + l - 1]`.
 fn relative_to_absolute(x: &Array) -> Result<Array> {
     let (b, h, l) = (x.dim(0), x.dim(1), x.dim(2));
     let x = ops::pad(x, &[(0, 0), (0, 0), (0, 0), (0, 1)], None, None)?;
@@ -194,7 +193,7 @@ impl Encoder {
 }
 
 // ---------------------------------------------------------------------------
-// MRTE：语义特征对文本做交叉注意力，再叠加音色向量。
+// MRTE: semantic features cross-attend to the text, then the timbre vector is added on top.
 
 struct Mrte {
     c_pre: Conv1d,
@@ -258,7 +257,7 @@ impl TextEncoder {
         })
     }
 
-    /// 返回先验分布的均值与对数标准差（各 `[1, T, 192]`）。
+    /// Returns the mean and log standard deviation of the prior distribution (each `[1, T, 192]`).
     fn forward(&self, quantized: &Array, phones: &[i32], ge: &Array) -> Result<(Array, Array)> {
         let y = self.encoder_ssl.forward(&self.ssl_proj.forward_nlc(quantized)?)?;
         let n = phones.len() as i32;
@@ -303,7 +302,7 @@ impl StyleEncoder {
         })
     }
 
-    /// 参考线性谱 → 音色向量 `ge`（`[1, 1, 512]`）。
+    /// Reference linear spectrogram → timbre vector `ge` (`[1, 1, 512]`).
     fn forward(&self, spec: &Spectrogram) -> Result<Array> {
         let frames = spec.frames;
         ensure!(frames > 0, "参考音频频谱为空");
@@ -333,7 +332,7 @@ impl StyleEncoder {
 }
 
 // ---------------------------------------------------------------------------
-// ResidualCouplingBlock（mean_only，只做逆变换）
+// ResidualCouplingBlock (mean_only, inverse transform only)
 
 struct Wn {
     cond: Conv1d,
@@ -420,7 +419,7 @@ impl Flow {
         })
     }
 
-    /// `flows = [C0, F, C2, F, C4, F, C6, F]` 倒序执行：每个耦合层之前先翻转通道。
+    /// `flows = [C0, F, C2, F, C4, F, C6, F]` run in reverse order: the channels are flipped before each coupling layer.
     fn reverse(&self, x: &Array, ge: &Array) -> Result<Array> {
         let mut x = x.clone();
         for coupling in self.couplings.iter().rev() {
@@ -443,7 +442,7 @@ struct ConvTranspose1d {
 
 impl ConvTranspose1d {
     fn load_weight_norm(w: &mut WeightMap, prefix: &str, stride: i32, padding: i32) -> Result<Self> {
-        // PyTorch 布局 `[Cin, Cout, K]` → `[Cout, K, Cin]`。
+        // PyTorch layout `[Cin, Cout, K]` → `[Cout, K, Cin]`.
         let weight = w.take_weight_norm(prefix)?.transpose_axes(&[1, 2, 0])?;
         let bias = w.take_optional_f32(&format!("{prefix}.bias"))?;
         Ok(Self {
@@ -538,7 +537,7 @@ impl Generator {
             }
             x = sum.context("Generator 缺少残差块")? / kernels as f32;
         }
-        // `F.leaky_relu` 默认斜率 0.01。
+        // `F.leaky_relu` default slope 0.01.
         let x = self.conv_post.forward_nlc(&leaky_relu(&x, 0.01)?)?;
         Ok(ops::tanh(&x)?)
     }
@@ -575,7 +574,7 @@ impl Sovits {
         })
     }
 
-    /// `extract_latent`：HuBERT `last_hidden_state`（`[1, T, 768]`）→ 25 Hz 语义码。
+    /// `extract_latent`: HuBERT `last_hidden_state` (`[1, T, 768]`) → 25 Hz semantic codes.
     pub fn extract_codes(&self, hubert: &Array) -> Result<Vec<u32>> {
         let x = self.ssl_proj.forward_nlc(hubert)?.reshape(&[-1, SSL_DIM])?;
         let distance = x.square()?.sum_axis(-1, true)? - ops::matmul(&x, &self.codebook.t())? * 2.0f32
@@ -585,7 +584,7 @@ impl Sovits {
         Ok(codes.as_slice::<u32>().to_vec())
     }
 
-    /// `decode`：语义码 + 目标音素 + 参考线性谱 → 32 kHz 波形（未做峰值归一化）。
+    /// `decode`: semantic codes + target phonemes + reference linear spectrogram → 32 kHz waveform (no peak normalization applied).
     pub fn decode(&self, codes: &[u32], phones: &[i32], refer: &Spectrogram, noise_scale: f32, seed: u64) -> Result<Vec<f32>> {
         ensure!(!codes.is_empty(), "SoVITS 输入语义码为空");
         ensure!(!phones.is_empty(), "SoVITS 输入音素为空");
@@ -594,7 +593,7 @@ impl Sovits {
             "语义码越界（码本 {CODEBOOK_SIZE}）"
         );
         let ge = self.ref_enc.forward(refer)?;
-        // 25 Hz → 50 Hz 最近邻上采样。
+        // 25 Hz → 50 Hz nearest-neighbor upsampling.
         let ids: Vec<i32> = codes.iter().flat_map(|&c| [c as i32; 2]).collect();
         let frames = ids.len() as i32;
         let quantized = self
@@ -616,7 +615,7 @@ impl Sovits {
 mod tests {
     use super::*;
 
-    /// MLX 单测共用一把锁；没有 Metal 设备（沙箱）时跳过，不让 MLX 的 C++ 异常撞进 Rust。
+    /// The MLX unit tests share one lock; they are skipped when there is no Metal device (sandbox), so that MLX's C++ exceptions do not propagate into Rust.
     fn metal() -> Option<std::sync::MutexGuard<'static, ()>> {
         let lock = crate::synthesize::tensor::host::TEST_LOCK
             .lock()
@@ -625,7 +624,7 @@ mod tests {
     }
 
     fn host(array: &Array) -> Vec<f32> {
-        // MLX 的 `as_slice` 直接读底层缓冲区，切片视图要先 reshape 成连续数组。
+        // MLX's `as_slice` reads the underlying buffer directly, so a sliced view must first be reshaped into a contiguous array.
         let array = array.reshape(&[-1]).unwrap().as_dtype(Dtype::Float32).unwrap();
         array.eval().unwrap();
         array.as_slice::<f32>().to_vec()
@@ -671,9 +670,9 @@ mod tests {
         let window = 2 * WINDOW as usize + 1;
         let values: Vec<f32> = (0..window).map(|v| v as f32).collect();
         let table = Array::from_slice(&values, &[1, window as i32, 1]);
-        // 短序列：切出中心 2l-1 个。
+        // Short sequence: take the central 2l-1 entries.
         assert_eq!(host(&relative_embeddings(&table, 3).unwrap()), vec![2.0, 3.0, 4.0, 5.0, 6.0]);
-        // 长序列：两侧各补 l-5 个零。
+        // Long sequence: pad l-5 zeros on each side.
         let long = host(&relative_embeddings(&table, 7).unwrap());
         assert_eq!(long.len(), 13);
         assert_eq!(&long[..2], &[0.0, 0.0]);

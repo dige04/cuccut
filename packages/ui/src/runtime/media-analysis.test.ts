@@ -19,7 +19,7 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
 
-/** 手动推进的定时器：轮询与合并通知都排在这里。 */
+/** Timer advanced by hand: polling and coalesced notifications are both scheduled here. */
 function harness(
   requests: { peaks?: (asset: VersionRef) => Promise<MediaPeaks>; thumbnail?: (asset: VersionRef, at: number) => Promise<MediaThumbnail> },
   options = {},
@@ -68,7 +68,7 @@ describe('素材分析缓存：峰值', () => {
     if (state.state !== 'ready') throw new Error(state.state);
     expect([...state.value.peaks]).toEqual([10, 64, 32]);
     expect(state.value.binsPerSecond).toBe(50);
-    // 三格时第 98 百分位落在中间那格。
+    // With three cells, the 98th percentile falls on the middle cell.
     expect(state.value.scale).toBeCloseTo(255 / 32);
     expect(peaks).toHaveBeenCalledTimes(2);
   });
@@ -161,7 +161,7 @@ describe('素材分析缓存：缩略图', () => {
     for (const at of [1, 2, 3]) cache.thumbnail(clip, at);
     await settle();
     expect(thumbnail.mock.calls.map(([, at]) => at)).toEqual([3]);
-    // 1 被丢掉之后重新排进来；2 还在队里，不重复排。
+    // After 1 is dropped it is queued again; 2 is still in the queue, so it is not queued twice.
     cache.thumbnail(clip, 1);
     cache.thumbnail(clip, 2);
     for (const at of [3, 1, 2]) {

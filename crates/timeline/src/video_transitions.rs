@@ -3,9 +3,9 @@ use crate::{AnimationPose, TimelineError};
 use serde::{Deserialize, Serialize};
 
 pub const PRESETS: &[&str] = &["none", "dissolve", "wipe", "slide", "zoom", "iris"];
-/// 一侧转场时长的区间（秒）；schema 校验、渲染的夹取与命令行参数共用。
+/// The range of a one-sided transition duration (seconds); shared by schema validation, render clamping, and command-line arguments.
 pub const DURATION_RANGE: (f64, f64) = (0.1, 2.0);
-/// 没写时长时的缺省（秒）。
+/// Default when no duration is given (seconds).
 pub const DURATION_DEFAULT: f64 = 0.5;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

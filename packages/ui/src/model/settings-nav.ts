@@ -2,8 +2,7 @@ import { live } from '@cuccut/protocol';
 import { M } from './settings-nav-copy.ts';
 
 /**
- * 设置分节表（产品设计 §2.1、§7.6）：模型配置并入设置，按「偏好设置 / Agent / 模型 / 应用」分四组。
- * 模型保留独立的类型与内容路由，URL 统一放在 /settings/models 下。
+ * Settings section table (product design §2.1, §7.6): model configuration is merged into Settings and grouped into four sections: “偏好设置 / Agent / 模型 / 应用”（Preferences / Agent / Models / App). Models keep their own type and content routing; the URLs all live under /settings/models.
  */
 
 export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'privacy', 'diagnostics', 'about'] as const;
@@ -18,7 +17,7 @@ export interface ModelCategoryInfo {
   key: ModelCategory;
   label: string;
   description: string;
-  /** 这一类有哪几页，按页签顺序。 */
+  /** Which pages this category has, in tab order. */
   pages: readonly ModelPage[];
 }
 
@@ -45,7 +44,7 @@ export const MODEL_CATEGORY_INFO: readonly ModelCategoryInfo[] = [
 
 export const MODEL_PAGE_LABEL: Record<ModelPage, string> = live(() => M.page);
 
-/** 只有一页的类在页首说一句为什么。 */
+/** A category with only one page states the reason at the top of the page. */
 export const ONLY_PAGE_NOTE: Partial<Record<ModelPage, string>> = live(() => M.onlyPage);
 
 export interface SettingsSectionInfo {
@@ -61,8 +60,8 @@ export const SETTINGS_SECTION_INFO: readonly SettingsSectionInfo[] = SETTINGS_SE
 }));
 
 /**
- * 组 id 不能与条目 key 相同（S2 SideNav 的 section 与 item 共用一个 id 空间，撞名会抛 RangeError），所以 Agent 组叫 `agents`。
- * 模型组的条目是 MODEL_CATEGORIES，由设置页自己插在 `agents` 与 `app` 之间。
+ * A group id must not be the same as an item key (S2 SideNav shares one id space between sections and items, and a name clash throws a RangeError), so the Agent group is named `agents`.
+ * The model group's items are MODEL_CATEGORIES, which the settings page inserts itself between `agents` and `app`.
  */
 type SettingsGroupId = 'preferences' | 'agents' | 'app';
 const group = (id: SettingsGroupId, keys: readonly SettingsSection[]) => ({
@@ -78,7 +77,7 @@ export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string; key
   group('app', ['glossary', 'privacy', 'diagnostics', 'about']),
 ];
 
-/** 旧链接 `/settings/agent/<页>`（Agent & Skills 还分页签时的深链）现在的去处；认不出的页落到 Agent 提供方。 */
+/** The old link `/settings/agent/<page>` (from when Agent & Skills still had tabs) now goes to its new place; pages that are not recognized fall back to the Agent provider. */
 export function legacyAgentSection(page: string | undefined): SettingsSection {
   if (page === 'skills') return 'skills';
   if (page === 'permissions') return 'privacy';
@@ -89,7 +88,7 @@ export function modelCategory(key: ModelCategory): ModelCategoryInfo {
   return MODEL_CATEGORY_INFO.find((c) => c.key === key)!;
 }
 
-/** 某一类该停在哪一页：给的页属于这一类就用它，否则用上次停的页，再不行用第一页。 */
+/** Which page a category should stop on: if the given page belongs to this category, use it; otherwise use the page it last stopped on; if that fails too, use the first page. */
 export function modelPageFor(category: ModelCategory, page?: ModelPage | null, last?: ModelPage | null): ModelPage {
   const { pages } = modelCategory(category);
   return [page, last].find((p): p is ModelPage => !!p && pages.includes(p)) ?? pages[0]!;

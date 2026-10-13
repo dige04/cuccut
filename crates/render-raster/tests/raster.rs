@@ -1,5 +1,5 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer`
+//! (the BCF document rendering path and the host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
 use motion::effect::BlendMode;
@@ -200,7 +200,7 @@ fn rasterize_reports_unbalanced_layers() {
     );
 }
 
-// ── DrawOp v3：裁剪栈与层混合 ────────────────────────────────────────
+// ── DrawOp v3: clip stack and layer blending ────────────────────────────────
 
 fn clear_white() -> DrawOp {
     DrawOp::Clear {
@@ -239,7 +239,7 @@ fn clip_path_limits_drawing_to_the_clipped_region() {
         ],
     };
     let pixmap = render_raster::raster::rasterize(&frame, 20, 20, &mut empty_media()).unwrap();
-    // 裁剪内：红；裁剪外：仍是清屏白
+    // Inside the clip: red; outside the clip: still the clear-screen white
     assert_eq!(pixel(&pixmap, 4, 4), [255, 0, 0, 255]);
     assert_eq!(pixel(&pixmap, 15, 15), [255, 255, 255, 255]);
 }
@@ -268,7 +268,7 @@ fn nested_clip_paths_intersect_and_pop_restores_the_outer_one() {
             },
             fill_all([1.0, 0.0, 0.0, 1.0]),
             DrawOp::PopClip,
-            // 回到外层裁剪（0..12）：这里画蓝色只应落在 0..12 内
+            // Back to the outer clip (0..12): blue drawn here should only land within 0..12
             DrawOp::FillRect {
                 x: 0.0,
                 y: 0.0,
@@ -282,11 +282,11 @@ fn nested_clip_paths_intersect_and_pop_restores_the_outer_one() {
         ],
     };
     let pixmap = render_raster::raster::rasterize(&frame, 20, 20, &mut empty_media()).unwrap();
-    // 交集 6..12 内是红
+    // The intersection 6..12 is red
     assert_eq!(pixel(&pixmap, 8, 8), [255, 0, 0, 255]);
-    // 只在外层裁剪里、不在内层裁剪里 ⇒ 红没画上，蓝画上了
+    // Only inside the outer clip and not inside the inner clip ⇒ red not drawn, blue drawn
     assert_eq!(pixel(&pixmap, 2, 2), [0, 0, 255, 255]);
-    // 外层裁剪之外（y >= 12）：蓝也没画上
+    // Outside the outer clip (y >= 12): blue not drawn either
     assert_eq!(pixel(&pixmap, 2, 16), [255, 255, 255, 255]);
 }
 
@@ -350,7 +350,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
             .contains("裁剪栈非空")
     );
 
-    // 层外压入、层内弹出
+    // Push a layer outside, pop inside
     let pop_inside_layer = FrameOps {
         static_prefix: None,
         strings: vec![],
@@ -377,7 +377,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
             .contains("跨越")
     );
 
-    // 层内压入、层外弹出
+    // Push a layer inside, pop outside
     let pop_outside_layer = FrameOps {
         static_prefix: None,
         strings: vec![],
@@ -405,8 +405,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
     );
 }
 
-/// `PushLayer{blend}` 的参考语义：`multiply` 下白底上盖 50% 灰应当变暗，
-/// 而 `normal` 只是 alpha 合成。
+/// Reference semantics of `PushLayer{blend}`: under `multiply`, 50% grey over a white backdrop should darken, whereas `normal` is just alpha compositing.
 #[test]
 fn pop_layer_applies_the_declared_blend_mode() {
     let render = |blend| {
@@ -450,9 +449,9 @@ fn pop_layer_applies_the_declared_blend_mode() {
     };
     let normal = render(BlendMode::Normal);
     let multiply = render(BlendMode::Multiply);
-    // normal：上层不透明 ⇒ 直接是上层颜色
+    // normal: the upper layer is opaque ⇒ exactly the upper layer's color
     assert_eq!(&normal[..3], &[255, 255, 128]);
-    // multiply：逐通道相乘 ⇒ 一定更暗，且红/绿通道来自底层
+    // multiply: channels multiplied ⇒ necessarily darker, and the red and green channels come from the lower layer
     assert!(
         multiply[0] < normal[0] && multiply[1] < normal[1],
         "{multiply:?}"
@@ -460,10 +459,10 @@ fn pop_layer_applies_the_declared_blend_mode() {
     assert_eq!(multiply[3], 255);
 }
 
-// ── v4：渐变 paint、even-odd 填充与轨道遮罩（ADR-M11）──────────────
+// ── v4: gradient paint, even-odd fill and track mattes (ADR-M11) ─────────────
 
 fn ring_path(cx: f32, cy: f32, outer: f32, inner: f32) -> PathData {
-    // 两个同心方框，同一绕向：nonzero 填满，even-odd 挖空中心。
+    // Two concentric squares with the same winding direction: nonzero fills everything, even-odd hollows out the center.
     let mut segs = square_path(cx - outer, cy - outer, outer * 2.0).0;
     segs.extend(square_path(cx - inner, cy - inner, inner * 2.0).0);
     PathData(segs)
@@ -525,7 +524,7 @@ fn even_odd_hollows_out_what_nonzero_fills_in() {
         render_raster::raster::rasterize(&make(true), 16, 16, &mut empty_media()).unwrap();
     assert_eq!(pixel(&nonzero, 8, 8)[3], 255, "nonzero 中心应当被填满");
     assert_eq!(pixel(&evenodd, 8, 8)[3], 0, "even-odd 中心应当被挖空");
-    // 环带部分两种规则一致
+    // The ring band is consistent under both rules
     assert_eq!(pixel(&nonzero, 8, 2)[3], pixel(&evenodd, 8, 2)[3]);
 }
 
@@ -542,14 +541,14 @@ fn an_alpha_matte_cuts_the_layer_below_it() {
                 opacity: 1.0,
                 blend: BlendMode::Normal,
             },
-            // 内容：整幅白
+            // Content: entirely white
             DrawOp::FillPathPaint {
                 path: 0,
                 paint: 0,
                 even_odd: false,
                 tf: IDENTITY,
             },
-            // 遮罩源：左上 8×8
+            // Matte source: top-left 8×8
             DrawOp::PushMatte,
             DrawOp::FillPathPaint {
                 path: 1,
@@ -611,7 +610,7 @@ fn matte_primitives_refuse_unbalanced_streams() {
         paints: vec![PaintData::Solid([1.0, 1.0, 1.0, 1.0])],
         ops,
     };
-    // PushMatte 必须在某个层里
+    // PushMatte must be inside some layer
     let orphan = base(vec![DrawOp::PushMatte, DrawOp::PopMatte { mode: 0 }]);
     assert!(
         render_raster::raster::rasterize(&orphan, 8, 8, &mut empty_media())
@@ -619,7 +618,7 @@ fn matte_primitives_refuse_unbalanced_streams() {
             .to_string()
             .contains("PushMatte")
     );
-    // 层里开了遮罩不 PopMatte 就 PopLayer
+    // If a matte is pushed inside a layer, you must PopMatte before PopLayer
     let leaked = base(vec![
         DrawOp::PushLayer {
             opacity: 1.0,
@@ -665,16 +664,15 @@ fn a_stroke_paint_honours_cap_and_join() {
     };
     let butt = render_raster::raster::rasterize(&make(0), 16, 16, &mut empty_media()).unwrap();
     let square = render_raster::raster::rasterize(&make(2), 16, 16, &mut empty_media()).unwrap();
-    // 端点外一像素：butt 是空的，square 把线帽延出去
+    // One pixel outside the endpoint: butt is empty, square extends the line cap outward
     assert_eq!(pixel(&butt, 13, 8)[3], 0);
     assert_eq!(pixel(&square, 13, 8)[3], 255);
 }
 
-/// `DrawBitmap`（v5，彩色字形）：像素原样（预乘）贴到 `tf` 指定的位置，
-/// 不吃任何文字颜色；`opacity` 整张乘上去；裁剪与其它原语一样生效。
+/// `DrawBitmap` (v5, color glyphs): pixels are pasted as-is (premultiplied) at the position given by `tf`, not affected by any text color; `opacity` multiplies over the whole image; clipping applies as with other primitives.
 #[test]
 fn draw_bitmap_places_premultiplied_pixels_with_opacity_and_clip() {
-    // 2×2：左上不透明红、右上半透明绿（预乘 128）、下排不透明蓝。
+    // 2×2: top-left opaque red, top-right semi-transparent green (premultiplied 128), bottom row opaque blue.
     let rgba: Vec<u8> = [
         [255, 0, 0, 255],
         [0, 128, 0, 128],
@@ -696,19 +694,19 @@ fn draw_bitmap_places_premultiplied_pixels_with_opacity_and_clip() {
         paths: vec![square_path(0.0, 0.0, 14.0)],
         bitmaps: vec![checker, solid],
         ops: vec![
-            // 整数平移、单位缩放：逐像素原样。
+            // Integer translation, unit scale: pixel-for-pixel as-is.
             DrawOp::DrawBitmap {
                 bitmap: 0,
                 opacity: 1.0,
                 tf: [1.0, 0.0, 0.0, 1.0, 3.0, 4.0],
             },
-            // 半透明整张。
+            // Semi-transparent over the whole image.
             DrawOp::DrawBitmap {
                 bitmap: 1,
                 opacity: 0.5,
                 tf: [1.0, 0.0, 0.0, 1.0, 0.0, 12.0],
             },
-            // 2× 放大，右半边被裁掉（裁剪框是 [0,14)²）。
+            // 2× magnification, right half clipped away (clip box is [0,14)²).
             DrawOp::ClipPath {
                 path: 0,
                 tf: IDENTITY,
@@ -771,10 +769,7 @@ fn draw_bitmap_refuses_unknown_or_malformed_bitmaps() {
     assert!(error.contains("尺寸与字节不符"), "实际 {error}");
 }
 
-/// `static_prefix` 是光栅缓存提示：同一个键第二次出现时直接拷贝缓存的前缀画面，
-/// 前缀里的指令不再执行。用「同键不同内容」的两帧把命中暴露出来（录制器保证
-/// 同键同内容，这里故意违反它只为观察缓存），并确认前缀之后的指令照常执行、
-/// 不设提示的帧不受影响。键取一个本文件独有的值，别的测试不会挤掉它。
+/// `static_prefix` is a raster cache hint: when the same key appears a second time, the cached prefix picture is copied directly, and the instructions in the prefix are not executed again. Two frames with the same key but different content expose the hit (the recorder guarantees same key ⇒ same content; here it is deliberately violated only to observe the cache), and confirm that instructions after the prefix still execute as usual and that frames without the hint are unaffected. The key is a value unique to this file, so other tests will not evict it.
 #[test]
 fn static_prefix_is_rasterized_once_per_key_and_size() {
     use render_raster::drawop::StaticPrefix;
@@ -808,10 +803,10 @@ fn static_prefix_is_rasterized_once_per_key_and_size() {
     assert_eq!(pixel(&hit, 0, 0), [255, 0, 0, 255], "同键命中：前缀取缓存");
     assert_eq!(pixel(&hit, 2, 2), [0, 255, 0, 255], "前缀之后照常画");
     assert_eq!(hit.data(), first.data());
-    // 尺寸是键的一部分；不设提示的帧不查缓存。
+    // Size is part of the key; frames without the hint do not consult the cache.
     assert_eq!(pixel(&draw(&frame(blue, true), 7), 0, 0), [0, 0, 255, 255]);
     assert_eq!(pixel(&draw(&frame(blue, false), 6), 0, 0), [0, 0, 255, 255]);
-    // 越界的提示被忽略（不 panic、不缓存）。
+    // An out-of-range hint is ignored (no panic, no caching).
     let mut bogus = frame(blue, false);
     bogus.static_prefix = Some(StaticPrefix {
         key: KEY + 1,

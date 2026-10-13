@@ -1,14 +1,9 @@
-//! 字幕：字幕文档（`cuccut.caption/1`）按样式文档交给渲染内核（`subtitle-render`）排版、画出来。
+//! Captions: a caption document (`cuccut.caption/1`) is laid out and drawn by the rendering kernel (`subtitle-render`) according to a style document.
 //!
-//! 共用一个样式文档的字幕实例是一组（没有样式文档时是实例自己），在组里第一层的位置画一次，坐标系是整张画布。
-//! 一组换成内核的一份字幕文档：原文字幕的句子是 `cues`，译文字幕（`lineKind: translation`）的句子是 `transCues`，
-//! 样式是 Studio 样式文档（`cuccut.legacy-studio-style/0.1`）的 `style`；组里只有原文时按原文模式，只有译文时按译文模式，
-//! 两者都有时按双语模式（上下顺序由样式的 `order` 决定）。显示时机（`displayTiming`）、标点的交付写法、逐词动画与
-//! 设计字幕的配方都由内核按样式画，与旧版逐字节一致。一组按第一层的时钟取时刻：文档在序列时钟上时用序列时间，
-//! 在源素材时钟上时用作用实例投影出的源时刻。
+//! Caption instances that share one style document form a group (an instance on its own when there is no style document); the group is drawn once, at the position of its first layer, in the whole-canvas coordinate system.
+//! A group becomes one caption document for the kernel: the sentences of original captions are `cues`, and those of translated captions (`lineKind: translation`) are `transCues`; the style is the `style` of the Studio style document (`cuccut.legacy-studio-style/0.1`). When the group has only original text it uses original mode, only translation uses translation mode, and with both it uses bilingual mode (top-to-bottom order set by the style's `order`). Display timing (`displayTiming`), the delivery form of punctuation, word-by-word animation and designed-caption recipes are all drawn by the kernel according to the style, byte-for-byte identical to the old version. A group takes its times from its first layer's clock: when the document is on the sequence clock, sequence time is used; when on the source media clock, the source time projected from the acting instance is used.
 //!
-//! 定位框样式（`cuccut.boxed-caption-style/N`，旧的外部工程导入写的）换算成一份等价的 Studio 样式交给同一个内核画
-//! （[`boxed_as_studio`]）：框的位置与宽度变成锚点与折行宽度，样式文档画布上的像素按输出尺寸换算。
+//! Boxed caption styles (`cuccut.boxed-caption-style/N`, written by the old external project import) are converted into an equivalent Studio style and drawn by the same kernel ([`boxed_as_studio`]): the box position and width become anchor and wrap width, and pixels on the style document canvas are scaled to the output size.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -24,36 +19,36 @@ use crate::caption_words::{Placement, SpeechWords, WordTimes, cue_words_indexed}
 use crate::documents::FrozenDocument;
 
 pub const CAPTION_DOCUMENT: &str = "cuccut.caption/1";
-/// Studio 字幕样式（旧版字幕的样式文档）。
+/// Studio caption style (the style document of legacy captions).
 pub const STUDIO_STYLE: &str = "cuccut.legacy-studio-style/0.1";
 
-/// 定位框样式：`cuccut.boxed-caption-style/` 后面跟版本号。
+/// Boxed caption style: `cuccut.boxed-caption-style/` followed by a version number.
 pub fn is_boxed_style(schema: &str) -> bool {
     video_model::caption_style::is_boxed_style_schema(schema)
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaptionCue {
-    /// 文档里的句子 ID（设计字幕的逐句样式按它找）；没写时为空。
+    /// The sentence ID in the document (per-sentence styles of designed captions are looked up by it); empty when not set.
     pub id: String,
-    /// 在文档时钟上的秒。
+    /// Seconds on the document clock.
     pub start: f64,
     pub end: f64,
     pub text: String,
-    /// 句子的 `words`（指向转写里的词），原样。
+    /// The sentence's `words` (pointing to words in the transcript), unchanged.
     pub refs: Option<Value>,
-    /// 交给内核的词（[`CaptionTrack::attach_words`] 填）；空时内核按空白切分推算。
+    /// Words handed to the kernel (filled by [`CaptionTrack::attach_words`]); when empty, the kernel infers them by splitting on whitespace.
     pub words: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaptionTrack {
-    /// 文档在序列时钟上（否则在源素材时钟上）。
+    /// Whether the document is on the sequence clock (otherwise on the source media clock).
     pub sequence_clock: bool,
     pub cues: Vec<CaptionCue>,
 }
 
-/// 读字幕文档的正文；不是 `cuccut.caption/1` 时返回 `None`。时间是整数刻度，`timescale` 缺省 1 000 000。
+/// Reads the body of a caption document; returns `None` unless it is `cuccut.caption/1`. Times are integer ticks; `timescale` defaults to 1 000 000.
 pub fn read_captions(body: &Value) -> Option<CaptionTrack> {
     let body = body.as_object()?;
     if body.get("schema").and_then(Value::as_str) != Some(CAPTION_DOCUMENT) {
@@ -87,9 +82,9 @@ pub fn read_captions(body: &Value) -> Option<CaptionTrack> {
 }
 
 impl CaptionTrack {
-    /// 给每一句配上转写里的词（[`crate::caption_words`]）：剪掉的、隐藏的词不给，拿掉了词的句子按留下的词重拼文字。
+    /// Attaches the transcript words to each sentence ([`crate::caption_words`]): cut or hidden words are not given, and a sentence with words removed has its text reassembled from the remaining words.
     pub fn attach_words(&mut self, speech: &SpeechWords, placement: &Placement) {
-        // 没写 `words` 的句子按时刻取词：索引在第一次用到时建，整份字幕共用。
+        // Sentences without `words` pick words by time: the index is built on first use and shared by the whole caption track.
         let mut times: Option<WordTimes> = None;
         for cue in &mut self.cues {
             let refs = cue.refs.as_ref().and_then(|refs| speech.refs(refs));
@@ -107,25 +102,25 @@ impl CaptionTrack {
     }
 }
 
-/// 样式文档读出来的样式。
+/// The style read from the style document.
 pub enum CaptionStyle {
-    /// Studio 样式的根（v2 的 `style` 对象）。
+    /// The root of a Studio style (the `style` object of v2).
     Studio(Value),
-    /// 定位框样式的正文。
+    /// The body of a boxed caption style.
     Boxed(Value),
 }
 
-/// 换算给内核的一份 Studio 样式。
+/// A Studio style converted for the kernel.
 pub struct KernelStyle {
     pub root: Value,
-    /// 整组字幕的不透明度（定位框样式的 `opacity`；Studio 样式恒为 1）。
+    /// Opacity of the whole caption group (`opacity` of a boxed style; always 1 for a Studio style).
     pub opacity: f32,
-    /// 换算时照不到的地方（作为渲染提示报出来）。
+    /// Things the conversion cannot carry over (reported as render notes).
     pub notes: Vec<String>,
 }
 
 impl CaptionStyle {
-    /// 交给内核的 Studio 样式（`size` 是输出尺寸）。
+    /// The Studio style handed to the kernel (`size` is the output size).
     pub fn kernel_style(&self, size: (u32, u32)) -> KernelStyle {
         match self {
             CaptionStyle::Studio(root) => KernelStyle {
@@ -138,20 +133,15 @@ impl CaptionStyle {
     }
 }
 
-/// 定位框样式换算成 Studio 样式。
+/// Converts a boxed caption style to a Studio style.
 ///
-/// 定位框样式的长度都是样式文档 `canvas` 上的像素，`k = 输出宽 / canvas.width` 折成输出像素；Studio 样式的字号按
-/// 540 短边量，留白、圆角与字距按自己的字号归一（`REFERENCE_FONT_SIZE` 30），这里反算回去：
-/// - 框（`box`：中心相对画布中心的偏移与宽高）→ 锚点 `x/y`（画布百分比）与 `verticalAlign`：靠上时锚在框顶、靠下时
-///   锚在框底、否则锚在框心；折行宽度 `width` 是框宽减两侧 `textPadding`。
-/// - `textPadding` 同时是底板的横竖留白（`backgroundPadding`、`backgroundPaddingY`），所以文字离框边正好一个留白。
-/// - `textShadow` 的偏移换成阴影的方向与距离；`backgroundColor` 不透明度不为 0 时画底板。
-/// - 显示时机不前后留白，标点不做交付写法（定位框样式按原文画）。
-/// - 逐词动画：`animationPresetId` 是逐词动画目录里的一格（[`subtitle_render::word_animation_catalog`]）时，按那一格的
-///   载荷画，与 Studio 样式选中同一格一样；没写时不动画。导入的字幕没有词时间，内核按空白切分推算词（规范 §3.8）。
-///   认不出的 id 不动画，报一条提示。
-/// - `textAlign`（左、中、右）照抄，并让各行在折行宽度里对齐（[`subtitle_render::ALIGN_WITHIN_WRAP_KEY`]）：左对齐的行
-///   贴框的左边（隔一个留白），右对齐贴右边，底板跟着行走。
+/// The lengths of a boxed style are pixels on the style document's `canvas`; `k = output width / canvas.width` folds them into output pixels. Studio style font sizes are measured against the 540 short edge, and padding, corner radius and letter spacing are normalized to their own font size (`REFERENCE_FONT_SIZE` 30), so the conversion reverses that here:
+/// - Box (`box`: offset of its center from the canvas center, plus width and height) → anchor `x/y` (canvas percentages) and `verticalAlign`: anchored at the box top when aligned to the top, at the box bottom when aligned to the bottom, otherwise at the box center; the wrap width `width` is the box width minus `textPadding` on both sides.
+/// - `textPadding` is also the horizontal and vertical padding of the background plate (`backgroundPadding`, `backgroundPaddingY`), so the text sits exactly one padding away from the box edge.
+/// - The offset of `textShadow` becomes the shadow's direction and distance; the background plate is drawn when `backgroundColor` opacity is not 0.
+/// - Display timing gets no extra padding before or after, and punctuation is not given the delivery form (boxed styles draw the original text).
+/// - Word animation: when `animationPresetId` is an entry in the word animation catalog ([`subtitle_render::word_animation_catalog`]), it is drawn with that entry's payload, the same as when that entry is selected in a Studio style; when not set, there is no animation. Imported captions have no word timing, so the kernel infers words by splitting on whitespace (spec §3.8). An unrecognized id is not animated, and a notice is reported.
+/// - `textAlign` (left, center, right) is copied as is, and lines are aligned within the wrap width ([`subtitle_render::ALIGN_WITHIN_WRAP_KEY`]): left-aligned lines stick to the box's left edge (one padding in), right-aligned lines to the right edge, and the background plate follows the text.
 pub fn boxed_as_studio(body: &Value, size: (u32, u32)) -> KernelStyle {
     let (width, height) = (f64::from(size.0.max(1)), f64::from(size.1.max(1)));
     let object = |value: Option<&Value>| value.filter(|v| v.is_object()).cloned().unwrap_or_else(|| json!({}));
@@ -164,7 +154,7 @@ pub fn boxed_as_studio(body: &Value, size: (u32, u32)) -> KernelStyle {
     let k = width / num(&canvas, "width", width).max(1.0);
     let pad = num(&style, "textPadding", 0.0).max(0.0) * k;
     let font_px = num(&style, "fontSize", 40.0).max(1.0) * k * num(&style, "scale", 1.0).max(0.05);
-    // Studio 样式的字号单位：540 短边上的像素；留白等按 `font_px / 30` 归一。
+    // Studio style font size unit: pixels on the 540 short edge; padding and similar are normalized by `font_px / 30`.
     let short_edge = width.min(height);
     let size_scale = font_px / 30.0;
     let box_width = (num(&frame, "width", width * 0.8 / k) * k).max(1.0);
@@ -192,7 +182,7 @@ pub fn boxed_as_studio(body: &Value, size: (u32, u32)) -> KernelStyle {
         "background": text("backgroundColor").and_then(|c| crate::effects::hex_rgba(&c)).is_some_and(|c| c[3] > 0),
         "displayTiming": { "leadIn": 0, "tail": 0 },
         "punct": false,
-        // 没选逐词动画时不动画（Studio 样式缺省是逐词变色）。
+        // No animation when no word animation is selected (the Studio style default is per-word color change).
         "anim": { "name": "None" },
     });
     let mut notes = Vec::new();
@@ -251,8 +241,7 @@ pub fn boxed_as_studio(body: &Value, size: (u32, u32)) -> KernelStyle {
 }
 
 impl CaptionStyle {
-    /// 没有样式文档时按默认预设（规范 §5.6，[`video_model::caption_style::default_studio_style`]）。认不出的样式给出它的
-    /// schema。有样式文档时照它画：没写的键按内核的兜底，不拿默认预设去补。
+    /// Without a style document, the default preset is used (spec §5.6, [`video_model::caption_style::default_studio_style`]). For an unrecognized style, its schema is reported. When there is a style document, it is drawn as written: keys it does not set fall back to the kernel's defaults, and are not filled in from the default preset.
     pub fn read(style: Option<&FrozenDocument>) -> Result<CaptionStyle, Option<String>> {
         let Some(document) = style else {
             return Ok(CaptionStyle::Studio(video_model::caption_style::default_studio_style()));
@@ -272,8 +261,7 @@ impl CaptionStyle {
     }
 }
 
-/// 设计字幕的强调（样式根的 `captionEmphasis`）按词 ID 写；多字的 CJK 词画的时候拆成了 `<词 ID>~<k>`，
-/// 写在整个词上的强调落到它拆出来的每个字上（字自己写了的不动）。
+/// Designed-caption emphasis (`captionEmphasis` at the style root) is keyed by word ID. When a multi-character CJK word is drawn, it is split into `<word ID>~<k>`, and emphasis set on the whole word applies to each character it is split into (characters with their own emphasis are left alone).
 fn split_emphasis(style: &mut Value, cues: &[Value]) {
     let Some(emphasis) = style.get_mut("captionEmphasis").and_then(Value::as_object_mut) else {
         return;
@@ -293,12 +281,12 @@ fn split_emphasis(style: &mut Value, cues: &[Value]) {
     }
 }
 
-/// 字幕文档的行种类是不是译文。
+/// Whether the caption document's line kind is translation.
 pub fn is_translation(document: &FrozenDocument) -> bool {
     document.line_kind.as_deref() == Some("translation")
 }
 
-/// 渲染器量出的字幕行框（输出像素），绕行中心旋转。
+/// Caption line box measured by the renderer (output pixels), rotated about the line's center.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptionHit {
@@ -313,31 +301,31 @@ pub struct CaptionHit {
     pub rotation: f64,
 }
 
-/// 一帧字幕层：预乘 RGBA（与内核帧缓存共用）、非零像素的外包矩形与混合方式。
+/// One frame of the caption layer: premultiplied RGBA (shared with the kernel's frame buffer), the bounding rectangle of non-zero pixels, and the blend mode.
 pub struct CaptionLayer {
     pub rgba: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
-    /// `(left, top, right, bottom)`，像素、右下开区间；盖住全部非零像素。
+    /// `(left, top, right, bottom)`, in pixels, right and bottom exclusive; covers all non-zero pixels.
     pub rect: (usize, usize, usize, usize),
     pub blend: BlendMode,
 }
 
-/// 一组字幕编好的内核计划。
+/// The kernel plan compiled for one group of captions.
 pub struct CaptionPlan {
     plan: OverlayRenderPlan,
     sources: HashMap<(bool, String), (String, String)>,
-    /// 组里第一份文档在序列时钟上。
+    /// Whether the first document in the group is on the sequence clock.
     pub sequence_clock: bool,
-    /// 整组的不透明度（样式给的）。
+    /// Opacity of the whole group (from the style).
     pub opacity: f32,
     notes: Vec<String>,
-    /// 排字时缺的字体族（常设）。
+    /// Font families missing when setting text (persistent).
     missing: std::collections::BTreeSet<String>,
 }
 
 impl CaptionPlan {
-    /// 编一组字幕：`members` 是组里各层的字幕文档（已确认读得懂），按层的顺序。
+    /// Compiles a group of captions: `members` are the caption documents of the layers in the group (already confirmed readable), in layer order.
     pub fn compile(
         style: &CaptionStyle,
         members: &[(&FrozenDocument, CaptionTrack)],
@@ -355,7 +343,7 @@ impl CaptionPlan {
                 .collect();
             cues.retain(|(_, cue)| !cue.text.trim().is_empty());
             cues.sort_by(|(_, a), (_, b)| a.start.total_cmp(&b.start));
-            // 句子 ID 照文档里的（逐句样式、强调都按 ID 找）；没写或重复的按次序补一个。
+            // Sentence IDs are kept as in the document (per-sentence styles and emphasis are looked up by ID); a missing or duplicate ID is filled in by order.
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             cues.iter()
                 .enumerate()
@@ -368,7 +356,7 @@ impl CaptionPlan {
                     }
                     sources.insert((translation, id.clone()), (document.document_id.clone(), cue.id.clone()));
                     let mut value = json!({ "id": id, "start": cue.start, "end": cue.end, "text": cue.text });
-                    // 同一句在序列上出现几次时 ID 各补后缀，逐句样式仍按文档里的 ID 找。
+                    // When the same sentence appears several times on the sequence, each ID gets a suffix, while per-sentence styles are still looked up by the ID in the document.
                     if !cue.id.is_empty() {
                         value["sourceItemId"] = json!(cue.id);
                     }
@@ -407,7 +395,7 @@ impl CaptionPlan {
             media_overlays: false,
             watermarks: false,
         };
-        // 时长只决定内核按哪条路取字幕帧；留足显示时机的尾巴。
+        // The duration only decides which path the kernel takes to fetch caption frames; leave room for the display timing tail.
         let duration = end + 3600.0;
         let plan = OverlayRenderPlan::compile_with_text_engine(
             &document,
@@ -430,7 +418,7 @@ impl CaptionPlan {
         })
     }
 
-    /// 序列的模板层（格式规范 §3.17 的字幕避让）：底部的整宽横条把字幕抬上去。只取避让，模板本身由模板层画。
+    /// The sequence's template layer (caption avoidance, format spec §3.17): a full-width bar at the bottom lifts the captions up. Only the avoidance is taken; the template itself is drawn by the template layer.
     pub fn avoid_template(&mut self, template: Option<&TemplateDoc>) {
         if self.plan.template_scene().map(|scene| &scene.doc) == template {
             return;
@@ -439,14 +427,14 @@ impl CaptionPlan {
             .set_template_scene(template.map(|doc| TemplateScene::new(doc.clone(), Vec::new(), "", Vec::new())));
     }
 
-    /// 拆下排版引擎，给下一份计划用。
+    /// Takes the layout engine apart, for use by the next plan.
     pub fn into_text_engine(self) -> TextEngine {
         self.plan.into_text_engine()
     }
 
-    /// 文档时钟上 `seconds` 这一刻的字幕层；这一刻没有字幕时为 `None`。
+    /// The caption layer at the moment `seconds` on the document clock; `None` when there is no caption at that moment.
     ///
-    /// 像素与内核的帧缓存共用一份（不复制整幅缓冲），连同内核算好的内容框一起交出，调用方不必再扫描。
+    /// The pixels are shared with the kernel's frame buffer (the full buffer is not copied) and are handed out together with the content box the kernel computed, so the caller does not need to scan again.
     pub fn render(&mut self, seconds: f64) -> Result<Option<CaptionLayer>> {
         let frame = self.plan.render_subtitle_frame(seconds.max(0.0))?;
         let Some(bounds) = frame.bounds else {
@@ -471,7 +459,7 @@ impl CaptionPlan {
         }))
     }
 
-    /// 与光栅同源的行几何；不在 UI 里估算字宽或重做显示时机。
+    /// Line geometry from the same source as the raster; the UI does not estimate glyph widths or redo display timing.
     pub fn hits(&mut self, seconds: f64) -> Result<Vec<CaptionHit>> {
         let layout = self.plan.subtitle_layout(seconds)?;
         let mut hits = Vec::new();
@@ -521,8 +509,7 @@ impl CaptionPlan {
         Ok(hits)
     }
 
-    /// 这组字幕的提示（样式换算的、内核编译与画字时报的）与排字时缺的字体族。常设：画过的帧内核会缓存、不再报，
-    /// 每画一帧都整份给出，由调用方去重。
+    /// Notices for this caption group (from style conversion, and from kernel compilation and drawing) and font families missing when setting text. Persistent: the kernel caches frames it has already drawn and does not report them again, so the full set is given with every frame drawn, and the caller de-duplicates.
     pub fn notes(&mut self) -> (Vec<String>, Vec<String>) {
         for note in std::mem::take(&mut self.plan.warnings) {
             if !self.notes.contains(&note) {
@@ -534,9 +521,7 @@ impl CaptionPlan {
     }
 }
 
-// 显示时机（前后留白、短间隔对半分）与标点的交付写法由内核按样式算，在 `subtitle-render` 的
-// `short_gaps_are_split_exactly_between_tail_and_lead_in` 与
-// `video_plan_projects_punctuation_in_every_language_and_honors_the_style_switch` 里核对。
+// Display timing (padding before and after, short gaps split evenly in half) and the delivery form of punctuation are computed by the kernel from the style; verified in `subtitle-render`'s `short_gaps_are_split_exactly_between_tail_and_lead_in` and `video_plan_projects_punctuation_in_every_language_and_honors_the_style_switch`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,7 +549,7 @@ mod tests {
                 words: Vec::new(),
             }
         );
-        // 结束早于开始时按零长；缺 `timescale` 时按微秒。
+        // If the end is before the start, the length is zero; without `timescale`, times are in microseconds.
         let track = read_captions(&json!({ "schema": CAPTION_DOCUMENT, "cues": [{ "start": 3_000_000, "end": 1, "text": "a" }] })).unwrap();
         assert!(!track.sequence_clock);
         assert_eq!((track.cues[0].start, track.cues[0].end), (3.0, 3.0));
@@ -593,17 +578,17 @@ mod tests {
                 "allCaps": true, "opacity": 0.8, "textAlign": "left",
             },
         });
-        // 输出 1920×1080：k = 0.5，字 48 像素（540 短边上的 24），按 30 号归一的比例是 1.6。
+        // Output 1920×1080: k = 0.5, glyphs 48 px (24 on the 540 short edge), and the ratio normalized to size 30 is 1.6.
         let KernelStyle { root, opacity, notes } = boxed_as_studio(&body, (1920, 1080));
         let close = |key: &str, expected: f64| {
             let got = root[key].as_f64().unwrap();
             assert!((got - expected).abs() < 1e-9, "{key}: {got} ≠ {expected}");
         };
-        // 框心 (960 + 96, 540 + 270)，高 216：靠下锚在框底 918。
+        // Box center (960 + 96, 540 + 270), height 216: anchored at the bottom of the box, 918, when aligned to the bottom.
         close("x", 1056.0 / 1920.0 * 100.0);
         close("y", 918.0 / 1080.0 * 100.0);
         assert_eq!(root["verticalAlign"], "bottom");
-        // 折行宽度：框宽 960 减两侧留白 12。
+        // Wrap width: box width 960 minus 12 padding on each side.
         close("width", 936.0 / 1920.0 * 100.0);
         close("fontSize", 24.0);
         close("backgroundPadding", 12.0 / (1.6 * 0.8));
@@ -613,7 +598,7 @@ mod tests {
         assert_eq!(root["background"], true);
         assert_eq!(root["textTransform"], "uppercase");
         assert_eq!(root["fontFamily"], "Noto Sans SC");
-        // 阴影向下 4 像素、模糊 3 像素，都按字号量。
+        // Shadow offset 4 px down with a 3 px blur, both measured against the font size.
         let shadow = &root["dropShadow"];
         assert_eq!(shadow["color"], "#000000");
         assert!((shadow["opacity"].as_f64().unwrap() - 64.0 / 255.0).abs() < 1e-9);
@@ -639,7 +624,7 @@ mod tests {
         assert_eq!(root["anim"]["animationName"], "Reveal");
         assert_eq!(root["anim"]["catalogId"], "reveal");
         assert!(notes.is_empty(), "{notes:?}");
-        // 认不出的不动画，报一条提示。
+        // Unrecognized ones are not animated; a notice is reported.
         let KernelStyle { root, notes, .. } = boxed_as_studio(&boxed(json!("typewriter")), (1920, 1080));
         assert_eq!(root["anim"]["name"], "None");
         assert_eq!(notes.len(), 1, "{notes:?}");

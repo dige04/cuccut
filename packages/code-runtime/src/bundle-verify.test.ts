@@ -56,7 +56,7 @@ describe.skipIf(!resolveElectronBinary())('verifyBundle', { timeout: 120_000 }, 
       'alpha',
       'network-runtime',
     ]);
-    // 0、中间、末帧、越界一帧，再加一次中间帧。
+    // 0, the middle, the last frame, an out-of-range frame, plus one more middle frame.
     expect(report.sampledFrames.map((f) => f.seconds)).toEqual([0, 1, 59 / 30, 2 + 1 / 30, 1]);
   });
 

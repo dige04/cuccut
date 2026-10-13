@@ -1,5 +1,5 @@
-// 编辑器页面与编译器打进去的第三方代码的原始许可（THIRD_PARTY_NOTICES.md「幻灯片编辑器」）。
-// npm 包按构建实际打进的模块收集，不手列；另加运行时以字符串内嵌的 mediabunny。
+// The original licenses of the third-party code bundled into the editor page and the compiler (THIRD_PARTY_NOTICES.md, “Slides editor”).
+// npm packages are collected from the modules the build actually bundles, not listed by hand; mediabunny, which the runtime embeds as a string, is added separately.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -7,17 +7,17 @@ import { fileURLToPath } from 'node:url';
 
 const runtimeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../packages/slides-runtime');
 
-/** 构建时改过的包：说明随许可一起写出。 */
+/** Packages modified at build time: the notice is written out together with the license. */
 const MODIFIED = {
   pptxgenjs: 'Modified at build time by CucCut: 25 extensions from packages/slides-runtime/patches/pptxgenjs-3.12.0.json.',
 };
 
-/** 发行文件里已经内联了依赖的包：打进的是 jszip 的浏览器版 dist/jszip.min.js，依赖不再作为单独模块出现。 */
+/** Packages whose distribution file already inlines their dependencies: what is bundled is jszip's browser build dist/jszip.min.js, and its dependencies no longer appear as separate modules. */
 const INLINED = {
   jszip: ['pako', 'lie', 'immediate', 'setimmediate'],
 };
 
-/** 运行时里以文本内嵌、不经 npm 解析的代码。 */
+/** Code embedded as text in the runtime, not resolved through npm. */
 const EMBEDDED = [
   {
     title: 'mediabunny@1.27.3 (MPL-2.0)',
@@ -28,7 +28,7 @@ const EMBEDDED = [
   },
 ];
 
-/** 从打进包里的模块路径找出所属的 npm 包目录（嵌套的 node_modules 取最里层）。 */
+/** Finds the npm package directory a module belongs to from its path in the bundle (for nested node_modules, the innermost one). */
 export function bundledPackageDirs(moduleIds) {
   const dirs = new Set();
   for (const id of moduleIds) {
@@ -42,7 +42,7 @@ export function bundledPackageDirs(moduleIds) {
   return [...dirs].sort();
 }
 
-/** 按 Node 的查找方式，从一个包目录往上找它依赖的包装在哪。 */
+/** Following Node's lookup rules, walks up from a package directory to find where its dependency packages are installed. */
 function installedPackageDir(fromDir, name) {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', name);
@@ -51,7 +51,7 @@ function installedPackageDir(fromDir, name) {
   }
 }
 
-/** 包目录 → 许可文本：包自带的许可文件原文；包里没有许可文件时只写 package.json 的许可标识。 */
+/** Package directory → license text: the package's own license file verbatim; if the package has no license file, only the license identifier from package.json. */
 export function thirdPartyLicenses(packageDirs) {
   const sections = [];
   for (const dir of packageDirs) {

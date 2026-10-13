@@ -24,17 +24,17 @@ export interface RuntimeServices {
 }
 
 export interface ServicesOptions {
-  /** 服务审批的时限（默认 `SERVICE_APPROVAL_TIMEOUT_MS`）。测试用短的。 */
+  /** The timeout for service approval (default `SERVICE_APPROVAL_TIMEOUT_MS`). Tests use a short one. */
   approvalTimeoutMs?: number;
-  /** 模型接口服务的上传与请求体上限（默认见 `MODEL_API_MAX_UPLOAD_BYTES`、`MODEL_API_MAX_JSON_BYTES`）。测试用小的。 */
+  /** The upload and body size limits of the model API service (defaults in `MODEL_API_MAX_UPLOAD_BYTES` and `MODEL_API_MAX_JSON_BYTES`). Tests use small ones. */
   modelApi?: { maxUploadBytes?: number; maxJsonBytes?: number };
-  /** Web 服务：构建产物目录（null 表示没有；不给时按 `CUCCUT_WEB_DIST`、打包资源、仓库里的构建输出找），以及代码与会话的期限。 */
+  /** Web service: the build output directory (null means none; if not given, it is looked up via `CUCCUT_WEB_DIST`, packaged resources, and the build output in the repo), plus the lifetime of codes and sessions. */
   web?: { dist?: string | null } & WebSessionsOptions;
 }
 
 /**
- * 读入对外服务的配置并登记全部服务（架构设计 §4.8）。不开启任何服务：随 Runtime 启动的由 `manager.restore` 开启。
- * 配置文件不是合法的配置时抛出（不覆盖它，免得丢掉已发放的客户端）。
+ * Reads the config for external services and registers all services (architecture design §4.8). It enables no service: those that start with the Runtime are enabled by `manager.restore`.
+ * Throws when the config file is not a valid config (it is not overwritten, so issued clients are not lost).
  */
 export async function openServices(deps: {
   home: RuntimeHome;
@@ -43,7 +43,7 @@ export async function openServices(deps: {
   models: ModelJobs;
   nodes: NodeService;
   log: Logger;
-  /** 整份工具目录的工具组（按服务的范围构造）：MCP 服务按 `surfaces` 露出其中的一部分。 */
+  /** The tool group of the full tool catalog (built for the service's scope): the MCP service exposes a subset of it according to `surfaces`. */
   toolSets: (scope: ToolScope) => ToolSet[];
   options?: ServicesOptions;
 }): Promise<RuntimeServices> {
@@ -56,7 +56,7 @@ export async function openServices(deps: {
         timeoutMs: deps.options?.approvalTimeoutMs ?? SERVICE_APPROVAL_TIMEOUT_MS,
         onRequested: (approval) => m.topic.publish({ type: 'approval.requested', approval }),
         onResolved: (approvalId, outcome) => m.topic.publish({ type: 'approval.resolved', approvalId, outcome }),
-        // 与会话审批共用 Harness 的 ApprovalService：待处理的服务审批也列在 `tasks` 主题里（§3.12）。
+        // Shares the Harness's ApprovalService with session approvals: pending service approvals are also listed under the `tasks` topic (§3.12).
         approvals: deps.harness.approvals,
       }),
   });

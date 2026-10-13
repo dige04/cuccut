@@ -17,14 +17,14 @@ import { COMMON_COPY } from './services-copy.ts';
 import { copyText, useConfigureService } from './use-service-actions.ts';
 
 /*
- * MCP / 模型接口 / Web 三页共用的零件（原型 designs/cuccut/app/services.css `.svc__sec` / `.svc__panel` / `.svc__line` /
- * `.svc__fix` / `.svc__port`，ui.css `.setrow`、`.agset-code`；page-services.jsx 的 `Row` 与「连接」「最近请求」块）。
+ * Parts shared by the three pages MCP / Model API / Web (prototype designs/cuccut/app/services.css `.svc__sec` / `.svc__panel` / `.svc__line` /
+ * `.svc__fix` / `.svc__port`, ui.css `.setrow` and `.agset-code`; the `Row` in page-services.jsx and the “Connect” and “Recent requests” blocks).
  */
 
 const sec = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 28, paddingX: 4 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
-/** 分节标题（原型 `.t-section.svc__sec`），右边可带一句状态。 */
+/** Section heading (prototype `.t-section.svc__sec`), with an optional status line on the right. */
 export function SectionHead({ title, aside }: { title: string; aside?: ReactNode }) {
   return (
     <div className={sec}>
@@ -38,7 +38,7 @@ export function SectionHead({ title, aside }: { title: string; aside?: ReactNode
   );
 }
 
-/** 原型 ui.css `.setrow`：标签 + 说明在左，控件在右，1px gray-100 分隔。 */
+/** Prototype ui.css `.setrow`: label and description on the left, control on the right, with a 1px gray-100 divider. */
 const row = style({
   display: 'flex',
   alignItems: 'center',
@@ -70,7 +70,7 @@ export function SetRow({ label, desc, dim = false, children }: { label: ReactNod
 const plannedRow = style({ display: 'flex', alignItems: 'start', gap: 8, marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 const plannedIcon = iconStyle({ size: 'S', color: 'neutral', marginTop: 2 });
 
-/** 置灰的控件旁边那一句：为什么这一版做不到（同工具页 `plannedReason` 的做法，写实话）。 */
+/** The sentence next to a greyed-out control: why this version cannot do it (same approach as `plannedReason` on the tools page; written honestly). */
 export function PlannedNote({ children }: { children: ReactNode }) {
   return (
     <p className={plannedRow}>
@@ -80,7 +80,7 @@ export function PlannedNote({ children }: { children: ReactNode }) {
   );
 }
 
-/** 原型 `.agset-code`：一行等宽文字 + 复制按钮。 */
+/** Prototype `.agset-code`: one line of monospace text plus a copy button. */
 const code = style({
   display: 'flex',
   alignItems: 'center',
@@ -113,7 +113,7 @@ export function CodeLine({ label, value, copyLabel, what }: { label?: string; va
   );
 }
 
-/** 多行的配置片段（JSON 或环境变量），只读、可选中。 */
+/** Multi-line configuration snippet (JSON or environment variables), read-only and selectable. */
 const pre = style({
   margin: 0,
   marginTop: 8,
@@ -139,7 +139,7 @@ export function ActionsRow({ children }: { children: ReactNode }) {
   return <div className={actionsRow}>{children}</div>;
 }
 
-/** 一项 Runtime 服务的状态与连接（页面共用）。 */
+/** The status and connection of one Runtime service (shared across pages). */
 export function useServiceStatus(id: Exclude<ServiceId, 'remote'>) {
   const runtimeId = runtimeServiceId(id);
   const status = useServices((s) => s.services.find((x) => x.serviceId === runtimeId));
@@ -148,13 +148,13 @@ export function useServiceStatus(id: Exclude<ServiceId, 'remote'>) {
   return { status, ready, connected, state: statusState(status) };
 }
 
-// ---- 端口、自动启动、出错时的补救 ----
+// ---- Port, auto-start, remedies on error ----
 
 const portField = style({ width: 96 });
 
 /**
- * 端口一行（原型 `.svc__port`）：失焦或回车时提交。和其他 CucCut 服务撞口的当场说是谁；
- * Runtime 立即生效——开着时按新端口重开（原型要先停服务，这里不用）。起停中不能改。
+ * Port row (prototype `.svc__port`): commits on blur or Enter. If it clashes with another CucCut service, it says right away which one it is.
+ * The Runtime takes effect immediately: if the service is running, it restarts on the new port (the prototype would require stopping the service first; this one does not). It cannot be changed while starting or stopping.
  */
 export function PortRow({ id, status }: { id: Exclude<ServiceId, 'remote'>; status: ServiceStatus }) {
   const configure = useConfigureService();
@@ -198,7 +198,7 @@ export function PortRow({ id, status }: { id: Exclude<ServiceId, 'remote'>; stat
   );
 }
 
-/** 「打开 CucCut 时自动启动」（随 Runtime 启动，`services.configure` 的 `autostart`）。 */
+/** “Start automatically when CucCut opens” (starts with the Runtime; the `autostart` of `services.configure`). */
 export function AutostartCheckbox({ id, status }: { id: Exclude<ServiceId, 'remote'>; status: ServiceStatus }) {
   const configure = useConfigureService();
   const connected = useConnection((s) => s.state.status === 'connected');
@@ -225,7 +225,7 @@ const fix = style({
 });
 const grow = style({ flexGrow: 1, minWidth: 0 });
 
-/** 出错时卡片里的补救一行（原型 `.svc__fix`）：换个端口再试，或一键换回默认端口。只在原因是端口的事时出现。 */
+/** Remedy line on the card in case of error (prototype `.svc__fix`): try another port, or switch back to the default port with one click. Shown only when the cause is the port. */
 export function ErrorFix({ id, status }: { id: Exclude<ServiceId, 'remote'>; status: ServiceStatus }) {
   const configure = useConfigureService();
   const connected = useConnection((s) => s.state.status === 'connected');
@@ -247,16 +247,16 @@ export function ErrorFix({ id, status }: { id: Exclude<ServiceId, 'remote'>; sta
   );
 }
 
-// ---- 允许的操作（三档） ----
+// ---- Allowed operations (three tiers) ----
 
-/** 三列等宽，窄了换成一列（原型 services.css `.svc__access3`）。 */
+/** Three equal-width columns; becomes one column when narrow (prototype services.css `.svc__access3`). */
 const levels = style({
   display: 'grid',
   gridTemplateColumns: { default: '1fr', sm: ['1fr', '1fr', '1fr'] },
   gap: 8,
   marginTop: 12,
 });
-/** 一档（原型 settings-agent.css `.agm-access__option`，选中是蓝底蓝边）。 */
+/** One tier (prototype settings-agent.css `.agm-access__option`; the selected one has a blue background and blue border). */
 const levelOption = style({
   display: 'flex',
   flexDirection: 'column',
@@ -280,8 +280,8 @@ const levelTitle = style({ font: 'ui', fontWeight: 'bold', color: { default: 'gr
 const levelDesc = style({ font: 'ui-xs', color: { default: 'gray-600', isDisabled: 'disabled' } });
 
 /**
- * 三档等级（原型 `.agm-access.svc__access3` 三选一）：react-aria 的 ToggleButtonGroup（同 tools/image-tool.tsx 的画幅选择）。
- * S2 SelectBoxGroup 的横排一行只放得下一个、竖排又不显示说明，所以不用它。立即生效。
+ * Three access tiers (prototype `.agm-access.svc__access3`, choose one of three): react-aria's ToggleButtonGroup (same as the aspect-ratio picker in tools/image-tool.tsx).
+ * S2's SelectBoxGroup fits only one item in its horizontal row, and its vertical layout does not show descriptions, so it is not used. Takes effect immediately.
  */
 export function LevelChoice({
   label,
@@ -322,7 +322,7 @@ export function LevelChoice({
   );
 }
 
-// ---- 最近请求 ----
+// ---- Recent requests ----
 
 const line = style({
   display: 'flex',
@@ -338,7 +338,7 @@ const line = style({
 const call = style({ flexGrow: 1, minWidth: 0, font: 'code-sm', color: 'gray-800', overflowWrap: 'anywhere' });
 const meta = style({ flexShrink: 0, font: 'ui-xs', color: { default: 'gray-600', isBad: 'negative' } });
 
-/** 最近的外部请求（Runtime 留最近 20 条，新的在前）：工具 · 目标视频，调用方 · 多久前 · 结果。不含参数正文。 */
+/** Recent external requests (the Runtime keeps the latest 20, newest first): tool · target video, caller · how long ago · result. Does not include the parameter body. */
 export function RequestList({ records, nameOf }: { records: readonly ServiceRequestRecord[]; nameOf: (id: Id) => string | undefined }) {
   const now = useNow(60_000);
   if (!records.length) return <p className={detail}>{COMMON_COPY.noRequests}</p>;

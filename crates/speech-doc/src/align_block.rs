@@ -1,27 +1,16 @@
-//! 最小单调对齐块（对齐块设计 §4.2–§4.6，纯函数、零 I/O、零 LLM）。
+//! Minimal monotonic alignment blocks (align block design §4.2–§4.6; pure functions, zero I/O, zero LLM).
 //!
-//! 一句译文的展示切分被拆成四步确定性计算：
+//! The display segmentation of a translated sentence is split into four deterministic steps:
 //!
-//! 1. **对齐边**（[`AlignEdge`]）：源词序号 ↔ 译文字符区间，由 [`WordAligner`]
-//!    实现叠加产出；[`AnchorAligner`] 只出数字/日期/URL/原样 Latin/锁定术语的
-//!    `hard` 边，LLM 块级对齐（M3）与模型对齐器（M5）另行注入，
-//!    [`merge_edges`] 负责硬边优先的合并。
-//! 2. **安全边界与最小单调块**（[`safe_boundaries`] / [`minimal_monotonic_blocks`]）：
-//!    只在没有任何高置信对齐边跨越的目标语合法缝上建立双语边界
-//!    （`leftMax(k) < rightMin(k)`），相邻安全边界之间就是一个块；语序交叉自动
-//!    落进同一块。
-//! 3. **双语 DP**（[`bilingual_dp`]）：以块为原子，`pieces` = 连续块的并，同时
-//!    受目标语版式、源语版式、共享时窗、两侧缝质量约束。
-//! 4. **决策树**（[`plan_sentence`]）：全部块 ≤ hard 且 DP 有解 ⇒ 块级对应；
-//!    某块 > hard ⇒ [`PlanOutcome::NeedsRewrite`]（单调化改写由调用方决定）；
-//!    置信度不足或无解 ⇒ 整句对应（[`sentence_level_entry`]）。
+//! 1. **Alignment edges** ([`AlignEdge`]): source word index ↔ translation character range, produced by layering the [`WordAligner`]
+//!    implementations. [`AnchorAligner`] only produces `hard` edges for numbers, dates, URLs, verbatim Latin words and locked terms; LLM block-level alignment (M3) and model aligners (M5) are injected separately, and [`merge_edges`] handles merging with hard-edge priority.
+//! 2. **Safe boundaries and minimal monotonic blocks** ([`safe_boundaries`] / [`minimal_monotonic_blocks`]): bilingual boundaries are set only at legal target-language seams that no high-confidence alignment edge crosses (`leftMax(k) < rightMin(k)`); the span between adjacent safe boundaries is one block, and crossed word order falls automatically within the same block.
+//! 3. **Bilingual DP** ([`bilingual_dp`]): blocks are atoms; `pieces` = unions of consecutive blocks, constrained at once by target-language layout, source-language layout, the shared time window, and the seam quality on both sides.
+//! 4. **Decision tree** ([`plan_sentence`]): all blocks ≤ hard and the DP has a solution ⇒ block-level correspondence; some block > hard ⇒ [`PlanOutcome::NeedsRewrite`] (monotonizing rewrite is up to the caller); confidence insufficient or no solution ⇒ sentence-level correspondence ([`sentence_level_entry`]).
 //!
-//! 时间分配不在本模块：`pieces.from/to` 落库后由
-//! [`crate::split::derive_trans_cues`] 按词时间派生并平滑/补足，本模块不重复。
+//! Time allocation is not in this module: after `pieces.from/to` is stored, [`crate::split::derive_trans_cues`] derives, smooths and fills it from word times; this module does not repeat that.
 //!
-//! 坐标约定：本模块内部所有目标侧位置都是**传入 `target` 文本的字符下标**
-//! （`chars()` 计数，非字节）；只有写入 [`TransAlign`] 时才按
-//! [`AlignBlock`] 的契约换算成 `concat(pieces.text)` 上的字符区间。
+//! Coordinate convention: all target-side positions inside this module are **character indices into the `target` text passed in** (counted by `chars()`, not bytes). Only when writing to [`TransAlign`] are they converted, per the [`AlignBlock`] contract, into character ranges over `concat(pieces.text)`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -43,26 +32,25 @@ use crate::split::{
     seam_penalty, target_cps_chars, target_required_seconds,
 };
 
-/// 缺省软边置信阈值 τ：低于它的软边不参与安全边界判定（设计 §4.3）。
+/// Default soft-edge confidence threshold τ: soft edges below it do not take part in safe-boundary decisions (design §4.3).
 pub const DEFAULT_EDGE_TAU: f32 = 0.5;
-/// 缺省整句降级阈值 τ_s：整个方案的置信度低于它时改为整句对应（设计 §4.5）。
+/// Default sentence-level fallback threshold τ_s: when the confidence of the whole plan is below it, the plan switches to sentence-level correspondence (design §4.5).
 pub const DEFAULT_SENTENCE_TAU: f32 = 0.35;
-/// 源侧断点选择时视为"停顿"的最小词间静音（秒）；与 ⏸ 停顿标记同门槛。
+/// Minimum inter-word silence (seconds) that counts as a "pause" when choosing source-side break points; same threshold as the ⏸ pause marker.
 pub const SOURCE_PAUSE_SEC: f64 = 0.6;
-/// 安全边界之间的未对齐源词达到这么多时，改按比例而不是"并入前一块"选断点：
-/// 一两个未对齐词是冠词/省译，长串未对齐词是证据缺失。
+/// When the unaligned source words between safe boundaries reach this many, the break is chosen proportionally rather than by "merging into the previous block": one or two unaligned words are articles or omissions, while a long run of unaligned words is missing evidence.
 const LONG_UNALIGNED_RUN: usize = 3;
-/// [`AnchorAligner`] 的来源标识。
+/// Source identifier of [`AnchorAligner`].
 pub const ANCHOR_ALIGNER_TAG: &str = "anchor/1";
 
-/// 一条对齐边：句内第 `src` 个锚定词 ↔ 目标文本字符区间 `tgt`。
+/// One alignment edge: the `src`-th anchored word in the sentence ↔ character range `tgt` in the target text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlignEdge {
     pub src: usize,
     pub tgt: Range<usize>,
-    /// 置信度 0..=1；`hard` 边恒按 1.0 参与判定。
+    /// Confidence 0..=1; `hard` edges always count as 1.0 in decisions.
     pub weight: f32,
-    /// 硬锚（数字/术语/原样 Latin 等确定性证据）。
+    /// Hard anchor (deterministic evidence such as numbers, terms, verbatim Latin).
     pub hard: bool,
 }
 
@@ -85,7 +73,7 @@ impl AlignEdge {
         }
     }
 
-    /// 是否参与安全边界判定：硬边恒参与，软边需 `weight >= tau`。
+    /// Whether this edge takes part in safe-boundary decisions: hard edges always do; soft edges need `weight >= tau`.
     pub fn counted(&self, tau: f32) -> bool {
         self.hard || self.weight >= tau
     }
@@ -95,35 +83,32 @@ impl AlignEdge {
     }
 }
 
-/// 双语锁定术语对（brief glossary / 锁定术语）。
+/// Bilingual locked term pair (brief glossary / locked terms).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TermPair {
     pub source: String,
     pub target: String,
 }
 
-/// 对齐器上下文。
+/// Aligner context.
 #[derive(Debug, Clone, Default)]
 pub struct AlignCtx {
-    /// 源语言（BCP-47）。
+    /// Source language (BCP-47).
     pub source_lang: String,
-    /// 目标语言（BCP-47）。
+    /// Target language (BCP-47).
     pub lang: String,
-    /// 锁定术语对：源词组 ↔ 目标字面串。
+    /// Locked term pair: source word group ↔ target literal string.
     pub protected_terms: Vec<TermPair>,
 }
 
-/// 对齐边来源抽象（设计 §4.2）。实现之间按置信度叠加，硬边优先。
+/// Abstraction over alignment-edge sources (design §4.2). Implementations layer by confidence; hard edges take priority.
 pub trait WordAligner {
     fn align(&self, src_words: &[&str], target: &str, ctx: &AlignCtx) -> Vec<AlignEdge>;
 }
 
-/// 确定性锚点对齐器：数字（含 `2028` / `50%` / `3.5` / `1,000`）、日期、URL/邮箱、
-/// 原样出现在译文里的 Latin 词、锁定术语对 ⇒ `hard` 边。
+/// Deterministic anchor aligner: numbers (including `2028` / `50%` / `3.5` / `1,000`), dates, URLs and emails, Latin words appearing verbatim in the translation, and locked term pairs ⇒ `hard` edges.
 ///
-/// 匹配纪律镜像 `engines::align::unique_anchor_bindings`：只在源侧与目标侧
-/// **各唯一命中**时才下结论；重复出现的 token 无法确定对应关系，交给上层
-/// 对齐器。术语源区间重叠时长词组胜出，等长双双弃权。
+/// Matching discipline mirrors `engines::align::unique_anchor_bindings`: a conclusion is drawn only when a token has exactly one hit on the source side **and** exactly one on the target side. Repeated tokens cannot determine their correspondence and are left to the upper-level aligner. When term source spans overlap, the longer phrase wins; on equal length both abstain.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AnchorAligner;
 
@@ -132,7 +117,7 @@ impl WordAligner for AnchorAligner {
         let target_chars: Vec<char> = target.chars().collect();
         let mut edges = term_edges(src_words, target, &ctx.protected_terms);
         let target_cjk = is_cjk_target(&ctx.lang);
-        // 每个源词至多产出一个 token 锚；先收集候选，再按唯一性过滤。
+        // Each source word produces at most one token anchor; collect candidates first, then filter by uniqueness.
         let mut candidates: Vec<(usize, String)> = Vec::new();
         for (index, word) in src_words.iter().enumerate() {
             let token = anchor_token(word);
@@ -161,7 +146,7 @@ impl WordAligner for AnchorAligner {
             }
             let start = hits[0];
             let range = start..start + token.chars().count();
-            // 已被术语边覆盖的源词不再重复出边（术语边更长、更精确）。
+            // Source words already covered by a term edge do not emit edges again (the term edge is longer and more precise).
             if edges.iter().any(|edge| edge.src == *index) {
                 continue;
             }
@@ -176,8 +161,7 @@ fn is_cjk_target(lang: &str) -> bool {
     matches!(primary_subtag(lang).as_str(), "zh" | "ja" | "ko" | "th")
 }
 
-/// 从源词剥掉首尾非内容标点后的锚 token（`2028,` → `2028`、`(GPU)` → `GPU`、
-/// `50%.` → `50%`）；内部字符原样保留（`3.5`、`1,000`、`https://a.b/c`）。
+/// Anchor token after stripping leading and trailing non-content punctuation from a source word (`2028,` → `2028`, `(GPU)` → `GPU`, `50%.` → `50%`). Internal characters are kept as-is (`3.5`, `1,000`, `https://a.b/c`).
 fn anchor_token(word: &str) -> String {
     let keep = |ch: char| ch.is_alphanumeric() || matches!(ch, '%' | '$' | '€' | '£' | '¥');
     word.trim()
@@ -217,9 +201,7 @@ fn is_url_anchor(token: &str) -> bool {
         && segments[0].len() >= 2
 }
 
-/// 原样 Latin 片段判据。CJK 目标语里任何 Latin 词都是外来原样片段；Latin
-/// 目标语只认专名形态（含数字、非首位大写、全大写、句中大写起首），避免把
-/// 同形功能词（`In`/`no`）当成硬锚。
+/// Test for verbatim Latin fragments. In a CJK target language, any Latin word is a foreign verbatim fragment. A Latin target language only accepts proper-noun forms (containing digits, a non-initial capital, all caps, or a mid-sentence capitalized initial), to avoid treating homographic function words (`In` / `no`) as hard anchors.
 fn is_latin_anchor(token: &str, target_cjk: bool, sentence_initial: bool) -> bool {
     let chars: Vec<char> = token.chars().collect();
     if chars.len() < 2
@@ -240,8 +222,7 @@ fn is_latin_anchor(token: &str, target_cjk: bool, sentence_initial: bool) -> boo
     has_digit || inner_upper || all_upper || (capitalized && !sentence_initial)
 }
 
-/// `token` 在目标字符流里的整词命中位置：前后不能紧邻字母数字，也不能是
-/// 紧接数字的小数点/千分位（`2028` 不命中 `2028.5` 或 `12,028`）。
+/// Whole-word hit position of `token` in the target character stream: the characters before and after must not be adjacent alphanumerics, nor a decimal point or thousands separator adjacent to digits (`2028` does not match in `2028.5` or `12,028`).
 fn whole_token_occurrences(target: &[char], token: &str) -> Vec<usize> {
     let needle: Vec<char> = token.chars().collect();
     if needle.is_empty() || needle.len() > target.len() {
@@ -279,7 +260,7 @@ fn lexemes(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 源词组在词序列上的唯一命中窗口（按规范化 lexeme 序列匹配）。
+/// Unique hit window of a source word group in the word sequence (matched on the normalized lexeme sequence).
 fn source_phrase_matches(words: &[&str], phrase: &str) -> Vec<(usize, usize)> {
     let phrase_tokens = lexemes(phrase);
     if phrase_tokens.is_empty() {
@@ -300,7 +281,7 @@ fn source_phrase_matches(words: &[&str], phrase: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// 锁定术语对 ⇒ 硬边（源窗口内每个词 → 目标字面串区间）。
+/// Locked term pair ⇒ hard edges (each word in the source window → the target literal's character range).
 fn term_edges(src_words: &[&str], target: &str, terms: &[TermPair]) -> Vec<AlignEdge> {
     struct Binding {
         span: (usize, usize),
@@ -334,7 +315,7 @@ fn term_edges(src_words: &[&str], target: &str, terms: &[TermPair]) -> Vec<Align
             tgt,
         });
     }
-    // 源区间重叠消歧：长词组胜出，等长双双弃权（镜像 unique_anchor_bindings）。
+    // Source-span overlap disambiguation: the longer phrase wins; on equal length both abstain (mirrors unique_anchor_bindings).
     let mut keep = vec![true; bindings.len()];
     for first in 0..bindings.len() {
         for second in first + 1..bindings.len() {
@@ -365,8 +346,7 @@ fn term_edges(src_words: &[&str], target: &str, terms: &[TermPair]) -> Vec<Align
         .collect()
 }
 
-/// 多层对齐边合并：空区间丢弃；同一源词或同一目标区间上硬边胜过软边；完全
-/// 相同的边只保留权重最高的一条。输出按 `(src, tgt)` 排序，结果确定。
+/// Merging of multi-layer alignment edges: empty ranges are dropped; on the same source word or the same target range, hard edges beat soft edges; identical edges keep only the highest-weight one. Output is sorted by `(src, tgt)`, so the result is deterministic.
 pub fn merge_edges(layers: Vec<Vec<AlignEdge>>) -> Vec<AlignEdge> {
     let mut all: Vec<AlignEdge> = layers
         .into_iter()
@@ -402,15 +382,14 @@ pub fn merge_edges(layers: Vec<Vec<AlignEdge>>) -> Vec<AlignEdge> {
     merged
 }
 
-/// 句内锚定词（[`TransAlign::words`] 的一项）：id 落库、text 供源缝判定、
-/// 时间供停顿与时窗代价。
+/// Anchored word within a sentence (an item of [`TransAlign::words`]): the id is stored, the text is used for source-seam judgment, and the time is used for pause and time-window costs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnchorWord {
     pub id: String,
     pub text: String,
     pub t0: f64,
     pub t1: f64,
-    /// 文稿里的「贴前」标记（[`crate::doc::Word::glue`]）。
+    /// The "glue to previous" marker in the script ([`crate::doc::Word::glue`]).
     pub glue: bool,
 }
 
@@ -423,29 +402,21 @@ impl crate::atomize::JoinWord for AnchorWord {
     }
 }
 
-/// 目标语候选切点：字符位 `pos`（切在该位之前，空白归左侧）与缝罚分
-/// （沿用 `split.rs` 标尺：句末 0 < 从句标点 0.3 < 词间空白 0.8 < 无缝
-/// [`crate::split::NO_SEAM_PENALTY`]，CJK 词内边界/阻塞级碎片另加
-/// [`BLOCKING_SEAM_PENALTY`]）。客观语病缝与锁定术语内部**不进候选**。
+/// Candidate target-language cut point: character position `pos` (cut before that position; whitespace goes to the left side) and seam penalty (following the `split.rs` scale: sentence end 0 < clause punctuation 0.3 < inter-word space 0.8 < no seam [`crate::split::NO_SEAM_PENALTY`]; CJK intra-word boundaries and blocking-level fragments get an extra [`BLOCKING_SEAM_PENALTY`]). Seams with objective defects and the interior of locked terms **do not enter candidates**.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CutCandidate {
     pub pos: usize,
     pub seam_cost: f64,
 }
 
-/// 模型切点提示吸附后的两堆候选（[`hinted_cut_candidates`]）：`admitted` 是
-/// lint 放行的（干净或只带悬垂尾），`refused` 是被客观语病 lint 拒掉的
-/// （弱尾 / 黏着首 / 残缺名词组 / 列表分隔 / 未闭合定界符）——后者只在块内
-/// 切分里作 [`SplitSeam::HintedRefused`] 档、排在逐字缝前（§8.9）。锁定术语
-/// 内部的提示两堆都不进。
+/// The two piles of candidates after snapping model cut hints ([`hinted_cut_candidates`]): `admitted` are those the lint lets through (clean, or carrying only a dangling tail); `refused` are those rejected by the objective-defect lint (weak tail / sticky head / incomplete noun phrase / list separator / unclosed delimiter). The latter are used only within block splitting, as the [`SplitSeam::HintedRefused`] tier, ranked before character-level seams (§8.9). Hints inside locked terms go into neither pile.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HintedCuts {
     pub admitted: Vec<CutCandidate>,
     pub refused: Vec<CutCandidate>,
 }
 
-/// 原子 → 在 `target` 里的起始字符下标（[`atomize`] 对非空白字符无损，逐一
-/// 回填即可）。返回 `n + 1` 项，末项 = 文本字符数。
+/// Starting character index in `target` of each atom (lossless for non-whitespace characters in [`atomize`], so filling them back one by one suffices). Returns `n + 1` items; the last item is the number of characters in the text.
 fn atom_start_positions(target: &str, atoms: &[String]) -> Vec<usize> {
     let mut starts = Vec::with_capacity(atoms.len() + 1);
     let mut want: Vec<usize> = Vec::with_capacity(atoms.len());
@@ -475,7 +446,7 @@ fn atom_start_positions(target: &str, atoms: &[String]) -> Vec<usize> {
     starts
 }
 
-/// 目标语候选切点（设计 §4.3）。
+/// Target-language candidate cut point (design §4.3).
 pub fn target_cut_candidates(
     target: &str,
     lang: &str,
@@ -495,14 +466,7 @@ pub fn target_cut_candidates(
         .collect()
 }
 
-/// 模型自己给出的切点（块边界、抄进译文的片标，见 [`crate::filepipe::lines::cut_hints`]）
-/// 作为块内切分的次选候选。`hints` 是目标字符下标，向后吸附到最近的原子起点
-/// （中间只许空白与标点），吸不上的丢弃。客观语病里只有悬垂尾照收进
-/// `admitted`——比按字硬切好，且落到 [`SplitSeam::HintedFlagged`] 档——弱尾 /
-/// 黏着首 / 残缺名词组 / 列表分隔 / 未闭合定界符的提示进 `refused`
-/// （§8.8 用户裁决：原先弱尾与黏着首也放行，四项目上 `align-target-seam`
-/// 9 → 33；§8.9 再把被拒的提示立成一档排在逐字缝前）；锁定术语内部的提示
-/// 两堆都不进。代价与 [`target_cut_candidates`] 同尺。去重、按位置排序。
+/// Cut points the model itself gave (block boundaries, segment markers copied into the translation; see [`crate::filepipe::lines::cut_hints`]) serve as second-choice candidates for splitting within a block. `hints` are target character indices, snapped forward to the nearest atom start (only whitespace and punctuation may lie in between); hints that cannot be snapped are dropped. Among objective-defect results, only dangling tails are kept in `admitted`, which is better than cutting character by character; they fall into the [`SplitSeam::HintedFlagged`] tier. Hints with weak tails, sticky heads, incomplete noun phrases, list separators or unclosed delimiters go into `refused` (§8.8 user decision: weak tails and sticky heads were originally admitted too, which raised `align-target-seam` from 9 to 33 across four projects; §8.9 then made rejected hints a tier of their own, ranked before character-level seams). Hints inside locked terms go into neither pile. The cost uses the same scale as [`target_cut_candidates`]. Deduplicated and sorted by position.
 pub fn hinted_cut_candidates(
     target: &str,
     lang: &str,
@@ -542,7 +506,7 @@ pub fn hinted_cut_candidates(
     out
 }
 
-/// 锁定术语在 `target` 上的字符区间（只锁放得进一行的术语）。
+/// Character range of a locked term in `target` (only terms that fit on one line are locked).
 fn protected_spans(
     target: &str,
     lang: &str,
@@ -561,17 +525,14 @@ fn protected_spans(
         .collect()
 }
 
-/// 原子 `j` 前的缝经客观语病 lint 后的裁定：`dangling` 是只有悬垂尾这一类
-/// 语病（证据候选不收、模型提示放行），`refused` 是别的客观语病（证据候选
-/// 与提示都不收进放行堆）。两者都假时是干净缝；代价里词内启发式与阻断级
-/// 语病都已计入 [`BLOCKING_SEAM_PENALTY`]。
+/// Verdict of the objective-defect lint on the seam before atom `j`: `dangling` means the only defect is a dangling tail (evidence candidates do not accept it, model hints do admit it); `refused` means some other objective defect (neither evidence candidates nor hints admit it into the accepted pile). When both are false it is a clean seam. The within-word heuristic and blocking-level defects are already counted in the cost as [`BLOCKING_SEAM_PENALTY`].
 struct CutVerdict {
     candidate: CutCandidate,
     dangling: bool,
     refused: bool,
 }
 
-/// 原子 `j` 前的缝：锁定术语内部不进候选（`None`），其余给出 [`CutVerdict`]。
+/// Seam before atom `j`: an interior of a locked term gives no candidate (`None`); otherwise gives a [`CutVerdict`].
 fn cut_verdict(
     target: &str,
     atoms: &[String],
@@ -616,15 +577,15 @@ fn cut_verdict(
     })
 }
 
-/// 一个目标切点上的对齐统计。
+/// Alignment statistics at one target cut point.
 struct BoundaryStat {
-    /// 切点左侧译文对齐到的最大源词序（无 ⇒ None）。
+    /// Maximum source word index aligned by the translation to the left of the cut (none ⇒ None).
     left_max: Option<usize>,
-    /// 切点右侧译文对齐到的最小源词序（无 ⇒ None）。
+    /// Minimum source word index aligned by the translation to the right of the cut (none ⇒ None).
     right_min: Option<usize>,
-    /// 有参与判定的边横跨切点。
+    /// An edge that takes part in the decision crosses the cut.
     straddled: bool,
-    /// 支撑该切点的边（达成 leftMax / rightMin 者）的最小权重。
+    /// Minimum weight of the edges supporting this cut (those that achieve leftMax / rightMin).
     confidence: f32,
 }
 
@@ -677,8 +638,7 @@ fn boundary_stat(edges: &[AlignEdge], k: usize, tau: f32) -> BoundaryStat {
     }
 }
 
-/// 安全边界（设计 §4.3）：候选切点 `k` 满足 `leftMax(k) < rightMin(k)` 且没有
-/// 参与判定的边横跨它。只统计 `hard` 边与 `weight >= tau` 的软边。
+/// Safe boundary (design §4.3): candidate cut `k` satisfies `leftMax(k) < rightMin(k)`, and no edge taking part in decisions crosses it. Only `hard` edges and soft edges with `weight >= tau` are counted.
 pub fn safe_boundaries(edges: &[AlignEdge], candidates: &[usize], tau: f32) -> Vec<usize> {
     let mut sorted: Vec<usize> = candidates.iter().copied().filter(|&k| k > 0).collect();
     sorted.sort_unstable();
@@ -689,7 +649,7 @@ pub fn safe_boundaries(edges: &[AlignEdge], candidates: &[usize], tau: f32) -> V
         .collect()
 }
 
-/// 源侧断点是否为强缝（左词带从句/句末标点）。
+/// Whether a source-side break is a strong seam (the word on the left carries a clause or sentence-end punctuation).
 fn source_punct_break(words: &[AnchorWord], b: usize) -> bool {
     let left = words[b - 1].text.trim();
     sentence_end(left) || clause_end_char(left).is_some()
@@ -699,10 +659,9 @@ fn source_pause_break(words: &[AnchorWord], b: usize) -> bool {
     words[b].t0 - words[b - 1].t1 >= SOURCE_PAUSE_SEC
 }
 
-/// 切在这些词**之后**会把它们与所依附的后续成分拆开（冠词/助动词/否定/
-/// 介词/连词/限定词）。小型英语规则集；CJK 悬垂由 [`ends_dangling`] 兜底。
+/// Cutting **after** these words would separate them from the following constituents they attach to (articles, auxiliaries, negation, prepositions, conjunctions, determiners). A small English rule set; CJK dangling is handled as a fallback by [`ends_dangling`].
 const FORWARD_CLINGING_EN: &[&str] = &[
-    // 冠词 / 限定词
+    // Articles / determiners
     "a",
     "an",
     "the",
@@ -724,7 +683,7 @@ const FORWARD_CLINGING_EN: &[&str] = &[
     "each",
     "another",
     "such",
-    // 助动词 / 系词 / 否定
+    // Auxiliaries / copulas / negation
     "do",
     "does",
     "did",
@@ -767,7 +726,7 @@ const FORWARD_CLINGING_EN: &[&str] = &[
     "haven't",
     "hadn't",
     "never",
-    // 介词 / 不定式
+    // Prepositions / infinitive markers
     "to",
     "of",
     "in",
@@ -791,7 +750,7 @@ const FORWARD_CLINGING_EN: &[&str] = &[
     "per",
     "toward",
     "towards",
-    // 连词 / 关系词
+    // Conjunctions / relative words
     "and",
     "or",
     "but",
@@ -816,7 +775,7 @@ const FORWARD_CLINGING_EN: &[&str] = &[
     "yet",
 ];
 
-/// 切在这些词**之前**会把黏着助词切到片首（日语助词）。
+/// Cutting **before** these words would move a clinging particle to the start of a segment (Japanese particles).
 const BACKWARD_CLINGING_JA: &[&str] = &[
     "は",
     "が",
@@ -837,7 +796,7 @@ const BACKWARD_CLINGING_JA: &[&str] = &[
     "けれど",
 ];
 
-/// 源侧断点 `b`（右块首词下标）是否合法。
+/// Whether a source-side break `b` (the index of the first word of the right block) is legal.
 fn source_seam_legal(words: &[AnchorWord], b: usize) -> bool {
     if b == 0 || b >= words.len() {
         return false;
@@ -846,9 +805,7 @@ fn source_seam_legal(words: &[AnchorWord], b: usize) -> bool {
     if ends_dangling(&left_text) {
         return false;
     }
-    // 从句标点封住的缝是合法的：`Generally speaking, though, | the smarter …`
-    // 里 `though,` 的词元虽在前附列表里，但逗号已经把它收成一个完整的插入语，
-    // 行尾停在这里没有悬垂。不封口时才按词元判前附。
+    // A seam closed by clause punctuation is legal: in `Generally speaking, though, | the smarter …` the lemma `though,` is in the prefix list, but the comma has already closed it as a complete parenthetical, so the line end here is not dangling. The prefix is judged by lemma only when there is no closing punctuation.
     let sealed = crate::seam::ends_clause_punct(&words[b - 1].text);
     let tail = lexemes(&words[b - 1].text).pop().unwrap_or_default();
     if !sealed && FORWARD_CLINGING_EN.contains(&tail.as_str()) {
@@ -861,9 +818,7 @@ fn source_seam_legal(words: &[AnchorWord], b: usize) -> bool {
     !BACKWARD_CLINGING_JA.contains(&head.as_str())
 }
 
-/// 源侧缝罚分（DP 用）：句读 0 < 连词前 0.3 < 介词前 0.5 < 普通词间 0.8；
-/// 非法缝（悬垂冠词/连词等）另加 [`BLOCKING_SEAM_PENALTY`]。块边界由对齐边
-/// 决定、可能被迫落在坏缝上，因此是重罚而非无穷。
+/// Source-side seam penalty (for the DP): sentence punctuation 0 < before a conjunction 0.3 < before a preposition 0.5 < ordinary inter-word 0.8. Illegal seams (dangling articles, conjunctions, etc.) additionally get [`BLOCKING_SEAM_PENALTY`]. Block boundaries are decided by alignment edges and may be forced onto bad seams, so this is a heavy penalty rather than an infinite one.
 fn source_seam_cost(words: &[AnchorWord], b: usize) -> f64 {
     let texts: Vec<&str> = words.iter().map(|word| word.text.as_str()).collect();
     let base = match source_boundary_strength(&texts, b) {
@@ -879,10 +834,7 @@ fn source_seam_cost(words: &[AnchorWord], b: usize) -> f64 {
     }
 }
 
-/// 在 `(leftMax, rightMin]`（已收窄为 `lo..=hi`）内选源侧断点（设计 §4.3）：
-/// 句末/从句标点 > 停顿 > 合法普通缝 > 非法缝；标点与停顿档内取最接近
-/// 比例理想位者；普通缝档默认并入前一块（取最大 `b`），未对齐词过长时改取
-/// 最接近理想位的合法缝；非法缝只作最后兜底。
+/// Chooses the source-side break within `(leftMax, rightMin]` (already narrowed to `lo..=hi`) (design §4.3): sentence-end or clause punctuation > pause > legal ordinary seam > illegal seam. Within the punctuation and pause tiers, take the one closest to the ideal proportional position. Within the ordinary-seam tier, the default is to merge into the previous block (take the largest `b`), but when an unaligned word run is too long, take the legal seam closest to the ideal position instead. Illegal seams are used only as a last resort.
 fn choose_source_break(
     words: &[AnchorWord],
     lo: usize,
@@ -923,7 +875,7 @@ fn choose_source_break(
     }
 }
 
-/// 块内是否存在交叉边（局部乱序）。
+/// Whether there are crossing edges inside the block (local reordering).
 fn has_local_reorder(edges: &[AlignEdge]) -> bool {
     for (index, a) in edges.iter().enumerate() {
         for b in &edges[index + 1..] {
@@ -937,16 +889,13 @@ fn has_local_reorder(edges: &[AlignEdge]) -> bool {
     false
 }
 
-/// 最小单调对齐块（设计 §4.3）。返回块的目标区间是 **`target` 字符坐标**
-/// （[`plan_entry`] 再换算到 `concat(pieces.text)`）。
+/// Minimal monotonic alignment block (design §4.3). Returns blocks whose target spans are in **`target` character coordinates** ([`plan_entry`] converts them to `concat(pieces.text)` later).
 ///
-/// - 只有参与判定（`hard` 或 `weight >= tau`）的边影响边界；
-/// - 每个安全边界的源断点由 [`choose_source_break`] 在 `(leftMax, rightMin]`
-///   内选出，且必须给两侧各留 ≥1 个源词，否则该边界弃用（并入相邻块）；
-/// - 未被任何边覆盖的源词并入前一块，句首的并入后一块；
-/// - `confidence` = 支撑块两侧边界的边权最小值，再与块内参与判定的边权取
-///   最小（无边界的整句块由块内边权决定）；
-/// - `flags`：`local-reorder`（块内交叉边）、`anchor`（含硬边）、`weak`（无硬边）。
+/// - Only edges taking part in decisions (`hard` or `weight >= tau`) affect boundaries;
+/// - the source break for each safe boundary is chosen by [`choose_source_break`] within `(leftMax, rightMin]`, and must leave at least 1 source word on each side, otherwise that boundary is dropped (merged into the adjacent block);
+/// - source words not covered by any edge merge into the previous block; leading ones at the start of the sentence merge into the next block;
+/// - `confidence` = the minimum edge weight of the edges supporting the block's two boundaries, further capped by the minimum weight of edges inside the block that take part in decisions (a whole-sentence block with no boundaries is decided by the in-block edge weights);
+/// - `flags`: `local-reorder` (crossing edges inside the block), `anchor` (contains hard edges), `weak` (no hard edges).
 pub fn minimal_monotonic_blocks(
     edges: &[AlignEdge],
     words: &[AnchorWord],
@@ -967,7 +916,7 @@ pub fn minimal_monotonic_blocks(
     sorted.sort_unstable();
     sorted.dedup();
 
-    // (目标切点, 源断点, 边界置信度)
+    // (target cut, source break, boundary confidence)
     let mut cuts: Vec<(usize, usize, f32)> = Vec::new();
     let mut prev_b = 0usize;
     for k in sorted {
@@ -1035,43 +984,40 @@ pub fn minimal_monotonic_blocks(
     blocks
 }
 
-/// 双语 DP 输入（设计 §4.4）。
+/// Bilingual DP input (design §4.4).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BilingualPlanInput {
-    /// 句内锚定词（顺序即 `src` 序号）。
+    /// Anchored words within the sentence (order is the `src` index).
     pub words: Vec<AnchorWord>,
-    /// 目标文本（`trans` 或 `transDisplay.text`，由 `text_basis` 声明）。
+    /// Target text (`trans` or `transDisplay.text`, as declared by `text_basis`).
     pub target: String,
-    /// 目标语言。
+    /// Target language.
     pub lang: String,
-    /// 源语言。
+    /// Source language.
     pub source_lang: String,
     pub params: TransParams,
-    /// 目标语锁定术语（不可从中间切开）。
+    /// Target-language locked terms (must not be split in the middle).
     pub protected_terms: Vec<String>,
-    /// 单条字幕最短展示时长（秒），缺省 1.0。
+    /// Minimum on-screen duration of one subtitle (seconds), default 1.0.
     pub min_duration_sec: f64,
-    /// 单条字幕最长停留时长（秒），缺省 7.0。
+    /// Maximum dwell duration of one subtitle (seconds), default 7.0.
     pub max_duration_sec: f64,
-    /// 源侧单行阅读单位预算（缺省按源语言取 `source_piece_budgets`）。
+    /// Per-line reading-unit budget on the source side (default taken per source language from `source_piece_budgets`).
     pub source_fit: usize,
-    /// 软边参与判定的置信阈值 τ。
+    /// Confidence threshold τ for soft edges to take part in decisions.
     pub tau: f32,
-    /// 整句降级阈值 τ_s。
+    /// Sentence-level fallback threshold τ_s.
     pub sentence_tau: f32,
     pub text_basis: TextBasis,
-    /// 写入 `TransAlign.aligner` 的来源标识。
+    /// Source identifier written to `TransAlign.aligner`.
     pub aligner: String,
-    /// 显示行密度。`Paired` 只放宽“目标行太窄”的合并偏好；读速与时长
-    /// 硬护栏保持不变。
+    /// Display line density. `Paired` only relaxes the "target line too narrow" merge preference; reading-speed and duration hard guardrails stay unchanged.
     pub density: AlignDensity,
-    /// 与 `words` 逐位对应的源 Cue 归属。非空（且与 `words` 等长）时，行规划
-    /// 按 `align-row-deficit` 同一驻留谓词（[`crate::engines::align::row_dwell_deficit`]）
-    /// 避免产出黏结行；空 = 不知道源行，谓词关闭。
+    /// Source-cue attribution for each word, aligned position by position with `words`. When non-empty (and of the same length as `words`), row planning uses the same dwell predicate as `align-row-deficit` ([`crate::engines::align::row_dwell_deficit`]) to avoid producing sticky rows. Empty means source rows are unknown and the predicate is off.
     pub source_cue_keys: Vec<Option<String>>,
 }
 
-/// 译文展示行密度。缺省 `Auto` 保持既有多对一行为。
+/// Translation display-line density. The default `Auto` keeps the existing many-to-one behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignDensity {
     #[default]
@@ -1097,8 +1043,7 @@ impl AlignDensity {
 }
 
 impl BilingualPlanInput {
-    /// 缺省参数：`TransParams::for_lang`、1.0s / 7.0s、源侧预算按语言、τ 0.5、
-    /// τ_s 0.35、`trans` 基准、[`ANCHOR_ALIGNER_TAG`]。
+    /// Default parameters: `TransParams::for_lang`, 1.0s / 7.0s, source-side budget per language, τ 0.5, τ_s 0.35, `trans` as basis, [`ANCHOR_ALIGNER_TAG`].
     pub fn new(
         words: Vec<AnchorWord>,
         target: impl Into<String>,
@@ -1124,12 +1069,12 @@ impl BilingualPlanInput {
         }
     }
 
-    /// 源行信息可用（逐词归属齐全）。
+    /// Source-row information is available (per-word attribution is complete).
     fn knows_source_rows(&self) -> bool {
         !self.words.is_empty() && self.source_cue_keys.len() == self.words.len()
     }
 
-    /// 整句的用户可见源行数；源行信息不可用时为 0。
+    /// Number of user-visible source rows in the whole sentence; 0 when source-row information is unavailable.
     fn sentence_source_rows(&self) -> usize {
         if !self.knows_source_rows() {
             return 0;
@@ -1137,8 +1082,7 @@ impl BilingualPlanInput {
         crate::engines::align::covered_source_rows(&self.source_cue_keys, 0, self.words.len() - 1)
     }
 
-    /// 句内词序 `[from, to]` 作为一条译文行时是否命中 `align-row-deficit` 的
-    /// 驻留谓词。源行信息不可用时恒为假。
+    /// Whether the word-order range `[from, to]` within the sentence, taken as one translation row, hits the dwell predicate of `align-row-deficit`. Always false when source-row information is unavailable.
     fn piece_dwell_deficit(&self, from: usize, to: usize) -> bool {
         if !self.knows_source_rows() || from > to || to >= self.words.len() {
             return false;
@@ -1158,13 +1102,13 @@ impl BilingualPlanInput {
     }
 }
 
-/// 合并多个块时的轻罚（每多合并一块），鼓励细粒度对照。
+/// Light penalty per block merged when several blocks are merged, encouraging fine-grained correspondence.
 const BLOCK_MERGE_PENALTY: f64 = 0.05;
-/// 源侧区间宽度超单行预算的罚分。
+/// Penalty for a source-side span width exceeding the single-line budget.
 const SOURCE_OVER_FIT_PENALTY: f64 = 1.0;
-/// 时窗短于目标语最低阅读时长：每秒缺口罚分。
+/// Time window shorter than the target language's minimum reading time: penalty per second of shortfall.
 const DURATION_DEFICIT_WEIGHT: f64 = 1.0;
-/// 时窗超过最长停留：每秒罚分。
+/// Time window longer than the maximum dwell: penalty per second.
 const DURATION_EXCESS_WEIGHT: f64 = 0.5;
 
 fn char_slice(chars: &[char], range: Range<usize>) -> String {
@@ -1173,9 +1117,7 @@ fn char_slice(chars: &[char], range: Range<usize>) -> String {
         .collect()
 }
 
-/// 一片（`blocks[i..j)`）的配对代价；`None` = 违反硬约束。`left_piece_start`
-/// 是 DP 为块 `i` 已选定的前驱片的首块下标（`i == 0` 时无意义），只用于顿号缝
-/// 的同口径判定。
+/// Pairing cost of one piece (`blocks[i..j)`); `None` means a hard constraint is violated. `left_piece_start` is the first block index of the predecessor piece that the DP has already chosen for block `i` (meaningless when `i == 0`); it is used only for the same-basis judgment of the enumeration-comma seam.
 #[allow(clippy::too_many_arguments)]
 fn pair_cost(
     blocks: &[AlignBlock],
@@ -1197,36 +1139,23 @@ fn pair_cost(
         return None;
     }
     let soft = params.soft.max(1) as f64;
-    // 目标宽度项。`Auto` 双向罚：偏离 soft 越远越贵，因此窄片在 DP 里几乎总会
-    // 被合回去（zh soft=14，一条 8u 的译文切成两片各付 ((4-14)/14)² ≈ 0.51，
-    // 合成一片只付 ((8-14)/14)² ≈ 0.18）。
+    // Target width term. `Auto` penalises in both directions: the further from soft, the more expensive, so a narrow piece almost always gets merged back in the DP (zh soft=14: a translation of 8 units split into two pieces, each paying ((4-14)/14)² ≈ 0.51, whereas merged into one it pays ((8-14)/14)² ≈ 0.18).
     //
-    // `Paired` 取消**窄于 soft** 方向的罚（该项取 0），因为 paired 的定义就是
-    // 「允许比 soft 短的行，换取每条源行一条译文行」；窄片的真正上限交给下面
-    // 的 `required`（阅读时长 / 读速）缺口罚与 `min_duration_sec` 接管——那是
-    // 生理护栏，不是排版偏好。宽于 soft 的方向仍按原式罚，`units > hard` 的
-    // 硬约束、超 fit 二次递增、源侧宽度/时窗、缝罚、合并罚与置信度罚全部不动。
+    // `Paired` removes the penalty for the **narrower than soft** direction (that term becomes 0), because the definition of paired is "allow lines shorter than soft, in exchange for one translation line per source line". The real upper bound on narrow pieces is taken over by the `required` (reading time / reading speed) shortfall penalty below and by `min_duration_sec`; those are physiological guardrails, not layout preferences. The direction wider than soft is still penalised as before; the `units > hard` hard constraint, the quadratic increase past fit, the source-side width and time window, seam penalties, merge penalties and the confidence penalty are all untouched.
     //
-    // 这条分支是 paired 在 `--align-only` 路径（check 的 fix 串、refine、
-    // 客户端定向重跑）上唯一的放宽点：那条路径走 `plan_sentence` →
-    // [`bilingual_dp`] → 本函数，够不到 [`merge_short_rows`]。
+    // This branch is the only relaxation point for paired on the `--align-only` path (check's fix runs, refine, client-directed reruns). That path goes `plan_sentence` → [`bilingual_dp`] → this function, and cannot reach [`merge_short_rows`].
     let mut cost = if input.density == AlignDensity::Paired && (units as f64) < soft {
         0.0
     } else {
         ((units as f64 - soft) / soft).powi(2)
     };
     if exceeds_one_line_fit(text, &input.lang, params.fit) {
-        // 超 fit 按超出幅度二次递增：刚过 fit 仍付 [`OVER_FIT_PENALTY`]（灰带
-        // 低端不改变既有取舍），顶到 hard 付三倍。平罚时「整行卡在 hard 上」
-        // （1.5）永远轻于源侧一个悬垂系词的坏缝（[`BLOCKING_SEAM_PENALTY`] +
-        // 0.8），DP 便宁可保留超 fit 整行；而 check 的 paired-density 恰恰要求在
-        // 那个译文缝上切开，refine 重跑也只会得到同一组块。hard 是天花板不是
-        // 目标：贴到天花板的行必须重于一个坏源缝。
+        // Beyond fit, the penalty grows quadratically with the overshoot: just past fit still pays [`OVER_FIT_PENALTY`] (so the low end of the grey band does not change existing trade-offs), and reaching hard pays three times as much. With a flat penalty, "a whole line pinned at hard" (1.5) would always be lighter than a bad source seam left by a dangling copula ([`BLOCKING_SEAM_PENALTY`] + 0.8), so the DP would rather keep an over-fit whole line. Yet check's paired-density requires cutting exactly at that translation seam, and a refine rerun would only produce the same blocks. Hard is a ceiling, not a target: a line pressed against the ceiling must weigh more than a bad source seam.
         let span = params.hard.saturating_sub(params.fit).max(1) as f64;
         let over = (units.saturating_sub(params.fit) as f64 / span).min(1.0);
         cost += OVER_FIT_PENALTY * (1.0 + 2.0 * over * over);
     }
-    // 源侧版式：区间宽度与时窗（沿用双语成对审阅的 4s / 6s 判据）。
+    // Source-side layout: span width and time window (following the 4s / 6s criteria of bilingual paired review).
     let (from, to) = (first.src.0, last.src.1);
     let source_width: usize = word_units[from..=to].iter().sum();
     if source_width > input.source_fit {
@@ -1240,7 +1169,7 @@ fn pair_cost(
     } else if span > soft_s {
         cost += 0.5 * (span - soft_s) / (hard_s - soft_s);
     }
-    // 共享时窗：短于目标语最低阅读时长 / 长于最长停留。
+    // Shared time window: shorter than the target language's minimum reading time, or longer than the maximum dwell.
     let required = target_required_seconds(text, &input.lang).max(input.min_duration_sec);
     if span < required {
         cost += (required - span) * DURATION_DEFICIT_WEIGHT;
@@ -1249,18 +1178,13 @@ fn pair_cost(
         cost += (span - input.max_duration_sec) * DURATION_EXCESS_WEIGHT;
     }
     cost += BLOCK_MERGE_PENALTY * (j - i - 1) as f64;
-    // 左边界缝罚分（片首不计）。
+    // Left-boundary seam penalty (the start of a piece is not counted).
     if i > 0 {
         cost += seam_costs
             .get(&first.tgt.0)
             .copied()
             .unwrap_or(BLOCKING_SEAM_PENALTY);
-        // 顿号与 `seam::lint_pieces` 同口径：并列项被拆开、而左右两片合并后仍
-        // 不超 hard 时，顿号不是缝（Blocking）。候选缝表算的是「左片 | 整个
-        // 余下部分」，余下部分几乎总是超 hard，于是顿号被按从句标点便宜地计
-        // 价；DP 在这里知道右片的真实宽度，左片取 dp 为块 i 选定的前驱片——
-        // 两者之和 ≤ hard 就按阻塞缝计，否则 check 会把这一刀报成
-        // align-target-seam，而重跑 align 只会得到同一组块。
+        // An enumeration comma is judged on the same basis as `seam::lint_pieces`: when parallel items are split apart and the merged left and right pieces still do not exceed hard, the enumeration comma is not a seam (Blocking). The candidate seam table prices "left piece | the entire remainder", and the remainder almost always exceeds hard, so the enumeration comma gets priced cheaply as a clause punctuation. Here the DP knows the true width of the right piece, and the left piece takes the predecessor piece the DP chose for block i. If their sum is ≤ hard, it counts as a blocking seam; otherwise check would report this cut as align-target-seam, while rerunning align would only produce the same blocks.
         let left_start = left_piece_start.unwrap_or(i - 1);
         let prev = char_slice(target_chars, blocks[left_start].tgt.0..blocks[i - 1].tgt.1);
         if ends_list_separator(&prev)
@@ -1278,17 +1202,10 @@ fn pair_cost(
     Some(cost)
 }
 
-/// 双语 DP（设计 §4.4）：`dp[j] = min_i dp[i] + pairCost(blocks[i..j))`。返回
-/// 各片包含的连续块下标；某个单块自身违反硬约束（目标 > hard）时无解。
-/// `blocks` 的目标区间须为 `input.target` 字符坐标（[`minimal_monotonic_blocks`]
-/// 的直接输出）。
+/// Bilingual DP (design §4.4): `dp[j] = min_i dp[i] + pairCost(blocks[i..j))`. Returns the consecutive block indices contained in each piece. If a single block by itself violates a hard constraint (target > hard), there is no solution.
+/// `blocks`' target spans must be in `input.target` character coordinates (the direct output of [`minimal_monotonic_blocks`]).
 ///
-/// 驻留谓词（源行信息可用时）：常规 DP 的方案里若有片命中
-/// `align-row-deficit`（驻留 ≥5s 且覆盖 ≥2 条源行，且片数少于源行数），再跑
-/// 一遍「黏结优先」的 DP——命中谓词的片加 [`ROW_DEFICIT_SPLIT_PENALTY`]，且
-/// 只允许可读的新片（见 [`readable_piece`]；常规方案里原有的片不受限，保证
-/// 第二遍至少有常规解可退）。第二遍的黏结片数严格更少才采用，否则保留常规
-/// 方案——宽度 fit 不再是唯一判据，但切不出可读片时不硬切。
+/// Dwell predicate (when source-row information is available): if a piece of the regular DP plan hits `align-row-deficit` (dwell ≥5s and covering ≥2 source rows, with fewer pieces than source rows), run a second DP that is "sticky-first". Pieces that hit the predicate add [`ROW_DEFICIT_SPLIT_PENALTY`], and only readable new pieces are allowed (see [`readable_piece`]). Pieces already in the regular plan are not restricted, which guarantees the second pass has at least the regular solution to fall back on. The second-pass plan is adopted only if its number of sticky pieces is strictly smaller; otherwise the regular plan is kept. Width fit is no longer the sole criterion, but nothing is forcibly split when no readable split exists.
 pub fn bilingual_dp(blocks: &[AlignBlock], input: &BilingualPlanInput) -> Option<Vec<Vec<usize>>> {
     let m = blocks.len();
     if m == 0 || input.words.is_empty() {
@@ -1358,14 +1275,10 @@ pub fn bilingual_dp(blocks: &[AlignBlock], input: &BilingualPlanInput) -> Option
     }
 }
 
-/// 黏结优先 DP 里一片命中驻留谓词的附加罚分：大于任何一组软罚（缝罚、置信
-/// 度、宽度、时窗）之和的量级，使「少一条黏结行」优先于排版偏好；硬约束
-/// （超 hard）与可读性门槛不受它影响。
+/// Additional penalty, in the sticky-first DP, for a piece that hits the dwell predicate. It is on the order of more than the sum of all soft penalties (seam, confidence, width, time window), so that "one fewer sticky row" takes priority over layout preferences. Hard constraints (exceeding hard) and the readability thresholds are unaffected by it.
 const ROW_DEFICIT_SPLIT_PENALTY: f64 = 10.0;
 
-/// 黏结优先 DP 新切出的片必须可读：宽度 ≥ [`ROW_MIN_UNITS`]、时窗 ≥
-/// `min_duration_sec`、读速 ≤ [`ROW_MAX_CPS`]——与 [`merge_short_rows`] 的
-/// 「太小 / 太快」同一组阈值，切出来的片不会被后处理再粘回去。
+/// Newly cut pieces in the sticky-first DP must be readable: width ≥ [`ROW_MIN_UNITS`], time window ≥ `min_duration_sec`, reading speed ≤ [`ROW_MAX_CPS`]. These are the same thresholds as "too small / too fast" in [`merge_short_rows`], so pieces cut here will not be glued back together by post-processing.
 fn readable_piece(
     blocks: &[AlignBlock],
     i: usize,
@@ -1381,7 +1294,7 @@ fn readable_piece(
         && units as f64 / seconds <= ROW_MAX_CPS
 }
 
-/// `dp[j] = min_i dp[i] + cost(i, j, 前驱片首块)`；无解返回 `None`。
+/// `dp[j] = min_i dp[i] + cost(i, j, first block of the predecessor piece)`; returns `None` when there is no solution.
 fn run_bilingual_dp(
     m: usize,
     cost_of: &dyn Fn(usize, usize, Option<usize>) -> Option<f64>,
@@ -1420,9 +1333,7 @@ fn run_bilingual_dp(
     Some(groups)
 }
 
-/// 块 + DP 分组 ⇒ [`TransAlign`]（manyToOne、块级对应）。块的目标区间从
-/// `target` 坐标换算到 `concat(pieces.text)` 坐标：片文本首尾空白被修剪时，
-/// 只影响该片首块起点 / 末块终点。
+/// Blocks + DP grouping ⇒ [`TransAlign`] (manyToOne, block-level correspondence). Block target spans are converted from `target` coordinates to `concat(pieces.text)` coordinates. When a piece's leading and trailing whitespace is trimmed, this only affects the start of the piece's first block and the end of its last block.
 pub fn plan_entry(
     blocks: &[AlignBlock],
     groups: &[Vec<usize>],
@@ -1442,8 +1353,7 @@ pub fn plan_entry(
         let leading = raw.chars().take_while(|ch| ch.is_whitespace()).count();
         let text = raw.trim().to_owned();
         let text_len = text.chars().count();
-        // 片文本第一个非空白字符在 target 里的位置；片首块起点夹到 0，片末块
-        // 终点夹到修剪后的长度。
+        // The position of the piece text's first non-whitespace character in target; the start of the piece's first block is clamped to 0, and the end of its last block is clamped to the trimmed length.
         let base = g_start + leading;
         for &index in group {
             let block = &blocks[index];
@@ -1475,7 +1385,7 @@ pub fn plan_entry(
     entry
 }
 
-/// 整句对应条目（设计 §4.5 兜底）：一个块、一片、`correspondence: sentence`。
+/// Whole-sentence correspondence entry (design §4.5 fallback): one block, one piece, `correspondence: sentence`.
 pub fn sentence_level_entry(input: &BilingualPlanInput, confidence: Option<f32>) -> TransAlign {
     let text = input.target.trim().to_owned();
     let text_len = text.chars().count();
@@ -1501,22 +1411,21 @@ pub fn sentence_level_entry(input: &BilingualPlanInput, confidence: Option<f32>)
     entry
 }
 
-/// [`plan_sentence`] 的结果。
+/// Result of [`plan_sentence`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlanOutcome {
-    /// 块级对应方案已落成。
+    /// The block-level correspondence plan has been formed.
     Aligned(TransAlign),
-    /// 某个（合并后的）块的目标文本超过 hard，放不进一条字幕：需要单调化
-    /// 显示改写（设计 §6.3）；调用方改写后重新跑 edges → blocks → DP。
+    /// The target text of some (merged) block exceeds hard and cannot fit into one subtitle: a monotonizing display rewrite is needed (design §6.3). After the caller rewrites it, rerun edges → blocks → DP.
     NeedsRewrite {
-        /// 超限块下标（`blocks` 内）。
+        /// Index of the over-limit block (within `blocks`).
         over_hard_block: usize,
-        /// 该块的目标阅读单位数。
+        /// Number of target reading units of that block.
         units: usize,
-        /// 全部块（`target` 字符坐标），供改写任务描述超限块及其源区间。
+        /// All blocks (`target` character coordinates), so the rewrite task can describe the over-limit blocks and their source spans.
         blocks: Vec<AlignBlock>,
     },
-    /// 整句对应：无对齐证据、方案置信度低于 τ_s，或 DP 无解。
+    /// Sentence-level correspondence: no alignment evidence, plan confidence below τ_s, or the DP has no solution.
     SentenceLevel(TransAlign),
 }
 
@@ -1525,7 +1434,7 @@ fn block_units(block: &AlignBlock, target_chars: &[char], lang: &str) -> usize {
     target_cps_chars(text.trim(), lang)
 }
 
-/// 决策树（设计 §4.5，不含 LLM 改写步骤）。
+/// Decision tree (design §4.5, excluding the LLM rewrite step).
 pub fn plan_sentence(edges: &[AlignEdge], input: &BilingualPlanInput) -> PlanOutcome {
     let candidates: Vec<usize> = target_cut_candidates(
         &input.target,
@@ -1590,29 +1499,23 @@ pub fn plan_sentence_at_cuts(
     }
 }
 
-/// 块内切分用的缝按来源与干净程度分档，档间先后高于 fit 与缝的代价
-/// （设计 §8.7–§8.9）。
+/// Seams used for splitting within a block are tiered by origin and cleanliness; tier order takes precedence over fit and seam cost (design §8.7–§8.9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SplitSeam {
-    /// 有标点或词间空白撑着、lint 干净的目标缝。
+    /// A target seam backed by punctuation or inter-word whitespace, clean under the lint.
     Backed,
-    /// 模型自己给的切点（块边界或抄进译文的片标，[`hinted_cut_candidates`]），
-    /// 且 lint 干净、不在词内。
+    /// A cut point the model gave itself (a block boundary, or a segment marker copied into the translation, [`hinted_cut_candidates`]), clean under the lint and not inside a word.
     Hinted,
-    /// 模型给的切点，但带 lint 放行的悬垂尾或落在词内启发式判定的缝上
-    /// （`ccut check` 会把前者报成 `align-target-seam`）。
+    /// A cut point the model gave, but with a lint-admitted dangling tail, or on a seam the within-word heuristic places inside a word (`ccut check` reports the former as `align-target-seam`).
     HintedFlagged,
-    /// 模型给的切点，但被客观语病 lint 拒了（弱尾 / 黏着首 / 残缺名词组 /
-    /// 列表分隔 / 未闭合定界符）：不算放行，只在有证据切点的梯子里顶替
-    /// 逐字缝（§8.9 用户裁决——模型的切点再差也是一个词边界）。
+    /// A cut point the model gave, but rejected by the objective-defect lint (weak tail / sticky head / incomplete noun phrase / list separator / unclosed delimiter). It is not counted as admitted. It only substitutes for a character-level seam in a ladder that has evidence cut points (§8.9 user decision: even a poor model cut point is still a word boundary).
     HintedRefused,
-    /// 既无依托也无提示、只是 lint 没否掉的逐字缝（CJK 词内风险）。
+    /// A character-level seam with neither backing nor hints, merely not rejected by the lint (CJK intra-word risk).
     Character,
 }
 
 impl SplitSeam {
-    /// 排序档：干净缝（有依托、干净的提示）一律先于带语病的提示缝，再是被拒
-    /// 的提示缝，逐字缝垫底；不论 fit。
+    /// Sort tiers: clean seams (backed, or clean hints) always come before hint seams with defects, then rejected hint seams, with character-level seams last; regardless of fit.
     fn rank(self) -> u8 {
         match self {
             Self::Backed | Self::Hinted => 0,
@@ -1622,7 +1525,7 @@ impl SplitSeam {
         }
     }
 
-    /// 没放行的缝：只靠提示进的梯子不用（这类句原本走改写轮）。
+    /// Seams not admitted: a ladder that relies only on hints does not use them (such sentences originally went to the rewrite round).
     fn unadmitted(self) -> bool {
         matches!(self, Self::HintedRefused | Self::Character)
     }
@@ -1638,14 +1541,14 @@ impl SplitSeam {
     }
 }
 
-/// 块内切分用掉的一个额外切点。
+/// An extra cut point used by splitting within a block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SplitCut {
     pub pos: usize,
     pub seam: SplitSeam,
 }
 
-/// `cuts` 按档计数的英文短语（advisory 用），如 `1 backed, 1 model-hinted seam(s)`。
+/// English phrase counting the `cuts` by tier (for advisory use), e.g. `1 backed, 1 model-hinted seam(s)`.
 pub fn describe_split_cuts(cuts: &[SplitCut]) -> String {
     let parts: Vec<String> = [
         SplitSeam::Backed,
@@ -1663,26 +1566,9 @@ pub fn describe_split_cuts(cuts: &[SplitCut]) -> String {
     format!("{} seam(s)", parts.join(", "))
 }
 
-/// [`plan_sentence_at_cuts`] 之后的块内切分：证据载体的模型切点都放行了（或
-/// 模型另给了切点提示）、某个块仍超 hard 时（模型把一块写粗了，或它的某个
-/// 切点落在 lint 否掉的缝上），在**该块内部**取一个目标缝把块一分为二，其余
-/// 块与模型切点原样保留。切点落在某块引用的目标区间里时，那块的两条软边按
-/// 切点拆成两半（左半归块首词、右半归块末词），新切点因此不再被横跨；块内
-/// 的源断点由 [`choose_source_break`] 在按比例的落点附近吸附到源侧标点 /
-/// 停顿 / 合法缝，块外的证据一字不动。
+/// Splitting within a block after [`plan_sentence_at_cuts`]: when the model's cut points are all admitted (or the model gave cut hints) and some block still exceeds hard (either the model wrote a block too coarse, or one of its cut points falls on a seam rejected by the lint), take one target seam **inside that block** to split it into two. The other blocks and the model's cut points are kept unchanged. When a cut point falls inside a target range referenced by some block, that block's two soft edges are split at the cut point (the left half goes to the block's first word, the right half to its last word), so the new cut is no longer crossed. The source break within the block is snapped by [`choose_source_break`], near the proportional landing point, to source punctuation, pauses or legal seams; evidence outside the block is left untouched.
 ///
-/// 只切「一刀就够」的块：两侧都得 ≤ hard、候选不被硬锚横跨、被拆的块至少
-/// 两个源词（单词块只有一条边，切开后无从判安全；拆过一次的块每一半也只剩
-/// 一条边，所以需要两刀的块这里切不了）。同样合格的候选先按档
-/// （[`SplitSeam`]：干净的有依托缝与干净的提示缝同档，带语病的提示缝其次，
-/// 被 lint 拒的提示缝再次，逐字垫底），再挑两侧都 ≤ fit 的，再比缝的代价与
-/// 离块中点的距离——档在前，否则一条两侧都放得下的词内缝会赢过一侧略超
-/// fit 的标点缝（`看到什|么机会`），一条两侧都放得下、但以「的」收尾的提示
-/// 缝也会赢过一侧略超 fit 的逗号缝。`cuts` 为空（没有一个证据切点放行、只靠
-/// 模型提示进的梯子）时不用没放行的缝（被拒的提示、逐字）：这类句原本走改
-/// 写轮，提示吸不上时拿词内缝换不来省掉的调用。需要两刀、没有候选、或切完
-/// 仍不安全的块保持 `NeedsRewrite`（改写轮的事：语序交叉与重度并块）。返回
-/// 方案与用掉的额外切点。
+/// Only blocks that can be split with "one cut" are considered: both sides must be ≤ hard, the candidate must not be crossed by a hard anchor, and the block being split has at least two source words (a one-word block has only one edge, so after splitting there is no way to judge safety; a block already split once has only one edge per half, so blocks needing two cuts cannot be split here). Equally eligible candidates are first ordered by tier ([`SplitSeam`]: clean backed seams and clean hint seams share a tier, then defective hint seams, then rejected hint seams, with character-level seams last), then those where both sides fit within fit are preferred, and then they are compared by seam cost and distance from the block midpoint. Tier comes first, because otherwise an intra-word seam where both sides fit would beat a punctuation seam where one side slightly exceeds fit (`看到什|么机会`), and a hint seam where both sides fit but which ends in “的” would beat a comma seam where one side slightly exceeds fit. When `cuts` is empty (no evidence cut point was admitted and only the hint-based ladder is used), unadmitted seams (rejected hints, character-level) are not used: such sentences originally went to the rewrite round, and when a hint cannot be snapped, an intra-word seam would not save the call it avoids. Blocks needing two cuts, having no candidates, or still unsafe after splitting remain `NeedsRewrite` (a job for the rewrite round: crossed word order and heavy block merging). Returns the plan and the extra cut points used.
 pub fn plan_sentence_splitting_over_hard(
     edges: &[AlignEdge],
     input: &BilingualPlanInput,
@@ -1696,7 +1582,7 @@ pub fn plan_sentence_splitting_over_hard(
     let unadmitted_allowed = !cuts.is_empty();
     let mut extra = Vec::new();
     let mut tried: BTreeSet<usize> = BTreeSet::new();
-    // 一个位置只算一次，取它最高的档。
+    // A position counts once, at its highest tier.
     let mut tiered: BTreeMap<usize, (SplitSeam, &CutCandidate)> = BTreeMap::new();
     for candidate in candidates {
         let seam = if candidate.seam_cost < BLOCKING_SEAM_PENALTY {
@@ -1752,8 +1638,7 @@ pub fn plan_sentence_splitting_over_hard(
         let width = |range: Range<usize>| {
             target_cps_chars(char_slice(&target_chars, range).trim(), &input.lang)
         };
-        // 候选排序：先按缝的档次，再两侧都放得进一行 fit 的优先（否则切完仍
-        // 报 `align-overfit`，只是不再超 hard），其次缝的代价，最后离块中点近。
+        // Candidate ordering: first by seam tier; then candidates where both sides fit within one line's fit are preferred (otherwise after splitting it still reports `align-overfit`, just not exceeding hard); then seam cost; and finally closeness to the block midpoint.
         let mut options: Vec<(SplitSeam, usize, &CutCandidate, Vec<AlignEdge>)> = tiered
             .values()
             .filter(|(seam, candidate)| {
@@ -1796,9 +1681,7 @@ pub fn plan_sentence_splitting_over_hard(
     }
 }
 
-/// 把横跨目标位置 `k` 的软边一分为二：同一目标区间的一组边（一个块的首词边
-/// 与末词边）拆成「块首词 ↔ 左半」「块末词 ↔ 右半」。硬锚横跨 `k`、或某组只有
-/// 一条边（单词块）时不可拆，返回 `None`。
+/// Splits a soft edge that crosses target position `k` into two. A group of edges sharing one target range (a block's first-word edge and last-word edge) is split into "block first word ↔ left half" and "block last word ↔ right half". Returns `None` when a hard anchor crosses `k`, or when a group has only one edge (a one-word block).
 fn split_edges_at(edges: &[AlignEdge], k: usize) -> Option<Vec<AlignEdge>> {
     let straddles = |edge: &AlignEdge| edge.tgt.start < k && k < edge.tgt.end;
     if edges.iter().any(|edge| edge.hard && straddles(edge)) {
@@ -1829,36 +1712,22 @@ fn split_edges_at(edges: &[AlignEdge], k: usize) -> Option<Vec<AlignEdge>> {
     Some(out)
 }
 
-/// 行分区方案（融合 rows 模式）：模型已经把译文按源词顺序切成显示行，
-/// 引擎只负责**把行边界固定住**并在行内补细粒度子块。
+/// Line partition plan (fused rows mode): the model has already split the translation into display lines in source-word order. The engine only **fixes the line boundaries** and adds fine-grained sub-blocks within each line.
 ///
-/// `row_ranges` 是各行在 `input.target` 上的字符区间（[`crate::filepipe::align_edges::chunk_char_ranges`]
-/// 的输出），按行序升序、互不重叠。流程：
+/// `row_ranges` are the character ranges of each line on `input.target` (the output of [`crate::filepipe::align_edges::chunk_char_ranges`]), ascending in line order and not overlapping. Flow:
 ///
-/// 1. 候选切点 = 常规目标语候选 ∪ 各行起点，跑 [`minimal_monotonic_blocks`]；
-/// 2. 每个行起点都必须真的成为块边界（被锚点边横跨、或源断点与锚点冲突时不会
-///    成为块边界）——否则整句返回 `None`，调用方回落常规路径；
-/// 3. 行内超 hard 才在该行的块子序列上跑 [`bilingual_dp`] 再切；这一步**绝不
-///    跨行**（切出来的碎片只能落在原行内部），某行无解 ⇒ 整句 `None`；
-/// 4. [`merge_short_rows`]：确定性后处理，把太短/太快的相邻行合并成一片。
+/// 1. Candidate cut points = regular target-language candidates ∪ each line start; run [`minimal_monotonic_blocks`];
+/// 2. Every line start must actually become a block boundary (when it is crossed by an anchor edge, or the source break conflicts with an anchor, it will not become a block boundary). Otherwise the whole sentence returns `None`, and the caller falls back to the regular path;
+/// 3. Only when a line exceeds hard is [`bilingual_dp`] run on that line's block sub-sequence to split it. This step **never crosses lines** (fragments can only fall inside the original line). If a line has no solution, the whole sentence returns `None`;
+/// 4. [`merge_short_rows`]: deterministic post-processing that merges adjacent lines that are too short or too fast into one piece.
 ///
-/// 块粒度：行边把整行的目标区间覆盖成一条边，行**内部**的候选切点必然被它
-/// 横跨（不安全），因此第 1–3 步产出的块与模型给的行一一对应——`blocks` 是
-/// 行级而不是短语级。同理，超 hard 的行在行内没有任何独立证据可切，第 3 步
-/// 实际总是落到 `None`（回落常规路径）而不是用比例锚定硬拗一刀。
+/// Block granularity: a line edge covers the whole line's target range with one edge, so cut points inside a line are necessarily crossed by it (unsafe). Therefore the blocks produced in steps 1–3 correspond one-to-one to the model's lines: `blocks` is at line level, not phrase level. Likewise, a line that exceeds hard has no independent evidence to cut within the line, so step 3 in practice always ends in `None` (fall back to the regular path) rather than forcing a cut by proportional anchoring.
 ///
-/// 第 4 步只合并**片**（`groups`），不动 `blocks`：片 = 若干连续块的并本来
-/// 就是 [`plan_entry`] 的常规形态，I3/I4 自动成立；块层因此仍然逐行记录模型
-/// 给出的源词↔译文对应，下游双语高亮不会因为合并而变粗。
+/// Step 4 merges only **pieces** (`groups`), not `blocks`. A piece, being a union of consecutive blocks, is already the regular shape of [`plan_entry`], so I3/I4 hold automatically. The block layer still records, line by line, the model's source-word ↔ translation correspondence, so downstream bilingual highlighting does not get coarser through merging.
 ///
-/// 成功时 `aligner` / `text_basis` 取自 `input`，`correspondence` 为
-/// [`Correspondence::Block`]（[`plan_entry`] 负责）。
+/// On success, `aligner` and `text_basis` are taken from `input`, and `correspondence` is [`Correspondence::Block`] (handled by [`plan_entry`]).
 ///
-/// **本函数不是 `density == Paired` 的主路径。** 它只在 translate 携带融合
-/// rows 草稿时可达；paired 的真实入口（`--align-only`：check 的 fix 串、
-/// `refine-align`、客户端定向重跑）传空 `FusionDrafts`，走
-/// [`plan_sentence`] → [`bilingual_dp`] → `pair_cost`。[`merge_short_rows`]
-/// 里的 paired 分支因此只服务 rows 草稿路径；paired 的宽度放宽在 `pair_cost`。
+/// **This function is not the main path for `density == Paired`.** It is reachable only when translate carries fused rows drafts. The real paired entry points (`--align-only`: check's fix runs, `refine-align`, client-directed reruns) pass empty `FusionDrafts` and go through [`plan_sentence`] → [`bilingual_dp`] → `pair_cost`. The paired branch in [`merge_short_rows`] therefore serves only the rows-draft path; paired width relaxation lives in `pair_cost`.
 pub fn plan_sentence_rows(
     edges: &[AlignEdge],
     row_ranges: &[Range<usize>],
@@ -1879,7 +1748,7 @@ pub fn plan_sentence_rows(
         return None;
     }
 
-    // 行起点（首行除外）就是必须落在块边界上的位置；行间的空白/标点归左行。
+    // A line start (except the first line) is a position that must fall on a block boundary; whitespace and punctuation between lines go to the left line.
     let mut row_starts: Vec<usize> = Vec::with_capacity(row_ranges.len());
     let mut previous_end = 0usize;
     for (index, range) in row_ranges.iter().enumerate() {
@@ -1909,7 +1778,7 @@ pub fn plan_sentence_rows(
         return None;
     }
 
-    // 每个行起点都必须是某个块的起点；同时记下该块下标以便按行分组。
+    // Every line start must be the start of some block; also record that block's index so lines can be grouped.
     let mut row_block_starts = Vec::with_capacity(row_starts.len());
     for &start in &row_starts {
         row_block_starts.push(blocks.iter().position(|block| block.tgt.0 == start)?);
@@ -1929,7 +1798,7 @@ pub fn plan_sentence_rows(
             groups.push((first..last).collect());
             continue;
         }
-        // 行本身超 hard：只在这一行的块子序列上再切，行边界仍然不动。
+        // If a line itself exceeds hard, cut only within that line's block sub-sequence; line boundaries stay fixed.
         let inner = bilingual_dp(&blocks[first..last], input)?;
         for group in inner {
             groups.push(group.into_iter().map(|index| index + first).collect());
@@ -1943,20 +1812,20 @@ pub fn plan_sentence_rows(
     })
 }
 
-/// [`plan_sentence_rows`] 的结果：条目 + 确定性后处理合并掉的行数。
+/// Result of [`plan_sentence_rows`]: the entry, plus the number of rows merged away by deterministic post-processing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RowPlan {
     pub entry: TransAlign,
-    /// 模型给的行数 − 最终片数。`0` = 模型的切法原样采用。
+    /// Number of model-given rows minus the final number of pieces. `0` means the model's split was adopted as-is.
     pub merged_rows: usize,
 }
 
-/// 一行"太短"的读速上限（阅读单位/秒）：超过它就是一闪而过。
+/// Reading-speed ceiling for a line that is "too short" (reading units per second): exceeding it means it flashes past.
 const ROW_MAX_CPS: f64 = 6.0;
-/// 一行"太短"的宽度下限（阅读单位）。
+/// Width floor for a line that is "too short" (reading units).
 pub const ROW_MIN_UNITS: usize = 6;
 
-/// 一片（连续块的并）的目标文本、阅读单位与共享时窗秒数。
+/// A piece's (union of consecutive blocks') target text, reading units, and shared time window in seconds.
 fn row_metrics(
     blocks: &[AlignBlock],
     group: &[usize],
@@ -1974,27 +1843,20 @@ fn row_metrics(
     (units, seconds)
 }
 
-/// 确定性行合并（rows 模式后处理）。
+/// Deterministic line merging (rows-mode post-processing).
 ///
-/// 模型实测基本按源侧分组一对一切行（第三轮对拍：每句 4.3 行 vs 常规融合
-/// 2.3 行，cps>6 中位 10.7%），契约里的"偏向合并"措辞几乎无效。宽度、读速与
-/// 时长都是可算的，因此改由引擎确定性收口，不再多花一次调用去劝模型。
+/// Measurements show the model basically splits lines one-to-one according to source-side grouping (third comparison round: 4.3 lines per sentence against 2.3 lines for the regular fused path, median 10.7% at cps>6). The "prefer merging" wording in the contract is nearly ineffective. Width, reading speed and duration are all computable, so the engine now closes them out deterministically, instead of spending one more call persuading the model.
 ///
-/// 判据（对同句相邻两片 `i` / `i+1`，两侧任一片"太短"即触发）：
+/// Criteria (for two adjacent pieces `i` / `i+1` in the same sentence; either one being "too short" triggers it):
 ///
-/// - **太快** = 读速 > [`ROW_MAX_CPS`]；
-/// - **太小** = 时长 < `min_duration_sec`（缺省 1.0s）或宽度 < [`ROW_MIN_UNITS`]；
-/// - 合并守卫**分级**：由"太快"触发的合并允许到 `params.hard`（20），只由
-///   "太小"触发的仍守 `params.fit`（16）。这与 `on` 那条 DP 的取舍口径一致
-///   ——[`pair_cost`] 里超 fit 只是罚分、只有超 hard 才是硬约束，读速则没有
-///   便宜的补救手段。第四轮对拍里 rows 的 overFit 已压到 1–2%，而 cps>6 仍有
-///   12–13%（`on` 中位 7.9%），把宽度让给读速正是缺的那一步；
-/// - 两级都还要满足合并后时长 ≤ `max_duration_sec`（缺省 7s）；
-/// - 一片左右都能合时，取**合并后读速更低**的一侧（平局取左，保证确定性）；
-/// - 迭代到没有合法合并为止（每次合并减少一片，必然收敛）。
+/// - **Too fast** = reading speed > [`ROW_MAX_CPS`];
+/// - **Too small** = duration < `min_duration_sec` (default 1.0s), or width < [`ROW_MIN_UNITS`];
+/// - The merge guard is **tiered**: a merge triggered by "too fast" is allowed up to `params.hard` (20), while one triggered only by "too small" still respects `params.fit` (16). This matches the trade-off in the `on` DP: in [`pair_cost`], exceeding fit is only a penalty, and only exceeding hard is a hard constraint, whereas reading speed has no cheap remedy. In the fourth comparison round, rows' overFit had already dropped to 1–2%, while cps>6 still stood at 12–13% (`on` median 7.9%). Yielding width to reading speed is exactly the missing step;
+/// - Both tiers must still satisfy merged duration ≤ `max_duration_sec` (default 7s);
+/// - When a piece can merge with either neighbour, take the side whose **merged reading speed is lower** (ties go left, which guarantees determinism);
+/// - Iterate until no legal merge remains (each merge reduces the piece count by one, so it necessarily converges).
 ///
-/// 超 hard 被 DP 再切出来的碎片不会被这里粘回去：两级守卫都 ≤ hard，而那些
-/// 碎片正是因为合起来超 hard 才被切开的。
+/// Fragments that the DP re-split out of an over-hard line are not glued back here: both tier guards are ≤ hard, and those fragments were split apart precisely because together they exceed hard.
 fn merge_short_rows(
     blocks: &[AlignBlock],
     mut groups: Vec<Vec<usize>>,
@@ -2005,23 +1867,23 @@ fn merge_short_rows(
         return groups;
     }
     let metrics = |group: &[usize]| row_metrics(blocks, group, input, target_chars);
-    // 太快：读速超上限，只能靠拉长时窗补救 ⇒ 合并守卫放宽到 hard。
+    // Too fast: reading speed exceeds the ceiling, and only a longer time window can remedy it ⇒ the merge guard is relaxed to hard.
     let too_fast = |group: &[usize]| {
         let (units, seconds) = metrics(group);
         seconds > 0.0 && units as f64 / seconds > ROW_MAX_CPS
     };
-    // 太小：一闪而过的碎行 ⇒ 合并守卫仍是 fit。
+    // Too small: a flashing fragment line ⇒ the merge guard still respects fit.
     let too_small = |group: &[usize]| {
         let (units, seconds) = metrics(group);
         seconds < input.min_duration_sec
             || (input.density == AlignDensity::Auto && units < ROW_MIN_UNITS)
     };
-    // 合并 `groups[index]` 与 `groups[index + 1]` 是否合法；合法时返回合并后读速。
+    // Whether merging `groups[index]` with `groups[index + 1]` is legal; if legal, return the merged reading speed.
     let joined_cps = |groups: &[Vec<usize>], index: usize| -> Option<f64> {
         let mut joined = groups[index].clone();
         joined.extend_from_slice(&groups[index + 1]);
         let (units, seconds) = metrics(&joined);
-        // 守卫分级：这一对里只要有一片是"太快"，宽度就放到 hard。
+        // Guard tiering: if either piece in the pair is "too fast", the width limit is raised to hard.
         let ceiling = if too_fast(&groups[index]) || too_fast(&groups[index + 1]) {
             input.params.hard
         } else {
@@ -2030,9 +1892,7 @@ fn merge_short_rows(
         if units > ceiling || seconds > input.max_duration_sec {
             return None;
         }
-        // 只因「宽度太窄」触发的合并不许合出一条黏结行（`align-row-deficit`
-        // 驻留谓词）：窄是排版偏好，黏结是用户可见的缺陷。读速太快 / 时长太短
-        // 是生理护栏，仍可合。
+        // A merge triggered only by "width too narrow" must not produce a sticky row (the `align-row-deficit` dwell predicate): narrowness is a layout preference, while stickiness is a user-visible defect. Reading speed being too fast or duration being too short are physiological guardrails and may still be merged.
         let physiological =
             |group: &[usize]| too_fast(group) || metrics(group).1 < input.min_duration_sec;
         if !physiological(&groups[index])
@@ -2064,7 +1924,7 @@ fn merge_short_rows(
                 .then(|| joined_cps(&groups, index))
                 .flatten();
             chosen = match (left, right) {
-                // 平局取左：合并结果与遍历顺序无关。
+                // Ties go left, so the merge result is independent of traversal order.
                 (Some(left_cps), Some(right_cps)) => Some(if right_cps < left_cps {
                     index
                 } else {
@@ -2085,16 +1945,13 @@ fn merge_short_rows(
     groups
 }
 
-/// 块层不变量 I3 / I4（设计 §2、§5）。`blocks` 为空恒有效（旧条目 /
-/// independent）；非空时：
+/// Block-layer invariants I3 / I4 (design §2, §5). An empty `blocks` is always valid (legacy entries / independent). When non-empty:
 ///
-/// - 只允许 manyToOne；`correspondence: sentence` 时恰一个块；
-/// - I3：源区间按序连续覆盖 `0..anchor_count`，目标区间按序连续覆盖
-///   `0..concat(pieces.text).chars().count()`，每块目标区间非空；
-/// - I4：每片的 `from` 与 `text` 起始字符偏移落在**同一个**块的起点上
-///   （片 = 若干连续块的并，两侧一致）。
+/// - Only manyToOne is allowed; with `correspondence: sentence` there must be exactly one block;
+/// - I3: source spans cover `0..anchor_count` contiguously and in order; target spans cover `0..concat(pieces.text).chars().count()` contiguously and in order; each block's target span is non-empty;
+/// - I4: each piece's `from` and the starting character offset of its `text` fall on the start of **the same** block (a piece is a union of consecutive blocks; both sides agree).
 ///
-/// 调用方（[`crate::split::align_entry_valid`]）已保证 pieces 连续全覆盖。
+/// The caller ([`crate::split::align_entry_valid`]) has already guaranteed that pieces are contiguous and fully covering.
 pub fn validate_blocks(entry: &TransAlign, anchor_count: usize) -> bool {
     if entry.blocks.is_empty() {
         return true;
@@ -2147,13 +2004,12 @@ pub fn validate_blocks(entry: &TransAlign, anchor_count: usize) -> bool {
     true
 }
 
-/// `transDisplay.transFingerprint` 所用的译文文本指纹。
+/// Text fingerprint of the translation, used for `transDisplay.transFingerprint`.
 pub fn trans_text_fingerprint(text: &str) -> String {
     fingerprint_strings([text])
 }
 
-/// display-stale（设计 §5）：`transDisplay[lang][sid].transFingerprint` 与当前
-/// `trans[lang][sid]` 文本指纹不符（或 `trans` 已不存在）的句 id，按传入句序。
+/// display-stale (design §5): the sentence ids whose `transDisplay[lang][sid].transFingerprint` does not match the current text fingerprint of `trans[lang][sid]` (or where `trans` no longer exists), in the order of the sentences passed in.
 pub fn stale_display_sentences(
     doc: &TranscriptDoc,
     lang: &str,
@@ -2176,8 +2032,7 @@ pub fn stale_display_sentences(
         .collect()
 }
 
-/// 删除 display-stale 的 `transDisplay`，并连带删除该句 `text_basis == display`
-/// 的 `transAlign`（回到自然译句整句上屏）。返回删除的 `transDisplay` 条数。
+/// Deletes display-stale `transDisplay` entries, along with the `transAlign` of those sentences whose `text_basis == display` (reverting to the natural translated sentence shown as a whole). Returns the number of `transDisplay` entries deleted.
 pub fn purge_stale_display(doc: &mut TranscriptDoc, lang: &str, sentences: &[Sentence]) -> usize {
     let stale = stale_display_sentences(doc, lang, sentences);
     if stale.is_empty() {
@@ -2219,7 +2074,7 @@ mod tests {
     use crate::sentence::derive_sentences;
     use crate::split::{align_entry_valid, align_entry_valid_for_lang, derive_trans_cues};
 
-    /// 等间距 0.4s 的锚定词。
+    /// Anchored words spaced evenly at 0.4s.
     fn words(texts: &[&str]) -> Vec<AnchorWord> {
         texts
             .iter()
@@ -2234,7 +2089,7 @@ mod tests {
             .collect()
     }
 
-    /// `needle` 在 `haystack` 里的字符区间（首个命中）。
+    /// Character range of `needle` in `haystack` (first hit).
     fn span(haystack: &str, needle: &str) -> Range<usize> {
         let byte = haystack
             .find(needle)
@@ -2261,9 +2116,7 @@ mod tests {
         assert_eq!(expected, word_count);
     }
 
-    /// 块内切分：模型切点放行、第二块 30 字超 hard 20 ⇒ 在块内找一个 lint 干净
-    /// 的缝再切一刀，第一块与模型切点原样保留，被切块的两条边按切点拆半后
-    /// 新切点判安全；单词块与硬锚横跨的位置不可拆。
+    /// Splitting within a block: the model's cut is admitted, and the second block has 30 characters, exceeding hard 20 ⇒ find one lint-clean seam inside the block and cut once more. The first block and the model's cut point are kept as they are; the two edges of the split block are halved at the cut point, and the new cut is then judged safe. A one-word block, or a position crossed by a hard anchor, cannot be split.
     #[test]
     fn over_hard_block_is_split_in_place_at_a_clean_target_seam() {
         let src = words(&[
@@ -2310,7 +2163,7 @@ mod tests {
         assert_eq!(concat(&entry), target);
         assert_invariants(&entry, src.len());
 
-        // 单词块只有一条边：拆不开，保持 NeedsRewrite 交给改写轮。
+        // A one-word block has only one edge and cannot be split, so it stays NeedsRewrite for the rewrite round.
         let single = vec![
             AlignEdge::soft(0, 0..first, 0.8),
             AlignEdge::soft(6, 0..first, 0.8),
@@ -2328,15 +2181,14 @@ mod tests {
             matches!(outcome, PlanOutcome::NeedsRewrite { .. }),
             "{outcome:?}"
         );
-        // 硬锚横跨的位置不可拆。
+        // Positions crossed by a hard anchor cannot be split.
         let mut anchored = edges.clone();
         anchored.push(AlignEdge::hard(6, first + 2..total - 2));
         assert!(split_edges_at(&anchored, first + 10).is_none());
         assert!(split_edges_at(&edges, first + 10).is_some());
     }
 
-    /// 缝的档在 fit 之前：一侧略超 fit 的标点缝赢过两侧都放得下的逐字缝
-    /// （`看到什|么机会` 那类词内切）；需要两刀而只有逐字缝的块仍交给改写轮。
+    /// Seam tier comes before fit: a punctuation seam with one side slightly over fit beats a character-level seam where both sides fit (cases like the intra-word cut `看到什|么机会`). Blocks that need two cuts, where only character-level seams exist, are still handed to the rewrite round.
     #[test]
     fn a_backed_seam_outranks_a_character_seam_that_fits_both_sides() {
         let src = words(&[
@@ -2382,7 +2234,7 @@ mod tests {
             }]
         );
 
-        // 两刀才够、只有逐字缝：不切。
+        // Two cuts needed and only character-level seams: do not cut.
         let long =
             "这一块译文没有任何标点可以依托一直写到超过两行的长度才算把话说完整了结束为止才行的";
         let target = format!("{head}{long}");
@@ -2410,9 +2262,7 @@ mod tests {
         );
     }
 
-    /// 只靠模型提示进梯子（证据切点一个都没放行）的块：提示吸不上就保持
-    /// `NeedsRewrite`，不拿逐字缝顶（how-claude `s-g33.0` `软|件产品` 那类）；
-    /// 提示吸得上则按 `Hinted` 切。
+    /// A block reached only through model hints (none of the evidence cut points were admitted): if the hint cannot be snapped, it stays `NeedsRewrite` and is not filled with a character-level seam (like the `软|件产品` case in how-claude `s-g33.0`); if the hint can be snapped, cut by `Hinted`.
     #[test]
     fn a_hint_only_ladder_never_falls_through_to_a_character_seam() {
         let src = words(&["alpha", "bravo", "charlie", "delta", "echo", "foxtrot."]);
@@ -2453,8 +2303,7 @@ mod tests {
         let (outcome, extra) =
             plan_sentence_splitting_over_hard(&edges, &input, &[], &candidates, &hinted);
         assert!(matches!(outcome, PlanOutcome::Aligned(_)), "{outcome:?}");
-        // 这条提示缝带 lint 放行的悬垂尾，落在 `HintedFlagged` 档：只靠提示的
-        // 梯子也用它，但有干净缝时它排在后面。
+        // This hint seam carries a lint-admitted dangling tail and falls into the `HintedFlagged` tier. The hint-only ladder uses it too, but it ranks after clean seams when any exist.
         assert_eq!(
             extra,
             vec![SplitCut {
@@ -2464,9 +2313,7 @@ mod tests {
         );
     }
 
-    /// 被 lint 拒的模型提示（这里是「得」收尾的弱尾）自成一档：有证据切点的
-    /// 梯子里它顶替逐字缝（§8.9），只靠提示进的梯子仍不用它、保持
-    /// `NeedsRewrite`。
+    /// A model hint rejected by the lint (here a weak tail ending in “得”) forms a tier of its own. In a ladder with evidence cut points it substitutes for a character-level seam (§8.9); in a hint-only ladder it is still not used, and the block stays `NeedsRewrite`.
     #[test]
     fn a_refused_hint_outranks_a_character_seam_but_never_carries_a_hint_only_ladder() {
         let src = words(&[
@@ -2493,7 +2340,7 @@ mod tests {
         assert_eq!(hinted.refused.len(), 1, "{hinted:?}");
         assert_eq!(hinted.refused[0].pos, hint);
 
-        // 有证据切点：被拒的提示赢过（此前会选中的）逐字缝。
+        // With evidence cut points: a rejected hint beats the character-level seam that would otherwise have been chosen.
         let (outcome, extra) =
             plan_sentence_splitting_over_hard(&edges, &input, &[first], &candidates, &hinted);
         let PlanOutcome::Aligned(entry) = outcome else {
@@ -2510,7 +2357,7 @@ mod tests {
         assert_eq!(entry.pieces[1].text, "第二段译文负责完整收尾这一块写得");
         assert_eq!(concat(&entry), target);
 
-        // 只靠提示：不用被拒的提示，也不用逐字缝。
+        // Hint-only: neither the rejected hint nor the character-level seam is used.
         let (outcome, extra) =
             plan_sentence_splitting_over_hard(&edges, &input, &[], &candidates, &hinted);
         assert!(extra.is_empty(), "{extra:?}");
@@ -2522,7 +2369,7 @@ mod tests {
 
     #[test]
     fn causal_inversion_collapses_into_one_local_reorder_block() {
-        // (a) I didn't go because I was sick. ↔ 因为我病了，所以没去。
+        // (a) I didn't go because I was sick. ↔ “因为我病了，所以没去。” (Chinese: “I was sick, so I didn't go.”)
         let src = words(&["I", "didn't", "go", "because", "I", "was", "sick."]);
         let target = "因为我病了，所以没去。";
         let edges = vec![
@@ -2562,7 +2409,7 @@ mod tests {
 
     #[test]
     fn relative_clause_noun_phrase_is_one_block_while_the_rest_still_splits() {
-        // (b) 只有 "the plan we discussed yesterday" ↔ "我们昨天讨论的计划" 交叉。
+        // (b) Only “the plan we discussed yesterday” ↔ “我们昨天讨论的计划” (the plan we discussed yesterday) cross over.
         let src = words(&[
             "We",
             "should",
@@ -2587,8 +2434,8 @@ mod tests {
             soft(10, target, "通知"),
             soft(12, target, "团队"),
         ];
-        // 名词短语内部：plan ↔ 计划、we ↔ 我们（第二个）、discussed ↔ 讨论、
-        // yesterday ↔ 昨天。
+        // Inside the noun phrase: plan ↔ 计划, we ↔ 我们 (second one), discussed ↔ 讨论,
+        // yesterday ↔ 昨天.
         let np_start = span(target, "敲定").end;
         let second_we = np_start..np_start + 2;
         edges.push(AlignEdge::soft(5, second_we.clone(), 0.8));
@@ -2601,7 +2448,7 @@ mod tests {
             .map(|c| c.pos)
             .collect();
         let blocks = minimal_monotonic_blocks(&edges, &src, target, &candidates, DEFAULT_EDGE_TAU);
-        // 名词短语块：源 the..yesterday（3..7），目标 我们昨天讨论的计划，
+        // Noun-phrase block: source the..yesterday (3..7), target 我们昨天讨论的计划 (the plan we discussed yesterday),
         let np = blocks
             .iter()
             .find(|block| block.flags.contains(&"local-reorder".to_owned()))
@@ -2613,11 +2460,11 @@ mod tests {
             .take(np.tgt.1 - np.tgt.0)
             .collect();
         assert!(np_text.starts_with("我们昨天讨论的计划"), "{np_text}");
-        // 句子其余部分仍然切开：名词短语前后都还有块。
+        // The rest of the sentence is still split: there are blocks both before and after the noun phrase.
         assert!(blocks.len() >= 3, "{blocks:#?}");
         assert!(blocks.iter().any(|b| b.src.1 < 3));
         assert!(blocks.iter().any(|b| b.src.0 > 7));
-        // 冠词 the 不悬在前一块末尾（源缝合法性把它并入名词短语）。
+        // The article `the` does not dangle at the end of the previous block (the source seam legality folds it into the noun phrase).
         assert!(!blocks.iter().any(|b| b.src.1 == 3), "{blocks:#?}");
         match plan_sentence(&edges, &input) {
             PlanOutcome::Aligned(entry) => {
@@ -2662,7 +2509,7 @@ mod tests {
             .collect();
         let blocks = minimal_monotonic_blocks(&edges, &src, target, &candidates, DEFAULT_EDGE_TAU);
         assert!(blocks.len() >= 3, "{blocks:#?}");
-        // 未对齐的冠词 the 跟随其后的名词，而不是悬在块尾。
+        // An unaligned article `the` goes with the noun that follows, rather than dangling at the end of a block.
         for block in &blocks {
             let tail = src[block.src.1].text.to_ascii_lowercase();
             assert_ne!(tail, "the", "{blocks:#?}");
@@ -2679,7 +2526,7 @@ mod tests {
                 assert_invariants(&entry, src.len());
                 for piece in &entry.pieces {
                     assert!(target_cps_chars(&piece.text, "zh") <= input.params.hard);
-                    // 只在逗号缝上切开。
+                    // Cut only at the comma seam.
                     assert!(
                         piece.text.ends_with('，') || piece.text.ends_with('。'),
                         "{entry:#?}"
@@ -2713,13 +2560,13 @@ mod tests {
                 AlignEdge::hard(6, span(target, "50%")),
             ]
         );
-        // 只用硬锚也能得到单调块，且数字与其源词同块。
+        // Monotonic blocks can be obtained from hard anchors alone, and numbers stay in the same block as their source words.
         let input = BilingualPlanInput::new(src.clone(), target, "en", "zh");
         let candidates: Vec<usize> = target_cut_candidates(target, "zh", &input.params, &[])
             .into_iter()
             .map(|c| c.pos)
             .collect();
-        // 数字 token 内部绝不是候选切点。
+        // The interior of a digit token is never a candidate cut point.
         let year = span(target, "2028");
         assert!(!candidates.iter().any(|&k| year.start < k && k < year.end));
         let blocks =
@@ -2734,7 +2581,7 @@ mod tests {
             assert!(block.flags.contains(&"anchor".to_owned()));
             assert_eq!(block.confidence, Some(1.0));
         }
-        // 与软边合并：同源词上的软边被硬边压掉。
+        // Merged with soft edges: soft edges on the same source word are suppressed by the hard edge.
         let merged = merge_edges(vec![
             vec![
                 AlignEdge::soft(1, 0..4, 0.7),
@@ -2779,15 +2626,15 @@ mod tests {
             }],
         };
         let edges = AnchorAligner.align(&src, target, &ctx);
-        // 术语对 → 源窗口每词一条硬边，目标同一区间。
+        // Term pair → one hard edge per source-window word, over the same target range.
         let cache = span(target, "KV 缓存");
         assert!(edges.contains(&AlignEdge::hard(7, cache.clone())));
         assert!(edges.contains(&AlignEdge::hard(8, cache)));
         assert!(edges.contains(&AlignEdge::hard(1, span(target, "agentskills.io"))));
         assert!(edges.contains(&AlignEdge::hard(4, span(target, "vLLM"))));
-        // KV 在源侧出现两次、目标侧两次：token 锚放弃（术语边已覆盖第一处）。
+        // KV appears twice on the source side and twice on the target side: the token anchor is abandoned (the term edge already covers the first occurrence).
         assert!(!edges.iter().any(|e| e.src == 11));
-        // Latin 目标语只认专名形态：句首 In / 小写功能词不出边。
+        // For a Latin target language only proper-noun forms count: sentence-initial `In` and lowercase function words produce no edges.
         let ctx_en = AlignCtx {
             source_lang: "de".to_owned(),
             lang: "en".to_owned(),
@@ -2799,14 +2646,14 @@ mod tests {
             &ctx_en,
         );
         assert_eq!(edges.iter().map(|e| e.src).collect::<Vec<_>>(), vec![1, 3]);
-        // 数字整词：`2028` 不命中 `2028.5` / `12,028`，句末 `2028.` 仍命中。
+        // Whole-word numerals: `2028` does not match `2028.5` or `12,028`, but a sentence-final `2028.` still matches.
         let chars: Vec<char> = "in 2028.5 or 12,028 by 2028.".chars().collect();
         assert_eq!(whole_token_occurrences(&chars, "2028"), vec![23]);
     }
 
     #[test]
     fn unaligned_source_words_attach_to_previous_block_unless_the_seam_is_illegal() {
-        // (e) "it" 未对齐 → 并入前一块："Read it | then sleep"。
+        // (e) "it" unaligned → merged into the previous block: "Read it | then sleep".
         let src = words(&["Read", "it", "then", "sleep."]);
         let target = "读吧，然后睡觉。";
         let edges = vec![
@@ -2819,7 +2666,7 @@ mod tests {
         assert_eq!(blocks.len(), 2, "{blocks:#?}");
         assert_eq!(blocks[0].src, (0, 1));
         assert_eq!(blocks[1].src, (2, 3));
-        // 悬垂连词 and 未对齐 → 不能并入前一块，改并入后一块。
+        // A dangling conjunction `and` that is unaligned cannot merge into the previous block; it merges into the next one instead.
         let src = words(&["Read", "the", "book", "and", "sleep."]);
         let target = "读书，睡觉。";
         let edges = vec![
@@ -2832,7 +2679,7 @@ mod tests {
         assert_eq!(blocks.len(), 2, "{blocks:#?}");
         assert_eq!(blocks[0].src, (0, 2));
         assert_eq!(blocks[1].src, (3, 4));
-        // 句首未对齐词并入后一块（第一块从 0 开始）。
+        // Leading unaligned words at the start of the sentence merge into the next block (the first block starts at 0).
         let src = words(&["Well,", "read", "then", "sleep."]);
         let target = "读吧，然后睡觉。";
         let edges = vec![
@@ -2847,7 +2694,7 @@ mod tests {
 
     #[test]
     fn source_break_prefers_punctuation_then_pause_inside_the_interval() {
-        // (leftMax, rightMin] = (1, 3]：b ∈ {2, 3}；"home," 后有标点 ⇒ b = 2。
+        // (leftMax, rightMin] = (1, 3]: b ∈ {2, 3}; there is punctuation after "home," ⇒ b = 2.
         let src = words(&["Go", "home,", "and", "then", "sleep."]);
         let target = "回家，然后睡觉。";
         let edges = vec![
@@ -2860,7 +2707,7 @@ mod tests {
         let blocks = minimal_monotonic_blocks(&edges, &src, target, &candidates, DEFAULT_EDGE_TAU);
         assert_eq!(blocks.len(), 2, "{blocks:#?}");
         assert_eq!(blocks[0].src, (0, 1));
-        // 无标点时停顿决定：在 "home" 与 "quickly" 之间留 1s 静音。
+        // Without punctuation, the pause decides: leave 1s of silence between "home" and "quickly".
         let mut src = words(&["Go", "home", "quickly", "then", "sleep."]);
         for word in &mut src[2..] {
             word.t0 += 1.0;
@@ -2874,7 +2721,7 @@ mod tests {
         ];
         let blocks = minimal_monotonic_blocks(&edges, &src, target, &candidates, DEFAULT_EDGE_TAU);
         assert_eq!(blocks[0].src, (0, 1), "{blocks:#?}");
-        // 既无标点也无停顿：并入前一块（quickly 属前块）。
+        // Neither punctuation nor pause: merge into the previous block (quickly belongs to the preceding block).
         let src = words(&["Go", "home", "quickly", "then", "sleep."]);
         let blocks = minimal_monotonic_blocks(&edges, &src, target, &candidates, DEFAULT_EDGE_TAU);
         assert_eq!(blocks[0].src, (0, 2), "{blocks:#?}");
@@ -2882,7 +2729,7 @@ mod tests {
 
     #[test]
     fn over_hard_block_requests_a_monotonic_rewrite() {
-        // (f) 整句一块且目标 > hard（20 单位）。
+        // (f) The whole sentence is one block with target > hard (20 units).
         let src = words(&[
             "I", "didn't", "go", "because", "I", "was", "sick", "and", "tired.",
         ]);
@@ -2936,7 +2783,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        // 无任何证据 ⇒ 整句对应；权重 ≥ τ_s 的同一组边 ⇒ 块级对应。
+        // No evidence at all ⇒ sentence-level correspondence; a group of edges with weight ≥ τ_s ⇒ block-level correspondence.
         assert!(matches!(
             plan_sentence(&[], &input),
             PlanOutcome::SentenceLevel(_)
@@ -2987,22 +2834,22 @@ mod tests {
             },
         ];
         assert!(validate_blocks(&entry, 4));
-        // 片切在块内部：源侧 from=1 不是块起点。
+        // The piece is cut inside a block: source-side from=1 is not a block start.
         let mut inside = entry.clone();
         inside.pieces[0].to = Some(0);
         inside.pieces[1].from = Some(1);
         assert!(!validate_blocks(&inside, 4));
-        // 目标侧：片文本切点不落在块边界。
+        // Target side: the piece text's cut point does not fall on a block boundary.
         let mut inside = entry.clone();
         inside.pieces[0].text = "甲乙".to_owned();
         inside.pieces[1].text = "，丙丁。".to_owned();
         assert!(!validate_blocks(&inside, 4));
-        // 源/目标两侧对应到不同的块。
+        // Source and target sides correspond to different blocks.
         let mut skew = entry.clone();
         skew.blocks[0].src = (0, 0);
         skew.blocks[1].src = (1, 3);
         assert!(!validate_blocks(&skew, 4));
-        // I3：不连续 / 覆盖不全 / 空目标区间。
+        // I3: not contiguous / incomplete coverage / empty target span.
         let mut gap = entry.clone();
         gap.blocks[1].src = (3, 3);
         assert!(!validate_blocks(&gap, 4));
@@ -3013,14 +2860,14 @@ mod tests {
         empty.blocks[0].tgt = (0, 0);
         empty.blocks[1].tgt = (0, 6);
         assert!(!validate_blocks(&empty, 4));
-        // sentence 对应只许一个块；independent 不含块。
+        // A sentence correspondence allows only one block; independent contains no blocks.
         let mut sentence = entry.clone();
         sentence.correspondence = Some(Correspondence::Sentence);
         assert!(!validate_blocks(&sentence, 4));
         let mut independent = entry.clone();
         independent.mode = AlignMode::Independent;
         assert!(!validate_blocks(&independent, 4));
-        // 无块层恒有效（旧条目）。
+        // No block layer is always valid (legacy entries).
         let mut legacy = entry.clone();
         legacy.blocks.clear();
         assert!(validate_blocks(&legacy, 4));
@@ -3109,8 +2956,7 @@ mod tests {
         let mut input = BilingualPlanInput::new(src, display, "en", "zh");
         input.text_basis = TextBasis::Display;
         input.aligner = "llm-chunk+anchor/1".to_owned();
-        // 缺省 fit=16 时整句一行放得下（DP 正确地不拆）；收窄阈值以覆盖两片路径：
-        // 整句 10 单位 > hard 8，但每个块 ≤ hard，必须切成两片。
+        // With the default fit=16 the whole sentence fits on one line, so the DP correctly does not split. Tighten the threshold to cover the two-piece path: the whole sentence is 10 units > hard 8, but each block is ≤ hard, so it must be split into two pieces.
         input.params = TransParams {
             fit: 6,
             soft: 5,
@@ -3123,7 +2969,7 @@ mod tests {
         assert_eq!(entry.aligner.as_deref(), Some("llm-chunk+anchor/1"));
         assert_eq!(entry.pieces.len(), 2, "{entry:#?}");
         assert_eq!(concat(&entry), display);
-        // 基准文本解析 + 校验：按 display 校验通过，按 trans 校验不通过。
+        // Base text parsing and validation: passes validation against display, fails against trans.
         assert_eq!(
             crate::split::basis_text(&doc, "zh", &sid, &entry),
             Some(display)
@@ -3146,7 +2992,7 @@ mod tests {
         assert_eq!(cues[1].text, "因为我生病了。");
         assert!(cues.iter().all(|c| !c.fallback));
         assert_eq!(cues[0].word_span, Some((0, 2)));
-        // 删除 transDisplay ⇒ 基准文本缺失 ⇒ 条目失效 ⇒ 自然译句整句上屏。
+        // Deleting transDisplay ⇒ base text missing ⇒ entry invalid ⇒ the natural translated sentence is shown as a whole.
         doc.trans_display.clear();
         assert!(!align_entry_valid_for_lang(
             &doc,
@@ -3192,7 +3038,7 @@ mod tests {
         assert_eq!(cues[0].start, 0.0);
         assert_eq!(cues[0].end, 1.5);
         assert_eq!(cues[0].word_span, Some((0, 2)));
-        // 单行放得下：不算降级。
+        // Fits on one line: not counted as a downgrade.
         assert!(!cues[0].fallback);
     }
 
@@ -3233,7 +3079,7 @@ mod tests {
             .insert(sid.clone(), entry);
         assert!(stale_display_sentences(&doc, "zh", &sentences).is_empty());
         assert_eq!(purge_stale_display(&mut doc, "zh", &sentences), 0);
-        // 改整句译文 ⇒ 指纹不符 ⇒ display-stale。
+        // Changing the whole translated sentence ⇒ fingerprint mismatch ⇒ display-stale.
         doc.trans
             .get_mut("zh")
             .unwrap()
@@ -3249,7 +3095,7 @@ mod tests {
             doc.trans_align.is_empty(),
             "display-basis alignment must go too"
         );
-        // trans 基准的对齐不受 display 过期影响。
+        // Alignment on the trans basis is not affected by a stale display.
         doc.trans_display
             .entry("zh".to_owned())
             .or_default()
@@ -3290,7 +3136,7 @@ mod tests {
                 .iter()
                 .any(|c| term.start < c.pos && c.pos < term.end)
         );
-        // 落在锁定术语内部的模型提示两头都不进：不放行，也不算「被拒的提示」。
+        // Model hints that fall inside a locked term are excluded from both piles: not admitted, and not counted as "rejected hints".
         let inside = term.start + "Claude ".chars().count();
         let hinted = hinted_cut_candidates(
             target,
@@ -3303,10 +3149,10 @@ mod tests {
             hinted.admitted.is_empty() && hinted.refused.is_empty(),
             "{hinted:?}"
         );
-        // 「的」尾是客观语病缝：不进候选。
+        // A seam after “的” is an objective-defect seam: not a candidate.
         let de = span(target, "稳定的").end;
         assert!(!candidates.iter().any(|c| c.pos == de), "{candidates:?}");
-        // 词间空白缝罚分低于 CJK 字界缝；空白归左侧，切点落在右侧首字上。
+        // The penalty for an inter-word whitespace seam is lower than for a CJK character-boundary seam; the whitespace goes to the left, and the cut lands on the first character of the right side.
         let after_code = candidates.iter().find(|c| c.pos == term.end + 1).unwrap();
         let cjk_seam = candidates
             .iter()
@@ -3315,10 +3161,10 @@ mod tests {
         assert!(after_code.seam_cost < cjk_seam.seam_cost);
         let chars: Vec<char> = target.chars().collect();
         assert!(is_cjk_char(chars[cjk_seam.pos]));
-        // 位置是原文字符坐标：切点前后字符对得上。
+        // Positions are original-text character coordinates: the characters on either side of the cut match up.
         assert_eq!(chars[after_code.pos], '写');
         assert_eq!(chars[after_code.pos - 1], ' ');
-        // 从句标点缝最便宜。
+        // Clause-punctuation seams are the cheapest.
         let comma = candidates
             .iter()
             .find(|c| c.pos == span(target, "稳定").start)
@@ -3326,13 +3172,7 @@ mod tests {
         assert!(comma.seam_cost < after_code.seam_cost);
     }
 
-    /// 真实用例（IBM「AI 安全三难困境」s-g40.34）：源行 19 词 / 5.8 s / 78 单位，
-    /// 译文 20 单位（超 fit、恰在 hard 上），块边界已经落在「是，」后，但配对的
-    /// 源缝 `… two of is | we could …` 以系词收尾、按前附词元判非法。平罚的超 fit
-    /// 代价（1.5）永远轻于这个坏源缝（BLOCKING + 0.8），DP 便宁可保留一条贴在
-    /// hard 上的整行；check 随后报 `align-paired-density` 要求在同一个缝上切开，
-    /// 而重跑 align 只会得到同样的块——所以超 fit 代价必须随宽度递增到足以压过
-    /// 一个坏源缝，让这一刀在这里被采纳。
+    /// Real case (IBM “AI 安全三难困境” (AI safety trilemma), s-g40.34): source line of 19 words / 5.8 s / 78 units; translation 20 units (over fit, exactly at hard). The block boundary already falls after “是，”, but the paired source seam `… two of is | we could …` ends with a copula and is judged illegal by its prefix lemma. The flat over-fit penalty (1.5) is always lighter than this bad source seam (BLOCKING + 0.8), so the DP would rather keep a whole line pinned at hard. check then reports `align-paired-density`, requiring a cut at the same seam, while rerunning align would produce the same blocks. So the over-fit cost must grow with width enough to outweigh a bad source seam, so that this cut is adopted here.
     fn dense_source_fixture() -> (Vec<AnchorWord>, &'static str, Vec<AlignBlock>) {
         let raw: [(&str, f64, f64); 19] = [
             ("And", 407.65, 408.2),
@@ -3391,14 +3231,14 @@ mod tests {
             groups.len() >= 2,
             "a 78-unit / 5.8 s source row paired with a 20-unit target must split: {groups:?}"
         );
-        // 切点落在「是，」后的从句缝，而不是把「我们可以选」孤悬。
+        // The cut falls at the clause seam after “是，”, rather than leaving “我们可以选” stranded.
         let target_chars: Vec<char> = target.chars().collect();
         let first_piece_end = blocks[groups[0][groups[0].len() - 1]].tgt.1;
         assert_eq!(
             char_slice(&target_chars, 0..first_piece_end),
             "最后，还有一种二选法是，"
         );
-        // 每一行的源侧都比整行窄，且不再有整行超 fit 的译文。
+        // Each line's source side is narrower than the whole line, and no translation line exceeds fit any longer.
         for group in &groups {
             let text = char_slice(
                 &target_chars,
@@ -3411,9 +3251,8 @@ mod tests {
         }
     }
 
-    /// 同一项目 s-g7.0：`Generally speaking, though, | the smarter models …`。
-    /// `though` 在前附词元表里，但逗号已把插入语封口，行尾停在这里没有悬垂；
-    /// 旧判定把这个缝当非法缝重罚，19 单位的译文整行不切。
+    /// Same project, s-g7.0: `Generally speaking, though, | the smarter models …`.
+    /// `though` is in the prefix lemma table, but the comma has already closed the parenthetical, so the line end here is not dangling. The old judgement treated this seam as illegal and penalised it heavily, so a 19-unit translation line was not cut.
     #[test]
     fn clause_punctuation_seals_a_source_seam_even_after_a_clinging_lexeme() {
         let raw: [(&str, f64, f64); 10] = [
@@ -3440,7 +3279,7 @@ mod tests {
             })
             .collect();
         assert!(source_seam_legal(&words, 3), "though, | the");
-        // 没有标点封口时，前附词元仍然不合法：`the | smarter`。
+        // Without punctuation closing it, a prefix lemma is still illegal: `the | smarter`.
         assert!(!source_seam_legal(&words, 4), "the | smarter");
         let target = "不过一般来说，越聪明的模型也需要其他能力。";
         let block = |src: (usize, usize), tgt: (usize, usize)| AlignBlock {
@@ -3461,11 +3300,7 @@ mod tests {
         assert_eq!(groups[0], vec![0]);
     }
 
-    /// 同一项目 s-g38.25（52 词的长枚举句）：顿号缝的定价必须与
-    /// `seam::lint_pieces` 同口径——并列项被拆开、左右两片合并后仍 ≤ hard 的
-    /// 顿号不是缝。候选缝表按「左片 | 整个余下部分」计价时顿号总显得便宜，
-    /// DP 便把 `它做的处理、` 单独切成一行，check 随即报 align-target-seam，
-    /// 而重跑 align 只会得到同一组块。
+    /// Same project, s-g38.25 (the 52-word enumeration sentence): the pricing of enumeration-comma seams must be on the same basis as `seam::lint_pieces`. An enumeration comma is not a seam when the parallel items are split apart and the merged left and right pieces still do not exceed hard. When the candidate seam table prices by "left piece | entire remainder", the enumeration comma always looks cheap, so the DP split `它做的处理、` out into a line of its own. check then reported align-target-seam, while rerunning align only produced the same blocks.
     #[test]
     fn list_separator_is_not_a_seam_when_the_neighbours_fit_together() {
         let raw: [(&str, f64, f64); 52] = [
@@ -3572,7 +3407,7 @@ mod tests {
                 "顿号后不该有一刀（合并后 {merged} ≤ hard）：{pieces:?}"
             );
         }
-        // check 点名的那一刀（「采取的行动，」后）已经切开，20 单位的行不再出现。
+        // The cut check pointed at (after “采取的行动，”) is already made, so the 20-unit line no longer appears.
         assert!(
             pieces.iter().any(|piece| piece.ends_with("采取的行动，")),
             "{pieces:?}"
@@ -3585,30 +3420,22 @@ mod tests {
         }
     }
 
-    // ---- paired 密度在 `--align-only` 真实路径上的探针 ----------------------
+    // ---- Probe for paired density on the real `--align-only` path ----------------------
 
-    /// R1 形态（短译文 + 长源时窗）的 `--align-only` 真实路径：
-    /// `plan_sentence` → [`bilingual_dp`] → `pair_cost`，**不经过**
-    /// [`plan_sentence_rows`]（那条路只在 translate 携带融合 rows 草稿时可达，
-    /// `--align-only` 传空草稿）。
+    /// The real `--align-only` path for the R1 shape (short translation + long source time window): `plan_sentence` → [`bilingual_dp`] → `pair_cost`, **not going through** [`plan_sentence_rows`] (that route is reachable only when translate carries fused rows drafts; `--align-only` passes empty drafts).
     ///
-    /// 这条 fixture 是 paired 语义的验收锚：
-    /// - `Auto` 必须仍收敛成一片（零漂移）——窄片的宽度罚
-    ///   `((units-soft)/soft)²` 压过源侧时窗罚；
-    /// - `Paired` 必须切出 ≥2 片——窄于 soft 的宽度罚归零后，只罚"整句一片"的
-    ///   源侧宽度/时窗罚成为主导项，DP 沿译文里那条从句缝切开。
+    /// This fixture is the acceptance anchor for paired semantics:
+    /// - `Auto` must still converge to one piece (zero drift): the narrow-piece width penalty `((units-soft)/soft)²` outweighs the source-side time-window penalty;
+    /// - `Paired` must split into ≥2 pieces. Once the width penalty for narrower-than-soft is zeroed, only the source-side width and time-window penalties for "whole sentence as one piece" dominate, and the DP cuts along the clause seam within the translation.
     fn r1_short_translation_fixture() -> (Vec<AnchorWord>, String, Vec<AlignEdge>) {
-        // 14 词 × 0.4s = 5.6s 源时窗：落在 PAIRED_SOURCE_MAX_SECONDS(4s) 与
-        // PAIRED_SOURCE_HARD_SECONDS(6s) 之间的软档；整句源宽也超 en 的
-        // `source_fit`(42)。两项都只罚"整句一片"，不罚切开后的两片。
+        // 14 words × 0.4s = 5.6s source time window: it falls in the soft band between PAIRED_SOURCE_MAX_SECONDS (4s) and PAIRED_SOURCE_HARD_SECONDS (6s). The whole-sentence source width also exceeds en's `source_fit` (42). Both terms penalise only "whole sentence as one piece", not the two pieces after splitting.
         let src = words(&[
             "And", "so", "I", "made", "up", "my", "mind", "then", "I", "started", "all", "over",
             "again", "there.",
         ]);
-        // 远短于 soft(14) 的译文，中间一条从句缝（`seam_penalty` 记 0.3）；
-        // 两侧都长于 `seam::MIN_PIECE_CHARS`，因此缝上没有闪现碎片附加罚。
+        // A translation well shorter than soft(14), with one clause seam in the middle (`seam_penalty` records 0.3). Both sides are longer than `seam::MIN_PIECE_CHARS`, so the seam carries no extra fragment penalty.
         let target = "我下定决心，重新来过。".to_owned();
-        // 权重 1.0：把置信度罚清零，让这条 fixture 只在宽度项上有分歧。
+        // Weight 1.0: zeroes the confidence penalty, so this fixture diverges only on the width term.
         let edge = |src: usize, needle: &str| AlignEdge::soft(src, span(&target, needle), 1.0);
         let edges = vec![
             edge(2, "我"),
@@ -3633,7 +3460,7 @@ mod tests {
             }
             other => panic!("auto: {other:?}"),
         };
-        // 零漂移：`Auto` 的代价函数没有变，这一句仍然整句一片。
+        // Zero drift: `Auto`'s cost function is unchanged, and this sentence is still one piece.
         assert_eq!(auto_pieces, 1, "auto must not drift");
 
         let mut paired = auto;
@@ -3652,8 +3479,7 @@ mod tests {
         }
     }
 
-    /// `Paired` 只取消「窄于 soft」方向的宽度罚：`units >= soft` 时代价与
-    /// `Auto` 逐字节相同，`units > hard` 仍是硬约束（`None`）。
+    /// `Paired` removes only the width penalty in the "narrower than soft" direction. When `units >= soft` the cost is byte-for-byte identical to `Auto`, and `units > hard` remains a hard constraint (`None`).
     #[test]
     fn paired_only_waives_the_narrow_side_of_the_width_term() {
         let (src, target, edges) = r1_short_translation_fixture();
@@ -3686,16 +3512,16 @@ mod tests {
             )
             .expect("whole-sentence piece is feasible")
         };
-        // 整句宽度 < soft(14)：paired 免掉的正是这一项，其余项逐字节相同。
+        // Whole-sentence width < soft(14): this is exactly the term paired waives; the other terms are byte-for-byte identical.
         let soft = auto.params.soft as f64;
         let width = ((target_cps_chars(&target, "zh") as f64 - soft) / soft).powi(2);
         assert!(width > 0.0);
         assert!((whole(&auto) - whole(&paired) - width).abs() < 1e-9);
     }
 
-    // ---- 行分区直通（`plan_sentence_rows`） --------------------------------
+    // ---- Line partition pass-through (`plan_sentence_rows`) --------------------------------
 
-    /// 把「行文本」列表变成 `target` 上的字符区间；行文本必须按序拼成 `target`。
+    /// Turns a list of "line texts" into character ranges on `target`; the line texts must concatenate in order to form `target`.
     fn row_ranges(rows: &[&str]) -> Vec<Range<usize>> {
         let mut cursor = 0usize;
         rows.iter()
@@ -3707,7 +3533,7 @@ mod tests {
             .collect()
     }
 
-    /// 每行一条软边覆盖该行全区间（模型给的行归属就长这样）。
+    /// Each line gets one soft edge covering its whole range (this is what the model's line attribution looks like).
     fn row_edges(rows: &[(&[usize], Range<usize>)]) -> Vec<AlignEdge> {
         rows.iter()
             .flat_map(|(ordinals, range)| {
@@ -3718,8 +3544,7 @@ mod tests {
             .collect()
     }
 
-    /// 行边界被冻结成块边界：pieces 数 = 行数、片文本 = 行文本、
-    /// `aligner` 走行标签、I3/I4 成立。
+    /// Line boundaries are frozen into block boundaries: piece count = line count, piece text = line text, `aligner` takes the line tag, and I3/I4 hold.
     #[test]
     fn rows_become_pieces_one_to_one_with_the_declared_source_spans() {
         let src = words(&[
@@ -3757,14 +3582,14 @@ mod tests {
         assert_eq!(entry.aligner.as_deref(), Some("llm-rows+anchor/1"));
         assert_eq!(concat(&entry), target);
         assert_invariants(&entry, src.len());
-        // 行边把整行钉成一个块：块与片一一对应，块的源区间就是行声明的区间。
+        // A line edge pins each whole line as one block: blocks and pieces correspond one-to-one, and the block's source span is exactly the span the line declared.
         assert_eq!(entry.blocks.len(), entry.pieces.len());
         assert_eq!(entry.blocks[0].src, (0, 4));
         assert_eq!(entry.blocks[1].src, (5, 8));
         assert_eq!(entry.blocks[2].src, (9, 13));
     }
 
-    /// 单行覆盖整句（语序对不上时的退化形态）：一片、块仍可细分。
+    /// A single line covering the whole sentence (the degenerate shape when word order does not match): one piece, and blocks can still be subdivided.
     #[test]
     fn a_single_row_covering_the_whole_sentence_yields_one_piece() {
         let src = words(&["I", "didn't", "go", "because", "I", "was", "sick."]);
@@ -3779,9 +3604,7 @@ mod tests {
         assert_invariants(&entry, src.len());
     }
 
-    /// 行本身超 hard：再切只允许发生在该行内部，绝不跨行合并。行边把整行
-    /// 的目标区间钉成一个块，行内没有任何独立证据可切，于是整句返回 `None`
-    /// 回落常规路径——宁可多派一次 align，也不用比例锚定冒充语义边界。
+    /// If a line itself exceeds hard, further cutting is allowed only inside that line; it never merges across lines. A line edge pins the whole line's target range as one block, and there is no independent evidence inside the line to cut, so the whole sentence returns `None` and falls back to the regular path. It is better to spend one more align call than to pass off proportional anchoring as a semantic boundary.
     #[test]
     fn an_over_hard_row_falls_back_instead_of_merging_across_rows() {
         let src = words(&[
@@ -3821,21 +3644,21 @@ mod tests {
             "第二行必须超 hard 才能覆盖再切分支"
         );
         assert!(plan_sentence_rows(&edges, &ranges, &input).is_none());
-        // 回落后的常规路径照常给出方案（这一句本来就有 dedicated 轮兜底）。
+        // The regular path after fallback still produces a plan as usual (this sentence has a dedicated round to fall back on).
         assert!(!matches!(
             plan_sentence(&edges, &input),
             PlanOutcome::Aligned(_)
         ));
     }
 
-    /// 行边界与硬锚冲突（锚点横跨行缝）：不硬拗，整句返回 `None` 回落常规路径。
+    /// The line boundary conflicts with a hard anchor (an anchor edge crosses the line seam): do not force it. The whole sentence returns `None` and falls back to the regular path.
     #[test]
     fn a_row_boundary_straddled_by_an_anchor_falls_back() {
         let src = words(&[
             "We", "shipped", "version", "2024", "last", "week", "already.",
         ]);
         let target = "我们上周就发布了2024版本。";
-        // 模型把行切在 "了" 之后——正好切进硬锚 "2024版本" 覆盖的区间。
+        // The model split the line after "了", exactly cutting into the range covered by the hard anchor "2024版本".
         let rows = ["我们上周就发布了2", "024版本。"];
         let ranges = row_ranges(&rows);
         let mut edges = row_edges(&[
@@ -3847,7 +3670,7 @@ mod tests {
         assert!(plan_sentence_rows(&merge_edges(vec![edges]), &ranges, &input).is_none());
     }
 
-    /// 自定时间的锚定词（合并判据依赖行时长，等间距 helper 不够用）。
+    /// Anchored words with self-assigned times (the merge criteria depend on line duration, so the evenly spaced helper is not enough).
     fn timed_words(spans: &[(f64, f64)]) -> Vec<AnchorWord> {
         spans
             .iter()
@@ -3862,10 +3685,9 @@ mod tests {
             .collect()
     }
 
-    /// 确定性行合并：[2 单位/0.6s] + [5/1.2s] + [9/2.5s] ⇒ 两行。
+    /// Deterministic line merge: [2 units/0.6s] + [5/1.2s] + [9/2.5s] ⇒ two lines.
     ///
-    /// 第一行 0.6s < 1.0s 触发合并，只有右邻可合（7 单位 / 1.8s，cps 3.9）；
-    /// 合并后两行都不再"太短"，迭代停止。
+    /// The first line at 0.6s is < 1.0s, which triggers a merge, and only the right neighbour can merge (7 units / 1.8s, cps 3.9). After merging, neither line is "too short" any more, so iteration stops.
     #[test]
     fn short_rows_are_merged_deterministically_after_the_row_split() {
         let src = timed_words(&[
@@ -3902,7 +3724,7 @@ mod tests {
         assert_eq!(plan.entry.pieces[0].from, Some(0));
         assert_eq!(plan.entry.pieces[0].to, Some(2));
         assert_eq!(plan.entry.pieces[1].from, Some(3));
-        // 块层不跟着变粗：仍是模型给的三行对应。
+        // The block layer does not get coarser along with it: it remains the model's three-line correspondence.
         assert_eq!(plan.entry.blocks.len(), 3);
         assert_eq!(concat(&plan.entry), target);
         assert_invariants(&plan.entry, src.len());
@@ -3938,7 +3760,7 @@ mod tests {
         assert_invariants(&paired_plan.entry, src.len());
     }
 
-    /// 合并守卫：相邻行已经接近 fit 时不合并（合并后 > fit 单位），短行原样留下。
+    /// Merge guard: when adjacent lines are already close to fit, do not merge (merged width > fit units); short lines are left as they are.
     #[test]
     fn a_short_row_next_to_a_wide_row_is_left_alone() {
         let src = timed_words(&[(0.0, 0.6), (0.6, 1.6), (1.6, 2.6), (2.6, 3.6)]);
@@ -3950,7 +3772,7 @@ mod tests {
         let ranges = row_ranges(&rows);
         let edges = row_edges(&[(&[0], ranges[0].clone()), (&[1, 2, 3], ranges[1].clone())]);
         let input = BilingualPlanInput::new(src.clone(), &target, "en", "zh");
-        // 2 + 15 = 17 > fit 16 ⇒ 合并非法。
+        // 2 + 15 = 17 > fit 16 ⇒ merge is illegal.
         assert!(2 + target_cps_chars(wide, "zh") > input.params.fit);
 
         let plan = plan_sentence_rows(&edges, &ranges, &input).expect("row plan");
@@ -3960,9 +3782,7 @@ mod tests {
         assert_invariants(&plan.entry, src.len());
     }
 
-    /// 守卫分级：由 **cps > 6** 触发的合并允许合并后宽度到 hard（20），
-    /// 只由"太小"触发的仍守 fit（16）。这里两行各 9 单位、各 1.0s（cps 9），
-    /// 合并后 18 单位 > fit 16 但 ≤ hard 20 ⇒ 合并；读速降到 9.0。
+    /// Guard tiering: a merge triggered by **cps > 6** may reach hard (20) in merged width, while one triggered only by "too small" still respects fit (16). Here two lines of 9 units each at 1.0s each (cps 9): merged 18 units > fit 16 but ≤ hard 20 ⇒ merge; reading speed drops to 9.0.
     #[test]
     fn a_too_fast_row_may_merge_up_to_hard_not_just_fit() {
         let src = timed_words(&[(0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.0)]);
@@ -3972,7 +3792,7 @@ mod tests {
         let ranges = row_ranges(&rows);
         let edges = row_edges(&[(&[0, 1], ranges[0].clone()), (&[2, 3], ranges[1].clone())]);
         let input = BilingualPlanInput::new(src.clone(), &target, "en", "zh");
-        // 两行都是 9 单位 / 1.0s = 9 cps > 6，但都不"太小"。
+        // Both lines are 9 units / 1.0s = 9 cps > 6, but neither is "too small".
         assert!(9 > input.params.fit / 2);
         assert!(18 > input.params.fit && 18 <= input.params.hard);
 
@@ -3983,8 +3803,7 @@ mod tests {
         assert_invariants(&plan.entry, src.len());
     }
 
-    /// 反面：同样宽的两行，如果读速本来就合规（各 9 单位 / 2.0s = 4.5 cps），
-    /// 谁也不"太快"也不"太小" ⇒ 根本不触发合并，18 单位的宽行不会出现。
+    /// The converse: two lines of the same width whose reading speed is already compliant (9 units / 2.0s = 4.5 cps each). Neither is "too fast" nor "too small" ⇒ no merge is triggered at all, and the 18-unit wide line does not appear.
     #[test]
     fn rows_that_read_comfortably_are_never_widened_past_fit() {
         let src = timed_words(&[(0.0, 1.0), (1.0, 2.0), (2.0, 3.0), (3.0, 4.0)]);
@@ -3999,7 +3818,7 @@ mod tests {
         assert_invariants(&plan.entry, src.len());
     }
 
-    /// 合并守卫之二：合并后时长超过 `max_duration_sec`（缺省 7s）也不合并。
+    /// Guard two: a merge is also refused if the merged duration exceeds `max_duration_sec` (default 7s).
     #[test]
     fn a_short_row_is_not_merged_past_the_dwell_ceiling() {
         let src = timed_words(&[(0.0, 0.6), (0.6, 7.0), (7.0, 8.0)]);
@@ -4008,14 +3827,14 @@ mod tests {
         let ranges = row_ranges(&rows);
         let edges = row_edges(&[(&[0], ranges[0].clone()), (&[1, 2], ranges[1].clone())]);
         let input = BilingualPlanInput::new(src.clone(), &target, "en", "zh");
-        // 合并后 0.0..8.0 = 8s > 7s。
+        // Merged 0.0..8.0 = 8s > 7s.
         let plan = plan_sentence_rows(&edges, &ranges, &input).expect("row plan");
         assert_eq!(plan.merged_rows, 0);
         assert_eq!(plan.entry.pieces.len(), 2);
         assert_invariants(&plan.entry, src.len());
     }
 
-    /// 没有任何参与判定的边 ⇒ 不走行直通（证据不足）。
+    /// No edge takes part in decisions ⇒ no line pass-through (insufficient evidence).
     #[test]
     fn rows_without_counted_edges_fall_back() {
         let src = words(&["alpha", "bravo", "charlie", "delta"]);

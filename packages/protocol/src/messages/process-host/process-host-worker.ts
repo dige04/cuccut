@@ -14,7 +14,7 @@ import { pl } from './process-host-worker.pl.ts';
 import { tr } from './process-host-worker.tr.ts';
 import { vi } from './process-host-worker.vi.ts';
 
-/** JSON 行子进程通道的错误（`packages/process-host`）。`method` 是请求的方法名。 */
+/** Errors of the JSON-line child process channel (`packages/process-host`). `method` is the name of the requested method. */
 const en = {
   requestFailed: (p: { method: string; code: string; message: string }) => `${p.method} failed: ${p.code}: ${p.message}`,
   exited: (p: { method: string; code: string; signal: string }) =>

@@ -1,47 +1,32 @@
 /**
- * 假的 Model Worker：一个 Node 脚本，按 Model Worker 协议规范说话（hello、load、unload、status、run、cancel，
- * `model.phase` / `job.phase` / `job.progress` / `job.segment` / `job.language` / `job.warning` 事件，
- * staging 里的 `segments.jsonl` 与 `result.json`）。测试不需要真实的 Rust Worker。
+ * Fake Model Worker: a Node script that speaks the Model Worker protocol specification (hello, load, unload, status, run, cancel; events `model.phase` / `job.phase` / `job.progress` / `job.segment` / `job.language` / `job.warning`; `segments.jsonl` and `result.json` in staging). Tests do not need the real Rust Worker.
  *
- * 用法：`node fake-model-worker.ts [--control <file>] --parent-pid <pid>`
+ * Usage: `node fake-model-worker.ts [--control <file>] --parent-pid <pid>`
  *
- * 故障注入：模型包 ID 里 `#` 之后用逗号分隔的标记，或者控制文件 `{ "faults": [...], "transcript": "..." }`
- * （控制文件在每次 `model.load` / `job.run` 时重新读取）：
+ * Fault injection: comma-separated markers after `#` in the model package ID, or the control file `{ "faults": [...], "transcript": "..." }` (the control file is re-read on every `model.load` / `job.run`):
  *
- * - `crash-on-run`：第一段之后 `process.exit(70)`；
- * - `crash-once`：只在 `runGeneration === 1` 时这样崩溃（Runtime 的自动重试用 2，所以第二次成功）；
- * - `hang-on-cancel`：收到 `job.cancel` 照常确认，但任务再也不返回（Runtime 要在期限后结束进程）；
- * - `slow`：20 段，每 300 ms 一段；
- * - `slow-load`：`model.load` 要 1 秒；
- * - 控制文件 `helloDelayMs`：延迟握手回应，模拟首次 GPU 内核编译；
- * - `invalid-output`：第二段的 start 早于第一段的 end（违反单调）；
- * - `load-fail:<code>`：`model.load` 返回这个错误码；
- * - `run-error:<code>`：`job.run` 返回这个错误码（`WORKER_PANIC` 之后进程退出，与规范一致）；
- * - `no-speech`：`outcome: 'no-speech'`，没有分段。
+ * - `crash-on-run`: `process.exit(70)` after the first segment;
+ * - `crash-once`: crashes this way only when `runGeneration === 1` (the Runtime's automatic retry uses 2, so the second attempt succeeds);
+ * - `hang-on-cancel`: acknowledges `job.cancel` as usual, but the job never returns (the Runtime must end the process after its deadline);
+ * - `slow`: 20 segments, one every 300 ms;
+ * - `slow-load`: `model.load` takes 1 second;
+ * - control file `helloDelayMs`: delays the handshake reply, simulating a first-time GPU kernel compile;
+ * - `invalid-output`: the second segment's start is earlier than the first segment's end (violates monotonicity);
+ * - `load-fail:<code>`: `model.load` returns this error code;
+ * - `run-error:<code>`: `job.run` returns this error code (the process exits after `WORKER_PANIC`, per the spec);
+ * - `no-speech`: `outcome: 'no-speech'`, no segments.
  *
- * 说话人区分（`options.diarize`）：模型包带 `segmentation` 与 `speaker` 组件（装了「说话人区分」模型包）时，识别之后进
- * `diarizing` 阶段，单数段是 `spk-1`、双数段是 `spk-2`（段与词都标；流式的段不带）；不带这两个组件时报
- * `diarization-unavailable` 警告。
+ * Speaker diarization (`options.diarize`): when the model package carries `segmentation` and `speaker` components (the “speaker diarization” model package is installed), after recognition it enters the `diarizing` phase. Odd-numbered segments are `spk-1` and even-numbered ones are `spk-2` (both segments and words are tagged; streamed segments are not). Without these two components it reports a `diarization-unavailable` warning.
  *
- * 本地语音合成（`job.run` 的 `capability: 'synthesize'`）：控制文件的 `capabilities` 含 `synthesize` 时 `worker.hello`
- * 才报告它（默认只报告 `transcribe`），这时 `synthesizeFamilies` 默认列出全部合成 family，控制文件的 `synthesizeFamilies`
- * 可以收窄。识别同样：`capabilities`（默认 `['transcribe']`）含 `transcribe` 时 `transcribeFamilies` 默认列出全部识别 family，
- * 控制文件的 `transcribeFamilies` 可以收窄。合成写一段 1 秒的 24 kHz 单声道 WAV（440 Hz 正弦），故障标记 `silent-output` 写全零的静音，`slow` 每步 200 ms；
- * 控制文件的 `readingsDropped` 原样放进结果；`record` 给出时，每次 `job.run` 的参数追加一行到那个文件。
+ * Local speech synthesis (`capability: 'synthesize'` in `job.run`): `worker.hello` reports it only when the control file's `capabilities` includes `synthesize` (by default it reports only `transcribe`). Then `synthesizeFamilies` by default lists all synthesis families, and the control file's `synthesizeFamilies` can narrow them. Recognition works the same way: when `capabilities` (default `['transcribe']`) includes `transcribe`, `transcribeFamilies` by default lists all recognition families, and the control file's `transcribeFamilies` can narrow them. Synthesis writes a 1-second 24 kHz mono WAV (440 Hz sine); the `silent-output` marker writes all-zero silence; `slow` is 200 ms per step. The control file's `readingsDropped` is put verbatim into the result. When `record` is given, each `job.run`'s arguments are appended as a line to that file.
  *
- * 人声分离（`capability: 'separate'`）：`capabilities` 含 `separate` 时报告它，`separateFamilies` 默认 `['htdemucs-ft']`。
- * 分离按 `options.sampleRate`（null 为 44100）写 16-bit 立体声 `vocals.wav`（440 Hz）与 `background.wav`（110 Hz，
- * 比人声低 12 dB），长度是控制文件的 `separateSeconds`，没有时输入是 WAV 就取它的时长，否则 1 秒；4 步进度；输入不存在时
- * `INPUT_UNREADABLE`，`slow` 每步 200 ms，`silent-output` 时人声是静音。
+ * Vocal separation (`capability: 'separate'`): reports it when `capabilities` includes `separate`; `separateFamilies` defaults to `['htdemucs-ft']`. Separation writes 16-bit stereo `vocals.wav` (440 Hz) and `background.wav` (110 Hz, 12 dB below the vocals) at `options.sampleRate` (null means 44100). The length is the control file's `separateSeconds`; if absent, it is the input's duration when the input is a WAV, otherwise 1 second. 4 progress steps. When the input does not exist, `INPUT_UNREADABLE`. `slow` is 200 ms per step; with `silent-output`, the vocals are silence.
  *
- * 已有转写的说话人区分（`capability: 'diarize'`）：`capabilities` 含 `diarize` 时报告它。前一半的词是 `spk-1`、后一半是
- * `spk-2`（只有一个词时只有 `spk-1`），写 staging 里的 `speakers.json`；2 步进度，输入不存在时 `INPUT_UNREADABLE`，`slow` 每步 200 ms。
+ * Diarization of existing transcripts (`capability: 'diarize'`): reports it when `capabilities` includes `diarize`. The first half of the words are `spk-1` and the second half are `spk-2` (with only one word, only `spk-1`). It writes `speakers.json` in staging. 2 progress steps; `INPUT_UNREADABLE` when the input does not exist; `slow` is 200 ms per step.
  *
- * 本地文生图（`capability: 'image'`）：控制文件的 `capabilities` 含 `image` 时 `worker.hello` 才报告它，`imageFamilies`
- * 默认列出全部文生图 family，控制文件的 `imageFamilies` 可以收窄。生图按请求的宽高写一张渐变的 RGB PNG，故障标记
- * `flat-output` 写一整片纯色，`slow` 每步 200 ms。
+ * Local text-to-image (`capability: 'image'`): `worker.hello` reports it only when the control file's `capabilities` includes `image`. `imageFamilies` by default lists all text-to-image families, and the control file's `imageFamilies` can narrow them. Image generation writes a gradient RGB PNG at the requested width and height. The `flat-output` marker writes a single flat color; `slow` is 200 ms per step.
  *
- * 本文件不引用仓库里的任何包：它作为独立脚本运行。
+ * This file does not reference any package in the repo: it runs as a standalone script.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -134,7 +119,7 @@ function faultArg(prefix: string): string | null {
   return found ? found.slice(prefix.length + 1) : null;
 }
 
-// ---- 看护：stdin 关闭或父进程不在就退出（协议规范 §1） ----
+// ---- Watchdog: exit when stdin closes or the parent process is gone (protocol spec §1) ----
 
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 lines.on('line', (line) => {
@@ -322,7 +307,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
       words: segmentWords,
     };
     if (fault('invalid-output') && index === 1) {
-      // 第二段从第一段中间开始：违反「递增且不重叠」。
+      // The second segment starts midway through the first: this violates “increasing and non-overlapping”.
       const shift = segment.start - Math.floor(segments[0]!.end / 2);
       segment.start -= shift;
       segment.words = segment.words.map((w) => ({ ...w, start: w.start - shift, end: w.end - shift }));
@@ -340,7 +325,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
   }
 
   if (current.cancelled) {
-    // hang-on-cancel：确认过取消，但再也不返回。
+    // hang-on-cancel: acknowledges the cancel, but never returns.
     if (fault('hang-on-cancel')) return;
     return finish({ outcome: 'cancelled', output: null, segmentsFile, stats: stats(0) });
   }
@@ -377,7 +362,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
       backend: bundle!.backend,
       device: bundle!.device,
       workerVersion: WORKER_VERSION,
-      // `job.run` 不携带输入 hash（协议规范 §2.5），Worker 无从回填。
+      // `job.run` does not carry an input hash (protocol spec §2.5), so the Worker has no way to backfill it.
       inputHash: '',
       runGeneration,
     },
@@ -394,7 +379,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
   });
 }
 
-/** 合成：参考录音（有时）→ 4 步合成（`job.progress` 的 `steps`）→ 编码，写 staging 里的 `speech.wav`。 */
+/** Synthesis: reference recording (sometimes) → 4 synthesis steps (`steps` in `job.progress`) → encoding. Writes `speech.wav` in staging. */
 async function synthesize(id: number, params: Record<string, unknown>): Promise<void> {
   const jobId = String(params.jobId);
   const staging = String(params.staging);
@@ -473,7 +458,7 @@ async function synthesize(id: number, params: Record<string, unknown>): Promise<
   });
 }
 
-/** 16-bit PCM WAV：`frames` 帧、`channels` 声道，样本由 `sample(i)` 给出（各声道相同）。 */
+/** 16-bit PCM WAV: `frames` frames and `channels` channels, with samples given by `sample(i)` (the same on every channel). */
 function pcmWav(sampleRate: number, channels: number, frames: number, sample: (i: number) => number): Buffer {
   const dataBytes = frames * channels * 2;
   const bytes = Buffer.alloc(44 + dataBytes);
@@ -497,7 +482,7 @@ function pcmWav(sampleRate: number, channels: number, frames: number, sample: (i
   return bytes;
 }
 
-/** WAV 文件的时长（秒）；不是 WAV 或读不了时 null。 */
+/** Duration of the WAV file in seconds; null if it is not a WAV or cannot be read. */
 function wavSeconds(file: string): number | null {
   let bytes: Buffer;
   try {
@@ -517,7 +502,7 @@ function wavSeconds(file: string): number | null {
   return null;
 }
 
-/** 分离：解码 → 4 步分离（`steps`）→ 编码，写 staging 里的 `vocals.wav` 与 `background.wav`。 */
+/** Separation: decode → 4 separation steps (`steps`) → encode. Writes `vocals.wav` and `background.wav` in staging. */
 async function separate(id: number, params: Record<string, unknown>): Promise<void> {
   const jobId = String(params.jobId);
   const staging = String(params.staging);
@@ -579,7 +564,7 @@ async function separate(id: number, params: Record<string, unknown>): Promise<vo
   });
 }
 
-/** 说话人区分：解码 → 2 步区分 → 整理，写 staging 里的 `speakers.json`（`cuccut.speakers/v1`）。 */
+/** Speaker diarization: decode → 2 diarization steps → finalize. Writes `speakers.json` (`cuccut.speakers/v1`) in staging. */
 async function diarize(id: number, params: Record<string, unknown>): Promise<void> {
   const jobId = String(params.jobId);
   const staging = String(params.staging);
@@ -635,7 +620,7 @@ async function diarize(id: number, params: Record<string, unknown>): Promise<voi
   });
 }
 
-/** 生图：编码提示词 → 去噪（`job.progress` 的 `steps`，从 0 开始）→ 解码，写 staging 里的 `image.png`。 */
+/** Image: encode prompt → denoise (`steps` in `job.progress`, starting from 0) → decode. Writes `image.png` in staging. */
 async function image(id: number, params: Record<string, unknown>): Promise<void> {
   const jobId = String(params.jobId);
   const staging = String(params.staging);
@@ -683,7 +668,7 @@ async function image(id: number, params: Record<string, unknown>): Promise<void>
   });
 }
 
-/** 一张 8 位 RGB PNG：横竖两个方向的渐变；`flat` 时一整片灰。 */
+/** One 8-bit RGB PNG with gradients in both the horizontal and vertical directions; with `flat`, a single flat gray. */
 function fakePng(width: number, height: number, flat: boolean): Buffer {
   const raw = Buffer.alloc(height * (1 + width * 3));
   for (let y = 0; y < height; y++) {

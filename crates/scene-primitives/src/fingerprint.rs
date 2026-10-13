@@ -1,12 +1,12 @@
-//! 渲染指纹（规范 §15）：
-//! 内容指纹 = sha256( canonical(文档 JSON) ‖ canonical(变量集 JSON) )，
-//! canonical 为键排序、无多余空白的规范化序列化。
-//! 帧指纹（DrawOp fnv1a64）在 ccut-render::drawop。
+//! Render fingerprint (spec §15):
+//! Content fingerprint = sha256( canonical(document JSON) ‖ canonical(variable set JSON) ),
+//! where canonical is a normalized serialization with sorted keys and no extra whitespace.
+//! Frame fingerprint (DrawOp fnv1a64) lives in ccut-render::drawop.
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-/// 键排序 + 紧凑（无空白）的规范化 JSON 序列化。
+/// Key-sorted, compact (no whitespace) canonical JSON serialization.
 pub fn canonical_json(v: &Value) -> String {
     let mut out = String::new();
     write_canonical(v, &mut out);
@@ -39,22 +39,21 @@ fn write_canonical(v: &Value, out: &mut String) {
             }
             out.push(']');
         }
-        // 标量走 serde_json 的确定性文本形态（数字保持解析时的规范表示）
+        // Scalars use serde_json's deterministic text form (numbers keep the canonical representation they had when parsed)
         _ => out.push_str(&v.to_string()),
     }
 }
 
-/// 文本的 sha256 裸十六进制（无 `sha256-` 前缀）。
+/// Bare lowercase hex SHA-256 of the text (no `sha256-` prefix).
 ///
-/// 与 `ccut_workspace::history::sha_of` 同口径——`__ccut/put` 的 `base`、
-/// direct-edit 的 `baseSourceHash` 都用这一种形态，跨模块比较不需要换算。
+/// Same convention as `ccut_workspace::history::sha_of`: the `base` of `__ccut/put` and the `baseSourceHash` of direct-edit both use this one form, so cross-module comparisons need no conversion.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     lower_hex(&h.finalize())
 }
 
-/// 内容指纹（§15）："sha256-<64hex>"。变量覆盖缺省视为空对象。
+/// Content fingerprint (§15): "sha256-<64hex>". A missing variable override is treated as an empty object.
 pub fn content_fingerprint(doc: &Value, overrides: Option<&Map<String, Value>>) -> String {
     let vars = match overrides {
         Some(o) => Value::Object(o.clone()),
@@ -66,8 +65,7 @@ pub fn content_fingerprint(doc: &Value, overrides: Option<&Map<String, Value>>) 
     format!("sha256-{}", lower_hex(&h.finalize()))
 }
 
-/// 摘要的小写十六进制，与 v2（sha2 0.10）的 `{:x}` 逐字相同；sha2 0.11 的输出类型不再实现
-/// `LowerHex`。
+/// Lowercase hex of the digest, identical character-for-character to v2 (sha2 0.10)'s `{:x}`; the sha2 0.11 output type no longer implements `LowerHex`.
 fn lower_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -94,7 +92,7 @@ mod tests {
     #[test]
     fn fingerprint_is_stable_and_var_sensitive() {
         let a = json!({ "meta": { "id": "x" }, "scenes": [] });
-        let b = json!({ "scenes": [], "meta": { "id": "x" } }); // 键序无关
+        let b = json!({ "scenes": [], "meta": { "id": "x" } }); // Key order does not matter.
         assert_eq!(content_fingerprint(&a, None), content_fingerprint(&b, None));
         let mut vars = Map::new();
         vars.insert("name".into(), json!("客户A"));

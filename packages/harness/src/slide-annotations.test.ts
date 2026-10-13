@@ -9,7 +9,7 @@ import type { AgentDriver, AgentEvent, AgentSession } from './driver.ts';
 import { Harness, withSlideAnnotations, type ResolvedSlideAnnotation } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
-/** 幻灯片标注随消息发出（docs/design/slides §9）：拼给智能体的那段文字，与记在用户消息上的那一份。假 Driver，全部在临时目录里。 */
+/** Slide annotations are sent with the message (docs/design/slides §9): the text assembled for the agent, and the copy recorded on the user message. Fake Driver, everything in a temp directory. */
 
 const note = (over: Partial<SlideAnnotation> = {}): SlideAnnotation => ({
   deck: { conversationId: 'c', path: 'talk' },
@@ -56,7 +56,7 @@ describe('withSlideAnnotations', () => {
 
 const capabilities: DriverProbe['capabilities'] = { steer: true, approvals: true, resume: false, images: false };
 
-/** 回合开始后一直开着；收下插话。 */
+/** Stays open from turn start until the end; accepts interjections. */
 class Session implements AgentSession {
   readonly id = newId('fake');
   readonly capabilities = capabilities;

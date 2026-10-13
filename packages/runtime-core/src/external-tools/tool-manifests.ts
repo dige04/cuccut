@@ -4,37 +4,35 @@ import type { ToolUpdateRecipe } from './tool-update-plan.ts';
 import { RcExternalTools } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 受管外部工具的登记表（架构设计 §12.9）。每个工具一份清单：用途、最低版本、探测方式，能由 CucCut 下载的再带固定的发布版本、
- * 各平台的文件、大小、sha256 与许可。音乐生成的 audio.cpp 引擎不在这里：它是音乐模型包的组件，随模型包安装（`@cuccut/models` 的
- * `music-engine.ts`，架构设计 §6.3）。
+ * Registry of managed external tools (architecture design §12.9). Each tool has one manifest: its purpose, minimum version, and probing method. Tools that CucCut can download also carry a pinned release version, the files for each platform, size, sha256, and license.
+ * The audio.cpp engine for music generation is not here: it is a component of the music model package and is installed with that package (`music-engine.ts` in `@cuccut/models`, architecture design §6.3).
  *
- * 不编造摘要：离线无法核实的 sha256 与大小留空（null），这时安装以 `TOOL_MANIFEST_INCOMPLETE` 拒绝（与模型包的内置清单
- * `MODEL_MANIFEST_INCOMPLETE` 同一条规则）。补上摘要是待评审事项（§14）。
+ * Digests are not made up. A sha256 or size that cannot be verified offline is left empty (null), and install is then refused with `TOOL_MANIFEST_INCOMPLETE` (the same rule as the model package's built-in manifest, `MODEL_MANIFEST_INCOMPLETE`). Filling in the digests is a pending review item (§14).
  */
 
-/** 一个平台要下载的文件。 */
+/** A file to download for one platform. */
 export interface ToolAsset {
-  /** 发布里的文件名。 */
+  /** The file name in the release. */
   fileName: string;
-  /** 字节数；未知时 null。 */
+  /** Size in bytes; null when unknown. */
   size: number | null;
-  /** sha256（小写十六进制）；未知时 null，不能安装。 */
+  /** sha256 (lowercase hex); null when unknown, in which case it cannot be installed. */
   sha256: string | null;
   /**
-   * 发布文件是压缩包时的格式：核对之后只解开包根目录里的普通文件到 `tools/<工具>/<版本>/`（`skip` 里的不解开），可执行文件是其中的
-   * `command`。没有时发布文件本身就是可执行文件。
+   * The format when the release file is an archive: after verification, only the regular files at the archive root are extracted to `tools/<tool>/<version>/` (those in `skip` are not extracted). The executable is the `command` among them.
+   * When absent, the release file itself is the executable.
    */
   archive?: { format: 'tar.gz' | 'zip'; skip: readonly string[] };
 }
 
 export interface ToolRelease {
-  /** 固定的发布版本（发布页的标签）。 */
+  /** The pinned release version (the tag on the release page). */
   version: string;
-  /** 按 `process.platform-process.arch` 取文件，例如 `darwin-arm64`。 */
+  /** Picks the file by `process.platform-process.arch`, for example `darwin-arm64`. */
   assets: Readonly<Record<string, ToolAsset>>;
-  /** 官方发布的下载地址：`{version}`、`{file}` 换成版本与文件名。 */
+  /** The official release download address: `{version}` and `{file}` are replaced with the version and the file name. */
   officialUrl: string;
-  /** 大小未知时给人看的估计。 */
+  /** An estimate to show people when the size is unknown. */
   estimatedBytes: number;
   license: string;
   homepage: string;
@@ -44,25 +42,25 @@ export interface ToolManifest {
   name: string;
   label: string;
   purpose: Localized;
-  /** 可执行文件的名字（在 PATH 里找它）。 */
+  /** The executable's name (looked up on PATH). */
   command: string;
-  /** 探测参数：打印版本。 */
+  /** Probe argument: print the version. */
   versionArgs: readonly string[];
-  /** 从探测输出里取版本号。 */
+  /** Extracts the version number from the probe output. */
   parseVersion(output: string): string | null;
-  /** 低于它报告为「需要更新」；null 表示不检查。 */
+  /** Below this, the tool is reported as needing an update; null means no check. */
   minVersion: string | null;
-  /** 用之前要不要先得到用户同意（会联网下载第三方内容的工具要）。 */
+  /** Whether the user's consent is needed before use (required for tools that download third-party content over the network). */
   consentRequired: boolean;
-  /** 能由 CucCut 下载的工具的发布；null 表示只能由用户自己安装（ffmpeg）。 */
+  /** The release for a tool CucCut can download; null means only the user can install it (ffmpeg). */
   release: ToolRelease | null;
-  /** 环境变量指定的路径（ffmpeg 的 `CUCCUT_FFMPEG`）；优先于其余来源。 */
+  /** A path given by an environment variable (ffmpeg's `CUCCUT_FFMPEG`); takes precedence over the other sources. */
   envVar?: string;
-  /** 用到它的任务种类：这些任务没结束时不删除受管副本（`TOOL_IN_USE`）。 */
+  /** The task kinds that use it: the managed copy is not deleted while these tasks have not finished (`TOOL_IN_USE`). */
   usedByJobKinds?: readonly string[];
-  /** 按原安装方式更新系统里的那一份（`externalTools.update`）；没有时不提供更新。 */
+  /** Updates the copy on the system in its original install method (`externalTools.update`); when absent, no update is offered. */
   update?: ToolUpdateRecipe;
-  /** 缺失时的补救（按 Runtime 所在的平台给）。 */
+  /** The remedy when the tool is missing (given for the platform the Runtime runs on). */
   missingRemedy: Localized;
 }
 
@@ -70,10 +68,9 @@ export const YT_DLP = 'yt-dlp';
 export const FFMPEG = 'ffmpeg';
 
 /**
- * yt-dlp 的发布：版本取自这台开发机上 Homebrew 安装的稳定版（Changelog 与 `yt_dlp/version.py` 都是 2026.07.04），没有对照
- * 上游核实；文件名按它随附的 README 里的发布文件表。大小与 sha256 都没有离线核实，留空（§14）。
- * Windows ARM64 的 `yt-dlp_arm64.exe` 按上游发布页从 2025.08.20 起才有（之前 ARM64 的 Windows 只能跑 x64 版）。
- * 许可：源码是 Unlicense；按上游 README，PyInstaller 打包的独立可执行文件含 GPLv3+ 代码，整体按 GPLv3+ 发布。
+ * The yt-dlp release: the version is the stable release installed by Homebrew on this development machine (the Changelog and `yt_dlp/version.py` both say 2026.07.04). It was not checked against upstream. The file names follow the release file table in the README bundled with it. Size and sha256 were not checked offline, so they are left empty (§14).
+ * Windows ARM64's `yt-dlp_arm64.exe` exists only from 2025.08.20 on, per the upstream release page (before that, ARM64 Windows could only run the x64 build).
+ * License: the source is Unlicense. Per the upstream README, the PyInstaller-built standalone executable contains GPLv3+ code, so the whole is distributed under GPLv3+.
  */
 const YT_DLP_RELEASE: ToolRelease = {
   version: '2026.07.04',
@@ -103,11 +100,11 @@ export const BUILTIN_TOOL_MANIFESTS: readonly ToolManifest[] = [
     command: 'yt-dlp',
     versionArgs: ['--version'],
     parseVersion: (output) => /^\s*(\d{4}\.\d{2}\.\d{2}(?:\.\d+)?)/.exec(output)?.[1] ?? null,
-    // 按本机 Homebrew 安装附带的 Changelog：`--plugin-dirs` / `--no-plugin-dirs` 从 2024.10.22 起才有，流程要用它关掉插件目录。
+    // Per the Changelog bundled with this Homebrew install, `--plugin-dirs` / `--no-plugin-dirs` exist only from 2024.10.22. The flow uses them to turn off the plugin directories.
     minVersion: '2024.10.22',
     consentRequired: true,
     release: YT_DLP_RELEASE,
-    // 稳定版：`brew upgrade`、`pip install -U` 与 `yt-dlp -U` 都跟着各自的稳定通道；从源码装的 Homebrew 开发版照旧取最新提交。
+    // Stable channel: `brew upgrade`, `pip install -U`, and `yt-dlp -U` each follow their own stable channel. A development Homebrew installed from source still takes the latest commit.
     update: {
       formula: 'yt-dlp',
       pipxPackage: 'yt-dlp',
@@ -141,14 +138,14 @@ export const BUILTIN_TOOL_MANIFESTS: readonly ToolManifest[] = [
   },
 ];
 
-/** 这台机器的平台键。 */
+/** This machine's platform key. */
 export function platformKey(platform: string = process.platform, arch: string = process.arch): string {
   return `${platform}-${arch}`;
 }
 
 /**
- * 下载地址：给了镜像（设置 `tools.downloadEndpoint` 或环境变量 `CUCCUT_TOOLS_ENDPOINT`）时是 `<基址>/<工具>/<版本>/<文件名>`，
- * 否则是官方发布的地址。
+ * Download address: when a mirror is given (the setting `tools.downloadEndpoint` or the environment variable `CUCCUT_TOOLS_ENDPOINT`), it is `<base>/<tool>/<version>/<file name>`.
+ * Otherwise it is the official release address.
  */
 export function toolDownloadUrl(manifest: ToolManifest, release: ToolRelease, asset: ToolAsset, endpoint: string | null): string {
   if (endpoint) {
@@ -160,7 +157,7 @@ export function toolDownloadUrl(manifest: ToolManifest, release: ToolRelease, as
     .replace('{file}', encodeURIComponent(asset.fileName));
 }
 
-/** 下载之前告诉用户的事；不能下载时说明原因。 */
+/** What to tell the user before a download; when a download is not possible, the reason. */
 export function toolOffer(manifest: ToolManifest, endpoint: string | null, platform: string): ExternalToolOffer | null {
   const release = manifest.release;
   if (!release) return null;
@@ -181,7 +178,7 @@ export function toolOffer(manifest: ToolManifest, endpoint: string | null, platf
 }
 
 /**
- * 比较两个点分的数字版本（yt-dlp 的 `2026.07.04`、夜间版的 `2026.07.04.123456`）：a < b 为负。不是数字的段按 0 处理。
+ * Compares two dot-separated numeric versions (yt-dlp's `2026.07.04`, nightly's `2026.07.04.123456`): negative when a < b. A segment that is not a number counts as 0.
  */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((s) => Number.parseInt(s, 10) || 0);

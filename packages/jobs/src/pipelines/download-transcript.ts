@@ -8,10 +8,9 @@ import { PipelineStepError, type PipelineStepContext } from './pipeline.ts';
 import type { PipelineTranscriber } from './video-create.ts';
 
 /**
- * 文件的转录（架构设计 §7.9）：认回这次运行提交过的转写，重试发布不重复识别。
+ * Transcript of a file (architecture design §7.9): recognizes the transcript submitted by this run, so a retried publish does not recognize it again.
  *
- * 命名：`job`（从链接下载时）是 `<源文件名>-<运行 ID>.txt/.srt`；`source`（只给文件的转录）是 `<源文件名>.txt/.srt`，
- * 两个文件用同一个序号（`<源文件名>-2.txt` 与 `.srt`），找两者都空着、或已有的内容正是这一份（重试）的那个序号。
+ * Naming: `job` (when downloading from a link) is `<source file name>-<run ID>.txt/.srt`. `source` (transcript of a file only) is `<source file name>.txt/.srt`. The two files use the same number (`<source file name>-2.txt` and `.srt`). It finds the number where both are empty, or where the existing content is exactly this one (a retry).
  */
 export async function downloadTranscript(
   jobs: PipelineTranscriber,
@@ -79,7 +78,7 @@ export async function downloadTranscript(
   return { jobId, files: outputs.map((o) => o.path!), outputs, language: result.language?.tag ?? null };
 }
 
-/** `source` 命名的序号：TXT 与 SRT 都空着，或已有的正是这一份内容（重试时认回）。 */
+/** Number for `source` naming: TXT and SRT are both empty, or the existing content is exactly this one (recognized on retry). */
 async function freeStem(directory: string, base: string, content: Record<string, string>): Promise<string> {
   for (let n = 1; n < 10_000; n++) {
     const stem = n === 1 ? base : `${base}-${n}`;

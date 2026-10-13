@@ -14,19 +14,19 @@ import { M } from './main-copy.ts';
 import { OpenThrottle, browserUserAgent, checkWebUrl, clampZoom, isRequestAllowed, isWebTabId, parseBounds, parseDeviceSize, parseFindRequest, nativeWebShortcut } from './web-policy.ts';
 
 /**
- * 网页标签的宿主一侧（架构设计 §12.10）。
+ * The host side of web tabs (architecture design §12.10).
  *
- * 每个标签一个 WebContentsView，挂在发起它的窗口上：独立的 `persist:web` 分区，沙箱、上下文隔离、
- * 没有 Node、没有预加载脚本，网页拿不到任何 CucCut 能力。只允许 http/https；回环地址、`file:` 与应用自己的页面
- * 一律拒绝（导航前拦一次，分区的每个请求再拦一次）。新窗口与权限请求一律拒绝并提示；下载交给系统浏览器。
+ * Each tab is one WebContentsView attached to the window that opened it: its own `persist:web` partition, sandboxed, context-isolated,
+ * with no Node and no preload script, so a web page gets none of CucCut's capabilities. Only http/https is allowed; loopback addresses, `file:` and the app's own pages
+ * are always rejected (checked once before navigation, and again for every request in the partition). New windows and permission requests are always rejected with a notice; downloads are handed to the system browser.
  *
- * 渲染进程传来的每个参数都重新校验；标签 id 由这里生成，只认发起窗口自己的标签。
+ * Every parameter passed from the renderer process is validated again; tab IDs are generated here, and only the tabs of the window that opened them are recognized.
  */
 
 type WebTabState = Parameters<Parameters<NonNullable<HostBridge['web']>['onState']>[0]>[0];
 
 export const WEB_PARTITION = 'persist:web';
-/** 每个窗口最多开多少个网页视图。 */
+/** Maximum number of web views per window. */
 const MAX_TABS_PER_WINDOW = 24;
 
 interface Tab {
@@ -45,7 +45,7 @@ interface Tab {
 }
 
 export interface WebTabsOptions {
-  /** 应用自己的来源（开发时的渲染服务器）；网页标签不许打开。 */
+  /** The app's own origin (the renderer dev server during development); web tabs may not open it. */
   appOrigins: readonly string[];
 }
 
@@ -56,7 +56,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
   let counter = 0;
   let partition: Session | null = null;
 
-  /** 网页分区只配置一次：权限、下载、请求拦截、User-Agent。 */
+  /** The web partition is configured only once: permissions, downloads, request interception, User-Agent. */
   const webSession = (): Session => {
     if (partition) return partition;
     const ses = session.fromPartition(WEB_PARTITION);
@@ -75,7 +75,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
         void shell.openExternal(target.url).then(() => notice(tab, 'download')).catch(() => {});
       }
     });
-    // 不带过滤条件：每个请求自己判，挡住网页里对本机服务（包括 Runtime 网关）的子资源与 WebSocket 请求。
+    // No filter: each request is judged on its own, blocking subresource and WebSocket requests from web pages to local services (including the Runtime gateway).
     ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !isRequestAllowed(details.url, appOrigins) }));
     ses.setUserAgent(browserUserAgent(ses.getUserAgent()));
     partition = ses;
@@ -129,7 +129,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
     for (const tab of [...tabs.values()]) if (tab.owner === owner) destroy(tab);
   };
 
-  /** 窗口关掉、界面重新加载或崩溃时，它开的网页视图都没人管了，一并销毁。 */
+  /** When the window closes, the UI reloads or the renderer crashes, the web views it opened are left without an owner, so they are destroyed together. */
   const watchOwner = (owner: BrowserWindow): void => {
     if (watchedOwners.has(owner)) return;
     watchedOwners.add(owner);
@@ -138,7 +138,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
     owner.webContents.on('render-process-gone', () => destroyAllOf(owner));
   };
 
-  /** 只认窗口主框架里的界面发来的请求；网页视图（没有预加载脚本）和子框架都不行。 */
+  /** Only requests from the UI in the window's main frame are accepted; web views (which have no preload script) and subframes are not. */
   const ownerOf = (event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | null => {
     const owner = BrowserWindow.fromWebContents(event.sender);
     if (!owner || owner.webContents !== event.sender) return null;
@@ -154,14 +154,14 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
   };
 
   const wire = (tab: Tab, wc: WebContents): void => {
-    // 网页里的新窗口一律拒绝并提示；外部打开只由界面上的用户动作触发。
+    // New windows from web pages are always rejected with a notice; opening externally is triggered only by a user action in the UI.
     wc.setWindowOpenHandler(({ url }) => {
       const target = checkWebUrl(url, { appOrigins });
-      // 保留当前页，告知用户；不让脚本弹窗自动启动外部应用。
+      // Keep the current page and tell the user; do not let a script pop-up launch an external app automatically.
       if (target.ok) notice(tab, 'popup');
       return { action: 'deny' };
     });
-    // 网页自己发起的导航与重定向：主框架按规则判，拒绝时停下并推一条「被拒绝」状态。子框架交给请求拦截。
+    // Navigations and redirects initiated by the web page itself: the main frame is judged by the rules, and on rejection it stops and pushes a “rejected” status. Subframes are left to request interception.
     const guard = (details: Electron.Event<{ url: string; isMainFrame: boolean }>): void => {
       if (!details.isMainFrame) return;
       const check = checkWebUrl(details.url, { appOrigins });
@@ -190,7 +190,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
     wc.on('did-start-loading', () => emit(tab));
     wc.on('did-stop-loading', () => emit(tab));
     wc.on('did-navigate', () => {
-      // 缩放按来源记在分区里：换了站点要把这个标签的缩放重新放上去。
+      // Zoom is recorded per origin in the partition: when the site changes, this tab's zoom has to be reapplied.
       wc.setZoomFactor(tab.zoom / 100);
       applyDevice(tab);
       tab.findRequest = 0;
@@ -203,7 +203,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
     });
     wc.on('page-title-updated', () => emit(tab));
     wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
-      // -3（ERR_ABORTED）是停止、被拦下或换了导航，不算失败。
+      // -3 (ERR_ABORTED) means stopped, blocked or navigated away, and is not counted as a failure.
       if (!isMainFrame || code === -3) return;
       tab.error = { kind: 'failed', code, description, url };
       emit(tab);
@@ -245,7 +245,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
   ipcMain.handle('cuccut:web-navigate', (event, id: unknown, url: unknown) => {
     const tab = tabOf(event, id);
     if (!tab) throw new Error(M.webTabMissing);
-    // 主进程的 loadURL 不经过 will-navigate：这里是唯一一道门。
+    // The main process's loadURL does not go through will-navigate, so this is the only gate.
     const check = checkWebUrl(url, { appOrigins });
     if (!check.ok) {
       tab.error = { kind: 'blocked', reason: check.reason, url: typeof url === 'string' ? url.slice(0, 2048) : '' };
@@ -253,7 +253,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
       return check;
     }
     tab.error = null;
-    // 失败由 did-fail-load 报给界面；这里不再抛。
+    // Failures are reported to the UI by did-fail-load; nothing is thrown here.
     tab.view.webContents.loadURL(check.url).catch(() => {});
     return check;
   });
@@ -320,7 +320,7 @@ export function installWebTabs({ appOrigins }: WebTabsOptions): void {
     await ses.clearAuthCache();
   });
 
-  // 界面主动「在浏览器中打开」：只收 http/https，去掉账号密码；本机地址（用户自己的开发服务器）可以交给系统浏览器。
+  // The UI's own “open in browser” action: only http/https is accepted, with the username and password stripped; local addresses (the user's own dev server) may be handed to the system browser.
   ipcMain.handle('cuccut:open-external', async (event, url: unknown) => {
     if (!ownerOf(event)) throw new Error(M.webOpenNotWindow);
     const target = checkWebUrl(url, { allowLoopback: true });

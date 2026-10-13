@@ -22,7 +22,7 @@ import { pl } from './tool-update.pl.ts';
 import { tr } from './tool-update.tr.ts';
 import { vi } from './tool-update.vi.ts';
 
-/** 更新下载工具的文案（译文在 `tool-update.<语言>.ts`）。「重新检测」是卡片上那颗按钮的名字。 */
+/** Copy for updating a downloaded tool (translations in `tool-update.<语言>.ts`). "Re-detect" is the name of the button on the card. */
 const en = {
   standalone: 'Official standalone binary',
   updateInTerminal: 'Update in Terminal',
@@ -46,11 +46,11 @@ export type ToolUpdateMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 按原安装方式更新下载工具（产品设计 §2.7「下载视频」，架构设计 §12.9；设计稿 model-tool-update.js）。
+ * Update a downloaded tool using its original install method (product design §2.7 "Download video", architecture design §12.9; design mock model-tool-update.js).
  *
- * 卡片里直接显示要执行的完整命令（一行代码块，右边是执行与复制）；点执行就是确认，交回的就是这一条。
- * 判断不了安装方式、或要管理员权限时不代为执行，只给命令；判断不了时列出的常用命令看 Runtime 所在主机的平台
- * （状态里的 `platform`），不看这个界面跑在哪。结束后按前后版本说结果。
+ * The card shows the exact command to run (a one-line code block, with run and copy on the right); clicking run is the confirmation, and that single command is what gets handed back.
+ * When the install method can't be determined, or admin rights are needed, the command is not run on your behalf; only shown. When it can't be determined, the common commands listed follow the platform of the host running the Runtime
+ * (the `platform` in the state), not the platform this UI runs on. After it finishes, the result is reported from the versions before and after.
  */
 
 export const UPDATE_METHOD_LABEL: Record<ExternalToolUpdateMethod, string> = {
@@ -90,22 +90,21 @@ const MANUAL_WINDOWS: readonly ManualCommand[] = [
   },
 ];
 
-/** 判断不了安装方式时列出的常见做法，按 Runtime 所在主机：Windows 上是 winget、Scoop、`py -m pip` 与 `-U`，其他系统是 Homebrew、pip 与 `-U`。 */
+/** Common approaches listed when the install method can't be determined, by Runtime host: on Windows, winget, Scoop, `py -m pip` and `-U`; on other systems, Homebrew, pip and `-U`. */
 export function manualUpdateCommands(platform: string | null | undefined): readonly ManualCommand[] {
   return platform === 'win32' ? MANUAL_WINDOWS : MANUAL_POSIX;
 }
 
 /**
- * 给人看的退出码：负数或超过 0xFFFF 的（Windows 的 HRESULT 一类）按 8 位十六进制写。winget 没有可升级的版本时以
- * 0x8A15002B 退出，Runtime 把它算成成功（已是最新），输出框的最后一行照样写出这个退出码。
+ * Exit code for display: negative numbers, or ones above 0xFFFF (like Windows HRESULTs), are written as 8-digit hex. When winget has no version to upgrade to, it exits with
+ * 0x8A15002B; the Runtime counts that as success (already up to date), and the last line of the output box still shows that exit code.
  */
 export function exitCodeText(code: number): string {
   return code < 0 || code > 0xffff ? `0x${(code >>> 0).toString(16).toUpperCase().padStart(8, '0')}` : String(code);
 }
 
 /**
- * 卡片里有没有「更新」一节：找到了系统里（或你指定的、环境变量指定的）那一份。CucCut 下载的副本用卡片的主按钮换版本，
- * 没装、正在安装的没有可更新的；正在更新时总有（输出在这一节里）。
+ * Whether the card has an "Update" section: found the copy in the system (or the one you specified, or the one given by an environment variable). The copy CucCut downloaded swaps versions with the card's primary button; a copy not installed, or one being installed, has nothing to update. It is always there while updating (the output is shown in this section).
  */
 export function hasUpdateSection(status: ExternalToolStatus | null | undefined): boolean {
   if (!status) return false;
@@ -113,28 +112,28 @@ export function hasUpdateSection(status: ExternalToolStatus | null | undefined):
   return !!status.path && status.source !== 'managed' && !status.installJobId && (!!status.update || !!status.version);
 }
 
-/** Runtime 的原因里已经写了「用管理员身份打开终端执行这条命令」的几条（rcExternalTools 目录）。 */
+/** The Runtime's reason already lists the few cases that say "run this command in a terminal opened as administrator" (rcExternalTools catalog). */
 const SAYS_HOW_TO_RUN = new Set(
   ['wingetMachineWide', 'scoopGlobal', 'chocolateyAdmin', 'pipAdminWin', 'standaloneAdminWin'].map((name) => `rcExternalTools.${name}`),
 );
 
-/** 「更新」一节：命令上面的标签，不能代为执行时命令下面的说明。 */
+/** The "Update" section: the label above the command, and the note below the command when it can't be run on your behalf. */
 export function updateSectionCopy(plan: ExternalToolUpdatePlan | null): { label: string; hint: string | null } {
   if (!plan) return { label: M.updateInTerminal, hint: M.unknownInstall };
   if (!plan.runnable) {
     const reason = localizeText(plan.reason, plan.reasonRef) ?? M.cannotRun;
-    // Runtime 的原因里已经说了在终端里怎么执行（Windows 上要管理员权限的几种）时不再重复。
+    // When the Runtime's reason already says how to run it in a terminal (the few Windows cases needing admin rights), don't repeat it.
     const how = plan.reasonRef && SAYS_HOW_TO_RUN.has(plan.reasonRef.key) ? M.thenRecheck : M.runThenRecheck;
     return { label: M.updateInTerminal, hint: `${reason}${how}` };
   }
   return { label: M.updateWith(UPDATE_METHOD_LABEL[plan.method] ?? plan.method), hint: null };
 }
 
-/** 一次更新结束后的事实：任务的终态、命令的退出码与错误，以及前后两次探测的版本。 */
+/** Facts after an update finishes: the task's final state, the command's exit code and error, and the versions probed before and after. */
 export interface UpdateOutcome {
   state: JobRecord['state'];
   exitCode: number | null;
-  /** 任务的错误（没能启动、超时这类没有退出码的失败时有用）。 */
+  /** The task's error (useful for failures with no exit code, such as failing to start or timing out). */
   error: string | null;
   before: string | null;
   after: string | null;
@@ -147,8 +146,8 @@ export interface UpdateSummary {
 }
 
 /**
- * 结束后的一句话：停止的不猜结果，让人看输出、重新检测；失败说退出码（没有退出码时说任务的错误）；
- * 成功时按重新检测的版本说更新到了哪个版本、或已是最新。
+ * The one-line result after finishing: if it was stopped, don't guess the outcome; tell the user to check the output and re-detect. On failure, give the exit code (or the task's error if there is no exit code);
+ * on success, say which version it was updated to, based on the re-detected version, or that it is already up to date.
  */
 export function updateSummary(o: UpdateOutcome): UpdateSummary {
   if (o.state === 'cancelled') return { tone: 'notice', title: M.stoppedTitle, body: M.stoppedBody };
@@ -164,7 +163,7 @@ export function updateSummary(o: UpdateOutcome): UpdateSummary {
   return { tone: 'neutral', title: M.upToDate(version), body: null };
 }
 
-/** 输出框里的文字：命令的输出（前面截掉过时先说一句），结束后补一行退出码或「已停止」。 */
+/** Text in the output box: the command's output (with a note first if the start was cut off), then a line with the exit code or "Stopped" once finished. */
 export function updateLog(command: JobCommandRun | null | undefined, state: JobRecord['state'] | null, live: boolean): string {
   const output = (command?.output ?? '').replace(/\n+$/, '');
   const head = command?.truncated ? M.logTruncated : '';
@@ -173,7 +172,7 @@ export function updateLog(command: JobCommandRun | null | undefined, state: JobR
   return text || '…';
 }
 
-/** 更新前的版本：用户点执行时记下的；从别处开始的（CLI、重启前）用任务记录里的（Runtime 把它记在 `modelId`）。 */
+/** The version before the update: recorded when the user clicked run; for updates started elsewhere (CLI, before a restart) it comes from the task record (the Runtime stores it in `modelId`). */
 export function updateBefore(recorded: string | null | undefined, job: Pick<JobRecord, 'modelId'> | null | undefined): string | null {
   if (recorded) return recorded;
   const fromJob = job?.modelId;

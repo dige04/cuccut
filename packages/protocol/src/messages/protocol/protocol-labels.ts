@@ -14,7 +14,7 @@ import { pl } from './protocol-labels.pl.ts';
 import { tr } from './protocol-labels.tr.ts';
 import { vi } from './protocol-labels.vi.ts';
 
-/** 协议里给人看的名字：访问模式、外发的数据种类，以及补救命令里的占位。 */
+/** Human-facing names in the protocol: access modes, kinds of data sent externally, and the placeholder in remedy commands. */
 const en = {
   modePlan: 'Plan first',
   modeAsk: 'Supervised',
@@ -27,7 +27,7 @@ const en = {
   dataVideo: 'Original video',
   dataDocument: 'Text and prompts',
   dataContext: 'Agent conversation context',
-  /** `custom:<名字>` 里的占位。 */
+  /** Placeholder in `custom:<name>`. */
   customProviderPlaceholder: 'custom:name',
   bundlesCommandNote: '(list local model bundles)',
   pairCommandArgs: '<address[:port]> <pairing-code>',

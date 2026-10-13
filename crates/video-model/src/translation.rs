@@ -1,6 +1,6 @@
-//! 译文文档的正文 `cuccut.translation/2`（视频格式规范 §5.3）。
+//! The body `cuccut.translation/2` of a translation document (video format spec §5.3).
 //!
-//! 不认识的字段收进 `extra`，写回时原样带上（§1.4）。`glossaryRef` 只原样保存，这里不解释。
+//! Unrecognized fields are collected into `extra` and written back unchanged (§1.4). `glossaryRef` is only stored as-is; it is not interpreted here.
 
 use message_ref::{Text, msg};
 use serde::{Deserialize, Serialize};
@@ -39,12 +39,12 @@ pub struct SourceBasis {
 pub struct TranslationUnit {
     pub id: Id,
     pub source_sentence_id: Id,
-    /// 源句的内容指纹；空字符串表示没有记下指纹。两种写法见 §5.3。
+    /// Content fingerprint of the source sentence; an empty string means no fingerprint was recorded. Two notations are described in §5.3.
     pub source_fingerprint: String,
     pub natural_text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_rewrite: Option<DisplayRewrite>,
-    /// 必有的字段，可以是 null。
+    /// Required field; may be null.
     #[serde(default)]
     pub alignment: Option<UnitAlignment>,
     pub status: UnitStatus,
@@ -66,7 +66,7 @@ pub struct DisplayRewrite {
     pub text: String,
     pub reason: String,
     pub reviewed: bool,
-    /// 改写依据的自然译句的指纹；自然译句改了，改写就过期（§5.3）。
+    /// Fingerprint of the natural translation the rewrite was based on. If the natural translation changes, the rewrite becomes stale (§5.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub natural_fingerprint: Option<String>,
     #[serde(flatten)]
@@ -81,7 +81,7 @@ pub struct UnitAlignment {
     pub blocks: Vec<AlignmentBlock>,
     pub source_word_ids: Vec<Id>,
     pub text_hash: String,
-    /// 字幕上怎么把这句译文切成几片显示（§5.3）。
+    /// How the translated sentence is split into pieces for display in subtitles (§5.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split: Option<AlignmentSplit>,
     #[serde(flatten)]
@@ -108,10 +108,10 @@ pub struct AlignmentBlock {
     pub id: Id,
     pub source_word_range: SourceWordRange,
     pub target_text_range: TargetTextRange,
-    /// 支撑这一块两侧边界的对齐边的最小权重，0–1；没有时是未知或确定性构造。
+    /// Minimum weight, 0–1, of the alignment edges that support the two boundaries of this block; when absent, it is unknown or deterministically constructed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
-    /// `local-reorder`（块内有交叉）、`anchor`（含硬锚）、`weak`（只有软边）等。
+    /// `local-reorder` (crossings within the block), `anchor` (contains hard anchors), `weak` (soft edges only), etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flags: Option<Vec<String>>,
     #[serde(flatten)]
@@ -131,21 +131,21 @@ pub struct TargetTextRange {
     pub end: u64,
 }
 
-/// 显示切分（§5.3）。
+/// Display split (§5.3).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlignmentSplit {
     pub mode: SplitMode,
-    /// 为真时片的 `from`/`to` 与块的源侧下标指 `sourceWordIds`；为假时指源句现在的可见词。
+    /// When true, the piece's `from`/`to` and the block's source-side indices refer to `sourceWordIds`; when false, they refer to the source sentence's currently visible words.
     pub word_anchored: bool,
-    /// 写入方明确给出的对应粒度；没有时由 `mode` 与 `wordAnchored` 推出，结果就是 `alignment.correspondence`。
+    /// The correspondence granularity given explicitly by the writer. When absent, it is derived from `mode` and `wordAnchored`, and the result is `alignment.correspondence`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correspondence: Option<Correspondence>,
-    /// 对齐边的来源，如 `deterministic/1`。
+    /// Source of the alignment edge, e.g. `deterministic/1`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aligner: Option<String>,
     pub pieces: Vec<SplitPiece>,
-    /// 旧项目留下的、只为无损导入保存的字段，不再解释。
+    /// Fields left by old projects, kept only for lossless import; no longer interpreted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy: Option<SplitLegacy>,
     #[serde(flatten)]
@@ -172,18 +172,18 @@ pub struct SplitPiece {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SplitLegacy {
-    /// 旧的语序交叉标记：为真时这句只按整句对应。
+    /// Legacy word-order crossing flag: when true, this sentence is aligned only as a whole sentence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crossing: Option<bool>,
-    /// 旧的源字幕行快照。
+    /// Legacy snapshot of the source subtitle line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cue_ids: Option<Vec<Id>>,
 }
 
-/// 只核对本规范为 `cuccut.translation/2` 补充的字段（§5.3）：`displayRewrite.naturalFingerprint`、
-/// `alignment.split`、对齐块的 `confidence` 与 `flags`。别的字段不在这里校验。
+/// Checks only the fields this specification adds to `cuccut.translation/2` (§5.3): `displayRewrite.naturalFingerprint`,
+/// `alignment.split`, and the block's `confidence` and `flags`. Other fields are not validated here.
 pub fn translation_body_problems(body: &Value) -> Vec<Text> {
-    // 这些结构只用来核对形状：读得进来就对，有的字段读进来之后不再看。
+    // These structures are only used to check the shape: if they parse, they are fine. Some fields are no longer read once parsed.
     #[derive(Deserialize)]
     struct Additions {
         #[serde(default)]
@@ -303,7 +303,7 @@ mod tests {
         ] {
             assert!(!translation_body_problems(&bad).is_empty(), "{bad}");
         }
-        // 只有已有字段、没有补充字段的正文不受影响。
+        // A body with only the existing fields and none of the added fields is unaffected.
         assert!(translation_body_problems(&json!({ "units": [{ "alignment": null }] })).is_empty());
     }
 }

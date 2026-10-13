@@ -14,7 +14,7 @@ import { pl } from './runtime-storage-grants.pl.ts';
 import { tr } from './runtime-storage-grants.tr.ts';
 import { vi } from './runtime-storage-grants.vi.ts';
 
-/** 数据外发授权与任务预算的错误与说明（`packages/runtime-storage` 的 GrantStore）。 */
+/** Errors and notes for outbound data authorizations and task budgets (`packages/runtime-storage`: GrantStore). */
 const en = {
   localNeedsNoGrant: "Local computation doesn't need a grant",
   dataKindRequired: 'Give at least one kind of data',

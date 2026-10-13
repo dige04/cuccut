@@ -4,7 +4,7 @@ import type { SlidesHost } from '@cuccut/slides/editor';
 import type { DesignSystemHostWindow } from './design-system-host.ts';
 import { createDesignSystemHost, installDesignSystemEditorHost, readSessionUserName } from './index.ts';
 
-/** 记录请求、按预设返回响应的假 fetch。 */
+/** Fake fetch that records requests and returns preset responses. */
 function fakeFetch(respond: (url: string, init: RequestInit) => Response | Promise<Response>) {
   const calls: { url: string; init: RequestInit }[] = [];
   const impl: typeof fetch = async (input, init = {}) => {
@@ -15,7 +15,7 @@ function fakeFetch(respond: (url: string, init: RequestInit) => Response | Promi
   return { impl, calls };
 }
 
-/** 编辑器宿主对象的替身：记下上传收到的参数。 */
+/** Stand-in for the editor host object: records the arguments the upload received. */
 function fakeSlidesHost(extra: Partial<SlidesHost> = {}) {
   const uploads: unknown[][] = [];
   const publish = vi.fn(async () => ({ version: 'v1', seq: 1, shas: {} }));
@@ -34,7 +34,7 @@ function fakeSlidesHost(extra: Partial<SlidesHost> = {}) {
   return { host, uploads, publish };
 }
 
-/** connectEditorHost 与标注的目标层用到的那几样的假窗口（页面是 happy-dom 的）；framed 时 parent 是另一个对象。 */
+/** Fake window for the few things connectEditorHost and the annotation target layer use (the page is happy-dom); when framed, parent is a different object. */
 function fakeWindow(respond: (url: string) => Response, framed = false) {
   const { impl, calls } = fakeFetch(respond);
   const posted: unknown[] = [];
@@ -144,7 +144,7 @@ describe('installDesignSystemEditorHost', () => {
     installDesignSystemEditorHost({ win });
     const ds = win.designSystemHost!;
     expect(Object.keys(ds).sort()).toEqual(['artifact', 'assets', 'chat', 'self', 'user']);
-    // 目标层（comment-targets.ts）在页面上拦点击、听 C 与 Esc，样式只装一份
+    // The target layer (comment-targets.ts) intercepts clicks on the page and listens for C and Esc; the styles are installed only once
     expect(types).toEqual(expect.arrayContaining(['click', 'pointerdown', 'keydown']));
     expect(document.querySelectorAll('#cuccut-comment-targets')).toHaveLength(1);
     void ds.chat!.suggestPrompt('Agent: read the design-system skill').catch(() => {});

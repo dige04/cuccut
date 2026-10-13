@@ -14,7 +14,7 @@ import { pl } from './model-selection.pl.ts';
 import { tr } from './model-selection.tr.ts';
 import { vi } from './model-selection.vi.ts';
 
-/** `packages/models/src/model-selection.ts` 给人看的文字：能力名，与选不出 Provider / 模型时的原因和补救提示。 */
+/** Human-facing text for `packages/models/src/model-selection.ts`: capability names, and the reasons and remedy hints when no provider or model can be selected. */
 const en = {
   capTranscribe: 'Transcription',
   capSynthesizeSpeech: 'Speech synthesis',

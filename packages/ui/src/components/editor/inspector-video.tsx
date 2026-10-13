@@ -34,8 +34,7 @@ const BACKDROPS = [
 ] as const;
 
 /**
- * 视频属性（Video settings 对话框，video-settings.tsx）：画幅（短边不变，画面上的东西跟着画布按比例走，一步撤销）、画布底色，
- * 以及只读的规格。帧率与时长由视频决定，这里不改。
+ * Video properties (Video settings dialog, video-settings.tsx): aspect ratio (the short side stays the same; items on the canvas follow it proportionally, with one-step undo), canvas background color, and read-only specs. Frame rate and duration are set by the video and are not changed here.
  */
 export function VideoPage({ sequence, assets }: { sequence: Sequence; assets: Record<Id, AssetRecord> }) {
   const { apply } = useEditorActions();

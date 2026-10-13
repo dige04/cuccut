@@ -18,7 +18,7 @@ import type { TranscribeRun } from './transcribe-run.ts';
 const frame = style({ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' });
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 12 });
 const list = style({ display: 'flex', flexDirection: 'column', gap: 8 });
-/** 实时段落（原型 `.para--live`）：与文稿的段落卡同一个外形，只读——没有词可点、没有菜单，点整段跳过去。 */
+/** Live paragraph (prototype `.para--live`): same shape as a transcript paragraph card, read-only. There are no words to click and no menu; clicking the whole paragraph jumps there. */
 const row = style({
   paddingX: 8,
   paddingY: 8,
@@ -30,7 +30,7 @@ const row = style({
   cursor: { default: 'default', isPlaced: 'pointer' },
 });
 const rowHead = style({ display: 'flex', alignItems: 'center', gap: 8, height: 20, marginBottom: 2 });
-/** 说话人要等转录完成才有：在长的那一段写「识别中」，退灰。 */
+/** Speakers are only known once transcription finishes. On the paragraph still growing, show “识别中” (identifying) in faded grey. */
 const unknown = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-500' });
 const time = style({ font: 'ui-xs', color: 'gray-500' });
 const text = style({
@@ -39,7 +39,7 @@ const text = style({
   color: { default: 'gray-800', isTail: 'gray-700' },
   overflowWrap: 'break-word',
 });
-/** 光标只跟在还在长的那一段后面（原型 `.caret`）。 */
+/** The caret only follows the paragraph still growing (prototype `.caret`). */
 const caret = style({
   display: 'inline-block',
   width: 2,
@@ -51,8 +51,7 @@ const caret = style({
 const EMPTY: readonly JobLiveSegment[] = [];
 
 /**
- * 文稿面板要切到实时态的那次转录（转写 Job 的 `jobId`）：时间线上能投影的素材里有一个正在转录（原型 panels.jsx：转录在跑就切，
- * 重新转录也一样）；转写做完以后等转写文档落进视频再切回（`liveTranscriptShown`）。选出的是 ID，进度每来一条不让整个面板重画。
+ * The transcription job (its `jobId`) that the transcript panel switches to live mode for: if one of the assets on the timeline that can be projected is being transcribed, the panel switches (re-transcribing counts too). After transcription finishes, it switches back once the transcript document has landed in the video (`liveTranscriptShown`). What is selected is the ID, so each progress event does not re-render the whole panel.
  */
 export function useLiveTranscriptJob(videoId: Id | null, assetIds: readonly Id[], documents: Record<Id, DocumentRecord>): Id | null {
   return useJobs((s) => {
@@ -69,9 +68,7 @@ export function useLiveTranscriptJob(videoId: Id | null, assetIds: readonly Id[]
 }
 
 /**
- * 转录中的文稿（原型 panels.jsx `LiveTranscript`）：任务事件流的投影，整面板只读——不能改字、不能剪、不进撤销栈。头上只留
- * 「复制已转录的部分」（润色、章节、说话人都要等完整文稿）；下面是运行态头（进度、阶梯、取消）与一段段流入的段落。还一段都没有时
- * （刚开始，或服务不流式返回）画骨架加一句提示，不造假数据。默认跟着最新的段落往下滚，往上翻就停住，浮出「回到最新」。
+ * Live transcript (prototype panels.jsx `LiveTranscript`): a projection of the task event stream. The whole panel is read-only: text cannot be edited, nothing can be cut, and nothing enters the undo stack. The header keeps only “Copy transcribed part”, since polishing, chapters, and speakers all need the full transcript. Below it are the run-state header (progress, stage steps, cancel) and the paragraphs streaming in. When no paragraph exists yet (just started, or the service does not stream), show a skeleton with one hint line rather than fake data. By default it follows the newest paragraph down; scrolling up stops it and shows “Back to latest.”
  */
 export function LiveTranscript({ jobId, sequence, assets }: { jobId: Id; sequence: Sequence; assets: Record<Id, AssetRecord> }) {
   const { seek } = useEditorActions();
@@ -81,7 +78,7 @@ export function LiveTranscript({ jobId, sequence, assets }: { jobId: Id; sequenc
   const segments = useLiveSegments(jobId);
   const assetId = step?.assetId ?? null;
   const running = !!step && jobLive(step);
-  // 识别做完、流程还在把结果写进视频（建字幕层）：头部停在「保存」一级，不再给取消识别。
+  // Recognition is done and the flow is still writing the result into the video (creating the caption layer): the header stops at the “Save” stage and no longer offers cancel recognition.
   const writing = useMemo<TranscribeRun | null>(
     () =>
       step && !running && step.videoId && assetId
@@ -89,7 +86,7 @@ export function LiveTranscript({ jobId, sequence, assets }: { jobId: Id; sequenc
         : null,
     [step, running, assetId, assets],
   );
-  // 段落在时间线上第一次出现的位置：点了跳到那里；整段都被剪掉的没有。
+  // The first place on the timeline where the paragraph appears: clicking jumps there. A paragraph that was entirely cut has none.
   const starts = useMemo(() => {
     const map = new Map<number, number>();
     if (assetId) for (const p of placeSegments(sequence, assetId, segments)) if (!map.has(p.index)) map.set(p.index, p.start);

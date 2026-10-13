@@ -16,10 +16,10 @@ import { tr } from './models-copy.tr.ts';
 import { vi } from './models-copy.vi.ts';
 
 /**
- * 模型页的文案（设计稿 page-settings.jsx、settings-local.jsx、settings-cloud.jsx、settings-voices.jsx）。
- * 放在模型页自己的目录里，不往 copy.ts 追加，免得与并行改 copy.ts 的子任务冲突。
- * 设计稿里那些还没有后端的说法（并发、应用里录音…）这里改成如实的一句。
- * 英文是键与类型的来源，译文在 `models-copy.<语言>.ts`；下面的具名导出在读属性时取当前语言。
+ * Text for the models page (design mocks page-settings.jsx, settings-local.jsx, settings-cloud.jsx, settings-voices.jsx).
+ * It lives in the models page's own directory, not appended to copy.ts, so it does not conflict with subtasks editing copy.ts in parallel.
+ * Wording in the design mock for things without a backend yet (concurrency, recording in the app…) is replaced here with one honest sentence.
+ * English is the source of keys and types; translations are in `models-copy.<语言>.ts`. The named exports below read the current language when a property is read.
  */
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -56,14 +56,14 @@ const en = {
     emptyBody:
       'The models folder on this computer only holds model packages for speech recognition, speech synthesis, image generation and source separation. Local models for this category aren’t supported yet.',
   },
-  /** 图像生成的本地页（设计稿 model-local-models.js 的 `DEFAULT_DESC.image`）：没有出厂默认，菜单里没有「自动选择」。 */
+  /** Image generation local page (design mock model-local-models.js `DEFAULT_DESC.image`): no factory default, and the menu has no “自动选择”(Auto select). */
   imageLocal: {
     defaultDesc: 'Preselected for new image tasks. Without a default you pick a model each time; a manual choice always wins.',
     cloudDefault: (name: string) =>
       `The default is a cloud model (${name}); change it in Settings › Cloud models. Choosing a local model switches to it.`,
     noInstalled: 'No image generation model is installed yet. Download one below first.',
     licenseUse: 'Images made with it may only be used in non-commercial content; for videos you plan to use commercially, pick another image model.',
-    /** 行上的「试画」与它的对话框（设计稿 image-gen.jsx `ImageProbeDialog` 的本机分支）。 */
+    /** The “试画”(Trial draw) on the row and its dialog (design mock image-gen.jsx `ImageProbeDialog`, local branch). */
     tryButton: 'Try it',
     tryTitle: (name: string) => `Try ${name}`,
     tryPromptTitle: 'Test prompt · one 512 × 512 image',
@@ -89,7 +89,7 @@ const en = {
     tryStart: 'Start generating',
     tryAgain: 'Generate another',
     tryBusy: 'Generating…',
-    /** 下载试画结果时的文件名（不含扩展名）。 */
+    /** Filename used when downloading trial draw results (without extension). */
     tryFileName: (id: string) => `image-try-${id}`,
   },
   cloud: {
@@ -123,7 +123,7 @@ const en = {
       generateText:
         'Used when subtitle translation, translated voice-overs or text generation don’t name a model. “Choose each time” means no default: the Runtime won’t pick one for you, requests without a model are rejected, and you pick one when you use it.',
     } satisfies Record<OnlineCapability, string>,
-    /** 默认是本机或节点的模型时（语音识别以外），云端页菜单里那一项的说明。 */
+    /** When the default is a local or node model (other than speech recognition), the description of that item in the cloud page menu. */
     localDefaultDesc: 'Set on the local models page · choose “Choose each time” to clear the default',
     none: {
       transcribe: 'Use local model',
@@ -145,7 +145,7 @@ const en = {
     defaultFailed: (message: string) => `Couldn't change the default model: ${message}`,
     providers: 'Providers',
     providersDesc: 'All model types from a provider share its key. Test results apply only to the tested model.',
-    /** 接在 `providersDesc` 后面，所以英文以空格开头。 */
+    /** Appended after `providersDesc`, so the English starts with a space. */
     providersExtra: {
       transcribe: '',
       synthesizeSpeech: ' Speech synthesis is usually billed per character.',
@@ -173,7 +173,7 @@ const en = {
       `Not connected · ${first}${total > 1 ? ` and ${count(total - 1, 'more model', 'more models')}` : ''} · connect to test and set a default`,
     headCount: (total: number) => count(total, 'model', 'models'),
     headDefault: (id: string) => ` · Default: ${id}`,
-    /** 卡头的「刷新」（设计稿 settings-cloud.jsx:318-321、:149-176、:214）。 */
+    /** The card header's “刷新”(Refresh) (design mock settings-cloud.jsx:318-321, :149-176, :214). */
     refresh: { models: 'Refresh models', voices: 'Refresh voice catalog' } satisfies Record<RefreshKind, string>,
     refreshNeedsKey: (label: string) => `${label} (connect a key first)`,
     refreshing: { models: 'Refreshing models…', voices: 'Refreshing voice catalog…' } satisfies Record<RefreshKind, string>,
@@ -192,15 +192,15 @@ const en = {
     customTag: 'Custom',
     emptyProviders: 'No cloud providers for this category yet. You can add a custom OpenAI-compatible service.',
     noCloud: 'This category has no cloud models.',
-    /** 浏览器里这一页能做的只有看与测试（Web 白名单只放行生成与转写）：页头下写这一句，其余控件置灰。 */
+    /** In the browser this page can only view and test (the Web allowlist only permits generation and transcription): this sentence is written under the page header, and other controls are greyed out. */
     webNote: 'A browser can’t connect providers, change keys, add providers or models, refresh catalogs, or change the default and its settings. You can still test models. Do the rest in the CucCut desktop app.',
   },
-  /** 文本生成的两行参数（设计稿 settings-cloud.jsx:262-269）。存在 Runtime 的能力参数里，对所有文本模型生效。 */
+  /** The two text generation parameter rows (design mock settings-cloud.jsx:262-269). Stored in the Runtime's capability parameters and applied to all text models. */
   textParams: {
     effort: 'Reasoning effort',
     effortDesc:
       'Only applies to models that support reasoning: if a model lacks this level, the closest one is used; models that can’t be tuned ignore it. “Auto” uses the model’s own default.',
-    /** 接在 `effortDesc` 后面，所以英文以空格开头。 */
+    /** Appended after `effortDesc`, so the English starts with a space. */
     effortCount: (tunable: number, total: number) => (total ? ` ${tunable} of the ${count(total, 'connected model', 'connected models')} can be tuned.` : ''),
     concurrency: 'Concurrent requests',
     concurrencyDesc: (min: number, max: number) =>
@@ -257,14 +257,14 @@ const en = {
       generateImage: 'Must support /v1/images/generations; sizes use conservative defaults (1024 × 1024, one image at a time).',
       generateText: 'Must support /v1/chat/completions; context and output length use conservative defaults (32K and 4K tokens).',
     } satisfies Record<OnlineCapability, string>,
-    /** 与 `note`、`noteTail` 前后相接，英文各自带空格。 */
+    /** Joins with `note` and `noteTail` before and after; the English pieces each carry their own space. */
     noteHead: 'An OpenAI-compatible service. ',
     noteTail: ' After adding it, connect (enter a key or leave it empty) and test the model.',
     add: 'Add',
     added: (name: string) => `Added ${name} · next, connect it`,
     failed: (message: string) => `Couldn't add: ${message}`,
   },
-  /** 用途分段的名字（`KIND_ITEMS`）。 */
+  /** Names of the usage segments (`KIND_ITEMS`). */
   kindLabel: {
     transcribe: 'Speech recognition · ASR',
     generateText: 'Text generation · LLM',
@@ -310,7 +310,7 @@ const en = {
     failed: 'Test failed',
     result: 'Test result',
     resultNote: 'The result is only shown here and isn’t added to the video.',
-    /** 文本的测试结果和别的文本生成一样列进 Space（runtime-core space/space-derive.ts）。 */
+    /** Text test results are listed in Space like other text generation (runtime-core space/space-derive.ts). */
     textResultNote: 'The reply isn’t added to the video; like other generated text, it’s saved as a document in Library.',
     start: 'Start test',
     retry: 'Test again',
@@ -326,7 +326,7 @@ const en = {
     emptyTitle: 'No voices yet',
     emptyBody: 'Choose a 5–12 second reference recording, or import a voice pack someone exported. Once saved, you can pick it anywhere.',
   },
-  /** 界面里引用一段原文（提示词、逐字稿）时加的引号。 */
+  /** Quote marks added when quoting original text in the UI (prompts, transcripts). */
   quoted: (text: string) => `“${text}”`,
 };
 
@@ -343,7 +343,7 @@ export const CODEX_CARD_COPY = live(() => M.codexCard);
 export const KEY_COPY = live(() => M.key);
 export const CUSTOM_COPY = live(() => M.custom);
 
-/** 用途分段（自建服务商、添加模型；设计稿 settings-cloud.jsx:196-197 的顺序）。 */
+/** Usage segments (custom provider, add model; order from design mock settings-cloud.jsx:196-197). */
 export const KIND_ITEMS: readonly { key: OnlineCapability; readonly label: string }[] = (
   ['transcribe', 'generateText', 'synthesizeSpeech', 'generateImage'] as const
 ).map((key) => ({
@@ -357,5 +357,5 @@ export const ADD_MODEL_COPY = live(() => M.addModel);
 export const PROBE_COPY = live(() => M.probe);
 export const VOICES_COPY = live(() => M.voices);
 
-/** 引用一段原文：中文用「」，英文用弯引号。 */
+/** Quoting original text: Chinese uses 「」, English uses curly quotes. */
 export const quoted = (text: string) => M.quoted(text);

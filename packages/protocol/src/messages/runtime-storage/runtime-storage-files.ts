@@ -14,7 +14,7 @@ import { pl } from './runtime-storage-files.pl.ts';
 import { tr } from './runtime-storage-files.tr.ts';
 import { vi } from './runtime-storage-files.vi.ts';
 
-/** 项目标记与偏好设置文件的校验说明（`packages/runtime-storage` 的 project-marker、settings-store）。 */
+/** Validation notes for project markers and preference files (`packages/runtime-storage`: project-marker, settings-store). */
 const en = {
   markerNotJson: 'not JSON',
   markerNotObject: 'not an object',

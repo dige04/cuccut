@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { checkDesignSystem, DESIGN_SYSTEM_ISSUE_CODES, DESIGN_SYSTEM_NOT_CHECKED, decodeIndexKey, encodeIndexKey, type DesignSystemCheckResult } from './check.ts';
 import { BLOBS_DIR, DESIGN_SYSTEM_LIMITS } from './layout.ts';
 
-/** 一个文件的内容；`{ sparse }` 是只有大小的稀疏文件（查大小上限用，不真的写这么多字节）；null 是删掉基础系统里的这个文件。 */
+/** A file's contents. `{ sparse }` is a sparse file that only has a size (used to test the size limit, without actually writing that many bytes); null means delete this file from the base system. */
 type Content = string | Buffer | { sparse: number } | null;
 
 const roots: string[] = [];
@@ -82,7 +82,7 @@ const BASE_FILES: Record<string, Exclude<Content, null>> = {
   'api/tokens.md': '# generated',
 };
 
-/** 在基础系统上改：`files` 里 null 是删掉；`index` 的字段与基础索引合并，值为 undefined 时去掉这个字段。 */
+/** Modifies the base system: a null in `files` means delete; the fields of `index` merge with the base index, and a value of undefined removes that field. */
 async function check(files: Record<string, Content> = {}, index: Record<string, unknown> = {}): Promise<DesignSystemCheckResult> {
   const merged: Record<string, unknown> = { ...BASE_INDEX, ...index };
   for (const [key, value] of Object.entries(index)) if (value === undefined) delete merged[key];
@@ -189,9 +189,9 @@ describe('checkDesignSystem：通过的', () => {
   });
 });
 
-/** 每一类问题至少一个用例：[说明, 文件改动, 索引改动, 报在哪个文件, 问题里的话]。 */
+/** At least one case per kind of problem: [description, file changes, index changes, file the problem is reported on, wording of the problem]. */
 const CASES: [string, Record<string, Content>, Record<string, unknown>, string, string | RegExp][] = [
-  // 索引
+  // Index
   ['没有索引', { 'design-system.json': null }, {}, 'design-system.json', 'missing'],
   ['索引不是 JSON', { 'design-system.json': '{ nope' }, {}, 'design-system.json', 'is not valid JSON'],
   ['索引不是 v3 files', {}, { v: 2 }, 'design-system.json', 'must be an object with "v": 3'],
@@ -223,7 +223,7 @@ const CASES: [string, Record<string, Content>, Record<string, unknown>, string, 
   ['记录的 blob 不是上传 id', {}, { blobs: { a: { name: 'a.png', blob: '/_blob/x', size: 1, type: 'image/png' } } }, 'design-system.json', '"blob" must be the upload'],
   ['docs 形状不对', {}, { docs: { sections: 'x' } }, 'design-system.json', '"docs" must be'],
   ['没有 namespace，bundle.js 也没有头行', { 'components/bundle.js': '(()=>{window.Acme={};})();' }, { namespace: undefined }, 'design-system.json', 'has no "namespace"'],
-  // 目录树与路径
+  // Directory tree and paths
   ['工具配置文件', { 'package.json': '{}' }, {}, 'package.json', "The editor can't see it"],
   ['保留名', { 'index.html': 'x' }, {}, 'index.html', 'is reserved'],
   ['单个文件超过 15 MiB', { 'assets/Logos/huge.png': { sparse: DESIGN_SYSTEM_LIMITS.fileBytes + 1 } }, {}, 'assets/Logos/huge.png', 'a file can be at most'],
@@ -237,7 +237,7 @@ const CASES: [string, Record<string, Content>, Record<string, unknown>, string, 
   ['章节文档超过 24 个', Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`guide/s${i}.md`, '# s'])), {}, '.', 'section documents'],
   ['组件目录名不合规则', { 'components/my-button/preview.html': PREVIEW }, {}, 'components/my-button/preview.html', 'is not a component name'],
   ['素材组名不合规则', { 'assets/ Spaced/a.svg': '<svg/>' }, {}, 'assets/ Spaced/a.svg', 'is not a valid group name'],
-  // 内容
+  // Content
   ['/_blob/ 引用写错', { 'README.md': '![x](/_blob/NOT-AN-ID)' }, {}, 'README.md', 'is not a valid upload reference'],
   ['/_blob/ 引用不在 _blobs/', { 'README.md': `![x](/_blob/${BLOB})` }, {}, 'README.md', `/_blob/${BLOB} is not in _blobs/`],
   ['preview 没有头行', { 'components/Button/preview.html': '<div></div>' }, {}, 'components/Button/preview.html', 'line 1 must be the marker'],
@@ -259,7 +259,7 @@ const CASES: [string, Record<string, Content>, Record<string, unknown>, string, 
   ['bundle.css 连网', { 'components/bundle.css': '@import url("https://cdn.example.com/x.css");' }, {}, 'components/bundle.css', 'loads https://cdn.example.com/x.css'],
   ['lib/ 的脚本含 </script', { 'components/lib/react.production.min.js': "window.React={};var s='</script>';" }, {}, 'components/lib/react.production.min.js', 'contains a literal </script'],
   ['lib/ 的脚本连网', { 'components/lib/react.production.min.js': "window.React={};import('https://cdn.example.com/x.js');" }, {}, 'components/lib/react.production.min.js', 'Copy what it loads'],
-  // 字体
+  // Fonts
   ['fonts/ 里不是字体', { 'fonts/README.txt': 'x' }, {}, 'fonts/README.txt', 'fonts/ holds font files only'],
   ['字体文件头不对', { 'fonts/Inter.woff2': 'not a font' }, {}, 'fonts/Inter.woff2', 'is not a WOFF2 font'],
   ['字体没列进 type.fonts', { 'fonts/Extra.woff2': WOFF2 }, {}, 'fonts/Extra.woff2', 'is not listed in tokens.json type.fonts'],
@@ -288,7 +288,7 @@ describe('checkDesignSystem：每一类问题', () => {
     const missing = result.issues.filter(i => i.code === 'ASSET_RECORD_MISSING_UPLOAD');
     expect(missing).toEqual([{ file: 'design-system.json', code: 'ASSET_RECORD_MISSING_UPLOAD', message: expect.stringContaining('assets/Logos/gone.svg') }]);
     expect(DESIGN_SYSTEM_ISSUE_CODES).toContain('ASSET_RECORD_MISSING_UPLOAD');
-    // 其余问题不带代码
+    // Other problems carry no code
     const other = await check({ 'package.json': '{}' });
     expect(other.issues.every(i => i.code === undefined)).toBe(true);
   });

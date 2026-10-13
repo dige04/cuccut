@@ -1,21 +1,21 @@
-// Google Gemini 文本模型（`generateText`，架构设计 §6.4）。2026-10-03 读过的文档：
+// Google Gemini text model (`generateText`, architecture design §6.4). Documentation read on 2026-10-03:
 //   https://ai.google.dev/api/generate-content
 //   https://ai.google.dev/gemini-api/docs/models
 //   https://ai.google.dev/gemini-api/docs/structured-output
 //   https://ai.google.dev/gemini-api/docs/thinking
 //   https://ai.google.dev/api/models#method:-models.list
-// 文档确认的：`POST {base}/models/{model}:generateContent`（`x-goog-api-key` 请求头）；`contents[{ role: 'user' | 'model',
-// parts: [{ text }] }]`、`systemInstruction`；`generationConfig` 的 `maxOutputTokens`、`temperature`、`seed`、
-// `responseMimeType: 'application/json'` 与 `responseJsonSchema`、`thinkingConfig.thinkingLevel`；响应的
-// `candidates[].finishReason`（`STOP`、`MAX_TOKENS`、`SAFETY`、`RECITATION`、`BLOCKLIST`、`PROHIBITED_CONTENT`、`SPII`……）、
-// `content.parts[].thought`（思考摘要，不取）、`promptFeedback.blockReason`、`usageMetadata`（`promptTokenCount`、
-// `candidatesTokenCount`、`thoughtsTokenCount`）、`modelVersion`。稳定的文本模型：gemini-3.8-flash（推荐）、3.7-flash、
-// 3.6-flash、3.5-flash、3.5-flash-lite、3.1-flash-lite；3.8 与 3.7 的思考档位是 low / medium / high（默认 medium），
-// 3.6 与 3.5-flash-lite 是 minimal–high（3.5-flash-lite 默认 minimal）。`GET {base}/models` 分页列出模型（`models[].name`
-// 是 `models/<id>`，`nextPageToken`）。
-// 没能确认的：3.5-flash 与 3.1-flash-lite 的思考档位（按 minimal–high 声明，默认分别取 medium 与 minimal）；各模型的
-// 输出上限（按 65,536 token 声明）与上下文（按 1,048,576 token 声明）；上下文过长时的错误形状（按 400 正文里提到 token
-// 上限的识别为 `INPUT_TOO_LONG`）。费用按 `unknown`。
+// Confirmed by the docs: `POST {base}/models/{model}:generateContent` (`x-goog-api-key` request header); `contents[{ role: 'user' | 'model',
+// parts: [{ text }] }]`, `systemInstruction`; `generationConfig`'s `maxOutputTokens`, `temperature`, `seed`,
+// `responseMimeType: 'application/json'` with `responseJsonSchema`, and `thinkingConfig.thinkingLevel`; the response's
+// `candidates[].finishReason` (`STOP`, `MAX_TOKENS`, `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, ...),
+// `content.parts[].thought` (thinking summary, not taken), `promptFeedback.blockReason`, `usageMetadata` (`promptTokenCount`,
+// `candidatesTokenCount`, `thoughtsTokenCount`), `modelVersion`. Stable text models: gemini-3.8-flash (recommended), 3.7-flash,
+// 3.6-flash, 3.5-flash, 3.5-flash-lite, 3.1-flash-lite; the thinking levels for 3.8 and 3.7 are low / medium / high (default medium),
+// and for 3.6 and 3.5-flash-lite they are minimal–high (3.5-flash-lite defaults to minimal). `GET {base}/models` lists models with pagination (`models[].name`
+// is `models/<id>`, `nextPageToken`).
+// Not confirmed: the thinking levels of 3.5-flash and 3.1-flash-lite (declared as minimal–high, with defaults of medium and minimal respectively); each model's
+// output limit (declared as 65,536 tokens) and context window (declared as 1,048,576 tokens); the error shape when the context is too long (a 400 whose body mentions the token
+// limit is recognized as `INPUT_TOO_LONG`). Cost is `unknown`.
 import { ProviderFailure, type TextReply } from '@cuccut/models';
 import type { TextEffort, TextFinishReason, TextModelInfo } from '@cuccut/protocol';
 import {
@@ -65,9 +65,9 @@ const MODELS: TextModelInfo[] = [
   model('gemini-3.1-flash-lite', 'Gemini 3.1 Flash-Lite', ALL, 'minimal'),
 ];
 
-/** 内容过滤类的结束原因。 */
+/** Finish reasons related to content filtering. */
 const FILTERED = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY']);
-/** 列模型至多翻这么多页。 */
+/** Maximum number of pages to page through when listing models. */
 const MAX_PAGES = 10;
 
 export class GoogleTextAdapter implements TextAdapter, ModelLister {
@@ -145,7 +145,7 @@ export function parseGenerateContent(value: unknown, version: string): TextReply
     : null;
   const candidate = Array.isArray(value.candidates) ? value.candidates.find(isObject) : undefined;
   if (!candidate) {
-    // 输入被拦下：没有候选，`promptFeedback.blockReason` 说明原因。
+    // Input was blocked: there are no candidates, and `promptFeedback.blockReason` gives the reason.
     if (isObject(value.promptFeedback) && typeof value.promptFeedback.blockReason === 'string') {
       return { text: '', finishReason: 'content-filter', usage, modelVersion, workerVersion: version };
     }
@@ -170,7 +170,7 @@ function finishOf(value: unknown): TextFinishReason {
   });
 }
 
-/** 认证失败（同转写）；上下文过长 → `INPUT_TOO_LONG`；404 → 模型不存在。 */
+/** Authentication failure (same as transcription); context too long → `INPUT_TOO_LONG`; 404 → model does not exist. */
 export function classifyGoogleText(status: number, body: string): RejectionCode | { code: RejectionCode; reason?: string } | null {
   const auth = classifyGoogle(status, body);
   if (auth) return auth;

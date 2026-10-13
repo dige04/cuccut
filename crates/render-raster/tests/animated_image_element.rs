@@ -1,13 +1,11 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering path and the host byte layer), and it does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! `animatedImage` 元素的端到端语义（规范 §6.5.1）：资产加载 → resolve →
-//! 录制期量化 → 光栅化取像素。
+//! End-to-end semantics of the `animatedImage` element (spec §6.5.1): asset loading → resolve →
+//! quantization at record time → rasterized pixels.
 //!
-//! 与 `video_semantics.rs` 是姊妹篇：那边验的是"按源帧率量化"，这边验的是
-//! "按逐帧时长表量化"，其余（`mediaStart` / `playbackRate` / `segment` /
-//! `loop` / `fit`）都是同一套公式，测试因此刻意用同样的写法对拍。
+//! This is a companion to `video_semantics.rs`: that one verifies “quantization by source frame rate”, while this one verifies “quantization by per-frame duration table”. The rest (`mediaStart` / `playbackRate` / `segment` /
+//! `loop` / `fit`) use the same formulas, so the tests deliberately compare against them with the same approach.
 
 use render_raster::drawop::DrawOp;
 use render_raster::{FrameRenderer, MediaStore, TextEngine, load_assets};
@@ -19,7 +17,7 @@ fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/animated")
 }
 
-/// 8×8 的 `stripes.gif`：4 帧，起点 0 / 100 / 300 / 600ms，总长 1000ms，无限循环。
+/// `stripes.gif`, 8×8: 4 frames starting at 0 / 100 / 300 / 600 ms, total length 1000 ms, loops forever.
 fn doc(element: Value) -> Value {
     json!({
         "meta": { "id": "ai", "width": 64, "height": 32, "fps": 25 },
@@ -77,7 +75,7 @@ fn build(element: Value) -> Harness {
 }
 
 impl Harness {
-    /// 该时刻 `DrawMedia` 记录的源毫秒（= 帧起点）。
+    /// The source milliseconds recorded by `DrawMedia` at this moment (= the frame start).
     fn media_ms(&mut self, t: f64) -> i64 {
         let frame = self.renderer.record(&self.ir, &mut self.engine, t);
         let hits: Vec<i64> = frame
@@ -92,7 +90,7 @@ impl Harness {
         hits[0]
     }
 
-    /// 该时刻画布左上角的像素（动图铺在 (0,0)，取样点必落在图内）。
+    /// The pixel at the canvas's top-left corner at this moment (the animated image is laid out at (0,0), so the sample point is guaranteed to fall inside the image).
     fn pixel(&mut self, t: f64) -> (u8, u8, u8, u8) {
         let frame = self.renderer.record(&self.ir, &mut self.engine, t);
         let pm = render_raster::rasterize_with_media(
@@ -112,7 +110,7 @@ const GREEN: (u8, u8, u8, u8) = (0x20, 0xc0, 0x20, 255);
 const BLUE: (u8, u8, u8, u8) = (0x20, 0x40, 0xe0, 255);
 const YELLOW: (u8, u8, u8, u8) = (0xf0, 0xd0, 0x00, 255);
 
-/// 时长表量化：一帧窗口内的所有时刻都记同一个 `media_ms`，跨帧才跳。
+/// Duration-table quantization: every time within one frame's window records the same `media_ms`, and it jumps only across frames.
 #[test]
 fn the_duration_table_drives_the_recorded_source_time() {
     let mut h = build(element(json!({})));
@@ -131,8 +129,7 @@ fn the_duration_table_drives_the_recorded_source_time() {
     }
 }
 
-/// 无 `loop` 声明 ⇒ 沿用素材自带的 loop count；`stripes.gif` 是无限循环，
-/// 于是第二遍从头开始。
+/// With no `loop` declaration ⇒ the loop count embedded in the asset is used. `stripes.gif` loops forever, so the second pass starts from the beginning.
 #[test]
 fn the_intrinsic_loop_count_supplies_the_default() {
     let mut h = build(element(json!({})));
@@ -143,7 +140,7 @@ fn the_intrinsic_loop_count_supplies_the_default() {
     assert_eq!(h.pixel(3.65), YELLOW);
 }
 
-/// `loop: false` ⇒ 放完一遍冻结末帧。
+/// `loop: false` ⇒ after one pass, the last frame is frozen.
 #[test]
 fn an_explicit_loop_false_freezes_on_the_last_frame() {
     let mut h = build(element(json!({ "loop": false })));
@@ -153,30 +150,29 @@ fn an_explicit_loop_false_freezes_on_the_last_frame() {
     assert_eq!(h.pixel(3.9), YELLOW);
 }
 
-/// `mediaStart` / `playbackRate` / `segment` 与 §6.5 视频公式同构。
+/// `mediaStart` / `playbackRate` / `segment` have the same structure as the §6.5 video formulas.
 #[test]
 fn media_start_rate_and_segment_fold_like_video() {
-    // segment [0.1, 0.6)：只播第 1、2 帧；rate 2 ⇒ 文档 1s 走 2s 源时间
+    // segment [0.1, 0.6): only frames 1 and 2 play; rate 2 ⇒ 1 s of document time covers 2 s of source time
     let mut h = build(element(
         json!({ "segment": [0.1, 0.6], "playbackRate": 2.0 }),
     ));
-    // mediaStart 缺省 = segment 起点 = 0.1s
+    // mediaStart default = segment start = 0.1 s
     assert_eq!(h.media_ms(0.0), 100);
-    // t=0.1 → src = 0.1 + 0.2 = 0.3 → 第 2 帧
+    // t=0.1 → src = 0.1 + 0.2 = 0.3 → frame 2
     assert_eq!(h.media_ms(0.1), 300);
-    // t=0.25 → src = 0.1 + 0.5 = 0.6 → 折回 segment 起点 0.1 → 第 1 帧
+    // t=0.25 → src = 0.1 + 0.5 = 0.6 → wraps back to the segment start 0.1 → frame 1
     assert_eq!(h.media_ms(0.25), 100);
     assert_eq!(h.pixel(0.25), GREEN);
     assert_eq!(h.pixel(0.1), BLUE);
 
-    // 显式 mediaStart 落在第 2 帧
+    // An explicit mediaStart lands on frame 2
     let mut h = build(element(json!({ "mediaStart": 0.35 })));
     assert_eq!(h.media_ms(0.0), 300);
     assert_eq!(h.pixel(0.0), BLUE);
 }
 
-/// 有限 loop count 的素材（`disposal.gif` 声明 2 遍）：放完就冻结，
-/// 显式 `loop: true` 可以覆盖它。
+/// An asset with a finite loop count (`disposal.gif` declares 2 passes): freezes after playing through, and an explicit `loop: true` can override it.
 #[test]
 fn a_finite_loop_count_stops_after_its_plays() {
     let with = |el: Value| {
@@ -199,19 +195,19 @@ fn a_finite_loop_count_stops_after_its_plays() {
             media,
         }
     };
-    // 总长 300ms、2 遍 ⇒ 600ms 之后冻结在末帧起点 200ms
+    // Total length 300 ms, 2 passes ⇒ after 600 ms, frozen at the last frame's start, 200 ms
     let mut h = run(with(element(json!({}))));
     assert_eq!(h.media_ms(0.35), 0, "0.35s 折回第二遍的第 0 帧");
     assert_eq!(h.media_ms(0.45), 100, "第二遍的第 1 帧");
     assert_eq!(h.media_ms(0.6), 200, "两遍放完，冻结末帧");
     assert_eq!(h.media_ms(3.9), 200);
-    // 显式 loop: true 覆盖素材声明
+    // An explicit loop: true overrides the asset's declaration
     let mut h = run(with(element(json!({ "loop": true }))));
     assert_eq!(h.media_ms(0.6), 0, "第三遍从头开始");
     assert_eq!(h.media_ms(3.88), 200, "第 13 遍的末帧");
 }
 
-/// 乱序录制与顺序录制逐字节相同——渲染是乱序 + 并行的，这条不是可选项。
+/// Out-of-order recording is byte-for-byte identical to in-order recording. Rendering is out of order and parallel, so this is not optional.
 #[test]
 fn shuffled_recording_matches_sorted_recording() {
     let mut h = build(element(json!({})));
@@ -234,8 +230,7 @@ fn shuffled_recording_matches_sorted_recording() {
     assert_eq!(sorted, shuffled);
 }
 
-/// 帧指纹：同一动图帧内的两个时刻指纹相同，跨帧必然不同——
-/// 静止帧缓存靠这个复用，也靠这个不误用。
+/// Frame fingerprint: two times within the same animated-image frame have the same fingerprint, and across frames they always differ. The static frame cache relies on this for reuse, and also relies on it to avoid misuse.
 #[test]
 fn frame_fingerprints_change_exactly_at_frame_boundaries() {
     let mut h = build(element(json!({})));
@@ -248,7 +243,7 @@ fn frame_fingerprints_change_exactly_at_frame_boundaries() {
     assert_eq!(fp(&mut h, 0.12), fp(&mut h, 0.28));
 }
 
-/// 静态图路径未受影响：`image` 元素仍是 `media_ms = -1` + 拉伸（fill）语义。
+/// The static-image path is unaffected: the `image` element still has `media_ms = -1` with stretch (fill) semantics.
 #[test]
 fn the_static_image_path_is_untouched() {
     let doc = json!({
@@ -279,8 +274,7 @@ fn the_static_image_path_is_untouched() {
     assert_eq!(ops, vec![(-1, [0.0f32; 4])], "静态图仍是 -1 + 整幅源");
 }
 
-/// GIF 声明成 `type: "image"` 时，错误要指路到 `animatedImage`，
-/// 而不是甩一句"不支持的图像格式"。
+/// When a GIF is declared as `type: "image"`, the error should point to `animatedImage` instead of simply saying “unsupported image format”.
 #[test]
 fn a_gif_declared_as_a_plain_image_points_at_animated_image() {
     let doc = json!({
@@ -301,7 +295,7 @@ fn a_gif_declared_as_a_plain_image_points_at_animated_image() {
     assert!(text.contains("animatedImage"), "{text}");
 }
 
-/// `asset-kind-mismatch`：`animatedImage` 元素引用 `image` 资产要在 lint 期挡住。
+/// `asset-kind-mismatch`: an `animatedImage` element referencing an `image` asset must be blocked at lint time.
 #[test]
 fn the_element_and_asset_kinds_must_agree() {
     let mut doc = doc(element(json!({})));
@@ -316,7 +310,7 @@ fn the_element_and_asset_kinds_must_agree() {
     );
 }
 
-/// 动图没有音轨：`withAudio` / `volume` 是写错了。
+/// Animated images have no audio track, so `withAudio` / `volume` is a mistake.
 #[test]
 fn an_animated_image_refuses_audio_fields() {
     let doc = doc(element(json!({ "withAudio": true, "volume": 0.5 })));

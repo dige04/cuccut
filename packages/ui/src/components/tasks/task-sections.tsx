@@ -18,9 +18,9 @@ import { useVideo } from '../../state/video-store.ts';
 import { TK } from './tasks-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
-/** 原型 `.t-section`：11px 粗体灰字，节与节之间空 28。 */
+/** Prototype `.t-section`: 11px bold grey text, with a 28 gap between sections. */
 export const sectionTitle = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-600', margin: 0, marginTop: 28 });
-/** 原型 `.card.card--layer`。 */
+/** Prototype `.card.card--layer`. */
 const layer = style({
   borderRadius: '[24px]',
   borderWidth: 1,
@@ -102,7 +102,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** 「详情」表（原型 `details`）：只列有值的行，标签列 88 宽。 */
+/** The “详情” (Details) table (prototype `details`): lists only rows that have a value, with a label column 88 wide. */
 export function TaskFacts({ rows: items }: { rows: FactRow[] }) {
   return (
     <Section title={TASK_VIEW_COPY.factsSection}>
@@ -119,8 +119,8 @@ export function TaskFacts({ rows: items }: { rows: FactRow[] }) {
 }
 
 /**
- * 来源（原型 `TaskSource`）：这一跑是哪个视频的哪个素材、视频目录在哪；Agent 任务是它的项目。
- * Job 只记着 videoId 与 assetId，名字只能从编辑器打开的视频里反查：不是打开的那个就不画。
+ * Source (prototype `TaskSource`): which asset of which video this run used, and where the video folder is; for an agent task, it is the task's project.
+ * A Job only records videoId and assetId; its names can only be looked up from the video open in the editor, so nothing is drawn unless it is the one that is open.
  */
 export function TaskSource({ job, task }: { job?: JobRecord; task?: TaskSummary }) {
   const runtime = useRuntime();
@@ -156,7 +156,7 @@ export function TaskSource({ job, task }: { job?: JobRecord; task?: TaskSummary 
   const ref = video?.ref;
   const snapshot = video?.state?.video;
   if (!job || !ref) return null;
-  // 生图不念视频里的素材：媒体行写视频会让人以为在「画这个视频」，只留视频行（原型 `source`）。
+  // Image generation does not show the asset from the video: a media row that names the video would make it look as if this video is being generated, so only the video row is kept (prototype `source`).
   const asset = job.kind !== 'generateImage' && job.assetId ? snapshot?.assets[job.assetId] : undefined;
   const revision = asset ? asset.revisions[job.assetRevision ?? asset.currentRevision] : undefined;
   const duration = revision?.duration ? Number(revision.duration.ticks) / revision.duration.timescale : null;
@@ -191,7 +191,7 @@ export function TaskSource({ job, task }: { job?: JobRecord; task?: TaskSummary 
   );
 }
 
-/** 一个产物的受限地址；拿不到时 null（缩略图退回占位）。 */
+/** The restricted address of one artifact; null when unavailable (the thumbnail falls back to a placeholder). */
 function useArtifactUrl(artifactId: string | null): string | null {
   const runtime = useRuntime();
   const [url, setUrl] = useState<string | null>(null);
@@ -210,7 +210,7 @@ function useArtifactUrl(artifactId: string | null): string | null {
   return url;
 }
 
-/** 出图任务的状态徽标；文案在渲染时读。 */
+/** Status badge for an image-generation task; its text is read at render time. */
 const IMAGE_STATUS = live(
   (): Record<JobRecord['state'], { label: string; variant: 'neutral' | 'informative' | 'positive' | 'negative' }> => ({
     queued: { label: TASK_VIEW_COPY.queued, variant: 'neutral' },
@@ -252,7 +252,7 @@ function ImageThumb({ job, now }: { job: JobRecord; now: number }) {
   );
 }
 
-/** 图片（原型 `TaskImages`）：生图任务的那一行请求——缩略图、状态、提示词、元信息；可以复制提示词。 */
+/** Images (prototype `TaskImages`): the request row for an image-generation task, showing the thumbnail, status, prompt and metadata; the prompt can be copied. */
 export function TaskImages({ job, now }: { job: JobRecord; now: number }) {
   const request = imageRequest(job, now);
   if (!request) return null;
@@ -291,7 +291,7 @@ export function TaskImages({ job, now }: { job: JobRecord; now: number }) {
 
 const OUTPUT_ICON = { image: Image, audio: AudioWave, document: FileText } as const;
 
-/** 产物（原型「产物」一节）：生成的每个输出可以打开（经 `artifacts.openHandle` 交给系统浏览器）；转录的文稿写进了视频。 */
+/** Artifacts (prototype “产物” section): each generated output can be opened (handed to the system browser via `artifacts.openHandle`); transcripts are written into the video. */
 export function TaskOutputs({ job }: { job: JobRecord }) {
   const runtime = useRuntime();
   const outputs = jobOutputs(job);

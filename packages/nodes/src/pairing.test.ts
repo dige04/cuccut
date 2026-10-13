@@ -10,7 +10,7 @@ function codeOf(pairing: Pairing): string {
   return state.code;
 }
 
-/** 一个肯定不是当前配对码的 6 位数。 */
+/** A 6-digit number that is definitely not the current pairing code. */
 function wrong(code: string): string {
   return code === '000000' ? '111111' : '000000';
 }
@@ -86,13 +86,13 @@ describe('配对', () => {
     expect(pairing.pair(wrong(code), 'client-a', 'A')).toEqual({ ok: false, code: 'PAIRING_CODE_INVALID' });
     expect(pairing.state()).toEqual({ lockedUntil: new Date(clock.now() + 10 * MINUTE).toISOString() });
 
-    // 锁定期间连正确的码也不行，并告诉对方还要等多久。
+    // During the lockout, even the correct code is refused, and the caller is told how much longer to wait.
     clock.advance(3 * MINUTE);
     expect(pairing.pair(code, 'client-a', 'A')).toEqual({ ok: false, code: 'PAIRING_LOCKED', retryAfterMs: 7 * MINUTE });
 
     clock.advance(7 * MINUTE);
     expect(pairing.state()).toBeNull();
-    // 旧码已作废。
+    // The old code is void.
     expect(pairing.pair(code, 'client-a', 'A')).toEqual({ ok: false, code: 'PAIRING_CODE_INVALID' });
     const fresh = pairing.newCode();
     expect(pairing.pair(fresh.code, 'client-a', 'A').ok).toBe(true);

@@ -22,7 +22,7 @@ function tool(name: string, effect: CatalogTool['effect'], surfaces: CatalogTool
   return { name, title: name, description: name, inputSchema: { type: 'object' }, risk: 'low', effect, examples: [], surfaces };
 }
 
-/** 固定的小目录：断言不随真实目录的说明文字变化。 */
+/** A fixed small directory: the assertions do not change with the explanatory text in the real directory. */
 const INPUTS: SyncInputs = {
   cliTools: [
     tool('assets_import', 'mutation'),
@@ -85,7 +85,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** 夹具复制一份到临时目录，生成块清空、craft 副本删掉，从「没同步过」开始。 */
+/** The fixture is copied to a temp directory, with generated blocks cleared and the craft copy removed, starting from "never synced". */
 function freshFixture(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-sync-agent-skill-'));
   dirs.push(root);
@@ -134,9 +134,9 @@ describe('说明书的同步', () => {
     );
     const chapters = result.files.get(`${AGENT}/references/craft/demo-chapters.md`)!;
     expect(chapters).toContain('When the transcript is not polished yet, first read [`references/craft/demo-polish.md`](demo-polish.md).');
-    // 句末的句号不挡住工具名。
+    // A trailing full stop does not block the tool name.
     expect(chapters).toContain('in one go with setChapters of `cuccut edits apply`.');
-    // 只在会话里有的工具：有兜底写法的（downloads_save）换掉、不提醒；没有的原样留下并提醒。
+    // Tools that exist only in the session: those with a fallback (downloads_save) are swapped out without a warning; those without one are left as-is, with a warning.
     expect(result.warnings).toEqual([]);
     fs.appendFileSync(path.join(root, BUILTIN, 'demo-polish/SKILL.md'), '\nUpdate tasks_contract at the end.\n');
     const withContract = buildAgentSkillSync(root, { ...INPUTS, agentToolNames: [...INPUTS.agentToolNames, 'tasks_contract'] });
@@ -176,7 +176,7 @@ describe('说明书的同步', () => {
         'transcribe --url x',
         '```',
         '',
-        // 英文正文、CSS 与取值里的同一个词不是工具名。
+        // The same word in English prose, CSS, or values is not a tool name.
         'Every transcribe job is English prose here; the',
         'transcribe (at a line start) too, and the element type `transcribe`.',
         '',
@@ -213,13 +213,13 @@ describe('说明书的同步', () => {
     );
     expect(conventions).toContain('| `CAPABILITY_NOT_CONFIGURED` | 2 |');
     expect(conventions).toContain('| `INVALID_ARGUMENTS` `UNKNOWN_TOOL` | 4 |');
-    // 退出码 1 的行按下一步分开：同一句的并成一行，没单独写下一步的用「其他错误码」那句。
+    // Lines with exit code 1 are split by next step: lines in the same sentence are merged into one line. Where no separate next step is written, the line uses the sentence with “其他错误码” (other error codes).
     expect(conventions).toContain("| `RUNTIME_NOT_OWNED` `RUNTIME_IN_USE` | 1 | The Runtime is not this CLI's to stop");
     expect(conventions).toContain('| `AGENT_SKILL_NOT_FOUND` `AGENT_SKILL_INVALID` | 1 | The agent guide cannot be installed');
     expect(conventions).toMatch(/\| `SOME_FAILURE` \| 1 \| Failed or cancelled\./);
     expect(conventions).toContain('<!-- surface: agent -->\n| Error code | Next step |\n| --- | --- |\n| `CAPABILITY_NOT_CONFIGURED` |');
 
-    // mcp.md 的块已经在 cli 段里，不再包一层。
+    // The mcp.md block is already inside the cli section, so it is not wrapped again.
     const mcp = files.get(`${AGENT}/references/mcp.md`)!;
     expect(mcp).toContain(
       '<!-- generated: tool-map -->\n| MCP tool | CLI command | Effect |\n| --- | --- | --- |\n| `assets_import` | `cuccut assets import` | mutation |',

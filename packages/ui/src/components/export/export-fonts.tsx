@@ -28,12 +28,11 @@ import { toastError } from '../editor/font-detail.tsx';
 import { TextLink } from './export-parts.tsx';
 
 /**
- * 导出与按需下载的字体（产品设计 §5.9「字体」、§8.1；原型 export.jsx 与 font-downloads.jsx 的 ExportFontNote）：
- * - 导出前（视频页顶上）：用到的族里还在下载的（导出先等）、没下载成功的（用回退字体代替，可重试）、没下载的（自动下载开着时
- *   导出开始先下载，关着时用回退字体导出，可以现在下载）；
- * - 导出中：准备阶段念「下载字体 · 族 百分比」；
- * - 导出完：没取到的族列出用什么代替与原因（Runtime 的 `FONT_NOT_DOWNLOADED` 警告）。
- * 下载不成不拦导出、也不要先选替代字体：照回退字体导出，给出警告（产品设计 §12 已定）。只在桌面端：浏览器会话没有 `fonts.*`。
+ * Fonts for export and on-demand download (product design §5.9 "Fonts", §8.1; prototype export.jsx and font-downloads.jsx's ExportFontNote):
+ * - Before export (top of the video page): families in use that are still downloading (export waits for them), families whose download failed (a fallback font is used instead, retry possible), and families not downloaded (with auto-download on, export starts by downloading them first; with it off, export uses the fallback font and the user can download now).
+ * - During export: the preparation phase reads "Downloading fonts · family percent".
+ * - After export: families that could not be obtained are listed with what replaced them and why (the Runtime's `FONT_NOT_DOWNLOADED` warning).
+ * A failed download does not block export, and the user is not asked to pick a substitute first: export with the fallback font and give a warning (settled in product design §12). Desktop only: browser sessions have no `fonts.*`.
  */
 
 const notes = style({ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 });
@@ -59,8 +58,7 @@ const doneNote = style({
 });
 
 /**
- * 导出面板视频页顶上的字体提示：打开时、切换「烧录字幕」时按这次导出的参数再清点一次（不下载）。字幕不烧进画面时，
- * 只有字幕用的族不列、不给下载（导出也不会下载它们）。
+ * Font notice at the top of the video page in the export panel: checked again when opened and when "Burn subtitles" is toggled, against this export's parameters (no download). When subtitles are not burned into the picture, only the families used by subtitles are left out of the list and are not offered for download (export does not download them either).
  */
 export function ExportFontNote({ videoId, burnCaptions }: { videoId: Id; burnCaptions: boolean }) {
   const { client, host } = useRuntime();
@@ -105,8 +103,7 @@ export function ExportFontNote({ videoId, burnCaptions }: { videoId: Id; burnCap
 }
 
 /**
- * 导出在下载字体时（任务阶段 `downloading`）念「下载字体 · 族 百分比」。导出自己下载的 face 不是 `fontDownload` 任务，
- * 在下哪一个按族的状态（`downloading`）找：这段时间每隔一会儿按这个视频用到的族重新取状态。
+ * During export, the font download phase (task phase `downloading`) reads "Downloading fonts · family percent". Faces that export downloads itself are not `fontDownload` tasks, so to find which one is downloading, look it up by family state (`downloading`): during this time, the state of the families this video uses is re-fetched every so often.
  */
 export function useExportFontPhase(job: JobRecord): string | null {
   const { client } = useRuntime();
@@ -137,7 +134,7 @@ export function useExportFontPhase(job: JobRecord): string | null {
   return exportFontPhase(job, now as NonNullable<(typeof now)[number]>[]);
 }
 
-/** 导出完成：没取到的族用什么代替、为什么（不拦导出，事后说清楚）。 */
+/** Export complete: which families could not be obtained, what replaces them, and why (does not block export; it is stated clearly afterwards). */
 export function ExportFontFallbacks({ job }: { job: JobRecord }) {
   const text = exportFontFallbacks(job.warnings);
   if (!text) return null;

@@ -16,17 +16,13 @@ import {
 } from './transcript-cut.ts';
 
 /**
- * 子视频文稿里片段外的话（产品设计 §5.10，原型 model-shorts-cut.js `foldRows` / `reclaimSpan`）：子视频复制了父视频的整份文稿，
- * 片段之外的部分是剪口剪掉的，在文稿里划掉。片段两端各留 `FOLD_NEAR` 句划掉的、点一下就从那一句到片段边缘放回这一支；
- * 再远的收成一行剪缝「前面 / 后面 X 已剪掉 · 展开」，一次铺出靠近片段的 `FOLD_STEP` 句。剪缝没有整条恢复：
- * 整条放回就等于把这一支变回整部原片，要放回哪句点哪句。只管两端；片段中间用户自己剪的口照普通剪口画。
- * 单位是句（按句末标点与段落切开），不是段：被切开的段只画露出来的那几句。
+ * Words outside the clip in a child video's script (product design §5.10; prototype model-shorts-cut.js `foldRows` / `reclaimSpan`): the child video copies the parent's whole script, and the parts outside the clip were cut away by cut points, so they are struck through in the script. At each end of the clip, `FOLD_NEAR` sentences stay struck through; clicking one restores the branch from that sentence to the clip edge. Further away, they collapse into one cut-seam line “前面 / 后面 X 已剪掉 · 展开”（before / after: X cut away · expand), and one expansion reveals the `FOLD_STEP` sentences nearest the clip. Cut seams are not restored as a whole: restoring the whole seam would turn the branch back into the entire original, so you click the sentence you want back. Only the two ends are handled; cut points the user made in the middle of the clip are drawn as ordinary cut points. The unit is sentences (split by sentence-ending punctuation and paragraphs), not paragraphs: a split paragraph draws only the sentences that are shown.
  */
 
 export const FOLD_NEAR = 3;
 export const FOLD_STEP = 10;
 
-/** 一句：在 `words`（文稿次序）里的下标区间 `[from, to)` 与素材时钟上的起止。 */
+/** One sentence: its index range `[from, to)` in `words` (script order), and its start and end on the source clock. */
 interface Unit {
   from: number;
   to: number;
@@ -36,35 +32,35 @@ interface Unit {
 
 export type FoldSide = 'before' | 'after';
 
-/** 一条剪缝：还收着几句（`count`）、多长（素材秒）、已经铺出几句、下一批铺几句。 */
+/** One cut seam: how many sentences are still hidden (`count`), how long it is (source seconds), how many sentences have already been spread out, and how many the next batch spreads. */
 export interface ShortsFold {
   side: FoldSide;
-  /** 片段这一侧划掉的总句数（不含两端常露的 `FOLD_NEAR` 句）。 */
+  /** The total number of sentences hidden on this side of the clip (not counting the `FOLD_NEAR` sentences always shown at each end). */
   total: number;
-  /** 还收着的句数。 */
+  /** The number of sentences still hidden. */
   count: number;
-  /** 收着的那截在素材时钟上的长度（秒）；都铺开了时是整截的长度。 */
+  /** The length of the hidden stretch on the source clock (seconds); when all of it is spread out, the length of the whole stretch. */
   seconds: number;
-  /** 已经铺出的句数（展开过的）。 */
+  /** The number of sentences already spread out (expanded). */
   shown: number;
-  /** 下一批铺几句。 */
+  /** How many sentences the next batch spreads. */
   next: number;
 }
 
 export interface FoldPlan {
-  /** 收起来不画的词（`TranscriptWord.index`）。 */
+  /** Words hidden and not drawn (`TranscriptWord.index`). */
   hidden: ReadonlySet<number>;
   before: ShortsFold | null;
   after: ShortsFold | null;
-  /** 第一个、最后一个还在时间线上的词在 `words` 里的位置。 */
+  /** The positions in `words` of the first and last words still on the timeline. */
   firstKept: number;
   lastKept: number;
-  /** 片段外每个词所在那一句（`words` 里的位置 → 句）。 */
+  /** The sentence containing each word outside the clip (word position in `words` → sentence). */
   units: Unit[];
   unitOf: Int32Array;
 }
 
-/** 把词按句切开：段落边界与句末标点处断。 */
+/** Splits words into sentences: breaks at paragraph boundaries and at sentence-ending punctuation. */
 function sentenceUnits(paragraphs: readonly TranscriptParagraph[], position: ReadonlyMap<number, number>): Unit[] {
   const units: Unit[] = [];
   for (const paragraph of paragraphs) {
@@ -86,8 +82,8 @@ function sentenceUnits(paragraphs: readonly TranscriptParagraph[], position: Rea
 }
 
 /**
- * 片段外的折叠：`shown` 是两侧已经铺出的句数。没有留在时间线上的词（整支都剪光了）时 null——那时不折，照普通剪口画。
- * `words` 是文稿的词（素材次序，与 `paragraphs` 里的同一批）。
+ * Folding outside the clip: `shown` is the number of sentences already spread out on both sides. Returns null when no words are left on the timeline (the whole branch is cut away); then nothing folds, and it is drawn as an ordinary cut.
+ * `words` are the script's words (source order, the same set as in `paragraphs`).
  */
 export function foldOutside(
   words: readonly TranscriptWord[],
@@ -115,12 +111,12 @@ export function foldOutside(
   units.forEach((unit, n) => {
     for (let i = unit.from; i < unit.to; i++) unitOf[i] = n;
   });
-  // 两端片段外的句：整句都在第一个留下的词之前 / 最后一个之后。
+  // Sentences at both ends outside the clip: whole sentences that come before the first kept word / after the last one.
   const head = units.filter((u) => u.to <= firstKept);
   const tail = units.filter((u) => u.from > lastKept);
   const hidden = new Set<number>();
   const side = (run: Unit[], which: FoldSide): ShortsFold | null => {
-    // 靠近片段的在前：前面那截倒过来数。
+    // The sentences nearest the clip come first: the part before it is counted backwards.
     const near2far = which === 'before' ? [...run].reverse() : run;
     const far = near2far.slice(near);
     if (!far.length) return null;
@@ -138,8 +134,7 @@ export function foldOutside(
 }
 
 /**
- * 这一支开头那一句（剪成短视频结果页卡片上的「开头」，派生时没给 `hook` 时）：第一个留在时间线上的词所在的那一句里、
- * 从它起留下的词。整支剪光了时 null。
+ * The opening sentence of this branch (the “opening” shown on the result-page card of a short video, used when no `hook` is given at derivation): the kept words, from the sentence containing the first word still on the timeline, starting at that word. null when the whole branch has been cut away.
  */
 export function openingSentence(words: readonly TranscriptWord[], paragraphs: readonly TranscriptParagraph[]): string | null {
   const plan = foldOutside(words, paragraphs, { before: 0, after: 0 });
@@ -150,7 +145,7 @@ export function openingSentence(words: readonly TranscriptWord[], paragraphs: re
   return text || null;
 }
 
-/** 去掉收起来的词之后的段落：整段收起的不要，切开的段只留露出来的词（段首换成第一个露出来的词）。没有收起来的词时原样返回。 */
+/** Paragraphs after removing collapsed words: fully collapsed paragraphs are dropped; split paragraphs keep only the words shown (the paragraph start becomes the first shown word). Returned as-is when no words are collapsed. */
 export function visibleParagraphs(paragraphs: readonly TranscriptParagraph[], hidden: ReadonlySet<number>): readonly TranscriptParagraph[] {
   if (!hidden.size) return paragraphs;
   const out: TranscriptParagraph[] = [];
@@ -166,15 +161,15 @@ export function visibleParagraphs(paragraphs: readonly TranscriptParagraph[], hi
   return out;
 }
 
-/** 要放回的素材区间与它在片段的哪一侧。 */
+/** The source range to restore, and which side of the clip it is on. */
 export interface ReclaimRange extends SourceRange {
   side: FoldSide;
 }
 
 /**
- * 点了片段外划掉的一个词：要放回的素材区间——在片段前面是 `[那一句起, 第一个留下的词起)`，在后面是 `[最后一个留下的词止, 那一句止)`。
- * 靠片段那一头最终按剪口的边放（`reclaimOperations`），片段保持连着、不留洞。词不在两端片段外（片段中间用户剪的口）时 null。
- * `position` 是这个词在 `words` 里的位置。
+ * A struck-through word outside the clip was clicked: the source range to restore is, before the clip, `[that sentence's start, first kept word's start)`, and after it, `[last kept word's end, that sentence's end)`.
+ * On the clip's side, the restore ultimately follows the cut's edge (`reclaimOperations`), so the clip stays connected and no hole is left. null when the word is not outside either end of the clip (a cut the user made in the middle of the clip).
+ * `position` is the word's position in `words`.
  */
 export function reclaimRange(words: readonly TranscriptWord[], plan: FoldPlan, position: number): ReclaimRange | null {
   const word = words[position];
@@ -193,13 +188,12 @@ export function reclaimRange(words: readonly TranscriptWord[], plan: FoldPlan, p
   return null;
 }
 
-/** 比这短的剩余不再剪回去（帧内的零头）。 */
+/** Remainders shorter than this are not cut back again (sub-frame leftovers). */
 const MIN_LEFT = 0.01;
 const EPS = 1e-6;
 
 /**
- * 剪口靠片段那一头接着的实例（同引擎 `insertions` 的判断：源时刻与剪口边界差不超过一帧）：片段后面是源终点对着剪口起点的，
- * 前面是源起点对着剪口终点的。同一轨道上另一边也接着实例（片段中间的剪口）的不算。
+ * Cut points whose instances continue on the clip's side (the same judgement as the engine's `insertions`: the source time and the cut boundary differ by no more than one frame). After the clip, the source end meets the cut's start; before it, the source start meets the cut's end. Cut points where the other side of the same track also has a continuing instance (a cut in the middle of the clip) do not count.
  */
 function edgeSpans(sequence: Sequence, assetId: Id, cut: TrackedCut, side: FoldSide): MediaSpan[] {
   const frame = sequence.fps.den / sequence.fps.num;
@@ -216,11 +210,9 @@ function edgeSpans(sequence: Sequence, assetId: Id, cut: TrackedCut, side: FoldS
 }
 
 /**
- * 放回之后字幕跟着接上（`addCuts` 剪掉时经过剪口的字幕缩短，这里是它的镜像）：经接缝那个实例投影、边正好在接缝上的字幕实例
- * 跨过放回的那段延长。引擎插回时只延长跨过插回点的实例，边正好落在片段首尾的会被推开（前面）或不动（后面），所以补 `trimItem`。
- * 某条字幕轨上没有字幕实例碰到接缝时，延长那条轨上离接缝最近的、经这个实例投影的字幕实例；有跨过接缝的交给引擎。
- * 返回各字幕实例要拉的边与帧：后面那一侧拉到放回之后、剪回之前的片段终点，紧跟着剪回远端时引擎把它和片段一起缩回
- * （`follow_removal` 把终点拉回剪口起点）；前面那一侧剪回之后片段起点不动，拉回片段起点。
+ * After restoration, captions follow to join up (`addCuts` shortens captions that cross a cut when cutting; this is its mirror): caption instances projected through the seam instance, whose edge lies exactly on the seam, are extended across the restored span. The engine, when inserting back, only extends instances that cross the insertion point; those whose edges land exactly on the clip's start or end are pushed (before) or left alone (after), so `trimItem` is added.
+ * When no caption instance on a caption track touches the seam, the caption instance on that track nearest the seam that is projected through this instance is extended instead; those that cross the seam are left to the engine.
+ * Returns the edges and frames each caption instance should trim. On the after side, the instance is pulled to the clip's end after restoration and before the far end is cut back; right after the far end is cut back, the engine shrinks it together with the clip (`follow_removal` pulls the end back to the cut's start). On the before side, the clip's start does not move after cutting back, so the caption start is pulled back to the clip's start.
  */
 function captionTrims(
   sequence: Sequence,
@@ -257,11 +249,9 @@ function captionTrims(
 }
 
 /**
- * 放回素材区间 `range` → 一笔事务：盖住它的剪口整个放回（`restoreCut`），剪口超出 `range` 的远端再 `addCuts` 剪回去
- * （同拖剪口带改范围，model/cut-bands.ts `retimeOperations`；引擎按次序执行，后一步读到前一步写下的剪口集合）。
- * 靠片段那一头不剪回：从片段边一直放回到 `range` 的远端，中间的停顿与被剪口切开的半个词一起回来，放回的那段接在原来的
- * 实例上、还是一个实例。字幕跟着延长（`captionTrims`）。`range` 没给 `side` 时两头都按 `range` 剪回。
- * 没有剪口盖住时照实拒绝（`untracked`）。`seconds` 是放回多少秒（序列时间）。
+ * Restore the source range `range` → one transaction: the cut points covering it are restored entirely (`restoreCut`), and the far ends of cut points that extend beyond `range` are cut back with `addCuts` (the same as dragging a cut band to change its range, model/cut-bands.ts `retimeOperations`; the engine runs the steps in order, and the later step reads the cut set the earlier step wrote).
+ * On the clip's end, nothing is cut back: from the clip edge all the way to the far end of `range`, the pauses in between and the half-words split by cuts come back together, and the restored span joins the original instance, which stays one instance. Captions are extended along (`captionTrims`).
+ * If no cut point covers it, it is rejected outright (`untracked`). `seconds` is how many seconds are restored (sequence time).
  */
 export function reclaimOperations(
   sequence: Sequence,
@@ -279,7 +269,7 @@ export function reclaimOperations(
   const heads: EditOperation[] = [];
   let seconds = 0;
   for (const cut of found) {
-    // 片段那一头接到剪口的边：不在片段边与 `range` 之间留一截剪口。
+    // On the side where the clip meets a cut, do not leave a stretch of cut between the clip edge and `range`.
     const from = range.side === 'after' ? Math.min(range.from, cut.from) : range.from;
     const to = range.side === 'before' ? Math.max(range.to, cut.to) : range.to;
     if (from - cut.from >= MIN_LEFT) again.push({ from: decimalSeconds(cut.from), to: decimalSeconds(from) });
@@ -287,7 +277,7 @@ export function reclaimOperations(
     seconds += Math.max(0, Math.min(cut.to, to) - Math.max(cut.from, from)) / rate;
     if (!range.side) continue;
     for (const seam of edgeSpans(sequence, assetId, cut, range.side)) {
-      // 引擎在接缝处放回的帧数（`insertions`：只有一边时按源区间除以速率向下取整）。
+      // Frames the engine restores at the seam (`insertions`: when only one side applies, the source range divided by the rate, rounded down).
       const frames = Math.floor(((range.side === 'after' ? cut.to - seam.sourceOut : seam.sourceIn - cut.from) / seam.rate) * perSecond + EPS);
       if (frames <= 0) continue;
       for (const trim of captionTrims(sequence, seam, range.side, frames)) {
@@ -303,7 +293,7 @@ export function reclaimOperations(
       }
     }
   }
-  // 后面那一侧：字幕先拉到放回之后的终点，再剪回远端时跟着落回片段终点；前面那一侧：剪回之后片段起点不动，字幕起点拉回去。
+  // After side: captions are first pulled to the end after restoration, then pulled back to the clip's end as the far end is cut back; before side: after cutting back, the clip's start does not move, so the caption start is pulled back.
   operations.push(...tails);
   if (again.length) operations.push({ type: 'addCuts', sequenceId: sequence.id, assetId, cuts: again });
   operations.push(...heads);

@@ -100,7 +100,7 @@ const take = (k: number, more: Record<string, unknown> = {}) => ({
   ...more,
 });
 
-/** 计划单元：给了 `takes` 就是重配过的；否则是旧计划（放上了就带 `artifactId`）。 */
+/** Plan unit: if `takes` is given, it has been redubbed. Otherwise it is an old plan (if already placed, it carries `artifactId`). */
 function planUnit(unitId: string, status: string, own: Record<string, unknown> = {}, more: Record<string, unknown> = {}) {
   return {
     id: `d-${unitId}`,
@@ -143,7 +143,7 @@ describe('版本', () => {
     expect(archivedTakes(u1).map((t) => t.k)).toEqual([1, 3]);
     expect(versionTip(u1)).toEqual({ k: 2, seed: 1002 });
     expect(takeSeconds(u1.takes[2]!)).toBeNull();
-    // `take` 指向不存在的版本时取最新的一版。
+    // If `take` points to a version that does not exist, use the latest one.
     const odd = planTakes({ units: [planUnit('u1', 'ready', { take: 9, takes: [take(1), take(2)] })] }).get('u1')!;
     expect(odd.take).toBe(2);
     const first = planTakes({ units: [planUnit('u1', 'ready', { take: 1, takes: [take(1), take(2)] })] }).get('u1')!;
@@ -195,7 +195,7 @@ describe('排队与候选', () => {
     };
     const placed = placedUnits(seq, 'g1');
     expect([...placed]).toEqual(['u1', 'u2', 'u4']);
-    // u4 是放不下但留着旧的一版：在时间线上，不算没合成。
+    // u4 is an old take that did not fit but was kept. On the timeline it does not count as unsynthesized.
     const failed = failedUnits(body, placed);
     expect(failed).toEqual([
       { unitId: 'u3', reason: 'voice', overflowSeconds: null },
@@ -209,10 +209,10 @@ describe('排队与候选', () => {
     expect(regenCandidates(failed, blocks, 'g1')).toEqual(['u3', 'u5', 'u1', 'u4']);
     expect(regenCandidates(failed, blocks, 'g2')).toEqual(['u3', 'u5']);
     expect(trackCounts(blocks, failed, new Set())).toEqual({ total: 5, fast: 2, muted: 1, failed: 2, queued: 0 });
-    // 排队中的块照旧算过快（设计稿 blockCounts：重配好之前放的还是这一版），但不再是候选。
+    // A block still in the queue counts as too fast (design draft blockCounts: until the redub is done, what was placed before is still this version), but it is no longer a candidate.
     expect(trackCounts(blocks, failed, new Set([queuedId('g1', 'u1')]))).toEqual({ total: 5, fast: 2, muted: 1, failed: 2, queued: 1 });
     expect(regenCandidates(failed, blocks, 'g1', new Set([queuedId('g1', 'u1'), queuedId('g1', 'u3')]))).toEqual(['u5', 'u4']);
-    // 句号按计划的次序：没合成的 u3 也占一个号，u4 是第 4 句而不是轨上的第 3 块。
+    // Sentence numbers follow the plan's order: the unsynthesized u3 still takes a number, so u4 is sentence 4, not the third block on the track.
     const order = planUnitOrder(body);
     expect([order.get('u3'), order.get('u4'), order.get('u6')]).toEqual([3, 4, 6]);
     expect(planUnitOrder(null).size).toBe(0);
@@ -250,7 +250,7 @@ describe('排队与候选', () => {
     expect(out.get('d1')).toMatchObject({ queued: false, version: { k: 2, seed: 1002 } });
     expect(out.get('d2')).toMatchObject({ queued: true, version: null });
     expect(out.get('d3')).toBe(blocks.get('d3'));
-    // 别的组同一个 unitId：计划没取到、不在排队，原样。
+    // Another group with the same unitId: the plan did not fetch it and it is not queued, so it is left as is.
     expect(out.get('d4')).toBe(blocks.get('d4'));
   });
 });
@@ -317,7 +317,7 @@ describe('切换版本', () => {
     expect(unit.actualSamples).toBe('48000');
     expect(unit.script.text).toBe('第 1 版的稿');
     expect((own.takes as Array<{ k: number; assetRef?: unknown }>).find((t) => t.k === 2)!.assetRef).toEqual({ id: 'asset_t2', revision: '1' });
-    // 原来的正文不动。
+    // The original text is left unchanged.
     expect((body.units[0]!.extensions['cuccut.dub'] as unknown as { take: number }).take).toBe(2);
   });
 
@@ -327,7 +327,7 @@ describe('切换版本', () => {
     const back = switchTakeOperations({ sequence: seq, item: seq.items[0] as AudioItem, record, body, unitId: 'u1', k: 2, assets });
     expect(back).toBeNull();
     expect(switchTakeOperations({ sequence: seq, item: seq.items[0] as AudioItem, record, body, unitId: 'u1', k: 3, assets })).toBeNull();
-    // 第 1 版记着素材：不用找；没记下又找不到时不能切。
+    // Version 1 has its source recorded, so there is no need to look for it. If the source was not recorded and cannot be found, do not switch.
     expect(switchTakeOperations({ sequence: seq, item: seq.items[0] as AudioItem, record, body, unitId: 'u1', k: 1, assets: {} })).not.toBeNull();
     const bare = structuredClone(body);
     delete (bare.units[0]!.extensions['cuccut.dub'] as unknown as { takes: Array<{ assetRef?: unknown }> }).takes[0]!.assetRef;
@@ -413,7 +413,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
       { type: 'updateTrack', sequenceId: 'seq', trackId: 'a-mix', muted: false },
       { type: 'setAudioMix', sequenceId: 'seq', itemId: 'orig', muted: true },
     ]);
-    // 已经是要的样子：不发操作。
+    // Already in the wanted state: no operation is sent.
     const done = sequence(
       [audio('orig', 'a-orig', 0, 20, { mix: { volume: 1, muted: true } }), audio('ja1', 'a-ja', 1, 2, dub('gJa', 'u1'))],
       [track('a-orig', 0), track('a-ja', 1)],
@@ -431,7 +431,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
       audio('voc', 'a-voc', 0, 20, { extensions: { 'cuccut.dub': { groupId: 'gEn', stem: 'vocals' } } }),
     ];
     const sep = [sourceGroup('gEn', { originalDialoguePolicy: 'duck', extensions: { 'cuccut.dub': { mutedItemIds: ['orig'] } } })];
-    // 刚配完：原声静音、两轨开、闪避开。
+    // Just dubbed: the original is muted, both tracks are on, and ducking is on.
     const dubbed = sequence(sepItems(true), sepTracks, [vocalsRule(true)]);
     expect(sourceOf(dubbed, sep[0]!)).toBe('dub');
     const toOriginal = switchSourceOperations(dubbed, sep, 'gEn', 'original');

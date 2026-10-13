@@ -1,40 +1,23 @@
-//! `frame-v1`：`border` / `reverse_border`（设计 §7.4）。
+//! `frame-v1`: `border` / `reverse_border` (design §7.4).
 //!
-//! 参考实现 `progress_border.frag` / `progress_reverse_border.frag` 用四个
-//! box SDF 拼边框，`clamp(b1 + b2 + b3 + b4, 0, 1)` 求并集。矢量侧把四条边
-//! 放进**同一条 path 的四个子路径**、按 nonzero 填充——同向子路径的并集正是
-//! `clamp(..., 0, 1)` 的意思，而拆成四条 `FillRect` 会在拐角处把半透明色叠两次。
+//! The reference implementations `progress_border.frag` / `progress_reverse_border.frag` build the border from four box SDFs and take the union with `clamp(b1 + b2 + b3 + b4, 0, 1)`. On the vector side, the four edges go into **four subpaths of the same path**, filled with nonzero. The union of same-direction subpaths is exactly what `clamp(..., 0, 1)` means. Splitting them into four `FillRect`s would blend the semi-transparent color twice at the corners.
 //!
-//! ## 边框粗细
+//! ## Border thickness
 //!
-//! `barSize = BORDER_SIZE · sourceAspect.yx`，两个轴换算到像素后都等于
-//! `borderSize · max(w, h)`——参考实现绕这一圈就是为了让横竖两条边**一样粗**。
-//! 矢量侧直接用这个结论。
+//! `barSize = BORDER_SIZE · sourceAspect.yx`. After both axes are converted to pixels, each equals `borderSize · max(w, h)`. The reference implementation takes this detour precisely so that the horizontal and vertical edges are **equally thick**. The vector side uses this conclusion directly.
 //!
-//! ## 两种填充方向（`fill` 参数）
+//! ## Two fill directions (the `fill` parameter)
 //!
-//! * `"forward"`：周长按 `w : h = srcRes.x : srcRes.y`（两者之和归一）分成两段，
-//!   **两条臂同时从左下角出发**——一条沿下边向右再沿右边向上，另一条沿左边向上
-//!   再沿上边向右，`progress == 1` 时在右上角会合。
-//! * `"reverse"`：用 `1 − progress` 当长度，从**左下**与**右上**两个角各伸出一个
-//!   L 形，长度在两个轴上都直接是归一化的 `1 − progress`（参考实现在这一支
-//!   **没有**做周长归一化，如实照搬）。
+//! * `"forward"`: the perimeter is split into two segments by `w : h = srcRes.x : srcRes.y` (normalized by their sum). **Both arms start from the bottom-left corner together.** One runs along the bottom edge to the right and then up the right edge; the other runs up the left edge and then right along the top edge. They meet at the top-right corner when `progress == 1`.
+//! * `"reverse"`: uses `1 − progress` as the length, with an L shape growing from the **bottom-left** and the **top-right** corners. The length on both axes is directly the normalized `1 − progress`. The reference implementation does **not** normalize the perimeter in this branch, and this is reproduced as is.
 //!
-//! ## 三种 `colorMode`（P5b 补齐后两种，determinism = `visual`）
+//! ## Three `colorMode`s (P5b completes the last two; determinism = `visual`)
 //!
-//! * `"solid"`：进度框整条用主色，strict。
-//! * `"rainbow"`：四角基色各走一趟 **hue 循环**（`hue += sin(t) · hueSpeed`），
-//!   再按归一化位置双线性插值，最后与白色按 `mixBias + (sin t·½+½)·mixGain` 相混。
-//!   颜色**逐点不同**，而 DrawOp 的 `FillPath` 只有一枚纯色——CPU 参照因此走
-//!   "压一层进度框的 `ClipPath`，再铺一张 `gradientSteps × gradientSteps` 的
-//!   色块网格"这条降采样近似（§8.7 visual 档）。像素真相在 WGSL。
-//! * `"strobe"`：四角是 `main / secondary / main / secondary`，采样点是**常数**
-//!   `(s, −s)`，因此 `fourCornerGradient` 退化成 `mix(main, secondary, s)`——
-//!   整框同色，CPU 侧一条 `FillPath` 就够，**没有近似**。
+//! * `"solid"`: the whole progress frame uses the primary color. Strict.
+//! * `"rainbow"`: each of the four corner base colors goes through a **hue cycle** (`hue += sin(t) · hueSpeed`). The colors are then bilinearly interpolated by normalized position, and finally mixed with white by `mixBias + (sin t·½+½)·mixGain`. The color **differs at each point**, but a `FillPath` in DrawOp has only one solid color. So the CPU reference takes a downsampled approximation: "push a `ClipPath` of the progress frame, then fill it with a `gradientSteps × gradientSteps` grid of color blocks" (§8.7 visual tier). The authoritative pixel output is in WGSL.
+//! * `"strobe"`: the four corners are `main / secondary / main / secondary`, and the sample point is the **constant** `(s, −s)`. So `fourCornerGradient` degenerates to `mix(main, secondary, s)`: the whole frame is one color, and on the CPU side a single `FillPath` is enough, **with no approximation**.
 //!
-//! 参考实现的 `progressColour *= u_mainColor.a` 里那个 `a` 与四角基色自带的
-//! alpha 是两回事：前者是元素透明度（host 已经折进 `params.main_color`），
-//! 后者恒为 1。两边都按"alpha = 主色 alpha"读。
+//! The `a` in the reference implementation's `progressColour *= u_mainColor.a` is a different thing from the alpha of the four corner base colors. The former is element opacity (the host already folds it into `params.main_color`), and the latter is always 1. Both sides read it as "alpha = the primary color's alpha".
 
 use motion::preset_registry::ProgressBody;
 use serde_json::Value;
@@ -61,7 +44,7 @@ pub(crate) fn draw(
     ) else {
         return 0;
     };
-    // 按**数据**分派（`colorMode.kind`），不按 id 列黑名单。
+    // Dispatches on **data** (`colorMode.kind`), not on a blocklist of ids.
     let kind = mode.get("kind").and_then(Value::as_str).unwrap_or("solid");
     let thickness = border_size * bbox.w.max(bbox.h);
     if !(thickness > 0.0) {
@@ -87,7 +70,7 @@ pub(crate) fn draw(
 
     let mut path = Vec::new();
     if fill == "reverse" {
-        // 满进度时整圈消失：参考实现的 `if (progress > 0.0)` 守卫。
+        // At full progress the whole ring disappears: the reference implementation's `if (progress > 0.0)` guard.
         let reach = 1.0 - progress;
         if reach > 0.0 {
             push_edge(&mut path, bbox, thickness, Edge::Bottom, 0.0, reach);
@@ -96,7 +79,7 @@ pub(crate) fn draw(
             push_edge(&mut path, bbox, thickness, Edge::Right, 1.0 - reach, 1.0);
         }
     } else if progress > 0.0 {
-        // 周长归一：横向段占 w/(w+h)，纵向段占 h/(w+h)。
+        // Perimeter normalization: the horizontal segment takes w/(w+h), and the vertical segment takes h/(w+h).
         let span = bbox.w + bbox.h;
         let (across, up) = (bbox.w / span, bbox.h / span);
         let leg = |from: f64, to: f64| -> f64 {
@@ -128,9 +111,9 @@ pub(crate) fn draw(
     if !path.is_empty() {
         let id = builder.path_id(PathData(path));
         match kind {
-            // hue 循环：进度框当裁剪面，色块网格填进去（见模块文档）。
+            // Hue cycle: the progress frame serves as the clip region, and the color-block grid is filled into it (see the module docs).
             "rainbow" => push_gradient_fill(builder, mode, params, time, bbox, id, tf),
-            // 频闪：整框同色，一条 `FillPath`。
+            // Strobe: the whole frame is one color, as a single `FillPath`.
             "strobe" => builder.push(DrawOp::FillPath {
                 path: id,
                 color: strobe_color(mode, params, time),
@@ -146,13 +129,13 @@ pub(crate) fn draw(
     builder.frame.ops.len() - before
 }
 
-/// `mixBias + (sin t · ½ + ½) · mixGain`：白色与渐变色的混合量。
+/// `mixBias + (sin t · ½ + ½) · mixGain`: the mix amount between white and the gradient color.
 fn mix_amount(mode: &serde_json::Map<String, Value>, time: f64) -> f64 {
     let number = |key: &str| mode.get(key).and_then(Value::as_f64).unwrap_or_default();
     number("mixBias") + (time.sin() * 0.5 + 0.5) * number("mixGain")
 }
 
-/// `mix(vec3(1), rgb, amount)`，alpha 取主色的 alpha（元素透明度）。
+/// `mix(vec3(1), rgb, amount)`, with alpha taken from the primary color's alpha (element opacity).
 fn toward_white(rgb: [f64; 3], amount: f64, alpha: f32) -> Color4 {
     [
         (1.0 + (rgb[0] - 1.0) * amount) as f32,
@@ -172,8 +155,7 @@ fn strobe_color(
         .and_then(Value::as_f64)
         .unwrap_or_default();
     let s = (time * speed).sin() * 0.5 + 0.5;
-    // 四角是 `main / secondary / main / secondary` 且采样点是常数 `(s, −s)`：
-    // 上下两条边插出来的是同一枚颜色，纵向那次 `mix` 因此退化。
+    // The corners are `main / secondary / main / secondary` and the sample point is the constant `(s, −s)`. The top and bottom edges interpolate to the same color, so the vertical `mix` pass degenerates.
     let blend = |slot: usize| {
         f64::from(params.main_color[slot])
             + (f64::from(params.secondary_color[slot]) - f64::from(params.main_color[slot])) * s
@@ -185,8 +167,7 @@ fn strobe_color(
     )
 }
 
-/// hue 循环的四角渐变：`gradientSteps × gradientSteps` 的色块网格，压在进度框的
-/// `ClipPath` 里。这是本样式**唯一**的近似点（§8.7 visual 档）。
+/// The four-corner gradient for the hue cycle: a `gradientSteps × gradientSteps` grid of color blocks, pressed into the progress frame's `ClipPath`. This is the **only** approximation point of this style (§8.7 visual tier).
 fn push_gradient_fill(
     builder: &mut FrameBuilder,
     mode: &serde_json::Map<String, Value>,
@@ -231,7 +212,7 @@ fn push_gradient_fill(
     builder.push(DrawOp::ClipPath { path: clip, tf });
     for row in 0..steps {
         for column in 0..steps {
-            // 色块取自己中心那一点的渐变色；uv 是 **v 向上**（与 WGSL 侧同一套）。
+            // Each block takes the gradient color at its own center point. uv is **v-up** (the same convention as the WGSL side).
             let u = (column as f64 + 0.5) / steps as f64;
             let v = (row as f64 + 0.5) / steps as f64;
             let blend = |slot: usize| {
@@ -244,7 +225,7 @@ fn push_gradient_fill(
             builder.push(DrawOp::FillRect {
                 x: x as f32,
                 y: y as f32,
-                // 相邻色块多铺半格：整数像素上不留缝（裁剪面挡住外溢）。
+                // Adjacent blocks overlap by half a cell so that no seams show at integer pixels. The clip region hides the overflow.
                 w: (bbox.w / steps as f64 + 1.0) as f32,
                 h: (bbox.h / steps as f64 + 1.0) as f32,
                 radius: 0.0,
@@ -256,7 +237,7 @@ fn push_gradient_fill(
     builder.push(DrawOp::PopClip);
 }
 
-/// 一枚 rgb 沿 hue 轴平移 `shift`（参考实现的 `animate()`：rgb → hsv → rgb）。
+/// Shifts one rgb along the hue axis by `shift` (the reference implementation's `animate()`: rgb → hsv → rgb).
 fn hue_cycled(rgb: [f64; 3], shift: f64) -> [f64; 3] {
     let (mut h, s, v) = rgb_to_hsv(rgb);
     h += shift;
@@ -267,7 +248,7 @@ fn rgb_to_hsv(rgb: [f64; 3]) -> (f64, f64, f64) {
     let max = rgb[0].max(rgb[1]).max(rgb[2]);
     let min = rgb[0].min(rgb[1]).min(rgb[2]);
     let delta = max - min;
-    // 与参考实现同一条防零除的 ε。
+    // The same ε as the reference implementation, to guard against division by zero.
     let epsilon = 1.0e-10;
     let hue = if delta <= epsilon {
         0.0
@@ -289,8 +270,7 @@ fn hsv_to_rgb(h: f64, s: f64, v: f64) -> [f64; 3] {
     [channel(1.0), channel(2.0 / 3.0), channel(1.0 / 3.0)]
 }
 
-/// 四条边。`from` / `to` 是沿该边的归一化区间，方向与参考实现的四个 box 一致：
-/// 下边与上边**自左向右**、左边与右边**自下向上**。
+/// The four edges. `from` / `to` are the normalized interval along that edge. The directions match the reference implementation's four boxes: the bottom and top edges run **left to right**, and the left and right edges run **bottom to top**.
 #[derive(Clone, Copy)]
 enum Edge {
     Bottom,

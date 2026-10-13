@@ -2,8 +2,8 @@ import type { Id, TextExportSettings } from '@cuccut/protocol';
 import { transcriptSettings } from './export-settings.ts';
 
 /**
- * 文稿面板复制记住的组合（设计稿 transcript-copy.jsx、偏好 `txCopy`）：格式与导出「文稿」页同一组五个开关。
- * 没存过时是 Markdown、五个开关全开；格式与开关都记住，下次打开还是上一次的选择。与导出页的「文首元信息」偏好分开记。
+ * The combination remembered by the transcript panel's copy (design mockup transcript-copy.jsx, preference `txCopy`): the format and the same five toggles as the export 「文稿」 (Transcript) page.
+ * When nothing has been saved, it defaults to Markdown with all five toggles on; the format and toggles are both remembered, so the next time it opens it shows the last choice. It is stored separately from the export page's 「文首元信息」 (header metadata) preference.
  */
 export interface TranscriptCopyPrefs {
   format: 'md' | 'txt';
@@ -23,15 +23,15 @@ export const COPY_DEFAULTS: TranscriptCopyPrefs = {
   skipCut: true,
 };
 
-/** 复制的范围：全文、这一章、这一段。第一章之前那一节没有章节标题可写，按 `para` 算。 */
+/** Copy scope: the full text, this chapter, or this paragraph. The section before the first chapter has no chapter title to write, so it is treated as `para`. */
 export type CopyScope = 'all' | 'chapter' | 'para';
 
-/** 摘要与回执里列出的项（界面按导出页的词写出来）；`keepCut` 是关掉了「跳过已剪段」。 */
+/** Items listed in the summary and receipt (the UI writes them out using the export page's wording); `keepCut` means 「跳过已剪段」 (skip cut segments) is turned off. */
 export type CopyInclude = 'frontmatter' | 'chapters' | 'timestamps' | 'speakers' | 'keepCut';
 
 /**
- * 生效的开关：文首只在 Markdown 时写；章节只在视频有章节时写。只看译文时全文由面板排（Runtime 的主文档不收译文），
- * 写不了文首，正文也只有时间线上留下的部分，所以文首关、跳过已剪段开。
+ * The effective toggles: the front matter is written only for Markdown; chapters are written only when the video has chapters. When only the translation is shown, the full text is laid out by the panel (the Runtime's main document does not include translations),
+ * so the front matter cannot be written, and the body only has the parts left on the timeline; so front matter is off and skip cut segments is on.
  */
 export function copyEffective(prefs: TranscriptCopyPrefs, env: { hasChapters: boolean; translationOnly: boolean }): TranscriptCopyPrefs {
   return {
@@ -43,8 +43,8 @@ export function copyEffective(prefs: TranscriptCopyPrefs, env: { hasChapters: bo
 }
 
 /**
- * 某个范围实际带上的项。节选（这一章、这一段）不写文首，正文取自面板、总是只有时间线上留下的部分，所以不列「含已剪段」；
- * 这一段不写章节标题。
+ * The items actually included for a given scope. Excerpts (this chapter, this paragraph) do not write front matter; the body is taken from the panel and is always only the parts left on the timeline, so 「含已剪段」 (includes cut segments) is not listed;
+ * this paragraph does not write a chapter title.
  */
 export function copyIncludes(eff: TranscriptCopyPrefs, scope: CopyScope): CopyInclude[] {
   const out: CopyInclude[] = [];
@@ -56,14 +56,14 @@ export function copyIncludes(eff: TranscriptCopyPrefs, scope: CopyScope): CopyIn
   return out;
 }
 
-/** 节选按设置复制与「只复制文字」写出来一样（纯文本、什么都不带）：菜单只留一项「复制文字」。 */
+/** An excerpt copied with the settings is written the same as 「只复制文字」 (copy text only): plain text, nothing extra. The menu keeps only one item, 「复制文字」 (Copy text). */
 export function scopeIsPlain(eff: TranscriptCopyPrefs, scope: Exclude<CopyScope, 'all'>): boolean {
   return eff.format === 'txt' && copyIncludes(eff, scope).length === 0;
 }
 
 /**
- * 全文复制交给 `exports.renderText` 的设置：面板里每份转写一份（几份时各排一份、按面板的次序接起来，文首只写在第一份），
- * 双语时配上它同一门语言的译文。与同样设置导出的文件逐字节相同。
+ * The settings handed to `exports.renderText` for copying the full text: one per transcript in the panel (with several, each is laid out in turn and joined in the panel's order, with the front matter written only on the first),
+ * and for bilingual output, paired with the translation in the same language. Byte-for-byte identical to a file exported with the same settings.
  */
 export function copyAllSettings(
   eff: TranscriptCopyPrefs,

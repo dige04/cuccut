@@ -1,23 +1,23 @@
 import { templateSlots, templateUnfilledText } from '@cuccut/protocol';
 
 /*
- * 提示词里的待填项（模板包规范 §5.5；产品设计 §3.2.1；原型 designs/cuccut/app/model-prompt-slots.js）。
- * 模板的 brief 与作品示例的 prompt.md 用 `{{label}}` 标出要用户补的地方；输入框把它画成 S2 的占位 token，打字即替换。
- * 草稿始终是一个字符串（占位符原样写成 `{{label}}`），这里负责字符串与片段之间的往返：
- * - 片段 → 字符串必须是字符串 → 片段的严格逆运算，否则 usePromptValue 会反复重建；
- * - label 是 `{{` 与 `}}` 之间的原文，不修剪；空的 `{{}}`、没闭合的 `{{`、带花括号或换行的都按普通文字留着。
- * 交给 Agent 的文字（`[label]`）、label 列表与示例句复用 @cuccut/protocol 的 templateUnfilledText / templateSlots / templateExampleText。
+ * Pending slots in a prompt (template pack spec §5.5; product design §3.2.1; prototype designs/cuccut/app/model-prompt-slots.js).
+ * The template's brief and the work example's prompt.md mark where the user should fill in content with `{{label}}`; the input box draws it as an S2 placeholder token, which is replaced as soon as the user types.
+ * The draft is always a single string (placeholders kept as-is, written `{{label}}`). This module handles the round trip between the string and the fragments:
+ * - Fragments → string must be the strict inverse of string → fragments, otherwise usePromptValue would keep rebuilding.
+ * - A label is the raw text between `{{` and `}}`, not trimmed. An empty `{{}}`, an unclosed `{{`, or one containing braces or newlines is kept as plain text.
+ * Text handed to the Agent (`[label]`), the label list and the example sentence reuse templateUnfilledText / templateSlots / templateExampleText from @cuccut/protocol.
  */
 
 /**
- * 占位符的写法，与 @cuccut/protocol template.ts 的 `TEMPLATE_SLOT` 一致（那边不导出正则，也没有按位置切片段的函数）；
- * prompt-slots.test.ts 用 templateSlots / templateUnfilledText 交叉核对两边认的是同一批占位符。
+ * Placeholder syntax, consistent with `TEMPLATE_SLOT` in @cuccut/protocol template.ts (that side exports no regex and has no function that slices fragments by position).
+ * prompt-slots.test.ts cross-checks templateSlots / templateUnfilledText to confirm both sides recognize the same set of placeholders.
  */
 const SLOT = /\{\{([^{}\n]+)\}\}/g;
 
 export type SlotPart = { type: 'text'; text: string } | { type: 'slot'; label: string };
 
-/** 文本 → 片段：文字与占位符交替。不产生空的文字片段；空串返回 []。 */
+/** Text → fragments: text and placeholders alternate. Produces no empty text fragments; an empty string returns []. */
 export function slotParts(text: string): SlotPart[] {
   const out: SlotPart[] = [];
   let at = 0;
@@ -30,23 +30,23 @@ export function slotParts(text: string): SlotPart[] {
   return out;
 }
 
-/** 文本里还没填的占位符 label：去重，按第一次出现的顺序。 */
+/** Unfilled placeholder labels in the text: de-duplicated, in order of first occurrence. */
 export function slotLabels(text: string): string[] {
   return [...new Set(templateSlots(text))];
 }
 
-/** 交给 Agent 的文字：没填的 `{{label}}` 写成 `[label]`，Agent 据此知道哪里要先问（规范 §5.5）。 */
+/** Text handed to the Agent: unfilled `{{label}}` is written as `[label]`, so the Agent knows where to ask first (spec §5.5). */
 export function slotsForAgent(text: string): string {
   return templateUnfilledText(text);
 }
 
-/** 认出填了什么时，在待填项前后各取几个字做锚点；填的值最长几个字（`filledSlot`）。 */
+/** When recognizing what was filled in, take a few characters before and after the slot as anchors; the filled value is capped at a few characters (`filledSlot`). */
 const SLOT_CONTEXT = 6;
 const FILLED_MAX = 32;
 
 /**
- * 用户把 `template` 里第一处 `{{label}}` 填成了什么（原型 model-prompt-slots.js `filled`；快捷开始记住上次填的值用）：
- * 在 `text` 里找紧挨着占位符的前后几个字，取两者之间的文字。前后文被改掉、还是占位符、填的是空白、跨了行或太长，都返回 null。
+ * Which value the user filled into the first `{{label}}` in `template` (prototype model-prompt-slots.js `filled`; used by quick start to remember the last filled value).
+ * Looks in `text` for the few characters immediately before and after the placeholder, and takes the text between them. If the surrounding text was edited, the placeholder is gone, the filled value is blank, it spans lines, or it is too long, returns null.
  */
 export function filledSlot(template: string, label: string, text: string): string | null {
   const parts = slotParts(template);
@@ -66,15 +66,14 @@ export function filledSlot(template: string, label: string, text: string): strin
   return value && value.length <= FILLED_MAX && !/[\n{}[\]]/.test(value) ? value : null;
 }
 
-/** 把 `template` 里第一处 `{{label}}` 换成 `value`（快捷开始沿用上次填的值）。 */
+/** Replaces the first `{{label}}` in `template` with `value` (quick start reuses the last filled value). */
 export function fillSlot(template: string, label: string, value: string): string {
   return template.replace(`{{${label}}}`, () => value);
 }
 
-/* ---------- 与 S2 PromptFieldValue 片段的互换 ----------
-   S2 的占位 token 是 {type: 'token', text: label, value: {type: 'placeholder', placeholderType: 'text'}}：
-   画成占位样式，点一下整个选中，打字即替换，Tab / Shift+Tab 在 token 之间跳。
-   这里只用结构类型，不引 @react-spectrum/ai（模型层在 node 里测）。 */
+/* ---------- Interchange with S2 PromptFieldValue fragments ----------
+   S2's placeholder token is {type: 'token', text: label, value: {type: 'placeholder', placeholderType: 'text'}}: drawn in placeholder style, a click selects the whole token, typing replaces it, and Tab / Shift+Tab move between tokens.
+   Only structural types are used here; @react-spectrum/ai is not imported (the model layer is tested in node). */
 
 export interface PromptSegmentLike {
   type: 'text' | 'token';
@@ -94,13 +93,13 @@ function tokenValue(segment: PromptSegmentLike): { type?: unknown; placeholderTy
   return segment.type === 'token' && segment.value && typeof segment.value === 'object' ? (segment.value as never) : null;
 }
 
-/** 是不是待填项的占位 token。 */
+/** Whether this is a placeholder token for an unfilled slot. */
 export function isSlotToken(segment: PromptSegmentLike | null | undefined): boolean {
   const value = segment ? tokenValue(segment) : null;
   return !!value && value.type === 'placeholder' && value.placeholderType === 'text';
 }
 
-/** 草稿字符串 → PromptFieldValue 的片段。只有从外面换进来的草稿走这里；用户自己打的 `{{x}}` 不经过它，照旧是文字。 */
+/** Draft string → PromptFieldValue fragments. Only drafts swapped in from outside go through here; `{{x}}` typed by the user does not go through it and stays plain text, as before. */
 export function toPromptSegments(text: string): PromptSegmentOut[] {
   return slotParts(text).map((x) =>
     x.type === 'slot'
@@ -110,8 +109,7 @@ export function toPromptSegments(text: string): PromptSegmentOut[] {
 }
 
 /**
- * PromptFieldValue 的片段 → 草稿字符串：占位 token 写回 `{{label}}`，链接 token 写完整地址（同 S2 PromptFieldValue 的 toString），
- * 其余取文字。S2 自己的 toString 会把占位 token 写成 label，占位性就丢了。
+ * PromptFieldValue fragments → draft string: placeholder tokens are written back as `{{label}}`, link tokens write the full address (same as S2 PromptFieldValue's toString), and everything else takes its text. S2's own toString writes placeholder tokens as the bare label, which loses their placeholder nature.
  */
 export function fromPromptSegments(segments: readonly PromptSegmentLike[]): string {
   return segments
@@ -124,7 +122,7 @@ export function fromPromptSegments(segments: readonly PromptSegmentLike[]): stri
     .join('');
 }
 
-/** 「填下一处」：从片段下标 `from` 往后找下一个占位 token，到末尾从头再找；没有返回 -1。 */
+/** “Fill the next one”: from fragment index `from`, looks for the next placeholder token onward; wraps around to the start at the end; returns -1 if there is none. */
 export function nextSlotIndex(segments: readonly PromptSegmentLike[], from: number): number {
   const n = segments.length;
   const start = Number.isInteger(from) ? from : -1;

@@ -16,24 +16,22 @@ import {
 import { JobsLibrary as J } from '@cuccut/protocol/messages/jobs/job-library.ts';
 
 /**
- * 任务用到的用户库（架构设计 §5.9）：提交时读出条目、冻结版本与摘要；任务进行期间固定这些版本，结束时解除。
- * 库只经这几个方法访问。
+ * The user library used by tasks (architecture design §5.9): at submission, entries are read and their versions and digests are frozen. During the task these versions are pinned, and they are released when it ends.
+ * The library is accessed only through these methods.
  *
- * 解析放在 JobManager 里，网关、智能体工具与对外服务走同一条路。对外服务的客户端（MCP、模型接口服务，
- * `submitter.kind === 'service'`）不能引用用户库：库是本机用户的数据，按最小暴露不对外部程序开放，
- * 以 `invalid-request` + `LIBRARY_ENTRY_NOT_APPLICABLE` 拒绝，不创建任务。
+ * Resolution lives in the JobManager, so the gateway, the agent tools and external services all take the same path. Clients of external services (MCP, the model interface service, `submitter.kind === 'service'`) cannot reference the user library: the library is the local user's data, and under minimal exposure it is not open to external programs. They are rejected with `invalid-request` + `LIBRARY_ENTRY_NOT_APPLICABLE`, and no task is created.
  */
 export type JobLibrary = Pick<LibraryStore, 'get' | 'pin' | 'unpin' | 'filePath'>;
 
 function assertLibraryOpenTo(submitter: JobSubmitter, message: () => Localized): void {
   if (submitter.kind !== 'service') return;
-  // 与 `libraryError` 同形（`details.code` + 原因），文字带着消息引用。
+  // Same shape as `libraryError` (`details.code` + reason), with the text carrying a message ref.
   throw new RpcError('invalid-request', message(), { code: 'LIBRARY_ENTRY_NOT_APPLICABLE', reason: 'service-client' });
 }
 
 /**
- * 识别用术语表进入转写提示。模型接受提示时规范写法接在用户的提示之后（合计不超过 1200 字符）；
- * 不接受时忽略术语表，在 `glossaryHint.status` 里说明。翻译用术语表不能用于识别。
+ * The glossary for recognition goes into the transcription prompt. If the model accepts the prompt, the canonical spellings are appended after the user's prompt (total not over 1200 characters).
+ * If it does not accept it, the glossary is ignored and explained in `glossaryHint.status`. The translation glossary cannot be used for recognition.
  */
 export function transcribeGlossaries(
   library: JobLibrary | undefined,
@@ -69,7 +67,7 @@ export function transcribeGlossaries(
   };
 }
 
-/** `library:<id>` 音色在所选 Provider 上的克隆；不是库里的音色时 null。没有有效克隆时抛 `VOICE_CLONE_REQUIRED`。 */
+/** The clone of a `library:<id>` voice on the chosen Provider; null if the voice is not in the library. Throws `VOICE_CLONE_REQUIRED` when there is no valid clone. */
 export function libraryVoice(
   library: JobLibrary | undefined,
   voice: string | undefined,
@@ -85,8 +83,7 @@ export function libraryVoice(
 }
 
 /**
- * 本地合成直接用音色库条目的参考录音（不上传，不需要克隆，也不需要出站授权）：冻结条目的版本与录音的摘要，
- * 执行时由本地 Provider 按摘要再核对一次。`withTranscript` 为 false（模型不读原文）时不带原文。
+ * Local synthesis uses the reference recording of the library voice entry directly (not uploaded, needs no clone, and needs no outbound authorization). The frozen entry's version and the recording's digest are recorded; at execution the local Provider checks the digest again. When `withTranscript` is false (the model does not read the original text), the original text is not included.
  */
 export function localLibraryVoice(
   library: JobLibrary | undefined,

@@ -1,5 +1,5 @@
-// 导入之后的核对：逐个打开项目文件夹里的视频，确认素材都按原路径找得到、没有被复制进视频目录，文档正文都读得出来，
-// 实例都是视频格式第 3 版的字段（没有旧的 `cuccut.legacy-*` 包装，导入扩展里只剩来源说明），剪口集合的正文成立。
+// Checks after import: open each video in the project folder one by one, confirm the materials are all found at their original paths and were not copied into the video directory, the document bodies can all be read,
+// the instances all use version 3 video-format fields (no old `cuccut.legacy-*` wrapper; only the source note remains in the import extension), and the body of the cut-point set holds.
 //
 //   node scripts/legacy-import/verify.ts <项目文件夹> [--engine <engine-host>]
 
@@ -42,10 +42,10 @@ const ITEM_TYPES = new Set([
   'composition',
   'caption',
 ]);
-/** 导入扩展里允许留下的键：来源说明，不是元素数据（映射说明第 5 节）。 */
+/** Keys allowed to remain in the import extension: source notes, not element data (section 5 of the mapping notes). */
 const IMPORT_KEYS = new Set(['sourceId', 'bcfClip', 'mediaId', 'itemCount']);
 
-/** 剪口集合的正文：按 t0 排序、互不重叠、整数刻度、不超出素材。 */
+/** Body of the cut-point set: sorted by t0, non-overlapping, integer timescale, not exceeding the material. */
 function cutSetProblems(body: Record<string, any>, durationSeconds: number | undefined, items: Set<string>): string[] {
   const out: string[] = [];
   if (body.schema !== 'cuccut.cut-set/1' || body.clock !== 'source-asset') out.push('schema 或 clock 不对');
@@ -78,7 +78,7 @@ function bytesUnder(dir: string): number {
 const host = new EngineHost(engine, ffprobe);
 await host.request('host.hello', {});
 const problems: string[] = [];
-// 仅打开已写出的对象看不见被跳过的素材、实例或整个项目；同时核对本批导入报告。
+// Merely opening the written objects cannot see skipped materials, instances or the whole project; also check this batch's import report.
 const reportFile = path.join(root, 'import-report.json');
 if (existsSync(reportFile)) {
   const report = JSON.parse(readFileSync(reportFile, 'utf8')) as { projects: ProjectReport[] };

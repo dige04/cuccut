@@ -14,7 +14,7 @@ import { pl } from './drivers-common.pl.ts';
 import { tr } from './drivers-common.tr.ts';
 import { vi } from './drivers-common.vi.ts';
 
-/** 各家 Driver 共用的句子：探测结果（没装、版本太旧）与会话里的通用错误、提示。 */
+/** Sentences shared by all drivers: probe results (not installed, version too old), and generic errors and hints in sessions. */
 const en = {
   executableMissing: (p: { command: string; path: string }) => `The specified ${p.command} (${p.path}) doesn't exist or can't be run.`,
   commandMissing: (p: { command: string; hint: string }) => `Couldn't find the ${p.command} command. ${p.hint}, or set its location in Settings.`,
@@ -25,7 +25,7 @@ const en = {
   startFailed: (p: { name: string; error: string }) => `${p.name} failed to start: ${p.error}`,
   openSessionFailed: (p: { name: string; error: string }) => `${p.name} couldn't open a session: ${p.error}`,
   confinedUnsupported: (p: { name: string }) => `${p.name} doesn't support confined one-off calls`,
-  /** `error` 为空时不带括号里的原因。 */
+  /** When `error` is empty, the reason in parentheses is left out. */
   resumeFailed: (p: { name: string; error: string }) =>
     `Couldn't resume the ${p.name} native session${p.error ? ` (${p.error})` : ''}. Started a new session; the Agent can't see the earlier conversation.`,
   sessionClosed: (p: { name: string }) => `The ${p.name} session is closed`,
@@ -35,9 +35,9 @@ const en = {
   timedOut: (p: { label: string; seconds: number }) => `${p.label} timed out (${p.seconds} s)`,
   unknownError: 'Unknown error',
   unknownReason: 'unknown reason',
-  /** 工具输出里图片的占位。 */
+  /** Placeholder for an image in tool output. */
   imagePlaceholder: '[Image]',
-  /** 安装方式的名字。 */
+  /** Names of the install methods. */
   officialScript: 'Official script',
 };
 

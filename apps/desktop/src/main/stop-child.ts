@@ -1,17 +1,15 @@
 import type { ChildProcess } from 'node:child_process';
 
-/** 强杀之后最多再等它退出多久（SIGKILL / TerminateProcess 正常几毫秒就结束；这只是不让异常情况挂住退出）。 */
+/** How long to wait after a forced kill at most for it to exit (SIGKILL / TerminateProcess normally finish within a few milliseconds; this only keeps an abnormal case from hanging the shutdown). */
 const KILL_WAIT_MS = 2_000;
 
-/** 经 IPC 通道请子进程停下的消息（Runtime 的入口认它，`apps/runtime/src/main.ts`）。 */
+/** The message that asks the child process to stop over the IPC channel (the Runtime entry point recognizes it, `apps/runtime/src/main.ts`). */
 export const STOP_MESSAGE = { type: 'stop' } as const;
 
 /**
- * 请子进程自己停下，等它退出；超过 `timeoutMs` 强杀。返回它是自己退出的（`exited`）还是被强杀的（`killed`）。
+ * Asks the child process to stop itself and waits for it to exit; force-kills it if it runs past `timeoutMs`. Returns whether it exited on its own (`exited`) or was force-killed (`killed`).
  *
- * 有 IPC 通道时经通道发 `STOP_MESSAGE`：子进程照常收尾（Runtime 的停止顺序，架构设计 §2.4）。Windows 上没有能被处理的
- * SIGTERM（`kill('SIGTERM')` 等于直接结束进程），所以不能靠信号请它停。没有 IPC 通道（或发不出去）时才退回 SIGTERM，
- * 这在 Windows 上就是强杀。
+ * When there is an IPC channel, it sends `STOP_MESSAGE` over the channel, and the child shuts down as usual (the Runtime's stop order, architecture design §2.4). On Windows there is no SIGTERM that can be handled (`kill('SIGTERM')` simply ends the process), so a signal cannot be used to ask it to stop. Only without an IPC channel (or when the message cannot be sent) does it fall back to SIGTERM, which on Windows amounts to a forced kill.
  */
 export function stopChild(child: ChildProcess, timeoutMs: number): Promise<'exited' | 'killed'> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve('exited');

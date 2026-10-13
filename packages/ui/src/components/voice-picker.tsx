@@ -8,9 +8,8 @@ import { useShell } from '../state/shell-store.ts';
 import { S } from './shell-copy.ts';
 
 /**
- * 共享音色选择器（设计稿 voice-picker.jsx `VoicePicker`）：工具页「生成语音」与编辑器「音频 › 生成语音 / 克隆声音」共用。
- * 分组与置灰原因在 model/voice-picker.ts；这里只画。「克隆新音色…」去 模型 › 语音合成 › 我的声音（克隆在那里建，
- * 这一版没有回程认领：建好回来再选）。手填音色 ID 的输入框与控件下面那一句由调用方按自己的版式放。
+ * The shared voice picker (design mockup voice-picker.jsx `VoicePicker`): used by both the tool page's “生成语音” (generate speech) and the editor's “音频 › 生成语音 / 克隆声音” (audio › generate speech / clone voice).
+ * Grouping and greyed-out reasons are in model/voice-picker.ts; this file only draws. “克隆新音色…” (clone new voice…) goes to 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices), where cloning is created; this version has no return hand-off, so the voice is picked after it is created. The manual voice-ID input and the line under the control are placed by the caller in its own layout.
  */
 export function VoicePicker({
   label,
@@ -23,7 +22,7 @@ export function VoicePicker({
   label: string;
   draft: Pick<TtsDraft, 'voice'>;
   option: SpeechOption;
-  /** 我的声音；还没读到时 null。 */
+  /** My voices; null until read. */
   voices: MyVoices;
   onChange: (voice: VoiceKey) => void;
   styles?: ComponentProps<typeof Picker>['styles'];

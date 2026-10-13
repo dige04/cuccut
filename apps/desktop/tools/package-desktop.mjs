@@ -1,30 +1,29 @@
-// 桌面端打包：Windows x64 出未签名 NSIS / ZIP；Apple Silicon 出签名公证的 ZIP / DMG；Mac --local 出本机临时签名包（含 Intel Metal）。
-// 两个平台共用 staging 与 Runtime 资源布局。Mac 要 --build、--sign-sha1、全新输出目录与干净提交，签名流程在 macos-distribution.mjs。
-// Mac 选项：--platform mac、--notary-profile、--sign-keychain、--metallib；Windows 专属选项与流程如下。
+// Desktop packaging: Windows x64 produces unsigned NSIS / ZIP; Apple Silicon produces signed, notarized ZIP / DMG; Mac --local produces a locally, temporarily signed package (including Intel Metal).
+// Both platforms share the staging and Runtime resource layout. Mac requires --build, --sign-sha1, a fresh output directory and a clean commit; the signing flow is in macos-distribution.mjs.
+// Mac options: --platform mac, --notary-profile, --sign-keychain, --metallib; the Windows-specific options and flow are as follows.
 //
-// 先要有：`npm run build`（out/）、`npm run build:web`（apps/web/dist）、`npm run build:slides-editor`（apps/slides-editor/dist）、
-// `npm run build:design-editor`（apps/design-editor/dist）与 `npm run build:design-system-editor`（apps/design-system-editor/dist）；
-// 根的 package:win 脚本会先跑它们。
-// 步骤：
-// 1. 编 Worker：`cargo build --release --locked --target <三元组>`，Model Worker 按变体选后端（标准版 candle CPU 与 whisper.cpp 的
-//    Whisper，CUDA 版的 candle 与 Whisper 都走 CUDA，Vulkan 版的 Whisper 改用 Vulkan）；
-//    `--bin-dir <目录>` 改用已经编好的可执行文件（本机交叉编译的冒烟用）。
-// 2. 在仓库外的临时目录里搭一个只含产物的应用：out/、按 out 里真正 require 的第三方包生成的 package.json 与它们的 node_modules。
-//    不直接打 apps/desktop：它的 dependencies 里有工作区的 TypeScript 包与只给渲染进程用的 React，会被原样塞进 asar。
-// 3. 资源按 `src/main/packaged-resources.ts`（主进程启动 Runtime 时用的同一份）放到 `<resources>` 下：bin/（Worker、凭据助手，
-//    CUDA 版另带 NVIDIA 运行库）、templates/、skills/（说明书与内置 skill）、model-assets/、web/、slides-editor/、design-editor/、
-//    design-system-editor/。都在 asar 外面，子进程要按路径读。
-// 4. electron-builder 出包。它会把 Electron 的 win32-x64 发行包与 NSIS 工具下到自己的缓存目录（~/Library/Caches/electron-builder 等）。
-// 5. 核对解开的包：resources 里的每一项都在，asar 里有主进程、Runtime 与 editor.wasm。在 Windows 上另由 check-packaged-app.mjs 真跑一遍。
-// 6. 写发布报告 `<产物名>-release.json`：版本、build、变体、安装器与 zip 的文件名、大小与 sha256。给了 --download-base-url 时再按
-//    应用的更新源格式（schema-1，app-update-rules.ts 的 releaseManifest）写 `appcast-<target>[-<变体>].json`，写完用应用自己的解析器读一遍。
+// Prerequisites: `npm run build` (out/), `npm run build:web` (apps/web/dist), `npm run build:slides-editor` (apps/slides-editor/dist),
+// `npm run build:design-editor` (apps/design-editor/dist) and `npm run build:design-system-editor` (apps/design-system-editor/dist);
+// the root package:win script runs them first.
+// Steps:
+// 1. Build the Workers: `cargo build --release --locked --target <triple>`. The Model Worker picks its backend by variant (the standard build uses candle CPU and whisper.cpp's
+//    Whisper; the CUDA build uses CUDA for both candle and Whisper; the Vulkan build uses Vulkan for Whisper);
+//    `--bin-dir <directory>` uses already-built executables instead (for smoke tests of local cross-compilation).
+// 2. In a temporary directory outside the repository, assemble an app containing only the build output: out/, a package.json generated from the third-party packages that out actually requires at runtime, and their node_modules.
+//    Do not package apps/desktop directly: its dependencies include workspace TypeScript packages and React meant only for the renderer, which would be packed into the asar as-is.
+// 3. Resources are placed under `<resources>` according to `src/main/packaged-resources.ts` (the same one the main process uses when it starts the Runtime): bin/ (Workers, credential helpers;
+//    the CUDA build also carries the NVIDIA runtime libraries), templates/, skills/ (manuals and built-in skills), model-assets/, web/, slides-editor/, design-editor/,
+//    design-system-editor/. All of these are outside the asar, since child processes read them by path.
+// 4. electron-builder produces the package. It downloads Electron's win32-x64 distribution and the NSIS tooling into its own cache directory (~/Library/Caches/electron-builder, etc.).
+// 5. Verify the unpacked package: every item in resources is present, and the asar contains the main process, the Runtime and editor.wasm. On Windows, check-packaged-app.mjs runs it for real as well.
+// 6. Write the release report `<artifact name>-release.json`: version, build, variant, installer and zip file names, sizes and sha256. When --download-base-url is given, also write `appcast-<target>[-<variant>].json` in the app's update-source format (schema-1, releaseManifest in app-update-rules.ts), then read it back with the app's own parser.
 //
-// 选项：--variant cpu|cuda|vulkan（缺省 cpu）、--target <三元组>（缺省 x86_64-pc-windows-msvc）、--bin-dir <目录>、--cuda-redist <目录>
-// （缺省 $CUDA_PATH/bin/x64 或 $CUDA_PATH/bin）、--worker-features <a,b>（Model Worker 另加的 feature）、--out <目录>（缺省 apps/desktop/dist/<变体>，
-// 已被 .gitignore 忽略）、--targets nsis,zip、--keep-staging、--build <正整数>（发布的 build 号，写进应用的 package.json 与产物名；
-// 不给时 build 是 0，应用不检查更新）、--download-base-url <https 地址>（安装器上传到哪个目录，要 --build 与 nsis）、
-// --rollout-hours <n>（分批推送：自动检查在 n 小时内逐步放开，要 --download-base-url；更新源另写 `releasedAt` = 生成的时刻，
-// 分批从这一刻算起。上传得晚就把它改成真正发布的时刻，它不在任何摘要里）。退出码：0 成功，1 失败。
+// Options: --variant cpu|cuda|vulkan (default cpu), --target <triple> (default x86_64-pc-windows-msvc), --bin-dir <directory>, --cuda-redist <directory>
+// (default $CUDA_PATH/bin/x64 or $CUDA_PATH/bin), --worker-features <a,b> (extra features for the Model Worker), --out <directory> (default apps/desktop/dist/<variant>,
+// already ignored by .gitignore), --targets nsis,zip, --keep-staging, --build <positive integer> (the release build number, written into the app's package.json and the artifact name;
+// if not given, build is 0 and the app does not check for updates), --download-base-url <https address> (the directory the installer is uploaded to; requires --build and nsis),
+// --rollout-hours <n> (staged rollout: automatic checks open up gradually over n hours; requires --download-base-url; the update source also records `releasedAt` = the time of generation;
+// the rollout is counted from that moment. If the upload is late, change it to the actual release time; it is not covered by any digest). Exit codes: 0 success, 1 failure.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -61,20 +60,20 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DESKTOP = path.resolve(HERE, '..');
 const ROOT = path.resolve(DESKTOP, '../..');
 
-/** 应用更新认的 bundle 标识；产品名决定 exe 与 NSIS 卸载程序的文件名（应用靠 `Uninstall CucCut.exe` 认出安装版）。 */
+/** The bundle identifier the app update recognizes; the product name determines the file names of the exe and the NSIS uninstaller (the app recognizes an installed copy by `Uninstall CucCut.exe`). */
 const APP_ID = BUNDLE_ID;
-/** 应用更新源的 target（应用按 win32 / x64 算出来的那个；与编 Worker 的 --target 无关）。 */
+/** The target of the app update source (the one the app computes as win32 / x64; unrelated to the --target used when building the Workers). */
 let FEED_TARGET;
 
 /**
- * Model Worker 的后端，按显卡分三档：
- * - 标准版：全平台的 candle CPU 与 whisper.cpp 的 Whisper（CPU），没有合适显卡的机器用它。
- * - CUDA 版（NVIDIA 专用，Ampere / RTX 30 起）：candle 的 CUDA（`cuda`）与 Whisper 的 ggml CUDA 后端（`whisper-ggml-cuda`）两个 feature
- *   都开。exe 静态链接 ggml-cuda、动态链接 cudart / cublas，没有 NVIDIA 驱动的机器上起不来（candle 的 cudarc 同样如此）。
- * - Vulkan 版：Whisper 用 Vulkan GPU（AMD / Intel，以及不支持 CUDA 13 的 NVIDIA 显卡），candle 仍在 CPU 上（同 v2 的 Vulkan 版）。
- *   要构建机装 Vulkan SDK；运行时只要显卡驱动自带的 vulkan-1.dll，不随包。
- * 单一安装包在运行期自选 CUDA / Vulkan 现在做不到（架构设计 §14「单一 GPU 安装包在运行期自选后端」）。CUDA 版的 Whisper 与 Vulkan 版
- * 都未实测。不带 macOS 缺省的 MLX / CoreML。其余 Worker 用缺省 feature。
+ * Backends of the Model Worker, in three tiers by graphics card:
+ * - Standard: candle CPU on all platforms and whisper.cpp's Whisper (CPU); machines without a suitable graphics card use this one.
+ * - CUDA (NVIDIA only, Ampere / RTX 30 and later): both the candle CUDA feature (`cuda`) and Whisper's ggml CUDA backend (`whisper-ggml-cuda`) are enabled.
+ *   The exe statically links ggml-cuda and dynamically links cudart / cublas, so it will not start on machines without an NVIDIA driver (candle's cudarc behaves the same way).
+ * - Vulkan: Whisper uses Vulkan GPU (AMD / Intel, and NVIDIA cards that do not support CUDA 13); candle stays on the CPU (as in the v2 Vulkan build).
+ *   The build machine needs the Vulkan SDK; at runtime only vulkan-1.dll, which the graphics driver supplies, is needed, and it is not shipped in the package.
+ * Choosing CUDA or Vulkan at runtime from a single installer is not possible yet (architecture design §14, “single GPU installer chooses its backend at runtime”). The CUDA build's Whisper and the Vulkan build are both untested.
+ * The macOS default MLX / CoreML are not included. Other Workers use the default features.
  */
 const VARIANTS = {
   cpu: { suffix: '', modelWorkerFeatures: ['backend-candle', 'whisper-ggml'] },
@@ -83,11 +82,10 @@ const VARIANTS = {
 };
 
 /**
- * CUDA 版随带的 NVIDIA 运行库（CUDA 13.x，放在 model-worker.exe 旁边，用户只需要显卡驱动）：cudart / cublas / curand / nvrtc，
- * cublas 会拉起 cublasLt，NVRTC 会加载 nvrtc-builtins。清单沿用 v2 的 Windows CUDA 发布（同为 candle 0.11）；工具链换了版本要跟着改。
- * Whisper 的 ggml-cuda（whisper-rs-sys 0.15，没开 GGML_STATIC）链的是 cudart、cublas（连带 cublasLt）与驱动的 cuda（nvcuda.dll，
- * 显卡驱动自带），都已在清单里或不随包，所以不用加库；按 whisper-rs-sys 的 build.rs 与 ggml-cuda 的 CMakeLists 核对，未实测
- * （工作流的 dumpbin 一步会列出实际依赖）。
+ * NVIDIA runtime libraries shipped with the CUDA build (CUDA 13.x, placed next to model-worker.exe; the user only needs the graphics driver): cudart / cublas / curand / nvrtc.
+ * cublas pulls in cublasLt, and NVRTC loads nvrtc-builtins. The manifest follows the v2 Windows CUDA release (both use candle 0.11); when the toolchain version changes, this must be updated too.
+ * Whisper's ggml-cuda (whisper-rs-sys 0.15, built without GGML_STATIC) links cudart and cublas (with cublasLt) and the driver's cuda (nvcuda.dll, supplied by the graphics driver). All of these are either in the manifest or not shipped, so no libraries need to be added. Checked against whisper-rs-sys's build.rs and ggml-cuda's CMakeLists; untested
+ * (the workflow's dumpbin step lists the actual dependencies).
  */
 const CUDA_REDIST_DLLS = [
   'cudart64_13.dll',
@@ -144,24 +142,24 @@ function run(command, args, env = process.env) {
 }
 
 /**
- * CUDA 版的 Whisper（ggml-cuda）编进哪些 GPU 架构，与 candle 的 `CUDA_COMPUTE_CAP=80` 同一口径：compute_80 的 PTX（Ampere 起，较新的
- * 显卡由驱动 JIT），再给 RTX 30 / 40 / 50 各编一份机器码（86、89、120；ggml 的 CMake 会把 120 改写成 120a，用上 Blackwell 专属指令）。
- * 必须显式给：外部设了 GGML_NATIVE=ON 时 ggml 会用 `native`，而构建机（CI 的 runner）没有 GPU，CMake 探到的架构是垃圾值，ggml 只好原样
- * 留着 `native`，nvcc 在没有 GPU 的机器上编不了。whisper-rs-sys 把 `CMAKE_*` 开头的环境变量原样交给 CMake，就靠这个传进去。未实测。
+ * The GPU architectures that the CUDA build's Whisper (ggml-cuda) is compiled for, using the same convention as candle's `CUDA_COMPUTE_CAP=80`: compute_80 PTX (from Ampere on; newer cards are JIT-compiled by the driver),
+ * plus machine code for each of RTX 30 / 40 / 50 (86, 89, 120; ggml's CMake rewrites 120 to 120a to use the Blackwell-specific instructions).
+ * This must be set explicitly: if GGML_NATIVE=ON is set from outside, ggml uses `native`, but the build machine (CI runner) has no GPU, so the architecture CMake detects is a meaningless value; ggml then leaves
+ * `native` as is, and nvcc cannot compile on a machine without a GPU. whisper-rs-sys passes environment variables starting with `CMAKE_` through to CMake unchanged, which is how this gets through. Untested.
  */
 const DEFAULT_CMAKE_CUDA_ARCHITECTURES = '80-virtual;86-real;89-real;120-real';
 
 /**
- * 编 Model Worker 时的环境。三个变体都编 ggml-cpu（CUDA 与 Vulkan 版也有 CPU 的算子），都要关掉 `GGML_NATIVE`：它缺省是 ON，在 MSVC 上
- * 由 FindSIMD.cmake 在构建机上实际运行探测程序，探到 AVX-512 就给整个 ggml-cpu 加 `/arch:AVX512`，用户的 CPU 没有就非法指令崩溃。
- * 改成固定基线 AVX2（MSVC 上是 `/arch:AVX2` 加 FMA、F16C 与 BMI2，Haswell / Zen 起），显式给 `GGML_AVX2=ON` 是为了不依赖 ggml 的
- * 缺省推导（设了 `SOURCE_DATE_EPOCH` 时它会退到 SSE2）。外部设了就用外部的。whisper-rs-sys 把 `GGML_*` 环境变量交给 CMake，但不随它们
- * 重跑，换了值要先清掉它的构建产物（README「Windows 打包」）。未实测。
+ * Environment for building the Model Worker. All three variants build ggml-cpu (the CUDA and Vulkan builds also have CPU operators), and all must turn off `GGML_NATIVE`: it defaults to ON, and on MSVC
+ * FindSIMD.cmake actually runs a probe program on the build machine; if it finds AVX-512, it adds `/arch:AVX512` to the whole ggml-cpu, and the program crashes with an illegal instruction on users' CPUs that lack it.
+ * It is replaced with a fixed AVX2 baseline (on MSVC, `/arch:AVX2` plus FMA, F16C and BMI2; from Haswell / Zen on). `GGML_AVX2=ON` is set explicitly so as not to depend on ggml's
+ * default derivation (when `SOURCE_DATE_EPOCH` is set, it falls back to SSE2). If set externally, the external value is used. whisper-rs-sys passes `GGML_*` environment variables through to CMake, but does not rerun it because of them;
+ * when a value changes, its build output must be cleared first (README, “Windows packaging”). Untested.
  *
- * CUDA 版另沿用 v2 的 Windows CUDA 发布：PTX 目标缺省 compute_80（Ampere 起，candle + CUDA 13 编不了更早的）；nvcc 的主机目标文件缺省是
- * 静态 CRT（/MT），与 Rust 的动态 CRT 不一致，Windows 上改成 /MD（ggml-cuda 经 CMake 调的 nvcc 同样吃到）。Whisper 的 ggml-cuda 另要
- * `CMAKE_CUDA_ARCHITECTURES`（外部给了就用外部的）。whisper-rs-sys 在 Windows 上还要 `CUDA_PATH` 找导入库（CUDA 安装器与工作流的
- * CUDA 安装步骤会设）。
+ * The CUDA build also follows the v2 Windows CUDA release: the PTX target defaults to compute_80 (from Ampere on; candle with CUDA 13 cannot compile older ones); nvcc's host-target object files default to
+ * the static CRT (/MT), which does not match Rust's dynamic CRT, so on Windows it is changed to /MD (nvcc, invoked by CMake for ggml-cuda, picks this up too). Whisper's ggml-cuda additionally needs
+ * `CMAKE_CUDA_ARCHITECTURES` (the external value is used if one is given). On Windows whisper-rs-sys also needs `CUDA_PATH` to find the import libraries (the CUDA installer and the workflow's
+ * CUDA installation step set it).
  */
 function modelWorkerBuildEnv() {
   const base = { ...process.env, GGML_NATIVE: process.env.GGML_NATIVE || 'OFF' };
@@ -230,19 +228,19 @@ for (const required of [
   if (!existsSync(path.join(DESKTOP, required))) fail(`没有 apps/desktop/${required}：先运行 npm run build`);
 }
 if (!existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) fail('没有 apps/web/dist/index.html：先运行 npm run build:web');
-// 幻灯片编辑器的页面与 slides_check 用的编译器（docs/design/slides §3）。
+// The slides editor's page and the compiler used by slides_check (docs/design/slides §3).
 const SLIDES_EDITOR_DIST = path.join(ROOT, 'apps/slides-editor/dist');
 const SLIDES_EDITOR_FILES = ['index.html', 'node/compiler.cjs'];
 for (const file of SLIDES_EDITOR_FILES) {
   if (!existsSync(path.join(SLIDES_EDITOR_DIST, file))) fail(`没有 apps/slides-editor/dist/${file}：先运行 npm run build:slides-editor`);
 }
-// 设计稿编辑器的页面、画板运行时与快速编辑 Worker（docs/design/canvas §3）。
+// The design editor's page, the canvas runtime and the quick-edit Worker (docs/design/canvas §3).
 const DESIGN_EDITOR_DIST = path.join(ROOT, 'apps/design-editor/dist');
 const DESIGN_EDITOR_FILES = ['index.html', 'artifact-type/dc-runtime.js', 'artifact-type/fast-edit-worker.js'];
 for (const file of DESIGN_EDITOR_FILES) {
   if (!existsSync(path.join(DESIGN_EDITOR_DIST, file))) fail(`没有 apps/design-editor/dist/${file}：先运行 npm run build:design-editor`);
 }
-// 设计系统编辑器的页面、预览页与预览用的 React UMD（docs/design/canvas §10.2）。
+// The design-system editor's page, its preview page, and the React UMD build used for preview (docs/design/canvas §10.2).
 const DESIGN_SYSTEM_EDITOR_DIST = path.join(ROOT, 'apps/design-system-editor/dist');
 const DESIGN_SYSTEM_EDITOR_FILES = [
   'index.html',
@@ -280,7 +278,7 @@ const staging = mkdtempSync(path.join(tmpdir(), 'cuccut-package-'));
 const appDir = path.join(staging, 'app');
 const resDir = path.join(staging, 'resources');
 try {
-  // 2. 只含产物的应用。
+  // 2. An app containing only the build output.
   const desktop = JSON.parse(readFileSync(path.join(DESKTOP, 'package.json'), 'utf8'));
   mkdirSync(appDir, { recursive: true });
   cpSync(path.join(ROOT, 'LICENSE'), path.join(appDir, 'LICENSE'));
@@ -303,7 +301,7 @@ try {
         author: { name: PRODUCT_NAME },
         license: 'SEE LICENSE IN LICENSE',
         main: 'out/main/index.js',
-        // 应用更新读这两个（app-update-ipc.ts）：build 号比清单，变体决定读哪一份更新源。没有 build 号的包不检查更新。
+        // The app update reads these two (app-update-ipc.ts): it compares the build number against the manifest, and the variant decides which update source to read. Packages without a build number do not check for updates.
         ...(build > 0 ? { cuccutBuild: build } : {}),
         ...(isMac ? { cuccutSourceCommit: sourceCommit } : {}),
         cuccutVariant: options.variant,
@@ -321,7 +319,7 @@ try {
     }`,
   );
 
-  // 3. 资源。
+  // 3. Resources.
   const bin = path.join(resDir, RESOURCE_DIRS.bin);
   mkdirSync(bin, { recursive: true });
   for (const name of BUNDLED_EXECUTABLES) {
@@ -378,7 +376,7 @@ try {
       productName: PRODUCT_NAME,
       electronVersion,
       directories: { output: outDir, buildResources: path.join(DESKTOP, 'build') },
-      // 没有原生 Node 模块；第三方依赖已经搭好，不重装、不重编。
+      // There are no native Node modules; the third-party dependencies are already set up, so they are not reinstalled or rebuilt.
       npmRebuild: false,
       nodeGypRebuild: false,
       asar: true,
@@ -387,8 +385,8 @@ try {
         ...Object.values(RESOURCE_DIRS).map((dir) => ({ from: path.join(resDir, dir), to: dir })),
         ...DISTRIBUTED_NOTICES.map(({ source, fileName }) => ({ from: path.join(ROOT, source), to: fileName })),
       ],
-      // 不改 Electron 的 fuse：渲染进程靠 GrantFileProtocolExtraPrivileges 读 file:// 的模块与字体，Runtime 靠 RunAsNode 以
-      // Node 方式启动（架构设计 §9.1 的字体一节）。要关就得先把渲染进程改由自定义协议供给。
+      // Electron's fuses are not changed: the renderer reads file:// modules and fonts through GrantFileProtocolExtraPrivileges, and the Runtime starts in Node mode through RunAsNode
+      // (the fonts section of architecture design §9.1). To turn them off, the renderer process must first be changed to be served by a custom protocol.
       mac: {
         electronLanguages: macElectronLanguages(LOCALES),
         icon: path.join(DESKTOP, 'build', 'icon.icns'),
@@ -407,7 +405,7 @@ try {
       win: {
         icon: path.join(DESKTOP, 'build', 'icon.ico'),
         artifactName: `${artifact}.\${ext}`,
-        // 不签名（§14）。改 exe 的图标与版本信息要 rcedit，在 macOS / Linux 上得有 Wine：只在 Windows 上做。
+        // Not signed (§14). Changing the exe's icon and version information requires rcedit, which needs Wine on macOS / Linux, so this is done only on Windows.
         signAndEditExecutable: onWindows,
       },
       nsis: {
@@ -419,7 +417,7 @@ try {
     },
   });
 
-  // 5. 核对解开的包。
+  // 5. Verify the unpacked package.
   const unpacked = isMac ? path.join(outDir, macPlan.directory, `${PRODUCT_NAME}.app`) : path.join(outDir, 'win-unpacked');
   verifyUnpacked(unpacked, options.variant);
   for (const name of readdirSync(outDir)) {
@@ -428,7 +426,7 @@ try {
       console.log(`产物：${file}（${Math.round(statSync(file).size / 2 ** 20)} MB）`);
   }
 
-  // 6. 发布报告与更新源。
+  // 6. Release report and update source.
   if (isMac) {
     const stem = `${PRODUCT_NAME}-${desktop.version}${buildPart}-${options.target}${options.local ? '-local' : ''}`;
     const distribution = await distributeMac({ app: unpacked, output: outDir, stem, version: desktop.version, build, appId: APP_ID,
@@ -455,7 +453,7 @@ try {
   else rmSync(staging, { recursive: true, force: true });
 }
 
-/** 文件的大小与 sha256（流式读，安装器上百 MB）。 */
+/** File size and sha256 (read as a stream, since installers can be hundreds of MB). */
 function fileFacts(file) {
   const hash = createHash('sha256');
   const fd = openSync(file, 'r');
@@ -475,8 +473,8 @@ function fileFacts(file) {
 }
 
 /**
- * 发布报告（总是写）与更新源（给了 --download-base-url 才写）。更新源用应用自己的 releaseManifest 生成、parseManifest 读回，
- * 与应用检查更新时读的是同一套口径。
+ * The release report (always written) and the update source (written only when --download-base-url is given). The update source is generated with the app's own releaseManifest and read back with parseManifest,
+ * using the same conventions the app follows when it checks for updates.
  */
 function writeReleaseFiles(stem, version) {
   const installerPath = path.join(outDir, `${stem}-setup.exe`);
@@ -522,7 +520,7 @@ function writeReleaseFiles(stem, version) {
   console.log(`更新源：${feedPath}`);
 }
 
-/** out/main 与 out/preload 里真正 require 的第三方包（只认 apps/desktop 的 dependencies 里列着的，代码里的字符串不算）。 */
+/** Third-party packages that out/main and out/preload actually require (only those listed in apps/desktop's dependencies count; strings in the code do not). */
 function externalPackages(outDir, declared) {
   const builtins = new Set(builtinModules);
   const found = new Set();
@@ -547,7 +545,7 @@ function listFiles(dir) {
   );
 }
 
-/** 按 Node 的办法从目录 `from` 往上找 `node_modules/<name>`（不经 exports，有的包不导出 package.json）。 */
+/** Looks up `node_modules/<name>` from directory `from` upward, the way Node does (without going through exports, since some packages do not export package.json). */
 function resolvePackage(name, from, optional = false) {
   for (let dir = from; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', name);
@@ -558,7 +556,7 @@ function resolvePackage(name, from, optional = false) {
   fail(`找不到依赖 ${name}`);
 }
 
-/** 把这些包与它们的依赖（生产依赖与装了的可选依赖）复制成扁平的 node_modules。版本冲突时直接失败，不猜。 */
+/** Copies these packages and their dependencies (production dependencies and installed optional dependencies) into a flat node_modules. Fails immediately on version conflicts; it does not guess. */
 function copyClosure(names, fromDir, toModules) {
   const seen = new Map();
   const queue = names.map((name) => ({ name, from: fromDir }));
@@ -573,13 +571,13 @@ function copyClosure(names, fromDir, toModules) {
     seen.set(name, manifest.version);
     cpSync(dir, path.join(toModules, name), { recursive: true, dereference: true });
     for (const dep of Object.keys(manifest.dependencies ?? {})) queue.push({ name: dep, from: dir });
-    // 没装的可选依赖不带。
+    // Optional dependencies that are not installed are not included.
     for (const dep of Object.keys(manifest.optionalDependencies ?? {}))
       if (resolvePackage(dep, dir, true)) queue.push({ name: dep, from: dir });
   }
 }
 
-/** 解开的包里应有的东西：与主进程交给 Runtime 的位置（packaged-resources.ts）逐项对上。 */
+/** What the unpacked package should contain: checked item by item against the locations the main process gives the Runtime (packaged-resources.ts). */
 function verifyUnpacked(dir, variantName) {
   const problems = [];
   const resources = path.join(dir, isMac ? 'Contents/Resources' : 'resources');
@@ -628,7 +626,7 @@ function verifyUnpacked(dir, variantName) {
   console.log(`解开的包核对通过：${dir}`);
 }
 
-/** asar 的文件清单（头是 Chromium Pickle 包着的 JSON：第 12 字节起是它的长度，第 16 字节起是它）。 */
+/** The asar file listing (the header is JSON wrapped in a Chromium Pickle: its length starts at byte 12, and the JSON itself starts at byte 16). */
 function asarEntries(file) {
   const fd = openSync(file, 'r');
   let header;

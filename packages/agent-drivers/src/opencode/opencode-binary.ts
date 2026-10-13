@@ -1,7 +1,7 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/runtime-client.ts 的 VERSION_PATTERN 与主版本判定。
- * 改成 CucCut 的安装查找（同 acp/acp-binary.ts：环境变量覆盖、登录 shell 的 PATH、已知位置里取版本最新的一个）。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra). Modified:
+ * the VERSION_PATTERN and major-version check from packages/server/src/server/agent/providers/opencode/runtime-client.ts.
+ * Changed to CucCut's install lookup (same as acp/acp-binary.ts: environment-variable override, login shell PATH, and the newest one among known locations).
  */
 import { execFile } from 'node:child_process';
 import os from 'node:os';
@@ -21,8 +21,8 @@ export interface OpenCodeInstall {
 let located: { at: number; result: Promise<OpenCodeInstall | null> } | null = null;
 
 /**
- * `CUCCUT_OPENCODE_PATH` 优先；否则在登录 shell 的 PATH（`opencode` 与 `opencode2`）与已知安装位置里取版本最新的一个。
- * 1.x 与 2.x 同时装着时取 2.x。结果缓存 30 秒。
+ * `CUCCUT_OPENCODE_PATH` takes priority; otherwise, picks the newest version among `opencode` and `opencode2` on the login shell PATH and in known install locations.
+ * When both 1.x and 2.x are installed, 2.x is chosen. The result is cached for 30 seconds.
  */
 export function locateOpenCode(): Promise<OpenCodeInstall | null> {
   if (located && Date.now() - located.at <= 30_000) return located.result;
@@ -48,7 +48,7 @@ async function findOpenCode(): Promise<OpenCodeInstall | null> {
   return pickNewest(candidates, async (command) => ({ command, version: await readOpenCodeVersion(command, env), env }));
 }
 
-/** 用户手动指定的可执行文件：只认这一个。不存在或不可执行时为 null。 */
+/** An executable the user specified manually: only this one is accepted. Null if it does not exist or is not executable. */
 export async function openCodeAt(command: string): Promise<OpenCodeInstall | null> {
   if (!(await isExecutable(command))) return null;
   const env = await agentEnv();
@@ -57,7 +57,7 @@ export async function openCodeAt(command: string): Promise<OpenCodeInstall | nul
 
 const VERSION_PATTERN = /^(?:opencode\s+)?v?(\d+\.\d+\.\d+)(?:[-+][\w.-]+)?$/i;
 
-/** `opencode --version` 的输出：2.x 是 `opencode v2.0.24`，1.x 是 `1.18.34`。认不出时为 null。 */
+/** Output of `opencode --version`: 2.x is `opencode v2.0.24`, 1.x is `1.18.34`. Null if it is not recognized. */
 export function parseOpenCodeVersion(output: string): string | null {
   for (const line of output.split(/\r?\n/)) {
     const match = VERSION_PATTERN.exec(line.trim());
@@ -66,7 +66,7 @@ export function parseOpenCodeVersion(output: string): string | null {
   return null;
 }
 
-/** 主版本号；读不出时为 null。 */
+/** Major version number; null if it cannot be read. */
 export function majorVersion(version: string): number | null {
   const major = Number.parseInt(version.split('.')[0] ?? '', 10);
   return Number.isFinite(major) ? major : null;

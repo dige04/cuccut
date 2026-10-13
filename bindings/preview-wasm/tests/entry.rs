@@ -1,4 +1,4 @@
-//! WASM 入口在原生上的行为：同一套导出函数，界面经线性内存调用的就是这些。
+//! Behaviour of the WASM entry on native: the same export functions; the UI calls exactly these through linear memory.
 
 use std::path::PathBuf;
 
@@ -71,7 +71,7 @@ fn bad_input_is_reported_and_keeps_the_previous_video() {
 #[test]
 fn frames_render_through_the_same_core_with_injected_fonts_and_pictures() {
     set_video(json!({ "video": video() }).to_string().as_bytes()).unwrap();
-    // 没有字体时渲染器建不起来：报出来，计划照样能求。
+    // Without fonts the renderer cannot be created: report it, but the plan can still be computed.
     assert_eq!(render(1.5, 320, 180, true, false).unwrap_err().code, "INVALID_PARAMS");
     assert!(plan(1.5).is_ok());
     let files: Vec<String> = serde_json::from_str(&font_files()).unwrap();
@@ -80,7 +80,7 @@ fn frames_render_through_the_same_core_with_injected_fonts_and_pictures() {
     for name in files.iter().take(3) {
         add_font(std::fs::read(dir.join(name)).unwrap()).unwrap();
     }
-    // 计划里每个视频、图片层都给一张纯红的画面（非预乘 RGBA）。
+    // The plan gives every video and image layer a solid red picture (non-premultiplied RGBA).
     let planned: Value = serde_json::from_str(&plan(1.5).unwrap()).unwrap();
     clear_pictures();
     for layer in planned["layers"].as_array().unwrap() {
@@ -95,12 +95,12 @@ fn frames_render_through_the_same_core_with_injected_fonts_and_pictures() {
     assert_eq!(pixels.len(), 320 * 180 * 4);
     assert!(pixels.chunks_exact(4).any(|p| p[0] > 200 && p[1] < 40), "红色的画面画上去了");
     assert!(pixels.chunks_exact(4).all(|p| p[3] == 255), "帧是不透明的");
-    // 经线性内存：尺寸变了照样画，画面指针与长度对得上。
+    // Through linear memory: painting still works after the size changes, and the picture pointer and length match.
     assert_eq!(bc_render(1.5, 160, 90, 1), 0);
     assert_eq!(output()["plan"]["frame"], 45);
     assert_eq!(bc_frame_len(), 160 * 90 * 4);
     assert!(!bc_frame_ptr().is_null());
-    // 透明底（缩略图）：不铺背景，画面是非预乘的。只给斜放的台标送画面：台标外透明，边上半透明处也还是纯红。
+    // Transparent background (thumbnail): no background fill, and the picture is non-premultiplied. Only a tilted logo is sent a picture: outside the logo is transparent, and the semi-transparent edge pixels are still pure red.
     clear_pictures();
     set_picture("item_logo", [255, 0, 0, 255].repeat(16 * 9), 16, 9).unwrap();
     assert_eq!(bc_render(1.5, 160, 90, 3), 0);
@@ -114,14 +114,14 @@ fn frames_render_through_the_same_core_with_injected_fonts_and_pictures() {
             .all(|p| p[0] >= 250 && p[1] == 0 && p[2] == 0),
         "非预乘"
     );
-    // 再画不透明的一帧，画面回到渲染器自己的。
+    // Painting an opaque frame again returns the picture to the renderer's own.
     assert_eq!(bc_render(1.5, 160, 90, 1), 0);
     assert!(frame().chunks_exact(4).all(|p| p[3] == 255));
-    // 画面尺寸与字节数不符时报错。
+    // An error is reported when the picture size does not match the byte count.
     assert_eq!(set_picture("x", vec![0; 3], 1, 1).unwrap_err().code, "INVALID_PICTURE");
 }
 
-/// 按文稿触发的闪避：送进转写之后，计划里的声音按有效词流压低（与导出的声音计划同一份词流）；没有转写时不压低。
+/// Script-triggered ducking: after the transcript is sent, sounds in the plan are lowered according to the effective word stream (the same word stream as the export's audio plan); without a transcript, nothing is lowered.
 #[test]
 fn speech_ducking_follows_the_transcripts_sent_in() {
     let mut video = video();
@@ -146,7 +146,7 @@ fn speech_ducking_follows_the_transcripts_sent_in() {
         "words": [{ "id": "w1", "text": "你好", "start": 1000, "end": 2000 }] });
     set_speech(json!([{ "documentId": "doc_speech", "body": body }]).to_string().as_bytes()).unwrap();
     assert!((music_gain(1.5) - (before - 12.0)).abs() < 1e-9);
-    // 换视频之后词流重算（规则还在，转写还在）。
+    // After a video change, the word stream is recomputed (the rules and the transcript remain).
     set_video(json!({ "video": video }).to_string().as_bytes()).unwrap();
     assert!((music_gain(1.5) - (before - 12.0)).abs() < 1e-9);
     set_speech(b"[]").unwrap();
@@ -154,7 +154,7 @@ fn speech_ducking_follows_the_transcripts_sent_in() {
     assert_eq!(set_speech(b"{").unwrap_err().code, "INVALID_DOCUMENTS");
 }
 
-/// 一段合成的 48 kHz 单声道声音：440 Hz 与 3 kHz 交替。
+/// A synthesized 48 kHz mono sound: alternating 440 Hz and 3 kHz.
 fn tone(samples: usize) -> Vec<f32> {
     (0..samples)
         .map(|i| {
@@ -164,7 +164,7 @@ fn tone(samples: usize) -> Vec<f32> {
         .collect()
 }
 
-/// 经线性内存按块送样本，算出素材频谱。
+/// Send samples in blocks through linear memory and compute the asset spectrum.
 fn analyse(pcm: &[f32], block: usize) -> Vec<u8> {
     bc_spectrum_begin();
     for part in pcm.chunks(block) {
@@ -180,14 +180,14 @@ fn analyse(pcm: &[f32], block: usize) -> Vec<u8> {
     unsafe { std::slice::from_raw_parts(bc_output_ptr(), bc_output_len()) }.to_vec()
 }
 
-/// 素材频谱按块送进来算，与原生导出一次算整段的结果逐字节相同。
+/// An asset spectrum computed from blocks sent in is byte-for-byte identical to native export computing the whole segment at once.
 #[test]
 fn asset_spectra_are_analysed_block_by_block_like_the_export() {
     let pcm = tone(50_000);
     let whole = waveform::dsp::analyze(&pcm, waveform::bcs1::SpectrumBackend::Symphonia).unwrap();
     assert_eq!(analyse(&pcm, 4_096), whole);
     assert_eq!(analyse(&pcm, 777), whole);
-    // 没开始就送、字节数不是 4 的倍数、什么都没送就结束：都报错。
+    // Sending before beginning, a byte count that is not a multiple of 4, or finishing with nothing sent: all report errors.
     assert_eq!(spectrum_push(&[0; 4]).unwrap_err().code, "NO_ANALYSIS");
     bc_spectrum_begin();
     assert_eq!(spectrum_push(&[0; 3]).unwrap_err().code, "INVALID_AUDIO");
@@ -195,7 +195,7 @@ fn asset_spectra_are_analysed_block_by_block_like_the_export() {
     assert_eq!(output()["code"], "INVALID_AUDIO");
 }
 
-/// 声波按序列的声音计划取素材频谱：缺的报在 `spectra` 里，送进来之后不再报缺，也不再报提示。
+/// The waveform takes asset spectra according to the sequence's audio plan: missing ones are reported in `spectra`; after they are sent in, they are no longer reported missing, and no longer reported as hints.
 #[test]
 fn visualizers_ask_for_the_asset_spectra_they_hear() {
     let mut video = video();
@@ -249,7 +249,7 @@ fn text_is_measured_with_the_injected_fonts_like_the_native_renderer() {
             (status, output())
         }
     };
-    // 没有字体时量不了。
+    // Cannot measure without fonts.
     assert_eq!(measure(&input).1["code"], "INVALID_PARAMS");
     let files: Vec<String> = serde_json::from_str(&font_files()).unwrap();
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/render-raster/assets/fonts");
@@ -257,7 +257,7 @@ fn text_is_measured_with_the_injected_fonts_like_the_native_renderer() {
     for font in &fonts {
         add_font(font.clone()).unwrap();
     }
-    // 还没画过帧也能量；结果与原生渲染器用同一批字体量的相同。
+    // Measurement works even before any frame is painted; the result is the same as the native renderer measuring with the same fonts.
     let (status, measured) = measure(&input);
     assert_eq!(status, 0, "{measured}");
     let options = RenderOptions {
@@ -271,17 +271,17 @@ fn text_is_measured_with_the_injected_fonts_like_the_native_renderer() {
     let expected = native.measure_text("输入文字", &request["style"], None, (1920, 1080));
     assert_eq!(measured, json!(expected));
     assert!(expected.width > 100.0 && expected.height > 30.0, "{expected:?}");
-    // 给了折行宽：框宽就是它，字折成多行。
+    // A wrap width is given: the box width is that width, and the text wraps onto multiple lines.
     let narrow = json!({ "text": "输入文字", "wrapWidth": 60, "canvas": { "width": 1920, "height": 1080 }, "style": request["style"] });
     let (_, wrapped) = measure(&narrow.to_string());
     assert_eq!(wrapped["width"], 60.0);
     assert!(wrapped["height"].as_f64().unwrap() > expected.height * 1.5, "{wrapped}");
-    // 读不懂的参数报出来。
+    // Unreadable arguments are reported.
     assert_eq!(measure("{}").1["code"], "INVALID_PARAMS");
 }
 
-/// 内置字体之外的族：`render` 报出缺的族名与提示；宿主把本机字体文件（这里是探针字体）经 `add_font` 送进来后，
-/// 已经建好的渲染器装上它重排，不再报。
+/// Families beyond the built-in fonts: `render` reports the missing family name and a hint; after the host sends the local font file (here a probe font) via `add_font`,
+/// an already-built renderer takes it and re-typesets, and no longer reports it.
 #[test]
 fn missing_font_families_are_reported_until_the_host_sends_the_font() {
     let mut video = video();
@@ -302,7 +302,7 @@ fn missing_font_families_are_reported_until_the_host_sends_the_font() {
             .filter(|d| d.contains("ColrProbe"))
             .collect()
     };
-    // 每一帧都报（预览每帧清掉报告，常设的提示照报）。
+    // Reported on every frame (the preview clears the report each frame; the persistent hint is still reported).
     for _ in 0..2 {
         let rendered: Value = serde_json::from_str(&render(7.5, 320, 180, true, false).unwrap()).unwrap();
         assert_eq!(rendered["fonts"], json!(["ColrProbe"]));
@@ -317,8 +317,7 @@ fn missing_font_families_are_reported_until_the_host_sends_the_font() {
     assert_ne!(frame(), fallback, "按送来的字体重排");
 }
 
-/// 两种尺寸来回画（预览播放与停住）：各自的渲染器留着，切回来画出的帧与只画这一种尺寸时逐字节相同；字体送进来时
-/// 两台都装上（闲着的那台下次画也按新字体重排）；第三种尺寸换掉最久没用的那台，照样画对。
+/// Paint at two sizes alternately (preview playing and stopped): each renderer is kept, and a frame painted after switching back is byte-for-byte identical to painting only that one size; when fonts are sent in, both renderers take them (the idle one re-typesets with the new fonts on its next paint); a third size replaces the least recently used one, and painting is still correct.
 #[test]
 fn renderers_kept_per_size_stay_exact_and_take_fonts_sent_while_idle() {
     let mut video = video();
@@ -342,7 +341,7 @@ fn renderers_kept_per_size_stay_exact_and_take_fonts_sent_while_idle() {
         assert_eq!(draw(320, 180).1, large, "切回来与只画这一种尺寸相同");
         assert_eq!(draw(160, 90).1, small);
     }
-    // 画着小的时候送来字体：大的那台闲着，也要装上。
+    // Fonts sent in while the small one is being painted: the large one is idle but must also take them.
     let probe = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/render-raster/tests/fixtures/fonts/ColrProbe.ttf");
     add_font(std::fs::read(probe).unwrap()).unwrap();
     let (rendered, large_font) = draw(320, 180);
@@ -351,7 +350,7 @@ fn renderers_kept_per_size_stay_exact_and_take_fonts_sent_while_idle() {
     let (rendered, small_font) = draw(160, 90);
     assert_eq!(rendered["fonts"], json!([]));
     assert_ne!(small_font, small);
-    // 第三种尺寸换掉最久没用的（大的）；再画大的时由当时最久没用的那台改尺寸，画面不变。
+    // A third size replaces the least recently used one (the large one); when the large one is painted again, the least recently used renderer at that time is resized, and the picture does not change.
     draw(64, 36);
     assert_eq!(draw(160, 90).1, small_font, "最近用过的那台还在");
     assert_eq!(draw(320, 180).1, large_font, "改尺寸重建的与原来的相同");

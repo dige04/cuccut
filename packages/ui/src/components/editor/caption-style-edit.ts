@@ -6,19 +6,17 @@ import { useCaptionPreferences } from '../../state/caption-preferences-store.ts'
 import { useEditor } from '../../state/editor-store.ts';
 
 /**
- * 字幕样式的一笔修改（属性页与舞台上拖字幕共用）：拖动中的值叠给预览（store 的文档草稿，见 video-editor 的 DraftDocuments），
- * 松手写入文档的新版本。字幕还没有样式文档时没有草稿可叠，松手新建一份，并让序列里还没有样式、能改的字幕都用它。
+ * One edit to a caption style (shared by the properties page and by dragging captions on the stage): while dragging, the value is overlaid on the preview as a draft of the document (the store's document draft, see DraftDocuments in video-editor); on release, it is written as a new version of the document. When a caption has no caption style document yet, there is no draft to overlay: on release, a new document is created, and every caption in the sequence that has no style yet and can be edited uses it.
  */
 
-/** 拖动中：把这份根样式叠给预览。 */
+/** While dragging: overlays this root style on the preview. */
 export function previewCaptionStyle(record: DocumentRecord | undefined, body: unknown, style: Json): void {
   if (!record) return;
   useEditor.getState().setDocumentDraft({ documentId: record.id, baseRevision: record.currentRevision, body: withCaptionStyle(body, style) });
 }
 
 /**
- * 松手：写入（或新建）样式文档，失败就丢掉草稿。成功后把这一笔记进新字幕选项（`before` 是改之前的根样式；
- * `singleLine` 见 `rememberCaptionPreferences`）。
+ * On release: writes (or creates) the style document; if that fails, the draft is discarded. On success, this change is recorded in the new-caption options (`before` is the root style before the change; see `rememberCaptionPreferences` for `singleLine`).
  */
 export function saveCaptionStyle(
   apply: (operations: EditOperation[], label?: Localized) => Promise<TransactionReceipt | null>,

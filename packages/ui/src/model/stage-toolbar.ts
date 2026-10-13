@@ -7,17 +7,14 @@ import type { PlacedItem, Rect } from './stage-pose.ts';
 import { M, type StageToolbarMessages } from './stage-toolbar-copy.ts';
 
 /**
- * 画布浮动工具条的规则（原型 model-toolbar.js 的 `BC_BAR` 与 stage-toolbar.jsx）：选中一件画面上的片段时，
- * 条子上按分组摆哪些格、溢出菜单（⋯）里有哪些，每一格做什么。
+ * Rules for the floating canvas toolbar (`BC_BAR` in the prototype model-toolbar.js and stage-toolbar.jsx): when a clip on the frame is selected, which cells the bar shows by group, what is in the overflow menu (⋯), and what each cell does.
  *
- * 分组照原型的配置表逐项摆（组间画竖分隔线；菜单里嵌套的一组是一行图标钮），这里再给每一格落到 CucCut 的写法：
- * 开弹层改值（与属性页同一条写入：拖动中只叠草稿，松手一笔提交）、菜单里下钻一层、开关、一下就提交的命令、
- * 跳到属性页的某一节，或者写明为什么还不能用（协议里没有对应的操作）。条子只管画，不再按类型手写第二遍。
+ * Groups are laid out item by item from the prototype's config table (vertical dividers are drawn between groups; a nested group inside the menu is a row of icon buttons). Here each cell is then mapped to CucCut's way of doing things: opening a popover to change a value (the same write path as the properties panel: dragging only layers a draft, and release commits one transaction), drilling one level down in the menu, toggles, commands that commit at once, jumping to a section of the properties panel, or stating why it cannot be used yet (the protocol has no matching operation). The bar only handles drawing; it no longer hand-writes a second copy per type.
  */
 
 /**
- * 条子按哪一类摆（原型的 kind；合成按内置生成器分）。认不出的合成退回一颗「属性」。
- * `subtitle` 是字幕的条子（字幕不是画面上的片段，见 `captionToolbar`）。
+ * Which category the bar is laid out for (the prototype's `kind`; compositions are split by built-in generator). Unrecognised compositions fall back to a single “Properties” button.
+ * `subtitle` is the subtitle bar (subtitles are not clips on the frame; see `captionToolbar`).
  */
 export type BarKind =
   | 'text'
@@ -85,12 +82,12 @@ export type ToolId =
   | 'hide-subs';
 
 /**
- * 每一格的显示名（原型 `ITEM`）。图标钮的名字是悬停提示。
- * 「copy」原型写「复制」，意思是再造一份（⌘D）；这里「复制」已经是 ⌘C 放进剪贴板，所以写「复制一份」（原型多选页的说法）。
+ * Display name of each cell (prototype `ITEM`). For icon buttons, the name is the hover tooltip.
+ * The prototype writes “copy” as “复制” (copy), which means making another copy (⌘D); here “复制” already means putting it on the clipboard with ⌘C, so it is written as “复制一份” (duplicate), the wording used on the prototype's multi-select page.
  */
 export const TOOL_LABEL: Record<ToolId, string> = live(() => M.toolLabel);
 
-/** 配置表的一段：一组格；菜单里的一段若是嵌套数组，就是一行图标钮（行内再分簇）。 */
+/** One section of the config table: a group of cells; if a section inside the menu is a nested array, it is a row of icon buttons (further split into clusters within the row). */
 type Group = ToolId[];
 type Row = ToolId[][];
 interface Layout {
@@ -104,8 +101,8 @@ const FLIP_FIT: Row = [
 ];
 
 /**
- * 原型 `BAR` 里与画面上的片段对得上的几类，分组与次序逐项照抄（模板、文本组等 CucCut 画布上没有；字幕见 `SUBTITLE_BAR`）。
- * 不透明度与「停用片段」照 CucCut v2 已上线的条子补齐：除视频外每一类的菜单里都有（v2 叫「隐藏」），停用片段摆在删除前一格。
+ * The categories in the prototype `BAR` that match clips on the frame; grouping and order are copied item by item (templates, the text group, etc. are not on the CucCut canvas; for subtitles see `SUBTITLE_BAR`).
+ * Opacity and “Disable clip” are added to match the CucCut v2 bars: every category except video has them in its menu (v2 calls it “Hide”), and “Disable clip” sits one cell before delete.
  */
 export const BAR: Record<Exclude<BarKind, 'other' | 'subtitle'>, Layout> = {
   text: {
@@ -171,8 +168,8 @@ export const BAR: Record<Exclude<BarKind, 'other' | 'subtitle'>, Layout> = {
       ['adjust-timing', 'disable', 'delete'],
     ],
   },
-  // 彩纸与白板手绘：颜色、形状、手、纸都在专属属性页，条子上只留动画；已铺满画面，不做翻转与适配画布。
-  // 菜单与别的几类一样带不透明度与停用片段（v2 里它们走通用菜单）。
+  // Confetti and whiteboard drawings: colour, shape, hand and paper are all on their own properties page, so only animation stays on the bar; they already fill the frame, so there is no flip and no fit-to-canvas.
+  // The menu, like the other categories, has opacity and disable clip (in v2 they use the generic menu).
   confetti: {
     visible: [['animation']],
     more: [['opacity'], ['copy', 'arrange'], ['properties'], ['adjust-timing', 'disable', 'delete']],
@@ -184,8 +181,7 @@ export const BAR: Record<Exclude<BarKind, 'other' | 'subtitle'>, Layout> = {
 };
 
 /**
- * 还没有自己一条的元素（手绘、占位框、代码包合成）：条子上只给一颗「属性」，菜单是 v2 那几类共有的
- * 不透明度、复制 / 层级、时长、停用片段与删除。
+ * Elements that do not have their own bar yet (hand drawing, placeholder boxes, code-package compositions): the bar shows only one “Properties” button, and the menu holds what the v2 categories share: opacity, copy / layer, duration, disable clip, and delete.
  */
 export const OTHER_BAR: Layout = {
   visible: [['properties']],
@@ -193,12 +189,9 @@ export const OTHER_BAR: Layout = {
 };
 
 /**
- * 字幕的条子（原型 `BAR.subtitle`）：最前是换一行来编辑（双语两行时），然后是颜色 字体 字号，
- * 再是 Edit / Styles / Animation；菜单是 B / I 与三对齐加大小写、行高与字距、存到品牌库与隐藏字幕。没有删除：
- * 字幕的内容真相在转录文档里，画布上只给隐藏。
+ * Subtitle bar (prototype `BAR.subtitle`): first comes line-break editing (two lines when bilingual), then colour, font, and size, followed by Edit / Styles / Animation. The menu holds B / I, the three alignments plus case, line height and letter spacing, saving to the brand library, and hiding the subtitles. There is no delete: the source of truth for subtitle content is the transcript document, so the canvas only offers hide.
  *
- * 原型第一段里的「全部字幕 / 仅这一条」（`sub-cue-scope`）与菜单里的「应用到所有字幕」（`apply-style-to-global`）不摆：
- * 视频格式的字幕样式是一整份文档，没有逐条的覆盖可写（同 caption-presets.ts 的说明）。
+ * The prototype's “All subtitles / This one only” (`sub-cue-scope`) in the first section and “Apply style to all subtitles” (`apply-style-to-global`) in the menu are not shown: subtitle styles in the video format are one whole document, with no per-cue overrides to write (see the note in caption-presets.ts).
  */
 export const SUBTITLE_BAR: Layout = {
   visible: [['sub-scope'], ['color', 'font', 'size'], ['sub-edit', 'sub-style', 'sub-animation']],
@@ -213,8 +206,7 @@ export const SUBTITLE_BAR: Layout = {
 };
 
 /**
- * 按元素种类归类：带计时读数的文字是计时，声波是 `wave`（动画贴纸与贴纸同一条：原型里 Lottie 也走能分色的那一边）。
- * 手绘、占位框与代码包合成在原型与旧版里都没有自己的一条，退回一颗「属性」。
+ * Classified by element kind: text with a timer readout is the timer kind; a waveform is `wave` (animated stickers share the same bar as stickers: in the prototype, Lottie also goes down the side that can recolour). Hand drawing, placeholder boxes and code-package compositions have no bar of their own in either the prototype or the legacy version, so they fall back to a single “Properties” button.
  */
 export function barKindOf(item: PlacedItem): BarKind {
   switch (item.type) {
@@ -238,12 +230,12 @@ export function barKindOf(item: PlacedItem): BarKind {
   }
 }
 
-// ---- 每一格做什么 ----
+// ---- What each cell does ----
 
 /**
- * - `pop`：条子上开弹层改值；`sub`：菜单里下钻一层（滑杆、时间）；`toggle`：菜单那一行里的开关钮；
- * - `command`：一下就提交；`jump`：打开属性页并滚到这一节（`null` 是页首；节名是稳定的 key，节头文字随界面语言）；
- * - `off`：现在不能用，`reason` 写给用户看。
+ * - `pop`: opens a popover on the bar to change a value; `sub`: drills one level down in the menu (slider, time); `toggle`: the toggle button on that menu row;
+ * - `command`: commits at once; `jump`: opens the properties panel and scrolls to this section (`null` is the top of the page; section names are stable keys, and section header text follows the UI language);
+ * - `off`: cannot be used right now; `reason` is shown to the user.
  */
 export type ToolAction =
   | { kind: 'pop' }
@@ -259,28 +251,28 @@ export interface Tool {
   action: ToolAction;
 }
 
-/** 菜单的一段：一行图标钮（分簇）或一列菜单项。 */
+/** One section of the menu: a row of icon buttons (split into clusters) or a column of menu items. */
 export type MenuGroup = { kind: 'row'; clusters: Tool[][] } | { kind: 'list'; tools: Tool[] };
 
 export interface ToolbarSpec {
   kind: BarKind;
   visible: Tool[][];
-  /** 没有溢出菜单时是 null：不画 ⋯。 */
+  /** null when there is no overflow menu: no ⋯ is drawn. */
   more: MenuGroup[] | null;
 }
 
-/** 协议里还没有对应操作的几格：为什么不能用。 */
+/** For cells with no matching operation in the protocol yet: why they cannot be used. */
 export const OFF_REASON: StageToolbarMessages['offReason'] = live(() => M.offReason);
 
-/** 「层级」下钻页的四行（显示名）与这一笔的名字。 */
+/** The four rows (display names) of the “Layer” drill-down page and the name of this operation. */
 export const ARRANGE_COPY: StageToolbarMessages['arrange'] = live(() => M.arrange);
-/** 「层级」下钻页的次序：往前的两行、一条线、往后的两行。 */
+/** Order of the “Layer” drill-down page: two rows for moving forward, a line, then two rows for moving backward. */
 export const ARRANGE_ROWS: readonly (readonly ArrangeDirection[])[] = [
   ['front', 'forward'],
   ['backward', 'back'],
 ];
 
-/** 属性页里能直接跳到的节。 */
+/** Sections in the properties panel that can be jumped to directly. */
 export type InspectorSection = 'style' | 'transition' | 'effects';
 
 const jump = (section: InspectorSection | null): ToolAction => ({ kind: 'jump', section });
@@ -290,27 +282,26 @@ const SUB: ToolAction = { kind: 'sub' };
 const TOGGLE: ToolAction = { kind: 'toggle' };
 const COMMAND: ToolAction = { kind: 'command' };
 
-/** 文字样式带着 schema（别的格式的样式对象）时，改字的几格都不能用。 */
+/** When a text style carries a schema (a style object from another format), the cells that change text are unavailable. */
 function textStyleAction(item: PlacedItem, action: ToolAction): ToolAction {
   if (item.type !== 'text' || editableTextStyle(item.style)) return action;
   return off(M.textStyleLocked(String(asObject(item.style).schema)));
 }
 
-/** 条子之外要知道的：这一件的素材（存到品牌库从哪里取文件），界面是不是在浏览器里。 */
+/** Beyond the bar: this item's asset (where the file comes from when saving to the brand library), and whether the UI is running in a browser. */
 export interface BarContext {
   asset?: AssetRecord;
-  /** 浏览器会话里调不了品牌库（`library.*` 不在 Web 服务的白名单里）。 */
+  /** The brand library cannot be called in a browser session (`library.*` is not on the Web service's allowlist). */
   web?: boolean;
 }
 
-/** 片段画的那个素材（视频、图片，以及按素材画的贴纸与占位框）。 */
+/** The asset the clip draws (videos, images, and stickers and placeholder boxes drawn from an asset). */
 export function itemAsset(item: PlacedItem, assets: Record<Id, AssetRecord>): AssetRecord | undefined {
   return 'assetRef' in item && item.assetRef ? assets[item.assetRef.id] : undefined;
 }
 
 /**
- * 素材片段存到品牌库存进哪一节、从哪取文件：取得到原文件才能存（生成的用产物，链接的用原文件），取不到时给原因。
- * 条子上这一格能不能用与按下去存什么走同一条判断。
+ * Which section a clip asset is saved to in the brand library, and where its file is taken from: it can only be saved if the original file can be obtained (generated assets use the output; linked assets use the original file); when it cannot, the reason is given. Whether this cell is usable on the bar and what gets saved when pressed follow the same rule.
  */
 export function brandTarget(asset: AssetRecord | undefined): { kind: BrandMediaKind; source: LibrarySource } | { reason: string } {
   const kind = asset && brandKindForAsset(asset);
@@ -319,11 +310,11 @@ export function brandTarget(asset: AssetRecord | undefined): { kind: BrandMediaK
   return 'source' in found ? { kind, source: found.source } : found;
 }
 
-/** 一格在这一件上落成什么。 */
+/** What a cell turns into for this item. */
 export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context: BarContext = {}): ToolAction {
   switch (id) {
     case 'color':
-      // 计时的颜色、字体、字号是生成器参数，控件在属性页上。
+      // The timer's colour, font and size are generator parameters; the controls are on the properties panel.
       if (kind === 'counter') return jump(null);
       return item.type === 'shape' ? POP : textStyleAction(item, POP);
     case 'font':
@@ -348,7 +339,7 @@ export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context:
       return jump('transition');
     case 'adjust':
     case 'effects':
-      // 调色、模糊、投影、描边都在属性页的「效果」一节（原型的「调整」页在这里是效果栈里的调色）。
+      // Colour grading, blur, shadow and stroke are all in the “Effects” section of the properties panel (the prototype's “Adjust” page is here colour grading within the effect stack).
       return jump('effects');
     case 'volume':
       return item.type === 'video' || (item.type === 'composition' && item.audio) ? POP : off(OFF_REASON.sound);
@@ -361,7 +352,7 @@ export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context:
     case 'wave-picker':
     case 'counter-mode':
     case 'volume-levels':
-      // 合成的参数（改的是生成器参数）：控件都在属性页的开头。
+      // Composition parameters (these change generator parameters): the controls are all at the top of the properties panel.
       return jump(null);
     case 'properties':
       return jump(null);
@@ -378,10 +369,10 @@ export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context:
     case 'adjust-timing':
       return SUB;
     case 'arrange':
-      // 四个方向在菜单里下钻一层（原型 stage-toolbar-menu.jsx 的 OrderSub）；走不动的方向灰着。
+      // The four directions drill down one level in the menu (`OrderSub` in the prototype stage-toolbar-menu.jsx); directions that cannot move are greyed out.
       return SUB;
     case 'save-to-brand-kit': {
-      // 品牌库收素材与字幕样式，没有文字样式这一节。
+      // The brand library holds assets and subtitle styles; there is no text style section.
       if (item.type === 'text') return off(OFF_REASON.brandText);
       if (context.web) return off(OFF_REASON.brandWeb);
       const target = brandTarget(context.asset);
@@ -395,10 +386,10 @@ export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context:
       return off(OFF_REASON.crop);
     case 'replace-video':
     case 'replace-image':
-      // 打开替换素材的窗口，只换这一段（asset-replace.ts 的 `itemId`）。
+      // Opens the replace-asset window, replacing only this segment (`itemId` in asset-replace.ts).
       return COMMAND;
     case 'detach-audio':
-      // 分离之后视频自带的声音关了，再按这一格也是「没有声音」。
+      // After separating, the video's own sound is turned off, so pressing this cell again still means “no sound”.
       return item.type === 'video' && canDetachAudio(item, context.asset) ? COMMAND : off(OFF_REASON.sound);
     case 'sub-scope':
     case 'sub-edit':
@@ -406,7 +397,7 @@ export function toolAction(id: ToolId, item: PlacedItem, kind: BarKind, context:
     case 'sub-animation':
     case 'case':
     case 'hide-subs':
-      // 字幕条子专用（见 `captionAction`），画面元素的配置表里没有。
+      // Only for the subtitle bar (see `captionAction`); it is not in the config table for frame elements.
       return COMMAND;
   }
 }
@@ -425,25 +416,25 @@ function specOf(kind: BarKind, layout: Layout, tool: (id: ToolId) => Tool): Tool
   };
 }
 
-/** 选中这一件时条子与菜单的样子。 */
+/** What the bar and menu look like when this item is selected. */
 export function toolbarFor(item: PlacedItem, context: BarContext = {}): ToolbarSpec {
   const kind = barKindOf(item);
   const layout: Layout = kind === 'other' || kind === 'subtitle' ? OTHER_BAR : BAR[kind];
   return specOf(kind, layout, (id) => ({ id, label: TOOL_LABEL[id], action: toolAction(id, item, kind, context) }));
 }
 
-// ---- 字幕 ----
+// ---- Subtitles ----
 
 export interface CaptionBarInput {
-  /** 原文与译文共用这份样式（双语两行）：条子最前才有换行的两枚 chip。 */
+  /** The original and translation share this style (two lines when bilingual): the two line-break chips appear only at the front of the bar. */
   paired: boolean;
-  /** 字幕已经有自己的样式文档：才有东西存进品牌库（还在用缺省样式时没有）。 */
+  /** Subtitles already have their own style document, so there is something to save to the brand library only then (nothing while the default style is still in use). */
   styled: boolean;
-  /** 浏览器会话里调不了品牌库。 */
+  /** The brand library cannot be called in a browser session. */
   web?: boolean;
 }
 
-/** 字幕条子上的一格落成什么：文字样式那几格与文字元素同一套形态，写的是字幕样式文档。 */
+/** What a cell on the subtitle bar turns into: the text-style cells take the same form as text elements, but they write to the subtitle style document. */
 function captionAction(id: ToolId, { styled, web }: CaptionBarInput): ToolAction {
   switch (id) {
     case 'color':
@@ -463,18 +454,18 @@ function captionAction(id: ToolId, { styled, web }: CaptionBarInput): ToolAction
       if (web) return off(OFF_REASON.brandWeb);
       return styled ? COMMAND : off(OFF_REASON.captionDefaultStyle);
     default:
-      // 换行、Edit、Styles、动画（打开属性页的「当前词」）、大小写一档档轮换、隐藏字幕：一下就生效。
+      // Line break, Edit, Styles, Animation (opens the properties panel at “Current word”), case cycling one step at a time, and hiding subtitles: all take effect immediately.
       return COMMAND;
   }
 }
 
-/** 选中字幕时条子与菜单的样子。只有一种行用这份样式时，第一段（换行）整段不出。 */
+/** What the bar and menu look like when subtitles are selected. When only one kind of line uses this style, the first section (line break) is not shown at all. */
 export function captionToolbar(input: CaptionBarInput): ToolbarSpec {
   const layout: Layout = input.paired ? SUBTITLE_BAR : { ...SUBTITLE_BAR, visible: SUBTITLE_BAR.visible.filter((g) => !g.includes('sub-scope')) };
   return specOf('subtitle', layout, (id) => ({ id, label: TOOL_LABEL[id], action: captionAction(id, input) }));
 }
 
-/** 字幕大小写的四档（属性页的「大小写」下拉同一套；`capitalize` 算首字母大写）。 */
+/** The four case modes for subtitles (the same set as the “Case” dropdown in the properties panel; `capitalize` capitalises the first letter). */
 export const CAPTION_CASES = ['none', 'uppercase', 'title', 'lowercase'] as const;
 export type CaptionCase = (typeof CAPTION_CASES)[number];
 
@@ -483,14 +474,14 @@ export function captionCase(transform: unknown): CaptionCase {
   return transform === 'title' || transform === 'capitalize' ? 'title' : 'none';
 }
 
-/** 菜单里那一颗大小写钮按一下换到下一档（原型 `case`：原样 → 全大写 → 首字母大写 → 全小写 → 原样）。 */
+/** Pressing the case button in the menu moves to the next mode (prototype `case`: as is → all caps → capitalised → all lower case → as is). */
 export function nextCaptionCase(transform: unknown): CaptionCase {
   return CAPTION_CASES[(CAPTION_CASES.indexOf(captionCase(transform)) + 1) % CAPTION_CASES.length]!;
 }
 
-// ---- 落位 ----
+// ---- Placement ----
 
-/** 条子离选框 12px（原型 `.mtb`）；选框上方有旋转钮时抬到 50px 跨过它（`.mtb--rot`）。离舞台边至少 8px。 */
+/** The bar sits 12px from the selection box (prototype `.mtb`); when there is a rotation handle above the selection box, it is raised to 50px to clear it (`.mtb--rot`). At least 8px from the stage edge. */
 export const BAR_GAP = 12;
 export const BAR_LIFT = 50;
 export const BAR_MARGIN = 8;
@@ -503,15 +494,14 @@ export interface Size {
 export interface BarPlacement {
   left: number;
   top: number;
-  /** 翻到了选框下方。 */
+  /** Flipped to below the selection box. */
   below: boolean;
-  /** 舞台比条子窄时，条子最多这么宽（横向滚动）。 */
+  /** When the stage is narrower than the bar, the bar is at most this wide (it scrolls horizontally). */
   maxWidth: number;
 }
 
 /**
- * 条子放在哪（舞台像素，`box` 是选中件旋转后的外包盒）：横向对着选框居中、夹在舞台里；
- * 纵向先放上方，上方放不下（贴着舞台顶）就翻到下方，下方也放不下就夹在舞台底边以内。
+ * Where the bar goes (stage pixels; `box` is the rotated bounding box of the selected item): horizontally centred on the selection box and clamped inside the stage; vertically it goes above first; if there is no room above (against the top of the stage), it flips below; if there is no room below either, it is clamped within the bottom edge of the stage.
  */
 export function toolbarPlacement(box: Rect, area: Size, bar: Size, knob: boolean): BarPlacement {
   const maxWidth = Math.max(0, area.w - BAR_MARGIN * 2);

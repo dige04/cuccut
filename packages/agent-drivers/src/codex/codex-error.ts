@@ -2,16 +2,16 @@ import type { AgentErrorCode } from '@cuccut/protocol';
 import type { CodexErrorInfo, CodexTurnError } from './codex-protocol.ts';
 
 /**
- * Codex 的回合错误 → `AgentErrorCode`（架构设计 §3.11）。先看结构化的 `codexErrorInfo`，它说不清时再按原文的关键词兜底。
+ * Codex turn error → `AgentErrorCode` (architecture design §3.11). It checks the structured `codexErrorInfo` first, and falls back to keyword matching on the raw text when that cannot tell.
  *
- * 结构化字段（对照 0.159.0 schema 与 codex 源码 `protocol/src/error.rs` 的 `to_codex_protocol_error`）：
- * - `unauthorized`（刷新令牌失败）→ 要重新登录。
- * - `usageLimitExceeded`（用量、额度、套餐不含）、`rateLimitExceeded` → 限流或额度用尽。
- * - 带 HTTP 状态的变体：401 → 要重新登录，429 → 限流。
- * - `serverOverloaded`（"Selected model is at capacity. Please try a different model."）→ 模型暂时不可用，换个模型就能继续。
- * - `other`、`badRequest`、`internalServerError`、没带状态的连接错误、或者干脆没有结构化字段：看原文。
- *   上游的「模型不存在」（HTTP 404 `Model not found ...`）与旧 CLI 不认识新模型都落在这里。
- * - 其余（上下文超长、预算、沙箱、内容策略……）不是这几类，给 null，界面只显示原文。
+ * Structured fields (checked against the 0.159.0 schema and codex source `protocol/src/error.rs`'s `to_codex_protocol_error`):
+ * - `unauthorized` (refresh token failed) → must log in again.
+ * - `usageLimitExceeded` (usage, quota, plan does not include it), `rateLimitExceeded` → rate-limited or quota exhausted.
+ * - Variants with an HTTP status: 401 → must log in again, 429 → rate-limited.
+ * - `serverOverloaded` (“Selected model is at capacity. Please try a different model.”) → model temporarily unavailable; switching models lets you continue.
+ * - `other`, `badRequest`, `internalServerError`, connection errors without a status, or simply no structured field: check the raw text.
+ *   Upstream “model not found” (HTTP 404 `Model not found ...`) and old CLIs not recognizing new models both land here.
+ * - Everything else (context too long, budget, sandbox, content policy…) is not in these groups, gives null, and the UI only shows the raw text.
  */
 export function classifyCodexError(error: Pick<CodexTurnError, 'message' | 'codexErrorInfo' | 'additionalDetails'>): AgentErrorCode | null {
   const info = error.codexErrorInfo ?? null;
@@ -20,7 +20,7 @@ export function classifyCodexError(error: Pick<CodexTurnError, 'message' | 'code
   return classifyCodexErrorText([error.message, error.additionalDetails ?? ''].join('\n'));
 }
 
-/** undefined = 结构化字段说不清，交给原文判断。 */
+/** undefined = the structured field cannot tell; leave it to the raw text. */
 function classifyInfo(info: CodexErrorInfo | null): AgentErrorCode | null | undefined {
   if (info === null) return undefined;
   if (typeof info === 'string') {
@@ -48,9 +48,9 @@ function classifyInfo(info: CodexErrorInfo | null): AgentErrorCode | null | unde
 }
 
 /**
- * 原文兜底的词表。账号一类与设计稿 `designs/cuccut/app/model-agent-setup.js` 的 `AUTH_NEEDLES` 一致
- * （内核 `agent_setup::auth_failure` 同一张表）：只认明确指向账号的说法，`auth` 词根、denied、forbidden 不收。
- * 模型一类含设计稿的 `MODEL_GATE_NEEDLES`（旧 CLI 不认识配置里的新模型）。
+ * Word list for the raw-text fallback. The account group matches `AUTH_NEEDLES` in the design draft `designs/cuccut/app/model-agent-setup.js`
+ * (the same table as the kernel's `agent_setup::auth_failure`): only phrases that clearly point to the account are accepted; the `auth` stem, denied and forbidden are not.
+ * The model group includes the design draft's `MODEL_GATE_NEEDLES` (old CLI does not recognize the new model in the config).
  */
 const MODEL_NEEDLES = [
   'requires a newer version of codex',
@@ -81,7 +81,7 @@ const AUTH_NEEDLES = [
 ];
 const RATE_NEEDLES = ['rate limit', 'rate_limit', 'ratelimit', 'usage limit', 'too many requests', 'quota', 'insufficient_quota'];
 
-/** 只看原文的分类。模型一类先判：「不支持用 ChatGPT 账号使用这个模型」里的 account 不是登录问题。 */
+/** Classification based only on the raw text. The model group is checked first, so that in 「不支持用 ChatGPT 账号使用这个模型」 (“This model is not supported with a ChatGPT account”) the “account” is not read as a login problem. */
 export function classifyCodexErrorText(text: string): AgentErrorCode | null {
   const t = text.toLowerCase();
   if (MODEL_NEEDLES.some((n) => t.includes(n))) return 'AGENT_MODEL_UNAVAILABLE';

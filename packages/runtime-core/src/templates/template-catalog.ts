@@ -30,46 +30,44 @@ import { parseTemplateManifest, parseTemplateTranslation } from '@cuccut/protoco
 import { RcTemplates } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 创作模板目录（模板包规范 §6）：内置目录（随应用分发）与 Runtime Home 下的 `templates/`（用户自己放的）。
+ * Creative template catalog (template package spec §6): the built-in catalog (distributed with the app) and the `templates/` under the Runtime Home (placed there by the user).
  *
- * - 逐个目录校验，坏模板跳过并记一条诊断，不影响其余模板。
- * - 不缓存：每次 `list`、`get`、`locate` 都重新读目录。几十个小文件的读取可以忽略，用户放进新模板后再列一次就能看到，
- *   `get` 与发句柄也不会用到过期的清单。
- * - 内置与用户目录同 id 时内置的优先，用户的那一份记 `builtin-conflict`（规范 §6）。
- * - 语言版本（规范 §3.6）：`locales/` 里的译文加载时全部校验，任何一份不合规整个模板跳过；`list`、`get` 与发送时
- *   按请求的语言（缺省为 Runtime 的界面语言）挑一份套到清单上。
+ * - Validates directory by directory. A bad template is skipped with one diagnostic recorded, without affecting the other templates.
+ * - No caching: every `list`, `get` and `locate` reads the directories again. Reading a few dozen small files is negligible. A new template placed by the user shows up on the next list, and `get` and handle issuing never use a stale manifest.
+ * - When the built-in and user directories have the same id, the built-in one wins, and the user's copy is recorded as `builtin-conflict` (spec §6).
+ * - Language versions (spec §3.6): the translations in `locales/` are all validated on load. If any one is non-compliant, the whole template is skipped. `list`, `get` and sending pick one according to the requested language (default: the Runtime's UI language), and apply it to the manifest.
  */
 
-/** 清单文件的上限：清单的各项都有长度上限，正常的清单远小于它；超过的不读进内存。 */
+/** Size limit for the manifest file. Each manifest item has a length cap, and a normal manifest is far smaller than this; anything larger is not read into memory. */
 const MANIFEST_MAX_BYTES = 64 * 1024;
-/** 一个模板目录里最多看多少个条目（含子目录）；超过的整个模板判为不合规，不让一个巨大的目录拖慢列表。 */
+/** Maximum number of entries (including subdirectories) examined in one template directory. A template that exceeds it is judged non-compliant as a whole, so one huge directory cannot slow down the list. */
 const MAX_TEMPLATE_ENTRIES = 256;
 
-/** 一个加载成功的模板。`dir` 是模板目录的绝对路径；`manifest` 与 `prompt` 是 `template.json` 与 `prompt.md` 原样。 */
+/** A successfully loaded template. `dir` is the absolute path of the template directory. `manifest` and `prompt` are `template.json` and `prompt.md` as they are. */
 export interface LoadedTemplate {
   manifest: TemplateManifest;
   origin: TemplateOrigin;
   dir: string;
   prompt: string;
-  /** `locales/` 里的译文，按 `LOCALES` 的顺序。 */
+  /** Translations in `locales/`, in the order of `LOCALES`. */
   translations: ReadonlyMap<Locale, TemplateTranslationEntry>;
 }
 
-/** 一种语言的译文：`locales/<语言>.json` 的文案与 `locales/<语言>.md` 的提示词。 */
+/** Translation for one language: the copy from `locales/<language>.json` and the prompt from `locales/<language>.md`. */
 export interface TemplateTranslationEntry {
   translation: TemplateTranslation;
   prompt: string;
 }
 
-/** 某种语言下的模板：清单套上译文、提示词换成译文；没有合适的译文时就是 `template.json` 与 `prompt.md`。 */
+/** A template in some language: the manifest with the translation applied, and the prompt replaced with the translation. Without a suitable translation, it is `template.json` and `prompt.md`. */
 export interface LocalizedTemplate {
   manifest: TemplateManifest;
   prompt: string;
-  /** 有哪些语言版本：`template.json` 的 `language` 在前，译文按 `LOCALES` 的顺序。 */
+  /** Which language versions exist: the `language` of `template.json` first, then the translations in the order of `LOCALES`. */
   languages: string[];
 }
 
-/** 按 `language`（缺省为 Runtime 的界面语言）挑语言版本（规范 §3.6）。 */
+/** Picks the language version by `language` (default: the Runtime's UI language) (spec §3.6). */
 export function localizeTemplate(template: LoadedTemplate, language?: string | null): LocalizedTemplate {
   const { manifest, translations } = template;
   const available = [...translations.keys()];
@@ -86,15 +84,14 @@ export interface TemplateScan {
 }
 
 export interface TemplateCatalogOptions {
-  /** 内置模板目录；null 表示没有（找不到随包的目录）。 */
+  /** Built-in template catalog. `null` means there is none (the directory bundled with the package cannot be found). */
   builtinDir: string | null;
-  /** 用户模板目录 `<CUCCUT_HOME>/templates`。不存在时当作空目录，不替用户创建。 */
+  /** User template directory `<CUCCUT_HOME>/templates`. If it does not exist it is treated as empty, and it is not created on the user's behalf. */
   userDir: string;
 }
 
 /**
- * 找内置模板目录：`CUCCUT_TEMPLATES_DIR` 环境变量；打包后的应用里是 `<resources>/templates`；开发时从本模块往上找
- * 同时有 `package.json` 与 `templates/` 的目录（仓库根）。都没有时 null。
+ * Finds the built-in template directory. Checks the `CUCCUT_TEMPLATES_DIR` environment variable. In a packaged app it is `<resources>/templates`. In development, it walks up from this module to find a directory that has both a `package.json` and a `templates/` (the repository root). `null` if none.
  */
 export function resolveBuiltinTemplatesDir(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.CUCCUT_TEMPLATES_DIR) return env.CUCCUT_TEMPLATES_DIR;
@@ -136,7 +133,7 @@ export class TemplateCatalog {
     return this.#options.userDir;
   }
 
-  /** 两个来源合在一起：内置的在前；用户目录里与内置同 id 的跳过。 */
+  /** Merges the two sources: built-in first. In the user directory, entries with the same id as a built-in one are skipped. */
   async scan(): Promise<TemplateScan> {
     const builtin = this.#options.builtinDir ? await scanTemplateDir(this.#options.builtinDir, 'builtin') : EMPTY_SCAN;
     const user = await scanTemplateDir(this.#options.userDir, 'user');
@@ -160,13 +157,13 @@ export class TemplateCatalog {
     return { templates, diagnostics };
   }
 
-  /** 目录；每个模板换成 `language`（缺省为 Runtime 的界面语言）挑中的语言版本。 */
+  /** Directory. Each template is replaced with the language version picked by `language` (default: the Runtime's UI language). */
   async list(language?: string | null): Promise<TemplateListResult> {
     const { templates, diagnostics } = await this.scan();
     return { templates: templates.map((t) => summaryOf(t, language)), diagnostics };
   }
 
-  /** 按 id 取一个可用的模板；没有（或没能加载）时 `not-found`。 */
+  /** Gets an available template by id. `not-found` if there is none (or it could not be loaded). */
   async require(id: string): Promise<LoadedTemplate> {
     const found = (await this.scan()).templates.find((t) => t.manifest.id === id);
     if (!found) throw new RpcError('not-found', RcTemplates.templateNotFound({ id }), { code: 'TEMPLATE_NOT_FOUND', templateId: id });
@@ -179,7 +176,7 @@ export class TemplateCatalog {
   }
 
   /**
-   * 模板随附文件的位置：只认清单登记的 `cover.file`、`preview.file` 与 `assets[].path`。媒体通道发句柄时再做一次真实路径检查。
+   * Location of a template's accompanying files. Only `cover.file`, `preview.file` and `assets[].path`, as registered in the manifest, are recognized. A real-path check is done again when the media channel issues a handle.
    */
   async locate(id: string, file: string): Promise<{ root: string; file: string }> {
     const template = await this.require(id);
@@ -207,17 +204,16 @@ export function summaryOf(template: LoadedTemplate, language?: string | null): T
   };
 }
 
-/** 清单登记的随附文件（不含清单与 `prompt.md`）。 */
+/** Accompanying files registered in the manifest (excluding the manifest and `prompt.md`). */
 function registeredFiles(manifest: TemplateManifest): string[] {
   return [manifest.cover.file, manifest.preview.file, ...(manifest.assets ?? []).map((a) => a.path)].filter((f): f is string => f != null);
 }
 
 /**
- * 读一个目录来源（规范 §6）：每个子目录是一个模板。不是目录的条目与隐藏条目忽略；符号链接不跟随（记诊断，说明为什么没出现）；
- * 同一来源里 id 重复的两个都跳过。目录不存在时为空。
+ * Reads a directory source (spec §6): each subdirectory is one template. Entries that are not directories, and hidden entries, are ignored. Symbolic links are not followed (a diagnostic is recorded explaining why it did not appear). If two in the same source have a duplicate id, both are skipped. A nonexistent directory is treated as empty.
  */
 export async function scanTemplateDir(dir: string, origin: TemplateOrigin): Promise<TemplateScan> {
-  // 相对路径（例如环境变量里写的）先解析成绝对路径：诊断给的是绝对路径，目录内的检查也按它比较。
+  // Relative paths (for example, ones written in an environment variable) are first resolved to absolute paths. The diagnostics give absolute paths, and the in-directory checks compare against them.
   const root = path.resolve(dir);
   const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
   const diagnostics: TemplateDiagnostic[] = [];
@@ -258,8 +254,7 @@ function diagnostic(
 }
 
 /**
- * 读并校验一个模板目录（规范 §2–§4）：清单合规、id 等于目录名、`prompt.md` 是非空的 UTF-8 且不超限、占位符与待填项对得上、登记的文件都在、
- * 封面与预览不超过体积上限、`locales/` 里的译文成对且合规（§3.6）、没有未登记的文件、目录里没有符号链接。不合规时返回诊断。
+ * Reads and validates one template directory (spec §2–§4): the manifest complies, the id equals the directory name, `prompt.md` is non-empty UTF-8 and within limits, the placeholders match the to-fill items, all registered files exist, the cover and preview are not over the size cap, the translations in `locales/` come in pairs and are compliant (§3.6), there are no unregistered files, and there are no symbolic links in the directory. Non-compliant directories return diagnostics.
  */
 export async function loadTemplate(dir: string, origin: TemplateOrigin): Promise<LoadedTemplate | TemplateDiagnostic> {
   const invalid = (issues: string[]) => diagnostic('invalid', origin, dir, RcTemplates.templateInvalid().text, issues);
@@ -288,7 +283,7 @@ export async function loadTemplate(dir: string, origin: TemplateOrigin): Promise
   const { manifest } = parsed;
 
   const issues: string[] = [];
-  // 占位符（规范 §2.2、§5.5）：example 的正文与 fields 对得上，scene 的正文不得有 `{{`。
+  // Placeholders (spec §2.2, §5.5): the body of `example` must match `fields`, and the body of `scene` must not contain `{{`.
   const prompt = (await readPrompt(dir, files, TEMPLATE_PROMPT_FILE, issues)) ?? '';
   if (prompt) issues.push(...templatePromptSlotProblems(manifest, prompt));
 
@@ -314,9 +309,7 @@ export async function loadTemplate(dir: string, origin: TemplateOrigin): Promise
 }
 
 /**
- * `locales/` 里的译文（规范 §3.6）：每种出货语言一对 `<语言小写>.json` 与 `.md`，不得与 `template.json` 同一种语言；
- * 文案对照清单校验，提示词照 `prompt.md` 的规则、占位符对照译文的 `fields`。问题写进 `issues`；`locales` 是认出来的语言
- * （它们的文件算登记过），`entries` 是合规的译文。认不出的文件留给未登记文件的检查。
+ * Translations in `locales/` (spec §3.6): one pair per shipped language, `<lowercase language>.json` and `.md`. They must not be the same language as `template.json`. The copy is checked against the manifest. The prompt follows the rules for `prompt.md`, and the placeholders are checked against the translation's `fields`. Problems are written to `issues`. `locales` are the recognized languages (their files count as registered), and `entries` are the compliant translations. Files that are not recognized are left to the unregistered-file check.
  */
 async function loadTranslations(
   dir: string,
@@ -355,7 +348,7 @@ async function loadTranslations(
   return { locales, entries };
 }
 
-/** 读一份提示词（`prompt.md` 或译文的 `.md`）：要在、非空、合法 UTF-8、不超过上限；不合规时记问题、返回 null。 */
+/** Reads a prompt (`prompt.md` or a translation's `.md`): it must exist, be non-empty, be valid UTF-8, and not exceed the limit. If it does not comply, records a problem and returns `null`. */
 async function readPrompt(dir: string, files: ReadonlySet<string>, file: string, issues: string[]): Promise<string | null> {
   if (!files.has(file)) {
     issues.push(RcTemplates.missingFile({ file }).text);
@@ -370,7 +363,7 @@ async function readPrompt(dir: string, files: ReadonlySet<string>, file: string,
   return null;
 }
 
-/** 读一份 JSON（译文文案）：要在、不超过清单的上限、合法 UTF-8 与 JSON；不合规时记问题、返回 undefined。 */
+/** Reads a JSON file (translated copy): it must exist, not exceed the manifest's limit, and be valid UTF-8 and JSON. If it does not comply, records a problem and returns `undefined`. */
 async function readJson(dir: string, files: ReadonlySet<string>, file: string, issues: string[]): Promise<unknown> {
   if (!files.has(file)) {
     issues.push(RcTemplates.missingFile({ file }).text);
@@ -395,8 +388,7 @@ async function readJson(dir: string, files: ReadonlySet<string>, file: string, i
 }
 
 /**
- * 模板目录里的全部普通文件（相对路径，`/` 分隔）。点开头的条目忽略；遇到符号链接或别的特殊文件、条目过多时整个模板不合规：
- * 不跟随链接，也就不会读到目录外的东西。
+ * All regular files in the template directory (relative paths, `/` separated). Entries beginning with a dot are ignored. On encountering a symbolic link, another special file, or too many entries, the whole template is non-compliant: links are not followed, so nothing outside the directory is read.
  */
 async function listTemplateFiles(dir: string): Promise<{ files: Set<string> } | { problem: string }> {
   const files = new Set<string>();
@@ -427,13 +419,13 @@ async function listTemplateFiles(dir: string): Promise<{ files: Set<string> } | 
   }
 }
 
-/** 相对路径解析后仍在目录内（清单校验已经挡掉 `..` 与绝对路径，这里再兜一次）。 */
+/** The relative path after resolution is still inside the directory. The manifest validation already blocks `..` and absolute paths; this is a second check. */
 function inside(dir: string, file: string): boolean {
   const resolved = path.resolve(dir, file);
   return resolved.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
 }
 
-/** 读文件，超过 `max` 字节时返回 null（只读到 `max + 1` 字节为止）。 */
+/** Reads a file. Returns `null` if it exceeds `max` bytes (reads at most `max + 1` bytes). */
 async function readCapped(file: string, max: number): Promise<Buffer | null> {
   const handle = await fsp.open(file, 'r');
   try {

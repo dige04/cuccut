@@ -8,8 +8,7 @@ import { activeImportStaging } from '../videos/package-import.ts';
 import { sweepLeftovers } from './leftover-files.ts';
 
 /**
- * 启动时的残留清理（架构设计 §5.8）：只删 CucCut 自己命名的、够旧的、没有进行中的任务用着的导出临时文件与打开便携包的暂存目录；
- * 用户的文件、名字对不上的、符号链接、子目录里的、刚写的都不碰。
+ * Startup cleanup of leftovers (architecture design §5.8): deletes only export temp files and import staging directories that CucCut itself named, that are old enough, and that no in-progress job is using. User files, names that don't match, symbolic links, anything in subdirectories, and anything freshly written are never touched.
  */
 
 describe('启动时清理导出与打开便携包的残留', () => {
@@ -64,28 +63,28 @@ describe('启动时清理导出与打开便携包的残留', () => {
     ];
     const outside = await file(path.join(dir, 'outside.txt'));
     const kept = [
-      // 用户的文件与最终的输出。
+      // User files and final outputs.
       await file(e('成片.mp4')),
       await file(e('.成片.mp4')),
-      // 刚写的：可能是别的进程里正在进行的导出。
+      // Freshly written: may be an export in progress in another process.
       await file(e('.成片.mp4.12345678.tmp'), false),
-      // 进行中的导出的输出名。
+      // Output names of in-progress exports.
       await file(e('.进行中.mp4.0a1b2c3d.tmp')),
-      // Ledger 里没有的输出名、名字对不上的。
+      // Output names not in the ledger, and names that don't match.
       await file(e('.别人.mp4.0a1b2c3d.tmp')),
       await file(e('.成片.mp4.9A8B7C6D.tmp')),
       await file(e('.成片.mp4.0a1b2c3.tmp')),
       await file(e('.成片.mp4.0a1b2c3d.tmp.bak')),
-      // 名字对得上但是目录。
+      // Names that match but are directories.
       await folder(e('.成片.mp4.abcdef01.tmp')),
-      // 刚建的、名字对不上的、不是目录的、子目录里的暂存。
+      // Freshly created, names that don't match, not directories, staging inside subdirectories.
       await folder(r('.cuccut-import-89abcdef'), false),
       await folder(r('.cuccut-import-zzzzzzzz')),
       await folder(r('cuccut-import-01234567')),
       await file(r('.cuccut-import-11111111')),
       await folder(r('sub/.cuccut-import-33333333')),
     ];
-    // 符号链接：名字对得上也不碰，指向的东西更不碰。
+    // Symbolic links: not touched even when the name matches, and whatever they point to is not touched either.
     const linkedTemp = e('.成片.mp4.22222222.tmp');
     await fs.symlink(outside, linkedTemp);
     await fs.lutimes(linkedTemp, hoursAgo, hoursAgo);
@@ -93,7 +92,7 @@ describe('启动时清理导出与打开便携包的残留', () => {
     await fs.symlink(path.join(dir, 'exports'), linkedStaging);
     await fs.lutimes(linkedStaging, hoursAgo, hoursAgo);
     kept.push(linkedTemp, linkedStaging, outside);
-    // 这个进程里进行中的打开用着的暂存目录。
+    // Staging directories used by in-progress opens in this process.
     const active = await folder(r('.cuccut-import-55555555'));
     (activeImportStaging() as Set<string>).add(active);
     kept.push(active);

@@ -1,41 +1,35 @@
-//! 模板层文档（`timeline.json` 顶层 `template` 与品牌库 `templates[]` 的线上形状）。
+//! Template layer document (the wire shape of the top-level `template` in `timeline.json` and of the brand library `templates[]`).
 //!
-//! 一套模板是一份**层文档**：`chapters | progress | logo | text` 四类图层按画面百分比落位，
-//! 数组顺序即 z 序（后画在上）。这里只放形状，校验、纯派生（分段、变量、命中）和内置
-//! 目录见 `ccut-timeline::template`，写路径见 `ccut-workspace::template`。
+//! A template is a **layer document**: the four layer kinds `chapters | progress | logo | text` are positioned by percentage of the frame, and array order is the z-order (later items are drawn on top). This file contains only the shapes; validation, pure derivations (segmentation, variables, hit testing) and the built-in catalog are in `ccut-timeline::template`, and the write path is in `ccut-workspace::template`.
 //!
-//! v2 在 `ccut-protocol/src/template.rs`，原样照搬到这里；只去掉了为生成 JSON Schema 的
-//! `JsonSchema` 派生与它的测试 `schema_generates`（本 crate 不依赖 `schemars`）。
+//! v2 is in `ccut-protocol/src/template.rs` and was copied here as-is; only the `JsonSchema` derive used for generating JSON Schema and its test `schema_generates` were removed (this crate does not depend on `schemars`).
 //!
-//! 没有独立的水印格式（2026-09-14，台账 2026-09-14-230340）：水印就是一套只有台标层的
-//! 模板，台标层用 `tile`（斜向平铺）与 `opacity`（整层不透明度）表达，`tag: "watermark"`
-//! 标出这一类；旧 Brand kit 的水印预设导入后是 `imported: "watermark"` 的品牌库模板。
+//! There is no separate watermark format (2026-09-14, ledger 2026-09-14-230340): a watermark is simply a template with only a logo layer. The logo layer expresses it with `tile` (diagonal tiling) and `opacity` (whole-layer opacity), and `tag: "watermark"` marks this category. Old Brand kit watermark presets, once imported, become brand library templates with `imported: "watermark"`.
 //!
-//! 颜色一律 `#RRGGBB[AA]`；尺寸（`size`）是画面高的百分比；`font` 是字体族名，`None`
-//! 表示跟随字幕样式字体；`mono` 文字层固定用内置等宽族，忽略 `font`。
+//! Colors are always `#RRGGBB[AA]`; sizes (`size`) are percentages of the frame height; `font` is a font family name, where `None` means follow the caption style font; `mono` text layers always use the built-in monospace family and ignore `font`.
 
 use serde::{Deserialize, Serialize};
 
-/// 图层最小宽度（画面百分比）。
+/// Minimum layer width (percentage of the frame).
 pub const MIN_W: f64 = 4.0;
-/// 图层最小高度（画面百分比）。
+/// Minimum layer height (percentage of the frame).
 pub const MIN_H: f64 = 0.6;
-/// 文字层可用的 `{变量}` 名。
+/// The `{variable}` names available to text layers.
 pub const VAR_NAMES: &[&str] = &[
     "chapter", "n", "count", "time", "remain", "total", "percent", "title",
 ];
-/// 目录卡片色相名（原型第 112 轮的取值集合；2026-09-14 平台款补 red / green / pink）。
+/// Catalog card hue names (the value set from prototype round 112; on 2026-09-14 the platform edition added red / green / pink).
 pub const HUES: &[&str] = &[
     "purple", "cyan", "orange", "yellow", "magenta", "blue", "gray", "red", "green", "pink",
 ];
-/// 台标层不透明度下限：0 等于关掉这一层，那是 `on` 的事。
+/// Lower bound of the logo layer's opacity: 0 would be the same as turning the layer off, which is what `on` is for.
 pub const MIN_OPACITY: f64 = 0.05;
-/// `TemplateDoc::tag` 的水印类取值（内置三款水印与导入的旧水印都带）。
+/// The watermark-category values of `TemplateDoc::tag` (the three built-in watermarks and the imported old watermarks all carry it).
 pub const TAG_WATERMARK: &str = "watermark";
-/// `TemplateDoc::imported` 的来历取值：由旧 Brand kit 水印预设导入。
+/// The provenance values of `TemplateDoc::imported`: imported from an old Brand kit watermark preset.
 pub const IMPORTED_WATERMARK: &str = "watermark";
 
-/// 整层不透明度夹到 `[MIN_OPACITY, 1]`，非数按 1（原型 `clampOpacity`）。
+/// Whole-layer opacity is clamped to `[MIN_OPACITY, 1]`; a non-number counts as 1 (prototype `clampOpacity`).
 pub fn clamp_opacity(v: f64) -> f64 {
     if v.is_nan() {
         1.0
@@ -44,7 +38,7 @@ pub fn clamp_opacity(v: f64) -> f64 {
     }
 }
 
-/// 模板画幅。
+/// Template canvas (frame) size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TemplateCanvas {
     #[default]
@@ -70,7 +64,7 @@ impl TemplateCanvas {
     }
 }
 
-/// 图层盒子，单位是画面百分比。
+/// Layer box; units are percentages of the frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayerBox {
     pub x: f64,
@@ -85,7 +79,7 @@ impl LayerBox {
     }
 }
 
-/// 章节条的填充方式：`bar` 底部进度条，`dim` 整段染色。
+/// Fill mode of the chapter strip: `bar` is a progress bar at the bottom, `dim` tints the whole segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChapterFill {
@@ -94,7 +88,7 @@ pub enum ChapterFill {
     Dim,
 }
 
-/// 台标形状。
+/// Logo shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogoShape {
@@ -103,7 +97,7 @@ pub enum LogoShape {
     Plain,
 }
 
-/// 水平对齐：文字层缺省靠左（`#[default]`），台标层缺省居中（见 [`LayerKind::Logo`]）。
+/// Horizontal alignment: text layers default to left (`#[default]`), logo layers default to centered (see [`LayerKind::Logo`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TextAlign {
@@ -113,14 +107,14 @@ pub enum TextAlign {
     Right,
 }
 
-/// `"text"` 字面量的载体（`LogoSrc::Text`）。
+/// The carrier for the `"text"` literal (`LogoSrc::Text`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogoText {
     #[serde(rename = "text")]
     Text,
 }
 
-/// 台标来源：文字徽章、品牌库图片 id、或项目相对路径的图片文件。
+/// Logo source: a text badge, a brand library image id, or an image file at a project-relative path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LogoSrc {
@@ -158,7 +152,7 @@ impl Default for LogoSrc {
     }
 }
 
-/// 图层类型与各自的参数；`kind` 与 `TemplateLayer` 的公共字段平铺在同一个对象里。
+/// Layer types and their respective parameters; `kind` and the common fields of `TemplateLayer` are flattened into the same object.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -166,7 +160,7 @@ impl Default for LogoSrc {
     rename_all_fields = "camelCase"
 )]
 pub enum LayerKind {
-    /// 章节条：按章节时长分段，当前段高亮。
+    /// Chapter strip: split into segments by chapter duration, with the current segment highlighted.
     Chapters {
         #[serde(default)]
         fill: ChapterFill,
@@ -180,9 +174,9 @@ pub enum LayerKind {
         #[serde(default = "default_chapters_size")]
         size: f64,
     },
-    /// 进度线：一条按播放进度填充的细线。
+    /// Progress line: a thin line filled according to playback progress.
     Progress { accent: String, track: String },
-    /// 台标：文字徽章或图片。
+    /// Logo: a text badge or an image.
     Logo {
         #[serde(default)]
         src: LogoSrc,
@@ -193,8 +187,8 @@ pub enum LayerKind {
         color: String,
         #[serde(default)]
         shape: LogoShape,
-        /// 字 / 图在盒子里的水平对齐，缺省居中且居中不落盘；底色照旧铺满盒子，平铺时不起作用。
-        /// 缺省值单独给：`TextAlign` 自己的缺省是文字层用的靠左。
+        /// Horizontal alignment of text or image within the box. Defaults to centered, and centered is not written to disk. The background still fills the box as before; alignment has no effect when tiled.
+        /// The default is given separately: `TextAlign`'s own default is left, which is what text layers use.
         #[serde(
             default = "default_logo_align",
             skip_serializing_if = "is_center_align"
@@ -202,19 +196,17 @@ pub enum LayerKind {
         align: TextAlign,
         #[serde(default = "default_logo_size")]
         size: f64,
-        /// 字离盒子左右边的内边距，单位与 `size` 相同（画面高的百分比）；缺省按字号推（徽章 0.6em、无底 0）。
-        /// 几层字要从同一条竖线起笔时给它们同一个值——按 em 推的内边距跟着各自字号走，
-        /// 字号不同就对不齐。图片台标与平铺不看它。
+        /// Left/right inner padding of the text from the box edges, in the same units as `size` (percentage of frame height). By default it is derived from the font size (badge 0.6em, no background 0). When several text layers need to start from the same vertical line, give them the same value: paddings derived in em follow each layer's own font size, so they will not line up if the sizes differ. Image logos and tiling ignore it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pad: Option<f64>,
-        /// 斜向平铺满整个盒子（水印用）；缺省只画一枚。
+        /// Diagonally tiled across the whole box (for watermarks); by default only one copy is drawn.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         tile: bool,
-        /// 整层不透明度，读时经 [`clamp_opacity`] 夹到 `[0.05, 1]`；缺省 1 不落盘。
+        /// Whole-layer opacity. On read it is clamped to `[0.05, 1]` via [`clamp_opacity`]; the default 1 is not written to disk.
         #[serde(default = "default_opacity", skip_serializing_if = "is_full_opacity")]
         opacity: f64,
     },
-    /// 文字：支持 `{chapter}` 等变量。
+    /// Text: supports variables such as `{chapter}`.
     Text {
         text: String,
         color: String,
@@ -224,7 +216,7 @@ pub enum LayerKind {
         align: TextAlign,
         #[serde(default = "default_text_size")]
         size: f64,
-        /// 字离盒子左右边的内边距，单位与 `size` 相同；缺省 0.5em（按字号推），语义同台标的 `pad`。
+        /// Left/right inner padding of the text from the box edges, in the same units as `size`; defaults to 0.5em (derived from the font size), with the same meaning as the logo's `pad`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pad: Option<f64>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -235,7 +227,7 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
-    /// 线上 `kind` 名。
+    /// The `kind` name on the wire.
     pub fn name(&self) -> &'static str {
         match self {
             LayerKind::Chapters { .. } => "chapters",
@@ -245,7 +237,7 @@ impl LayerKind {
         }
     }
 
-    /// 整宽横条类图层（章节条 / 进度线），字幕避让只看这两类。
+    /// Full-width strip-type layers (chapter strip, progress line); caption avoidance only considers these two kinds.
     pub fn is_strip(&self) -> bool {
         matches!(
             self,
@@ -253,7 +245,7 @@ impl LayerKind {
         )
     }
 
-    /// 生效的整层不透明度：台标层按 `opacity` 夹取，其余类恒为 1。
+    /// The effective whole-layer opacity: logo layers are clamped per `opacity`; other kinds are always 1.
     pub fn opacity(&self) -> f64 {
         match self {
             LayerKind::Logo { opacity, .. } => clamp_opacity(*opacity),
@@ -261,13 +253,13 @@ impl LayerKind {
         }
     }
 
-    /// 是否是平铺台标。
+    /// Whether this is a tiled logo.
     pub fn tiled(&self) -> bool {
         matches!(self, LayerKind::Logo { tile: true, .. })
     }
 }
 
-/// 一层。
+/// One layer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TemplateLayer {
     pub id: String,
@@ -279,49 +271,45 @@ pub struct TemplateLayer {
     pub kind: LayerKind,
 }
 
-/// 一套模板（定义或实例）。
+/// One template (a definition or an instance).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateDoc {
     pub id: String,
     pub name: String,
-    /// 目录卡片色相名，见 [`HUES`]。
+    /// Catalog card hue name; see [`HUES`].
     #[serde(default = "default_hue")]
     pub hue: String,
-    /// 目录分组键（内置目录才写：`chapters` / `info` / `vertical` / `douyin` / `xhs` /
-    /// `youtube` / `bili` / `watermark`）；不认识或缺省归「信息条」，品牌库一律归品牌库组。
+    /// Catalog group key (written only for the built-in catalog: `chapters` / `info` / `vertical` / `douyin` / `xhs` /
+    /// `youtube` / `bili` / `watermark`). Unknown or missing values are filed under 「信息条」 (info bar); brand library entries are always filed under the brand library group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default)]
     pub canvas: TemplateCanvas,
-    /// 套用时把**项目画幅**改成这个值（可省；缺省只叠层不动画幅）。
-    /// 取值与 `ccut canvas --ratio` 同一套语法：`"original"` 跟随源尺寸，或 `W:H`
-    /// （`"16:9"`、`"9:16"`、`"2.35:1"`）。与 `canvas`（版面按哪个画幅画）是两件事。
+    /// When applied, changes the **project canvas** to this value (optional; by default only layers are stacked and the canvas is left alone). Values use the same syntax as `ccut canvas --ratio`: `"original"` follows the source size, or `W:H` (`"16:9"`, `"9:16"`, `"2.35:1"`). This is a different thing from `canvas`, which sets the aspect ratio the layout is drawn for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ratio: Option<String>,
-    /// 画幅锁（原型第 218 轮）：与 `ratio` 同时为真时，套了这套模板的项目在舞台画幅钮、
-    /// 项目设置与 `ccut project canvas` 里都改不了画幅（只允许改成 `ratio` 本身），
-    /// 要改先在模板设置里解锁。没有 `ratio` 时该位无效，见 [`ratio_lock`]。
+    /// Aspect-ratio lock (prototype round 218): when true together with `ratio`, a project that has this template applied cannot change its aspect ratio in the stage ratio button, in project settings, or with `ccut project canvas` (it may only be changed to `ratio` itself). To change it, unlock it in the template settings first. Without `ratio` this field has no effect; see [`ratio_lock`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub lock_ratio: bool,
-    /// 内置目录为 `true`；实例与品牌库存入的为 `false`。
+    /// `true` for the built-in catalog; `false` for instances and for entries stored in the brand library.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub builtin: bool,
-    /// 类别标记：`"watermark"`（[`TAG_WATERMARK`]）表示水印类，目录与品牌页据此出 chip。
+    /// Category tag: `"watermark"` ([`TAG_WATERMARK`]) marks the watermark category; the catalog and brand page use it to show a chip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    /// 来历标记：`"watermark"`（[`IMPORTED_WATERMARK`]）表示由旧水印预设导入。
+    /// Provenance tag: `"watermark"` ([`IMPORTED_WATERMARK`]) marks an import from an old watermark preset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub desc: String,
-    /// 整套模板的字体族；`None` 跟随字幕样式字体。
+    /// The font family for the whole template; `None` follows the caption style font.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
-    /// 实例来源的定义 id（内置或品牌库）。
+    /// The definition id the instance came from (built-in or brand library).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
-    /// 字幕是否避让底部横条。
+    /// Whether captions avoid the bottom strip.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub subs_avoid: bool,
     #[serde(default)]
@@ -337,12 +325,12 @@ impl TemplateDoc {
         self.layers.iter_mut().find(|l| l.id == id)
     }
 
-    /// 水印类模板（原型 `isWatermark`）。
+    /// Watermark-category template (prototype `isWatermark`).
     pub fn is_watermark(&self) -> bool {
         self.tag.as_deref() == Some(TAG_WATERMARK)
     }
 
-    /// 由旧水印预设导入的品牌库模板。
+    /// A brand library template imported from an old watermark preset.
     pub fn is_imported_watermark(&self) -> bool {
         self.imported.as_deref() == Some(IMPORTED_WATERMARK)
     }
@@ -388,16 +376,15 @@ fn default_opacity() -> f64 {
     1.0
 }
 
-/// 不透明（或非数，读回按 1）就不落盘。
+/// If fully opaque (or not a number, which reads back as 1), it is not written to disk.
 fn is_full_opacity(v: &f64) -> bool {
     v.is_nan() || *v >= 1.0
 }
 
-// ---------- 校验 ----------
+// ---------- Validation ----------
 
-/// 校验一份层文档的语义约束（id/name/hue/font、层 id 唯一、盒子越界与最小尺寸、
-/// 颜色 `#RRGGBB[AA]`、尺寸为正、内边距非负、字重 100..=900、`file` 必须是项目相对路径）。
-/// 错误文案面向用户；`ccut-timeline` 与 `ccut-config` 各自包成本层错误类型。
+/// Validates the semantic constraints of a layer document: id/name/hue/font, layer ids unique, boxes not out of bounds and above minimum sizes, colors `#RRGGBB[AA]`, sizes positive, paddings non-negative, font weight 100..=900, and `file` must be a project-relative path.
+/// Error messages are user-facing; `ccut-timeline` and `ccut-config` each wrap them in their own layer's error type.
 pub fn validate(doc: &TemplateDoc) -> Result<(), String> {
     check_id("template", &doc.id)?;
     if doc.name.trim().is_empty() {
@@ -429,13 +416,12 @@ pub fn validate(doc: &TemplateDoc) -> Result<(), String> {
     Ok(())
 }
 
-/// `ratio` 是否表示「跟随源尺寸」（`original`，不分大小写）。
+/// Whether `ratio` means “follow the source size” (`original`, case-insensitive).
 pub fn ratio_is_original(text: &str) -> bool {
     text.trim().eq_ignore_ascii_case("original")
 }
 
-/// 模板锁住的画幅（原型 `ratioLock`）：`lockRatio` 为真且声明了 `ratio` 才算锁。
-/// `ratio` 是锁定的目标（`original` 或 `W:H`），`name` 供文案指明是哪套模板锁的。
+/// The aspect ratio locked by the template (prototype `ratioLock`): it counts as locked only when `lockRatio` is true and `ratio` is declared. `ratio` is the locked target (`original` or `W:H`); `name` is for the copy, to state which template did the locking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RatioLock {
     pub ratio: String,
@@ -443,19 +429,18 @@ pub struct RatioLock {
 }
 
 impl RatioLock {
-    /// 锁定目标是否是「跟随源尺寸」。
+    /// Whether the locked target is “follow the source size”.
     pub fn is_original(&self) -> bool {
         ratio_is_original(&self.ratio)
     }
 
-    /// 请求的画幅（`None` = original）是否与锁定目标一致——一致的写入放行，
-    /// 这样套用模板本身、撤销/重做与幂等重设都不会被自己的锁拦住。
+    /// Whether the requested aspect ratio (`None` = original) matches the locked target. A matching write is allowed, so applying the template itself, undo/redo and idempotent re-applies are never blocked by their own lock.
     pub fn allows(&self, requested: Option<&str>) -> bool {
         ratio_equivalent(Some(self.ratio.as_str()), requested)
     }
 }
 
-/// 模板的画幅锁；没锁（`lockRatio` 假或缺 `ratio`）为 `None`。
+/// The template's aspect-ratio lock; `None` if not locked (`lockRatio` false or `ratio` missing).
 pub fn ratio_lock(doc: &TemplateDoc) -> Option<RatioLock> {
     if !doc.lock_ratio {
         return None;
@@ -470,16 +455,15 @@ pub fn ratio_lock(doc: &TemplateDoc) -> Option<RatioLock> {
     })
 }
 
-/// 模板是否锁着画幅（原型 `ratioLocked`）。
+/// Whether the template locks the aspect ratio (prototype `ratioLocked`).
 pub fn ratio_locked(doc: &TemplateDoc) -> bool {
     ratio_lock(doc).is_some()
 }
 
-/// 两个 `--ratio` 实参是否指同一画幅：`None` 与 `original` 同义；`W:H` 按比值比较
-/// （`16:9` 与 `32:18` 同档），解析不了的按文本比较。
+/// Whether two `--ratio` arguments refer to the same aspect ratio: `None` and `original` are equivalent; `W:H` is compared by value (`16:9` and `32:18` are the same), and anything that cannot be parsed is compared as text.
 pub fn ratio_equivalent(left: Option<&str>, right: Option<&str>) -> bool {
     fn parse(text: Option<&str>) -> Option<Option<f64>> {
-        // 缺席（`canvas` 键没写）就是「跟随源尺寸」，与显式 `original` 同义。
+        // Absent (the `canvas` key is not written) means “follow the source size”, equivalent to an explicit `original`.
         let Some(text) = text.map(str::trim).filter(|t| !t.is_empty()) else {
             return Some(None);
         };
@@ -500,9 +484,7 @@ pub fn ratio_equivalent(left: Option<&str>, right: Option<&str>) -> bool {
     }
 }
 
-/// `ratio` 语法：`original` 或 `W:H`（两边都是正的有限数）。与
-/// `ccut-workspace::canvas::CanvasInput::parse_ratio` 同一套判据；protocol 不能依赖
-/// workspace，所以这里单独写一遍并由测试锁住两边一致。
+/// `ratio` syntax: `original` or `W:H` (both sides are positive finite numbers). It uses the same criteria as `ccut-workspace::canvas::CanvasInput::parse_ratio`; protocol cannot depend on workspace, so it is written out separately here, and a test keeps the two in agreement.
 pub fn check_ratio(text: &str) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
@@ -756,7 +738,7 @@ mod tests {
     fn round_trips_through_json() {
         let doc = sample();
         let value = serde_json::to_value(&doc).unwrap();
-        // kind 与公共字段平铺在同一对象里。
+        // `kind` and the common fields are flattened into the same object.
         assert_eq!(value["layers"][0]["kind"], "chapters");
         assert_eq!(value["layers"][0]["box"]["y"], 91.0);
         assert_eq!(value["layers"][0]["fill"], "bar");
@@ -881,7 +863,7 @@ mod tests {
         assert!(lock.allows(None));
         assert!(lock.allows(Some("Original")));
         assert!(!lock.allows(Some("1:1")));
-        // 落盘：假不写，真写 `lockRatio`；旧文档缺字段读回为假。
+        // On disk: false is not written; true writes `lockRatio`. Old documents missing the field read back as false.
         doc.lock_ratio = false;
         assert!(!serde_json::to_string(&doc).unwrap().contains("lockRatio"));
         doc.lock_ratio = true;
@@ -914,10 +896,10 @@ mod tests {
         assert!(back.layers[2].kind.tiled());
         assert_eq!(back.layers[2].kind.opacity(), 0.2);
         assert!(validate(&back).is_ok());
-        // 章节条 / 进度 / 文字层没有不透明度，恒为 1。
+        // Chapter strip, progress and text layers have no opacity; always 1.
         assert_eq!(doc.layers[0].kind.opacity(), 1.0);
         assert!(!doc.layers[3].kind.tiled());
-        // 读时夹取：0 → 下限，超 1 → 1，非数 → 1；校验只拒非有限数。
+        // Clamped on read: 0 → the lower bound, above 1 → 1, non-number → 1. Validation only rejects non-finite numbers.
         assert_eq!(clamp_opacity(0.0), MIN_OPACITY);
         assert_eq!(clamp_opacity(-2.0), MIN_OPACITY);
         assert_eq!(clamp_opacity(3.0), 1.0);
@@ -956,7 +938,7 @@ mod tests {
             let back: TemplateDoc = serde_json::from_value(value).unwrap();
             assert_eq!(back, doc);
         }
-        // 旧文档没有这个字段：台标读成居中，文字层仍读成靠左。
+        // Old documents lack this field: the logo reads as centered, and text layers still read as left.
         let raw = json!({"id": "t", "name": "n", "layers": [
             {"id": "a", "kind": "logo", "box": {"x": 0, "y": 0, "w": 30, "h": 10},
              "text": "T", "color": "#FFFFFF"},
@@ -1031,10 +1013,10 @@ mod tests {
         assert_eq!(back, doc);
         assert!(back.is_watermark());
         assert!(back.is_imported_watermark());
-        // 分组键不做成员校验：未知组照样合法，由目录归到「信息条」。
+        // The group key is not checked for membership: an unknown group is still valid and is filed under 「信息条」 (info bar) by the catalog.
         doc.group = Some("somewhere".into());
         assert!(validate(&doc).is_ok());
-        // 平台款补的色相。
+        // Hue added for the platform edition.
         for hue in ["red", "green", "pink"] {
             doc.hue = hue.into();
             assert!(validate(&doc).is_ok(), "{hue}");

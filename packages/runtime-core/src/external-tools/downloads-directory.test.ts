@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveDownloadsDirectory, resolveSaveDirectory } from './downloads-directory.ts';
 
-/** 下载目录与保存位置（架构设计 §7.9）：调用给的目录、设置、主机的下载文件夹，依次兜底。 */
+/** Download directory and save location (architecture design §7.9): the directory given by the call, then settings, then the host's Downloads folder, as fallbacks in that order. */
 
 describe('保存位置', () => {
   const host = process.env.CUCCUT_DOWNLOADS_DIR;

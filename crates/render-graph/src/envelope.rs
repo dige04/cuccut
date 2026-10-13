@@ -1,20 +1,16 @@
-//! 音量包络（格式规范 §3.9 的 `mix.envelope`、`embeddedAudio.envelope`、合成的 `audio.envelope`）的求值：逐帧计划
-//! （预览）与区间计划（导出）共用这一份。
+//! Evaluation of the volume envelope (`mix.envelope`, `embeddedAudio.envelope`, and the synthesized `audio.envelope` in format spec §3.9): shared by the per-frame plan (preview) and the interval plan (export).
 //!
-//! 包络取代实例的 `volume`：有生效的点时，某一时刻的音量是包络在那一刻的取样值。点换成 v2 的 `volume` 关键帧后交给
-//! `timeline::duck::volume_curve`（v2 预览与导出共用的同一个函数）：线性段只取点本身，带缓动的段按
-//! `ENVELOPE_BAKE_STEP`（0.02 秒）烘焙成折线；`at` 超出实例终点的点不生效；值夹到 [0, 4]。折线在第一个点之前取它的值，
-//! 最后一个点之后取最后一个点的值（`GainEnvelope::at`）。时刻是实例局部的秒（序列时间减实例起点），百分比按实例的长度。
+//! The envelope replaces the instance's `volume`: when there are effective points, the volume at a given moment is the envelope's sampled value at that moment. After the points are converted to v2 `volume` keyframes, they are handed to `timeline::duck::volume_curve` (the same function shared by v2 preview and export): linear segments take only the points themselves, while eased segments are baked into a polyline at `ENVELOPE_BAKE_STEP` (0.02 s); points whose `at` lies past the instance's end have no effect; values are clamped to [0, 4]. The polyline takes its first point's value before the first point, and the last point's value after the last point (`GainEnvelope::at`). Times are in seconds local to the instance (sequence time minus the instance start), and percentages are relative to the instance's length.
 
 use editor_semantics::{MediaTime, Ratio};
 use timeline::duck::{GainEnvelope, volume_curve};
 use timeline::keyframes::{KeyTime, Keyframe, Keyframes};
 use video_model::{CompositionItem, EnvelopePoint, TimelineItem};
 
-/// 一个点最多的个数（与关键帧相同）。
+/// The maximum number of points (same as keyframes).
 pub const MAX_ENVELOPE_POINTS: usize = timeline::keyframes::KEYFRAMES_MAX_PER_PROP;
 
-/// 实例的音量包络：没有包络时为 `None`（用静态的 `volume`）。
+/// The instance's volume envelope: `None` when there is no envelope (the static `volume` is used).
 pub fn envelope_points(item: &TimelineItem) -> Option<&[EnvelopePoint]> {
     let envelope = match item {
         TimelineItem::Audio(a) => &a.mix.envelope,
@@ -25,8 +21,7 @@ pub fn envelope_points(item: &TimelineItem) -> Option<&[EnvelopePoint]> {
     (!envelope.is_empty()).then_some(envelope.as_slice())
 }
 
-/// 音量包络换成 v2 的 `volume` 关键帧：`at` 是实例局部的秒，`percent` 写成 `"N%"`。点数超限、时刻为负、`at` 与
-/// `percent` 不是恰好给一个时拒绝（引擎写入时用它校验）。
+/// Converts the volume envelope into v2 `volume` keyframes: `at` is seconds local to the instance, and `percent` is written as `"N%"`. Rejects a point count over the limit, negative times, and any point where `at` and `percent` are not exactly one of them (the engine uses this to validate on write).
 pub fn envelope_keyframes(points: &[EnvelopePoint]) -> Result<Vec<Keyframe>, String> {
     if points.len() > MAX_ENVELOPE_POINTS {
         return Err(format!("音量包络最多 {MAX_ENVELOPE_POINTS} 个点"));
@@ -57,8 +52,8 @@ fn seconds(t: &MediaTime) -> f64 {
     t.to_ratio("time").map(Ratio::to_f64).unwrap_or(f64::NAN)
 }
 
-/// 实例的音量曲线：`points` 为空时是常数 `volume`；否则是包络烘焙出的折线（实例局部的秒，线性倍数）。
-/// `duration` 是实例在序列上的长度（秒），百分比的点按它换算。写坏的包络（引擎不会写进视频）按没有包络算。
+/// The instance's volume curve: when `points` is empty it is the constant `volume`; otherwise it is the polyline baked from the envelope (seconds local to the instance, linear multipliers).
+/// `duration` is the instance's length on the sequence (seconds), used to convert percentage points. A malformed envelope (which the engine would not write into a video) is treated as having no envelope.
 #[derive(Clone, Debug, PartialEq)]
 pub enum VolumeCurve {
     Constant(f64),
@@ -80,7 +75,7 @@ impl VolumeCurve {
         VolumeCurve::Envelope(GainEnvelope(volume_curve(volume, Some(&keyframes), duration)))
     }
 
-    /// 实例局部 `local` 秒的音量（线性倍数）。
+    /// The volume (linear multiplier) at `local` seconds into the instance.
     pub fn at(&self, local: f64) -> f64 {
         match self {
             VolumeCurve::Constant(volume) => *volume,

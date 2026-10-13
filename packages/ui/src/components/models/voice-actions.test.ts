@@ -15,8 +15,8 @@ import {
 } from './voice-actions.ts';
 
 /**
- * 我的声音的命令走真的 `RuntimeSession`（追加的薄方法），只把 `client.request` 换成假的：记下方法与参数，按方法回一个结果。
- * 不上传、不建克隆、不碰任何 Provider——克隆的创建与删除都停在这一层。
+ * The commands for My Voices run through a real `RuntimeSession` (with added thin methods); only `client.request` is replaced with a fake: it records the method and arguments, and returns a result by method.
+ * Nothing is uploaded, no clone is created and no Provider is touched: creating and deleting clones both stop at this layer.
  */
 
 type Reply = (params: Record<string, unknown>) => unknown;

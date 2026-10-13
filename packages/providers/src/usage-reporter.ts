@@ -10,30 +10,28 @@ import type {
 import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 一次在线调用结束时的报告（架构设计 §6.8、§6.10）：执行者在调用结束处（成功或失败）交给来源，来源写一条用量记录，并按结果
- * 更新用的那个账号的状态。只报告真的向供应商发出了请求的调用：没启用、没密钥而没发出的，与取消的，都不报告。
+ * Report at the end of an online call (architecture design §6.8, §6.10). The executor hands the call's outcome (success or failure) to the source at the call's end. The source writes one usage record and updates the state of the account that was used, according to the result. Only calls that actually sent a request to the provider are reported. Calls that were not enabled, or had no key and so were never sent, and cancelled calls, are not reported.
  */
 export interface CallReport {
   capability: ModelServiceCapability;
   modelId: string;
   source: UsageSource;
   ref?: UsageRecord['ref'];
-  /** 用的哪个账号（执行时取密钥时定下的）；没有账号时 null。 */
+  /** The account used (fixed when the key was taken at execution); null when there is no account. */
   accountId: string | null;
-  /** `Date.now()`，调用开始时。 */
+  /** `Date.now()` at call start. */
   startedAt: number;
   units: UsageUnits;
-  /** 供应商报告的金额；没有时不给（记为 `unknown`）。 */
+  /** Amount reported by the provider; omitted when absent (recorded as `unknown`). */
   cost?: UsageRecordCost;
-  /** 失败的原因；成功时不给。 */
+  /** Reason for failure; omitted on success. */
   error?: unknown;
 }
 
 export type CallReporter = (report: CallReport) => void;
 
 /**
- * 调用结果对应的账号状态（§6.8）：成功是 `ok`；认证失败是 `invalid-key`；额度用尽是 `quota-exhausted`；别的 429 是
- * `rate-limited`（`until` 由 `Retry-After` 推出）。其余的失败与密钥无关，返回 null：只更新最近使用时间，不改状态。
+ * Account state that corresponds to the call result (§6.8). Success is `ok`; authentication failure is `invalid-key`; quota exhaustion is `quota-exhausted`; other 429s are `rate-limited` (`until` is derived from `Retry-After`). Other failures are unrelated to the key and return null: only the last-used time is updated, and the state is not changed.
  */
 export function accountStatusOf(error: unknown, at: string): ProviderAccountStatus | null {
   if (error === undefined) return { state: 'ok', at };
@@ -50,7 +48,7 @@ export function accountStatusOf(error: unknown, at: string): ProviderAccountStat
   return null;
 }
 
-/** 写进账本的失败原因：错误码与一句说明（`ProviderFailure` 的文本已经去掉了密钥）。 */
+/** Failure reason written to the ledger: an error code and a one-line description (the `ProviderFailure` text has already had the key removed). */
 export function usageErrorOf(error: unknown): string {
   if (error instanceof ProviderFailure) {
     const code = typeof error.details.code === 'string' ? error.details.code : error.kind;

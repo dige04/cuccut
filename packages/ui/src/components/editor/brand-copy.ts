@@ -14,7 +14,7 @@ import { pl } from './brand-copy.pl.ts';
 import { tr } from './brand-copy.tr.ts';
 import { vi } from './brand-copy.vi.ts';
 
-/** 品牌面板（品牌库的各节、行操作、新建品牌色、取色面板里的品牌色）的文案。译文在 `brand-copy.zh-Hans.ts`。 */
+/** Copy for the brand panel (library sections, row actions, creating a brand color, brand colors in the color picker). Translations are in `brand-copy.zh-Hans.ts`. */
 const en = {
   importFilter: 'Files the brand kit accepts',
   videoNotReady: 'The video isn’t ready yet, so it can’t be changed now',

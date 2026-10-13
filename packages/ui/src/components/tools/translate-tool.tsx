@@ -24,12 +24,9 @@ import { useToolStart, useVideoTools, type TranslateDraft } from './use-video-to
 import { DuplicateAlert, firstWhy, lede, SubmitBar, TextModelField, usePreset } from './video-tool-parts.tsx';
 
 /*
- * 工具 › 翻译字幕（设计稿 tool-translate.jsx `TranslateToolPage`）：从 Space（转录过的视频或字幕条目）或本机的 SRT / VTT
- * 文件开始。视频：新增一份译文与目标语言的字幕层（目录在 `execution.params` 里带 `captions: true`），可以双语显示，原文
- * 不动；同一种语言已有译文时新增一份、不覆盖。字幕文件与字幕条目（`input` 给 `{ entryId }`）：文件到文件，译好的保存到
- * 保存位置。文本模型都是在线服务，没同意过的在这一页当场授权。
+ * Tools › Translate subtitles (design mockup tool-translate.jsx `TranslateToolPage`): start from a Space item (a transcribed video or a subtitle entry) or a local SRT / VTT file. For a video: a new translated subtitle layer in the target language is added (the directory has `captions: true` in `execution.params`); it can be shown bilingually, and the original is left untouched; if a translation in the same language already exists, another one is added rather than overwriting it. For subtitle files and subtitle entries (`input` gives `{ entryId }`): file to file, and the translation is saved to the save location. Text models are all online services; a model the user has not yet agreed to is authorized right on this page.
  *
- * 与设计稿的出入：不做粘贴与示例。
+ * Differences from the mockup: paste and examples are not included.
  */
 
 const SUBTITLE = /\.(srt|vtt)$/i;
@@ -43,7 +40,7 @@ const dropPath = style({ font: 'code-xs', color: 'gray-600', overflowWrap: 'anyw
 const buttons = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 });
 const field = style({ width: 'full' });
 
-/** 翻译用哪只文本模型：选过的还在就用它，否则生效的默认值（能用时）、第一只能用的。 */
+/** Which text model to translate with: the selected one if it is still there, otherwise the effective default (if usable), otherwise the first usable one. */
 export function useTextModel(saved: string | null): {
   ready: boolean;
   options: ToolModelOption<TextModelInfo>[];
@@ -57,13 +54,13 @@ export function useTextModel(saved: string | null): {
   }, [view, saved]);
 }
 
-/** 文本模型那一条原因：还在读、没有、不能用。 */
+/** The text-model status line: still loading, none available, or unusable. */
 export function textModelWhy(m: ReturnType<typeof useTextModel>): string | null {
   if (!m.ready) return FORM_COPY.loading;
   return modelReason(m.options, m.option, FRAME_COPY.textNoun);
 }
 
-/** 目标语言：视频来源时去掉文稿自己的语言；缺省照设计稿（英语原文译成简体中文，其余译成英语）。 */
+/** Target language: for a video source, the transcript's own language is removed; by default, as in the mockup (English source translated to Simplified Chinese (简体中文), everything else translated to English). */
 function useTargets(row: PickerRow | null, doc: ToolCandidateDocument | null, video: boolean, want: string | null) {
   const codes = TARGET_LANGUAGES.map((l) => l.code);
   const available = video ? targetLangs(codes, doc) : codes;
@@ -86,7 +83,7 @@ export function TranslateTool() {
 
   const entryId = space ? pick(rows, draft.entryId) : null;
   const picked = entryId ? (rows.find((r) => r.entryId === entryId) ?? null) : null;
-  // 视频写进它；字幕条目与本机文件是文件到文件。
+  // A video is written into; subtitle entries and local files are file to file.
   const row = picked?.video ?? null;
   const video = !!row;
   const subtitleEntry = picked && !video ? picked : null;
@@ -94,7 +91,7 @@ export function TranslateTool() {
   const doc = sourceDocument(row, draft.documentId);
   const { languages, lang, has } = useTargets(row, doc, video, draft.lang);
   const text = useTextModel(draft.model);
-  // 字幕文件的结果写到保存位置；「更改…」只改这一次（写进视频时没有这一行）。
+  // Results from subtitle files are written to the save location; “更改…” (change…) only changes it this once (no such line when writing into a video).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
   const model = text.option?.usable ? { provider: text.option.providerId, model: text.option.modelId } : {};
 
@@ -177,7 +174,7 @@ export function TranslateTool() {
   );
 }
 
-/** 从哪份文稿翻译：只有一份时一句话，几份时可选；内容还没读完时说由 Runtime 选。 */
+/** Which transcript to translate from: one sentence when there is only one; selectable when there are several; when the content has not finished loading, say the Runtime chooses. */
 function DocumentLine({ row, doc, onChange }: { row: PickerRow; doc: ToolCandidateDocument | null; onChange: (id: string) => void }) {
   if (!doc) return <span className={detail}>{TRANSLATE_COPY.fromPending}</span>;
   if (row.documents.length < 2) return <span className={detail}>{TRANSLATE_COPY.from(row.name, langLabel(doc.language))}</span>;
@@ -198,7 +195,7 @@ function DocumentLine({ row, doc, onChange }: { row: PickerRow; doc: ToolCandida
   );
 }
 
-/** 字幕文件：拖入或选一份 SRT / VTT（只收本机路径）。 */
+/** Subtitle file: drag in or choose an SRT / VTT (local paths only). */
 function SubtitleFile({ path, onPath }: { path: string | null; onPath: (path: string | null) => void }) {
   const runtime = useRuntime();
   const pickFiles = runtime.host.pickFiles?.bind(runtime.host);

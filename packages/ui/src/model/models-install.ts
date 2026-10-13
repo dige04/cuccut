@@ -13,40 +13,40 @@ import { M } from './models-install-copy.ts';
 import { jobErrorText, remedyText } from './localized-text.ts';
 
 /**
- * 本地模型包的安装管理（架构设计 §6.3；设计稿 settings-local.jsx、model-local-models.js）：
- * 安装与修复的两步确认（先看计划、再交回 `confirmBytes`）、下载进度、删除估算，以及各种失败给人看的补救。
- * 检查（`models.test`）的状态与说法在 model-check.ts。
- * 数字都来自 Runtime：总字节数未知时不伪造百分比，估计值写明是估计。
+ * Installation management for local model packages (architecture design §6.3; design settings-local.jsx, model-local-models.js):
+ * two-step confirmation for install and repair (first review the plan, then hand back `confirmBytes`), download progress, delete estimates, and the remedies shown to people for each kind of failure.
+ * Status and wording for checks (`models.test`) are in model-check.ts.
+ * All numbers come from the Runtime: when the total byte count is unknown, no percentage is fabricated, and estimates are labeled as estimates.
  */
 
-// ---- 确认对话框 ----
+// ---- Confirmation dialog ----
 
 export interface PlanLine {
   key: string;
   /** `asr · Qwen/Qwen3-ASR-0.6B` */
   label: string;
-  /** `412 MB`、`大小未知`、`已装好，不动` */
+  /** `412 MB`, `大小未知` (size unknown), `已装好，不动` (already installed, left alone) */
   value: string;
 }
 
 export interface InstallPlanView {
-  /** 已经齐全、没有要下载的。 */
+  /** Already complete; nothing to download. */
   upToDate: boolean;
-  /** 「要下载 1.2 GB」；有文件大小未知时「约 1.2 GB（有文件大小未知，按登记的估计）」。 */
+  /** “要下载 1.2 GB” (need to download 1.2 GB); when some file sizes are unknown, “约 1.2 GB（有文件大小未知，按登记的估计）” (about 1.2 GB (some file sizes unknown, using the registered estimate)). */
   size: string;
-  /** 按钮上的量：「1.2 GB」或「约 1.2 GB」。 */
+  /** The amount on the button: “1.2 GB” or “约 1.2 GB” (about 1.2 GB). */
   amount: string;
-  /** 上次留下、这次接着用的部分；没有时 null。 */
+  /** The part left over from last time and reused this time; null when there is none. */
   resumed: string | null;
-  /** 磁盘可用空间；查不到时 null。 */
+  /** Free disk space; null when it cannot be determined. */
   space: string | null;
-  /** 可用空间明显不够（不含已经收到的部分）：先清理再下载。 */
+  /** Free space is clearly insufficient (not counting the part already received): clean up first, then download. */
   noSpace: string | null;
   source: string;
   lines: PlanLine[];
 }
 
-/** 计划 → 确认对话框里的几行话。 */
+/** Plan → a few lines of text in the confirmation dialog. */
 export function installPlanView(plan: ModelInstallPlan): InstallPlanView {
   const exact = plan.downloadBytes !== null;
   const size = exact ? M.planSize(fmtSize(plan.confirmBytes)) : M.planSizeEstimate(fmtSize(plan.confirmBytes));
@@ -70,15 +70,15 @@ export function installPlanView(plan: ModelInstallPlan): InstallPlanView {
   };
 }
 
-// ---- 进度 ----
+// ---- Progress ----
 
 export interface InstallProgressView {
   state: ModelInstallProgress['state'];
-  /** 「正在下载 120 MB / 1.2 GB」「已暂停 · 留着 300 MB」 */
+  /** “正在下载 120 MB / 1.2 GB” (downloading 120 MB / 1.2 GB), “已暂停 · 留着 300 MB” (paused · 300 MB kept) */
   label: string;
-  /** 0–100；总字节数未知、排队或校验中时 null（进度条显示为不确定）。 */
+  /** 0–100; null when the total byte count is unknown, or when queued or verifying (the progress bar shows as indeterminate). */
   percent: number | null;
-  /** 有任务在跑（排队、下载、校验）：可以停下。 */
+  /** A task is running (queued, downloading, verifying): it can be stopped. */
   running: boolean;
 }
 
@@ -103,14 +103,14 @@ export function installProgressView(install: ModelInstallProgress): InstallProgr
   }
 }
 
-// ---- 就地下载（设计稿 tool-tts.jsx、image-gen.jsx、panel-aitools.jsx、panel-dub-setup.jsx 的「下载 {size}」） ----
+// ---- Download in place (design tool-tts.jsx, image-gen.jsx, panel-aitools.jsx, panel-dub-setup.jsx “下载 {size}” (download {size})) ----
 
-/** 这只模型包能不能就地下载：还没装好，这台电脑也跑得了。装好了的、跑不了的（`unsupported`、`worker-missing`）不算。 */
+/** Whether this model package can be downloaded in place: not yet installed, and this computer can run it. Packages that are already installed, or that cannot run (`unsupported`, `worker-missing`), do not count. */
 export function canDownload(bundle: Pick<ModelBundleStatus, 'state' | 'reason' | 'components'>): boolean {
   return !isBundleInstalled(bundle) && bundle.reason !== 'unsupported' && bundle.reason !== 'worker-missing';
 }
 
-/** 本机的这只模型能就地下载时它的模型包；云端、节点、装好了的、这台电脑跑不了的为 null。 */
+/** The model package of this model on this machine when it can be downloaded in place; null for cloud, node, already installed, or ones this computer cannot run. */
 export function downloadableBundle(
   bundles: readonly ModelBundleStatus[],
   ref: { providerId: string; modelId: string } | null,
@@ -121,8 +121,8 @@ export function downloadableBundle(
 }
 
 /**
- * 配音要分离背景声、本机又没有能用的分离模型时就地下载哪一只：按 ID 排第一只能下载的（Runtime 挑分离默认值也按 ID 排）。
- * 都下载不了（这台电脑跑不了）时 null。
+ * When dubbing needs background separation and there is no usable separation model on this machine, which one to download in place: the first downloadable one by ID (the Runtime also picks the separation default by ID).
+ * null when none can be downloaded (this computer cannot run them).
  */
 export function separationDownload(bundles: readonly ModelBundleStatus[]): ModelBundleStatus | null {
   return (
@@ -134,23 +134,23 @@ export function separationDownload(bundles: readonly ModelBundleStatus[]): Model
 }
 
 /**
- * 就地下载走哪种安装（与设置页同一个判断，设计稿 settings-local.jsx 的 `half`）：这只模型包自己的文件已在盘上（权重在、缺公共组件，
- * 或下到一半、权重已经落地）时是补齐——只下载缺的，不再问许可；否则是下载。公共组件按它那一类的模型包算（`hasOwnFiles`）。
+ * Which kind of install the in-place download performs (same decision as the settings page, design settings-local.jsx `half`): when this model package's own files are already on disk (weights present with shared components missing,
+ * or halfway through a download with the weights already landed), it is a fill-in — only the missing parts are downloaded, and the license is not asked again; otherwise it is a download. Shared components are counted per their category of model package (`hasOwnFiles`).
  */
 export function inlineInstallMode(bundle: ModelBundleStatus, bundles: readonly ModelBundleStatus[]): 'install' | 'complete' {
   return hasOwnFiles(bundle, sharedComponents(bundles, bundleCategory(bundle))) ? 'complete' : 'install';
 }
 
 export interface DownloadView {
-  /** `idle` 还没开始，`paused` 停在一半（接着下），`running` 正在下（排队、下载、校验）。 */
+  /** `idle`: not started; `paused`: stopped halfway (can resume); `running`: downloading (queued, downloading, verifying). */
   state: 'idle' | 'paused' | 'running';
-  /** 要下载多少：下载任务的总量，没有时按缺的组件算（`downloadBytes`，与设置页同一个数）；都不知道时 null。 */
+  /** How much to download: the total of the download task; when there is none, it is computed from the missing components (`downloadBytes`, the same figure as on the settings page); null when neither is known. */
   size: string | null;
-  /** 正在下时的百分比；总量未知、排队或校验中时 null。 */
+  /** Percentage while downloading; null when the total is unknown, or when queued or verifying. */
   percent: number | null;
 }
 
-/** 就地下载那一处此刻的样子：按钮上写多大，下载中写进度。 */
+/** How the in-place download control looks right now: the button shows the size, and shows progress while downloading. */
 export function downloadView(bundle: Pick<ModelBundleStatus, 'install' | 'estimatedBytes' | 'components'>): DownloadView {
   const install = bundle.install;
   const total = install?.totalBytes || downloadBytes(bundle);
@@ -160,12 +160,12 @@ export function downloadView(bundle: Pick<ModelBundleStatus, 'install' | 'estima
   return progress.running ? { state: 'running', size, percent: progress.percent } : { state: 'paused', size, percent: null };
 }
 
-// ---- 失败与补救 ----
+// ---- Failures and remedies ----
 
 export interface Problem {
-  /** Runtime 的原话。 */
+  /** The Runtime's own message. */
   message: string;
-  /** 怎么办；认不得的错误码用 Runtime 给的 `remedy`，都没有时 null。 */
+  /** What to do (“怎么办”); for unrecognized error codes, the Runtime's `remedy` is used; null when neither is available. */
   remedy: string | null;
 }
 
@@ -179,7 +179,7 @@ function str(details: unknown, key: string): string | null {
   return typeof v === 'string' && v ? v : null;
 }
 
-/** 按错误码说清楚怎么办（模型包的安装、修复与删除）。 */
+/** Spells out what to do for each error code (installing, repairing, and deleting model packages). */
 export function modelProblem(code: string | null, message: string, details: unknown): Problem {
   switch (code) {
     case 'MODEL_DOWNLOAD_NO_SPACE': {
@@ -211,14 +211,14 @@ export function modelProblem(code: string | null, message: string, details: unkn
   }
 }
 
-/** RPC 被拒（`RpcError`，错误码在 `details.code`）。 */
+/** RPC rejected (`RpcError`; the error code is in `details.code`). */
 export function rpcProblem(error: unknown): Problem {
   const message = error instanceof Error ? error.message : String(error);
   const details = (error as { details?: unknown } | null)?.details;
   return modelProblem(str(details, 'code'), message, details);
 }
 
-/** 一条失败的任务。 */
+/** A failed task. */
 export function jobProblem(job: Pick<JobRecord, 'error'>): Problem | null {
   if (!job.error) return null;
   return modelProblem(job.error.code, jobErrorText(job.error), job.error.details);
@@ -228,9 +228,9 @@ export function problemText(problem: Problem): string {
   return problem.remedy ? M.problemText(problem.message, problem.remedy) : problem.message;
 }
 
-// ---- 每一行的安装任务 ----
+// ---- Install task for each row ----
 
-/** 这个模型包最近一次某类任务（按创建时间）。 */
+/** The most recent task of a given kind for this model package (by creation time). */
 export function latestBundleJob(jobs: readonly JobRecord[], bundleId: string, kind: 'modelInstall' | 'modelTest'): JobRecord | null {
   let latest: JobRecord | null = null;
   for (const job of jobs) {
@@ -240,7 +240,7 @@ export function latestBundleJob(jobs: readonly JobRecord[], bundleId: string, ki
   return latest;
 }
 
-/** 安装：最近一次安装或修复任务失败了、现在也没在装时，失败的原因与补救（取消的、被打断的不算失败）。 */
+/** Install: when the most recent install or repair task has failed and nothing is being installed now, the reason for the failure and the remedy (cancelled or interrupted tasks do not count as failures). */
 export function installFailure(bundle: ModelBundleStatus, jobs: readonly JobRecord[]): Problem | null {
   if (bundle.install && bundle.install.state !== 'paused') return null;
   const job = latestBundleJob(jobs, bundle.bundleId, 'modelInstall');
@@ -248,16 +248,16 @@ export function installFailure(bundle: ModelBundleStatus, jobs: readonly JobReco
   return jobProblem(job);
 }
 
-// ---- 删除 ----
+// ---- Delete ----
 
 export interface RemovalEstimate {
-  /** 会腾出的字节数（只算已装好、没有别的已装模型包在用的组件）；不知道组件时 null。 */
+  /** Bytes that will be freed (counts only components of installed packages that no other installed model package uses); null when components are not known. */
   frees: number | null;
-  /** 还有别的已装模型包在用、会保留的组件。 */
+  /** Components still used by other installed model packages, which will be kept. */
   kept: { repo: string; usedBy: string[] }[];
 }
 
-/** 删除前的估算：与 Runtime 的规则一致——别的已装模型包也用到的组件保留。 */
+/** Estimate before deletion: consistent with the Runtime's rules — components that other installed model packages also use are kept. */
 export function removalEstimate(bundle: ModelBundleStatus, bundles: readonly ModelBundleStatus[]): RemovalEstimate {
   if (!bundle.components?.length) return { frees: null, kept: [] };
   const installed = new Set(bundles.filter((b) => b.bundleId !== bundle.bundleId && b.state !== 'not-installed').map((b) => b.bundleId));
@@ -271,40 +271,40 @@ export function removalEstimate(bundle: ModelBundleStatus, bundles: readonly Mod
   return { frees, kept };
 }
 
-/** 删除确认的正文。 */
+/** Body of the delete confirmation. */
 export function removalBody(estimate: RemovalEstimate): string {
   const frees = estimate.frees !== null && estimate.frees > 0 ? fmtSize(estimate.frees) : null;
   return M.removalBody(estimate.frees === null, frees, estimate.kept);
 }
 
-/** 删完之后的提示：Runtime 实际删了什么、留了什么。 */
+/** Message after deletion: what the Runtime actually deleted and what it kept. */
 export function removedToast(bundleId: string, result: { removed: string[]; kept: { repo: string; usedBy: string[] }[] }): string {
   const kept = result.kept.filter((k) => k.usedBy.length > 0);
   return kept.length ? M.removedKept(bundleId, kept.map((k) => k.repo)) : M.removed(bundleId);
 }
 
-// ---- 每行能做什么 ----
+// ---- What each row can do ----
 
 export interface BundleActions {
-  /** 下载（自己的文件不在盘上，且没在装、没暂停）。 */
+  /** Download (its own files are not on disk, and it is not being installed or paused). */
   install: boolean;
-  /** 继续下载（暂停着）。 */
+  /** Continue download (paused). */
   resume: boolean;
-  /** 停下（有任务在跑）。 */
+  /** Stop (a task is running). */
   stop: boolean;
-  /** 丢掉已下载的部分（暂停着）。 */
+  /** Discard the part already downloaded (paused). */
   discard: boolean;
-  /** 补齐：自己的文件在盘上、还缺组件（`missingParts`），只下载缺的那几件（没在装、没暂停）。 */
+  /** Fill in: its own files are on disk but components are still missing (`missingParts`); only the missing items are downloaded (not being installed, not paused). */
   complete: boolean;
-  /** 修复：盘上的逐个文件校验一遍、只重下坏的与缺的。能不能检查见 model-check.ts 的 `checkRoute`。 */
+  /** Repair: verifies each file on disk and re-downloads only the corrupt and missing ones. Whether it can be checked: see `checkRoute` in model-check.ts. */
   repair: boolean;
-  /** 删除：自己的文件在盘上、没有在装的。 */
+  /** Delete: its own files are on disk and it is not being installed. */
   remove: boolean;
 }
 
 /**
- * 一行模型包能做什么（设计稿 settings-local.jsx）。`ownFiles`：模型包自己的文件在不在盘上（models-local.ts `hasOwnFiles`，要整类的
- * 公共组件才算得出；默认按装好没有算）。在盘上、还缺组件的（`half`）给「补齐」不给「下载」，照样能修复、删除。
+ * What a model package row can do (design settings-local.jsx). `ownFiles`: whether the model package's own files are on disk (models-local.ts `hasOwnFiles`; it needs the whole category's
+ * shared components to be computed; by default, it counts as not installed). Items on disk with components still missing (`half`) get “补齐” (fill in) rather than “下载” (download), and can still be repaired and deleted.
  */
 export function bundleActions(bundle: ModelBundleStatus, ownFiles = isBundleInstalled(bundle)): BundleActions {
   const installing = !!bundle.install && bundle.install.state !== 'paused';

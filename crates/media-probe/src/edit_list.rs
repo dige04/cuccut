@@ -1,55 +1,43 @@
-//! ISO-BMFF 音轨编辑表（`elst`）的起点：解码后要丢掉多少编码器前置帧（priming）。
+//! The start of the ISO-BMFF audio track edit list (`elst`): how many encoder priming frames to discard after decoding.
 //!
-//! ## 为什么要自己读
+//! ## Why read it ourselves
 //!
-//! AAC 编码器会在码流最前面垫一段前置帧（ffmpeg 的 `aac` 编码器 1024 帧，
-//! AVFoundation 2112 帧），MP4 / M4A / MOV 用音轨的编辑表把它们挡在呈现时间轴
-//! 之外：`elst` 第一段编辑的 `media_time` 就是「呈现时间 0 对应媒体时间轴的哪一刻」。
-//! ffmpeg 与各家播放器都按它丢前缀；**Symphonia 0.6 的 isomp4 解复用器读了 `elst`
-//! 却不应用**（它的 `demuxer.rs` 写明 edits are not currently supported），AAC
-//! 解码器也不按 packet 裁剪，于是前置帧原样混进 PCM——纯 Rust 路径解出的整条音频
-//! 比 ffmpeg 晚 `media_time` 帧（44.1 kHz 下 1024 帧 ≈ 23.2 ms）。Symphonia 的
-//! `ElstAtom` 字段是私有的，只能在这里另读一遍。
+//! The AAC encoder pads the start of the bitstream with priming frames (ffmpeg's `aac` encoder uses 1024 frames, AVFoundation uses 2112). MP4 / M4A / MOV use the track's edit list to keep them outside the presentation timeline: the `media_time` of the first edit in `elst` is the moment in the media timeline that presentation time 0 corresponds to. ffmpeg and all the players drop the prefix according to it. **Symphonia 0.6's isomp4 demuxer reads `elst` but does not apply it** (its `demuxer.rs` states "edits are not currently supported"), and the AAC decoder does not trim per packet either. So the priming frames are mixed into the PCM as is, and the whole audio decoded by the pure Rust path is `media_time` frames later than ffmpeg's (1024 frames at 44.1 kHz ≈ 23.2 ms). Symphonia's `ElstAtom` fields are private, so it has to be read separately here.
 //!
-//! ## 口径（与 ffmpeg 解到 f32le 管道时一致）
+//! ## Conventions (consistent with ffmpeg decoding to an f32le pipe)
 //!
-//! - 只回答**前缀要丢多少**：取选中音轨第一段非空编辑的 `media_time`。
-//! - 不按 `segment_duration` 裁尾：ffmpeg CLI 解码同样把尾部 padding 留着
-//!   （`core/fixtures/native-export/source.mp4` 上两边都解出 48128 帧）。
-//! - 前置空编辑（`media_time = -1`，呈现延迟）不补静音；多段非空编辑只取第一段
-//!   的起点；`media_rate ≠ 1` 不理会。这三种在素材里罕见，属于已知边界。
+//! - It only answers **how much of the prefix to drop**: it takes the `media_time` of the first non-empty edit of the selected audio track.
+//! - It does not trim the tail according to `segment_duration`: the ffmpeg CLI decode also keeps the trailing padding (on `core/fixtures/native-export/source.mp4`, both sides decode 48128 frames).
+//! - Leading empty edits (`media_time = -1`, presentation delay) are not padded with silence. For multiple non-empty edits, only the start of the first one is taken. `media_rate ≠ 1` is ignored. These three cases are rare in material and are known boundaries.
 //!
-//! ## 代价
+//! ## Cost
 //!
-//! 只读 box 头和 `tkhd` / `mdhd` / `elst` 三种小 box，`stbl` 与 `mdat` 一律 seek
-//! 跳过——几小时的片子也只是几十次小读，每次解码前查一遍不值得缓存。
+//! Only the box headers and the three small boxes `tkhd` / `mdhd` / `elst` are read. `stbl` and `mdat` are always skipped by seeking. Even a several-hour file needs only dozens of small reads, which is not worth caching for each lookup made before decoding.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// 顶层 box 类型白名单：第一个 box 不在其中就不是 ISO-BMFF，直接不查。
-/// 老式 MOV 不一定以 `ftyp` 开头，`wide` / `mdat` / `moov` 打头的都见过。
+/// The whitelist of top-level box types. If the first box is not in it, the file is not ISO-BMFF and no lookup is done. Old-style MOV files do not always start with `ftyp`; ones starting with `wide`, `mdat` or `moov` have been seen.
 const TOP_LEVEL_TYPES: &[&[u8; 4]] = &[
     b"ftyp", b"moov", b"mdat", b"free", b"skip", b"wide", b"pnot", b"uuid", b"styp",
 ];
 
-/// 需要整块读进内存解析的 box 上限：`tkhd` / `mdhd` 几十字节，`elst` 每条 12 或
-/// 20 字节。超过这个大小的必是坏文件，按「没有编辑表」处理。
+/// The size limit for boxes that must be read into memory whole: `tkhd` / `mdhd` are a few dozen bytes, and each `elst` entry is 12 or 20 bytes. Anything bigger must be a bad file, and is treated as "no edit list".
 const MAX_SMALL_BOX: u64 = 1 << 20;
 
-/// 音轨第一段非空编辑的起点，单位是该轨 `mdhd` 的媒体时标。
+/// The start of the track's first non-empty edit, in the track's `mdhd` media timescale.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditStart {
-    /// `elst` 的 `media_time`（媒体时标 tick），恒大于 0。
+    /// `elst`'s `media_time` (in media timescale ticks), always greater than 0.
     pub media_time: u64,
-    /// 该轨 `mdhd` 的 timescale（每秒 tick 数），恒大于 0。
+    /// The track's `mdhd` timescale (ticks per second), always greater than 0.
     pub timescale: u32,
 }
 
 impl EditStart {
-    /// 换算成 `sample_rate` 下要丢掉的解码帧数（四舍五入）。
+    /// Converts to the number of decoded frames to drop at `sample_rate` (rounded).
     ///
-    /// 音轨的媒体时标通常就是采样率（此时逐帧精确），但规范不要求两者相等。
+    /// The track's media timescale is usually the sample rate (exact frame for frame in that case), but the spec does not require the two to be equal.
     pub fn frames(&self, sample_rate: u32) -> u64 {
         let timescale = u128::from(self.timescale);
         let scaled = u128::from(self.media_time) * u128::from(sample_rate);
@@ -57,11 +45,9 @@ impl EditStart {
     }
 }
 
-/// 查 `path` 里 `track_id`（`tkhd.track_ID`，也就是 Symphonia 的 `Track::id`）
-/// 那条轨的编辑表起点。
+/// Looks up the edit-list start for the track `track_id` in `path` (`tkhd.track_ID`, which is Symphonia's `Track::id`).
 ///
-/// 返回 `None` 的情形：不是 ISO-BMFF、读不了、找不到这条轨、没有 `elst`、
-/// 第一段非空编辑从 0 开始。全部等价于「不用丢前缀」，调用方照旧解码即可。
+/// Cases that return `None`: not ISO-BMFF, unreadable, the track is not found, there is no `elst`, or the first non-empty edit starts at 0. All of these are equivalent to "no prefix to drop", and the caller simply decodes as usual.
 pub fn audio_edit_start(path: &Path, track_id: u32) -> Option<EditStart> {
     let file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
@@ -75,8 +61,7 @@ fn edit_start_in<R: Read + Seek>(
     len: u64,
     track_id: u32,
 ) -> io::Result<Option<EditStart>> {
-    // 先认类型再认尺寸：WAV / FLAC 的前 4 字节当 box 尺寸读必然越界，
-    // 那不是「坏 MP4」，只是别的容器。
+    // Check the type first, then the size. Reading a WAV / FLAC's first 4 bytes as a box size necessarily overruns, and that is not a "bad MP4", just a different container.
     let mut magic = [0u8; 8];
     if reader.read_exact(&mut magic).is_err() {
         return Ok(None);
@@ -164,13 +149,13 @@ fn read_trak<R: Read + Seek>(reader: &mut R, trak: &BoxHeader) -> io::Result<Tra
 
 struct BoxHeader {
     kind: [u8; 4],
-    /// 载荷起点（跳过 size/type 与可能的 64 位 largesize）。
+    /// The payload start (skips the size/type and the possible 64-bit largesize).
     body: u64,
-    /// 本 box 的结尾（开区间）。
+    /// The end of this box (open interval).
     end: u64,
 }
 
-/// 读 `pos` 处的 box 头；容器剩余不足一个头时返回 `None`。尺寸越界算坏文件。
+/// Reads the box header at `pos`. Returns `None` when the remaining container is not big enough for a header. A size that overruns counts as a bad file.
 fn next_box<R: Read + Seek>(reader: &mut R, pos: u64, end: u64) -> io::Result<Option<BoxHeader>> {
     if pos.saturating_add(8) > end {
         return Ok(None);
@@ -180,13 +165,13 @@ fn next_box<R: Read + Seek>(reader: &mut R, pos: u64, end: u64) -> io::Result<Op
     reader.read_exact(&mut head)?;
     let kind = [head[4], head[5], head[6], head[7]];
     let (header_len, size) = match u32::from_be_bytes([head[0], head[1], head[2], head[3]]) {
-        // 64 位 largesize（大 mdat 常见）。
+        // 64-bit largesize (common for large mdat).
         1 => {
             let mut large = [0u8; 8];
             reader.read_exact(&mut large)?;
             (16, u64::from_be_bytes(large))
         }
-        // 延伸到容器结尾。
+        // Extends to the end of the container.
         0 => (8, end - pos),
         size => (8, u64::from(size)),
     };
@@ -219,7 +204,7 @@ fn be_u64(bytes: &[u8], at: usize) -> Option<u64> {
     Some(u64::from_be_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
-/// `tkhd`（FullBox）：v0 = 创建 4 + 修改 4 + track_ID；v1 = 8 + 8 + track_ID。
+/// `tkhd` (FullBox): v0 = creation 4 + modification 4 + track_ID; v1 = 8 + 8 + track_ID.
 fn parse_tkhd(body: &[u8]) -> Option<u32> {
     match body.first()? {
         0 => be_u32(body, 12),
@@ -228,7 +213,7 @@ fn parse_tkhd(body: &[u8]) -> Option<u32> {
     }
 }
 
-/// `mdhd`（FullBox）：timescale 紧跟在创建 / 修改时间之后。
+/// `mdhd` (FullBox): the timescale comes right after the creation / modification times.
 fn parse_mdhd(body: &[u8]) -> Option<u32> {
     match body.first()? {
         0 => be_u32(body, 12),
@@ -237,8 +222,7 @@ fn parse_mdhd(body: &[u8]) -> Option<u32> {
     }
 }
 
-/// `elst`（FullBox）：第一段非空编辑的 `media_time`。`-1` 是空编辑（呈现延迟），
-/// 跳过；所有编辑都是空编辑时返回 `None`。
+/// `elst` (FullBox): the `media_time` of the first non-empty edit. `-1` is an empty edit (presentation delay), and is skipped. Returns `None` when all edits are empty.
 fn parse_elst(body: &[u8]) -> Option<u64> {
     let version = *body.first()?;
     let count = be_u32(body, 4)? as usize;
@@ -294,7 +278,7 @@ mod tests {
         bx(b"mdia", &payload)
     }
 
-    /// v0 编辑表：`(segment_duration, media_time)`，速率恒为 1.0。
+    /// v0 edit list: `(segment_duration, media_time)`, with the rate always 1.0.
     fn edts_v0(entries: &[(u32, i32)]) -> Vec<u8> {
         let mut rest = (entries.len() as u32).to_be_bytes().to_vec();
         for (duration, media_time) in entries {
@@ -329,7 +313,7 @@ mod tests {
 
     #[test]
     fn the_first_edit_gives_the_priming_to_drop() {
-        // ffmpeg 的 aac 编码器：44.1 kHz，1024 帧前置。
+        // ffmpeg's aac encoder: 44.1 kHz, 1024 frames of priming.
         let bytes = file(&[trak(1, 44_100, Some(edts_v0(&[(264_600, 1024)])))]);
         let start = lookup(&bytes, 1).unwrap();
         assert_eq!(
@@ -340,7 +324,7 @@ mod tests {
             }
         );
         assert_eq!(start.frames(44_100), 1024);
-        // 解码器按别的采样率报帧时按比例换算：1024 × 48000 / 44100 = 1114.6。
+        // When the decoder reports frames at a different sample rate, scale proportionally: 1024 × 48000 / 44100 = 1114.6.
         assert_eq!(start.frames(48_000), 1115);
     }
 
@@ -375,7 +359,7 @@ mod tests {
         rest.extend_from_slice(&[0, 1, 0, 0]);
         let edts = bx(b"edts", &bx(b"elst", &full(1, &rest)));
         let mut bytes = bx(b"ftyp", b"qt  \0\0\0\0qt  ");
-        // 64 位 largesize 的 mdat 排在 moov 前面。
+        // A 64-bit largesize mdat placed before moov.
         bytes.extend_from_slice(&1u32.to_be_bytes());
         bytes.extend_from_slice(b"mdat");
         bytes.extend_from_slice(&(16u64 + 8).to_be_bytes());
@@ -399,7 +383,7 @@ mod tests {
         );
     }
 
-    /// 入库夹具：ffmpeg 编出的 48 kHz 单声道 AAC，音轨（id 2）`elst media_time 1024`。
+    /// Checked-in fixture: a 48 kHz mono AAC encoded by ffmpeg, with the audio track (id 2) at `elst media_time 1024`.
     #[test]
     fn the_native_export_fixture_reports_ffmpeg_priming() {
         let fixture =

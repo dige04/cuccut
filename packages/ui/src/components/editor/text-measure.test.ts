@@ -7,7 +7,7 @@ const canvas = { width: 1920, height: 1080 };
 type MeasureOn = (size: typeof canvas) => MeasureText;
 const crashed = () => new PlanFailure({ code: 'PLANNER_CRASHED', message: '帧计划器出错，正在重新载入' });
 
-/** 假的内核：量出来的框宽是字数 × 100；`fail` 给出第几次量要抛什么。 */
+/** Fake kernel: the measured box width is character count × 100; `fail` specifies which measurement call should throw, and what. */
 function fakeKernel(fail: (call: number) => Error | null = () => null) {
   let calls = 0;
   let recover: () => void = () => {};
@@ -42,7 +42,7 @@ describe('新建文字时量框', () => {
     loading.resolve(kernel);
     const layer = await made;
     expect(build).toHaveBeenCalledTimes(1);
-    // 「输入文字」四个字 → 400 像素宽，占 1920 宽画布的 400/1920。
+    // “输入文字” (enter text, four characters) → 400 px wide, which is 400/1920 of a 1920-wide canvas.
     expect(layer.place?.w).toBeCloseTo((400 / 1920) * 100, 1);
   });
 
@@ -53,13 +53,13 @@ describe('新建文字时量框', () => {
   });
 
   it('量到一半内核陷阱（PLANNER_CRASHED）：等它重新载入好了，把整组重量一遍', async () => {
-    // 第二次量的时候陷阱：第一层量好了、第二层没量到，结果不能用半截的。
+    // Trap on the second measurement: the first layer is measured but the second is not, so the result must not be a partial one.
     const kernel = fakeKernel((call) => (call === 2 ? crashed() : null));
     const build = vi.fn((measureOn: MeasureOn) => [measureOn(canvas)('一', {}, null).width, measureOn(canvas)('一二', {}, null).width]);
     let settled = false;
     const made = withTextMeasure(build, async () => kernel).finally(() => (settled = true));
     await vi.waitFor(() => expect(kernel.calls()).toBe(2));
-    // 还没重新载入好：不重试，也不交出结果。
+    // Not yet reloaded: do not retry, and do not return a result.
     await Promise.resolve();
     expect(settled).toBe(false);
     expect(build).toHaveBeenCalledTimes(1);

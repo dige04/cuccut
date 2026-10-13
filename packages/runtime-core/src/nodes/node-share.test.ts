@@ -14,13 +14,13 @@ import { resolveRuntimeHome, type RuntimeHome } from '@cuccut/runtime-storage';
 import { startRuntime, type RunningRuntime, type StartRuntimeOptions } from '../runtime.ts';
 
 /**
- * Runtime 里的节点服务：网关的 `nodes.share.*`、`node-share.json` 的持久与权限、重启后恢复、端口被占用。
- * 节点只听 127.0.0.1、端口由系统分配，mDNS 换成假的。
+ * The node service in the Runtime: the gateway's `nodes.share.*`, persistence and permissions of `node-share.json`, recovery after a restart, and a port that is already in use.
+ * The node listens only on 127.0.0.1, with a system-assigned port; mDNS is replaced with a fake.
  */
 
 const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件。 */
+/** Writes a synthesized manifest and files for each repository in the default model pack. */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -130,19 +130,19 @@ describe('Runtime 的节点服务', () => {
     expect(restored.clients).toEqual([expect.objectContaining({ clientId: 'client-a' })]);
     expect(r2.nodes.port).toBe(restored.port);
     expect(advertiser.active).toMatchObject({ port: restored.port });
-    // 旧令牌仍然有效：认证通过，任务不存在。
+    // The old token is still valid: authentication passes, and the job does not exist.
     const probe = await nodeFetch(`http://127.0.0.1:${restored.port}`, token, '/v1/jobs/job_missing');
     expect(probe.status).toBe(404);
     expect((await fs.stat(home.nodeShareFile)).mode & 0o777).toBe(0o600);
 
-    // 吊销：令牌失效，持久状态里也没了。
+    // Revoke: the token is invalid, and it is gone from persistent state too.
     const revoked = await c2.request('nodes.share.revoke', { clientId: 'client-a' });
     expect(revoked.clients).toEqual([]);
     expect((await nodeFetch(`http://127.0.0.1:${restored.port}`, token, '/v1/jobs/job_missing')).status).toBe(401);
     await expect(c2.request('nodes.share.revoke', { clientId: 'client-a' })).rejects.toMatchObject({ code: 'not-found' });
     await expect(c2.request('nodes.share.revoke', { clientId: 'a.b' })).rejects.toMatchObject({ code: 'invalid-request' });
 
-    // 关闭：停止监听；重启后保持关闭。
+    // Close: stops listening; stays closed after a restart.
     const stopped = await c2.request('nodes.share.stop', {});
     expect(stopped).toMatchObject({ enabled: false, listening: false, pairing: null });
     await expect(fetch(`http://127.0.0.1:${restored.port}/v1/health`)).rejects.toThrow();
@@ -160,7 +160,7 @@ describe('Runtime 的节点服务', () => {
       const blocked = await c1.request('nodes.share.start', { port: taken });
       expect(blocked).toMatchObject({ enabled: true, listening: false, port: taken, error: expect.stringContaining(String(taken)) });
 
-      // 重启时端口仍被占：Runtime 起得来，状态如实报告。
+      // Port still taken at restart: the Runtime still starts, and the status is reported accurately.
       const { client: c2 } = await reboot();
       expect(await c2.request('nodes.share.status', {})).toMatchObject({
         enabled: true,
@@ -186,7 +186,7 @@ describe('Runtime 的节点服务', () => {
         server.listen(port, '127.0.0.1', () => resolve(server));
       });
     const closeServer = (server: http.Server) => new Promise((resolve) => server.close(resolve));
-    // 先占一个空闲端口再放开，给节点用固定端口。
+    // Take a free port first, then release it, so the node can use a fixed port.
     const probe = await listenOn(0);
     const nodePort = (probe.address() as AddressInfo).port;
     await closeServer(probe);
@@ -197,7 +197,7 @@ describe('Runtime 的节点服务', () => {
     await runtime?.close();
     runtime = null;
 
-    // 发现文件写不进去（同名的非空目录）：startRuntime 在节点服务开始监听之后失败，节点的端口也要放出来。
+    // The discovery file cannot be written (a non-empty directory with the same name): startRuntime fails after the node service has started listening, so the node's port must be released too.
     await fs.mkdir(path.join(home.discoveryFile, 'blocker'), { recursive: true });
     await expect(
       startRuntime({
@@ -281,7 +281,7 @@ describe('Runtime 的节点服务', () => {
       ]);
       expect(await c1.request('jobs.inspect', { jobId: job.jobId })).toMatchObject({ submitter: { kind: 'node', id: 'client-a' } });
 
-      // 一个等上传的任务：Runtime 停止时连同目录一起清掉。
+      // A job waiting for an upload: when the Runtime stops, it is cleared along with its directory.
       const waiting = await nodeFetch(baseUrl, token, '/v1/jobs', {
         method: 'POST',
         body: JSON.stringify({

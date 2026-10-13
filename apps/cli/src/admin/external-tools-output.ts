@@ -10,9 +10,9 @@ import { formatBytes } from './models-output.ts';
 import { M } from './external-tools-copy.ts';
 
 /**
- * `cuccut external-tools …` 的参数与输出（架构设计 §12.9；管理桶，Agent 面设计 §7）。
- * 下载工具的同意只来自用户：`install` 先打印来源、版本、大小与许可，终端里问一次，只有 `--yes` 跳过；不在终端里又没给
- * `--yes` 时拒绝，不默认同意。`update` 同样先打印安装方式与要执行的完整命令，确认之后才执行，输出逐行打出来。
+ * `cuccut external-tools …`: arguments and output (Architecture design §12.9; admin bucket, Agent-surface design §7).
+ * Consent to download comes only from the user. `install` first prints the source, version, size and license, and asks once in the terminal. Only `--yes` skips the question. When not in a terminal and `--yes` is not given, it refuses and does not default to consent.
+ * `update` likewise first prints the install method and the full command to be run, and runs it only after confirmation. Its output is printed line by line.
  */
 
 export type ToolsCommand =
@@ -24,7 +24,7 @@ export type ToolsCommand =
   | { kind: 'remove'; name: string }
   | { kind: 'consent'; name: string; grant: boolean };
 
-/** `cuccut external-tools <子命令> …`。`path` 的文件按当前目录解析成绝对路径。 */
+/** `cuccut external-tools <subcommand> …`. The `path` file is resolved against the current directory to an absolute path. */
 export function parseToolsArgs(
   args: string[],
   flags: { revoke?: boolean | undefined; clear?: boolean | undefined },
@@ -67,7 +67,7 @@ const STATE_LABELS: Readonly<Record<ExternalToolStatus['state'], string>> = live
 
 const SOURCE_LABELS: Readonly<Record<NonNullable<ExternalToolStatus['source']>, string>> = live(() => M.sourceLabels);
 
-/** 一个工具几行：状态、版本与来源、路径；同意的状态；不能用时的原因与补救。 */
+/** One tool in a few lines: status, version and source, path; the consent status; the reason it cannot be used, and the remedy. */
 export function formatToolStatus(probed: ExternalToolStatus): string[] {
   const tool = localizeToolStatus(probed);
   const source = tool.source ? SOURCE_LABELS[tool.source] : null;
@@ -99,7 +99,7 @@ export function formatToolList(tools: ExternalToolStatus[]): string[] {
 
 const UPDATE_METHOD_LABELS: Readonly<Record<ExternalToolUpdateMethod, string>> = live(() => M.updateMethodLabels);
 
-/** 更新之前给用户看的：安装方式与要执行的完整命令；不能代为执行时说明原因，交给用户在终端里执行。 */
+/** Shown to the user before an update: the install method and the full command to be run. When it cannot be run on their behalf, explains why and leaves it to the user to run in the terminal. */
 export function formatToolUpdatePlan(tool: ExternalToolStatus, plan: ExternalToolUpdatePlan): string[] {
   if (!plan.runnable) {
     return [
@@ -121,8 +121,8 @@ export function updateToolPrompt(label: string): string {
 }
 
 /**
- * 逐行跟随命令的输出（任务记录的 `command`）：返回还没打印过的完整行，`final` 时连同最后没写完的那一行；前面截掉、
- * 没来得及打印的行用一行说明代替。`printed` 是已经打印过的行数。
+ * Follows the command's output line by line (the task record's `command`). Returns the complete lines not yet printed. With `final`, the last unfinished line is included as well. Lines cut off from the front
+ * that were never printed in time are replaced by a one-line note. `printed` is the number of lines already printed.
  */
 export function newCommandLines(run: JobCommandRun, printed: number, final: boolean): { lines: string[]; printed: number } {
   const complete = run.output.split('\n');
@@ -134,13 +134,13 @@ export function newCommandLines(run: JobCommandRun, printed: number, final: bool
   return { lines, printed: Math.max(printed, run.lines) + (final && partial ? 1 : 0) };
 }
 
-/** 更新结束后的一句：按前后版本说更新到了哪个版本，或已是最新。 */
+/** One sentence after an update finishes: says which version it was updated to, comparing the versions before and after, or that it was already the latest. */
 export function updateOutcomeLine(label: string, before: string | null, after: string | null): string {
   if (after && after !== before) return M.updated(label, before, after);
   return M.upToDate(label, after);
 }
 
-/** 下载之前给用户看的：来源、版本、大小、许可；不能下载时说明原因。 */
+/** Shown to the user before a download: source, version, size, license. Explains the reason when it cannot download. */
 export function formatToolOffer(label: string, offer: ExternalToolOffer): string[] {
   const size = offer.sizeBytes !== null ? formatBytes(offer.sizeBytes) : M.sizeEstimated(formatBytes(offer.estimatedBytes));
   const lines = [

@@ -1,5 +1,4 @@
-//! 顶层 `events[]`（规范 §4）：TimeExpr 求值（不对齐帧网格）、行外形与排序、
-//! 相位展开，以及 `ccut lint` 的五个事件码。
+//! Top-level `events[]` (spec §4): TimeExpr evaluation (not snapped to the frame grid), row shape and sorting, phase expansion, and the five event codes of `ccut lint`.
 
 use scene_primitives::events::resolve_events;
 use scene_primitives::lint::{Severity, lint, lint_with_inputs};
@@ -67,18 +66,18 @@ fn event_times_resolve_to_millisecond_absolute_seconds_sorted() {
     let ids: Vec<&str> = t.rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
     assert_eq!(ids, ["abs", "splash", "word", "bolt", "mid"]);
     let by = |id: &str| t.rows.iter().find(|r| r["id"] == id).unwrap().clone();
-    // 不对齐 1/30 网格：2.0123 → 毫秒取整 2.012
+    // Not aligned to the 1/30 grid: 2.0123 → rounded to milliseconds 2.012
     assert_eq!(by("splash")["t"], json!(2.012));
     assert_eq!(by("splash")["scene"], json!("moon"));
     assert_eq!(by("splash")["sceneT"], json!(2.012));
     assert_eq!(by("splash")["gain"], json!(0.8));
     assert_eq!(by("splash")["type"], json!("plink"));
-    // #clip：storm 起点 4 + 3 − 0.5
+    // #clip: storm start 4 + 3 − 0.5
     assert_eq!(by("bolt")["t"], json!(6.5));
     assert_eq!(by("bolt")["sceneT"], json!(2.5));
-    // ~词锚点：clip 起点 5 + 0.4213 → 5.421
+    // ~word anchor: clip start 5 + 0.4213 → 5.421
     assert_eq!(by("word")["t"], json!(5.421));
-    // .50%：storm 的一半；until 求成绝对秒
+    // .50%: half of storm; until resolves to absolute seconds
     assert_eq!(by("mid")["t"], json!(7.0));
     assert_eq!(by("mid")["until"], json!(10.0));
     assert!(by("abs").get("phase").is_none());
@@ -91,7 +90,7 @@ fn phase_events_expand_to_one_row_per_upward_crossing() {
          "phase": "u*2.6+0.2", "gain": 0.5}
     ]));
     assert!(t.issues.is_empty(), "{:?}", t.issues);
-    // 相位 0.2 → 6.96：越过 0.25, 1.25, … 6.25 共 7 次
+    // Phase 0.2 → 6.96: crosses 0.25, 1.25, … 6.25, seven times in total
     assert_eq!(t.rows.len(), 7);
     for (k, row) in t.rows.iter().enumerate() {
         assert_eq!(row["id"], json!(format!("flap#{k}")));
@@ -100,7 +99,7 @@ fn phase_events_expand_to_one_row_per_upward_crossing() {
         assert_eq!(row["type"], json!("flapPhase"));
         assert_eq!(row["gain"], json!(0.5));
         assert!(row.get("phase").is_none() && row.get("until").is_none());
-        // u = (k + 0.05) / 2.6 向上取到毫秒
+        // u = (k + 0.05) / 2.6, rounded up to milliseconds
         let exact = 4.0 + (k as f64 + 0.05) / 2.6;
         let t = row["t"].as_f64().unwrap();
         assert!(

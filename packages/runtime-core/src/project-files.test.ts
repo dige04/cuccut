@@ -99,12 +99,12 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect(result.entries.find((e) => e.path === 'alias.md')).toMatchObject({ isDir: false, size: 5, kind: 'document' });
     expect(result.entries.find((e) => e.path === 'assets-link')).toMatchObject({ isDir: true });
 
-    // 根目录里的目录链接可以进入，路径仍按逻辑路径拼。
+    // A directory link in the root can be entered; the path is still built from the logical path.
     const linked = await listProjectFiles(root, { dir: 'assets-link' });
     expect(linked.entries.map((e) => e.path)).toEqual(['assets-link/deep', 'assets-link/logo.png']);
     expect((await rejection(listProjectFiles(root, { dir: 'leak-dir' }))).code).toBe('invalid-request');
 
-    // 查找也不列越界的链接，不进入目录链接（不会重复列出 assets-link 下的文件）。
+    // Search also does not list out-of-bounds links, and does not enter directory links (files under assets-link are not listed twice).
     const found = await listProjectFiles(root, { query: 'clip' });
     expect(found.entries.map((e) => e.path)).not.toContain('leak-dir');
     expect(found.entries.some((e) => e.path.startsWith('assets-link/'))).toBe(false);
@@ -128,7 +128,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     const video = await listProjectFiles(root, { query: 'intro' });
     expect(video.entries).toMatchObject([{ path: 'Intro.video', isDir: true, kind: 'video' }]);
 
-    // 空白的 query 等于不给：列一层。
+    // A blank query is the same as no query: list one level.
     expect((await listProjectFiles(root, { query: '   ' })).entries).toHaveLength(6);
   });
 
@@ -138,7 +138,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     const listed = await listProjectFiles(root, {});
     expect(listed.entries.find((e) => e.path === 'talk')).toMatchObject({ isDir: true, size: null, kind: 'slides' });
     expect(listed.entries.find((e) => e.path === 'talk')?.modifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    // 进目录照常列出里面的文件。
+    // Entering a directory still lists the files inside it.
     expect((await listProjectFiles(root, { dir: 'talk' })).entries.map((e) => e.path)).toEqual(['talk/slides', 'talk/deck.json']);
     expect((await listProjectFiles(root, { query: 'clip' })).entries.map((e) => e.path)).not.toContain('talk/slides/clip-s1.html');
     expect((await listProjectFiles(root, { query: 'talk' })).entries).toMatchObject([{ path: 'talk', kind: 'slides' }]);
@@ -148,7 +148,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     const boards = { 'Main.dc.html': { x: 0, y: 0, w: 880, h: 560 } };
     await write(path.join(root, 'poster', 'canvas.json'), JSON.stringify({ v: 3, title: 'Poster', boards, order: ['Main.dc.html'] }));
     await write(path.join(root, 'poster', 'screens', 'clip-Main.dc.html'), '<x-dc></x-dc>');
-    // 不合格式的 canvas.json 不算设计稿，目录照常进入。
+    // A canvas.json in the wrong format is not a design canvas, so the directory is still entered.
     await write(path.join(root, 'sketch', 'canvas.json'), JSON.stringify({ v: 2, boards: [] }));
     const listed = await listProjectFiles(root, {});
     expect(listed.entries.find((e) => e.path === 'poster')).toMatchObject({ isDir: true, size: null, kind: 'design' });
@@ -162,7 +162,7 @@ describe('项目文件浏览（projects.files.list）', () => {
   it('设计系统目录：含合法 design-system.json 的目录是一项 design-system，修改时间取 design-system.json；查找时不进入', async () => {
     await write(path.join(root, 'brand', 'design-system.json'), JSON.stringify({ v: 3, layout: 'files', createdOnFiles: { v: 1, at: '2026-10-11T00:00:00Z' }, title: 'Brand' }));
     await write(path.join(root, 'brand', 'assets', 'Logos', 'clip-mark.svg'), '<svg/>');
-    // 不是 v3 files 的 design-system.json 不算设计系统，目录照常进入。
+    // A design-system.json that is not v3 files is not a design system, so the directory is still entered.
     await write(path.join(root, 'legacy', 'design-system.json'), JSON.stringify({ v: 2, content: { files: {} } }));
     const listed = await listProjectFiles(root, {});
     expect(listed.entries.find((e) => e.path === 'brand')).toMatchObject({ isDir: true, size: null, kind: 'design-system' });

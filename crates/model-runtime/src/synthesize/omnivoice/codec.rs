@@ -1,22 +1,16 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/OmniVoiceTTS/OmniVoiceCodec.swift / Sources/OmniVoiceTTS/OmniVoiceCodecEncoder.swift`。
+//! Some implementations are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/OmniVoiceTTS/OmniVoiceCodec.swift / Sources/OmniVoiceTTS/OmniVoiceCodecEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-bundle interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Higgs Audio v2 音频分词器（OmniVoice 的 `audio_tokenizer/`）：24 kHz 波形 ↔ 8 码本
-//! 25 Hz token。对照 transformers `HiggsAudioV2TokenizerModel`（`encode` / `decode`）、
-//! `DacEncoder` / `DacDecoder`（改过的：转置卷积 `output_padding = stride % 2`、去掉 tanh）
-//! 与 `HubertModel`（group-norm 特征提取 + post-norm 编码层）。
+//! Higgs Audio v2 audio tokenizer (OmniVoice's `audio_tokenizer/`): 24 kHz waveform ↔ 8-codebook 25 Hz tokens. Checked against transformers' `HiggsAudioV2TokenizerModel` (`encode` / `decode`), `DacEncoder` / `DacDecoder` (modified: transposed convolution with `output_padding = stride % 2`, tanh removed), and `HubertModel` (group-norm feature extraction + post-norm encoder layers).
 //!
-//! 全部走通道在后（`[B, T, C]`）布局。权重是 PyTorch 布局的 F16，加载时一律转 F32 并把卷积核
-//! 转成 `[out, k, in]`；HuBERT 位置卷积的 weight-norm 在加载时合成。
-//! 转置卷积按「全长计算后切 `[ceil(s/2), +L·s)`」实现，与 PyTorch 的 `padding = ceil(s/2)`、
-//! `output_padding = s % 2` 逐样本等价，也不依赖两个后端 `padding` 语义是否一致。
+//! All computation uses channels-last (`[B, T, C]`) layout. The weights are F16 in PyTorch layout; at load time they are all converted to F32, and convolution kernels are converted to `[out, k, in]`; HuBERT's positional-convolution weight-norm is synthesized at load time.
+//! Transposed convolution is implemented as "compute the full length, then slice `[ceil(s/2), +L·s)`", which is sample-for-sample equivalent to PyTorch's `padding = ceil(s/2)`, `output_padding = s % 2`, and does not depend on whether the two backends' `padding` semantics agree.
 //!
-//! `decoder_semantic.*`、`fc1.*` 只在训练时用；码本的 `cluster_size` / `embed_avg` / `inited`
-//! 是 EMA 统计量：加载时取走丢弃，免得算作未使用的权重。
+//! `decoder_semantic.*` and `fc1.*` are only used in training; the codebook's `cluster_size` / `embed_avg` / `inited` are EMA statistics: they are taken and discarded at load time, so they are not counted as unused weights.
 
 use crate::synthesize::qwen3_tts::layers::Linear;
 use crate::synthesize::qwen3_tts::weights::Weights;
@@ -54,7 +48,7 @@ fn elu(x: &Array) -> Result<Array> {
     Ok(ops::which(&x.gt(&Array::from_f32(0.0))?, x, &negative)?)
 }
 
-/// 带对称补零的 Conv1d（PyTorch `nn.Conv1d(padding=p)`）。
+/// Conv1d with symmetric zero-padding (PyTorch `nn.Conv1d(padding=p)`).
 struct Conv {
     weight: Array,
     bias: Option<Array>,
@@ -94,7 +88,7 @@ impl Conv {
     }
 }
 
-/// `Snake1d`：`x + 1/(α+1e-9) · sin²(αx)`，`α` 由 `[1, C, 1]` 转成 `[1, 1, C]`。
+/// `Snake1d`: `x + 1/(α+1e-9) · sin²(αx)`; `α` is reshaped from `[1, C, 1]` to `[1, 1, C]`.
 struct Snake {
     alpha: Array,
     inv_alpha: Array,
@@ -113,7 +107,7 @@ impl Snake {
     }
 }
 
-/// DAC `DacResidualUnit`：snake → k7 空洞卷积 → snake → 1×1 卷积，残差相加（长度不变）。
+/// DAC `DacResidualUnit`: snake → k7 dilated convolution → snake → 1×1 convolution, residual added (length unchanged).
 struct DacResidual {
     snake1: Snake,
     conv1: Conv,
@@ -179,7 +173,7 @@ impl DacEncoder {
         })
     }
 
-    /// HF `_get_conv1d_output_lengths`：残差单元的卷积都保长，只数会改长度的几层。
+    /// HF `_get_conv1d_output_lengths`: the convolutions in the residual units all preserve length, so only the few layers that change the length are counted.
     fn out_len(&self, len: i32) -> i32 {
         let mut len = self.conv1.out_len(len);
         for block in &self.blocks {
@@ -200,7 +194,7 @@ impl DacEncoder {
     }
 }
 
-/// DAC 解码块：snake → 转置卷积（×stride）→ 三个残差单元。
+/// DAC decoder block: snake → transposed convolution (×stride) → three residual units.
 struct DacDecoderBlock {
     snake: Snake,
     weight: Array,
@@ -296,7 +290,7 @@ struct HubertLayer {
     final_norm: Norm,
 }
 
-/// HuBERT base：group-norm 特征提取、weight-norm 位置卷积、12 层 post-norm 编码层。
+/// HuBERT base: group-norm feature extraction, weight-norm positional convolution, 12 post-norm encoder layers.
 struct Hubert {
     convs: Vec<Conv>,
     group_norm: Norm,
@@ -329,7 +323,7 @@ impl Hubert {
             convs.push(conv);
         }
         let group_norm = Norm::load(weights, "semantic_model.feature_extractor.conv_layers.0.layer_norm")?;
-        // weight-norm（dim = 2）：每个核位置 k 上 `w = g · v / ‖v[:, :, k]‖`。
+        // weight-norm (dim = 2): at each kernel position k, `w = g · v / ‖v[:, :, k]‖`.
         let prefix = "semantic_model.encoder.pos_conv_embed.conv";
         let g = f32_weight(weights, &format!("{prefix}.parametrizations.weight.original0"))?;
         let v = f32_weight(weights, &format!("{prefix}.parametrizations.weight.original1"))?;
@@ -389,13 +383,13 @@ impl Hubert {
         layer.out.forward(&merged)
     }
 
-    /// `[1, N, 1]` 的 16 kHz 波形 → 全部 13 份 hidden state 的均值 `[1, T, 768]`。
+    /// `[1, N, 1]` 16 kHz waveform → the mean of all 13 hidden states `[1, T, 768]`.
     fn forward(&self, wave: &Array) -> Result<Array> {
         let mut h = wave.clone();
         for (i, conv) in self.convs.iter().enumerate() {
             h = conv.forward(&h)?;
             if i == 0 {
-                // GroupNorm(512 组, 512 通道)：每个通道沿时间归一化，再仿射。
+                // GroupNorm(512 groups, 512 channels): each channel is normalized along time, then made affine.
                 let mean = h.mean_axis(1, true)?;
                 let centered = h.subtract(&mean)?;
                 let var = centered.square()?.mean_axis(1, true)?;
@@ -408,7 +402,7 @@ impl Hubert {
         }
         let h = layer_norm(&h, &self.projection_norm.weight, &self.projection_norm.bias, self.eps)?;
         let h = self.projection.forward(&h)?;
-        // 位置卷积（偶数核长）多出的最后一帧去掉（`HubertSamePadLayer`），再 GELU。
+        // The extra last frame that the positional convolution (even kernel length) adds is removed (`HubertSamePadLayer`), then GELU.
         let t = h.dim(1);
         let pos = self.pos_conv.forward(&h)?;
         let pos = gelu_same_dtype(&pos.index((.., ..t, ..)))?;
@@ -425,7 +419,7 @@ impl Hubert {
     }
 }
 
-/// `HiggsAudioV2TokenizerResidualUnit`：ELU → 卷积（无偏置）→ ELU → 1×1 卷积，残差相加。
+/// `HiggsAudioV2TokenizerResidualUnit`: ELU → convolution (no bias) → ELU → 1×1 convolution, residual added.
 struct SemanticResidual {
     conv1: Conv,
     conv2: Conv,
@@ -508,8 +502,7 @@ pub struct Codec {
     fc2: Linear,
     quantizers: Vec<Quantizer>,
     downsample: usize,
-    /// HuBERT 输入两侧补零数。HF 写死 160；它等于 `downsample_factor / 2`（HuBERT 总步长
-    /// 320 的一半），这里按后者算，合成小模型单测才能用小步长。
+    /// Zero-padding on each side of the HuBERT input. HF hardcodes 160; it equals `downsample_factor / 2` (half of HuBERT's total stride of 320), so it is computed from the latter here, which lets unit tests of a small synthetic model use a small stride.
     semantic_pad: usize,
     hop: usize,
     pub sample_rate: u32,
@@ -537,7 +530,7 @@ impl Codec {
                 project_out: dense(weights, &format!("{p}.project_out"))?,
             });
         }
-        // 训练专用的语义解码支路与 EMA 统计量：取走丢弃。
+        // The training-only semantic decoding branch and EMA statistics: taken and discarded.
         for key in weights.keys() {
             if key.starts_with("decoder_semantic.")
                 || key.starts_with("fc1.")
@@ -568,13 +561,12 @@ impl Codec {
         self.quantizers.len()
     }
 
-    /// 每个 token 帧对应的 24 kHz 样本数。
+    /// Number of 24 kHz samples per token frame.
     pub fn hop(&self) -> usize {
         self.hop
     }
 
-    /// 24 kHz 波形（长度须是 `hop` 的整数倍）→ `[num_codebooks, frames]` 的 token，
-    /// 按码本在前的行主序展开。
+    /// 24 kHz waveform (length must be an integer multiple of `hop`) → `[num_codebooks, frames]` tokens, expanded in row-major order with codebooks first.
     pub fn encode(&self, wave: &[f32]) -> Result<Vec<i32>> {
         ensure!(
             !wave.is_empty() && wave.len().is_multiple_of(self.hop),
@@ -582,7 +574,7 @@ impl Codec {
             wave.len(),
             self.hop
         );
-        // 语义支路：重采样到 16 kHz、两侧补 160 个零、HuBERT 13 层均值、隔帧取一。
+        // Semantic branch: resample to 16 kHz, pad 160 zeros on each side, average HuBERT's 13 layers, take every other frame.
         let semantic_wave = super::audio::resample(wave, self.sample_rate, self.semantic_rate);
         let mut padded = vec![0.0f32; self.semantic_pad];
         padded.extend_from_slice(&semantic_wave);
@@ -595,7 +587,7 @@ impl Codec {
         let semantic = self.semantic.forward(&features)?;
         let frames = semantic.dim(1);
 
-        // 声学支路：输出帧数对不上语义帧数时两侧各补 hop/2（HF `encode` 的判定）。
+        // Acoustic branch: if the output frame count does not match the semantic frame count, pad hop/2 on each side (HF `encode`'s rule).
         let mut acoustic_input = wave.to_vec();
         if self.acoustic_encoder.out_len(wave.len() as i32) != frames {
             let pad = self.hop / 2;
@@ -617,7 +609,7 @@ impl Codec {
             .forward(&ops::concatenate_axis(&[&acoustic, &semantic], -1)?)?
             .reshape(&[frames, -1])?;
 
-        // 残差向量量化：`argmax(2·h·eᵀ − |e|²)` 即欧氏最近邻（`|h|²` 对每行是常数）。
+        // Residual vector quantization: `argmax(2·h·eᵀ − |e|²)` is the Euclidean nearest neighbor (`|h|²` is constant per row).
         let mut residual = embeddings;
         let mut codes = Vec::with_capacity(self.quantizers.len() * frames as usize);
         for quantizer in &self.quantizers {
@@ -633,7 +625,7 @@ impl Codec {
         Ok(codes)
     }
 
-    /// `[num_codebooks, frames]` 的 token（行主序）→ 24 kHz 波形。
+    /// `[num_codebooks, frames]` tokens (row-major) → 24 kHz waveform.
     pub fn decode(&self, codes: &[i32], frames: usize) -> Result<Vec<f32>> {
         let n = self.quantizers.len();
         ensure!(

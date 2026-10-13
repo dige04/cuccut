@@ -1,32 +1,32 @@
 import type { ModelBackend, ModelCapability } from '@cuccut/protocol';
 
 /**
- * Runtime 与 Model Worker 之间的合同（Model Worker 协议规范）：消息形状、模型包描述与 `cuccut.asr-result/v1`。
- * 这是私有执行器通道，不进公共协议包；字段名与规范逐字对应。
+ * The contract between the Runtime and the Model Worker (Model Worker protocol spec): message shapes, model package descriptions, and `cuccut.asr-result/v1`.
+ * This is a private executor channel and is not part of the public protocol package; field names match the spec word for word.
  */
 
 export const WORKER_CONTRACT_VERSION = 1;
 export const ASR_RESULT_SCHEMA = 'cuccut.asr-result/v1';
 export const DEFAULT_TIMESCALE = 1_000_000;
 
-// ---- §4 模型包描述 ----
+// ---- §4 Model package descriptions ----
 
 export type ModelFamily =
-  // 识别主模型（`components.asr.family`）：Qwen3-ASR、Whisper 的 MLX 包、CoreML 包与 GGML（whisper.cpp）包、MOSS-Transcribe-Diarize
-  // （自己切段、不要 VAD）。
+  // Main recognition model (`components.asr.family`): Qwen3-ASR, Whisper's MLX package, CoreML package and GGML (whisper.cpp) package, MOSS-Transcribe-Diarize
+  // (does its own segmentation, no VAD needed).
   | 'qwen3-asr'
   | 'whisper-mlx'
   | 'whisper-coreml'
   | 'whisper-ggml'
   | 'moss-transcribe-diarize'
-  /** Whisper 的分词器（`tokenizer` 组件，取自 `openai/whisper-large-v3`；MLX 包的 `generation_config.json` 也在这里）。 */
+  /** Whisper's tokenizer (`tokenizer` component, taken from `openai/whisper-large-v3`; the MLX package's `generation_config.json` is also here). */
   | 'whisper-tokenizer'
   | 'qwen3-forced-aligner'
   | 'silero-vad'
   | 'wespeaker'
-  /** 「说话人区分」模型包的 Pyannote 分段模型（`segmentation` 组件，与 `speaker` 的 WeSpeaker 一起用，§4）。 */
+  /** The Pyannote segmentation model of the “speaker diarization” model package (`segmentation` component, used together with WeSpeaker from `speaker`, §4). */
   | 'pyannote-segmentation'
-  // 本地语音合成（§4.1）：主模型、共享的语音编解码器与 IndexTTS 2.5 取自 IndexTTS2 仓库的辅助权重。
+  // Local speech synthesis (§4.1): the main model, the shared speech codec, and the IndexTTS 2.5 auxiliary weights are taken from the IndexTTS2 repo.
   | 'qwen3-tts'
   | 'qwen3-tts-tokenizer'
   | 'indextts2'
@@ -35,20 +35,20 @@ export type ModelFamily =
   | 'gpt-sovits'
   | 'voxcpm2'
   | 'omnivoice'
-  /** 人声与伴奏分离（`separator` 组件，§4.2）：HTDemucs-FT，四个子模型同在一个权重文件里。 */
+  /** Vocal and accompaniment separation (`separator` component, §4.2): HTDemucs-FT, with its four sub-models all in one weights file. */
   | 'htdemucs-ft'
-  // 本地文生图（§4.2）：Qwen-Image-2.1（文本编码器、DiT、VAE 与分词表同在一个 `image` 组件里）。
+  // Local text-to-image (§4.2): Qwen-Image-2.1 (the text encoder, DiT, VAE and tokenizer tables are all in one `image` component).
   | 'qwen-image'
-  /** 本地音乐生成（§4.4）：YuE2 的 GGUF 权重（主模型、VAE 与分词表同在一个 `music` 组件里），由 audio.cpp 引擎执行，不交给 Model Worker。 */
+  /** Local music generation (§4.4): YuE2's GGUF weights (the main model, VAE and tokenizer tables are all in one `music` component), run by the audio.cpp engine and not handed to the Model Worker. */
   | 'yue2'
   /**
-   * audio.cpp 引擎（`audiocpp-engine` 组件，§4.4）：上游 GitHub 发布页的预编译包，按主机平台取一个压缩包解开；不交给 Model Worker，
-   * 音乐生成的本地 Provider 直接执行它。
+   * The audio.cpp engine (`audiocpp-engine` component, §4.4): a prebuilt package from the upstream GitHub release page. One archive is picked for the host platform and extracted. It is not handed to the Model Worker;
+   * the local music-generation Provider runs it directly.
    */
   | 'audio-cpp-engine';
 /**
- * `asr` / `vad` / `aligner` / `speaker` / `segmentation` / `tokenizer` 是识别的组件；`tts` / `codec` / `aux` 是语音合成的组件（§4.1）；
- * `separator` 是人声与伴奏分离的组件，`image` 是文生图的组件（§4.2）：两者都不与别的组件同在一个模型包里。
+ * `asr` / `vad` / `aligner` / `speaker` / `segmentation` / `tokenizer` are the recognition components; `tts` / `codec` / `aux` are the speech synthesis components (§4.1);
+ * `separator` is the vocal and accompaniment separation component, and `image` is the text-to-image component (§4.2). Neither shares a model package with other components.
  */
 export type BundleComponent =
   | 'asr'
@@ -62,11 +62,11 @@ export type BundleComponent =
   | 'aux'
   | 'separator'
   | 'image'
-  /** 音乐生成的组件（§4.4）：不与别的组件同在一个模型包里，也不交给 Model Worker（audio.cpp 引擎直接读它的目录）。 */
+  /** The music-generation component (§4.4): does not share a model package with other components, and is not handed to the Model Worker (the audio.cpp engine reads its directory directly). */
   | 'music'
   /**
-   * 音乐生成模型包的 audio.cpp 引擎（§4.4）：平台专属的共享组件，来自 GitHub 发布页而不是模型仓库，装在 Runtime Home 的
-   * `tools/audiocpp/<版本>/`，不在模型目录里，也不交给 Model Worker。
+   * The audio.cpp engine for the music-generation model package (§4.4): a platform-specific shared component, taken from the GitHub release page rather than the model repo. It is installed in the Runtime Home's
+   * `tools/audiocpp/<版本>/`, not in the model directory, and is not handed to the Model Worker.
    */
   | 'audiocpp-engine';
 export const SPEECH_COMPONENTS: readonly BundleComponent[] = ['tts', 'codec', 'aux'];
@@ -74,9 +74,9 @@ export const SPEECH_COMPONENTS: readonly BundleComponent[] = ['tts', 'codec', 'a
 export interface ModelFiles {
   family: ModelFamily;
   revision: string;
-  /** 绝对路径。 */
+  /** Absolute path. */
   dir: string;
-  /** 相对 `dir`。 */
+  /** Relative to `dir`. */
   files: Array<{ path: string; sha256: string; byteLength: number }>;
 }
 
@@ -89,7 +89,7 @@ export interface ModelBundle {
   memoryBudgetBytes: number | null;
 }
 
-// ---- §2 方法 ----
+// ---- §2 Methods ----
 
 export interface WorkerHello {
   workerVersion: string;
@@ -98,23 +98,23 @@ export interface WorkerHello {
   backends: Array<{ id: ModelBackend; available: boolean; reason?: string; devices: string[] }>;
   capabilities: ModelCapability[];
   /**
-   * 这个 Worker 能加载的识别主模型 family（`components.asr.family`）。有一个时 `capabilities` 才含 `transcribe`；
-   * 识别的模型包只交给列出了它的 family 的 Worker（§2.1）。
+   * The main recognition model family this Worker can load (`components.asr.family`). `capabilities` includes `transcribe` only when there is one;
+   * recognition model packages are handed only to Workers that list their family (§2.1).
    */
   transcribeFamilies: ModelFamily[];
   /**
-   * 这个 Worker 能加载的合成主模型 family（`components.tts.family`）。有一个时 `capabilities` 才含 `synthesize`；
-   * 合成的模型包只交给列出了它的 family 的 Worker（§2.1）。
+   * The main synthesis model family this Worker can load (`components.tts.family`). `capabilities` includes `synthesize` only when there is one;
+   * synthesis model packages are handed only to Workers that list their family (§2.1).
    */
   synthesizeFamilies: ModelFamily[];
   /**
-   * 这个 Worker 能加载的分离模型 family（`components.separator.family`）。有一个时 `capabilities` 才含 `separate`；
-   * 分离的模型包只交给列出了它的 family 的 Worker（§2.1）。
+   * The separation model family this Worker can load (`components.separator.family`). `capabilities` includes `separate` only when there is one;
+   * separation model packages are handed only to Workers that list their family (§2.1).
    */
   separateFamilies: ModelFamily[];
   /**
-   * 这个 Worker 能加载的文生图 family（`components.image.family`）。有一个时 `capabilities` 才含 `image`；
-   * 文生图的模型包只交给列出了它的 family 的 Worker（§2.1）。
+   * The text-to-image family this Worker can load (`components.image.family`). `capabilities` includes `image` only when there is one;
+   * text-to-image model packages are handed only to Workers that list their family (§2.1).
    */
   imageFamilies: ModelFamily[];
 }
@@ -164,25 +164,25 @@ export interface TranscribeRunParams {
   outputContract: typeof ASR_RESULT_SCHEMA;
 }
 
-/** 合成的输出合同：staging 里的一个 WAV（PCM，单声道或立体声，采样率是模型的原生采样率）。 */
+/** Output contract for synthesis: one WAV in staging (PCM, mono or stereo; the sample rate is the model's native sample rate). */
 export const SPEECH_WAV_CONTRACT = 'cuccut.speech-wav/v1';
-/** 合成结果在 staging 里的文件名。 */
+/** File name of the synthesis result in staging. */
 export const SPEECH_OUTPUT_FILE = 'speech.wav';
 
 /**
- * 合成的声音（§2.5.2）：`preset` 是模型的说话人；`clone` 用 `input` 的参考录音，`transcript` 是它的原文；
- * `describe` 是一句描述。Worker 不换成别的声音：模型做不到就是 `INVALID_PARAMS`。
+ * The synthesized voice (§2.5.2): `preset` is the model's speaker; `clone` uses the reference recording in `input`, and `transcript` is its original text;
+ * `describe` is a one-sentence description. The Worker does not swap in another voice: if the model cannot do it, the error is `INVALID_PARAMS`.
  */
 export type SynthesizeVoice =
   { mode: 'preset'; id: string } | { mode: 'clone'; transcript: string | null } | { mode: 'describe'; description: string };
 
-/** `job.run`（capability `synthesize`）的冻结参数。文本原样交给 Worker，读音标注由引擎换成自己的写法。 */
+/** Frozen parameters for `job.run` (capability `synthesize`). The text is handed to the Worker as-is; pronunciation annotations are converted by the engine into its own notation. */
 export interface SynthesizeOptions {
   text: string;
-  /** BCP 47；null 为由引擎按文本判断。 */
+  /** BCP 47; null means the engine decides from the text. */
   language: string | null;
   voice: SynthesizeVoice;
-  /** 语气与风格的说明（模型接受时）。 */
+  /** Description of tone and style (when the model accepts it). */
   instructions: string | null;
   speed: number | null;
   cfg: number | null;
@@ -194,46 +194,46 @@ export interface SynthesizeRunParams {
   jobId: string;
   runGeneration: number;
   capability: 'synthesize';
-  /** `clone` 的参考录音（只读、整段、轨 0）；其余声音方式为 null。 */
+  /** Reference recording for `clone` (read-only, whole, track 0); null for other voice modes. */
   input: JobInput | null;
   options: SynthesizeOptions;
   staging: string;
   outputContract: typeof SPEECH_WAV_CONTRACT;
 }
 
-/** 分离的输出合同：staging 里人声与背景两个 16-bit PCM 立体声 WAV，采样率是请求的 `sampleRate`，长度与输入相同。 */
+/** Output contract for separation: two 16-bit PCM stereo WAVs in staging, vocals and background. The sample rate is the requested `sampleRate`, and the length is the same as the input. */
 export const STEMS_WAV_CONTRACT = 'cuccut.stems-wav/v1';
-/** 分离结果在 staging 里的文件名。 */
+/** File names of the separation results in staging. */
 export const STEM_OUTPUT_FILES = { vocals: 'vocals.wav', background: 'background.wav' } as const;
 
-/** `job.run`（capability `separate`）的参数（§2.5.4）：整段输入，不接受 `range`。 */
+/** Parameters for `job.run` (capability `separate`) (§2.5.4): whole-input only; `range` is not accepted. */
 export interface SeparateRunParams {
   jobId: string;
   runGeneration: number;
   capability: 'separate';
   input: Omit<JobInput, 'range'>;
-  /** `sampleRate`：输出的采样率（8000–192000）；null 为模型的工作采样率（HTDemucs 为 44100）。Runtime 传输入音轨的采样率。 */
+  /** `sampleRate`: output sample rate (8000–192000); null means the model's working sample rate (44100 for HTDemucs). The Runtime passes the input track's sample rate. */
   options: { sampleRate: number | null };
   staging: string;
   outputContract: typeof STEMS_WAV_CONTRACT;
 }
 
-/** 文生图的输出合同：staging 里的一张 8 位 RGBA PNG。 */
+/** Output contract for text-to-image: one 8-bit RGBA PNG in staging. */
 export const IMAGE_PNG_CONTRACT = 'cuccut.image-png/v1';
-/** 文生图结果在 staging 里的文件名。 */
+/** File name of the text-to-image result in staging. */
 export const IMAGE_OUTPUT_FILE = 'image.png';
 
-/** 音乐生成的输出约定（§4.4）：staging 里一个 WAV（模型的采样率、单声道或立体声、16 位或 32 位浮点）。 */
+/** Output convention for music generation (§4.4): one WAV in staging (the model's sample rate; mono or stereo; 16-bit or 32-bit float). */
 export const MUSIC_WAV_CONTRACT = 'cuccut.music-wav/v1';
-/** 音乐生成结果在 staging 里的文件名。 */
+/** File name of the music-generation result in staging. */
 export const MUSIC_OUTPUT_FILE = 'music.wav';
 
-/** `job.run`（capability `image`）的冻结参数（§2.5.3）。宽高是像素；`seed` 必给（Runtime 在提交时冻结），同一 seed 同一张图。 */
+/** Frozen parameters for `job.run` (capability `image`) (§2.5.3). Width and height are in pixels. `seed` is always given (the Runtime freezes it at submission), and the same seed produces the same image. */
 export interface ImageRunOptions {
   prompt: string;
   width: number;
   height: number;
-  /** 去噪步数；null 为模型的默认步数。 */
+  /** Number of denoising steps; null means the model's default. */
   steps: number | null;
   seed: number;
 }
@@ -247,14 +247,14 @@ export interface ImageRunParams {
   outputContract: typeof IMAGE_PNG_CONTRACT;
 }
 
-/** 已有转写的说话人区分的输出合同：staging 里的 `speakers.json`（§2.5.5）。 */
+/** Output contract for speaker diarization of an existing transcript: `speakers.json` in staging (§2.5.5). */
 export const SPEAKERS_CONTRACT = 'cuccut.speakers/v1';
-/** 说话人区分结果在 staging 里的文件名。 */
+/** File name of the speaker-diarization result in staging. */
 export const SPEAKERS_OUTPUT_FILE = 'speakers.json';
 
 /**
- * `job.run`（capability `diarize`）的参数（§2.5.5）：加载的是「说话人区分」模型包本身（只有 `segmentation` 与 `speaker`）。
- * `words` 是转写的词在素材时间上的起止（`timescale` 下的刻度），按转写里的次序。
+ * Parameters for `job.run` (capability `diarize`) (§2.5.5): what is loaded is the “speaker diarization” model package itself (only `segmentation` and `speaker`).
+ * `words` are the start and end of the transcript's words on the media timeline (ticks under `timescale`), in transcript order.
  */
 export interface DiarizeRunParams {
   jobId: string;
@@ -266,7 +266,7 @@ export interface DiarizeRunParams {
   outputContract: typeof SPEAKERS_CONTRACT;
 }
 
-/** `job.run`（`diarize`）的结果：`output` 是 staging 里的 `speakers.json`，取消时为 null。 */
+/** Result of `job.run` (`diarize`): `output` is `speakers.json` in staging; null when cancelled. */
 export interface DiarizeRunResult {
   outcome: 'completed' | 'cancelled';
   output: JobOutput | null;
@@ -281,7 +281,7 @@ export interface SpeakersFile {
   timescale: number;
   speakers: Array<{ id: string; words: number; seconds: number }>;
   ranges: Array<{ start: number; end: number; speaker: string }>;
-  /** 与参数的 `words` 一一对应：投影到的说话人，拿不到证据的词为 null。 */
+  /** One-to-one with the `words` parameter: the speaker each word is projected onto; null for words with no supporting evidence. */
   words: Array<string | null>;
   provenance: Record<string, unknown>;
 }
@@ -301,17 +301,17 @@ export interface JobRunResult {
   stats: { decodeMs: number; vadMs: number; asrMs: number; alignMs: number; speechSeconds: number };
 }
 
-/** `job.run`（`synthesize`）的结果：`output` 是 staging 里的 `speech.wav`。 */
+/** Result of `job.run` (`synthesize`): `output` is `speech.wav` in staging. */
 export interface SynthesizeRunResult {
   outcome: 'completed' | 'cancelled';
   output: JobOutput | null;
   audio: { sampleRate: number; channels: number; durationSec: number } | null;
   stats: { referenceMs: number; synthesisMs: number; encodeMs: number };
-  /** 没能按注记念出来的读音（引擎不认读音、注记畸形等）：警告，不是失败；取消时为空（§2.5.2）。 */
+  /** Pronunciations that could not be read as annotated (the engine does not recognize the reading, the annotation is malformed, etc.): a warning, not a failure; empty when cancelled (§2.5.2). */
   readingsDropped: DroppedReading[];
 }
 
-/** `job.run`（`separate`）的结果：`stems` 是 staging 里的 `vocals.wav` 与 `background.wav`（背景是鼓、贝斯与其他之和），取消时为 null。 */
+/** Result of `job.run` (`separate`): `stems` are `vocals.wav` and `background.wav` in staging (the background is the sum of drums, bass, and the rest); null when cancelled. */
 export interface SeparateRunResult {
   outcome: 'completed' | 'cancelled';
   stems: { vocals: JobOutput; background: JobOutput } | null;
@@ -319,17 +319,17 @@ export interface SeparateRunResult {
   stats: { decodeMs: number; separationMs: number; encodeMs: number };
 }
 
-/** 一条没念出来的读音注记：去注记后的文字里 `[start, end)`（Unicode 码点偏移）原本要读作 `reading`。 */
+/** One pronunciation annotation that was not read out: in the text with annotations removed, the range `[start, end)` (Unicode code-point offsets) was meant to be read as `reading`. */
 export interface DroppedReading {
   start: number;
   end: number;
-  /** 规范化后的拼音读音，多字用空格分（`yin2 hang2`）；畸形注记是原文。 */
+  /** Normalized pinyin reading, with multiple syllables separated by spaces (`yin2 hang2`); malformed annotations are kept as the original text. */
   reading: string;
-  /** 注记的来源：手写、词组表、字典默认或 LLM 定的。 */
+  /** Source of the annotation: hand-written, phrase table, dictionary default, or decided by an LLM. */
   origin: 'user' | 'phrase' | 'dict' | 'llm';
 }
 
-/** `job.run`（`image`）的结果：`output` 是 staging 里的 `image.png`。 */
+/** Result of `job.run` (`image`): `output` is `image.png` in staging. */
 export interface ImageRunResult {
   outcome: 'completed' | 'cancelled';
   output: JobOutput | null;
@@ -337,16 +337,16 @@ export interface ImageRunResult {
   stats: { generationMs: number; encodeMs: number };
 }
 
-// ---- §3 事件 ----
+// ---- §3 Events ----
 
-/** 识别的阶段。 */
+/** Recognition stages. */
 export type TranscribeJobPhase = 'decoding' | 'vad' | 'transcribing' | 'aligning' | 'diarizing' | 'finalizing';
-/** 合成的阶段：`preparing-reference` → `synthesizing` → `encoding`。 */
+/** Synthesis stages: `preparing-reference` → `synthesizing` → `encoding`. */
 export type SynthesizeJobPhase = 'preparing-reference' | 'synthesizing' | 'encoding';
 export const SYNTHESIZE_JOB_PHASES: readonly SynthesizeJobPhase[] = ['preparing-reference', 'synthesizing', 'encoding'];
-/** 分离的阶段：`decoding` → `separating`（进度单位 `steps` = 窗口 × 子模型）→ `encoding`。 */
+/** Separation stages: `decoding` → `separating` (progress unit `steps` = windows × sub-models) → `encoding`. */
 export type SeparateJobPhase = 'decoding' | 'separating' | 'encoding';
-/** 文生图的阶段：`encoding-prompt` → `denoising`（按步报进度，开始时 `0/n`）→ `decoding`。 */
+/** Text-to-image stages: `encoding-prompt` → `denoising` (reports progress per step, starting at `0/n`) → `decoding`. */
 export type ImageJobPhase = 'encoding-prompt' | 'denoising' | 'decoding';
 export const IMAGE_JOB_PHASES: readonly ImageJobPhase[] = ['encoding-prompt', 'denoising', 'decoding'];
 export type WorkerJobPhase = TranscribeJobPhase | SynthesizeJobPhase | SeparateJobPhase | ImageJobPhase;
@@ -362,13 +362,13 @@ export type WorkerEventParams =
   | { event: 'job.warning'; params: { jobId: string; warning: AsrWarning } }
   | { event: 'job.language'; params: { jobId: string; tag: string; confidence: number | null } };
 
-// ---- §6 输出合同 ----
+// ---- §6 Output contract ----
 
 export type AsrOutcome = 'transcribed' | 'no-audio-track' | 'no-speech';
 export type TimingQuality = 'aligned' | 'provider' | 'estimated' | 'missing';
 export const TIMING_QUALITIES: readonly TimingQuality[] = ['aligned', 'provider', 'estimated', 'missing'];
 
-/** `hint-ignored`：模型没有识别提示的通道（MOSS），`hint` 没有交给模型；`segment-incomplete`：模型有一段没写完整，之后可能缺字。 */
+/** `hint-ignored`: the model has no channel for recognition hints (MOSS), so `hint` was not passed to the model. `segment-incomplete`: the model left a segment unfinished, so words may be missing later. */
 export type AsrWarningCode =
   | 'alignment-failed'
   | 'timing-adjusted'
@@ -401,7 +401,7 @@ export interface Word {
   text: string;
   confidence: number | null;
   timingQuality: TimingQuality;
-  /** 说话人区分（Pyannote，§6.6）投影到这个词的说话人，在 `speakers` 里；没有区分或拿不到证据时没有这一项。 */
+  /** The speaker that speaker diarization (Pyannote, §6.6) projected onto this word, in `speakers`. This entry is absent when there is no diarization or no evidence. */
   speakerId?: string;
 }
 
@@ -429,8 +429,8 @@ export interface AsrProvenance {
   inputHash: string;
   runGeneration: number;
   /**
-   * 费用状态（架构设计 §6.4）：只有在线 Provider 给出。`reported` 时 `usage` 是供应商原样报告的用量对象，
-   * 没有可信的报告时为 `unknown`；不换算成金额。
+   * Cost status (architecture design §6.4): given only by the online Provider. When `reported`, `usage` is the usage object exactly as the vendor reported it;
+   * when there is no trustworthy report, it is `unknown`. It is not converted into an amount.
    */
   cost?: AsrCost;
 }
@@ -454,7 +454,7 @@ export interface AsrResult {
   provenance: AsrProvenance;
 }
 
-/** `segments.jsonl` 的首行（§5）。 */
+/** First line of `segments.jsonl` (§5). */
 export interface SegmentsHeader {
   header: true;
   jobId: string;
@@ -464,11 +464,11 @@ export interface SegmentsHeader {
   timescale: number;
 }
 
-// ---- §7 错误 ----
+// ---- §7 Errors ----
 
-/** `model.load` 只会返回这三种失败。 */
+/** `model.load` can return only these three kinds of failure. */
 export const LOAD_FAILURE_CODES = ['MODEL_NOT_INSTALLED', 'MODEL_UNSUPPORTED', 'MODEL_RESOURCE'] as const;
-/** 推理途中可重试的失败：与进程崩溃一样计入崩溃次数（架构设计 §6.5）。 */
+/** A failure during inference that can be retried. It counts toward the crash count, the same as a process crash (architecture design §6.5). */
 export const CRASH_CODES = ['WORKER_PANIC', 'INFERENCE_FAILED', 'DECODE_FAILED'] as const;
-/** 输出写不进 staging（磁盘满、权限）：可重试，但与模型无关，不计崩溃次数。 */
+/** Output cannot be written to staging (disk full, permissions): can be retried, but it is unrelated to the model, so it is not counted in the crash count. */
 export const OUTPUT_WRITE_FAILED = 'OUTPUT_WRITE_FAILED';

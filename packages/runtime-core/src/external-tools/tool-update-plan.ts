@@ -7,82 +7,75 @@ import { refOf, type Localized } from '@cuccut/protocol';
 import { RcExternalTools } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 按原安装方式更新系统里的外部工具（架构设计 §12.9）：探测时按可执行文件的真实位置（跟随符号链接）判断它是怎么装的，
- * 给出要执行的命令。只看本机文件，不联网、不执行任何程序。
+ * Updates an external tool installed on the system by its original install method (architecture design §12.9). During probing, it works out how the tool was installed from the executable's real location (following symbolic links), and produces the command to run.
+ * It looks only at local files. It makes no network calls and runs no program.
  *
- * - Homebrew：真实位置在 `<前缀>/Cellar/<formula>/<版本>/` 下，用同一个前缀的 `bin/brew` 执行 `brew upgrade`；
- *   从源码装的开发版（版本目录以 `HEAD` 开头）加 `--fetch-HEAD`，否则 Homebrew 不会去取新的提交。
- * - pipx：真实位置在 `pipx/venvs/<包>/` 下，执行 `pipx upgrade`。
- * - pip：入口脚本（解释器的 shebang、导入工具的模块），用同一个解释器执行 `-m pip install -U`；脚本在用户目录
- *   （`~/Library/Python/<版本>/bin`、`~/.local/bin`）时加 `--user`。
- *   Windows 上入口是 Scripts 目录里的 `.exe` 启动器（distlib）：启动器程序 + `#!<解释器>` 一行 + 含 `__main__.py` 的 zip，
- *   从这一行读出解释器；解释器指向 pipx 的 venv 时按 pipx 处理；脚本不在解释器旁边（`%APPDATA%\Python\…\Scripts`、
- *   Microsoft Store 的 Python）时加 `--user`。
- * - Windows 的包管理器（它们的入口是复制出来的 `.exe` shim 或指过去的符号链接，要在认独立程序之前认出来）：
- *   - winget：真实位置在 `WinGet\Packages\<包 ID>_<源>\` 下（`WinGet\Links` 里的符号链接指向那里），用 PATH 里（或 WindowsApps 里）的 winget
- *     不交互地升级这一个包，只查 winget 源（msstore 源的协议提示会让命令失败）；
- *   - Scoop：`<Scoop 目录>\shims\<app>.exe`（旁边有同名的 `.shim`）或 `<Scoop 目录>\apps\<app>\<版本>\` 下。Scoop 本身
- *     是 PowerShell 脚本，照它自己的 `scoop.cmd` 那样用 System32 的 powershell.exe 执行 `scoop.ps1 update <app>`；
- *     全局安装（ProgramData 下，或 `SCOOP_GLOBAL` 指的目录）要管理员权限，只给 `scoop update <app> --global`；
- *   - Chocolatey：`<Chocolatey 目录>\bin\<包>.exe` 或 `lib\<包>\` 下，装在 ProgramData，总要管理员权限，只给
- *     `choco upgrade <包>`。
- * - 官方独立程序：可执行的二进制文件（Mach-O、ELF、PE）或 Python zipapp，执行它自带的更新参数（`yt-dlp -U`）。
- * - 其余（自己写的包装脚本、认不出的文件、uv 装的工具——它的环境里没有 pip）判断不了，返回 null，由界面列出常见做法。
+ * - Homebrew: the real location is under `<prefix>/Cellar/<formula>/<version>/`. It runs `brew upgrade` with the `bin/brew` of the same prefix.
+ *   A development version built from source (its version directory starts with `HEAD`) adds `--fetch-HEAD`; otherwise Homebrew does not fetch new commits.
+ * - pipx: the real location is under `pipx/venvs/<package>/`. It runs `pipx upgrade`.
+ * - pip: the entry script (the interpreter in its shebang, and the module it imports). It runs `-m pip install -U` with the same interpreter. When the script is in the user directory (`~/Library/Python/<version>/bin`, `~/.local/bin`), it adds `--user`.
+ *   On Windows the entry is the `.exe` launcher in the Scripts directory (distlib): a launcher program, then a `#!<interpreter>` line, then a zip containing `__main__.py`.
+ *   The interpreter is read from that line. If the interpreter is in pipx's venv, it is handled as pipx. When the script is not beside the interpreter (`%APPDATA%\Python\…\Scripts`, the Microsoft Store Python), it adds `--user`.
+ * - Windows package managers (their entries are copied `.exe` shims or symbolic links pointing elsewhere, so they must be recognized before standalone programs are):
+ *   - winget: the real location is under `WinGet\Packages\<package ID>_<source>\` (the symbolic links in `WinGet\Links` point there). It uses the winget on PATH (or in WindowsApps) to upgrade just this package non-interactively, and queries only the winget source (the msstore source's agreement prompt would make the command fail).
+ *   - Scoop: `<Scoop directory>\shims\<app>.exe` (with a same-named `.shim` beside it), or under `<Scoop directory>\apps\<app>\<version>\`. Scoop itself is a PowerShell script. As its own `scoop.cmd` does, it runs `scoop.ps1 update <app>` with System32's powershell.exe.
+ *     A global install (under ProgramData, or in the directory `SCOOP_GLOBAL` points to) needs admin rights, so it gives only `scoop update <app> --global`.
+ *   - Chocolatey: `<Chocolatey directory>\bin\<package>.exe` or under `lib\<package>\`. It is installed in ProgramData and always needs admin rights, so it gives only `choco upgrade <package>`.
+ * - Official standalone programs: an executable binary (Mach-O, ELF, PE) or a Python zipapp. It runs the update argument the program has built in (`yt-dlp -U`).
+ * - Anything else (a self-written wrapper script, an unrecognized file, a tool installed by uv, whose environment has no pip) cannot be judged. It returns null, and the UI lists common approaches.
  *
- * 要改写的位置当前用户不能写时不代为执行、不提权：独立程序给出带 `sudo` 的命令（Windows 上说明用管理员身份），
- * 其余只给原命令并说明原因。Windows 上 `fs.access` 不看访问控制列表，按位置判断：Program Files、ProgramData、
- * Windows 目录下的都算要管理员权限。
+ * When the current user cannot write to the location being rewritten, it does not run anything on the user's behalf and does not escalate privileges. A standalone program gets a command with `sudo` (on Windows, a note to use an administrator identity). Anything else gets only the original command, with an explanation of why.
+ * On Windows, `fs.access` does not look at access control lists, so the check goes by location: anything under Program Files, ProgramData, or the Windows directory counts as needing admin rights.
  *
- * 给人看的命令（`command`）按 Runtime 主机的平台写：Windows 上按 PowerShell 的规则加引号，其他系统按 POSIX shell。
+ * The command shown to people (`command`) follows the Runtime host's platform: on Windows it is quoted by PowerShell rules; on other systems, by POSIX shell rules.
  */
 
-/** 清单里的更新方式：Homebrew 的 formula、pipx 与 pip 的包、入口脚本导入的模块、独立程序自带的更新参数，以及 Windows 包管理器里的名字。 */
+/** How the update works in the manifest: a Homebrew formula, a pipx or pip package, the module imported by an entry script, the update argument a standalone program has built in, and the name in a Windows package manager. */
 export interface ToolUpdateRecipe {
   formula: string;
   pipxPackage: string;
-  /** `pip install -U` 的需求（带 extras）。 */
+  /** The requirement for `pip install -U` (with extras). */
   pipRequirement: string;
-  /** 入口脚本里 `from <模块> import …` 的模块名，据此认出 pip 装的脚本。 */
+  /** The module name in `from <module> import …` in an entry script; used to recognize scripts installed by pip. */
   module: string;
   selfUpdateArgs: readonly string[];
-  /** winget 的包 ID（`WinGet\Packages\<ID>_<源>\`）。 */
+  /** The winget package ID (`WinGet\Packages\<ID>_<source>\`). */
   wingetId: string;
-  /** Scoop 的 app 名（`apps\<app>\`、`shims\<app>.exe`）。 */
+  /** The Scoop app name (`apps\<app>\`, `shims\<app>.exe`). */
   scoopApp: string;
-  /** Chocolatey 的包名（`lib\<包>\`、`bin\<包>.exe`）。 */
+  /** The Chocolatey package name (`lib\<package>\`, `bin\<package>.exe`). */
   chocolateyPackage: string;
 }
 
-/** winget 没有可升级的版本时的退出码（APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE）。 */
+/** The exit code winget gives when there is no upgradable version (APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE). */
 export const WINGET_UPDATE_NOT_APPLICABLE = 0x8a15002b;
 
 /**
- * 更新命令算不算成功：退出码是 0；winget 没有可升级的版本时以 0x8A15002B 退出，也算（版本不变，就是已是最新）。
- * Windows 的退出码是 32 位无符号数，Node 可能报成负数，比较前按无符号数看。
+ * Whether an update command counts as a success: exit code 0 does. winget exiting with 0x8A15002B, meaning there is no upgradable version, also counts (the version is unchanged, which means it is already the latest).
+ * Windows exit codes are 32-bit unsigned, but Node may report them as negative, so compare them as unsigned before comparing.
  */
 export function updateSucceeded(method: ExternalToolUpdateMethod, exitCode: number | null): boolean {
   if (exitCode === 0) return true;
   return method === 'winget' && exitCode !== null && exitCode >>> 0 === WINGET_UPDATE_NOT_APPLICABLE;
 }
 
-/** 给人看的退出码：负数或超过 0xFFFF 的（Windows 的 HRESULT、NTSTATUS 一类）按 8 位十六进制写。 */
+/** An exit code for display: negative values, or values above 0xFFFF (Windows HRESULT, NTSTATUS, and similar), are written as 8-digit hex. */
 export function exitCodeText(code: number): string {
   return code < 0 || code > 0xffff ? `0x${(code >>> 0).toString(16).toUpperCase().padStart(8, '0')}` : String(code);
 }
 
 const HEAD_BYTES = 4096;
-/** pip 的启动器只有一百多 KB；更大的 `.exe`（PyInstaller 打包的独立程序）不读全文。 */
+/** pip's launcher is only a little over 100 KB. A larger `.exe` (a standalone program built with PyInstaller) is not read in full. */
 const LAUNCHER_MAX_BYTES = 2 * 1024 * 1024;
 const SAFE_POSIX = /^[A-Za-z0-9_@%+=:,./~-]+$/;
-/** PowerShell 里不用加引号的参数：不含空格、引号、`$`、`` ` ``、`@`、`;`、`,`、`&`、`|`、括号与方括号、`#`、`%`、`<>` 等。 */
+/** Arguments that need no quotes in PowerShell: no spaces, quotes, `$`, `` ` ``, `@`, `;`, `,`, `&`, `|`, parentheses or brackets, `#`, `%`, `<>`, and so on. */
 const SAFE_POWERSHELL = /^[A-Za-z0-9_+=:./\\-]+$/;
 
 /**
- * 参数数组 → 给人看、能粘进终端的一行。
+ * Turns an argument array into one line for people that can be pasted into a terminal.
  *
- * - POSIX：单引号，内部的单引号写成 `'\''`。
- * - Windows（PowerShell）：单引号，内部的单引号（含弯引号，PowerShell 也把它们当单引号）写两遍；第一个词加了引号时
- *   前面加调用运算符 `& `，否则 PowerShell 只把它当字符串输出。
+ * - POSIX: single quotes; a single quote inside is written as `'\''`.
+ * - Windows (PowerShell): single quotes; a single quote inside (including curly quotes, which PowerShell also treats as single quotes) is written twice. When the first word is quoted, the call operator `& ` is added in front; otherwise PowerShell only prints it as a string.
  */
 export function commandLine(argv: readonly string[], platform: NodeJS.Platform = process.platform): string {
   if (platform !== 'win32') return argv.map((a) => (a !== '' && SAFE_POSIX.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`)).join(' ');
@@ -92,8 +85,7 @@ export function commandLine(argv: readonly string[], platform: NodeJS.Platform =
 }
 
 /**
- * `file` 是此刻用的那一份（可以是符号链接），`label` 是给人看的工具名。`env` 只用来在 Windows 上找 Program Files 等
- * 要管理员权限的位置（默认当前进程的）。
+ * `file` is the copy in use right now (it may be a symbolic link), and `label` is the tool's name for display. `env` is used only on Windows, to find locations that need admin rights, such as Program Files (it defaults to the current process's environment).
  */
 export async function toolUpdatePlan(
   file: string,
@@ -201,7 +193,7 @@ export async function toolUpdatePlan(
       }
       return plan('pip', [launcher, ...tail]);
     }
-    // 认不出的 Scripts 目录里的 .exe（别的启动器）不认 -U。
+    // An .exe in an unrecognized Scripts directory (another launcher) does not get -U.
     if (/[\\/]scripts[\\/][^\\/]+$/i.test(real)) return null;
   }
 
@@ -216,9 +208,9 @@ export async function toolUpdatePlan(
 }
 
 /**
- * Windows 上 pip 的入口程序（distlib 启动器）：启动器程序之后是 `#!<解释器>` 一行，紧接着是 zip（`__main__.py` 不压缩）。
- * 是导入 `module` 的启动器时返回那一行里的解释器路径（含空格时带双引号，去掉）；uv 的启动器（结尾是 `UVSC`）返回 'uv'；
- * 其他 null。
+ * On Windows, pip's entry program (the distlib launcher): after the launcher program comes a `#!<interpreter>` line, followed right after by a zip (`__main__.py` is stored uncompressed).
+ * When it is a launcher that imports `module`, it returns the interpreter path from that line (wrapped in double quotes when it has spaces; the quotes are removed). For uv's launcher (which ends with `UVSC`), it returns 'uv'.
+ * Otherwise null.
  */
 async function pipLauncher(file: string, module: string): Promise<string | 'uv' | null> {
   const stat = await fs.stat(file).catch(() => null);
@@ -241,8 +233,7 @@ async function pipLauncher(file: string, module: string): Promise<string | 'uv' 
 }
 
 /**
- * Scoop 的目录（用户的 `~\scoop`、`SCOOP` 指的目录，或全局的）：入口是 `<目录>\shims\<app>.exe` 且旁边有 `<app>.shim`，
- * 或真实位置在 `<目录>\apps\<app>\<版本>\` 下且 `<目录>\shims` 在。不是时 null。
+ * A Scoop directory (the user's `~\scoop`, the directory `SCOOP` points to, or the global one). The entry is `<dir>\shims\<app>.exe` with `<app>.shim` beside it, or the real location is under `<dir>\apps\<app>\<version>\` and `<dir>\shims` exists. Otherwise null.
  */
 async function scoopRoot(real: string, posix: string, app: string): Promise<string | null> {
   const name = escape(app);
@@ -253,7 +244,7 @@ async function scoopRoot(real: string, posix: string, app: string): Promise<stri
   return null;
 }
 
-/** Chocolatey 装的：`<Chocolatey 目录>\bin\<包>.exe` 或 `lib\<包>\` 下；目录是 `ChocolateyInstall` 指的，或名叫 chocolatey。 */
+/** Installed by Chocolatey: under `<Chocolatey directory>\bin\<package>.exe` or `lib\<package>\`. The directory is the one `ChocolateyInstall` points to, or one named chocolatey. */
 function chocolatey(posix: string, pkg: string, env: NodeJS.ProcessEnv): boolean {
   const name = escape(pkg);
   const under = (root: string) => new RegExp(`^${escape(root)}/(?:bin/${name}\\.exe$|lib/${name}/)`, 'i').test(posix);
@@ -261,7 +252,7 @@ function chocolatey(posix: string, pkg: string, env: NodeJS.ProcessEnv): boolean
   return (configured ? under(configured.replace(/\\/g, '/').replace(/\/+$/, '')) : false) || new RegExp(`/chocolatey/(?:bin/${name}\\.exe$|lib/${name}/)`, 'i').test(posix);
 }
 
-/** Windows 上 PATH 里的程序（`<名字>.exe`），再看 `%LOCALAPPDATA%\Microsoft\WindowsApps`。winget 是那里的应用执行别名，跟随它的 `stat` 会失败，只看它在不在。 */
+/** On Windows, a program on PATH (`<name>.exe`), then `%LOCALAPPDATA%\Microsoft\WindowsApps`. winget is an app execution alias there, and following it with `stat` fails, so only whether it exists is checked. */
 async function findWindowsProgram(name: string, searchPath: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   const local = envValue(env, 'LOCALAPPDATA');
   const dirs = searchPath.split(path.delimiter).concat(local ? [path.join(local, 'Microsoft', 'WindowsApps')] : []);
@@ -273,13 +264,13 @@ async function findWindowsProgram(name: string, searchPath: string, env: NodeJS.
   return null;
 }
 
-/** System32 里的 Windows PowerShell（不在 PATH 里找，免得被同名程序顶替；它随系统安装，总在）。 */
+/** Windows PowerShell in System32. It is not looked up on PATH, so a same-named program cannot take its place. It ships with the system, so it is always there. */
 function windowsPowerShell(env: NodeJS.ProcessEnv): string {
   const root = envValue(env, 'SystemRoot') || envValue(env, 'windir') || 'C:\\Windows';
   return path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 }
 
-/** Windows 上要管理员权限才能改写的位置：Program Files（含 x86）、ProgramData、Windows 目录。 */
+/** On Windows, the locations that need admin rights to rewrite: Program Files (including x86), ProgramData, and the Windows directory. */
 function windowsAdminDir(dir: string, env: NodeJS.ProcessEnv): boolean {
   const roots = ['ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'ProgramData', 'SystemRoot']
     .map((name) => envValue(env, name))
@@ -290,7 +281,7 @@ function windowsAdminDir(dir: string, env: NodeJS.ProcessEnv): boolean {
   return roots.some((root) => target === root || target.startsWith(`${root}/`));
 }
 
-/** 比较 Windows 路径：不分大小写，`\` 与 `/` 一样，忽略结尾的分隔符。 */
+/** Compares Windows paths case-insensitively; `\` and `/` are the same, and trailing separators are ignored. */
 function normalizeDir(dir: string): string {
   return dir.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
@@ -308,7 +299,7 @@ async function isDirectory(dir: string): Promise<boolean> {
 }
 
 /**
- * 解释器在不在：Microsoft Store 的 Python 是 WindowsApps 里的应用执行别名，跟随它的 `stat` 可能失败，看它本身在不在。
+ * Whether the interpreter exists. Microsoft Store's Python is an app execution alias in WindowsApps, and following it with `stat` may fail, so check whether the alias itself exists.
  */
 async function exists(file: string): Promise<boolean> {
   if (!path.isAbsolute(file) && !path.win32.isAbsolute(file)) return false;
@@ -331,7 +322,7 @@ async function readHead(file: string): Promise<Buffer | null> {
   }
 }
 
-/** Mach-O（含通用二进制）、ELF、PE。 */
+/** Mach-O (including universal binaries), ELF, PE. */
 function isNativeExecutable(head: Buffer): boolean {
   if (head.length < 4) return false;
   const magic = head.readUInt32BE(0);
@@ -346,8 +337,7 @@ function importsModule(text: string, module: string): boolean {
 }
 
 /**
- * 入口脚本的解释器：`#!/绝对路径/python`、`#!/usr/bin/env python3`（在 PATH 里找），或 pip 给长路径写的
- * `#!/bin/sh` + `'''exec' "<解释器>" "$0" "$@"`。解释器不能执行时 null。
+ * The interpreter of an entry script: `#!/absolute/path/python`, `#!/usr/bin/env python3` (looked up on PATH), or the `#!/bin/sh` followed by `'''exec' "<interpreter>" "$0" "$@"` that pip writes for long paths. Null when the interpreter cannot be run.
  */
 async function scriptInterpreter(text: string, searchPath: string, platform: NodeJS.Platform): Promise<string | null> {
   const first = text.slice(2).split('\n', 1)[0]!.trim();

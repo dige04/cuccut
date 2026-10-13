@@ -1,4 +1,4 @@
-//! 导出输入（Runtime 写的 JSON 文件）：冻结的序列与素材、文档正文、素材的位置、输出设置与工具位置。
+//! Export input (JSON file written by the Runtime): frozen sequence and assets, document bodies, asset locations, output settings, and tool locations.
 
 use std::path::{Path, PathBuf};
 
@@ -15,18 +15,18 @@ use crate::Failure;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Input {
-    /// 逐帧求计划用的视频（引擎 `exports.plan` 的 `document`）。
+    /// Video used for per-frame plan computation (the `document` of the engine's `exports.plan`).
     pub document: PlanDocument,
     pub sequence_id: String,
-    /// 序列时间的精确范围 `[start, end)`。
+    /// Exact range of sequence time `[start, end)`.
     pub range: InputRange,
     #[serde(default)]
     pub documents: Vec<FrozenDocument>,
-    /// 各说话人在序列上说话的区间（引擎 `exports.plan` 的 `speakers`，写了 `speaker` 的声波用）；没有时按视频里没有转写画。
+    /// Intervals during which each speaker talks on the sequence (the engine `exports.plan`'s `speakers`, used by waveforms when `speaker` is set); when absent, treated as no transcript in the video.
     #[serde(default)]
     pub speakers: Option<SpeakerActivity>,
     pub assets: Vec<InputAsset>,
-    /// 冻结的本机字体 face（架构设计 §9.11 的「字体」）：画第一帧之前按摘要核对、抽出来装进渲染器。
+    /// Frozen local font face (architecture design §9.11 “fonts”): before the first frame is drawn, it is checked against its digest, extracted, and loaded into the renderer.
     #[serde(default)]
     pub fonts: Vec<InputFont>,
     pub output: OutputSettings,
@@ -52,13 +52,13 @@ pub struct InputRange {
 pub struct InputAsset {
     pub asset_id: String,
     pub revision: String,
-    /// 绝对路径。
+    /// Absolute path.
     pub path: PathBuf,
     #[serde(default)]
     pub media_type: Option<String>,
 }
 
-/// 冻结时找到的一个本机字体 face：所在文件（绝对路径）、文件里第几个与整个文件的摘要和字节数。
+/// A local font face found at freeze time: the file it lives in (absolute path), its index within the file, and the digest and byte count of the whole file.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputFont {
@@ -67,7 +67,7 @@ pub struct InputFont {
     pub italic: bool,
     pub path: PathBuf,
     pub face_index: u32,
-    /// `sha256:` 加十六进制。
+    /// `sha256:` followed by hex.
     pub content_hash: String,
     pub byte_length: u64,
 }
@@ -96,7 +96,7 @@ pub struct OutputSettings {
     pub bitrate_kbps: Option<u32>,
     #[serde(default)]
     pub audio: Option<OutputAudio>,
-    /// 画面在输出里的位置（引擎 `exports.plan` 的 `output.picture`）：没有时铺满输出；比输出小时画在这一块里，其余是黑边。
+    /// Position of the picture in the output (the `output.picture` of the engine's `exports.plan`): when absent, it fills the output; when smaller than the output, it is drawn inside that block with black bars around the rest.
     #[serde(default)]
     pub picture: Option<PictureRect>,
 }
@@ -115,7 +115,7 @@ pub struct InputTools {
 }
 
 impl OutputSettings {
-    /// 画面在输出里的位置：没写时铺满输出。
+    /// Position of the picture in the output: when unspecified, it fills the output.
     pub fn picture(&self) -> PictureRect {
         self.picture.unwrap_or(PictureRect {
             x: 0,
@@ -166,7 +166,7 @@ impl Input {
         Ok((start, end))
     }
 
-    /// 输出的帧数：范围长度乘输出帧率，向上取整（最后一帧覆盖范围的尾巴）。
+    /// Number of output frames: range length times output frame rate, rounded up (the last frame covers the tail of the range).
     pub fn frame_count(&self) -> Result<u64, Failure> {
         let (start, end) = self.range()?;
         let duration = end.checked_sub(start).ok_or_else(|| invalid("范围超出范围"))?;
@@ -174,7 +174,7 @@ impl Input {
         u64::try_from(frames).map_err(|_| invalid("帧数超出范围"))
     }
 
-    /// 第 `k` 个输出帧的序列时刻：`start + k / fps`，精确值。
+    /// Sequence time of output frame `k`: `start + k / fps`, an exact value.
     pub fn frame_time(&self, k: u64) -> Result<Ratio, Failure> {
         let (start, _) = self.range()?;
         frame_time(k as i128, self.output.fps)
@@ -233,7 +233,7 @@ impl Input {
         self.assets.iter().find(|a| a.asset_id == id && a.revision == revision)
     }
 
-    /// 素材版本的 PTS 原点（秒）：源时刻 0 对应它。
+    /// PTS origin of the asset version (seconds): source time 0 corresponds to it.
     pub fn pts_origin(&self, id: &str, revision: &str) -> f64 {
         self.document
             .assets

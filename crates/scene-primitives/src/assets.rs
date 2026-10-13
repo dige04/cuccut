@@ -1,7 +1,7 @@
-//! 显式资源生命周期（规范 §11.2，模式来自 opencat core 的 HostRequirements/HostInputs）：
-//!   doc → host_requirements()（AssetId + kind + 逻辑 src + 可选 hash）
-//!   → host 侧 fetch/probe（core 无 I/O）
-//!   → HostInputs（媒体元数据）注入 Resolver → resolve 期定尺寸、fail-fast。
+//! Explicit asset lifecycle (spec §11.2, pattern drawn from opencat core's HostRequirements/HostInputs):
+//!   doc → host_requirements() (AssetId + kind + logical src + optional hash)
+//!   → host-side fetch/probe (core does no I/O)
+//!   → HostInputs (media metadata) injected into the Resolver → size fixed at resolve time, fail-fast.
 
 use crate::json::JsonExt;
 use anyhow::{Result, bail};
@@ -13,16 +13,11 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetKind {
     Image,
-    /// GIF / APNG / 动画 WebP（规范 §6.5.1）。与 `Image` 分家而不是给 `Image`
-    /// 加个标记：天然尺寸之外还要逐帧时长表与循环声明，元素语义也不同
-    /// （`animatedImage` 元素有 §6.5 那套媒体字段，`image` 元素没有）。
+    /// GIF / APNG / animated WebP (spec §6.5.1). Split out from `Image` rather than adding a flag to `Image`: beyond the natural size it also needs a per-frame duration table and a loop declaration, and its element semantics differ (the `animatedImage` element has the media fields of §6.5, while the `image` element does not).
     AnimatedImage,
-    /// bodymovin JSON（Lottie，规范 §6.5.2）。与 `AnimatedImage` 分家：它是
-    /// **矢量**源，没有位图帧，天然尺寸来自合成头而不是解码器，子资源
-    /// （image）要在 preflight 一并收集并进内容指纹。
+    /// bodymovin JSON (Lottie, spec §6.5.2). Split out from `AnimatedImage`: it is a **vector** source with no bitmap frames, its natural size comes from the composition header rather than a decoder, and its sub-resources (images) must be collected during preflight and included in the content fingerprint.
     Lottie,
-    /// 代码生成画面（规范 §6.5.3）：一组 TSX/TS 模块，宿主逐帧求值出 SVG 再光栅。
-    /// 天然尺寸、帧率与帧数都写在资产条目里（没有可探测的容器），见 [`ProgramReq`]。
+    /// Code-generated picture (spec §6.5.3): a set of TSX/TS modules that the host evaluates frame by frame into SVG, then rasterizes. The natural size, frame rate and frame count are written in the asset entry (there is no probeable container); see [`ProgramReq`].
     Program,
     Video,
     Audio,
@@ -58,44 +53,44 @@ impl fmt::Display for AssetKind {
     }
 }
 
-/// 单条资源需求：id 为文档内 canonical 标识，src 为逻辑定位（相对文档目录）。
+/// A single resource requirement: id is the canonical identifier within the document, src is the logical location (relative to the document directory).
 #[derive(Debug, Clone)]
 pub struct AssetReq {
     pub id: String,
     pub kind: AssetKind,
     pub src: String,
-    /// "sha256-<64hex>"；提供时 host 必须校验内容一致
+    /// "sha256-<64hex>"; when provided, the host must verify that the content matches
     pub hash: Option<String>,
     pub bounded_image: bool,
-    /// `program` 资产的其余声明（§6.5.3）；其它类型恒为 `None`。
+    /// The remaining declarations of a `program` asset (§6.5.3); for other types, always `None`.
     pub program: Option<ProgramReq>,
 }
 
-/// `program` 资产条目里 `src` 之外的字段（§6.5.3）。路径都相对文档目录。
+/// Fields of a `program` asset entry other than `src` (§6.5.3). All paths are relative to the document directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgramReq {
-    /// 入口模块里组件的导出名，缺省 `default`。
+    /// The export name of the component in the entry module; defaults to `default`.
     pub export: String,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
-    /// 源帧数；源时长 = `frames / fps`。
+    /// Source frame count; source duration = `frames / fps`.
     pub frames: u32,
-    /// 裸模块名 → 模块文件（如 `"remotion": "compat/remotion.ts"`）。
+    /// Bare module name → module file (e.g. `"remotion": "compat/remotion.ts"`).
     pub imports: std::collections::BTreeMap<String, String>,
-    /// 组件经 `asset()` 引用的文件或目录，加载期整体读入内存。
+    /// File or directory referenced by the component via `asset()`, loaded into memory in full at load time.
     pub files: Vec<String>,
-    /// 传给组件的 props（JSON 对象）。
+    /// Props passed to the component (a JSON object).
     pub props: Value,
 }
 
-/// 程序画面的上限：单边像素、帧率、帧数（一小时 60 fps）。
+/// Limits for program pictures: maximum size per side in pixels, frame rate, and frame count (one hour at 60 fps).
 pub const PROGRAM_MAX_SIDE: u32 = 8192;
 pub const PROGRAM_MAX_FPS: f64 = 240.0;
 pub const PROGRAM_MAX_FRAMES: u32 = 216_000;
 
 impl ProgramReq {
-    /// 资产条目 → 声明；字段缺失或越界时报出具体字段。
+    /// Asset entry → declaration; when a field is missing or out of range, report the specific field.
     pub fn parse(id: &str, entry: &Value) -> Result<ProgramReq> {
         let side = |key: &str| -> Result<u32> {
             match entry.get_(key).and_then(Value::as_u64) {
@@ -169,8 +164,7 @@ impl ProgramReq {
         })
     }
 
-    /// 逐帧起点毫秒表（N+1 项）：`round(k × 1000 / fps)`，与 Lottie 合成帧表同一公式，
-    /// 帧率相同时合成第 k 帧恰好取到源第 k 帧。
+    /// Per-frame start-time millisecond table (N+1 entries): `round(k × 1000 / fps)`, the same formula as the Lottie composition frame table; when the frame rates are equal, composition frame k picks up source frame k exactly.
     pub fn frame_starts_ms(&self) -> Vec<i64> {
         (0..=self.frames)
             .map(|k| (f64::from(k) * 1000.0 / self.fps).round() as i64)
@@ -178,14 +172,13 @@ impl ProgramReq {
     }
 }
 
-/// doc → 资源需求清单（按 id 排序，确定性输出）。
-/// asset 变量委托（`var` 字段，§11.2）按 variables 默认值解析；
-/// 有变量覆盖时用 [`host_requirements_with_vars`]。
+/// doc → resource requirement list (sorted by id, deterministic output).
+/// Asset variable delegation (the `var` field, §11.2) is resolved against the variable default values; when there are variable overrides, use [`host_requirements_with_vars`].
 pub fn host_requirements(doc: &Value) -> Result<Vec<AssetReq>> {
     host_requirements_with_vars(doc, None)
 }
 
-/// 同 [`host_requirements`]，`overrides` 以 {"id": value} 形态覆盖 variables 默认值（§11.1）。
+/// Same as [`host_requirements`], except that `overrides` in the form {"id": value} override the variable default values (§11.1).
 pub fn host_requirements_with_vars(
     doc: &Value,
     overrides: Option<&Map<String, Value>>,
@@ -232,7 +225,7 @@ pub fn host_requirements_with_vars(
     Ok(out)
 }
 
-/// variables 默认值 + 覆盖 → 生效变量表。
+/// Variable default values + overrides → effective variable table.
 pub fn effective_vars(doc: &Value, overrides: Option<&Map<String, Value>>) -> Map<String, Value> {
     let mut vars = Map::new();
     for v in doc
@@ -253,8 +246,8 @@ pub fn effective_vars(doc: &Value, overrides: Option<&Map<String, Value>>) -> Ma
     vars
 }
 
-/// 单条 asset 的 `var` 委托求解（§11.2）：`{type, var}` → `{type, src, hash?}`。
-/// 变量值须为 `{src, hash?}`；`{media}` 形态需要 Project 容器，当前拒绝。
+/// Solving the `var` delegation for a single asset (§11.2): `{type, var}` → `{type, src, hash?}`.
+/// The variable value must be `{src, hash?}`; the `{media}` form requires a Project container and is currently rejected.
 pub fn materialize_asset_entry(
     id: &str,
     entry: &Value,
@@ -294,7 +287,7 @@ pub fn materialize_asset_entry(
     Ok(Value::Object(out))
 }
 
-/// assets 表整体物化：把 `var` 委托条目替换为解析后的 `{type, src, hash?}`。
+/// Materializes the whole assets table: replaces `var`-delegated entries with the resolved `{type, src, hash?}`.
 pub fn materialize_assets(assets: &Value, vars: &Map<String, Value>) -> Result<Value> {
     let Some(entries) = assets.as_object() else {
         return Ok(assets.clone());
@@ -306,22 +299,19 @@ pub fn materialize_assets(assets: &Value, vars: &Map<String, Value>) -> Result<V
     Ok(Value::Object(out))
 }
 
-/// host 探测到的媒体元数据（image: duration=0；audio: width/height=0）。
-/// `fps` 是媒体源帧率（§6.5 帧精确采样用）；未知时为 0，采样退化为连续时间。
+/// Media metadata probed by the host (image: duration=0; audio: width/height=0).
+/// `fps` is the media source frame rate (used for frame-exact sampling in §6.5); when unknown it is 0, and sampling degrades to continuous time.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MediaMeta {
     pub width: f64,
     pub height: f64,
     pub duration: f64,
     pub fps: f64,
-    /// 素材自带的播放遍数（`0` = 无限）。**只有 `animatedImage` 有意义**：
-    /// GIF 的 NETSCAPE2.0 / APNG 的 `acTL.num_plays` / WebP 的 `ANIM.loop_count`。
-    /// 元素没写 `loop` 时按它取缺省（§6.5.1）。
+    /// Number of playback loops the material itself declares (`0` = infinite). **Only meaningful for `animatedImage`**: GIF's NETSCAPE2.0 / APNG's `acTL.num_plays` / WebP's `ANIM.loop_count`. When the element does not write `loop`, the default is taken from it (§6.5.1).
     pub plays: u32,
 }
 
-/// 转录词原子的 core 侧极简形态（§18.6）：CLI 从 flow-core TranscriptDoc 桥接。
-/// t0/t1 为媒体源秒。
+/// The minimal core-side form of a transcript word atom (§18.6): the CLI bridges it from flow-core TranscriptDoc. t0/t1 are in source media seconds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreWord {
     pub id: String,
@@ -329,17 +319,16 @@ pub struct CoreWord {
     pub t1: f64,
 }
 
-/// host → core 的回填：resolve 期只需要元数据，字节留在 host。
-/// `transcripts` 按资产 id 键入词表（`~` 词锚点求值来源，§5.2/§18.6）。
+/// Back-fill from host → core: resolve time needs only metadata; the bytes stay in the host.
+/// `transcripts` keys word lists by asset id (the source for `~` word-anchor evaluation, §5.2/§18.6).
 #[derive(Debug, Clone, Default)]
 pub struct HostInputs {
     /// Declared font source / asset reference → family name read by the host.
     pub font_families: HashMap<String, String>,
     pub media: HashMap<String, MediaMeta>,
     pub transcripts: HashMap<String, Vec<CoreWord>>,
-    /// `animatedImage` / `lottie` 的逐帧**起点**毫秒表（N+1 项，末项为总时长）。
-    /// 录制期按它把源时间量化到帧起点——同一帧内的连续时刻因此发出逐字节
-    /// 相同的 DrawOp，静止帧缓存与帧指纹才命中得了。
+    /// Per-frame **start** millisecond table of `animatedImage` / `lottie` (N+1 entries; the last entry is the total duration).
+    /// During recording, source time is quantized to frame starts using it, so consecutive instants within the same frame emit byte-identical DrawOps, which is what lets the static-frame cache and frame fingerprints actually hit.
     pub frame_tables: HashMap<String, Arc<[i64]>>,
 }
 
@@ -356,8 +345,8 @@ impl HostInputs {
             },
         );
     }
-    /// 动图：宽高 + 逐帧起点表 + 素材自带的播放遍数。
-    /// `duration` 由表的末项推出，`fps` 恒为 0（逐帧时长可以各不相同）。
+    /// Animated image: width and height + per-frame start table + the number of playback loops the material declares itself.
+    /// `duration` is derived from the table's last entry; `fps` is always 0 (per-frame durations may differ).
     pub fn insert_animated_image(
         &mut self,
         id: &str,
@@ -380,17 +369,14 @@ impl HostInputs {
         self.frame_tables
             .insert(id.to_string(), Arc::from(frame_starts_ms));
     }
-    /// Lottie：宽高来自合成头，帧表按合成帧率铺满 `[ip, op)`。
+    /// Lottie: width and height come from the composition header; the frame table covers `[ip, op)` at the composition frame rate.
     ///
-    /// 与动图共用一条回填路径**是有意的**——两者的元素时间语义完全同构
-    /// （`localTime = mediaStart + (t − clip.start) × rate`，再按帧表量化），
-    /// 差别只在"帧里装的是位图还是矢量指令"，而那是 host 的事。
-    /// Lottie 容器不带播放遍数，`plays` 恒为 0（无限），元素写 `loop` 才是判据。
+    /// Sharing one back-fill path with animated images is **intentional**: the element time semantics of the two are fully isomorphic (`localTime = mediaStart + (t − clip.start) × rate`, then quantized by the frame table). The only difference is whether a frame holds a bitmap or vector instructions, and that is the host's concern.
+    /// A Lottie container carries no playback loop count, so `plays` is always 0 (infinite); whether the element writes `loop` is the criterion.
     pub fn insert_lottie(&mut self, id: &str, width: f64, height: f64, frame_starts_ms: Vec<i64>) {
         self.insert_animated_image(id, width, height, frame_starts_ms, 0);
     }
-    /// 程序画面（§6.5.3）：尺寸与帧表都来自资产声明，回填路径与 Lottie 相同，
-    /// `plays` 恒为 0（没写 `loop` 就无限循环）。
+    /// Program picture (§6.5.3): size and frame table both come from the asset declaration; the back-fill path is the same as Lottie, and `plays` is always 0 (if `loop` is not written, it loops infinitely).
     pub fn insert_program(&mut self, id: &str, program: &ProgramReq) {
         self.insert_animated_image(
             id,
@@ -429,7 +415,7 @@ impl HostInputs {
     }
 }
 
-/// `"$assets.logo"` → `Some("logo")`（media 节点 src 的唯一合法形态，规范 §11.2）
+/// `"$assets.logo"` → `Some("logo")` (the only legal form of a media node's src, spec §11.2)
 pub fn asset_ref_id(src: &str) -> Option<&str> {
     let rest = src.strip_prefix("$assets.")?;
     if rest.is_empty() || rest.contains('.') {
@@ -438,7 +424,7 @@ pub fn asset_ref_id(src: &str) -> Option<&str> {
     Some(rest)
 }
 
-/// hash 字段格式校验（"sha256-" + 64 位十六进制）
+/// hash field format validation ("sha256-" + 64 hex digits)
 pub fn valid_hash(h: &str) -> bool {
     h.strip_prefix("sha256-")
         .map(|hex| hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()))
@@ -468,7 +454,7 @@ mod tests {
     fn unknown_kind_rejected() {
         let doc = json!({ "assets": { "x": { "type": "gif", "src": "x.gif" } } });
         assert!(host_requirements(&doc).is_err());
-        // 动图有自己的 kind：扩展名不参与判定，`type` 才是
+        // Animated images have their own kind: the file extension does not participate in the decision, `type` does.
         let doc = json!({ "assets": { "x": { "type": "animatedImage", "src": "x.gif" } } });
         let reqs = host_requirements(&doc).unwrap();
         assert_eq!(reqs[0].kind, AssetKind::AnimatedImage);

@@ -20,9 +20,7 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 智能体作为图片 Provider（`agent:codex`，架构设计 §6.9）经网关端到端：Codex Driver 对着假 codex（`@cuccut/agent-drivers/testing`，
- * 一个 node 脚本，按场景把真实的小 PNG 写进会话的工作目录），JobManager → ffprobe 解码校验 → 产物；给了视频时经真实引擎
- * 导入为候选素材。从不启动本机真实的 codex，不联网，不读任何账号文件。
+ * End-to-end, through the gateway, for an agent as an image Provider (`agent:codex`, architecture design §6.9): the Codex Driver runs against a fake codex (`@cuccut/agent-drivers/testing`, a node script that writes a real small PNG into the session's working directory per scenario), then JobManager → ffprobe decode check → artifact. When a video is given, it is imported as a candidate asset through the real engine. The real codex on this machine is never started, there is no network access, and no account file is read.
  */
 
 const engine = resolveEngineHostCommand();
@@ -39,7 +37,7 @@ if (!engine) console.warn('跳过智能体图片导入视频的测试：没有�
 
 const PROVIDER = 'agent:codex';
 const b64 = (bytes: Buffer) => bytes.toString('base64');
-/** 一个真实的 1×1 GIF：文件头不是 PNG。 */
+/** A real 1×1 GIF: its file header is not PNG. */
 const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 async function until<T>(read: () => T | undefined | null | false | Promise<T | undefined | null | false>, timeoutMs = 15_000): Promise<T> {
@@ -117,7 +115,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   return error as RpcError;
 }
 
-/** 假 codex 启动过几个 app-server（每次生成一个专用会话）。 */
+/** The fake codex has started several app-servers (one dedicated session per generation). */
 const sessions = (fake: FakeCodex) => fake.log().filter((e) => e.kind === 'start');
 
 describe('智能体图片 Provider：列出、可用性与配置（不需要 ffprobe）', () => {
@@ -158,7 +156,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
     expect(model!.notes).toMatch(/一张/);
     expect(model!.notes).toMatch(/同一时间只跑一个/);
     expect(model!.notes).toMatch(/额度未知/);
-    // 不是出厂默认。
+    // Not the factory default.
     expect(capabilities.generateImage).toMatchObject({ default: null, effective: null });
   });
 
@@ -175,7 +173,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
       const entry = (await agentEntry(side))!;
       expect(entry, reason).toMatchObject({ available: false, unavailableReason: reason });
       expect(entry.detail, reason).toMatch(/./);
-      // 这里写成的说明带着引用（界面按当前语言重新生成）；Driver 探测的说明带着探测自己的引用。
+      // The description written here carries a reference (the UI regenerates it in the current language); the description from Driver probing carries the probe's own reference.
       if (reason === 'outdated') expect(entry.detailRef, reason).toMatchObject({ key: 'providersConfig.versionTooOld' });
       if (reason === 'not-configured') expect(entry.detailRef, reason).toEqual({ key: 'providersConfig.notEnabled' });
       const error = await rejection(side.client.request('models.generateImage', { prompt: 'a cat', provider: PROVIDER }));
@@ -195,7 +193,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
       if (reason === 'not-configured') expect(capabilityRemedyCommands(details)).toEqual([`cuccut models configure ${PROVIDER} --enable`]);
     }
     expect(await side.client.request('jobs.list', {})).toEqual({ jobs: [] });
-    // 只探测过，没有开过会话。
+    // Probed only; no session has been opened.
     expect(sessions(side.fake)).toHaveLength(0);
   });
 
@@ -216,13 +214,13 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
       capabilities: { generateImage: { available: true } },
     });
     expect(await agentEntry(side)).toMatchObject({ available: true });
-    // 配置文件里没有密钥一类的东西。
+    // The config file contains no keys or similar secrets.
     expect(JSON.parse(await fs.readFile(side.home.modelServicesFile, 'utf8')).providers[PROVIDER]).toEqual({
       enabled: true,
       enabledAt: expect.any(String),
     });
 
-    // 启用了也不是出厂默认：不指定 provider 时提示设默认值。
+    // Enabled, but not the factory default: when no provider is specified, prompt to set a default.
     const error = await rejection(side.client.request('models.generateImage', { prompt: 'a cat' }));
     expect(error.details).toMatchObject({ reason: 'no-default', remedy: { action: 'set-default', providerId: PROVIDER } });
 
@@ -279,7 +277,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     const bytes = Buffer.from(await (await fetch(handle.url)).arrayBuffer());
     expect(bytes.equals(pngFixture(24, 16, 3))).toBe(true);
 
-    // 会话：工作目录是这个任务的 staging；没有 MCP 服务（没有 CucCut 的工具）；只写工作目录，从不审批。
+    // Session: the working directory is this task's staging; there are no MCP servers (no CucCut tools); it writes only to the working directory and never approves anything.
     const [start] = side.fake.requests('thread/start');
     const staging = path.join(side.home.stagingDir, 'jobs', jobId);
     expect(start!.params.cwd).toBe(staging);
@@ -289,12 +287,12 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     });
     expect(JSON.stringify(start!.params)).not.toContain('mcp_servers');
     expect(start!.params.developerInstructions).toMatch(/output\.png/);
-    // 没有会话历史与视频上下文：新开的线程，一个回合，输入只有提示词。
+    // No session history or video context: a new thread, one turn, and the only input is the prompt.
     expect(side.fake.requests('thread/resume')).toHaveLength(0);
     const turns = side.fake.requests('turn/start');
     expect(turns).toHaveLength(1);
     expect(JSON.stringify(turns[0]!.params.input)).toContain('a red fox, watercolor');
-    // 会话在调用结束时关闭；staging 在任务终结时删除。
+    // The session closes when the call ends; staging is deleted when the task ends.
     await until(() => side.fake.log().some((e) => e.kind === 'exit'));
     expect(sessions(side.fake)).toHaveLength(1);
     expect(await fs.stat(staging).catch(() => null)).toBeNull();

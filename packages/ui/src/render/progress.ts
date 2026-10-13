@@ -1,12 +1,11 @@
 import { elementPresets, lazyObject, type ProgressPreset } from '@cuccut/editor-wasm';
 
 /**
- * 进度条（`cuccut.progress`）的 14 款：次序、盒形与默认主副色读 `motion` 的内置配方（经编辑语义 WASM），渲染画的是同一份。
- * `square` 的几款在框里取内切正方形，`bar` 与 `frame` 用整个框。这里是新建与属性页用的样式目录；画法在渲染内核里。
+ * Progress bars (`cuccut.progress`): 14 styles. Order, box shapes, and default primary and secondary colors come from the built-in recipes in `motion` (through the edit-semantics WASM), and the render draws from the same source. For the `square` styles, the inscribed square within the box is used; `bar` and `frame` use the whole box. This is the style catalog for creation and the property panel; drawing happens in the render kernel.
  */
 export type ProgressStyle = ProgressPreset;
 
-/** 键序就是配方的 `order`（属性页样式目录的次序）。 */
+/** Key order is the recipe's `order` (the order of the property panel's style catalog). */
 export const PROGRESS_STYLES: Readonly<Record<string, ProgressStyle>> = lazyObject(() =>
   Object.fromEntries(elementPresets().progress.map((preset) => [preset.id, preset])),
 );

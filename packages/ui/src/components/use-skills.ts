@@ -5,8 +5,8 @@ import { useConnection } from '../state/connection-store.ts';
 import { useSkills, type SkillsStore } from '../state/skills-store.ts';
 
 /**
- * skill 列表：挂上时、重新连上时各取一次（设置 › Skills 与输入框共用；同时要几次只发一次）。没连上时不发，等连上再取。
- * 返回列表的镜像与一个「重试」。
+ * The skill list: fetched once on mount and once on reconnect (shared by Settings › Skills and the input box; several requests at the same time send only one). Not sent while disconnected; it waits until connected.
+ * Returns a mirror of the list and a “retry”.
  */
 export function useSkillsLoader(): SkillsStore & { retry(): void } {
   const runtime = useRuntime();

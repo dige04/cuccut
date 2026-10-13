@@ -1,7 +1,6 @@
-//! ccut 转录后处理 AI 管线的纯逻辑核心（零 I/O、零网络）。
+//! The pure logic core of the ccut post-transcription AI pipeline (zero I/O, zero network).
 //!
-//! 分层原则与 speech 侧一致：本 crate 只做确定性算法与引擎逻辑，LLM 以
-//! [`llm::LlmJson`] trait 注入，宿主（CLI）提供 provider / agent 两种执行器。
+//! The layering principle matches the speech side: this crate contains only deterministic algorithms and engine logic. The LLM is injected through the [`llm::LlmJson`] trait, and the host (CLI) provides two kinds of executor: provider and agent.
 
 pub mod align_block;
 pub mod asr_rows;

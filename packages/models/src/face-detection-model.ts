@@ -1,16 +1,14 @@
 import { modelAssetPath } from './model-assets.ts';
 
 /**
- * 随应用分发的人脸检测模型：YuNet（OpenCV Zoo `face_detection_yunet_2023mar.onnx`，MIT，约 230 KB），由 `face-detect`
- * 进程载入（`crates/face-detect`），`videos_frames` 给每帧标出人脸框。来源、许可与校验和见
- * `packages/models/assets/face-detection/COPYING.txt`。
+ * The face detection model shipped with the app: YuNet (OpenCV Zoo `face_detection_yunet_2023mar.onnx`, MIT, about 230 KB), loaded by the `face-detect` process (`crates/face-detect`). `videos_frames` marks face boxes on each frame. The source, license and checksum are in `packages/models/assets/face-detection/COPYING.txt`.
  */
 export interface FaceDetectionModel {
-  /** 检测器的标识，随结果报告（`videos_frames` 的 `detector`）。 */
+  /** Identifier of the detector, reported with results (`detector` in `videos_frames`). */
   id: 'yunet';
-  /** 模型数据目录里的相对路径（`model-assets.ts`）；绝对路径用 `faceDetectionModelFile` 在用时求。 */
+  /** Relative path within the model data directory (`model-assets.ts`). The absolute path is resolved at use time with `faceDetectionModelFile`. */
   asset: string;
-  /** 文件的 SHA-256（十六进制）：与来源核对，测试据此防止被换掉。 */
+  /** The file's SHA-256 (hex). It is checked against the source, and the tests use it to prevent substitution. */
   sha256: string;
 }
 
@@ -20,7 +18,7 @@ export const FACE_DETECTION_MODEL: FaceDetectionModel = {
   sha256: '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4',
 };
 
-/** 模型的绝对路径；找不到模型数据目录时 null（不检查文件在不在）。 */
+/** The model's absolute path. Null when the model data directory cannot be found (does not check whether the file exists). */
 export function faceDetectionModelFile(env: NodeJS.ProcessEnv = process.env): string | null {
   return modelAssetPath(FACE_DETECTION_MODEL.asset, env);
 }

@@ -9,11 +9,11 @@ interface DraftFilesStore {
   files: Record<string, DraftFile[]>;
   add(key: string, files: readonly DraftFile[]): number;
   remove(key: string, path: string): void;
-  /** 只清掉本次发出的引用；发送期间新加的文件保留。 */
+  /** Clear only the references that were sent; files added during sending are kept. */
   sent(key: string, paths: readonly string[]): void;
 }
 
-/** 本机引用按会话草稿存；只带路径，不改 Agent 的权限范围。 */
+/** Local file references are stored per session draft. They carry only paths and do not change the Agent's permission scope. */
 export const useDraftFiles = create<DraftFilesStore>()((set, get) => ({
   files: {},
   add(key, incoming) {

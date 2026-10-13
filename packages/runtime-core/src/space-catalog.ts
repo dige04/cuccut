@@ -51,20 +51,20 @@ import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 export type { ScannedFile } from './space/space-derive.ts';
 
 /**
- * Space 目录（架构设计 §5.7）。它是派生索引，丢了可以重建；只有用户标记（收藏、显示名、回收站、清除的占位）
- * 与 `space.import` 的登记存在 Runtime Store 里。条目的来源与派生规则见 `space/space-derive.ts`：
+ * The Space catalog (architecture design §5.7). It is a derived index that can be rebuilt if lost; only user marks (favorites, display names, trash, cleared placeholders)
+ * and `space.import` registrations are kept in the Runtime Store. For the sources of entries and the derivation rules, see `space/space-derive.ts`:
  *
- * - 来源目录：登记的项目目录，和不属于项目的会话的工作目录。只收认得出类型的媒体与文档文件，跳过隐藏目录与依赖目录；
- *   含 `video.db` 的目录是一个视频（视频格式规范 §1），含合法 `deck.json` 的目录是一份幻灯片（docs/design/slides §7.3），
- *   含合法 `canvas.json` 的目录是一份设计稿（docs/design/canvas §7.3），含合法 `design-system.json`（v 为 3、`layout` 为 `"files"`）
- *   的目录是一个设计系统（§10.6），整个目录都算一个条目，不再往里走。
- *   设计里「只索引登记过的文件、不扫描整个项目目录」（§5.7）还没有做到：界面与会话里的文件列表依赖扫描，见 §14。
- * - Job Ledger（`jobs`）：生成与导出的产物、进行中与失败的占位。Job 事件到来时增量重算。产出产物的任务另记一份派生用事实
- *   （`artifacts`，Runtime Store 的 `space-artifacts.json`）：Ledger 修剪掉旧任务之后，产物条目照样在。
- * - 删除了的视频（`videos.delete`）：视频目录在来源目录的 `.ccut-trash/` 里，记录在 `space.json`，是回收站里的视频条目。
- * - 内容索引（`index`）：视频的 videoId、当前版本与时间线上用到的素材，决定视频条目的 `ref`、`applied` 与 `source-changed`。
+ * - Source directories: registered project directories, and the working directories of sessions that do not belong to a project. Only media and document files of recognized types are collected; hidden and dependency directories are skipped.
+ *   A directory containing `video.db` is a video (video format spec §1), a directory containing a valid `deck.json` is a slide deck (docs/design/slides §7.3),
+ *   a directory containing a valid `canvas.json` is a design canvas (docs/design/canvas §7.3), and a directory containing a valid `design-system.json` (v is 3, `layout` is “files”)
+ *   is a design system (§10.6). The whole directory counts as one entry; it is not descended into.
+ *   The design goal of indexing only registered files, not scanning the whole project directory (§5.7), is not yet achieved: the file lists in the UI and sessions depend on scanning, see §14.
+ * - Job Ledger (`jobs`): generated and exported artifacts, and placeholders for jobs in progress and failed ones. Recomputed incrementally when job events arrive. Jobs that produce artifacts also record a separate derived fact
+ *   (`artifacts`, `space-artifacts.json` in the Runtime Store): after the Ledger prunes old jobs, the artifact entries still remain.
+ * - Deleted videos (`videos.delete`): the video directory is in the source directory's `.ccut-trash/`, recorded in `space.json`; these are the video entries in the trash.
+ * - Content index (`index`): the video's videoId, current version, and the material used on the timeline, which determine the video entry's `ref`, `applied` and `source-changed`.
  *
- * 每次变化都从这些输入整体重算一遍（纯函数），再与上一次的结果比较，只发变了的条目：增量与重建的结果因此一致。
+ * Every change recomputes everything from these inputs (a pure function), then compares with the previous result and emits only the entries that changed, so incremental and rebuilt results are the same.
  */
 
 const KIND_BY_EXT: Record<string, SpaceEntryKind> = {};
@@ -74,7 +74,7 @@ for (const [kind, exts] of Object.entries({
   audio: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus'],
   subtitle: ['srt', 'vtt', 'ass', 'ssa'],
   document: ['md', 'markdown', 'txt', 'pdf', 'doc', 'docx', 'rtf', 'html', 'htm', 'csv', 'tsv', 'json'],
-  // 便携包（视频格式规范 §8）：别处导出的包放进来也认得出。
+  // Portable packages (video format spec §8): packages exported elsewhere are recognized when they are brought in as well.
   package: ['cuccut'],
 }) as [SpaceEntryKind, string[]][]) {
   for (const ext of exts) KIND_BY_EXT[ext] = kind;
@@ -87,17 +87,17 @@ export function classifyFile(fileName: string): SpaceEntryKind | null {
 
 const IGNORED_DIRS = new Set(['node_modules', '__pycache__', 'Pods', 'DerivedData']);
 
-/** 隐藏文件与目录（含 `.git` 与项目标记目录 `.ccut`）和依赖目录不进 Space，也不往里走。 */
+/** Hidden files and directories (including `.git` and the project marker directory `.ccut`) and dependency directories are not part of Space, and are not descended into. */
 export function isIgnoredName(name: string): boolean {
   return name.startsWith('.') || IGNORED_DIRS.has(name);
 }
 
 export interface ScanLimits {
-  /** 进入子目录的最大深度，来源目录本身是 0。 */
+  /** Maximum depth for descending into subdirectories; the source directory itself is 0. */
   maxDepth: number;
-  /** 每个来源最多收多少个文件。 */
+  /** Maximum number of files collected per source. */
   maxFiles: number;
-  /** 每个来源最多看多少个目录项，防止误把很大的目录登记成项目时扫个没完。 */
+  /** Maximum number of directory entries examined per source, so that scanning does not go on forever when a very large directory was registered as a project by mistake. */
   maxVisited: number;
 }
 
@@ -108,7 +108,7 @@ export interface ScanResult {
   issue: { kind: SpaceScanIssue['kind']; detail: string } | null;
 }
 
-/** 扫一个来源目录。目录不存在算空；读不了根目录算问题；子目录读不了就跳过。不跟随符号链接。 */
+/** Scans one source directory. A missing directory counts as empty; failing to read the root directory counts as a problem; subdirectories that cannot be read are skipped. Symbolic links are not followed. */
 export async function scanDirectory(root: string, limits: ScanLimits = DEFAULT_SCAN_LIMITS): Promise<ScanResult> {
   const files: ScannedFile[] = [];
   const queue: { dir: string; rel: string; depth: number }[] = [{ dir: root, rel: '', depth: 0 }];
@@ -165,7 +165,7 @@ export async function scanDirectory(root: string, limits: ScanLimits = DEFAULT_S
         const stat = await fsp.stat(full);
         files.push({ relPath, kind, size: stat.size, mtimeMs: stat.mtimeMs, birthtimeMs: stat.birthtimeMs });
       } catch {
-        // 扫描期间被删掉了。
+        // Deleted during the scan.
       }
     }
   }
@@ -173,11 +173,11 @@ export async function scanDirectory(root: string, limits: ScanLimits = DEFAULT_S
 }
 
 /**
- * 视频目录的大小与最近活动：`video.db` 加上受管理的素材；WAL 里还没合并的写入也算活动。
- * 不是视频目录返回 null。不打开数据库，不碰写入锁。
+ * The size and recent activity of a video directory: `video.db` plus the managed media; writes not yet merged in the WAL also count as activity.
+ * Returns null when it is not a video directory. Does not open the database and does not touch the write lock.
  */
 async function inspectVideoDir(dir: string): Promise<{ size: number; mtimeMs: number; birthtimeMs: number } | null> {
-  // 改名之前的目录只有 `movie.db`：照样列出，引擎打开它时就地升级成 `video.db`。
+  // A directory from before the rename has only `movie.db`: it is still listed, and the engine upgrades it in place to `video.db` when it opens it.
   const current = await fsp.stat(path.join(dir, 'video.db')).catch(() => null);
   const dbFile = current ? 'video.db' : 'movie.db';
   const db = current ?? (await fsp.stat(path.join(dir, dbFile)).catch(() => null));
@@ -198,14 +198,14 @@ async function inspectVideoDir(dir: string): Promise<{ size: number; mtimeMs: nu
   return { size, mtimeMs, birthtimeMs: db.birthtimeMs };
 }
 
-/** Space 目录读 Job Ledger 用到的那一部分（`JobManager`）。 */
+/** The part of the Job Ledger that the Space catalog reads (`JobManager`). */
 export interface SpaceJobsSource {
   list(): JobRecord[];
   onChange(listener: (job: JobRecord) => void): () => void;
   artifacts: { locate(artifactId: string): Promise<string | null> };
 }
 
-/** 已打开视频的版本变化（`VideoService.onChange`）。 */
+/** Version changes of open videos (`VideoService.onChange`). */
 export interface SpaceVideoEvents {
   onChange(listener: (change: { videoId: Id; path: string; revision: string }) => void): () => void;
 }
@@ -214,37 +214,37 @@ export interface SpaceCatalogOptions {
   harness: Harness;
   marks: SpaceMarkStore;
   log: Logger;
-  /** 监视来源目录的变化。测试里关掉，改用 `rescan()`。 */
+  /** Watches source directories for changes. Turned off in tests, where `rescan()` is used instead. */
   watch?: boolean;
   debounceMs?: number;
   limits?: ScanLimits;
   jobs?: SpaceJobsSource;
-  /** 产出产物的任务的派生用事实，不随 Job Ledger 修剪丢失。没有时只看 Ledger。 */
+  /** Derived facts for jobs that produce artifacts; not lost when the Job Ledger is pruned. When absent, only the Ledger is consulted. */
   artifacts?: SpaceArtifactStore;
   videos?: SpaceVideoEvents;
   index?: ContentIndex;
   /**
-   * 无项目会话的工作目录放在哪（`RuntimeHome.scratchDir`，以及旧版本的 `legacyScratchDir`）：会话放进项目之前发布在
-   * `<目录>/<会话 id>/` 里的导出，按搬进项目之后的位置认（`DeriveSource.formerRoots`）。
+   * Where the working directories of sessions without a project are placed (`RuntimeHome.scratchDir`, and the older `legacyScratchDir`). Exports published before a session was moved into a project, in `<directory>/<session id>/`,
+   * are recognized by their location after the move into the project (`DeriveSource.formerRoots`).
    */
   scratchDirs?: readonly string[];
 }
 
-/** 回收站目录：在来源目录里（与视频目录同一个卷，移动是改名），隐藏目录不进 Space 的扫描。 */
+/** Trash directory: inside the source directory (on the same volume as the video directories, so moving is a rename). Hidden directories are not scanned into Space. */
 export const TRASH_DIR = '.ccut-trash';
 
-/** 视频目录里归视频管理的文件：物理删除只删这些（视频格式规范 §1）。 */
+/** Files in a video directory that the video manages: physical deletion removes only these (video format spec §1). */
 const VIDEO_OWNED = /^(video|movie)\.(db|db-wal|db-shm|db-journal|lock)$|^blobs$|^\.DS_Store$/;
 
-/** 一个删除了的视频：回收站里的条目 id、记录与来源。 */
+/** A deleted video: its entry id in the trash, its record, and its source. */
 export interface TrashedVideoInfo {
   entryId: Id;
   record: TrashedVideo;
-  /** 来源目录；来源不在了（项目被移除）时 null。 */
+  /** The source directory; null when the source is gone (the project was removed). */
   root: string | null;
 }
 
-/** 来源目录里的一个视频条目的位置（删除视频用）。 */
+/** The location of a video entry inside a source directory (used for deleting videos). */
 export interface VideoEntryInfo {
   entry: SpaceEntry;
   dir: string;
@@ -254,7 +254,7 @@ export interface VideoEntryInfo {
   scope: { projectId: Id } | { conversationId: Id };
 }
 
-/** 一个视频条目与它在内容索引里的记录。 */
+/** A video entry and its record in the content index. */
 export interface SpaceVideo {
   entryId: Id;
   dir: string;
@@ -276,13 +276,13 @@ export class SpaceCatalog {
   readonly #index: ContentIndex | null;
   readonly #topic: TopicLog<SpaceSnapshot, SpaceEvent>;
   readonly #sources = new Map<string, DeriveSource>();
-  /** 会话属于哪个项目：会话里生成的产物归到那个项目。 */
+  /** Which project a session belongs to: artifacts generated in the session are attributed to that project. */
   readonly #conversationProjects = new Map<Id, Id | null>();
-  /** 无项目会话工作目录的上级目录，首次扫描前换成真实路径（导出记下的发布路径是真实路径）。 */
+  /** The parent directory of the working directories of sessions without a project; replaced with the real path before the first scan (the publish paths recorded by exports are real paths). */
   #scratchDirs: readonly string[];
   readonly #files = new Map<Id, ScannedItem>();
   #derived = new Map<Id, DerivedEntry>();
-  /** 派生时用的文件状态缓存：产物文件、来源目录之外的发布路径。 */
+  /** File-state cache used during derivation: artifact files and publish paths outside source directories. */
   #artifactStats = new Map<string, FileStat | null>();
   #pathStats = new Map<string, FileStat | null>();
   readonly #issues = new Map<string, SpaceScanIssue>();
@@ -294,7 +294,7 @@ export class SpaceCatalog {
   #queue: Promise<void> = Promise.resolve();
   #scanning = true;
   #closed = false;
-  /** 首次扫描完成。 */
+  /** The first scan has completed. */
   readonly ready: Promise<void>;
   #markReady!: () => void;
 
@@ -319,7 +319,7 @@ export class SpaceCatalog {
         }),
       );
     }
-    // 内容索引里有视频更新了：重算派生状态（`ref`、`applied`、`source-changed`）。
+    // A video in the content index was updated: recompute the derived state (`ref`, `applied`, `source-changed`).
     if (this.#index) this.#unsubscribe.push(this.#index.listen(() => this.#scheduleRecompute()));
     if (options.videos && this.#index) {
       const index = this.#index;
@@ -327,7 +327,7 @@ export class SpaceCatalog {
     }
   }
 
-  /** 跟着目录主题登记来源，然后做首次扫描。不等扫描完成就返回。 */
+  /** Registers the sources and subscribes to the directory topic, then does the first scan. Returns without waiting for the scan to finish. */
   start(): void {
     this.#directory = this.#harness.subscribe('directory', undefined, (event) => this.#onDirectory(event.event as DirectoryEvent));
     const initial = this.#directory.result;
@@ -336,7 +336,7 @@ export class SpaceCatalog {
       for (const project of snapshot.projects) this.#addProject(project, false);
       for (const conversation of snapshot.conversations) this.#addConversation(conversation, false);
     }
-    // 先把 Ledger 里还在的产物任务补进产物记录、按目录实际在哪里核对删除了的视频，再做首次扫描：条目不会先消失再出现。
+    // First add the artifact jobs still in the Ledger to the artifact records, and check deleted videos against where they actually are on disk, then do the first scan: entries do not vanish and then reappear.
     void this.#enqueue(async () => {
       const dirs = await Promise.all(this.#scratchDirs.map(async (dir) => [dir, await fsp.realpath(dir).catch(() => dir)]));
       this.#scratchDirs = [...new Set(dirs.flat())];
@@ -365,7 +365,7 @@ export class SpaceCatalog {
     await this.#artifacts?.flush().catch(() => {});
   }
 
-  /** 排队中的扫描、重算与内容索引都做完（测试用）。 */
+  /** Waits until queued scans, recomputations and the content index have all finished (for tests). */
   async idle(): Promise<void> {
     for (;;) {
       await this.#index?.idle();
@@ -379,7 +379,7 @@ export class SpaceCatalog {
     return { entries: this.entries(), issues: [...this.#issues.values()], scanning: this.#scanning };
   }
 
-  /** 全部条目，按最近活动从新到旧，同一时刻按 id。 */
+  /** All entries, from most recent activity to oldest; ties broken by id. */
   entries(): SpaceEntry[] {
     const entries = [...this.#derived.values()].map((d) => d.entry);
     entries.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : a.lastActivityAt > b.lastActivityAt ? -1 : a.id < b.id ? -1 : 1));
@@ -400,7 +400,7 @@ export class SpaceCatalog {
     return derived.entry;
   }
 
-  /** 来源目录里的全部视频条目（内容检索的范围），按最近活动从新到旧。 */
+  /** All video entries in source directories (the scope of content search), from most recent activity to oldest. */
   videos(): SpaceVideo[] {
     const videos: SpaceVideo[] = [];
     for (const derived of this.#derived.values()) {
@@ -419,7 +419,7 @@ export class SpaceCatalog {
     return videos;
   }
 
-  /** 全部来源目录（项目目录、没有项目的会话的工作目录）。 */
+  /** All source directories (project directories, and the working directories of sessions without a project). */
   sourceRoots(): string[] {
     return [...this.#sources.values()].map((source) => source.root);
   }
@@ -432,7 +432,7 @@ export class SpaceCatalog {
     return this.#topic.subscribe(afterSeq, listener);
   }
 
-  /** 立即重扫全部来源，完成后发一条 `catalog.replaced`。 */
+  /** Rescans all sources immediately; when done, emits one `catalog.replaced`. */
   rescan(): Promise<void> {
     return this.#enqueue(async () => {
       await this.#scanAll();
@@ -441,9 +441,9 @@ export class SpaceCatalog {
   }
 
   /**
-   * 丢掉全部派生数据（扫描结果、文件状态缓存、内容索引）从权威来源重建（§5.7「可重建」）。用户标记与登记不动。
-   * 目录在返回前重建完：重扫与重查都先算出新的再整体换上，期间的查询仍看到旧的目录。内容索引删掉缓存后在后台重建，
-   * 期间检索结果标明不完整。
+   * Discards all derived data (scan results, file-state cache, content index) and rebuilds it from the authoritative sources (§5.7 “rebuildable”). User marks and registrations are left alone.
+   * The catalog is fully rebuilt before returning: rescans and rechecks compute the new state first and then swap it in as a whole, and queries in the meantime still see the old catalog. After the content index cache is deleted it is rebuilt in the background,
+   * and during that time search results are marked as incomplete.
    */
   rebuild(): Promise<{ entries: number; pendingVideos: number }> {
     let pendingVideos = 0;
@@ -455,11 +455,11 @@ export class SpaceCatalog {
     }).then(() => ({ entries: this.#derived.size, pendingVideos }));
   }
 
-  /** 用户标记：收藏、显示名、回收站。只写标记，不碰文件。 */
+  /** User marks: favorites, display names, trash. Only writes marks; does not touch files. */
   async update(params: { entryId: Id; favorite?: boolean; displayName?: string | null; trashed?: boolean }): Promise<SpaceEntry> {
     const derived = this.#derived.get(params.entryId);
     if (!derived) throw new RpcError('not-found', RcSpace.entryGone());
-    // 视频进出回收站是移动目录（`videos.delete` / `videos.restore`），方法层已经转过去了；这里只防直接调用。
+    // Moving videos into and out of the trash is moving directories (`videos.delete` / `videos.restore`); the method layer already routes them there, so this only guards against direct calls.
     if (params.trashed === true && derived.videoDir && !derived.entry.user.trashedAt) {
       throw new RpcError('invalid-request', RcSpace.trashVideoUseDelete(), { code: 'SPACE_TRASH_VIDEO' });
     }
@@ -471,12 +471,12 @@ export class SpaceCatalog {
     if (params.displayName !== undefined) mark.displayName = params.displayName?.trim() || null;
     if (params.trashed !== undefined) mark.trashedAt = params.trashed ? (mark.trashedAt ?? nowIso()) : null;
     await this.#marks.put(params.entryId, mark);
-    // 等写盘的时候条目可能被重扫拿掉了。
+    // While waiting for the disk write, the entry may have been removed by a rescan.
     this.#recompute(true);
     return this.get(params.entryId);
   }
 
-  /** 媒体通道与打开视频用：来源目录里的条目对应的来源目录与文件，以及来源（项目或会话）。 */
+  /** For the media channel and for opening videos: the source directory and file corresponding to an entry in a source directory, and the source (project or session). */
   locate(entryId: Id): { root: string; file: string; scope: { projectId: Id } | { conversationId: Id } } {
     const derived = this.#derived.get(entryId);
     if (!derived) throw new RpcError('not-found', RcSpace.entryGone());
@@ -489,8 +489,8 @@ export class SpaceCatalog {
   }
 
   /**
-   * 媒体通道用：条目 bytes 的位置，只给受限句柄（§5.6）。来源目录里的按来源目录限定；产物与来源目录之外的导出
-   * 限定到那一个文件所在的目录（句柄只放行这一个文件）。没有 bytes 的（占位、缺失）是 not-found。
+   * For the media channel: the location of an entry's bytes, given only as a restricted handle (§5.6). For entries in source directories it is restricted to that source directory; for artifacts and exports outside source directories,
+   * it is restricted to the directory containing that one file (the handle allows only that file). Entries without bytes (placeholders, missing) are `not-found`.
    */
   locateBytes(entryId: Id): { root: string; file: string } {
     const derived = this.#derived.get(entryId);
@@ -502,9 +502,9 @@ export class SpaceCatalog {
   }
 
   /**
-   * 工具的 Space 条目输入（架构设计 §7.9）：条目对应的、能读的文件。条目不在 `not-found`；在回收站里 `conflict`
-   * （`SPACE_ENTRY_TRASHED`）；种类不在 `kinds` 里（含视频条目）`invalid-request`（`SPACE_ENTRY_UNSUPPORTED`）；
-   * 没有可读的文件（占位、缺失、来源不在了）`conflict`（`SPACE_ENTRY_NO_FILE`）。种类先于文件判断：种类不会变，文件可以恢复。
+   * Input for a tool's Space entry (architecture design §7.9): the readable file for the entry. If the entry does not exist, `not-found`; if it is in the trash, `conflict` (`SPACE_ENTRY_TRASHED`);
+   * if its kind is not in `kinds` (including video entries), `invalid-request` (`SPACE_ENTRY_UNSUPPORTED`); if there is no readable file (placeholder, missing, source gone), `conflict` (`SPACE_ENTRY_NO_FILE`).
+   * The kind is checked before the file: the kind does not change, while the file may be restored.
    */
   resolveFile(entryId: Id, kinds: readonly SpaceEntryKind[]): { entry: SpaceEntry; file: string } {
     const derived = this.#derived.get(entryId);
@@ -539,8 +539,8 @@ export class SpaceCatalog {
   }
 
   /**
-   * 把一个文件登记为项目的素材（§5.7「项目里不属于视频的文件」），不放进任何视频。项目目录里的文件原地登记；
-   * 项目之外的复制进项目的 `imports/`（重名时加序号）。`file` 是调用方给的绝对路径。
+   * Registers a file as project material (§5.7 “files in the project that are not video”), not placed in any video. A file inside the project directory is registered in place;
+   * a file outside the project is copied into the project's `imports/` (with a sequence number added on name clash). `file` is an absolute path given by the caller.
    */
   async importFile(params: { projectId: Id; file: string; name?: string }): Promise<{ entry: SpaceEntry; copied: boolean }> {
     const key = `project:${params.projectId}`;
@@ -601,9 +601,9 @@ export class SpaceCatalog {
   }
 
   /**
-   * 物理删除（§5.5、§5.7）。来源目录里的视频条目拒绝（先 `videos.delete`）；删除了的视频见 `#purgeVideo`；进行中的占位拒绝；
-   * 失败的占位清除即可。其余只删回收站里的条目，先查引用：链接着这个文件的视频素材、用着这个产物的进行中任务；有视频此刻读不了时
-   * 无法确认，按有引用处理（fail closed）。有引用时什么也不删，返回引用。
+   * Physical deletion (§5.5, §5.7). Video entries in source directories are rejected (call `videos.delete` first); deleted videos are covered by `#purgeVideo`; placeholders for jobs in progress are rejected;
+   * failed placeholders can simply be cleared. Otherwise only entries in the trash are deleted, after checking references first: video materials linking to this file, and in-progress jobs using this artifact. When a video cannot be read at the moment,
+   * this cannot be confirmed, so it is treated as referenced (fail closed). When something is referenced, nothing is deleted and the references are returned.
    */
   async purge(entryId: Id): Promise<SpacePurgeResult> {
     const derived = this.#derived.get(entryId);
@@ -629,10 +629,10 @@ export class SpaceCatalog {
     const file = location.kind === 'source' ? this.locate(entryId).file : location.kind === 'none' ? null : location.path;
     const references = file ? await this.#references(entry, file) : [];
     if (references.length > 0) return { status: 'blocked', entryId, references };
-    // 幻灯片、设计稿与设计系统条目是整个 deck / 设计稿 / 设计系统目录（设计系统连同 `_blobs/`）。
+    // Slide deck, design canvas and design system entries are the whole deck / design canvas / design system directory (for design systems, together with `_blobs/`).
     if (file) await fsp.rm(file, { force: true, recursive: entry.kind === 'slides' || entry.kind === 'design' || entry.kind === 'design-system' });
     await this.#marks.remove(entryId);
-    // 导出与扫描到的文件合成一个条目：文件删了之后不要再以「缺失」的产物出现。
+    // Exports and scanned files are merged into one entry: once the file is deleted, it must not reappear as a “missing” artifact.
     const artifactId = entry.ref && 'artifactId' in entry.ref ? entry.ref.artifactId : null;
     if (artifactId) {
       await this.#marks.put(artifactId, { ...EMPTY_MARK, dismissedAt: nowIso() });
@@ -646,7 +646,7 @@ export class SpaceCatalog {
     return { status: 'purged', entryId };
   }
 
-  /** 从条目回到可以编辑的视频（§5.7「从成片回到视频」）。只回答去哪里，不打开视频。 */
+  /** Goes from an entry back to the editable video (§5.7 “from the final cut back to the video”). Only answers where to go; does not open the video. */
   openForEdit(entryId: Id): SpaceOpenForEditResult {
     const derived = this.#derived.get(entryId);
     if (!derived) throw new RpcError('not-found', RcSpace.entryGone());
@@ -672,9 +672,9 @@ export class SpaceCatalog {
     return { mode: 'new-video', source: { entryId }, projectId: entry.source.projectId ?? entry.origin?.projectId ?? null };
   }
 
-  // ---- 删除的视频（§5.5、§5.7）----
+  // ---- Deleted videos (§5.5, §5.7) ----
 
-  /** 来源目录里的视频条目与它的位置。不是视频、已经删除或不在来源目录里时报错。 */
+  /** The video entry in a source directory and its location. Throws if it is not a video, has already been deleted, or is not in a source directory. */
   videoEntry(entryId: Id): VideoEntryInfo {
     const derived = this.#derived.get(entryId);
     if (!derived) throw new RpcError('not-found', RcSpace.entryGone());
@@ -693,7 +693,7 @@ export class SpaceCatalog {
     };
   }
 
-  /** 来源目录里、真实路径是 `dir` 的视频条目；没有时 null。刚建的视频可能还没扫到：先重扫它所在的来源再找一次。 */
+  /** The video entry in a source directory whose real path is `dir`; null when none. A video that was just created may not have been scanned yet: rescan its source first, then look again. */
   async videoEntryAt(dir: string): Promise<VideoEntryInfo | null> {
     const real = await fsp.realpath(dir).catch(() => null);
     if (!real) return null;
@@ -711,7 +711,7 @@ export class SpaceCatalog {
     return find();
   }
 
-  /** 删除了的视频：按回收站里的条目 id，或删除之前的条目 id（撤销用）。没有时 null。 */
+  /** A deleted video, looked up by its entry id in the trash, or by its entry id from before the deletion (for undo). null when none. */
   trashedVideo(entryId: Id): TrashedVideoInfo | null {
     const trashed = this.#marks.trashedVideos();
     let id: Id | null = trashed.has(entryId) ? entryId : null;
@@ -723,17 +723,17 @@ export class SpaceCatalog {
     return { entryId: id, record, root: this.#sources.get(record.sourceKey)?.root ?? null };
   }
 
-  /** 回收站里的条目 id：来源键与在回收站里的相对路径决定。 */
+  /** The entry id in the trash, determined by the source key and the relative path inside the trash. */
   trashEntryId(sourceKey: string, trashRelPath: string): Id {
     return entryIdOf(sourceKey, trashRelPath);
   }
 
-  /** 记下要删除的视频（移动目录之前）。 */
+  /** Records the video to be deleted (before its directory is moved). */
   recordTrashedVideo(entryId: Id, record: TrashedVideo): Promise<void> {
     return this.#marks.putTrashedVideo(entryId, record);
   }
 
-  /** 视频回到了来源目录（恢复，或删除没有完成）：去掉记录，标记搬到 `relPath` 的条目，重扫来源。返回新的条目 id。 */
+  /** The video is back in its source directory (restored, or deletion did not finish): removes the record, moves the mark to the entry at `relPath`, and rescans the source. Returns the new entry id. */
   async releaseTrashedVideo(entryId: Id, record: TrashedVideo, relPath: string): Promise<Id> {
     const to = entryIdOf(record.sourceKey, relPath);
     await this.#marks.dropTrashedVideo(entryId, to);
@@ -741,7 +741,7 @@ export class SpaceCatalog {
     return to;
   }
 
-  /** 重扫一个来源并重算（移动了视频目录之后）。 */
+  /** Rescans one source and recomputes (after a video directory has been moved). */
   refreshSource(sourceKey: string): Promise<void> {
     return this.#enqueue(async () => {
       await this.#rescanSource(sourceKey);
@@ -750,8 +750,8 @@ export class SpaceCatalog {
   }
 
   /**
-   * 回收站的保留期（§5.7）：移入回收站超过 `days` 天的条目逐个物理删除，与 `space.purge` 同一条路径：有引用的留着，
-   * 来源目录里的视频（旧版本只写了回收站标记的）跳过。返回删了几个、留着几个。
+   * Retention period for the trash (§5.7): entries that have been in the trash for more than `days` days are physically deleted one by one, through the same path as `space.purge`. Those with references are kept,
+   * and videos in source directories (older versions only wrote a trash mark) are skipped. Returns how many were deleted and how many were kept.
    */
   async sweepTrash(days: number, now = Date.now()): Promise<{ purged: number; kept: number }> {
     const cutoff = now - days * 86_400_000;
@@ -781,8 +781,8 @@ export class SpaceCatalog {
   }
 
   /**
-   * 物理删除一个删除了的视频：查引用（别的视频链接着它目录里的文件、用着它的进行中任务、此刻读不了的视频），再查目录里有没有
-   * 不归视频管理的文件；都没有时只删归视频管理的文件（数据库、锁、`blobs/`），再删掉空的目录。链接素材的原文件不在视频目录里，不碰。
+   * Physically deletes a deleted video: checks references first (other videos linking to files in its directory, in-progress jobs using it, videos that cannot be read at the moment), then checks whether the directory contains
+   * files not managed by the video. Only when neither applies does it delete the files the video manages (database, lock, `blobs/`), then removes the directory if it is empty. Original files of linked materials are not in the video directory and are not touched.
    */
   async #purgeVideo(entryId: Id, location: { sourceKey: string; relPath: string }): Promise<SpacePurgeResult> {
     const record = this.#marks.trashedVideos().get(entryId);
@@ -806,7 +806,7 @@ export class SpaceCatalog {
         if (job.state === 'queued' || job.state === 'running') {
           references.push({ kind: 'job', jobId: job.jobId, videoId: record.videoId, detail: RcSpace.refRunningTaskUsesVideo({ jobId: job.jobId }).text });
         } else if (job.state === 'needs-reconciliation') {
-          // 结果还等用户决定（`jobs.reconcile apply` 会写进这个视频）：删除可以撤销，物理删除不行。
+          // The result still awaits the user's decision (`jobs.reconcile apply` would write into this video): deletion can be undone, physical deletion cannot.
           references.push({
             kind: 'job',
             jobId: job.jobId,
@@ -839,8 +839,8 @@ export class SpaceCatalog {
   }
 
   /**
-   * 启动时核对删除了的视频（§5.7）：记录写了、目录没有移过去（删除时崩溃），或已经移回来、记录没删（恢复时崩溃）时去掉记录；
-   * 两处都没有（被外部删掉了）时连同标记一起去掉。来源还没登记的留到下次。
+   * Reconciles deleted videos at startup (§5.7). If a record was written but the directory was not moved over (crash during deletion), or it was already moved back but the record was not removed (crash during restore), the record is removed.
+   * If neither place has it (removed externally), it is removed together with its mark. If the source is not registered yet, leave it until next time.
    */
   async #reconcileTrash(): Promise<void> {
     for (const [entryId, record] of [...this.#marks.trashedVideos()]) {
@@ -855,12 +855,11 @@ export class SpaceCatalog {
     }
   }
 
-  // ---- 产物记录（§14「Space 与 Job Ledger 的保留」）----
+  // ---- Artifact records (§14 “Retention of Space and the Job Ledger”) ----
 
   /**
-   * 智能体用 `downloads_save` 交出的文件登记为交付物（架构设计 §3.5、§5.7）：与从链接下载的文件同一条路，写进产物记录一条
-   * `downloads-save` 的文件到文件记录（不经 Job Ledger），派生成条目（`id` 是内容摘要，来源目录之外的单独成条），
-   * 回复里的链接按条目打开。写完重算一次，返回时目录里已经有它。没有产物记录时不登记。
+   * A file handed over by the agent with `downloads_save` is registered as a deliverable (architecture design §3.5, §5.7). It takes the same path as files downloaded from a link: a file record of kind `downloads-save` is written into the artifact record
+   * (not via the Job Ledger) and derived into an entry (`id` is the content digest; entries outside the source directory stand alone). Links in the reply open the entry. It is recomputed once after writing, so the directory already contains it when this returns. Nothing is registered when there is no artifact record.
    */
   async recordHandover(handover: { path: string; bytes: number; artifactId: string; submitter: JobSubmitter; at: string }): Promise<void> {
     if (!this.#artifacts) return;
@@ -894,7 +893,7 @@ export class SpaceCatalog {
       pipeline: { name: 'downloads-save' },
     };
     await this.#artifacts.put([facts]);
-    // 来源目录之外的发布路径按缓存的文件状态派生：先忘掉这条路径（同名文件之前可能记成不在了），再重算。
+    // Publish paths outside source directories are derived from cached file state: first forget this path (a file of the same name may have been recorded as absent earlier), then recompute.
     this.#pathStats.delete(handover.path);
     await this.#enqueue(async () => {
       await this.#refreshStats(false);
@@ -902,7 +901,7 @@ export class SpaceCatalog {
     });
   }
 
-  /** 任务输入：Ledger 里的任务，加上产物记录里 Ledger 已经修剪掉的。 */
+  /** Job input: the jobs in the Ledger, plus those the Ledger has already pruned but that are still in the artifact records. */
   #jobFacts(): SpaceJobFacts[] {
     const live = this.#jobs?.list() ?? [];
     if (!this.#artifacts) return live;
@@ -910,7 +909,7 @@ export class SpaceCatalog {
     return [...live, ...this.#artifacts.list().filter((facts) => !seen.has(facts.jobId))];
   }
 
-  /** 结束了、有产物的任务记进产物记录（已经全部清除了的不再记）。 */
+  /** Finished jobs that have artifacts are recorded in the artifact records (jobs that have been fully cleared are no longer recorded). */
   #retain(jobs: readonly JobRecord[]): void {
     if (!this.#artifacts) return;
     const records = jobs.flatMap((job) => {
@@ -920,14 +919,14 @@ export class SpaceCatalog {
       return ids.length > 0 && ids.every((id) => this.#marks.get(id).dismissedAt) ? [] : [facts];
     });
     if (records.length > 0) void this.#artifacts.put(records).catch((error) => this.#log.warn('Writing output records failed', { error: String(error) }));
-    // 只为产物库清扫保留的引用（§7.3）：任何留下了产物的任务（配音、翻译、说话人、写进视频的转录、它们的步骤……），
-    // 不论上面要不要留派生用的事实。不进目录，Job Ledger 修剪之后产物仍被引用。
+    // References kept only for the artifact library sweep (§7.3): any job that left artifacts (dubbing, translation, speaker, transcription written into the video, their steps...),
+    // regardless of whether the derived facts above are kept. Not in the catalog; after the Job Ledger prunes it, the artifacts are still referenced.
     const refs = jobs.flatMap((job) => artifactRefsOf(job) ?? []);
     if (refs.length > 0)
       void this.#artifacts.putReferences(refs).catch((error) => this.#log.warn('Writing output references failed', { error: String(error) }));
   }
 
-  /** 产物全部物理删除或清除了的记录去掉；Ledger 里也没有这个任务时，清除标记也不再需要。 */
+  /** Removes records whose artifacts have all been physically deleted or cleared; when the job is also no longer in the Ledger, the clear mark is not needed either. */
   async #pruneRetained(): Promise<void> {
     if (!this.#artifacts) return;
     const live = new Set((this.#jobs?.list() ?? []).map((job) => job.jobId));
@@ -941,7 +940,7 @@ export class SpaceCatalog {
     await this.#artifacts.remove(done);
   }
 
-  // ---- 引用 ----
+  // ---- References ----
 
   async #references(entry: SpaceEntry, file: string): Promise<SpaceReference[]> {
     const real = await fsp.realpath(file).catch(() => file);
@@ -960,7 +959,7 @@ export class SpaceCatalog {
     return references;
   }
 
-  /** 来源目录里的视频的链接素材里，`matches` 的；有视频此刻读不了或索引没跟上时记 `unverified`。 */
+  /** Among the linked materials of videos in source directories, those that `matches`; when a video cannot be read at the moment or the index has not caught up, records `unverified`. */
   async #linkReferences(matches: (linkedPath: string) => Promise<boolean>): Promise<SpaceReference[]> {
     const references: SpaceReference[] = [];
     const index = this.#index;
@@ -988,16 +987,16 @@ export class SpaceCatalog {
     return references;
   }
 
-  // ---- 来源 ----
+  // ---- Sources ----
 
   #onDirectory(event: DirectoryEvent): void {
     if (this.#closed) return;
     if (event.type === 'project.upsert') {
       this.#addProject(event.project, true);
     } else if (event.type === 'conversation.upsert') {
-      // 回合结束等活动变化后重扫一次它的工作目录：监视失效（目录刚建好、平台不支持）时也不会漏。
+      // After a turn ends and activity changes, rescan its working directory once, so nothing is missed when watching has failed (the directory was just created, or the platform does not support it).
       if (!this.#addConversation(event.conversation, true)) this.#schedule(sourceKeyOf(event.conversation));
-      // 会话改属项目会改变它的产物的归属。
+      // Moving a session into a project changes the attribution of its artifacts.
       this.#scheduleRecompute();
     } else if (event.type === 'conversation.removed') {
       this.#removeSource(`conv:${event.conversationId}`);
@@ -1006,7 +1005,7 @@ export class SpaceCatalog {
 
   #addProject(project: Project, scan: boolean): boolean {
     const key = `project:${project.id}`;
-    // 项目目录被移动或改名（架构设计 §5.1）：来源换到新路径。条目 id 只由来源键与相对路径决定，用户标记跟得上。
+    // The project directory was moved or renamed (architecture design §5.1): the source switches to the new path. Entry ids are determined only by the source key and the relative path, so user marks carry over.
     const existing = this.#sources.get(key);
     if (existing && existing.root !== project.path) this.#removeSource(key);
     return this.#addSource({ key, root: project.path, realRoot: project.path, projectId: project.id, conversationId: null }, scan);
@@ -1015,12 +1014,12 @@ export class SpaceCatalog {
   #addConversation(conversation: Conversation, scan: boolean): boolean {
     this.#conversationProjects.set(conversation.id, conversation.projectId ?? null);
     if (conversation.projectId) {
-      // 无项目会话绑定了项目（§3.10）：它的工作目录不再是来源，东西已经搬进项目，由项目来源列出。条目 id 随来源键换了，
-      // 旧来源下的用户标记（收藏、显示名）不跟过去。
+      // A session without a project was bound to a project (§3.10): its working directory is no longer a source, its contents have been moved into the project, and the project source lists them. Entry ids change with the source key,
+      // so user marks under the old source (favorites, display names) do not carry over.
       this.#removeSource(`conv:${conversation.id}`);
       return false;
     }
-    // 共用另一条会话工作目录的：那条会话的来源已经列出这个目录。
+    // A session sharing another session's working directory: that session's source already lists this directory.
     if (conversation.folderOf) return false;
     return this.#addSource(
       {
@@ -1034,7 +1033,7 @@ export class SpaceCatalog {
     );
   }
 
-  /** 项目来源的 `formerRoots`：放进这个项目的会话原来的工作目录（项目里直接建的会话也算上，那个目录从来没有过，认不到东西）。 */
+  /** `formerRoots` of a project source: the original working directories of the sessions moved into this project (sessions created directly in the project count too; that directory never existed, so it recognizes nothing). */
   #syncFormerRoots(): void {
     if (!this.#scratchDirs.length) return;
     const former = new Map<Id, string[]>();
@@ -1080,7 +1079,7 @@ export class SpaceCatalog {
       });
       this.#watchers.set(source.key, watcher);
     } catch {
-      // 目录还不存在或不可读：靠会话活动触发的重扫补上。
+      // The directory does not exist yet or is unreadable: covered by the rescan triggered by session activity.
     }
   }
 
@@ -1096,7 +1095,7 @@ export class SpaceCatalog {
     );
   }
 
-  /** Job 事件（进度一秒好几次）合并成一次重算。 */
+  /** Job events (progress fires several times a second) are merged into a single recomputation. */
   #scheduleRecompute(): void {
     if (this.#closed || this.#recomputeTimer) return;
     this.#recomputeTimer = setTimeout(() => {
@@ -1108,7 +1107,7 @@ export class SpaceCatalog {
     }, 50);
   }
 
-  // ---- 扫描与派生 ----
+  // ---- Scanning and derivation ----
 
   #enqueue(job: () => Promise<void>): Promise<void> {
     const run = this.#queue.then(() => (this.#closed ? undefined : job()));
@@ -1124,7 +1123,7 @@ export class SpaceCatalog {
         return [source, result] as const;
       }),
     );
-    // 清空与填回在同一段同步代码里：期间到来的重算（用户标记、Job 事件）看不到半空的目录。
+    // Clearing and refilling happen in the same synchronous block: recomputations arriving in between (user marks, job events) never see a half-empty catalog.
     this.#files.clear();
     this.#issues.clear();
     for (const [source, result] of results) {
@@ -1156,13 +1155,13 @@ export class SpaceCatalog {
     source.realRoot = await fsp.realpath(source.root).catch(() => source.root);
   }
 
-  /** 记下来源的扫描问题。问题清单只随 `catalog.replaced` 与快照下发。 */
+  /** Records scan problems for a source. The problem list is only delivered with `catalog.replaced` and in snapshots. */
   #apply(source: DeriveSource, result: ScanResult): void {
     if (result.issue) this.#issues.set(source.key, { sourceKey: source.key, ...result.issue });
     else this.#issues.delete(source.key);
   }
 
-  /** 把来源目录里的视频目录交给内容索引。 */
+  /** Hands the video directories in source directories to the content index. */
   async #syncIndex(): Promise<void> {
     if (!this.#index || this.#closed) return;
     const locations: { dir: string; mtimeMs: number }[] = [];
@@ -1174,10 +1173,10 @@ export class SpaceCatalog {
     await this.#index.sync(locations);
   }
 
-  /** 产物文件与来源目录之外的发布路径在不在：新出现的查一次；`all` 时全部重查（重扫、重建）。 */
+  /** Checks whether artifact files and publish paths outside source directories exist: newly appearing ones are checked once; with `all`, everything is rechecked (rescans, rebuilds). */
   async #refreshStats(all: boolean): Promise<void> {
     if (!this.#jobs) return;
-    // 全部重查时先查到新的表里再换上：查的期间到来的重算仍用旧的。
+    // When rechecking everything, first check into a new table and swap it in afterwards: recomputations arriving during the check still use the old one.
     const artifactStats = all ? new Map<string, FileStat | null>() : this.#artifactStats;
     const pathStats = all ? new Map<string, FileStat | null>() : this.#pathStats;
     const artifacts = new Set<string>();
@@ -1186,7 +1185,7 @@ export class SpaceCatalog {
       if (!job.result) continue;
       if (job.kind === 'generateText') artifacts.add(job.result.artifactId);
       for (const output of job.result.outputs ?? []) {
-        // 发布的文件，以及直接任务另存在保存位置的副本（§7.9）。
+        // Published files, and copies that direct jobs saved to the save location (§7.9).
         if (output.path) paths.add(output.path);
         if (job.kind === 'generateImage' || job.kind === 'synthesizeSpeech' || job.kind === 'generateMusic') artifacts.add(output.artifactId);
       }
@@ -1206,7 +1205,7 @@ export class SpaceCatalog {
     }
   }
 
-  /** 从全部输入重算条目；`publish` 时把变了的条目逐条发出去（首次扫描与重建只发一条 `catalog.replaced`）。 */
+  /** Recomputes entries from all inputs; with `publish`, emits each changed entry one by one (the first scan and rebuilds emit only one `catalog.replaced`). */
   #recompute(publish: boolean): void {
     if (this.#closed) return;
     this.#syncFormerRoots();
@@ -1250,7 +1249,7 @@ async function statOf(file: string): Promise<FileStat | null> {
   return stat?.isFile() ? { path: file, size: stat.size, mtimeMs: stat.mtimeMs, birthtimeMs: stat.birthtimeMs } : null;
 }
 
-/** 复制进目录，重名时加序号；返回目录里的文件名。 */
+/** Copies into the directory, adding a sequence number on name clash; returns the file name in the directory. */
 async function copyUnique(file: string, dir: string): Promise<string> {
   const ext = path.extname(file);
   const base = path.basename(file, ext);
@@ -1270,7 +1269,7 @@ function sourceKeyOf(conversation: Conversation): string {
   return conversation.projectId ? `project:${conversation.projectId}` : `conv:${conversation.folderOf ?? conversation.id}`;
 }
 
-/** 条目 id 由来源与相对路径决定：重扫、重启都不变，用户标记才能跟得上。 */
+/** Entry ids are determined by the source and the relative path: they do not change on rescan or restart, so user marks can keep up. */
 export function entryIdOf(sourceKey: string, relPath: string): Id {
   return `sp_${crypto.createHash('sha256').update(`${sourceKey}\0${relPath}`).digest('base64url').slice(0, 22)}`;
 }

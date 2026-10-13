@@ -78,7 +78,7 @@ describe('翻译流程的进度', () => {
       queued: false,
       agent: null,
     });
-    // 子任务不在镜像里：那一步按 0 算，不猜。
+    // Subtask is not in the mirror: that step counts as 0, no guessing.
     expect(translateProgress(job('running'), []).percent).toBe(5);
     expect(translateProgress(job('running'), [child(3, null)]).units).toEqual({ done: 3, total: null });
     const nearly = job('running');
@@ -112,7 +112,7 @@ describe('翻译流程的进度', () => {
     expect(sourceOf(agent)).toBe('speech_a');
     expect(translateProgress(agent, [])).toEqual({ percent: null, step: null, units: null, queued: false, agent: { sentences: 62 } });
     expect(translateProgress({ ...agent, state: 'completed' }, []).percent).toBe(100);
-    // 不是流程：没有可重试的步骤。
+    // Not a pipeline: there are no retryable steps.
     expect(retryNote({ ...agent, state: 'interrupted' })).toBeNull();
   });
 
@@ -128,7 +128,7 @@ describe('翻译流程的进度', () => {
     expect(retryNote(stopped('write'))).toBe('free');
     expect(retryNote(stopped('assemble'))).toBe('free');
     expect(retryNote(stopped('freeze-source'))).toBeNull();
-    // 没记 stoppedAt 时按步骤的状态找。
+    // When stoppedAt is not recorded, look it up from the step states.
     const interrupted = job('interrupted', { endedAt: 'x' });
     interrupted.pipeline = {
       ...interrupted.pipeline!,

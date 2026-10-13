@@ -1,8 +1,8 @@
 import { ATTACHMENT_COPY } from '../copy.ts';
 
 /**
- * 把图片原始字节 PUT 到 `attachments.prepare` 给的一次性地址（媒体通道同一端口）。
- * 用 XHR 而不是 fetch：要拿上传进度。Content-Type 必须与登记时声明的一致。
+ * PUT the raw image bytes to the one-time address given by `attachments.prepare` (same port as the media channel).
+ * Uses XHR instead of fetch because upload progress is needed. Content-Type must match the one declared at registration.
  */
 export function putAttachment(
   url: string,

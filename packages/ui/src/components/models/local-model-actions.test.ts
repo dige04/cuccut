@@ -6,8 +6,8 @@ import { bundle } from '../../model/models-test-fixtures.ts';
 import { confirmInstall, planInstall, removeBundle, startSelfTest, stopInstall } from './local-model-actions.ts';
 
 /**
- * 本地模型包的命令走真的 `RuntimeSession`（追加的薄方法），只把 `client.request` 换成假的：记下方法与参数，按方法回一个结果。
- * 不下载、不跑 Worker——安装与检查都停在这一层。
+ * The model package commands run through a real `RuntimeSession` (with added thin methods); only `client.request` is replaced with a fake: it records the method and arguments, and returns a result by method.
+ * Nothing is downloaded and no Worker runs; install and check both stop at this layer.
  */
 
 const QWEN = 'qwen3-asr-0.6b@mlx-4bit';

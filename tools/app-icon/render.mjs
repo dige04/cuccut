@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// 由 app-icon.mjs 重新生成 CucCut 的全部图标生成物（仓库根运行）：
-//   node tools/app-icon/render.mjs             写回仓库
-//   node tools/app-icon/render.mjs --out DIR   只写到 DIR（预览用，不碰仓库）
-// 位图在 Electron（仓库自带的 Chromium）的 canvas 里按目标像素各自绘制 SVG，不从大图缩小。
-// 本文件直接用 node 运行时会以 Electron 重新拉起自己；依赖：node_modules/electron、macOS 的 iconutil。
+// Regenerates all of CucCut's icon outputs from app-icon.mjs (run from the repo root):
+//   node tools/app-icon/render.mjs             write back to the repo
+//   node tools/app-icon/render.mjs --out DIR   write only to DIR (for preview; does not touch the repo)
+// Bitmaps are drawn at each target pixel size separately from the SVG in Electron's canvas (the Chromium bundled with the repo), not downscaled from a large image.
+// Running this file directly with node re-launches itself under Electron; dependencies: node_modules/electron, and macOS's iconutil.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,12 +27,12 @@ const PNG_1024 = 'apps/desktop/build/icon.png';
 const ICNS = 'apps/desktop/build/icon.icns';
 const ICO = 'apps/desktop/build/icon.ico';
 
-// iconutil 的 iconset 命名：逻辑尺寸 × 倍率。
+// iconutil iconset naming: logical size × scale.
 const ICONSET = [16, 32, 128, 256, 512].flatMap((pt) => [
   [`icon_${pt}x${pt}.png`, pt],
   [`icon_${pt}x${pt}@2x.png`, pt * 2],
 ]);
-// 与原 icon.ico 相同的九档，全部是 32 位 PNG 条目。
+// Same nine sizes as the original icon.ico, all as 32-bit PNG entries.
 const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
 function ico(images) {
@@ -55,7 +55,7 @@ function ico(images) {
 }
 
 if (!process.versions.electron) {
-  // 普通 node：换成 Electron 再跑一遍自己。
+  // Plain node: switch to Electron and run itself again.
   const electron = require('electron');
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -65,7 +65,7 @@ if (!process.versions.electron) {
 
 const { app, BrowserWindow } = require('electron');
 
-// 一张页面把每个尺寸画成 PNG 的 data URL。macOS（icns、1024 PNG）带模板投影；Windows 的 ICO 不带，系统自己不画也不期待投影。
+// One page draws each size as a PNG data URL. macOS (icns, 1024 PNG) carries the template shadow; Windows ICO does not, and the system itself neither draws nor expects a shadow.
 async function rasterize(jobs) {
   const html = `<!doctype html><meta charset="utf-8"><script>
     window.run = async (jobs) => {
@@ -115,7 +115,7 @@ async function main() {
   for (const rel of [PROTOTYPE_SVG, PNG_1024, ICNS, ICO]) console.log(`${target(rel)}  ${fs.statSync(target(rel)).size} B`);
 }
 
-// ESM 主进程里不能顶层 await app.whenReady()：ready 事件要等模块求值结束才发，会死锁。
+// In the ESM main process you cannot top-level await app.whenReady(): the ready event fires only after module evaluation finishes, which deadlocks.
 app
   .whenReady()
   .then(main)

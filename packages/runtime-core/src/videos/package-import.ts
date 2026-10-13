@@ -8,21 +8,17 @@ import { videoDirName, type VideoService } from './video-service.ts';
 import { RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 打开便携包（`videos.importPackage`，视频格式规范 §8）：在来源目录里的隐藏暂存目录边核对边解开包（清单的格式与打包版本、
- * 每个文件的长度与 sha256、路径与条目种类，见 `package-reader.ts`），再由引擎把它建成一个新视频（新的 `videoId`，
- * 素材全部收进视频；引擎再核对一遍文档与素材的摘要和引用）。任何一步失败都不留下视频目录；暂存目录在任何结局下都删掉，
- * 进程被强杀留下的由下次启动时的残留清理删掉（`leftover-files.ts`）。
+ * Opening a portable package (`videos.importPackage`, video format spec §8): the package is unpacked in a hidden staging directory inside the source directory, checked as it goes (the manifest's format and packaging version, each file's length and sha256, paths and entry kinds; see `package-reader.ts`). Then the engine builds it into a new video (a new `videoId`, all assets collected into the video; the engine checks the document and asset digests and references once more). If any step fails, no video directory is left behind. The staging directory is deleted in every outcome; if the process is killed hard, leftovers are removed by the leftover cleanup at the next startup (`leftover-files.ts`).
  *
- * 开给桌面界面、CLI 与 Web 服务（Web 在处理函数里把文件限制在来源目录里），以及会话与终端的工具目录（`videos_import_package`，
- * 同一个入口）；对外服务（MCP）没有这个入口。
+ * Exposed to the desktop UI, the CLI and the Web service (the Web service limits files to the source directory in its handler), and to the session and terminal tool catalogue (`videos_import_package`, the same entry point). The external service (MCP) has no such entry point.
  */
 
 type Scope = { projectId: Id } | { conversationId: Id };
 
-/** 来源目录里的暂存目录名：`.cuccut-import-<8 位十六进制>`。 */
+/** Staging directory name in the source directory: `.cuccut-import-<8 hex digits>`. */
 const STAGING_NAME = /^\.cuccut-import-[0-9a-f]{8}$/;
 
-/** 进行中的打开用着的暂存目录（真实路径）。启动时的残留清理跳过它们；同一进程里的各个入口共用。 */
+/** Staging directories in use by opens in progress (real paths). Startup leftover cleanup skips them; the entry points in the same process share them. */
 const activeStaging = new Set<string>();
 
 export function isImportStagingName(name: string): boolean {
@@ -41,7 +37,7 @@ export class PackageImporter {
     this.#videos = videos;
   }
 
-  /** `options.name`：视频目录用这个名字（不给时用包里的视频名）。 */
+  /** `options.name`: the video directory uses this name (when not given, the video name from the package is used). */
   import(
     params: RpcParams<'videos.importPackage'>,
     root: string,

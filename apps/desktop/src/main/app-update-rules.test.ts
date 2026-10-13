@@ -220,7 +220,7 @@ describe('清单', () => {
     ]) {
       expect(read(extra), JSON.stringify(extra)).toMatchObject({ ok: true, info: { build: 57 }, rollout: null });
     }
-    // JSON 写不出 Infinity / NaN（变成 null），也当不分批。
+    // JSON cannot encode Infinity or NaN (they become null), and that is also treated as no staged rollout.
     expect(read({ rolloutHours: Infinity, releasedAt: at })).toMatchObject({ ok: true, rollout: null });
   });
 
@@ -462,7 +462,7 @@ describe('状态机', () => {
       expect(reduce(start, { type: 'check' })).toEqual({ k: 'checking' });
     }
     expect(reduce({ ...available, bg: true }, { type: 'download' })).toEqual({ k: 'downloading', info, pct: 0 });
-    // 静默检查在途时用户开了下载：晚到的结果不把下载冲回有新版本
+    // The user started a download while a silent check was in flight: a late result must not reset the download back to “有新版本” (update available).
     const downloading = reduce({ ...available, bg: true }, { type: 'download' });
     expect(reduce(downloading, { type: 'found', info: info2 })).toBe(downloading);
     expect(reduce(downloading, { type: 'none' })).toBe(downloading);
@@ -485,11 +485,11 @@ describe('状态机', () => {
     expect(reduce(bg58, { type: 'found', info }), '已下载的 58 被撤、更新源退回 57：以更新源为准').toEqual({ k: 'available', info });
     expect(reduce(bg, { type: 'none' }), '更新源里没有更新的了：不装已撤回的版本').toEqual({ k: 'upToDate' });
     expect(reduce(bg, { type: 'fail', failure: 'check' }), '网络抖动不丢下载好的更新').toEqual(ready);
-    // 在途时点「重启并更新」照常安装，标记不带进安装态；之后晚到的结果作废
+    // If “重启并更新” (restart and update) is clicked while a check is in flight, install as usual. The flag is not carried into the installing state, and any late result afterwards is discarded.
     const installing = reduce(bg, { type: 'install' });
     expect(installing).toEqual({ k: 'installing', info });
     expect(reduce(installing, { type: 'none' })).toBe(installing);
-    // 不是静默检查在途的已下载，不吃检查结果
+    // Downloaded, but not from a silent check in flight: do not consume the check result.
     for (const ev of [{ type: 'found', info: info2 }, { type: 'none' }] as const) expect(reduce(ready, ev), ev.type).toBe(ready);
   });
 
@@ -526,7 +526,7 @@ describe('检查之后', () => {
     expect(followup('manual', true, cached, { k: 'downloading', info, pct: 100 }), '缓存里的也要校验完才到已下载').toBe('verify');
     const unmet = { ...report, systemUnmet: '27.0' };
     expect(followup('auto', true, unmet, { k: 'available', info, systemUnmet: '27.0' })).toBe('none');
-    // 已下载时的静默检查留在已下载（同一个 build、更新的但系统不够）：不跟进
+    // A silent check while downloaded stays downloaded (same build, or newer but the OS is too old): do not follow up.
     expect(followup('auto', true, report, { k: 'ready', info, path: '/c/x.zip' })).toBe('none');
     expect(followup('auto', true, unmet, { k: 'ready', info, path: '/c/x.zip' })).toBe('none');
   });
@@ -582,7 +582,7 @@ describe('命令输出与换包脚本', () => {
     expect(script).not.toContain('hdiutil');
     const dmg = installerScript({ ...plan, mount: '/Volumes/CucCut', unpacked: null });
     expect(dmg.ok && dmg.script).toContain('/usr/bin/hdiutil detach "$MOUNT" -quiet');
-    // 换完、回滚（三处）都打开应用
+    // After the swap and after the rollbacks (all three places), open the app.
     expect(script.match(/\/usr\/bin\/open "\$TARGET"/g)).toHaveLength(4);
   });
 

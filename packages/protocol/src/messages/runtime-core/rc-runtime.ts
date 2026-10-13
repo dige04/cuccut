@@ -14,7 +14,7 @@ import { pl } from './rc-runtime.pl.ts';
 import { tr } from './rc-runtime.tr.ts';
 import { vi } from './rc-runtime.vi.ts';
 
-/** Runtime 本体（runtime.ts、agent-setup、handlers、self-check、project-files、media 等）的错误与说明。英文是键与类型的来源，译文在 `rc-runtime.<语言>.ts`。 */
+/** Errors and descriptions for the Runtime itself (runtime.ts, agent-setup, handlers, self-check, project-files, media, etc.). English is the source of keys and types; translations are in `rc-runtime.<language>.ts`. */
 const en = {
   noSuchRun: (p: { runId: string }) => `No run ${p.runId}`,
   noLoginCommand: (p: { agent: string }) => `${p.agent} has no sign-in command`,
@@ -69,7 +69,7 @@ const en = {
     `This Runtime is still in use (desktop app: ${p.desktop}, other CLI connections: ${p.cli}, unfinished tasks: ${p.activeJobs}). Wait for them to finish or close them, then stop it`,
   stopNotSupported: "This Runtime can't be stopped through the gateway",
 
-  // legacyImport.*（旧版项目的导入询问、重试与跳过，architecture-design §2.7）
+  // legacyImport.* (import prompts for legacy projects, retries and skips, architecture-design §2.7)
   legacyPromptGone: "This import question has already been answered or is no longer open",
   legacyImportFolderReserved: "Choose a folder outside the data folders of CucCut and its earlier versions",
   legacyImportFolderUnwritable: "Can't create or write to this folder",

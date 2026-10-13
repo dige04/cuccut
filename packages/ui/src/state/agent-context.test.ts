@@ -5,7 +5,7 @@ import { useEditor } from './editor-store.ts';
 import { useShell, type Route } from './shell-store.ts';
 import { useVideo, type OpenVideo } from './video-store.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
@@ -43,7 +43,7 @@ function open(): void {
 
 describe('发给智能体的编辑器上下文', () => {
   const initial = getLocale();
-  // 测试环境可能用 `CUCCUT_LOCALE` 钉住语言；这里要真的换语言。
+  // The test environment may pin the language with `CUCCUT_LOCALE`; here the language must really be switched.
   beforeEach(() => vi.stubEnv('CUCCUT_LOCALE', ''));
   afterEach(() => {
     setLocale(initial);

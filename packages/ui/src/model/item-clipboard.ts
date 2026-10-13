@@ -30,7 +30,7 @@ import { pl } from './item-clipboard.pl.ts';
 import { tr } from './item-clipboard.tr.ts';
 import { vi } from './item-clipboard.vi.ts';
 
-/** 副本名字的文案（英文是键与类型的来源，译文在 `item-clipboard.zh-Hans.ts`）。 */
+/** Copy for copy names (the English is the source of keys and types; translations are in `item-clipboard.zh-Hans.ts`). */
 const en = {
   copySuffix: ' · Copy',
 };
@@ -38,31 +38,31 @@ export type ItemClipboardMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 时间线的复制、粘贴与再制（原型 editor-keys.jsx 的 spawn、model-select.js 的 pasteSpan / pasteOffset）。
+ * Copy, paste and duplicate for the timeline (prototype editor-keys.jsx's spawn, and model-select.js's pasteSpan / pasteOffset).
  *
- * 剪贴板里放的是复制那一刻的片段快照；粘贴把它们换成一笔 `insertItems`（缺轨道时同一笔里先 `addTrack`）。
- * 引擎管的字段（id、lineage、启用、锁定、叠放次序、跟随）与联动组不带过去，副本是一件全新的、启用的片段。
+ * The clipboard holds snapshots of the segments as they were at the moment of copying; paste turns them into one `insertItems` change (if a track is missing, `addTrack` is added in the same change).
+ * Engine-managed fields (id, lineage, enabled, locked, stacking order, follow) and link groups are not carried over: a copy is a brand-new, enabled segment.
  */
 
-/** 每粘贴一次，画面上的副本再错开画幅的 2%（原型 PASTE_STEP）。 */
+/** Each paste offsets the copy on screen by a further 2% of the frame size (prototype PASTE_STEP). */
 export const PASTE_STEP = 2;
-/** 副本中心的限位（画幅百分比，原型 LIMITS）：错开不能把它推出画面。 */
+/** Limits on the copy's center (frame percentages, prototype LIMITS): the offset cannot push it out of the frame. */
 export const PASTE_LIMITS = { x: [3, 97], y: [4, 96] } as const;
-/** 副本名字的后缀；再复制副本时不叠成「· 副本 · 副本」。 */
+/** The suffix for copy names; copying a copy does not stack it into “· 副本 · 副本” (· copy · copy). */
 export let COPY_SUFFIX: string = M.copySuffix;
 onLocaleChange(() => {
   COPY_SUFFIX = M.copySuffix;
 });
 
-/** 片段所在的时间（帧）：音频可以落在帧之间，其余都在帧上。 */
+/** The time of the segment (frames): audio can fall between frames, everything else is on frames. */
 interface Frames {
   start: number;
   end: number;
 }
 
 /**
- * 副本落在哪段时间（原型 pasteSpan）：播放头在源片段的时段里（两端都算）就原地粘；
- * 在外面就搬到播放头、保持长度，起点夹在 [0, 片长 − 长度] 里。返回新的起点（帧），原地时原样返回。
+ * Which time span the copy lands in (prototype pasteSpan): if the playhead is within the source segment's time span (both ends count), paste in place;
+ * if it is outside, move it to the playhead, keeping its length, with the start clamped to [0, total length − length]. Returns the new start (frames); returns it unchanged when pasting in place.
  */
 export function pasteStart(range: Frames, playheadFrame: number, durationFrames: number): number {
   if (playheadFrame >= range.start - 1e-6 && playheadFrame <= range.end + 1e-6) return range.start;
@@ -76,15 +76,15 @@ const roundTo = (value: number, k: number) => {
   return r === 0 ? 0 : r;
 };
 
-/** 一条轴上错开：原本就在限位外的（大半出画的视频）不动，免得被拉回画面里。 */
+/** Offset along one axis: values already outside the limits (mostly-off-screen videos) stay put, so they are not pulled back into the frame. */
 function shiftAxis(center: number, step: number, [lo, hi]: readonly [number, number]): number {
   if (center < lo - 1e-6 || center > hi + 1e-6) return center;
   return roundTo(Math.min(hi, Math.max(lo, center + step)), 10);
 }
 
 /**
- * 副本的 `place`（原型 pasteOffset）：框中心按画幅百分比往右下错开 `PASTE_STEP × generation`，夹在限位里；
- * 大小与角度不变。铺满画布的（框不看位置）原样不动。
+ * The copy's `place` (prototype pasteOffset): the frame center is offset to the lower right by `PASTE_STEP × generation` percent of the frame, clamped to the limits;
+ * size and angle are unchanged. Items that fill the whole canvas (where the frame ignores position) are left entirely unchanged.
  */
 export function pastePlace(item: VisualItem, canvas: { width: number; height: number }, generation: number): Place {
   const { width: W, height: H } = canvas;
@@ -98,37 +98,37 @@ export function pastePlace(item: VisualItem, canvas: { width: number; height: nu
   return { ...item.place, ...(nx !== cx ? { x: nx } : {}), ...(ny !== cy ? { y: ny } : {}) };
 }
 
-/** 副本的名字：去掉已有的「· 副本」再加一次。 */
+/** The copy's name: strips any existing “· 副本” (· copy) and then adds it once. */
 export function copyName(name: string): string {
   return `${name.endsWith(COPY_SUFFIX) ? name.slice(0, -COPY_SUFFIX.length) : name}${COPY_SUFFIX}`;
 }
 
-/** 放进哪条轨道：已有的，或同一笔事务里新建的那条（`ref`）。 */
+/** Which track to place it on: an existing one, or one created in the same change (`ref`). */
 type Slot = { trackId: Id } | { trackRef: string };
 
 export interface PastePlan {
   operations: EditOperation[];
-  /** 粘贴了几件。 */
+  /** How many items were pasted. */
   count: number;
 }
 
 export interface PasteOptions {
-  /** 播放头在哪一帧。 */
+  /** Which frame the playhead is on. */
   playheadFrame: number;
-  /** 这是本次会话的第几次粘贴（含再制），决定画面上错开多少。 */
+  /** Which paste this is in the session (duplicates included), which determines how far the copies are staggered on screen. */
   generation: number;
-  /** 片段没有自己的名字时显示的名字（素材名、生成器名……），副本拿它加「· 副本」。 */
+  /** The name shown for a segment that has no name of its own (material name, generator name, …); the copy appends “· 副本” (· copy) to it. */
   labelOf(item: SequenceItem): string;
 }
 
 const ZERO = (timescale: number): MediaTime => ({ ticks: '0', timescale });
 
 /**
- * 把剪贴板里的片段粘回序列：一笔事务，整批一条撤销记录（原型 spawn）。
+ * Pastes the clipboard segments back into the sequence: one change, with the whole batch as a single undo record (prototype spawn).
  *
- * 时间按 `pasteStart`，各件各算。轨道：源轨道在落点空着（算上这一批已经放下的）、没锁、类型对得上就放回原轨；
- * 否则找它上面第一条空着的同类轨道（副本压在原件上面才看得见）；都不行就在最上面新建一条。
- * 文字没有自己的名字时不起名：时间线上照旧显示正文，改了正文也跟着变。
+ * The time follows `pasteStart`, calculated for each item separately. Track: if the source track is empty at the landing spot (counting items already placed in this batch), not locked, and the type matches, the item goes back on its original track;
+ * otherwise it goes on the first empty track of the same type above it (copies stacked on top of the original are visible); if neither works, a new track is created at the very top.
+ * Text with no name of its own is not given one: the timeline keeps showing the body as before, and it changes along with the body when edited.
  */
 export function pasteOperations(sequence: Sequence, entries: readonly SequenceItem[], options: PasteOptions): PastePlan {
   if (!entries.length) return { operations: [], count: 0 };
@@ -136,7 +136,7 @@ export function pasteOperations(sequence: Sequence, entries: readonly SequenceIt
   const duration = sequenceDurationFrames(sequence);
   const tracks = [...sequence.tracks].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   const byId = new Map(tracks.map((track) => [track.id, track]));
-  // 这一批已经放下的（按轨道或 ref 记）：后面的副本不能叠上去。
+  // Items already placed in this batch (tracked by track or ref): later copies must not stack on top of them.
   const placed = new Map<string, Frames[]>();
   const created: { ref: string; kind: Track['kind'] }[] = [];
   const operations: EditOperation[] = [];
@@ -181,7 +181,7 @@ export function pasteOperations(sequence: Sequence, entries: readonly SequenceIt
   return { operations, count: items.length };
 }
 
-/** 一件副本的字段：去掉引擎管的与联动组，换时间、轨道、名字与画面上的位置。 */
+/** Fields of one copy: engine-managed fields and link groups are removed, and time, track, name and on-screen position are replaced. */
 function pasteInput(entry: SequenceItem, slot: Slot, start: number, sourceStart: number, sequence: Sequence, options: PasteOptions): SequenceItemInput {
   const { id: _id, lineage: _lineage, trackId: _track, enabled: _enabled, locked: _locked, paintOrder: _order, followPolicy: _follow, linkGroupId: _link, ...rest } =
     entry;
@@ -189,7 +189,7 @@ function pasteInput(entry: SequenceItem, slot: Slot, start: number, sourceStart:
   if (entry.name || entry.type !== 'text') fields.name = copyName(entry.name || options.labelOf(entry));
   if (isVisualItem(entry)) fields.place = pastePlace(entry, sequence.canvas, options.generation);
   if (entry.type === 'audio') {
-    // 原地粘贴保留帧内偏移；搬到播放头时落在帧上。
+    // Pasting in place keeps the sub-frame offset; when moved to the playhead, it lands on a frame.
     if (start !== sourceStart) {
       fields.fromFrame = Math.round(start);
       fields.subframeOffset = ZERO(entry.subframeOffset.timescale);

@@ -1,20 +1,18 @@
 import type { AssetRecord, AudioMix, EditOperation, Sequence, VideoItem } from '@cuccut/protocol';
 
 /**
- * 分离音频（CucCut v2 视频条子的「分离音频」）：一笔事务里新建一条音频轨，把视频片段自带的声音放成一段音频——同一素材、
- * 同一时间映射、同起点同长度，音量、淡入淡出与包络照抄——再关掉视频自带的声音（`setAudioMix.muted`，引擎写成
- * `embeddedAudio.enabled: false`）。撤销一步回去。新的音频片段不带视频的作用（`broll` 等只给画面）与扩展。
+ * Detach audio (the “分离音频” action on CucCut v2's video clip): in one transaction, create a new audio track and turn the clip's own sound into an audio segment. It uses the same source, the same time mapping, and the same start and length, and copies the volume, fades and envelope. Then it turns off the video's own sound (`setAudioMix.muted`, which the engine writes as `embeddedAudio.enabled: false`). One undo step reverts it. The new audio clip does not carry the video's effects (`broll` and the like apply only to the picture) or its extensions.
  */
 
-/** 同一事务里新建音频轨的 `ref`。 */
+/** The `ref` of the audio track created in the same transaction. */
 export const DETACH_TRACK_REF = 'detached-audio';
 
-/** 这一段有没有声音可分：素材有音轨、自带的声音开着、按恒定速率播放（定格没有声音）。 */
+/** Whether this segment has sound to detach: the source has an audio track, its own sound is on, and it plays at a constant rate (freeze frames have no sound). */
 export function canDetachAudio(item: VideoItem, asset: AssetRecord | undefined): boolean {
   return !!asset?.revisions[item.assetRef.revision]?.audio && item.embeddedAudio.enabled && item.timeMap.kind === 'linear';
 }
 
-/** 分离这一段的声音的那一笔操作。 */
+/** The one operation that detaches this segment's sound. */
 export function detachAudioOperations(sequence: Sequence, item: VideoItem): EditOperation[] {
   const { fps } = sequence;
   const { enabled: _enabled, envelope, ...fades } = item.embeddedAudio;
@@ -31,7 +29,7 @@ export function detachAudioOperations(sequence: Sequence, item: VideoItem): Edit
           assetRef: item.assetRef,
           fromFrame: item.span.fromFrame,
           subframeOffset: { ticks: '0', timescale: 1 },
-          // 帧数换成精确时间：durationFrames × den / num 秒，不经浮点。
+          // Frame counts become exact time: durationFrames × den / num seconds, without floating point.
           playDuration: { ticks: String(item.span.durationFrames * fps.den), timescale: fps.num },
           timeMap: item.timeMap,
           mix,

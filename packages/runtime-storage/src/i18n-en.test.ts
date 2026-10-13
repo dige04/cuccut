@@ -7,7 +7,7 @@ import { credentialProblem, CredentialStoreError } from './credential-store.ts';
 import { GrantStore } from './grant-store.ts';
 import { decodeGlossaryMarkdown } from './library/glossary-markdown.ts';
 
-/** 界面语言是英文时，存储层写给人看的文字是英文；落盘的、Runtime 写成的授权目的带消息引用。 */
+/** When the UI language is English, the text the storage layer writes for people is English. Grant purposes that the Runtime writes and persists carry a message reference. */
 describe('runtime-storage 的英文文案', () => {
   let dir: string;
 

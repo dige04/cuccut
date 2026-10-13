@@ -25,7 +25,7 @@ import {
   type TemplateVerification,
 } from './template.ts';
 
-/** 仓库根下的 `templates/`：从本文件往上三级（packages/protocol/src）。 */
+/** `templates/` at the repo root: three levels up from this file (packages/protocol/src). */
 const TEMPLATES_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../templates');
 
 const base: TemplateManifest = {
@@ -318,7 +318,7 @@ describe('templates.* 与发送时挂的模板', () => {
   });
 });
 
-/** 目录内的全部文件（相对路径，正斜杠），点开头的隐藏文件不算。 */
+/** All files in the directory (relative paths, forward slashes). Hidden files starting with a dot are not counted. */
 function listFiles(dir: string, prefix = ''): string[] {
   return fs
     .readdirSync(dir, { withFileTypes: true })
@@ -377,7 +377,7 @@ describe('仓库内置模板 templates/', () => {
     const ids = dirs.map((dir) => JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, dir, TEMPLATE_MANIFEST_FILE), 'utf8')).id);
     expect(new Set(ids).size).toBe(ids.length);
   });
-  /** 每个内置模板 × 每种别的出货语言一条，测试名「<id> · <语言>」，便于只跑一种语言：`-t ' · ja'`。 */
+  /** One test for each built-in template × each other shipped language, named “<id> · <language>”, so a single language can be run on its own: `-t ' · ja'`. */
   const translations = dirs.flatMap((dir) => {
     const manifest = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, dir, TEMPLATE_MANIFEST_FILE), 'utf8')) as TemplateManifest;
     return LOCALES.filter((locale) => locale !== localeOfTag(manifest.language)).map((locale) => [`${dir} · ${locale}`, dir, locale] as const);
@@ -400,15 +400,15 @@ describe('仓库内置模板 templates/', () => {
     expect(prompt, '提示词不得含机器路径').not.toMatch(/\/Users\/|\/home\/|[A-Za-z]:\\/);
     expect(templatePromptSlotProblems({ kind: manifest.kind, fields: translation.fields }, prompt), `${files.prompt} 与译文的 fields 对不上`).toEqual([]);
 
-    // 每一项和原文一一对应：原文有提示与示例的，译文也有；原文没有示例的（例如成片语言，规范 §4.3）译文也不给。
+    // Each item corresponds one-to-one with the original: where the original has hints and examples, the translation does too. Where the original has no example (for example the language of the finished cut, spec §4.3), the translation gives none either.
     (manifest.fields ?? []).forEach((field, i) => {
       const translated = translation.fields![i]!;
       expect(translated.hint != null, `fields[${i}].hint`).toBe(field.hint != null);
       expect(translated.example != null, `fields[${i}].example`).toBe(field.example != null);
     });
-    // 原文封面角标是中文时，别的语言要给自己的角标；英文角标可以沿用。
+    // When the original's cover corner label is Chinese, other languages must give their own corner label. An English corner label may be reused.
     if (/\p{Script=Han}/u.test(manifest.cover.kicker ?? '')) expect(translation.cover?.kicker, 'cover.kicker').toBeTruthy();
-    // 中文、日文以外的译文不该残留汉字。
+    // Translations other than Chinese and Japanese should not contain leftover Han characters.
     if (!['zh-Hans', 'zh-Hant', 'ja'].includes(locale)) {
       const leftover = [JSON.stringify(translation), prompt].join('\n').match(/\p{Script=Han}+/gu);
       expect(leftover, '译文里残留汉字').toBeNull();

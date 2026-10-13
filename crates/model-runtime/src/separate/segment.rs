@@ -1,19 +1,18 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-bundle interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 长音频的窗口切分与三角交叉淡化（纯逻辑，全平台编译）。
+//! Window splitting and triangular cross-fading for long audio (pure logic, compiled on all platforms).
 //!
-//! 对照 speech-swift `HTDemucsSeparator.swift` 的 `triangularWeight` / `applySplit`：
-//! 以 `training_length` 为窗、`(1 - overlap) × 窗长` 为步长滑动，每个窗口的输出乘以
-//! 三角权重后 overlap-add，最后除以权重之和（shifts = 0，确定性）。
+//! Cross-referenced with speech-swift `HTDemucsSeparator.swift`'s `triangularWeight` / `applySplit`:
+//! windows of `training_length`, sliding with a step of `(1 - overlap) × window length`; each window's output is multiplied by its triangular weight and overlap-added, and finally divided by the sum of the weights (shifts = 0, deterministic).
 
 use anyhow::{Result, bail};
 
-/// 三角交叉淡化权重：前半段 1..half 递增，后半段递减到 1，再除以最大值。
+/// Triangular cross-fade weight: rises from 1 to half over the first half, falls back to 1 over the second half, then divided by the maximum.
 pub fn triangular_weight(length: usize) -> Vec<f32> {
     if length == 0 {
         return Vec::new();
@@ -29,14 +28,14 @@ pub fn triangular_weight(length: usize) -> Vec<f32> {
     w
 }
 
-/// 一个推理窗口：起点与实际长度（末尾窗口可能短于窗长，模型内部会补零）。
+/// One inference window: its start and actual length (the last window may be shorter than the window length; the model zero-pads internally).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
     pub offset: usize,
     pub len: usize,
 }
 
-/// 按 demucs `apply_model(split=True)` 的规则排窗。
+/// Orders the windows by the rules of demucs `apply_model(split=True)`.
 pub fn plan_windows(length: usize, segment_len: usize, overlap: f32) -> Vec<Window> {
     if length == 0 || segment_len == 0 {
         return Vec::new();
@@ -52,7 +51,7 @@ pub fn plan_windows(length: usize, segment_len: usize, overlap: f32) -> Vec<Wind
     windows
 }
 
-/// CPU overlap-add 累加器：`channels` 路等长输出 + 权重和。
+/// CPU overlap-add accumulator: `channels` equal-length outputs plus the weight sum.
 pub struct OverlapAdd {
     segment_len: usize,
     weight: Vec<f32>,
@@ -70,7 +69,7 @@ impl OverlapAdd {
         }
     }
 
-    /// 累加一个窗口的输出（每路长度须等于 `window.len`）。
+    /// Accumulates one window's output (each channel's length must equal `window.len`).
     pub fn add(&mut self, window: Window, chunk: &[Vec<f32>]) -> Result<()> {
         if chunk.len() != self.out.len() {
             bail!("窗口输出通道数 {} 与累加器 {} 不符", chunk.len(), self.out.len());
@@ -98,7 +97,7 @@ impl OverlapAdd {
         Ok(())
     }
 
-    /// 除以权重和，得到最终各路输出。
+    /// Divides by the weight sum to get the final output for each channel.
     pub fn finish(self) -> Vec<Vec<f32>> {
         let sum_w = self.sum_w;
         self.out
@@ -141,7 +140,7 @@ mod tests {
         assert_eq!(windows.last().unwrap().offset, stride * 3);
         assert_eq!(windows.last().unwrap().len, 882_000 - stride * 3);
         assert_eq!(windows.len(), 4);
-        // 短于一个窗口：只有一个窗，长度即总长。
+        // Shorter than one window: there is just one window, and its length is the total length.
         assert_eq!(plan_windows(1000, seg, 0.25), vec![Window { offset: 0, len: 1000 }]);
         assert!(plan_windows(0, seg, 0.25).is_empty());
     }

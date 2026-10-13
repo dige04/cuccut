@@ -1,4 +1,4 @@
-//! 转写正文 ↔ `TranscriptDoc` 的词、说话人、章节、换行与分段、阶段指纹（视频格式规范 §5.2）。
+//! Words, speakers, chapters, line breaks and paragraphs, and stage fingerprints of the transcript body ↔ `TranscriptDoc` (video format spec §5.2).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -11,9 +11,9 @@ use video_model::speech::{
 use crate::time::{FRESH_TIMESCALE, check_timescale, media_time_seconds, seconds_to_ticks, ticks_to_seconds};
 use crate::{BridgeError, MediaFacts, WriteReport};
 
-/// 没有说话人的词在 `TranscriptDoc` 里归到这个保留的说话人：`TranscriptDoc` 要求每个词都有说话人。
+/// Words with no speaker in the body are assigned to this reserved speaker in `TranscriptDoc`, because `TranscriptDoc` requires every word to have a speaker.
 const NO_SPEAKER: &str = "";
-/// 转写文档头没有语言时 `TranscriptDoc.lang` 用的标签。
+/// Language tag used for `TranscriptDoc.lang` when the transcript header has no language.
 const UNDETERMINED: &str = "und";
 
 fn timescale_of(body: &SpeechBody) -> Result<i64, BridgeError> {
@@ -113,8 +113,7 @@ pub(crate) fn to_doc(media: &MediaFacts, language: Option<&str>, body: &SpeechBo
     Ok(doc)
 }
 
-/// 正文的 `engine` 是开放的对象。`TranscriptDoc` 只要名字、版本与「词时间是不是真实对齐的」：名字取 `name`，
-/// 没有时取 `provider`；`alignedWords` 没写时看有没有 `estimated` / `missing` 的词。
+/// The body's `engine` is an open object. `TranscriptDoc` needs only the name, the version, and whether the word times are truly aligned: the name is taken from `name`, or from `provider` if absent; when `alignedWords` is not given, check whether there are any `estimated` / `missing` words.
 fn engine_of(body: &SpeechBody) -> DocEngine {
     let object = body.engine.as_ref().and_then(Value::as_object);
     let text = |key: &str| object.and_then(|o| o.get(key)).and_then(Value::as_str);
@@ -159,12 +158,12 @@ fn pins_from_doc(pins: &BTreeMap<String, BreakOverride>) -> BTreeMap<String, Bre
         .collect()
 }
 
-/// 空集合写不写：有底稿时跟底稿（底稿有这个字段就写），没有底稿时按 `fresh`。
+/// Whether to write empty collections: when a base exists, follow it (write if the base has this field); with no base, follow `fresh`.
 fn keep_empty<T>(value: T, empty: bool, base_had: Option<bool>, fresh: bool) -> Option<T> {
     (!empty || base_had.unwrap_or(fresh)).then_some(value)
 }
 
-/// 布尔标记：为真时写 `true`；为假时底稿明写了 `false` 就照写，否则不写。
+/// Boolean flags: write `true` when true; when false, write `false` only if the base explicitly has `false`, otherwise omit.
 fn keep_flag(value: bool, prior: Option<bool>) -> Option<bool> {
     if value {
         Some(true)
@@ -175,7 +174,7 @@ fn keep_flag(value: bool, prior: Option<bool>) -> Option<bool> {
     }
 }
 
-/// 秒 → 刻度。底稿的刻度换回秒正好等于这个值时沿用底稿的刻度，否则按 §2.10 的规则取整并记进报告。
+/// Seconds → ticks. If converting the base's ticks back to seconds gives exactly this value, keep the base's ticks; otherwise round per §2.10 and record it in the report.
 fn keep_or_round(seconds: f64, prior: Option<i64>, timescale: i64, report: &mut WriteReport) -> Result<i64, BridgeError> {
     if let Some(prior) = prior
         && ticks_to_seconds(prior, timescale).ok() == Some(seconds)
@@ -227,7 +226,7 @@ pub(crate) fn from_doc(
         out.speaker = (word.sp != NO_SPEAKER).then(|| word.sp.clone());
         out.hidden = keep_flag(doc.hidden.get(&word.id).copied().unwrap_or(false), prior.and_then(|p| p.hidden));
         out.glue = keep_flag(word.glue, prior.and_then(|p| p.glue));
-        // 时间没变的词沿用底稿的时间质量；新词或改了时间的词按引擎说的「词时间是不是真实对齐的」标。
+        // Words whose time is unchanged keep the base's time quality; new words, or words whose time changed, are marked according to the engine's statement of whether word times are truly aligned.
         if retimed {
             out.timing_quality = (!doc.engine.aligned_words).then_some(TimingQuality::Estimated);
         }
@@ -288,7 +287,7 @@ pub(crate) fn from_doc(
             prior.clone()
         }
         _ => {
-            // 按词序排，已经不在词表里的词排在最后。
+            // Sorted in word order; words no longer in the word list come last.
             let position: HashMap<&str, usize> = doc.words.iter().enumerate().map(|(i, w)| (w.id.as_str(), i)).collect();
             let mut list: Vec<&str> = paragraph_set.iter().copied().collect();
             list.sort_by_key(|id| (position.get(id).copied().unwrap_or(usize::MAX), *id));
@@ -305,7 +304,7 @@ pub(crate) fn from_doc(
         .collect();
     let stages = stages_from(&doc.stages, base.and_then(|b| b.stages.as_ref()));
 
-    // 存下来的句子只在词的 ID、顺序、隐藏与分段都没变时沿用；变了就清成 null，由派生规则重新得出。
+    // Stored sentences are kept only if the word IDs, order, hiding and paragraphing are all unchanged; if anything changed, they are reset to null and re-derived by the derivation rules.
     let structure = |list: &[SpeechWord]| list.iter().map(|w| (w.id.clone(), w.hidden == Some(true))).collect::<Vec<_>>();
     let sentences = match base {
         None => Some(None),
@@ -380,7 +379,7 @@ fn speaker_from(id: &str, speaker: &Speaker, prior: Option<&SpeechSpeaker>) -> S
     SpeechSpeaker {
         id: id.to_owned(),
         name: speaker.name.clone(),
-        // 底稿明写了 `hue: null` 而色相仍然没有时照写 null。
+        // If the base explicitly has `hue: null` and the hue is still absent, write null.
         hue: match (speaker.hue, prior.map(|p| p.hue)) {
             (Some(hue), _) => Some(Some(hue)),
             (None, Some(Some(None))) => Some(None),

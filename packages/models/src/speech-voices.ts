@@ -1,25 +1,23 @@
 import { modelAssetPath } from './model-assets.ts';
 
 /**
- * 本地语音合成的内置音色（架构设计 §6.1）：随应用分发的八段参考录音，四种语言各一男一女（`assets/tts-voices/`，
- * 来源与许可见同目录的 `COPYING.txt`）。只能克隆的模型（IndexTTS、GPT-SoVITS、VoxCPM2、OmniVoice、Qwen3-TTS Base）
- * 把它们列为预设音色：选一只就是用这段录音与它的原文克隆。
+ * Built-in voices for local speech synthesis (architecture design §6.1): eight reference recordings bundled with the app, one male and one female for each of four languages (`assets/tts-voices/`; source and licence in the `COPYING.txt` in the same directory). Models that can only clone (IndexTTS, GPT-SoVITS, VoxCPM2, OmniVoice, Qwen3-TTS Base) list them as preset voices: picking one means cloning with that recording and its transcript.
  *
- * `description` 是英文的一句声音描述，留给按描述造声的模型复用（不翻译：它是交给模型的文字，不是界面文案）。
+ * `description` is a one-sentence English voice description, kept for reuse by models that create voices from descriptions (not translated: it is text handed to the model, not UI copy).
  */
 export interface BuiltinVoice {
   id: string;
-  /** BCP 47 主语言子标签。 */
+  /** BCP 47 primary language subtag. */
   language: string;
   gender: 'female' | 'male';
-  /** 录音时长（秒）。 */
+  /** Recording duration (seconds). */
   seconds: number;
-  /** 录音的原文。 */
+  /** Transcript of the recording. */
   transcript: string;
   description: string;
-  /** 素材出处（数据集 · 子集 · 原文件）。 */
+  /** Source of the material (dataset · subset · original file). */
   credit: string;
-  /** 录音在模型数据目录里的相对路径（`model-assets.ts`）；绝对路径用 `builtinVoiceFile` 在用时求。 */
+  /** Relative path of the recording within the model data directory (`model-assets.ts`); the absolute path is resolved with `builtinVoiceFile` at the point of use. */
   asset: string;
 }
 
@@ -29,14 +27,14 @@ function asset(id: string): string {
   return `tts-voices/${id}.wav`;
 }
 
-/** 次序即界面次序：中、英、日、西，各女先男后。 */
+/** The order is the UI order: Chinese, English, Japanese, Spanish, with the female voice before the male in each. */
 export const BUILTIN_VOICES: readonly BuiltinVoice[] = [
   {
     id: 'zh-female',
     language: 'zh',
     gender: 'female',
     seconds: 6.72,
-    // i18n-ignore: 参考录音的原文，交给模型
+    // i18n-ignore: transcript of the reference recording, handed to the model
     transcript: '一般来说，卫星电话不能取代移动电话，因为只有在卫星信号畅通的室外，才能进行通话。',
     description: 'A warm, natural young female voice speaking Mandarin Chinese at an even, unhurried pace',
     credit: 'FLEURS · cmn_hans_cn · dev · 11138309825590803862',
@@ -47,7 +45,7 @@ export const BUILTIN_VOICES: readonly BuiltinVoice[] = [
     language: 'zh',
     gender: 'male',
     seconds: 6.16,
-    // i18n-ignore: 参考录音的原文，交给模型
+    // i18n-ignore: transcript of the reference recording, handed to the model
     transcript: '游猎活动也许是非洲最吸引人的旅游活动，也是许多游客行程中的亮点。',
     description: 'A calm, steady adult male voice speaking Mandarin Chinese, clear and even',
     credit: 'FLEURS · cmn_hans_cn · dev · 7878925372167965477',
@@ -78,7 +76,7 @@ export const BUILTIN_VOICES: readonly BuiltinVoice[] = [
     language: 'ja',
     gender: 'female',
     seconds: 8.44,
-    // i18n-ignore: 参考录音的原文，交给模型
+    // i18n-ignore: transcript of the reference recording, handed to the model
     transcript: '州間の税法や関税を無効にする権限もありませんでした。',
     description: 'A bright, gentle young female voice speaking Japanese at an even pace',
     credit: 'FLEURS · ja_jp · dev · 9633305044980004895',
@@ -89,7 +87,7 @@ export const BUILTIN_VOICES: readonly BuiltinVoice[] = [
     language: 'ja',
     gender: 'male',
     seconds: 6.4,
-    // i18n-ignore: 参考录音的原文，交给模型
+    // i18n-ignore: transcript of the reference recording, handed to the model
     transcript: '宇宙にある人工衛星は通話を受信して、ほぼ瞬時にそれを反映します。',
     description: 'A calm, low adult male voice speaking Japanese, clear and even',
     credit: 'FLEURS · ja_jp · dev · 18146068393309246703',
@@ -117,7 +115,7 @@ export const BUILTIN_VOICES: readonly BuiltinVoice[] = [
   },
 ];
 
-/** 内置音色录音的绝对路径；找不到模型数据目录时 null（读的地方报 `APP_FILE_MISSING`）。 */
+/** Absolute path of a built-in voice recording; null when the model data directory cannot be found (reading it reports `APP_FILE_MISSING`). */
 export function builtinVoiceFile(voice: BuiltinVoice, env: NodeJS.ProcessEnv = process.env): string | null {
   return modelAssetPath(voice.asset, env);
 }
@@ -127,8 +125,8 @@ export function builtinVoice(id: string): BuiltinVoice | null {
 }
 
 /**
- * 不指定声音时用哪只内置音色：请求语言的女声，没有这种语言时取那种语言的第一只，都没有时取第一只（中文女声）。
- * 不看文本猜语言：没有语言时就是第一只。
+ * Which built-in voice is used when no voice is specified: the female voice for the request's language; if there is none for that language, the first voice of that language; if there is none at all, the first voice (the Chinese female voice).
+ * The language is not guessed from the text: with no language given, it is the first one.
  */
 export function defaultBuiltinVoice(language: string | null): BuiltinVoice {
   const primary = language?.toLowerCase().split('-')[0] ?? null;

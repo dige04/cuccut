@@ -1,8 +1,8 @@
 import { createIcon } from '@react-spectrum/s2';
 
 /**
- * 智能体（机器人）图标：S2 workflow 图标里没有这个语义，按原型的描边几何画在 20×20 网格上，
- * 1.5 笔宽、只吃 currentColor，放进按钮与 SideNav 的图标槽时与 S2 原件一样对齐。
+ * Agent (robot) icon: the S2 workflow icons have no such meaning, so it is drawn from the prototype's outline geometry on a 20×20 grid,
+ * with a 1.5 stroke width and only using currentColor, so it aligns with the S2 originals when placed in the icon slot of buttons and SideNav.
  */
 export const AgentIcon = createIcon((props) => (
   <svg {...props} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">

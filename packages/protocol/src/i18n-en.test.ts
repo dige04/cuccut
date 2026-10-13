@@ -7,7 +7,7 @@ import { methodParamSchemas } from './schemas.ts';
 import { SETTING_DESCRIPTIONS, settingDescription } from './settings.ts';
 import { templatePathProblem } from './template.ts';
 
-/** 界面语言是英文时，协议层给人看的文字（设置说明、模式名、校验错误）按英文生成；切回中文后照旧。 */
+/** When the interface language is English, the text the protocol layer shows people (settings descriptions, mode names, validation errors) is generated in English; after switching back to Chinese, it is generated as before. */
 describe('protocol 的英文文案', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

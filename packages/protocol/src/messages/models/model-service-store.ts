@@ -14,7 +14,7 @@ import { pl } from './model-service-store.pl.ts';
 import { tr } from './model-service-store.tr.ts';
 import { vi } from './model-service-store.vi.ts';
 
-/** `packages/models/src/model-service-store.ts` 给人看的文字：服务商账号与凭据的错误。 */
+/** Human-facing text for `packages/models/src/model-service-store.ts`: errors for provider accounts and credentials. */
 const en = {
   notMigrated: 'Keys from version 1 have not been migrated yet',
   orderMismatch: 'order must list each existing account of this service provider exactly once',

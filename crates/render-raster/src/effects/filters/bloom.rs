@@ -1,14 +1,13 @@
-//! `filter.bloom@1`：软膝亮通 + 多级降采样 / 上采样金字塔 + 加法回混。
+//! `filter.bloom@1`: soft-knee bright-pass + multi-level downsample / upsample pyramid + additive recombination.
 //!
-//! 全程 f32 四则运算（级数由 `libm::log2` 定），不依赖平台超越函数实现，
-//! 同一输入在 native 与 wasm 上逐位一致。像素约定与其余滤镜相同：预乘 sRGB / u8。
+//! All arithmetic is f32 four-operation arithmetic (the number of levels is set by `libm::log2`), with no dependence on platform transcendental function implementations, so the same input is bit-identical on native and wasm. Pixel conventions match the other filters: premultiplied sRGB / u8.
 
 type Px = [f32; 4];
 
-/// 金字塔级数上限：2⁸ = 256 px 的扩散已经覆盖 4K 画布的大半短边。
+/// Upper bound on pyramid levels: a spread of 2⁸ = 256 px already covers most of the short edge of a 4K canvas.
 const MAX_LEVELS: usize = 8;
 
-/// 泛光。`radius_px` 已按画布短边换算成像素。
+/// Bloom. `radius_px` has already been converted to pixels from the canvas short edge.
 #[allow(clippy::too_many_arguments)]
 pub fn bloom(
     data: &mut [u8],
@@ -22,7 +21,7 @@ pub fn bloom(
     if width == 0 || height == 0 || intensity <= 0.0 || radius_px <= 0.0 {
         return;
     }
-    // 级数取 log2(半径)，夹到 [1, 8]；末级按小数部分加权，半径动画时连续。
+    // The level count is taken from log2(radius), clamped to [1, 8]; the last level is weighted by the fractional part, so it stays continuous as the radius animates.
     let exact = libm::log2(radius_px.max(1.0)).clamp(1.0, MAX_LEVELS as f64);
     let levels = exact.ceil() as usize;
     let mut last_weight = (exact - (levels - 1) as f64) as f32;
@@ -33,13 +32,13 @@ pub fn bloom(
     let threshold = threshold.clamp(0.0, 1.0) as f32;
     let knee = knee.clamp(0.0, 1.0) as f32;
 
-    // 第 0 级：亮通与第一次降采样合在一起做，不留整幅 f32 缓冲。
+    // Level 0: the bright-pass and the first downsample are combined, without keeping a full-frame f32 buffer.
     let mut pyramid: Vec<(Vec<Px>, usize, usize)> = Vec::with_capacity(levels);
     pyramid.push(downsample_bright(data, width, height, threshold, knee));
     while pyramid.len() < levels {
         let (prev, w, h) = pyramid.last().expect("至少一级");
         if *w == 1 && *h == 1 {
-            // 已经缩到 1×1：再降没有意义，末级按满权重算。
+            // Already shrunk to 1×1: further downsampling is pointless, so the last level is computed at full weight.
             last_weight = 1.0;
             break;
         }
@@ -51,7 +50,7 @@ pub fn bloom(
         last_weight = 1.0;
     }
 
-    // 上采样链：b_{n-1} = w·a_{n-1}；b_i = a_i + up(b_{i+1})。
+    // Upsample chain: b_{n-1} = w·a_{n-1}; b_i = a_i + up(b_{i+1}).
     {
         let (deepest, _, _) = pyramid.last_mut().expect("至少一级");
         if last_weight != 1.0 {
@@ -95,8 +94,7 @@ fn to_u8(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-/// 软膝亮通（Unity 式二次膝）：权重作用在预乘 RGB 上，alpha 取发光量本身，
-/// 这样透明底上的亮物体会长出自带 alpha 的光晕。
+/// Soft-knee bright-pass (Unity-style quadratic knee): the weight applies to premultiplied RGB, and alpha takes the glow amount itself, so bright objects on a transparent background grow a halo that carries its own alpha.
 fn bright(px: &[u8], threshold: f32, knee: f32) -> Px {
     let r = f32::from(px[0]) / 255.0;
     let g = f32::from(px[1]) / 255.0;
@@ -114,7 +112,7 @@ fn bright(px: &[u8], threshold: f32, knee: f32) -> Px {
     [r * weight, g * weight, b * weight, (peak * weight).min(1.0)]
 }
 
-/// 帐篷核 [1,3,3,1]/8 的一维 2× 降采样，边缘夹取。
+/// 1-D 2× downsample with a tent kernel [1,3,3,1]/8, with edge clamping.
 fn tap(get: impl Fn(usize) -> Px, len: usize, x: usize) -> Px {
     let at = |i: isize| get(i.clamp(0, len as isize - 1) as usize);
     let c = 2 * x as isize;
@@ -176,7 +174,7 @@ fn vertical(tmp: &[Px], width: usize, height: usize, out_height: usize) -> Vec<P
     out
 }
 
-/// 细级坐标 `i` 在粗级上的两个双线性抽头（像素中心对齐）。
+/// Two bilinear taps on the coarse level for fine-level coordinate `i` (pixel-center aligned).
 fn up_taps(i: usize, coarse_len: usize) -> [(usize, f32); 2] {
     let last = coarse_len as isize - 1;
     let clamp = |v: isize| v.clamp(0, last) as usize;
@@ -238,11 +236,11 @@ mod tests {
         let mut data = dot(32);
         bloom(&mut data, 32, 32, 0.5, 0.2, 6.0, 2.0);
         let at = |x: usize, y: usize| &data[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
-        // 离中心 4 px 处原本全透明，现在有光。
+        // 4 px from the center was previously fully transparent, and now it has glow.
         assert!(at(20, 16)[3] > 0, "{:?}", at(20, 16));
         assert!(at(20, 16)[0] <= at(20, 16)[3]);
         assert_eq!(at(16, 16), &[255, 255, 255, 255]);
-        // 远角仍是暗的，且亮度随距离单调下降。
+        // The far corners are still dark, and brightness decreases monotonically with distance.
         assert!(at(16 + 2, 16)[3] >= at(16 + 6, 16)[3]);
     }
 

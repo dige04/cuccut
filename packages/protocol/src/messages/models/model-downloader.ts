@@ -14,7 +14,7 @@ import { pl } from './model-downloader.pl.ts';
 import { tr } from './model-downloader.tr.ts';
 import { vi } from './model-downloader.vi.ts';
 
-/** `packages/models/src/model-downloader.ts` 给人看的文字：下载模型文件失败的原因与补救办法。 */
+/** `packages/models/src/model-downloader.ts`: text shown to people for why downloading model files failed, and the remedies. */
 const en = {
   remedyNoSpace: 'The disk that holds the models folder is out of space. Free up enough space (or move the models folder to another disk in Settings), then install again',
   remedyNetwork: "Can't reach the network, or the download was interrupted. Check the network and install again; what's already downloaded resumes. You can also switch mirrors under “Model download source” in “Settings › General”",

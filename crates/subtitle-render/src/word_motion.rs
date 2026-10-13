@@ -1,45 +1,44 @@
 //! Subtitle motion tracks shared by panel previews, playback and export.
-/// 一条轨落在整行还是逐词上（原型 `track.group`）。
+/// Whether a track lands on the whole line or per word (prototype `track.group`).
 ///
-/// 与 [`Track::block_scaling`] 是两件事：这个说**谁拿自己的时间窗**，那个说**变形
-/// 相对谁**。`stomp` 已经是 `Block` 了却还标着 `block_scaling`，正是两者不同义的证据。
+/// This is a different matter from [`Track::block_scaling`]: this one says **who owns its own time window**, and that one says **relative to whom the deformation is measured**. `stomp` is already `Block` yet is still marked `block_scaling`, which is evidence that the two mean different things.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {
-    /// 每个词一个时间窗。
+    /// One time window per word.
     Word,
-    /// 整行一个时间窗。
+    /// One time window for the whole line.
     Block,
 }
 
-/// `YG`：这一条拿不拿样式上的 `animationColor`，拿去当字色还是块色。
+/// `YG`: whether this track takes the style's `animationColor`, and whether it is used as the text color or the block color.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ColourParam {
-    /// 当字色用（只有 `colourHighlight`）。
+    /// Used as the text color (only `colourHighlight`).
     TextColour,
-    /// 当块色用（`boxHighlight` / `stack`）。
+    /// Used as the block color (`boxHighlight` / `stack`).
     BoxColour,
 }
 
-/// 一帧里的颜色通道。`alpha` 是不透明度；后三样是「换成这条样式的强调色」。
+/// Color channels of one frame. `alpha` is opacity; the other three are “switch to this style's accent color”.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Colour {
-    /// `colour.a`。缺席时归一化补 1。
+    /// `colour.a`. When absent, normalization fills in 1.
     pub alpha: Option<f64>,
     /// `colour.useCustom`。
     pub use_custom: bool,
     /// `colour.useSecondary`。
     pub use_secondary: bool,
-    /// `colour.mixSecondary`。只有 `1` 与 `1e-9` 两种取值（后者＝几乎不混＝不换）。
+    /// `colour.mixSecondary`. Only two values are used, `1` and `1e-9` (the latter ≈ almost no mixing = no swap).
     pub mix_secondary: Option<f64>,
 }
 
 impl Colour {
-    /// 这一帧写没写换色（原型 `hasSwap`）。
+    /// Whether this frame specifies a color swap at all (prototype `hasSwap`).
     fn has_swap(self) -> bool {
         self.use_custom || self.use_secondary || self.mix_secondary.is_some()
     }
 
-    /// 换不换色。`mixSecondary` 优先于两个布尔开关，> 0.5 才算换。
+    /// Whether a color swap happens. `mixSecondary` takes precedence over the two boolean switches; only > 0.5 counts as a swap.
     fn swaps(self) -> bool {
         let flag = self.use_custom || self.use_secondary;
         if !flag && self.mix_secondary.is_none() {
@@ -49,44 +48,40 @@ impl Colour {
     }
 }
 
-/// 一帧里的底块（原型 `keyframe.box`）。
+/// The background block of one frame (prototype `keyframe.box`).
 ///
-/// 这 19 条用到的字段就是这三个：块自己的缩放、块自己的 alpha、圆角。其余
-/// (`underText` / `trackActiveElement` / `useCustomColour` / `translate` / `rotation`)
-/// 在这 19 条里是恒定值，落进核心只会变成永远为真的死字段。
+/// The only fields the 19 entries use are these three: the block's own scale, the block's own alpha, and corner rounding. The others (`underText` / `trackActiveElement` / `useCustomColour` / `translate` / `rotation`) are constant across these 19 entries, and carrying them into the core would only create dead fields that are always true.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Chip {
-    /// `box.scale.x`（这 19 条里 x 恒等于 y）。
+    /// `box.scale.x` (across these 19 entries x is always equal to y).
     pub scale: f64,
-    /// `box.colour.a`。**独立于词的 opacity**——落到词上会把字一起淡掉。
+    /// `box.colour.a`. **Independent of the word's opacity**: applying it to the word would fade the text along with it.
     pub alpha: f64,
-    /// `box.cornerRounding`：**占字号的倍数**（`.5` → `.5em`），不是占盒子短边的
-    /// 几分之几。依据见原型 `boxOf()` 的注释与 `model-subanim.test.js:98`。
+    /// `box.cornerRounding`: **a multiple of the font size** (`.5` → `.5em`), not a fraction of the box's short side. Basis: the comment on the prototype `boxOf()` and `model-subanim.test.js:98`.
     pub corner_rounding: f64,
 }
 
-/// 一条轨上的一帧。缺席的通道由 [`Track::normalized`] 按 `DEFAULTS` 补齐——这是
-/// 本模块关键帧的读法（「没写＝回默认」），与 CSS `@keyframes` 的读法相反。
+/// One frame on a track. Absent channels are filled in from `DEFAULTS` by [`Track::normalized`]. This is how keyframes are read in this module ("unwritten = reset to default"), the opposite of CSS `@keyframes` ("unwritten = not part of the interpolation").
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keyframe {
-    /// 0–1 的时刻。
+    /// Time from 0 to 1.
     pub time: f64,
-    /// 从上一帧到这一帧的缓动名（空串＝线性）。
+    /// Easing name from the previous frame to this frame (empty string = linear).
     pub easing: &'static str,
-    /// `translate {x, y}`：**元素自己尺寸的倍数**（`-0.2` = 往上挪自己的 20%）。
+    /// `translate {x, y}`: **multiples of the element's own size** (`-0.2` = moves up by 20% of its own size).
     pub translate: Option<[f64; 2]>,
-    /// `scale`。这 19 条里 x 恒等于 y，所以只存一个数。
+    /// `scale`. Across these 19 entries x is always equal to y, so only one number is stored.
     pub scale: Option<f64>,
-    /// `rotation {x, y, z}`，度。投影由绘制端负责。
+    /// `rotation {x, y, z}`, in degrees. Projection is handled by the drawing side.
     pub rotation: Option<[f64; 3]>,
     /// `colour`。
     pub colour: Option<Colour>,
-    /// `box`。缺席＝这一帧没有块（归一化**不给它补默认值**）。
+    /// `box`. When absent, this frame has no block (normalization **does not supply a default for it**).
     pub chip: Option<Chip>,
 }
 
 impl Keyframe {
-    /// 只写时刻的空帧（`{time: t}`）。
+    /// An empty frame that only specifies the time (`{time: t}`).
     const fn at(time: f64) -> Self {
         Self {
             time,
@@ -144,7 +139,7 @@ impl Keyframe {
     }
 }
 
-/// 换色那一档的两种写法。
+/// The two ways of writing the recolor step.
 const CUSTOM: Colour = Colour {
     alpha: None,
     use_custom: true,
@@ -166,26 +161,25 @@ const fn mix(value: f64) -> Colour {
     }
 }
 
-/// 一条轨。`kf` 是轨在动画注册表里的键。
+/// One track. `kf` is the track's key in the animation registry.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Track {
     pub kf: &'static str,
     pub scope: Scope,
-    /// 逐词变形**相对整行**算：`dropIn` 的 `scale 1.5` 因此
-    /// 是「从画面外侧落进来」，不是「原地胀一下」。
+    /// Per-word deformation is computed **relative to the whole line**, so `dropIn`'s `scale 1.5` means "falls in from outside the frame", not "swells in place".
     pub block_scaling: bool,
-    /// 这个词是**居中单独放大**的，不是排在行里的第 n 个。
+    /// This word is **centered and enlarged on its own**, not the n-th word in the line.
     pub centre_elements: bool,
     pub keyframes: &'static [Keyframe],
 }
 
-/// 一条动效的全部轨（原型 `ANIMS[i]`）。
+/// All tracks of one animation (prototype `ANIMS[i]`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AnimTracks {
-    /// 目录 id，与 the editor animation catalogue 同名同序。
+    /// Catalog id, with the same names and order as the editor animation catalogue.
     pub catalog_id: &'static str,
     pub colour_param: Option<ColourParam>,
-    /// `qG`：时长按**整条 cue** 算（不在表里的按词窗口均分）。与 `scope` 是两件事。
+    /// `qG`: the duration is computed from the **whole cue** (words not in the table are split evenly across the word windows). This is separate from `scope`.
     pub block_timing: bool,
     pub tracks: &'static [Track],
 }
@@ -230,7 +224,7 @@ const fn cue_timed(mut anim: AnimTracks) -> AnimTracks {
 }
 
 // ---------------------------------------------------------------------------
-// 19 条轨，原样
+// 19 tracks, verbatim
 // ---------------------------------------------------------------------------
 
 const BOX_HIGHLIGHT_V2: [Keyframe; 3] = [
@@ -393,9 +387,7 @@ const T_STOMP: [Track; 1] = [Track {
 const T_BOUNCE: [Track; 1] = [word_track("bounce", &BOUNCE)];
 const T_PAINT: [Track; 1] = [word_track("paint", &PAINT)];
 
-/// 19 条动效的轨表。**顺序与 the editor animation catalogue 逐格相同**
-/// （门禁 `the_track_table_lines_up_with_the_catalogue` 钉住），因此
-/// `WORD_ANIM_TRACKS[demo as usize]` 就是那一格的轨。
+/// Track table of the 19 animations. **Order is identical, cell by cell, to the editor animation catalogue** (pinned by the test gate `the_track_table_lines_up_with_the_catalogue`), so `WORD_ANIM_TRACKS[demo as usize]` is the track of that cell.
 pub static WORD_ANIM_TRACKS: [AnimTracks; 19] = [
     anim("none", &[]),
     tinted(
@@ -425,10 +417,10 @@ pub static WORD_ANIM_TRACKS: [AnimTracks; 19] = [
 ];
 
 // ---------------------------------------------------------------------------
-// 归一化与取样（原型 `normalize` / `ease01` / `tween` / `sampleAt`）
+// Normalization and sampling (prototype `normalize` / `ease01` / `tween` / `sampleAt`)
 // ---------------------------------------------------------------------------
 
-/// 一条轨用到的通道并集。归一化按它逐帧补默认值。
+/// Union of the channels used by one track. Normalization fills in defaults per frame using it.
 #[derive(Clone, Copy, Debug, Default)]
 struct Used {
     translate: bool,
@@ -449,17 +441,15 @@ impl Track {
         used
     }
 
-    /// 这条轨碰不碰 transform（原型 `moving`）。
+    /// Whether this track touches transform at all (prototype `moving`).
     pub fn moving(self) -> bool {
         let used = self.used();
         used.translate || used.scale || used.rotation
     }
 
-    /// 第 `i` 帧补齐缺席通道后的样子。
+    /// The state of frame `i` after the absent channels are filled in.
     ///
-    /// **「没写＝回默认」**，不是 CSS `@keyframes` 的「没写＝不参与插值」。
-    /// `composedFloatIn_top` 的末帧什么都没写，词当然要落回 `y = 0`。
-    /// 唯一的例外是 `box`：没写块就是**没有块**，不给它补一个空块。
+    /// **"Unwritten = reset to default"**, not CSS `@keyframes`' "unwritten = not part of the interpolation". The final frame of `composedFloatIn_top` writes nothing, so the word naturally falls back to `y = 0`. The only exception is `box`: not writing a block means **there is no block**, so an empty block is not filled in for it.
     fn normalized(self, index: usize) -> Keyframe {
         let used = self.used();
         let swaps = self
@@ -483,7 +473,7 @@ impl Track {
             if colour.alpha.is_none() {
                 colour.alpha = Some(1.0);
             }
-            // 换色也要「回默认」：轨里只要有一帧换色，没换的那几帧就得显式写回本色。
+            // Recolor also "resets to default": if any frame on the track swaps color, the frames that do not swap must explicitly write back the base color.
             if swaps && !colour.has_swap() {
                 colour.mix_secondary = Some(0.0);
             }
@@ -492,8 +482,7 @@ impl Track {
     }
 }
 
-/// 段内进度（原型 `ease01`）。`square*` 是阶跃，其余按线性取样——静帧不必解贝塞尔，
-/// 差别落在小数点后。
+/// Progress within a segment (prototype `ease01`). `square*` are steps; the others are sampled linearly. A static frame does not need to solve a Bézier, and the difference only shows after the decimal point.
 fn ease01(name: &str, p: f64) -> f64 {
     match name {
         "squareIn" | "squareInOut" => 0.0,
@@ -506,7 +495,7 @@ fn lerp(a: f64, b: f64, p: f64) -> f64 {
     a + (b - a) * p
 }
 
-/// 两帧之间插一帧（原型 `tween`）。只插数值；颜色开关、圆角这些离散的取**起始帧**的。
+/// Interpolates between two frames (prototype `tween`). Only numeric values are interpolated; discrete values such as the color switch and corner rounding take the **starting frame's** value.
 fn tween(a: Keyframe, b: Keyframe, p: f64) -> Keyframe {
     let mut out = Keyframe::at(lerp(a.time, b.time, p));
     if a.translate.is_some() || b.translate.is_some() {
@@ -527,7 +516,7 @@ fn tween(a: Keyframe, b: Keyframe, p: f64) -> Keyframe {
         ]);
     }
     if a.colour.is_some() || b.colour.is_some() {
-        // 换色开关取起始帧的；只有 alpha 连续。
+        // The color switch takes the starting frame's value; only alpha is continuous.
         let mut colour = a.colour.unwrap_or_default();
         let start = a.colour.and_then(|c| c.alpha);
         let end = b.colour.and_then(|c| c.alpha);
@@ -536,8 +525,7 @@ fn tween(a: Keyframe, b: Keyframe, p: f64) -> Keyframe {
         }
         out.colour = Some(colour);
     }
-    // 块按数插：`scale` 与 `colour.a` 连续（`boxHighlightV2` 那下胀缩靠它们），
-    // 圆角离散，取起始帧的。
+    // Blocks are interpolated numerically: `scale` and `colour.a` are continuous (the swell-and-shrink of `boxHighlightV2` relies on them), while corner rounding is discrete and takes the starting frame's value.
     if let Some(base) = a.chip.or(b.chip) {
         let start = a.chip.unwrap_or(base);
         let end = b.chip.unwrap_or(base);
@@ -550,7 +538,7 @@ fn tween(a: Keyframe, b: Keyframe, p: f64) -> Keyframe {
     out
 }
 
-/// 这条轨在时刻 `t`（0–1）的那一帧。超出首末帧就取首末帧（CSS 的 `both`）。
+/// The frame of this track at time `t` (0–1). Beyond the first and last frames it takes the first or last frame (CSS `both`).
 pub fn sample_at(track: Track, t: f64) -> Keyframe {
     let last = track.keyframes.len() - 1;
     if t <= track.keyframes[0].time {
@@ -572,22 +560,22 @@ pub fn sample_at(track: Track, t: f64) -> Keyframe {
     track.normalized(last)
 }
 
-/// 一帧上能被面板消费的那几位。
+/// The channels of one frame that the panel can consume.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sample {
-    /// 换成这条样式的强调色。
+    /// The accent color swapped in for this style.
     pub tinted: bool,
-    /// 不透明度。
+    /// Opacity.
     pub opacity: f64,
-    /// 纵向位移，**元素自己尺寸的倍数**（`-0.2` = 往上挪自己的 20%）。
+    /// Vertical displacement, **multiples of the element's own size** (`-0.2` = moves up by 20% of its own size).
     pub dy: f64,
-    /// 缩放倍数。
+    /// Scale multiplier.
     pub scale: f64,
-    /// 绕 x 轴旋转（度）。非零时配 `perspective(6em)`。
+    /// Rotation around the x axis (degrees). When non-zero, it is paired with `perspective(6em)`.
     pub rotate_x_deg: f64,
-    /// 绕 z 轴旋转（度）。平面内的倾斜，不配透视。
+    /// Rotation around the z axis (degrees). An in-plane tilt, with no perspective.
     pub rotate_z_deg: f64,
-    /// 底块。
+    /// Background block.
     pub chip: Option<Chip>,
 }
 
@@ -606,8 +594,7 @@ impl Default for Sample {
 }
 
 impl Sample {
-    /// 把一帧盖到这份取样上。同一条动效的多条轨按顺序叠（原型 `Object.assign`），
-    /// 后来的轨只覆盖它**自己写了**的通道。
+    /// Overlays one frame onto this sample. Several tracks of the same animation are stacked in order (prototype `Object.assign`); a later track only overrides the channels **it itself wrote**.
     fn apply(&mut self, kf: Keyframe) {
         if let Some(translate) = kf.translate {
             self.dy = translate[1];
@@ -633,10 +620,9 @@ impl Sample {
     }
 }
 
-/// 第 `index` 个词在「当前词是 `current`」这一帧的样子（原型 `frame()`）。
+/// The state of the `index`-th word when the current word is `current` (prototype `frame()`).
 ///
-/// `phase` 是当前词自己窗口内的 0–1：还没轮到的词取轨的**首帧**、念过的取**末帧**、
-/// 正在念的取 `phase`。底块只画在当前词上。
+/// `phase` is the 0–1 progress within the current word's own window. Words not yet reached take the track's **first frame**, words already spoken take the **last frame**, and the word being spoken takes `phase`. The background block is drawn only on the current word.
 pub fn sample_word(anim: &AnimTracks, index: usize, current: usize, phase: f64) -> Sample {
     let mut out = Sample::default();
     for track in anim.tracks.iter().filter(|t| t.scope == Scope::Word) {
@@ -656,10 +642,9 @@ pub fn sample_word(anim: &AnimTracks, index: usize, current: usize, phase: f64) 
     out
 }
 
-/// 整行那一档在这一帧的样子（原型 `lineFrame()`）。
+/// The state of the whole-line tier at this frame (prototype `lineFrame()`).
 ///
-/// `current <= 1` 当作**还在进场**——签名帧因此画的是「正在进来」那一刻；停在落位
-/// 那一帧的话它与「无」长得一模一样。
+/// `current <= 1` is treated as **still entering**, so the signature frame draws the moment of "coming in". If it stopped on the frame where it has landed, it would look exactly the same as “none”.
 pub fn sample_block(anim: &AnimTracks, current: usize, phase: f64) -> Sample {
     let mut out = Sample::default();
     for track in anim.tracks.iter().filter(|t| t.scope == Scope::Block) {
@@ -670,24 +655,24 @@ pub fn sample_block(anim: &AnimTracks, current: usize, phase: f64) -> Sample {
 }
 
 impl AnimTracks {
-    /// 这一条有没有整行 / 逐词那一档。
+    /// Whether this entry has a whole-line tier and / or a per-word tier.
     pub fn has_scope(&self, scope: Scope) -> bool {
         self.tracks.iter().any(|track| track.scope == scope)
     }
 
-    /// 有没有轨（原型 `moves`）。
+    /// Whether there are any tracks at all (prototype `moves`).
     pub fn moves(&self) -> bool {
         !self.tracks.is_empty()
     }
 
-    /// 逐词变形是不是相对整行算的（原型 `blockScaled`）。
+    /// Whether per-word deformation is computed relative to the whole line (prototype `blockScaled`).
     pub fn block_scaled(&self) -> bool {
         self.tracks
             .iter()
             .any(|track| track.scope == Scope::Word && track.block_scaling)
     }
 
-    /// 入场方向箭头（原型 `dir`）：**从轨上读**，不另写一份。位移为负＝从上面来。
+    /// Entry direction arrow (prototype `dir`): **read from the track**, not written separately. A negative displacement means it comes from above.
     pub fn direction(&self) -> Option<&'static str> {
         let y = self
             .tracks
@@ -707,8 +692,7 @@ impl AnimTracks {
     }
 }
 
-/// 缓动名 → CSS 曲线（原型 `EASING`）。取样用不到它（`ease01` 已经收口），
-/// 留给要真跑动画的表面。
+/// Easing name → CSS curve (prototype `EASING`). Sampling does not use it (`ease01` has already taken over); it is kept for surfaces that really run animations.
 pub fn easing_curve(name: &str) -> Option<&'static str> {
     Some(match name {
         "sinIn" => "cubic-bezier(0.12, 0, 0.39, 0)",
@@ -1014,7 +998,7 @@ pub fn demo_frame(id: &str, seconds: f64) -> MotionFrame {
 #[cfg(test)]
 mod continuous_tests {
     use super::*;
-    /// 演示帧、种子与投影矩阵的固定点。
+    /// Fixed points for demo frames, seeds and projection matrices.
     #[test]
     fn demo_frame_seed_and_projection_match_fixed_points() {
         assert!(demo_frame("rotateFlipClock", 2.6).block.rx > 0.0);

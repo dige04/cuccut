@@ -1,23 +1,21 @@
 /**
- * 幻灯片、设计稿与设计系统编辑器的 HTTP 路由（docs/design/slides §6.2、docs/design/canvas §6.2、§10.4）。Runtime 网关与
- * Web 服务各挂一份，共用同一个 SlidesServer，所以同一份 deck 只有一个 DeckStore（发布串行）与一个目录监听。
+ * HTTP routes for the slides, design canvas and design system editors (docs/design/slides §6.2, docs/design/canvas §6.2, §10.4). The Runtime gateway and the web service each mount one, sharing the same SlidesServer, so the same deck has only one DeckStore (publishes are serialized) and one directory watcher.
  *
- * 编辑器按种类区分（`EditorKind`）：`/slides/<grant>/`、`/design/<grant>/` 与 `/design-system/<grant>/` 下的路由一一对应，
- * 只是编辑器产物、文件布局、CSP 与没构建时的说明不同；grant 表只有一张，grant 只对发它的那个种类有效。
+ * The editor is distinguished by kind (`EditorKind`): the routes under `/slides/<grant>/`, `/design/<grant>/` and `/design-system/<grant>/` correspond one to one. Only the editor build output, file layout, CSP and the message shown when not built differ. There is one grant table; a grant is only valid for the kind that issued it.
  *
- *   /slides/<grant>/                       编辑器页面（apps/slides-editor 的构建产物，不含 node/）
- *   /slides/<grant>/_files.json            清单
- *   /slides/<grant>/project/<路径>          deck 文件
- *   /slides/<grant>/__deck/publish         POST 发布
- *   /slides/<grant>/__deck/assets          POST 上传素材
- *   /slides/<grant>/__deck/events          SSE：外部改动
- *   /slides/<grant>/__deck/session         这次打开能不能编辑
- *   /slides/<grant>/_blob/<id>、/_blob/<id> 素材；根级的在所有已打开的目录里找（id 是内容哈希），按 `blobScope` 收窄
- *   /design/<grant>/…                      同上，设计稿编辑器（apps/design-editor 的构建产物）
- *   /design-system/<grant>/…               同上，设计系统编辑器（apps/design-system-editor 的构建产物）；
- *                                          另有 `artifact-type/run.html`（组件预览的 iframe，同源），会话另给本机用户名
+ *   /slides/<grant>/                       editor page (build output of apps/slides-editor, without node/)
+ *   /slides/<grant>/_files.json            manifest
+ *   /slides/<grant>/project/<path>          deck files
+ *   /slides/<grant>/__deck/publish         POST publish
+ *   /slides/<grant>/__deck/assets          POST upload assets
+ *   /slides/<grant>/__deck/events          SSE: external changes
+ *   /slides/<grant>/__deck/session         whether this open session can edit
+ *   /slides/<grant>/_blob/<id>, /_blob/<id> assets; root-level ones are looked up in all open directories (the id is a content hash), narrowed by `blobScope`
+ *   /design/<grant>/…                      same as above, design canvas editor (build output of apps/design-editor)
+ *   /design-system/<grant>/…               same as above, design system editor (build output of apps/design-system-editor);
+ *                                          also `artifact-type/run.html` (component preview iframe, same origin); the session separately gives the local user name
  *
- * grant 是不可猜的凭证，只在内存里；Runtime 重启后由界面重新打开。
+ * The grant is an unguessable credential, kept only in memory; after a Runtime restart the UI reopens it.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -28,51 +26,49 @@ import path from 'node:path';
 import { contentTypeOf, DeckStore, watchExternalEdits, type DeckLayout } from './deck-store.ts';
 import { DECK_ROUTES, type DeckChangeEvent, type GenericPublishError, type WireEntry } from './file-protocol.ts';
 
-/** 这次请求的权限与响应头（网关与 Web 服务不同）。 */
+/** Permissions and response headers for this request (the gateway and the web service differ). */
 export interface DeckRouteOptions {
-  /** 能不能发布与上传；Web 服务只读模式下为 false。 */
+  /** Whether publishing and uploading are allowed; false in the web service's read-only mode. */
   canEdit: boolean;
-  /** CSP 的 frame-ancestors 来源列表；不给时不限制（网关：grant 本身就是凭证，桌面界面是 file:// 页面）。 */
+  /** Source list for the CSP frame-ancestors; not restricted when not given (gateway: the grant itself is the credential; the desktop UI is a file:// page). */
   frameAncestors?: string;
   /**
-   * 根级 `/_blob/<id>` 在哪些已打开的目录里找：`all`（默认）是所有已打开的目录，`design` 只找设计稿，`design-system` 只找
-   * 设计系统，`isolated` 找设计稿与设计系统：这两种编辑器在 Web 上走另一个回环主机名、不带会话（docs/design/canvas §6.2、
-   * §10.4），根级的素材请求分不出来自哪一种，两种都开放时都找；Web 的方法白名单只开放一种时只找那一种。
-   * `/<种类>/<grant>/_blob/<id>` 不受影响。
+   * Which open directories the root-level `/_blob/<id>` is looked up in: `all` (default) searches all open directories, `design` only design canvases, `design-system` only design systems, and `isolated` design canvases and design systems. These two editors use a different loopback hostname on the Web and carry no session (docs/design/canvas §6.2, §10.4), so a root-level asset request cannot tell which editor it came from; when both are open, both are searched. When the Web's method allowlist opens only one of them, only that one is searched.
+   * `/<kind>/<grant>/_blob/<id>` is not affected.
    */
   blobScope?: 'all' | 'design' | 'design-system' | 'isolated';
 }
 
-/** 编辑器的种类，也是路由的第一段。 */
+/** The editor kind, also the first segment of the route. */
 export type EditorKind = 'slides' | 'design' | 'design-system';
 
-/** 设计稿与设计系统编辑器的配置（两者形状相同）。 */
+/** Config for the design canvas and design system editors (both have the same shape). */
 export interface DesignEditorOptions {
-  /** 编辑器的构建产物目录；返回 null 时页面给不可用的说明。 */
+  /** Editor build output directory; when this returns null the page shows an unavailable message. */
   editorDist: () => string | null;
-  /** 文件布局（`@cuccut/design` 的 `CANVAS_LAYOUT`、`@cuccut/design-system` 的 `DESIGN_SYSTEM_LAYOUT`）。 */
+  /** File layout (`CANVAS_LAYOUT` from `@cuccut/design`, `DESIGN_SYSTEM_LAYOUT` from `@cuccut/design-system`). */
   layout: DeckLayout;
 }
 
 export interface DesignSystemEditorOptions extends DesignEditorOptions {
   /**
-   * `__deck/session` 的 `userName`（编辑器 `user.name()`，记进 `lastChange.by`，docs/design/canvas §10.3）。
-   * 返回 undefined 或空串时不带。不给时取本机用户名（`os.userInfo().username`）。
+   * `userName` for `__deck/session` (the editor's `user.name()`, recorded in `lastChange.by`, docs/design/canvas §10.3).
+   * Omitted when it returns undefined or an empty string. When not given, the local user name is used (`os.userInfo().username`).
    */
   userName?: () => string | undefined;
 }
 
 export interface SlidesServerOptions {
-  /** 编辑器构建产物目录；返回 null 时页面给不可用的说明。每次请求都问，构建后不用重启。 */
+  /** Editor build output directory; when this returns null the page shows an unavailable message. It is asked on every request, so no restart is needed after a build. */
   editorDist: () => string | null;
-  /** 设计稿编辑器（docs/design/canvas §6.2）。不给时不能打开设计稿，`/design/…` 一律 404。 */
+  /** Design canvas editor (docs/design/canvas §6.2). When not given, design canvases cannot be opened and `/design/…` always returns 404. */
   design?: DesignEditorOptions;
-  /** 设计系统编辑器（docs/design/canvas §10.4）。不给时不能打开设计系统，`/design-system/…` 一律 404。 */
+  /** Design system editor (docs/design/canvas §10.4). When not given, design systems cannot be opened and `/design-system/…` always returns 404. */
   designSystem?: DesignSystemEditorOptions;
   onError?: (message: string, error: unknown) => void;
-  /** 运行日志里记一条（例如设计稿的文件数超过清单上限）。 */
+  /** Records one entry in the runtime log (e.g. a design canvas's file count exceeds the manifest limit). */
   onWarn?: (message: string) => void;
-  /** 同时打开的 deck 与设计稿上限，超过时丢掉最早打开、没有编辑器连着的。 */
+  /** Upper limit on deck and design canvases open at the same time; when exceeded, the earliest opened one with no editor connected is dropped. */
   maxDecks?: number;
 }
 
@@ -88,53 +84,48 @@ interface OpenDeck {
 interface KindConfig {
   editorDist: () => string | null;
   layout: DeckLayout | undefined;
-  /** 没有构建产物时 index.html 的 503 说明。 */
+  /** The 503 message for index.html when there is no build output. */
   notBuilt: string;
   csp: (inlineScriptHashes: readonly string[], frameAncestors?: string) => string;
-  /** 运行日志里称呼这种目录的说法（英文）。 */
+  /** The English term the runtime log uses for this kind of directory. */
   noun: string;
-  /** `__deck/session` 另带的字段。 */
+  /** Other fields carried by `__deck/session`. */
   session?: () => Record<string, unknown>;
 }
 
-/** 发布请求体上限：base64 后的整批文件。 */
+/** Upper limit for the publish request body: the whole batch of files after base64. */
 const MAX_PUBLISH_BYTES = 64 * 1024 * 1024;
-/** 素材上限（视频也走这里）。 */
+/** Upper limit for assets (videos also go through here). */
 const MAX_ASSET_BYTES = 256 * 1024 * 1024;
 const SSE_KEEPALIVE_MS = 25_000;
 const GRANT_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const BLOB_PATH = /^_blob\/([0-9a-f]{32})$/;
 
 /**
- * 素材与 deck 文件按「数据」给：不当页面执行（例如 SVG 被直接打开）。设计系统的预览用 `<script src>`、`<link>`、`<img>`、
- * `@font-face` 加载 `project/*` 也照样能用：响应头里的 CSP 只约束以它交付的文档（与 Worker），不约束子资源；子资源要的是
- * 正确的 Content-Type（带 nosniff），见 deck-store.ts 的 MIME 表。所以哪一种文件都不放开。
+ * Assets and deck files are served as "data": they are not executed as pages (e.g. an SVG opened directly). The design system preview loads `project/*` via `<script src>`, `<link>`, `<img>` and `@font-face`, and that still works: the CSP in the response headers only constrains the documents served with it (and Workers), not sub-resources. Sub-resources need the correct Content-Type (with nosniff); see the MIME table in deck-store.ts. So no file type is exempted.
  */
 const DATA_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
-/** 编辑器页面的 CSP：运行时要执行脚本、加载 Google Fonts、显示素材与 data:/blob: 图片、用 blob: Worker 转码视频。 */
+/** CSP for the editor page: the runtime must run scripts, load Google Fonts, display assets and data:/blob: images, and transcode video with a blob: Worker. */
 export function editorCsp(inlineScriptHashes: readonly string[], frameAncestors?: string): string {
   return pageCsp(`script-src 'self' ${inlineScriptHashes.map(h => `'${h}'`).join(' ')}`.trim(), frameAncestors);
 }
 
 /**
- * 设计稿编辑器的 CSP（docs/design/canvas §6.2）：画板要执行内联脚本、用 Babel 编译（eval）、从 blob: 加载画板运行时，
- * 所以 `script-src` 是 `'self' 'unsafe-inline' 'unsafe-eval' blob:`，不带哈希（带哈希时浏览器忽略 `'unsafe-inline'`）。其余同幻灯片。
+ * CSP for the design canvas editor (docs/design/canvas §6.2): the canvas must run inline scripts, compile with Babel (eval), and load the canvas runtime from blob:, so `script-src` is `'self' 'unsafe-inline' 'unsafe-eval' blob:`, with no hashes (when hashes are present, browsers ignore `'unsafe-inline'`). The rest is the same as for slides.
  */
 export function designEditorCsp(frameAncestors?: string): string {
   return pageCsp("script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:", frameAncestors);
 }
 
 /**
- * 设计系统编辑器的 CSP（docs/design/canvas §10.4），也用于 `artifact-type/run.html`：组件预览执行组件包与 `preview.html` 里的
- * 脚本，同设计稿编辑器（`'self' 'unsafe-inline' 'unsafe-eval' blob:`），不放行 CDN（React UMD 随页面提供）。Google Fonts 照旧：
- * 样式表与字体，字体目录要 `fetch` 它的 css2（connect-src）。
+ * CSP for the design system editor (docs/design/canvas §10.4), also used for `artifact-type/run.html`: the component preview runs the component bundle and the scripts in `preview.html`, same as the design canvas editor (`'self' 'unsafe-inline' 'unsafe-eval' blob:`), and does not allow CDNs (React UMD is served with the page). Google Fonts as before: stylesheets and fonts; the font catalog must `fetch` its css2 (connect-src).
  */
 export function designSystemEditorCsp(frameAncestors?: string): string {
   return pageCsp("script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:", frameAncestors);
 }
 
-/** 本机用户名（设计系统编辑器的 `user.name()`）；取不到时 undefined。 */
+/** Local user name (the design system editor's `user.name()`); undefined when it cannot be obtained. */
 export function localUserName(): string | undefined {
   try {
     const name = os.userInfo().username.trim();
@@ -163,7 +154,7 @@ function pageCsp(scriptSrc: string, frameAncestors?: string): string {
   ].join('; ');
 }
 
-/** index.html 里内联 `<script>` 的 sha256（CSP 用）。 */
+/** sha256 of the inline `<script>` in index.html (for CSP). */
 export function inlineScriptHashes(html: string): string[] {
   const hashes: string[] = [];
   for (const match of html.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi)) {
@@ -230,7 +221,7 @@ function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   });
 }
 
-/** POST 只接受同源（编辑器页面自己的 fetch）或不带 Origin 的请求：别的网页即使知道 grant 也写不进来。 */
+/** POST accepts only same-origin requests (the editor page's own fetch) or requests without an Origin, so other web pages cannot write even if they know the grant. */
 function sameOrigin(request: IncomingMessage): boolean {
   const origin = request.headers.origin;
   if (origin === undefined) return true;
@@ -248,7 +239,7 @@ function isWireEntry(value: unknown): value is WireEntry {
   if (typeof value !== 'object' || Array.isArray(value)) return false;
   const entry = value as Record<string, unknown>;
   if (entry.delete === true) return entry.ifMatch === undefined || typeof entry.ifMatch === 'string';
-  // 写入的 ifMatch 可以是 null：要求文件还不存在（file-protocol.ts 的 PublishWrite）。
+  // ifMatch for a write may be null: it requires the file not to exist yet (PublishWrite in file-protocol.ts).
   if (entry.ifMatch !== undefined && entry.ifMatch !== null && typeof entry.ifMatch !== 'string') return false;
   return typeof entry.base64 === 'string' && typeof entry.contentType === 'string';
 }
@@ -259,9 +250,9 @@ export class SlidesServer {
   readonly #onWarn: (message: string) => void;
   readonly #maxDecks: number;
   readonly #byGrant = new Map<string, OpenDeck>();
-  /** `<种类>\0<真实路径>` → 打开的目录：同一个目录按两种编辑器打开时各有各的 grant。 */
+  /** `<kind>\\0<real path>` → open directory: the same directory opened in both editors has a separate grant for each. */
   readonly #byDir = new Map<string, OpenDeck>();
-  /** `<种类>\0<相对路径>` → 编辑器产物里的页面。 */
+  /** `<kind>\\0<relative path>` → page in the editor build output. */
   readonly #pageCache = new Map<string, { file: string; mtimeMs: number; html: string; hashes: string[] }>();
 
   constructor(options: SlidesServerOptions) {
@@ -292,14 +283,14 @@ export class SlidesServer {
     this.#maxDecks = options.maxDecks ?? 64;
   }
 
-  /** 这个种类的编辑器构建产物在不在（不在时界面显示不可用的说明）。 */
+  /** Whether this kind's editor build output exists (when it does not, the UI shows an unavailable message). */
   editorAvailable(kind: EditorKind = 'slides'): boolean {
     return this.#kinds[kind].editorDist() !== null;
   }
 
   /**
-   * 为目录发 grant；同一个目录（真实路径）按同一个种类打开时复用同一个。返回 grant。调用方先校验目录是 deck、设计稿或设计系统。
-   * 没配置这个种类的编辑器（设计稿、设计系统）时抛错。
+   * Issues a grant for a directory; the same directory (real path) opened with the same kind reuses the same grant. Returns the grant. The caller first checks that the directory is a deck, a design canvas or a design system.
+   * Throws when the editor for this kind is not configured (design canvas, design system).
    */
   async open(dirPath: string, kind: EditorKind = 'slides'): Promise<string> {
     if (kind !== 'slides' && this.#kinds[kind].layout === undefined) throw new Error(`${this.#kinds[kind].noun} editor is not configured`);
@@ -321,7 +312,7 @@ export class SlidesServer {
     return deck.grant;
   }
 
-  /** 已打开的目录的存储（slides_check、design_import_asset 等也用同一个，免得与编辑器的发布交错）。 */
+  /** Storage for open directories (slides_check, design_import_asset, etc. also use it, so they do not interleave with editor publishes). */
   storeOf(dirPath: string, kind: EditorKind = 'slides'): DeckStore | null {
     for (const deck of this.#byDir.values()) {
       if (deck.kind === kind && (deck.dir === dirPath || deck.store.root === dirPath)) return deck.store;
@@ -329,7 +320,7 @@ export class SlidesServer {
     return null;
   }
 
-  /** 没打开过的目录按这个种类的布局建一个存储（不登记 grant）。 */
+  /** A directory not opened before gets a storage created with this kind's layout (no grant is registered). */
   createStore(dirPath: string, kind: EditorKind = 'slides'): DeckStore {
     return this.#createStore(dirPath, kind);
   }
@@ -345,14 +336,14 @@ export class SlidesServer {
     });
   }
 
-  /** 关掉所有事件流与目录监听。 */
+  /** Closes all event streams and directory watchers. */
   close(): void {
     for (const deck of this.#byGrant.values()) this.#release(deck);
     this.#byGrant.clear();
     this.#byDir.clear();
   }
 
-  /** 处理 `/slides/…`、`/design/…`、`/design-system/…` 与 `/_blob/…`；不是这几个前缀返回 false。 */
+  /** Handles `/slides/…`, `/design/…`, `/design-system/…` and `/_blob/…`; returns false for any other prefix. */
   handle(request: IncomingMessage, response: ServerResponse, options: DeckRouteOptions): boolean {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const pathname = url.pathname;
@@ -369,14 +360,14 @@ export class SlidesServer {
     if (!match) return false;
     const kind = match[1] as EditorKind;
     const found = GRANT_PATTERN.test(match[2]!) ? this.#byGrant.get(match[2]!) : undefined;
-    // grant 只对发它的那个种类有效
+    // A grant is only valid for the kind that issued it
     const deck = found?.kind === kind ? found : undefined;
     if (!deck) {
       response.writeHead(404, { 'Cache-Control': 'no-store' }).end();
       return true;
     }
     if (match[3] === undefined) {
-      // 运行时用相对地址取 `_files.json`、`project/…`：页面地址必须以 / 结尾
+      // The runtime fetches `_files.json` and `project/…` with relative URLs, so the page URL must end with /
       response.writeHead(308, { Location: `/${kind}/${deck.grant}/${url.search}`, 'Cache-Control': 'no-store' }).end();
       return true;
     }
@@ -543,7 +534,7 @@ export class SlidesServer {
       response.writeHead(200, {
         'Content-Type': found.contentType,
         'Content-Length': info.size,
-        // 内容寻址：同一个 id 的内容不会变
+        // Content-addressed: the same id always has the same content
         'Cache-Control': 'private, max-age=31536000, immutable',
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': DATA_CSP,
@@ -565,7 +556,7 @@ export class SlidesServer {
     const config = this.#kinds[kind];
     const dist = config.editorDist();
     const parts = rest === '' ? ['index.html'] : rest.split('/');
-    // 构建目录里的 node/ 是给 Runtime 用的编译器，不对外
+    // node/ in the build directory is the compiler for the Runtime and is not exposed externally
     const invalid = parts.some(p => p === '' || p === '.' || p === '..' || p.startsWith('.') || p.includes('\\')) || parts[0] === 'node';
     if (dist === null || invalid) {
       if (dist === null && parts[0] === 'index.html') {
@@ -584,7 +575,7 @@ export class SlidesServer {
       return;
     }
     const type = STATIC_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
-    // index.html 与其他页面（设计系统的 `artifact-type/run.html`：组件预览的 iframe，会执行脚本）都带这个种类的 CSP
+    // index.html and the other pages (the design system's `artifact-type/run.html`, the component preview iframe, which runs scripts) all carry this kind's CSP
     if (path.extname(file).toLowerCase() === '.html') {
       const page = await this.#page(kind, rest === '' ? 'index.html' : rest, file, info.mtimeMs);
       const body = Buffer.from(page.html);
@@ -602,7 +593,7 @@ export class SlidesServer {
     response.writeHead(200, {
       'Content-Type': type,
       'Content-Length': info.size,
-      // vite 产物的文件名带内容哈希
+      // Vite output filenames include a content hash
       'Cache-Control': parts[0] === 'assets' ? 'private, max-age=31536000, immutable' : 'no-cache',
       'X-Content-Type-Options': 'nosniff',
     });
@@ -616,7 +607,7 @@ export class SlidesServer {
     stream.pipe(response);
   }
 
-  /** 编辑器产物里的一个页面（按种类与相对路径缓存）；幻灯片的页面另算内联脚本的哈希。 */
+  /** A page in the editor build output (cached by kind and relative path); slide pages compute the hash of their inline script separately. */
   async #page(kind: EditorKind, rel: string, file: string, mtimeMs: number): Promise<{ html: string; hashes: string[] }> {
     const key = `${kind}\0${rel}`;
     const cached = this.#pageCache.get(key);

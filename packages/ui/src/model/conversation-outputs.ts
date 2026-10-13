@@ -14,37 +14,37 @@ import { conversationJobVideos, isVideoAt, openingVideo, videoOutput } from './v
 import { isPreviewExport } from './export-job.ts';
 
 /**
- * 会话头「产物」里的一项（产品设计 §3.2 用户修订）：这条会话新建、改过或在上面做过活的视频、做好的幻灯片、设计稿与设计系统，
- * 或它工作目录里的文件。
+ * One item in the session header's “产物” (outputs) (product design §3.2, revised by the user): a video this session created, changed, or worked on, a finished slide deck, a design draft and a design system,
+ * or a file in its working directory.
  */
 export interface ConversationOutput {
-  /** 视频用视频 ID（同一个改几次只算一项），其它文件用 Space 条目 ID。 */
+  /** Videos use the video ID (editing one several times still counts as one item); other files use the Space entry ID. */
   id: string;
   kind: SpaceEntryKind;
   name: string;
-  /** 视频在编辑器里打开的定位；不是视频时为 null。 */
+  /** Location for opening the video in the editor; null when it is not a video. */
   video: FileTarget | null;
-  /** 对应的 Space 条目；视频还没扫描到时为 null。 */
+  /** The matching Space entry; null when the video has not been scanned yet. */
   entry: SpaceEntry | null;
-  /** 视频最近一次修改后的时长。 */
+  /** The video's duration after its most recent edit. */
   durationSeconds: number | null;
-  /** 幻灯片（docs/design/slides §7.3）：在功能区幻灯片标签里打开的定位与页数（不知道时 null）；不是幻灯片时没有。 */
+  /** Slide deck (docs/design/slides §7.3): the location to open it in the Slides tab of the ribbon, and its page count (null when unknown); absent when it is not a slide deck. */
   slides?: { target: FileTarget; slideCount: number | null };
-  /** 设计稿（docs/design/canvas §7.3）：在功能区设计稿标签里打开的定位与画板数（不知道时 null）；不是设计稿时没有。 */
+  /** Design draft (docs/design/canvas §7.3): the location to open it in the Designs tab of the ribbon, and its artboard count (null when unknown); absent when it is not a design draft. */
   design?: { target: FileTarget; boardCount: number | null };
-  /** 设计系统（docs/design/canvas §10.6）：在功能区设计系统标签里打开的定位；不是设计系统时没有。 */
+  /** Design system (docs/design/canvas §10.6): the location to open it in the Design Systems tab of the ribbon; absent when it is not a design system. */
   designSystem?: { target: FileTarget };
   at: string;
   /**
-   * 产生它的任务：视频取最近一次修改所在的任务；文件取最近一次改到它的文件改动步骤所在的任务。
-   * 认不出来时为 null（只在会话头的「产物」里列，不挂到哪条回复下面）。
+   * The task that produced it: for a video, the task of its most recent edit; for a file, the task of the file-change step that most recently changed it.
+   * null when it cannot be determined (it is then listed only in the session header's “产物”, not attached under any reply).
    */
   taskId: Id | null;
 }
 
 const LIMIT = 30;
 
-/** Space 里的这个幻灯片、设计稿或设计系统条目是不是在这个位置（来源目录 + 相对路径）。 */
+/** Whether this slide deck, design draft or design system entry in Space is at this location (source directory + relative path). */
 function isDirAt(kind: 'slides' | 'design' | 'design-system', entry: SpaceEntry, target: FileTarget): boolean {
   if (entry.kind !== kind || !('path' in target) || entry.relPath !== target.path) return false;
   return 'projectId' in target ? entry.source.projectId === target.projectId : entry.source.conversationId === target.conversationId;
@@ -53,8 +53,8 @@ function isDirAt(kind: 'slides' | 'design' | 'design-system', entry: SpaceEntry,
 const baseName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? path;
 
 /**
- * 文件改动步骤改到的文件 → 最近一次改它的任务。Driver 写的路径可能是绝对路径，也可能相对工作目录；
- * 两种都记下（绝对路径落在工作目录里的，再按相对路径记一份）。
+ * Files changed by file-change steps → the task that most recently changed each one. The path the Driver writes may be absolute or relative to the working directory;
+ * both are recorded (an absolute path inside the working directory is also recorded as a relative path).
  */
 function fileTasks(items: readonly TimelineItem[], cwd: string | undefined): Map<string, Id> {
   const byPath = new Map<string, Id>();
@@ -71,12 +71,12 @@ function fileTasks(items: readonly TimelineItem[], cwd: string | undefined): Map
 }
 
 /**
- * 这条会话的产物，最近的在前：智能体新建（`video-created`）或经视频引擎改过（变更卡）的视频，智能体在上面做过活的视频
- * （转录、导出、从链接导入新建的……，`jobs` 里这条会话提交的），随第一句话带进来的视频（`openingVideo`），智能体做好的幻灯片、设计稿
- * 与设计系统（`slides-created`、`design-created`、`design-system-created`），
- * 加上不属于项目的会话自己工作目录里的文件。
- * 项目会话的其它文件没有记录是哪条会话产生的，不列；进了回收站的不列。`cwd` 用来把文件对回改它的任务。
- * 会话头只列最近 30 项；按回复分组时不截断（`limit: Infinity`）。
+ * This session's outputs, most recent first: videos the agent created (`video-created`) or changed through the video engine (change card), videos the agent worked on
+ * (transcription, export, a video newly imported from a link, and so on: the jobs this session submitted in `jobs`), the video brought in with the first message (`openingVideo`), slide decks, design drafts
+ * and design systems the agent produced (`slides-created`, `design-created`, `design-system-created`),
+ * plus files in the session's own working directory when it is not in a project.
+ * Other files in a project session are not recorded as belonging to any session, so they are not listed; items in the trash are not listed. `cwd` is used to match files back to the task that changed them.
+ * The session header lists only the latest 30 items; grouping by reply does not truncate (`limit: Infinity`).
  */
 export function conversationOutputs(
   conversation: Pick<Conversation, 'id' | 'projectId'> & { cwd?: string },
@@ -105,11 +105,11 @@ export function conversationOutputs(
   for (const videoId of conversationJobVideos(jobs, conversation.id)) {
     if (!videos.has(videoId)) videos.set(videoId, videoOutput(videoId, items, entries, jobs));
   }
-  // 随第一句话带进来的视频：线程里有它的卡，会话摘要里也列（同一张卡，产品设计 §3.2.2）。
+  // The video brought in with the first message: it has a card in the thread and is also listed in the session summary (the same card, product design §3.2.2).
   const opening = openingVideo(items);
   if (opening && !videos.has(opening.videoId)) videos.set(opening.videoId, videoOutput(opening.videoId, items, entries, jobs));
-  // 智能体做好的幻灯片（`slides-created` 回执）：一份一项，标题、页数与任务取最近一次校验通过的，回复下面的卡片跟着它挪。
-  // Space 里有它的条目时用条目的 id，下面列工作目录里的文件时不再重复。
+  // Slide decks the agent produced (`slides-created` receipt): one item per deck; the title, page count and task come from the latest version that passed validation, and the card under the reply moves with it.
+  // When the deck has an entry in Space, that entry's id is used; it is not repeated when the working-directory files are listed below.
   const decks: ConversationOutput[] = [];
   for (const item of items) {
     if (item.kind !== 'slides-created') continue;
@@ -126,7 +126,7 @@ export function conversationOutputs(
       taskId: item.taskId,
     });
   }
-  // 智能体做好的设计稿（`design-created` 回执）：同幻灯片。
+  // Design drafts the agent produced (`design-created` receipt): same as slide decks.
   for (const item of items) {
     if (item.kind !== 'design-created') continue;
     const entry = entries.find((e) => isDirAt('design', e, item.target)) ?? null;
@@ -142,7 +142,7 @@ export function conversationOutputs(
       taskId: item.taskId,
     });
   }
-  // 智能体做好的设计系统（`design-system-created` 回执）：同幻灯片，没有计数。
+  // Design systems the agent produced (`design-system-created` receipt): same as slide decks, but without a count.
   for (const item of items) {
     if (item.kind !== 'design-system-created') continue;
     const entry = entries.find((e) => isDirAt('design-system', e, item.target)) ?? null;
@@ -164,7 +164,7 @@ export function conversationOutputs(
     const exports = jobs.filter((j) => j.kind === 'export');
     const previewByJob = new Map(exports.map((j) => [j.jobId, isPreviewExport(j)]));
     const previewPaths = new Set<string>();
-    // 同一个路径后来被正式导出替换时，以最近一次发布的用途为准，不让旧预览藏掉新交付。
+    // When the same path is later replaced by a formal export, the purpose of the most recent publish wins, so an old preview does not hide the new deliverable.
     const published = [...exports].sort(
       (a, b) => (a.endedAt ?? a.createdAt).localeCompare(b.endedAt ?? b.createdAt) || a.jobId.localeCompare(b.jobId),
     );
@@ -205,8 +205,8 @@ export function conversationOutputs(
 }
 
 /**
- * 每条回复下面的产物（原型 home-session.jsx `SessionMessageArtifacts`）：按任务归到这个任务最后一条显示出来的回复下面，
- * 同一条回复下按出现的先后排。任务没有回复（例如还没开口就失败了）的产物只在会话头的「产物」里列。
+ * Outputs under each reply (prototype `SessionMessageArtifacts` in home-session.jsx): each is attached to the last visible reply of its task,
+ * and within one reply they are ordered by when they first appeared. Outputs of a task with no reply (for example one that failed before it said anything) are listed only in the session header's “产物”.
  */
 export function outputsByMessage(items: readonly TimelineItem[], outputs: readonly ConversationOutput[]): Map<Id, ConversationOutput[]> {
   const lastReply = new Map<Id, Id>();
@@ -225,8 +225,8 @@ export function outputsByMessage(items: readonly TimelineItem[], outputs: readon
 }
 
 /**
- * 视频的源目录还在不在（原型 `SessionMoviePreview` 的「找不到源文件」）。只在 Space 扫完、这个来源的扫描没有截断或读不了、
- * 却没有这个视频的条目时才算找不到；还在扫、扫描不完整时不下结论。目录藏得比扫描深度（6 层）还深时会误报。
+ * Whether the video's source directory still exists (prototype `SessionMoviePreview`'s “找不到源文件” (source file not found)). A video counts as not found only when Space has finished scanning, the scan of this source was not truncated or unreadable,
+ * and there is no entry for this video; no conclusion is drawn while scanning is still running or incomplete. A false report happens when the directory is nested deeper than the scan depth (6 levels).
  */
 export function outputSourceMissing(
   output: ConversationOutput,
@@ -241,7 +241,7 @@ export function outputSourceMissing(
 }
 
 /**
- * 视频卡 16:9 预览取的那一帧（规则在 `@cuccut/protocol`，与 Space 缩略图 `space.thumbnail` 同一帧）。
- * 编辑器开着它时用 `media.thumbnail` 取当前快照的封面；其它视频经 Space 缩略图取封面，不用打开视频。
+ * The frame used for a video card's 16:9 preview (the rule lives in `@cuccut/protocol`, and it is the same frame as the Space thumbnail `space.thumbnail`).
+ * While the editor has the video open, the cover of the current snapshot is taken with `media.thumbnail`; other videos take their cover from the Space thumbnail, without opening the video.
  */
 export { posterFrame } from '@cuccut/protocol';

@@ -13,9 +13,7 @@ import { TOOL_RISK } from './tool-scope.ts';
 import { ToolDriver, tool, until, type Loose, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * `captions_create` 端到端（架构设计 §7.9「给智能体建字幕层的操作」）：假智能体经真实的 MCP 端点给转写与自己写的译文
- * 建字幕层，落到真实的引擎里。原文、译文、双语与重复建（不覆盖）；规划模式只读。译文的句子经 editor-wasm 派生。
- * 需要 engine-host、ffmpeg 与 editor-wasm，缺了就跳过。
+ * End to end for `captions_create` (architecture design §7.9, “operations for the agent to build caption layers”). The fake agent, through the real MCP endpoint, creates caption layers for the transcript and for its own written translation, which land in the real engine. Covers the source text, the translation, bilingual output, and repeated creation (no overwrite). Planning mode is read-only. The translation's sentences are derived through editor-wasm. Needs engine-host, ffmpeg and editor-wasm; skipped if they are missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -120,7 +118,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
   const captionItems = (documentId: Id) =>
     video().sequences[video().rootSequenceId]!.items.filter((i): i is CaptionItem => i.type === 'caption' && i.documentId === documentId);
 
-  /** 照 documents_read 的写法写一份译文：alignment 写 null，由 Runtime 补。 */
+  /** Writes a translation in the style of documents_read, with alignment set to null, which the Runtime fills in. */
   async function writeTranslation(session: ToolSession): Promise<{ translationId: Id; put: Loose }> {
     const read = await tool(session, 'documents_read', { video: videoPath, documentId: speechId });
     const basis = read.body.translationBasis;
@@ -169,7 +167,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
   it('转写建原文字幕；智能体写的译文补上对齐后建译文与双语字幕；再建一次不覆盖', async () => {
     const session = await send('auto');
 
-    // 原文：放进新建的字幕轨，显示着。
+    // Source text: placed in a newly created caption track, and shown.
     const original = await tool(session, 'captions_create', { video: videoPath, documentId: speechId });
     expect(original.isError).toBe(false);
     expect(original.body).toMatchObject({
@@ -194,7 +192,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     const bilingualSpeech = await tool(session, 'captions_create', { video: videoPath, documentId: speechId, bilingual: true });
     expect(bilingualSpeech.body.error.code).toBe('INVALID_ARGUMENTS');
 
-    // 译文：alignment 为 null 的两句由 Runtime 按句子补成句级对齐。
+    // Translation: the two sentences with null alignment get sentence-level alignment from the Runtime.
     const { translationId, put } = await writeTranslation(session);
     expect(put.filledAlignments).toBe(2);
     const translation = await tool(session, 'documents_read', { video: videoPath, documentId: translationId });
@@ -213,7 +211,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
       }),
     ]);
 
-    // 双语：译文一层（新轨），与原文共用新建的样式，原文留在画面上。
+    // Bilingual: the translation as one layer (a new track), sharing a newly created style with the source. The source stays on screen.
     const bilingual = await tool(session, 'captions_create', { video: videoPath, documentId: translationId, bilingual: true });
     expect(bilingual.isError).toBe(false);
     expect(bilingual.body).toMatchObject({
@@ -240,7 +238,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(style).toEqual(expect.any(String));
     expect(captionItems(originalDoc).map((i) => [i.enabled, i.styleDocumentId])).toEqual([[true, style]]);
 
-    // 同一份译文再建一次（只看译文）：不覆盖，新的一层停用着放上去，配对的原文不动。
+    // The same translation created again (translation only): no overwrite. The new layer is added disabled, and the paired source is untouched.
     const again = await tool(session, 'captions_create', { video: videoPath, documentId: translationId });
     expect(again.isError).toBe(false);
     expect(again.body).toMatchObject({
@@ -254,11 +252,11 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(captionItems(originalDoc).map((i) => i.enabled)).toEqual([true]);
     expect(captionItems(bilingual.body.documentId).map((i) => i.enabled)).toEqual([true]);
 
-    // 转写再建一次：同样另建一层、停用着。
+    // The transcript created again: likewise a separate layer, disabled.
     const twice = await tool(session, 'captions_create', { video: videoPath, documentId: speechId, layoutProfileId: 'two-line' });
     expect(twice.body).toMatchObject({ enabled: false, layoutProfileId: 'two-line', existing: { documentId: originalDoc } });
 
-    // 每一次都是一笔修改：会话里放了变更卡。
+    // Each time is one change, so a change card is added to the session.
     const cards = (await client.request('conversations.get', { conversationId })).items.filter((i) => i.kind === 'video-change');
     expect(cards.filter((c) => (c as Loose).label === '建立字幕层')).toHaveLength(4);
   });
@@ -279,7 +277,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(put.body).toMatchObject({ syncedCaptions: 1, revision: { before, after: video().revision } });
     const cues = (await tool(session, 'documents_read', { video: videoPath, documentId: captionId })).body.body.cues;
     expect(cues.map((c: Loose) => [c.id, c.text, c.start, c.end])).toEqual([[`q-${body.units[0].id}`, '您好呀。', 0, 1000]]);
-    // 一笔修改：译文与字幕文档的新版本出自同一个事务。
+    // One change: the new versions of the translation and the caption document come from the same transaction.
     const docs = video().documents;
     const createdBy = (id: Id) => docs[id]!.revisions[docs[id]!.currentRevision]!.createdBy;
     expect(createdBy(captionId)).toBe(createdBy(translationId));
@@ -321,7 +319,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     const cues = (await tool(session, 'documents_read', { video: videoPath, documentId: pairedOriginal.documentId })).body.body.cues;
     expect(cues.map((c: Loose) => c.text)).toEqual(['Hello there.', 'Good morning.']);
 
-    // 一笔事务：撤销它，原文与译文的字幕实例一起没了。
+    // One transaction: undoing it removes both the source and translation caption instances.
     const undone = await tool(session, 'edits_undo', { video: videoPath, transactionId: bilingual.body.transactionId });
     expect(undone.isError).toBe(false);
     expect(captionItems(pairedOriginal.documentId)).toEqual([]);

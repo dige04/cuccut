@@ -48,15 +48,13 @@ import { RcGrants } from '@cuccut/protocol/messages/runtime-core';
 import { jobMessage } from '../localized.ts';
 
 /**
- * 数据外发的授权与预算（架构设计 §12.5、§7.8）：账本（`GrantStore`）之上的服务。
+ * Authorization and budgets for outbound data transfer (architecture design §12.5, §7.8): a service built on the ledger (`GrantStore`).
  *
- * - JobManager 的接纳（`JobAdmission`）：提交在线、智能体 Provider 的任务时判断并预留，开始执行前查代，结束时结算；
- * - 工具与对外服务在审批之前用 `plan` 判断这次调用要不要授权、额度够不够；审批允许后用 `issueForApproval` 发放授权；
- * - 启用 Provider 时发放默认授权（§6.8 的迁移规则）：按能力推出数据种类（`PROVIDER_ENABLE_DATA_KINDS`）、不设金额上限、
- *   按次计金额未知；停用或移除时撤销；
- * - 任务预算（§3.2、§7.8）：每个外发调用在授权之外还要通过它所在任务的预算；智能体提交的 Job、任务里启动的固定流程与
- *   它的子步骤都算在这个任务里（流程的子任务经父任务找到提交它的智能体任务）；
- * - `grants` 主题：授权的发放、用量与撤销。
+ * - JobManager admission (`JobAdmission`): when submitting online or agent-provider tasks, it checks and reserves, re-checks before execution starts, and settles when finished;
+ * - Before approval, tools and external services use `plan` to decide whether this call needs a grant and whether the quota is sufficient. After approval, `issueForApproval` issues the grant;
+ * - When a provider is enabled, a default grant is issued (§6.8 migration rule): data kinds are derived from capabilities (`PROVIDER_ENABLE_DATA_KINDS`), no amount cap, count-based with unknown amount. Revoked when disabled or removed;
+ * - Task budgets (§3.2, §7.8): each outbound call must also pass the budget of its task, in addition to the grant. Jobs submitted by agents, fixed flows started within a task, and their sub-steps all count toward that task (a flow's sub-task finds the agent task that submitted it via its parent task);
+ * - `grants` topic: issuance, usage, and revocation of grants.
  */
 
 export interface GrantServiceOptions {
@@ -66,10 +64,10 @@ export interface GrantServiceOptions {
   now?: () => Date;
 }
 
-/** `plan` 的输入：一次模型调用的能力、Provider 与范围。 */
+/** Input to `plan`: the capability, provider, and scope of one model call. */
 export interface OutboundCall {
   capability: ModelServiceCapability;
-  /** 调用方给的 Provider；不给时用这种能力的有效默认值。 */
+  /** Provider given by the caller; when not given, the effective default for this capability is used. */
   providerId?: string | undefined;
   modelId?: string | null | undefined;
   videoId: Id | null;
@@ -77,21 +75,21 @@ export interface OutboundCall {
   dataKinds?: GrantDataKind[];
   quantity?: { count?: number; chars?: number };
   purpose: string;
-  /** `purpose` 由 Runtime 写成时的引用：审批里的待批准项与发放的授权带上它，界面按当前语言重新生成。 */
+  /** When the Runtime writes `purpose`, this is its reference: pending items in approval and the issued grant carry it, and the UI regenerates it in the current language. */
   purposeRef?: MessageRef;
 }
 
-/** Runtime 写成的用途：文字与它的引用（`OutboundCall` 的 `purpose` / `purposeRef`）。 */
+/** The purpose the Runtime writes: text and its reference (`purpose` / `purposeRef` of `OutboundCall`). */
 export function outboundPurpose(purpose: Localized): Pick<OutboundCall, 'purpose' | 'purposeRef'> {
   return { purpose: purpose.text, purposeRef: refOf(purpose) };
 }
 
 /**
- * `plan` 的结果：
- * - `none`：不需要授权（本机、节点），或解析不到 Provider、Provider 没有启用（提交时会被拒绝，数据不会外发）；
- * - `covered`：有授权覆盖、额度够；
- * - `approval`：要用户授权这次外发（`item` 放进审批）。
- * 额度不够（`BUDGET_EXCEEDED`）时直接抛出，不进审批：预算上限在任何访问模式下都生效。
+ * Result of `plan`:
+ * - `none`: no grant needed (local or node), or the provider cannot be resolved or is not enabled (rejected at submission, so no data is sent out);
+ * - `covered`: a grant covers it and the quota is sufficient;
+ * - `approval`: the user must approve this outbound transfer (`item` goes into the approval).
+ * If the quota is insufficient (`BUDGET_EXCEEDED`), it throws directly and does not enter approval: the budget cap applies in every access mode.
  */
 export type OutboundPlan =
   | { status: 'none'; kind: ProviderKind | null }
@@ -106,7 +104,7 @@ interface Judged {
   evaluation: GrantEvaluation;
 }
 
-/** 要用户批准的一项：为什么要授权按评估的结果。 */
+/** One item for the user to approve: why a grant is needed, according to the evaluation result. */
 function requestItem(call: OutboundCall, judged: Judged): GrantRequestItem {
   const { provider, dataKinds, estimate, evaluation } = judged;
   return {
@@ -164,16 +162,14 @@ export class GrantService implements JobAdmission {
     return new GrantService(store, options);
   }
 
-  /** 任务记录的来源（用量报告列出用过授权的任务；流程的子任务经它找到所在的智能体任务）。 */
+  /** The source of a task record (the usage report lists the tasks that used a grant; a flow's sub-task finds the agent task it belongs to through this). */
   attachJobs(jobs: () => JobRecord[], job?: (jobId: Id) => JobRecord | null): void {
     this.#jobs = jobs;
     this.#job = job ?? ((jobId) => jobs().find((r) => r.jobId === jobId) ?? null);
   }
 
   /**
-   * 哪些提交者是在场的用户（工具页的当场授权，§7.9）：Runtime 登记桌面界面的连接。在场的用户启动流程、直接提交任务时，
-   * 缺授权或额度不够的拒绝多带待批准的项（`pendingGrants`），由客户端请用户确认、发放之后重新提交；这里从不发放授权。
-   * 没有设时一律不在场。
+   * Which submitters are present users (on-the-spot grant in the tool page, §7.9): the Runtime registers desktop UI connections. When a present user starts a flow or submits a task directly, a rejection for a missing grant or insufficient quota carries the pending items (`pendingGrants`). The client asks the user to confirm, issues the grant, and resubmits. This never issues grants itself. If unset, nobody is present.
    */
   setPresence(present: (submitter: JobSubmitter) => boolean): void {
     this.#present = present;
@@ -183,21 +179,20 @@ export class GrantService implements JobAdmission {
     return submitter !== undefined && this.#present(submitter);
   }
 
-  // ---- 任务预算（§3.2、§7.8） ----
+  // ---- Task budget (§3.2, §7.8) ----
 
-  /** 一个任务的预算与用量；没有时 null。 */
+  /** A task's budget and usage; null when none. */
   taskBudget(taskId: Id): TaskBudgetPolicy | null {
     return this.store.taskBudget(taskId);
   }
 
-  /** 建立或修改一个任务的预算上限。 */
+  /** Creates or changes a task's budget cap. */
   setTaskBudget(taskId: Id, limits: TaskBudgetLimits): TaskBudgetPolicy {
     return this.store.setTaskBudget(taskId, limits);
   }
 
   /**
-   * 提交者所在的智能体任务：智能体提交的是它的任务；流程的子任务、流程里提交的 Job 经父任务往上找。其余（连接、
-   * 系统、节点、对外服务）不在任务里。
+   * The agent task of the submitter: an agent's submission belongs to its task. Sub-tasks of a flow, and Jobs submitted within a flow, look up through the parent task. Others (connections, system, nodes, external services) are not part of a task.
    */
   taskOf(submitter: JobSubmitter): Id | null {
     let current: JobSubmitter | undefined = submitter;
@@ -209,24 +204,23 @@ export class GrantService implements JobAdmission {
     return null;
   }
 
-  /** 一个 Job（流程的步骤子任务）所在的智能体任务。 */
+  /** The agent task a Job (a flow's step sub-task) belongs to. */
   taskOfJob(jobId: Id | null): Id | null {
     if (jobId === null) return null;
     const record = this.#job?.(jobId);
     return record ? this.taskOf(record.submitter) : null;
   }
 
-  /** 启动时：任务账本对过账之后，剩下的预留没有任务认领（进程内调用、没来得及落盘的任务），按开始与否结算。 */
+  /** On startup: after the task ledger is reconciled, leftover reservations that no task claims (in-process calls, and tasks not yet flushed to disk) are settled according to whether they started. */
   settleOrphans(): void {
     const count = this.store.settleOrphans();
     if (count > 0) this.#log.warn('Settled outbound reservations left over from last time', { count });
   }
 
-  // ---- 启用 Provider 时的默认授权（§6.8） ----
+  // ---- Default grant when a provider is enabled (§6.8) ----
 
   /**
-   * 按模型服务的配置对账：启用着的在线与智能体 Provider 各有一条默认授权（同一次启用只发放一次，用户撤销后不补发）；
-   * 停用或移除的，撤销它启用时发放的默认授权。
+   * Reconciles against the model service's configuration: each enabled online and agent provider has one default grant (issued once per enablement; not reissued after the user revokes it). For a provider that is disabled or removed, the default grant it received when enabled is revoked.
    */
   reconcile(): void {
     const store = this.#services.store;
@@ -255,7 +249,7 @@ export class GrantService implements JobAdmission {
     }
   }
 
-  /** 一次调用之前补上它的 Provider 的默认授权（视图还没算出、刚启用还没对账时）。 */
+  /** Before a call, fills in its provider's default grant if it is missing (the view has not been computed yet, or it was just enabled and not reconciled). */
   ensureDefault(providerId: string, label: string, capability: ModelServiceCapability): void {
     const config = this.#services.store.configView(providerId);
     if (!config.enabled) return;
@@ -264,7 +258,7 @@ export class GrantService implements JobAdmission {
     this.store.ensureProviderGrant({ recipient: providerId, dataKinds: [...kinds], enabledAt: enabledKey(config.enabledAt), label });
   }
 
-  /** 视图里的在线与智能体 Provider：它们提供的能力推出的数据种类。 */
+  /** The online and agent providers in the view: the data kinds derived from what they offer. */
   #providerKinds(): Map<string, { label: string; dataKinds: GrantDataKind[] }> {
     const view = this.#services.view();
     const out = new Map<string, { label: string; dataKinds: GrantDataKind[] }>();
@@ -279,9 +273,9 @@ export class GrantService implements JobAdmission {
     return out;
   }
 
-  // ---- 工具与对外服务：审批之前的判断 ----
+  // ---- Tools and external services: judgment before approval ----
 
-  /** 这次调用要不要授权、额度够不够（不预留）。额度不够时抛 `BUDGET_EXCEEDED`。 */
+  /** Whether this call needs a grant and whether the quota is sufficient (does not reserve). Throws `BUDGET_EXCEEDED` when the quota is insufficient. */
   plan(call: OutboundCall): OutboundPlan {
     const judged = this.#judge(call);
     if (judged.status === 'none') return judged;
@@ -294,9 +288,7 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * 流程启动前的判断（工具页的当场授权，§7.9）：这次调用要用户批准的项，额度不够（`exhausted`）也算；不需要授权、已有授权
-   * 覆盖时 null。不预留。任务预算不够时照样抛出：批准外发放宽不了任务预算。`taskBudget: false` 不看任务预算（流程的启动，§7.8），
-   * `taskId` 仍用来匹配只属于这个任务的授权。
+   * Judgment before a flow starts (on-the-spot grant in the tool page, §7.9): the items this call needs the user to approve. Insufficient quota (`exhausted`) counts too. Null when no grant is needed or an existing grant covers it. Does not reserve. If the task budget is insufficient, it still throws: approving an outbound transfer cannot loosen the task budget. `taskBudget: false` ignores the task budget (flow start, §7.8). `taskId` is still used to match grants that belong only to this task.
    */
   pending(call: OutboundCall, options: { taskBudget?: boolean } = {}): GrantRequestItem | null {
     const judged = this.#judge(call, options);
@@ -311,7 +303,7 @@ export class GrantService implements JobAdmission {
     this.ensureDefault(provider.providerId, provider.label, call.capability);
     const dataKinds = call.dataKinds ?? [...CAPABILITY_DATA_KINDS[call.capability]];
     const estimate = estimateCallCost(provider.model.price, call.quantity ?? {});
-    // 任务预算不够时直接拒绝，不进审批：用户批准这一次外发也放宽不了任务预算。
+    // If the task budget is insufficient, reject directly and do not enter approval: even if the user approves this one outbound transfer, the task budget cannot be loosened.
     const task = options.taskBudget === false ? null : this.store.evaluateTask({ taskId: call.taskId, estimate });
     if (task) throw taskBudgetRpcError(task, { recipient: provider.providerId, label: provider.label, dataKinds, videoId: call.videoId });
     const evaluation = this.store.evaluate({
@@ -325,10 +317,9 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * 审批允许之后发放授权（§12.5）。返回这次调用要点名使用的授权（「只这一次」的，或刚发放的持续授权）。
-   * - 不给 `choice` 或 `persist: false`：一条只覆盖这一次调用的授权（金额未知）；`taskId` 给了时只属于这个任务；
-   * - `persist: true`：一条持续授权（默认只覆盖这个视频）；给了金额上限而这个模型估不出金额时，持续授权照样发放，
-   *   这一次另用一条「只这一次」的授权（金额未知），免得这次调用以 `BUDGET_UNVERIFIABLE` 被拒。
+   * Issues grants after approval is given (§12.5). Returns the grant this call must cite: the “只这一次” (this time only) grant, or the newly issued persistent grant.
+   * - If `choice` is not given, or `persist: false`: a grant covering only this call (amount unknown). If `taskId` is given, it belongs only to that task.
+   * - `persist: true`: a persistent grant (by default covering only this video). If an amount cap is given but this model cannot estimate amounts, the persistent grant is still issued, and this call uses a separate “只这一次” (this time only) grant (amount unknown), so that this call is not rejected with `BUDGET_UNVERIFIABLE`.
    */
   issueForApproval(
     item: GrantRequestItem,
@@ -358,7 +349,7 @@ export class GrantService implements JobAdmission {
       ...(item.purposeRef ? { purposeRef: item.purposeRef } : {}),
       budgetMode: budgetCap ? 'estimate-cap' : 'per-call-unknown-cost',
       budgetCap,
-      // 持续授权的次数上限只看用户的选择：任务申请的次数只用于只属于这个任务的授权。
+      // The count cap on a persistent grant depends only on the user's choice. The count the task requests applies only to grants that belong to this task alone.
       maxCalls: choice.maxCalls ?? null,
       expiresAt: choice.expiresAt ?? null,
       origin: 'approval',
@@ -370,7 +361,7 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * 合并审批（`grants_request`）允许后：每一项一条只属于这个任务的授权（次数上限是请求的次数），或按用户的选择发放持续授权。
+   * After a merged approval (`grants_request`) is allowed: each item gets a grant belonging only to this task (its count cap is the requested count), or a persistent grant is issued according to the user's choice.
    */
   issueForTask(
     items: GrantRequestItem[],
@@ -395,8 +386,7 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * 发放之后提交被拒（参数检查、模型不可用、并发下额度被占完）：这次调用没有发生，撤销只为它发放、还没用过的「只这一次」授权，
-   * 免得在列表里留下一条用不上的。持续授权不动（用户选择了发放它）。
+   * If submission is rejected after issuing (parameter check, model unavailable, or quota taken by concurrent calls): the call did not happen, so the unused “只这一次” (this time only) grants issued for it are revoked, so an unusable one is not left in the list. Persistent grants are untouched, since the user chose to issue them.
    */
   discardUnused(grantId: Id): void {
     const grant = this.store.get(grantId);
@@ -405,7 +395,7 @@ export class GrantService implements JobAdmission {
     this.store.revoke(grantId);
   }
 
-  /** 带着刚发放的授权提交：提交被拒时撤销没用上的「只这一次」授权（`discardUnused`），原样抛出。 */
+  /** Submitted with a just-issued grant: when submission is rejected, the unused “只这一次” (this time only) grant is revoked (`discardUnused`), and the error is rethrown as is. */
   async submitWith<T>(hint: { grantId?: Id } | undefined, submit: () => Promise<T>): Promise<T> {
     try {
       return await submit();
@@ -415,7 +405,7 @@ export class GrantService implements JobAdmission {
     }
   }
 
-  // ---- JobManager 的接纳（§7.8） ----
+  // ---- JobManager admission (§7.8) ----
 
   admit(request: JobAdmissionRequest): JobGrantUse | null {
     if (request.providerKind === 'local' || request.providerKind === 'node') return null;
@@ -435,7 +425,7 @@ export class GrantService implements JobAdmission {
         { label: request.label, jobId: request.jobId },
       );
     } catch (error) {
-      // 在场的用户直接提交（工具页的生成语音、图片、文本）：拒绝里带上这一项待批准的外发（§7.9 的当场授权）。
+      // A present user submitting directly (voice, image, and text generation in the tool page): the rejection carries this one pending outbound item (the §7.9 on-the-spot grant).
       const reason = approvableReason(error);
       if (reason === null || !this.present(request.submitter)) throw error;
       const purpose = RcGrants.toolPurpose({ tool: capabilityLabel(request.capability) });
@@ -462,7 +452,7 @@ export class GrantService implements JobAdmission {
     if (started.unsaved) {
       return { code: 'INTERNAL', ...jobMessage(RcGrants.ledgerUnsaved()), details: { grantId: use.grantId } };
     }
-    // 排队期间 Provider 被停用：默认授权随之撤销，但真正的原因是 Provider 不可用（与没有授权时的错误一致）。
+    // The provider was disabled while queued: the default grant is revoked with it, but the real reason is that the provider is unavailable (consistent with the error when no grant exists).
     const grant = started.grant;
     if (grant?.origin === 'provider-enable' && !this.#services.store.configView(grant.recipient).enabled) {
       return {
@@ -507,11 +497,11 @@ export class GrantService implements JobAdmission {
     return { ...use, settled: settlement ?? { calls: 0, amount: null, basis: 'released', at: new Date().toISOString() } };
   }
 
-  /** 进程内的一次调用（固定流程的逐批翻译）：判断并预留，开始，返回结束时调用的结算。不通过时抛出。 */
+  /** In-process call (per-batch translation in a fixed flow): checks and reserves, starts, and returns a settlement to call when finished. Throws if it does not pass. */
   async begin(
     call: GrantCall & { label: string; jobId: Id | null },
   ): Promise<(outcome: { state: JobState; reported?: Money | null }) => void> {
-    // 流程步骤里的调用不知道自己的任务：经子任务找到提交流程的智能体任务，算进它的任务预算。
+    // A call made within a flow step does not know its own task: it finds the agent task that submitted the flow via its sub-task, and counts toward that task's budget.
     const taskId = call.taskId ?? this.taskOfJob(call.jobId);
     const use = this.#reserve({ ...call, taskId }, { label: call.label, jobId: call.jobId });
     const refused = await this.start(use);
@@ -527,7 +517,7 @@ export class GrantService implements JobAdmission {
     };
   }
 
-  /** 有授权覆盖、额度够；否则抛出对应的错误（不预留）。`taskBudget: false` 不看任务预算（同 `pending`）。 */
+  /** Has a covering grant and sufficient quota; otherwise throws the matching error (does not reserve). `taskBudget: false` ignores the task budget (same as `pending`). */
   assertCovered(call: GrantCall, label: string = call.recipient, options: { taskBudget?: boolean } = {}): void {
     const ctx = { recipient: call.recipient, label, dataKinds: call.dataKinds, videoId: call.videoId };
     const evaluation = this.store.evaluate(call);
@@ -547,7 +537,7 @@ export class GrantService implements JobAdmission {
     return useOf(admission.reservation, call.dataKinds);
   }
 
-  // ---- 方法 ----
+  // ---- Methods ----
 
   list(params: { recipient?: string; videoId?: Id; includeEnded?: boolean }): { grants: Grant[] } {
     return { grants: this.store.list(params) };
@@ -582,9 +572,9 @@ export class GrantService implements JobAdmission {
     return this.store.flush();
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
-  /** 能力视图里的 Provider 与模型（同步，用最近一次算出的视图）。 */
+  /** Providers and models in the capability view (synchronous; uses the most recently computed view). */
   #provider(capability: ModelServiceCapability, providerId: string | undefined, modelId: string | null | undefined): ProviderInfo | null {
     const view = this.#services.view()[capability];
     const id = providerId ?? view.effective?.providerId;
@@ -601,8 +591,7 @@ export class GrantService implements JobAdmission {
 }
 
 /**
- * 一次启用的标识：默认授权按它只发放一次（用户撤销后不补发，重新启用才再发）。记下启用时间之前的版本里启用的 Provider
- * 没有 `enabledAt`：用固定的标识，升级后照样有默认授权，撤销之后也不会因重启而补发。
+ * Identifier for one enablement: default grants are issued once per enablement (not reissued after the user revokes them; reissued only when re-enabled). Providers enabled in versions from before the enablement time was recorded have no `enabledAt`: they use a fixed identifier, so after the upgrade they still get the default grant, and a revocation is not reissued on restart.
  */
 const LEGACY_ENABLED_AT = 'legacy';
 

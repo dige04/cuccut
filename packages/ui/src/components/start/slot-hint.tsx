@@ -3,7 +3,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { HOME_COPY } from '../../copy.ts';
 import { S } from '../shell-copy.ts';
 
-// 托盘下面一行小字 + quiet 按钮，与托盘里的内容左对齐（原型 `.pslot-hint`）；没有待填项时整行不占高度。
+// A line of small text plus a quiet button below the tray, left-aligned with the tray's contents (prototype `.pslot-hint`); when nothing is left to fill in, the row takes no height.
 const row = style({
   display: 'flex',
   alignItems: 'center',
@@ -15,9 +15,7 @@ const row = style({
 const text = style({ minWidth: 0, font: 'ui-sm', color: 'gray-700', lineHeight: '[1.5]' });
 
 /**
- * 待填提示（模板包规范 §5.5；原型 new-agent.jsx `SlotHint`）：输入框里还有占位符时，框下面一行说还有几处、是哪些，
- * 不填也能发送；「填下一处」把焦点放回输入框并选中下一个占位符（同 Tab）。没有待填项时只留一个空的 status 区，
- * 读屏在填完时不会被打断，下一次出现时照常播报。
+ * Fill-in hint (template pack spec §5.5; prototype new-agent.jsx `SlotHint`): when the input box still contains placeholders, a line below the box says how many are left and which ones. Sending works without filling them in. “填下一处” (Fill next) returns focus to the input box and selects the next placeholder (same as Tab). When nothing is left to fill in, only an empty status region is kept, so screen readers are not interrupted when the last one is filled, and the message is announced as usual the next time it appears.
  */
 export function SlotHint({ labels, onNext }: { labels: readonly string[]; onNext(): void }) {
   return (

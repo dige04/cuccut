@@ -6,8 +6,8 @@ import { useConnection } from '../../state/connection-store.ts';
 import { useTemplateCatalog, type TemplateCatalogStore } from '../../state/template-catalog-store.ts';
 
 /**
- * 模板目录：挂上时、`refresh` 变了时（弹窗打开）、重新连上时各取一次。没连上时不发，等连上再取。
- * 返回目录的镜像与一个「重试」。
+ * Template catalog: fetched once on mount, when `refresh` changes (the dialog opens), and when the connection is re-established. Nothing is sent while disconnected; it waits until connected and then fetches.
+ * Returns a mirror of the catalog and a “重试” (retry) function.
  */
 export function useTemplateCatalogLoader(refresh: unknown = null): TemplateCatalogStore & { retry(): void } {
   const runtime = useRuntime();
@@ -22,7 +22,7 @@ export function useTemplateCatalogLoader(refresh: unknown = null): TemplateCatal
 
 export type PromptState = { state: 'loading' } | { state: 'ready'; text: string } | { state: 'failed'; message: string };
 
-/** 一个模板的提示词（`templates.get`）：按「id@版本:语言」缓存，换模板时先显示加载中。 */
+/** The prompt for one template (`templates.get`): cached by “id@版本:语言” (id@version:language); when switching templates, loading is shown first. */
 export function useTemplatePrompt(template: Pick<HomeTemplate, 'id' | 'version' | 'language'> | null): PromptState & { retry(): void } {
   const runtime = useRuntime();
   const connected = useConnection((s) => s.state.status === 'connected');
@@ -41,7 +41,7 @@ export function useTemplatePrompt(template: Pick<HomeTemplate, 'id' | 'version' 
     return () => {
       cancelled = true;
     };
-    // template 只经 key 生效：同一 id@版本:语言 不重取。
+    // `template` only takes effect through `key`: the same id@版本:语言 is not fetched again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, key, connected, attempt]);
 
@@ -53,8 +53,7 @@ export function useTemplatePrompt(template: Pick<HomeTemplate, 'id' | 'version' 
 }
 
 /**
- * 模板随附文件（封面图、预览视频）的地址；`path` 为 null 时不取。媒体元素报错时调 `fail`：丢掉句柄重取一次，
- * 再错就放弃（调用方退回占位封面）。
+ * The address of a template's bundled files (cover image, preview video); nothing is fetched when `path` is null. When a media element errors, call `fail`: drop the handle and fetch once more; if it errors again, give up (the caller falls back to the placeholder cover).
  */
 export function useTemplateFileUrl(id: string, path: string | null): { url: string | null; failed: boolean; fail(): void } {
   const runtime = useRuntime();

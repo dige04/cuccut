@@ -3,18 +3,18 @@ import type { Id } from '@cuccut/protocol';
 import { addSlideAnnotation, removeSlideAnnotation, type DraftSlideAnnotation, type SlideAnnotationError } from '../model/slide-annotations.ts';
 
 /**
- * 幻灯片标签里加进对话的标注（docs/design/slides §8.2），按会话 id 分；composer 上显示「幻灯片标注 · N 条」，
- * 发送时随消息交出去。只在这个窗口里，不持久化（同点选的 skill 与附图）。
- * 标注只加在建好的会话上：幻灯片标签所在的位置还没有会话时不收（标签页自己提示）。
+ * Annotations on slide tags added to the conversation (docs/design/slides §8.2), keyed by session id. The composer shows "slide annotations · N",
+ * and they are handed over with the message when it is sent. Only in this window, not persisted (same as selected skills and attached images).
+ * Annotations are only added to sessions that already exist: when the slide tab's location has no session yet, they are not accepted (the tab itself shows a hint).
  */
 interface DraftSlideAnnotationsStore {
-  /** 会话 id → 按添加顺序的标注。 */
+  /** Session id → annotations in the order added. */
   annotations: Record<Id, readonly DraftSlideAnnotation[]>;
-  /** 接在后面加一条；加不进去时返回原因，草稿不变。 */
+  /** Append one. If it cannot be added, return the reason and leave the draft unchanged. */
   add(conversationId: Id, note: DraftSlideAnnotation): SlideAnnotationError | null;
   remove(conversationId: Id, id: string): void;
   clear(conversationId: Id): void;
-  /** 发出去了：摘掉发出去的那几条（发送期间新加的留着）。 */
+  /** Sent: remove the annotations that were sent (ones added during sending are kept). */
   sent(conversationId: Id, ids: readonly string[]): void;
 }
 
@@ -47,7 +47,7 @@ export const useDraftSlideAnnotations = create<DraftSlideAnnotationsStore>()((se
   };
 });
 
-/** 这个会话草稿里的标注；没有时是同一个空数组（订阅不抖）。 */
+/** The annotations in this session's draft. When there are none, the same empty array is returned (so subscribers don't churn). */
 export function useDraftSlideAnnotationList(conversationId: Id | null): readonly DraftSlideAnnotation[] {
   return useDraftSlideAnnotations((s) => (conversationId ? (s.annotations[conversationId] ?? EMPTY) : EMPTY));
 }

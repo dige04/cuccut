@@ -15,12 +15,11 @@ import { tr } from './local-models-copy.tr.ts';
 import { vi } from './local-models-copy.vi.ts';
 
 /**
- * 模型 › 本地模型的安装管理（下载、修复、停下、删除）用到的文字。页面其余的文字在 models-copy.ts 的 `LOCAL_COPY`，
- * 检查的说法在 model/model-check-copy.ts。英文是键与类型的来源，译文在 `local-models-copy.<语言>.ts`。
+ * Text used for the install management of local models (download, repair, stop, delete). The other text on the page is in `LOCAL_COPY` in models-copy.ts, and check wording is in model/model-check-copy.ts. English is the source of keys and types; translations are in `local-models-copy.<语言>.ts`.
  */
 const en = {
   install: {
-    /** 浏览器里（Web 白名单不含 `models.install` 等安装管理与 `models.setDefault`）：页面顶上写这一句，这些按钮置灰。 */
+    /** In the browser (the Web allowlist does not include `models.install` and other install management, or `models.setDefault`): this sentence is shown at the top of the page and these buttons are greyed out. */
     webNote: 'A browser can’t download, check, repair or remove local models, or change the default model. Do this in the CucCut desktop app.',
     availableNote:
       'Before downloading, you’ll see how much will be downloaded and how much disk space is left. You can pause a download; what’s already downloaded is kept and resumes next time.',
@@ -40,7 +39,7 @@ const en = {
     componentLine: (state: 'installed' | 'missing', size: string | null) => (state === 'installed' ? `Installed${size ? ` · ${size}` : ''}` : `Missing${size ? ` · ${size}` : ''}`),
     sharedWith: (ids: string[]) => `Shared with ${ids.join(', ')}`,
     noComponents: 'This Runtime didn’t report component details.',
-    // 确认对话框
+    // Confirmation dialog
     installTitle: (id: string) => `Download ${id}`,
     repairTitle: (id: string) => `Repair “${id}”?`,
     completeTitle: (id: string) => `Complete ${id}`,
@@ -58,7 +57,7 @@ const en = {
     cancel: 'Cancel',
     close: 'Close',
     started: (id: string) => `Downloading ${id} · progress shows in this row and in Background tasks`,
-    // 停下与删除
+    // Stop and delete
     paused: (id: string) => `Paused ${id} · what’s already downloaded is kept`,
     discardTitle: (id: string) => `Discard the downloaded part of ${id}?`,
     discardBody: 'The next download starts from scratch. Files other model packages are downloading, and shared components, aren’t deleted.',
@@ -72,15 +71,15 @@ const en = {
   shared: {
     title: 'Shared components',
     note: 'Several models in this category use these. Each is installed once and removed along with the last model that uses it.',
-    /** 折叠时的副题：有要补的写几件待补，否则写一共几件。 */
+    /** Subtitle when collapsed: if there are some to complete, says how many are pending; otherwise says the total count. */
     summaryRepair: (n: number) => (n === 1 ? '1 component to complete' : `${n} components to complete`),
     summaryCount: (n: number) => (n === 1 ? '1 shared component' : `${n} shared components`),
-    /** 一行的副题：文件在盘上的模型几只在用、一共几只需要（总数至少 2）。 */
+    /** Subtitle of a row: how many models with their own files on disk are in use, out of how many are needed in total (at least 2). */
     usage: (live: number, all: number) => `${live === 1 ? '1 installed model uses it' : `${live} installed models use it`} · ${all} need it`,
     usageNone: (all: number) => `${all} models will use it · none installed yet`,
-    /** 没有能借来补齐的模型：装模型时一起下载。 */
+    /** No model available to borrow for completion: downloaded together when the model is installed. */
     withModel: (size: string | null) => `Downloads with the first model you install${size ? ` · ${size}` : ''}`,
-    /** 从公共组件那一行补齐某只模型时，对话框里换掉 `install.completeNote` 的那一句。 */
+    /** When completing a model from the shared components row, the sentence in the dialog that replaces `install.completeNote`. */
     completeNote: (name: string) => `Shared components download with a model that uses them. This only adds what ${name} is missing; installed files are left alone.`,
   },
 };
@@ -91,5 +90,5 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 
 export const LOCAL_INSTALL_COPY = live(() => M.install);
 
-/** 本地模型页的「公共组件」区（设计稿 settings-local.jsx `SharedCard`）。 */
+/** The “shared components” section of the local models page (design mock settings-local.jsx `SharedCard`). */
 export const LOCAL_SHARED_COPY = live(() => M.shared);

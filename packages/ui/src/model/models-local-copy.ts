@@ -14,9 +14,9 @@ import { pl } from './models-local-copy.pl.ts';
 import { tr } from './models-local-copy.tr.ts';
 import { vi } from './models-local-copy.vi.ts';
 
-/** 模型 › 本地模型的文案（英文是键与类型的来源，译文在 `models-local-copy.<语言>.ts`）。 */
+/** Models › Local models copy (the English is the source of the keys and types; translations are in `models-local-copy.<locale>.ts`). */
 const en = {
-  /** 模型包不可用或文件不对的原因（行上的标签）。 */
+  /** Reasons a model package is unavailable or its files are wrong (row labels). */
   reason: {
     unsupported: 'Not supported on this computer',
     resource: 'Turned off',
@@ -35,9 +35,9 @@ const en = {
   chipBusy: 'Running',
   chipUnloading: 'Unloading',
   chipUnavailable: 'Unavailable',
-  /** 装好了、还缺的可选组件（行上的标签）。 */
+  /** Optional components still missing from an installed package (row labels). */
   chipMissing: (names: string[]) => `Missing ${names.join(', ')}`,
-  /** 模型包的用途。 */
+  /** Purpose of a model package. */
   capability: {
     transcribe: 'Transcribe',
     align: 'Align',
@@ -47,11 +47,11 @@ const en = {
     music: 'Music',
     diarize: 'Speaker diarization',
   } as Record<ModelBundleStatus['capability'], string>,
-  /** 默认菜单里「不设默认，用出厂默认」那一项。 */
+  /** The item in the default menu “不设默认，用出厂默认” (no default, use factory default). */
   auto: 'Automatic',
-  /** 存着的默认指向一只没装的模型包。 */
+  /** The stored default points to a model package that is not installed. */
   notInstalled: (name: string) => `${name} (not installed)`,
-  /** 组件给人看的名字（许可、缺件标签、公共组件）；没列的用组件名。 */
+  /** Display names of components (license, missing-part labels, shared components); components not listed use their component name. */
   componentName: {
     'audiocpp-engine': 'audio.cpp engine',
     aligner: 'Forced aligner',
@@ -62,7 +62,7 @@ const en = {
     codec: 'Speech codec',
     aux: 'Auxiliary models',
   } as Record<string, string>,
-  /** 公共组件那一行写它做什么；没列的不写。 */
+  /** The row for a shared component says what it does; components not listed have no description. */
   componentDesc: {
     'audiocpp-engine': 'Runs YuE2 · downloaded for your platform · Windows / Linux need a Vulkan GPU driver',
     vad: 'Finds the stretches where someone is speaking',
@@ -73,7 +73,7 @@ const en = {
     codec: 'Turns acoustic tokens back into a waveform',
     aux: 'Extra models the main model needs',
   } as Record<string, string>,
-  /** 从 GitHub 发布页下载的组件的来源（详情里组件那一行）：仓库与发布标签。 */
+  /** Source of components downloaded from GitHub release pages (the component row in details): repository and release tag. */
   githubRelease: (repo: string, tag: string) => `GitHub release ${repo} ${tag}`,
   weights: 'Model weights',
 };

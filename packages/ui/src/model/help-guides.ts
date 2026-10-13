@@ -1,16 +1,15 @@
 /*
- * 帮助中心的内置指南（原型 designs/cuccut/app/model-help.js）。
- * 来源：cuccut-app apps/shared/help/content.json（zh-CN 的 guides 与搜索规则），modified：
- * 逐篇按这个应用现有的功能改写，描述了这里没有的功能的篇目删掉（配音、配音 FAQ、独立工具），
- * 「视频」按术语表写成「视频」。改动清单见 H-a 的报告。
- * 翻译、导出与工具页几篇在功能接上之后补回，照实现写（字幕面板的「生成字幕」「＋ 翻译成…」、视频栏的「导出」、
- * 编辑器里的工具页）；设计稿里有、实现还没有的（双语样式卡、剪映等工程、体积耗时估算、快速修补、智能裁剪）不写。
+ * Built-in guides for the help center (prototype designs/cuccut/app/model-help.js).
+ * Source: cuccut-app apps/shared/help/content.json (the zh-CN guides and search rules), modified:
+ * each article was rewritten to match the features this app has now; articles describing features that are not here were removed (voice-over, voice-over FAQ, standalone tools),
+ * and “视频” (video) is written as “视频” per the glossary. The list of changes is in H-a's report.
+ * The translation, export and tool-page articles are to be restored once their features are connected, written to match the implementation (the subtitle panel's “生成字幕” (Generate subtitles) and “＋ 翻译成…” (+ Translate to…), the video bar's “导出” (Export), the tool page in the editor); things in the design mockup that the implementation does not have yet (bilingual style cards, Jianying and other project files, time and size estimates, quick fixes, smart crop) are not written.
  *
- * 写进正文的都是界面上现有的入口与文案；经 Agent 完成的步骤（会话里的转写、把转写结果放上时间线、工具页交给 Agent 的整理与写作、
- * 没有可用服务时的说明）依据的是 Agent 工具的说明（runtime-core agent-tools），Agent 实际会不会这样做没有实测（未验证）。
+ * Text written into the body covers only the entry points and copy that currently exist in the UI; steps done through the Agent (transcription in the session, putting the transcription result on the timeline, the Agent's organizing and writing for the tool page,
+ * and the explanation when no service is available) are based on the description of the Agent tools (runtime-core agent-tools), and whether the Agent actually does this has not been tested (unverified).
  *
- * 正文在目录里：英文是键与类型的来源，简体中文原文在 `help-guides.zh-Hans.ts`；两种语言的文章结构（篇目、三步、提示、按钮）一致。
- * 英文正文里引号中的界面名照英文界面的说法写；搜索关键词按当前语言各写一份。
+ * The body text is in the catalogue: English is the source of keys and types, and the original Simplified Chinese text is in `help-guides.zh-Hans.ts`; the article structure (articles, three steps, tips, buttons) is the same in both languages.
+ * In the English body, UI names in quotes follow the English UI's wording; search keywords are written separately for each language.
  */
 import { defineMessages } from '@cuccut/protocol';
 import { HELP_COPY } from '../copy.ts';
@@ -31,7 +30,7 @@ import { vi } from './help-guides.vi.ts';
 
 export type HelpGroup = 'start' | 'guide' | 'faq';
 
-/** 指南按钮去哪（原型 help-center.jsx 的 `navigate`；旧版的意图白名单里这里只保留真能到的几种）。 */
+/** Where guide buttons lead (prototype help-center.jsx's `navigate`; of the older intent allowlist, only the destinations that can actually be reached are kept here). */
 export type HelpAction = 'new' | 'subtitle' | 'style' | 'return' | 'agent' | 'models';
 
 export type HelpIcon =
@@ -52,7 +51,7 @@ export interface HelpGuide {
   id: string;
   icon: HelpIcon;
   title: string;
-  /** 快速上手路径卡上的短名；不在快速上手里的是 null。 */
+  /** The short name on the quick-start path card; null for articles not in quick start. */
   short: string | null;
   group: HelpGroup;
   minutes: number;
@@ -66,7 +65,7 @@ export interface HelpGuide {
 
 type GuideId = 'import' | 'subtitle' | 'translate' | 'export' | 'workspace' | 'style' | 'elements' | 'reframe' | 'aitools' | 'agent' | 'missing' | 'model';
 
-/** 一篇的文字；`cta` 不写时是「回到视频」。 */
+/** Text of one article; when `cta` is not given, it is “回到视频” (Back to video). */
 type GuideText = Pick<HelpGuide, 'title' | 'short' | 'summary' | 'keywords' | 'steps' | 'tip'> & { cta?: string };
 
 const en = {
@@ -329,7 +328,7 @@ const en = {
 export type HelpGuidesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 篇目与次序（文字在目录里）：`[id, 图标, 分组, 分钟, 按钮去处]`。 */
+/** Articles and their order (text is in the catalogue): `[id, icon, group, minutes, button destination]`. */
 const GUIDES: readonly (readonly [GuideId, HelpIcon, HelpGroup, number, HelpAction])[] = [
   ['import', 'upload', 'start', 1, 'new'],
   ['subtitle', 'captions', 'start', 2, 'subtitle'],
@@ -374,17 +373,16 @@ export const HELP_GUIDES: readonly HelpGuide[] = GUIDES.map(([id, icon, group, m
   },
 }));
 
-/** 快速上手页「你可能还想了解」列的两篇（原型 help-center.jsx）。 */
+/** The two articles listed under “你可能还想了解” (You might also want to know) on the quick-start page (prototype help-center.jsx). */
 export const HELP_MORE: readonly string[] = ['workspace', 'agent'];
 
-/** 快速上手的几篇，按目录次序。 */
+/** The quick-start articles, in catalogue order. */
 export function quickStart(guides: readonly HelpGuide[] = HELP_GUIDES): HelpGuide[] {
   return guides.filter((guide) => guide.group === 'start');
 }
 
 /**
- * 搜索（原型 model-help.js 的 `search`）：按空白分词、不分大小写，每个词都要出现在标题、短名、摘要、关键词、
- * 提示或步骤里。原型把可能为 null 的短名直接拼进去（搜「null」会全中），这里跳过空值。
+ * Search (prototype model-help.js's `search`): splits on whitespace, case-insensitive; every word must appear in the title, short name, summary, keywords, tips or steps. The prototype concatenated short names that may be null directly (searching “null” matched everything), so empty values are skipped here.
  */
 export function searchGuides(query: string, guides: readonly HelpGuide[] = HELP_GUIDES): HelpGuide[] {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -397,21 +395,21 @@ export function searchGuides(query: string, guides: readonly HelpGuide[] = HELP_
   });
 }
 
-/** 按钮落到哪：`new` 打开首页（从输入框的「+」或拖放加素材），`space` 去 Space（选视频），`subtitle` 打开编辑器的字幕页，`close` 只关帮助回到视频。 */
+/** Where buttons lead: `new` opens the home page (adding material from the input box's “+” or by drag and drop), `space` goes to Space (to pick a video), `subtitle` opens the editor's subtitle page, `close` only closes help and returns to the video. */
 export type HelpTarget = 'new' | 'space' | 'agent' | 'models' | 'subtitle' | 'close';
 
 export interface HelpCta {
   label: string;
   target: HelpTarget;
-  /** 这篇要在视频里做，而现在没开视频：按钮换成「选择一个视频」。 */
+  /** This article is meant to be done in a video, but no video is open now: the button changes to “选择一个视频” (Choose a video). */
   needsVideo: boolean;
 }
 
 /**
- * 文章底部的按钮（原型 help-center.jsx 的 `cta` 与 `navigate`）。只做这里真能到的：
- * - `new` 打开首页（原型 help-center.jsx `newProject({entry: 'media'})`，不带目标）；`agent` 去设置 › Agent 提供方；`models` 去模型页。
- * - 要在视频里做的（字幕、样式、回到视频）：没开视频时换成「选择一个视频」去 Space。
- * - `style`：字幕属性要先在时间线上选中一段字幕才有，帮助打不开它，按钮换成「回到视频」。
+ * Buttons at the bottom of an article (prototype help-center.jsx's `cta` and `navigate`). Only destinations that can actually be reached here are used:
+ * - `new` opens the home page (prototype help-center.jsx `newProject({entry: 'media'})`, with no target); `agent` goes to Settings › Agent provider; `models` goes to the models page.
+ * - Actions done in a video (subtitles, styles, back to video): when no video is open, the button changes to “选择一个视频” (Choose a video) and goes to Space.
+ * - `style`: subtitle properties exist only after a subtitle segment is selected on the timeline; help cannot open it, so the button changes to “回到视频” (Back to video).
  */
 export function helpCta(guide: HelpGuide, inVideo: boolean): HelpCta {
   const plain = (target: HelpTarget, label = guide.cta): HelpCta => ({ label, target, needsVideo: false });

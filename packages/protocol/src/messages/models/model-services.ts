@@ -14,7 +14,7 @@ import { pl } from './model-services.pl.ts';
 import { tr } from './model-services.tr.ts';
 import { vi } from './model-services.vi.ts';
 
-/** `packages/models/src/model-services.ts` 给人看的文字：服务与模型命令被拒绝的原因。 */
+/** Human-facing text for `packages/models/src/model-services.ts`: reasons why service and model commands are rejected. */
 const en = {
   noSuchProvider: (p: { provider: string }) => `No such provider: ${p.provider}`,
   noConfigureNeeded: 'This computer and nodes need no setup; only online providers have a switch and a key',

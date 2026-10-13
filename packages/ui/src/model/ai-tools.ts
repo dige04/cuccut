@@ -1,20 +1,16 @@
 /**
- * 工具页（不在编辑器工具栏上的承载页，从会话 `/`、文稿面板头部菜单与各面板旁的按钮打开；原型 panel-aitools-flows.jsx `TOOLS` / `GROUPS` /
- * `GROUP_SUB`、model-agent.js `INTENTS` / `intentPrompt`、panel-aitools-cut.jsx `cleanupExtra`、model-writing.js `intentExtra`）：工具目录、每个工具由谁来做，以及交给 Agent 时那句意图。
+ * The tools page (a host page not on the editor toolbar; opened from the session `/`, the document panel's header menu, and the buttons beside each panel; prototype panel-aitools-flows.jsx `TOOLS` / `GROUPS` / `GROUP_SUB`, model-agent.js `INTENTS` / `intentPrompt`, panel-aitools-cut.jsx `cleanupExtra`, model-writing.js `intentExtra`): the tool catalog, who does each tool, and the intent sentence used when handing off to the Agent.
  *
- * 由谁来做分三档，页面照实说：
- * - `runtime`：Runtime 有这条流程（识别说话人、翻译字幕、翻译配音），工具页就是那条流程的设置页。识别说话人的设置页里
- *   「用」还能选交给 Agent（意图句照下面的 `INTENTS.speakers`）。
- * - `agent`：Runtime 没有单独的流程，交给编码 Agent——直接把那句意图发到这个视频的会话里。
- * - `soon`：要在画面上跟踪、调取景框（智能裁剪），Runtime 还没有这条流程，列着但只说为什么还不能用。
- * 剪成短视频只交给 Agent、总是新开一条会话：参数折成提示词里一行一句（`shortsLines`），在那条会话里找话题、每个话题剪成一支子视频；
- * 几支、每支多长缺省都是「自动」，交给 Agent 按找到的话题定。
+ * Who does the work falls into three tiers, and the page says so plainly:
+ * - `runtime`: the Runtime has this flow (identifying speakers, translating subtitles, translating dubbing), and the tools page is that flow's settings page. On the speaker-identification settings page, “Use” can still choose to hand it to the Agent (intent sentence per `INTENTS.speakers` above).
+ * - `agent`: the Runtime has no separate flow, so it goes to the coding Agent: the intent sentence is sent straight into this video's session.
+ * - `soon`: it has to track things on screen and pick a framing box (smart crop). The Runtime does not have this flow yet, so it is listed, but the page only explains why it cannot be used yet.
+ * Cutting into short videos goes only to the Agent, and always opens a new session. Its parameters are folded into the prompt one sentence per line (`shortsLines`); in that session the Agent finds topics and cuts each into its own short video. The number of clips and the length of each default to “自动 (Auto)”, so the Agent decides from the topics it finds.
  *
- * 工具页第一行「用」还能选「直接调模型」：润色、章节、总结、博客、标题、简介走 Runtime 的 `ai-tool` 流程（不经过对话，
- * 见 components/editor/ai-tool-direct.ts）；重新转录、找可剪的口、重译过期句、做封面那一项置灰、写原因。
- * （转录流程整篇另加一份转写，不按范围替换词级数据，所以「重新转录」仍交给 Agent；整篇重转在字幕面板。）
+ * The first row on the tools page, “Use”, can also choose “Call model directly”. Polishing, chapters, summary, blog, titles, and descriptions go through the Runtime's `ai-tool` flow (not through a conversation; see components/editor/ai-tool-direct.ts). Re-transcription, finding cut points, re-translating stale sentences, and making a cover are grayed out, and the reason is written.
+ * (The transcription flow adds a transcript for the whole document on top, rather than replacing the word-level data by range, so “re-transcribe” still goes to the Agent; whole-document re-transcription is on the subtitles panel.)
  *
- * 文案（工具名、说明、选项、意图句与附加要求）都在目录里，英文是键与类型的来源，译文在 `ai-tools.zh-Hans.ts`；意图句随界面语言写。
+ * All the copy (tool names, descriptions, options, intent sentences, and extra requirements) is in the catalog. English is the source of keys and types, and translations are in `ai-tools.zh-Hans.ts`. Intent sentences are written in the interface language.
  */
 
 import { defineMessages, intlLocale, live } from '@cuccut/protocol';
@@ -51,12 +47,12 @@ export type AiToolId =
   | 'cover'
   | 'soundtrack';
 
-/** 分组（数据键；显示名见 `AI_TOOL_GROUP_LABEL`）。 */
+/** Groups (data key; the display name is in `AI_TOOL_GROUP_LABEL`). */
 export type AiToolGroup = 'frame' | 'transcript' | 'translate' | 'writing' | 'publish' | 'sound';
-/** `tool`：不在这个 Tab 里做，带上这部视频去工具页（生成配乐 → 工具 › 生成音乐）。 */
+/** `tool`: not done on this tab; the video is taken to the tools page (generate music → Tools › 生成音乐 (Generate music)). */
 export type AiToolTier = 'runtime' | 'agent' | 'soon' | 'tool';
 
-/** 交给 Agent 的那些工具。 */
+/** The tools handed off to the Agent. */
 export type AgentToolId =
   | 'polish'
   | 'chapters'
@@ -75,12 +71,12 @@ export interface AiTool {
   id: AiToolId;
   group: AiToolGroup;
   name: string;
-  /** 列表第二行。 */
+  /** The second line in the list. */
   desc: string;
   tier: AiToolTier;
-  /** 工具页顶上那张说明卡的几行；没有时用 `desc`。 */
+  /** The few lines of the description card at the top of the tools page; `desc` is used when there are none. */
   setup?: readonly string[];
-  /** `soon` 的工具：为什么还不能用。 */
+  /** For `soon` tools: why they cannot be used yet. */
   why?: string;
 }
 
@@ -96,7 +92,7 @@ const COVER_TEXT_KEYS = ['none', 'phrase', 'phrase-sub'] as const;
 export type CoverText = (typeof COVER_TEXT_KEYS)[number];
 const SHORTS_LENGTH_KEYS = ['auto', 'short', 'medium', 'long', 'extended', 'custom'] as const;
 export type ShortsLength = (typeof SHORTS_LENGTH_KEYS)[number];
-/** 切几支：`auto` 交给 Agent 按找到的话题定，或 1–10 支。 */
+/** How many clips to cut: `auto` lets the Agent decide from the topics it finds, or 1–10 clips. */
 export type ShortsCount = number | 'auto';
 const SHORTS_RATIO_KEYS = ['9:16', '1:1', 'source'] as const;
 export type ShortsRatio = (typeof SHORTS_RATIO_KEYS)[number];
@@ -123,7 +119,7 @@ type ToolText = {
 
 const soonTail =
   'Runtime doesn’t have this workflow yet, and there’s no overlay on the video for adjusting the framing, so there’s no form to fill in here yet.';
-/** 意图句里的范围：「第 2 章 · 开场 of “A”」；整篇时只说视频。 */
+/** The scope in the intent sentence: “第 2 章 · 开场 (Chapter 2 · Opening) of “A””; for the whole document, only the video is named. */
 const scopeOf = (o: IntentArgs) => (o.scope ? `${o.scope} of ${o.p}` : o.p);
 
 const en = {
@@ -238,7 +234,7 @@ const en = {
       off: 'repeated starts',
     },
   } as Record<CleanupKey, { label: string; sub: string; off: string }>,
-  /** 没勾的几类折成的一句。 */
+  /** The sentence formed from the categories that are not checked. */
   cleanupOff: (offs: readonly string[]) => `Don’t look for ${new Intl.ListFormat(intlLocale(), { type: 'conjunction' }).format(offs)}`,
   lengths: { short: 'Short', medium: 'Medium', long: 'Long' } as Record<WriteLength, string>,
   styles: {
@@ -254,7 +250,7 @@ const en = {
     author: 'I’m the author',
     viewer: 'I’m a viewer',
   } as Record<WriteView, string>,
-  /** 剪成短视频的选项（原型 model-shorts-cut.js）与折进提示词的几行。 */
+  /** The options for cutting into short videos (prototype model-shorts-cut.js) and the lines folded into the prompt. */
   shorts: {
     lengths: {
       auto: 'Auto',
@@ -276,21 +272,20 @@ const en = {
       shorts: { label: 'Shorts captions', sub: 'Built-in preset that stays clear of platform buttons' },
       video: { label: 'Keep this video’s style', sub: 'Same size and position; platform buttons may cover them' },
     } as Record<ShortsStyle, { label: string; sub: string }>,
-    /** 折进提示词：取景怎么说。自动是给智能体的做法（抽帧看说话的人在哪一侧、裁到他身上、找不到就居中）；
-        「跟着说话的人」这一版不开放，不进句子。 */
+    /** Folded into the prompt: how the framing is described. Auto is the Agent's approach (sample frames to see which side the speaker is on, crop to them, and center if none is found). The “跟着说话的人 (follow the speaker)” version is not open yet, so it does not go into the sentence. */
     focusPrompt: {
       auto: 'auto: sample frames evenly across the segment, see which side of the frame the speaker is on, and place the crop on them; if no one is found, center it',
       manual: 'centered for now; I’ll adjust each one myself',
     } as Record<'auto' | 'manual', string>,
-    /** 「切几支」下拉里的一项（自动那一项用 `lengths.auto`）。 */
+    /** An item in the “切几支 (how many clips)” dropdown (the Auto item uses `lengths.auto`). */
     countN: (n: number) => `${n}`,
-    /** 「切成什么样」下面那行说明：哪一项是自动就说那一项怎么定。 */
+    /** The explanation line under “切成什么样 (what the cut looks like)”: when one item is Auto, it says how that item is decided. */
     autoHint: {
       both: 'Auto: the Agent finds the strongest topics that stand on their own and decides how many shorts and how long each runs—no filler, no topic cut in half.',
       count: 'Auto: one short for every topic strong enough to stand on its own; no filler.',
       length: 'Auto: each short runs from its opening hook to where its topic lands, not stretched or trimmed to fit a length.',
     },
-    /** 几支、多长那一句；`count` 为 null 是自动（按话题定几支），`len` 为 null 是自动（每支按话题定长短）。 */
+    /** The sentence about how many clips and how long. `count` null = Auto (the number of clips is decided by topics); `len` null = Auto (the length of each is decided by its topic). */
     lineCount: (count: number | null, len: { min: number; max: number } | null) =>
       `${count === null ? 'Decide how many shorts from the topics you find' : `Make ${count === 1 ? '1 short' : `${count} shorts`}`}, ${
         len ? `each ${len.min}–${len.max} seconds` : 'each as long as its topic needs, from the opening hook to where the point lands'
@@ -316,10 +311,10 @@ const en = {
   extraIdea: (idea: string) => `The one thing the cover should say: ${idea}`,
   extraRatio: (ratio: string) => `Aspect ratio ${ratio}`,
   extraCoverText: (label: string) => `Text on the cover: ${label}`,
-  /** 片名进句子的样子；没有片名时的说法。 */
+  /** How the video name appears in the sentence; the wording used when there is no name. */
   titled: (title: string) => `“${title}”`,
   thisVideo: 'this video',
-  /** 刷新过期译文的两类来源：给了句数时带数，否则只说类别。 */
+  /** The two kinds of sources for refreshing stale translations: when a count is given, it includes the number; otherwise only the category is named. */
   sourceEdited: (n: number | null) => (n === null ? 'source edited' : n === 1 ? '1 sentence edited in the source' : `${n} sentences edited in the source`),
   sourceCut: (n: number | null) => (n === null ? 'source cut' : n === 1 ? '1 sentence cut in the source' : `${n} sentences cut in the source`),
   sourceJoin: (parts: readonly string[]) => parts.join(', '),
@@ -347,15 +342,15 @@ const en = {
     shortscut: (o: IntentArgs) =>
       `Find the topics in ${scopeOf(o)} most worth posting on their own and cut each into a complete short: each one is a new video referencing the same source footage, and the original video and its timeline stay as they are.`,
   },
-  /** 列表页（AI 工具 Tab）分组下的一句副题：说清这一组给谁用。 */
+  /** A subtitle under a group's name on the list page (AI tools tab) that states who the group is for. */
   groupSub: {
     writing: 'For readers: what the video covers, without having to watch it',
     publish: 'For whoever posts the video: make people want to click, then deliver on it',
   } as Partial<Record<AiToolGroup, string>>,
-  /** 列表页脚注：第一批没搬进来的工具在哪。 */
+  /** The footnote on the list page: where the tools not yet moved in this first batch are. */
   laterNote:
     'Translate subtitles is still in the Subtitles panel and Translate voice-over in the Audio panel; they’ll move here later. Smart crop is coming soon.',
-  /** 工具页说明卡上的一行：按下去会不会改视频。 */
+  /** The line on the tools page description card that says whether pressing the button changes the video. */
   effect: {
     polish: 'Changes the transcript: applied when done, and one step undoes it',
     chapters: 'Changes the chapters: applied when done, and one step undoes it',
@@ -370,7 +365,7 @@ const en = {
     cover: 'Doesn’t change the video: pick one to use',
     shortscut: 'Creates new child videos; the original video and its timeline stay as they are',
   } as Record<AgentToolId, string>,
-  /** 模板里的固定约束（以前是语言、风格、篇幅、视角的下拉）。`language` 是语言名；没有时跟文稿。 */
+  /** The fixed constraints in the template (formerly the dropdowns for language, style, length, and viewpoint). `language` is the language name; when there is none, the language of the document is followed. */
   standMarkdown: (language: string | null) =>
     language ? `Write in Markdown, in ${language}.` : 'Write in Markdown, in the same language as the transcript.',
   standLanguage: (language: string | null) => (language ? `Write in ${language}.` : 'Write in the same language as the transcript.'),
@@ -386,7 +381,7 @@ const en = {
     polish: ['Don’t rewrite my wording or remove anything; only fix what is clearly a slip.'],
     chapters: ['Group by topic, with a short title for each chapter.'],
   } as Partial<Record<AgentToolId, readonly string[]>>,
-  /** 交给 Agent 发到哪条会话。 */
+  /** The session the handoff is sent to. */
   sessionNew: 'New session',
   sessionNewSub: 'Takes this video as context; one task per session, with no long history to resend',
   sessionCurrent: (title: string) => `Continue “${title}”`,
@@ -395,17 +390,17 @@ const en = {
     messages === null
       ? 'Resends the session’s history, which costs more once the prompt cache expires'
       : `${messages === 1 ? '1 message' : `${messages} messages`} so far · resends the history, which costs more once the prompt cache expires`,
-  /** 主按钮下那行：按下去会去哪。 */
+  /** The line under the main button: where pressing it will go. */
   hintNew: 'Starts a new session with this video as context. Follow along there; any change the Agent makes to the video can be undone.',
   hintCurrent: 'Sends to this video’s current session, with this video as context. Follow along there; any change the Agent makes to the video can be undone.',
-  /** 附加要求补句末标点；意图句与附加要求怎么接。 */
+  /** Adds a final punctuation mark to the extra requirements; how the intent sentence and the extra requirements are joined. */
   endSentence: (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`),
   joinPrompt: (head: string, extra: readonly string[]) => [head, ...extra].join(' '),
 };
 export type AiToolsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 分组的显示名。 */
+/** The display name of the group. */
 export const AI_TOOL_GROUP_LABEL: Readonly<Record<AiToolGroup, string>> = live(() => M.groups);
 
 const tool = (id: AiToolId, group: AiToolGroup, tier: AiToolTier): AiTool => ({
@@ -457,30 +452,28 @@ export function isAiToolId(value: unknown): value is AiToolId {
   return typeof value === 'string' && BY_ID.has(value as AiToolId);
 }
 
-/** 写作与发布：只读文稿和画面，结果给人读、挑、拷走（原型 §15.11）。 */
+/** Writing and publishing: reads only the document and the picture, and the results are for people to read, pick from, and copy (prototype §15.11). */
 export function isWritingTool(id: AiToolId): id is 'summary' | 'blog' | 'title' | 'desc' | 'cover' {
   return id === 'summary' || id === 'blog' || id === 'title' || id === 'desc' || id === 'cover';
 }
 
 /**
- * 交给 Agent 后工具页留不留在原地（产品设计 §5.10「交给智能体」，原型 model-ai-prompt.js `agentLeavesPage`）：找可剪的口与
- * 刷新过期译文留在原地画进度，会话照样建好、话照样发出去，只是不切过去；其余工具回列表、那条会话打开到眼前。
+ * After a handoff, whether the tools page stays in place (product design §5.10 “hand to agent”, prototype model-ai-prompt.js `agentLeavesPage`). Finding cut points and refreshing stale translations stay on the page and show progress: the session is still created and the message still sent, but it does not switch to it. Other tools return to the list, and that session opens in front of you.
  */
 export function agentStaysOnPage(id: AgentToolId): boolean {
   return id === 'cleanup' || id === 'stale';
 }
 
 /**
- * 设置页给不给「范围」一行：范围会进意图句的工具才给（润色、说话人、重新转录、找可剪的口按 `scope` 写进句子，
- * 写作与发布折成「只看…」）。生成章节与刷新过期译文的句子里没有范围，给了也不起作用。
+ * Whether the settings page shows a “范围 (Scope)” row: only for tools whose intent sentence includes the scope. Polishing, speakers, re-transcription, and finding cut points write `scope` into the sentence; writing and publishing folds it into “只看… (only look at…)”. The sentences for generating chapters and refreshing stale translations have no scope, so giving one has no effect.
  */
 export function hasScope(id: AgentToolId): boolean {
   return id !== 'chapters' && id !== 'stale';
 }
 
-// ---- 设置项 ----
+// ---- Settings items ----
 
-/** 找可剪的口：三类口各自可勾；没勾的折成一句「…不找」。 */
+/** Finding cut points: each of the three kinds of cut points can be checked individually; unchecked ones fold into one sentence “…不找 (do not look for…)”. */
 export const CLEANUP_OPTIONS = CLEANUP_KEYS.map((key) => ({
   key,
   get label() {
@@ -519,7 +512,7 @@ export type CoverRatio = (typeof COVER_RATIOS)[number];
 
 export const COVER_TEXT = options(COVER_TEXT_KEYS, () => M.coverText);
 
-/** 画布的比例（1920×1080 → 16:9），做封面「跟视频画布」时写进句子。 */
+/** The canvas aspect ratio (1920×1080 → 16:9), written into the sentence when a cover “跟视频画布 (follows the video canvas)”. */
 export function canvasRatio(width: number, height: number): string {
   const w = Math.round(width);
   const h = Math.round(height);
@@ -529,30 +522,30 @@ export function canvasRatio(width: number, height: number): string {
   return `${w / g}:${h / g}`;
 }
 
-/** 写作与发布的设置态（原型 model-writing.js `intentExtra` 的入参）；没给的项不进句子。 */
+/** The settings state for writing and publishing (the input to prototype model-writing.js `intentExtra`); items that are not given do not go into the sentence. */
 export interface WritingSettings {
-  /** 「只看」的那一章；整篇时 null。 */
+  /** The chapter chosen for “只看 (only look at)”; null for the whole document. */
   scope?: string | null;
   length?: WriteLength | null;
   style?: WriteStyle | null;
-  /** 风格选「自定义…」时用户写的那句。 */
+  /** The sentence the user wrote when the style is “自定义… (Custom…)”. */
   customStyle?: string;
-  /** 用哪种语言写（已经是名字，比如「英语」）。 */
+  /** The language to write in (already a name, e.g. “英语 (English)”). */
   language?: string | null;
-  /** 选定的视角；「自动」不写，交给 Agent 按视频来源判断。 */
+  /** The chosen viewpoint; “自动 (Auto)” is not written, and the Agent decides from the video's source. */
   view?: WriteView | null;
-  /** 要发到哪个平台。 */
+  /** The platform to publish to. */
   platform?: string;
-  /** 做封面：要说的一件事、画幅、封面上的字。 */
+  /** Making a cover: the one thing to say, the aspect ratio, and the text on the cover. */
   idea?: string;
   ratio?: string | null;
   coverText?: CoverText | null;
-  /** 写博客：在需要配图的地方从视频取关键帧插进正文（只有交给 Agent 才拿得到画面）。 */
+  /** Writing a blog: where images are needed, takes keyframes from the video and inserts them into the body (only available when handed to the Agent, since only it gets access to the picture). */
   frames?: boolean;
   note?: string;
 }
 
-/** 设置态折成附加要求，一句一条，接在意图句后面。 */
+/** The settings state folded into extra requirements, one sentence per item, appended after the intent sentence. */
 export function writingExtra(tool: 'summary' | 'blog' | 'title' | 'desc' | 'cover', s: WritingSettings): string[] {
   const out: string[] = [];
   if (s.scope) out.push(M.extraScope(s.scope));
@@ -577,10 +570,10 @@ export function writingExtra(tool: 'summary' | 'blog' | 'title' | 'desc' | 'cove
   return out;
 }
 
-// ---- 剪成短视频（原型 panel-aitools-shorts.jsx、model-shorts-cut.js） ----
+// ---- Cutting into short videos (prototype panel-aitools-shorts.jsx, model-shorts-cut.js) ----
 
 export const SHORTS_COUNT = { min: 1, max: 10 } as const;
-/** 「切几支」下拉：自动在最前，再是 1–10 支。 */
+/** The “切几支 (how many clips)” dropdown: Auto first, then 1–10 clips. */
 export const SHORTS_COUNTS: readonly { key: ShortsCount; readonly label: string }[] = [
   'auto' as const,
   ...Array.from({ length: SHORTS_COUNT.max - SHORTS_COUNT.min + 1 }, (_, i) => SHORTS_COUNT.min + i),
@@ -590,7 +583,7 @@ export const SHORTS_COUNTS: readonly { key: ShortsCount; readonly label: string 
     return key === 'auto' ? M.shorts.lengths.auto : M.shorts.countN(key);
   },
 }));
-/** 自定义时长的上下界（秒）。 */
+/** The lower and upper bounds of a custom length (seconds). */
 export const SHORTS_CUSTOM = { min: 1, max: 600 } as const;
 const SHORTS_PRESET: Record<Exclude<ShortsLength, 'auto' | 'custom'>, { min: number; max: number }> = {
   short: { min: 15, max: 30 },
@@ -614,7 +607,7 @@ export const SHORTS_FOCUS = SHORTS_FOCUS_KEYS.map((key) => ({
   get sub() {
     return M.shorts.focus[key].sub;
   },
-  /** 这一版不开放时的原因（「跟着说话的人」：还没有人物与发言人模型）。 */
+  /** The reason this version is not open (“跟着说话的人 (follow the speaker)”: there is not yet a person or speaker model). */
   get off(): string | null {
     return key === 'speaker' ? M.shorts.speakerOff : null;
   },
@@ -630,18 +623,18 @@ export const SHORTS_STYLES = SHORTS_STYLE_KEYS.map((key) => ({
   },
 }));
 
-/** 剪成短视频的设置态；默认见 `SHORTS_DEFAULTS`。 */
+/** The settings state for cutting into short videos; the defaults are in `SHORTS_DEFAULTS`. */
 export interface ShortsSettings {
   count: ShortsCount;
   length: ShortsLength;
-  /** 自定义时长的两头（秒）。 */
+  /** The two ends of a custom length (seconds). */
   lenMin: number;
   lenMax: number;
   ratio: ShortsRatio;
   focus: ShortsFocus;
   tracks: ShortsTracks;
   style: ShortsStyle;
-  /** 已经切过的不再找。 */
+  /** Ones already cut are not searched for again. */
   skipDone: boolean;
 }
 
@@ -660,7 +653,7 @@ export const SHORTS_DEFAULTS: Readonly<ShortsSettings> = {
 const clampSeconds = (n: number, fallback: number) =>
   Number.isFinite(n) ? Math.max(SHORTS_CUSTOM.min, Math.min(SHORTS_CUSTOM.max, Math.round(n))) : fallback;
 
-/** 这次要的时长区间（秒）：预设一档，或自定义的两头（1–600 秒，填反了对调，两头相等时拉开一秒）；自动时为 null（长短按话题定）。 */
+/** The length range wanted (seconds): a preset tier, or the two ends of a custom range (1–600 seconds; if they are reversed they are swapped; if they are equal, they are spread apart by one second). Null when Auto (the length is decided by the topic). */
 export function shortsLengthRange(s: Pick<ShortsSettings, 'length' | 'lenMin' | 'lenMax'>): { min: number; max: number } | null {
   if (s.length === 'auto') return null;
   if (s.length !== 'custom') return { ...SHORTS_PRESET[s.length] };
@@ -674,13 +667,13 @@ export function shortsLengthRange(s: Pick<ShortsSettings, 'length' | 'lenMin' | 
   return { min: a, max: b };
 }
 
-/** 支数：自动原样留着；数字夹在 1–10；认不出的落回自动。 */
+/** The number of clips: Auto is kept as it is; a number is clamped to 1–10; an unrecognized value falls back to Auto. */
 function clampShortsCount(n: ShortsCount): ShortsCount {
   if (n === 'auto' || !Number.isFinite(n)) return 'auto';
   return Math.max(SHORTS_COUNT.min, Math.min(SHORTS_COUNT.max, Math.round(n)));
 }
 
-/** 「切成什么样」下面那行说明（原型 model-shorts-cut.js `autoHint`）：哪一项是自动就说那一项怎么定；都不是自动时为 null。 */
+/** The explanation line under “切成什么样 (what the cut looks like)” (prototype model-shorts-cut.js `autoHint`): when one item is Auto, it says how that item is decided; null when no item is Auto. */
 export function shortsAutoHint(s: Pick<ShortsSettings, 'count' | 'length'>): string | null {
   const count = clampShortsCount(s.count) === 'auto';
   const length = s.length === 'auto';
@@ -691,9 +684,8 @@ export function shortsAutoHint(s: Pick<ShortsSettings, 'count' | 'length'>): str
 }
 
 /**
- * 设置态折成提示词里的参数行（原型 model-shorts-cut.js `agentExtra`），一行一句：几支、多长（自动的一半交给 Agent 按话题定）、画幅与取景、字幕，
- * 勾着「已经切过的不再找」时一句；最后一行「找好就直接创建」，可以单独删掉。
- * 「跟着说话的人」这一版不开放，落回自动；没有译文时字幕只有原文。
+ * The settings state folded into parameter lines in the prompt (prototype model-shorts-cut.js `agentExtra`), one sentence per line: the number of clips; the length (the Agent decides the Auto half by topic); the aspect ratio and framing; subtitles; and, when “已经切过的不再找 (ones already cut are not searched for again)” is checked, one sentence for it. The last line, “找好就直接创建 (if found, create directly)”, can be deleted on its own.
+ * “跟着说话的人 (follow the speaker)” is not open in this version and falls back to Auto. When there is no translation, the subtitles are source-only.
  */
 export function shortsLines(s: ShortsSettings, o: { hasTranslation: boolean }): string[] {
   const count = clampShortsCount(s.count);
@@ -710,20 +702,20 @@ export function shortsLines(s: ShortsSettings, o: { hasTranslation: boolean }): 
   return out;
 }
 
-// ---- 意图句 ----
+// ---- Intent sentence ----
 
 export interface AiIntent {
   tool: AgentToolId;
-  /** 视频名；没有时说「这个视频」。 */
+  /** The video name; when there is none, says “这个视频 (this video)”. */
   title?: string | null;
-  /** 范围（「第 2 章 · 开场」）；整篇时不给。 */
+  /** The scope (“第 2 章 · 开场 (Chapter 2 · Opening)”); not given for the whole document. */
   scope?: string | null;
-  /** 刷新过期译文的两类来源：数字是句数，`true` 是勾了但不知道几句。 */
+  /** The two kinds of sources for refreshing stale translations: a number is the sentence count; `true` means it was checked but the count is not known. */
   edited?: number | boolean;
   cut?: number | boolean;
-  /** 起标题的候选数、做封面的张数。 */
+  /** The number of title candidates, and the number of cover images. */
   count?: number | null;
-  /** 设置态折进来的附加要求，一句一条；空的跳过。 */
+  /** The extra requirements folded in from the settings state, one per sentence; empty ones are skipped. */
   extra?: readonly (string | null | undefined | false)[];
 }
 
@@ -749,7 +741,7 @@ const INTENTS: Record<AgentToolId, (o: IntentArgs) => string> = {
   shortscut: (o) => M.intents.shortscut(o),
 };
 
-/** 交给 Agent 的那句话：意图句加附加要求，每条补上句号。 */
+/** The sentence handed to the Agent: the intent sentence plus the extra requirements, with a full stop added after each. */
 export function intentPrompt(intent: AiIntent): string {
   const title = (intent.title ?? '').trim();
   const p = title ? M.titled(title) : M.thisVideo;
@@ -768,16 +760,15 @@ export function intentPrompt(intent: AiIntent): string {
 }
 
 /**
- * 译文列表里「交给 Agent 重译」发出去的那句话（产品设计 §5.10「逐句与过期译文」，原型 model-agent.js 的 `retranslate` 与带句数的
- * `stale`）：写明语言与范围——一句时是它的时间码与原文开头，一批时是过期或待翻译的句数——只改这几句的译文。
+ * The sentence sent when “交给 Agent 重译 (re-translate with Agent)” is pressed in the translation list (product design §5.10 “sentence-by-sentence and stale translations”; prototype model-agent.js `retranslate`, and `stale` with a count). It states the language and the scope: for one sentence, its timecode and the start of its source text; for a batch, the number of stale or untranslated sentences. It changes only the translations of those sentences.
  */
 export function retranslatePrompt(o: {
   title: string | null;
-  /** 译文语言的名字（界面语言里的写法）。 */
+  /** The name of the translation language (as written in the interface language). */
   language: string;
-  /** 一句：时间码（剪掉了时 null）与原文开头。 */
+  /** One sentence: its timecode (null if it has been cut) and the start of its source text. */
   scope?: { time: string | null; text: string } | null;
-  /** 一批：句数。 */
+  /** One batch: the number of sentences. */
   count?: number;
 }): string {
   const title = (o.title ?? '').trim();
@@ -787,41 +778,41 @@ export function retranslatePrompt(o: {
     : M.retranslateStale({ p, language: o.language, count: o.count ?? 0 });
 }
 
-// ---- AI 工具 Tab：列表、模板、内置 skill、会话去向（产品设计 §5.10、§6.9；原型 model-ai-prompt.js） ----
+// ---- AI tools tab: list, templates, built-in skills, session destinations (product design §5.10, §6.9; prototype model-ai-prompt.js) ----
 
 /**
- * 列表页第一批只列从文稿出发的三组，加「画面」组里的剪成短视频与「声音」组的生成配乐（原型 model-ai-prompt.js `GROUPS_NOW`）；
- * 翻译与智能裁剪仍从各自面板进来，脚注说清去处。
+ * The first batch of the list page lists only the three groups that start from the document, plus cutting into short videos in the “画面 (Picture)” group and generating music in the “声音 (Sound)” group (prototype model-ai-prompt.js `GROUPS_NOW`).
+ * Translation and smart crop still open from their own panels; the footnote says where they are.
  */
 export const LIST_GROUPS: readonly AiToolGroup[] = ['transcript', 'writing', 'publish', 'frame', 'sound'];
 
-/** 有白名单的组只露白名单里的工具（原型 model-ai-prompt.js `OPEN_IN_GROUP`）：「画面」组先只开剪成短视频。 */
+/** A group with an allowlist shows only the tools on the allowlist (prototype model-ai-prompt.js `OPEN_IN_GROUP`): for now, the “画面 (Picture)” group opens only cutting into short videos. */
 const OPEN_IN_GROUP: Partial<Record<AiToolGroup, readonly AiToolId[]>> = { frame: ['shortscut'] };
 
-/** 列表页这一组露出的工具。 */
+/** The tools this group shows on the list page. */
 export function listedTools(group: AiToolGroup): AiTool[] {
   const only = OPEN_IN_GROUP[group];
   return AI_TOOLS.filter((t) => t.group === group && (!only || only.includes(t.id)));
 }
 
-/** 这个工具要不要先有文稿：生成配乐不从文稿出发，没有文稿也能点。 */
+/** Whether this tool needs a document first. Generating music does not start from a document, so it can be clicked without one. */
 export function needsTranscript(id: AiToolId): boolean {
   return id !== 'soundtrack';
 }
 
-/** 分组下的一句副题；没有时不画。 */
+/** A subtitle under the group; not drawn when there is none. */
 export function groupSub(group: AiToolGroup): string | null {
   return M.groupSub[group] ?? null;
 }
 
-/** 列表页脚注。 */
+/** The footnote on the list page. */
 export function laterNote(): string {
   return M.laterNote;
 }
 
 /**
- * 每个工具配一个内置 skill（仓库根 `skills/cuccut/built-in-skills/<id>/`）：工具页的提示词框默认挂着它，可以摘掉，也可以再挂别的。
- * 翻译字幕与刷新过期译文共用一个；起标题与写简介共用一个。
+ * Each tool is paired with one built-in skill (repo root `skills/cuccut/built-in-skills/<id>/`). The tools page's prompt box has it attached by default; it can be removed, and other skills can be attached.
+ * Subtitle translation and refreshing stale translations share one; generating titles and writing descriptions share one.
  */
 export const TOOL_SKILL: Readonly<Partial<Record<AiToolId, string>>> = {
   retranscribe: 'subtitle-workflow',
@@ -839,18 +830,18 @@ export const TOOL_SKILL: Readonly<Partial<Record<AiToolId, string>>> = {
   shortscut: 'shorts-segments',
 };
 
-/** 打开工具页时默认挂的 skill：这个工具的内置 skill 还在列表里就挂它（关着的也挂：点选不看开关，§6.9）。 */
+/** The built-in skill attached by default when the tools page opens: if this tool's built-in skill is still in the list, it is attached (even when switched off, since picking does not look at the switch, §6.9). */
 export function defaultSkillIds(tool: AiToolId, available: readonly { id: string }[]): string[] {
   const id = TOOL_SKILL[tool];
   return id && available.some((s) => s.id === id) ? [id] : [];
 }
 
-/** 工具页说明卡上那一行「会不会改视频」。 */
+/** The line on the tools page description card for “会不会改视频 (whether it changes the video)”. */
 export function toolEffect(tool: AgentToolId): string {
   return M.effect[tool];
 }
 
-/** 模板里意图句下面的几行固定约束；`language` 是语言名（「英语」），没有时跟文稿的语言。 */
+/** The fixed constraints under the intent sentence in the template; `language` is the language name (“英语 (English)”); when there is none, the language of the document is followed. */
 export function standingLines(tool: AgentToolId, opts: { language?: string | null } = {}): string[] {
   const language = opts.language?.trim() || null;
   const own = [...(M.standing[tool] ?? [])];
@@ -860,29 +851,28 @@ export function standingLines(tool: AgentToolId, opts: { language?: string | nul
 }
 
 /**
- * 预填进提示词框的模板：第一行意图句（`intentPrompt` 的结果，范围与勾选项已折在里面），下面一行一条固定约束；
- * `lines` 是工具自己的参数行（剪成短视频的 `shortsLines`），接在最后，一行一句，用户可以单独删改。
+ * The template pre-filled into the prompt box: the first line is the intent sentence (the result of `intentPrompt`, with the scope and checked items already folded in), and below it one fixed constraint per line.
+ * `lines` are the tool's own parameter lines (`shortsLines` for cutting into short videos), appended at the end, one per sentence, so the user can edit or delete them separately.
  */
 export function toolTemplate(tool: AgentToolId, intent: string, opts: { language?: string | null; lines?: readonly string[] } = {}): string {
   return [intent.trim(), ...standingLines(tool, opts), ...(opts.lines ?? [])].filter(Boolean).join('\n');
 }
 
-/** 工具页提示词框的草稿键：附件、图片与改过的提示词都挂在它下面。 */
+/** The draft key for the tools page prompt box: attachments, images, and edited prompts all hang under it. */
 export const toolDraftKey = (videoId: string, tool: AiToolId): string => `aitool:${videoId}:${tool}`;
 
-/** 「会话」一行的一个选项。 */
+/** One option in the “会话 (Session)” row. */
 export interface SessionOption {
   key: 'new' | 'current';
   label: string;
   sub: string;
-  /** 「接着」的那条会话。 */
+  /** The session for “接着 (continue)”. */
   conversationId?: string;
 }
 
 /**
- * 交给 Agent 时发到哪条会话（原型 `sessionOptions`）：缺省新会话、这部视频作为上下文；这部视频有一条说过话的会话时才给「接着」，
- * 标上已有几条消息（还没取到时不写数）。视频不属于项目时新会话与它所在的那条会话共用工作目录（`folderOf`），同样看得到它；
- * 视频还没有位置（`canCreate: false`）时只能接着。
+ * Which session the handoff goes to (prototype `sessionOptions`). The default is a new session with this video as context. “接着 (continue)” is offered only when this video has a session where something has been said, and the existing message count is shown (no number when it has not been fetched yet). If the video is not in a project, the new session shares the working directory of the session the video lives in (`folderOf`), and sees it too.
+ * If the video has no location yet (`canCreate: false`), only continuing is possible.
  */
 export function sessionOptions(input: {
   canCreate: boolean;
@@ -902,7 +892,7 @@ export function sessionOptions(input: {
   return { options, fallback: options[0]?.key ?? null };
 }
 
-/** 主按钮下那行：按下去会去哪。 */
+/** The line under the main button: where pressing it will go. */
 export function handoffHint(session: 'new' | 'current'): string {
   return session === 'current' ? M.hintCurrent : M.hintNew;
 }

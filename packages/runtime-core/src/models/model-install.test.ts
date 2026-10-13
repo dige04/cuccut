@@ -34,14 +34,12 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, mcp, tool, until } from '../agent-tools/testing/fake-agent.ts';
 
 /**
- * 模型安装端到端（架构设计 §6.3）：网关的 `models.install / cancelInstall / repair / remove / test` → JobManager → 下载器 →
- * 本机回环地址上的假模型来源（合成的仓库与清单）；自检走假的 Model Worker。模型目录是临时目录，不访问真实网络、不下载
- * 真实的模型。转写用这台机器上的 Qwen3-ASR 0.6B（Apple Silicon 是 MLX 的，别的平台是 candle 的）；语音合成的模型包是 MLX 的，
- * 只在 Apple Silicon 的 macOS 上测。
+ * End-to-end model installation (architecture design §6.3): the gateway's `models.install / cancelInstall / repair / remove / test` → JobManager → downloader →
+ * a fake model source on the loopback address (a synthetic repository and manifest); self-tests go through a fake Model Worker. The model directory is a temporary directory; there is no access to the real network and no real models are downloaded. Transcription uses Qwen3-ASR 0.6B on this machine (MLX on Apple Silicon, candle on other platforms); the speech synthesis model bundle is MLX, and it is tested only on macOS with Apple Silicon.
  */
 
 const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
-/** 这台机器上的 Qwen3-ASR 0.6B 模型包：Apple Silicon 是 MLX 的，别的平台是 candle 的（同样的仓库）。 */
+/** Qwen3-ASR 0.6B model bundle on this machine: MLX on Apple Silicon, candle on other platforms (same repository). */
 const TRANSCRIBE_BUNDLE = appleSilicon ? QWEN3_ASR_0_6B_BUNDLE : 'qwen3-asr-0.6b@candle';
 if (!appleSilicon) console.warn('跳过语音合成模型包的安装测试：它们是 MLX 的，只在 Apple Silicon 的 macOS 上可用');
 
@@ -57,14 +55,14 @@ const repos: SyntheticRepo[] = [
     revision: def.components.vad!.revision,
     files: { 'config.json': Buffer.from('{}'), 'model.safetensors': syntheticBytes(60_000, 12) },
   },
-  // 可选的对齐器：安装与修复照样下载它。
+  // Optional aligner: install and repair still download it.
   {
     repo: def.components.aligner!.repo,
     revision: def.components.aligner!.revision,
     files: { 'config.json': Buffer.from('{"synthetic":"aligner"}'), 'model.safetensors': syntheticBytes(30_000, 14) },
   },
 ];
-/** 本地语音合成：只有一个组件的模型包，自检用默认声音合成一句（假 Worker 写 1 秒的正弦 WAV，`silent-output` 时是静音）。 */
+/** Local speech synthesis: a model bundle with a single component; the self-test synthesizes one sentence with the default voice (the fake Worker writes a 1-second sine WAV, or silence for `silent-output`). */
 const SPEECH_BUNDLE = 'voxcpm2@mlx-int8';
 const speechDef = BUNDLES.find((b) => b.bundleId === SPEECH_BUNDLE)!;
 const speechRepo: SyntheticRepo = {
@@ -72,7 +70,7 @@ const speechRepo: SyntheticRepo = {
   revision: speechDef.components.tts!.revision,
   files: { 'config.json': Buffer.from('{"synthetic":"tts"}'), 'model.safetensors': syntheticBytes(80_000, 13) },
 };
-/** 本地文生图：整个仓库是一个 `image` 组件，自检用固定的提示词与 seed 少步数生成一张 256² 的图（假 Worker 写渐变 PNG）。 */
+/** Local text-to-image: the whole repository is a single `image` component; the self-test generates one 256² image with a fixed prompt and seed in a few steps (the fake Worker writes a gradient PNG). */
 const IMAGE_BUNDLE = 'qwen-image-2.1@mlx-4bit';
 const imageDef = BUNDLES.find((b) => b.bundleId === IMAGE_BUNDLE)!;
 const imageRepo: SyntheticRepo = {
@@ -80,7 +78,7 @@ const imageRepo: SyntheticRepo = {
   revision: imageDef.components.image!.revision,
   files: { 'model_index.json': Buffer.from('{"synthetic":"image"}'), 'vae/model.safetensors': syntheticBytes(50_000, 15) },
 };
-/** 本地人声分离：只有 `separator` 一个组件，自检把识别的样本分成两路（假 Worker 写人声与低 12 dB 的背景）。 */
+/** Local vocal separation: a single `separator` component; the self-test splits the recognition sample into two tracks (the fake Worker writes vocals and a background 12 dB lower). */
 const SEPARATE_BUNDLE = 'htdemucs-ft@mlx';
 const separateDef = BUNDLES.find((b) => b.bundleId === SEPARATE_BUNDLE)!;
 const separateRepo: SyntheticRepo = {
@@ -88,7 +86,7 @@ const separateRepo: SyntheticRepo = {
   revision: separateDef.components.separator!.revision,
   files: { 'htdemucs_ft_config.json': Buffer.from('{"synthetic":"sep"}'), 'htdemucs_ft.safetensors': syntheticBytes(50_000, 15) },
 };
-/** 「说话人区分」模型包（这台机器上 Qwen3-ASR 用的那个）：Pyannote 分段与 WeSpeaker 两个组件，没有单独的检查。 */
+/** The “说话人区分” (speaker diarization) model bundle (the one Qwen3-ASR uses on this machine): Pyannote segmentation and WeSpeaker, two components, with no separate check. */
 const diarizationDef = BUNDLES.find((b) => b.bundleId === def.diarization)!;
 const diarizationRepos: SyntheticRepo[] = [
   {
@@ -105,8 +103,7 @@ const diarizationRepos: SyntheticRepo[] = [
 const repoBytes = (r: SyntheticRepo) => Object.values(r.files).reduce((s, b) => s + b.length, 0);
 const TOTAL = repos.reduce((sum, r) => sum + repoBytes(r), 0);
 /**
- * 这台机器默认的转写模型包（MOSS）：自己的识别权重，加上与上面共用的对齐器与说话人模型（WeSpeaker）。智能体的下载工具
- * 不给 `bundleId` 时装它。
+ * The default transcription model bundle on this machine (MOSS): its own recognition weights, plus the aligner and speaker model (WeSpeaker) shared with the above. The agent's download tool installs it when no `bundleId` is given.
  */
 const DEFAULT_TRANSCRIBE_BUNDLE = defaultTranscribeBundle(process.platform, process.arch);
 const defaultDef = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
@@ -211,7 +208,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     side = await startSide(source, free);
     expect(bundleOf(side)).toMatchObject({ state: 'not-installed', reason: 'missing-manifest' });
 
-    // 第一步：只给计划，不创建任务。
+    // Step 1: return only the plan; no task is created.
     const first = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     expect(first.jobId).toBeNull();
     expect(first.plan).toMatchObject({
@@ -223,19 +220,19 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     });
     expect((await side.client.request('jobs.list', {})).jobs).toEqual([]);
 
-    // 字节数对不上：拒绝并给新的计划。
+    // Byte count does not match: rejected, and a new plan is returned.
     const changed = await side.client
       .request('models.install', { bundleId: TRANSCRIBE_BUNDLE, confirmBytes: TOTAL + 1 })
       .catch((e: unknown) => e);
     expect(changed).toBeInstanceOf(RpcError);
     expect(changed).toMatchObject({ code: 'conflict', details: { code: 'MODEL_INSTALL_SIZE_CHANGED', plan: { confirmBytes: TOTAL } } });
 
-    // 第二步：确认。下载放慢，好在中途取消。
+    // Step 2: confirm. Download is slowed so it can be cancelled midway.
     source.throttle(8 * 1024, 20);
     const submitted = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE, confirmBytes: TOTAL });
     const jobId = submitted.jobId!;
     expect(jobId).toMatch(/^job_/);
-    // 同一个模型包正在安装：再提交返回同一个任务。
+    // The same model bundle is already being installed: submitting again returns the same task.
     expect((await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE, confirmBytes: TOTAL })).jobId).toBe(jobId);
 
     const downloading = await until(() => {
@@ -251,11 +248,11 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     const status = await until(() => bundleOf(side!)?.state === 'downloading' && bundleOf(side!));
     expect(status.install).toMatchObject({ jobId, state: 'downloading', totalBytes: TOTAL });
     expect(side.modelEvents.some((e) => e.type === 'bundle.updated' && e.bundle.state === 'downloading')).toBe(true);
-    // 下载中不能自检。
+    // Cannot self-test while downloading.
     const busy = await side.client.request('models.test', { bundleId: TRANSCRIBE_BUNDLE }).catch((e: unknown) => e);
     expect(busy).toMatchObject({ code: 'conflict', details: { code: 'MODEL_UNAVAILABLE' } });
 
-    // 取消：任务 cancelled，暂存区留着，模型包报告暂停。
+    // Cancel: the task is cancelled, staging is kept, and the model bundle reports paused.
     const cancelled = await side.client.request('models.cancelInstall', { bundleId: TRANSCRIBE_BUNDLE });
     expect(cancelled.bundle).toMatchObject({ state: 'not-installed', install: { state: 'paused', jobId: null, totalBytes: TOTAL } });
     const paused = cancelled.bundle.install!.receivedBytes;
@@ -264,7 +261,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect((await until(() => terminal(jobOf(side!, jobId)))).state).toBe('cancelled');
     await until(() => bundleOf(side!)?.install?.state === 'paused');
 
-    // 再装：只算剩下的字节，续传。
+    // Install again: only the remaining bytes are counted; it resumes.
     source.throttle(64 * 1024, 0);
     const again = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     expect(again.plan.resumedBytes).toBe(paused);
@@ -283,7 +280,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     const listed = (await side.client.request('models.list', {})).bundles.find((b) => b.bundleId === TRANSCRIBE_BUNDLE)!;
     expect(listed).toMatchObject({ state: 'installed' });
     expect(listed.components!.map((c) => c.state)).toEqual(['installed', 'installed', 'installed']);
-    // 本机转写的能力随之可用。
+    // Local transcription capability becomes available as a result.
     await until(async () => {
       const { capabilities } = await side!.client.request('models.capabilities', {});
       const local = capabilities.transcribe.providers.find((p) => p.providerId === 'local');
@@ -291,7 +288,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     });
     expect((await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE })).plan.upToDate).toBe(true);
 
-    // 自检：样本走完整的 Worker 流程，结果记在模型包上。
+    // Self-test: the sample goes through the full Worker flow, and the result is recorded on the model bundle.
     const { jobId: testJob } = await side.client.request('models.test', { bundleId: TRANSCRIBE_BUNDLE });
     const tested = await until(() => terminal(jobOf(side!, testJob)), 15_000);
     expect(tested).toMatchObject({ kind: 'modelTest', state: 'completed', bundleId: TRANSCRIBE_BUNDLE });
@@ -299,7 +296,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     const selfTest = await until(() => bundleOf(side!)?.selfTest);
     expect(selfTest).toMatchObject({ state: 'passed', jobId: testJob });
     expect(selfTest.detail).toContain('testing one two three');
-    // 两种任务都不属于智能体任务。
+    // Neither kind of task belongs to an agent task.
     expect(side.jobs()!.jobs.every((j) => j.submitter.kind === 'connection')).toBe(true);
   });
 
@@ -312,7 +309,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     });
     expect((await until(() => terminal(jobOf(side!, jobId!)))).state).toBe('completed');
 
-    // 修复：删掉一个文件、改坏另一个（同样大小），只重下这两个。
+    // Repair: delete one file, corrupt another (same size); only these two are re-downloaded.
     const asrDir = path.join(side.home.modelsDir, ...repos[0]!.repo.split('/'));
     await fs.rm(path.join(asrDir, 'config.json'));
     const weights = Buffer.from(repos[0]!.files['model.safetensors']!);
@@ -338,10 +335,10 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     ).toEqual([`${repos[0]!.repo}:config.json`, `${repos[0]!.repo}:model.safetensors`]);
     expect(await fs.readFile(path.join(asrDir, 'model.safetensors'))).toEqual(repos[0]!.files['model.safetensors']);
 
-    // 慢的自检在跑：删除被拒绝。
+    // A slow self-test is running: deletion is rejected.
     await fs.writeFile(side.control, JSON.stringify({ faults: ['slow'] }));
     const { jobId: testJob } = await side.client.request('models.test', { bundleId: TRANSCRIBE_BUNDLE });
-    // Worker 已经在执行（有了进度），不只是排上队。
+    // The Worker is already executing (progress exists), not just queued.
     await until(() => jobOf(side!, testJob)?.progress, 10_000);
     const refused = await side.client.request('models.remove', { bundleId: TRANSCRIBE_BUNDLE }).catch((e: unknown) => e);
     expect(refused).toMatchObject({ code: 'conflict', details: { code: 'MODEL_IN_USE', jobIds: [testJob] } });
@@ -349,7 +346,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
 
     await side.client.request('jobs.cancel', { jobId: testJob });
     await until(() => terminal(jobOf(side!, testJob)));
-    // 转写有出厂默认：指向被删模型包的默认值保留，报告为不可用（§6.8）。
+    // Transcription has a factory default: the default pointing to the deleted model bundle is kept and reported as unavailable (§6.8).
     await side.client.request('models.setDefault', { capability: 'transcribe', providerId: 'local', modelId: TRANSCRIBE_BUNDLE });
     const removed = await side.client.request('models.remove', { bundleId: TRANSCRIBE_BUNDLE });
     expect(removed.removed.sort()).toEqual(repos.map((r) => r.repo).sort());
@@ -361,7 +358,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect(kept.default).toEqual({ providerId: 'local', modelId: TRANSCRIBE_BUNDLE });
     expect(kept.effective).toBeNull();
 
-    // 空间不足：确认后的任务失败，错误带补救说明。
+    // Insufficient space: the task fails after confirmation, and the error includes a remedy.
     free.bytes = 1000;
     const tight = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     expect(tight.plan.availableBytes).toBe(1000);
@@ -378,7 +375,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
       },
     });
 
-    // 严格离线：不下载。
+    // Strict offline: no download.
     await side.client.request('settings.set', { values: { 'offline.strict': true } });
     const offline = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE }).catch((e: unknown) => e);
     expect(offline).toMatchObject({ code: 'conflict', details: { code: 'OFFLINE_STRICT' } });
@@ -394,20 +391,20 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
       confirmBytes: plan.plan.confirmBytes,
     });
     expect((await until(() => terminal(jobOf(side!, jobId!)))).state).toBe('completed');
-    // 自检加载了 Worker，跑完空闲着（`jobIdleMs` 是一分钟）。
+    // The self-test loaded the Worker, which is idle after finishing (`jobIdleMs` is one minute).
     const { jobId: testJob } = await side.client.request('models.test', { bundleId: TRANSCRIBE_BUNDLE });
     expect((await until(() => terminal(jobOf(side!, testJob)), 15_000)).state).toBe('completed');
     const provider = side.runtime.models.provider;
     expect(provider.workerPid(TRANSCRIBE_BUNDLE)).not.toBeNull();
 
-    // 对齐器不在了：模型包还算装好，组件报告缺。
+    // Aligner missing: the model bundle still counts as installed, and the component reports as missing.
     const aligner = repos[2]!;
     await fs.rm(path.join(side.home.modelsDir, ...aligner.repo.split('/')), { recursive: true });
     const listed = (await side.client.request('models.list', {})).bundles.find((b) => b.bundleId === TRANSCRIBE_BUNDLE)!;
     expect(listed.state).not.toBe('not-installed');
     expect(listed.components!.find((c) => c.component === 'aligner')).toMatchObject({ optional: true, state: 'missing', bytes: null });
 
-    // 安装只下载对齐器，装好的组件不动。
+    // Installing downloads only the aligner; the installed components are untouched.
     const complete = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     expect(complete.plan.upToDate).toBe(false);
     expect(complete.plan.components.map((c) => [c.component, c.action])).toEqual([
@@ -422,7 +419,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     });
     expect((await until(() => terminal(jobOf(side!, completed.jobId!)))).state).toBe('completed');
     expect(new Set(source.requests.slice(before).filter((r) => r.method === 'GET').map((r) => r.repo))).toEqual(new Set([aligner.repo]));
-    // 旧的 Worker 没有对齐器：空闲的卸下，下一个任务重新加载。
+    // The old Worker has no aligner: idle ones are unloaded, and the next task reloads them.
     await until(() => provider.workerPid(TRANSCRIBE_BUNDLE) === null);
     expect((await side.client.request('models.list', {})).bundles.find((b) => b.bundleId === TRANSCRIBE_BUNDLE)!.components!.map((c) => c.state)).toEqual([
       'installed',
@@ -455,7 +452,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect(untestable).toBeInstanceOf(RpcError);
     expect(untestable).toMatchObject({ code: 'unsupported' });
 
-    // 识别模型包的慢自检在跑：它的 Worker 加载着这个模型包的组件，删除被拒绝。
+    // A slow self-test of the recognition bundle is running: its Worker has this bundle's components loaded, so deletion is rejected.
     await fs.writeFile(side.control, JSON.stringify({ faults: ['slow'] }));
     const { jobId: testJob } = await side.client.request('models.test', { bundleId: TRANSCRIBE_BUNDLE });
     await until(() => jobOf(side!, testJob)?.progress, 10_000);
@@ -487,7 +484,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
       expect(tested.result).toMatchObject({ artifactId: expect.stringMatching(/^sha256:/) });
       expect(await until(() => speechOf()?.selfTest)).toMatchObject({ state: 'passed', jobId: testJob, detail: '1.00 秒 · 24000 Hz' });
 
-      // 合成出静音：自检失败，原因写在模型包上。
+      // Synthesis produced silence: self-test fails, and the reason is recorded on the model bundle.
       await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'synthesize'], faults: ['silent-output'] }));
       const { jobId: silentJob } = await side.client.request('models.test', { bundleId: SPEECH_BUNDLE });
       const silent = await until(() => terminal(jobOf(side!, silentJob)), 15_000);
@@ -501,7 +498,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         code: 'MODEL_OUTPUT_WRONG',
       });
 
-      // 删除默认的合成模型包：语音合成没有出厂默认，指向它的默认值一并清掉（「未设置」），并发 capabilities.updated。
+      // Deleting the default synthesis model bundle: speech synthesis has no factory default, so the default pointing to it is cleared too (“未设置” (not set)), and capabilities.updated is emitted.
       await side.client.request('models.setDefault', { capability: 'synthesizeSpeech', providerId: 'local', modelId: SPEECH_BUNDLE });
       expect((await side.client.request('models.capabilities', {})).capabilities.synthesizeSpeech.default).toEqual({
         providerId: 'local',
@@ -531,7 +528,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
       const imageOf = () => side!.models()?.bundles.find((b) => b.bundleId === IMAGE_BUNDLE);
       await until(() => imageOf()?.state === 'installed');
       expect(imageOf()).toMatchObject({ capability: 'image', label: 'Qwen-Image-2.1', license: { commercialUse: false } });
-      // 装好之后 local 提供 generateImage；没有出厂默认，不指定就不会用它。
+      // After installation, local provides generateImage; there is no factory default, so it is not used unless specified.
       const capabilities = (await side.client.request('models.capabilities', {})).capabilities;
       expect(capabilities.generateImage.providers.find((p) => p.providerId === 'local')).toMatchObject({ available: true });
       expect(capabilities.generateImage.effective).toBeNull();
@@ -546,7 +543,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>);
       expect(run).toMatchObject({ capability: 'image', options: { width: 256, height: 256, steps: 4, seed: 7 } });
 
-      // 出一整片纯色：自检失败，原因写在模型包上。
+      // Output is a solid colour throughout: self-test fails, and the reason is recorded on the model bundle.
       await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'image'], faults: ['flat-output'] }));
       const { jobId: flatJob } = await side.client.request('models.test', { bundleId: IMAGE_BUNDLE });
       const flat = await until(() => terminal(jobOf(side!, flatJob)), 15_000);
@@ -568,7 +565,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     const separateOf = () => side!.models()?.bundles.find((b) => b.bundleId === SEPARATE_BUNDLE);
     await until(() => separateOf()?.state === 'installed');
     expect(separateOf()).toMatchObject({ capability: 'separate', label: 'HTDemucs-FT', license: { name: 'MIT', commercialUse: true } });
-    // 能力视图：人声分离的出厂默认是本机装好的分离模型包；可以设成用户默认值（与语音识别同样的设法）。
+    // Capability view: the factory default for vocal separation is the separation model bundle installed on this machine; it can be set as a user default (the same approach as speech recognition).
     const separateView = async () => (await side!.client.request('models.capabilities', {})).capabilities.separateAudio;
     expect(await separateView()).toMatchObject({
       default: null,
@@ -618,7 +615,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         ['load-fail:MODEL_NOT_INSTALLED', 'MODEL_FILES_DAMAGED'],
         ['load-fail:MODEL_RESOURCE', 'MODEL_OUT_OF_MEMORY'],
       ] as const) {
-        // 上一次加载失败把模型包挡下了：重新启用之后才能再检查。
+        // A previous load failure blocked the model bundle: it can be checked again only after it is re-enabled.
         await side.client.request('models.enable', { bundleId: SPEECH_BUNDLE });
         await until(() => speechOf()?.state === 'installed');
         await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'synthesize'], faults: [fault] }));
@@ -650,7 +647,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         const statusOf = (bundleId: string) => side!.models()?.bundles.find((b) => b.bundleId === bundleId);
         await until(() => statusOf(SPEECH_BUNDLE)?.state === 'installed' && statusOf(TRANSCRIBE_BUNDLE)?.state === 'installed');
 
-        // 提交时：模型数据目录是空的。
+        // At submission: the model data directory is empty.
         const empty = path.join(assets, 'empty');
         await fs.mkdir(empty);
         process.env[MODEL_ASSETS_ENV] = empty;
@@ -664,7 +661,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         }
         expect(side.jobs()!.jobs.length).toBe(jobsBefore);
 
-        // 执行前：第一个自检占着这个模型包的队列（假 Worker 放慢），第二个排着；这时删掉内置音色的录音。
+        // Before execution: the first self-test holds this model bundle's queue (the fake Worker is slowed), and the second waits in line; at this point the built-in voice recording is deleted.
         process.env[MODEL_ASSETS_ENV] = assets;
         await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'synthesize'], faults: ['slow'] }));
         const { jobId: first } = await side.client.request('models.test', { bundleId: SPEECH_BUNDLE });
@@ -680,7 +677,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         });
         expect(failed.error!.message).toContain('重新安装 CucCut');
         expect(failed.error!.message).not.toContain(assets);
-        // 模型包上的自测结果还是第一次的：安装不完整不算模型自测没通过。
+        // The self-test result on the model bundle is still the first one: an incomplete install does not count as a failed model self-test.
         expect(statusOf(SPEECH_BUNDLE)?.selfTest).toMatchObject({ state: 'passed', jobId: first });
       } finally {
         if (saved === undefined) delete process.env[MODEL_ASSETS_ENV];
@@ -738,7 +735,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     const job = await until(() => terminal(jobOf(side!, result.body.jobId)));
     expect(job).toMatchObject({ kind: 'modelInstall', state: 'completed', submitter: { kind: 'agent' } });
 
-    // 已经装好：不再确认，jobId 为 null。
+    // Already installed: no further confirmation, and jobId is null.
     const again = await tool(session, 'models_install', {});
     expect(again.body).toMatchObject({ jobId: null, downloadBytes: 0 });
     expect(side.runtime.harness.approvals.pending()).toEqual([]);

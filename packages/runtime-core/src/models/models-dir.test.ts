@@ -12,12 +12,11 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { until } from '../agent-tools/testing/fake-agent.ts';
 
 /**
- * 模型目录端到端（架构设计 §6.3）：网关的 `models.getDir / inspectDir / setDir` → 模型目录服务 → 盘上的移动与回滚。
- * 模型是临时目录里合成的仓库（带清单的小文件），不碰真实的模型目录。临时目录都在同一块盘上，跨盘的复制与校验由
- * `@cuccut/models` 的单元测试覆盖。
+ * End to end model directory (architecture design §6.3): the gateway's `models.getDir / inspectDir / setDir` → model directory service → move and rollback on disk.
+ * Models are repositories synthesized in a temp directory (small files with manifests); the real model directory is not touched. The temp directories are all on the same disk; cross-disk copy and verification are covered by the `@cuccut/models` unit tests.
  */
 
-/** 这台机器上的 Qwen3-ASR 0.6B 模型包：Apple Silicon 是 MLX 的，别的平台是 candle 的（同样的仓库）。 */
+/** The Qwen3-ASR 0.6B model pack on this machine: MLX on Apple Silicon, candle on other platforms (same repository). */
 const TRANSCRIBE_BUNDLE = process.platform === 'darwin' && process.arch === 'arm64' ? QWEN3_ASR_0_6B_BUNDLE : 'qwen3-asr-0.6b@candle';
 
 const def = BUNDLES.find((b) => b.bundleId === TRANSCRIBE_BUNDLE)!;
@@ -32,7 +31,7 @@ const repos: SyntheticRepo[] = [
     revision: def.components.vad!.revision,
     files: { 'config.json': Buffer.from('{}'), 'model.safetensors': syntheticBytes(6_000, 22) },
   },
-  // 可选的对齐器：装了就是模型包的一部分，随目录一起移动。
+  // Optional aligner: if installed, it is part of the model pack and moves with the directory.
   {
     repo: def.components.aligner!.repo,
     revision: def.components.aligner!.revision,
@@ -53,11 +52,11 @@ interface Side {
 let tmp: string;
 let side: Side | undefined;
 const free = { bytes: (10 * 1024 * 1024 * 1024) as number | null };
-/** 每个仓库放到位之前调一次：测试在这里卡住移动、或注入失败。 */
+/** Called once before each repository is put in place: tests use this to stall the move or inject a failure. */
 let beforePlace: (repo: string) => Promise<void> | void = () => {};
-/** 临时目录都在同一块盘上；置为 false 时假装跨盘（复制、校验、删原文件）。 */
+/** The temp directories are all on the same disk; when set to false, pretend it is cross-disk (copy, verify, delete the original files). */
 let sameDisk = true;
-/** 卡住的移动在测试失败时也要放开，否则 Runtime 停不下来。 */
+/** A stalled move must be released even when the test fails, otherwise the Runtime cannot stop. */
 let releaseGate: () => void = () => {};
 
 async function startSide(env: Record<string, string> = {}): Promise<Side> {
@@ -162,7 +161,7 @@ describe('模型目录', () => {
     await until(() => bundleState(side!)?.components?.every((c) => c.state === 'installed'));
     expect((await side.client.request('settings.get', {})).settings['models.dir']).toBe(other);
 
-    // 设置页的通用写法不能改它。
+    // The settings page's generic write approach must not change it.
     const managed = await rejection(side.client.request('settings.set', { values: { 'models.dir': defaultDir } }));
     expect(codeOf(managed)).toBe('SETTING_MANAGED');
 
@@ -170,7 +169,7 @@ describe('模型目录', () => {
     side = await startSide();
     expect(await side.client.request('models.getDir', {})).toMatchObject({ path: other, source: 'setting', modelCount: 1 });
 
-    // 恢复缺省：缺省目录是空的，只切换。
+    // Restore the default: the default directory is empty, so this only switches.
     const back = await side.client.request('models.setDir', { path: null, mode: 'switch' });
     expect(back.dir).toMatchObject({ path: defaultDir, source: 'default', usedBytes: 0 });
     expect((await side.client.request('settings.get', {})).settings['models.dir']).toBeNull();
@@ -279,7 +278,7 @@ describe('模型目录', () => {
       await fs.chmod(locked, 0o755);
     }
 
-    // 放不下：同一块盘时改名不占空间；跨盘时要能放下要移动的全部字节。只切换不受影响。
+    // Does not fit: on the same disk a rename takes no space; across disks, all the bytes to move must fit. Switch-only is unaffected.
     free.bytes = 100;
     const small = path.join(tmp, 'small');
     await fs.mkdir(small);
@@ -301,7 +300,7 @@ describe('模型目录', () => {
     expect((await side.client.request('models.setDir', { path: small, mode: 'switch' })).dir).toMatchObject({ path: small, usedBytes: 0 });
   });
 
-  // 自检要用 Qwen3-ASR 0.6B 的 MLX 模型包，只在 Apple Silicon 的 macOS 上能跑。
+  // The self-test needs the Qwen3-ASR 0.6B MLX model pack, which only runs on macOS on Apple Silicon.
   it('有任务在用本地模型时拒绝（MODEL_IN_USE），结束后卸下空闲的 Worker 再换', async () => {
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
@@ -321,7 +320,7 @@ describe('模型目录', () => {
 
     await side.client.request('jobs.cancel', { jobId: testJob });
     await until(() => terminal(jobOf(side!, testJob)));
-    // Worker 还加载着模型（空闲）：换目录时先卸下。
+    // A Worker still has the model loaded (idle): unload it before changing the directory.
     await fs.writeFile(side.control, '{}');
     const result = await side.client.request('models.setDir', { path: other, mode: 'switch' });
     expect(result.dir).toMatchObject({ path: other, modelCount: 1 });

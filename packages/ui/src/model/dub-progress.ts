@@ -19,13 +19,11 @@ import { jobLive } from './task-list.ts';
 import { chargesOnRetry } from './task-reconcile.ts';
 
 /**
- * 翻译配音流程（`pipelines.start` 的 `dub`，架构设计 §7.9）在工具页上的进度、失败与收据：父任务记着九步（读取原文 →
- * 翻译 → 组装译文 → 写入译文 → 核对译文 → 分离人声与背景 → 逐句合成 → 时间对齐 → 应用配音），翻译与合成两步按句报进度，
- * 合成一步再为每句开一个子任务（`第 N 句`）。给了译文时翻译三步跳过；没有要求分离或没有分离的执行者时分离一步跳过。
- * 进度只按 Runtime 报来的真实数字算，不猜批次（同 translate-progress.ts）。
+ * Progress, failure and receipt for the translated dubbing flow (`dub` of `pipelines.start`, architecture design §7.9) on the tools page. The parent task records nine steps: read source → translate → assemble translation → write translation → verify translation → separate vocals and background → synthesize sentence by sentence → align timing → apply dub. The translation and synthesis steps report progress per sentence. The synthesis step opens a child task for each sentence (`第 N 句`). When a translation is given, the three translation steps are skipped. When separation is not requested or there is no separation executor, the separation step is skipped.
+ * Progress is computed only from the real numbers the Runtime reports, without guessing batches (same as translate-progress.ts).
  */
 
-/** 各步占总进度的份量：时间几乎都花在逐批翻译与逐句合成上。认不出的步骤按 3 算。 */
+/** The weight of each step in total progress: most of the time goes to per-batch translation and per-sentence synthesis. Unrecognized steps count as 3. */
 const STEP_WEIGHT: Record<string, number> = {
   'freeze-source': 2,
   translate: 30,
@@ -39,31 +37,31 @@ const STEP_WEIGHT: Record<string, number> = {
 };
 const weightOf = (name: string) => STEP_WEIGHT[name] ?? 3;
 
-/** 先翻译时才跑的三步。 */
+/** The three steps that only run when translating first. */
 export const TRANSLATING_STEPS = new Set(['translate', 'assemble', 'write']);
-/** 停在这几步上时失败与补救按文本模型算；别的按语音合成算。 */
+/** When the flow stops at these steps, the failure and remedy are based on the text model. Others are based on speech synthesis. */
 const TEXT_STEPS = new Set(['freeze-source', 'translate', 'assemble', 'write']);
 
 type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
 
-/** 这个视频的翻译配音流程（不论从哪里发起：工具页、智能体、命令行）。 */
+/** The translated dubbing flow for this video (wherever it was started: the tools page, the agent, or the command line). */
 export function isDubJob(job: JobRecord, videoId: Id | null): boolean {
   return job.kind === 'pipeline' && job.pipeline?.name === DUB_PIPELINE && videoId !== null && job.videoId === videoId;
 }
 
-/** 正在配的（排队、在跑、崩溃后自动重跑）。 */
+/** Being dubbed (queued, running, or rerun automatically after a crash). */
 export function liveDubs(jobs: readonly JobRecord[], videoId: Id | null): JobRecord[] {
   return jobs.filter((job) => isDubJob(job, videoId) && jobLive(job));
 }
 
-/** 冻结参数里配成的语言。 */
+/** The language dubbed into, from the frozen parameters. */
 export function dubLanguageOf(job: JobRecord): string | null {
   return str(job.pipeline?.params.language) ?? str(job.pipeline?.summary?.language);
 }
 
-/** 冻结参数里语音合成与文本模型的 Provider（父任务的 `providerId` 只记语音合成那家）。 */
+/** The speech synthesis and text model Providers in the frozen parameters (the parent task's `providerId` records only the speech synthesis one). */
 export function dubProviders(job: JobRecord): { voice: string | null; text: string | null } {
   const params = job.pipeline?.params ?? {};
   const voice = isObject(params.voice) ? str(params.voice.providerId) : null;
@@ -71,13 +69,13 @@ export function dubProviders(job: JobRecord): { voice: string | null; text: stri
   return { voice: voice ?? str(job.providerId), text: params.translationId ? null : translate };
 }
 
-/** 让流程停下的那一步：`pipeline.stoppedAt`，没有时取第一个失败、中断或取消的步骤。 */
+/** The step that stops the flow: `pipeline.stoppedAt`. If absent, the first failed, interrupted or cancelled step. */
 export function dubStoppedAt(job: JobRecord): string | null {
   const steps = job.pipeline?.steps ?? [];
   return job.pipeline?.stoppedAt ?? steps.find((s) => s.status === 'failed' || s.status === 'interrupted' || s.status === 'cancelled')?.name ?? null;
 }
 
-/** 这一步会不会跳过：已经标了 `skipped`，或还没到、但按冻结参数一定跳过（给了译文时的翻译三步；没有分离的执行者）。 */
+/** Whether this step is skipped: already marked `skipped`, or not reached yet but certainly skipped by the frozen parameters (the three translation steps when a translation is given; no separation executor). */
 function skips(step: PipelineStepState, params: Json): boolean {
   if (step.status === 'skipped') return true;
   if (step.status !== 'pending') return false;
@@ -86,27 +84,27 @@ function skips(step: PipelineStepState, params: Json): boolean {
   return false;
 }
 
-/** 进度阶梯上画的步骤：去掉跳过的与按冻结参数一定跳过的（九格在窄面板里挤不下，也不该画永远灰着的格子）。 */
+/** Steps drawn on the progress ladder: the skipped ones and those the frozen parameters certainly skip are removed. Nine cells do not fit a narrow panel, and there is no reason to draw cells that stay grey forever. */
 export function dubLadder(job: JobRecord): PipelineStepState[] {
   const params = job.pipeline?.params ?? {};
   return (job.pipeline?.steps ?? []).filter((step) => !skips(step, params));
 }
 
 export interface DubProgress {
-  /** 0–100；还没开始时 0，没完成时最多 99。 */
+  /** 0–100. 0 before starting, at most 99 before completion. */
   percent: number;
-  /** 正在执行的那一步：Runtime 给的步骤名与给人看的名字；排队、还没有步骤时 null。 */
+  /** The step now running: the step name from the Runtime and its name for people. null while queued or before any step. */
   step: { name: string; label: string } | null;
-  /** 翻译或合成那一步的句数；还没报时 null。 */
+  /** The sentence count for the translation or synthesis step. null until reported. */
   units: { step: 'translate' | 'synthesize'; done: number; total: number | null } | null;
-  /** 合成那一步当前这一次的逐句子任务：在合成的、失败了的句数。 */
+  /** For the synthesis step: the per-sentence child tasks now running. The number of sentences synthesizing and the number that failed. */
   sentences: { running: number; failed: number } | null;
   queued: boolean;
 }
 
 /**
- * 总进度：完成或跳过的步骤不计入（一定跳过的也不计，免得一开始就跳一大截），正在跑的步骤按子任务报来的 `done / total` 算一部分。
- * 子任务不在镜像里或没有总数时那一步按 0 算——宁可慢，不猜。
+ * Total progress: completed or skipped steps are not counted. Steps certain to be skipped are not counted either, so the bar does not jump ahead at the start. A running step counts partly, by the child task's `done / total`.
+ * When a child task is not in the mirror or has no total, that step counts as 0. Better slow than guessing.
  */
 export function dubProgress(parent: JobRecord, jobs: readonly JobRecord[]): DubProgress {
   const steps = dubLadder(parent);
@@ -148,11 +146,11 @@ export function dubProgress(parent: JobRecord, jobs: readonly JobRecord[]): DubP
 }
 
 /**
- * 重试会不会为已经做过的再花钱：`pipelines.retry` 从停下的那一步接着做，前面完成的步骤复用产出。
- * - 停在「翻译」：这一步整个重跑，已经翻过的批次会再调一次在线文本模型（`charges`；本机与节点的不计费，null）。
- * - 停在「逐句合成」：已经合成好的句子复用，只合成失败的和还没合成的（`partial`）。
- * - 停在合成之后（对齐、应用）：不再调用模型（`free`）。
- * - 停在翻译与合成之间：译文复用，合成还没开始，谈不上「再」花钱（`free`）。停在翻译之前：null。
+ * Whether a retry spends money again on work already done. `pipelines.retry` continues from the step where it stopped and reuses the outputs of earlier completed steps.
+ * - Stopped at “翻译” (translation): this whole step reruns. Batches already translated call the online text model again (`charges`; local and node runs are not billed, so null).
+ * - Stopped at “逐句合成” (sentence synthesis): sentences already synthesized are reused. Only the failed and not-yet-synthesized ones are synthesized (`partial`).
+ * - Stopped after synthesis (align, apply): the model is not called again (`free`).
+ * - Stopped between translation and synthesis: the translation is reused and synthesis has not started, so there is no “再” (again) cost (`free`). Stopped before translation: null.
  */
 export function dubRetryNote(job: JobRecord): 'charges' | 'partial' | 'free' | null {
   const stoppedAt = dubStoppedAt(job);
@@ -165,7 +163,7 @@ export function dubRetryNote(job: JobRecord): 'charges' | 'partial' | 'free' | n
   return 'free';
 }
 
-/** 失败时按停下的那一步找补救：翻译那几步按文本模型（`generateText`），别的按语音合成（凭据、配置问题去模型页）。 */
+/** On failure, the remedy depends on the step it stopped at. Translation steps use the text model (`generateText`). Others use speech synthesis (credential and config problems go to the model page). */
 export function dubRemedy(job: JobRecord): Remedy | null {
   const stoppedAt = dubStoppedAt(job);
   const providers = dubProviders(job);
@@ -175,7 +173,7 @@ export function dubRemedy(job: JobRecord): Remedy | null {
   return jobRemedy({ kind, providerId, error: job.error });
 }
 
-/** 完成时的摘要；没有、或不像 `DubSummary` 时 null。 */
+/** The summary on completion. null when there is none, or when it does not look like `DubSummary`. */
 export function dubSummaryOf(job: JobRecord): DubSummary | null {
   const summary = job.pipeline?.summary;
   if (!isObject(summary) || !isObject(summary.units) || typeof summary.planDocumentId !== 'string' || typeof summary.groupId !== 'string') return null;
@@ -195,11 +193,11 @@ export interface DubUnitRow {
   key: DubUnitKey;
   label: string;
   count: number;
-  /** 放上了（`placed`）还是没放（要用户看一眼）。 */
+  /** Placed (`placed`) or not placed (the user should take a look). */
   placed: boolean;
 }
 
-/** 配音进度与收据的文案（英文是键与类型的来源，译文在 `dub-progress.zh-Hans.ts`）。 */
+/** Copy for the dub progress and receipt (English is the source of keys and types; translations are in `dub-progress.zh-Hans.ts`). */
 const en = {
   unit: {
     fit: 'Placed as is',
@@ -238,7 +236,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 
 const UNIT_LABEL: Record<DubUnitKey, string> = live(() => M.unit);
 
-/** 收据上各句的去向（按放不放得下）：只列有句子的，放上的在前。 */
+/** Where each sentence ends up on the receipt, depending on whether it fits. Only the groups that have sentences are listed, with placed ones first. */
 export function dubUnitRows(summary: Pick<DubSummary, 'units'>): DubUnitRow[] {
   const u = summary.units;
   const fit = Math.max(0, u.placed - u.tempo - u.extended);
@@ -254,7 +252,7 @@ export function dubUnitRows(summary: Pick<DubSummary, 'units'>): DubUnitRow[] {
   return rows.filter((row) => row.count > 0);
 }
 
-/** 音色不可用的原因（Runtime 给的错误码与 `stale`、`missing` 之类的原因）。 */
+/** Reasons a voice is unavailable (the Runtime's error codes and reasons such as `stale` and `missing`). */
 export function voiceReasonText(code: string, reason: string): string {
   switch (reason) {
     case 'stale':
@@ -290,7 +288,7 @@ export interface VoiceFailure {
 
 type UnavailableUnit = DubSummary['voiceUnavailableUnits'][number];
 
-/** 按说话人归拢音色不可用的句子（这位说话人的句子没合成）：一位说话人一行，次序照第一次出现。 */
+/** Groups the sentences whose voice is unavailable by speaker (this speaker's sentences were not synthesized): one line per speaker, in order of first appearance. */
 export function voiceFailures(units: readonly UnavailableUnit[]): VoiceFailure[] {
   const out = new Map<string, VoiceFailure>();
   for (const u of units) {
@@ -302,16 +300,16 @@ export function voiceFailures(units: readonly UnavailableUnit[]): VoiceFailure[]
 }
 
 export interface DubFailureFacts {
-  /** 所有句子的说话人音色都不可用（失败的 `details.unavailable`）。 */
+  /** All sentences' speaker voices are unavailable (the failed `details.unavailable`). */
   unavailable: VoiceFailure[];
-  /** 合成失败的句子（`DUB_SYNTHESIS_FAILED` 的 `details.failed`）。 */
+  /** Sentences that failed synthesis (`details.failed` of `DUB_SYNTHESIS_FAILED`). */
   failed: Array<{ unitId: Id; code: string; message: string }>;
-  /** 停下时已经合成、还剩的句数。 */
+  /** The number of sentences still left after stopping, which were already synthesized. */
   synthesized: number | null;
   remaining: number | null;
 }
 
-/** 失败的任务里 Runtime 给的逐句事实：哪些句子没合成、为什么；没有时空的。 */
+/** The per-sentence facts the Runtime gives for a failed task: which sentences were not synthesized and why. Empty when there are none. */
 export function dubFailureFacts(job: Pick<JobRecord, 'error'>): DubFailureFacts {
   const details = isObject(job.error?.details) ? job.error.details : {};
   const unavailable = Array.isArray(details.unavailable)
@@ -334,7 +332,7 @@ export function dubFailureFacts(job: Pick<JobRecord, 'error'>): DubFailureFacts 
 
 const WARNING_TITLE: Record<string, string> = live(() => M.warning);
 
-/** 任务上的告警（同一码只留一条）：标题与 Runtime 的原话。 */
+/** Warnings on the task (one per code): the title and the Runtime's original words. */
 export function dubWarnings(job: Pick<JobRecord, 'warnings'>): Array<{ code: string; title: string; detail: string }> {
   const seen = new Set<string>();
   const out: Array<{ code: string; title: string; detail: string }> = [];
@@ -346,7 +344,7 @@ export function dubWarnings(job: Pick<JobRecord, 'warnings'>): Array<{ code: str
   return out;
 }
 
-/** 人声与背景分离的结果，如实写。 */
+/** The result of separating vocals from background, reported as it is. */
 export function separationText(separation: DubSummary['separation']): string {
   switch (separation) {
     case 'completed':
@@ -358,7 +356,7 @@ export function separationText(separation: DubSummary['separation']): string {
   }
 }
 
-/** 原声怎么处理的。 */
+/** What was done with the original audio. */
 export function originalAudioText(mode: DubSummary['originalAudio'], duckDb: number | null): string {
   if (mode === 'mute') return M.originalMuted;
   if (mode === 'keep') return M.originalKept;

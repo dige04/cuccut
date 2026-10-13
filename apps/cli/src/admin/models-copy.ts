@@ -27,9 +27,9 @@ import { vi } from './models-copy.vi.ts';
 
 const s = (n: number) => (n === 1 ? '' : 's');
 
-/** `cuccut models …` 的文案（英文是键与类型的来源，译文在 `models-copy.<语言>.ts`）。 */
+/** Copy for `cuccut models …`. The English is the source of the keys and types; the translations are in `models-copy.<language>.ts`. */
 const en = {
-  /** `cuccut models --help` 与 `cuccut help models` 的正文（管理桶的子命令）。 */
+  /** The body of `cuccut models --help` and `cuccut help models` (subcommands of the admin bucket). */
   help: `Usage:
   cuccut models cancel <bundleId> [--discard]
                                    Stop installing (what's already downloaded is kept; install again to resume);
@@ -217,7 +217,7 @@ const en = {
   byCapability: 'By capability',
   byModel: 'By model',
   byAccount: 'By account',
-  // ---- 管理桶 `cuccut models …`（admin/models.ts） ----
+  // ---- Admin bucket `cuccut models …` (admin/models.ts) ----
   usageRepair: 'Usage: cuccut models repair <bundleId> [--yes]',
   usageCancel: 'Usage: cuccut models cancel <bundleId> [--discard]',
   usageConfigure: 'Usage: cuccut models configure <providerId> [--enable|--disable] [--key-stdin] [--endpoint <url>] …',

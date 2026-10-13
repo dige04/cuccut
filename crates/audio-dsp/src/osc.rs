@@ -1,11 +1,10 @@
-//! 振荡器：逐采样频率 → 相位累加；polyBLEP 带限锯齿 / 方波；正弦。
+//! Oscillators: per-sample frequency → phase accumulation; polyBLEP band-limited sawtooth / square; sine.
 //!
-//! 频率曲线是 `&[f64]`（每个采样一个 Hz 值），相位按 `phase0 + Σ f/sr` 累加（第一个采样已含
-//! 自己那一步，与参考工程 `np.cumsum` 同口径）；累加在 `f64` 里做，长音不漂。
+//! The frequency curve is `&[f64]` (one Hz value per sample), and the phase accumulates as `phase0 + Σ f/sr` (the first sample already includes its own step, matching the reference project's `np.cumsum`); accumulation is done in `f64` so long notes do not drift.
 
 use crate::math::TAU;
 
-/// 累计相位（单位：周，未取模）。
+/// Accumulated phase (in cycles, not wrapped modulo 1).
 pub fn phase_cycles(freq: &[f64], sr: f64, phase0: f64) -> Vec<f64> {
     let mut acc = phase0;
     freq.iter()
@@ -16,7 +15,7 @@ pub fn phase_cycles(freq: &[f64], sr: f64, phase0: f64) -> Vec<f64> {
         .collect()
 }
 
-/// 累计相位（弧度），供加性合成 `sin(k·φ + θ)` 用。
+/// Accumulated phase (radians), for additive synthesis `sin(k·φ + θ)`.
 pub fn phase_radians(freq: &[f64], sr: f64) -> Vec<f64> {
     let mut acc = 0.0;
     freq.iter()
@@ -42,7 +41,7 @@ fn poly_blep(t: f64, dt: f64) -> f64 {
     }
 }
 
-/// 带限锯齿（−1..1，上升沿），`phase0` 是起始相位（周）。
+/// Band-limited sawtooth (−1..1, rising edge); `phase0` is the starting phase (in cycles).
 pub fn saw(freq: &[f64], sr: f64, phase0: f64) -> Vec<f32> {
     let mut ph = phase0 - libm::floor(phase0);
     freq.iter()
@@ -55,7 +54,7 @@ pub fn saw(freq: &[f64], sr: f64, phase0: f64) -> Vec<f32> {
         .collect()
 }
 
-/// 带限方波（占空比 `duty`，0..1）。
+/// Band-limited square wave (duty cycle `duty`, 0..1).
 pub fn square(freq: &[f64], sr: f64, phase0: f64, duty: f64) -> Vec<f32> {
     let duty = duty.clamp(0.01, 0.99);
     let mut ph = phase0 - libm::floor(phase0);
@@ -76,7 +75,7 @@ pub fn square(freq: &[f64], sr: f64, phase0: f64, duty: f64) -> Vec<f32> {
         .collect()
 }
 
-/// 正弦（按频率曲线累加相位）。
+/// Sine (phase accumulated from the frequency curve).
 pub fn sine(freq: &[f64], sr: f64, phase0: f64) -> Vec<f32> {
     phase_cycles(freq, sr, phase0)
         .into_iter()
@@ -91,7 +90,7 @@ mod tests {
 
     const SR: f64 = 48_000.0;
 
-    /// 功率谱中 `lo..hi` Hz 的能量占比。
+    /// Fraction of the power spectrum's energy in `lo..hi` Hz.
     fn band_fraction(x: &[f32], lo: f64, hi: f64) -> f64 {
         let n = next_pow2(x.len());
         let fft = Fft::new(n);
@@ -121,8 +120,7 @@ mod tests {
             .into_iter()
             .map(|c| (2.0 * (c - libm::floor(c)) - 1.0) as f32)
             .collect();
-        // 3111 Hz 的谐波落在 20 kHz 以上就会折回；比较 20 kHz 以下、非谐波处的杂散能量
-        // 不方便，这里直接比最高频段（20–24 kHz）的能量：折叠越少越低。
+        // Harmonics of 3111 Hz that land above 20 kHz fold back. Comparing spurious energy below 20 kHz at non-harmonic bins is inconvenient, so this compares the energy in the top band (20–24 kHz) directly: the less folding, the lower it is.
         let a = band_fraction(&blep, 20_000.0, 24_000.0);
         let b = band_fraction(&naive, 20_000.0, 24_000.0);
         assert!(a < b * 0.5, "blep {a} naive {b}");

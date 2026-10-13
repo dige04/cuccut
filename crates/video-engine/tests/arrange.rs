@@ -1,5 +1,5 @@
-//! 叠放次序：`arrangeItem` 把画面实例往前 / 往后挪一层或挪到最前 / 最后，`moveTrack` 把轨道挪到同类轨道的上面或下面。
-//! 叠放次序就是轨道的上下：共用轨道的实例拆到相邻新建的轨道上，独占轨道的实例整条轨道挪位；两个操作都能撤销。
+//! Stacking order: `arrangeItem` moves a picture instance forward or backward one layer, or to the front or back, and `moveTrack` moves a track above or below tracks of the same kind.
+//! Stacking order is the vertical order of the tracks: instances on a shared track are split onto newly created adjacent tracks, and instances on an exclusive track move the whole track. Both operations can be undone.
 
 #![allow(clippy::result_large_err)]
 
@@ -87,7 +87,7 @@ fn find(video: &Video, pick: impl Fn(&TimelineItem) -> bool) -> String {
         .unwrap()
 }
 
-/// 画面轨道从下到上的名字（按 `order`）。
+/// Picture track names from bottom to top (by `order`).
 fn visual_stack(video: &Video) -> Vec<String> {
     let mut tracks: Vec<_> = video
         .state()
@@ -110,16 +110,16 @@ fn arrange(video: &mut Video, command_id: &str, item_id: &str, direction: &str) 
 struct Fixture {
     video: Video,
     seq: String,
-    /// V1 上 0–60 帧的文字，与图形共用 V1。
+    /// Text at frames 0–60 on V1, sharing V1 with a graphic.
     text: String,
-    /// V1 上 60–90 帧的图形。
+    /// A graphic at frames 60–90 on V1.
     shape: String,
-    /// V2 上独占的进度条。
+    /// A progress bar exclusive to V2.
     progress: String,
     _dir: tempfile::TempDir,
 }
 
-/// V1（文字 + 图形）、A1、V2（进度条）：order 依次 0、1、2。没有媒体，不需要 ffprobe。
+/// V1 (text and graphic), A1, V2 (progress bar): order 0, 1, 2 in turn. No media, so no ffprobe is needed.
 fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let mut video = new_video(&dir.path().join("m"));
@@ -164,7 +164,7 @@ fn a_clip_sharing_its_track_is_split_out_to_a_new_adjacent_track() {
     let mut f = fixture();
     let (v1, a1, v2) = (track(&f.video, "V1"), track(&f.video, "A1"), track(&f.video, "V2"));
 
-    // 前移一层：文字拆到 V1 上面新建的 V3，上面的轨道整体让一格；图形留在 V1。
+    // Move forward one layer: the text is split onto a new V3 created above V1, and the tracks above shift up one; the graphic stays on V1.
     let committed = arrange(&mut f.video, "cmd_forward", &f.text, "forward").unwrap();
     assert_eq!(committed.receipt.created_ids.len(), 1, "新建了一条轨道");
     let v3 = committed.receipt.created_ids[0].clone();
@@ -186,13 +186,13 @@ fn a_clip_sharing_its_track_is_split_out_to_a_new_adjacent_track() {
         "让位的轨道列在 updatedIds"
     );
 
-    // 撤销：轨道没了，文字回到 V1，order 复原。
+    // Undo: the track is gone, the text returns to V1, and order is restored.
     undo(&mut f.video, "cmd_undo", &committed);
     assert!(!f.video.state().tracks.contains_key(&v3));
     assert_eq!(track_of(&f.video, &f.text), v1);
     assert_eq!([order(&f.video, &v1), order(&f.video, &a1), order(&f.video, &v2)], [0, 1, 2]);
 
-    // 后移一层：拆到 V1 下面新建的一条，V1 及其上的轨道让一格，order 不会是负数。
+    // Move backward one layer: split onto a new track created below V1; V1 and the tracks above it shift up one; order never becomes negative.
     let committed = arrange(&mut f.video, "cmd_backward", &f.shape, "backward").unwrap();
     let below = committed.receipt.created_ids[0].clone();
     assert_eq!(track_of(&f.video, &f.shape), below);
@@ -213,7 +213,7 @@ fn front_and_back_on_a_shared_track_create_tracks_at_the_extremes() {
     let mut f = fixture();
     let (v1, v2) = (track(&f.video, "V1"), track(&f.video, "V2"));
 
-    // 移到最前：新轨道排在所有轨道之上（max + 1），别的轨道不动。
+    // Move to front: the new track is placed above all tracks (max + 1); other tracks do not move.
     let committed = arrange(&mut f.video, "cmd_front", &f.text, "front").unwrap();
     let top = committed.receipt.created_ids[0].clone();
     assert_eq!(track_of(&f.video, &f.text), top);
@@ -221,13 +221,13 @@ fn front_and_back_on_a_shared_track_create_tracks_at_the_extremes() {
     assert_eq!([order(&f.video, &v1), order(&f.video, &v2)], [0, 2]);
     assert_eq!(visual_stack(&f.video), ["V1", "V2", "V3"]);
 
-    // 图形现在独占 V1，再「移到最后」：已经在最后，拒绝。
+    // The graphic now exclusively holds V1; “Move to back” again: it is already at the back, so it is rejected.
     let err = arrange(&mut f.video, "cmd_back_edge", &f.shape, "back").unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
     assert_eq!(err.details["rule"], json!("already-at-edge"));
     assert_eq!(err.details["edge"], json!("back"));
 
-    // 把图形挪回文字那条轨道，再「移到最后」：拆到最底下新建的一条，其余轨道让一格。
+    // Move the graphic back onto the text's track, then “Move to back”: split onto a new track created at the very bottom, and the other tracks shift up one.
     apply(
         &mut f.video,
         "cmd_join",
@@ -246,13 +246,13 @@ fn a_clip_alone_on_its_track_moves_the_whole_track() {
     let mut f = fixture();
     let (v1, a1, v2) = (track(&f.video, "V1"), track(&f.video, "A1"), track(&f.video, "V2"));
 
-    // 进度条独占最上面的 V2：再往前没有地方。
+    // The progress bar exclusively holds the top V2: there is nowhere further forward.
     let err = arrange(&mut f.video, "cmd_edge", &f.progress, "forward").unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
     assert_eq!(err.details["edge"], json!("front"));
     assert_eq!(err.entity_ids, vec![f.progress.clone()]);
 
-    // 后移一层：V2 与 V1 互换 order，没有新建轨道，音频轨道不动。
+    // Move backward one layer: V2 and V1 swap order; no new track is created; audio tracks do not move.
     let committed = arrange(&mut f.video, "cmd_backward", &f.progress, "backward").unwrap();
     assert!(committed.receipt.created_ids.is_empty());
     assert_eq!(track_of(&f.video, &f.progress), v2);
@@ -262,7 +262,7 @@ fn a_clip_alone_on_its_track_moves_the_whole_track() {
     undo(&mut f.video, "cmd_undo", &committed);
     assert_eq!([order(&f.video, &v1), order(&f.video, &a1), order(&f.video, &v2)], [0, 1, 2]);
 
-    // 三条画面轨道时「移到最后」：这条到最底，其余顺次让位，order 的集合不变。
+    // With three picture tracks, “Move to back”: this one goes to the very bottom, the others shift in turn; the set of order values is unchanged.
     apply(&mut f.video, "cmd_v3", vec![json!({ "type": "addTrack", "kind": "visual" })]).unwrap();
     let v3 = track(&f.video, "V3");
     assert_eq!(order(&f.video, &v3), 3);
@@ -275,7 +275,7 @@ fn a_clip_alone_on_its_track_moves_the_whole_track() {
     arrange(&mut f.video, "cmd_back", &f.progress, "back").unwrap();
     assert_eq!([order(&f.video, &v3), order(&f.video, &v1), order(&f.video, &v2)], [0, 2, 3]);
     assert_eq!(visual_stack(&f.video), ["V3", "V1", "V2"]);
-    // 再「移到最前」：回到最上面。
+    // Then “Move to front”: it returns to the top.
     arrange(&mut f.video, "cmd_front", &f.progress, "front").unwrap();
     assert_eq!([order(&f.video, &v1), order(&f.video, &v2), order(&f.video, &v3)], [0, 2, 3]);
 }
@@ -304,7 +304,7 @@ fn arranging_refuses_locked_clips_and_tracks() {
         arrange(&mut f.video, "cmd_b", &f.shape, "forward").unwrap_err().code,
         "TARGET_LOCKED"
     );
-    // 别的序列的实例、不存在的实例。
+    // An instance of another sequence, a nonexistent instance.
     let err = apply(
         &mut f.video,
         "cmd_c",
@@ -355,13 +355,13 @@ fn a_picture_clip_can_be_brought_in_front_of_a_subtitle_track() {
     let s1 = track(&f.video, "S1");
     assert!(order(&f.video, &s1) > order(&f.video, &v2));
 
-    // 进度条独占 V2，上面只有字幕轨道：前移一层就是与字幕轨道互换，画面盖到字幕上。
+    // The progress bar exclusively holds V2, with only a subtitle track above it: moving forward one layer swaps it with the subtitle track, so the picture covers the subtitles.
     let committed = arrange(&mut f.video, "cmd_fwd", &f.progress, "forward").unwrap();
     assert!(order(&f.video, &v2) > order(&f.video, &s1));
     assert!(committed.receipt.created_ids.is_empty());
     assert_eq!(track_of(&f.video, &f.progress), v2);
 
-    // 再往前已经到顶。
+    // Already at the top; cannot go further forward.
     let err = arrange(&mut f.video, "cmd_top", &f.progress, "forward").unwrap_err();
     assert_eq!(err.code, "INVALID_OPERATION");
     undo(&mut f.video, "cmd_undo", &committed);
@@ -376,7 +376,7 @@ fn move_track_reorders_tracks_within_one_stack() {
     let v3 = track(&f.video, "V3");
     assert_eq!(visual_stack(&f.video), ["V1", "V2", "V3"]);
 
-    // V1 放到 V3 上面：同类轨道重新领取原有的 order 值 {0, 2, 3}；音频轨道不动。
+    // V1 is moved above V3: tracks of the same kind take back their original order values {0, 2, 3}; audio tracks do not move.
     let committed = apply(
         &mut f.video,
         "cmd_move",
@@ -395,12 +395,12 @@ fn move_track_reorders_tracks_within_one_stack() {
     );
     assert!(committed.receipt.created_ids.is_empty());
     assert!(!committed.receipt.updated_ids.contains(&a1));
-    // 实例跟着轨道走：没有换轨。
+    // Instances follow their track: no change of track.
     assert_eq!(track_of(&f.video, &f.text), v1);
     undo(&mut f.video, "cmd_undo", &committed);
     assert_eq!(visual_stack(&f.video), ["V1", "V2", "V3"]);
 
-    // V3 放到 V1 下面。
+    // V3 is moved below V1.
     apply(
         &mut f.video,
         "cmd_below",
@@ -410,7 +410,7 @@ fn move_track_reorders_tracks_within_one_stack() {
     assert_eq!(visual_stack(&f.video), ["V3", "V1", "V2"]);
     assert_eq!([order(&f.video, &v3), order(&f.video, &v1), order(&f.video, &v2)], [0, 2, 3]);
 
-    // 画面与字幕是同一叠：画面轨道可以放到字幕轨道上面（画面盖住字幕）。
+    // Pictures and subtitles are in the same stack: a picture track may be placed above a subtitle track (the picture covers the subtitles).
     apply(&mut f.video, "cmd_s1", vec![json!({ "type": "addTrack", "kind": "subtitle" })]).unwrap();
     let s1 = track(&f.video, "S1");
     assert!(order(&f.video, &s1) > order(&f.video, &v2));
@@ -423,7 +423,7 @@ fn move_track_reorders_tracks_within_one_stack() {
     assert!(order(&f.video, &v2) > order(&f.video, &s1));
     assert!(order(&f.video, &s1) > order(&f.video, &v1));
 
-    // 声音另一叠、自己、锁定、不存在。
+    // Sound is another stack; itself; locked; nonexistent.
     let err = apply(
         &mut f.video,
         "cmd_kind",

@@ -81,27 +81,27 @@ export interface RpcHandlers {
 }
 
 /**
- * 方法表到 Harness 的映射。界面、CLI 与外部智能体走的是同一组处理函数（架构设计 §4.1）。
- * `principal` 0.1 只用于日志；权限检查随外部智能体接入出现。
+ * Mapping from the method table to the Harness. The UI, the CLI and external agents use the same set of handler functions (architecture design §4.1).
+ * `principal` 0.1 is only used for logs. Permission checks arrive with external agent access.
  */
 export interface HandlerDeps {
   harness: Harness;
-  /** Agent 的安装、升级与登录动作（架构设计 §12.9）。 */
+  /** Install, upgrade and login actions for agents (architecture design §12.9). */
   setup: AgentSetup;
   space: SpaceCatalog;
   media: MediaRegistry;
-  /** 幻灯片编辑器的地址（`slides.open`，docs/design/slides §6.1）：网关与 Web 服务的基址不同。 */
+  /** Address of the slide editor (`slides.open`, docs/design/slides §6.1). The gateway and the web service have different base addresses. */
   slides: SlidesOpener;
-  /** 设计稿编辑器的地址（`design.open`，docs/design/canvas §6.1），基址同 `slides`。 */
+  /** Address of the design editor (`design.open`, docs/design/canvas §6.1). Same base address as `slides`. */
   design: DesignOpener;
-  /** 设计系统编辑器的地址（`designSystem.open`，docs/design/canvas §10.4），基址同 `slides`。 */
+  /** Address of the design system editor (`designSystem.open`, docs/design/canvas §10.4). Same base address as `slides`. */
   designSystem: DesignSystemOpener;
   attachments: AttachmentStore;
   analysis: MediaAnalysis;
-  /** Space 条目的缩略图（`space.thumbnail`）。 */
+  /** Thumbnail of a Space entry (`space.thumbnail`). */
   spaceThumbnails: SpaceThumbnails;
   videos: VideoService;
-  /** 删除与恢复视频（§5.5、§5.7）。 */
+  /** Delete and restore videos (§5.5, §5.7). */
   videoTrash: VideoTrash;
   models: ModelJobs;
   exports: ExportService;
@@ -111,30 +111,30 @@ export interface HandlerDeps {
   settings: RuntimeSettings;
   services: RuntimeServices;
   runtime: RuntimeInfo;
-  /** 受管外部工具（§12.9）。 */
+  /** Managed external tools (§12.9). */
   externalTools: ExternalToolService;
-  /** 创作模板目录（模板包规范 §6）。 */
+  /** Catalog of creation templates (template package spec §6). */
   templates: TemplateCatalog;
-  /** Agent 的 skill 目录与安装动作（§3.8、§12.9）。 */
+  /** Agent skill directory and install action (§3.8, §12.9). */
   skills: SkillCatalog;
   skillInstaller: SkillInstaller;
-  /** 按需下载的字体（§9.1）。 */
+  /** Fonts downloaded on demand (§9.1). */
   fonts: FontService;
-  /** 代码画面的导入与预览（§8，`compositions.*`）：与工具共用的服务。 */
+  /** Import and preview of code compositions (§8, `compositions.*`). A service shared with the tools. */
   compositions: CompositionService;
-  /** Agent 面的工具目录对终端的视图（`catalog.*`，§3.5）：与工具桥同一组工具。 */
+  /** Terminal view of the agent-side tool catalog (`catalog.*`, §3.5). Same set of tools as the tool bridge. */
   catalog: ToolCatalog;
-  /** 说明书的根目录（`catalog.agentSkill` 渲染 CLI 面用；与会话指导同一份）。不给时每次调用重新找。 */
+  /** Root directory of the manual (`catalog.agentSkill` renders it for the CLI surface; same source as session guidance). When not given, it is looked up on each call. */
   agentSkillsDir?: string | null;
-  /** 连接、任务与空闲退出（`runtime.status`，§2.2）。 */
+  /** Connection, tasks and idle exit (`runtime.status`, §2.2). */
   activity: RuntimeActivity;
-  /** `runtime.stop` 的去处（入口停下 Runtime）；嵌入式的 Runtime（测试）没有。 */
+  /** Where `runtime.stop` goes (the entry point stops the Runtime). Embedded Runtimes (tests) do not have it. */
   requestStop: (() => void) | null;
-  /** 历史版本的启动迁移（§2.7）：旧版项目的导入询问（`legacyImport.*` 与 `legacy-import` 主题）。 */
+  /** Startup migration from old versions (§2.7): the import prompt for old-version projects (`legacyImport.*` and the `legacy-import` topic). */
   legacyUpgrade: LegacyUpgrade;
 }
 
-/** 文件目标定位到来源目录与文件（Space 条目、会话工作目录或项目目录里的路径）。目录内的检查在媒体通道（或视频服务）里做。 */
+/** Resolves a file target to its source directory and file (a path in a Space entry, a session working directory or a project directory). Checks inside the directory are done in the media channel (or the video service). */
 export function locateFileTarget(
   harness: Harness,
   space: SpaceCatalog,
@@ -143,7 +143,7 @@ export function locateFileTarget(
   if ('entryId' in target) return space.locate(target.entryId);
   if ('conversationId' in target) {
     const { conversation } = harness.getConversation(target.conversationId);
-    // 共用另一条会话工作目录的会话：位置记那条会话（与 AgentScope.source 相同）。
+    // A session sharing another session's working directory: its location records that session (same as AgentScope.source).
     return { root: conversation.cwd, file: target.path, scope: { conversationId: conversation.folderOf ?? conversation.id } };
   }
   const project = harness.listProjects().find((p) => p.id === target.projectId);
@@ -152,8 +152,8 @@ export function locateFileTarget(
 }
 
 /**
- * videoId → 界面打开这个视频用的 FileTarget（与界面从 Space 条目打开时相同：所在项目或会话的工作目录 + 相对路径）。
- * 先看已打开的视频，再看 Space 登记的；都没有时 `not-found`（`VIDEO_NOT_FOUND`）。Web 访问链接直达编辑器时用。
+ * videoId → the FileTarget the UI uses to open this video (same as the UI opening it from a Space entry: the project or session working directory plus relative path).
+ * Opened videos are checked first, then those registered in Space. If neither has it, `not-found` (`VIDEO_NOT_FOUND`). Used when a web access link opens the editor directly.
  */
 export function videoTargetOf(videos: VideoService, space: SpaceCatalog, videoId: Id): FileTarget {
   const fromSource = (source: { projectId: Id | null; conversationId: Id | null }, relPath: string): FileTarget | null =>
@@ -209,24 +209,24 @@ export function createHandlers({
 }: HandlerDeps): RpcHandlers {
   const { catalog, jobs, services, pipelines } = models;
   const packages = new PackageImporter(videos);
-  /** 节点、模型包变化之后重算能力视图（`models` 主题）。失败只影响视图，不影响调用。 */
+  /** After a node or model package changes, recompute the capability view (`models` topic). A failure only affects the view, not the call. */
   const refreshModels = () => void services.refresh().catch(() => {});
-  /** 节点服务的权威是 `NodeService`：`nodes.share.*` 改过之后把投影送到 `services` 主题。 */
+  /** The authority for node services is `NodeService`. After `nodes.share.*` changes, send the projection to the `services` topic. */
   const nodeChanged = <T>(result: Promise<T>): Promise<T> => result.finally(() => external.manager.refresh('node'));
-  /** 文件定位到来源目录与文件。目录内的检查在媒体通道（或视频服务）里做。 */
+  /** Resolves a file to its source directory and file. Checks inside the directory are done in the media channel (or the video service). */
   const locateMedia = (target: FileTarget) => locateFileTarget(harness, space, target);
-  /** 发送与插话带的幻灯片标注：deck 换成相对会话工作目录的路径（docs/design/slides §9）。 */
+  /** Slide annotations sent with a message or an interjection: the deck is converted to a path relative to the session working directory (docs/design/slides §9). */
   const slideAnnotationsOf = (conversationId: Id, annotations: readonly SlideAnnotation[] | undefined) =>
     resolveSlideAnnotations(annotations, harness.getConversation(conversationId).conversation.cwd, locateMedia);
-  /** 设计稿标注同上（docs/design/canvas §9）。 */
+  /** Design annotations, same as above (docs/design/canvas §9). */
   const designAnnotationsOf = (conversationId: Id, annotations: readonly DesignAnnotation[] | undefined) =>
     resolveDesignAnnotations(annotations, harness.getConversation(conversationId).conversation.cwd, locateMedia);
-  /** 设计系统标注同上（docs/design/canvas §10.6）。 */
+  /** Design system annotations, same as above (docs/design/canvas §10.6). */
   const designSystemAnnotationsOf = (conversationId: Id, annotations: readonly DesignSystemAnnotation[] | undefined) =>
     resolveDesignSystemAnnotations(annotations, harness.getConversation(conversationId).conversation.cwd, locateMedia);
 
   /**
-   * 新建视频的位置：项目目录。给的是会话时用它的来源：所属项目，不属于项目时是会话的工作目录（架构设计 §3.10，不为视频建项目）。
+   * Location for a new video: the project directory. When given a session, use its source: the project it belongs to, or, if it belongs to no project, the session's working directory (architecture design §3.10; no project is created for a video).
    */
   const videoRoot = async (p: {
     projectId?: Id;
@@ -247,13 +247,13 @@ export function createHandlers({
     throw new RpcError('invalid-request', RcRuntime.newVideoNeedsTarget());
   };
 
-  /** 项目文件浏览的根目录：会话所属项目的目录；不属于项目的会话用它的工作目录。 */
+  /** Root directory for project file browsing: the directory of the session's project. For a session that belongs to no project, its working directory. */
   const filesRoot = (conversationId: Id): string => {
     const { conversation } = harness.getConversation(conversationId);
     const project = conversation.projectId ? harness.listProjects().find((p) => p.id === conversation.projectId) : undefined;
     return project?.path ?? conversation.cwd;
   };
-  /** `projects.files.create` 的根目录与定位：属于项目的会话按项目定位，与项目文件页签打开的是同一个标签。 */
+  /** Root directory and location for `projects.files.create`. A session in a project is located by its project, which is the same tab the project files tab opens. */
   const fileScope = (p: { conversationId: Id } | { projectId: Id }): { root: string; scope: ProjectFileScope } => {
     if ('projectId' in p) {
       const project = harness.listProjects().find((item) => item.id === p.projectId);
@@ -274,15 +274,15 @@ export function createHandlers({
         if (principal.kind !== 'cli' && principal.kind !== 'desktop') throw new RpcError('forbidden', RcRuntime.statusLocalOnly());
         return activity.status();
       },
-      // 只停 CLI 拉起的、没有别人在用的（§2.2）：桌面端、调用者之外的 CLI 连接、排队或运行中的任务都算在用。
-      // 响应先送出去再停：停止顺序里会关掉网关。
+      // Stops only a Runtime launched by the CLI that no one else is using (§2.2). The desktop app, CLI connections other than the caller, and queued or running tasks all count as in use.
+      // The response is sent before stopping, because the stop sequence closes the gateway.
       'runtime.stop': (_p, principal) => {
         if (principal.kind !== 'cli') throw new RpcError('forbidden', RcRuntime.stopCliOnly());
         if (runtime.launchedBy !== 'cli') {
           throw new RpcError('forbidden', RcRuntime.stopNotCliLaunched(), { code: 'RUNTIME_NOT_OWNED' });
         }
         const { connections, activeJobs } = activity.status();
-        // 调用者自己是一个 CLI 连接，不算。
+        // The caller's own CLI connection does not count.
         const others = { desktop: connections.desktop, cli: Math.max(0, connections.cli - 1), activeJobs };
         if (others.desktop > 0 || others.cli > 0 || others.activeJobs > 0) {
           throw new RpcError('conflict', RcRuntime.runtimeInUse(others), { code: 'RUNTIME_IN_USE', ...others });
@@ -292,7 +292,7 @@ export function createHandlers({
         return { stopping: true as const };
       },
       'legacyImport.get': () => ({ prompt: legacyUpgrade.prompt(), run: legacyUpgrade.run() }),
-      // 导入到哪、要不要导入、重试还是跳过，是本机用户的决定：Agent 与对外服务的连接不能替用户做。
+      // Where to import, whether to import, and whether to retry or skip are decisions for the local user. Connections from agents and external services cannot make them on the user's behalf.
       'legacyImport.answer': async (p, principal) => {
         if (principal.kind !== 'cli' && principal.kind !== 'desktop') throw new RpcError('forbidden', RcRuntime.legacyImportLocalOnly());
         await legacyUpgrade.answer(p);
@@ -307,18 +307,18 @@ export function createHandlers({
         return { changed: await legacyUpgrade.setSkipped(p.paths, p.skipped) };
       },
       'agents.list': () => harness.agents(),
-      // 「重新检测」：强制探测（给了 driverId 只探那一个），探完再返回（§3.11）。
+      // “Re-detect”: force a probe (if a driverId is given, probe only that one), and return after the probe finishes (§3.11).
       'agents.detect': (p) => harness.agents({ fresh: true, ...(p.driverId ? { driverId: p.driverId } : {}) }),
       'agents.configure': (p) => harness.configureAgent(p),
-      // 默认 Agent 存在偏好设置里（`agent.defaultDriver`，§3.11）：和设置页、CLI 的 settings set 是同一个值。
-      // 设置变化时 Runtime 让 Harness 推送 `agents.updated`（见 runtime.ts）。
+      // The default agent is stored in preferences (`agent.defaultDriver`, §3.11). It is the same value as the settings page and the CLI's settings set.
+      // When the setting changes, the Runtime has the Harness push `agents.updated` (see runtime.ts).
       'agents.setDefault': async (p) => {
-        // 只认注册了的 Driver：写进设置之后，没注册的默认值会让每次建会话都失败。
+        // Only registered Drivers are accepted. Once written to settings, an unregistered default would make every session creation fail.
         harness.assertDriverRegistered(p.driverId);
         await settings.store.set({ 'agent.defaultDriver': p.driverId });
         return harness.agents();
       },
-      // 用户添加的 ACP 智能体（§3.11）：不在 Web 服务的白名单里（决定这台机器运行什么命令）。
+      // ACP agents added by the user (§3.11). They are not on the Web service's allowlist, which decides which commands this machine runs.
       'agents.addProvider': (p) => harness.addProvider(p),
       'agents.removeProvider': (p) => harness.removeProvider(p.id),
       'agents.updatePreferences': (p) => harness.updateAgentPreferences(p),
@@ -331,7 +331,7 @@ export function createHandlers({
       'projects.list': () => ({ projects: harness.listProjects() }),
       'projects.open': async (p) => {
         const project = await harness.openProject(p.path);
-        // 副本里的视频在后台换标识（架构设计 §5.1）；打开视频时引擎还会再认领一次，这一步失败不影响打开项目。
+        // Videos in the copy get new identifiers in the background (architecture design §5.1). The engine claims them again when the video is opened, and a failure here does not affect opening the project.
         void videos.claimProjectVideos(project).catch(() => {});
         return { project };
       },
@@ -351,7 +351,7 @@ export function createHandlers({
         await harness.deleteConversation(p.conversationId);
         return { deleted: true as const };
       },
-      // 带模板或 skill 的发送在 `templateMethods` 里：先解析模板与 skill，再交给 Harness。
+      // A send with a template or skill goes through `templateMethods`: resolve the template and skill first, then hand over to the Harness.
       'conversations.steer': ({ slideAnnotations, designAnnotations, designSystemAnnotations, ...p }) => {
         const resolved = slideAnnotationsOf(p.conversationId, slideAnnotations);
         const resolvedDesign = designAnnotationsOf(p.conversationId, designAnnotations);
@@ -365,7 +365,7 @@ export function createHandlers({
       },
       'attachments.prepare': (p) => attachments.prepare(p),
       'tasks.stop': (p) => harness.stopTask(p.taskId),
-      // 任务合同（架构设计 §3.2）：经 RPC 的一方都是用户（界面、CLI、Web）；智能体经工具读写自己的合同。
+      // Task contract (architecture design §3.2). The parties calling via RPC are all users (UI, CLI, Web). Agents read and write their own contracts through tools.
       'tasks.create': async (p) => {
         const { taskId } = await harness.send({ ...p, text: p.goal });
         return { taskId, contract: harness.getContract(taskId).contract };
@@ -376,11 +376,11 @@ export function createHandlers({
       'tasks.changeGoal': (p) => harness.changeGoal(p),
       'tasks.recordCheck': (p) => harness.recordCheck(p, 'user'),
       'tasks.listChecks': (p) => harness.listChecks(p.taskId),
-      // 统一的待处理审批（架构设计 §3.12）：会话的与对外服务的在一处列出、一处处理。
+      // Unified pending approvals (architecture design §3.12). Approvals from sessions and from external services are listed and handled in one place.
       'approvals.list': () => ({ approvals: harness.approvals.pending() }),
-      // 带外发授权的审批可以同时选择「只这一次」或发放持续授权（§12.5）。
+      // An approval that carries an outbound-data grant can choose either “only this time” or issue a standing grant (§12.5).
       'approvals.respond': (p) => harness.approvals.respond(p.approvalId, p.decision, p.grant ? { grant: p.grant } : {}),
-      // 数据外发的授权与预算（§12.5、§7.8）：只开给本机连接，浏览器不开放。
+      // Outbound-data grants and budgets (§12.5, §7.8). Open only to local connections; not exposed to the browser.
       'grants.list': (p) => models.grants.list(p),
       'grants.create': (p) => models.grants.create(p),
       'grants.update': (p) => models.grants.update(p),
@@ -394,7 +394,7 @@ export function createHandlers({
       ...spaceMethods(space, { harness, trash: videoTrash, thumbnails: spaceThumbnails }),
       'media.resolve': async (p, principal) => {
         if ('localPath' in p) {
-          // 桌面端的本机文件（§4.5）：只对桌面客户端，以文件自己的目录为根，只给普通文件；浏览器与对外服务按原来的访问范围拒绝。
+          // Local files on the desktop (§4.5). Only for the desktop client, rooted at the file's own directory, and only regular files. The browser and external services are refused under their existing access scope.
           if (principal.kind !== 'desktop') throw new RpcError('forbidden', RcRuntime.onlyWorkingFolderFiles());
           if (!path.isAbsolute(p.localPath)) throw new RpcError('not-found', RcRuntime.fileNotFound());
           return media.issue(path.dirname(p.localPath), p.localPath);
@@ -404,7 +404,7 @@ export function createHandlers({
           return { ...(await media.issue(asset.root, asset.file)), fileName: asset.name };
         }
         if ('attachmentId' in p) {
-          // 只认这条会话自己的消息里出现过的附件：别的会话的、没发出去的，一律当作不存在。
+          // Only attachments that appeared in this session's own messages are accepted. Attachments from other sessions, or ones not yet sent, are treated as nonexistent.
           const { items } = harness.getConversation(p.conversationId);
           const ref = items
             .flatMap((item) => (item.kind === 'user-message' ? (item.attachments ?? []) : []))
@@ -414,7 +414,7 @@ export function createHandlers({
           return { ...(await media.issue(root, file)), fileName: ref.fileName };
         }
         if ('entryId' in p && space.get(p.entryId).kind === 'video') {
-          // 视频条目是一个目录：给它的主素材（封面那一帧所在的素材版本），会话里的视频卡就地播放用（产品设计 §3.2.2）。
+          // A video entry is a directory. Its primary material (the material version holding the cover frame) is provided so the video card in the session can play in place (product design §3.2.2).
           const { root, file } = await spaceThumbnails.videoSource(p.entryId);
           return { ...(await media.issue(root, file)), fileName: space.get(p.entryId).name };
         }
@@ -422,7 +422,7 @@ export function createHandlers({
         return media.issue(root, file);
       },
       'media.playback': (p) => media.playback(p.url, (file) => analysis.playback(file, p.playable)),
-      // 字体（§9.1）：本机、下载缓存与按需下载。
+      // Fonts (§9.1): local, the download cache, and on-demand downloads.
       ...fontMethods(
         () => fonts,
         media,
@@ -439,28 +439,28 @@ export function createHandlers({
         const { root, scope } = await videoRoot(p);
         return videos.create(p, root, scope, principal);
       },
-      // 派生子视频（§3.5）：与工具 videos_derive 同一个服务。
+      // Derive child videos (§3.5). Same service as the videos_derive tool.
       'videos.derive': async (p, principal) =>
         (await deriveVideo({ videos, findDerived: spaceDerivedFinder(space) }, p, principal)).result,
-      // 镜头切换（§3.5）：与工具 videos_shots 同一个实现。
+      // Shot cuts (§3.5). Same implementation as the videos_shots tool.
       'videos.shots': (p) => videoShots({ analysis, videos }, p),
-      // 便携包（视频格式规范 §8）：建成来源目录里的一个新视频。不给智能体与对外服务（它们没有这个方法的入口）。
+      // Portable package (video format spec §8). Built as a new video in the source directory. Not offered to agents or external services, since they have no entry point for this method.
       'videos.importPackage': async (p, principal) => {
         const { root, scope } = await videoRoot(p);
         return packages.import(p, root, scope, principal);
       },
       'slides.open': async (p) => {
-        // Space 条目给的是绝对路径，其余是相对来源目录的路径。
+        // Space entries give absolute paths. The rest are paths relative to the source directory.
         const { root, file } = locateMedia(p);
         return slides.open(root, path.isAbsolute(file) ? path.relative(root, file) : file);
       },
       'design.open': async (p) => {
-        // 同 slides.open（docs/design/canvas §6.1）。
+        // Same as slides.open (docs/design/canvas §6.1).
         const { root, file } = locateMedia(p);
         return design.open(root, path.isAbsolute(file) ? path.relative(root, file) : file);
       },
       'designSystem.open': async (p) => {
-        // 同 design.open（docs/design/canvas §10.4）。
+        // Same as design.open (docs/design/canvas §10.4).
         const { root, file } = locateMedia(p);
         return designSystem.open(root, path.isAbsolute(file) ? path.relative(root, file) : file);
       },
@@ -475,17 +475,17 @@ export function createHandlers({
       'edits.undo': (p, principal) => videos.undo(p, principal),
       'edits.undoState': (p, principal) => videos.undoState(p.videoId, principal),
       'edits.applySpeakers': (p, principal) => applySpeakerProposal({ videos, jobs }, p, principal),
-      // 代码画面（§8）：界面不经过智能体预览与导入，与工具 compositions_preview / compositions_import 同一个服务。
+      // Code compositions (§8). The UI does not go through agent preview and import. Same service as the compositions_preview and compositions_import tools.
       ...compositionMethods({ compositions, videos, harness, media }),
       'models.list': async () => ({ bundles: await catalog.list() }),
-      // 没有显式给术语表时用视频里启用的转写术语表（§5.9）；对外服务的客户端不碰用户库。
+      // When no glossary is given explicitly, use the transcription glossary enabled in the video (§5.9). External service clients do not touch the user's library.
       'models.transcribe': async (p, principal) => {
         const enabled =
           p.glossaries || principal.kind === 'service' ? null : (await library.enabledGlossaries(p.videoId, 'transcribe')).ids;
         const params = enabled?.length ? { ...p, glossaries: enabled.map((id) => ({ id })) } : p;
         return jobs.submitTranscribe(params, { kind: 'connection', id: principal.connectionId });
       },
-      // Space 条目作为素材（§7.9）：在这里换成文字，任务只看到文本。
+      // Space entries as material (§7.9): converted to text here, so the task sees only text.
       'models.synthesizeSpeech': async (p, principal) =>
         jobs.submitSynthesizeSpeech(await withSpeechMaterial(space, p), { kind: 'connection', id: principal.connectionId }),
       'models.generateImage': (p, principal) => jobs.submitGenerateImage(p, { kind: 'connection', id: principal.connectionId }),
@@ -499,13 +499,13 @@ export function createHandlers({
         refreshModels();
         return { bundle: (await catalog.status(p.bundleId))! };
       },
-      // 本地模型包的安装管理（§6.3）：安装与自检是不属于任何智能体任务的普通 Job。
+      // Install management for local model packs (§6.3). Installation and self-check are ordinary Jobs that belong to no agent task.
       'models.install': (p, principal) => models.installs.install(p, { kind: 'connection', id: principal.connectionId }),
       'models.repair': (p, principal) => models.installs.install(p, { kind: 'connection', id: principal.connectionId }, { repair: true }),
       'models.cancelInstall': (p) => models.installs.cancelInstall(p),
       'models.remove': (p) => models.installs.remove(p.bundleId),
       'models.test': (p, principal) => models.installs.test(p, { kind: 'connection', id: principal.connectionId }),
-      // 模型目录（§6.3）：含本机路径，只给桌面界面与 CLI（不在 Web 白名单里，MCP 也不提供）。
+      // Model catalog (§6.3). Contains local paths, so it is given only to the desktop UI and the CLI (not on the Web allowlist, and MCP does not offer it).
       'models.getDir': () => models.dir.getDir(),
       'models.inspectDir': (p) => models.dir.inspect(p.path),
       'models.setDir': (p, principal) => models.dir.setDir(p, { kind: 'connection', id: principal.connectionId }),
@@ -515,30 +515,30 @@ export function createHandlers({
         await services.removeProvider(p.providerId);
         return { removed: true };
       },
-      // 服务商的账号（§6.8）：都返回这个 Provider 的视图；变化经 `capabilities.updated` 送达。
+      // Provider accounts (§6.8). All of them return this Provider's view. Changes are delivered through `capabilities.updated`.
       'models.addAccount': async (p) => ({ provider: await services.addAccount(p) }),
       'models.updateAccount': async (p) => ({ provider: await services.updateAccount(p) }),
       'models.removeAccount': async (p) => ({ provider: await services.removeAccount(p.providerId, p.accountId) }),
       'models.arrangeAccounts': async (p) => ({ provider: await services.arrangeAccounts(p) }),
-      // 用量（§6.10）：只读。
+      // Usage (§6.10). Read-only.
       'models.usage': (p) => services.usage(p),
       'models.setDefault': async (p) => ({ default: await services.setDefault(p.capability, p.providerId, p.modelId) }),
-      // 固定流程的步骤默认折叠在父任务下（架构设计 §7.9）。
+      // Steps of a fixed pipeline are folded under the parent task by default (architecture design §7.9).
       'jobs.list': (p) => ({ jobs: jobs.list(p.videoId).filter((r) => p.children === true || !r.parentJobId) }),
       'jobs.inspect': (p) => jobs.inspect(p.jobId),
-      // 资源调度的现状（架构设计 §7.6、§7.7）：只读。
+      // Current state of resource scheduling (architecture design §7.6, §7.7). Read-only.
       'jobs.resources': () => jobs.resources.snapshot(),
       'jobs.cancel': (p) => jobs.cancel(p.jobId),
-      // 对账（架构设计 §7.5）：retry 是新的一次调用，照常经授权与预算准入；智能体与 MCP 服务没有这个入口。
+      // Reconciliation (architecture design §7.5). A retry is a new call and is admitted again through grants and budget. Agents and MCP services have no entry point for it.
       'jobs.reconcile': (p) => jobs.reconcile(p.jobId, p.decision),
-      // 导出：冻结与预检同步完成，失败时不建任务；进度、取消与结果走 jobs.*（架构设计 §9.11）。
+      // Export: freezing and preflight complete synchronously. On failure, no task is created. Progress, cancellation and results go through jobs.* (architecture design §9.11).
       'exports.create': (p, principal) => exports.create(p, { kind: 'connection', id: principal.connectionId }),
       'exports.get': (p) => exports.get(p.jobId),
       'exports.list': (p) => ({ jobs: exports.list(p.videoId) }),
-      // 只读：与 exports.create 同一套冻结与写法排出正文，不写文件、不建任务。
+      // Read-only. Uses the same freezing and serialization as exports.create to produce the body, without writing a file or creating a task.
       'exports.renderText': (p) => exports.renderText(p),
       'pipelines.list': () => ({ pipelines: pipelines.list() }),
-      // Space 条目作为输入（§7.9）：文件条目在提交时换成路径，冻结的参数里只有路径。
+      // Space entries as input (§7.9). File entries are converted to paths at submission, so the frozen parameters contain only paths.
       'pipelines.start': (p, principal) =>
         pipelines.start(
           { ...p, params: resolvePipelineEntryInputs(space, p.pipeline, p.params) },
@@ -556,13 +556,13 @@ export function createHandlers({
         offlineStrict: () => settings.store.get('offline.strict'),
         saveDirectory: () => resolveSaveDirectory({ settings: settings.store.get('downloads.directory') }),
       }),
-      // 产物（转写的原始结果、生成的音频与图片）的短期读取句柄：只读产物库里的文件。
+      // Short-lived read handles for outputs (raw transcription results, generated audio and images). Read-only over files in the output library.
       'artifacts.openHandle': async (p) => {
         const file = await jobs.artifacts.locate(p.artifactId);
         if (!file) throw new RpcError('not-found', RcRuntime.outputNotFound());
         return media.issue(jobs.artifacts.dir, path.basename(file));
       },
-      // 用户库（架构设计 §5.9）：只经 Runtime 读写。
+      // User library (architecture design §5.9). Read and written only through the Runtime.
       'library.list': (p) => library.list(p),
       'library.get': (p) => library.get(p),
       'library.put': (p) => library.put(p),
@@ -573,7 +573,7 @@ export function createHandlers({
       'library.getVideoSelection': (p) => library.getVideoSelection(p),
       'library.setVideoSelection': (p, principal) => library.setVideoSelection(p, principal),
       'library.openHandle': (p) => library.openHandle(p),
-      // 音色克隆（§5.9）：创建是普通任务，删除先请求远端。
+      // Voice cloning (§5.9). Creation is an ordinary task. Deletion requests the remote side first.
       'library.createVoiceClone': (p, principal) => library.voiceClones.create(p, { kind: 'connection', id: principal.connectionId }),
       'library.removeVoiceClone': (p) => library.voiceClones.remove(p),
       'nodes.share.start': (p) => nodeChanged(nodes.start(p)),
@@ -582,7 +582,7 @@ export function createHandlers({
       'nodes.share.pairingCode': () => nodes.pairingCode(),
       'nodes.share.revoke': (p) => nodes.revoke(p.clientId),
       'nodes.share.setCapability': (p) => nodes.setCapability(p.capability, p.enabled),
-      // 发现结果里去掉这台机器自己的节点。
+      // Discovery results exclude this machine's own node.
       'nodes.discover': async (p) => ({ nodes: await initiator.discover(p.timeoutMs, nodes.status().nodeId) }),
       'nodes.pair': async (p) => {
         const node = await initiator.pair(p);
@@ -592,7 +592,7 @@ export function createHandlers({
       'nodes.list': async () => ({ nodes: await initiator.list() }),
       'settings.get': (p) => settings.store.view(p.keys),
       'settings.set': async (p) => {
-        // 有专门方法的键（模型目录）不经这里改：要先查在用、卸 Worker、选移动还是只换位置（§6.3）。
+        // Keys that have dedicated methods (the model catalog) are not changed through here. First check whether they are in use, unload the Worker, and choose between moving or only swapping the location (§6.3).
         for (const [key, method] of Object.entries(SETTING_MANAGED_BY)) {
           if (p.values && key in p.values) {
             throw new RpcError('invalid-request', RcRuntime.settingManaged({ key, method }), { code: 'SETTING_MANAGED', key, method });

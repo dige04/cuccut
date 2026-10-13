@@ -6,22 +6,22 @@ import { ProtocolLabels } from './messages/protocol/protocol-labels.ts';
 import { ProtocolValidation } from './messages/protocol/protocol-validation.ts';
 
 /**
- * 数据外发的授权（Grant）与预算账本（架构设计 §12.5、§7.8）。
+ * Grants for outbound data (Grant) and the budget ledger (architecture design §12.5, §7.8).
  *
- * - 一条授权绑定数据种类、接收方（Provider）、范围（全部视频或一个视频）、目的、预算方式与上限、到期时间，可以只属于一个任务。
- *   批准缩略图不等于批准原视频：调用要外发的每一种数据都要在授权的 `dataKinds` 里。
- * - 撤销或收紧（缩小数据种类、范围、上限，提前到期）使 `generation` 加一：之前按旧代接纳、还在排队的调用在开始执行时被拒绝
- *   （`GRANT_REVOKED`）。已经外发或已经计费的部分无法靠本地撤销抹除，`usage` 如实保留。
- * - 预算按调用次数（`maxCalls`）与金额（`budgetCap`，只在模型描述带价格时能估算）两种度量；每次调用在提交时原子地预留，
- *   结束时结算（§7.8）。
- * - 本机模型（`local`）与已配对的局域网节点（`node:*`）不需要授权：前者不外发，后者是用户自己的设备，配对即授权。
+ * - A grant binds a data kind, a recipient (Provider), a scope (all videos or one video), a purpose, a budget mode and cap, and an expiry time. It can belong to a single task only.
+ *   Approving a thumbnail does not approve the original video: every kind of data a call sends out must be in the grant's `dataKinds`.
+ * - Revoking or tightening (narrowing the data kinds, scope or caps, moving expiry earlier) increments `generation`: calls admitted under the old generation that are still queued are rejected when they start
+ *   (`GRANT_REVOKED`). Data already sent out or already charged cannot be erased by a local revocation; `usage` records it as it happened.
+ * - Budgets are measured two ways: by call count (`maxCalls`) and by amount (`budgetCap`, which can only be estimated when the model description includes a price). Each call reserves atomically at submission and
+ *   is settled when it ends (§7.8).
+ * - Local models (`local`) and paired LAN nodes (`node:*`) need no grant: the former sends nothing out, and the latter are the user's own devices, so pairing is the authorization.
  */
 
-/** 外发的数据种类。`context` 是智能体对话的上下文（发给智能体运行时的模型服务），本版只在模型上保留，不接入 Driver。 */
+/** Kinds of data sent out. `context` is the agent conversation context (sent to the model service that runs the agent). In this version it is kept only on the model and is not wired to the Driver. */
 export const GRANT_DATA_KINDS = ['transcript', 'frames', 'audio', 'video', 'document', 'context'] as const;
 export type GrantDataKind = (typeof GRANT_DATA_KINDS)[number];
 
-/** 数据种类给人看的名字，带消息引用（嵌进 Runtime 的句子时作为参数传）。 */
+/** Human-readable name of a data kind, with a message reference (passed as a parameter when embedded in a Runtime sentence). */
 export function grantDataKindLabel(kind: GrantDataKind): Localized {
   switch (kind) {
     case 'transcript':
@@ -39,29 +39,29 @@ export function grantDataKindLabel(kind: GrantDataKind): Localized {
   }
 }
 
-/** 数据种类给人看的名字的当前语言文字（读的时候取当前语言）。 */
+/** Current-language text of the human-readable name of a data kind (read in the current language at read time). */
 export const GRANT_DATA_KIND_LABELS: Readonly<Record<GrantDataKind, string>> = live(
   () => Object.fromEntries(GRANT_DATA_KINDS.map((kind) => [kind, grantDataKindLabel(kind).text])) as Record<GrantDataKind, string>,
 );
 
 /**
- * 一种能力的调用默认外发哪些数据：转写把素材的音频交给 Provider；合成语音、生成图片与文本生成交出的是文本（要合成的文字、
- * 提示词、消息）。调用方知道得更具体时可以另给（例如流程把文稿交去翻译时是 `transcript`）。
+ * The data a capability's calls send out by default: transcription hands the material's audio to the Provider; speech synthesis, image generation and text generation hand over text (the text to synthesize, prompts, messages).
+ * A caller that knows more specifically may supply another kind (for example, a flow that sends a script for translation uses `transcript`).
  */
 export const CAPABILITY_DATA_KINDS: Readonly<Record<ModelServiceCapability, readonly GrantDataKind[]>> = {
   transcribe: ['audio'],
   synthesizeSpeech: ['document'],
   generateImage: ['document'],
   generateText: ['document'],
-  // 只在本机分离，不外发；列出音频只为类型完整。
+  // Separated on the local machine only, never sent out; audio is listed only for type completeness.
   separateAudio: ['audio'],
-  // 只在本机生成，不外发；列出文档（风格与歌词）只为类型完整。
+  // Generated on the local machine only, never sent out; documents (style and lyrics) are listed only for type completeness.
   generateMusic: ['document'],
 };
 
 /**
- * 启用 Provider 时默认授权（§6.8 的迁移规则）覆盖的数据种类：这种能力的调用默认外发的，加上 CucCut 自己的流程经它外发的
- * （文本生成还用于翻译文稿，§7.9）。启用之前就是这样外发的，迁移不收紧也不放宽。
+ * The data kinds covered by the default grant when a Provider is enabled (migration rules, §6.8): the kinds this capability's calls send out by default, plus those CucCut's own flows send through it
+ * (text generation is also used to translate scripts, §7.9). Data was sent out this way before enabling, so migration neither tightens nor loosens it.
  */
 export const PROVIDER_ENABLE_DATA_KINDS: Readonly<Record<ModelServiceCapability, readonly GrantDataKind[]>> = {
   transcribe: ['audio'],
@@ -73,36 +73,36 @@ export const PROVIDER_ENABLE_DATA_KINDS: Readonly<Record<ModelServiceCapability,
 };
 
 /**
- * 预算方式：
- * - `estimate-cap`：有金额上限，每次调用按模型描述的价格估算上界并预留；模型没有价格（或币种不同、计价单位在提交时
- *   估不出上界）时不能保证上限，调用以 `BUDGET_UNVERIFIABLE` 拒绝；
- * - `per-call-unknown-cost`：金额未知，只按次数（`maxCalls`，可以不限）计；不设金额上限；
- * - `free-local`：本机计算，不需要授权（保留给描述，`grants.create` 不接受）。
+ * Budget modes:
+ * - `estimate-cap`: has an amount cap; each call's upper bound is estimated from the model description's price and reserved. If the model has no price (or the currency differs, or the pricing unit's upper bound cannot be
+ *   estimated at submission), the cap cannot be guaranteed and the call is rejected with `BUDGET_UNVERIFIABLE`;
+ * - `per-call-unknown-cost`: the amount is unknown, so only the number of calls is counted (`maxCalls`, which may be unlimited); no amount cap;
+ * - `free-local`: computed locally, no grant needed (reserved for the description; `grants.create` does not accept it).
  */
 export const GRANT_BUDGET_MODES = ['estimate-cap', 'per-call-unknown-cost', 'free-local'] as const;
 export type GrantBudgetMode = (typeof GRANT_BUDGET_MODES)[number];
 
-/** 金额：十进制字符串（最多 6 位小数）与 ISO 4217 币种。不用浮点数。 */
+/** Amount: a decimal string (at most 6 decimal places) and an ISO 4217 currency. No floating-point numbers. */
 export interface Money {
   amount: string;
   currency: string;
 }
 
-/** 范围：`videoId` 为 null 时是全部视频（以及不属于任何视频的调用）；给了视频时只覆盖以这个视频为输入或目标的调用。 */
+/** Scope: when `videoId` is null, it covers all videos (and calls that belong to no video); when a video is given, it covers only calls whose input or target is that video. */
 export interface GrantScope {
   videoId: Id | null;
 }
 
-/** 授权从哪里来：用户在设置或 CLI 里发放、审批时一并发放、启用 Provider 时默认发放（迁移规则，§6.8）。 */
+/** Where the grant comes from: issued by the user in Settings or the CLI, issued together with an approval, or issued by default when a Provider is enabled (migration rule, §6.8). */
 export type GrantOrigin = 'user' | 'approval' | 'provider-enable';
 
-/** 授权此刻的状态（读取时算出）：有效、已到期、已撤销、额度用完（只有 `once` 与有 `maxCalls` 的会用完）。 */
+/** The grant's current status (computed on read): active, expired, revoked, or exhausted (only `once` and grants with `maxCalls` can be exhausted). */
 export type GrantState = 'active' | 'expired' | 'revoked' | 'exhausted';
 
 /**
- * 用量。`calls` 是已经结算计入的调用次数（含保守扣除的），`reservedCalls` 是预留中的；金额按授权的币种：
- * `amount` 是已经计入的（服务报告的，或报告缺失时按估算），`reservedAmount` 是预留中的；没有金额上限时两者为 null。
- * `unknownCostCalls` 是计入了次数、金额未知的调用。
+ * Usage. `calls` is the number of calls already settled and counted (including conservative deductions); `reservedCalls` is the number reserved. Amounts are in the grant's currency: `amount` is what has been counted
+ * (as reported by the service, or estimated when the report is missing); `reservedAmount` is what is reserved. Both are null when there is no amount cap.
+ * `unknownCostCalls` are calls that were counted but whose amount is unknown.
  */
 export interface GrantUsage {
   calls: number;
@@ -115,27 +115,27 @@ export interface GrantUsage {
 export interface Grant {
   grantId: Id;
   dataKinds: GrantDataKind[];
-  /** 接收方：Provider（`openai`、`google`、`elevenlabs`、`custom:<名字>`、`agent:codex`）。 */
+  /** Recipient: a Provider (`openai`, `google`, `elevenlabs`, `custom:<name>`, `agent:codex`). */
   recipient: string;
   scope: GrantScope;
-  /** 目的：给人看的一句话（任务、用途）。 */
+  /** Purpose: one sentence for people to read (the task, the use). */
   purpose: string;
-  /** `purpose` 由 Runtime 写成时（例如启用 Provider 时的默认授权）的文字引用：界面按当前语言重新生成；用户给的目的没有。 */
+  /** Text reference for `purpose` when the Runtime writes it (for example, the default grant when a Provider is enabled). The UI regenerates it in the current language; a purpose the user supplied has none. */
   purposeRef?: MessageRef;
   budgetMode: GrantBudgetMode;
-  /** 金额上限（`estimate-cap` 才有）。 */
+  /** Amount cap (only for `estimate-cap`). */
   budgetCap: Money | null;
-  /** 调用次数上限；null 为不限。`once` 的授权是 1。 */
+  /** Call-count cap; null means unlimited. A `once` grant has 1. */
   maxCalls: number | null;
   expiresAt: string | null;
-  /** 授权的代：撤销或收紧时加一，按旧代接纳、还没开始执行的调用被拒绝。 */
+  /** Grant generation: incremented on revocation or tightening; calls admitted under the old generation that have not yet started are rejected. */
   generation: number;
-  /** 只属于这个任务（会话的一次执行）的授权；null 为不限任务。 */
+  /** Grant that belongs only to this task (one execution in a session); null means not limited to a task. */
   taskId: Id | null;
-  /** 「只这一次」：只覆盖审批时绑定的那一次调用，不被别的调用匹配。 */
+  /** “Just this once”: covers only the one call bound at approval time, and is not matched by other calls. */
   once: boolean;
   origin: GrantOrigin;
-  /** 审批时发放的：那条审批。 */
+  /** Issued at approval time: that approval. */
   approvalId: Id | null;
   state: GrantState;
   createdAt: string;
@@ -144,30 +144,30 @@ export interface Grant {
   usage: GrantUsage;
 }
 
-/** 任务记录里的授权与预算：用了哪条授权（哪一代）、预留了什么、结算成什么。 */
+/** The grant and budget in a task record: which grant (and which generation) was used, what was reserved, and what it settled to. */
 export interface JobGrantUse {
   grantId: Id;
   generation: number;
-  /** 账本里的这笔预留。 */
+  /** This reservation in the ledger. */
   reservationId: Id;
   budgetMode: GrantBudgetMode;
-  /** 这次调用外发的数据种类。 */
+  /** Data kinds this call sends out. */
   dataKinds: GrantDataKind[];
-  /** 提交时预留的：一次调用，以及估算的金额上界（有金额上限时）。 */
+  /** Reserved at submission: one call, plus the estimated upper bound of the amount (when there is an amount cap). */
   reserved: { calls: number; amount: Money | null };
-  /** 结算（任务结束时）；还在进行时为 null。 */
+  /** Settlement (when the task ends); null while it is still in progress. */
   settled: JobGrantSettlement | null;
-  /** 自动重试之前那几次尝试的结算：重试也消耗预算（§7.8）。 */
+  /** Settlements of the attempts before an automatic retry: retries also consume budget (§7.8). */
   retries?: JobGrantSettlement[];
 }
 
 /**
- * 结算的依据（§7.8）：
- * - `reported`：服务报告了费用，按报告计；
- * - `estimate`：完成了、服务没有报告费用，按预留的估算计（有金额上限时）；
- * - `unknown`：完成了，金额未知（`per-call-unknown-cost`），只计次数；
- * - `conservative`：已经开始执行（数据可能已经交出、可能已经计费）却失败、取消或中断，服务没有报告：计一次调用并扣下预留的估算；
- * - `released`：还没开始执行就结束了（排队时取消、开始前被撤销、停止），预留全部释放，什么都不计。
+ * Basis of settlement (§7.8):
+ * - `reported`: the service reported the cost; counted as reported;
+ * - `estimate`: completed, but the service reported no cost; counted at the reserved estimate (when there is an amount cap);
+ * - `unknown`: completed, amount unknown (`per-call-unknown-cost`); only the count is counted;
+ * - `conservative`: execution had started (data may already have been handed over, and may already have been charged), but it failed, was cancelled or was interrupted, and the service reported nothing: count one call and deduct the reserved estimate;
+ * - `released`: ended before execution started (cancelled while queued, revoked before start, or stopped); the whole reservation is released and nothing is counted.
  */
 export type JobGrantSettlementBasis = 'reported' | 'estimate' | 'unknown' | 'conservative' | 'released';
 
@@ -178,34 +178,32 @@ export interface JobGrantSettlement {
   at: string;
 }
 
-/** 一项要用户授权的数据外发（审批里列出，`PendingApproval.grants`）。 */
+/** One outbound data transfer that needs user authorization (listed in the approval, `PendingApproval.grants`). */
 export interface GrantRequestItem {
   capability: ModelServiceCapability;
   dataKinds: GrantDataKind[];
   recipient: string;
-  /** 外发的数据来自（或结果要放进）哪个视频；没有时 null。 */
+  /** The video the outbound data comes from (or whose result is to be put into); null if none. */
   videoId: Id | null;
   purpose: string;
-  /** `purpose` 由 Runtime 写成时（工具页、流程、模型工具的用途）的文字引用：界面按当前语言重新生成；智能体给的用途没有。 */
+  /** Text reference for `purpose` when the Runtime writes it (tool page, flow, model tool purpose). The UI regenerates it in the current language; a purpose given by the agent has none. */
   purposeRef?: MessageRef;
   /**
-   * 为什么要授权：`none` 没有覆盖它的授权；`revoked` 覆盖它的授权已被撤销或到期；`unverifiable` 有金额上限的授权覆盖它，
-   * 但模型没有价格，无法保证上限（只能批准这一次、金额未知）；`exhausted` 覆盖它的授权额度用完了（只出现在工具页的
-   * 待批准项里，见 `PendingGrantsDetails`）。
+   * Why authorization is needed: `none` means no grant covers it; `revoked` means the grant that covers it has been revoked or has expired; `unverifiable` means a grant with an amount cap covers it, but the model has no price,
+   * so the cap cannot be guaranteed (it can only be approved this once, amount unknown); `exhausted` means the grant that covers it has used up its quota (appears only in the tool page's pending items, see `PendingGrantsDetails`).
    */
   reason: 'none' | 'revoked' | 'unverifiable' | 'exhausted';
-  /** 模型的费用状态与这次调用的估算（有价格时）。 */
+  /** The model's cost status and this call's estimate (when there is a price). */
   cost: ModelCost;
   estimate: Money | null;
-  /** 合并的审批（`grants_request`）里请求的调用次数上限；null 为不限。 */
+  /** Call-count cap requested in a merged approval (`grants_request`); null means unlimited. */
   maxCalls: number | null;
 }
 
 /**
- * 允许一条带外发授权的审批时的选择（`approvals.respond` 的 `grant`）：
- * - `{ persist: false }`（默认）：只这一次，金额未知；
- * - `{ persist: true, … }`：同时发放一条持续授权，范围默认是这次调用的视频（`scope: 'all'` 为全部视频），给了 `budgetCap`
- *   时是 `estimate-cap`，否则 `per-call-unknown-cost`。
+ * The choice when allowing an approval that carries an outbound grant (`grant` in `approvals.respond`):
+ * - `{ persist: false }` (default): this time only, amount unknown;
+ * - `{ persist: true, … }`: also issues a persistent grant. The scope defaults to this call's video (`scope: 'all'` means all videos). When `budgetCap` is given it is `estimate-cap`, otherwise `per-call-unknown-cost`.
  */
 export type ApprovalGrantChoice =
   | { persist: false }
@@ -214,7 +212,7 @@ export type ApprovalGrantChoice =
 export interface GrantCreateParams {
   dataKinds: GrantDataKind[];
   recipient: string;
-  /** 不给时是全部视频。 */
+  /** When not given, it means all videos. */
   scope?: GrantScope;
   purpose: string;
   budgetMode: Exclude<GrantBudgetMode, 'free-local'>;
@@ -225,19 +223,18 @@ export interface GrantCreateParams {
 }
 
 /**
- * 工具页的当场授权（架构设计 §7.9、§12.5）：在场的用户（桌面界面的连接）启动固定流程或直接提交任务，缺授权或额度不够时，
- * 拒绝的 `details`（`GRANT_REQUIRED`、`GRANT_REVOKED`、`BUDGET_EXCEEDED`、`BUDGET_UNVERIFIABLE`）多带 `pendingGrants`：
- * 这次启动要用户批准的全部外发（一个流程的几种外发在同一次拒绝里）。客户端请用户确认之后逐项 `grants.create`
- * （`grantCreateParamsFor`），再用同一个 `commandId` 重新提交。Runtime 不自动发放、不放宽任何授权；CLI、智能体与对外服务
- * 的拒绝不带它（`remedy.commands` 照旧给出要执行的命令）。任务预算（`TASK_BUDGET_*`）不进待批准项。
+ * On-the-spot grants on the tool page (architecture design §7.9, §12.5): when a user who is present (a connection from the desktop UI) starts a fixed flow or submits a task directly, and a grant or quota is missing or insufficient,
+ * the rejection's `details` (`GRANT_REQUIRED`, `GRANT_REVOKED`, `BUDGET_EXCEEDED`, `BUDGET_UNVERIFIABLE`) carry `pendingGrants`: every outbound transfer this launch needs the user to approve (a flow's several outbound transfers appear in one rejection).
+ * The client asks the user to confirm, then calls `grants.create` for each item (`grantCreateParamsFor`), and resubmits with the same `commandId`. The Runtime does not issue grants automatically and does not loosen any grant. Rejections to the CLI, agents and external services do not carry it
+ * (`remedy.commands` still gives the commands to run). Task budgets (`TASK_BUDGET_*`) do not go into pending items.
  */
 export interface PendingGrantsDetails {
   pendingGrants: GrantRequestItem[];
 }
 
 /**
- * 一项待批准的外发对应的 `grants.create` 参数：范围是这一项的视频（没有视频时是全部视频）、按次计金额未知、次数上限照项里的。
- * 用户可以在发放前改（例如设金额上限）。
+ * The `grants.create` parameters for one pending outbound item: the scope is that item's video (all videos when there is no video), the amount is counted as unknown per call, and the call-count cap is as in the item.
+ * The user can change it before issuing (for example, set an amount cap).
  */
 export function grantCreateParamsFor(item: GrantRequestItem): GrantCreateParams {
   return {
@@ -250,7 +247,7 @@ export function grantCreateParamsFor(item: GrantRequestItem): GrantCreateParams 
   };
 }
 
-/** `grants.update`：给出的字段替换，不给的不变。收紧（缩小、降低、提前）时 `generation` 加一。 */
+/** `grants.update`: fields given replace the old values; fields not given stay the same. When tightening (narrowing, lowering, moving earlier), `generation` is incremented. */
 export interface GrantUpdateParams {
   grantId: Id;
   dataKinds?: GrantDataKind[];
@@ -261,21 +258,21 @@ export interface GrantUpdateParams {
   expiresAt?: string | null;
 }
 
-/** 一条授权的用量与用过它的任务（还保留在任务记录里的）。 */
+/** Usage of a grant and the tasks that used it (those still kept in task records). */
 export interface GrantUsageReport {
   grant: Grant;
   jobs: Array<{ jobId: Id; state: string; reserved: JobGrantUse['reserved']; settled: JobGrantSettlement | null }>;
 }
 
-/** 撤销的结果：撤销之后禁止新的调用；已经外发或计费的部分如实列出，无法抹除。 */
+/** Result of a revocation: new calls are forbidden after it. Parts already sent out or charged are listed as they are and cannot be erased. */
 export interface GrantRevokeResult {
   grant: Grant;
-  /** 已经计入的调用与金额（已经交出的数据与可能产生的费用）。 */
+  /** Calls and amounts already counted (data already handed over, and possible costs). */
   alreadySent: { calls: number; amount: Money | null; unknownCostCalls: number };
-  /** 撤销时正在执行的任务：数据已经交出，照常结束并结算；排队中的在开始时被拒绝。 */
+  /** Tasks executing at revocation: their data has already been handed over, so they finish as usual and are settled; queued ones are rejected when they start. */
   runningJobs: Id[];
   note: string;
-  /** `note` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `note` (message-ref.ts). */
   noteRef?: MessageRef;
 }
 
@@ -285,8 +282,8 @@ export interface GrantsSnapshot {
 
 export type GrantsEvent = { type: 'grant.upsert'; grant: Grant } | { type: 'grant.removed'; grantId: Id };
 
-/** 授权与预算的错误码（放在 `RpcError.details.code`）。 */
-/** 授权与预算的错误码；`TASK_BUDGET_*` 是任务预算（§7.8）的，与授权的预算并列检查。 */
+/** Error codes for grants and budgets (carried in `RpcError.details.code`). */
+/** Error codes for grants and budgets. `TASK_BUDGET_*` belong to the task budget (§7.8) and are checked alongside the grant budget. */
 export const GRANT_ERROR_CODES = [
   'GRANT_REQUIRED',
   'GRANT_REVOKED',
@@ -301,9 +298,9 @@ export function isGrantErrorCode(value: unknown): value is GrantErrorCode {
   return typeof value === 'string' && (GRANT_ERROR_CODES as readonly string[]).includes(value);
 }
 
-// ---- 金额 ----
+// ---- Amount ----
 
-/** 金额的最小单位：百万分之一。 */
+/** The smallest unit of an amount: one millionth. */
 export const MONEY_SCALE = 1_000_000n;
 const AMOUNT_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
@@ -316,14 +313,14 @@ export function isCurrency(value: string): boolean {
   return CURRENCY_PATTERN.test(value);
 }
 
-/** 十进制字符串 → 百万分之一的整数。不合法时抛出。 */
+/** Decimal string → integer in millionths. Throws if invalid. */
 export function moneyToMicros(amount: string): bigint {
   if (!AMOUNT_PATTERN.test(amount)) throw new Error(String(ProtocolValidation.amountInvalidValue({ amount })));
   const [whole, fraction = ''] = amount.split('.');
   return BigInt(whole!) * MONEY_SCALE + BigInt(fraction.padEnd(6, '0'));
 }
 
-/** 百万分之一的整数 → 十进制字符串（去掉多余的 0，至少两位小数）。 */
+/** Integer in millionths → decimal string (extra trailing zeros removed, at least two decimal places). */
 export function microsToMoney(micros: bigint): string {
   const negative = micros < 0n;
   const abs = negative ? -micros : micros;
@@ -334,8 +331,8 @@ export function microsToMoney(micros: bigint): string {
 }
 
 /**
- * 按模型描述的价格估算一次调用的金额上界。只在提交时能确定上界的计价单位上估算：按次（`request`）、按张（`image`，
- * 乘张数）、按千字符（`1k-chars`，按合成文本的码点数向上取整）。没有价格、单位用不上（例如转写按分钟、文本按 token）时 null。
+ * Estimates the upper bound of one call's amount from the model description's price. Estimates only for pricing units whose upper bound can be fixed at submission: per request (`request`), per image (`image`, multiplied by the image count),
+ * and per thousand characters (`1k-chars`, rounded up by the code point count of the synthesized text). Null when there is no price, or the unit does not apply (for example transcription by minute, or text by token).
  */
 export function estimateCallCost(price: ModelPrice | undefined, input: { count?: number; chars?: number }): Money | null {
   if (!price || !isMoneyAmount(price.amount) || !isCurrency(price.currency)) return null;

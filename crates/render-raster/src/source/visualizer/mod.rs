@@ -1,42 +1,23 @@
-//! 频谱素材源（元素方案 ADR-E04）。
+//! Spectrum source for visualizer elements (element design, ADR-E04).
 //!
-//! 一条 [`VizTrack`] 就是「整段音频、按某个元素的参数派生好的逐帧频谱」。它在
-//! **host preflight** 里一次性算完（`ccut spectrum` 产出的 BCS1 → 元素 dB 窗 →
-//! 指数平滑 → gain），渲染期只做一次数组下标查找：
+//! A [`VizTrack`] is the whole-audio, per-frame spectrum derived from one element's parameters. It is computed once in the **host preflight** (BCS1 output of `ccut spectrum` → element dB window → exponential smoothing → gain). At render time it only does a single array index lookup:
 //!
 //! ```text
-//! idx = clamp(floor(t × analysis_rate), 0, frame_count - 1)   // nearest，向下取整
+//! idx = clamp(floor(t × analysis_rate), 0, frame_count - 1)   // nearest, rounded down
 //! ```
 //!
-//! **平滑为什么不在 `sample(t)` 里算**：`y[n] = τ·y[n-1] + (1-τ)·x[n]` 天然递推，
-//! 放进采样期就等于给源装一个增量时钟——而导出是乱序的（`ccut render --t 7.5`
-//! 直接跳帧、全片导出按 stride 分给多个 worker）。ADR-E04 因此把平滑钉在
-//! preflight，把 `sample` 钉成纯查表，`shuffled_sampling_equals_sorted_sampling`
-//! 是这条契约的可执行形式。
+//! **Why smoothing is not computed in `sample(t)`**: `y[n] = τ·y[n-1] + (1-τ)·x[n]` is a natural recurrence, and putting it in the sampling step would be the same as giving the source an incremental clock. But exports run out of order (`ccut render --t 7.5` jumps straight to a frame, and full-timeline exports split frames by stride across several workers). ADR-E04 therefore pins smoothing to the preflight and pins `sample` to a pure table lookup; `shuffled_sampling_equals_sorted_sampling` is the executable form of this contract.
 //!
-//! **时域行与频域行的分工**（本模块的语义决定，见 [`VizTrack::derive`]）：
-//! 频域行走完整的「重映射 → 平滑 → gain」链条；时域行**逐字节原样搬运**。
-//! 依据是本方案一路对齐的 Web Audio 语义——`smoothingTimeConstant` 只作用于
-//! `getByteFrequencyData`，`getByteTimeDomainData` 拿到的是原始波形；而 dB 窗
-//! 对一条「静音 ≈ 128」的中心化波形本来就没有意义。
+//! **Division of work between time-domain and frequency-domain rows** (the semantics of this module, see [`VizTrack::derive`]): frequency rows go through the full remap → smoothing → gain chain; time-domain rows are copied **byte for byte**. The reason is the Web Audio semantics this design follows throughout: `smoothingTimeConstant` only applies to `getByteFrequencyData`, while `getByteTimeDomainData` returns the raw waveform; and a dB window has no meaning for a centred waveform where silence ≈ 128.
 //!
-//! ## §8 的 GPU 接口在这里冻结（本阶段只冻结，不实现）
+//! ## The §8 GPU interface is frozen here (this stage freezes it, does not implement it)
 //!
-//! 设计 §8 是跨文档契约，P5 的 wgpu 后端与 P6 的 wasm 预览都按它接线：
+//! Design §8 is a cross-document contract; the P5 wgpu backend and the P6 wasm preview both wire to it:
 //!
-//! * §8.1 bind group：`@group(0)` 变换、`@group(1)` 逐效果标量、
-//!   `@group(2) @binding(0)` 音频纹理 + `@binding(1)` sampler（linear /
-//!   clamp-to-edge）；
-//! * §8.2 `@group(1)` uniform **顺序冻结**：visualizer 8 项
-//!   `u_time / u_mainColor / u_secondaryColor / u_canvasRes / u_dstRes /
-//!   u_colourMultiplier / u_clip / u_textureSize`；
-//! * §8.3 音频纹理：`R8Unorm`、`w × 2`、**row 0 = 时域、row 1 = 频域、无 flip**
-//!   （GLSL 参考实现开了 `UNPACK_FLIP_Y_WEBGL`，行序与 WGSL 相反，移植时必须
-//!   翻转行索引，否则得到静默的错误图像）——见 [`AUDIO_TEXTURE_ROW_TIME`] /
-//!   [`AUDIO_TEXTURE_ROW_FREQ`]；
-//! * §8.4 频率映射：48 kHz 的 BCS1 直接对齐 Web Audio，`binWidth == "64"`
-//!   取最低 64 个 bin（0–3 kHz），`half` 覆盖 0–24 kHz——见
-//!   [`VizFrame::freq_window`]。
+//! * §8.1 bind groups: `@group(0)` transform, `@group(1)` per-effect scalars, `@group(2) @binding(0)` audio texture + `@binding(1)` sampler (linear / clamp-to-edge);
+//! * §8.2 `@group(1)` uniform **order frozen**: 8 visualizer items `u_time / u_mainColor / u_secondaryColor / u_canvasRes / u_dstRes / u_colourMultiplier / u_clip / u_textureSize`;
+//! * §8.3 audio texture: `R8Unorm`, `w × 2`, **row 0 = time domain, row 1 = frequency domain, no flip** (the GLSL reference implementation enables `UNPACK_FLIP_Y_WEBGL`, so its row order is the opposite of WGSL; when porting, the row index must be flipped, otherwise the result is a silently wrong image) — see [`AUDIO_TEXTURE_ROW_TIME`] / [`AUDIO_TEXTURE_ROW_FREQ`];
+//! * §8.4 frequency mapping: 48 kHz BCS1 aligns directly with Web Audio; `binWidth == "64"` takes the lowest 64 bins (0–3 kHz), `half` covers 0–24 kHz — see [`VizFrame::freq_window`].
 
 use anyhow::{Result, bail};
 use sha2::{Digest, Sha256};
@@ -50,17 +31,16 @@ pub(crate) mod recipes;
 
 pub use draw::{VisualizerParams, VizBox, visualizer_frame};
 
-/// 音频纹理的时域行行号（设计 §8.3，**无 flip**）。
+/// Row index of the time-domain row in the audio texture (design §8.3, **no flip**).
 pub const AUDIO_TEXTURE_ROW_TIME: u32 = 0;
-/// 音频纹理的频域行行号（设计 §8.3，**无 flip**）。
+/// Row index of the frequency-domain row in the audio texture (design §8.3, **no flip**).
 pub const AUDIO_TEXTURE_ROW_FREQ: u32 = 1;
-/// 音频纹理的高度。
+/// Height of the audio texture.
 pub const AUDIO_TEXTURE_ROWS: u32 = 2;
-/// `binWidth == "64"` 的纹理宽度（设计 §8.3/§8.4）：48 kHz 分析下的
-/// **最低 64 个 bin**（0–3 kHz）。
+/// Texture width for `binWidth == "64"` (design §8.3/§8.4): the **lowest 64 bins** (0–3 kHz) under 48 kHz analysis.
 pub const FIXED_BIN_WIDTH: usize = 64;
 
-/// 按配方的 `binWidth` 取频域行的可用段（设计 §8.4）。
+/// Takes the usable segment of the frequency-domain row according to the recipe's `binWidth` (design §8.4).
 pub(crate) fn freq_row(frame: &VizFrame, bin_width: motion::preset_registry::BinWidth) -> &[u8] {
     match bin_width {
         motion::preset_registry::BinWidth::Fixed64 => frame.freq_window(FIXED_BIN_WIDTH),
@@ -68,19 +48,13 @@ pub(crate) fn freq_row(frame: &VizFrame, bin_width: motion::preset_registry::Bin
     }
 }
 
-/// 时域行**重采样到音频纹理的宽度**（设计 §8.3 的定案，P5b 冻结）。
+/// Resamples the time-domain row **to the audio texture width** (the decision in design §8.3, frozen in P5b).
 ///
-/// `VizFrame` 的两条行宽度不同（BCS1 的 128 / 512），而 §8.3 的纹理是 `w × 2`
-/// ——两条行必须同宽。频域行按 `binWidth` 取窗（原样字节），时域行按
-/// [`crate::source::kernel::sample_row_linear`] 的 clamp-to-edge 纹素中心规则
-/// 重采样到同宽。
+/// The two `VizFrame` rows have different widths (128 / 512 in BCS1), but the §8.3 texture is `w × 2`, so both rows must have the same width. The frequency row is windowed by `binWidth` (raw bytes); the time-domain row is resampled to the same width with the clamp-to-edge texel-centre rule of [`crate::source::kernel::sample_row_linear`].
 ///
-/// **CPU 绘制走同一条**：`oscilloscope-v1`（`oscilloscope` / `ring_wave`）是唯一
-/// 读时域行的算法，它们的 `binWidth` 是 `"half"`，纹理宽 512 是时域行 128 的四倍。
-/// 示波器折线在重采样后的行上取 `samples` 个点，与 `AudioTexture` 上传的字节逐字
-/// 相同——**重采样是行语义的一部分**，不是上传期的实现细节：两侧共用本函数。
+/// **The CPU drawing path uses the same code**: `oscilloscope-v1` (`oscilloscope` / `ring_wave`) is the only algorithm that reads the time-domain row. Its `binWidth` is `"half"`, and the texture width of 512 is four times the time-domain row width of 128. The oscilloscope polyline takes `samples` points from the resampled row, which is byte-for-byte identical to what `AudioTexture` uploads — **resampling is part of the row semantics, not an upload-time implementation detail**: both sides share this function.
 ///
-/// 宽度相同时逐字节恒等（`Borrowed`，不复制）。
+/// When the widths are equal the result is byte-identical (`Borrowed`, no copy).
 pub(crate) fn time_row(
     frame: &VizFrame,
     bin_width: motion::preset_registry::BinWidth,
@@ -100,40 +74,33 @@ pub(crate) fn time_row(
     )
 }
 
-/// 派生算法的版本号，进 [`VizTrack::fingerprint`]。
+/// Version number of the derivation algorithm, included in [`VizTrack::fingerprint`].
 ///
-/// 改了「哪条行走哪条链路」「取整放在哪一步」这类语义就必须 +1，否则旧产物会
-/// 带着新像素复用旧指纹。
+/// Any change to semantics such as "which row takes which chain" or "at which step rounding happens" must bump this by +1; otherwise old artifacts would reuse the old fingerprint while carrying new pixels.
 const DERIVE_VERSION: u32 = 1;
 
-/// 一帧频谱：两条字节行。
+/// One spectrum frame: two byte rows.
 ///
-/// 两条行**宽度不同**（BCS1 的 128 / 512），因为它们本来就是两种量：时域是
-/// 波形采样、频域是 dB 窗内的幅度。§8.3 的 `w × 2` 纹理是 GPU 上传期的事——
-/// 那一步按配方的 `binWidth` 把两条行各自取到同一个 `w`，不属于本层。
+/// The two rows have **different widths** (128 / 512 in BCS1) because they measure two different quantities to begin with: the time domain is waveform samples, the frequency domain is amplitude within the dB window. The `w × 2` texture of §8.3 belongs to the GPU upload stage — that step takes each row to the same `w` according to the recipe's `binWidth`, and is not part of this layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VizFrame {
-    /// 时域行，中心化到 128（静音 ≈ 128），语义对齐 `getByteTimeDomainData`。
+    /// Time-domain row, centred on 128 (silence ≈ 128), semantically aligned with `getByteTimeDomainData`.
     pub time: Box<[u8]>,
-    /// 频域行，已按元素的 `[minDb, maxDb]` 重映射、平滑并乘上 `gain`。
+    /// Frequency-domain row, already remapped to the element's `[minDb, maxDb]`, smoothed, and multiplied by `gain`.
     pub freq: Box<[u8]>,
 }
 
 impl VizFrame {
-    /// 频域行的**最低 `bins` 个 bin**（设计 §8.4：48 kHz 下 64 bin = 0–3 kHz）。
+    /// The **lowest `bins` bins** of the frequency-domain row (design §8.4: at 48 kHz, 64 bins = 0–3 kHz).
     ///
-    /// `bins` 超过行宽时返回整行——配方要的 bin 数比缓存还多是配方的事，
-    /// 采样端不该 panic。
+    /// When `bins` exceeds the row width, the whole row is returned. Asking for more bins than the cache holds is the recipe's problem; the sampling side should not panic.
     pub fn freq_window(&self, bins: usize) -> &[u8] {
         &self.freq[..bins.min(self.freq.len())]
     }
 
-    /// 一帧**纯静音**：时域行中心化到 128、频域行全 0。
+    /// One frame of **pure silence**: time-domain row centred on 128, frequency-domain row all 0.
     ///
-    /// 给 host 的「映射不到音频区段」用（`audio: "project"` 的输出时刻落在剪掉的
-    /// 空隙里、或该时刻在播另一条源）。频域取 0 而不是"某个 dB 底"是因为这不是
-    /// "很轻的声音"，是**根本没有声音**——柱状样式的 `max(freq, minHeight)` 会
-    /// 把它画成一排小柱子，与静音段的观感一致。
+    /// Used by the host for "maps to no audio segment" (when the output time of `audio: "project"` falls in a cut gap, or when another source is playing at that time). The frequency values are 0 rather than "some dB floor" because this is not "very quiet sound" — it is **no sound at all**. Bar styles' `max(freq, minHeight)` will draw it as a row of short bars, matching how a silent segment looks.
     pub fn silent(time_bins: usize, freq_bins: usize) -> VizFrame {
         VizFrame {
             time: vec![TIME_DOMAIN_SILENCE; time_bins].into_boxed_slice(),
@@ -142,24 +109,23 @@ impl VizFrame {
     }
 }
 
-/// 时域行的静音基线（`getByteTimeDomainData` 的中心值）。
+/// Silence baseline of the time-domain row (the centre value of `getByteTimeDomainData`).
 pub const TIME_DOMAIN_SILENCE: u8 = 128;
 
-/// 元素级派生参数（`VisualizerProps` 的渲染侧对应物）。
+/// Element-level derived parameters (the render-side counterpart of `VisualizerProps`).
 ///
-/// 刻意不带 `Default`：缺省值住在 `ccut_timeline::schema` 的
-/// `VISUALIZER_*_DEFAULT` 常量里，让本层再抄一份就会出现两套缺省。
+/// Deliberately does not derive `Default`: the default values live in the `VISUALIZER_*_DEFAULT` constants in `ccut_timeline::schema`, and copying them into this layer would create two sets of defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VizParams {
     pub min_db: f64,
     pub max_db: f64,
-    /// `smoothingTimeConstant` 的离线等价，钳到 0..1。
+    /// Offline equivalent of `smoothingTimeConstant`, clamped to 0..1.
     pub smoothing: f64,
-    /// CucCut 自有字段：重映射后、绘制前相乘。
+    /// CucCut-specific field: multiplied in after remapping, before drawing.
     pub gain: f64,
 }
 
-/// 频谱素材源的落地实现：整轨驻留、纯查表采样。
+/// Concrete implementation of the spectrum source: the whole track is kept resident, sampling is a pure table lookup.
 #[derive(Debug, Clone)]
 pub struct VizTrack {
     analysis_rate: u32,
@@ -169,12 +135,11 @@ pub struct VizTrack {
 }
 
 impl VizTrack {
-    /// **ADR-E04 数据流的第 2 步**：canonical BCS1 字节 → 元素参数的整轨。
+    /// **Step 2 of the ADR-E04 data flow**: canonical BCS1 bytes → the whole track with element parameters applied.
     ///
-    /// 只吃字节，不碰文件系统——BCS1 的读取（缓存路径、指纹、原子写）是 host
-    /// 的活（`apps/cli` 的 `services/spectrum.rs`）。
+    /// Consumes bytes only and never touches the filesystem — reading BCS1 (cache path, fingerprint, atomic write) is the host's job (`services/spectrum.rs` in `apps/cli`).
     ///
-    /// 频域行经 [`Remapper`] **从帧 0 顺序推进**；时域行原样搬运（见模块文档）。
+    /// Frequency-domain rows are advanced **sequentially from frame 0** through [`Remapper`]; time-domain rows are copied through as-is (see the module docs).
     pub fn derive(spectrum: &[u8], params: VizParams) -> Result<VizTrack> {
         let view = bcs1::parse(spectrum)?;
         let header = view.header();
@@ -204,10 +169,9 @@ impl VizTrack {
         VizTrack::assemble(header.analysis_rate, frames, params, header.content_hash)
     }
 
-    /// 已经派生好的帧 → 轨。给「BCS1 从别处来」的 host（P6 的 wasm 预览）留的口。
+    /// Already-derived frames → track. An entry point left for hosts whose BCS1 comes from elsewhere (the P6 wasm preview).
     ///
-    /// `source_hash` 是上游素材的内容 hash（BCS1 的 `content_hash`），与派生参数
-    /// 一起进 [`VizTrack::fingerprint`]。
+    /// `source_hash` is the content hash of the upstream material (`content_hash` in BCS1), and goes into [`VizTrack::fingerprint`] together with the derivation parameters.
     pub fn assemble(
         analysis_rate: u32,
         frames: Vec<VizFrame>,
@@ -236,7 +200,7 @@ impl VizTrack {
         hasher.update((frames.len() as u64).to_le_bytes());
         hasher.update((time_bins as u64).to_le_bytes());
         hasher.update((freq_bins as u64).to_le_bytes());
-        // 参数进指纹：同一份 BCS1 换个 dB 窗就是另一幅画面。
+        // Parameters go into the fingerprint: the same BCS1 with a different dB window is a different picture.
         for value in [params.min_db, params.max_db, params.smoothing, params.gain] {
             hasher.update(value.to_bits().to_le_bytes());
         }
@@ -257,46 +221,44 @@ impl VizTrack {
         self.params
     }
 
-    /// 覆盖的秒数 = `frame_count / analysis_rate`。
+    /// Seconds covered = `frame_count / analysis_rate`.
     pub fn duration(&self) -> f64 {
         self.frames.len() as f64 / f64::from(self.analysis_rate)
     }
 
-    /// 时域行宽（BCS1 是 [`waveform::bcs1::TIME_BINS`] = 128）。
+    /// Time-domain row width (in BCS1 it is [`waveform::bcs1::TIME_BINS`] = 128).
     pub fn time_bins(&self) -> usize {
         self.frames.first().map_or(0, |frame| frame.time.len())
     }
 
-    /// 频域行宽（BCS1 是 `fftSize / 2` = 512）。
+    /// Frequency-domain row width (in BCS1 it is `fftSize / 2` = 512).
     pub fn freq_bins(&self) -> usize {
         self.frames.first().map_or(0, |frame| frame.freq.len())
     }
 
-    /// 第 `index` 帧；越界返回 `None`。
+    /// Frame number `index`; returns `None` when out of range.
     pub fn frame(&self, index: usize) -> Option<&VizFrame> {
         self.frames.get(index)
     }
 
-    /// 与本轨行宽一致的静音帧（见 [`VizFrame::silent`]）。
+    /// A silent frame matching this track's row widths (see [`VizFrame::silent`]).
     pub fn silent_frame(&self) -> VizFrame {
         VizFrame::silent(self.time_bins(), self.freq_bins())
     }
 }
 
-/// 频谱源的采样契约（ADR-E04）。
+/// Sampling contract for spectrum sources (ADR-E04).
 ///
-/// 四条义务与 [`super::VisualSource`] 逐字相同：唯一入口是**绝对时刻**的
-/// `sample`、不得持有增量时钟、采样只取 `&self`、内容指纹覆盖全部字节。
-/// 不同的只有「一帧是什么」——见 `source/mod.rs` 里两个 trait 分家的理由。
+/// The four obligations are word-for-word the same as [`super::VisualSource`]: the only entry point is `sample` at an **absolute time**; no incremental clock may be held; sampling takes only `&self`; and the content fingerprint covers all bytes. Only "what a frame is" differs — see the reason the two traits are split in `source/mod.rs`.
 pub trait VizSource: Send + Sync {
     fn analysis_rate(&self) -> u32;
 
     fn frame_count(&self) -> usize;
 
-    /// 秒 → 帧号（ADR-E04 的取整规则）。空轨返回 `None`。
+    /// Seconds → frame number (the rounding rule of ADR-E04). Returns `None` for an empty track.
     fn frame_index_at(&self, seconds: f64) -> Option<usize>;
 
-    /// **唯一正式采样接口**：绝对时刻 → 该时刻的频谱帧。
+    /// **The only official sampling interface**: absolute time → the spectrum frame at that time.
     fn sample(&self, seconds: f64) -> Option<&VizFrame>;
 
     fn fingerprint(&self) -> ContentHash;
@@ -311,9 +273,7 @@ impl VizSource for VizTrack {
         self.frames.len()
     }
 
-    /// 取整规则**不在这里实现**：`waveform::bcs1::frame_index_at` 是它的
-    /// 唯一住址，`Bcs1View::frame_index_at` 也转发到同一处（ADR-E04
-    /// 「取整规则是契约的一部分」）。
+    /// The rounding rule is **not implemented here**: `waveform::bcs1::frame_index_at` is its only home, and `Bcs1View::frame_index_at` also forwards to that same place (ADR-E04: "the rounding rule is part of the contract").
     fn frame_index_at(&self, seconds: f64) -> Option<usize> {
         bcs1::frame_index_at(self.analysis_rate, self.frames.len(), seconds)
     }
@@ -327,7 +287,7 @@ impl VizSource for VizTrack {
     }
 }
 
-/// BCS1 的时域行宽，给 host 组装夹具时对齐用。
+/// BCS1 time-domain row width, for host test fixtures to align with.
 pub const BCS1_TIME_BINS: usize = TIME_BINS as usize;
 
 #[cfg(test)]

@@ -7,17 +7,14 @@ import { hasVideoDb, reserveVideoDir, type VideoLocation, type VideoService } fr
 import { RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 固定流程的视频目标（架构设计 §7.9）在 Runtime 里的实现：
+ * Runtime implementation of the fixed-flow video target (architecture design §7.9):
  *
- * - 位置（`VideoPlace`）与重启恢复用的同形：来源目录、视频目录、来源（项目或会话）。
- * - 以租约打开：用一个只在打开那一刻存在的主体打开（别的连接已经打开着时直接接上那一份），换成 Runtime 的租约后马上离开；
- *   被别的进程锁着时引擎的 `VIDEO_LOCKED` 原样抛出。租约放下之后没有别的打开者时按宽限期关闭。
- * - 新建：与 `videos.create` 同一条路径（项目目录、目录命名、新视频的初始内容），之后同样换成租约。给的是会话时与智能体的
- *   `videos_create` 同样放置：会话属于项目时在项目里（范围是项目），否则在会话的工作目录里（范围是会话）。流程先占下目录
- *   （`reserve`，建成空目录）再新建到那里；那里已经有视频（上次新建之后、流程记下产出之前中断了）时打开它，不再新建。
+ * - Place (`VideoPlace`), the same shape used for restart recovery: source directory, video directory, source (project or session).
+ * - Opened with a lease: opened with a subject that exists only at the moment of opening (when another connection already has it open, that one is attached to), then immediately exchanged for the Runtime's lease and left. When another process holds the lock, the engine's `VIDEO_LOCKED` is thrown unchanged. After the lease is released with no other openers, it is closed after the grace period.
+ * - Creation: the same path as `videos.create` (project directory, directory naming, the new video's initial content), after which it is likewise exchanged for a lease. When given a session, it is placed as the agent's `videos_create` places it: if the session belongs to a project, it goes in the project (scope is the project); otherwise in the session's working directory (scope is the session). The flow first reserves the directory (`reserve`, creating an empty directory) and then creates into it. If a video is already there (the flow was interrupted after creation but before it recorded the output), that video is opened instead of creating a new one.
  */
 
-/** 已打开视频的位置；不是从项目或会话打开的（没有来源）时 null。 */
+/** The place of an opened video; null when it was not opened from a project or session (no source). */
 export function videoPlace(videos: VideoService, videoId: Id): VideoPlace | null {
   const ref = videos.ref(videoId);
   if (!ref) return null;
@@ -27,13 +24,13 @@ export function videoPlace(videos: VideoService, videoId: Id): VideoPlace | null
       ? { conversationId: ref.source.conversationId }
       : null;
   if (!scope) return null;
-  // 来源目录：视频目录去掉相对路径。
+  // Source directory: the video directory with the relative path removed.
   const depth = ref.relPath ? ref.relPath.split('/').length : 0;
   const root = path.resolve(ref.path, ...Array<string>(depth).fill('..'));
   return { root, file: ref.relPath || '.', scope };
 }
 
-/** 位置换成打开视频用的定位；形状不对时 null。 */
+/** Converts the place into the form used to open the video; null if the shape is wrong. */
 export function placeLocation(place: VideoPlace): VideoLocation | null {
   const { root, file, scope } = place as { root?: unknown; file?: unknown; scope?: unknown };
   if (typeof root !== 'string' || typeof file !== 'string' || !scope || typeof scope !== 'object') return null;
@@ -44,8 +41,7 @@ export function placeLocation(place: VideoPlace): VideoLocation | null {
 }
 
 /**
- * Space 里的视频条目的位置（不打开视频）。在回收站里（含删除之前的条目 id）`SPACE_ENTRY_TRASHED`；不是视频
- * `SPACE_ENTRY_NOT_VIDEO`；不在了 `not-found`。
+ * The place of a video entry in Space, without opening the video. In the trash (including the entry ID from before deletion): `SPACE_ENTRY_TRASHED`; not a video: `SPACE_ENTRY_NOT_VIDEO`; gone: `not-found`.
  */
 export function entryPlace(space: SpaceCatalog, entryId: Id): VideoPlace {
   if (space.trashedVideo(entryId)) {
@@ -56,13 +52,12 @@ export function entryPlace(space: SpaceCatalog, entryId: Id): VideoPlace {
 }
 
 export interface PipelineTargetsOptions {
-  /** Space 条目的位置（`entryPlace`）。Space 在 Runtime 启动的后面才有，调用时再取。 */
+  /** The place of a Space entry (`entryPlace`). Space only exists after Runtime startup finishes, so it is fetched at call time. */
   entry(entryId: Id): VideoPlace;
-  /** 项目目录；不存在时 `not-found`。 */
+  /** The project directory; `not-found` if it does not exist. */
   projectRoot(projectId: Id): string;
   /**
-   * 按会话新建时的位置（与智能体的 `videos_create` 相同）：会话所属项目的目录与项目范围；不属于项目的会话是它的工作目录与会话范围
-   * （架构设计 §3.10）。会话不存在时 `not-found`。不给时不接受按会话新建。
+   * The place when creating from a session (same as the agent's `videos_create`): the directory of the project the session belongs to, with project scope; a session that does not belong to a project uses its working directory and session scope (architecture design §3.10). `not-found` if the session does not exist. Creating from a session is not accepted when none is given.
    */
   conversationSource?(
     conversationId: Id,
@@ -70,7 +65,7 @@ export interface PipelineTargetsOptions {
 }
 
 export function pipelineTargets(videos: VideoService, options: PipelineTargetsOptions): PipelineTargets {
-  /** 打开者换成租约：打开用的主体马上离开，视频由租约保持打开。 */
+  /** Exchanges the opener for a lease: the subject used to open leaves at once, and the lease keeps the video open. */
   const toLease = async (videoId: Id, principal: TrustedPrincipal, fallback: VideoPlace | null): Promise<VideoLease> => {
     videos.retain(videoId);
     await videos.close(videoId, principal);
@@ -91,7 +86,7 @@ export function pipelineTargets(videos: VideoService, options: PipelineTargetsOp
     };
   };
 
-  /** 新建视频的来源目录与范围：项目，或会话的来源（属于项目的会话是那个项目）。 */
+  /** The source directory and scope for a newly created video: a project, or the session's source (a session that belongs to a project is that project). */
   const source = async (request: PipelineCreateScope): Promise<{ root: string; scope: { projectId: Id } | { conversationId: Id } }> => {
     if (request.projectId !== undefined) return { root: options.projectRoot(request.projectId), scope: { projectId: request.projectId } };
     if (!options.conversationSource) {
@@ -142,7 +137,7 @@ function sameScope(a: { projectId: Id } | { conversationId: Id }, b: { projectId
     : 'conversationId' in b && a.conversationId === b.conversationId;
 }
 
-/** 流程打开视频的主体：每次一个，只在打开的一刻用（随即换成租约）。 */
+/** The subject with which the flow opens a video: one at a time, used only at the moment of opening, then immediately exchanged for a lease. */
 function targetPrincipal(): TrustedPrincipal {
   return { connectionId: newId('system:pipeline-target'), kind: 'cli', name: RcVideo.pipelinePrincipalName().text };
 }

@@ -1,20 +1,16 @@
-//! `pulse-rings-v1`：`pulse_rings`（设计 §7.2）。
+//! `pulse-rings-v1`: `pulse_rings` (design §7.2).
 //!
-//! 中央一个随低频呼吸的圆盘（`Core`，主色）+ `bands` 个随各自频带向外扩张的同心
-//! 环（`Rings`，副色）。可用的 bin 等分成 `bands` 段，第 `k` 段的平均幅度经 `easing`
-//! 驱动第 `k` 个环；圆盘跟着第 0 段（最低频）。
+//! A central disc that breathes with the low frequencies (`Core`, primary colour), plus `bands` concentric rings that expand outward with their own frequency bands (`Rings`, secondary colour). The usable bins are split into `bands` segments; the average amplitude of segment `k` drives ring `k` through `easing`; the disc follows segment 0 (the lowest frequencies).
 //!
-//! 径向布局（`R` 是内切正方形的半边长，配方声明 `aspect: square`）：
+//! Radial layout (`R` is the half-side of the inscribed square; the recipe declares `aspect: square`):
 //!
 //! ```text
-//! step   = (ringRadius − coreRadius) / (bands + 1)      // 每个环一个径向槽位，圆盘也占一个
-//! core   = R · (coreRadius + step · a₀)                  // 圆盘在自己的槽位里呼吸
-//! ring_k = R · (coreRadius + step · (k + 1) + step · a_k) // 静音时等距排开，有声时向外推
+//! step   = (ringRadius − coreRadius) / (bands + 1)      // one radial slot per ring; the disc also takes one
+//! core   = R · (coreRadius + step · a₀)                  // the disc breathes within its own slot
+//! ring_k = R · (coreRadius + step · (k + 1) + step · a_k) // evenly spaced at silence, pushed outward when there is sound
 //! ```
 //!
-//! 环宽 `ringWidth × R`（以 `ring_k` 为中线）。静音时圆盘停在 `coreRadius`、环停在
-//! 各自的静止位，画面仍然完整。一条圆盘 `FillPath` + `bands` 条环 `FillPath`，
-//! 返回 `bands + 1`。
+//! Ring width `ringWidth × R` (centred on `ring_k`). At silence the disc rests at `coreRadius` and the rings rest at their static positions, so the picture stays complete. One disc `FillPath` plus `bands` ring `FillPath`s; returns `bands + 1`.
 
 use motion::preset_registry::VisualizerBody;
 

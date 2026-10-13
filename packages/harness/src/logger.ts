@@ -1,4 +1,4 @@
-/** 最小日志接口。日志不记录密钥、提示词全文或敏感路径（架构设计 §12.6）。 */
+/** Minimal logger interface. Logs never record keys, full prompt text or sensitive paths (architecture design §12.6). */
 export interface Logger {
   debug(message: string, fields?: Record<string, unknown>): void;
   info(message: string, fields?: Record<string, unknown>): void;

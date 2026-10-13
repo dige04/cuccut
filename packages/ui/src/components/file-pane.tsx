@@ -26,7 +26,7 @@ import { DESIGN_SYSTEM } from '../model/design-system-copy.ts';
 import { SLIDES } from '../model/slides-copy.ts';
 
 const pane = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, minHeight: 0 });
-/** 单文件头（原型 home-workspace.css `.home-resource__bar`）。 */
+/** Single-file header (prototype home-workspace.css `.home-resource__bar`). */
 const bar = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -50,7 +50,7 @@ const name = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900', overflow
 const meta = style({ font: 'ui-sm', color: 'gray-600' });
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 24, paddingY: 16 });
 const playerBody = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, paddingX: 16, paddingY: 16 });
-/** 页脚路径（原型 `.home-resource__path`）。 */
+/** Footer path (prototype `.home-resource__path`). */
 const footer = style({
   flexShrink: 0,
   paddingX: 16,
@@ -68,9 +68,8 @@ const footer = style({
 const missing = style({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1, font: 'ui', color: 'gray-600' });
 
 /**
- * 功能区的单个文件（产品设计 §3.3，原型 home-workspace.jsx `WorkspaceFiles` 的单文件视图）：头部是图标、文件名与类别，
- * 「在 Space 中显示」与「在文件夹中显示」；视频与音频用播放器，其余用查看器；页脚是磁盘上的路径。宽度由功能区决定。
- * 桌面端工作目录之外的本机文件（`{ localPath }`）只读预览，保留「用默认应用打开」与「在文件夹中显示」，不在 Space 中显示。
+ * A single file in the workspace area (product design §3.3, the single-file view of the prototype home-workspace.jsx `WorkspaceFiles`): the header is the icon, filename and category, plus "Show in Space" and "Show in folder"; video and audio use a player, others use a viewer; the footer is the path on disk. The width is decided by the workspace area.
+ * Local files outside the desktop working directory (`{ localPath }`) are read-only previews, keeping "Open with default app" and "Show in folder", without "Show in Space".
  */
 export function FilePane({ target, conversationId, fileNameHint, active = true }: { active?:boolean; fileNameHint?:string; target: MediaTarget; conversationId?: string | null }) {
   const runtime = useRuntime();
@@ -85,7 +84,7 @@ export function FilePane({ target, conversationId, fileNameHint, active = true }
   const entry = entryOfTarget(entries, target);
   if ('entryId' in target && !entry) return <div className={missing}>{WORKSPACE_COPY.fileMissing}</div>;
 
-  // 桌面端工作目录之外的本机文件（`{ localPath }`）：没有来源目录，名字取路径的最后一段，按绝对路径打开与定位。
+  // Local files outside the desktop working directory (`{ localPath }`): there is no source directory; the name is the last segment of the path; opened and located by absolute path.
   const local = 'localPath' in target ? target.localPath : null;
   const relPath = 'path' in target ? target.path : local ? (local.split(/[\\/]/).pop() ?? '') : (entry?.relPath ?? '');
   const fileName = entry?.fileName ?? resolved?.handle.fileName ?? fileNameHint ?? relPath.split(/[\\/]/).pop()!;
@@ -98,25 +97,25 @@ export function FilePane({ target, conversationId, fileNameHint, active = true }
   const detectedKind = resolved?.handle.contentKind;
   const typeLabel = detectedKind ? ({ text: KIND_LABEL.document, pdf: KIND_LABEL.document, image: KIND_LABEL.image, audio: KIND_LABEL.audio, video: KIND_LABEL['video-file'], archive: '', binary: '' })[detectedKind] : kind ? KIND_LABEL[kind] : '';
   const metadata = [typeLabel, resolved ? formatBytes(resolved.handle.size) : ''].filter(Boolean).join(' · ');
-  // 项目里的文件从会话还是从 Space 打开，播放位置记在一处。
+  // Whether a project file was opened from the session or from Space, its playback position is recorded in one place.
   const memoryKey = previewMemoryKey(target,entries,conversations);
   const gallery = (activeGroup ? groups[activeGroup] : undefined)
     ?? generatedImageGallery({ target, name: fileName }, entries);
-  // 打开的是一份幻灯片的 `deck.json`：可以改用幻灯片编辑器打开它所在的目录（docs/design/slides §8.1）。是不是合法的 deck 由 slides.open 判断。
+  // When the file opened is a slide deck's `deck.json`: it can switch to opening its directory in the slide editor (docs/design/slides §8.1). Whether it is a valid deck is decided by slides.open.
   const deckDir = 'path' in target && /(^|[\\/])deck\.json$/.test(target.path) ? target.path.replace(/[\\/]?deck\.json$/, '') : null;
   const openDeck = () => {
     if (deckDir === null || !('path' in target)) return;
     const deck = 'projectId' in target ? { projectId: target.projectId, path: deckDir } : { conversationId: target.conversationId, path: deckDir };
     useShell.getState().openPane({ kind: 'slides', target: deck });
   };
-  // 打开的是一份设计稿的 `canvas.json`：同样改用设计稿编辑器打开它所在的目录（docs/design/canvas §8.1）；认不认得出由 design.open 判断。
+  // When the file opened is a design mockup's `canvas.json`: likewise switch to opening its directory in the design editor (docs/design/canvas §8.1); whether it is recognized is decided by design.open.
   const canvasDir = 'path' in target && /(^|[\\/])canvas\.json$/.test(target.path) ? target.path.replace(/[\\/]?canvas\.json$/, '') : null;
   const openCanvas = () => {
     if (canvasDir === null || !('path' in target)) return;
     const canvas = 'projectId' in target ? { projectId: target.projectId, path: canvasDir } : { conversationId: target.conversationId, path: canvasDir };
     useShell.getState().openPane({ kind: 'design', target: canvas });
   };
-  // 打开的是一套设计系统的 `design-system.json`：改用设计系统编辑器打开它所在的目录（docs/design/canvas §10）；认不认得出由 designSystem.open 判断。
+  // When the file opened is a design system's `design-system.json`: switch to opening its directory in the design system editor (docs/design/canvas §10); whether it is recognized is decided by designSystem.open.
   const systemDir =
     'path' in target && /(^|[\\/])design-system\.json$/.test(target.path) ? target.path.replace(/[\\/]?design-system\.json$/, '') : null;
   const openSystem = () => {

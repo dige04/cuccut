@@ -8,7 +8,7 @@ import { useToolStatus } from './use-tool-status.ts';
 import { useVideoTools } from './use-video-tools.ts';
 import { goRerun } from './video-tool-parts.tsx';
 
-/** Space 查看框里与工具有关的几样：能用哪些工具处理、哪个工具做出来的（再做一次）、在哪个目录。 */
+/** The tool-related items in the Space viewer: which tools can process it, which tool produced it (do again), and which directory it is in. */
 export interface EntryTools {
   tools: readonly { id: ToolId; name: string }[];
   origin: { toolName: string; jobId: Id | null; rerun: Rerun | null } | null;
@@ -24,7 +24,7 @@ export function useEntryTools(entry: SpaceEntry | null): EntryTools | null {
   if (!entry) return null;
   const toolId = job ? toolOfTask(job) : toolOfOrigin(entry.origin);
   const tool = toolId ? toolById(toolId) : null;
-  // 回收站里的、还在生成的不给「再做一次」；失败的占位照任务给「重试」。
+  // Items in the trash that are still being generated do not get “再做一次” (do again); a failed placeholder gets “重试” (retry) based on its job.
   const rerun = job && !entry.user.trashedAt ? rerunOf(job) : null;
   return {
     tools: toolsForEntry(entry).map((t) => ({ id: t.id, name: t.name })),

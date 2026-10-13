@@ -33,35 +33,29 @@ import { isAgentTranslate, isTranslateJob, TRANSLATE_PIPELINE, targetOf, transla
 import { jobErrorText, jobWaitText } from './localized-text.ts';
 
 /**
- * 会话线程里的视频卡与下载卡（产品设计 §3.2.2、§6.5；原型 model-agent-cards.js、model-agent-projects.js `sessionArtifacts`）。
- * 纯函数：卡片内容只从会话条目（`video-created`、`video-change`）与智能体提交的 Job 记录算，不读回复正文。
+ * Video cards and download cards in the conversation thread (product design §3.2.2, §6.5; prototype model-agent-cards.js, model-agent-projects.js `sessionArtifacts`).
+ * Pure functions: card content is computed only from conversation entries (`video-created`, `video-change`) and from the Job records submitted by the agent. It does not read reply text.
  *
- * - **一条会话一部视频一张卡**。一部视频「被引用」：会话里有它的 `video-created` / `video-change`，某一轮的任务提交了
- *   指向它的 Job（转录、导出、翻译、从链接导入到它；Job 的引用落在这个任务最后一组步骤上），或第一条用户消息带着它的编辑器状态
- *   （`openingVideo`：从开着的视频说起的会话，视频随第一句话带进来）。卡挂在下面两处里靠后的那一处：
- *   (a) 最后一个引用它的块后面；(b) 卡上的活在后面的回合开始时还没结束（在跑或排队）：这件活结束之前开始的最后一轮
- *   （还在跑时就是最新一轮）的最后一个块后面。先后只比活的 `endedAt` 与那一轮用户消息的 `createdAt`；活结束后卡不再挪，
- *   也不挪回去。卡挪走后前面的回合不再有它。卡上列这条会话在这部视频上的全部活，与「产物」弹层的那张一样。
- * - **下载卡**：智能体发起的从链接导入，父任务还没有 `videoId` 时一张；视频一建出来（父任务带上 `videoId`），
- *   同一个位置换成视频卡，下载那一件活并进卡上（流程提交的转录是一行）。只下载、不建视频的，完成后仍是下载卡，写落地的文件。
- * - 合成语音、生成图片这类生成任务不进视频卡（原型的候选卡在正式应用里还没有）。
+ * - **One video card per video per conversation.** A video is “referenced” when the conversation has its `video-created` / `video-change`, when a task in some turn submitted a Job pointing at it (transcription, export, translation, importing from a link into it; a Job's reference lands on the last group of steps of that task), or when the first user message carries its editor state (`openingVideo`: a conversation that starts from an open video, with the video brought in by the first sentence). The card attaches to the later of the two places below:
+ *   (a) after the last block that references it; (b) if an activity on the card has not ended by the start of a later turn (running or queued): after the last block of the last turn that started before that activity ended (while still running, this is the latest turn). Only the activity's `endedAt` and that turn's user message `createdAt` are compared. Once the activity ends, the card no longer moves and does not move back. After the card moves away, earlier turns no longer have it. The card lists all activities of this conversation on this video, the same as the card in the “Artifacts” popover.
+ * - **Download card:** for a link import started by the agent, one card while the parent task has no `videoId` yet. Once the video is created (the parent task carries `videoId`), the video card replaces it at the same position, and the download activity is merged into the card (a transcription submitted by the pipeline is one row). A download-only job that creates no video keeps the download card after completion and records the saved files.
+ * - Generation tasks such as speech synthesis and image generation do not go into video cards (the prototype's candidate cards do not exist in the shipped app yet).
  *
- * Job 归回合：`submitter` 是这条会话的智能体（`kind: 'agent'`、`id` 为会话），`taskId` 是那一轮的任务；固定流程提交的
- * （`submitter.kind === 'pipeline'`）归到父任务；流程的步骤（`parentJobId`）不单独成行，只经父任务读进度。
+ * Assigning Jobs to turns: `submitter` is the agent of this conversation (`kind: 'agent'`, `id` is the conversation), and `taskId` is that turn's task. Jobs submitted by a fixed pipeline (`submitter.kind === 'pipeline'`) are assigned to the parent task. A pipeline's steps (`parentJobId`) do not get rows of their own; their progress is read through the parent task.
  */
 
 type Item<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 export type ThreadCard =
-  /** `jobIds`：这条会话归这部视频的活（行），按提交先后（与 `conversationVideoJobs` 同一份）。 */
+  /** `jobIds`: the activities (rows) this conversation has on this video, in submission order (the same list as `conversationVideoJobs`). */
   { kind: 'video'; key: string; video: ConversationOutput; jobIds: Id[] } | { kind: 'download'; key: string; jobId: Id };
 
-/** 进视频卡做一行的 Job：转录、导出、固定流程（翻译、从链接导入到这部视频……）、智能体自己翻译。 */
+/** Jobs that become a row on the video card: transcription, export, fixed pipelines (translation, importing from a link into this video, …), and the agent's own translation. */
 function isRowJob(job: JobRecord): boolean {
   return !isPreviewExport(job) && (job.kind === 'transcribe' || job.kind === 'export' || job.kind === 'pipeline' || isAgentTranslate(job));
 }
 
-/** 这条 Job 归会话里哪个智能体任务：智能体直接提交的就是它自己；固定流程提交的归父任务（至多上溯几层）。 */
+/** The agent task in the conversation that a Job belongs to: a Job submitted directly by the agent belongs to that agent's own task; a Job submitted by a fixed pipeline belongs to the parent task (walking up at most a few levels). */
 export function agentOwner(job: JobRecord, byId: ReadonlyMap<Id, JobRecord>, conversationId: Id): JobRecord | null {
   let cur: JobRecord | undefined = job;
   for (let depth = 0; cur && depth < 4; depth++) {
@@ -77,7 +71,7 @@ function agentTaskId(job: JobRecord): Id | null {
   return job.submitter.kind === 'agent' ? job.submitter.taskId : null;
 }
 
-/** Space 里的这个视频条目是不是在这个位置（来源目录 + 相对路径）。 */
+/** Whether this video entry in Space is at this location (source directory + relative path). */
 export function isVideoAt(entry: SpaceEntry, target: VideoChange['target']): boolean {
   if (entry.kind !== 'video' || entry.relPath !== target.path) return false;
   return 'projectId' in target ? entry.source.projectId === target.projectId : entry.source.conversationId === target.conversationId;
@@ -89,8 +83,8 @@ function blockTaskIds(block: ThreadBlock): Id[] {
 }
 
 /**
- * 一部视频在卡上的名字、打开的位置与时长：会话里最近一条 `video-created` / `video-change`，Space 里的条目
- * （名字以 Space 为准，流程新建的视频只能靠 `ref.videoId` 找），都没有时取链接的标题。找不到位置时 `video` 为 null（按钮置灰）。
+ * The video's name, open location and duration on the card: the most recent `video-created` / `video-change` in the conversation, or the Space entry
+ * (the name follows Space; a video newly created by a pipeline can only be found through `ref.videoId`). If neither exists, the link's title. When no location is found, `video` is null (the button is disabled).
  */
 export function videoOutput(
   videoId: Id,
@@ -103,7 +97,7 @@ export function videoOutput(
       (i.kind === 'video-change' || i.kind === 'video-created') && i.videoId === videoId,
   );
   const change = items.findLast((i): i is Item<'video-change'> => i.kind === 'video-change' && i.videoId === videoId);
-  // 只随第一句话带进来的视频（`openingVideo`）：名字与时刻取那条消息。
+  // Videos that come in only with the first message (`openingVideo`): the name and time are taken from that message.
   const said = items.find((i): i is Item<'user-message'> => i.kind === 'user-message' && i.context?.videoId === videoId);
   const entry =
     entries.find((e) => e.kind === 'video' && e.ref && 'videoId' in e.ref && e.ref.videoId === videoId) ??
@@ -127,15 +121,15 @@ export function videoOutput(
 }
 
 /**
- * 随第一句话带进会话的视频（产品设计 §3.2.2、§5.1）：第一条用户消息带着编辑器状态时（Space 的悬浮会话、开着视频的起始页发出的），
- * 这部视频在那条消息后面出一张视频卡，点「打开编辑器」回到它。只认第一条：之后的消息带着编辑器状态不挪卡，卡照常跟着智能体的引用走。
+ * A video brought into the conversation with the first sentence (product design §3.2.2, §5.1): when the first user message carries editor state (sent from Space's floating conversation, or from the start page while a video is open),
+ * this video gets a video card after that message, and “Open editor” returns to it. Only the first message counts: later messages carrying editor state do not move the card; the card keeps following the agent's references.
  */
 export function openingVideo(items: readonly TimelineItem[]): { videoId: Id; itemId: Id } | null {
   const first = items.find((i): i is Item<'user-message'> => i.kind === 'user-message');
   return first?.context ? { videoId: first.context.videoId, itemId: first.id } : null;
 }
 
-/** 活什么时候结束：还没结束（排队、在跑、崩溃后在重跑）是 Infinity；结束了却没记时间的是 -Infinity（不跟到后面的回合）。 */
+/** When an activity ends: not yet ended (queued, running, or rerunning after a crash) is Infinity; ended without a recorded time is -Infinity (it does not carry over to later turns). */
 function endOf(job: JobRecord | undefined): number {
   if (!job) return -Infinity;
   if (jobLive(job)) return Infinity;
@@ -144,8 +138,8 @@ function endOf(job: JobRecord | undefined): number {
 }
 
 /**
- * 线程块 id → 挂在它后面的卡（视频卡与下载卡），同一块下按第一次引用的先后。
- * `blocks` 是 `buildThread(items)` 的输出；`jobs` 是 Job 镜像（含流程的步骤）。
+ * Thread block id → the cards (video cards and download cards) attached after it. Under the same block, they are ordered by first reference.
+ * `blocks` is the output of `buildThread(items)`; `jobs` is the Job mirror (including pipeline steps).
  */
 export function threadCards(input: {
   blocks: readonly ThreadBlock[];
@@ -156,8 +150,8 @@ export function threadCards(input: {
 }): Map<Id, ThreadCard[]> {
   const { blocks, items, jobs, conversationId, entries } = input;
 
-  // 回合：每条用户消息开一轮；块 → 回合，任务 → 回合（任务第一次出现的那一轮）。
-  // 每一轮记开始的时刻（用户消息的 createdAt；第一条用户消息之前的那一段算很早以前）与最后一个内容块。
+  // Turns: each user message starts a turn; block → turn, task → turn (the turn where the task first appears).
+  // Each turn records its start time (the user message's createdAt; the stretch before the first user message counts as long ago) and its last content block.
   const blockTurn: number[] = [];
   const taskTurn = new Map<Id, number>();
   const turnStart: number[] = [];
@@ -175,7 +169,7 @@ export function threadCards(input: {
     for (const id of blockTaskIds(block)) if (!taskTurn.has(id)) taskTurn.set(id, turn);
   });
 
-  // 条目 → 它所在的块；没有自己一块的（新建视频的记录、空回复）落在它前面最近的一块。
+  // Entry → the block it belongs to. Entries without a block of their own (records of newly created videos, empty replies) fall into the nearest preceding block.
   const itemBlock = new Map<Id, number>();
   blocks.forEach((block, i) => {
     if (block.type === 'task') return;
@@ -190,7 +184,7 @@ export function threadCards(input: {
     if (lastBlock >= 0) anchorOf.set(item.id, own ?? lastBlock);
   }
 
-  /** 智能体任务的 Job 挂在哪一块：这个任务在这一轮的最后一组步骤；没有步骤时这一轮最后一个内容块。 */
+  /** The block an agent task's Job attaches to: the last group of steps of this task in this turn; if there are no steps, the last content block of this turn. */
   const jobAnchor = (taskId: Id): number | null => {
     const t = taskTurn.get(taskId);
     if (t === undefined) return null;
@@ -209,7 +203,7 @@ export function threadCards(input: {
     last: number;
     seq: number;
     card: ThreadCard;
-    /** 视频卡：卡上每件活被引用的那一轮。 */
+    /** Video card: the turn in which each activity on the card was referenced. */
     jobTurns: Map<Id, number>;
   }
   const refs = new Map<string, Ref>();
@@ -255,8 +249,8 @@ export function threadCards(input: {
   }
 
   /**
-   * 视频卡挂在哪一块（规则见文件头）：(b) 每件活在它被引用的那一轮之后、结束之前开始的最后一轮；取最晚的一轮，
-   * 不早于最后的引用所在的那一轮时挂在那一轮的最后一个块后面，否则挂在最后的引用后面。
+   * The block a video card attaches to (rules in the file header): (b) for each activity, the last turn that started after the turn where it was referenced and before it ended; take the latest such turn.
+   * If that is not earlier than the turn containing the last reference, attach after the last block of that turn; otherwise attach after the last reference.
    */
   const anchor = (ref: Ref): number => {
     let to = -1;
@@ -284,7 +278,7 @@ export function threadCards(input: {
   return out;
 }
 
-/** 整条会话里归这部视频的活，按提交先后：线程里的视频卡与「产物」弹层里的是同一份。 */
+/** All activities on this video in this conversation, in submission order. This is the same list as the video card in the thread and the one in the “Artifacts” popover. */
 export function conversationVideoJobs(videoId: Id, jobs: readonly JobRecord[], conversationId: Id): Id[] {
   const byId = new Map(jobs.map((j) => [j.jobId, j]));
   return jobs
@@ -293,7 +287,7 @@ export function conversationVideoJobs(videoId: Id, jobs: readonly JobRecord[], c
     .map((j) => j.jobId);
 }
 
-/** 这条会话的智能体让哪些视频有了活（流程新建、转录、导出……）：「产物」弹层里补上没有 `video-change` 的视频。 */
+/** The videos this conversation's agent has given activities to (created by a pipeline, transcription, export, …). Fills in videos without a `video-change` in the “Artifacts” popover. */
 export function conversationJobVideos(jobs: readonly JobRecord[], conversationId: Id): Id[] {
   const byId = new Map(jobs.map((j) => [j.jobId, j]));
   const ids: Id[] = [];
@@ -304,21 +298,19 @@ export function conversationJobVideos(jobs: readonly JobRecord[], conversationId
   return ids;
 }
 
-// ---- 状态词 ----
+// ---- Status words ----
 
 export type VideoStatusKey = 'transcribing' | 'queued' | 'translating' | 'transcribed' | 'failed';
 
 export interface VideoStatus {
   key: VideoStatusKey;
-  /** 「转录中 · 45%」「排队中」「翻译中 · 30%」「已转录」「失败」。 */
+  /** “转录中 · 45%” (transcribing · 45%), “排队中” (queued), “翻译中 · 30%” (translating · 30%), “已转录” (transcribed), “失败” (failed). */
   text: string;
 }
 
 /**
- * 视频卡头上的状态词（原型 `badge`）：指向这部视频的转录在跑 / 排队时以它为准；转录没在跑、有翻译在跑（翻译流程，不论
- * 从哪里发起，或智能体自己翻译）时是「翻译中」，只有一件、是翻译流程、已经有步骤时带上百分比；否则有转录结果（完成的
- * 转录写了文稿，或编辑器开着它、文档里有 `speech`）是「已转录」；转录失败过是「失败」。什么都不知道时 null（不显示），
- * 不从「没有」推出「未转录」：Job 镜像只有这次 Runtime 记得的任务，视频没开着时也读不到它的文档。
+ * The status word in the video card header (prototype `badge`): when this video's transcription is running or queued, that takes precedence. When no transcription is running but a translation is (the translation pipeline, whichever way it was started, or the agent translating itself), it is “翻译中” (translating); with only one such job, which is the translation pipeline and has steps, the percentage is included. Otherwise, if a transcription result exists (a completed transcription wrote a transcript, or the editor has the video open and its document has `speech`), it is “已转录” (transcribed). If a transcription has failed, it is “失败” (failed). When nothing is known, null (nothing is shown).
+ * Do not infer “not transcribed” from the absence of a record: the Job mirror holds only the tasks this Runtime remembers, and the video's document cannot be read when the video is not open.
  */
 export function videoStatus(videoId: Id, jobs: readonly JobRecord[], transcribedInEditor: boolean): VideoStatus | null {
   const mine = jobs.filter((j) => j.kind === 'transcribe' && j.videoId === videoId);
@@ -344,7 +336,7 @@ export function videoStatus(videoId: Id, jobs: readonly JobRecord[], transcribed
   return null;
 }
 
-// ---- 一件活一行 ----
+// ---- One activity per row ----
 
 export type RowState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted';
 
@@ -353,25 +345,25 @@ export interface JobRowView {
   kind: 'transcribe' | 'translate' | 'export' | 'link-import' | 'other';
   name: string;
   state: RowState;
-  /** 头上右侧：运行中是百分比（没有总量时 null），其余是一个状态词。 */
+  /** Right side of the header: while running, the percentage (null when there is no total); otherwise a single status word. */
   tail: string | null;
-  /** 进度条：0–100；运行中没有总量时 null（不确定的细条）；不在跑时不画。 */
+  /** Progress bar: 0–100. While running with no total, null (a thin indeterminate bar). Not drawn when not running. */
   pct: number | null;
-  /** 运行中「识别中 · 已识别 1:02 / 3:26」，排队中写在等什么。 */
+  /** While running: “识别中 · 已识别 1:02 / 3:26” (recognizing · recognized 1:02 / 3:26). While queued, it says what the activity is waiting for. */
   line: string | null;
-  /** 转录与重新转录用的模型与参数（只读的一行，`asrLine` 拼成字）；别的活、不知道模型时 null。 */
+  /** The model and parameters used for transcription and re-transcription (a read-only line, assembled by `asrLine`). null for other activities or when the model is unknown. */
   asr: AsrFacts | null;
-  /** 已用时长（只在跑时）。 */
+  /** Elapsed time (only while running). */
   elapsed: string | null;
   facts: string[];
   warnings: string[];
-  /** 导出完成后的文件。 */
+  /** The file after export completes. */
   files: ExportOutputFact[];
-  /** 可以播放的导出文件（成片与音频；便携包不进产物库）。 */
+  /** Exported files that can be played (the final cut and audio; portable packages do not go into the asset library). */
   playable: Record<string, string>;
   error: string | null;
   canCancel: boolean;
-  /** `jobs.reconcile` 的 `retry` 适用（中断、结果不明）。 */
+  /** `retry` from `jobs.reconcile` applies (interrupted, result unknown). */
   canRetry: boolean;
   remedy: Remedy | null;
 }
@@ -395,7 +387,7 @@ function rowKind(job: JobRecord): JobRowView['kind'] {
   return 'other';
 }
 
-/** 同一部视频之前已经有完成的转录：这一件叫「重新转录」。 */
+/** The same video already had a completed transcription before: this one is called “重新转录” (re-transcription). */
 function isRetranscribe(job: JobRecord, jobs: readonly JobRecord[]): boolean {
   return jobs.some(
     (j) =>
@@ -424,7 +416,7 @@ function rowName(job: JobRecord, kind: JobRowView['kind'], jobs: readonly JobRec
   }
 }
 
-/** 转录的计数：按秒「已识别 1:02 / 3:26」，按片段「已识别 12 / 40 段」。 */
+/** Transcription progress counts: by seconds, “已识别 1:02 / 3:26” (recognized 1:02 / 3:26); by segments, “已识别 12 / 40 段” (recognized 12 / 40 segments). */
 function transcribeCount(job: JobRecord): string | null {
   const p = job.progress;
   if (!p) return null;
@@ -433,7 +425,7 @@ function transcribeCount(job: JobRecord): string | null {
   return null;
 }
 
-/** 跑着的一行：阶段、计数与百分比。 */
+/** The running row: stage, counts and percentage. */
 function progressOf(job: JobRecord, kind: JobRowView['kind'], jobs: readonly JobRecord[]): { line: string | null; pct: number | null } {
   if (jobRetrying(job)) return { line: VIDEO_CARD_COPY.retrying, pct: null };
   const phase = JOB_PHASE_LABEL[job.phase];
@@ -442,7 +434,7 @@ function progressOf(job: JobRecord, kind: JobRowView['kind'], jobs: readonly Job
       return { line: [exportPhaseLabel(job), exportProgressLine(job)].filter(Boolean).join(' · '), pct: jobPercent(job) };
     case 'translate': {
       const p = translateProgress(job, jobs);
-      // 智能体自己翻译没有逐句进度：只写一共多少句，进度条不确定（原型 `phaseLabel` / `countLabel` 的 `byAgent`）。
+      // The agent's own translation has no per-sentence progress: only the total sentence count is written, and the progress bar is indeterminate (prototype `phaseLabel` / `countLabel`'s `byAgent`).
       if (p.agent) {
         const total = p.agent.sentences ? VIDEO_CARD_COPY.sentenceTotal(p.agent.sentences) : null;
         return { line: [VIDEO_CARD_COPY.agentTranslating, total].filter(Boolean).join(' · '), pct: null };
@@ -461,12 +453,12 @@ function progressOf(job: JobRecord, kind: JobRowView['kind'], jobs: readonly Job
   }
 }
 
-/** 「已下载 30 MB / 92 MB」：`downloadProgress` 有总量时只给两个数（`pct` 不为 null），没总量时 `text` 已是整句。 */
+/** “已下载 30 MB / 92 MB” (downloaded 30 MB / 92 MB). When `downloadProgress` has a total, only the two numbers are given (`pct` is not null). With no total, `text` is already the full sentence. */
 const downloaded = (d: { pct: number | null; text: string }) => (d.pct === null ? d.text : VIDEO_CARD_COPY.downloaded(d.text));
 
 const warningText = (w: JobRecord['warnings'][number]) => VIDEO_CARD_COPY.warning[w.code] ?? localizeText(w.detail, w.detailRef) ?? w.code;
 
-/** 一件活一行（原型 `jobRow`）：运行中阶段与进度，完成后结果事实与文件，失败原因与去处，取消写已取消。`now` 算已用时长。 */
+/** One activity per row (prototype `jobRow`): while running, the stage and progress; after completion, the result facts and the file; on failure, the reason and where to go; on cancel, it says cancelled. `now` is used to compute elapsed time. */
 export function jobRowView(job: JobRecord, jobs: readonly JobRecord[], now: number): JobRowView {
   const state = rowState(job);
   const kind = rowKind(job);
@@ -476,7 +468,7 @@ export function jobRowView(job: JobRecord, jobs: readonly JobRecord[], now: numb
   const files = done && kind === 'export' ? exportOutputs(job) : [];
   const playable: Record<string, string> = {};
   if (done && kind === 'export') {
-    // 成片和音频可以播放（字幕、便携包只在文件夹中显示）；扩展名再过一道 isPlayable：AVI 浏览器放不了。
+    // The final cut and audio can be played (subtitles and portable packages are only shown in the folder). The extension is checked again with isPlayable: the browser cannot play AVI.
     for (const [i, o] of (job.result?.outputs ?? []).entries()) {
       if ((o.media.kind === 'video' || o.media.kind === 'audio') && (!o.path || isPlayable(files[i]!.name)))
         playable[files[i]!.key] = o.artifactId;
@@ -527,18 +519,18 @@ export function jobRowView(job: JobRecord, jobs: readonly JobRecord[], now: numb
     files,
     playable,
     error,
-    // 智能体自己翻译不给取消：译文是那一轮在写，取消记录停不下智能体，要停就停那条会话。
+    // The agent's own translation cannot be cancelled: that turn is still writing the translation, and cancelling the record cannot stop the agent. To stop it, stop that conversation.
     canCancel: jobLive(job) && !jobRetrying(job) && !(kind === 'export' && cancelPending(job)) && !isAgentTranslate(job),
     canRetry: reconcileOptions(job).includes('retry'),
     remedy: failed ? jobRemedy(job) : null,
   };
 }
 
-// ---- 转录用的模型与参数 ----
+// ---- Models and parameters for transcription ----
 
 /**
- * 转录那一行用的是什么（产品设计 §3.2.2 视频卡；原型 `asrLine`）。`language`：语言标签；null 是自动检测；
- * undefined 是不知道（记录里没写，不显示这一段）。`diarize` 是生效的说话人区分（模型不能区分、报了警告的不算）。
+ * What the transcription row uses (product design §3.2.2 video card; prototype `asrLine`). `language`: the language tag; null means auto-detect;
+ * undefined means unknown (not recorded; this segment is not shown). `diarize` is the effective speaker diarization (a model that cannot distinguish speakers and reported a warning does not count).
  */
 export interface AsrFacts {
   providerId: string;
@@ -547,7 +539,7 @@ export interface AsrFacts {
   diarize: boolean;
 }
 
-/** 流程（转录、从链接导入）以自己的 jobId 为提交者提交的转录 Job，后提交的在后。 */
+/** Transcription Jobs that a pipeline (transcription, import from link) submitted with its own jobId as the submitter; later submissions come later. */
 function pipelineTranscribes(parent: JobRecord, jobs: readonly JobRecord[]): JobRecord[] {
   return jobs
     .filter((j) => j.kind === 'transcribe' && j.submitter.kind === 'pipeline' && j.submitter.id === parent.jobId)
@@ -555,9 +547,9 @@ function pipelineTranscribes(parent: JobRecord, jobs: readonly JobRecord[]): Job
 }
 
 /**
- * 转录行的模型与参数：Provider 与模型取转录 Job（转录流程的父任务取它提交的那次，还没提交时取父任务冻结的选择），
- * 语言与说话人区分取转录 Job 的 `transcribe`；之前的记录没有时退回流程冻结的参数（`language` 不给是自动检测，
- * `diarize` 没给就不写）。不是转录、没有模型时 null。
+ * Model and parameters for the transcription row. Provider and model come from the transcription Job (for the parent task of a transcription pipeline, the submission it made; if it has not submitted yet, the choice frozen by the parent task).
+ * Language and speaker diarization come from the transcription Job's `transcribe`. For earlier records that lack these, fall back to the parameters frozen by the pipeline (a missing `language` means auto-detect,
+ * and a missing `diarize` is not written). null when it is not a transcription or there is no model.
  */
 export function asrFacts(job: JobRecord, jobs: readonly JobRecord[]): AsrFacts | null {
   if (rowKind(job) !== 'transcribe') return null;
@@ -577,8 +569,8 @@ export function asrFacts(job: JobRecord, jobs: readonly JobRecord[]): AsrFacts |
 }
 
 /**
- * 模型给人看的名字（与转录工具页的模型菜单同源）：本机与节点是模型包的名字，在线的是「API 提供方 · 模型」；
- * 能力视图里查不到时照写模型 ID。
+ * The model's display name (same source as the model menu on the transcription tool page). Local and node models use the model pack's name; online models show “API provider · model”.
+ * When the capability view does not have it, the model ID is written as is.
  */
 export function asrModelName(
   view: ModelCapabilitiesView | null,
@@ -597,32 +589,31 @@ export function asrModelName(
 }
 
 /**
- * 转录那一行的字：「模型 · 本机或云端 · 语言 · 识别说话人」（产品设计 §3.2.2）。`words` 是转录工具页的「自动检测」
- * 与「识别说话人」，由界面层传入（与工具页同一套用词）。
+ * The text of the transcription row: “model · local or cloud · language · speaker diarization” (product design §3.2.2). `words` are the transcription tool page's “Auto-detect” and “Identify speakers”, passed in by the UI layer (the same wording as that page).
  */
 export function asrLine(facts: AsrFacts, modelName: string, words: { auto: string; speakers: string }): string {
   const language = facts.language === undefined ? null : facts.language === null ? words.auto : langName(facts.language);
   return [modelName, runsOnLabel(facts.providerId), language, facts.diarize ? words.speakers : null].filter(Boolean).join(' · ');
 }
 
-// ---- 摊开与收起 ----
+// ---- Expand and collapse ----
 
-/** 折叠只看这几项：状态、补救与能不能重试。 */
+/** Folding considers only these: status, remedies, and whether it can be retried. */
 type FoldRow = Pick<JobRowView, 'state' | 'remedy' | 'canRetry'>;
 
 /**
- * 这一行要不要人去处理（原型 `needsAction`）：没有做完（失败，或中断、结果不明），而且有去处（`jobRemedy` 的补救，
- * 或 `jobs.reconcile` 的重试）。没有去处的失败、已取消的都不算。
+ * Whether this row needs someone to act (prototype `needsAction`): it is not complete (failed, or interrupted with an unknown result), and there is somewhere to go (a remedy from `jobRemedy`,
+ * or a retry from `jobs.reconcile`). Failures with nowhere to go, and cancelled rows, do not count.
  */
 export function needsAction(row: FoldRow): boolean {
   return (row.state === 'failed' || row.state === 'interrupted') && (row.remedy !== null || row.canRetry);
 }
 
 /**
- * 视频卡上摊开哪几行、收起哪几行（产品设计 §3.2.2；原型 `foldRows`）。`rows` 按 `cardRows` 的先后（提交先后）。
- * - 有活在跑或排队：摊开全部进行中的，按原先后；这时不摊开已结束的。
- * - 都结束了：只摊开最后一件，「最后」按提交先后取（规格写的是「按提交先后」，不按结束时间）。
- * - 其余收进 `earlier`，**新的在前**；`pending` 是其中待处理的件数（`needsAction`），摊开着的不算。
+ * Which rows are expanded and which are collapsed on the video card (product design §3.2.2; prototype `foldRows`). `rows` follow the order of `cardRows` (submission order).
+ * - If activities are running or queued: expand all in-progress ones, in their original order. In this case, ended ones stay collapsed.
+ * - If all have ended: expand only the last one. “Last” is by submission order (the spec says “by submission order”, not by end time).
+ * - The rest go into `earlier`, **newest first**. `pending` is the count of those still needing action (`needsAction`); expanded rows are not counted.
  */
 export function foldRows<R extends FoldRow>(rows: readonly R[]): { shown: R[]; earlier: R[]; pending: number } {
   const live = rows.filter((r) => r.state === 'running' || r.state === 'queued');
@@ -632,10 +623,10 @@ export function foldRows<R extends FoldRow>(rows: readonly R[]): { shown: R[]; e
 }
 
 /**
- * 卡上要列的行（按提交先后）。从链接导入到这部视频的父任务：下载、导入还在做时是一行；流程提交的转录一出现，
- * 进度由转录那一行念，父任务不再另占一行；完成后也不再列（原型：下载完成后卡上只剩转录）。失败、取消时留着写原因。
- * 转录流程的父任务同理：它提交的转录 Job 出现后由那一行念（一次转录一行）；只有转录做完而流程还在做后面的步骤
- * （建字幕层）或在那之后失败、取消时，父任务那一行留着。
+ * The rows listed on the card (in submission order). For a parent task that imports from a link into this video: while downloading and importing, it is one row. Once the transcription submitted by the pipeline appears,
+ * its progress is read from the transcription row, and the parent task no longer takes its own row. After completion it is no longer listed (prototype: after the download finishes, only the transcription remains on the card). It stays on failure or cancellation, with the reason.
+ * The same applies to a transcription pipeline's parent task: once the transcription Job it submitted appears, its progress is read from that row (one row per transcription). Only when transcription is done but the pipeline is still on later steps
+ * (building the subtitle track), or fails or is cancelled after that, does the parent task's row stay.
  */
 export function cardRows(jobIds: readonly Id[], jobs: readonly JobRecord[]): JobRecord[] {
   const byId = new Map(jobs.map((j) => [j.jobId, j]));
@@ -654,22 +645,22 @@ export function cardRows(jobIds: readonly Id[], jobs: readonly JobRecord[]): Job
     });
 }
 
-// ---- 下载卡 ----
+// ---- Download card ----
 
 export interface DownloadCardView {
   jobId: Id;
   state: RowState;
   title: string;
-  /** 视频标题；还没解析出来时是站点。 */
+  /** Video title; the site name until it has been parsed. */
   name: string;
-  /** 脱敏后的链接。 */
+  /** The redacted link. */
   source: string | null;
   pct: number | null;
   line: string | null;
   elapsed: string | null;
   error: string | null;
   hint: string | null;
-  /** 只下载、不建视频时落地的文件（媒体与字幕），可以在文件夹中显示。 */
+  /** Files saved by a download-only job that creates no video (media and subtitles); they can be shown in the folder. */
   files: { name: string; path: string }[];
   canCancel: boolean;
   canRetry: boolean;
@@ -677,7 +668,7 @@ export interface DownloadCardView {
 
 const basename = (file: string) => file.split(/[\\/]/).pop() || file;
 
-/** 下载卡（原型 `download`）：来源、已下载多少、已用时长、取消；失败写原因与说明；完成写落地的文件。 */
+/** Download card (prototype `download`): source, amount downloaded, elapsed time, cancel. On failure, the reason and an explanation; on completion, the saved files. */
 export function downloadCardView(job: JobRecord, jobs: readonly JobRecord[], now: number): DownloadCardView {
   const state = rowState(job);
   const running = state === 'running';

@@ -1,8 +1,8 @@
 /*!
- * ccut-core —— BCF (.ccut.json) 的纯函数核心：
- * $引用解析 / TimeExpr / resolve 管线 → FlatIR / sample(t) / 静态布局 / lint。
- * 语义与规范 §14.1 及 prototype（index.html / swift-renderer）逐步对应。
- * 本 crate 不做任何 I/O：文本度量经 TextMeasure trait 由 host 注入。
+ * ccut-core — the pure-function core of BCF (.ccut.json):
+ * $reference resolution / TimeExpr / resolve pipeline → FlatIR / sample(t) / static layout / lint.
+ * Semantics correspond step by step to spec §14.1 and the prototype (index.html / swift-renderer).
+ * This crate performs no I/O: text measurement is injected by the host via the TextMeasure trait.
  */
 
 pub mod assets;

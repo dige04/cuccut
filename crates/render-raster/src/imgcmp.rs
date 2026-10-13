@@ -1,56 +1,38 @@
-//! 图像相似度比较：SSIM + 逐通道最大偏差，供 golden / 跨后端容差比对复用。
+//! Image similarity comparison: SSIM plus per-channel maximum deviation, reused for golden and cross-backend tolerance comparisons.
 //!
-//! WP5b 之前仓库里有三份互不一致的 SSIM：`apps/cli` 的 `ccut ssim` / `ccut
-//! compare`（灰度、8×8 **非重叠**窗口、总体方差，丢弃 alpha 通道）、这个 crate
-//! 的 `tests/gpu_conformance.rs`（逐通道 RGBA、8×8 **滑动**窗口、样本方差、外加
-//! 4× 盒式降采样与逐通道最大偏差诊断）、以及 `ccut-media-native` 测试里的一份
-//! 最小灰度版本。三处算法各走各的，同一对图片能报出不同的 SSIM。
+//! Before WP5b the repository had three mutually inconsistent SSIM implementations: `ccut ssim` / `ccut compare` in `apps/cli` (grayscale, 8×8 **non-overlapping** windows, population variance, alpha channel dropped), `tests/gpu_conformance.rs` in this crate (per-channel RGBA, 8×8 **sliding** windows, sample variance, plus 4× box downsampling and per-channel maximum deviation diagnostics), and a minimal grayscale version in the `ccut-media-native` tests. Each followed its own algorithm, so the same pair of images could report different SSIM values.
 //!
-//! 本模块收敛为唯一实现，算法基准是 `gpu_conformance.rs` 那一份——它是三者里
-//! 最成熟的：滑动窗口比非重叠窗口更贴近参考 SSIM 论文的定义，逐通道比灰度更能
-//! 抓住只在某一色道上跑偏的解码矩阵差异，降采样 SSIM 与逐通道最大偏差正是
-//! `docs/design/bcf/cuccut-format-spec.md` §15.1 要求的诊断形状（容差判据 + 偏置诊断）。
+//! This module consolidates them into a single implementation, using the `gpu_conformance.rs` version as the algorithmic baseline, since it is the most mature of the three: sliding windows match the reference SSIM paper's definition better than non-overlapping windows, per-channel comparison catches decoding-matrix differences that drift in only one color channel better than grayscale, and the downsampled SSIM and per-channel maximum deviation are exactly the diagnostic shape that `docs/design/bcf/cuccut-format-spec.md` §15.1 requires (tolerance criterion + bias diagnostics).
 //!
-//! `gpu_conformance.rs` 自己的判定阈值（`SSIM_FLOOR_STRICT` / `SSIM_FLOOR_VISUAL`
-//! / `EDGE_PIXEL_SHARE`）与三条断言逻辑保持原地不动——那些是"GPU 抗锯齿函数
-//! 是否可接受"这个特定问题的判据，不是这个模块的算法契约。这个模块只收敛
-//! **算法本身**，调用方各自决定拿 [`Comparison`] 的哪个字段做门。
+//! The pass/fail thresholds in `gpu_conformance.rs` itself (`SSIM_FLOOR_STRICT` / `SSIM_FLOOR_VISUAL` / `EDGE_PIXEL_SHARE`) and its three assertion checks stay where they are. They judge the specific question of whether the GPU anti-aliasing function is acceptable, not this module's algorithm contract. This module consolidates only **the algorithm itself**; each caller decides which field of [`Comparison`] to gate on.
 //!
-//! 不做 I/O，只依赖 `tiny-skia`（`ccut-render` 的 `wasm-safe` 子集本来就含
-//! 光栅化），因此不进 `media` feature 门。
+//! It performs no I/O and depends only on `tiny-skia` (the `wasm-safe` subset of `ccut-render` already includes rasterization), so it is not gated behind the `media` feature.
 
 use anyhow::{Result, bail};
 use tiny_skia::Pixmap;
 
-/// 平坦区（两幅图 3×3 邻域都恒定的像素）逐通道偏差预算：超过这个值才算
-/// "过渡带"像素。沿用 `gpu_conformance.rs` 原有的取值（就是渲染方案 §8.7 那个 2）。
+/// Per-channel deviation budget for flat-region pixels (pixels whose 3×3 neighborhood is constant in both images). Only deviations above this value count as “transition band” pixels. Keeps the value that `gpu_conformance.rs` originally used (the 2 in render plan §8.7).
 pub const FLAT_CHANNEL_BUDGET: u8 = 2;
 
-/// [`Comparison::ssim_downsampled`] 的盒式降采样倍率。
+/// Box-downsampling factor for [`Comparison::ssim_downsampled`].
 pub const DOWNSAMPLE_FACTOR: usize = 4;
 
-/// 一次 RGBA 图像对拍的实测分布。
+/// Measured distribution from one RGBA image pair comparison.
 #[derive(Debug, Clone, Copy)]
 pub struct Comparison {
-    /// 全分辨率下四个通道（R/G/B/A）里最差的那个 SSIM（8×8 滑动窗口、样本方差）。
+    /// Worst SSIM across the four channels (R/G/B/A) at full resolution (8×8 sliding window, sample variance).
     pub ssim: f64,
-    /// 全图逐通道最大绝对偏差。
+    /// Maximum absolute per-channel deviation across the whole image.
     pub max_deviation: u8,
-    /// **平坦区**（两幅图的 3×3 邻域都恒定）逐通道最大绝对偏差。§15.1 要求的
-    /// "SSIM 之外记录逐通道最大偏差"诊断，对 YUV→RGB 矩阵差异这类整幅小幅
-    /// 偏置比 SSIM 更敏感。
+    /// Maximum absolute per-channel deviation in **flat regions** (where the 3×3 neighborhood is constant in both images). This is the diagnostic §15.1 asks for, “record the per-channel maximum deviation in addition to SSIM”; it is more sensitive than SSIM to whole-image small biases such as YUV→RGB matrix differences.
     pub flat_max_deviation: u8,
-    /// 偏差 > [`FLAT_CHANNEL_BUDGET`] 的像素占比。
+    /// Share of pixels whose deviation is greater than [`FLAT_CHANNEL_BUDGET`].
     pub edge_share: f64,
-    /// 两侧各做一次 [`DOWNSAMPLE_FACTOR`]× 盒式降采样之后的 SSIM：把边缘过渡带
-    /// 按面积摊平，衡量"两幅图观感上是不是同一幅"而不是"每个像素的抗锯齿函数
-    /// 是不是同一条"。图像小于降采样倍率时退化为与 [`Comparison::ssim`] 相同的值
-    /// （降采样在那种尺寸下没有意义）。
+    /// SSIM after applying one [`DOWNSAMPLE_FACTOR`]× box downsample to both sides. It spreads edge transition bands out by area, and measures whether the two images look like the same image, rather than whether the per-pixel anti-aliasing function is the same. When the image is smaller than the downsampling factor, it falls back to the same value as [`Comparison::ssim`] (downsampling is meaningless at that size).
     pub ssim_downsampled: f64,
 }
 
-/// 比较两幅 RGBA `Pixmap`；尺寸不一致时返回 `Err`（不 panic——生产 CLI 路径
-/// 需要把它转成正常的失败信封，而不是让整个进程崩掉）。
+/// Compares two RGBA `Pixmap`s; returns `Err` when the sizes differ (it does not panic, because the production CLI path must turn this into a normal failure envelope rather than crash the whole process).
 pub fn compare(a: &Pixmap, b: &Pixmap) -> Result<Comparison> {
     if (a.width(), a.height()) != (b.width(), b.height()) {
         bail!(
@@ -102,7 +84,7 @@ pub fn compare(a: &Pixmap, b: &Pixmap) -> Result<Comparison> {
         }
         downsampled
     } else {
-        // 图像比降采样倍率还小：降采样没有意义，直接复用全分辨率的 SSIM。
+        // The image is smaller than the downsampling factor: downsampling is meaningless, so reuse the full-resolution SSIM directly.
         ssim
     };
 
@@ -115,7 +97,7 @@ pub fn compare(a: &Pixmap, b: &Pixmap) -> Result<Comparison> {
     })
 }
 
-/// RGBA8 的盒式降采样（在预乘数域里平均，与执行器的超采样同一条规则）。
+/// Box downsampling of RGBA8 (averaged in the premultiplied domain, the same rule as the executor's supersampling).
 fn box_downsample(rgba: &[u8], w: usize, h: usize, factor: usize) -> (Vec<u8>, usize, usize) {
     let (ow, oh) = (w / factor, h / factor);
     let area = (factor * factor) as f64;
@@ -139,9 +121,9 @@ fn box_downsample(rgba: &[u8], w: usize, h: usize, factor: usize) -> (Vec<u8>, u
     (out, ow, oh)
 }
 
-/// 3×3 邻域（含自身）逐通道恒定 = "这个像素不在任何一条边上"。
+/// A 3×3 neighborhood (including the pixel itself) that is constant per channel = “this pixel is not on any edge”.
 ///
-/// 图像边界上的像素邻域不完整，一律算作**非**平坦——那是最保守的读法。
+/// Pixels on the image border have incomplete neighborhoods and are always counted as **not** flat; that is the most conservative reading.
 fn is_flat(data: &[u8], w: usize, h: usize, x: usize, y: usize) -> bool {
     if x == 0 || y == 0 || x + 1 >= w || y + 1 >= h {
         return false;
@@ -159,15 +141,15 @@ fn is_flat(data: &[u8], w: usize, h: usize, x: usize, y: usize) -> bool {
     true
 }
 
-/// 单通道 SSIM：8×8 滑窗、步长 1、窗口均值、样本方差（N−1）。
+/// Single-channel SSIM: 8×8 sliding window, stride 1, window mean, sample variance (N−1).
 ///
-/// 常量取标准值 `C1 = (0.01·255)²`、`C2 = (0.03·255)²`。
+/// The constants take the standard values `C1 = (0.01·255)²` and `C2 = (0.03·255)²`.
 fn plane_ssim(a: &[u8], b: &[u8], w: usize, h: usize) -> f64 {
     const WINDOW: usize = 8;
     const C1: f64 = 6.5025; // (0.01 * 255)^2
     const C2: f64 = 58.5225; // (0.03 * 255)^2
     if w < WINDOW || h < WINDOW {
-        // 小于一个窗口时退化成全图单窗。
+        // If the image is smaller than one window, it degrades to a single window covering the whole image.
         return window_ssim(a, b, w, 0, 0, w, h, C1, C2);
     }
     let mut total = 0.0;
@@ -212,7 +194,7 @@ fn window_ssim(
             cov += da * db;
         }
     }
-    // 样本方差（N−1），与常见 SSIM 实现一致；单像素窗口（N=1）退化成 0。
+    // Sample variance (N−1), consistent with common SSIM implementations; a single-pixel window (N=1) degrades to 0.
     let denom = (n - 1.0).max(1.0);
     let (va, vb, cov) = (va / denom, vb / denom, cov / denom);
     ((2.0 * mu_a * mu_b + c1) * (2.0 * cov + c2))
@@ -259,7 +241,7 @@ mod tests {
         assert!(error.to_string().contains("尺寸不一致"), "{error}");
     }
 
-    /// 图像小于降采样倍率时不 panic、不产生 NaN。
+    /// When the image is smaller than the downsampling factor, it neither panics nor produces NaN.
     #[test]
     fn tiny_images_fall_back_to_full_resolution_ssim() {
         let a = solid(2, 2, 40);

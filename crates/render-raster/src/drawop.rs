@@ -1,16 +1,15 @@
-//! DrawOp 帧指令 IR（opencat draw_op/draw_encoding 模式的 ccut 版）：
-//! record(t) 产出与后端无关的指令流 + path/string 侧表（去重），
-//! 二进制编码逐字节确定 ⇒ 指纹可做静止帧缓存与跨端字节级一致性测试。
-//! 媒体只以 (asset id, 媒体时刻) 引用出现——字节留在 host（FrameMediaPlan 语义）。
-//! 彩色字形位图（v5）不是媒体：它与字形轮廓同类，都是录制期从字体里取出的
-//! 几何/像素，因此像 path 一样**内嵌**进位图侧表，指纹覆盖它的像素。
+//! DrawOp frame instruction IR (the ccut version of opencat's draw_op/draw_encoding pattern):
+//! record(t) produces a backend-independent instruction stream plus path/string side tables (deduplicated).
+//! Binary encoding is byte-deterministic ⇒ fingerprints can be used for still-frame caching and cross-platform byte-level consistency tests.
+//! Media appears only as references (asset id, media time); the bytes stay with the host (FrameMediaPlan semantics).
+//! Color glyph bitmaps (v5) are not media: like glyph outlines, they are geometry/pixels extracted from the font at recording time, so like paths they are **embedded** in the bitmap side table, and the fingerprint covers their pixels.
 
 use anyhow::{Result, bail};
 use motion::effect::BlendMode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// path 段：verb 0=Move(2) 1=Line(2) 2=Quad(4) 3=Cubic(6) 4=Close(0)
+/// Path segments: verb 0=Move(2) 1=Line(2) 2=Quad(4) 3=Cubic(6) 4=Close(0)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PathSeg {
     pub verb: u8,
@@ -20,15 +19,15 @@ pub struct PathSeg {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PathData(pub Vec<PathSeg>);
 
-pub type Color4 = [f32; 4]; // RGBA，非预乘，0..1
-pub type Mat6 = [f32; 6]; // 仿射 [sx ky kx sy tx ty]（tiny-skia from_row 序）
+pub type Color4 = [f32; 4]; // RGBA, not premultiplied, 0..1
+pub type Mat6 = [f32; 6]; // Affine [sx ky kx sy tx ty] (tiny-skia from_row order)
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrawOp {
     Clear {
         color: Color4,
     },
-    /// 圆角矩形填充（box 背景 / 字幕背景）
+    /// Rounded-rectangle fill (box background / subtitle background)
     FillRect {
         x: f32,
         y: f32,
@@ -49,37 +48,36 @@ pub enum DrawOp {
         width: f32,
         tf: Mat6,
     },
-    /// 媒体引用：media_ms < 0 = 静态 image；≥0 = video 在该媒体毫秒的帧。
-    /// src = 源像素裁剪矩形 [x, y, w, h]（fit: cover 用）；全零 = 整幅源。
+    /// Media reference: media_ms < 0 = static image; ≥0 = video frame at that media millisecond.
+    /// src = source pixel crop rectangle [x, y, w, h] (used for fit: cover); all zeros = the whole source.
     DrawMedia {
         asset: u32,
         media_ms: i64,
         src: [f32; 4],
         tf: Mat6,
     },
-    /// 离屏层：组不透明度 + 混合模式（v3 起带 `blend`；v2 的 `PushLayer{opacity}`
-    /// 解码时 blend 视为 `Normal`）。
+    /// Offscreen layer: group opacity + blend mode (since v3 it carries `blend`; in v2, `PushLayer{opacity}` decodes with blend treated as `Normal`).
     PushLayer {
         opacity: f32,
         blend: BlendMode,
     },
     PopLayer,
-    /// 裁剪：把 `path`（经 `tf` 变换）与当前裁剪求交后压栈。
+    /// Clip: intersects `path` (transformed by `tf`) with the current clip, then pushes the result.
     ClipPath {
         path: u32,
         tf: Mat6,
     },
-    /// 弹出一层裁剪。**不得跨越 `PushLayer`/`PopLayer` 边界**（规范 §14.5）。
+    /// Pops one clip layer. **Must not cross `PushLayer`/`PopLayer` boundaries** (spec §14.5).
     PopClip,
-    /// 带 paint 侧表的填充（v4）：渐变与 even-odd 填充规则，`FillPath` 表达不了。
+    /// Fill with a paint side table (v4): gradients and the even-odd fill rule, which `FillPath` cannot express.
     FillPathPaint {
         path: u32,
         paint: u32,
-        /// `true` = even-odd，`false` = nonzero（`FillPath` 恒为 nonzero）。
+        /// `true` = even-odd, `false` = nonzero (`FillPath` is always nonzero).
         even_odd: bool,
         tf: Mat6,
     },
-    /// 带 paint 侧表的描边（v4）：渐变描边 + 线帽/线接头（`StrokePath` 恒为 Round/Round）。
+    /// Stroke with a paint side table (v4): gradient stroke plus line cap/join (`StrokePath` is always Round/Round).
     StrokePathPaint {
         path: u32,
         paint: u32,
@@ -91,17 +89,13 @@ pub enum DrawOp {
         miter: f32,
         tf: Mat6,
     },
-    /// 打开一张**遮罩源**离屏层（v4）。层内绘制不进画面，只在 [`DrawOp::PopMatte`]
-    /// 时按 `mode` 折进**下面那一层**的 alpha。必须处在某个 `PushLayer` 之内。
+    /// Opens an offscreen layer for a **matte source** (v4). Drawing inside this layer does not enter the picture; on [`DrawOp::PopMatte`] it is folded by `mode` into the alpha of the **layer below**. Must be inside a `PushLayer`.
     PushMatte,
-    /// 弹出遮罩源并施加到当前层：`mode` 见 [`MatteMode`]。
+    /// Pops the matte source and applies it to the current layer; `mode` see [`MatteMode`].
     PopMatte {
         mode: u8,
     },
-    /// 画一张位图侧表条目（v5）：彩色字形（`sbix` / `CBDT` / `COLR`）。`tf` 把
-    /// **位图像素坐标**映射到 surface——字形的 placement 与超采样倍率在录制期
-    /// 已经折进去；`opacity` 单独成字段，逐 part 淡入不会让同一张位图去重失效。
-    /// 像素不受文字颜色着色（与浏览器、字幕通道一致）。
+    /// Draws a bitmap side-table entry (v5): color glyphs (`sbix` / `CBDT` / `COLR`). `tf` maps **bitmap pixel coordinates** to the surface; the glyph placement and supersampling factor are already folded in at recording time. `opacity` is a separate field, so per-part fade-in does not break deduplication of the same bitmap. Pixels are not tinted by the text color (consistent with browsers and the subtitle channel).
     DrawBitmap {
         bitmap: u32,
         opacity: f32,
@@ -109,16 +103,16 @@ pub enum DrawOp {
     },
 }
 
-/// 轨道遮罩模式（Lottie 的 `tt`）。
+/// Track matte mode (Lottie's `tt`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatteMode {
-    /// 目标 alpha ×= 遮罩 alpha
+    /// Target alpha ×= matte alpha
     Alpha,
-    /// 目标 alpha ×= 1 − 遮罩 alpha
+    /// Target alpha ×= 1 − matte alpha
     AlphaInverted,
-    /// 目标 alpha ×= 遮罩亮度（已按遮罩 alpha 加权）
+    /// Target alpha ×= matte luminance (already weighted by matte alpha)
     Luma,
-    /// 目标 alpha ×= 1 − 遮罩亮度
+    /// Target alpha ×= 1 − matte luminance
     LumaInverted,
 }
 
@@ -143,15 +137,14 @@ impl MatteMode {
     }
 }
 
-/// 渐变色标。`offset` ∈ [0,1]，`color` 是非预乘 RGBA。
+/// Gradient color stop. `offset` ∈ [0,1]; `color` is non-premultiplied RGBA.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GradientStop {
     pub offset: f32,
     pub color: Color4,
 }
 
-/// paint 侧表条目（v4）。几何量都在 **path 本地坐标系**里——与 op 的 `tf`
-/// 同一个坐标系，因此 paint 跟着路径一起变换，不需要第二份矩阵。
+/// Paint side-table entry (v4). All geometric quantities are in the **path-local coordinate system**, the same coordinate system as the op's `tf`, so the paint transforms along with the path and needs no second matrix.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintData {
     Solid(Color4),
@@ -160,7 +153,7 @@ pub enum PaintData {
         p1: [f32; 2],
         stops: Vec<GradientStop>,
     },
-    /// `focus` 是高光点（Lottie 的 `h`/`a`）；等于 `center` 时是正圆渐变。
+    /// `focus` is the highlight point (Lottie's `h`/`a`); when it equals `center`, the gradient is a true circle.
     Radial {
         center: [f32; 2],
         radius: f32,
@@ -169,7 +162,7 @@ pub enum PaintData {
     },
 }
 
-/// 位图侧表条目（v5）：**预乘** RGBA8，逐行紧排，`rgba.len() == width × height × 4`。
+/// Bitmap side-table entry (v5): **premultiplied** RGBA8, stored tightly row by row, `rgba.len() == width × height × 4`.
 #[derive(Clone, PartialEq)]
 pub struct BitmapData {
     pub width: u32,
@@ -178,7 +171,7 @@ pub struct BitmapData {
 }
 
 impl std::fmt::Debug for BitmapData {
-    /// 只打尺寸与像素指纹：逐字节打印一张 emoji 就是几万个数字。
+    /// Only prints the size and pixel fingerprint: printing an emoji byte by byte would be tens of thousands of numbers.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BitmapData")
             .field("width", &self.width)
@@ -188,13 +181,9 @@ impl std::fmt::Debug for BitmapData {
     }
 }
 
-/// 光栅提示：`ops[..ops]` 是一段像素**只由 `key` 决定**的前缀（文档背景：
-/// `Clear` + `meta.background.texture`），层栈与裁剪栈在前缀末尾都已收平。
-/// CPU 光栅器按 `(key, 宽, 高)` 缓存前缀画完后的整张画面，命中时拷贝它再从
-/// 第 `ops` 条接着画——逐字节等同于从头重放（光栅是确定性的）。
+/// Raster hint: `ops[..ops]` is a prefix whose pixels are **determined solely by `key`** (for the document background: `Clear` + `meta.background.texture`). The layer stack and clip stack are both flattened at the end of the prefix. The CPU rasterizer caches, keyed by `(key, width, height)`, the full picture after the prefix is drawn. On a hit it copies that picture and continues drawing from op number `ops`, which is byte-for-byte equivalent to replaying from the start (rasterization is deterministic).
 ///
-/// **不进编码、不进指纹**：指令流本身不变，不认识它的执行器（GPU、`ccut ops`）
-/// 照常逐条执行；`decode` 出来的帧没有它。
+/// **Not part of the encoding and not in the fingerprint**: the instruction stream itself is unchanged, and executors that do not recognize it (GPU, `ccut ops`) still execute each op one by one; a decoded frame does not carry it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StaticPrefix {
     pub key: u64,
@@ -204,17 +193,17 @@ pub struct StaticPrefix {
 #[derive(Debug, Default)]
 pub struct FrameOps {
     pub ops: Vec<DrawOp>,
-    /// 见 [`StaticPrefix`]；只有录制器在帧首写背景纹理时设置。
+    /// See [`StaticPrefix`]; only set by the recorder when it writes the background texture at the start of a frame.
     pub static_prefix: Option<StaticPrefix>,
     pub paths: Vec<PathData>,
     pub strings: Vec<String>,
-    /// v4 的 paint 侧表。空 ⇒ 整帧仍按 v3 编码（既有 golden 逐字节不变）。
+    /// v4 paint side table. Empty ⇒ the whole frame is still encoded as v3 (existing goldens stay byte-identical).
     pub paints: Vec<PaintData>,
-    /// v5 的位图侧表（彩色字形）。空 ⇒ 不升 v5。
+    /// v5 bitmap side table (color glyphs). Empty ⇒ do not bump to v5.
     pub bitmaps: Vec<BitmapData>,
 }
 
-/// 录制期侧表去重（首次出现序编号 ⇒ 输出确定性）
+/// Side-table deduplication at recording time (numbered by order of first appearance ⇒ deterministic output)
 #[derive(Default)]
 pub struct FrameBuilder {
     pub frame: FrameOps,
@@ -252,7 +241,7 @@ impl FrameBuilder {
         id
     }
 
-    /// paint 侧表去重（与 `path_id` 同一口径：编码字节的 FNV 做键）。
+    /// Paint side-table deduplication (same convention as `path_id`: keyed by the FNV of the encoded bytes).
     pub fn paint_id(&mut self, paint: PaintData) -> u32 {
         let mut bytes = Vec::with_capacity(64);
         encode_paint(&paint, &mut bytes);
@@ -266,9 +255,7 @@ impl FrameBuilder {
         id
     }
 
-    /// 位图侧表去重：键是**像素内容**（尺寸 + 字节）的 FNV，不是 `Arc` 指针——
-    /// 字形缓存中途淘汰再重光栅化会换一个 `Arc`，按指针去重会让同一帧的侧表
-    /// 条数随缓存状态漂移，编码就不再是 `(ir, t)` 的纯函数。
+    /// Bitmap side-table deduplication: the key is the FNV of the **pixel content** (size + bytes), not the `Arc` pointer. After glyph-cache eviction and re-rasterization, a new `Arc` would be produced, and pointer-based deduplication would let the side table's entry count drift with cache state within the same frame, so encoding would no longer be a pure function of `(ir, t)`.
     pub fn bitmap_id(&mut self, bitmap: BitmapData) -> u32 {
         let mut head = Vec::with_capacity(8);
         put_u32(&mut head, bitmap.width);
@@ -288,7 +275,7 @@ impl FrameBuilder {
     }
 }
 
-/// tiny-skia Path → PathData（录制侧的唯一桥）
+/// tiny-skia Path → PathData (the only bridge on the recording side)
 pub fn path_from_skia(p: &tiny_skia::Path) -> PathData {
     use tiny_skia::PathSegment as S;
     let mut out = Vec::new();
@@ -321,30 +308,28 @@ pub fn path_from_skia(p: &tiny_skia::Path) -> PathData {
 
 const VERB_PTS: [usize; 5] = [1, 1, 2, 3, 0];
 
-// ── 二进制信封（LE；节顺序 strings → paths → ops）──────────────────
+// ── Binary envelope (LE; section order strings → paths → ops) ──────────────────
 
 const MAGIC: u32 = 0x42_43_4F_50; // "BCOP"
-/// **基线**信封版本：不含 v4 原语的帧一律按它编码。
+/// **Baseline** envelope version: frames that contain no v4 primitives are always encoded with it.
 ///
-/// * v2：`DrawMedia` 增加源裁剪矩形（fit: cover，§6.5）
-/// * v3：`PushLayer` 增加 `blend`，新增 `ClipPath` / `PopClip`（ADR-M04）
-/// * v4：paint 侧表（渐变 / even-odd 填充）与 `PushMatte` / `PopMatte`（ADR-M11）
-/// * v5：位图侧表与 `DrawBitmap`（BCF 文字的彩色字形）
+/// * v2: `DrawMedia` adds the source crop rectangle (fit: cover, §6.5)
+/// * v3: `PushLayer` adds `blend`; adds `ClipPath` / `PopClip` (ADR-M04)
+/// * v4: paint side table (gradient / even-odd fill) and `PushMatte` / `PopMatte` (ADR-M11)
+/// * v5: bitmap side table and `DrawBitmap` (color glyphs for BCF text)
 ///
-/// `encode` 写的是**这一帧真正需要的**版本（[`required_version`]）：一条 v4
-/// 原语都没有的帧仍然产出 v3 字节。这不是省事，而是承诺——阶段 0 录下的
-/// `core/fixtures/motion/` 指纹不因为「渲染器学会了画渐变」而集体换值。
+/// `encode` writes the version that **this frame actually needs** ([`required_version`]): a frame with no v4 primitive still produces v3 bytes. This is not a shortcut but a commitment: the `core/fixtures/motion/` fingerprints recorded in stage 0 must not all change value just because "the renderer learned to draw gradients."
 pub const VERSION: u32 = 3;
-/// 引入 paint 侧表与遮罩的版本。
+/// The version that introduced the paint side table and mattes.
 const PAINT_VERSION: u32 = 4;
-/// 引入位图侧表的版本。
+/// The version that introduced the bitmap side table.
 const BITMAP_VERSION: u32 = 5;
-/// `encode` 可能产出、`decode` 必须认得的最高版本。
+/// Highest version that `encode` may produce and `decode` must recognize.
 pub const MAX_VERSION: u32 = BITMAP_VERSION;
-/// `decode` 接受的最低版本。
+/// Lowest version that `decode` accepts.
 pub const MIN_DECODABLE_VERSION: u32 = 2;
 
-/// 这一帧最低需要哪个信封版本。
+/// The minimum envelope version this frame requires.
 pub fn required_version(frame: &FrameOps) -> u32 {
     let needs_v5 = !frame.bitmaps.is_empty()
         || frame
@@ -371,7 +356,7 @@ fn put_u32(out: &mut Vec<u8>, v: u32) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 fn put_f32(out: &mut Vec<u8>, v: f32) {
-    // -0.0 归一到 +0.0：数值等价的帧必须字节相同
+    // -0.0 is normalized to +0.0: numerically equivalent frames must be byte-identical
     let v = if v == 0.0 { 0.0f32 } else { v };
     out.extend_from_slice(&v.to_le_bytes());
 }
@@ -577,12 +562,12 @@ pub fn encode(frame: &FrameOps) -> Vec<u8> {
     out
 }
 
-/// FNV-1a 64：编码字节 → 帧指纹（场景快照缓存键 / 跨端一致性比对）
+/// FNV-1a 64: encoded bytes → frame fingerprint (scene snapshot cache key / cross-platform consistency comparison)
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
     fnv1a64_continue(0xcbf2_9ce4_8422_2325, bytes)
 }
 
-/// 从已有状态 `h` 续算 FNV-1a 64（分段喂入与一次喂入结果相同）。
+/// Continues FNV-1a 64 from existing state `h` (feeding in segments gives the same result as feeding everything at once).
 fn fnv1a64_continue(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= b as u64;
@@ -595,9 +580,9 @@ pub fn fingerprint(frame: &FrameOps) -> u64 {
     fnv1a64(&encode(frame))
 }
 
-// ── 解码器（v2 – v5）────────────────────────────────────────────────
+// ── Decoder (v2 – v5) ────────────────────────────────────────────────
 
-/// 游标：所有取数都做边界检查，截断的输入报 `bcop-truncated` 而不是 panic。
+/// Cursor: all reads are bounds-checked; truncated input reports `bcop-truncated` rather than panicking.
 struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
@@ -692,10 +677,9 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// 解析 BCOP 信封。返回 `(源版本, 帧)`——调用方据此判断读到的是 v2 还是 v3。
+/// Parses a BCOP envelope. Returns `(source version, frame)`; the caller uses this to tell whether it read v2 or v3.
 ///
-/// v2 的 `PushLayer` 只有 opacity，blend 补 `Normal`；因此
-/// `encode(decode(v2).1)` 得到的是**语义等价的 v3**，不是原字节。
+/// v2's `PushLayer` has only opacity, and blend is filled with `Normal`. Therefore `encode(decode(v2).1)` yields a **semantically equivalent v3**, not the original bytes.
 pub fn decode(bytes: &[u8]) -> Result<(u32, FrameOps)> {
     let mut r = Reader::new(bytes);
     if r.u32()? != MAGIC {
@@ -745,7 +729,7 @@ pub fn decode(bytes: &[u8]) -> Result<(u32, FrameOps)> {
         for _ in 0..bitmap_count {
             let width = r.u32()?;
             let height = r.u32()?;
-            // 尺寸乘积先做溢出检查；越界由 `take` 报 `bcop-truncated`。
+            // The size product is checked for overflow first; out-of-bounds is reported as `bcop-truncated` by `take`.
             let len = (width as usize)
                 .checked_mul(height as usize)
                 .and_then(|pixels| pixels.checked_mul(4))
@@ -794,7 +778,7 @@ pub fn decode(bytes: &[u8]) -> Result<(u32, FrameOps)> {
             },
             5 => {
                 let opacity = r.f32()?;
-                // v2 没有 blend 字节：整幅层栈只有组不透明度。
+                // v2 has no blend byte: the whole layer stack has only group opacity.
                 let blend = if version >= 3 {
                     let code = r.u8()?;
                     BlendMode::from_code(code)

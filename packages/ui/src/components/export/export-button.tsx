@@ -19,10 +19,10 @@ import { ExportPanel } from './export-popover.tsx';
 import type { ExportEnv } from './use-export-submit.ts';
 
 /**
- * 视频栏的「导出」按钮（设计稿 export.jsx、产品设计 §17.1）：点开右对齐的导出弹层。
- * 这个视频有导出在跑时（谁提交的都算），按钮念「导出中 · NN%」；关掉弹层不停导出。
- * 弹层关着时导出结束：完成给一条提示，可以直接在文件夹中显示；失败或中断给一条提示，点「查看」打开弹层看原因。
- * 别处可以请它打开弹层（`requestExport`）。
+ * The "Export" button in the video bar (design mockup export.jsx, product design §17.1): click to open the right-aligned export popover.
+ * While an export of this video is running (no matter who submitted it), the button reads "Exporting · NN%"; closing the popover does not stop the export.
+ * When an export finishes while the popover is closed: success gives a notice that can reveal the file in its folder directly; failure or interruption gives a notice, and "View" opens the popover to show the reason.
+ * Other places can ask it to open the popover (`requestExport`).
  */
 
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
@@ -38,7 +38,7 @@ export function ExportButton({ video, sequence }: { video: OpenVideo; sequence: 
     setFocus(jobId);
     setOpen(true);
   });
-  // 别处请打开导出弹层（剪成短视频结果页的「全部导出…」）：视频读到了才开。
+  // Other places ask to open the export popover (the "Export all…" on the short-video result page): opens only once the video has been read.
   const requested = useExportRequest((s) => !!videoId && s.videoId === videoId);
   const ready = !!sequence;
   useEffect(() => {
@@ -69,7 +69,7 @@ export function ExportButton({ video, sequence }: { video: OpenVideo; sequence: 
   );
 }
 
-/** 弹层打开那一刻的视频事实；播放头与选区取打开时的（弹层开着时编辑器不动）。 */
+/** The video facts at the moment the popover opens; playhead and selection are taken at open time (the editor does not move while the popover is open). */
 function PanelHost({ video, videoId, sequence, initialJobId, onClose }: { video: OpenVideo; videoId: Id; sequence: Sequence | null; initialJobId: Id | null; onClose: () => void }) {
   const web = useRuntime().host.platform === 'web';
   const [{ playhead, selection }] = useState(() => {
@@ -84,7 +84,7 @@ function PanelHost({ video, videoId, sequence, initialJobId, onClose }: { video:
       </div>
     );
   }
-  // 成片没挑位置时导到主素材（时间轴上最早出现的那段视频或音频）所在的文件夹。Web 上 Runtime 只往项目的 exports/ 里写，不给。
+  // When the output has no chosen location, export to the folder of the main source (the earliest video or audio segment on the timeline). On web the Runtime only writes into the project's exports/ folder, so this is not given.
   const main = web ? undefined : mediaCandidates(sequence, snapshot.assets, snapshot.documents)[0]?.asset;
   const videoDir = video.ref?.path ?? null;
   const env: ExportEnv = {
@@ -102,8 +102,8 @@ function PanelHost({ video, videoId, sequence, initialJobId, onClose }: { video:
 }
 
 /**
- * 弹层关着时，这个视频的某次导出从「在跑」变成结束：完成、失败、中断各给一条提示（取消是用户自己点的，不再提示）。
- * 只看这个窗口亲眼见过在跑的那些，刚连上时的历史记录不提示。
+ * While the popover is closed, one export of this video changes from "running" to finished: completed, failed, or interrupted each give a notice (cancellation is the user's own action, so no notice).
+ * Only exports this window actually saw running are considered; history loaded on first connection does not notify.
  */
 function useEndNotices(videoId: Id | null, open: boolean, onView: (jobId: Id) => void) {
   const runtime = useRuntime();

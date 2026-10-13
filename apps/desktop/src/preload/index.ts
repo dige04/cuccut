@@ -5,7 +5,7 @@ type WebHost = NonNullable<HostBridge['web']>;
 type WebTabState = Parameters<Parameters<WebHost['onState']>[0]>[0];
 
 /**
- * 网页标签（架构设计 §12.10）：视图在主进程里，这里只转发调用与状态。参数在主进程里重新校验。
+ * Web tabs (architecture design §12.10): the views live in the main process, and this side only forwards calls and state. Parameters are validated again in the main process.
  */
 const web: WebHost = {
   create: () => ipcRenderer.invoke('cuccut:web-create'),
@@ -36,7 +36,7 @@ const web: WebHost = {
 };
 
 /**
- * 应用自动更新（架构设计 §2.6）：检查、下载、校验、换包都在主进程里，这里只转发调用并订阅状态与提醒。
+ * App auto-update (architecture design §2.6): checking, downloading, verifying and swapping the package all happen in the main process; this side only forwards calls and subscribes to status and reminders.
  */
 const updates: UpdatesHost = {
   get: () => ipcRenderer.invoke('cuccut:updates-get'),
@@ -59,8 +59,8 @@ const updates: UpdatesHost = {
 };
 
 /**
- * 渲染进程能用的全部原生能力。保持最小：业务请求不经过这里，界面直连 Runtime。
- * 形状与 @cuccut/ui 的 HostBridge 一致。
+ * All native capabilities the renderer process can use. Kept minimal: business requests do not pass through here; the UI connects to the Runtime directly.
+ * The shape matches HostBridge in @cuccut/ui.
  */
 contextBridge.exposeInMainWorld('cuccut', {
   platform: process.platform,
@@ -77,6 +77,6 @@ contextBridge.exposeInMainWorld('cuccut', {
   pickFiles: (options) => ipcRenderer.invoke('cuccut:pick-files', options),
   pickSavePath: (options) => ipcRenderer.invoke('cuccut:pick-save-path', options),
   saveFile: (options) => ipcRenderer.invoke('cuccut:save-file', options),
-  // 界面语言：主进程据此换应用菜单与对话框的语言（参数在主进程里重新校验）。
+  // UI language: the main process uses it to switch the language of the app menu and dialogs (parameters are validated again in the main process).
   setLocale: (locale) => ipcRenderer.send('cuccut:set-locale', locale),
 } satisfies HostBridge);

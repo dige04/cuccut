@@ -10,7 +10,7 @@ import {
   parseServicesArgs,
 } from './services-output.ts';
 
-/** `cuccut services`：对外服务的状态、开关与配置（架构设计 §4.8）。令牌只在创建客户端时打印一次。 */
+/** `cuccut services`: the status, switches and config of external services (Architecture design §4.8). The token is printed only once, when a client is created. */
 export const services = defineNoun({
   name: 'services',
   get usage() {

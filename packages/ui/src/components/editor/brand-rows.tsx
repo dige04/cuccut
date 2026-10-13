@@ -16,7 +16,7 @@ import { BRAND_COPY as IB } from './brand-copy.ts';
 
 export type BrandRowAction = 'place' | 'rename' | 'copy' | 'delete';
 
-/** 品牌条目一行（设计稿 .brow）：32 的缩略格、名字与说明、右边「更多」。 */
+/** One brand library row (design mockup .brow): a 32px thumbnail cell, name and description, and “more” on the right. */
 const row = style({
   display: 'flex',
   alignItems: 'center',
@@ -57,7 +57,7 @@ const nameStyle = style({
 });
 const meta = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 
-/** 放进视频那一项怎么说：看放到哪里。 */
+/** How the “put into video” item is described: depends on where it goes. */
 function placeLabel(content: BrandContent): string | null {
   if (content.kind === 'color') return null;
   if (content.kind === 'captionStyle') return IB.applyToCaptions;
@@ -68,8 +68,8 @@ function placeLabel(content: BrandContent): string | null {
 }
 
 /**
- * 品牌库里的一条：缩略（图片与图片贴纸用文件，字体用它自己写「Aa」，颜色是色块）、名字与说明、操作菜单。
- * 「放进视频」不能用时说明原因（`placeBlocked`）。
+ * One item in the brand library: a thumbnail (images and image stickers use the file; fonts show their own “Aa”; colors are swatches), name and description, and an action menu.
+ * When “put into video” is unavailable, the reason is stated (`placeBlocked`).
  */
 export function BrandRow({
   summary,
@@ -77,7 +77,7 @@ export function BrandRow({
   onAction,
 }: {
   summary: LibraryEntrySummary;
-  /** 放不进视频的原因；null 时能放。 */
+  /** The reason the item cannot be put into the video; null when it can. */
   placeBlocked: string | null;
   onAction(action: BrandRowAction, summary: LibraryEntrySummary, entry: LibraryEntry | null): void;
 }) {
@@ -171,14 +171,14 @@ function BrandThumb({ summary, content }: { summary: LibraryEntrySummary; conten
     );
   }
   return (
-    // 品牌字体用它自己预览「Aa」：字体名是用户的文件，不是界面的字体。
+    // Brand fonts preview their “Aa” in their own face: the font name is the user's file, not the interface font.
     <span className={thumb} aria-hidden style={family ? { fontFamily: `"${family}"` } : undefined}>
       Aa
     </span>
   );
 }
 
-/** 把品牌字体的文件载进页面，给缩略用；载不进来（格式、网络）时 null，退回界面字体。 */
+/** Loads the brand font file into the page for the thumbnail; if it cannot be loaded (format, network), null, falling back to the interface font. */
 function useFontFamily(url: string | null, key: string): string | null {
   const [loaded, setLoaded] = useState<{ key: string; family: string } | null>(null);
   useEffect(() => {

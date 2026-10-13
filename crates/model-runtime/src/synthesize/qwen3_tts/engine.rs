@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! `Qwen3Tts`：把 Talker / Code Predictor / codec 解码器 / 音色克隆串成
-//! [`TtsEngine`]：预置说话人 / 声音描述 / x-vector 克隆走普通 prefill，带参考原文的克隆走 ICL prefill。
+//! `Qwen3Tts`: chains the Talker / Code Predictor / codec decoder / voice cloning into
+//! [`TtsEngine`]: preset speakers / voice description / x-vector cloning use the ordinary prefill; cloning with reference text uses the ICL prefill.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -41,45 +41,44 @@ use super::weights::Weights;
 use crate::synthesize::resample::resample;
 use crate::synthesize::stitch::Stitcher;
 
-/// 参考音频解码用的中间采样率：先解到 48 kHz，再用 [`resample`] 降到 24 kHz（与 v2 同一条路）。
+/// Intermediate sample rate for decoding reference audio: first decoded to 48 kHz, then downsampled to 24 kHz with [`resample`] (same path as v2).
 const REFERENCE_DECODE_RATE: u32 = 48_000;
 
-/// 已加载的 Qwen3-TTS 12 Hz 模型（Base / CustomVoice / VoiceDesign）。
+/// A loaded Qwen3-TTS 12 Hz model (Base / CustomVoice / VoiceDesign).
 pub struct Qwen3Tts {
     config: Qwen3TtsConfig,
     tokenizer: Qwen3Tokenizer,
     talker: Talker,
     code_predictor: CodePredictor,
     codec_decoder: CodecDecoder,
-    /// Base 模型才有（克隆用 x-vector）。
+    /// Present only in the Base model (x-vector for cloning).
     speaker_encoder: Option<SpeakerEncoder>,
-    /// ICL 克隆时才加载（Base + 参考文本）。
+    /// Loaded only for ICL cloning (Base + reference text).
     codec_encoder: Option<CodecEncoder>,
-    /// 语音分词器（codec 组件）的权重文件，ICL 克隆时按需再读一次编码器部分。
+    /// Weight file of the speech tokenizer (codec component); for ICL cloning, the encoder part is read again on demand.
     codec_files: Vec<PathBuf>,
-    /// 最后一个字段：权重先析构，再等 GPU 并清缓存。
+    /// The last field: weights are dropped first, then it waits for the GPU and clears the cache.
     _cache_guard: ModelMemoryCacheGuard,
 }
 
-/// 一次生成用的 prefill 产物。
+/// Prefill output for one generation.
 struct Prefill {
     embeds: Array,
     trailing: Array,
     tts_pad: Array,
 }
 
-/// 一次生成的结果。
+/// Result of one generation.
 struct Generated {
-    /// `[1, 16, frames]` Int32；`frames == 0` 时为空。
+    /// `[1, 16, frames]` Int32; empty when `frames == 0`.
     codes: Option<Array>,
     frames: usize,
 }
 
 impl Qwen3Tts {
-    /// 按清单加载。`model` 是主模型组件（`config.json` + `*.safetensors` + `vocab.json`，
-    /// `merges.txt` / `tokenizer_config.json` 列了就用）；`codec` 是语音分词器组件
-    /// （`Qwen/Qwen3-TTS-Tokenizer-12Hz` 的 `*.safetensors`）。缺文件是 `MODEL_NOT_INSTALLED`，
-    /// 在碰 Metal 之前就报。
+    /// Loads per manifest. `model` is the main model component (`config.json` + `*.safetensors` + `vocab.json`;
+    /// `merges.txt` / `tokenizer_config.json` are used if listed); `codec` is the speech tokenizer component
+    /// (`*.safetensors` of `Qwen/Qwen3-TTS-Tokenizer-12Hz`). A missing file is `MODEL_NOT_INSTALLED`, reported before touching Metal.
     pub fn load(model: &VerifiedFiles, codec: &VerifiedFiles) -> Result<Self> {
         let config_path = model.require("config.json")?;
         let vocabulary = model.require("vocab.json")?;
@@ -92,7 +91,7 @@ impl Qwen3Tts {
 
         ensure_device()?;
         configure_memory_cache()?;
-        // 先建守卫：后面任何一步加载失败，展开时也会等 GPU 并清掉已分配的缓存。
+        // Create the guard first: if any later loading step fails, the guard on unwind also waits for the GPU and clears any cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
 
         let config_text = std::fs::read_to_string(config_path).with_context(|| format!("读取 {}", config_path.display()))?;
@@ -128,12 +127,12 @@ impl Qwen3Tts {
         })
     }
 
-    /// 模型配置（含说话人表）。
+    /// Model configuration (including the speaker table).
     pub fn config(&self) -> &Qwen3TtsConfig {
         &self.config
     }
 
-    /// 是否具备克隆能力（Base 变体带 speaker_encoder）。
+    /// Whether cloning is supported (the Base variant carries a speaker_encoder).
     pub fn supports_cloning(&self) -> bool {
         self.speaker_encoder.is_some()
     }
@@ -147,7 +146,7 @@ impl Qwen3Tts {
         Ok(self.codec_encoder.as_ref().expect("刚加载"))
     }
 
-    // ---- 嵌入辅助 ----
+    // ---- Embedding helpers ----
 
     fn hidden(&self) -> i32 {
         self.talker.hidden_size as i32
@@ -161,12 +160,12 @@ impl Qwen3Tts {
         self.talker.embed_codec(&token_array(tokens))
     }
 
-    /// `[1, n, D]` 的 tts_pad 重复。
+    /// tts_pad repeated to `[1, n, D]`.
     fn pad_block(&self, tts_pad: &Array, count: usize) -> Result<Array> {
         Ok(ops::broadcast_to(tts_pad, &[1, count as i32, self.hidden()])?)
     }
 
-    /// 在 codec 前缀嵌入的 `insert_at` 位置插入说话人向量 `[1, 1024]`。
+    /// Inserts the speaker vector `[1, 1024]` at position `insert_at` of the codec prefix embedding.
     fn inject_speaker(&self, codec_embeds: &Array, speaker: &Array, insert_at: usize) -> Result<Array> {
         let spk = speaker.reshape(&[1, 1, self.hidden()])?.as_dtype(codec_embeds.dtype())?;
         let at = insert_at as i32;
@@ -175,7 +174,7 @@ impl Qwen3Tts {
         Ok(ops::concatenate_axis(&[&part0, &spk, &part1], 1)?)
     }
 
-    /// 普通 / x-vector 路径的 prefill。
+    /// Prefill for the ordinary / x-vector path.
     fn build_prefill(
         &self,
         text_tokens: &[i32],
@@ -220,7 +219,7 @@ impl Qwen3Tts {
         Ok(Prefill { embeds, trailing, tts_pad })
     }
 
-    /// ICL 路径的 prefill。
+    /// Prefill for the ICL path.
     fn build_icl_prefill(
         &self,
         ref_codes: &Array,
@@ -241,7 +240,7 @@ impl Qwen3Tts {
         let text_with_eos = ops::concatenate_axis(&[&text_embed, &tts_eos], 1)?;
         let text_len = text_with_eos.dim(1) as usize;
 
-        // codec_bos + Σ 各 codebook 嵌入(ref_codes)
+        // codec_bos + Σ each codebook's embedding(ref_codes)
         let mut ref_codec_embed = self.talker.embed_codec(&ref_codes.index((.., 0, ..)));
         for group in 0..self.code_predictor.num_groups() {
             let ids = ref_codes.index((.., (group + 1) as i32, ..));
@@ -284,7 +283,7 @@ impl Qwen3Tts {
         Ok(Prefill { embeds, trailing, tts_pad })
     }
 
-    /// 自回归生成。
+    /// Autoregressive generation.
     fn generate(
         &self,
         prefill: &Prefill,
@@ -294,7 +293,7 @@ impl Qwen3Tts {
         progress: &mut ProgressSink<'_>,
     ) -> Result<Generated> {
         let safe_max_tokens = sampling.max_tokens.min(prompt::SAFE_MAX_TOKENS);
-        // Code Predictor 只继承温度与 top-k。
+        // Code Predictor only inherits temperature and top-k.
         let cp_sampling = SamplingConfig {
             temperature: sampling.temperature,
             top_k: sampling.top_k,
@@ -392,9 +391,9 @@ impl Qwen3Tts {
         self.code_predictor.predict_frame(hidden, &code0, cp_sampling, rng)
     }
 
-    // ---- 参考音频 ----
+    // ---- Reference audio ----
 
-    /// 解码参考音频为 24 kHz 单声道。
+    /// Decodes reference audio to 24 kHz mono.
     fn load_reference_audio(path: &Path) -> Result<Vec<f32>> {
         let samples = crate::audio::decode_mono(path, REFERENCE_DECODE_RATE).with_context(|| format!("解码参考音频 {}", path.display()))?;
         if samples.is_empty() {
@@ -403,7 +402,7 @@ impl Qwen3Tts {
         Ok(resample(&samples, REFERENCE_DECODE_RATE, SAMPLE_RATE))
     }
 
-    /// 参考音频 → x-vector `[1, 1024]`。
+    /// Reference audio → x-vector `[1, 1024]`.
     fn speaker_embedding(&self, audio_24k: &[f32]) -> Result<Array> {
         let Some(encoder) = &self.speaker_encoder else {
             bail!("当前模型没有 speaker_encoder，无法克隆音色（需要 Qwen3-TTS Base 变体）");
@@ -418,12 +417,12 @@ impl Qwen3Tts {
         Ok(embed)
     }
 
-    /// 解码 codes 为 24 kHz 波形。
+    /// Decodes codes into a 24 kHz waveform.
     fn decode(&self, codes: &Array) -> Result<Vec<f32>> {
         self.codec_decoder.decode_to_samples(codes)
     }
 
-    // ---- 单块合成 ----
+    // ---- Single-chunk synthesis ----
 
     fn synthesize_chunk(
         &mut self,
@@ -493,15 +492,14 @@ impl Qwen3Tts {
         Ok(samples)
     }
 
-    /// 把请求的音色解析成生成计划（一次请求只做一次参考音频处理）。
+    /// Resolves the requested voice into a generation plan (reference audio is processed only once per request).
     fn plan_voice(&mut self, request: &TtsRequest, progress: &mut ProgressSink<'_>) -> Result<VoicePlan> {
         let (language_name, language_explicit) = match request.language.as_deref() {
             Some(tag) if !tag.trim().is_empty() && tag.trim() != "auto" => (normalize_language(tag), true),
             _ => (normalize_language(crate::synthesize::text::guess_language(&request.text)), false),
         };
 
-        // VoiceDesign 只会按一句描述造声：`--instruct` 就是那句描述；没给时内置音色在它身上
-        // 是那一句**描述**（`voices::style_for`），点名内置音色又给了 `--instruct` 时两句都说。
+        // VoiceDesign only produces speech from one description sentence: `--instruct` is that sentence; when it is not given, a built-in voice acts on it as that sentence's **description** (`voices::style_for`); when a built-in voice is named and `--instruct` is given, both sentences are used.
         if self.config.variant == ModelVariant::VoiceDesign {
             let described = match &request.voice {
                 VoiceSpec::Clone { .. } => bail!("Qwen3-TTS VoiceDesign 不接受参考音频，声音只由一句描述（--instruct）决定"),
@@ -516,9 +514,8 @@ impl Qwen3Tts {
             return self.plan_prompt(None, &described, &language_name, language_explicit);
         }
 
-        // Base 没有说话人表：`Preset` / `Default` 都落到随包的内置音色，用它的录音
-        // 算 x-vector（`crate::voices`，与 IndexTTS / GPT-SoVITS 同一张表同一组 id）。
-        // CustomVoice 有自己的 9 只说话人，随包录音在它身上用不上。
+        // Base has no speaker table: `Preset` / `Default` both fall back to the built-in voice bundled with the package, and use its recording to compute the x-vector (`crate::voices`, same table and same ids as IndexTTS / GPT-SoVITS).
+        // CustomVoice has its own 9 speakers; the bundled recordings are of no use to it.
         let voice = if self.config.speaker.is_none() && self.speaker_encoder.is_some() {
             match &request.voice {
                 VoiceSpec::Clone { .. } => None,
@@ -533,7 +530,7 @@ impl Qwen3Tts {
             }) {
                 bail!("合成已取消");
             }
-            // 随包录音在内存里解码并重采样到 24 kHz，不落盘。
+            // Bundled recordings are decoded in memory and resampled to 24 kHz, not written to disk.
             let audio = crate::synthesize::voices::builtin(voice).audio.samples(SAMPLE_RATE)?;
             let speaker_embedding = self.speaker_embedding(&audio)?;
             return Ok(VoicePlan::Prompt {
@@ -574,7 +571,7 @@ impl Qwen3Tts {
                             bail!("合成已取消");
                         }
                         let ref_codes = self.ensure_codec_encoder()?.encode(&audio)?;
-                        // ICL 只在调用方显式指定语言时带语言 token（未指定时按 "auto"）。
+                        // ICL includes a language token only when the caller explicitly specifies a language (otherwise it is "auto").
                         let language = if language_explicit { language } else { None };
                         Ok(VoicePlan::Icl {
                             ref_codes,
@@ -596,8 +593,8 @@ impl Qwen3Tts {
             }
             VoiceSpec::Preset { speaker } => self.plan_prompt(Some(speaker), request, &language_name, language_explicit),
             VoiceSpec::Default => {
-                // CustomVoice：按语言挑默认那只说话人（日语 Ono_Anna、韩语 Sohee…），
-                // 不再拿说话人表里字母序的第一只顶。
+                // CustomVoice: picks the default speaker for the language (Ono_Anna for Japanese, Sohee for Korean…),
+                // rather than always taking the first one in the alphabetically sorted speaker table.
                 let pick = prompt::default_speaker(&language_name, self.config.speaker.as_ref());
                 self.plan_prompt(pick.as_deref(), request, &language_name, language_explicit)
             }
@@ -619,7 +616,7 @@ impl Qwen3Tts {
                 super::tokens::LANGUAGE_ENGLISH
             }
         };
-        // CustomVoice 没给 instruct 时补默认指令。
+        // CustomVoice fills in a default instruction when no instruct is given.
         let instruct = match request.instruct.as_deref().map(str::trim) {
             Some(s) if !s.is_empty() => Some(s.to_string()),
             _ => self.config.speaker.as_ref().map(|_| prompt::DEFAULT_INSTRUCT.to_string()),
@@ -633,16 +630,16 @@ impl Qwen3Tts {
     }
 }
 
-/// 一次请求解析出的生成方式。
+/// The generation mode resolved for one request.
 enum VoicePlan {
-    /// 预置说话人 / 默认 / x-vector 克隆：codec 前缀 + 可选说话人向量。
+    /// Preset speaker / default / x-vector cloning: codec prefix + optional speaker vector.
     Prompt {
         speaker_token: Option<i32>,
         language: i32,
         instruct: Option<String>,
         speaker_embedding: Option<Array>,
     },
-    /// ICL 克隆：参考 codec + 参考文本进入上下文。
+    /// ICL cloning: reference codec + reference text enter the context.
     Icl {
         ref_codes: Array,
         reference_text: String,
@@ -661,7 +658,7 @@ impl TtsEngine for Qwen3Tts {
     }
 
     fn preset_speakers(&self) -> Vec<String> {
-        // CustomVoice 报模型自己的 9 只；Base 没有说话人表，报随包的内置音色。
+        // CustomVoice reports its model's own 9; Base has no speaker table, so it reports the built-in voices bundled with the package.
         self.config
             .speaker
             .as_ref()
@@ -682,7 +679,7 @@ impl TtsEngine for Qwen3Tts {
         let mut rng = Rng::from_optional_seed(request.sampling.seed);
         let plan = self.plan_voice(request, &mut progress)?;
 
-        // 块与块之间的停顿与响度由拼接统一定（`synthesize::stitch`），不用模型在块首尾自带的静音。
+        // Pauses and loudness between chunks are set uniformly by stitching (`synthesize::stitch`), not by silence the model adds at the chunk edges.
         let count = chunks.len();
         let mut stitcher = Stitcher::new(SAMPLE_RATE, count);
         for (index, chunk) in chunks.iter().enumerate() {
@@ -704,7 +701,7 @@ impl TtsEngine for Qwen3Tts {
     }
 }
 
-/// 说话人展示名：配置里是小写键，这里首字母大写（`vivian` → `Vivian`）。
+/// Speaker display name: the config has lowercase keys, so here the first letter is capitalized (`vivian` → `Vivian`).
 trait SpeakerConfigExt {
     fn display_names(&self) -> Vec<String>;
 }
@@ -724,7 +721,7 @@ impl SpeakerConfigExt for super::config::SpeakerConfig {
     }
 }
 
-/// `Vec<PathBuf>` → `Weights::load` 要的 `&[&Path]`。
+/// `Vec<PathBuf>` → `&[&Path]`, as required by `Weights::load`.
 fn path_refs(paths: &[PathBuf]) -> Vec<&Path> {
     paths.iter().map(PathBuf::as_path).collect()
 }

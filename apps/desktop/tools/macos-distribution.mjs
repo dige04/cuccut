@@ -1,4 +1,4 @@
-// 签名与公证只在这里完成；electron-builder 先产出目录，最终归档来自已 staple 的 App。
+// Signing and notarization are done only here; electron-builder first produces the directory, and the final archive comes from the stapled App.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, mkdirSync, openSync, readSync, statSync, writeFileSync } from 'node:fs';

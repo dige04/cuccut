@@ -8,33 +8,32 @@ import { resolveInside } from '../media.ts';
 import type { SpaceCatalog } from '../space-catalog.ts';
 
 /**
- * Space 条目的缩略图（`space.thumbnail`，架构设计 §5.7，产品设计 §4.2–§4.3）：网格的卡片与列表的名称列按需来取。
+ * Thumbnails of Space entries (`space.thumbnail`, architecture design §5.7, product design §4.2–§4.3). The grid cards and the name column of the list fetch them on demand.
  *
- * - 视频：当前工作稿的封面那一帧（`posterFrame`）。素材版本与时间取自内容索引（§5.11），还没有索引时让索引先读这一个；
- *   素材文件按视频目录经引擎的只读查询找（`VideoService.assetFileAt`），不打开视频、不取写锁，链接素材照媒体通道的规则放行。
- *   画面按素材的内容摘要缓存：时间线没变、封面那一帧没变时不再找文件、不再运行 ffmpeg。
- * - 成片、视频素材与图片：条目的文件（`SpaceCatalog.locateBytes`）取一帧，按真实路径、大小与修改时间缓存。
- * - 文档与字幕：开头的正文，字幕只留台词。PDF、Word 与 RTF 不读。
+ * - Video: the cover frame (`posterFrame`) of the current working draft. The asset version and time come from the content index (§5.11). If there is no index yet, the index is asked to read this one first.
+ *   The asset file is found by the video directory through the engine's read-only query (`VideoService.assetFileAt`). The video is not opened and no write lock is taken. Linked assets are allowed under the media channel's rules.
+ *   The image is cached by the asset's content digest. While the timeline and the cover frame are unchanged, the file is not looked up again and ffmpeg is not run again.
+ * - Rendered cuts, video assets and images: a frame is taken from the entry's file (`SpaceCatalog.locateBytes`), cached by real path, size and modification time.
+ * - Documents and subtitles: the opening body text. Subtitles keep only the dialogue lines. PDF, Word and RTF are not read.
  *
- * 取帧都经媒体分析（`MediaAnalysis`）：同样的解复用器白名单、时限、输出上限与并发名额，失败记一阵。这里把一切读不了、
- * 解不了的情况都答成 `none`，不报错：界面照样显示类型占位。
+ * Every frame extraction goes through media analysis (`MediaAnalysis`): the same demuxer allowlist, time limit, output cap and concurrency slots apply, and failures are remembered for a while. Here, everything that cannot be read or decoded is answered as `none` rather than an error, so the UI still shows the type placeholder.
  */
 
 const NONE: SpaceThumbnail = { kind: 'none' };
 
-/** 成片与视频素材取帧的时间：1 秒与时长的 10% 中较早的（避开片头的黑场，又不至于取到很短的视频之外）。 */
+/** Time for frame extraction from rendered cuts and video assets: the earlier of 1 second and 10% of the duration. This avoids the black leader without going past very short videos. */
 const VIDEO_FRAME_AT = 1;
 const VIDEO_FRAME_FRACTION = 0.1;
 
 const TEXT_EXTS = new Set(['md', 'markdown', 'txt']);
 const SUBTITLE_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa']);
-/** 字幕要去掉序号、时间码与样式，读得多一些才凑得够摘要。 */
+/** Subtitles need more text read to gather enough summary, since sequence numbers, timecodes and styles are stripped. */
 const SUBTITLE_READ_BYTES = 32 * 1024;
 
 export interface SpaceThumbnailDeps {
   catalog: SpaceCatalog;
   analysis: MediaAnalysis;
-  /** 按视频目录找素材版本的文件（`VideoService.assetFileAt`）。 */
+  /** Finds the asset file version by the video directory (`VideoService.assetFileAt`). */
   assetFileAt: (dir: string, assetId: Id, revision: string) => Promise<{ root: string; file: string }>;
   log: Logger;
 }
@@ -48,7 +47,7 @@ export class SpaceThumbnails {
     this.#log = deps.log.child('space-thumbnails');
   }
 
-  /** 条目的缩略图。条目由调用方按主体查好（看不到的已经是 `not-found`）；这里不再报错。 */
+  /** Thumbnail of an entry. The caller has already looked up the entry by principal (entries that are not visible are already `not-found`), so no error is raised here. */
   async of(entry: SpaceEntry): Promise<SpaceThumbnail> {
     if (entry.status === 'missing' || entry.status === 'generating' || entry.status === 'failed') return NONE;
     try {
@@ -89,8 +88,7 @@ export class SpaceThumbnails {
   }
 
   /**
-   * 视频条目的主素材文件（媒体通道 `media.resolve` 的 `entryId`，会话里视频卡的就地播放）：封面那一帧所在的素材版本，
-   * 与缩略图同一个来源，不打开视频、不取写锁。它是素材本身，没有套用时间线上的剪辑、字幕与叠加。没有封面时 not-found。
+   * The main asset file of a video entry (the media channel's `media.resolve` with `entryId`, used for in-place playback of the video card in the session). It is the asset version that contains the cover frame, from the same source as the thumbnail. It does not open the video and takes no write lock. It is the asset itself, with no timeline cuts, subtitles or overlays applied. `not-found` when there is no cover.
    */
   async videoSource(entryId: Id): Promise<{ root: string; file: string }> {
     const { catalog, assetFileAt } = this.#deps;
@@ -100,7 +98,7 @@ export class SpaceThumbnails {
     return assetFileAt(dir, poster.assetId, poster.revision);
   }
 
-  /** 视频的封面：来源目录里的视频才有（删除了的视频不在内容索引里）。 */
+  /** Cover of a video: only for videos in a source directory (deleted videos are not in the content index). */
   async #videoPoster(entry: SpaceEntry): Promise<SpaceThumbnail> {
     const { catalog, analysis, assetFileAt } = this.#deps;
     const index = catalog.index;
@@ -124,7 +122,7 @@ function image(frame: MediaFrame): SpaceThumbnail {
   return { kind: 'image', mimeType: frame.mimeType, data: frame.data.toString('base64'), width: frame.width, height: frame.height };
 }
 
-/** 读文件开头的 `limit` 字节，解成文字；不是文字（有 NUL、不是 UTF-8 也没有 UTF-16 的 BOM）时 null。 */
+/** Reads the first `limit` bytes of a file and decodes them to text. `null` if it is not text (contains NUL, is not UTF-8, and has no UTF-16 BOM). */
 async function readHead(file: string, limit: number): Promise<string | null> {
   const handle = await fs.open(file, 'r');
   try {
@@ -138,8 +136,8 @@ async function readHead(file: string, limit: number): Promise<string | null> {
 }
 
 /**
- * 文件开头的 bytes → 文字。认 UTF-8（去掉 BOM）与带 BOM 的 UTF-16；别的编码不猜（产品能力不假定某种语言的旧编码），回答 null。
- * `complete` 为 false 时 bytes 是截断的：末尾半个字符丢掉。
+ * Bytes at the start of a file → text. Recognizes UTF-8 (BOM stripped) and UTF-16 with a BOM. Other encodings are not guessed (the product does not assume any language's legacy encoding); the answer is `null`.
+ * When `complete` is false, the bytes are truncated: the half character at the end is dropped.
  */
 export function decodeText(bytes: Uint8Array, complete: boolean): string | null {
   let encoding = 'utf-8';
@@ -157,16 +155,16 @@ export function decodeText(bytes: Uint8Array, complete: boolean): string | null 
   }
 }
 
-/** 摘要：统一换行、去掉首尾空白，截到 `SPACE_EXCERPT_MAX_BYTES` 字节以内（截在字符边界上）。 */
+/** Summary: normalizes line endings, trims leading and trailing whitespace, and truncates to within `SPACE_EXCERPT_MAX_BYTES` bytes (cut at a character boundary). */
 export function excerptOf(text: string): string {
   const normalized = text.replace(/\r\n?/g, '\n').trim();
   const bytes = Buffer.from(normalized, 'utf8');
   if (bytes.length <= SPACE_EXCERPT_MAX_BYTES) return normalized;
-  // 流式解码：末尾不完整的字符留在解码器里，不输出。
+  // Streaming decode: an incomplete character at the end stays in the decoder and is not output.
   return new TextDecoder('utf-8').decode(bytes.subarray(0, SPACE_EXCERPT_MAX_BYTES), { stream: true }).trimEnd();
 }
 
-/** 字幕文件的台词：一行一句。SRT 与 WebVTT 去掉序号或标识、时间码、头部与注释块、标签；ASS / SSA 只取对白行的文字。 */
+/** Subtitle file lines: one cue per line. SRT and WebVTT: strip the sequence number or identifier, timecodes, header and comment blocks, and tags. ASS / SSA: keep only the text of dialogue lines. */
 export function subtitleDialogue(text: string, ext: string): string {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
@@ -191,7 +189,7 @@ export function subtitleDialogue(text: string, ext: string): string {
     }
     return out.join('\n');
   }
-  // SRT / WebVTT：按空行分块。时间码那一行之前的是序号或标识；没有时间码的块（WEBVTT 头、NOTE、STYLE、REGION）整块跳过。
+  // SRT / WebVTT: split into blocks by blank lines. Lines before the timecode line are the sequence number or identifier. Blocks without a timecode (the WEBVTT header, NOTE, STYLE, REGION) are skipped entirely.
   let block: string[] = [];
   const flush = () => {
     const cue = block.findIndex((line) => line.includes('-->'));
@@ -211,7 +209,7 @@ export function subtitleDialogue(text: string, ext: string): string {
   return out.join('\n');
 }
 
-/** 去掉字幕行里的标签（`<i>`、`<v 说话人>`、`<00:00:01.000>`、`{\an8}`）与常见的字符实体。 */
+/** Strips tags from subtitle lines (`<i>`, `<v speaker>`, `<00:00:01.000>`, `{\an8}`) and common character entities. */
 function cleanCue(line: string): string {
   return line
     .replace(/<[^>]*>/g, '')

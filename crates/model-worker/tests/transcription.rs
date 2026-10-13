@@ -1,12 +1,11 @@
-//! 端到端：真实模型包 + 真实音频。需要本机装好的模型，默认忽略：
+//! End-to-end: a real model bundle with real audio. It needs models installed on this machine and is ignored by default:
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-worker --test transcription -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! `candle_` 开头的几条在 candle 后端的 CPU 上跑同一批模型包，要 `--features backend-candle`（Windows / Linux 上加
-//! `--no-default-features`）：
+//! The tests whose names start with `candle_` run the same bundles on candle's CPU backend. They need `--features backend-candle` (and `--no-default-features` on Windows or Linux):
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR=… cargo test -p model-worker --features backend-candle --test transcription \
@@ -110,7 +109,7 @@ fn normalized(text: &str) -> String {
     lower.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 读回 `result.json`，核对 sha256 与响应一致，并检查所有时间性质。后端是 `mlx`。
+/// Read back `result.json`, check that its sha256 matches the response, and check all the timing properties. The backend is `mlx`.
 fn check_output(response: &Value, staging: &Path) -> Value {
     check_output_on(response, staging, "mlx")
 }
@@ -131,7 +130,7 @@ fn check_output_on(response: &Value, staging: &Path, backend: &str) -> Value {
     assert_eq!(asr["provenance"]["runGeneration"], 7);
     assert_eq!(asr["provenance"]["backend"], backend);
 
-    // 模型包带了对齐器时词时间是对齐出来的（不该有对齐失败），否则按字符长度估计。
+    // When the bundle carries an aligner, word timing comes from alignment (no alignment failure should occur). Otherwise it is estimated from character length.
     let timing = if asr["provenance"]["models"]["aligner"].is_object() {
         "aligned"
     } else {
@@ -165,7 +164,7 @@ fn check_output_on(response: &Value, staging: &Path, backend: &str) -> Value {
         }
     }
 
-    // segments.jsonl：头 + 与结果相同的段（说话人区分在识别之后，流出去的段不带说话人）。
+    // segments.jsonl: a header plus the same segments as the result. Speaker diarization runs after recognition, so the streamed segments carry no speaker.
     let segments_file = run["segmentsFile"].as_str().unwrap();
     let lines: Vec<Value> = std::fs::read_to_string(segments_file)
         .unwrap()
@@ -201,7 +200,7 @@ fn transcript(asr: &Value) -> String {
 fn transcribes_the_english_and_chinese_fixtures() {
     let mut worker = loaded_worker();
 
-    // ---- 英文，自动识别语言 ----
+    // ---- English, language auto-detected ----
     let staging = tempfile::tempdir().unwrap();
     let started = Instant::now();
     let params = job_params(
@@ -263,7 +262,7 @@ fn transcribes_the_english_and_chinese_fixtures() {
         );
     }
 
-    // ---- 同一音频的一段：tick 仍在素材时钟上 ----
+    // ---- One segment of the same audio: ticks are still on the media clock ----
     let staging = tempfile::tempdir().unwrap();
     let range = json!({ "start": 1_000, "end": 3_680, "timescale": 1_000 });
     let mut params = job_params(
@@ -281,7 +280,7 @@ fn transcribes_the_english_and_chinese_fixtures() {
     for segment in ranged["segments"].as_array().unwrap() {
         assert!(segment["start"].as_u64().unwrap() >= 1_000_000, "{segment}");
     }
-    // 术语提示进 system 段：没有它 0.6B 模型常把产品名听成 “Baeocut”。
+    // The terminology hint goes into the system segment. Without it, the 0.6B model often hears the product name as “Baeocut”.
     assert!(
         normalized(&transcript(&ranged)).contains("cuccut is ready"),
         "{}",
@@ -293,7 +292,7 @@ fn transcribes_the_english_and_chinese_fixtures() {
         ranged["coverage"]
     );
 
-    // ---- 中文 ----
+    // ---- Chinese ----
     let staging = tempfile::tempdir().unwrap();
     let params = job_params(
         "job-zh",
@@ -326,7 +325,7 @@ fn transcribes_the_english_and_chinese_fixtures() {
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-ASR and Silero bundles installed"]
 fn cancel_stops_at_the_next_segment_boundary() {
-    // 把英文样本接 10 遍（约 37 秒），保证取消时还有剩下的段。
+    // Concatenate the English sample 10 times (about 37 seconds), so that segments are still left when it is cancelled.
     let media = tempfile::tempdir().unwrap();
     let long = media.path().join("long.wav");
     let mut reader = hound::WavReader::open(fixture("test-sample.wav")).unwrap();
@@ -346,7 +345,7 @@ fn cancel_stops_at_the_next_segment_boundary() {
         "job.run",
         job_params("job-cancel", &long, staging.path(), json!({ "mode": "prefer", "tag": null }), None),
     );
-    // 等第一段出来再取消。
+    // Wait for the first segment to come out before cancelling.
     loop {
         let message = worker.next(JOB_TIMEOUT);
         assert_ne!(
@@ -381,7 +380,7 @@ fn cancel_stops_at_the_next_segment_boundary() {
     assert_eq!(error_code(&response), "NOT_FOUND");
 }
 
-/// Qwen3-ASR 1.7B（8-bit）走与 0.6B 同一个加载器；没装时打印一行就跳过，忽略的测试一起跑时照样通过。
+/// Qwen3-ASR 1.7B (8-bit) uses the same loader as 0.6B. If it is not installed, print one line and skip, so the test still passes when the ignored tests run together.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-ASR 1.7B and Silero bundles installed"]
 fn transcribes_with_the_larger_qwen3_asr() {
@@ -429,7 +428,7 @@ fn transcribes_with_the_larger_qwen3_asr() {
     assert_eq!(chinese["language"]["tag"], "zh");
     eprintln!("1.7B chinese-sample.wav: {}", transcript(&chinese));
 
-    // 语言表与 0.6B 相同：斯瓦希里语不认。
+    // The language table is the same as 0.6B's: Swahili is not recognized.
     let staging = tempfile::tempdir().unwrap();
     let params = job_params(
         "job-1.7b-sw",
@@ -452,7 +451,7 @@ fn align_params(job_id: &str, file: &Path, staging: &Path, tag: &str, text: &str
     params
 }
 
-/// `capability: 'align'`：给识别出来的文本重新对时间，分段只看停顿、句末标点与段长，文字不变。
+/// `capability: 'align'`: re-time the recognized text. Segmentation looks only at pauses, sentence-final punctuation and segment length. The text does not change.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-ASR, Silero and forced aligner bundles installed"]
 fn aligns_known_text_with_the_forced_aligner() {
@@ -472,7 +471,7 @@ fn aligns_known_text_with_the_forced_aligner() {
         ("test-sample.wav", "en", "Testing, one two three. CucCut is ready!"),
         ("chinese-sample.wav", "zh", ""),
     ] {
-        // 中文样本的文本取自识别结果。
+        // The Chinese sample's text comes from the recognition result.
         let text = if text.is_empty() {
             let staging = tempfile::tempdir().unwrap();
             let params = job_params(
@@ -514,7 +513,7 @@ fn aligns_known_text_with_the_forced_aligner() {
     assert_eq!(result(&response)["unloaded"], true);
 }
 
-/// 可选的对齐器没装：照样能识别，词时间按字符长度估计；`align` 报 MODEL_UNSUPPORTED。
+/// The optional aligner is not installed: recognition still works, and word timing is estimated from character length. `align` reports MODEL_UNSUPPORTED.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-ASR and Silero bundles installed"]
 fn transcribes_without_the_optional_aligner() {
@@ -552,28 +551,26 @@ fn transcribes_without_the_optional_aligner() {
     assert_eq!(result(&response)["unloaded"], true);
 }
 
-/// 样本里的「testing one two three」：Whisper 把数字写成阿拉伯数字（`Testing 1, 2, 3`），两种写法都算（与模型包
-/// 自检的 `TRANSCRIBE_SELF_TEST` 同一规则）。
+/// The "testing one two three" in the sample: Whisper writes numbers as digits (`Testing 1, 2, 3`), so both forms count (same rule as the bundle's self-check `TRANSCRIBE_SELF_TEST`).
 fn says_testing_one_two_three(text: &str) -> bool {
     let normal = normalized(text);
     normal.contains("testing one two three") || normal.contains("testing 1 2 3")
 }
 
-/// Whisper（CoreML）的模型包都装好了：`asr` 的仓库、分词器与 Silero。
+/// The Whisper (CoreML) bundle is fully installed: the `asr` repo, the tokenizer and Silero.
 fn whisper_installed(root: &Path, (_, asr_repo, _): WhisperBundle) -> bool {
     whisper_repos_installed(root, asr_repo)
 }
 
-/// Whisper 模型包要的仓库都装好了：`asr` 的仓库、分词器与 Silero（Core ML 与 MLX 相同）。
+/// All the repos the Whisper bundle needs are installed: the `asr` repo, the tokenizer and Silero (same for Core ML and MLX).
 fn whisper_repos_installed(root: &Path, asr_repo: &str) -> bool {
     [asr_repo, WHISPER_TOKENIZER_REPO, "aufklarer/Silero-VAD-v6.2.1-MLX"]
         .iter()
         .all(|repo| is_installed(root, repo))
 }
 
-/// 一个 Whisper 模型包：英文样本（自动识别语言、带识别提示的断言语言）、中文样本、Whisper 才认的语言与它不认的语言。
-/// 装了可选的对齐器时词时间是对齐出来的（`check_output_on` 逐词核对），否则按字符长度估计。没装时打印一行就跳过。
-/// `bundle` 是模型包的 `model.load` 参数，`backend` 是结果 provenance 里应有的后端。
+/// One Whisper bundle: an English sample (language auto-detected, asserting the language the recognition hint gives), a Chinese sample, a language Whisper recognizes, and one it does not. If the optional aligner is installed, word timing comes from alignment (checked word by word in `check_output_on`). Otherwise it is estimated from character length. If it is not installed, print one line and skip.
+/// `bundle` is the bundle's `model.load` parameters. `backend` is the backend expected in the result's provenance.
 fn transcribes_with_whisper(bundle: Option<Value>, backend: &str) {
     let root = models_root();
     let Some(bundle) = bundle else {
@@ -614,7 +611,7 @@ fn transcribes_with_whisper(bundle: Option<Value>, backend: &str) {
     eprintln!("{} test-sample.wav ({elapsed:?}): {text}", bundle_id);
     eprintln!("stats: {}", result(&response)["stats"]);
 
-    // 断言语言 + 识别提示（作 initial prompt）。
+    // Asserted language, plus the recognition hint (used as the initial prompt).
     let staging = tempfile::tempdir().unwrap();
     let mut params = job_params(
         "job-whisper-hint",
@@ -647,7 +644,7 @@ fn transcribes_with_whisper(bundle: Option<Value>, backend: &str) {
     assert_eq!(chinese["language"]["tag"], "zh");
     eprintln!("{} chinese-sample.wav: {}", bundle_id, transcript(&chinese));
 
-    // Whisper 的语言表：斯瓦希里语认（Qwen3-ASR 不认），菲律宾语不认。
+    // Whisper's language table: Swahili is recognized (Qwen3-ASR does not recognize it), Filipino is not.
     let staging = tempfile::tempdir().unwrap();
     let params = job_params(
         "job-whisper-sw",
@@ -694,7 +691,7 @@ fn transcribes_with_whisper_large_v3_turbo() {
     transcribes_with_whisper(bundle, "coreml");
 }
 
-/// 已安装的 Whisper（MLX）模型包；没装时 `None`。
+/// The installed Whisper (MLX) bundle. `None` if it is not installed.
 fn installed_whisper_mlx(root: &Path, whisper: WhisperMlxBundle) -> Option<Value> {
     whisper_repos_installed(root, whisper.1).then(|| whisper_mlx_bundle(root, whisper))
 }
@@ -711,8 +708,7 @@ fn transcribes_with_whisper_large_v3_turbo_mlx() {
     transcribes_with_whisper(installed_whisper_mlx(&models_root(), WHISPER_LARGE_V3_TURBO_MLX), "mlx");
 }
 
-/// 一中一英两段话（中间停 1 秒，VAD 切成两段），自动识别语言，两种先后次序：任务的语言是第一段的，但不强加给第二段，
-/// 每段按自己的语言识别。Whisper 在给定的语言下会把另一种语言翻译过来（v2 把第一段的语言锁给之后的段，就是这样）。
+/// One Chinese and one English passage (a 1-second pause in between, so VAD splits them into two segments), language auto-detected, in both orders. The task's language comes from the first segment but is not forced onto the second, and each segment is recognized in its own language. Given a language, Whisper translates the other language into it. (v2 locked the first segment's language for the later segments, which is what happened.)
 fn keeps_each_language_of_a_bilingual_recording(bundle: Value, backend: &str) {
     let mut worker = loaded_worker_with(bundle);
     let dir = tempfile::tempdir().unwrap();
@@ -766,12 +762,12 @@ fn keeps_each_language_of_a_bilingual_recording_with_whisper_large_v3() {
     keeps_each_language_of_a_bilingual_recording(whisper_bundle(&root, WHISPER_LARGE_V3), "coreml");
 }
 
-/// 本机装好了 MOSS 就加载（没有预热一步，`warmupMs` 是 0）；没装返回 `None`，打印一行。
+/// If MOSS is installed, load it (there is no warmup step, so `warmupMs` is 0). If it is not installed, return `None` and print one line.
 fn loaded_moss_worker() -> Option<WorkerProcess> {
     loaded_moss_worker_with(|bundle| bundle, LOAD_TIMEOUT)
 }
 
-/// 同 [`loaded_moss_worker`]，模型包先经 `adapt` 改写（换后端）。
+/// Same as [`loaded_moss_worker`], with the bundle first rewritten by `adapt` (backend swap).
 fn loaded_moss_worker_with(adapt: impl FnOnce(Value) -> Value, load_timeout: Duration) -> Option<WorkerProcess> {
     let root = models_root();
     let asr_repo = MOSS_TRANSCRIBE_DIARIZE.1;
@@ -813,7 +809,7 @@ fn loaded_moss_worker_with(adapt: impl FnOnce(Value) -> Value, load_timeout: Dur
     Some(worker)
 }
 
-/// MOSS 的结果：段按时间排开、词落在段内；对齐只用于长于 5 秒的行，其余的行词时间按字符长度估计。
+/// The MOSS result: segments are ordered by time, and words fall inside their segments. Alignment is used only for lines longer than 5 seconds. Other lines estimate word timing from character length.
 fn check_moss_output(response: &Value, staging: &Path) -> Value {
     check_moss_output_on(response, staging, MOSS_TRANSCRIBE_DIARIZE.0, "mlx")
 }
@@ -859,12 +855,12 @@ fn moss_job(job_id: &str, file: &Path, staging: &Path, language: Value, diarize:
     params
 }
 
-/// 把几个 16 kHz 单声道 16 位的样本首尾相接，写进 `dir/name`。
+/// Concatenate several 16 kHz mono 16-bit samples end to end and write them to `dir/name`.
 fn joined_fixtures(dir: &Path, name: &str, samples: &[&str]) -> PathBuf {
     joined_fixtures_with_gap(dir, name, samples, 0.0)
 }
 
-/// 同 [`joined_fixtures`]，样本之间插 `gap` 秒静音。
+/// Same as [`joined_fixtures`], with `gap` seconds of silence inserted between the samples.
 fn joined_fixtures_with_gap(dir: &Path, name: &str, samples: &[&str], gap: f64) -> PathBuf {
     let joined = dir.join(name);
     let spec = hound::WavSpec {
@@ -900,8 +896,7 @@ fn print_segments(asr: &Value) {
     }
 }
 
-/// MOSS：英文样本自动识别（数字写成阿拉伯数字也算）、断言语言 + 识别提示（MOSS 没有提示通道，报 `hint-ignored`），
-/// 中文样本。不要说话人时不带标签。
+/// MOSS: the English sample is auto-detected (digits written as numerals also count). It asserts the language and the recognition hint (MOSS has no hint channel, so it reports `hint-ignored`). Then the Chinese sample. Without speakers requested, there are no labels.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with MOSS Transcribe Diarize installed"]
 fn transcribes_with_moss() {
@@ -987,7 +982,7 @@ fn transcribes_with_moss() {
     );
     eprintln!("MOSS chinese-sample.wav: {}", transcript(&chinese));
 
-    // 同一个人连说两遍：长于 5 秒的行（如果模型给出了）在行窗口内强制对齐，其余按字符长度估计。
+    // The same person speaking twice in a row: lines longer than 5 seconds (if the model provides them) are force-aligned within the line window. Others are estimated from character length.
     let dir = tempfile::tempdir().unwrap();
     let twice = joined_fixtures(dir.path(), "twice.wav", &["test-sample.wav", "test-sample.wav"]);
     let staging = tempfile::tempdir().unwrap();
@@ -1028,7 +1023,7 @@ fn transcribes_with_moss() {
         assert!(aligned > 0);
     }
 
-    // `align` 在 MOSS 模型包上同样可用：对齐器按需加载。
+    // `align` also works on MOSS bundles: the aligner is loaded on demand.
     if is_installed(&models_root(), QWEN3_FORCED_ALIGNER) {
         let staging = tempfile::tempdir().unwrap();
         let text = "Testing, one two three. CucCut is ready!";
@@ -1045,8 +1040,7 @@ fn transcribes_with_moss() {
     assert!(worker.wait_exit(Duration::from_secs(5)).is_some_and(|status| status.success()));
 }
 
-/// 两个说话人：英文样本接中文样本（测试时现拼一个临时文件）。要说话人时至少分出两个人；装了说话人模型时用它合并
-/// 说话人（`provenance.models.speaker`）。
+/// Two speakers: the English sample followed by the Chinese sample (a temporary file assembled during the test). When speakers are requested, at least two people must be separated. If the speaker model is installed, it is used to merge speakers (`provenance.models.speaker`).
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with MOSS Transcribe Diarize installed"]
 fn diarizes_two_speakers_with_moss() {
@@ -1093,7 +1087,7 @@ fn diarizes_two_speakers_with_moss() {
     let (_, status) = worker.call("worker.status", json!({}), QUICK);
     eprintln!("memory after the job: {}", result(&status)["memory"]);
 
-    // 下一个任务照常识别（内存吃紧时加载说话人模型前卸下了 MOSS，这里重新加载；`CUCCUT_MEMORY_PRESSURE` 可模拟）。
+    // The next job still recognizes as usual. Under memory pressure, MOSS is unloaded before the speaker model is loaded, so it is reloaded here. `CUCCUT_MEMORY_PRESSURE` can simulate this.
     let staging = tempfile::tempdir().unwrap();
     let params = moss_job(
         "job-moss-again",
@@ -1112,11 +1106,8 @@ fn diarizes_two_speakers_with_moss() {
     assert_eq!(result(&response)["unloaded"], true);
 }
 
-/// 说话人区分（Pyannote + WeSpeaker）：英文样本、1 秒静音、中文样本（两个人，测试时现拼），识别完成后恰好分出两个人，
-/// 英文样本里的词是 `spk-1`、中文样本里的词是 `spk-2`，按词核对。中间要停顿：两个样本首尾直接相接时 VAD 切出的是
-/// 同一段，一段里先英文后中文、中间不停，两个识别模型都判成中文并丢掉英文（模型的局限，v2 相同）。同一个 Worker
-/// 接着不要说话人再跑一遍：文本相同，不带说话人。
-/// 「说话人区分」模型包或识别模型包没装时打印一行就跳过。
+/// Speaker diarization (Pyannote + WeSpeaker): the English sample, 1 second of silence, then the Chinese sample (two people, assembled during the test). After recognition, exactly two people must be separated: the words in the English sample are `spk-1` and those in the Chinese sample are `spk-2`, checked word by word. A pause is needed in between. If the two samples are joined head to tail, VAD cuts them into one segment, and within that segment, English followed by Chinese with no pause, both recognition models judge it to be Chinese and drop the English (a limitation of the models, same in v2). The same Worker then runs again without speakers: the text is the same, with no speaker labels.
+/// If the speaker-diarization bundle or the recognition bundle is not installed, print one line and skip.
 fn diarizes_two_speakers_with(bundle: Option<Value>, backend: &str, timeout: Duration) {
     let root = models_root();
     let Some(bundle) = bundle.and_then(|bundle| with_diarization(&root, bundle)) else {
@@ -1168,7 +1159,7 @@ fn diarizes_two_speakers_with(bundle: Option<Value>, backend: &str, timeout: Dur
         json!([{ "id": "spk-1", "label": null }, { "id": "spk-2", "label": null }]),
         "expected exactly two speakers"
     );
-    // 离接缝 0.3 秒以外的词按所在的样本核对；两个样本里都要有词。
+    // Words more than 0.3 seconds away from the seam are checked against the sample they come from. Both samples must contain words.
     let mut seen = std::collections::BTreeSet::new();
     for segment in asr["segments"].as_array().unwrap() {
         assert!(["spk-1", "spk-2"].contains(&segment["speakerId"].as_str().unwrap()), "{segment}");
@@ -1228,11 +1219,11 @@ fn diarizes_two_speakers_with_whisper_large_v3() {
     diarizes_two_speakers_with(bundle, "coreml", JOB_TIMEOUT);
 }
 
-/// candle 在 CPU 上加载与识别都比 Metal 慢一个数量级（1.7B 反量化成 f32 约 7 GiB）。
+/// On CPU, candle is an order of magnitude slower than Metal for both loading and recognition (the 1.7B model dequantized to f32 is about 7 GiB).
 #[cfg(feature = "backend-candle")]
 const CANDLE_TIMEOUT: Duration = Duration::from_secs(1_800);
 
-/// Worker 此刻的进程常驻内存（candle 的 `worker.status.memory.active`）。
+/// The Worker process's current resident memory (candle's `worker.status.memory.active`).
 #[cfg(feature = "backend-candle")]
 fn rss_gib(worker: &mut WorkerProcess) -> String {
     let (_, status) = worker.call("worker.status", json!({}), QUICK);
@@ -1241,8 +1232,7 @@ fn rss_gib(worker: &mut WorkerProcess) -> String {
     format!("rss {:.2} GiB, peak {:.2} GiB", gib(&memory["active"]), gib(&memory["peak"]))
 }
 
-/// candle（CPU）上的 Qwen3-ASR：`worker.hello` 报 candle 可用、设备 `cpu`、两种识别 family 与 `align`；英文、中文样本
-/// 识别，装了对齐器时词时间对齐出来，并用 `align` 给已知文本对时间。
+/// Qwen3-ASR on candle (CPU): `worker.hello` reports candle available, device `cpu`, both recognition families and `align`. The English and Chinese samples are recognized. If the aligner is installed, word timing is aligned, and `align` is used to time known text.
 #[cfg(feature = "backend-candle")]
 fn candle_transcribes_with(bundle_id: &str, asr: (&str, &str)) {
     let root = models_root();
@@ -1348,7 +1338,7 @@ fn candle_transcribes_with_qwen3_asr_1_7b() {
     candle_transcribes_with(QWEN3_ASR_1_7B_CANDLE, QWEN3_ASR_1_7B);
 }
 
-/// candle（CPU）上的 MOSS：英文样本识别，英文接中文的两人样本分出至少两个说话人（装了说话人模型时用它合并）。
+/// MOSS on candle (CPU): the English sample is recognized. The two-person sample (English followed by Chinese) separates at least two speakers (if the speaker model is installed, it is used to merge them).
 #[cfg(feature = "backend-candle")]
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with MOSS Transcribe Diarize installed"]
@@ -1415,7 +1405,7 @@ fn candle_transcribes_and_diarizes_with_moss() {
     assert_eq!(result(&response)["unloaded"], true);
 }
 
-/// candle（CPU）上的 Qwen3-ASR 0.6B 加「说话人区分」模型包：同 [`diarizes_two_speakers_with_qwen3_asr`]。
+/// Qwen3-ASR 0.6B on candle (CPU) with the speaker-diarization bundle: same as [`diarizes_two_speakers_with_qwen3_asr`].
 #[cfg(feature = "backend-candle")]
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Qwen3-ASR 0.6B, Silero and the speaker diarization pack installed"]

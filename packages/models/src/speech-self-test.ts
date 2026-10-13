@@ -3,13 +3,12 @@ import { ModelsSpeechSelfTest as M } from '@cuccut/protocol/messages/models/spee
 import type { BundleDefinition } from './bundle-registry.ts';
 
 /**
- * 本地语音合成模型包的自检（架构设计 §6.3，Model Worker 协议规范 §4.3）：用模型自己的默认声音合成一句固定的短句，
- * 检查输出是能解码的 WAV、时长合理、不是静音、没有削波。不判断读得对不对（那要另一个识别模型），只证明整条合成链路能出声。
+ * Self-test for local speech synthesis model packages (architecture design §6.3, Model Worker protocol spec §4.3): synthesises a fixed short sentence with the model's own default voice, and checks that the output is a decodable WAV, has a reasonable duration, is not silent, and does not clip. It does not judge whether the reading is correct (that would need another recognition model); it only proves that the whole synthesis chain can produce sound.
  */
 
-/** 每种语言一句（按 BCP 47 主语言子标签）。模型不列出这些语言、或接受任意语言时用英文那句。 */
+/** One sentence per language (keyed by the BCP 47 primary language subtag). When the model does not list these languages, or accepts any language, the English sentence is used. */
 export const SPEECH_SELF_TEST_SENTENCES: Readonly<Record<string, string>> = {
-  // i18n-ignore-start: 自检朗读样本（交给模型合成的固定句子，按语言各一句）
+  // i18n-ignore-start: self-test reading samples (fixed sentences handed to the model for synthesis, one per language)
   zh: '这是一段语音合成的自检。',
   en: 'This is a short speech synthesis check.',
   ja: 'これは音声合成の短いテストです。',
@@ -25,19 +24,19 @@ export const SPEECH_SELF_TEST_SENTENCES: Readonly<Record<string, string>> = {
 };
 const FALLBACK_LANGUAGE = 'en';
 
-/** 判定的阈值（写在 Model Worker 协议规范 §4.3）。 */
+/** Thresholds for the verdict (written in Model Worker protocol spec §4.3). */
 export const SPEECH_SELF_TEST_LIMITS = {
-  /** 一句短句合成出的时长下限与上限（秒）。 */
+  /** Lower and upper bounds on the duration of a synthesised short sentence (seconds). */
   minDurationSec: 0.3,
   maxDurationSec: 30,
-  /** 整段的均方根（满幅为 1）低于这个值就当作静音（约 -60 dBFS）。 */
+  /** If the RMS of the whole clip (full scale = 1) is below this value, it counts as silence (about -60 dBFS). */
   minRms: 0.001,
-  /** 到了满幅（|x| ≥ `clipLevel`）的样本占全部样本的比例高于这个值就当作削波。 */
+  /** If the proportion of samples at full scale (|x| ≥ `clipLevel`) out of all samples is above this value, it counts as clipping. */
   clipLevel: 0.999,
   maxClippedRatio: 0.001,
 } as const;
 
-/** 自检的请求：模型列出的第一种有句子的语言；接受任意语言或都没有句子时用英文。声音用模型的默认声音（不指定）。 */
+/** The self-test request: the first language the model lists that has a sentence; when it accepts any language, or none of its languages has a sentence, English is used. The voice is the model's default voice (not specified). */
 export function speechSelfTestRequest(def: BundleDefinition): SynthesizeSpeechRequest & { language: string } {
   const listed = def.speech?.languages;
   const language =
@@ -52,24 +51,24 @@ export interface WavFacts {
   sampleRate: number;
   channels: number;
   bitsPerSample: number;
-  /** `pcm`：整数 PCM；`float`：IEEE 浮点。 */
+  /** `pcm`: integer PCM; `float`: IEEE float. */
   encoding: 'pcm' | 'float';
   durationSec: number;
-  /** 所有声道合在一起的均方根，满幅为 1。 */
+  /** RMS over all channels together, full scale = 1. */
   rms: number;
-  /** 所有样本里的最大绝对值，满幅为 1。 */
+  /** Maximum absolute value across all samples, full scale = 1. */
   peak: number;
-  /** 到了满幅（|x| ≥ 0.999）的样本占全部样本的比例。 */
+  /** Proportion of samples at full scale (|x| ≥ 0.999) out of all samples. */
   clippedRatio: number;
 }
 
-/** 解析 WAV（RIFF/WAVE，PCM 16/24/32 位或 32 位浮点）：不合格式时给出原因。 */
+/** Parses a WAV (RIFF/WAVE, PCM 16/24/32-bit or 32-bit float); gives the reason when the format is not acceptable. */
 export function inspectWav(bytes: Buffer): { ok: true; wav: WavFacts } | { ok: false; problem: string } {
   const parsed = parseWav(bytes);
   return parsed.ok ? parsed : { ok: false, problem: parsed.problem.text };
 }
 
-/** 同 `inspectWav`，原因带消息引用（嵌进自检判定的句子里）。 */
+/** Same as `inspectWav`, but the reason carries a message reference (embedded in the self-test verdict sentence). */
 export function parseWav(bytes: Buffer): { ok: true; wav: WavFacts } | { ok: false; problem: Localized } {
   if (bytes.length < 12 || bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') {
     return { ok: false, problem: M.notWav() };
@@ -83,7 +82,7 @@ export function parseWav(bytes: Buffer): { ok: true; wav: WavFacts } | { ok: fal
     const body = offset + 8;
     if (id === 'fmt ' && size >= 16 && body + 16 <= bytes.length) {
       let format = bytes.readUInt16LE(body);
-      // WAVE_FORMAT_EXTENSIBLE：真正的格式在子格式 GUID 的前两个字节。
+      // WAVE_FORMAT_EXTENSIBLE: the real format is in the first two bytes of the sub-format GUID.
       if (format === 0xfffe && size >= 40 && body + 26 <= bytes.length) format = bytes.readUInt16LE(body + 24);
       fmt = {
         format,
@@ -141,8 +140,7 @@ export function parseWav(bytes: Buffer): { ok: true; wav: WavFacts } | { ok: fal
 }
 
 /**
- * 自检的判定：能解码、时长在范围内、不是静音、没有削波。不通过时给出原因：`problem` 是当前语言的文本，`problemRef` 是它的
- * 消息引用（记进检查结果的 `detailRef`、任务错误的 `messageRef`）。
+ * Verdict of the self-test: decodes, duration within range, not silent, does not clip. If it fails, the reason is given: `problem` is the text in the current language, and `problemRef` is its message reference (recorded in the check result's `detailRef` and the task error's `messageRef`).
  */
 export function speechSelfTestVerdict(
   bytes: Buffer,

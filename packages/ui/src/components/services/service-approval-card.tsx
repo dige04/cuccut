@@ -13,10 +13,10 @@ import { APPROVAL_CARD_COPY } from './services-copy.ts';
 import { toastFailure } from './use-service-actions.ts';
 
 /*
- * 服务审批卡（原型 designs/cuccut/app/page-services.jsx `.svc__ask`；架构设计 §3.12、§4.8）：
- * 「修改前询问」下外部客户端的写入、任务与生成，在这里逐条确认；50 秒没人处理按拒绝。
- * 要外发数据又没有授权覆盖时（§12.5，`tasks` 主题统一列表里的 `grants`），允许分「只允许这一次」与「允许并记住」。
- * 原型的「详情」里有完整参数；Runtime 的审批只带一行摘要（不含参数正文），所以没有「详情」与「复制完整参数」。
+ * Service approval card (prototype designs/cuccut/app/page-services.jsx `.svc__ask`; architecture design §3.12, §4.8):
+ * writes from external clients, tasks and generation under “Ask before changes” are confirmed here one by one; if nobody handles one within 50 seconds, it is rejected.
+ * When data must be sent externally and no existing authorization covers it (§12.5, `grants` in the unified list of the `tasks` topic), approval is split into “Allow this once” and “Allow and remember”.
+ * The prototype's “Details” shows full parameters. The Runtime's approval carries only a one-line summary (without the parameter body), so there is no “Details” and no “Copy full parameters”.
  */
 
 const card = style({
@@ -38,7 +38,7 @@ const callLine = style({ font: 'code-sm', color: 'gray-800', overflowWrap: 'anyw
 const small = style({ font: 'ui-xs', color: 'gray-600' });
 const buttons = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'end', gap: 8, marginTop: 12 });
 
-/** 一项服务所有还没过时限的审批，旧的在前。 */
+/** All pending approvals for one service that have not yet timed out, oldest first. */
 export function ServiceApprovals({ serviceId }: { serviceId: ServiceApproval['serviceId'] }) {
   const approvals = useServices((s) => s.approvals);
   const now = useNow(1000, approvals.length > 0);

@@ -1,5 +1,5 @@
-//! 关键帧跟着窗口走（视频格式规范 §3.15）：拆分时两半各自保留自己窗口里的帧、接缝处补取样值；合并是拆分的逆；
-//! 裁切与波纹删除按内容的位移换算 `localFrame`，`percent` 原样。音量包络同一套规则。
+//! Keyframes follow their window (video format spec §3.15): on split, each half keeps the frames within its own window, and sampled values are filled in at the seam; merge is the inverse of split;
+//! on trim and ripple delete, `localFrame` is converted by the content's shift, and `percent` is kept as is. The volume envelope follows the same rules.
 
 #![allow(clippy::result_large_err)]
 
@@ -86,7 +86,7 @@ fn bindings(video: &Video, target: &str) -> Vec<AnimationBinding> {
         .collect()
 }
 
-/// `(localFrame 或 percent, 值)`。
+/// `(localFrame or percent, value)`.
 fn keys(binding: &AnimationBinding) -> Vec<(f64, f64)> {
     binding
         .keyframes
@@ -100,7 +100,7 @@ fn span(video: &Video, id: &str) -> (i64, i64) {
     (s.from_frame, s.duration_frames)
 }
 
-/// 一个 90 帧的图形，不透明度 0 → 1（第 0 帧到第 60 帧），x 用百分比写法。
+/// A 90-frame graphic with opacity 0 → 1 (from frame 0 to frame 60), with x written as a percentage.
 fn shape_with_keyframes() -> (Video, String, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let mut video = new_video(&dir.path().join("m"));
@@ -152,7 +152,7 @@ fn split_divides_keyframes_and_join_restores_them() {
     .unwrap();
     let right = split.receipt.created_ids.iter().find(|c| c.starts_with("item")).unwrap().clone();
 
-    // 左半保留绑定 ID：第 0 帧 0，接缝（第 30 帧）补 0.5；右半是新绑定：接缝 0.5，第 30 帧 1。
+    // The left half keeps the binding ID: frame 0 is 0, and the seam (frame 30) gets 0.5 filled in; the right half is a new binding: 0.5 at the seam, 1 at frame 30.
     assert_eq!(keys(&opacity(&video, &id)), vec![(0.0, 0.0), (30.0, 0.5)]);
     assert_eq!(
         opacity(&video, &id).id,
@@ -160,12 +160,12 @@ fn split_divides_keyframes_and_join_restores_them() {
     );
     assert_eq!(keys(&opacity(&video, &right)), vec![(0.0, 0.5), (30.0, 1.0)]);
     assert!(bindings(&video, &right).iter().all(|b| before.iter().all(|o| o.id != b.id)));
-    // 百分比写法折回各自分到的那一份：左半 10 → 36.6667 在 0%–100%。
+    // Percentage values fold back into each piece's share: the left half 10 → 36.6667 across 0%–100%.
     let left_x = keys(&x(&video, &id));
     assert_eq!((left_x[0], left_x[1].0), ((0.0, 10.0), 100.0));
     assert!((left_x[1].1 - (10.0 + 80.0 / 3.0)).abs() < 1e-9);
 
-    // 合并是拆分的逆：拼回同一串帧，绑定 ID 不变，右半删掉。
+    // Merge is the inverse of split: the same run of frames is put back together, the binding ID is unchanged, and the right half is deleted.
     let joined = apply(&mut video, "cmd_join", vec![json!({ "type": "joinItems", "itemIds": [right, id] })]).unwrap();
     assert_eq!(joined.receipt.label, "Join clips");
     assert!(joined.receipt.deleted_ids.contains(&right));
@@ -173,7 +173,7 @@ fn split_divides_keyframes_and_join_restores_them() {
     assert_eq!(bindings(&video, &id), before);
     assert!(bindings(&video, &right).is_empty());
 
-    // 撤销合并，再撤销拆分：回到拆分之前。
+    // Undo the merge, then undo the split: back to before the split.
     undo(&mut video, "cmd_undo_join", &joined);
     assert_eq!(keys(&opacity(&video, &right)), vec![(0.0, 0.5), (30.0, 1.0)]);
     undo(&mut video, "cmd_undo_split", &split);
@@ -186,7 +186,7 @@ fn trimming_shifts_local_frames_and_keeps_percent_keys() {
     let (mut video, id, _dir) = shape_with_keyframes();
     let s = seq(&video);
     let x_before = keys(&x(&video, &id));
-    // 起点裁掉 15 帧：第 0 帧的帧落到窗口外，在新起点补取样值 0.25；第 60 帧变成第 45 帧。
+    // The start is trimmed by 15 frames: frame 0 falls outside the window, and a sampled value of 0.25 is filled in at the new start; frame 60 becomes frame 45.
     apply(
         &mut video,
         "cmd_trim",
@@ -197,7 +197,7 @@ fn trimming_shifts_local_frames_and_keeps_percent_keys() {
     assert_eq!(keys(&opacity(&video, &id)), vec![(0.0, 0.25), (45.0, 1.0)]);
     assert_eq!(keys(&x(&video, &id)), x_before);
 
-    // 终点裁到第 45 帧（局部第 30 帧）：之后的帧去掉，在新终点补取样值。
+    // The end is trimmed to frame 45 (local frame 30): the later frames are removed, and sampled values are filled in at the new end.
     apply(
         &mut video,
         "cmd_trim_end",
@@ -220,7 +220,7 @@ fn ripple_delete_shortens_static_items_and_rewindows_their_keyframes() {
         vec![json!({ "type": "removeRange", "sequenceId": s, "from": frames(30), "to": frames(60), "trackIds": [v1], "alignment": "exact-frame" })],
     )
     .unwrap();
-    // 图形跨过区间：只缩短 30 帧，起点不动；第 60 帧落到新终点之外，在第 60 帧补取样值 1。
+    // The graphic spans the range: it is only shortened by 30 frames and its start does not move; frame 60 falls beyond the new end, so a sampled value of 1 is filled in at frame 60.
     assert_eq!(span(&video, &id), (0, 60));
     assert_eq!(keys(&opacity(&video, &id)), vec![(0.0, 0.0), (60.0, 1.0)]);
 }
@@ -246,7 +246,7 @@ fn join_refuses_what_a_split_could_not_have_produced() {
     let cases = [
         json!({ "type": "joinItems", "itemIds": [id] }),
         json!({ "type": "joinItems", "itemIds": [id, id] }),
-        // 字段不一致又没有 keep。
+        // The fields are inconsistent and there is no keep.
         json!({ "type": "joinItems", "itemIds": [id, right] }),
     ];
     for (n, op) in cases.into_iter().enumerate() {
@@ -262,7 +262,7 @@ fn join_refuses_what_a_split_could_not_have_produced() {
     assert_eq!(err.details["keys"], json!(["place"]));
     assert_eq!(video.revision(), before);
 
-    // keep 选一边放行：取第二个（右半）的字段，留下靠前那件的 ID 与起点。
+    // keep lets one side through: it takes the fields of the second one (the right half), keeping the ID and start of the earlier piece.
     apply(
         &mut video,
         "cmd_keep",
@@ -272,7 +272,7 @@ fn join_refuses_what_a_split_could_not_have_produced() {
     assert_eq!(span(&video, &id), (0, 90));
     assert_eq!(video.state().items[&id].value.place().unwrap().opacity, Some(0.5));
 
-    // 不首尾相接：拆开后挪开右半。
+    // They do not join end-to-start: after splitting, the right half is moved away.
     let split = apply(
         &mut video,
         "cmd_split2",
@@ -298,7 +298,7 @@ fn has_ffprobe() -> bool {
     ok
 }
 
-/// 8 kHz 单声道 16 位的静音 wav。
+/// A silent 8 kHz mono 16-bit wav.
 fn write_wav(path: &Path, seconds: u32) {
     let samples = 8000 * seconds;
     let data_len = samples * 2;
@@ -365,7 +365,7 @@ fn audio_envelopes_split_and_join_like_keyframes() {
             .collect()
     };
     let before = envelope(&video, &id);
-    // 音频按精确时间拆分：0.5 秒处。
+    // The audio is split at exact time: at 0.5 seconds.
     let split = apply(&mut video, "cmd_split", vec![json!({ "type": "splitItem", "sequenceId": s, "itemId": id, "at": { "unit": "seconds", "value": "0.5" }, "alignment": "exact-frame" })]).unwrap();
     let right = split.receipt.created_ids.iter().find(|c| c.starts_with("item")).unwrap().clone();
     assert_eq!(envelope(&video, &id), vec![(0.0, 1.0), (0.5, 0.75)]);

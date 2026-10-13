@@ -14,7 +14,7 @@ import { pl } from './local-music.pl.ts';
 import { tr } from './local-music.tr.ts';
 import { vi } from './local-music.vi.ts';
 
-/** `packages/models/src/local-music.ts` 给人看的文字：本地音乐生成模型的耗时提示。 */
+/** `packages/models/src/local-music.ts`: text shown to people with the duration hint for local music generation models. */
 const en = {
   slowLocal: 'Generates on this computer with the audio.cpp engine: a one-minute track takes a few minutes; longer tracks take proportionally longer',
 };

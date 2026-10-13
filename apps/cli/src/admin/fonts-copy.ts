@@ -14,9 +14,9 @@ import { pl } from './fonts-copy.pl.ts';
 import { tr } from './fonts-copy.tr.ts';
 import { vi } from './fonts-copy.vi.ts';
 
-/** `cuccut fonts …` 的文案（英文是键与类型的来源，译文在 `fonts-copy.<语言>.ts`）。 */
+/** Copy for `cuccut fonts …`. The English is the source of the keys and types; the translations are in `fonts-copy.<language>.ts`. */
 const en = {
-  /** `cuccut fonts --help` 的正文。 */
+  /** The body of `cuccut fonts --help`. */
   help: `Usage:
   cuccut fonts [downloaded]        Downloaded fonts (Google Fonts, downloaded on demand):
                                    family, weights, size, license, and the total size

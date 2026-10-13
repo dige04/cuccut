@@ -1,15 +1,15 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/v2/mapping.ts 的 modelsFromV2 / modelRef（`provider/model` 的写法、
- * 只留 enabled 的模型、variants 当推理强度），v2/readiness.ts 的 waitForLocationReady（冷启动的目录先回空的插件表，
- * 轮询到非空才算就绪），v2/agent.ts 的 fetchCatalog。
- * 改成 CucCut 的 DriverModel；没有账号时不报错（OpenCode Zen 的免费模型不用登录），账号按已启用的 provider 报。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra). Modified:
+ * modelsFromV2 / modelRef in packages/server/src/server/agent/providers/opencode/v2/mapping.ts (the `provider/model` format,
+ * only enabled models kept, variants used as reasoning effort), waitForLocationReady in v2/readiness.ts (on cold start the directory first returns an empty plugin table; polling until it is non-empty counts as ready),
+ * and fetchCatalog in v2/agent.ts.
+ * Changed to CucCut's DriverModel. No error when there is no account (OpenCode Zen's free models need no login); accounts are reported by enabled provider.
  */
 import type { DriverModel } from '@cuccut/protocol';
 import { DriversOpencode } from '@cuccut/protocol/messages/agent-drivers';
 import type { OpenCodeServer } from './opencode-server.ts';
 
-/** `/api/model` 里的一个模型（只列用到的字段）。 */
+/** One model from `/api/model` (only the fields used are listed). */
 export interface OpenCodeModel {
   id: string;
   providerID: string;
@@ -26,18 +26,18 @@ export interface OpenCodeProvider {
   activation?: string;
 }
 
-/** OpenCode 自带、不用登录的 provider（OpenCode Zen 的免费模型）。 */
+/** Providers that ship with OpenCode and need no login (OpenCode Zen's free models). */
 export const BUILTIN_PROVIDER = 'opencode';
 
 export interface OpenCodeCatalog {
   models: DriverModel[];
-  /** 已启用的、需要账号的 provider 名称（逗号分隔）；只有自带的免费 provider 时为 null。 */
+  /** Names of the enabled providers that require an account (comma-separated); null when only the bundled free provider is present. */
   account: string | null;
 }
 
 /**
- * 等目录就绪：冷启动时 `/api/plugin` 先回空表，配置里的插件登记完才有内容（实测 2.0.24：第一次 0 个，随后 86 个）。
- * 在那之前读模型表、建会话会拿到空的结果。
+ * Waits for the catalog to be ready. On cold start `/api/plugin` first returns an empty table; content appears only after the plugin registrations from the config finish (measured on 2.0.24: 0 the first time, then 86).
+ * Before that, reading the model table or creating a session would return empty results.
  */
 export async function waitForLocation(server: OpenCodeServer, directory: string, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -49,7 +49,7 @@ export async function waitForLocation(server: OpenCodeServer, directory: string,
   }
 }
 
-/** 读模型表、默认模型与已启用的 provider。 */
+/** Reads the model table, the default model, and the enabled providers. */
 export async function readCatalog(server: OpenCodeServer, directory: string): Promise<OpenCodeCatalog> {
   await waitForLocation(server, directory);
   const [models, fallback, providers] = await Promise.all([
@@ -61,12 +61,12 @@ export async function readCatalog(server: OpenCodeServer, directory: string): Pr
   return { models: driverModels(models?.data ?? [], defaultId), account: accountOf(providers?.data ?? []) };
 }
 
-/** CucCut 的模型 id：`<providerID>/<id>`，例如 `anthropic/claude-sonnet-5`、`opencode/big-pickle`。 */
+/** CucCut's model id: `<providerID>/<id>`, for example `anthropic/claude-sonnet-5` or `opencode/big-pickle`. */
 export function modelId(model: Pick<OpenCodeModel, 'id' | 'providerID'>): string {
   return `${model.providerID}/${model.id}`;
 }
 
-/** 反过来：按第一个 `/` 拆开（模型 id 自己可能带斜杠）。拆不开时为 null。 */
+/** The reverse: split on the first `/` (the model id itself may contain slashes). Null if it cannot be split. */
 export function modelRef(id: string, effort: string | null): { providerID: string; id: string; variant?: string } | null {
   const cut = id.indexOf('/');
   if (cut <= 0 || cut === id.length - 1) return null;
@@ -91,7 +91,7 @@ export function driverModels(models: OpenCodeModel[], defaultId: string | null):
     });
 }
 
-/** 账号：除了自带的免费 provider 之外已启用的 provider。 */
+/** Accounts: the enabled providers other than the bundled free one. */
 export function accountOf(providers: OpenCodeProvider[]): string | null {
   const names = providers
     .filter((p) => p.id !== BUILTIN_PROVIDER && (p.activation === undefined || p.activation === 'enabled'))

@@ -14,7 +14,7 @@ import { pl } from './image-self-test.pl.ts';
 import { tr } from './image-self-test.tr.ts';
 import { vi } from './image-self-test.vi.ts';
 
-/** `packages/models/src/image-self-test.ts` 文生图自检没通过的原因。 */
+/** `packages/models/src/image-self-test.ts`: why the text-to-image self-test did not pass. */
 const en = {
   notPng: 'Not a PNG file',
   chunkTruncated: (p: { type: string }) => `The ${p.type} chunk is truncated`,

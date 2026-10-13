@@ -1,49 +1,32 @@
-//! 断点布局优化：候选断点全局 DP（对齐块方案 §3.3）。
+//! Breakpoint layout optimization: a global DP over candidate breakpoints (aligned with the block plan §3.3).
 //!
-//! Cue 派生算法（§18.5）保持简单、贪心且三端严格一致；展示质量来自这里的
-//! 确定性优化器。它把 §18.5 的六条规则当作**候选生成器与最终重放器**：
+//! The Cue derivation algorithm (§18.5) stays simple, greedy and strictly consistent across the three platforms; display quality comes from the deterministic optimizer here. It treats the six rules of §18.5 as **the candidate generator and the final replayer**:
 //!
-//! - 硬边界（必断）：用户 `break`、说话人切换、`paraBreaks`、句末标点、
-//!   英文有足够正文/时长且后接新从句的从句标点
-//!   （Sentence 由完整 Cue 聚合，句末不可越过）；
-//! - 禁止边界：用户 `nobreak`、英文高置信度悬挂成分与固定词组内部；
-//! - 其余位置是软候选，由 DP 整体选择：
+//! - Hard boundaries (must break): user `break`, speaker change, `paraBreaks`, sentence-final punctuation, and, for English, clause punctuation where the body text/duration is sufficient and a new clause follows (Sentence is aggregated from complete Cues, so a sentence end cannot be crossed);
+//! - Forbidden boundaries: user `nobreak`, high-confidence English dangling constituents, and the interior of fixed phrases;
+//! - All other positions are soft candidates, chosen as a whole by the DP:
 //!
 //! ```text
-//! dp[j] = min over i<j, [i..j) 合法 of dp[i] + cueCost(words[i..j))
-//! cueCost = 行宽（预算外重罚；保留语义不可拆单位与显式 nobreak 的可解性）
-//!         + 阅读速度罚（cps 超 warn 线性、超 bad 平方；时窗按 lead_in/tail 借静音口径）
-//!         + 时长过短（< min_duration）/ 过长（> max_duration）罚
-//!         + 接缝罚（沿用 split.rs 标尺：句末 0 < 从句标点 0.3 < 停顿 0.5 < 普通词间 0.8
-//!                   < 悬垂冠词/介词/助词尾 1.5 < CJK 词内字界 3.0）
-//!         + 孤立短尾罚（< minClauseChars 且贴着软边界）
-//!         + 行长失衡罚（欠满平方，只作平局裁决）
-//!         + 两行失衡罚（仅 max_lines > 1 的 profile：行内换行 DP 后最宽/最窄行差的平方）
+//! dp[j] = min over i<j, [i..j) legal of dp[i] + cueCost(words[i..j))
+//! cueCost = line width (heavy penalty beyond budget; keeps semantically indivisible units and explicit nobreak solvable)
+//!         + reading-speed penalty (cps: linear beyond warn, squared beyond bad; the time window borrows the silence convention of lead_in/tail)
+//!         + too short (< min_duration) / too long (> max_duration) penalty
+//!         + seam penalty (uses the split.rs scale: sentence end 0 < clause punctuation 0.3 < pause 0.5 < ordinary inter-word 0.8 < dangling article/preposition/particle end 1.5 < CJK intra-word character boundary 3.0)
+//!         + isolated short-tail penalty (< minClauseChars and adjacent to a soft boundary)
+//!         + line-length imbalance penalty (underfill squared; only breaks ties)
+//!         + two-line imbalance penalty (only for profiles with max_lines > 1: squared difference between the widest and narrowest lines after the in-line wrap DP)
 //! ```
 //!
-//! 接缝罚按「偏离 §18.5 的代价」计：贪心自己会断的位置断开记 0，贪心不断而
-//! 我们断开按缝等级计罚，贪心要断而我们压住按被压缝的等级计罚。这样贪心布局
-//! 没有语义/可读性问题时最小 pin 集为空。语义禁切位先从候选中移除，不能用
-//! 宽度或 CPS 分数换取非法切点。英文短从句不足两条最短展示时长时，允许用
-//! overflowSlack 收入尾标点，避免制造闪现片。不可拆词组或用户 nobreak 超宽时
-//! 保留完整单位，让宽度检查报告问题；非英文保持原有软罚分与宽度策略。
+//! The seam penalty is measured as the cost of deviating from §18.5: a seam where the greedy pass would break anyway costs 0 when we break it; where greedy does not break and we do, the penalty follows the seam level; where greedy would break and we suppress that break, the penalty follows the level of the suppressed seam. This way, when the greedy layout has no semantic or readability problem, the minimal pin set is empty. Semantically forbidden cut points are removed from the candidates first and can never be bought back with width or CPS scores. When an English short clause cannot fit into two shortest display durations, overflowSlack may be used to absorb trailing punctuation, to avoid creating a flash cue. When an indivisible phrase or a user nobreak is over-width, the complete unit is kept and the width check reports the problem; non-English text keeps the original soft penalties and width strategy.
 //!
-//! 双行 profile（`LayoutProfile::max_lines = 2`，方案 §3.4）：宽度预算放大到
-//! `max_lines × maxChars`，一条 Cue 允许承载两行文字；行内怎么换行由渲染期投影
-//! 决定（不落盘），DP 只用 [`line_break_plan_with`] 复算一次换行位置来给"两行
-//! 失衡"打分，且换行数超过 `max_lines` 的段视为超宽。`default` profile
-//! （`max_lines = 1`）下这些分支全部不参与，逐字节等于单行行为。
+//! Two-line profile (`LayoutProfile::max_lines = 2`, plan §3.4): the width budget grows to `max_lines × maxChars`, so one Cue may carry two lines of text. How those lines wrap is decided by a render-time projection (not persisted). The DP uses [`line_break_plan_with`] only to recompute the line-break positions once, to score the "two-line imbalance"; a segment whose line count exceeds `max_lines` is treated as over-width. Under the `default` profile (`max_lines = 1`) none of these branches participate, and the behaviour is byte-for-byte identical to the single-line case.
 //!
-//! 输出仍是**最小 pin 集**：与 `auto_break` 重放不一致处才落 `break`/`nobreak`，
-//! 写入 `doc.auto_breaks[layoutProfile]`，**绝不写 `doc.breaks`**（那是用户显式意图，
-//! 对 DP 是约束）。任何 §18.5 实现（Studio 服务端、designs 原型、Mac 客户端）
-//! 从 words + `autoBreaks ⊕ breaks` 重放都得到同一布局，无需各自内置优化器。
+//! The output is still the **minimal pin set**: `break`/`nobreak` are written only where the replay of `auto_break` disagrees, into `doc.auto_breaks[layoutProfile]`, and **never into `doc.breaks`** (that is explicit user intent, which is a constraint for the DP). Any §18.5 implementation (Studio server, designs prototype, Mac client) that replays from words + `autoBreaks ⊕ breaks` gets the same layout, without needing its own built-in optimizer.
 //!
-//! 典型修复形态（来自真实失败样本）：
-//! - 溢出硬断把句尾单词甩成近零时长 Cue（`…reshape the` / `environment.`）
-//!   → 缝回移到行宽均衡处；
-//! - 停顿断行的句尾片语速过快（`…tools that were` / `once managed
-//!   separately.`，>21 cps）→ 缝前移让第二行获得足够时窗。
+//! Typical fix patterns (from real failure samples):
+//! - An overflow hard break throws the last words of a sentence into a Cue of near-zero duration (`…reshape the` / `environment.`) → the seam moves back to where line width is balanced;
+//! - A pause break leaves the sentence tail too fast (`…tools that were` / `once managed
+//!   separately.`, >21 cps) → the seam moves earlier so the second line gets enough time window.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -58,36 +41,30 @@ use crate::layout_profile::{CpsBudget, LayoutProfile, line_break_plan_with};
 use crate::seam::{cjk_midword_boundary, ends_dangling};
 use crate::source_boundary::{english_clause_start, english_cue_boundary_issue};
 
-/// 缝罚分标尺（与 `split.rs::seam_penalty` 同一阶梯；句末是硬边界不参与）。
+/// Seam-penalty scale (the same ladder as `split.rs::seam_penalty`; a sentence end is a hard boundary and does not participate).
 const SEAM_CLAUSE: f64 = 0.3;
 const SEAM_PAUSE: f64 = 0.5;
 const SEAM_WORD: f64 = 0.8;
-/// 悬垂冠词/介词/助词后的缝（`seam.rs::ends_dangling`）：语法上不可停顿，
-/// 但源词是 ASR 原子，长句里未必有更好的缝，故重罚不禁止。
+/// Seam after a dangling article/preposition/particle (`seam.rs::ends_dangling`): grammatically it must not be a pause point, but source words are ASR atoms, and in long sentences there may be no better seam, so it is penalized heavily rather than forbidden.
 const SEAM_DANGLING: f64 = 1.5;
-/// CJK 词内字界（两侧都是表意字且无标点/空白）：与 `split.rs` 的无缝档同量级。
+/// CJK intra-word character boundary (both sides are ideographs with no punctuation or whitespace): same magnitude as the seamless tier in `split.rs`.
 const SEAM_CJK_MIDWORD: f64 = 3.0;
-/// 阅读速度：cps 越过 warn 到 bad 的区间记满 0.5（线性），越过 bad 后再按
-/// 「超出量 / (bad−warn)」平方 ×4——一条 23.5 cps 的拉丁行 ≈ 2.1，足以买动
-/// 一次移缝（0.8）加一次压缝（0.5）。
+/// Reading speed: for cps between warn and bad, a linear penalty up to 0.5; beyond bad, the squared "excess / (bad−warn)" × 4. A 23.5 cps Latin line ≈ 2.1, enough to buy one seam move (0.8) plus one seam suppression (0.5).
 const READING_WARN_LINEAR: f64 = 0.5;
 const READING_BAD_QUADRATIC: f64 = 4.0;
-/// 时长：短于 min_duration 按缺口比例线性 ×3（0.58 s 的孤儿尾 ≈ 1.25，买得动
-/// 一次移缝）；长于 max_duration 按超出比例 ×2。
+/// Duration: shorter than min_duration, linear × 3 by the proportional gap (an orphan tail of 0.58 s ≈ 1.25, enough to buy one seam move); longer than max_duration, × 2 by the proportional excess.
 const SHORT_DURATION_PENALTY: f64 = 3.0;
 const LONG_DURATION_PENALTY: f64 = 2.0;
-/// 孤立短段（< minClauseChars 且贴着软边界）按短缺比例 ×1。
+/// Isolated short segment (< minClauseChars and adjacent to a soft boundary): × 1 by the proportional shortfall.
 const ORPHAN_PENALTY: f64 = 1.0;
-/// 超过 maxChars：视为无穷（保持有限只是为了 DP 在用户 nobreak 焊死或单词
-/// 本身超宽时仍有解，且越宽越差）。
+/// Beyond maxChars: treated as infinite (keeping it finite only ensures the DP still has a solution when a user nobreak welds words together or a single word is itself over-wide, and the wider it is, the worse).
 const OVERWIDE_PENALTY: f64 = 1e6;
-/// 欠满平方项权重：只做平局裁决，任何一次偏离（≥ 0.3）都买不动。
+/// Weight of the underfill squared term: it only breaks ties; any real deviation (≥ 0.3) cannot be bought with it.
 const UNDERFILL_WEIGHT: f64 = 0.1;
-/// 两行失衡权重（仅 `max_lines > 1`）：最宽行与最窄行之差占单行宽的比例平方。
-/// 一行 42、一行 21 时 ≈ 0.25，能买动一次欠满平局但买不动一次移缝（0.8）。
+/// Two-line imbalance weight (only `max_lines > 1`): the squared ratio of the difference between the widest and narrowest lines to the single-line width. For one line of 42 and one of 21 ≈ 0.25, enough to buy an underfill tie-break but not a seam move (0.8).
 const LINE_IMBALANCE_WEIGHT: f64 = 1.0;
 
-/// 文档脚本的阅读速度预算：取前 80 个词判定 CJK（Han/Kana/Hangul）。
+/// Reading-speed budget for the document script: CJK (Han/Kana/Hangul) is determined from the first 80 words.
 fn reading_budget(words: &[Word], profile: &LayoutProfile) -> CpsBudget {
     let sample: String = words
         .iter()
@@ -97,14 +74,14 @@ fn reading_budget(words: &[Word], profile: &LayoutProfile) -> CpsBudget {
     profile.cps_for_script(is_cjk_text(&sample))
 }
 
-/// 边界分类（词 `k` 之后的缝）。
+/// Boundary classification (the seam after word `k`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Seam {
-    /// 必断：末词、用户 break、说话人切换、段落钉、句末、受保护的英文从句标点。
+    /// Must break: last word, user break, speaker change, paragraph pin, sentence end, and protected English clause punctuation.
     Hard,
-    /// 禁断：用户 nobreak 或英文已识别的非法词组边界，硬边界仍压过它。
+    /// Must not break: user nobreak, or a recognized illegal English phrase boundary; hard boundaries still override it.
     Forbidden,
-    /// 软候选。
+    /// Soft candidate.
     Soft,
 }
 
@@ -129,7 +106,7 @@ fn classify_seams(
                 clause_width += word_sep(&words[k - 1].text, word);
             }
             clause_width += visual_width(&word.text);
-            // 判据只需局部词窗，避免每个切点扫描整篇前缀，使长文稿保持线性预处理。
+            // The criterion only needs a local word window; avoid scanning the whole prefix at every cut point, so long scripts keep linear preprocessing.
             let start = k.saturating_sub(2);
             let end = (k + 4).min(words.len());
             let seam = if next.sp != word.sp || para_breaks.get(&next.id).copied().unwrap_or(false)
@@ -166,22 +143,21 @@ fn classify_seams(
         .collect()
 }
 
-/// 规则版缝等级（低 = 更愿意在此断）：标点 > 停顿 > CJK 词内字界 > 普通词界。
+/// Rule-based seam level (lower = more willing to break here): punctuation > pause > CJK intra-word character boundary > ordinary word boundary.
 fn seam_grade(word: &Word, next: &Word, params: &CueParams) -> f64 {
     if clause_end_char(&word.text).is_some() {
         SEAM_CLAUSE
     } else if next.t0 - word.t1 >= params.pause_sec {
         SEAM_PAUSE
     } else if next.glue || cjk_midword_boundary(&word.text, &next.text) {
-        // 带「贴前」标记的缝没有空格，与表意字之间的字缝同档。
+        // A seam marked “贴前” (attach-to-previous) has no space and sits in the same tier as the character seams between ideographs.
         SEAM_CJK_MIDWORD
     } else {
         SEAM_WORD
     }
 }
 
-/// 悬垂尾罚：无论贪心是否会在此断（贪心的溢出臂常把 `the` / `to` 甩在行尾），
-/// 缝落在悬垂冠词/介词/助词后都计罚，DP 有更好的缝就会移开。
+/// Dangling-tail penalty: whether or not greedy would break here (greedy's overflow arm often throws `the` / `to` to the end of a line), a seam after a dangling article/preposition/particle is penalized, and the DP moves away if it finds a better seam.
 fn dangling_cost(word: &Word) -> f64 {
     if clause_end_char(&word.text).is_none() && ends_dangling(&word.text) {
         SEAM_DANGLING
@@ -190,7 +166,7 @@ fn dangling_cost(word: &Word) -> f64 {
     }
 }
 
-/// 贪心在此处要断而被压住的代价：从句/停顿档按缝等级计，溢出档由行宽罚承担。
+/// The cost of suppressing a break that greedy would make here: the clause/pause tiers are charged by seam level; the overflow tier is carried by the line-width penalty.
 fn suppression_cost(word: &Word, next: &Word, line_chars: usize, params: &CueParams) -> f64 {
     if let Some(punct) = clause_end_char(&word.text) {
         let gate = if punct == '—' || punct == '–' {
@@ -218,20 +194,17 @@ struct Optimizer<'a> {
 }
 
 impl Optimizer<'_> {
-    /// profile 行数（至少 1）。
+    /// Number of lines in the profile (at least 1).
     fn max_lines(&self) -> usize {
         usize::from(self.profile.max_lines.max(1))
     }
 
-    /// 一条 Cue 的宽度预算：`max_lines × maxChars`（单行 profile 即 `maxChars`）。
+    /// Width budget of one Cue: `max_lines × maxChars` (for a single-line profile, just `maxChars`).
     fn width_budget(&self) -> usize {
         self.params.max_chars * self.max_lines()
     }
 
-    /// 两行失衡罚（方案 §3.4）：只对 `max_lines > 1` 且宽度已越过单行的段计算。
-    /// 复用 studio `sourceDisplayLines` 的均衡 + 边界罚分口径（Rust 移植
-    /// [`line_break_plan_with`]，宽度按 `visual_width` 与本文件其余尺度一致），
-    /// 换行数超过 `max_lines` 视为超宽（与行宽无穷罚同档）。
+    /// Two-line imbalance penalty (plan §3.4): computed only for `max_lines > 1` and for segments whose width already exceeds a single line. It reuses the balancing and boundary-penalty scoring of studio `sourceDisplayLines` (Rust port [`line_break_plan_with`]; width is measured by `visual_width`, consistent with the rest of this file). A line count above `max_lines` counts as over-width (same tier as the infinite width penalty).
     fn line_imbalance_cost(&self, words: &[Word], width: usize) -> f64 {
         let max_lines = self.max_lines();
         let max_chars = self.params.max_chars;
@@ -268,13 +241,13 @@ impl Optimizer<'_> {
         }
     }
 
-    /// `[i..j)` 作为一条 Cue 的代价（不含无穷宽度以外的合法性判断）。
+    /// The cost of `[i..j)` as one Cue (excluding legality checks other than infinite width).
     fn segment_cost(&self, i: usize, j: usize) -> f64 {
         let words = &self.words[i..j];
         let params = self.params;
         let mut cost = 0.0;
 
-        // 沿段内重放贪心：压住的贪心断点计罚；末缝按偏离计。
+        // Replay greedy within the segment: a suppressed greedy break is penalized; the final seam is charged by its deviation.
         let mut line = 0_usize;
         for (offset, word) in words.iter().enumerate() {
             if offset > 0 {
@@ -298,12 +271,10 @@ impl Optimizer<'_> {
             }
         }
 
-        // 行宽（双行 profile 下预算是 max_lines × maxChars）。
+        // Line width (under a two-line profile the budget is max_lines × maxChars).
         let width = visual_width(&join_word_texts(words));
         let max_chars = self.width_budget();
-        // 两条各至少 min_duration 的 Cue 放不下这个短从句时，允许用既有
-        // overflow_slack 收入尾标点，避免 “I think | that's ... world.” 闪现片。
-        // 长句仍在正常宽度内选合法切点；不把余量扩成所有行的新目标。
+        // When two Cues that each last at least min_duration cannot hold this short clause, the existing overflow_slack may be used to absorb trailing punctuation, to avoid a flash cue like “I think | that's ... world.”. Long sentences still choose legal cut points within the normal width; the margin is not expanded into a new target for all lines.
         let short_clause_slack = self.english
             && (clause_end_char(&words[words.len() - 1].text).is_some()
                 || sentence_end(&words[words.len() - 1].text))
@@ -317,7 +288,7 @@ impl Optimizer<'_> {
         }
         cost += self.line_imbalance_cost(words, width);
 
-        // 阅读速度与时长（借静音口径与屏幕呈现一致）。
+        // Reading speed and duration (borrowing the silence convention, so they match on-screen presentation).
         let window = self.profile.display_window(
             words[0].t0,
             words[words.len() - 1].t1,
@@ -355,7 +326,7 @@ impl Optimizer<'_> {
             cost += LONG_DURATION_PENALTY * (window - max_duration) / max_duration;
         }
 
-        // 孤立短段：贴着软边界的过窄段。
+        // Isolated short segment: an over-narrow segment adjacent to a soft boundary.
         let start_soft = i > 0 && self.seams[i - 1] == Seam::Soft;
         let end_soft = self.seams[j - 1] == Seam::Soft;
         if width < params.min_clause_chars && (start_soft || end_soft) {
@@ -365,7 +336,7 @@ impl Optimizer<'_> {
         cost
     }
 
-    /// 在硬边界切出的一个块 `[start..=end]` 内求最优分段，返回各段末词下标。
+    /// Within one block `[start..=end]` cut out by hard boundaries, find the optimal segmentation and return the last-word index of each segment.
     fn solve_block(&self, start: usize, end: usize) -> Vec<usize> {
         let n = end - start + 1;
         let max_chars = self.width_budget()
@@ -412,7 +383,7 @@ impl Optimizer<'_> {
         ends
     }
 
-    /// 全文最优 Cue 末词集合。
+    /// The set of optimal Cue end-words for the whole document.
     fn desired_ends(&self) -> BTreeSet<usize> {
         let mut ends = BTreeSet::new();
         let mut start = 0;
@@ -426,7 +397,7 @@ impl Optimizer<'_> {
     }
 }
 
-/// 布局层的可见词（非空 id 且未 hidden），顺序即 `doc.words` 顺序。
+/// Visible words for layout (non-empty id and not hidden), in `doc.words` order.
 fn visible_words(doc: &TranscriptDoc) -> Vec<Word> {
     doc.words
         .iter()
@@ -436,22 +407,17 @@ fn visible_words(doc: &TranscriptDoc) -> Vec<Word> {
         .collect()
 }
 
-/// `stages.asrLayout` 指纹的组成串：用户版式串
-/// （[`TranscriptDoc::layout_strings`]，已排序）。
+/// Component strings of the `stages.asrLayout` fingerprint: the user's layout strings ([`TranscriptDoc::layout_strings`], already sorted).
 pub fn layout_fingerprint_strings(doc: &TranscriptDoc) -> Vec<String> {
     doc.layout_strings()
 }
 
-/// [`layout_fingerprint_strings`] 的指纹值：写进 `stages.asrLayout` 的串。
+/// The fingerprint value of [`layout_fingerprint_strings`]: the string written into `stages.asrLayout`.
 pub fn layout_fingerprint(doc: &TranscriptDoc) -> String {
     fingerprint_strings(layout_fingerprint_strings(doc))
 }
 
-/// 计算均衡布局的最小自动 pin 集（写入 `autoBreaks[layoutProfile]` 的内容）：
-/// 用户 `breaks`、段落钉、说话人与句末为硬约束，其余由候选断点全局 DP 决定；
-/// 只在自动阶梯与目标布局不一致、且用户未钉该词处落 `break`/`nobreak`。
-/// 段落钉缝显式落 `break`，保证不做段前封口的镜像实现（designs JS / mac
-/// Swift）逐词等价。既有 `autoBreaks` 不参与计算，因此重跑幂等。
+/// Computes the minimal automatic pin set of the balanced layout (the content written to `autoBreaks[layoutProfile]`): user `breaks`, paragraph pins, speakers and sentence ends are hard constraints, and everything else is decided by the global DP over candidate breakpoints. Only where the automatic ladder disagrees with the target layout, and the user has not pinned that word, is a `break`/`nobreak` written. Paragraph-pin seams explicitly write `break`, so that mirror implementations without the pre-paragraph seal logic (designs JS / mac Swift) stay word-for-word equivalent. Existing `autoBreaks` do not take part in the computation, so re-running is idempotent.
 pub fn balanced_cue_breaks(
     doc: &TranscriptDoc,
     params: &CueParams,
@@ -517,8 +483,7 @@ pub fn balanced_cue_breaks(
     out
 }
 
-/// 用均衡布局钉集覆写 `doc.auto_breaks[layoutProfile]`（空集则移除该 profile
-/// 的表）；返回是否有变化。`doc.breaks` 只读。
+/// Overwrites `doc.auto_breaks[layoutProfile]` with the balanced-layout pin set (an empty set removes that profile's table); returns whether anything changed. `doc.breaks` is read-only.
 pub fn apply_balanced_cues(doc: &mut TranscriptDoc, params: &CueParams) -> bool {
     let profile = doc.layout_profile_id().to_owned();
     let pins = balanced_cue_breaks(doc, params);
@@ -533,29 +498,23 @@ pub fn apply_balanced_cues(doc: &mut TranscriptDoc, params: &CueParams) -> bool 
     true
 }
 
-/// 铺设均衡布局：总是运行（用户 `breaks` 与 `paraBreaks` 是硬约束，不再因
-/// 「已有钉集」整篇跳过），结果只进 `autoBreaks`。返回是否有变化。
+/// Lays out the balanced layout. It always runs (user `breaks` and `paraBreaks` are hard constraints; it is no longer skipped for the whole document just because "pins already exist"), and the result goes only into `autoBreaks`. Returns whether anything changed.
 pub fn ensure_balanced_cue_layout(doc: &mut TranscriptDoc, params: &CueParams) -> bool {
     apply_balanced_cues(doc, params)
 }
 
-/// 布局出口统计：口径与 designs 原型 `optimizeBreaks` 的
-/// `stats.after / stats.longAfter` 一致（`over_width` 为新增的越界计数）。
-/// 越界判据是 profile 预算 [`LayoutProfile::cue_width_budget`]（单行 profile 即
-/// 自动阶梯的实际天花板 `max_chars + overflow_slack`；双行 profile 为
-/// `2 × max_chars + overflow_slack`）；正常管线出口应恒为 `over_width == 0`，
-/// 非零即代表布局层放出了预算之外的超宽行，属于回归信号。
+/// Layout exit statistics, with the same meaning as `stats.after / stats.longAfter` of `optimizeBreaks` in the designs prototype (`over_width` is the new over-width count). The over-width criterion is the profile budget [`LayoutProfile::cue_width_budget`] (for a single-line profile this is the actual ceiling of the automatic ladder, `max_chars + overflow_slack`; for a two-line profile it is `2 × max_chars + overflow_slack`). On the normal pipeline output, `over_width == 0` should always hold; a non-zero value means the layout layer emitted over-wide lines beyond the budget, which is a regression signal.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CueLayoutStats {
-    /// 派生 Cue 条数。
+    /// Number of derived Cues.
     pub cues: usize,
-    /// 最长 Cue 的视觉宽度（CJK 计 2）。
+    /// Visual width of the longest Cue (CJK counts as 2).
     pub longest_width: usize,
-    /// 超过单行预算的 Cue 条数。
+    /// Number of Cues that exceed the single-line budget.
     pub over_width: usize,
 }
 
-/// 按当前钉表（`autoBreaks ⊕ breaks`）派生 Cue 并统计宽度分布。
+/// Derives Cues from the current pin table (`autoBreaks ⊕ breaks`) and computes the width distribution.
 pub fn cue_layout_stats(doc: &TranscriptDoc, params: &CueParams) -> CueLayoutStats {
     let budget = LayoutProfile::for_doc(doc).cue_width_budget(params);
     let cues = derive_cues(doc, params);
@@ -573,14 +532,9 @@ pub fn cue_layout_stats(doc: &TranscriptDoc, params: &CueParams) -> CueLayoutSta
     stats
 }
 
-/// 删除把超宽 Cue 焊死的 `nobreak` 覆盖（用户 `breaks` 与当前 profile 的
-/// `autoBreaks` 都查）；普通 `break` 与未造成超宽的 `nobreak` 均保留。超宽
-/// 判据取 profile 预算 [`LayoutProfile::cue_width_budget`]：双行 profile 下
-/// 优化器焊出的两行 Cue 不算超宽。
+/// Removes the `nobreak` overrides that weld an over-wide Cue together (both user `breaks` and the current profile's `autoBreaks` are checked). Ordinary `break`s and any `nobreak` that does not cause over-width are kept. The over-width criterion is the profile budget [`LayoutProfile::cue_width_budget`]: under a two-line profile, a two-line Cue that the optimizer produced is not over-wide.
 ///
-/// rebind 改变词 id/标点后，旧的布局钉可能从「抑制一个过早断点」变成
-/// 「抑制唯一合法断点」，形成无法在 UI/导出层再折行的超宽 Cue。逐轮只移除
-/// 超宽 Cue 内的 `nobreak`，让规范自动阶梯重新获得断行权；返回实际移除数。
+/// After a rebind changes word ids or punctuation, an old layout pin can go from "suppressing an early break" to "suppressing the only legal break", forming an over-wide Cue that the UI/export layers cannot re-wrap. Each round removes only the `nobreak`s inside over-wide Cues, so the canonical automatic ladder regains the right to break; returns the number actually removed.
 pub fn remove_overwide_nobreaks(doc: &mut TranscriptDoc, params: &CueParams) -> usize {
     let budget = LayoutProfile::for_doc(doc).cue_width_budget(params);
     let profile = doc.layout_profile_id().to_owned();
@@ -799,10 +753,7 @@ mod tests {
         assert_eq!(cue_layout_stats(&doc, &CueParams::default()).over_width, 0);
     }
 
-    /// 真实失败样本 A：溢出硬断把句尾单词甩成近零时长孤儿 Cue（0.58 s < 1 s）。
-    /// DP 后缝回移到行宽均衡处，孤儿消失；结果只进 `autoBreaks`。
-    /// 与旧成对优化器的差异：旧版移到 `…beginning to | reshape…`，DP 对悬垂
-    /// 不定式 `to` 计罚（方案 §3.3 禁止边界），因此选 `…beginning | to reshape…`。
+    /// Real failure sample A: an overflow hard break throws the last word of a sentence into a near-zero-duration orphan Cue (0.58 s < 1 s). After the DP, the seam moves back to where line width is balanced and the orphan disappears; the result goes only into `autoBreaks`. The difference from the old pairwise optimizer: the old one moved it to `…beginning to | reshape…`, but the DP penalizes the dangling infinitive `to` (plan §3.3 forbidden boundary), so it picks `…beginning | to reshape…`.
     #[test]
     fn overflow_orphan_tail_is_rebalanced() {
         let mut doc = doc_with_words(vec![
@@ -815,12 +766,12 @@ mod tests {
             w("g1.6", 67.0, 67.6, "reshape"),
             w("g1.7", 67.6, 67.8, "the"),
             w("g1.8", 67.8, 68.15, "environment."),
-            // 后续句：让孤儿尾无法从媒体尾部借展示时间。
+            // Following sentence: the orphan tail cannot borrow display time from the end of the media.
             w("g2.0", 68.5, 69.2, "Modern"),
             w("g2.1", 69.2, 69.9, "workflows"),
             w("g2.2", 69.9, 70.6, "changed."),
         ]);
-        // 无布局时的贪心派生：句尾单词被溢出硬断甩出。
+        // Greedy derivation with no layout: the last word of the sentence is thrown out by an overflow hard break.
         assert_eq!(
             cue_texts(&doc)[0..2],
             [
@@ -841,8 +792,7 @@ mod tests {
         assert_eq!(auto_table(&doc).get("g1.4"), Some(&BreakOverride::Break));
     }
 
-    /// 真实失败样本 B：停顿断行让句尾片挤进过窄时窗（23.5 cps > 21）。
-    /// DP 后缝前移，第二行拿到含停顿在内的完整时窗。
+    /// Real failure sample B: a pause break squeezed the sentence-tail fragment into too narrow a window (23.5 cps > 21). The DP moves the seam earlier, so the second line gets a full window that includes the pause.
     #[test]
     fn pause_break_too_fast_tail_moves_seam_earlier() {
         let mut doc = doc_with_words(vec![
@@ -853,7 +803,7 @@ mod tests {
             w("g1.4", 71.8, 72.9, "tools"),
             w("g1.5", 72.9, 73.1, "that"),
             w("g1.6", 73.1, 73.4, "were"),
-            // ≥0.6s 停顿：贪心派生在此断行。
+            // ≥0.6 s pause: greedy derivation breaks the line here.
             w("g1.7", 74.1, 74.25, "once"),
             w("g1.8", 74.25, 74.5, "managed"),
             w("g1.9", 74.5, 74.75, "separately."),
@@ -874,10 +824,7 @@ mod tests {
         assert!(doc.breaks.is_empty());
     }
 
-    /// 真实失败样本 C（回归）：整段语速贴着 CPS 天花板。旧优化器的合并分支若放宽到
-    /// 2×目标，会把两条各 40 宽的合规行焊成 81 宽的单行并钉上 `nobreak`。DP 把
-    /// > `max_chars` 视为无穷：无论怎么重排都不得出现超宽行，也不得为了压宽度而
-    /// 甩出单词孤儿尾。
+    /// Real failure sample C (regression): the speech rate of the whole segment hugs the CPS ceiling. If the old optimizer's merge branch were relaxed to 2× the target, it would weld two compliant 40-wide lines into one 81-wide line and pin a `nobreak`. The DP treats > `max_chars` as infinite: whatever the rearrangement, no over-wide line may appear, and no single-word orphan tail may be thrown out to reduce width.
     #[test]
     fn merge_is_capped_at_single_line_budget() {
         let mut doc = doc_with_words(vec![
@@ -910,7 +857,7 @@ mod tests {
         ]);
         let params = CueParams::default();
         let budget = params.max_chars + params.overflow_slack;
-        // 贪心基线：两条各 40 宽的行，都在单行预算内。
+        // Greedy baseline: two lines of 40 each, both within the single-line budget.
         let greedy = cue_texts(&doc);
         assert_eq!(greedy[1], "We've been running it for a few weeks in");
         assert_eq!(greedy[2], "shadow and it's been consistently faster");
@@ -918,13 +865,13 @@ mod tests {
         ensure_balanced_cue_layout(&mut doc, &params);
         let texts = cue_texts(&doc);
         let stats = cue_layout_stats(&doc, &params);
-        // 不得出现超宽单行。
+        // No over-wide single line may appear.
         assert_eq!(stats.over_width, 0, "layout: {texts:?}");
         assert!(stats.longest_width <= budget, "layout: {texts:?}");
-        // 句首句尾不动：句末是硬边界。
+        // The start and end of the sentence do not move: a sentence end is a hard boundary.
         assert_eq!(texts[0], "It's been working really well.");
         assert!(texts.last().unwrap().ends_with("implementation is."));
-        // 也不得为了压宽度而甩出单词孤儿尾。
+        // Nor may a single-word orphan tail be thrown out to reduce width.
         let cues = derive_cues(&doc, &params);
         assert!(
             cues.iter().all(|cue| cue.word_indices.len() >= 2),
@@ -933,7 +880,7 @@ mod tests {
         assert!(doc.breaks.is_empty());
     }
 
-    /// 钉集是最小覆盖集：派生重放必须逐字节复现 DP 布局；重跑收敛（幂等）。
+    /// The pin set is a minimal covering set: derived replay must reproduce the DP layout byte for byte; re-running converges (idempotent).
     #[test]
     fn emitted_pins_reproduce_dp_layout_and_rerun_is_idempotent() {
         let mut doc = doc_with_words(vec![
@@ -951,7 +898,7 @@ mod tests {
             w("g2.2", 69.9, 70.6, "changed."),
         ]);
         let params = CueParams::default();
-        // DP 的目标布局（词下标末集）与写钉后 derive_cues 的重放逐词一致。
+        // The DP's target layout (the set of word-index ends) matches the replay of derive_cues word for word after the pins are written.
         let visible: Vec<Word> = doc.words.clone();
         let profile = LayoutProfile::default_profile();
         let optimizer = Optimizer {
@@ -976,14 +923,14 @@ mod tests {
             .map(|cue| *cue.word_indices.last().unwrap())
             .collect();
         assert_eq!(replayed, desired);
-        // 二次计算收敛：已是均衡布局时不再产生变化。
+        // The second computation converges: when the layout is already balanced, it produces no further change.
         let pins = auto_table(&doc);
         assert!(!apply_balanced_cues(&mut doc, &params));
         assert_eq!(auto_table(&doc), pins);
         assert!(!ensure_balanced_cue_layout(&mut doc, &params));
     }
 
-    /// 已经是零偏离的贪心布局：不写任何自动 pin，也不动文档。
+    /// A greedy layout that already has zero deviation: writes no automatic pins and does not touch the document.
     #[test]
     fn well_formed_greedy_layout_needs_no_auto_pins() {
         let mut doc = doc_with_words(vec![
@@ -1001,7 +948,7 @@ mod tests {
         assert_eq!(doc, before);
     }
 
-    /// 句末缝与说话人边界不可被重排移动。
+    /// Sentence-end and speaker-boundary seams cannot be moved by rearrangement.
     #[test]
     fn dp_never_crosses_sentence_or_speaker_boundaries() {
         let mut words = vec![
@@ -1018,8 +965,7 @@ mod tests {
         assert_eq!(cues[0].text(&doc), "Hi.");
     }
 
-    /// 用户钉是硬约束：优化器总是运行，但 `break` 必断、`nobreak` 必不断，
-    /// `breaks` 表原样保留。
+    /// User pins are hard constraints: the optimizer always runs, but `break` always breaks and `nobreak` never breaks, and the `breaks` table is kept as is.
     #[test]
     fn user_pins_are_respected_and_never_rewritten() {
         let mut doc = doc_with_words(vec![
@@ -1036,7 +982,7 @@ mod tests {
             w("g2.1", 69.2, 69.9, "workflows"),
             w("g2.2", 69.9, 70.6, "changed."),
         ]);
-        // 用户要在 "AI" 后断、"to" 后不断。
+        // The user wants a break after "AI" and no break after "to".
         doc.breaks.insert("g1.2".to_owned(), BreakOverride::Break);
         doc.breaks.insert("g1.5".to_owned(), BreakOverride::Nobreak);
         let user = doc.breaks.clone();
@@ -1049,14 +995,13 @@ mod tests {
             "nobreak 被越过：{texts:?}"
         );
         assert!(texts.iter().all(|text| visual_width(text) <= 42));
-        // 自动表不重复用户已钉的键。
+        // The automatic table does not repeat keys the user has already pinned.
         for id in user.keys() {
             assert!(!auto_table(&doc).contains_key(id));
         }
     }
 
-    /// 旧式文档：优化器 pin 还留在 `breaks` 里。读入后视为用户意图——派生结果与
-    /// 0.3 时代逐字节相同；重跑优化器也不会改写它们。
+    /// Legacy documents: optimizer pins still live in `breaks`. On load they are treated as user intent: the derived result is byte-for-byte identical to the 0.3-era output, and re-running the optimizer will not rewrite them.
     #[test]
     fn legacy_optimizer_pins_in_breaks_are_treated_as_user_intent() {
         let words = vec![
@@ -1073,7 +1018,7 @@ mod tests {
             w("g2.1", 69.2, 69.9, "workflows"),
             w("g2.2", 69.9, 70.6, "changed."),
         ];
-        // 0.3 时代的优化器输出：最小 pin 集直接落在 breaks。
+        // 0.3-era optimizer output: the minimal pin set sits directly in breaks.
         let mut legacy = doc_with_words(words.clone());
         let mut fresh = doc_with_words(words);
         apply_balanced_cues(&mut fresh, &CueParams::default());
@@ -1082,7 +1027,7 @@ mod tests {
         let legacy_layout = cue_texts(&legacy);
         assert_eq!(legacy_layout, cue_texts(&fresh));
 
-        // 重跑：breaks 原样、布局不变、无需任何自动 pin。
+        // Re-run: breaks are unchanged, the layout is unchanged, and no automatic pins are needed.
         let pins = legacy.breaks.clone();
         ensure_balanced_cue_layout(&mut legacy, &CueParams::default());
         assert_eq!(legacy.breaks, pins);
@@ -1090,7 +1035,7 @@ mod tests {
         assert!(auto_table(&legacy).is_empty());
     }
 
-    /// 段落钉边界在钉集中显式落 break（镜像实现无段前封口逻辑）。
+    /// Paragraph-pin boundaries explicitly write a break into the pin set (mirror implementations have no pre-paragraph seal logic).
     #[test]
     fn paragraph_pin_seams_get_explicit_break_pins() {
         let mut doc = doc_with_words(vec![
@@ -1106,8 +1051,7 @@ mod tests {
         assert_eq!(breaks.get("g1.2"), Some(&BreakOverride::Break));
     }
 
-    /// 用户 nobreak 把行焊超预算时，DP 仍有解（无穷罚保持有限），且不产出
-    /// 超出用户约束之外的超宽。
+    /// When a user nobreak welds a line over budget, the DP still has a solution (the infinite penalty keeps it finite), and it does not produce over-width output beyond the user's own constraint.
     #[test]
     fn forbidden_seams_keep_the_dp_solvable() {
         let words = (0..12)
@@ -1155,8 +1099,7 @@ mod tests {
         assert_eq!(cue_layout_stats(&doc, &params).over_width, 0);
     }
 
-    /// `default` profile 的钉集快照。样本 C 曾在 `for | a few weeks` 断开；
-    /// 英文语义门禁改为 `weeks | in shadow`，其余两份基线保持不变。
+    /// Pin-set snapshot of the `default` profile. Sample C once broke at `for | a few weeks`; the English semantic gate was changed to `weeks | in shadow`, and the other two baselines are unchanged.
     #[test]
     fn default_profile_pins_preserve_legal_reference_seams() {
         let expected: [&[(&str, BreakOverride)]; 3] = [
@@ -1179,10 +1122,7 @@ mod tests {
         }
     }
 
-    /// 双行 profile（方案 §3.4）：宽度预算放大到 2 × maxChars，DP 用 `nobreak` 把
-    /// 两行合规文字焊成一条 Cue；行内换行由 `line_break_plan` 复算且不超过两行；
-    /// `cue_layout_stats` / `remove_overwide_nobreaks` 按 profile 预算判越界，不把
-    /// 双行 Cue 当回归。同一文档在 `default` 下仍是两条单行 Cue。
+    /// Two-line profile (plan §3.4): the width budget grows to 2 × maxChars, and the DP uses `nobreak` to weld two compliant lines of text into one Cue. In-line wrapping is recomputed by `line_break_plan` and must not exceed two lines. `cue_layout_stats` / `remove_overwide_nobreaks` judge over-width against the profile budget, so a two-line Cue is not treated as a regression. The same document under `default` is still two single-line Cues.
     #[test]
     fn two_line_profile_welds_two_balanced_lines_into_one_cue() {
         let text =
@@ -1212,7 +1152,7 @@ mod tests {
         assert!(pins.values().all(|value| *value == BreakOverride::Nobreak));
         assert!(two.breaks.is_empty());
         assert!(!two.auto_breaks.contains_key("default"));
-        // 行内换行是渲染期投影：这里只验证复算的换行不超过两行且每行合规。
+        // In-line wrapping is a render-time projection; here we only verify that the recomputed wrap is at most two lines and that each line is compliant.
         let word_texts: Vec<&str> = two.words.iter().map(|word| word.text.as_str()).collect();
         let plan = crate::layout_profile::line_break_plan_with(
             &word_texts,
@@ -1225,12 +1165,12 @@ mod tests {
             let line_text = join_word_texts(line.iter().map(|&index| word_texts[index]));
             assert!(visual_width(&line_text) <= params.max_chars, "{line_text}");
         }
-        // profile 预算：双行 Cue 不越界，超宽修复也不会拆掉它。
+        // Profile budget: a two-line Cue is not over budget, and over-width repair does not split it.
         let stats = cue_layout_stats(&two, &params);
         assert_eq!(stats.over_width, 0);
         assert_eq!(remove_overwide_nobreaks(&mut two, &params), 0);
         assert_eq!(cue_texts(&two), vec![text.to_owned()]);
-        // 重跑幂等。
+        // Re-running is idempotent.
         assert!(!ensure_balanced_cue_layout(&mut two, &params));
     }
 
@@ -1297,7 +1237,7 @@ mod tests {
         ]
     }
 
-    /// 过期的自动 nobreak 同样会被超宽修复移除。
+    /// Stale automatic nobreaks are likewise removed by over-width repair.
     #[test]
     fn overwide_repair_also_drops_stale_auto_nobreaks() {
         let words = (0..12)
@@ -1340,15 +1280,14 @@ mod tests {
         assert_eq!(seam_grades(&words), [SEAM_CJK_MIDWORD, SEAM_WORD]);
         let doc = doc_with_words(words);
         assert_eq!(cue_texts(&doc), ["abcd ef"]);
-        // 换行预算按同一把尺：贴住的缝不占分隔宽度。
+        // The wrap budget uses the same measure: a seam that sticks to the previous character takes up no separator width.
         assert_eq!(
             crate::atomize::join_prefix_char_lens(&doc.words),
             vec![2, 4, 7]
         );
     }
 
-    /// **回归锁定**：期望值逐值写死，四份样本覆盖 0.3 / 0.5 / 0.8 / 3.0 四档
-    /// 缝等级与 1.5 的悬垂罚。
+    /// **Regression lock**: the expected values are hard-coded one by one. The four samples cover the seam levels 0.3 / 0.5 / 0.8 / 3.0 and the 1.5 dangling penalty.
     #[test]
     fn seam_grade_and_dangling_cost_match_the_locked_baseline() {
         let expected: [(&[f64], &[f64]); 4] = [

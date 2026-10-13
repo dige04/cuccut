@@ -15,8 +15,8 @@ import { M } from './fonts-copy.ts';
 import { formatBytes } from './models-output.ts';
 
 /**
- * `cuccut fonts …` 的参数与输出（架构设计 §9.1 的按需下载字体）。从 main.ts 分出来，单独可测。
- * 下载只给族名与字重、斜体；不列地址。
+ * Arguments and output of `cuccut fonts …` (fonts downloaded on demand, Architecture design §9.1). Split out of main.ts so it can be tested on its own.
+ * Downloads take only the family name, weight and italic flag; no addresses are listed.
  */
 
 export type FontsCommand =
@@ -26,7 +26,7 @@ export type FontsCommand =
   | { kind: 'remove'; family: string }
   | { kind: 'clear' };
 
-/** `cuccut fonts <子命令> …`。族名里有空格时整个加引号，或者分开写（按空格拼回去）。 */
+/** `cuccut fonts <subcommand> …`. A family name with spaces is quoted as a whole, or given as separate words (joined back with spaces). */
 export function parseFontsArgs(
   args: string[],
   flags: {
@@ -92,7 +92,7 @@ export function faceLabel(face: FontFaceStyle): string {
   return M.face(face.weight, Boolean(face.italic));
 }
 
-/** 下载缓存：每个族一行（字重、大小、许可），最后是总大小。 */
+/** Download cache: one line per family (weight, size, license), with the total size last. */
 export function formatDownloadedFonts(faces: readonly DownloadedFontFace[], totalBytes: number): string[] {
   if (faces.length === 0) return [M.noDownloads];
   const families = new Map<string, DownloadedFontFace[]>();
@@ -104,7 +104,7 @@ export function formatDownloadedFonts(faces: readonly DownloadedFontFace[], tota
   return [...lines, M.downloadedTotal(families.size, faces.length, formatBytes(totalBytes))];
 }
 
-/** 选字列表的一页：族名、状态（下载中带进度，失败带原因）、分类、文字与许可。 */
+/** One page of the font-picking list: family name, status (downloading shows progress, failed shows the reason), category, sample text and license. */
 export function formatFontFamilies(families: readonly FontFamilyStatus[], total: number): string[] {
   if (families.length === 0) return [M.noMatches];
   const lines = families.map((f) => {

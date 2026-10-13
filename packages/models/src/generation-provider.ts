@@ -2,11 +2,9 @@ import type { GenerationParameters, JobWarning } from '@cuccut/protocol';
 import type { TextResult } from './text-generation.ts';
 
 /**
- * 生成类能力（`synthesizeSpeech`、`generateImage`、`generateText`）的 Provider 接口（架构设计 §6.1、§6.6）：输入是冻结的文本与参数，
- * 输出是写在 staging 里的文件（媒体，或文本模型的全文）。校验（ffprobe 解码）、发布与导入视频都在 JobManager 里，不在 Provider 里。
+ * The Provider interface for generation capabilities (`synthesizeSpeech`, `generateImage`, `generateText`) (architecture design §6.1, §6.6). Input is frozen text and parameters. Output is files written into staging: media, or the full text from a text model. Validation (ffprobe decoding), publishing and importing into video all happen in JobManager, not in the Provider.
  *
- * 一次 `generate` 是一次尝试。在线 Provider 自己按 §6.4 有界重试连不上与 5xx；JobManager 不再重试，
- * 也不换 Provider、模型或声音。
+ * One `generate` call is one attempt. Online Providers retry connection failures and 5xx responses themselves, with bounded retries per §6.4. JobManager does not retry again, and does not switch Provider, model or voice.
  */
 
 export type GenerationCapability = GenerationParameters['capability'];
@@ -16,26 +14,26 @@ export interface GenerationRun {
   attempt: number;
   providerId: string;
   modelId: string;
-  /** 提交时冻结的参数。 */
+  /** Parameters frozen at submission. */
   parameters: GenerationParameters;
-  /** 这次尝试的 staging 目录（绝对路径）；Provider 只能把输出写在这里。 */
+  /** The staging directory for this attempt (absolute path). The Provider may only write its output here. */
   staging: string;
 }
 
 export interface GenerationSink {
-  /** 进入生成阶段（请求已经发出）。 */
+  /** Entered the generation stage (the request has been sent). */
   generating(): void;
-  /** 多个输出时，已经拿到几个（`outputs`，默认）；本地合成报告的是扩散或解码的步数（`steps`）。 */
+  /** For multiple outputs, how many have been obtained so far (`outputs`, the default). For local synthesis, reports the number of diffusion or decoding steps (`steps`). */
   progress(done: number, total: number, unit?: 'outputs' | 'steps'): void;
-  /** 不影响产出的警告（本地合成念不了的读音标注），记进任务的 `warnings`。 */
+  /** Warnings that do not affect the output (pronunciation annotations that local synthesis cannot read), recorded in the job's `warnings`. */
   warning?(warning: JobWarning): void;
 }
 
-/** staging 里的一个输出文件。`mediaType` 是 Provider 按请求的格式声明的，JobManager 按文件头核对。 */
+/** One output file in staging. `mediaType` is declared by the Provider according to the requested format. JobManager checks it against the file header. */
 export interface GenerationOutputFile {
-  /** 相对 staging 的路径。 */
+  /** Path relative to staging. */
   path: string;
-  /** 小写十六进制，不带前缀。 */
+  /** Lowercase hex, no prefix. */
   sha256: string;
   byteLength: number;
   mediaType: string;
@@ -45,19 +43,19 @@ export type GenerationAttempt =
   | {
       outcome: 'completed';
       outputs: GenerationOutputFile[];
-      /** 适配器版本，记进日志与诊断。 */
+      /** Adapter version, recorded in logs and diagnostics. */
       workerVersion: string;
-      /** 供应商原样报告的用量。 */
+      /** Usage as reported by the vendor, unchanged. */
       usage?: unknown;
-      /** `generateText`：检查过的结果（结束原因、用量、模型版本与说明），任务的结果摘要用它。 */
+      /** `generateText`: the checked result (finish reason, usage, model version and notes). The job's result summary uses it. */
       text?: TextResult;
     }
   | { outcome: 'cancelled' };
 
 export interface GenerationProvider {
   readonly id: string;
-  /** 执行一次尝试。`signal` 中止时中止在途的请求，以 `cancelled` 兑现。失败抛 `ProviderFailure`。 */
+  /** Performs one attempt. When `signal` aborts, it cancels the in-flight request and settles as `cancelled`. Throws `ProviderFailure` on failure. */
   generate(run: GenerationRun, sink: GenerationSink, signal: AbortSignal): Promise<GenerationAttempt>;
-  /** 正常停止：中止在途的请求。 */
+  /** Normal stop: cancels the in-flight request. */
   close(): Promise<void>;
 }

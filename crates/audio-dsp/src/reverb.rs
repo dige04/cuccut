@@ -1,4 +1,4 @@
-//! 合成脉冲响应（分频段指数衰减的噪声 + 早期反射）与 FFT 分块卷积（overlap-add）。
+//! Synthesized impulse responses (noise with per-band exponential decay, plus early reflections) and FFT block convolution (overlap-add).
 
 use crate::biquad::{bandpass, highpass, lowpass};
 use crate::fft::{Fft, next_pow2};
@@ -6,20 +6,20 @@ use crate::math::samples;
 use crate::rng::Rng;
 use crate::stereo::Stereo;
 
-/// 一只混响空间的参数（参考工程 `make_ir`）。
+/// Parameters for one reverb space (reference project's `make_ir`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct IrSpec {
-    /// 中频 T60（秒）。
+    /// Mid-frequency T60 (seconds).
     pub t60: f64,
-    /// 预延迟（秒），IR 前补这么多零。
+    /// Pre-delay (seconds); this many zeros are prepended to the IR.
     pub pre_delay: f64,
-    /// 高频变暗系数：3.2 kHz 以上两个频段的衰减时间除以它（1 = 不变暗）。
+    /// High-frequency darkening factor: the decay times of the two bands above 3.2 kHz are divided by it (1 = no darkening).
     pub dark: f64,
-    /// IR 长度（秒）；缺省 `min(1.15·t60, 9)`。
+    /// IR length (seconds); default `min(1.15·t60, 9)`.
     pub length: Option<f64>,
-    /// 额外的二阶低通（Hz），水下这类闷空间用。
+    /// Extra second-order low-pass (Hz), for muffled spaces such as underwater.
     pub lowpass: Option<f64>,
-    /// 噪声种子。
+    /// Noise seed.
     pub seed: u64,
 }
 
@@ -35,7 +35,7 @@ impl IrSpec {
         }
     }
 
-    /// 内置空间：`room` / `hall` / `huge` / `water`（与参考工程同参）。
+    /// Built-in spaces: `room` / `hall` / `huge` / `water` (same parameters as the reference project).
     pub fn preset(name: &str) -> Option<Self> {
         let base = |t60, seed, pre| Self {
             pre_delay: pre,
@@ -58,9 +58,9 @@ impl IrSpec {
     }
 }
 
-/// 生成立体声 IR：五个频段（0–220、220–1100、1100–3200、3200–7500、7500+ Hz）各自按
-/// `exp(−6.9078·t / (t60·m))` 衰减（m = 1.2 / 1.0 / 0.8 / 0.55÷dark / 0.3÷dark），15 ms 渐起，
-/// 10 个 6–70 ms 的早期反射；两声道噪声独立。能量归一到两声道平均单位能量，再补预延迟。
+/// Generates a stereo IR: each of the five bands (0–220, 220–1100, 1100–3200, 3200–7500, 7500+ Hz) decays as
+/// `exp(−6.9078·t / (t60·m))` (m = 1.2 / 1.0 / 0.8 / 0.55÷dark / 0.3÷dark), with a 15 ms fade-in,
+/// and 10 early reflections of 6–70 ms; the noise in the two channels is independent. Energy is normalized to unit average energy across the two channels, then the pre-delay is added.
 pub fn synth_ir(spec: &IrSpec, sr: f64) -> Stereo {
     let mut rng = Rng::new(spec.seed);
     let n = samples(spec.length.unwrap_or((spec.t60 * 1.15).min(9.0)), sr).max(1);
@@ -120,8 +120,8 @@ pub fn synth_ir(spec: &IrSpec, sr: f64) -> Stereo {
     }
 }
 
-/// 线性卷积 `x * h`，截到 `out_len`。overlap-add：FFT 长度取 `next_pow2(2·len(h))`，块长
-/// `fft − len(h) + 1`。纯标量、确定性。
+/// Linear convolution `x * h`, truncated to `out_len`. Overlap-add: FFT length is `next_pow2(2·len(h))`, block length
+/// `fft − len(h) + 1`. Scalar-only and deterministic.
 pub fn convolve(x: &[f32], h: &[f32], out_len: usize) -> Vec<f32> {
     let mut out = vec![0.0f64; out_len];
     if x.is_empty() || h.is_empty() || out_len == 0 {
@@ -166,7 +166,7 @@ pub fn convolve(x: &[f32], h: &[f32], out_len: usize) -> Vec<f32> {
     out.into_iter().map(|v| v as f32).collect()
 }
 
-/// 立体声送出 × 立体声 IR：左进左、右进右（参考工程同口径），截到 `out_len`。
+/// Stereo send × stereo IR: left in to left, right in to right (same convention as the reference project), truncated to `out_len`.
 pub fn convolve_stereo(x: &Stereo, ir: &Stereo, out_len: usize) -> Stereo {
     Stereo {
         l: convolve(&x.l, &ir.l, out_len),
@@ -216,7 +216,7 @@ mod tests {
                 .sum::<f64>()
                 / 2.0;
         assert!((energy - 1.0).abs() < 1e-3, "energy {energy}");
-        // 0.1–0.3 s 与 2.4–2.6 s 两窗的能量差大致应是 −60 dB × 2.2/2.8 左右（高频衰减更快，取宽松区间）。
+        // The energy difference between the 0.1–0.3 s and 2.4–2.6 s windows should be roughly −60 dB × 2.2/2.8 (high frequencies decay faster, so a loose range is used).
         let win = |a: f64, b: f64| {
             let (i, j) = (pad + samples(a, SR), pad + samples(b, SR));
             ir.l[i..j].iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / (j - i) as f64

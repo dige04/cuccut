@@ -35,7 +35,7 @@ describe('识别说话人', () => {
       timeMap: { kind: 'linear', sourceIn: { ticks: '2000', timescale: 1000 }, rate: { num: 1, den: 1 } },
     } as unknown as VideoItem;
     const sequence = { fps: { num: 30, den: 1 }, items: [item] } as unknown as Sequence;
-    // 素材 2s 起的这一段放在时间线 1s 处。
+    // Material from 2s onward is placed at 1s on the timeline.
     expect(clipWindow(sequence, 'asset', { sentenceId: 's', start: 2500, end: 3000, text: 'x' }, 1000)).toEqual({ start: 1.5, end: 2 });
     expect(clipWindow(sequence, 'asset', { sentenceId: 's', start: 0, end: 1000, text: 'x' }, 1000)).toBeNull();
     expect(clipWindow(sequence, 'other', { sentenceId: 's', start: 2500, end: 3000, text: 'x' }, 1000)).toBeNull();

@@ -23,7 +23,7 @@ const FITS: readonly { key: FitMode; label: string }[] = [
   },
 ];
 
-/** 画面：素材在布局框里怎么放（包含留边、覆盖裁切）与不透明度。 */
+/** Picture: how the media fits its layout box (contain with margins, or cover with cropping), and opacity. */
 function PictureSection(props: ItemPageProps<VideoItem | ImageItem>) {
   const { item, sequence, edit, canChange } = props;
   return (
@@ -48,7 +48,7 @@ function PictureSection(props: ItemPageProps<VideoItem | ImageItem>) {
   );
 }
 
-/** 编辑视频：变速、声音（含压低原声）、画面、效果、转场、几何、时间。 */
+/** Edit video: speed, audio (including lowering the original audio), picture, effects, transition, geometry, time. */
 export function VideoItemPage(props: ItemPageProps<VideoItem>) {
   return (
     <>
@@ -65,7 +65,7 @@ export function VideoItemPage(props: ItemPageProps<VideoItem>) {
   );
 }
 
-/** 编辑图片：画面、效果、转场、几何、时间。 */
+/** Edit image: picture, effects, transition, geometry, time. */
 export function ImagePage(props: ItemPageProps<ImageItem>) {
   return (
     <>
@@ -79,7 +79,7 @@ export function ImagePage(props: ItemPageProps<ImageItem>) {
   );
 }
 
-/** 编辑音频：变速、声音（含压低原声）、时间。 */
+/** Edit audio: speed, audio (including lowering the original audio), time. */
 export function AudioPage(props: ItemPageProps<AudioItem>) {
   return (
     <>

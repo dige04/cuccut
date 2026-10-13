@@ -11,9 +11,9 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, tool, until, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * 端到端：任务合同的保护范围（架构设计 §3.2）。假智能体经真实的 MCP 端点读合同、改视频，检查落在真实的 Rust 引擎里：
- * 智能体触碰保护的修改整笔拒绝（`TASK_PROTECTED`），用户的修改不受限制，合同修改之后的提交按新的范围检查。
- * 需要 engine-host 与 ffmpeg，缺了就跳过。
+ * End to end: the scope of task contract protection (architecture §3.2). A fake agent reads the contract and modifies the video through the real MCP endpoint, and the checks land in the real Rust engine:
+ * agent edits that touch the protection are rejected as a whole (`TASK_PROTECTED`); the user's edits are not restricted; submissions after the contract is changed are checked against the new scope.
+ * Needs engine-host and ffmpeg; skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -86,7 +86,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     return video.sequences[video.rootSequenceId]!.items;
   }
 
-  /** 智能体放两段 clip（0 秒与 3 秒），返回两段的实例 id 与之后的版本。 */
+  /** The agent places two clips (at 0 s and 3 s) and returns the two clips' instance IDs and the later version. */
   async function placeTwo(session: ToolSession): Promise<{ first: Id; second: Id; revision: string }> {
     const inspected = await tool(session, 'videos_inspect', { video: videoId });
     const applied = await tool(session, 'edits_apply', {
@@ -117,7 +117,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     const session = await until(() => driver.sessions[0]);
     await until(() => session.turnId);
 
-    // 读合同：默认合同加上给出的检查。
+    // Read the contract: the default contract plus the given checks.
     const read = await tool(session, 'tasks_contract', {});
     expect(read.isError).toBe(false);
     expect(read.body).toMatchObject({
@@ -128,7 +128,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
 
     const { first, second } = await placeTwo(session);
 
-    // 用户保护第一段：实体保护与区间保护（第二段所在的 3–5 秒）。
+    // The user protects the first clip: entity protection and range protection (the 3–5 s where the second clip sits).
     const view = await client.request('tasks.getContract', { taskId });
     const sequenceId = runtime.videos.mirror(videoId)!.video.rootSequenceId;
     const { contract } = await client.request('tasks.updateContract', {
@@ -145,7 +145,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     expect(contract.revision).toBe(2);
     const [entityProtection, intervalProtection] = contract.protectedRefs;
 
-    // 智能体删第一段：整笔拒绝，错误里是被触碰的保护与实体；视频不变。
+    // The agent deletes the first clip: the whole transaction is rejected; the error names the protection and entity that were touched; the video is unchanged.
     const before = items().length;
     const revision = runtime.videos.mirror(videoId)!.video.revision;
     const refused = await tool(session, 'edits_apply', {
@@ -163,7 +163,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
       },
       next: expect.stringContaining('protectedRefs'),
     });
-    // 区间保护：移动第二段也被拒绝。
+    // Range protection: moving the second clip is rejected too.
     const moved = await tool(session, 'edits_apply', {
       video: videoId,
       expectedRevision: revision,
@@ -174,17 +174,17 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
       code: 'TASK_PROTECTED',
       details: { protections: [{ protectionId: intervalProtection!.protectionId }] },
     });
-    // 撤销自己放的两段也会触碰保护。
+    // Undoing the two clips the agent placed also touches the protection.
     const undo = await tool(session, 'edits_undo', { video: videoId });
     expect(undo.body.error).toMatchObject({ code: 'TASK_PROTECTED' });
     expect(items()).toHaveLength(before);
     expect(runtime.videos.mirror(videoId)!.video.revision).toBe(revision);
 
-    // 智能体不能自己撤掉保护。
+    // The agent cannot remove the protection itself.
     const unprotect = await tool(session, 'tasks_update_contract', { expectedRevision: 2, patch: { protectedRefs: [] } });
     expect(unprotect.body.error).toMatchObject({ code: 'CONTRACT_FIELD_READONLY', fields: ['protectedRefs'] });
 
-    // 用户的修改不受任务保护限制。
+    // The user's edits are not restricted by the task protection.
     await client.request('edits.apply', {
       videoId,
       commandId: newId('cmd'),
@@ -193,7 +193,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     });
     await until(() => items().length === before - 1);
 
-    // 用户去掉保护之后：智能体之后的提交按新范围检查。
+    // After the user removes the protection, the agent's later submissions are checked against the new scope.
     await client.request('tasks.updateContract', { taskId, expectedRevision: 2, commandId: newId('cmd'), patch: { protectedRefs: [] } });
     const allowed = await tool(session, 'edits_apply', {
       video: videoId,
@@ -203,7 +203,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     });
     expect(allowed.isError).toBe(false);
 
-    // 记录检查结果：标明由智能体记录。
+    // Records the check result, marked as recorded by the agent.
     const checkId = read.body.contract.acceptanceChecks[0].checkId;
     const recorded = await tool(session, 'tasks_record_check', { checkId, outcome: 'failed', note: '片头被删了' });
     expect(recorded.body.result).toMatchObject({ checkId, outcome: 'failed', recordedBy: 'agent', contractRevision: 3 });
@@ -220,7 +220,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     const session = await until(() => driver.sessions[0]);
     await until(() => session.turnId);
     const { first } = await placeTwo(session);
-    // 保护整个视频：智能体的任何修改都被拒绝。
+    // Protects the whole video: every agent edit is rejected.
     await client.request('tasks.updateContract', {
       taskId,
       expectedRevision: 1,
@@ -234,7 +234,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
       operations: [{ type: 'deleteItems', itemIds: [first] }],
     });
     expect(refused.body.error.code).toBe('TASK_PROTECTED');
-    // 别的视频不受这个保护影响：保护按视频交给引擎。
+    // Other videos are not affected by this protection: protection is handed to the engine per video.
     const other = (await client.request('videos.create', { projectId: project.id, name: '另一个' })).ref.videoId;
     const inspected = await tool(session, 'videos_inspect', { video: other });
     const elsewhere = await tool(session, 'edits_apply', {

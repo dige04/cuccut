@@ -12,8 +12,7 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { decodeText, excerptOf, subtitleDialogue } from './space-thumbnails.ts';
 
 /**
- * Space 条目的缩略图（`space.thumbnail`）。文字摘要与字幕台词是纯函数；其余是端到端：真实的 engine-host 与 ffmpeg，
- * 视频的封面在视频关着时取（引擎的只读查询找素材文件），成片要 Render Worker。缺哪个跳过哪部分。
+ * Thumbnails of Space entries (`space.thumbnail`). Text summaries and subtitle lines are pure functions. The rest is end-to-end, with a real engine-host and ffmpeg. A video's cover is taken while the video is closed (the engine's read-only query finds the asset file). The rendered cut needs the Render Worker. Whichever is missing, the corresponding part is skipped.
  */
 
 describe('文字摘要', () => {
@@ -24,7 +23,7 @@ describe('文字摘要', () => {
     expect(decodeText(Buffer.concat([Buffer.from([0xfe, 0xff]), be]), true)).toBe('ab');
     expect(decodeText(Buffer.from([0x61, 0x00, 0x62]), true)).toBeNull();
     expect(decodeText(Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x20]), true)).toBeNull();
-    // 读到一半截断的：末尾半个字符丢掉，不算解不开。
+    // Truncated mid-read: the half character at the end is dropped, and it is not counted as undecodable.
     const cut = Buffer.from('剪辑', 'utf8').subarray(0, 4);
     expect(decodeText(cut, false)).toBe('剪');
     expect(decodeText(cut, true)).toBeNull();
@@ -36,7 +35,7 @@ describe('文字摘要', () => {
     const excerpt = excerptOf(long);
     expect(Buffer.byteLength(excerpt, 'utf8')).toBeLessThanOrEqual(SPACE_EXCERPT_MAX_BYTES);
     expect(excerpt).toBe('剪'.repeat(Math.floor(SPACE_EXCERPT_MAX_BYTES / 3)));
-    // 四字节的字符：截断处的半个字符丢掉，不留替换符。
+    // Four-byte characters: the half character at the truncation point is dropped, leaving no replacement character.
     expect(excerptOf(`x${'😀'.repeat(600)}`)).toBe(`x${'😀'.repeat(Math.floor((SPACE_EXCERPT_MAX_BYTES - 1) / 4))}`);
   });
 
@@ -201,7 +200,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
     for (const name of ['声音.wav', '旧编码.txt', '说明.pdf', '矢量.svg', '假图.png'])
       expect(await thumbnail(name), name).toEqual({ kind: 'none' });
 
-    // 结果里没有本机路径。
+    // No local machine path in the result.
     const all = JSON.stringify(await Promise.all(['素材.mp4', '笔记.md'].map(thumbnail)));
     expect(all).not.toContain(project.path);
     expect(all).not.toContain(dir);
@@ -239,7 +238,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
     expectImage(await ofVideo(linked.videoId), 'image/jpeg', 720, 360);
     expect(await ofVideo(empty.videoId)).toEqual({ kind: 'none' });
 
-    // 媒体通道按视频条目给主素材（会话里视频卡的就地播放）：同样不打开视频；没有片段的 not-found。
+    // The media channel gives the main asset for a video entry (in-place playback of the video card in the session). It likewise does not open the video; not-found when there is no clip.
     const resolveVideo = async (videoId: string) => {
       const [entry] = (await client.request('space.list', { videoId, kind: 'video' })).entries;
       return client.request('media.resolve', { entryId: entry!.id });
@@ -251,7 +250,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
     }
     expect((await resolveVideo(empty.videoId).then(() => null, (error: RpcError) => error))?.code).toBe('not-found');
 
-    // 取封面不打开视频、不占写锁：照样能打开来编辑。
+    // Getting the cover does not open the video or take the write lock: it can still be opened for editing.
     const reopened = await client.request('videos.open', { projectId: project.id, path: managed.relPath });
     expect(reopened.ref.videoId).toBe(managed.videoId);
     await client.request('videos.close', { videoId: managed.videoId });
@@ -292,7 +291,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
       await settle();
       const { entries } = await client.request('space.list', { kind: 'export' });
       expect(entries).toHaveLength(1);
-      // 成片按默认的 16:9 画布渲染：720 宽对应的 405 取偶数。
+      // A rendered cut uses the default 16:9 canvas: 720 wide corresponds to 405, rounded to an even number.
       expectImage(await client.request('space.thumbnail', { entryId: entries[0]!.id }), 'image/jpeg', 720, 406);
     },
     120_000,

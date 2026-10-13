@@ -8,110 +8,105 @@ import type { DesignAnnotation } from './design.ts';
 import type { DesignSystemAnnotation } from './design-system.ts';
 
 /**
- * 会话侧的领域对象（架构设计 §1.5、§3.10）。
+ * Session-side domain objects (architecture design §1.5, §3.10).
  *
- * 这些是 Runtime Store 的权威对象在线上的 DTO。视频、序列、素材等视频领域类型由
- * Rust 单源生成（架构设计 §13.2），0.1 还没有视频引擎，所以这里没有它们。
+ * These are the DTOs on the wire of the authoritative objects in the Runtime Store. Video domain types such as video, sequence and assets are generated from the single Rust source (architecture design §13.2); 0.1 has no video engine yet, so they are not here.
  */
 
 export type Id = string;
 
-/** 十进制字符串形式的序号（D06：避免 64 位整数在 JSON 中丢精度）。 */
+/** Sequence number as a decimal string (D06: avoids losing precision for 64-bit integers in JSON). */
 export type Seq = string;
 
-/** 项目：一个目录，也是智能体的工作目录（产品设计 §2.3）。 */
+/** Project: a directory, and also the agent's working directory (product design §2.3). */
 export interface Project {
   id: Id;
-  /** 显示名。改名只改登记，不动目录。 */
+  /** Display name. Renaming only changes the registry, not the directory. */
   name: string;
   path: string;
   createdAt: string;
   lastActiveAt: string;
   pinned: boolean;
-  /** 归档只影响列表显示（产品设计 §3.1）。 */
+  /** Archiving only affects how the list is displayed (product design §3.1). */
   archived: boolean;
 }
 
-/** 会话的活动状态，侧栏徽标由它汇总（架构设计 §11.3）。 */
+/** Active state of the session; the sidebar badge is summarized from it (architecture design §11.3). */
 export type ConversationActivity = 'idle' | 'running' | 'stopping' | 'awaiting-approval' | 'failed';
 
 export interface Conversation {
   id: Id;
   title: string;
   /**
-   * 可空：不属于任何项目的会话（架构设计 §3.10）。可以从 null 绑定一次（第一次新建视频时 Runtime 建项目并绑定，经
-   * `conversation.upsert` / `conversation.updated` 推送），之后不改绑到另一个项目。
+   * Nullable: a session that belongs to no project (architecture design §3.10). It can be bound once from null (the first time a new video is created, the Runtime creates a project and binds to it, pushed via `conversation.upsert` / `conversation.updated`); after that it is not rebound to another project.
    */
   projectId: Id | null;
-  /** 智能体的工作目录：项目目录，或无项目会话的临时目录（绑定项目后换成项目目录）。 */
+  /** The agent's working directory: the project directory, or a temporary directory for a session with no project (replaced by the project directory once bound). */
   cwd: string;
   /**
-   * 不属于项目、与另一条会话共用工作目录的会话（`conversations.create` 的 `folderOf`，架构设计 §3.10）：那条会话的 id。
-   * 它的视频与文件都在那条会话的工作目录里，Space 按那条会话列出，视频的位置也写那条会话；那条会话放进项目时它跟着进去，
-   * 之后省略。自己有工作目录的会话省略。
+   * A session that does not belong to a project and shares its working directory with another session (`folderOf` in `conversations.create`, architecture design §3.10): the id of that session.
+   * Its videos and files are in that session's working directory; Space lists it under that session, and video locations are written under that session. When that session is put into a project, this one goes along with it; after that it is omitted. A session that has its own working directory omits it.
    */
   folderOf?: Id;
-  /** 会话的 Agent。没有任务之前可以换，之后固定（原生会话不能跨 Agent 续）。 */
+  /** The session's agent. It can be changed before any task starts; after that it is fixed (native sessions cannot continue across agents). */
   driverId: DriverId;
-  /** 模型 id，来自 `DriverInfo.models`；null = 不传模型，用 Agent 自己的默认（`configModel`）。下一轮生效。 */
+  /** Model id, from `DriverInfo.models`; null = no model is passed, so the agent's own default (`configModel`) is used. Takes effect from the next turn. */
   model: string | null;
-  /** 推理强度 id，来自所选模型的 `efforts`；null = 模型默认。下一轮生效。 */
+  /** Reasoning effort id, from the `efforts` of the selected model; null = the model's default. Takes effect from the next turn. */
   effort: string | null;
   createdAt: string;
   updatedAt: string;
   archived: boolean;
   pinned: boolean;
-  /** 任务结束后还没被看过：侧栏的「已完成未读」（产品设计 §3.1）。 */
+  /** The task has finished but has not been seen yet: “completed, unread” in the sidebar (product design §3.1). */
   unread: boolean;
   activity: ConversationActivity;
   activeTaskId: Id | null;
   /**
-   * 会话的访问模式（架构设计 §3.12）：用 `conversations.update` 或发送参数切换，对之后的动作生效。
-   * null（或旧记录没有）表示还没切换过：每次发送时取 `agent.defaultAccessMode`。
+   * Access mode of the session (architecture design §3.12): switched with `conversations.update` or send parameters; it applies to later actions.
+   * null (or absent in old records) means it has never been switched: `agent.defaultAccessMode` is taken on each send.
    */
   accessMode?: AgentMode | null;
   /**
-   * 从 Space 条目继续会话时附上、还没发出去的引用（`space.continueInConversation`，架构设计 §5.7）。下一次发送时附在消息后面，
-   * 发出后清空。没有时省略。
+   * A reference attached when a session is continued from a Space entry (`space.continueInConversation`, architecture design §5.7) that has not been sent yet. It is attached after the message on the next send and cleared once sent.
+   * Omitted when there is none.
    */
   pendingReferences?: SpaceEntryReference[];
 }
 
 /**
- * 会话里对一个 Space 条目的引用（架构设计 §5.7「从条目继续会话」）：只有条目的标识与元数据，不含文件内容；
- * 智能体要内容时经工具按 `entryId`、`videoId` 或 `artifactId` 去取，照常受范围与审批约束。
+ * A reference in a session to a Space entry (architecture design §5.7 “continue the session from an entry”): only the entry's identifier and metadata, not the file contents. When the agent needs the content, it fetches it through a tool by `entryId`, `videoId` or `artifactId`, subject to scope and approval as usual.
  */
 export interface SpaceEntryReference {
   entryId: Id;
   kind: SpaceEntryKind;
   name: string;
   projectId: Id | null;
-  /** 在来源目录里时的相对路径；产物与占位为 null。 */
+  /** Relative path inside the source directory; null for artifacts and placeholders. */
   relPath: string | null;
   videoId: Id | null;
   artifactId: string | null;
   status: SpaceEntryStatus | null;
-  /** 来源摘要：生成或导出它的能力、任务与会话、导出冻结的视频版本。不含生成参数。 */
+  /** Source summary: the capability, task and session that generated or exported it, and the frozen video version at export. It does not include generation parameters. */
   origin: Pick<SpaceEntryOrigin, 'source' | 'capability' | 'jobId' | 'conversationId' | 'videoRevision'> | null;
   attachedAt: string;
 }
 
 /**
- * 内置的智能体引擎（架构设计 §3.1）。顺序就是设置页与选择器里的顺序：前五个（Claude、Codex、Copilot、Pi、OpenCode）常驻主列表，
- * 后四个（Gemini CLI、Cursor Agent、Grok、Kimi Code）没检测到时在「更多」折叠段里（主列表与折叠段的划分由界面静态持有）。
- * Copilot 与后四个经 Agent Client Protocol（ACP）的同一份实现接入。
- * 表里有不等于这一版已经注册了它：`agents.list` 只列 Runtime 注册了的 Driver。
+ * Built-in agent engines (architecture design §3.1). The order is the order in settings and in the selector: the first five (Claude, Codex, Copilot, Pi, OpenCode) are always in the main list; the last four (Gemini CLI, Cursor Agent, Grok, Kimi Code) are in the collapsed “More” section when not detected (the UI holds the split between the main list and the collapsed section statically).
+ * Copilot and the last four connect through the same implementation of the Agent Client Protocol (ACP).
+ * Being in the table does not mean this version has registered it: `agents.list` only lists the drivers the Runtime has registered.
  */
 export const BUILTIN_DRIVER_IDS = ['claude', 'codex', 'copilot', 'pi', 'opencode', 'gemini', 'cursor', 'grok', 'kimi'] as const;
 export type BuiltinDriverId = (typeof BUILTIN_DRIVER_IDS)[number];
 
 /**
- * 智能体引擎的 id：内置的（`BUILTIN_DRIVER_IDS`），或用户添加的 ACP 智能体（`agents.addProvider`）。
- * 都是小写字母开头的小写字母、数字与连字符，最长 63 个字符（`DRIVER_ID_PATTERN`）；自定义的不得与内置的重名。
+ * The id of an agent engine: a built-in one (`BUILTIN_DRIVER_IDS`) or a user-added ACP agent (`agents.addProvider`).
+ * Both are lowercase letters, digits and hyphens, starting with a lowercase letter, at most 63 characters (`DRIVER_ID_PATTERN`); a custom one must not share a name with a built-in one.
  */
 export type DriverId = string;
 
-/** Driver id 的写法：与偏好设置 `agent.defaultDriver` 的校验一致。 */
+/** Format of a driver id: matches the validation of the `agent.defaultDriver` preference. */
 export const DRIVER_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
 export function isDriverId(value: unknown): value is DriverId {
@@ -123,10 +118,8 @@ export function isBuiltinDriverId(value: unknown): value is BuiltinDriverId {
 }
 
 /**
- * 用户添加的 ACP 智能体（`agents.addProvider`，架构设计 §3.11），存在 Runtime Home 的 `store/agent-providers.json`。
- * `command` 的第一个元素是可执行文件（PATH 上的名字或绝对路径），其余是以 ACP（stdio）启动它的参数，
- * 例如 `["npx", "-y", "@google/gemini-cli@0.52.0", "--acp"]`。`env` 是启动它时另加的环境变量，可能含密钥：只在 Runtime 里，
- * 不进 `AgentsView`、不写日志。
+ * User-added ACP agents (`agents.addProvider`, architecture design §3.11), stored at `store/agent-providers.json` in the Runtime Home.
+ * The first element of `command` is the executable (a name on PATH or an absolute path); the rest are the arguments that start it over ACP (stdio), e.g. `["npx", "-y", "@google/gemini-cli@0.52.0", "--acp"]`. `env` holds extra environment variables added when it is started; they may contain secrets, so they stay only in the Runtime: they do not go into `AgentsView` and are not logged.
  */
 export interface CustomAgentProvider {
   id: DriverId;
@@ -136,7 +129,7 @@ export interface CustomAgentProvider {
   addedAt: string;
 }
 
-/** `AgentsView` 里一个用户添加的智能体的配置：环境变量只给名字，不给值。 */
+/** Configuration of a user-added agent in `AgentsView`: environment variables are given by name only, never by value. */
 export interface CustomAgentProviderView {
   command: string[];
   envKeys: string[];
@@ -148,28 +141,27 @@ export function customAgentProviderView(provider: CustomAgentProvider): CustomAg
 }
 
 /**
- * 0.1 的自主模式，旧值（产品设计 §7.1）。仍被协议与设置接受，按 `normalizeAgentMode` 换成新的访问模式：
- * `controlled` → `ask`，`authorized` → `fullAccess`，`plan` 不变。新代码用 `AgentMode`（`access.ts`）。
+ * The autonomy mode of 0.1, old values (product design §7.1). The protocol and settings still accept them, and `normalizeAgentMode` maps them to the new access modes:
+ * `controlled` → `ask`, `authorized` → `fullAccess`, `plan` unchanged. New code uses `AgentMode` (`access.ts`).
  */
 export type Autonomy = 'plan' | 'controlled' | 'authorized';
 
 /**
- * 任务的访问模式从哪里来：发送时显式给出、会话切换过的模式、用户设的默认值（`agent.defaultAccessMode`），或内置默认。
+ * Where the access mode of a task comes from: given explicitly when sending, the mode switched in the session, the user's default (`agent.defaultAccessMode`), or the built-in default.
  */
 export type AutonomySource = 'request' | 'conversation' | 'setting' | 'default';
 
 export type TaskStatus = 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 
 export type ToolCallKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'other';
-/** `interrupted`：回合结束时步骤仍未收到终态，不能当成完成。 */
+/** `interrupted`: the turn ended while the step had still not received a terminal state, so it must not be treated as completed. */
 export type ToolCallStatus = 'running' | 'completed' | 'failed' | 'declined' | 'interrupted';
 
 /**
- * 审批的内容。`tool` 是工具调用（架构设计 §3.12）：CucCut 自己的工具，或 Agent 自带的工具（Claude 的 WebFetch 之类）；
- * `files` 放目标（视频、文件），`reason` 放参数摘要，只认 `command` 与 `file-change` 的旧界面按文件修改显示它也不出错。
- * `server`：MCP 服务名，CucCut 自己的是 `cuccut`，Agent 自带的工具为 null。
- * `rule`：选「总是允许」时存下的规则（命令取 `ccut <子命令>` 或第一个词，工具取工具名），由 Driver 或工具目录算好；
- * null 或没有表示这一类不提供「总是允许」。
+ * The content of an approval. `tool` is a tool call (architecture design §3.12): either CucCut's own tools or the agent's built-in tools (such as Claude's WebFetch); `files` holds the targets (videos, files) and `reason` holds a summary of the arguments. Old UIs that only know `command` and `file-change` show it as a file change without error.
+ * `server`: the MCP server name; CucCut's own is `cuccut`, and it is null for the agent's built-in tools.
+ * `rule`: the rule saved when “always allow” is chosen (commands use `ccut <subcommand>` or the first word; tools use the tool name), computed by the Driver or the tool catalog;
+ * null or absent means this kind offers no “always allow”.
  */
 export type ApprovalRequest =
   | { kind: 'command'; command: string; cwd: string | null; reason: string | null; rule?: string | null }
@@ -177,30 +169,27 @@ export type ApprovalRequest =
   | { kind: 'tool'; tool: string; reason: string | null; files: string[]; server?: string | null; rule?: string | null };
 
 /**
- * - `accept-for-session`：对 Driver 原样转交（原生侧的会话级放行）；对 CucCut 工具是「这个任务里同一个工具不再问」，
- *   只在内存里，任务结束即失效（架构设计 §3.12）。
- * - `accept-always`：存一条规则到 `AgentPreferences.rules`，以后所有会话都按它自动批准。规则只归 CucCut 管：
- *   Driver 不得把它写进原生的持久设置（Claude 的 userSettings / projectSettings），否则设置页里「移除规则」是假的；
- *   原生侧最多按本次允许或会话级放行处理。
+ * - `accept-for-session`: passed through to the Driver unchanged (the native session-level allow); for CucCut tools it means “this same tool is no longer asked about in this task”, held in memory only and invalid once the task ends (architecture design §3.12).
+ * - `accept-always`: saves a rule to `AgentPreferences.rules`, which auto-approves it in all sessions from then on. Rules belong to CucCut alone: a Driver must not write them into the agent's native persistent settings (Claude's userSettings / projectSettings), or “remove rule” on the settings page would be fake; on the native side it is handled at most as allow-once or session-level allow.
  */
 export type ApprovalDecision = 'accept' | 'accept-for-session' | 'accept-always' | 'decline';
 export type ApprovalStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 /**
- * 谁做的决定：用户点的、按访问模式自动（允许或拒绝，架构设计 §3.12 的 `auto`），或按「总是允许」规则自动允许的。
- * `rule` 是在 §3.12 之上加的一层：查表得到「询问」时才看规则，命中就自动允许；查表是「拒绝」的不放行，对外发数据的审批也不看规则。
+ * Who made the decision: the user clicked it, it was automatic by access mode (allow or deny; `auto` in architecture design §3.12), or it was automatically allowed by an “always allow” rule.
+ * `rule` is a layer added on top of §3.12: rules are consulted only when the table yields “ask”, and a match is allowed automatically. When the table says “deny”, it is not allowed through, and approvals for sending data externally do not consult rules.
  */
 export type ApprovalDecider = 'user' | 'auto' | 'rule';
 
 interface TimelineBase {
   id: Id;
   createdAt: string;
-  /** 所属任务；用户消息与任务卡片自己也带上，便于按任务分组。 */
+  /** The task it belongs to; user messages and task cards carry it too, so they can be grouped by task. */
   taskId: Id | null;
 }
 
 /**
- * 会话里的一条内容（产品设计 §3.2.2）：用户消息、智能体回复、执行步骤、审批与任务卡片。
- * 卡片状态来自事件与回执，不来自模型的自然语言（架构设计 §11.3）。
+ * An item in a session (product design §3.2.2): a user message, an agent reply, an execution step, an approval, or a task card.
+ * Card state comes from events and receipts, not from the model's natural language (architecture design §11.3).
  */
 export type TimelineItem =
   | (TimelineBase & {
@@ -209,17 +198,17 @@ export type TimelineItem =
       context?: EditorContext;
       references?: SpaceEntryReference[];
       attachments?: AttachmentRef[];
-      /** 发送时挂上的场景模板（模板包规范 §5.2）：只是标记，提示词正文与简报引导只交给智能体，不在 `text` 里。 */
+      /** Scene template attached when sending (template package spec §5.2): only a marker. The prompt body and brief guidance go to the agent and are not in `text`. */
       template?: TemplateMessageRef;
-      /** 发送时点选的 skill（架构设计 §3.8），按挂上的顺序：只是标记，`SKILL.md` 正文只交给智能体，不在 `text` 里。 */
+      /** Skills picked at send time (architecture design §3.8), in the order attached: only markers. The body of `SKILL.md` goes to the agent and is not in `text`. */
       skills?: SkillMessageRef[];
-      /** 旧记录：只能点一个 skill 时写的标记。读的时候与 `skills` 一样对待（`messageSkills`），新消息不再写。 */
+      /** Legacy record: the marker written when only one skill could be picked. Treated like `skills` when read (`messageSkills`); new messages no longer write it. */
       skill?: SkillMessageRef;
-      /** 随消息发出的幻灯片标注（docs/design/slides §9），按添加的顺序。批注正文交给了智能体，不在 `text` 里。旧记录没有。 */
+      /** Slide annotations sent with the message (docs/design/slides §9), in the order added. The annotation text was handed to the agent and is not in `text`. Absent in old records. */
       slideAnnotations?: SlideAnnotation[];
-      /** 随消息发出的设计稿标注（docs/design/canvas §9），按添加的顺序；与 `slideAnnotations` 同一个写法。旧记录没有。 */
+      /** Design annotations sent with the message (docs/design/canvas §9), in the order added; same form as `slideAnnotations`. Absent in old records. */
       designAnnotations?: DesignAnnotation[];
-      /** 随消息发出的设计系统标注（docs/design/canvas §10.6），按添加的顺序；与 `designAnnotations` 同一个写法。旧记录没有。 */
+      /** Design system annotations sent with the message (docs/design/canvas §10.6), in the order added; same form as `designAnnotations`. Absent in old records. */
       designSystemAnnotations?: DesignSystemAnnotation[];
     })
   | (TimelineBase & { kind: 'agent-message'; text: string; streaming: boolean })
@@ -240,14 +229,14 @@ export type TimelineItem =
       request: ApprovalRequest;
       status: ApprovalStatus;
       decidedAt: string | null;
-      /** 动作的风险等级与当时生效的访问模式（§3.12）。旧记录没有。 */
+      /** Risk level of the action and the access mode in effect at the time (§3.12). Absent in old records. */
       risk?: RiskLevel;
       mode?: AgentMode;
-      /** 谁做的决定：按模式自动、按「总是允许」规则，或用户。取消的与旧记录没有。 */
+      /** Who made the decision: automatic by mode, by an “always allow” rule, or the user. Absent for cancelled ones and old records. */
       decidedBy?: ApprovalDecider;
       /**
-       * 用户点的是哪个答案（只在 `decidedBy: 'user'` 时有）：界面据此把「总是允许」写成「之后 <规则> 不再问」。
-       * 早先的记录没有这个字段。
+       * Which answer the user clicked (only present when `decidedBy: 'user'`): the UI uses it to write “always allow” as “no longer asked for <rule>”.
+       * Earlier records do not have this field.
        */
       decision?: ApprovalDecision;
     })
@@ -258,25 +247,25 @@ export type TimelineItem =
       startedAt: string;
       endedAt: string | null;
       error: string | null;
-      /** `error` 的消息引用（message-ref.ts）：CucCut 自己写的原因带上，界面按当前语言重新生成；Agent 的原话没有。 */
+      /** Message reference for `error` (message-ref.ts): included when the reason was written by CucCut; the UI regenerates it in the current language. The agent's original wording has none. */
       errorRef?: MessageRef;
       /**
-       * 任务开始时的访问模式与它的来源（架构设计 §3.12、§5.10）。旧记录没有，旧值在读入时换成新值。
-       * 任务进行中切换模式不改它：切换记在会话的提示（`modeChange`）里。
+       * The access mode when the task started, and where it came from (architecture design §3.12, §5.10). Absent in old records; old values are converted to new ones on read.
+       * Switching the mode while the task runs does not change this; the switch is recorded in the session's prompts (`modeChange`).
        */
       autonomy?: { mode: AgentMode; source: AutonomySource };
-      /** 可恢复的失败原因，界面据此给出「去登录」「换个模型重发」这类出路。 */
+      /** Recoverable failure reason; the UI uses it to offer ways out such as “log in” or “resend with another model”. */
       errorCode?: AgentErrorCode | null;
-      /** 任务合同的当前修订（架构设计 §3.2）。旧记录没有，读入时补上默认合同。历史修订经 `tasks.getContract` 查。 */
+      /** Current revision of the task contract (architecture design §3.2). Absent in old records; the default contract is filled in on read. Historical revisions are looked up with `tasks.getContract`. */
       contract?: TaskContract;
     })
   | (TimelineBase & {
       kind: 'notice';
       level: 'info' | 'warning' | 'error';
       text: string;
-      /** `text` 的消息引用（message-ref.ts）：CucCut 自己写的提示带上，界面按当前语言重新生成；Agent 的原话没有。 */
+      /** Message reference for `text` (message-ref.ts): included when the hint was written by CucCut; the UI regenerates it in the current language. The agent's original wording has none. */
       textRef?: MessageRef;
-      /** 切换访问模式的记录（§3.12）。 */
+      /** A record of switching the access mode (§3.12). */
       modeChange?: { from: AgentMode; to: AgentMode };
     })
   | (TimelineBase & VideoChange & { kind: 'video-change' })
@@ -288,51 +277,48 @@ export type TimelineItem =
 export type TimelineItemKind = TimelineItem['kind'];
 
 /**
- * 智能体在这条会话里新建了一部视频（`videos_create`，架构设计 §3.5）：视频一存在，线程里的视频卡就出现，随时能打开编辑器
- * （产品设计 §3.2.2）。固定流程新建的视频（从链接导入、转录的 `target.create`）不另记：父任务记录补上 `videoId` 时界面就看得到。
- * 不是变更卡：新建没有撤销，删视频是 §4.9 的另一个操作。
+ * The agent created a video in this session (`videos_create`, architecture design §3.5). Once the video exists, a video card appears in the thread and the editor can be opened at any time (product design §3.2.2). Videos created by fixed flows (import from a link, `target.create` for transcription) are not recorded separately: when the parent task record gets a `videoId`, the UI can see it.
+ * This is not a change card: creation has no undo; deleting a video is a separate operation (§4.9).
  */
 export interface VideoCreated {
   videoId: Id;
   videoName: string;
-  /** 在编辑器里打开这个视频；与 `VideoChange.target` 同一个写法。 */
+  /** Opens this video in the editor; same form as `VideoChange.target`. */
   target: VideoChange['target'];
   videoRevision: string;
 }
 
 /**
- * `videos.derive`（工具 `videos_derive`，架构设计 §3.5「派生子视频」）：复制父视频（时间线与文稿），把剪辑后时间线
- * `[start, end)`（秒）之外的部分用剪口剪掉，建在父视频旁边；子视频里恢复剪口就能把片段往外扩。区间先对到帧（起点向下、终点向上取整；取整越过句间停顿、吃进相邻句子的词时反向取整，结果的 `range` 是实际采用的区间）。`width`、`height` 缺省沿用父视频的画布；
- * `fit`、`crop` 给了时写到每个视频片段上；`crops` 按镜头分段取景（见字段）；`captions`、`translations`、`chapters` 缺省都开。
+ * `videos.derive` (tool `videos_derive`, architecture design §3.5 “derive a child video”): copies the parent video (timeline and script) and cuts away everything outside the edited timeline range `[start, end)` (seconds) with cut points, creating the result next to the parent video; restoring the cut points in the child video lets the clip be extended outward. The range is first aligned to frames (start rounds down, end rounds up; when rounding would cross a pause between sentences and take words from an adjacent sentence, it is rounded the other way; the `range` in the result is the range actually used). `width` and `height` default to the parent's canvas;
+ * `fit` and `crop`, when given, are written onto every video clip; `crops` frames the video by shot (see the fields); `captions`, `translations` and `chapters` are all on by default.
  */
 export interface VideoDeriveParams {
   videoId: Id;
   start: number;
   end: number;
-  /** 子视频名；缺省「父视频名 · mm:ss–mm:ss」。不参与幂等键。 */
+  /** Child video name; defaults to “parent name · mm:ss–mm:ss”. Not part of the idempotency key. */
   name?: string;
   width?: number;
   height?: number;
   fit?: 'cover' | 'contain';
   crop?: { left: number; top: number; right: number; bottom: number };
   /**
-   * 按镜头分段取景：父视频剪辑后时间线上的 `[from, to)` 秒（与 `start`、`end` 同一个时钟）各用一份裁剪，最多 64 段、互不重叠。
-   * 各段的起止就近对到帧、截到区间（截过或丢掉的以 `crops-adjusted` 说明）；主素材的视频片段在取景变化处拆开，各段带自己的
-   * 裁剪。没盖住的地方用 `crop`。给了才参与幂等键。
+   * Framing by shot: each `[from, to)` range in seconds on the parent's edited timeline (same clock as `start` and `end`) gets its own crop; up to 64 segments, not overlapping.
+   * The start and end of each segment are snapped to the nearest frame and clipped to the range (what is clipped or dropped is explained by `crops-adjusted`). The video clips of the main material are split where the framing changes, and each piece carries its own crop. Places not covered use `crop`. Only counted in the idempotency key when given.
    */
   crops?: VideoDeriveCrop[];
   captions?: boolean;
   translations?: boolean;
   chapters?: boolean;
-  /** 开头一句（剪成短视频的结果页卡片上的「开头」）；不给时界面取子视频保留段的第一句。写进派生来源文档，不参与幂等键。 */
+  /** Opening sentence (the “opening” on the result card of a short cut video); when not given, the UI takes the first sentence of the child video's kept section. Written into the derivation source document; not part of the idempotency key. */
   hook?: string;
-  /** 为什么挑这一段（结果页卡片上的「为什么挑它」）。写进派生来源文档，不参与幂等键。 */
+  /** Why this section was picked (“why it was picked” on the result card). Written into the derivation source document; not part of the idempotency key. */
   reason?: string;
-  /** 提示牌：几句短提醒（如「开头是对方反应镜头」）。写进派生来源文档，不参与幂等键。 */
+  /** Caption cards: a few short reminders (e.g. “the opening is the other party's reaction shot”). Written into the derivation source document; not part of the idempotency key. */
   notes?: string[];
 }
 
-/** 一段取景：时间线上的 `[from, to)` 秒与四边各裁掉的比例（同 `crop`）。 */
+/** One framing: `[from, to)` seconds on the timeline, and the proportion trimmed from each of the four edges (same as `crop`). */
 export interface VideoDeriveCrop {
   from: number;
   to: number;
@@ -343,10 +329,7 @@ export interface VideoDeriveCrop {
 }
 
 /**
- * 派生时丢掉、改动或没做到的东西（架构设计 §3.5「派生子视频」）。`translations-skipped`：父视频的一份译文没能复制
- * （`documentId` 是父视频里的译文；正文既不是 `cuccut.translation/2`，旧项目的 `/1` 也换不过去）。`crops-adjusted`：
- * 分段取景有 `count` 段截到了区间或截完为空丢掉。`animation-split`：拆开的片段（`itemId`，父视频里的）有循环动画或音量包络，
- * 拆开后每段从头算。
+ * What was dropped, changed or not done during derivation (architecture design §3.5 “derive a child video”). `translations-skipped`: a translation of the parent video could not be copied (`documentId` is the translation in the parent video; its body is neither `cuccut.translation/2` nor convertible from the old project's `/1`). `crops-adjusted`: `count` segments of the framing by shot were clipped to the range, or became empty after clipping and were dropped. `animation-split`: the split clips (`itemId`, in the parent video) have a looping animation or a volume envelope; after splitting, each piece is computed from its start.
  */
 export type VideoDeriveWarningCode =
   | 'anchor-dropped'
@@ -361,43 +344,40 @@ export type VideoDeriveWarningCode =
   | 'animation-split';
 
 export interface VideoDeriveResult {
-  /** 子视频：与 `videos_create` 的 `video-created` 同一个写法。 */
+  /** Child video: same form as `video-created` from `videos_create`. */
   video: VideoCreated;
-  /** 同一父视频版本、同一区间与设置的子视频已经有了：认回它，没有再建。 */
+  /** A child video with the same parent video version, range and settings already exists: it is recognized and returned; nothing new is created. */
   reused: boolean;
-  /** 幂等键：父视频、版本、对齐后的区间与设置的摘要。 */
+  /** Idempotency key: a digest of the parent video, its version, the aligned range and the settings. */
   key: string;
-  /** 对齐到帧之后实际采用的区间（秒；边界留在句间的停顿里）。 */
+  /** The range actually used after aligning to frames (seconds; the boundaries stay within the pauses between sentences). */
   range: { start: number; end: number };
-  /** 记剪口的主素材（父视频里的 ID）；没有可剪的媒体时 null。 */
+  /** The main material whose cut points are recorded (its ID in the parent video); null when there is no media to cut. */
   primaryAssetId: Id | null;
-  /** 区间之外记下的剪口：主素材源时钟上的秒（父视频的素材 ID）。在子视频里恢复它们就回到父视频的全貌。 */
+  /** Cut points recorded outside the range: seconds on the main material's source clock (the material IDs of the parent video). Restoring them in the child video returns to the full view of the parent. */
   cuts: { assetId: Id; from: number; to: number }[];
-  /** 复制的片段数；分段取景拆开的片段按段数算。 */
+  /** Number of clips copied; pieces split by framing by shot are counted by segment. */
   itemCount: number;
-  /** 实际采用的分段取景：对到帧、截到区间之后的各段（父视频剪辑后时间线上的秒）。给了 `crops` 才有。 */
+  /** The framing by shot actually used: the segments after aligning to frames and clipping to the range (seconds on the parent's edited timeline). Present only when `crops` was given. */
   framing?: VideoDeriveCrop[];
-  /** 子视频里的派生来源文档（`kind: 'derivation'`）。 */
+  /** The derivation source document inside the child video (`kind: 'derivation'`). */
   derivationDocumentId: Id | null;
   /**
-   * 派生来源文档里记下的挑选说明，原样回显（去掉首尾空白，空的不带），供调用方核对写进去的是什么。认回已有的子视频时是
-   * 原来那份：这次传的不改写它。
+   * The selection note recorded in the derivation source document, echoed back as given (trimmed; omitted when empty), so the caller can check what was written. When an existing child video is recognized, the original document is returned: what is passed this time does not rewrite it.
    */
   hook?: string;
   reason?: string;
   notes?: string[];
   speech: { documentId: Id; sourceDocumentId: Id; words: number }[];
   translations: { documentId: Id; sourceDocumentId: Id }[];
-  /** 建的字幕层。字幕按整份文稿切条；`cueCount` 只数落在保留区间里（子视频里看得到）的字幕条，认回已有的一层时 null。 */
+  /** The caption track created. Captions are split by the whole script; `cueCount` counts only the caption cues that fall inside the kept range (visible in the child video); null when an existing track was recognized. */
   captions: { documentId: Id; sourceDocumentId: Id; cueCount: number | null }[];
   warnings: { code: VideoDeriveWarningCode; itemId?: Id; assetId?: Id; documentId?: Id; count?: number }[];
 }
 
 /**
- * `videos.shots`（工具 `videos_shots`，架构设计 §3.5「镜头切换」）：找剪辑后时间线 `[start, end)`（秒，缺省整条；最长 20 分钟）
- * 里画面的切换点。按取帧的同一条规则（最上层、启用、轨道可见的视频片段）把区间分段：换了片段、源画面不接续的地方是
- * `edit`；每段的源画面交给 ffmpeg 的场景分数（`select='gt(scene,T)'`），超过 `threshold`（0–1，缺省 0.3）的是 `scene`。
- * 短于 `minShot` 秒（缺省 0.8）的镜头并进前一个。只看画面突变，不认人；叠化、推拉会漏报，闪光会多报。
+ * `videos.shots` (tool `videos_shots`, architecture design §3.5 “shot cuts”): finds the points where the picture cuts within the edited timeline range `[start, end)` (seconds; the whole timeline by default; at most 20 minutes). It splits the range by the same rules as frame fetching (the topmost, enabled, track-visible video clip): where the clip changes or the source picture does not continue, it is an `edit`; within each piece, the source picture is passed to ffmpeg's scene score (`select='gt(scene,T)'`), and those above `threshold` (0–1, default 0.3) are `scene`.
+ * Shots shorter than `minShot` seconds (default 0.8) are merged into the previous one. Only sudden changes in the picture are detected; it does not recognize people. Dissolves and pans will be missed, and flashes may be over-reported.
  */
 export interface VideoShotsParams {
   videoId: Id;
@@ -407,7 +387,7 @@ export interface VideoShotsParams {
   minShot?: number;
 }
 
-/** 一处切换：时间线上的秒（对到帧）；`score` 是场景分数（`edit` 为 null）。 */
+/** One cut: the timeline seconds (snapped to a frame); `score` is the scene score (null for `edit`). */
 export interface VideoShotCut {
   at: number;
   score: number | null;
@@ -417,10 +397,10 @@ export interface VideoShotCut {
 export interface VideoShotsResult {
   videoId: Id;
   revision: string;
-  /** 实际检测的区间（对到帧）。 */
+  /** The range actually detected (snapped to frames). */
   range: { start: number; end: number };
   cuts: VideoShotCut[];
-  /** 相邻切换之间的镜头；`sampleAt` 是镜头 20%、50%、80% 处的时刻（十进制秒字符串，可直接作为取帧的 `at`）。 */
+  /** The shots between adjacent cuts; `sampleAt` is the times at 20%, 50% and 80% of the shot (decimal second strings, usable directly as the `at` of frame fetching). */
   shots: { start: number; end: number; sampleAt: string[] }[];
   threshold: number;
   minShot: number;
@@ -428,47 +408,44 @@ export interface VideoShotsResult {
 }
 
 /**
- * 智能体在这条会话里做好了一份幻灯片（`slides_check` 校验通过，docs/design/slides §7.3）：线程里出现幻灯片卡片，点开在功能区的幻灯片标签里编辑。
- * 同一份 deck 只有一条，之后再校验通过时更新标题、页数与 `taskId`（换成那次校验的任务；条目 id 与位置不变）。
+ * The agent made a slide deck in this session (`slides_check` passed validation, docs/design/slides §7.3): a slide card appears in the thread, and clicking it opens the deck for editing in the slides tab of the feature area.
+ * A deck has only one entry; when validation passes again later, its title, page count and `taskId` are updated (to that validation's task; item ids and positions do not change).
  */
 export interface SlidesCreated {
-  /** deck 目录；与 `VideoCreated.target` 同一个写法，打开时原样交给 `slides.open`。 */
+  /** Deck directory; same form as `VideoCreated.target`, passed to `slides.open` unchanged when opened. */
   target: VideoChange['target'];
-  /** `deck.json` 的 `title`（去掉首尾空白，可能为空）。 */
+  /** The `title` of `deck.json` (trimmed; may be empty). */
   title: string;
   slideCount: number;
 }
 
 /**
- * 智能体在这条会话里做好了一份设计稿（`design_check` 没有问题，docs/design/canvas §7.3）：线程里出现设计稿卡片，
- * 点开在功能区的设计稿标签里编辑。与 `SlidesCreated` 同一套规则：同一份设计稿只有一条，之后再校验通过时更新标题、画板数与 `taskId`。
+ * The agent made a design in this session (`design_check` with no problems, docs/design/canvas §7.3): a design card appears in the thread, and clicking it opens the design for editing in the design tab of the feature area.
+ * Same rules as `SlidesCreated`: a design has only one entry; when validation passes again later, its title, board count and `taskId` are updated.
  */
 export interface DesignCreated {
-  /** 设计稿目录；与 `VideoCreated.target` 同一个写法，打开时原样交给 `design.open`。 */
+  /** Design directory; same form as `VideoCreated.target`, passed to `design.open` unchanged when opened. */
   target: VideoChange['target'];
-  /** `canvas.json` 的 `title`（去掉首尾空白；没有时是目录名）。 */
+  /** The `title` of `canvas.json` (trimmed; the directory name when there is none). */
   title: string;
   boardCount: number;
 }
 
 /**
- * 智能体在这条会话里做好了一个设计系统（`design_system_check` 没有问题，docs/design/canvas §10.5）：线程里出现设计系统卡片，
- * 点开在功能区的设计系统标签里编辑。与 `DesignCreated` 同一套规则：同一个设计系统只有一条，之后再校验通过时更新标题与 `taskId`。
+ * The agent made a design system in this session (`design_system_check` with no problems, docs/design/canvas §10.5): a design system card appears in the thread, and clicking it opens the design system for editing in the design system tab of the feature area.
+ * Same rules as `DesignCreated`: a design system has only one entry; when validation passes again later, its title and `taskId` are updated.
  */
 export interface DesignSystemCreated {
-  /** 设计系统目录；与 `VideoCreated.target` 同一个写法，打开时原样交给 `designSystem.open`。 */
+  /** Design system directory; same form as `VideoCreated.target`, passed to `designSystem.open` unchanged when opened. */
   target: VideoChange['target'];
-  /** `design-system.json` 的 `title`（去掉首尾空白；没有时是目录名）。 */
+  /** The `title` of `design-system.json` (trimmed; the directory name when there is none). */
   title: string;
 }
 
 /**
- * 回合失败的结构化原因（架构设计 §3.11）。Driver 从原生错误里认出来（Claude 的 `authentication_failed`、
- * `model_not_found`、`billing_error`，Codex 的登录与模型错误），认不出的为 null，界面只显示原文。
- * `AGENT_BILLING_REQUIRED`：账号的余额或付款有问题（Claude 的 `billing_error`），要用户在服务商那边处理，等待不会恢复；
- * 套餐用量到顶、限流仍是 `AGENT_RATE_LIMITED`。
- * `AGENT_ACCESS_MODE_UNSUPPORTED`：这个 Agent 没有逐次审批的通道（`capabilities.approvals` 为 false），只能在 `fullAccess` 下运行；
- * Harness 在发送与切换模式时拒绝（`RpcError.code` 为 `conflict`，放在 `details.code`，§3.12），不替用户改模式。
+ * The structured cause of a turn failure (architecture design §3.11). The Driver recognizes it from native errors (Claude's `authentication_failed`, `model_not_found`, `billing_error`; Codex's login and model errors). Unrecognized ones are null, and the UI shows only the raw text.
+ * `AGENT_BILLING_REQUIRED`: a problem with the account's balance or payment (Claude's `billing_error`); the user has to handle it with the provider, and waiting will not recover it. Plan usage at its limit and rate limiting remain `AGENT_RATE_LIMITED`.
+ * `AGENT_ACCESS_MODE_UNSUPPORTED`: this agent has no per-action approval channel (`capabilities.approvals` is false), so it can only run in `fullAccess`. The Harness rejects this when sending and when switching modes (`RpcError.code` is `conflict`, placed in `details.code`, §3.12), and does not change the mode on the user's behalf.
  */
 export const AGENT_ERROR_CODES = [
   'AGENT_AUTH_REQUIRED',
@@ -483,8 +460,7 @@ export const AGENT_ERROR_CODES = [
 export type AgentErrorCode = (typeof AGENT_ERROR_CODES)[number];
 
 /**
- * 消息里的一张图片（产品设计 §3.2.4）。字节经 `attachments.prepare` 拿到的上传地址 PUT 到 Runtime，
- * 存在 Runtime Home 下；发给 Agent 时 Harness 换成本地路径。
+ * An image in a message (product design §3.2.4). The bytes are PUT to the Runtime at the upload address from `attachments.prepare` and stored under the Runtime Home; when sending to the agent, the Harness replaces it with a local path.
  */
 export interface AttachmentRef {
   id: Id;
@@ -495,32 +471,32 @@ export interface AttachmentRef {
 }
 
 /**
- * 发送时编辑器里的上下文（产品设计 §5.3、架构设计 §3.4）：打开的视频、看到的版本、选中的片段与播放头。
- * 绑定的是稳定的 ID 与当时的版本，不是屏幕位置。
+ * The editor context at send time (product design §5.3, architecture design §3.4): the open video, the version being viewed, the selected clip and the playhead.
+ * It is bound to stable IDs and the version at the time, not to screen positions.
  */
 export interface EditorContext {
   videoId: Id;
   videoName: string;
-  /** 视频目录，相对来源目录（项目目录或会话的工作目录）。 */
+  /** Video directory, relative to the source directory (the project directory or the session's working directory). */
   videoPath: string;
   revision: string;
-  /** 选中的时间线片段。 */
+  /** The selected timeline clip. */
   selection: Id[];
   playheadSeconds: number;
-  /** 用户的界面语言（BCP 47，如 `zh-Hans`、`en`）；skill 据此定输出语言（用户提问的语言优先）。旧客户端不给。 */
+  /** The user's UI language (BCP 47, e.g. `zh-Hans`, `en`); skills use it to choose the output language (the language the user asked in takes priority). Old clients do not send it. */
   uiLanguage?: string;
 }
 
 /**
- * 变更卡（产品设计 §6.5）：智能体经视频引擎提交的一笔修改。内容全部来自事务回执，不来自模型的说法。
+ * A change card (product design §6.5): one edit the agent submitted through the video engine. All of its content comes from the transaction receipt, not from the model's claims.
  */
 export interface VideoChange {
   videoId: Id;
   videoName: string;
-  /** 在编辑器里打开这个视频。 */
+  /** Opens this video in the editor. */
   target: { projectId: Id; path: string } | { conversationId: Id; path: string };
   transactionId: Id;
-  /** 回执的修改名与引用：界面用 `localizeText(label, labelRef)` 显示。 */
+  /** The change name and reference from the receipt: the UI displays it with `localizeText(label, labelRef)`. */
   label: string;
   labelRef?: MessageRef;
   previousRevision: string;
@@ -529,26 +505,26 @@ export interface VideoChange {
   updatedIds: Id[];
   deletedIds: Id[];
   durationSeconds: { before: number; after: number };
-  /** 这一笔是撤销哪一笔。 */
+  /** Which change this one undoes. */
   undoOf: Id | null;
 }
 
-/** 能力的三层（架构设计 §3.6）。 */
+/** The three layers of capability (architecture design §3.6). */
 export type CapabilityLevel = 'declared' | 'verified' | 'effective';
 
 export type DriverUnavailableReason = 'not-installed' | 'not-connected' | 'no-permission' | 'unsupported' | 'resource';
 
 /**
- * 一个 Agent 在这台电脑上的状态（架构设计 §3.11）。多个问题同时存在时按设计稿的优先级取一个：
- * 没装 > 出错 > 版本太旧 > 没登录 > 已停用 > 可用。
+ * The state of an agent on this computer (architecture design §3.11). When several problems exist at once, one is chosen by the priority in the design:
+ * not installed > error > version too old > not logged in > disabled > available.
  */
 export type DriverState = 'ready' | 'not-installed' | 'outdated' | 'signed-out' | 'error' | 'disabled';
 
-/** 模型的定位：推荐、最强、最快。界面据此排序与标注。 */
+/** The model's positioning: recommended, strongest, fastest. The UI sorts and labels by it. */
 export type ModelTier = 'balanced' | 'max' | 'fast';
 
 export interface DriverEffort {
-  /** 原生的强度 id（Claude 与 Codex 都是 `low` / `medium` / `high` 一类）。中文标签由界面映射。 */
+  /** The native effort id (for both Claude and Codex, values like `low` / `medium` / `high`). The UI maps them to Chinese labels. */
   id: string;
   label: string;
 }
@@ -558,111 +534,106 @@ export interface DriverModel {
   label: string;
   description: string | null;
   tier: ModelTier | null;
-  /** Agent 自己标的默认模型。 */
+  /** The default model the agent itself marks. */
   isDefault: boolean;
-  /** 空数组 = 这个模型不分推理强度。 */
+  /** An empty array = this model does not distinguish reasoning effort. */
   efforts: DriverEffort[];
   defaultEffort: string | null;
 }
 
 /**
- * 安装或升级这个 Agent 的一种方式。命令原样给用户看，也可以替用户放进终端，不在后台执行。
- * 「不在后台执行」指不在用户看不见的地方悄悄跑：`brew`、`npm` 类经用户逐次确认后可以由 Runtime 在应用内运行
- * （`agents.runSetup`，输出显示在设置页里并记入日志，架构设计 §12.9）；`script` 类（从网络下载并运行脚本）
- * 只给复制或 `agents.openTerminal`。
+ * One way to install or upgrade this agent. The command is shown to the user as it is, and can also be put into their terminal for them; it is not run in the background.
+ * “Not run in the background” means not run secretly where the user cannot see. `brew` and `npm` style commands can be run inside the app by the Runtime after the user confirms each one (`agents.runSetup`; the output is shown on the settings page and recorded in the log, architecture design §12.9). `script` kind (downloading a script from the network and running it) is only offered for copying or `agents.openTerminal`.
  */
 export interface DriverInstallOption {
   kind: 'script' | 'brew' | 'npm';
   label: string;
-  /** `label` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `label` (message-ref.ts). */
   labelRef?: MessageRef;
-  /** 前提，例如 Homebrew、Node.js。 */
+  /** A prerequisite, e.g. Homebrew, Node.js. */
   needs: string | null;
-  /** `needs` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `needs` (message-ref.ts). */
   needsRef?: MessageRef;
   command: string;
   upgrade: string;
 }
 
-/** 应用内运行的安装动作：安装或升级（登录只在系统终端里做，见 `agents.openTerminal`）。 */
+/** An install action run inside the app: install or upgrade (login is only done in the system terminal; see `agents.openTerminal`). */
 export type AgentSetupAction = 'install' | 'upgrade';
 
 export type AgentSetupState = 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** 一次应用内运行最多保留的输出行数（与设计稿的日志上限一致）；更早的行丢掉，`droppedLines` 记丢了多少。 */
+/** The maximum number of output lines kept for one in-app run (matches the design's log limit); earlier lines are dropped, and `droppedLines` records how many were dropped. */
 export const AGENT_SETUP_OUTPUT_LINES = 400;
 
 /**
- * 一次应用内运行的安装或升级命令（`agents.runSetup`，架构设计 §12.9）。只在 Runtime 内存里，不持久化。
- * 结束后 Runtime 先重新探测 Agent，再送出终态：收到终态时 `agents.list` 已经是新结果。
+ * One in-app run of an install or upgrade command (`agents.runSetup`, architecture design §12.9). It is held only in the Runtime's memory and is not persisted.
+ * When it ends, the Runtime re-probes the agent first and only then sends the terminal state: by the time the terminal state is received, `agents.list` already has the new result.
  */
 export interface AgentSetupRun {
   runId: Id;
   driverId: DriverId;
   action: AgentSetupAction;
   kind: DriverInstallOption['kind'];
-  /** 实际运行的完整命令：Runtime 从探测结果里取的，不是客户端给的。 */
+  /** The full command actually run: taken by the Runtime from the probe result, not given by the client. */
   command: string;
   state: AgentSetupState;
-  /** 进程的退出码；被信号结束、没能启动时为 null。 */
+  /** The process exit code; null when it was ended by a signal or failed to start. */
   exitCode: number | null;
-  /** 合并的 stdout 与 stderr，按行，去掉了终端控制序列；只留最后 `AGENT_SETUP_OUTPUT_LINES` 行。 */
+  /** Merged stdout and stderr, line by line, with terminal control sequences removed; only the last `AGENT_SETUP_OUTPUT_LINES` lines are kept. */
   output: string[];
   droppedLines: number;
   startedAt: string;
   endedAt: string | null;
-  /** 没能启动之类的原因（非 0 退出不算，看 `exitCode`）。 */
+  /** The reason, such as failure to start (a non-zero exit does not count; see `exitCode`). */
   error: string | null;
 }
 
 /**
- * Driver 探测到的事实（不含用户偏好）。`status` / `unavailableReason` 是粗粒度的旧字段，
- * 由 `state` 推出（见 `driverAvailability`），模型服务等只关心能不能用的调用方继续用它们。
+ * Facts detected by the Driver (user preferences not included). `status` / `unavailableReason` are coarse legacy fields derived from `state` (see `driverAvailability`); callers that only care whether it can be used, such as the model service, keep using them.
  */
 export interface DriverProbe {
   id: DriverId;
   name: string;
-  /** 终端里敲的名字。 */
+  /** The name typed in the terminal. */
   command: string;
   state: Exclude<DriverState, 'disabled'>;
   status: 'available' | 'unavailable';
   version: string | null;
-  /** CucCut 能驱动的最低版本；空串表示没有要求（用户添加的智能体）。 */
+  /** The minimum version CucCut can drive; an empty string means no requirement (user-added agents). */
   minVersion: string;
-  /** 已知的上游最新版本；不知道为 null。 */
+  /** The latest known upstream version; null if unknown. */
   latestVersion: string | null;
   unavailableReason: DriverUnavailableReason | null;
-  /** 给人看的问题描述（出错原文、为什么不可用）。 */
+  /** A human-readable description of the problem (the raw error text, why it is unavailable). */
   detail: string | null;
-  /** `detail` 的消息引用（message-ref.ts）：探测结果会缓存到磁盘，界面按当前语言重新生成。 */
+  /** Message reference for `detail` (message-ref.ts): probe results are cached to disk, and the UI regenerates them in the current language. */
   detailRef?: MessageRef;
   executable: string | null;
-  /** 链接解析到底的真实位置，用来认出它归谁管（Homebrew、npm……），推出对应的升级命令。 */
+  /** The real location the link finally resolves to, used to recognize who manages it (Homebrew, npm…) and to derive the matching upgrade command. */
   realExecutable: string | null;
-  /** 已登录的账号描述（例如「Claude Pro 订阅」）；没登录或不知道为 null。 */
+  /** A description of the logged-in account (e.g. “Claude Pro subscription”); null if not logged in or unknown. */
   account: string | null;
-  /** `account` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `account` (message-ref.ts). */
   accountRef?: MessageRef;
-  /** 需要什么订阅，例如「Claude Pro 或 Max 订阅」。 */
+  /** The subscription needed, e.g. “Claude Pro or Max subscription”. */
   plan: string;
-  /** `plan` 的消息引用（message-ref.ts）。 */
+  /** Message reference for `plan` (message-ref.ts). */
   planRef?: MessageRef;
-  /** 在终端里登录的命令。 */
+  /** The command to log in from the terminal. */
   loginCommand: string | null;
   install: DriverInstallOption[];
   models: DriverModel[];
-  /** 不传模型时 CLI 自己的配置会选哪个（Codex 读 `~/.codex/config.toml`），以及这一版 CLI 的模型表里有没有它。 */
+  /** Which model the CLI's own configuration picks when no model is passed (Codex reads `~/.codex/config.toml`), and whether this version of the CLI's model table has it. */
   configModel: string | null;
   configModelKnown: boolean | null;
   checkedAt: string;
   /**
-   * 这个 Driver 经过集成测试（架构设计 §3.11 的 D08）。false 时只显示探测结果，不能用来开始会话：Harness 拒绝发送
-   * （`driver-unavailable`）。它是 Driver 这一版的事实，不随本机的安装或登录变化。
+   * This driver has passed integration tests (D08 in architecture design §3.11). When false, only the probe result is shown and it cannot be used to start a session: the Harness rejects sending (`driver-unavailable`). It is a fact about this version of the driver and does not change with installation or login on this machine.
    */
   verified: boolean;
   /**
-   * 这一家在 CucCut 里真机跑通过完整会话。同一协议的共享实现（ACP）在一家真机验证通过即算验证（`verified`），其余预设与用户添加的
-   * 智能体能开会话，但 `tested` 为 false，界面提示「未在 CucCut 实测」。与 `verified` 一样是 Driver 这一版的事实。
+   * This provider has run a complete session on a real machine in CucCut. A shared implementation of the same protocol (ACP) counts as `verified` once one provider passes on a real machine. The other presets and user-added agents can open sessions, but `tested` is false and the UI shows “未在 CucCut 实测” (not yet tested in CucCut). Like `verified`, it is a fact about this version of the driver.
    */
   tested: boolean;
   capabilities: {
@@ -673,46 +644,41 @@ export interface DriverProbe {
   };
 }
 
-/** 一个智能体引擎的能力快照条目（架构设计 §3.6、§3.11）：探测结果加上用户偏好。 */
+/** A capability snapshot entry for an agent engine (architecture design §3.6, §3.11): the probe result plus user preferences. */
 export interface DriverInfo extends Omit<DriverProbe, 'state'> {
   state: DriverState;
-  /** `builtin`：CucCut 自带的 Driver；`custom`：用户添加的 ACP 智能体，可以用 `agents.removeProvider` 移除。 */
+  /** `builtin`: a driver bundled with CucCut; `custom`: a user-added ACP agent, which can be removed with `agents.removeProvider`. */
   source: 'builtin' | 'custom';
-  /** 用户添加的智能体的配置；内置的为 null。 */
+  /** The configuration of a user-added agent; null for built-in ones. */
   custom: CustomAgentProviderView | null;
   enabled: boolean;
-  /** 新会话默认用它。 */
+  /** New sessions use it by default. */
   isDefault: boolean;
   /**
-   * 新会话起手用的模型：用户设过的模型 id（从模型表里消失了也原样给出，新会话改用推荐模型）；没设过时是推荐模型
-   * （`recommendedDriverModel`，还没有模型表时为 null）；null = 用户明确选了「Agent 默认模型」，不传模型，按 CLI 配置。
-   * 默认 Agent 没设过时先看偏好设置 `agent.defaultModel`。
+   * The model a new session starts with: the model id the user set (still given as is if it has dropped out of the model table; the new session then uses the recommended model instead). If never set, it is the recommended model (`recommendedDriverModel`; null when there is no model table yet). null = the user explicitly chose “Agent default model”, so no model is passed and the CLI configuration applies.
+   * If the default agent has not been set, the `agent.defaultModel` preference is checked first.
    */
   defaultModel: string | null;
-  /** 新会话的默认强度；null = 模型自己的默认。 */
+  /** The default reasoning effort for new sessions; null = the model's own default. */
   defaultEffort: string | null;
-  /** 用户手动指定的可执行文件。 */
+  /** The executable the user specified manually. */
   executableOverride: string | null;
 }
 
 /**
- * 「Agent 默认模型」的存法：Agent 偏好的 `defaultModel` 与偏好设置 `agent.defaultModel` 存这个值，表示用户明确选了
- * 不传模型、按 Agent 自己的 CLI 配置走。null 是没设过，用推荐模型（`recommendedDriverModel`）。不会与原生模型 id 相撞
- * （Cursor 就有一个叫 `auto` 的模型）。只在存储里出现：`DriverInfo.defaultModel` 与会话的 `model` 用 null 表示它，
- * `agents.configure { defaultModel: null }` 存成它。
+ * How “Agent default model” is stored: the agent's `defaultModel` preference and the `agent.defaultModel` preference store this value, meaning the user explicitly chose to pass no model and follow the agent's own CLI configuration. null means it was never set, so the recommended model (`recommendedDriverModel`) is used. It does not collide with a native model id (Cursor has a model called `auto`). It only appears in storage: `DriverInfo.defaultModel` and the session's `model` use null to represent it, and `agents.configure { defaultModel: null }` stores it as this value.
  */
 export const AGENT_DEFAULT_MODEL = '__agent-default__';
 
-/** 各家的推荐系列（2026-09-29 用户裁决）：Claude Code 取 Sonnet，Codex 取 `-sol` 结尾的那一档，免得默认落到最贵的模型上。 */
+/** Each vendor's recommended model family (user decision of 2026-09-29): Claude Code takes Sonnet, and Codex takes the tier ending in `-sol`, so the default does not land on the most expensive model. */
 const RECOMMENDED_FAMILY: Partial<Record<DriverId, (model: DriverModel) => boolean>> = {
   claude: (m) => /sonnet/i.test(m.id),
   codex: (m) => /-sol$/i.test(m.id),
 };
 
 /**
- * 推荐模型：没设过默认模型的新会话用它（设计稿 model-agent-setup.js `recommended`）。按这一版 CLI 自己的模型表次序取：
- * Claude Code 第一个 Sonnet、Codex 第一个 `-sol`；其余几家（以及这两家表里没有这一系列时）取第一个标了 `balanced` 的，
- * 再不然是 Agent 标的默认，再不然是第一个。模型表为空时为 null（不传模型）。
+ * The recommended model: new sessions without a set default model use it (design draft model-agent-setup.js `recommended`). It is taken in the order of this version's CLI model table: Claude Code's first Sonnet and Codex's first `-sol`. For the others (and when those two tables have no such family), it is the first one marked `balanced`; failing that, the agent's marked default; failing that, the first one.
+ * null when the model table is empty (no model is passed).
  */
 export function recommendedDriverModel(driverId: DriverId, models: readonly DriverModel[]): DriverModel | null {
   const family = RECOMMENDED_FAMILY[driverId];
@@ -721,7 +687,7 @@ export function recommendedDriverModel(driverId: DriverId, models: readonly Driv
   );
 }
 
-/** `state` 推出旧的粗粒度字段。 */
+/** Legacy coarse-grained fields derived from `state`. */
 export function driverAvailability(state: DriverState): Pick<DriverProbe, 'status' | 'unavailableReason'> {
   switch (state) {
     case 'ready':
@@ -740,35 +706,33 @@ export function driverAvailability(state: DriverState): Pick<DriverProbe, 'statu
 }
 
 /**
- * 放行策略的三个开关（设置 › 权限与安全「减少重复询问」，设计稿）。架构设计 §3.12 规定只读动作（`read`）在任何模式下
- * 都直接执行、不经审批，所以 `read` 与 `ccutro` 覆盖的只读工具本来就不问；`loop`（应答环）在这个架构里没有对应的工具。
- * 三个开关只存下用户的选择供设置页显示，不参与审批判定。
+ * The three switches of the allow policy (settings › Permissions and Security, “reduce repeated prompts”; design draft). Architecture design §3.12 specifies that read-only actions (`read`) run directly under every mode without approval, so the read-only tools covered by `read` and `ccutro` are never asked about anyway; `loop` (the response loop) has no corresponding tool in this architecture.
+ * The three switches only store the user's choice for the settings page to show; they do not take part in approval decisions.
  */
 export interface AgentPolicy {
-  /** 读取视频文件（transcript、project 之类的只读工具）自动允许。 */
+  /** Reading video files (read-only tools such as transcript and project) is allowed automatically. */
   read: boolean;
-  /** CucCut 只读命令（info / status / spec）自动允许。 */
+  /** CucCut's read-only commands (info / status / spec) are allowed automatically. */
   ccutro: boolean;
-  /** Agent 应答环（task claim / task submit）自动允许。 */
+  /** The agent response loop (task claim / task submit) is allowed automatically. */
   loop: boolean;
 }
 
 /**
- * Agent 的用户偏好（设置 › Agent 提供方），存在 Runtime Home 里。新会话默认用哪个 Agent、默认访问模式是偏好设置
- * `agent.defaultDriver`、`agent.defaultAccessMode`（`settings.*`，架构设计 §5.10），不在这里。
+ * The user preferences for agents (settings › Agent providers), stored in the Runtime Home. The default agent for new sessions and the default access mode are the `agent.defaultDriver` and `agent.defaultAccessMode` preferences (`settings.*`, architecture design §5.10), not here.
  */
 export interface AgentPreferences {
   drivers: Partial<Record<DriverId, AgentDriverPreferences>>;
   policy: AgentPolicy;
-  /** 启动时和运行期间定期更新各 Agent 的模型表。 */
+  /** Refreshes each agent's model table at startup and periodically while running. */
   modelAutoUpdate: boolean;
-  /** 「总是允许」存下的规则，按添加顺序。 */
+  /** The rules saved by “always allow”, in the order added. */
   rules: string[];
 }
 
 export interface AgentDriverPreferences {
   enabled: boolean;
-  /** 模型 id；`AGENT_DEFAULT_MODEL` = 明确选了「Agent 默认模型」；null = 没设过，用推荐模型。 */
+  /** Model id; `AGENT_DEFAULT_MODEL` = the user explicitly chose “Agent default model”; null = never set, so the recommended model is used. */
   defaultModel: string | null;
   defaultEffort: string | null;
   executable: string | null;
@@ -776,19 +740,18 @@ export interface AgentDriverPreferences {
 
 export interface RuntimeInfo {
   instanceId: Id;
-  /** Runtime 的运行代：每次启动不同。客户端发现它变了就丢掉增量游标，重取快照。 */
+  /** The Runtime's run generation: different on each start. When the client sees it change, it drops its incremental cursor and fetches the snapshot again. */
   epoch: string;
   runtimeVersion: string;
   protocolVersion: string;
   home: string;
-  /** 「新建项目」放在这里。 */
+  /** “New project” goes here. */
   projectsDir: string;
   logsDir: string;
   pid: number;
   startedAt: string;
   /**
-   * 谁拉起了这个 Runtime（架构设计 §2.2）：`cli` 是 CLI 自动拉起或 `cuccut runtime ensure` 拉起的（空闲满设置
-   * `runtime.idleExitMinutes` 自己退出，`cuccut runtime stop` 只停这种）；其余（桌面端、`npm run runtime`）为 null。
+   * Who started this Runtime (architecture design §2.2): `cli` if it was auto-started by the CLI or started by `cuccut runtime ensure` (it exits by itself after being idle for the minutes set in `runtime.idleExitMinutes`; `cuccut runtime stop` only stops this kind). Others (the desktop app, `npm run runtime`) are null.
    */
   launchedBy: RuntimeLauncher | null;
 }
@@ -796,21 +759,21 @@ export interface RuntimeInfo {
 export type RuntimeLauncher = 'cli';
 
 /**
- * `runtime.status` 的结果（架构设计 §2.2）：给 `cuccut runtime status` 与 `runtime stop` 判断有没有别人在用。
- * 连接只数本机网关上已认证的连接（Web 服务与对外服务走自己的端口，不在这里）。
+ * The result of `runtime.status` (architecture design §2.2): used by `cuccut runtime status` and `runtime stop` to decide whether anyone else is using it.
+ * Connections only count the authenticated connections on the local gateway (the web service and external services use their own ports and are not counted here).
  */
 export interface RuntimeStatus {
   info: RuntimeInfo;
   connections: { desktop: number; cli: number; agent: number };
-  /** 还没结束（排队或运行中）的任务数。 */
+  /** The number of tasks not yet finished (queued or running). */
   activeJobs: number;
-  /** 开着的对外服务（MCP、模型接口、Web、局域网共享）。 */
+  /** The open external services (MCP, model API, web, LAN sharing). */
   runningServices: string[];
-  /** 空闲退出（只有 CLI 拉起的 Runtime 有）：设置的分钟数，与从什么时候起空闲（不空闲时 null）。 */
+  /** Idle exit (only Runtimes started by the CLI have it): the minutes set, and since when it has been idle (null when not idle). */
   idleExit: { minutes: number; idleSince: string | null } | null;
 }
 
-/** 任务中心的一行（产品设计 §2.1）：从会话里的任务卡片派生，不另存。 */
+/** One row in the task center (product design §2.1): derived from the task cards in sessions, not stored separately. */
 export interface TaskSummary {
   taskId: Id;
   conversationId: Id;
@@ -821,23 +784,22 @@ export interface TaskSummary {
   startedAt: string;
   endedAt: string | null;
   error: string | null;
-  /** `error` 的消息引用（message-ref.ts），取自任务卡片的 `errorRef`：界面按当前语言重新生成。 */
+  /** Message reference for `error` (message-ref.ts), taken from the task card's `errorRef`: the UI regenerates it in the current language. */
   errorRef?: MessageRef;
-  /** 任务合同的当前修订号；没有合同的旧任务没有。 */
+  /** The current revision number of the task contract; absent for old tasks that have no contract. */
   contractRevision?: number;
 }
 
 /**
- * Space 条目（架构设计 §5.7）。目录是派生索引，条目有四种来源：
+ * A Space entry (architecture design §5.7). Directories are a derived index. Entries come from four sources:
  *
- * - 来源目录（登记的项目目录、不属于项目的会话的工作目录）里认得出的文件、视频目录与幻灯片目录（有合法 `deck.json` 的目录，
- *   一份 deck 一个条目，不拆成里面的文件）；视频条目带 `ref.videoId`；
- * - Artifact Store 里可交付的产物（生成的图片、音频、文本；不在来源目录里的导出），`id` 是 artifactId；
- * - Job Ledger 里进行中与失败的生成、导出：`generating` / `failed` 的占位，`id` 是 jobId，没有 bytes；
- * - 经 `space.import` 登记的项目文件（与来源目录里的同一个文件是同一个条目，`origin.source` 为 `imported`）。
+ * - Files, video directories and slide directories recognized in source directories (registered project directories, and the working directories of sessions that belong to no project). A directory with a valid `deck.json` is one entry per deck and is not split into the files inside it. Video entries carry `ref.videoId`.
+ * - Deliverable artifacts in the Artifact Store (generated images, audio and text; exports that are not in a source directory). `id` is the artifactId.
+ * - In-progress and failed generations and exports in the Job Ledger: `generating` / `failed` placeholders. `id` is the jobId and there are no bytes.
+ * - Project files registered through `space.import`. The same file in a source directory is the same entry, with `origin.source` set to `imported`.
  *
- * 发布到来源目录里的导出与扫描到的那个文件是同一个条目（`id` 由来源与相对路径决定），带上导出的来源与状态。
- * `status` 为 null 表示没有可说的状态（普通文件、视频）。
+ * An export published into a source directory and the file found by scanning it are the same entry (`id` is decided by the source and the relative path), and carry the export's source and status.
+ * `status` is null when there is nothing to say about it (plain files and videos).
  */
 export type SpaceEntryKind =
   | 'video'
@@ -855,24 +817,23 @@ export type SpaceEntryKind =
 
 export type SpaceEntryStatus = 'generating' | 'candidate' | 'applied' | 'published' | 'source-changed' | 'missing' | 'failed';
 
-/** 条目从哪来（架构设计 §5.7 的 `origin`）。生成参数（原文、提示词）不在这里，只在 Job 记录里。 */
+/** Where the entry came from (`origin` in architecture design §5.7). Generation parameters (the original text, prompts) are not here; they are only in the Job record. */
 export interface SpaceEntryOrigin {
-  /** `derived`：从另一个视频的一段派生出来的子视频（`videos.derive`），`videoId` 是父视频。 */
+  /** `derived`: a child video derived from a section of another video (`videos.derive`); `videoId` is the parent video. */
   source: 'generated' | 'imported' | 'exported' | 'derived';
   /**
-   * 所属项目：产物取自产生它的视频或会话所属的项目；不属于任何项目时为 null。bytes 不在来源目录里的条目
-   * （`source` 两项都是 null）靠它归到项目，`space.list` 的 `projectId` 筛选同时看两处。
+   * The owning project: an artifact takes the project of the video or session that produced it; null when it belongs to no project. For entries whose bytes are not in a source directory (both `source` fields null), this is what assigns them to a project; the `projectId` filter of `space.list` checks both places.
    */
   projectId?: Id | null;
-  /** 产生它的视频；导出时另有冻结的视频版本。 */
+  /** The video that produced it; an export also has a frozen video version. */
   videoId?: Id;
   videoRevision?: string;
-  /** 派生的子视频：派生时取的父视频区间（父视频剪辑后的时间线，秒）；只有 `derived` 有。 */
+  /** For a derived child video: the parent video's range it was derived from (seconds on the parent's edited timeline); only present for `derived`. */
   range?: { start: number; end: number };
   conversationId?: Id;
   taskId?: Id;
   jobId?: Id;
-  /** 生成、导出或派生它的能力（`synthesizeSpeech`、`generateImage`、`generateMusic`、`generateText`、`export`、`videos-derive`）。 */
+  /** The capability that generated, exported or derived it (`synthesizeSpeech`, `generateImage`, `generateMusic`, `generateText`, `export`, `videos-derive`). */
   capability?: string;
   provider?: { providerId: string; modelId: string };
 }
@@ -880,28 +841,27 @@ export interface SpaceEntryOrigin {
 export interface SpaceEntry {
   id: Id;
   kind: SpaceEntryKind;
-  /** 显示名：用户改过就是改后的名字，否则是文件名。 */
+  /** Display name: the edited name if the user has changed it, otherwise the file name. */
   name: string;
   fileName: string;
   /**
-   * bytes 所在的来源目录：项目，或不属于项目的会话的工作目录。不在任何来源目录里的（Artifact Store 里的产物、来源目录之外的导出、
-   * 占位）两者都为 null，这时 `relPath` 只是显示用的文件名，不能按来源目录拼路径；所属项目见 `origin.projectId`。
+   * The source directory holding the bytes: a project, or the working directory of a session that belongs to no project. For entries not inside any source directory (artifacts in the Artifact Store, exports outside a source directory, placeholders), both are null; then `relPath` is only a file name for display and must not be joined to a source directory path. The owning project is in `origin.projectId`.
    */
   source: { projectId: Id | null; conversationId: Id | null };
-  /** 相对来源目录的路径，用 `/` 分隔。 */
+  /** The path relative to the source directory, separated by `/`. */
   relPath: string;
   size: number;
   lastActivityAt: string;
-  /** ISO 时间；旧 Runtime 可不提供，无法确定时为 null。创建时间不使用文件的状态变更时间（ctime）。 */
+  /** ISO time; an old Runtime may not provide it, and it is null when it cannot be determined. The creation time does not use the file's status change time (ctime). */
   createdAt?: string | null;
-  /** 内容的最近更新时间；与创建时间独立，旧 Runtime 可不提供。 */
+  /** The most recent update time of the content; independent of the creation time, and an old Runtime may not provide it. */
   updatedAt?: string | null;
   status: SpaceEntryStatus | null;
   user: { favorite: boolean; displayName: string | null; trashedAt: string | null };
-  /** 指向的对象：视频（视频条目）、产物（生成与导出的结果）或任务（占位）。普通文件没有。 */
+  /** The object it points to: a video (for video entries), an artifact (the result of a generation or export), or a task (for placeholders). Plain files have none. */
   ref?: { videoId: Id } | { artifactId: string } | { jobId: Id };
   origin?: SpaceEntryOrigin;
-  /** 状态的说明：失败与缺失的原因、进度、成片冻结的版本与视频当前的版本。 */
+  /** A description of the status: the reasons for failure and missing files, progress, the version the finished video was frozen at, and the video's current version. */
   statusDetail?: {
     reason?: string;
     code?: string;
@@ -909,25 +869,24 @@ export interface SpaceEntry {
     currentRevision?: string;
   };
   media?: { mediaType?: string; durationSec?: number; width?: number; height?: number };
-  /** 幻灯片条目（deck 目录，docs/design/slides §7.3）的页数；`name` 是 deck 的标题。 */
+  /** The page count of a slide entry (a deck directory, docs/design/slides §7.3); `name` is the deck's title. */
   deck?: { slideCount: number };
-  /** 设计稿条目（设计稿目录，docs/design/canvas §7.3）的画板数；`name` 是设计稿的标题。 */
+  /** The board count of a design entry (a design directory, docs/design/canvas §7.3); `name` is the design's title. */
   canvas?: { boardCount: number };
   /**
-   * 结果写到磁盘上的文件（架构设计 §7.9「保存位置」）：取自任务结果的 `outputs[].path`——文件到文件的流程与导出发布的文件、
-   * 直接任务另存的副本。文件不在了时没有；来源目录里扫描到的普通文件也没有（按来源目录与 `relPath` 拼）。
+   * The file the result is written to on disk (architecture design §7.9 “save location”): taken from the task result's `outputs[].path`, i.e. the file that the file-to-file flow and export publish, and the copies saved by direct tasks. Absent when the file no longer exists; also absent for plain files found by scanning a source directory (they are built from the source directory and `relPath`).
    */
   file?: { path: string };
 }
 
-/** 某个来源目录的扫描没有列全（文件太多或读不了），如实告诉界面。 */
+/** A scan of some source directory did not list everything (too many files, or unreadable); this is reported honestly to the UI. */
 export interface SpaceScanIssue {
   sourceKey: string;
   kind: 'truncated' | 'unreadable';
   detail: string;
 }
 
-/** Runtime 发现信息（架构设计 §2.2），写在 Runtime Home 下，权限 0600。 */
+/** Runtime discovery info (architecture design §2.2), written under the Runtime Home with permission 0600. */
 export interface RuntimeDiscovery extends RuntimeInfo {
   endpoint: string;
   token: string;

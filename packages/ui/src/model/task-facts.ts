@@ -28,7 +28,7 @@ import { tr } from './task-facts.tr.ts';
 import { vi } from './task-facts.vi.ts';
 import { remedyHintText } from './localized-text.ts';
 
-/** 「详情」表的行名与生图请求那一行（译文在 `task-facts.<语言>.ts`）。 */
+/** Row names of the “详情” (Details) table, and the row for the image generation request (translations are in `task-facts.<语言>.ts`). */
 const en = {
   fact: {
     kind: 'Type',
@@ -48,11 +48,11 @@ export type TaskFactsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 任务详情的事实（原型 model-task-facts.js）：「详情」表、错误卡片的补救去处、产物行。
- * 只产出真有数据的行，缺席不写占位；原型里没有后端的（费用、调用记录、行数、帧与速度、预计剩余）不出。
+ * Task detail facts (prototype model-task-facts.js): the “详情” (Details) table, the remedy destinations for the error card, and the output rows.
+ * Only rows with real data are produced; a missing value is not filled with a placeholder. Items that have no backend in the prototype (cost, call records, row count, frames and speed, estimated time remaining) are not produced.
  */
 
-/** `42s` / `12m 40s` / `1h 5m`（原型 `took`）。 */
+/** `42s` / `12m 40s` / `1h 5m` (prototype `took`). */
 export function took(ms: number): string {
   const seconds = Math.max(0, Math.round((Number.isFinite(ms) ? ms : 0) / 1000));
   if (seconds < 60) return `${seconds}s`;
@@ -62,7 +62,7 @@ export function took(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-/** `612 MB` / `1.5 GB` / `500 KB`，1024 进位（原型 `fmtSize`）。 */
+/** `612 MB` / `1.5 GB` / `500 KB`, carrying at 1024 (prototype `fmtSize`). */
 export function fmtSize(bytes: number): string {
   const mb = (bytes || 0) / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -72,20 +72,20 @@ export function fmtSize(bytes: number): string {
 
 export type FactRow = [label: string, value: string];
 
-/** `12 s`；满一分钟起同 `took`（原型 `secs`）。 */
+/** `12 s`; from one minute on, the same as `took` (prototype `secs`). */
 export function secs(ms: number): string {
   const s = Math.max(0, Math.round((ms || 0) / 1000));
   return s < 60 ? `${s} s` : took(ms);
 }
 
 /**
- * 「详情」表的状态格（原型 `statusLabel`）：在跑的念「进行中」，阶段与百分比在进度条与「阶段」一格；
- * 等批准、正在停止与结束了的照 chip 念。
+ * Status cell of the “详情” (Details) table (prototype `statusLabel`): a running task shows “进行中” (“In progress”), with the stage and percentage shown in the progress bar and in the “阶段” (Stage) cell;
+ * tasks waiting for approval, stopping, or already ended are shown as their chip shows them.
  */
 function factStatus(row: TaskRow): string {
   if (row.queued) return TASK_VIEW_COPY.queued;
   if (row.waiting) return row.label;
-  // 可以停或取消的在跑的；正在停止的没有动作可做，照 chip 念「正在停止」。
+  // Running tasks that can be stopped or cancelled; a task that is stopping has no action to take, so it shows “正在停止” (“Stopping”) as its chip does.
   if (row.live && row.action) return TASK_VIEW_COPY.running;
   return row.label;
 }
@@ -104,8 +104,8 @@ function submitterLabel(job: JobRecord): string {
 }
 
 /**
- * 「详情」行 `[label, value]`（原型 `details`）：类型、发起方、状态、开始于、跑在、语言、阶段、图片、用时。
- * 用时：结束了按结束时间算，还在跑的按 `now` 现算，还在排队的不写。
+ * “详情” (Details) row `[label, value]` (prototype `details`): type, initiator, status, started at, running on, language, stage, image, duration.
+ * Duration: for ended tasks it is computed from the end time; for running tasks it is computed live from `now`; for tasks still queued it is not written.
  */
 export function taskFacts(row: TaskRow, source: { job?: JobRecord; task?: TaskSummary }, now: number): FactRow[] {
   const rows: FactRow[] = [];
@@ -134,7 +134,7 @@ export function taskFacts(row: TaskRow, source: { job?: JobRecord; task?: TaskSu
 }
 
 /**
- * 取消之后费用的那句实话（架构设计 §7.4）：服务商不支持取消时请求可能照样在远端做完。没有外发的不写（null）。
+ * The honest note about cost after cancellation (architecture design §7.4): if the provider does not support cancellation, the request may still complete on the remote side. Nothing is written when nothing was sent out (null).
  */
 export function cancellationCost(cancellation: Pick<JobCancellation, 'remote' | 'cost'>): string | null {
   if (cancellation.cost === 'none') return null;
@@ -144,7 +144,7 @@ export function cancellationCost(cancellation: Pick<JobCancellation, 'remote' | 
   return TASK_VIEW_COPY.costPossible;
 }
 
-/** 补救去处：与 shell 的路由同形（`models` 的类与页、设置 › Agent、服务）。 */
+/** Remedy destinations: same shape as the shell's routes (the `models` category and page, Settings › Agent, and services). */
 export type RemedyTarget =
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
   | { tab: 'settings'; section: 'agent' }
@@ -154,7 +154,7 @@ export type RemedyTarget =
 export interface Remedy {
   label: string;
   target: RemedyTarget;
-  /** 说明这是配置问题的一句；`CAPABILITY_NOT_CONFIGURED` 时用它自己的提示。 */
+  /** A sentence stating that this is a configuration problem; for `CAPABILITY_NOT_CONFIGURED`, its own hint is used. */
   hint: string;
 }
 
@@ -167,7 +167,7 @@ const CAPABILITY_CATEGORY: Record<ModelServiceCapability, ModelCategory> = {
   generateMusic: 'music',
 };
 
-/** 模型任务所属的能力分类；导出、固定流程、安装之类不是模型任务，没有。 */
+/** The capability category a model task belongs to; export, fixed pipelines, installation and the like are not model tasks and have none. */
 function jobCategory(kind: JobKind): ModelCategory | undefined {
   return (CAPABILITY_CATEGORY as Partial<Record<JobKind, ModelCategory>>)[kind];
 }
@@ -182,8 +182,8 @@ function isCapabilityNotConfigured(details: unknown): details is CapabilityNotCo
 }
 
 /**
- * 失败的 Job 去哪儿补：`CAPABILITY_NOT_CONFIGURED` 按 `remedy.action`（合同上它在提交时就拒绝、不建 Job，这里防御着读），
- * 其余按错误码：凭据问题去云端模型，模型包问题去本地模型。别的错误没有确定的去处，不给按钮。
+ * Where a failed Job is remedied: `CAPABILITY_NOT_CONFIGURED` follows `remedy.action` (by contract it is rejected at submission and no Job is created; it is read defensively here),
+ * other errors follow the error code: credential problems go to cloud models, model package problems go to local models. Other errors have no definite destination, so no button is shown.
  */
 export function jobRemedy(job: Pick<JobRecord, 'kind' | 'providerId' | 'error'>): Remedy | null {
   const error = job.error;
@@ -224,8 +224,8 @@ export function jobRemedy(job: Pick<JobRecord, 'kind' | 'providerId' | 'error'>)
 }
 
 /**
- * 提交时就被拒、没有建 Job 的（`CAPABILITY_NOT_CONFIGURED` 在 RPC 错误的 details 里）：同样按 `remedy.action` 给去处。
- * 别的拒绝没有确定的去处（null）。
+ * Rejected at submission without a Job being created (`CAPABILITY_NOT_CONFIGURED` in the details of the RPC error): the destination is likewise given by `remedy.action`.
+ * Other rejections have no definite destination (null).
  */
 export function rejectionRemedy(kind: JobKind, error: unknown): Remedy | null {
   const details = (error as { details?: unknown } | null)?.details;
@@ -238,14 +238,14 @@ export interface OutputRow {
   key: string;
   kind: 'image' | 'audio' | 'document';
   name: string;
-  /** `768×1344 · 1.2 MB`、`0:12 · 48 kHz · 1.2 MB`；文稿是一句说明。 */
+  /** `768×1344 · 1.2 MB`, `0:12 · 48 kHz · 1.2 MB`; a transcript is a single explanatory sentence. */
   meta: string;
-  /** 能经 `artifacts.openHandle` 打开的产物；文稿写进了视频，没有单独可开的文件。 */
+  /** Outputs that can be opened via `artifacts.openHandle`; a transcript is written into the video and has no separate file to open. */
   artifactId: string | null;
   mediaType: string | null;
-  /** 已导入视频成为素材。 */
+  /** The imported video becomes a media asset. */
   imported: boolean;
-  /** 写到磁盘上的文件（导出）：完整路径，「在文件夹中显示」用；只存在产物库里的没有。 */
+  /** Files written to disk (exports): the full path, used by “在文件夹中显示” (“Show in folder”); outputs that exist only in the artifact library have none. */
   path: string | null;
 }
 
@@ -280,10 +280,10 @@ function outputRow(output: GeneratedOutput, index: number): OutputRow {
     return {
       key: output.artifactId,
       kind: 'document',
-      // 导出写到磁盘上的文件以实际文件名为准（重名时 Runtime 加过的序号也在里面）。
+      // The file exported to disk uses its actual file name (including any index the Runtime added to avoid a name clash).
       name: output.path ? basename(output.path) : media.kind === 'video' ? TASK_VIEW_COPY.videoName(index + 1) : TASK_VIEW_COPY.fileName(index + 1),
       meta: meta.join(' · '),
-      // 便携包不进产物库（`artifactId` 只是包文件的摘要），打不开，只能在文件夹中显示。
+      // Portable packages do not go into the artifact library (`artifactId` is only the digest of the package file); they cannot be opened, only shown in the folder.
       artifactId: media.kind === 'package' ? null : output.artifactId,
       mediaType: output.mediaType,
       imported: false,
@@ -302,7 +302,7 @@ function outputRow(output: GeneratedOutput, index: number): OutputRow {
   };
 }
 
-/** 产物行：生成任务的每个输出；转录写进视频的文稿只说一句，原始结果（JSON）不列。 */
+/** Output rows: each output of a generation task; a transcript written into the video is described in one sentence, and the raw result (JSON) is not listed. */
 export function jobOutputs(job: Pick<JobRecord, 'result'>): OutputRow[] {
   const result = job.result;
   if (!result) return [];
@@ -324,7 +324,7 @@ export function jobOutputs(job: Pick<JobRecord, 'result'>): OutputRow[] {
   return [];
 }
 
-/** 生图任务的那一行请求（原型 `imageMeta`）：`模型 · 画幅 · N 张 · 用时`。没有冻结参数时 null。 */
+/** The request row for an image generation task (prototype `imageMeta`): `model · aspect ratio · N images · duration`. null when there are no frozen parameters. */
 export function imageRequest(job: JobRecord, now: number): { prompt: string; meta: string } | null {
   const g = job.generation;
   if (g?.capability !== 'generateImage') return null;

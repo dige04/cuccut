@@ -14,7 +14,7 @@ import { pl } from './runtime-storage-credentials.pl.ts';
 import { tr } from './runtime-storage-credentials.tr.ts';
 import { vi } from './runtime-storage-credentials.vi.ts';
 
-/** 凭据存储（系统的安全存储、凭据文件、凭据助手）的错误说明（`packages/runtime-storage`）。 */
+/** Errors for credential storage (the system secure store, credential files, credential helpers) (`packages/runtime-storage`). */
 const en = {
   denied: 'Access denied',
   unavailable: 'The credential store is unavailable',

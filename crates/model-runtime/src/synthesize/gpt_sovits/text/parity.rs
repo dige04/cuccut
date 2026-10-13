@@ -1,6 +1,5 @@
-//! 与上游 Python 前端（G2PW 关闭）的全量对拍。语料由 v2 仓库（`cuccut-app`）的 `scripts/dev/gpt-sovits-text/` 的
-//! `dump_golden.py`（golden.json）、`dump_en.py`（en_layers.json）、`dump_jieba.py`（jieba.json）
-//! 导出，放在 `CCUT_GSV_GOLDEN_DIR` 下：
+//! Full parity check against the upstream Python frontend (G2PW disabled). The corpus is exported from the v2 repository (`cuccut-app`)'s `scripts/dev/gpt-sovits-text/` by
+//! `dump_golden.py` (golden.json), `dump_en.py` (en_layers.json) and `dump_jieba.py` (jieba.json), and placed under `CCUT_GSV_GOLDEN_DIR`:
 //!
 //! ```text
 //! CCUT_GSV_GOLDEN_DIR=… cargo test -p model-runtime --lib synthesize::gpt_sovits::text::parity -- --ignored
@@ -36,7 +35,7 @@ fn names(ids: &[u32]) -> String {
         .join(" ")
 }
 
-/// 切句与中文段 norm_text / phones / word2ph。
+/// Sentence splitting, and norm_text / phones / word2ph for Chinese segments.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn golden_split_and_zh_segments() {
@@ -48,7 +47,7 @@ fn golden_split_and_zh_segments() {
         let text = case["text"].as_str().unwrap();
         let english = case["hint"] == "en";
 
-        // 上游报错的 case 记为 `{"error": ...}`，这边应同样返回 Err
+        // Cases where upstream raised an error are recorded as `{"error": ...}`; here the same cases should also return Err
         let want: Option<Vec<String>> = serde_json::from_value(case["split"].clone()).ok();
         let got = split::pre_seg_text(&split::replace_consecutive_punctuation(text), english).ok();
         split_total += 1;
@@ -94,7 +93,7 @@ fn golden_split_and_zh_segments() {
     assert_eq!(seg_ok, seg_total, "zh segment mismatches");
 }
 
-/// jieba 分词、词性与搜索模式。
+/// jieba segmentation, parts of speech and search mode.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn jieba_matches_jieba_fast() {
@@ -140,7 +139,7 @@ fn rows(layer: &str) -> &'static [Value] {
     LAYERS[layer].as_array().expect("layer").as_slice()
 }
 
-/// 上游结果：字符串或 `{"error": 异常类名}`。
+/// Upstream result: a string, or `{"error": exception class name}`.
 fn render(got: Result<String, PyError>) -> Value {
     match got {
         Ok(text) => Value::String(text),
@@ -194,7 +193,7 @@ impl Tally {
     }
 }
 
-/// inflect 数字读法。
+/// inflect number reading.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn en_layer_number_to_words() {
@@ -209,7 +208,7 @@ fn en_layer_number_to_words() {
     };
     for row in rows("ntw") {
         let s = row["s"].as_str().unwrap();
-        // 上游先 int(s)，再把 int 传进 number_to_words（即 str(int)）
+        // Upstream first calls int(s), then passes the int into number_to_words (that is, str(int))
         let n = match s.trim_start_matches('0') {
             "" => "0",
             n => n,
@@ -228,7 +227,7 @@ fn en_layer_number_to_words() {
     Tally::finish(&[tally]);
 }
 
-/// 英文文本规范化。
+/// English text normalization.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn en_layer_normalize() {
@@ -241,7 +240,7 @@ fn en_layer_normalize() {
     Tally::finish(&[normalize, text_normalize]);
 }
 
-/// 分词、词性、wordsegment 与 GRU 预测。
+/// Segmentation, part of speech, wordsegment and GRU prediction.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn en_layer_tokens_tags_segments_predictions() {
@@ -269,7 +268,7 @@ fn en_layer_tokens_tags_segments_predictions() {
     Tally::finish(&[tokenize, pos, segment, predict]);
 }
 
-/// g2p_en 调用、GPT-SoVITS 的英文 g2p 与 clean_text。
+/// g2p_en calls, GPT-SoVITS's English g2p, and clean_text.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn en_layer_g2p() {
@@ -290,7 +289,7 @@ fn en_layer_g2p() {
     Tally::finish(&[call, g2p, clean]);
 }
 
-/// 中英混排分段（规则 C）与逐段音素 id。
+/// Mixed Chinese/English segmentation (rule C) and per-segment phone ids.
 #[test]
 #[ignore = "needs CCUT_GSV_GOLDEN_DIR (golden.json / en_layers.json / jieba.json)"]
 fn langseg_and_text_phones() {

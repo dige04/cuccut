@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use timeline::svg_fill;
 
-// v2 的路径（`apps/cuccut/assets/stickers`）。v3 还没有贴纸库，本文件的测试都标了 ignore。
+// v2's path (`apps/cuccut/assets/stickers`). v3 has no sticker library yet, so all tests in this file are marked ignore.
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../apps/cuccut/assets/stickers")
 }
@@ -86,7 +86,7 @@ fn every_shipped_static_sticker_has_editable_regions_and_renders_after_partial_r
             path.display()
         );
         let cards = svg_fill::fills_of(&svg);
-        // 单色线性图标只有一张色卡；多色贴纸最多五张。
+        // A single-color linear icon has only one swatch. A multi-color sticker has at most five.
         assert!(
             (1..=5).contains(&cards.len()),
             "{}: {cards:?}",

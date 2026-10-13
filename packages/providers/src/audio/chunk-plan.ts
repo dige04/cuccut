@@ -1,9 +1,7 @@
 /**
- * 切片计划（架构设计 §6.4）：超过单次请求上限的音频切成几块依次提交，边界尽量落在静音处。纯函数，单位是秒。
+ * Chunk plan (architecture design §6.4): audio longer than the single-request cap is cut into several chunks that are submitted in turn, with boundaries falling at silence where possible. It is a pure function, and the units are seconds.
  *
- * 规则：从当前位置起，在 [位置 + 上限·50%, 位置 + 上限] 的窗口里找静音；与窗口相交的静音取它的中点（夹进窗口），
- * 取最靠后的一个作为切点；窗口里没有静音就在窗口末端硬切。窗口末端还要给剩下的部分至少留 `minChunkSec`，
- * 免得最后一块只有零点几秒。剩下的不超过上限时就是最后一块。
+ * Rule: from the current position, look for silence in the window [position + cap·50%, position + cap]. For silence that intersects the window, take its midpoint (clamped into the window), and choose the latest one as the cut point. If there is no silence in the window, hard cut at the window's end. The window's end must also leave at least `minChunkSec` for the remainder, so that the last chunk is not just a fraction of a second. When the remainder is not over the cap, it is the last chunk.
  */
 
 export interface Silence {
@@ -18,14 +16,14 @@ export interface PlannedChunk {
 
 export interface ChunkPlanInput {
   durationSec: number;
-  /** 每块的上限（已经含余量）。 */
+  /** The cap per chunk (already including the margin). */
   maxChunkSec: number;
   silences: readonly Silence[];
-  /** 最后一块至少多长；默认 min(1 秒, 上限的 1/4)。 */
+  /** The minimum length of the last chunk. Default min(1 second, 1/4 of the cap). */
   minChunkSec?: number;
 }
 
-/** 窗口从上限的这个比例开始。 */
+/** The window starts at this proportion of the cap. */
 const WINDOW_FROM = 0.5;
 
 export function planChunks(input: ChunkPlanInput): PlannedChunk[] {
@@ -60,14 +58,14 @@ export function planChunks(input: ChunkPlanInput): PlannedChunk[] {
 }
 
 /**
- * 每块的时长上限：单次请求的时长上限与字节上限（按这种编码最坏情况下每秒的字节数折算）取小的，乘上余量；
- * 还可以给一个更短的偏好（例如不返回时间的模型切短一些，让插值的词时间不至于太粗）。
+ * The duration cap per chunk: the smaller of the single request's duration cap and its byte cap (converted from the worst-case bytes per second of this encoding), multiplied by a margin.
+ * A shorter preferred length may also be given. For example, models that do not return times get shorter chunks, so that interpolated word times are not too coarse.
  */
 export function chunkLimitSec(input: {
   maxDurationSec: number | null;
   maxInputBytes: number | null;
   bytesPerSec: number;
-  /** 容器头部等固定开销。 */
+  /** Fixed overhead such as the container header. */
   overheadBytes?: number;
   preferredSec?: number | null;
   margin?: number;
@@ -82,7 +80,7 @@ export function chunkLimitSec(input: {
   return limits.length > 0 ? Math.min(...limits) : Number.POSITIVE_INFINITY;
 }
 
-/** 解析 ffmpeg `silencedetect` 写在 stderr 里的行。没有收尾的静音延续到 `durationSec`。 */
+/** Parses the lines that ffmpeg `silencedetect` writes to stderr. A silence that is never closed extends to `durationSec`. */
 export function parseSilences(stderr: string, durationSec: number): Silence[] {
   const silences: Silence[] = [];
   let open: number | null = null;

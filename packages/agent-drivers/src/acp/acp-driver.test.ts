@@ -41,7 +41,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
       { id: 'fake-pro', label: 'Fake Pro', description: null, tier: null, isDefault: true, efforts: [], defaultEffort: null },
       { id: 'fake-flash', label: 'Fake Flash', description: 'Fast', tier: null, isDefault: false, efforts: [], defaultEffort: null },
     ]);
-    // 探测进程不弹浏览器，用完就关（session/close），不发 prompt。
+    // The probe process does not open a browser; it is closed when done (session/close), and no prompt is sent.
     expect(fake.log().find((e) => e.kind === 'start')?.env).toEqual({ NO_BROWSER: '1', NO_OPEN_BROWSER: '1' });
     expect(fake.requests('session/close')).toHaveLength(1);
     expect(fake.requests('session/prompt')).toEqual([]);
@@ -80,7 +80,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     expect(probe.state).toBe('signed-out');
     expect(probe.unavailableReason).toBe('not-connected');
     expect(probe.detail).toContain('gemini');
-    // Google 账号与 API 密钥两种登录方式都说到。
+    // Both the Google account and API key login methods are covered.
     expect(probe.detail).toContain('Google');
     expect(probe.detail).toContain('~/.gemini/.env');
     expect(probe.detail).toContain('API key is missing');
@@ -95,12 +95,12 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
       expect(helpers()).toHaveLength(1);
       expect(() => process.kill(helpers()[0]!, 0)).toThrow();
     } finally {
-      // 断言失败时也不留下测试自己的进程。
+      // Even when an assertion fails, the test does not leave its own processes behind.
       for (const pid of helpers()) {
         try {
           process.kill(pid, 'SIGKILL');
         } catch {
-          // 已经结束
+          // Already ended
         }
       }
     }
@@ -146,16 +146,16 @@ describe('ACP 预设', () => {
       ['npm install -g @github/copilot', 'npm install -g @github/copilot@latest'],
     ]);
     expect(ACP_PRESETS.copilot.permissionOption).toEqual({ configId: 'allow_all', on: 'on', off: 'off' });
-    // #autopilot 比完全访问还宽，不在候选里。
+    // #autopilot is broader than full access, so it is not among the candidates.
     expect(
       Object.values(ACP_PRESETS.copilot.modes)
         .flat()
         .some((id) => id.endsWith('#autopilot')),
     ).toBe(false);
     expect(acpPathVariable(ACP_PRESETS.cursor)).toBe('CUCCUT_CURSOR_PATH');
-    // 不放比 CucCut 模式更宽的原生模式：ask 只有 default。
+    // Do not add a native mode broader than CucCut's modes: ask has only default.
     expect(ACP_PRESETS.gemini.modes.ask).toEqual(['default']);
-    // 共享实现已验证：都能开会话；各家都还没以自家智能体在 CucCut 上实测过。
+    // The shared implementation is verified: sessions can be opened in all cases; none of the vendors has yet been tested on CucCut with its own agent.
     expect(acpDrivers(silentLogger).map((d) => [d.id, d.verified, d.slowProbe, d.preset.tested])).toEqual([
       ['copilot', true, true, false],
       ['gemini', true, true, false],

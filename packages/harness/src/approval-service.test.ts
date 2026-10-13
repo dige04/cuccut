@@ -50,7 +50,7 @@ describe('ApprovalService', () => {
     expect(approvals.pending()).toEqual([
       expect.objectContaining({ approvalId: 'ap1', risk: 'edit', expiresAt: null, subject: conversation }),
     ]);
-    // 同一个号已被占用：另起一个。
+    // Same id already taken: use another.
     const second = approvals.request(input({ approvalId: 'ap1' }));
     expect(second.approvalId).not.toBe('ap1');
     expect(second.approvalId).toMatch(/^apv_/);

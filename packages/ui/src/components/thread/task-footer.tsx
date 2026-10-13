@@ -13,10 +13,9 @@ import './agent-thread.css';
 const stack = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 
 /**
- * 回合页脚（产品设计 §3.2.2）：一轮从一条用户消息到下一条之前，页脚挂在这一轮最后一行下面。
- * 状态来自任务事件，不来自模型说了什么（架构设计 §11.3）。进行中「正在工作 · 0:42」每秒跳，只有计时的小组件自己重渲；
- * 等审批时「等你允许 · 0:42」；完成后「已工作 1:03」，hover 换成结束时刻。右侧复制这一轮的回复正文（Markdown 源码，不含工具与思考）。
- * `recover`：这是会话里最后一个任务、失败了、会话空闲，下面挂恢复区。
+ * Turn footer (product design §3.2.2): a turn runs from one user message until the next; the footer hangs below the last row of that turn.
+ * The status comes from task events, not from what the model said (architecture design §11.3). While in progress, “正在工作 · 0:42” (Working · 0:42) ticks every second, and only the timer widget re-renders itself. While waiting for approval, “等你允许 · 0:42” (Waiting for your approval · 0:42). When done, “已工作 1:03” (Worked 1:03); on hover it switches to the end time. On the right is a copy of this turn's reply body (Markdown source, excluding tools and thinking).
+ * `recover`: this is the last task in the session, it failed, and the session is idle, so the recovery area is attached below.
  */
 export const TaskFooter = memo(function TaskFooter({
   turn,
@@ -48,8 +47,8 @@ export const TaskFooter = memo(function TaskFooter({
 });
 
 /**
- * 进行中的计时：每秒重渲的只有它。前面一个通用序列的像素加载图形（与正文左边对齐），等你允许时不放；
- * 图形是扫光文字的兄弟节点（扫光把文字色设成透明，放进去 currentColor 就没了）。
+ * The timer while in progress: it is the only thing that re-renders every second. In front of it is a pixel loader graphic from the generic sequence (aligned with the left edge of the body); it does not play while waiting for your approval.
+ * The graphic is a sibling of the shimmering text (the shimmer sets the text colour to transparent, so if the graphic were placed inside, `currentColor` would be lost).
  */
 function LiveClock({ turn }: { turn: Turn }) {
   const now = useNow(1000);
@@ -68,7 +67,7 @@ function LiveClock({ turn }: { turn: Turn }) {
   );
 }
 
-/** 结束后的时长；hover 换成结束时刻。隐藏的 sizer 占住两种文案里较长的宽度，换字时不抖。失败只写原因。 */
+/** The duration after finishing; on hover it switches to the end time. A hidden sizer reserves the width of the longer of the two labels, so the text does not jitter when it changes. On failure, only the reason is written. */
 function DoneClock({ turn }: { turn: Turn }) {
   const task = turn.task;
   if (!task) return null;

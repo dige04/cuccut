@@ -35,7 +35,7 @@ const ASSETS: Record<string, AssetRecord> = {
   },
 };
 
-/** 文稿剪过一刀的样子（S03）：素材 [0, 4) 在 [0, 120)，[6, 12) 在 [120, 300)；视频与链接的音频，加一条作用实例指向它们的字幕。 */
+/** What a transcript looks like after one cut (S03): media [0, 4) at [0, 120), [6, 12) at [120, 300); the video and its linked audio, plus one instance pointing at their captions. */
 function afterCut(extra: Parameters<typeof sequence>[1] = []) {
   return sequence(TRACKS, [
     video('va', 0, 120, 0, { linkGroupId: 'g1' }),
@@ -48,7 +48,7 @@ function afterCut(extra: Parameters<typeof sequence>[1] = []) {
   ]);
 }
 
-/** 12 秒的素材，每秒一个词：`词i` 在 [i, i + 0.8)。 */
+/** 12 seconds of media with one word per second: `词i` (word i) spans [i, i + 0.8). */
 const WORDS: SpeechWord[] = Array.from({ length: 12 }, (_, i) => ({ id: `w${i}`, start: i, end: i + 0.8, text: `词${i}`, paragraphStart: false }));
 
 const band = (s = afterCut()): CutBand => cutBands(s)[0]!;
@@ -149,7 +149,7 @@ describe('dragBandEdge', () => {
 });
 
 describe('retimeOperations', () => {
-  /** `afterCut()` 的剪口：素材 [4, 6)。 */
+  /** The cut from `afterCut()`: media [4, 6). */
   const CUTS = [{ id: 'cut-1', from: 4, to: 6 }];
   const restoreCut = { type: 'restoreCut', sequenceId: 'seq', assetId: 'asset_a', cutId: 'cut-1' };
 
@@ -159,7 +159,7 @@ describe('retimeOperations', () => {
     expect(plan?.ok).toBe(true);
     if (!plan?.ok) return;
     expect(plan.frames).toBe(92);
-    // 左缘往前拖 32 帧：素材 4 - 32/30 秒。
+    // Left edge dragged earlier by 32 frames: media 4 - 32/30 s.
     expect(plan.operations).toEqual([
       restoreCut,
       { type: 'addCuts', sequenceId: 'seq', assetId: 'asset_a', cuts: [{ from: '2.933333', to: '6' }] },
@@ -187,7 +187,7 @@ describe('retimeOperations', () => {
     expect(retimeOperations(s, ASSETS, band(s), [], { start: -10, end: 60 })).toEqual({ ok: false, reason: 'untracked' });
     const part = [{ id: 'cut-1', from: 5, to: 6 }];
     expect(retimeOperations(s, ASSETS, band(s), part, { start: -10, end: 60 })).toEqual({ ok: false, reason: 'partial' });
-    // 只恢复不要求整个盖住：点一下带放回盖住的那部分。
+    // Restore-only does not require the whole cut to be covered: a single click on the band restores the part it covers.
     expect(bandRestore(s, band(s), part)).toMatchObject({ ok: true, cutIds: ['cut-1'], seconds: 1 });
   });
 });

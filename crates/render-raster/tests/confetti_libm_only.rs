@@ -1,22 +1,15 @@
-//! confetti 取样核的超越函数只走 `libm` crate（道理同 `ccut-motion/tests/libm_only.rs`）。
+//! The transcendental functions in the confetti sampling kernel go only through the `libm` crate (same reasoning as `ccut-motion/tests/libm_only.rs`).
 //!
-//! `ccut-wasm` 的 `confettiSample` 把 `confetti_particles` 的 f64 粒子表原样序列化给 JS，
-//! 这条路径上一个 `sin` 差 1 ULP，Web 缩略图、目录格拿到的坐标就与 native 不同；修复前
-//! 十款里九款对不上（`apps/web/tests/unit/render/wasm-motion-parity.test.ts`）。
+//! `confettiSample` in `ccut-wasm` serializes the f64 particle table from `confetti_particles` as-is for JS. On this path, a `sin` that differs by 1 ULP would make the coordinates the web thumbnail and catalog grid get differ from native. Before the fix, nine of the ten styles did not match (`apps/web/tests/unit/render/wasm-motion-parity.test.ts`).
 //!
-//! 取样路径是 `kernel.rs`（闭式运动核）与 `shapes.rs`（单位形；星形顶点经 `path_d` 出边界），
-//! 两份整文件扫描，一处 std 超越函数都不许有。`draw.rs` 的 `confetti_frame` 把粒子转角
-//! 变成 f32 仿射（`sin_cos`），属于合成层：规范 §15.1 对 DrawOp 承诺的是逐像素确定，
-//! 与 `ccut-timeline-render` 的 `element_transform` 同一批留在 std。这里把它钉成
-//! `draw.rs` 唯一的一处，`confetti_particles` 里新添的调用照样会红。
+//! The sampling path is `kernel.rs` (the closed-form motion kernel) and `shapes.rs` (unit shapes; star vertices reach their boundary through `path_d`). Both files are scanned in full, and no std transcendental function is allowed anywhere in them. `confetti_frame` in `draw.rs` turns the particle rotation into an f32 affine (`sin_cos`), which belongs to the composition layer: spec §15.1 promises pixel-level determinism for DrawOp, and like `element_transform` in `ccut-timeline-render` it stays on std. Here it is pinned as the single place in `draw.rs`, so any new call added in `confetti_particles` will still fail the check.
 //!
-//! 扫描是文本级的，跳过注释行；`draw.rs` 那一处同时是扫描器认得 `sin_cos` 的正例，
-//! `kernel.rs` / `shapes.rs` 里的 `libm::sin(` 是它不误报的反例。
+//! The scan is text-level and skips comment lines. The one occurrence in `draw.rs` is also a positive example for the scanner, which recognizes `sin_cos`. The `libm::sin(` calls in `kernel.rs` / `shapes.rs` are negative examples that it must not flag.
 
 use std::fs;
 use std::path::Path;
 
-/// std 上会落到平台数学库的 `f32` / `f64` 方法。
+/// `f32` / `f64` methods that on std fall through to the platform math library.
 const TRANSCENDENTAL: &[&str] = &[
     "sin", "cos", "tan", "sin_cos", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
     "asinh", "acosh", "atanh", "exp", "exp2", "exp_m1", "ln", "ln_1p", "log", "log2", "log10",
@@ -27,7 +20,7 @@ const HINT: &str = "改调 libm：同名的直接换（`x.sin()` → `libm::sin(
                     `ln_1p` → `log1p`，`exp_m1` → `expm1`，`sin_cos` → `sin` + `cos`，\
                     `powf` → `pow`，底数为 2 的写 `exp2`";
 
-/// 一行里调到的 std 超越函数：方法调用 `x.sin(`，或路径 `f64::sin`（调用或当函数值传）。
+/// A std transcendental function called on a line: a method call `x.sin(`, or a path `f64::sin` (called or passed as a function value).
 fn std_calls(line: &str) -> Vec<&'static str> {
     TRANSCENDENTAL
         .iter()
@@ -45,7 +38,7 @@ fn std_calls(line: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// `src/source/confetti/<file>` 里调 std 超越函数的 `(行号, 函数名)`，以及 `libm::` 出现次数。
+/// The `(line number, function name)` of std transcendental calls in `src/source/confetti/<file>`, and the number of occurrences of `libm::`.
 fn scan(file: &str) -> (Vec<(usize, &'static str)>, usize) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/source/confetti")

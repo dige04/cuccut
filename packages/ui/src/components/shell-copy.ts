@@ -15,15 +15,15 @@ import { tr } from './shell-copy.tr.ts';
 import { vi } from './shell-copy.vi.ts';
 
 /**
- * 应用外壳（components 根目录下各组件）的文案。英文写在这里，译文在 `shell-copy.zh-Hans.ts`；
- * 用词见 docs/glossary.md。界面读取时才取值，切换语言后重新渲染即生效。
+ * Copy for the app shell (components at the root of components). English is written here; translations live in `shell-copy.zh-Hans.ts`;
+ * see docs/glossary.md for wording. Values are read only when the UI renders, so switching language takes effect on re-render.
  */
 
-/** 会话所在位置：属于项目，或只是一个工作目录。 */
+/** Where the session lives: belongs to a project, or is just a working directory. */
 export type ConversationPlace = 'project' | 'workdir';
 
 const en = {
-  /** 并列名词的分隔（如「A、B」）。 */
+  /** Separator for parallel nouns (e.g. “A、B”). */
   list: (items: readonly string[]): string => items.join(', '),
   separator: ', ',
   common: {
@@ -241,7 +241,7 @@ const en = {
   voicePicker: { placeholder: 'Choose a voice' },
   pageSidebar: {
     resize: 'Resize sidebar',
-    /** 侧栏浮出右上角的按钮：恢复常驻侧栏（产品设计 §2.5）。 */
+    /** Button in the top-right corner of the floating sidebar: restores the pinned sidebar (product design §2.5). */
     pin: 'Pin sidebar',
   },
   filePane: { label: (name: string) => `File: ${name}` },

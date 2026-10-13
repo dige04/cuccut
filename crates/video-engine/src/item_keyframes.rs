@@ -1,9 +1,6 @@
-//! 实例的窗口变了之后改写它的关键帧绑定与音量包络（视频格式规范 §3.15、§3.9）。
+//! After an instance's window changes, rewrite its keyframe bindings and volume envelope (video format spec §3.15, §3.9).
 //!
-//! 换算只有一份，取 `timeline::keyframes`：裁切与跟随用 `rewindow`，拆分用 `split_keyframes`，合并用
-//! `join_keyframes`。这里只做两种写法之间的转换：绑定的 `localFrame` 按序列帧率换成实例局部的秒，换算之后取
-//! 最近的帧写回（同一帧上的几帧只留后一帧的值）；百分比原样往返。音量包络的 `at` 换算之后按微秒写回
-//! （`rewindow` 本身就取到微秒）。
+//! There is only one set of conversions, in `timeline::keyframes`: `rewindow` for trimming and following, `split_keyframes` for splitting, and `join_keyframes` for joining. This file only converts between the two representations. The bindings' `localFrame` is converted from sequence frames to instance-local seconds, and after conversion the nearest frame is written back (when several frames land on the same frame, only the later one's value is kept). Percentages round-trip unchanged. The volume envelope's `at` is written back in microseconds after conversion (`rewindow` itself works to microseconds).
 
 use editor_semantics::{MediaTime, Rate, Ratio};
 use timeline::keyframes::{KeyTime, Keyframe as V2Keyframe, Keyframes, Rewindow, join_keyframes, rewindow, split_keyframes};
@@ -14,7 +11,7 @@ use crate::model::*;
 use crate::state::VideoState;
 use render_graph::envelope::envelope_keyframes;
 
-/// 一个实例的关键帧（画面绑定与音量包络）：v2 的写法。
+/// An instance's keyframes (picture bindings and volume envelope): in v2's form.
 fn keyframes_of(state: &VideoState, item_id: &str, fps: f64) -> EngineResult<Keyframes> {
     let placed = state.items.get(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     let header = &state.sequence(&placed.sequence_id)?.header;
@@ -26,8 +23,7 @@ fn keyframes_of(state: &VideoState, item_id: &str, fps: f64) -> EngineResult<Key
     Ok(keyframes)
 }
 
-/// 把 v2 写法的关键帧写回实例：画面属性写成序列上的绑定（已有的绑定保留 ID，新的分配 ID），音量写回包络。
-/// 没有出现的属性去掉。
+/// Writes v2-form keyframes back to the instance: picture properties are written as bindings on the sequence (existing bindings keep their IDs, new ones are assigned IDs); volume is written back to the envelope. Properties that do not appear are removed.
 fn write_keyframes(state: &mut VideoState, item_id: &str, keyframes: &Keyframes, fps: f64) -> EngineResult<()> {
     let placed = state.items.get_mut(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     if let Some(points) = envelope_mut(&mut placed.value) {
@@ -56,7 +52,7 @@ fn write_keyframes(state: &mut VideoState, item_id: &str, keyframes: &Keyframes,
             });
         }
     }
-    // 保持绑定在序列上的先后：原位替换，新增的接在后面。
+    // Keep the order of the bindings on the sequence: replace in place; new ones are appended after.
     let mut out = Vec::with_capacity(header.animation_bindings.len());
     for binding in header.animation_bindings.drain(..) {
         if binding.target_id != item_id {
@@ -70,7 +66,7 @@ fn write_keyframes(state: &mut VideoState, item_id: &str, keyframes: &Keyframes,
     Ok(())
 }
 
-/// 裁切与跟随：实例的窗口按 `window` 改了（§3.15「裁切或跟随剪口改变实例的窗口时」）。
+/// Trimming and following: the instance's window was changed by `window` (§3.15 “when trimming or following a cut changes an instance's window”).
 pub(crate) fn rewindow_item(state: &mut VideoState, item_id: &str, window: Rewindow, fps: Rate) -> EngineResult<()> {
     let fps = fps.ratio().to_f64();
     let keyframes = keyframes_of(state, item_id, fps)?;
@@ -80,8 +76,7 @@ pub(crate) fn rewindow_item(state: &mut VideoState, item_id: &str, window: Rewin
     write_keyframes(state, item_id, &rewindow(&keyframes, window), fps)
 }
 
-/// 拆分：`left_id` 已是左半、`right_id` 是新的右半（还带着左半的关键帧）。`duration` 是拆分之前的长度，
-/// `cut` 是拆分点的实例局部秒。左半保留原来的绑定 ID，右半的绑定是新的。
+/// Split: `left_id` is already the left half, and `right_id` is the new right half (which still carries the left half's keyframes). `duration` is the length before the split; `cut` is the split point in the instance's local seconds. The left half keeps the original binding IDs; the right half's bindings are new.
 pub(crate) fn split_item(state: &mut VideoState, left_id: &str, right_id: &str, duration: f64, cut: f64, fps: Rate) -> EngineResult<()> {
     let fps = fps.ratio().to_f64();
     let keyframes = keyframes_of(state, left_id, fps)?;
@@ -93,8 +88,7 @@ pub(crate) fn split_item(state: &mut VideoState, left_id: &str, right_id: &str, 
     write_keyframes(state, right_id, &right, fps)
 }
 
-/// 合并：时间上靠前的 `early`（长 `early_duration` 秒）与靠后的 `late` 拼回一件。能还原成同一串帧时返回
-/// 拼好的关键帧（`Some(None)` 是两边都没有），否则 `None`。
+/// Join: the earlier `early` (which is `early_duration` seconds long) and the later `late` are rejoined into one. When they can be reduced to the same sequence of frames, returns the joined keyframes (`Some(None)` means neither side has any), otherwise `None`.
 pub(crate) fn join_items(
     state: &VideoState,
     early: &str,
@@ -110,12 +104,12 @@ pub(crate) fn join_items(
     Ok(join_keyframes(a.as_ref(), early_duration, b.as_ref(), late_duration))
 }
 
-/// 把合并拼好的关键帧写到留下的实例上。
+/// Writes the joined keyframes onto the instance that remains.
 pub(crate) fn write_joined(state: &mut VideoState, item_id: &str, keyframes: Option<&Keyframes>, fps: Rate) -> EngineResult<()> {
     write_keyframes(state, item_id, keyframes.unwrap_or(&Keyframes::default()), fps.ratio().to_f64())
 }
 
-/// 把 `from` 的关键帧原样搬到 `to` 上（合并时用 `keep` 选了靠后那一边）。
+/// Moves `from`'s keyframes over to `to` unchanged (when joining, `keep` selected the later side).
 pub(crate) fn copy_bindings(state: &mut VideoState, from: &str, to: &str) -> EngineResult<()> {
     let sequence_id = state
         .items
@@ -145,7 +139,7 @@ const ALL_PROPERTIES: [KeyframeProperty; 7] = [
     KeyframeProperty::Radius,
 ];
 
-/// v2 的帧换回绑定的帧：秒取最近的帧，同一帧上只留后一帧的值；百分比原样。
+/// Converts v2 frames back into bindings: seconds are rounded to the nearest frame; when several land on the same frame only the later value is kept; percentages are unchanged.
 pub(crate) fn to_binding_keyframes(frames: &[V2Keyframe], fps: f64) -> Vec<Keyframe> {
     let mut out: Vec<Keyframe> = Vec::with_capacity(frames.len());
     for frame in frames {
@@ -166,7 +160,7 @@ pub(crate) fn to_binding_keyframes(frames: &[V2Keyframe], fps: f64) -> Vec<Keyfr
     out
 }
 
-/// v2 的音量帧换回包络：秒按微秒写回。
+/// Converts v2 volume frames back into the envelope: seconds are written back as microseconds.
 fn to_envelope(frames: &[V2Keyframe]) -> Vec<EnvelopePoint> {
     frames
         .iter()

@@ -14,7 +14,7 @@ import { pl } from './drivers-acp.pl.ts';
 import { tr } from './drivers-acp.tr.ts';
 import { vi } from './drivers-acp.vi.ts';
 
-/** 经 ACP 接入的 Agent（GitHub Copilot、Gemini CLI、Cursor Agent、Grok、Kimi Code 与用户添加的）：预设、探测与会话里的文字。 */
+/** Agents connected over ACP (GitHub Copilot, Gemini CLI, Cursor Agent, Grok, Kimi Code, and user-added ones): text for presets, probing and sessions. */
 const en = {
   copilotPlan: 'GitHub Copilot subscription',
   copilotLoginHint: "run copilot login in a terminal to sign in (or enter /login in copilot's interactive mode)",
@@ -30,16 +30,16 @@ const en = {
   kimiInstallHint: 'Install Kimi Code following the official instructions (https://github.com/MoonshotAI/kimi-code)',
   customNoCommand: (p: { id: string }) => `Agent ${p.id} has no command`,
   customInstallHint: (p: { command: string }) => `Check that ${p.command} is installed and on PATH, or add it again with an absolute path`,
-  /** 未登录时「怎么登录」的缺省说法。 */
+  /** Default wording for “how to sign in” when not signed in. */
   loginViaTerminal: (p: { command: string }) => `run ${p.command} in a terminal to sign in`,
   loginPerInstructions: 'follow its instructions to sign in',
-  /** `detail` 为空时不带括号里的原文。 */
+  /** When `detail` is empty, the original text in parentheses is left out. */
   signedOut: (p: { name: string; login: string; detail: string }) =>
     `${p.name} isn't signed in: ${p.login}.${p.detail ? ` (${p.detail})` : ''}`,
   probeTimeout: (p: { name: string; seconds: number }) => `${p.name} didn't respond within ${p.seconds} seconds`,
   acpModeFailed: (p: { name: string; error: string }) => `${p.name} failed to start in ACP mode: ${p.error}`,
   exitCode: (p: { code: string }) => `exit code ${p.code}`,
-  /** `tail` 是 stderr 的最后一行，为空时不带。 */
+  /** `tail` is the last line of stderr. It is left out when empty. */
   exited: (p: { name: string; status: string; tail: string }) => `${p.name} exited (${p.status})${p.tail ? `: ${p.tail}` : ''}`,
   exitedBeforeInit: (p: { name: string }) => `${p.name} exited before initializing`,
   initTimeout: (p: { name: string }) => `${p.name} didn't finish ACP initialization in time`,

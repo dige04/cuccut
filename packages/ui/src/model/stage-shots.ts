@@ -3,12 +3,10 @@ import { cropOperations } from './stage-gesture.ts';
 import { isPannable, type PannableVideo } from './stage-pose.ts';
 
 /**
- * 按镜头分段取景（产品设计 §5.10「改一支短视频」，原型 model-shorts-cut.js 的 `shotBadge` 与 stage-objects.jsx 的 `ShotChip`）：
- * 剪成短视频时按镜头取景的子视频里，主素材按镜头拆成几段视频，各带自己的裁剪（`videos_derive` 写的）。画布上选中其中一段时
- * 挂一枚小牌，说清楚拖的是哪一段；小牌上「套到整支」把这一段的裁剪写到同一素材的每一段。
+ * Shot-by-shot framing (product design §5.10 “Edit a short video”; `shotBadge` in the prototype model-shorts-cut.js and `ShotChip` in stage-objects.jsx): in a sub-video framed shot by shot when cut into a short video, the main footage is split into several video segments by shot, each with its own crop (written by `videos_derive`). When one of these segments is selected on the canvas, a small badge is attached to make clear which segment is being dragged; the “Apply to whole clip” on the badge writes this segment's crop to every segment of the same asset.
  */
 
-/** 和 `item` 一起分段取景的那几段：同一素材、铺满、`cover`、带裁剪的视频，按时间线先后排。`item` 本身不是这种视频时空表。 */
+/** The segments framed together with `item`: videos from the same asset that are full-frame, `cover`, and cropped, ordered by timeline position. When `item` itself is not this kind of video, the table is empty. */
 export function framingPieces(sequence: Sequence, item: SequenceItem): PannableVideo[] {
   if (!isPannable(item)) return [];
   const asset = item.assetRef.id;
@@ -17,20 +15,20 @@ export function framingPieces(sequence: Sequence, item: SequenceItem): PannableV
     .sort((a, b) => a.span.fromFrame - b.span.fromFrame);
 }
 
-/** 出不出小牌：这支视频的主素材拆成了不止一段取景，选中的是其中一段。 */
+/** Whether to show the badge: this video's main footage is split into more than one framed segment, and one of them is selected. */
 export function showsShotChip(sequence: Sequence, item: SequenceItem): boolean {
   const pieces = framingPieces(sequence, item);
   return pieces.length > 1 && pieces.some((piece) => piece.id === item.id);
 }
 
-/** 小牌上的秒：这一段在子视频时间线上的起止，取整，止至少比起多 1 秒（原型 `shotBadge`）。 */
+/** Seconds shown on the badge: the start and end of this segment on the sub-video timeline, rounded; the end is at least 1 second after the start (`shotBadge` in the prototype). */
 export function shotSeconds(item: PannableVideo, sequence: Pick<Sequence, 'fps'>): { from: number; to: number } {
   const from = Math.round(framesToSeconds(item.span.fromFrame, sequence.fps));
   const to = Math.max(from + 1, Math.round(framesToSeconds(item.span.fromFrame + item.span.durationFrames, sequence.fps)));
   return { from, to };
 }
 
-/** 「套到整支」：把 `item` 现在的裁剪写到同一素材的其它几段（一笔事务）；已经一样的不写。 */
+/** “Apply to whole clip”: writes `item`'s current crop to the other segments of the same asset (one transaction); segments that already match are not written. */
 export function applyFramingToAll(sequenceId: Id, item: PannableVideo, pieces: readonly PannableVideo[]): EditOperation[] {
   return pieces.filter((piece) => piece.id !== item.id).flatMap((piece) => cropOperations(sequenceId, piece, item.crop));
 }

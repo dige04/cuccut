@@ -4,29 +4,29 @@ import { agoLabel } from './format.ts';
 import type { TaskRow } from './task-list.ts';
 
 /**
- * 任务胶囊与悬停卡（原型 model-task-pill.js）。一条不变量：**胶囊上的「+N」与卡片里的行是同一张表**。
- * 胶囊念表头那一条，「+N」是其余的条数；卡片把整张表画出来，最多 CARD_MAX 行，余下一句「还有 N 个」。
+ * Task pill and hover card (prototype model-task-pill.js). One invariant: **the “+N” on the pill and the rows in the card come from the same table**.
+ * The pill shows the head entry, and “+N” is the count of the rest; the card draws the whole table, up to CARD_MAX rows, with the remainder as one line, “还有 N 个” (“N more”).
  *
- * 原型的「这个项目」在这里是编辑器打开的视频（`videoId`）：Job 记着它的视频，Agent 任务属于会话、没有视频，
- * 所以 `mineOnly` 时 Agent 任务不进胶囊（它就在旁边的会话里）。
+ * The prototype's “这个项目” (“this project”) is here the video open in the editor (`videoId`): a Job records its video, while an agent task belongs to a session and has no video,
+ * so with `mineOnly` agent tasks do not go into the pill (they are in the adjacent session).
  */
 
 export const CARD_MAX = 5;
 
 export interface PillOptions {
-  /** 编辑器打开的视频。 */
+  /** The video open in the editor. */
   videoId?: Id | null;
-  /** 只报这个视频的任务。 */
+  /** Report only this video's tasks. */
   mineOnly?: boolean;
-  /** 正在看的那条任务详情，排最前。 */
+  /** The task whose details are being viewed, sorted first. */
   focusId?: Id | null;
 }
 
 const isMine = (row: TaskRow, videoId: Id | null | undefined) => !!videoId && row.videoId === videoId;
 
 /**
- * 胶囊与卡片共用的那张表：活着的任务（在跑、排队、等批准），这个视频的导出不进表（导出按钮自己念进度）。
- * 排序：正在看的那条 → 这个视频的 → 其余在跑的 → 排队的；同档后起的在前。
+ * The table shared by the pill and the card: live tasks (running, queued, waiting for approval); this video's exports are not in the table (the export button shows their progress itself).
+ * Order: the one being viewed → this video's → other running ones → queued ones; within a tier, later ones first.
  */
 export function pillList(rows: readonly TaskRow[], options: PillOptions = {}): TaskRow[] {
   const { videoId, mineOnly, focusId } = options;
@@ -44,7 +44,7 @@ export function pillList(rows: readonly TaskRow[], options: PillOptions = {}): T
     .map(({ row }) => row);
 }
 
-/** 右侧那一格：百分比 / 排队中 / 需要你确认 / 正在停止；不确定进度时为空。 */
+/** The cell on the right: percentage / queued / needs your confirmation / stopping; empty when progress is not determinate. */
 export function pillState(row: TaskRow): string {
   if (row.waiting) return TASK_VIEW_COPY.awaitingApproval;
   if (row.queued) return TASK_VIEW_COPY.queued;
@@ -52,7 +52,7 @@ export function pillState(row: TaskRow): string {
   return row.pct == null ? '' : `${row.pct}%`;
 }
 
-/** 胶囊上的字：`转录 · 37%`。 */
+/** Text on the pill: `转录 · 37%`. */
 export function pillLabel(row: TaskRow): string {
   const tail = pillState(row);
   return tail ? `${row.kindText} · ${tail}` : row.kindText;
@@ -64,7 +64,7 @@ export interface PillFace {
   more: number;
 }
 
-/** 胶囊的样子：表头那一条 ＋ 其余条数；表空时不画。 */
+/** What the pill looks like: the head entry plus the count of the rest; nothing is drawn when the table is empty. */
 export function pillFace(list: readonly TaskRow[]): PillFace | null {
   const head = list[0];
   if (!head) return null;
@@ -77,14 +77,14 @@ export interface PillCardRow {
   detail: string;
   meta: string;
   state: string;
-  /** 数字是确定进度；`indet` 转圈；null 不画（排队、等批准）。 */
+  /** A number is determinate progress; `indet` spins; null draws nothing (queued, waiting for approval). */
   progress: number | 'indet' | null;
   cancellable: boolean;
 }
 
-/** 卡片的一行。 */
+/** One row of the card. */
 export function pillRow(row: TaskRow, videoId: Id | null | undefined, now: number): PillCardRow {
-  // 不到一分钟（与 `agoLabel` 的「刚刚」同一条线）写「刚开始」，不靠比对显示文字。
+  // Under one minute (same threshold as “刚刚” (“just now”) in `agoLabel`) is written as “刚开始” (“just started”), without relying on comparing displayed text.
   const justStarted = Math.max(0, now - Date.parse(row.startedAt)) < 60_000;
   const when = justStarted ? TASK_PILL_COPY.justStarted : TASK_PILL_COPY.startedAt(agoLabel(row.startedAt, now));
   return {
@@ -105,7 +105,7 @@ export interface PillCard {
   overflow: number;
 }
 
-/** 整张卡：单条时是那一条的详情；多条时是计数头 ＋ 行表 ＋ 溢出一句。 */
+/** The whole card: with one entry, that entry's details; with several, a count header plus the row table plus an overflow line. */
 export function pillCard(list: readonly TaskRow[], videoId: Id | null | undefined, now: number): PillCard {
   return {
     multi: list.length > 1,

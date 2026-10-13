@@ -4,8 +4,8 @@ import { M } from './skills-copy.ts';
 import { formatSkillChanged, parseSkillId } from './skills-output.ts';
 
 /**
- * 管理桶 `cuccut skills add|import|enable|disable|remove`（架构设计 §3.8、§12.9）：添加、导入与移除只经桌面界面与 CLI。
- * 列出与读取在 Agent 面（`skills list|read`）。
+ * Admin bucket `cuccut skills add|import|enable|disable|remove` (architecture design §3.8, §12.9): adding, importing and removing go only through the desktop UI and the CLI.
+ * Listing and reading are on the agent surface (`skills list|read`).
  */
 export const skills = defineNoun({
   name: 'skills',

@@ -1,4 +1,4 @@
-//! WASM 入口在原生上的行为：同一套导出函数，界面与 Node 经线性内存调用的就是这些。
+//! Behaviour of the WASM entry on native: the same export functions; the UI and Node call exactly these through linear memory.
 
 use editor_wasm::{bc_alloc, bc_free, bc_output_len, bc_output_ptr, bc_speech_sentences, speech_sentences};
 use serde_json::{Value, json};

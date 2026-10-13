@@ -5,9 +5,9 @@ import { mediaUrlKey } from '../../runtime/media-url-cache.ts';
 import { useConnection } from '../../state/connection-store.ts';
 
 /**
- * 视频素材的媒体地址（架构设计 §4.5）。句柄有期限，Runtime 重启后旧地址失效：
- * 媒体元素报错时调用 `retry` 重新取一次；重新连上之后也重新取。
- * 地址经视频控制器的地址缓存要（同一素材版本共用一个请求）；缓存里已有新鲜的地址时第一次渲染就给出。
+ * Media address of a video asset (architecture design §4.5). Handles expire, and old addresses become invalid after the Runtime restarts.
+ * When the media element errors, call `retry` to fetch a new address; also fetch again after reconnecting.
+ * The address comes through the video controller's address cache (one request shared by the same asset version). If the cache already holds a fresh address, it is returned on the first render.
  */
 export function useAssetUrl(videoId: Id | null, asset: VersionRef): { url: string | null; error: string | null; retry(): void } {
   const urls = useRuntime().videos.mediaUrls;
@@ -15,10 +15,10 @@ export function useAssetUrl(videoId: Id | null, asset: VersionRef): { url: strin
   const key = videoId ? mediaUrlKey(videoId, asset) : null;
   const initial = () => ({ key, url: videoId ? urls.peek(videoId, asset) : null, error: null as string | null });
   const [state, setState] = useState(initial);
-  // 换了素材（或视频）时不拿上一个的地址或错误顶着：先看缓存，没有就空着，等这次的结果。
+  // When the asset (or the video) changes, do not hold the previous address or error: check the cache first, otherwise leave it empty and wait for this result.
   const current = state.key === key ? state : initial();
   const [attempt, setAttempt] = useState(0);
-  // 这一次渲染给出去的地址：媒体元素报错时拿它去缓存里比对。
+  // The address handed out in this render: when the media element errors, compare against it in the cache.
   const shown = useRef({ key, url: current.url });
   shown.current = { key, url: current.url };
 
@@ -26,7 +26,7 @@ export function useAssetUrl(videoId: Id | null, asset: VersionRef): { url: strin
     if (!videoId || !connected) return;
     const target = { id: asset.id, revision: asset.revision };
     const k = mediaUrlKey(videoId, target);
-    // 缓存里的就是正在用的：不用再要（上千个元素同时挂上时各自都在这里停下）。
+    // If the cache already holds the address in use, there is no need to request again (when thousands of elements mount at once, each one stops here).
     const hit = urls.peek(videoId, target);
     if (hit && hit === shown.current.url && shown.current.key === k) return;
     let cancelled = false;
@@ -43,7 +43,7 @@ export function useAssetUrl(videoId: Id | null, asset: VersionRef): { url: strin
   }, [urls, videoId, asset.id, asset.revision, connected, attempt]);
 
   const retry = useCallback(() => {
-    // 先报错的那个把失效的地址从缓存里删掉；其余的跟上同一个新请求。
+    // The first to error removes the invalid address from the cache; the rest follow the same new request.
     const { key: failedKey, url: failedUrl } = shown.current;
     if (videoId && failedUrl && failedKey === mediaUrlKey(videoId, { id: asset.id, revision: asset.revision })) {
       urls.invalidate(videoId, { id: asset.id, revision: asset.revision }, failedUrl);

@@ -103,14 +103,12 @@ import { FALLBACK_FONT_FAMILY } from '../fonts/bundled-fonts.ts';
 import { queryKey, type ExportFacePlan, type FontService } from '../fonts/font-service.ts';
 
 /**
- * 导出服务（架构设计 §9.11、§9.13）：`exports.create` 在提交前冻结与预检，失败时不创建任务；通过后把冻结的快照存成
- * JSON 产物、交给 JobManager 排队。任务在 staging 里生成每个输出、各自校验、取消检查之后各自发布（复制到目标目录、
- * 硬链接到最终的名字、登记为产物），部分失败如实报告。
+ * Export service (architecture design §9.11, §9.13): `exports.create` freezes and preflights before submission, and creates no task on failure; after passing, it saves the frozen snapshot as a JSON artifact and hands it to the JobManager for queuing. The task generates each output in staging and verifies it, and after the cancellation check, each output is published on its own (copied to the target directory, hard-linked to the final name, registered as an artifact). Partial failures are reported as they happened.
  *
- * 预检的错误放在 `RpcError.details.code`（命令与协议规范 §11.4）：`EXPORT_KIND_UNSUPPORTED`、`EXPORT_RANGE_EMPTY`、
- * `EXPORT_SOURCE_NOT_FOUND`、`EXPORT_SOURCE_AMBIGUOUS`、`EXPORT_SOURCE_UNSUPPORTED`、`EXPORT_SOURCE_UNPLACED`、
- * `EXPORT_NOTHING_TO_EXPORT`、`EXPORT_DESTINATION_EXISTS`、`EXPORT_DESTINATION_UNWRITABLE`、`EXPORT_TOOL_MISSING`、
- * `ASSET_MISSING`、`ASSET_CHANGED`。
+ * Preflight errors go in `RpcError.details.code` (command and protocol spec §11.4): `EXPORT_KIND_UNSUPPORTED`, `EXPORT_RANGE_EMPTY`,
+ * `EXPORT_SOURCE_NOT_FOUND`, `EXPORT_SOURCE_AMBIGUOUS`, `EXPORT_SOURCE_UNSUPPORTED`, `EXPORT_SOURCE_UNPLACED`,
+ * `EXPORT_NOTHING_TO_EXPORT`, `EXPORT_DESTINATION_EXISTS`, `EXPORT_DESTINATION_UNWRITABLE`, `EXPORT_TOOL_MISSING`,
+ * `ASSET_MISSING`, `ASSET_CHANGED`.
  */
 
 export interface ExportServiceOptions {
@@ -118,18 +116,18 @@ export interface ExportServiceOptions {
   videos: VideoService;
   ffmpeg: () => Promise<ToolCommand>;
   ffprobe: () => Promise<ToolCommand>;
-  /** Render Worker（`export-worker`）的可执行文件；找不到时 null，成片导出以 `EXPORT_TOOL_MISSING` 拒绝。 */
+  /** The executable for the Render Worker (`export-worker`); null when not found, in which case finished-video export is rejected with `EXPORT_TOOL_MISSING`. */
   exportWorker?: () => string | null;
-  /** 按需下载的字体（架构设计 §9.1）：不给时只用本机字体。 */
+  /** Fonts downloaded on demand (architecture design §9.1): when not given, only local fonts are used. */
   fonts?: FontService;
   log: Logger;
 }
 
 const SPEECH_SCHEMA = 'cuccut.speech/1';
 const CAPTION_SCHEMA = 'cuccut.caption/1';
-/** 缺 ffmpeg / ffprobe 时的补救办法（用时取，跟着当前语言）。 */
+/** The remedy when ffmpeg / ffprobe is missing (fetched at the time of use, follows the current language). */
 const toolRemedy = () => ffmpegMissingRemedy({ ffprobe: true });
-/** 缺 Render Worker 时的补救办法（用时取，跟着当前语言）。 */
+/** The remedy when the Render Worker is missing (fetched at the time of use, follows the current language). */
 const workerRemedy = () => RcExport.workerRemedy().text;
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -159,7 +157,7 @@ interface FrozenOutput {
   fileName: string;
 }
 
-/** 链接素材在预检时看到的文件状态：执行前再比一次，变了就重算摘要。 */
+/** The file state of linked assets as seen at preflight: compared again before execution, and the digest is recomputed if it changed. */
 interface LinkedCheck {
   asset: PlannedAsset;
   size: number;
@@ -189,7 +187,7 @@ export class ExportService {
     return this.#jobs.list(videoId).filter((job) => job.kind === 'export');
   }
 
-  /** 冻结 → 预检 → 存快照 → 排队。预检不过时抛 `RpcError`，不创建任务。 */
+  /** Freeze → preflight → save snapshot → queue. If preflight fails, throws `RpcError` and no task is created. */
   async create(request: ExportCreateRequest, submitter: JobSubmitter): Promise<{ jobId: Id }> {
     const { settings } = request;
     if (!(SUPPORTED_EXPORT_KINDS as readonly string[]).includes(settings.kind)) throw kindUnsupported(settings.kind);
@@ -215,11 +213,11 @@ export class ExportService {
     return this.#createText(request, settings as TextSettings, ranges, mirror.video, submitter);
   }
 
-  // ---- 字幕与文稿 ----
+  // ---- Subtitles and text ----
 
   /**
-   * 字幕或文稿的正文，不写文件、不建任务（`exports.renderText`）：冻结、预检与写法都与 `exports.create` 是同一段代码
-   * （`#planText`、`renderTextPart`），所以正文与导出的文件逐字节相同。不碰目标目录；文件名是默认目标下预计的名字。
+   * The body of a subtitle or text document, without writing a file or creating a task (`exports.renderText`). Freezing, preflight and formatting use the same code as `exports.create`
+   * (`#planText`, `renderTextPart`), so the body is byte-identical to the exported file. It does not touch the target directory; the file name is the one expected under the default target.
    */
   async renderText(request: ExportRenderTextRequest): Promise<ExportRenderTextResult> {
     const settings = request.settings as ExportSettings;
@@ -248,7 +246,7 @@ export class ExportService {
     return { outputs, warnings };
   }
 
-  /** 选文档、在一个引擎请求里冻结全部范围的计划、预检（文档能不能导、范围里有没有字）。 */
+  /** Selects the document, freezes the plan for all ranges in one engine request, and preflights (whether the document can be exported, whether the range contains any text). */
   async #planText(videoId: Id, settings: TextSettings, ranges: ExportRange[], video: VideoSnapshot): Promise<FrozenText> {
     const sequenceId = settings.sequenceId ?? video.rootSequenceId;
     const primaryId = settings.documentId ?? chooseDocument(video, sequenceId, settings);
@@ -277,7 +275,7 @@ export class ExportService {
         });
       }
     }
-    // 不跳过剪掉的部分时从正文取条目：转写的正文在计划里，字幕的另外读。
+    // When not skipping the cut parts, entries come from the body: the transcript's body is in the plan, and subtitles are read separately.
     const bodies = new Map<Id, unknown>();
     if (settings.kind === 'transcript' && settings.skipCut === false) {
       for (const [i, document] of plan.documents.entries()) {
@@ -382,7 +380,7 @@ export class ExportService {
     return this.#submit(request, settings, snapshot, outputs, dir, submitter, run);
   }
 
-  // ---- 音频 ----
+  // ---- Audio ----
 
   async #createAudio(
     request: ExportCreateRequest,
@@ -406,7 +404,7 @@ export class ExportService {
         remedy: toolRemedy(),
       });
     }
-    // 响度标准化由 Render Worker 的母带做。
+    // Loudness normalization is done by the Render Worker's mastering.
     const workerCommand = output.loudness ? (this.#options.exportWorker?.() ?? null) : null;
     if (output.loudness && !workerCommand) {
       throw new RpcError('conflict', RcExport.loudnessNeedsWorker(), {
@@ -462,7 +460,7 @@ export class ExportService {
       frozenAt: nowIso(),
     };
     const run = async (task: TaskRun) => {
-      // 执行前再核对一次链接素材（排队期间文件可能被换掉）。
+      // Re-check linked assets before execution (files may have been replaced while queued).
       for (const check of linked) {
         throwIfAborted(task.signal);
         await recheckLinked(check);
@@ -484,7 +482,7 @@ export class ExportService {
         }
         for (const segment of audio.segments) {
           const key = `GAIN_ABOVE_PREVIEW:${segment.itemId}`;
-          // 包络的折点也算：最高的那一点高于 1 时同样比预览响。
+          // Envelope breakpoints count too: if the highest point is above 1, it is also louder than the preview.
           const peak = Math.max(0, ...(segment.envelope ?? []).map(([, gain]) => gain));
           const peakDb = segment.gainDb + (peak > 1 ? 20 * Math.log10(peak) : 0);
           if (peakDb > 0 && !warned.has(key)) {
@@ -530,7 +528,7 @@ export class ExportService {
       }
       return this.#publish(task, staged, failed, dir, request);
     };
-    // 峰值需求（§7.7）：按全部输出的总时长估 staging。
+    // Peak requirement (§7.7): estimate staging from the total duration of all outputs.
     const resources: TaskResources = {
       demand: audioExportDemand({
         durationSec: plan.parts.reduce((sum, p) => sum + p.audio.range.durationSeconds, 0),
@@ -542,7 +540,7 @@ export class ExportService {
     return this.#submit(request, settings, snapshot, outputs, dir, submitter, run, resources);
   }
 
-  // ---- 成片 ----
+  // ---- Video ----
 
   async #createVideo(
     request: ExportCreateRequest,
@@ -576,7 +574,7 @@ export class ExportService {
       });
     }
     const worker: ToolCommand = { command: workerCommand, env: ffmpeg.env ?? process.env };
-    // 声音来源与音频导出相同：只换这一次的声音计划，画面与视频不变。
+    // The sound source is the same as for audio export: only this export's sound plan is swapped; the picture and video are unchanged.
     const video = this.#videos.mirror(request.videoId)!.video;
     const audioItems = await audioItemSelection(video, settings.sequenceId ?? video.rootSequenceId, settings.source, async (documentId) => {
       return (await this.#videos.document(request.videoId, documentId)).body;
@@ -586,7 +584,7 @@ export class ExportService {
       ...(settings.sequenceId ? { sequenceId: settings.sequenceId } : {}),
       ranges,
       ...(audioItems ? { audioItems } : {}),
-      // 输出尺寸由引擎定（宽高都给且比例与画布不同时画面居中、其余是黑边）。
+      // The engine decides the output size (when both width and height are given and the aspect ratio differs from the canvas, the picture is centered and the rest is black bars).
       ...(settings.width !== undefined || settings.height !== undefined
         ? {
             output: {
@@ -618,7 +616,7 @@ export class ExportService {
       assets.set(`${asset.assetId}@${asset.revision}`, absolute);
       if (absolute.storage === 'linked') linked.push(await verifyLinked(absolute));
     }
-    // 冻结的本机字体：预检之后才知道（预检的输入里没有）。
+    // Frozen local fonts: only known after preflight (they are not among the preflight inputs).
     let fonts: ExportFontFace[] = [];
     const inputOf = (part: number, outputPath: string, audioPath: string | null) =>
       workerInput({
@@ -635,7 +633,7 @@ export class ExportService {
         ffprobe: ffprobe.command,
       });
 
-    // 预检：每段范围里画不出来的内容、素材能不能解出画面、编码器在不在。不过就不创建任务。
+    // Preflight: for each range segment, whether anything cannot be drawn, whether the assets can decode a picture, and whether the encoders exist. If it fails, no task is created.
     const preflightDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-export-preflight-'));
     const frames: number[] = [];
     const preflightWarnings: JobWarning[] = [];
@@ -681,7 +679,7 @@ export class ExportService {
     const frozenFonts = await this.#freezeFonts([...faces.values()]);
     fonts = frozenFonts.fonts;
 
-    // 画面里烧着字幕时，默认文件名带上这些字幕的语言（「视频名.zh-Hans.mp4」），与字幕导出的后缀同一个写法。
+    // When subtitles are burned into the picture, the default file name includes their language ("video name.zh-Hans.mp4"), using the same format as the subtitle export suffix.
     const sequence = video.sequences[settings.sequenceId ?? video.rootSequenceId];
     const suffix = burnCaptions && sequence ? burnedCaptionLanguages(sequence, video.documents).join('-') : '';
     const { dir, outputs } = await this.#destination(request, plan.videoName, suffix, settings.format, ranges, plan.parts.length, (i) => {
@@ -719,7 +717,7 @@ export class ExportService {
         throwIfAborted(task.signal);
         await recheckLinked(check);
       }
-      // 字体目录里有、还没下载的字体：开始画之前下载，下载好的冻结进这次渲染；不下载或下载不成的照回退字体画。
+      // Fonts that are in the font directory but not yet downloaded: download them before drawing starts, and freeze the downloaded ones into this render; if they are not downloaded or the download fails, draw with fallback fonts.
       fonts = await this.#downloadFonts(task, fonts, frozenFonts.notes);
       if (size.adjusted) {
         const { width, height } = size;
@@ -740,7 +738,7 @@ export class ExportService {
         const part = plan.parts[i]!;
         task.phase('generating', { done, total, unit: 'frames' });
         try {
-          // 声音：与音频导出同一套混音，写成 WAV 交给 Worker 封装。
+          // Sound: the same mix as audio export, written as WAV and handed to the Worker to package.
           const audio = await renderAudio({
             plan: part.audio,
             assets,
@@ -766,7 +764,7 @@ export class ExportService {
             warned.add(key);
             task.warn(skippedWarning(item));
           }
-          // 合成时才知道的警告（字体替换、缺字）；预检时已经报过的不重复。
+          // Warnings that only appear at composition time (font substitution, missing glyphs); those already reported at preflight are not repeated.
           for (const warning of result.warnings) {
             const key = `warning:${warning.code}|${warning.detail}`;
             if (warned.has(key) || preflightWarnings.some((w) => w.code === warning.code && w.detail === warning.detail)) continue;
@@ -810,7 +808,7 @@ export class ExportService {
           } else if (error instanceof ToolFailure)
             failed.push({ fileName: out.fileName, code: 'EXPORT_RENDER_FAILED', problems: [error.message] });
           else if (error instanceof WorkerFailure) {
-            // 冻结之后素材或字体变了、工具不见了：整个任务失败；画到一半出错：这一个输出失败。
+            // If assets or fonts change after freezing, or the tool disappears, the whole task fails; an error partway through drawing fails only that one output.
             if (
               error.code === 'EXPORT_UNSUPPORTED_CONTENT' ||
               error.code === 'EXPORT_TOOL_MISSING' ||
@@ -825,7 +823,7 @@ export class ExportService {
       }
       return this.#publish(task, staged, failed, dir, request);
     };
-    // 峰值需求（§7.7）：输出尺寸、帧率与全部输出的总时长；各段依次渲染，内存按一段计，staging 按全部计（发布前都留着）。
+    // Peak requirement (§7.7): output size, frame rate, and the total duration of all outputs; segments render one after another, memory is counted for one segment, and staging is counted for all of them (kept until publishing).
     const resources: TaskResources = {
       demand: videoExportDemand({
         width: output.width,
@@ -840,7 +838,7 @@ export class ExportService {
       }),
     };
     const submitted = await this.#submit(request, settings, snapshot, outputs, dir, submitter, run, resources);
-    // 冻结了的下载缓存里的文件、在等下载的 face：任务结束之前不让 `fonts.remove` / `fonts.clear` 删。
+    // Files in the frozen download cache, and faces waiting on download: do not let `fonts.remove` / `fonts.clear` delete them before the task ends.
     this.#options.fonts?.pin(submitted.jobId, {
       files: (snapshot.fonts ?? []).flatMap((f) => ('path' in f && f.source === 'downloaded' ? [f.path] : [])),
       faces: (snapshot.fonts ?? []).filter((f) => 'download' in f),
@@ -849,15 +847,13 @@ export class ExportService {
   }
 
   /**
-   * 成片的本机字体冻结（架构设计 §9.11 的「字体」）：预检报的 face（随渲染内核的字体里没有的族）经引擎挑好，记下所在文件、
-   * 第几个与整个文件的摘要和字节数（与冻结素材同一个摘要写法；几个 face 共用一个字体集合时只算一次）。找不到的记
-   * `fallback`，照回退字体画、结果里有提示，不拒绝导出。
+   * Freezing local fonts for a finished video ("fonts" in architecture design §9.11): the faces reported at preflight (families not in the fonts bundled with the render kernel) are selected by the engine, recording the file each is in, its index within that file, and the digest and byte count of the whole file (same digest format as frozen assets; when several faces share one font collection, it is counted once). Faces not found are recorded as `fallback`, drawn with fallback fonts, with a note in the result; the export is not rejected.
    */
   async #freezeFonts(faces: FontFaceQuery[]): Promise<{ fonts: ExportFontFace[]; notes: Map<string, string> }> {
     const frozen: ExportFontFace[] = [];
-    /** 不下载的 face 的原因（`FONT_NOT_DOWNLOADED` 警告），按 `queryKey`。 */
+    /** The reason each face was not downloaded (`FONT_NOT_DOWNLOADED` warning), keyed by `queryKey`. */
     const notes = new Map<string, string>();
-    // 引擎只接受 1–200 字的族名：别的不会是本机字体的名字。
+    // The engine accepts only family names of 1–200 characters; anything else cannot be the name of a local font.
     const asked = faces.filter((face) => {
       const family = face.family.trim();
       const usable = family.length > 0 && family.length <= 200;
@@ -879,7 +875,7 @@ export class ExportService {
     return { fonts: frozen, notes };
   }
 
-  /** 经引擎挑 face、记下文件与摘要（几个 face 共用一个字体集合时只算一次）。有不下载原因的找不到时记 `not-downloaded`。 */
+  /** Selects faces through the engine, recording the file and digest (when several faces share one font collection, it is counted once). Faces not found that have a not-downloaded reason are recorded as `not-downloaded`. */
   async #resolveFonts(faces: FontFaceQuery[], notes: ReadonlyMap<string, string>): Promise<ExportFontFace[]> {
     const frozen: ExportFontFace[] = [];
     const digests = new Map<string, Promise<{ contentHash: string; byteLength: number } | null>>();
@@ -921,9 +917,8 @@ export class ExportService {
   }
 
   /**
-   * 导出任务开始画之前（§9.1）：冻结时记 `download` 的 face 在这里下载（进度按字节、取消随任务），下载好的按同样的写法冻结
-   * （文件钉住到任务结束）；下载不成的、冻结时就不下载（自动下载关着、严格离线）而本机也没有的，记一条 `FONT_NOT_DOWNLOADED`
-   * 警告说明原因（`font` 带族、字重、回退族与原因），照回退字体画：不拒绝导出，也不要用户先选替代字体。
+   * Before the export task starts drawing (§9.1): faces marked `download` at freeze time are downloaded here (progress by bytes; cancellation follows the task), and the downloaded ones are frozen in the same way (the file is pinned until the task ends).
+   * Faces that cannot be downloaded (freezing did not download them because auto-download is off or it is strictly offline, and they are not present locally) record a `FONT_NOT_DOWNLOADED` warning that explains why (`font` carries the family, weight, fallback family and reason). They are drawn with fallback fonts. The export is not rejected, and the user is not asked to choose a substitute font first.
    */
   async #downloadFonts(task: TaskRun, fonts: ExportFontFace[], notes: ReadonlyMap<string, string>): Promise<ExportFontFace[]> {
     const service = this.#options.fonts;
@@ -965,12 +960,11 @@ export class ExportService {
     });
   }
 
-  // ---- 便携包 ----
+  // ---- Portable package ----
 
   /**
-   * 便携包（架构设计 §5.8）：引擎一次冻结快照、文档正文与素材位置；预检读不到的素材、本机路径、tar 的限制、目标与空间，
-   * 都过了才排队。任务把包直接写到目标目录里的隐藏临时文件，写完从归档里重新读一遍、按清单核对每个文件，
-   * 全对才挂到最终的名字上；取消与失败删掉临时文件，不留半个包。
+   * Portable package (architecture design §5.8): the engine freezes the snapshot, document body and asset locations once; assets unreadable at preflight, local paths, tar limits, the target and the space are all checked, and the job is queued only if they all pass. The task writes the package directly into a hidden temp file in the target directory; after writing, it reads the archive back, checks each file against the manifest,
+   * and attaches the package to the final name only if every file matches. On cancellation or failure the temp file is deleted, so no half-finished package is left.
    */
   async #createPortable(request: ExportCreateRequest, settings: PortableSettings, submitter: JobSubmitter): Promise<{ jobId: Id }> {
     const ref = this.#videos.ref(request.videoId)!;
@@ -1053,7 +1047,7 @@ export class ExportService {
           throw taskFailureOf('EXPORT_PUBLISH_FAILED', error);
         }
         const result: GeneratedOutput = {
-          // 包不进产物库（它已经是一个完整的文件，常常很大）：`artifactId` 是包文件的摘要。
+          // The package is not added to the artifact library (it is already a complete file, often large): `artifactId` is the digest of the package file.
           artifactId,
           mediaType: MEDIA_TYPES[PACKAGE_EXTENSION]!,
           byteLength: size,
@@ -1083,11 +1077,11 @@ export class ExportService {
     return this.#submit(request, settings, snapshot, outputs, dir, submitter, run);
   }
 
-  // ---- 工程 ----
+  // ---- Project ----
 
   /**
-   * 工程导出（架构设计 §9.13）：一条序列写成 xmeml，素材按引用（本机路径）写出；表达不了的对象逐项记成任务警告。
-   * 读不到的素材不拒绝：工程里是离线的片段，警告里点名。
+   * Project export (architecture design §9.13): one sequence is written as xmeml, with assets written by reference (local paths); anything it cannot express is recorded item by item as a task warning.
+   * Assets that cannot be read do not cause a rejection: they become offline clips in the project, and the warning names them.
    */
   async #createProject(request: ExportCreateRequest, settings: ProjectSettings, submitter: JobSubmitter): Promise<{ jobId: Id }> {
     const freeze = await this.#videos.freezePackage<PackageFreeze>(request.videoId);
@@ -1160,12 +1154,10 @@ export class ExportService {
     return this.#submit(request, settings, snapshot, outputs, dir, submitter, run);
   }
 
-  // ---- 字体清点（`fonts.usage`） ----
+  // ---- Font inventory (`fonts.usage`) ----
 
   /**
-   * 视频用到的字体（架构设计 §9.1 `fonts.usage`）：与成片导出同一份冻结（整条根序列、烧字幕）交给 Render Worker 的
-   * `census` 排一遍字，返回点了名的全部 face 与内核的回退族。不预检素材与编码器、不建任务、不下载。字体只看文字与字幕：
-   * 不冻结素材（`skipAssets`），没有素材、素材文件不见了或变了都照样清点。
+   * Fonts used by the video (architecture design §9.1 `fonts.usage`): the same frozen input as finished-video export (the whole root sequence, burned-in subtitles) is handed to the Render Worker's `census`, which lays out the text and returns all the named faces and the kernel's fallback families. It does not preflight assets or encoders, create tasks or download anything. Fonts only look at text and subtitles: assets are not frozen (`skipAssets`), so the inventory works whether there are no assets, the asset files are missing, or they have changed.
    */
   async fontCensus(params: { videoId: Id; sequenceId?: Id; burnCaptions?: boolean }): Promise<Extract<WorkerEvent, { event: 'census' }>> {
     if (!this.#videos.mirror(params.videoId)) throw new RpcError('not-found', RcExport.videoNotOpen(), { code: 'VIDEO_NOT_OPEN' });
@@ -1188,7 +1180,7 @@ export class ExportService {
         skipAssets: true,
       });
     } catch (error) {
-      // 空的序列：没有要排的字。
+      // Empty sequence: no text to lay out.
       if (error instanceof RpcError && (error.details as { code?: string } | undefined)?.code === 'EXPORT_RANGE_EMPTY') {
         return { event: 'census', faces: [], fallback: FALLBACK_FONT_FAMILY };
       }
@@ -1240,9 +1232,9 @@ export class ExportService {
     return { event: 'census', faces: [...faces.values()], fallback };
   }
 
-  // ---- 共用 ----
+  // ---- Shared ----
 
-  /** 引擎的冻结；引擎的错误码换成协议的（`EXPORT_*` 是请求的问题，链接素材变了是 `ASSET_CHANGED`）。 */
+  /** The engine's freeze; the engine's error codes are converted to the protocol's (`EXPORT_*` is a problem with the request; a changed linked asset is `ASSET_CHANGED`). */
   async #plan<T>(videoId: Id, params: Record<string, unknown>): Promise<T> {
     try {
       return await this.#videos.exportPlan<T>(videoId, params);
@@ -1260,8 +1252,8 @@ export class ExportService {
   }
 
   /**
-   * 目标目录与每个输出的文件名；预检目录可写、给定的文件名不存在（除非覆盖）。不给目录时是来源目录下的 `exports/`，
-   * 内部检查用的（`purpose: 'preview'`）是 `.cuccut-out/exports/`：Space 不扫点开头的目录，检查文件不混进交付物。
+   * The target directory and each output's file name. Preflight checks that the directory is writable and that the given file name does not exist (unless overwrite). With no directory given, it is `exports/` under the source directory;
+   * the internal check (`purpose: 'preview'`) uses `.cuccut-out/exports/`: Space does not scan directories whose names start with a dot, so check files do not mix into the deliverables.
    */
   async #destination(
     request: ExportCreateRequest,
@@ -1302,7 +1294,7 @@ export class ExportService {
     run: (task: TaskRun) => Promise<NonNullable<JobRecord['result']>>,
     resources?: TaskResources,
   ): Promise<{ jobId: Id }> {
-    // 这台机器永远放不下的导出不建任务（`RESOURCE_ADMISSION_UNSATISFIABLE`），也不留下快照。
+    // An export this machine can never fit creates no task (`RESOURCE_ADMISSION_UNSATISFIABLE`) and leaves no snapshot either.
     const exceeded = resources ? this.#jobs.resources.check({ owner: '', label: `export:${settings.kind}`, ...resources }) : null;
     if (exceeded) {
       const { messageRef } = exceeded as { messageRef?: MessageRef };
@@ -1314,7 +1306,7 @@ export class ExportService {
         kind: 'export',
         spec: { task: 'export', snapshotArtifactId: artifactId },
         videoId: request.videoId,
-        // 输入就是冻结的快照：同一份快照得到同样的输出。
+        // The input is the frozen snapshot: the same snapshot gives the same output.
         contentHash: artifactId,
         inputHash: `sha256:${sha256Hex(canonicalJson({ task: 'export', snapshotArtifactId: artifactId }))}`,
         providerId: 'local',
@@ -1345,7 +1337,7 @@ export class ExportService {
     return { jobId };
   }
 
-  /** 取消检查在发布之前；开始发布之后不再中途停下（发布了的文件就是结果）。每个文件各自发布、各自登记。 */
+  /** The cancellation check happens before publishing; once publishing starts it does not stop partway (a published file is the result). Each file is published and registered on its own. */
   async #publish(
     task: TaskRun,
     staged: Staged[],
@@ -1405,22 +1397,22 @@ export class ExportService {
   }
 }
 
-/** 字幕与文稿冻结好的计划与预检过的文档（`#planText`）。 */
+/** The frozen plan and preflighted documents for subtitles and text (`#planText`). */
 interface FrozenText {
   plan: TextPlanResult;
   primary: PlannedDocument;
   secondary: PlannedDocument | undefined;
-  /** 默认文件名的种类后缀：`transcript`，字幕的语言（双语是「主-副」），没有语言时 `subtitles`。 */
+  /** Kind suffix for default file names: `transcript`; for subtitles, the language (bilingual is "primary-secondary"); `subtitles` when there is no language. */
   suffix: string;
-  /** 文稿不跳过剪掉的部分时，带时间的文档的正文（转写的取自计划，字幕的另外读）。 */
+  /** For text documents when not skipping the cut parts: the body of documents with timing (the transcript's comes from the plan; the subtitles' is read separately). */
   bodies: Map<Id, unknown>;
-  /** 序列上的章节（`kind: 'chapter'` 的标记），序列时间（秒），按开始排好。 */
+  /** Chapters on the sequence (markers with `kind: 'chapter'`), in sequence time (seconds), sorted by start. */
   chapters: TextChapter[];
-  /** 文首元信息里与范围无关的字段（时长按每一段另算）。 */
+  /** Fields in the document head that do not depend on the range (duration is calculated separately for each segment). */
   frontMatter: Omit<FrontMatter, 'duration'> & { sourceDuration: number | null };
 }
 
-/** 序列上的章节标记：帧换成秒，按开始排，没有标题的不要。 */
+/** Chapter markers on the sequence: frames converted to seconds, sorted by start; those without a title are dropped. */
 function chapterMarkers(video: VideoSnapshot, plan: TextPlanResult): TextChapter[] {
   const markers = video.sequences[plan.sequenceId]?.markers ?? [];
   return markers
@@ -1430,8 +1422,8 @@ function chapterMarkers(video: VideoSnapshot, plan: TextPlanResult): TextChapter
 }
 
 /**
- * 文首元信息（Markdown 文稿，`frontmatter`）：标题是视频名；出处、作者、发布日期与平台取主文档所记素材的来源
- * （从链接导入时记下的 `provenance.source`，视频格式规范 §4.5）；语言是主文档与译文的语言。视频没有简介，`description` 不写。
+ * Document head metadata (Markdown text, `frontmatter`): the title is the video name; the source, author, publish date and platform come from the source of the assets recorded in the main document
+ * (the `provenance.source` recorded on import from a link, video format spec §4.5); the language is the language of the main document and the translation. The video has no description, so `description` is not written.
  */
 function frontMatterOf(
   video: VideoSnapshot,
@@ -1451,7 +1443,7 @@ function frontMatterOf(
     description: null,
     source: text(source.webpageUrl) ?? text(source.url),
     author: text(source.uploader),
-    // 下载工具的 `YYYYMMDD` 写成 `YYYY-MM-DD`，别的写法原样。
+    // The download tool's `YYYYMMDD` is written as `YYYY-MM-DD`; other formats are kept as they are.
     published: uploaded && /^\d{8}$/.test(uploaded) ? `${uploaded.slice(0, 4)}-${uploaded.slice(4, 6)}-${uploaded.slice(6)}` : uploaded,
     platform: text(source.platform),
     language: primary.language ?? null,
@@ -1460,14 +1452,14 @@ function frontMatterOf(
   };
 }
 
-/** 排出第 `index` 段的正文：导出任务与 `exports.renderText` 都只经过这里。 */
+/** Produces the body of segment `index`: both the export task and `exports.renderText` go only through here. */
 function renderTextPart(frozen: FrozenText, settings: TextSettings, index: number): TextExportOutput {
   const { plan, primary, secondary } = frozen;
   const part = plan.parts[index]!;
   const transcript = settings.kind === 'transcript';
   const range = part.plans[0]!.range;
   const unprojected = transcript && settings.skipCut === false;
-  // 不跳过剪掉的部分：主文档（与带时间的另一份）换成不经投影的原文，章节换到原文的时钟。
+  // When not skipping the cut parts: the main document (and the other timed one) is replaced with the original text, without projection, and chapters are moved to the original text's clock.
   const whole = !settings.range && !settings.ranges;
   const primaryPlan = unprojected ? sourcePlan(frozen.bodies.get(primary.documentId), part.plans[0]!, whole) : part.plans[0]!;
   const secondaryPlan = part.plans[1] ?? null;
@@ -1511,7 +1503,7 @@ function renderTextPart(frozen: FrozenText, settings: TextSettings, index: numbe
   });
 }
 
-/** 默认的文件名：「视频名.后缀.扩展名」（成片没有后缀：「视频名.mp4」），几段范围各出一份时加 `.partN`。 */
+/** The default file name: "video name.suffix.extension" (finished video has no suffix: "video name.mp4"); when several ranges each produce one, `.partN` is added. */
 function defaultFileName(videoName: string, suffix: string, extension: string, multiple: boolean, index: number): string {
   const stem = suffix ? `${safeFileStem(videoName)}.${suffix}` : safeFileStem(videoName);
   return `${stem}${multiple ? `.part${index + 1}` : ''}.${extension}`;
@@ -1539,7 +1531,7 @@ interface Failed {
   problems: string[];
 }
 
-/** 声音计划的说明码对应的文字；认不出的码返回 null（照用码本身）。 */
+/** The text for a sound-plan explanation code; an unrecognized code returns null (the code itself is used). */
 function audioNoteText(code: string): Localized | null {
   switch (code) {
     case 'DUCK_NO_SPEECH':
@@ -1555,7 +1547,7 @@ function audioNoteText(code: string): Localized | null {
   }
 }
 
-/** 已有的错误换成任务失败：错误带引用时一并带上，没有时照用它的文字。 */
+/** Turns an existing error into a task failure: if the error carries a reference, that reference is included too; otherwise its text is used as is. */
 function taskFailureOf(code: string, error: unknown, details?: unknown, result?: ConstructorParameters<typeof TaskFailure>[3]): TaskFailure {
   const message = localizedOf(error);
   return typeof message === 'string' ? new TaskFailure(code, message, details, result) : taskFailure(code, message, details, result);
@@ -1565,7 +1557,7 @@ function itemKey(item: UnsupportedItem): string {
   return [item.scope, item.itemId, item.effectId ?? '', item.transitionId ?? ''].join('|');
 }
 
-/** 任务进行中工具启动不了（提交之后被删、被挪走）：按是哪个工具给补救办法，Render Worker 不见了不叫人装 ffmpeg。 */
+/** A tool fails to start during the task (deleted or moved after submission): the remedy depends on which tool it is; if the Render Worker is missing, the user is not asked to install ffmpeg. */
 function toolMissing(error: ToolFailure): TaskFailure {
   if (error.tool === 'export-worker') {
     return taskFailure('EXPORT_TOOL_MISSING', RcExport.workerGone({ error: localizedOf(error) }), {
@@ -1576,7 +1568,7 @@ function toolMissing(error: ToolFailure): TaskFailure {
   return taskFailureOf('EXPORT_TOOL_MISSING', error, { ...(error.tool ? { missing: error.tool } : {}), remedy: toolRemedy() });
 }
 
-/** 预检时 Worker 的失败换成提交时的错误（不创建任务）。 */
+/** A Worker failure during preflight is converted to the error from submission (no task is created). */
 function workerRpcError(error: unknown): unknown {
   if (error instanceof WorkerFailure) {
     const kind = error.code === 'EXPORT_TOOL_MISSING' || error.code.startsWith('ASSET_') ? 'conflict' : 'invalid-request';
@@ -1598,7 +1590,7 @@ function workerRpcError(error: unknown): unknown {
   return error;
 }
 
-/** 冻结时的素材版本（导出快照里记的位置；读不到的路径为空）。 */
+/** The asset version at freeze time (the location recorded in the export snapshot; the path is empty when unreadable). */
 function frozenAssets(freeze: PackageFreeze): ExportSnapshot['assets'] {
   return freeze.assets.map((a) => ({
     assetId: a.assetId,
@@ -1611,7 +1603,7 @@ function frozenAssets(freeze: PackageFreeze): ExportSnapshot['assets'] {
   }));
 }
 
-/** 文档正文里的 `schema`（读不出时为空串）。 */
+/** The `schema` in the document body (empty string when unreadable). */
 function documentSchema(text: string): string {
   try {
     const schema = (JSON.parse(text) as { schema?: unknown }).schema;
@@ -1640,7 +1632,7 @@ function assetChanged(asset: PlannedAsset): RpcError {
   });
 }
 
-/** 预检：链接素材的内容摘要与登记的一致（引擎只核对了存在与长度）。 */
+/** Preflight: the content digest of the linked asset matches the registered one (the engine checks only existence and length). */
 async function verifyLinked(asset: PlannedAsset): Promise<LinkedCheck> {
   const stat = await fs.stat(asset.path).catch(() => null);
   if (!stat?.isFile()) {
@@ -1654,7 +1646,7 @@ async function verifyLinked(asset: PlannedAsset): Promise<LinkedCheck> {
   return { asset, size: stat.size, mtimeMs: stat.mtimeMs };
 }
 
-/** 执行前：文件的长度与修改时间没变就不重算摘要。 */
+/** Before execution: if the file's length and modification time are unchanged, the digest is not recomputed. */
 async function recheckLinked(check: LinkedCheck): Promise<void> {
   const stat = await fs.stat(check.asset.path).catch(() => null);
   const { name } = check.asset;
@@ -1666,7 +1658,7 @@ async function recheckLinked(check: LinkedCheck): Promise<void> {
   }
 }
 
-/** 默认的主文档（见 `TextExportOptions.documentId`）。 */
+/** The default main document (see `TextExportOptions.documentId`). */
 function chooseDocument(video: VideoSnapshot, sequenceId: Id, settings: TextSettings): Id {
   const docs = Object.values(video.documents);
   const languageOk = (language: string | undefined) =>
@@ -1686,7 +1678,7 @@ function chooseDocument(video: VideoSnapshot, sequenceId: Id, settings: TextSett
   const order = settings.kind === 'transcript' ? [speech, shown] : [shown, speech];
   for (const candidates of order) {
     if (candidates.length === 1) return candidates[0]!;
-    // 候选把另一组也列上（字幕导出时的转写、文稿导出时显示着的字幕）：它们同样可以用 documentId 指定。
+    // Candidates also list the other group (the transcript when exporting subtitles, and the subtitles shown when exporting text): these can likewise be selected with documentId.
     if (candidates.length > 1) throw ambiguous(video, [...new Set([...order[0]!, ...order[1]!])]);
   }
   const message = settings.language ? RcExport.noSourceForLanguage({ language: settings.language }) : RcExport.noSource();
@@ -1695,7 +1687,7 @@ function chooseDocument(video: VideoSnapshot, sequenceId: Id, settings: TextSett
   });
 }
 
-/** 双语合并的另一份文档。 */
+/** The other document for a bilingual merge. */
 function chooseSecondary(video: VideoSnapshot, primaryId: Id, bilingual: NonNullable<TextSettings['bilingual']>): Id {
   const explicit = typeof bilingual === 'object' ? bilingual : {};
   if (explicit.documentId !== undefined) {
@@ -1716,7 +1708,7 @@ function chooseSecondary(video: VideoSnapshot, primaryId: Id, bilingual: NonNull
       video,
       translations.map((d) => d.id),
     );
-  // 没有译文时：同一素材的另一种语言的字幕或转写。
+  // When there is no translation: the subtitles or transcript of the same asset in another language.
   const others = Object.values(video.documents).filter(
     (d) =>
       d.id !== primaryId &&

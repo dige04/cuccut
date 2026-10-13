@@ -30,19 +30,16 @@ import { transcribeJobOf } from './transcribe-speakers.ts';
 import { jobErrorText } from './localized-text.ts';
 
 /**
- * 视频工具的一次运行（产品设计 §2.7「进度与失败」「结果页的下一步」「授权在当场完成」，设计稿 model-tool-runs.js）。
+ * One run of a video tool (product design §2.7 “progress and failures”, “next steps on the result page”, “authorization completes in place”; design file model-tool-runs.js).
  *
- * 一次运行就是后台任务里的一条固定流程父任务（`kind: 'pipeline'`）：步骤、进度、失败停在哪一步都读 `jobs` 主题里的记录，
- * 不在界面里另跑一份。步骤表照 Runtime 的流程（`pipeline.steps`，名字与标签由 Runtime 给），不照设计稿的演示表；
- * 跳过的步骤（这次用不到，例如不新建视频时的「新建视频」）不列。
+ * A run is one fixed-flow parent task in the background tasks (`kind: 'pipeline'`). Steps, progress, and where a failure stopped are all read from records in the `jobs` topic; the UI does not run a separate copy. The step table follows the Runtime’s flow (`pipeline.steps`; names and labels come from Runtime), not the design file’s demo table. Skipped steps (not needed this time, e.g. “New video” when not creating a new video) are not listed.
  *
- * 提交：流程名与目录固定带上的参数从 `tools.list` 的 `execution`（按输入种类的 `executionByInput`）来，合进界面给的参数，
- * 不写死；被当场授权拒绝（`details.pendingGrants`）时请用户确认、逐项 `grants.create`，再用同一个 `commandId` 重提。
+ * Submission: the flow name and the directory parameters that are fixed for the flow come from `tools.list`’s `execution` (`executionByInput` by input kind), and are merged into the parameters given by the UI; they are not hard-coded. When the submission is rejected by in-place authorization (`details.pendingGrants`), ask the user to confirm, issue `grants.create` item by item, then resubmit with the same `commandId`.
  */
 
-// ---- 流程与工具 ----
+// ---- Flows and tools ----
 
-/** 流程名 → 工具页（转码按 `action` 分压缩与合并）；不属于任何工具时 null。 */
+/** Flow name → tool page (transcoding is split into compress and merge by `action`). null when it belongs to no tool. */
 export function toolOfJob(job: Pick<JobRecord, 'kind' | 'pipeline'>): ToolId | null {
   const name = job.pipeline?.name;
   switch (name) {
@@ -63,8 +60,8 @@ export function toolOfJob(job: Pick<JobRecord, 'kind' | 'pipeline'>): ToolId | n
 }
 
 /**
- * 后台任务详情里按视频工具的运行来画的流程任务（步骤、从这一步重试、回到工具）：转录、翻译字幕、翻译配音。
- * 下载视频也使用此视图；带旧视频目标的链接流程保留原详情页。
+ * Flow tasks shown in the background task details as a video-tool run (steps, retry from this step, back to the tool): transcribe, translate captions, translate dubbing.
+ * Download video also uses this view. Link flows with an old video target keep the original details page.
  */
 export function toolRunOf(job: Pick<JobRecord, 'kind' | 'pipeline'>): VideoToolId | null {
   if (job.kind !== 'pipeline') return null;
@@ -73,19 +70,19 @@ export function toolRunOf(job: Pick<JobRecord, 'kind' | 'pipeline'>): VideoToolI
   return tool === 'transcribe' || tool === 'translate-subtitles' || tool === 'dub' ? tool : null;
 }
 
-/** 这条任务算不算这个视频工具的运行记录：转录页另收「从链接开始、下载后转录」的链接导入（设计稿：同一个结果）。 */
+/** Whether this task counts as a run record of this video tool. The transcription page separately collects “start from a link, transcribe after download” link imports (design file: the same result). */
 export function isRunOf(job: JobRecord, tool: VideoToolId): boolean {
   if (job.kind !== 'pipeline' || !job.pipeline) return false;
   if (toolOfJob(job) === tool) return true;
   return tool === 'transcribe' && job.pipeline.name === 'link-import' && job.pipeline.params.transcribe === true;
 }
 
-/** 这个工具的运行记录，新的在前。 */
+/** The run records of this tool, newest first. */
 export function runsOf(jobs: readonly JobRecord[], tool: VideoToolId): JobRecord[] {
   return jobs.filter((j) => isRunOf(j, tool)).sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 }
 
-// ---- 步骤与进度 ----
+// ---- Steps and progress ----
 
 export type RunStepStatus = 'done' | 'running' | 'failed' | 'pending';
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -94,7 +91,7 @@ export interface RunStep {
   name: string;
   label: string;
   status: RunStepStatus;
-  /** 在跑的这一步的进度（0–100）；读不出时 null。 */
+  /** Progress (0–100) of the step currently running; null if it cannot be read. */
   pct: number | null;
 }
 
@@ -102,16 +99,16 @@ export interface RunView {
   jobId: Id;
   status: RunStatus;
   steps: RunStep[];
-  /** 当前这一步（在跑、停住的，或下一步要跑的）在 `steps` 里的序号。 */
+  /** Index in `steps` of the current step (running, stopped, or the next one to run). */
   cur: number;
-  /** 失败、取消时给人看的原因。 */
+  /** The reason shown to people for a failure or cancellation. */
   error: string | null;
   errorCode: string | null;
-  /** 重试过几次（第一次为 1）。 */
+  /** How many times it has been retried (the first run is 1). */
   attempt: number;
 }
 
-/** Runtime 的步骤状态 → 界面的四种；跳过的步骤为 null（不列）。 */
+/** Maps Runtime step status to the four states in the UI. Skipped steps are null (not listed). */
 export function stepStatus(status: PipelineStepState['status']): RunStepStatus | null {
   switch (status) {
     case 'completed':
@@ -154,7 +151,7 @@ function runStatus(job: JobRecord): RunStatus {
   }
 }
 
-/** 子任务的进度（0–100）：有总量时按比例，没有时 null。 */
+/** Progress (0–100) of a subtask: proportional when there is a total; null otherwise. */
 function childPct(jobId: Id | null, jobs: readonly JobRecord[]): number | null {
   if (!jobId) return null;
   const p = jobs.find((j) => j.jobId === jobId)?.progress;
@@ -170,9 +167,8 @@ export const DIARIZE_STEP = {
 };
 
 /**
- * 一条流程任务的运行视图；不是流程任务时 null。`jobs` 用来读在跑那一步的子任务进度。
- * `opts.diarizeStep`：转录由「说话人区分」模型包区分说话人（model/transcribe-speakers.ts `diarizeStepOf`）时，把「转写」
- * 拆成「转写」与「识别说话人」两步（设计稿 model-tool-runs.js `plan`）；流程里是同一步，按转写任务的阶段（`diarizing`）分开。
+ * The run view of a flow task; null if it is not a flow task. `jobs` is used to read the subtask progress of the step currently running.
+ * `opts.diarizeStep`: when transcription is diarized by the “speaker diarization” model package (`diarizeStepOf` in model/transcribe-speakers.ts), “transcribe” is split into “transcribe” and “identify speakers” (design file model-tool-runs.js `plan`). In the flow it is one step; it is separated by the transcription task’s phase (`diarizing`).
  */
 export function runView(job: JobRecord, jobs: readonly JobRecord[] = [], opts: { diarizeStep?: boolean } = {}): RunView | null {
   const pipeline = job.pipeline;
@@ -203,7 +199,7 @@ export function runView(job: JobRecord, jobs: readonly JobRecord[] = [], opts: {
   };
 }
 
-/** 「转写」拆成两步：转写任务到了区分说话人的阶段，转写算完成、在跑（或停在）「识别说话人」；之前「识别说话人」等着。 */
+/** “Transcribe” is split into two steps. Once the transcription task reaches the speaker-diarization phase, transcription counts as complete, and “identify speakers” is running (or stopped). Before that, “identify speakers” is waiting. */
 function splitDiarize(label: string, status: RunStepStatus, pct: number | null, diarizing: boolean): RunStep[] {
   const later = (s: RunStepStatus): RunStep => ({ ...DIARIZE_STEP, status: s, pct: null });
   if (status === 'done' || status === 'pending') return [{ name: 'transcribe', label, status, pct: null }, later(status)];
@@ -211,7 +207,7 @@ function splitDiarize(label: string, status: RunStepStatus, pct: number | null, 
   return [{ name: 'transcribe', label, status, pct: status === 'running' ? pct : null }, later('pending')];
 }
 
-/** 整次运行的进度（0–100）：完成的步骤加上当前这一步的比例。 */
+/** Progress (0–100) of the whole run: the completed steps plus the proportion of the current step. */
 export function pct(run: RunView): number {
   if (run.status === 'done') return 100;
   if (!run.steps.length) return 0;
@@ -221,7 +217,7 @@ export function pct(run: RunView): number {
   return Math.round(((done + part) / run.steps.length) * 100);
 }
 
-/** 状态短语：正在转写 · 第 2 / 4 步；失败时说停在哪一步。 */
+/** Status phrase: Transcribing · step 2 / 4. On failure, says which step it stopped at. */
 export function phase(run: RunView): string {
   if (run.status === 'done') return M.phaseDone;
   if (run.status === 'queued') return M.phaseQueued;
@@ -233,7 +229,7 @@ export function phase(run: RunView): string {
   return M.runningAt(step.label, at);
 }
 
-/** 步骤行右边那几个字：完成 / 停在这一步 / N% / 等待。 */
+/** The few words on the right of a step row: done / stopped at this step / N% / waiting. */
 export function stepNote(step: RunStep): string {
   if (step.status === 'done') return M.stepDone;
   if (step.status === 'failed') return M.stepStopped;
@@ -241,14 +237,14 @@ export function stepNote(step: RunStep): string {
   return M.stepWaiting;
 }
 
-// ---- 结果页 ----
+// ---- Result page ----
 
-/** 结果是不是一个视频（有「打开编辑」）。 */
+/** Whether the result is a video (it gets “Open editor”). */
 export function opensMovie(tool: VideoToolId, input: ToolInputKind, opts: { target?: ToolTargetKey } = {}): boolean {
   return !(tool === 'translate-subtitles' && input === 'file') && !((tool === 'link-import' || tool === 'transcribe') && opts.target === 'none');
 }
 
-// ---- 当场授权 ----
+// ---- In-place authorization ----
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -265,7 +261,7 @@ function isGrantItem(value: unknown): value is GrantRequestItem {
   );
 }
 
-/** 拒绝里带的待批准项（`details.pendingGrants`，只有在场用户的拒绝带）；没有时 null。 */
+/** Pending approval items carried by a rejection (`details.pendingGrants`; only rejections from a present user carry them). null when there are none. */
 export function pendingGrantsOf(error: unknown): GrantRequestItem[] | null {
   const details = error instanceof RpcError ? error.details : isObject(error) ? error.details : undefined;
   if (!isObject(details) || !Array.isArray(details.pendingGrants)) return null;
@@ -273,12 +269,12 @@ export function pendingGrantsOf(error: unknown): GrantRequestItem[] | null {
   return items.length ? items : null;
 }
 
-/** 同一位接收方、同一组数据种类：同意过一次的认得出来（防止发放之后还被拒时循环）。 */
+/** Same recipient and same data kinds: an earlier consent is recognized, which prevents a loop when the request is still rejected after granting. */
 export function grantKey(item: Pick<GrantRequestItem, 'recipient' | 'dataKinds'>): string {
   return `${item.recipient}:${[...item.dataKinds].sort().join(',')}`;
 }
 
-/** 服务商 ID → 名字（模型视图里各能力的服务商）：授权的接收方照它写。 */
+/** Provider ID → name (the providers for each capability in the model view). The authorized recipient is written using this. */
 export function providerLabels(view: ModelCapabilitiesView | null): Map<string, string> {
   const map = new Map<string, string>();
   if (view) for (const cap of Object.values(view)) for (const p of cap.providers) map.set(p.providerId, p.label);
@@ -292,7 +288,7 @@ export interface GrantLine {
   cost: string;
 }
 
-/** 授权卡的一项：发给谁、发什么、预计多少钱（有估算时写金额，否则照实说估不出）。 */
+/** One item on the authorization card: who it goes to, what is sent, and the estimated cost (the amount is written when there is an estimate; otherwise it says honestly that no estimate is available). */
 export function grantLines(items: readonly GrantRequestItem[], labels: ReadonlyMap<string, string>): GrantLine[] {
   const seen = new Set<string>();
   const out: GrantLine[] = [];
@@ -317,7 +313,7 @@ export function grantLines(items: readonly GrantRequestItem[], labels: ReadonlyM
   return out;
 }
 
-// ---- 提交 ----
+// ---- Submit ----
 
 export interface PipelineRequest {
   pipeline: string;
@@ -325,8 +321,7 @@ export interface PipelineRequest {
 }
 
 /**
- * 这个工具从这种输入开始时怎么执行：流程名与目录固定带上的参数（`execution.params`，例如翻译字幕的 `captions: true`）
- * 合进界面给的参数（界面的叠在上面）。状态还没到、或这个工具不是流程时 null（不提交，不回退到写死的流程名）。
+ * How this tool runs when it starts from this kind of input: the flow name and the directory parameters that the flow fixes (`execution.params`, e.g. `captions: true` for translate captions) are merged into the parameters given by the UI (the UI’s values take precedence). null when the state is not yet available or this tool is not a flow (do not submit, and do not fall back to a hard-coded flow name).
  */
 export function toolRequest(status: ToolStatus | null | undefined, input: ToolInputKind, params: Record<string, unknown>): PipelineRequest | null {
   if (!status) return null;
@@ -335,7 +330,7 @@ export function toolRequest(status: ToolStatus | null | undefined, input: ToolIn
   return { pipeline: execution.pipeline, params: { ...(execution.params ?? {}), ...params } };
 }
 
-/** 会话里提交用到的两个方法（测试里换成假的）。 */
+/** The two methods used for submission in the session (replaced with fakes in tests). */
 export interface ToolStartSession {
   startPipelineWithCommand(pipeline: string, params: Record<string, unknown>, commandId: string): Promise<Id>;
   createGrant(params: GrantCreateParams): Promise<unknown>;
@@ -344,20 +339,20 @@ export interface ToolStartSession {
 export type StartOutcome =
   | { kind: 'started'; jobId: Id }
   | { kind: 'grants'; items: GrantRequestItem[] }
-  /** 取代被改过的文稿、又没给 `acceptEdited`（`TRANSCRIPT_EDITED`，产品设计：重新转录的手工修改闸门）：同意之后带上它重提。 */
+  /** Replacing an edited transcript without `acceptEdited` (`TRANSCRIPT_EDITED`; a product-design gate for manual edits in re-transcription): resubmit with it after consent. */
   | { kind: 'edited'; error: Error }
   | { kind: 'failed'; error: Error };
 
-/** 提交时以 `TRANSCRIPT_EDITED` 拒绝（`RpcError.code` 是 `conflict`，码在 `details.code`）。 */
+/** Rejected on submit with `TRANSCRIPT_EDITED` (`RpcError.code` is `conflict`; the code is in `details.code`). */
 export function transcriptEditedOf(error: unknown): boolean {
   const details = error instanceof RpcError ? error.details : isObject(error) ? error.details : undefined;
   return isObject(details) && details.code === 'TRANSCRIPT_EDITED';
 }
 
-/** 已经同意并发放过、Runtime 还是要这几项时的说明（不再循环请用户同意）。 */
+/** Explanation for when consent was already given and the grants were issued, but Runtime still requires these items (the user is not asked for consent again). */
 export const grantLoopText = (): string => M.grantLoop;
 
-/** 启动一次：被当场授权拒绝时交回待批准项（同一个 `commandId` 留着重提），其余失败照原样交回。 */
+/** Start once. When rejected by in-place authorization, returns the pending approval items (the same `commandId` is kept for resubmission); other failures are returned as they are. */
 export async function startTool(session: ToolStartSession, request: PipelineRequest, commandId: string): Promise<StartOutcome> {
   try {
     const jobId = await session.startPipelineWithCommand(request.pipeline, request.params, commandId);
@@ -372,8 +367,7 @@ export async function startTool(session: ToolStartSession, request: PipelineRequ
 }
 
 /**
- * 用户同意之后：逐项发放（`grants.create(grantCreateParamsFor(item))`），再用同一个 `commandId` 重提。`granted` 记着这一轮
- * 发放过的项（`grantKey`）：重提又被拒、要的还是发放过的，停下来说明，不再请用户同意。
+ * After the user consents: grant item by item (`grants.create(grantCreateParamsFor(item))`), then resubmit with the same `commandId`. `granted` records the items granted in this round (`grantKey`). If the resubmission is rejected again and asks for something already granted, stop and explain; do not ask for consent again.
  */
 export async function grantAndRestart(
   session: ToolStartSession,
@@ -396,23 +390,22 @@ export async function grantAndRestart(
   return outcome;
 }
 
-// ---- 各工具的参数 ----
+// ---- Parameters for each tool ----
 
-/** 视频目标：Space 里的条目（候选只给条目 ID；没打开过的视频没有 videoId），或新建。 */
+/** Video target: an item in Space (candidates carry only item IDs; a video that has never been opened has no videoId), or a new video. */
 export type VideoTarget = { entryId: Id } | { create: { projectId: Id; name?: string; media?: string } };
 
 export interface AsrChoice {
   provider?: string;
   model?: string;
-  /** 断言的语言；空串或不给时自动检测。 */
+  /** The language to assert. An empty string or none means auto-detect. */
   language?: string;
-  /** 识别不识别说话人（「更多选项」的开关）；工具页总是明确给 true / false，不给时 Runtime 按模型决定。 */
+  /** Whether to identify speakers (the “More options” toggle). The tool page always sends true or false explicitly; when not given, Runtime decides based on the model. */
   diarize?: boolean;
 }
 
 /**
- * 视频已有文稿时的落点（产品设计：重新转录）：`new-video` 新建视频（`name` 空时 Runtime 取「<原名> · 重新转录」），
- * `replace` 换用文稿、译文结转；`acceptEdited` 是用户看过手工修改提醒、仍要取代。视频还没有文稿时 Runtime 不看这些。
+ * Where the result lands when the video already has a transcript (product design: re-transcription). `new-video` creates a new video (when `name` is empty, Runtime uses “<original name> · Re-transcribed”). `replace` swaps in the new transcript and carries translations over. `acceptEdited` means the user has seen the warning about manual edits and still wants to replace. When the video has no transcript yet, Runtime ignores these.
  */
 export interface TranscribeDestinationChoice {
   destination: TranscribeDestination;
@@ -420,7 +413,7 @@ export interface TranscribeDestinationChoice {
   acceptEdited?: boolean;
 }
 
-/** 转录（`transcribe` 流程）：本机文件新建视频，或写进 Space 里的视频；`assetId` 在视频里有几个素材、用户选了一个时给。 */
+/** Transcription (`transcribe` flow): create a new video from a local file, or write into an editable video in Space. `assetId` is given when the video has several assets and the user picked one. */
 export function transcribeParams(
   target: VideoTarget,
   asr: AsrChoice,
@@ -443,8 +436,7 @@ export function transcribeParams(
 }
 
 /**
- * 只给文件的转录（`transcribe` 流程不给目标，`TranscribeFileParams`）：本机文件或 Space 里的媒体条目（`{ entryId }`），
- * TXT 与 SRT 写到 `outDir`（不给时是保存位置）。不收 `diarize`、`assetId` 与 `captions`。
+ * File-only transcription (the `transcribe` flow with no target, `TranscribeFileParams`): a local file, or a media item in Space (`{ entryId }`). TXT and SRT are written to `outDir` (the save location when not given). Does not accept `diarize`, `assetId`, or `captions`.
  */
 export function transcribeFileParams(file: string | { entryId: Id }, asr: AsrChoice, outDir?: string): Record<string, unknown> {
   return {
@@ -456,7 +448,7 @@ export function transcribeFileParams(file: string | { entryId: Id }, asr: AsrCho
   };
 }
 
-/** 从链接导入（`link-import` 流程）：落点新建 / 加进已有 / 只下载；`transcribe` 下载后转写（用默认的语音识别模型）。 */
+/** Import from a link (`link-import` flow): where it lands (new, add to existing, or download only). `transcribe` transcribes after download (using the default speech recognition model). */
 export function linkParams(o: {
   url: string;
   target: ToolTargetKey;
@@ -472,7 +464,7 @@ export function linkParams(o: {
   return params;
 }
 
-/** 翻译字幕（视频）：`translate` 流程；`captions: true` 由目录带，双语要在它之上（`toolRequest` 合并）。 */
+/** Translate captions (video): the `translate` flow. The catalog supplies `captions: true`; bilingual output has to be layered on top of it (merged in `toolRequest`). */
 export function translateVideoParams(o: {
   entryId: Id;
   documentId?: Id | null;
@@ -491,15 +483,15 @@ export function translateVideoParams(o: {
   };
 }
 
-/** 翻译字幕（字幕文件）：`translate-subtitles` 流程，文件到文件。 */
+/** Translate captions (caption file): the `translate-subtitles` flow, file to file. */
 export function translateFileParams(o: {
-  /** 字幕文件的本机路径，或 Space 里的字幕条目。 */
+  /** The local path of the caption file, or a caption item in Space. */
   input: string | { entryId: Id };
   targetLanguage: string;
   bilingual: boolean;
   provider?: string;
   model?: string;
-  /** 这次的保存位置；不给时 Runtime 写到它的保存位置。 */
+  /** The save location for this run. When not given, Runtime writes to its save location. */
   outDir?: string;
 }) {
   return {
@@ -515,14 +507,13 @@ export function translateFileParams(o: {
 export type OriginalAudio = 'duck' | 'mute' | 'keep';
 
 /**
- * 翻译配音：选了已有的译文时给 `translationId`（与它的来源文稿），否则给目标语言与翻译用的文本模型（`textProvider` /
- * `textModel`）先翻译。`provider` / `model` 是语音合成；音色不给（用模型的默认音色，说话人绑定的照旧）。
+ * Translate dubbing: when an existing translation is chosen, give `translationId` (and its source transcript). Otherwise give the target language and the text model used for translation (`textProvider` / `textModel`) to translate first. `provider` / `model` are for speech synthesis. The voice is not given (the model’s default voice is used; speaker-bound voices stay as they are).
  */
 export function dubParams(o: {
   entryId: Id;
   translation: { id: Id; documentId: Id } | null;
   targetLanguage: string | null;
-  /** 先翻译时的来源文稿；不给时由 Runtime 取视频里唯一的一份。 */
+  /** The source transcript to translate first. When not given, Runtime takes the single transcript in the video. */
   documentId?: Id | null;
   originalAudio: OriginalAudio;
   provider?: string;
@@ -546,7 +537,7 @@ export function dubParams(o: {
   };
 }
 
-/** 翻译要结构化输出：不支持的那只列着但用不了（同字幕面板与首页固定流程的翻译）。 */
+/** Translation needs structured output. A provider that does not support it is listed but cannot be used (this applies to translation in the captions panel and in the home-page fixed flow as well). */
 export function translateModelOptions(view: ModelCapabilitiesView): ToolModelOption<TextModelInfo>[] {
   return cloudModelOptions(view, 'generateText').map((o) =>
     o.usable && o.info.structuredOutput === false ? { ...o, usable: false, why: M.noStructuredOutput } : o,
@@ -554,8 +545,8 @@ export function translateModelOptions(view: ModelCapabilitiesView): ToolModelOpt
 }
 
 /**
- * 配音引擎的缺省：选过的还在就用它；否则生效的默认值（能用、会念这门语言时），再否则第一只能用又会念的、第一只能用的。
- * `lang` 不知道（译文没标语言）时不按语言挑。
+ * The default dubbing engine: the one selected earlier, if it is still available; otherwise the effective default (usable and able to speak this language); otherwise the first one that is usable and speaks the language; otherwise the first usable one.
+ * When `lang` is unknown (the translation does not label its language), do not pick by language.
  */
 export function dubEngineKey(
   options: readonly ToolModelOption<Pick<SpeechModelInfo, 'languages'>>[],
@@ -569,9 +560,9 @@ export function dubEngineKey(
   return (options.find((o) => o.key === preferred && fits(o)) ?? options.find(fits) ?? options.find((o) => o.usable) ?? options[0])?.key ?? null;
 }
 
-// ---- 失败之后 ----
+// ---- After a failure ----
 
-/** 转录时视频主轨上有几个素材（`TRANSCRIBE_ASSET_AMBIGUOUS`）：要用户选一个，带 `assetId` 重新开始。 */
+/** When transcribing and the video’s main track has several assets (`TRANSCRIBE_ASSET_AMBIGUOUS`), the user has to pick one, and the run restarts with `assetId`. */
 export function ambiguousAssets(job: Pick<JobRecord, 'error'> | null): Id[] | null {
   const error = job?.error;
   if (!error || error.code !== 'TRANSCRIBE_ASSET_AMBIGUOUS' || !isObject(error.details)) return null;
@@ -580,8 +571,7 @@ export function ambiguousAssets(job: Pick<JobRecord, 'error'> | null): Id[] | nu
 }
 
 /**
- * 选好素材后重新开始（新的一次运行、新的 commandId）：照这次冻结的参数，加上 `assetId`；这次已经写进了某个视频时
- * 目标换成那个视频（不再新建一个）。
+ * Restart after the asset is picked (a new run with a new commandId): uses this run’s frozen parameters plus `assetId`. If this run has already been written into a video, the target becomes that video (no new one is created).
  */
 export function withAsset(job: Pick<JobRecord, 'pipeline' | 'videoId'>, assetId: Id): PipelineRequest | null {
   const pipeline = job.pipeline;
@@ -591,7 +581,7 @@ export function withAsset(job: Pick<JobRecord, 'pipeline' | 'videoId'>, assetId:
   return { pipeline: pipeline.name, params };
 }
 
-/** 这次运行从哪种输入开始（没有本机记录时从冻结参数推）。 */
+/** The kind of input this run started from (inferred from the frozen parameters when there is no local record). */
 export function runInput(job: Pick<JobRecord, 'pipeline'>): ToolInputKind {
   const pipeline = job.pipeline;
   if (!pipeline) return 'video';
@@ -602,7 +592,7 @@ export function runInput(job: Pick<JobRecord, 'pipeline'>): ToolInputKind {
   return target && isObject(target.create) ? 'file' : 'video';
 }
 
-/** 从链接导入与转录的落点、是否下载后转录（从冻结参数推）。只给文件的转录是 `none`。 */
+/** Where a link import or transcription lands, and whether it transcribes after download (inferred from the frozen parameters). File-only transcription is `none`. */
 export function runOpts(job: Pick<JobRecord, 'pipeline'>): { target?: ToolTargetKey; transcribe?: boolean } {
   const pipeline = job.pipeline;
   if (pipeline?.name === 'transcribe') {
@@ -615,9 +605,9 @@ export function runOpts(job: Pick<JobRecord, 'pipeline'>): { target?: ToolTarget
   return { target: !target ? 'none' : isObject(target.create) ? 'create' : 'video', transcribe: pipeline.params.transcribe === true };
 }
 
-// ---- 结果 ----
+// ---- Result ----
 
-/** 本机这次提交时记下的名字（摘要里只有 ID）：运行标题、视频名、项目名、来源文稿的语言。 */
+/** The name recorded locally at submission (the summary only has IDs): run title, video name, project name, and the language of the source transcript. */
 export interface RunMeta {
   tool: VideoToolId;
   input: ToolInputKind;
@@ -630,8 +620,7 @@ export interface RunMeta {
 }
 
 /**
- * 流程建立的字幕层（`summary.captions`）。合并 main 之后换成 protocol 的 `PipelineCaptionsSummary`
- * （origin/main:packages/protocol/src/pipelines.ts）。
+ * The caption layer the flow created (`summary.captions`). After main was merged, this is replaced with protocol’s `PipelineCaptionsSummary` (origin/main:packages/protocol/src/pipelines.ts).
  */
 export interface CaptionsFacts {
   status: 'created' | 'existing' | 'disabled' | 'not-on-timeline' | 'empty';
@@ -663,7 +652,7 @@ function dirName(path: string): string {
   return parts.join('/') || path;
 }
 
-/** 字幕层那一句；没建时说为什么，参数关掉时不说。 */
+/** One sentence for the caption layer. When it was not created, says why; when the option is off, says nothing. */
 function captionsLine(c: CaptionsFacts | null, lang: string | null, translation: boolean): string | null {
   if (!c) return null;
   switch (c.status) {
@@ -684,7 +673,7 @@ function captionsLine(c: CaptionsFacts | null, lang: string | null, translation:
   }
 }
 
-/** 换用文稿的结转（摘要的 `translations`、`captionPins`、`dubs`）：每种语言的译文与配音、pin 各一句；有过期的提示去刷新。 */
+/** The carry-over when the transcript is replaced (the summary’s `translations`, `captionPins`, `dubs`): one sentence each for translations and dubs per language, and for pins. If something is stale, a hint to refresh. */
 function carryLines(summary: Record<string, unknown>): string[] {
   const lines: string[] = [];
   const translations = carryTranslationsOf(summary);
@@ -701,8 +690,7 @@ function carryLines(summary: Record<string, unknown>): string[] {
 }
 
 /**
- * 换用了文稿的那次转录（`summary.target === 'replace'`）：结果页给「撤销」（按 `replaced.transactionId` 撤销那一笔，没有时不给）
- * 与「刷新过期译文」（有过期的句子时）。别的运行 null。
+ * A transcription that replaced the transcript (`summary.target === 'replace'`): the result page offers “Undo” (undoes that transaction by `replaced.transactionId`; not offered when it is missing) and “Refresh stale translations” (when there are stale sentences). null for other runs.
  */
 export function transcriptSwitchOf(job: JobRecord): { videoId: Id; transactionId: Id | null; stale: boolean } | null {
   const summary = job.pipeline?.name === 'transcribe' && job.state === 'completed' ? job.pipeline.summary : null;
@@ -713,7 +701,7 @@ export function transcriptSwitchOf(job: JobRecord): { videoId: Id; transactionId
   return { videoId, transactionId, stale: carryTranslationsOf(summary).some((t) => t.stale > 0) };
 }
 
-/** 摘要里结转的译文（读不出的项跳过）。 */
+/** The translations carried over in the summary (items that cannot be read are skipped). */
 export function carryTranslationsOf(
   summary: Record<string, unknown> | null | undefined,
 ): Array<{ language: string; kept: number; keptReviewed: number; stale: number }> {
@@ -727,8 +715,7 @@ export function carryTranslationsOf(
 }
 
 /**
- * 结果页的几句话（设计稿 tool-specs.jsx 的 `result`），从流程摘要（`pipeline.summary`）读；摘要里只有 ID，名字取 `meta`
- * （本机这次提交时记下的）或 `videoName`（按视频 ID 在 Space 里查到的）。读不出时空数组。
+ * A few sentences on the result page (design file tool-specs.jsx `result`), read from the flow summary (`pipeline.summary`). The summary only has IDs, so names come from `meta` (recorded locally at submission) or `videoName` (looked up in Space by video ID). An empty array when they cannot be read.
  */
 export function resultLines(job: JobRecord, meta: RunMeta | null, videoName: string | null): string[] {
   const summary = job.pipeline?.summary;
@@ -745,12 +732,12 @@ export function resultLines(job: JobRecord, meta: RunMeta | null, videoName: str
         lines.push(M.transcriptLanguage(langLabel(str(summary.language)), model));
         return lines;
       }
-      // 落点（`summary.target`，产品设计：重新转录）：新建视频、取代文稿，或原来没有文稿、直接写进去。
+      // Landing (`summary.target`, product design: re-transcription): a new video, the transcript replaced, or there was no transcript before, so it was written directly.
       const target = str(summary.target);
       if (target === 'replace') lines.push(M.replacedTranscript(name));
       else if (target === 'new-video') {
         const created = isObject(summary.newVideo) ? str(summary.newVideo.name) : null;
-        // 提交时记下的 `meta.videoName` 是原视频；按 ID 查到的 `videoName` 是新视频。
+        // The `meta.videoName` recorded at submission is the original video; the `videoName` looked up by ID is the new video.
         lines.push(M.newVideoFrom(created ?? videoName ?? M.newVideo, project, meta?.videoName ?? null));
       } else if (summary.createdVideo === true) lines.push(M.createdVideoLinked(videoName ?? meta?.videoName ?? M.newVideo, project));
       else lines.push(M.wroteTranscript(name));
@@ -805,7 +792,7 @@ export function resultLines(job: JobRecord, meta: RunMeta | null, videoName: str
       else lines.push(M.linkDownloaded(file, media ? dirName(media) : null));
       const browser = str(summary.cookieBrowser);
       if (browser && (LINK_COOKIE_BROWSERS as readonly string[]).includes(browser)) lines.push(usedCookieText(browser as LinkCookieBrowser));
-      // 从链接导入的转写不建字幕层（远端 §14 记为未实现）：照实说。
+      // Transcription from a link import does not create a caption layer (remote §14 records it as not implemented): say so honestly.
       if (Array.isArray(summary.transcriptFiles)) lines.push(M.linkTranscribedFiles);
       else if (str(summary.transcribeJobId)) lines.push(M.linkTranscribed);
       return lines;
@@ -815,13 +802,13 @@ export function resultLines(job: JobRecord, meta: RunMeta | null, videoName: str
   }
 }
 
-/** 运行写进（或新建）的视频；没有视频时 null。 */
+/** The video the run wrote into (or created). null when there is no video. */
 export function resultVideoId(job: JobRecord): Id | null {
   const summary = job.pipeline?.summary;
   return (summary && str(summary.videoId)) ?? job.videoId ?? null;
 }
 
-/** 没有本机记录时的运行标题：工具名加上能从冻结参数里读出的东西（文件名、链接、目标语言）。 */
+/** The run title when there is no local record: the tool name, plus whatever can be read from the frozen parameters (file name, link, target language). */
 export function fallbackTitle(job: JobRecord, toolName: string, videoName: string | null): string {
   const params = job.pipeline?.params ?? {};
   const target = isObject(params.target) ? params.target : null;

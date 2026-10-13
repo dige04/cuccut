@@ -78,11 +78,11 @@ import { useEntryThumbnail } from '../use-entry-thumbnail.ts';
 import { SPACE_COPY as COPY } from './space-copy.ts';
 
 /**
- * Space 的列表区（产品设计 §4.3–§4.4；原型 space-list.jsx）：网格是 CardView，列表是 TableView（名称、类型、来源、
- * 时长或尺寸、状态、最近活动）。两者都虚拟化，高度由外框给。这里只画；动作交给页面。
- * 卡片与名称列都先放缩略图（§4.3），列表的行高因此用 spacious 密度。
- * 「全部」与「视频」里一部视频只有一行（model/space.ts `groupEntries`）：它导出、生成的文件收在卡片的「N 个文件」与
- * 名称下面那行里；视频自己没有状态时，状态替这些文件里最该被看见的那个说话。
+ * The list area of Space (product design §4.3–§4.4; prototype space-list.jsx): the grid is CardView, the list is TableView (name, type, source,
+ * duration or size, status, recent activity). Both are virtualized, with height given by the outer frame. This part only renders; actions are handed to the page.
+ * Cards and the name column both show thumbnails first (§4.3), so the list row height uses the spacious density.
+ * In “全部” (All) and “视频” (Videos), one video takes only one row (model/space.ts `groupEntries`): its exported and generated files are gathered under the card's “N 个文件” and
+ * the line below the name. When the video has no status of its own, the status speaks for whichever of its files most needs to be seen.
  */
 
 export type EntryAction =
@@ -99,7 +99,7 @@ export type EntryAction =
   | 'restore'
   | 'purge'
   | 'clear'
-  /** 按来源筛出从这部视频切出的短视频（卡片与行上的「N 支短视频」）。 */
+  /** Filters, by source, to the shorts cut from this video (the “N 支短视频” on cards and rows). */
   | 'shorts';
 
 export const KIND_ICON: Record<SpaceEntryKind, ComponentType> = {
@@ -144,7 +144,7 @@ const thumb = style({
   color: 'gray-600',
   overflow: 'hidden',
 });
-/** 列表行里的缩略图（原型 sp-prev--small）：spacious 行高 48，缩略图取控件高度 32、16:9，上下各留 8。 */
+/** Thumbnail in a list row (prototype sp-prev--small): spacious row height 48; the thumbnail takes the control height 32, 16:9, leaving 8 above and below. */
 const thumbSmall = style({
   display: 'flex',
   alignItems: 'center',
@@ -158,7 +158,7 @@ const thumbSmall = style({
   overflow: 'hidden',
 });
 const thumbImage = style({ width: 'full', height: 'full', objectFit: { default: 'cover', isContain: 'contain' }, display: 'block' });
-/** 文档与字幕：正文摘要印在一张纸上（原型 sp-prev--document）；列表行里只留纸面和类型图标。 */
+/** Documents and subtitles: the body text summary is printed on a sheet of paper (prototype sp-prev--document); list rows keep only the paper and the type icon. */
 const docBack = style({
   position: 'relative',
   width: 'full',
@@ -232,7 +232,7 @@ const nameCell = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth
 const nameText = style({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const nameBody = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
 const nameSub = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-/** 卡片底栏：状态在左，「N 个文件」推到右边（原型 sp-files）。 */
+/** Card footer: status on the left, “N 个文件” (N files) pushed to the right (prototype sp-files). */
 const filesButton = style({ marginStart: 'auto' });
 const visuallyHidden = style({
   position: 'absolute',
@@ -245,14 +245,14 @@ const visuallyHidden = style({
 const favMark = style({ display: 'flex', color: 'yellow-800', flexShrink: 0 });
 
 /**
- * 预览块（原型 ItemPreview）：画面铺满；文档与字幕是纸上的正文摘要；没有的画类型图标，缺失的加「找不到文件」。
- * `small` 是列表名称列里的那一档：名字就在旁边，整块对读屏隐藏；文档只留纸面和类型图标；缺失只靠灰底，文字由 aria-label 说。
+ * Preview block (prototype ItemPreview): the picture fills the block; documents and subtitles are body-text summaries on paper; items without a picture show a type icon, and missing files add “找不到文件” (File not found).
+ * `small` is the tier in the list's name column: the name sits right beside it, so the whole block is hidden from screen readers; documents keep only the paper and type icon; for missing files, only the gray background shows, and the text is announced via aria-label.
  */
 export function EntryThumb({ entry, small, contain = false }: { entry: SpaceEntry; small?: boolean; contain?: boolean }) {
   const thumbnail = useEntryThumbnail(entry);
   const missing = entry.status === 'missing';
   const Icon = KIND_ICON[entry.kind];
-  // 列表那一档的类型图标是 workflow 图标，走全局的 16px；网格卡片的是类型预览，保留 S2 原生画布（产品设计 §2.1）。
+  // The type icon in the list tier is the workflow icon and uses the global 16px; grid cards show the type preview and keep S2's native canvas (product design §2.1).
   const icons = small ? undefined : 'own';
   if (thumbnail?.kind === 'image') {
     return (
@@ -293,12 +293,12 @@ export function EntryThumb({ entry, small, contain = false }: { entry: SpaceEntr
   );
 }
 
-/** 最近活动：收了文件的视频取它和文件里最近的一次。 */
+/** Recent activity: for a video with files, takes the most recent time between itself and its files. */
 const activityOf = (row: SpaceRow) => row.activityAt ?? row.lastActivityAt;
 
 /**
- * 状态：灯 + 字（原型 ItemStatus）。视频自己没有状态时看名下的文件（`filesAttention`）；都没有时列表里写一道横线，
- * 卡片上写最近活动（`quiet`）。
+ * Status: light + text (prototype ItemStatus). When the video has no status of its own, look at its files (`filesAttention`); if neither has one, the list shows a dash,
+ * and the card shows recent activity (`quiet`).
  */
 function EntryStatus({ entry, now, quiet }: { entry: SpaceRow; now: number; quiet?: boolean }) {
   const text = statusText(entry);
@@ -318,7 +318,7 @@ function EntryStatus({ entry, now, quiet }: { entry: SpaceRow; now: number; quie
   );
 }
 
-/** 卡片上的「N 个文件」：点开是这部视频的查看框，文件逐个列在里面（原型 FilesButton）。 */
+/** “N 个文件” (N files) on a card: clicking opens this video's viewer, with the files listed one by one inside (prototype FilesButton). */
 function FilesButton({ row, onAction }: { row: SpaceRow; onAction: (action: EntryAction, entry: SpaceEntry) => void }) {
   const n = row.files?.length ?? 0;
   if (!n) return null;
@@ -330,7 +330,7 @@ function FilesButton({ row, onAction }: { row: SpaceRow; onAction: (action: Entr
   );
 }
 
-/** 父视频卡片上的「N 支短视频」（产品设计 §5.10）：点一下按来源筛出它们。 */
+/** “N 支短视频” (N shorts) on a parent video card (product design §5.10): click to filter by source to show them. */
 function ShortsButton({ row, count, onAction }: { row: SpaceRow; count: number; onAction: (action: EntryAction, entry: SpaceEntry) => void }) {
   if (!count) return null;
   return (
@@ -342,13 +342,13 @@ function ShortsButton({ row, count, onAction }: { row: SpaceRow; count: number; 
 }
 
 /**
- * 条目的 ⋯ 菜单（原型 itemMenu，卡片与行共用）：视频是「打开视频」「查看信息」（查看框）与
- * 「视频详情…」（原型项目卡菜单的详情框，与编辑器顶栏 ⓘ 同一个框）；其余是「查看」；回收站里的是恢复与彻底删除，
- * 失败的生成占位只能清除。做不了的项置灰（原因在查看框里写明）。
+ * The item ⋯ menu (prototype itemMenu, shared by cards and rows): for a video, “打开视频” (Open video), “查看信息” (View info, the viewer), and
+ * “视频详情…” (Video details…, the details dialog from the prototype project card menu, the same dialog as the ⓘ in the editor top bar); for others, “查看” (View); in the trash, restore and delete permanently;
+ * a failed generation placeholder can only be cleared. Items that cannot be done are greyed out (the reason is written in the viewer).
  */
 /**
- * 视频条目的「转录… / 重新转录… / 重试转录…」（产品设计 §4.4，原型 space-list.jsx `transcribeItem`）：进转录工具页、预选这部视频。
- * 重试排在最前（打开视频之前），另外两种跟在查看信息之后。
+ * “转录… / 重新转录… / 重试转录…” (Transcribe… / Re-transcribe… / Retry transcription…) for video items (product design §4.4, prototype space-list.jsx `transcribeItem`): opens the transcription tool page with this video preselected.
+ * Retry comes first (before Open video); the other two follow View info.
  */
 function transcribeItem(action: SpaceTranscribeAction) {
   const label = COPY.transcribe[action];
@@ -462,12 +462,12 @@ function entryMenu(
   );
 }
 
-/** 卡片说明与「时长或尺寸」一列：有媒体信息时写时长与尺寸，没有时写文件大小。 */
+/** Card description and the “duration or size” column: shows duration and size when media info exists, otherwise file size. */
 function measureOf(entry: SpaceEntry): string {
   return measureText(entry) ?? (entry.size > 0 ? formatBytes(entry.size) : '');
 }
 
-/** 行与卡片的默认动作：视频打开编辑器，幻灯片、设计稿与设计系统在功能区打开，其余打开查看框（原型 onAction）。 */
+/** Default action for rows and cards: videos open in the editor; slides, design drafts and design systems open in the feature area; everything else opens the viewer (prototype onAction). */
 const primaryAction = (entry: SpaceEntry): EntryAction =>
   (entry.kind === 'video' || entry.kind === 'slides' || entry.kind === 'design' || entry.kind === 'design-system') && !entry.user.trashedAt
     ? 'open'
@@ -477,22 +477,22 @@ interface ListProps {
   entries: SpaceRow[];
   now: number;
   sourceOf: (entry: SpaceEntry) => string;
-  /** 条目在磁盘上有没有能在文件夹中显示的路径。 */
+  /** Whether the item has a path on disk that can be shown in the file manager. */
   canReveal: (entry: SpaceEntry) => boolean;
   onAction: (action: EntryAction, entry: SpaceEntry) => void;
-  /** 视频条目菜单里给哪个转录动作；不给时 null（转录中、源文件缺失、还不知道有没有文稿）。 */
+  /** Which transcription action to offer in a video item's menu; null when not given (transcribing, source file missing, or transcript status not yet known). */
   transcribeAction: (entry: SpaceEntry) => SpaceTranscribeAction | null;
   empty: () => ReactNode;
-  /** 父视频派生出的子视频数（`derivedCount`，按 videoId）；不给时不显示。 */
+  /** Number of child videos derived from this parent video (`derivedCount`, by videoId); not shown when not given. */
   shorts?: ReadonlyMap<string, number>;
 }
 
 const listStyles = style({ flexGrow: 1, minHeight: 0 });
 
 /**
- * 集合的 `dependencies` 与稳定的菜单回调：CardView / TableBody 按条目对象缓存每项的渲染。后到的候选、`jobs`、保存位置、
- * 来源列和 `now` 不经 `entries` 传进来，得靠依赖键让缓存失效（`entryMenuKey`，内容变了才变）。缓存住的菜单回调也会过时，
- * 所以菜单拿一个身份不变、调用时转给最新 `onAction` 的函数。
+ * The collection's `dependencies` and the stable menu callbacks: CardView / TableBody cache each item's render by item object. Late-arriving candidates, `jobs`, the save location,
+ * the source column and `now` are not passed in via `entries`, so the dependency key has to invalidate the cache (`entryMenuKey`, which changes only when content changes). A cached menu callback can also go stale,
+ * so the menu takes a function whose identity never changes and forwards calls to the latest `onAction`.
  */
 function useListDeps({ entries, now, canReveal, onAction, transcribeAction, shorts }: ListProps, sourceOf?: ListProps['sourceOf']) {
   const latest = useRef(onAction);
@@ -642,14 +642,14 @@ const GridCard = memo(function GridCard({
   );
 });
 
-/** 视频条目派生出的子视频数。 */
+/** Number of child videos derived from a video item. */
 function shortsOf(shorts: ListProps['shorts'], entry: SpaceEntry): number {
   return shorts && entry.ref && 'videoId' in entry.ref ? (shorts.get(entry.ref.videoId) ?? 0) : 0;
 }
 
-/** 表格的列；列名在渲染时按当前语言取（`columnName`）。 */
+/** Table columns; column names are looked up in the current language at render time (`columnName`). */
 const COLUMNS = [
-  { id: 'name', isRowHeader: true, minWidth: 280 }, // 缩略图比原来的类型图标宽约 40，名字至少留出原来的宽度
+  { id: 'name', isRowHeader: true, minWidth: 280 }, // Thumbnails are about 40 wider than the old type icon; the name keeps at least its original width
   { id: 'kind', width: 88 },
   { id: 'source', minWidth: 180 },
   { id: 'size', width: 168 },
@@ -674,7 +674,7 @@ export function SpaceTable(props: ListProps) {
   const { act, dependencies } = useListDeps(props, sourceOf);
   const cell = (entry: SpaceRow, column: ColumnId): ReactNode => {
     if (column === 'name') {
-      // 收了文件的视频：名字下面一行写「N 个文件 · 成片 2 · 字幕 1」，只靠文件对上搜索时写找到的是哪个
+      // Video with files: below the name, the line reads “N 个文件 · 成片 2 · 字幕 1” (N files · finished cut 2 · subtitles 1); when a search matches only through a file, it shows which file was found
       const n = entry.files?.length ?? 0;
       const kids = shortsOf(shorts, entry);
       const sub =

@@ -1,9 +1,7 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/acp-agent.ts 的 ACPAgentClient.fetchCatalog（起一个临时进程、session/new、
- * 读模型表、关掉）与 PROBE_ENV，cursor-acp-agent.ts 的 resolveCursorCatalogModels / fetchCursorModelCatalog
- * （`cursor/list_available_models`），generic-acp-agent.ts 的通用 Driver 装配。
- * 改成 CucCut 的 DriverProbe：需要登录（-32000）报 signed-out，模型表按版本缓存 10 分钟。
+ * Some mechanisms are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * ACPAgentClient.fetchCatalog in packages/server/src/server/agent/providers/acp-agent.ts (starts a temporary process, session/new, reads the model table, shuts it down) and PROBE_ENV; resolveCursorCatalogModels / fetchCursorModelCatalog in cursor-acp-agent.ts (`cursor/list_available_models`); the generic Driver assembly in generic-acp-agent.ts.
+ * Changed to CucCut's DriverProbe: when login is required (-32000), it reports signed-out; the model table is cached per version for 10 minutes.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -26,13 +24,13 @@ import {
 } from './acp-presets.ts';
 import { AcpSession, acpCapabilities, agentError } from './acp-session.ts';
 
-/** 模型表的缓存：拿到了留 10 分钟；没登录或出错 1 分钟后再试（登录、升级之后不必等太久）。 */
+/** Model table cache: a result is kept for 10 minutes; if signed out or on error, retry after 1 minute (no need to wait long after logging in or upgrading). */
 const CATALOG_TTL_MS = 10 * 60_000;
 const CATALOG_RETRY_MS = 60_000;
 
 interface AcpCatalog {
   state: 'ready' | 'signed-out' | 'error';
-  /** signed-out 时是 Agent 的原话；error 时是 CucCut 写的说明。 */
+  /** For signed-out, this is the Agent's original wording; for error, it is an explanation written by CucCut. */
   detail: DriverText | null;
   models: DriverModel[];
   capabilities: DriverProbe['capabilities'];
@@ -40,30 +38,28 @@ interface AcpCatalog {
 
 export interface AcpDriverOptions {
   /**
-   * 找到可执行文件。默认按 `CUCCUT_<ID>_PATH`、登录 shell 的 PATH 与已知安装位置找（`locateAcp`）。
-   * 测试注入假的智能体，不读登录 shell，也不碰本机真实的命令。
+   * Finds the executable. By default it looks in `CUCCUT_<ID>_PATH`, the login shell's PATH and known install locations (`locateAcp`).
+   * Tests inject a fake agent, which does not read the login shell and does not touch the real command on this machine.
    */
   locate?: () => Promise<AcpInstall | null>;
-  /** 探测（起进程、初始化、建会话、取模型表）的总时限，默认 30 秒（Gemini CLI 冷启动就要十几秒）。 */
+  /** Overall time limit for a probe (starting the process, initializing, creating a session, fetching the model table); default 30 seconds (Gemini CLI takes more than ten seconds to cold start). */
   probeTimeoutMs?: number;
-  /** 能不能开会话；不给时取预设的 `verified`，预设也没给时取 `ACP_SHARED_VERIFIED`。 */
+  /** Whether a session can be opened; if not given, takes the preset's `verified`, and if the preset does not give one either, `ACP_SHARED_VERIFIED`. */
   verified?: boolean;
 }
 
 /**
- * 经 Agent Client Protocol 接入的 Driver（架构设计 §3.1）：一份实现，按预设（GitHub Copilot、Gemini CLI、Cursor Agent、Grok、Kimi Code，
- * 以及用户添加的智能体）区分怎么找、怎么启动、怎么登录。每个会话一个智能体进程。
+ * A Driver connected through the Agent Client Protocol (architecture design §3.1): one implementation, where the preset (GitHub Copilot, Gemini CLI, Cursor Agent, Grok, Kimi Code, and user-added agents) determines how it is found, started and logged in. Each session has one agent process.
  *
- * 共享实现经 claude-code-acp 适配器在真机上跑通了完整会话（新建、审批、追问、中断、恢复，§3.11 的 D08，`ACP_SHARED_VERIFIED`）：
- * 预设与用户添加的智能体默认 `verified`。各家智能体本身是否在 CucCut 上实测过看预设的 `tested`。
+ * The shared implementation has run a full session on a real machine through the claude-code-acp adapter (new session, approval, follow-up, interrupt, resume; §3.11 D08, `ACP_SHARED_VERIFIED`): presets and user-added agents default to `verified`. Whether each agent itself has been tested on CucCut is given by the preset's `tested`.
  */
 export class AcpDriver implements AgentDriver {
   readonly id: AcpDriverId;
-  /** 能不能开会话（架构设计 §3.11 的 D08）：构造参数，其次预设，默认 `ACP_SHARED_VERIFIED`。 */
+  /** Whether a session can be opened (architecture design §3.11 D08): the constructor argument first, then the preset, default `ACP_SHARED_VERIFIED`. */
   readonly verified: boolean;
-  /** 这一家在 CucCut 里真机跑通过完整会话：取预设的 `tested`，不给为 false。 */
+  /** Whether this vendor has run a full session on a real machine in CucCut: takes the preset's `tested`; false if not given. */
   readonly tested: boolean;
-  /** 探测要拉起智能体进程（冷启动可达十几秒）：`agents.list` 不等它，也不做「便宜的纠正」（§3.11）。 */
+  /** The probe starts the agent process (cold start can take more than ten seconds): `agents.list` does not wait for it, and does not make a "cheap correction" (§3.11). */
   readonly slowProbe = true;
   readonly preset: AcpPreset;
   readonly #log: Logger;
@@ -82,9 +78,7 @@ export class AcpDriver implements AgentDriver {
   }
 
   /**
-   * 常量部分。能力（`capabilities`）其实来自智能体 `initialize` 的应答，是本机事实；探测缓存不存它，从磁盘缓存读回来时
-   * 先用这里的保守值（`acpCapabilities(null)`），启动后的后台探测随即换成真实的；在那之前开的会话以 `initialize` 的
-   * 应答为准（`AcpSession.capabilities`），只有发图片前的判断可能因保守值拒绝一次。
+   * Constant part. Capabilities (`capabilities`) actually come from the agent's `initialize` response and are facts about this machine; the probe cache does not store them. When read back from the disk cache, the conservative values here are used first (`acpCapabilities(null)`); the background probe after startup then replaces them with the real ones. Sessions opened before that follow the `initialize` response (`AcpSession.capabilities`); only the check before sending an image may refuse once because of the conservative value.
    */
   describe(): DriverDescription {
     const preset = this.preset;
@@ -133,7 +127,7 @@ export class AcpDriver implements AgentDriver {
       return result('not-installed', detail);
     }
     const realExecutable = await fs.realpath(install.command).catch(() => null);
-    // 没有最低版本（用户添加的智能体）：不看版本，直接起 ACP 模式探测。
+    // No minimum version (user-added agents): the version is not checked; the ACP-mode probe starts directly.
     if (preset.minVersion !== null) {
       if (!install.version) return result('error', DriversCommon.versionFailed({ command: install.command }), { realExecutable });
       if (compareVersions(install.version, preset.minVersion) < 0) {
@@ -163,9 +157,8 @@ export class AcpDriver implements AgentDriver {
   }
 
   /**
-   * 模型表与登录状态，按「哪个命令、哪个版本」缓存；同时到来的探测共用一次。`force`（重新检测、安装结束、出错后的纠正）
-   * 不用缓存，真的起一次进程：刚在终端里登录完点「重新检测」，不能还拿着 10 分钟内的 signed-out。新取的照样登记给之后共用。
-   * 这层缓存与 Driver 注册表的缓存（§3.11）不冲突：注册表只决定什么时候调 `probe()`，这里只省掉短时间内重复起进程。
+   * The model table and login status are cached by "which command, which version"; concurrent probes share a single fetch. `force` (re-detect, after installation finishes, correction after an error) does not use the cache and really starts a process: after logging in in the terminal and clicking "re-detect", it must not still get a signed-out from within the last 10 minutes. The newly fetched result is still recorded for later sharing.
+   * This cache layer does not conflict with the Driver registry cache (§3.11): the registry only decides when `probe()` is called; here we only avoid starting processes repeatedly within a short time.
    */
   #catalog(install: AcpInstall, force: boolean): Promise<AcpCatalog> {
     const key = `${install.command}\0${install.version ?? ''}`;
@@ -185,8 +178,8 @@ export class AcpDriver implements AgentDriver {
   }
 
   /**
-   * 起一个临时进程：`initialize`、`session/new`（不连 MCP，不调模型）、读模型表，然后关掉。
-   * 不打开浏览器（`NO_BROWSER`）：没登录的智能体在 `session/new` 回 -32000，记成 signed-out。
+   * Starts a temporary process: `initialize`, `session/new` (no MCP connection, no model call), reads the model table, then shuts it down.
+   * Does not open a browser (`NO_BROWSER`): an agent that is not logged in returns -32000 on `session/new` and is recorded as signed-out.
    */
   async #readCatalog(install: AcpInstall): Promise<AcpCatalog> {
     const preset = this.preset;
@@ -207,7 +200,7 @@ export class AcpDriver implements AgentDriver {
         },
         initTimeoutMs: this.#probeTimeoutMs,
       });
-      // 超时之后才起来的进程：没人管了，直接关掉。
+      // A process that starts after the timeout: nobody is waiting for it, so shut it down.
       if (done) {
         await started.close();
         throw new Error('probe timed out');
@@ -227,7 +220,7 @@ export class AcpDriver implements AgentDriver {
     };
     try {
       const running = run();
-      // 超时之后它还会失败（进程被关掉）：那时没人等它了。
+      // It can still fail after the timeout (the process is shut down): by then nobody is waiting for it.
       running.catch(() => undefined);
       return await withTimeout(
         running,
@@ -245,8 +238,7 @@ export class AcpDriver implements AgentDriver {
   }
 
   /**
-   * Cursor 的模型表走扩展方法 `cursor/list_available_models`（在会话里切换模型会改它的全局偏好，探测时不能那样逐个试）。
-   * 取不到时退回 `session/new` 应答里的模型。
+   * Cursor's model table goes through the extension method `cursor/list_available_models` (switching the model in a session changes its global preference, so the probe cannot try them one by one). If it cannot be fetched, falls back to the models in the `session/new` response.
    */
   async #cursorModels(proc: AcpProcess, fallback: DriverModel[]): Promise<DriverModel[] | null> {
     try {
@@ -271,7 +263,7 @@ export class AcpDriver implements AgentDriver {
   }
 }
 
-/** 内置 ACP 预设各一个 Driver，按 `BUILTIN_DRIVER_IDS` 的顺序。 */
+/** One Driver for each built-in ACP preset, in the order of `BUILTIN_DRIVER_IDS`. */
 export function acpDrivers(log: Logger): AcpDriver[] {
   return (['copilot', 'gemini', 'cursor', 'grok', 'kimi'] as const).map((id) => new AcpDriver(id, log));
 }

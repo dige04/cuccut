@@ -10,7 +10,7 @@ const TRANSLATION: CompileContext = { role: 'translation', hasWordTiming: false 
 const preset = (id: string) => CAPTION_PRESETS.find((p) => p.id === id)!;
 const pick = (style: Json, keys: readonly string[]) => Object.fromEntries(keys.filter((k) => k in style).map((k) => [k, style[k]]));
 
-/** 内核 `textMotion` 的取值域（`deny_unknown_fields`：一项不合法整份丢掉）。 */
+/** Value ranges of the kernel's `textMotion` (`deny_unknown_fields`: one invalid item and the whole document is dropped). */
 function expectValidTextMotion(tm: unknown, id: string) {
   if (tm === undefined) return;
   const t = tm as Json;

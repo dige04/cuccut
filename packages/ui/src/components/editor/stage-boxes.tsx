@@ -18,12 +18,12 @@ import {
 import './editor.css';
 
 /**
- * 舞台叠加层的画法（原型 ui.css 的 .selbox / .hnd / .rot / .angchip / .selthin / .multichip / .marquee / .gline）：
- * 选中框、把手、旋转钮、角度气泡、多选统一框与它的角标、框选矩形、参考线。只管画，指针由叠加层根节点统一接：
- * 把手带 `data-handle`，旋转钮带 `data-rotate`，统一框带 `data-group`。
+ * How the stage overlay is drawn (prototype ui.css .selbox / .hnd / .rot / .angchip / .selthin / .multichip / .marquee / .gline):
+ * selection boxes, handles, the rotate knob, the angle bubble, the unified box for multi-select and its corner badge, the marquee rectangle, and guide lines. Drawing only; the pointer is handled uniformly by the overlay root:
+ * handles carry `data-handle`, the rotate knob carries `data-rotate`, and the unified box carries `data-group`.
  */
 
-/** 序列画布像素 → 舞台显示像素。 */
+/** Sequence canvas pixels → stage display pixels. */
 export interface View {
   kx: number;
   ky: number;
@@ -120,7 +120,7 @@ const marqueeBox = style({
 });
 const guideLine = style({ position: 'absolute', backgroundColor: 'blue-800', pointerEvents: 'none' });
 
-/** 盒在舞台上的位置（未旋转；旋转交给 CSS 绕中心转，与盒的口径一致）。 */
+/** The box's position on the stage (unrotated; rotation is left to CSS, which rotates around the center, consistent with the box's coordinates). */
 export function displayRect(pose: Pose, view: View): CSSProperties {
   return {
     left: (pose.cx - pose.w / 2) * view.kx,
@@ -130,7 +130,7 @@ export function displayRect(pose: Pose, view: View): CSSProperties {
   };
 }
 
-/** 把手的落位（照抄原型：四角 12px 圆点压在框角外 7px，边条 4×20 外沿贴着描边；小盒一档 8px）。 */
+/** Handle placement (copied from the prototype: the 12px corner dots sit 7px outside the box corners, and the 4×20 edge bars have their outer edge flush with the stroke; small boxes use one size step smaller, 8px). */
 function handlePlace(h: Handle, small: boolean): CSSProperties {
   if (isCorner(h)) {
     const size = small ? 8 : 12;
@@ -147,7 +147,7 @@ function handleTip(kind: ResizeKind, h: Handle): string {
   return h === 'n' || h === 's' ? STAGE_COPY.edgeHeightTip : STAGE_COPY.edgeWidthTip;
 }
 
-/** 单件的选中框：可改时带把手与旋转钮；旋转中出角度气泡（反向抵消框的旋转，读数不歪）。 */
+/** Selection box for a single item: when editable, it has handles and a rotate knob. An angle bubble appears while rotating (counter-rotated to cancel the box's rotation, so the reading stays upright). */
 export function ItemBox({
   id,
   pose,
@@ -164,9 +164,9 @@ export function ItemBox({
   pose: Pose;
   view: View;
   kind: ResizeKind;
-  /** 视频不画描边（原型 .selbox--video），只出把手。 */
+  /** Videos are not outlined (prototype .selbox--video); only handles are shown. */
   video: boolean;
-  /** 出把手与旋转钮（可改、没在播放）。 */
+  /** Shows handles and the rotate knob (editable and not playing). */
   controls: boolean;
   movable: boolean;
   dragging: boolean;
@@ -208,14 +208,14 @@ export function ItemBox({
   );
 }
 
-/** 多选时每件只留一条细描边（原型 .selthin）。 */
+/** When multi-selecting, each item keeps only a thin outline (prototype .selthin). */
 export function ThinBox({ pose, view }: { pose: Pose; view: View }) {
   return <div className={thinBox} style={{ ...displayRect(pose, view), transform: `rotate(${pose.rotation}deg)` }} />;
 }
 
 const GROUP_CORNERS: Handle[] = ['nw', 'ne', 'sw', 'se'];
 
-/** 多选统一框（原型 MultiBox）：虚线外包框，整体拖动、四角整体等比缩放，没有旋转钮；下方角标「已选 N 个」。 */
+/** Unified multi-select box (prototype MultiBox): a dashed outer frame. Drag it as a whole; the corners scale the whole group proportionally; no rotate knob. A corner badge below reads “已选 N 个”(N selected). */
 export function GroupBox({
   bounds,
   view,
@@ -253,12 +253,12 @@ export function GroupBox({
   );
 }
 
-/** 框选矩形（舞台显示像素）。 */
+/** Marquee rectangle (stage display pixels). */
 export function Marquee({ rect }: { rect: Rect }) {
   return <div className={marqueeBox} style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }} />;
 }
 
-/** 对齐参考线：1px，横贯画面；手势中现算，松手消失。 */
+/** Alignment guide line: 1px, spanning the picture. Computed live during a gesture; disappears on release. */
 export function Guides({ guides, view }: { guides: Guide[]; view: View }) {
   return (
     <>

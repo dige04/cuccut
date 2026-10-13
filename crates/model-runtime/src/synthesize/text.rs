@@ -1,41 +1,41 @@
-//! 长文本切块：TTS 模型一次只能稳定生成十几秒，长文本要按自然停顿切开逐块合成。
+//! Splitting long text into chunks: a TTS model can only reliably generate about ten-odd seconds at a time, so long text must be split at natural pauses and synthesized chunk by chunk.
 //!
-//! 同时照顾中英文：句末标点
-//! （。！？.!?）优先，其次分号 / 冒号 / 逗号（含全角），最后按预算硬切。
-//! 长度预算按「单元」计：一个 CJK 字算一个单元，一个空格分隔的拉丁词算一个单元。
+//! Handles Chinese and English alike: sentence-final punctuation
+//! (。！？.!?) takes priority, then semicolon / colon / comma (including full-width), and finally a hard cut at the budget.
+//! The length budget is counted in units: one CJK character counts as one unit, and one space-separated Latin word counts as one unit.
 
-/// 默认每块最多 60 个单元（约 35 个英文词或 60 个汉字，Qwen3-TTS 约 15 秒语音）。
+/// By default, each chunk holds at most 60 units (about 35 English words or 60 Chinese characters, roughly 15 seconds of Qwen3-TTS speech).
 pub const DEFAULT_MAX_UNITS: usize = 60;
-/// 少于这个数的碎片会并入相邻块。
+/// Fragments shorter than this number are merged into adjacent chunks.
 pub const MIN_UNITS: usize = 8;
 
 const SENTENCE_END: &[char] = &['。', '！', '？', '.', '!', '?', '…'];
 const CLAUSE_END: &[char] = &['；', ';', '：', ':', '，', ',', '、'];
 
-/// 把整段文本切成适合单次合成的块，保留原始标点。
+/// Splits the whole text into chunks suitable for a single synthesis call, keeping the original punctuation.
 pub fn chunk(text: &str, max_units: usize) -> Vec<String> {
     chunk_with_breaks(text, max_units).into_iter().map(|chunk| chunk.text).collect()
 }
 
-/// 一块之后是哪一级边界：拼接时据此插停顿（[`crate::synthesize::stitch`]）。
+/// Which boundary level follows a chunk: used during stitching to insert pauses ([`crate::synthesize::stitch`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkBreak {
-    /// 块在句中断开：落在分号、逗号等分句标点上，或超长无标点时硬切。
+    /// A chunk breaks mid-sentence: it falls on clause punctuation such as a semicolon or comma, or is hard-cut when it is too long with no punctuation.
     Clause,
-    /// 块以句末标点收尾（。！？.!?…，后面可以跟右引号、右括号）。
+    /// A chunk ends with sentence-final punctuation (。！？.!?…, which may be followed by a closing quote or closing bracket).
     Sentence,
-    /// 段落（换行）边界；整段文本的最后一块也记作它。
+    /// Paragraph (line break) boundary; the last chunk of the whole text is also recorded as this.
     Paragraph,
 }
 
-/// [`chunk`] 切出的一块，带上它之后的边界级别。
+/// A chunk produced by [`chunk`], along with the boundary level that follows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextChunk {
     pub text: String,
     pub after: ChunkBreak,
 }
 
-/// 与 [`chunk`] 切法完全相同，另给出每块之后的边界级别。
+/// Splits exactly as [`chunk`] does, and additionally gives the boundary level after each chunk.
 pub fn chunk_with_breaks(text: &str, max_units: usize) -> Vec<TextChunk> {
     let mut out = Vec::new();
     for paragraph in chunk_paragraphs(text, max_units) {
@@ -54,7 +54,7 @@ pub fn chunk_with_breaks(text: &str, max_units: usize) -> Vec<TextChunk> {
     out
 }
 
-/// 去掉末尾的右引号、右括号与空白后，最后一个字符是不是句末标点。
+/// After stripping trailing closing quotes, closing brackets and whitespace, is the last character sentence-final punctuation?
 fn ends_sentence(text: &str) -> bool {
     text.trim_end_matches(|c: char| c.is_whitespace() || is_closing_quote(c))
         .chars()
@@ -62,7 +62,7 @@ fn ends_sentence(text: &str) -> bool {
         .is_some_and(|c| SENTENCE_END.contains(&c))
 }
 
-/// 按段落分组的块：段落（换行）永远是块边界，每个段落各自切。
+/// Chunks grouped by paragraph: a paragraph (line break) is always a chunk boundary, and each paragraph is split separately.
 fn chunk_paragraphs(text: &str, max_units: usize) -> Vec<Vec<String>> {
     let max_units = max_units.max(MIN_UNITS);
     let normalized = text.replace("\r\n", "\n");
@@ -93,7 +93,7 @@ fn chunk_paragraphs(text: &str, max_units: usize) -> Vec<Vec<String>> {
             current_units += units;
         }
         flush(&mut chunks, &mut current, &mut current_units);
-        // 碎尾只在同一段落内并回，不跨段落。
+        // A trailing fragment is merged back only within the same paragraph, never across paragraphs.
         let paragraph_chunks = merge_tiny_tail(std::mem::take(&mut chunks));
         if !paragraph_chunks.is_empty() {
             out.push(paragraph_chunks);
@@ -111,7 +111,7 @@ fn flush(chunks: &mut Vec<String>, current: &mut String, units: &mut usize) {
     *units = 0;
 }
 
-/// 末块太短时并回前一块（避免「。好的」这类碎片单独合成出怪音）。
+/// When the last chunk is too short, it is merged back into the previous chunk (to avoid a fragment such as “。好的” being synthesized alone and producing strange sounds).
 fn merge_tiny_tail(mut chunks: Vec<String>) -> Vec<String> {
     if chunks.len() >= 2 {
         let last_units = count_units(&chunks[chunks.len() - 1]);
@@ -137,7 +137,7 @@ fn needs_space(left: &str, right: &str) -> bool {
     !(is_cjk(last) || is_cjk(first) || last.is_whitespace())
 }
 
-/// 按句末标点切句，标点跟随前句。
+/// Splits into sentences at sentence-final punctuation; the punctuation stays with the preceding sentence.
 pub fn split_sentences(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -146,14 +146,14 @@ pub fn split_sentences(text: &str) -> Vec<String> {
     while i < chars.len() {
         let c = chars[i];
         if SENTENCE_END.contains(&c) {
-            // 小数点 / 缩写：`3.14`、`e.g.` 之后紧跟非空白字符不算句末。
+            // Decimal point / abbreviation: a period immediately followed by a non-whitespace character, as in `3.14` or `e.g.`, does not count as a sentence end.
             let mut end = i + 1;
             while end < chars.len() && (SENTENCE_END.contains(&chars[end]) || is_closing_quote(chars[end])) {
                 end += 1;
             }
             let ascii_dot = c == '.';
             let followed_by_text = end < chars.len() && !chars[end].is_whitespace() && !is_cjk(chars[end]);
-            // `e.g. roughly` / `Mr. smith`：句点后接小写词也不算句末。
+            // `e.g. roughly` / `Mr. smith`: a period followed by a lowercase word does not count as a sentence end either.
             let followed_by_lowercase = chars[end..]
                 .iter()
                 .find(|ch| !ch.is_whitespace())
@@ -187,29 +187,27 @@ fn is_closing_quote(c: char) -> bool {
     matches!(c, '"' | '\'' | '”' | '’' | '」' | '』' | ')' | '）' | '】' | ']')
 }
 
-/// 真正收住一句的标点：句号、问号、叹号。英文句点 `.` 另有缩写 / 小数的判断，不在这里。
+/// The punctuation that truly ends a sentence: full stop, question mark, exclamation mark. The English period `.` has its own abbreviation / decimal checks, which are not here.
 const STRONG_END: &[char] = &['。', '｡', '．', '！', '？', '!', '?'];
 const OPEN_MARKS: &[char] = &['“', '‘', '「', '『', '（', '(', '【', '[', '《', '〈'];
 const CLOSE_MARKS: &[char] = &['”', '’', '」', '』', '）', ')', '】', ']', '》', '〉'];
-/// 句点后面不收句的常见英文缩写（小写比）。
+/// Common English abbreviations after which a period does not end a sentence (compared in lowercase).
 const ABBREVIATIONS: &[&str] = &[
     "mr", "mrs", "ms", "dr", "prof", "st", "jr", "sr", "vs", "etc", "no", "inc", "ltd", "co", "mt", "fig", "approx",
 ];
 
-/// 念出来是几句：说到句号、问号、叹号为止算一句，按顺序返回每一句（旁白清单「一句一条」）。
+/// Counts how many sentences are spoken: a sentence ends at a full stop, question mark or exclamation mark; returns each sentence in order (the narration list rule: “一句一条”, one sentence per entry).
 ///
-/// 只拿来提醒，所以宁可漏数也不多数，口径与切块用的 [`split_sentences`] 不同（那边决定合成出的
-/// 音频，不动），也比对齐结果里的句子（画面锚点，另在 `；` 与 `…` 处切）严：
-/// - 省略号（`…`、两个以上的点）不算句末：「嗯……好吧。」是一句；
-/// - 引号、括号里的句末不算：「他问：“你去哪？”她没回答。」是一句；
-/// - 英文句点后紧跟非空白（`3.14`、`U.S.`）、后接小写词、前面是单个大写字母（`J. K.`）
-///   或常见缩写（`Mr.`、`etc.`）都不算；
-/// - 句末后面只剩标点、空白时不另起一句。
+/// Used only as a reminder, so it errs on the side of undercounting rather than overcounting. Its criteria differ from [`split_sentences`], which is used for chunking (that one decides the synthesized audio, and is not changed here), and it is stricter than the sentences in the alignment result (picture anchors, which are additionally split at `；` and `…`):
+/// - Ellipses (`…`, two or more dots) do not end a sentence: “嗯……好吧。” is one sentence;
+/// - A sentence end inside quotes or brackets does not count: “他问：“你去哪？”她没回答。” is one sentence;
+/// - An English period followed by a non-whitespace character (`3.14`, `U.S.`), followed by a lowercase word, preceded by a single capital letter (`J. K.`), or a common abbreviation (`Mr.`, `etc.`) does not count;
+/// - When only punctuation or whitespace remains after a sentence end, it does not start a new sentence.
 pub fn spoken_sentences(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut cuts = Vec::new();
     let mut depth = 0usize;
-    // 直双引号开合同一个字符，单独记开着没有。
+    // A straight double quote opens and closes with the same character, so there is no separate record of whether one is open.
     let mut straight = false;
     let mut i = 0usize;
     while i < chars.len() {
@@ -219,7 +217,7 @@ pub fn spoken_sentences(text: &str) -> Vec<String> {
         } else if OPEN_MARKS.contains(&c) {
             depth += 1;
         } else if CLOSE_MARKS.contains(&c) {
-            // `don’t` 里的 `’` 是撇号，不是右引号。
+            // The `’` in `don’t` is an apostrophe, not a closing quote.
             if !(c == '’' && is_apostrophe(&chars, i)) {
                 depth = depth.saturating_sub(1);
             }
@@ -247,7 +245,7 @@ pub fn spoken_sentences(text: &str) -> Vec<String> {
         if piece.is_empty() {
             continue;
         }
-        // 只剩标点的一段（句末后的右引号、多出来的符号）并回前一句。
+        // A segment that is only punctuation (a closing quote after the sentence end, or stray symbols) is merged back into the previous sentence.
         if !piece.chars().any(char::is_alphanumeric) {
             match out.last_mut() {
                 Some(last) => last.push_str(piece),
@@ -269,7 +267,7 @@ fn is_apostrophe(chars: &[char], at: usize) -> bool {
     before.is_some_and(char::is_ascii_alphabetic) && after.is_some_and(char::is_ascii_alphabetic)
 }
 
-/// `chars[start..end]` 是一串连着的句末 / 省略号，它收不收住一句。
+/// `chars[start..end]` is a run of consecutive sentence-final marks / ellipses; whether it ends a sentence.
 fn closes_sentence(chars: &[char], start: usize, end: usize) -> bool {
     let run = &chars[start..end];
     if run.iter().any(|c| STRONG_END.contains(c)) {
@@ -278,7 +276,7 @@ fn closes_sentence(chars: &[char], start: usize, end: usize) -> bool {
     if run.contains(&'…') || run.len() >= 2 {
         return false;
     }
-    // 只剩单个英文句点。
+    // Only a single English period remains.
     if chars.get(end).is_some_and(|c| !c.is_whitespace() && !is_cjk(*c)) {
         return false;
     }
@@ -301,7 +299,7 @@ fn closes_sentence(chars: &[char], start: usize, end: usize) -> bool {
     !(initial || ABBREVIATIONS.contains(&word.to_ascii_lowercase().as_str()))
 }
 
-/// 超长单句：先按分句标点，再按预算硬切。
+/// An overly long single sentence: first split at clause punctuation, then hard-cut at the budget.
 fn split_long_sentence(sentence: &str, max_units: usize) -> Vec<String> {
     let chars: Vec<char> = sentence.chars().collect();
     let mut pieces: Vec<String> = Vec::new();
@@ -323,7 +321,7 @@ fn split_long_sentence(sentence: &str, max_units: usize) -> Vec<String> {
             pieces.push(tail);
         }
     }
-    // 把分句拼回不超预算的块；单个分句仍超长就按单元硬切。
+    // Joins clauses back into chunks that do not exceed the budget; a single clause that is still too long is hard-cut by units.
     let mut out = Vec::new();
     let mut current = String::new();
     let mut units = 0usize;
@@ -357,7 +355,7 @@ fn hard_split(text: &str, max_units: usize) -> Vec<String> {
             flush(&mut out, &mut current, &mut units);
         }
         if token.chars().all(is_cjk) {
-            // CJK 串逐字切，保证单块不超预算。
+            // CJK runs are split character by character, ensuring no single chunk exceeds the budget.
             for ch in token.chars() {
                 if units >= max_units {
                     flush(&mut out, &mut current, &mut units);
@@ -377,7 +375,7 @@ fn hard_split(text: &str, max_units: usize) -> Vec<String> {
     out
 }
 
-/// 拆成「CJK 连串」与「非 CJK 词」两类 token。
+/// Splits into two kinds of tokens: “CJK runs” and “non-CJK words”.
 fn tokens(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start: Option<usize> = None;
@@ -409,7 +407,7 @@ fn tokens(text: &str) -> Vec<&str> {
     out
 }
 
-/// 单元计数：CJK 字各算 1，空格分隔的其他词算 1。标点不计。
+/// Unit count: each CJK character counts as 1, and each other space-separated word counts as 1. Punctuation is not counted.
 pub fn count_units(text: &str) -> usize {
     let mut units = 0usize;
     let mut in_word = false;
@@ -431,14 +429,14 @@ pub fn count_units(text: &str) -> usize {
 
 pub fn is_cjk(c: char) -> bool {
     matches!(c as u32,
-        0x3040..=0x30FF | // 平假名 / 片假名
-        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | // CJK 统一表意
-        0xAC00..=0xD7AF | // 谚文音节
+        0x3040..=0x30FF | // Hiragana / katakana
+        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | // CJK Unified Ideographs
+        0xAC00..=0xD7AF | // Hangul syllables
         0x20000..=0x2FA1F
     )
 }
 
-/// 判断文本主要语言（供 Qwen3-TTS 语言 token 自动选择）；返回 `zh`/`ja`/`ko`/`en`。
+/// Determines the main language of the text (for automatic selection of the Qwen3-TTS language token); returns `zh`/`ja`/`ko`/`en`.
 pub fn guess_language(text: &str) -> &'static str {
     let mut han = 0usize;
     let mut kana = 0usize;
@@ -481,7 +479,7 @@ mod tests {
         let chunks = chunk(text, 20);
         assert_eq!(chunks.len(), 2, "{chunks:?}");
         assert_eq!(chunks[0], "第一句话有一些内容在这里。");
-        // 「第三句话呢？」还装得下；「第四句。」是碎尾，并回前一块。
+        // “第三句话呢？” still fits; “第四句。” is a trailing fragment and is merged back into the previous chunk.
         assert_eq!(chunks[1], "第二句话也有一些内容在这里！第三句话呢？第四句。");
         let sentences = split_sentences(text);
         assert_eq!(sentences.len(), 4);
@@ -529,14 +527,14 @@ mod tests {
                     这一句没有句末标点却非常非常长，长到一块装不下，只好在逗号处断开，然后再接着往下说，一直说到这里才停下来，\
                     后面还跟着一句话。「引号里的一句。」\r\n最后一段。";
         let chunks = chunk_with_breaks(text, 20);
-        // 切法与 `chunk` 一字不差。
+        // The splitting is identical, character for character, to `chunk`.
         assert_eq!(
             chunks.iter().map(|c| c.text.clone()).collect::<Vec<_>>(),
             chunk(text, 20),
             "{chunks:#?}"
         );
         let breaks: Vec<ChunkBreak> = chunks.iter().map(|c| c.after).collect();
-        // 段落的最后一块是 Paragraph；块以句末标点（含其后的右引号）收尾是 Sentence；在逗号处断开的是 Clause。
+        // A paragraph's last chunk is Paragraph; a chunk ending with sentence-final punctuation (including a closing quote after it) is Sentence; one broken at a comma is Clause.
         for chunk in &chunks {
             let expected = if chunk.text.ends_with("凑够这一块的字数。") || chunk.text == "最后一段。" || chunk.text.ends_with("」")
             {
@@ -577,7 +575,7 @@ mod tests {
         spoken_sentences(text).len()
     }
 
-    /// 2026-09-24 一次新鲜 Agent 实跑写进清单的两条：各两句，四块装了六句。
+    /// Two entries written into the list from a fresh Agent live run on 2026-09-24: two sentences each; four chunks held six sentences.
     #[test]
     fn two_sentences_in_one_entry_are_counted() {
         assert_eq!(
@@ -610,9 +608,9 @@ mod tests {
         assert_eq!(spoken("注意（见图 1。）这里。"), 1);
         assert_eq!(spoken("He said \"Stop. Now.\" and left."), 1);
         assert_eq!(spoken("“I don’t know. Maybe,” she said."), 1);
-        // 句末后面只剩右引号：并回前一句，不另起。
+        // Only a closing quote remains after the sentence end: merged into the previous sentence, not started anew.
         assert_eq!(spoken_sentences("好了。”"), vec!["好了。”"]);
-        // 书名号不挡句末：两句各自收住。
+        // Book-title marks (《》) do not block a sentence end: the two sentences each end on their own.
         assert_eq!(spoken("这是《三体》。那是《球状闪电》。"), 2);
     }
 
@@ -627,7 +625,7 @@ mod tests {
         assert_eq!(spoken("The U.S. is large."), 1);
     }
 
-    /// 切块口径不随计句变：`…` 仍是切块的句末。
+    /// The chunking criteria do not change with sentence counting: `…` is still a sentence end for chunking.
     #[test]
     fn chunking_still_splits_on_ellipsis() {
         assert_eq!(split_sentences("嗯……好吧。"), vec!["嗯……", "好吧。"]);

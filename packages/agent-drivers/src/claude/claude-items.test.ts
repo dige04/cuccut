@@ -12,7 +12,7 @@ const toolResult = (id: string, content: unknown, isError = false, toolUseResult
     parent_tool_use_id: null,
     tool_use_result: toolUseResult,
   }) as unknown as SDKMessage;
-/** 会话线程判定工具输出是不是 unified diff 的规则（有 `@@ … @@` 块头，或同时有 `---` 与 `+++` 文件头）。 */
+/** Rule the session thread uses to decide whether a tool output is a unified diff (it has an `@@ … @@` hunk header, or both `---` and `+++` file headers). */
 const looksLikeDiff = (text: string) => /^@@ .* @@/m.test(text) || (/^--- \S/m.test(text) && /^\+\+\+ \S/m.test(text));
 
 describe('ClaudeItemMapper', () => {
@@ -25,7 +25,7 @@ describe('ClaudeItemMapper', () => {
       stream({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'Bash' } }),
       stream({ type: 'content_block_start', index: 2, content_block: { type: 'text', text: '' } }),
       stream({ type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: '第二' } }),
-      // CLI 每个块结束后发一条 assistant 消息，id 相同。
+      // The CLI sends one assistant message after each block ends, all with the same id.
       assistant('msg_1', [{ type: 'text', text: '第一' }]),
       assistant('msg_1', [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } }]),
       assistant('msg_1', [{ type: 'text', text: '第二' }]),

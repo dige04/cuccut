@@ -6,12 +6,10 @@ import { FACE_DETECTION_MODEL, faceDetectionModelFile } from '@cuccut/models';
 import { JsonLineWorker, findBundledBinary } from '@cuccut/process-host';
 
 /**
- * 帧上的人脸（`videos_frames` 的 `faces`）：随应用分发的 YuNet 模型（`@cuccut/models` 的 `FACE_DETECTION_MODEL`）由
- * `face-detect` 进程（`crates/face-detect`，纯 Rust 推理，Windows 与 macOS 同一份实现）载入，一次调用起一个进程、载入一次模型、
- * 逐帧问。进程或模型缺失、起不来、中途出错都不报错：整次调用退回 `null`（结果里 `detector: null`），帧照常返回。
+ * Faces on frames (`faces` of `videos_frames`): the YuNet model shipped with the app (`FACE_DETECTION_MODEL` from `@cuccut/models`) is loaded by the `face-detect` process (`crates/face-detect`, pure Rust inference, one implementation for both Windows and macOS). Each call starts one process, loads the model once, and queries frame by frame. If the process or model is missing, fails to start, or errors midway, nothing is thrown: the whole call falls back to `null` (`detector: null` in the result), and the frames are still returned.
  */
 
-/** 一张脸：框的左上角与宽高，按帧的宽高归一化到 0–1；`score` 是 0–1 的置信度。 */
+/** A face: the top-left corner of the box and its width and height, normalized to the frame's width and height (0–1); `score` is the confidence, 0–1. */
 export interface DetectedFace {
   x: number;
   y: number;
@@ -22,22 +20,22 @@ export interface DetectedFace {
 
 export interface FaceDetection {
   detector: typeof FACE_DETECTION_MODEL.id;
-  /** 与传入的文件一一对应。 */
+  /** One-to-one with the files passed in. */
   faces: DetectedFace[][];
 }
 
 export interface FaceDetector {
-  /** 检测这几张图（PNG 或 JPEG 的绝对路径）。不可用或失败时 null。 */
+  /** Detects faces in these images (absolute paths to PNG or JPEG files). `null` when unavailable or on failure. */
   detect(files: readonly string[]): Promise<FaceDetection | null>;
 }
 
-/** 指定 `face-detect` 路径的环境变量（开发与测试用）。 */
+/** Environment variable that sets the `face-detect` path (for development and tests). */
 export const FACE_DETECT_ENV = 'CUCCUT_FACE_DETECT';
 
-/** 单帧的时限：一帧通常几十毫秒，留足机器繁忙时的余量。 */
+/** Per-frame time limit: a frame usually takes a few tens of milliseconds, leaving headroom for a busy machine. */
 const DETECT_TIMEOUT_MS = 15_000;
 
-/** `face-detect` 的位置：`CUCCUT_FACE_DETECT`；随应用分发的原生程序目录；或从本模块往上找 cargo 产物目录。 */
+/** Location of `face-detect`: `CUCCUT_FACE_DETECT`; the native program directory shipped with the app; or the cargo output directory found by walking up from this module. */
 export function resolveFaceDetectCommand(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env[FACE_DETECT_ENV]) return env[FACE_DETECT_ENV];
   return findBundledBinary('face-detect', path.dirname(fileURLToPath(import.meta.url)), env);
@@ -46,12 +44,12 @@ export function resolveFaceDetectCommand(env: NodeJS.ProcessEnv = process.env): 
 export interface FaceDetectorOptions {
   log: Logger;
   env?: NodeJS.ProcessEnv;
-  /** 测试用：代替 `resolveFaceDetectCommand` 与 `faceDetectionModelFile`。 */
+  /** For tests: replaces `resolveFaceDetectCommand` and `faceDetectionModelFile`. */
   command?: string | null;
   model?: string | null;
 }
 
-/** 起 `face-detect` 进程的检测器。进程与模型每次调用时再找（找不到时只记一次日志）。 */
+/** Detector that starts the `face-detect` process. The process and model are looked up again on each call (when not found, logs only once). */
 export function createFaceDetector(options: FaceDetectorOptions): FaceDetector {
   const log = options.log;
   const env = options.env ?? process.env;
@@ -104,7 +102,7 @@ export function createFaceDetector(options: FaceDetectorOptions): FaceDetector {
   };
 }
 
-/** 只留约定的五个字段（进程以后多报的不往外传）。 */
+/** Keeps only the five agreed-upon fields (fields the process reports beyond these are not passed on). */
 function face(raw: DetectedFace): DetectedFace {
   return { x: raw.x, y: raw.y, w: raw.w, h: raw.h, score: raw.score };
 }

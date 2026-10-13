@@ -1,12 +1,12 @@
-//! Preset 展开：alias → canonical → 递归 compose → 参数校验 → 循环检测
-//! （设计 §5.4.2、规范 §7.4）。
+//! Preset expansion: alias → canonical → recursive compose → parameter validation → cycle detection
+//! (design §5.4.2, spec §7.4).
 //!
-//! 展开结果里**不残留 preset 名**：provenance 只以 `ExpandedPreset::sources` 侧车
-//! 形式保留，最终进 `MotionProgram::sources`，采样期从不查它。
+//! The expanded result **keeps no preset name**: provenance is kept only as the `ExpandedPreset::sources` side-car,
+//! which ends up in `MotionProgram::sources`, and sampling never looks at it.
 //!
-//! 相对长度在这里**不求值**——`ResolvedFrame::v` 保留 `{value, basis, offset}` 原文
-//! 对象，由布局之后的 `scene_primitives::resolve::build_channels_after_layout` 求值
-//! （设计 §5.5：`self*/parent*` 需要静态布局）。
+//! Relative lengths are **not evaluated** here: `ResolvedFrame::v` keeps the raw `{value, basis, offset}`
+//! objects, which are evaluated after layout by `scene_primitives::resolve::build_channels_after_layout`
+//! (design §5.5: `self*/parent*` needs static layout).
 
 use serde_json::{Map, Value};
 
@@ -19,16 +19,16 @@ use super::frozen::BcfPreset;
 use super::manifest::{ComposeStep, PresetBody, PresetManifest, TrackSpec};
 use super::substitute::{deep_substitute, substitute};
 
-/// 配方来源。生产用 `Builtin`（静态注册表）；单测用内存表注入病态 manifest
-/// （自引用、缺参数…），因为那些配方不该被发布。
+/// Recipe source. Production uses `Builtin` (the static registry); unit tests inject pathological manifests through an in-memory table
+/// (self-references, missing parameters, …), because those recipes should never be published.
 pub trait PresetSource {
     fn manifest(&self, id: &str) -> Option<&PresetManifest>;
     fn bcf(&self, id: &str) -> Option<&BcfPreset>;
-    /// alias → canonical id；不是 alias 时返回原串。
+    /// alias → canonical id; when the input is not an alias, returns the original string.
     fn canonical<'a>(&'a self, id: &'a str) -> &'a str;
 }
 
-/// 内置注册表。
+/// The built-in registry.
 pub struct Builtin;
 
 impl PresetSource for Builtin {
@@ -45,13 +45,13 @@ impl PresetSource for Builtin {
     }
 }
 
-/// 递归深度上限。防御非环的病态深度（环本身由 `stack` 抓）。
+/// Recursion depth limit. Guards against pathological depth that is not a cycle (cycles themselves are caught by `stack`).
 const MAX_COMPOSE_DEPTH: usize = 32;
 
 pub struct ExpandCtx {
-    /// 引用点声明的时长；`'%'` 帧按它铺开。
+    /// The duration declared at the reference point; `'%'` frames are spread across it.
     pub dur: f64,
-    /// 规范 §7.3：省略 seed 时编译期写死 0。
+    /// Spec §7.3: when seed is omitted, it is hard-coded to 0 at compile time.
     pub default_seed: u64,
 }
 
@@ -64,11 +64,11 @@ impl ExpandCtx {
     }
 }
 
-/// `t` 是**相对秒**（0..dur），调用方再加窗口起点。
+/// `t` is **relative seconds** (0..dur); the caller then adds the window start.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedFrame {
     pub t: f64,
-    /// 数字，或未求值的 `{value, basis, offset}` 相对长度对象。
+    /// A number, or an unevaluated relative-length object `{value, basis, offset}`.
     pub v: Value,
     pub ease: Option<String>,
 }
@@ -85,13 +85,13 @@ pub struct ResolvedTrack {
 pub struct ExpandedPreset {
     pub tracks: Vec<ResolvedTrack>,
     pub sources: Vec<PresetRef>,
-    /// 命中的 alias（供 `preset-alias-used` info lint）。
+    /// The matched alias (for the `preset-alias-used` info lint).
     pub aliases_used: Vec<String>,
 }
 
-/// 展开一个通用 manifest（或经 alias 指向它的旧名）。
+/// Expands a general manifest (or an old name that points to it via an alias).
 ///
-/// `version` 缺省 = 该 id 的最低已发布版本（规范 §7.4，**不静默取最新**）。
+/// The default for `version` is the lowest published version of that id (spec §7.4, **never silently takes the latest**).
 pub fn expand(
     id: &str,
     version: Option<u32>,
@@ -101,7 +101,7 @@ pub fn expand(
     expand_with(&Builtin, id, version, user_params, ctx)
 }
 
-/// 可注入来源的展开（单测与未来的第三方包用）。
+/// Expansion with an injectable source (for unit tests and future third-party packages).
 pub fn expand_with(
     source: &dyn PresetSource,
     id: &str,
@@ -156,7 +156,7 @@ fn expand_inner(
     }
 
     let Some(manifest) = source.manifest(canonical) else {
-        // 冻结的 `bcf.*@1` 配方也可以被 compose 引用（规范附录 B 的 fadeIn/fadeOut）。
+        // Frozen `bcf.*@1` recipes can also be referenced by compose (fadeIn/fadeOut in spec Appendix B).
         return expand_frozen_bcf(source, canonical, version, user_params, at, dur, out);
     };
     if let Some(requested) = version {
@@ -186,7 +186,7 @@ fn expand_inner(
     result
 }
 
-/// 参数绑定：缺省填充 → 用户覆盖 → 未知键 / 必填缺失 / 类型校验。
+/// Parameter binding: default fill → user override → checks for unknown keys / missing required keys / types.
 fn bind_params(
     manifest: &PresetManifest,
     user_params: &Map<String, Value>,
@@ -250,7 +250,7 @@ fn lower_leaf(
         for (index, frame) in track.frames.iter().enumerate() {
             let v = eval_manifest_value(&manifest.id, &deep_substitute(&frame.v, params))?;
             if v.is_null() {
-                // `case` 表没有这个分支 ⇒ 该方向不驱动这条轨（例如 direction=up 的 x）。
+                // If the `case` table has no such branch ⇒ that direction does not drive this track (e.g. x when direction=up).
                 dropped = true;
                 break;
             }
@@ -262,7 +262,7 @@ fn lower_leaf(
             }
             let ease = match &frame.ease {
                 Some(value) => curve_name(value, params),
-                // 首帧不带曲线（`sample_frames` 从不读首帧的 ease）
+                // The first frame carries no curve (`sample_frames` never reads the first frame's ease)
                 None if index == 0 => None,
                 None => track_curve.clone(),
             };
@@ -292,12 +292,12 @@ fn lower_leaf(
     Ok(())
 }
 
-/// ops 体（[`PresetBody::Ops`]）：`"{param}"` 替换 → `flow` 解析 → `graph` 编译
-/// → 关键帧。`"{dur}"` 是**隐式绑定**，等于引用点声明的时长（manifest 因此不必
-/// 也不能声明一个叫 `dur` 的参数）。
+/// Ops body ([`PresetBody::Ops`]): `"{param}"` substitution → `flow` parsing → `graph` compilation
+/// → keyframes. `"{dur}"` is an **implicit binding** equal to the duration declared at the reference point (so the manifest need not,
+/// and cannot, declare a parameter named `dur`).
 ///
-/// ops 体不能产出无名曲线：`graph` 已经把曲线对象铺成线性关键帧，剩下的
-/// `ease` 一定是封闭枚举里的名字，正好落进 `ResolvedFrame::ease`。
+/// An ops body cannot produce unnamed curves: `graph` has already spread the curve objects into linear keyframes, so the remaining
+/// `ease` must be a name from the closed enum, which lands exactly in `ResolvedFrame::ease`.
 fn lower_ops(
     manifest: &PresetManifest,
     ops: &[Value],
@@ -344,14 +344,14 @@ fn lower_ops(
     Ok(())
 }
 
-/// manifest 专用的两个**封闭**构造。两者都只出现在 `core/presets/builtin/**`，
-/// BCF 文档里没有它们——规范 §7.4「`"{param}"` 是唯一替换语法、不做算术」约束的是
-/// 文档作者，这里是配方作者的词汇表（见规范 §7.4 实现注记）。
+/// Two **closed** constructs specific to manifests. Both appear only in `core/presets/builtin/**`,
+/// and they do not exist in BCF documents. Spec §7.4's rule that “`"{param}"` is the only substitution syntax, with no arithmetic” constrains
+/// document authors; here it is the vocabulary of recipe authors (see the implementation note in spec §7.4).
 ///
-/// - `{"case": <已替换的枚举值>, "of": {…}}`：按枚举参数选值。`of` 里没有这个键
-///   ⇒ `null` ⇒ 整条轨丢弃（`direction: "up"` 时 `x` 轨根本不存在，而不是一条全 0 轨）。
-/// - `{"length": <数字或长度对象>, "scale": <字面量>}`：字面量幅度 / 符号乘子。
-///   `scale` **必须**是 manifest 里的字面数字，不接受 `"{param}"`——否则就成了表达式。
+/// - `{"case": <substituted enum value>, "of": {…}}`: selects a value by an enum parameter. If `of` has no such key
+///   ⇒ `null` ⇒ the whole track is dropped (with `direction: "up"` the `x` track simply does not exist, rather than being an all-zero track).
+/// - `{"length": <number or length object>, "scale": <literal>}`: literal magnitude / sign multiplier.
+///   `scale` **must** be a literal number in the manifest; `"{param}"` is not accepted, otherwise it would become an expression.
 fn eval_manifest_value(id: &str, value: &Value) -> Result<Value, MotionError> {
     let Some(object) = value.as_object() else {
         return Ok(value.clone());
@@ -436,12 +436,12 @@ fn lower_compose(
     Ok(())
 }
 
-/// 冻结的 `bcf.*@1` 配方（`{params?, keyframes}`）被 compose 引用时的展开。
-/// 数值走同一条 `'%'` → 秒的换算，composite 用属性缺省表。
+/// Expansion when a frozen `bcf.*@1` recipe (`{params?, keyframes}`) is referenced by compose.
+/// Values go through the same `'%'` → seconds conversion, and composite uses the property default table.
 ///
-/// 注意 `countUp` 的 `emitsParamsMeta`（prefix/suffix/decimals）在这里**不产出**——
-/// `Channel::meta` 属于 BCF 文档域，由 `Resolver::lay_preset_frames` 挂上。
-/// 阶段 2 没有任何 family compose 它；真要 compose 时得先决定 meta 怎么合并。
+/// Note that `countUp`'s `emitsParamsMeta` (prefix/suffix/decimals) is **not produced** here:
+/// `Channel::meta` belongs to the BCF document domain and is attached by `Resolver::lay_preset_frames`.
+/// In phase 2 no family composes it; if it ever really needs to be composed, the meta merge strategy has to be decided first.
 fn expand_frozen_bcf(
     source: &dyn PresetSource,
     id: &str,
@@ -519,8 +519,8 @@ fn expand_frozen_bcf(
     Ok(())
 }
 
-/// 同一 `(prop, composite, order)` 合并到一条轨；否则新开一条（多轨叠加是
-/// `composite` 生效的前提，设计 §5.1）。
+/// The same `(prop, composite, order)` is merged into one track; otherwise a new track is opened (stacking multiple tracks is
+/// the precondition for `composite` to take effect, design §5.1).
 fn push_track(
     out: &mut ExpandedPreset,
     prop: &str,
@@ -553,7 +553,7 @@ mod tests {
     use crate::fingerprint::fnv1a64;
     use serde_json::json;
 
-    /// 内存表：可以喂进永远不该被发布的病态 manifest（自引用、缺参数…）。
+    /// In-memory table: it can be fed pathological manifests that should never be published (self-references, missing parameters, …).
     struct TestSource {
         manifests: Vec<PresetManifest>,
     }
@@ -777,7 +777,7 @@ mod tests {
         let out = expand_in(&source, "motion.c", json!({})).unwrap();
         assert_eq!(out.tracks.len(), 1);
         assert_eq!(out.tracks[0].prop, "opacity");
-        // 规范 §7.7：opacity 缺省 multiply
+        // Spec §7.7: opacity defaults to multiply
         assert_eq!(out.tracks[0].composite, CompositeMode::Multiply);
         assert_eq!(out.tracks[0].frames[1].t, 0.5);
         assert!(out.sources.iter().any(|s| s.id == "fadeIn"));

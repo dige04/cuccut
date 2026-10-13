@@ -27,7 +27,7 @@ function track(id: string, order: number): Track {
   return { id, order, kind: 'audio', locked: false, visible: true, muted: false, solo: { enabled: false, group: 'audio' } };
 }
 
-/** 按秒放的音频；`dub` 给了就是配音块。 */
+/** Audio placed by seconds; when `dub` is given it is a dub block. */
 function audio(id: string, trackId: string, start: number, seconds: number, extra: Partial<AudioItem> = {}): AudioItem {
   return {
     id,
@@ -214,7 +214,7 @@ describe('计划、说话人与语速', () => {
       manual: false,
     });
     expect(blocks.get('d2')).toMatchObject({ index: 2, text: 'Welcome.', speakerId: 'S2', hue: 'green', rate: 1.25, fast: false, muted: false });
-    // 1.2 × 1.2 = 1.44 > 1.35；句子 s-w3 里只有隐藏的词，说话人取不到
+    // 1.2 × 1.2 = 1.44 > 1.35; sentence s-w3 has only hidden words, so the speaker cannot be determined
     const d3 = blocks.get('d3')!;
     expect(d3.rate).toBeCloseTo(1.44);
     expect(d3).toMatchObject({ fast: true, manual: true, speakerId: null, hue: 'blue' });
@@ -228,8 +228,8 @@ describe('计划、说话人与语速', () => {
 });
 
 describe('拖右缘改语速', () => {
-  const d1 = seq.items[2] as AudioItem; // 1–4 秒，后面 d2 从 5 秒起
-  const d3 = seq.items[4] as AudioItem; // 9–10.5 秒，1.2 倍，后面没有东西
+  const d1 = seq.items[2] as AudioItem; // 1–4 seconds; d2 after it starts at 5 seconds
+  const d3 = seq.items[4] as AudioItem; // 9–10.5 seconds, 1.2×, nothing after it
 
   it('到同轨下一件起点还有多少空', () => {
     expect(roomAfter(seq, d1)).toBeCloseTo(4);
@@ -240,16 +240,16 @@ describe('拖右缘改语速', () => {
     expect(stretchSpeed(d1, 2.4, 4)).toMatchObject({ rate: { num: 5, den: 4 }, speed: 1.25, clamped: false });
     expect(stretchSpeed(d1, 2.4, 4).seconds).toBeCloseTo(2.4);
     expect(stretchSpeed(d1, 3.75, 4)).toMatchObject({ rate: { num: 4, den: 5 }, speed: 0.8 });
-    // 已经 1.2 倍的块：源长 1.8 秒，拉到 1 秒就是 1.8 倍
+    // A block already at 1.2×: source length 1.8 seconds, stretched to 1 second is 1.8×
     expect(stretchSpeed(d3, 1, null)).toMatchObject({ rate: { num: 9, den: 5 }, speed: 1.8 });
   });
 
   it('拉长不能盖住下一件：速率往上取一档，宁可短一点', () => {
     const s = stretchSpeed(d1, 10, 4);
-    // 源长 3 秒、空 4 秒 → 最慢 0.75 倍，正好 4 秒
+    // Source 3 seconds, gap 4 seconds → slowest 0.75×, exactly 4 seconds
     expect(s).toMatchObject({ speed: 0.75, clamped: true });
     expect(s.seconds).toBeLessThanOrEqual(4);
-    // 空 3.7 秒：3 / 3.7 = 0.8108… → 0.82 倍，2.0 ≤ 3.7
+    // Gap 3.7 seconds: 3 / 3.7 = 0.8108… → 0.82×, 2.0 ≤ 3.7
     const t = stretchSpeed(d1, 10, 3.7);
     expect(t.speed).toBe(0.82);
     expect(t.seconds).toBeLessThanOrEqual(3.7);
@@ -258,7 +258,7 @@ describe('拖右缘改语速', () => {
   it('夹在合同的 0.1–10 之内', () => {
     expect(stretchSpeed(d1, 0.01, 4)).toMatchObject({ speed: 10, clamped: true });
     expect(stretchSpeed(d1, 1000, null)).toMatchObject({ speed: 0.1, rate: { num: 1, den: 10 }, clamped: true });
-    // 空太小，最快也放不下：保持原样
+    // The gap is too small; even the fastest rate cannot fit it: keep as is
     expect(stretchSpeed(d1, 1, 0.1)).toMatchObject({ speed: 1, seconds: 3, clamped: true });
   });
 
@@ -286,7 +286,7 @@ describe('菜单操作', () => {
     const itemLocked = sequence(seq.items.map((item) => (item.id === 'd2' ? { ...item, locked: true } : item)));
     expect(anyLocked(itemLocked, ['d1'])).toBe(false);
     expect(anyLocked(itemLocked, ['d1', 'd2'])).toBe(true);
-    // 背景声在原声轨上：原声轨锁了，整组就移除不了
+    // The background sound is on the original-audio track: the original track is locked, so the whole group cannot be removed
     const origLocked = sequence(seq.items, [{ ...track('a-orig', 0), locked: true }, track('a-dub', 1)]);
     expect(anyLocked(origLocked, ['d1', 'd2', 'd3'])).toBe(false);
     expect(groupLocked(origLocked, 'g1')).toBe(true);

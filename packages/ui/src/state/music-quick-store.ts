@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import type { MusicQuickPick } from '../model/tools-music.ts';
 
-/** 一次提交的音乐试听：任务 ID、提交时的设置身份与选择（结果行按它写）。 */
+/** One submitted music audition: task ID, the settings identity at submission, and the selection (the result row is written from it). */
 export interface MusicQuickRun {
   jobId: string;
   key: string;
   pick: MusicQuickPick;
 }
 
-/** 一行模型的试听草稿：选择、最近一次提交、上一段做成了的（最近一次没做成时仍放它）。 */
+/** One model row's audition draft: the selection, the most recent submission, and the last one that succeeded (kept even when the most recent one did not succeed). */
 export interface MusicQuickDraft {
   pick: MusicQuickPick;
   run: MusicQuickRun | null;
@@ -16,8 +16,8 @@ export interface MusicQuickDraft {
 }
 
 /**
- * 设置 › 模型 › 音乐生成 › 本地模型的「试听」（同 state/tts-quick-store.ts）：哪几行展开着、每只模型的选择与最近的结果。
- * 按模型包 ID 记，只在这次运行里有效，不落盘；任务本身在 `jobs` 主题里，这里只记 ID。
+ * The local-model "audition" under Settings › Models › Music generation (same as state/tts-quick-store.ts): which rows are expanded, and each model's selection and most recent results.
+ * Keyed by model package ID and valid only for this run, not written to disk. The task itself is in the `jobs` topic, and this records only its ID.
  */
 export interface MusicQuickStore {
   open: string[];

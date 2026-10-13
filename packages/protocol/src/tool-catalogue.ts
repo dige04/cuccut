@@ -3,28 +3,26 @@ import type { ModelServiceCapability } from './models.ts';
 import type { MessageRef } from './message-ref.ts';
 
 /**
- * 工具目录（架构设计 §7.9；产品设计 §2.7）：固定流程与直接任务在产品上的目录。工具不是另一套执行机制：每个工具对应一个
- * 固定流程（`pipelines.start`）或一种直接提交的 Job（`models.*`），目录只声明它接受什么输入、产出什么、依赖什么。
+ * Tool catalogue (architecture design §7.9; product design §2.7): the product-level catalogue of fixed pipelines and direct tasks. A tool is not a separate execution mechanism. Each tool corresponds to a fixed pipeline (`pipelines.start`) or a kind of directly submitted Job (`models.*`). The catalogue only declares what inputs a tool accepts, what it produces, and what it depends on.
  *
- * - 目录是一份静态注册表（`@cuccut/jobs` 的 `TOOL_CATALOGUE`），加上 Runtime 此刻的可用性判断（`tools.list`）。
- * - 候选输入（`tools.candidates`）来自内容索引（§5.11）与 Space 目录（§5.7），不打开视频。
+ * - The catalogue is a static registry (`TOOL_CATALOGUE` in `@cuccut/jobs`), plus the Runtime's availability check at this moment (`tools.list`).
+ * - Candidate inputs (`tools.candidates`) come from the content index (§5.11) and the Space directory (§5.7), without opening videos.
  */
 
 /**
- * 工具的组（架构设计 §7.9，产品设计 §2.7）：`speech` 语音与字幕、`text-image` 文字与图片、`music` 音乐、`video-file` 视频文件。
- * 按用户要做的事分组，不按结果写进视频还是成为产物分（那是每个工具的 `results`）。
+ * Tool groups (architecture design §7.9, product design §2.7): `speech` for voice and subtitles, `text-image` for text and images, `music` for music, `video-file` for video files. Grouped by what the user wants to do, not by whether the result is written into the video or becomes an artifact (that is each tool's `results`).
  */
 export const TOOL_CATEGORIES = ['speech', 'text-image', 'music', 'video-file'] as const;
 export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
 
-/** 输入的种类：本机文件、链接、一段文字、Space 里的视频、一份文档（流程工具指视频里的文档，直接任务指 Space 里的文档或字幕条目，作 `material`）。 */
+/** Kinds of input: a local file, a link, a piece of text, a video in Space, or a document. For pipeline tools, a document means a document in the video. For direct tasks, it means a document or subtitle entry in Space, as `material`. */
 export const TOOL_INPUT_KINDS = ['file', 'link', 'text', 'video', 'document'] as const;
 export type ToolInputKind = (typeof TOOL_INPUT_KINDS)[number];
 
-/** 结果的种类：写进视频（新的文稿、译文、配音组，或新建的视频），或产物（文件、生成的音频与图片）。 */
+/** Kinds of result: written into the video (a new script, translation, dubbing group, or a newly created video), or an artifact (a file, generated audio and images). */
 export type ToolResultKind = 'video' | 'artifact';
 
-/** 直接提交的 Job 用的方法。 */
+/** Method used by direct Jobs. */
 export type ToolJobMethod =
   | 'models.transcribe'
   | 'models.synthesizeSpeech'
@@ -33,24 +31,24 @@ export type ToolJobMethod =
   | 'models.generateText';
 
 /**
- * 怎么执行：
- * - `pipeline`：`pipelines.start` 启动这个流程；`params` 是这个工具固定带上的参数（例如转码的 `action`），其余由客户端给；
- * - `job`：直接提交一种模型任务。
+ * How it executes:
+ * - `pipeline`: `pipelines.start` starts this pipeline. `params` are parameters this tool always carries (for example, the `action` for transcoding); the rest are supplied by the client;
+ * - `job`: directly submits one kind of model task.
  */
 export type ToolExecution =
   | { kind: 'pipeline'; method: 'pipelines.start'; pipeline: string; params?: Record<string, unknown> }
   | { kind: 'job'; method: ToolJobMethod; capability: ModelServiceCapability };
 
 /**
- * 候选输入的规则（`tools.candidates`）：
- * - `videos`：回收站之外的全部视频（转录的目标、链接导入写进已有的视频）；
- * - `videos-with-transcript`：有文稿的视频，每个视频列出可选的文稿（翻译字幕、翻译配音）。
+ * Rules for candidate inputs (`tools.candidates`):
+ * - `videos`: all videos except those in the trash (transcription targets, and link imports written into existing videos);
+ * - `videos-with-transcript`: videos that have a script. Each video lists its optional scripts (translated subtitles, translated dubbing).
  */
 export type ToolCandidateRule = 'videos' | 'videos-with-transcript';
 
-/** 注册表里的一个工具（静态声明，不随 Runtime 的状态变）。 */
+/** One tool in the registry (a static declaration that does not change with Runtime state). */
 export interface ToolDefinition {
-  /** 稳定的 ID（小写字母与连字符），界面、CLI 与产物的来源都用它。 */
+  /** Stable ID (lowercase letters and hyphens). The UI, the CLI and artifact sources all use it. */
   id: string;
   label: string;
   description: string;
@@ -59,121 +57,116 @@ export interface ToolDefinition {
   results: ToolResultKind[];
   execution: ToolExecution;
   /**
-   * 按输入种类换执行方式：同一个工具对不同的输入由不同的流程完成（例如翻译字幕：视频里的文稿走 `translate`，
-   * 字幕文件走 `translate-subtitles`）。没列出的输入种类用 `execution`。
+   * Execution differs by input kind: the same tool is completed by different pipelines for different inputs (for example, translating subtitles: a script in the video goes through `translate`, and a subtitle file goes through `translate-subtitles`). Input kinds not listed use `execution`.
    */
   executionByInput?: Partial<Record<ToolInputKind, ToolExecution>>;
-  /** 一定要用的能力。 */
+  /** A capability that must be used. */
   capabilities: ModelServiceCapability[];
-  /** 只在某些输入或参数下才用的能力（例如配音缺译文时的文本生成）。没有配置时工具照样可用，`limitations` 里说明。 */
+  /** A capability used only for certain inputs or parameters (for example, text generation when dubbing lacks a translation). The tool still works when it is not configured; `limitations` explains this. */
   optionalCapabilities: ModelServiceCapability[];
-  /** 一定要用的受管外部工具（§12.9），按工具名。 */
+  /** Managed external tools (§12.9) that must be used, by tool name. */
   externalTools: string[];
-  /** 只在某些输入下才用的外部工具（例如转录的链接输入要下载工具）。 */
+  /** External tools used only for certain inputs (for example, a download tool is needed for link input to transcription). */
   optionalExternalTools: string[];
-  /** 要不要联网下载（不是模型调用）：`required` 一定要，`optional` 只在链接输入时要。严格离线（`offline.strict`）时据此判断。 */
+  /** Whether it downloads from the internet (this is not a model call). `required` must be used; `optional` is used only for link input. Under strict offline mode (`offline.strict`), this is used to decide. */
   network: 'required' | 'optional' | 'none';
-  /** 候选输入的规则；不接受视频输入的工具为 null。 */
+  /** Rules for candidate inputs. null for tools that do not accept video input. */
   candidates: ToolCandidateRule | null;
 }
 
 /**
- * 不可用的一个原因，`code` 沿用已有的错误码（命令与协议规范 §11.3）：`CAPABILITY_NOT_CONFIGURED`、`TOOL_NOT_INSTALLED`、
- * `TOOL_UNAVAILABLE`、`TOOL_OUTDATED`、`TOOL_CONSENT_REQUIRED`、`TOOL_UPDATING`、`OFFLINE_STRICT`；浏览器会话里执行方法不在白名单时
- * `WEB_METHOD_NOT_ALLOWED`。
+ * One reason a tool is unavailable. `code` reuses the existing error codes (command and protocol spec §11.3): `CAPABILITY_NOT_CONFIGURED`, `TOOL_NOT_INSTALLED`, `TOOL_UNAVAILABLE`, `TOOL_OUTDATED`, `TOOL_CONSENT_REQUIRED`, `TOOL_UPDATING`, `OFFLINE_STRICT`. In a browser session, when the method being executed is not on the allowlist, it is `WEB_METHOD_NOT_ALLOWED`.
  */
 export interface ToolProblem {
   code: string;
-  /** 给人看的一句话（Runtime 的语言）；界面用 `localizeText(message, messageRef)` 按自己的语言显示。 */
+  /** A one-sentence message for people (in the Runtime's language). The UI shows it in its own language using `localizeText(message, messageRef)`. */
   message: string;
   messageRef?: MessageRef;
-  /** 能力没有配置时：哪种能力与 `CAPABILITY_NOT_CONFIGURED` 的 `reason`。 */
+  /** When a capability is not configured: which capability, with the `reason` for `CAPABILITY_NOT_CONFIGURED`. */
   capability?: ModelServiceCapability;
   reason?: string;
-  /** 外部工具的问题：哪个工具。 */
+  /** A problem with an external tool: which tool. */
   tool?: string;
-  /** 怎么补救（给人看的一句话）；没有时不给。 */
+  /** How to fix it (a one-sentence message for people). Omitted when there is none. */
   remedy?: string;
   remedyRef?: MessageRef;
 }
 
-/** `tools.list` 的一项：声明加上此刻的可用性。 */
+/** One item of `tools.list`: the declaration plus its current availability. */
 export interface ToolStatus extends ToolDefinition {
-  /** 此刻能不能启动：`problems` 为空。 */
+  /** Can start right now: `problems` is empty. */
   available: boolean;
-  /** 不能启动的原因（一定要的能力、外部工具、联网）。 */
+  /** Reasons it cannot start (required capabilities, external tools, network access). */
   problems: ToolProblem[];
-  /** 不影响启动、但某些输入或参数用不了的原因（可选的能力或外部工具）。 */
+  /** Reasons that do not prevent starting but mean some inputs or parameters cannot be used (optional capabilities or external tools). */
   limitations: ToolProblem[];
 }
 
 export interface ToolsListResult {
   tools: ToolStatus[];
   /**
-   * 保存位置（架构设计 §7.9「保存位置」）：工具没有视频的结果落在这里的本机绝对路径（设置 `downloads.directory`，
-   * 没有设置时是主机的下载文件夹）。工具页显示它，直接任务把它作为 `saveDir` 传入。带本机路径，Web 服务不给。
+   * Save location (architecture design §7.9, “Save location”): for tools whose results are not attached to a video, the absolute local path where results land (the `downloads.directory` setting; when it is not set, the host's Downloads folder). The tool page shows it, and direct tasks pass it in as `saveDir`. It carries a local path, so the Web service does not provide it.
    */
   saveDirectory?: string;
 }
 
-// ---- 内容索引里的视频事实（§5.11）：候选输入用，不打开视频 ----
+// ---- Video facts from the content index (§5.11): for candidate inputs, without opening the video ----
 
-/** 一份文稿（`speech` 文档）。 */
+/** One script (a `speech` document). */
 export interface VideoTranscriptFact {
   documentId: Id;
   name: string;
   language: string | null;
-  /** 有可见的词，且没有一个词的时间是估计的或缺失的（`timingQuality`）。 */
+  /** Has visible words, and no word has an estimated or missing time (`timingQuality`). */
   wordTiming: boolean;
-  /** 在根序列上投影得出内容（对应的素材在时间线上）。 */
+  /** Content derived by projection on the root sequence (the corresponding material is on the timeline). */
   onTimeline: boolean;
 }
 
-/** 一份译文（`translation` 文档）。 */
+/** One translation (a `translation` document). */
 export interface VideoTranslationFact {
   documentId: Id;
   name: string;
-  /** 目标语言。 */
+  /** Target language. */
   language: string | null;
-  /** 译自哪份文稿；记不出来时 null。 */
+  /** The script it was translated from. null when it cannot be determined. */
   sourceDocumentId: Id | null;
   units: number;
   /**
-   * 过期的单元数：标成过期、原文的句子不在了、原文改过（指纹不符）、译文为空。术语表改过（`glossary-changed`）要读用户库，
-   * 索引里不判断，配音时照样会查。
+   * Number of stale units: marked stale, the source sentence no longer exists, the source was changed (fingerprint mismatch), or the translation is empty. A glossary change (`glossary-changed`) requires reading the user's library, which the index does not judge. Dubbing still checks it anyway.
    */
   staleUnits: number;
 }
 
-/** 一组配音（同一次配音写进的配音计划与实例）。 */
+/** A dubbing group: the dubbing plan and instances written by the same dubbing run. */
 export interface VideoDubGroupFact {
   groupId: string;
   language: string | null;
-  /** 配音计划（`dubbing-plan` 文档）；只有实例时 null。 */
+  /** Dubbing plan (a `dubbing-plan` document). null when there are only instances. */
   planDocumentId: Id | null;
-  /** 这组配音用的译文与译文对应的文稿；记不出来时 null。 */
+  /** The translation this dubbing group uses, and the script corresponding to that translation. null when it cannot be determined. */
   translationId: Id | null;
   transcriptId: Id | null;
-  /** 时间线上属于这一组的配音实例数。 */
+  /** Number of dubbing instances on the timeline that belong to this group. */
   items: number;
 }
 
 // ---- tools.candidates ----
 
-/** `tools.candidates` 一页最多多少个视频。 */
+/** Maximum number of videos per page for `tools.candidates`. */
 export const TOOL_CANDIDATES_MAX_LIMIT = 500;
 
 export interface ToolCandidatesParams {
   toolId: string;
-  /** 只列这个项目的视频；`null` 是不属于任何项目的视频。不给时不按项目筛。 */
+  /** Only list videos of this project. `null` is a video that belongs to no project. When not given, no project filter is applied. */
   projectId?: Id | null;
-  /** 上一页结果里的 `nextCursor`。 */
+  /** `nextCursor` from the previous page's result. */
   cursor?: string;
-  /** 默认 100，最多 `TOOL_CANDIDATES_MAX_LIMIT`。 */
+  /** Default 100, max `TOOL_CANDIDATES_MAX_LIMIT`. */
   limit?: number;
 }
 
-/** 视频里一份可选的文稿，带上已有的译文与配音组（工具据此提示「已经有英文译文」）。 */
+/** An optional script in a video, with any existing translations and dubbing groups attached (the tool uses this to show “already has an English translation”). */
 export interface ToolCandidateDocument extends VideoTranscriptFact {
   kind: 'speech';
   translations: Array<Pick<VideoTranslationFact, 'documentId' | 'language' | 'units' | 'staleUnits'>>;
@@ -182,30 +175,29 @@ export interface ToolCandidateDocument extends VideoTranscriptFact {
 
 export interface ToolCandidate {
   entryId: Id;
-  /** 还没有索引、目录里也没记下时 null。 */
+  /** Not yet indexed, and not recorded in the directory either. null. */
   videoId: Id | null;
   name: string;
   projectId: Id | null;
   lastActivityAt: string;
   /**
-   * 索引是当前的。false：还没有索引、排队重读（旧版本的缓存、视频改过）或读失败：`documents` 可能不全，
-   * 有文稿才列的工具也照样列出它（不能断定没有文稿）。
+   * Whether the index is current. False means: not indexed yet, queued for re-reading (a cache from an old version, or the video was changed), or the read failed. `documents` may then be incomplete. Tools that list only when there is a script still list the video, since it cannot be concluded that there is no script.
    */
   indexed: boolean;
-  /** 索引时的视频版本；没有索引时 null。 */
+  /** Video version at indexing time. null when not indexed. */
   indexedRevision: string | null;
-  /** 这个工具可选的文档（`videos-with-transcript` 是文稿）；`videos` 规则的工具为空。 */
+  /** Optional documents for this tool (`videos-with-transcript` means scripts). Empty for tools using the `videos` rule. */
   documents: ToolCandidateDocument[];
 }
 
 export interface ToolCandidatesResult {
   toolId: string;
-  /** 按最近活动从新到旧。 */
+  /** Sorted from most recent activity to oldest. */
   candidates: ToolCandidate[];
-  /** 符合条件的视频总数（不止这一页）。 */
+  /** Total number of matching videos (not just this page). */
   total: number;
   nextCursor: string | null;
-  /** 与 `space.search` 相同：没有待索引的视频、首次扫描已完成、索引可用。 */
+  /** Same as `space.search`: no videos waiting to be indexed, the first scan has finished, and the index is available. */
   complete: boolean;
   pendingVideos: number;
   scanning: boolean;

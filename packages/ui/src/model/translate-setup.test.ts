@@ -44,7 +44,7 @@ describe('目标语言', () => {
     expect(of('zh-Hant').disabled).toBeNull();
     expect(of('en').disabled).toBe('已经有这门语言的译文');
     expect(of('ja')).toMatchObject({ label: '日本語', description: '日语', disabled: null });
-    // 英语已经有了：退到第一门能选的。
+    // English already exists: fall back to the first language that can be chosen.
     expect(defaultTarget(options, 'zh')).toBe('zh-Hant');
     expect(defaultTarget(targetOptions('en', []), 'en')).toBe('zh-Hans');
     expect(defaultTarget(targetOptions(null, []), null)).toBe('zh-Hans');

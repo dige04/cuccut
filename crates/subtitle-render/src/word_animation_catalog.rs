@@ -1,18 +1,16 @@
-//! 逐词动画的目录：19 格，每格一个目录 id（`catalogId`），与 [`crate::word_motion::WORD_ANIM_TRACKS`] 同名同序。
+//! Catalog of word animations: 19 cells, each with one catalog id (`catalogId`), with the same names and order as [`crate::word_motion::WORD_ANIM_TRACKS`].
 //!
-//! 样式根的 `wordAnimation`（或旧键 `anim`）由 [`crate::word_animation`] 读：`catalogId` 是目录里的一格时按那一格的
-//! 连续轨画，`animationName` 是内核的三档分支名（`Reveal`、`Highlight`……）。[`word_animation_payload`] 给出选中一格时
-//! 写进样式的那一份载荷，界面与只给了目录 id 的样式（定位框样式的 `animationPresetId`）都用它，不各写一份。
+//! The style root's `wordAnimation` (or the legacy key `anim`) is read by [`crate::word_animation`]: when `catalogId` is one of the cells in the catalog, it plays that cell's continuous track; `animationName` is the kernel's three-tier branch name (`Reveal`, `Highlight`, ...). [`word_animation_payload`] gives the payload written into the style when a cell is selected. Both the UI and styles that only supply a catalog id (`animationPresetId` in positioned-box styles) use it, rather than each writing their own.
 //!
-//! 移植自 v2 `ccut-editor-core::stylepane` 的 `WORD_ANIMATIONS` 与 `word_animation_payload`，行为不变。
+//! Ported from v2 `ccut-editor-core::stylepane`'s `WORD_ANIMATIONS` and `word_animation_payload`, behavior unchanged.
 
 use serde_json::{Map, Value, json};
 
-/// 目录的一格：目录 id 与内核的分支名。
+/// One cell of the catalog: its catalog id and the kernel's branch name.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WordAnimationEntry {
     pub catalog_id: &'static str,
-    /// [`crate::word_animation`] 认的 `animationName`。
+    /// The `animationName` recognised by [`crate::word_animation`].
     pub kernel: &'static str,
 }
 
@@ -20,7 +18,7 @@ const fn entry(catalog_id: &'static str, kernel: &'static str) -> WordAnimationE
     WordAnimationEntry { catalog_id, kernel }
 }
 
-/// 19 格，顺序与 [`crate::word_motion::WORD_ANIM_TRACKS`] 相同：17 格原样，加内核自己的「弹跳」「涂色」两格。
+/// 19 cells, same order as [`crate::word_motion::WORD_ANIM_TRACKS`]: 17 cells unchanged, plus the kernel's own two cells, “弹跳” (bounce) and “涂色” (colour fill).
 pub const WORD_ANIMATIONS: [WordAnimationEntry; 19] = [
     entry("none", "None"),
     entry("boxHighlight", "Highlight"),
@@ -43,18 +41,18 @@ pub const WORD_ANIMATIONS: [WordAnimationEntry; 19] = [
     entry("paint", "Paint"),
 ];
 
-/// 目录 id 找那一格；不在目录里时为 `None`。
+/// Find the cell by catalog id; `None` if it is not in the catalog.
 pub fn word_animation_entry(catalog_id: &str) -> Option<&'static WordAnimationEntry> {
     WORD_ANIMATIONS
         .iter()
         .find(|entry| entry.catalog_id == catalog_id)
 }
 
-/// 「药丸高亮」底块的胀缩轨：`(相位, 倍数)`，缓动 [`WORD_BOX_EASING`]。
+/// Scaling track for the “pill highlight” background block: `(phase, multiplier)`, easing [`WORD_BOX_EASING`].
 pub const WORD_BOX_SCALE_KEYFRAMES: [(f64, f64); 3] = [(0.0, 0.9), (0.7, 1.1), (1.0, 1.0)];
-/// 同上的 alpha 轨。块 alpha 独立于词的 opacity：落到词 opacity 上会把字一起淡掉。
+/// Alpha track for the same block. The block's alpha is independent of the word's opacity; applying it to the word's opacity would fade the text along with it.
 pub const WORD_BOX_OPACITY_KEYFRAMES: [(f64, f64); 3] = [(0.0, 0.75), (0.7, 1.0), (1.0, 1.0)];
-/// 两段共用的缓动名（`cubic-bezier(0.37, 0, 0.63, 1)`）。
+/// Easing name shared by both tracks (`cubic-bezier(0.37, 0, 0.63, 1)`).
 pub const WORD_BOX_EASING: &str = "sinInOut";
 
 fn keyframes_json(frames: &[(f64, f64)]) -> Value {
@@ -66,10 +64,9 @@ fn keyframes_json(frames: &[(f64, f64)]) -> Value {
     )
 }
 
-/// 选中一格时写进样式根 `wordAnimation` 的载荷：`{animationId, animationName, catalogId, spoken, active, unspoken}`。
+/// The payload written into the style root's `wordAnimation` when a cell is selected: `{animationId, animationName, catalogId, spoken, active, unspoken}`.
 ///
-/// `name` 是目录 id；不是时按内核分支名处理（旧文档里只有 `animationName` 的，例如 `Highlight`、`Custom`），
-/// 这时 `catalogId` 就写这个名字，不擅自换成目录里第一张同内核的卡。
+/// `name` is the catalog id. If it is not one, it is treated as a kernel branch name (older documents that only have `animationName`, such as `Highlight` or `Custom`). In that case `catalogId` is set to that name, without quietly swapping it for the first catalog card with the same kernel.
 pub fn word_animation_payload(name: &str) -> Value {
     let entry = word_animation_entry(name);
     let catalog_id = entry.map_or(name, |entry| entry.catalog_id);
@@ -100,7 +97,7 @@ pub fn word_animation_payload(name: &str) -> Value {
             unspoken.insert("underline".to_owned(), json!(false));
             unspoken.insert("opacity".to_owned(), json!(0.0));
         }
-        // 纯不透明度那两档：没有块、没有换色，只有 `opacity`。
+        // The two pure-opacity cells have no block and no color change; they only have `opacity`.
         "Karaoke" => {
             spoken.insert("opacity".to_owned(), json!(1.0));
             active.insert("opacity".to_owned(), json!(1.0));
@@ -123,9 +120,9 @@ pub fn word_animation_payload(name: &str) -> Value {
     if catalog_id == "boxHighlight" {
         active.insert("backgroundColor".to_owned(), json!("#FFD43B"));
         active.insert("color".to_owned(), json!("#0D0D0D"));
-        // 圆角是字号的倍数（0.5 → 0.5em），与底板圆角同一把尺。
+        // Corner rounding is a multiple of the font size (0.5 → 0.5em), on the same scale as the plate's corner radius.
         active.insert("borderRadiusEm".to_owned(), json!(0.5));
-        // 只有这一格带底块的时间轨；荧光笔（`highlight`）的块是常亮的方角底。
+        // Only this cell has a time track for the background block. The highlighter (`highlight`) block is a constant-on square-cornered backing.
         active.insert(
             "boxScale".to_owned(),
             keyframes_json(&WORD_BOX_SCALE_KEYFRAMES),
@@ -171,7 +168,7 @@ mod tests {
         assert_eq!(highlight["active"]["backgroundColor"], json!("#FFD43B"));
         assert_eq!(highlight["active"]["color"], json!("#0D0D0D"));
         assert_eq!(highlight["spoken"], json!({}));
-        // None 是唯一把 animationId 写成 "none" 的。
+        // None is the only one that writes animationId as "none".
         let none = word_animation_payload("None");
         assert_eq!(none["animationId"], json!("none"));
         assert_eq!(none["active"], json!({}));
@@ -181,7 +178,7 @@ mod tests {
             word_animation_payload("Reveal")["unspoken"]["color"],
             json!("transparent")
         );
-        // 纯不透明度那两档：只有 `opacity`，没有 backgroundColor / color。
+        // The two pure-opacity cells: only `opacity`, with no backgroundColor or color.
         let karaoke = word_animation_payload("karaoke");
         assert_eq!(karaoke["animationName"], json!("Karaoke"));
         assert_eq!(karaoke["spoken"], json!({"opacity": 1.0}));
@@ -200,7 +197,7 @@ mod tests {
             word_animation_payload("Bounce")["active"]["bottomEm"],
             json!(0.22)
         );
-        // 块的时间轨只属于「药丸高亮」这一格；内核名递进来的 `Highlight` 不带。
+        // The block's time track belongs only to the “pill highlight” cell; the `Highlight` kernel name passed in does not carry it.
         assert!(highlight["active"].get("boxScale").is_none());
         for entry in WORD_ANIMATIONS {
             let payload = word_animation_payload(entry.catalog_id);
@@ -233,7 +230,7 @@ mod tests {
 
     #[test]
     fn every_cell_reaches_the_kernel() {
-        // 每一格的载荷交给内核都选中那一格的连续轨（`none` 没有轨），分支名照目录。
+        // Each cell's payload is handed to the kernel, which selects that cell's continuous track (`none` has no track). The branch name follows the catalog.
         for entry in WORD_ANIMATIONS {
             let payload = word_animation_payload(entry.catalog_id);
             let animation = crate::word_animation(&json!({ "wordAnimation": payload }));
@@ -246,7 +243,7 @@ mod tests {
                 entry.catalog_id
             );
         }
-        // 逐字显现：没念到的词透明、不带阴影。
+        // Character-by-character reveal: unspoken words are transparent and have no shadow.
         let reveal =
             crate::word_animation(&json!({ "wordAnimation": word_animation_payload("reveal") }));
         assert_eq!(reveal.unspoken.opacity, Some(0.0));

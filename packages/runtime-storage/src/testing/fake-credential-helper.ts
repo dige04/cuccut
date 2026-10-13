@@ -1,11 +1,10 @@
 /**
- * 测试用的假凭据助手：与 `credential-helper` 同一个协议（stdin 一行请求、stdout 一行响应），密钥存在临时目录的
- * `items.json` 里，绝不访问系统的钥匙串。
+ * Fake credential helper for tests: same protocol as `credential-helper` (one line of request on stdin, one line of response on stdout). Secrets are stored in `items.json` in a temp directory, and it never touches the system keychain.
  *
- * 用法：`node fake-credential-helper.ts <目录>`。目录里：
- * - `items.json`：`{ "<key>": "<密钥>" }`；
- * - `control.json`（可选）：`{ fail?: { "<op>": "<错误码>" }, failKeys?: { "<key>": "<错误码>" }, mode?: "hang" | "silent" | "garbage" }`；
- * - `calls.jsonl`：每次调用追加一行 `{ argv, op, key, secretInEnv }`，测试据此检查密钥没有进命令行参数或环境变量。
+ * Usage: `node fake-credential-helper.ts <directory>`. In the directory:
+ * - `items.json`: `{ "<key>": "<secret>" }`;
+ * - `control.json` (optional): `{ fail?: { "<op>": "<error code>" }, failKeys?: { "<key>": "<error code>" }, mode?: "hang" | "silent" | "garbage" }`;
+ * - `calls.jsonl`: each call appends one line `{ argv, op, key, secretInEnv }`; tests use it to check that the secret did not go into command-line arguments or environment variables.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,7 +55,7 @@ process.stdin.on('end', () => {
   }
   const failure = control.failKeys?.[request.key] ?? control.fail?.[request.op];
   if (failure) {
-    // 故意在信息里带上密钥：调用方要把它去掉。
+    // Deliberately includes the secret in the message: the caller must strip it.
     respond({ ok: false, error: failure, message: `模拟的失败 ${request.secret ?? ''}`.trim() });
     return;
   }

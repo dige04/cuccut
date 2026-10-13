@@ -75,7 +75,7 @@ describe.skipIf(!resolveElectronBinary() || !hasFfmpeg)('bakeComposition', { tim
     expect(probe.status, probe.stderr).toBe(0);
     const stream = JSON.parse(probe.stdout).streams[0];
     expect(stream).toMatchObject({ codec_name: 'prores', width: 1280, height: 720, r_frame_rate: '30/1' });
-    // 编码输入是 yuva444p10le；ProRes 4444 解码端报告 yuva444p12le。导入端只看 `yuva` 前缀判定透明。
+    // The encoded input is yuva444p10le, but the ProRes 4444 decoder reports yuva444p12le. The importer only checks the `yuva` prefix to decide whether there is transparency.
     expect(stream.pix_fmt).toMatch(/^yuva444p1[02]le$/);
     expect(Number(stream.nb_read_frames)).toBe(60);
   });

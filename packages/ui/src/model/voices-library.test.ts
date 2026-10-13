@@ -117,7 +117,7 @@ describe('一只音色在各 Provider 上的克隆', () => {
       error: { code: 'GRANT_REQUIRED', message: '把音频交给 ElevenLabs 需要用户授权', details: { remedy: { hint: '请在设置里发放授权' } } },
     } as Partial<JobRecord>);
     expect(cloneRows(summary(), [ELEVEN], [failed])[0]!.failure).toBe('把音频交给 ElevenLabs 需要用户授权。请在设置里发放授权');
-    // 已经有有效克隆时不提旧的失败。
+    // When a valid clone already exists, do not show an old failure.
     expect(cloneRows(summary({ clones: [{ providerId: 'elevenlabs', state: 'valid' }] }), [ELEVEN], [failed])[0]!.failure).toBeNull();
   });
 

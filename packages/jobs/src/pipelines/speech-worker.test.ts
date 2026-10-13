@@ -15,12 +15,12 @@ import {
 import { translationShapeProblems } from './translation-document.ts';
 import { fakeSpeechAnswer as fakeAnswer, requestedSentences, speechRequestKind as kindOf } from '../testing/fake-speech-model.ts';
 
-// 真的 Speech Worker（`npm run build:engine` 构建；`CUCCUT_SPEECH_WORKER` 或引擎宿主旁边），模型是假的。没有构建时跳过。
+// Real Speech Worker (built by `npm run build:engine`; `CUCCUT_SPEECH_WORKER` or next to the engine host), the model is fake. Skip when it is not built.
 const command = resolveSpeechWorkerCommand(process.env.CUCCUT_ENGINE_HOST ?? null);
 
 /**
- * 界面核对译文的样例（`packages/ui/src/model/translation-doc.test.ts` 用）：一份转写与 Worker 对它写出的译文。这里用真的
- * Worker 重新翻译那份转写，确认样例就是 Worker 现在的输出；`CUCCUT_WRITE_FIXTURES=1` 时改为重写样例。
+ * Sample for checking translations in the UI (used by `packages/ui/src/model/translation-doc.test.ts`): a transcript and the translation the Worker wrote for it. Here the real
+ * Worker translates that transcript again to confirm the sample matches what the Worker outputs now; with `CUCCUT_WRITE_FIXTURES=1` the sample is rewritten instead.
  */
 const UI_SAMPLE = fileURLToPath(new URL('../../../ui/src/model/fixtures/worker-translation.json', import.meta.url));
 
@@ -34,7 +34,7 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
-/** 一份英文转写：`sentences` 句，每句 `words` 个词，句末有标点，句间停顿 0.4 秒（微秒刻度）。 */
+/** An English transcript: `sentences` sentences, each with `words` words, ending in punctuation, with a 0.4-second pause between sentences (microsecond scale). */
 function speechInput(sentences: number, words: number): SpeechTranslateInput {
   const list = [];
   let clock = 0;
@@ -71,7 +71,7 @@ interface Call {
   user: string;
 }
 
-/** 假的 `text.generate`：`hook` 可以在某次调用时抛错或改答案。 */
+/** Fake `text.generate`: `hook` can throw or change the answer on a given call. */
 function fakeText(hook?: (call: Call, index: number, signal: AbortSignal | undefined) => Promise<string | null> | string | null) {
   const calls: Call[] = [];
   return {
@@ -156,7 +156,7 @@ describe.skipIf(!command)('runSpeechTranslate with the Speech Worker', () => {
     expect(result.cues.cues.length).toBeGreaterThan(0);
     expect(result.report.unitCount).toBe(4);
 
-    // 每次调用都经 text.generate：冻结的 Provider 与模型，按模型的限制去掉温度、夹输出上限。
+    // Every call goes through text.generate: the frozen provider and model; the temperature is dropped and the output limit clamped according to the model's limits.
     expect(text.calls.length).toBe(result.calls.calls);
     for (const { request } of text.calls) {
       expect(request).toMatchObject({ provider: 'fake', model: 'fake-model' });
@@ -187,7 +187,7 @@ describe.skipIf(!command)('runSpeechTranslate with the Speech Worker', () => {
     });
     await expect(run(staging, input, first)).rejects.toBe(refusal);
     await expect(fs.stat(path.join(staging, 'checkpoint.json'))).resolves.toBeTruthy();
-    // 终止性的失败不重发。
+    // Terminal failures are not retried.
     expect(first.calls.filter((call) => kindOf(call.user) === 'translate')).toHaveLength(2);
     const done = new Set(requestedSentences(first.calls.find((call) => kindOf(call.user) === 'translate')!.user));
     expect(done.size).toBeGreaterThan(0);

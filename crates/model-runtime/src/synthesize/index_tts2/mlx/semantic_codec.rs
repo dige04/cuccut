@@ -1,15 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2SemanticCodec.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2SemanticCodec.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! MaskGCT 语义码本（对照 speech-swift `IndexTTS2SemanticCodec.swift`）。
+//! MaskGCT semantic codebook (cross-checked against speech-swift `IndexTTS2SemanticCodec.swift`).
 //!
-//! 编码器：Vocos ConvNeXt 骨干（1024 → 384，12 块，LN eps 1e-6，精确 GELU，
-//! `gamma` 缩放）+ 384 → 1024 投影；量化器：weight-norm 的 in/out_project
-//! （k=1 卷积）与 `[8192, 8]` 码本，L2 归一化后按最近邻取码。
+//! Encoder: Vocos ConvNeXt backbone (1024 → 384, 12 blocks, LN eps 1e-6, exact GELU,
+//! `gamma` scaling) + 384 → 1024 projection; quantizer: weight-norm in/out_project
+//! (k=1 convolutions) and an `[8192, 8]` codebook; codes are picked by nearest neighbour after L2 normalization.
 
 use super::layers::{Conv1d, LayerNorm, Linear, act};
 use super::v25_weights;
@@ -41,7 +41,7 @@ impl ConvNeXtBlock {
         })
     }
 
-    /// 输入 / 输出 `[B, T, C]`（内部等价于 Swift 的 NCL 布局往返）。
+    /// Input / output `[B, T, C]` (internally equivalent to a round trip through Swift's NCL layout).
     fn forward(&self, x: &Array) -> Result<Array> {
         let h = self.dwconv.forward_nlc(x)?;
         let h = self.norm.forward(&h)?;
@@ -61,7 +61,7 @@ pub struct SemanticEncoder {
 }
 
 impl SemanticEncoder {
-    /// `{prefix}.0` 是 Vocos 骨干、`{prefix}.1` 是 384 → 1024 投影（编码器与 2.5 解码器同构）。
+    /// `{prefix}.0` is the Vocos backbone and `{prefix}.1` is the 384 → 1024 projection (the encoder and the 2.5 decoder share this structure).
     fn load(w: &mut WeightMap, prefix: &str) -> Result<Self> {
         let mut blocks = Vec::with_capacity(NUM_BLOCKS);
         for i in 0..NUM_BLOCKS {
@@ -76,7 +76,7 @@ impl SemanticEncoder {
         })
     }
 
-    /// 输入 `[B, T, 1024]`，输出 `[B, T, 1024]`。
+    /// Input `[B, T, 1024]`, output `[B, T, 1024]`.
     pub fn forward(&self, hidden: &Array) -> Result<Array> {
         let mut h = self.embed.forward_nlc(hidden)?;
         h = self.norm.forward(&h)?;
@@ -104,13 +104,13 @@ impl SemanticQuantizer {
         })
     }
 
-    /// 码 `[B, T]` → 嵌入 `[B, 1024, T]`。
+    /// Codes `[B, T]` → embedding `[B, 1024, T]`.
     pub fn vq2emb(&self, codes: &Array) -> Result<Array> {
         let emb = self.codebook.index(codes); // [B, T, 8]
         Ok(self.out_project.forward_nlc(&emb)?.swap_axes(1, 2)?)
     }
 
-    /// 编码隐状态 `[B, T, 1024]` → (码 `[B, T]` i32, 提示嵌入 `[B, T, 1024]`)。
+    /// Encoder hidden states `[B, T, 1024]` → (codes `[B, T]` i32, prompt embedding `[B, T, 1024]`).
     pub fn quantize(&self, encoded: &Array) -> Result<(Array, Array)> {
         let b = encoded.dim(0);
         let t = encoded.dim(1);
@@ -149,8 +149,8 @@ impl SemanticCodec {
     }
 }
 
-/// IndexTTS 2.5 语义码本解码器（官方 `EnhancedCodec.decode`）：码 → 码本嵌入 →
-/// Vocos 解码骨干 → 时间轴 ×2 重复 → k=3 卷积，得到 50 Hz 的 S2Mel 内容特征。
+/// IndexTTS 2.5 semantic codebook decoder (official `EnhancedCodec.decode`): codes → codebook embedding →
+/// Vocos decoder backbone → time-axis ×2 repeat → k=3 convolution, producing 50 Hz S2Mel content features.
 pub struct CodecDecoderV25 {
     backbone: SemanticEncoder,
     quantizer: SemanticQuantizer,
@@ -158,7 +158,7 @@ pub struct CodecDecoderV25 {
 }
 
 impl CodecDecoderV25 {
-    /// 读 `mlx-community/IndexTTS-2.5-fp16` 的 `codec.safetensors`（MLX 布局，内部重映射）。
+    /// Reads `codec.safetensors` from `mlx-community/IndexTTS-2.5-fp16` (MLX layout, remapped internally).
     pub fn load(mut w: WeightMap) -> Result<Self> {
         v25_weights::remap_codec(&mut w)?;
         Ok(Self {
@@ -168,7 +168,7 @@ impl CodecDecoderV25 {
         })
     }
 
-    /// 语义码 `N` 个 → 内容特征 `[1, 2N, 1024]`。
+    /// `N` semantic codes → content features `[1, 2N, 1024]`.
     pub fn decode(&self, codes: &[i32]) -> Result<Array> {
         ensure!(!codes.is_empty(), "IndexTTS 2.5 语义码为空");
         let n = codes.len() as i32;

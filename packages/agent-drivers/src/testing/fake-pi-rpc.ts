@@ -3,8 +3,7 @@ import path from 'node:path';
 import type { FakePiLogEntry, FakePiScenario, FakePiTool } from './fake-pi.ts';
 
 /**
- * 假 `pi --mode rpc` 的进程入口（见 `fake-pi.ts`）。只用 Node 自带的模块；线上的形状照 pi 1.0.4 的真实输出手写，
- * 免得测试与实现共用同一份理解。
+ * Entry point of the fake `pi --mode rpc` (see `fake-pi.ts`). It uses only Node's built-in modules. The wire shapes are handwritten to match pi 1.0.4's real output, so that tests and the implementation do not share the same understanding.
  */
 
 const dir = process.env.FAKE_PI_DIR;
@@ -79,7 +78,7 @@ process.stdin.on('data', (chunk: string) => {
   }
 });
 process.stdin.on('end', () => process.exit(0));
-// 混进一行不是 JSON 的输出：CucCut 应该忽略它。
+// Mixes in a line of output that is not JSON: CucCut should ignore it.
 process.stdout.write('pi: starting up\n');
 
 function handle(message: Msg): void {
@@ -113,7 +112,7 @@ function handle(message: Msg): void {
       if (abort) {
         const done = abort;
         abort = null;
-        // abort 等 pi 空闲下来才应答。
+        // abort waits until pi is idle before replying.
         void Promise.resolve(done()).then(() => respond(id, type));
       } else respond(id, type);
       return;
@@ -239,7 +238,7 @@ async function runTurn(text: string): Promise<void> {
   send({ type: 'turn_end' });
   if (sessionFile && !fs.existsSync(sessionFile)) fs.writeFileSync(sessionFile, `${JSON.stringify({ type: 'session', id: sessionId })}\n`);
   streaming = false;
-  // 1.0.4 的 agent_end 不带 willRetry。
+  // pi 1.0.4's agent_end does not carry willRetry.
   send({ type: 'agent_end', messages: [] });
   if (scenario.settled) send({ type: 'agent_settled' });
 }

@@ -1,6 +1,6 @@
-//! 秒与 tick 的换算。Worker 内部一律用 f64 秒计算，只在写出结果的边界换算一次（架构设计 §6.6）。
+//! Conversion between seconds and ticks. Inside the Worker, all calculations use f64 seconds; conversion happens once, at the boundary where results are written (architecture design §6.6).
 
-/// 秒 → 整数 tick（四舍五入；负数按 0）。单调：`a <= b` 时结果也 `<=`。
+/// Seconds → integer ticks (rounded; negative values become 0). Monotonic: if `a <= b`, the result is also `<=`.
 pub fn seconds_to_ticks(seconds: f64, timescale: u64) -> u64 {
     if !seconds.is_finite() || seconds <= 0.0 {
         return 0;
@@ -8,7 +8,7 @@ pub fn seconds_to_ticks(seconds: f64, timescale: u64) -> u64 {
     (seconds * timescale as f64).round() as u64
 }
 
-/// tick → 秒。
+/// Ticks → seconds.
 pub fn ticks_to_seconds(ticks: u64, timescale: u64) -> f64 {
     if timescale == 0 {
         return 0.0;
@@ -29,7 +29,7 @@ mod tests {
         assert_eq!(seconds_to_ticks(f64::NAN, 48_000), 0);
         assert_eq!(seconds_to_ticks(2.0, 48_000), 96_000);
         assert_eq!(seconds_to_ticks(1.0 / 3.0, 90_000), 30_000);
-        // 素材时间一小时以上也不丢精度。
+        // Keeps precision even for media longer than one hour.
         assert_eq!(seconds_to_ticks(3_725.123_456, 1_000_000), 3_725_123_456);
     }
 

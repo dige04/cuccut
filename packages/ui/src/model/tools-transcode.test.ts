@@ -100,7 +100,7 @@ describe('选文件', () => {
 
   it('加文件：去重、不是视频的与相对路径不收，并说清楚', () => {
     const r = addInputs(['/v/a.mp4'], ['/v/a.mp4', '/v/b.mov', '/v/song.mp3', 'c.mp4', '/v/raw.mts']);
-    // 扩展名认不出的（.mts）放行，交给 ffprobe 判断。
+    // Files whose extension is not recognized (.mts) pass through, and ffprobe decides.
     expect(r.inputs).toEqual(['/v/a.mp4', '/v/b.mov', '/v/raw.mts']);
     expect(addNotice(r)).toBe('song.mp3 不是视频文件；c.mp4 不是绝对路径；a.mp4 已经在列表里');
     expect(addNotice(addInputs([], ['/v/x.mkv']))).toBeNull();
@@ -251,12 +251,12 @@ describe('记录', () => {
       { current: 1, steps: STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'completed' : i === 1 ? 'running' : 'pending', jobId: i === 1 ? 'job_enc' : null, attempts: i <= 1 ? 1 : 0, output: null })) },
     );
     expect(transcodeProgress(running, [running, child])).toEqual({ text: '编码中 0:12 / 0:42 · 29%', percent: 29 });
-    // 子任务还没到：不伪造百分比。
+    // The sub-job has not arrived yet: do not fake a percentage.
     expect(transcodeProgress(running, [running])).toEqual({ text: '编码中', percent: null });
     const probing = transcodeJob({ inputs: ['/a.mp4'], action: 'compress' }, {}, { current: 0 });
     expect(transcodeProgress(probing, [probing])).toEqual({ text: '读取输入 · 第 1/4 步', percent: null });
     expect(transcodeProgress(transcodeJob({ inputs: ['/a.mp4'], action: 'compress' }, { state: 'queued', phase: 'queued' }), []).text).toBe('排队中');
-    // 这一步的子任务在排队：照 Runtime 记着的原因写。
+    // This step's sub-job is queued: write the reason the Runtime recorded.
     const waiting = toolJob({ jobId: 'job_enc', kind: 'pipeline-step', state: 'queued', phase: 'queued', wait: { reason: 'concurrency', detail: '等 ffmpeg 空出名额', since: '2026-10-03T00:00:01.000Z' } });
     expect(transcodeProgress(running, [running, waiting])).toEqual({ text: '编码 · 等 ffmpeg 空出名额', percent: null });
   });
@@ -271,12 +271,12 @@ describe('记录', () => {
     expect(transcodeResults(done)).toEqual([
       { path: '/v/holiday-compressed.mp4', name: 'holiday-compressed.mp4', meta: '1280×720 · 0:42 · H.264 / AAC', size: '68.4 MB → 21.8 MB（小 68%）' },
     ]);
-    // 读不到源文件大小时只写输出大小。
+    // When the source file size cannot be read, only write the output size.
     const bare = transcodeJob({ inputs: ['/v/a.mov'], action: 'compress' }, { result: done.result });
     expect(inputSizes(bare)).toBeNull();
     expect(transcodeResults(bare)[0]!.size).toBe('21.8 MB');
     expect(humanBytes(512 * 1024)).toBe('512 KB');
-    // 只小了不到 1%：不写「小 0%」。
+    // Smaller by less than 1%: do not write 「小 0%」 (smaller by 0%).
     expect(transcodeResults(finished(68.3 * 1024 * 1024))[0]!.size).toBe('68.4 MB → 68.3 MB（几乎没变）');
     expect(transcodeResults(finished(70 * 1024 * 1024))[0]!.size).toBe('68.4 MB → 70.0 MB（没有变小）');
   });
@@ -296,7 +296,7 @@ describe('记录', () => {
     );
     expect(transcodeMeta(done)).toBe('合并 2 段 · 流复制');
     expect(transcodeResults(done)[0]!.size).toBe('842 KB（源文件共 843 KB）');
-    // 重新编码的合并照常写编码与画质。
+    // Merges that re-encode still write the codec and quality.
     const reencoded = transcodeJob(params, {}, { summary: { action: 'merge', mode: 're-encode', reason: '分辨率不一致', executor: { tool: 'ffmpeg', version: '8.0.1', commands: [] }, files: [] } });
     expect(transcodeMeta(reencoded)).toBe('合并 2 段 · H.264 · 高画质（CRF 22）');
   });
@@ -336,7 +336,7 @@ describe('记录', () => {
     expect(failureDetail(failed)).toBe('时长 1.00 秒，应约为 5.00 秒');
     expect(failureDetail({ error: { code: 'TRANSCODE_FAILED', message: 'x', details: { stderr: ' No space left on device \n' } } })).toBe('No space left on device');
     expect(failureRemedy({ state: 'interrupted', error: null })).toBeNull();
-    // 缺 ffmpeg：用 Runtime 按它的平台给的那句；没给时只说装什么，不猜平台。
+    // ffmpeg is missing: use the sentence the Runtime gives for its platform; if none is given, only say what to install, without guessing the platform.
     const winget = '安装 ffmpeg（含 ffprobe，例如 winget install --id Gyan.FFmpeg -e），或用环境变量 CUCCUT_FFMPEG 指定';
     expect(
       failureRemedy({ state: 'failed', error: { code: 'MEDIA_TOOL_UNAVAILABLE', message: '找不到 ffmpeg', details: { remedy: winget } } }),
@@ -348,7 +348,7 @@ describe('记录', () => {
 
   it('带回左边：冻结的参数回到表单，CRF 取最接近的一档；重试照原参数', () => {
     expect(againTranscodeDraft(compress, BLANK_COMPRESS)).toEqual({ ...BLANK_COMPRESS, inputs: ['/v/holiday.mov'], maxHeight: 720, quality: 'balanced' });
-    // h264 的 23 离「均衡」26 比离「高画质」22 远：取高画质。
+    // For h264, 23 is farther from 「均衡」 (balanced, 26) than 「高画质」 (high quality, 22) is: pick high quality.
     expect(againTranscodeDraft(merge, BLANK_MERGE)?.quality).toBe('high');
     const byRate = transcodeJob({ inputs: ['/a.mp4'], action: 'compress', codec: 'hevc', videoBitrateKbps: 2500, audioBitrateKbps: 96, outDir: '/out' });
     expect(againTranscodeDraft(byRate, BLANK_COMPRESS)).toMatchObject({ codec: 'hevc', rate: 'bitrate', videoKbps: 2500, audioKbps: 96, outDir: '/out' });

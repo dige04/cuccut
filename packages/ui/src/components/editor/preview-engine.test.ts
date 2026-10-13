@@ -4,7 +4,7 @@ import type { LoadedFace, LocalFont } from '../../render/local-fonts.ts';
 import type { CaptionHit, RenderPlanner } from '../../render/render-planner.ts';
 import { PreviewEngine, videoKey, type PreviewStatus } from './preview-engine.ts';
 
-// 引擎跑在浏览器里；这里只走不碰媒体元素的那部分，补上 Node 没有的动画帧函数与 ImageData（装下像素就行）。
+// The engine runs in the browser; here we only exercise the part that does not touch media elements, adding the animation frame function and ImageData that Node lacks (just enough to hold pixels).
 vi.stubGlobal('requestAnimationFrame', () => 0);
 vi.stubGlobal('cancelAnimationFrame', () => {});
 vi.stubGlobal('ImageData', function (data: Uint8ClampedArray, width: number, height: number) {
@@ -27,7 +27,7 @@ function fakePlanner(): RenderPlanner {
 test('停用之后接回来的引擎照常出计划：开发模式下效果会多跑一轮清理与建立', async () => {
   const planner = Promise.resolve(fakePlanner());
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => planner);
-  // StrictMode 的顺序：建立 → 清理（dispose）→ 再建立（resume），计划器在这之后才载入完。
+  // StrictMode order: create → clean up (dispose) → create again (resume); the planner only finishes loading after this.
   engine.dispose();
   engine.resume();
   const seen: PreviewStatus[] = [];
@@ -128,7 +128,7 @@ test('转写：按文稿触发的闪避、写了 speaker 的声波与字幕要�
   engine.setVideo(ducked([rule]), {}, records);
   expect(loads).toEqual(['doc_b']);
   expect(sentSpeech).toEqual([[{ documentId: 'doc_a', sourceAssetId: 'asset_a', body: bodies.doc_a }]]);
-  // 正文没变不重送；另一份取到了再送一次。
+  // Body unchanged: not re-sent; re-sent once the other copy is fetched.
   engine.setVideo(ducked([rule]), {}, records);
   expect(sentSpeech).toHaveLength(1);
   bodies.doc_b = { schema: 'cuccut.speech/1', words: [] };
@@ -137,10 +137,10 @@ test('转写：按文稿触发的闪避、写了 speaker 的声波与字幕要�
     { documentId: 'doc_a', sourceAssetId: 'asset_a', body: bodies.doc_a },
     { documentId: 'doc_b', body: bodies.doc_b },
   ]);
-  // 规则停用：送一份空的，计划器不再压低。
+  // Rule disabled: send an empty one, and the planner stops ducking.
   engine.setVideo(ducked([{ ...rule, enabled: false }]), {}, records);
   expect(sentSpeech.at(-1)).toEqual([]);
-  // 写了 `speaker` 的声波也要转写（按说话人分开的区间）；没写的不要。
+  // Waveforms with `speaker` set also need transcripts (segments split by speaker); those without it do not.
   const visualizer = (speaker?: string) =>
     ({
       ...sequence,
@@ -150,7 +150,7 @@ test('转写：按文稿触发的闪避、写了 speaker 的声波与字幕要�
   expect(sentSpeech.at(-1)).toEqual([]);
   engine.setVideo(visualizer('spk_a'), {}, records);
   expect(sentSpeech.at(-1)).toHaveLength(2);
-  // 字幕要它派生自的那份转写（逐词动画按转写里的词推进），只送这一份；停用的字幕实例不要。
+  // Subtitles need the transcript they are derived from (word-by-word animation advances by the words in the transcript), so only that one is sent; disabled subtitle instances are not.
   const captioned = (enabled: boolean) =>
     ({ ...sequence, items: [{ id: 'cap', type: 'caption', enabled, documentId: 'doc_d' }] }) as unknown as Sequence;
   const withCaption = { ...(records as object), doc_d: { id: 'doc_d', kind: 'caption', sourceDocumentId: 'doc_a', currentRevision: 'r1' } };
@@ -210,12 +210,12 @@ test('声波要的素材频谱：在算时不报占位提示，算好了送进�
   engine.setVideo(sequence, { asset_music: record('asset_music', 1000), asset_huge: record('asset_huge', 2 ** 30) } as never);
   await new Promise((resolve) => setTimeout(resolve, 10));
 
-  // 太大的那份不去取；在算的那份不报占位提示。
+  // Items that are too large are not fetched; an item still being computed does not report a placeholder hint.
   expect(requested).toEqual([{ asset: 'asset_music', decoder: 'spectrum' }]);
   const tooLarge = '声波 viz 听的素材 asset_huge 超过 512 MB，预览不分析它的声音；导出照常';
   expect(seen.at(-1)).toEqual({ kind: 'ready', problems: [tooLarge] });
 
-  // 算好了：送进计划器，再画一次。
+  // Computed: pass it to the planner and draw again.
   ready = true;
   const before = renders;
   notify();
@@ -237,7 +237,7 @@ test('写了 speaker 的声波：转写还在取时不报「没有转写」，�
     setDocuments: () => {},
     clearPictures: () => {},
     setSpeech: (transcripts: unknown[]) => (speech = transcripts),
-    // 内核的样子：一份转写都没有时当作视频里没有转写；有转写而里面没有这位说话人时报另一句。
+    // Kernel behavior: when there is no transcript at all, it is treated as the video having no transcript; when there is a transcript but this speaker is not in it, a different message is reported.
     render: () => {
       const detail =
         speech.length === 0
@@ -315,7 +315,7 @@ test.each([
   engine.setVideo(sequence, { asset_svg: record } as never);
   await new Promise((resolve) => setTimeout(resolve, 10));
 
-  // 还在取：先不画（等字节，最多等一会儿），也不找图片元素。
+  // Still fetching: don't draw yet (wait for the bytes, for a limited time), and don't look for the image element either.
   expect(requested).toContain('asset_svg:bytes');
   expect(renders).toBe(0);
 
@@ -348,7 +348,7 @@ test('本机字体：报缺的族里排字点了名的 face 向宿主要一次�
     render: () => {
       renders++;
       const missing = injected.length > 0 ? ['Nowhere'] : ['Climate Crisis', 'Nowhere'];
-      // 内置的族与已经有了的族也会点名；之后出现的粗体，它的族已经不缺了，也要去要。
+      // Built-in families and families already present are also named; a bold weight that shows up later, whose family is no longer missing, must still be requested.
       const faces = [face('Climate Crisis'), face('Nowhere'), face('Permanent Marker'), ...(bold ? [face('Climate Crisis', 700)] : [])];
       return { plan, warnings: missing.map(note), skipped: [], spectra: [], fonts: missing, faces };
     },
@@ -368,7 +368,7 @@ test('本机字体：报缺的族里排字点了名的 face 向宿主要一次�
   engine.setVideo(sequence, {});
   await new Promise((resolve) => setTimeout(resolve, 10));
 
-  // 在取：两个缺的族的 face 一起问一次（内置的族不问），提示先不报。
+  // Fetching: the faces of the two missing families are requested together in one go (built-in families are not requested); the hint is not reported yet.
   expect(asked).toEqual([[face('Climate Crisis'), face('Nowhere')]]);
   expect(seen.at(-1)).toEqual({ kind: 'ready' });
   const before = renders;
@@ -379,19 +379,19 @@ test('本机字体：报缺的族里排字点了名的 face 向宿主要一次�
   });
   deliver([loaded(face('Climate Crisis'))]);
   await new Promise((resolve) => setTimeout(resolve, 10));
-  // 到了：注入，再画一次；找不到的族照报，也不再问。
+  // Arrived: inject it and draw again; families that cannot be found are still reported, and are not asked for again.
   expect(injected).toEqual(['Climate Crisis/400']);
   expect(renders).toBeGreaterThan(before);
   expect(asked).toHaveLength(1);
   expect(seen.at(-1)).toEqual({ kind: 'ready', problems: [note('Nowhere').detail] });
-  // 同一个族的粗体后来才排到：照样去要。
+  // A bold weight of the same family is queued later: still request it.
   bold = true;
   engine.seek(0.1);
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(asked.at(-1)).toEqual([face('Climate Crisis', 700)]);
   deliver([]);
   await new Promise((resolve) => setTimeout(resolve, 10));
-  // 报缺的族后来下载好了（字体条的「下载」、导出里下载的）：忘掉问过的，重画时再要一次。别的族不动。
+  // A family reported missing has since been downloaded (via “Download” in the font bar, or downloaded during export): forget what was asked, and request again on redraw. Other families are left alone.
   const count = asked.length;
   engine.retryFonts(['Permanent Marker']);
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -402,7 +402,7 @@ test('本机字体：报缺的族里排字点了名的 face 向宿主要一次�
   engine.dispose();
 });
 
-/** 能一个个推进的动画帧与时钟：`tick(ms)` 把时钟拨到 `ms` 再跑排着的回调。 */
+/** Animation frames and clock that advance one step at a time: `tick(ms)` sets the clock to `ms` and then runs the queued callbacks. */
 function manualFrames() {
   let callbacks: FrameRequestCallback[] = [];
   let now = 0;
@@ -422,7 +422,7 @@ function manualFrames() {
   };
 }
 
-/** 播放用的计划器：计划的帧号按 30 fps 从时刻求，记下每次画的时刻与尺寸。 */
+/** Planner for playback: plan frame numbers are derived from the time at 30 fps, and the time and size of each draw are recorded. */
 function playablePlanner() {
   const renders: { seconds: number; width: number; height: number }[] = [];
   const planAt = (seconds: number) => ({
@@ -465,13 +465,13 @@ test('播放中同一个视频帧只画一次；有东西变了（文档、素�
   renders.length = 0;
 
   engine.play();
-  // 60 Hz 的刷新放 30 fps 的视频：0.1 秒里 6 个 tick，跨 3 个视频帧（第 0 帧停住时已经画好）。
+  // 60 Hz refresh playing 30 fps video: 6 ticks in 0.1 s, spanning 3 video frames (frame 0 was already drawn when paused).
   for (let i = 1; i <= 6; i++) frames.tick(i * (1000 / 60));
   expect(renders.map((render) => Math.floor(render.seconds * 30 + 1e-6))).toEqual([1, 2, 3]);
   expect(engine.stats.repeated).toBe(3);
   expect(engine.stats.presented).toBe(3);
 
-  // 正文到了：同一帧也重画。
+  // Body arrived: redraw even the same frame.
   notify();
   frames.tick(6.5 * (1000 / 60));
   expect(renders).toHaveLength(4);
@@ -498,7 +498,7 @@ test('播放中按像素预算降分辨率画；停下来画回原尺寸的那�
   expect(canvas).toMatchObject({ width: 960, height: 540 });
   expect(engine.stats.size).toEqual({ width: 960, height: 540 });
 
-  // 停下：停住的那一帧按原尺寸重画（与导出同一帧），时刻是停下的那一刻。
+  // Stopped: the paused frame is redrawn at its original size (the same frame as export), at the moment it stopped.
   engine.pause();
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(renders).toHaveLength(5);
@@ -508,7 +508,7 @@ test('播放中按像素预算降分辨率画；停下来画回原尺寸的那�
   engine.dispose();
 });
 
-/** 假的媒体元素（Node 里没有）：定位要等 `land()` 才落地，读出的画面记着读的时候元素在哪一刻。 */
+/** A fake media element (Node has none): seeking only lands after `land()` is called, and the picture read out records where the element was when it was read. */
 function fakeMedia() {
   class FakeMedia {
     static HAVE_METADATA = 1;
@@ -530,7 +530,7 @@ function fakeMedia() {
       this.#time = seconds;
       this.seeking = true;
     }
-    /** 定位落地：报 `seeked`。 */
+    /** Seek lands: fires `seeked`. */
     land() {
       this.seeking = false;
       for (const listener of this.#listeners) listener();
@@ -602,13 +602,13 @@ test('停着定位：视频还在定位时先用它上一张画面马上画，�
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // 点一下：元素还在定位，不等，先拿上一张画面按播放的分辨率画。
+    // Single tap: the element is still seeking, so don't wait; draw the previous picture at the playback resolution.
     renders.length = 0;
     engine.seek(2);
     await vi.advanceTimersByTimeAsync(0);
     expect(renders).toEqual([{ seconds: 2, width: 960, picture: 0 }]);
     expect(engine.exact).toBe(false);
-    // 落地：画精确的那一帧；停下时已经是了，不再画。
+    // Landed: draw the exact frame; if already paused on it, don't draw again.
     video.land();
     await vi.advanceTimersByTimeAsync(0);
     expect(renders.at(-1)).toEqual({ seconds: 2, width: 1920, picture: 2 });
@@ -616,7 +616,7 @@ test('停着定位：视频还在定位时先用它上一张画面马上画，�
     await vi.advanceTimersByTimeAsync(300);
     expect(renders).toHaveLength(2);
 
-    // 拖动：接连定位都马上画，降分辨率（落地了的也一样）。
+    // Dragging: each seek is drawn immediately at reduced resolution (landed ones too).
     renders.length = 0;
     for (const seconds of [3, 4, 5]) {
       engine.seek(seconds);
@@ -626,12 +626,12 @@ test('停着定位：视频还在定位时先用它上一张画面马上画，�
     }
     expect(renders.map(({ seconds, width }) => `${seconds}@${width}`)).toEqual(['3@960', '3@1920', '4@960', '4@960', '5@960', '5@960']);
     expect(engine.exact).toBe(false);
-    // 停下：按原尺寸画停住的那一帧，与导出同一帧。
+    // Stopped: draw the paused frame at original size, the same frame as export.
     await vi.advanceTimersByTimeAsync(300);
     expect(renders.at(-1)).toEqual({ seconds: 5, width: 1920, picture: 5 });
     expect(engine.exact).toBe(true);
 
-    // 停下时还没落地：等它落地再画精确的那一帧。
+    // Stopped before it landed: wait for it to land, then draw the exact frame.
     renders.length = 0;
     engine.seek(9);
     await vi.advanceTimersByTimeAsync(300);
@@ -674,7 +674,7 @@ test('字幕命中框随实际出帧通知；换帧先清空旧框，没有几�
   const stop = engine.onCaptionHits((hits) => seen.push(hits));
   engine.setVideo(sequence, {});
   await vi.waitFor(() => expect(engine.captionHits).toEqual(hits));
-  // 输出像素已在内核换回序列坐标，引擎不重复乘预览缩放。
+  // Output pixels have already been mapped back to sequence coordinates in the kernel, so the engine does not apply the preview scale again.
   expect(seen.at(-1)?.[0]?.cx).toBe(960);
   frame = 30;
   captionHits = [];
@@ -751,7 +751,7 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
   expect(engine.captionHits).toEqual([]);
   expect(seen.at(-1)).toEqual({ kind: 'ready' });
 
-  // 舞台隐藏字幕（`off`）时临时字幕也不叠，放开后接着叠。
+  // When the stage hides subtitles (`off`), temporary captions are not overlaid either; overlaying resumes when released.
   engine.setCaptionView('off');
   expect(videos.at(-1)!.items.map((item) => item.id)).toEqual(['v']);
   engine.setCaptionView(null);
@@ -794,7 +794,7 @@ test('倍速：播放中从换的那一刻起按新倍速走钟，媒体元素�
     engine.setRate(2);
     expect(engine.rate).toBe(2);
     expect(video.playbackRate).toBe(3);
-    // 换倍速之前走了 1 秒，之后的 1 秒按 2 倍走。
+    // One second was played before the speed change; the next second plays at 2x.
     now = 3000;
     frames.at(-1)!(now);
     expect(times.at(-1)).toBeCloseTo(3);

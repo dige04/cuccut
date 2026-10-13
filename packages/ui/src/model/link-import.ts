@@ -6,39 +6,36 @@ import { UPDATE_METHOD_LABEL } from './tool-update.ts';
 import { jobErrorText, remedyText } from './localized-text.ts';
 
 /**
- * 从链接导入（设计稿 import-flow.jsx、import-panel.jsx、model-import.js；Runtime 的 `link-import` 流程，架构设计 §7.9）。
- * 这里是纯逻辑：认出流程任务、读冻结参数与结果摘要、三步进度、失败的说法与补救、下载工具卡片的几种状态。
+ * Import from a link (design draft import-flow.jsx, import-panel.jsx, model-import.js; the Runtime's `link-import` flow, architecture design §7.9).
+ * This is pure logic here: it recognizes flow tasks, reads frozen parameters and result summaries, the three-step progress, the failure wording and remedies, and the states of the download tool card.
  *
- * 与设计稿的出入：
- * - 首页起的导入不带 `videoId`：流程只解析、下载、校验、放进下载目录；建视频与转录由首页的流程执行器在流程完成之后做
- *   （components/start/flow-runner.ts），所以「确认媒体并建视频」与「生成字幕」两步的状态有一半来自那边。那边导入素材时
- *   带上 `linkProvenance` 的来源，视频详情照样有「来源信息」。
- * - 下载工具只在本机（没有「用哪台电脑下载」）。要登录的网站在下载视频的「网站登录」里勾选浏览器（model/link-cookies.ts），
- *   Runtime 按勾选的顺序逐个用它们的 Cookie。
- * - 失败记录不能删：Runtime 没有删任务的接口，记录留在后台任务里。
+ * Differences from the design draft:
+ * - An import started from the home page carries no `videoId`: the flow only parses, downloads, verifies and puts the file into the download directory. Creating the video and transcription are done by the home page's flow runner after the flow completes (components/start/flow-runner.ts), so half of the states of the “确认媒体并建视频” (confirm media and create video) and “生成字幕” (generate captions) steps come from there. That side carries the `linkProvenance` source when it imports the media, so the video details still show “source info”.
+ * - The download tool is local only (there is no “which computer to download on”). For sites that need login, browsers are ticked in “网站登录” (website login) under downloading videos (model/link-cookies.ts), and the Runtime uses their cookies in the ticked order.
+ * - Failure records cannot be deleted: the Runtime has no interface to delete tasks, so the records stay in the background tasks.
  */
 
 export const LINK_IMPORT = 'link-import';
 export const DOWNLOADER = 'yt-dlp';
 
-/** 首页起的、或别处起的链接导入父任务。 */
+/** The parent task of a link import, started from the home page or from elsewhere. */
 export function isLinkImport(job: Pick<JobRecord, 'kind' | 'pipeline'> | null | undefined): boolean {
   return !!job && job.kind === 'pipeline' && job.pipeline?.name === LINK_IMPORT;
 }
 
 export interface LinkFrozen {
-  /** 脱敏之后的链接。 */
+  /** The link after redaction. */
   url: string;
   host: string;
   audioOnly: boolean;
-  /** 冻结的下载目录。 */
+  /** The frozen download directory. */
   outDir: string | null;
   videoId: string | null;
 }
 
 const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
 
-/** 冻结的参数里给人看的几项（Runtime 存的是脱敏后的链接）。 */
+/** A few items of the frozen parameters shown to people (the Runtime stores the redacted link). */
 export function linkFrozen(job: Pick<JobRecord, 'pipeline'>): LinkFrozen {
   const p = job.pipeline?.params ?? {};
   const url = str(p.url) ?? '';
@@ -51,7 +48,7 @@ export function linkFrozen(job: Pick<JobRecord, 'pipeline'>): LinkFrozen {
   };
 }
 
-/** 完成时的结果摘要；形状不对（或没完成）时 null。 */
+/** The result summary when complete; null when the shape is wrong (or it has not completed). */
 export function linkSummary(job: Pick<JobRecord, 'pipeline'>): LinkImportSummary | null {
   const s = job.pipeline?.summary as Partial<LinkImportSummary> | null | undefined;
   if (!s || typeof s !== 'object' || !s.files || typeof s.files.media !== 'string') return null;
@@ -71,7 +68,7 @@ export function linkSummary(job: Pick<JobRecord, 'pipeline'>): LinkImportSummary
   };
 }
 
-/** 解析步骤留下的元数据（标题、平台）：流程没完成也能先显示。 */
+/** Metadata left by the parse step (title, platform): can be shown even before the flow completes. */
 export function linkMeta(job: Pick<JobRecord, 'pipeline'>): { title: string | null; platform: string | null; durationSec: number | null } {
   const summary = linkSummary(job);
   if (summary) return { title: summary.title, platform: summary.platform, durationSec: summary.durationSec };
@@ -85,9 +82,9 @@ export function linkMeta(job: Pick<JobRecord, 'pipeline'>): { title: string | nu
 }
 
 /**
- * 首页起的导入完成之后建视频时，素材要记的来源：与流程自己导入（给了 `videoId`）时 `importIntoVideo` 记的同形
- * （`origin: 'link-import'`，脱敏的链接、平台元数据、工具与版本、下载时间、父任务）。摘要里没有的几项取解析步骤的元数据。
- * 没完成时 null。
+ * The source the media records when the video is created after an import started from the home page completes: the same shape that `importIntoVideo` records when the flow imports it itself (given a `videoId`)
+ * (`origin: 'link-import'`, the redacted link, platform metadata, tool and version, download time, parent task). For the items not in the summary, the metadata from the parse step is used.
+ * null when not complete.
  */
 export function linkProvenance(job: Pick<JobRecord, 'jobId' | 'pipeline'>): { origin: string; source: Record<string, unknown> } | null {
   const summary = linkSummary(job);
@@ -112,28 +109,28 @@ export function linkProvenance(job: Pick<JobRecord, 'jobId' | 'pipeline'>): { or
   };
 }
 
-/** 任务列表里的标题：「从链接导入 · 标题」，标题还不知道时写主机名。 */
+/** The title in the task list: “从链接导入 · 标题” (Import from link · title); when the title is not known yet, the host name is written. */
 export function linkTitle(job: Pick<JobRecord, 'pipeline'>): string {
   const meta = linkMeta(job);
   const name = meta.title ?? (linkFrozen(job).host || null);
   return M.title(name);
 }
 
-/** 任务表与胶囊上念的种类（`kind` 是通用的 `pipeline`）。 */
+/** The kind shown in the task table and the capsule (`kind` is the generic `pipeline`). */
 export function linkKindLabel(): string {
   return M.title(null);
 }
 
 /**
- * 父任务的阶段 → 一句话（`phase` 由流程的各步上报）。建字幕层那一步上报的也是 `applying`，与导入视频同名，
- * 按正在跑的那一步说成「生成字幕」。
+ * Stage of the parent task → one sentence (`phase` is reported by the steps of the flow). The caption-layer step also reports `applying`, the same name as importing the video;
+ * it is described as “生成字幕” (generate captions) according to the step that is actually running.
  */
 export function linkPhaseText(job: Pick<JobRecord, 'phase' | 'pipeline'>): string {
   if (job.pipeline?.steps.find((s) => s.status === 'running')?.name === 'captions') return M.stageSubs;
   return M.phase[job.phase] ?? M.phaseFallback;
 }
 
-/** 下载这一步的字节进度（子任务上报的 `bytes`）：百分比与「12 MB / 45 MB」。没有时 null。 */
+/** Byte progress of the download step (the `bytes` reported by the subtask): a percentage and “12 MB / 45 MB”. null when absent. */
 export function downloadProgress(job: Pick<JobRecord, 'pipeline'>, jobs: readonly JobRecord[]): { pct: number | null; text: string } | null {
   const step = job.pipeline?.steps.find((s) => s.name === 'download');
   if (!step?.jobId || step.status !== 'running') return null;
@@ -145,7 +142,7 @@ export function downloadProgress(job: Pick<JobRecord, 'pipeline'>, jobs: readonl
   return { pct, text: `${formatBytes(p.done)} / ${formatBytes(p.total)}` };
 }
 
-// ---- 三步：下载视频 · 确认媒体并建视频 · 生成字幕 ----
+// ---- Three steps: download video · confirm media and create video · generate captions ----
 
 export type StageState = 'pending' | 'current' | 'done' | 'failed' | 'skipped';
 
@@ -155,10 +152,10 @@ export interface LinkStage {
   state: StageState;
 }
 
-/** 流程完成之后首页执行器那一半做到哪了；不是首页起的（或应用重启过）时 null。 */
+/** How far the home page's executor half got after the flow completes; null when the import did not start from the home page (or the app was restarted). */
 export interface FollowUp {
   video: 'pending' | 'running' | 'done' | 'failed';
-  /** 不转录（音频转视频关了字幕）时 `skipped`。 */
+  /** `skipped` when it is not transcribed (audio-to-video had captions turned off). */
   subs: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 }
 
@@ -176,7 +173,7 @@ function stepsState(job: Pick<JobRecord, 'pipeline'>, names: readonly string[]):
 export function linkStages(job: Pick<JobRecord, 'pipeline' | 'state'>, follow: FollowUp | null): LinkStage[] {
   const download = stepsState(job, ['resolve', 'download']);
   const fetched = stepsState(job, ['verify', 'publish']);
-  // 带 videoId 起的导入（别处）：流程自己导入、转写。
+  // An import started with a videoId (elsewhere): the flow imports and transcribes it itself.
   const own = (job.pipeline?.steps ?? []).some((s) => s.name === 'import');
   let video: StageState;
   let subs: StageState;
@@ -206,7 +203,7 @@ export function linkStages(job: Pick<JobRecord, 'pipeline' | 'state'>, follow: F
   ];
 }
 
-// ---- 失败的说法与补救 ----
+// ---- Failure wording and remedies ----
 
 export type LinkAction = 'retry' | 'change-link' | 'use-file' | 'tools' | 'restart' | 'downloads';
 
@@ -214,13 +211,13 @@ export interface LinkIssue {
   code: string;
   title: string;
   body: string;
-  /** 补救按钮，第一个是主按钮。 */
+  /** Remedy buttons; the first one is the primary button. */
   actions: LinkAction[];
-  /** 下载工具给的原话（标准错误的结尾，链接已脱敏）；没有时 null。 */
+  /** The original text from the download tool (the end of standard error, link redacted); null when absent. */
   diag: string | null;
 }
 
-/** 认得的失败码 → 补救按钮（第一个是主按钮）；标题与说明在文案目录的 `issue` 里。 */
+/** Recognized failure codes → remedy buttons (the first one is primary); titles and descriptions are in the `issue` of the copy catalog. */
 const LINK_ISSUE_ACTIONS: Record<string, LinkAction[]> = {
   TOOL_NOT_INSTALLED: ['tools'],
   TOOL_CONSENT_REQUIRED: ['tools'],
@@ -242,7 +239,7 @@ const LINK_ISSUE_ACTIONS: Record<string, LinkAction[]> = {
   INTERRUPTED: ['retry'],
 };
 
-/** 父任务的错误（或 `pipelines.start` 的拒绝）→ 标题、说明、补救按钮。不认得的码照 Runtime 的原话写。 */
+/** The error of the parent task (or the rejection from `pipelines.start`) → title, description and remedy buttons. Unrecognized codes are shown with the Runtime's original text. */
 export function linkIssue(error: Pick<JobError, 'code' | 'message' | 'messageRef' | 'details'> | null, state?: JobRecord['state']): LinkIssue | null {
   if (!error && state !== 'interrupted') return null;
   const code = error?.code ?? 'INTERRUPTED';
@@ -261,14 +258,14 @@ export function linkIssue(error: Pick<JobError, 'code' | 'message' | 'messageRef
   };
 }
 
-/** `pipelines.start` 被拒时，错误里的码（`RpcError.details.code`）。 */
+/** When `pipelines.start` is rejected, the code in the error (`RpcError.details.code`). */
 export function rejectionCode(error: unknown): string | null {
   const details = (error as { details?: unknown } | null)?.details;
   const code = details && typeof details === 'object' ? (details as { code?: unknown }).code : null;
   return typeof code === 'string' ? code : null;
 }
 
-/** 链接导入的大标题（设计稿 `ImportTask` 的 heading）。 */
+/** The large title of the link import (the heading of `ImportTask` in the design draft). */
 export function linkHeading(job: Pick<JobRecord, 'state'>, follow: FollowUp | null): string {
   if (job.state === 'cancelled') return M.headingStopped;
   if (job.state === 'failed' || job.state === 'interrupted' || job.state === 'needs-reconciliation') return M.headingFailed;
@@ -281,7 +278,7 @@ export function linkHeading(job: Pick<JobRecord, 'state'>, follow: FollowUp | nu
   return follow.subs === 'skipped' ? M.headingReady : M.headingSubsReady;
 }
 
-// ---- 下载工具卡片 ----
+// ---- Download tool card ----
 
 export type ToolCardState = 'checking' | 'unknown' | 'installing' | 'updating' | 'install' | 'update' | 'broken' | 'blocked' | 'consent' | 'ready';
 
@@ -289,15 +286,15 @@ export interface ToolCard {
   state: ToolCardState;
   title: string;
   body: string;
-  /** 主按钮（同意并安装 / 同意并更新 / 同意使用）；没有时 null。 */
+  /** The primary button (agree and install / agree and update / agree to use); null when absent. */
   action: string | null;
-  /** 来源、版本、大小、许可这类事实，一行一项。 */
+  /** Facts such as source, version, size and license, one per line. */
   facts: string[];
 }
 
 export const TOOL_SOURCE_LABEL: Record<NonNullable<ExternalToolStatus['source']>, string> = live(() => M.toolSource);
 
-/** 下载工具能不能直接用：装好了、版本够、同意过。 */
+/** Whether the download tool can be used directly: installed, version sufficient, consent given. */
 export function toolReady(status: ExternalToolStatus | null | undefined): boolean {
   return !!status && status.state === 'installed' && (!status.consentRequired || status.consent?.state === 'granted');
 }
@@ -319,7 +316,7 @@ function offerFacts(status: ExternalToolStatus): string[] {
   ].filter(Boolean);
 }
 
-/** 此刻用的那一份：版本、来源、安装方式（能判断时），与它的路径。 */
+/** The one in use right now: version, source, install method (when it can be determined), and its path. */
 function usedFacts(status: ExternalToolStatus): string[] {
   const where = [
     status.version ? `yt-dlp ${status.version}` : 'yt-dlp',
@@ -330,9 +327,8 @@ function usedFacts(status: ExternalToolStatus): string[] {
 }
 
 /**
- * 链接档开始之前的下载工具卡片（设计稿 `DownloaderSettings` 与 `issues.missing/outdated`）。只读 `externalTools.detect`
- * 的结果；安装与同意都要用户点了才做（`externalTools.install` 带 `consent: true` 时同时记下同意）。系统里的那一份按原安装方式
- * 更新（产品设计 §2.7）：命令与输出在卡片的「更新」一节，更新期间卡片是 `updating`。
+ * The download tool card before the link section starts (design draft `DownloaderSettings` and `issues.missing/outdated`). It only reads the result of `externalTools.detect`;
+ * installing and consenting both happen only when the user clicks (`externalTools.install` with `consent: true` also records the consent). The copy on the system is updated with its original install method (product design §2.7): the command and output are in the card's “更新” (Update) section, and while updating the card is `updating`.
  */
 export function toolCard(probed: ExternalToolStatus | null | undefined, opts: { checking: boolean; installing: boolean; updating?: boolean }): ToolCard {
   const status = probed && localizeToolStatus(probed);
@@ -394,7 +390,7 @@ export function toolCard(probed: ExternalToolStatus | null | undefined, opts: { 
   return { state: 'ready', title: M.cardReady, body: M.cardReadyBody, action: null, facts };
 }
 
-/** 下载位置那一行（Runtime 的规则：设了 `downloads.directory` 就一律在那里，否则是运行主机的 ~/Downloads）。 */
+/** The download location row (Runtime rule: if `downloads.directory` is set, it is always used there; otherwise the host's ~/Downloads). */
 export function downloadDirLabel(setting: string | null, _projectPath: string | null): string {
   if (setting) return shortenPath(setting);
   return '~/Downloads';

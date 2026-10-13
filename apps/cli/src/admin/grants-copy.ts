@@ -14,9 +14,9 @@ import { pl } from './grants-copy.pl.ts';
 import { tr } from './grants-copy.tr.ts';
 import { vi } from './grants-copy.vi.ts';
 
-/** `cuccut grants` 与 `cuccut approvals allow --persist` 的文案（英文是键与类型的来源，译文在 `grants-copy.<语言>.ts`）。 */
+/** Copy for `cuccut grants` and `cuccut approvals allow --persist`. The English is the source of the keys and types; the translations are in `grants-copy.<language>.ts`. */
 const en = {
-  /** `cuccut grants --help` 的正文。 */
+  /** The body of `cuccut grants --help`. */
   help: `Usage:
   cuccut grants [list]             List data-sharing grants (online and agent providers):
                                    recipient, data kinds, scope, usage, and budget

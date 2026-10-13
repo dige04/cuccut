@@ -1,7 +1,6 @@
-//! Pyannote PyanNet 说话人分段（跨平台 candle 后端）。移植自 v2 `ccut-speech` 的 `candle_backend/pyannote.rs`。
+//! Pyannote PyanNet speaker segmentation (cross-platform candle backend). Ported from v2 `ccut-speech`'s `candle_backend/pyannote.rs`.
 //!
-//! v3 只改边界（同 MLX）：权重按模型包清单取（`segmentation` / `speaker` 组件的 [`VerifiedFiles`]），设备取模型包的
-//! 设备；外加 [`DiarizerSlot`]，任务里第一次要用时才加载、任务结束放掉。网络、解码与聚类原样保留。
+//! v3 changes only the boundary (same as MLX): weights are taken from the model pack's manifest (`segmentation` / `speaker` components' [`VerifiedFiles`]), and the device comes from the model pack's device. In addition there is [`DiarizerSlot`], which loads on first use within a job and is released when the job ends. The network, decoding and clustering are kept as they are.
 
 use anyhow::{Result, bail};
 use candle_core::{Device, IndexOp, Tensor};
@@ -52,15 +51,15 @@ struct Conv1d {
 
 impl Conv1d {
     fn load(store: &mut WeightStore, prefix: &str, stride: usize) -> Result<Self> {
-        // Checkpoint/MLX layout `[out, kernel, in]` → candle `[out, in, kernel]`。
-        // `contiguous()` 是**正确性**要求，不是性能优化：candle 0.11 的 CPU
-        // `conv1d`（`cpu_backend/mod.rs:2753`）走 im2col 路径时，如果 kernel 布局
-        // 非连续，会分配 `kernel_c` 并把权重整理进去，却仍然把**原始的非连续
-        // `kernel`** 传给 `matmul`，且附上一个声称连续的 layout——那份拷贝是死代码。
-        // 结果就是按 `[out, kernel, in]` 的原始字节当成 `[out, in, kernel]` 用。
-        // conv.0 的 `in == 1`，两种布局字节相同所以看不出来；conv.1/conv.2
-        // （in=80/60、kernel=5）会被静默读错。删掉这个 `contiguous()` 会让分割网络
-        // 与 MLX 出现 156/589 帧的类别分歧。
+        // Checkpoint/MLX layout `[out, kernel, in]` → candle `[out, in, kernel]`.
+        // `contiguous()` is a **correctness** requirement, not a performance optimization: when candle 0.11's CPU
+        // `conv1d` (`cpu_backend/mod.rs:2753`) takes the im2col path and the kernel layout is
+        // non-contiguous, it allocates `kernel_c` and lays the weights out into it, but still passes the **original non-contiguous
+        // `kernel`** to `matmul`, with a layout that claims it is contiguous, so that copy is dead code.
+        // The result is that the raw bytes of `[out, kernel, in]` are used as if they were `[out, in, kernel]`.
+        // conv.0 has `in == 1`, so both layouts have the same bytes and the bug does not show; conv.1/conv.2
+        // (in=80/60, kernel=5) are silently read wrong. Removing this `contiguous()` makes the segmentation network
+        // disagree with MLX on 156/589 frames' classes.
         Ok(Self {
             weight: store.take_f32(&format!("{prefix}.weight"))?.permute((0, 2, 1))?.contiguous()?,
             bias: store.take_optional_f32(&format!("{prefix}.bias"))?,
@@ -115,8 +114,7 @@ impl SincNet {
 }
 
 struct LstmLayer {
-    /// 加载期就转置并 `contiguous`：`.t()` 产出的是非连续视图，放在 589 步的
-    /// 时间步循环里等于每步重做一次布局整理。
+    /// Transposed and made contiguous at load time: `.t()` produces a non-contiguous view, and inside the 589-step time loop that would redo the layout fix-up on every step.
     wx_t: Tensor,
     wh_t: Tensor,
     bias: Tensor,
@@ -233,9 +231,7 @@ impl SegmentationNetwork {
         })
     }
 
-    /// 返回每个窗口的原始 powerset logits（`FRAMES_PER_WINDOW * CLASS_COUNT`，
-    /// 帧在外、类在内）。**这里刻意不做 argmax**：softmax、按说话人求和、迟滞
-    /// 二值化全部交给 `pyannote_common`，两个后端共用同一份解码。
+    /// Returns the raw powerset logits of each window (`FRAMES_PER_WINDOW * CLASS_COUNT`, frames outside and classes inside). **argmax is deliberately not taken here**: softmax, summing per speaker and hysteresis binarization are all left to `pyannote_common`, so both backends share the same decoding.
     pub(crate) fn frame_logits(&self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<f32>>> {
         let input = Tensor::from_slice(packed, (batch_size, 1, WINDOW_SAMPLES), &self.device)?;
         let mut hidden = self.sincnet.forward(&input)?;
@@ -258,7 +254,7 @@ pub struct PyannoteDiarizer {
 }
 
 impl PyannoteDiarizer {
-    /// 只加载分割模型；没有声纹阶段，全局身份退化为 IoU 链式传递。
+    /// Loads only the segmentation model; there is no voiceprint stage, so global identity degrades to chained IoU propagation.
     pub fn load(segmentation: &VerifiedFiles, device: &Device) -> Result<Self> {
         Ok(Self {
             network: SegmentationNetwork::load(segmentation, device)?,
@@ -266,7 +262,7 @@ impl PyannoteDiarizer {
         })
     }
 
-    /// 同时加载 WeSpeaker 声纹模型，启用声纹再识别（推荐路径）。
+    /// Also loads the WeSpeaker voiceprint model, enabling voiceprint re-identification (the recommended path).
     pub fn load_with_embedding(segmentation: &VerifiedFiles, speaker: &VerifiedFiles, device: &Device) -> Result<Self> {
         Ok(Self {
             network: SegmentationNetwork::load(segmentation, device)?,
@@ -280,7 +276,7 @@ impl PyannoteDiarizer {
         options: &PyannoteOptions,
         callbacks: &mut PyannoteCallbacks<'_>,
     ) -> Result<Vec<DiarizedSegment>> {
-        // 两个闭包分别可变借用不同字段，必须先解构 self。
+        // The two closures each mutably borrow different fields, so `self` must be destructured first.
         let Self { network, embedder } = self;
         let mut embed_fn;
         let embed: Option<&mut dyn FnMut(&[f32]) -> Option<Vec<f32>>> = match embedder.as_mut() {
@@ -299,13 +295,12 @@ impl PyannoteDiarizer {
         )
     }
 
-    /// 跨后端对拍入口：一批窗口的原始 powerset logits（帧在外、类在内）。
+    /// Cross-backend comparison entry point: raw powerset logits for a batch of windows (frames outside, classes inside).
     pub fn frame_logits(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<f32>>> {
         self.network.frame_logits(packed, batch_size)
     }
 
-    /// 跨后端对拍入口：逐帧 powerset 胜出类别。**不参与实际解码**，只用于把
-    /// 后端差异定位到网络层。
+    /// Cross-backend comparison entry point: the winning powerset class per frame. **Not used in actual decoding**; it only pinpoints backend differences to the network layer.
     pub fn class_ids(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<u8>>> {
         Ok(self
             .network
@@ -327,8 +322,7 @@ impl SpeakerDiarization for PyannoteDiarizer {
     }
 }
 
-/// 识别的模型包里的说话人区分（`segmentation` + 可选的 `speaker`），与 MLX 后端的 `DiarizerSlot` 同一套规则：加载模型包时
-/// 只核对文件，任务里第一次要用时才加载，任务结束（[`DiarizerSlot::release`]）放掉；加载失败时同一任务不再重试。
+/// Speaker diarization within the recognition model pack (`segmentation` + optional `speaker`), using the same rules as the MLX backend's `DiarizerSlot`: when the model pack is loaded, only the files are checked; the models load on first use within a job and are released when the job ends ([`DiarizerSlot::release`]); if loading fails, the same job does not retry.
 pub struct DiarizerSlot {
     segmentation: Option<VerifiedFiles>,
     speaker: Option<VerifiedFiles>,
@@ -338,7 +332,7 @@ pub struct DiarizerSlot {
 }
 
 impl DiarizerSlot {
-    /// 按清单核对文件：缺文件是 `MODEL_NOT_INSTALLED`（不悄悄退回不区分说话人）。
+    /// Checks the files against the manifest: a missing file is `MODEL_NOT_INSTALLED` (it does not quietly fall back to no speaker diarization).
     pub fn new(bundle: &VerifiedBundle, device: &Device) -> Result<Self, ErrorBody> {
         if let Some(files) = &bundle.segmentation {
             files.require_extension_in("", "safetensors")?;
@@ -377,7 +371,7 @@ impl DiarizerSlot {
         self.loaded.as_mut().map(|diarizer| diarizer as &mut dyn SpeakerDiarization)
     }
 
-    /// 放掉加载了的模型；返回这次是否真的放掉了。
+    /// Releases the loaded model; returns whether it was actually released this time.
     pub fn release(&mut self) -> bool {
         self.failed = false;
         self.loaded.take().is_some()

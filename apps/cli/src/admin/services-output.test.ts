@@ -241,7 +241,7 @@ describe('cuccut web', () => {
     expect(printed[0]).toBe(link.url);
     expect(launched).toEqual([]);
 
-    // --launch：浏览器打开不带代码的登录页，代码只打在终端里。
+    // --launch: the browser opens the login page without the code. The code is printed only in the terminal.
     const launchedLines: string[] = [];
     await webOpen(client, { launch: true, launcher: async (url) => void launched.push(url), print: (line) => launchedLines.push(line) });
     const code = link.url.split('#code=')[1]!;

@@ -1,6 +1,6 @@
-//! 阶段 1 冻结的四种专用配方形状（ADR-M08）。**不要改写这些解析路径**：
-//! `timeline.*@1` / `bcf.*@1` / 转场配方已发布，像素必须逐位不变。
-//! 新配方走 `manifest.rs` 的通用 manifest 形状（设计 §5.4.1）。
+//! Four dedicated recipe shapes frozen in phase 1 (ADR-M08). **Do not rewrite these parse paths**:
+//! `timeline.*@1` / `bcf.*@1` / transition recipes are published, so their pixels must stay bit-for-bit identical.
+//! New recipes use the generic manifest shape in `manifest.rs` (design §5.4.1).
 
 use serde_json::Value;
 
@@ -68,9 +68,8 @@ impl SlotChannels {
     }
 }
 
-/// 配方面向哪类元素的目录（2026-09-08，元素动画目录）。核心求值不读它：
-/// 它只决定 `enter_ids()`（文字目录）与 `element_enter_ids()`（形状/图片/
-/// 视频目录）各自列出哪些行。缺省 `any` = 两张目录都列。
+/// Directory of which element kinds a recipe targets (2026-09-08, element animation directory). Core evaluation does not read it:
+/// it only decides which rows `enter_ids()` (text directory) and `element_enter_ids()` (shape/image/video directory) each list. Default `any` = list in both directories.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecipeSurface {
     #[default]
@@ -98,11 +97,11 @@ impl RecipeSurface {
     }
 }
 
-/// `dx` / `dy` 的长度基准（配方 `basis` 字段）。冻结目录全部是
-/// `canvasShortEdge`（pose 的 dx/dy 是画布短边比例）；元素动画配方是
-/// `selfWidth` / `selfHeight`（x:1 = 一个元素宽）。lowering 用
-/// [`crate::lower_timeline::ElementExtent`] 把后者换算成短边比例，调用方没给
-/// 元素尺寸时按 1 短边近似（见 `lower_timeline` 文档）。
+/// Length basis for `dx` / `dy` (recipe `basis` field). All frozen directories use
+/// `canvasShortEdge` (pose dx/dy are proportions of the canvas short edge); element animation recipes use
+/// `selfWidth` / `selfHeight` (x:1 = one element width). Lowering uses
+/// [`crate::lower_timeline::ElementExtent`] to convert the latter into short-edge proportions. When the caller gives no
+/// element size, it is approximated as 1 short edge (see the `lower_timeline` docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TranslateBasis {
     pub dx: LengthBasis,
@@ -118,9 +117,9 @@ impl Default for TranslateBasis {
     }
 }
 
-/// 多关键帧配方（元素动画）的一帧：`at` 是槽时长内的 0…1，
-/// `curve` 是**到达本帧**那一段的缓动（首帧的 curve 无用），
-/// `channels` 没写的通道 = 本帧取 identity。
+/// One frame of a multi-keyframe recipe (element animation): `at` is 0…1 within the slot duration,
+/// `curve` is the easing for the segment **arriving at this frame** (the curve on the first frame is unused),
+/// channels not written = identity for this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SlotKeyframe {
     pub at: f64,
@@ -255,18 +254,17 @@ pub struct SlotRecipe {
     pub from: SlotChannels,
     pub parts: Option<StaggerPlan>,
     pub determinism: String,
-    /// **表面目录**开关（ADR-M09），不是内核门。核心求值（`lower_timeline`）
-    /// 从不读它，`ccut render` 照样画得出 `available: false` 的配方；它只回答
-    /// "GPUI/Mac 的动画面板里能不能选到这一行"。`wipe` 在两个客户端上都还没有
-    /// 元素包围盒可裁，所以两处目录都藏着它。
+    /// **Surface directory** switch (ADR-M09), not a kernel gate. Core evaluation (`lower_timeline`)
+    /// never reads it; `ccut render` still renders recipes with `available: false`. It only answers
+    /// "can this row be selected in the GPUI/Mac animation panel". `wipe` has no element bounding box to clip against on either client yet, so it is hidden from both directories.
     pub available: bool,
     pub manifest_hash: u64,
-    /// 多关键帧形态（2026-09-08）。非空时 `from` 可为空、`curve` 不参与插值、
-    /// `parts` 必须缺席；每通道按相邻关键帧逐段 tween。
+    /// Multi-keyframe form (2026-09-08). When non-empty, `from` may be empty, `curve` does not take part in interpolation,
+    /// and `parts` must be absent. Each channel tweens segment by segment between adjacent keyframes.
     pub keyframes: Vec<SlotKeyframe>,
     pub surface: RecipeSurface,
     pub basis: TranslateBasis,
-    /// `reveal` 的扫掠边（`left` / `right` / `top` / `bottom`），槽没给 edge 时用。
+    /// Sweep edge for `reveal` (`left` / `right` / `top` / `bottom`), used when the slot gives no edge.
     pub edge: Option<String>,
 }
 
@@ -286,8 +284,8 @@ pub struct LoopRecipe {
     pub determinism: String,
     pub available: bool,
     pub manifest_hash: u64,
-    /// 多关键帧循环（2026-09-08）：`at` 是周期内 0…1，逐段插值、包络恒 1；
-    /// 非空时 `amplitudes` / `wave` 不参与求值。
+    /// Multi-keyframe loop (2026-09-08): `at` is 0…1 within the period, interpolated segment by segment, envelope always 1.
+    /// When non-empty, `amplitudes` / `wave` do not take part in evaluation.
     pub keyframes: Vec<SlotKeyframe>,
     pub surface: RecipeSurface,
     pub basis: TranslateBasis,
@@ -299,14 +297,14 @@ pub struct BcfPreset {
     pub version: u32,
     pub order: usize,
     pub emits_params_meta: bool,
-    /// `{params?, keyframes}` —— 与 `resolve.rs::BUILTIN_PRESETS` 的内层对象逐字相同。
+    /// `{params?, keyframes}`, identical word for word to the inner object of `resolve.rs::BUILTIN_PRESETS`.
     pub definition: Value,
     pub manifest_hash: u64,
 }
 
-/// 转场配方的**一条**属性通道（设计 §6.4）。
+/// **One** attribute channel of a transition recipe (design §6.4).
 ///
-/// 两个关键帧固定落在 `t0 ± half`，只有第二帧带 ease——规范 §9 的双通道语义。
+/// The two keyframes are fixed at `t0 ± half`; only the second frame carries an ease. This is the dual-channel semantics of spec §9.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransitionChannel {
     pub prop: String,
@@ -315,21 +313,17 @@ pub struct TransitionChannel {
     pub to: RelativeLength,
 }
 
-/// 一侧（out / in）的通道表。`cut` 两侧都是空表。
+/// Channel table for one side (out / in). `cut` has empty tables on both sides.
 ///
-/// 阶段 1 发布的五条配方每侧只有一条通道，manifest 里写的是
-/// `{"prop": …, "ease": …, "out": {"from": …, "to": …}}` 的**单通道糖**；
-/// 阶段 5 的 `zoomThrough` / `whipPan` 每侧两条、`wipeLeft/Right` 两侧的
-/// `prop` 还不同，因此 manifest 允许写 `{"channels": [...]}`。两种写法解析
-/// 成同一个结构，`bcf.*.json` 的五份旧文件一字未改。
+/// Each side of the five recipes published in phase 1 has only one channel, written in the manifest as the **single-channel sugar** `{"prop": …, "ease": …, "out": {"from": …, "to": …}}`. Phase 5's `zoomThrough` / `whipPan` have two channels per side, and the `prop` of `wipeLeft/Right` differs between the two sides, so the manifest allows `{"channels": [...]}`. Both forms parse into the same structure, and the five old `bcf.*.json` files were not changed by a single character.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransitionRecipe {
     pub id: String,
     pub version: u32,
     pub order: usize,
-    /// 单通道糖的默认 `prop`（写了 `channels` 时为 `None`）。
+    /// Default `prop` of the single-channel sugar (`None` when `channels` is written).
     pub prop: Option<String>,
-    /// 通道没写 `ease` 时的默认 ease。
+    /// Default ease when a channel does not write `ease`.
     pub ease: Option<String>,
     pub out: Vec<TransitionChannel>,
     pub r#in: Vec<TransitionChannel>,
@@ -341,17 +335,16 @@ impl TransitionRecipe {
         if is_out { &self.out } else { &self.r#in }
     }
 
-    /// 这条配方一个通道都不产（`cut`）。
+    /// This recipe produces no channels at all (`cut`).
     pub fn is_cut(&self) -> bool {
         self.out.is_empty() && self.r#in.is_empty()
     }
 }
 
-/// 字幕入场姿态配方的一条通道（`transition.caption.*@1`）。
+/// One channel of a caption entry-pose recipe (`transition.caption.*@1`).
 ///
-/// 取值 = `factor × scaleBy × (a + b·e)`，`e` 是曲线取值。**求值顺序是契约**：
-/// `magic-fade` 的 blur 原式是 `6.0 × canvasScale × (1 − e)`，先乘 canvasScale
-/// 再乘括号；写成 `(6 − 6e) × canvasScale` 就是另一串浮点、另一批字幕像素。
+/// Value = `factor × scaleBy × (a + b·e)`, where `e` is the curve value. **Evaluation order is part of the contract**:
+/// the original `magic-fade` blur is `6.0 × canvasScale × (1 − e)`, so multiply by canvasScale first, then by the parenthesized term. Writing it as `(6 − 6e) × canvasScale` is a different floating-point sequence and produces different caption pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaptionChannel {
     /// `opacity` / `scale` / `scaleX` / `scaleY` / `blur`。
@@ -359,29 +352,27 @@ pub struct CaptionChannel {
     pub factor: f64,
     pub a: f64,
     pub b: f64,
-    /// `none`（乘 1）或 `canvasScale`（乘调用方给的画布缩放）。
+    /// `none` (multiply by 1) or `canvasScale` (multiply by the canvas scale supplied by the caller).
     pub scale_by: String,
     pub clamp01: bool,
     pub clamp_min: Option<f64>,
 }
 
-/// 字幕入场姿态配方（阶段 5 收编的 `magic-fade` / `magic-pop` / `magic-flip`）。
+/// Caption entry-pose recipes (`magic-fade` / `magic-pop` / `magic-flip`, absorbed in phase 5).
 ///
-/// 与 [`TransitionRecipe`] 不是一类东西：它不产生 BCF 通道，而是**按 clip 的
-/// 显示起点给一条相位**，由 `studio_export` 的字幕合成直接消费。曲线求解器与
-/// 相位量化都写进 manifest，因为两者都直接决定字幕像素。
+/// Not the same kind of thing as [`TransitionRecipe`]: it does not produce BCF channels. Instead it **assigns a phase from the clip's display start**, consumed directly by caption compositing in `studio_export`. The curve solver and phase quantization are both written into the manifest, because both directly determine caption pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaptionTransitionRecipe {
     pub id: String,
     pub version: u32,
     pub order: usize,
-    /// Studio / Mac / GPUI 里那个历史 id（`magic-fade` …）。持久化写的是它。
+    /// The historical id used in Studio / Mac / GPUI (`magic-fade` …). Persistence writes this id.
     pub legacy_id: String,
     pub curve: CurveSpec,
-    /// 曲线求解器的名字。闭集：`newton6-bisect10-1e-6`（历史实现）。
+    /// Name of the curve solver. Closed set: `newton6-bisect10-1e-6` (historical implementation).
     pub solver: String,
-    /// 相位量化规则。闭集：`round-both-ends` ——
-    /// `((t×fps).round()/fps − (start×fps).round()/fps) / dur`。
+    /// Phase quantization rule. Closed set: `round-both-ends`:
+    /// `((t×fps).round()/fps − (start×fps).round()/fps) / dur`.
     pub time_quantization: String,
     pub channels: Vec<CaptionChannel>,
     pub determinism: String,
@@ -389,8 +380,7 @@ pub struct CaptionTransitionRecipe {
 }
 
 impl CaptionTransitionRecipe {
-    /// 相位。**两端都按 fps 取整**（`round-both-ends`）：字幕姿态跟的是帧号，
-    /// 不是连续时间，否则同一帧在不同 seek 路径下会给出不同的姿态。
+    /// Phase. **Both ends are rounded to fps** (`round-both-ends`): caption poses follow frame numbers, not continuous time. Otherwise the same frame would produce different poses under different seek paths.
     pub fn phase(&self, time: f64, display_start: f64, duration: f64, fps: f64) -> f64 {
         let fps = fps.max(1.0);
         match self.time_quantization.as_str() {
@@ -401,8 +391,7 @@ impl CaptionTransitionRecipe {
         }
     }
 
-    /// 曲线取值。求解器按 manifest 的 `solver` 选——两条实现最大差 2.2e-6，
-    /// 落到 u8 上就是像素差（见 [`crate::curve::cubic_bezier_caption`]）。
+    /// Curve value. The solver is chosen by the manifest's `solver`. The two implementations differ by at most 2.2e-6, which becomes a pixel difference once quantized to u8 (see [`crate::curve::cubic_bezier_caption`]).
     pub fn eased(&self, phase: f64) -> f64 {
         let progress = phase.clamp(0.0, 1.0);
         match (&self.curve, self.solver.as_str()) {
@@ -413,7 +402,7 @@ impl CaptionTransitionRecipe {
         }
     }
 
-    /// 一条通道在给定曲线取值下的值。
+    /// Value of one channel at the given curve value.
     pub fn channel_value(&self, channel: &CaptionChannel, eased: f64, canvas_scale: f64) -> f64 {
         let scale = match channel.scale_by.as_str() {
             "canvasScale" => canvas_scale,
@@ -687,8 +676,8 @@ pub(crate) fn parse_loop(
     })
 }
 
-/// 多关键帧循环：没有波形、seed 与包络，`amplitudes` 可缺席（缺席 = 空表）。
-/// 关键帧不得驱动 blur / reveal（与波形循环同一条禁令）。
+/// Multi-keyframe loop: no waveform, seed or envelope; `amplitudes` may be absent (absent = empty table).
+/// Keyframes must not drive blur / reveal (same prohibition as waveform loops).
 fn parse_keyframe_loop(
     file: &str,
     doc: &Value,
@@ -748,8 +737,8 @@ pub(crate) fn parse_bcf(
     })
 }
 
-/// 一侧的通道表。接受两种写法（见 [`TransitionRecipe`]）：
-/// 单通道糖 `{"from": …, "to": …}`，或 `{"channels": [{prop, ease?, from, to}]}`。
+/// Channel table for one side. Accepts two forms (see [`TransitionRecipe`]):
+/// the single-channel sugar `{"from": …, "to": …}`, or `{"channels": [{prop, ease?, from, to}]}`.
 pub(crate) fn parse_side(
     file: &str,
     doc: Option<&Value>,

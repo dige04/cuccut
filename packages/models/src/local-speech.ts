@@ -22,17 +22,15 @@ import { BUILTIN_VOICES, builtinVoice, builtinVoiceFile, defaultBuiltinVoice, ty
 import type { JobInput, SynthesizeOptions, SynthesizeVoice } from './worker-contract.ts';
 
 /**
- * 本地语音合成（架构设计 §6.1、§6.3）：把 `synthesize` 模型包描述成 `local` Provider 的 `synthesizeSpeech` 模型，
- * 在提交时决定声音方式（不换成别的声音），执行时换成 Worker 的 `job.run` 参数（Model Worker 协议规范 §2.5.2）。
+ * Local speech synthesis (architecture design §6.1, §6.3): describes a `synthesize` model pack as the `synthesizeSpeech` model of the `local` provider. The voice mode is decided at submission (it is not swapped for another voice), and is converted at execution time into the Worker's `job.run` arguments (Model Worker protocol spec §2.5.2).
  */
 
 /**
- * 本地模型单次请求的文本上限（按码点计）。引擎内部按句切分，这个上限只挡住一次任务里过长的文本，超过时在提交时拒绝，
- * 不截断：长文由调用方分段提交。
+ * Per-request text limit for local models (counted in code points). The engine splits text into sentences internally. This limit only blocks text that is too long for one task, and it is rejected at submission rather than truncated: the caller splits long text into segments.
  */
 export const LOCAL_SPEECH_MAX_CHARS = 2000;
 
-/** `synthesize` 模型包的 `synthesizeSpeech` 模型描述。 */
+/** The `synthesizeSpeech` model description for a `synthesize` model pack. */
 export function localSpeechModelInfo(def: BundleDefinition, status: ModelBundleStatus, usable: boolean): SpeechModelInfo {
   const profile = def.speech!;
   const builtin = profile.presets === 'builtin-reference' || profile.presets === 'builtin-description';
@@ -77,15 +75,13 @@ export function localSpeechModelInfo(def: BundleDefinition, status: ModelBundleS
   };
 }
 
-/** candle 的模型包在 CPU 上跑（Worker 没有报告 CUDA）。 */
+/** candle model packs run on CPU (the Worker did not report CUDA). */
 function onCpu(def: BundleDefinition, status: ModelBundleStatus): boolean {
   return def.backend === 'candle' && (status.device ?? def.device) === 'cpu';
 }
 
 /**
- * candle 在 CPU 上合成有多慢，按模型（`bundleId` 的 `@` 前一段）。数字是本机（Apple M 系列、16 GiB，`--release`）的实测
- * （架构设计 §6.5）：Qwen3-TTS 0.6B 2.9 秒用 162 秒、5.0 秒用 268 秒；IndexTTS 2.5 每句 3.4–4.9 秒用 420–625 秒；
- * OmniVoice 22 秒用 646 秒；GPT-SoVITS 9 秒用 56 秒（含加载）。没有实测的照实写「这只没有实测」，不编数字。
+ * How slow candle synthesis is on CPU, per model (the part before `@` in `bundleId`). The numbers are measured on this machine (Apple M-series, 16 GiB, `--release`) (architecture design §6.5): Qwen3-TTS 0.6B took 162 s for 2.9 s of audio and 268 s for 5.0 s; IndexTTS 2.5 took 420–625 s for 3.4–4.9 s per sentence; OmniVoice took 646 s for 22 s; GPT-SoVITS took 56 s for 9 s (including loading). Where there is no measurement, state plainly "this has not been measured" and do not make up numbers.
  */
 const CPU_PACE: Record<string, () => Localized> = {
   'qwen3-tts-0.6b-base': M.paceQwen06,
@@ -101,20 +97,19 @@ const CPU_PACE: Record<string, () => Localized> = {
 };
 
 /**
- * 耗时的提示（与文生图的同一个 `notes`）：candle 合成在 CPU 上只用到一两个核（与旧版相同），比实时慢几倍到上百倍，照实说。
- * CUDA 没有实测；Worker 报告 CUDA 时不写这句，与 MLX 的同一只模型一样。
+ * Slowness notice (same `notes` as text-to-image): candle synthesis on CPU uses only one or two cores (same as the older version), running several to over a hundred times slower than real time. State this plainly. CUDA has not been measured. When the Worker reports CUDA, this sentence is not written, same as for the same model on MLX.
  */
-// `notes` 没有引用字段：按生成时的语言存文本。
+// `notes` has no reference field: the text is stored in the language in use at generation time.
 function cpuNote(def: BundleDefinition): string {
   const pace = (CPU_PACE[def.bundleId.split('@')[0]!] ?? M.paceDefault)();
   return M.cpuNote({ pace }).text;
 }
 
 /**
- * 提交时决定的声音（还没读文件）：
- * - `preset`：模型的说话人或内置音色（`builtin` 不为 null）；
- * - `clone`：参考录音来自请求的文件，或音色库条目（`library:<id>`，由任务管理器读出固定版本的录音与原文）；
- * - `describe`：一句描述。
+ * The voice decided at submission (the reference audio has not been read yet):
+ * - `preset`: the model's speaker or built-in voice (`builtin` is not null);
+ * - `clone`: the reference recording comes from a file in the request, or from a voice library entry (`library:<id>`; the task manager reads its fixed-version recording and transcript);
+ * - `describe`: a one-sentence description.
  */
 export type LocalVoicePlan =
   | { mode: 'preset'; voice: string; builtin: BuiltinVoice | null }
@@ -122,7 +117,7 @@ export type LocalVoicePlan =
   | { mode: 'clone'; source: 'library'; libraryId: string }
   | { mode: 'describe'; description: string };
 
-/** 按模型的描述决定声音方式；模型不支持请求的方式时拒绝，不换成别的声音。 */
+/** Decide the voice mode from the model's description. When the model does not support the requested mode, reject rather than substitute a different voice. */
 export function planLocalVoice(choice: ModelChoice<'synthesizeSpeech'>, request: SynthesizeSpeechRequest): LocalVoicePlan {
   const model = choice.model;
   const local = model.local!;
@@ -176,7 +171,7 @@ export function planLocalVoice(choice: ModelChoice<'synthesizeSpeech'>, request:
     }
     return { mode: 'preset', voice: listed.voiceId, builtin: listed.source === 'builtin' ? builtinVoice(listed.voiceId) : null };
   }
-  // 不指定声音：内置音色按请求的语言挑（没有那种语言时取第一只），模型的说话人用 `defaultVoice`。
+  // No voice specified: a built-in voice is chosen for the requested language (if there is none in that language, the first one); the model's speaker uses `defaultVoice`.
   if (local.builtinVoices) {
     const voice = defaultBuiltinVoice(request.language ?? null);
     return { mode: 'preset', voice: voice.id, builtin: voice };
@@ -185,11 +180,11 @@ export function planLocalVoice(choice: ModelChoice<'synthesizeSpeech'>, request:
   return { mode: 'preset', voice: model.defaultVoice, builtin: null };
 }
 
-/** 封闭词表：逗号分隔（半角或全角），每项必须在词表里（英文不分大小写），每类至多一项。 */
+/** Closed vocabulary: comma-separated (half-width or full-width), each item must be in the vocabulary (English is case-insensitive), at most one per category. */
 function checkDescription(description: string, spec: SpeechVoiceDescription | null, modelId: string, where: Record<string, string>): void {
   if (!spec || spec.kind === 'free') return;
   const seen = new Set<string>();
-  // i18n-ignore: 解析描述用的全角逗号
+  // i18n-ignore: full-width comma used in the parse description
   for (const raw of description.split(/[,，]/)) {
     const term = raw.trim().toLowerCase();
     if (!term) continue;
@@ -212,14 +207,14 @@ function checkDescription(description: string, spec: SpeechVoiceDescription | nu
   if (seen.size === 0) throw new RpcError('invalid-request', M.descriptionEmpty(), where);
 }
 
-/** 要冻结的参考录音：请求给出的文件（`path`），或内置音色随应用分发的录音（`asset`；`path` 在用时求，找不到模型数据目录时 null）。 */
+/** Reference recording to freeze: a file given in the request (`path`), or a recording shipped with the app for a built-in voice (`asset`; `path` is resolved at use time, null when the model data directory cannot be found). */
 export type ReferenceToFreeze =
   | { source: 'file'; path: string; transcript: string | null }
   | { source: 'builtin'; voiceId: string; asset: string; path: string | null; transcript: string | null };
 
 /**
- * 内置音色要不要读参考录音：克隆模型的内置音色是一段随应用分发的录音（`builtin`），其余情况不用文件。
- * 返回要冻结的文件（任务管理器读出摘要）。不读文件、不抛错。
+ * Whether a built-in voice needs to read a reference recording: a cloning model's built-in voice is a recording shipped with the app (`builtin`); otherwise no file is used.
+ * Returns the file to freeze (the task manager reads its summary). Does not read the file and does not throw.
  */
 export function builtinReferenceFile(
   model: SpeechModelInfo,
@@ -230,17 +225,16 @@ export function builtinReferenceFile(
   return { source: 'builtin', voiceId: voice.id, asset: voice.asset, path: builtinVoiceFile(voice), transcript: voice.transcript };
 }
 
-/** 内置音色的录音在错误里叫什么（给人看）：每次读都按当前语言生成，嵌进句子时带着引用。 */
+/** What a built-in voice's recording is called in errors (for people to read): regenerated in the current language on each read, and carried with its reference when embedded in a sentence. */
 export const BUILTIN_REFERENCE_LABEL: Localized = live(() => M.builtinReferenceLabel());
 
-/** 请求给出的参考录音读不出来（`INPUT_UNREADABLE`）：句子里只说文件名，完整路径在 `details.file`。 */
+/** The reference recording given in the request cannot be read (`INPUT_UNREADABLE`): the sentence names only the file name, and the full path is in `details.file`. */
 export function referenceUnreadableMessage(file: string): Localized {
   return M.referenceUnreadable({ name: path.basename(file) });
 }
 
 /**
- * 参考录音：提交时读出摘要与长度。读不出（不存在、不是文件）时，请求给出的文件是 `invalid-request`（`INPUT_UNREADABLE`），
- * 内置音色的录音是 `conflict`（`APP_FILE_MISSING`，安装不完整）。
+ * Reference recording: at submission, its digest and length are read. If it cannot be read (does not exist, is not a file), a request-supplied file is `invalid-request` (`INPUT_UNREADABLE`), and a built-in voice's recording is `conflict` (`APP_FILE_MISSING`, incomplete installation).
  */
 export async function freezeReferenceFile(reference: ReferenceToFreeze): Promise<FrozenSpeechReference> {
   const { source, path: file, transcript } = reference;
@@ -260,7 +254,7 @@ export async function freezeReferenceFile(reference: ReferenceToFreeze): Promise
   return { source, path: file, sha256: `sha256:${hex}`, byteLength: stat.size, transcript };
 }
 
-/** 冻结参数里的 `voice`：预设是音色 ID；克隆与描述没有音色 ID，记下来源（音色库条目照原样）。 */
+/** `voice` in frozen parameters: for presets it is the voice ID. Cloning and description have no voice ID, so record the source (library entries as-is). */
 export function frozenVoiceOf(plan: LocalVoicePlan): string {
   switch (plan.mode) {
     case 'preset':
@@ -273,8 +267,7 @@ export function frozenVoiceOf(plan: LocalVoicePlan): string {
 }
 
 /**
- * 冻结的参数 → Worker 的 `job.run`（`synthesize`）。有参考录音就是 `clone`（内置音色也是），有描述就是 `describe`，
- * 其余是模型的说话人。参考录音的摘要是提交时读出的；执行前由调用方再核对一次文件。
+ * Frozen parameters → Worker's `job.run` (`synthesize`). With a reference recording it is `clone` (built-in voices too); with a description it is `describe`; otherwise it is the model's speaker. The reference recording's digest was read at submission; before execution, the caller checks the file again.
  */
 export function synthesizeRunOf(parameters: {
   text: string;

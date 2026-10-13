@@ -1,11 +1,11 @@
-//! 最小 WAV 写出 / 读入（16-bit PCM）。合成产物与随包录音走这里。单声道是常态；
-//! 多声道见 [`write_wav_pcm16_channels`]。
+//! Minimal WAV writing / reading (16-bit PCM). Synthesis output and bundled recordings go through here. Mono is the norm;
+//! for multichannel see [`write_wav_pcm16_channels`].
 
 use anyhow::{Context, Result, bail};
 use std::io::Write;
 use std::path::Path;
 
-/// 把 f32 单声道 PCM 写成 16-bit PCM WAV。超出 [-1, 1] 的样本会被裁剪。
+/// Writes f32 mono PCM as a 16-bit PCM WAV. Samples outside [-1, 1] are clipped.
 pub fn write_wav_pcm16(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()> {
     let bytes = encode_wav_pcm16(samples, sample_rate);
     let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
@@ -14,12 +14,12 @@ pub fn write_wav_pcm16(path: &Path, samples: &[f32], sample_rate: u32) -> Result
     Ok(())
 }
 
-/// 内存中编码，供测试与流式写出复用。
+/// Encodes in memory, for reuse by tests and streaming output.
 pub fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     encode_wav_pcm16_channels(std::slice::from_ref(&samples), sample_rate)
 }
 
-/// 按声道平面写多声道 16-bit PCM WAV（交错落盘）。各声道长度不一时按最短的截。
+/// Writes a multichannel 16-bit PCM WAV from per-channel planes (interleaved on disk). If channel lengths differ, they are truncated to the shortest.
 pub fn write_wav_pcm16_channels<S: AsRef<[f32]>>(path: &Path, channels: &[S], sample_rate: u32) -> Result<()> {
     let bytes = encode_wav_pcm16_channels(channels, sample_rate);
     let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
@@ -28,7 +28,7 @@ pub fn write_wav_pcm16_channels<S: AsRef<[f32]>>(path: &Path, channels: &[S], sa
     Ok(())
 }
 
-/// [`write_wav_pcm16_channels`] 的内存版；单声道与 [`encode_wav_pcm16`] 逐字节相同。
+/// In-memory version of [`write_wav_pcm16_channels`]; for mono, the output is byte-identical to [`encode_wav_pcm16`].
 pub fn encode_wav_pcm16_channels<S: AsRef<[f32]>>(channels: &[S], sample_rate: u32) -> Vec<u8> {
     let count = channels.len().max(1) as u16;
     let frames = channels.iter().map(|channel| channel.as_ref().len()).min().unwrap_or(0);
@@ -58,15 +58,15 @@ pub fn encode_wav_pcm16_channels<S: AsRef<[f32]>>(channels: &[S], sample_rate: u
     out
 }
 
-/// 读取本 crate 写出的 16-bit PCM 单声道 WAV（测试与自检用；任意媒体请走
-/// [`crate::audio::decode_mono`]）。
+/// Reads a 16-bit PCM mono WAV written by this crate (for tests and self-checks; for arbitrary media use
+/// [`crate::audio::decode_mono`]).
 pub fn read_wav_pcm16(path: &Path) -> Result<(Vec<f32>, u32)> {
     let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
     decode_wav_pcm16(&bytes)
 }
 
-/// 只读头：返回本 crate 写出的 16-bit PCM WAV 的 (帧数, 采样率)，不解全部样本。
-/// 量已有产物的时长时用它——时长以**盘上的 WAV 为准**，不信任任何侧车记录。
+/// Header only: returns the (frame count, sample rate) of a 16-bit PCM WAV written by this crate, without decoding all samples.
+/// To measure the duration of an existing output, use this: the duration follows **the WAV on disk**; no sidecar record is trusted.
 pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
     use std::io::Read;
 
@@ -102,8 +102,8 @@ pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
                 }
             }
             b"data" => {
-                // 声明的 data 长度可能比实际文件大（写到一半被打断）：以文件真实
-                // 剩余字节为准，宁可少报也不虚报。
+                // The declared data length may be larger than the actual file (a write that was interrupted partway). Use the file's real
+                // remaining bytes; it is better to under-report than to over-report.
                 data_bytes = Some(size.min(file_len.saturating_sub(body_start as u64)));
                 break;
             }
@@ -118,7 +118,7 @@ pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
     Ok((data_bytes / (2 * u64::from(channels)), sample_rate))
 }
 
-/// 读入并混成单声道（多声道取平均）。
+/// Reads and mixes down to mono (multichannel is averaged).
 pub fn decode_wav_pcm16(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
     let (channels, rate) = decode_wav_pcm16_channels(bytes)?;
     let count = channels.len() as f32;
@@ -131,13 +131,13 @@ pub fn decode_wav_pcm16(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
     Ok((samples, rate))
 }
 
-/// 读入并按声道平面返回（不混缩）。
+/// Reads and returns per-channel planes (no downmix).
 pub fn read_wav_pcm16_channels(path: &Path) -> Result<(Vec<Vec<f32>>, u32)> {
     let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
     decode_wav_pcm16_channels(&bytes)
 }
 
-/// [`read_wav_pcm16_channels`] 的内存版。
+/// In-memory version of [`read_wav_pcm16_channels`].
 pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         bail!("不是 RIFF/WAVE 文件");
@@ -186,7 +186,7 @@ pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
     Ok((planes, sample_rate))
 }
 
-/// 只读头：声道数。
+/// Header only: channel count.
 pub fn probe_wav_channels(path: &Path) -> Result<u16> {
     let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
     let head = &bytes[..bytes.len().min(4096)];
@@ -229,7 +229,7 @@ mod tests {
         let samples: Vec<f32> = (0..1_200).map(|i| (i as f32 * 0.01).sin() * 0.3).collect();
         write_wav_pcm16(&path, &samples, 24_000).unwrap();
         assert_eq!(probe_wav_pcm16(&path).unwrap(), (1_200, 24_000));
-        // 截断的产物只报实际写下的帧数，不照抄头里的声明长度。
+        // A truncated output reports only the frames actually written, not the length declared in the header.
         let mut bytes = std::fs::read(&path).unwrap();
         bytes.truncate(44 + 800 * 2);
         std::fs::write(&path, &bytes).unwrap();
@@ -248,7 +248,7 @@ mod tests {
         for (a, b) in right.iter().zip(&planes[1]) {
             assert!((a - b).abs() < 1.0 / 32000.0);
         }
-        // 混缩读取取平均；单声道编码与旧函数逐字节相同。
+        // Downmixing on read averages the channels; mono encoding is byte-identical to the old function.
         let (mono, _) = decode_wav_pcm16(&bytes).unwrap();
         assert!((mono[10] - (left[10] + right[10]) / 2.0).abs() < 1.0 / 16000.0);
         assert_eq!(encode_wav_pcm16_channels(&[left.clone()], 48_000), encode_wav_pcm16(&left, 48_000));

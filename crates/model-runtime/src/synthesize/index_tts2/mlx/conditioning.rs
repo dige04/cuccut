@@ -1,16 +1,16 @@
-//! 参考音频条件（对照官方 `infer_v2.py` / `infer_v2_5.py` 的 `infer()`）。
+//! Reference audio conditioning (corresponds to `infer()` in the official `infer_v2.py` / `infer_v2_5.py`).
 //!
-//! 一次合成前，从音色参考（与可选的情感参考）音频算出 GPT / S2Mel 需要的全部
-//! 条件：w2v-BERT 第 17 层隐状态（音色 / 情感）、语义码本量化嵌入、提示梅尔谱、
-//! 长度规整后的提示条件、CAM++ 风格向量，以及显式 8 维情感向量（可选）。
+//! Before a synthesis, compute from the voice reference (and the optional emotion reference) audio all the conditioning that GPT / S2Mel needs:
+//! the layer-17 hidden states of w2v-BERT (voice / emotion), semantic codebook quantized embeddings, prompt mel spectrogram, length-normalized prompt conditioning,
+//! the CAM++ style vector, and the optional explicit 8-dimensional emotion vector.
 //!
-//! 音频读法照官方：音色参考按 22050 Hz 读入并裁到 15 秒（`librosa.load` 缺省；按原生
-//! 采样率解码后用拟合 soxr_hq 的 [`dsp::librosa_resample`] 重采样），梅尔谱用它；
-//! w2v-BERT 与 CAM++ 用它经 [`dsp::torchaudio_resample`] 降到 16 kHz 的版本。情感参考
-//! （没有时就是音色参考文件本身）另按 16 kHz 读入、单独过一遍 w2v-BERT。
-//! 显式情感向量给出时不用情感参考音频。
+//! Audio is read as in the official code: the voice reference is loaded at 22050 Hz and trimmed to 15 seconds (the `librosa.load` default; decoded at its native
+//! sample rate, then resampled with [`dsp::librosa_resample`], which is fitted to soxr_hq); the mel spectrogram uses this. w2v-BERT and CAM++ use a version
+//! downsampled to 16 kHz via [`dsp::torchaudio_resample`]. The emotion reference (when absent, it is the voice reference file itself) is loaded separately at 16 kHz
+//! and passed through w2v-BERT on its own.
+//! When an explicit emotion vector is given, the emotion reference audio is not used.
 //!
-//! 参考音频是 [`ReferenceAudio`]：调用方给的文件，或内置音色的随包录音（在内存里解码，不落盘）。
+//! The reference audio is a [`ReferenceAudio`]: either a file supplied by the caller, or a built-in voice's bundled recording (decoded in memory, never written to disk).
 
 use super::campplus::CampPlus;
 use super::s2mel::S2Mel;
@@ -26,47 +26,46 @@ use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-/// 参考音频最长取 15 秒（官方 `_load_and_cut_audio(…, 15)`）。
+/// Reference audio is capped at 15 seconds (official `_load_and_cut_audio(…, 15)`).
 pub const MAX_REFERENCE_SECONDS: usize = 15;
 
-/// 一次合成共用的参考条件。音频推出的部分按 [`ConditioningKey`] 跨合成缓存
-/// （[`ConditioningCache`]），`explicit_emotion` 随请求现算。
+/// Reference conditioning shared by one synthesis. The parts derived from audio are cached across syntheses by [`ConditioningKey`]
+/// ([`ConditioningCache`]); `explicit_emotion` is computed per request.
 #[derive(Clone)]
 pub struct ReferenceConditioning {
-    /// 音色参考的 w2v-BERT 隐状态 `[1, T, 1024]`（f32），官方的 `spk_cond_emb`。
+    /// Voice reference w2v-BERT hidden states `[1, T, 1024]` (f32), the official `spk_cond_emb`.
     pub speaker_hidden: Array,
-    /// 情感参考的隐状态 `[1, T', 1024]`，官方的 `emo_cond_emb`（16 kHz 直读，与音色
-    /// 参考同一文件时也单独算）。
+    /// Emotion reference hidden states `[1, T', 1024]`, the official `emo_cond_emb` (read directly at 16 kHz; computed separately even when it is the same file as the voice reference).
     pub emotion_hidden: Array,
-    /// 提示梅尔谱 `[1, 80, Tp]`。
+    /// Prompt mel spectrogram `[1, 80, Tp]`.
     pub prompt_mel: Array,
-    /// 长度规整后的提示条件 `[1, Tp, 512]`。
+    /// Length-normalized prompt conditioning `[1, Tp, 512]`.
     pub prompt_condition: Array,
-    /// CAM++ 风格向量 `[1, 192]`。
+    /// CAM++ style vector `[1, 192]`.
     pub style: Array,
-    /// 显式情感向量 `[1, 1280]` 与其权重和（给了 `EmotionControl` 时才有）。
+    /// Explicit emotion vector `[1, 1280]` and its weight sum (present only when an `EmotionControl` is given).
     pub explicit_emotion: Option<(Array, f32)>,
 }
 
-/// 计算条件所需的模型与统计量（由引擎持有，按引用借出）。
+/// Models and statistics needed to compute the conditioning (held by the engine, borrowed by reference).
 pub struct ConditioningModels<'a> {
     pub config: &'a RuntimeConfig,
     pub w2v_bert: &'a Wav2Vec2Bert,
-    /// MaskGCT 语义码本（2.0）；IndexTTS 2.5 为 `None`，提示条件直接由隐状态规整。
+    /// MaskGCT semantic codebook (2.0); `None` for IndexTTS 2.5, where the prompt conditioning is normalized directly from the hidden states.
     pub semantic_codec: Option<&'a SemanticCodec>,
     pub campplus: &'a CampPlus,
     pub s2mel: &'a S2Mel,
-    /// w2v-BERT 隐状态统计量 `[1024]`（host f32）。
+    /// w2v-BERT hidden-state statistics `[1024]` (host f32).
     pub w2v_mean: &'a [f32],
     pub w2v_var: &'a [f32],
-    /// `feat1.safetensors` 的 `[73, 192]` 行主序数据。
+    /// Row-major data of `feat1.safetensors`, `[73, 192]`.
     pub speaker_rows: &'a [f32],
-    /// `feat2.safetensors` 的 `[73, 1280]` 行主序数据。
+    /// Row-major data of `feat2.safetensors`, `[73, 1280]`.
     pub emotion_rows: &'a [f32],
 }
 
-/// 显式情感向量 `[1, 1280]` 与其权重和；没给 `control` 时为 `None`。只依赖风格向量与
-/// 两张特征表，缓存命中时照样现算。
+/// Explicit emotion vector `[1, 1280]` and its weight sum; `None` when no `control` is given. Depends only on the style vector and the two feature tables,
+/// so it is still computed on a cache hit.
 pub fn explicit_emotion(
     config: &RuntimeConfig,
     speaker_rows: &[f32],
@@ -91,8 +90,8 @@ pub fn explicit_emotion(
     Ok(Some((Array::from_slice(&vector, &[1, dim]), weight_sum)))
 }
 
-/// 条件准备里情感参考的实际来源：给了显式情感向量时用音色参考，否则用情感参考
-/// 音频，缺省也是音色参考。
+/// The actual source of the emotion reference during conditioning preparation: when an explicit emotion vector is given, the voice reference is used;
+/// otherwise the emotion reference audio is used, and by default it is also the voice reference.
 pub fn emotion_source<'p>(
     reference_audio: &'p ReferenceAudio,
     emotion_audio: Option<&'p ReferenceAudio>,
@@ -105,8 +104,8 @@ pub fn emotion_source<'p>(
     }
 }
 
-/// 一段参考音频的身份。文件：路径 + 长度 + 修改时刻，同一路径的文件被改写后算新文件；
-/// 内置音色：音色 id（录音随包编译进来，不会变）。
+/// Identity of one reference audio. File: path + length + modification time; a file at the same path that is rewritten counts as a new file.
+/// Built-in voice: the voice id (the recording is compiled into the package and never changes).
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum AudioIdentity {
     File {
@@ -133,7 +132,7 @@ impl AudioIdentity {
     }
 }
 
-/// 参考条件缓存键：音色参考 + 情感来源。显式情感向量不进键（随请求现算）。
+/// Cache key of the reference conditioning: voice reference + emotion source. The explicit emotion vector is not part of the key (computed per request).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConditioningKey {
     reference: AudioIdentity,
@@ -141,7 +140,7 @@ pub struct ConditioningKey {
 }
 
 impl ConditioningKey {
-    /// 读不到任一文件的元数据时返回 `None`：不缓存，让条件准备照常报错。
+    /// If the metadata of any file cannot be read, returns `None`: nothing is cached, so conditioning preparation reports its errors as usual.
     pub fn new(reference_audio: &ReferenceAudio, emotion_source: &ReferenceAudio) -> Option<Self> {
         Some(Self {
             reference: AudioIdentity::of(reference_audio)?,
@@ -150,11 +149,11 @@ impl ConditioningKey {
     }
 }
 
-/// 最多留几份参考条件。每份是两段 `[1, ≤750, 1024]` f32 隐状态加提示梅尔 / 条件，
-/// 约 10 MB；配音按说话人取参考，8 份够一部多人片子来回切。
+/// Maximum number of reference conditionings to keep. Each holds two `[1, ≤750, 1024]` f32 hidden-state segments plus the prompt mel / conditioning,
+/// about 10 MB; dubbing fetches references per speaker, so 8 entries are enough to switch back and forth in a multi-speaker film.
 pub const CONDITIONING_CACHE_CAPACITY: usize = 8;
 
-/// 最近用过的参考条件（LRU）。批量合成同一音色时 w2v-BERT 只跑一次，也不必常驻。
+/// Recently used reference conditionings (LRU). In batch synthesis of the same voice, w2v-BERT runs only once and need not stay resident.
 pub struct ConditioningCache<V> {
     entries: Vec<(ConditioningKey, V)>,
     capacity: usize,
@@ -168,7 +167,7 @@ impl<V: Clone> ConditioningCache<V> {
         }
     }
 
-    /// 命中时把这一项挪到最近端并返回副本。
+    /// On a hit, move this entry to the most-recent end and return a copy.
     pub fn get(&mut self, key: &ConditioningKey) -> Option<V> {
         let index = self.entries.iter().position(|(k, _)| k == key)?;
         let entry = self.entries.remove(index);
@@ -177,7 +176,7 @@ impl<V: Clone> ConditioningCache<V> {
         Some(value)
     }
 
-    /// 放入（同键覆盖）；超出容量时淘汰最久没用的一项。
+    /// Insert (overwriting the same key); when over capacity, evict the least recently used entry.
     pub fn insert(&mut self, key: ConditioningKey, value: V) {
         self.entries.retain(|(k, _)| k != &key);
         if self.entries.len() >= self.capacity {
@@ -187,14 +186,14 @@ impl<V: Clone> ConditioningCache<V> {
     }
 }
 
-/// 官方 `librosa.load(path)` 不指定 `sr` 时的缺省采样率。
+/// Default sample rate of the official `librosa.load(path)` when `sr` is not given.
 const LIBROSA_DEFAULT_SAMPLE_RATE: u32 = 22_050;
 
-/// 读取并裁到 15 秒的单声道参考音频。
+/// Reads mono reference audio and trims it to 15 seconds.
 pub fn load_clipped_audio(audio: &ReferenceAudio, sample_rate: u32) -> Result<Vec<f32>> {
-    // 照 `librosa.load(path, sr=…)`：按原生采样率解码成单声道，再用拟合 soxr_hq 的
-    // 重采样到目标采样率。探测不到采样率时先解到 48 kHz 再重采样。只取前 16 秒：
-    // 多出的 1 秒让 15 秒截断处的重采样核两侧都有真实样本。
+    // As with `librosa.load(path, sr=…)`: decode to mono at the native sample rate, then resample to the target rate with a resampler fitted to soxr_hq.
+    // If the native rate cannot be detected, decode at 48 kHz first and then resample. Only the first 16 seconds are read: the extra second gives the
+    // resampling kernel real samples on both sides at the 15-second truncation point.
     let (mut decoded, native) = decode_native(audio)?;
     decoded.truncate(native as usize * (MAX_REFERENCE_SECONDS + 1));
     let mut samples = dsp::librosa_resample(&decoded, native, sample_rate);
@@ -205,11 +204,11 @@ pub fn load_clipped_audio(audio: &ReferenceAudio, sample_rate: u32) -> Result<Ve
     Ok(samples)
 }
 
-/// 探测不到原生采样率时的中间解码采样率。
+/// Intermediate decode sample rate used when the native rate cannot be detected.
 const FALLBACK_DECODE_RATE: u32 = 48_000;
 
-/// 按原生采样率解成单声道，返回样本与采样率。文件：WAV 从文件头读采样率；其他格式不探测，
-/// 经 ffmpeg 解到 [`FALLBACK_DECODE_RATE`]。内置音色：随包录音（16 kHz）在内存里解码。
+/// Decodes to mono at the native sample rate, returning samples and rate. File: WAV reads the rate from the file header; other formats are not probed
+/// and are decoded via ffmpeg to [`FALLBACK_DECODE_RATE`]. Built-in voice: the bundled recording (16 kHz) is decoded in memory.
 fn decode_native(audio: &ReferenceAudio) -> Result<(Vec<f32>, u32)> {
     match audio {
         ReferenceAudio::File(path) => {
@@ -228,7 +227,7 @@ fn decode_native(audio: &ReferenceAudio) -> Result<(Vec<f32>, u32)> {
     }
 }
 
-/// 报错里怎么称呼一段参考音频。
+/// How a reference audio is referred to in error messages.
 fn describe(audio: &ReferenceAudio) -> String {
     match audio {
         ReferenceAudio::File(path) => path.display().to_string(),
@@ -236,7 +235,7 @@ fn describe(audio: &ReferenceAudio) -> String {
     }
 }
 
-/// SeamlessM4T 前端特征 `[1, frames, 160]`；不足一帧时报「参考太短」。
+/// SeamlessM4T front-end features `[1, frames, 160]`; if there is less than one frame, reports “参考太短” (reference too short).
 fn semantic_front_end_features(audio_16k: &[f32], source: &ReferenceAudio) -> Result<Array> {
     if audio_16k.len() < SEAMLESS_FRAME_LENGTH {
         bail!(
@@ -254,7 +253,7 @@ fn semantic_front_end_features(audio_16k: &[f32], source: &ReferenceAudio) -> Re
 }
 
 impl<'a> ConditioningModels<'a> {
-    /// `(hidden − mean) / sqrt(var)`，与 Swift `normalizeSemanticHidden` 相同。
+    /// `(hidden − mean) / sqrt(var)`, same as Swift `normalizeSemanticHidden`.
     fn normalize_semantic_hidden(&self, hidden: &Array) -> Result<Array> {
         let dim = self.w2v_mean.len() as i32;
         let mean = Array::from_slice(self.w2v_mean, &[1, 1, dim]);
@@ -262,7 +261,7 @@ impl<'a> ConditioningModels<'a> {
         Ok((hidden - mean) / std)
     }
 
-    /// 16 kHz 音频 → 归一化后的 w2v-BERT 第 17 层隐状态 `[1, T, 1024]`。
+    /// 16 kHz audio → normalized layer-17 w2v-BERT hidden states `[1, T, 1024]`.
     fn semantic_hidden(&self, audio_16k: &[f32], source: &ReferenceAudio) -> Result<Array> {
         let features = semantic_front_end_features(audio_16k, source)?;
         let hidden = self.w2v_bert.hidden_state_17(&features)?;
@@ -271,8 +270,8 @@ impl<'a> ConditioningModels<'a> {
         Ok(normalized)
     }
 
-    /// 提示梅尔谱 `[1, 80, Tp]`：先做 `(n_fft − hop)/2` 的自定义反射填充，再取
-    /// Slaney 对数梅尔（fmin 0、fmax sr/2、幅度谱、floor 1e-5、无 center、周期 Hann）。
+    /// Prompt mel spectrogram `[1, 80, Tp]`: first a custom reflection padding of `(n_fft − hop)/2`, then the Slaney log-mel
+    /// (fmin 0, fmax sr/2, magnitude spectrum, floor 1e-5, no center, periodic Hann).
     fn prompt_mel(&self, audio_22k: &[f32]) -> Result<Array> {
         let s2mel = &self.config.s2mel;
         let pad = (s2mel.n_fft - s2mel.hop_length) / 2;
@@ -299,10 +298,10 @@ impl<'a> ConditioningModels<'a> {
         Ok(mel.t().expand_dims(0)?)
     }
 
-    /// 对照官方 `infer()` 的条件准备段。
+    /// Corresponds to the conditioning-preparation section of the official `infer()`.
     ///
-    /// `emotion_audio`：情感参考音频；`emotion_control` 给出时忽略它，缺省时音色参考
-    /// 文件同时充当情感参考。`progress` 返回 false 表示取消。
+    /// `emotion_audio`: emotion reference audio; ignored when `emotion_control` is given. By default the voice reference file also serves as the emotion reference.
+    /// `progress` returning false means cancel.
     pub fn prepare(
         &self,
         reference_audio: &ReferenceAudio,
@@ -321,7 +320,7 @@ impl<'a> ConditioningModels<'a> {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         let speaker_hidden = self.semantic_hidden(&reference_16k, reference_audio)?;
-        // 2.0 把隐状态量化成 MaskGCT 嵌入再做提示条件；官方 `infer_v2_5` 直接用隐状态。
+        // 2.0 quantizes the hidden states into MaskGCT embeddings before building the prompt conditioning; the official `infer_v2_5` uses the hidden states directly.
         let prompt_content = match self.semantic_codec {
             Some(codec) => {
                 let encoded = codec.encoder.forward(&speaker_hidden)?;
@@ -415,7 +414,7 @@ mod tests {
             None,
             "读不到文件就不缓存"
         );
-        // 内置音色按 id 认，不碰文件系统。
+        // Built-in voices are identified by id and do not touch the file system.
         let builtin = ReferenceAudio::Builtin("zh-female");
         assert_eq!(ConditioningKey::new(&builtin, &builtin), ConditioningKey::new(&builtin, &builtin));
         assert!(ConditioningKey::new(&builtin, &builtin).is_some());

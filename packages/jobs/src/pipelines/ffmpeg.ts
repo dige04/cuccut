@@ -5,13 +5,13 @@ import type { ProbeToolResolver } from '../media-probe.ts';
 import { PipelineStepError } from './pipeline.ts';
 
 /**
- * 文件转码用的 ffmpeg 与 ffprobe（PATH 里的，或 `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE`，与媒体分析相同）。
- * 中止时先 SIGTERM，宽限之后 SIGKILL，等进程真正退出再报告，不让它在后台继续写文件。
+ * The ffmpeg and ffprobe used for file transcoding (from PATH, or `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE`, same as media analysis).
+ * On abort, SIGTERM is sent first, then SIGKILL after a grace period, and the result is reported only after the process has actually exited, so it does not keep writing files in the background.
  */
 
 export type MediaToolResolver = ProbeToolResolver;
 
-/** ffprobe 读出的一个文件的事实。 */
+/** The facts about one file, as read by ffprobe. */
 export interface ProbedMedia {
   durationSec: number;
   formatName: string;
@@ -28,7 +28,7 @@ interface RunResult {
   stderr: string;
 }
 
-/** 执行一个工具；`onStdout` 收到逐块的标准输出。中止时杀掉进程并等它退出，然后抛 `AbortError`。 */
+/** Runs one tool; `onStdout` receives stdout chunk by chunk. On abort, kills the process, waits for it to exit, then throws `AbortError`. */
 async function runTool(
   tool: { command: string; env?: NodeJS.ProcessEnv },
   args: string[],
@@ -71,7 +71,7 @@ async function runTool(
   });
 }
 
-/** ffmpeg 的版本（`ffmpeg -version` 的第一行里的版本号）。找不到时抛 `MEDIA_TOOL_UNAVAILABLE`。 */
+/** The ffmpeg version (the version number on the first line of `ffmpeg -version`). Throws `MEDIA_TOOL_UNAVAILABLE` when not found. */
 export async function ffmpegVersion(resolve: MediaToolResolver): Promise<string> {
   const run = await runTool(await resolve(), ['-hide_banner', '-version']);
   const match = /ffmpeg version (\S+)/.exec(run.stdout);
@@ -79,7 +79,7 @@ export async function ffmpegVersion(resolve: MediaToolResolver): Promise<string>
   return match[1]!;
 }
 
-/** 用 ffprobe 读一个文件。读不出来时抛 `INPUT_UNREADABLE`。 */
+/** Reads one file with ffprobe. Throws `INPUT_UNREADABLE` when it cannot be read. */
 export async function probeMedia(resolve: MediaToolResolver, file: string, signal?: AbortSignal): Promise<ProbedMedia> {
   const args = [
     '-v',
@@ -121,8 +121,8 @@ export async function probeMedia(resolve: MediaToolResolver, file: string, signa
 }
 
 /**
- * 执行一次 ffmpeg（参数里已经有 `-progress pipe:1 -nostats`）：按 `out_time_us` 报告写到第几秒。
- * 非零退出时抛 `TRANSCODE_FAILED`，带 stderr 的结尾。
+ * Runs one ffmpeg (the arguments already include `-progress pipe:1 -nostats`): reports how far it has written, in seconds, from `out_time_us`.
+ * On non-zero exit, throws `TRANSCODE_FAILED` with the tail of stderr.
  */
 export async function runFfmpeg(
   resolve: MediaToolResolver,

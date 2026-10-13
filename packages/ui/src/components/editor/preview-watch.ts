@@ -1,67 +1,67 @@
 import type { Id } from '@cuccut/protocol';
 
 /**
- * 预览卡住时的诊断：引擎每隔一会儿交一份快照，卡在同一步超过 `STALL_MS` 就打一条 `console.warn`，点名卡在哪一步
- * （开发时 Electron 主进程把它转到终端），同时通知订阅者（舞台上的卡住提示，产品设计 §5.1「预览载入与卡住」）。
- * 同一段卡住只报一次，有了进展（这一步过去了、换了一步）再重新计时。在等 Runtime 准备兼容副本的媒体：进度在走就算有进展，
- * Runtime 还不知道进度时不算卡住（转换有自己的超时，失败走主媒体放不出来那张卡）。
+ * Stall diagnostics for the preview: the engine hands over a snapshot every so often; if it stays on the same step for longer than `STALL_MS`, it logs one `console.warn` naming the step it is stuck at
+ * (during development the Electron main process forwards it to the terminal), and at the same time notifies subscribers (the stall hint on the stage, product design §5.1 “preview loading and stalls”).
+ * A given stall is reported only once; when there is progress (the step is passed, or it moves to another step), timing starts again. For media waiting for the Runtime to prepare a compatible copy: if the progress is moving, that counts as progress;
+ * when the Runtime doesn't know the progress, it is not counted as stalled (conversion has its own timeout, and on failure it falls through to the card for media the main element can't play).
  *
- * 用计时器轮询，不用 requestAnimationFrame：窗口被挡住或隐藏时 rAF 不跑。页面隐藏期间不计时（隐藏时不画是正常的）。
+ * Uses a timer for polling, not requestAnimationFrame: rAF does not run when the window is obscured or hidden. No timing is done while the page is hidden (not drawing while hidden is normal).
  */
 
-/** 卡住的是哪一步。 */
+/** Which step is stuck. */
 export type StallStep =
-  /** 渲染内核（WASM 与随它发布的字体）还没载入完。 */
+  /** The render kernel (the WASM and the fonts shipped with it) has not finished loading. */
   | 'planner-loading'
-  /** 内核好了，还没交给它视频。 */
+  /** The kernel is ready, but the video has not been handed to it yet. */
   | 'no-video'
-  /** 视频交给内核时出错了，还没对上元素。 */
+  /** An error occurred when handing the video to the kernel; it has not been matched to elements yet. */
   | 'video-error'
-  /** 内核与视频都有了，还没求出一份计划（多半是求计划时抛了意外的错，见 `lastError`）。 */
+  /** The kernel and video are both ready, but no plan has been computed yet (most likely an unexpected error was thrown while computing the plan; see `lastError`). */
   | 'no-plan'
-  /** 这一刻要画的媒体层或要出声的元素一直没好（没有元素、载入不了、定位不落地），见 `media`。 */
+  /** The media layers to draw or elements to play at this moment have stayed unready (no element, can't load, seek doesn't land); see `media`. */
   | 'media-pending'
-  /** 要的媒体都在等兼容副本，转换的进度一直没动，见 `media`。 */
+  /** All needed media is waiting for compatible copies, and conversion progress has not moved; see `media`. */
   | 'media-preparing'
-  /** 字幕层要的文档正文一直没取到，见 `documents`。 */
+  /** Document bodies the caption layer needs have not been fetched; see `documents`. */
   | 'documents-pending'
-  /** 本机字体一直没取完，见 `fonts`。 */
+  /** Local fonts have not finished fetching; see `fonts`. */
   | 'fonts-loading'
-  /** 有一帧要画，画布上一直没换（画的时候抛了意外的错，见 `lastError`）。 */
+  /** A frame needs drawing but the canvas has not changed (an unexpected error was thrown while drawing; see `lastError`). */
   | 'not-painted'
-  /** 有一帧要画，但还没有画布。 */
+  /** A frame needs drawing, but there is no canvas yet. */
   | 'no-canvas';
 
-/** 媒体为什么还没好。 */
+/** Why the media is not ready yet. */
 export type MediaWait =
-  /** 页面上没有这个元素（多半是素材地址还没取到：比如 Runtime 没连上）。 */
+  /** The element is not on the page (most likely the asset address hasn't been fetched yet, e.g. the Runtime isn't connected). */
   | 'no-element'
-  /** 还没有元素：Runtime 在准备兼容副本（浏览器放不了这个 WebM），见 `progress`。 */
+  /** No element yet: the Runtime is preparing a compatible copy (the browser can't play this WebM); see `progress`. */
   | 'preparing'
-  /** 元素载入或解码出错。 */
+  /** The element failed to load or decode. */
   | 'error'
-  /** 还没有这一刻的画面（`readyState` 不到 HAVE_CURRENT_DATA）。 */
+  /** No picture for this moment yet (`readyState` is below HAVE_CURRENT_DATA). */
   | 'no-data'
-  /** 定位还没落地。 */
+  /** The seek has not landed yet. */
   | 'seeking'
-  /** 有画面，但不在要的那一刻。 */
+  /** There is a picture, but not for the moment needed. */
   | 'position'
-  /** 在内核里解的图片（SVG、GIF）：字节还在取，或取不到。 */
+  /** Images decoded in the kernel (SVG, GIF): the bytes are still being fetched, or cannot be fetched. */
   | 'bytes-loading'
   | 'bytes-missing';
 
-/** 一个还没好的媒体层或声音。不记地址：地址里可能带着访问凭据。 */
+/** A media layer or sound that is not ready. The address is not recorded: it may contain access credentials. */
 export interface MediaProbe {
   itemId: Id;
-  /** 取画面或声音的素材（界面按它点名「在等哪个媒体」）。 */
+  /** The asset supplying picture or sound (the UI uses it to name “which media is being waited on”). */
   assetId?: Id;
   kind: 'video' | 'image' | 'audio';
   wait: MediaWait;
-  /** 要的源时刻（秒）；图片没有。 */
+  /** The source time needed, in seconds; images have none. */
   wantedSeconds: number | null;
-  /** `preparing` 时兼容副本编码到了几成（0–1），Runtime 还不知道时 null。 */
+  /** During `preparing`, how far the compatible copy's encoding has got (0–1); null if the Runtime does not know yet. */
   progress?: number | null;
-  /** 元素的状态；没有元素或不经元素（内核解的图片）时为 null。 */
+  /** Element state; null when there is no element or it does not go through an element (images decoded by the kernel). */
   element: {
     readyState: number | null;
     networkState: number | null;
@@ -72,7 +72,7 @@ export interface MediaProbe {
   } | null;
 }
 
-/** 引擎交来的快照。 */
+/** Snapshot handed over by the engine. */
 export interface PreviewSnapshot {
   status: 'loading' | 'ready' | 'error';
   planner: 'loading' | 'ready';
@@ -81,9 +81,9 @@ export interface PreviewSnapshot {
   plan: boolean;
   canvas: boolean;
   playing: boolean;
-  /** 画布上最近画的那一帧：每画一帧换一个对象，按身份比较有没有进展。 */
+  /** The most recently drawn frame on the canvas: a new object is created for each frame drawn, and progress is checked by object identity. */
   painted: object | null;
-  /** 有一帧要画（播放中、重画排着、有东西变了、计划还没画上去）。 */
+  /** A frame needs drawing (during playback, a redraw is queued, something changed, or the plan is not yet on the canvas). */
   paintWanted: boolean;
   media: MediaProbe[];
   documents: Id[];
@@ -92,33 +92,33 @@ export interface PreviewSnapshot {
 
 export interface StallReport extends Omit<PreviewSnapshot, 'painted'> {
   step: StallStep;
-  /** 卡在这一步多久了（毫秒，只算页面可见的时间）。 */
+  /** How long it has been stuck at this step (ms, counting only time the page is visible). */
   stalledMs: number;
-  /** 从什么时候开始卡在这一步（诊断的时钟，默认 `performance.now()`）；界面按它逐秒数「已经等了多久」。 */
+  /** When it started being stuck at this step (the diagnostic clock, default `performance.now()`); the UI uses it to count “how long it has been waiting” second by second. */
   since: number;
-  /** 最近一次被兜住的意外错误（播放的 tick、重画、媒体事件里抛的）。 */
+  /** The most recent unexpected error that was caught (thrown in a playback tick, a redraw, or a media event). */
   lastError: string | null;
-  /** 还卡着；之后有了进展会改成 false。 */
+  /** Still stalled; becomes false once there is progress. */
   ongoing: boolean;
 }
 
-/** 卡在同一步这么久才报。 */
+/** Only report after being stuck on the same step this long. */
 export const STALL_MS = 10_000;
-/** 多久看一次。 */
+/** How often to check. */
 export const POLL_MS = 2_000;
-/** 同一个意外错误这么久内只打一次（播放中每帧都抛时不刷屏）。 */
+/** The same unexpected error is logged only once within this window (so it doesn't flood the console when thrown every frame during playback). */
 const ERROR_REPEAT_MS = 10_000;
 
 export interface WatchOptions {
   now?: () => number;
-  /** 排一次检查，返回取消的函数。 */
+  /** Schedules one check and returns a function that cancels it. */
   schedule?: (run: () => void, ms: number) => () => void;
   visible?: () => boolean;
   warn?: (message: string, report: StallReport) => void;
   error?: (message: string, error: unknown) => void;
 }
 
-// i18n-ignore-start: 开发日志
+// i18n-ignore-start: dev log
 const STEP_LABELS: Record<StallStep, string> = {
   'planner-loading': '渲染内核还没载入完',
   'no-video': '渲染内核好了，还没交给它视频',
@@ -133,9 +133,9 @@ const STEP_LABELS: Record<StallStep, string> = {
 };
 // i18n-ignore-end
 
-/** 这份快照卡在哪一步；`progressed` 是上次看过之后画布上换过帧。没卡住是 null。 */
+/** Which step this snapshot is stuck at; `progressed` means the canvas has swapped frames since it was last checked. null if not stalled. */
 export function stalledStep(snapshot: PreviewSnapshot, progressed: boolean): StallStep | null {
-  // 出错时界面有提示，不算卡住。
+  // When there is an error, the UI shows a hint, so it does not count as stalled.
   if (snapshot.status === 'error') return null;
   if (snapshot.status === 'loading') {
     if (snapshot.planner === 'loading') return 'planner-loading';
@@ -145,7 +145,7 @@ export function stalledStep(snapshot: PreviewSnapshot, progressed: boolean): Sta
   }
   if (snapshot.media.length > 0) {
     if (snapshot.media.some((probe) => probe.wait !== 'preparing')) return 'media-pending';
-    // 都在等兼容副本：不知道进度的不算卡住；进度动没动由 `PreviewWatch` 比对（见 `preparingMark`）。
+    // All waiting on compatible copies: those with unknown progress don't count as stalled; whether the progress has moved is compared by `PreviewWatch` (see `preparingMark`).
     return snapshot.media.some((probe) => probe.progress == null) ? null : 'media-preparing';
   }
   if (snapshot.documents.length > 0) return 'documents-pending';
@@ -154,7 +154,7 @@ export function stalledStep(snapshot: PreviewSnapshot, progressed: boolean): Sta
   return null;
 }
 
-/** 转换的进度记号：按原始的 0–1 比，不按取整的百分比（长片的 1% 可能比卡住门槛还久）。 */
+/** The conversion progress marker: uses the raw 0–1 ratio, not the rounded percentage (1% of a long film can take longer than the stall threshold). */
 export function preparingMark(snapshot: Pick<PreviewSnapshot, 'media'>): string {
   return snapshot.media
     .filter((probe) => probe.wait === 'preparing')
@@ -163,7 +163,7 @@ export function preparingMark(snapshot: Pick<PreviewSnapshot, 'media'>): string 
     .join(',');
 }
 
-/** 元素现在为什么还不能用（`readyState` 等按 HTMLMediaElement 的常量，2 是 HAVE_CURRENT_DATA）。 */
+/** Why the element cannot be used right now (`readyState` and similar follow the HTMLMediaElement constants; 2 is HAVE_CURRENT_DATA). */
 export function probeElement(element: Partial<HTMLMediaElement & HTMLImageElement> | null | undefined): {
   wait: MediaWait;
   element: MediaProbe['element'];
@@ -195,7 +195,7 @@ export class PreviewWatch {
   #running = false;
   #cancel: (() => void) | null = null;
   #step: StallStep | null = null;
-  /** 卡在转换时的进度记号：变了就算有进展。 */
+  /** Progress marker while stuck on conversion: if it changes, that counts as progress. */
   #mark = '';
   #since = 0;
   #warned = false;
@@ -207,7 +207,7 @@ export class PreviewWatch {
   constructor(probe: () => PreviewSnapshot, options: WatchOptions = {}) {
     this.#probe = probe;
     this.#now = options.now ?? (() => performance.now());
-    // 建的时候就取下计时器：测试里换成假计时器之前建的引擎，停的时候也用同一套。
+    // Capture the timer at creation time: an engine created before the tests swap in fake timers also stops using the same set.
     const { setTimeout: set, clearTimeout: clear } = globalThis;
     this.#schedule =
       options.schedule ??
@@ -216,27 +216,27 @@ export class PreviewWatch {
         return () => clear(timer);
       });
     this.#visible = options.visible ?? (() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
-    this.#warn = options.warn ?? ((message, report) => console.warn(message, report)); // i18n-ignore: 开发日志
-    this.#error = options.error ?? ((message, error) => console.error(message, error)); // i18n-ignore: 开发日志
+    this.#warn = options.warn ?? ((message, report) => console.warn(message, report)); // i18n-ignore: dev log
+    this.#error = options.error ?? ((message, error) => console.error(message, error)); // i18n-ignore: dev log
   }
 
-  /** 最近一次报出的卡住（之后有了进展 `ongoing` 改成 false）；没报过是 null。 */
+  /** The most recently reported stall (`ongoing` becomes false once there is progress); null if none has been reported. */
   get report(): StallReport | null {
     return this.#report;
   }
 
-  /** 还卡着的那一段（`report` 里 `ongoing` 为真的那份）；没卡住是 null。 */
+  /** The stall still in progress (the `report` whose `ongoing` is true); null if not stalled. */
   get ongoing(): StallReport | null {
     return this.#report?.ongoing ? this.#report : null;
   }
 
-  /** 报出卡住、卡住结束时通知（参数是还卡着的那一段，结束了是 null）；返回取消订阅的函数。 */
+  /** Notifies when a stall is reported and when it ends (the argument is the stall still in progress, or null when it has ended); returns a function that unsubscribes. */
   onChange(listener: (report: StallReport | null) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  /** 从头计时（重试之后）：手上的卡住算结束，之后还卡着要再满 `STALL_MS` 才报。 */
+  /** Restart timing (after a retry): any current stall counts as ended, and if still stuck afterward, it must reach a full `STALL_MS` before being reported. */
   reset(): void {
     this.#reset();
   }
@@ -254,10 +254,10 @@ export class PreviewWatch {
     this.#cancel = null;
   }
 
-  /** 看一次（计时器到点时调用；测试直接调）。 */
+  /** Checks once (called when the timer fires; tests call it directly). */
   check(): void {
     if (!this.#visible()) {
-      // 隐藏时不画是正常的：回来之后重新计时。
+      // Not drawing while hidden is normal: timing restarts once it is visible again.
       this.#reset();
       return;
     }
@@ -286,19 +286,19 @@ export class PreviewWatch {
       ongoing: true,
     };
     this.#report = report;
-    // i18n-ignore: 开发日志
+    // i18n-ignore: dev log
     this.#warn(`[preview] 预览卡住了：${STEP_LABELS[step]}（${Math.round((now - this.#since) / 1000)} 秒）`, report);
     this.#notify(report);
   }
 
-  /** 播放的 tick、重画、媒体事件里抛了意外的错：兜住、打出来（同一个错一阵只打一次），记进下一份报告。 */
+  /** An unexpected error thrown in a playback tick, a redraw, or a media event: caught, logged (the same error is logged only once for a while), and recorded in the next report. */
   noteError(where: string, error: unknown): void {
     const message = `${where}: ${error instanceof Error ? error.message : String(error)}`;
     const now = this.#now();
     const last = this.#lastError;
     this.#lastError = { message, at: last?.message === message && now - last.at < ERROR_REPEAT_MS ? last.at : now };
     if (last?.message === message && now - last.at < ERROR_REPEAT_MS) return;
-    // i18n-ignore: 开发日志
+    // i18n-ignore: dev log
     this.#error(`[preview] ${where}时抛了意外的错，预览接着跑`, error);
   }
 
@@ -309,7 +309,7 @@ export class PreviewWatch {
     this.#end();
   }
 
-  /** 手上还卡着的那一段算结束。 */
+  /** The stall currently held is treated as ended. */
   #end(): void {
     if (!this.#report?.ongoing) return;
     this.#report = { ...this.#report, ongoing: false };
@@ -321,7 +321,7 @@ export class PreviewWatch {
       try {
         listener(report);
       } catch (error) {
-        this.noteError('卡住通知', error); // i18n-ignore: 开发日志
+        this.noteError('卡住通知', error); // i18n-ignore: dev log
       }
     }
   }
@@ -332,8 +332,8 @@ export class PreviewWatch {
       try {
         this.check();
       } catch (error) {
-        // 诊断自己出错不该影响预览。
-        this.noteError('卡住诊断', error); // i18n-ignore: 开发日志
+        // The diagnostics themselves failing should not affect the preview.
+        this.noteError('卡住诊断', error); // i18n-ignore: dev log
       }
       if (this.#running) this.#arm();
     }, POLL_MS);

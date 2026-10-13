@@ -1,38 +1,22 @@
-//! 评测指标（对齐块设计 §8 / M5）：SubER 字幕编辑率与对齐结构指标。
+//! Evaluation metrics (alignment block design §8 / M5): the SubER subtitle edit rate and alignment-structure metrics.
 //!
-//! 纯函数、零 I/O：宿主（`ccut check`、`verify.sh` 的离线评测步骤）负责读
-//! 字幕/transcript 并把 [`AlignMetrics`] / [`SuberBreakdown`] 序列化输出。
+//! Pure functions, zero I/O. The host (`ccut check`, and the offline evaluation step of `verify.sh`) is responsible for reading subtitles/transcripts and serializing the [`AlignMetrics`] / [`SuberBreakdown`] output.
 //!
 //! # SubER
 //!
-//! Wilken et al., *SubER: A Metric for Subtitle Quality*（IWSLT 2022）。本实现
-//! 对拍 AppTek 参考实现 `subtitle-edit-rate` 0.4.0（`suber/metrics/suber.py` +
-//! `lib_ter.py`，后者是 sacrebleu TER 的改版），逐条复刻其定义：
+//! Wilken et al., *SubER: A Metric for Subtitle Quality* (IWSLT 2022). This implementation is cross-checked against the AppTek reference implementation `subtitle-edit-rate` 0.4.0 (`suber/metrics/suber.py` + `lib_ter.py`, the latter being a modified version of sacrebleu TER), reproducing its definitions one by one:
 //!
-//! - 词元：每行按空白切词，行末词后接 `<eol>`，块末词后接 `<eob>`（覆盖
-//!   `<eol>`）；空行忽略。默认口径（[`suber`]）对每个词做小写并剥去 ASCII
-//!   标点与 `…`，剥空则保留原词（纯标点词元仍计数）；不再做任何分词。
-//! - 字级口径（[`suber_chars`]）复刻参考实现 `--language zh` 路径：小写、剥去
-//!   Unicode 标点（`\p{P}`）、再按 sacrebleu `TokenizerZh` 把每个 CJK 字切成
-//!   独立词元、非 CJK 部分走 13a 风格的标点切分。相对参考实现的**已知偏差**：
-//!   假名与谚文也逐字切（参考实现对 ja/ko 用 MeCab 分词，Rust 侧不可用）。
-//! - TER：Levenshtein（ins/del/sub 各 1）+ tercom 式贪心移位（每次取使编辑
-//!   距离下降最多的移位，最长优先、位置靠前优先；移位窗口 ≤ 50、片段 ≤ 10 词、
-//!   每个独立分段最多评估 1000 个候选）；对角线束宽 100 与参考实现相同。
-//! - SubER 约束：只有所属块时窗重叠的词才允许匹配/替换（`(a.start < b.end)
-//!   == (b.start < a.end)`，与参考实现同式）；换行词元只与换行词元对齐。
-//! - 归一化：编辑数 / 参考词元数（含换行词元）× 100；参考为空时有编辑记
-//!   100、无编辑记 0。参考实现在输出时四舍五入到 3 位小数，这里返回原值。
-//! - 与参考实现相同，先按"两侧都无字幕"的时间点把文档切成独立分段再算，
-//!   分段不改变分数但显著缩短序列；参考实现的行缓存（只影响速度）未复刻。
-//! - 输入块按起始时间稳定排序（参考实现对乱序 SRT 直接报错）；不剥 `<i>` 等
-//!   标签，调用方应传纯文本。
+//! - Tokens: each line is split on whitespace; after the last word of a line, `<eol>` is appended, and after the last word of a block, `<eob>` (which covers `<eol>`). Empty lines are ignored. The default convention ([`suber`]) lowercases each word and strips ASCII punctuation and `…`; if nothing is left, the original word is kept (pure-punctuation tokens are still counted). No further tokenization is done.
+//! - The character-level convention ([`suber_chars`]) reproduces the reference implementation's `--language zh` path: lowercase, strip Unicode punctuation (`\p{P}`), then split each CJK character into its own token following sacrebleu `TokenizerZh`, while the non-CJK parts are split on punctuation in 13a style. **Known deviation** from the reference implementation: kana and hangul are also split character by character. The reference uses MeCab word segmentation for ja/ko, which is unavailable on the Rust side.
+//! - TER: Levenshtein (insertion, deletion and substitution each cost 1), plus tercom-style greedy shifts. Each step takes the shift that reduces the edit distance the most; ties go to the longest first, then the earliest position. The shift window is ≤ 50, segments are ≤ 10 words, and at most 1000 candidates are evaluated per independent segment. The diagonal beam width is 100, the same as the reference implementation.
+//! - SubER constraint: only words whose subtitle time windows overlap may be matched or substituted (`(a.start < b.end) == (b.start < a.end)`, the same formula as the reference). Newline tokens align only with newline tokens.
+//! - Normalization: edit count / number of reference tokens (including newline tokens) × 100. If the reference is empty, any edit counts as 100, and no edits count as 0. The reference implementation rounds to 3 decimal places on output; here the raw value is returned.
+//! - As in the reference, the document is first split into independent segments at time points where neither the hypothesis nor the reference has a subtitle, and the score is computed per segment. Splitting does not change the score but shortens the sequences considerably. The reference's row cache (which affects speed only) is not reproduced.
+//! - Input blocks are stably sorted by start time (the reference implementation errors on out-of-order SRT). Tags such as `<i>` are not stripped, so callers should pass plain text.
 //!
-//! # 对齐结构指标
+//! # Alignment structure metrics
 //!
-//! [`align_metrics`] 直接读取持久化的 [`TransAlign`] 覆盖层；对齐边不落盘，
-//! 因此覆盖率以"源词/译文字符是否落在某个 `blocks[]` 块内"近似（无块 = 0）。
-//! 各口径见 [`AlignMetrics`] 字段说明。
+//! [`align_metrics`] reads the persisted [`TransAlign`] overlay directly. Alignment edges are not persisted, so coverage is approximated by whether a source word or target character falls inside some `blocks[]` block (no blocks = 0). See the field documentation of [`AlignMetrics`] for each convention.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
@@ -52,23 +36,23 @@ use crate::sentence::derive_sentences;
 // SubER
 // ---------------------------------------------------------------------------
 
-/// 行末换行词元（MuST-Cinema 记法）。
+/// Line-end newline token (MuST-Cinema notation).
 pub const END_OF_LINE_SYMBOL: &str = "<eol>";
-/// 块末换行词元。
+/// Block-end newline token.
 pub const END_OF_BLOCK_SYMBOL: &str = "<eob>";
 
 const COST_INS: i64 = 1;
 const COST_DEL: i64 = 1;
 const COST_SUB: i64 = 1;
-/// tercom 限制：单次移位片段最长词数 / 最远移位距离 / 编辑距离束宽。
+/// tercom limits: the maximum word count of a single shift segment / the maximum shift distance / the edit-distance beam width.
 const MAX_SHIFT_SIZE: usize = 10;
 const MAX_SHIFT_DIST: usize = 50;
 const BEAM_WIDTH: usize = 100;
-/// 参考实现自加的限制：每个独立分段最多评估这么多移位候选。
+/// A limit added by the reference implementation itself: each independent segment evaluates at most this many shift candidates.
 const MAX_SHIFT_CANDIDATES: usize = 1000;
 const INT_INFINITY: i64 = 10_000_000_000_000_000;
 
-/// 一条字幕块：时窗 + 若干显示行。
+/// One subtitle block: a time window plus several display lines.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubtitleBlock {
     pub start: f64,
@@ -76,26 +60,25 @@ pub struct SubtitleBlock {
     pub lines: Vec<String>,
 }
 
-/// SubER 词元口径。
+/// SubER token convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SuberTokenization {
-    /// 空白切词（参考实现默认路径）。
+    /// Whitespace tokenization (the reference implementation's default path).
     Words,
-    /// CJK 逐字（参考实现 `--language zh` 路径，见模块文档）。
+    /// CJK per character (the reference implementation's `--language zh` path; see the module docs).
     Chars,
 }
 
-/// SubER 编辑操作分解。方向沿用参考实现的统计口径：参考 → 假设，即假设里
-/// 多出来的词元记 insertion、缺失记 deletion。
+/// The breakdown of SubER edit operations. The direction follows the reference implementation's statistical convention, from reference to hypothesis: tokens that the hypothesis has extra are counted as insertions, and missing tokens as deletions.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuberBreakdown {
-    /// SubER 百分数（未四舍五入）。
+    /// The SubER percentage (not rounded).
     pub score: f64,
-    /// 总编辑数 = 移位 + 词/换行的插入、删除、替换。
+    /// Total edits = shifts + word and newline insertions, deletions and substitutions.
     pub edits: usize,
-    /// 参考词元总数（词 + 换行）。
+    /// Total reference tokens (words + newlines).
     pub reference_tokens: usize,
     pub reference_words: usize,
     pub reference_breaks: usize,
@@ -108,17 +91,17 @@ pub struct SuberBreakdown {
     pub break_substitutions: usize,
 }
 
-/// 词级 SubER 百分数。
+/// The word-level SubER percentage.
 pub fn suber(hyp: &[SubtitleBlock], reference: &[SubtitleBlock]) -> f64 {
     suber_breakdown(hyp, reference, SuberTokenization::Words).score
 }
 
-/// 字级 SubER 百分数（zh/ja 等 CJK 目标语）。
+/// The character-level SubER percentage (CJK target languages such as zh and ja).
 pub fn suber_chars(hyp: &[SubtitleBlock], reference: &[SubtitleBlock]) -> f64 {
     suber_breakdown(hyp, reference, SuberTokenization::Chars).score
 }
 
-/// SubER 分数与逐类编辑计数。
+/// The SubER score and the per-category edit counts.
 pub fn suber_breakdown(
     hyp: &[SubtitleBlock],
     reference: &[SubtitleBlock],
@@ -155,7 +138,7 @@ pub fn suber_breakdown(
     stats
 }
 
-/// 词元：字符串驻留后按符号 id 比较；换行词元单独标记。
+/// Token: after string interning, compared by symbol id. Newline tokens are marked separately.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Tok {
     sym: u32,
@@ -193,7 +176,7 @@ enum LineBreak {
     EndOfBlock,
 }
 
-/// 块 → 词元序列：切词、挂换行、规范化、（字级）再切分、换行展开成词元。
+/// Block → token sequence: tokenize, attach newlines, normalize, re-split (at character level), and expand newlines into tokens.
 fn tokenize_blocks(
     blocks: &[SubtitleBlock],
     tokenization: SuberTokenization,
@@ -263,7 +246,7 @@ fn tokenize_blocks(
 /// Python `string.punctuation`。
 const ASCII_PUNCTUATION: &str = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
-/// 默认口径的词规范化：小写、剥 ASCII 标点与 `…`；剥空则保留（小写）原词。
+/// Word normalization for the default convention: lowercase, strip ASCII punctuation and `…`. If that leaves nothing, keep the (lowercased) original word.
 fn normalize_word_ascii(word: &str) -> String {
     let lowered = word.to_lowercase();
     let stripped: String = lowered
@@ -277,7 +260,7 @@ fn normalize_word_ascii(word: &str) -> String {
     }
 }
 
-/// 字级口径的词规范化：小写、剥 Unicode 标点（`\p{P}`）；剥空则保留原词。
+/// Word normalization for the character-level convention: lowercase, strip Unicode punctuation (`\p{P}`). If that leaves nothing, keep the original word.
 fn normalize_word_unicode(word: &str) -> String {
     let lowered = word.to_lowercase();
     let stripped: String = lowered
@@ -304,14 +287,9 @@ fn is_unicode_punctuation(ch: char) -> bool {
     )
 }
 
-/// sacrebleu `TokenizerZh` 的"中文字符"区段（含全角区、CJK 标点区等），外加
-/// 本实现自扩的假名/谚文区（见模块文档偏差说明）。
+/// The "Chinese character" ranges of sacrebleu `TokenizerZh` (including the fullwidth range, the CJK punctuation range, etc.), plus the kana and hangul ranges extended by this implementation itself (see the deviation note in the module docs).
 ///
-/// sacrebleu 把两个辅助平面区段写成 `' 0'`/`'⾀0'`（Python 里是
-/// `' ' + '0'` 两个字符），字符串比较后实际生效的是 U+2001–U+2A6D 与
-/// U+2F81–U+2FA1，而 CJK 扩展 B / 兼容补充区并不逐字切。为与参考实现数值
-/// 一致，这里保留该生效区段（覆盖通用标点、箭头、数学符号等；标点已在规范
-/// 化时剥去，只影响残留符号），同时补上真正的扩展 B / 兼容补充区。
+/// sacrebleu writes two auxiliary plane ranges as `' 0'` / `'⾀0'` (in Python, `' ' + '0'`, two characters). After string comparison, the ranges that actually take effect are U+2001–U+2A6D and U+2F81–U+2FA1, while CJK Extension B and the Compatibility Supplement are not split character by character. To keep the numbers identical to the reference implementation, the effective ranges are preserved here (they cover general punctuation, arrows, mathematical symbols, etc.; punctuation was already stripped during normalization, so this only affects residual symbols). The genuine CJK Extension B and Compatibility Supplement ranges are added on top.
 fn is_char_token(ch: char) -> bool {
     matches!(ch as u32,
         0x3400..=0x4DB5 | 0x4E00..=0x9FA5 | 0x9FA6..=0x9FBB | 0xF900..=0xFA2D
@@ -320,17 +298,15 @@ fn is_char_token(ch: char) -> bool {
         | 0x2F00..=0x2FDF | 0x2FF0..=0x2FFF | 0x3100..=0x312F | 0x31A0..=0x31BF
         | 0xFE10..=0xFE1F | 0xFE30..=0xFE4F | 0x2600..=0x26FF | 0x2700..=0x27BF
         | 0x3200..=0x32FF | 0x3300..=0x33FF
-        // sacrebleu 实际生效的"误写"区段（见函数文档）；U+2F81–U+2FA1 已含于
-        // 上面的康熙部首区 U+2F00–U+2FDF，不再重复列出。
+        // The mis-encoded ranges that actually take effect in sacrebleu (see the function docs). U+2F81–U+2FA1 is already included in the Kangxi Radicals range U+2F00–U+2FDF above, so it is not listed again.
         | 0x2001..=0x2A6D
-        // 真正的 CJK 扩展 B 与兼容补充区。
+        // The genuine CJK Extension B and Compatibility Supplement ranges.
         | 0x20000..=0x2A6D6 | 0x2F800..=0x2FA1D
-        // 本实现自扩：平假名/片假名/片假名音标扩展、谚文音节。
+        // Extended by this implementation itself: Hiragana, Katakana, Katakana Phonetic Extensions, and Hangul syllables.
         | 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xAC00..=0xD7AF)
 }
 
-/// sacrebleu `TokenizerZh`：CJK 字两侧补空格，再走 `TokenizerRegexp`
-/// （13a 的语言无关部分），最后按空白切分。单个词若只得一个词元则原样保留。
+/// sacrebleu `TokenizerZh`: add spaces on both sides of each CJK character, then run `TokenizerRegexp` (the language-independent part of 13a), and finally split on whitespace. A single word that yields only one token is kept as is.
 fn tokenize_zh(word: &str) -> Vec<String> {
     let mut spaced = String::with_capacity(word.len() * 2);
     for ch in word.trim().chars() {
@@ -353,7 +329,7 @@ fn tokenize_zh(word: &str) -> Vec<String> {
     }
 }
 
-/// sacrebleu `TokenizerRegexp`（`13a` / `zh` 的共用后处理）。
+/// sacrebleu `TokenizerRegexp` (the post-processing shared by `13a` and `zh`).
 fn tokenizer_regexp(line: &str) -> String {
     static RULES: OnceLock<[(Regex, &'static str); 4]> = OnceLock::new();
     let rules = RULES.get_or_init(|| {
@@ -380,8 +356,7 @@ fn tokenizer_regexp(line: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 参考实现 `_get_independent_parts`：沿时间轴扫描，在"假设与参考都没有字幕"
-/// 的时间点切分；返回每个分段的（假设块下标, 参考块下标）。
+/// The reference implementation's `_get_independent_parts`: scan along the time axis and cut at time points where neither the hypothesis nor the reference has a subtitle. Returns, for each segment, the (hypothesis block index, reference block index).
 fn independent_parts(hyp: &[TokBlock], reference: &[TokBlock]) -> Vec<(Vec<usize>, Vec<usize>)> {
     let mut parts = Vec::new();
     let mut hyp_part = Vec::new();
@@ -415,8 +390,7 @@ fn independent_parts(hyp: &[TokBlock], reference: &[TokBlock]) -> Vec<(Vec<usize
     parts
 }
 
-/// SubER 允许对齐：换行词元只与换行词元对齐；且所属块时窗重叠（与参考实现
-/// 同式，零长块在同一时刻也视为重叠）。
+/// SubER alignment permission: newline tokens align only with newline tokens, and the blocks' time windows must overlap (the same formula as the reference; zero-length blocks also count as overlapping at the same instant).
 fn is_allowed_alignment(a: Tok, b: Tok) -> bool {
     if a.is_break != b.is_break {
         return false;
@@ -428,8 +402,7 @@ fn is_word_match(a: Tok, b: Tok) -> bool {
     a.sym == b.sym && is_allowed_alignment(a, b)
 }
 
-/// 编辑距离回溯操作。`HypOnly` / `RefOnly` 对应参考实现翻转后 trace 的
-/// `i` / `d`（假设多出的词元 / 参考缺失的词元）。
+/// Edit-distance backtrace operations. `HypOnly` and `RefOnly` correspond to the `i` and `d` of the reference implementation's flipped trace (tokens the hypothesis has extra / tokens the reference is missing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Op {
     Keep,
@@ -439,8 +412,7 @@ enum Op {
     Undef,
 }
 
-/// 单个独立分段的 TER：贪心移位直到不再降低编辑距离，返回（编辑数, 参考长度）
-/// 并把逐类计数累加进 `stats`。
+/// The TER for a single independent segment: greedy shifts until the edit distance no longer decreases. Returns (edit count, reference length) and accumulates the per-category counts into `stats`.
 fn translation_edit_rate(
     hyp: &[Tok],
     reference: &[Tok],
@@ -521,14 +493,13 @@ fn collect_stats(
     stats.shifts += shifts;
 }
 
-/// 参考实现 `_shift`：枚举 tercom 候选移位，返回（编辑距离下降量, 移位后的假设）。
-/// 无候选时下降量为 0 并原样返回。
+/// The reference implementation's `_shift`: enumerates the tercom candidate shifts and returns (the reduction in edit distance, the shifted hypothesis). If there are no candidates, the reduction is 0 and the input is returned unchanged.
 fn best_shift(hyp: &[Tok], reference: &[Tok], checked: &mut usize) -> (i64, Vec<Tok>) {
     let (pre_score, trace) = edit_distance(hyp, reference);
     let (align, ref_err, hyp_err) = trace_to_alignment(&trace);
     let n_h = hyp.len();
     let n_r = reference.len();
-    // (下降量, 长度, -start_h, -idx) 字典序最大者胜出；并列保留先出现者。
+    // The candidate with the lexicographically largest (reduction, length, -start_h, -idx) wins; ties keep the one that appeared first.
     let mut best: Option<((i64, usize, i64, i64), Vec<Tok>)> = None;
 
     'outer: for start_h in 0..n_h {
@@ -541,7 +512,7 @@ fn best_shift(hyp: &[Tok], reference: &[Tok], checked: &mut usize) -> (i64, Vec<
                 && length < MAX_SHIFT_SIZE
             {
                 length += 1;
-                // 候选 (start_h, start_r, length)
+                // Candidate (start_h, start_r, length)
                 let hyp_wrong = hyp_err[start_h..start_h + length].iter().any(|&e| e);
                 let ref_wrong = ref_err[start_r..start_r + length].iter().any(|&e| e);
                 let aligned_inside =
@@ -570,7 +541,7 @@ fn best_shift(hyp: &[Tok], reference: &[Tok], checked: &mut usize) -> (i64, Vec<
                             best = Some((key, shifted));
                         }
                     }
-                    // 参考实现只在通过过滤的候选之后检查上限。
+                    // The reference implementation checks the upper limit only after candidates have passed the filter.
                     if *checked >= MAX_SHIFT_CANDIDATES {
                         break 'outer;
                     }
@@ -587,7 +558,7 @@ fn best_shift(hyp: &[Tok], reference: &[Tok], checked: &mut usize) -> (i64, Vec<
     }
 }
 
-/// 参考实现 `_perform_shift`：把 `words[start..start+length]` 挪到 `target` 之前。
+/// The reference implementation's `_perform_shift`: moves `words[start..start+length]` to just before `target`.
 fn perform_shift(words: &[Tok], start: usize, length: usize, target: usize) -> Vec<Tok> {
     let n = words.len();
     let mut out = Vec::with_capacity(n);
@@ -611,7 +582,7 @@ fn perform_shift(words: &[Tok], start: usize, length: usize, target: usize) -> V
     out
 }
 
-/// trace → （参考位置 → 对齐到的假设位置, 参考错误位, 假设错误位）。
+/// trace → (reference position → aligned hypothesis position, reference error position, hypothesis error position).
 fn trace_to_alignment(trace: &[Op]) -> (Vec<i64>, Vec<bool>, Vec<bool>) {
     let mut pos_hyp: i64 = -1;
     let mut align = Vec::new();
@@ -645,8 +616,7 @@ fn trace_to_alignment(trace: &[Op]) -> (Vec<i64>, Vec<bool>, Vec<bool>) {
     (align, ref_err, hyp_err)
 }
 
-/// 带束宽的 Levenshtein（参考实现 `BeamEditDistance._edit_distance`，无缓存）：
-/// 行 = 假设、列 = 参考；不允许时间不重叠的词替换。返回（距离, trace）。
+/// Beam-limited Levenshtein (the reference implementation's `BeamEditDistance._edit_distance`, uncached): rows = hypothesis, columns = reference. Words whose times do not overlap may not be substituted. Returns (distance, trace).
 fn edit_distance(hyp: &[Tok], reference: &[Tok]) -> (i64, Vec<Op>) {
     let n_h = hyp.len();
     let n_r = reference.len();
@@ -688,7 +658,7 @@ fn edit_distance(hyp: &[Tok], reference: &[Tok]) -> (i64, Vec<Op>) {
             } else {
                 (INT_INFINITY, Op::Sub)
             };
-            // tercom 偏好：匹配/替换 > 假设多词 > 参考多词（严格小于才更新）。
+            // tercom preference: match/substitute > extra hypothesis word > extra reference word (updated only on a strict less-than).
             let candidates = [
                 (cost[index - width - 1] + sub_cost, sub_op),
                 (cost[index - width] + COST_DEL, Op::HypOnly),
@@ -706,7 +676,7 @@ fn edit_distance(hyp: &[Tok], reference: &[Tok]) -> (i64, Vec<Op>) {
     let (mut i, mut j) = (n_h, n_r);
     while i > 0 || j > 0 {
         let op = match ops[i * width + j] {
-            // 束外单元格理论上不会出现在回溯路径上；兜底选一个能推进的操作。
+            // Cells outside the beam should theoretically not appear on the backtrace path. As a fallback, pick an operation that makes progress.
             Op::Undef => {
                 if i > 0 {
                     Op::HypOnly
@@ -731,92 +701,86 @@ fn edit_distance(hyp: &[Tok], reference: &[Tok]) -> (i64, Vec<Op>) {
 }
 
 // ---------------------------------------------------------------------------
-// 对齐结构指标（设计 §8）
+// Alignment structure metrics (design §8)
 // ---------------------------------------------------------------------------
 
-/// 逐句对齐明细。
+/// Per-sentence alignment detail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentenceAlignMetrics {
-    /// 句 id（`s-<首词id>`）。
+    /// Sentence id (`s-<first word id>`).
     pub id: String,
-    /// 该语言下是否存在 `transAlign` 条目。
+    /// Whether a `transAlign` entry exists for this language.
     pub aligned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<AlignMode>,
-    /// 生效对应粒度（[`TransAlign::correspondence`]）。
+    /// The effective correspondence granularity ([`TransAlign::correspondence`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correspondence: Option<Correspondence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_basis: Option<TextBasis>,
-    /// 源词数：条目 `words` 非空取其长度，否则取句内词数。
+    /// Source word count: if the entry's `words` is non-empty, take its length; otherwise take the number of words in the sentence.
     pub source_words: usize,
-    /// `concat(pieces.text)` 字符数。
+    /// The character count of `concat(pieces.text)`.
     pub target_chars: usize,
     pub blocks: usize,
     pub local_reorder_blocks: usize,
     pub weak_blocks: usize,
-    /// 落在某个块 `src` 区间内的源词数（无块 = 0）。
+    /// The number of source words that fall within some block's `src` range (no block = 0).
     pub covered_source_words: usize,
-    /// 落在某个块 `tgt` 区间内的译文字符数（无块 = 0）。
+    /// The number of target-text characters that fall within some block's `tgt` range (no block = 0).
     pub covered_target_chars: usize,
-    /// 块间边界数 = `blocks - 1`（有块时）。
+    /// The number of boundaries between blocks = `blocks - 1` (when blocks exist).
     pub block_boundaries: usize,
-    /// 落在块内部（非块边界）的目标语候选合法缝数：片文本原子边界中原文有
-    /// 空白背书、或前一原子以从句/句末标点收尾者。
+    /// The number of legal target-side seams inside blocks (not at block boundaries): those where the source text backs the atomic boundary of the piece with whitespace, or where the preceding atom ends with clause or sentence-end punctuation.
     pub inner_candidate_seams: usize,
-    /// 条目的 `aligner` 来源串（`TransAlign::aligner`），供评分器口径与
-    /// `align-scorer-stale` 使用。
+    /// The `aligner` source string of the entry (`TransAlign::aligner`), used by the scorer's convention and by `align-scorer-stale`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aligner: Option<String>,
-    /// 该句按源 Cue 分段并吸收 ≤2 词碎段后，实际可见的源子行数。
+    /// The number of source sub-lines actually visible for this sentence, after it is split by source Cue and fragments of ≤ 2 words are absorbed.
     pub source_rows: usize,
-    /// 该句当前派生出的译文 Cue 数。
+    /// The number of target Cues currently derived for this sentence.
     pub trans_cues: usize,
-    /// 该句最长译文 Cue 的驻留秒数。
+    /// The dwell time, in seconds, of the longest target Cue of this sentence.
     pub max_dwell_sec: f64,
 }
 
-/// 按语言汇总的对齐结构指标（设计 §8）。所有比率的分母为 0 时记 0。
+/// Alignment structure metrics aggregated per language (design §8). When the denominator of any ratio is 0, the ratio is recorded as 0.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlignMetrics {
-    /// 目标语言键。
+    /// The target-language key.
     pub lang: String,
-    /// 当前派生的句数。
+    /// The number of sentences currently derived.
     pub sentences: usize,
-    /// 有 `transAlign` 条目的句数。
+    /// The number of sentences that have a `transAlign` entry.
     pub aligned: usize,
-    /// `transAlign[lang]` 中不对应任何当前句的条目数（陈旧残留）。
+    /// The number of `transAlign[lang]` entries that correspond to no current sentence (stale leftovers).
     pub orphan_entries: usize,
-    /// `align-coverage`（源侧）：manyToOne 条目里落在某个块内的源词占比；
-    /// 无块条目按 0 覆盖计入分母。
+    /// `align-coverage` (source side): the share of source words that fall within a block, among manyToOne entries. Entries without blocks count as 0 coverage in the denominator.
     pub coverage_src: f64,
-    /// `align-coverage`（目标侧）：manyToOne 条目里落在某个块内的译文字符占比。
+    /// `align-coverage` (target side): the share of target-text characters that fall within a block, among manyToOne entries.
     pub coverage_tgt: f64,
-    /// `align-crossing-rate`：含 `local-reorder` 块的句占已对齐句的比例。
+    /// `align-crossing-rate`: the proportion of aligned sentences that contain a `local-reorder` block.
     pub crossing_rate: f64,
-    /// `local-reorder` 块总数。
+    /// The total number of `local-reorder` blocks.
     pub local_reorder_blocks: usize,
-    /// `align-safe-boundary-ratio`：块边界数 / (块边界数 + 块内部候选合法缝数)，
-    /// 只统计有块的条目。
+    /// `align-safe-boundary-ratio`: block boundary count / (block boundary count + in-block legal seam candidates). Only entries that have blocks are counted.
     pub safe_boundary_ratio: f64,
-    /// `align-sentence-degrade-rate`：manyToOne 条目中 `correspondence == sentence`
-    /// 的占比（持久层不区分降级原因；`independent` 单独见 `independent_rate`）。
+    /// `align-sentence-degrade-rate`: the share of manyToOne entries where `correspondence == sentence` (persistence does not distinguish the reason for degradation; `independent` is shown separately as `independent_rate`).
     pub sentence_degrade_rate: f64,
-    /// `align-rewrite-rate`：`textBasis == display` 的条目占已对齐句的比例。
+    /// `align-rewrite-rate`: the proportion of aligned sentences whose `textBasis == display`.
     pub rewrite_rate: f64,
-    /// `mode == independent` 的条目占已对齐句的比例。
+    /// The proportion of aligned sentences whose `mode == independent`.
     pub independent_rate: f64,
-    /// 带 `weak` 标记的块占全部块的比例。
+    /// The proportion of all blocks that carry a `weak` mark.
     pub weak_block_rate: f64,
-    /// `align-row-deficit` 命中句 / 已翻译句。
+    /// `align-row-deficit` hits / translated sentences.
     pub row_deficit_rate: f64,
     pub per_sentence: Vec<SentenceAlignMetrics>,
 }
 
-/// 计算 `lang` 的对齐结构指标：句由 [`derive_sentences`] 现场派生（源 Cue 不
-/// 参与），逐句查 `doc.trans_align[lang]`。
+/// Computes the alignment structure metrics for `lang`. Sentences are derived on the fly by [`derive_sentences`] (source Cues do not take part), and `doc.trans_align[lang]` is looked up for each sentence.
 pub fn align_metrics(doc: &TranscriptDoc, lang: &str) -> AlignMetrics {
     let source_cues = derive_cues(doc, &crate::layout_profile::cue_params_for_doc(doc));
     let sentences = derive_sentences(doc, &source_cues);
@@ -991,7 +955,7 @@ fn sentence_align_metrics(
         }
     }
 
-    // 候选合法缝：逐片原子化，缝位置换算到 concat(pieces.text) 字符下标。
+    // Candidate legal seams: atomize each piece, and convert seam positions to character indices in concat(pieces.text).
     let mut inner_candidate_seams = 0usize;
     let mut offset = 0usize;
     for (piece, &len) in entry.pieces.iter().zip(&piece_lens) {
@@ -1044,14 +1008,12 @@ fn sentence_align_metrics(
 }
 
 // ---------------------------------------------------------------------------
-// Golden 对拍指标（语义评分器方案 §11.3；strict / lax 两口径）
+// Golden alignment metrics (semantic scorer plan §11.3; strict / lax conventions)
 // ---------------------------------------------------------------------------
 
-/// 一个 bead：源词下标半开区间 ↔ 目标 `chars()` 半开区间。
+/// A bead: a half-open source-word index range ↔ a half-open target `chars()` range.
 ///
-/// 与 Vecalign / Bertalign 的 bead 同义，只是这里的单位是"句内词"与"译文
-/// 字符"而不是文档内的句。golden 与预测两侧都必须是**连续全覆盖且单调**的
-/// 划分（[`beads_contiguous`] 可自检）。
+/// It has the same meaning as a Vecalign or Bertalign bead, except that the units here are in-sentence words and target characters rather than sentences in a document. Both the golden side and the predicted side must be **contiguous, fully covering and monotonic** partitions ([`beads_contiguous`] can check this).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bead {
     pub src: std::ops::Range<usize>,
@@ -1075,30 +1037,30 @@ impl Bead {
     }
 }
 
-/// Bead 匹配口径（设计 §11.3 / §16.2 采纳 Vecalign 的两口径）。
+/// Bead matching conventions (design §11.3 / §16.2 adopts the two conventions of Vecalign).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BeadMatch {
-    /// 严格：两侧区间与某个对照 bead **完全相等**才算命中。
+    /// Strict: a hit requires both sides' ranges to be **exactly equal** to some reference bead.
     Strict,
-    /// 宽松：与某个对照 bead 在源侧、目标侧**都有非空交集**即算命中。
+    /// Lax: a hit requires a **non-empty intersection** with some reference bead on both the source side and the target side.
     Lax,
 }
 
-/// 精确率 / 召回率 / F1 及其计数。分母为 0 时：两侧皆空记 1.0，否则记 0.0。
+/// Precision, recall and F1, with their counts. When a denominator is 0: record 1.0 if both sides are empty, otherwise 0.0.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prf {
     pub precision: f64,
     pub recall: f64,
     pub f1: f64,
-    /// 预测侧命中数（精确率分子）。
+    /// The number of hits on the predicted side (the precision numerator).
     pub matched_predicted: usize,
-    /// golden 侧命中数（召回率分子）。
+    /// The number of hits on the golden side (the recall numerator).
     pub matched_golden: usize,
-    /// 参与统计的预测项数（精确率分母）。
+    /// The number of predicted items counted (the precision denominator).
     pub predicted: usize,
-    /// 参与统计的 golden 项数（召回率分母）。
+    /// The number of golden items counted (the recall denominator).
     pub golden: usize,
 }
 
@@ -1137,7 +1099,7 @@ impl Prf {
     }
 }
 
-/// 单侧命中数：`probe` 里有多少项按 `mode` 能在 `against` 里找到对应。
+/// One-sided hit count: how many items in `probe` can find a match in `against` under `mode`.
 fn bead_hits(probe: &[Bead], against: &[Bead], mode: BeadMatch) -> usize {
     probe
         .iter()
@@ -1149,15 +1111,12 @@ fn bead_hits(probe: &[Bead], against: &[Bead], mode: BeadMatch) -> usize {
         .count()
 }
 
-/// Bead P/R/F1（设计 §11.3）。
+/// Bead P/R/F1 (design §11.3).
 ///
-/// - `Strict`：预测 bead 与 golden bead 两侧区间完全一致才计命中——即
-///   Vecalign / Bertalign 的 strict 口径。
-/// - `Lax`：只要两侧都有交集就计命中（局部切分粒度不同但对应关系正确时
-///   仍得分）。
+/// - `Strict`: a predicted bead counts as a hit only when both sides' ranges exactly match a golden bead. This is the strict convention of Vecalign and Bertalign.
+/// - `Lax`: a hit counts as soon as both sides intersect. A prediction still scores when the local segmentation granularity differs but the correspondence is correct.
 ///
-/// 空 bead（任一侧区间为空）两侧都不参与统计。精确率以预测为分母、召回率
-/// 以 golden 为分母，各自独立判定（与参考实现相同，lax 下两者不必相等）。
+/// Empty beads (an empty range on either side) take no part in the statistics on either side. Precision uses the predictions as its denominator and recall uses the golden beads, each judged independently (the same as the reference implementation; under lax the two need not be equal).
 pub fn bead_prf(golden: &[Bead], predicted: &[Bead], mode: BeadMatch) -> Prf {
     let predicted_total = predicted.iter().filter(|bead| !bead.is_empty()).count();
     let golden_total = golden.iter().filter(|bead| !bead.is_empty()).count();
@@ -1169,10 +1128,9 @@ pub fn bead_prf(golden: &[Bead], predicted: &[Bead], mode: BeadMatch) -> Prf {
     )
 }
 
-/// Boundary F1（设计 §11.3）：边界位置集合的精确率 / 召回率 / F1。
+/// Boundary F1 (design §11.3): the precision, recall and F1 of the set of boundary positions.
 ///
-/// 源侧传源词下标、目标侧传目标字符下标；重复值先去重，两端的平凡边界
-/// （0 与全长）由调用方决定是否传入——[`beads_boundaries`] 默认不含它们。
+/// The source side passes source word indices and the target side passes target character indices. Duplicate values are deduplicated first. Whether to include the trivial boundaries at the two ends (0 and the full length) is up to the caller; [`beads_boundaries`] does not include them by default.
 pub fn boundary_f1(golden_boundaries: &[usize], predicted_boundaries: &[usize]) -> Prf {
     let golden: BTreeSet<usize> = golden_boundaries.iter().copied().collect();
     let predicted: BTreeSet<usize> = predicted_boundaries.iter().copied().collect();
@@ -1180,12 +1138,12 @@ pub fn boundary_f1(golden_boundaries: &[usize], predicted_boundaries: &[usize]) 
     Prf::new(hit, predicted.len(), hit, golden.len())
 }
 
-/// Path EM（设计 §11.3）：整条 bead 路径逐项相等。
+/// Path EM (design §11.3): the entire bead path is equal item by item.
 pub fn path_exact_match(golden: &[Bead], predicted: &[Bead]) -> bool {
     golden == predicted
 }
 
-/// bead 序列的内部边界（源侧、目标侧），不含 0 与末端。供 [`boundary_f1`]。
+/// The internal boundaries of a bead sequence (source side, target side), excluding 0 and the ends. Used by [`boundary_f1`].
 pub fn beads_boundaries(beads: &[Bead]) -> (Vec<usize>, Vec<usize>) {
     let src = beads
         .iter()
@@ -1200,8 +1158,7 @@ pub fn beads_boundaries(beads: &[Bead]) -> (Vec<usize>, Vec<usize>) {
     (src, tgt)
 }
 
-/// bead 序列是否满足"两侧连续全覆盖且单调"：从 0 起逐项衔接，末项分别到
-/// `src_len` / `tgt_len`，且每项两侧非空。空序列只在两个长度都为 0 时成立。
+/// Whether a bead sequence satisfies "contiguous, fully covering and monotonic on both sides": starting from 0, each item connects to the next; the last item reaches `src_len` / `tgt_len` respectively; and each item has a non-empty range on both sides. An empty sequence holds only when both lengths are 0.
 pub fn beads_contiguous(beads: &[Bead], src_len: usize, tgt_len: usize) -> bool {
     if beads.is_empty() {
         return src_len == 0 && tgt_len == 0;
@@ -1218,8 +1175,7 @@ pub fn beads_contiguous(beads: &[Bead], src_len: usize, tgt_len: usize) -> bool 
     src_cursor == src_len && tgt_cursor == tgt_len
 }
 
-/// 原子 → 在 `text` 里的起始字符下标（[`atomize`] 对非空白字符无损）。返回
-/// `atoms.len() + 1` 项，末项 = 文本字符数。
+/// Atom → its starting character index in `text` ([`atomize`] is lossless for non-whitespace characters). Returns `atoms.len() + 1` items; the last item is the character count of the text.
 fn atom_char_starts(text: &str, atoms: &[String]) -> Vec<usize> {
     let mut want = Vec::with_capacity(atoms.len());
     let mut acc = 0usize;
@@ -1282,7 +1238,7 @@ mod tests {
             block(2.5, 4.0, &["I am great."]),
             block(4.5, 7.0, &["The plan we discussed", "today is ready."]),
         ];
-        // 20 个参考词元（15 词 + 5 换行）；`YOU?` 规范化后与 `you?` 相同，只剩 2 处替换。
+        // 20 reference tokens (15 words + 5 newlines). `YOU?` normalizes to the same token as `you?`, leaving only 2 substitutions.
         let breakdown = suber_breakdown(&hyp, &reference, SuberTokenization::Words);
         assert_eq!(breakdown.reference_tokens, 20);
         assert_eq!(breakdown.word_substitutions, 2);
@@ -1314,7 +1270,7 @@ mod tests {
         hyp[1].start = 4.0;
         hyp[1].end = 4.4;
         let breakdown = suber_breakdown(&hyp, &reference, SuberTokenization::Words);
-        // 中间块（3 词 + `<eob>`）在两侧各算一次：4 删除 + 4 插入。
+        // The middle block (3 words + `<eob>`) is counted once on each side: 4 deletions + 4 insertions.
         assert_eq!(breakdown.word_deletions + breakdown.break_deletions, 4);
         assert_eq!(breakdown.word_insertions + breakdown.break_insertions, 4);
         assert!((breakdown.score - 40.0).abs() < 1e-9);
@@ -1332,7 +1288,7 @@ mod tests {
         let reference = vec![block(0.0, 2.0, &["我没去，", "因为我病了。"])];
         let hyp = vec![block(0.0, 2.0, &["我没走", "因为我病了"])];
         let breakdown = suber_breakdown(&hyp, &reference, SuberTokenization::Chars);
-        // 8 个字 + 2 个换行；只有「去→走」一处替换。
+        // 8 characters + 2 newlines; only one substitution, 去→走 (go → walk).
         assert_eq!(breakdown.reference_tokens, 10);
         assert_eq!(breakdown.word_substitutions, 1);
         assert_eq!(breakdown.edits, 1);
@@ -1343,12 +1299,9 @@ mod tests {
         assert_eq!(tokenize_zh("价格$100"), vec!["价", "格", "$", "100"]);
     }
 
-    /// 与 AppTek 参考实现（subtitle-edit-rate 0.4.0）逐例对拍：手工用例 +
-    /// 随机用例，编辑计数逐项相等、分数误差 < 1e-6。
+    /// Cross-checked case by case against the AppTek reference implementation (subtitle-edit-rate 0.4.0): hand-written cases plus random cases, with edit counts equal item by item and a score error < 1e-6.
     ///
-    /// 缺省只跑 ≤ 6 条字幕的用例（debug 构建下 tercom 位移搜索对 30 条 × 200 词的
-    /// 用例要数分钟）；全量对拍见 [`suber_matches_reference_implementation_fixture_full`]
-    /// （`cargo test -p ccut-flow-core --release -- --ignored`）。
+    /// By default only cases with ≤ 6 subtitles run. In debug builds, the tercom shift search takes minutes on a case of 30 subtitles × 200 words. The full cross-check is in [`suber_matches_reference_implementation_fixture_full`] (`cargo test -p ccut-flow-core --release -- --ignored`).
     #[test]
     fn suber_matches_reference_implementation_fixture() {
         check_suber_fixture(Some(6));
@@ -1410,7 +1363,7 @@ mod tests {
         assert!(checked >= 20, "fixture 子集过小：{checked}");
     }
 
-    // ----- 对齐结构指标 -----
+    // ----- Alignment structure metrics -----
 
     fn word(id: &str, t0: f64, t1: f64, text: &str) -> Word {
         Word {
@@ -1446,9 +1399,9 @@ mod tests {
                 hue: None,
             },
         );
-        // 句 1（8 词）：I didn't go because I was sick.
-        // 句 2（4 词）：It is very late.
-        // 句 3（3 词）：See you tomorrow.
+        // Sentence 1 (8 words): I didn't go because I was sick.
+        // Sentence 2 (4 words): It is very late.
+        // Sentence 3 (3 words): See you tomorrow.
         let texts: [&[&str]; 3] = [
             &["I", "didn't", "go", "because", "I", "was", "sick."],
             &["It", "is", "very", "late."],
@@ -1482,7 +1435,7 @@ mod tests {
                 .collect()
         };
 
-        // 句 1：块级对应，两块，第二块 local-reorder；块 1 覆盖 0..=2、块 2 覆盖 3..=6。
+        // Sentence 1: block-level correspondence with two blocks; the second block is local-reorder. Block 1 covers 0..=2, and block 2 covers 3..=6.
         let mut entry1 = TransAlign::new(
             AlignMode::ManyToOne,
             words_of(&sentences[0]),
@@ -1515,7 +1468,7 @@ mod tests {
                 flags: vec!["local-reorder".to_owned(), "weak".to_owned()],
             },
         ];
-        // 句 2：整句对应，一块覆盖全句；译文里有一个块内候选缝（「，」后）。
+        // Sentence 2: whole-sentence correspondence; one block covers the whole sentence. The translation has one in-block candidate seam (after “，”).
         let mut entry2 = TransAlign::new(
             AlignMode::ManyToOne,
             words_of(&sentences[1]),
@@ -1532,7 +1485,7 @@ mod tests {
             confidence: Some(0.2),
             flags: vec![],
         }];
-        // 句 3：independent，无块。
+        // Sentence 3: independent, with no blocks.
         let entry3 = TransAlign::new(
             AlignMode::Independent,
             Vec::new(),
@@ -1557,12 +1510,12 @@ mod tests {
         assert_eq!(metrics.sentences, 3);
         assert_eq!(metrics.aligned, 3);
         assert_eq!(metrics.orphan_entries, 1);
-        // 覆盖率只看 manyToOne：句 1 7/7 词、10/10 字符；句 2 4/4、7/7。
+        // Coverage counts only manyToOne: sentence 1 has 7/7 words and 10/10 characters; sentence 2 has 4/4 and 7/7.
         assert!((metrics.coverage_src - 1.0).abs() < 1e-9);
         assert!((metrics.coverage_tgt - 1.0).abs() < 1e-9);
         assert!((metrics.crossing_rate - 1.0 / 3.0).abs() < 1e-9);
         assert_eq!(metrics.local_reorder_blocks, 1);
-        // 块边界 1（句 1 位置 4）；块内候选缝 1（句 2「已经，」之后）→ 1/2。
+        // Block boundary 1 (sentence 1, position 4); in-block candidate seam 1 (after “已经，” in sentence 2) → 1/2.
         assert!((metrics.safe_boundary_ratio - 0.5).abs() < 1e-9);
         assert!((metrics.sentence_degrade_rate - 0.5).abs() < 1e-9);
         assert!((metrics.rewrite_rate - 1.0 / 3.0).abs() < 1e-9);
@@ -1585,21 +1538,19 @@ mod tests {
         assert_eq!(row3.covered_source_words, 0);
         assert_eq!(row3.source_words, 3);
 
-        // camelCase 序列化，供 `ccut check` 直接输出。
+        // camelCase serialization, for direct output by `ccut check`.
         let json = serde_json::to_value(&metrics).unwrap();
         assert!(json.get("coverageSrc").is_some());
         assert!(json.get("safeBoundaryRatio").is_some());
-        // M8.2：两条评分器口径已随本地对齐评分器退役。
+        // M8.2: the two scorer conventions were retired along with the local alignment scorer.
         assert!(json.get("scorerDirectRate").is_none());
         assert!(json.get("llmFallbackRate").is_none());
-        // `corridorPruned` 只存在于 `--align-audit` 工件：transcript 上没有
-        // 走廊剪枝数，缺字段比给 0 诚实。
+        // `corridorPruned` exists only in the `--align-audit` artifact. The transcript has no corridor-pruning count, so omitting the field is more honest than giving 0.
         assert!(json.get("corridorPruned").is_none());
         assert_eq!(json["perSentence"][0]["localReorderBlocks"], 1);
     }
 
-    /// M8.2 后不再产生 `semantic-span-dp/1:…` 条目，但旧项目里已有的必须
-    /// 继续可读：`aligner` 原样出现在逐句行里，指标不因此报错或改写它。
+    /// After M8.2, `semantic-span-dp/1:…` entries are no longer produced, but ones already in old projects must stay readable: `aligner` appears as-is in the per-sentence rows, and the metrics neither error on it nor rewrite it.
     #[test]
     fn legacy_semantic_span_dp_entries_stay_readable() {
         let mut doc = doc_with_three_sentences();
@@ -1659,7 +1610,7 @@ mod tests {
                 text: "我没去因为我病了".to_owned(),
             }],
         );
-        // 块只覆盖前 3 个词、前 3 个字符。
+        // The block covers only the first 3 words and the first 3 characters.
         entry.blocks = vec![AlignBlock {
             src: (0, 2),
             tgt: (0, 3),
@@ -1677,13 +1628,13 @@ mod tests {
         assert_eq!(metrics.per_sentence[1].aligned, false);
     }
 
-    // ----- Golden 对拍指标 -----
+    // ----- Golden alignment metrics -----
 
     fn bead(src: (usize, usize), tgt: (usize, usize)) -> Bead {
         Bead::new(src.0..src.1, tgt.0..tgt.1)
     }
 
-    /// golden：三块；预测：完全一致。
+    /// Golden: three blocks; prediction: exactly identical.
     fn golden_three() -> Vec<Bead> {
         vec![
             bead((0, 2), (0, 4)),
@@ -1705,7 +1656,7 @@ mod tests {
         assert_eq!(lax.f1, 1.0);
     }
 
-    /// 预测把 golden 的中间块切成两半：strict 只认头尾两块，lax 全认。
+    /// The prediction splits golden's middle block into two halves. Strict accepts only the first and last blocks; lax accepts all of them.
     #[test]
     fn bead_prf_strict_and_lax_differ_on_split_block() {
         let golden = golden_three();
@@ -1729,7 +1680,7 @@ mod tests {
         assert!(lax.f1 > strict.f1);
     }
 
-    /// 语序错位：预测块与 golden 块两侧都没有交集 ⇒ strict 与 lax 同为 0。
+    /// Out-of-order correspondence: the predicted block and the golden block have no intersection on either side ⇒ strict and lax are both 0.
     #[test]
     fn bead_prf_lax_still_zero_without_overlap() {
         let golden = vec![bead((0, 2), (0, 4)), bead((2, 4), (4, 8))];
@@ -1741,7 +1692,7 @@ mod tests {
         }
     }
 
-    /// 整句降级（单块）对多块 golden：lax 能拿到满召回但精确率仍受限。
+    /// Whole-sentence degradation (a single block) against a multi-block golden: lax reaches full recall, but precision remains limited.
     #[test]
     fn bead_prf_sentence_level_prediction() {
         let golden = golden_three();
@@ -1779,7 +1730,7 @@ mod tests {
         assert_eq!(deduped.golden, 2);
         assert_eq!(deduped.predicted, 2);
         assert_eq!(deduped.f1, 1.0);
-        // 整句降级：预测没有内部边界。
+        // Whole-sentence degradation: the prediction has no internal boundaries.
         let none = boundary_f1(&[2, 5], &[]);
         assert_eq!(none.precision, 0.0);
         assert_eq!(none.recall, 0.0);

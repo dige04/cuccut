@@ -71,7 +71,7 @@ const KIND_ICON: Record<StepKind, ReactNode> = {
   other: <More />,
 };
 
-/** CucCut 自己的工具按类别取图标（agent-tool-steps.ts）。 */
+/** CucCut's own tools take their icons by category (agent-tool-steps.ts). */
 const TOOL_ICON: Record<CucCutStepKind, ReactNode> = {
   'video-list': <ListBulleted />,
   'video-create': <Video />,
@@ -105,11 +105,8 @@ const TOOL_ICON: Record<CucCutStepKind, ReactNode> = {
 };
 
 /**
- * 一组执行过程（产品设计 §3.2.2）：两段文字之间只有一行灰字摘要 + 箭头（「读取了 2 个文件、运行了命令」），不放图标；
- * 有失败也是灰字，只多写「N 项失败」。点开是一个带边框的框：一步一行、一张修改回执一行（§6.5 变更卡，撤销与恢复在行里），
- * 行间分隔线；框里每一行还能再点开看输入、输出与错误。
- * 会话在跑、这一组里有一步在跑时，摘要行换成那一步：类别的像素加载图形 + 扫光的类别名 + 已用时间，默认也折叠；
- * 几步一起跑时写「等 N 项」。点开后框里那一行用静止图标：一个会话里在动的只有摘要行与回合页脚。
+ * A group of execution steps (product design §3.2.2): between two blocks of text there is only a single grey summary line plus an arrow (e.g. “读取了 2 个文件、运行了命令” (read 2 files, ran commands)), with no icon. A failure is also shown in grey, with “N 项失败” (N failed) added. Clicking it opens a bordered box: one step per row, and one change receipt per row (§6.5 change card, with undo and restore in the row), with divider lines between rows; each row inside the box can again be expanded to show its input, output and errors.
+ * While the session is running and a step in this group is running, the summary line switches to that step: the category's pixel loader graphic, the category name with a shimmer sweep, and the elapsed time, and it is collapsed by default. When several steps run at once, it reads “等 N 项” (N items in progress). After expanding, the row in the box uses a static icon: in a session, only the summary line and the turn footer move.
  */
 export const StepsGroup = memo(function StepsGroup({
   items,
@@ -166,7 +163,7 @@ function lastStepText(items: StepsBlock['items'], cwd?: string | null): string |
   return [step.label, step.summary].filter(Boolean).join(' ');
 }
 
-/** 在跑的摘要行：那一步的类别名与已用时间（自己每秒跳，组不跟着重渲）。几步一起跑时不写时间，写「等 N 项」。 */
+/** The summary line while running: the category name of that step and the elapsed time (it ticks every second on its own, so the group does not re-render with it). When several steps run at once, no time is shown; it reads “等 N 项” (N items in progress). */
 function LiveHead({ item, count, cwd }: { item: ToolCall | Reasoning; count: number; cwd?: string | null }) {
   const now = useNow(1000);
   const label = item.kind === 'tool-call' ? toolStep(item, cwd).label : T.steps.thinking;
@@ -186,13 +183,13 @@ function LiveHead({ item, count, cwd }: { item: ToolCall | Reasoning; count: num
   );
 }
 
-/** 步骤的加载图形键：CucCut 自己的工具按它的类别（与图标同一个优先级），其余按通用类别。 */
+/** Loader-graphic key for a step: CucCut's own tools use their category (same priority as the icon); everything else uses the generic category. */
 function stepLoaderKey(item: ToolCall, cwd?: string | null): string {
   const step = toolStep(item, cwd);
   return step.tool ?? step.kind;
 }
 
-/** 14px 的像素图放进与类别图标同尺寸的画布，换图标时这一行不动。 */
+/** The 14px pixel graphic is placed in a canvas the same size as the category icon, so this row does not move when the icon changes. */
 function RowLoader({ kind }: { kind: string }) {
   return (
     <span className="cc-step__ic cc-step__loader">
@@ -201,7 +198,7 @@ function RowLoader({ kind }: { kind: string }) {
   );
 }
 
-/** `still`：加载图形已在摘要行上，这一行在跑时用静止图标、只留扫光。 */
+/** `still`: the loader graphic is already on the summary line, so while this row is running it uses a static icon and keeps only the shimmer sweep. */
 const StepRow = memo(function StepRow({
   item,
   still,
@@ -220,7 +217,7 @@ const StepRow = memo(function StepRow({
   return <ToolRow item={item} still={still} conversationId={conversationId} cwd={cwd} />;
 });
 
-/** 思考只露第一行（去掉 Markdown 加粗），全文在展开里。 */
+/** Thinking shows only its first line (with Markdown bold removed); the full text is in the expanded view. */
 function firstLine(text: string): string {
   const line = text.trim().split('\n')[0] ?? '';
   return line.replace(/\*\*/g, '').trim();
@@ -253,7 +250,7 @@ function ReasoningRow({ item, still }: { item: Reasoning; still: boolean }) {
   );
 }
 
-/** 状态一旦失败，不再被这一行之后收到的更新改回。 */
+/** Once the status has failed, it is not changed back by updates received for this row afterwards. */
 function useLatchedStatus(status: ToolCall['status']): ToolCall['status'] {
   const latched = useRef<ToolCall['status'] | null>(null);
   latched.current = nextToolStatus(latched.current, status);

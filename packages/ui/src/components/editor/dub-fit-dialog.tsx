@@ -14,10 +14,9 @@ import { useDocumentBody } from './use-document-body.ts';
 import { rateText } from './timeline-dub.tsx';
 
 /**
- * 「改译文并重配」（设计稿 panel-dub-fit.jsx 的简化版）：要重配的几句一句一行——现在的配音多长、多快，或者为什么没合成；
- * 下面是这句译文（合成念的 `naturalText`），可以改。确定后先写译文的新版本（只改动过的几句），再只重配这几句（dub-regen.ts）。
- * 不做语速库预估、不请模型缩写或重译；改译文不重切从它生成的字幕。
- * 由时间线常驻挂一个（timeline-menu.tsx），块菜单、配音行头与素材页的配音组卡经 `openDubFit` 打开。
+ * “Edit translation and re-dub” (simplified version of design panel-dub-fit.jsx): one row per sentence to re-dub, showing the current dub's length and speed, or why it was not synthesized. Below is that sentence's translation (`naturalText`, which synthesis reads), which can be edited. On confirm, a new version of the translation is written first (only the sentences that were changed), then only those sentences are re-dubbed (dub-regen.ts).
+ * No speech-rate library estimates, and no model is asked to shorten or re-translate; editing the translation does not re-split the subtitles generated from it.
+ * The timeline mounts one of these permanently (timeline-menu.tsx); the block menu, the dub row header and the asset page's dub group card open it through `openDubFit`.
  */
 export function DubFitHost({ sequence, documents, blocks }: { sequence: Sequence; documents: Record<Id, DocumentRecord>; blocks: ReadonlyMap<Id, DubBlock> }) {
   const fit = useDubRegen((s) => s.fit);
@@ -46,7 +45,7 @@ const listStyle = style({ display: 'flex', flexDirection: 'column', marginTop: 1
 interface FitRow {
   unitId: Id;
   index: number;
-  /** 现在的配音（时间线上有这一句时）。 */
+  /** The current dub (when this sentence is on the timeline). */
   dub: { seconds: number; rate: string } | null;
   failed: FailedUnit | null;
   unit: TranslationUnit | null;
@@ -80,7 +79,7 @@ function DubFitDialog({
 
   const failed = failedUnits(planBody, placedUnits(sequence, fit.groupId));
   const order = new Map((translation?.units ?? []).map((unit, i) => [unit.id, { unit, index: i + 1 }]));
-  // 没有译文可对（计划里没有引用、读不出）时按计划的次序写第几句：没合成的句也占号，轨上的块序数不算它们。
+  // With no translation to compare against (no reference in the plan, or it cannot be read), the sentence is labeled by its order in the plan: sentences not synthesized also take a number; the block order on the track does not count them.
   const planOrder = planUnitOrder(planBody);
   const rows: FitRow[] = fit.units.map((unitId, i) => {
     const block = [...blocks.values()].find((b) => b.groupId === fit.groupId && b.unitId === unitId);
@@ -113,7 +112,7 @@ function DubFitDialog({
         translationId: translation ? translationId : null,
         texts,
       });
-      // 没提交成（已经提示过）时留在对话框里，改过的字不丢。
+      // If it was not submitted (already reported), stay in the dialog so edited text is not lost.
       if (jobId) closeDubFit();
     } finally {
       setBusy(false);

@@ -9,44 +9,44 @@ import { useRuntime } from '../../runtime/context.tsx';
 import { useExportPlaces } from '../../state/export-store.ts';
 import { EXPORT_COPY } from './export-copy.ts';
 
-/** 弹层各页要读的视频事实（编辑器打开着的那个视频）。 */
+/** Video facts the export panel's pages read (the video open in the editor). */
 export interface ExportEnv {
   videoId: Id;
   videoName: string;
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
   assets: Record<Id, AssetRecord>;
-  /** 编辑器播放头（秒）：范围的「取此刻」与默认勾的那一段。 */
+  /** Editor playhead (seconds): used by the range's "Use current" and for the segment ticked by default. */
   playhead: number;
   selection: readonly Id[];
-  /** 已追平、能提交（打开中、断线时不能导）。 */
+  /** Caught up and able to submit (cannot export while opening or disconnected). */
   ready: boolean;
-  /** 成片没挑位置时导到这里：原视频所在的文件夹（`exportSourceDir`）；Web、素材在视频目录里时 null，交给 Runtime 的缺省。 */
+  /** When no location is chosen, export here: the folder of the original video (`exportSourceDir`); null on web, or when the source is inside the video's folder, which leaves it to the Runtime default. */
   sourceDir: string | null;
 }
 
 export interface ExportSubmit {
   busy: boolean;
-  /** 上一次提交被拒的原因；没有被拒时 null。 */
+  /** The reason the last submission was rejected; null if it was not rejected. */
   problem: ExportProblem | null;
-  /** 被拒的那份设置：补救（跳过、换位置、指定文档）在它上面改了重提。 */
+  /** The settings that were rejected: remedies (skip, change location, pick a document) are applied to these and then resubmitted. */
   rejected: ExportSettings | null;
   submit(settings: ExportSettings, dir?: string | null): Promise<void>;
-  /** 一次导几份（音频页「每种配音各一份」）：逐份提交，弹层盯第一份。 */
+  /** How many files to export at once (the audio page's "one per kind"): submitted one by one, and the panel watches the first. */
   submitEach(parts: readonly ExportPart[], dir?: string | null): Promise<void>;
   dismiss(): void;
 }
 
-/** 几份里的一份：设置，加上可选的固定文件名（只出一个文件时）。 */
+/** One of several: the settings, plus an optional fixed filename (when only one file is produced). */
 export interface ExportPart {
   settings: ExportSettings;
   fileName?: string | null;
 }
 
 /**
- * 桌面端先确认保存目的地，取消时不建任务；Web 沿用 Runtime 目的地。
- * 提交一次导出（`exports.create`，架构设计 §9.11）：通过了就是一条 Job，交给弹层盯着它的进度；
- * 被拒时没有建任务，按 Runtime 的拒绝码整理成一句标题、逐项清单与能做的补救。不重试、不伪造结果。
+ * On desktop, the save destination is confirmed first; cancelling creates no job. Web uses the Runtime's destination.
+ * Submits one export (`exports.create`, architecture design §9.11): when accepted, it is one Job, handed to the panel to watch its progress.
+ * When rejected, no job is created, and the Runtime's rejection code is turned into a one-sentence title, an itemized list and the remedy available. No retries, no fabricated results.
  */
 export function useExportSubmit(env: ExportEnv, onStarted: (jobId: Id, tab: ExportTab) => void): ExportSubmit {
   const runtime = useRuntime();
@@ -55,7 +55,7 @@ export function useExportSubmit(env: ExportEnv, onStarted: (jobId: Id, tab: Expo
   const pending = useRef(false);
   const [problem, setProblem] = useState<ExportProblem | null>(null);
   const [rejected, setRejected] = useState<ExportSettings | null>(null);
-  // 几份里第一份就被拒（还没有建任务）：补救（换个位置）拿着被拒的那份重提时，从它起把剩下的几份一起重提。
+  // If the first of several is rejected (no job created yet): when the remedy (change location) resubmits the rejected one, the remaining ones are resubmitted together with it.
   const [batch, setBatch] = useState<{ rejected: ExportSettings; parts: readonly ExportPart[] } | null>(null);
   const placeFor = (settings: ExportSettings, dir: string | null | undefined) => exportTargetDir(settings.kind, dir, savedDir, env.sourceDir);
   const namesFor = (settings: ExportSettings) => defaultFileNames(env.videoName, settings, env.documents, env.sequence);
@@ -92,9 +92,8 @@ export function useExportSubmit(env: ExportEnv, onStarted: (jobId: Id, tab: Expo
   };
 
   /**
-   * 逐份 `exports.create`（各是一条任务）。都提交了：弹层盯第一份，其余在任务里，提示一句。
-   * 第一份就被拒：和单份一样在页内说明与补救，补救时剩下的几份一起重提；提交了几份之后才被拒：弹层已经去盯第一份了，
-   * 用提示说清楚后面几份没导。
+   * Submits each one (`exports.create`, each is one job). If all were submitted: the panel watches the first, the rest are in the jobs, and one notice says so.
+   * If the first is rejected: as with a single export, explain and offer the remedy on the page; when the remedy is applied, the remaining ones are resubmitted together. If some were submitted before a rejection: the panel is already watching the first, so a notice states clearly that the later ones were not exported.
    */
   const submitEach = async (parts: readonly ExportPart[], dir?: string | null) => {
     if (!parts.length || pending.current) return;

@@ -14,9 +14,9 @@ import { pl } from './speakers.pl.ts';
 import { tr } from './speakers.tr.ts';
 import { vi } from './speakers.vi.ts';
 
-/** `packages/jobs/src/pipelines/speakers.ts`：「识别说话人」流程与应用提案。 */
+/** `packages/jobs/src/pipelines/speakers.ts`: the “identify speakers” flow and application proposals. */
 const en = {
-  /** 流程名，也是应用提案那笔事务的标签。 */
+  /** Flow name, also the label of the transaction that applies the proposal. */
   label: 'Identify speakers',
   description:
     'Tells apart the speakers in an existing transcript in the video by voice (local model, no re-transcription). The result is a proposal; after it is confirmed, apply it with edits.applySpeakers.',

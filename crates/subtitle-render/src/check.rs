@@ -1,13 +1,10 @@
-//! 检查报告里依赖时间线 schema 的纯判定。
+//! Pure checks in the inspection report that depend on the timeline schema.
 //!
-//! 移植自 CucCut v2 `ccut-engine` 的 `flows/check.rs`：`place_out_of_canvas` 与它的测试原样带来，
-//! 只把私有函数提成 `pub`。同一文件里读写工程目录的 `check_verdict` / `run_check` 不移植；
-//! `speech-doc` 的 `check` 只依赖转录文档，不认识时间线 schema，所以这一条放在这里。
+//! Ported from `flows/check.rs` in CucCut v2 `ccut-engine`: `place_out_of_canvas` and its tests are brought over as-is, with only the private functions made `pub`. `check_verdict` / `run_check`, which read and write the project directory in the same file, are not ported. The `check` in `speech-doc` depends only on the transcript document and does not recognise the timeline schema, so this rule lives here.
 
-/// `place` 越出画布（`element-rect-out-of-canvas`）：盒子一侧越出画布，或中心 y 不在画内。
+/// `place` extends beyond the canvas (`element-rect-out-of-canvas`): one side of the box extends beyond the canvas, or its centre y is not within the canvas.
 ///
-/// 视频 / 图片放大到左右都越出、盖满整幅宽不算：那是「放大、拖动取景」的裁切
-/// （`ccut shorts cut --focus-x` 写的就是这种盒），播客切片验收里被当成放歪报了出来。
+/// A video or image enlarged so that it extends beyond both left and right and covers the full width is not reported. That is a crop for “zoom in and drag the framing” (the box written by `ccut shorts cut --focus-x` is exactly this kind), which was wrongly reported as misplaced in the podcast-clip acceptance check.
 pub fn place_out_of_canvas(
     kind: timeline::schema::ElementKind,
     place: &timeline::schema::Place,
@@ -36,8 +33,7 @@ mod place_tests {
         }
     }
 
-    /// 播客切片验收：`shorts cut --focus-x 0.6` 的主视频盒（x -32.26、w 316.37）左右都越出、
-    /// 盖满画布，是取景裁切，不报；只越出一侧的照报。
+    /// Podcast-clip acceptance: the main video box from `shorts cut --focus-x 0.6` (x -32.26, w 316.37) extends beyond both left and right and covers the full canvas. It is a framing crop and is not reported. A box that extends beyond only one side is still reported.
     #[test]
     fn a_zoom_crop_that_covers_the_canvas_is_not_out_of_canvas() {
         assert!(!place_out_of_canvas(
@@ -49,7 +45,7 @@ mod place_tests {
             &place(50.0, 180.0)
         ));
         assert!(place_out_of_canvas(ElementKind::Video, &place(90.0, 40.0)));
-        // 文字盒没有「取景」这回事，越出就报。
+        // A text box has no concept of “framing”, so if it extends beyond the canvas, it is reported.
         assert!(place_out_of_canvas(ElementKind::Text, &place(50.0, 180.0)));
         assert!(!place_out_of_canvas(ElementKind::Text, &place(50.0, 60.0)));
     }

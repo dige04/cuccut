@@ -1,28 +1,23 @@
-//! 按字体族名找本机字体（架构设计 §9.1）。移植自 CucCut v2 `ccut-render` 的系统字体库
-//! （`system_font_db`、`system_font_files`、`FaceNames`）。
+//! Finds local fonts by font family name (architecture design §9.1). Ported from the system font library of CucCut v2 `ccut-render`
+//! (`system_font_db`, `system_font_files`, `FaceNames`).
 //!
-//! 单位是 face：渲染时一段文字按「族名、字重、斜体」挑字体（与排版引擎同一套 CSS 匹配，`fontdb::Database::query`），
-//! 所以这里也按这三样在本机字体里挑出那一个 face（哪个文件、文件里第几个），见 [`FontLibrary::resolve_face`]。
-//! 导出（原生，直接读文件）与预览（WASM 读不到本机字体，由宿主按这里的解析把字节送过去）都只装挑出来的 face：
-//! 系统的中文字体集合（`.ttc`，苹方约 75 MB、24 个 face）只取用到的那一个（[`FaceLayout`]，抽出它的表拼成一个单独的
-//! 字体），两边装进去的字节相同，挑到的 face 也相同。只按用到的去找，有大小上限（[`MAX_FACE_BYTES`]）；不列、不送整个
-//! 字体目录。
+//! The unit is the face. When rendering, a run of text picks a font by “family name, weight, italic” (the same CSS matching as the layout engine, `fontdb::Database::query`), so this also picks that one face from the local fonts by those three (which file, and which index within the file); see [`FontLibrary::resolve_face`].
+//! Export (native, reads the file directly) and preview (WASM cannot read local fonts, so the host sends the bytes according to the resolution done here) both load only the picked face. The system's CJK font collections (`.ttc`; PingFang is about 75 MB with 24 faces) take only the one face used ([`FaceLayout`], which extracts its tables and assembles a single standalone font). Both sides load identical bytes, and the face picked is the same. Only the faces used are looked up, with a size cap ([`MAX_FACE_BYTES`]); the whole font catalogue is not listed or sent.
 //!
-//! 测试钩子：环境变量 [`FONT_DIRS_ENV`] 设了时只扫它列出的目录（按平台的路径列表分隔），不再扫本机字体；
-//! 设成空串就是一个字体也没有。测试据此不依赖这台机器上恰好装了什么字体。
+//! Test hook: when the environment variable [`FONT_DIRS_ENV`] is set, only the directories it lists are scanned (separated by the platform's path-list separator), and local fonts are not scanned. Setting it to an empty string means there are no fonts at all. Tests use this so they do not depend on what fonts happen to be installed on the machine.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
-/// 只扫这些目录、不扫本机字体的环境变量（测试用）。
+/// Environment variable to scan only these directories and not the local fonts (for tests).
 pub const FONT_DIRS_ENV: &str = "CUCCUT_FONT_DIRS";
 
-/// 一个 face 抽出来之后的上限（苹方的一个 face 约 13 MB），再大的不送。
+/// Upper limit on an extracted face (one PingFang face is about 13 MB); anything larger is not sent.
 pub const MAX_FACE_BYTES: u64 = 96 * 1024 * 1024;
 
-/// 要找的 face：族名（或 PostScript 名）、字重（100–900）、是否斜体。
+/// Face to find: family name (or PostScript name), weight (100–900), and whether it is italic.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FaceQuery {
     pub family: String,
@@ -30,7 +25,7 @@ pub struct FaceQuery {
     pub italic: bool,
 }
 
-/// 挑出来的 face：文件、文件里第几个 face（不是集合时是 0）与文件的字节数。
+/// The face picked: file, its index within the file (0 when not a collection), and the file's byte count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontFace {
     pub path: PathBuf,
@@ -38,17 +33,17 @@ pub struct FontFace {
     pub file_len: u64,
 }
 
-/// 找不到的原因。
+/// Reason for not finding it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Missing {
-    /// 本机没有这个族。
+    /// This family is not installed locally.
     NotFound,
-    /// 有，但抽出来的 face 超过上限。
+    /// Present, but the extracted face exceeds the limit.
     TooLarge,
 }
 
 impl Missing {
-    /// 协议里的原因码。
+    /// Reason code in the protocol.
     pub fn code(self) -> &'static str {
         match self {
             Missing::NotFound => "not-found",
@@ -57,7 +52,7 @@ impl Missing {
     }
 }
 
-/// 一个字体 face 的名字：族名（所有语言的写法）与 PostScript 名。
+/// A font face's name: family name (in every language's spelling) and PostScript name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceNames {
     pub families: Vec<String>,
@@ -65,7 +60,7 @@ pub struct FaceNames {
 }
 
 impl FaceNames {
-    /// 族名或 PostScript 名等于 `name`（族名不分大小写）。
+    /// Family name or PostScript name equals `name` (family name compared case-insensitively).
     pub fn matches(&self, name: &str) -> bool {
         self.post_script_name == name || self.families.iter().any(|family| family.eq_ignore_ascii_case(name))
     }
@@ -78,19 +73,19 @@ fn face_names(face: &fontdb::FaceInfo) -> FaceNames {
     }
 }
 
-/// 一批字体文件的索引（只读了各文件的名字表，没有留字节）。
+/// Index of a batch of font files (only the name tables of each file are read; no bytes are kept).
 pub struct FontLibrary {
     db: fontdb::Database,
-    /// 扫的时候各字体目录的修改时间（[`Self::changed`] 据此判断装没装过新字体）。
+    /// Modification times of each font directory at scan time ([`Self::changed`] uses them to tell whether new fonts have been installed).
     watched: Vec<(PathBuf, Option<SystemTime>)>,
 }
 
 static SYSTEM: OnceLock<FontLibrary> = OnceLock::new();
 
-/// 往上看几层目录：系统下载的字体在 `…/某个资源/AssetData/字体.ttc`，新装的资源是上两层目录里多出来的一项。
+/// Looks up to a few levels up: system-downloaded fonts sit in `…/某个资源/AssetData/字体.ttc` (某个资源 = some resource), and a newly installed resource shows up as an extra entry two levels up.
 const WATCH_ANCESTORS: usize = 3;
 
-/// 本机字体所在的根目录（与 `fontdb` 扫的那些对应；用户字体目录一开始可能是空的，也看着）。
+/// Root directories where local fonts live (matching what `fontdb` scans). The user font directory may be empty at first, and is still watched.
 fn system_font_roots() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut roots: Vec<PathBuf> = Vec::new();
@@ -120,12 +115,12 @@ fn modified(dir: &Path) -> Option<SystemTime> {
 }
 
 impl FontLibrary {
-    /// 进程内只扫一次的本机字体库（[`Self::scan`]）。
+    /// Local font library, scanned only once per process ([`Self::scan`]).
     pub fn system() -> &'static FontLibrary {
         SYSTEM.get_or_init(FontLibrary::scan)
     }
 
-    /// 扫一遍本机字体（全机约 0.1–0.6 秒）；设了 [`FONT_DIRS_ENV`] 时只扫它列出的目录。
+    /// Scans the local fonts once (about 0.1–0.6 seconds for the whole machine). When [`FONT_DIRS_ENV`] is set, only the directories it lists are scanned.
     pub fn scan() -> FontLibrary {
         match std::env::var_os(FONT_DIRS_ENV) {
             Some(dirs) => FontLibrary::from_dirs(&std::env::split_paths(&dirs).collect::<Vec<_>>()),
@@ -137,7 +132,7 @@ impl FontLibrary {
         }
     }
 
-    /// 只装这些目录里的字体（递归；读不到的目录跳过）。
+    /// Loads only the fonts in these directories (recursive; unreadable directories are skipped).
     pub fn from_dirs(dirs: &[PathBuf]) -> FontLibrary {
         let mut db = fontdb::Database::new();
         let dirs: Vec<PathBuf> = dirs.iter().filter(|dir| !dir.as_os_str().is_empty()).cloned().collect();
@@ -147,8 +142,7 @@ impl FontLibrary {
         FontLibrary::indexed(db, &dirs)
     }
 
-    /// 记下要看的目录：字体根目录，与每个字体文件往上几层、还在某个根目录里的目录（根目录之外的家目录之类常常在变，
-    /// 不看；不在任何根目录里的文件只看它所在的目录）。
+    /// Records the directories to watch: the font roots, and for each font file, the directories up a few levels that are still inside some root. Directories outside the roots, such as the home directory, often change and are not watched. A file that is not inside any root watches only its own directory.
     fn indexed(db: fontdb::Database, roots: &[PathBuf]) -> FontLibrary {
         let mut dirs: std::collections::BTreeSet<PathBuf> = roots.iter().cloned().collect();
         for face in db.faces() {
@@ -175,13 +169,12 @@ impl FontLibrary {
         FontLibrary { db, watched }
     }
 
-    /// 扫过之后字体目录有没有变（装了、删了字体）：只看各目录自己的修改时间，几百次 `stat`，不重读字体。
+    /// Whether the font directories have changed since the scan (fonts installed or removed). It looks only at each directory's own modification time, a few hundred `stat`s, without re-reading the fonts.
     pub fn changed(&self) -> bool {
         self.watched.iter().any(|(dir, at)| modified(dir) != *at)
     }
 
-    /// 这批字体里所有的族名（每个 face 取它的第一个族名，即英文名；去重、按名字排好）。只有名字，不带文件路径：
-    /// 选字列表据此标出「本机已装」的族。
+    /// All family names in this batch of fonts (each face takes its first family name, i.e. its English name; deduplicated and sorted by name). Names only, without file paths: the font picker uses this to mark families as “installed locally”.
     pub fn families(&self) -> Vec<String> {
         let names: std::collections::BTreeSet<String> = self
             .db
@@ -192,14 +185,12 @@ impl FontLibrary {
         names.into_iter().collect()
     }
 
-    /// 按族名、字重与斜体挑一个 face：与排版引擎同一套 CSS 匹配（`fontdb::Database::query`，族名按原样比较），所以
-    /// 渲染器里只装这一个 face 时挑到的就是它。族名大小写不对时按写法对的那个族挑；都不是族名时按 PostScript 名
-    /// 精确找。抽出来超过 [`MAX_FACE_BYTES`] 的不要。同一个请求每次挑到同一个 face。
+    /// Picks one face by family name, weight, and italic, using the same CSS matching as the layout engine (`fontdb::Database::query`, with family names compared as given), so when only this one face is loaded into the renderer, the one picked is that face. If the family name's case is wrong, it is picked by the correctly spelled family; if none is a family name, it is found by exact PostScript name. A face whose extraction exceeds [`MAX_FACE_BYTES`] is not returned. The same request always picks the same face.
     pub fn resolve_face(&self, query: &FaceQuery) -> Result<FontFace, Missing> {
         self.resolve_face_within(query, MAX_FACE_BYTES)
     }
 
-    /// [`Self::resolve_face`]，按给定的上限。
+    /// [`Self::resolve_face`] with a given limit.
     pub fn resolve_face_within(&self, query: &FaceQuery, max_bytes: u64) -> Result<FontFace, Missing> {
         let family = query.family.trim();
         if family.is_empty() {
@@ -234,7 +225,7 @@ impl FontLibrary {
             })
             .ok_or(Missing::NotFound)?;
         let face = self.db.face(id).ok_or(Missing::NotFound)?;
-        // 本机字体按文件装入（`load_system_fonts` / `load_fonts_dir` → `Source::File`）。
+        // Local fonts are loaded per file (`load_system_fonts` / `load_fonts_dir` → `Source::File`).
         let fontdb::Source::File(path) = &face.source else {
             return Err(Missing::NotFound);
         };
@@ -257,7 +248,7 @@ impl FontLibrary {
     }
 }
 
-/// 一张表搬到哪里：原文件里从 `from` 起的 `len` 个字节，放到新字体的 `to`。
+/// Where a table moves: the `len` bytes starting at `from` in the original file go to `to` in the new font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableCopy {
     pub from: u64,
@@ -265,19 +256,16 @@ pub struct TableCopy {
     pub to: u32,
 }
 
-/// 把字体文件（或字体集合里的一个 face）抽成一个单独字体的做法：新的文件头（版本与表目录，表的位置改成新的），
-/// 加上每张表从原文件搬到哪里。表的内容原样搬，按 4 字节对齐依次排在表目录之后，空隙补零。读的时候查过边界：
-/// 每张表都在文件里，表目录不超过 [`MAX_TABLES`] 项。预览（经读取句柄按区间取）与导出（读文件）按同一个做法拼，
-/// 得到的字节相同。
+/// The way to extract a font file (or one face in a font collection) as a single standalone font: a new file header (version and table directory, with table offsets rewritten to the new positions), plus where each table moves from the original file. Table contents are copied as they are, laid out in 4-byte-aligned order after the table directory, with gaps zero-filled. Bounds are checked on read: every table lies within the file, and the table directory has no more than [`MAX_TABLES`] entries. Preview (reading by range through a read handle) and export (reading the file) assemble it the same way, so the resulting bytes are identical.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceLayout {
     pub header: Vec<u8>,
     pub tables: Vec<TableCopy>,
-    /// 拼好之后的字节数。
+    /// Byte count after assembly.
     pub size: u32,
 }
 
-/// 一个 face 最多几张表（真实字体二三十张）。
+/// Maximum number of tables in one face (real fonts have twenty to thirty).
 pub const MAX_TABLES: usize = 512;
 
 fn invalid(message: &str) -> std::io::Error {
@@ -302,13 +290,13 @@ fn be16(bytes: &[u8], at: usize) -> u16 {
     u16::from_be_bytes([bytes[at], bytes[at + 1]])
 }
 
-/// sfnt 的版本：TrueType（`0x00010000`、`true`）与 CFF（`OTTO`）。
+/// sfnt version: TrueType (`0x00010000`, `true`) and CFF (`OTTO`).
 fn is_sfnt(version: u32) -> bool {
     matches!(version, 0x0001_0000 | 0x7472_7565 | 0x4F54_544F)
 }
 
 impl FaceLayout {
-    /// 读文件头与表目录，算出第 `index` 个 face 怎样拼（`file_len` 是文件的字节数）。不是集合的文件只有第 0 个。
+    /// Reads the file header and table directory, and works out how the `index`-th face is assembled (`file_len` is the file's byte count). A file that is not a collection has only face 0.
     pub fn read<R: Read + Seek>(reader: &mut R, file_len: u64, index: u32) -> std::io::Result<FaceLayout> {
         let head = read_at(reader, file_len, 0, 12)?;
         let offset = if &head[0..4] == b"ttcf" {
@@ -336,7 +324,7 @@ impl FaceLayout {
         let mut header = Vec::with_capacity(12 + count * 16);
         header.extend_from_slice(&version.to_be_bytes());
         header.extend_from_slice(&(count as u16).to_be_bytes());
-        // searchRange、entrySelector、rangeShift 按 OpenType 的定义重算。
+        // searchRange, entrySelector, and rangeShift are recomputed per the OpenType definitions.
         let selector = (count as u32).ilog2();
         let range = (1u32 << selector) * 16;
         header.extend_from_slice(&(range as u16).to_be_bytes());
@@ -361,7 +349,7 @@ impl FaceLayout {
         Ok(FaceLayout { header, tables, size })
     }
 
-    /// 按这个做法从 `reader`（原文件）拼出单独的字体。
+    /// Assembles a standalone font from `reader` (the original file) by this method.
     pub fn assemble<R: Read + Seek>(&self, reader: &mut R, file_len: u64) -> std::io::Result<Vec<u8>> {
         let mut out = vec![0u8; self.size as usize];
         out[..self.header.len()].copy_from_slice(&self.header);
@@ -374,7 +362,7 @@ impl FaceLayout {
     }
 }
 
-/// 一个字体文件里的一个 face 是什么：第几个、名字、字重与是否斜体。
+/// What one face in a font file is: its index, name, weight, and whether it is italic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceSummary {
     pub index: u32,
@@ -383,9 +371,7 @@ pub struct FaceSummary {
     pub italic: bool,
 }
 
-/// 检查一个字体文件（例如刚下载的）：不超过 `max_bytes`，按渲染用的同一套解析（`fontdb`）读得出 face，每个 face 的
-/// 表都在文件之内（[`FaceLayout`]）。给出每个 face 的名字、字重与斜体；读不出任何 face 的是坏文件。只读名字表与表目录，
-/// 不执行文件里的任何东西。
+/// Checks a font file (for example, one just downloaded): no larger than `max_bytes`, readable as faces by the same parsing used for rendering (`fontdb`), and every face's tables lie within the file ([`FaceLayout`]). Gives each face's name, weight, and italic; a file with no readable face is a bad file. Reads only the name table and the table directory, and executes nothing in the file.
 pub fn inspect_file(path: &Path, max_bytes: u64) -> std::io::Result<Vec<FaceSummary>> {
     let len = file_len(path)?;
     if len > max_bytes {
@@ -411,14 +397,14 @@ pub fn inspect_file(path: &Path, max_bytes: u64) -> std::io::Result<Vec<FaceSumm
     Ok(faces)
 }
 
-/// 从一份字体文件的字节里抽出第 `index` 个 face（[`FaceLayout`]）。
+/// Extracts the `index`-th face from a font file's bytes ([`FaceLayout`]).
 pub fn extract_face(file: &[u8], index: u32) -> std::io::Result<Vec<u8>> {
     let mut reader = std::io::Cursor::new(file);
     let layout = FaceLayout::read(&mut reader, file.len() as u64, index)?;
     layout.assemble(&mut reader, file.len() as u64)
 }
 
-/// 读出一个挑好的 face（导出直接装进渲染器）。
+/// Reads out a picked face (export loads it directly into the renderer).
 pub fn read_face(face: &FontFace) -> std::io::Result<Vec<u8>> {
     let mut file = std::fs::File::open(&face.path)?;
     let len = file_len(&face.path)?;

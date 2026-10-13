@@ -2,15 +2,15 @@ import { intlLocale, type PairedNode, type ShareStatus } from '@cuccut/protocol'
 import { M } from './nodes-copy.ts';
 
 /**
- * `cuccut nodes` 与 `cuccut share` 的输出与参数（节点协议规范 §10）。从 main.ts 分出来，单独可测。
- * 令牌从不经过这里：`ShareStatus` 与 `PairedNode` 都不带令牌。
+ * Output and arguments of `cuccut nodes` and `cuccut share` (Node protocol spec §10). Split out of main.ts so it can be tested on its own.
+ * Tokens never pass through here: neither `ShareStatus` nor `PairedNode` carries a token.
  */
 
 function capabilityLabel(capability: string): string {
   return M.capabilityLabels[capability] ?? capability;
 }
 
-/** `cuccut share capability <能力> <on|off>` 的参数。 */
+/** Arguments of `cuccut share capability <capability> <on|off>`. */
 export function parseCapabilitySwitch(args: string[]): { capability: string; enabled: boolean } {
   const [capability, state, ...extra] = args;
   if (!capability || (state !== 'on' && state !== 'off') || extra.length > 0) {
@@ -19,14 +19,14 @@ export function parseCapabilitySwitch(args: string[]): { capability: string; ena
   return { capability, enabled: state === 'on' };
 }
 
-/** `ShareStatus` 的给人看的几行。 */
+/** The lines of `ShareStatus` shown to people. */
 export function formatShareStatus(status: ShareStatus): string[] {
   const lines: string[] = [];
   const state = !status.enabled ? M.shareOff : status.listening ? M.shareOn : M.shareNotListening(status.error || null);
   lines.push(M.shareState(state));
   lines.push(M.name(status.name, status.nodeId || null));
   lines.push(M.port(status.port, Boolean(status.allowAnySource)));
-  // 地址只在监听时有：开着却没监听的原因已经写在状态那一行。
+  // The address exists only while listening. The reason it is on but not listening is already written on the status line.
   if (status.listening)
     lines.push(
       M.addresses(status.addresses.length > 0 ? status.addresses.map((a) => formatHostPort(a, status.port)).join('  ') : null),
@@ -48,7 +48,7 @@ function timeOf(at: string | number): string {
   return new Date(at).toLocaleTimeString(intlLocale());
 }
 
-/** 已配对节点的一行：连不上、版本不兼容、配对失效，或各能力的状态。 */
+/** One line per paired node: cannot connect, version incompatible, pairing invalid, or the status of each capability. */
 export function describeNode(node: PairedNode): string {
   const problem =
     node.problem === 'unreachable'

@@ -14,7 +14,7 @@ import { pl } from './transcode.pl.ts';
 import { tr } from './transcode.tr.ts';
 import { vi } from './transcode.vi.ts';
 
-/** `packages/jobs/src/pipelines/transcode.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/transcode.ts`. */
 const en = {
   label: 'Transcode files',
   description: "Compress video files, merge them in order, or extract audio: file to file, without creating a video, run by ffmpeg; outputs don't overwrite existing files.",

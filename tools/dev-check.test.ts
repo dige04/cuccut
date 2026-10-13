@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-// @ts-expect-error 仓库的 Node 脚本没有类型声明
+// @ts-expect-error the repo's Node scripts have no type declarations
 import { checkEnvironment } from './dev-check.mjs';
 
 type Check = { label: string; ok: boolean; required: boolean; hint: string };

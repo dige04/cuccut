@@ -10,8 +10,7 @@ import { ToolError } from './tool-catalog.ts';
 import { toolRisk, type ToolConfirmation, type ToolScope } from './tool-scope.ts';
 
 /**
- * `slides_check` 与 `slides_import_asset`（docs/design/slides §7.2）：deck 必须在会话的来源目录里；校验通过时会话里记一条
- * `slides-created`，有问题时不记；导入的图片进 deck 的 `assets/`，返回 `/_blob/<id>`。要编译器的用例在编辑器没构建时跳过。
+ * `slides_check` and `slides_import_asset` (docs/design/slides §7.2): the deck must be in the session's source directory. When validation passes, the session records a `slides-created` entry; when there are problems, it does not. Imported images go into the deck's `assets/`, and the tool returns `/_blob/<id>`. Cases that need the compiler are skipped when the editor is not built.
  */
 
 const dist = resolveSlidesEditorDist();
@@ -54,7 +53,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   throw new Error('应当拒绝');
 }
 
-/** 工具用到的：授权、确认（记下请求）、来源目录与工作目录、记卡片。 */
+/** What the tools use: authorization, confirmation (records the request), the source and working directories, and card recording. */
 function fakeScope(write = true) {
   const confirmed: ToolConfirmation[] = [];
   const recorded: SlidesCreated[] = [];

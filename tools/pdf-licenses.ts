@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
-/** 内嵌的 PDF 字体、CMap、WASM 与 HTML 清理库的许可随桌面和 Web 构建一起交付。 */
+/** The licenses for the embedded PDF fonts, CMaps, WASM and HTML sanitizer library ship with the desktop and web builds. */
 export function pdfLicenses(root: string): Plugin {
   const files = [
     'pdfjs-dist/LICENSE', 'pdfjs-dist/cmaps/LICENSE',

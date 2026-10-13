@@ -1,12 +1,10 @@
-//! 英文文本规范化：inflect `number_to_words` / `ordinal`，上游 `text/en_normalization/expend.py` 的
-//! `normalize`，以及 `text/english.py` 的 `text_normalize`。
+//! English text normalization: inflect `number_to_words` / `ordinal`, the `normalize` from upstream `text/en_normalization/expend.py`,
+//! and `text_normalize` from `text/english.py`.
 //!
-//! 数字函数只接受 ASCII 数字串（可带 `st/nd/rd/th`），上游调用点全部来自 `[0-9]+` 匹配或 `str(int)`；
-//! 分组只移植了 `group` 0 / 1 / 2，小数点分块走不到。
+//! The number functions accept only ASCII digit strings (optionally with `st/nd/rd/th`); all upstream call sites come from `[0-9]+` matches or `str(int)`.
+//! Only groups 0 / 1 / 2 are ported; the decimal-point chunking path is unreachable.
 //!
-//! 上游正则里的 `\b`、`\d`、`\s` 是 Python 语义（`pychar`），与 `regex` crate 自带的不同：含 `\b` 的
-//! 规则手写扫描，其余把 `\d` / `\s` 展开成显式字符类。`regex` 的 leftmost-first 与 Python 回溯引擎在
-//! 这些无回溯引用、无环视的模式上给出相同的匹配与分组。
+//! In the upstream regexes, `\b`, `\d` and `\s` have Python semantics (`pychar`), which differ from the `regex` crate's: rules containing `\b` are scanned by hand, and the rest expand `\d` / `\s` into explicit character classes. `regex`'s leftmost-first matching and Python's backtracking engine give the same matches and groups on these patterns, which have no backreferences and no lookaround.
 
 use std::sync::LazyLock;
 
@@ -45,7 +43,7 @@ const MILL: [&str; 12] = [
     " decillion",
 ];
 const NTH_SUFF: [&str; 4] = ["st", "nd", "rd", "th"];
-/// inflect `ordinal_suff`：词尾 → 序数词尾。
+/// inflect `ordinal_suff`: cardinal word ending → ordinal ending.
 const ORDINAL_SUFF: [(&str, &str); 8] = [
     ("ty", "tieth"),
     ("one", "first"),
@@ -57,10 +55,10 @@ const ORDINAL_SUFF: [(&str, &str); 8] = [
     ("twelve", "twelfth"),
 ];
 
-/// CPython `int(str)` 的位数上限（`sys.get_int_max_str_digits()` 默认值）。
+/// The digit limit of CPython `int(str)` (the default value of `sys.get_int_max_str_digits()`).
 const INT_MAX_STR_DIGITS: usize = 4300;
 
-/// `str(int(s))`：ASCII 数字串去前导零；含其他字符或超长抛 `ValueError`。
+/// `str(int(s))`: strips leading zeros from an ASCII digit string; raises `ValueError` if it contains other characters or is too long.
 fn py_int(s: &str) -> Result<&str, PyError> {
     if s.is_empty() || s.len() > INT_MAX_STR_DIGITS || !s.bytes().all(|b| b.is_ascii_digit()) {
         return Err(PyError::Value);
@@ -73,7 +71,7 @@ fn digit(b: u8) -> usize {
     usize::from(b - b'0')
 }
 
-/// inflect `number_to_words` 的关键字参数。
+/// Keyword arguments for inflect `number_to_words`.
 #[derive(Debug, Clone, Copy)]
 pub struct NumberArgs<'a> {
     pub group: u8,
@@ -102,7 +100,7 @@ fn tenfn(tens: usize, units: usize, mindex: usize) -> Result<String, PyError> {
         let hyphen = if tens != 0 && units != 0 { "-" } else { "" };
         return Ok(format!("{}{hyphen}{}{}", TEN[tens], UNIT[units], millfn(mindex)?));
     }
-    // 上游这一支直接下标 `mill[mindex]`，越界是 IndexError 而不是 NumOutOfRangeError
+    // This upstream branch indexes `mill[mindex]` directly, so out of range is an IndexError rather than NumOutOfRangeError
     let mill = MILL.get(mindex).ok_or(PyError::Index)?;
     Ok(format!("{}{mill}", TEEN[units]))
 }
@@ -165,7 +163,7 @@ fn enword(num: &str, args: &NumberArgs) -> Result<String, PyError> {
                 _ => {}
             }
             let d: Vec<usize> = value.bytes().map(digit).collect();
-            // 从低位起每三位一组（THREE_DIGITS_WORD 反复替换最右三位），全零组不出词但照样进位
+            // Digits are grouped in threes from the low end (THREE_DIGITS_WORD repeatedly replaces the rightmost three digits); an all-zero group produces no words but still carries
             let (mut end, mut mill_count, mut tail) = (d.len(), 0, String::new());
             while end >= 3 {
                 tail = hundfn(d[end - 3], d[end - 2], d[end - 1], mill_count, args.andword)? + &tail;
@@ -248,7 +246,7 @@ fn sub_ord(value: &str) -> String {
     format!("{value}th")
 }
 
-/// inflect `engine.number_to_words(num, **args)`，`num` 为 ASCII 数字串（可带序数后缀）。
+/// inflect `engine.number_to_words(num, **args)`, where `num` is an ASCII digit string (optionally with an ordinal suffix).
 pub fn number_to_words(num: &str, args: NumberArgs) -> Result<String, PyError> {
     // _get_sign：num.lstrip()[0]
     let sign = match num.trim_start_matches(pychar::is_space).chars().next() {
@@ -276,14 +274,14 @@ pub fn number_to_words(num: &str, args: NumberArgs) -> Result<String, PyError> {
         words = comma_word(&words, args.andword);
     }
     let mut words = collapse_spaces(&words).trim_matches(pychar::is_space).to_owned();
-    // 只有一块：按 ", " 拆开、末项 _sub_ord、再用 ", " 拼回（group 0 的 _render 同样如此）
+    // Only one chunk: split on ", ", apply _sub_ord to the last item, then join back with ", " (group 0's _render does the same)
     if myord {
         words = sub_ord(&words);
     }
     Ok(format!("{sign}{words}"))
 }
 
-/// inflect `engine.ordinal(num)`：数字串加 `st/nd/rd/th`，否则把英文基数词改成序数词。
+/// inflect `engine.ordinal(num)`: appends `st/nd/rd/th` to a digit string, otherwise turns the English cardinal word into an ordinal word.
 pub fn ordinal(num: &str) -> Result<String, PyError> {
     if !num.chars().next().is_some_and(pychar::is_decimal) {
         return Ok(sub_ord(num));
@@ -317,17 +315,17 @@ fn digits_end(chars: &[char], mut i: usize) -> usize {
     i
 }
 
-/// Python `\b` 在数字（`\w`）前成立：前一个字符不是 `\w`。
+/// Python `\b` holds before a digit (`\w`): the previous character is not `\w`.
 fn word_before(chars: &[char], i: usize) -> bool {
     i > 0 && pychar::is_word(chars[i - 1])
 }
 
-/// Python `\b` 在 `\w` 字符之后成立：到结尾或下一个字符不是 `\w`。
+/// Python `\b` holds after a `\w` character: at the end or when the next character is not `\w`.
 fn boundary_after(chars: &[char], j: usize) -> bool {
     j == chars.len() || !pychar::is_word(chars[j])
 }
 
-/// 仿 `re.sub`：从左到右逐位置试 `try_at`，命中 `(结尾, 替换)` 后从结尾继续（匹配都非空）。
+/// Imitates `re.sub`: tries `try_at` at each position from left to right; after a match of `(end, replacement)`, continues from the end (all matches are non-empty).
 fn sub_scan(text: &str, mut try_at: impl FnMut(&[char], usize) -> Option<(usize, Result<String, PyError>)>) -> Result<String, PyError> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -347,7 +345,7 @@ fn sub_scan(text: &str, mut try_at: impl FnMut(&[char], usize) -> Option<(usize,
     Ok(out)
 }
 
-/// 仿 `re.sub`，替换函数可能抛异常（在第一个异常处中止，与 Python 一致）。
+/// Imitates `re.sub`, where the replacement function may raise an exception (aborts at the first exception, consistent with Python).
 fn sub_regex(re: &Regex, text: &str, mut repl: impl FnMut(&Captures) -> Result<String, PyError>) -> Result<String, PyError> {
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
@@ -416,14 +414,14 @@ fn convert_ordinal(text: &str) -> Result<String, PyError> {
     })
 }
 
-/// `\b([01]?[0-9]|2[0-3]):([0-5][0-9])\b` → 12 小时制读法
+/// `\b([01]?[0-9]|2[0-3]):([0-5][0-9])\b` → 12-hour clock reading
 fn expand_time(text: &str) -> Result<String, PyError> {
     sub_scan(text, |chars, i| {
         if word_before(chars, i) || !chars[i].is_ascii_digit() {
             return None;
         }
         let at = |p: usize| chars.get(p).copied().unwrap_or('\0');
-        // 三个分支在冒号位置或首位上互斥，回溯不会换到别的分支
+        // The three branches are mutually exclusive at the colon position or the first position, so backtracking never switches to another branch
         let hour_len = if matches!(at(i), '0' | '1') && at(i + 1).is_ascii_digit() && at(i + 2) == ':' {
             2
         } else if at(i + 1) == ':' {
@@ -453,7 +451,7 @@ fn expand_time(text: &str) -> Result<String, PyError> {
     })
 }
 
-/// `\b([0-9]+(\.[0-9]+)?(m|km|km/h|…|°F))\b` → 数字 + 单位全称
+/// `\b([0-9]+(\.[0-9]+)?(m|km|km/h|…|°F))\b` → number + full unit name
 fn expand_measurement(text: &str) -> Result<String, PyError> {
     sub_scan(text, |chars, i| {
         if word_before(chars, i) || !chars[i].is_ascii_digit() {
@@ -561,7 +559,7 @@ fn expand_number(digits: &str) -> Result<String, PyError> {
     )
 }
 
-/// 仅 ASCII 的大小写不敏感字面替换（此时文本已只剩 ASCII）。
+/// ASCII-only, case-insensitive literal replacement (the text is already ASCII-only at this point).
 fn replace_ascii_ci(text: &str, pattern: &str, with: &str) -> String {
     let (bytes, pat) = (text.as_bytes(), pattern.as_bytes());
     let mut out = String::with_capacity(text.len());
@@ -578,7 +576,7 @@ fn replace_ascii_ci(text: &str, pattern: &str, with: &str) -> String {
     out
 }
 
-/// 上游 `expend.normalize`。
+/// Upstream `expend.normalize`.
 pub fn normalize(text: &str) -> Result<String, PyError> {
     let mut text = convert_ordinal(text)?;
     while ASMD.is_match(&text) {
@@ -614,7 +612,7 @@ pub fn normalize(text: &str) -> Result<String, PyError> {
     let text = sub_regex(&ORDINAL, &text, |caps| number_to_words(&caps[0], NumberArgs::default()))?;
     let text = sub_regex(&NUMBER, &text, |caps| expand_number(&caps[0]))?;
 
-    // NFD 去 Mn、`%` → " percent"、删掉 [^ A-Za-z'.,?!\-]：Mn 本就不在保留集里，合成一遍
+    // NFD, drop Mn, `%` → " percent", delete [^ A-Za-z'.,?!\-]: Mn is not in the kept set anyway, so these are combined into one pass
     let mut kept = String::with_capacity(text.len());
     for c in text.nfd() {
         if c == '%' {
@@ -639,7 +637,7 @@ pub fn normalize(text: &str) -> Result<String, PyError> {
 
 // ---------------------------------------------------------------- english.text_normalize
 
-/// 上游 `rep_map`：键经 `re.escape` 后按字面匹配（`"[;:：，；]"` 是七个字符的字面串）。
+/// Upstream `rep_map`: keys are escaped with `re.escape` and matched literally (`"[;:：，；]"` is a literal seven-character string).
 const REP_MAP: [(&str, &str); 5] = [("[;:：，；]", ","), ("[\"’]", "'"), ("。", "."), ("！", "!"), ("？", "?")];
 
 /// `text.symbols.punctuation`
@@ -664,7 +662,7 @@ fn replace_consecutive_punctuation(text: &str) -> String {
     out
 }
 
-/// 上游 `english.text_normalize`。
+/// Upstream `english.text_normalize`.
 pub fn text_normalize(text: &str) -> Result<String, PyError> {
     let mut replaced = String::with_capacity(text.len());
     let mut rest = text;

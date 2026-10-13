@@ -3,19 +3,14 @@ import { ModelsSpeechBundles as M } from '@cuccut/protocol/messages/models/speec
 import type { BundleComponentSource, BundleDefinition, SpeechBundleProfile } from './bundle-registry.ts';
 
 /**
- * 本地语音合成的模型包（架构设计 §6.3）。`bundleId` 是 `<模型>@<backend>-<量化>`，模型名与原型的合成模型表一致。
- * 仓库、版本与文件清单（`repo-manifests.ts`）取自旧版 CucCut 为同一版本固定的清单。
+ * Model packages for local speech synthesis (architecture design §6.3). `bundleId` is `<model>@<backend>-<quantisation>`; the model name matches the synthesis model table in the prototype.
+ * The repositories, revisions and file manifests (`repo-manifests.ts`) are taken from the fixed manifests that the old CucCut version used for the same revision.
  *
- * 组件：`tts` 是主模型；`codec` 是 Qwen3-TTS 共用的语音编解码器（一份，按引用保留）；`aux` 是 IndexTTS 2.5 用到的
- * IndexTTS2 辅助权重（w2v-BERT、CAM++、BigVGAN 与统计量），直接共用整个 IndexTTS2 仓库：与 `indextts2@mlx-fp16`
- * 同一仓库与版本，装一份、按引用保留（代价是只装 2.5 时多下 IndexTTS2 的主权重，见架构设计 §14）。
+ * Components: `tts` is the main model; `codec` is the speech codec shared by Qwen3-TTS (one copy, kept by reference); `aux` is the IndexTTS2 auxiliary weights used by IndexTTS 2.5 (w2v-BERT, CAM++, BigVGAN and statistics). It shares the whole IndexTTS2 repository directly: the same repository and revision as `indextts2@mlx-fp16`, installed once and kept by reference. The cost is that installing only 2.5 also downloads IndexTTS2's main weights (see architecture design §14).
  *
- * 引擎在 Model Worker 里逐个接入；Worker 在 `worker.hello` 的 `synthesizeFamilies` 里声明接上了的模型族，Runtime 在加载前
- * 按它拒绝没接上的，不停用模型包（Model Worker 协议规范 §2.1）。
+ * Engines are wired into the Model Worker one by one. The Worker declares the model families it has wired in under `synthesizeFamilies` in `worker.hello`, and the Runtime refuses unwired ones before loading them, without disabling the model package (Model Worker protocol spec §2.1).
  *
- * 每个 MLX 模型包都有一个 candle 变体（`<模型>@candle`，架构设计 §6.5）：同一仓库与版本，加载时把量化权重反量化、把权重换成
- * 计算精度（CPU 上 f32，CUDA 上保持半精度），只在 Apple Silicon 以外的平台列出。组件上的 `weightBits` / `parameters` 只给
- * candle 估计常驻量用（`candleResidentBytes`）；参数个数按 safetensors 头数出（量化张量按位宽展开，不计 `scales` / `biases`）。
+ * Every MLX model package has a candle variant (`<model>@candle`, architecture design §6.5): the same repository and revision. At load time, the quantised weights are dequantised and the weights converted to the compute precision (f32 on CPU, kept at half precision on CUDA). It is listed only on platforms other than Apple Silicon. `weightBits` / `parameters` on components are used only for the candle estimate of resident memory (`candleResidentBytes`). The parameter count is taken from the safetensors header; quantised tensors are expanded by bit width, and `scales` / `biases` are not counted.
  */
 
 const QWEN3_TTS_CODEC: BundleComponentSource = {
@@ -28,18 +23,18 @@ const QWEN3_TTS_CODEC: BundleComponentSource = {
 
 const INDEX_TTS2_REPO = { repo: 'aufklarer/IndexTTS2-MLX-fp16', revision: '208b3d6ea53a119f3501b3bfd8e666b9b5e8c705' };
 
-/** 主模型组件的存储位宽与参数个数（candle 估计常驻量用）。 */
+/** Storage bit width and parameter count of the main model component (used for the candle resident-memory estimate). */
 type WeightSize = Required<Pick<BundleComponentSource, 'weightBits' | 'parameters'>>;
 
 const QWEN3_TTS_LANGUAGES = ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru'];
-/** Qwen3-TTS CustomVoice 的九个说话人（0.6B 与 1.7B 同一张表）；名字是权重里的标识，不翻译。 */
+/** The nine speakers of Qwen3-TTS CustomVoice (the same table for 0.6B and 1.7B); the names are identifiers in the weights and are not translated. */
 export const QWEN3_TTS_SPEAKERS = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
 
-/** 克隆的参考录音建议 3–15 秒（五个能克隆的引擎共用）。 */
+/** Suggested length of a reference recording for cloning: 3–15 seconds (shared by the five engines that can clone). */
 const REFERENCE_SECONDS: [number, number] = [3, 15];
 
-/** OmniVoice 按描述造声的封闭词表：每类至多一项；同一类各语言的词条按下标对应。 */
-// i18n-ignore-start: 交给模型的声音描述词表（各语言的词条原样传给 OmniVoice）
+/** OmniVoice's closed vocabulary for voice description: at most one entry per category; entries for each language in the same category correspond by index. */
+// i18n-ignore-start: voice-description vocabulary handed to the model (each language's entries are passed through to OmniVoice as-is)
 export const OMNIVOICE_VOCABULARY: SpeechVoiceDescription = {
   kind: 'vocabulary',
   categories: [
@@ -87,7 +82,7 @@ const QWEN3_TTS_LICENSE: ModelLicense = {
   name: 'Apache-2.0',
   url: 'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base',
   commercialUse: true,
-  // 许可摘要给人看：用 getter，读的时候（列出状态、序列化过线）按当前语言生成。
+  // The licence summary is for display: a getter, generated in the current language when read (when listing status or serialising over the wire).
   get summary() {
     return M.qwen3TtsLicense().text;
   },
@@ -221,7 +216,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
     bundleId: 'indextts2@mlx-fp16',
     label: 'IndexTTS2',
     ...MLX,
-    // 整个仓库（含 `aux/`）都按这个模型包计。
+    // The whole repository (including `aux/`) is counted against this model package.
     components: { tts: { family: 'indextts2', ...INDEX_TTS2_REPO, weightBits: 16, parameters: 1_915_602_132 } },
     license: INDEX_TTS2_LICENSE,
     speech: {
@@ -229,7 +224,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
       languages: 'any',
       voiceModes: ['preset', 'clone'],
       presets: 'builtin-reference',
-      // IndexTTS 只从参考录音取音色，不读原文。
+      // IndexTTS takes the voice only from the reference recording, not from the transcript.
       reference: { recommendedSeconds: REFERENCE_SECONDS, withTranscriptSeconds: null, acceptsTranscript: false },
       voiceDescription: null,
       instructions: null,
@@ -254,7 +249,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
         weightBits: 16,
         parameters: 966_515_596,
       },
-      // 只读 `aux/` 下的 w2v-BERT、CAM++、BigVGAN 与统计量，参数个数只数这些。
+      // Reads only the w2v-BERT, CAM++, BigVGAN and statistics under `aux/`; the parameter count counts only these.
       aux: { family: 'indextts2-aux', ...INDEX_TTS2_REPO, weightBits: 16, parameters: 699_767_331 },
     },
     license: INDEX_TTS25_LICENSE,
@@ -267,7 +262,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
       voiceDescription: null,
       instructions: null,
       emotion: true,
-      // 语速按倍率缩放目标语义 token 数。
+      // The speaking rate scales the number of target semantic tokens by the multiplier.
       knobs: { speed: { min: 0.5, max: 1.5, step: 0.05, default: 1 } },
       maxDurationSec: null,
       acceptsSeed: true,
@@ -302,7 +297,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
       languages: ['zh', 'en'],
       voiceModes: ['preset', 'clone'],
       presets: 'builtin-reference',
-      // 给了原文时参考录音要 3–10 秒。
+      // When a transcript is given, the reference recording must be 3–10 seconds.
       reference: { recommendedSeconds: REFERENCE_SECONDS, withTranscriptSeconds: [3, 10], acceptsTranscript: true },
       voiceDescription: null,
       instructions: null,
@@ -343,7 +338,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
       presets: 'builtin-reference',
       reference: { recommendedSeconds: REFERENCE_SECONDS, withTranscriptSeconds: null, acceptsTranscript: true },
       voiceDescription: null,
-      // 风格说明接在正文前；给了它就不走续写式的高保真克隆。
+      // The style description is placed before the text; when it is given, the continuation-style high-fidelity cloning is not used.
       instructions: 'style',
       emotion: false,
       knobs: { cfg: { min: 1, max: 3, step: 0.1, default: 2 }, steps: { min: 1, max: 50, step: 1, default: 10 } },
@@ -398,7 +393,7 @@ const MLX_SPEECH_BUNDLES: readonly BundleDefinition[] = [
   },
 ];
 
-/** MLX 模型包的 candle 变体：同一仓库与特性，ID 是 `<模型>@candle`，登记的设备是 `cpu`（Worker 报告 CUDA 时 Runtime 改用 `cuda`）。 */
+/** The candle variant of an MLX model package: same repository and features, ID `<model>@candle`, registered device `cpu` (the Runtime switches to `cuda` when the Worker reports CUDA). */
 function onCandle(def: BundleDefinition): BundleDefinition {
   return { ...def, bundleId: `${def.bundleId.split('@')[0]}@candle`, backend: 'candle', device: 'cpu' };
 }

@@ -14,7 +14,7 @@ import { pl } from './translation-document.pl.ts';
 import { tr } from './translation-document.tr.ts';
 import { vi } from './translation-document.vi.ts';
 
-/** `packages/jobs/src/pipelines/translation-document.ts`：读原文句子与校验译文正文时的问题。 */
+/** `packages/jobs/src/pipelines/translation-document.ts`: problems when reading source sentences and validating the translated body. */
 const en = {
   notSpeech: 'The source document is not a cuccut.speech/1 transcript',
   unreadable: "Couldn't read the transcript",

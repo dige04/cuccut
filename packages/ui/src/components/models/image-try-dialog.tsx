@@ -74,10 +74,7 @@ const resultPrompt = style({ font: 'ui-xs', color: 'gray-700', overflow: 'hidden
 const resultActions = style({ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 });
 
 /**
- * 本地图像生成模型那一行的「试画」（设计稿 image-gen.jsx `ImageProbeDialog` 的本机分支、settings-local.jsx 的 `imgProbe`）：
- * 能改提示词，提交一次真的 `models.generateImage`（`provider: 'local'`、512 × 512、8 步、一张），进度与结果从 `jobs` 主题读，
- * 结果能看、能下载、能复制提示词。试画不算检查：模型上次检查没通过时开头先说（`notice`，那次检查之后画成了就不再说），自己的失败用检查那一套说法
- * （哪里不对 · 怎么办 · 按钮），「检查模型 / 修复… / 重新检查」交回那一行（`onCheck`）。关掉对话框不撤回任务。
+ * The “试画”(trial draw) on the local image generation model row (design mock image-gen.jsx `ImageProbeDialog`, local branch; settings-local.jsx `imgProbe`): the prompt can be edited, and submitting sends one real `models.generateImage` (`provider: 'local'`, 512 × 512, 8 steps, one image). Progress and results are read from the `jobs` topic; the result can be viewed and downloaded, and the prompt can be copied. A trial draw is not a check: if the model's last check did not pass, the dialog opens by saying so (`notice`; not repeated once an image has been produced after that check). Its own failures use the check wording (what is wrong · what to do · buttons). “检查模型 / 修复… / 重新检查”(Check model / Repair… / Re-check) are handed back to the row (`onCheck`). Closing the dialog does not cancel the task.
  */
 export function ImageTryDialog({
   bundleId,
@@ -91,7 +88,7 @@ export function ImageTryDialog({
 }: {
   bundleId: string;
   name: string;
-  /** 名字旁的小标签：后端（MLX）。 */
+  /** Small label next to the name: backend (MLX). */
   chip: string;
   model: ImageModelInfo;
   notice: TryNoteView | null;
@@ -105,7 +102,7 @@ export function ImageTryDialog({
   const [prompt, setPrompt] = useState<string>(IMAGE_SAMPLES[0]);
   const [run, setRun] = useState<{ jobId: string; prompt: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // 没交到 Runtime 的这一次（提交被拒）。
+  // The submission that did not reach the Runtime (the submit was rejected).
   const [issue, setIssue] = useState<Omit<TryFailureInput, 'canCheck' | 'subject'> | null>(null);
 
   const job = run ? jobs.find((j) => j.jobId === run.jobId) : undefined;

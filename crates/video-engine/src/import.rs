@@ -1,11 +1,10 @@
-//! 导入素材：探测媒体信息、算摘要，然后按存储方式处理 bytes（视频格式规范 §4.2）。
-//! - 受管理（managed）：写入 staging、原子发布到 `blobs/`（架构设计 §5.2）；
-//! - 链接（linked）：bytes 留在原处，只记下定位与指纹。
+//! Import assets: probe media info, compute the digest, then handle the bytes according to the storage mode (video format spec §4.2).
+//! - Managed: write to staging, atomically publish to `blobs/` (architecture design §5.2).
+//! - Linked: the bytes stay where they are; only the location and fingerprint are recorded.
 //!
-//! 调用方不指定时，文件默认链接，目录（代码包）默认收进来（架构设计 §5.1）。
+//! When the caller does not specify, a file defaults to linked, and a directory (code bundle) defaults to being collected in (architecture design §5.1).
 //!
-//! 这些耗时的工作在事务之外完成；事务里只增加引用。崩溃可能留下没有被引用的 blob，
-//! 由之后的 GC 清理，不会出现数据库指向未发布 bytes 的情况。
+//! This time-consuming work is done outside the transaction; inside the transaction only references are added. A crash may leave unreferenced blobs, which later GC cleans up; a database never points at unpublished bytes.
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -20,22 +19,22 @@ use sha2::{Digest, Sha256};
 use crate::error::{EngineResult, ErrorBody, Text, msg};
 use crate::model::{AssetKind, AssetStorage, AudioInfo, FileLocator, FrameRateInfo, TreeInfo, VideoInfo};
 
-/// 目录素材的媒体类型。
+/// Media type of a directory asset.
 pub const DIRECTORY_MEDIA_TYPE: &str = "inode/directory";
 
-/// `.lottie` 压缩包的媒体类型（zip）。只有 Lottie 压缩包会记成它。
+/// Media type of a `.lottie` archive (zip). Only Lottie archives are recorded as this.
 pub const LOTTIE_ARCHIVE_MEDIA_TYPE: &str = "application/zip";
 
-/// Lottie 素材的大小上限：再大就不是贴纸动画了（与 Runtime 放行链接 Lottie 的上限相同）。
+/// Size limit for Lottie assets: beyond this it is no longer a sticker animation (same limit as the Runtime uses for allowing linked Lottie).
 pub const LOTTIE_MAX_BYTES: u64 = 32 << 20;
 
-/// 导入时 bytes 怎么放。调用方不指定时由 [`prepare_import`] 按来源决定（视频格式规范 §4.2）。
+/// How the bytes are stored on import. When the caller does not specify, [`prepare_import`] decides based on the source (video format spec §4.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StorageMode {
-    /// 复制进视频目录的 `blobs/`。
+    /// Copied into the video directory's `blobs/`.
     Managed,
-    /// 留在原处，只记定位。
+    /// Left where it is; only the location is recorded.
     Linked,
 }
 
@@ -47,7 +46,7 @@ pub struct ProbeInfo {
     pub audio: Option<AudioInfo>,
 }
 
-/// 一份已经就位（发布到 `blobs/`，或确认过原处可读）的 bytes 及其媒体信息，等待事务引用。
+/// Bytes that are already in place (published to `blobs/`, or confirmed readable where they are), together with their media info, waiting for a transaction to reference them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedAsset {
     pub kind: AssetKind,
@@ -60,7 +59,7 @@ pub struct PreparedAsset {
     pub tree: Option<TreeInfo>,
 }
 
-/// 按扩展名认媒体类型。认不出的不导入，免得把任意文件当成视频。
+/// Media type is recognized by extension. Files that are not recognized are not imported, so that arbitrary files are not treated as video.
 pub fn media_type_of(path: &Path) -> Option<(AssetKind, &'static str)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match ext.as_str() {
@@ -84,14 +83,14 @@ pub fn media_type_of(path: &Path) -> Option<(AssetKind, &'static str)> {
         "srt" => (AssetKind::Caption, "application/x-subrip"),
         "vtt" => (AssetKind::Caption, "text/vtt"),
         "ass" => (AssetKind::Caption, "text/x-ass"),
-        // 读出来是 Lottie 动画的 JSON 在 [`prepare_import`] 里改记成 `lottie`，别的 JSON 仍是 `other`。
+        // A JSON that reads as a Lottie animation is recorded as `lottie` in [`prepare_import`]; other JSON remains `other`.
         "json" => (AssetKind::Other, "application/json"),
         "lottie" => (AssetKind::Lottie, LOTTIE_ARCHIVE_MEDIA_TYPE),
         _ => return None,
     })
 }
 
-/// blob 的扩展名由媒体类型决定，便于媒体通道按扩展名给出 MIME。
+/// The blob extension is determined by the media type, so the media channel can give the MIME type by extension.
 pub fn blob_extension(media_type: &str) -> &'static str {
     match media_type {
         "video/mp4" => "mp4",
@@ -120,7 +119,7 @@ pub fn blob_extension(media_type: &str) -> &'static str {
     }
 }
 
-/// 视频目录里一份 blob 的相对路径：文件是 `blobs/<sha256>.<ext>`，目录是 `blobs/<sha256>/`。
+/// The relative path of a blob in the video directory: a file is `blobs/<sha256>.<ext>`, a directory is `blobs/<sha256>/`.
 pub fn blob_rel_path(content_hash: &str, media_type: &str) -> PathBuf {
     let hex = content_hash.strip_prefix("sha256:").unwrap_or(content_hash);
     if media_type == DIRECTORY_MEDIA_TYPE {
@@ -138,7 +137,7 @@ fn rfc3339(time: SystemTime) -> Option<String> {
     Some(crate::ids::rfc3339_from_unix(secs.as_secs(), secs.subsec_millis()))
 }
 
-/// 路径所在卷的名字（macOS 的 `/Volumes/<名字>/…`）。只作提示用。
+/// The name of the volume where the path lies (`/Volumes/<name>/…` on macOS). For hints only.
 fn volume_of(path: &Path) -> Option<String> {
     let mut parts = path.components().skip(1);
     match (parts.next()?.as_os_str().to_str()?, parts.next()) {
@@ -147,11 +146,11 @@ fn volume_of(path: &Path) -> Option<String> {
     }
 }
 
-/// 项目标记（架构设计 §5.1）。引擎只看它在不在，不解析内容。
+/// Project marker (architecture design §5.1). The engine only checks whether it exists; it does not parse its contents.
 pub const PROJECT_MARKER: &str = ".ccut/project.json";
 
-/// 视频所在的项目目录：视频目录的父目录链上带项目标记的最近一层；都没有时是视频目录的父目录
-/// （视频格式规范 §4.2）。按 `video_dir` 的写法逐级向上找，不解析符号链接。
+/// The project directory where the video lives: the nearest layer, going up the parent chain of the video directory, that carries a project marker; if there is none, the parent directory of the video directory
+/// (video format spec §4.2). Searches upward level by level in the way `video_dir` is written, without resolving symbolic links.
 pub fn project_dir_of(video_dir: &Path) -> PathBuf {
     let parent = video_dir.parent().unwrap_or(video_dir);
     parent
@@ -161,8 +160,8 @@ pub fn project_dir_of(video_dir: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-/// 按字面规范化路径：去掉 `.`，`..` 抵掉前一段，不访问文件系统、不解析符号链接。
-/// 越过根的 `..` 留在根上（与操作系统的行为一致）。
+/// Literally normalizes a path: removes `.`, and `..` cancels the previous segment. Does not touch the file system and does not resolve symbolic links.
+/// A `..` that goes past the root stays at the root (consistent with the operating system's behavior).
 pub fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
@@ -181,7 +180,7 @@ pub fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// 从目录 `from` 到 `to` 的相对路径，用 `/` 分隔（两者都是规范化的绝对路径）。
+/// The relative path from directory `from` to `to`, separated by `/` (both are normalized absolute paths).
 fn relative_between(from: &Path, to: &Path) -> String {
     let from: Vec<_> = from.components().collect();
     let to: Vec<_> = to.components().collect();
@@ -192,18 +191,16 @@ fn relative_between(from: &Path, to: &Path) -> String {
     if parts.is_empty() { ".".into() } else { parts.join("/") }
 }
 
-/// 一个绝对路径（已规范化）若在视频所在的项目目录里，返回相对视频目录的写法。
+/// If an absolute path (already normalized) lies inside the video's project directory, returns its form relative to the video directory.
 fn project_relative(video_dir: &Path, target: &Path) -> Option<String> {
     let project = project_dir_of(video_dir);
     target.starts_with(&project).then(|| relative_between(video_dir, target))
 }
 
-/// 链接时登记的路径（视频格式规范 §4.2）：调用方给的路径（绝对，或相对视频目录）按字面规范化之后，
-/// 在项目目录里就记相对视频目录的路径（可以有 `..`，但不会越出项目目录），整个项目移动或改名后仍然有效；
-/// 在项目目录外就记绝对路径。文件本身是符号链接时不解析它：项目里的那个链接跟着项目走。
+/// The path recorded at link time (video format spec §4.2): the path given by the caller (absolute, or relative to the video directory) is literally normalized. If it is inside the project directory, it is recorded as a path relative to the video directory (it may contain `..`, but never escapes the project directory), so it stays valid after the whole project is moved or renamed. If it is outside the project directory, the absolute path is recorded. If the file itself is a symbolic link, it is not resolved: the link inside the project follows the project.
 ///
-/// 先按调用方的写法比较；比不上时再按两边所在目录的真实路径比较一次（例如 `/var` 与 `/private/var`）。
-/// 都不在项目里时记调用方写法的绝对路径。返回登记的路径与按字面求出的绝对路径。
+/// First compare using the caller's form. If that does not match, compare once more using the real paths of the two directories (for example `/var` and `/private/var`).
+/// If neither is inside the project, record the absolute path in the caller's form. Returns the recorded path and the literally computed absolute path.
 pub fn link_path(video_dir: &Path, given: &Path) -> (String, PathBuf) {
     let video_dir = normalize(video_dir);
     let absolute = normalize(&video_dir.join(given));
@@ -223,8 +220,7 @@ pub fn link_path(video_dir: &Path, given: &Path) -> (String, PathBuf) {
     (absolute.to_string_lossy().into_owned(), absolute)
 }
 
-/// 登记的路径此刻指向哪里：绝对路径照用；相对路径相对视频目录求值，结果越出项目目录时拒绝，
-/// 免得一个别处拿来的视频用 `../../..` 读项目外的文件（视频格式规范 §4.2）。
+/// Where the recorded path points now: absolute paths are used as they are; relative paths are evaluated relative to the video directory, and rejected if the result escapes the project directory, so that a video taken from elsewhere cannot use `../../..` to read files outside the project (video format spec §4.2).
 pub fn locate_linked(video_dir: &Path, asset_id: &str, path: &str) -> EngineResult<PathBuf> {
     let given = Path::new(path);
     if given.is_absolute() {
@@ -248,7 +244,7 @@ pub fn locate_linked(video_dir: &Path, asset_id: &str, path: &str) -> EngineResu
     Ok(resolved)
 }
 
-/// 链接素材的定位：登记的路径（见 [`link_path`]），以及按实际文件记下的修改时间与卷名。
+/// Location of a linked asset: the recorded path (see [`link_path`]), plus the modification time and volume name recorded from the actual file.
 pub fn link_locator(video_dir: &Path, given: &Path) -> (FileLocator, PathBuf) {
     let (path, resolved) = link_path(video_dir, given);
     let locator = FileLocator {
@@ -259,7 +255,7 @@ pub fn link_locator(video_dir: &Path, given: &Path) -> (FileLocator, PathBuf) {
     (locator, resolved)
 }
 
-/// 不复制，只算一个文件的摘要与长度。
+/// Does not copy; only computes a digest and length for a file.
 pub fn hash_file(source: &Path) -> EngineResult<(String, u64)> {
     let mut input = File::open(source).map_err(|e| ErrorBody::asset_missing(
             "",
@@ -284,7 +280,7 @@ pub fn hash_file(source: &Path) -> EngineResult<(String, u64)> {
     Ok((format!("sha256:{}", hex(hasher.finalize())), total))
 }
 
-/// 目录里属于素材的文件，按相对路径排序。跳过隐藏文件与符号链接；`include` 限定只收哪些文件或子目录。
+/// The files in a directory that belong to the asset, sorted by relative path. Skips hidden files and symbolic links; `include` restricts which files or subdirectories are collected.
 pub fn tree_files(root: &Path, include: Option<&[String]>) -> EngineResult<Vec<(String, PathBuf)>> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) -> EngineResult<()> {
         for entry in fs::read_dir(dir)? {
@@ -317,7 +313,7 @@ pub fn tree_files(root: &Path, include: Option<&[String]>) -> EngineResult<Vec<(
     Ok(files)
 }
 
-/// 目录的摘要：每个文件一行 `<sha256> <长度> <相对路径>`，按路径排序后整体再求 sha256（视频格式规范 §4.3）。
+/// The digest of a directory: one line per file `<sha256> <length> <relative path>`, sorted by path, then the whole is hashed again with sha256 (video format spec §4.3).
 pub fn hash_tree(root: &Path, include: Option<&[String]>) -> EngineResult<(String, u64, u32)> {
     let files = tree_files(root, include)?;
     if files.is_empty() {
@@ -337,7 +333,7 @@ pub fn hash_tree(root: &Path, include: Option<&[String]>) -> EngineResult<(Strin
     ))
 }
 
-/// 把目录按内容地址复制进 `blobs/<sha256>/`。已有同样的目录时不重复复制。
+/// Copies a directory into `blobs/<sha256>/` by content address. If the same directory is already there, it is not copied again.
 pub fn publish_tree(video_dir: &Path, root: &Path, include: Option<&[String]>, content_hash: &str) -> EngineResult<()> {
     let target = video_dir.join(blob_rel_path(content_hash, DIRECTORY_MEDIA_TYPE));
     if target.is_dir() {
@@ -361,7 +357,7 @@ pub fn publish_tree(video_dir: &Path, root: &Path, include: Option<&[String]>, c
     result
 }
 
-/// 把一个文件按内容地址发布进 `blobs/`，并核对摘要与素材版本登记的一致（收纳链接素材时用）。
+/// Publishes a file into `blobs/` by content address, and checks that its digest matches what the asset version records (used when collecting a linked asset).
 pub fn publish_verified(video_dir: &Path, source: &Path, media_type: &str, expected_hash: &str) -> EngineResult<()> {
     let (hash, _) = publish_blob(video_dir, source, media_type)?;
     if hash != expected_hash {
@@ -378,11 +374,11 @@ pub fn publish_verified(video_dir: &Path, source: &Path, media_type: &str, expec
     Ok(())
 }
 
-/// `given` 是调用方给的路径：绝对路径，或（仅链接时）相对视频目录的路径。链接时登记的定位按 [`link_path`]
-/// 规范化：项目目录里的记相对视频目录的路径，项目外的记绝对路径。
+/// `given` is the path supplied by the caller: absolute, or (only for linking) relative to the video directory. The location recorded for a link is normalized by [`link_path`]:
+/// inside the project directory, recorded as a path relative to the video directory; outside it, recorded as an absolute path.
 ///
-/// 不指定 `mode` 时：文件留在原处（`linked`）；目录是代码包，没有原文件可以指向，收进视频（`managed`）。
-/// 收进视频（显式或按默认）要求绝对路径：相对路径只用于链接，视频与素材一起移动时仍然有效。
+/// When `mode` is not specified: the file stays where it is (`linked`); a directory is a code bundle, has no original file to point to, and is collected into the video (`managed`).
+/// Collecting into the video (explicitly or by default) requires an absolute path. A relative path is only for linking, so it remains valid when the video and the assets are moved together.
 pub fn prepare_import(
     video_dir: &Path,
     given: &Path,
@@ -397,7 +393,7 @@ pub fn prepare_import(
             "An import copied into the video (managed) needs an absolute path; relative paths are only for links"
         )));
     }
-    // 按字面规范化后的绝对路径：读文件与判断在不在项目里用同一个写法。
+    // The literally normalized absolute path: reading the file and checking whether it is inside the project use the same form.
     let resolved = normalize(&video_dir.join(given));
     let source = resolved.as_path();
     let meta = fs::metadata(source).map_err(|e| ErrorBody::asset_missing(
@@ -447,11 +443,11 @@ pub fn prepare_import(
         return Err(ErrorBody::invalid_operation(msg!("engine.importNotFile", "Only files or directories can be imported")));
     }
     let (mut kind, media_type) = media_type_of(source).ok_or_else(|| ErrorBody::invalid_operation(msg!("engine.fileTypeUnsupported", "This kind of file is not supported")))?;
-    // JSON 读出来像 Lottie 动画（有版本、帧率、帧范围与图层）就按 Lottie 收。
+    // JSON that reads like a Lottie animation (has a version, frame rate, frame range and layers) is collected as Lottie.
     if kind == AssetKind::Other && media_type == "application/json" && meta.len() <= LOTTIE_MAX_BYTES && looks_like_lottie_json(source) {
         kind = AssetKind::Lottie;
     }
-    // 只有 ffprobe 认得的媒体才探测；矢量图、字体、字幕与数据文件没有可探测的流。Lottie 用内核的读法取尺寸与时长。
+    // Only media that ffprobe recognizes is probed; vector images, fonts, subtitles and data files have no probeable streams. For Lottie, the kernel's reading is used to get the size and duration.
     let probe = if kind == AssetKind::Lottie {
         if meta.len() > LOTTIE_MAX_BYTES {
             return Err(ErrorBody::invalid_operation(msg!(
@@ -471,7 +467,7 @@ pub fn prepare_import(
             audio: None,
         }
     };
-    // 视频容器里只有声音时按音频处理。
+    // When a video container contains only sound, it is handled as audio.
     if kind == AssetKind::Video && probe.video.is_none() {
         if probe.audio.is_none() {
             return Err(ErrorBody::probe_failed(msg!("engine.noPictureOrSound", "The file has no usable picture or sound")));
@@ -503,7 +499,7 @@ pub fn prepare_import(
     })
 }
 
-/// 边复制边算摘要，写入 staging 并落盘，再改名为内容地址。已有同样的 blob 时丢掉这一份。
+/// Copies while computing the digest, writes to staging and flushes to disk, then renames to the content address. If the same blob already exists, this copy is discarded.
 fn publish_blob(video_dir: &Path, source: &Path, media_type: &str) -> EngineResult<(String, u64)> {
     let staging_dir = video_dir.join("blobs").join(".staging");
     fs::create_dir_all(&staging_dir)?;
@@ -542,8 +538,7 @@ fn publish_blob(video_dir: &Path, source: &Path, media_type: &str) -> EngineResu
     result
 }
 
-/// JSON 文件是不是 Lottie 动画的样子：顶层有版本 `v`（字符串或数）、数值的 `fr`/`ip`/`op` 与图层数组（与素材库认
-/// Lottie 贴纸的判断相同）。像的交给内核读，读不开就不收；读不出来或不是 JSON 都算不是，仍按普通 JSON 收。
+/// Whether a JSON file looks like a Lottie animation: at the top level, a version `v` (string or number), numeric `fr`/`ip`/`op`, and an array of layers (the same test the asset library uses to recognize Lottie stickers). Those that look like it are handed to the kernel to read; if it cannot be read, it is not collected. Anything that cannot be read or is not JSON counts as not Lottie, and is still collected as ordinary JSON.
 fn looks_like_lottie_json(source: &Path) -> bool {
     let Ok(bytes) = fs::read(source) else {
         return false;
@@ -565,9 +560,8 @@ fn lottie_recovery() -> Text {
     )
 }
 
-/// Lottie 素材的尺寸与时长：用内核读 Lottie 的同一份实现（[`render_raster::source::Lottie::parse`]，JSON 或 `.lottie`
-/// 压缩包）。显示尺寸是动画声明的宽高，帧率是动画的帧率，时长是帧范围除以帧率（毫秒取整，与内核取帧一致）；没有音轨。
-/// 读不开、用了内核不支持的特性、没有时长时不收。
+/// Size and duration of a Lottie asset: uses the same implementation the kernel uses to read Lottie ([`render_raster::source::Lottie::parse`], JSON or `.lottie` archive). The displayed size is the width and height the animation declares, the frame rate is the animation's frame rate, and the duration is the frame range divided by the frame rate (milliseconds rounded, consistent with how the kernel picks frames). There is no audio track.
+/// Not collected if it cannot be read, uses features the kernel does not support, or has no duration.
 fn probe_lottie(source: &Path, name: &str) -> EngineResult<ProbeInfo> {
     let bytes = fs::read(source).map_err(|e| ErrorBody::asset_missing(
         "",
@@ -593,7 +587,7 @@ fn probe_lottie(source: &Path, name: &str) -> EngineResult<ProbeInfo> {
         .and_then(|d| MediaTime::from_ratio(d, "duration").ok())
         .ok_or_else(|| ErrorBody::probe_failed(msg!("engine.lottieDurationRange", "The duration of the Lottie animation is out of range")))?;
     let fr = lottie.frame_rate();
-    // 帧率按千分之一取有理数并约分（29.97 记成 2997/100），整数帧率原样。
+    // The frame rate is taken as a rational to one thousandth and reduced (29.97 is recorded as 2997/100); integer frame rates are kept as is.
     let rate = Ratio::new((fr * 1000.0).round() as i128, 1000)
         .and_then(to_rate)
         .ok_or_else(|| ErrorBody::probe_failed(msg!("engine.lottieFrameRate", "The Lottie animation has an invalid frame rate: {rate}", rate = fr)))?;
@@ -614,7 +608,7 @@ fn probe_lottie(source: &Path, name: &str) -> EngineResult<ProbeInfo> {
     })
 }
 
-/// 用 ffprobe 读媒体信息。时长与 PTS 用流的整数 timebase 精确换算，不走浮点。
+/// Reads media info with ffprobe. Duration and PTS are converted exactly using the stream's integer timebase, not floating point.
 pub fn probe(source: &Path, ffprobe: &Path, kind: AssetKind) -> EngineResult<ProbeInfo> {
     let output = Command::new(ffprobe)
         .args(["-v", "error", "-print_format", "json", "-show_format", "-show_streams"])
@@ -656,7 +650,7 @@ fn to_rate(r: Ratio) -> Option<Rate> {
     Rate::new(i64::try_from(r.num()).ok()?, i64::try_from(r.den()).ok()?).ok()
 }
 
-/// 一个流的精确时长：`duration_ts × time_base`，没有时退回十进制的 `duration`。
+/// The exact duration of one stream: `duration_ts × time_base`; falls back to the decimal `duration` when absent.
 fn stream_duration(stream: &Value) -> Option<Ratio> {
     let time_base = stream.get("time_base").and_then(Value::as_str).and_then(parse_rational);
     if let (Some(tb), Some(ts)) = (time_base, stream.get("duration_ts").and_then(Value::as_i64))
@@ -821,7 +815,7 @@ mod tests {
         );
     }
 
-    /// 一份最小的 Lottie：64×48，25 帧每秒，帧范围 0–50（2 秒），一个纯色图层。
+    /// A minimal Lottie: 64×48, 25 frames per second, frame range 0–50 (2 seconds), one solid-color layer.
     fn lottie_json() -> Vec<u8> {
         serde_json::to_vec(&json!({
             "v": "5.7.4", "fr": 25, "ip": 0, "op": 50, "w": 64, "h": 48,
@@ -832,7 +826,7 @@ mod tests {
         .unwrap()
     }
 
-    /// 手拼一个只用「存储」方式的 zip（`(名字, 内容)`）。
+    /// Hand-assembles a zip that uses only the “store” method (`(name, content)`).
     fn stored_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let crc32 = render_raster::source::lottie::archive::crc32;
         let (mut out, mut central) = (Vec::new(), Vec::new());

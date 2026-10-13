@@ -1,19 +1,17 @@
-//! 整段重采样：Blackman 窗 sinc 插值，多相核表（[`PHASES`] 个相位）取最近相位。
+//! Whole-buffer resampling: Blackman-windowed sinc interpolation, using a polyphase kernel table ([`PHASES`] phases) that picks the nearest phase.
 //!
-//! 给「读进来的素材采样率与工程不一致」这类离线场景用（例如总谱加载 22.05 kHz 的旁白 WAV）：
-//! 整段在内存里，一次出结果；超越函数只走 `libm`，跨平台逐位一致。降采样时截止与抽头数
-//! 按比例缩放，保持阻带衰减。输出第 `n` 个样本对应源时间 `n / to` 秒（零相位），两端越界按零。
+//! For offline cases where the source's sample rate differs from the project's (for example, loading a 22.05 kHz narration WAV for the master score): the whole buffer is in memory and the result comes out in one pass. Transcendental functions only go through `libm`, so output is bit-identical across platforms. When downsampling, the cutoff and tap count scale proportionally to keep stopband attenuation.
+//! Output sample `n` corresponds to source time `n / to` seconds (zero phase); out-of-range samples at both ends count as zero.
 //!
-//! `ccut-render` 的流式解码器另有一份按块推进的实现（走 std 浮点，已有 golden 绑定它的末位），
-//! 两者口径相同、实现各自独立，互不替换。
+//! The streaming decoder in `ccut-render` has a separate implementation that advances block by block (uses std floating point, and a golden test already pins its last bit). The two follow the same conventions, are implemented independently, and do not replace each other.
 
 use crate::stereo::Stereo;
 
-/// 基准单侧抽头数（升采样；降采样按比例放大）。
+/// Base one-sided tap count (for upsampling; scaled up proportionally when downsampling).
 const BASE_HALF: usize = 24;
-/// 截止频率相对新奈奎斯特的比例（留一点过渡带）。
+/// Cutoff as a fraction of the new Nyquist frequency (leaves a little transition band).
 const ROLLOFF: f64 = 0.94;
-/// 核表相位数。
+/// Number of phases in the kernel table.
 pub const PHASES: usize = 256;
 
 fn sinc(x: f64) -> f64 {
@@ -26,7 +24,7 @@ fn sinc(x: f64) -> f64 {
 }
 
 fn blackman(x: f64) -> f64 {
-    // x ∈ [-1, 1]，两端为 0。
+    // x ∈ [-1, 1], zero at both ends.
     if x.abs() >= 1.0 {
         return 0.0;
     }
@@ -86,13 +84,13 @@ impl Kernel {
     }
 }
 
-/// 输出长度：`round(len · to / from)`。
+/// Output length: `round(len · to / from)`.
 pub fn output_len(len: usize, from: f64, to: f64) -> usize {
     let n = libm::round(len as f64 * to / from);
     if n > 0.0 { n as usize } else { 0 }
 }
 
-/// 单声道 `from` Hz → `to` Hz。两者相同（差 < 0.5 Hz）时原样拷贝。
+/// Mono, `from` Hz → `to` Hz. If the two rates are the same (differ by < 0.5 Hz), copies the input unchanged.
 pub fn resample(x: &[f32], from: f64, to: f64) -> Vec<f32> {
     if (from - to).abs() < 0.5 || x.is_empty() {
         return x.to_vec();
@@ -100,7 +98,7 @@ pub fn resample(x: &[f32], from: f64, to: f64) -> Vec<f32> {
     Kernel::new(from, to).run(x, output_len(x.len(), from, to))
 }
 
-/// 立体声 `from` Hz → `to` Hz（两声道共用一组核，没有声道间相位差）。
+/// Stereo, `from` Hz → `to` Hz (both channels share one set of kernels, so there is no inter-channel phase difference).
 pub fn resample_stereo(x: &Stereo, from: f64, to: f64) -> Stereo {
     if (from - to).abs() < 0.5 || x.l.is_empty() {
         return x.clone();
@@ -145,7 +143,7 @@ mod tests {
 
     #[test]
     fn passband_tone_keeps_level_and_phase() {
-        // 1 kHz @ 22.05 kHz → 48 kHz：中段应与直接在 48 kHz 生成的同一正弦几乎一致。
+        // 1 kHz @ 22.05 kHz → 48 kHz: the middle section should nearly match the same sine generated directly at 48 kHz.
         let up = resample(&tone(1000.0, 22_050.0, 1.0), 22_050.0, 48_000.0);
         let want = tone(1000.0, 48_000.0, 1.0);
         let mid = 4_800..43_200;
@@ -160,7 +158,7 @@ mod tests {
 
     #[test]
     fn downsampling_rejects_above_new_nyquist() {
-        // 20 kHz @ 48 kHz → 16 kHz：新奈奎斯特 8 kHz 之上，应被压到 −60 dB 以下。
+        // 20 kHz @ 48 kHz → 16 kHz: above the new 8 kHz Nyquist, it should be suppressed below −60 dB.
         let down = resample(&tone(20_000.0, 48_000.0, 1.0), 48_000.0, 16_000.0);
         let r = rms(&down[1_600..14_400]) / (0.5 / 2f64.sqrt());
         assert!(20.0 * r.log10() < -60.0, "leak {}", 20.0 * r.log10());

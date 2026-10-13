@@ -1,5 +1,5 @@
-//! 编辑操作（命令与协议规范 §4.2）。调用方提交的是经过校验的操作，不是任意的 Patch（§3.5）。
-//! 每个操作用稳定的 ID 指明目标；涉及时间的操作带 `sequenceId` 与对齐政策（§6.1）。
+//! Edit operations (command and protocol spec §4.2). Callers submit validated operations, not arbitrary Patches (§3.5).
+//! Each operation names its target with a stable ID; operations involving time carry a `sequenceId` and an alignment policy (§6.1).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -25,9 +25,9 @@ use timeline::keyframes::Rewindow;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum EditOperation {
-    /// 导入一个文件或目录为素材。`storage` 决定 bytes 留在原处（`linked`）还是复制进视频目录（`managed`）；
-    /// 不给时文件默认链接，目录（代码包，没有原文件可以指向）默认收进来（视频格式规范 §4.2）。
-    /// 目录成为代码包素材。`ref` 供同一事务里后面的操作引用。
+    /// Import a file or directory as media. `storage` decides whether the bytes stay in place (`linked`) or are copied into the video directory (`managed`);
+    /// when omitted, a file defaults to linked, and a directory (a code bundle, which has no single original file to point to) defaults to managed (video format spec §4.2).
+    /// A directory becomes a code bundle asset. `ref` lets later operations in the same transaction refer to it.
     ImportAsset {
         path: String,
         #[serde(default)]
@@ -36,37 +36,37 @@ pub enum EditOperation {
         reference: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         storage: Option<StorageMode>,
-        /// 导入目录时只收这些文件或子目录（相对路径）。
+        /// When importing a directory, only these files or subdirectories (relative paths) are taken.
         #[serde(default)]
         include: Option<Vec<String>>,
-        /// 代码包的清单（代码包规范 §2），只对目录有意义。
+        /// The code bundle manifest (code bundle spec §2); only meaningful for directories.
         #[serde(default)]
         bundle: Option<Value>,
         #[serde(default)]
         provenance: Option<ProvenanceInput>,
     },
-    /// 把链接素材的 bytes 收进视频目录（`linked` → `managed`）。素材版本不变。
+    /// Move a linked asset's bytes into the video directory (`linked` → `managed`). The asset version does not change.
     CollectAssets {
         asset_ids: Vec<Id>,
     },
-    /// 从视频里删掉没有任何引用的素材记录（实例、章节缩略图与文档的来源都不再指向它，见 [`crate::asset_usage`]）。
-    /// 还有引用时拒绝。代码包与它烘焙出的预渲染替身成对删除：列出其中一个，另一个也没有引用时一起删掉。
-    /// 只删记录，不删 bytes：`blobs/` 里的内容由 GC 按引用图与保留政策回收，撤销能把记录放回来。
+    /// Delete asset records that no longer have any reference in the video (instances, chapter thumbnails and document sources no longer point to it; see [`crate::asset_usage`]).
+    /// Rejected while references remain. A code bundle and the pre-rendered proxy baked from it are deleted as a pair: when one is listed, the other is deleted with it if it has no references either.
+    /// Only records are deleted, not bytes: content in `blobs/` is reclaimed by GC according to the reference graph and retention policy, and undo can put the records back.
     RemoveAssets {
         asset_ids: Vec<Id>,
     },
-    /// 链接素材换了位置：核对内容与登记的一致，然后更新定位。素材版本不变。
+    /// A linked asset has moved: verify that the content matches the record, then update its location. The asset version does not change.
     RelinkAsset {
         asset_id: Id,
         path: String,
     },
-    /// 按精确的字段写入一批实例（格式转换与导入用）。`id` 由引擎分配；时间已经在帧网格与精确时间上，不再量化。
-    /// 同一事务里新建的轨道与文档用 `trackRef`、`documentRef`、`styleDocumentRef` 代替对应的 ID。
+    /// Write a batch of instances with exact fields (for format conversion and import). `id` is assigned by the engine; times are already on the frame grid and at exact time, so they are not quantized again.
+    /// Tracks and documents created in the same transaction are referenced with `trackRef`, `documentRef` and `styleDocumentRef` instead of their IDs.
     InsertItems {
         sequence_id: Id,
         items: Vec<Value>,
     },
-    /// 写入一份文档的新版本。不给 `documentId` 时新建文档。正文不进快照（视频格式规范 §4.4）。
+    /// Write a new version of a document. Without `documentId`, a new document is created. The body is not part of the snapshot (video format spec §4.4).
     PutDocument {
         #[serde(default)]
         document_id: Option<Id>,
@@ -87,7 +87,7 @@ pub enum EditOperation {
         #[serde(default)]
         extensions: BTreeMap<String, Value>,
     },
-    /// 把素材放到时间线上。不给 `at` 时接在轨道末尾。
+    /// Place a media asset on the timeline. Without `at`, it is appended to the end of the track.
     AddItem {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -112,7 +112,7 @@ pub enum EditOperation {
         track_id: Option<Id>,
         alignment: FrameAlignment,
     },
-    /// 一组移动在同一笔事务里生效；重叠在全部移动之后检查，所以可以交换两个片段。
+    /// A group of moves takes effect in the same transaction; overlaps are checked after all moves, so two clips can be swapped.
     MoveItems {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -134,9 +134,8 @@ pub enum EditOperation {
         at: TimelineTimeInput,
         alignment: FrameAlignment,
     },
-    /// 把同一轨道上首尾相接的两个实例合并成一个（拆分的逆，视频格式规范 §3.15）：种类相同；带源时钟的源时间连续、
-    /// 速率相同；其余字段一致，或用 `keep`（按 `itemIds` 的先后，`first`、`second`）指明取哪一边。关键帧与音量包络
-    /// 能还原成同一串帧时拼回，否则算作不一致。留下时间上靠前的实例（它的 ID、起点与源起点），靠后的删掉。
+    /// Merge two instances that are adjacent on the same track into one (the inverse of split, video format spec §3.15): same kind; for instances with a source clock, the source time is continuous and the rate is the same; the other fields must match, or `keep` (`first` or `second`, following the order of `itemIds`) says which side to take.
+    /// Keyframes and volume envelopes are stitched back into one sequence of frames when they can be reconstructed; otherwise the merge counts as inconsistent. The earlier instance is kept (its ID, start and source start), and the later one is deleted.
     JoinItems {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -144,13 +143,13 @@ pub enum EditOperation {
         #[serde(default)]
         keep: Option<JoinKeep>,
     },
-    /// 删除实例只删除引用，不删除素材与 bytes（命令与协议规范 §5）。
+    /// Deleting an instance deletes only the reference, not the asset or its bytes (command and protocol spec §5).
     DeleteItems {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_ids: Vec<Id>,
     },
-    /// 在声明的轨道上删掉序列的 `[from, to)` 并闭合空隙（波纹删除，视频格式规范 §6.4）。没声明的轨道不动。
+    /// On the declared tracks, delete the sequence's `[from, to)` and close the gap (ripple delete, video format spec §6.4). Undeclared tracks are not touched.
     RemoveRange {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -159,23 +158,23 @@ pub enum EditOperation {
         track_ids: Vec<Id>,
         alignment: FrameAlignment,
     },
-    /// 在源素材的剪口集合里加入剪口（视频格式规范 §6.7），并在同一笔事务里按新的保留区间重排序列上的实例：
-    /// 剪口集合的实例所在的轨道上波纹删除，其余实例按 `followPolicy` 移动（§3.16）。区间是源素材时钟上的十进制秒。
+    /// Add cut points to the source asset's cut set (video format spec §6.7), and in the same transaction re-sequence the instances on the sequence against the new kept ranges:
+    /// ripple delete on the tracks where cut-set instances sit; other instances move according to `followPolicy` (§3.16). Ranges are decimal seconds on the source asset's clock.
     AddCuts {
         #[serde(default)]
         sequence_id: Option<Id>,
         asset_id: Id,
         cuts: Vec<crate::cuts::CutInput>,
     },
-    /// 恢复一个剪口：从剪口集合里去掉它，把它删掉的源区间放回接缝处，之后的内容后移（§6.7）。
+    /// Restore a cut point: remove it from the cut set, put back the source range it removed at the seam, and move later content back (§6.7).
     RestoreCut {
         #[serde(default)]
         sequence_id: Option<Id>,
         asset_id: Id,
         cut_id: Id,
     },
-    /// 按源素材的转写检测口癖与长停顿，把建议写进它的剪辑提案（视频格式规范 §6.2，每个素材至多一份，再提出时整份替换）。
-    /// 不改时间线。转写不给时取素材唯一的那份。
+    /// Detect verbal tics (filler words) and long pauses from the source asset's transcript, and write the suggestions into its editorial proposal (video format spec §6.2; at most one per asset, replaced as a whole when proposed again).
+    /// The timeline is not changed. If no transcript is given, the asset's only transcript is used.
     ProposeCuts {
         asset_id: Id,
         #[serde(default)]
@@ -183,14 +182,14 @@ pub enum EditOperation {
         #[serde(default)]
         detect: crate::proposals::DetectInput,
     },
-    /// 接受剪辑提案里的建议：编译成 `addCuts`（`ref` 是建议的 ID），并在同一笔事务里把它们标成 `accepted`（§6.2）。
+    /// Accept the suggestions in an editorial proposal: compile them into `addCuts` (`ref` is the suggestion's ID), and mark them `accepted` in the same transaction (§6.2).
     AcceptCutSuggestions {
         #[serde(default)]
         sequence_id: Option<Id>,
         proposal_id: Id,
         suggestion_ids: Vec<Id>,
     },
-    /// 新增一条轨道，排在最上面。`ref` 供同一事务里后面的 `insertItems` 用 `trackRef` 引用。
+    /// Add a new track at the top. `ref` lets a later `insertItems` in the same transaction refer to it with `trackRef`.
     AddTrack {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -200,7 +199,7 @@ pub enum EditOperation {
         #[serde(default, rename = "ref")]
         reference: Option<String>,
     },
-    /// 删掉一条空轨道。轨道上还有实例、被闪避规则引用或锁定时拒绝；其他轨道的 `order` 不变（与 `addTrack` 对称）。
+    /// Delete an empty track. Rejected if it still has instances, is referenced by a ducking rule, or is locked. Other tracks' `order` does not change (symmetric with `addTrack`).
     DeleteTrack {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -219,27 +218,26 @@ pub enum EditOperation {
         #[serde(default)]
         name: Option<String>,
     },
-    /// 调整一个画面实例的叠放次序（画布上的「前移一层 / 后移一层 / 移到最前 / 移到最后」）。叠放次序就是轨道的上下：
-    /// 实例与别的实例共用一条轨道时，把它拆到相邻新建的一条轨道上（上面或下面的轨道整体让一格）；它独占一条轨道时，
-    /// 轨道整条在同一叠里挪位（画面与字幕轨道是同一叠：相邻两条互换，或挪到最上 / 最下，其余轨道顺次让位）。已经在最前 / 最后时拒绝。
+    /// Change the stacking order of a visual instance (on the canvas: “Bring forward / Send backward / Bring to front / Send to back”). Stacking order is the tracks' up-and-down position:
+    /// when the instance shares a track with other instances, split it onto a newly created adjacent track (the track above or below shifts one step as a whole); when it has a track to itself, the whole track moves within the same stack (visual and subtitle tracks are one stack: swap with the adjacent track, or move to the top or bottom, with the other tracks yielding in turn). Rejected when already at the front or back.
     ArrangeItem {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         direction: ArrangeDirection,
     },
-    /// 把一条轨道挪到同一叠里另一条轨道的上面或下面（时间线上拖动行头）。画面与字幕轨道是同一叠，声音轨道另一叠；
-    /// 这一叠原有的那组 `order` 值按新次序重新分配，另一叠不动。
+    /// Move a track above or below another track in the same stack (dragging a track header on the timeline). Visual and subtitle tracks are one stack; audio tracks are another stack.
+    /// The existing set of `order` values in this stack is reassigned in the new order; the other stack is not touched.
     MoveTrack {
         #[serde(default)]
         sequence_id: Option<Id>,
         track_id: Id,
-        /// 作为参照的同类轨道。
+        /// The reference track of the same kind.
         target: Id,
         position: TrackPosition,
     },
-    /// 改实例的名字、启用、锁定与跟随策略。锁定的实例只能先解锁；空的名字去掉实例自己的名字。`followPolicy` 整个替换
-    /// （视频格式规范 §3.16），写法与 `insertItems` 的相同。
+    /// Change an instance's name, enabled and locked state, and follow policy. A locked instance must be unlocked first; an empty name removes the instance's own name. `followPolicy` is replaced as a whole
+    /// (video format spec §3.16), written the same way as in `insertItems`.
     UpdateItem {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -253,7 +251,7 @@ pub enum EditOperation {
         #[serde(default)]
         follow_policy: Option<FollowPolicy>,
     },
-    /// 改画面实例的几何（视频格式规范 §3.5 `place`）。只改给出的字段；数值给 `null` 去掉，回到按种类的缺省。
+    /// Change the geometry of a visual instance (video format spec §3.5 `place`). Only the fields given are changed; giving `null` for a value removes it and returns to the default for its kind.
     SetTransform {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -275,9 +273,7 @@ pub enum EditOperation {
         #[serde(default)]
         flip_y: Option<bool>,
     },
-    /// 改画面实例的外观（§3.5、§3.6）。只改给出的字段，给 `null` 去掉（回到缺省）。`opacity`、`radius`、`cornerRadii`
-    /// 写进 `place`；`mode`、`fit`、`bg`、`mask` 是视觉媒体的；`tile` 用于图片与文字；`style`、`stylePresetId`、
-    /// `verticalAlign` 用于文字；`shape` 整个替换图形的参数；`crop` 用于视频与图片。适用范围与取值由 `timeline` 校验。
+    /// Change the appearance of a visual instance (§3.5, §3.6). Only the fields given are changed; giving `null` removes them (back to the default). `opacity`, `radius` and `cornerRadii` are written into `place`; `mode`, `fit`, `bg` and `mask` are for visual media; `tile` is for images and text; `style`, `stylePresetId` and `verticalAlign` are for text; `shape` replaces the shape parameters as a whole; `crop` is for video and images. The applicable scope and allowed values are validated by `timeline`.
     SetStyle {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -306,11 +302,11 @@ pub enum EditOperation {
         vertical_align: Option<Option<String>>,
         #[serde(default)]
         shape: Option<ShapeProps>,
-        /// 视频与图片的裁剪（§3.5）；`null` 去掉。
+        /// Crop for video and images (§3.5); `null` removes it.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         crop: Option<Option<Crop>>,
     },
-    /// 改文字实例的内容：`text` 与 `counter` 给且只给一个，给了的那个替换另一个（§3.6）。
+    /// Change the content of a text instance: `text` and `counter` are given one at a time, and the one given replaces the other (§3.6).
     SetText {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -320,22 +316,21 @@ pub enum EditOperation {
         #[serde(default)]
         counter: Option<CounterProps>,
     },
-    /// 整个替换生成类元素与图形的种类参数（§3.7：`shape`、`sticker`、`visualizer`、`progress`、`draw`、
-    /// `placeholder`、`confetti`、`whiteboard` 里与实例种类相同的那一个）。
+    /// Replace as a whole the kind parameters of a generated element or graphic (§3.7: the one among `shape`, `sticker`, `visualizer`, `progress`, `draw`, `placeholder`, `confetti` and `whiteboard` that matches the instance's kind).
     SetProps {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         props: Value,
     },
-    /// 整个替换画面实例的元素动画三槽（§3.15）；`null` 去掉。
+    /// Replace as a whole the three element-animation slots of a visual instance (§3.15); `null` removes them.
     SetAnimation {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         animate: Option<Animation>,
     },
-    /// 整个替换画面实例一个属性的关键帧（§3.15）；`null` 或空表去掉这条绑定。
+    /// Replace as a whole the keyframes of one property of a visual instance (§3.15); `null` or an empty table removes this binding.
     SetKeyframes {
         #[serde(default)]
         sequence_id: Option<Id>,
@@ -343,44 +338,42 @@ pub enum EditOperation {
         property: KeyframeProperty,
         keyframes: Option<Vec<Keyframe>>,
     },
-    /// 整个替换序列的模板层（§3.17）；`null` 去掉。
+    /// Replace as a whole the template layer of the sequence (§3.17); `null` removes it.
     SetTemplate {
         sequence_id: Id,
         template: Option<TemplateLayers>,
     },
-    /// 改合成实例的参数，整个替换 `parameterValues`。代码包的参数要先按它公开的 Schema 校验（代码包规范 §3.2），
-    /// 引擎还做不到，所以拒绝；`expectedBundleRef` 与 `scope` 也还不支持。
+    /// Change the parameters of a composite instance, replacing `parameterValues` as a whole. Code bundle parameters must first be validated against the schema the bundle publishes (code bundle spec §3.2); the engine cannot do that yet, so it rejects the change. `expectedBundleRef` and `scope` are not supported yet either.
     SetCodeParameters {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         values: Value,
     },
-    /// 原地换合成实例的代码包版本与预渲染替身（代码包规范 §3.3）：实例 ID、轨道、起点、几何与不透明度、效果、遮罩、名字、
-    /// 开关与锁、跟随、关键帧、声音路由与 lineage 都不变。时间映射回到从 0 开始的线性映射；长度取新替身的长度，
-    /// 没有替身时取清单的 `intrinsic`。变短就裁掉，变长撞上同轨后面的实例就拒绝（`TIMELINE_OVERLAP`），不推开别人。
-    /// 实例有参数而新包去掉或换了参数 Schema（`parametersSchemaRef`）时，要同时给新的 `parameterValues`。
+    /// Swap the code bundle version and pre-rendered proxy of a composite instance in place (code bundle spec §3.3): instance ID, track, start, geometry and opacity, effects, mask, name, enabled and locked flags, follow, keyframes, sound routing and lineage are all unchanged. The time map goes back to a linear mapping from 0; the length is the new proxy's length, or the manifest's `intrinsic` when there is no proxy.
+    /// If it gets shorter, it is trimmed; if it gets longer and hits a later instance on the same track, it is rejected (`TIMELINE_OVERLAP`) rather than pushing others away.
+    /// When the instance has parameters and the new bundle removes or changes the parameter schema (`parametersSchemaRef`), new `parameterValues` must be given too.
     ReplaceCodeBundle {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         asset_ref: VersionRef,
-        /// 新的预渲染替身；省略或 `null` 是不要替身。
+        /// The new pre-rendered proxy; omitted or `null` means no proxy.
         #[serde(default)]
         prerender: Option<VersionRef>,
-        /// 整个替换 `parameterValues`；省略是不改。
+        /// Replace `parameterValues` as a whole; omitted means no change.
         #[serde(default)]
         parameter_values: Option<Value>,
     },
-    /// 改声音（§3.9）：音频实例的混音、视频实例的内嵌音频、合成自己的声音。只改给出的字段；
-    /// 淡入淡出是实例局部的十进制秒字符串，`"0"` 去掉。
+    /// Change sound (§3.9): the mix of audio instances, the embedded audio of video instances, and the composition's own sound. Only the fields given are changed.
+    /// Fade in and fade out are decimal-second strings local to the instance; `"0"` removes them.
     SetAudioMix {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         #[serde(default)]
         muted: Option<bool>,
-        /// 线性倍数，[0, 4]（§3.9）。
+        /// Linear multiplier, [0, 4] (§3.9).
         #[serde(default)]
         volume: Option<f64>,
         #[serde(default)]
@@ -388,23 +381,23 @@ pub enum EditOperation {
         #[serde(default)]
         fade_out: Option<String>,
     },
-    /// 恒定速率变速（视频与音频实例）：取用的源区间不变，实例的长度按新速率重算——视频向下取整到帧，音频保持精确。
-    /// 变长之后与后面的实例重叠就拒绝，不推开别人。
+    /// Constant-rate speed change (video and audio instances): the source range used stays the same, and the instance's length is recalculated at the new rate. Video is rounded down to frames; audio stays exact.
+    /// If the new length makes it overlap later instances, the change is rejected rather than pushing others away.
     SetSpeed {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         rate: Rate,
     },
-    /// 字幕实例改用一份字幕样式文档（`caption-style`）；同一事务里新建的文档用 `ref`。
+    /// Point a subtitle instance at a subtitle style document (`caption-style`); a document created in the same transaction is referenced with `ref`.
     SetCaptionStyle {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         style_document: DocumentTarget,
     },
-    /// 改序列：名字、画布尺寸、画布底色（`#RRGGBB`）。几何按画幅的百分比保存（§3.5），改尺寸时实例跟着画布走，不用改写。
-    /// 编辑帧率另有 `changeSequenceFrameRate`（视频格式规范 §2.12），不在这里。
+    /// Change the sequence: name, canvas size, canvas background color (`#RRGGBB`). Geometry is stored as percentages of the frame (§3.5), so when the size changes, instances follow the canvas and do not need rewriting.
+    /// Changing the frame rate is handled separately by `changeSequenceFrameRate` (video format spec §2.12), not here.
     UpdateSequence {
         sequence_id: Id,
         #[serde(default)]
@@ -414,9 +407,7 @@ pub enum EditOperation {
         #[serde(default)]
         background: Option<String>,
     },
-    /// 设置一个转场（§3.9）：两个首尾相接的同轨实例之间（两个 ID 都给），或一个实例的开头（只给 `rightItemId`）、
-    /// 结尾（只给 `leftItemId`）。同一条边上已有的转场被替换。两侧转场 handles 不够时拒绝，不自动缩短；单侧转场可以不给
-    /// `duration`（缺省 0.5 秒），生效的长度随实例变短。
+    /// Set a transition (§3.9): between two adjacent instances on the same track (both IDs given), or at the start of an instance (only `rightItemId` given), or at its end (only `leftItemId` given). An existing transition on the same edge is replaced. Rejected if the handles on either side are not enough; it does not shorten anything automatically. A one-sided transition may omit `duration` (default 0.5 seconds); its effective length shrinks as the instance gets shorter.
     SetTransition {
         sequence_id: Id,
         #[serde(default)]
@@ -442,20 +433,20 @@ pub enum EditOperation {
         sequence_id: Option<Id>,
         transition_id: Id,
     },
-    /// 整个替换视觉媒体或合成实例的 `fx`（视频格式规范 §3.8）；`null` 去掉。
+    /// Replace as a whole the `fx` of a visual media or composite instance (video format spec §3.8); `null` removes it.
     SetEffects {
         #[serde(default)]
         sequence_id: Option<Id>,
         item_id: Id,
         fx: Option<Fx>,
     },
-    /// 整个替换序列的章节（§3.13）；其他标记不动。
+    /// Replace as a whole the chapters of the sequence (§3.13); other markers are unchanged.
     SetChapters {
         sequence_id: Id,
         chapters: Vec<ChapterInput>,
         alignment: FrameAlignment,
     },
-    /// 新建（不给 `chapterId`）或修改一章；`summary`、`thumbnail` 给 null 去掉。给 `at` 时要写明 `alignment`。
+    /// Create (no `chapterId`) or modify a chapter; `summary` and `thumbnail` given as `null` are removed. When `at` is given, `alignment` must be stated.
     UpsertChapter {
         sequence_id: Id,
         #[serde(default)]
@@ -476,7 +467,7 @@ pub enum EditOperation {
         sequence_id: Option<Id>,
         chapter_id: Id,
     },
-    /// 新建（不给 `ruleId`）或修改一条闪避规则（§3.9）。`attack`、`release` 是十进制秒字符串。
+    /// Create (no `ruleId`) or modify a ducking rule (§3.9). `attack` and `release` are decimal-second strings.
     SetDucking {
         sequence_id: Id,
         #[serde(default)]
@@ -489,7 +480,7 @@ pub enum EditOperation {
         trigger: Option<DuckingTriggerInput>,
         #[serde(default)]
         target: Option<DuckingGroupInput>,
-        /// 压低的 dB，[0, 60]。
+        /// Attenuation in dB, [0, 60].
         #[serde(default)]
         depth: Option<f64>,
         #[serde(default)]
@@ -538,7 +529,7 @@ pub enum DocumentTarget {
     },
 }
 
-/// `setDucking` 的触发：有人说话时，或这些轨道与实例发声时。
+/// The trigger for `setDucking`: when someone is speaking, or when these tracks and instances are sounding.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum DuckingTriggerInput {
@@ -555,7 +546,7 @@ impl DuckingTriggerInput {
     }
 }
 
-/// `setDucking` 的触发组与目标组：已有的轨道与实例，加上同一事务里 `addTrack` 起的 `ref`（`trackRefs`）。
+/// The trigger group and target group for `setDucking`: existing tracks and instances, plus the `ref`s from `addTrack` in the same transaction (`trackRefs`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DuckingGroupInput {
@@ -589,7 +580,7 @@ impl DuckingGroupInput {
     }
 }
 
-/// 导入方已知的来源。不给时按「用户导入」记录。
+/// The source known to the importer. When not given, it is recorded as "user import".
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProvenanceInput {
@@ -610,7 +601,7 @@ pub struct ItemMove {
     pub track_id: Option<Id>,
 }
 
-/// `updateSequence` 的画布尺寸（像素）。
+/// Canvas size for `updateSequence`, in pixels.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CanvasChange {
@@ -625,7 +616,7 @@ pub enum Edge {
     End,
 }
 
-/// `arrangeItem` 的方向：往上一层、往下一层、最上、最下。
+/// Direction for `arrangeItem`: up one layer, down one layer, to the top, to the bottom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArrangeDirection {
@@ -635,7 +626,7 @@ pub enum ArrangeDirection {
     Back,
 }
 
-/// `moveTrack` 放在参照轨道的上面还是下面。
+/// Whether `moveTrack` places the track above or below the reference track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackPosition {
@@ -643,7 +634,7 @@ pub enum TrackPosition {
     Below,
 }
 
-/// 把 JSON 解析成操作。时间输入的错误按时间的错误码报，其余按 `INVALID_OPERATION`。
+/// Parse JSON into an operation. Errors in time input are reported with the time error codes; everything else as `INVALID_OPERATION`.
 pub fn parse_operation(index: usize, value: &Value) -> EngineResult<EditOperation> {
     match serde_json::from_value::<EditOperation>(value.clone()) {
         Ok(op) => Ok(op),
@@ -696,7 +687,7 @@ pub fn parse_operation(index: usize, value: &Value) -> EngineResult<EditOperatio
     }
 }
 
-/// 一笔事务执行期间积累的结果：量化回执、lineage、导入引用。
+/// Results accumulated while a transaction runs: quantization receipts, lineage, import references.
 pub struct EditContext<'a> {
     pub transaction_id: &'a str,
     pub now: &'a str,
@@ -705,31 +696,30 @@ pub struct EditContext<'a> {
     pub refs: HashMap<String, Id>,
     pub time_resolution: Vec<TimeQuantizationReceipt>,
     pub lineage: BTreeMap<Id, Vec<Id>>,
-    /// 导入时复用了已有素材（相同的 bytes）：不新增记录。
+    /// An existing asset was reused on import (same bytes): no new record is added.
     pub reused_assets: Vec<Id>,
-    /// 同一事务里新建的文档，供后面的操作用 `ref` 引用。
+    /// Documents created in the same transaction, which later operations can reference with `ref`.
     pub document_refs: HashMap<String, Id>,
-    /// 同一事务里新建的轨道，供后面的 `insertItems` 用 `trackRef` 引用。
+    /// Tracks created in the same transaction, which later `insertItems` can reference with `trackRef`.
     pub track_refs: HashMap<String, Id>,
-    /// 这笔事务写入的文档正文，与文档头一起提交。
+    /// The document body written by this transaction, committed together with the document header.
     pub documents: Vec<DocumentBody>,
-    /// 要写新版本的文档在库里存过的最大版本号（含撤销掉的）。撤销后快照里没有那个版本，
-    /// 新版本仍要从这里之上编号，不复用已存过正文的号。
+    /// The largest version number ever stored in the database for the document that is getting a new version (including versions from undone transactions). After an undo, the snapshot does not contain that version, but the new version must still be numbered above it, so it never reuses a number whose body has already been stored.
     pub document_revision_floor: &'a HashMap<Id, u64>,
-    /// 重新链接时在事务之外确认过的新定位（按操作序号）。
+    /// New locations confirmed outside the transaction for relinking (keyed by operation index).
     pub relinked: &'a HashMap<usize, FileLocator>,
     pub actor: &'a Actor,
-    /// 这笔事务要改的剪口集合在事务开始时的正文（按文档 ID），在事务之外读出。
+    /// The body, as of the start of the transaction, of the cut-set documents this transaction will change (keyed by document ID), read outside the transaction.
     pub cut_sets: &'a HashMap<Id, Value>,
-    /// 剪辑提案要读的转写与提案在事务开始时的正文（按文档 ID），在事务之外读出。
+    /// The bodies, as of the start of the transaction, of the transcript and the proposal that the editorial proposal reads (keyed by document ID), read outside the transaction.
     pub document_bodies: &'a HashMap<Id, Value>,
-    /// 剪口操作写进回执 `impact` 的结果。
+    /// The result of cut operations, written into the receipt's `impact`.
     pub cut_impact: crate::cuts::CutImpact,
-    /// `replaceCodeBundle` 写进回执 `impact.codeEdits` 的结果。
+    /// The result that `replaceCodeBundle` writes into the receipt's `impact.codeEdits`.
     pub code_edits: Vec<crate::receipt::CodeEdit>,
-    /// `deleteTrack` 删掉的轨道，写进回执 `impact.removedTracks`。
+    /// The tracks deleted by `deleteTrack`, written into the receipt's `impact.removedTracks`.
     pub removed_tracks: Vec<Id>,
-    /// `removeAssets` 删掉的素材（含成对带走的），写进回执 `impact.removedAssets`。
+    /// The assets deleted by `removeAssets` (including those removed with them as a pair), written into the receipt's `impact.removedAssets`.
     pub removed_assets: Vec<Id>,
 }
 
@@ -1290,7 +1280,7 @@ fn clean_name(name: &str, what: Text) -> EngineResult<String> {
     Ok(trimmed.to_string())
 }
 
-/// 命令所属的序列。有时间输入的操作必须写明 `sequenceId`（TM04：不猜帧率）。
+/// The sequence the command belongs to. Operations with time input must state `sequenceId` (TM04: the frame rate is not guessed).
 pub(crate) fn require_sequence<'s>(state: &'s VideoState, sequence_id: Option<&str>) -> EngineResult<(&'s str, Rate, String)> {
     let id = sequence_id.ok_or_else(|| ErrorBody::time_domain_mismatch(msg!(
             "engine.sequenceIdRequired",
@@ -1370,7 +1360,7 @@ fn import_asset(
         .prepared
         .get(&index)
         .ok_or_else(|| ErrorBody::invalid_operation(msg!("engine.importNotPrepared", "The imported file is not ready")))?;
-    // 相同的 bytes 已在视频里：复用原素材，不新增记录（重新链接到相同的 bytes 不改变版本）。
+    // The same bytes are already in the video: reuse the existing asset and add no record (relinking to identical bytes does not change the version).
     let existing = state.assets.values().find(|a| {
         a.revisions
             .get(&a.current_revision)
@@ -1427,8 +1417,7 @@ fn import_asset(
     Ok(())
 }
 
-/// `addItem` 放进来的视频与图片：铺满画布、整个放进去（`fullscreen` + `contain`，留边按缺省的黑色），
-/// 与旧的「布局框铺满画布、contain」一致。几何留空，取 `timeline::geometry` 的缺省。
+/// Videos and images added by `addItem` fill the canvas and fit entirely inside it (`fullscreen` + `contain`, with the margins in the default black), matching the old "layout frame fills the canvas, contain". Geometry is left empty and takes the defaults from `timeline::geometry`.
 fn full_canvas_media() -> MediaFields {
     MediaFields {
         mode: Some(VisualMode::Fullscreen),
@@ -1437,7 +1426,7 @@ fn full_canvas_media() -> MediaFields {
     }
 }
 
-/// 素材目标解析成素材 ID：直接给的 ID，或同一事务里导入时起的 `ref`。
+/// Resolve an asset target to an asset ID: either the ID given directly, or the `ref` of an import in the same transaction.
 pub(crate) fn resolve_asset(target: &AssetTarget, ctx: &EditContext<'_>) -> EngineResult<Id> {
     match target {
         AssetTarget::Id { asset_id } => Ok(asset_id.clone()),
@@ -1508,7 +1497,7 @@ fn add_item(
     };
     ensure_track_editable(state, &track_id)?;
 
-    // 起点：给了就量化一次；没给就接在轨道末尾。
+    // Start: if given, quantize it once; if not, append to the end of the track.
     let grid = GridContext {
         sequence_id: &sequence_id,
         sequence_revision: &seq_revision,
@@ -1551,11 +1540,11 @@ fn add_item(
                 None => frames_at(track_end, fps).ok_or_else(overflow)?.ceil() as i64,
             };
             let duration_frames = if asset_kind == AssetKind::Image || !has_video {
-                // 图片默认 5 秒。
+                // Images default to 5 seconds.
                 quantize_frame(Ratio::from_int(5).unwrap(), fps, FrameAlignment::NearestFrame, "duration")?
             } else {
                 let duration = asset_duration(state, &asset_ref)?.ok_or_else(|| ErrorBody::probe_failed(msg!("engine.videoNoDuration", "The video asset has no duration")))?;
-                // 只取完整的帧：量化不能越过素材的终点（命令与协议规范 §6.4）。
+                // Only take complete frames: quantization must not go past the end of the asset (command and protocol spec §6.4).
                 frames_at(duration, fps).ok_or_else(overflow)?.floor() as i64
             };
             if duration_frames <= 0 {
@@ -1602,7 +1591,7 @@ fn add_item(
             }
         }
         TrackKind::Audio => {
-            // 音频的开始位置保留子帧精度，不吸附到帧（视频格式规范 §2.10）。
+            // Audio start keeps sub-frame precision and is not snapped to a frame (video format spec §2.10).
             let start = match at {
                 Some(input) => input.resolve(fps, "at", false)?,
                 None => track_end,
@@ -1637,7 +1626,7 @@ fn add_item(
     Ok(())
 }
 
-/// 轨道上最后一个实例的精确终点；空轨道为 0。
+/// The exact end of the last instance on the track; 0 for an empty track.
 fn track_end(state: &VideoState, sequence_id: &str, track_id: &str, fps: Rate) -> EngineResult<Ratio> {
     let mut end = Ratio::ZERO;
     for placed in state
@@ -1650,7 +1639,7 @@ fn track_end(state: &VideoState, sequence_id: &str, track_id: &str, fps: Rate) -
     Ok(end)
 }
 
-/// 精确的音频起点拆成「粗帧 + 余数」，余数落在 [0, 一帧)。
+/// An exact audio start is split into "coarse frames + remainder", with the remainder in [0, one frame).
 fn split_audio_start(start: Ratio, fps: Rate) -> EngineResult<(i64, MediaTime)> {
     let frame = frames_at(start, fps).ok_or_else(overflow)?.floor();
     let offset = start
@@ -1673,7 +1662,7 @@ pub(crate) fn move_item(
     let mut item = placed.value.clone();
     let (start, _) = item_range(&item, fps)?;
 
-    // 绝对位置与相对偏移二选一；相对偏移先求绝对目标，再量化一次（TM07）。
+    // An absolute position and a relative offset are mutually exclusive; a relative offset first works out the absolute target and then quantizes once (TM07).
     let (target, requested) = match (&mv.at, &mv.offset) {
         (Some(at), None) => (at.resolve(fps, "at", false)?, at.clone()),
         (None, Some(offset)) => {
@@ -1747,7 +1736,7 @@ pub(crate) fn trim_item(
         sequence_revision: &seq_revision,
         fps,
     };
-    // 合成的源区间只受预渲染替身的长度约束；代码包本身没有时长。
+    // A composition's source range is constrained only by the length of its pre-rendered proxy; the code bundle itself has no duration.
     let timed_asset = match &item {
         TimelineItem::Composition(c) => c.prerender.as_ref(),
         other => other.asset_ref(),
@@ -1773,7 +1762,7 @@ pub(crate) fn trim_item(
                     "A clip with a hold mapping does not support this trim"
                 )));
             };
-            // 新的 sourceIn 由旧映射在新起点上精确求值（视频格式规范 §2.7）。
+            // The new sourceIn is evaluated exactly at the new start using the old mapping (video format spec §2.7).
             let shift = frame_time((new_from - span.from_frame) as i128, fps).ok_or_else(overflow)?;
             let new_in = source_in
                 .to_ratio("sourceIn")?
@@ -1832,7 +1821,7 @@ pub(crate) fn trim_item(
                 rate,
             };
         }
-        // 其余画面实例与字幕：只改区间。
+        // Other visual instances and subtitles: only the range changes.
         other => {
             let span = other.span_mut().expect("除音频外的实例都在帧网格上");
             let q = editor_semantics::quantize_input(at, &grid, alignment, "at")?;
@@ -1852,7 +1841,7 @@ pub(crate) fn trim_item(
     }
     let (new_start, new_end) = item_range(&item, fps)?;
     state.items.insert(item_id.to_string(), Placed { sequence_id, value: item });
-    // 关键帧跟着窗口走：localFrame 按内容的位移换算，percent 原样（§3.15）。
+    // Keyframes follow the window: localFrame is converted by the content's shift; percent is kept as is (§3.15).
     let window = Rewindow::trim(
         seconds_between(old_start, old_end),
         seconds_between(old_start, new_start),
@@ -1861,7 +1850,7 @@ pub(crate) fn trim_item(
     crate::item_keyframes::rewindow_item(state, item_id, window, fps)
 }
 
-/// `replaceCodeBundle`（代码包规范 §3.3）：只换代码包版本与替身，实例的其余部分原样保留。
+/// `replaceCodeBundle` (code bundle spec §3.3): only the code bundle version and proxy are swapped; the rest of the instance is kept as is.
 fn replace_code_bundle(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -1885,7 +1874,7 @@ fn replace_code_bundle(
     let CompositionSource::Bundle { asset_ref: old_ref } = &old.source;
     let old_ref = old_ref.clone();
 
-    // 种类先查：代码包与视频替身（与 `check_item` 同一条规则）。
+    // Check the kind first: code bundle and video proxy (the same rule as `check_item`).
     let kind_of = |r: &VersionRef| state.assets.get(&r.id).map(|a| a.kind);
     let new_rev = asset_revision(state, asset_ref)?;
     if kind_of(asset_ref) != Some(AssetKind::Bundle) {
@@ -1906,7 +1895,7 @@ fn replace_code_bundle(
         }
     }
 
-    // 参数闸门：实例有参数、新包去掉或换了参数 Schema，又没给新参数，就拒绝；不默默套用旧值。
+    // Parameter gate: if the instance has parameters and the new bundle removes or changes the parameter schema, and no new parameters are given, reject; do not silently apply the old values.
     let schema_of = |rev: Option<&AssetRevision>| -> Option<String> {
         rev.and_then(|r| r.bundle.as_ref())
             .and_then(|m| m.get("parametersSchemaRef"))
@@ -1929,7 +1918,7 @@ fn replace_code_bundle(
         })));
     }
 
-    // 新长度：有替身取替身的长度（向下取整到帧，源区间不超出替身）；没有替身取清单的 intrinsic，换算到序列的帧率。
+    // New length: with a proxy, use the proxy's length (rounded down to a frame, so the source range does not exceed the proxy); without one, use the manifest's `intrinsic`, converted to the sequence's frame rate.
     let frames = match prerender {
         Some(r) => asset_duration(state, r)?.and_then(|d| frames_at(d, fps)).map(Ratio::floor),
         None => intrinsic_frames(new_rev.bundle.as_ref(), fps),
@@ -1965,7 +1954,7 @@ fn replace_code_bundle(
         check_time_map(state, item_id, &c.time_map, length, c.prerender.as_ref())?;
     }
 
-    // 变长撞上同轨的实例：拒绝，提示先挪开或删掉后面的实例（不推开别人）。
+    // A longer length that hits an instance on the same track: reject, and suggest moving or deleting the later instance first (do not push others away).
     let track_id = item.base().track_id.clone();
     let blocking: Vec<Id> = state
         .items
@@ -1993,7 +1982,7 @@ fn replace_code_bundle(
         },
     );
     check_item(state, item_id)?;
-    // 内容的局部时间仍从 0 开始：关键帧只随窗口变长变短（§3.15）。
+    // The content's local time still starts at 0: keyframes only stretch and shrink with the window (§3.15).
     let window = Rewindow::trim(seconds_between(old_start, old_end), 0.0, seconds_between(new_start, new_end));
     crate::item_keyframes::rewindow_item(state, item_id, window, fps)?;
     ctx.code_edits.push(crate::receipt::CodeEdit {
@@ -2009,7 +1998,7 @@ fn replace_code_bundle(
     Ok(())
 }
 
-/// 清单 `intrinsic` 的长度换算到序列帧率（向下取整）；缺字段时为 `None`。
+/// Convert the length of the manifest's `intrinsic` to the sequence frame rate (rounded down); `None` when the field is missing.
 fn intrinsic_frames(manifest: Option<&Value>, fps: Rate) -> Option<i128> {
     let intrinsic = manifest?.get("intrinsic")?;
     let frames = intrinsic.get("durationFrames")?.as_i64()?;
@@ -2022,12 +2011,12 @@ fn intrinsic_frames(manifest: Option<&Value>, fps: Rate) -> Option<i128> {
     frames_at(seconds, fps).map(Ratio::floor)
 }
 
-/// `b − a` 的秒数（浮点）：交给 `timeline::keyframes` 的换算用。
+/// The number of seconds in `b − a` (float), for the conversion done by `timeline::keyframes`.
 pub(crate) fn seconds_between(a: Ratio, b: Ratio) -> f64 {
     b.to_f64() - a.to_f64()
 }
 
-/// 源区间必须在素材之内：不默默截断（错误码 `SOURCE_TIME_OUT_OF_RANGE`）。
+/// The source range must lie within the asset: no silent truncation (error code `SOURCE_TIME_OUT_OF_RANGE`).
 fn check_source_range(item_id: &str, source_in: Ratio, source_out: Ratio, duration: Option<Ratio>) -> EngineResult<()> {
     let past_end = duration.is_some_and(|d| source_out > d);
     if source_in.is_negative() || past_end {
@@ -2068,7 +2057,7 @@ pub(crate) fn split_item(
 
     match (&mut left, &mut right) {
         (TimelineItem::Audio(l), TimelineItem::Audio(r)) => {
-            // 音频按精确时间拆分，不套用视频的整数帧限制（§2.7）。
+            // Audio is split at exact times and does not get the video's whole-frame limit (§2.7).
             let t = at.resolve(fps, "at", false)?;
             let start = audio_start(l, fps)?;
             let end = start.checked_add(l.play_duration.to_ratio("playDuration")?).ok_or_else(overflow)?;
@@ -2089,8 +2078,7 @@ pub(crate) fn split_item(
             l.play_duration = MediaTime::from_ratio(t.checked_sub(start).ok_or_else(overflow)?, "playDuration")?;
         }
         (l, r) => {
-            // 帧网格上的实例：拆分点量化一次；有 timeMap 的，右片段的 sourceIn 由旧映射在拆分时刻精确求值，
-            // 不从格式化的秒重建（§2.7）。
+            // Instances on the frame grid: the split point is quantized once. For those with a timeMap, the right segment's sourceIn is evaluated exactly at the split moment using the old mapping, not rebuilt from formatted seconds (§2.7).
             let span = l.span().expect("音频之外的实例都在帧网格上");
             let q = editor_semantics::quantize_input(at, &grid, alignment, "at")?;
             let split = q.frame - span.from_frame;
@@ -2151,7 +2139,7 @@ pub(crate) fn split_item(
     captions_follow_split(state, item_id, &right_id);
     let cut = item_range(&right, fps)?.0;
     state.items.insert(right_id.clone(), Placed { sequence_id, value: right });
-    // 两半各自保留落在自己窗口里的关键帧，接缝处各补一帧取样值（§3.15）。
+    // Each half keeps the keyframes that fall within its own window, and one sampled value is added at each side of the seam (§3.15).
     crate::item_keyframes::split_item(
         state,
         item_id,
@@ -2163,7 +2151,7 @@ pub(crate) fn split_item(
     Ok(right_id)
 }
 
-/// `joinItems` 在两边字段不一致时取哪一边（按 `itemIds` 的先后）。
+/// Which side `joinItems` takes when the two sides' fields disagree (following the order of `itemIds`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JoinKeep {
@@ -2171,7 +2159,7 @@ pub enum JoinKeep {
     Second,
 }
 
-/// 合并时不比较的字段：两段本来就该不同的身份与时间，外加名字（只是标签，字段一致时取靠前那件的）。
+/// Fields not compared when merging: the identity and time that the two pieces are meant to differ in, plus the name (it is only a label; when the fields match, the earlier one's name is taken).
 const JOIN_OWN_KEYS: [&str; 8] = [
     "id",
     "name",
@@ -2190,7 +2178,7 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
     if first == second {
         return Err(ErrorBody::invalid_operation(msg!("engine.joinSameItem", "The two clips of joinItems cannot be the same")).entities([first.clone()]));
     }
-    // 没有时间输入：不写 sequenceId 时取实例所在的序列。
+    // No time input: when `sequenceId` is not given, use the sequence the instance is on.
     let sequence_id = match sequence_id {
         Some(id) => id.to_string(),
         None => state
@@ -2227,7 +2215,7 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
         let gap = seconds_between(early_range.1, late_range.0);
         return Err(refuse(msg!("engine.joinNotAdjacent", "they do not touch end to start"), json!({ "rule": "not-adjacent", "gapSeconds": gap })));
     }
-    // 带源时钟的：同一速率，靠后那件的源起点 = 靠前那件的源起点 + 长度 × 速率（精确相等）。
+    // For those with a source clock: the same rate, and the later one's source start equals the earlier one's source start + length × rate (exact equality).
     match (early.time_map(), late.time_map()) {
         (None, None) => {}
         (
@@ -2331,7 +2319,7 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
             value: merged,
         },
     );
-    // 关键帧：拼得回时写拼好的；拼不回而用 keep 放行时，取那一边的原样。
+    // Keyframes: if they can be stitched back together, write the stitched result; if they cannot, and `keep` lets it through, take that side's as is.
     match joined {
         Some(keyframes) => crate::item_keyframes::write_joined(state, &early_id, keyframes.as_ref(), fps)?,
         None if base_id != early_id => crate::item_keyframes::copy_bindings(state, &base_id, &early_id)?,
@@ -2345,7 +2333,7 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
     check_item(state, &early_id)
 }
 
-/// 合并之后，跟着靠后那件的 `item-local` 实例改跟留下的那件（§3.16）；位置在事务最后按源时刻补算。
+/// After a merge, a `item-local` instance that followed the later one switches to follow the one that remains (§3.16); its position is recomputed from the source moment at the end of the transaction.
 fn followers_follow_join(state: &mut VideoState, early_id: &str, late_id: &str) {
     for placed in state.items.values_mut() {
         let policy = &mut placed.value.base_mut().follow_policy;
@@ -2357,7 +2345,7 @@ fn followers_follow_join(state: &mut VideoState, early_id: &str, late_id: &str) 
     }
 }
 
-/// 合并之后，经靠后那件投影的字幕改经留下的那件投影（它已经在里面时只去掉靠后那件）。
+/// After a merge, a subtitle projected through the later one is projected through the one that remains (if it is already in there, only the later one is removed).
 fn captions_follow_join(state: &mut VideoState, early_id: &str, late_id: &str) {
     for placed in state.items.values_mut() {
         if let TimelineItem::Caption(caption) = &mut placed.value {
@@ -2366,7 +2354,7 @@ fn captions_follow_join(state: &mut VideoState, early_id: &str, late_id: &str) {
     }
 }
 
-/// ID 表里的 `late_id` 换成 `early_id`；`early_id` 已经在表里时只去掉 `late_id`。
+/// In the ID table, `late_id` is replaced by `early_id`; if `early_id` is already in the table, only `late_id` is removed.
 pub(crate) fn replace_joined(ids: &mut Vec<Id>, early_id: &str, late_id: &str) {
     if let Some(at) = ids.iter().position(|id| id == late_id) {
         if ids.iter().any(|id| id == early_id) {
@@ -2377,8 +2365,7 @@ pub(crate) fn replace_joined(ids: &mut Vec<Id>, early_id: &str, late_id: &str) {
     }
 }
 
-/// 拆分之后，经被拆实例投影的字幕也经右半边投影（§3.8）：右半边紧跟在原实例后面加进 `scopeItemIds`，
-/// 否则素材时钟上的字幕在拆分点之后就没了。
+/// After a split, a subtitle projected through the split instance is also projected through the right half (§3.8): the right half is added to `scopeItemIds` right after the original instance. Otherwise subtitles on the source clock would disappear after the split point.
 fn captions_follow_split(state: &mut VideoState, item_id: &str, right_id: &str) {
     for placed in state.items.values_mut() {
         if let TimelineItem::Caption(caption) = &mut placed.value
@@ -2389,8 +2376,7 @@ fn captions_follow_split(state: &mut VideoState, item_id: &str, right_id: &str) 
     }
 }
 
-/// 删掉的实例从字幕的 `scopeItemIds` 里拿掉；会拿空时保留原样：空表示「文档时间就是序列时间」，
-/// 拿空等于悄悄换了时钟。留下的 ID 对不上任何实例，那段字幕就不显示——它的画面已经删了。
+/// Instances deleted are removed from a subtitle's `scopeItemIds`; if that would leave it empty, the list is kept as is. An empty list means "document time is sequence time", so emptying it would silently change the clock. Leftover IDs that match no instance mean that stretch of subtitles is not shown, because its picture has been deleted.
 fn captions_forget_deleted(state: &mut VideoState, deleted: &[Id]) {
     for placed in state.items.values_mut() {
         if let TimelineItem::Caption(caption) = &mut placed.value
@@ -2402,14 +2388,14 @@ fn captions_forget_deleted(state: &mut VideoState, deleted: &[Id]) {
     }
 }
 
-/// 波纹删除（视频格式规范 §6.4、§6.6）。区间量化到帧网格；声明的轨道上：
-/// - 整个落在区间里的实例删掉；
-/// - 跨进区间的裁掉进去的那部分，从区间里伸出去的那部分再前移到区间起点；
-/// - 盖住整个区间的媒体实例（视频、音频、合成）拆成两段、删掉中间、右段前移，经它投影的字幕跟着右段走；
-///   静态实例（图片、文字、形状、字幕）缩短区间那么长；
-/// - 区间之后的前移区间那么长（音频保留子帧位置）。
+/// Ripple delete (video format spec §6.4, §6.6). The range is quantized to the frame grid. On the declared tracks:
+/// - instances lying entirely within the range are deleted;
+/// - instances crossing into the range have the part that falls inside trimmed, and the part sticking out beyond the range is moved forward to the range start;
+/// - media instances (video, audio, composition) covering the whole range are split into two, the middle is deleted and the right piece moves forward; subtitles projected through them follow the right piece;
+///   static instances (images, text, shapes, subtitles) are shortened by the length of the range;
+/// - instances after the range move forward by the length of the range (audio keeps its sub-frame position).
 ///
-/// 轨道或要动的实例锁着时整笔拒绝，不跳过；没声明的轨道不动。
+/// If a track or an instance to be moved is locked, the whole transaction is rejected rather than skipped; undeclared tracks are not touched.
 pub(crate) fn remove_range(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -2490,7 +2476,7 @@ pub(crate) fn remove_range(
             trim_item(state, seq, &id, Edge::End, &frame(f0), exact, ctx)?;
             shift_earlier(state, &right, length, f1 - f0, fps)?;
         } else if let Some(span) = state.items.get_mut(&id).and_then(|p| p.value.span_mut()) {
-            // 静态实例只缩短，关键帧按跟随剪口的规则换算：起点不动，新的长度短了区间那么长（§3.16）。
+            // Static instances are only shortened. Keyframes are converted by the rule for following a cut: the start stays put and the length shrinks by the length of the range (§3.16).
             let old = span.duration_frames;
             span.duration_frames -= f1 - f0;
             let frames = |n: i64| n as f64 / fps.ratio().to_f64();
@@ -2504,7 +2490,7 @@ pub(crate) fn remove_range(
     Ok(())
 }
 
-/// 把实例前移 `length`（= `frames` 帧）。音频按精确时间移，保留子帧位置。
+/// Move an instance forward by `length` (= `frames` frames). Audio is moved by exact time and keeps its sub-frame position.
 pub(crate) fn shift_earlier(state: &mut VideoState, item_id: &str, length: Ratio, frames: i64, fps: Rate) -> EngineResult<()> {
     let placed = state.items.get_mut(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     match &mut placed.value {
@@ -2570,7 +2556,7 @@ fn add_track(
     Ok(())
 }
 
-/// 序列里最大的轨道 `order`（没有轨道时 0）。
+/// The largest track `order` in the sequence (0 when there are no tracks).
 fn max_track_order(state: &VideoState, sequence_id: &str) -> i64 {
     state
         .tracks
@@ -2581,7 +2567,7 @@ fn max_track_order(state: &VideoState, sequence_id: &str) -> i64 {
         .unwrap_or(0)
 }
 
-/// 新建一条轨道放在给定的 `order` 上；没给名字时按种类计数（V2、A3……）。
+/// Create a new track at the given `order`; without a name, it is numbered by kind (V2, A3, …).
 fn create_track(state: &mut VideoState, sequence_id: &str, kind: TrackKind, name: Option<String>, order: i64) -> EngineResult<Id> {
     let count = state
         .tracks
@@ -2621,7 +2607,7 @@ fn create_track(state: &mut VideoState, sequence_id: &str, kind: TrackKind, name
     Ok(id)
 }
 
-/// 叠放分组：画面轨道与字幕轨道合成在同一叠里（渲染按 `order` 统一排序，字幕不自动在最上），声音另算一叠。
+/// Stacking group: visual tracks and subtitle tracks are combined in one stack (rendering sorts them uniformly by `order`; subtitles are not automatically on top); audio is counted as a separate stack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StackingGroup {
     Picture,
@@ -2635,7 +2621,7 @@ fn stacking_group(kind: TrackKind) -> StackingGroup {
     }
 }
 
-/// 序列里同一叠的轨道，按 `order` 从低到高（画面上从下到上）。
+/// The tracks in the same stack in the sequence, by `order` from low to high (bottom to top on screen).
 fn tracks_in_stack(state: &VideoState, sequence_id: &str, group: StackingGroup) -> Vec<(Id, i64)> {
     let mut tracks: Vec<(Id, i64)> = state
         .tracks
@@ -2647,7 +2633,7 @@ fn tracks_in_stack(state: &VideoState, sequence_id: &str, group: StackingGroup) 
     tracks
 }
 
-/// 给新轨道腾出 `order == slot` 这个位置：序列里 `order >= slot` 的轨道整体加一（所有种类一起让，`order` 在序列内保持唯一）。
+/// Make room at `order == slot` for a new track: every track in the sequence with `order >= slot` moves up by one (all kinds move together, and `order` stays unique within the sequence).
 fn open_track_slot(state: &mut VideoState, sequence_id: &str, slot: i64) {
     for placed in state.tracks.values_mut() {
         if placed.sequence_id == sequence_id && placed.value.order >= slot {
@@ -2656,7 +2642,7 @@ fn open_track_slot(state: &mut VideoState, sequence_id: &str, slot: i64) {
     }
 }
 
-/// 同一叠的轨道按新的次序重新领取它们原有的那组 `order` 值：集合不变，只换谁拿哪个，另一叠的轨道不受影响。
+/// The tracks in the same stack take over their existing set of `order` values in the new order: the set is unchanged, only who gets which value changes; tracks in the other stack are not affected.
 fn reassign_track_orders(state: &mut VideoState, ordered: &[Id], orders: &[i64]) {
     debug_assert_eq!(ordered.len(), orders.len());
     for (id, order) in ordered.iter().zip(orders) {
@@ -2668,7 +2654,7 @@ fn reassign_track_orders(state: &mut VideoState, ordered: &[Id], orders: &[i64])
     }
 }
 
-/// `arrangeItem`：见 [`EditOperation::ArrangeItem`]。
+/// `arrangeItem`: see [`EditOperation::ArrangeItem`].
 fn arrange_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, direction: ArrangeDirection) -> EngineResult<()> {
     let placed = checked_item(state, sequence_id, item_id)?;
     let sequence_id = placed.sequence_id.clone();
@@ -2695,7 +2681,7 @@ fn arrange_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str
         .details(json!({ "rule": "already-at-edge", "edge": if upward { "front" } else { "back" } })));
     }
     if shared {
-        // 与别的实例共用一条轨道：拆到相邻新建的一条轨道上，别的实例留在原处。
+        // It shares a track with other instances: split it onto a newly created adjacent track; the other instances stay where they are.
         let current = same_kind[index].1;
         let order = match direction {
             ArrangeDirection::Forward => {
@@ -2717,7 +2703,7 @@ fn arrange_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str
         state.items.get_mut(item_id).expect("刚检查过").value.base_mut().track_id = new_track;
         return Ok(());
     }
-    // 独占一条轨道：整条轨道在同一叠里挪位（画面与字幕一叠），其余轨道顺次让位。
+    // It has a track to itself: the whole track moves within the same stack (visual and subtitle share one stack), and the other tracks yield in turn.
     let orders: Vec<i64> = same_kind.iter().map(|(_, order)| *order).collect();
     let mut ordered: Vec<Id> = same_kind.into_iter().map(|(id, _)| id).collect();
     let moved = ordered.remove(index);
@@ -2732,7 +2718,7 @@ fn arrange_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str
     Ok(())
 }
 
-/// `moveTrack`：见 [`EditOperation::MoveTrack`]。
+/// `moveTrack`: see [`EditOperation::MoveTrack`].
 fn move_track(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -2790,7 +2776,7 @@ fn move_track(
     Ok(())
 }
 
-/// `deleteTrack`：只删空轨道。其他轨道的 `order` 不重排：`addTrack` 取最大值加一、不动别人，删除也不动别人。
+/// `deleteTrack`: deletes only empty tracks. The `order` of other tracks is not renumbered: `addTrack` takes the maximum plus one without touching others, and deletion does not touch others either.
 fn delete_track(state: &mut VideoState, sequence_id: Option<&str>, track_id: &str, ctx: &mut EditContext<'_>) -> EngineResult<()> {
     let placed = state.tracks.get(track_id).ok_or_else(|| ErrorBody::not_found(kinds::track(), track_id))?;
     if let Some(seq) = sequence_id
@@ -2878,7 +2864,7 @@ fn update_track(
         )));
     }
     let track = &mut placed.value;
-    // 锁定的轨道只能先解锁（锁定阻止修改，不等于隐藏）。
+    // A locked track must be unlocked first (locking blocks edits; it does not hide anything).
     let unlocking = locked == Some(false);
     if track.locked && !unlocking && (visible.is_some() || muted.is_some() || name.is_some()) {
         return Err(ErrorBody::locked(vec![track_id.to_string()], msg!("engine.trackLocked", "The track is locked")));
@@ -2898,14 +2884,14 @@ fn update_track(
     Ok(())
 }
 
-/// 文字实例的正文上限（字符）。
+/// Upper limit on the body of a text instance (characters).
 const MAX_TEXT_CHARS: usize = 10_000;
-/// 样式、形状与生成器参数这类自由结构的上限（序列化之后的字节）。
+/// Upper limit for free-form structures such as styles, shapes and generator parameters (bytes after serialization).
 const MAX_OBJECT_BYTES: usize = 64 * 1024;
-/// 画布边长的上限（像素）。
+/// Upper limit on the canvas side length (pixels).
 const MAX_CANVAS_SIDE: u32 = 16_384;
 
-/// 序列里一个可以修改的实例：片段与所在轨道都没锁。只改属性、不涉及时间，所以 `sequenceId` 可以省略。
+/// An instance in the sequence that can be modified: neither the clip nor its track is locked. It changes only properties and involves no time, so `sequenceId` can be omitted.
 fn checked_item<'s>(state: &'s VideoState, sequence_id: Option<&str>, item_id: &str) -> EngineResult<&'s Placed<TimelineItem>> {
     let placed = state.items.get(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     if let Some(seq) = sequence_id
@@ -2931,7 +2917,7 @@ pub(crate) fn not_applicable(item_id: &str, why: Text) -> ErrorBody {
     ErrorBody::invalid_operation(msg!("engine.notApplicable", "Clip {item} {reason}", item = item_id, reason = why)).entities([item_id])
 }
 
-/// 生成类元素与图形的种类参数：按目标类型解析，解析之后再序列化，对不上的字段按不认识报错（§1.4）。
+/// Kind parameters for generated elements and graphics: resolved against the target type, then re-serialized after resolving; fields that do not match are rejected as unknown (§1.4).
 fn parse_props<T: serde::de::DeserializeOwned + Serialize>(item_id: &str, props: &Value) -> EngineResult<T> {
     let parsed: T = serde_json::from_value(props.clone())
         .map_err(|e| ErrorBody::invalid_operation(msg!("engine.propsInvalid", "props is invalid: {error}", error = e.to_string())).entities([item_id]))?;
@@ -2964,7 +2950,7 @@ fn set_props(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, p
     check_item(state, item_id)
 }
 
-/// 整个替换实例一个属性的关键帧绑定；`None` 或空表去掉。绑定存在序列上（§3.15）。
+/// Replace as a whole the keyframe binding of one property of an instance; `None` or an empty table removes it. The binding is stored on the sequence (§3.15).
 fn set_keyframes(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -3001,7 +2987,7 @@ fn set_keyframes(
     check_item(state, item_id)
 }
 
-/// 样式、形状与参数是格式之外定义的结构，引擎只要求它是对象并限制大小；字段的含义由渲染器解释。
+/// Styles, shapes and parameters are structures defined outside the format. The engine only requires them to be objects and limits their size; the renderer interprets the meaning of their fields.
 fn check_json_object(item_id: &str, field: &str, value: &Value) -> EngineResult<()> {
     if !value.is_object() {
         return Err(ErrorBody::invalid_operation(msg!("engine.fieldNotObject", "{field} must be an object", field)).entities([item_id]));
@@ -3012,7 +2998,7 @@ fn check_json_object(item_id: &str, field: &str, value: &Value) -> EngineResult<
     Ok(())
 }
 
-/// `updateItem` 要改的字段，`None` 是不改。
+/// The fields to change for `updateItem`; `None` means no change.
 struct ItemUpdate<'a> {
     name: Option<&'a str>,
     enabled: Option<bool>,
@@ -3042,7 +3028,7 @@ fn update_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str,
         )).entities([item_id]));
     }
     ensure_track_editable(state, &placed.value.base().track_id)?;
-    // 锁定的片段只能先解锁；同一个操作里解锁再改别的可以。
+    // A locked clip must be unlocked first; within the same operation, unlocking and then changing other things is allowed.
     if placed.value.base().locked && locked != Some(false) && (name.is_some() || enabled.is_some() || follow_policy.is_some()) {
         return Err(ErrorBody::locked(vec![item_id.to_string()], msg!("engine.itemLocked", "The clip is locked")));
     }
@@ -3068,7 +3054,7 @@ fn update_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str,
     Ok(())
 }
 
-/// `setStyle` 的字段：外层 `None` 是不改，`Some(None)` 是去掉。
+/// The fields of `setStyle`: an outer `None` means no change, and `Some(None)` means remove.
 #[derive(Default, PartialEq)]
 struct StyleInput {
     opacity: Option<Option<f64>>,
@@ -3163,7 +3149,7 @@ fn set_style(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, i
     check_item(state, item_id)
 }
 
-/// 淡入淡出写成十进制秒；0 表示没有淡变（省略字段）。
+/// Fade in and fade out are written as decimal seconds; 0 means no fade (field omitted).
 fn parse_fade(text: Option<&str>, field: &str) -> EngineResult<Option<Option<MediaTime>>> {
     let Some(text) = text else { return Ok(None) };
     let value = editor_semantics::parse_decimal_seconds(text, field)?;
@@ -3205,7 +3191,7 @@ fn set_audio_mix(
             }
             (&mut audio.mix.volume, (&mut audio.mix.fade_in, &mut audio.mix.fade_out))
         }
-        // 视频与合成自带的声音：静音就是不用这路声音。
+        // The sound that video and compositions carry themselves: muting means not using this audio channel.
         TimelineItem::Video(VideoItem { embedded_audio: audio, .. })
         | TimelineItem::Composition(CompositionItem { audio: Some(audio), .. }) => {
             if let Some(m) = muted {
@@ -3267,7 +3253,7 @@ fn set_speed(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, r
             msg!("engine.speedNotLinear", "has no linear time mapping, so its speed cannot change"),
         ));
     };
-    // 取用的源区间不变：新长度 = 源长度 / 新速率。
+    // The source range used stays the same: new length = source length / new rate.
     let source_length = length.checked_mul(old.ratio()).ok_or_else(overflow)?;
     let new_length = source_length.checked_div(speed).ok_or_else(overflow)?;
     let new_length = match &mut item {
@@ -3311,7 +3297,7 @@ fn update_sequence(
     let mut next = state.sequence(sequence_id)?.header.clone();
     if let Some(n) = name {
         next.name = clean_name(n, kinds::sequence())?;
-        // 用户起的名字原样显示，不再跟着读者的语言换。
+        // A name the user gave is shown as is, and no longer changes with the reader's language.
         next.name_ref = None;
     }
     if let Some(bg) = background {
@@ -3334,7 +3320,7 @@ fn update_sequence(
     Ok(())
 }
 
-/// 把链接素材改记为受管理。bytes 已经在事务之外复制并核对过摘要。
+/// Mark a linked asset as managed. The bytes have already been copied outside the transaction and their digest checked.
 fn collect_assets(state: &mut VideoState, asset_ids: &[Id]) -> EngineResult<()> {
     if asset_ids.is_empty() {
         return Err(ErrorBody::invalid_operation(msg!("engine.collectAssetsEmpty", "collectAssets needs at least one entry")));
@@ -3371,14 +3357,14 @@ fn relink_asset(state: &mut VideoState, index: usize, asset_id: &str, ctx: &mut 
     Ok(())
 }
 
-/// 输入里的每个字段都必须被认得：解析之后再序列化，对不上的字段就是被丢掉的（视频格式规范 §1.4）。
+/// Every field in the input must be recognized: after parsing and re-serializing, a field that does not match is one that was dropped (video format spec §1.4).
 fn dropped_field(input: &Value, output: &Value, path: &str) -> Option<String> {
     match (input, output) {
         (Value::Object(a), Value::Object(b)) => a.iter().find_map(|(key, value)| {
             let here = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
             match b.get(key) {
                 Some(other) => dropped_field(value, other, &here),
-                // 省略的默认值（false、空表、null）不算丢失。
+                // Omitted defaults (false, empty tables, null) do not count as lost.
                 None if matches!(value, Value::Null | Value::Bool(false)) => None,
                 None if value.as_array().is_some_and(Vec::is_empty) || value.as_object().is_some_and(|o| o.is_empty()) => None,
                 None => Some(here),
@@ -3393,7 +3379,7 @@ fn dropped_field(input: &Value, output: &Value, path: &str) -> Option<String> {
     }
 }
 
-/// 线性映射的源区间必须落在素材之内。
+/// The source range of a linear mapping must lie within the asset.
 fn check_time_map(state: &VideoState, id: &str, map: &TimeMap, length: Ratio, asset_ref: Option<&VersionRef>) -> EngineResult<()> {
     let TimeMap::Linear { source_in, rate } = map else {
         return Ok(());
@@ -3410,9 +3396,8 @@ fn check_time_map(state: &VideoState, id: &str, map: &TimeMap, length: Ratio, as
     check_source_range(id, source_in, source_out, duration)
 }
 
-/// `insertItems` 里引用同一事务新建对象的字段：`trackRef` → `trackId`，`documentRef` → `documentId`，
-/// `styleDocumentRef` → `styleDocumentId`，`assetImportRef`（`importAsset` 的 `ref`）→ `assetRef`（那个素材的当前版本）。
-/// 同一个对象不能既给 ID 又给 ref。
+/// Fields in `insertItems` that refer to objects created in the same transaction: `trackRef` → `trackId`, `documentRef` → `documentId`, `styleDocumentRef` → `styleDocumentId`, and `assetImportRef` (the `ref` of `importAsset`) → `assetRef` (that asset's current version).
+/// The same object cannot be given both an ID and a ref.
 fn resolve_item_refs(state: &VideoState, body: &mut serde_json::Map<String, Value>, ctx: &EditContext<'_>, n: usize) -> EngineResult<()> {
     let fail = |message: Text| ErrorBody::invalid_operation(message).details(json!({ "itemIndex": n }));
     if let Some(value) = body.remove("assetImportRef") {
@@ -3503,7 +3488,7 @@ fn insert_items(state: &mut VideoState, sequence_id: &str, items: &[Value], ctx:
                 number = n + 1
             )));
         }
-        // 引擎管的字段有默认值，调用方只写内容。
+        // Fields the engine manages have defaults; the caller writes only the content.
         let id = new_id("item");
         let mut body = fields.clone();
         resolve_item_refs(state, &mut body, ctx, n)?;
@@ -3515,7 +3500,7 @@ fn insert_items(state: &mut VideoState, sequence_id: &str, items: &[Value], ctx:
         ] {
             body.entry(key).or_insert(default);
         }
-        // 画面实例的几何可以省略，取按种类的缺省（§3.5）。
+        // The geometry of a visual instance may be omitted and takes the default for its kind (§3.5).
         if !matches!(body.get("type").and_then(Value::as_str), Some("audio" | "caption")) {
             body.entry("place").or_insert(json!({}));
         }
@@ -3561,7 +3546,7 @@ fn insert_items(state: &mut VideoState, sequence_id: &str, items: &[Value], ctx:
         let length = end.checked_sub(start).ok_or_else(overflow)?;
         match &item {
             TimelineItem::Video(v) => check_time_map(state, &id, &v.time_map, length, Some(&v.asset_ref))?,
-            // 替身与合成共用时间映射：源区间不能超出替身的长度。
+            // A proxy and a composition share the time map: the source range cannot exceed the proxy's length.
             TimelineItem::Composition(c) => check_time_map(state, &id, &c.time_map, length, c.prerender.as_ref())?,
             TimelineItem::Caption(c) => {
                 for doc in std::iter::once(&c.document_id).chain(&c.style_document_id) {
@@ -3595,7 +3580,7 @@ fn insert_items(state: &mut VideoState, sequence_id: &str, items: &[Value], ctx:
     Ok(())
 }
 
-/// 在错误的细节里补上 `itemIndex`（`insertItems` 里第几个实例）。
+/// Add `itemIndex` to the error details (which instance in `insertItems`).
 fn with_item_index(mut err: ErrorBody, index: usize) -> ErrorBody {
     match &mut err.details {
         Value::Object(map) => {
@@ -3639,7 +3624,7 @@ pub(crate) fn put_document(state: &mut VideoState, input: PutDocumentInput<'_>, 
             "The document body must be a JSON object"
         )));
     }
-    // 认得的正文格式只核对规范为它补充的字段（视频格式规范 §5.2、§5.3、§5.6），别的字段照旧不校验。
+    // For a recognized body format, only the fields the spec adds for it are validated (video format spec §5.2, §5.3, §5.6); other fields are still not validated, as before.
     let schema = input.body.get("schema").and_then(Value::as_str).unwrap_or_default();
     let problems = match schema {
         video_model::speech::SPEECH_SCHEMA => video_model::speech::speech_body_problems(input.body),
@@ -3677,7 +3662,7 @@ pub(crate) fn put_document(state: &mut VideoState, input: PutDocumentInput<'_>, 
     {
         return Err(ErrorBody::not_found(kinds::asset(), id));
     }
-    // 剪口集合（§6.7）：刻度、排序与不重叠；知道被剪素材的时长时剪口不超过它。
+    // Cut-point set (§6.7): ticks, sorted and non-overlapping; when the duration of the cut asset is known, cut points do not exceed it.
     if schema == video_model::cut_set::CUT_SET_SCHEMA {
         let asset_id = source_asset_id.as_deref().or_else(|| {
             input
@@ -3723,7 +3708,7 @@ pub(crate) fn put_document(state: &mut VideoState, input: PutDocumentInput<'_>, 
         return Err(ErrorBody::not_found(kinds::document(), id));
     }
 
-    // 正文按键有序的 JSON 保存，摘要与写法无关。
+    // The body is saved as JSON with ordered keys, so the digest does not depend on formatting.
     let text = crate::video::canonical_json(input.body);
     let content_hash = crate::video::sha256_text(&text);
     let (id, revision) = match input.document_id {
@@ -3735,7 +3720,7 @@ pub(crate) fn put_document(state: &mut VideoState, input: PutDocumentInput<'_>, 
                     "The kind of an existing document cannot change"
                 )).entities([id]));
             }
-            // 内容没变：不产生新版本。
+            // Content unchanged: no new version is produced.
             if existing
                 .revisions
                 .get(&existing.current_revision)
@@ -3804,7 +3789,7 @@ pub(crate) fn put_document(state: &mut VideoState, input: PutDocumentInput<'_>, 
     Ok(())
 }
 
-/// 同一轨道上的实例不能重叠。只检查这笔事务涉及的序列。
+/// Instances on the same track cannot overlap. Only the sequences this transaction touches are checked.
 pub fn check_overlaps(state: &VideoState, sequence_id: &str) -> EngineResult<()> {
     let fps = state.sequence(sequence_id)?.header.fps;
     let mut by_track: BTreeMap<&str, Vec<(Ratio, Ratio, &str)>> = BTreeMap::new();

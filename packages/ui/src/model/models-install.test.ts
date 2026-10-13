@@ -189,7 +189,7 @@ describe('分组与每行能做什么', () => {
     const repairing = bundle('b@mlx', { state: 'downloading', components: [component('y')] });
     const partial = bundle('c@mlx', { state: 'not-installed', reason: 'incomplete', components: [component('c'), component('z', { state: 'missing' })] });
     const unsupported = bundle('d@candle', { state: 'error', reason: 'unsupported', components: [component('w', { state: 'missing' })] });
-    // y 是 b 装上的公共组件，e 自己的 v 还没下。
+    // y is a shared component installed by b; e's own v has not been downloaded yet.
     const borrowed = bundle('e@mlx', { state: 'not-installed', reason: 'incomplete', components: [component('y'), component('v', { state: 'missing' })] });
     const groups = localGroups([fresh, repairing, partial, unsupported, borrowed], 'asr');
     expect(groups.installed.map((b) => b.bundleId)).toEqual(['b@mlx', 'c@mlx']);
@@ -203,11 +203,11 @@ describe('分组与每行能做什么', () => {
     const start = bundle('a@mlx', { state: 'downloading', install: running, components: [component('w', { state: 'missing' }), component('v', { state: 'missing' })] });
     const placed = installingPlacement(localGroups([start], 'asr'));
     expect(placed).toEqual(new Map([['a@mlx', false]]));
-    // 权重先装上了：还在可下载，不在下载途中跳组。
+    // Weights installed first: still downloadable, and the group does not jump while downloading.
     const midway = { ...start, components: [component('w'), component('v', { state: 'missing' })] };
     expect(localGroups([midway], 'asr').installed.map((b) => b.bundleId)).toEqual(['a@mlx']);
     expect(localGroups([midway], 'asr', placed).available.map((b) => b.bundleId)).toEqual(['a@mlx']);
-    // 下完了：不再看记着的。
+    // Download finished: no longer looks at what was recorded.
     const done = bundle('a@mlx', { state: 'installed', components: [component('w'), component('v')] });
     expect(localGroups([done], 'asr', placed).installed.map((b) => b.bundleId)).toEqual(['a@mlx']);
     expect(installingPlacement(localGroups([done], 'asr', placed))).toEqual(new Map());
@@ -251,7 +251,7 @@ describe('分组与每行能做什么', () => {
     const paused = { ...half, install: { jobId: null, state: 'paused' as const, receivedBytes: 5, totalBytes: 10 } };
     expect(bundleActions(paused)).toMatchObject({ complete: false, resume: true });
     expect(bundleActions({ ...half, state: 'error', reason: 'worker-missing' }).complete).toBe(false);
-    // 必需组件缺：没装好，走「下载」，不是补齐
+    // A required component is missing: not installed properly, so it goes through “下载” (download), not “补齐” (fill in)
     const partial = bundle(QWEN, { state: 'not-installed', reason: 'incomplete', components: [component('w', { state: 'missing' }), aligner] });
     expect(bundleActions(partial)).toMatchObject({ complete: false, install: true });
   });
@@ -268,9 +268,9 @@ describe('分组与每行能做什么', () => {
       repair: true,
       remove: true,
     });
-    // 不给 ownFiles 时按装好没有算。
+    // Without ownFiles, it is treated as not installed.
     expect(bundleActions(half)).toMatchObject({ install: true, complete: false, repair: false, remove: false });
-    // 跑不了的不给补齐、修复，照样能删。
+    // Models that cannot run are not offered fill-in or repair, but can still be deleted.
     expect(bundleActions({ ...half, state: 'error', reason: 'worker-missing' }, true)).toMatchObject({
       install: false,
       complete: false,
@@ -317,14 +317,14 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
 
   it('下载的样子：大小先用下载任务的总量、再按缺的组件算；在下写百分比，停在一半是暂停', () => {
     expect(downloadView(missing(QWEN))).toEqual({ state: 'idle', size: fmtSize(1.2 * GB), percent: null });
-    // 权重在、只缺公共组件：只写缺的那一件（与设置页「补齐 {大小}」同一个数），不写整只模型的估计值。
+    // Weights present, only shared components missing: writes only the missing item (the same figure as “补齐 {大小}” (fill in {size}) on the settings page), not an estimate for the whole model.
     const vad = component('silero/vad', { component: 'vad', state: 'missing', bytes: null, estimatedBytes: 30 * MB });
     const half = missing(QWEN, { components: [component('w', { estimatedBytes: 1.2 * GB }), vad], estimatedBytes: 1.2 * GB + 30 * MB });
     expect(downloadView(half).size).toBe(fmtSize(30 * MB));
-    // 缺的组件有不知道大小的：不写（设置页也不写），不拿整只的估计值顶。
+    // If a missing component has an unknown size, nothing is written (the settings page does not write it either), and the estimate for the whole model is not used instead.
     const unsized = missing(QWEN, { components: [component('w', { estimatedBytes: 1.2 * GB }), { ...vad, estimatedBytes: null }] });
     expect(downloadView(unsized).size).toBeNull();
-    // 没有组件信息的旧快照用随附清单估的；都没有时不写。
+    // Old snapshots without component information are estimated from the bundled manifest; when neither is available, nothing is written.
     const { components: _c, ...legacy } = missing(QWEN);
     expect(downloadView(legacy).size).toBe(fmtSize(1.2 * GB));
     const { estimatedBytes: _e, ...unknown } = legacy;
@@ -345,10 +345,10 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
     expect(canDownload(half)).toBe(true);
     expect(inlineInstallMode(half, bundles)).toBe('complete');
     expect(inlineInstallMode(fresh, bundles)).toBe('install');
-    // 公共组件是别的模型装上的：自己的权重不在，照样是下载（要问许可）。
+    // The shared component was installed by another model: its own weights are not present, so it is still a download (license must be asked).
     const borrowed = missing('b@mlx', { components: [component('b', { state: 'missing' }), vad('installed')] });
     expect(inlineInstallMode(borrowed, [borrowed, { ...half, components: [component('a'), vad('installed')] }])).toBe('install');
-    // 下到一半停下、权重已经落地：接着下也是补齐（设置页的「继续下载」同样按补齐走）。
+    // Download stopped halfway with the weights already landed: continuing is also a fill-in (the settings page's “继续下载” (continue download) likewise goes by fill-in).
     const paused = { ...half, install: { jobId: null, state: 'paused' as const, receivedBytes: 5, totalBytes: 10 } };
     expect(inlineInstallMode(paused, [paused, fresh])).toBe('complete');
   });

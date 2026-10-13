@@ -14,12 +14,12 @@ import { pl } from './engine.pl.ts';
 import { tr } from './engine.tr.ts';
 import { vi } from './engine.vi.ts';
 
-/** 参数是标量，或嵌套的引用（展开之后的文字）。 */
+/** A parameter is a scalar, or a nested reference (the text after expansion). */
 type P<K extends string> = Record<K, string | number>;
 
 /**
- * `crates/video-engine` 的引擎错误（`EngineErrorBody.message` / `recovery` 与撤销不可用的原因）。
- * 英文条目与 Rust `msg!` 的模板一字不差（`tools/rust-messages.test.ts` 核对）；改英文要两边一起改，键发布后不改名、不复用。
+ * Engine errors of `crates/video-engine` (`EngineErrorBody.message` / `recovery`, and the reason undo is unavailable).
+ * English entries match the Rust `msg!` templates word for word (checked by `tools/rust-messages.test.ts`); to change the English, change both sides. Keys are never renamed or reused once published.
  */
 const en = {
   // anchors.rs
@@ -414,7 +414,7 @@ const en = {
   undoOverlaps: 'Restored clips would overlap clips added later',
   undoBreaksTransitions: 'These transitions no longer hold after undoing',
   undoNoChange: 'This transaction did not change the video',
-  // 缺省修改名（命令与协议规范 §3.1）：每种操作一条；撤销、重做与几种修改套在别的修改名外面（嵌套参数）。
+  // Default change names (command and protocol spec §3.1): one per kind of operation; undo, redo and several changes are wrapped inside other change names (nested parameters).
   labelImportAssets: 'Import assets',
   labelCollectAssets: 'Collect assets',
   labelCleanUpAssets: 'Clean up assets',

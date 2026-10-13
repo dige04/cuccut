@@ -14,7 +14,7 @@ import { pl } from './nodes-client.pl.ts';
 import { tr } from './nodes-client.tr.ts';
 import { vi } from './nodes-client.vi.ts';
 
-/** 用别的电脑（节点）转写的这一端：连接、配对、已配对节点与远端任务的说明与错误（`packages/nodes/src/client`）。`label` 是节点的地址或别名。 */
+/** The client side of transcription done on another computer (node): connection, pairing, paired nodes and remote job descriptions and errors (`packages/nodes/src/client`). `label` is the node's address or alias. */
 const en = {
   badEventStream: (p: { label: string }) => `Node ${p.label} returned an invalid event stream response`,
   badResultResponse: (p: { label: string }) => `Node ${p.label} returned an invalid result response`,

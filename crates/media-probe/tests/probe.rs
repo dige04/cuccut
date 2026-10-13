@@ -1,7 +1,6 @@
-//! 纯 Rust 探测的自测 ＋ 与 `ffprobe` 的对拍。
+//! Self-tests for the pure Rust probe, plus cross-checks against `ffprobe`.
 //!
-//! 仓库既有素材（`tests/fixtures/`）直接断言；视频/WebM 夹具用 ffmpeg 现生成，
-//! **探测不到 ffmpeg 就静默 skip**（与 `ccut-render` 的媒体管线测试同礼节）。
+//! Existing repo assets (`tests/fixtures/`) are asserted directly; video/WebM fixtures are generated with ffmpeg on the fly, and **if ffmpeg is not detected the test silently skips** (the same convention as the media pipeline tests in `ccut-render`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,7 +44,7 @@ fn video_bitrate_matches_track_bytes_instead_of_audio_and_container() {
     assert_eq!(unavailable.video_bitrate(&path), None);
 }
 
-/// 生成一次性夹具目录（进程外幂等：同名文件在就复用）。
+/// Generates a one-off fixture directory (idempotent across processes: an existing file with the same name is reused).
 fn ff(args: &[&str]) -> bool {
     Command::new("ffmpeg")
         .args(["-y", "-loglevel", "error"])
@@ -54,7 +53,7 @@ fn ff(args: &[&str]) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// 夹具目录；ffmpeg 不在就返回 `None`（调用方 skip）。
+/// Fixture directory; returns `None` if ffmpeg is not present (the caller skips).
 fn video_fixtures() -> Option<PathBuf> {
     if !have("ffmpeg") {
         eprintln!("跳过：PATH 中没有 ffmpeg");
@@ -103,8 +102,7 @@ fn video_fixtures() -> Option<PathBuf> {
     let rotated = dir.join("rotated-display-matrix.mp4");
     if !rotated.exists()
         && !ff(&[
-            // FFmpeg 7+ 用输入级 `-display_rotation` 写 MP4 tkhd display
-            // matrix；旧版不认这个参数时只跳过旋转用例。
+            // FFmpeg 7+ writes the MP4 tkhd display matrix using the input-level `-display_rotation`; for older versions that do not recognize this parameter, only the rotation case is skipped.
             "-display_rotation",
             "90",
             "-i",
@@ -119,8 +117,8 @@ fn video_fixtures() -> Option<PathBuf> {
 
     let alpha = dir.join("alpha.webm");
     if !alpha.exists() {
-        // `yuva420p` + libvpx-vp9 ⇒ Matroska 的 `AlphaMode` 会被写上。
-        // 这台机器的 ffmpeg 没编 libvpx-vp9 时生成会失败，那就跳过 alpha 用例。
+        // `yuva420p` + libvpx-vp9 ⇒ Matroska's `AlphaMode` gets written.
+        // If this machine's ffmpeg was built without libvpx-vp9, generation fails, and the alpha case is skipped.
         let _ = ff(&[
             "-f",
             "lavfi",
@@ -254,7 +252,7 @@ fn webm_alpha_mode_is_visible_without_ffprobe() {
     }
 }
 
-/// 对拍：同一份文件，native 与 ffprobe 两条路径的关键字段必须一致。
+/// Cross-check: for the same file, the key fields from the native and ffprobe paths must match.
 #[test]
 fn native_matches_ffprobe() {
     if !have("ffprobe") {
@@ -323,7 +321,7 @@ fn native_matches_ffprobe() {
     }
 }
 
-/// 纯 Rust 解不了的容器（AVI）走 ffprobe 兜底，且后端标记如实。
+/// Containers that pure Rust cannot parse (AVI) fall back to ffprobe, and the backend marker is reported accurately.
 #[test]
 fn unsupported_container_falls_back_to_ffprobe() {
     let Some(dir) = video_fixtures() else { return };

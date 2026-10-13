@@ -1,16 +1,15 @@
-//! GPT-SoVITS 用到的基础层：线性、LayerNorm、Conv1d（NLC 布局）与激活函数。
+//! Base layers used by GPT-SoVITS: linear, LayerNorm, Conv1d (NLC layout) and activation functions.
 //!
-//! 移植自 v2 `ccut-tts::index_tts2::mlx::layers`（IndexTTS2 与 GPT-SoVITS 共用的那一份），只带
-//! GPT-SoVITS 用到的部分、去掉 Candle 分支；与 IndexTTS2 的同名层同源，两边都移植完可以合并成一份。
+//! Ported from v2 `ccut-tts::index_tts2::mlx::layers` (the copy shared by IndexTTS2 and GPT-SoVITS). It carries only the parts GPT-SoVITS uses and drops the Candle branch. It shares its origin with the same-named layers in IndexTTS2; once both are ported they can be merged into one.
 //!
-//! 线性权重按 safetensors 的 f16 原样驻留，前向时转成输入 dtype（与 MLX matmul 的类型提升一致）；
-//! 卷积与归一化参数在加载时转 f32。
+//! Linear weights stay resident in safetensors' f16 form as-is, and are converted to the input dtype on the forward pass (matching MLX matmul type promotion);
+//! convolution and normalization parameters are converted to f32 at load time.
 
 use super::weights::WeightMap;
 use crate::synthesize::tensor::{Array, Dtype, fast, ops};
 use anyhow::Result;
 
-/// `y = x @ Wᵀ + b`，权重形状 `[out, in]`（PyTorch 布局）。
+/// `y = x @ Wᵀ + b`, with weight shape `[out, in]` (PyTorch layout).
 pub struct Linear {
     pub weight: Array,
     pub bias: Option<Array>,
@@ -43,7 +42,7 @@ impl Linear {
     }
 }
 
-/// 最后一维 LayerNorm（可选仿射）。
+/// LayerNorm over the last dimension (optional affine).
 pub struct LayerNorm {
     pub weight: Option<Array>,
     pub bias: Option<Array>,
@@ -65,7 +64,7 @@ impl LayerNorm {
     }
 }
 
-/// 1D 卷积。权重内部保存为 MLX 布局 `[Cout, K, Cin/groups]`（f32）。
+/// 1D convolution. Weights are stored internally in MLX layout `[Cout, K, Cin/groups]` (f32).
 pub struct Conv1d {
     pub weight: Array,
     pub bias: Option<Array>,
@@ -76,7 +75,7 @@ pub struct Conv1d {
 }
 
 impl Conv1d {
-    /// 由 PyTorch 布局 `[Cout, Cin/groups, K]` 的权重构造。
+    /// Constructs from weights in PyTorch layout `[Cout, Cin/groups, K]`.
     pub fn from_torch(weight: Array, bias: Option<Array>) -> Result<Self> {
         let weight = weight.as_dtype(Dtype::Float32)?.transpose_axes(&[0, 2, 1])?;
         Ok(Self {
@@ -121,7 +120,7 @@ impl Conv1d {
         self
     }
 
-    /// 输入 `[N, L, Cin]`，输出 `[N, L', Cout]`。
+    /// Input `[N, L, Cin]`, output `[N, L', Cout]`.
     pub fn forward_nlc(&self, x: &Array) -> Result<Array> {
         let mut y = ops::conv1d(x, &self.weight, self.stride, self.padding, self.dilation, self.groups)?;
         if let Some(bias) = &self.bias {
@@ -131,13 +130,12 @@ impl Conv1d {
     }
 }
 
-/// 激活函数：不用 mlx-rs `nn::*` 的 compiled 版本（每种形状都会重新编译），
-/// 直接按公式展开。
+/// Activation functions: the compiled versions in mlx-rs `nn::*` are not used (they recompile for every shape); the formulas are expanded directly instead.
 pub mod act {
     use crate::synthesize::tensor::{Array, ops};
     use anyhow::Result;
 
-    /// 精确 GELU：`x · (1 + erf(x/√2)) / 2`。
+    /// Exact GELU: `x · (1 + erf(x/√2)) / 2`.
     pub fn gelu(x: &Array) -> Result<Array> {
         let erf = ops::erf(x * std::f32::consts::FRAC_1_SQRT_2)?;
         Ok(x * (erf + 1.0f32) * 0.5f32)

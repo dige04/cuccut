@@ -1,22 +1,20 @@
-//! 量文字元素的框：新建文字时界面要知道一段字排出来多宽，与画它的是同一台排版引擎、同一批字体
-//! （`subtitle-render` 的 [`layout_text`]），量出来的框与画出来的字一致。
+//! Measures the box of a text element. When text is created, the UI needs to know how wide the laid-out text will be. It uses the same typesetting engine and the same fonts that draw it (`subtitle-render`'s [`layout_text`]), so the measured box matches the drawn text.
 //!
-//! 口径与画文字元素相同：样式按序列画布解释（字号以 540 短边为基准），按 Unicode 词边界折行，行高取排出来的各行。
+//! The rules are the same as for drawing a text element: the style is interpreted on the sequence canvas (font size is based on the 540 short side), text wraps at Unicode word boundaries, and the line height is taken from the laid-out lines.
 
 use render_raster::TextEngine;
 use serde::Serialize;
 use serde_json::Value;
 use subtitle_render::{LineKind, TimedItem, layout_lines_height, layout_text, resolve_line_style};
 
-/// 一段文字作为文字元素要多大的框（序列像素，含底板留白）。
+/// The box a text needs as a text element (in sequence pixels, including the backing padding).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct TextBox {
     pub width: f64,
     pub height: f64,
 }
 
-/// 量 `text` 按 `style` 排在 `canvas` 上要多大的框：给了 `wrap_width` 就按它折行、框宽就是它；否则排成不折的一块，
-/// 框宽是最宽一行加左右留白，再多留四分之一个字号的余量（预览与导出按输出尺寸排，与按序列画布量的差一点舍入）。
+/// Measures how large the box is for `text` laid out with `style` on `canvas`. If `wrap_width` is given, text wraps to it and the box width is that width. Otherwise it is laid out as one unwrapped block, the box width is the widest line plus left and right padding, and an extra quarter of the font size is added as margin. (Preview and export lay out at output size, so the result differs slightly from measuring at sequence canvas size because of rounding.)
 pub fn measure_text_element(engine: &mut TextEngine, text: &str, style: &Value, wrap_width: Option<f64>, canvas: (u32, u32)) -> TextBox {
     let (canvas_width, canvas_height) = (canvas.0.max(1), canvas.1.max(1));
     let line = resolve_line_style(style, LineKind::Original, canvas_width, canvas_height, false);

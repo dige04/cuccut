@@ -3,7 +3,7 @@ import { defineNoun } from './context.ts';
 import { M } from './services-copy.ts';
 import { browserCommand, webOpen } from './services-output.ts';
 
-/** `cuccut web open [--video <videoId>] [--launch]`：开启 Web 服务并给出一次性的访问链接（架构设计 §4.8）。 */
+/** `cuccut web open [--video <videoId>] [--launch]`: starts the web service and gives a one-time access link (architecture design §4.8). */
 export const web = defineNoun({
   name: 'web',
   get usage() {
@@ -31,7 +31,7 @@ export const web = defineNoun({
   },
 });
 
-/** 用系统默认浏览器打开登录页（不带代码；不等浏览器退出）。 */
+/** Opens the login page in the system's default browser (no code; does not wait for the browser to exit). */
 function launchBrowser(url: string): Promise<void> {
   const { command, args } = browserCommand(process.platform, url);
   return new Promise((resolve, reject) => {

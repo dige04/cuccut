@@ -1,25 +1,20 @@
-// 成片导出的基准（开发流程 §2 的可选检查）：合成一段带双语字幕的 1080p 夹具，用 Render Worker（`export-worker render`）
-// 按导出同样的输入画完整段、编码成 MP4，报墙钟时间、Worker 自报的合成时间（`renderSeconds`）、帧数、每帧毫秒、输出帧率与负载。
-// 同一段画面按两种摆法各跑一遍（`PLACEMENTS`）：`cover` 是旧夹具的形状；`contain` 是真实项目里主视频的形状
-// （`mode: fullscreen`、`fit: contain`、`bg: black`，源与输出同大）。两者几何上都是恒等，帧率应相近（±10%）；
-// `contain` 明显慢说明 subtitle-render 里带底的路径多做了事（commit 099c1db 修过恒等直通；烧字幕时仍有残余差距）。
+// Export benchmark (optional check in the dev workflow §2): synthesizes a 1080p fixture with bilingual subtitles, and uses the Render Worker (`export-worker render`) to render the full clip from the same inputs as export and encode it to MP4. It reports wall-clock time, the Worker's self-reported synthesis time (`renderSeconds`), frame count, milliseconds per frame, output frame rate, and load.
+// The same picture is run in two placements (`PLACEMENTS`): `cover` is the shape of the old fixture; `contain` is the shape of the main video in a real project
+// (`mode: fullscreen`, `fit: contain`, `bg: black`, source and output the same size). Geometrically both are identity, so the frame rates should be close (±10%);
+// if `contain` is clearly slower, the path with a background in subtitle-render does extra work (commit 099c1db fixed the identity passthrough; a residual gap remains when captions are burned in).
 //
-// 夹具（都在系统临时目录里，结束时删掉，`--keep` 保留）：
-// - 画面：ffmpeg 的 `testsrc2`，1920×1080、30 fps、H.264（每 2 秒一个关键帧），缺省 60 秒（`--seconds`）；没有声音，
-//   测的是画面的解码、合成与编码，不含声音的混音与封装；两种摆法共用这一段，各写一份 Worker 输入；
-// - 字幕：每 2.5 秒一句。原文是英文，带逐词时刻的转写（`cuccut.speech/1`，句子用 `words` 指向转写里的词），按逐词变色画；
-//   译文中英混排，与原文共用一份样式文档（双语叠成一组）。`--mono` 只烧原文，`--no-captions` 关掉烧字幕（`burnCaptions: false`）。
-// Worker 的输入用 Runtime 的 `workerInput`（`packages/runtime-core/src/exports/video-export.ts`）拼，视频与文档按引擎
-// `exports.plan` 给的形状手写（取自一致性夹具 `crates/frame-render/tests/fixtures/parity.json` 的写法）。
+// Fixtures (all in the system temp directory, deleted at the end; `--keep` keeps them):
+// - Picture: ffmpeg's `testsrc2`, 1920×1080, 30 fps, H.264 (a keyframe every 2 seconds), 60 seconds by default (`--seconds`); no sound. It measures picture decoding, compositing and encoding, not audio mixing or muxing. Both placements share this clip, each with its own Worker input;
+// - Subtitles: one line every 2.5 seconds. The source text is English, with a word-timed transcript (`cuccut.speech/1`; sentences point at transcript words via `words`), drawn with per-word color change. The translation mixes Chinese and English and shares one style document with the source (the two are stacked as a pair). `--mono` burns in only the source; `--no-captions` turns off caption burning (`burnCaptions: false`).
+// The Worker input is assembled with the Runtime's `workerInput` (`packages/runtime-core/src/exports/video-export.ts`). The video and document are written by hand in the shape the engine's `exports.plan` returns (taken from the parity fixture `crates/frame-render/tests/fixtures/parity.json`).
 //
-// 用法：node tools/export-bench.ts [--seconds 60] [--mono | --no-captions] [--style <预设>] [--worker <export-worker>] [--runs 1]
-//       [--json <输出文件>] [--keep]
-// `--style` 选字幕样式预设：缺省 `studio-color`（逐词变色，画面只在句与词的边界变，约 1 ms/帧）；其余走字幕内核每帧重画的路径：
-// `studio-transition`（入场姿态＋出场）、`studio-wordbox`（药丸高亮块随词缩放淡入）、`designed`（Designed Caption 配方＋逐词强调）、
-// `boxed-reveal`（定位框样式＋逐字显现，原文与译文各一个框；词到了才亮出来，只在词界变）、`boxed-motion`（同样的框，词入场连续位移）。
-// `--worker` 缺省是 `<target>/release/export-worker`（`cargo build --release -p export-worker`；打包的应用用 release），
-// 没有时退回 debug 并警告。`--runs` 大于 1 时每种摆法各报中位数与最好的一次。机器忙时绝对值会飘，看输出里的负载。
-// 环境：CARGO_TARGET_DIR（找 export-worker），CUCCUT_FFMPEG / CUCCUT_FFPROBE（缺省 PATH 里的 ffmpeg、ffprobe）。
+// Usage: node tools/export-bench.ts [--seconds 60] [--mono | --no-captions] [--style <preset>] [--worker <export-worker>] [--runs 1]
+//       [--json <output file>] [--keep]
+// `--style` picks a caption style preset. The default is `studio-color` (per-word color change; the picture changes only at sentence and word boundaries, about 1 ms/frame). The others take the path where the caption kernel redraws every frame:
+// `studio-transition` (entrance pose plus exit), `studio-wordbox` (pill highlight block that scales and fades in with the word), `designed` (Designed Caption recipe plus per-word emphasis),
+// `boxed-reveal` (positioned-box style plus character-by-character reveal, with one box each for source and translation; a word lights up only when it arrives, and the picture changes only at word boundaries), `boxed-motion` (the same boxes, with words moving continuously as they enter).
+// `--worker` defaults to `<target>/release/export-worker` (`cargo build --release -p export-worker`; the packaged app uses release). If it is missing, it falls back to debug with a warning. When `--runs` is greater than 1, each placement reports the median and the best run. When the machine is busy, absolute values drift, so check the load in the output.
+// Environment: CARGO_TARGET_DIR (to find export-worker), CUCCUT_FFMPEG / CUCCUT_FFPROBE (default to ffmpeg and ffprobe on PATH).
 
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -44,11 +39,11 @@ const FFPROBE = process.env.CUCCUT_FFPROBE ?? "ffprobe";
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
-/** 每句字幕的间隔与长度（秒）。 */
+/** Interval and length of each subtitle line, in seconds. */
 const CUE_EVERY = 2.5;
 const CUE_LENGTH = 2.3;
 
-/** 主视频的摆法：`cover` 是旧夹具的形状，`contain` 是真实项目的形状（全屏 + contain + 黑底，源与输出同大）。 */
+/** Placement of the main video: `cover` is the shape of the old fixture; `contain` is the shape of a real project (fullscreen + contain + black background; source and output the same size). */
 const PLACEMENTS = [
   { id: "cover", fit: "cover" },
   { id: "contain", fit: "contain", bg: "black" },
@@ -57,7 +52,7 @@ type Placement = (typeof PLACEMENTS)[number];
 
 type Captions = "bilingual" | "mono" | "none";
 
-/** 字幕样式预设（`--style`）。除缺省的 `studio-color` 外，都会让字幕内核每帧重画。 */
+/** Caption style presets (`--style`). Apart from the default `studio-color`, all of them make the caption kernel redraw every frame. */
 const STYLES = [
   "studio-color",
   "studio-transition",
@@ -111,7 +106,7 @@ function parseOptions(argv: string[]): Options {
   return options;
 }
 
-/** Worker：给了就用给的；否则 release，没有时退回 debug。 */
+/** Worker: use the one given; otherwise use release, falling back to debug if it is missing. */
 function findWorker(given: string | null): { path: string; profile: string } {
   if (given) {
     if (!existsSync(given)) throw new Error(`没有 ${given}`);
@@ -150,7 +145,7 @@ function run(command: string, args: string[]): void {
     throw new Error(`${command} ${args.join(" ")} 失败：${result.stderr}`);
 }
 
-// ---------- 夹具 ----------
+// ---------- Fixtures ----------
 
 const ORIGINAL = [
   "Today we are going to look at how the export pipeline works",
@@ -173,7 +168,7 @@ const TRANSLATION = [
   "我们量 worker 每秒能稳定画多少帧（FPS）",
 ];
 
-/** 译文行的样式文档 id；Studio 样式两行共用 `doc_style`，定位框样式各有一个框。 */
+/** Style document id for the translation line. The Studio styles share `doc_style` across both lines; each positioned-box style has a box of its own. */
 const ORIG_STYLE = "doc_style";
 const TRANS_STYLE = "doc_style_trans";
 
@@ -193,7 +188,7 @@ const studioDocument = (documentId: string, style: unknown) => ({
   body: { schema: "cuccut.legacy-studio-style/0.1", style },
 });
 
-/** 定位框样式：画布与输出同大，原文框在下、译文框叠在它上面；`animationPresetId: reveal` 逐字显现。 */
+/** Positioned-box style: the canvas and output are the same size; the source box sits below, and the translation box is stacked on top of it. `animationPresetId: reveal` reveals one character at a time. */
 const boxedDocument = (documentId: string, y: number, preset: string) => ({
   documentId,
   kind: "caption-style",
@@ -211,7 +206,7 @@ const boxedDocument = (documentId: string, y: number, preset: string) => ({
   },
 });
 
-/** 预设的样式文档：`orig` 给原文，`trans` 给译文（缺省与原文共用）。 */
+/** Style documents for the preset: `orig` for the source, `trans` for the translation (defaults to sharing the source's). */
 function styleDocuments(style: StyleName): { orig: unknown; trans: unknown } {
   const studio = (extra: Record<string, unknown>) => {
     const doc = studioDocument(ORIG_STYLE, { order: "trans", ...extra });
@@ -219,10 +214,10 @@ function styleDocuments(style: StyleName): { orig: unknown; trans: unknown } {
   };
   switch (style) {
     case "studio-color":
-      // 逐词变色：画面只在句子与词的边界变。
+      // Per-word color change: the picture changes only at sentence and word boundaries.
       return studio({ anim: { name: "Color" } });
     case "studio-transition":
-      // 入场姿态（淡入＋缩放）与出场（textMotion.out）：句首句尾每帧重画。
+      // Entrance pose (fade-in plus scale) and exit (textMotion.out): redrawn every frame at the start and end of each sentence.
       return studio({
         anim: { name: "Color" },
         transition: { transitionId: "magic-pop", transitionSpeed: 0 },
@@ -233,7 +228,7 @@ function styleDocuments(style: StyleName): { orig: unknown; trans: unknown } {
         },
       });
     case "studio-wordbox":
-      // 药丸高亮：高亮块随词的相位缩放、淡入。
+      // Pill highlight: the highlight block scales and fades in following the word's phase.
       return studio({
         wordAnimation: {
           animationName: "Highlight",
@@ -253,7 +248,7 @@ function styleDocuments(style: StyleName): { orig: unknown; trans: unknown } {
         },
       });
     case "designed": {
-      // Designed Caption：配方每帧解析；第 3 个词标成 hero（词 id 取自转写）。
+      // Designed Caption: the recipe is resolved every frame; the 3rd word is marked as hero (word id taken from the transcript).
       const doc = studioDocument(ORIG_STYLE, {
         order: "trans",
         captionEmphasis: {
@@ -278,7 +273,7 @@ function styleDocuments(style: StyleName): { orig: unknown; trans: unknown } {
     }
     case "boxed-reveal":
     case "boxed-motion": {
-      // 逐字显现是离散的（词到了才亮出来）；`floatInTop` 让每个词入场时连续位移淡入。
+      // Character-by-character reveal is discrete (a word lights up only when it arrives); `floatInTop` makes each word move continuously while it fades in on entry.
       const preset = style === "boxed-reveal" ? "reveal" : "floatInTop";
       return {
         orig: boxedDocument(ORIG_STYLE, 440, preset),
@@ -294,7 +289,7 @@ const time = (seconds: number) => ({
   timescale: 1000,
 });
 
-/** 转写、原文与译文字幕（源素材时钟，毫秒）。 */
+/** Transcript, source and translated subtitles (source media clock, in milliseconds). */
 function captionDocuments(seconds: number, assetId: string, style: StyleName) {
   const words: { id: string; text: string; start: number; end: number }[] = [];
   const original: unknown[] = [];
@@ -394,7 +389,7 @@ function captionItem(
   };
 }
 
-/** 引擎 `exports.plan` 的 `video` 计划：一条序列，一段铺满画布的视频，字幕按 `captions` 叠上。 */
+/** The `video` plan from the engine's `exports.plan`: one sequence, with one video covering the whole canvas and captions overlaid per `captions`. */
 function plan(
   seconds: number,
   captions: Captions,
@@ -510,7 +505,7 @@ function plan(
 
 interface Fixture {
   dir: string;
-  /** 每种摆法一份 Worker 输入，共用同一段画面。 */
+  /** One Worker input per placement, all sharing the same picture. */
   inputs: { placement: Placement; inputFile: string }[];
   outputFile: string;
   cues: number;
@@ -578,7 +573,7 @@ function makeFixture(
   };
 }
 
-/** Worker 要的是工具的路径：PATH 里的名字换成绝对路径。 */
+/** The Worker needs the tool's path: replace the bare name on PATH with an absolute path. */
 function which(tool: string): string {
   if (tool.includes("/")) return resolve(tool);
   const found = spawnSync("/usr/bin/env", ["which", tool], {
@@ -589,10 +584,10 @@ function which(tool: string): string {
   return path;
 }
 
-// ---------- 运行 ----------
+// ---------- Run ----------
 
 interface Result {
-  /** 主视频的摆法（`PLACEMENTS` 的 id）。 */
+  /** Placement of the main video (an id from `PLACEMENTS`). */
   placement: Placement["id"];
   captions: Captions;
   style: StyleName;
@@ -602,19 +597,19 @@ interface Result {
   frames: number;
   wallSeconds: number;
   renderSeconds: number;
-  /** 墙钟减去 Worker 自报的合成时间：读输入、预检、起解码与编码、收尾封装。 */
+  /** Wall clock minus the Worker's self-reported synthesis time: reading the input, preflight, starting decode and encode, and finishing the mux. */
   overheadSeconds: number;
   msPerFrame: number;
   fps: number;
   decoderRestarts: number;
-  /** Worker 报的画面编解码后端（`done.video`），如 `avfoundation→avfoundation`；`CUCCUT_EXPORT_NATIVE=0` 时是 ffmpeg。 */
+  /** The picture codec backend the Worker reports (`done.video`), such as `avfoundation→avfoundation`; with `CUCCUT_EXPORT_NATIVE=0` it is ffmpeg. */
   video: string;
   outputBytes: number;
   loadBefore: number;
   loadAfter: number;
 }
 
-/** 跑一次 `export-worker render`。stdin 保持开着：Worker 把 stdin 关闭当作取消。 */
+/** Runs `export-worker render` once. stdin is kept open: the Worker treats closing stdin as cancel. */
 function render(
   worker: string,
   inputFile: string,
@@ -644,7 +639,7 @@ function render(
           const event = JSON.parse(line);
           if (event.event !== "progress") final = event;
         } catch {
-          // 不是 JSON 的行忽略。
+          // Lines that are not JSON are ignored.
         }
       }
     });
@@ -788,7 +783,7 @@ async function main(): Promise<void> {
         print("  最好的一次", best);
       }
     }
-    // 两种摆法都是恒等几何，帧率应相近；contain 明显慢说明带底的恒等直通丢了。
+    // Both placements use identity geometry, so their frame rates should be close; if contain is clearly slower, the identity passthrough with a background has been lost.
     const fpsOf = (id: Placement["id"]) =>
       median(results.filter((r) => r.placement === id).map((r) => r.fps));
     const cover = fpsOf("cover");

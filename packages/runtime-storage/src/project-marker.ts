@@ -5,8 +5,8 @@ import { writeJsonAtomic } from './json-file.ts';
 import { RuntimeStorageFiles as SF } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 项目标记 `<项目目录>/.ccut/project.json`（架构设计 §5.1）：项目的标识在目录里，登记只是索引。
- * 标记目录只放 CucCut 自己的项目级状态，不放用户内容。
+ * Project marker `<project directory>/.ccut/project.json` (architecture design §5.1): the project's identity lives in the directory, and the registry is only an index.
+ * The marker directory holds only CucCut's own project-level state, not user content.
  */
 
 export const PROJECT_MARKER_DIR = '.ccut';
@@ -24,9 +24,9 @@ export interface ProjectMarker {
 export type ProjectMarkerRead =
   | { kind: 'none' }
   | { kind: 'ok'; marker: ProjectMarker }
-  /** 读得到但认不出：不是 JSON、`format` 不对、缺字段。 */
+  /** Readable but not recognized: not JSON, wrong `format`, or missing fields. */
   | { kind: 'corrupt'; reason: string }
-  /** 比这个版本认识的更新：不能理解，也不能改写。 */
+  /** Newer than this version understands: cannot be understood, and cannot be rewritten. */
   | { kind: 'unsupported'; schemaVersion: number };
 
 const PROJECT_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -35,7 +35,7 @@ export function projectMarkerPath(dir: string): string {
   return path.join(dir, PROJECT_MARKER_DIR, PROJECT_MARKER_FILE);
 }
 
-/** 读项目标记。没有文件是 `none`；读不了（权限等）的错误照常抛出。 */
+/** Reads the project marker. No file returns `none`. Read errors (permissions and the like) are thrown as usual. */
 export async function readProjectMarker(dir: string): Promise<ProjectMarkerRead> {
   let text: string;
   try {
@@ -66,7 +66,7 @@ export async function readProjectMarker(dir: string): Promise<ProjectMarkerRead>
   };
 }
 
-/** 原子写入项目标记。 */
+/** Atomically writes the project marker. */
 export async function writeProjectMarker(dir: string, projectId: Id, createdAt: string): Promise<ProjectMarker> {
   const marker: ProjectMarker = {
     format: PROJECT_MARKER_FORMAT,
@@ -78,7 +78,7 @@ export async function writeProjectMarker(dir: string, projectId: Id, createdAt: 
   return marker;
 }
 
-/** 认不出的标记改名保留（`project.json.corrupt-<时间>`），不静默覆盖。返回改名后的路径。 */
+/** An unrecognized marker is kept by renaming it (`project.json.corrupt-<time>`), not silently overwritten. Returns the renamed path. */
 export async function quarantineProjectMarker(dir: string, now = new Date()): Promise<string> {
   const stamp = now
     .toISOString()

@@ -2,7 +2,7 @@ import { RpcError, type Localized } from '@cuccut/protocol';
 import { JobsParams } from '@cuccut/protocol/messages/jobs/params.ts';
 import { joinList } from '../job-text.ts';
 
-/** 流程参数的校验：不合时一律 `invalid-request`，说明是哪个参数。 */
+/** Validates pipeline parameters: when they are not valid, always `invalid-request`, saying which parameter. */
 export class ParamReader {
   readonly #raw: Record<string, unknown>;
   readonly #known: Set<string>;
@@ -56,9 +56,7 @@ export class ParamReader {
 }
 
 /**
- * 参数 `key` 不合：「参数 key 问题」。`problem` 给目录条目（`JobsParams.mustBeBoolean()` 这类谓语：中文以「应为…」开头，
- * 英文是 `must be …`），引用随错误过线；旧的调用给字符串时照原样拼进去。说不成「参数 key 问题」的整句，直接
- * `new RpcError('invalid-request', J.x({ ... }))`。
+ * Parameter `key` is invalid: 「参数 key 问题」(“parameter key problem”). `problem` takes a catalog entry (a predicate such as `JobsParams.mustBeBoolean()`: the Chinese starts with 「应为…」, the English is `must be …`). The reference travels with the error. When an older caller passes a string, it is concatenated as it is. For a whole sentence that cannot be expressed as “parameter key problem”, call `new RpcError('invalid-request', J.x({ ... }))` directly.
  */
 export function invalid(key: string, problem: string | Localized): RpcError {
   return new RpcError('invalid-request', JobsParams.invalidParam({ key, problem }));

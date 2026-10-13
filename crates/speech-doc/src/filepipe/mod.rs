@@ -1,21 +1,19 @@
-//! 文件契约字幕 AI 管线（`file-v1`）的载体编解码层。
+//! The carrier encoding/decoding layer of the file-contract subtitle AI pipeline (`file-v1`).
 //!
-//! 见 `docs/design/subtitle/ccut-file-contract-subtitle-ai-design.md`。每个阶段的四拍是
-//! `render（代码）→ edit（LLM/Agent）→ parse + lint（代码）→ apply（代码写真相）`；
-//! 本模块只负责第一拍和第三拍，且全部是零 I/O、零时钟、零随机的纯函数。
+//! See `docs/design/subtitle/ccut-file-contract-subtitle-ai-design.md`. Each stage's four beats are
+//! `render (code) → edit (LLM/Agent) → parse + lint (code) → apply (code writes the truth)`;
+//! this module handles only the first and third beats, and all of it is pure functions with zero I/O, zero clock, and zero randomness.
 //!
-//! 五种载体：
-//! - [`polish_txt`]：哨兵栅栏纯文本，用于断句与顺读修订。
-//! - [`translate_html`]：`<article>` 裸根 HTML，用于句级翻译（可携带块对齐边草稿）。
-//! - [`align_edges`]：HTML 表格，模型只标注"译文语义块 → 源词序号"（缺省对齐
-//!   载体 `align-edges/1`）与单调化显示改写（`align-rewrite/1`）。
-//! - [`align_table`]：HTML 表格，用于译文行片切分与源文区间对齐（审阅/修复载体）。
-//! - [`context_md`]：Markdown，用于全局摘要与术语表。
-//! - [`chapters_html`]：段落级 HTML 进、`<h2>` + 概要 + 首段锚出，用于分章节的
-//!   Map 页与 Reduce 大纲。
+//! Five carriers:
+//! - [`polish_txt`]: plain text with sentinel fences, used for sentence breaking and reading-order revision.
+//! - [`translate_html`]: bare `<article>` root HTML, used for sentence-level translation (may carry block-alignment edge drafts).
+//! - [`align_edges`]: HTML table; the model only annotates "translation semantic block → source word index" (default alignment carrier `align-edges/1`) and monotonic display rewriting (`align-rewrite/1`).
+//! - [`align_table`]: HTML table, used for line-splitting translations and aligning source spans (review/repair carrier).
+//! - [`context_md`]: Markdown, used for the global summary and glossary.
+//! - [`chapters_html`]: paragraph-level HTML in; `<h2>` + summary + first paragraph anchored out, used for the per-chapter Map pages and the Reduce outline.
 //!
-//! 解析一律「按 id/data 属性定位」，标签名不进协议；解析出的问题分两路：
-//! [`common::Problem`]（§10 闭集，进重试账本）与 [`common::Warning`]（仅可观测性）。
+//! Parsing always "locates by id/data attribute"; tag names are not part of the protocol. Parsed problems come in two kinds:
+//! [`common::Problem`] (closed set from §10, feeds the retry ledger) and [`common::Warning`] (observability only).
 
 pub mod align_edges;
 pub mod align_table;

@@ -7,10 +7,10 @@ import { DownloaderCard, type DownloaderView } from './downloader-card.tsx';
 import { ST } from './start-copy.ts';
 
 /*
- * 视频链接这一档（设计稿 new-media.jsx 的链接档）：粘完地址出链接卡（只写地址本身看得出来的，真标题要下载时解析），
- * 常驻「下载到…」与下载工具卡片。工具 › 从链接导入与转录的链接来源共用。
+ * The video link tier (design draft new-media.jsx link tier): after a link is pasted, a link card appears (it writes only what the address itself reveals; the real title is resolved when downloading),
+ * with a persistent “下载到…” (Download to…) row and the download tool card. Shared by Tools › Import from link and the link source for transcription.
  *
- * 与设计稿的出入：没有「用哪台电脑下载」（Runtime 的下载只在本机）。
+ * Differences from the design draft: there is no “用哪台电脑下载” (which computer to download on), because the Runtime's downloads run only locally.
  */
 
 const mediaCard = style({
@@ -56,14 +56,14 @@ export interface LinkSourceProps {
   url: string;
   onUrl(url: string): void;
   downloader: DownloaderView;
-  /** 「下载到 …」那一行的位置。 */
+  /** Position of the “下载到 …” (Download to …) row. */
   downloadDir: string;
   onChangeDir(): void;
-  /** 「下载到」下面那句说明。 */
+  /** The description below “下载到” (Download to). */
   note: string;
 }
 
-/** 链接档：地址、链接卡、「下载到 …」与下载工具卡片。 */
+/** Link tier: address, link card, “下载到 …” (Download to …) and the download tool card. */
 export function LinkSource({ url, onUrl, downloader, downloadDir, onChangeDir, note }: LinkSourceProps) {
   const trimmed = url.trim();
   const ok = urlValid(trimmed);

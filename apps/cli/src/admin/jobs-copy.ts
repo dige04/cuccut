@@ -16,9 +16,9 @@ import { vi } from './jobs-copy.vi.ts';
 
 const s = (n: number) => (n === 1 ? '' : 's');
 
-/** `cuccut jobs` 的文案（英文是键与类型的来源，译文在 `jobs-copy.<语言>.ts`）。 */
+/** Copy for `cuccut jobs`. The English is the source of the keys and types; the translations are in `jobs-copy.<language>.ts`. */
 const en = {
-  /** `cuccut jobs --help` 的正文。 */
+  /** The body of `cuccut jobs --help`. */
   help: `Usage:
   cuccut jobs resources            Resource scheduling status: machine capacity and its source, reservations,
                                    leases, resident Model Workers, and what queued tasks are waiting for

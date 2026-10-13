@@ -52,35 +52,34 @@ import type { ModelApiConfig, ServiceConfigStore } from './service-config-store.
 import type { ManagedService, ServiceReport } from './service-manager.ts';
 
 /**
- * 模型接口服务（架构设计 §4.8、§12.8）：给支持 OpenAI 接口的程序用的本机 HTTP 端点，把请求映射为一次没有视频的
- * 能力调用（§7.9），结果直接作为 HTTP 响应返回。
+ * Model API service (architecture design §4.8, §12.8): a local HTTP endpoint for programs that support the OpenAI interface. It maps a request to a single capability call without video (§7.9), and the result is returned directly as the HTTP response.
  *
- * - 只监听回环地址，端口可配置（默认 `MODEL_API_DEFAULT_PORT`），被占用时进入 `error`，不换端口；
- * - 认证：每个客户端一枚令牌（`Authorization: Bearer <令牌>`），与 MCP 服务的令牌互不通用；缺失、错误或已吊销时 401；
- *   带 `Origin` 的请求 403（网页不能调用），`Host` 不是回环地址的 403（DNS 重绑定）；
- * - 等级：`read` 只有 `GET /v1/models`（与 `/v1/cuccut/info`），生成请求 403；`ask` 每个生成请求一条服务审批；`auto` 直接执行。
- *   视频范围对这个服务没有意义，忽略；
- * - 每个生成请求是一次 Job，`submitter: { kind: 'service', id: 'model-api', clientId }`，记录与产物就是它的生成记录；
- *   调用方断开时取消这个 Job（服务停止时不取消：已经提交的照常跑完，§12.8）；
- * - 每个客户端同时在途的生成请求有上限，超出时 429；上传与 JSON 请求体有大小上限，超出时 413；
- * - 上传边读边写到 `staging/model-api/<请求>/`，请求结束（任务终结）后删除，服务开启时清掉上次留下的；
- * - 不接受任何文件路径参数；令牌与请求正文不进日志与最近请求的记录。
+ * - Listens only on loopback, port configurable (default `MODEL_API_DEFAULT_PORT`); if the port is taken, it enters `error` and does not switch ports;
+ * - Auth: one token per client (`Authorization: Bearer <token>`), not interchangeable with the MCP service's tokens; missing, wrong or revoked tokens get 401;
+ *   requests carrying `Origin` get 403 (web pages cannot call it); a `Host` that is not loopback gets 403 (DNS rebinding);
+ * - Levels: `read` only allows `GET /v1/models` (and `/v1/cuccut/info`), and generation requests get 403; `ask` asks for one service approval per generation request; `auto` executes directly.
+ *   The video scope has no meaning for this service and is ignored;
+ * - Each generation request is one Job, `submitter: { kind: 'service', id: 'model-api', clientId }`; the record and output are its generation record;
+ *   when the caller disconnects, this Job is cancelled (when the service stops, it is not cancelled: already-submitted jobs run to completion, §12.8);
+ * - Each client has a limit on in-flight generation requests; over the limit gives 429. Uploads and JSON bodies have size limits; over them gives 413;
+ * - Uploads are written to `staging/model-api/<request>/` as they are read, and deleted when the request ends (the job reaches a terminal state); leftovers from the last run are cleared when the service starts;
+ * - No file path parameters are accepted; tokens and request bodies do not enter logs or the recent-request records.
  */
 
 export interface ModelApiServiceDeps {
   store: ServiceConfigStore;
   models: ModelJobs;
   approvals: ServiceApprovals;
-  /** `<home>/staging/model-api`：上传的临时目录。 */
+  /** `<home>/staging/model-api`: the temporary directory for uploads. */
   stagingDir: string;
   log: Logger;
-  /** 客户端、配置或最近的请求变了：送一条 `service.updated`。 */
+  /** The client, config, or recent requests changed: send one `service.updated`. */
   onChange: () => void;
-  /** 测试用更小的上限。 */
+  /** Smaller limits for tests. */
   limits?: { maxUploadBytes?: number; maxJsonBytes?: number };
 }
 
-/** 别名表的默认内容：`whisper-1` → 本机的默认转写模型（`modelId: null` 取本机 Provider 的默认模型包）。 */
+/** Default content of the alias table: `whisper-1` → the local default transcription model (`modelId: null` takes the local provider's default model pack). */
 export const DEFAULT_MODEL_API_ALIASES: readonly ModelApiAlias[] = [
   { alias: 'whisper-1', capability: 'transcribe', providerId: 'local', modelId: null },
 ];
@@ -119,7 +118,7 @@ const ENDPOINTS = [
   'POST /v1/chat/completions',
 ];
 
-/** 调用方在拿到结果之前断开了：不再回答。 */
+/** The caller disconnected before getting the result: no longer answer. */
 class ClientGone extends Error {}
 
 export class ModelApiService implements ManagedService {
@@ -132,9 +131,9 @@ export class ModelApiService implements ManagedService {
   readonly #log: Logger;
   readonly #clients: ServiceClients;
   readonly #recent = new RecentRequests();
-  /** 每个客户端在途的生成请求数。 */
+  /** The number of in-flight generation requests per client. */
   readonly #inFlight = new Map<string, number>();
-  /** 正在用的上传目录：开启服务时的清理不碰它们（服务停止后，提交的任务可能还在读）。 */
+  /** The upload directories in use: startup cleanup does not touch them (after the service stops, submitted jobs may still be reading them). */
   readonly #uploads = new Set<string>();
   readonly #maxUploadBytes: number;
   readonly #maxJsonBytes: number;
@@ -178,7 +177,7 @@ export class ModelApiService implements ManagedService {
     const server = this.#server;
     this.#server = null;
     this.#port = null;
-    // 停止服务断开连接，但不取消已经提交的任务（§12.8）：连接的关闭不当作调用方断开。
+    // Stopping the service disconnects but does not cancel already-submitted jobs (§12.8): closing the connection is not treated as the caller disconnecting.
     this.#stopping = true;
     if (server) await closeLoopback(server);
     await this.#deps.store.flush('model-api').catch(() => {});
@@ -207,7 +206,7 @@ export class ModelApiService implements ManagedService {
       if (value !== undefined) routing[key] = value;
     }
     const changesOwn = params.routing !== undefined || params.maxConcurrentPerClient !== undefined;
-    // 视频范围对这个服务没有意义：给了也忽略。
+    // The video scope is meaningless for this service: if given, it is ignored.
     await this.#deps.store.update('model-api', {
       ...(params.autostart !== undefined ? { autostart: params.autostart } : {}),
       ...(params.port !== undefined ? { port: params.port } : {}),
@@ -219,7 +218,7 @@ export class ModelApiService implements ManagedService {
     return params.port !== undefined && params.port !== before.port;
   }
 
-  // ---- 客户端与别名 ----
+  // ---- Clients and aliases ----
 
   createClient(name: string): Promise<{ client: ServiceClient; token: string }> {
     return this.#clients.create(name);
@@ -233,7 +232,7 @@ export class ModelApiService implements ManagedService {
     return this.#clients.revoke(clientId);
   }
 
-  /** OpenAI SDK 怎么连：基址与请求头，令牌用占位符（明文只在创建客户端时给出一次）。 */
+  /** How the OpenAI SDK connects: the base URL and headers, with the token as a placeholder (plaintext is given only once, when the client is created). */
   connectionInfo(clientId?: string): ModelApiConnectionInfo {
     const client = this.#clients.find(clientId);
     const { port, endpoint } = this.status();
@@ -281,7 +280,7 @@ export class ModelApiService implements ManagedService {
     };
   }
 
-  // ---- 请求 ----
+  // ---- Requests ----
 
   async #handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader('X-CucCut-Interface-Version', MODEL_API_INTERFACE_VERSION);
@@ -319,7 +318,7 @@ export class ModelApiService implements ManagedService {
       signal: controller.signal,
       audit: { videoId: null },
     };
-    // 调用方在拿到结果之前断开：取消等待中的审批与提交的任务。服务停止造成的断开不算。
+    // If the caller disconnects before getting the result: cancel the pending approval and the submitted job. Disconnects caused by stopping the service do not count.
     response.once('close', () => {
       if (!response.writableFinished && !this.#stopping) controller.abort();
     });
@@ -406,7 +405,7 @@ export class ModelApiService implements ManagedService {
     }));
   }
 
-  /** 生成请求：等级 → 并发名额 → 读请求体 → 解析模型 → 审批 → 提交任务、等它终结 → 回答。 */
+  /** Generation request: level → concurrency slot → read body → resolve model → approval → submit job and wait for it to finish → answer. */
   async #generate(
     route: Exclude<Route, { kind: 'models' | 'model' | 'info' }>,
     request: IncomingMessage,
@@ -625,7 +624,7 @@ export class ModelApiService implements ManagedService {
     }
   }
 
-  /** 响应里的追溯信息：任务与实际用的 Provider、模型（生成记录在任务中心里看）。 */
+  /** Trace info in the response: the job and the actual provider and model used (generation records are viewed in the job center). */
   #trace(record: JobRecord): Record<string, unknown> {
     return { jobId: record.jobId, providerId: record.providerId, modelId: record.modelId };
   }
@@ -640,11 +639,11 @@ export class ModelApiService implements ManagedService {
   }
 
   /**
-   * 路由之后、提交之前（§4.8、§12.5）：先判断数据外发的授权与预算，再按服务等级确认。
-   * - 额度不够：409 `BUDGET_EXCEEDED`，任何等级都不进审批；
-   * - `auto` 等级免的是逐次确认，不是外发授权：没有授权覆盖的外发是 403 `GRANT_REQUIRED`；
-   * - `ask` 等级：一条服务审批（没有授权覆盖的外发是 `high`，带上要授权的数据），允许后发放授权并点名使用；
-   *   拒绝、超时与取消都是 403。
+   * After routing and before submission (§4.8, §12.5): first check the authorization and budget for outbound data, then confirm according to the service level.
+   * - Budget insufficient: 409 `BUDGET_EXCEEDED`; no level goes to approval;
+   * - The `auto` level skips per-request confirmation, not the outbound authorization: outbound without a covering authorization is 403 `GRANT_REQUIRED`;
+   * - `ask` level: one service approval (outbound without a covering authorization is `high`, with the data to be authorized listed); on allow, issue the authorization and name its use;
+   *   rejection, timeout and cancellation are all 403.
    */
   async #approve(
     principal: ServicePrincipal,
@@ -696,12 +695,12 @@ export class ModelApiService implements ManagedService {
     throw new ApiError(403, 'SERVICE_APPROVAL_DENIED', message);
   }
 
-  /** 提交（错误换成 HTTP 的）；提交被拒时撤销为它发放、没用上的「只这一次」授权。 */
+  /** Submission (errors converted to HTTP). If the submission is rejected, revoke the "this time only" authorization issued for it that was not used. */
   #submit<T>(grant: JobGrantHint | undefined, run: () => Promise<T>): Promise<T> {
     return submit(() => this.#deps.models.grants.submitWith(grant, run));
   }
 
-  /** 等任务终结；调用方先断开时取消任务。没有完成时按任务的错误回答。 */
+  /** Waits for the job to finish; if the caller disconnects first, cancel the job. If it did not complete, answer with the job's error. */
   async #wait(jobId: Id, signal: AbortSignal): Promise<JobRecord> {
     const jobs = this.#deps.models.jobs;
     const settled = jobs.settled(jobId);
@@ -742,7 +741,7 @@ export class ModelApiService implements ManagedService {
     }
   }
 
-  // ---- 回答与审计 ----
+  // ---- Responses and audit ----
 
   #refuse(request: IncomingMessage, response: ServerResponse, error: ApiError): void {
     this.#log.info('External request refused', { serviceId: 'model-api', status: error.status, code: error.code });
@@ -764,7 +763,7 @@ export class ModelApiService implements ManagedService {
     response.end(body);
   }
 
-  /** 错误体；请求体还没读完时关掉连接（不读剩下的上传）。 */
+  /** Error body. If the request body has not been fully read, close the connection (do not read the rest of the upload). */
   #sendError(response: ServerResponse, error: ApiError, close: boolean): void {
     this.#sendJson(response, error.status, error.body(), { ...error.headers, ...(close ? { Connection: 'close' } : {}) });
   }
@@ -782,7 +781,7 @@ export class ModelApiService implements ManagedService {
     this.#deps.onChange();
   }
 
-  /** 清掉上次留下的上传（还在用的除外）。 */
+  /** Clears leftover uploads from last time (except those still in use). */
   async #sweepStaging(): Promise<void> {
     await fs.mkdir(this.#deps.stagingDir, { recursive: true, mode: 0o700 });
     for (const name of await fs.readdir(this.#deps.stagingDir).catch(() => [] as string[])) {
@@ -817,7 +816,7 @@ function safeDecode(text: string): string {
   }
 }
 
-/** 提交时的 `RpcError` 换成 HTTP 的错误。 */
+/** Converts the `RpcError` at submission into an HTTP error. */
 async function submit<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();

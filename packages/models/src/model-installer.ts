@@ -22,68 +22,60 @@ import { REPO_MANIFESTS, repoManifestFor, type RepoManifestSpec } from './repo-m
 import { extractToolArchive } from './tool-archive.ts';
 
 /**
- * 模型包的安装、修复与删除（架构设计 §6.3）。
+ * Installation, repair and removal of model packages (architecture design §6.3).
  *
- * - 计划（`plan`）：逐个组件看磁盘上齐不齐。齐的组件不动（共享组件只装一份）；缺的组件只下载缺的文件——仓库目录里
- *   清单与哈希都对得上的文件复用，暂存区里核对过的文件不再下载，没下完的续传。修复（`repair`）把每个文件的 sha256
- *   读一遍，只重下坏的与缺的。内置清单缺可信哈希时拒绝（`MODEL_MANIFEST_INCOMPLETE`）。大小未知的文件向下载来源发
- *   HEAD 取大小（每个至多几秒，并行）；取不到时总字节数报告为未知，确认用估计值。
- * - 安装（`install`）：先查可用空间，再逐个组件下载、核对、发布；每个组件发布之后才是「已装好」，中途失败时已发布的组件
- *   保留，模型包报告为 `incomplete`，下次只补缺的。完成后把模型包记进安装记录。
- * - 删除（`remove`）：只删没有别的模型包持有的组件。持有者是用到同一仓库与版本、并且在安装记录里或文件齐全的模型包。
- *   仓库目录里是别的版本时不删（不属于这个模型包）。
- * - 发布页组件（`release`，audio.cpp 引擎）：按主机平台的压缩包下载（地址见 `release-component.ts`，不发 HEAD，大小取登记的），
- *   核对大小与 sha256，在进程内解开到暂存区（只取包根目录的普通文件，略过 `archive.skip`），没有可执行文件或解不开时删掉暂存、
- *   `MODEL_DOWNLOAD_INTEGRITY`；写好清单后原子地改名到 `<toolsDir>/<名字>/<版本>/`，再交给 `probeExecutable` 确认能运行（失败时
- *   删掉组件目录，同样是 `MODEL_DOWNLOAD_INTEGRITY`）。`engineOverride` 满足的不碰；修复时有清单就按清单核对 sha256，旧版装下、
- *   没有清单的重新下载压缩包。最后一个持有者删除时回收组件目录。
+ * - Plan (`plan`): check component by component whether everything is on disk. Complete components are left alone (a shared component is installed only once); for missing components only the missing files are downloaded: files in the repository directory whose manifest and hashes match are reused, files already verified in the staging area are not downloaded, and unfinished ones resume. Repair (`repair`) reads each file's sha256 and re-downloads only the bad and missing ones. It is refused when the built-in manifest lacks a trusted hash (`MODEL_MANIFEST_INCOMPLETE`). For files of unknown size, send HEAD to the download source to get the size (each at most a few seconds, in parallel); if that fails, the total bytes are reported as unknown and the confirmation uses an estimate.
+ * - Install (`install`): check available space first, then download, verify and publish each component one by one; a component counts as "installed" only after it is published. If a failure happens midway, the components already published are kept, the model package is reported as `incomplete`, and next time only the missing ones are filled in. On completion the model package is recorded in the install record.
+ * - Remove (`remove`): deletes only the components no other model package holds. A holder is a model package that uses the same repository and version and is either in the install record or has all its files.
+ *   A repository directory holding a different version is not deleted (it does not belong to this model package).
+ * - Release-page component (`release`, audio.cpp engine): downloads the archive for the host platform (addresses in `release-component.ts`; no HEAD is sent, the registered size is used), checks size and sha256, and unpacks in-process into the staging area (only regular files at the archive root; `archive.skip` is ignored). If there is no executable or it cannot be unpacked, the staging area is deleted and `MODEL_DOWNLOAD_INTEGRITY` is raised. After the manifest is written, the component is renamed atomically to `<toolsDir>/<name>/<version>/`, then `probeExecutable` confirms it runs (on failure the component directory is deleted, again `MODEL_DOWNLOAD_INTEGRITY`). Components satisfied by `engineOverride` are left untouched; on repair, if there is a manifest the sha256 is checked against it, and installs without a manifest (from an older version) have the archive downloaded again. The component directory is reclaimed when the last holder is removed.
  */
 
 export interface ModelInstallerOptions {
   catalog: ModelCatalog;
-  /** 下载来源的基址；每次做计划时取一次。 */
+  /** Base URL of the download source; read once per plan. */
   endpoint: () => string;
   fetch?: typeof fetch;
-  /** 模型目录所在磁盘的可用空间（测试注入）。默认 `statfs`。 */
+  /** Free space on the disk that holds the model directory (injected for tests). Defaults to `statfs`. */
   freeBytes?: (dir: string) => Promise<number | null>;
-  /** 换掉内置的仓库清单（测试用）。 */
+  /** Replace the built-in repository manifest (for tests). */
   manifests?: readonly RepoManifestSpec[];
-  /** 计划时用 HEAD 取未知的文件大小（默认是）。 */
+  /** Use HEAD to get unknown file sizes during planning (default: yes). */
   probeSizes?: boolean;
-  /** 每个 HEAD 的期限（毫秒），默认 5 秒。 */
+  /** Deadline for each HEAD, in milliseconds; default 5 seconds. */
   headTimeoutMs?: number;
   retries?: number;
   backoffMs?: (attempt: number) => number;
   stallMs?: number;
   /**
-   * 发布页组件的下载镜像（设置 `tools.downloadEndpoint` 或 `CUCCUT_TOOLS_ENDPOINT`）：给了时地址是 `<基址>/<名字>/<版本>/<文件名>`，
-   * 否则是登记的官方地址。函数形式每次做计划时取一次。
+   * Download mirror for release-page components (set `tools.downloadEndpoint` or `CUCCUT_TOOLS_ENDPOINT`): when given, the address is `<base>/<name>/<version>/<filename>`;
+   * otherwise it is the registered official address. As a function, it is read once per plan.
    */
   toolsEndpoint?: string | null | (() => string | null);
   /**
-   * 发布页组件发布之后确认可执行文件能运行（Runtime 传 `--version` 探测）；抛错时删掉刚发布的组件目录，安装以
-   * `MODEL_DOWNLOAD_INTEGRITY` 失败。不给时不探测。
+   * After a release-page component is published, confirm that its executable runs (the Runtime probes with `--version`); if it throws, delete the just-published component directory, and the install fails with
+   * `MODEL_DOWNLOAD_INTEGRITY`. If not given, no probe is run.
    */
   probeExecutable?: (executable: string) => Promise<void>;
 }
 
-/** 计划里的一个组件（内部形态，安装时照着做）。 */
+/** A component in the plan (internal shape, followed when installing). */
 export interface PlannedComponent {
   component: string;
   source: BundleComponentSource;
   action: 'keep' | 'download';
-  /** 要下载的文件。 */
+  /** File to download. */
   fetch: DownloadFile[];
-  /** 从仓库目录复用的好文件（修复与补齐时）。 */
+  /** Good files reused from the repository directory (during repair and fill-in). */
   reuse: string[];
-  /** 发布时清单要列出的全部文件。 */
+  /** All files the manifest must list at publish time. */
   files: Array<{ path: string; sha256: string }>;
-  /** 暂存区里已经收到的字节。 */
+  /** Bytes already received in the staging area. */
   staged: number;
-  /** 还要下载的字节；有大小未知的文件时 null。 */
+  /** Bytes still to download; null when there are files of unknown size. */
   bytes: number | null;
   estimatedBytes: number;
-  /** 发布页组件：这台主机的压缩包与下载地址（`fetch` 里只有这个压缩包）。 */
+  /** Release-page component: the archive and download address for this host (`fetch` has only this archive). */
   release?: { asset: ComponentReleaseAsset; url: string };
 }
 
@@ -91,10 +83,10 @@ export interface InstallPlanDetail {
   plan: ModelInstallPlan;
   components: PlannedComponent[];
   endpoint: string;
-  /** 发布页组件的下载镜像；没有时 null（官方地址）。 */
+  /** Download mirror for the release-page component; null when there is none (official address). */
   toolsEndpoint: string | null;
   repair: boolean;
-  /** 进度的总字节数（含暂存区里已经收到的）；未知时 null。 */
+  /** Total bytes for progress (including bytes already received in the staging area); null if unknown. */
   totalBytes: number | null;
 }
 
@@ -105,9 +97,9 @@ export interface InstallProgress {
 }
 
 export interface InstallOutcome {
-  /** 这次发布的仓库清单。 */
+  /** The repository manifest for this publish. */
   published: CcutManifest[];
-  /** 这次实际收到的字节（不含续传前已有的）。 */
+  /** Bytes actually received this time (excluding those present before resume). */
   downloadedBytes: number;
 }
 
@@ -170,7 +162,7 @@ export class ModelInstaller {
     return { plan, components, endpoint, toolsEndpoint, repair, totalBytes: downloadBytes === null ? null : downloadBytes + resumedBytes };
   }
 
-  /** 照计划下载、核对、发布。信号中止时停下（暂存区保留，下次续传），抛出中止的原因。 */
+  /** Download, verify and publish according to the plan. On signal abort, stop (the staging area is kept and resumed next time) and throw the abort reason. */
   async install(
     detail: InstallPlanDetail,
     options: { signal: AbortSignal; onProgress?: (progress: InstallProgress) => void },
@@ -237,7 +229,7 @@ export class ModelInstaller {
     return { published, downloadedBytes: downloaded };
   }
 
-  /** 删除一个模型包独有的组件，保留别的模型包在用的。调用方先确认没有任务在用它。 */
+  /** Delete the components unique to one model package, keeping those still used by other model packages. The caller first confirms that no task is using them. */
   async remove(bundleId: string): Promise<{ removed: string[]; kept: Array<{ repo: string; usedBy: string[] }> }> {
     const def = this.#definition(bundleId);
     const record = await readInstallRecord(this.root);
@@ -268,7 +260,7 @@ export class ModelInstaller {
     return { removed, kept };
   }
 
-  /** 删掉一个模型包缺的组件在暂存区里留下的部分（`models.cancelInstall` 的 `discard`）。别的模型包正在共用的不删。 */
+  /** Delete the parts that a model package's missing components left in the staging area (`discard` of `models.cancelInstall`). Anything another model package is sharing is not deleted. */
   async discard(bundleId: string, busy: (source: BundleComponentSource) => boolean = () => false): Promise<void> {
     const def = this.#definition(bundleId);
     for (const [, source] of componentsOf(def)) {
@@ -277,7 +269,7 @@ export class ModelInstaller {
     this.#catalog.changed(bundleId);
   }
 
-  /** 记下自检结果（模型包状态的 `selfTest`）。 */
+  /** Record the self-test result (`selfTest` of the model package status). */
   async recordSelfTest(bundleId: string, result: ModelSelfTestResult): Promise<void> {
     await updateInstallRecord(this.root, (record) => {
       record.bundles[bundleId] = { ...(record.bundles[bundleId] ?? { installedAt: result.at }), selfTest: result };
@@ -291,8 +283,8 @@ export class ModelInstaller {
   }
 
   /**
-   * 发布页组件的计划：`engineOverride` 满足的、装好的不动；修复时有清单就按清单核对 sha256，好的不动，旧版装下没有清单的重新下载。
-   * 要下载的只有这台主机的压缩包，大小取登记的（不发 HEAD）；暂存区里已有的部分续传。这个平台没有压缩包时拒绝。
+   * Plan for a release-page component: a component satisfied by `engineOverride` or already installed is left alone; on repair, if there is a manifest, the sha256 is checked against it, good ones are left alone, and installs without a manifest (from an older version) are downloaded again.
+   * Only this host's archive is downloaded, with the registered size (no HEAD is sent); parts already in the staging area resume. Refused when this platform has no archive.
    */
   async #planRelease(component: string, source: BundleComponentSource, repair: boolean, toolsEndpoint: string | null): Promise<PlannedComponent> {
     const release = source.release!;
@@ -336,8 +328,8 @@ export class ModelInstaller {
   }
 
   /**
-   * 下载、核对、解开、发布一个发布页组件，返回写进组件目录的清单。解不开、没有可执行文件或探测失败时不留半个目录，
-   * 以 `MODEL_DOWNLOAD_INTEGRITY` 失败；中止时压缩包留在暂存区，下次续传。
+   * Download, verify, unpack and publish one release-page component, returning the manifest written into the component directory. If unpacking fails, there is no executable, or the probe fails, no half-directory is left;
+   * it fails with `MODEL_DOWNLOAD_INTEGRITY`. On abort, the archive stays in the staging area and resumes next time.
    */
   async #installRelease(
     downloader: ModelDownloader,
@@ -389,7 +381,7 @@ export class ModelInstaller {
     }
     const manifest: CcutManifest = { format_version: 1, repo: source.repo, revision: source.revision, source: url, files };
     await fs.writeFile(path.join(unpacked, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
-    // 原子地换上：旧的组件目录（旧版装下的那一份，或修复前的）先挪开，换好再删。
+    // Swap in atomically: move the old component directory (the one from an older install, or the one from before repair) aside first, and delete it once the new one is in place.
     const target = this.#catalog.componentDir(source);
     await fs.mkdir(path.dirname(target), { recursive: true });
     const aside = `${target}.old-${process.pid}-${Date.now()}`;
@@ -473,7 +465,7 @@ export class ModelInstaller {
       spec.files.every((f) => listed.get(f.path)?.sha256 === f.sha256);
     if (repair && fetchFiles.length === 0 && manifestOk) return keep();
 
-    // 暂存区里已经收到的部分：核对过的整份不再下载，`.part` 续传。
+    // Parts already received in the staging area: fully verified files are not downloaded again; `.part` files resume.
     const stage = stagingDirOf(this.root, source.repo, source.revision);
     let staged = 0;
     const pending: Array<{ file: DownloadFile; part: number }> = [];
@@ -502,14 +494,14 @@ export class ModelInstaller {
     return { component, source, action: 'download', fetch: fetchFiles, reuse, files, staged, bytes, estimatedBytes };
   }
 
-  /** 下载来源的仓库：清单的 `sourceRepo`，没写时就是登记的 `repo`。 */
+  /** Repository at the download source: the manifest's `sourceRepo`; if not written, the registered `repo`. */
   #sourceRepo(source: BundleComponentSource): string {
     return repoManifestFor(source.repo, source.revision, this.#manifests)?.sourceRepo ?? source.repo;
   }
 
   /**
-   * 计划里的来源：这次要下载的组件实际用到的基址，有几个时设置的基址在前、用「 + 」连起来；没有要下载的时是设置的基址。
-   * 发布页组件的基址是工具下载镜像，没有镜像时是上游的发布页。
+   * Source in the plan: the base URLs actually used by the components to be downloaded this time. When there are several, the configured base URL comes first and they are joined with “ + ”; when nothing needs downloading, it is the configured base URL.
+   * The base URL for release-page components is the tool download mirror; without a mirror it is the upstream release page.
    */
   #sourceOf(endpoint: string, toolsEndpoint: string | null, downloading: readonly PlannedComponent[]): string {
     const bases = new Set(
@@ -522,9 +514,9 @@ export class ModelInstaller {
   }
 
   /**
-   * 向下载来源问文件大小：先 HEAD（跟随重定向；LFS 文件优先 `x-linked-size`）；HEAD 不给大小时改发只要第一个字节的 GET，
-   * 从 `Content-Range` 读总长（来源不理 Range、回 200 整份时读 `Content-Length`）。ModelScope 的 HEAD 从不给大小，直接发 GET。
-   * 取不到时 null。
+   * Ask the download source for a file's size: HEAD first (following redirects; for LFS files prefer `x-linked-size`); if HEAD gives no size, send a GET for just the first byte instead,
+   * reading the total length from `Content-Range` (if the source ignores Range and returns 200 with the whole file, read `Content-Length`). ModelScope's HEAD never gives a size, so a GET is sent directly.
+   * null if it cannot be obtained.
    */
   async #probeSizes(endpoint: string, repo: string, revision: string, files: DownloadFile[]): Promise<Array<number | null>> {
     if (this.#options.probeSizes === false) return files.map(() => null);
@@ -547,7 +539,7 @@ export class ModelInstaller {
           });
           await ranged.body?.cancel().catch(() => {});
           if (!ranged.ok) return null;
-          // ModelScope 的小文件回 200 却带 `Content-Range`（`Content-Length` 是 1）：有它就以它为准。
+          // ModelScope's small files return 200 yet carry `Content-Range` (`Content-Length` is 1): when present, it takes precedence.
           const range = /^bytes \d+-\d+\/(\d+)$/.exec(ranged.headers.get('content-range') ?? '');
           if (range) return sizeOf(range[1]);
           return ranged.status === 200 ? sizeOf(ranged.headers.get('content-length')) : null;
@@ -558,7 +550,7 @@ export class ModelInstaller {
     );
   }
 
-  /** 这个组件除了 `bundleId` 之外的持有者：用到同一仓库与版本、在安装记录里或文件齐全的模型包。 */
+  /** Holders of this component other than `bundleId`: model packages that use the same repository and version and are either in the install record or have all their files. */
   async #holders(bundleId: string, source: BundleComponentSource, record: Record<string, unknown>): Promise<string[]> {
     const holders: string[] = [];
     for (const other of this.#catalog.definitions()) {
@@ -595,7 +587,7 @@ export class ModelInstaller {
   }
 }
 
-/** 清单列出的文件都在、大小相符、sha256 对得上（修复发布页组件时）。 */
+/** All files listed in the manifest are present, sizes match, and sha256 matches (when repairing a release-page component). */
 async function intact(dir: string, manifest: CcutManifest): Promise<boolean> {
   for (const file of manifest.files) {
     const full = path.join(dir, file.path);

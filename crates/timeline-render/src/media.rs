@@ -1,8 +1,8 @@
-//! Timeline 图片/视频元素 → renderer-neutral 外部纹理节点。
+//! Timeline image/video elements → renderer-neutral external texture nodes.
 //!
-//! 解码器与像素仍归 host；本模块只冻结基础媒体元素的几何、fit、圆角、动画
-//! pose 与源时刻。暂未有 GPU pass 的效果明确返回 `None`，调用方继续走既有
-//! Konva/CPU 路径，不能把 `bg: blur` 静默画成黑色。
+//! Decoders and pixels still belong to the host; this module only freezes the geometry, fit, corner radius, animated
+//! pose and source time of the basic media elements. Effects that have no GPU pass yet explicitly return `None`, and callers keep
+//! using the existing Konva/CPU path; `bg: blur` must not be silently drawn as black.
 
 use std::sync::Arc;
 
@@ -16,8 +16,8 @@ use crate::{
     TextureBackground, TextureEffect, TextureFit, TextureMaskShape, TextureNode, WarnSink,
 };
 
-/// 一张实时场景允许单个 tile 元素展开的最大纹理节点数。每个节点仍是一个有序
-/// texture pass；超过上限就把该元素完整留给 host，不能截断网格交付残缺画面。
+/// The maximum number of texture nodes a single tile element may expand into in one live scene. Each node is still an ordered
+/// texture pass; beyond the limit the whole element is left to the host, since a grid must not be truncated to deliver an incomplete picture.
 pub const EXTERNAL_MEDIA_TILE_NODE_LIMIT: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,19 +45,19 @@ impl ExternalMediaMetadata {
     }
 }
 
-/// 外部媒体 scene 所需的最小元素视图。Web 直接从持久 [`Element`] 借用；native
-/// 导出从已解析好绝对时间的 host 元素表借用，避免为了共用几何再拼一份伪文档。
+/// The minimal element view required by the external media scene. Web borrows directly from the persistent [`Element`]; native
+/// export borrows from a host element table whose absolute times are already resolved, avoiding fabricating a fake document just to share the geometry.
 #[derive(Debug, Clone, Copy)]
 pub struct ExternalMediaElement<'a> {
     pub id: &'a str,
     pub kind: ElementKind,
-    /// 合成器会话内的纹理槽 key。它可以是 `srcId`，也可以是 host 为同源异步钟
-    /// 分配的元素级 key；scene 不把它解释成项目资源 id。
+    /// A texture slot key within a compositor session. It can be a `srcId`, or an element-level key the host assigns for
+    /// a same-source asynchronous clock; the scene does not interpret it as a project resource id.
     pub texture: Option<&'a str>,
     pub place: &'a Place,
     pub mode: VisualMode,
     pub fit: Fit,
-    /// 全屏 + contain 的留边底；`None` 不画底（合成替身，透明区域露出下层）。
+    /// Backdrop for full-screen + contain letterboxing; `None` draws no backdrop (a compositing stand-in, so transparent areas show the layer below).
     pub background: Option<Background>,
     pub tile: Option<&'a Tile>,
     pub mask: Option<&'a Mask>,
@@ -66,10 +66,10 @@ pub struct ExternalMediaElement<'a> {
     pub transition: timeline::video_transitions::TransitionFrame,
 }
 
-/// 基础 image/video/asset-sticker 的共享实时场景。返回 `None` 表示这份元素
-/// 仍需 host 光栅化；原因会写入 `warn`，让 Web 分派只在能力完整时接管像素。
-/// 一个 timeline 元素可以展开成多个有序节点（例如 image tile），但仍占据同一个
-/// 全局 z 槽位。
+/// The shared live scene for basic image/video/asset-sticker. Returns `None` to indicate that this element
+/// still needs host rasterization; the reason is written to `warn`, so that Web dispatch takes over pixels only when capability is complete.
+/// One timeline element may expand into several ordered nodes (e.g. an image tile), but still occupies the same
+/// global z slot.
 pub fn external_media_scene_nodes(
     element: &Element,
     start: f64,
@@ -127,8 +127,8 @@ pub fn external_media_scene_nodes_in_span(
     )
 }
 
-/// 已由 host 冻结媒体时钟后的外部纹理节点。动态 asset sticker 的 loop/once/hold
-/// 需要源时长，属于 host 数据；它通过 `media_ms` 注入，几何与 Web 仍共用本函数。
+/// External texture nodes once the host has frozen the media clock. Loop/once/hold for dynamic asset stickers
+/// need the source duration, which is host data; it is injected via `media_ms`, and geometry and Web still share this function.
 pub fn external_media_scene_nodes_at(
     element: &ExternalMediaElement<'_>,
     media_ms: i64,
@@ -197,8 +197,8 @@ pub fn external_media_scene_nodes_at(
         warn(format!("元素 {} 的媒体盒尺寸非法", element.id));
         return None;
     }
-    // CPU reference 与 Konva 都先建立整数像素局部画布，再绕这个盒中心做仿射。
-    // 在 scene 边界冻结同一轮取整，避免 GPU 在奇数画幅/比例下多出半像素尺寸。
+    // The CPU reference and Konva both first establish an integer-pixel local canvas, then apply an affine transform around the center of this box.
+    // Freeze the same rounding pass at the scene boundary, so the GPU does not produce half-pixel extra size for odd frame sizes/aspect ratios.
     let box_width = box_width.round().max(1.0);
     let box_height = box_height.round().max(1.0);
 
@@ -221,8 +221,7 @@ pub fn external_media_scene_nodes_at(
     let (flip_x, flip_y) = place.flip_signs();
     let base_scale = place.scale.unwrap_or(1.0);
     let scale_x = base_scale * pose.scale_x * flip_x;
-    // 第 122 轮 D2：`scaleY` 乘在 `scale` 之上（缺席 = 1），与
-    // `timeline::geometry::static_box` 同一口径。
+    // Round 122 D2: `scaleY` multiplies on top of `scale` (absent = 1), the same convention as `timeline::geometry::static_box`.
     let scale_y = base_scale * place.scale_y.unwrap_or(1.0) * pose.scale_y * flip_y;
     let opacity = (place.opacity.unwrap_or(1.0) * pose.opacity).clamp(0.0, 1.0) as f32;
     let background = if mode == VisualMode::Fullscreen && fit == Fit::Contain {
@@ -854,8 +853,8 @@ mod tests {
         )
         .unwrap();
         let tile = element.tile.as_ref().unwrap();
-        // 64.64 × 32.32 的本地盒必须和 CPU / Studio 一样 round 为 65 × 32，
-        // 不能在这里静默截断为 64 × 32，导致临界网格的 ownership 判定漂移。
+        // A 64.64 × 32.32 local box must round to 65 × 32, as in CPU / Studio,
+        // and must not silently truncate to 64 × 32 here, which would make the ownership decision on critical grid boundaries drift.
         let points = timeline::geometry::tile_stamp_points(320, 180, 65, 32, tile);
         let nodes = external_media_scene_nodes(
             &element,
@@ -874,11 +873,10 @@ mod tests {
             panic!("tile stamp must be a texture node")
         };
         let rotation = (-25.0_f64).to_radians();
-        // 第 122 轮 D2：`scaleY` 是**乘在 `scale` 之上**的纵向倍率（缺席 = 1），
-        // 不再是「替换 `scale` 的纵向分量」。所以纵向倍率是 1.25 × 0.75 =
-        // 0.9375，横向仍是 1.25。改这个期望值等于把 media 的口径与
-        // `timeline::geometry::static_box`（矢量元素）以及编辑核的
-        // `stage_objects::media_footprint_xy` 三处统一到同一条乘法上。
+        // Round 122 D2: `scaleY` is the vertical factor **multiplied on top of `scale`** (absent = 1),
+        // no longer "replacing the vertical component of `scale`". So the vertical factor is 1.25 × 0.75 =
+        // 0.9375, while the horizontal stays 1.25. Changing this expected value amounts to unifying the media convention with
+        // `timeline::geometry::static_box` (vector elements) and `stage_objects::media_footprint_xy` in the editing core, all onto this one multiplication rule.
         let scale_x = 1.25;
         let scale_y = 1.25 * 0.75;
         let expected_center_x =

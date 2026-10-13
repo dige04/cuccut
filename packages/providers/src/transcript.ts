@@ -16,18 +16,17 @@ import type { ChunkTranscript } from './adapter.ts';
 import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 把各块的转写拼成 `cuccut.asr-result/v1`（架构设计 §6.4、§6.6）：时间换回素材时钟的整数 tick；供应商给的词时间
- * 标 `provider`，没有词时间的段按字符长度插值、标 `estimated`（与 Model Worker 的规则相同，见 `word-timing.ts`）。
+ * Joins each chunk's transcript into `cuccut.asr-result/v1` (architecture design §6.4, §6.6). Times are converted back to integer ticks on the source clock. Word times from the provider are marked `provider`; segments without word times are interpolated by character length and marked `estimated` (the same rule as the Model Worker, see `word-timing.ts`).
  *
- * - 有段：词按中点归到所在的段（落在段外的归到最近的段）；
- * - 只有词：按停顿（> 0.8 秒）、句末标点、段长（> 30 秒）分段；
- * - 只有文本：整块一段；
- * - 段与前一段重叠时从前一段的结尾开始；换算之后没有长度的段丢弃，记 `segment-degenerate`；
- * - 词时间修正过的段记 `timing-adjusted`。
+ * - With segments: each word goes to the segment containing its midpoint (words outside every segment go to the nearest one);
+ * - Words only: split by pauses (> 0.8 seconds), sentence-ending punctuation, and segment length (> 30 seconds);
+ * - Text only: the whole chunk becomes one segment;
+ * - A segment that overlaps the previous one starts at the end of the previous one. Segments with no length after conversion are dropped and recorded as `segment-degenerate`;
+ * - Segments whose word timing was corrected are recorded as `timing-adjusted`.
  */
 
 export interface ChunkResult {
-  /** 这一块在解码音频里的起止（秒，相对解码起点）。 */
+  /** Start and end of this chunk in the decoded audio (seconds, relative to the decode start). */
   startSec: number;
   endSec: number;
   transcript: ChunkTranscript;
@@ -41,7 +40,7 @@ export interface ResultContext {
   runGeneration: number;
   timescale: number;
   language: LanguageOption;
-  /** 解码起点在素材时钟上的位置（秒）：请求了 range 时是它的起点。 */
+  /** Position of the decode start on the source clock (seconds). When a range was requested, this is the start of that range. */
   offsetSec: number;
 }
 
@@ -66,7 +65,7 @@ const SENTENCE_END = /[。！？!?…]$|[^.]\.$/u;
 export function buildAsrResult(input: {
   chunks: readonly ChunkResult[];
   context: ResultContext;
-  /** 实际解码出来的音频长度（秒）。 */
+  /** Actual length of the decoded audio (seconds). */
   decodedSec: number;
   warnings?: AsrWarning[];
 }): AsrResult {
@@ -124,7 +123,7 @@ export function buildAsrResult(input: {
   };
 }
 
-/** 素材没有所选音轨时的结果。 */
+/** Result when the source has no selected audio track. */
 export function noAudioResult(context: ResultContext): AsrResult {
   return {
     schema: ASR_RESULT_SCHEMA,
@@ -141,7 +140,7 @@ export function noAudioResult(context: ResultContext): AsrResult {
   };
 }
 
-/** 一块的段，时间换成相对解码起点的秒，并夹在这一块之内。 */
+/** A chunk's segments, with times converted to seconds relative to the decode start and clamped to this chunk. */
 export function chunkSegments(chunk: ChunkResult): RawSegment[] {
   const t = chunk.transcript;
   const length = Math.max(0, chunk.endSec - chunk.startSec);
@@ -182,7 +181,7 @@ function nearestSegment(segments: RawSegment[], point: number): RawSegment {
   return best;
 }
 
-/** 只有词时：按停顿、句末标点与段长分段。 */
+/** Words only: split by pauses, sentence-ending punctuation, and segment length. */
 export function groupWords(words: readonly RawWord[]): RawSegment[] {
   const segments: RawSegment[] = [];
   let current: RawWord[] = [];
@@ -210,7 +209,7 @@ export function groupWords(words: readonly RawWord[]): RawSegment[] {
   return segments;
 }
 
-/** 把词拼回文本：中日文之间、标点之前不加空格，其余用空格隔开。 */
+/** Joins words back into text: no space between CJK characters or before punctuation; otherwise words are separated by spaces. */
 export function joinWords(words: readonly string[]): string {
   let out = '';
   for (const word of words) {
@@ -244,7 +243,7 @@ function languageOf(option: LanguageOption, chunks: readonly ChunkResult[]): Asr
   return { tag: option.tag ? canonicalLanguageTag(option.tag) : null, source: 'unknown', confidence: null };
 }
 
-/** 每一块都报告了用量才是 `reported`（一块时原样，多块时是数组）；否则 `unknown`，不拿部分用量充数。 */
+/** Usage is `reported` only when every chunk reported it (the single value for one chunk, an array for several). Otherwise it is `unknown`; partial usage is not used as a stand-in. */
 function costOf(chunks: readonly ChunkResult[]): AsrCost {
   const usage = chunks.map((c) => c.transcript.usage).filter((u) => u !== undefined && u !== null);
   if (chunks.length === 0 || usage.length !== chunks.length) return { status: 'unknown' };

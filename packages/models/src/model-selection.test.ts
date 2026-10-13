@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProviderUnavailableReason, ProviderView, SeparateModelInfo, TranscribeModelInfo } from '@cuccut/protocol';
 import { checkTranscribeOptions, effectiveChoice, selectModel, type SelectionInput } from './model-selection.ts';
 
-/** 选择的顺序（架构设计 §6.2）：显式 → 用户默认值 → 出厂默认 → `CAPABILITY_NOT_CONFIGURED`。 */
+/** Order of selection (architecture design §6.2): explicit → user default → factory default → `CAPABILITY_NOT_CONFIGURED`. */
 
 const model = (modelId: string, extra: Partial<TranscribeModelInfo> = {}): TranscribeModelInfo => ({
   modelId,
@@ -30,7 +30,7 @@ const provider = (
   capabilities: { transcribe: { models, available: !unavailable, ...(unavailable ? { unavailableReason: unavailable } : {}) } },
 });
 
-// 与 LocalProviderSource 一致：一个可用的模型包都没有时，能力本身也不可用（not-installed）。
+// Consistent with LocalProviderSource: when no usable model package exists at all, the capability itself is unavailable (not-installed).
 const local = (installed = true) =>
   provider(
     'local',
@@ -209,7 +209,7 @@ describe('selectModel', () => {
         }),
       }),
     );
-    // 没有一个分离模型包登记（其他平台）：同样指向安装，不指向配置在线服务。
+    // No separate model package is registered (other platforms): likewise points to installation, not to configuring an online service.
     expect(() => selectModel({ capability: 'separateAudio', userDefault: null, providers: [local(), openai()] })).toThrow(
       expect.objectContaining({ details: expect.objectContaining({ remedy: expect.objectContaining({ action: 'install-model' }) }) }),
     );

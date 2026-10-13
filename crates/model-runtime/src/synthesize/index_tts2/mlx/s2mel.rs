@@ -1,18 +1,18 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2S2Mel.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2S2Mel.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! S2Mel：语义 → 梅尔（对照 speech-swift `IndexTTS2S2Mel.swift` 与
-//! `IndexTTS2S2MelFlow.swift`）。
+//! S2Mel: semantic → mel (cross-checked against speech-swift `IndexTTS2S2Mel.swift` and
+//! `IndexTTS2S2MelFlow.swift`).
 //!
-//! 包含长度调节器（content_in_proj → 最近邻插值 → 4×(conv k3 → GroupNorm(1) →
-//! mish) → k1 输出卷积）、`gpt_layer` 三层投影，以及 CFM 估计器：DiT（隐层 512、
-//! 8 头、13 层、i>6 时接 skip 栈、adaRMS 调制、传统 RoPE）→ skip_linear → WaveNet
-//! （8 层门控）→ adaLN 终层 → conv2。推理为 CFG（率 0.7）欧拉步进，噪声用
-//! `key(0)` 播种，提示区间每步清零。所有权重 checkpoint 带 `net.` 前缀。
+//! Includes the length regulator (content_in_proj → nearest-neighbour interpolation → 4×(conv k3 → GroupNorm(1) →
+//! mish) → k1 output conv), the three-layer `gpt_layer` projection, and the CFM estimator: DiT (hidden size 512,
+//! 8 heads, 13 layers, skip stack attached when i>6, adaRMS modulation, conventional RoPE) → skip_linear → WaveNet
+//! (8 gated layers) → adaLN final layer → conv2. Inference uses CFG (rate 0.7) Euler steps, with noise seeded with
+//! `key(0)`, and the prompt region zeroed at every step. All weight checkpoints carry a `net.` prefix.
 
 use super::layers::{Conv1d, GroupNorm1, Linear, RmsNorm, act};
 use super::weights::WeightMap;
@@ -29,7 +29,7 @@ const RMS_EPS: f32 = 1e-5;
 const FINAL_LN_EPS: f32 = 1e-6;
 
 // ---------------------------------------------------------------------------
-// 长度调节器
+// Length regulator
 // ---------------------------------------------------------------------------
 
 pub struct LengthRegulator {
@@ -58,7 +58,7 @@ impl LengthRegulator {
         })
     }
 
-    /// 语义提示 `[B, T, 1024]` → S2Mel 提示条件 `[B, target_length, 512]`。
+    /// Semantic prompt `[B, T, 1024]` → S2Mel prompt condition `[B, target_length, 512]`.
     pub fn forward(&self, semantic_prompt: &Array, target_length: i32) -> Result<Array> {
         let mut h = self.content_in_proj.forward(semantic_prompt)?.swap_axes(1, 2)?; // [B, 512, T]
         h = Self::interpolate_nearest_ncl(&h, target_length)?;
@@ -87,7 +87,7 @@ impl LengthRegulator {
 }
 
 // ---------------------------------------------------------------------------
-// CFM 估计器
+// CFM estimator
 // ---------------------------------------------------------------------------
 
 struct TimestepEmbedder {
@@ -280,7 +280,7 @@ impl Estimator {
         })
     }
 
-    /// `x / prompt_x: [B, 80, T]`，`t: [B]`，`style: [B, 192]`，`condition: [B, T, 512]` → 速度 `[B, 80, T]`。
+    /// `x / prompt_x: [B, 80, T]`, `t: [B]`, `style: [B, 192]`, `condition: [B, T, 512]` → velocity `[B, 80, T]`.
     fn forward(&self, x: &Array, prompt_x: &Array, t: &Array, style: &Array, condition: &Array) -> Result<Array> {
         let batch = x.dim(0);
         let frames = x.dim(2);
@@ -333,7 +333,7 @@ fn layer_norm_no_affine(x: &Array, eps: f32) -> Result<Array> {
 }
 
 // ---------------------------------------------------------------------------
-// S2Mel 总装
+// S2Mel assembly
 // ---------------------------------------------------------------------------
 
 pub struct S2Mel {
@@ -357,7 +357,7 @@ impl S2Mel {
         })
     }
 
-    /// GPT 潜变量 `[B, T, 1280]` → `[B, T, 1024]`。
+    /// GPT latent `[B, T, 1280]` → `[B, T, 1024]`.
     pub fn gpt_latent(&self, latent: &Array) -> Result<Array> {
         let mut h = latent.clone();
         for layer in &self.gpt_layer {
@@ -366,8 +366,8 @@ impl S2Mel {
         Ok(h)
     }
 
-    /// 流匹配推理：`condition [B, T, 512]`，`prompt_mel [B, 80, Tp]`，`style [B, 192]` → 梅尔 `[B, 80, T]`
-    /// （提示区间为 0，调用方按 `Tp` 裁掉）。
+    /// Flow-matching inference: `condition [B, T, 512]`, `prompt_mel [B, 80, Tp]`, `style [B, 192]` → mel `[B, 80, T]`
+    /// (the prompt region is 0; the caller trims it by `Tp`).
     pub fn inference(
         &self,
         condition: &Array,
@@ -388,7 +388,7 @@ impl S2Mel {
         if temperature != 1.0 {
             x = x * temperature;
         }
-        // 提示区间掩码：前 Tp 帧为 0，其余为 1。
+        // Prompt-region mask: the first Tp frames are 0, the rest are 1.
         let keep = ops::pad(
             &ops::zeros::<f32>(&[1, 1, prompt_frames])?,
             &[(0, 0), (0, 0), (0, total_frames - prompt_frames)],

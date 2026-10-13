@@ -1,27 +1,25 @@
-//! 纯 Rust 音频解码主路径（Symphonia）：任意容器 → 48 kHz 交错立体声 f32。
+//! Pure-Rust audio decoding main path (Symphonia): any container → 48 kHz interleaved stereo f32.
 //!
-//! 语义对齐迁移前的
-//! `ffmpeg -ss <start> -t <duration> -i <src> -f f32le -ac 2 -ar 48000 -`：
+//! Semantics aligned with the pre-migration
+//! `ffmpeg -ss <start> -t <duration> -i <src> -f f32le -ac 2 -ar 48000 -`:
 //!
-//! - **窗口**：`[start, start + duration)`，在**源采样帧**上取整（`round`），
-//!   样本精确；源不够长就自然截短（ffmpeg 的 `-t` 同样只是上界）。
-//! - **编辑表**：MP4 / M4A / MOV 音轨 `elst` 的起点（AAC 编码器前置帧，ffmpeg 编的
-//!   1024 帧、AVFoundation 编的 2112 帧）先从解码帧流里丢掉，`start = 0` 才是
-//!   ffmpeg 与播放器眼里的第 0 帧。Symphonia 自己不应用编辑表，漏了这一步整条
-//!   音频会晚一个前置帧（`media_probe::audio_edit_start`）。
-//! - **声道**：单声道以等功率增益映射到左右（各乘 1/√2），立体声原样。
-//!   **三声道及以上直接报错**让调用方回落 ffmpeg——`-ac 2` 的下混矩阵（中置 / 环绕的增益与相位）是有讲究的，
-//!   猜一个近似值会让 5.1 素材的混音听起来不一样，宁可不接。
-//! - **采样率**：多相加窗 sinc 重采样到 48 kHz；源已是 48 kHz 时直通不滤波。
+//! - **Window**: `[start, start + duration)`, rounded on **source sample frames** (`round`),
+//!   sample-accurate. If the source is not long enough it is simply truncated (ffmpeg's `-t` is likewise only an upper bound).
+//! - **Edit list**: the start point of the `elst` on an MP4 / M4A / MOV audio track (the AAC encoder's leading priming frames:
+//!   1024 frames from ffmpeg, 2112 frames from AVFoundation) is first dropped from the decoded frame stream, so that `start = 0` is frame 0 as seen by ffmpeg and by players. Symphonia does not apply the edit list itself; if this step is skipped, the whole
+//!   audio runs one priming frame late (`media_probe::audio_edit_start`).
+//! - **Channels**: mono is mapped to left and right with constant-power gain (each multiplied by 1/√2); stereo passes through unchanged.
+//!   **Three or more channels return an error** so the caller falls back to ffmpeg. The `-ac 2` downmix matrix (gains and phases for center and surround) is careful work, and guessing an approximation would make 5.1 material sound different; it is better not to accept it.
+//! - **Sample rate**: multi-phase windowed-sinc resampling to 48 kHz; when the source is already 48 kHz, it passes through without filtering.
 //!
-//! ## 与 `ccut-speech` 那份重采样器的关系
+//! ## Relationship to the resampler in `ccut-speech`
 //!
-//! `core/crates/ccut-speech/src/audio/symphonia_decode.rs` 里有一份同族实现，
-//! 但它是**单声道 → 16 kHz 写死**的 ASR 前端（taps 与截止都按语音调过）。
-//! `ccut-render` 不能依赖 `ccut-speech`（那是带 MLX/Candle 的重 crate，方向也
-//! 反了），把两者收敛成一个共享 crate 是比 WP6a 更大的一次改动。这里保留同一套
-//! 算法（多相加窗 sinc、Blackman 窗、DC 增益归一）但参数按全频段音频重新取，
-//! 并在两处互相点名，等有第三个调用点时再抽 crate。
+//! `core/crates/ccut-speech/src/audio/symphonia_decode.rs` has an implementation of the same family,
+//! but it is an ASR front end hard-wired to **mono → 16 kHz** (taps and cutoff tuned for speech).
+//! `ccut-render` cannot depend on `ccut-speech` (that is a heavy crate with MLX/Candle, and the dependency direction is also backwards).
+//! Merging the two into one shared crate would be a bigger change than WP6a. This file keeps the same
+//! algorithm (multi-phase windowed sinc, Blackman window, DC gain normalization) but takes the parameters afresh for full-band audio,
+//! and the two files name each other; the shared crate will be extracted when there is a third call site.
 
 use std::path::Path;
 
@@ -38,26 +36,25 @@ use symphonia::core::units::Timestamp;
 
 use super::{CHANNELS, SAMPLE_RATE};
 
-/// 相位表大小：小数偏移量化到 1/1024 源样本。
+/// Phase table size: fractional offsets quantized to 1/1024 of a source sample.
 const PHASE_COUNT: usize = 1024;
-/// 单侧基准 taps 数。比 ASR 前端那份（16）大一倍：这里要过的是整条可听频带的
-/// 音乐/人声，过渡带窄一点才不会在 44.1 → 48 这种常见换算上削掉高频。
+/// Base tap count per side. Twice that of the ASR front end (16): this must pass the full audible band of music and voice, and a narrower transition band avoids clipping high frequencies in common conversions such as 44.1 → 48.
 const BASE_HALF_TAPS: usize = 32;
-/// 低通截止相对 Nyquist 的余量，抑制过渡带附近的混叠。
+/// Margin of the low-pass cutoff relative to Nyquist, to suppress aliasing near the transition band.
 const CUTOFF_ROLLOFF: f64 = 0.92;
 
-/// 解码 `path` 的第一条音轨在 `[start, start + duration)` 上的样本，
-/// 交出 48 kHz 交错立体声 f32。
+/// Decodes the samples of the first audio track of `path` over `[start, start + duration)`,
+/// yielding 48 kHz interleaved stereo f32.
 ///
-/// `Err` 一律代表"这条片源纯 Rust 路径解不了"，调用方据此回落 ffmpeg。
+/// Any `Err` means "this source cannot be handled by the pure-Rust path", and the caller falls back to ffmpeg on that basis.
 pub(crate) fn decode_stereo_48k(path: &Path, start: f64, duration: f64) -> Result<Vec<f32>> {
     decode_window(path, start, duration, true).map(|(samples, _)| samples)
 }
 
-/// 整条第一音轨 → 48 kHz 单声道 f32：各声道取平均（单声道源原样）。
+/// The first audio track as a whole → 48 kHz mono f32: channels are averaged (a mono source passes through as-is).
 pub(crate) fn decode_mono_48k(path: &Path) -> Result<Vec<f32>> {
     let (stereo, _, channels) = decode_window_channels(path, 0.0, f64::INFINITY, false)?;
-    // 单声道源在立体声里是两边各乘 1/√2：乘回去。
+    // A mono source is split into both sides at 1/√2 in stereo: multiply back.
     let scale = if channels == 1 {
         std::f32::consts::SQRT_2
     } else {
@@ -103,7 +100,7 @@ fn decode_window(
         .map(|(samples, packets, _)| (samples, packets))
 }
 
-/// 同 [`decode_window`]，另外交出源的声道数。
+/// Same as [`decode_window`], additionally yielding the source's channel count.
 fn decode_window_channels(
     path: &Path,
     start: f64,
@@ -115,7 +112,7 @@ fn decode_window_channels(
         .first_track_known_codec(TrackType::Audio)
         .context("Rust 解复用器没有找到音频轨")?;
     let track_id = track.id;
-    // MP4 / M4A 的编码器前置帧：Symphonia 不应用 `elst`，这里自己丢。
+    // MP4 / M4A encoder priming frames: Symphonia does not apply `elst`, so they are dropped here.
     let edit = media_probe::audio_edit_start(path, track_id);
     let codec_params = track
         .codec_params
@@ -168,18 +165,18 @@ fn decode_window_channels(
         .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
         .context("Rust 音频解码器不可用")?;
 
-    // 解到文件末尾（`duration` 无穷大）时不预留。
+    // When decoding to end of file (`duration` infinite), nothing is reserved in advance.
     let reserve = if duration.is_finite() {
         (duration.max(0.0) * f64::from(SAMPLE_RATE)) as usize * CHANNELS
     } else {
         0
     };
     let mut out: Vec<f32> = Vec::with_capacity(reserve);
-    // 采样率与声道数要到首个解码帧才确定；届时换算窗口边界并建重采样器。
+    // The sample rate and channel count are only known at the first decoded frame; at that point the window boundaries are converted and the resampler is built.
     let mut state: Option<StreamState> = None;
     let mut reached_end = false;
     let mut decoded_packets = 0;
-    // 交织缓冲跨 packet 复用；`copy_to_vec_interleaved` 自己 resize 到本帧大小。
+    // The interleave buffer is reused across packets; `copy_to_vec_interleaved` resizes it itself to the current frame size.
     let mut interleaved: Vec<f32> = Vec::new();
     loop {
         let packet = match format.next_packet() {
@@ -266,14 +263,14 @@ fn decode_window_channels(
 struct StreamState {
     sample_rate: u32,
     channels: usize,
-    /// 窗口在解码帧流中的边界（end 为开区间），已计入编辑表要丢的前置帧。
+    /// Window boundaries in the decoded frame stream (end is exclusive), already counting the leading frames that the edit list says to drop.
     first_frame: u64,
     end_frame: Option<u64>,
     resampler: StereoResampler,
 }
 
 impl StreamState {
-    /// `priming` 是编辑表起点换算成的解码帧数：呈现时间 0 落在解码帧流的这一帧上。
+    /// `priming` is the number of decoded frames that the edit-list start converts to: presentation time 0 falls on this frame of the decoded stream.
     fn new(
         sample_rate: u32,
         channels: usize,
@@ -298,27 +295,25 @@ impl StreamState {
     }
 }
 
-/// 立体声多相加窗 sinc 重采样器：任意源采样率 → [`SAMPLE_RATE`]。
+/// Stereo multi-phase windowed-sinc resampler: any source sample rate → [`SAMPLE_RATE`].
 ///
-/// 两个声道共用同一组核与同一个相位游标（同一时刻同一插值点），因此不会引入
-/// 声道间相位差。滤波器对称零相位，输出样本 n 恰好对应窗口内源时间
-/// `n / SAMPLE_RATE` 秒，与 ffmpeg 兜底路径的时间轴一致。
+/// Both channels share the same kernel and the same phase cursor (the same interpolation point at the same instant), so no inter-channel phase difference is introduced. The filter is symmetric and zero-phase, so output sample n corresponds exactly to source time `n / SAMPLE_RATE` seconds within the window, consistent with the timeline of the ffmpeg fallback path.
 struct StereoResampler {
-    /// 源采样率等于目标时直通，不做任何滤波。
+    /// When the source rate equals the target, pass through with no filtering at all.
     passthrough: bool,
-    /// 每个输出样本对应的源样本步长 = 源采样率 / 48000。
+    /// Source-sample step per output sample = source sample rate / 48000.
     step: f64,
-    /// 单侧 taps 数（源样本）。
+    /// Tap count per side (in source samples).
     half: usize,
-    /// PHASE_COUNT 组核平铺存放，每组 2*half+1 个 taps，DC 增益归一到 1。
+    /// PHASE_COUNT kernels stored flat, each with 2*half+1 taps, DC gain normalized to 1.
     phases: Vec<f32>,
-    /// 尚未消费完的窗口内源样本（交错立体声）；只保留仍会被卷积用到的尾部。
+    /// Source samples within the window not yet consumed (interleaved stereo); only the tail still used by the convolution is kept.
     pending: Vec<f32>,
-    /// pending 的第 0 帧在窗口内源帧流中的绝对下标。
+    /// Absolute index, in the window's source frame stream, of frame 0 of pending.
     pending_start: u64,
-    /// 已接收的窗口内源帧总数。
+    /// Total number of in-window source frames received.
     received: u64,
-    /// 下一个待产出的输出帧下标。
+    /// Index of the next output frame to produce.
     next_output: u64,
 }
 
@@ -337,7 +332,7 @@ impl StereoResampler {
             };
         }
         let step = f64::from(source_rate) / f64::from(SAMPLE_RATE);
-        // 降采样时把截止和 taps 一起按步长缩放，保持阻带衰减；升采样保持基准。
+        // When downsampling, the cutoff and taps are scaled together by the step to preserve stopband attenuation; when upsampling, the base is kept.
         let scale = step.max(1.0);
         let half = (BASE_HALF_TAPS as f64 * scale).ceil() as usize;
         let cutoff = CUTOFF_ROLLOFF * 0.5 / scale;
@@ -385,7 +380,7 @@ impl StereoResampler {
         self.drain(false, output);
     }
 
-    /// 输入结束后产出剩余输出；右侧不足的 taps 按零填充。
+    /// After input ends, emit the remaining output; taps past the right edge are zero-padded.
     fn flush(&mut self, output: &mut Vec<f32>) {
         if self.passthrough {
             return;
@@ -413,7 +408,7 @@ impl StereoResampler {
             let first = center_floor - self.half as i64;
             let mut acc = [0.0f32; CHANNELS];
             for (tap, weight) in kernel.iter().enumerate() {
-                // 流两端越界按零填充；对应 ffmpeg 在边界的行为差异只有亚毫秒级。
+                // Out-of-range samples at the stream edges are zero-padded; the difference from ffmpeg's edge behavior is sub-millisecond only.
                 let index = first + tap as i64 - self.pending_start as i64;
                 if index >= 0 && (index as usize) < frames(&self.pending) {
                     let base = index as usize * CHANNELS;
@@ -423,7 +418,7 @@ impl StereoResampler {
             }
             output.extend_from_slice(&acc);
             self.next_output += 1;
-            // 丢掉再也用不到的前缀，控制驻留内存；攒够一批再挪，摊平搬移成本。
+            // Drop the prefix no longer needed to bound resident memory; move it in batches to amortize the copying cost.
             let keep_from = (self.next_output as f64 * self.step).floor() as i64 - self.half as i64;
             let drop = (keep_from - self.pending_start as i64).max(0) as usize;
             if drop >= 8192 {
@@ -443,7 +438,7 @@ fn sinc(x: f64) -> f64 {
     }
 }
 
-/// Blackman 窗；|u| >= 1 时为 0。
+/// Blackman window; 0 when |u| >= 1.
 fn blackman(u: f64) -> f64 {
     if u.abs() >= 1.0 {
         return 0.0;
@@ -504,10 +499,7 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/native-export/source.mp4")
     }
 
-    /// MP4 编辑表：入库夹具是 ffmpeg 编的 48 kHz 单声道 AAC 正弦，音轨
-    /// `elst media_time 1024`。丢掉前置帧后帧数与 `ffmpeg -f f32le` 一致（48128），
-    /// 头 20 ms 里就有正弦；不丢的话多出 1024 帧，开头 21 ms 是编码器垫的近静音
-    /// （峰值约 0.0035，这里再乘 1/√2）。
+    /// MP4 edit list: the bundled fixture is a 48 kHz mono AAC sine encoded by ffmpeg, with the track's `elst media_time 1024`. After dropping the leading frames, the frame count matches `ffmpeg -f f32le` (48128), and the sine is present within the first 20 ms. If they are not dropped, there are 1024 extra frames, and the first 21 ms are near-silence padded by the encoder (peak about 0.0035, here again multiplied by 1/√2).
     #[test]
     fn mp4_edit_list_priming_is_dropped_like_ffmpeg() {
         let fixture = native_export_fixture();
@@ -517,7 +509,7 @@ mod tests {
             .iter()
             .fold(0.0f32, |peak, value| peak.max(value.abs()));
         assert!(head > 0.05, "头 20 ms 峰值 {head}：前置帧没丢掉");
-        // 窗口起点同样从呈现时间 0 起算：48 kHz 直通，逐样本相等。
+        // The window start is likewise measured from presentation time 0: at 48 kHz pass-through, it is equal sample by sample.
         let window = decode_stereo_48k(&fixture, 0.5, 0.1).unwrap();
         assert_eq!(window, samples[24_000 * CHANNELS..28_800 * CHANNELS]);
     }
@@ -606,16 +598,15 @@ mod tests {
         assert_eq!(best, 0, "audio seek introduced a sample offset");
     }
 
-    /// 报告里的原场景：44.1 kHz 源经 `ffmpeg -c:a aac` 编成 M4A（1024 帧前置），
-    /// 纯 Rust 路径与 ffmpeg 兜底路径解出的 48 kHz PCM 必须零时差。修之前 Rust
-    /// 路径晚 1115 帧（1024 × 48000 / 44100 ≈ 23.2 ms）。没有能编 AAC 的 ffmpeg 就跳过。
+    /// The original scene from the report: a 44.1 kHz source encoded to M4A by `ffmpeg -c:a aac` (1024 leading frames).
+    /// The pure-Rust path and the ffmpeg fallback path must decode to 48 kHz PCM with zero time offset. Before the fix, the Rust path was 1115 frames late (1024 × 48000 / 44100 ≈ 23.2 ms). Skipped if no ffmpeg able to encode AAC is available.
     #[test]
     fn an_ffmpeg_aac_m4a_decodes_with_zero_lag_against_ffmpeg() {
         let directory = tempfile::tempdir().unwrap();
         let wav = directory.path().join("noise.wav");
         let m4a = directory.path().join("noise.m4a");
         let rate = 44_100_u32;
-        let frames = rate; // 1 秒
+        let frames = rate; // 1 second
         let size = frames * 2;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");
@@ -630,7 +621,7 @@ mod tests {
         bytes.extend_from_slice(&16_u16.to_le_bytes());
         bytes.extend_from_slice(b"data");
         bytes.extend_from_slice(&size.to_le_bytes());
-        // 固定种子的白噪声：互相关峰又尖又唯一。
+        // Fixed-seed white noise: the cross-correlation peak is sharp and unique.
         let mut seed = 0x2545_f491_u32;
         for _ in 0..frames {
             seed ^= seed << 13;
@@ -654,7 +645,7 @@ mod tests {
         let left =
             |samples: &[f32]| -> Vec<f32> { samples.iter().step_by(CHANNELS).copied().collect() };
         let (native, reference) = (left(&native), left(&reference));
-        // 取中段 0.25 s 与参考逐偏移求互相关，搜 ±1500 帧（盖住 1115 与 2112 两种前置）。
+        // Take the middle 0.25 s and cross-correlate it against the reference at each offset, searching ±1500 frames (covering both the 1115 and 2112 leading-frame cases).
         let (from, len, reach) = (12_000_usize, 12_000_usize, 1_500_i64);
         let correlation = |lag: i64| -> f64 {
             (0..len)
@@ -677,7 +668,7 @@ mod tests {
         assert_eq!(best, 0, "纯 Rust 路径相对 ffmpeg 晚 {best} 帧（48 kHz）");
     }
 
-    /// 目标采样率直通：一个样本都不动，也不引入延迟。
+    /// Target sample rate pass-through: no sample is touched, and no delay is introduced.
     #[test]
     fn a_matching_sample_rate_passes_samples_through_untouched() {
         let mut resampler = StereoResampler::new(SAMPLE_RATE);
@@ -688,11 +679,11 @@ mod tests {
         assert_eq!(out, vec![0.25, -0.5, 1.0, 0.0]);
     }
 
-    /// 44.1k → 48k：输出帧数按比例增加（±1 帧的边界余量），直流电平不变。
+    /// 44.1k → 48k: the output frame count scales proportionally (±1 frame boundary margin), and the DC level is unchanged.
     #[test]
     fn upsampling_preserves_level_and_scales_the_frame_count() {
         let source_rate = 44_100_u32;
-        let frames = source_rate as usize / 10; // 0.1 秒
+        let frames = source_rate as usize / 10; // 0.1 second
         let mut resampler = StereoResampler::new(source_rate);
         let mut out = Vec::new();
         for _ in 0..frames {
@@ -705,7 +696,7 @@ mod tests {
             produced.abs_diff(expected) <= 1,
             "输出 {produced} 帧，期望约 {expected} 帧"
         );
-        // 两端各有半个窗口的零填充过渡带，取中段验电平。
+        // Each end has half a window of zero-padded transition band, so take the middle to verify the level.
         let middle = produced / 2 * CHANNELS;
         assert!(
             (out[middle] - 0.5).abs() < 1e-3,
@@ -719,7 +710,7 @@ mod tests {
         );
     }
 
-    /// 96k → 48k：降采样同样按比例，且左右声道互不串扰。
+    /// 96k → 48k: downsampling is likewise proportional, and the left and right channels do not crosstalk.
     #[test]
     fn downsampling_keeps_the_channels_independent() {
         let source_rate = 96_000_u32;
@@ -737,12 +728,11 @@ mod tests {
         assert!(out[middle + 1].abs() < 1e-3, "右声道应保持静音");
     }
 
-    /// 正弦保真：44.1k 的 1 kHz 正弦重采样到 48k 后 RMS 与理论值一致（不是把
-    /// 高频削平或整体衰减）。
+    /// Sine fidelity: a 1 kHz sine at 44.1k resampled to 48k has an RMS matching the theoretical value (high frequencies are not clipped away, and the whole signal is not attenuated).
     #[test]
     fn a_sine_keeps_its_energy_across_the_rate_change() {
         let source_rate = 44_100_u32;
-        let frames = source_rate as usize / 2; // 0.5 秒
+        let frames = source_rate as usize / 2; // 0.5 second
         let mut resampler = StereoResampler::new(source_rate);
         let mut out = Vec::new();
         for index in 0..frames {
@@ -751,7 +741,7 @@ mod tests {
             resampler.push(value, value, &mut out);
         }
         resampler.flush(&mut out);
-        // 掐掉两端各 10 ms 的过渡带再量 RMS。
+        // Trim 10 ms from each end, past the transition band, before measuring RMS.
         let skip = SAMPLE_RATE as usize / 100 * CHANNELS;
         let core = &out[skip..out.len() - skip];
         let rms = (core

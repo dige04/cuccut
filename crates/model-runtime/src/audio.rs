@@ -1,11 +1,8 @@
-//! 音频解码：把素材的一条音轨解成 16 kHz 单声道 f32，分块写进 staging 的 `audio.f32`，
-//! 之后用 mmap 读（VAD 与识别只切片，不把整段读进内存）。
+//! Audio decoding: decodes one audio track of an asset to 16 kHz mono f32, written in chunks to `audio.f32` in staging, then read via mmap (VAD and recognition only slice it, without reading the whole thing into memory).
 //!
-//! 主路径是 ffmpeg 管道，解封装器只许白名单里的（与 Runtime 的素材分析 `media-analysis.ts` 一致），
-//! 只许读本地文件。16 kHz 的 PCM WAV 另有纯 Rust 路径（hound），不需要 ffmpeg。
+//! The main path is an ffmpeg pipe; only demuxers on the allowlist are permitted (consistent with the Runtime's asset analysis `media-analysis.ts`), and only local files may be read. 16 kHz PCM WAV has a separate pure Rust path (hound) that does not need ffmpeg.
 //!
-//! 合成的参考音频很短，[`decode_mono`] 把它整个解进内存，采样率由调用方定。人声分离要立体声，
-//! [`decode_stereo`] 同样整段解进内存。
+//! Synthesized reference audio is short, so [`decode_mono`] decodes it entirely into memory, with the sample rate chosen by the caller. Vocal separation needs stereo, and [`decode_stereo`] likewise decodes the whole thing into memory.
 
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
@@ -16,26 +13,26 @@ use memmap2::Mmap;
 
 use crate::SAMPLE_RATE;
 
-/// 解码缓存的固定文件名（协议规范 §5）。
+/// Fixed file name of the decode cache (protocol spec §5).
 pub const AUDIO_FILE: &str = "audio.f32";
-/// ffmpeg 允许的解封装器。名字按 ffmpeg 的写法：`mov,mp4,m4a,3gp,3g2,mj2` 是一个解封装器。
+/// Demuxers allowed for ffmpeg. Names follow ffmpeg's spelling: `mov,mp4,m4a,3gp,3g2,mj2` is a single demuxer.
 pub const DEMUXER_ALLOWLIST: &str = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,aac,mp3,wav,flac,ogg";
-/// 覆盖 ffmpeg 可执行文件的环境变量。
+/// Environment variable that overrides the ffmpeg executable.
 pub const FFMPEG_ENV: &str = "CUCCUT_FFMPEG";
 
 const READ_BUFFER_BYTES: usize = 64 * 1024;
 const WAV_CHUNK_FRAMES: usize = 16 * 1024;
 const STDERR_LIMIT_BYTES: usize = 64 * 1024;
-/// 两次进度回调之间至少前进的秒数。
+/// Minimum number of seconds that must advance between two progress callbacks.
 const PROGRESS_STEP_SECONDS: f64 = 10.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DecodeError {
-    /// 素材没有所选的音轨。
+    /// The asset does not have the selected audio track.
     NoAudioTrack,
-    /// 文件不存在、不可解封装或解封装器不在白名单（还没有解出任何样本）。
+    /// The file does not exist, cannot be demuxed, or its demuxer is not on the allowlist (no samples have been decoded yet).
     InputUnreadable(String),
-    /// 解码中途失败。
+    /// Decoding failed midway.
     DecodeFailed(String),
     Cancelled,
 }
@@ -53,7 +50,7 @@ impl std::fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-/// 解码哪一段。`duration` 为 `None` 时解到结尾。
+/// Which segment to decode. When `duration` is `None`, decode to the end.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DecodeRange {
     pub start: f64,
@@ -73,7 +70,7 @@ pub struct DecodeRequest<'a> {
     pub range: DecodeRange,
 }
 
-/// 解码到 `output`，返回写出的样本数。`progress` 收到已解码的秒数。
+/// Decodes into `output` and returns the number of samples written. `progress` receives the seconds decoded so far.
 pub fn decode_to_file(
     request: &DecodeRequest<'_>,
     output: &Path,
@@ -98,7 +95,7 @@ pub fn decode_to_file(
     sink.finish()
 }
 
-/// 把 f32 样本写进文件，顺带汇报进度。
+/// Writes f32 samples to a file, reporting progress along the way.
 struct PcmSink<'a> {
     out: BufWriter<File>,
     samples: u64,
@@ -228,17 +225,17 @@ fn ffmpeg_executable() -> PathBuf {
         .map_or_else(|| PathBuf::from("ffmpeg"), PathBuf::from)
 }
 
-/// ffmpeg 的参数：只读本地文件、只许白名单的解封装器、不经 shell。
+/// ffmpeg arguments: local files only, allowlisted demuxers only, and no shell.
 pub fn ffmpeg_args(request: &DecodeRequest<'_>) -> Vec<String> {
     ffmpeg_args_at(request, SAMPLE_RATE)
 }
 
-/// 同 [`ffmpeg_args`]，输出采样率可选。
+/// Same as [`ffmpeg_args`], with an optional output sample rate.
 fn ffmpeg_args_at(request: &DecodeRequest<'_>, sample_rate: u32) -> Vec<String> {
     ffmpeg_args_with(request, sample_rate, 1)
 }
 
-/// 同 [`ffmpeg_args`]，输出采样率与声道数可选（声道交错的 f32le）。
+/// Same as [`ffmpeg_args`], with optional output sample rate and channel count (interleaved f32le).
 fn ffmpeg_args_with(request: &DecodeRequest<'_>, sample_rate: u32, channels: u16) -> Vec<String> {
     let mut args: Vec<String> = [
         "-nostdin",
@@ -268,11 +265,11 @@ fn ffmpeg_args_with(request: &DecodeRequest<'_>, sample_rate: u32, channels: u16
     args
 }
 
-/// 把一段短音频（合成的参考音频）整个解进内存：单声道 f32、`sample_rate`。
+/// Decodes a short audio clip (synthesized reference audio) entirely into memory: mono f32 at `sample_rate`.
 ///
-/// PCM / float WAV 走 hound（不需要 ffmpeg），采样率不同时用 [`crate::synthesize::resample`] 的带限插值换算；
-/// 其他格式走与 [`decode_to_file`] 同一套受限的 ffmpeg 参数，只是输出采样率换成 `sample_rate`。
-/// 只取第一条音轨、整段，不汇报进度。
+/// PCM / float WAV goes through hound (no ffmpeg needed); when the sample rate differs, it is converted with the band-limited interpolation of [`crate::synthesize::resample`].
+/// Other formats use the same restricted ffmpeg arguments as [`decode_to_file`], except that the output sample rate is `sample_rate`.
+/// Only the first audio track is taken, for the whole clip, with no progress reporting.
 pub fn decode_mono(path: &Path, sample_rate: u32) -> Result<Vec<f32>, DecodeError> {
     if !path.is_file() {
         return Err(DecodeError::InputUnreadable("文件不存在".into()));
@@ -295,7 +292,7 @@ pub fn decode_mono(path: &Path, sample_rate: u32) -> Result<Vec<f32>, DecodeErro
     Ok(samples)
 }
 
-/// 整个读入 WAV 并混成单声道。
+/// Reads the whole WAV and mixes it down to mono.
 fn read_wav_mono(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Result<Vec<f32>, DecodeError> {
     let spec = reader.spec();
     let channels = usize::from(spec.channels.max(1));
@@ -316,7 +313,7 @@ fn read_wav_mono(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Resu
         .collect())
 }
 
-/// 立体声解码的结果：左右等长，采样率见 `sample_rate`。
+/// Result of stereo decoding: left and right are equal length; the sample rate is in `sample_rate`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StereoPcm {
     pub left: Vec<f32>,
@@ -324,10 +321,9 @@ pub struct StereoPcm {
     pub sample_rate: u32,
 }
 
-/// 把一条音轨整段解进内存成立体声 f32（人声分离的输入）。
+/// Decodes a whole audio track into memory as stereo f32 (the input for vocal separation).
 ///
-/// 单声道或立体声的 PCM / float WAV（轨 0）走 hound，保留原采样率；其他格式走与 [`decode_to_file`] 同一套受限的
-/// ffmpeg 参数，输出两路、`fallback_rate`（单声道素材复制成两路，多声道由 ffmpeg 混成两路）。
+/// Mono or stereo PCM / float WAV (track 0) goes through hound and keeps its original sample rate; other formats use the same restricted ffmpeg arguments as [`decode_to_file`], outputting two channels at `fallback_rate` (mono assets are duplicated into two channels; multichannel assets are downmixed to two channels by ffmpeg).
 pub fn decode_stereo(path: &Path, track: u32, fallback_rate: u32) -> Result<StereoPcm, DecodeError> {
     if !path.is_file() {
         return Err(DecodeError::InputUnreadable("文件不存在".into()));
@@ -363,7 +359,7 @@ pub fn decode_stereo(path: &Path, track: u32, fallback_rate: u32) -> Result<Ster
     Ok(pcm)
 }
 
-/// 整个读入单声道或立体声 WAV；单声道复制成两路。
+/// Reads the whole mono or stereo WAV; mono is duplicated into two channels.
 fn read_wav_stereo(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Result<StereoPcm, DecodeError> {
     let spec = reader.spec();
     let interleaved: Result<Vec<f32>, hound::Error> = match spec.sample_format {
@@ -389,7 +385,7 @@ fn read_wav_stereo(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Re
     })
 }
 
-/// 经 ffmpeg 解到内存（第一条音轨、整段）。
+/// Decodes into memory via ffmpeg (first audio track, whole clip).
 fn decode_ffmpeg_to_memory(path: &Path, sample_rate: u32) -> Result<Vec<f32>, DecodeError> {
     let request = DecodeRequest {
         file: path,
@@ -399,7 +395,7 @@ fn decode_ffmpeg_to_memory(path: &Path, sample_rate: u32) -> Result<Vec<f32>, De
     run_ffmpeg_to_memory(&request, sample_rate, 1)
 }
 
-/// 经 ffmpeg 把 `request` 整段解到内存：声道交错的 f32。
+/// Decodes the whole of `request` into memory via ffmpeg: interleaved f32.
 fn run_ffmpeg_to_memory(request: &DecodeRequest<'_>, sample_rate: u32, channels: u16) -> Result<Vec<f32>, DecodeError> {
     let output = Command::new(ffmpeg_executable())
         .args(ffmpeg_args_with(request, sample_rate, channels))
@@ -432,7 +428,7 @@ fn decode_ffmpeg(request: &DecodeRequest<'_>, sink: &mut PcmSink<'_>, should_can
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| DecodeError::DecodeFailed(format!("无法启动 ffmpeg：{e}")))?;
-    // stderr 在单独的线程里读（有上限），否则长的错误输出会把管道堵住。
+    // stderr is read on a separate thread (with a size cap); otherwise long error output would block the pipe.
     let mut stderr = child.stderr.take().expect("stderr piped");
     let stderr_reader = std::thread::spawn(move || {
         let mut collected = Vec::new();
@@ -502,7 +498,7 @@ fn decode_ffmpeg(request: &DecodeRequest<'_>, sink: &mut PcmSink<'_>, should_can
     }
 }
 
-/// `audio.f32` 的只读映射。
+/// Read-only mapping of `audio.f32`.
 pub struct PcmFile {
     map: Option<Mmap>,
 }
@@ -520,14 +516,14 @@ impl PcmFile {
         if length % 4 != 0 {
             return Err(std::io::Error::other("解码缓存的长度不是 4 的倍数"));
         }
-        // SAFETY: 文件在 staging 里，由本进程写完后只读映射；别的进程不应改动它。
+        // SAFETY: the file is in staging; it is mapped read-only after this process finishes writing it; other processes should not modify it.
         let map = unsafe { Mmap::map(&file)? };
         Ok(Self { map: Some(map) })
     }
 
     pub fn samples(&self) -> &[f32] {
         match &self.map {
-            // SAFETY: mmap 按页对齐，满足 f32 的对齐；长度是 4 的倍数；任意位型都是合法的 f32。
+            // SAFETY: mmap is page-aligned, which satisfies f32 alignment; the length is a multiple of 4; any bit pattern is a valid f32.
             Some(map) => unsafe { std::slice::from_raw_parts(map.as_ptr().cast::<f32>(), map.len() / 4) },
             None => &[],
         }
@@ -599,7 +595,7 @@ mod tests {
         assert_eq!(count.unwrap(), 4_000);
         let pcm = PcmFile::open(&out).unwrap();
         assert!((pcm.samples()[0] - 500.0 / 32_768.0).abs() < 1e-7);
-        // range 越过结尾：只解到结尾。
+        // range runs past the end: decode only up to the end.
         let (count, _, _keep) = decode(
             &wav,
             0,
@@ -627,7 +623,7 @@ mod tests {
     fn decode_mono_reads_wav_at_any_rate_into_memory() {
         let dir = tempfile::tempdir().unwrap();
         let wav = dir.path().join("stereo-8k.wav");
-        // 8 kHz 双声道、0.5 秒：左右声道取平均。
+        // 8 kHz stereo, 0.5 s: left and right channels are averaged.
         let frames: Vec<Vec<i16>> = (0..4000).map(|i| vec![if i % 2 == 0 { 8192 } else { -8192 }, 0]).collect();
         write_wav(&wav, 8000, 2, &frames);
         let same = decode_mono(&wav, 8000).unwrap();
@@ -701,7 +697,7 @@ mod tests {
         assert_eq!((pcm.left.len(), pcm.right.len()), (480, 480));
         assert!((pcm.left[0] - 0.25).abs() < 1e-6 && (pcm.right[0] + 0.5).abs() < 1e-6);
 
-        // 单声道复制成两路。
+        // Mono duplicated into two channels.
         let mono = dir.path().join("mono.wav");
         write_wav(&mono, 16_000, 1, &[vec![4096], vec![-4096]]);
         let pcm = decode_stereo(&mono, 0, 44_100).unwrap();

@@ -1,8 +1,7 @@
-//! 句子派生（v0.3 §3，规范性算法）。
+//! Sentence derivation (v0.3 §3, normative algorithm).
 //!
-//! Sentence 是翻译与对齐的单位：源句 1:1 译句。它直接从可见词序列派生，
-//! 不落盘；`trans` / `transSrc` / `transAlign` 以句 id（`s-<首词id>`）为键。
-//! 源 Cue 只在最后回填展示元数据，不能参与句界、翻译或对齐语义。
+//! A Sentence is the unit of translation and alignment: each source sentence maps 1:1 to a target sentence. It is derived directly from the visible word sequence and is not persisted. `trans` / `transSrc` / `transAlign` are keyed by sentence id (`s-<first word id>`).
+//! Source Cues only backfill display metadata at the end. They must not take part in sentence boundaries, translation, or alignment semantics.
 
 use std::collections::BTreeSet;
 
@@ -10,39 +9,37 @@ use crate::cue::{Cue, join_words};
 use crate::doc::{TranscriptDoc, Word};
 use crate::fingerprint::fingerprint;
 
-/// 句内词数封顶（无标点长流的兜底启发式）。
+/// Word-count cap within a sentence (fallback heuristic for long runs without punctuation).
 ///
-/// 翻译组允许覆盖多个展示 Cue；阈值过小会把语义完整的长句硬切在介词、助词或
-/// 谓语中间。80 词仍远低于单页 LLM 预算，同时能覆盖口语中的长解释句。
+/// A translation group may span several display Cues. A threshold that is too small would hard-split a semantically complete long sentence in the middle of a preposition, particle, or predicate. 80 words is still far below a single-page LLM budget, while covering long explanatory sentences in speech.
 pub const SENTENCE_MAX_WORDS: usize = 80;
-/// 无句末标点时，足以单独封句的强停顿阈值（秒）。
+/// Strong-pause threshold (seconds) that alone is enough to close a sentence when there is no sentence-final punctuation.
 ///
-/// 0.6s 仍用于 Cue 展示断行和 LLM 软标记，但不能兼任语义句界；自然说话在
-/// 词组内部常有 0.6–1.2s 的思考停顿。1.8s 对齐 pause marker 的“长停顿”档。
+/// 0.6s is still used for Cue display line breaks and as a soft LLM marker, but it must not double as the semantic sentence boundary. Natural speech often has 0.6–1.2s hesitation pauses inside a phrase. 1.8s matches the "long pause" tier of the pause marker.
 pub const SENTENCE_HARD_GAP_SECONDS: f64 = 1.8;
 
-/// 句子 = 1..N 个连续可见词。翻译、脏检测与对齐的单位。
+/// A sentence = 1..N consecutive visible words. The unit for translation, dirty detection, and alignment.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sentence {
-    /// `"s-" + 首词 id`——首词不变则跨重派生稳定。
+    /// `"s-" + first word id`. Stable across re-derivation as long as the first word does not change.
     pub id: String,
     pub cue_ids: Vec<String>,
-    /// 指回传入的 cues 切片。
+    /// Refers back to the incoming cues slice.
     pub cue_indices: Vec<usize>,
-    /// 指回 `doc.words`（句内全部非 hidden 词）。
+    /// Refers back to `doc.words` (all non-hidden words within the sentence).
     pub word_indices: Vec<usize>,
     pub source_text: String,
-    /// 句内词切片的内容指纹——`transSrc` 脏检测的基准。
+    /// Content fingerprint of the sentence's word slice. This is the baseline for `transSrc` dirty detection.
     pub src_fingerprint: String,
 }
 
 impl Sentence {
-    /// 句时间窗直接来自句内词，不继承源字幕 Cue 的展示边界。
+    /// The sentence time window comes directly from its words, not from the display boundaries of source subtitle Cues.
     pub fn start(&self, doc: &TranscriptDoc) -> f64 {
         doc.words[self.word_indices[0]].t0
     }
 
-    /// 句时间窗直接来自句内词，不继承源字幕 Cue 的展示边界。
+    /// The sentence time window comes directly from its words, not from the display boundaries of source subtitle Cues.
     pub fn end(&self, doc: &TranscriptDoc) -> f64 {
         doc.words[*self.word_indices.last().expect("sentence non-empty")].t1
     }
@@ -56,11 +53,10 @@ impl Sentence {
     }
 }
 
-/// 句派生：直接顺扫可见词。封口条件（任一满足即封）：
-/// 1. 末词 `sentence_end`；2. 与下一词间 gap ≥ 1.8s；3. 说话人切换；
-/// 4. 句内词数 ≥ 80；5. 下一词被 `paraBreaks` 钉住（段落边界）；
-/// 6. 下一词跨章节边界。`cues` 只回填 `cue_ids/cue_indices` 展示元数据，
-/// 改动源字幕 `breaks` 不得改变句 id、词区间、文本或指纹。
+/// Sentence derivation: a direct forward scan of the visible words. Closing conditions (close the sentence if any one holds):
+/// 1. the last word has `sentence_end`; 2. the gap to the next word is ≥ 1.8s; 3. speaker change;
+/// 4. word count within the sentence ≥ 80; 5. the next word is pinned by `paraBreaks` (paragraph boundary);
+/// 6. the next word crosses a chapter boundary. `cues` only backfills `cue_ids/cue_indices` display metadata. Changing source subtitle `breaks` must not change sentence ids, word ranges, text, or fingerprints.
 pub fn derive_sentences(doc: &TranscriptDoc, cues: &[Cue]) -> Vec<Sentence> {
     let chapter_of = |t: f64| -> usize {
         doc.chapters
@@ -134,8 +130,8 @@ pub fn derive_sentences(doc: &TranscriptDoc, cues: &[Cue]) -> Vec<Sentence> {
     sentences
 }
 
-/// 句级脏检测：`transSrc[lang][id]` 存在且 ≠ 当前指纹 ⇒ stale。
-/// **无 stamp 不算 stale**——从未在新机制下翻过的数据不被误伤。
+/// Sentence-level dirty detection: `transSrc[lang][id]` exists and ≠ the current fingerprint ⇒ stale.
+/// **No stamp means not stale.** Data never translated under the new mechanism is not penalized.
 pub fn stale_sentences(
     doc: &TranscriptDoc,
     lang: &str,
@@ -201,8 +197,8 @@ mod tests {
         }
     }
 
-    /// 句1 = 两 Cue（"echo," 处 pause_punct 断行 / "hotel." 句末）；
-    /// 句2 = 单 Cue "Done."。
+    /// Sentence 1 = two Cues (a break from `pause_punct` at "echo," / sentence-final "hotel.");
+    /// Sentence 2 = a single Cue "Done.".
     fn two_sentence_doc() -> TranscriptDoc {
         doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha", "s1"),
@@ -235,7 +231,7 @@ mod tests {
 
     #[test]
     fn sentences_distinguish_display_pauses_from_semantic_boundaries() {
-        // 0.8s 会让 Cue 断行，但不应把同一个语义句拆成两个翻译组。
+        // A 0.8s gap breaks the Cue, but it must not split the same semantic sentence into two translation groups.
         let doc = doc_with_words(vec![
             w("g1.0", 0.0, 0.3, "one", "s1"),
             w("g1.1", 0.3, 0.6, "two", "s1"),
@@ -250,7 +246,7 @@ mod tests {
         assert_eq!(cues.len(), 2);
         assert_eq!(derive_sentences(&doc, &cues).len(), 1);
 
-        // 1.8s 以上的强停顿即使没有句末标点，也足以封句。
+        // A strong pause of 1.8s or more is enough to close a sentence even without sentence-final punctuation.
         let mut doc = doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "first", "s1"),
             w("g1.1", 0.4, 0.8, "thought", "s1"),
@@ -331,8 +327,7 @@ mod tests {
 
     #[test]
     fn medium_pauses_do_not_fragment_agent_definition() {
-        // 来自 “What is an Agentic Harness (2)” 的真实失败形态：
-        // tools→running 0.62s，accomplish→a goal 1.08s。
+        // The real failure pattern from "What is an Agentic Harness (2)": tools→running 0.62s, accomplish→a goal 1.08s.
         let doc = doc_with_words(vec![
             w("g2.0", 0.00, 0.20, "An", "s1"),
             w("g2.1", 0.20, 0.55, "agent", "s1"),
@@ -362,14 +357,14 @@ mod tests {
 
     #[test]
     fn para_pin_and_chapter_boundary_close_sentences() {
-        // 无标点、无停顿的同说话人流；仅段落钉逼出句边界。
+        // An unpunctuated, unpaused stream from one speaker. Only paragraph pins force a sentence boundary.
         let mut doc = doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha", "s1"),
             w("g1.1", 0.4, 0.8, "bravo,", "s1"),
             w("g1.2", 0.8, 1.2, "charlie", "s1"),
             w("g1.3", 1.2, 1.6, "delta", "s1"),
         ]);
-        // "bravo," 处让 Cue 断行（pause_punct 需要 min_pause_chars=20——用手工 break）。
+        // Break the Cue at "bravo," (pause_punct needs min_pause_chars=20, so use a manual break).
         doc.breaks
             .insert("g1.1".to_owned(), crate::doc::BreakOverride::Break);
         let cues = derive_cues(&doc, &CueParams::default());
@@ -383,7 +378,7 @@ mod tests {
         assert_eq!(sentences[1].id, "s-g1.2");
 
         doc.para_breaks.clear();
-        // 章节边界正落在 Cue 2 起点（g1.2 t0=0.8）。
+        // The chapter boundary falls exactly at the start of Cue 2 (g1.2 t0=0.8).
         doc.chapters = vec![
             Chapter {
                 id: "c1".to_owned(),

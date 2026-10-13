@@ -1,18 +1,10 @@
-//! Whisper large-v3 / large-v3 Turbo 的 MLX 实现（mlx-community 的 fp16 safetensors）。
+//! Whisper large-v3 / large-v3 Turbo on MLX (mlx-community fp16 safetensors).
 //!
-//! 网络结构与数学参照 ml-explore/mlx-examples 的 `whisper/mlx_whisper/`（MIT 许可）：编码器是两层卷积（第二层
-//! stride 2）+ 正弦位置编码 + pre-LN Transformer；解码器是学习的位置嵌入 + 自注意力（KV cache）+ 交叉注意力 +
-//! MLP，logits 与词嵌入共享权重。这里是用 mlx-rs 按那套结构自己写的 Rust，没有照搬代码。
+//! The network structure and math follow ml-explore/mlx-examples' `whisper/mlx_whisper/` (MIT license): the encoder is two convolution layers (the second with stride 2) + sinusoidal positional encoding + pre-LN Transformer; the decoder is learned positional embeddings + self-attention (KV cache) + cross-attention + MLP, with logits sharing weights with the token embedding. This is Rust written with mlx-rs following that structure; the code is not copied.
 //!
-//! 解码口径与 Core ML 版（[`crate::backend::coreml`]）、whisper.cpp 版（[`crate::backend::ggml`]）一致，规则都在
-//! [`crate::speech::whisper_decoding`]：每 30 s 一个窗独立解码；有语言提示就用它的语言 token，没有就在
-//! `<|startoftranscript|>` 一步前向的 logits 里取语言 token 中最大的；前缀是「可选的 `<|startofprev|>` 加提示」
-//! 接上 `<|startoftranscript|><|lang|><|transcribe|><|notimestamps|>`，一次前向预填充；之后贪心，按
-//! `should_suppress` 抑制，遇 `<|endoftext|>` 或复读停，每窗「提示 + 前缀 + 生成」不超过
-//! [`DECODER_TOKEN_BUDGET`]。词级时间由统一的强制对齐器补。
+//! The decoding rules match the Core ML version ([`crate::backend::coreml`]) and the whisper.cpp version ([`crate::backend::ggml`]); the rules are all in [`crate::speech::whisper_decoding`]: each 30 s window is decoded independently. If a language hint is given, its language token is used; otherwise the language token with the largest logit from one forward step at `<|startoftranscript|>` is taken. The prefix is an optional `<|startofprev|>` plus the hint, followed by `<|startoftranscript|><|lang|><|transcribe|><|notimestamps|>`, prefilled in one forward pass. After that, greedy decoding, suppressed per `should_suppress`, stops at `<|endoftext|>` or on a repetition; each window's "hint + prefix + generation" stays within [`DECODER_TOKEN_BUDGET`]. Word-level timing is filled in by the shared forced aligner.
 //!
-//! 设备是 Metal，权重以 f16 常驻；mel 在 CPU 上算（[`WhisperFeaturePipeline::moss`]，标准 400 点 FFT），每窗补零到
-//! 30 s，恰好 3000 帧。
+//! The device is Metal, with weights kept resident as f16. The mel is computed on the CPU ([`WhisperFeaturePipeline::moss`], standard 400-point FFT), and each window is zero-padded to 30 s, exactly 3000 frames.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -32,16 +24,16 @@ use crate::speech::whisper_decoding::{
 use crate::speech::{Recognition, RecognitionRequest, SpeechRecognizer};
 
 const SAMPLE_RATE: usize = 16_000;
-/// 一个 30 s 窗的 mel 帧数（hop 160）：编码器的两层卷积把它减半成 1500 个位置。
+/// Number of mel frames in a 30 s window (hop 160): the encoder's two convolution layers halve it to 1500 positions.
 const WINDOW_FRAMES: i32 = 3_000;
-/// Whisper 的 LayerNorm 是 PyTorch 默认的 eps。
+/// Whisper's LayerNorm uses PyTorch's default eps.
 const LAYER_NORM_EPS: f32 = 1e-5;
-/// 抑制掩码里「不能出」的 token 加的值：f16 下足够把它压到所有正常 logit 之下，又不至于溢出成 NaN。
+/// The value added to tokens that must not be emitted in the suppression mask: in f16 it is enough to push them below all normal logits without overflowing to NaN.
 const SUPPRESSED_LOGIT: f32 = -60_000.0;
-/// mlx-community 的转换在权重里附带的对齐头表（词级时间戳用），这里不用。
+/// The alignment-heads table that mlx-community's conversion stores in the weights (for word-level timestamps); not used here.
 const UNUSED_WEIGHT_KEYS: [&str; 1] = ["alignment_heads"];
 
-/// `config.json`（mlx-community 的 Whisper 转换）里网络的形状。
+/// Network shape from `config.json` (mlx-community's Whisper conversion).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WhisperConfig {
     pub n_mels: usize,
@@ -57,7 +49,7 @@ pub struct WhisperConfig {
 }
 
 impl WhisperConfig {
-    /// 读 `config.json`。形状不合（比如不是 30 s 窗 → 1500 个位置、头数除不尽宽度）时返回说明。
+    /// Reads `config.json`. If the shape does not fit (e.g. not a 30 s window → 1500 positions, or the head count does not divide the width), returns an explanation.
     pub fn parse(raw: &Value) -> std::result::Result<Self, String> {
         let field = |name: &str| -> std::result::Result<usize, String> {
             raw.get(name)
@@ -94,8 +86,7 @@ impl WhisperConfig {
     }
 }
 
-/// 一个 MLX Whisper 模型包要的文件：`asr` 组件的 `config.json` 与 safetensors，`tokenizer` 组件（取自
-/// `openai/whisper-large-v3`）的 `tokenizer.json` 与 `generation_config.json`。
+/// Files a MLX Whisper model bundle needs: the `config.json` and safetensors of the `asr` component, and the `tokenizer.json` and `generation_config.json` of the `tokenizer` component (taken from `openai/whisper-large-v3`).
 #[derive(Debug, Clone)]
 pub struct WhisperFiles {
     pub config: PathBuf,
@@ -104,7 +95,7 @@ pub struct WhisperFiles {
     pub generation_config: PathBuf,
 }
 
-/// 多头注意力的四个投影（`key` 没有偏置）。
+/// The four projections of multi-head attention (`key` has no bias).
 struct Attention {
     query: Dense,
     key: Dense,
@@ -132,7 +123,7 @@ impl Attention {
             .transpose_axes(&[0, 2, 1, 3])?)
     }
 
-    /// 由 `source` 算出 K、V（已拆好头）。
+    /// Computes K and V from `source` (already split into heads).
     fn keys_values(&self, source: &Array) -> Result<(Array, Array)> {
         Ok((
             self.split_heads(&self.key.forward(source)?)?,
@@ -140,7 +131,7 @@ impl Attention {
         ))
     }
 
-    /// `input` 作查询，对给定的 K、V 做缩放点积注意力，合并头后过输出投影。
+    /// Uses `input` as the query, runs scaled dot-product attention against the given K and V, merges the heads, then applies the output projection.
     fn attend(&self, input: &Array, keys: &Array, values: &Array, mask: Option<ScaledDotProductAttentionMask<'_>>) -> Result<Array> {
         let (batch, sequence, width) = (input.dim(0), input.dim(1), input.dim(2));
         let query = self.split_heads(&self.query.forward(input)?)?;
@@ -151,7 +142,7 @@ impl Attention {
     }
 }
 
-/// 两层 MLP（GELU）。
+/// Two-layer MLP (GELU).
 struct Mlp {
     up: Dense,
     down: Dense,
@@ -166,12 +157,12 @@ impl Mlp {
     }
 
     fn forward(&self, input: &Array) -> Result<Array> {
-        // `nn::gelu` 的常量是 f32，会把 f16 激活整段提升成 f32；用保持 dtype 的版本。
+        // The constant in `nn::gelu` is f32, which would promote the whole f16 activation to f32; use the dtype-preserving version.
         self.down.forward(&gelu_same_dtype(&self.up.forward(input)?)?)
     }
 }
 
-/// 编码器的一层：pre-LN 自注意力（无掩码）+ pre-LN MLP。
+/// One encoder layer: pre-LN self-attention (no mask) + pre-LN MLP.
 struct EncoderBlock {
     attention: Attention,
     attention_norm: LayerNorm,
@@ -197,7 +188,7 @@ impl EncoderBlock {
     }
 }
 
-/// 音频编码器：mel `[1, 3000, n_mels]` → `[1, 1500, n_audio_state]`。
+/// Audio encoder: mel `[1, 3000, n_mels]` → `[1, 1500, n_audio_state]`.
 struct AudioEncoder {
     conv1_weight: Array,
     conv1_bias: Array,
@@ -233,7 +224,7 @@ impl AudioEncoder {
     }
 
     fn forward(&self, mel: &Array) -> Result<Array> {
-        // conv 权重是 `[out, kernel, in]`，正是 MLX conv1d 的原生布局（输入 `[N, L, C_in]`），不用转置。
+        // The conv weights are `[out, kernel, in]`, exactly MLX conv1d's native layout (input `[N, L, C_in]`), so no transpose is needed.
         let hidden = ops::conv1d(mel, &self.conv1_weight, 1, 1, None, None)?;
         let hidden = gelu_same_dtype(&(&hidden + &self.conv1_bias))?;
         let hidden = ops::conv1d(&hidden, &self.conv2_weight, 2, 1, None, None)?;
@@ -245,7 +236,7 @@ impl AudioEncoder {
     }
 }
 
-/// Whisper 编码器的正弦位置编码：前半是 sin、后半是 cos，时间尺度从 1 到 10000 按几何级数分布。
+/// Whisper encoder's sinusoidal positional encoding: the first half is sin, the second half is cos, with time scales spread geometrically from 1 to 10000.
 fn sinusoids(length: usize, channels: usize) -> Array {
     let half = channels / 2;
     let increment = 10_000_f32.ln() / (half as f32 - 1.0);
@@ -261,7 +252,7 @@ fn sinusoids(length: usize, channels: usize) -> Array {
     Array::from_slice(&values, &[length as i32, channels as i32])
 }
 
-/// 解码器的一层：pre-LN 自注意力（带 KV cache）+ pre-LN 交叉注意力 + pre-LN MLP。
+/// One decoder layer: pre-LN self-attention (with KV cache) + pre-LN cross-attention + pre-LN MLP.
 struct DecoderBlock {
     attention: Attention,
     attention_norm: LayerNorm,
@@ -287,7 +278,7 @@ impl DecoderBlock {
         let normalized = self.attention_norm.forward(input)?;
         let (keys, values) = self.attention.keys_values(&normalized)?;
         let (keys, values) = cache.update(keys, values)?;
-        // 多 token 预填充要因果掩码（MLX 把查询对齐到 key 的末尾，带 cache 偏移也对）；单步解码不要。
+        // Multi-token prefill needs a causal mask (MLX aligns the query to the end of the keys, which also works with a cache offset); single-step decoding does not.
         let mask = (input.dim(1) > 1).then_some(ScaledDotProductAttentionMask::Causal);
         let hidden = input + &self.attention.attend(&normalized, &keys, &values, mask)?;
         let normalized = self.cross_attention_norm.forward(&hidden)?;
@@ -296,7 +287,7 @@ impl DecoderBlock {
     }
 }
 
-/// 文本解码器。
+/// Text decoder.
 struct TextDecoder {
     token_embedding: Array,
     positional: Array,
@@ -328,7 +319,7 @@ impl TextDecoder {
         self.blocks.iter().map(|_| KvCache::new()).collect()
     }
 
-    /// 每层交叉注意力的 K、V：一个窗只算一次。
+    /// Cross-attention K and V for each layer: computed once per window.
     fn cross_keys_values(&self, audio: &Array) -> Result<Vec<(Array, Array)>> {
         let pairs = self
             .blocks
@@ -339,7 +330,7 @@ impl TextDecoder {
         Ok(pairs)
     }
 
-    /// 送入 `tokens`（接在 cache 已有的位置之后），返回最后一个位置的 logits `[n_vocab]`（与词嵌入共享权重）。
+    /// Feeds `tokens` (placed after the positions already in the cache) and returns the logits `[n_vocab]` at the last position (weights shared with the token embedding).
     fn forward(&self, tokens: &[i32], cache: &mut [KvCache], cross: &[(Array, Array)]) -> Result<Array> {
         let offset = cache.first().map(KvCache::offset).unwrap_or(0);
         let count = tokens.len() as i32;
@@ -354,7 +345,7 @@ impl TextDecoder {
     }
 }
 
-/// MLX 上的 Whisper 句级转录器。词级时间由统一的强制对齐器补齐。
+/// Sentence-level transcriber on MLX. Word-level timing is filled in by the shared forced aligner.
 pub struct WhisperMlx {
     config: WhisperConfig,
     encoder: AudioEncoder,
@@ -362,18 +353,18 @@ pub struct WhisperMlx {
     tokenizer: WhisperTokenizer,
     generation: GenerationConfig,
     features: WhisperFeaturePipeline,
-    /// 第一个生成 token 的抑制掩码（加到 logits 上）：另含 begin_suppress。
+    /// Suppression mask for the first generated token (added to the logits); it also includes begin_suppress.
     first_step_mask: Array,
-    /// 之后各步的抑制掩码。
+    /// Suppression masks for the steps after the first.
     step_mask: Array,
-    // 字段按声明顺序析构：先释放权重，再清缓存。
+    // Fields are dropped in declaration order: weights are released first, then the cache is cleared.
     _memory_cache_guard: ModelMemoryCacheGuard,
 }
 
 impl WhisperMlx {
     pub fn load(files: &WhisperFiles) -> Result<Self> {
         ensure_metal_device()?;
-        // 加载中途出错时也要清掉已读入的权重。
+        // If loading fails partway through, the weights already read in must also be cleared.
         let memory_cache_guard = ModelMemoryCacheGuard;
         let raw: Value = serde_json::from_slice(&std::fs::read(&files.config).with_context(|| format!("读取 {}", files.config.display()))?)
             .context("解析 Whisper config.json")?;
@@ -382,7 +373,7 @@ impl WhisperMlx {
         let generation = GenerationConfig::load(&files.generation_config)?;
 
         let weights = files.weights.iter().map(PathBuf::as_path).collect::<Vec<_>>();
-        // 逐张量物化，不把 1.6–3 GB 的权重塞进同一个 Metal command buffer。
+        // Materialize tensor by tensor, so that 1.6–3 GB of weights are not put into the same Metal command buffer.
         let raw_weights = load_safetensors_filtered(&weights, |key| !UNUSED_WEIGHT_KEYS.contains(&key))?;
         let mut store = WeightStore::from_arrays(raw_weights)?;
         let encoder = AudioEncoder::load(&mut store, &config)?;
@@ -409,8 +400,7 @@ impl WhisperMlx {
         })
     }
 
-    /// 预热：一秒静音走一遍 mel、编码器、语言检测与一步解码，让 Metal 内核在第一段识别之前编译好。编码器的形状与
-    /// 正式识别完全相同（每窗都补到 30 s）。
+    /// Warm-up: one second of silence goes through the mel, the encoder, language detection and one decoding step, so the Metal kernels are compiled before the first recognition. The encoder shapes are exactly the same as in real recognition (every window is padded to 30 s).
     pub fn warmup(&mut self) -> Result<()> {
         let _memory_cache_guard = MemoryCacheGuard::new();
         let audio = self.encode_window(&vec![0.0; SAMPLE_RATE])?;
@@ -426,7 +416,7 @@ impl WhisperMlx {
         Ok(())
     }
 
-    /// 整段音频 → 文本与语言码：按 30 s 切窗、各窗独立解码，空格拼接；语言取第一个窗检测到的（之后的窗沿用）。
+    /// Whole audio → text and language code: split into 30 s windows, decode each window independently, and join with spaces. The language is the one detected in the first window; later windows reuse it.
     pub fn transcribe(&self, audio: &[f32], language_hint: Option<&str>, prompt: Option<&str>) -> Result<(String, Option<String>)> {
         if audio.is_empty() {
             return Ok((String::new(), language_hint.map(str::to_owned)));
@@ -451,7 +441,7 @@ impl WhisperMlx {
     }
 
     fn transcribe_window(&self, audio: &[f32], language_hint: Option<&str>, prompt_tokens: &[i32]) -> Result<(String, Option<String>)> {
-        // 每个窗的 mel、编码器输出、KV cache 都是临时 Metal 缓冲区；窗结束时归还。
+        // Each window's mel, encoder output and KV cache are temporary Metal buffers; they are returned when the window ends.
         let _memory_cache_guard = MemoryCacheGuard::new();
         let timing = speech_timing_enabled();
         let started = Instant::now();
@@ -477,7 +467,7 @@ impl WhisperMlx {
         Ok((self.tokenizer.decode(&generated).trim().to_owned(), language))
     }
 
-    /// 一个窗（≤ 30 s）→ 编码器输出 `[1, 1500, n_audio_state]`（已求值）。不足 30 s 的补零到 30 s 再提特征。
+    /// One window (≤ 30 s) → encoder output `[1, 1500, n_audio_state]` (already evaluated). Input shorter than 30 s is zero-padded to 30 s before feature extraction.
     fn encode_window(&self, audio: &[f32]) -> Result<Array> {
         let mut padded = vec![0.0_f32; WINDOW_SAMPLES];
         let count = audio.len().min(WINDOW_SAMPLES);
@@ -495,7 +485,7 @@ impl WhisperMlx {
         Ok(output)
     }
 
-    /// `<|startoftranscript|>` 一步前向，在语言 token 里取 logit 最大的；一个也取不到时当英语。
+    /// One forward step at `<|startoftranscript|>`, taking the language token with the largest logit; if none can be taken, assume English.
     fn detect_language(&self, cross: &[(Array, Array)]) -> Result<i32> {
         let mut cache = self.decoder.new_cache();
         let logits = self
@@ -509,12 +499,11 @@ impl WhisperMlx {
         )
     }
 
-    /// 贪心解码。前缀一次前向预填充；之后每步送上一步的 token。语义与早先 Core ML 版逐项相同：第一个生成 token 用
-    /// 另一张抑制掩码，`<|endoftext|>` 停，特殊 token 不进结果，复读停；位置用满预算前一格为止。
+    /// Greedy decoding. The prefix is prefilled in one forward pass; afterwards each step feeds the previous step's token. The semantics match the earlier Core ML version item by item: the first generated token uses a separate suppression mask, `<|endoftext|>` stops decoding, special tokens are not included in the result, and repetition stops decoding. Positions run up to one before the full budget.
     fn decode_greedy(&self, cross: &[(Array, Array)], language_token: i32, prompt_tokens: &[i32]) -> Result<Vec<i32>> {
         let mut prefix = prompt_tokens.to_vec();
         prefix.extend(self.generation.task_tokens(language_token));
-        // `<|notimestamps|>` 是第一步解码的输入，它的位置就是第一个生成 token 的位置。
+        // `<|notimestamps|>` is the input to the first decoding step, so its position is the position of the first generated token.
         let mut position = prefix.len();
         prefix.push(self.generation.no_timestamps());
         let last_position = DECODER_TOKEN_BUDGET.saturating_sub(1);
@@ -551,15 +540,15 @@ impl WhisperMlx {
         Ok(generated)
     }
 
-    /// logits 加上抑制掩码后在设备上取最大，只把一个 token 拉回主机。
+    /// After the suppression mask is added to the logits, the max is taken on the device, so only one token is pulled back to the host.
     fn pick(&self, logits: &Array, mask: &Array) -> Result<i32> {
         let token = argmax_axis(&(logits + mask), -1, false)?;
         Ok(token.try_item::<u32>()? as i32)
     }
 }
 
-/// 第 `generated_count` 步的抑制掩码：[`GenerationConfig::should_suppress`] 说不能出的 token 加一个很大的负数。
-/// 抑制只分「第一个生成 token」与「之后」两种，所以两张掩码就够。
+/// Suppression mask for step `generated_count`: tokens that [`GenerationConfig::should_suppress`] says must not appear get a very large negative value added.
+/// Suppression only comes in two kinds, "first generated token" and "after", so two masks are enough.
 fn suppression_mask(generation: &GenerationConfig, vocabulary: usize, generated_count: usize, dtype: Dtype) -> Result<Array> {
     let values = (0..vocabulary)
         .map(|token| {
@@ -575,8 +564,7 @@ fn suppression_mask(generation: &GenerationConfig, vocabulary: usize, generated_
     Ok(mask)
 }
 
-/// 转写流水线的一段：断言的语言作语言 token，识别提示作 initial prompt。Whisper 报的是语言码（`en`、`yue`），
-/// 不是 Qwen3-ASR 那样的语言名。
+/// A segment of the transcription pipeline: the asserted language is used as the language token, and the recognition hint is used as the initial prompt. Whisper reports language codes (`en`, `yue`), not language names like Qwen3-ASR does.
 impl SpeechRecognizer for WhisperMlx {
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> Result<Recognition> {
         let (text, language) = self.transcribe(audio, request.language, request.context)?;
@@ -588,7 +576,7 @@ impl SpeechRecognizer for WhisperMlx {
     }
 }
 
-/// 从路径取文件（测试与基准用）：`dir` 下的 `config.json` 与 `*.safetensors`，分词器目录下的两只 JSON。
+/// Reads files from a path (for tests and benchmarks): `config.json` and `*.safetensors` in `dir`, plus the two JSON files in the tokenizer directory.
 pub fn files_in(weights_dir: &Path, tokenizer_dir: &Path) -> Result<WhisperFiles> {
     let mut weights = std::fs::read_dir(weights_dir)
         .with_context(|| format!("读取 {}", weights_dir.display()))?
@@ -635,18 +623,16 @@ mod tests {
         let table = sinusoids(3, 8);
         table.eval().unwrap();
         let values = table.as_slice::<f32>();
-        // 位置 0：sin 全 0，cos 全 1。
+        // Position 0: sin all 0, cos all 1.
         assert_eq!(&values[..8], &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-        // 位置 1、第 0 个频率（时间尺度 1）：sin(1)、cos(1)；最后一个频率的时间尺度是 10000。
+        // Position 1, frequency 0 (time scale 1): sin(1), cos(1); the last frequency has time scale 10000.
         assert!((values[8] - 1_f32.sin()).abs() < 1e-6);
         assert!((values[12] - 1_f32.cos()).abs() < 1e-6);
         assert!((values[11] - (1.0e-4_f32).sin()).abs() < 1e-6);
     }
 
-    /// 真实权重的端到端识别与计时（`--release` 跑）：`CUCCUT_WHISPER_MLX_DIR` 是 mlx-community 的 fp16 仓库目录
-    /// （`config.json` + safetensors），`CUCCUT_WHISPER_TOKENIZER_DIR` 是 `openai/whisper-large-v3` 的分词器目录
-    /// （`tokenizer.json` + `generation_config.json`），`CUCCUT_WHISPER_AUDIO` 是 16 kHz 单声道 WAV。
-    /// `CUCCUT_WHISPER_EXPECT` 给了就核对文本开头。
+    /// End-to-end recognition and timing with real weights (run with `--release`): `CUCCUT_WHISPER_MLX_DIR` is the directory of mlx-community's fp16 repo (`config.json` + safetensors), `CUCCUT_WHISPER_TOKENIZER_DIR` is the tokenizer directory of `openai/whisper-large-v3` (`tokenizer.json` + `generation_config.json`), and `CUCCUT_WHISPER_AUDIO` is a 16 kHz mono WAV.
+    /// If `CUCCUT_WHISPER_EXPECT` is given, the start of the text is checked against it.
     #[test]
     #[ignore = "needs CUCCUT_WHISPER_MLX_DIR, CUCCUT_WHISPER_TOKENIZER_DIR and CUCCUT_WHISPER_AUDIO"]
     fn transcribes_a_real_recording() {

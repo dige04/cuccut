@@ -2,21 +2,21 @@ import { useSyncExternalStore } from 'react';
 import { SeekQueue } from '../../model/seek.ts';
 import { P } from './player-copy.ts';
 
-/** 事件驱动的播放状态：只在事件发生时变，不随每一帧变。 */
+/** Event-driven playback state: changes only when events happen, not on every frame. */
 export interface PlaybackStatus {
   ready: boolean;
   paused: boolean;
   ended: boolean;
   waiting: boolean;
   duration: number;
-  /** 有画面（音频文件没有）。 */
+  /** Has a picture (audio files do not). */
   hasPicture: boolean;
   error: string | null;
 }
 
 const INITIAL: PlaybackStatus = { ready: false, paused: true, ended: false, waiting: false, duration: 0, hasPicture: false, error: null };
 
-/** MediaError.code → 文案 key（出错时才读，跟当时的界面语言）。 */
+/** MediaError.code → message key (read only on error, following the UI language at that time). */
 const MEDIA_ERRORS: Record<number, 'aborted' | 'network' | 'decode' | 'unsupported'> = { 1: 'aborted', 2: 'network', 3: 'decode', 4: 'unsupported' };
 const mediaErrorText = (code: number): string => P.mediaError[MEDIA_ERRORS[code] ?? 'other'];
 
@@ -26,12 +26,12 @@ type MediaWithFrames = HTMLMediaElement & {
 };
 
 /**
- * 一个媒体元素的播放控制（架构设计 §4.5：播放时钟和拖动留在界面本地）。
+ * Playback control for one media element (architecture design §4.5: the playback clock and dragging stay local to the UI).
  *
- * - 时间每帧读一次：有画面时取「这一帧画面」的时间（requestVideoFrameCallback），字幕跟着画面走；
- *   音频取 currentTime。
- * - 定位经 SeekQueue：拖动时只保留最新请求，正在定位时显示的就是它（验收 T30）。
- * - 组件按需订阅：时间（每帧）与状态（事件）分开，字幕列表只订阅由时间推出的句子序号。
+ * - Time is read once per frame: when there is a picture, it takes the time of “this frame” (requestVideoFrameCallback), so subtitles follow the picture;
+ *   audio uses currentTime.
+ * - Seeks go through SeekQueue: while dragging, only the latest request is kept, and while seeking, the displayed position is that request (acceptance T30).
+ * - Components subscribe on demand: time (per frame) and state (events) are separate, and the subtitle list only subscribes to the sentence index derived from time.
  */
 export class PlaybackController {
   readonly media: MediaWithFrames;
@@ -103,9 +103,9 @@ export class PlaybackController {
     this.#cleanup();
   }
 
-  // ---- 读 ----
+  // ---- Read ----
 
-  /** 显示用的位置：正在定位时是最新请求，否则是画面（或声音）的时间。 */
+  /** Position for display: while seeking, it is the latest request; otherwise it is the time of the picture (or sound). */
   get time(): number {
     return this.#time;
   }
@@ -124,7 +124,7 @@ export class PlaybackController {
     return () => this.#statusListeners.delete(listener);
   };
 
-  // ---- 控制 ----
+  // ---- Control ----
 
   toggle(): void {
     if (this.media.paused) this.play();
@@ -133,7 +133,7 @@ export class PlaybackController {
 
   play(): void {
     if (this.#status.ended) this.seek(0);
-    // 用户手势里调用；被拒绝（例如还没加载）时状态由事件说明，这里不报错。
+    // Called from user gestures. When the call is rejected (e.g. not loaded yet), the state is explained by events, so no error is thrown here.
     void this.media.play().catch(() => {});
   }
 
@@ -153,7 +153,7 @@ export class PlaybackController {
     this.seek((this.#queue.target ?? this.#time) + delta);
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #readTime(frameTime?: number): void {
     this.#setTime(this.#queue.target ?? frameTime ?? this.media.currentTime);
@@ -204,7 +204,7 @@ function finite(n: number): number {
 
 const NO_SUBSCRIBE = () => () => {};
 
-/** 订阅由时间推出的值。`select` 应当返回原始值（数字、字符串），只有它变了组件才重画。 */
+/** Subscribes to values derived from time. `select` should return primitive values (numbers, strings); the component only redraws when that value changes. */
 export function usePlaybackTime<T extends string | number | boolean | null>(
   controller: PlaybackController | null,
   select: (time: number) => T,

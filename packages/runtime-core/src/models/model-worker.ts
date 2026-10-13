@@ -3,16 +3,16 @@ import { fileURLToPath } from 'node:url';
 
 import { findBundledBinary } from '@cuccut/process-host';
 
-/** 启动 Model Worker 的命令。Runtime 会在 `args` 后面追加 `--parent-pid <pid>`。 */
+/** Command that starts the Model Worker. The Runtime appends `--parent-pid <pid>` after `args`. */
 export interface ModelWorkerCommand {
   command: string;
   args?: string[];
 }
 
 /**
- * 找 Model Worker 可执行文件：`CUCCUT_MODEL_WORKER` 环境变量；随应用分发的原生程序目录（`CUCCUT_BIN_DIR`、打包后的 `<resources>/bin`）；
- * 或者从本模块往上找 cargo 产物目录里的 `{release,debug}/model-worker`（开发时用 cargo 构建；目录跟随 `.cargo/config*.toml` 的
- * `build.target-dir`）。找不到时为 null：本地推理不可用。
+ * Finds the Model Worker executable: the `CUCCUT_MODEL_WORKER` environment variable; the native program directory shipped with the app (`CUCCUT_BIN_DIR`, packaged `<resources>/bin`);
+ * or, from this module, walks up to find `{release,debug}/model-worker` in the cargo output directory (development builds use cargo; the directory follows `build.target-dir` in `.cargo/config*.toml`).
+ * Returns null when none is found: local inference is unavailable.
  */
 export function resolveModelWorkerCommand(env: NodeJS.ProcessEnv = process.env): ModelWorkerCommand | null {
   if (env.CUCCUT_MODEL_WORKER) return { command: env.CUCCUT_MODEL_WORKER };

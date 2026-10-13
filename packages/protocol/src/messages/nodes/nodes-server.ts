@@ -14,7 +14,7 @@ import { pl } from './nodes-server.pl.ts';
 import { tr } from './nodes-server.tr.ts';
 import { vi } from './nodes-server.vi.ts';
 
-/** 共享给别的电脑的这一端（节点服务）：HTTP 接口、远端任务与共享开关的错误说明（`packages/nodes/src`）。经节点协议回给对方时按本机语言。 */
+/** The server side shared with other computers (node service): descriptions of errors for the HTTP interface, remote jobs and the sharing switch (`packages/nodes/src`). When sent back to the peer over the node protocol, it uses this machine's language. */
 const en = {
   taskRequestInvalid: 'Invalid task request',
   transcribeNotShared: "The node doesn't share transcription",

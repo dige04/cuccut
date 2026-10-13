@@ -2,19 +2,13 @@ import type { Id } from '@cuccut/protocol';
 import { EditorWasmUnavailable, TRANSLATION_SCHEMA, sha256Hex, sourceSentences, type SourceSentence } from '@cuccut/jobs';
 
 /**
- * 旧项目导入的译文 `cuccut.translation/1` 换成 `cuccut.translation/2`（视频格式规范 §5.3）。`/1` 的单元按旧项目的句子 ID
- * 记译文（`{ id, text, display?, source?, alignment? }`），旧的指纹与对齐块不能换算；这里只取译句本身，按转写现在的句子
- * （字幕与翻译核心的规则，经 editor-wasm，与翻译流程、`documents_read` 的 `translationBasis` 同一套）重新挂上去，
- * 对齐写成句级（`correspondence: 'sentence'`），与「源文稿换版本时的结转」降级的写法相同。
+ * Converts translations from old project imports, `cuccut.translation/1`, to `cuccut.translation/2` (video format spec §5.3). The `/1` units record translations by the old project's sentence IDs (`{ id, text, display?, source?, alignment? }`). The old fingerprints and alignment blocks cannot be converted, so only the translated sentence itself is taken here and re-attached to the current sentences of the transcript (the subtitle and translation-core rules, via editor-wasm, the same ones used by the translation flow and by `translationBasis` in `documents_read`). The alignment is written at sentence level (`correspondence: 'sentence'`), the same way as the downgrade in “carry-over when the source document changes version”.
  *
- * - 旧句的词：转写正文里存下的同 ID 句子（`first`/`last` 或 `wordIds`），没有时取单元的 `source.first`/`source.last`，
- *   再没有时取规则句子里同 ID 的那一句。都没有的单元换不过去。
- * - 配对按词：旧句与新句共有的词不少于两者中较短那句的一半才算候选，先配共有词最多的一对，一旧句只配一新句（与结转按时间
- *   重叠贪心配对同一个办法，这里同一份转写、词 ID 不变，直接按词比）。
- * - 词完全相同的：`draft`（译文照用）；配上但词不同的：译文留着给人参考，`status: 'stale'`；没配上的旧句不带过去，新句没有
- *   旧译文的不写单元。`display`（字幕显示用的改写）不带：旧项目没有记下改写依据的自然译句指纹，带过去也按过期处理。
+ * - Words of an old sentence: the stored sentence with the same ID in the transcript body (`first`/`last` or `wordIds`); if there is none, the unit's `source.first`/`source.last`; if there is still none, the sentence with the same ID in the rules. A unit with none of these cannot be converted.
+ * - Pairing is by words: an old and a new sentence are candidates only if they share at least half the words of the shorter of the two. The pair sharing the most words is paired first, and one old sentence pairs with only one new sentence (the same greedy approach as carry-over pairing by time overlap; here the transcript is the same and word IDs do not change, so words are compared directly).
+ * - Identical words: `draft` (the translation is used as is); paired but with different words: the translation is kept for human reference, `status: 'stale'`. Unpaired old sentences are not carried over, and new sentences with no old translation get no unit. `display` (the rewrite used for subtitle display) is not carried over: the old project did not record the fingerprint of the natural translation that the rewrite was based on, so carrying it would be stale anyway.
  *
- * 派生子视频（`videos.derive`）用它把父视频的旧译文复制成子视频能建字幕层的译文；别处要升级旧译文时同样用它。
+ * Derived sub-videos (`videos.derive`) use it to copy the parent video's old translations into the sub-video, so that it can build translation subtitle layers. Elsewhere, it is used whenever old translations need upgrading.
  */
 
 export interface LegacyTranslationUpgrade {
@@ -24,11 +18,11 @@ export interface LegacyTranslationUpgrade {
     sourceBasis: { speechRef: { id: Id; revision: string }; sequenceId: Id; scopeLineage: Id[]; editViewHash: string };
     units: Record<string, unknown>[];
   };
-  /** 词完全对上、照用的单元。 */
+  /** A unit whose words match exactly; used as is. */
   kept: number;
-  /** 配上了但句子的词变了、标为过期的单元。 */
+  /** A unit that was paired but whose sentence words changed; marked stale. */
   stale: number;
-  /** 找不到对应句子、没带过去的旧单元。 */
+  /** An old unit with no matching sentence; not carried over. */
   dropped: number;
 }
 
@@ -42,8 +36,7 @@ export function isLegacyTranslation(body: unknown): boolean {
 }
 
 /**
- * 换算一份 `/1` 译文。`speech` 是它译自的转写正文；`language` 是译文的语言（文档记录的 `language`）；`basis` 是新正文
- * `sourceBasis` 的转写版本与序列。换不了（不是 `/1`、没有语言、转写读不出句子、editor-wasm 没有构建、一个单元都挂不上）时 null。
+ * Converts one `/1` translation. `speech` is the transcript body it was translated from; `language` is the translation's language (the document's recorded `language`); `basis` is the transcript version and sequence of the new body's `sourceBasis`. Returns null when conversion is impossible (not `/1`, no language, the transcript yields no sentences, editor-wasm is not built, or not a single unit can be attached).
  */
 export function upgradeLegacyTranslation(
   body: unknown,
@@ -80,7 +73,7 @@ export function upgradeLegacyTranslation(
     legacy.push({ text, words: new Set(ids) });
   }
 
-  // 按共有的词贪心配对：一旧句只配一新句。
+  // Greedy pairing by shared words: one old sentence pairs with only one new sentence.
   const candidates: { i: number; j: number; shared: number }[] = [];
   const sentenceOf = new Map<string, number>();
   sentences.forEach((s, j) => s.wordIds.forEach((w) => sentenceOf.set(w, j)));
@@ -143,13 +136,13 @@ export function upgradeLegacyTranslation(
   };
 }
 
-/** 转写的词 ID，按词序。 */
+/** The transcript's word IDs, in word order. */
 function speechWordIds(speech: unknown): string[] {
   const list = (speech as { words?: unknown } | null)?.words;
   return Array.isArray(list) ? list.map((w) => String((w as { id?: unknown })?.id ?? '')) : [];
 }
 
-/** 正文里存下的句子：ID → 词（`first`/`last` 是词序上的闭区间，或直接给 `wordIds`）。 */
+/** Sentences stored in the body: ID → words (`first`/`last` are a closed range in word order, or `wordIds` is given directly). */
 function storedSentences(speech: unknown, words: string[], position: ReadonlyMap<string, number>): Map<string, string[]> {
   const out = new Map<string, string[]>();
   const list = (speech as { sentences?: unknown } | null)?.sentences;
@@ -163,7 +156,7 @@ function storedSentences(speech: unknown, words: string[], position: ReadonlyMap
   return out;
 }
 
-/** `{ first, last }` → 词序上的那一段；找不到时 null。 */
+/** `{ first, last }` → that span in word order; null if not found. */
 function sourceRange(value: unknown, words: string[], position: ReadonlyMap<string, number>): string[] | null {
   const r = value as { first?: unknown; last?: unknown } | null;
   if (!r || typeof r.first !== 'string') return null;
@@ -172,7 +165,7 @@ function sourceRange(value: unknown, words: string[], position: ReadonlyMap<stri
   return a >= 0 && b >= a ? words.slice(a, b + 1) : null;
 }
 
-/** 旧句与这一句是同一句：这一句的词旧句都有，旧句也没有落在这一句首词到末词之外的词（其间隐藏的词不算差别）。 */
+/** The old sentence is the same sentence as this one: every word of this sentence is in the old sentence, and the old sentence has no words outside the span from this sentence's first word to its last (hidden words in between do not count as a difference). */
 function sameSentence(old: Set<string>, position: ReadonlyMap<string, number>, sentence: SourceSentence): boolean {
   if (!sentence.wordIds.every((w) => old.has(w))) return false;
   const first = position.get(sentence.wordIds[0]!) ?? -1;

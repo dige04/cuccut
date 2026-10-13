@@ -4,7 +4,7 @@ import { defineConfig, type Plugin } from 'vite';
 import { patchPptxgenjs, pptxgenjsDistFile } from '@cuccut/slides-runtime/pptxgenjs-patch';
 import { bundledPackageDirs, thirdPartyLicenses } from './licenses.mjs';
 
-/** PptxGenJS 的应用扩展在构建时打进读到的发行文件，不改 node_modules（packages/slides-runtime/patches）。 */
+/** The PptxGenJS application extension is applied at build time to the distribution file as it is read; node_modules is not changed (packages/slides-runtime/patches). */
 function pptxgenjsExtensions(): Plugin {
   return {
     name: 'cuccut-pptxgenjs-extensions',
@@ -15,7 +15,7 @@ function pptxgenjsExtensions(): Plugin {
   };
 }
 
-/** 页面打进去的第三方代码的原始许可，放在产物根目录的 third-party-licenses.txt。 */
+/** The original licenses of the third-party code bundled into the page, placed at the output root as third-party-licenses.txt. */
 function editorLicenses(): Plugin {
   return {
     name: 'cuccut-slides-editor-licenses',
@@ -28,8 +28,8 @@ function editorLicenses(): Plugin {
 }
 
 /**
- * 幻灯片编辑器页面（docs/design/slides §3）：由 Runtime 在 `/slides/<grant>/` 下提供，所以资源用相对地址。
- * 运行时是工作区里的 @cuccut/slides-runtime，页面模板是本目录的 index.html。
+ * The slides editor page (docs/design/slides §3): served by the Runtime under `/slides/<grant>/`, so its assets use relative URLs.
+ * The runtime is @cuccut/slides-runtime in the workspace; the page template is index.html in this directory.
  */
 export default defineConfig({
   root: import.meta.dirname,
@@ -39,10 +39,10 @@ export default defineConfig({
     target: 'es2022',
     outDir: resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
-    // 运行时本身就是一个大包（React、编辑器、PPTX 导出）
+    // The runtime is itself one large bundle (React, the editor, PPTX export)
     chunkSizeWarningLimit: 8000,
     rollupOptions: {
-      // @base-ui 等依赖带 "use client" 指令，打成单包时 Rollup 会逐个警告，这里没有意义。
+      // Dependencies such as @base-ui carry "use client" directives; when bundled into one package, Rollup warns about each one, which is meaningless here.
       onwarn(warning, warn) {
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE') return;
         warn(warning);

@@ -23,13 +23,11 @@ import { entryPath } from '../model/space.ts';
 import { copyText, elideMiddle, entryFacts, HERO_NAME_MAX, heroLine, sections, type InfoRow, type VideoInfoFacts } from '../model/video-info.ts';
 
 /**
- * 视频详情框（设计稿 project-info.jsx）：hero、只读的分区行、可编辑项，页脚「复制全部」与「完成」。行的装配在
- * model/video-info.ts，这里只管画与名字的提交。编辑器顶栏的 ⓘ（editor/video-info.tsx）与 Space 的「视频详情…」共用。
+ * The video details dialog (design mockup project-info.jsx): a hero, read-only section rows, editable items, and a footer with “复制全部” (copy all) and “完成” (done). Row assembly is in model/video-info.ts; this file only draws and commits the name. The ⓘ in the editor top bar (editor/video-info.tsx) and Space's “视频详情…” (video details…) share it.
  *
- * 只有名字能改（编辑器那条路，`renameVideo`）：失焦、回车或点「完成」时提交一次，不是每敲一个字一笔修改；空的或没改的
- * 还原。按 Esc 关掉时丢掉没提交的草稿。简介、备注没有地方存，置灰写明原因。
- * 「位置」「源文件」行尾有「在文件夹中显示」（行的 `reveal`），交给主机的文件管理器；Web 的主机做不到，不画。原简介限高滚动。
- * 不放「重新关联媒体」：那是缺媒体时的事。
+ * Only the name can be changed (the editor path, `renameVideo`): it is committed once on blur, Enter, or “完成” (done), not on every keystroke; an empty or unchanged name is restored. Closing with Esc discards an uncommitted draft. Description and notes have nowhere to be stored, so they are greyed out with the reason.
+ * The “位置” (location) and “源文件” (source file) rows have “在文件夹中显示” (show in folder) at the end (the row's `reveal`), which hands off to the host's file manager; the Web host cannot do this, so it is not drawn. The original description scrolls within a height limit.
+ * “重新关联媒体” (relink media) is not included here: that belongs to the case where media is missing.
  */
 export const VIDEO_INFO_COPY = live(() => S.videoInfo);
 const C = VIDEO_INFO_COPY;
@@ -62,17 +60,17 @@ const full = style({ width: 'full' });
 
 export interface VideoInfoDialogProps {
   facts: VideoInfoFacts;
-  /** 编辑器那条路多出来的行（内容、译文）。 */
+  /** Rows that only the editor path has (content, translation). */
   extras?: readonly InfoRow[];
-  /** 改名；成功返回 true。不给时名称置灰。 */
+  /** Rename; returns true on success. When not given, the name is greyed out. */
   onRename?: (name: string) => Promise<boolean>;
-  /** 名称不能改的原因（置灰时写在下面）。 */
+  /** Why the name cannot be changed (written below when greyed out). */
   renameNote?: string | null;
   onClose(): void;
 }
 
 export function VideoInfoDialog({ facts, extras = [], onRename, renameNote = null, onClose }: VideoInfoDialogProps) {
-  // 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+  // State lives in the dialog's outer layer: S2's Dialog renders its children in several slots, each one separately.
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef<Promise<boolean> | null>(null);
@@ -81,7 +79,7 @@ export function VideoInfoDialog({ facts, extras = [], onRename, renameNote = nul
   const host = useRuntime().host;
   const canReveal = host.platform !== 'web';
 
-  /** 提交名字的草稿；没有草稿、空的或没改时还原并当作成功。失败时留着草稿，错误由改名的一方提示。 */
+  /** Submits the name draft; with no draft, an empty or unchanged one, it is restored and counts as success. On failure the draft is kept, and the error is shown by the side that renamed it. */
   const commit = (): Promise<boolean> => {
     if (pending.current) return pending.current;
     if (draft === null) return Promise.resolve(true);
@@ -171,7 +169,7 @@ export function VideoInfoDialog({ facts, extras = [], onRename, renameNote = nul
                     onChange={setDraft}
                     onBlur={() => void commit()}
                     onKeyDown={(event) => {
-                      // 输入法选字时的回车不算提交。
+                      // Enter while an IME is choosing characters does not count as a commit.
                       if (event.key === 'Enter' && !event.nativeEvent.isComposing) void commit();
                       else event.continuePropagation();
                     }}
@@ -204,7 +202,7 @@ export function VideoInfoDialog({ facts, extras = [], onRename, renameNote = nul
   );
 }
 
-/** Space 那条路：只有条目记录，没有的行省略；名字不在这里改（Space 的「重命名」改的是显示名）。 */
+/** The Space path: only entry records; rows without them are omitted. The name is not changed here (Space's “重命名” (rename) changes the display name). */
 export function SpaceVideoInfo({ entry, dirs, onClose }: { entry: SpaceEntry; dirs: Parameters<typeof entryPath>[1]; onClose(): void }) {
   return <VideoInfoDialog facts={entryFacts(entry, entry.name, entryPath(entry, dirs))} renameNote={C.renameInEditor} onClose={onClose} />;
 }

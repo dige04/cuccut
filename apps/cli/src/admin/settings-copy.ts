@@ -14,9 +14,9 @@ import { pl } from './settings-copy.pl.ts';
 import { tr } from './settings-copy.tr.ts';
 import { vi } from './settings-copy.vi.ts';
 
-/** `cuccut settings` 的文案（英文是键与类型的来源，译文在 `settings-copy.<语言>.ts`）。 */
+/** Copy for `cuccut settings`. The English is the source of the keys and types; the translations are in `settings-copy.<language>.ts`. */
 const en = {
-  /** `cuccut settings --help` 与 `cuccut help settings` 的正文。 */
+  /** The body of `cuccut settings --help` and `cuccut help settings`. */
   help: `Usage:
   cuccut settings                  List all preferences: key, current value, whether it's the default, and a one-line description
   cuccut settings get <key>        Print a setting's current value (JSON)

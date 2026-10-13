@@ -6,7 +6,7 @@ import { aabbOf, boundsOf, pivotOf, type PlacedItem } from './stage-pose.ts';
 const canvas = { width: 1920, height: 1080 };
 const env = { canvas, others: [], pxScale: 2 };
 const free = { shift: false, alt: false };
-/** 中心在 (480, 270)、宽 192 的框；图片按画布的宽高比高 108，文字是正方。 */
+/** A box centered at (480, 270) with width 192; the image's height follows the canvas aspect ratio (108), the text is square. */
 const box = (patch: Partial<Place> = {}): Place => ({ x: 25, y: 25, w: 10, ...patch });
 const text = (patch: Partial<Place> = {}, style: Record<string, unknown> = { fontSize: 40 }) =>
   ({ id: 't', type: 'text', text: '标题', place: box(patch), style }) as unknown as PlacedItem;
@@ -43,7 +43,7 @@ describe('单件手势', () => {
     expect(patch.style).toMatchObject({ fontSize: 60 });
     const ops = gestureOperations('s', [member], frame.poses, frame.factor, canvas);
     expect(ops.map((op) => op.type)).toEqual(['setTransform', 'setStyle']);
-    // 对角（左上）不动：宽 15%，中心跟着往右下走；正方的框不写 scaleY。
+    // The diagonal corner (top-left) stays fixed: width 15%, the center moves toward the bottom-right; a square box does not write scaleY.
     expect(ops[0]).toEqual({ type: 'setTransform', sequenceId: 's', itemId: 't', x: 27.5, y: 29.4, w: 15 });
     expect(patch.place).toEqual({ x: 27.5, y: 29.4, w: 15 });
   });
@@ -67,7 +67,7 @@ describe('多选手势', () => {
     const members = [memberOf(image('a', { x: 3.125 }), canvas), memberOf(image('b'), canvas)];
     const g = { kind: 'group-move' as const, members, p0: { x: 0, y: 0 } };
     const { poses } = stepGesture(g, { x: -200, y: 0 }, free, env);
-    // a 的中心在 60，限位左端 57.6：全组只能再往左 2.4。
+    // a's center is at 60, the limit's left end is 57.6: the group can only move 2.4 further left.
     expect(poses.map((p) => p.cx)).toEqual([57.6, 477.6]);
   });
 
@@ -75,7 +75,7 @@ describe('多选手势', () => {
     const members = [memberOf(image('a', { x: 20 }), canvas), memberOf(text({ x: 30 }), canvas)];
     const bounds = boundsOf(members.map((m) => aabbOf(m.start)))!;
     const g = { kind: 'group-scale' as const, members, bounds, p0: { x: bounds.x + bounds.w, y: bounds.y + bounds.h } };
-    // 绕外包盒的中心放大：拖到离中心两倍远。
+    // Scale around the center of the bounding box: drag until the pointer is twice as far from the center.
     const frame = stepGesture(g, { x: bounds.x + 1.5 * bounds.w, y: bounds.y + 1.5 * bounds.h }, free, env);
     expect(frame.factor).toBeCloseTo(2);
     const ops = gestureOperations('s', members, frame.poses, frame.factor, canvas);

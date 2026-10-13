@@ -1,4 +1,4 @@
-//! 译文正文 ↔ `TranscriptDoc` 的 `trans` / `transDisplay` / `transAlign` / `transSrc`（视频格式规范 §5.3）。
+//! Translation body ↔ `TranscriptDoc`'s `trans` / `transDisplay` / `transAlign` / `transSrc` (video format spec §5.3).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -16,8 +16,7 @@ use video_model::translation::{
 
 use crate::{BridgeError, WriteBase};
 
-/// `transSrc` 里表示「v3 标了过期」的前缀：`stale:<sourceFingerprint>`。它与任何真实指纹都不相等，
-/// 字幕与翻译核心因此把这句当作原文改过。
+/// The prefix in `transSrc` that means "v3 marked it stale": `stale:<sourceFingerprint>`. It never equals any real fingerprint, so the subtitle and translation core treats the sentence as one whose source text has been changed.
 const STALE_PREFIX: &str = "stale:";
 
 pub(crate) fn to_doc(doc: &mut TranscriptDoc, bodies: &[TranslationBody]) -> Result<(), BridgeError> {
@@ -138,7 +137,7 @@ fn trans_align(unit_id: &str, alignment: &UnitAlignment, split: &AlignmentSplit)
             })
             .collect(),
     };
-    // 没有明写粒度时由 mode 推出；推出的与 `alignment.correspondence` 不同时以后者为准，明写进去。
+    // When granularity is not written explicitly, it is derived from `mode`; if the derived value differs from `alignment.correspondence`, the latter wins and is written out explicitly.
     let declared = correspondence_to_doc(alignment.correspondence);
     if entry.correspondence() != declared {
         entry.correspondence = Some(declared);
@@ -160,7 +159,7 @@ fn correspondence_from_doc(value: DocCorrespondence) -> Correspondence {
     }
 }
 
-/// `TranscriptDoc` 的置信度是 f32，正文里是 JSON 数。两边都取最短十进制写法，往返不变。
+/// The confidence in `TranscriptDoc` is an f32, while in the body it is a JSON number. Both sides use the shortest decimal form, so round-tripping does not change it.
 fn confidence_to_doc(value: f64) -> f32 {
     format!("{value}").parse().unwrap_or(value as f32)
 }
@@ -169,7 +168,7 @@ fn confidence_from_doc(value: f32) -> f64 {
     format!("{value}").parse().unwrap_or(value as f64)
 }
 
-/// 译文的 `textHash`：自然译句 UTF-8 字节的 sha256（§5.3）。
+/// `textHash` of a translation: sha256 of the UTF-8 bytes of the natural translated sentence (§5.3).
 pub(crate) fn text_hash(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
@@ -186,7 +185,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
             return Err(BridgeError::new(format!("{table} 有语言 {lang}，trans 里没有")));
         }
     }
-    // 源句的可见词：没有底稿的对齐记录从这里取 `sourceWordIds`。
+    // The source sentence's visible words: alignment records with no base take `sourceWordIds` from here.
     let members: HashMap<String, Vec<Id>> = derive_sentences(doc, &[])
         .into_iter()
         .map(|sentence| {
@@ -239,7 +238,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
             .map(|b| b.units.iter().map(|u| (u.source_sentence_id.as_str(), u)).collect())
             .unwrap_or_default();
 
-        // 顺序：底稿里的单元保持原来的顺序；新句子按首词的位置插到第一个首词更靠后的单元之前，找不到首词的放最后。
+        // Order: units in the base keep their original order; a new sentence is inserted before the first unit whose first word comes later, based on the position of its first word; if no first word can be found, it goes last.
         let mut order: Vec<&str> = prior_body
             .into_iter()
             .flat_map(|b| b.units.iter().map(|u| u.source_sentence_id.as_str()))
@@ -287,7 +286,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
                     sentence_words,
                 )?),
                 None => match prior {
-                    // 底稿的对齐没有显示切分：照用，译句改了只更新 textHash。
+                    // The base alignment has no explicit segmentation: keep it as is; if the translated sentence changed, only update the textHash.
                     Some(p) => match &p.alignment {
                         None => None,
                         Some(a) if a.split.is_none() => {
@@ -354,7 +353,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
     Ok((bodies, removed))
 }
 
-/// 没有显示切分时的句级对应记录（与翻译流程写的相同）。
+/// Sentence-level correspondence record used when there is no explicit segmentation (same as the translation flow writes).
 fn sentence_alignment(source_word_ids: Vec<Id>, natural: &str) -> UnitAlignment {
     UnitAlignment {
         basis: AlignmentBasis::Natural,
@@ -373,7 +372,7 @@ fn alignment_from(
     natural: &str,
     sentence_words: impl Fn() -> Vec<Id>,
 ) -> Result<UnitAlignment, BridgeError> {
-    // 片与块的源侧下标所指的词：有词锚时就是词锚；没有时沿用底稿的 sourceWordIds，再没有就是源句现在的可见词。
+    // The words pointed to by the source-side indices of pieces and blocks: if there are word anchors, those are the words; otherwise use the base's sourceWordIds; failing that, the source sentence's currently visible words.
     let source_word_ids = if !entry.words.is_empty() {
         entry.words.clone()
     } else if let Some(prior) = prior {
@@ -398,7 +397,7 @@ fn alignment_from(
             start: block.tgt.0 as u64,
             end: block.tgt.1 as u64,
         };
-        // 底稿同一位置的块范围没变时沿用它的 ID 与扩展字段。
+        // If the block range at the same position in the base is unchanged, keep its ID and extension fields.
         let same = prior
             .and_then(|p| p.blocks.get(i))
             .filter(|p| p.source_word_range == range && p.target_text_range == target);

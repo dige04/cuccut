@@ -1,8 +1,8 @@
-//! 转写文档的正文 `cuccut.speech/1`（视频格式规范 §5.2）。
+//! Body of a transcript document, `cuccut.speech/1` (video format spec §5.2).
 //!
-//! 字段与 TS 写入方（转写流程、旧项目导入）写出的形状一一对应；这里不认识的字段收进 `extra`，
-//! 写回时原样带上（§1.4）。可以是 `null` 的字段（`engine`、`createdAt`、`sentences`、说话人的 `hue`）
-//! 区分「没有这个字段」与「值为 null」，读进来再写出去逐字相同。
+//! The shapes correspond one-to-one with what the TS writers (the transcription pipeline and old-project import) write; fields not recognized here are collected into `extra`,
+//! and are carried back unchanged on write-back (§1.4). Fields that may be `null` (`engine`, `createdAt`, `sentences`, the speaker's `hue`)
+//! distinguish “no such field” from “value is null”, so a value read in and written back out is identical byte for byte.
 
 use std::collections::BTreeMap;
 
@@ -20,10 +20,10 @@ pub struct SpeechBody {
     pub schema: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clock: Option<String>,
-    /// 每秒的刻度数；读的时候没有就按 1 000 000（与 TS 读者相同）。
+    /// Ticks per second; when reading and it is absent, 1 000 000 is used (same as the TS readers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timescale: Option<i64>,
-    /// 识别引擎的说明，内容开放：转写流程写 Provider 与模型，旧项目导入写旧格式的引擎对象，或 null。
+    /// Description of the recognition engine, open content: the transcription pipeline writes the provider and model, old-project import writes the engine object in the old format, or null.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present")]
     pub engine: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present")]
@@ -31,24 +31,24 @@ pub struct SpeechBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speakers: Option<Vec<SpeechSpeaker>>,
     pub words: Vec<SpeechWord>,
-    /// 存下来的句子；null 表示句子按派生规则从词得出。
+    /// Saved sentences; null means sentences are derived from words by the derivation rules.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present")]
     pub sentences: Option<Option<Vec<SpeechSentence>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapters: Option<Vec<SpeechChapter>>,
-    /// 用户钉的换行：词 ID → 在这个词之前断开或不断开（§5.5）。
+    /// Line breaks pinned by the user: word ID → break before this word or do not break (§5.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_breaks: Option<BTreeMap<Id, BreakPin>>,
-    /// 自动排版钉的换行，按 LayoutProfile 的 ID 分组（§5.6）；同一个词上用户的 pin 优先。
+    /// Line breaks pinned by auto-layout, grouped by LayoutProfile ID (§5.6); on the same word, the user's pin takes precedence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_breaks: Option<BTreeMap<String, BTreeMap<Id, BreakPin>>>,
-    /// 源字幕排版用的 LayoutProfile；没有这个字段时是 `default`（§5.6）。
+    /// The LayoutProfile used for source caption layout; when this field is absent it is `default` (§5.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_profile_id: Option<String>,
-    /// 用户钉的分段：这些词开始一个新段落，也是句子的边界（§5.5）。
+    /// Segments pinned by the user: these words start a new paragraph, and are also sentence boundaries (§5.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paragraph_breaks: Option<Vec<Id>>,
-    /// 各处理阶段提交时的指纹，用来判断之后有没有人工修改（§5.5）。
+    /// Fingerprints taken when each processing stage commits, used to judge whether anyone has edited by hand since (§5.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stages: Option<SpeechStages>,
     #[serde(flatten)]
@@ -70,7 +70,7 @@ pub struct SpeechSpeaker {
 #[serde(rename_all = "camelCase")]
 pub struct SpeechWord {
     pub id: Id,
-    /// 源时间，单位是正文的 `timescale`。
+    /// Source time, in units of the body's `timescale`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,7 +82,7 @@ pub struct SpeechWord {
     pub hidden: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing_quality: Option<TimingQuality>,
-    /// 这个词与前一个词之间不加空格，不论拼接规则怎么判（§5.2）。
+    /// No space between this word and the previous word, regardless of how the joining rules judge it (§5.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glue: Option<bool>,
     #[serde(flatten)]
@@ -132,26 +132,26 @@ pub enum BreakPin {
     NoBreak,
 }
 
-/// 阶段指纹（§5.5）。指纹的写法由写入它的引擎决定，这里只原样保存。
+/// Stage fingerprint (§5.5). The fingerprint's form is decided by the engine that wrote it; here it is only stored as is.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeechStages {
-    /// 转写完成时文本的指纹。
+    /// Fingerprint of the text when transcription completed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asr: Option<String>,
-    /// 转写完成时换行、分段与隐藏的指纹。
+    /// Fingerprint of line breaks, segments and hidden items when transcription completed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asr_layout: Option<String>,
-    /// 润色提交时文本的指纹。
+    /// Fingerprint of the text when the polish was committed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub polish: Option<String>,
-    /// 分段提交时词 ID 序列的指纹。
+    /// Fingerprint of the word ID sequence when segments were committed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment: Option<String>,
-    /// 章节提交时文本的指纹。
+    /// Fingerprint of the text when chapters were committed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapters: Option<String>,
-    /// 词时间来自文稿强制对齐而不是识别。
+    /// Word times come from forced alignment of the script rather than from recognition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aligned: Option<AlignedStage>,
     #[serde(flatten)]
@@ -161,18 +161,18 @@ pub struct SpeechStages {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlignedStage {
-    /// 目前只有 `script`。
+    /// Currently only `script`.
     pub mode: String,
-    /// 对齐到有效时长的字符占文稿字符的比例，0–1。
+    /// The proportion of script characters that align to valid durations, 0–1.
     pub coverage: f64,
-    /// 时长塌成 0、需要复核的词。
+    /// Words whose duration collapsed to 0 and need review.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_confidence: Option<Vec<Id>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-/// 字段出现了就是 `Some`，值为 null 时是 `Some(None)` 或 `Some(Value::Null)`；没有这个字段时由 `default` 给 `None`。
+/// When the field is present it is `Some`; when the value is null it is `Some(None)` or `Some(Value::Null)`; when the field is absent, `default` gives `None`.
 pub(crate) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -181,10 +181,10 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-/// 只核对本规范为 `cuccut.speech/1` 补充的字段（§5.2）：它们出现时形状必须对。别的字段不在这里校验，
-/// 已有的写入方照常可以写。
+/// Checks only the fields this spec adds for `cuccut.speech/1` (§5.2): when they appear, their shape must be correct. Other fields are not validated here,
+/// and existing writers may keep writing them as usual.
 pub fn speech_body_problems(body: &Value) -> Vec<Text> {
-    // 这些结构只用来核对形状：读得进来就对，有的字段读进来之后不再看。
+    // These structs are used only to check shape: if it reads in, it is correct; some fields are not looked at after reading.
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(dead_code)]

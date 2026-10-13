@@ -1,4 +1,4 @@
-//! `~` 词锚点求值（§5.2 / §18.6）：引用窗口收集、mapToDoc、四类错误与帧对齐。
+//! `~` word-anchor evaluation (§5.2 / §18.6): reference window collection, mapToDoc, four kinds of error, and frame alignment.
 
 use scene_primitives::{CoreWord, HostInputs, Resolver};
 use serde_json::{Value, json};
@@ -11,7 +11,7 @@ fn word(id: &str, t0: f64, t1: f64) -> CoreWord {
     }
 }
 
-/// interview（video，footage clip 引用，rate 2）+ voice（audio clip 引用）。
+/// interview (video, footage clip reference, rate 2) + voice (audio clip reference).
 fn doc() -> Value {
     json!({
         "meta": { "id": "w", "width": 1920, "height": 1080, "fps": 30 },
@@ -39,12 +39,12 @@ fn inputs() -> HostInputs {
     let mut inputs = HostInputs::default();
     inputs.insert_video("interview", 1280.0, 720.0, 60.0, 30.0);
     inputs.insert_audio("voice", 30.0);
-    // voice 源时基：g1.1 在窗口 [5, 15) 内；g1.2 在窗口外
+    // voice source timebase: g1.1 is within the window [5, 15); g1.2 is outside the window
     inputs.insert_transcript(
         "voice",
         vec![word("g1.1", 6.0, 6.5), word("g1.2", 20.0, 21.0)],
     );
-    // interview 源时基：footage 窗口覆盖源 [10, 10+6×2=22)
+    // interview source timebase: the footage window covers source [10, 10+6×2=22)
     inputs.insert_transcript("interview", vec![word("g2.1", 12.0, 13.0)]);
     inputs
 }
@@ -64,7 +64,7 @@ fn audio_ref_word_anchor_maps_to_doc_time() {
     assert!((v - 3.0).abs() < 1e-9, "{v}");
     let v = r.eval_t(&json!("~voice:g1.1:end")).unwrap().unwrap();
     assert!((v - 3.5).abs() < 1e-9, "{v}");
-    // 偏移后对齐 1/fps 网格（§5.4）
+    // After the offset, aligned to the 1/fps grid (§5.4)
     let v = r.eval_t(&json!("~voice:g1.1:end-0.2")).unwrap().unwrap();
     let expected = (3.3f64 * 30.0).round() / 30.0;
     assert!((v - expected).abs() < 1e-9, "{v}");
@@ -80,7 +80,7 @@ fn video_ref_word_anchor_respects_playback_rate() {
     // docTime = 4 + (12 − 10) / 2 = 5；end = 4 + (13 − 10) / 2 = 5.5
     let v = r.eval_t(&json!("~interview:g2.1")).unwrap().unwrap();
     assert!((v - 5.0).abs() < 1e-9, "{v}");
-    let v = r.eval_t(&json!("~footage:g2.1:end")).unwrap().unwrap(); // clip 限定等价
+    let v = r.eval_t(&json!("~footage:g2.1:end")).unwrap().unwrap(); // clip-qualified form is equivalent
     assert!((v - 5.5).abs() < 1e-9, "{v}");
 }
 
@@ -121,7 +121,7 @@ fn unknown_word_and_unknown_ref_are_time_ref_unknown() {
 fn missing_transcript_fails_resolution_and_lint() {
     let mut d = doc();
     d["tracks"][0]["clips"][0]["start"] = json!("~voice:g1.1");
-    // 只注入媒体元数据，不注入词表
+    // Only media metadata is injected, not the word table
     let mut r = Resolver::new(d.clone(), None).unwrap();
     let mut media_only = HostInputs::default();
     media_only.insert_video("interview", 1280.0, 720.0, 60.0, 30.0);
@@ -138,7 +138,7 @@ fn missing_transcript_fails_resolution_and_lint() {
         diags.iter().any(|x| x.rule == "word-anchor-no-transcript"),
         "{diags:?}"
     );
-    // 注入词表后 lint 干净
+    // After injecting the word table, lint is clean
     let diags = scene_primitives::lint::lint_with_inputs(&d, Some(&inputs()));
     assert!(
         !diags
@@ -160,7 +160,7 @@ fn multiple_reference_points_are_ambiguous_unless_clip_qualified() {
     let r = resolved(d, inputs());
     let err = r.eval_t(&json!("~interview:g2.1")).unwrap_err().to_string();
     assert!(err.starts_with("word-anchor-ambiguous"), "{err}");
-    // clip 限定消歧
+    // clip-qualified disambiguation
     let v = r.eval_t(&json!("~footage-2:g2.1")).unwrap().unwrap();
     assert!((v - 11.0).abs() < 1e-9, "{v}");
 }
@@ -168,7 +168,7 @@ fn multiple_reference_points_are_ambiguous_unless_clip_qualified() {
 #[test]
 fn media_and_clip_name_clash_is_rejected() {
     let mut d = doc();
-    d["tracks"][1]["clips"][0]["id"] = json!("voice"); // clip 与媒体同名
+    d["tracks"][1]["clips"][0]["id"] = json!("voice"); // clip and media share a name
     let r = resolved(d, inputs());
     let err = r.eval_t(&json!("~voice:g1.1")).unwrap_err().to_string();
     assert!(err.starts_with("word-anchor-name-clash"), "{err}");
@@ -177,7 +177,7 @@ fn media_and_clip_name_clash_is_rejected() {
 #[test]
 fn eval_t_aligns_to_frame_grid() {
     let r = resolved(doc(), inputs());
-    // 0.111s @30fps → 3.33 帧 → round 3 → 0.1s
+    // 0.111s @30fps → 3.33 frames → round to 3 → 0.1s
     let v = r.eval_t(&json!(0.111)).unwrap().unwrap();
     assert!((v - 0.1).abs() < 1e-9, "{v}");
 }

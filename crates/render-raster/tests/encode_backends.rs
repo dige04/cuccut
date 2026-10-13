@@ -1,17 +1,13 @@
-//! `media` 门内：本文件用 `video::VideoWriter` / `FfmpegWriter`（host 字节层），
-//! `wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `video::VideoWriter` / `FfmpegWriter` (the host byte layer) and does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! 成片编码后端选择的验收（WP6b）：写出 MP4 的到底是平台原生还是 ffmpeg。
+//! Acceptance for the final-render encoder backend selection (WP6b): whether the MP4 is written by the native platform encoder or by ffmpeg.
 //!
-//! 与 `decode_backends.rs` 对称。按 `docs/design/bcf/cuccut-format-spec.md` §15.1，
-//! **导出编码的字节不承诺可复现**，所以这里断言的是选择规则、产物存在性、
-//! 几何、时长容差与后端标识——不做像素 golden。
+//! Symmetric with `decode_backends.rs`. Per `docs/design/bcf/cuccut-format-spec.md` §15.1, **the bytes of an exported encode are not promised to be reproducible**, so what is asserted here is the selection rule, that the artifact exists, its geometry, the duration tolerance and the backend identifier — no pixel golden.
 //!
-//! - macOS / Windows，偶数画布 → 平台原生（AVFoundation / Media Foundation）
-//! - Linux（`media_native::encode_available()` 为 false）→ ffmpeg 兜底
-//! - ffmpeg 兜底路径本身仍要写得出合规 MP4（原生路径接管之后它没有日常流量，
-//!   更需要一条钉住它的测试）
+//! - macOS / Windows, even canvas → platform native (AVFoundation / Media Foundation)
+//! - Linux (`media_native::encode_available()` is false) → ffmpeg fallback
+//! - The ffmpeg fallback path must still write a compliant MP4 on its own (once the native path takes over it has no routine traffic, so it especially needs a test that pins it)
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -34,7 +30,7 @@ fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
-/// 一帧渐变：亮度随帧号推进，编码器不至于把整片压成一个静止 GOP。
+/// A gradient per frame: brightness advances with the frame number, so the encoder does not compress the whole clip into one static GOP.
 fn frame(index: usize) -> Vec<u8> {
     let level = (index * 3 % 200 + 40) as u8;
     let mut data = Vec::with_capacity(WIDTH as usize * HEIGHT as usize * 4);
@@ -64,7 +60,7 @@ fn the_writer_picks_the_platform_backend_when_one_exists() {
     let out = dir.path().join("native.mp4");
     let mut writer = match VideoWriter::open(&out, WIDTH, HEIGHT, FPS, None) {
         Ok(writer) => writer,
-        // 既没有原生编码器又没有 ffmpeg：按仓库礼节跳过。
+        // Neither a native encoder nor ffmpeg is available: skip, per repository convention.
         Err(_) => {
             eprintln!("跳过：本机既无原生编码器也无 ffmpeg");
             return;
@@ -103,8 +99,7 @@ fn the_ffmpeg_fallback_still_writes_a_conforming_mp4() {
     assert_playable(&out);
 }
 
-/// 后端标识的取值闭集：诊断输出与 `ccut render --json` 的 `encodeBackend`
-/// 都读它，别名漂移会静默破坏客户端的判定。
+/// The closed set of backend identifier values: diagnostic output and `encodeBackend` in `ccut render --json` both read it; alias drift would silently break clients' checks.
 #[test]
 fn the_backend_label_is_one_of_the_three_known_values() {
     let backend = if media_native::encode_available() {

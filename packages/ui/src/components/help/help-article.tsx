@@ -9,8 +9,7 @@ import { quickStart, type HelpCta, type HelpGuide } from '../../model/help-guide
 import { GuideIcon, detail, eyebrow } from './help-guide-list.tsx';
 
 /**
- * 一篇指南（原型 help-center.jsx 的 `article`）：返回、标题、编号步骤、提示、去做的按钮与说明、
- * 快速上手里接着读下一篇。
+ * One guide (prototype help-center.jsx `article`): back, title, numbered steps, tips, a button to go and do it with its note, and, in the quick start, the next guide to read.
  */
 export function HelpArticle({
   guide,

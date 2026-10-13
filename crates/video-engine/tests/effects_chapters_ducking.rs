@@ -1,4 +1,4 @@
-//! 效果（`fx`）与裁剪、章节、闪避规则，以及版本门：只读写版本 3（视频格式规范 §1.4、§3.5、§3.8、§3.9、§3.13）。
+//! Effects (`fx`) with their trim, chapter, and ducking rules, and the version gate: only reads and writes version 3 (video format spec §1.4, §3.5, §3.8, §3.9, §3.13).
 
 #![allow(clippy::result_large_err)]
 
@@ -79,7 +79,7 @@ struct Fixture {
     _dir: tempfile::TempDir,
 }
 
-/// V1 上一段文字 [0,90)，V2 上一个代码包合成 [0,90)（合成有自己的声音）。没有媒体，不需要 ffprobe。
+/// A text clip [0,90) on V1, and a code bundle composition [0,90) on V2 (the composition has its own sound). No media, so no ffprobe is needed.
 fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let bundle = dir.path().join("scene");
@@ -150,7 +150,7 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
     assert_eq!(committed.receipt.label, "Edit effects");
     assert_eq!(fx_json(&video, &counter), fx);
 
-    // 整个替换：没给的字段去掉。
+    // Whole replacement: fields that are not given are removed.
     apply(
         &mut video,
         "cmd_fx2",
@@ -161,13 +161,13 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
 
     let before = video.revision();
     for (n, op) in [
-        // 文字的描边、阴影在 style 里，不用 fx。
+        // The text's outline and shadow are in style, not in fx.
         json!({ "type": "setEffects", "itemId": text, "fx": { "blur": 1 } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "brightness": 2 } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "blur": 101 } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "gamma": 1 } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "filterPreset": "no-such-filter" } }),
-        // 预设名没有下划线：`calm1`，不是 `calm_1`（协议的类型与它一致）。
+        // A preset name has no underscore: `calm1`, not `calm_1` (the protocol's type matches it).
         json!({ "type": "setEffects", "itemId": counter, "fx": { "filterPreset": "calm_1" } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "temperature": 1.5 } }),
         json!({ "type": "setEffects", "itemId": counter, "fx": { "stroke": { "width": 101, "color": "#FFFFFF" } } }),
@@ -185,7 +185,7 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
     }
     assert_eq!(video.revision(), before);
 
-    // 去掉，再撤销。空的 fx 不写出来。
+    // Remove, then undo. An empty fx is not written out.
     let cleared = apply(
         &mut video,
         "cmd_clear",
@@ -205,7 +205,7 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
     undo(&mut video, "cmd_undo", &cleared).unwrap();
     assert_eq!(fx_json(&video, &counter)["filterPreset"], "calm1");
 
-    // 锁定的片段不能改效果。
+    // A locked clip cannot have its effects changed.
     apply(
         &mut video,
         "cmd_lock",
@@ -264,7 +264,7 @@ fn insert_items_validates_fx_against_the_element_model() {
     }
 }
 
-/// 2 秒 30 fps 的视频，没有声音。
+/// A 2-second, 30 fps video with no sound.
 fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
     let dir = tempfile::tempdir().ok()?;
     let path = dir.path().join("clip.mp4");
@@ -380,11 +380,11 @@ fn chapters_are_set_upserted_and_removed() {
     assert_eq!(list[1]["summary"], "讲重点");
     let second = list[1]["id"].as_str().unwrap().to_string();
 
-    // 章节固定在序列时间上：移动实例不动它。
+    // Chapters are fixed on sequence time: moving an instance does not move them.
     apply(&mut video, "cmd_move", vec![json!({ "type": "moveItem", "sequenceId": s, "itemId": text, "at": { "unit": "frames", "value": 200 }, "alignment": "exact-frame" })]).unwrap();
     assert_eq!(chapters(&video)[1]["frame"], 30);
 
-    // 修改：只改给出的字段；null 去掉简介。
+    // Modify: only the given fields change; null removes the description.
     let upsert = json!({ "type": "upsertChapter", "sequenceId": s, "chapterId": second, "title": "第二章", "summary": null,
                          "at": { "unit": "frames", "value": 45 }, "alignment": "exact-frame" });
     let updated = apply(&mut video, "cmd_upsert", vec![upsert]).unwrap();
@@ -395,7 +395,7 @@ fn chapters_are_set_upserted_and_removed() {
         (Some(45), Some("第二章"), None)
     );
 
-    // 新建一章，排在中间。
+    // Create a new chapter, placed in the middle.
     let created = apply(
         &mut video,
         "cmd_new",
@@ -410,14 +410,14 @@ fn chapters_are_set_upserted_and_removed() {
 
     let before = video.revision();
     for (n, op) in [
-        // 开始帧要严格递增。
+        // Start frames must strictly increase.
         json!({ "type": "setChapters", "sequenceId": s, "alignment": "exact-frame", "chapters": [
             { "at": { "unit": "frames", "value": 10 }, "title": "a" }, { "at": { "unit": "frames", "value": 10 }, "title": "b" }] }),
         json!({ "type": "setChapters", "sequenceId": s, "alignment": "exact-frame", "chapters": [{ "at": { "unit": "frames", "value": 0 }, "title": "  " }] }),
         json!({ "type": "setChapters", "sequenceId": s, "alignment": "exact-frame", "chapters": [{ "chapterId": "chap_missing", "at": { "unit": "frames", "value": 0 }, "title": "a" }] }),
-        // 同一帧已经有一章。
+        // A chapter already exists on the same frame.
         json!({ "type": "upsertChapter", "sequenceId": s, "at": { "unit": "frames", "value": 45 }, "alignment": "exact-frame", "title": "撞了" }),
-        // 给 at 要写 alignment；新建要有 title。
+        // Giving “at” requires an alignment; creating a chapter requires a title.
         json!({ "type": "upsertChapter", "sequenceId": s, "chapterId": second, "at": { "unit": "frames", "value": 50 } }),
         json!({ "type": "upsertChapter", "sequenceId": s, "at": { "unit": "frames", "value": 50 }, "alignment": "exact-frame" }),
         json!({ "type": "removeChapter", "chapterId": "chap_missing" }),
@@ -435,7 +435,7 @@ fn chapters_are_set_upserted_and_removed() {
     assert_eq!(removed.receipt.deleted_ids, vec![second]);
     assert_eq!(removed.receipt.label, "Delete chapter");
 
-    // 章节不受锁定约束。
+    // Chapters are not subject to lock restrictions.
     let v1 = track(&video, "V1");
     apply(
         &mut video,
@@ -479,7 +479,7 @@ fn ducking_rules_are_validated_and_undoable() {
         (json!({ "ticks": "1", "timescale": 50 }), json!({ "ticks": "7", "timescale": 20 }))
     );
 
-    // 改成按文稿触发：有人说话时压低。
+    // Changed to be triggered by the script: lower the volume when someone is speaking.
     let changed = apply(
         &mut video,
         "cmd_change",
@@ -518,7 +518,7 @@ fn ducking_rules_are_validated_and_undoable() {
     let rule = &video.snapshot().sequences[&s].ducking[0];
     assert_eq!((rule.depth, rule.trigger.group().is_some()), (10.0, true));
 
-    // 目标在锁定的轨道上：不能改，也不能删。
+    // The target is on a locked track: it cannot be changed or deleted.
     let v2 = track(&video, "V2");
     apply(
         &mut video,
@@ -561,7 +561,7 @@ fn ducking_groups_follow_splits_and_survive_deletions() {
     .unwrap();
     let id = video.snapshot().sequences[&s].ducking[0].id.clone();
 
-    // 拆开被点名的实例：右半也在目标组里，紧跟在左半后面。
+    // Split the named instance: the right half is also in the target group, right after the left half.
     let split = apply(
         &mut video,
         "cmd_split",
@@ -575,7 +575,7 @@ fn ducking_groups_follow_splits_and_survive_deletions() {
         vec![counter.clone(), right.clone()]
     );
 
-    // 删掉右半：规则里那一项留着（渲染时不匹配），规则的其他字段照样能改。
+    // Delete the right half: the rule's entry for it stays (it does not match at render time), and the rule's other fields can still be changed.
     apply(&mut video, "cmd_delete", vec![json!({ "type": "deleteItems", "itemIds": [right] })]).unwrap();
     apply(
         &mut video,
@@ -584,7 +584,7 @@ fn ducking_groups_follow_splits_and_survive_deletions() {
     )
     .unwrap();
     assert!(!video.snapshot().sequences[&s].ducking[0].enabled);
-    // 重新给出的组仍要全部存在。
+    // A group that is given again must all still exist.
     assert_eq!(
         code(apply(
             &mut video,
@@ -595,7 +595,7 @@ fn ducking_groups_follow_splits_and_survive_deletions() {
     );
 }
 
-/// 版本门（视频格式规范 §1.4）：只读写版本 3。版本 1、2 是元素模型之前的格式，说明原因并拒绝；更新的版本也拒绝。
+/// Version gate (video format spec §1.4): only reads and writes version 3. Versions 1 and 2 are formats from before the element model; they are rejected with the reason explained. Newer versions are rejected too.
 #[test]
 fn only_version_three_videos_open() {
     let Fixture { video, _dir, .. } = fixture();

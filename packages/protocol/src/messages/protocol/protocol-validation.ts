@@ -14,9 +14,9 @@ import { pl } from './protocol-validation.pl.ts';
 import { tr } from './protocol-validation.tr.ts';
 import { vi } from './protocol-validation.vi.ts';
 
-/** 入站参数与清单校验的说明（zod schema 的 issue、模板与 skill 的路径检查、JSON Schema 编译）。 */
+/** Descriptions for inbound parameter and manifest validation (zod schema issues, template and skill path checks, JSON Schema compilation). */
 const en = {
-  /** 把几项连成一串时的分隔符。 */
+  /** Separator used when joining several items into one line. */
   listSeparator: ', ',
   notEmpty: "Can't be empty",
   noSurroundingSpace: "Can't start or end with whitespace",

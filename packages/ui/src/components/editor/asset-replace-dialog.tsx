@@ -33,10 +33,8 @@ import { useEditorActions } from './editor-context.tsx';
 import { MEDIA_COPY as MC } from './media-copy.ts';
 
 /**
- * 替换素材（设计稿 video-replace.jsx 的 `VideoReplaceDialog`，搬到素材库这一层）：左边是正在替换的素材与它用在哪几段，
- * 右边从视频素材里挑一份同类的，或选一个本地文件（同一笔事务里导入）。时间规则见 model/asset-replace.ts；确认后一笔提交，
- * 撤销一步回去。设计稿的「同时改视频画幅」不在这里：协议里改画幅是另一件事，替换只换素材。
- * 从画布工具条打开时带 `itemId`：只换选中的那一段（设计稿 `openVideoReplace(el.id)`），左边的说明随之改成这一段。
+ * Replace asset (design mockup video-replace.jsx `VideoReplaceDialog`, moved to the asset library layer): on the left, the asset being replaced and where it is used; on the right, pick a same-type video asset or choose a local file (imported in the same transaction). Timing rules are in model/asset-replace.ts. Confirming commits one transaction, and undo steps back. The mockup's “also change the video's aspect ratio” is not here: in the protocol, changing the aspect ratio is a separate operation, and replace only swaps the asset.
+ * Opened from the canvas toolbar with `itemId`: only the selected clip is replaced (mockup `openVideoReplace(el.id)`), and the explanation on the left changes to describe that clip.
  */
 
 const KIND_ICON: Record<PlaceableKind, ComponentType<{ slot?: string }>> = { video: Video, image: Image, audio: MusicNote };
@@ -118,12 +116,12 @@ export interface AssetReplaceDialogProps {
   asset: AssetRecord & { kind: PlaceableKind };
   sequence: Sequence;
   assets: Record<string, AssetRecord>;
-  /** 只换这一段（画布工具条）；缺省换掉用到这个素材的每一段。 */
+  /** Replace only this clip (canvas toolbar); by default, every clip that uses this asset is replaced. */
   itemId?: Id;
   onClose(): void;
 }
 
-/** 一个素材的替换窗口。状态放在 Dialog 外层（S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍）。 */
+/** The replace window for one asset. State lives outside the Dialog (S2's Dialog renders its children in several slots). */
 export function AssetReplaceDialog({ asset, sequence, assets, itemId, onClose }: AssetReplaceDialogProps) {
   const runtime = useRuntime();
   const { apply, undo } = useEditorActions();
@@ -134,7 +132,7 @@ export function AssetReplaceDialog({ asset, sequence, assets, itemId, onClose }:
   const [file, setFile] = useState<{ path: string; name: string; kind: PlaceableKind | null } | null>(null);
   const [align, setAlign] = useState(false);
   const [busy, setBusy] = useState(false);
-  // 提交时把两份计划定住：事务落地后序列先变、窗口后关，不定住会闪一下「没用到这个素材」。
+  // Lock both plans at submit time: once the transaction lands, the sequence changes first and the window closes later; without the lock, it would flicker “asset not used”.
   const [frozen, setFrozen] = useState<{ plan: AssetReplacePlan; precheck: AssetReplacePlan } | null>(null);
 
   const candidates = useMemo(() => libraryAssets(assets, asset.kind).filter((a) => a.id !== asset.id), [assets, asset.id, asset.kind]);
@@ -143,7 +141,7 @@ export function AssetReplaceDialog({ asset, sequence, assets, itemId, onClose }:
   const source: ReplaceSource | null =
     tab === 'library' ? (pick ? { from: 'library', asset: pick } : null) : file ? { from: 'file', path: file.path, name: file.name, kind: file.kind } : null;
   const plan = frozen?.plan ?? (source ? planAssetReplace({ sequence, asset, source, align, itemId }) : null);
-  // 不管换成什么都会被拒的情形（都锁着、没用到）在选之前就说。
+  // Cases where any choice would be rejected (all locked, or not used) are stated before selecting.
   const precheck = frozen?.precheck ?? planAssetReplace({ sequence, asset, source: { from: 'file', path: '', name: '', kind: asset.kind }, itemId });
   const blocked = !precheck.ok ? precheck.reason : null;
   const sideEffects = plan ? replaceSideEffects(plan) : [];

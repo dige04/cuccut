@@ -7,8 +7,8 @@ import { ToolPage } from './tool-parts.tsx';
 import { PLANNED_COPY } from './tools-copy.ts';
 
 /**
- * 还没有后端的工具（字幕翻译）：深链进来时如实说「即将推出」和为什么，不画能操作的表单
- * （设计稿 tool-llm.jsx 的表单要等能力接进来）。
+ * A tool with no backend yet (subtitle translation): when deep-linked to, it honestly says “即将推出” (Coming soon) and why, and does not draw an operable form
+ * (the form in design file tool-llm.jsx waits until the capability is connected).
  */
 export function PlannedTool({ tool, reason }: { tool: ToolInfo; reason: string }) {
   const go = useShell((s) => s.go);

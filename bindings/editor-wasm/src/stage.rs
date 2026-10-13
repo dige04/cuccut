@@ -1,7 +1,6 @@
-//! 舞台的框：界面摆实例、改框、属性面板的位置与尺寸都经这里，算法是帧计划画层用的那一份（`render_graph::item_box`）。
+//! Stage boxes: the UI's instance placement, box resizing, and the position and size in the property panel all go through here. The algorithm is the same one the frame-plan layer uses (`render_graph::item_box`).
 //!
-//! 输入只读推框要看的字段，别的字段（`span`、文字、样式……）不管，新建之前的草稿层也能算。素材只传实例引用的那一个，
-//! 合成传预渲染：`{ kind, video?: { displayWidth, displayHeight, pixelAspectRatio } }`。
+//! The input reads only the fields that box-pushing needs; other fields (`span`, text, style…) are ignored, so it also works for draft layers before they are created. Pass only the asset that the instance references; for compositions pass the pre-rendered form: `{ kind, video?: { displayWidth, displayHeight, pixelAspectRatio } }`.
 
 use editor_semantics::Rate;
 use render_graph::item_box::{
@@ -29,7 +28,7 @@ struct ItemInput {
     crop: Option<Crop>,
 }
 
-/// 图形与贴纸只有一个字段参与框：图形的 `h`（画幅高 %），贴纸的 `templateId`（`box` 的高是宽的 0.62）。
+/// Only one field of a graphic or sticker takes part in the box: the graphic's `h` (frame height %), the sticker's `templateId` (the `box` height is 0.62 of its width).
 #[derive(Deserialize)]
 struct ShapeInput {
     #[serde(default)]
@@ -43,7 +42,7 @@ struct StickerInput {
     template_id: Option<String>,
 }
 
-/// 推框用的图形与贴纸属性：只填参与框的那个字段，别的留空。
+/// Graphic and sticker properties for box-pushing: fill only the field that takes part in the box, leave the others empty.
 struct Props {
     shape: Option<ShapeProps>,
     sticker: Option<StickerProps>,
@@ -86,7 +85,7 @@ struct Canvas {
     height: f64,
 }
 
-/// 界面的框：中心、未旋转的宽高（画布像素）、角度（度）。
+/// The UI box: center, unrotated width and height (canvas pixels), angle (degrees).
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Pose {
@@ -129,7 +128,7 @@ struct BoxOutput {
     pose: Pose,
     flip_x: bool,
     flip_y: bool,
-    /// 铺满画布：框不看 `place` 的位置与大小，只能转。
+    /// Fill the canvas: the box ignores `place`'s position and size and can only rotate.
     fullscreen: bool,
 }
 
@@ -176,7 +175,7 @@ pub fn stage_box(input: &[u8]) -> Result<String, EntryError> {
     Ok(serde_json::to_string(&output(b)).expect("框总能序列化"))
 }
 
-/// `{ item, asset?, canvas, pose }` → 要写进 `place` 的字段（`x` / `y` / `w` / `scaleY` / `rot`，只有变了的）。
+/// `{ item, asset?, canvas, pose }` → the `place` fields to write (`x` / `y` / `w` / `scaleY` / `rot`, only those that changed).
 pub fn stage_place(input: &[u8]) -> Result<String, EntryError> {
     let request: PlaceRequest = serde_json::from_slice(input).map_err(invalid_input)?;
     let pose = BoxPose {
@@ -194,7 +193,7 @@ pub fn stage_place(input: &[u8]) -> Result<String, EntryError> {
     Ok(serde_json::to_string(&change).expect("字段总能序列化"))
 }
 
-/// `{ type }` → 这个种类的缺省落位 `{ x, y, w }`。
+/// `{ type }` → the default placement `{ x, y, w }` for this kind.
 pub fn place_default(input: &[u8]) -> Result<String, EntryError> {
     let request: DefaultsRequest = serde_json::from_slice(input).map_err(invalid_input)?;
     Ok(serde_json::to_string(&place_defaults(request.kind)).expect("落位总能序列化"))

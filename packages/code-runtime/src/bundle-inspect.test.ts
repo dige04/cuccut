@@ -30,7 +30,7 @@ afterAll(() => {
   for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** 在临时目录里按 { 相对路径: 内容 } 写一棵树。 */
+/** Writes a tree in a temporary directory from { relative path: content }. */
 function tree(files: Record<string, string | Buffer>): string {
   const dir = tmp();
   for (const [rel, content] of Object.entries(files)) {
@@ -77,7 +77,7 @@ describe('listBundleFiles', () => {
     expect(await codeOf(listBundleFiles(tree({ 'index.html': SIMPLE_HTML, 'node_modules/x/index.js': '' })))).toBe(
       'BUNDLE_FILE_NOT_ALLOWED',
     );
-    // 扩展名不分大小写；按名字放行的固定文件。
+    // Extensions are case-insensitive. Fixed files are allowed by name.
     const ok = await listBundleFiles(tree({ 'INDEX.HTML': SIMPLE_HTML, 'build.recipe.json': '{}', 'dependency.lock': '' }));
     expect(ok).toHaveLength(3);
   });
@@ -103,10 +103,10 @@ describe('computeContentHash', () => {
       size: 1,
       sha256: sha(p),
     }));
-    // 键顺序打乱、顺序打乱，结果不变。
+    // Shuffling the key order or the order of entries does not change the result.
     const shuffled = [{ sha256: a.sha256, size: a.size, path: a.path }, ...unhashed, b];
     expect(computeContentHash(shuffled)).toBe(expected);
-    // 子目录里同名的文件参与摘要。
+    // Files with the same name in subdirectories take part in the digest.
     expect(computeContentHash([a, b, { path: 'sub/verification.json', size: 1, sha256: sha('x') }])).not.toBe(expected);
   });
 });
@@ -201,7 +201,7 @@ describe('inspectBundle', () => {
     const error = (await inspectBundle(dir).catch((e: unknown) => e)) as CodeBundleError;
     expect(error.code).toBe('BUNDLE_HASH_MISMATCH');
     expect(error.details).toMatchObject({ expected: expect.stringMatching(/^sha256-/), actual: expect.stringMatching(/^sha256-/) });
-    // 改清单本身或验证报告不影响摘要。
+    // Changing the manifest itself or the verification report does not affect the digest.
     const ok = await bundleWithManifest();
     fs.writeFileSync(path.join(ok, 'verification.json'), '{}');
     await expect(inspectBundle(ok)).resolves.toBeTruthy();
@@ -230,7 +230,7 @@ describe('inspectBundle', () => {
     expect(bundle.manifest.runtime).toEqual({ engine: 'browser', contract: 'hyperframes/1', entry: 'index.html', frameworkHints: [] });
     expect(bundle.manifest.output.alpha).toBe(true);
     expect(bundle.compositionId).toBe('main');
-    // files.manifest.json 的内容就是参与摘要的条目；暂存目录再检查一遍是自洽的。
+    // The entries in files.manifest.json are what take part in the digest; checking the staging directory again is self-consistent.
     const listed = JSON.parse(fs.readFileSync(path.join(staging, 'files.manifest.json'), 'utf8'));
     expect('sha256-' + sha(JSON.stringify(listed))).toBe(bundle.manifest.contentHash);
     const again = await inspectBundle(staging);
@@ -260,7 +260,7 @@ describe('inspectBundle', () => {
     const lenient = await inspectBundle(path.join(fixtures, 'network-static'), { strictNetwork: false });
     tmpDirs.push(lenient.root);
     expect(lenient.networkReferences).toHaveLength(1);
-    // 运行期才拼出来的 URL 静态扫描看不到。
+    // A URL assembled at runtime cannot be seen by static scanning.
     const runtime = await inspectBundle(path.join(fixtures, 'network-runtime'));
     tmpDirs.push(runtime.root);
     expect(runtime.networkReferences).toEqual([]);

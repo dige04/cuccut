@@ -1,16 +1,16 @@
-//! `MotionProgram` 指纹（设计 §5.3）。
+//! `MotionProgram` fingerprint (design §5.3).
 //!
-//! FNV-1a-64，不引入 `sha2`：程序指纹是**等价/调试 token**，不是内容寻址哈希；
-//! 需要内容寻址时用 `scene_primitives::fingerprint::canonical_json` 哈希
-//! `canonical_bytes()`（计划 §1.1）。
+//! FNV-1a-64. `sha2` is not introduced: the program fingerprint is an **equivalence / debugging token**, not a content-addressed
+//! hash. When content addressing is needed, hash `canonical_bytes()` with `scene_primitives::fingerprint::canonical_json`
+//! (plan §1.1).
 //!
-//! 两个指纹，职责不同：
-//! - `fingerprint()`：版本 + 时间基准 + 轨（target/property/段时间/typed 值/曲线/
-//!   插值器/composite/order）。**不含** base/post/optional/fill 与 `sources`，
-//!   这样"语义等价的 Timeline 与 BCF 文档得到同一指纹"（设计 §10 阶段 1 验收）
-//!   才可能成立——两条路径的 preset id 与 manifest hash 天然不同。
-//! - `full_fingerprint()`：再叠加 base/post/optional/fill 与 `sources`
-//!   （registry id / version / manifest hash），配方一改就变。
+//! Two fingerprints, with different responsibilities:
+//! - `fingerprint()`: version + time base + tracks (target / property / segment times / typed values / curve / interpolator /
+//!   composite / order). It **excludes** base / post / optional / fill and `sources`, so that “semantically equivalent Timeline
+//!   and BCF documents get the same fingerprint” (design §10 stage 1 acceptance) can actually hold. The two paths have different
+//!   preset ids and manifest hashes by nature.
+//! - `full_fingerprint()`: adds base / post / optional / fill and `sources` (registry id / version / manifest hash) on top, so
+//!   changing the recipe changes it.
 
 use std::fmt::Write as _;
 
@@ -31,7 +31,7 @@ pub fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// `-0.0` 归一到 `+0.0`，让 Timeline 与 BCF 两条 lowering 的零符号差异不劈开指纹。
+/// `-0.0` is normalized to `+0.0`, so that the zero-sign difference between the Timeline and BCF lowerings does not split the fingerprint.
 fn bits(value: f64) -> u64 {
     if value == 0.0 {
         0.0f64.to_bits()
@@ -55,7 +55,7 @@ fn encode_value(out: &mut String, value: &MotionValue) {
                 bits(c.a)
             );
         }
-        // 数字（含 `Discrete` 里的整数 JSON）一律编码成标量：`0` 与 `0.0` 是同一段运动。
+        // Numbers (including integer JSON inside `Discrete`) are always encoded as scalars: `0` and `0.0` are the same motion.
         other => match other.as_f64() {
             Some(n) => {
                 let _ = write!(out, "n:{:016x}", bits(n));
@@ -69,7 +69,7 @@ fn encode_value(out: &mut String, value: &MotionValue) {
 
 fn encode_curve(out: &mut String, curve: &CurveSpec) {
     match curve {
-        // `Default` 与 `Named(Linear)` 行为相同，指纹上必须相同。
+        // `Default` and `Named(Linear)` behave the same, so their fingerprints must be the same.
         CurveSpec::Default => out.push_str("c:linear"),
         CurveSpec::Named(id) => {
             let _ = write!(out, "c:{}", id.name());
@@ -113,7 +113,7 @@ fn encode_kernel(out: &mut String, kernel: &LoopKernel) {
         bits(kernel.identity),
         kernel.post,
     );
-    // 关键帧循环的补充行；波形内核此表为空，输出逐位不变。
+    // Supplementary row for the keyframe loop. The waveform kernel's table is empty here, so the output stays bit-for-bit unchanged.
     for key in &kernel.keyframes {
         let _ = writeln!(
             out,

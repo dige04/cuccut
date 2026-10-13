@@ -1,10 +1,8 @@
-//! 剪辑提案（视频格式规范 §6.2）：`proposeCuts` 按转写检测口癖与长停顿，把建议写进源素材的剪辑提案文档
-//! （`cuccut.editorial-proposal/1`，每个素材至多一份）；`acceptCutSuggestions` 把接受的建议编译成剪口
-//! （`addCuts`，`ref` 是建议的 ID），并在同一笔事务里把它们标成 `accepted`。
+//! Editorial proposals (video format spec §6.2): `proposeCuts` detects verbal tics (filler words) and long pauses from the transcript and writes the suggestions into the source asset's editorial proposal document (`cuccut.editorial-proposal/1`, at most one per asset). `acceptCutSuggestions` compiles the accepted suggestions into cut points (`addCuts`, with `ref` being the suggestion's ID), and marks them `accepted` in the same transaction.
 //!
-//! - 检测沿用 `timeline::detect`（口癖与停顿，缺省参数与旧版一致）；隐藏的词与没有时间的词不参与。重复片段没有检测器，不产出。
-//! - 已经整个落在剪口里的建议不再提出。超出素材时长的建议丢掉。
-//! - 建议记下检测读的转写版本；转写之后改过时整笔拒绝接受（`details.rule: 'proposal-stale'`），须重新提出。
+//! - Detection reuses `timeline::detect` (verbal tics and pauses; default parameters match the old version). Hidden words and words without time take no part. Repeated segments have no detector, so none are produced.
+//! - A suggestion that already lies entirely inside a cut is not proposed again. Suggestions beyond the asset's duration are dropped.
+//! - A suggestion records the transcript version that detection read. If the transcript has changed since, accepting is rejected as a whole (`details.rule: 'proposal-stale'`), and the proposal must be made again.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -27,20 +25,20 @@ use crate::model::*;
 use crate::ops::{AssetTarget, EditContext, PutDocumentInput, put_document};
 use crate::state::VideoState;
 
-/// 转写文档的 kind。
+/// The kind of a transcript document.
 const SPEECH_KIND: &str = "speech";
 
-/// `proposeCuts` 的检测参数；不给的按旧版的缺省：停顿 0.8 秒以上、压缩到 0.3 秒、3 秒以上的不算停顿，口癖按中英文、含软口癖。
+/// Detection parameters for `proposeCuts`. Those not given use the old defaults: pauses of 0.8 seconds or more, compressed to 0.3 seconds; pauses of 3 seconds or more are not counted as pauses; verbal tics cover Chinese and English, including soft tics.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DetectInput {
-    /// 检测长停顿，缺省 true。
+    /// Detect long pauses; default true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pauses: Option<bool>,
-    /// 检测口癖，缺省 true。
+    /// Detect verbal tics (filler words); default true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fillers: Option<bool>,
-    /// 十进制秒。
+    /// Decimal seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_pause: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -52,12 +50,12 @@ pub struct DetectInput {
     pub filler_language: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_fillers: Vec<String>,
-    /// 章节之间的停顿也压缩，缺省 false。
+    /// Pauses between chapters are also compressed; default false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trim_chapter_starts: Option<bool>,
 }
 
-/// 源素材的剪辑提案文档（至多一份）。
+/// The editorial proposal document of the source asset (at most one).
 pub fn proposal_document(state: &VideoState, asset_id: &str) -> Option<Id> {
     state
         .documents
@@ -67,7 +65,7 @@ pub fn proposal_document(state: &VideoState, asset_id: &str) -> Option<Id> {
         .min()
 }
 
-/// 检测读的转写：指明的，或者源素材唯一的那份转写；有几份时须指明。
+/// The transcript that detection reads: the one given, or the asset's only transcript; when there are several, one must be given.
 pub fn speech_document(state: &VideoState, asset_id: &str, explicit: Option<&str>) -> EngineResult<Id> {
     if let Some(id) = explicit {
         let record = state
@@ -105,7 +103,7 @@ pub fn speech_document(state: &VideoState, asset_id: &str, explicit: Option<&str
     }
 }
 
-/// 文档在这笔事务里的正文：先写过的以写过的为准，否则是事务之外读出的。
+/// The document's body within this transaction: a body written earlier takes precedence; otherwise it is the body read outside the transaction.
 fn body_of(ctx: &EditContext<'_>, id: &str) -> EngineResult<Value> {
     match ctx.documents.iter().rev().find(|d| d.document_id == id) {
         Some(written) => serde_json::from_str(&written.body).map_err(|e| ErrorBody::storage(msg!(
@@ -129,7 +127,7 @@ fn seconds(text: &Option<String>, field: &str, default: f64) -> EngineResult<f64
     }
 }
 
-/// 检测参数按旧版的规则核对：停顿长度为正，压缩后的长度小于最短停顿，最长停顿大于最短停顿；两样都不检测时没有可做的。
+/// Detection parameters are checked by the old version's rules: the pause length must be positive, the compressed length must be less than the minimum pause, and the maximum pause must be greater than the minimum pause. When neither kind of detection is on, there is nothing to do.
 fn options(input: &DetectInput) -> EngineResult<(Option<SilenceOptions>, Option<FillerOptions>)> {
     let pauses = input.pauses.unwrap_or(true);
     let fillers = input.fillers.unwrap_or(true);
@@ -199,7 +197,7 @@ fn lcm(a: i128, b: i128) -> i128 {
     a / gcd(a, b) * b
 }
 
-/// 两段文字拼起来：两边都是拉丁字母或数字时隔一个空格，否则直接相接（中文不加空格）。
+/// Join two pieces of text: if both sides are Latin letters or digits, separate them with one space; otherwise join them directly (no space for Chinese).
 fn join_text(words: &[&str]) -> String {
     let mut out = String::new();
     for w in words {
@@ -212,7 +210,7 @@ fn join_text(words: &[&str]) -> String {
     out
 }
 
-/// 按转写检测口癖与长停顿，写进源素材的剪辑提案（§6.2）。
+/// Detect verbal tics and long pauses from the transcript, and write them into the source asset's editorial proposal (§6.2).
 pub(crate) fn propose_cuts(
     state: &mut VideoState,
     asset_id: &str,
@@ -246,7 +244,7 @@ pub(crate) fn propose_cuts(
     }
     let factor = scale / speech_scale;
 
-    // 隐藏的词、没有时间的词不参与（与旧版一致）。
+    // Hidden words and words without time take no part (consistent with the old version).
     let mut ticks: HashMap<&str, (i128, i128, &str)> = HashMap::new();
     let mut words = Vec::new();
     for w in &speech.words {
@@ -287,7 +285,7 @@ pub(crate) fn propose_cuts(
             let texts: Vec<&str> = p.word_ids.iter().filter_map(|id| ticks.get(id.as_str()).map(|t| t.2)).collect();
             (SuggestionKind::Filler, first.0 * factor, last.1 * factor, join_text(&texts))
         } else {
-            // 停顿的边界是两位小数的秒，刻度含 100，换算是精确的。
+            // Pause boundaries are seconds with two decimal places, and the scale includes 100, so the conversion is exact.
             let at = |t: f64| (t * scale as f64).round() as i128;
             (SuggestionKind::Pause, at(p.t0), at(p.t1), String::new())
         };
@@ -358,7 +356,7 @@ fn write(
     )
 }
 
-/// 接受剪辑提案里的建议：编译成剪口（`ref` 是建议的 ID）并标成 `accepted`，一笔事务（§6.2）。
+/// Accept the suggestions in an editorial proposal: compile them into cut points (`ref` is the suggestion's ID) and mark them `accepted`, in one transaction (§6.2).
 pub(crate) fn accept_cut_suggestions(
     state: &mut VideoState,
     sequence_id: Option<&str>,

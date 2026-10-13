@@ -1,6 +1,4 @@
-//! Qwen-Image-2.1 VAE 的单帧解码器（移植自 v2 `ccut-image-local::candle::vae`）。发布的 MLX checkpoint 把卷积核存成
-//! `[out, kh, kw, in]`，candle 要 NCHW 与 `[out, in, kh, kw]`。解码器按需读每个卷积，高分辨率的尾段按行条带处理，
-//! 条带上下各留 12 行重叠（与 Metal 实现相同）。
+//! Single-frame decoder of the Qwen-Image-2.1 VAE (ported from v2 `ccut-image-local::candle::vae`). The published MLX checkpoint stores convolution kernels as `[out, kh, kw, in]`, while candle needs NCHW and `[out, in, kh, kw]`. The decoder reads each convolution on demand. The high-resolution tail is processed in row strips, with 12 rows of overlap above and below each strip (same as the Metal implementation).
 
 use anyhow::{Result, bail};
 use candle_core::{DType, Device, Tensor};
@@ -63,7 +61,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    /// `files` 是 `vae/` 下按清单取出的 safetensors，`config` 是 `vae/config.json`。
+    /// `files` are the safetensors under `vae/`, fetched by manifest; `config` is `vae/config.json`.
     pub fn load(files: &[&Path], config: &Path, device: &Device, dtype: DType) -> Result<Self> {
         let config: VaeConfig = serde_json::from_str(&std::fs::read_to_string(config)?)?;
         if config.class_name != "AutoencoderKLQwenImage21"
@@ -141,7 +139,7 @@ impl Decoder {
             .reshape((1, 2 * h, 2 * w, c))?)
     }
 
-    /// 单帧的 DupUp3D：时间维只取最后一帧对应的通道，再把通道摊到 2×2 的空间块上。
+    /// DupUp3D for a single frame: along the time axis only the channels for the last frame are taken, and the channels are spread over 2×2 spatial blocks.
     fn dup_up(x: &Tensor, out: usize, ft: usize) -> Result<Tensor> {
         let (_, h, w, input) = x.dims4()?;
         let repeat = out * ft * 4 / input;
@@ -188,7 +186,7 @@ impl Decoder {
         Ok(y)
     }
 
-    /// 高分辨率的尾段按相互重叠的行条带重算。12 行的重叠覆盖 up_blocks 2..4 与 conv_out 的全部 3×3 卷积。
+    /// The high-resolution tail is recomputed in overlapping row strips. The 12-row overlap covers all the 3×3 convolutions of up_blocks 2..4 and conv_out.
     pub fn decode(&self, latents: &Tensor, cancel: &dyn Fn() -> bool) -> Result<Tensor> {
         let (_, gh, gw, channels) = latents.dims4()?;
         if channels != Z_DIM {

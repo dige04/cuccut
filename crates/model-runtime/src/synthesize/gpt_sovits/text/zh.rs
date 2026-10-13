@@ -1,5 +1,4 @@
-//! 中文 G2P：复刻上游 `text/chinese2.py` 关闭 G2PW 时的 pypinyin 路径，以及 `cleaner.clean_text`
-//! 对中文段的特殊静音符处理。
+//! Chinese G2P: replicates the pypinyin path of upstream `text/chinese2.py` with G2PW disabled, and the special silence-symbol handling that `cleaner.clean_text` applies to Chinese segments.
 
 use super::data::OPENCPOP;
 use super::error::PyError;
@@ -9,7 +8,7 @@ use super::tone_sandhi::{self, Seg};
 use super::words::{self, MUST_ERHUA, NOT_ERHUA};
 use super::{pinyin, zh_norm};
 
-/// `text.symbols.punctuation`（含后加的 `-`）。
+/// `text.symbols.punctuation` (including the `-` appended later).
 pub const PUNCTUATION: &[char] = &['!', '?', '…', ',', '.', '-'];
 
 /// `replace_punctuation`
@@ -72,7 +71,7 @@ fn merge_erhua(finals: &mut [String], word: &str, pos: &str) {
     }
 }
 
-/// `re.split(r"(?<=[!?…,.-])\s*", text)` 后丢掉空白句。
+/// After `re.split(r"(?<=[!?…,.-])\s*", text)`, blank sentences are dropped.
 fn split_after_punctuation(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut current = String::new();
@@ -93,7 +92,7 @@ fn split_after_punctuation(text: &str) -> Vec<String> {
     sentences
 }
 
-/// 声母 + 带调韵母 → opencpop 音素；查不到时返回 `None`。
+/// Initial + toned final → opencpop phone; returns `None` when not found.
 fn syllable_phones(initial: &str, final_: &str) -> Option<[String; 2]> {
     let tone = final_.chars().last().filter(|t| ('1'..='5').contains(t))?;
     let bare = &final_[..final_.len() - 1];
@@ -126,7 +125,7 @@ fn syllable_phones(initial: &str, final_: &str) -> Option<[String; 2]> {
     Some([new_initial.clone(), format!("{new_final}{tone}")])
 }
 
-/// `g2p(norm_text)` → `(phones, word2ph)`；`word2ph` 与 `norm_text` 逐字对应。
+/// `g2p(norm_text)` → `(phones, word2ph)`; `word2ph` corresponds to `norm_text` character by character.
 pub fn g2p(text: &str) -> (Vec<String>, Vec<usize>) {
     let mut phones = Vec::new();
     let mut word2ph = Vec::new();

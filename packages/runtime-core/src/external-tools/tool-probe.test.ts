@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { envValue, findOnPath, pathExtensions, windowsScriptKind } from './tool-probe.ts';
 
-/** 在 PATH 里找工具：Windows 的 PATHEXT 用注入的平台在临时目录里核对（目录分隔仍按本机），不执行任何文件。 */
+/** Finds a tool on PATH. On Windows, PATHEXT is checked against the injected platform in a temp directory (directory separators still follow the local machine). No file is executed. */
 
 describe('在 PATH 里找工具', () => {
   let dir: string;
@@ -29,9 +29,9 @@ describe('在 PATH 里找工具', () => {
     const searchPath = path.join(dir, 'a');
     expect(await findOnPath('yt-dlp', searchPath, 'win32', '.COM;.EXE;.BAT;.CMD')).toBe(exe);
     expect(await findOnPath('yt-dlp', searchPath, 'win32', '.CMD;.EXE')).toBe(cmd);
-    // 没有 PATHEXT 时用 .COM;.EXE;.BAT;.CMD。
+    // Without PATHEXT, use .COM;.EXE;.BAT;.CMD.
     expect(await findOnPath('yt-dlp', searchPath, 'win32')).toBe(exe);
-    // 带了扩展名的只找原名。
+    // If the name already has an extension, look only for the exact name.
     expect(await findOnPath('yt-dlp.cmd', searchPath, 'win32')).toBe(cmd);
   });
 

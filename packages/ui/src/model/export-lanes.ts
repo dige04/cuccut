@@ -15,7 +15,7 @@ import { pl } from './export-lanes.pl.ts';
 import { tr } from './export-lanes.tr.ts';
 import { vi } from './export-lanes.vi.ts';
 
-/** 导出弹层轨道清单的文案（英文是键与类型的来源，译文在 `export-lanes.zh-Hans.ts`）。 */
+/** Copy for the export popover's track list (English is the source of keys and types; translations are in `export-lanes.zh-Hans.ts`). */
 const en = {
   hidden: 'Hidden on the timeline',
   otherSolo: 'Another track is soloed',
@@ -31,28 +31,28 @@ export type ExportLanesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 导出弹层的「画面里有什么」「声音里有什么」（设计稿 export.jsx 的 `Lane`、export-audio.jsx 的 `soundLanes`）：
- * 时间轴上每条轨道这次会不会进画面、会不会出声。
+ * The export popover's “What's in the picture” and “What's in the sound” (the design draft's `Lane` in export.jsx and `soundLanes` in export-audio.jsx):
+ * for each timeline track, whether it goes into the picture and whether it makes sound in this export.
  *
- * 规则与渲染一致（crates/render-graph `TrackRules`）：隐藏只影响画面，静音只影响声音；独显 / 独听分视觉组与音频组
- * 各自生效——有轨道在独显时，别的视觉轨不进画面。
+ * The rules match the rendering (`TrackRules` in crates/render-graph): hide affects only the picture, mute affects only the sound; solo applies separately to the visual group and the audio group,
+ * each on its own. When a track is soloed, other visual tracks stay out of the picture.
  *
- * 设计稿在这里可以逐轨拨开关、只对这次导出生效，再「同步到时间轴」；Runtime 的导出没有逐轨覆盖的参数
- * （只有 `burnCaptions` 能决定字幕烧不烧进画面），所以这里只读：开关跟着时间轴，要改回时间轴上改。
+ * The design draft lets each track be toggled here, for this export only, followed by “sync to timeline”; the Runtime's export has no per-track override parameter
+ * (only `burnCaptions` decides whether subtitles are burned into the picture), so here it is read-only: the toggles follow the timeline, and changes must be made on the timeline.
  */
 
 export interface ExportLane {
   trackId: Id;
   kind: Track['kind'];
-  /** 与时间轴行头同一个叫法：「画面」「音频 2」「字幕 · 英文」。 */
+  /** Named the same as the timeline row headers: “画面” (Picture), “音频 2” (Audio 2), “字幕 · 英文” (Subtitles · English). */
   label: string;
-  /** 一句说明：「3 个片段」「2 段声音」「访谈转写」。 */
+  /** A short description: “3 个片段” (3 clips), “2 段声音” (2 sound segments), “访谈转写” (interview transcript). */
   sub: string;
-  /** 画面：视觉轨与字幕轨这次画不画；音频轨 null。 */
+  /** Picture: whether visual and subtitle tracks are drawn in this export; null for audio tracks. */
   picture: boolean | null;
-  /** 声音：音频轨与带声音的视觉轨这次出不出声；字幕轨、没有声音的视觉轨 null。 */
+  /** Sound: whether audio tracks and visual tracks with sound make sound in this export; null for subtitle tracks and for visual tracks without sound. */
   sound: boolean | null;
-  /** 关着的原因：「时间轴上隐藏」「别的轨在独显」「时间轴上静音」「别的轨在独听」。 */
+  /** Reasons a track is off: "Hidden on the timeline", "Another track is solo-visible", "Muted on the timeline", "Another track is solo-audible". */
   reason: string | null;
 }
 
@@ -67,7 +67,7 @@ function soloRules(tracks: readonly Track[]) {
   };
 }
 
-/** 时间轴上的轨道，顺序与时间轴一致（字幕在上，画面按叠放，音频在下）；一个启用实例都没有的轨道不列。 */
+/** Tracks on the timeline, in the same order as the timeline (subtitles on top, picture by stacking order, audio at the bottom); tracks with no enabled instances are not listed. */
 export function exportLanes(sequence: Sequence, documents: Record<Id, DocumentRecord>): ExportLane[] {
   const rules = soloRules(sequence.tracks);
   const lanes: ExportLane[] = [];
@@ -92,12 +92,12 @@ export function exportLanes(sequence: Sequence, documents: Record<Id, DocumentRe
   return lanes;
 }
 
-/** 一行这次进不进成片：画面或声音有一样在就算。 */
+/** Whether a row goes into the final export this time: it counts if either the picture or the sound is on. */
 export function laneOn(lane: ExportLane): boolean {
   return lane.picture === true || lane.sound === true;
 }
 
-/** 声音里有什么：出声的轨道（音频轨，与带声音的视觉轨）。 */
+/** What's in the sound: the tracks that make sound (audio tracks, and visual tracks with sound). */
 export function soundLanes(lanes: readonly ExportLane[]): ExportLane[] {
   return lanes.filter((l) => l.sound !== null);
 }

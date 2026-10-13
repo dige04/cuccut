@@ -19,7 +19,7 @@ function snapshot(patch: Partial<PreviewSnapshot> = {}): PreviewSnapshot {
   };
 }
 
-/** 手动推进的时钟与计时器：`advance` 到点就跑排着的检查。 */
+/** A manually advanced clock and timer: `advance` runs the queued checks as they come due. */
 function harness(probe: () => PreviewSnapshot, visible = () => true) {
   let now = 0;
   let pending: { run: () => void; at: number } | null = null;
@@ -66,12 +66,12 @@ test('卡在哪一步：就绪之后看媒体、文档、字体，再看要画�
   expect(stalledStep(snapshot({ fonts: ['Inter'] }), false)).toBe('fonts-loading');
   expect(stalledStep(snapshot({ paintWanted: true }), false)).toBe('not-painted');
   expect(stalledStep(snapshot({ paintWanted: true, canvas: false }), false)).toBe('no-canvas');
-  // 画布上换过帧（播放中每帧都要画）就不算卡住。
+  // If the canvas has swapped frames (drawing every frame during playback), it is not considered stalled.
   expect(stalledStep(snapshot({ paintWanted: true, playing: true }), true)).toBeNull();
   expect(stalledStep(snapshot(), false)).toBeNull();
 });
 
-/** 在等兼容副本的媒体：`progress` 是转换到了几成，null 是 Runtime 还不知道。 */
+/** Media waiting for a compatible copy: `progress` is how far conversion has got; null means the Runtime does not know yet. */
 const preparing = (progress: number | null, assetId = 'asset_a'): MediaProbe => ({
   itemId: `clip_${assetId}`,
   assetId,
@@ -84,12 +84,12 @@ const preparing = (progress: number | null, assetId = 'asset_a'): MediaProbe => 
 
 test('卡在哪一步：都在等兼容副本时看进度；夹着别的媒体还是在等媒体', () => {
   expect(stalledStep(snapshot({ media: [preparing(0.3)] }), false)).toBe('media-preparing');
-  // Runtime 还不知道进度：不算卡住（转换有自己的超时）。
+  // The Runtime doesn't know the progress yet: not counted as stalled (conversion has its own timeout).
   expect(stalledStep(snapshot({ media: [preparing(null)] }), false)).toBeNull();
   expect(stalledStep(snapshot({ media: [preparing(0.3), preparing(null, 'asset_b')] }), false)).toBeNull();
   const other = { itemId: 'clip', kind: 'video' as const, wait: 'no-data' as const, wantedSeconds: 0, element: null };
   expect(stalledStep(snapshot({ media: [preparing(0.3), other] }), false)).toBe('media-pending');
-  // 记号按原始比值、与顺序无关。
+  // The marker uses the raw ratio, independent of order.
   expect(preparingMark({ media: [preparing(0.301, 'b'), preparing(0.3)] })).toBe(preparingMark({ media: [preparing(0.3), preparing(0.301, 'b')] }));
   expect(preparingMark({ media: [preparing(0.3)] })).not.toBe(preparingMark({ media: [preparing(0.3001)] }));
 });
@@ -125,7 +125,7 @@ test('同一步卡过门槛只报一次，带上快照；有进展之后重新�
   let current = snapshot({ status: 'loading', planner: 'loading' });
   const { watch, warn, advance } = harness(() => current);
   watch.start();
-  // 第一次看到卡住才开始计时。
+  // Timing starts only the first time a stall is seen.
   advance(STALL_MS);
   expect(warn).not.toHaveBeenCalled();
   advance(POLL_MS);
@@ -137,7 +137,7 @@ test('同一步卡过门槛只报一次，带上快照；有进展之后重新�
   advance(STALL_MS * 3);
   expect(warn).toHaveBeenCalledTimes(1);
 
-  // 内核载入了，换成卡在下一步：上一份标成过去了，这一步重新计时。
+  // The kernel has loaded and it is now stuck at the next step: the previous one is marked as past, and this step's timing restarts.
   current = snapshot({ status: 'loading' });
   advance(POLL_MS);
   expect(watch.report).toMatchObject({ step: 'planner-loading', ongoing: false });
@@ -145,7 +145,7 @@ test('同一步卡过门槛只报一次，带上快照；有进展之后重新�
   expect(warn).toHaveBeenCalledTimes(2);
   expect(watch.report).toMatchObject({ step: 'no-plan', ongoing: true });
 
-  // 好了，之后再卡又报。
+  // Once it recovers, a later stall is reported again.
   current = snapshot();
   advance(POLL_MS);
   expect(watch.report?.ongoing).toBe(false);
@@ -260,7 +260,7 @@ test('报出卡住与卡住结束都通知订阅者；报告带开始卡住的�
   advance(POLL_MS);
   expect(seen).toEqual(['media-pending', null]);
   expect(watch.ongoing).toBeNull();
-  // 历史报告还留着，只是不再是还卡着的。
+  // Past reports are still kept, they just are no longer ongoing.
   expect(watch.report?.ongoing).toBe(false);
 });
 

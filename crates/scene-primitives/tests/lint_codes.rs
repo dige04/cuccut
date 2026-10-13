@@ -1,7 +1,7 @@
-//! 阶段 2 新增的诊断码（规范 §16）与「码表 ↔ 规范表」的一致性。
+//! Diagnostic codes added in stage 2 (spec §16), and the consistency between the “code table ↔ spec table”.
 //!
-//! 规范 §16 的表是**唯一的码清单**，此前没有任何测试把它和代码对起来
-//! （`docs/archive/reviews/2026-08-02-cli-doc-audit.md` 已记过这个缺口）。
+//! The table in spec §16 is the **only list of codes**, and until now no test checked it against the code
+//! (`docs/archive/reviews/2026-08-02-cli-doc-audit.md` already recorded this gap).
 
 use std::path::{Path, PathBuf};
 
@@ -15,7 +15,7 @@ fn repo_root() -> PathBuf {
         .expect("repo root")
 }
 
-/// 一份最小可 resolve 的文档，元素上挂给定的 `animate`。
+/// A minimal resolvable document, with the given `animate` attached to an element.
 fn doc_with_animate(animate: Value) -> Value {
     json!({
         "meta": {"id": "t", "width": 1920, "height": 1080, "fps": 30},
@@ -49,7 +49,7 @@ fn doc_with_text(text: &str) -> Value {
     doc
 }
 
-/// 声明了 `font` 资产的文档：strict 字体模式（§11.2），系统字体不参与回退。
+/// A document that declares a `font` asset: strict font mode (§11.2), where system fonts do not take part in fallback.
 fn strict_doc_with_text(text: &str) -> Value {
     let mut doc = doc_with_text(text);
     doc["assets"] = json!({"body": {"type": "font", "src": "fonts/body.ttf"}});
@@ -69,7 +69,7 @@ fn text_newline_and_color_emoji_warn() {
     );
 }
 
-/// 显式 `style.textWrap` 或 `split.by: "line"` 启用多行排版（§6.2.2），`\n` 是硬换行。
+/// An explicit `style.textWrap` or `split.by: "line"` enables multi-line layout (§6.2.2); `\n` is a hard line break.
 #[test]
 fn text_newline_is_quiet_in_paragraph_layout() {
     let mut wrapped = doc_with_text("line one\nline two");
@@ -80,7 +80,7 @@ fn text_newline_is_quiet_in_paragraph_layout() {
     assert!(!codes(&split).contains(&"text-newline"));
 }
 
-/// 旧单行路径不读 `textAlign`，整行恒居中（§6.2.2）：靠左 / 靠右不配 textWrap 会被静默丢掉。
+/// The old single-line path does not read `textAlign`; the whole line is always centered (§6.2.2). Left / right alignment without textWrap is silently dropped.
 #[test]
 fn text_align_without_wrap_warns() {
     let with_style = |text: &str, style: Value, split: Option<Value>| {
@@ -100,20 +100,20 @@ fn text_align_without_wrap_warns() {
         }
         style
     };
-    // 靠左 / 靠右，以及单行路径一样不校验的非法值，都报
+    // Left / right, and illegal values that the single-line path likewise does not validate, are all reported
     for align in ["left", "right", "justify"] {
         assert!(
             with_style("hi", styled(json!({"textAlign": align})), None),
             "{align}"
         );
     }
-    // 内容是 `$` 引用也照报：textAlign 与内容无关
+    // Still reported when the content is a `$` reference: textAlign is independent of the content
     assert!(with_style(
         "$data.title",
         styled(json!({"textAlign": "left"})),
         None
     ));
-    // 居中 = 旧行为；没写 / null / `$` 引用的 textAlign 不报
+    // Centered = the old behavior; a textAlign that is unset / null / a `$` reference is not reported
     assert!(!with_style("hi", base.clone(), None));
     assert!(!with_style(
         "hi",
@@ -126,7 +126,7 @@ fn text_align_without_wrap_warns() {
         styled(json!({"textAlign": "$theme.align"})),
         None
     ));
-    // 启用新排版（textWrap 或 split.by: "line"）后 textAlign 生效，不报
+    // Once the new layout is enabled (textWrap or split.by: "line"), textAlign takes effect and is not reported
     for wrap in ["none", "word", "grapheme"] {
         assert!(
             !with_style(
@@ -142,7 +142,7 @@ fn text_align_without_wrap_warns() {
         styled(json!({"textAlign": "left"})),
         Some(json!({"by": "line"}))
     ));
-    // 按词拆分不启用新排版，照报
+    // Splitting by word does not enable the new layout, so it is still reported
     assert!(with_style(
         "hi",
         styled(json!({"textAlign": "left"})),
@@ -150,8 +150,7 @@ fn text_align_without_wrap_warns() {
     ));
 }
 
-/// `align` / `justify` 只在 row / column / grid 下生效（§6.3）：缺省绝对布局里写了也被静默丢掉，
-/// 子节点落在左上角——白板片里「圆角卡片的字贴在左上角」就是这样来的。
+/// `align` / `justify` only take effect under row / column / grid (§6.3): written under the default absolute layout they are silently dropped and the children land in the top-left corner. This is how the whiteboard clip's “text on the rounded card sticks to the top-left corner” came about.
 #[test]
 fn align_without_flow_layout_warns() {
     let with_box_style = |style: Value| {
@@ -173,7 +172,7 @@ fn align_without_flow_layout_warns() {
         }
         style
     };
-    // 缺省布局与显式 absolute：一个节点只报一条，两个键都写也是一条
+    // Default layout and explicit absolute: one node reports one entry; writing both keys is also one entry
     assert_eq!(
         with_box_style(styled(json!({"align": "center", "justify": "center"}))),
         1
@@ -183,7 +182,7 @@ fn align_without_flow_layout_warns() {
         with_box_style(styled(json!({"layout": "absolute", "align": "center"}))),
         1
     );
-    // row / column / grid 生效；没写、null、`$` 引用的 layout 不报
+    // Takes effect under row / column / grid; a layout that is unset, null, or a `$` reference is not reported
     for layout in ["row", "column", "grid"] {
         assert_eq!(
             with_box_style(styled(
@@ -204,14 +203,14 @@ fn align_without_flow_layout_warns() {
     assert!(message(&doc, "layout-align-ignored").contains("layout: \"column\""));
 }
 
-/// 没声明 `font` 资产时由系统彩色 emoji 字体画成位图（§14.4 `DrawBitmap`），不报。
+/// When no `font` asset is declared, it is drawn as a bitmap by the system color emoji font (§14.4 `DrawBitmap`); not reported.
 #[test]
 fn color_emoji_is_quiet_outside_strict_font_mode() {
     for text in ["attach 📎", "done 🟢", "\u{2764}\u{FE0F}"] {
         let found = codes(&doc_with_text(text));
         assert!(!found.contains(&"text-emoji-no-glyph"), "{text}: {found:?}");
     }
-    // 只有 image 资产不算 strict
+    // Having only image assets does not count as strict
     let mut doc = doc_with_text("attach 📎");
     doc["assets"] = json!({"logo": {"type": "image", "src": "img/logo.png"}});
     assert!(!codes(&doc).contains(&"text-emoji-no-glyph"));
@@ -229,7 +228,7 @@ fn preset_version_unknown_fires_for_builtin_and_manifest_presets() {
         "enter": {"preset": "motion.moveIn", "presetVersion": 9, "dur": 0.4}
     }));
     assert!(codes(&doc).contains(&"preset-version-unknown"));
-    // 冻结的 bcf.*@1 走另一条路径，同样不得静默用最新
+    // Frozen bcf.*@1 takes another path, and likewise must not silently use the latest
     let doc = doc_with_animate(json!({
         "enter": {"preset": "fadeIn", "presetVersion": 2, "dur": 0.4}
     }));
@@ -243,7 +242,7 @@ fn preset_param_unknown_and_missing_fire() {
     }));
     assert!(codes(&doc).contains(&"preset-param-unknown"));
 
-    // 类型不符复用 unknown（规范 §16 没有独立的类型码），message 说明原因
+    // A type mismatch reuses unknown (spec §16 has no separate type code); the message explains the reason
     let doc = doc_with_animate(json!({
         "enter": {"preset": "motion.moveIn", "dur": 0.4, "params": {"direction": "sideways"}}
     }));
@@ -253,7 +252,7 @@ fn preset_param_unknown_and_missing_fire() {
 
 #[test]
 fn relative_basis_unresolved_fires_when_the_target_has_no_layout_box() {
-    // 字幕 lane 的入场模板是逐条目锚定的，没有单一自身盒。
+    // The caption lane's entrance template is anchored per item and has no single box of its own.
     let doc = json!({
         "meta": {"id": "t", "width": 1920, "height": 1080, "fps": 30},
         "scenes": [{"id": "s", "dur": 3}],
@@ -289,8 +288,8 @@ fn relative_lengths_on_disallowed_properties_are_a_schema_error() {
 
 #[test]
 fn preset_compose_cycle_maps_to_its_own_code() {
-    // 内置配方里不存在环（`tests/families.rs` 守着），所以这里直接验映射函数：
-    // resolve 期的 `MotionError::PresetComposeCycle` 的 Display 前缀就是码。
+    // There are no cycles in the built-in recipes (guarded by `tests/families.rs`), so the mapping function is tested directly here:
+    // the Display prefix of `MotionError::PresetComposeCycle` raised at resolve time is the code.
     assert_eq!(
         resolve_error_code("preset-compose-cycle: motion.a → motion.b → motion.a"),
         "preset-compose-cycle"
@@ -309,7 +308,7 @@ fn every_resolve_error_prefix_maps_to_the_code_it_names() {
         assert_eq!(resolve_error_code(&msg), *code, "{prefix}");
     }
     assert_eq!(resolve_error_code("完全不认识的消息"), "resolve-error");
-    // `component-` 是刻意保留的宽前缀：两种消息都归 component-cycle
+    // `component-` is a deliberately broad prefix: both kinds of message map to component-cycle
     assert_eq!(
         resolve_error_code("component-unknown: x"),
         "component-cycle"
@@ -330,14 +329,14 @@ fn preset_alias_used_is_info_and_suggests_the_canonical_form() {
             .severity,
         Severity::Info
     );
-    // canonical 写法不再提示
+    // The canonical form no longer gets a hint
     let doc = doc_with_animate(json!({"enter": {"preset": "motion.backIn", "dur": 0.4}}));
     assert!(!codes(&doc).contains(&"preset-alias-used"));
 }
 
 #[test]
 fn preset_sprawl_counts_families_not_cards() {
-    // 同一个 family 的四个方向 = 一种词汇，不该触发。
+    // The four directions of the same family are one vocabulary and should not trigger.
     let mut children = Vec::new();
     for (i, direction) in ["left", "right", "up", "down"].iter().enumerate() {
         children.push(json!({
@@ -356,7 +355,7 @@ fn preset_sprawl_counts_families_not_cards() {
     });
     assert!(!codes(&doc).contains(&"preset-sprawl"), "{:?}", codes(&doc));
 
-    // 五个**不同**家族才触发
+    // Triggers only with five **different** families
     let ids = [
         "motion.moveIn",
         "motion.scaleIn",
@@ -386,7 +385,7 @@ fn preset_sprawl_counts_families_not_cards() {
 
 #[test]
 fn motion_replace_overlap_fires_on_two_overlapping_replace_tracks() {
-    // 两条裸 keyframes 通道写同一个属性、时间交叠 ⇒ 后声明按 order 覆盖。
+    // Two bare keyframes channels write the same property with overlapping times ⇒ the later declaration overrides by order.
     let doc = doc_with_animate(json!({"keyframes": [
         {"prop": "x", "frames": [{"t": "0%", "v": 0}, {"t": "80%", "v": 100}]},
         {"prop": "x", "frames": [{"t": "40%", "v": 0}, {"t": "100%", "v": -50}]}
@@ -394,7 +393,7 @@ fn motion_replace_overlap_fires_on_two_overlapping_replace_tracks() {
     let msg = message(&doc, "motion-replace-overlap");
     assert!(msg.contains("\"x\""), "{msg}");
 
-    // 不交叠就不报
+    // No report if they do not overlap
     let doc = doc_with_animate(json!({"keyframes": [
         {"prop": "x", "frames": [{"t": "0%", "v": 0}, {"t": "30%", "v": 100}]},
         {"prop": "x", "frames": [{"t": "60%", "v": 0}, {"t": "100%", "v": -50}]}
@@ -404,7 +403,7 @@ fn motion_replace_overlap_fires_on_two_overlapping_replace_tracks() {
 
 #[test]
 fn add_and_multiply_tracks_never_trigger_replace_overlap() {
-    // `motion.moveIn`（y=add）+ `motion.pulse`（scale=multiply）刻意叠加。
+    // `motion.moveIn` (y=add) + `motion.pulse` (scale=multiply) stack on purpose.
     let doc = doc_with_animate(json!({
         "enter": {"preset": "motion.moveIn", "dur": 0.5},
         "emphasis": [{"preset": "motion.pulse", "at": 0.2, "dur": 0.6}]
@@ -416,7 +415,7 @@ fn add_and_multiply_tracks_never_trigger_replace_overlap() {
     );
 }
 
-/// 稳定 id 纪律（直接编辑回写方案 §4.3-1）：舞台编辑按元素路径寻址。
+/// Stable id discipline (direct-edit write-back plan §4.3-1): stage editing addresses elements by their element path.
 #[test]
 fn element_id_rules_guard_the_addressing_of_stage_edits() {
     let doc = |children: Value| {
@@ -430,7 +429,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
         })
     };
 
-    // 都有 id：两条规则都不响
+    // All have ids: neither rule fires
     let clean = doc(json!([
         {"type": "text", "id": "a", "text": "甲"},
         {"type": "text", "id": "b", "text": "乙"}
@@ -442,7 +441,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
     );
     assert!(!codes(&clean).contains(&"element-id-duplicate"));
 
-    // 匿名节点 → warn（不挡导出）
+    // Anonymous node → warn (does not block export)
     let anonymous = doc(json!([{"type": "text", "text": "甲"}]));
     assert!(codes(&anonymous).contains(&"element-id-missing"));
     assert_eq!(
@@ -454,7 +453,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
         Severity::Warn
     );
 
-    // 同树重名 → error（一条元素路径会指向两个节点）
+    // Duplicate names in the same tree → error (one element path would point to two nodes)
     let duplicated = doc(json!([
         {"type": "text", "id": "a", "text": "甲"},
         {"type": "text", "id": "a", "text": "乙"}
@@ -470,7 +469,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
         Severity::Error
     );
 
-    // 作用域是**单棵树**：跨 clip 重名合法（路径本来就从 clip 根起算）
+    // The scope is a **single tree**: the same name across clips is legal (paths are already relative to the clip root)
     let cross_clip = json!({
         "meta": {"id": "t", "width": 1920, "height": 1080, "fps": 30},
         "scenes": [{"id": "s", "dur": 3, "desc": "x"}],
@@ -491,8 +490,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
 #[test]
 #[ignore = "读 v2 的 BCF 规范 docs/design/bcf/cuccut-format-spec/16.md：v3 不用 BCF，没有带来这份规范"]
 fn every_declared_rule_appears_in_the_spec_section_sixteen_table() {
-    // `schema` / `resolve-error` 是两个**结构层**的兜底码：规范 §16 的正文
-    // （而不是表）描述它们。其余必须能 grep 到。
+    // `schema` / `resolve-error` are two **structural-layer** fallback codes: spec §16's prose (not the table) describes them. All the others must be greppable.
     const STRUCTURAL: &[&str] = &["schema", "resolve-error"];
     let spec = std::fs::read_to_string(spec_path()).expect("spec");
     let mut missing: Vec<&str> = Vec::new();
@@ -510,7 +508,7 @@ fn every_declared_rule_appears_in_the_spec_section_sixteen_table() {
     );
 }
 
-/// 规范已按章拆分（主文件只剩目录），§16 的码表在章节文件里。
+/// The spec has been split by chapter (the main file is now only a table of contents); the §16 code table is in the chapter file.
 fn spec_path() -> PathBuf {
     let path = repo_root().join("docs/design/bcf/cuccut-format-spec/16.md");
     assert!(Path::new(&path).is_file(), "{path:?}");
@@ -526,8 +524,7 @@ fn the_rule_table_has_no_duplicates() {
     }
 }
 
-/// 效果参数通道 `effects[N].<param>`（§6.6）：合法通道放行，越界下标 / 未知参数 /
-/// 非数值参数都是 error。
+/// Effect parameter channels `effects[N].<param>` (§6.6): legal channels pass; an out-of-range index / unknown parameter / non-numeric parameter is an error.
 #[test]
 fn effect_param_channels_are_checked_against_the_effect_stack() {
     let with = |prop: &str| {
@@ -571,7 +568,7 @@ fn effect_param_channels_are_checked_against_the_effect_stack() {
         "{color:?}"
     );
 
-    // 非规范写法仍然是 allowlist 错误。
+    // A non-canonical form is still an allowlist error.
     let malformed = with("effects[01].intensity");
     assert!(
         malformed.iter().any(|(_, m)| m.contains("allowlist")),
@@ -608,9 +605,7 @@ fn proc_nodes_lint_clean_and_bad_params_surface_as_errors() {
     assert!(!unknown.is_empty());
 }
 
-/// `program` 资产的 `src` / `imports` / `files` 用 `..` 越出文档所在目录 → `program-path-escape`
-/// （§6.5.3），指针落到具体那一项；消息写明边界、违规路径与改法。先下去再上来没出边界的、
-/// 在目录内的路径都不报。
+/// `src` / `imports` / `files` of a `program` asset that use `..` to climb out of the document's directory → `program-path-escape` (§6.5.3), with the pointer landing on the specific entry; the message states the boundary, the offending path and the fix. Paths that go down and come back up without leaving the boundary, staying inside the directory, are not reported.
 #[test]
 fn program_paths_escaping_the_document_directory_are_flagged_where_they_are() {
     let with = |program: Value| {
@@ -641,7 +636,7 @@ fn program_paths_escaping_the_document_directory_are_flagged_where_they_are() {
         "imports": {"remotion": "../shim/remotion.ts", "a/b": "../x.ts"},
         "files": ["ok.png", "../art/logo.svg"]
     }));
-    // lint 的输出按指针排序
+    // lint output is sorted by pointer
     let pointers: Vec<&str> = escaped.iter().map(|(_, p, _)| p.as_str()).collect();
     assert_eq!(
         pointers,
@@ -662,8 +657,7 @@ fn program_paths_escaping_the_document_directory_are_flagged_where_they_are() {
     assert!(escaped[1].2.contains("imports.a/b"), "{:?}", escaped[1]);
 }
 
-/// 场景数上限 `1..400`（§5.1 / §16 Schema 层）：80 与 400 场通过，401 场在 `/scenes` 报
-/// `schema` 错误，消息写明上限。一场一个 clip，确认这种规模下 lint 能走完 resolve。
+/// Scene count limit `1..400` (§5.1 / §16 Schema layer): 80 and 400 scenes pass, while 401 scenes report a `schema` error at `/scenes` with the limit stated in the message. One clip per scene, to confirm that lint can finish resolve at this scale.
 #[test]
 fn scene_count_limit_is_four_hundred() {
     let doc_with_scenes = |n: usize| {
@@ -711,9 +705,7 @@ fn scene_count_limit_is_four_hundred() {
     assert_eq!(scene_schema(0).len(), 1);
 }
 
-/// clip 根元素写 `style.x` / `style.y` 不生效（根节点从画布原点布局，§6.4）→ `clip-root-xy-ignored`
-/// （warn），指针落到第一处生效不了的键，消息给改法（包进全画幅 Box）。写 0、写在子节点上、
-/// 用 `$` 引用（值只有 resolve 才知道）都不报。
+/// `style.x` / `style.y` on a clip's root element has no effect (the root node is laid out from the canvas origin, §6.4) → `clip-root-xy-ignored` (warn). The pointer lands on the first key that has no effect, and the message gives the fix (wrap it in a full-frame Box). Writing 0, writing it on a child node, or using a `$` reference (the value is only known at resolve time) is not reported.
 #[test]
 fn clip_root_style_xy_warns_because_the_root_is_laid_out_at_the_origin() {
     let with_root = |style: Value| {
@@ -746,7 +738,7 @@ fn clip_root_style_xy_warns_because_the_root_is_laid_out_at_the_origin() {
         assert!(with_root(quiet.clone()).is_empty(), "{quiet}");
     }
 
-    // 子节点上的 x/y 照常生效，不报
+    // x/y on child nodes still takes effect as usual, not reported
     let mut doc = doc_with_text("hi");
     doc["tracks"][0]["clips"][0]["element"] = json!({
         "type": "box", "id": "root", "style": {"width": 1920, "height": 1080},
@@ -756,10 +748,7 @@ fn clip_root_style_xy_warns_because_the_root_is_laid_out_at_the_origin() {
     assert!(!codes(&doc).contains(&"clip-root-xy-ignored"));
 }
 
-/// `preset-unknown` 不再被更早的 resolve 错误吞掉（§16）：resolve 快速失败，一份文档里
-/// 先撞上的 `motion-unsupported`（报成 `schema`，指针 `/`）曾让后面 `animate.parts` 里
-/// 写错的 preset 一直看不见，改一处才冒一处。现在未知 preset 在静态阶段就按引用处报，
-/// 与 resolve 错误同时出现；flow / parts 的 `op: "preset"` 条目也算引用。
+/// `preset-unknown` is no longer swallowed by an earlier resolve error (§16): resolve fails fast, so a `motion-unsupported` hit first in the document (reported as `schema`, pointer `/`) used to hide a mistyped preset further down in `animate.parts`, surfacing only after each fix. Now an unknown preset is reported at its reference during the static phase, appearing together with the resolve error; `op: "preset"` entries in flow / parts also count as references.
 #[test]
 fn preset_unknown_is_reported_alongside_an_earlier_resolve_error() {
     let doc = json!({
@@ -801,8 +790,7 @@ fn preset_unknown_is_reported_alongside_an_earlier_resolve_error() {
     );
 }
 
-/// 同一个未知 preset 静态报过，resolve 失败时的那条（指针 `/`）不再重复；
-/// 已知的 manifest / 冻结配方 / 项目级 preset 都不报。
+/// An unknown preset already reported statically is not repeated by the resolve-failure entry (pointer `/`); known presets from the manifest, frozen recipes or the project level are not reported.
 #[test]
 fn preset_unknown_is_reported_once_at_the_reference() {
     let doc = doc_with_animate(json!({"enter": {"preset": "notAPreset", "dur": 0.4}}));
@@ -849,8 +837,7 @@ fn preset_unknown_is_reported_once_at_the_reference() {
     }
 }
 
-/// flow / parts 的 `op: "preset"` 不读项目级 `presets`（resolve 直接查注册表）：
-/// 写项目级名字 resolve 就失败，lint 在引用处报并说明只能用在 enter / exit / emphasis。
+/// `op: "preset"` in flow / parts does not read the project-level `presets` (resolve looks up the registry directly): using a project-level name makes resolve fail, and lint reports it at the reference, explaining that it can only be used for enter / exit / emphasis.
 #[test]
 fn flow_preset_ops_do_not_see_project_presets() {
     let mut doc = doc_with_animate(json!({"flow": {"op": "preset", "preset": "mine"}}));

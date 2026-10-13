@@ -6,48 +6,47 @@ import type { OpenCodeInstall } from '../opencode/opencode-binary.ts';
 import type { OpenCodeModel, OpenCodeProvider } from '../opencode/opencode-models.ts';
 
 /**
- * 测试用的假 opencode：一个可执行文件，回答 `--version` 与 `serve`（形状同 OpenCode 2.x 的 v2 HTTP API，见
- * fake-opencode-server.ts）。不联网、不碰本机真实的 opencode；收到的每个请求记进 `log.jsonl`。
+ * Fake opencode for tests: one executable that answers `--version` and `serve` (shaped like OpenCode 2.x's v2 HTTP API, see
+ * fake-opencode-server.ts). It makes no network calls and does not touch the machine's real opencode. Every request received is recorded in `log.jsonl`.
  *
- * 用法：`createFakeOpenCode(dir)` 得到 `locate`，交给 `new OpenCodeDriver(log, { locate })`；`scenario()` 改之后起的
- * 进程的行为（serve 在启动时读场景）。
+ * Usage: `createFakeOpenCode(dir)` gives `locate`, which is passed to `new OpenCodeDriver(log, { locate })`. `scenario()` changes the behavior of processes started afterwards (serve reads the scenario at startup).
  */
 
 export interface FakeOpenCodeTool {
   name: string;
   input: Record<string, unknown>;
-  /** 执行前先来要权限（`permission.asked`），等 CucCut 答复。 */
+  /** Before execution, first asks for permission (`permission.asked`) and waits for CucCut's reply. */
   permission?: { action: string; resources: string[]; metadata?: Record<string, unknown> };
   output?: string;
   metadata?: Record<string, unknown>;
 }
 
-/** 一轮怎么走。 */
+/** How a turn goes. */
 export interface FakeOpenCodeTurn {
   delayMs?: number;
   reasoning?: string;
   tool?: FakeOpenCodeTool;
   reply?: string;
-  /** `hang`：一直不结束，直到收到中断。 */
+  /** `hang`: never ends until an interrupt is received. */
   end?: 'succeeded' | 'failed' | 'hang';
   error?: string;
-  /** 执行开始后进程直接退出（意外退出）。 */
+  /** The process exits right after execution starts (unexpected exit). */
   crash?: boolean;
 }
 
 export interface FakeOpenCodeScenario {
   installed: boolean;
-  /** `--version` 的输出：2.x 是 `opencode v2.0.24`，1.x 是 `1.18.34`。 */
+  /** The output of `--version`: 2.x is `opencode v2.0.24`, 1.x is `1.18.34`. */
   versionOutput: string;
   models: OpenCodeModel[];
   defaultModel: string | null;
   providers: OpenCodeProvider[];
-  /** 冷启动：前几次 `/api/plugin` 回空表。 */
+  /** Cold start: the first few `/api/plugin` calls return an empty table. */
   coldPluginCalls: number;
   catalog: 'ok' | 'error';
-  /** 登记的 MCP 服务最后的状态。 */
+  /** The final state of the registered MCP servers. */
   mcp: 'connected' | 'failed';
-  /** 会话的 instructions 条目接口在不在。 */
+  /** Whether the session's instructions entry interface exists. */
   instructions: 'ok' | 'missing';
   turn: FakeOpenCodeTurn;
 }
@@ -69,7 +68,7 @@ export interface FakeOpenCode {
   locate: () => Promise<OpenCodeInstall | null>;
   scenario(patch: Partial<FakeOpenCodeScenario>): void;
   log(): FakeOpenCodeLogEntry[];
-  /** 某个方法与路径（路径里的会话 id 写成 `:id`）的请求，按到达顺序。 */
+  /** Requests for a given method and path (the session id in the path is written as `:id`), in arrival order. */
   requests(method: string, route: string): FakeOpenCodeLogEntry[];
 }
 
@@ -111,7 +110,7 @@ const ENTRY = fileURLToPath(new URL('./fake-opencode-server.ts', import.meta.url
 export async function createFakeOpenCode(dir: string, scenario: Partial<FakeOpenCodeScenario> = {}): Promise<FakeOpenCode> {
   await fs.mkdir(dir, { recursive: true });
   const command = path.join(dir, 'opencode');
-  // 假 opencode 是 .ts：22.18 之前的 Node 要显式打开类型剥离（之后默认打开，这个标志无害）。
+  // The fake opencode is a .ts file: Node versions before 22.18 need type stripping turned on explicitly (it is on by default after that, so this flag is harmless).
   await fs.writeFile(command, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types --no-warnings "${ENTRY}" "$@"\n`, {
     mode: 0o755,
   });

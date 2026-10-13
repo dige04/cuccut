@@ -1,6 +1,4 @@
-//! 给图像做条件的 Qwen3-VL 语言模型部分，逐层求值，36 层的权重从不整份留在设备上（移植自 v2
-//! `ccut-image-local::candle::text_encoder`）。分词换成与 MLX 路径共用的 [`super::super::prompt::Prompter`]（v2 用 HF
-//! `tokenizers` 读同一份 `processor/tokenizer.json`）。
+//! The part of the Qwen3-VL language model that conditions the image, evaluated layer by layer. Its 36 layers' weights are never held on the device all at once (ported from v2 `ccut-image-local::candle::text_encoder`). Tokenization is replaced by [`super::super::prompt::Prompter`], shared with the MLX path (v2 reads the same `processor/tokenizer.json` with the HF `tokenizers` crate).
 
 use anyhow::{Context, Result, bail};
 use candle_core::{DType, Device, Tensor};
@@ -19,9 +17,9 @@ const HEAD_DIM: usize = 128;
 const LAYERS: usize = 36;
 const ROPE_THETA: f32 = 5_000_000.0;
 const EPS: f32 = 1e-6;
-/// 语言模型权重的键前缀：mlx-community 4-bit 包是 `language_model.model`，保留 transformers 原名的包是 `model.language_model`。
+/// Key prefix of the language-model weights: the mlx-community 4-bit package uses `language_model.model`; a package that keeps the original transformers names uses `model.language_model`.
 const PREFIXES: [&str; 2] = ["language_model.model", "model.language_model"];
-/// 提示词（含模板）的 token 上限。
+/// Token limit for the prompt (including the template).
 const MAX_TOKENS: usize = 1024;
 
 fn rms(x: &Tensor, w: &Tensor) -> Result<Tensor> {
@@ -73,8 +71,8 @@ fn attention(
     projection(weights, &format!("{prefix}.o_proj"), &merged, HIDDEN, device, dtype)
 }
 
-/// 返回末层 decoder 的残差（不过最终 RMSNorm，QwenImage21Pipeline 要的就是它），并丢掉系统提示那段前缀。
-/// 每层之前看一次 `cancel`。`files` 是 `text_encoder/` 下按清单取出的 safetensors。
+/// Returns the residual of the last decoder layer (without the final RMSNorm, which is what QwenImage21Pipeline needs), and drops the system-prompt prefix segment.
+/// `cancel` is checked before each layer. `files` are the safetensors under `text_encoder/`, fetched by manifest.
 pub fn encode(
     files: &[&Path],
     prompter: &Prompter,

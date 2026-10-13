@@ -14,14 +14,14 @@ export interface ToolCatalogueDeps {
   services: ModelServices;
   externalTools: () => ExternalToolService;
   offlineStrict: () => boolean;
-  /** 解析好的保存位置（§7.9）；不给时结果里没有 `saveDirectory`。 */
+  /** The resolved save location (§7.9); when not given, the result has no `saveDirectory`. */
   saveDirectory?: () => string;
 }
 
 /**
- * `tools.*` 的处理函数（工具目录与候选输入，架构设计 §7.9），由 `handlers.ts` 并进方法表。都是只读的：目录不探测网络，
- * 外部工具用上次探测的结果；候选输入不打开视频，范围与 `space.list` 相同（对外服务不走网关，经 MCP 工具访问 Space）。
- * Web 服务在 `services/web-handlers.ts` 里把执行方法不在白名单的工具标为不可用。
+ * Handlers for `tools.*` (tool catalogue and candidate inputs, architecture design §7.9), merged into the method table by `handlers.ts`. All are read-only: the catalogue does not probe the network, and
+ * external tools use the result of the last probe; candidate inputs do not open videos, and the scope is the same as `space.list` (external services do not go through the gateway and reach Space through MCP tools).
+ * The Web service marks tools whose execution method is not on the allowlist as unavailable in `services/web-handlers.ts`.
  */
 export function toolCatalogueMethods(deps: ToolCatalogueDeps): Pick<RpcHandlers['methods'], 'tools.list' | 'tools.candidates'> {
   const { services } = deps;

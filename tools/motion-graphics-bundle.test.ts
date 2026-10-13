@@ -16,7 +16,7 @@ const exemplarFiles = EXEMPLARS.flatMap((id) => ASPECTS.map((a) => `exemplars/${
 type Issue = { code: string; message: string; line?: number };
 const codes = (html: string) => (lintHtml(html).issues as Issue[]).map((i) => i.code);
 
-/** 在 html 上做一次必须命中的替换，返回变异后的文本。 */
+/** Performs one replacement that must match in the html, and returns the mutated text. */
 function mutate(html: string, from: string | RegExp, to: string) {
   const out = html.replace(from, to);
   expect(out, `mutation did not apply: ${String(from)}`).not.toBe(html);
@@ -108,7 +108,7 @@ describe('motion-graphics lint', () => {
 });
 
 describe('motion-graphics 范例', () => {
-  // 去掉布局槽、viewport、根尺寸、画幅与标题之后，横竖两版应完全相同。
+  // After removing the layout slots, viewport, root size, aspect ratio and title, the landscape and portrait versions must be identical.
   const strip = (html: string) =>
     html
       .replace(/\/\* slot:layout \*\/[\s\S]*?<\/style>/, '')

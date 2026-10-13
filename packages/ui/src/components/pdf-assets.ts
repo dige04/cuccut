@@ -1,4 +1,4 @@
-/** PDF.js 的字体、CMap 和图片解码器随包内嵌；打包后的 file:// 也不依赖网络或 fetch(file:)。 */
+/** PDF.js fonts, CMaps and image decoders are embedded in the package; the packaged file:// build also does not depend on the network or on fetch(file:). */
 const assets = import.meta.glob<string>([
   '../../../../node_modules/pdfjs-dist/cmaps/*.bcmap',
   '../../../../node_modules/pdfjs-dist/standard_fonts/*.{pfb,ttf}',

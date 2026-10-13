@@ -77,26 +77,26 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const runtime = useRuntime();
   const projects = useDirectory((s) => s.projects);
   const pickable = projects.filter((p) => !p.archived).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-  // 旁边的编辑器开着项目里的视频时，新会话建在那个项目里，智能体才能读写这个视频（§1.5）。
+  // When the editor beside it has a video open from a project, the new session is created in that project so the agent can read and write this video (§1.5).
   const videoProjectId = useVideo((s) => s.video?.ref?.source.projectId ?? null);
-  // 路由没带项目时用托盘上次选的（记在这台电脑上，还在、没归档才算；产品设计 §3.2.1），否则不用项目。
+  // When the route carries no project, use the one last picked in the tray (remembered on this computer; it counts only if it still exists and is not archived; product design §3.2.1); otherwise no project.
   const lastProject = useHomeMemory((s) => s.project);
   const remembered = lastProject && pickable.some((p) => p.id === lastProject) ? lastProject : null;
   const projectId = routeProjectId ?? videoProjectId ?? remembered;
   const project = useProject(projectId);
-  // 「转录并翻译」上次填的目标语言：快捷开始沿用它，没有时那句话留待填项。
+  // The target language last filled in for “转录并翻译” (Transcribe and translate): quick start reuses it; when there is none, that sentence waits for the field to be filled.
   const lastTarget = useHomeMemory((s) => s.target);
   const go = useShell((s) => s.go);
   const draftKey = startDraftKey(routeProjectId);
-  // 新会话的访问模式：草稿上选过的，否则设置里的默认（`agent.defaultAccessMode`，记着上次在这里选的）。
+  // Access mode for a new session: whatever was picked on the draft, otherwise the default in settings (`agent.defaultAccessMode`, which remembers the last choice made here).
   const draftMode = useShell((s) => s.draftAccessModes[draftKey]);
   const defaultMode = useSetting('agent.defaultAccessMode');
   const accessMode = draftMode ?? defaultMode ?? DEFAULT_AGENT_MODE;
-  // Agent · 模型 · 强度：草稿上选过的，否则默认 Agent 和它在偏好里的默认模型与强度。
+  // Agent · model · effort: whatever was picked on the draft, otherwise the default Agent and its default model and effort from preferences.
   const choice = useShell((s) => s.draftAgents[draftKey]);
   const drivers = useConnection((s) => s.drivers);
   const checking = useConnection((s) => s.checking);
-  // 草稿上选的 Agent 还在首次探测时显示「正在检测」，不退回默认的那个（发送时照旧带草稿上的选择）。
+  // If the Agent picked on the draft is still being detected for the first time, show “正在检测” (Detecting) and do not fall back to the default one (sending still uses the draft's choice).
   const driver =
     choice?.driverId && checking.includes(choice.driverId)
       ? null
@@ -105,25 +105,25 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const { model, effort } = draftSelection(driver, choice);
   const editor = useEditorReference({ conversationId: null, projectId });
   const brief = useStartBriefOf(draftKey);
-  // 输入框里还没填的待填项（模板包规范 §5.5）：框下面的提示行列出它们。
+  // Unfilled fields in the input box (template pack spec §5.5): the hint line below the box lists them.
   const slots = slotLabels(useShell((s) => s.drafts[draftKey] ?? ''));
-  // 每加一，输入框选中下一处待填项（Composer `start.selectSlot`）。
+  // Each press selects the next unfilled field in the input box (Composer `start.selectSlot`).
   const [slotTick, setSlotTick] = useState(0);
-  // 模板目录：起始页挂上时取一次（弹窗打开、重新连上时也会再取）。
+  // Template catalog: fetched once when the start page mounts (it is fetched again when the popup opens or the connection is restored).
   const catalog = useTemplateCatalogLoader();
   const template = templateOf(catalog.templates, brief.template);
   const shelf = useHomeTemplates((s) => s.recent);
-  // 「+ › 使用 Skill」点选的那几个：标记和模板排在一行（列表由输入框取）。
+  // Skills picked via “+ › 使用 Skill” (+ › Use Skill): markers and templates share one line (the list is taken from the input box).
   const skillIds = useDraftSkillIds(draftKey);
   const skillCatalog = useSkills((s) => s.skills);
   const pickedSkills = skillIds.map((id) => ({ id, name: skillCatalog.find((k) => k.id === id)?.name ?? id }));
-  // 「+ › 最近的视频」：还能选的项目里最近活动的视频。
+  // “+ › 最近的视频” (+ › Recent videos): among the videos that can still be picked, those with the most recent activity.
   const spaceEntries = useSpace((s) => s.entries);
   const recent = recentVideos(
     spaceEntries,
     pickable.map((p) => p.id),
   );
-  // 还在检测 Agent 时不下结论，不闪指引卡。
+  // While the Agent is still being detected, draw no conclusion and do not flash the guidance card.
   const gate = homeGate(drivers, checking);
   const guide = gateGuide(gate);
   // "Create a video" or "Clip a long video" (agentcut's `make` / `clips`).
@@ -134,16 +134,16 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const patch = (next: Partial<HomeBriefState>) => useStartBrief.getState().patch(draftKey, next);
   const currentBrief = () => useStartBrief.getState().briefs[draftKey] ?? EMPTY_HOME_BRIEF;
 
-  // 弹窗关上时 S2 会把焦点还给打开它的按钮：等它还完再把焦点放回输入框（同输入框自己的 refocus）。
-  // 草稿里有待填项时选中第一处（规范 §5.5），否则光标放到末尾。
+  // When the popup closes, S2 returns focus to the button that opened it: wait until that finishes, then put focus back in the input box (same as the input box's own refocus).
+  // If the draft has unfilled fields, select the first one (spec §5.5); otherwise put the cursor at the end.
   const focusComposer = () =>
     window.setTimeout(() => {
       if (slotLabels(useShell.getState().drafts[draftKey] ?? '').length) setSlotTick((n) => n + 1);
       else focusPromptEnd(document.querySelector(`[data-composer="${CSS.escape(draftKey)}"]`));
     }, 400);
 
-  // 往输入框里填一句提示词（快捷开始、作品示例、场景模板共用；原型 page-new.jsx `fillPrompt`）：框里原来有字时直接替换，不先问，给一次撤销；
-  // 填完焦点回到输入框（有待填项时选中第一处，否则光标在末尾）。`undo` 是撤销时除了文字还要还原的东西。
+  // Fill one sentence of prompt into the input box (shared by quick start, work examples and scene templates; prototype page-new.jsx `fillPrompt`): if the box already has text, replace it directly without asking, and offer one undo;
+  // after filling, focus returns to the input box (if there are unfilled fields, select the first one; otherwise the cursor goes to the end). `undo` is what to restore besides the text when undoing.
   const fillPrompt = (next: string, undo?: () => void) => {
     const shell = useShell.getState();
     const before = shell.drafts[draftKey] ?? '';
@@ -162,9 +162,8 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     });
   };
 
-  // 场景模板（模板包规范 §5.2、§5.5；原型 page-new.jsx `pickScene`）：挂在输入框上，记进模板网格
-  // （最近用过的在前），并把 brief 填进输入框（带待填项，换选另一个模板就换掉文字）；已经挂着的再选一次不重填。
-  // 摘掉模板（再点一次同一张卡、点标记的 ×）只摘模板，不动文字。撤销把文字与模板一起还原（同 applyExample）。
+  // Scene templates (template pack spec §5.2, §5.5; prototype page-new.jsx `pickScene`): attached to the input box, recorded in the template grid (most recently used first), and the brief is filled into the input box (with unfilled fields; choosing another template replaces the text). Picking one that is already attached does not refill it.
+  // Removing the template (clicking the same card again, or the × on the marker) removes only the template and leaves the text alone. Undo restores the text and template together (same as applyExample).
   const pickScene = (picked: HomeTemplate | null) => {
     const before = currentBrief();
     if (picked) useHomeTemplates.getState().pick(picked.id, useTemplateCatalog.getState().templates);
@@ -173,11 +172,11 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     fillPrompt(picked.brief, () => patch({ template: before.template }));
   };
 
-  // 快捷开始：只换输入框里的字，模板与素材都不动；不发送。
+  // Quick start: only replaces the text in the input box; templates and materials are left alone; does not send.
   const applyStarter = (starter: HomeStarter) => fillPrompt(starter.prompt);
 
-  // 作品示例（规范 §5.1；原型 page-new.jsx `applyExample`）：提示词全文替换输入框里的话（之后就是用户自己的话），摘掉挂着的场景模板。
-  // 撤销把文字与模板一起还原。
+  // Work example (spec §5.1; prototype page-new.jsx `applyExample`): replaces the whole prompt in the input box (after that it is the user's own words) and removes any attached scene template.
+  // Undo restores the text and template together.
   const applyExample = async (example: HomeTemplate) => {
     let text: string;
     try {
@@ -196,7 +195,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   // none is picked: without a session the video has nowhere else to live).
   const createBlank = (ratio: BlankRatio) => createBlankVideo(runtime, projectId, ratio);
 
-  // 选文件是异步的：并进去时按 store 里最新的那份算，不用渲染时的快照。
+  // Choosing files is asynchronous: when merging, compute from the latest version in the store, not from the snapshot taken at render time.
   const addPaths = (paths: readonly string[]) => {
     if (!paths.length) return;
     const current = useStartBrief.getState().briefs[draftKey] ?? EMPTY_HOME_BRIEF;
@@ -205,8 +204,8 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     if (rejected) ToastQueue.neutral(HOME_COPY.materialsFull(MAX_HOME_MATERIALS, rejected), { timeout: 5000 });
   };
 
-  // 换项目：起始页按项目重新挂载，输入框的话、附图、点选的 skill、模板与素材、访问模式与 Agent 选择一起搬过去；
-  // 编辑器开着的话，功能区的标签也跟到那个项目的起始页。
+  // Switching project: the start page is remounted per project; the input text, attached images, picked skills, templates and materials, access mode and Agent choice all move over together;
+  // if the editor is open, its feature-area tab also follows to that project's start page.
   const moveDraft = (id: Id | null) => {
     const to = startDraftKey(id);
     const shell = useShell.getState();
@@ -232,7 +231,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     if (route.tab === 'home') shell.carryWorkspace(workspaceKey(route.conversationId, route.projectId), workspaceKey(null, id));
   };
 
-  // 托盘上选的项目（null = 不用项目）记下来，下次进起始页还是它；别处带着项目来（侧栏「在这里新建会话」等）不记。
+  // The project picked in the tray (null = no project) is remembered, so the next visit to the start page still uses it; when arriving with a project from elsewhere (e.g. the sidebar's “在这里新建会话” (Create session here)), it is not remembered.
   const switchProject = (id: Id | null) => {
     useHomeMemory.getState().setProject(id);
     if (id === routeProjectId) return;
@@ -242,8 +241,8 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     go({ tab: 'home', conversationId: null, projectId: id, ...(pane ? { pane } : {}) });
   };
 
-  // 「+ › 最近的视频」（原型 page-new.jsx `pickRecent`）：起始页换到那个视频的项目，并在功能区打开它——会话建在那个项目里，
-  // 输入框上方出现这个视频的引用标签，智能体就能读写它。这句话只对一条视频说：已经挂着的视频或音频素材让出位置，给一次撤销。
+  // “+ › 最近的视频” (+ › Recent videos; prototype page-new.jsx `pickRecent`): the start page switches to that video's project and opens it in the feature area, so the session is created in that project,
+  // and a reference tag for this video appears above the input box so the agent can read and write it. This applies only to a single video: an already-attached video or audio material gives way, and one undo is offered.
   const pickRecent = (entryId: string) => {
     const entry = useSpace.getState().entries.find((e) => e.id === entryId);
     const to = entry?.source.projectId;
@@ -282,14 +281,14 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     skills: SkillSendRef[],
     from: { materials: readonly string[]; scene?: TemplateSendRef; composer: boolean },
   ): Promise<boolean> => {
-    // 「转录并翻译」填的目标语言记下来，下次点这条快捷开始直接沿用（认不出那句话就不记）。
+    // The target language filled in for “转录并翻译” (Transcribe and translate) is remembered, so the next time this quick start is clicked it is reused directly (if the sentence is not recognized, nothing is remembered).
     const target = from.composer ? starterTarget(raw) : null;
     if (target) useHomeMemory.getState().setTarget(target);
     const text = homeBrief(raw, { images: attachments.length, materials: [...from.materials] });
     let conversationId: string | null = null;
     try {
-      // 只传草稿上选过的；没选的由 Runtime 按偏好给（默认 Agent、它的默认模型与强度）。
-      // 没选过的不传，会话跟着设置走；选过的同时记成新会话的默认（原型「全局种子」）。
+      // Pass only what was picked on the draft; anything not picked is supplied by the Runtime from preferences (default Agent, its default model and effort).
+      // Items not picked are not passed, so the session follows settings; items that were picked are also recorded as the default for new sessions (prototype “global seed”).
       const conversation = await runtime.createConversation(projectId, {
         ...(draftMode ? { accessMode: draftMode } : {}),
         ...(choice?.driverId ? { driverId: choice.driverId } : {}),
@@ -302,7 +301,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
       useShell.getState().setDraftAgent(draftKey, null);
       if (from.composer) useStartBrief.getState().clear(draftKey);
       const context = await editor.capture();
-      // 编辑器开着的话保持打开：会话换成刚建的这个。
+      // If the editor is open, keep it open and switch the session to the one just created.
       const { route } = useShell.getState();
       const pane = route.tab === 'home' ? route.pane : undefined;
       if (route.tab === 'home') useShell.getState().carryWorkspace(workspaceKey(route.conversationId, route.projectId), conversation.id);
@@ -319,8 +318,8 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
       return true;
     } catch (error) {
       ToastQueue.negative(sendFailureMessage(error), { timeout: 5000 });
-      // 会话已经建好：把整段话（含设置与素材）、图片与点选的 skill 放回那个会话的输入框，不吞掉用户的输入。
-      // 场景模板挂不到会话的输入框上（那里没有模板），这一次的模板随之丢掉。
+      // Session already created: put the whole text (with settings and materials), images and picked skills back into that session's input box, so the user's input is not swallowed.
+      // A scene template cannot attach to the session's input box (there is no template there), so this time's template is dropped.
       if (conversationId) {
         useShell.getState().setDraft(conversationId, text);
         if (from.composer) {
@@ -329,7 +328,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
         }
         return true;
       }
-      // 会话没建成：输入框放回原话，模板、设置与素材还留在起始页上。
+      // Session not created: restore the original text in the input box; the template, settings and materials remain on the start page.
       return false;
     }
   };
@@ -349,7 +348,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   return (
     <div className={cn('@container flex flex-col', layout === 'column' && 'cc-scroll min-h-0 flex-1 overflow-y-auto')}>
       <div className={cn('mx-auto box-border flex w-full flex-col gap-12', layout === 'column' && 'max-w-6xl px-4 pt-4 pb-12 @xl:px-6')}>
-        {/* 旧版项目导入在跑 / 留了没导入的（只在桌面端有导入）。 */}
+        {/* A legacy project import is running, or left items not yet imported (import exists only on desktop). */}
         <LegacyImportBanner />
         <div className="mx-auto w-full max-w-3xl pt-4 @3xl:pt-10">
           <Tabs value={flow} onValueChange={(value) => setFlow(value === 'clips' ? 'clips' : 'make')} className="gap-7">
@@ -402,7 +401,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
                     ),
                     ready,
                     selectSlot: slotTick,
-                    // 只选了模板、没写一句话不能发；附了图片或素材可以（Agent 用不了时输入框自己挡住）。
+                    // Cannot send with only a template chosen and no sentence written; attaching images or materials is fine (the input box itself blocks sending when the Agent is unavailable).
                     canSendEmpty: (images) => canStartHome({ text: '', images, materials: brief.materials.length, gate: null }).ok,
                     onPaths: addPaths,
                     recent: {
@@ -415,9 +414,9 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
                     },
                   }}
                   onSend={(raw, attachments, skills) => {
-                    // 素材在发出去时写进这条消息（原型 `AgentHero` 的 brief），没填的待填项写成「[label]」（规范 §5.5，homeBrief）；挂着的场景模板与点选的 skill 只传标识，
-                    // 简报引导、模板正文与 SKILL.md 由 Runtime 拼给智能体（模板包规范 §5.2、产品设计 §6.9），
-                    // 会话里的消息另带「模板：标题」「Skill：名称」的标记。
+                    // Materials are written into this message when it is sent (the brief of prototype `AgentHero`); unfilled fields are written as “[label]” (spec §5.5, homeBrief). Attached scene templates and picked skills pass only their identifiers;
+                    // the brief guidance, template body and SKILL.md are assembled for the agent by the Runtime (template pack spec §5.2, product design §6.9),
+                    // and the message in the session additionally carries the markers “模板：标题” (Template: title) and “Skill：名称” (Skill: name).
                     const scene = brief.template
                       ? { id: brief.template, ...(template ? { version: template.version, language: template.language } : {}) }
                       : undefined;

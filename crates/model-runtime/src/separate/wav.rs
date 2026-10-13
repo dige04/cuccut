@@ -1,13 +1,13 @@
-//! 最小 WAV 读写（立体声 16-bit PCM 写出；读入支持 16-bit PCM 与 32-bit float 的单 / 双声道）。
+//! Minimal WAV reading and writing (writes stereo 16-bit PCM; reads mono or stereo 16-bit PCM and 32-bit float).
 //!
-//! 分离产物落盘走这里，避免再引入 hound；任意媒体（mp4 等）的解码请用 ffmpeg。
+//! Separation outputs are written to disk through here, to avoid adding hound; for decoding arbitrary media (mp4, etc.), use ffmpeg.
 
 use super::types::StereoAudio;
 use anyhow::{Context, Result, bail};
 use std::io::Write;
 use std::path::Path;
 
-/// 把立体声 f32 PCM 写成 16-bit PCM WAV。超出 [-1, 1] 的样本会被裁剪。
+/// Writes stereo f32 PCM as a 16-bit PCM WAV. Samples outside [-1, 1] are clipped.
 pub fn write_wav_stereo_pcm16(path: &Path, audio: &StereoAudio) -> Result<()> {
     let bytes = encode_wav_stereo_pcm16(audio)?;
     let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
@@ -16,7 +16,7 @@ pub fn write_wav_stereo_pcm16(path: &Path, audio: &StereoAudio) -> Result<()> {
     Ok(())
 }
 
-/// 内存中编码立体声 16-bit PCM WAV。
+/// Encodes stereo 16-bit PCM WAV in memory.
 pub fn encode_wav_stereo_pcm16(audio: &StereoAudio) -> Result<Vec<u8>> {
     if audio.left.len() != audio.right.len() {
         bail!("左右声道长度不一致：{} / {}", audio.left.len(), audio.right.len());
@@ -24,13 +24,13 @@ pub fn encode_wav_stereo_pcm16(audio: &StereoAudio) -> Result<Vec<u8>> {
     Ok(encode_wav_stereo_i16(audio.sample_rate, &interleave_pcm16(audio)))
 }
 
-/// 分轨落盘的量化规则：裁到 [-1, 1] 后乘 32767 四舍五入。本机 `ccut separate` 写 WAV 与
-/// 节点分离交回 FLAC 分轨（远端算力 J2）用同一条，客户端解回的 i16 才能与本机逐样本相同。
+/// Quantization rule for writing stem tracks to disk: clip to [-1, 1], multiply by 32767, and round. The local `ccut separate` writes WAV, and the node separation that returns FLAC stems (remote compute J2) uses this same rule,
+/// so the i16 values the client decodes back are sample-for-sample identical to the local output.
 pub fn pcm16(sample: f32) -> i16 {
     (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
 
-/// 立体声 f32 → 交织的 16-bit PCM（[`pcm16`] 量化）。左右不等长时按短的截。
+/// Stereo f32 → interleaved 16-bit PCM (quantized by [`pcm16`]). If left and right differ in length, truncates to the shorter.
 pub fn interleave_pcm16(audio: &StereoAudio) -> Vec<i16> {
     let mut out = Vec::with_capacity(audio.left.len() * 2);
     for (l, r) in audio.left.iter().zip(&audio.right) {
@@ -40,7 +40,7 @@ pub fn interleave_pcm16(audio: &StereoAudio) -> Vec<i16> {
     out
 }
 
-/// 交织的立体声 16-bit PCM 编成 WAV（与 [`encode_wav_stereo_pcm16`] 同一个文件头）。
+/// Encodes interleaved stereo 16-bit PCM as WAV (same file header as [`encode_wav_stereo_pcm16`]).
 pub fn encode_wav_stereo_i16(sample_rate: u32, interleaved: &[i16]) -> Vec<u8> {
     let frames = interleaved.len() / 2;
     let channels = 2u16;
@@ -66,7 +66,7 @@ pub fn encode_wav_stereo_i16(sample_rate: u32, interleaved: &[i16]) -> Vec<u8> {
     out
 }
 
-/// [`encode_wav_stereo_i16`] 写成文件。
+/// Writes the output of [`encode_wav_stereo_i16`] to a file.
 pub fn write_wav_stereo_i16(path: &Path, sample_rate: u32, interleaved: &[i16]) -> Result<()> {
     let bytes = encode_wav_stereo_i16(sample_rate, interleaved);
     let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
@@ -75,7 +75,7 @@ pub fn write_wav_stereo_i16(path: &Path, sample_rate: u32, interleaved: &[i16]) 
     Ok(())
 }
 
-/// 读取 WAV（16-bit PCM 或 32-bit float，1 或 2 声道）；单声道会复制成左右两路。
+/// Reads WAV (16-bit PCM or 32-bit float, 1 or 2 channels); mono is duplicated into left and right.
 pub fn read_wav(path: &Path) -> Result<StereoAudio> {
     let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
     decode_wav(&bytes)
@@ -106,7 +106,7 @@ pub fn decode_wav(bytes: &[u8]) -> Result<StereoAudio> {
                 channels = u16::from_le_bytes(body[2..4].try_into()?);
                 sample_rate = u32::from_le_bytes(body[4..8].try_into()?);
                 bits = u16::from_le_bytes(body[14..16].try_into()?);
-                // WAVE_FORMAT_EXTENSIBLE：真正的格式在 SubFormat 的前两个字节。
+                // WAVE_FORMAT_EXTENSIBLE: the real format is in the first two bytes of SubFormat.
                 if format == 0xFFFE && body.len() >= 26 {
                     format = u16::from_le_bytes(body[24..26].try_into()?);
                 }

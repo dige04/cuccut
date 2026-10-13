@@ -51,9 +51,7 @@ import { useMediaGen, useMediaGenStore, type AudioSubpage } from './media-gen-st
 import { PanelHead } from './panel-head.tsx';
 
 /*
- * 音频 Tab 的「生成语音 / 克隆声音」子页（设计稿 panel-tts.jsx `TtsPanel` 的云端部分）：同一张表单两个入口，
- * 「克隆声音」先选我的声音里一只在这家克隆好的。合成走 `models.synthesizeSpeech` 带 `videoId`：做完由 Runtime 收进
- * 这个视频的素材库，放到时间线是另一步。本机引擎、注音、情绪与「按句放到时间轴」这一版没有合同，不画。
+ * Cloud sub-page of the Audio tab, “生成语音 / 克隆声音” (Generate speech / Clone voice) (design panel-tts.jsx `TtsPanel`, cloud part): one form with two entry points. “克隆声音” (Clone voice) first selects one of my voices that has been cloned with this provider. Synthesis goes through `models.synthesizeSpeech` with `videoId`: when it finishes, the Runtime files the result into this video's asset library. Placing it on the timeline is a separate step. The local engine, phonetic annotation, emotion, and “按句放到时间轴” (place per sentence on the timeline) have no contract in this version and are not drawn.
  */
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
@@ -101,7 +99,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
   const view = useModels((s) => s.capabilities);
-  // 我的声音：还没读到时 null（库音色先不判克隆状态，交给 Runtime 核对）。
+  // My voices: null until read (library voices do not check clone status yet; the Runtime checks).
   const myVoices = useVoices((s) => (s.ready ? s.voices : null));
   const state = useMediaGen(videoId);
   const patch = useMediaGenStore((s) => s.patch);
@@ -118,7 +116,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
   const option = findOption(options, initialModelKey(options, draft.model, view?.synthesizeSpeech.effective ?? null));
   const setDraft = (next: Partial<TtsDraft>) => patchTts(videoId, next);
 
-  // 「克隆声音」进来先选我的声音里在这家克隆好的一只（读到我的声音与模型之后选一次，之后由人改）。
+  // Entering “克隆声音” (Clone voice) first selects one of my voices that has been cloned with this provider (chosen once, after my voices and models are read; after that, the user changes it).
   const picked = useRef(false);
   useEffect(() => {
     if (!clone || picked.current || !myVoices || !view) return;
@@ -127,7 +125,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
     if (key && key !== draft.voice) patchTts(videoId, { voice: key });
   }, [clone, myVoices, view, draft, option, patchTts, videoId]);
 
-  // 取消了（这里或后台任务页）：回到表单，照实说费用。
+  // Cancelled (here or on the background task page): return to the form and state the cost honestly.
   const cancelledId = job?.state === 'cancelled' ? job.jobId : null;
   useEffect(() => {
     if (!cancelledId || !job) return;
@@ -152,12 +150,12 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
     setSubmitting(true);
     runtime
       .synthesizeSpeech(editorSpeechRequest(draft, option, videoId))
-      // 提交到了就记下这个任务：面板切走再回来照样看得到进度。
+      // Once submitted, record this task: switching the panel away and back still shows its progress.
       .then((jobId) => patch(videoId, { ttsJob: jobId }), submitFailed)
       .finally(() => setSubmitting(false));
   };
 
-  // 在跑时返回只是收起子页，任务照跑，回来还看得到；做完或没做成时返回就是放下这一次。
+  // Returning while it runs only collapses the sub-page. The task keeps running and can be seen again on return. Returning after it finishes or fails abandons this attempt.
   const back = () => patch(videoId, stage === 'run' ? { audio: null } : { audio: null, ttsJob: null });
   const head = (
     <PanelHead title={title} back={{ label: C.back, onPress: back }}>
@@ -283,7 +281,7 @@ function SubHead({ title, aside }: { title: string; aside?: ReactNode }) {
   );
 }
 
-/** 音色、风格、语速、语言（设计稿 `CloudRows`）：窄栏里一项一行。 */
+/** Voice, style, speed, language (design `CloudRows`): one item per row in the narrow column. */
 function VoiceRows({ draft, option, voices, setDraft }: { draft: TtsDraft; option: SpeechOption; voices: MyVoices; setDraft: (p: Partial<TtsDraft>) => void }) {
   const info = option.info;
   const voiceKey = voiceKeyFor(draft, info);
@@ -359,7 +357,7 @@ function VoiceRows({ draft, option, voices, setDraft }: { draft: TtsDraft; optio
   );
 }
 
-/** 在跑（设计稿 `Job` 进度卡）：阶段、进度、取消。还没出现在任务镜像里时先画一条不定进度。 */
+/** In progress (design `Job` progress card): stage, progress, cancel. If the task has not yet appeared in the task mirror, show an indeterminate bar first. */
 function RunView({ title, job, all, view }: { title: string; job: JobRecord | null; all: readonly JobRecord[]; view: ModelCapabilitiesView | null }) {
   const cancel = useCancelJob();
   const pct = job ? jobPercent(job) : null;
@@ -384,7 +382,7 @@ function RunView({ title, job, all, view }: { title: string; job: JobRecord | nu
   );
 }
 
-/** 做完（设计稿 `aplbar` + 素材卡 + 播放条）：已收进素材库，「加到时间线」放在播放头处。 */
+/** Done (design `aplbar` + asset card + playback bar): already filed into the asset library; “加到时间线” (Add to timeline) sits at the playhead. */
 function DoneView({
   job,
   view,
@@ -444,7 +442,7 @@ function DoneView({
   );
 }
 
-/** 没做成：原因、再试一次（照冻结的参数，仍回到这个视频）、改一改再生成；结果不明的去任务详情处理。 */
+/** Failed: the reason, retry (with the frozen parameters, still returning to this video), or edit and generate again. For an uncertain result, handle it in task details. */
 function FailedView({ job, videoId, onEdit }: { job: JobRecord; videoId: Id; onEdit: () => void }) {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);

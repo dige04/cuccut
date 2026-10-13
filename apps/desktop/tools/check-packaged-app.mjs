@@ -1,13 +1,10 @@
-// 打包产物的自检：用应用自己的可执行文件以 Node 方式（`ELECTRON_RUN_AS_NODE`，与主进程启动 Runtime 的方式一样）运行 asar 里的
-// `out/main/runtime.js --self-check --probe`，环境变量按主进程的做法（`src/main/packaged-resources.ts`）给出。Runtime 用它找东西的同一批
-// 解析函数报告每个 Worker、凭据助手、内置模板与 skill、模型数据、Web 客户端与 editor.wasm 解析到哪里，并把每个原生程序起一次、走一遍
-// 握手（缺 DLL、架构不对在这里暴露）；代码包的离屏宿主也起一次（应用的可执行文件带 `--composition-host`，走主进程入口的宿主分支）。
-// 只能在包的目标平台上跑（CI 的 Windows runner）。
+// Self-check of the packaged output: runs `out/main/runtime.js --self-check --probe` inside the asar using the app's own executable in Node mode (`ELECTRON_RUN_AS_NODE`, the same way the main process starts the Runtime), with environment variables provided the way the main process does (`src/main/packaged-resources.ts`). Using the same resolver functions the Runtime uses to find things, it reports where each Worker, credential helper, built-in template and skill, model data, the web client and editor.wasm resolve to, and it starts each native program once and runs it through the handshake (missing DLLs and wrong architectures show up here). The code package's off-screen host is also started once (the app's executable is given `--composition-host`, which takes the host branch of the main-process entry).
+// It can only run on the package's target platform (CI's Windows runner).
 //
-//   node apps/desktop/tools/check-packaged-app.mjs <应用目录>   应用目录是 CucCut.exe 所在的目录（win-unpacked 或安装目录）
-//   node apps/desktop/tools/check-packaged-app.mjs --dev        对开发构建（out/main，用 node_modules 里的 Electron）跑一遍，不给资源目录
+//   node apps/desktop/tools/check-packaged-app.mjs <app directory>   the app directory is the one containing CucCut.exe (win-unpacked or the install directory)
+//   node apps/desktop/tools/check-packaged-app.mjs --dev             runs against the development build (out/main, using Electron from node_modules), without a resources directory
 //
-// 不启动 Runtime、不碰应用数据目录、不联网。退出码：0 通过，1 不通过，2 起不来。
+// It does not start the Runtime, does not touch the app data directory, and does not use the network. Exit codes: 0 pass, 1 fail, 2 failed to start.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -26,7 +23,7 @@ if (!arg) {
 }
 
 const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-// 别让外面的覆盖顶掉要检查的解析。
+// Do not let outside overrides replace the resolution being checked.
 for (const name of [
   'CUCCUT_ENGINE_HOST',
   'CUCCUT_MODEL_WORKER',

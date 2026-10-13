@@ -50,7 +50,7 @@ describe('胶片条', () => {
   });
 
   it('每格取它左边那一刻的画面：经 timeMap 换成源时间、按粒度取整、不超出素材', () => {
-    // 每秒 32 像素：一格 2 秒；速度 2 倍，一格覆盖 4 秒源时间，粒度 2 秒。
+    // 32 px per second: one cell is 2 s wide; at 2x speed one cell covers 4 s of source time, so the granularity is 2 s.
     const tiles = filmstripTiles({
       clipLeft: 64,
       clipWidth: 160,

@@ -188,7 +188,7 @@ describe('SlidesServer 路由', () => {
           text = text.slice(text.lastIndexOf('\n\n') + 2);
         }
       } catch {
-        // 中止
+        // Aborted
       }
     })();
     try {

@@ -1,13 +1,11 @@
-//! `timeline.json` 的格式版本常量。
+//! Format version constants for `timeline.json`.
 //!
-//! v2 放在 `ccut-protocol/src/version.rs` 的 `versions` 模块里；本 crate 只用到这两个，
-//! 原值照搬到这里。`schema` 仍以原来的公共名字（`TIMELINE_VERSION` / `TIMELINE_VERSIONS`）
-//! 导出它们。
+//! The v2 versions live in the `versions` module of `ccut-protocol/src/version.rs`. This crate only uses these two, so the original values are copied here as-is. `schema` still exports them under their original public names (`TIMELINE_VERSION` / `TIMELINE_VERSIONS`).
 
-/// Timeline（`timeline.json`）：读 0.1–0.12，写 0.12（0.9 白板节拍跟旁白：`pace` / `strict` / `end` / `label` / 词锚点；
-/// 0.10 音频元素 `bcfClip`：动画项目旁白导入为轨时认领的 BCF 音频 clip；0.11 素材 `origin`（`"ai"`）与出处侧车
-/// `provenance`：图像生成的结果登记成普通 `Source`；0.12 元素 `keyframes` / `duck`，`bg` 与
-/// `main.background` 接受 `#RRGGBB`）。
+/// Timeline (`timeline.json`): reads 0.1–0.12, writes 0.12. (0.9: whiteboard beats follow the narration: `pace` / `strict` / `end` / `label` / word anchors;
+/// 0.10: audio element `bcfClip`, the BCF audio clip claimed when an animation project's narration is imported as a track; 0.11: source `origin` (`"ai"`) and the provenance sidecar
+/// `provenance`: image-generation results are registered as ordinary `Source`s; 0.12: element `keyframes` / `duck`, and `bg` and
+/// `main.background` accept `#RRGGBB`.)
 pub const TIMELINE_CURRENT: &str = "0.12";
 pub const TIMELINE_SUPPORTED: &[&str] = &[
     "0.1",

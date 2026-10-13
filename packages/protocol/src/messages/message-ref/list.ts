@@ -14,12 +14,12 @@ import { pl } from './list.pl.ts';
 import { tr } from './list.tr.ts';
 import { vi } from './list.vi.ts';
 
-/** 参数是标量，或嵌套的引用（展开之后的文字）。 */
+/** The parameter is a scalar, or a nested reference (the text after expansion). */
 type P<K extends string> = Record<K, string | number>;
 
 /**
- * `crates/message-ref` 的通用拼接（`message_ref::join`）。
- * 英文条目与 Rust `msg!` 的模板一字不差（`tools/rust-messages.test.ts` 核对）；改英文要两边一起改，键发布后不改名、不复用。
+ * The generic join for `crates/message-ref` (`message_ref::join`).
+ * The English entries match the Rust `msg!` templates word for word (checked by `tools/rust-messages.test.ts`). When the English changes, change both sides together. Keys are not renamed or reused after release.
  */
 const en = {
   join: (p: P<'head' | 'tail'>) => `${p.head}; ${p.tail}`,

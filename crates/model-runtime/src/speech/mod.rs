@@ -1,10 +1,6 @@
-//! 语音识别的纯逻辑：不做 I/O，不依赖推理框架。后端经 [`StreamingVad`] 与 [`SpeechRecognizer`]（自己切段的模型经
-//! [`SegmentingRecognizer`]）接入。
+//! Pure logic for speech recognition: no I/O, no dependency on an inference framework. Backends plug in via [`StreamingVad`] and [`SpeechRecognizer`] (models that segment audio themselves plug in via [`SegmentingRecognizer`]).
 //!
-//! `hint`、`moss_parse`、`refine`、`speaker_cluster`、`timestamp`、`vad_binarize` 与本文件末尾的数据合同
-//! 从 v2 `ccut-speech-core` 原样移植；`moss_common`（MOSS 的分块生成与重复检测）与 `moss_speakers`（跨块说话人合并）
-//! 从 v2 `ccut-speech` 与 `ccut-transcribe` 原样移植（架构设计 §6.5、§14）。`pyannote_common`（Pyannote 分段的解码与
-//! 声纹聚类）从 v2 `ccut-speech` 原样移植，`speaker_projection`（说话人区间 → 词）从 v2 `ccut-kernel` 原样移植（§6.6）。
+//! `hint`, `moss_parse`, `refine`, `speaker_cluster`, `timestamp`, `vad_binarize` and the data contracts at the end of this file are ported verbatim from v2 `ccut-speech-core`; `moss_common` (MOSS chunked generation and repetition detection) and `moss_speakers` (cross-chunk speaker merging) are ported verbatim from v2 `ccut-speech` and `ccut-transcribe` (architecture design §6.5, §14). `pyannote_common` (Pyannote segment decoding and voiceprint clustering) is ported verbatim from v2 `ccut-speech`, and `speaker_projection` (speaker intervals → words) is ported verbatim from v2 `ccut-kernel` (§6.6).
 
 pub mod align_common;
 pub mod autolang;
@@ -36,35 +32,33 @@ pub use moss_parse::SpeakerRange;
 pub use segmenter::SpeechSpan;
 pub use vad_stream::{StreamingVad, VadConfig};
 
-/// 一次识别的参数。
+/// Parameters for one recognition.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RecognitionRequest<'a> {
-    /// 规范语言码（`en`、`zh`、`yue`…）；`None` 交给模型自动识别。
+    /// Canonical language code (`en`, `zh`, `yue`…); `None` leaves detection to the model.
     pub language: Option<&'a str>,
-    /// 术语与上下文提示，进模型的 system 段。
+    /// Terminology and context hints, passed into the model's system segment.
     pub context: Option<&'a str>,
 }
 
-/// 一次识别的结果。
+/// Result of one recognition.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Recognition {
     pub text: String,
-    /// 模型自己报出的语言名（Qwen3-ASR 自动识别时输出 `language English`）。
+    /// Language name reported by the model itself (Qwen3-ASR outputs `language English` when auto-detecting).
     pub language_name: Option<String>,
-    /// 加了重复惩罚重试之后仍像复读。
+    /// Still looks like repetition after retrying with a repetition penalty.
     pub degenerate: bool,
 }
 
-/// 一段音频（16 kHz 单声道）→ 文本。
+/// One audio segment (16 kHz mono) → text.
 pub trait SpeechRecognizer {
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> anyhow::Result<Recognition>;
 }
 
-/// 自己切段的识别器（MOSS-Transcribe-Diarize）：整段音频（16 kHz 单声道）进，带绝对时间、可能带说话人标签的
-/// 行出。不经 VAD，分块、断句由模型自己做。
+/// Recognizer that segments audio itself (MOSS-Transcribe-Diarize): the whole audio (16 kHz mono) goes in, and rows with absolute times and possibly speaker labels come out. There is no VAD; chunking and sentence breaking are done by the model itself.
 pub trait SegmentingRecognizer {
-    /// `language` 是断言的规范语言码；`None` 交给模型自己判断。取消时返回的错误能 `downcast_ref` 出
-    /// [`SegmentingCancelled`]。
+    /// `language` is the asserted canonical language code; `None` leaves the judgment to the model. The error returned on cancellation can be identified with `downcast_ref` as [`SegmentingCancelled`].
     fn transcribe(
         &mut self,
         audio: &[f32],
@@ -73,25 +67,25 @@ pub trait SegmentingRecognizer {
     ) -> anyhow::Result<SegmentedTranscription>;
 }
 
-/// 自己切段的识别器的结构化输出；`rows` 已带绝对时间（相对送入音频的起点）与说话人标签。
+/// Structured output of a self-segmenting recognizer; `rows` already carry absolute times (relative to the start of the audio passed in) and speaker labels.
 #[derive(Debug, Clone, Default)]
 pub struct SegmentedTranscription {
     pub text: String,
     pub rows: Vec<RowIn>,
     pub speaker_ranges: Vec<SpeakerRange>,
     pub generation_tokens: usize,
-    /// 转录成功但有一段没写完整之类的提示。
+    /// Hint that transcription succeeded but a segment was not fully written, and similar.
     pub warnings: Vec<String>,
 }
 
-/// 自己切段的识别过程的观测与中止钩子。
+/// Observation and abort hooks for the self-segmenting recognition process.
 #[derive(Default)]
 pub struct SegmentingCallbacks<'a> {
-    /// (已覆盖音频秒数, 音频总秒数)，单调不减。
+    /// (covered audio seconds, total audio seconds), monotonically non-decreasing.
     pub on_progress: Option<&'a mut dyn FnMut(f64, f64)>,
-    /// 流式解析出的整句（时间戳已加上块偏移，是全局时间轴）。
+    /// A full sentence parsed from streaming (timestamps already include the chunk offset; this is the global timeline).
     pub on_segment: Option<&'a mut dyn FnMut(&LiveSegment)>,
-    /// 返回 true 表示请求中止。
+    /// Returns true to request abort.
     pub should_cancel: Option<&'a mut dyn FnMut() -> bool>,
 }
 
@@ -105,7 +99,7 @@ impl SegmentingCallbacks<'_> {
     }
 }
 
-/// 取消时的错误载荷，调用方可用 anyhow 的 `downcast_ref` 识别。
+/// Payload of the error on cancellation; callers can identify it with anyhow's `downcast_ref`.
 #[derive(Debug, Clone, Copy)]
 pub struct SegmentingCancelled;
 
@@ -117,9 +111,9 @@ impl std::fmt::Display for SegmentingCancelled {
 
 impl std::error::Error for SegmentingCancelled {}
 
-// ---- 以下移植自 v2 `ccut-speech-core` 的 `types.rs` 与 `traits.rs` ----------------------------
+// ---- The following is ported from v2 `ccut-speech-core`'s `types.rs` and `traits.rs` ----------------------------
 
-/// 推理层返回的相对词时间（f32 秒）。
+/// Relative word times (f32 seconds) returned by the inference layer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlignedWord {
     pub text: String,
@@ -127,7 +121,7 @@ pub struct AlignedWord {
     pub end: f32,
 }
 
-/// VAD 推理层返回的相对语音区间（f32 秒）。
+/// Relative speech intervals (f32 seconds) returned by the VAD inference layer.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SpeechSegment {
     pub start: f32,
@@ -140,7 +134,7 @@ impl SpeechSegment {
     }
 }
 
-/// 应用层词时间（绝对 f64 秒）。
+/// Word times at the application layer (absolute f64 seconds).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WordIn {
     pub start: f64,
@@ -148,7 +142,7 @@ pub struct WordIn {
     pub text: String,
 }
 
-/// 统一转录行。没有真实词时间时 `words` 为 `None`。
+/// Unified transcript row. `words` is `None` when there are no real word times.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RowIn {
     pub start: f64,
@@ -187,18 +181,16 @@ pub trait ForcedAlignment {
     }
 }
 
-/// 说话人嵌入（16 kHz 单声道 → L2 归一化的向量）。WeSpeaker 的 MLX 实现在 `backend::mlx::wespeaker`；按段提取嵌入、
-/// 聚类（[`speaker_cluster`]）的调用方是自分段模型（MOSS）的说话人合并。
+/// Speaker embedding (16 kHz mono → L2-normalized vector). WeSpeaker's MLX implementation lives in `backend::mlx::wespeaker`; the callers that extract per-segment embeddings and cluster them ([`speaker_cluster`]) are the speaker merging for self-segmenting models (MOSS).
 pub trait SpeakerEmbedding {
-    /// 太短的输入（WeSpeaker 少于 0.5 秒）报错，由调用方先过滤。
+    /// Input too short (WeSpeaker needs at least 0.5 seconds) is an error; callers filter it out first.
     fn embed(&mut self, samples: &[f32]) -> anyhow::Result<Vec<f32>>;
 }
 
-/// 说话人区分（Pyannote 分段 + WeSpeaker 声纹聚类）：整段 16 kHz 单声道音频 → 全局说话人区间。MLX 与 candle 各有
-/// 一份实现（`backend::mlx::pyannote`、`backend::candle::pyannote`），解码与聚类都在 [`pyannote_common`]。
-/// 转录模型自己不区分说话人（Qwen3-ASR、Whisper）时，识别完成后由转录作业调用（架构设计 §6.6）。
+/// Speaker diarization (Pyannote segmentation + WeSpeaker voiceprint clustering): whole 16 kHz mono audio → global speaker intervals. There is one implementation each for MLX and candle (`backend::mlx::pyannote`, `backend::candle::pyannote`); decoding and clustering both live in [`pyannote_common`].
+/// When the transcription model does not diarize speakers itself (Qwen3-ASR, Whisper), the transcription job calls this after recognition finishes (architecture design §6.6).
 pub trait SpeakerDiarization {
-    /// 取消时返回的错误可 `downcast_ref::<pyannote_common::PyannoteCancelled>()`。
+    /// The error returned on cancellation can be retrieved with `downcast_ref::<pyannote_common::PyannoteCancelled>()`.
     fn diarize(
         &mut self,
         samples: &[f32],

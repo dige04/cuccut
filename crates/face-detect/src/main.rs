@@ -1,12 +1,11 @@
-//! `face-detect <model.onnx>`：stdio 的 JSON 行，与 Engine Host、Model Worker 同一套形状（`process-host` 的 `JsonLineWorker`）。
+//! `face-detect <model.onnx>`: JSON lines over stdio, the same shape as Engine Host and Model Worker (`JsonLineWorker` of `process-host`).
 //!
-//! - 载入模型后推送 `{"event":"ready","params":{"loadMs":…}}`；载入失败时在 stderr 写原因、以 1 退出（在途请求随之失败）。
-//! - 请求 `{"id":1,"method":"detect","params":{"file":"<PNG 或 JPEG 的绝对路径>"}}`，
-//!   响应 `{"id":1,"result":{"faces":[{x,y,w,h,score}],"width":…,"height":…,"ms":…}}`；
-//!   读不了的图或推理失败是 `{"id":1,"error":{"code":"DETECT_FAILED","message":…}}`，不认识的方法 `UNKNOWN_METHOD`，形状不对 `INVALID_REQUEST`。
-//! - stdin 关闭即退出。
+//! - After loading the model, pushes `{"event":"ready","params":{"loadMs":…}}`. On load failure, it writes the reason to stderr and exits with 1 (in-flight requests then fail).
+//! - Request `{"id":1,"method":"detect","params":{"file":"<absolute path of a PNG or JPEG>"}}`,
+//!   response `{"id":1,"result":{"faces":[{x,y,w,h,score}],"width":…,"height":…,"ms":…}}`. An unreadable image or an inference failure is `{"id":1,"error":{"code":"DETECT_FAILED","message":…}}`, an unknown method is `UNKNOWN_METHOD`, and a malformed shape is `INVALID_REQUEST`.
+//! - Exits when stdin closes.
 //!
-//! 错误说明是给 Runtime 日志看的开发者文字，不是给人看的界面文字。
+//! Error descriptions are developer text for the Runtime log, not UI text shown to people.
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -86,7 +85,7 @@ fn handle(detector: &FaceDetector, request: &Request) -> Result<Value, (&'static
 }
 
 fn emit(out: &mut impl Write, value: Value) {
-    // stdout 关了（父进程走了）就没什么可做的了。
+    // Once stdout is closed (the parent has gone), there is nothing left to do.
     if writeln!(out, "{value}").and_then(|()| out.flush()).is_err() {
         std::process::exit(0);
     }

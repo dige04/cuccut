@@ -23,7 +23,7 @@ describe('帮助', () => {
     const text = renderMainHelp(snapshot.tools, admin);
     const lines = text.split('\n');
     expect(lines.length).toBeLessThanOrEqual(HELP_MAX_LINES);
-    // 每个一级动词与名词组各占一行。
+    // Each top-level verb and noun group takes one line.
     const tree = buildTree(snapshot.tools);
     for (const verb of tree.verbs.keys()) expect(lines.some((line) => line.startsWith(`  ${verb} `))).toBe(true);
     for (const noun of tree.nouns.keys()) expect(lines.some((line) => line.startsWith(`  ${noun} `))).toBe(true);
@@ -53,7 +53,7 @@ describe('帮助', () => {
       const command = commandOf(tool);
       for (const example of tool.examples) {
         const line = exampleCommand(command, example.args);
-        // 要确认的命令的示例带 `--yes`：CLI 自己的旗标先取出来，与 `runCli` 一样。
+        // Examples for commands that need confirmation carry `--yes`: the CLI's own flags are taken out first, as in `runCli`.
         const { globals, rest: words } = extractGlobals(shellSplit(line).slice(1 + command.display.split(' ').length));
         expect(globals.yes, line).toBe(needsConfirmation(tool));
         const parsed = await parseToolArgs(command, words, globals, {
@@ -119,7 +119,7 @@ describe('spec', () => {
   });
 });
 
-/** 按 POSIX shell 的单引号规则切词（`exampleCommand` 只用单引号）。 */
+/** Splits words by POSIX shell single-quote rules (`exampleCommand` uses only single quotes). */
 function shellSplit(line: string): string[] {
   const words: string[] = [];
   let word = '';

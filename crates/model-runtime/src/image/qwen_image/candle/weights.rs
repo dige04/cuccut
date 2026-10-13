@@ -1,8 +1,6 @@
-//! 从映射的 MLX safetensors 分片里一次只读一个张量（移植自 v2 `ccut-image-local::candle::weights`）。
+//! Reads one tensor at a time from the mapped MLX safetensors shards (ported from v2 `ccut-image-local::candle::weights`).
 //!
-//! candle 普通的 `safetensors::load` 会把每个张量一次性搬到设备上；图像模型的权重比一般显卡的显存大得多，所以映射与
-//! 张量搬运的生命周期刻意分开。与 v2 唯一的不同：v2 按目录扫 `*.safetensors`，这里读调用方按清单取出的文件
-//! （[`crate::bundle::VerifiedFiles::require_extension_in`]）。
+//! candle's ordinary `safetensors::load` moves every tensor to the device at once. Image model weights are far larger than the VRAM of a typical GPU, so the lifetime of the mapping is deliberately kept separate from the tensor transfers. The only difference from v2: v2 scans `*.safetensors` in a directory, while this reads the files the caller fetched by manifest ([`crate::bundle::VerifiedFiles::require_extension_in`]).
 
 use anyhow::{Context, Result, anyhow, bail};
 use candle_core::safetensors::Load;
@@ -20,15 +18,14 @@ struct Shard {
     data: Mmap,
 }
 
-/// safetensors 分片一直映射在主机的虚拟内存里。只有请求的张量会拷到目标设备上；层算完后丢掉返回的张量，
-/// 那份设备内存就放掉了。
+/// The safetensors shards stay mapped in host virtual memory. Only the requested tensors are copied to the target device. Once a layer is done, the returned tensors are dropped and that device memory is released.
 pub struct ShardedWeights {
     shards: Vec<Shard>,
     index: HashMap<String, usize>,
 }
 
 impl ShardedWeights {
-    /// 打开给定的分片（按路径排序后建索引）。
+    /// Opens the given shards (indexed after sorting by path).
     pub fn open(files: &[&Path]) -> Result<Self> {
         let mut paths = files.iter().map(|path| path.to_path_buf()).collect::<Vec<_>>();
         paths.sort();
@@ -39,7 +36,7 @@ impl ShardedWeights {
         let mut index = HashMap::new();
         for path in paths {
             let file = File::open(&path).with_context(|| format!("打开 {}", path.display()))?;
-            // SAFETY: 映射只读，建映射时文件一直开着，CucCut 的代码不改模型权重。
+            // SAFETY: the mapping is read-only; the file stays open while the mapping is made, and CucCut's code does not modify the model weights.
             let data = unsafe { MmapOptions::new().map(&file) }.with_context(|| format!("映射 {}", path.display()))?;
             let tensors = SafeTensors::deserialize(&data).with_context(|| format!("解析 {}", path.display()))?;
             for key in tensors.names() {
@@ -63,7 +60,7 @@ impl ShardedWeights {
             .context("权重分片索引越界")
     }
 
-    /// 只看形状与类型，不分配设备张量。
+    /// Looks only at shapes and types; allocates no device tensors.
     pub fn metadata(&self, key: &str) -> Result<(Vec<usize>, safetensors::Dtype)> {
         let shard = self.shard(key)?;
         let tensors = SafeTensors::deserialize(&shard.data)?;
@@ -80,8 +77,7 @@ impl ShardedWeights {
             .with_context(|| format!("读取权重 {key} ({})", shard.path.display()))
     }
 
-    /// MLX 仿射量化的矩阵是打包的 u32 加每组的 scales 与 biases。只在主机内存里反量化这一个矩阵，再把结果按 `dtype`
-    /// 搬到设备上；临时分配在返回时就放掉。
+    /// MLX affine-quantized matrices are packed u32 values plus per-group scales and biases. Only this one matrix is dequantized in host memory, and the result is then moved to the device with `dtype`. The temporary allocations are freed when it returns.
     pub fn linear(&self, prefix: &str, input: usize, device: &Device, dtype: DType) -> Result<Tensor> {
         let key = format!("{prefix}.weight");
         let weight = self.load(&key, &Device::Cpu)?;
@@ -108,8 +104,7 @@ impl ShardedWeights {
         Ok(dense.to_dtype(dtype)?.to_device(device)?)
     }
 
-    /// 词嵌入先按提示词的 token 挑行、再反量化：Qwen3-VL 的整张词表展开会在主机内存里占好几 GB，而一句提示词只用到
-    /// 几十行。
+    /// Word embeddings pick rows by the prompt's tokens first and only then are dequantized. Expanding the whole Qwen3-VL vocabulary would take several GB of host memory, while a prompt uses only a few dozen rows.
     pub fn embedding_rows(&self, prefix: &str, ids: &[u32], width: usize, device: &Device, dtype: DType) -> Result<Tensor> {
         let weight = self.load(&format!("{prefix}.weight"), &Device::Cpu)?;
         let rows = weight.dim(0)?;
@@ -186,7 +181,7 @@ mod tests {
     #[test]
     fn expands_mlx_four_bit_affine_matrix_on_cpu() {
         let dir = tempfile::tempdir().unwrap();
-        // 8 个低位在前的 4 位值（0..7），一组 8 个。
+        // 8 low-bit-first 4-bit values (0..7), in groups of 8.
         let packed = (0..8_u32).fold(0_u32, |word, q| word | (q << (4 * q)));
         write_tensor(
             &dir.path().join("a.safetensors"),

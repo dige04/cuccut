@@ -1,38 +1,38 @@
 /**
- * 设计系统标注的目标层（docs/design/canvas §10.6）：设计系统运行时不画批注层，只在 DOM 上标目标——
- * `data-comment-target` 标可点的那一块，`data-id`（它自己或最近的祖先）是锚点，`data-comment-name` 是原名
- * （editor/comment-anchors.ts，原名是 CucCut 加的），`data-uncommentable` 标不收批注的区域。原版的批注层归宿主；
- * 在 CucCut 里宿主的这一半在 iframe 里（父窗口跨源，读不到 DOM），就是这里。
+ * Target layer for design system annotations (docs/design/canvas §10.6). The design system runtime does not draw an annotation layer; it only marks targets on the DOM:
+ * `data-comment-target` marks the clickable block, `data-id` (on it or its nearest ancestor) is the anchor, `data-comment-name` is the original name
+ * (editor/comment-anchors.ts; the original name was added by CucCut), and `data-uncommentable` marks areas that do not accept annotations. The original's annotation layer belongs to the host;
+ * in CucCut the host's half lives in the iframe (the parent window is cross-origin and cannot read the DOM), and this is that half.
  *
- * 这里扮演幻灯片运行时在标注桥（@cuccut/slides 的 comments-bridge.ts）另一头的角色：经 `comments.customAnchors`
- * 拿到控制器，消息、批注框的超时与编号标记的图层都用桥的。
+ * Here it plays the role on the other end of the annotation bridge from the slide runtime (comments-bridge.ts in @cuccut/slides): it gets the controller via `comments.customAnchors`,
+ * and the messages, the comment box timeout and the layer for numbered markers all use the bridge's.
  *
- * - 标注模式：父窗口的开关（`editor:set-mode`），或按 C（焦点不在输入框、对话框里，不带修饰键）开关，Esc 退出。
- *   开着时目标上是十字光标与虚线框，目标里面的控件不接指针（点组件预览里的按钮也是在标注那个组件）。
- * - 点一个目标：在点的位置弹批注框（`compose`），给人看的位置是「章节 › 种类 “名字”」，给模型看的带种类、名字、章节、
- *   所在文件与锚点；章节 id 另带上（`section`），跳回去时要先到那一章。不在目标上、或在不收批注的区域里的点击照常交给页面。
- * - 编号标记：标注模式开着时画在目标的右上角，随滚动、尺寸与内容变化重算；目标不在页面上、或被滚出了它的滚动容器就不画。
- * - 跳回一处（`reveal`）：派发 `cuccut:reveal-comment-target`，运行时照搜索里选中一条的路去那一章、等目标出现、滚到它并闪一下
- *   （files/ui/design-system-app.tsx 里 `CucCut:` 那段）。
+ * - Annotation mode: toggled by the parent window (`editor:set-mode`), or by pressing C (focus not in an input or dialog, no modifier keys); Esc exits.
+ *   When on, targets show a crosshair cursor and a dashed outline; controls inside a target do not receive the pointer (clicking a button in a component preview annotates that component).
+ * - Clicking a target opens the comment box (`compose`) at the click position. The position label for people is "section › kind “name”"; the model gets the kind, name, section,
+ *   file and anchor. The section id is also included (`section`), since jumping back must first go to that chapter. Clicks not on a target, or in an area that accepts no annotations, are passed to the page as usual.
+ * - Numbered markers: drawn at the top-right corner of a target while annotation mode is on; recomputed on scroll, size and content changes. Not drawn if the target is not on the page or has been scrolled out of its scroll container.
+ * - Jump back (`reveal`): dispatches `cuccut:reveal-comment-target`. The runtime follows the same path as selecting a search result to reach that chapter, waits for the target to appear, scrolls to it and flashes it
+ *   (the `CucCut:` section in files/ui/design-system-app.tsx).
  */
 import type { EditorPoint } from '@cuccut/slides/editor-messages';
 import type { CommentAnchorController, CommentAnchorHandlers, HostCommentsCapability } from '@cuccut/slides/editor';
 import type { DesignSystemCommentLabels } from './comment-labels.ts';
 
-/** 跳回一处时派发给运行时的事件（files/ui/design-system-app.tsx 监听）。`detail` 是 `{ target, section?, label? }`。 */
+/** Event dispatched to the runtime when jumping back to a place (listened to by files/ui/design-system-app.tsx). `detail` is `{ target, section?, label? }`. */
 export const REVEAL_COMMENT_TARGET_EVENT = 'cuccut:reveal-comment-target';
-/** 章节的 `data-testid` 前缀（files/ui/design-system-app.tsx：`ds-section-<章节 id>`，`aria-label` 是章节名）。 */
+/** Prefix of a section's `data-testid` (files/ui/design-system-app.tsx: `ds-section-<section id>`; `aria-label` is the section name). */
 const SECTION_TEST_ID_PREFIX = 'ds-section-';
-/** 位置标签里引用名字的长度；给模型的定位里长一些。 */
+/** Length of the name referenced in a position label; longer in the locator given to the model. */
 const LABEL_QUOTE_MAX = 40;
 const DETAIL_QUOTE_MAX = 80;
-/** 编号标记离目标右上角的距离（CSS 像素）。 */
+/** Distance of a numbered marker from the target's top-right corner (CSS pixels). */
 const PIN_INSET = 14;
-/** 标注模式开着时 `<html>` 上的属性，与点中的目标上的属性（样式见 `STYLE`）。 */
+/** Attribute on `<html>` while annotation mode is on, and the attribute on the clicked target (styles in `STYLE`). */
 const MODE_ATTR = 'data-cuccut-annotating';
 const PICKED_ATTR = 'data-cuccut-picked';
 const STYLE_ID = 'cuccut-comment-targets';
-/** 标注模式的样式；颜色与编号标记同一个 S2 蓝（comments-bridge.ts 的 domPinLayer）。嵌套的目标只框最里面那个。 */
+/** Styles for annotation mode. The color is the same S2 blue as the numbered markers (domPinLayer in comments-bridge.ts). Nested targets outline only the innermost one. */
 const STYLE = `
 html[${MODE_ATTR}] [data-comment-target] { cursor: crosshair; }
 html[${MODE_ATTR}] [data-comment-target] * { pointer-events: none; }
@@ -42,7 +42,7 @@ html[${MODE_ATTR}] [data-comment-target]:hover:not(:has([data-comment-target]:ho
 [${PICKED_ATTR}] { outline: 2px solid #3B63FB !important; outline-offset: 2px; }
 `;
 
-/** 给模型看的种类（英文），按前缀；`ds` 按名字。 */
+/** Kind shown to the model (English), by prefix; `ds` by name. */
 const KINDS_EN: Readonly<Record<string, string>> = {
   token: 'Token',
   cgroup: 'Color group',
@@ -66,7 +66,7 @@ const KINDS_EN: Readonly<Record<string, string>> = {
 };
 const SPECIALS_EN: Readonly<Record<string, string>> = { cover: 'Cover', 'font-files': 'Font files' };
 
-/** 点中的一个目标。`name` 是原名（`data-comment-name`，没有时取看得到的名字）；`section` 与 `sectionLabel` 是它所在的章节。 */
+/** A clicked target. `name` is the original name (`data-comment-name`; the visible name if missing); `section` and `sectionLabel` are the section it belongs to. */
 export interface CommentTarget {
   anchor: string;
   prefix: string;
@@ -75,7 +75,7 @@ export interface CommentTarget {
   sectionLabel?: string;
 }
 
-/** 锚点的前缀：第一个 `-` 之前（commentTargetId 拼的是 `<前缀>-<名字或哈希>`，前缀本身不含 `-`）。 */
+/** The anchor's prefix: everything before the first `-` (commentTargetId builds `<prefix>-<name or hash>`, and the prefix itself contains no `-`). */
 export function prefixOf(anchor: string): string {
   const cut = anchor.indexOf('-');
   return cut < 0 ? anchor : anchor.slice(0, cut);
@@ -86,7 +86,7 @@ function quote(text: string, max: number): string {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-/** 章节里的内容写在哪：概览是 README.md，颜色、文字、间距、圆角、阴影与另加的 token 章都在 tokens.json，组件与素材各有目录。 */
+/** Where a section's content is written: the overview is README.md; colors, text, spacing, radius, shadow, and the extra token chapters are all in tokens.json; components and assets each have a directory. */
 function sectionFile(section: string | undefined): string | undefined {
   if (section === undefined) return undefined;
   if (section === 'readme') return 'README.md';
@@ -97,9 +97,9 @@ function sectionFile(section: string | undefined): string | undefined {
 }
 
 /**
- * 这个目标写在设计系统的哪个文件里（skill design-system 的 references/format.md）：token、颜色组、文字样式、字体与样式设置
- * 都在 tokens.json，组件在 `components/<组件>/`（用法说明在它的 README.md），素材组在 `assets/<组>/`，素材与文档的名字就是
- * 它的路径，封面是 `components/Cover/preview.html`，字体文件在 `fonts/`，章节标题按章节。别的说不准，不写。
+ * Which file in the design system this target is written in (skill design-system's references/format.md): tokens, color groups, text styles, fonts and style settings
+ * are all in tokens.json; components are in `components/<component>/` (usage notes in its README.md); asset groups are in `assets/<group>/`; asset and document names are
+ * their paths; the cover is `components/Cover/preview.html`; font files are in `fonts/`; section titles go by their section. Anything else is not certain, so it is not written.
  */
 export function fileOf(prefix: string, name: string, section?: string): string | undefined {
   switch (prefix) {
@@ -138,8 +138,8 @@ export function fileOf(prefix: string, name: string, section?: string): string |
 }
 
 /**
- * 一个目标的两种说法：`label` 给人看——「章节 › 种类 “名字”」，章节标题只到章节，`ds` 的几处按名字（封面、字体文件），
- * 不在章节里（弹层、对话框）时没有章节那一段；`detail` 给模型看——英文的种类与名字、章节 id、所在文件与锚点。
+ * Two wordings for a target. `label` is for people: "section › kind “name”", where a section title goes only as far as the chapter. The few `ds` places are looked up by name (cover, font files).
+ * When not inside a chapter (popovers, dialogs), the section part is omitted. `detail` is for the model: the kind and name in English, the section id, the file and the anchor.
  */
 export function describeTarget(target: CommentTarget, labels: DesignSystemCommentLabels): { label: string; detail: string } {
   const { anchor, prefix, name, section, sectionLabel } = target;
@@ -155,7 +155,7 @@ export function describeTarget(target: CommentTarget, labels: DesignSystemCommen
   return { label, detail: `${whatEn}${where ? ` ${where}` : ''} · ${anchor}` };
 }
 
-/** 元素上看得到的名字：读屏名称，或里面第一个标题的字。 */
+/** The name visible on the element: the screen-reader name, or the text of the first heading inside it. */
 function visibleName(el: Element): string {
   const aria = el.getAttribute('aria-label');
   if (aria?.trim()) return aria.trim();
@@ -164,9 +164,9 @@ function visibleName(el: Element): string {
 }
 
 /**
- * 点中的地方属于哪个目标：最近的 `[data-comment-target]`，锚点是它自己或最近的祖先的 `data-id`；在不收批注的区域里、
- * 或找不到锚点时为 null。名字依次取 `data-comment-name`（目标上、锚点元素上）、看得到的名字（锚点元素的、目标的、
- * 目标里的字）、锚点去掉前缀的部分。
+ * Which target the clicked spot belongs to: the nearest `[data-comment-target]`, whose anchor is the `data-id` on itself or its nearest ancestor. Null inside an area that accepts no comments,
+ * or when no anchor is found. The name is taken in order from `data-comment-name` (on the target, on the anchor element), the visible name (of the anchor element, of the target,
+ * or the text inside the target), and finally the anchor with its prefix removed.
  */
 export function readTarget(start: EventTarget | null): CommentTarget | null {
   if (!start || typeof (start as Element).closest !== 'function') return null;
@@ -190,7 +190,7 @@ export function readTarget(start: EventTarget | null): CommentTarget | null {
   return { anchor, prefix, name, ...(section ? { section } : {}), ...(sectionLabel ? { sectionLabel } : {}) };
 }
 
-/** 页面上锚点为 `anchor` 的目标：带 `data-id` 的元素自己是目标就是它，否则是它里面锚点归它的第一个目标（分组卡片的标题行）。 */
+/** The target on the page whose anchor is `anchor`: the element itself if it has `data-id` and is a target; otherwise the first target inside it whose anchor belongs to it (the header row of a grouped card). */
 export function findTarget(doc: Document, anchor: string): Element | null {
   for (const holder of doc.querySelectorAll('[data-id]')) {
     if (holder.getAttribute('data-id') !== anchor) continue;
@@ -202,7 +202,7 @@ export function findTarget(doc: Document, anchor: string): Element | null {
 
 const clips = (overflow: string) => overflow !== '' && overflow !== 'visible';
 
-/** 编号标记的位置（视口坐标）：目标的右上角往里一点；目标没有大小、或这一点被滚出视口或某一层滚动容器时为 null。 */
+/** Position of a numbered marker (viewport coordinates): slightly inward from the target's top-right corner. Null if the target has no size, or if this point is scrolled out of the viewport or out of some scroll container layer. */
 export function pinPoint(el: Element, win: Window & typeof globalThis): EditorPoint | null {
   const r = el.getBoundingClientRect();
   if (r.width <= 0 && r.height <= 0) return null;
@@ -218,7 +218,7 @@ export function pinPoint(el: Element, win: Window & typeof globalThis): EditorPo
   return { x, y };
 }
 
-/** 键盘事件是不是在输入框、可编辑区域或对话框、菜单里（这些地方的 C 与 Esc 归它们）。 */
+/** Whether a keyboard event is inside an input, an editable area, or a dialog or menu (where C and Esc belong to them). */
 function inField(target: EventTarget | null): boolean {
   const el = target as Element | null;
   if (!el || typeof el.closest !== 'function') return false;
@@ -232,7 +232,7 @@ export interface CommentTargetsOptions {
   labels: DesignSystemCommentLabels;
 }
 
-/** 装上目标层；返回卸下的函数。 */
+/** Installs the target layer. Returns the function that removes it. */
 export function installCommentTargets({ win, comments, labels }: CommentTargetsOptions): () => void {
   const doc = win.document;
   let controller: CommentAnchorController | null = null;
@@ -306,7 +306,7 @@ export function installCommentTargets({ win, comments, labels }: CommentTargetsO
       if (!on) pick(null);
     },
     move: async () => null,
-    // C 与 Esc 由这里绑（见下），不让桥另绑
+    // C and Esc are bound here (see below), so the bridge does not bind them separately
     hotkey: false,
     reveal(id) {
       const thread = threads.find(t => t.id === id);
@@ -319,7 +319,7 @@ export function installCommentTargets({ win, comments, labels }: CommentTargetsO
     },
   };
 
-  /** 标注模式下按在目标上：页面不接（按下、抬起、点击都拦），点击时弹批注框。 */
+  /** In annotation mode, a press on a target is not passed to the page (press, release and click are all intercepted); a click opens the comment box. */
   const press = (event: MouseEvent) => {
     if (!mode || !controller || event.button !== 0) return;
     const target = readTarget(event.target);

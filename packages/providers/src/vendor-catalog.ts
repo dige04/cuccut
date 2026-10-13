@@ -2,13 +2,9 @@ import type { ProviderVendorInfo, TextModelInfo } from '@cuccut/protocol';
 import { ProvidersConfig as PC } from '@cuccut/protocol/messages/providers';
 
 /**
- * 服务商目录里的 OpenAI 兼容文本服务商（架构设计 §6.4 的目录表）：显示名、`kind`、官网、图标、基址（有国际与中国两个基址的
- * 按账号的 `region` 取）与内置模型表。只列已经实现的能力（`generateText`）；目录里标 P1 的语音、转写与生图不在这里声明。
+ * OpenAI-compatible text providers in the provider catalog (the catalog table in architecture design §6.4): display name, `kind`, website, icon, base URL (providers with both an international and a China base URL choose by the account's `region`), and built-in model table. Only implemented capabilities (`generateText`) are listed; speech, transcription and image generation, marked P1 in the catalog, are not declared here.
  *
- * 模型表取自各家 2026-10 的模型列表，每家 2–4 个当前主力模型，第一个是默认。限制没有逐个核对，取保守值：上下文
- * 128K token、单次输出 8192 token（请求的上限超过时在提交时拒绝，不会被供应商截断）；推理强度不声明（不发
- * `reasoning_effort`）；`temperature` 照发，`seed` 不发。费用按 `unknown`。`models.refreshProvider` 取到的列表里没有的
- * 模型会标为不可用，不需要猜错的 ID 继续占着默认值。
+ * Model tables come from each provider's model list as of 2026-10, with 2 to 4 current main models per provider; the first is the default. Limits were not checked one by one, so conservative values are used: 128K-token context and 8192-token output per call (requests above the limit are rejected at submission rather than truncated by the provider). Reasoning effort is not declared, so `reasoning_effort` is not sent; `temperature` is sent, `seed` is not. Cost is `unknown`. A model not in the list returned by `models.refreshProvider` is marked unavailable, so a wrongly guessed ID does not keep holding the default.
  */
 
 export const COMPAT_VENDOR_IDS = [
@@ -29,7 +25,7 @@ export type CompatVendorId = (typeof COMPAT_VENDOR_IDS)[number];
 export interface CompatVendor {
   label: string;
   vendor: ProviderVendorInfo;
-  /** 地区 → 基址；第一个是缺省的地区。 */
+  /** Region → base URL; the first is the default region. */
   regions: Record<string, string>;
   jsonMode: 'json_schema' | 'json_object';
   models: TextModelInfo[];

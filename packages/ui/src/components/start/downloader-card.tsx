@@ -15,27 +15,27 @@ import { ST } from './start-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * 下载工具（yt-dlp）的状态与卡片（设计稿 import-panel.jsx `DownloaderSettings`、import-flow.jsx 的 `downloader`）。
- * 首页链接档与链接导入的任务详情共用一份：检测只在本机跑 `--version`（`externalTools.detect`），进来就看一眼；
- * 安装（带同意）、同意、指定位置都只在用户按了按钮之后做，安装的进度读 `jobs` 主题里那条 `toolInstall` 任务。
- * 系统里的那一份按原安装方式更新（产品设计 §2.7）：用户点了命令旁的执行才提交 `toolUpdate` 任务，输出读任务记录的 `command`。
+ * The download tool (yt-dlp) status and card (design draft import-panel.jsx `DownloaderSettings`, import-flow.jsx `downloader`).
+ * The home page's link tier and the link import's task detail share one copy. Detection only runs `--version` locally (`externalTools.detect`), a look when entering.
+ * Install (with consent), consent, and choosing a location all happen only after the user presses the button; install progress is read from the `toolInstall` task in the `jobs` topic.
+ * The copy installed on the system is updated by its original install method (product design §2.7): only when the user presses Run next to the command is a `toolUpdate` task submitted, and its output is read from the task record's `command`.
  */
 
 interface DownloaderState {
   status: ExternalToolStatus | null;
   checking: boolean;
-  /** 检测过一次（成功或失败）。 */
+  /** Checked once (success or failure). */
   checked: boolean;
-  /** 用户刚按了安装、任务事件还没到：先显示「正在准备」。 */
+  /** The user just pressed install and the task event has not arrived yet: show “正在准备” (Preparing) first. */
   installing: boolean;
   installJobId: Id | null;
-  /** 检测本身失败（Runtime 没连上等）。 */
+  /** Detection itself failed (e.g. the Runtime is not connected). */
   error: string | null;
-  /** 正在提交同意 / 安装 / 指定位置。 */
+  /** Submitting consent / install / location. */
   busy: boolean;
-  /** 正在提交更新（点了执行、Runtime 还没回话）。 */
+  /** Submitting an update (Run was pressed, the Runtime has not replied yet). */
   updateBusy: boolean;
-  /** 卡片里的这一次更新（用户点了执行的，或探测时发现正在进行的）；点「关闭」后为 null。 */
+  /** The update in this card (started by the user pressing Run, or an in-progress one found during detection); null after “关闭” (Close). */
   update: DownloaderUpdateRun | null;
 }
 
@@ -55,7 +55,7 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 let detecting: Promise<void> | null = null;
 
-/** 重新检测（只在本机看一眼版本、不联网）。同时只跑一次。 */
+/** Re-detect (only checks the version locally, no network). Only one runs at a time. */
 export function detectDownloader(runtime: Pick<RuntimeSession, 'detectExternalTool'>): Promise<void> {
   if (detecting) return detecting;
   useDownloader.setState({ checking: true });
@@ -72,7 +72,7 @@ export function detectDownloader(runtime: Pick<RuntimeSession, 'detectExternalTo
   return detecting;
 }
 
-/** 卡片的主按钮：没装 / 要更新 / 坏了时安装（`consent: true` 一并记下同意），装好了只差同意时只记同意。 */
+/** The card's primary button: install when not installed, update when outdated, repair when broken (`consent: true` also records consent); when it is installed and only consent is missing, only consent is recorded. */
 async function fixDownloader(runtime: RuntimeSession, state: ToolCardState): Promise<void> {
   useDownloader.setState({ busy: true });
   try {
@@ -92,7 +92,7 @@ async function fixDownloader(runtime: RuntimeSession, state: ToolCardState): Pro
   }
 }
 
-/** 指定自己装的那一份（Runtime 先跑一次 `--version` 核对）。宿主没有打开对话框时这一项置灰。 */
+/** Specify the copy you installed yourself (the Runtime first runs `--version` to verify it). This item is greyed out when the host has no open dialog. */
 async function pickDownloader(runtime: RuntimeSession): Promise<void> {
   const pick = runtime.host.pickFiles;
   if (!pick) return;
@@ -110,8 +110,8 @@ async function pickDownloader(runtime: RuntimeSession): Promise<void> {
 }
 
 /**
- * 点了命令旁的执行：交回界面上显示的那条命令（就是用户的确认）。Runtime 说办法已经变了（`TOOL_UPDATE_CONFIRM_REQUIRED`）
- * 或现在不能代为执行（`TOOL_UPDATE_MANUAL`）时不执行，把此刻的命令换上，让用户再看一眼。
+ * Pressing Run next to the command hands back the command shown on screen (that is the user's confirmation). When the Runtime says the method has changed (`TOOL_UPDATE_CONFIRM_REQUIRED`)
+ * or that it cannot run the command on the user's behalf now (`TOOL_UPDATE_MANUAL`), it does not run; it swaps in the current command so the user can look again.
  */
 async function runUpdate(runtime: RuntimeSession, plan: ExternalToolUpdatePlan): Promise<void> {
   const before = useDownloader.getState().status?.version ?? null;
@@ -148,7 +148,7 @@ async function stopUpdate(runtime: RuntimeSession, jobId: Id): Promise<void> {
 const settling = new Set<Id>();
 
 /**
- * 更新任务结束：重新检测拿到新版本，再说结果（卡片在几处同时挂着时只做一次）。成功时输出收起，失败与停止时留着。
+ * The update task has finished: re-detect to get the new version, then report the result (when the card is mounted in several places, this happens only once). On success the output collapses; on failure or stop it stays visible.
  */
 async function settleUpdate(runtime: RuntimeSession, job: JobRecord): Promise<void> {
   const run = useDownloader.getState().update;
@@ -169,7 +169,7 @@ async function settleUpdate(runtime: RuntimeSession, job: JobRecord): Promise<vo
   }
 }
 
-/** 换下载位置（设置 `downloads.directory`）：之后的导入都下到那里。 */
+/** Change the download location (setting `downloads.directory`): later imports download there. */
 export async function changeDownloadDir(runtime: RuntimeSession): Promise<void> {
   const dir = await runtime.host.pickDirectory();
   if (!dir) return;
@@ -184,17 +184,17 @@ export async function changeDownloadDir(runtime: RuntimeSession): Promise<void> 
 export interface DownloaderView extends DownloaderState {
   card: ToolCard;
   ready: boolean;
-  /** 正在进行的安装任务（有时）。 */
+  /** The in-progress install task (when there is one). */
   job: JobRecord | null;
-  /** 卡片里那次更新的任务（有时；刚提交、任务事件还没到时为 null）。 */
+  /** The update task for this card (when there is one; null just after submission, before task events arrive). */
   updateJob: JobRecord | null;
-  /** 正在更新（含结束后重新检测的那一下）：期间不能开始下载。 */
+  /** Updating (including the re-detect right after it finishes): downloads cannot start during this time. */
   updating: boolean;
 }
 
 /**
- * 读下载工具的状态：第一次用到时检测；安装任务结束后重新检测（失败时提示原因）。
- * `enabled` 为假时不检测（本地文件档用不到它）。
+ * Reads the download tool's status: detected the first time it is used; re-detected after an install task finishes (on failure, the reason is shown).
+ * When `enabled` is false, nothing is detected (the local-file tier does not need it).
  */
 export function useDownloaderTool(enabled: boolean): DownloaderView {
   const runtime = useRuntime();
@@ -215,11 +215,11 @@ export function useDownloaderTool(enabled: boolean): DownloaderView {
     useDownloader.setState({ installing: false, installJobId: null });
     if (job.state === 'failed') ToastQueue.negative(ST.downloader.notInstalled(jobErrorText(job.error) ?? ST.downloader.installFailedFallback), { timeout: 6000 });
     void detectDownloader(runtime);
-    // 只在这条安装任务结束的那一下收尾。
+    // Wrap up only at the moment this install task finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ended, job?.jobId, runtime]);
 
-  // 探测时发现正在进行的更新（CLI 开始的、重启前开始的）：接上它，输出照样显示在卡片里。
+  // Detection found an update in progress (started from the CLI or before a restart): attach to it; its output still shows in the card.
   const liveUpdateId = state.status?.updateJobId ?? null;
   useEffect(() => {
     if (liveUpdateId && useDownloader.getState().update?.jobId !== liveUpdateId)
@@ -228,7 +228,7 @@ export function useDownloaderTool(enabled: boolean): DownloaderView {
 
   useEffect(() => {
     if (updateEnded && updateJob) void settleUpdate(runtime, updateJob);
-    // 只在这条更新任务结束的那一下收尾。
+    // Wrap up only at the moment this update task finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateEnded, updateJob?.jobId, runtime]);
 
@@ -265,7 +265,7 @@ const factList = style({ margin: 0, padding: 0, listStyleType: 'none', display: 
 const fact = style({ font: 'ui-xs', color: 'gray-600', overflowWrap: 'anywhere' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 4 });
 
-/** 状态徽标的颜色；文字在渲染时从 `ST.downloader.badge` 读。 */
+/** Color of the status badge; the text is read at render time from `ST.downloader.badge`. */
 const BADGE: Record<ToolCardState, 'positive' | 'informative' | 'notice' | 'negative' | 'neutral'> = {
   checking: 'neutral',
   unknown: 'negative',
@@ -280,8 +280,8 @@ const BADGE: Record<ToolCardState, 'positive' | 'informative' | 'notice' | 'nega
 };
 
 /**
- * 下载工具卡片（视频下载工具 · yt-dlp）：现状一句话、来源与许可这类事实、主按钮（同意并安装 / 同意并更新 / 同意使用）、
- * 重新检测、指定位置。安装中显示安装任务的进度。系统里的那一份在最下面有「更新」一节（命令、执行与复制、输出）。
+ * The download tool card (video download tool · yt-dlp): a one-sentence status, facts such as source and license, the primary button (“同意并安装” (Agree and install) / “同意并更新” (Agree and update) / “同意使用” (Agree to use)),
+ * re-detect, and choose location. While installing, it shows the install task's progress. The copy on the system has an “更新” (Update) section at the bottom (command, run and copy, output).
  */
 export function DownloaderCard({ view }: { view: DownloaderView }) {
   const runtime = useRuntime();

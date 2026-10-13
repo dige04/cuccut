@@ -2,16 +2,15 @@ import { RpcError, type AudioExportSource, type Id, type VideoSnapshot } from '@
 import { RcExport } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 音频导出的声音来源（架构设计 §9.13）换成引擎声音计划里的实例选择（`exports.plan` 的 `audioItems`）：
+ * The sound source for audio export (architecture design §9.13), replaced by the instance selection in the engine's sound plan (`audioItems` of `exports.plan`):
  *
- * - `original`：停用带 `cuccut.dub` 标记的实例（配音与分离出的背景），配音静音掉的原声取消静音（配音计划里记的
- *   `mutedItemIds`，只含配音之前没有静音的实例）；配音触发的压低随触发的实例一起消失。
- * - `{ dubGroupId }`：只留这一组配音的实例，其余一律停用；视频里没有这一组时拒绝。
+ * - `original`: deactivate instances tagged `cuccut.dub` (the dubbing and the separated background); unmute the original audio that dubbing muted (the `mutedItemIds` recorded in the dub plan, which only includes instances not already muted before dubbing); ducking triggered by dubbing goes away together with the instance that triggered it.
+ * - `{ dubGroupId }`: keep only the instances of this one dub group and deactivate everything else; reject if the video has no such group.
  *
- * 只影响这一次导出的计划，视频不变。
+ * Affects only this export's plan; the video itself is unchanged.
  */
 
-/** 配音写在实例与配音计划上的标记（视频格式规范 §7.2、§1.4）。 */
+/** Markers that dubbing writes on instances and on the dub plan (video format spec §7.2, §1.4). */
 const DUB_EXTENSION = 'cuccut.dub';
 
 export interface AudioItemSelection {

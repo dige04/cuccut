@@ -48,18 +48,18 @@ export interface ConnectionTarget {
 }
 
 export interface ClientOptions {
-  /** 每次（重新）连接前调用：Runtime 重启后端口与令牌都会变，要重新读发现信息。 */
+  /** Called before every (re)connection. The Runtime's port and token change when it restarts, so the discovery info must be read again. */
   resolve: () => Promise<ConnectionTarget>;
   client: { kind: ClientKind; name: string; version: string };
-  /** 断线后自动重连。CLI 的一次性命令可以关掉。 */
+  /** Automatically reconnects after a disconnect. One-shot CLI commands can turn this off. */
   reconnect?: boolean;
   requestTimeoutMs?: number;
   WebSocket?: typeof WebSocket;
 }
 
-/** 单次请求的选项。 */
+/** Options for a single request. */
 export interface RequestOptions {
-  /** 这一次的超时（毫秒），覆盖 `ClientOptions.requestTimeoutMs`。 */
+  /** The timeout for this call (milliseconds), overriding `ClientOptions.requestTimeoutMs`. */
   timeoutMs?: number;
 }
 
@@ -67,23 +67,23 @@ export type ConnectionState =
   | { status: 'connecting'; attempt: number }
   | { status: 'connected'; runtime: RuntimeInfo; connectionId: Id }
   | { status: 'disconnected'; reason: string; retryInMs: number | null }
-  /** 协议不兼容：不重试，等用户更新（架构设计 §13.3）。 */
+  /** Protocol incompatible: do not retry; wait for the user to update (architecture design §13.3). */
   | { status: 'incompatible'; reason: string }
   | { status: 'closed' };
 
 export interface TopicHandlers<S, E> {
-  /** 收到同一水位的快照：整体替换本地镜像。 */
+  /** A snapshot at the same watermark arrived: replace the local mirror as a whole. */
   snapshot(snapshot: S, seq: Seq): void;
-  /** 按序到达的增量事件。 */
+  /** Incremental events, arriving in order. */
   event(event: E, seq: Seq): void;
 }
 
 interface TopicEntry {
   topic: Topic;
   handlers: TopicHandlers<unknown, unknown>;
-  /** 本地镜像所在的水位；null 表示需要快照。 */
+  /** The watermark the local mirror is at; null means a snapshot is needed. */
   seq: Seq | null;
-  /** 订阅请求在途；响应处理前到达的事件在快照或补发之后按序应用。 */
+  /** A subscription request is in flight. Events that arrive before the response is handled are applied in order after the snapshot or replay. */
   pending: boolean;
   buffered: SequencedEvent<unknown>[];
 }
@@ -97,10 +97,9 @@ interface PendingRequest {
 const BACKOFF_MS = [250, 500, 1000, 2000, 5000];
 
 /**
- * Runtime 的客户端：握手、请求、按主题订阅与断线恢复（架构设计 §4.4）。
+ * The Runtime client: handshake, requests, topic subscriptions and recovery after disconnect (architecture design §4.4).
  *
- * 订阅的保证：处理函数只会看到「快照，然后连续的事件」。序号重复的事件丢弃，
- * 出现缺口或 Runtime 换了运行代（epoch）就重新取快照，不在缺事件的镜像上继续。
+ * Subscription guarantee: the handler only ever sees "a snapshot, then continuous events". Events with a duplicate sequence number are dropped. On a gap, or when the Runtime changes its run epoch, the snapshot is fetched again rather than continuing on a mirror that is missing events.
  */
 export class CucCutClient {
   readonly #options: ClientOptions;
@@ -127,7 +126,7 @@ export class CucCutClient {
     return this.#state;
   }
 
-  /** 开始连接，在第一次握手成功后返回。 */
+  /** Starts connecting; returns after the first handshake succeeds. */
   connect(): Promise<RuntimeInfo> {
     if (!this.#started) {
       this.#started = true;
@@ -143,8 +142,7 @@ export class CucCutClient {
   }
 
   /**
-   * 发一个请求。`options.timeoutMs` 覆盖这一次的超时（缺省用 `requestTimeoutMs`，再缺省 30 秒）：烘焙代码画面这类要几分钟的调用
-   * （`compositions.import`）由调用方放宽。
+   * Sends one request. `options.timeoutMs` overrides the timeout for this call (default `requestTimeoutMs`, otherwise 30 seconds). Calls that take minutes, such as baking code-frame ones (`compositions.import`), are relaxed by the caller.
    */
   async request<M extends RpcMethod>(method: M, params: RpcParams<M>, options: RequestOptions = {}): Promise<RpcResult<M>> {
     await this.#waitReady();
@@ -174,37 +172,37 @@ export class CucCutClient {
     return this.subscribe('tasks', handlers);
   }
 
-  /** 后台任务（转写等）的记录，所有视频的都在里面。 */
+  /** Records of background jobs (transcription etc.), for all videos. */
   subscribeJobs(handlers: TopicHandlers<JobsSnapshot, JobsEvent>): () => void {
     return this.subscribe('jobs', handlers);
   }
 
-  /** 模型服务的能力视图：配置、默认值、模型包或节点变化时推送完整的新视图。 */
+  /** The capability view of the model service: when the config, defaults, or model bundles or nodes change, the full new view is pushed. */
   subscribeModels(handlers: TopicHandlers<ModelsSnapshot, ModelsEvent>): () => void {
     return this.subscribe('models', handlers);
   }
 
-  /** 偏好设置：快照是全部键的有效值与默认值，之后只推送变了的键（`applySettingsEvent` 合进快照）。 */
+  /** Preferences: the snapshot holds the effective values and defaults for all keys. Afterwards only changed keys are pushed (`applySettingsEvent` merges them into the snapshot). */
   subscribeSettings(handlers: TopicHandlers<SettingsSnapshot, SettingsEvent>): () => void {
     return this.subscribe('settings', handlers);
   }
 
-  /** 对外服务（架构设计 §4.8）：全部服务的状态与待处理的服务审批。 */
+  /** External services (architecture design §4.8): the status of all services and the pending service approvals. */
   subscribeServices(handlers: TopicHandlers<ServicesSnapshot, ServicesEvent>): () => void {
     return this.subscribe('services', handlers);
   }
 
-  /** 应用内运行的 Agent 安装、升级命令（`agents.runSetup`）的状态与输出。 */
+  /** The status and output of the in-app agent install and upgrade commands (`agents.runSetup`). */
   subscribeAgentSetup(handlers: TopicHandlers<AgentSetupSnapshot, AgentSetupEvent>): () => void {
     return this.subscribe('agent-setup', handlers);
   }
 
-  /** Agent 的探测结果与偏好（`agents.list` 的视图）：快照先来，后台探测完成后逐个送新视图。 */
+  /** The probe results and preferences of agents (the view from `agents.list`): the snapshot arrives first, and after background probing completes, a new view is sent for each agent. */
   subscribeAgents(handlers: TopicHandlers<AgentsSnapshot, AgentsEvent>): () => void {
     return this.subscribe('agents', handlers);
   }
 
-  /** 旧版项目的导入询问（架构设计 §2.7）：快照是等回答的询问，出现或消失时整体替换。只给桌面界面。 */
+  /** The import prompt for legacy projects (architecture design §2.7). The snapshot is a prompt awaiting an answer, and it is replaced as a whole when it appears or disappears. Desktop UI only. */
   subscribeLegacyImport(handlers: TopicHandlers<LegacyImportSnapshot, LegacyImportEvent>): () => void {
     return this.subscribe('legacy-import', handlers);
   }
@@ -213,7 +211,7 @@ export class CucCutClient {
     return this.subscribe('space', handlers);
   }
 
-  /** 已打开视频的投影。视频要先经 `videos.open` / `videos.create` 打开；没有打开时订阅不会重试。 */
+  /** The projection of an opened video. The video must first be opened via `videos.open` / `videos.create`; if it is not open, the subscription does not retry. */
   subscribeVideo(videoId: Id, handlers: TopicHandlers<VideoTopicSnapshot, VideoTopicEvent>): () => void {
     return this.subscribe(videoTopic(videoId), handlers);
   }
@@ -229,7 +227,7 @@ export class CucCutClient {
     this.#readyWaiters.clear();
   }
 
-  // ---- 连接 ----
+  // ---- Connection ----
 
   async #open(): Promise<void> {
     if (this.#closed) return;
@@ -279,13 +277,13 @@ export class CucCutClient {
       this.#scheduleReconnect(event.reason || (welcomed ? C.connectionLost() : C.cannotConnect()).text);
     };
     socket.onerror = () => {
-      // close 事件随后到达，在那里统一处理。
+      // The close event arrives afterwards and is handled uniformly there.
     };
   }
 
   #onWelcome(runtime: RuntimeInfo, connectionId: Id): void {
     if (this.#epoch !== runtime.epoch) {
-      // Runtime 换了运行代：旧游标没有意义，全部重取快照。
+      // The Runtime changed its run epoch: old cursors are meaningless, so all snapshots are fetched again.
       for (const entry of this.#topics.values()) entry.seq = null;
       this.#epoch = runtime.epoch;
     }
@@ -324,7 +322,7 @@ export class CucCutClient {
     return new Promise((resolve, reject) => this.#readyWaiters.add({ resolve, reject }));
   }
 
-  // ---- 请求 ----
+  // ---- Requests ----
 
   #send(method: string, params: unknown, timeoutOverride?: number): Promise<unknown> {
     const socket = this.#socket;
@@ -371,7 +369,7 @@ export class CucCutClient {
     }
   }
 
-  // ---- 订阅 ----
+  // ---- Subscriptions ----
 
   #resubscribe(entry: TopicEntry): void {
     entry.pending = true;
@@ -400,14 +398,14 @@ export class CucCutClient {
         entry.pending = false;
         entry.buffered = [];
         if (this.#topics.get(entry.topic) !== entry) return;
-        // 主题不存在（例如会话已被删除）：交给调用方从目录里得知，不再重试。不允许订阅（Web 服务的白名单之外）同样不重试。
+        // The topic does not exist (for example, the session was deleted): the caller learns this from the directory, and it is not retried. Not being allowed to subscribe (outside the Web service's allowlist) is likewise not retried.
         if (error instanceof RpcError && (error.code === 'not-found' || error.code === 'forbidden')) return;
         if (this.#state.status === 'connected') setTimeout(() => this.#resubscribe(entry), 1000);
       },
     );
   }
 
-  /** 送达一条事件。返回 false 表示发现缺口、已经转去重取快照。 */
+  /** Delivers one event. Returns false if a gap was found and a snapshot re-fetch has started. */
   #deliver(entry: TopicEntry, event: SequencedEvent<unknown>): boolean {
     if (entry.seq === null) return false;
     if (compareSeq(event.seq, entry.seq) <= 0) return true;

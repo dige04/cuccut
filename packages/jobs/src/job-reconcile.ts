@@ -5,15 +5,15 @@ import { joinList } from './job-text.ts';
 import { retryable } from './job-recovery.ts';
 
 /**
- * `jobs.reconcile` 的决定与它们合法的状态（架构设计 §7.5）。集合封闭，没有别的决定：
+ * The decisions of `jobs.reconcile` and the states they are legal in (architecture design §7.5). The set is closed; there are no other decisions:
  *
- * | 决定 | 合法的状态 | 结果 |
+ * | Decision | Legal states | Result |
  * | --- | --- | --- |
- * | `retry` | `needs-reconciliation`、`interrupted` 的转写（有视频）与生成任务 | 同一个任务回到 `queued`、`attempt` 加一，重新准入（新的一次调用与预留）；有视频时视频要已经打开 |
- * | `discard` | `needs-reconciliation` | `cancelled`，记下取消的三件事实；按保守规则扣下的预算不退 |
- * | `apply` | `failed`、`cancelled` 且最近一次应用是 `stale-input`、`rejected` 或 `cancelled`，产物在 | 先按旧的 `commandId` 查回执，再新建一次应用、重新校验后提交；视频要已经打开 |
+ * | `retry` | Transcription (with video) and generation jobs in `needs-reconciliation` or `interrupted` | The same job goes back to `queued`, `attempt` increments by one, and it is admitted again (a new call and reservation); when there is a video, the video must already be open |
+ * | `discard` | `needs-reconciliation` | `cancelled`, recording the three facts about the cancellation; budget deducted under the conservative rule is not refunded |
+ * | `apply` | `failed`, or `cancelled` whose latest apply is `stale-input`, `rejected` or `cancelled`, with the output present | First look up the receipt by the old `commandId`, then create a new apply, validate again, and commit; the video must already be open |
  *
- * 没有「标为已提交 / 未提交」：用户的判断无从核实，不拿它退预算或重放请求。
+ * There is no “marked as committed / not committed”: the user's judgment cannot be verified, so it is not used to refund budget or replay requests.
  */
 
 export const RECONCILE_DECISIONS: readonly JobReconcileDecision[] = ['retry', 'discard', 'apply'];

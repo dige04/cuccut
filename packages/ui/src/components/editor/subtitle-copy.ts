@@ -16,12 +16,12 @@ import { viCaptionStyle, viNotConfigured, viSubtitle } from './subtitle-copy.vi.
 
 const subtitles = (n: number) => `${n} subtitle${n === 1 ? '' : 's'}`;
 
-/** 字幕面板的文案（空态、转录、轨条、接缝）。原型：panel-subtitle.jsx、panel-shared.jsx `LiveHead`、panel-substrip.jsx、subtrack.jsx。译文在 `subtitle-copy.zh-Hans.ts`。 */
+/** Copy for the subtitle panel (empty state, transcription, track strip, seams). Prototype: panel-subtitle.jsx, panel-shared.jsx `LiveHead`, panel-substrip.jsx, subtrack.jsx. The translations are in `subtitle-copy.zh-Hans.ts`. */
 const en = {
   emptyTitle: 'No subtitles yet',
   emptyReady: 'Transcribe your media, then proofread the subtitles here.',
   emptyNoMedia: 'Add a video or audio file first, then generate subtitles.',
-  /** 素材在库里、还没放上时间线：字幕跟着时间线走，转录了也落不到画面上。 */
+  /** The clip is in the library but not yet placed on the timeline: subtitles follow the timeline, so even after transcription they cannot land on the picture. */
   emptyNotPlaced: 'The video or audio isn’t on the timeline yet. Place it there before generating subtitles.',
   emptyReuse: (name: string) => `“${name}” is already transcribed; generating subtitles uses that transcript without recognizing it again.`,
   generate: 'Generate subtitles',
@@ -31,7 +31,7 @@ const en = {
   pickTranscribe: 'Transcribe, then generate',
   pickReuse: 'Generate from existing transcript · no re-recognition',
 
-  // 转录中（LiveHead）
+  // Transcribing (LiveHead)
   liveTitle: 'Transcribing',
   submitting: 'Submitting transcription',
   writing: 'Generating subtitles',
@@ -39,20 +39,20 @@ const en = {
   segments: (done: number, total: number | null) => (total ? `Recognized ${done} / ${total} segments` : `Recognized ${done} segment${done === 1 ? '' : 's'}`),
   stages: ['Decode audio', 'Recognize', 'Align words', 'Save'],
   cancel: 'Cancel transcription',
-  /** 转录中字幕面板列出已识别的段落（只读卡，subtitle-live.tsx），字幕要等转录完成才生成、才能校对。 */
+  /** While transcribing, the subtitle panel lists the segments recognized so far (read-only cards, subtitle-live.tsx); subtitles are only generated once transcription finishes, and only then can they be proofread. */
   liveNote: 'Recognized parts appear one by one. When transcription finishes, subtitles are generated and you can proofread them here line by line.',
   foreignNote: 'This transcription wasn’t started from the Subtitles panel. When it finishes, click “Generate subtitles” to use its result.',
-  /** 时间线上转录中的临时字幕行（原型 timeline-rows.jsx 第 220 轮）：行头与待定带的提示。百分比不明时不写。 */
+  /** Temporary subtitle row on the timeline while transcribing (prototype timeline-rows.jsx, round 220): hints for the row header and the pending band. Leave out the percentage when it is unknown. */
   liveTip: (pct: number | null, at: string, remain: string | null) =>
     [pct === null ? 'Transcribing' : `Transcribing ${pct}%`, `transcribed up to ${at}`, ...(remain ? [`${remain} left`] : [])].join(' · '),
   pendingLeft: (remain: string) => `Transcribing · ${remain} left`,
   cancelled: 'Transcription cancelled',
   cancelFailed: (message: string) => `Couldn’t cancel transcription: ${message}`,
 
-  // 结果与问题
+  // Results and issues
   generated: (count: number, from: string, to: string) => `Generated ${subtitles(count)} · ${from} → ${to}`,
   created: (count: number) => `Generated ${subtitles(count)}`,
-  /** 这个素材已经有原文字幕显示着：新的一层停用着放上去（轨条上的虚线 chip）。 */
+  /** This clip already has its source-language subtitles showing: the new layer is placed in a disabled state (the dashed chip on the track strip). */
   createdShelved: (count: number) =>
     `Generated ${subtitles(count)} · original subtitles are already on screen, so the new layer isn’t shown yet; click it on the strip to put it on screen`,
   notConfigured: (reason: string) => `Can’t transcribe yet · ${reason}`,
@@ -80,7 +80,7 @@ const en = {
     `${message ? `${message}. ` : ''}The recognition result is still available; you can write it to the video again from Background tasks. After that, “Generate subtitles” uses it directly.`,
   decide: 'Resolve in Background tasks',
 
-  // 轨条与样式入口卡
+  // Track strip and style entry card
   onScreen: 'On screen',
   defaultStyle: 'Default style',
   styleEntry: (n: number) => (n ? `Edit style · ${n} subtitle track${n === 1 ? '' : 's'} on screen` : 'Edit style'),
@@ -109,7 +109,7 @@ const en = {
   flipped: (translationFirst: boolean) =>
     `Flipped · ${translationFirst ? 'translation on top, original below' : 'original on top, translation below'}`,
 
-  // 列表
+  // List
   stats: (cues: number, sentences: number) => `${subtitles(cues)} · ${sentences} sentence${sentences === 1 ? '' : 's'}`,
   seam: 'Merge into previous',
   seamSpeaker: 'Different speakers · can’t merge',
@@ -166,7 +166,7 @@ const en = {
 export type SubtitleMessages = typeof en;
 export const SUBTITLE_COPY = defineMessages(en, { 'zh-Hans': zhSubtitle, 'zh-Hant': zhHantSubtitle, ja: jaSubtitle, ko: koSubtitle, es: esSubtitle, fr: frSubtitle, de: deSubtitle, nl: nlSubtitle, 'pt-BR': ptBRSubtitle, it: itSubtitle, ru: ruSubtitle, pl: plSubtitle, tr: trSubtitle, vi: viSubtitle });
 
-/** `CAPABILITY_NOT_CONFIGURED` 的原因（协议 `CapabilityNotConfiguredReason`）。 */
+/** Reasons for `CAPABILITY_NOT_CONFIGURED` (protocol `CapabilityNotConfiguredReason`). */
 const notConfigured: Record<CapabilityNotConfiguredReason, string> = {
   'no-default': 'No model chosen for transcription yet',
   'missing-credential': 'The transcription service has no key yet',
@@ -187,9 +187,9 @@ type Choice<K extends string> = { readonly key: K; readonly label: string };
 type Place = Choice<'top' | 'middle' | 'bottom'> & { readonly y: number; readonly valign: 'top' | 'center' | 'bottom' };
 type Plate = Choice<'wrap' | 'block'> & { readonly note: string };
 
-/** 字幕样式画廊与属性页的「原文 | 译文」（原型 panel-substyle.jsx `SubGallery` / `GalleryCard`，panel-subprops.jsx 的位置、大小写、背景形态与比例链）。 */
+/** “原文 | 译文” (source | translation) in the subtitle style gallery and properties page (prototype panel-substyle.jsx `SubGallery` / `GalleryCard`, and the position, case, background shape and ratio chain from panel-subprops.jsx). */
 const captionStyle = {
-  // 画廊
+  // Gallery
   title: 'Subtitle styles',
   back: 'Back to Subtitles',
   open: 'Change style',
@@ -205,7 +205,7 @@ const captionStyle = {
   foreign: (schema: string) => `This subtitle style is ${schema}; the gallery can’t apply to it.`,
   readOnly: 'This video can’t be changed right now; style cards are view-only.',
 
-  // 属性页
+  // Properties page
   lineSwitch: 'Line to edit',
   original: 'Original',
   translation: 'Translation',

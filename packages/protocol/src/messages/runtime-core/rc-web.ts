@@ -14,12 +14,12 @@ import { pl } from './rc-web.pl.ts';
 import { tr } from './rc-web.tr.ts';
 import { vi } from './rc-web.vi.ts';
 
-/** 网页服务与上传（services/web-*、multipart-upload、attachments）的拒绝与错误。英文是键与类型的来源，译文在 `rc-web.<语言>.ts`。 */
+/** Rejections and errors for web services and uploads (services/web-*, multipart-upload, attachments). English is the source of keys and types; translations are in `rc-web.<language>.ts`. */
 const en = {
   invalidAccessPath: "The access link path must start with / and contain no #",
   videoTargetNotFound: (p: { videoId: string }) => `Video "${p.videoId}" not found: use a videoId from videos list`,
 
-  // Web 服务（web-service）。
+  // Web service (web-service).
   serviceLabel: 'Web service',
   runtimeNotReady: "Runtime isn't ready yet",
   clientNotBuilt:
@@ -37,7 +37,7 @@ const en = {
   loginRequired: 'Sign in with an access link from CucCut',
   fileNotFound: 'No such file',
   readFailed: "Couldn't read the file",
-  // 浏览器里的方法与路径约束（web-handlers）。
+  // Method and path restrictions in the browser (web-handlers).
   webReadOnly: (p: { method: string }) => `The web service is read-only right now: ${p.method} can't be called from the browser`,
   methodNotAllowed: (p: { method: string }) => `${p.method} can't be called from the browser: use the CucCut desktop app or CLI`,
   toolMethodNotAllowed: (p: { method: string }) =>
@@ -63,7 +63,7 @@ const en = {
     "The browser can only export to folders inside the video's project folder (not the video folder or .ccut)",
   exportDirMissing: "The export folder doesn't exist",
   exportDirRecovery: 'Choose a folder that already exists',
-  // 登录页（web-static）。
+  // Login page (web-static).
   loginTitle: 'Sign in to CucCut',
   loginInstructions: (p: { launch: string; open: string }) =>
     `Run ${p.launch} in a terminal and paste the access code it prints below, or open the access link printed by ${p.open}.`,
@@ -74,7 +74,7 @@ const en = {
   codeRejected: 'This access code is wrong, already used, or expired: run cuccut web open in a terminal to get a new one.',
   cannotReach: "Can't reach CucCut: make sure CucCut is still running and the web service hasn't stopped.",
   codeMalformed: "This access code isn't in the right format: paste the string printed by cuccut web open in the terminal.",
-  // multipart 请求体（multipart-upload）。
+  // Multipart request body (multipart-upload).
   fieldTooLong: (p: { field: string }) => `Field ${p.field} is too long`,
   noNewlineAfterBoundary: 'No line break after the boundary',
   junkAfterBoundary: 'Extra content after the boundary',
@@ -85,7 +85,7 @@ const en = {
   bodyTruncated: 'The request body ended before the closing boundary',
   requestAborted: 'The request was disconnected before it was fully read',
   partHeaderMalformed: 'Malformed part header',
-  // 附件上传（attachments）。
+  // Attachment upload (attachments).
   imageTypeUnsupported: (p: { mimeType: string }) => `Unsupported attachment format: ${p.mimeType}`,
   imageSizeInvalid: "Attachment size must be a positive integer (bytes)",
   imageTooLarge: (p: { mb: number }) => `Attachment is too large: ${p.mb} MB at most`,

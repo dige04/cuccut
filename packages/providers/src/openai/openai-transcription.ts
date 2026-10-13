@@ -1,10 +1,8 @@
-// OpenAI 的转写接口形状（`openai` 与 `openai-compatible` 共用）。2026-10-03 读过的文档：
+// Shape of OpenAI's transcription endpoint (shared by `openai` and `openai-compatible`). Docs read on 2026-10-03:
 //   https://developers.openai.com/api/docs/guides/speech-to-text
 //   https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create
-// 文档确认的：`POST {base}/audio/transcriptions`，multipart 字段 `file`、`model`、`response_format`、`language`（ISO-639-1）、
-// `prompt`、`timestamp_granularities[]`（只配 `verbose_json`）；`verbose_json` 的 `language`（语言名，如 "english"）、
-// `segments[].start/end/text`、`words[].word/start/end`、`usage`；`json` 的 `text` 与 `usage`；鉴权 `Authorization: Bearer`；
-// 文件上限 25 MB。没能确认的：verbose_json 的 `language` 是否总是英文语言名（这里也接受 ISO 代码）。
+// Confirmed by the docs: `POST {base}/audio/transcriptions`, multipart fields `file`, `model`, `response_format`, `language` (ISO-639-1), `prompt`, `timestamp_granularities[]` (only with `verbose_json`); `verbose_json` returns `language` (a language name such as "english"), `segments[].start/end/text`, `words[].word/start/end`, and `usage`; `json` returns `text` and `usage`; auth is `Authorization: Bearer`; file limit 25 MB.
+// Not confirmed: whether verbose_json's `language` is always an English language name. Here ISO codes are also accepted.
 import fs from 'node:fs';
 import path from 'node:path';
 import { ProviderFailure } from '@cuccut/models';
@@ -22,7 +20,7 @@ import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 export interface OpenAiRequestStyle {
   label: string;
-  /** 请求 `verbose_json` 与词、段的时间。 */
+  /** Requests `verbose_json` with word and segment timing. */
   verbose: boolean;
 }
 
@@ -31,7 +29,7 @@ export async function openAiTranscribeChunk(request: ChunkRequest, style: OpenAi
   const format = CHUNK_FORMATS[request.format];
   const body = async () => {
     const form = new FormData();
-    // `openAsBlob` 按需从磁盘读，不把文件整读进内存。
+    // `openAsBlob` reads from disk on demand, so the whole file is not read into memory.
     const blob = await fs.openAsBlob(request.file, { type: format.mimeType });
     form.append('file', blob, `audio${path.extname(request.file)}`);
     form.append('model', model.modelId);
@@ -57,7 +55,7 @@ export async function openAiTranscribeChunk(request: ChunkRequest, style: OpenAi
   return parseOpenAiTranscription(response.json(), style.label);
 }
 
-/** 读 `json` 或 `verbose_json` 的响应。 */
+/** Reads a `json` or `verbose_json` response. */
 export function parseOpenAiTranscription(value: unknown, label: string): ChunkTranscript {
   if (!isObject(value) || typeof value.text !== 'string') throw new ProviderFailure('protocol', PH.missingText({ label }).text);
   const transcript: ChunkTranscript = { text: value.text };
@@ -84,7 +82,7 @@ export function parseOpenAiTranscription(value: unknown, label: string): ChunkTr
   return transcript;
 }
 
-/** `GET {base}/models`：只读，验证密钥与端点。 */
+/** `GET {base}/models`: read-only, verifies the key and endpoint. */
 export async function openAiValidate(config: AdapterConfig, signal: AbortSignal, http: AdapterHttp, label: string): Promise<void> {
   await providerFetch(httpOptions(label, config, { ...http, attempts: 1 }), {
     method: 'GET',
@@ -108,7 +106,7 @@ export function httpOptions(label: string, config: AdapterConfig, http: AdapterH
   };
 }
 
-/** whisper 的 `verbose_json` 报告语言名（"english"）；也接受 ISO 代码。认不出时 null。 */
+/** Whisper's `verbose_json` reports the language name ("english"); ISO codes are also accepted. null when unrecognized. */
 export function languageTagOf(value: string): string | null {
   const lower = value.trim().toLowerCase();
   const named = LANGUAGE_NAMES[lower];
@@ -177,7 +175,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
   cantonese: 'yue',
 };
 
-/** OpenAI 语音合成支持的语言（TTS 指南：沿用 Whisper 的语言表；粤语不在其中）。 */
+/** Languages supported by OpenAI speech synthesis (TTS guide: same language table as Whisper; Cantonese is not in it). */
 export const WHISPER_LANGUAGES: string[] = [...new Set(Object.values(LANGUAGE_NAMES))].filter((tag) => tag !== 'yue');
 
 function isObject(value: unknown): value is Record<string, unknown> {

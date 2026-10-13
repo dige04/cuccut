@@ -12,9 +12,7 @@ import { ENTRY_TOOL_COPY } from '../tools/tools-copy.ts';
 import { goRerun } from '../tools/video-tool-parts.tsx';
 
 /*
- * 后台任务详情里工具任务的结果与「重试 / 再做一次」（产品设计 §2.7「进度与失败」；设计稿 page-tasks-outputs.jsx）：
- * 直接任务与文件到文件的流程列出产物与保存位置，操作与工具结果页相同；直接任务失败时把原因写在「重试」上面，
- * 「重试」回到参数已经填好的工具页（直接任务没有就地重试的方法）。
+ * Results of tool tasks in the background task details, and “重试 / 再做一次” (Retry / Run again) (product design §2.7 “进度与失败” (Progress and failure); design draft page-tasks-outputs.jsx): direct tasks and file-to-file flows list their outputs and save locations, with the same actions as the tool result page. When a direct task fails, the reason is written above “重试” (Retry), and “重试” returns to the tool page with its parameters already filled in (direct tasks have no way to retry in place).
  */
 
 const box = style({ display: 'flex', flexDirection: 'column', gap: 8 });
@@ -23,7 +21,7 @@ const errorIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, color: '
 const hint = style({ font: 'ui-sm', color: 'gray-600' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
-/** 「重试 / 再做一次」：失败时原因写在上面，配置问题另给去处。 */
+/** “重试 / 再做一次” (Retry / Run again): on failure the reason is written above; configuration problems are sent elsewhere. */
 export function ToolTaskRerun({ job, rerun, error, remedy }: { job: JobRecord; rerun: Rerun; error: string | null; remedy: Remedy | null }) {
   const go = useShell((s) => s.go);
   return (
@@ -51,7 +49,7 @@ export function ToolTaskRerun({ job, rerun, error, remedy }: { job: JobRecord; r
   );
 }
 
-/** 工具任务发布进 Space 的产物；还没列进 Space（或不发布产物）时画 `fallback`（任务结果里的文件）。 */
+/** Artifacts of a tool task published into the Space; when they are not yet listed in the Space (or the task publishes no artifacts), `fallback` (the files in the task result) is drawn. */
 export function ToolTaskOutputs({ job, fallback }: { job: JobRecord; fallback: ReactNode }) {
   const entries = useJobOutputs([job.jobId]);
   if (!entries.length) return <>{fallback}</>;

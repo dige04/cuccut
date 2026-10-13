@@ -19,8 +19,8 @@ const title = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
 const why = style({ margin: 0, color: 'gray-700' });
 
 /**
- * 还做不了的工具页（智能裁剪）：要在画面上跟踪重点、调取景框，Runtime 还没有这条流程。
- * 列表里照常列着，点进来只说「即将推出」和为什么，不画能操作的表单（同 tools/planned-tool.tsx）。
+ * Tool page for smart crop, not yet available: it needs to track the subject on screen and adjust the framing box, and the Runtime does not have that flow yet.
+ * It stays listed as usual; opening it only says “coming soon” and why, and no operable form is drawn (same as tools/planned-tool.tsx).
  */
 export function AiToolSoon({ tool, onBack }: { tool: AiTool; onBack(): void }) {
   return (

@@ -1,21 +1,18 @@
-//! SVG 光栅化（`svg` feature）：host（`media`）与浏览器预览（`wasm-safe` + `svg`）共用的那一份。
+//! SVG rasterization (`svg` feature): the one copy shared by the host (`media`) and the browser preview (`wasm-safe` + `svg`).
 //!
-//! 只认字节、不做 I/O：内嵌位图只认 data URI，`href` 指向磁盘的一律不读。不开 `media` 时
-//! resvg 不带 `text`，SVG 里的 `<text>` 不画；开了 `media` 也一样画不出字——解析选项的
-//! 字体库是空的（`Options::default()`）。两侧因此逐像素同一份结果。
+//! Works on bytes only and does no I/O: embedded bitmaps are accepted only as data URIs, and `href` pointing at disk is never read. Without `media`, resvg is built without `text`, so `<text>` in an SVG is not drawn. With `media` on, text still is not drawn, because the font database in the parse options is empty (`Options::default()`). Both sides therefore produce the same result, pixel for pixel.
 
 use anyhow::{Result, anyhow, bail};
 use tiny_skia::Pixmap;
 
-/// SVG 贴纸（静态与动画）的解析选项：内嵌位图只认 data URI，`href` 指向磁盘的
-/// 一律不读——渲染期不做 I/O，相对路径也不该跟着进程的工作目录走。
+/// Parse options for SVG stickers (static and animated): embedded bitmaps are accepted only as data URIs, and `href` pointing at disk is never read. Rendering does no I/O, and relative paths should not depend on the process working directory.
 pub fn svg_options() -> resvg::usvg::Options<'static> {
     let mut options = resvg::usvg::Options::default();
     options.image_href_resolver.resolve_string = Box::new(|_, _| None);
     options
 }
 
-/// 字节看起来是不是一份 SVG（跳过 BOM 与前导空白后以 `<svg` / `<?xml` 开头）。
+/// Whether the bytes look like an SVG (after skipping a BOM and leading whitespace, the content starts with `<svg` or `<?xml`).
 pub fn looks_like_svg(bytes: &[u8]) -> bool {
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     let start = bytes
@@ -26,7 +23,7 @@ pub fn looks_like_svg(bytes: &[u8]) -> bool {
     head.starts_with(b"<svg") || head.starts_with(b"<?xml")
 }
 
-/// 按 SVG 的天然尺寸（`width`/`height`，向上取整）光栅化。
+/// Rasterizes at the SVG's natural size (`width`/`height`, rounded up).
 pub fn decode_svg_natural(bytes: &[u8]) -> Result<Pixmap> {
     let tree = resvg::usvg::Tree::from_data(bytes, &svg_options())?;
     let size = tree.size();
@@ -36,11 +33,9 @@ pub fn decode_svg_natural(bytes: &[u8]) -> Result<Pixmap> {
     Ok(pm)
 }
 
-/// 按**目标长边**光栅化 SVG——矢量原件的 `width`/`height` 不是分辨率上限。
+/// Rasterizes the SVG at the **target long edge**. The `width`/`height` of the vector source is not a cap on resolution.
 ///
-/// [`decode_svg_natural`] 走的是 resvg 的天然尺寸：一枚 `width="128"` 的贴纸原件不管
-/// 显示多大都只光栅出 128 px，再放大就是糊的。这里在 render 时加一个等比 `Transform`，
-/// 而不是先出天然尺寸再 resample。等比缩放：长边落到 `long_edge`，短边按原比例取整（至少 1 px）。
+/// [`decode_svg_natural`] uses resvg's natural size: a sticker source with `width="128"` is rasterized at only 128 px no matter how large it is displayed, so scaling it up looks blurry. Here a uniform `Transform` is added at render time instead of producing the natural size first and resampling. Uniform scaling: the long edge lands on `long_edge`, and the short edge is rounded from the original ratio (at least 1 px).
 pub fn decode_svg_at_long_edge(bytes: &[u8], long_edge: u32) -> Result<Pixmap> {
     let tree = resvg::usvg::Tree::from_data(bytes, &svg_options())?;
     let size = tree.size();

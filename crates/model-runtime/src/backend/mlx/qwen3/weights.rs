@@ -1,13 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/WeightLoading.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/WeightLoading.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 权重表：读入列出的全部 safetensors，去掉 `thinker.` 前缀，按键取用。
+//! Weight table: reads all listed safetensors, strips the `thinker.` prefix, and looks up by key.
 //!
-//! `from_arrays` 与 `load_thinker_text*` 移植自 v2，供本地语音合成批次（Qwen2.5-Omni Thinker 文本骨干）使用。
+//! `from_arrays` and `load_thinker_text*` were ported from v2, for the local speech synthesis batch (the Qwen2.5-Omni Thinker text backbone).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -22,18 +22,18 @@ pub struct WeightStore {
 }
 
 impl WeightStore {
-    /// 读入 `files` 列出的全部 safetensors 分片。
+    /// Reads all the safetensors shards listed in `files`.
     pub fn load(files: &[&Path]) -> Result<Self> {
         Self::from_raw(load_safetensors(files)?)
     }
 
-    /// 由调用方自备的数组表构造（例如尚未求值的惰性 safetensors 数组）。
+    /// Constructed from a table of arrays supplied by the caller (for example, not-yet-evaluated lazy safetensors arrays).
     pub fn from_arrays(values: HashMap<String, Array>) -> Result<Self> {
         Self::from_raw(values)
     }
 
-    /// 只加载 Qwen Thinker 文本骨干：官方 Omni 仓库还包含本路径
-    /// 完全不使用的视觉、音频和 Talker 权重。
+    /// Loads only the Qwen Thinker text backbone: the official Omni repo also contains vision, audio and Talker weights that this path
+    /// never uses.
     pub fn load_thinker_text(files: &[&Path]) -> Result<Self> {
         let raw = load_safetensors_filtered(files, is_thinker_text)?;
         Self::from_raw(raw)
@@ -120,7 +120,7 @@ mod tests {
         Ok(())
     }
 
-    // ---- 以下两个移植自 v2：v2 按目录读，这里把夹具文件逐个列出来 ----
+    // ---- The following two were ported from v2: v2 reads from a directory, here the fixture files are listed one by one ----
 
     #[test]
     fn streamed_thinker_quantization_matches_original_quantizer() -> Result<()> {
@@ -159,7 +159,7 @@ mod tests {
         }
         assert!(WeightStore::load_thinker_text_quantized(&files, 64, 3).is_err());
 
-        // 不量化的入口同样只留 Thinker 文本骨干。
+        // The unquantized entry point likewise keeps only the Thinker text backbone.
         let plain = WeightStore::load_thinker_text(&files)?;
         assert_eq!(
             plain.remaining(),

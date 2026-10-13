@@ -7,12 +7,11 @@ import { isJobLive, useJobs } from '../../state/jobs-store.ts';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 
 /**
- * 工具页「用 › 直接调模型」的运行（产品设计 §5.10）：提交 `pipelines.start('ai-tool')`，经 `jobs` 主题跟住父任务；完成时
- * 父任务的 `pipeline.summary`（`AiToolSummary`）要么是写进视频的那笔事务（润色、章节，收据上一键撤销），要么是模型写的正文
- * （总结、博客、标题、简介，只给人读、拷走）。
+ * The run of 「用 › 直接调模型」 (Use › Call model directly) on the tool page (product design §5.10): submits `pipelines.start('ai-tool')`, follows the parent task through the `jobs` topic; when complete, the parent task's `pipeline.summary` (`AiToolSummary`) is either the transaction written into the video (polishing, chapters; undoable with one click on the receipt), or the body the model wrote
+ * (summaries, blog posts, titles, descriptions; only for people to read and copy).
  *
- * 状态放在模块级 store 里（同 speakers-run.ts）：工具页可能被关掉、换到别的面板，任务不能因此断线，结果也还在。
- * 键是「视频 · 工具」：同一个视频的不同工具可以同时跑，同一个工具同时只跑一次。
+ * State is kept in a module-level store (like speakers-run.ts): the tool page may be closed or moved to another panel, and the task must not disconnect because of it; the result is still there.
+ * The key is 「视频 · 工具」 (video · tool): different tools on the same video can run at once, but the same tool runs only once at a time.
  */
 
 export const runKey = (videoId: Id, tool: AiToolKind): string => `${videoId}:${tool}`;
@@ -20,16 +19,16 @@ export const runKey = (videoId: Id, tool: AiToolKind): string => `${videoId}:${t
 export interface AiToolRun {
   videoId: Id;
   tool: AiToolKind;
-  /** 提交成功之前为 null。 */
+  /** null until submission succeeds. */
   jobId: Id | null;
   status: 'submitting' | 'running';
-  /** 运行态写哪只模型（菜单里的名字）。 */
+  /** Which model the run state shows (the name from the menu). */
   model: string;
-  /** 重试时任务的 `updatedAt`：镜像里还是那条已经结束的记录时不收尾。 */
+  /** The task's `updatedAt` on retry: when the mirror still holds that already-finished record, it is not finished again. */
   retriedAt: string | null;
 }
 
-/** 只给结果的工具：模型写的正文。 */
+/** For result-only tools: the body the model wrote. */
 export interface AiToolResult {
   videoId: Id;
   tool: AiToolKind;
@@ -37,13 +36,13 @@ export interface AiToolResult {
   summary: AiToolSummary & { text: string };
 }
 
-/** 写进视频的工具：那笔事务的收据（一键撤销，不给重做）。 */
+/** For tools that write into the video: the receipt of that transaction (undo with one click, no redo). */
 export interface AiToolReceipt {
   videoId: Id;
   tool: AiToolKind;
   jobId: Id;
   summary: AiToolSummary;
-  /** 没有改动（或 Runtime 没给事务）时 null，不给撤销。 */
+  /** null when there is no change (or the Runtime did not provide a transaction); no undo is offered. */
   transactionId: Id | null;
   undone: boolean;
   busy: boolean;
@@ -54,11 +53,11 @@ export interface AiToolProblem {
   tool: AiToolKind;
   title: string;
   message: string;
-  /** 去模型页、设置的补救（没配文本模型时）。 */
+  /** The remedy that goes to the model page and settings (when no text model is configured). */
   remedy: Remedy | null;
-  /** 能从停下的那一步重跑的任务（`pipelines.retry`）。 */
+  /** A task that can be re-run from the step where it stopped (`pipelines.retry`). */
   retryJobId: Id | null;
-  /** 后台任务里要人决定的那一个。 */
+  /** The one among the background tasks that needs a person's decision. */
   taskId: Id | null;
   model: string;
 }
@@ -68,7 +67,7 @@ interface AiToolRunState {
   results: Record<string, AiToolResult>;
   receipts: Record<string, AiToolReceipt>;
   problems: Record<string, AiToolProblem>;
-  /** 收据上撤销过的任务（`jobId`）：收据关掉之后列表仍写「已撤销」，不写「上次」。 */
+  /** A task whose receipt was undone (`jobId`): after the receipt is closed, the list still shows 「已撤销」 (Undone) rather than 「上次」 (Last time). */
   undoneJobs: Record<Id, true>;
 }
 
@@ -77,51 +76,51 @@ const EMPTY: AiToolRunState = { runs: {}, results: {}, receipts: {}, problems: {
 export const useAiToolRun = create<AiToolRunState>()(() => ({ ...EMPTY }));
 
 /**
- * 工具页提示词框里改过的字，键是 `toolDraftKey`（视频 · 工具）。跑着、出了结果或收据时这一页换成那一态，提示词框卸掉；
- * 回列表也一样。字放在这里，「完成」、切换「用」或回列表再进来都还在。没有这一项就是没改过（框跟着模板走）；
- * 改成空也算改过，不弹回模板。
+ * Text typed into the tool page's prompt box, keyed by `toolDraftKey` (video · tool). While running, or showing a result or a receipt, this page is replaced by that state and the prompt box is unmounted;
+ * going back to the list does the same. The text lives here, so it survives 「完成」 (Done), switching 「用」 (Use), or re-entering from the list. No entry means it is unedited (the box follows the template);
+ * clearing it to empty still counts as an edit and does not snap back to the template.
  */
 export const useAiToolPrompts = create<{ prompts: Record<string, string> }>()(() => ({ prompts: {} }));
 
-/** 框里的字变了：与模板一字不差就是没改过（删掉这一项）。 */
+/** The text in the box changed: if it is identical to the template, it is not an edit (delete the entry). */
 export function setAiToolPrompt(key: string, text: string, template: string): void {
   useAiToolPrompts.setState((s) => ({ prompts: text === template ? without(s.prompts, key) : { ...s.prompts, [key]: text } }));
 }
 
-/** 「恢复默认」：回到模板。 */
+/** 「恢复默认」 (Restore default): back to the template. */
 export function restoreAiToolPrompt(key: string): void {
   useAiToolPrompts.setState((s) => ({ prompts: without(s.prompts, key) }));
 }
 
 /**
- * 工具页提示词框上挂着的 skill（按挂上的顺序，不重复），键同 `useAiToolPrompts`。理由同上：框卸掉再回来，摘掉的内置 skill
- * 不能自己回来，「+ › 使用 Skill」挂上的也不能丢。没有这一项就是缺省那一份（`defaults`，这个工具的内置 skill）。
+ * Skills attached to the tool page's prompt box, keyed like `useAiToolPrompts`, in attachment order with no duplicates. Same reason as above: when the box is unmounted and remounted, skills that were removed (built-ins) cannot return by themselves,
+ * and skills attached with 「+ › 使用 Skill」 (+ › Use Skill) must not be lost. No entry means the default set (`defaults`: this tool's built-in skill).
  */
 export const useAiToolSkills = create<{ skills: Record<string, string[]> }>()(() => ({ skills: {} }));
 
 const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
 
-/** 挂着的 skill 变了：与缺省那一份一样就删掉这一项。 */
+/** Attached skills changed: if it is identical to the default set, delete the entry. */
 export function setAiToolSkills(key: string, ids: readonly string[], defaults: readonly string[]): void {
   useAiToolSkills.setState((s) => ({ skills: sameIds(ids, defaults) ? without(s.skills, key) : { ...s.skills, [key]: [...ids] } }));
 }
 
-/** 这个框现在挂着的 skill：存过的，或缺省那一份。 */
+/** The skills currently attached to this box: the saved ones, or the default set. */
 export function aiToolSkills(key: string, defaults: readonly string[]): readonly string[] {
   return useAiToolSkills.getState().skills[key] ?? defaults;
 }
 
-/** 挂上一个 skill：接在后面，已经挂着的不重复。 */
+/** Attach a skill: appended, not duplicated if already attached. */
 export function attachAiToolSkill(key: string, id: string, defaults: readonly string[]): void {
   setAiToolSkills(key, appendSkillId(aiToolSkills(key, defaults), id), defaults);
 }
 
-/** 摘掉一个 skill。 */
+/** Remove a skill. */
 export function detachAiToolSkill(key: string, id: string, defaults: readonly string[]): void {
   setAiToolSkills(key, aiToolSkills(key, defaults).filter((x) => x !== id), defaults);
 }
 
-/** 用到的会话能力；测试给假的。 */
+/** The conversation capabilities used; tests supply fakes. */
 export interface AiToolRunDeps {
   runtime: {
     startPipeline(pipeline: string, params: Record<string, unknown>): Promise<Id>;
@@ -135,13 +134,13 @@ export interface AiToolRunDeps {
 let deps: AiToolRunDeps | null = null;
 let unwatch: (() => void) | null = null;
 
-/** 工具页挂上时绑定会话与提示；第一次绑定时开始盯 `jobs` 主题。 */
+/** On mount, bind the tool page to a conversation and the prompt; the first binding starts watching the `jobs` topic. */
 export function bindAiToolRun(next: AiToolRunDeps): void {
   deps = next;
   unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
 }
 
-/** 测试用：解绑并清空状态。 */
+/** For tests: unbind and clear the state. */
 export function resetAiToolRun(): void {
   unwatch?.();
   unwatch = null;
@@ -165,17 +164,17 @@ function endRun(key: string, problem?: AiToolProblem): void {
   }));
 }
 
-/** 问题卡上的「知道了」。 */
+/** The 「知道了」 (Got it) on the question card. */
 export function dismissAiToolProblem(key: string): void {
   useAiToolRun.setState((s) => ({ problems: without(s.problems, key) }));
 }
 
-/** 结果与收据上的「完成」：回到设置态。 */
+/** 「完成」 (Done) on the result and receipt: back to the settings state. */
 export function closeAiToolResult(key: string): void {
   useAiToolRun.setState((s) => ({ results: without(s.results, key), receipts: without(s.receipts, key) }));
 }
 
-/** 开始。同一个视频的同一个工具同时只跑一次。`model` 是运行态与问题卡上写的模型名字。 */
+/** Start. The same tool on the same video runs only once at a time. `model` is the model name shown in the run state and on the question card. */
 export async function startAiTool(params: AiToolParams, model: string): Promise<boolean> {
   const bound = deps;
   const key = runKey(params.videoId, params.tool);
@@ -189,7 +188,7 @@ export async function startAiTool(params: AiToolParams, model: string): Promise<
   try {
     const jobId = await bound.runtime.startPipeline(AI_TOOL_PIPELINE, { ...params });
     useAiToolRun.setState((s) => (s.runs[key] ? { runs: { ...s.runs, [key]: { ...s.runs[key]!, jobId, status: 'running' } } } : {}));
-    // 任务事件可能比回执先到。
+    // Task events can arrive before the receipt.
     settle(useJobs.getState().jobs);
     return true;
   } catch (error) {
@@ -198,7 +197,7 @@ export async function startAiTool(params: AiToolParams, model: string): Promise<
   }
 }
 
-/** 从停下的那一步重跑同一个任务（`pipelines.retry`）。 */
+/** Re-run the same task from the step where it stopped (`pipelines.retry`). */
 export async function retryAiTool(key: string): Promise<void> {
   const bound = deps;
   const problem = useAiToolRun.getState().problems[key];
@@ -228,7 +227,7 @@ export async function cancelAiTool(jobId: Id): Promise<void> {
   }
 }
 
-/** 盯着从这里提交的任务：结束了就收尾。每一轮只收一次——先同步改掉状态。 */
+/** Watch the task submitted from here: when it finishes, wrap up. Once per round — change the state synchronously first. */
 function settle(jobs: readonly JobRecord[]): void {
   for (const [key, run] of Object.entries(useAiToolRun.getState().runs)) {
     if (run.status !== 'running' || !run.jobId) continue;
@@ -291,7 +290,7 @@ function finish(key: string, run: AiToolRun, job: JobRecord): void {
   useAiToolRun.setState((s) => ({ runs: without(s.runs, key), results: { ...s.results, [key]: result } }));
 }
 
-/** 收据上的「撤销」：撤写进视频的那一笔。 */
+/** 「撤销」 (Undo) on the receipt: undo the transaction written into the video. */
 export async function undoAiTool(key: string): Promise<void> {
   const bound = deps;
   const receipt = useAiToolRun.getState().receipts[key];

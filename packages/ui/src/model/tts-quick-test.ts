@@ -5,12 +5,12 @@ import { canClone, quickKind, type QuickKind } from './models-tts-local.ts';
 import { M } from './tts-quick-test-copy.ts';
 
 /**
- * 本地语音合成的「试听」（设计稿 settings-tts.jsx 的 TtsQuickTest、model-tts.js 的 `quick*`）：芯片只改选择，
- * 点「生成试听」才提交一次真实的 `models.synthesizeSpeech`（`provider: 'local'`，`model` = 模型包）。结果带着自己的身份
- * （`quickKey` = 请求本身），选择一变旧结果就只是「上一次」的。示例台词、快捷音色与语气照设计稿。
+ * Local speech synthesis “Preview” (design draft settings-tts.jsx's TtsQuickTest, model-tts.js's `quick*`): the chips only change the selection,
+ * and only pressing “Generate preview” submits one real `models.synthesizeSpeech` (`provider: 'local'`, `model` = the model pack). A result carries its own identity
+ * (`quickKey` = the request itself); when the selection changes, the old result is just “the previous one”. Sample lines, quick voices and tones follow the design draft.
  */
 
-/* ---------- 示例台词（设计稿 SAMPLE_KINDS / SAMPLE_LINES：十一门语言 × 三句） ---------- */
+/* ---------- Sample lines (design draft SAMPLE_KINDS / SAMPLE_LINES: eleven languages × three lines) ---------- */
 
 export type SampleKind = 'intro' | 'numbers' | 'mood';
 export const SAMPLE_KINDS: readonly { k: SampleKind; label: string }[] = [
@@ -34,8 +34,8 @@ export const SAMPLE_KINDS: readonly { k: SampleKind; label: string }[] = [
   },
 ];
 
-/** 示例台词按台词的语言固定，不随界面语言变。 */
-// i18n-ignore-start: 示例台词按台词语言固定，不随界面语言
+/** Sample lines are fixed to the language of the line, and do not change with the UI language. */
+// i18n-ignore-start: sample lines stay fixed to their language, not the UI language
 export const SAMPLE_LINES: readonly { code: string; kind: SampleKind; text: string }[] = [
   { code: 'zh', kind: 'intro', text: '欢迎使用 CucCut！转录、翻译、配音，全都在你自己的电脑上完成。' },
   { code: 'zh', kind: 'numbers', text: '这条 4K 片段 3 分 28 秒，导出只用了 1 分 12 秒。' },
@@ -76,8 +76,8 @@ export const SAMPLE_LINES: readonly { code: string; kind: SampleKind; text: stri
 const SAMPLE_CODES = [...new Set(SAMPLE_LINES.map((l) => l.code))];
 
 /**
- * 这只模型能试听哪几门语言：模型声明的语言里有示例台词的，按示例表的次序；不限语言（`any`）时示例表的每一门都给。
- * 声明了但没有示例台词的语言不给芯片——那门语言可以用「自己写一句」念。不假定中文或英文。
+ * Which languages this model can preview: among the languages the model declares, those with sample lines, in the order of the sample table; when the model accepts any language (`any`), every language in the sample table is offered.
+ * A declared language with no sample lines gets no chip; that language can still be read with “Write your own line”. Neither Chinese nor English is assumed.
  */
 export function sampleLangs(model: Pick<SpeechModelInfo, 'languages'>): { code: string; label: string }[] {
   const declared = model.languages;
@@ -85,26 +85,26 @@ export function sampleLangs(model: Pick<SpeechModelInfo, 'languages'>): { code: 
   return codes.map((code) => ({ code, label: languageName(code) }));
 }
 
-/** 这门语言有哪几种台词。 */
+/** Which kinds of line this language has. */
 export function sampleKinds(code: string): { k: SampleKind; label: string }[] {
   return SAMPLE_KINDS.filter((k) => SAMPLE_LINES.some((l) => l.code === code && l.kind === k.k));
 }
 
-/** 按语言 + 台词种类取示例句；缺这一种就退到这门语言的第一句，再退到表头。 */
+/** Gets a sample sentence by language plus line kind; if that kind is missing, falls back to the language's first sentence, then to the table header. */
 export function sampleLine(code: string | null, kind: SampleKind): { code: string; kind: SampleKind; text: string } {
   return SAMPLE_LINES.find((l) => l.code === code && l.kind === kind) ?? SAMPLE_LINES.find((l) => l.code === code) ?? SAMPLE_LINES[0]!;
 }
 
-/* ---------- 音色 ---------- */
+/* ---------- Voices ---------- */
 
-/** Qwen3-TTS CustomVoice 的说话人：名字是权重里的标识，不翻译；副题是听感（设计稿 PRESETS）。 */
+/** Qwen3-TTS CustomVoice speakers: the name is an identifier in the weights and is not translated; the subtitle describes how it sounds (design draft PRESETS). */
 export const PRESET_SUB: Readonly<Record<string, string>> = live(() => M.presetSub);
-/** 行上直接露出的四个预设，男女各两；其余收进「更多音色」。 */
+/** The four presets shown directly on the row, two male and two female; the rest go under “More voices”. */
 export const QUICK_PRESETS: readonly string[] = ['Vivian', 'Serena', 'Eric', 'Uncle_Fu'];
 
 /**
- * 内置音色的名字与录音时长（设计稿 BUILTIN_REFS；录音、原文与出处在 Runtime 的 packages/models/src/speech-voices.ts，
- * 模型描述只给 `voiceId` 与语言）。
+ * Names and recording durations of the built-in voices (design draft BUILTIN_REFS; the recordings, source texts and credits are in the Runtime's packages/models/src/speech-voices.ts,
+ * and the model descriptions only give `voiceId` and language).
  */
 const BUILTIN_SECONDS: Readonly<Record<string, number>> = {
   'zh-female': 6.72,
@@ -119,12 +119,12 @@ const BUILTIN_SECONDS: Readonly<Record<string, number>> = {
 export const BUILTIN_VOICE_INFO: Readonly<Record<string, { label: string; seconds: number }>> = live(() =>
   Object.fromEntries(Object.entries(BUILTIN_SECONDS).map(([id, seconds]) => [id, { label: M.builtinVoice[id] ?? id, seconds }])),
 );
-/** 芯片上直接露出的四只内置音色，其余收进「更多音色」。 */
+/** The four built-in voices shown directly on the chips; the rest go under “More voices”. */
 export const QUICK_BUILTINS: readonly string[] = ['zh-female', 'zh-male', 'en-female', 'en-male'];
-/** 内置音色录音的出处（设计稿 REF_CREDIT）。 */
+/** Credit for the built-in voice recordings (design draft REF_CREDIT). */
 export const builtinCredit = (): string => M.builtinCredit;
 
-/** 秒数按当前语言写数字（`min` / `max` 位小数）。 */
+/** Seconds are written as numbers in the current language (`min` / `max` decimal places). */
 function formatSeconds(seconds: number, max: number, min = 0): string {
   return new Intl.NumberFormat(intlLocale(), { minimumFractionDigits: min, maximumFractionDigits: max, useGrouping: false }).format(seconds);
 }
@@ -133,7 +133,7 @@ export function builtinLabel(id: string): string {
   return BUILTIN_VOICE_INFO[id]?.label ?? id;
 }
 
-/** 「按描述造声音」的三句现成描述（设计稿 DESCRIBE_VOICES），给只认自由描述的模型。 */
+/** Three ready-made descriptions for “Design a voice from a description” (design draft DESCRIBE_VOICES), for models that only accept free-form descriptions. */
 export const DESCRIBE_VOICES: readonly { k: string; label: string; text: string }[] = [
   {
     k: 'warm',
@@ -165,8 +165,8 @@ export const DESCRIBE_VOICES: readonly { k: string; label: string; text: string 
 ];
 
 /**
- * 试听的语气（设计稿 INSTRUCT_TONES）：只给预设说话人、且接受风格说明（`instructions: 'style'`）的模型——落成 `instructions`。
- * 设计稿给 IndexTTS 的情绪档（EMOTION_TONES）这一版的请求带不了，不画。
+ * Tones for the preview (design draft INSTRUCT_TONES): only for models that take preset speakers and accept a style note (`instructions: 'style'`); they become `instructions`.
+ * The design draft's emotion presets for IndexTTS (EMOTION_TONES) cannot be sent by this version's request, so they are not drawn.
  */
 export const INSTRUCT_TONES: readonly { k: string; label: string; text?: string }[] = [
   {
@@ -208,15 +208,15 @@ export function quickTones(model: SpeechModelInfo): readonly { k: string; label:
   return quickKind(model) === 'preset' && model.local?.instructions === 'style' ? INSTRUCT_TONES : [];
 }
 
-/** 音色芯片与「更多音色」的一项。 */
+/** An item of the voice chips and of “More voices”. */
 export interface VoiceOption {
   key: string;
   label: string;
-  /** 次要说明（悬停提示 / 菜单副题）。 */
+  /** Secondary note (hover hint / menu subtitle). */
   sub?: string;
 }
 
-/** 「我的声音」里的一只（`library:<id>` 交给克隆模型）。 */
+/** One voice from “My voices” (`library:<id>` is handed to the cloning model). */
 export interface MyVoice {
   id: string;
   name: string;
@@ -236,8 +236,8 @@ const quickSpeakers = (model: SpeechModelInfo) => {
 };
 
 /**
- * 快捷音色（设计稿 `quickVoices`）：预设模型给四个说话人；按描述造声的给快捷四只内置音色（在它身上是一句描述）+ 三句现成描述
- * + 自己描述；能克隆的给默认音色、我的声音、快捷四只内置音色与「临时用一段」。
+ * Quick voices (design draft `quickVoices`): preset models get four speakers; models that design a voice from a description get the four quick built-in voices (for them each is a description) + the three ready-made descriptions
+ * + a custom description; models that can clone get the default voice, My voices, the four quick built-in voices and “Use a clip for now”.
  */
 export function quickVoices(model: SpeechModelInfo, mine: readonly MyVoice[]): VoiceOption[] {
   const kind = quickKind(model);
@@ -258,7 +258,7 @@ export function quickVoices(model: SpeechModelInfo, mine: readonly MyVoice[]): V
   ];
 }
 
-/** 「更多音色」：预设模型收其余的说话人，其余收快捷四只之外的内置音色。 */
+/** “More voices”: preset models include the remaining speakers; others include the built-in voices other than the four quick ones. */
 export function moreVoices(model: SpeechModelInfo): VoiceOption[] {
   if (quickKind(model) === 'preset') {
     const quick = quickSpeakers(model);
@@ -274,32 +274,32 @@ export function moreVoices(model: SpeechModelInfo): VoiceOption[] {
     });
 }
 
-/** 这门语言的内置音色：先找女声，再找这门语言的第一只，都没有时取第一只（与 Runtime 的 `defaultBuiltinVoice` 同口径）。 */
+/** The built-in voice for this language: looks for a female voice first, then the language's first voice, and when neither exists takes the first voice (same rule as the Runtime's `defaultBuiltinVoice`). */
 export function defaultBuiltin(model: SpeechModelInfo, lang: string | null): string | null {
   const builtins = model.voices.filter((v) => v.source === 'builtin');
   const same = lang ? builtins.filter((v) => v.language === lang) : [];
   return (same.find((v) => v.voiceId.endsWith('-female')) ?? same[0] ?? builtins[0])?.voiceId ?? null;
 }
 
-/* ---------- 选择 → 请求 ---------- */
+/* ---------- Selection → request ---------- */
 
-/** 这一行试听的选择（按模型在本次页面会话里留着）。 */
+/** The selection for this preview row (kept per model for this page session). */
 export interface QuickPick {
   lang: string | null;
   kind: SampleKind;
   voice: string;
-  /** 用户自己点过音色：没点过时换语言，默认的内置音色跟着语言走。 */
+  /** The user has picked a voice themselves; until then, changing language makes the default built-in voice follow the language. */
   voicePicked: boolean;
   tone: string;
-  /** 「自己写一句」开着：念 `draft`，否则念示例台词。关上时写过的那句留着。 */
+  /** “Write your own line” is on: reads `draft`, otherwise reads a sample line. When turned off, the line written earlier is kept. */
   editing: boolean;
   draft: string;
-  /** 「自己描述」的那句话。 */
+  /** The sentence for “Describe the voice yourself”. */
   describe: string;
-  /** 「临时用一段」：自己选的录音，或「用示例录音」放进来的内置音色。 */
+  /** “Use a clip for now”: a recording the user picked, or a built-in voice brought in by “Use sample recording”. */
   file: { path: string; name: string } | null;
   sample: string | null;
-  /** 自己选的录音的原文（模型读原文时可填）。 */
+  /** Source text of a recording the user picked (can be filled in when the model reads the source). */
   transcript: string;
 }
 
@@ -327,7 +327,7 @@ export function quickDefaults(model: SpeechModelInfo): QuickPick {
   };
 }
 
-/** 换语言：想听同一句换种语言念，台词种类留着（这门语言没有就落回第一句）；没点过音色时默认的内置音色跟着语言走。 */
+/** Changing language: to hear the same line read in another language, the line kind is kept (if this language has none, falls back to the first sentence); until a voice is picked, the default built-in voice follows the language. */
 export function chooseLang(model: SpeechModelInfo, pick: QuickPick, lang: string): QuickPick {
   const next: QuickPick = { ...pick, lang, kind: sampleLine(lang, pick.kind).kind, editing: false };
   if (!pick.voicePicked && quickKind(model) !== 'preset') {
@@ -337,18 +337,18 @@ export function chooseLang(model: SpeechModelInfo, pick: QuickPick, lang: string
   return next;
 }
 
-/** 点了一个音色芯片或「更多音色」里的一项。 */
+/** Clicked a voice chip or an item under “More voices”. */
 export function chooseVoice(pick: QuickPick, voice: string): QuickPick {
   return { ...pick, voice, voicePicked: true };
 }
 
-/** 选好了一段自己的录音（换掉示例录音）。 */
+/** A recording of the user's own has been chosen (replacing the sample recording). */
 export function chooseFile(pick: QuickPick, path: string): QuickPick {
   const name = path.split(/[\\/]/).pop() || path;
   return { ...pick, voice: FILE_VOICE, voicePicked: true, file: { path, name }, sample: null };
 }
 
-/** 「用示例录音」：拿这门语言的内置音色当参考（它就是一段随应用分发的录音），不用去找文件。 */
+/** “Use sample recording”: uses this language's built-in voice as the reference (it is a recording shipped with the app), so no file needs to be found. */
 export function chooseSample(model: SpeechModelInfo, pick: QuickPick): QuickPick {
   const sample = defaultBuiltin(model, pick.lang);
   return sample ? { ...pick, voice: FILE_VOICE, voicePicked: true, sample, file: null } : pick;
@@ -357,22 +357,22 @@ export function chooseSample(model: SpeechModelInfo, pick: QuickPick): QuickPick
 export type QuickRequest = Omit<SynthesizeSpeechRequest, 'commandId'>;
 
 export interface QuickForm {
-  /** 能提交时的请求；有问题时 null。 */
+  /** The request when it can be submitted; null when there is a problem. */
   request: QuickRequest | null;
-  /** 按下「生成试听」时要说清楚的第一个问题（按钮不置灰，按下再说）。 */
+  /** The first problem to state clearly when “Generate preview” is pressed (the button is not greyed out; the problem is raised on press). */
   problem: string | null;
-  /** 结果的身份：同一身份的结果就是「现在这组选择」念出来的。 */
+  /** Result identity: a result with the same identity is what “the current selection” reads out. */
   key: string;
 }
 
-/** 正在念的文字：「自己写一句」开着时是写的那句，否则是示例台词。 */
+/** The text being read: the written line when “Write your own line” is on, otherwise the sample line. */
 export function quickText(pick: QuickPick): string {
   return pick.editing ? pick.draft : sampleLine(pick.lang, pick.kind).text;
 }
 
 /**
- * 选择 → `models.synthesizeSpeech` 的请求（设计稿 `quickForm` + `validatePreview`）。`voice`、`reference` 与 `voiceDescription`
- * 至多给一个（Runtime 同样拒绝多给）。念示例台词时带上语言；自己写的一句不猜语言。
+ * Selection → request for `models.synthesizeSpeech` (design draft `quickForm` + `validatePreview`). At most one of `voice`, `reference` and `voiceDescription`
+ * is given (the Runtime rejects more than one as well). The language is included when reading a sample line; a self-written line does not have its language guessed.
  */
 export function quickForm(model: SpeechModelInfo, pick: QuickPick, mine: readonly MyVoice[]): QuickForm {
   const kind = quickKind(model);
@@ -414,11 +414,11 @@ export function quickForm(model: SpeechModelInfo, pick: QuickPick, mine: readonl
   return { request: problem ? null : request, problem, key: JSON.stringify(request) };
 }
 
-/* ---------- 进度与结果 ---------- */
+/* ---------- Progress and result ---------- */
 
 /**
- * 在跑的试听写到哪一步：排队 → 加载模型 → 合成（Worker 报了步数时写第几步）→ 写出音频。Worker 自己的参考录音准备与编码
- * 不单独成为任务阶段，只有合成的步数会转到任务进度里。
+ * Which step a running preview is at: queued → loading the model → synthesizing (shows the step number when the Worker reports step counts) → writing the audio. The Worker's own preparation and encoding of the reference recording
+ * do not become a separate task stage; only the synthesis step count is passed through to the task progress.
  */
 export function quickPhase(job: JobRecord | undefined): { label: string; percent: number | null } {
   if (!job) return { label: M.phaseSubmitting, percent: null };
@@ -445,7 +445,7 @@ export function quickPhase(job: JobRecord | undefined): { label: string; percent
   }
 }
 
-/** 结果行这一段用的是哪只音色（设计稿 `quickSummary` 的 voice）。 */
+/** Which voice this result line uses (the voice of design draft `quickSummary`). */
 export function voiceLabel(model: SpeechModelInfo, pick: QuickPick, mine: readonly MyVoice[]): string {
   const kind = quickKind(model);
   if (kind === 'preset') return pick.voice;
@@ -460,8 +460,8 @@ export function voiceLabel(model: SpeechModelInfo, pick: QuickPick, mine: readon
 }
 
 /**
- * 结果行：「Vivian · 热情洋溢 · 中文 · 用时 1.6 秒 · 音频 3.9 秒」。台词不是介绍时写出种类；自己写的一句写「自定义文本」。
- * 用时与音频时长都取任务的真实数字，没有就不写。
+ * Result line: “Vivian · 热情洋溢 · 中文 · 用时 1.6 秒 · 音频 3.9 秒” (Vivian · enthusiastic · Chinese · took 1.6 s · audio 3.9 s). When the line is not an introduction, the kind is written; a self-written line is written as “自定义文本” (custom text).
+ * Time taken and audio duration both come from the task's real numbers; when absent, they are not written.
  */
 export function quickSummary(
   model: SpeechModelInfo,
@@ -485,9 +485,9 @@ export function quickSummary(
   return parts.filter(Boolean).join(' · ');
 }
 
-/* ---------- 「我的声音」的试听克隆 ---------- */
+/* ---------- Preview cloning for “My voices” ---------- */
 
-/** 「我的声音」挑模型的次序（设计稿 model-voices.js CLONE_MODELS），按模型包 ID 的 `@` 前一段比；表外能克隆的排在后面。 */
+/** Order for choosing a model for “My voices” (design draft model-voices.js CLONE_MODELS), compared by the part of the model pack ID before `@`; cloning models not in the table come after. */
 export const CLONE_ORDER: readonly string[] = [
   'indextts2',
   'qwen3-tts-0.6b-base',
@@ -497,7 +497,7 @@ export const CLONE_ORDER: readonly string[] = [
   'voxcpm2',
 ];
 
-/** 「试听克隆」去哪一行：装好了的、能克隆的模型包里按 `CLONE_ORDER` 取第一只；一只都没装时 null。 */
+/** Which row “Preview cloning” goes to: the first installed cloning-capable model pack by `CLONE_ORDER`; null when none is installed. */
 export function auditionBundle(bundles: readonly ModelBundleStatus[], models: ReadonlyMap<string, SpeechModelInfo>): string | null {
   const rank = (id: string) => {
     const i = CLONE_ORDER.indexOf(id.split('@')[0]!);

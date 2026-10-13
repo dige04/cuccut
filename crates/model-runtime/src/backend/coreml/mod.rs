@@ -1,8 +1,6 @@
-//! CoreML 后端（Apple Silicon）：Whisper large-v3 / large-v3-turbo 的 `.mlmodelc` 包。
+//! CoreML backend (Apple Silicon): `.mlmodelc` packs for Whisper large-v3 / large-v3-turbo.
 //!
-//! 识别模型在 CoreML 上跑（mel 与解码器的设备选择见 [`whisper`]），切段的 Silero VAD 与可选的强制对齐器仍是
-//! MLX 的（[`super::mlx::silero`]、[`super::mlx::aligner`]），所以这个后端连带要求 `backend-mlx` 与一个 Metal
-//! 设备。CoreML 的模型句柄与 MLX 的数组一样只留在加载它的线程上。
+//! The recognition model runs on CoreML (for the device choice of mel and the decoder, see [`whisper`]). The segmentation Silero VAD and the optional forced aligner are still MLX's ([`super::mlx::silero`], [`super::mlx::aligner`]), so this backend also requires `backend-mlx` and a Metal device. CoreML model handles, like MLX arrays, stay only on the thread that loaded them.
 
 pub mod whisper;
 
@@ -17,7 +15,7 @@ use crate::protocol::{BackendStatus, ErrorBody, MemorySnapshot, codes, transcrip
 use crate::speech::{ForcedAlignment, SpeakerDiarization};
 use whisper::{WhisperCoreMl, WhisperFiles};
 
-/// CoreML 认的设备名：模型包登记写 `ane`（编码器与解码器优先上神经网络引擎，mel 在 CPU/GPU）。
+/// The device name CoreML recognizes: the model pack registers `ane` (the encoder and decoder prefer the Neural Engine, and mel runs on CPU/GPU).
 pub const DEVICE: &str = "ane";
 
 pub struct CoreMlBackend;
@@ -27,7 +25,7 @@ impl Backend for CoreMlBackend {
         "coreml"
     }
 
-    /// 识别模型包都带 MLX 的 VAD：没有 Metal 设备时报告不可用，与 `mlx` 后端同一个原因。
+    /// Recognition model packs all bring MLX's VAD: without a Metal device, it reports unavailable, for the same reason as the `mlx` backend.
     fn status(&self) -> BackendStatus {
         match runtime::ensure_metal_device() {
             Ok(()) => BackendStatus {
@@ -48,7 +46,7 @@ impl Backend for CoreMlBackend {
     fn load(&self, bundle: &VerifiedBundle, phase: &mut PhaseCallback<'_>) -> Result<Box<dyn LoadedModel>, ErrorBody> {
         check_device(bundle)?;
         let (Some(asr_files), Some(vad_files), Some(tokenizer_files)) = (&bundle.asr, &bundle.vad, &bundle.tokenizer) else {
-            // backend::load 已经检查过；这里只为类型。
+            // backend::load has already checked this; this is only for the type.
             return Err(ErrorBody::new(
                 codes::MODEL_UNSUPPORTED,
                 "the bundle needs asr, vad and tokenizer components",
@@ -58,15 +56,15 @@ impl Backend for CoreMlBackend {
             return Err(transcription_not_wired(Some(&asr_files.family)));
         }
 
-        // 先按清单取齐文件：缺文件是 MODEL_NOT_INSTALLED，不必先加载几百 MB 的模型。
+        // Gather all files from the manifest first: a missing file is MODEL_NOT_INSTALLED, so there is no need to load a model of several hundred MB first.
         let files = whisper_files(asr_files, tokenizer_files)?;
         let vad_weights = vad_files.require_extension("safetensors")?;
-        // 对齐器是可选组件（与 MLX 的模型包共用同一只）：带了才加载，缺文件同样报 MODEL_NOT_INSTALLED。
+        // The aligner is an optional component (shared with the MLX model pack): it loads only if present, and a missing file likewise reports MODEL_NOT_INSTALLED.
         if let Some(aligner_files) = &bundle.aligner {
             aligner_files.require_extension_in("", "safetensors")?;
             aligner_files.require("vocab.json")?;
         }
-        // 说话人区分同样可选（MLX 的 Pyannote 与 WeSpeaker）：只核对文件，任务里要用时才加载。
+        // Speaker diarization is also optional (MLX's Pyannote and WeSpeaker): only the files are checked, and the models load when a job needs them.
         let diarizer = DiarizerSlot::new(bundle)?;
 
         runtime::configure_memory_cache().map_err(|error| load_failed("vad", &error))?;
@@ -97,8 +95,8 @@ impl Backend for CoreMlBackend {
     }
 }
 
-/// 从清单里取 Whisper 要的文件。`.mlmodelc` 是目录，整个交给 CoreML（[`VerifiedFiles::require_directory`]）；
-/// context prefill 模型可有可无（v2：有就用）。
+/// Takes the files Whisper needs from the manifest. `.mlmodelc` is a directory, handed to CoreML as a whole ([`VerifiedFiles::require_directory`]);
+/// the context prefill model is optional (v2: used when present).
 pub fn whisper_files(asr: &VerifiedFiles, tokenizer: &VerifiedFiles) -> Result<WhisperFiles, ErrorBody> {
     Ok(WhisperFiles {
         mel: asr.require_directory("MelSpectrogram.mlmodelc")?,
@@ -110,7 +108,7 @@ pub fn whisper_files(asr: &VerifiedFiles, tokenizer: &VerifiedFiles) -> Result<W
     })
 }
 
-/// 设备必须是 `ane`，且本机有 Metal 设备（VAD 在 MLX 上跑）。
+/// The device must be `ane`, and the machine must have a Metal device (the VAD runs on MLX).
 fn check_device(bundle: &VerifiedBundle) -> Result<(), ErrorBody> {
     if bundle.device != DEVICE {
         return Err(
@@ -125,7 +123,7 @@ fn check_device(bundle: &VerifiedBundle) -> Result<(), ErrorBody> {
     Ok(())
 }
 
-/// 模型文件不对、CoreML 拒绝加载之类的失败。细节（可能含路径）只写 stderr；按清单取文件的错误原样透传。
+/// Failures such as wrong model files or CoreML refusing to load. Details (which may include paths) are written only to stderr; errors from fetching files from the manifest are passed through unchanged.
 fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
     eprintln!("[model-worker] loading {component} failed: {error:#}");
     if let Some(body) = error.downcast_ref::<ErrorBody>() {
@@ -135,11 +133,11 @@ fn load_failed(component: &str, error: &anyhow::Error) -> ErrorBody {
         .with_details(json!({ "component": component, "reason": "load-failed" }))
 }
 
-/// 进程此刻的常驻内存（字节）。CoreML 不报告模型占用，`residentBytes` 报整个 Worker 进程的 RSS。
+/// The process's current resident memory (bytes). CoreML does not report model usage, so `residentBytes` reports the RSS of the whole Worker process.
 fn resident_bytes() -> Option<u64> {
     let mut info: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
-    // SAFETY: `info` 是足够大、按 C 布局的缓冲区；proc_pidinfo 只写入其中 `size` 字节。
+    // SAFETY: `info` is a sufficiently large buffer with C layout; proc_pidinfo writes only `size` bytes into it.
     let written = unsafe {
         libc::proc_pidinfo(
             libc::getpid(),
@@ -152,7 +150,7 @@ fn resident_bytes() -> Option<u64> {
     (written == size).then_some(info.pti_resident_size)
 }
 
-/// 加载好的 VAD（MLX）+ Whisper（CoreML）+ 可选的强制对齐器（MLX）+ 按需加载的说话人区分（MLX）。
+/// The loaded VAD (MLX) + Whisper (CoreML) + optional forced aligner (MLX) + on-demand speaker diarization (MLX).
 pub struct CoreMlModel {
     vad: SileroVad,
     asr: WhisperCoreMl,
@@ -188,7 +186,7 @@ impl LoadedModel for CoreMlModel {
         }
     }
 
-    /// CoreML 没有 MLX 那样的活动 / 缓存 / 峰值统计；MLX 的快照只看得到 VAD 与对齐器，报出来反而误导。
+    /// CoreML has no active / cache / peak statistics like MLX's; MLX's snapshot only covers the VAD and aligner, and reporting them would be misleading.
     fn memory(&self) -> Option<MemorySnapshot> {
         None
     }

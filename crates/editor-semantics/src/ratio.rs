@@ -1,7 +1,7 @@
-//! 检查溢出的有理数（视频格式规范 §2.3「运算」）。
+//! Overflow-checked rational numbers (video format spec §2.3 “Arithmetic”).
 //!
-//! 分子分母用 `i128`，始终约分、分母为正。任何一步超限都返回 `None`，由调用方报
-//! `TIME_ARITHMETIC_OVERFLOW`，不退化为浮点数。
+//! Numerator and denominator are `i128`, always reduced, with a positive denominator. If any step exceeds the limit, it returns `None`, and the caller reports
+//! `TIME_ARITHMETIC_OVERFLOW`; it never falls back to floating point.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -12,7 +12,7 @@ pub struct Ratio {
     den: i128,
 }
 
-/// 分子与分母的上限。两个合法值交叉相乘（比较、通分）不会越过 `i128`。
+/// Upper bound for numerator and denominator. Cross-multiplying two valid values (for comparison or common denominators) will not exceed `i128`.
 const LIMIT: u128 = 1 << 63;
 
 fn gcd(a: u128, b: u128) -> u128 {
@@ -27,7 +27,7 @@ impl Ratio {
     pub const ZERO: Ratio = Ratio { num: 0, den: 1 };
     pub const ONE: Ratio = Ratio { num: 1, den: 1 };
 
-    /// 约分并把符号放到分子上。分母为零或超限时为 `None`。
+    /// Reduces the fraction and puts the sign on the numerator. `None` if the denominator is zero or a limit is exceeded.
     pub fn new(num: i128, den: i128) -> Option<Ratio> {
         if den == 0 {
             return None;
@@ -79,7 +79,7 @@ impl Ratio {
         })
     }
 
-    /// 相乘之前交叉约分，尽量不让中间值越界。
+    /// Cross-reduces before multiplying, to keep intermediate values from overflowing where possible.
     pub fn checked_mul(self, other: Ratio) -> Option<Ratio> {
         let g1 = gcd(self.num.unsigned_abs(), other.den as u128).max(1) as i128;
         let g2 = gcd(other.num.unsigned_abs(), self.den as u128).max(1) as i128;
@@ -95,18 +95,18 @@ impl Ratio {
         self.checked_mul(Ratio::new(other.den, other.num)?)
     }
 
-    /// 不大于它的最大整数。
+    /// The largest integer not greater than it (floor).
     pub fn floor(self) -> i128 {
         self.num.div_euclid(self.den)
     }
 
-    /// 不小于它的最小整数。
+    /// The smallest integer not less than it (ceiling).
     pub fn ceil(self) -> i128 {
         let f = self.floor();
         if self.num.rem_euclid(self.den) == 0 { f } else { f + 1 }
     }
 
-    /// 小数部分，落在 [0, 1)。
+    /// Fractional part, in [0, 1).
     pub fn fract(self) -> Ratio {
         Ratio {
             num: self.num.rem_euclid(self.den),
@@ -114,12 +114,12 @@ impl Ratio {
         }
     }
 
-    /// 规范的文本形式，用于缓存键与比较：约分之后的 `num/den`。
+    /// Canonical text form, used for cache keys and comparison: `num/den` after reduction.
     pub fn canonical(self) -> String {
         format!("{}/{}", self.num, self.den)
     }
 
-    /// 宿主边界上的近似值。只在 draw、媒体 API 这类要求原生数值的地方用（§2.13）。
+    /// Approximate value at the host boundary. Used only where a native number is required, such as draw or media APIs (§2.13).
     pub fn to_f64(self) -> f64 {
         self.num as f64 / self.den as f64
     }
@@ -127,7 +127,7 @@ impl Ratio {
 
 impl Ord for Ratio {
     fn cmp(&self, other: &Self) -> Ordering {
-        // 分母为正，交叉相乘比较；值都在 LIMIT 之内，乘积不超过 2^126。
+        // Denominators are positive, so compare by cross-multiplying; values are all within LIMIT, so products do not exceed 2^126.
         (self.num * other.den).cmp(&(other.num * self.den))
     }
 }

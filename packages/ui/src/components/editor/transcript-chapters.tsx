@@ -18,15 +18,9 @@ import { TRANSCRIPT_TOOLS_COPY as T } from './transcript-copy.ts';
 import { useHoldRow } from './use-virtual-rows.ts';
 
 /**
- * 文稿里的章节头行（设计稿 panels.jsx `.chead`）：滚动时贴在面板顶上；章名点一下就地改名（Enter 或移开焦点写入，Esc 放弃），
- * 起止时间点一下跳到这一章开头，右边是这一章有几段。没有段落的章在头行下写一句（`TranscriptChapterEmpty`，文稿列表里单独一行）。
- * `chapter` 为 null 时是「第一章之前」。头行本身就是文稿虚拟列表里的一行（`rowProps`：量高的 ref 与列表项属性），吸顶靠它是
- * 那一节外层的直接子元素；菜单开着、章名输入框开着时要求列表别卸掉这一行。
+ * Chapter header row in the transcript (design mock panels.jsx `.chead`): it sticks to the top of the panel while scrolling. Clicking the chapter name renames it in place (Enter or moving focus away saves, Esc discards). Clicking the start or end time jumps to the start of this chapter, and on the right is the number of paragraphs in the chapter. A chapter with no paragraphs gets a line under the header (`TranscriptChapterEmpty`, its own row in the transcript list). When `chapter` is null, it means “before the first chapter.” The header is itself one row in the transcript virtual list (`rowProps`: the ref used to measure height and the list item attributes). For sticky positioning it must be a direct child of that section's outer element. While the menu or the name input is open, the list must not unmount this row.
  *
- * 最右是「这一章…」菜单（设计稿 `.chead__b` + `ScopeMenu`，悬停、焦点在上面或菜单开着时显出来）：复制这一章（按复制设置 /
- * 只要文字，由文稿面板按这一章的段排）、改名、剪掉这一章（`removeRange` 删掉这段时间，删标记，后面的章前移，一笔事务）、
- * 删除章节标记（内容不动）。「第一章之前」只有复制。设计稿菜单里只对一章重跑转录、润色、识别说话人的几项没有做（按章的重跑
- * 还没有）；拖段落换章也没有做，用段落行的 ↑ ↓。
+ * On the far right is the “This chapter…” menu (design mock `.chead__b` + `ScopeMenu`, shown on hover, when focus is inside it, or while the menu is open). It offers: copy this chapter (per the copy settings or text only, arranged by the transcript panel from this chapter's paragraphs), rename, cut this chapter (`removeRange` deletes that time span and marks it deleted, the later chapters move forward, all in one transaction), and delete the chapter marker (content unchanged). “Before the first chapter” only has copy. The design's menu items that re-run transcription, polishing, or speaker identification for a single chapter are not implemented (per-chapter re-runs do not exist yet). Dragging paragraphs between chapters is also not implemented; use the ↑ ↓ on the paragraph row.
  */
 
 const head = style({
@@ -100,7 +94,7 @@ const range = style({
   whiteSpace: 'nowrap',
 });
 const grow = style({ flexGrow: 1 });
-/** 「这一章…」钮（设计稿 `.chead__b`）：平时透明，悬停、焦点在里面或菜单开着时显出来。 */
+/** “This chapter…” button (design mock `.chead__b`): transparent normally, shown on hover, when focus is inside it, or while the menu is open. */
 const menuSlot = style({ flexShrink: 0, alignSelf: 'center', opacity: { default: 0, isShown: 1 } });
 const count = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-500', whiteSpace: 'nowrap' });
 const empty = style({ margin: 0, paddingX: 4, paddingTop: 8, paddingBottom: 12, font: 'ui-sm', color: 'gray-500' });
@@ -113,14 +107,14 @@ export function TranscriptChapterHead({
   cutTrackIds,
   onCopy,
 }: {
-  /** 虚拟列表给行外层的：量高的 ref、`role="listitem"` 与位置。 */
+  /** For the outer element of each virtual list row: the height-measuring ref, `role="listitem"`, and position. */
   rowProps?: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> };
   sequence: Sequence;
   chapter: ChapterSpan | null;
   paragraphs: number;
-  /** 剪掉这一章时声明的轨道（与文稿里剪一段同一套：取用了素材的轨道、链接的轨道与字幕轨）。 */
+  /** Tracks declared when cutting this chapter (same set as cutting a paragraph in the transcript: tracks that use the asset, linked tracks, and the caption track). */
   cutTrackIds: readonly Id[];
-  /** 复制这一章的段：按复制设置，或只要文字。 */
+  /** Paragraphs to copy for this chapter: per the copy settings, or text only. */
   onCopy(withSettings: boolean): void;
 }) {
   const actions = useEditorActions();
@@ -130,9 +124,9 @@ export function TranscriptChapterHead({
   const [rowHovered, setRowHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  // 「第一章之前」没有章节标题可写，按这一段算。
+  // “Before the first chapter” has no chapter title to write, so it counts as one segment.
   const scopeCopy = useScopeCopy(chapter ? 'chapter' : 'para');
-  // Enter 写入后输入框卸掉时还可能来一次失焦：只写一次。
+  // Enter commits, and unmounting the input after that can still fire a blur: commit only once.
   const settled = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   useHoldRow(menuOpen || draft !== null);
@@ -199,7 +193,7 @@ export function TranscriptChapterHead({
     else if (!chapter || !editable) return;
     else if (key === 'rename') {
       startEdit();
-      // 菜单关上时会把焦点还给 ⋯ 按钮（在它卸掉后的下一帧）：等那之后再把焦点放进输入框。
+      // Closing the menu returns focus to the ⋯ button (on the frame after it unmounts), so wait until then before moving focus into the input.
       requestAnimationFrame(() => requestAnimationFrame(() => inputRef.current?.focus()));
     } else if (key === 'cut' && cutPlan) void applyChapterCut(actions, chapter, cutPlan, sequence.fps);
     else if (key === 'remove') void removeChapter(actions, sequence, chapter);
@@ -275,7 +269,7 @@ export function TranscriptChapterHead({
   );
 }
 
-/** 没有段落的章，头行下面的那一句。 */
+/** The line under the header of a chapter that has no paragraphs. */
 export function TranscriptChapterEmpty() {
   return <p className={empty}>{C.empty}</p>;
 }

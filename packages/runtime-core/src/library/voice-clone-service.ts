@@ -20,34 +20,30 @@ import { outboundPurpose, type GrantService } from '../grants/grant-service.ts';
 import { RcLibrary } from '@cuccut/protocol/messages/runtime-core';
 import { localizedOf, taskFailure, withLocalized, withMessageRef } from '../localized.ts';
 
-/** 克隆外发的数据：参考录音。 */
+/** Data sent out for cloning: the reference recording. */
 export const VOICE_CLONE_DATA_KINDS: GrantDataKind[] = ['audio'];
 
-/** 克隆任务记录里的「模型」：克隆不是某个模型的调用。 */
+/** The “model” in a clone task record. Cloning is not a call to a model. */
 const CLONE_MODEL_ID = 'voice-clone';
 
-/** 删除远端克隆的期限。 */
+/** Deadline for deleting the remote clone. */
 const REMOVE_TIMEOUT_MS = 60_000;
 
 export interface VoiceCloneServiceOptions {
   store: LibraryStore;
   jobs: JobManager;
   grants: GrantService;
-  /** 一个 Provider 的克隆接口；没有克隆接口（或不认识这个 Provider）时 null。 */
+  /** A Provider's clone interface. null when there is no clone interface (or the Provider is not recognized). */
   cloner(providerId: string): VoiceCloner | null;
   log: Logger;
 }
 
 /**
- * 音色克隆（架构设计 §5.9）：`library.createVoiceClone` 与 `library.removeVoiceClone`。
+ * Voice cloning (architecture design §5.9): `library.createVoiceClone` and `library.removeVoiceClone`.
  *
- * - 创建是一个普通任务（`kind: 'voiceClone'`），进度、取消与失败都在任务里。提交时依次检查：授权声明
- *   （`VOICE_CONSENT_REQUIRED`）、Provider 有没有克隆接口（`VOICE_CLONE_UNSUPPORTED`）、是否启用、已有的有效克隆
- *   （`VOICE_CLONE_EXISTS`）、数据外发的授权与额度（数据种类 `audio`，§12.5）。不通过时不建任务。
- * - 执行时固定提交时的版本，再查一次授权声明，按授权预留、上传、结算；建好之后记进条目的 `clones[providerId]`，
- *   记的是上传的那份参考录音的摘要，上传期间参考录音改了时直接是 `stale`。替换下来的过期克隆随后请求远端删除，
- *   删不掉时留一条告警（带它的 `voiceId`），不让任务失败。
- * - 删除先请求远端、成功（或远端已经没有）才清掉记录；远端失败时记录保留，以 Provider 的错误码报告。
+ * - Creation is an ordinary task (`kind: 'voiceClone'`). Progress, cancellation and failure all live in the task. At submission the checks run in order: the consent declaration (`VOICE_CONSENT_REQUIRED`), whether the Provider has a clone interface (`VOICE_CLONE_UNSUPPORTED`), whether it is enabled, an existing valid clone (`VOICE_CLONE_EXISTS`), and the outbound-data grant and quota (data kind `audio`, §12.5). If any check fails, no task is created.
+ * - At execution, the version fixed at submission is used, the consent declaration is checked again, the upload is reserved against the grant, uploaded, and settled. Afterwards the clone is recorded in the entry's `clones[providerId]`, with the digest of the reference recording that was uploaded. If the reference recording changed during the upload, the clone is immediately `stale`. The old clone it replaced is then requested for remote deletion. If that deletion fails, a warning is left (with its `voiceId`), and the task does not fail.
+ * - Deletion requests the remote side first, and clears the record only after success (or when the remote side no longer has it). If the remote call fails, the record is kept and the failure is reported with the Provider's error code.
  */
 export class VoiceCloneService {
   readonly #options: VoiceCloneServiceOptions;
@@ -81,7 +77,7 @@ export class VoiceCloneService {
       );
     }
     const taskId = submitter.kind === 'agent' ? submitter.taskId : null;
-    // 提交前的判断：没有授权覆盖、额度不够时不建任务。审批只在会话与对外服务里，这里直接拒绝（与 `models.*` 一致）。
+    // Checks before submission: with no grant covering it, or insufficient quota, no task is created. Approvals exist only in sessions and external services, so here the request is rejected directly (consistent with `models.*`).
     const plan = grants.plan({
       capability: 'synthesizeSpeech',
       providerId: params.providerId,
@@ -99,7 +95,7 @@ export class VoiceCloneService {
     const frozen: FrozenLibraryEntry = { library: 'voices', id: entry.id, version: entry.version, contentHash: entry.contentHash };
     const spec = { task: 'voiceClone' as const, ...frozen, library: 'voices' as const, providerId: params.providerId };
     const inputHash = `sha256:${sha256Hex(canonicalJson(spec))}`;
-    // 同一个音色、同一个 Provider、同一个版本的克隆还在排队或进行时，返回那个任务。
+    // If a clone of the same voice, same Provider and same version is queued or in progress, return that task.
     const active = jobs
       .list()
       .find((job) => job.kind === 'voiceClone' && job.inputHash === inputHash && (job.state === 'queued' || job.state === 'running'));
@@ -165,7 +161,7 @@ export class VoiceCloneService {
   ): Promise<NonNullable<JobRecord['result']>> {
     const { store, grants, jobs, log } = this.#options;
     run.phase('starting');
-    // 固定提交时的版本：排队期间条目被改、被删，上传的仍是提交时那一份；任务终结时由 JobManager 解除。
+    // The version is fixed at submission. If the entry is changed or deleted while queued, the upload still uses the version from submission. JobManager releases it when the task ends.
     let entry: LibraryEntry<'voices'>;
     try {
       store.pin(run.jobId, [frozen]);
@@ -173,7 +169,7 @@ export class VoiceCloneService {
     } catch {
       throw taskFailure('LIBRARY_ENTRY_GONE', RcLibrary.cloneVersionGone(), { library: 'voices', id: frozen.id });
     }
-    // 排队期间撤回了授权声明：不上传。
+    // Consent declaration withdrawn while queued: do not upload.
     try {
       assertVoiceUploadAllowed(this.#currentOrFrozen(entry), providerId);
     } catch (error) {
@@ -223,7 +219,7 @@ export class VoiceCloneService {
     run.phase('publishing');
     await store.recordClone(frozen.id, providerId, voiceId, reference.sha256);
     log.info('Voice clone created', { id: frozen.id, providerId, jobId: run.jobId });
-    // 替换下来的旧克隆：请求远端删除，删不掉只告警（新克隆已经记下，旧的 voiceId 写在告警里）。
+    // The replaced old clone is requested for remote deletion. If deletion fails, only warn (the new clone is already recorded, and the old voiceId is in the warning).
     if (previous && previous.voiceId !== voiceId) {
       try {
         await cloner.remove(previous.voiceId, AbortSignal.any([run.signal, AbortSignal.timeout(REMOVE_TIMEOUT_MS)]));
@@ -245,7 +241,7 @@ export class VoiceCloneService {
     return { documentId: null, artifactId };
   }
 
-  /** 授权声明以条目的当前版本为准（撤回声明是新版本）；条目删了时用固定的版本。 */
+  /** The consent declaration follows the entry's current version (withdrawing it is a new version). When the entry has been deleted, the fixed version is used. */
   #currentOrFrozen(frozen: LibraryEntry<'voices'>): LibraryEntry<'voices'> {
     try {
       return this.#options.store.get({ library: 'voices', id: frozen.id });
@@ -255,7 +251,7 @@ export class VoiceCloneService {
   }
 }
 
-/** Provider 的失败换成任务错误：错误码、说明（已经去掉密钥）与不含请求头和地址的详情。 */
+/** Turns a Provider failure into a task error: the error code, a description (keys already removed), and details without request headers or addresses. */
 function providerError(error: unknown, providerId: string): { code: string; message: string; details: Record<string, unknown> } {
   if (error instanceof ProviderFailure) {
     const { code, status, reason } = error.details;

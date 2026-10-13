@@ -1,21 +1,21 @@
 /**
- * Agent 回复的逐字显示与 Markdown 分块（产品设计 §3.2.2）。纯函数，视图在 components/thread/agent-markdown.tsx。
+ * Character-by-character display of agent replies and Markdown chunking (product design §3.2.2). Pure functions; the view is in components/thread/agent-markdown.tsx.
  *
- * 回复的文字一坨一坨到达（Runtime 按 60ms 左右的窗口合并后才送过来），界面不按到达的节奏跳，而是匀速往外放：
- * 每一帧放出的字符数与积压成正比，积压多就追得快，积压少就慢慢走。全文留在 store，视图只渲染已放出的那一截。
+ * Reply text arrives in lumps (the Runtime merges it within a window of about 60 ms before sending it), so the UI does not jump to the arrival rhythm. It releases the text at a steady pace instead:
+ * the number of characters released per frame is proportional to the backlog, so a larger backlog catches up faster and a smaller one advances slowly. The full text stays in the store, and the view renders only the part released so far.
  *
- * - `revealStep`：这一帧该多放几个字符
- * - `safeCut` / `advanceCut`：切点落在字素簇边界上，不把一个字切成两半
- * - `splitBlocks`：按 Markdown 块拆开，流式时只有最后一块在变
- * - `closeStreamingTail`：最后一块里没写完的标记先补齐，渲染时不闪出星号与反引号
+ * - `revealStep`: how many characters to release in this frame
+ * - `safeCut` / `advanceCut`: cut points land on grapheme cluster boundaries, so a character is never split in two
+ * - `splitBlocks`: splits by Markdown block; while streaming, only the last block changes
+ * - `closeStreamingTail`: completes any unfinished markers in the last block first, so asterisks and backticks do not flash on screen while rendering
  */
 
-/** 积压在多长时间里放完。 */
+/** The time over which the backlog is released. */
 export const REVEAL_HORIZON_MS = 150;
-/** 两帧之间的时间先夹到这么长：页面隐藏回来后不一口气放完。 */
+/** The gap between two frames is capped at this much, so after the page is hidden and then shown again, the text is not released all at once. */
 const MAX_ELAPSED_MS = 250;
 
-/** 这一帧放出几个字符：与积压成正比，下限 1、上限 backlog；elapsed 先夹到 250ms，不短于 horizon 时全部放出。 */
+/** How many characters to release in this frame: proportional to the backlog, with a minimum of 1 and a maximum of the backlog. elapsed is capped at 250 ms first; when it is no shorter than horizon, everything is released. */
 export function revealStep(input: { backlog: number; elapsedMs: number; horizonMs?: number }): number {
   const backlog = Math.max(0, Math.floor(input.backlog || 0));
   if (!backlog) return 0;
@@ -25,7 +25,7 @@ export function revealStep(input: { backlog: number; elapsedMs: number; horizonM
   return Math.min(backlog, Math.max(1, Math.ceil((backlog * elapsed) / horizon)));
 }
 
-/* Intl.Segmenter 每次调用都现查：测试会临时拿掉它，缓存跟着构造器走。 */
+/* Intl.Segmenter is looked up on every call: tests temporarily remove it, so the cache follows the constructor. */
 let segCache: { ctor: typeof Intl.Segmenter; seg: Intl.Segmenter } | null = null;
 function segmenter(): Intl.Segmenter | null {
   const Seg = typeof Intl !== 'undefined' ? (Intl.Segmenter as typeof Intl.Segmenter | undefined) : undefined;
@@ -34,7 +34,7 @@ function segmenter(): Intl.Segmenter | null {
   return segCache.seg;
 }
 
-/** 把切点拉回到它所在字素簇的起点；没有 Intl.Segmenter 时原样返回。 */
+/** Pulls the cut point back to the start of its grapheme cluster; returned unchanged when there is no Intl.Segmenter. */
 export function safeCut(text: string, index: number): number {
   const i = Math.max(0, Math.min(text.length, Math.floor(index) || 0));
   if (i === 0 || i === text.length) return i;
@@ -44,7 +44,7 @@ export function safeCut(text: string, index: number): number {
   return hit ? hit.index : i;
 }
 
-/** 从 `from` 往后放 `step` 个字符，保证至少前进一个完整的字素簇（safeCut 可能把切点拉回原地）。 */
+/** Releases `step` characters from `from` onward, guaranteeing progress of at least one complete grapheme cluster (safeCut may pull the cut point back to where it started). */
 export function advanceCut(text: string, from: number, step: number): number {
   const start = Math.max(0, Math.min(text.length, from || 0));
   if (start >= text.length) return text.length;
@@ -56,7 +56,7 @@ export function advanceCut(text: string, from: number, step: number): number {
   return hit ? Math.min(text.length, hit.index + hit.segment.length) : target;
 }
 
-// ---- 围栏代码块 ----
+// ---- Fenced code blocks ----
 
 interface Fence {
   ch: string;
@@ -81,7 +81,7 @@ function fenceCloses(line: string, open: Fence): boolean {
 const LIST_ITEM = /^ {0,3}([*+-]|\d{1,9}[.)])(\s+|$)/;
 const blank = (line: string) => /^[ \t]*$/.test(line);
 
-/** 按 Markdown 块拆开（空行分隔）；围栏代码块里、列表内部的空行不拆。块尾的空行不算进块里。 */
+/** Splits by Markdown block (separated by blank lines). Blank lines inside a fenced code block, or inside a list, do not split. Blank lines at the end of a block are not counted as part of it. */
 export function splitBlocks(markdown: string): string[] {
   const lines = markdown.split('\n');
   const blocks: string[] = [];
@@ -105,7 +105,7 @@ export function splitBlocks(markdown: string): string[] {
       while (j < lines.length && blank(lines[j]!)) j++;
       const next = j < lines.length ? lines[j]! : null;
       const inList = LIST_ITEM.test(cur[0]!);
-      // 列表里的空行：下一行还是列表项或缩进的续行，就留在同一块；后面还没到的先挂着。
+      // A blank line inside a list: if the next line is still a list item or an indented continuation, it stays in the same block; anything not yet arrived is held.
       if (inList && (next === null || LIST_ITEM.test(next) || /^[ \t]{2,}\S/.test(next))) {
         cur.push(line);
         continue;
@@ -119,7 +119,7 @@ export function splitBlocks(markdown: string): string[] {
     }
     const open = fenceOpen(line);
     if (open) {
-      // 围栏能打断段落：前面的段落自成一块。
+      // A fence can interrupt a paragraph: the paragraph before it forms its own block.
       if (cur.length && !LIST_ITEM.test(cur[0]!)) flush();
       fence = open;
     }
@@ -129,11 +129,11 @@ export function splitBlocks(markdown: string): string[] {
   return blocks;
 }
 
-// ---- 流式尾部补全 ----
+// ---- Completing the streaming tail ----
 
 type Span = [start: number, end: number];
 
-/** 行内代码的区间（[start, end)，end 含收尾反引号）；最后一个没闭合的单独返回。 */
+/** The ranges of inline code ([start, end), where end includes the closing backtick); the last one, if unclosed, is returned separately. */
 function codeSpans(s: string): { spans: Span[]; open: { start: number; len: number } | null } {
   const spans: Span[] = [];
   let open: { start: number; len: number } | null = null;
@@ -161,7 +161,7 @@ function codeSpans(s: string): { spans: Span[]; open: { start: number; len: numb
 
 const inSpans = (spans: Span[], i: number) => spans.some(([a, b]) => i >= a && i < b);
 
-/** 没写完的图片整个藏起来；没写完的链接只露出文字。行内代码里的方括号不算。 */
+/** An unfinished image is hidden entirely; an unfinished link shows only its text. Square brackets inside inline code do not count. */
 function fixLinks(s: string): string {
   const { spans, open } = codeSpans(s);
   const masked = (i: number) => inSpans(spans, i) || (open !== null && i >= open.start);
@@ -179,7 +179,7 @@ function fixLinks(s: string): string {
   return s;
 }
 
-/** 强调标记的配对栈：返回还没闭合的开标记（按出现顺序）。行首的列表符号、两边都是空白的星号不算。 */
+/** The stack for pairing emphasis markers: returns the opening markers that are still unclosed, in order of appearance. A list marker at the start of a line, and an asterisk with whitespace on both sides, do not count. */
 function openMarkers(s: string, spans: Span[]): { mark: string; at: number }[] {
   const stack: { mark: string; at: number }[] = [];
   let lineStart = 0;
@@ -219,14 +219,14 @@ function openMarkers(s: string, spans: Span[]): { mark: string; at: number }[] {
       i = j;
       continue;
     }
-    // 先当收尾：从栈顶往下配。
+    // First treat each as a closer: match from the top of the stack downward.
     while (len > 0 && !prevSpace) {
       const top = stack[stack.length - 1];
       if (!top || top.mark[0] !== '*' || top.mark.length > len) break;
       stack.pop();
       len -= top.mark.length;
     }
-    // 剩下的当开头。
+    // The rest are treated as openers.
     if (len > 0 && !nextSpace) {
       if (len >= 2) {
         stack.push({ mark: '**', at: i });
@@ -240,8 +240,7 @@ function openMarkers(s: string, spans: Span[]): { mark: string; at: number }[] {
 }
 
 /**
- * 流式中最后一块的补全：只动最后一段，在没闭合的围栏里什么都不做。没闭合的 `**` `*` `~~` 与行内代码补齐，
- * 末尾孤零零的标记去掉，没写完的链接只露文字，没写完的图片藏起来。渲染前的字符串预处理：解析器没有分隔符钩子。
+ * Completes the last block while streaming: only the last segment is changed, and nothing is done inside an unclosed fence. Unclosed `**`, `*`, `~~`, and inline code are completed; a stray marker at the end is removed; an unfinished link shows only its text; an unfinished image is hidden. This is a preprocessing step on the string before rendering, since the parser has no delimiter hooks.
  */
 export function closeStreamingTail(markdown: string): string {
   const lines = markdown.split('\n');
@@ -269,11 +268,11 @@ export function closeStreamingTail(markdown: string): string {
   if (!tail) return markdown;
 
   tail = fixLinks(tail);
-  // 末尾孤零零的标记直接去掉（`_` 只在它前面是空白时）；写完一半的收尾标记也先去掉，下面统一补。
+  // A stray marker at the end is removed outright (`_` only when preceded by whitespace). A half-written closing marker is removed too, and all of them are completed below.
   const strip = (s: string) => s.replace(/[*~]+$/, '').replace(/(^|\s)_+$/, '$1');
   let code = codeSpans(tail);
   if (code.open && code.open.start + code.open.len === tail.length) {
-    // 只来了开头的反引号：先不显示。
+    // Only the opening backtick has arrived: not shown yet.
     tail = strip(tail.slice(0, code.open.start));
     code = codeSpans(tail);
   } else if (!code.open) {
@@ -283,7 +282,7 @@ export function closeStreamingTail(markdown: string): string {
   let closers = '';
   let scan = tail;
   if (code.open) {
-    // 行内代码里的星号不算强调；先闭合代码，再闭合外面的强调。
+    // Asterisks inside inline code do not count as emphasis: close the code first, then close the emphasis outside it.
     closers += '`'.repeat(code.open.len);
     scan = tail.slice(0, code.open.start);
   }

@@ -1,4 +1,4 @@
-//! 时间模型验收 TM01–TM07（验收规范 §6.7）。涉及视频事务的部分在 video-engine 的测试里。
+//! Acceptance tests TM01–TM07 for the time model (acceptance spec §6.7). The parts involving video transactions are in the video-engine tests.
 
 use editor_semantics::*;
 
@@ -65,7 +65,7 @@ fn tm03_exact_frame_rejects_and_ties_go_to_the_earlier_edge() {
     }
 
     let fps = Rate::new(30, 1).unwrap();
-    // 0.05 秒恰在第 1 帧与第 2 帧正中。
+    // 0.05 s falls exactly at the midpoint between frame 1 and frame 2.
     let tie = quantize_input(&secs("0.05"), &grid(fps), FrameAlignment::NearestFrame, "at").unwrap();
     assert_eq!(tie.frame, 1);
     assert_eq!(tie.receipt.delta, mt(-1, 60));
@@ -78,14 +78,14 @@ fn tm03_exact_frame_rejects_and_ties_go_to_the_earlier_edge() {
 
 #[test]
 fn tm04_frames_belong_to_the_command_sequence_only() {
-    // 帧输入只有「unit: frames」一种，按命令所属序列换算；源帧、输出帧之类的单位在反序列化时就被拒绝。
+    // Frame input has only one form, “unit: frames”, converted according to the sequence the command belongs to; units such as source frames and output frames are rejected at deserialization.
     let source_frames = serde_json::from_str::<TimelineTimeInput>(r#"{"unit":"sourceFrames","value":10}"#);
     assert!(source_frames.is_err());
     let both = serde_json::from_str::<TimelineTimeInput>(r#"{"unit":"seconds","value":"1","frames":30}"#);
     assert!(both.is_err());
     let bare = serde_json::from_str::<TimelineTimeInput>(r#"{"value":30}"#);
     assert!(bare.is_err());
-    // 同一个帧号在不同序列帧率下是不同的时间：不猜帧率。
+    // The same frame number is a different time at different sequence frame rates: the frame rate is never guessed.
     let at = TimelineTimeInput::Frames { value: 300 };
     assert_eq!(
         at.resolve(Rate::new(30, 1).unwrap(), "at", false).unwrap(),
@@ -134,12 +134,12 @@ fn tm06_invalid_values_fail_without_float_fallback() {
     assert_eq!(huge.code(), "TIME_ARITHMETIC_OVERFLOW");
     let precise = parse_decimal_seconds("0.1234567890123456789", "t").err().unwrap();
     assert_eq!(precise.code(), "TIME_ARITHMETIC_OVERFLOW");
-    // 绝对位置不能为负。
+    // Absolute positions cannot be negative.
     assert_eq!(
         secs("-1").resolve(Rate::new(30, 1).unwrap(), "at", false).err().unwrap().code(),
         "INVALID_TIME_VALUE"
     );
-    // 零分母、负分母、未约分、超限的 Rate 与 MediaTime。
+    // Rate and MediaTime with a zero denominator, negative denominator, unreduced form, or overflow.
     assert_eq!(Rate::new(30, 0).err().unwrap().code(), "INVALID_TIME_VALUE");
     assert_eq!(Rate::new(60, 2).err().unwrap().code(), "INVALID_TIME_VALUE");
     assert_eq!(Rate::new(1 << 60, 1).err().unwrap().code(), "TIME_ARITHMETIC_OVERFLOW");
@@ -171,7 +171,7 @@ fn tm06_invalid_values_fail_without_float_fallback() {
         timescale: 1,
     };
     assert_eq!(overflow.to_ratio("t").err().unwrap().code(), "TIME_ARITHMETIC_OVERFLOW");
-    // 帧号必须是安全整数；JSON 里的小数与指数在反序列化时就被拒绝。
+    // Frame numbers must be safe integers; decimals and exponents in JSON are rejected at deserialization.
     let frames = TimelineTimeInput::Frames { value: 1 << 60 };
     assert_eq!(
         frames.resolve(Rate::new(30, 1).unwrap(), "at", false).err().unwrap().code(),
@@ -185,7 +185,7 @@ fn tm06_invalid_values_fail_without_float_fallback() {
 #[test]
 fn tm07_relative_moves_quantize_the_absolute_target_once() {
     let fps = Rate::new(30, 1).unwrap();
-    // 起点不在帧上（例如音频的精确位置 0.02 秒），连续三次「晚 0.02 秒」。
+    // The start point is not on a frame (for example, an audio exact position of 0.02 s), with three consecutive “0.02 s later” steps.
     let start = parse_decimal_seconds("0.02", "t").unwrap();
     let step = parse_decimal_seconds("0.02", "t").unwrap();
     let mut exact = start;
@@ -194,7 +194,7 @@ fn tm07_relative_moves_quantize_the_absolute_target_once() {
     }
     let once = quantize_exact(exact, secs("0.08"), &grid(fps), FrameAlignment::NearestFrame, "at").unwrap();
     assert_eq!(once.frame, 2);
-    // 若每次先把 0.02 秒舍入成 1 帧再累加，会落到第 3 帧：这正是要避免的累计偏差。
+    // If each 0.02 s were first rounded to one frame and then accumulated, it would land on frame 3: this is exactly the cumulative drift that must be avoided.
     let per_step = quantize_frame(step, fps, FrameAlignment::NearestFrame, "t").unwrap();
     assert_eq!(per_step * 3, 3);
     assert_ne!(once.frame, per_step * 3);
@@ -202,7 +202,7 @@ fn tm07_relative_moves_quantize_the_absolute_target_once() {
 
 #[test]
 fn map_time_matches_the_spec_example() {
-    // 视频格式规范 §2.5 的例子：30 fps，fromFrame=90，sourceIn=2 秒，rate=3/2。
+    // Example from video format spec §2.5: 30 fps, fromFrame=90, sourceIn=2 s, rate=3/2.
     let fps = Rate::new(30, 1).unwrap();
     let map = TimeMap::Linear {
         source_in: mt(2, 1),
@@ -226,7 +226,7 @@ fn timestamps_round_half_to_even_from_absolute_index() {
     assert_eq!(timestamp_at(0, ntsc), Some(0));
     assert_eq!(timestamp_at(1, ntsc), Some(33367));
     assert_eq!(timestamp_at(1_000_000, ntsc), Some(33_366_666_667));
-    // 1/2 微秒正中：8 fps 下第 1 帧是 125000 微秒，构造 2_000_000 fps 的 1 帧 = 0.5 微秒。
+    // Exact midpoint of 1/2 microsecond: at 8 fps, frame 1 is 125000 microseconds; constructing 1 frame at 2_000_000 fps = 0.5 microseconds.
     let fast = Rate::new(2_000_000, 1).unwrap();
     assert_eq!(timestamp_at(1, fast), Some(0));
     assert_eq!(timestamp_at(3, fast), Some(2));

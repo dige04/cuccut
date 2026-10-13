@@ -2,22 +2,21 @@ import type { Id, Seq } from './domain.ts';
 import { localizeText, type MessageRef } from './message-ref.ts';
 
 /**
- * 视频领域的线上 DTO（视频格式规范 §2–§4；命令与协议规范 §4–§6、§10）。
+ * Online DTOs for the video domain (video format spec §2–§4; command and protocol spec §4–§6, §10).
  *
- * 语义与校验由 Rust 视频引擎单源定义（架构设计 §13.2）。这些类型是按引擎的 serde 输出手写的镜像，
- * 字段名与取值和 `crates/video-model`（画面元素是 v2 的元素模型，`crates/timeline` 的 `schema.rs`）、
- * `crates/video-engine/src/ops.rs` 与 `receipt.rs` 一一对应；生成工具随后补上。格式版本只有 3。
+ * Semantics and validation are defined once by the Rust video engine (architecture design §13.2). These types are hand-written mirrors of the engine's serde output. Field names and values correspond one-to-one with `crates/video-model` (picture elements are the v2 element model; `crates/timeline`'s `schema.rs`),
+ * `crates/video-engine/src/ops.rs` and `receipt.rs`. A generation tool will fill in the rest later. The format version is only 3.
  */
 
 export type Revision = string;
 
-/** 正的整数比，已约分。帧率、时间基、速度都用它。 */
+/** A positive integer ratio, reduced. Used for frame rate, timebase and speed. */
 export interface Rate {
   num: number;
   den: number;
 }
 
-/** 精确时间：`ticks / timescale` 秒。`ticks` 是十进制整数字符串，避免 64 位整数丢精度。 */
+/** Exact time: `ticks / timescale` seconds. `ticks` is a decimal integer string, to avoid losing precision in 64-bit integers. */
 export interface MediaTime {
   ticks: string;
   timescale: number;
@@ -36,7 +35,7 @@ export interface FrameSpan {
 export type TimeMap = { kind: 'linear'; sourceIn: MediaTime; rate: Rate } | { kind: 'hold'; sourceAt: MediaTime };
 
 export type TrackKind = 'visual' | 'audio' | 'subtitle';
-/** `arrangeItem` 的方向：往上一层、往下一层、最上、最下。 */
+/** Direction for `arrangeItem`: up one layer, down one layer, to the top, to the bottom. */
 export type ArrangeDirection = 'forward' | 'backward' | 'front' | 'back';
 
 export interface Track {
@@ -56,7 +55,7 @@ export interface ItemLineage {
   viaTransactionId: Id;
 }
 
-/** 语义锚点（视频格式规范 §3.16）：实例的起点或终点钉在一个词、一句话、另一个实例的局部时刻或序列的一帧上。 */
+/** Semantic anchor (video format spec §3.16): an instance's start or end is pinned to a word, a sentence, a local moment of another instance, or a frame of the sequence. */
 export type SemanticAnchor =
   | { kind: 'word'; speechRef: VersionRef; wordId: Id; occurrenceId?: Id; edge: 'start' | 'end'; offset?: MediaTime }
   | { kind: 'sentence'; speechRef: VersionRef; sentenceId: Id; occurrenceId?: Id; edge: 'start' | 'end' }
@@ -64,8 +63,7 @@ export type SemanticAnchor =
   | { kind: 'sequence'; sequenceId: Id; frame: number };
 
 /**
- * 实例跟着什么移动（视频格式规范 §3.16）。`addCuts`、`restoreCut` 按它移动 `follow-cuts` 的实例；新建的实例缺省 `follow-cuts`，
- * `sequence-fixed` 要显式选择（`insertItems` 或 `updateItem` 写明）。
+ * What an instance moves with (video format spec §3.16). `addCuts` and `restoreCut` move instances with `follow-cuts`. New instances default to `follow-cuts`; `sequence-fixed` must be chosen explicitly (written by `insertItems` or `updateItem`).
  */
 export type FollowPolicy =
   | { kind: 'sequence-fixed' }
@@ -85,19 +83,19 @@ interface ItemBase {
   lineage?: ItemLineage;
   linkGroupId?: Id;
   /**
-   * 实例在视频里的作用（开放词表）。`broll`、`watermark`、`screentext`、`overlay`、`frame` 写入时校验与种类的搭配：
-   * `broll` 只用于图片与视频，`screentext` 只用于文字，`watermark` 用于文字、图片、视频与贴纸，`overlay`、`frame` 用于图片、视频与贴纸。
+   * The role of an instance in the video (open vocabulary). `broll`, `watermark`, `screentext`, `overlay` and `frame` are checked on write against the kinds they pair with:
+   * `broll` is only for images and videos, `screentext` only for text, `watermark` for text, images, videos and stickers, and `overlay` and `frame` for images, videos and stickers.
    */
   role?: string;
-  /** 生成来源的说明；引擎不解释，原样保留。 */
+  /** Description of the generation source. The engine does not interpret it and keeps it as is. */
   ai?: unknown;
-  /** 终点跟着序列末尾（§3.16）：引擎在每笔编辑事务的最后求出 `span` 的终点，写入的长度不算数。不是时省略。 */
+  /** End follows the end of the sequence (§3.16): the engine computes the end of `span` at the end of every edit transaction, and the written length is ignored. Omitted otherwise. */
   untilSequenceEnd?: boolean;
-  /** 命名空间下的扩展：引擎不解释，写回时保留。空的时候省略。 */
+  /** Extensions under a namespace. The engine does not interpret them and preserves them on write-back. Omitted when empty. */
   extensions?: Record<string, unknown>;
 }
 
-/** 四角各自的圆角，540 短边下的像素。 */
+/** Corner radius of each corner, in pixels at a 540 short side. */
 export interface CornerRadii {
   topLeft: number;
   topRight: number;
@@ -106,8 +104,8 @@ export interface CornerRadii {
 }
 
 /**
- * 画面实例的位置（视频格式规范 §3.5，v2 的元素模型）：`x`、`y` 是框中心在画幅里的百分比，`w` 是框宽占画幅宽的百分比
- * （正方款按短边量），高由种类推出；`scale`、`scaleY` 乘在宽高上，`rot` 是绕中心顺时针的角度。省略的字段取按种类的缺省。
+ * Position of a picture instance (video format spec §3.5, the v2 element model). `x` and `y` are the percentage position of the box center within the canvas, and `w` is the box width as a percentage of the canvas width
+ * (square variants are measured on the short side). Height is derived from the kind. `scale` and `scaleY` multiply the width and height; `rot` is the clockwise rotation around the center. Omitted fields take the kind's defaults.
  */
 export interface Place {
   x?: number;
@@ -116,30 +114,30 @@ export interface Place {
   scale?: number;
   scaleY?: number;
   rot?: number;
-  /** [0, 1]，缺省 1。 */
+  /** [0, 1], default 1. */
   opacity?: number;
-  /** 整个框的圆角，540 短边下的像素。 */
+  /** Corner radius of the whole box, in pixels at a 540 short side. */
   radius?: number;
   cornerRadii?: CornerRadii;
-  /** 为 false 时省略。 */
+  /** Omitted when false. */
   flipX?: boolean;
   flipY?: boolean;
 }
 
-/** 视觉媒体的摆法：铺满画布，或按源的宽高比摆成画中画。缺省 `pip`。 */
+/** How visual media is placed: fill the canvas, or as picture-in-picture at the source's aspect ratio. Default `pip`. */
 export type VisualMode = 'fullscreen' | 'pip';
-/** 源画面怎么放进框里。缺省 `cover`。 */
+/** How the source picture fits into the box. Default `cover`. */
 export type FitMode = 'cover' | 'contain';
-/** 铺满加 `contain` 时框里其余部分画什么：模糊的源、黑色或一种颜色（`#RRGGBB`）。缺省 `black`。 */
+/** When filling with `contain`, what to draw in the rest of the box: a blurred source, black, or a color (`#RRGGBB`). Default `black`. */
 export type MediaBackground = 'blur' | 'black' | (string & {});
 
-/** 遮罩：内切于框的椭圆，`feather` 是 540 短边下的像素。 */
+/** Mask: an ellipse inscribed in the box. `feather` is in pixels at a 540 short side. */
 export interface Mask {
   shape: 'ellipse';
   feather?: number;
 }
 
-/** 平铺（图片与文字）。 */
+/** Tiling (images and text). */
 export interface Tile {
   on: boolean;
   angle?: number;
@@ -166,8 +164,8 @@ export type EffectPreset =
   'none' | 'invert' | 'night_vision' | 'thermal_vision' | 'old' | 'polaroid' | 'filmic' | 'snowy' | 'box_blur' | 'bokeh_blur';
 
 /**
- * 画面效果（视频格式规范 §3.8）：固定字段，省略的不生效。调色字段在 [-1, 1]（`hue` 乘 180 度），`blur` 在 [0, 100]，
- * 长度都是 540 短边下的像素。`temperature`、`shadow`、`stroke` 是 v3 并进来的三种。
+ * Picture effects (video format spec §3.8): fixed fields, and omitted ones have no effect. Color-grading fields are in [-1, 1] (`hue` is multiplied by 180 degrees), `blur` is in [0, 100],
+ * and lengths are in pixels at a 540 short side. `temperature`, `shadow` and `stroke` are the three merged in from v3.
  */
 export interface Fx {
   filterPreset?: FilterPreset;
@@ -184,13 +182,13 @@ export interface Fx {
   sharpen?: number;
   noise?: number;
   vignette?: number;
-  /** 阴影：alpha 轮廓平移、模糊、填色，画在画面下面。向右、向下为正。 */
+  /** Shadow: the alpha outline offset, blurred and filled with color, drawn beneath the picture. Positive is right and down. */
   shadow?: { offsetX: number; offsetY: number; blur: number; color: string; opacity: number };
-  /** 描边：沿 alpha 轮廓的外侧画一圈，`width` 在 (0, 100]。 */
+  /** Stroke: draws a ring along the outside of the alpha outline. `width` is in (0, 100]. */
   stroke?: { width: number; color: string };
 }
 
-/** 元素动画的一槽（视频格式规范 §3.15）。`preset` 是封闭的名字表。 */
+/** One slot of an element animation (video format spec §3.15). `preset` is a closed list of names. */
 export interface AnimationSlot {
   preset: string;
   presetVersion?: number;
@@ -205,17 +203,17 @@ export interface AnimationSlot {
   seed?: number;
 }
 
-/** 元素动画的三槽：入场、出场、循环。 */
+/** The three slots of an element animation: in, out and loop. */
 export interface Animation {
   enter?: AnimationSlot;
   exit?: AnimationSlot;
   loop?: AnimationSlot;
 }
 
-/** 可以打关键帧的属性（`place` 里的数值字段）。 */
+/** Attributes that can be keyframed (the numeric fields in `place`). */
 export type KeyframeProperty = 'x' | 'y' | 'scale' | 'scaleY' | 'rot' | 'opacity' | 'radius';
 
-/** 一个关键帧：时刻是实例局部的帧或实例长度的百分比，二选一。 */
+/** One keyframe. Its time is either a frame local to the instance or a percentage of the instance's length, one of the two. */
 export interface Keyframe {
   localFrame?: number;
   percent?: number;
@@ -223,7 +221,7 @@ export interface Keyframe {
   ease?: string;
 }
 
-/** 关键帧绑定（视频格式规范 §3.15）：一个实例的一个属性。存在序列上。 */
+/** Keyframe binding (video format spec §3.15): one attribute of one instance. Stored on the sequence. */
 export interface AnimationBinding {
   id: Id;
   targetId: Id;
@@ -231,7 +229,7 @@ export interface AnimationBinding {
   keyframes: Keyframe[];
 }
 
-/** 源画面的裁剪：从源的显示画面四边各裁掉的比例，在 `fit` 之前生效（视频格式规范 §3.5）。每边在 [0, 1)，左右、上下之和小于 1。 */
+/** Crop of the source picture: the proportion trimmed from each of the four sides of the source's display picture, applied before `fit` (video format spec §3.5). Each side is in [0, 1), and the left plus right and top plus bottom sums are less than 1. */
 export interface Crop {
   left: number;
   top: number;
@@ -239,7 +237,7 @@ export interface Crop {
   bottom: number;
 }
 
-/** 视觉媒体的字段：视频、图片、素材贴纸、占位框与白板共用。 */
+/** Fields for visual media, shared by videos, images, asset stickers, placeholder boxes and whiteboards. */
 export interface MediaFields {
   mode?: VisualMode;
   fit?: FitMode;
@@ -248,18 +246,18 @@ export interface MediaFields {
   fx?: Fx;
 }
 
-/** 视频实例的内嵌音频、合成实例自己的声音（视频格式规范 §3.9）。 */
+/** The embedded audio of a video instance, or a composition instance's own sound (video format spec §3.9). */
 export interface EmbeddedAudio {
   enabled: boolean;
-  /** 线性倍数，[0, 4]。 */
+  /** Linear multiplier, [0, 4]. */
   volume: number;
   fadeIn?: MediaTime;
   fadeOut?: MediaTime;
-  /** 空的时候省略。 */
+  /** Omitted when empty. */
   envelope?: EnvelopePoint[];
 }
 
-/** 画面实例共有的字段：区间、位置与元素动画。 */
+/** Fields shared by picture instances: span, position and element animations. */
 interface VisualBase extends ItemBase {
   span: FrameSpan;
   place: Place;
@@ -270,7 +268,7 @@ export interface VideoItem extends VisualBase, MediaFields {
   type: 'video';
   assetRef: VersionRef;
   timeMap: TimeMap;
-  /** 没有裁剪时省略。 */
+  /** Omitted when there is no crop. */
   crop?: Crop;
   embeddedAudio: EmbeddedAudio;
 }
@@ -280,22 +278,22 @@ export interface ImageItem extends VisualBase, MediaFields {
   assetRef: VersionRef;
   crop?: Crop;
   tile?: Tile;
-  /** 图片的编辑来源（`file` / `html`）；渲染只用 `assetRef`。 */
+  /** Edit source of an image (`file` / `html`). Rendering uses only `assetRef`. */
   source?: string;
-  /** `source` 为 `html` 时保留的原始片段。 */
+  /** The original fragment kept when `source` is `html`. */
   html?: string;
 }
 
-/** 计时读数：倒计时或正计时。 */
+/** Timer readout: countdown or count-up. */
 export interface CounterProps {
   mode: 'countdown' | 'countup';
-  /** 缺省 `s`。 */
+  /** Default `s`. */
   format?: 's' | 'mm:ss' | 'hh:mm:ss';
 }
 
 /**
- * 文字实例：一段文字或计时读数，加文字样式（视频格式规范 §3.6）。`text` 与 `counter` 二选一。
- * `style` 是 v2 的文字样式对象，引擎按对象保存。
+ * Text instance: a piece of text or a timer readout, plus the text style (video format spec §3.6). Exactly one of `text` and `counter` is given.
+ * `style` is the v2 text style object, which the engine stores as an object.
  */
 export interface TextItem extends VisualBase {
   type: 'text';
@@ -303,15 +301,15 @@ export interface TextItem extends VisualBase {
   counter?: CounterProps;
   style?: Record<string, unknown>;
   stylePresetId?: string;
-  /** `place.y` 钉住文字块的哪一处，缺省 `center`。 */
+  /** Which point of the text block `place.y` pins. Default `center`. */
   verticalAlign?: 'top' | 'center' | 'bottom';
   tile?: Tile;
 }
 
-/** 图形的参数（v2 的 `ShapeProps`）。`h` 是框高占画幅高的百分比，省略时是正方形；`line`、`arrow` 用端点（框内百分比）。 */
+/** Shape parameters (v2's `ShapeProps`). `h` is the height as a percentage of the canvas height; when omitted the shape is square. `line` and `arrow` use endpoints (percentages within the box). */
 export interface ShapeProps {
   shape: string;
-  /** `#RRGGBB` 或 `#RRGGBBAA`。 */
+  /** `#RRGGBB` or `#RRGGBBAA`. */
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
@@ -328,7 +326,7 @@ export interface ShapeItem extends VisualBase {
   shape: ShapeProps;
 }
 
-/** 贴纸：`template` 贴纸画目录里的矢量，`asset` 贴纸画 `assetRef` 指向的图片、视频或 Lottie。 */
+/** Sticker: `template` is a vector from the sticker template catalog. `asset` is an image, video or Lottie file that `assetRef` points to. */
 export interface StickerProps {
   source: 'template' | 'asset' | (string & {});
   templateId?: string;
@@ -357,7 +355,7 @@ export interface VisualizerProps {
   alwaysShow?: boolean;
 }
 
-/** 声波。 */
+/** Sound wave. */
 export interface VisualizerItem extends VisualBase {
   type: 'visualizer';
   visualizer: VisualizerProps;
@@ -367,12 +365,12 @@ export interface ProgressProps {
   style: string;
   mainColor?: string;
   secondaryColor?: string;
-  /** 归一化起止值；允许 `start > end` 表达倒向进度。 */
+  /** Normalized start and end values. `start > end` is allowed to express reverse progress. */
   startProgress?: number;
   endProgress?: number;
 }
 
-/** 进度条。 */
+/** Progress bar. */
 export interface ProgressItem extends VisualBase {
   type: 'progress';
   progress: ProgressProps;
@@ -386,7 +384,7 @@ export interface DrawProps {
   strokes?: { points: [number, number][] }[];
 }
 
-/** 手绘。 */
+/** Hand-drawn. */
 export interface DrawItem extends VisualBase {
   type: 'draw';
   draw: DrawProps;
@@ -397,7 +395,7 @@ export interface PlaceholderProps {
   notes?: string;
 }
 
-/** 占位框：没有 `assetRef` 时画占位的外观，有时按视觉媒体画。 */
+/** Placeholder box: draws a placeholder look when there is no `assetRef`, and is sometimes drawn as visual media. */
 export interface PlaceholderItem extends VisualBase, MediaFields {
   type: 'placeholder';
   assetRef?: VersionRef;
@@ -422,7 +420,7 @@ export interface ConfettiProps {
   spread?: number;
 }
 
-/** 彩纸。 */
+/** Confetti. */
 export interface ConfettiItem extends VisualBase {
   type: 'confetti';
   confetti: ConfettiProps;
@@ -438,7 +436,7 @@ export interface WhiteboardProps {
   beats?: unknown[];
 }
 
-/** 白板手绘：一个图片素材按推导出的顺序画出来。 */
+/** Whiteboard hand-drawing: an image asset drawn out in the derived order. */
 export interface WhiteboardItem extends VisualBase, MediaFields {
   type: 'whiteboard';
   assetRef: VersionRef;
@@ -447,56 +445,56 @@ export interface WhiteboardItem extends VisualBase, MediaFields {
 
 export type CompositionSource = { kind: 'bundle'; assetRef: VersionRef };
 
-/** 合成实例：由代码包按局部时间画出来的画面（视频格式规范 §3.7）。`place` 没写位置与宽时铺满画布。 */
+/** Composition instance: a picture drawn by a code bundle from local time (video format spec §3.7). When `place` has no position or width, it fills the canvas. */
 export interface CompositionItem extends VisualBase {
   type: 'composition';
   source: CompositionSource;
   parameterValues: unknown;
   timeMap: TimeMap;
   /**
-   * 预渲染替身：把这段合成渲染好的视频素材，与合成共用一条时间映射。
-   * 合成的运行环境不可用或来不及实时渲染时，预览与导出用它代替。
+   * Pre-rendered stand-in: a pre-rendered video asset of this composition, sharing one time mapping with the composition.
+   * Used for preview and export when the composition's runtime is unavailable or cannot render in real time.
    */
   prerender?: VersionRef;
-  /** 合成自己发出的声音的路由；没有声音的合成不写。 */
+  /** Routing of the sound the composition itself emits. Not written for compositions without sound. */
   audio?: EmbeddedAudio;
   mask?: Mask;
   fx?: Fx;
 }
 
-/** 字幕实例：在一段序列时间里显示一份字幕文档（视频格式规范 §3.8）。它跟随文档的当前版本，所以引用的是文档 ID。只在字幕轨道上。 */
+/** Caption instance: shows a caption document over a span of sequence time (video format spec §3.8). It follows the document's current version, so it references the document ID. Only on caption tracks. */
 export interface CaptionItem extends ItemBase {
   type: 'caption';
   span: FrameSpan;
   documentId: Id;
   styleDocumentId?: Id;
-  /** 字幕的词时间经过哪些实例的 timeMap 投影到序列上。省略（空）表示文档里的时间已经是序列时间。 */
+  /** The instances whose timeMap projects the caption's word times onto the sequence. Omitted (empty) means the times in the document are already sequence time. */
   scopeItemIds?: Id[];
 }
 
-/** 音量包络的一个点：时刻是实例局部的精确时间或实例长度的百分比，二选一。 */
+/** A point on a volume envelope. Its time is either an exact time local to the instance or a percentage of the instance's length, one of the two. */
 export interface EnvelopePoint {
   at?: MediaTime;
   percent?: number;
-  /** 线性倍数，[0, 4]。 */
+  /** Linear multiplier, [0, 4]. */
   volume: number;
-  /** 进入这一点的那一段的缓动，缺省 `linear`。 */
+  /** Easing of the segment leading into this point. Default `linear`. */
   ease?: string;
 }
 
-/** 混音（视频格式规范 §3.9）。增益只有线性倍数 `volume`。 */
+/** Mix (video format spec §3.9). Gain is only the linear multiplier `volume`. */
 export interface AudioMix {
-  /** 线性倍数，[0, 4]，缺省 1。 */
+  /** Linear multiplier, [0, 4], default 1. */
   volume: number;
-  /** 为 false 时省略。 */
+  /** Omitted when false. */
   muted?: boolean;
   fadeIn?: MediaTime;
   fadeOut?: MediaTime;
-  /** 音量包络；有它时取代 `volume`。空的时候省略。 */
+  /** Volume envelope. When present it replaces `volume`. Omitted when empty. */
   envelope?: EnvelopePoint[];
 }
 
-/** 音频实例的开始位置是 `fromFrame` + `subframeOffset`，不吸附到帧（视频格式规范 §2.10）。 */
+/** The start position of an audio instance is `fromFrame` + `subframeOffset`, not snapped to frames (video format spec §2.10). */
 export interface AudioItem extends ItemBase {
   type: 'audio';
   assetRef: VersionRef;
@@ -507,7 +505,7 @@ export interface AudioItem extends ItemBase {
   mix: AudioMix;
 }
 
-/** 有 `span` 与 `place` 的画面实例。 */
+/** Picture instance with `span` and `place`. */
 export type VisualItem =
   | VideoItem
   | ImageItem
@@ -522,15 +520,15 @@ export type VisualItem =
   | WhiteboardItem
   | CompositionItem;
 
-/** 序列上的一个实例（与会话里的 `TimelineItem` 无关）。 */
+/** An instance on the sequence (unrelated to `TimelineItem` in the session). */
 export type SequenceItem = VisualItem | AudioItem | CaptionItem;
 
-/** 画面实例（有 `place`）。 */
+/** Picture instance (has `place`). */
 export function isVisualItem(item: SequenceItem): item is VisualItem {
   return item.type !== 'audio' && item.type !== 'caption';
 }
 
-/** 实例的内容引用的素材版本。文字、图形、生成类元素与字幕没有。 */
+/** The asset version that the instance's content references. Text, shapes, generated elements and captions have none. */
 export function itemAssetRef(item: SequenceItem): VersionRef | undefined {
   switch (item.type) {
     case 'video':
@@ -548,7 +546,7 @@ export function itemAssetRef(item: SequenceItem): VersionRef | undefined {
   }
 }
 
-/** 实例引用的全部素材版本：内容本身，加上合成的预渲染替身。 */
+/** All asset versions the instance references: the content itself, plus the composition's pre-rendered stand-in. */
 export function itemAssetRefs(item: SequenceItem): VersionRef[] {
   const refs: VersionRef[] = [];
   const content = itemAssetRef(item);
@@ -557,52 +555,51 @@ export function itemAssetRefs(item: SequenceItem): VersionRef[] {
   return refs;
 }
 
-/** 实例时间到源时间的映射。没有源时间的实例（图片、文字、图形、生成类元素、字幕）没有。 */
+/** Mapping from instance time to source time. Instances with no source time (images, text, shapes, generated elements, captions) have none. */
 export function itemTimeMap(item: SequenceItem): TimeMap | undefined {
   return item.type === 'video' || item.type === 'audio' || item.type === 'composition' ? item.timeMap : undefined;
 }
 
-/** 线性倍数换成 dB（显示用）：0 记作 -Infinity。 */
+/** Converts a linear multiplier to dB (for display). 0 is recorded as -Infinity. */
 export function volumeToDb(volume: number): number {
   return 20 * Math.log10(volume);
 }
 
-/** dB 换成线性倍数（显示用）。 */
+/** Converts dB to a linear multiplier (for display). */
 export function dbToVolume(db: number): number {
   return 10 ** (db / 20);
 }
 
 /**
- * 这个版本定义的转场种类（视频格式规范 §3.9）。前五种可以单侧也可以两侧，没有参数；`dip-to-color`（{color: '#RRGGBB'}）
- * 与 `push`（{direction}）只用于两侧。
+ * Transition kinds defined by this version (video format spec §3.9). The first five can be one-sided or two-sided and take no parameters. `dip-to-color` ({color: '#RRGGBB'})
+ * and `push` ({direction}) are only for two-sided use.
  */
 export type TransitionKind = 'dissolve' | 'wipe' | 'slide' | 'zoom' | 'iris' | 'dip-to-color' | 'push';
-/** 可以单侧也可以两侧的种类。 */
+/** Kinds that can be one-sided or two-sided. */
 export const SINGLE_SIDED_TRANSITION_KINDS: readonly TransitionKind[] = ['dissolve', 'wipe', 'slide', 'zoom', 'iris'];
 export type TransitionDirection = 'left' | 'right' | 'up' | 'down';
 export type Easing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
-/** 转场窗口相对剪切点的位置：居中、从剪切点开始、在剪切点结束。单侧转场只能居中。 */
+/** Position of the transition window relative to the cut point: centered, starting at the cut point, or ending at the cut point. One-sided transitions can only be centered. */
 export type TransitionPlacement = 'center' | 'start-at-cut' | 'end-at-cut';
 
 /**
- * 转场（视频格式规范 §3.9）：两个首尾相接的同轨画面实例之间（两个 ID 都有），或一个实例的开头（只有 `rightItemId`）、
- * 结尾（只有 `leftItemId`）。单侧转场写入的长度不变，生效的长度是 min(长度, ⌊实例长度/2⌋)。认不出的种类原样保留，渲染成硬切。
+ * Transition (video format spec §3.9): between two abutting picture instances on the same track (both IDs present), or at the start of an instance (only `rightItemId`) or its end (only `leftItemId`). A one-sided transition's written length is unchanged, and its effective length is min(length, ⌊instance length/2⌋). Unrecognized kinds are kept as they are and rendered as a hard cut.
  */
 export interface Transition {
   id: Id;
   leftItemId?: Id;
   rightItemId?: Id;
   kind: TransitionKind | (string & {});
-  /** 空的时候省略。 */
+  /** Omitted when empty. */
   params?: Record<string, unknown>;
   durationFrames: number;
   easing: Easing;
   placement: TransitionPlacement;
-  /** 为 false 时省略。 */
+  /** Omitted when false. */
   audioCrossfade?: boolean;
 }
 
-/** 序列上的标记（视频格式规范 §3.13）。`kind: 'chapter'` 的是章节，固定在序列时间上，不跟着实例移动。 */
+/** Marker on the sequence (video format spec §3.13). `kind: 'chapter'` is a chapter, fixed to sequence time, and does not move with instances. */
 export interface Marker {
   id: Id;
   frame: number;
@@ -613,17 +610,17 @@ export interface Marker {
   thumbnail?: VersionRef;
 }
 
-/** 闪避规则的一组：轨道上的全部实例，加上单独点名的实例。 */
+/** One group of a ducking rule: all instances on the track, plus the instances named individually. */
 export interface DuckingGroup {
   trackIds?: Id[];
   itemIds?: Id[];
 }
 
-/** 闪避的触发：有人说话时（按文稿的词流），或这些实例发声时。 */
+/** Ducking trigger: when someone is speaking (following the transcript's word stream), or when these instances are sounding. */
 export type DuckingTrigger = { kind: 'speech' } | ({ kind: 'items' } & DuckingGroup);
 
 /**
- * 闪避（视频格式规范 §3.9）：触发的时间段里，目标组压低 `depth` dB，提前 `attack` 开始下降、结束后用 `release` 恢复。
+ * Ducking (video format spec §3.9): during the triggered time span, the target group is lowered by `depth` dB. It starts dropping `attack` early and recovers over `release` after the span ends.
  */
 export interface DuckingRule {
   id: Id;
@@ -637,16 +634,16 @@ export interface DuckingRule {
   release: MediaTime;
 }
 
-/** 模板层的一层：框是画幅百分比（左上角与宽高），其余字段按层的种类。 */
+/** One layer of a template: the box is in canvas percentages (top-left corner, width and height). Other fields depend on the layer's kind. */
 export interface TemplateLayer {
   id: string;
-  /** 缺省 true。 */
+  /** Default true. */
   on?: boolean;
   box: { x: number; y: number; w: number; h: number };
   [key: string]: unknown;
 }
 
-/** 序列的模板层（视频格式规范 §3.17，v2 的模板文档）。 */
+/** Template layers of the sequence (video format spec §3.17, the v2 template document). */
 export interface TemplateLayers {
   id: string;
   name: string;
@@ -658,77 +655,77 @@ export interface Sequence {
   id: Id;
   revision: Revision;
   name: string;
-  /** `name` 还是引擎起的缺省名（`engine.mainSequence`）时的引用；改名后没有。显示用 {@link sequenceDisplayName}。 */
+  /** A reference used while `name` is still the engine default name (`engine.mainSequence`). Absent after renaming. For display, use {@link sequenceDisplayName}. */
   nameRef?: MessageRef;
   fps: Rate;
-  /** `background` 是不透明的纯色 `#RRGGBB`（大写）。 */
+  /** `background` is an opaque solid color `#RRGGBB` (uppercase). */
   canvas: { width: number; height: number; workingSpace: string; background: string };
   durationPolicy: { kind: 'derived' } | { kind: 'fixed'; frames: number };
-  /** 关键帧绑定（§3.15）。 */
+  /** Keyframe binding (§3.15). */
   animationBindings: AnimationBinding[];
-  /** 模板层；没有时省略。 */
+  /** Template layers. Omitted when there are none. */
   template?: TemplateLayers;
   tracks: Track[];
   items: SequenceItem[];
-  /** 按 ID 排序。 */
+  /** Sorted by ID. */
   transitions: Transition[];
-  /** 按帧排序（同帧按 ID）。 */
+  /** Sorted by frame (same frame sorted by ID). */
   markers: Marker[];
-  /** 按 ID 排序。 */
+  /** Sorted by ID. */
   ducking: DuckingRule[];
 }
 
-/** `bundle` 是代码包：一个目录。 */
+/** `bundle` is a code bundle: a directory. */
 export type AssetKind = 'video' | 'audio' | 'image' | 'lottie' | 'font' | 'caption' | 'document' | 'bundle' | 'other';
 
 export interface FileLocator {
-  /** 绝对路径，或相对视频目录的路径（文件在项目目录里时）。 */
+  /** Absolute path, or a path relative to the video directory (when the file is inside the project directory). */
   path: string;
-  /** 链接时文件的修改时间。 */
+  /** Modification time of the file when it was linked. */
   modifiedAt?: string;
-  /** 所在卷的名字，文件找不到时用来提示「请接上某个盘」。 */
+  /** Name of the volume the file is on, used to prompt 'please connect a certain drive' when the file cannot be found. */
   volume?: string;
 }
 
 /**
- * 此刻读不到的一个素材版本（`videos.assetStatus`，视频格式规范 §4.2）。`reason` 与 `ASSET_MISSING` 错误的 `details.reason` 相同：
- * `missing` 文件不在了；`changed` 已经不是登记时的文件（长度不符）；`outside-project` 相对路径越出了项目目录，不予读取。
+ * An asset version that cannot be read at this moment (`videos.assetStatus`, video format spec §4.2). `reason` matches `details.reason` of an `ASSET_MISSING` error:
+ * `missing`: the file is gone. `changed`: it is no longer the file that was registered (length mismatch). `outside-project`: the relative path leaves the project directory, so it is not read.
  */
 export interface MissingAsset {
   assetId: Id;
   revision: Revision;
   reason: 'missing' | 'changed' | 'outside-project';
-  /** 链接素材登记的路径（相对视频目录，或绝对路径）；收进视频的素材没有。 */
+  /** The path a linked asset was registered with (relative to the video directory, or absolute). Absent for assets collected into the video. */
   path?: string;
-  /** 所在卷的名字，用来提示「请接上某个盘」。 */
+  /** Name of the volume, used to prompt 'please connect a certain drive'. */
   volume?: string;
 }
 
 /**
- * 一个没有任何引用的素材（`videos.unusedAssets`，`removeAssets` 能删的那些）。引用包括所有序列上的实例与它的预渲染替身、
- * 章节缩略图、文档的来源素材。
+ * An asset with no references (`videos.unusedAssets`, the ones `removeAssets` can delete). References include all instances on all sequences and their pre-rendered stand-ins,
+ * chapter thumbnails, and the source assets of documents.
  */
 export interface UnusedAsset {
   assetId: Id;
   name: string;
   kind: AssetKind;
   mediaType: string;
-  /** 当前版本的字节数。 */
+  /** Byte count of the current version. */
   byteLength: number;
-  /** `managed`：bytes 在视频目录里；`linked`：文件留在原处，删掉记录不动它。 */
+  /** `managed`: the bytes are in the video directory. `linked`: the file stays where it is, and deleting the record does not touch it. */
   storage: 'managed' | 'linked';
-  /** 成对的另一半（代码包 ↔ 它烘焙出的预渲染替身），同样没有引用；删掉其中一个时一起删。没有时省略。 */
+  /** The other half of a pair (a code bundle and the pre-rendered stand-in baked from it). It also has no references, and deleting one deletes both. Omitted when there is none. */
   pairedWith?: Id[];
 }
 
-/** bytes 放在哪里（视频格式规范 §4.2）：在视频目录的 `blobs/` 里，或留在原处、视频只记下去哪里找。位置不属于版本的身份。 */
+/** Where the bytes live (video format spec §4.2): in the `blobs/` folder of the video directory, or left in place, with the video recording only where to find them. Location is not part of a version's identity. */
 export type AssetStorage = { mode: 'managed' } | { mode: 'linked'; locator: FileLocator; frozen: boolean };
 
-/** 来源（视频格式规范 §4.5）。本机路径只出现在 `storage.locator` 里。 */
+/** Source (video format spec §4.5). Local paths appear only in `storage.locator`. */
 export interface Provenance {
   origin: string;
   importedFrom?: { originalName: string; importedAt: string };
-  /** 已知的出处：来源网址、原平台的元数据、生成记录等。 */
+  /** Known provenance: source URL, metadata from the original platform, generation records, etc. */
   source?: unknown;
 }
 
@@ -750,9 +747,9 @@ export interface AssetRevision {
     hasAlpha: boolean;
   };
   audio?: { sampleRate: number; channels: number; layout?: string };
-  /** 素材是一个目录时的文件清单概要。`include` 省略表示整个目录。 */
+  /** Summary of the file manifest when the asset is a directory. Omitting `include` means the whole directory. */
   tree?: { fileCount: number; include?: string[] };
-  /** 代码包的清单（代码包规范 §2）。引擎按对象保存。 */
+  /** Manifest of a code bundle (code bundle spec §2). Stored by the engine as an object. */
   bundle?: unknown;
   provenance: Provenance;
 }
@@ -770,29 +767,29 @@ export interface DocumentRevision {
   contentHash: string;
   byteLength: number;
   createdAt: string;
-  /** 写入这个版本的事务。 */
+  /** The transaction that wrote this version. */
   createdBy: Id;
-  /** 正文的概要（词数、句数等），让列表与智能体不必读正文。 */
+  /** Summary of the body (word count, sentence count, etc.), so that lists and agents do not need to read the body. */
   summary?: unknown;
 }
 
-/** 文档头（视频格式规范 §4.4）：身份与各个版本的指纹。正文按版本保存在存储里，不随快照下发。 */
+/** Document header (video format spec §4.4): identity and the fingerprint of each version. Bodies are stored per version in storage and are not sent with snapshots. */
 export interface DocumentRecord {
   id: Id;
-  /** 文档的种类：`speech`、`translation`、`caption`、`caption-style`……（开放词表）。 */
+  /** Document kind: `speech`, `translation`, `caption`, `caption-style`, ... (open vocabulary). */
   kind: string;
   name: string;
   language?: string;
-  /** 这份文档描述的素材（例如转写对应的录音）。 */
+  /** The asset this document describes (for example, the recording a transcript corresponds to). */
   sourceAssetId?: Id;
-  /** 这份文档派生自哪份文档（例如译文对应的转写）。 */
+  /** The document this one derives from (for example, the transcript a translation corresponds to). */
   sourceDocumentId?: Id;
   currentRevision: Revision;
   revisions: Record<Revision, DocumentRevision>;
   extensions?: Record<string, unknown>;
 }
 
-/** 一份文档某个版本的正文（`documents.read`）。 */
+/** The body of one version of a document (`documents.read`). */
 export interface DocumentContent {
   document: DocumentRecord;
   revision: Revision;
@@ -808,7 +805,7 @@ export interface Checkpoint {
   note?: string;
 }
 
-/** 视频快照（视频格式规范 §3.1）。文稿类内容（转写、翻译、字幕样式等）在 `documents` 里只有文档头，正文按版本另取。 */
+/** Video snapshot (video format spec §3.1). Script-type content (transcripts, translations, caption styles, etc.) has only the document header in `documents`. Bodies are fetched per version. */
 export interface VideoSnapshot {
   format: 'cuccut.video';
   schemaVersion: number;
@@ -829,19 +826,19 @@ export interface VideoSnapshot {
   links: unknown[];
 }
 
-// ---- 编辑操作（命令与协议规范 §4.2）----
-// 带时间输入的操作必须写明 `sequenceId`：时间按那个序列的帧率量化（§6.1）。
+// ---- Edit operations (command and protocol spec §4.2) ----
+// Operations with time inputs must state `sequenceId`: times are quantized to that sequence's frame rate (§6.1).
 
 export type TimelineTimeInput = { unit: 'seconds'; value: string } | { unit: 'frames'; value: number };
 export type FrameAlignment = 'exact-frame' | 'nearest-frame' | 'floor-frame' | 'ceil-frame';
 
 type EngineManaged = 'enabled' | 'locked' | 'paintOrder' | 'followPolicy';
-/** 放在哪条轨道：已有轨道的 ID，或同一事务里 `addTrack` 的 `ref`。 */
+/** Which track to place it on: the ID of an existing track, or the `ref` of an `addTrack` in the same transaction. */
 type TrackTarget = { trackId: Id; trackRef?: never } | { trackRef: string; trackId?: never };
-/** 字幕实例引用的文档：已有文档的 ID，或同一事务里 `putDocument` 的 `ref`。 */
+/** The document a caption instance references: the ID of an existing document, or the `ref` of a `putDocument` in the same transaction. */
 type CaptionDocuments = ({ documentId: Id; documentRef?: never } | { documentRef: string; documentId?: never }) &
   ({ styleDocumentId?: Id; styleDocumentRef?: never } | { styleDocumentRef: string; styleDocumentId?: never });
-/** 媒体实例的素材：已有素材的版本，或同一事务里 `importAsset` 的 `ref`（引擎取那个素材的当前版本）。 */
+/** The asset for a media instance: a version of an existing asset, or the `ref` of an `importAsset` in the same transaction (the engine takes that asset's current version). */
 type AssetTarget = { assetRef: VersionRef; assetImportRef?: never } | { assetImportRef: string; assetRef?: never };
 type OptionalAssetTarget = { assetRef?: VersionRef; assetImportRef?: never } | { assetImportRef: string; assetRef?: never };
 type ItemInput<Item> = Item extends CaptionItem
@@ -861,20 +858,20 @@ type ItemInput<Item> = Item extends CaptionItem
         : never;
 
 /**
- * `insertItems` 写入的实例：字段与 `SequenceItem` 相同；`id` 与 `lineage` 由引擎分配，不能自带；引擎管的字段有默认值。
- * 轨道、字幕文档与媒体的素材可以用同一事务里新建的那个的 `ref`（`trackRef`、`documentRef`、`styleDocumentRef`、
- * `assetImportRef`）。
+ * Instances written by `insertItems`. Fields are the same as `SequenceItem`. `id` and `lineage` are assigned by the engine and cannot be supplied. Engine-managed fields have defaults.
+ * Tracks, caption documents and media assets can use the `ref` of something created in the same transaction (`trackRef`, `documentRef`, `styleDocumentRef`,
+ * `assetImportRef`).
  */
 export type SequenceItemInput = ItemInput<SequenceItem>;
 
-/** `setDucking` 的一组：`DuckingGroup` 加上同一事务里新建轨道的 `ref`。 */
+/** One group for `setDucking`: `DuckingGroup` plus the `ref` of a track created in the same transaction. */
 export type DuckingGroupInput = DuckingGroup & { trackRefs?: string[] };
-/** `setDucking` 的触发：有人说话时，或这些轨道与实例发声时。 */
+/** Trigger for `setDucking`: when someone is speaking, or when these tracks and instances are sounding. */
 export type DuckingTriggerInput = { kind: 'speech' } | ({ kind: 'items' } & DuckingGroupInput);
 
 /**
- * 剪口集合的正文（视频格式规范 §6.7，文档 `kind: 'cut-set'`）：一个源素材上被口播剪辑删掉的区间，按 `t0` 排序、互不重叠。
- * `t0`、`t1` 是整数刻度写成的十进制字符串，`ref` 是出处（剪辑建议的 ID）。由 `addCuts`、`restoreCut` 改写。
+ * Body of a cut set (video format spec §6.7, document `kind: 'cut-set'`): intervals on one source asset that were removed by spoken-word editing, sorted by `t0`, non-overlapping.
+ * `t0` and `t1` are decimal strings in integer ticks, and `ref` is the provenance (the ID of an edit suggestion). Rewritten by `addCuts` and `restoreCut`.
  */
 export interface CutSetBody {
   schema: 'cuccut.cut-set/1';
@@ -884,29 +881,29 @@ export interface CutSetBody {
   cuts: { id: Id; t0: string; t1: string; ref?: Id }[];
 }
 
-/** 剪辑提案里的一条建议（视频格式规范 §6.2）：建议剪掉的源区间 `[t0, t1)`，整数刻度写成十进制字符串。 */
+/** One suggestion in a cut proposal (video format spec §6.2): the source interval `[t0, t1)` suggested for removal, in integer ticks written as a decimal string. */
 export interface CutSuggestion {
   id: Id;
   kind: 'filler' | 'pause';
   t0: string;
   t1: string;
-  /** 口癖：区间里的词。 */
+  /** Filler word: the interval's word. */
   wordIds?: Id[];
-  /** 停顿：停顿之前的词。 */
+  /** Pause: the word before the pause. */
   afterWordId?: Id;
-  /** 区间里的文字：口癖是这些词的原文，停顿为空。 */
+  /** Text in the interval: for fillers, the original words; for pauses, empty. */
   text: string;
-  /** 检测器写的短句，原样展示。 */
+  /** Short phrase written by the detector, shown as it is. */
   reason: string;
   detail?: string;
-  /** 0–1；检测器给不出时没有。 */
+  /** 0 to 1. Absent when the detector cannot provide one. */
   confidence?: number;
   status: 'pending' | 'accepted';
 }
 
 /**
- * 剪辑提案的正文（视频格式规范 §6.2，文档 `kind: 'editorial-proposal'`，每个源素材至多一份）。由 `proposeCuts` 写出，
- * `acceptCutSuggestions` 把接受的建议标成 `accepted`。`speechRef` 是检测读的转写版本，转写之后改过时建议过期。
+ * Body of a cut proposal (video format spec §6.2, document `kind: 'editorial-proposal'`, at most one per source asset). Written by `proposeCuts`,
+ * and `acceptCutSuggestions` marks accepted suggestions as `accepted`. `speechRef` is the transcript version the detection read. Suggestions become stale if the transcript is changed after the proposal.
  */
 export interface EditorialProposalBody {
   schema: 'cuccut.editorial-proposal/1';
@@ -916,58 +913,58 @@ export interface EditorialProposalBody {
   suggestions: CutSuggestion[];
 }
 
-/** `proposeCuts` 的检测参数（视频格式规范 §6.2）；不给的取缺省。秒数是十进制字符串。 */
+/** Detection parameters for `proposeCuts` (video format spec §6.2). Defaults apply when not given. Seconds are decimal strings. */
 export interface CutDetectOptions {
-  /** 检测长停顿，缺省 true。 */
+  /** Detect long pauses. Default true. */
   pauses?: boolean;
-  /** 检测口癖，缺省 true。 */
+  /** Detect filler words. Default true. */
   fillers?: boolean;
-  /** 最短的停顿，缺省 0.8 秒。 */
+  /** The shortest pause. Default 0.8 seconds. */
   minPause?: string;
-  /** 停顿压缩到的长度，缺省 0.3 秒（句末多留 0.1 秒，至多 0.5 秒）；须小于 `minPause`。 */
+  /** The length a pause is compressed to. Default 0.3 seconds (keep an extra 0.1 seconds at sentence ends, at most 0.5 seconds). Must be less than `minPause`. */
   compressTo?: string;
-  /** 更长的间隔不算停顿，缺省 3 秒；须大于 `minPause`。 */
+  /** Longer gaps do not count as pauses. Default 3 seconds. Must be greater than `minPause`. */
   maxGap?: string;
-  /** 口癖表：`auto`（中英文，缺省）、`en` 或 `zh`。 */
+  /** Filler-word table: `auto` (Chinese and English, default), `en` or `zh`. */
   fillerLanguage?: 'auto' | 'en' | 'zh' | 'vi';
-  /** 另外当作口癖的词。 */
+  /** Additional words to treat as fillers. */
   customFillers?: string[];
-  /** 章节之间的停顿也压缩，缺省 false。 */
+  /** Pauses between chapters are also compressed. Default false. */
   trimChapterStarts?: boolean;
 }
 
 export type EditOperation =
-  /** 导入一个文件或目录为素材（文件默认链接、留在原处）；目录成为代码包素材。`ref` 供同一事务里后面的操作引用。 */
+  /** Imports a file or directory as an asset (files are linked by default and stay in place). A directory becomes a code bundle asset. `ref` is for later operations in the same transaction to reference. */
   | {
       type: 'importAsset';
       path: string;
       name?: string;
       ref?: string;
       /**
-       * bytes 留在原处（`linked`）还是复制进视频目录（`managed`）。不给时文件默认 `linked`；目录（代码包，没有原文件可以指向）
-       * 默认 `managed`。`managed` 要求绝对路径，`linked` 可以给相对视频目录的路径。之后可以用 `collectAssets` 收进来。
+       * Whether the bytes stay in place (`linked`) or are copied into the video directory (`managed`). If not given, files default to `linked`. Directories (code bundles, which have no original file to point to)
+       * default to `managed`. `managed` requires an absolute path. `linked` may use a path relative to the video directory. They can later be collected with `collectAssets`.
        */
       storage?: 'managed' | 'linked';
-      /** 导入目录时只收这些文件或子目录（相对路径）。 */
+      /** When importing a directory, only collect these files or subdirectories (relative paths). */
       include?: string[];
-      /** 代码包的清单，只对目录有意义。 */
+      /** The code bundle's manifest. Only meaningful for directories. */
       bundle?: unknown;
-      /** 导入方已知的来源。不给时按「用户导入」记录。 */
+      /** The provenance known to the importer. If not given, it is recorded as 'user import'. */
       provenance?: { origin: string; source?: unknown };
     }
-  /** 把链接素材的 bytes 收进视频目录（`linked` → `managed`）。素材版本不变。 */
+  /** Collects a linked asset's bytes into the video directory (`linked` to `managed`). The asset version does not change. */
   | { type: 'collectAssets'; assetIds: Id[] }
   /**
-   * 删掉没有任何引用的素材记录（实例与它的预渲染替身、章节缩略图、文档的来源都不再指向它）。还有引用时拒绝
-   * （`INVALID_OPERATION`，`details.rule: 'asset-in-use'`，`details.usedBy` 列出谁在用）。代码包与它烘焙出的预渲染替身成对删除。
-   * 只删记录，bytes 由 GC 回收；撤销能放回来。预检清单见 `videos.unusedAssets`。
+   * Deletes asset records that have no references (instances and their pre-rendered stand-ins, chapter thumbnails, and document sources no longer point to them). Rejected while references remain
+   * (`INVALID_OPERATION`, `details.rule: 'asset-in-use'`, and `details.usedBy` lists who uses it). A code bundle and the pre-rendered stand-in baked from it are deleted as a pair.
+   * Only the records are deleted. The bytes are reclaimed by GC, and undo can restore them. For the pre-check list, see `videos.unusedAssets`.
    */
   | { type: 'removeAssets'; assetIds: Id[] }
-  /** 链接素材换了位置：核对内容与登记的一致，然后更新定位。素材版本不变。 */
+  /** A linked asset has moved. Checks that the content matches the registered content, then updates the location. The asset version does not change. */
   | { type: 'relinkAsset'; assetId: Id; path: string }
-  /** 按精确的字段写入一批实例（格式转换与导入用）。时间已经在帧网格与精确时间上，不再量化。 */
+  /** Writes a batch of instances with exact fields (for format conversion and import). Times are already on the frame grid and in exact time, so they are not quantized again. */
   | { type: 'insertItems'; sequenceId: Id; items: SequenceItemInput[] }
-  /** 写入一份文档的新版本。不给 `documentId` 时新建文档。`ref` 供同一事务里后面的操作引用。正文不进快照。 */
+  /** Writes a new version of a document. If no `documentId` is given, a new document is created. `ref` is for later operations in the same transaction to reference. The body is not included in snapshots. */
   | {
       type: 'putDocument';
       documentId?: Id;
@@ -1008,61 +1005,56 @@ export type EditOperation =
   | { type: 'trimItem'; sequenceId: Id; itemId: Id; edge: 'start' | 'end'; at: TimelineTimeInput; alignment: FrameAlignment }
   | { type: 'splitItem'; sequenceId: Id; itemId: Id; at: TimelineTimeInput; alignment: FrameAlignment }
   /**
-   * 把同一轨道上首尾相接的两个实例合并成一个（拆分的逆）：种类相同；带源时钟的源时间连续、速率相同；其余字段一致，或用
-   * `keep`（按 `itemIds` 的先后）指明取哪一边。关键帧与音量包络能还原成同一串帧时拼回，否则算作不一致。留下时间上靠前
-   * 的实例，靠后的删掉。
+   * Merges two abutting instances on the same track into one (the inverse of split). They must be the same kind. Source-clocked instances need continuous source time at the same rate. Other fields must match, or `keep` (by the order of `itemIds`) names which side to take.
+   * Keyframes and volume envelopes are rejoined into one continuous series when they can be restored; otherwise it counts as inconsistent. The earlier instance in time is kept, and the later one is deleted.
    */
   | { type: 'joinItems'; sequenceId?: Id; itemIds: [Id, Id]; keep?: 'first' | 'second' }
   | { type: 'deleteItems'; sequenceId?: Id; itemIds: Id[] }
   /**
-   * 波纹删除（视频格式规范 §6.4）：在 `trackIds` 上删掉序列的 `[from, to)` 并让之后的内容前移补上。盖住区间的媒体实例
-   * 拆开删掉中间（经它投影的字幕跟着右段走），静态实例缩短；没列出的轨道不动；轨道或要动的实例锁着时整笔拒绝。
+   * Ripple delete (video format spec §6.4): deletes the sequence's `[from, to)` on `trackIds` and moves later content forward to close the gap. Media instances covering the range are split and the middle is deleted (captions projected through them follow the right-hand part). Static instances are shortened. Tracks not listed are untouched. The whole edit is rejected if a track or an instance to be moved is locked.
    */
   | { type: 'removeRange'; sequenceId?: Id; from: TimelineTimeInput; to: TimelineTimeInput; trackIds: Id[]; alignment: FrameAlignment }
   /**
-   * 在源素材的剪口集合里加入剪口（视频格式规范 §6.7）：`from`、`to` 是源素材时钟上的十进制秒，`ref` 是出处（剪辑建议的 ID）。
-   * 与已有剪口间隔不超过 0.02 秒的并成一个，保留靠前那个的 ID 与出处。同一笔事务里按新的保留区间重排剪口集合的实例
-   * （它们所在的轨道上波纹删除），其余实例按 `followPolicy` 移动；整个落在剪掉区间里的列在 `impact.removedByCuts`。
+   * Adds cuts to a source asset's cut set (video format spec §6.7). `from` and `to` are decimal seconds on the source asset's clock, and `ref` is the provenance (the ID of an edit suggestion).
+   * A cut within 0.02 seconds of an existing cut is merged into it, keeping the earlier one's ID and provenance. In the same transaction, instances on the affected tracks are rearranged to the new kept ranges (ripple-deleted on their track). Other instances move according to `followPolicy`. Instances that lie entirely within a cut range are listed in `impact.removedByCuts`.
    */
   | { type: 'addCuts'; sequenceId: Id; assetId: Id; cuts: { from: string; to: string; ref?: Id }[] }
-  /** 恢复一个剪口：从剪口集合里去掉它，在接缝处放回它删掉的源区间、之后的内容后移；找不到接缝时列在 `impact.cutsNotRelaid`。 */
+  /** Restores a cut: removes it from the cut set, puts back the source interval it removed at the seam, and moves later content back. If no seam can be found, it is listed in `impact.cutsNotRelaid`. */
   | { type: 'restoreCut'; sequenceId: Id; assetId: Id; cutId: Id }
   /**
-   * 按源素材的转写检测口癖与长停顿，把建议写进它的剪辑提案（视频格式规范 §6.2，没有时新建，有时整份替换）；不改时间线。
-   * 已经整个落在剪口里的不再提出。素材有几份转写时用 `speechDocumentId` 指明。
+   * Detects filler words and long pauses from the source asset's transcript, and writes the suggestions into its cut proposal (video format spec §6.2). The proposal is created if missing and replaced wholesale if present. The timeline is not changed.
+   * Items that already lie entirely within cuts are not proposed again. If the asset has several transcripts, `speechDocumentId` specifies which one to use.
    */
   | { type: 'proposeCuts'; assetId: Id; speechDocumentId?: Id; detect?: CutDetectOptions }
   /**
-   * 接受剪辑提案里的建议：编译成剪口（同 `addCuts`，`ref` 是建议的 ID）并标成 `accepted`，一笔事务。转写在提出之后改过时
-   * 拒绝（`INVALID_OPERATION`，`details.rule: 'proposal-stale'`）。
+   * Accepts suggestions in a cut proposal. In one transaction, it compiles them into cuts (as `addCuts`, with the suggestion's ID as `ref`) and marks them `accepted`. It is rejected (`INVALID_OPERATION`, `details.rule: 'proposal-stale'`) if the transcript was changed after the proposal was made.
    */
   | { type: 'acceptCutSuggestions'; sequenceId: Id; proposalId: Id; suggestionIds: Id[] }
-  /** 新增一条轨道，排在最上面。`ref` 供同一事务里后面的 `insertItems` 用 `trackRef` 引用。 */
+  /** Adds a track, placed at the top. `ref` lets a later `insertItems` in the same transaction reference it with `trackRef`. */
   | { type: 'addTrack'; sequenceId?: Id; kind: TrackKind; name?: string; ref?: string }
   /**
-   * 删掉一条空轨道，其他轨道的 `order` 不变。轨道上还有片段时拒绝（`INVALID_OPERATION`，`details.rule: 'track-not-empty'`，
-   * `details.itemIds` 与 `details.next: ['deleteItems', 'moveItem']`）；被闪避规则引用时也拒绝（`track-in-ducking`）。
+   * Deletes an empty track. The `order` of other tracks is unchanged. Rejected while the track still has clips (`INVALID_OPERATION`, `details.rule: 'track-not-empty'`,
+   * `details.itemIds`, and `details.next: ['deleteItems', 'moveItem']`). Also rejected when a ducking rule references it (`track-in-ducking`).
    */
   | { type: 'deleteTrack'; sequenceId?: Id; trackId: Id }
   | { type: 'updateTrack'; sequenceId?: Id; trackId: Id; locked?: boolean; visible?: boolean; muted?: boolean; name?: string }
   /**
-   * 调整一个画面实例的叠放次序（画布上的「前移一层 / 后移一层 / 移到最前 / 移到最后」）。叠放次序就是轨道的上下：
-   * 实例与别的实例共用一条轨道时，把它拆到相邻新建的一条轨道上（新轨道列在 `createdIds`，让位的轨道列在 `updatedIds`）；
-   * 它独占一条轨道时，整条轨道在同类轨道里挪位（相邻两条互换，或挪到最上 / 最下，其余顺次让位）。已经在最前 / 最后时拒绝
-   * （`INVALID_OPERATION`，`details.rule: 'already-at-edge'`）；实例或所在轨道锁着时 `TARGET_LOCKED`。
+   * Adjusts the stacking order of a picture instance (on the canvas: 'bring forward / send backward / bring to front / send to back'). Stacking order is the track's vertical position.
+   * If the instance shares its track with others, it is moved to a newly created adjacent track (the new track is listed in `createdIds`, and the track that gives way is listed in `updatedIds`).
+   * If it has a track to itself, the whole track moves among tracks of the same kind (swapping with a neighbor, or moving to the top or bottom, with the others shifting). It is rejected when already at the front or back (`INVALID_OPERATION`, `details.rule: 'already-at-edge'`). `TARGET_LOCKED` when the instance or its track is locked.
    */
   | { type: 'arrangeItem'; sequenceId?: Id; itemId: Id; direction: ArrangeDirection }
   /**
-   * 把一条轨道挪到同类的另一条轨道（`target`）上面或下面：同类轨道原有的那组 `order` 值按新次序重新分配，别的种类不动，
-   * 实例跟着轨道走。种类不同或参照自己时拒绝（`INVALID_OPERATION`）；轨道锁着时 `TARGET_LOCKED`。
+   * Moves a track above or below another track of the same kind (`target`). The set of `order` values for same-kind tracks is reassigned in the new order. Other kinds are not affected,
+   * and instances follow their tracks. Rejected (`INVALID_OPERATION`) if the kinds differ or the target is the track itself. `TARGET_LOCKED` when the track is locked.
    */
   | { type: 'moveTrack'; sequenceId?: Id; trackId: Id; target: Id; position: 'above' | 'below' }
   /**
-   * 片段的名字、启用、锁定与跟随策略。空名字清掉名字；锁定的片段只能先解锁（同一个操作里解锁再改别的可以）。
-   * `followPolicy` 整个替换（视频格式规范 §3.16）。
+   * A clip's name, enabled state, lock state and follow policy. An empty name clears the name. A locked clip must be unlocked first (unlocking and then changing other fields in the same operation is allowed).
+   * `followPolicy` is replaced as a whole (video format spec §3.16).
    */
   | { type: 'updateItem'; sequenceId?: Id; itemId: Id; name?: string; enabled?: boolean; locked?: boolean; followPolicy?: FollowPolicy }
-  /** 改画面实例的位置（`place`）：只改给出的字段；数值给 `null` 去掉，回到按种类的缺省。字幕与音频没有位置。 */
+  /** Changes a picture instance's position (`place`). Only the given fields change. Give `null` for a numeric field to remove it and return to the kind's default. Captions and audio have no position. */
   | {
       type: 'setTransform';
       sequenceId?: Id;
@@ -1077,9 +1069,9 @@ export type EditOperation =
       flipY?: boolean;
     }
   /**
-   * 改画面实例的外观：只改给出的字段，给 `null` 去掉（回到缺省）。`opacity`、`radius`、`cornerRadii` 写进 `place`；
-   * `mode`、`fit`、`bg`、`mask` 是视觉媒体的；`tile` 用于图片与文字；`style`、`stylePresetId`、`verticalAlign` 用于文字；
-   * `shape` 整个替换图形的参数；`crop` 用于视频与图片。适用范围与取值由引擎按元素模型校验。
+   * Changes a picture instance's appearance. Only the given fields change, and `null` removes one (back to the default). `opacity`, `radius` and `cornerRadii` are written into `place`.
+   * `mode`, `fit`, `bg` and `mask` apply to visual media. `tile` applies to images and text. `style`, `stylePresetId` and `verticalAlign` apply to text.
+   * `shape` replaces the shape parameters as a whole. `crop` applies to videos and images. The engine validates which fields apply and their values against the element model.
    */
   | {
       type: 'setStyle';
@@ -1097,29 +1089,28 @@ export type EditOperation =
       stylePresetId?: string | null;
       verticalAlign?: 'top' | 'center' | 'bottom' | null;
       shape?: ShapeProps;
-      /** 视频与图片的裁剪；`null` 去掉。 */
+      /** Crop for videos and images. `null` removes it. */
       crop?: Crop | null;
     }
-  /** 改文字实例的内容：`text` 与 `counter` 给且只给一个，给了的那个替换另一个。 */
+  /** Changes a text instance's content. Give exactly one of `text` and `counter`. The one given replaces the other. */
   | { type: 'setText'; sequenceId?: Id; itemId: Id; text?: string; counter?: CounterProps }
   /**
-   * 整个替换生成类元素与图形的种类参数（`shape`、`sticker`、`visualizer`、`progress`、`draw`、`placeholder`、`confetti`、
-   * `whiteboard` 里与实例种类相同的那一个）。
+   * Replaces the kind parameter of a generated element or shape as a whole (`shape`, `sticker`, `visualizer`, `progress`, `draw`, `placeholder`, `confetti`,
+   * or the one in `whiteboard` that matches the instance's kind).
    */
   | { type: 'setProps'; sequenceId?: Id; itemId: Id; props: Record<string, unknown> }
-  /** 整个替换画面实例的元素动画三槽；`null` 去掉。 */
+  /** Replaces the three element-animation slots of a picture instance as a whole. `null` removes them. */
   | { type: 'setAnimation'; sequenceId?: Id; itemId: Id; animate: Animation | null }
-  /** 整个替换画面实例一个属性的关键帧；`null` 或空表去掉这条绑定。 */
+  /** Replaces one attribute's keyframes of a picture instance as a whole. `null` or an empty table removes the binding. */
   | { type: 'setKeyframes'; sequenceId?: Id; itemId: Id; property: KeyframeProperty; keyframes: Keyframe[] | null }
-  /** 整个替换序列的模板层；`null` 去掉。 */
+  /** Replaces the template layers of a sequence as a whole. `null` removes them. */
   | { type: 'setTemplate'; sequenceId: Id; template: TemplateLayers | null }
-  /** 改合成实例的参数：`values` 整体替换 `parameterValues`。代码包的参数要先按它的 Schema 校验，引擎还不支持，拒绝。 */
+  /** Changes a composition instance's parameters: `values` replaces `parameterValues` as a whole. Bundle parameters must first be validated against its schema. The engine does not support this yet, so it is rejected. */
   | { type: 'setCodeParameters'; sequenceId?: Id; itemId: Id; values: Record<string, unknown> }
   /**
-   * 原地换合成实例的代码包版本与预渲染替身（代码包规范 §3.3）：实例 ID、轨道、起点、几何、效果、关键帧等都不变。
-   * 时间映射回到从 0 开始的线性映射；长度取新替身的长度，没有替身时取清单的 `intrinsic`。变短就裁掉，
-   * 变长撞上同轨后面的实例以 `TIMELINE_OVERLAP` 拒绝。实例有参数而新包去掉或换了 `parametersSchemaRef` 时要给 `parameterValues`。
-   * 回执的 `impact.codeEdits` 说明改的是源这一层与前后的长度。
+   * Swaps a composition instance's code bundle version and pre-rendered stand-in in place (code bundle spec §3.3). The instance ID, track, start, geometry, effects, keyframes and so on are unchanged.
+   * The time mapping returns to a linear mapping from 0. The length is taken from the new stand-in, or from the manifest's `intrinsic` if there is no stand-in. If it gets shorter, it is trimmed. If it gets longer and collides with the next instance on the track, it is rejected with `TIMELINE_OVERLAP`. If the instance has parameters and the new bundle removes or changes `parametersSchemaRef`, `parameterValues` must be given.
+   * The receipt's `impact.codeEdits` states which source layer changed and the lengths before and after.
    */
   | {
       type: 'replaceCodeBundle';
@@ -1130,18 +1121,18 @@ export type EditOperation =
       parameterValues?: Record<string, unknown>;
     }
   /**
-   * 改声音：音频实例改自己的混音；视频与有声音的合成改自带的那路声音（静音即不用它）。
-   * 音量是线性倍数，在 [0, 4]；淡入淡出是十进制秒，`"0"` 表示去掉，两者之和不超过片段长度。
+   * Changes sound. Audio instances change their own mix. Videos and compositions with sound change the sound track they carry (muting means it is not used).
+   * Volume is a linear multiplier in [0, 4]. Fade-in and fade-out are decimal seconds, and `"0"` removes the fade. Their sum must not exceed the clip length.
    */
   | { type: 'setAudioMix'; sequenceId?: Id; itemId: Id; muted?: boolean; volume?: number; fadeIn?: string; fadeOut?: string }
   /**
-   * 恒定速率变速（视频、音频）：取用的源区间不变，长度按新速率重算——视频向下取整到帧，音频保持精确。
-   * 速率在 0.1–10 之间，须约分。变长之后盖住后面的实例就拒绝，不推开别人。
+   * Constant-rate speed change (video and audio). The source interval used stays the same, and the length is recalculated at the new rate. Video rounds down to a whole frame, and audio stays exact.
+   * The rate must be between 0.1 and 10 and reduced. A length change that covers later instances is rejected rather than pushing them.
    */
   | { type: 'setSpeed'; sequenceId?: Id; itemId: Id; rate: Rate }
-  /** 字幕实例换一份字幕样式文档（`kind` 为 `caption-style`）。 */
+  /** Changes a caption instance to another caption style document (`kind` is `caption-style`). */
   | { type: 'setCaptionStyle'; sequenceId?: Id; itemId: Id; styleDocument: { documentId: Id } | { ref: string } }
-  /** 序列的名字、画布尺寸（像素）与底色（`#RRGGBB`）。位置按画幅的百分比保存，改尺寸时实例跟着画布走。 */
+  /** The sequence's name, canvas size (pixels) and background color (`#RRGGBB`). Positions are stored as percentages of the canvas, so instances follow the canvas when its size changes. */
   | {
       type: 'updateSequence';
       sequenceId: Id;
@@ -1150,10 +1141,9 @@ export type EditOperation =
       background?: string;
     }
   /**
-   * 设置一个转场：两个首尾相接的同轨画面实例之间（两个 ID 都给），或一个实例的开头（只给 `rightItemId`）、结尾（只给
-   * `leftItemId`）。同一条边上已有的转场被替换（同一对实例沿用原来的 ID）。时长量化到帧：两侧转场必须给，不超过 10 秒，
-   * handles 不够时拒绝（`TRANSITION_HANDLES_INSUFFICIENT`），不自动缩短；单侧转场在 0.1–2 秒，不给时 0.5 秒，生效的长度
-   * 随实例变短。给了 `duration` 就要写明 `alignment`。单侧转场只能居中，不能交叉淡化声音。
+   * Sets a transition. It goes between two abutting picture instances on the same track (both IDs given), or at the start of an instance (only `rightItemId`) or its end (only
+   * `leftItemId`). An existing transition on the same edge is replaced (the same pair of instances keeps the original ID). The duration is quantized to frames. Two-sided transitions must be given, up to 10 seconds.
+   * It is rejected (`TRANSITION_HANDLES_INSUFFICIENT`) when there are not enough handles, and it is not shortened automatically. One-sided transitions are 0.1 to 2 seconds, default 0.5 seconds when not given, and their effective length shortens with the instance. If `duration` is given, `alignment` must be stated. One-sided transitions can only be centered and cannot crossfade sound.
    */
   | {
       type: 'setTransition';
@@ -1169,16 +1159,16 @@ export type EditOperation =
       audioCrossfade?: boolean;
     }
   | { type: 'removeTransition'; sequenceId?: Id; transitionId: Id }
-  /** 整个替换视觉媒体（视频、图片、素材贴纸、占位框、白板）或合成实例的 `fx`；`null` 去掉。 */
+  /** Replaces the `fx` of a visual-media item (video, image, asset sticker, placeholder box or whiteboard) or of a composition instance, as a whole. `null` removes it. */
   | { type: 'setEffects'; sequenceId?: Id; itemId: Id; fx: Fx | null }
-  /** 整个替换序列的章节（其他标记不动）：按时间严格递增；`chapterId` 沿用已有的章节。 */
+  /** Replaces the sequence's chapters as a whole (other markers are untouched). Times must strictly increase. `chapterId` keeps the existing chapter IDs. */
   | {
       type: 'setChapters';
       sequenceId: Id;
       chapters: { chapterId?: Id; at: TimelineTimeInput; title: string; summary?: string; thumbnail?: AssetRefInput }[];
       alignment: FrameAlignment;
     }
-  /** 新建（不给 `chapterId`，须给 `at` 与 `title`）或修改一章。给 `at` 时要写明 `alignment`；`summary`、`thumbnail` 给 null 去掉。 */
+  /** Creates a chapter (no `chapterId`; `at` and `title` required) or edits one. When `at` is given, `alignment` must be stated. `summary` and `thumbnail` given as null are removed. */
   | {
       type: 'upsertChapter';
       sequenceId: Id;
@@ -1191,8 +1181,8 @@ export type EditOperation =
     }
   | { type: 'removeChapter'; sequenceId?: Id; chapterId: Id }
   /**
-   * 新建（不给 `ruleId`，须给 `trigger` 与 `target`）或修改一条闪避规则。`depth` 在 [0, 60] dB，默认 10；
-   * `attack`、`release` 是十进制秒（0–5）。按实例触发时，触发组与目标组不能重叠。
+   * Creates a ducking rule (no `ruleId`; `trigger` and `target` required) or edits one. `depth` is in [0, 60] dB, default 10.
+   * `attack` and `release` are decimal seconds (0 to 5). When triggered by instances, the trigger group and the target group cannot overlap.
    */
   | {
       type: 'setDucking';
@@ -1200,7 +1190,7 @@ export type EditOperation =
       ruleId?: Id;
       name?: string;
       enabled?: boolean;
-      /** 除了已有的轨道与实例，还可以用同一事务里 `addTrack` 的 `ref`（`trackRefs`）。 */
+      /** Besides existing tracks and instances, you can use the `ref` of an `addTrack` in the same transaction (`trackRefs`). */
       trigger?: DuckingTriggerInput;
       target?: DuckingGroupInput;
       depth?: number;
@@ -1211,12 +1201,12 @@ export type EditOperation =
   | { type: 'createCheckpoint'; name: string; note?: string }
   | { type: 'renameVideo'; name: string };
 
-/** 引用素材：已有素材的 ID，或同一事务里 `importAsset` 的 `ref`。 */
+/** Asset reference: the ID of an existing asset, or the `ref` of an `importAsset` in the same transaction. */
 export type AssetRefInput = { assetId: Id } | { ref: string };
 
 export type EditOperationType = EditOperation['type'];
 
-// ---- 回执、事件、历史 ----
+// ---- Receipts, events, history ----
 
 export interface Actor {
   kind: 'user' | 'agent' | 'system';
@@ -1235,8 +1225,8 @@ export interface TimeQuantizationReceipt {
   policy: FrameAlignment;
 }
 
-/** 事务持久化之后的回执（命令与协议规范 §5）。界面在收到它之前不显示「已保存」。 */
-/** 代码画面的一次修改（代码包规范 §3.4）。`layer` 目前只有 `source`：换的是代码包版本与替身。 */
+/** The receipt after the transaction is persisted (command and protocol spec §5). The UI does not show 'saved' until it receives this. */
+/** One change to a code picture (code bundle spec §3.4). `layer` currently has only `source`: it swaps the code bundle version and stand-in. */
 export interface CodeEdit {
   itemId: Id;
   layer: 'source';
@@ -1257,8 +1247,8 @@ export interface TransactionReceipt {
   videoRevision: Revision;
   eventSeq: Seq;
   /**
-   * 给人看的修改名（命令与协议规范 §3.1）。调用方给的文字与引用（`edits.apply` 的 `labelRef`）原样保存；引擎起的是
-   * 英文缺省文字，`labelRef` 是它的消息引用。界面用 `localizeText(label, labelRef)` 按当前语言显示。
+   * The human-readable edit name (command and protocol spec §3.1). The caller's text and reference (`labelRef` of `edits.apply`) are stored as given. The engine's default text is in English, and `labelRef` is its message reference.
+   * The UI displays it in the current language with `localizeText(label, labelRef)`.
    */
   label: string;
   labelRef?: MessageRef;
@@ -1268,7 +1258,7 @@ export interface TransactionReceipt {
   updatedIds: Id[];
   deletedIds: Id[];
   lineage: Record<Id, Id[]>;
-  /** 操作里的 `ref` 解析到的素材、文档或轨道 ID。空的时候省略。 */
+  /** IDs of the assets, documents or tracks that a `ref` in the operations resolved to. Omitted when empty. */
   refs?: Record<string, Id>;
   impact: {
     oldDurationFrames: number;
@@ -1276,44 +1266,44 @@ export interface TransactionReceipt {
     translationUnitsStale: Id[];
     dubbingUnitsStale: Id[];
     /**
-     * 这笔事务之后语义锚（`speech-anchor`）求不出来、或者摆不到求出的位置上的实例：它们留在原来的位置（视频格式规范 §3.16）。
-     * 原因由 `videos.inspect` 的 `orphanedAnchors` 按时间线现算。
+     * Instances whose semantic anchors (`speech-anchor`) cannot be resolved after this transaction, or cannot be placed at the resolved position, stay where they were (video format spec §3.16).
+     * The reason is computed from the timeline by `orphanedAnchors` in `videos.inspect`.
      */
     orphanedAnchors: Id[];
-    /** 这次编辑之后不再成立、被引擎删掉的转场。空的时候省略。 */
+    /** Transitions that no longer hold after this edit and were removed by the engine. Omitted when empty. */
     removedTransitions?: { id: Id; reason: TransitionRemovalReason }[];
-    /** 这笔事务里因为实例变短而变短的单侧转场：写入的长度与生效的长度 min(D, ⌊L/2⌋)。空的时候省略。 */
+    /** One-sided transitions in this transaction that were shortened because their instance got shorter: written length and effective length min(D, ⌊L/2⌋). Omitted when empty. */
     shortenedTransitions?: { id: Id; durationFrames: number; effectiveFrames: number }[];
-    /** 随剪口删掉的实例：整个落在剪掉的区间里。它们同时在 `deletedIds` 里。空的时候省略。 */
+    /** Instances deleted along with cuts: those that lie entirely within the cut range. They are also in `deletedIds`. Omitted when empty. */
     removedByCuts?: Id[];
-    /** 恢复了、却在序列上找不到接缝放回去的剪口：剪口集合里已经去掉，实例没有动。空的时候省略。 */
+    /** Cuts that were restored but whose seam could not be found on the sequence to put them back. They are removed from the cut set, and the instances were not moved. Omitted when empty. */
     cutsNotRelaid?: Id[];
-    /** 跟着的目标（`item-local`）被删掉、一起删掉的实例（视频格式规范 §3.16）。它们同时在 `deletedIds` 里。空的时候省略。 */
+    /** Instances deleted together because the target they followed (`item-local`) was deleted (video format spec §3.16). They are also in `deletedIds`. Omitted when empty. */
     removedWithTarget?: Id[];
-    /** 这笔事务改过的代码画面（代码包规范 §3.4）：改在哪一层，前后的代码包版本、替身与长度。空的时候省略。 */
+    /** Code pictures changed in this transaction (code bundle spec §3.4): which layer changed, the bundle versions and stand-ins before and after, and the lengths. Omitted when empty. */
     codeEdits?: CodeEdit[];
-    /** `deleteTrack` 删掉的空轨道。它们同时在 `deletedIds` 里。空的时候省略。 */
+    /** Empty tracks removed by `deleteTrack`. They are also in `deletedIds`. Omitted when empty. */
     removedTracks?: Id[];
-    /** `removeAssets` 删掉的素材记录，含成对一起删掉的代码包或预渲染替身。它们同时在 `deletedIds` 里。空的时候省略。 */
+    /** Asset records removed by `removeAssets`, including the code bundles or pre-rendered stand-ins deleted as pairs. They are also in `deletedIds`. Omitted when empty. */
     removedAssets?: Id[];
   };
   timeResolution: TimeQuantizationReceipt[];
   preserved: Id[];
-  /** `unavailableReason` 是引擎给的英文缺省文字，`unavailableReasonRef` 是它的消息引用（界面用 `localizeText` 按当前语言显示）。 */
+  /** `unavailableReason` is the engine's default English text. `unavailableReasonRef` is its message reference (the UI displays it in the current language with `localizeText`). */
   undo: { available: boolean; token?: string; unavailableReason?: string; unavailableReasonRef?: MessageRef };
   committedAt: string;
 }
 
-/** 转场被删掉的原因：实例没了、两侧不再相接、窗口超出实例、handles 不够、与同一实例上的另一个转场重叠。 */
+/** Reasons a transition was removed: the instance is gone, the two sides no longer abut, the window extends beyond the instance, handles are insufficient, or it overlaps another transition on the same instance. */
 export type TransitionRemovalReason = 'item-deleted' | 'not-adjacent' | 'too-long' | 'handles-insufficient' | 'overlap';
 
 export type VideoEntityKind =
   'video' | 'sequence' | 'track' | 'item' | 'transition' | 'marker' | 'ducking' | 'asset' | 'document' | 'checkpoint' | 'protection';
 
-/** 视频事件（命令与协议规范 §10.1）：一笔事务一条，带着可以直接应用的投影变化。 */
+/** Video event (command and protocol spec §10.1): one per transaction, carrying projection changes that can be applied directly. */
 export interface VideoEvent {
   videoId: Id;
-  /** 视频自己的事件序号（outbox）。与主题的投递序号不是一回事。 */
+  /** The video's own event sequence number (outbox). It is not the same as the topic's delivery sequence number. */
   eventSeq: Seq;
   videoRevision: Revision;
   transactionId: Id;
@@ -1323,7 +1313,7 @@ export interface VideoEvent {
     removals: { kind: VideoEntityKind; id: Id; sequenceId?: Id }[];
   };
   actor: Actor;
-  /** 与回执的 `label`、`labelRef` 相同。 */
+  /** Same as the receipt's `label` and `labelRef`. */
   label: string;
   labelRef?: MessageRef;
   undoOf?: Id;
@@ -1333,7 +1323,7 @@ export interface VideoEvent {
 export interface HistoryEntry {
   transactionId: Id;
   commandId: Id;
-  /** 与回执相同。引用列加上之前提交的事务没有 `labelRef`，照 `label` 原样显示。 */
+  /** Same as the receipt. Entries for transactions committed earlier have no `labelRef`, so they are shown as `label` as is. */
   label: string;
   labelRef?: MessageRef;
   actor: Actor;
@@ -1341,19 +1331,19 @@ export interface HistoryEntry {
   committedAt: string;
   undoOf?: Id;
   undoneBy?: Id;
-  /** 0 是正向修改，奇数是撤销，正偶数是重做。 */
+  /** 0 is a forward change. Odd numbers are undos, and positive even numbers are redos. */
   undoDepth: number;
   undoAvailable: boolean;
 }
 
 export interface UndoStep {
   transactionId: Id;
-  /** 正向修改的名字（撤销与重做都用它），显示同回执的 `label`。 */
+  /** The name of the forward change (used for both undo and redo). Displayed like the receipt's `label`. */
   label: string;
   labelRef?: MessageRef;
 }
 
-/** 当前连接的操作者可以撤销与重做的一步（只含自己的修改）。 */
+/** The one step the current connection's operator can undo and redo (it contains only their own changes). */
 export interface UndoState {
   undo?: UndoStep;
   redo?: UndoStep;
@@ -1362,8 +1352,8 @@ export interface UndoState {
 export type UndoTarget = 'undo' | 'redo' | { transaction: Id };
 
 /**
- * 引擎的错误体（命令与协议规范 §11），放在 `RpcError.details` 里。
- * `code` 是规范里的错误码，例如 `PROJECT_REVISION_CONFLICT`、`TIMELINE_OVERLAP`。
+ * The engine's error body (command and protocol spec §11), placed in `RpcError.details`.
+ * `code` is the error code from the spec, for example `PROJECT_REVISION_CONFLICT` or `TIMELINE_OVERLAP`.
  */
 export interface EngineErrorBody {
   code: string;
@@ -1373,7 +1363,7 @@ export interface EngineErrorBody {
   retryability: 'same-command' | 'after-refresh' | 'after-user-action' | 'never';
   details: unknown;
   recovery?: string;
-  /** `message` 的消息引用（命令与协议规范 §11.1）：`message` 与 `recovery` 是英文缺省文字，界面用 `localizeText(message, messageRef)` 按当前语言显示。 */
+  /** The message reference for `message` (command and protocol spec §11.1). `message` and `recovery` are English default text, and the UI displays `localizeText(message, messageRef)` in the current language. */
   messageRef?: MessageRef;
   recoveryRef?: MessageRef;
 }
@@ -1382,36 +1372,36 @@ export function isEngineErrorBody(value: unknown): value is EngineErrorBody {
   return typeof value === 'object' && value !== null && typeof (value as EngineErrorBody).code === 'string' && 'retryability' in value;
 }
 
-// ---- 主题 ----
+// ---- Topic ----
 
-/** 已打开视频的位置与身份。 */
+/** The location and identity of an open video. */
 export interface VideoRef {
   videoId: Id;
   name: string;
-  /** 视频目录的绝对路径。 */
+  /** Absolute path of the video directory. */
   path: string;
-  /** 所在的来源：项目，或不属于项目的会话的工作目录。 */
+  /** The source it belongs to: the project, or the working directory of a session that is not part of a project. */
   source: { projectId: Id | null; conversationId: Id | null };
-  /** 相对来源目录的路径，用 `/` 分隔。 */
+  /** Path relative to the source directory, using `/` as the separator. */
   relPath: string;
 }
 
 export interface VideoTopicSnapshot {
   video: VideoSnapshot;
-  /** 快照所在的视频事件序号。 */
+  /** The video event sequence number at which the snapshot was taken. */
   eventSeq: Seq;
 }
 
 /**
- * `video:<id>` 主题的事件。`video.replaced` 在引擎进程重启、无法证明增量连续时整体替换；
- * `video.closed` 表示视频在 Runtime 里关闭了，界面要重新打开它。
+ * Events on the `video:<id>` topic. `video.replaced` replaces everything when the engine process restarts and incremental continuity cannot be proven.
+ * `video.closed` means the video was closed in the Runtime, and the UI must reopen it.
  */
 export type VideoTopicEvent =
   | { type: 'video.event'; event: VideoEvent }
   | { type: 'video.replaced'; snapshot: VideoTopicSnapshot }
   | { type: 'video.closed'; reason: string };
 
-// ---- 共享的投影 reducer：Runtime 的镜像与界面用同一个 ----
+// ---- Shared projection reducer: used by both the Runtime mirror and the UI ----
 
 function itemStart(item: SequenceItem, fps: Rate): number {
   if (item.type === 'audio') return (item.fromFrame * fps.den) / fps.num + mediaTimeToSeconds(item.subframeOffset);
@@ -1437,7 +1427,7 @@ function sortTracks(tracks: Track[]): Track[] {
 }
 
 /**
- * 把一条视频事件应用到快照上，返回新快照（不修改输入）。序号不大于快照的事件原样返回（重复投递）。
+ * Applies one video event to the snapshot and returns a new snapshot (the input is not modified). Events whose sequence number is not greater than the snapshot's are returned as they are (duplicate delivery).
  */
 export function applyVideoEvent(state: VideoTopicSnapshot, event: VideoEvent): VideoTopicSnapshot {
   if (BigInt(event.eventSeq) <= BigInt(state.eventSeq)) return state;
@@ -1528,7 +1518,7 @@ export function applyVideoEvent(state: VideoTopicSnapshot, event: VideoEvent): V
         const existing = sequenceOf(upsert.id);
         if (existing) {
           Object.assign(existing, header);
-          // 没有模板层时省略：去掉之后的投影里也不能留着旧的。缺省名的引用同理（改名后省略）。
+          // Omitted when there are no template layers: after removal, the projection must not keep the old ones. The same applies to references to the default name (omitted after renaming).
           if (!('template' in header)) delete existing.template;
           if (!('nameRef' in header)) delete existing.nameRef;
         } else {
@@ -1603,7 +1593,7 @@ export function applyVideoEvent(state: VideoTopicSnapshot, event: VideoEvent): V
   return { video, eventSeq: event.eventSeq };
 }
 
-// ---- 显示用的时间换算（只用于显示与命中测试；命令里用帧或十进制秒字符串）----
+// ---- Display time conversion (only for display and hit testing; commands use frames or decimal second strings) ----
 
 export function mediaTimeToSeconds(time: MediaTime): number {
   return Number(time.ticks) / time.timescale;
@@ -1617,7 +1607,7 @@ export function secondsToFrames(seconds: number, fps: Rate): number {
   return (seconds * fps.num) / fps.den;
 }
 
-/** 实例在序列上的区间（秒）。 */
+/** An instance's span on the sequence (seconds). */
 export function itemRangeSeconds(item: SequenceItem, fps: Rate): { start: number; end: number } {
   if (item.type === 'audio') {
     const start = itemStart(item, fps);
@@ -1626,19 +1616,19 @@ export function itemRangeSeconds(item: SequenceItem, fps: Rate): { start: number
   return { start: framesToSeconds(item.span.fromFrame, fps), end: framesToSeconds(item.span.fromFrame + item.span.durationFrames, fps) };
 }
 
-// i18n-ignore: 有 nameRef 之前新建的视频存的是这个缺省名（视频格式规范 §3.2），只用来认出它
+// i18n-ignore: Videos created before nameRef existed stored this default name (video format spec §3.2). It is used only to recognize it
 const LEGACY_DEFAULT_SEQUENCE_NAME = '主序列';
 
 /**
- * 序列给人看的名字（视频格式规范 §3.2）：引擎起的缺省名按读者的语言显示，用户起的名字原样。有 `nameRef` 之前新建的视频
- * 存的是中文缺省名「主序列」、没有引用，也当缺省名显示。
+ * The sequence's name for display (video format spec §3.2). The engine's default name is shown in the reader's language, and names the user chose are shown as they are. Videos created before `nameRef` existed
+ * stored the Chinese default name "主序列" (main sequence) with no reference. That is also treated as a default name.
  */
 export function sequenceDisplayName(sequence: Pick<Sequence, 'name' | 'nameRef'>): string {
   const ref = sequence.nameRef ?? (sequence.name === LEGACY_DEFAULT_SEQUENCE_NAME ? { key: 'engine.mainSequence' } : undefined);
   return localizeText(sequence.name, ref);
 }
 
-/** 序列长度（帧）：所有实例终点的最大值向上取整。 */
+/** Sequence length (frames): the maximum end of all instances, rounded up. */
 export function sequenceDurationFrames(sequence: Sequence): number {
   let max = 0;
   for (const item of sequence.items) {
@@ -1650,8 +1640,8 @@ export function sequenceDurationFrames(sequence: Sequence): number {
 }
 
 /**
- * 视频的封面取的那一帧（产品设计 §4.2「封面取当前工作稿」）：根序列上最早出现、启用着、轨道可见、素材有画面的视频片段，
- * 在它开头对应的素材时间（秒）。会话头的视频卡与 Space 的缩略图（`space.thumbnail`）取的是同一帧。没有这样的片段时为 null。
+ * The frame the video's cover is taken from (product design §4.2, 'the cover is taken from the current working draft'): the earliest video clip on the root sequence that is enabled, on a visible track, and whose asset has picture.
+ * It is the asset time (seconds) corresponding to the start of that clip. The video card in the session header and Space's thumbnail (`space.thumbnail`) use this same frame. It is null when there is no such clip.
  */
 export function posterFrame(video: VideoSnapshot): { asset: VersionRef; at: number } | null {
   const sequence = video.sequences[video.rootSequenceId];

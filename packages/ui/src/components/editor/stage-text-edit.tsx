@@ -6,7 +6,7 @@ import { asObject, resolveLineStyle } from '../../render/text-style.ts';
 import type { View } from './stage-boxes.tsx';
 
 const shell = style({ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center' });
-/** 原型 .txtedit：不画第二层焦点环（外面已经有选中框了），光标随字色。 */
+/** Prototype .txtedit: no second focus ring (the selection box outside already provides one); the caret follows the text color. */
 const field = style({
   width: 'full',
   outlineStyle: 'none',
@@ -18,9 +18,8 @@ const field = style({
 });
 
 /**
- * 就地改字（原型 stage-elements.jsx 的 TextEdit）：在文字的选中框里铺一块可编辑的正文，字体、字号、颜色、对齐按这段文字的样式
- * 换算到舞台显示尺寸，画布上的那份先藏起来（叠加层负责）。进来整段选中；Enter 提交、⇧Enter 换行、Esc 提交并退出、
- * 失焦同样提交。输入法组字中的 Enter 不算。按键一律就地吞掉，编辑器的快捷键在这一格里不生效。
+ * In-place text editing (prototype stage-elements.jsx TextEdit): an editable body is laid over the text's selection box, with font, size, color and alignment converted from this text's styles to the stage's display size. The copy on the canvas is hidden first (handled by the overlay). Entering selects the whole text. Enter commits, Shift+Enter inserts a line break, Esc commits and exits,
+ * and losing focus also commits. Enter during IME composition does not count. All keys are swallowed locally, so editor shortcuts do not apply while this text is being edited.
  */
 export function StageTextEdit({
   item,
@@ -31,7 +30,7 @@ export function StageTextEdit({
   item: TextItem;
   view: View;
   canvas: { width: number; height: number };
-  /** `text` 为 null 表示没改；`byKey` 是用 Enter / Esc 结束的（焦点该回到舞台）。 */
+  /** `text` is null when nothing changed; `byKey` is true when the edit ended with Enter / Esc (focus should return to the stage). */
   onDone(text: string | null, byKey: boolean): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);

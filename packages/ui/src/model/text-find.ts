@@ -1,6 +1,6 @@
 /**
- * 查找与替换的匹配器（照原型 `model-find.js`）：区分大小写、全词、正则三个开关只有这一份实现，
- * 字幕列表与以后的文稿共用。区间是 UTF-16 偏移（`String.slice` 的口径）。
+ * Find-and-replace matcher (following the prototype `model-find.js`): the three switches, case-sensitive, whole word and regex, have only this one implementation,
+ * shared by the subtitle list and later by transcripts. Ranges are UTF-16 offsets (the convention of `String.slice`).
  */
 
 export interface FindOptions {
@@ -15,10 +15,10 @@ export interface TextRange {
 }
 
 const RE_ESCAPE = /[.*+?^${}()|[\]\\]/g;
-/** 词边界用 Unicode 属性类：`\b` 只认 ASCII，中文的「全词」会在每个字之间都判成边界。 */
+/** Word boundaries use a Unicode property class: `\b` only recognizes ASCII, so “全词” (“whole word”) matching for Chinese would treat every gap between characters as a boundary. */
 const NOT_WORD = '[^\\p{L}\\p{N}]';
 
-/** 编译一次：`{re}` 或 `{error}`（正则写错了要说出来，不是安静地查不到）。查询为空时两者皆无。 */
+/** Compiled once: `{re}` or `{error}` (a wrong regex must be reported, not silently match nothing). When the query is empty, neither is set. */
 export function compileFind(query: string, options: FindOptions): { re?: RegExp; error?: string } {
   if (!query) return {};
   let source = options.regex ? query : query.replace(RE_ESCAPE, '\\$&');
@@ -30,13 +30,13 @@ export function compileFind(query: string, options: FindOptions): { re?: RegExp;
   }
 }
 
-/** 一段文本里的全部命中。 */
+/** All matches in a piece of text. */
 export function findRanges(text: string, re: RegExp, wholeWord: boolean): TextRange[] {
   const out: TextRange[] = [];
   re.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
-    // 全词模式把命中包在第 1 组里，外面那圈是边界。
+    // Whole-word mode wraps the match in group 1; the outer layer is the boundary.
     const grouped = wholeWord && match[1] !== undefined;
     const hit = grouped ? match[1]! : match[0];
     const start = grouped ? match.index + match[0].indexOf(hit) : match.index;
@@ -50,7 +50,7 @@ export function findRanges(text: string, re: RegExp, wholeWord: boolean): TextRa
   return out;
 }
 
-/** 在一段文本里落下若干替换（从后往前改，前面的区间才不挪位）。替换文本按字面插入，不解析 `$1`。 */
+/** Applies several replacements within a piece of text (applied from the end backwards, so earlier ranges do not shift). The replacement text is inserted literally; `$1` is not parsed. */
 export function replaceRanges(text: string, ranges: readonly TextRange[], replacement: string): { text: string; changed: number } {
   let next = text;
   let changed = 0;
@@ -62,7 +62,7 @@ export function replaceRanges(text: string, ranges: readonly TextRange[], replac
   return { text: next, changed };
 }
 
-/** 上一个 / 下一个，到头绕回去。 */
+/** Previous / next; wraps around at the ends. */
 export function stepIndex(index: number, length: number, direction: 1 | -1): number {
   if (!length) return 0;
   const at = Math.min(Math.max(0, index), length - 1);

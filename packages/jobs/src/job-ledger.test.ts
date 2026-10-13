@@ -77,7 +77,7 @@ describe('JobLedger（JSONL）', () => {
     await ledger.flush();
     expect(await fs.readFile(file, 'utf8')).toBe(before);
 
-    // 重新读之后也一样：读到的就是比较的基准。
+    // Also the same after re-reading: what is read is the baseline for comparison.
     const again = new JobLedger(file);
     await again.save(await again.load());
     expect(await fs.readFile(file, 'utf8')).toBe(before);
@@ -116,20 +116,20 @@ describe('JobLedger（JSONL）', () => {
     await ledger.load();
     const a = job('job_a');
     const b = job('job_b');
-    await ledger.save([a, b]); // 2 行
+    await ledger.save([a, b]); // 2 lines
     a.record.state = 'running';
-    await ledger.save([a, b]); // 3 行
+    await ledger.save([a, b]); // 3 lines
     b.record.state = 'running';
-    await ledger.save([a, b]); // 4 行
+    await ledger.save([a, b]); // 4 lines
     const before = await new JobLedger(file).load();
     a.record.state = 'completed';
-    await ledger.save([a, b]); // 5 行 > max(2×2, 4)：压缩
+    await ledger.save([a, b]); // 5 lines > max(2×2, 4): compact
     const written = await lines(file);
     expect(written).toHaveLength(3);
     expect(written.slice(1).map((row) => (row.record as { state: string }).state)).toEqual(['completed', 'running']);
     expect(await new JobLedger(file).load()).toEqual([{ ...before[0], record: { ...before[0]!.record, state: 'completed' } }, before[1]]);
     expect(await fs.readdir(path.dirname(file))).toEqual(['jobs.jsonl']);
-    // 压缩之后照常追加。
+    // Appending continues normally after compaction.
     b.record.state = 'failed';
     await ledger.save([a, b]);
     expect(await lines(file)).toHaveLength(4);
@@ -146,7 +146,7 @@ describe('JobLedger（JSONL）', () => {
     expect(await ledger.load()).toEqual(old);
     expect((await fs.readdir(path.dirname(file))).sort()).toEqual(['jobs.json.migrated', 'jobs.jsonl']);
     expect(await new JobLedger(file).load()).toEqual(old);
-    // 导入的记录就是基准：原样保存不写。
+    // The imported record is the baseline: saved as it is, not written.
     const before = await fs.readFile(file, 'utf8');
     await ledger.save(old);
     expect(await fs.readFile(file, 'utf8')).toBe(before);

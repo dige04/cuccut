@@ -14,7 +14,7 @@ import { pl } from './ffmpeg.pl.ts';
 import { tr } from './ffmpeg.tr.ts';
 import { vi } from './ffmpeg.vi.ts';
 
-/** `packages/jobs/src/pipelines/ffmpeg.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/ffmpeg.ts`. */
 const en = {
   notFound: (p: { command: string; remedy: string }) => `Can't find ${p.command}: ${p.remedy}`,
   ffmpegBroken: "ffmpeg isn't working properly",

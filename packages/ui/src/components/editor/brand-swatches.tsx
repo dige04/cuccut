@@ -12,7 +12,7 @@ import { BRAND_COPY as IB } from './brand-copy.ts';
 const group = style({ display: 'flex', flexDirection: 'column', alignItems: 'start', gap: 8 });
 const title = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-600' });
 
-/** 取色值的 `#RRGGBB[AA]`（大写），与品牌库的写法一致。 */
+/** Color value as `#RRGGBB[AA]` (uppercase), in the same form the brand library uses. */
 function hexOf(color: Color): string {
   const rgb = color.toFormat('rgb');
   const byte = (n: number) =>
@@ -25,8 +25,7 @@ function hexOf(color: Color): string {
 }
 
 /**
- * 取色面板里的「品牌色」（设计稿 panel-shared.jsx 的取色面板）：品牌库里的颜色，点一下就用；
- * 下面「存到品牌色」把当前颜色存进品牌库，别处的取色面板都取得到。不透明度跟着品牌色走（`allowAlpha` 为 false 时由调用方丢掉）。
+ * “Brand colors” in the color picker (mockup panel-shared.jsx color picker): colors from the brand library, one click to use. Below, “Store to brand colors” stores the current color in the brand library, so color pickers elsewhere can use it. Opacity follows the brand color (the caller drops it when `allowAlpha` is false).
  */
 export function BrandSwatches({ color, allowAlpha, onPick }: { color: Color; allowAlpha: boolean; onPick(next: Color): void }) {
   const runtime = useRuntime();
@@ -65,7 +64,7 @@ export function BrandSwatches({ color, allowAlpha, onPick }: { color: Color; all
         <Brand />
         <Text>{saved ? IB.inBrandColors : IB.saveToColors}</Text>
       </ActionButton>
-      {/* 紧跟着的是取色面板原有的常用色：标一下，免得看成品牌色的一部分。 */}
+      {/* The picker's existing common colors follow: marked so they are not mistaken for part of the brand colors. */}
       <span className={title}>{IB.commonColors}</span>
     </div>
   );

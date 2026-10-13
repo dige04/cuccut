@@ -3,59 +3,58 @@ import { M } from './cli-copy.ts';
 import { remedyHintText, remedyText } from './localized-text.ts';
 
 /**
- * CLI 的输出信封与退出码（Agent 面设计 §5.1、§5.2；命令与协议规范 §11.7）。派生命令、元命令与管理桶共用这一份：
+ * CLI output envelope and exit codes (agent-surface design §5.1, §5.2; command and protocol spec §11.7). Shared by derived commands, meta commands and admin buckets:
  *
- * - 成功 `{ ok: true, result, next?, runtime? }`：`result` 是工具的结果对象（与 MCP 工具结果的 JSON 相同），`next` 是建议的下一条
- *   命令（工具结果里的 `next`，已按 CLI 的写法渲染），`runtime: { started: true }` 表示这次自动拉起了 Runtime。
- * - 失败 `{ ok: false, error, runtime? }`：`error` 与 `catalog.call` 的错误对象（`ToolCatalog.errorBody`）相同；CLI 自己发现的问题
- *   （参数、缺 `--yes`、Runtime 不可用）用同一个形状。
- * - `--json`（stdout 不是 TTY 时默认）把信封原样写到 stdout；否则成功的结果按缩进格式写到 stdout，失败写到 stderr。
+ * - Success `{ ok: true, result, next?, runtime? }`: `result` is the tool's result object (same JSON as an MCP tool result); `next` is the suggested next command (the `next` in the tool result, already rendered in CLI form); `runtime: { started: true }` means the Runtime was started automatically this time.
+ *   Failure `{ ok: false, error, runtime? }`: `error` is the same as the error object of `catalog.call` (`ToolCatalog.errorBody`); problems discovered by the CLI itself
+ *   (arguments, missing `--yes`, Runtime unavailable) use the same shape.
+ * - `--json` (the default when stdout is not a TTY) writes the envelope to stdout as-is; otherwise successful results are written to stdout indented, and failures to stderr.
  */
 
 export type Envelope =
   | { ok: true; result: unknown; next?: string; runtime?: { started: true } }
   | { ok: false; error: CatalogToolError; runtime?: { started: true } };
 
-/** 退出码（§5.2）。 */
+/** Exit codes (§5.2). */
 export const EXIT = {
   ok: 0,
-  /** 失败或取消：任务终态 `failed` / `cancelled`，或工具、引擎拒绝。 */
+  /** Failure or cancellation: task terminal state `failed` / `cancelled`, or rejected by a tool or engine. */
   failed: 1,
-  /** 要用户做事才能继续：配置能力、授权、同意外部工具等。输出里有 `remedy` 与 `next`。 */
+  /** Needs user action before it can continue: configuring a capability, authorization, consent to external tools, etc. The output has `remedy` and `next`. */
   actionRequired: 2,
-  /** Runtime 不可用或版本不兼容。 */
+  /** Runtime unavailable or version incompatible. */
   runtimeUnavailable: 3,
-  /** 参数不对，或不可撤销的命令缺 `--yes`。 */
+  /** Wrong arguments, or an irreversible command missing `--yes`. */
   invalidArguments: 4,
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 
 /**
- * 错误码 → 退出码的唯一一张表。没列出的错误码都是 1。任务失败时按任务的错误码查，但不会低于 1。
+ * The only table mapping error codes to exit codes. Any error code not listed is 1. For task failures, the lookup uses the task's error code, but never goes below 1.
  *
- * - 2：用户得先做一件事（配置、授权、同意、登录、安装），Agent 照 `remedy` / `next` 转告用户，不自己绕过。
- * - 3：CLI 自己判定的 Runtime 问题（连不上、拉不起、协议或接口版本不同）。
- * - 4：参数（含 CLI 解析阶段的未知旗标、类型不对）与缺 `--yes`。
+ * - 2: the user must do something first (configuration, authorization, consent, login, installation); the agent relays `remedy` / `next` to the user and does not work around it itself.
+ * - 3: a Runtime problem determined by the CLI itself (cannot connect, cannot start, protocol or interface version differs).
+ * - 4: arguments (including unknown flags and wrong types found in the CLI parsing stage) and missing `--yes`.
  *
- * 说明书 `conventions.md` 的错误码表由 `tools/sync-agent-skill.ts` 按这张表生成。
+ * The error-code table in the instructions file `conventions.md` is generated from this table by `tools/sync-agent-skill.ts`.
  */
 export const EXIT_BY_CODE: Readonly<Record<string, ExitCode>> = {
-  // 能力与模型
+  // Capabilities and models
   CAPABILITY_NOT_CONFIGURED: EXIT.actionRequired,
   DUB_SEPARATION_NOT_CONFIGURED: EXIT.actionRequired,
   MODELS_DIR_MISSING: EXIT.actionRequired,
   CREDENTIAL_UNAVAILABLE: EXIT.actionRequired,
   AUTHENTICATION_REQUIRED: EXIT.actionRequired,
   OFFLINE_STRICT: EXIT.actionRequired,
-  // 授权与预算
+  // Authorization and budget
   GRANT_REQUIRED: EXIT.actionRequired,
   GRANT_REVOKED: EXIT.actionRequired,
   BUDGET_EXCEEDED: EXIT.actionRequired,
   BUDGET_UNVERIFIABLE: EXIT.actionRequired,
   TASK_BUDGET_EXCEEDED: EXIT.actionRequired,
   TASK_BUDGET_UNVERIFIABLE: EXIT.actionRequired,
-  // 外部工具（yt-dlp、ffmpeg）与链接
+  // External tools (yt-dlp, ffmpeg) and links
   TOOL_UNAVAILABLE: EXIT.actionRequired,
   TOOL_CONSENT_REQUIRED: EXIT.actionRequired,
   TOOL_UPDATE_CONFIRM_REQUIRED: EXIT.actionRequired,
@@ -65,7 +64,7 @@ export const EXIT_BY_CODE: Readonly<Record<string, ExitCode>> = {
   LINK_LOGIN_REQUIRED: EXIT.actionRequired,
   LINK_COOKIES_UNAVAILABLE: EXIT.actionRequired,
   LINK_TOOL_UPDATE_REQUIRED: EXIT.actionRequired,
-  // 音色
+  // Voices
   VOICE_CONSENT_REQUIRED: EXIT.actionRequired,
   VOICE_CLONE_REQUIRED: EXIT.actionRequired,
   // Runtime
@@ -74,13 +73,13 @@ export const EXIT_BY_CODE: Readonly<Record<string, ExitCode>> = {
   PROTOCOL_MISMATCH: EXIT.runtimeUnavailable,
   INTERFACE_VERSION_MISMATCH: EXIT.runtimeUnavailable,
   CATALOG_UNAVAILABLE: EXIT.runtimeUnavailable,
-  // Runtime 在却停不了：不是 CLI 拉起的，或还有人在用。是失败，不是 Runtime 不可用。
+  // The Runtime is running but cannot be stopped: it was not started by the CLI, or someone is still using it. This is a failure, not Runtime unavailable.
   RUNTIME_NOT_OWNED: EXIT.failed,
   RUNTIME_IN_USE: EXIT.failed,
-  // 说明书（`catalog.agentSkill`）找不到或写错：是安装或说明书本身的问题，不是参数也不是 Runtime 不可用。
+  // The instructions (`catalog.agentSkill`) are missing or wrong: a problem with the installation or the instructions themselves, not with the arguments, and not Runtime unavailability.
   AGENT_SKILL_NOT_FOUND: EXIT.failed,
   AGENT_SKILL_INVALID: EXIT.failed,
-  // 参数
+  // Arguments
   INVALID_ARGUMENTS: EXIT.invalidArguments,
   UNKNOWN_COMMAND: EXIT.invalidArguments,
   UNKNOWN_TOOL: EXIT.invalidArguments,
@@ -91,13 +90,13 @@ export function exitCodeFor(code: string): ExitCode {
   return EXIT_BY_CODE[code] ?? EXIT.failed;
 }
 
-/** 任务以失败或取消结束：按任务的错误码查表，但至少是 1（任务的错误码不会是参数或 Runtime 问题的 3、4）。 */
+/** The task ends in failure or cancellation: the table is looked up by the task's error code, but the result is at least 1 (a task's error code is never 3 or 4, which are reserved for argument or Runtime problems). */
 export function exitCodeForJob(code: string | null | undefined): ExitCode {
   const mapped = code ? exitCodeFor(code) : EXIT.failed;
   return mapped === EXIT.actionRequired ? mapped : EXIT.failed;
 }
 
-/** CLI 自己发现的问题：带错误码，最后由 `main` 包成失败信封。 */
+/** Problems discovered by the CLI itself: they carry an error code, and finally `main` wraps them as a failure envelope. */
 export class CliError extends Error {
   readonly code: string;
   readonly extra: Record<string, unknown>;
@@ -115,18 +114,18 @@ export class CliError extends Error {
 }
 
 export interface OutputOptions {
-  /** 写信封的 JSON；不给时按 stdout 是不是 TTY。 */
+  /** JSON for writing the envelope; if not given, it depends on whether stdout is a TTY. */
   json?: boolean | undefined;
   stdout?: NodeJS.WritableStream & { isTTY?: boolean };
   stderr?: NodeJS.WritableStream & { isTTY?: boolean };
 }
 
-/** 一条命令的输出：信封写到哪里、写成什么样。 */
+/** Output of one command: where the envelope is written and in what form. */
 export class Output {
   readonly json: boolean;
   readonly stdout: NodeJS.WritableStream & { isTTY?: boolean };
   readonly stderr: NodeJS.WritableStream & { isTTY?: boolean };
-  /** 这次自动拉起了 Runtime：写进信封。 */
+  /** The Runtime was started automatically this time: written into the envelope. */
   runtimeStarted = false;
 
   constructor(options: OutputOptions = {}) {
@@ -135,7 +134,7 @@ export class Output {
     this.json = options.json ?? !this.stdout.isTTY;
   }
 
-  /** 写成功的信封，返回退出码 0。`next` 不给时取结果顶层的 `next`；`next` 只在信封顶层出现一次，结果里的去掉。 */
+  /** Writes a successful envelope and returns exit code 0. If `next` is not given, takes the top-level `next` of the result; `next` appears only once, at the envelope's top level, and is removed from the result. */
   success(result: unknown, next?: string | null): ExitCode {
     const hint = next ?? nextOf(result);
     const body = withoutNext(result);
@@ -151,7 +150,7 @@ export class Output {
   }
 
   /**
-   * 管理桶的成功：`--json` 时与 `success` 相同（结果是协议方法的原始结果）；给人读时打印手写的几行，不用通用排版。
+   * Admin-bucket success: with `--json` it is the same as `success` (the result is the protocol method's raw result); for human reading, it prints the handwritten few lines, without the generic layout.
    */
   report(result: unknown, lines: readonly string[], next?: string | null): ExitCode {
     if (this.json) return this.success(result, next ?? null);
@@ -161,7 +160,7 @@ export class Output {
     return EXIT.ok;
   }
 
-  /** 写失败的信封，返回按错误码查到的退出码（或调用方给的）。 */
+  /** Writes a failure envelope and returns the exit code looked up from the error code (or the one passed by the caller). */
   failure(error: CatalogToolError, exitCode: ExitCode = exitCodeFor(error.code)): ExitCode {
     const envelope: Envelope = { ok: false, error, ...this.#runtime() };
     if (this.json) this.stdout.write(`${JSON.stringify(envelope)}\n`);
@@ -169,13 +168,13 @@ export class Output {
     return exitCode;
   }
 
-  /** 裸 JSON（`spec`、`version`）：不包信封，人读时也是缩进的 JSON。 */
+  /** Bare JSON (`spec`, `version`): no envelope; even for human reading it is indented JSON. */
   raw(value: unknown): ExitCode {
     this.stdout.write(`${this.json ? JSON.stringify(value) : JSON.stringify(value, null, 2)}\n`);
     return EXIT.ok;
   }
 
-  /** 纯文本（`--help`、`help <命令>`）。 */
+  /** Plain text (`--help`, `help <command>`). */
   text(text: string): ExitCode {
     this.stdout.write(text.endsWith('\n') ? text : `${text}\n`);
     return EXIT.ok;
@@ -196,7 +195,7 @@ function withoutNext(result: unknown): unknown {
   return rest;
 }
 
-/** 失败给人读的样子：一行错误码与说明，随后是补救与下一步。 */
+/** How a failure looks to a human: one line with the error code and description, followed by remedy and next steps. */
 export function renderError(error: CatalogToolError): string {
   const message = localizeText(error.message, isMessageRef(error.messageRef) ? error.messageRef : null);
   const lines = [`${M.errorLabel} ${error.code}: ${message}`];
@@ -207,7 +206,7 @@ export function renderError(error: CatalogToolError): string {
     if (hint !== null) lines.push(`  ${hint}`);
     if (Array.isArray(remedy.commands)) for (const command of remedy.commands) lines.push(`    ${String(command)}`);
   }
-  // 引擎错误带消息引用：按 CLI 的界面语言重写说明与补救。
+  // Engine errors carry message references: rewrite the description and remedy in the CLI's interface language.
   if (typeof error.recovery === 'string')
     lines.push(`  ${localizeText(error.recovery, isMessageRef(error.recoveryRef) ? error.recoveryRef : null)}`);
   const rest = Object.fromEntries(
@@ -222,8 +221,8 @@ export function renderError(error: CatalogToolError): string {
 }
 
 /**
- * 给人读的格式：JSON 的另一种排版（缩进的「键: 值」），不另写每个工具的渲染。标量一行；短的标量数组写在一行；
- * 多行字符串缩进成块。
+ * Human-readable format: another layout of JSON (indented “key: value”), without a separate renderer for each tool. Scalars on one line; short scalar arrays on one line;
+ * multi-line strings are indented as blocks.
  */
 export function renderHuman(value: unknown): string {
   return lines(value, '').join('\n');

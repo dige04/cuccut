@@ -1,15 +1,10 @@
-// OpenAI 的语音合成与图片生成接口形状（`openai` 与 `openai-compatible` 共用）。2026-10-03 读过的文档：
+// Shape of OpenAI's speech synthesis and image generation endpoints (shared by `openai` and `openai-compatible`). Docs read on 2026-10-03:
 //   https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
 //   https://developers.openai.com/api/docs/guides/text-to-speech
 //   https://developers.openai.com/api/reference/resources/images/methods/generate
 //   https://developers.openai.com/api/docs/guides/image-generation
-// 文档确认的：`POST {base}/audio/speech`，JSON `model`、`input`（≤ 4096 字符）、`voice`（内置音色名，或自定义音色
-// `{ id }`）、`instructions`（tts-1 / tts-1-hd 不接受）、`response_format`（mp3、opus、aac、flac、wav、pcm）、
-// `speed`（0.25–4.0）；响应体就是音频字节。`POST {base}/images/generations`，JSON `model`、`prompt`（≤ 32000 字符）、
-// `n`（1–10）、`size`、`output_format`（png、jpeg、webp）；GPT image 模型总是返回 `data[].b64_json`（`response_format`
-// 已弃用），响应带 `usage`。鉴权 `Authorization: Bearer`。
-// 没能确认的：兼容端点是否接受这些字段、是否返回 `b64_json`（这里对兼容端点额外发 `response_format: 'b64_json'`；
-// 只返回 `url` 的端点不支持——不去下载响应里给的任意地址）。
+// Confirmed by the docs: `POST {base}/audio/speech`, JSON `model`, `input` (≤ 4096 characters), `voice` (a built-in voice name, or a custom voice `{ id }`), `instructions` (not accepted by tts-1 / tts-1-hd), `response_format` (mp3, opus, aac, flac, wav, pcm), `speed` (0.25–4.0); the response body is the audio bytes. `POST {base}/images/generations`, JSON `model`, `prompt` (≤ 32000 characters), `n` (1–10), `size`, `output_format` (png, jpeg, webp); GPT image models always return `data[].b64_json` (`response_format` is deprecated), and the response includes `usage`. Auth is `Authorization: Bearer`.
+// Not confirmed: whether compatible endpoints accept these fields and whether they return `b64_json`. Here compatible endpoints get `response_format: 'b64_json'` as an extra field. Endpoints that return only `url` are not supported; the arbitrary address in the response is not downloaded.
 import { ProviderFailure } from '@cuccut/models';
 import { generationTimeoutMs, type ImageOutput, type ImageRequest, type SpeechOutput, type SpeechRequest } from '../adapter.ts';
 import { providerFetch } from '../http/provider-fetch.ts';
@@ -18,7 +13,7 @@ import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 export interface OpenAiGenerationStyle {
   label: string;
-  /** 兼容端点：请求 `b64_json`（GPT image 模型不需要，也不再接受这个参数的其他取值）。 */
+  /** Compatible endpoints: request `b64_json` (GPT image models do not need it, and no longer accept other values for this parameter). */
   compatible: boolean;
 }
 
@@ -28,7 +23,7 @@ export async function openAiSynthesize(request: SpeechRequest, style: OpenAiGene
   const body = {
     model: model.modelId,
     input: parameters.text,
-    // 不在预置音色里的是账号里的自定义音色：按文档以 `{ id }` 传。
+    // Voices not in the preset list are the account's custom voices: passed as `{ id }`, per the docs.
     voice: preset || style.compatible ? parameters.voice : { id: parameters.voice },
     response_format: parameters.format,
     ...(parameters.instructions ? { instructions: parameters.instructions } : {}),

@@ -1,6 +1,6 @@
-//! host 侧资源加载（opencat 显式生命周期的 fetch/probe 半边）：
-//!   core host_requirements() → 本模块按 kind 加载/探测 → HostInputs 回填 core。
-//! 所有路径相对文档目录；hash 声明时 sha256 强校验（渲染农场一致性）。
+//! Host-side asset loading (the fetch and probe half of opencat's explicit lifecycle):
+//!   core host_requirements() → this module loads or probes by kind → HostInputs are filled back into core.
+//! All paths are relative to the document directory. When a hash is declared, sha256 is strictly verified (render farm consistency).
 
 use crate::plan::PreflightDiagnostic;
 use crate::source::{AnimatedImage, Lottie, PrepareCtx, VisualSource};
@@ -13,10 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tiny_skia::Pixmap;
 
-/// 探测兜底用的 `ffprobe`：发现逻辑走 [`crate::exec`]（`CUCCUT_FFPROBE`，再 `PATH`），不归
-/// 探测 crate 本身管，见 [`media_probe`] 顶部说明。找不到就是 `None`——
-/// 调用方直接走纯 Rust 探测的结果，不再多花一次必然失败的 spawn。进程内只
-/// 解析一次。
+/// The `ffprobe` used as a fallback for probing. Discovery goes through [`crate::exec`] (`CUCCUT_FFPROBE`, then `PATH`) and is not handled by the probing crate itself; see the note at the top of [`media_probe`]. If it is not found, this is `None`: the caller uses the pure Rust probing result directly, without spending an extra spawn that is bound to fail. It is resolved only once per process.
 fn ffprobe_path() -> Option<&'static Path> {
     static RESOLVED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     RESOLVED
@@ -24,33 +21,26 @@ fn ffprobe_path() -> Option<&'static Path> {
         .as_deref()
 }
 
-/// 视频资源：字节不进内存，逐帧经 VideoReader 按需解码。
+/// Video asset: the bytes are not held in memory; frames are decoded on demand, one at a time, via VideoReader.
 #[derive(Debug, Clone)]
 pub struct VideoInfo {
     pub path: PathBuf,
     pub width: u32,
     pub height: u32,
     pub duration: f64,
-    /// 源自身的帧率。`0` = 探测不到。
+    /// The source's own frame rate. `0` = cannot be probed.
     ///
-    /// 用途只有一个：算出**最后一个可解码的时刻**（`duration - 1/fps`）。
-    /// `ffmpeg -ss` 到最后一帧**之后**会一帧都吐不出来——那是硬错误，不是
-    /// "冻结末帧"。想停在末帧的调用方（P7b 的 `sticker.loop = "once"`）必须
-    /// 按源帧率夹取，按合成帧率夹取在低帧率片源上不够。
+    /// It serves one purpose: computing the **last decodable moment** (`duration - 1/fps`). `ffmpeg -ss` past the **last frame** outputs nothing at all; that is a hard error, not “freeze the last frame”. A caller that wants to stop on the last frame (P7b's `sticker.loop = "once"`) must clamp to the source frame rate; clamping to the composition frame rate is not enough for low-frame-rate sources.
     pub fps: f64,
-    /// 解码这条片源必须**显式指定**的解码器名（`None` = 让 ffmpeg 自选）。
+    /// The decoder name this source **must** specify explicitly (`None` = let ffmpeg choose).
     ///
-    /// 只有一种情况用得上：**带 alpha 的 WebM**。ffmpeg 的原生 `vp9` / `vp8`
-    /// 解码器会**静默丢掉 alpha 平面**（WebM 把它存在 `BlockAdditional` 里，
-    /// 由容器的 `AlphaMode` 标记），只有 `libvpx-vp9` / `libvpx` 会还原它。
-    /// 不指定就会让一张透明贴纸解出一块不透明的黑底——而且没有任何报错。
-    /// 判据来自 [`probe_alpha_decoder`]，在资源加载期问一次。
+    /// Only one case needs it: **WebM with alpha**. ffmpeg's native `vp9` / `vp8` decoders **silently drop the alpha plane** (WebM stores it in `BlockAdditional`, marked by the container's `AlphaMode`); only `libvpx-vp9` / `libvpx` restore it. Without specifying it, a transparent sticker decodes to an opaque black background, with no error reported at all. The criterion comes from [`probe_alpha_decoder`], which is asked once during asset loading.
     pub decoder: Option<String>,
 }
 
 #[derive(Default)]
 pub struct LoadedAssets {
-    /// 本次加载实际读取的文件，包括 Lottie 的外部图片；供宿主使热更新缓存失效。
+    /// The files actually read by this load, including Lottie's external images. The host uses it to invalidate the hot-reload cache.
     pub dependencies: Vec<PathBuf>,
     pub file_signatures: Vec<(PathBuf, Option<(u64, Option<std::time::SystemTime>)>)>,
     /// Lazy audio/video must still match the files probed during preparation.
@@ -58,30 +48,23 @@ pub struct LoadedAssets {
     pub images: HashMap<String, Arc<Pixmap>>,
     pub bounded_images: HashMap<String, PathBuf>,
     pub animated_svgs: HashMap<String, Arc<scene_primitives::svg_animation::SvgAnimation>>,
-    /// 动图源（GIF / APNG / WebP）。`Arc` 是因为帧字节要跨渲染线程共享——
-    /// 每个 worker 一个 `MediaStore`，但动图只解一次（`VisualSource` 无状态）。
+    /// Animated image source (GIF / APNG / WebP). `Arc` is used because the frame bytes are shared across render threads. Each worker has a `MediaStore`, but animated images are decoded only once (`VisualSource` is stateless).
     pub animated: HashMap<String, Arc<AnimatedImage>>,
-    /// Lottie 源（bodymovin 子集）。与动图同样共享给多个 worker——
-    /// `Lottie::record` 是纯函数，不持有采样状态。
+    /// Lottie source (bodymovin subset). It is shared across workers like animated images: `Lottie::record` is a pure function and holds no sampling state.
     pub lotties: HashMap<String, Arc<Lottie>>,
-    /// `program` 源（§6.5.3）：模块图与 `files` 字节只读共享，求值器按渲染线程各建一个。
+    /// `program` source (§6.5.3): the module graph and `files` bytes are shared read-only; each render thread builds its own evaluator.
     pub programs: HashMap<String, Arc<crate::program::ProgramSource>>,
     pub videos: HashMap<String, VideoInfo>,
     pub audios: HashMap<String, PathBuf>,
-    /// 文档字体字节（进 TextEngine fontdb；非空 ⇒ strict 模式禁系统回退）
+    /// Document font bytes (go into the TextEngine fontdb; when non-empty, strict mode disables system fallback)
     pub fonts: Vec<Vec<u8>>,
-    /// 资源加载期产生的 **warn 级**诊断（当前只有 Lottie 的
-    /// `lottie-unsupported-feature`：忽略掉的表达式控制器组）。fail 级在这里
-    /// 就是 `Err`，根本走不到 preflight。由 `FramePlanner` 并进 preflight 报告，
-    /// 从 `ccut render --json` / `ccut ops` 的 `diagnostics` 透出。
+    /// **Warn-level** diagnostics produced during asset loading (currently only Lottie's `lottie-unsupported-feature`: an ignored expression controller group). Fail-level diagnostics become `Err` here and never reach preflight. `FramePlanner` merges them into the preflight report, and they are surfaced in the `diagnostics` of `ccut render --json` / `ccut ops`.
     pub source_diagnostics: Vec<PreflightDiagnostic>,
     pub inputs: HostInputs,
 }
 
 impl LoadedAssets {
-    /// 渲染中才出现的 warn：`program` 资产在加载期试渲的首帧之后才碰到的降级写法
-    /// 与缺字形（`program-degraded`，按资产 id 排序）。与 `source_diagnostics`
-    /// 不重复，渲染结束后读。
+    /// Warnings that appear only during rendering: degraded forms and missing glyphs in a `program` asset that are hit after the first frame trial-rendered during loading (`program-degraded`, sorted by asset id). They do not duplicate `source_diagnostics`, and are read after rendering finishes.
     pub fn render_diagnostics(&self) -> Vec<PreflightDiagnostic> {
         let mut ids: Vec<&String> = self.programs.keys().collect();
         ids.sort();
@@ -108,12 +91,12 @@ impl LoadedAssets {
     }
 }
 
-/// doc + 文档目录 → 全部资源加载完成的 LoadedAssets（缺文件 / hash 不符即 fail-fast）。
+/// Document + document directory → the LoadedAssets once all assets are loaded (a missing file or a hash mismatch fails fast).
 pub fn load_assets(doc: &Value, base_dir: &Path) -> Result<LoadedAssets> {
     load_assets_with_vars(doc, base_dir, None)
 }
 
-/// 同 [`load_assets`]，带变量覆盖（asset 变量委托的需求解析，§11.1/§11.2）。
+/// Same as [`load_assets`], with variable overrides (the requirement resolution delegated by asset variables, §11.1/§11.2).
 pub fn load_assets_with_vars(
     doc: &Value,
     base_dir: &Path,
@@ -121,7 +104,7 @@ pub fn load_assets_with_vars(
 ) -> Result<LoadedAssets> {
     let reqs = scene_primitives::host_requirements_with_vars(doc, overrides)?;
     let mut out = LoadedAssets::default();
-    // 程序的字体库要等全部 `font` 资产读完才建得出来（字体可能排在程序后面）。
+    // The program's font library can only be built after all `font` assets are read, since fonts may be listed after the program.
     #[cfg(feature = "program")]
     let mut programs = Vec::new();
     for req in &reqs {
@@ -201,8 +184,7 @@ pub fn load_assets_with_vars(
             AssetKind::Lottie => {
                 let mut src = Lottie::parse(&req.id, &req.src, &bytes)
                     .with_context(|| format!("asset \"{}\" 解析失败", req.id))?;
-                // 子资源在这里收集、读盘、解码，并按资产名并进内容指纹链；
-                // 渲染期不得再有 I/O（`VisualSource` 的约定）。
+                // Sub-resources are collected, read from disk and decoded here, and folded into the content fingerprint chain by asset name. There must be no I/O at render time (the `VisualSource` convention).
                 let lottie_dir = path.parent().unwrap_or(base_dir).to_path_buf();
                 let mut loaded = Vec::new();
                 for requirement in src.image_requirements().to_vec() {
@@ -233,8 +215,7 @@ pub fn load_assets_with_vars(
                         format!("asset \"{}\"：Lottie 子资源 {label} 解码失败", req.id)
                     })?;
                     let pixmap = Arc::new(pixmap);
-                    // 同一张图既进 Lottie 自己的采样表，也进 MediaStore——
-                    // 元素路径发的是 `DrawMedia`，光栅化时从 MediaStore 取。
+                    // The same image goes both into Lottie's own sampling table and into MediaStore. The element path emits `DrawMedia`, which is fetched from MediaStore at rasterization.
                     out.images
                         .insert(requirement.asset_name.clone(), pixmap.clone());
                     loaded.push((requirement.asset_name, bytes, pixmap));
@@ -277,7 +258,7 @@ pub fn load_assets_with_vars(
                     out.inputs.insert_program(&req.id, program);
                     programs.push((req.id.clone(), bundle, program.clone()));
                 }
-                // v3：`ccut-compile` 不移植（架构设计 §13.6），`program` feature 只是占位。
+                // v3: `ccut-compile` is not ported (architecture design §13.6); the `program` feature is only a placeholder.
                 #[cfg(not(feature = "program"))]
                 bail!(
                     "asset \"{}\"：program 资产要 BCF 编译器（ccut-compile），v3 不移植（架构设计 §13.6）",
@@ -374,7 +355,7 @@ fn verify_hash(req: &AssetReq, bytes: &[u8]) -> Result<()> {
     verify_digest(req, &lower_hex(&Sha256::digest(bytes)))
 }
 
-/// sha2 0.11 的摘要（hybrid-array）没有 `LowerHex`：逐字节写出，与 v2 的 `{:x}` 同值。
+/// sha2 0.11's digest (hybrid-array) has no `LowerHex`, so it is written out byte by byte, with the same value as v2's `{:x}`.
 fn lower_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -393,9 +374,8 @@ fn verify_digest(req: &AssetReq, actual: &str) -> Result<()> {
     Ok(())
 }
 
-/// png → tiny-skia 内置解码；jpg → image crate（无 alpha）；svg → resvg 天然尺寸光栅化。
-/// **静态图专用**：GIF / APNG / 动画 WebP 走 `AssetKind::AnimatedImage`
-/// 与 [`crate::source::AnimatedImage`]，不从这里进。
+/// png → built-in tiny-skia decoder; jpg → image crate (no alpha); svg → resvg, rasterized at its natural size.
+/// **Static images only**: GIF / APNG / animated WebP go through `AssetKind::AnimatedImage` and [`crate::source::AnimatedImage`], not from here.
 pub fn decode_image(src: &str, bytes: &[u8]) -> Result<Pixmap> {
     let ext = Path::new(src)
         .extension()
@@ -408,7 +388,7 @@ pub fn decode_image(src: &str, bytes: &[u8]) -> Result<Pixmap> {
             let img = image::load_from_memory(bytes)?.to_rgba8();
             let (w, h) = (img.width(), img.height());
             let mut pm = Pixmap::new(w, h).ok_or_else(|| anyhow!("空 JPEG"))?;
-            pm.data_mut().copy_from_slice(img.as_raw()); // JPEG 无 alpha，straight == premultiplied
+            pm.data_mut().copy_from_slice(img.as_raw()); // JPEG has no alpha, so straight == premultiplied
             Ok(pm)
         }
         "svg" => crate::svg::decode_svg_natural(bytes),
@@ -419,13 +399,12 @@ pub fn decode_image(src: &str, bytes: &[u8]) -> Result<Pixmap> {
     }
 }
 
-/// 按**目标长边**光栅化 SVG（实现在 [`crate::svg`]，浏览器预览共用同一份）。
+/// Rasterize SVG to the **target long side** (implemented in [`crate::svg`], shared with the browser preview).
 pub use crate::svg::decode_svg_at_long_edge;
 
-/// 按**字节**解码静态图（Lottie 子资源专用）。
+/// Decode a static image **from bytes** (only for Lottie sub-resources).
 ///
-/// 不走 [`decode_image`] 的扩展名分派：内嵌 data URI 根本没有文件名，
-/// 而 bodymovin 的 `p` 字段在不同导出器下也未必带正确后缀。
+/// It does not dispatch on file extension as [`decode_image`] does: an embedded data URI has no file name, and bodymovin's `p` field may not carry a correct suffix across different exporters.
 pub fn decode_image_bytes(label: &str, bytes: &[u8]) -> Result<Pixmap> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         return Pixmap::decode_png(bytes).map_err(|e| anyhow!("{label}: PNG {e}"));
@@ -438,7 +417,7 @@ pub fn decode_image_bytes(label: &str, bytes: &[u8]) -> Result<Pixmap> {
         .to_rgba8();
     let (w, h) = (img.width(), img.height());
     let mut raw = img.into_raw();
-    // straight RGBA → premultiplied（tiny-skia 的像素格式）
+    // straight RGBA → premultiplied (tiny-skia's pixel format)
     for px in raw.chunks_exact_mut(4) {
         let pm = tiny_skia::ColorU8::from_rgba(px[0], px[1], px[2], px[3]).premultiply();
         px[0] = pm.red();
@@ -477,11 +456,9 @@ fn probe_media_info(path: &Path, want_video: bool) -> Result<ProbedMediaInfo> {
     })
 }
 
-/// 媒体探测：纯 Rust 主路径，解不了的容器才退到 `ffprobe`（可选）。
+/// Media probing: the pure Rust path is the main one; containers it cannot handle fall back to `ffprobe` (optional).
 ///
-/// 返回 (natural_width, natural_height, duration, fps)；尺寸是**不含旋转**
-/// 的编码口径，保持 CLI `naturalW/naturalH` 契约。渲染资源加载另行使用
-/// 摆正后的 display 尺寸。fps 仅视频流有意义，`0` = 探测不到。
+/// Returns (natural_width, natural_height, duration, fps). The size is the **encoded orientation without rotation**, to keep the CLI `naturalW/naturalH` contract. Render asset loading uses the rotation-corrected display size separately. fps is meaningful only for video streams; `0` = cannot be probed.
 pub fn probe_media(path: &Path, want_video: bool) -> Result<(u32, u32, f64, f64)> {
     let probed = probe_media_info(path, want_video)?;
     Ok((
@@ -492,22 +469,15 @@ pub fn probe_media(path: &Path, want_video: bool) -> Result<(u32, u32, f64, f64)
     ))
 }
 
-/// 带 alpha 的 WebM 需要**显式**解码器，否则 alpha 平面被静默丢掉。
+/// A WebM with alpha needs an **explicit** decoder, or its alpha plane is silently discarded.
 ///
-/// WebM 把 alpha 存成每个 Block 的 `BlockAdditional`，靠 track 的 `AlphaMode`
-/// 标记（EBML 0x53C0）。ffmpeg 的
-/// **原生** `vp9` / `vp8` 解码器不读它，`libvpx-vp9` / `libvpx` 才读。
-/// 实测（ffmpeg 7.1）：同一份 `yuva420p` 的 VP9 WebM，默认解码器给出的
-/// 每个像素 α 都是 255，`-c:v libvpx-vp9` 才还原出真实 alpha。
+/// WebM stores alpha as `BlockAdditional` per Block, marked by the track's `AlphaMode` (EBML 0x53C0). ffmpeg's **native** `vp9` / `vp8` decoders do not read it; only `libvpx-vp9` / `libvpx` do. Measured with ffmpeg 7.1: for the same `yuva420p` VP9 WebM, the default decoder gives every pixel an α of 255, and only `-c:v libvpx-vp9` restores the real alpha.
 ///
-/// 返回 `None` = 不用管（不是 alpha WebM，或者探测本身失败——那种情况下
-/// 视频解码本身也会在下一步失败，这里不额外报错）。
+/// Returns `None` = nothing to do (not an alpha WebM, or the probe itself failed; in that case video decoding will also fail at the next step, and no extra error is reported here).
 ///
-/// alpha 标记现在由 [`media_probe`] 直接从 Matroska 的 `AlphaMode`
-/// 元素读出，不再需要 ffprobe；**解码**仍然是 ffmpeg 的活，所以
-/// 「codec + alpha → 解码器名」这层映射留在本模块。
+/// The alpha flag is now read directly from Matroska's `AlphaMode` element by [`media_probe`], so ffprobe is no longer needed. **Decoding** is still ffmpeg's job, so the mapping from "codec + alpha → decoder name" stays in this module.
 ///
-/// 这是 P7b 动态贴纸（GIF → 带 alpha 的 WebM）能落进画面的必要条件。
+/// This is the necessary condition for P7b dynamic stickers (GIF → WebM with alpha) to make it into the picture.
 pub fn probe_alpha_decoder(path: &Path) -> Option<String> {
     let (probe, _backend) = media_probe::probe_with_fallback(path, ffprobe_path()).ok()?;
     let video = probe.video.as_ref()?;
@@ -517,7 +487,7 @@ pub fn probe_alpha_decoder(path: &Path) -> Option<String> {
     match video.codec.as_deref()? {
         "vp9" => Some("libvpx-vp9".to_owned()),
         "vp8" => Some("libvpx".to_owned()),
-        // 其余编码的 alpha 由各自的原生解码器还原，不用换。
+        // The alpha of other codecs is restored by their own native decoders, so nothing changes there.
         _ => None,
     }
 }

@@ -14,7 +14,7 @@ import { pl } from './editor-copy.pl.ts';
 import { tr } from './editor-copy.tr.ts';
 import { vi } from './editor-copy.vi.ts';
 
-/** 编辑器外框（时间线、走带条、预览、打开状态）与几处通用句式的文案。译文在 `editor-copy.zh-Hans.ts`。 */
+/** Copy for the editor frame (timeline, transport bar, preview, open state) and a few common sentence patterns. Translations are in `editor-copy.zh-Hans.ts`. */
 const en = {
   withNote: (label: string, note: string) => `${label} (${note})`,
   labeled: (label: string, value: string) => `${label}: ${value}`,
@@ -61,7 +61,7 @@ const en = {
   rendererFailed: (message: string) => `The preview renderer didn’t load: ${message}`,
   spectrumTooLarge: (itemId: string, assetId: string, mb: number) =>
     `Waveform ${itemId}: asset ${assetId} is over ${mb} MB, so the preview doesn’t analyze its sound; export is unaffected`,
-  /** 预览载入与卡住（产品设计 §5.1）：舞台上的载入态与卡住提示，`media` 等点名素材、字幕文档或字体族。 */
+  /** Preview loading and stalling (product design §5.1): the loading state and stall hint on the stage; `media` and the like name the asset, subtitle document or font family. */
   stall: {
     loading: 'Loading preview',
     title: 'Preview is stuck',

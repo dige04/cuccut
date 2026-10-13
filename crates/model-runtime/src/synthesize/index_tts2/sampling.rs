@@ -1,19 +1,19 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 语义 GPT 的采样 / 束搜索纯逻辑（对照 speech-swift `IndexTTS2SemanticGPT.swift`
-//! 里的宿主端部分：`IndexTTS2SeededRNG`、`sampleToken`、`applyTopK/TopP`、
-//! `sampleIndicesWithoutReplacement`、`bestBeams`、`isBeamSampleDone`）。
+//! Pure logic for sampling / beam search in the semantic GPT (cross-checked against the host-side parts of speech-swift `IndexTTS2SemanticGPT.swift`:
+//! `IndexTTS2SeededRNG`, `sampleToken`, `applyTopK/TopP`,
+//! `sampleIndicesWithoutReplacement`, `bestBeams`, `isBeamSampleDone`).
 //!
-//! 全部在宿主端 f32 上完成，与后端无关，因此不带 cfg 门并可单元测试。
+//! Everything runs on the host side in f32 and is independent of the backend, so it has no cfg gate and can be unit tested.
 
 use std::collections::HashSet;
 
-/// 与 `IndexTTS2SemanticGenerationOptions` 对应的生成选项。
+/// Generation options corresponding to `IndexTTS2SemanticGenerationOptions`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerationOptions {
     pub max_semantic_tokens: usize,
@@ -43,8 +43,8 @@ impl Default for GenerationOptions {
     }
 }
 
-/// splitmix64（`IndexTTS2SeededRNG`），并复刻 Swift `Double.random(in: lo..<hi, using:)`
-/// 的位语义：取 53 位尾数得到 `[0, 1)` 均匀数，命中上界时重抽。
+/// splitmix64 (`IndexTTS2SeededRNG`), replicating the bit-level semantics of Swift `Double.random(in: lo..<hi, using:)`:
+/// takes the 53-bit mantissa to get a uniform number in `[0, 1)`, and redraws when the upper bound is hit.
 #[derive(Debug, Clone)]
 pub struct SeededRng {
     state: u64,
@@ -77,7 +77,7 @@ impl SeededRng {
     }
 }
 
-/// 重复惩罚：出现过的 token，负 logit 乘以惩罚、正 logit 除以惩罚。
+/// Repetition penalty: for tokens that have already appeared, a negative logit is multiplied by the penalty and a positive logit is divided by it.
 pub fn apply_repetition_penalty(logits: &mut [f32], previous: &[i32], penalty: f32) {
     if penalty <= 1.0 {
         return;
@@ -107,7 +107,7 @@ pub fn apply_temperature(logits: &mut [f32], temperature: f32) {
     }
 }
 
-/// 保留最大的 `max(k, min_tokens_to_keep)` 个，其余置 `-inf`。
+/// Keeps the largest `max(k, min_tokens_to_keep)` tokens and sets the rest to `-inf`.
 pub fn apply_top_k(logits: &mut [f32], k: usize, min_tokens_to_keep: usize) {
     let keep = k.max(min_tokens_to_keep);
     if keep == 0 || keep >= logits.len() {
@@ -123,7 +123,7 @@ pub fn apply_top_k(logits: &mut [f32], k: usize, min_tokens_to_keep: usize) {
     }
 }
 
-/// 核采样：按 `exp(v - max)` 归一化后累计到 `p`，之外置 `-inf`。
+/// Nucleus sampling: after normalizing by `exp(v - max)`, accumulates up to `p`, and sets everything beyond that to `-inf`.
 pub fn apply_top_p(logits: &mut [f32], p: f32, min_tokens_to_keep: usize) {
     if !(p > 0.0 && p < 1.0) {
         return;
@@ -157,7 +157,7 @@ pub fn apply_top_p(logits: &mut [f32], p: f32, min_tokens_to_keep: usize) {
     }
 }
 
-/// `applyTopP(_:p:temperature:)`：在温度缩放副本上做核采样，再把掩码套回原值。
+/// `applyTopP(_:p:temperature:)`: runs nucleus sampling on a temperature-scaled copy, then applies the mask back to the original values.
 pub fn apply_top_p_with_temperature(logits: &mut [f32], p: f32, temperature: f32) {
     let mut scaled = logits.to_vec();
     apply_temperature(&mut scaled, temperature);
@@ -169,7 +169,7 @@ pub fn apply_top_p_with_temperature(logits: &mut [f32], p: f32, temperature: f32
     }
 }
 
-/// 单束采样一个 token（`sampleToken`）：重复惩罚 → 贪心或 top-k / top-p → Gumbel-max。
+/// Samples one token for a single beam (`sampleToken`): repetition penalty → greedy or top-k / top-p → Gumbel-max.
 pub fn sample_token(mut values: Vec<f32>, previous: &[i32], options: &GenerationOptions, rng: &mut SeededRng) -> i32 {
     apply_repetition_penalty(&mut values, previous, options.repetition_penalty);
     if options.greedy || options.temperature <= 1e-4 {
@@ -230,14 +230,14 @@ pub fn log_softmax(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// 有限值里最大的 `count` 个 `(token, 值)`。
+/// The `count` largest `(token, value)` pairs among the finite values.
 pub fn top_log_probs(values: &[f32], count: usize) -> Vec<(i32, f32)> {
     let mut indices: Vec<usize> = (0..values.len()).filter(|&i| values[i].is_finite()).collect();
     indices.sort_by(|&a, &b| values[b].partial_cmp(&values[a]).unwrap_or(std::cmp::Ordering::Equal));
     indices.into_iter().take(count).map(|i| (i as i32, values[i])).collect()
 }
 
-/// 按 `exp(score - max)` 权重无放回抽 `count` 个下标（`sampleIndicesWithoutReplacement`）。
+/// Draws `count` indices without replacement, weighted by `exp(score - max)` (`sampleIndicesWithoutReplacement`).
 pub fn sample_indices_without_replacement(scores: &[f32], count: usize, rng: &mut SeededRng) -> Vec<usize> {
     if count == 0 {
         return Vec::new();
@@ -279,7 +279,7 @@ pub fn sample_indices_without_replacement(scores: &[f32], count: usize, rng: &mu
     selected
 }
 
-/// 束（`SemanticBeam`）。
+/// A beam (`SemanticBeam`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Beam {
     pub tokens: Vec<i32>,
@@ -306,7 +306,7 @@ impl Beam {
     }
 }
 
-/// 按排名分降序（同分时更长者优先）取前 `count` 个。
+/// Takes the top `count` by descending rank score (on ties, the longer one comes first).
 pub fn best_beams(beams: &[Beam], count: usize, length_penalty: f32) -> Vec<Beam> {
     let mut sorted: Vec<Beam> = beams.to_vec();
     sorted.sort_by(|a, b| {
@@ -322,7 +322,7 @@ pub fn best_beams(beams: &[Beam], count: usize, length_penalty: f32) -> Vec<Beam
     sorted
 }
 
-/// 已完成束数达到宽度，且最差的完成束不低于最好的活跃束时停止。
+/// Stops when the number of finished beams reaches the beam width and the worst finished beam is no worse than the best active beam.
 pub fn is_beam_sample_done(active: &[Beam], completed: &[Beam], width: usize, length_penalty: f32) -> bool {
     if completed.len() < width {
         return false;
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn splitmix64_matches_reference_stream() {
-        // splitmix64 参考值（seed 0 的前两个输出）。
+        // splitmix64 reference values (the first two outputs for seed 0).
         let mut rng = SeededRng::new(0);
         assert_eq!(rng.next_u64(), 0xE220_A839_7B1D_CDAF);
         assert_eq!(rng.next_u64(), 0x6E78_9E6A_A1B9_65F4);

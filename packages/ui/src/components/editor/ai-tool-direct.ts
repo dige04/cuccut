@@ -6,25 +6,25 @@ import { S } from '../shell-copy.ts';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 
 /**
- * 工具页「用 › 直接调模型」的纯逻辑（产品设计 §5.10，原型 model-ai-prompt.js `contextPack` / `contextLine` / `hint`）：
- * 哪些工具能直接调模型、做不了的写什么原因，发给模型的上下文那一行、主按钮的字与它下面那行去向。
- * 运行走 Runtime 的 `ai-tool` 流程（`AI_TOOL_PIPELINE`），这里只折参数；刷新过期译文走 `translate` 流程的就地刷新（`directRefresh`）。
+ * Pure logic for the tool page's 「用 › 直接调模型」 (Use › Call model directly) (product design §5.10; prototype model-ai-prompt.js `contextPack` / `contextLine` / `hint`):
+ * which tools can call a model directly, the reason written for those that cannot, the context line sent to the model, the label on the main button and the line under it saying where the result goes.
+ * Running goes through the Runtime's `ai-tool` flow (`AI_TOOL_PIPELINE`); this only assembles the parameters. Refreshing stale translations goes through the in-place refresh of the `translate` flow (`directRefresh`).
  */
 
-/** 能直接调模型时是哪一种；做不了（只能交给 Agent）时 null。 */
+/** Which kind, when a model can be called directly; null when it cannot (it can only be handed to an Agent). */
 export function directTool(tool: AgentToolId): AiToolKind | null {
   return (AI_TOOL_KINDS as readonly string[]).includes(tool) ? (tool as AiToolKind) : null;
 }
 
 /**
- * 刷新过期译文直接调模型时不走 `ai-tool`：走 `translate` 流程就地刷新一份译文（`translationId`，不点名句子，由 Runtime 挑过期、
- * 原句改过与还没有译文的），同字幕面板 AI 钮的「用模型 API 重译」（产品设计 §5.10「逐句与过期译文」）。
+ * When refreshing stale translations by calling the model directly, `ai-tool` is not used: the `translate` flow refreshes one translation in place (`translationId`, without naming sentences; the Runtime picks the stale ones,
+ * those whose source was edited, and those with no translation yet), the same as 「用模型 API 重译」 (retranslate with the model API) on the subtitle panel's AI button (product design §5.10 「逐句与过期译文」 (sentence by sentence and stale translations)).
  */
 export function directRefresh(tool: AgentToolId): boolean {
   return tool === 'stale';
 }
 
-/** 「直接调模型」置灰时那一行原因；能直接调模型时 null。 */
+/** The reason line when 「直接调模型」 (Call model directly) is greyed out; null when a model can be called directly. */
 export function directBlocked(tool: AgentToolId): string | null {
   if (directTool(tool) || directRefresh(tool)) return null;
   switch (tool) {
@@ -39,22 +39,22 @@ export function directBlocked(tool: AgentToolId): string | null {
   }
 }
 
-/** 完成即写进视频（一笔可撤销的事务）；其余只给结果。 */
+/** Done writes into the video (one undoable transaction); the others only give a result. */
 export function directApplies(tool: AiToolKind): boolean {
   return AI_TOOL_APPLY_KINDS.includes(tool);
 }
 
-/** 要模型按 JSON Schema 回（润色、章节）：不支持结构化输出的模型不能用。 */
+/** Asks the model to reply against a JSON Schema (polishing, chapters): models without structured output support cannot be used. */
 export function needsStructuredOutput(tool: AiToolKind): boolean {
   return tool === 'polish' || tool === 'chapters';
 }
 
-/** 章节总是整篇（模型要看全片才分得出章），不接受范围。 */
+/** Chapters always cover the whole video (the model must see the full timeline to split chapters), so no range is accepted. */
 export function directHasScope(tool: AiToolKind): boolean {
   return tool !== 'chapters';
 }
 
-/** 主按钮写这个工具自己的动作。 */
+/** The main button states this tool's own action. */
 export function directCta(tool: AiToolKind): string {
   switch (tool) {
     case 'polish':
@@ -74,39 +74,39 @@ export function directCta(tool: AiToolKind): string {
 
 export interface DirectContext {
   tool: AiToolKind;
-  /** 范围里的段数（口径同文稿面板）；没有文稿时 0。 */
+  /** Number of segments in the range (counted the same way as the script panel); 0 when there is no script. */
   paragraphs: number;
-  /** 选了某一章时那一章的名字；整篇时 null。 */
+  /** Name of the selected chapter when one is chosen; null for the whole video. */
   scope: string | null;
-  /** 时间线上的章节数（随文稿一起给模型；润色只给词，不带章节）。 */
+  /** Number of chapters on the timeline (sent to the model along with the script; polishing gets only the words, without chapters). */
   chapters: number;
   attachments: number;
-  /** 挂着的 skill 的名字，按挂上的顺序。 */
+  /** Names of the attached skills, in attachment order. */
   skills: readonly string[];
 }
 
-/** 发给模型的上下文，一项一句（原型 `contextPack`）。 */
+/** The context sent to the model, one sentence per item (prototype `contextPack`). */
 export function contextItems(c: DirectContext): string[] {
   const items: string[] = [];
   if (c.paragraphs > 0) items.push(C.contextTranscript(c.paragraphs, c.scope));
   if (c.tool !== 'polish' && c.paragraphs > 0 && c.chapters > 0) items.push(C.contextChapters(c.chapters));
   if (c.attachments > 0) items.push(C.contextAttachments(c.attachments));
-  // 并列的名字按产品自己的列举写法（中文「A、B」），不是句子里的「和」。
+  // List items are joined the way the product lists them (Chinese 「A、B」, with the enumeration comma 、), not with the conjunction 「和」 (and) used in sentences.
   if (c.skills.length) items.push(C.contextSkills(S.list(c.skills)));
   return items;
 }
 
-/** 「发给模型的：提示词 + …」；什么都不带时只有提示词（原型 `contextLine`）。 */
+/** The line 「发给模型的：提示词 + …」 (what is sent to the model: prompt + …); with nothing attached, only the prompt (prototype `contextLine`). */
 export function contextLine(items: readonly string[]): string {
   return items.length ? C.contextLine(items.join(' · ')) : C.contextNone;
 }
 
-/** 主按钮下那行：直接调哪只模型、结果去哪、花不花钱（原型 `hint`）。 */
+/** The line under the main button: which model is called directly, where the result goes, whether it costs money (prototype `hint`). */
 export function directHint(o: { tool: AiToolKind; model: string | null; local: boolean }): string {
   return C.modelHint(o.model, directApplies(o.tool), o.local);
 }
 
-/** 范围里的段数：段里有词落在范围内（时间线上的秒）就算；整段剪掉的不算。 */
+/** Segments in the range: a segment counts if a word in it falls inside the range (seconds on the timeline); segments cut out entirely do not count. */
 export function scopedParagraphs(
   paragraphs: readonly { words: readonly { placements: readonly { start: number; end: number }[] }[] }[],
   range: { start: number; end: number } | null,
@@ -116,7 +116,7 @@ export function scopedParagraphs(
   ).length;
 }
 
-/** `pipelines.start('ai-tool', …)` 的参数（`AiToolParams`）。 */
+/** The arguments for `pipelines.start('ai-tool', …)` (`AiToolParams`). */
 export function directParams(o: {
   videoId: Id;
   tool: AiToolKind;
@@ -126,7 +126,7 @@ export function directParams(o: {
   attachments: readonly Id[];
   skills: readonly string[];
   model: { providerId: string; modelId: string } | null;
-  /** 界面语言（`getLocale()`）。 */
+  /** UI language (`getLocale()`). */
   uiLanguage: string;
 }): AiToolParams {
   return {
@@ -142,15 +142,15 @@ export function directParams(o: {
   };
 }
 
-// ---- 刷新过期译文：直接调模型（`translate` 就地刷新） ----
+// ---- Refreshing stale translations: call the model directly (in-place `translate`) ----
 
-/** 能就地刷新的译文：译自视频里的一份转写。 */
+/** A translation that can be refreshed in place: translated from a transcript of the video. */
 export function refreshableTranslations(documents: Record<Id, DocumentRecord>): DocumentRecord[] {
   return Object.values(documents).filter((d) => d.kind === 'translation' && !!d.sourceDocumentId && documents[d.sourceDocumentId]?.kind === 'speech');
 }
 
 /**
- * 刷新哪一份译文：选过且还在的；再是入口带来的（字幕面板带着那一份的 ID，或只带语言名）；再是第一份。没有译文时 null。
+ * Which translation to refresh: the chosen one if it still exists; then the one the entry point brought (the subtitle panel passes that one's ID, or just the language name); then the first one. null when there are no translations.
  */
 export function pickTranslation(
   translations: readonly DocumentRecord[],
@@ -161,7 +161,7 @@ export function pickTranslation(
   return byId(o.picked) ?? byId(o.presetId) ?? byLanguage ?? translations[0] ?? null;
 }
 
-/** 要重译几句（口径同字幕面板统计条的「过期」「未翻译」）：Runtime 不点名时挑的就是这些。 */
+/** How many sentences to retranslate (counted the same way as the 「过期」 (stale) and 「未翻译」 (untranslated) counts in the subtitle panel's stats bar): what the Runtime picks when it does not name any. */
 export function refreshCounts(rows: readonly PairRow[]): { todo: number; stale: number; untranslated: number } {
   const stale = rows.filter((r) => isStale(r.state)).length;
   const todo = rows.filter(needsTranslation).length;

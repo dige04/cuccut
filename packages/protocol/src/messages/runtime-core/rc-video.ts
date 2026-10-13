@@ -14,9 +14,9 @@ import { pl } from './rc-video.pl.ts';
 import { tr } from './rc-video.tr.ts';
 import { vi } from './rc-video.vi.ts';
 
-/** 视频（videos/）的错误。英文是键与类型的来源，译文在 `rc-video.<语言>.ts`。 */
+/** Errors for videos (videos/). English is the source of keys and types; translations are in `rc-video.<language>.ts`. */
 const en = {
-  // 引擎进程（engine-host）
+  // Engine process (engine-host)
   engineExited: "The video engine exited, so the change may not have been committed. Retry with the same command",
   engineStartFailed: (p: { reason: string }) => `Couldn't start the video engine: ${p.reason}`,
   engineNotRunning: "The video engine isn't running",
@@ -25,8 +25,8 @@ const en = {
   runtimeStopping: 'Runtime is stopping',
   engineNotFound: "The video engine (engine-host) wasn't found. Run npm run build:engine first",
 
-  // 新建与打开（video-service、package-import、pipeline-targets）
-  /** 写进目录名与视频名的默认名字（按新建时的语言）。 */
+  // Create and open (video-service, package-import, pipeline-targets)
+  /** Default names written into directory names and video names (in the language used at creation time). */
   defaultDirName: 'Video',
   untitledVideo: 'Untitled video',
   sourceDirNotFound: "The source folder doesn't exist",
@@ -48,7 +48,7 @@ const en = {
   reservedDirOutsideProject: "The reserved folder isn't in this project or session folder",
   pipelinePrincipalName: 'Pipeline',
 
-  // 回收站（video-trash）
+  // Trash (video-trash)
   openElsewhere: 'This video is open in another window or connection. Close it there first',
   videoBusy: 'This video still has tasks or exports in progress. Cancel them first',
   crossDevice: "The video folder and source folder aren't on the same disk, so it can't be moved to the trash",
@@ -61,7 +61,7 @@ const en = {
   sourceRootRemedy:
     'In CucCut, first remove the project or session that uses it as its folder, then delete this video from the parent project',
 
-  // 代码画面（compositions/）：界面直接导入与预览失败；具体原因的错误码在括号里，原话在 details 里
+  // Code compositions (compositions/): errors when the UI imports directly and preview fails; the error code for the specific reason is in parentheses, and the original words are in details.
   compositionImportFailed: (p: { code: string }) => `Couldn't import the motion graphic (${p.code})`,
   compositionPreviewFailed: (p: { code: string }) => `Couldn't preview the motion graphic (${p.code})`,
 };

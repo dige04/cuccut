@@ -84,8 +84,8 @@ import "./editor.css";
  */
 
 /**
- * 竖幅画布上的平台安全区（原型 stage.jsx 的 `SafeAreaOverlay`）：三块斜纹遮挡区各带一枚标签，中间一道虚线框。
- * 盖在画面上、不接指针，只在舞台上画（全屏是干净的成片样子）。
+ * The platform safe area on a portrait canvas (prototype stage.jsx `SafeAreaOverlay`): three diagonally striped obscured areas, each with a label, and a dashed frame in the middle.
+ * Drawn over the picture and does not capture the pointer. It is drawn only on the stage (fullscreen shows the clean final look).
  */
 export function SafeAreaOverlay() {
   const pct = (r: { x: number; y: number; w: number; h: number }) => ({
@@ -117,7 +117,7 @@ const volumeRow = style({
   gap: 8,
   width: 240,
 });
-// 滑杆照媒体播放器的音量杆画（media-player.tsx）：S2 的 Slider 总在杆上方摆一个读数，这里读数只在悬停提示里出现。
+// The slider is drawn like the media player's volume bar (media-player.tsx). S2's Slider always places a readout above the bar, but here the readout only appears in the hover tooltip.
 const volumeSlider = style({ flexGrow: 1, minWidth: 0, paddingEnd: 8 });
 const volumeTrack = style({
   position: "relative",
@@ -141,7 +141,7 @@ const volumeFill = style({
   borderRadius: "full",
   backgroundColor: "accent",
 });
-// react-aria 给拇指的是 translate(-50%, -50%)：顶边放在杆的竖向中线上，拇指才压在细轨正中。
+// react-aria gives the thumb translate(-50%, -50%): the top edge is placed on the bar's vertical midline, so the thumb sits exactly centered on the thin track.
 const volumeThumb = style({
   top: "[50%]",
   size: 14,
@@ -166,7 +166,7 @@ const customNote = style({
   marginBottom: 0,
 });
 
-// ---- 画幅 ----
+// ---- Aspect ratio ----
 
 export function RatioPicker({
   sequence,
@@ -255,7 +255,7 @@ export function RatioPicker({
               {S.custom}
             </MenuItem>
           </MenuSection>
-          {/* 平台安全区：竖幅才可点；开关不进文档、不进撤销。 */}
+          {/* Platform safe area: only clickable for portrait. The toggle is not stored in the document and not in undo history. */}
           <MenuSection
             aria-label={S.safeArea}
             selectionMode="multiple"
@@ -285,7 +285,7 @@ export function RatioPicker({
   );
 }
 
-/** 自定义画幅比（原型「自定义…」）：两个数，短边不变，换出来的尺寸先写在下面；长边超过引擎上限时不让应用。 */
+/** Custom aspect ratio (prototype “自定义…”(custom…)): two numbers. The short side stays the same and the resulting size is written below first; apply is blocked when the long side exceeds the engine's limit. */
 function CustomRatioDialog({
   canvas,
   onApply,
@@ -298,7 +298,7 @@ function CustomRatioDialog({
   ): Promise<boolean>;
   onClose(): void;
 }) {
-  // 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+  // State lives in the outer dialog wrapper: S2's Dialog renders children once in each of several slots.
   const [w, setW] = useState(21);
   const [h, setH] = useState(9);
   const [busy, setBusy] = useState(false);
@@ -376,9 +376,9 @@ function CustomRatioDialog({
   );
 }
 
-// ---- 字幕显隐 ----
+// ---- Caption visibility ----
 
-/** 舞台上隐藏 / 显示字幕：只是这个窗口看不看得见，不改字幕轨、不影响导出（导出里烧不烧字幕另在导出里选）。 */
+/** Hide or show captions on the stage: this only controls whether they are visible in this window. It does not change the caption track or affect export (whether to burn in captions is chosen separately in export). */
 export function CaptionsToggle() {
   const hidden = useEditor((s) => s.captionsHidden);
   const setHidden = useEditor((s) => s.setCaptionsHidden);
@@ -397,15 +397,15 @@ export function CaptionsToggle() {
   );
 }
 
-// ---- 音量 ----
+// ---- Volume ----
 
-/** 读数写成「70%」：悬停提示显示它，读屏也念它。 */
+/** The readout is written as “70%”: the hover tooltip shows it, and screen readers read it aloud too. */
 const VOLUME_FORMAT: Intl.NumberFormatOptions = {
   style: "unit",
   unit: "percent",
 };
 
-/** 监听音量（原型 stage.jsx 的音量弹层）：与 ↑/↓、M、全屏播放器同一份，只管这个窗口听多大声，不改视频的混音。 */
+/** Listening volume (prototype stage.jsx's volume popover): the same as ↑/↓, M and the fullscreen player. It only controls how loud this window plays, and does not change the video's mix. */
 export function VolumeControl() {
   const { engine } = useEditorActions();
   const [level, setLevelState] = useState<MonitorLevel>(() =>
@@ -453,9 +453,9 @@ export function VolumeControl() {
 }
 
 /**
- * 不显示数字的音量杆：鼠标停在杆上或拖着拇指时，拇指上方出提示写当前音量。
- * 提示锚在整条杆上，横向偏移到拇指的位置，拖动时跟着走。
- * 步长 5（原型这里是 25）：react-aria 会把受控值吸到步长上，↑/↓ 一档 10 调出来的 70% 在 25 一档的杆上会画成 75%。
+ * Volume bar without a number: when the mouse hovers over the bar or drags the thumb, a tooltip above the thumb shows the current volume.
+ * The tooltip is anchored to the whole bar, offset horizontally to the thumb's position, and follows it while dragging.
+ * Step is 5 (the prototype uses 25 here): react-aria snaps controlled values to the step, and 70% reached with ↑/↓ in steps of 10 would be drawn as 75% on a bar with steps of 25.
  */
 function VolumeSlider({
   value,
@@ -480,7 +480,7 @@ function VolumeSlider({
       <SliderTrack ref={trackRef} className={volumeTrack}>
         {({ state, isHovered }) => {
           const percent = state.getThumbPercent(0);
-          // 拇指中心离杆中心多远；从右往左排版时杆是反的。
+          // How far the thumb center is from the bar center; the bar is mirrored when laid out right-to-left.
           const shift =
             ((direction === "rtl" ? 1 - percent : percent) - 0.5) *
             (trackRef.current?.clientWidth ?? 0);
@@ -508,8 +508,7 @@ function VolumeSlider({
 }
 
 /**
- * 由调用方决定开合、锚在任意元素上的 S2 提示。TooltipTrigger 要一个能聚焦的触发器，滑杆里那个是拇指里藏起来的 input，
- * 鼠标碰不到；这里直接把开合状态与锚点交给 react-aria 的提示上下文。提示只是给眼睛看的，读屏从滑杆的 aria-valuetext 读数。
+ * An S2 tooltip whose open state is controlled by the caller and which is anchored to any element. TooltipTrigger needs a focusable trigger, and the slider's one is an input hidden inside the thumb that the mouse cannot reach. So here the open state and anchor are passed directly to react-aria's tooltip context. The tooltip is purely visual; screen readers read the value from the slider's aria-valuetext.
  */
 function TrackTip({
   anchorRef,
@@ -540,9 +539,9 @@ function TrackTip({
   );
 }
 
-// ---- 倍速 ----
+// ---- Playback speed ----
 
-/** 倍速（原型 `D.speeds`）：与全屏播放器共用一份，只是这个窗口看的快慢；preview.tsx 交给引擎。 */
+/** Playback speed (prototype `D.speeds`): shared with the fullscreen player. It only sets how fast this window plays; preview.tsx passes it to the engine. */
 export function RatePicker() {
   const rate = useEditor((s) => s.rate);
   const setRate = useEditor((s) => s.setRate);

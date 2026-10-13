@@ -1,23 +1,22 @@
-//! 目录型配方（catalogue recipe，ADR-E05）——注册表的**第三种**配方形状。
+//! Catalogue recipe (ADR-E05) — the **third** recipe shape in the registry.
 //!
-//! 与既有两种并列：
+//! It sits alongside the two existing shapes:
 //!
-//! - [`super::frozen`]：阶段 1 冻结的四条专用解析路径；
-//! - [`super::manifest`]：通用动画 manifest（`tracks` 或 `compose`）；
-//! - **本模块**：`core/presets/builtin/{shape,sticker,visualizer,progress,confetti}/*.json`。
+//! - [`super::frozen`]: the four dedicated parse paths frozen in phase 1;
+//! - [`super::manifest`]: the general animation manifest (`tracks` or `compose`);
+//! - **this module**: `core/presets/builtin/{shape,sticker,visualizer,progress,confetti}/*.json`.
 //!
-//! **为什么不复用 `parse_manifest`**：它有三条硬约束对目录型配方全部不成立——
-//! `domain` 必须 ∈ 封闭的 `ManifestDomain{Motion,Transition,Filter}`；
-//! `determinism` 必填（shape 配方没有这个概念，矢量直出恒为 strict）；
-//! `tracks` 与 `compose` 必须恰有其一。目录型配方描述的是"怎么画一帧"，
-//! 而不是"某个属性怎么随时间变"，硬塞进去只能靠编一个假的空 `tracks`。
+//! **Why not reuse `parse_manifest`**: it has three hard constraints that do not hold at all for catalogue recipes:
+//! `domain` must be in the closed set `ManifestDomain{Motion,Transition,Filter}`;
+//! `determinism` is required (the shape recipe has no such concept, since direct vector output is always strict);
+//! and exactly one of `tracks` or `compose` must be present. A catalogue recipe describes “how to draw one frame”,
+//! not “how a property changes over time”, so forcing it in would only work by inventing a fake empty `tracks`.
 //!
-//! 复用的是**纪律**不是 parser：`builtin!` + `include_str!` 清单、`OnceLock`
-//! 一次性 `build()`、`(id, version)` + `manifest_hash` 冻结、目录一致性由
-//! `tests/manifests.rs` 守住、`available` 作为分波次上线开关。
+//! What is reused is the **discipline**, not the parser: the `builtin!` + `include_str!` manifest list, a one-time `build()` behind `OnceLock`,
+//! freezing by `(id, version)` + `manifest_hash`, catalogue consistency guarded by `tests/manifests.rs`, and `available` as the switch for rolling out in waves.
 //!
-//! **分派靠清单归属，不靠 JSON `domain` 字段**——与 frozen 路径一致；JSON 里
-//! 仍写 `domain`，纯粹作自描述与人读，解析期只做一次等值核对。
+//! **Dispatch relies on manifest ownership, not on the JSON `domain` field**, consistent with the frozen path. The JSON still
+//! writes `domain`, purely as self-description for human readers; parse time only does a one-time equality check.
 
 use serde_json::{Map, Value};
 
@@ -26,10 +25,10 @@ use crate::MotionError;
 use super::json::{field, number, text, version};
 use super::manifest::Determinism;
 
-/// 目录型配方的种类。P0 落 [`CatalogueKind::Shape`]，P2 补齐 visualizer /
-/// progress，P7b 补 [`CatalogueKind::Sticker`]，彩纸设计稿（§4）补
-/// [`CatalogueKind::Confetti`]；骨架早就参数化过，所以五种共用同一条
-/// `parse_catalogue` 入口，各自只多一个 body parser。
+/// The kinds of catalogue recipe. P0 lands [`CatalogueKind::Shape`], P2 adds visualizer /
+/// progress, P7b adds [`CatalogueKind::Sticker`], and the confetti design draft (§4) adds
+/// [`CatalogueKind::Confetti`]. The skeleton was already parameterized from the start, so all five kinds share the same
+/// `parse_catalogue` entry point, each adding only one body parser.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CatalogueKind {
     Shape,
@@ -40,7 +39,7 @@ pub enum CatalogueKind {
 }
 
 impl CatalogueKind {
-    /// JSON `domain` 字段的自描述值，同时是 `core/presets/builtin/` 的目录名。
+    /// The self-describing value of the JSON `domain` field, which is also the directory name under `core/presets/builtin/`.
     pub const fn dir(self) -> &'static str {
         match self {
             Self::Shape => "shape",
@@ -52,20 +51,20 @@ impl CatalogueKind {
     }
 }
 
-/// 形状轮廓：**归一化到元素盒 0..1** 的定义（左上原点）。
+/// Shape outline: a definition **normalized to the element box 0..1** (origin at top-left).
 ///
-/// 封闭集合。未知 `kind` 在**注册表解析期**报 `manifest-invalid`（构建期错误，
-/// 用户文档碰不到）；"`timeline.json` 引用了注册表里没有的形状名"是另一个时机
-/// 另一个码（lint / resolve 期的 `preset-unknown`），见设计 §5.3。
+/// A closed set. An unknown `kind` reports `manifest-invalid` at **registry parse time** (a build-time error
+/// that users' documents never encounter). “`timeline.json` references a shape name that is not in the registry” is a different
+/// moment with a different code (`preset-unknown`, at lint / resolve time); see design §5.3.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShapePath {
-    /// 元素盒本身；`ShapeProps.cornerRadius` 生效。
+    /// The element box itself; `ShapeProps.cornerRadius` applies.
     Rect,
-    /// 元素盒的内切椭圆。
+    /// The ellipse inscribed in the element box.
     Ellipse,
-    /// `ShapeProps` 的 `x1,y1 → x2,y2` 线段；`defaultHead` 是缺省端头。
+    /// The `x1,y1 → x2,y2` line segment of `ShapeProps`; `defaultHead` is the default end cap.
     Segment { default_head: ShapeHead },
-    /// 显式轮廓，P7 的 19 种形状走这条：点全部在 0..1。
+    /// Explicit outline: the 19 shapes of P7 take this path; all points lie within 0..1.
     Outline { segments: Vec<PathSegment> },
 }
 
@@ -85,7 +84,7 @@ impl ShapeHead {
     }
 }
 
-/// 轮廓段。verb 与点数一一对应，解析期校验，消费者不必再防。
+/// An outline segment. Each verb corresponds one-to-one with its point count, validated at parse time, so consumers need not guard against it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PathSegment {
     Move([f64; 2]),
@@ -95,8 +94,8 @@ pub enum PathSegment {
     Close,
 }
 
-/// 该形状支持的可调项（封闭集合）。属性面板据此决定显示哪些控件，
-/// 渲染侧据此决定读不读某个 `ShapeProps` 字段。
+/// The adjustable options this shape supports (a closed set). The property panel uses it to decide which controls to show,
+/// and the renderer uses it to decide whether to read a given `ShapeProps` field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShapeParam {
     Fill,
@@ -122,11 +121,11 @@ impl ShapeParam {
     }
 }
 
-/// 一份目录型配方。
+/// One catalogue recipe.
 ///
-/// `id` 是**文档面值**——`timeline.json` 的 `shape.shape` 写什么，这里就是什么
-/// （`rect` / `ellipse` / `line` / `arrow`），与 frozen 路径的 `bcf.cut.json →
-/// id "cut"` 同一约定；文件名与 id 相同，目录一致性测试因此是逐字比对。
+/// `id` is the **document-facing value**: whatever `shape.shape` is set to in `timeline.json` is what it is here
+/// (`rect` / `ellipse` / `line` / `arrow`), the same convention as the frozen path's `bcf.cut.json →
+/// id "cut"`. The file name and the id are the same, so the directory consistency test is a character-for-character comparison.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CatalogueRecipe {
     pub id: String,
@@ -134,15 +133,15 @@ pub struct CatalogueRecipe {
     pub kind: CatalogueKind,
     pub order: usize,
     pub body: CatalogueBody,
-    /// **表面目录**开关，语义同 `SlotRecipe.available`：面板里能不能选到。
-    /// 不使用通用 manifest 的 `exposedTo` + `Surface`——目录型配方只服务
-    /// timeline 元素、`namespace` 恒为 `"timeline"`，没有多表面暴露维度。
+    /// The **surface-catalogue** switch, with the same meaning as `SlotRecipe.available`: whether it can be selected in the panel.
+    /// It does not use the general manifest's `exposedTo` + `Surface`: catalogue recipes serve only timeline elements,
+    /// `namespace` is always `"timeline"`, so there is no multi-surface exposure dimension.
     pub available: bool,
     pub manifest_hash: u64,
 }
 
 impl CatalogueRecipe {
-    /// `Domain.dir` 前缀的限定名（`shape.rect`），供 UI 与文档引用。
+    /// The qualified name with the `Domain.dir` prefix (`shape.rect`), for reference by the UI and documents.
     pub fn qualified_id(&self) -> String {
         format!("{}.{}", self.kind.dir(), self.id)
     }
@@ -182,8 +181,8 @@ impl CatalogueRecipe {
         }
     }
 
-    /// 绘制配方（visualizer / progress / confetti 有，shape / sticker 没有——
-    /// 矢量直出不需要算法名）。
+    /// Drawing recipe (present for visualizer / progress / confetti, absent for shape / sticker,
+    /// since direct vector output needs no algorithm name).
     pub fn recipe(&self) -> Option<&Recipe> {
         match &self.body {
             CatalogueBody::Shape(_) | CatalogueBody::Sticker(_) => None,
@@ -194,7 +193,7 @@ impl CatalogueRecipe {
     }
 }
 
-/// 逐 kind 的配方体。
+/// The recipe body for each kind.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CatalogueBody {
     Shape(ShapeBody),
@@ -216,52 +215,52 @@ impl ShapeBody {
     }
 }
 
-// ── sticker 配方体（设计 §10 P7 的 template 源）─────────────────────
+// ── Sticker recipe body (the template source for design §10 P7) ─────────────────────
 
-/// 模板贴纸：**一叠带自带颜色的轮廓层**，按声明顺序自下而上绘制。
+/// Template sticker: **a stack of outline layers that carry their own colors**, drawn bottom to top in declaration order.
 ///
-/// 与 [`ShapeBody`] 的两处本质区别（也是为什么它不是"多几个 param 的 shape"）：
+/// Two essential differences from [`ShapeBody`] (which is also why it is not “a shape with a few more params”):
 ///
-/// 1. **颜色在配方里，不在 props 里**。`StickerProps`（设计 §5.2）只有
-///    `source` / `templateId` / `path` / `loop`，没有 `fill` / `stroke`——
-///    贴纸是一张**画好的图**，不是一个可调色的图元。配色因此是模板的一部分，
-///    改色要换模板，不是改元素属性。
-/// 2. **多层多色**。一份模板可以是"绿底 + 白勾"两层，shape 的单 fill + 单
-///    stroke 表达不了。
+/// 1. **Colors live in the recipe, not in the props.** `StickerProps` (design §5.2) has only
+///    `source` / `templateId` / `path` / `loop`, with no `fill` / `stroke`:
+///    a sticker is a **finished picture**, not an adjustable colored primitive. The palette is therefore part of the template;
+///    changing the color means swapping the template, not editing an element property.
+/// 2. **Multiple layers, multiple colors.** One template can be “a green base + a white check mark” in two layers, which a shape's single fill + single
+///    stroke cannot express.
 ///
-/// **几何恒为单位正方（0..1，左上原点、y 向下）**：模板贴纸的元素盒沿用
-/// `element_height` 里 sticker 分支的"正方"缺省（`geometry.rs`），因此配方
-/// 不需要也不允许声明纵横比——想要非正方的观感，把留白画进 viewBox 里。
-/// 这条约束让 P7b 完全不必动 `ccut-timeline` 的几何默认表与三端孪生。
+/// **Geometry is always a unit square (0..1, origin at top-left, y pointing down).** The element box of a template sticker follows the
+/// “square” default of the sticker branch in `element_height` (`geometry.rs`), so the recipe
+/// neither needs nor is allowed to declare an aspect ratio: for a non-square look, draw the margin into the viewBox.
+/// This constraint means P7b does not have to touch the geometry default table or the three-platform mirror implementations of `ccut-timeline` at all.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StickerBody {
     pub layers: Vec<StickerLayer>,
 }
 
-/// 一层轮廓 + 它自己的颜色。`fill` / `stroke` 至少有一个（解析期校验）。
+/// One outline layer plus its own colors. At least one of `fill` / `stroke` is required (validated at parse time).
 #[derive(Clone, Debug, PartialEq)]
 pub struct StickerLayer {
     pub segments: Vec<PathSegment>,
     /// `#RRGGBB[AA]`。
     pub fill: Option<String>,
     pub stroke: Option<String>,
-    /// **元素盒短边的比例**（0..1），不是参考短边 540 上的像素。
+    /// **A ratio of the element box's short edge** (0..1), not pixels on a reference short edge of 540.
     ///
-    /// 与 `ShapeProps.stroke_width` 的口径**刻意不同**：shape 的描边宽度是用户
-    /// 属性，跟着画布走才不会在 4K 上变发丝线；贴纸的描边是**画面的一部分**，
-    /// 必须跟着贴纸自己缩放——否则同一张贴纸放大一倍，外框粗细不变、比例就毁了。
+    /// Its basis is **deliberately different** from `ShapeProps.stroke_width`: a shape's stroke width is a user
+    /// property that follows the canvas, so it does not turn into a hairline at 4K; a sticker's stroke is **part of the picture**
+    /// and must scale with the sticker itself. Otherwise, doubling the size of the same sticker would leave the outline thickness unchanged and ruin the proportions.
     pub stroke_width: f64,
 }
 
-/// `strokeWidth` 缺省：元素盒短边的 3%。
+/// `strokeWidth` default: 3% of the element box's short edge.
 pub const STICKER_DEFAULT_STROKE_WIDTH: f64 = 0.03;
 
-// ── visualizer / progress 配方体（设计 §7.2）─────────────────────────
+// ── Visualizer / progress recipe bodies (design §7.2) ─────────────────────────
 
-/// 音频纹理的 bin 宽度。`Half` = `fftSize/2`（bicubic 全 bin 类 4 种）。
+/// Bin width of the audio texture. `Half` = `fftSize/2` (the four full-bin bicubic kinds).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinWidth {
-    /// 只取最低 64 个 bin，11/15 种走这条。
+    /// Takes only the lowest 64 bins; 11 of the 15 kinds use this.
     Fixed64,
     Half,
 }
@@ -283,11 +282,11 @@ impl BinWidth {
     }
 }
 
-/// visualizer 元素的默认盒形（ADR-E01 的帧百分比表）。
+/// The default box shape for visualizer elements (the frame-percentage table in ADR-E01).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisualizerAspect {
     Free,
-    /// 强制正方形（`ring_bars` / `ring_wave` / `pulse_rings` / progress 的 `circle` / `donut`）。
+    /// Forced square (`ring_bars` / `ring_wave` / `pulse_rings` / progress `circle` / `donut`).
     Square,
 }
 
@@ -301,7 +300,7 @@ impl VisualizerAspect {
     }
 }
 
-/// progress 元素的默认盒形。`Frame` 类跟随画布比铺满边框。
+/// The default box shape for progress elements. The `Frame` kinds follow the canvas aspect and fill the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProgressAspect {
     Bar,
@@ -328,26 +327,26 @@ pub struct VisualizerBody {
     pub default_secondary_color: String,
     pub default_min_db: f64,
     pub default_max_db: f64,
-    /// `false` = 属性面板无 dB 控件（`beam`）。
+    /// `false` = the property panel has no dB control (`beam`).
     pub has_control: bool,
     pub bin_width: BinWidth,
     pub aspect: VisualizerAspect,
     pub recipe: Recipe,
     pub determinism: Determinism,
-    /// 声波 10 款全部是 CPU 矢量配方，manifest 里 `shader` 必须写 `null`
-    /// （设计 §8.6 的 visualizer WGSL 清单已整体退役）；字段保留为
-    /// `Option` 只是给未来 GPU 配方留位置。
+    /// All 10 sound-wave styles are CPU vector recipes, so `shader` must be written as `null` in the manifest
+    /// (the visualizer WGSL list in design §8.6 has been retired as a whole); the field is kept as an
+    /// `Option` only to leave room for future GPU recipes.
     pub shader: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProgressBody {
     pub num_colors: u8,
-    /// 每个色板的标题（主色 / 副色各一条）。
+    /// The title of each palette (one each for the primary and secondary colors).
     ///
-    /// 与 [`VisualizerBody::color_labels`] 同一口径：条数恒等于 `num_colors`，
-    /// 所以「彩虹边框整段颜色不出」（0）与「游走彩虹只出一张 Background」（1）
-    /// 都由这两个字段一起表达，面板不写死款名。
+    /// Same basis as [`VisualizerBody::color_labels`]: the count always equals `num_colors`,
+    /// so “rainbow border, whole-run colors not emitted” (0) and “roaming rainbow emits only one Background” (1)
+    /// are both expressed by these two fields together, and the panel does not hard-code style names.
     pub color_labels: Vec<String>,
     pub default_main_color: String,
     pub default_secondary_color: String,
@@ -357,44 +356,44 @@ pub struct ProgressBody {
     pub shader: String,
 }
 
-// ── confetti 配方体（`docs/design/elements/ccut-confetti-element-design.md` §4）────────
+// ── Confetti recipe body (`docs/design/elements/ccut-confetti-element-design.md` §4) ────────
 
-/// `confetti.shapes` 的封闭取值——12 种单位形，与 `ccut-timeline` 的
-/// `CONFETTI_SHAPES` 是同一张表（那边守文档，这边守配方；两处都是解析期报错）。
+/// The closed set of values for `confetti.shapes`: 12 unit shapes, the same table as `ccut-timeline`'s
+/// `CONFETTI_SHAPES` (that side guards the documentation, this side guards the recipe; both report errors at parse time).
 pub const CONFETTI_SHAPES: &[&str] = &[
     "rect", "strip", "circle", "ellipse", "triangle", "diamond", "star", "starlet", "sparkle",
     "heart", "petal", "ribbon",
 ];
 
-/// 一款彩纸 = **调色板 + 形状混合 + `confetti-v1` 的参数包**。
+/// One confetti style = **palette + shape mix + a `confetti-v1` parameter bundle**.
 ///
-/// 与 [`ProgressBody`] 的两处不同：颜色是一张**列表**而不是主/副两色
-/// （`ConfettiProps.colors` 缺席时整表生效，写了就整表替换）；没有 shader
-/// ——十款全部由 CPU 闭式运动核发 `FillPath`，GPU 端走 `SceneNode::Vectors`
-/// 复用同一批路径，因此 `determinism` 恒为 `strict`。几何恒为 `aspect: "frame"`
-/// （铺满画幅），配方不声明别的盒形。
+/// Two differences from [`ProgressBody`]: the colors are a **list** rather than a primary/secondary pair
+/// (when `ConfettiProps.colors` is absent the whole table applies; when written, it replaces the whole table); and there is no shader.
+/// All ten styles emit `FillPath` from the CPU closed-form motion kernel, and the GPU side uses `SceneNode::Vectors`
+/// to reuse the same paths, so `determinism` is always `strict`. Geometry is always `aspect: "frame"`
+/// (fills the frame), and the recipe declares no other box shape.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConfettiBody {
-    /// `#RRGGBB[AA]` × 1–8，目录顺序。
+    /// `#RRGGBB[AA]` × 1–8, in catalogue order.
     pub palette: Vec<String>,
-    /// [`CONFETTI_SHAPES`] 的非空子集。
+    /// A non-empty subset of [`CONFETTI_SHAPES`].
     pub shapes: Vec<String>,
-    /// 改编来源（`core/assets/elements/vendor/sources.json` 的 id），只作署名与
-    /// 许可清单，渲染不读。
+    /// Adaptation source (the id in `core/assets/elements/vendor/sources.json`); used only for the attribution and
+    /// license list, and the renderer does not read it.
     pub sources: Vec<String>,
-    /// 属性页出不出「起点」开关（设计稿 §6.2）：多发射器 / 有方向的爆发款
-    /// 为 `true`，顶部撒落的连续款为 `false`（自定起点对它没有意义）。
+    /// Whether the property page shows the “origin” toggle (design draft §6.2): multi-emitter / directional burst styles
+    /// are `true`; continuous styles scattered from the top are `false` (a custom origin is meaningless for them).
     pub has_emitter_control: bool,
     pub recipe: Recipe,
     pub determinism: Determinism,
 }
 
-/// 绘制配方 = **封闭算法名 + 参数包**。
+/// Drawing recipe = **closed algorithm name + parameter bundle**.
 ///
-/// 参数原样保留成 JSON 对象：Rust 侧只有算法实现，**一个数字都不带**（与阶段 1
-/// `loop_kernel` 同一纪律）。P3/P4/P5 的绘制内核用 [`Recipe::number`] /
+/// The parameters are kept verbatim as a JSON object: the Rust side holds only the algorithm implementations, and **carries not a single number** (the same discipline as phase 1's
+/// `loop_kernel`). The P3/P4/P5 drawing kernels read values item by item with [`Recipe::number`] /
 /// [`Recipe::integer`] / [`Recipe::flag`] / [`Recipe::text`] / [`Recipe::object`] /
-/// [`Recipe::array`] 逐项取值；解析期已保证必填项在场且落在合法域，取值端不必再防。
+/// [`Recipe::array`]; parse time has already guaranteed that required items are present and within the legal domain, so the reading side need not guard again.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Recipe {
     pub algorithm: RecipeAlgorithm,
@@ -406,8 +405,8 @@ impl Recipe {
         self.params.get(key)
     }
 
-    /// `null` 与缺键都返回 `None`——配方里的 `null` 是"这一档不启用"的意思
-    /// （`shaping: null`、`spin: null`、`echoLayers: null`）。
+    /// Both `null` and a missing key return `None`: in a recipe, `null` means “this tier is not enabled”
+    /// (`shaping: null`, `spin: null`, `echoLayers: null`).
     fn present<'a>(&'a self, key: &str) -> Option<&'a Value> {
         match self.params.get(key) {
             None | Some(Value::Null) => None,
@@ -440,12 +439,12 @@ impl Recipe {
     }
 }
 
-/// 封闭算法名（设计 §7.2 / §7.4 的两张表）。未知名在**注册表解析期**报
-/// `manifest-invalid`——与"文档引用了不存在的 style id"的 `preset-unknown`
-/// 是两个时机两个码（设计 §5.3）。
+/// Closed algorithm names (the two tables in design §7.2 / §7.4). An unknown name reports
+/// `manifest-invalid` at **registry parse time**. It is a different moment and a different code from `preset-unknown`, which is for “a document references a style id that does not exist”
+/// (design §5.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecipeAlgorithm {
-    // visualizer（设计 §7.2）
+    // Visualizer (design §7.2)
     SpectrumBarsV1,
     PolarBarsV1,
     OscilloscopeV1,
@@ -480,7 +479,7 @@ impl RecipeAlgorithm {
         }
     }
 
-    /// 该算法归哪个目录——防止 progress 配方里写了 visualizer 的算法名。
+    /// Which catalogue this algorithm belongs to, to prevent a visualizer algorithm name from being written into a progress recipe.
     const fn kind(self) -> CatalogueKind {
         match self {
             Self::BarV1 | Self::FrameV1 | Self::RingV1 | Self::SnakeV1 => CatalogueKind::Progress,
@@ -489,7 +488,7 @@ impl RecipeAlgorithm {
         }
     }
 
-    /// 必填参数键。缺一个就在解析期报 `manifest-invalid`。
+    /// Required parameter keys. Missing even one reports `manifest-invalid` at parse time.
     const fn required(self) -> &'static [&'static str] {
         match self {
             Self::SpectrumBarsV1 => &["barCount", "align", "gap", "radius", "minHeight", "easing"],
@@ -564,7 +563,7 @@ impl RecipeAlgorithm {
     }
 }
 
-/// 必须是正整数的参数键（跨算法通用）。
+/// Parameter keys that must be positive integers (common to all algorithms).
 const POSITIVE_INT_KEYS: &[&str] = &[
     "barCount",
     "columns",
@@ -576,15 +575,15 @@ const POSITIVE_INT_KEYS: &[&str] = &[
     "maxAlive",
 ];
 
-/// `samples`（曲线族的 path 采样密度）的下界。
+/// The lower bound of `samples` (the path sampling density of the curve families).
 ///
-/// 它是**冻结的配方常量**：曲线族能评为 `strict`（设计 §7.3 的 determinism 列）
-/// 的前提就是"每份 manifest 说死自己按多少个点采样"——绘制端换一个密度就是换一份
-/// 画面。两个点才连得成一条折线，一个点连不成，因此下界是 2 而不是 `POSITIVE_INT_KEYS`
-/// 的 1；这是几何事实，不是样式取舍。
+/// It is a **frozen recipe constant**: the premise for a curve family to be rated `strict` (the determinism column in design §7.3)
+/// is that “each manifest fixes how many points it samples”; if the drawing side changed the density, it would be a different
+/// picture. Two points are needed to join into a polyline, and one point cannot, so the lower bound is 2 rather than the 1 of `POSITIVE_INT_KEYS`.
+/// This is a geometric fact, not a styling choice.
 const MIN_SAMPLES: u64 = 2;
 
-/// 必须落在 `[0, 1]` 的参数键（跨算法通用）。
+/// Parameter keys that must fall within `[0, 1]` (common to all algorithms).
 const UNIT_INTERVAL_KEYS: &[&str] = &[
     "minHeight",
     "innerRadius",
@@ -601,10 +600,10 @@ const UNIT_INTERVAL_KEYS: &[&str] = &[
     "smoothing",
 ];
 
-/// 必须严格大于 0 的实数参数键（跨算法通用）。
+/// Real-number parameter keys that must be strictly greater than 0 (common to all algorithms).
 const POSITIVE_NUMBER_KEYS: &[&str] = &["amplitude", "speed", "cycles"];
 
-/// 顶层字符串参数的封闭取值表。
+/// The closed table of allowed values for top-level string parameters.
 const ENUM_KEYS: &[(&str, &[&str])] = &[
     (
         "easing",
@@ -617,7 +616,7 @@ const ENUM_KEYS: &[(&str, &[&str])] = &[
     ("startAngle", &["top"]),
 ];
 
-/// 目录型配方的共用解析骨架：公共头 + 逐 kind 的配方体。
+/// The shared parse skeleton for catalogue recipes: a common header + a recipe body for each kind.
 pub(crate) fn parse_catalogue(
     kind: CatalogueKind,
     file: &str,
@@ -630,8 +629,8 @@ pub(crate) fn parse_catalogue(
             "{file}: \"id\" 必须与文件名一致（读到 {id:?}）"
         )));
     }
-    // `domain` / `namespace` 只作自描述——分派靠清单归属；核对一次是为了挡住
-    // 复制粘贴出来的串门配方。
+    // `domain` / `namespace` are for self-description only; dispatch relies on manifest ownership. The check is done once to block
+    // recipes copy-pasted across catalogues.
     let domain = text(file, doc, "domain")?;
     if domain != kind.dir() {
         return Err(MotionError::ManifestInvalid(format!(
@@ -706,11 +705,11 @@ fn parse_shape_body(file: &str, doc: &Value) -> Result<ShapeBody, MotionError> {
     Ok(ShapeBody { path, params })
 }
 
-/// 模板贴纸：`layers[]`，每层一条轮廓 + 自带颜色。
+/// Template sticker: `layers[]`, one outline per layer plus its own colors.
 ///
-/// 校验的四件事都是"画不出来"的早期发现：层数非空、每层至少有一个颜色、
-/// 轮廓以 `move` 开头（复用 [`parse_outline`]）、`strokeWidth` 落在 (0, 1]
-/// —— 它是元素盒短边的比例，超过 1 说明作者按像素写了。
+/// The four checks are all early detection of “cannot be drawn”: the layer count is non-empty, each layer has at least one color,
+/// the outline starts with `move` (reusing [`parse_outline`]), and `strokeWidth` falls within (0, 1]
+/// — it is a ratio of the element box's short edge, and a value above 1 means the author wrote it in pixels.
 fn parse_sticker_body(file: &str, doc: &Value) -> Result<StickerBody, MotionError> {
     let items = field(file, doc, "layers")?.as_array().ok_or_else(|| {
         MotionError::ManifestInvalid(format!("{file}: \"layers\" is not an array"))
@@ -750,7 +749,7 @@ fn parse_sticker_body(file: &str, doc: &Value) -> Result<StickerBody, MotionErro
     Ok(StickerBody { layers })
 }
 
-/// 可缺席的 `#RRGGBB[AA]` 字段。缺席与 `null` 同义，其余一律按格式校验。
+/// An optional `#RRGGBB[AA]` field. Absent is the same as `null`; everything else is validated against the format.
 fn optional_color(file: &str, doc: &Value, key: &str) -> Result<Option<String>, MotionError> {
     match doc.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -847,8 +846,8 @@ fn parse_visualizer_body(file: &str, doc: &Value) -> Result<VisualizerBody, Moti
     })
 }
 
-/// 声波配方全部走 CPU 矢量内核：`shader` 只接受 `null`（或不写）。写了文件名
-/// 就是 manifest 与内核不一致，解析期直接拒绝。
+/// All sound-wave recipes run on the CPU vector kernel: `shader` accepts only `null` (or may be omitted). Writing a file name
+/// means the manifest and the kernel disagree, so parsing rejects it outright.
 fn parse_visualizer_shader(file: &str, doc: &Value) -> Result<Option<String>, MotionError> {
     match doc.get("shader") {
         None | Some(Value::Null) => Ok(None),
@@ -875,10 +874,10 @@ fn parse_progress_body(file: &str, doc: &Value) -> Result<ProgressBody, MotionEr
     })
 }
 
-/// 彩纸配方体：`palette[]` + `shapes[]` + `sources[]` + `confetti-v1` 参数包。
+/// Confetti recipe body: `palette[]` + `shapes[]` + `sources[]` + the `confetti-v1` parameter bundle.
 ///
-/// 不走 [`parse_shader`]——彩纸没有 WGSL（`shader` 写 `null` 或不写）；
-/// `aspect` 只接受 `"frame"`，别的盒形不是这一族的概念。
+/// It does not go through [`parse_shader`]: confetti has no WGSL (`shader` is written as `null` or omitted);
+/// `aspect` accepts only `"frame"`, since other box shapes are not a concept for this family.
 fn parse_confetti_body(file: &str, doc: &Value) -> Result<ConfettiBody, MotionError> {
     let aspect = text(file, doc, "aspect")?;
     if aspect != "frame" {
@@ -953,9 +952,9 @@ fn string_list(file: &str, doc: &Value, key: &str) -> Result<Vec<String>, Motion
         .collect()
 }
 
-/// `confetti-v1` 参数包的形状校验（设计稿 §4.2）：区间对 `[lo, hi]` 两数升序
-/// 非负、发射器至少一枚且坐标是数、`emit.mode` 封闭、`pulse` 是 `null` 或
-/// `{min, max, hz}`。数值本身仍是配方的自由度，Rust 侧一个数字都不带。
+/// Shape validation for the `confetti-v1` parameter bundle (design draft §4.2): each range `[lo, hi]` is a pair of non-negative numbers in ascending order,
+/// there is at least one emitter and its coordinates are numbers, `emit.mode` is a closed set, and `pulse` is `null` or
+/// `{min, max, hz}`. The values themselves remain the recipe's degrees of freedom; the Rust side carries not a single number.
 fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionError> {
     let bad = |what: &str| MotionError::ManifestInvalid(format!("{file}: confetti-v1 的 {what}"));
     for key in ["speedPx", "sizePx", "spinDps", "flipHz"] {
@@ -1046,10 +1045,10 @@ fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionErr
     Ok(())
 }
 
-/// `colorLabels`：条数必须恰好等于 `numColors`。
+/// `colorLabels`: the count must equal `numColors` exactly.
 ///
-/// 声波与进度共用一份——两族的色板标题都是英文原文
-/// （Bars / Wave 1 / Bar / Base / Color 1 / Foreground…），译名在各表面自己做。
+/// Sound-wave and progress share one definition: the palette titles of both families are the original English text
+/// (Bars / Wave 1 / Bar / Base / Color 1 / Foreground…), and translations are done on each surface itself.
 fn parse_color_labels(file: &str, doc: &Value, num_colors: u8) -> Result<Vec<String>, MotionError> {
     let labels = field(file, doc, "colorLabels")?
         .as_array()
@@ -1081,7 +1080,7 @@ fn parse_num_colors(file: &str, doc: &Value) -> Result<u8, MotionError> {
     }
 }
 
-/// `#RRGGBB` 或 `#RRGGBBAA`（半透明的默认色用 8 位）。
+/// `#RRGGBB` or `#RRGGBBAA` (semi-transparent default colors use 8 digits).
 fn parse_color(file: &str, doc: &Value, key: &str) -> Result<String, MotionError> {
     let value = text(file, doc, key)?;
     let hex = value.strip_prefix('#').unwrap_or("");
@@ -1110,7 +1109,7 @@ fn parse_shader(file: &str, doc: &Value) -> Result<String, MotionError> {
     Ok(value.to_owned())
 }
 
-/// `recipe` = 封闭算法名 + 参数包，参数按算法名做 schema 校验。
+/// `recipe` = closed algorithm name + parameter bundle; parameters are schema-validated according to the algorithm name.
 fn parse_recipe(file: &str, doc: &Value, kind: CatalogueKind) -> Result<Recipe, MotionError> {
     let recipe = field(file, doc, "recipe")?;
     let name = text(file, recipe, "algorithm")?;
@@ -1194,8 +1193,8 @@ fn validate_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionError> {
     Ok(())
 }
 
-/// 带 tag 的嵌套参数（`{"kind": ...}` / `{"form": ...}` / `{"ease": ...}`）：
-/// 存在即必须是对象，且 tag 落在封闭集合里。
+/// Nested parameters with a tag (`{"kind": ...}` / `{"form": ...}` / `{"ease": ...}`):
+/// if present, they must be an object, and the tag must fall within the closed set.
 fn validate_tagged(
     file: &str,
     recipe: &Recipe,

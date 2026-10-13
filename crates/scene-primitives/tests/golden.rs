@@ -1,5 +1,4 @@
-//! 对 tests/fixtures/launch-golden/launch.ccut.json（golden 参考文档）的
-//! resolve/sample 数值验收。期望值与该 golden 的历史参考实现语义一致。
+//! Numeric acceptance of resolve/sample against tests/fixtures/launch-golden/launch.ccut.json (the golden reference document). The expected values match the semantics of that golden's historical reference implementation.
 
 use scene_primitives::RNode;
 use scene_primitives::json::JsonExt;
@@ -34,7 +33,7 @@ fn golden_resolve_shapes() {
     assert_eq!((ir.w, ir.h), (1920.0, 1080.0));
     // bg = $theme.color.bg = #0b0b0e
     assert_eq!((ir.bg.r, ir.bg.g, ir.bg.b), (11.0, 11.0, 14.0));
-    // theme.color.accent = $vars.accent = #e8906a（theme 可引用 vars）
+    // theme.color.accent = $vars.accent = #e8906a (theme can reference vars)
     let accent = r
         .ctx
         .theme
@@ -47,13 +46,13 @@ fn golden_resolve_shapes() {
     assert_eq!(ir.camera_clips.len(), 2);
     assert_eq!(ir.caption_clips.len(), 1);
 
-    // clip 窗口 + 转场交叠（crossfade 0.5 / slideLeft 0.6，对称展开）
+    // clip windows + transition overlap (crossfade 0.5 / slideLeft 0.6, expanded symmetrically)
     let by_id = |id: &str| ir.visual_clips.iter().find(|c| c.id == id).unwrap();
     let opening = by_id("opening-shot");
     assert_eq!((opening.start, opening.end), (0.0, 3.0));
     assert!((opening.render_end - 3.25).abs() < 1e-9);
     let problem = by_id("problem-shot");
-    assert_eq!((problem.start, problem.end), (3.0, 8.0)); // #opening-shot.end 链式
+    assert_eq!((problem.start, problem.end), (3.0, 8.0)); // #opening-shot.end chained
     assert!((problem.render_start - 2.75).abs() < 1e-9);
     assert!((problem.render_end - 8.3).abs() < 1e-9);
     let growth = by_id("growth-shot");
@@ -62,10 +61,10 @@ fn golden_resolve_shapes() {
     assert_eq!((outro.start, outro.end), (16.0, 20.0));
     assert!((outro.render_start - 15.75).abs() < 1e-9);
 
-    // camera：cam-growth 从 @growth+1.2 = 9.2 起
+    // camera: cam-growth starts from @growth+1.2 = 9.2
     assert!((ir.camera_clips[0].start - 9.2).abs() < 1e-9);
     assert_eq!(ir.camera_clips[0].end, 16.0);
-    // kenBurns preset 展开：zoom 1.06 → 1.0
+    // kenBurns preset expanded: zoom 1.06 → 1.0
     let outro_cam = &ir.camera_clips[1];
     let v0 = sample_frames(&outro_cam.frames, 16.0);
     let v1 = sample_frames(&outro_cam.frames, 20.0);
@@ -79,7 +78,7 @@ fn golden_channels_and_sampling() {
     let ir = r.resolve().unwrap();
     let by_id = |id: &str| ir.visual_clips.iter().find(|c| c.id == id).unwrap();
 
-    // 跨界滑行：growth-shot/heading 的 x 通道 [@growth-0.4=7.6 → @growth+0.6=8.6]
+    // Sliding across the boundary: growth-shot/heading's x channel [@growth-0.4=7.6 → @growth+0.6=8.6]
     let heading = find(&by_id("growth-shot").tree, "heading").unwrap();
     let x_ch = heading.channels.iter().find(|c| c.prop == "x").unwrap();
     assert!((x_ch.frames[0].t - 7.6).abs() < 1e-9);
@@ -97,19 +96,19 @@ fn golden_channels_and_sampling() {
     assert!((s_ch.frames[1].t - (13.6 + 0.55 * 0.6)).abs() < 1e-9);
     assert_eq!(s_ch.frames[1].v.as_f64().unwrap(), 1.14);
 
-    // stagger：pain-cards 三个 wrapper 的 extra_delay = 0 / 0.22 / 0.44
+    // stagger: the extra_delay of the three pain-cards wrappers = 0 / 0.22 / 0.44
     let cards = find(&by_id("problem-shot").tree, "pain-cards").unwrap();
     assert_eq!(cards.children.len(), 3);
     for (i, w) in cards.children.iter().enumerate() {
         assert!((w.extra_delay - 0.22 * i as f64).abs() < 1e-9);
-        // wrapper enter=rise(delay 0.5, distance 48)：opacity 通道起点 = 3.0 + 0.5 + stagger
+        // wrapper enter=rise(delay 0.5, distance 48): the opacity channel starts at 3.0 + 0.5 + stagger
         let op = w.channels.iter().find(|c| c.prop == "opacity").unwrap();
         assert!((op.frames[0].t - (3.0 + 0.5 + 0.22 * i as f64)).abs() < 1e-9);
         let y = w.channels.iter().find(|c| c.prop == "y").unwrap();
-        assert_eq!(y.frames[0].v.as_f64().unwrap(), 48.0); // params.distance=48 替换 {distance}
+        assert_eq!(y.frames[0].v.as_f64().unwrap(), 48.0); // params.distance=48 replaces {distance}
     }
 
-    // 组件 $props：countUp to=72/45/89，meta.suffix="%"
+    // component $props: countUp to=72/45/89, meta.suffix="%"
     let card0 = &cards.children[0];
     let value_node = find(card0, "value").unwrap();
     let tc = value_node
@@ -120,7 +119,7 @@ fn golden_channels_and_sampling() {
     assert_eq!(tc.frames[1].v.as_f64().unwrap(), 72.0);
     assert_eq!(tc.meta.as_ref().unwrap().get("suffix").unwrap(), "%");
 
-    // barFill to=$props.ratio：三根柱 0.14 / 0.43 / 1.0，锚定 clip 起点 8.0
+    // barFill to=$props.ratio: three bars 0.14 / 0.43 / 1.0, anchored to clip start 8.0
     let bars = find(&by_id("growth-shot").tree, "bars").unwrap();
     let ratios = [0.14, 0.43, 1.0];
     for (i, w) in bars.children.iter().enumerate() {
@@ -130,7 +129,7 @@ fn golden_channels_and_sampling() {
         assert_eq!(sy.frames[1].v.as_f64().unwrap(), ratios[i]);
     }
 
-    // 转场 wrap 通道：problem-shot 入场 crossfade + 离场 slideLeft
+    // Transition wrap channels: problem-shot enters with crossfade and leaves with slideLeft
     let problem = by_id("problem-shot");
     assert_eq!(problem.wrap_channels.len(), 2);
     let fade_in = &problem.wrap_channels[0];
@@ -169,9 +168,9 @@ fn golden_captions() {
     let en = &cap.lanes[1];
     assert_eq!(en.id, "en");
     assert!(en.hi_color.is_none());
-    assert!((en.enter_dur - 0.25).abs() < 1e-9); // rise 入场
+    assert!((en.enter_dur - 0.25).abs() < 1e-9); // rise entrance
 
-    // 字幕项时间：until 缺省 = 下一条 at；末条 = clip end
+    // Caption item timing: until defaults to the next item's at; the last item = clip end
     assert_eq!(cap.items.len(), 4);
     assert!((cap.items[0].at_abs - 0.6).abs() < 1e-9);
     assert!((cap.items[0].until_abs - 3.4).abs() < 1e-9);
@@ -180,13 +179,13 @@ fn golden_captions() {
     assert!((cap.items[2].until_abs - 13.4).abs() < 1e-9); // @growth+5.4
     assert!((cap.items[3].until_abs - 20.0).abs() < 1e-9);
 
-    // 词级时间：末词 end = 本条 span
+    // Word-level timing: the last word's end = the span of this item
     let zh_line = cap.items[2].lines.get("zh").unwrap();
     let words = zh_line.words.as_ref().unwrap();
     assert_eq!(words.len(), 5);
     assert!((words[0].end - 0.45).abs() < 1e-9);
     assert!((words[4].end - 4.0).abs() < 1e-9);
-    // en lane 无词戳 → 整句降级
+    // The en lane has no word timestamps → degrades to whole-sentence timing
     assert!(cap.items[2].lines.get("en").unwrap().words.is_none());
 }
 
@@ -206,7 +205,7 @@ fn golden_lint_clean() {
 
 #[test]
 fn reflow_semantics() {
-    // 把 growth 场景 8s → 12s：@growth.55% 等比伸缩，@growth+1.2 保持偏移，#clip.end 链式跟随
+    // Stretch the growth scene from 8s → 12s: @growth.55% scales proportionally, @growth+1.2 keeps its offset, #clip.end follows the chain
     let mut doc = golden_doc();
     doc["scenes"][2]["dur"] = serde_json::json!(12);
     let mut r = Resolver::new(doc, None).unwrap();
@@ -226,10 +225,10 @@ fn reflow_semantics() {
         .unwrap();
     assert_eq!((outro.start, outro.end), (20.0, 24.0));
 
-    // camera 起点 @growth+1.2 → 9.2（绝对偏移不伸缩）
+    // camera start @growth+1.2 → 9.2 (absolute offsets do not scale)
     assert!((ir.camera_clips[0].start - 9.2).abs() < 1e-9);
 
-    // emphasis @growth.70% → 8 + 12*0.7 = 16.4（百分比随场景伸缩）
+    // emphasis @growth.70% → 8 + 12*0.7 = 16.4 (percentages scale with the scene)
     fn find<'a>(node: &'a RNode, id: &str) -> Option<&'a RNode> {
         if node.id == id {
             return Some(node);
@@ -243,13 +242,13 @@ fn reflow_semantics() {
 
 #[test]
 fn lint_catches_errors() {
-    // 未知场景引用
+    // unknown scene reference
     let mut doc = golden_doc();
     doc["tracks"][0]["clips"][0]["start"] = serde_json::json!("@nonexistent");
     let diags = lint(&doc);
     assert!(diags.iter().any(|d| d.rule == "time-ref-unknown"));
 
-    // 不可动画属性
+    // non-animatable property
     let mut doc = golden_doc();
     doc["presets"]["rise"]["keyframes"][0]["prop"] = serde_json::json!("width");
     let diags = lint(&doc);
@@ -259,7 +258,7 @@ fn lint_catches_errors() {
             .any(|d| d.rule == "schema" && d.message.contains("width"))
     );
 
-    // 词拼接不一致
+    // inconsistent word concatenation
     let mut doc = golden_doc();
     doc["tracks"][2]["clips"][0]["captions"][2]["lines"]["zh"]["words"][0]["text"] =
         serde_json::json!("91");

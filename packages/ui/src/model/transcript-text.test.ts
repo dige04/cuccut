@@ -15,7 +15,7 @@ import {
   type CopyParagraph,
 } from './transcript-text.ts';
 
-/** 文稿里的词：只填拼文字要用的字段。 */
+/** Words in the transcript: only fill the fields the text assembly needs. */
 function w(index: number, id: string, text: string, spaced: boolean, state: TranscriptWord['state'] = 'kept'): TranscriptWord {
   return { id, index, text, spaced, state, start: index, end: index + 1, placements: [], paragraphStart: false };
 }
@@ -153,7 +153,7 @@ describe('复制', () => {
     const md = { format: 'md', view: 'source', speakers: true, timestamps: true } as const;
     expect(writeTranscript([{ chapter: null, paras }], md)).toBe('**主持人:** 大家好，欢迎收看。 [00:12]\n\nThen we start. [01:05]');
     expect(writeTranscript([{ chapter: null, paras: [{ ...paras[1]!, text: 'a*b_c #1' }] }], { ...md, timestamps: false })).toBe('a\\*b\\_c \\#1');
-    // 双语的译文另起一块引用；只看译文时译文当正文写。
+    // A bilingual translation is quoted in its own block; in translation-only view, the translation is written as body text.
     expect(writeTranscript([{ chapter: null, paras: paras.slice(0, 1) }], { ...md, view: 'both', timestamps: false })).toBe(
       '**主持人:** 大家好，欢迎收看。\n\n> Hello everyone.',
     );
@@ -199,7 +199,7 @@ describe('复制', () => {
   it('回执：段数加字数，中文按字、拉丁按词，哪种多按哪种', () => {
     expect(copyReceipt(paras, 'source')).toBe('2 段 · 7 字');
     expect(copyReceipt(paras.slice(1), 'source')).toBe('1 段 · 3 词');
-    // 导出面板的篇幅：Runtime 数好的段数、汉字数与词数，同一个说法。
+    // Length figures in the export panel: paragraph count, Han character count and word count, counted by the Runtime, using the same terms.
     expect(lengthReceipt(2, 7, 1)).toBe('2 段 · 7 字');
     expect(lengthReceipt(1, 0, 3)).toBe('1 段 · 3 词');
     expect(copyReceipt(paras, 'translation')).toBe('2 段 · 6 字');

@@ -18,8 +18,8 @@ import type {
 import type { Json } from '../render/text-style.ts';
 
 /**
- * 拖动中还没提交的属性（滑杆松手、取色面板放手才提交）：只叠给预览与属性页看。
- * 草稿记着它基于的序列版本；序列换了版本（提交成功、撤销、别人改了），草稿自然作废。
+ * Uncommitted property values during a drag (a slider is committed on release, a color panel on pointer-up): only overlaid on the preview and the property panel.
+ * The draft records the sequence version it was based on; when the sequence changes version (commit succeeded, undo, or someone else edited it), the draft becomes invalid.
  */
 export interface ItemDraft {
   itemId: Id;
@@ -28,27 +28,27 @@ export interface ItemDraft {
 }
 
 export interface ItemPatch {
-  /** 位置、大小、角度、不透明度与圆角（逐字段叠在 `place` 上）。 */
+  /** Position, size, angle, opacity and corner radius (overlaid field by field on `place`). */
   place?: Partial<Place>;
-  /** 文字样式（整体替换）。 */
+  /** Text style (replaced as a whole). */
   style?: Json;
-  /** 图形（整体替换）。 */
+  /** Shape (replaced as a whole). */
   shape?: ShapeProps;
-  /** 生成类元素的种类参数（声波、进度条、彩纸、手绘、贴纸；整体替换）。 */
+  /** Kind parameters of generated elements (sound wave, progress bar, confetti, hand-drawn, sticker; replaced as a whole). */
   props?: Json;
-  /** 合成的参数（整体替换）。 */
+  /** Composition parameters (replaced as a whole). */
   parameterValues?: Json;
-  /** 音频实例的混音。 */
+  /** Mix of the audio instance. */
   mix?: Partial<AudioMix>;
-  /** 视频自带的声音，或合成发出的声音。 */
+  /** Sound that comes with the video, or sound emitted by the composition. */
   embeddedAudio?: Partial<EmbeddedAudio>;
-  /** 画面效果（整体替换；`null` 是去掉）。 */
+  /** Picture effect (replaced as a whole; `null` removes it). */
   fx?: Fx | null;
-  /** 视频与图片的裁剪（整体替换）：画布上平移铺满画面的视频时跟手。 */
+  /** Crop of videos and images (replaced as a whole): when panning a video that fills the frame on the canvas, it follows the pointer. */
   crop?: Crop;
 }
 
-/** 同一个片段、同一个版本上的草稿叠在一起（拖完一根滑杆、提交还没回来时又拖另一根，前一根不弹回）。 */
+/** Drafts on the same clip and the same version are stacked together (after dragging one slider, while its commit has not returned, dragging another one does not snap the previous one back). */
 export function mergeDraft(previous: ItemDraft | null, next: ItemDraft): ItemDraft {
   if (!previous || previous.itemId !== next.itemId || previous.revision !== next.revision) return next;
   const a = previous.patch;
@@ -65,7 +65,7 @@ export function mergeDraft(previous: ItemDraft | null, next: ItemDraft): ItemDra
   };
 }
 
-/** 序列叠上草稿；草稿不属于这个版本时原样返回。 */
+/** Overlays drafts onto the sequence; returned as is when the draft does not belong to this version. */
 export function applyDraft(sequence: Sequence, draft: ItemDraft | null): Sequence {
   if (!draft || draft.revision !== sequence.revision) return sequence;
   const index = sequence.items.findIndex((item) => item.id === draft.itemId);
@@ -75,7 +75,7 @@ export function applyDraft(sequence: Sequence, draft: ItemDraft | null): Sequenc
   return { ...sequence, items };
 }
 
-/** 一个片段叠上补丁：只叠这种片段有的字段。 */
+/** Overlays a patch onto one clip: only the fields that this kind of clip has. */
 export function patchItem(item: SequenceItem, patch: ItemPatch): SequenceItem {
   if (item.type === 'audio') return patch.mix ? { ...item, mix: { ...item.mix, ...patch.mix } } : item;
   if (item.type === 'caption') return item;
@@ -118,7 +118,7 @@ export function patchItem(item: SequenceItem, patch: ItemPatch): SequenceItem {
   }
 }
 
-/** 换上或去掉 `fx`（`null` 去掉字段，与引擎落盘一致）。 */
+/** Sets or removes `fx` (`null` removes the field, consistent with what the engine writes to disk). */
 function withFx<T extends { fx?: Fx }>(item: T, patch: ItemPatch): T {
   if (patch.fx === undefined) return item;
   if (patch.fx !== null) return { ...item, fx: patch.fx };
@@ -126,7 +126,7 @@ function withFx<T extends { fx?: Fx }>(item: T, patch: ItemPatch): T {
   return rest as T;
 }
 
-/** 序列叠上几份草稿（舞台上整体拖动多件）：逐份叠，不属于这个版本的那份跳过。 */
+/** Overlays several drafts onto the sequence (several items dragged together on the stage): applied one by one; a draft that does not belong to this version is skipped. */
 export function applyDrafts(sequence: Sequence, drafts: readonly ItemDraft[]): Sequence {
   return drafts.reduce((shown, draft) => applyDraft(shown, draft), sequence);
 }

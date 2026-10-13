@@ -1,8 +1,7 @@
-//! `"{param}"` 替换必须与 `ccut-core::resolve::resolve_ref` 逐位相同。
+//! The `"{param}"` substitution must be bit-for-bit identical to `ccut-core::resolve::resolve_ref`.
 //!
-//! 两条路径并存是有意的：项目级 preset 走 `resolve_ref`（它还要认 `$vars/$theme`），
-//! 内置 manifest 走 `preset_registry::substitute`（`ccut-motion` 不能依赖 `ccut-core`）。
-//! 同一个模板必须给同一个结果，否则「内置与项目级没有格式差别」（规范 §7.4）就是假的。
+//! The two paths coexisting is intentional: project-level presets go through `resolve_ref` (which also needs to recognize `$vars/$theme`), while built-in manifests go through `preset_registry::substitute` (because `ccut-motion` cannot depend on `ccut-core`).
+//! The same template must give the same result; otherwise the claim that “built-in and project-level have no format difference” (spec §7.4) would be false.
 
 use motion::preset_registry::substitute::{deep_substitute, substitute};
 use scene_primitives::resolve::{Ctx, resolve_ref};

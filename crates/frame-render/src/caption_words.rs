@@ -1,13 +1,11 @@
-//! 字幕句子的词（视频格式规范 §3.8、§5.7）：字幕文档的句子用 `words`（`{first, last}` 或 `{wordIds}`）指向转写文档
-//! （字幕文档头的 `sourceDocumentId`）里的词。交给内核的是有效词流里的这些词，逐词动画、逐词高亮与设计字幕的强调
-//! （按词 ID）都按它们推进：
+//! Words of caption sentences (video format spec §3.8, §5.7): a caption document's sentence uses `words` (`{first, last}` or `{wordIds}`) to point to words in the transcript document (the `sourceDocumentId` in the caption document header).
+//! The kernel receives these words from the effective word stream; word-by-word animation, word-by-word highlighting and designed-caption emphasis (by word ID) all advance by them:
 //!
-//! - 隐藏的词不给；剪掉的词（投不到时间线上任何一处的）也不给。句子里有词因此被拿掉时，句子的文字按留下的词重新拼
-//!   （`speech_doc::atomize::join_word_texts`，认词上的「贴前」标记），一个也不剩的句子不画。
-//! - 词按文档时钟给时刻：字幕在源素材时钟上时是词自己的源时刻；在序列时钟上时是词投到序列上、与这一句重叠的那一处。
-//! - 多字的 CJK 词按转写落盘的同一条规则逐字拆开（`speech_doc::build::atomize_timed_word`，子 ID `<词>~<k>`）。
-//! - 句子没有写 `words`（较早生成的字幕）时，取时刻落在这一句里的词给时刻，句子的文字不动。
-//! - 翻译字幕、没有 `sourceDocumentId` 或指向的不是转写的字幕不给词，内核按空白切分推算。
+//! - Hidden words are not given; cut words (those that project to no point on the timeline) are not given either. When words are removed from a sentence this way, the sentence's text is reassembled from the remaining words (`speech_doc::atomize::join_word_texts`, recognizing the “贴前” (attach-to-previous) flag on words), and a sentence with no words left is not drawn.
+//! - Words get their times from the document clock: when the caption is on the source media clock, a word's own source time; when on the sequence clock, the place where the word projects onto the sequence and overlaps this sentence.
+//! - Multi-character CJK words are split character by character using the same rule as the transcript's on-disk form (`speech_doc::build::atomize_timed_word`, sub-ID `<word>~<k>`).
+//! - When a sentence has no `words` (captions generated earlier), it takes the words whose times fall in this sentence for timing, and its text is unchanged.
+//! - Translated captions, captions without `sourceDocumentId`, or captions pointing to a non-transcript get no words; the kernel infers them by splitting on whitespace.
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,7 +18,7 @@ use crate::documents::FrozenDocument;
 
 pub const SPEECH_DOCUMENT: &str = "cuccut.speech/1";
 
-/// 转写文档里的一个词（秒，转写的时钟）。
+/// A word in the transcript document (seconds, on the transcript's clock).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpeechWord {
     pub id: String,
@@ -31,7 +29,7 @@ pub struct SpeechWord {
     pub hidden: bool,
 }
 
-/// 读好的转写：词按文档里的次序，可以按 ID 找。
+/// A loaded transcript: words in document order, looked up by ID.
 #[derive(Clone, Debug, Default)]
 pub struct SpeechWords {
     pub words: Vec<SpeechWord>,
@@ -40,7 +38,7 @@ pub struct SpeechWords {
 }
 
 impl SpeechWords {
-    /// 不是 `cuccut.speech/1` 时为 `None`。时间是整数刻度，`timescale` 缺省 1 000 000。
+    /// `None` unless the document is `cuccut.speech/1`. Times are integer ticks; `timescale` defaults to 1 000 000.
     pub fn read(body: &Value) -> Option<SpeechWords> {
         if body.get("schema").and_then(Value::as_str) != Some(SPEECH_DOCUMENT) {
             return None;
@@ -76,7 +74,7 @@ impl SpeechWords {
         })
     }
 
-    /// 句子的 `words` 指向的词（文档里的下标，按文档次序）。没写或一个也找不到时为 `None`。
+    /// The words that a sentence's `words` points to (indices into the document, in document order). `None` if it is not set or none can be found.
     pub fn refs(&self, words: &Value) -> Option<Vec<usize>> {
         let found: Vec<usize> = if let Some(ids) = words.get("wordIds").and_then(Value::as_array) {
             ids.iter()
@@ -93,20 +91,18 @@ impl SpeechWords {
     }
 }
 
-/// 词在剪辑之后的去留与时刻。
+/// Whether each word survives the edit, and its timing.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Placement {
-    /// 投不上序列（例如转写的素材不在时间线上）：词都留下，按转写自己的时刻。
+    /// Cannot be projected onto the sequence (for example, the transcript's source is not on the timeline): all words are kept, at the transcript's own times.
     Unplaced,
-    /// 有效词流里出现的词 ID（剪掉的、隐藏的不在里面）。
+    /// Word IDs that appear in the effective word stream (cut or hidden words are not included).
     Kept(HashSet<String>),
-    /// 词投到序列上的各个区间（秒，从序列起点算）。
+    /// The intervals of the words projected onto the sequence (seconds, from the sequence start).
     OnSequence(HashMap<String, Vec<(f64, f64)>>),
 }
 
-/// 把 `speech` 投到序列上：作用实例是显示 `caption_document_id` 的字幕实例的 `scopeItemIds`（都没写时是转写描述的素材
-/// 在时间线上的各个实例，与有效词流同一个求法，`render_graph::text_plan::plan_text`）。`on_sequence` 时给出词在序列上的
-/// 区间，否则只给去留。
+/// Projects `speech` onto the sequence. The instances it acts on are the `scopeItemIds` of the caption instance that displays `caption_document_id` (if neither is set, the instances of the media that the transcript describes on the timeline, found the same way as the effective word stream, `render_graph::text_plan::plan_text`). When `on_sequence` is set, the intervals of the words on the sequence are given; otherwise only whether each word is kept.
 pub fn place(
     video: VideoView,
     sequence_id: &str,
@@ -156,19 +152,18 @@ pub fn place(
     }
 }
 
-/// 交给内核的一句的词与（拿掉了词时）重新拼好的文字。
+/// The words of one sentence handed to the kernel, and the text reassembled from them (when words were removed).
 #[derive(Clone, Debug, PartialEq)]
 pub struct CueWords {
-    /// `{id, text, t0, t1}`，按文档次序。
+    /// `{id, text, t0, t1}`, in document order.
     pub words: Vec<Value>,
     pub text: Option<String>,
 }
 
-/// 留在这一句里的词与它（在字幕时钟上）的起止。
+/// The words kept in this sentence, and their start and end (on the caption clock).
 type Member<'a> = (&'a SpeechWord, (f64, f64));
 
-/// 没写 `words` 的句子按时刻取词用的索引：词在字幕时钟上可能的中点（投到序列上时是每一处的中点）排好序，一句只看
-/// 中点落在它里面的那些词，不必每句把整份转写扫一遍（几千句、几万词时是上亿次查表）。一份转写、一种去留建一次。
+/// Index used to pick words by time for sentences without `words`: each word's possible midpoint on the caption clock (each occurrence's midpoint when projected onto the sequence) is sorted, so a sentence only looks at the words whose midpoints fall inside it, rather than scanning the whole transcript for every sentence (with thousands of sentences and tens of thousands of words, that would be hundreds of millions of lookups). Built once per transcript and per keep/cut setting.
 pub struct WordTimes {
     middles: Vec<(f64, usize)>,
 }
@@ -186,13 +181,13 @@ impl WordTimes {
                 _ => middles.push(((word.start + word.end) / 2.0, index)),
             }
         }
-        // NaN 落不进任何一句（比较总是假），不进索引。
+        // NaN falls inside no sentence (comparisons are always false), so it is not indexed.
         middles.retain(|(middle, _)| !middle.is_nan());
         middles.sort_by(|x, y| x.0.total_cmp(&y.0));
         WordTimes { middles }
     }
 
-    /// 有一处中点落在 `[span.0, span.1)` 里的词（下标，按文档次序）：取词的候选，去留与时刻仍按 [`cue_words`] 的规则逐个判。
+    /// Words with a midpoint inside `[span.0, span.1)` (indices, in document order): candidates for picking words. Whether each is kept and its timing are still decided one by one by the rules of [`cue_words`].
     fn within(&self, span: (f64, f64)) -> Vec<usize> {
         let from = self.middles.partition_point(|&(middle, _)| middle < span.0);
         let to = self.middles.partition_point(|&(middle, _)| middle < span.1).max(from);
@@ -203,8 +198,8 @@ impl WordTimes {
     }
 }
 
-/// 一句（文档时钟上的 `start`–`end`，`refs` 是它的 `words` 指向的词）交给内核的词。`sequence_clock` 是字幕文档的时钟。
-/// 给不出词时为 `None`（内核按空白切分推算）。
+/// The words of one sentence (`start`–`end` on the document clock, `refs` are the words its `words` points to) handed to the kernel. `sequence_clock` is the caption document's clock.
+/// `None` when no words can be given (the kernel then infers them by splitting on whitespace).
 pub fn cue_words(
     speech: &SpeechWords,
     refs: Option<&[usize]>,
@@ -215,7 +210,7 @@ pub fn cue_words(
     cue_words_indexed(speech, refs, span, sequence_clock, placement, None)
 }
 
-/// 同 [`cue_words`]；没写 `words` 的句子给了 `times`（同一份转写、同一种去留建的）时只在候选词里取。
+/// Same as [`cue_words`]; for a sentence without `words`, when `times` is given (built for the same transcript and keep/cut setting), words are picked only from the candidates.
 pub fn cue_words_indexed(
     speech: &SpeechWords,
     refs: Option<&[usize]>,
@@ -224,7 +219,7 @@ pub fn cue_words_indexed(
     placement: &Placement,
     times: Option<&WordTimes>,
 ) -> Option<CueWords> {
-    // 词的时刻换不到字幕的时钟上（序列时钟的字幕、转写投不上序列）时不给词。
+    // No words are given when the words' times cannot be converted to the caption clock (a caption on the sequence clock, or a transcript that cannot be projected onto the sequence).
     let usable = match placement {
         Placement::OnSequence(_) => sequence_clock && !speech.sequence_clock,
         _ => sequence_clock == speech.sequence_clock,
@@ -232,14 +227,14 @@ pub fn cue_words_indexed(
     if !usable {
         return None;
     }
-    // 词在字幕时钟上的时刻；不留的词为 `None`。
+    // The word's time on the caption clock; `None` for a word that is not kept.
     let timed = |word: &SpeechWord| -> Option<(f64, f64)> {
         if word.hidden {
             return None;
         }
         match placement {
             Placement::OnSequence(spans) => {
-                // 同一段源用了两次时取与这一句重叠最多的那一处。
+                // When the same source segment is used twice, take the occurrence that overlaps this sentence the most.
                 let spans = spans.get(&word.id)?;
                 spans
                     .iter()
@@ -249,7 +244,7 @@ pub fn cue_words_indexed(
                     .map(|(a, b, _)| (a, b))
             }
             Placement::Kept(kept) => {
-                // 零长的词不进有效词流，它跟着这一句留下。
+                // Zero-length words are not part of the effective word stream; they stay with this sentence.
                 (word.end <= word.start || kept.contains(&word.id)).then_some((word.start, word.end))
             }
             Placement::Unplaced => Some((word.start, word.end)),
@@ -340,13 +335,13 @@ mod tests {
         let all = cue_words(&s, Some(&refs), (0.0, 1.2), false, &Placement::Unplaced).unwrap();
         assert_eq!(ids(&all), ["w1", "w3", "w4", "w5"]);
         assert_eq!(all.text.as_deref(), Some("真别再 Codex"));
-        // 剪掉 w3：有效词流里没有它。
+        // w3 is cut: it is not in the effective word stream.
         let kept = Placement::Kept(["w1", "w4", "w5"].into_iter().map(String::from).collect());
         let cut = cue_words(&s, Some(&refs), (0.0, 1.2), false, &kept).unwrap();
         assert_eq!(ids(&cut), ["w1", "w4", "w5"]);
         assert_eq!(cut.text.as_deref(), Some("真再 Codex"));
         assert_eq!(cut.words[1]["t0"], json!(0.6));
-        // 什么都没拿掉时文字不动。
+        // When nothing is removed, the text is left unchanged.
         let s = speech(&[("a", "Hi", 0.0, 0.5), ("b", "there", 0.5, 1.0)], &[]);
         let same = cue_words(&s, Some(&[0, 1]), (0.0, 1.0), false, &Placement::Unplaced).unwrap();
         assert_eq!(same.text, None);
@@ -371,9 +366,9 @@ mod tests {
         let words = cue_words(&s, Some(&[0, 1]), (10.0, 12.0), true, &spans).unwrap();
         assert_eq!(words.words[0]["t0"], json!(10.0));
         assert_eq!(words.words[1]["t1"], json!(12.0));
-        // 投不上序列时序列时钟的字幕不给词。
+        // When projection onto the sequence fails, captions on the sequence clock get no words.
         assert_eq!(cue_words(&s, Some(&[0, 1]), (10.0, 12.0), true, &Placement::Unplaced), None);
-        // 一个词也投不到这一句上：整句不画。
+        // No word projects onto this sentence: the whole sentence is not drawn.
         let gone = cue_words(&s, Some(&[0, 1]), (20.0, 22.0), true, &spans).unwrap();
         assert!(gone.words.is_empty());
         assert_eq!(gone.text.as_deref(), Some(""));

@@ -3,23 +3,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { YtDlpTool } from '../pipelines/yt-dlp.ts';
 
-/** 假的 yt-dlp 脚本（`fake-yt-dlp.ts`）的绝对路径。 */
+/** Absolute path of the fake yt-dlp script (`fake-yt-dlp.ts`). */
 export const FAKE_YT_DLP = fileURLToPath(new URL('./fake-yt-dlp.ts', import.meta.url));
 
 export interface FakeYtDlp {
-  /** 可执行的包装（`<dir>/yt-dlp`）。 */
+  /** The executable wrapper (`<dir>/yt-dlp`). */
   command: string;
-  /** 直接用当前 Node 运行，供跨平台的进程测试使用（Windows 不能直接启动 sh 包装）。 */
+  /** Runs directly with the current Node, for cross-platform process tests (Windows cannot launch the sh wrapper directly). */
   nodeTool: YtDlpTool;
-  /** 每次调用追加一行 `{ argv }`。 */
+  /** Appends one `{ argv }` line on each call. */
   log: string;
-  /** 读出记下的调用。 */
+  /** Reads back the recorded calls. */
   calls(): Promise<Array<{ argv?: string[]; resumedFrom?: number }>>;
 }
 
 /**
- * 在 `dir` 里写一个名为 `yt-dlp` 的可执行包装：用当前的 Node 运行假脚本，日志写在 `dir` 里。
- * 包装里写的是绝对路径，不依赖 PATH：测试可以把 PATH 设成只含这个目录（或空目录），系统里真实的 yt-dlp 不会被用到。
+ * Writes an executable wrapper named `yt-dlp` in `dir`: it runs the fake script with the current Node, with logs written in `dir`.
+ * The wrapper uses absolute paths and does not depend on PATH, so tests can set PATH to only this directory (or an empty directory), and a real yt-dlp on the system will not be used.
  */
 export async function writeFakeYtDlp(dir: string, options: { version?: string; name?: string } = {}): Promise<FakeYtDlp> {
   await fs.mkdir(dir, { recursive: true });

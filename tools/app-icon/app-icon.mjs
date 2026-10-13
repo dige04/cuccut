@@ -1,46 +1,46 @@
-// CucCut App 图标的绘制源码（矢量）：三条横向轨道拼成一个圆角播放键，一根带星芒的播放头把它切开，
-// 每条轨道在切口两侧是深浅不同的两段片段。几何从 v2 原样移植；配色重做：
-// 一块纯色品牌色底砖 + 白色图形 + 一档浅色片段，总共三种颜色（Spectrum 2 的「一个产品色，配深浅两档」）。
-// 1024 设计单位，套 macOS 图标模板（824 主体、连续圆角、投影）。底砖颜色不随系统深浅色变化。
-// 用法：import { svg, VARIANTS } from './app-icon.mjs'; svg(VARIANTS.coral)
-// 设计思路见 docs/design/brand/app-icon.md。
+// Drawing source (vector) of the CucCut app icon: three horizontal tracks form a rounded play button, cut by a playhead with a star sparkle,
+// and each track has two segments of different shades on either side of the cut. The geometry is ported unchanged from v2; the colours are redone:
+// a solid brand-colour tile + white shapes + one light segment tint, three colours in total (Spectrum 2's “one product colour, in two shades”).
+// 1024 design units, macOS icon template (824 body, continuous corners, shadow). The tile colour does not change with the system light/dark mode.
+// Usage: import { svg, VARIANTS } from './app-icon.mjs'; svg(VARIANTS.coral)
+// Design rationale: see docs/design/brand/app-icon.md.
 
 const rad = (deg) => (deg * Math.PI) / 180;
 const f = (n) => +n.toFixed(4);
 
-// 模板：主体 824×824 落在 (100,100)，Figma 式连续圆角（半径 185.4、平滑 0.6），投影黑 30% / 模糊 20 / 下移 12。
+// Template: body 824×824 placed at (100,100), Figma-style continuous corners (radius 185.4, smoothing 0.6), shadow black 30% / blur 20 / offset down 12.
 export const BODY = { x: 100, y: 100, w: 824, h: 824, r: 185.4, smooth: 0.6 };
 
-export const CORAL = '#FF5C4A'; // 品牌色：CucCut 的珊瑚色
-export const CORAL_DEEP = '#E8381F'; // 品牌色深档，只用在渐变变体
-export const CORAL_TINT = '#FFC1B8'; // 品牌色浅档：播放头左侧「已播过」的片段，呼应 App 里播过的字幕变灰
-export const INK = '#1F1F1F'; // 深底砖（备选）
+export const CORAL = '#FF5C4A'; // Brand colour: CucCut's coral
+export const CORAL_DEEP = '#E8381F'; // Deep brand-colour shade, used only in the gradient variant
+export const CORAL_TINT = '#FFC1B8'; // Light brand-colour shade: the “already played” segment to the left of the playhead, echoing the played subtitles in the app turning grey
+export const INK = '#1F1F1F'; // Deep tile (alternative)
 export const WHITE = '#FFFFFF';
 
-// 几何。三角左边 332、播放头 42%：图形的亮度质心正落在底砖中线（见 docs/design/brand/app-icon.md §4），
-// 左段够宽才像片段，又避开上下轨道变窄的尖端。
+// Geometry. Triangle left edge 332, playhead at 42%: the luminance centroid of the shapes falls right on the tile's centre line (see docs/design/brand/app-icon.md §4),
+// the left segment is wide enough to read as a segment, and it avoids the narrowing tips of the upper and lower tracks.
 export const GEOMETRY = {
-  L: 332, // 三角左边
-  W: 468, // 三角宽（左边到尖）
-  H: 520, // 三角高
-  yc: 576, // 尖所在的水平线
-  gap: 22, // 轨道间缝
-  rCorner: 48, // 左上、左下圆角
-  rApex: 42, // 尖的圆角
-  playhead: 0.42, // 播放头位置，占三角宽的比例；也是每条轨道左右两段的切口
-  casing: 44, // 播放头两侧的缝总宽（露出底砖），同时是片段之间的缝
-  line: 20, // 播放头线宽
-  sparkR: 104, // 星芒半径
-  sparkDy: -44, // 星芒中心相对三角顶边
+  L: 332, // Triangle left edge
+  W: 468, // Triangle width (left edge to tip)
+  H: 520, // Triangle height
+  yc: 576, // Horizontal line where the tip sits
+  gap: 22, // Gap between tracks
+  rCorner: 48, // Upper-left and lower-left corner radius
+  rApex: 42, // Tip corner radius
+  playhead: 0.42, // Playhead position as a share of the triangle width; also the cut on each track between its left and right segments
+  casing: 44, // Total gap on both sides of the playhead (showing the tile), also the gap between segments
+  line: 20, // Playhead line width
+  sparkR: 104, // Star radius
+  sparkDy: -44, // Star centre relative to the triangle's top edge
 };
 
-// 配色变体。tile 是底砖（纯色或 [上, 下] 渐变）；left / right 是每条轨道切口两侧的片段色（左边是播过的，浅；右边是没播到的，实）；mark 是播放头与星芒。
+// Colour variants. tile is the base tile (solid or [top, bottom] gradient); left / right are the segment colours on each side of each track's cut (left is the played one, light; right is the not-yet-played one, solid); mark is the playhead and star.
 export const VARIANTS = {
-  // 定稿：珊瑚底砖，左侧已播片段浅珊瑚，右侧片段白；AI 元素（播放头 + 星芒）白色。
+  // Final: coral tile, left played segments light coral, right segments white; AI elements (playhead + star) white.
   coral: { id: 'coral', name: '珊瑚底砖', tile: CORAL, left: CORAL_TINT, right: WHITE, mark: WHITE },
-  // 备选：深灰底砖，左侧已播片段白，右侧珊瑚；AI 元素白色。
+  // Alternative: deep grey tile, left played segments white, right coral; AI elements white.
   ink: { id: 'ink', name: '深色底砖', tile: INK, left: WHITE, right: CORAL, mark: WHITE },
-  // 备选：单色相渐变底砖（Spectrum 2 的品牌渐变），其余同推荐。
+  // Alternative: single-hue gradient tile (Spectrum 2 brand gradient), otherwise same as the recommended one.
   gradient: { id: 'gradient', name: '渐变底砖', tile: [CORAL, CORAL_DEEP], left: CORAL_TINT, right: WHITE, mark: WHITE },
 };
 
@@ -76,7 +76,7 @@ export function squircleD(x, y, w, h, R, s) {
   ].join(' ');
 }
 
-// 多边形，每个顶点单独给圆角；相邻圆角的切线长加起来超过边长时按比例收小。
+// Polygon, each vertex with its own rounded corner; if the tangent lengths of adjacent rounded corners add up to more than the edge length, they are scaled down proportionally.
 export function roundPolyD(pts, radii) {
   const n = pts.length;
   const geo = pts.map((p, i) => {
@@ -114,7 +114,7 @@ export function roundPolyD(pts, radii) {
   return `${d.join(' ')} Z`;
 }
 
-// 与 App 的 ai-sparkle 图标同一种四角星（控制点 ≈ 0.17r）。
+// Same four-point star as the app's ai-sparkle icon (control point ≈ 0.17r).
 export function sparkleD(cx, cy, r, k = 0.17) {
   const q = r * k;
   return [
@@ -127,7 +127,7 @@ export function sparkleD(cx, cy, r, k = 0.17) {
   ].join(' ');
 }
 
-// 1024 画布的 SVG。shadow=false 时不画 macOS 模板投影（给 favicon、ICO 等自带容器的场合）。
+// SVG on a 1024 canvas. With shadow=false the macOS template shadow is not drawn (for favicon, ICO, etc. that carry their own container).
 export function svg(variant = VARIANTS.coral, { shadow = true, geometry = {} } = {}) {
   const o = { ...GEOMETRY, ...geometry };
   const y0 = o.yc - o.H / 2;

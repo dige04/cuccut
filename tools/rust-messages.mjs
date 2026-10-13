@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * Rust 一侧的消息引用（仓库约定 §5）：`message-ref` crate 的 `msg!("<区域>.<名字>", "英文模板", 参数…)` 生成英文文本与
- * 引用，译文只在 `packages/protocol/src/messages/` 的目录里。这里把 `crates/` 与 `bindings/` 里的 `msg!` 全部找出来，
- * 测试（`rust-messages.test.ts`）据此核对：每个键都在 TS 目录里，英文条目与 Rust 模板一字不差，同一个键处处同一个模板。
+ * References to messages on the Rust side (repo convention §5): `msg!("<area>.<name>", "English template", args…)` from the `message-ref` crate generates the English text and a reference, and translations live only in the `packages/protocol/src/messages/` directory. This finds every `msg!` in `crates/` and `bindings/`, and the test (`rust-messages.test.ts`) checks against it: every key is in the TS directory, each English entry matches the Rust template word for word, and the same key always has the same template.
  *
- * 用法：`node tools/rust-messages.mjs` 列出全部键与模板（JSON）。
+ * Usage: `node tools/rust-messages.mjs` lists all keys and templates (JSON).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const RUST_ROOTS = ['crates', 'bindings'];
-// `tests/` 是集成测试；测试里的 `msg!` 不是给人看的文字。
+// `tests/` holds integration tests; `msg!` calls in tests are not text meant for people.
 const SKIP_DIRS = new Set(['target', 'node_modules', 'generated', 'tests']);
 
-/** Rust 字符串字面量的内容（只处理 `msg!` 模板会用到的转义）。 */
+/** The contents of a Rust string literal (handles only the escapes that `msg!` templates use). */
 function unescape(body) {
   return body.replace(/\\(u\{([0-9a-fA-F]+)\}|n|t|"|\\|'|\n\s*)/g, (_, esc, hex) => {
     if (hex) return String.fromCodePoint(parseInt(hex, 16));
@@ -28,7 +26,7 @@ function unescape(body) {
 const STRING = String.raw`"((?:[^"\\]|\\.)*)"`;
 const MSG = new RegExp(String.raw`msg!\(\s*${STRING}\s*,\s*${STRING}`, 'gs');
 
-/** `#[cfg(test)]` 模块所占的区间（按花括号配对，跳过字符串与字符字面量里的括号）。 */
+/** The ranges taken up by `#[cfg(test)]` modules (matched by braces, skipping brackets inside string and char literals). */
 function testRanges(source) {
   const ranges = [];
   for (const m of source.matchAll(/#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{/g)) {
@@ -48,7 +46,7 @@ function testRanges(source) {
   return ranges;
 }
 
-/** 一份 Rust 源码里的 `msg!` 调用：`{ key, template, line }`。注释与 `#[cfg(test)]` 模块里的不算。 */
+/** One `msg!` call in a Rust source file: `{ key, template, line }`. Calls in comments and in `#[cfg(test)]` modules are not counted. */
 export function messagesIn(source) {
   const found = [];
   const tests = testRanges(source);
@@ -62,7 +60,7 @@ export function messagesIn(source) {
   return found;
 }
 
-/** 模板里的占位符名（`{name}`；`{{` 与 `}}` 是字面的花括号）。 */
+/** Placeholder names in a template (`{name}`; `{{` and `}}` are literal braces). */
 export function placeholders(template) {
   return [...template.replace(/\{\{|\}\}/g, '').matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map((m) => m[1]);
 }
@@ -77,7 +75,7 @@ function* rustFiles(dir) {
   }
 }
 
-/** 仓库里全部 `msg!` 调用：`{ key, template, file, line }`，`file` 相对仓库根。 */
+/** All `msg!` calls in the repo: `{ key, template, file, line }`, with `file` relative to the repo root. */
 export function rustMessages(root) {
   const all = [];
   for (const top of RUST_ROOTS) {

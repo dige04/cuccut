@@ -13,7 +13,7 @@ import {
 } from './i18n.ts';
 
 const initial = getLocale();
-// 测试环境用 CUCCUT_LOCALE 钉住中文（vitest.config.ts）；这里要来回切换，先撤掉它。
+// The test environment pins Chinese with CUCCUT_LOCALE (vitest.config.ts); here we switch back and forth, so clear it first.
 beforeEach(() => vi.stubEnv('CUCCUT_LOCALE', undefined));
 afterEach(() => {
   setLocale(initial);

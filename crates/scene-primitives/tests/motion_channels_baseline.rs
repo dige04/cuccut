@@ -1,14 +1,10 @@
-//! 阶段 0 语义基线：BCF `resolve` 产出的绝对时间 `Vec<Channel>` golden 与
-//! `sample_frames` 的乱序采样一致性。
+//! Stage 0 semantic baseline: consistency between the absolute-time `Vec<Channel>` golden produced by BCF `resolve` and out-of-order sampling via `sample_frames`.
 //!
-//! 夹具：`tests/fixtures/motion/bcf-channels.json`。
-//! 重生成：`CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-core --test motion_channels_baseline`。
+//! Fixture: `tests/fixtures/motion/bcf-channels.json`.
+//! Regenerate: `CCUT_UPDATE_GOLDEN=1 cargo test -p ccut-core --test motion_channels_baseline`.
 //!
-//! 比较策略：**按序列化文本逐字节比对**，不留 epsilon。`to_string_pretty` 的输出
-//! （ryu 最短往返表示 + BTreeMap 键序）本身是确定的，逐字节比对才是真正的
-//! 「逐位不变」，也不依赖解析方向的设置（workspace 层的 serde_json 开着
-//! `float_roundtrip`，见 `core/Cargo.toml`）。
-//! 乱序采样断言另用 `f64::to_bits` 逐位比较。
+//! Comparison strategy: **byte-for-byte comparison of the serialized text**, with no epsilon. The output of `to_string_pretty` (ryu shortest round-trip representation + BTreeMap key order) is itself deterministic, and byte-level comparison is the real “bit-for-bit unchanged”. It also does not depend on the parse-direction setting (the workspace-level serde_json has `float_roundtrip` enabled, see `core/Cargo.toml`).
+//! Out-of-order sampling assertions additionally compare bit by bit using `f64::to_bits`.
 
 use std::path::PathBuf;
 
@@ -18,8 +14,7 @@ use scene_primitives::sample::{Channel, sample_frames};
 use scene_primitives::{HostInputs, Rgba};
 use serde_json::{Value, json};
 
-/// 固定文本度量：core 不做 I/O，字体由 host 注入。这里给一份纯算术的假度量，
-/// 让夹具与系统字体无关。
+/// Fixed text metrics: core does no I/O, and fonts are injected by the host. Here a purely arithmetic fake metric is provided, so the fixture is independent of system fonts.
 struct FixedMeasure;
 
 impl TextMeasure for FixedMeasure {
@@ -82,7 +77,7 @@ fn assert_golden(name: &str, actual: &Value) {
     );
 }
 
-/// media-demo 的宿主元数据：固定值，夹具不依赖真实媒体探测。
+/// Host metadata for media-demo: fixed values; the fixture does not depend on real media probing.
 fn media_demo_inputs() -> HostInputs {
     let mut inputs = HostInputs::default();
     inputs.insert_image("card", 640.0, 360.0);
@@ -96,7 +91,7 @@ fn rgba_json(color: &Rgba) -> Value {
     json!({"r": color.r, "g": color.g, "b": color.b, "a": color.a})
 }
 
-/// 通道自适应采样点：区间外各一点、每个关键帧、每段中点。
+/// Adaptive sampling points for channels: one point just outside each end of the interval, each keyframe, and the midpoint of each segment.
 fn channel_probe_times(channel: &Channel) -> Vec<f64> {
     let mut times = Vec::new();
     if channel.frames.is_empty() {
@@ -142,7 +137,7 @@ fn channels_json(channels: &[Channel]) -> Value {
     Value::Array(channels.iter().map(channel_json).collect())
 }
 
-/// 深度优先展开渲染树，只留下带通道或带 extraDelay 的节点，夹具因此聚焦动画。
+/// Expands the render tree depth-first, keeping only nodes that carry channels or an extraDelay, so the fixture focuses on animation.
 fn node_rows(node: &RNode, path: &str, rows: &mut Vec<Value>) {
     let here = if path.is_empty() {
         node.id.clone()
@@ -230,10 +225,10 @@ fn resolve_document(doc: Value, inputs: Option<HostInputs>) -> Ir {
         resolver.set_host_inputs(inputs);
     }
     let mut ir = resolver.resolve().expect("resolve");
-    // 阶段 2：生产顺序是 resolve → layout → `build_channels_after_layout`
-    // （相对长度求值），`FrameRenderer::new` 已把它固化成契约。
-    // media-demo / launch 里没有任何相对长度 ⇒ 这一步**一个字节都不改**，
-    // 这正是「绝对通道输出不变」的硬证据，golden 因此不重生成。
+    // Stage 2: the production order is resolve → layout → `build_channels_after_layout`
+    // (relative-length evaluation), which `FrameRenderer::new` has already fixed as a contract.
+    // media-demo / launch contain no relative lengths ⇒ this step changes **not a single byte**,
+    // which is the hard evidence that “absolute channel output is unchanged”; the golden is therefore not regenerated.
     let before: Vec<String> = ir
         .visual_clips
         .iter()
@@ -259,14 +254,13 @@ fn media_demo_doc() -> Value {
     serde_json::from_slice(&std::fs::read(&path).expect("读取 media-demo.ccut.json")).unwrap()
 }
 
-/// `tests/fixtures/launch-golden/launch.ccut.json` 是跟踪进版本库的 fixture。
+/// `tests/fixtures/launch-golden/launch.ccut.json` is a fixture tracked in the repository.
 fn launch_doc() -> Value {
     let path = fixture_root().join("launch-golden/launch.ccut.json");
     serde_json::from_slice(&std::fs::read(&path).expect("读取 launch.ccut.json")).unwrap()
 }
 
-// 两份 golden 里的 "path" / "note" / "generator" 记的是 v2 的位置与命令，与夹具逐字节
-// 对拍，所以照原文保留；夹具实际从本 crate 的 `tests/fixtures/` 读。
+// The "path" / "note" / "generator" entries in the two goldens record the v2 location and command; they are cross-checked byte for byte against the fixture, so they are kept as originally written. The fixture is in fact read from this crate's `tests/fixtures/`.
 #[test]
 fn bcf_channels_match_golden() {
     let document = json!({
@@ -287,8 +281,7 @@ fn bcf_channels_match_golden() {
     assert_golden("bcf-channels.json", &document);
 }
 
-/// `tests/fixtures/launch-golden/launch.ccut.json` 与本基线 golden 都在版本库里，
-/// 逐位核对，不再跳过。
+/// `tests/fixtures/launch-golden/launch.ccut.json` and this baseline golden are both in the repository, checked bit by bit, and no longer skipped.
 #[test]
 fn bcf_channels_launch_matches_golden() {
     let doc = launch_doc();
@@ -329,7 +322,7 @@ fn sample_frames_is_order_independent() {
     }
     assert!(!channels.is_empty(), "media-demo 必须产出通道");
 
-    // 覆盖 [-0.5, total+0.5] 的密集网格 + 若干帧内偏移。
+    // Dense grid covering [-0.5, total+0.5] plus a few intra-frame offsets.
     let mut times = Vec::new();
     let mut frame = -15_i32;
     while frame <= (ir.total * 30.0) as i32 + 15 {
@@ -369,8 +362,7 @@ fn collect_channels(node: &RNode, out: &mut Vec<Channel>) {
     }
 }
 
-/// `Value` 的相等对 f64 走 `PartialEq`，`0.0 == -0.0` 会放过符号翻转；
-/// 这里显式按位比，乱序采样必须逐位相同。
+/// Equality of `Value` on f64 goes through `PartialEq`, where `0.0 == -0.0` would let a sign flip slip through; here the comparison is explicitly bitwise, and out-of-order sampling must match bit for bit.
 fn value_bitwise_eq(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
@@ -389,7 +381,7 @@ fn value_bitwise_eq(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// 固定种子的确定性置换（splitmix64 → Fisher-Yates），不引入 rand 依赖。
+/// Deterministic permutation with a fixed seed (splitmix64 → Fisher-Yates), without introducing a rand dependency.
 fn shuffled(len: usize, mut seed: u64) -> Vec<usize> {
     let mut next = move || {
         seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);

@@ -1,11 +1,11 @@
-//! 共享的源词边界判断。翻译对齐维持原判据；英文源 Cue 在其上增加不可拆短语保护。
+//! Shared source-word boundary logic. Translation alignment keeps its original criteria. For English source Cues, an unbreakable-phrase protection is layered on top.
 
 use crate::atomize::join_word_texts;
 use crate::seam::{ends_dangling, source_boundary_strength};
 
-/// 源 Cue 的切点比跨语对齐更严格：功能词不得悬在行尾，已知固定短语不得拆开。
-/// 这不是句法解析器；只约束高置信度结构，不把未知普通词对猜成名词短语。
-/// 调用方只在 en / en-* 文稿启用，显式用户断点仍有更高优先级。
+/// Cut points for source Cues are stricter than cross-language alignment. Function words must not hang at the end of a line, and known fixed phrases must not be split.
+/// This is not a syntactic parser. It only constrains high-confidence structures, and it does not guess that unknown ordinary word pairs are noun phrases.
+/// Callers enable this only for en / en-* scripts. Explicit user breakpoints still take higher priority.
 pub(crate) fn english_cue_boundary_issue(words: &[&str], boundary: usize) -> Option<String> {
     if boundary == 0 || boundary >= words.len() || source_boundary_strength(words, boundary) >= 3 {
         return None;
@@ -23,8 +23,7 @@ pub(crate) fn english_cue_boundary_issue(words: &[&str], boundary: usize) -> Opt
         })
         .collect();
     let tail = tokens[boundary - 1].as_str();
-    // 这些词无句读地留在行尾时仍依赖后续成分。保留标点后的自然停顿，
-    // 例如 “Yes, you can. | Next ...” 不会被本表拦截。
+    // When these words are left at the end of a line without punctuation, they still depend on what follows. The natural pause after punctuation is kept, so “Yes, you can. | Next ...” is not blocked by this table.
     const BOUND_TAILS: &[&str] = &[
         "in",
         "on",
@@ -156,7 +155,7 @@ pub(crate) fn english_cue_boundary_issue(words: &[&str], boundary: usize) -> Opt
     None
 }
 
-/// 逗号后的高置信度从句起点；名词枚举与 like / basically 一类填充语不在此表。
+/// High-confidence clause starts after a comma. Noun enumerations and filler such as like / basically are not in this table.
 pub(crate) fn english_clause_start(word: &str) -> bool {
     let token = normalized_source_lexemes(word)
         .into_iter()
@@ -207,7 +206,7 @@ mod tests {
                 "{words:?}"
             );
         }
-        // Cue 新增的约束不改变翻译对齐的调用契约。
+        // The constraints added to Cue do not change the calling contract of translation alignment.
         assert!(source_boundary_issue(&["national", "security"], 1).is_none());
         assert!(source_boundary_issue(&["very", "dangerous"], 1).is_none());
         for (words, boundary) in [
@@ -233,8 +232,7 @@ pub(crate) fn normalized_source_lexemes(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 无解析器条件下只拦截高置信度的源语残片。一般的无标点短语仍交给 LLM
-/// 判断；冠词/所有格/常见前置修饰语悬在片尾则一定不是完整语义单位。
+/// Without a parser, only high-confidence source-language fragments are blocked. General unpunctuated phrases are still left to the LLM to judge. An article, possessive, or common pre-modifier hanging at the end of a fragment is definitely not a complete semantic unit.
 pub fn source_boundary_issue(words: &[&str], boundary: usize) -> Option<String> {
     if boundary == 0 || boundary >= words.len() || source_boundary_strength(words, boundary) >= 3 {
         return None;
@@ -255,10 +253,7 @@ pub fn source_boundary_issue(words: &[&str], boundary: usize) -> Option<String> 
         .get(boundary + 1)
         .and_then(|word| normalized_source_lexemes(word).into_iter().next())
         .unwrap_or_default();
-    // 高置信度的英语不定式补语：`need | to write prompts`
-    // 会把谓词的必需补语切到下一行，不能因为此处恰有轻停顿
-    // 或 seam1 就放行。只列可高信判定的支配词，避免把
-    // `walk | to the store` 这类可独立的方向短语一概禁掉。
+    // High-confidence English infinitive complements: `need | to write prompts` would split the predicate's required complement onto the next line. It must not be allowed just because there happens to be a light pause or seam1 here. Only governing words that can be identified with high confidence are listed, to avoid banning directional phrases like `walk | to the store` that can stand alone.
     const INFINITIVE_COMPLEMENT_HEADS: &[&str] = &[
         "afford",
         "afforded",
@@ -344,9 +339,7 @@ pub fn source_boundary_issue(words: &[&str], boundary: usize) -> Option<String> 
         "each", "every", "some", "any", "no", "new", "other", "same", "first", "last", "next",
         "own", "more", "less", "many", "much", "few", "several",
     ];
-    // `thought that | proposition` 一类 reporting bridge 常被目标语压缩成
-    // “参与者认为，| 命题”，这是优质双语边界；不要把补语 that 误标成
-    // 限定词。其他 `that | noun/clause` 仍保持风险提示。
+    // `thought that | proposition` style reporting bridges are often compressed in the target language into “参与者认为，| 命题” (the participant thinks, | proposition). This is a high-quality bilingual boundary. Do not tag the complementizer that as a determiner. Other `that | noun/clause` cases keep the risk warning.
     const REPORTING_VERBS: &[&str] = &[
         "argue", "argued", "believe", "believed", "claim", "claimed", "find", "found", "know",
         "knew", "say", "said", "show", "showed", "think", "thought",
@@ -361,18 +354,14 @@ pub fn source_boundary_issue(words: &[&str], boundary: usize) -> Option<String> 
         .unwrap_or_default();
     let reporting_bridge =
         tail == "that" && boundary >= 2 && REPORTING_VERBS.contains(&previous.as_str());
-    // `each other | across ...` 已在完整互指短语之后收口；不要只因末词
-    // `other` 同时也是常见前置修饰词，就把这条自然边界误判为悬空修饰语。
+    // `each other | across ...` is already closed after the complete reciprocal phrase. Do not misjudge this natural boundary as a dangling modifier just because the final word `other` is also a common pre-modifier.
     let reciprocal_complete = tail == "other"
         && boundary >= 2
         && normalized_source_lexemes(words[boundary - 2])
             .into_iter()
             .next_back()
             .is_some_and(|token| token == "each");
-    // `doing this | ...`、`reach for this | ...`：this/that/these/those 跟在
-    // 及物动词或介词之后、且下一片以功能词（连词、代词、系动词、状语等
-    // 无法充当名词中心语的词）开头时，它是宾语代词而非限定词，这条边界
-    // 是完整的。`use this | model` 一类真限定词用法仍保持提示。
+    // `doing this | ...`, `reach for this | ...`: when this/that/these/those follows a transitive verb or preposition, and the next fragment starts with a function word (a conjunction, pronoun, copula, adverbial, or any word that cannot serve as a noun head), it is an object pronoun rather than a determiner, and this boundary is complete. Genuine determiner uses such as `use this | model` keep the warning.
     const PRONOUN_OBJECT_HEADS: &[&str] = &[
         "do", "does", "did", "doing", "done", "for", "to", "with", "into", "at", "on", "about",
         "from", "of", "in", "by", "like", "reach", "reaches", "reached", "try", "tries", "tried",

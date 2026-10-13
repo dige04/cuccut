@@ -14,7 +14,7 @@ import { pl } from './speech-document.pl.ts';
 import { tr } from './speech-document.tr.ts';
 import { vi } from './speech-document.vi.ts';
 
-/** `packages/jobs/src/speech-document.ts`：写进视频的转写文档名与缺省的说话人名。 */
+/** `packages/jobs/src/speech-document.ts`: the name of the transcript document written into the video, and the default speaker name. */
 const en = {
   documentName: 'Transcript',
   speakerName: (p: { n: number }) => `Speaker ${p.n}`,

@@ -16,7 +16,7 @@ import { DriverRegistry } from './agent-manager.ts';
 import { Harness, withEditorContext } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
-/** 项目标记 `.ccut/project.json` 与 `openProject` 的判定顺序（架构设计 §5.1）。全部在临时目录里。 */
+/** Decision order for the project marker `.ccut/project.json` and `openProject` (architecture design §5.1). All in a temp directory. */
 
 let dir: string;
 let home: RuntimeHome;
@@ -91,7 +91,7 @@ describe('项目标记', () => {
     const after = harness.getConversation(conversation.id).conversation;
     expect(after).toMatchObject({ projectId: project.id, cwd: b });
 
-    // 用户改过的名字保留。
+    // A name the user changed is kept.
     await harness.updateProject({ projectId: project.id, name: '我的片子' });
     const c = path.join(dir, '再换一次');
     await fs.rename(b, c);
@@ -114,7 +114,7 @@ describe('项目标记', () => {
     expect(harness.listProjects().find((p) => p.id === project.id)?.path).toBe(original);
     expect(harness.getConversation(conversation.id).conversation).toMatchObject({ projectId: project.id, cwd: original });
 
-    // 两边再打开都各自稳定。
+    // Each side stays stable when reopened.
     expect((await harness.openProject(original)).id).toBe(project.id);
     expect((await harness.openProject(copy)).id).toBe(opened.id);
   });
@@ -126,7 +126,7 @@ describe('项目标记', () => {
     expect((await harness.openProject(work)).id).toBe(project.id);
     expect(await markerId(work)).toBe(project.id);
 
-    // 换个没登记过的位置，再删标记：新项目。
+    // Move to an unregistered location, then delete the marker: new project.
     const elsewhere = path.join(dir, '别处');
     await fs.rename(work, elsewhere);
     await fs.rm(path.join(elsewhere, '.ccut'), { recursive: true });
@@ -190,7 +190,7 @@ describe('项目标记', () => {
     const rebuilt = await harness.openProject(work);
     expect(rebuilt).toMatchObject({ id: project.id, createdAt: project.createdAt, path: work });
 
-    // 升级前的登记（目录里没有标记）：加载时不写，打开时沿用登记的 id 并写入。
+    // Registration from before the upgrade (no marker in the directory): not written on load; on open, reuse the registered id and write it.
     const legacy = await mkdir('旧项目');
     await harness.shutdown();
     const now = new Date().toISOString();
@@ -204,9 +204,9 @@ describe('项目标记', () => {
   });
 });
 
-/** 无项目会话的视频留在工作目录里；用户要建项目或删会话时才建项目并绑定（架构设计 §3.10），以及启动时的迁移。 */
+/** Videos in a session without a project stay in its working directory; a project is created and bound only when the user creates one or deletes the session (architecture design §3.10), along with the migration at startup. */
 describe('无项目会话绑定项目', () => {
-  /** 一个假的视频目录：只要有 `video.db` 就算视频（视频格式规范 §1）。 */
+  /** A fake video directory: any directory with `video.db` counts as a video (video format spec §1). */
   async function fakeVideo(dir: string): Promise<void> {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'video.db'), 'db');
@@ -230,20 +230,20 @@ describe('无项目会话绑定项目', () => {
     expect(await markerId(a.path)).toBe(a.id);
     expect(harness.getConversation(conversation.id).conversation).toMatchObject({ projectId: a.id, cwd: a.path });
     expect(await fs.readFile(path.join(a.path, 'notes.txt'), 'utf8')).toBe('笔记');
-    // 没有回合在用旧工作目录：删掉。
+    // No turn is using the old working directory: delete it.
     expect(await exists(conversation.cwd)).toBe(false);
 
     expect((await harness.ensureConversationProject(conversation.id)).id).toBe(a.id);
     expect(harness.listProjects()).toHaveLength(1);
 
-    // 绑定落盘：重启后还在。
+    // Binding is written to disk: still there after restart.
     await harness.shutdown();
     harness = await open();
     expect(harness.getConversation(conversation.id).conversation).toMatchObject({ projectId: a.id, cwd: a.path });
     expect((await harness.ensureConversationProject(conversation.id)).id).toBe(a.id);
     expect(harness.listProjects()).toHaveLength(1);
 
-    // 没有标题用默认名。
+    // Without a title, use the default name.
     const untitled = await harness.createConversation({});
     expect((await harness.ensureConversationProject(untitled.id)).name).toBe(HP.untitledProject().text);
   });
@@ -265,7 +265,7 @@ describe('无项目会话绑定项目', () => {
 
   it('崩溃恢复：项目目录选定之后、会话绑定之前退出，下次接着用同一个目录，不产生第二个项目', async () => {
     const conversation = await harness.createConversation({ title: '半途' });
-    // 模拟上次绑定到一半：选定的目录记下了、建好并登记了，会话还没有绑定。
+    // Simulate a binding interrupted halfway: the chosen directory was recorded, created and registered, but the session is not yet bound.
     const chosen = path.join(home.projectsDir, '半途');
     await fs.writeFile(path.join(conversation.cwd, '.cuccut-binding.json'), JSON.stringify({ path: chosen }));
     const half = await harness.createProject({ name: '半途' });
@@ -294,7 +294,7 @@ describe('无项目会话绑定项目', () => {
     const result = await harness.migrateScratch();
     expect(result).toEqual({ moved: 0, folded: 0, recovered: 1, removed: 1 });
 
-    // 有视频的无项目会话不建项目：视频留在它的工作目录里。
+    // A project-less session with videos does not get a project: the videos stay in its working directory.
     expect(harness.getConversation(live.id).conversation).toMatchObject({ projectId: null, cwd: live.cwd });
     expect(await exists(path.join(live.cwd, '旧视频', 'video.db'))).toBe(true);
     expect(await exists(path.join(live.cwd, 'exports.txt'))).toBe(true);
@@ -308,7 +308,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(orphan)).toBe(false);
     expect(await exists(empty)).toBe(false);
 
-    // 再来一个没有会话的：收进同一个「恢复的视频」，重名的加序号。
+    // Another one without a session: collected into the same "Recovered videos" project, with duplicate names numbered.
     const another = path.join(home.scratchDir, 'conv_gone2');
     await fakeVideo(path.join(another, '孤儿视频'));
     await harness.shutdown();
@@ -355,7 +355,7 @@ describe('无项目会话绑定项目', () => {
     home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home'), CUCCUT_SESSIONS_DIR: path.join(dir, 'sessions') });
     const legacyDir = home.legacyScratchDir!;
     expect(legacyDir).toBe(path.join(dir, 'home', 'scratch'));
-    // 先按旧位置建会话：用一个旧布局的 Home 打开。
+    // First create the session at the old location: open with a Home in the old layout.
     const oldHome = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home') });
     harness = await Harness.open({
       home: oldHome,
@@ -382,7 +382,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(path.join(home.scratchDir, gone.id))).toBe(true);
     expect(await exists(legacyDir)).toBe(false);
 
-    // 落盘：重启后还是新位置，再跑一遍什么也不做。
+    // Persisted: after restart it is still at the new location, and running again does nothing.
     await harness.shutdown();
     harness = await open();
     expect(harness.getConversation(kept.id).conversation.cwd).toBe(moved.cwd);
@@ -412,14 +412,14 @@ describe('无项目会话绑定项目', () => {
     const refused = await rejection(harness.ensureConversationProject(conversation.id));
     expect(refused.code).toBe('conflict');
     expect(refused.details).toMatchObject({ code: 'VIDEO_IN_USE', videos: ['开着的'] });
-    // 先把只在宽限期里等着关的关掉，再看还有没有开着的。
+    // First close the ones only waiting to close in the grace period, then check whether any are still open.
     expect(idleClosed).toEqual([real]);
     expect(harness.listProjects()).toHaveLength(projectsBefore);
     expect(harness.getConversation(conversation.id).conversation).toMatchObject({ projectId: null, cwd: conversation.cwd });
     expect(await exists(path.join(conversation.cwd, '开着的', 'video.db'))).toBe(true);
     expect(await exists(path.join(conversation.cwd, 'b.txt'))).toBe(true);
 
-    // 删会话要先把视频放进项目：同样拒绝，会话记录与工作目录原样留着。
+    // Deleting a session must first move its videos into the project: likewise rejected, and the session record and working directory are left as they are.
     expect((await rejection(harness.deleteConversation(conversation.id))).details).toMatchObject({ code: 'VIDEO_IN_USE' });
     expect(harness.getConversation(conversation.id).conversation.projectId).toBeNull();
     expect(await exists(path.join(conversation.cwd, '开着的', 'video.db'))).toBe(true);
@@ -441,7 +441,7 @@ describe('无项目会话绑定项目', () => {
       projects: new ProjectStore(home.projectsFile),
       drivers: new DriverRegistry(),
       log: silentLogger,
-      // 第一次是绑定前的检查：那时还没开着。
+      // The first time is the check before binding: at that point nothing was open.
       openVideoDirs: () => (checked ? busy : ((checked = true), [])),
     });
     const conversation = await harness.createConversation({ title: '开着' });
@@ -453,16 +453,16 @@ describe('无项目会话绑定项目', () => {
       const project = await harness.ensureConversationProject(conversation.id);
       expect(await exists(path.join(project.path, 'b.txt'))).toBe(true);
       expect(await exists(path.join(conversation.cwd, '开着的', 'video.db'))).toBe(true);
-      // 计时器用假的，文件操作是真的：让出事件循环等它们做完。
+      // Timers are fake, file operations are real: yield the event loop and wait for them to finish.
       const until = async (done: () => boolean | Promise<boolean>) => {
         for (let i = 0; i < 5000 && !(await done()); i++) await new Promise((r) => setImmediate(r));
       };
-      // 还开着：到点也不搬，再等下一次。
+      // Still open: don't move at the scheduled time, wait for the next one.
       expect(vi.getTimerCount()).toBe(1);
       await vi.advanceTimersByTimeAsync(30_000);
       await until(() => vi.getTimerCount() === 1);
       expect(await exists(path.join(conversation.cwd, '开着的', 'video.db'))).toBe(true);
-      // 视频关掉之后，过一会儿自己搬过去（不用等下次启动）。
+      // After the video is closed, it moves itself later (no need to wait for the next startup).
       busy = [];
       await vi.advanceTimersByTimeAsync(30_000);
       await until(async () => !(await exists(conversation.cwd)));
@@ -478,7 +478,7 @@ describe('无项目会话绑定项目', () => {
     const owner = await harness.createConversation({ title: '原来的' });
     const guest = await harness.createConversation({ title: '切片', folderOf: owner.id });
     expect(guest).toMatchObject({ projectId: null, cwd: owner.cwd, folderOf: owner.id });
-    // 从共用的会话再开：还是共用最初那条。
+    // Opening from a shared session: it still uses the original one.
     expect(await harness.createConversation({ folderOf: guest.id })).toMatchObject({ cwd: owner.cwd, folderOf: owner.id });
     expect(await exists(path.join(home.scratchDir, guest.id))).toBe(false);
 
@@ -488,7 +488,7 @@ describe('无项目会话绑定项目', () => {
     expect(follower).toMatchObject({ projectId: project.id, cwd: project.path });
     expect(follower.folderOf).toBeUndefined();
 
-    // 落盘：重启后还在。
+    // Persisted: still there after restart.
     await harness.shutdown();
     harness = await open();
     expect(harness.getConversation(guest.id).conversation).toMatchObject({ cwd: owner.cwd, folderOf: owner.id });
@@ -507,7 +507,7 @@ describe('无项目会话绑定项目', () => {
     });
     await fakeVideo(path.join(owner.cwd, '访谈 片段'));
 
-    // 删掉一条共用的会话：目录与视频都在。
+    // Delete one shared session: the directory and videos remain.
     await harness.deleteConversation(other.id);
     expect(await exists(path.join(owner.cwd, '访谈', 'video.db'))).toBe(true);
 
@@ -541,7 +541,7 @@ describe('无项目会话绑定项目', () => {
     const bound = await harness.createConversation({ title: '有项目的' });
     const boundGuest = await harness.createConversation({ title: '跟着', folderOf: bound.id });
     await harness.shutdown();
-    // 模拟崩溃留下的记录：那条会话的记录没了（删掉之后来不及改共用它的）；另一条进了项目、共用它的还没改。
+    // Simulate a record left by a crash: the record of one session is gone (there was no time to update the one sharing it); the other went into the project, and the one sharing it has not been updated yet.
     await fs.rm(path.join(home.conversationsDir, `${owner.id}.jsonl`), { force: true });
     harness = await open();
     const project = await harness.ensureConversationProject(bound.id);
@@ -550,7 +550,7 @@ describe('无项目会话绑定项目', () => {
     harness = await open();
     await harness.migrateScratch();
 
-    // 最早建的那条接过目录（两条可能建在同一毫秒，那时按 id）。
+    // The earliest-created one takes over the directory (two may have been created in the same millisecond; then by id).
     const [heir, other] = [first, second].sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
     const a = harness.getConversation(heir!.id).conversation;
     expect(a).toMatchObject({ cwd: path.join(home.scratchDir, heir!.id), projectId: null });
@@ -562,7 +562,7 @@ describe('无项目会话绑定项目', () => {
     expect(b.folderOf).toBeUndefined();
   });
 
-  /** 把共用会话的记录改回「还没跟上」：仍共用 `ownerId`，工作目录是它的旧工作目录（模拟绑定后来不及改它就停了）。 */
+  /** Change the shared session's record back to "not yet caught up": it still shares `ownerId`, and its working directory is its old working directory (simulating binding stopping before it could update it). */
   async function rewriteGuest(guestId: string, ownerId: string): Promise<void> {
     const file = path.join(home.conversationsDir, `${guestId}.jsonl`);
     const lines = (await fs.readFile(file, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line));

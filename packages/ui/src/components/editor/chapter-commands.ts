@@ -13,13 +13,12 @@ import { CHAPTER_COPY as C } from './chapter-copy.ts';
 import type { EditorActions } from './editor-context.tsx';
 
 /**
- * 章节的编辑命令：章节条、右键菜单与文稿章节头行共用。每一步是一笔编辑事务（`apply`），撤销栈上有名字；
- * 加、改名、删除之后出带「撤销」的提示，撤的是这一笔（不是栈顶）。拖起点与拖片段边缘一样，不出提示。
+ * Chapter editing commands: shared by the chapter bar, the context menu and the chapter header line in the transcript. Each step is one edit transaction (`apply`), named on the undo stack. After adding, renaming or deleting, a toast with “Undo” appears, which undoes that one operation (not the top of the stack). Dragging a start point, like dragging a clip edge, shows no toast.
  */
 
 const TOAST_MS = 2500;
 
-/** 上一条带撤销的提示：新的一条出来时收掉旧的（S2 带操作的提示不会自己消失）。 */
+/** The previous toast with undo: when a new one appears, the old one is closed (S2 toasts with actions do not dismiss themselves). */
 let closeUndoToast: (() => void) | null = null;
 
 function undoToast(actions: EditorActions, message: string, receipt: TransactionReceipt): void {
@@ -60,7 +59,7 @@ export async function removeChapter(actions: EditorActions, sequence: Sequence, 
   return !!receipt;
 }
 
-/** 挪起点（调用方已按 `startBounds` 夹好）。 */
+/** Moves the start point (the caller has already clamped it with `startBounds`). */
 export async function moveChapter(actions: EditorActions, sequence: Sequence, chapter: ChapterSpan, frame: number): Promise<boolean> {
   const operation = moveChapterOperation(sequence.id, chapter, frame);
   if (!operation) return false;

@@ -1,15 +1,8 @@
-//! `ribbons-v1`：`ribbons`（设计 §7.2）。
+//! `ribbons-v1`: `ribbons` (design §7.2).
 //!
-//! `ribbonCount` 条正弦丝带横跨盒宽，围绕盒子中线摆动。可用的 bin 等分成
-//! `ribbonCount` 段，第 `j` 条丝带的摆幅是第 `j` 段的平均幅度（占半盒高的分数）；
-//! 相位随**元素本地时刻**流动（`speed` 是每秒走过的周期数），`cycles` 是横跨盒宽
-//! 的周期数，各条丝带的初相等距错开一整圈。摆幅再乘 `sin(π·u)`——丝带在盒子左右
-//! 两端收拢到中线，是这类视觉的经典形态。颜色从主色（第一条）到副色（最后一条）
-//! 线性插值，标签 `Ribbon A` / `Ribbon B`。
+//! `ribbonCount` sinusoidal ribbons span the box width and swing around the box's centre line. The usable bins are split into `ribbonCount` segments; the swing of ribbon `j` is the average amplitude of segment `j` (as a fraction of half the box height). The phase flows with the **element's local time** (`speed` is the number of cycles per second), `cycles` is the number of cycles across the box width, and the initial phases of the ribbons are spaced evenly across one full turn. The swing is further multiplied by `sin(π·u)`, so the ribbons pinch toward the centre line at the left and right ends of the box, which is the classic form of this kind of visual. Colour interpolates linearly from the primary colour (first ribbon) to the secondary colour (last ribbon), with labels `Ribbon A` / `Ribbon B`.
 //!
-//! 静音时丝带摆幅为零，退化成 `ribbonCount` 条重合的中线。**唯一读时钟的算法**：
-//! 同一帧频谱在不同时刻画出不同相位。每条丝带一条 `StrokePath`
-//! （宽 `lineWidth × 盒高`），返回 `ribbonCount`。
+//! At silence the ribbons have zero swing and collapse into `ribbonCount` coincident centre lines. **The only algorithm that reads the clock**: the same spectrum frame draws different phases at different times. One `StrokePath` per ribbon (width `lineWidth × box height`); returns `ribbonCount`.
 
 use motion::preset_registry::VisualizerBody;
 

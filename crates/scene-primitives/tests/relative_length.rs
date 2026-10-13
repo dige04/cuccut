@@ -1,7 +1,6 @@
-//! 相对长度（规范 §7.8 / 设计 §5.5）：`canvas*` 随画幅走、`self*/parent*` 随
-//! 静态布局盒走，求值发生在**布局之后**。
+//! Relative lengths (spec §7.8 / design §5.5): `canvas*` follows the frame size, `self*/parent*` follows the static layout box, and evaluation happens **after layout**.
 //!
-//! 生产顺序由 `FrameRenderer::new` 固化：layout → `build_channels_after_layout`。
+//! The production order is fixed by `FrameRenderer::new`: layout → `build_channels_after_layout`.
 
 use scene_primitives::layout::{TextMeasure, TextMetricsLine};
 use scene_primitives::resolve::{Ir, RNode, Resolver};
@@ -56,7 +55,7 @@ fn find<'a>(node: &'a RNode, id: &str) -> Option<&'a RNode> {
     node.children.iter().find_map(|c| find(c, id))
 }
 
-/// `card` 元素上某属性首帧的 px 值。
+/// The px value of a property on the `card` element at its first frame.
 fn first_frame(ir: &Ir, prop: &str) -> f64 {
     let card = find(&ir.visual_clips[0].tree, "card").expect("card");
     card.channels
@@ -96,7 +95,7 @@ fn self_and_parent_bases_follow_the_static_layout_boxes() {
             {"t": "0%", "v": {"value": 0.5, "basis": "parentHeight"}},
             {"t": "100%", "v": 0}]}
     ]);
-    // 画幅变了，但 card 的显式 120×60 与父盒 400×200 没变 ⇒ px 也不变。
+    // The frame size changed, but the card's explicit 120×60 and the parent box 400×200 did not ⇒ the px values do not change either.
     for (w, h) in [(1920.0, 1080.0), (1080.0, 1920.0)] {
         let ir = resolved(doc(w, h, frames.clone()));
         assert_eq!(first_frame(&ir, "x"), 120.0, "{w}x{h}");
@@ -117,7 +116,7 @@ fn offset_is_added_after_scaling() {
 
 #[test]
 fn the_canonical_families_scale_with_the_canvas() {
-    // `motion.moveIn` 的缺省 distance 是画布短边的 4.5%。
+    // The default distance of `motion.moveIn` is 4.5% of the canvas short side.
     let make = |w: f64, h: f64| {
         json!({
             "meta": {"id": "t", "width": w, "height": h, "fps": 30},

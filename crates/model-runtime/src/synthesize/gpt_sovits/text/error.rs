@@ -1,23 +1,23 @@
-//! 上游 Python 前端在异常输入上抛出的异常类型；Rust 端返回同类错误，对拍时按类型名比对。
+//! Exception types that the upstream Python frontend raises on malformed input. The Rust side returns errors of the same kind, and parity checks compare them by type name.
 
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyError {
-    /// `ValueError`（如 `int("5,0")`）。
+    /// `ValueError` (e.g. `int("5,0")`).
     Value,
-    /// inflect `NumOutOfRangeError`（超过 decillion）。
+    /// inflect `NumOutOfRangeError` (value above decillion).
     NumOutOfRange,
     /// `IndexError`。
     Index,
-    /// `KeyError`（如音素不在符号表）。
+    /// `KeyError` (e.g. a phoneme that is not in the symbol table).
     Key,
-    /// torch `RuntimeError`（如在空列表上 `torch.cat`）。
+    /// torch `RuntimeError` (e.g. `torch.cat` on an empty list).
     Runtime,
 }
 
 impl PyError {
-    /// Python 异常类名。
+    /// Python exception class name.
     pub fn name(self) -> &'static str {
         match self {
             Self::Value => "ValueError",

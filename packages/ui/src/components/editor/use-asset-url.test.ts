@@ -20,7 +20,7 @@ function Probe({ videoId, asset }: { videoId: Id | null; asset: VersionRef }) {
   return createElement('i', { 'data-url': url ?? '', 'data-error': error ?? '' });
 }
 
-/** 只渲染第一次（服务端渲染不跑 effect）：看挂上那一刻给出的地址。 */
+/** Only the first render (server rendering does not run effects): check the address given at the moment of mounting. */
 function firstRender(cache: MediaUrlCache, videoId: Id | null, assets: VersionRef[]): string {
   const runtime = { videos: { mediaUrls: cache } } as unknown as RuntimeSession;
   return renderToStaticMarkup(

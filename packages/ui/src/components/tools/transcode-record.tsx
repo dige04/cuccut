@@ -51,9 +51,8 @@ import { RECORD_COPY, TRANSCODE_COPY } from './tools-copy.ts';
 import { copyText, useCancelJob, useRecordRetry } from './use-tool-records.ts';
 
 /*
- * 设计稿 tool-video.jsx `JobCard`：在跑的一张写进度与取消；做完的列输出文件（规格、体积前后、在文件夹中显示），
- * 合并另写一句流复制还是重新编码与原因；没做成的写原因、修法与 ffmpeg 原文；取消了的可以重新排队。
- * 本机 ffmpeg 不计费，取消了的也照设计稿留一张。
+ * Design mockup tool-video.jsx `JobCard`: a running job shows progress and a cancel button; a finished job lists its output file (spec, size before and after, “在文件夹中显示” (show in folder)), and says in one line whether the merge used stream copy or re-encoding, and why; a failed job gives the reason, the fix, and the raw ffmpeg output; a cancelled job can be queued again.
+ * Local ffmpeg is not billed, and a cancelled job still keeps a card, as in the mockup.
  */
 
 const progress = style({ width: 'full' });
@@ -75,7 +74,7 @@ const output = style({
 const outputText = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 });
 const outputName = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', userSelect: 'text' });
 const truncate = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 });
-/** 卡头右边的状态词与时间：不折行，标题让位。 */
+/** Status word and time on the right of the card header: no wrapping, the title yields. */
 const stamp = style({ font: 'ui-xs', color: 'gray-600', flexShrink: 0, whiteSpace: 'nowrap' });
 const modeLine = style({
   display: 'flex',
@@ -100,14 +99,14 @@ const raw = style({
 });
 
 const ACTION_ICON = { compress: <Filmstrip />, merge: <Layers />, 'extract-audio': <AudioWave /> } as const;
-/** 记录对应的工具与草稿（「带回左边再来一版」）。 */
+/** The tool and draft this record belongs to (“带回左边再来一版” (bring back to the left and make another version)). */
 const ACTION_TOOL = { compress: 'compress-video', merge: 'merge-video', 'extract-audio': 'extract-audio' } as const;
 
 function ActionIcon({ job }: { job: JobRecord }) {
   return <span className={recordIcon} aria-hidden>{ACTION_ICON[transcodeAction(job)]}</span>;
 }
 
-/** 照冻结的参数再提交一个新任务（失败的「再试一次」、取消了的「重新排队」）。 */
+/** Submits a new job with the frozen parameters (“再试一次” (retry) for failed jobs, “重新排队” (re-queue) for cancelled ones). */
 function useTranscodeRetry(job: JobRecord, copy: { submitted: string }) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -121,7 +120,7 @@ function useTranscodeRetry(job: JobRecord, copy: { submitted: string }) {
   );
 }
 
-/** 右栏的一条压缩或合并记录。 */
+/** One compress or merge record in the right column. */
 export function TranscodeRecord({ job, all, now }: { job: JobRecord; all: readonly JobRecord[]; now: number }) {
   if (job.state === 'cancelled') return <CancelledCard job={job} />;
   const status = recordStatus(job);
@@ -165,7 +164,7 @@ function ErrorCard({ job }: { job: JobRecord }) {
   const hide = useTools((s) => s.hide);
   const again = useTranscodeRetry(job, { submitted: TRANSCODE_COPY.retried });
   const title = transcodeTitle(job);
-  // 结果不明的要先对账（任务详情里决定再试或放弃），这里不给重试、也不让藏起来。
+  // Results of unknown state must be reconciled first (decide to retry or give up in the job details); here there is no retry and it cannot be hidden.
   if (job.state === 'needs-reconciliation') {
     return (
       <RecordCard failed label={title}>
@@ -226,7 +225,7 @@ function ErrorCard({ job }: { job: JobRecord }) {
   );
 }
 
-/** 取消了的一条：本机 ffmpeg 不计费，没有产出文件；可以照原设置重新排队，或者藏起来。 */
+/** A cancelled record: local ffmpeg is not billed and there is no output file; it can be re-queued with the same settings, or hidden. */
 function CancelledCard({ job }: { job: JobRecord }) {
   const hide = useTools((s) => s.hide);
   const again = useTranscodeRetry(job, { submitted: TRANSCODE_COPY.retried });
@@ -324,7 +323,7 @@ function DoneCard({ job, now }: { job: JobRecord; now: number }) {
       <span className={truncate} title={transcodeMeta(job)}>
         {transcodeMeta(job)}
       </span>
-      {/* 产物列进 Space 之后用产物行（在 Space 中查看、交给 Agent、以此新建视频）；列进去之前先按任务结果列文件。 */}
+      {/* Once the outputs are in Space, use the output row (view in Space, hand to Agent, create a video from it); before they are in Space, list the files from the job result. */}
       {entries.length ? (
         <div className={outputs}>
           {entries.map((e) => (

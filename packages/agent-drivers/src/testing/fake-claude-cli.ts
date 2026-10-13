@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { FakeClaudeCliScenario } from './fake-claude.ts';
 
 /**
- * 假 claude 的进程入口（见 `fake-claude.ts` 的 `createFakeClaudeCli`）。由 node 直接运行，只用 Node 自带的模块。
- * 只回答探测用到的 `--version` 与 `auth status`；会话不经过它（会话用注入的假 Query）。
- * 行为来自 `$FAKE_CLAUDE_DIR/scenario.json`，每次调用的参数记进 `$FAKE_CLAUDE_DIR/log.jsonl`。
+ * The process entry point for the fake claude (see `createFakeClaudeCli` in `fake-claude.ts`). Run directly by node, using only Node's built-in modules.
+ * It only answers the `--version` and `auth status` probes; sessions do not go through it (sessions use the injected fake Query).
+ * Behavior comes from `$FAKE_CLAUDE_DIR/scenario.json`, and the arguments of each call are recorded in `$FAKE_CLAUDE_DIR/log.jsonl`.
  */
 
 const dir = process.env.FAKE_CLAUDE_DIR;
@@ -27,12 +27,12 @@ if (args[0] === '--version') {
 }
 if (args[0] === 'auth' && args[1] === 'status') {
   if (scenario.auth === null) {
-    // 旧版本：没有这个子命令。
+    // Old version: no such subcommand.
     process.stderr.write(`error: unknown command 'auth'\n`);
     process.exit(1);
   }
   process.stdout.write(`${JSON.stringify(scenario.auth, null, 2)}\n`);
-  // 与 2.1.284 一致：没登录时退出码 1，stdout 照样是 JSON。
+  // Consistent with 2.1.284: when not logged in, exit code 1, but stdout is still JSON.
   process.exit(scenario.auth.loggedIn ? 0 : 1);
 }
 process.stderr.write(`假 claude 不支持：${args.join(' ')}\n`);

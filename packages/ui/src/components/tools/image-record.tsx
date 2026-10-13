@@ -31,8 +31,8 @@ import { IMAGE_COPY, RECORD_COPY } from './tools-copy.ts';
 import { copyText, useArtifactUrl, useCancelJob, useDownloadArtifact, useRecordRetry } from './use-tool-records.ts';
 
 /*
- * 设计稿 image-gen.jsx `ImageResults`（425-442）、`ImageCard`（376-395）、`RunningCard`（396-409）、`ErrorCard`（411-423）：
- * 做完的一批是小标题 + 图格，在跑的一张进度卡，没做成的一张警示卡。取消了的不列（可能已经计费的照实留一张）。
+ * Design file image-gen.jsx `ImageResults` (425-442), `ImageCard` (376-395), `RunningCard` (396-409), `ErrorCard` (411-423):
+ * a finished batch is a subtitle plus an image grid, a running one is a progress card, and a failed one is a warning card. Cancelled items are not listed (one that may already have been billed is kept, to be accurate).
  */
 
 const batch = style({ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 });
@@ -56,7 +56,7 @@ const errorTitle = style({ margin: 0, font: 'ui-sm', fontWeight: 'bold', color: 
 const progress = style({ width: 'full' });
 const caption = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
 
-/** 「再试一次」：中断的就地重跑，其余照冻结的参数原样再提交（见 `useRecordRetry`）；编辑器里的带回 `videoId`，仍收进那个视频。 */
+/** “再试一次” (Try again): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`); a run from the editor carries back its `videoId` and is still filed under that video. */
 function useImageRetry(job: JobRecord, videoId?: Id) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -70,7 +70,7 @@ function useImageRetry(job: JobRecord, videoId?: Id) {
   );
 }
 
-/** 右栏的一条生图记录：按状态画成一批结果、进度卡或警示卡。 */
+/** One image-generation record in the right column: drawn as a batch of results, a progress card or a warning card, depending on its status. */
 export function ImageRecord({
   job,
   all,
@@ -85,7 +85,7 @@ export function ImageRecord({
   onAgain: (job: JobRecord) => void;
 }) {
   const provider = providerName(view, 'generateImage', job.providerId);
-  // 取消了的不列；可能已经计费的照实留一张（服务商不支持取消时请求可能照样做完）。
+  // Cancelled items are not listed; one that may already have been billed is kept, to be accurate (when the provider does not support cancellation, the request may still complete).
   if (job.state === 'cancelled') {
     const cost = job.cancellation ? cancellationCost(job.cancellation) : null;
     return cost ? <CancelledCard job={job} cost={cost} /> : null;
@@ -128,7 +128,7 @@ export function ErrorCard({ job, videoId }: { job: JobRecord; videoId?: Id }) {
   const go = useShell((s) => s.go);
   const hide = useTools((s) => s.hide);
   const again = useImageRetry(job, videoId);
-  // 结果不明的要先对账（任务详情里决定再试或放弃），这里不给重试、也不让藏起来。
+  // Results of unknown status must be reconciled first (decide to retry or give up in the job details); no retry is offered here, and they cannot be hidden.
   if (job.state === 'needs-reconciliation') {
     return (
       <RecordCard failed label={imagePrompt(job)}>
@@ -166,7 +166,7 @@ export function ErrorCard({ job, videoId }: { job: JobRecord; videoId?: Id }) {
   );
 }
 
-/** 取消了但可能已经计费的一条：照实写费用，可以藏起来。 */
+/** A cancelled item that may already have been billed: the cost is shown as is, and it can be hidden. */
 export function CancelledCard({ job, cost }: { job: JobRecord; cost: string }) {
   const hide = useTools((s) => s.hide);
   return (

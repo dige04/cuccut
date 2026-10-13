@@ -1,33 +1,29 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/QuantizedTextDecoder.swift`。
+//! Parts of this file are implemented with reference to speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/QuantizedTextDecoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; scope of sources: see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! candle 后端的基础层，镜像 mlx 后端 `qwen3/layers.rs` 的数值语义。
+//! Base layers of the candle backend, mirroring the numerical semantics of the mlx backend `qwen3/layers.rs`.
 //!
-//! 计算精度由 `WeightStore::compute_dtype` 决定：CPU 上恒为 f32，CUDA 上沿用
-//! checkpoint 自身的半精度（bf16/f16）。需要稳定累加的归约（LayerNorm 的均值
-//! 与方差、softmax、RmsNorm）仍在 f32 上完成。
+//! Compute precision is determined by `WeightStore::compute_dtype`: always f32 on CPU; on CUDA, the checkpoint's own half precision (bf16/f16) is used. Reductions that need stable accumulation (LayerNorm's mean and variance, softmax, RmsNorm) are still done in f32.
 
 use super::weights::WeightStore;
 use anyhow::{Result, anyhow, bail};
 use candle_core::{D, DType, Device, Tensor};
 use std::sync::Mutex;
 
-/// RoPE cos/sin 表的扩容步长；按需增长，避免解码期反复重建。
+/// Growth step for the RoPE cos/sin tables; grows on demand to avoid rebuilding them repeatedly during decoding.
 const ROPE_TABLE_STEP: usize = 1_024;
 
-/// 精确 GELU：`x * (1 + erf(x / √2)) / 2`，与 mlx 侧 `gelu_same_dtype` 一致。
+/// Exact GELU: `x * (1 + erf(x / √2)) / 2`, matching `gelu_same_dtype` on the mlx side.
 pub fn gelu(x: &Tensor) -> Result<Tensor> {
     Ok(x.gelu_erf()?)
 }
 
 pub struct Dense {
-    /// 只保存 [in, out] 一份布局：这是 gemm 直接可用的形状，既不需要像原来那样
-    /// 额外保留一份 [out, in]（大投影层是数 GB 的差别），也避免解码期用转置视图
-    /// 触发 cuBLAS 的低效 `OP_T` GEMV 路径。
+    /// Only one [in, out] layout is stored: this is the shape gemm can use directly, so there is no need to keep an extra [out, in] copy as before (for large projection layers, that is a difference of several GB), and it also avoids triggering cuBLAS's inefficient `OP_T` GEMV path by using a transposed view during decoding.
     weight_t: Tensor,
     bias: Option<Tensor>,
 }
@@ -39,14 +35,14 @@ impl Dense {
         Self::from_weight(weight, bias)
     }
 
-    /// checkpoint 带 `scales` 时反量化加载（对应 mlx 的 `Projection`）。
+    /// When the checkpoint has `scales`, loads by dequantizing (corresponding to mlx's `Projection`).
     pub fn load_dequantized(store: &mut WeightStore, prefix: &str, group_size: usize, bits: usize) -> Result<Self> {
         let weight = store.take_dequantized(prefix, group_size, bits)?;
         let bias = store.take_optional_compute(&format!("{prefix}.bias"))?;
         Self::from_weight(weight, bias)
     }
 
-    /// `weight` 为 checkpoint 的 [out, in]；转置后原张量立即释放。
+    /// `weight` is the checkpoint's [out, in]; the original tensor is released immediately after transposing.
     pub fn from_weight(weight: Tensor, bias: Option<Tensor>) -> Result<Self> {
         let weight_t = weight.t()?.contiguous()?;
         drop(weight);
@@ -78,7 +74,7 @@ pub struct LayerNorm {
 
 impl LayerNorm {
     pub fn load(store: &mut WeightStore, prefix: &str, eps: f32) -> Result<Self> {
-        // 归一化参数很小，恒定保存为 f32：forward 也在 f32 上累加均值/方差。
+        // Normalization parameters are small, so they are always stored as f32: forward also accumulates mean/variance in f32.
         let weight = store.take_optional_f32(&format!("{prefix}.weight"))?;
         let bias = store.take_optional_f32(&format!("{prefix}.bias"))?;
         if weight.is_none() && bias.is_none() {
@@ -120,7 +116,7 @@ pub struct RmsNorm {
 impl RmsNorm {
     pub fn load(store: &mut WeightStore, prefix: &str, eps: f32) -> Result<Self> {
         Ok(Self {
-            // candle 的 rms_norm 内部按 f32 累加，权重与输入同精度即可。
+            // candle's rms_norm accumulates internally in f32, so the weights only need to match the input precision.
             weight: store.take_compute(&format!("{prefix}.weight"))?,
             eps,
         })
@@ -132,8 +128,7 @@ impl RmsNorm {
 }
 
 pub struct TokenEmbedding {
-    /// 同样只保存 [hidden, vocab] 一份：tied 输出层是每步都跑的热路径，需要这个
-    /// 布局；查表则改成沿 vocab 维 `index_select` 再转置，代价只有取到的那几行。
+    /// Likewise, only one [hidden, vocab] copy is stored: the tied output layer is a hot path that runs every step and needs this layout; lookups instead use `index_select` along the vocab dimension followed by a transpose, so the cost is only the rows fetched.
     weight_t: Tensor,
 }
 
@@ -145,7 +140,7 @@ impl TokenEmbedding {
         Ok(Self { weight_t })
     }
 
-    /// `ids` 为 u32 [batch, sequence]。
+    /// `ids` is u32 [batch, sequence].
     pub fn forward(&self, ids: &Tensor) -> Result<Tensor> {
         let (batch, sequence) = ids.dims2()?;
         let flat = ids.flatten_all()?;
@@ -153,16 +148,13 @@ impl TokenEmbedding {
         Ok(columns.t()?.contiguous()?.reshape((batch, sequence, ()))?)
     }
 
-    /// tied embedding 作为输出层：`hidden × Wᵀ`。
+    /// Tied embedding used as the output layer: `hidden × Wᵀ`.
     pub fn as_linear(&self, hidden: &Tensor) -> Result<Tensor> {
         Ok(hidden.broadcast_matmul(&self.weight_t)?)
     }
 }
 
-/// 标准 SDPA：`softmax(q·kᵀ·scale + mask)·v`。支持 GQA（kv 头数少于 q 头数
-/// 时把重复的 q 头折进序列维，而不是把 kv 物化成 q 头数）。所有输入为
-/// [batch, heads, sequence, head_dim]，且必须是 gemm 可直接消费的布局
-/// （连续张量，或 KV cache 的 `narrow` 视图）。
+/// Standard SDPA: `softmax(q·kᵀ·scale + mask)·v`. Supports GQA (when the number of kv heads is fewer than q heads, the repeated q heads are folded into the sequence dimension rather than materializing kv to the q head count). All inputs are [batch, heads, sequence, head_dim], and must be layouts gemm can consume directly (contiguous tensors, or `narrow` views of the KV cache).
 pub fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value: &Tensor, scale: f64, mask: Option<&Tensor>) -> Result<Tensor> {
     let (batch, heads, sequence, head_dim) = query.dims4()?;
     let kv_heads = key.dim(1)?;
@@ -173,8 +165,7 @@ pub fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value: &Tensor
     let grouped_query = if repeats == 1 {
         query.clone()
     } else {
-        // [b, kv*rep, seq, d] 的内存顺序就是 [b, kv, rep, seq, d]，
-        // 因此这个 reshape 是零拷贝，且与逐组复制 kv 完全等价。
+        // The memory order of [b, kv*rep, seq, d] is the same as [b, kv, rep, seq, d], so this reshape is zero-copy and exactly equivalent to copying kv group by group.
         query.reshape((batch, kv_heads, repeats * sequence, head_dim))?
     };
     let scores = (grouped_query.matmul(&key.transpose(2, 3)?)? * scale)?;
@@ -204,16 +195,15 @@ pub fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value: &Tensor
     })
 }
 
-/// 半分裂 RoPE（llama 风格），与 mlx `fast::rope(traditional=false)` 一致。
-/// `x` 为 [batch, heads, sequence, head_dim]，`offset` 是 KV cache 长度。
+/// Half-split RoPE (llama style), matching mlx `fast::rope(traditional=false)`.
+/// `x` is [batch, heads, sequence, head_dim]; `offset` is the KV cache length.
 pub fn rope(x: &Tensor, theta: f32, offset: usize) -> Result<Tensor> {
     let (_batch, _heads, sequence, head_dim) = x.dims4()?;
     let (cos, sin) = rope_tables(theta, head_dim, offset, sequence, x.dtype(), x.device())?;
     Ok(candle_nn::rotary_emb::rope(&x.contiguous()?, &cos, &sin)?)
 }
 
-/// 常驻设备的 RoPE cos/sin 表。自回归解码时每步只做一次 `narrow`，
-/// 取代原来的「host 重建 + 上传」。
+/// RoPE cos/sin tables kept resident on the device. During autoregressive decoding each step only does one `narrow`, replacing the earlier “rebuild on host + upload”.
 pub struct RopeCache {
     theta: f32,
     head_dim: usize,
@@ -275,8 +265,7 @@ fn rope_tables(theta: f32, head_dim: usize, offset: usize, length: usize, dtype:
     Ok((cos, sin))
 }
 
-/// 注意力掩码使用的负偏置。必须落在目标精度的可表示范围内：f16 下 `-1e9`
-/// 会溢出成 `-inf`，再与「未屏蔽」位置的 0 相乘就会产生 NaN，整层输出报废。
+/// The negative bias used by the attention mask. It must lie within the representable range of the target precision: under f16, `-1e9` overflows to `-inf`, and multiplying it by the 0 at “unmasked” positions then produces NaN, ruining the whole layer's output.
 pub fn mask_bias(dtype: DType) -> f64 {
     match dtype {
         DType::F16 => -6.0e4,
@@ -284,8 +273,8 @@ pub fn mask_bias(dtype: DType) -> f64 {
     }
 }
 
-/// 因果注意力掩码：允许看见全部 cache 与自身及之前的 token。
-/// 直接在设备上用 arange 比较生成，避免 prefill 时在 host 上铺 O(seq×total)。
+/// Causal attention mask: allows attending to the entire cache and to itself and earlier tokens.
+/// Generated directly on the device by comparing arange values, avoiding laying out O(seq×total) on the host during prefill.
 pub fn causal_mask(sequence: usize, cache_length: usize, device: &Device, dtype: DType) -> Result<Tensor> {
     let total = sequence + cache_length;
     let rows = Tensor::arange(cache_length as u32, (cache_length + sequence) as u32, device)?.reshape((sequence, 1))?;
@@ -303,7 +292,7 @@ mod tests {
     use super::*;
     use candle_core::IndexOp;
 
-    /// GQA 现在把重复的 q 头折进序列维；结果必须与「逐组复制 kv」的朴素实现一致。
+    /// GQA now folds the repeated q heads into the sequence dimension; the result must match the naive implementation that copies kv group by group.
     #[test]
     fn grouped_query_attention_matches_repeated_kv() {
         let device = Device::Cpu;
@@ -356,7 +345,7 @@ mod tests {
         }
     }
 
-    /// 缓存表跨越扩容边界后，切片结果仍要与逐次重建的 rope 完全一致。
+    /// After the cache table crosses a growth boundary, the sliced result must still match RoPE rebuilt from scratch each time exactly.
     #[test]
     fn rope_cache_matches_uncached_rope_across_growth() {
         let device = Device::Cpu;
@@ -371,7 +360,7 @@ mod tests {
         }
     }
 
-    /// 掩码偏置必须在目标精度下保持有限，否则未屏蔽位置会出现 0 × -inf = NaN。
+    /// The mask bias must stay finite at the target precision; otherwise unmasked positions would produce 0 × -inf = NaN.
     #[test]
     fn causal_mask_stays_finite_in_every_dtype() {
         let device = Device::Cpu;
@@ -383,14 +372,14 @@ mod tests {
                 values.iter().all(|value| value.is_finite()),
                 "{dtype:?} mask has non-finite values: {values:?}"
             );
-            // 行 0 只能看到 cache 与自身，行 1 可以多看一格。
+            // Row 0 can only see the cache and itself; row 1 can see one more position.
             assert_eq!(values[1], 0.0);
             assert!(values[2] < -1.0e3);
             assert_eq!(values[5], 0.0);
         }
     }
 
-    /// LayerNorm 在半精度输入下改走 f32 归约，输出精度必须与 f32 路径接近。
+    /// LayerNorm switches to f32 reductions for half-precision input; the output precision must be close to the f32 path.
     #[test]
     fn layer_norm_half_precision_tracks_f32() {
         let device = Device::Cpu;
@@ -414,7 +403,7 @@ mod tests {
         }
     }
 
-    /// Dense 只保存转置布局，前向结果必须仍等于 `x · Wᵀ + b`。
+    /// Dense only stores the transposed layout; the forward result must still equal `x · Wᵀ + b`.
     #[test]
     fn dense_forward_matches_row_major_weight() {
         let device = Device::Cpu;
@@ -423,11 +412,11 @@ mod tests {
         let dense = Dense::from_weight(weight, Some(bias)).unwrap();
         let input = Tensor::from_vec(vec![1.0_f32, 2.0], (1, 1, 2), &device).unwrap();
         let output = dense.forward(&input).unwrap().flatten_all().unwrap().to_vec1::<f32>().unwrap();
-        // W = [[0,1],[2,3],[4,5]]，x = [1,2] → [2, 8, 14]，再加 bias。
+        // W = [[0,1],[2,3],[4,5]], x = [1,2] → [2, 8, 14], then add bias.
         assert_eq!(output, vec![2.5, 7.5, 15.0]);
     }
 
-    /// tied embedding 只保存 [hidden, vocab]，查表与输出投影都要保持原语义。
+    /// Tied embedding stores only [hidden, vocab]; both the lookup and the output projection must preserve their original semantics.
     #[test]
     fn token_embedding_lookup_and_projection_agree() {
         let device = Device::Cpu;
@@ -444,7 +433,7 @@ mod tests {
         );
         let logits = embedding.as_linear(&rows.i((.., 0..1, ..)).unwrap()).unwrap();
         assert_eq!(logits.dims(), &[1, 1, 4]);
-        // [6,7,8] 与词表各行的点积。
+        // Dot products of [6,7,8] with each row of the vocabulary.
         assert_eq!(
             logits.flatten_all().unwrap().to_vec1::<f32>().unwrap(),
             vec![23.0, 86.0, 149.0, 212.0]

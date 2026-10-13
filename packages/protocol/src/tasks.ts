@@ -3,14 +3,12 @@ import type { EditorContext, Id } from './domain.ts';
 import type { Money } from './grants.ts';
 
 /**
- * 任务合同（架构设计 §3.2，产品设计 §6）：一个任务的目标、范围、约束、「不要改动」、交付、访问模式、权限范围、预算与验收检查。
+ * Task contract (architecture design §3.2, product design §6): a task's goal, scope, constraints, “do not change” items, deliverables, access mode, permission scope, budget and acceptance checks.
  *
- * - 合同随任务（Run）建立：发送消息时没有显式给出的，Runtime 按编辑器上下文与会话的模式建立默认合同，经会话的
- *   `item.upsert`（任务条目上的 `contract`）与 `tasks` 主题（`contractRevision`）对用户可见。
- * - 每次修改产生新的 `revision`（从 1 起），旧的修订保留可查（`tasks.getContract` 给 `revision`）。
- * - 尚未启动的步骤采用新约束；已经冻结输入的 Job 不在执行中更换内容。
- * - `autonomy` 就是会话的访问模式（§3.12），不是第二套：改合同的 `autonomy` 等于切换会话的模式，切换会话的模式也会给
- *   进行中任务的合同记一个新修订。
+ * - The contract is established together with the task (Run). For anything not explicitly given when a message is sent, the Runtime establishes a default contract from the editor context and the session's mode. It is visible to the user through the session's `item.upsert` (the `contract` on the task item) and the `tasks` topic (`contractRevision`).
+ * - Each change produces a new `revision` (starting from 1). Old revisions are kept and can be queried (`tasks.getContract` gives `revision`).
+ * - Steps not yet started adopt the new constraints. A Job whose inputs are already frozen does not change its content while executing.
+ * - `autonomy` is just the session's access mode (§3.12), not a second system. Changing the contract's `autonomy` is the same as switching the session's mode, and switching the session's mode also records a new revision on the contract of the in-progress task.
  */
 
 export type TaskDeliverableKind = 'preview' | 'video-change' | 'video-file' | 'subtitle' | 'audio' | 'package';
@@ -18,33 +16,33 @@ export type TaskDeliverableStage = 'candidate-ready' | 'committed' | 'published'
 
 export interface TaskDeliverable {
   kind: TaskDeliverableKind;
-  /** 交付到哪个阶段才算完成：候选就绪、写进视频、发布到项目目录。 */
+  /** The delivery stage at which the task counts as complete: candidate ready, written into the video, or published to the project directory. */
   requiredStage: TaskDeliverableStage;
-  /** BCP 47 语言标签（字幕、配音）。 */
+  /** BCP 47 language tag (subtitles, dubbing). */
   language?: string;
-  /** 画幅变体。 */
+  /** Aspect ratio variant. */
   variantId?: Id;
 }
 
 /**
- * 任务的上下文范围（首版）：智能体「这个」「这里」指的对象。默认由发送时的编辑器上下文得出。
- * 时间区间按输出时间（秒）；没有时是整个视频。
+ * Context scope of the task (first version): the objects the agent's “this” and “here” refer to. By default derived from the editor context at send time.
+ * Time ranges are in output time (seconds). When absent, it is the whole video.
  */
 export interface ContextSelection {
   videoId: Id | null;
-  /** 用户发出任务时看到的视频版本。 */
+  /** The video version the user was looking at when issuing the task. */
   videoRevision: string | null;
-  /** 范围所在的序列；不给时是根序列。 */
+  /** The sequence the scope is in. The root sequence when not given. */
   sequenceId: Id | null;
-  /** 选中的时间线实例。 */
+  /** The selected timeline instance. */
   itemIds: Id[];
-  /** 输出时间上的一段区间（秒）。 */
+  /** A range on output time (seconds). */
   timeRange: { fromSeconds: number; toSeconds: number } | null;
 }
 
 export type ConstraintKind = 'content' | 'style' | 'duration' | 'format' | 'language' | 'other';
 
-/** 一条内容约束（首版是自然语言，交给智能体；QualityService 不据此自动判断）。 */
+/** One content constraint (in the first version it is natural language, handed to the agent; QualityService does not judge against it automatically). */
 export interface ConstraintRef {
   constraintId: Id;
   kind: ConstraintKind;
@@ -52,13 +50,12 @@ export interface ConstraintRef {
 }
 
 /**
- * 只对这个任务生效的保护（视频格式规范 §3.10 的 target 形状，另把属性单独列出）。智能体在任务里的提交与撤销带上它，
- * VideoEngine 提交时检查，触碰时整笔以 `TASK_PROTECTED` 拒绝；用户与手动的修改不受限制。
+ * Protection that applies only to this task (the target shape from the video format spec §3.10, with the attributes also listed separately). The agent's submissions and reverts within the task carry it. VideoEngine checks it on commit, and touching it rejects the whole operation with `TASK_PROTECTED`. User and manual edits are not restricted.
  *
- * - `video`：整个视频的任何变化；
- * - `entity`：这个实体本身（创建、修改、删除），不含子实体；
- * - `property`：实体的几个属性，点分隔的路径（`text`、`style.fontSize`、`place.x`）；删除实体算触碰；
- * - `interval`：序列上的一段帧区间：修改前或修改后与它相交的时间线实例（音频按精确起止时刻）；`trackIds` 限定轨道。
+ * - `video`: any change to the whole video;
+ * - `entity`: the entity itself (create, modify, delete), not including its sub-entities;
+ * - `property`: several properties of an entity, given as dot-separated paths (`text`, `style.fontSize`, `place.x`). Deleting the entity counts as touching it;
+ * - `interval`: a frame range on the sequence. Timeline instances that intersect it before or after the change (audio uses exact start and end times). `trackIds` restricts it to tracks.
  */
 export type ProtectionTarget =
   | { kind: 'video' }
@@ -70,30 +67,29 @@ export interface ProtectionRef {
   protectionId: Id;
   videoId: Id;
   target: ProtectionTarget;
-  /** 授权来源：用户在哪个合同修订里加上的。有效范围是这个任务（合同的全部后续修订，直到被移除）。 */
+  /** Authorization source: the contract revision in which the user added it. Its effective scope is this task (all later revisions of the contract, until it is removed). */
   origin: { by: 'user'; revision: number; at: string };
   note?: string;
 }
 
 /**
- * 一项验收检查。`review` 由用户或智能体判断后记录结果；`quality` 留给 QualityService 自动执行
- * （首版不执行，只定义与记录，见架构设计 §14）。
+ * One acceptance check. `review` results are recorded after the user or agent judges them. `quality` is left for QualityService to run automatically (not executed in the first version; only defined and recorded, see architecture design §14).
  */
 export interface CheckDefinition {
   checkId: Id;
   kind: 'review' | 'quality';
   description: string;
-  /** 必过：没有记录为通过之前，任务不算满足验收。 */
+  /** Required: until it is recorded as passed, the task does not count as meeting acceptance. */
   required: boolean;
 }
 
 export type CheckOutcome = 'passed' | 'failed' | 'skipped';
 
-/** 一次检查结果。按记录先后保留，最新一条是当前结果。 */
+/** One check result. Kept in the order recorded; the latest one is the current result. */
 export interface CheckResult {
   resultId: Id;
   checkId: Id;
-  /** 记录时合同的修订。 */
+  /** The contract revision at the time of recording. */
   contractRevision: number;
   outcome: CheckOutcome;
   note: string | null;
@@ -101,19 +97,19 @@ export interface CheckResult {
   recordedAt: string;
 }
 
-/** 合同的这个修订由谁、因为什么产生。 */
+/** Who produced this contract revision, and why. */
 export interface ContractChange {
   by: 'user' | 'agent' | 'runtime';
-  /** `created`：建立；`updated`：修改字段；`mode`：切换访问模式；`goal`：改变目标后由旧任务派生。 */
+  /** `created`: established; `updated`: fields modified; `mode`: access mode switched; `goal`: derived from the old task after the goal was changed. */
   reason: 'created' | 'updated' | 'mode' | 'goal';
-  /** 这个修订改了哪些字段。 */
+  /** Which fields this revision changed. */
   fields: Array<keyof TaskContractPatch | 'goal'>;
   at: string;
 }
 
 export interface TaskContract {
   taskId: Id;
-  /** 合同的修订号，从 1 开始，每次修改加一。 */
+  /** Contract revision number, starting from 1 and increasing by one on each change. */
   revision: number;
   conversationId: Id;
   videoId: Id | null;
@@ -123,21 +119,20 @@ export interface TaskContract {
   constraints: ConstraintRef[];
   protectedRefs: ProtectionRef[];
   deliverables: TaskDeliverable[];
-  /** 就是会话此刻的访问模式（§3.12）。 */
+  /** The session's current access mode (§3.12). */
   autonomy: AgentMode;
-  /** 权限范围：会话绑定的项目（`projectId`），不属于项目的会话是会话自己（`conversationId`）。随会话的绑定，不经合同修改。 */
+  /** Permission scope: the project the session is bound to (`projectId`). For a session not belonging to a project, the session itself (`conversationId`). Follows the session's binding and is not changed through contract edits. */
   permissionScopeRef: Id;
-  /** 任务预算策略（`TaskBudgetPolicy.policyId`）；没有 Runtime 预算账本时 null。 */
+  /** Task budget policy (`TaskBudgetPolicy.policyId`); null when there is no Runtime budget ledger. */
   budgetPolicyRef: Id | null;
   acceptanceChecks: CheckDefinition[];
-  /** 改变目标时：这个任务接替的旧任务与旧工作的处理。 */
+  /** When the goal changes: how the old task this task replaces, and the old work, are handled. */
   supersedes: { taskId: Id; previousWork: 'stop' | 'keep' } | null;
   change: ContractChange;
 }
 
 /**
- * 任务预算（架构设计 §7.8）：一个任务里所有外发调用（智能体提交的 Job、任务里启动的固定流程与它的子步骤）跨 Provider
- * 合计的次数与金额上限。每次调用在通过授权（Grant）的接纳之后还要通过它；`null` 表示这一项不设上限。
+ * Task budget (architecture design §7.8): the caps on count and amount, totaled across providers, for all outbound calls in a task (Jobs submitted by the agent, fixed pipelines started in the task, and their sub-steps). Each call must also pass this budget after being admitted through the Grant. `null` means no cap is set for this item.
  */
 export interface TaskBudgetLimits {
   maxCalls: number | null;
@@ -152,18 +147,18 @@ export interface TaskBudgetPolicy extends TaskBudgetLimits {
   updatedAt: string;
 }
 
-/** 任务预算的用量：已结算的按币种分列；金额未知的调用只计次数。 */
+/** Task budget usage: settled amounts listed by currency; calls with unknown amounts count only toward the count. */
 export interface TaskBudgetUsage {
   calls: number;
   reservedCalls: number;
-  /** 已结算的金额，每个币种一项。 */
+  /** Settled amounts, one item per currency. */
   spent: Money[];
-  /** 预留中的金额（有上限时，按上限的币种）。 */
+  /** Amount reserved (when there is a cap, in the cap's currency). */
   reserved: Money[];
   unknownCostCalls: number;
 }
 
-/** 建立任务时给出的合同（都可以不给，不给的按默认）。 */
+/** Contract given when the task is created (all optional; defaults apply to anything not given). */
 export interface TaskContractInput {
   scope?: Partial<ContextSelection>;
   constraints?: Array<Omit<ConstraintRef, 'constraintId'> & { constraintId?: Id }>;
@@ -181,9 +176,7 @@ export interface ProtectionInput {
 }
 
 /**
- * 合同的修改：给出的字段整体替换。`autonomy` 等于切换会话的访问模式。智能体只能改 `scope`、`constraints`、
- * `deliverables` 与 `acceptanceChecks`：`autonomy`、`budget` 与 `protectedRefs` 只由用户修改（`CONTRACT_FIELD_READONLY`），
- * 权限范围不经合同修改。
+ * Contract change: the fields given replace the whole field. `autonomy` is the same as switching the session's access mode. The agent may only change `scope`, `constraints`, `deliverables` and `acceptanceChecks`. `autonomy`, `budget` and `protectedRefs` are changed only by the user (`CONTRACT_FIELD_READONLY`). The permission scope is not changed through the contract.
  */
 export interface TaskContractPatch {
   scope?: Partial<ContextSelection>;
@@ -195,18 +188,18 @@ export interface TaskContractPatch {
   acceptanceChecks?: TaskContractInput['acceptanceChecks'];
 }
 
-/** 智能体不能修改的合同字段。 */
+/** Contract fields the agent cannot modify. */
 export const AGENT_READONLY_CONTRACT_FIELDS = ['autonomy', 'budget', 'protectedRefs', 'permissionScopeRef', 'budgetPolicyRef'] as const;
 
-/** 合同与它的预算用量（`tasks.getContract` 的结果）。 */
+/** The contract and its budget usage (the result of `tasks.getContract`). */
 export interface TaskContractView {
   contract: TaskContract;
-  /** 最新的修订号（查旧修订时与 `contract.revision` 不同）。 */
+  /** Latest revision number (differs from `contract.revision` when an old revision is queried). */
   latestRevision: number;
   budget: TaskBudgetPolicy | null;
 }
 
-/** 由编辑器上下文得出默认的范围。 */
+/** Default scope derived from the editor context. */
 export function defaultContextSelection(context: EditorContext | undefined): ContextSelection {
   return {
     videoId: context?.videoId ?? null,
@@ -217,7 +210,7 @@ export function defaultContextSelection(context: EditorContext | undefined): Con
   };
 }
 
-/** 任务合同的错误码（命令与协议规范 §11.3）。 */
+/** Error codes for task contracts (command and protocol spec §11.3). */
 export const TASK_CONTRACT_ERROR_CODES = [
   'TASK_PROTECTED',
   'TASK_BUDGET_EXCEEDED',

@@ -2,8 +2,8 @@ import { parseArgs } from 'node:util';
 import { RuntimeAlreadyRunningError, runtimeSelfCheck, startRuntime } from '@cuccut/runtime-core';
 
 /**
- * 构建时可以注入的凭据后端（`file` | `keychain`，架构设计 §6.8）。没有注入时是 `file`；
- * 桌面端的正式版本用隐藏参数 `--credential-store keychain` 指定。这不是用户设置。
+ * The credential backend that can be injected at build time (`file` | `keychain`, architecture design §6.8). When nothing is injected it is `file`;
+ * the desktop release build specifies it with the hidden parameter `--credential-store keychain`. This is not a user setting.
  */
 declare const __CUCCUT_CREDENTIAL_STORE__: string | undefined;
 const BUILT_CREDENTIAL_STORE = typeof __CUCCUT_CREDENTIAL_STORE__ === 'string' ? __CUCCUT_CREDENTIAL_STORE__ : 'file';
@@ -14,20 +14,19 @@ function credentialStoreKind(value: string): 'file' | 'keychain' {
 }
 
 /**
- * Runtime 进程入口。桌面端用 Electron 自带的 Node（ELECTRON_RUN_AS_NODE）启动它；
- * 开发时也可以直接 `npm run runtime`。
+ * The Runtime process entry point. The desktop app starts it with Electron's bundled Node (ELECTRON_RUN_AS_NODE);
+ * in development it can also be run directly with `npm run runtime`.
  *
- * 就绪后向 stdout 写一行 `{"type":"ready",...}`。令牌不经过 stdout，客户端从发现文件读。
+ * Once ready, it writes one line `{"type":"ready",...}` to stdout. The token does not go through stdout; the client reads it from the discovery file.
  *
- * `--launched-by cli --idle-exit`：CLI 自动拉起时带上（架构设计 §2.2）。`--launched-by` 记进发现文件（`cuccut runtime stop` 只停 CLI 拉起的）；
- * `--idle-exit` 让 Runtime 在没有连接、没有任务、没有开着的对外服务满设置 `runtime.idleExitMinutes` 后自己退出。桌面端不带它们。
+ * `--launched-by cli --idle-exit`: passed when the CLI launches it automatically (architecture design §2.2). `--launched-by` is recorded in the discovery file (`cuccut runtime stop` only stops the ones the CLI launched);
+ * `--idle-exit` makes the Runtime exit by itself once there have been no connections, no tasks, and no open external services for the configured `runtime.idleExitMinutes`. The desktop app does not pass these.
  *
- * `--self-check [--probe]` 不启动 Runtime：报告随应用分发的原生程序与数据解析到哪里（`runtimeSelfCheck`），写一行 JSON，
- * 有问题时退出码 1。打包产物的检查（`apps/desktop/tools/check-packaged-app.mjs`）用它。
+ * `--self-check [--probe]` does not start the Runtime: it reports where the native programs and data shipped with the app resolve to (`runtimeSelfCheck`), writes one line of JSON,
+ * and exits with code 1 if there is a problem. The packaged-app check (`apps/desktop/tools/check-packaged-app.mjs`) uses it.
  */
 async function main(): Promise<void> {
-  // stdout 只送就绪消息：读它的一端（桌面端主进程）不在了就送不到，不让写入失败（EPIPE）成为未捕获的异常。stderr 上的
-  // 回显由日志自己处理（`createFileLogger`）。
+  // stdout carries only the ready message. If the end reading it (the desktop main process) is gone, the message cannot be delivered, so a write failure (EPIPE) must not become an uncaught exception. Echoes on stderr are handled by the logger itself (`createFileLogger`).
   process.stdout.on('error', () => {});
   const { values } = parseArgs({
     options: {
@@ -47,7 +46,7 @@ async function main(): Promise<void> {
 
   if (values['self-check']) {
     const report = await runtimeSelfCheck({ probe: values.probe });
-    // 不直接 exit：写进管道的输出要先送出去。
+    // Do not call exit directly: output already written to the pipe must be sent out first.
     process.exitCode = report.problems.length > 0 ? 1 : 0;
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return;
@@ -59,7 +58,7 @@ async function main(): Promise<void> {
   ];
 
   let runtime: Awaited<ReturnType<typeof startRuntime>>;
-  // 空闲退出在 Runtime 起好之后才可能触发：那时 `stop` 已经定义好。
+  // Idle exit can only trigger after the Runtime has started, because by then `stop` has been defined.
   let onIdle = () => {};
   let onStopRequest = () => {};
   try {
@@ -99,10 +98,10 @@ async function main(): Promise<void> {
   onStopRequest = () => stop('runtime.stop');
   process.on('SIGTERM', () => stop('SIGTERM'));
   process.on('SIGINT', () => stop('SIGINT'));
-  // 终端关了（直接在终端里跑时）：照常收尾。不处理的话默认动作是立即结束，来不及按停止顺序收尾、删发现文件。
+  // The terminal was closed (when running directly in a terminal): shut down as usual. If this were not handled, the default action would be an immediate exit, with no time to shut down in stop order or delete the discovery file.
   process.on('SIGHUP', () => stop('SIGHUP'));
-  // 由父进程以 IPC 通道启动时（桌面端），父进程经通道发 `{ type: 'stop' }` 请 Runtime 停下：Windows 上 SIGTERM 等于直接
-  // 结束进程，处理不到。通道断开（父进程退出或崩溃）不停：Runtime 照旧留着，下一次启动经发现文件找回它（架构设计 §2.2）。
+  // When the parent process starts it with an IPC channel (the desktop app), the parent asks the Runtime to stop by sending `{ type: 'stop' }` over the channel: on Windows SIGTERM is the same as killing the process outright and cannot be handled.
+  // A closed channel (the parent exited or crashed) does not stop it: the Runtime stays running, and the next start finds it again through the discovery file (architecture design §2.2).
   process.on('message', (message) => {
     if ((message as { type?: unknown } | null)?.type === 'stop') stop('ipc');
   });

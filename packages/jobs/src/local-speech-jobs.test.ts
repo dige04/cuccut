@@ -28,9 +28,9 @@ import { ResourceScheduler } from './resource-scheduler.ts';
 const GiB = 1024 ** 3;
 
 /**
- * 本地语音合成走完整条路（架构设计 §6.1、§6.5）：ModelServices 选择 `local` 的合成模型，JobManager 在提交时冻结声音，
- * 本地 Provider 在 Model Worker 进程里执行（假的 Worker，`testing/fake-model-worker.ts`），输出按生成任务的规则校验与发布。
- * 模型包是测试用的：candle 后端（任何平台都能跑），声音描述借真实模型包的。
+ * Local speech synthesis runs the full path (architecture design §6.1, §6.5): ModelServices selects the `local` synthesis model, JobManager freezes the voice at submission,
+ * and the local Provider executes in the Model Worker process (a fake Worker, `testing/fake-model-worker.ts`). Output is validated and published by the rules for generation jobs.
+ * The model package is for testing: a candle backend (runs on any platform), with the voice description borrowed from a real model package.
  */
 
 const real = (id: string) => SPEECH_BUNDLES.find((b) => b.bundleId === id)!;
@@ -41,7 +41,7 @@ const speechBundle = (bundleId: string, like: string, withCodec: boolean): Bundl
   backend: 'candle',
   device: 'cpu',
   components: {
-    // 参数个数是假的：只给资源调度按 candle 的常驻量估计 Model Worker。
+    // The parameter count is fake: it is given only so that resource scheduling estimates the Model Worker from candle's resident size.
     tts: { family: 'qwen3-tts', repo: 'test/tts', revision: 'r-tts', weightBits: 8, parameters: 500_000_000 },
     ...(withCodec
       ? {
@@ -126,7 +126,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     const models = path.join(dir, 'models');
     await writeRepo(models, 'test/tts', 'r-tts');
     await writeRepo(models, 'test/codec', 'r-codec');
-    // 内置清单只给资源调度用（candle 的常驻量要知道每个组件有清单）。
+    // The built-in manifest is only for resource scheduling (candle's resident size requires each component to have a manifest).
     const manifest = (repo: string, revision: string) => {
       const size = `weights of ${repo}`.length;
       return { repo, revision, files: [{ path: 'model.safetensors', size, sha256: null }], estimatedBytes: size, provenance: 'test' };
@@ -166,7 +166,7 @@ describe('本地语音合成（假 Model Worker）', () => {
       videos: new FakeVideos(),
       library,
       resources: scheduler,
-      // 解码校验：用自检的 WAV 判定代替 ffprobe（只看能不能解码）。
+      // Decode validation: uses the self-checking WAV judgement in place of ffprobe (it only checks whether the file can be decoded).
       probe: async (file) => {
         probed.push(file);
         const verdict = speechSelfTestVerdict(await fs.readFile(file));
@@ -284,7 +284,7 @@ describe('本地语音合成（假 Model Worker）', () => {
       },
     });
 
-    // 提交后、执行前改掉文件：慢的任务占着 Worker，第二个任务排在后面。
+    // The file is modified after submission and before execution: the slow job holds the Worker, and the second job waits behind it.
     await control({ capabilities: ['transcribe', 'synthesize'], faults: ['slow'] });
     const first = await manager.submitSynthesizeSpeech({ text: '一', provider: 'local', model: CLONE }, submitter);
     const second = await manager.submitSynthesizeSpeech(
@@ -348,7 +348,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(refused.message).toContain('「my-voice.wav」');
     expect(refused.message).not.toContain(dir);
 
-    // 模型数据目录是空的：内置音色的录音不在，安装不完整。
+    // The model data directory is empty: the built-in voice's recording is missing, so the installation is incomplete.
     const empty = path.join(dir, 'empty-assets');
     await fs.mkdir(empty);
     const saved = process.env[MODEL_ASSETS_ENV];
@@ -381,7 +381,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     const saved = process.env[MODEL_ASSETS_ENV];
     process.env[MODEL_ASSETS_ENV] = assets;
     try {
-      // 慢的任务占着 Worker，第二个任务排在后面。
+      // The slow job holds the Worker, and the second job waits behind it.
       await control({ capabilities: ['transcribe', 'synthesize'], faults: ['slow'] });
       const first = await manager.submitSynthesizeSpeech(
         { text: '一', provider: 'local', model: CLONE, reference: { file: ref } },
@@ -416,7 +416,7 @@ describe('本地语音合成（假 Model Worker）', () => {
       error: { code: 'MODEL_LOAD_FAILED', details: expect.objectContaining({ reason: 'unsupported', detail: 'capability-missing' }) },
     });
     expect(await recorded()).toEqual([]);
-    // 换一个声明 synthesize 的 Worker 就能用：模型包没有被停用，状态仍是已安装。
+    // A Worker that declares synthesize makes it usable again: the model package was not disabled, and its status is still installed.
     expect(catalog.blocked(CLONE)).toBe(false);
     expect(await catalog.status(CLONE)).toMatchObject({ state: 'installed' });
   });

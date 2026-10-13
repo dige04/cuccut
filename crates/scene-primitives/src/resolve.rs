@@ -1,7 +1,7 @@
-//! doc(JSON) → FlatIR（规范 §14.1）。
-//! 与 swift-renderer / index.html 原型的 resolveAll 逐步对应：
-//!   $引用解析 → cue 表 → clip 窗口定点迭代 → 组件/each/stagger 展开
-//!   → preset 展开为绝对时间通道 → 转场物化 → camera / captions。
+//! doc (JSON) → FlatIR (spec §14.1).
+//! Step-by-step correspondence with resolveAll in the swift-renderer / index.html prototype:
+//!   $ reference resolution → cue table → clip window fixed-point iteration → component/each/stagger expansion
+//!   → presets expanded into absolute-time channels → transitions materialized → camera / captions.
 
 use crate::assets::{CoreWord, MediaMeta, asset_ref_id, materialize_assets};
 use crate::color::Rgba;
@@ -14,17 +14,16 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// ── $ 引用与 {param} 模板 ────────────────────────────────────────────
+// ── $ references and {param} templates ────────────────────────────────────────────
 
-/// 四槽的声明序 → `Channel::order`。乘以 `SLOT_ORDER_STRIDE` 后给配方内部的
-/// 轨序留出空间（规范 §7.1「后声明覆盖」的显式化）。
+/// Declaration order of the four slots → `Channel::order`. Multiplied by `SLOT_ORDER_STRIDE` to leave room for track ordering inside a recipe (makes the "later declaration overrides" rule of spec §7.1 explicit).
 const SLOT_ORDER_ENTER: u32 = 0;
 const SLOT_ORDER_EXIT: u32 = 1;
 const SLOT_ORDER_EMPHASIS: u32 = 2;
 const SLOT_ORDER_KEYFRAMES: u32 = 1000;
 const SLOT_ORDER_STRIDE: u32 = 1000;
 
-/// 生命周期四槽（规范 §7.1）。与 `animate.flow` 互斥（§7.5）。
+/// Lifecycle four slots (spec §7.1). Mutually exclusive with `animate.flow` (§7.5).
 pub const LEGACY_ANIMATE_SLOTS: &[&str] = &["enter", "exit", "emphasis", "keyframes"];
 
 #[derive(Clone)]
@@ -60,13 +59,13 @@ pub fn resolve_ref(v: &Value, ctx: &Ctx) -> Value {
             return Value::Null;
         }
         if let Some(src) = c.get_("src") {
-            return src.clone(); // asset 条目
+            return src.clone(); // asset entries
         }
-        return resolve_ref(&c, ctx); // theme 可引用 vars
+        return resolve_ref(&c, ctx); // theme may reference vars
     }
     if let Some(props) = &ctx.props {
         if s.contains('{') {
-            // 单独占位符 "{param}" → 原值替换
+            // A lone placeholder "{param}" → replaced by the original value
             if let Some(inner) = s.strip_prefix('{').and_then(|t| t.strip_suffix('}')) {
                 if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 {
@@ -75,7 +74,7 @@ pub fn resolve_ref(v: &Value, ctx: &Ctx) -> Value {
                     }
                 }
             }
-            // 字符串模板："共 {value} 人"
+            // String template: "共 {value} 人" (“{value} people in total”)
             let mut out = s.to_string();
             for (k, pv) in props {
                 let needle = format!("{{{k}}}");
@@ -102,8 +101,8 @@ pub fn resolve_ref(v: &Value, ctx: &Ctx) -> Value {
     v.clone()
 }
 
-/// `textCount` 轨的 `format`（规范 §7.1）：封闭键集，逐键校验类型与范围。
-/// 渲染端的 `fmt_count` 对缺省键按缺省处理，所以拦截只在这里。
+/// `format` for the `textCount` track (spec §7.1): closed key set, with each key's type and range checked individually.
+/// The renderer's `fmt_count` applies defaults for missing keys, so the validation is done only here.
 fn validate_count_format(format: &Map<String, Value>) -> Result<()> {
     for (key, value) in format {
         let valid = match key.as_str() {
@@ -136,7 +135,7 @@ pub fn deep_resolve(v: &Value, ctx: &Ctx) -> Value {
     }
 }
 
-// ── IR 结构 ──────────────────────────────────────────────────────────
+// ── IR structures ──────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct VisualClip {
@@ -149,7 +148,7 @@ pub struct VisualClip {
     pub z: f64,
     pub order: usize,
     pub wrap_channels: Vec<Channel>,
-    /// clip 级 `cadence`（规范 §7.10）：覆盖 `meta.cadence`。
+    /// Clip-level `cadence` (spec §7.10): overrides `meta.cadence`.
     pub cadence: Cadence,
     pub tree: RNode,
 }
@@ -168,7 +167,7 @@ pub struct CapWord {
     pub text: String,
 }
 
-/// 行盒内的词（词级高亮单元）：`index` 指回 `CapLine.words`，`dx` 是相对行左边缘的偏移
+/// A word within a line box (word-level highlight unit): `index` points back to `CapLine.words`, and `dx` is the offset from the line's left edge
 #[derive(Debug, Clone)]
 pub struct CapWordBox {
     pub index: usize,
@@ -176,23 +175,23 @@ pub struct CapWordBox {
     pub text: String,
 }
 
-/// 确定性排版产出的行盒（core 排、三端只画，§8.4）。
-/// 坐标为画布绝对坐标，`y` 不含 lane 入场通道的动态 y 偏移。
+/// Line box produced by deterministic typesetting (laid out in core, drawn only by the three platforms, §8.4).
+/// Coordinates are absolute canvas coordinates. `y` excludes the dynamic y offset from the lane's entrance channel.
 #[derive(Debug, Clone)]
 pub struct CapLineBox {
-    /// 本行实际绘制文本
+    /// The text actually drawn for this line
     pub text: String,
-    /// 行左边缘 x
+    /// Left-edge x of the line
     pub x: f64,
-    /// 内容盒顶端 y
+    /// Top y of the content box
     pub y: f64,
-    /// 行宽（不含背景 padding）
+    /// Line width (excluding background padding)
     pub w: f64,
-    /// 内容盒高度 = fontSize * 1.25
+    /// Content box height = fontSize * 1.25
     pub h: f64,
     pub ascent: f64,
     pub descent: f64,
-    /// 词级高亮盒；非词 lane 为空
+    /// Word-level highlight box. Empty for non-word lanes.
     pub words: Vec<CapWordBox>,
 }
 
@@ -200,7 +199,7 @@ pub struct CapLineBox {
 pub struct CapLine {
     pub text: String,
     pub words: Option<Vec<CapWord>>,
-    /// 由 `layout::layout_captions` 填充；None = 尚未排版
+    /// Filled in by `layout::layout_captions`. None = not yet laid out.
     pub boxes: Option<Vec<CapLineBox>>,
 }
 
@@ -226,12 +225,12 @@ pub struct CapLane {
     pub bg_radius: f64,
     pub hi_color: Option<Rgba>,
     pub hi_transition: f64,
-    /// enter preset 模板（'%' 帧），锚定每条 at_abs
+    /// Enter preset template ('%' frames), anchored at each at_abs
     pub enter_kfs: Vec<Value>,
     pub enter_dur: f64,
     pub enter_delay: f64,
-    /// exit preset 模板（'%' 帧），锚定每条 until_abs：在 [until_abs − exit_dur, until_abs] 播放。
-    /// 为空时这条 lane 按 clip 的 `fade` 整块淡出（§8.4）。
+    /// Exit preset template ('%' frames), anchored at each until_abs: plays over [until_abs − exit_dur, until_abs].
+    /// When empty, the lane fades out as a whole using the clip's `fade` (§8.4).
     pub exit_kfs: Vec<Value>,
     pub exit_dur: f64,
 }
@@ -270,24 +269,24 @@ impl Default for CapLane {
 pub struct CaptionClip {
     pub start: f64,
     pub end: f64,
-    /// 距锚边距离（相对画面高度比例）
+    /// Distance from the anchor edge (ratio relative to frame height)
     pub offset: f64,
     pub anchor_top: bool,
     pub gap: f64,
-    /// 区域排布矩形 [x, y, w, h]（px，画布坐标）；None = anchor/offset 语义（§3.6）
+    /// Region layout rectangle [x, y, w, h] (px, canvas coordinates). None = anchor/offset semantics (§3.6).
     pub region: Option<[f64; 4]>,
-    /// region 模式行数增长方向：true = 向上（矩形底边固定），false = 向下（顶边固定）
+    /// Growth direction of the line count in region mode. true = upward (rectangle's bottom edge fixed), false = downward (top edge fixed).
     pub grow_up: bool,
-    /// anchor 模式换行宽度（px）；None = 不换行
+    /// Line-wrap width in anchor mode (px). None = no wrapping.
     pub max_width: Option<f64>,
     pub lanes: Vec<CapLane>,
     pub items: Vec<CapItem>,
     pub fade: f64,
 }
 
-/// audio 轨 clip（规范 §8.4）：src 已解析为逻辑路径，volume 为绝对时间通道。
-/// `withAudio: true` 的 video 元素在编译期也展开为一条 AudioClip（§6.5），
-/// 此时 `rate` 继承 video 的 playbackRate。
+/// Audio-track clip (spec §8.4): src is already resolved to a logical path, and volume is an absolute-time channel.
+/// A video element with `withAudio: true` is also expanded at compile time into one AudioClip (§6.5).
+/// In that case `rate` is inherited from the video's playbackRate.
 #[derive(Clone)]
 pub struct AudioClip {
     pub id: String,
@@ -295,37 +294,33 @@ pub struct AudioClip {
     pub start: f64,
     pub end: f64,
     pub media_start: f64,
-    /// 媒体倍速（音频轨 clip 恒为 1.0；withAudio 展开继承 video）
+    /// Media playback rate (audio-track clips are always 1.0; withAudio expansion inherits from the video)
     pub rate: f64,
-    /// 素材实长（秒，host 探测经 [`HostInputs`](crate::HostInputs) 回填，与视频节点的
-    /// `media_duration` 同一条路）；`0` = 未知或无界（没探测、探测失败、循环播放的
-    /// withAudio 视频）。声音在 `start + (media_duration − media_start) / rate` 处结束，
-    /// 之后 clip 窗口里只剩静音；渲染照常按窗口混音，不读它。
+    /// Native length of the source media (seconds). The host fills it in by probing via [`HostInputs`](crate::HostInputs), the same path as the video node's
+    /// `media_duration`. `0` = unknown or unbounded (not probed, probe failed, or a looping withAudio video). Sound ends at `start + (media_duration − media_start) / rate`;
+    /// after that, the clip window holds only silence. Rendering mixes by the window as usual and does not read this.
     pub media_duration: f64,
     pub base_volume: f64,
-    /// 空 = 恒定 base_volume
+    /// Empty = constant base_volume
     pub volume: Vec<Kf>,
-    /// 来自哪条 audio 轨（§8.4）：轨的 `id`，没写 id 时是 `#<轨序>`；`withAudio`
-    /// 展开的 clip 不属于任何 audio 轨，为 `None`。host 按轨分组（旁白导入为轨）用它，
-    /// 渲染不读。
+    /// Which audio track this clip came from (§8.4): the track's `id`, or `#<track index>` if no id was written. Clips expanded from `withAudio`
+    /// do not belong to any audio track and are `None`. The host uses this to group by track (narration imported as a track). Rendering does not read it.
     pub track: Option<String>,
-    /// 淡入 / 淡出时长（秒，§8.4 `fadeIn` / `fadeOut`）；`0` = 不淡。线性幅度包络，按
-    /// [`fade_span`](Self::fade_span) 这段声明窗口算：`timeMap` 切出的多段共用原 clip 的窗口。
+    /// Fade-in / fade-out duration (seconds, §8.4 `fadeIn` / `fadeOut`). `0` = no fade. A linear amplitude envelope, computed over the declared window [`fade_span`](Self::fade_span). Segments split out by `timeMap` share the original clip's window.
     pub fade_in: f64,
     pub fade_out: f64,
-    /// 淡入淡出所依的窗口（原 clip 的 `[start, end]`）。
+    /// The window the fades are based on (the original clip's `[start, end]`).
     pub fade_span: (f64, f64),
-    /// 声像 `−1`（全左）..`1`（全右），等功率、居中不掉电平；`0` = 不动。
+    /// Pan: −1 (full left) .. 1 (full right). Equal-power, so the level does not dip at centre. `0` = no pan.
     pub pan: f64,
-    /// 混音总线（§8.4 `bus`；缺省按轨 id 推，见 [`crate::audio_mix::default_bus`]）。
+    /// Mix bus (§8.4 `bus`; defaults derived from the track id, see [`crate::audio_mix::default_bus`]).
     pub bus: String,
-    /// 所在 audio 轨写了 `muted: true`：编译保留这条 clip（投影、检查照常看得到），
-    /// 渲染 / 导出混音 / 预览都跳过。
+    /// The containing audio track has `muted: true`. Compile keeps this clip (projection and checks still see it), but render / export mix / preview all skip it.
     pub muted: bool,
 }
 
 impl AudioClip {
-    /// 时刻 `t`（绝对秒）的淡入淡出增益 `0..=1`；没写淡入淡出恒为 `1`。
+    /// Fade gain `0..=1` at time `t` (absolute seconds). Constantly `1` when no fade is declared.
     pub fn fade_gain(&self, t: f64) -> f64 {
         let (a, b) = self.fade_span;
         let mut g = 1.0;
@@ -338,7 +333,7 @@ impl AudioClip {
         g
     }
 
-    /// 这条 clip 用不着混音链的新环节：没淡入淡出、没声像。
+    /// This clip does not need the new stages of the mix chain: no fades, no panning.
     pub fn is_plain(&self) -> bool {
         self.fade_in <= 0.0 && self.fade_out <= 0.0 && self.pan == 0.0
     }
@@ -350,13 +345,11 @@ pub use crate::pathstyle::{Cadence, LineCap, LineJoin, PathTexture, PathWobble};
 pub struct Ir {
     pub total: f64,
     pub fps: f64,
-    /// `meta.cadence`（规范 §7.10）：文档级缺省绘制频率。只量化视觉节点的采样
-    /// 时钟；clip 激活、转场窗口、相机、字幕、音频都走真实时间。
+    /// `meta.cadence` (spec §7.10): document-level default drawing frequency. It only quantizes the sampling clock of visual nodes. Clip activation, transition windows, camera, captions, and audio all use real time.
     pub cadence_fps: Option<f64>,
-    /// `meta.background` 对象形态里的纹理（规范 §4）：铺满画布、不随相机动。
+    /// The texture in the object form of `meta.background` (spec §4): fills the canvas and does not move with the camera.
     pub bg_texture: Option<PathTexture>,
-    /// 场景骨架的绝对时间窗 `(id, start, end)`，声明序。host 拿它给样张标场景、
-    /// 找切镜点；渲染不读。
+    /// Absolute time windows `(id, start, end)` of the scene skeleton, in declaration order. The host uses them to label thumbnails by scene and to find cut points. Rendering does not read them.
     pub scenes: Vec<(String, f64, f64)>,
     pub w: f64,
     pub h: f64,
@@ -365,45 +358,39 @@ pub struct Ir {
     pub camera_clips: Vec<CameraClip>,
     pub caption_clips: Vec<CaptionClip>,
     pub audio_clips: Vec<AudioClip>,
-    /// 文档级 `audio`（§4：总线增益、闪避、母带）；没写为 `None`，混音走旧路径逐位不变。
+    /// Document-level `audio` (§4: bus gain, ducking, mastering). `None` when unspecified, in which case mixing takes the old path, bit-for-bit unchanged.
     pub audio: Option<crate::audio_mix::DocAudio>,
-    /// 声明为 **Surface Transition** 的剪辑点（规范 §9）。Motion Transition
-    /// 物化成两侧的 `wrap_channels`，不进这张表。
+    /// Cut points declared as **Surface Transition** (spec §9). A Motion Transition is materialized as `wrap_channels` on both sides and does not go into this table.
     pub surface_transitions: Vec<SurfaceTransition>,
 }
 
-/// 一个走 `Transition` pass 的剪辑点（规范 §9 的第二类转场）。
+/// A cut point that runs through the `Transition` pass (the second kind of transition in spec §9).
 ///
-/// 两侧各画进一张离屏 surface，再由 `progress` 驱动的双输入效果合成。
-/// `progress = (t − (t0 − half)) / (2 × half)`，闭区间 `[0, 1]`。
+/// Both sides are drawn into an offscreen surface each, then composited by a two-input effect driven by `progress`.
+/// `progress = (t − (t0 − half)) / (2 × half)`, closed interval `[0, 1]`.
 ///
-/// `fallback_out` / `fallback_in` 是**同一个剪辑点的 Motion 版本**，在
-/// 后端跑不动这条效果、或者调用方走的是平坦单 surface 路径（`ccut ops` /
-/// `FrameRenderer::draw`）时顶上——降级发生在渲染侧，但通道必须在 resolve
-/// 期算好，因为那里才有画布尺寸与配方注册表。
+/// `fallback_out` / `fallback_in` are **the Motion version of this same cut point**. They are substituted when the backend cannot run this effect, or when the caller takes the flat single-surface path (`ccut ops` / `FrameRenderer::draw`). Degradation happens on the render side, but the channels must be computed at resolve time, because that is where the canvas size and the recipe registry are available.
 #[derive(Debug, Clone)]
 pub struct SurfaceTransition {
     pub from_clip: String,
     pub to_clip: String,
     pub effect: motion::effect::EffectRef,
     pub uniforms: motion::effect::UniformMap,
-    /// 剪辑点（窗口中心）。
+    /// Cut point (window centre).
     pub t0: f64,
-    /// 半时长。窗口是 `[t0 − half, t0 + half]`。
+    /// Half duration. The window is `[t0 − half, t0 + half]`.
     pub half: f64,
-    /// 降级用的 Motion Transition 配方名（缺省 `crossfade`）。
+    /// Name of the Motion Transition recipe used for degradation (default `crossfade`).
     pub fallback: String,
     pub fallback_out: Vec<Channel>,
     pub fallback_in: Vec<Channel>,
 }
 
 impl SurfaceTransition {
-    /// 闭区间 `[0, 1]`；窗口外返回 `None`。
+    /// Closed interval `[0, 1]`. Returns `None` outside the window.
     ///
-    /// 窗口两端必须和两侧 clip 的 `render_start = t0 − half` / `render_end = t0 + half`
-    /// 用同一个表达式算：写成 `(t0 − half) + 2·half` 会差一个 ulp（`t0 = 2493/30`、
-    /// `half = 0.4` 时终点是 `83.49999999999999`），整帧正好落在终点时这里判成窗口外，
-    /// 出镜 clip 却还在自己的渲染窗口里，那一帧就闪回出镜画面。
+    /// The two ends of the window must be computed with the same expressions as the two clips' `render_start = t0 − half` / `render_end = t0 + half`.
+    /// Writing it as `(t0 − half) + 2·half` is off by one ulp (with `t0 = 2493/30` and `half = 0.4`, the end becomes `83.49999999999999`). When a frame lands exactly on the end, this would judge it outside the window while the exiting clip is still inside its render window, so that frame flashes back to the exiting picture.
     pub fn progress_at(&self, t: f64) -> Option<f64> {
         if self.half <= 0.0 {
             return None;
@@ -417,7 +404,7 @@ impl SurfaceTransition {
     }
 }
 
-// ── 渲染树节点 ───────────────────────────────────────────────────────
+// ── Render-tree nodes ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Rect {
@@ -427,15 +414,15 @@ pub struct Rect {
     pub h: f64,
 }
 
-/// video 元素适配模式（§6.5）：天然尺寸到布局盒的映射。
+/// Fit mode for video elements (§6.5): mapping from the natural size to the layout box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Fit {
-    /// 等比放大裁剪填满盒（缺省）
+    /// Scale up proportionally, cropping to fill the box (default)
     #[default]
     Cover,
-    /// 等比缩小完整可见（letterbox）
+    /// Scale down proportionally, fully visible (letterbox)
     Contain,
-    /// 非等比拉伸铺满
+    /// Non-proportional stretch to fill
     Fill,
 }
 
@@ -454,7 +441,7 @@ impl Fit {
 pub struct RNode {
     pub ntype: String,
     pub char_grid: Option<crate::char_grid::CharGrid>,
-    /// 程序化画面源（`type:"proc"`，§6.12）：`(局部秒, seed)` 闭式求值。
+    /// Procedural picture source (`type:"proc"`, §6.12): closed-form evaluation of `(local seconds, seed)`.
     pub proc: Option<crate::proc::ProcSource>,
     /// An independent local canvas; instances reuse the existing components/props system.
     pub composition: Option<crate::composition::LocalCanvas>,
@@ -472,20 +459,20 @@ pub struct RNode {
     pub text_wrap: Option<crate::text_layout::Wrap>,
     pub text_block: Option<crate::text_layout::TextBlock>,
     pub path_d: Option<String>,
-    /// `morphTo`（规范 §6.2.1）：`pathMorph` 通道的目标形状，按声明序。
+    /// `morphTo` (spec §6.2.1): target shapes for the `pathMorph` channel, in declaration order.
     pub morph_d: Vec<String>,
     pub stroke: Option<Rgba>,
     pub stroke_width: f64,
     pub fill: Option<Rgba>,
-    /// `fillRule: "evenodd"`（规范 §6.2.1）；缺省 nonzero。
+    /// `fillRule: "evenodd"` (spec §6.2.1). Default nonzero.
     pub fill_even_odd: bool,
-    /// 渲染期纹理填充：裁剪在本路径内、在路径局部坐标里生成，无时间依赖。
+    /// Render-time texture fill: the clip is inside this path, generated in path-local coordinates, with no time dependency.
     pub texture: Option<PathTexture>,
-    /// 描边抖动（填充不抖 ⇒ 填充与轮廓永不重合）。
+    /// Stroke jitter (the fill does not jitter, so the fill and outline never drift apart).
     pub wobble: Option<PathWobble>,
     pub line_cap: LineCap,
     pub line_join: LineJoin,
-    /// `dash`（路径自身坐标，偶数项）；空 = 实线。
+    /// `dash` (in path-local coordinates, even number of entries). Empty = solid line.
     pub dash: Vec<f64>,
     pub dash_offset: f64,
     pub screen_size: bool,
@@ -494,80 +481,77 @@ pub struct RNode {
     pub stroke_brush: Option<crate::pathstyle::StrokeBrush>,
     pub follow: Option<crate::pathstyle::PathFollow>,
     pub echo: Option<crate::temporal::Echo>,
-    /// 节点级 `cadence`（规范 §7.10）。
+    /// Node-level `cadence` (spec §7.10).
     pub cadence: Cadence,
     pub view_box: Option<[f64; 4]>,
     pub wrap_layout: Option<Map<String, Value>>,
-    /// 作者溯源（方案 §4.3）：这个 resolved 节点回指 TSX/JSON 里的哪个作者节点。
-    /// `expand_node` 铸派生 id 的同一处登记，消费方因此不必反解析 `-{i}` 前缀。
+    /// Author provenance (scheme §4.3): which author node in the TSX/JSON this resolved node points back to.
+    /// Registered at the same place where `expand_node` mints derived ids, so consumers do not have to reverse-parse the `-{i}` prefix.
     pub origin: Option<Box<NodeOrigin>>,
     pub extra_delay: f64,
     pub children: Vec<RNode>,
     pub channels: Vec<Channel>,
-    /// `split.by`（规范 §7.9，实验字段）。`animate.parts` 存在而没写 `split`
-    /// 时缺省 `grapheme`。`line` 按最终排版结果，在布局后编译。
+    /// `split.by` (spec §7.9, experimental field). When `animate.parts` is present and `split` is not written, the default is `grapheme`. `line` is computed from the final layout result, so it is compiled after layout.
     pub split: Option<motion::PartUnit>,
-    /// 文字 part 动画（阶段 3，规范 §7.9）。`record_text` 逐字形按 part 采样。
+    /// Text part animation (phase 3, spec §7.9). `record_text` samples per glyph by part.
     pub part_motion: Option<PartMotion>,
     pub pending_line_motion: Option<PendingLineMotion>,
-    /// 效果栈（规范 §6.6）。非空 ⇒ 该元素及其子树先画进一张离屏 surface，
-    /// 逐条跑 `Filter` pass，再按 `blend` / opacity 合成回父 surface。
+    /// Effect stack (spec §6.6). Non-empty ⇒ the element and its subtree are first drawn into an offscreen surface, each `Filter` pass runs in turn, and the result is composited back onto the parent surface by `blend` / opacity.
     pub effects: Vec<ResolvedEffect>,
     /// Filters of the already composed lower siblings, clipped to this node box.
     pub backdrop_effects: Vec<ResolvedEffect>,
-    /// `style.blendMode`（规范 §6.6）。非 `Normal` ⇒ 录制期发 `PushLayer{blend}`。
+    /// `style.blendMode` (spec §6.6). Anything other than `Normal` ⇒ `PushLayer{blend}` is emitted at record time.
     pub blend: motion::effect::BlendMode,
-    /// `style.clipPath` 的静态形状（规范 §6.3）。`clipPath` 通道存在时按刻覆盖它。
+    /// Static shape of `style.clipPath` (spec §6.3). When a `clipPath` channel exists, it overrides this per frame.
     pub clip_shape: Option<ClipShape>,
-    /// `style.clipPath` 的 `path` 形状（规范 §6.3）：只能静态声明，不进通道。
+    /// The `path` shape of `style.clipPath` (spec §6.3). It can only be declared statically, not via a channel.
     pub clip_poly: Option<ClipPoly>,
 
-    // 媒体节点（image / video）
+    // Media nodes (image / video)
     pub asset_id: Option<String>,
     pub media_start: f64,
-    /// 媒体时间 = t - media_t0（build_channels 用 clip 窗口回填；rate=1 时成立）
+    /// Media time = t - media_t0 (back-filled by build_channels from the clip window; holds when rate=1)
     pub media_t0: f64,
-    /// 宿主 clip 窗口起点（§6.5 srcTime 公式的 clip.start）
+    /// Start of the host clip window (clip.start in the §6.5 srcTime formula)
     pub media_win_start: f64,
     pub nat_w: f64,
     pub nat_h: f64,
 
-    // video 媒体语义（§6.5）
+    // video media semantics (§6.5)
     pub playback_rate: f64,
     pub segment: Option<(f64, f64)>,
     pub loop_media: bool,
     pub fit: Fit,
     pub with_audio: bool,
-    /// withAudio 展开的静态音量
+    /// Static volume for withAudio expansion
     pub media_volume: f64,
-    /// 源帧率 / 源时长（host 探测；0 = 未知，采样退化为连续时间）
+    /// Source frame rate / source duration (host-probed; 0 = unknown, and sampling degrades to continuous time)
     pub media_fps: f64,
     pub media_duration: f64,
 
-    // animatedImage / lottie / program 媒体语义（§6.5.1 – §6.5.3）
-    /// 逐帧**起点**毫秒表（N+1 项，末项为总时长）；host 探测回填。
-    /// 录制期按它把源时间量化到帧起点。
+    // animatedImage / lottie / program media semantics (§6.5.1 – §6.5.3)
+    /// Per-frame **start** millisecond table (N+1 entries, the last entry is the total duration). The host fills it in by probing.
+    /// At record time, source time is quantized to frame starts using it.
     pub frame_starts_ms: Arc<[i64]>,
-    /// 生效的播放遍数（`0` = 无限）：元素写了 `loop` 就按 `loop`
-    /// （`true` → 0、`false` → 1），没写则沿用素材自带的 loop count。
+    /// Effective number of play passes (`0` = infinite). If the element sets `loop`, it uses `loop` (`true` → 0, `false` → 1). If not set, it inherits the asset's own loop count.
     pub media_plays: u32,
 
-    // 静态变换初值（style，layout::prepare 填充）
+    // Static transform initial values (style; filled by layout::prepare)
     pub base_scale: f64,
     pub base_scale_x: Option<f64>,
     pub base_scale_y: Option<f64>,
     pub base_rotation: f64,
     pub base_opacity: f64,
     pub anchor: String,
-    /// `style.anchor: [x, y]`（元素盒比例）；有值时压过 `anchor` 枚举。
+    /// `style.anchor: [x, y]` (element box proportions). When set, it overrides the `anchor` enum.
     pub anchor_xy: Option<(f64, f64)>,
 
-    // 布局结果（layout 模块填充）
+    // Layout results (filled by the layout module)
     pub frame: Rect,
     pub intrinsic_cache: Option<(f64, f64)>,
     pub svg_scale: f64,
     pub subpaths: Vec<Vec<(f64, f64)>>,
-    /// `morphTo` 各目标形状的折线（已乘 `svg_scale`），拓扑与 `subpaths` 逐点一致。
+    /// Polylines for each `morphTo` target shape (already multiplied by `svg_scale`). Topology matches `subpaths` point for point.
     pub morph_shapes: Vec<Vec<Vec<(f64, f64)>>>,
     pub total_len: f64,
     pub text_w: f64,
@@ -575,28 +559,26 @@ pub struct RNode {
     pub text_desc: f64,
     pub font_size: f64,
     pub font_weight: u16,
-    /// style.font（$theme 已解析）；空 = 缺省无衬线族
+    /// style.font (`$theme` already resolved). Empty = default sans-serif family
     pub font_family: String,
     pub text_color: Rgba,
     pub bg_color: Option<Rgba>,
-    /// `style.background` 的渐变形态；与 `bg_color` 互斥（§6.3）。
+    /// Gradient form of `style.background`. Mutually exclusive with `bg_color` (§6.3).
     pub bg_gradient: Option<BgGradient>,
     pub border_radius: f64,
-    /// `style.border`（§6.3）：盒内侧一圈描边。
+    /// `style.border` (§6.3): a stroke ring on the inside of the box.
     pub border: Option<BoxBorder>,
-    /// `style.fontStyle: "italic"`（§6.3）：参与字体匹配与 shaping。
+    /// `style.fontStyle: "italic"` (§6.3): takes part in font matching and shaping.
     pub font_italic: bool,
-    /// `style.mask`（§6.3）：以同 clip 的另一元素作遮罩。
+    /// `style.mask` (§6.3): uses another element in the same clip as a mask.
     pub mask: Option<ElementMask>,
-    /// 本节点被某个 `style.mask.source` 点名：它是遮罩定义，不在正常流里出画。
+    /// This node is named by some `style.mask.source`. It is a mask definition and is not drawn in the normal flow.
     pub mask_source: bool,
 }
 
-/// 展开期携带的作者溯源上下文（方案 §4.3）。
+/// Author-provenance context carried during expansion (scheme §4.3).
 ///
-/// 只在 `expand_node` 这一条链上流动：进组件时换成组件内坐标系（`authored`
-/// 从组件根重新起算），`site` / `index` 记住实例化点，出组件时不回退——一个
-/// resolved 节点要么整个属于某个组件实例，要么完全不属于。
+/// It flows only along the `expand_node` chain. On entering a component it switches to component-local coordinates (`authored` restarts from the component root), and `site` / `index` record the instantiation point. It does not revert on exit: a resolved node either belongs wholly to some component instance, or not at all.
 #[derive(Debug, Clone)]
 pub(crate) struct OriginCtx {
     pub(crate) path: String,
@@ -631,28 +613,23 @@ impl OriginCtx {
         }
     }
 
-    /// 进入 `use` 的第 `index` 个实例：作者坐标系换成组件根，实例化点是当前路径。
+    /// Entering the `index`-th instance of `use`: author coordinates switch to the component root, and the instantiation point is the current path.
     fn instance(&self, component: &str, index: usize) -> Self {
         Self {
             path: String::new(),
             component: Some(component.to_string()),
-            // 组件套组件时 site 记**最外层**的实例化点：那才是作者能编辑的位置。
+            // For a component nested inside a component, site records the **outermost** instantiation point, because that is the position the author can edit.
             site: Some(self.site.clone().unwrap_or_else(|| self.path.clone())),
             index: Some(self.index.unwrap_or(index)),
         }
     }
 }
 
-/// 编译产物 → **舞台空间投影**（BCF 直接编辑回写方案 §4.3 的两跳映射之一）。
+/// Compiled output → **stage-space projection** (one of the two hops of the BCF direct-edit write-back, scheme §4.3).
 ///
-/// 界面点中的是组件展开、`$` 引用落定之后的节点，而 edit-map 说的是作者写在
-/// TSX 里的位置。这里给出中间那一层：一份 doc 形状的 JSON，`tracks[].clips[].element`
-/// 是展开后的元素树，每个节点带 `_origin`（作者溯源）。因此
-/// [`crate::editpath::locate_element`] 在它上面照常可用，客户端只需要**一套地址**
-/// （舞台路径），折回作者节点是服务端的事。
+/// The UI hits nodes after component expansion and `$` reference resolution, whereas the edit-map refers to positions the author wrote in the TSX. This is the intermediate layer: a doc-shaped JSON whose `tracks[].clips[].element` is the expanded element tree, each node carrying `_origin` (author provenance). Hence [`crate::editpath::locate_element`] works on it as usual, and the client only needs **one set of addresses** (stage paths). Mapping back to author nodes is the server's job.
 ///
-/// 只投影 visual 轨：舞台编辑的对象就是它们。不跑布局、不需要 host 输入，
-/// 所以缺字体缺媒体也能用（`image` 节点的 `src` 仍回写成 `$assets.*` 引用）。
+/// Only visual tracks are projected, since those are the objects of stage editing. It does not run layout and needs no host inputs, so it works even with missing fonts or media (an `image` node's `src` is still written back as a `$assets.*` reference).
 pub fn stage_projection(doc: &Value) -> Result<Value> {
     let resolver = Resolver::new(doc.clone(), None)?;
     let ctx = resolver.ctx.clone();
@@ -683,7 +660,7 @@ pub fn stage_projection(doc: &Value) -> Result<Value> {
     Ok(serde_json::json!({ "tracks": tracks }))
 }
 
-/// 单个 resolved 节点的 JSON 视图（字段名与规范层同名，寻址口径不变）。
+/// JSON view of a single resolved node (field names match the spec layer, so addressing is unchanged).
 fn node_view(n: &RNode) -> Value {
     let mut out = Map::new();
     out.insert("type".into(), Value::String(n.ntype.clone()));
@@ -809,10 +786,9 @@ fn node_view(n: &RNode) -> Value {
     Value::Object(out)
 }
 
-/// resolved 树 → 反查表（方案 §4.3-2）。
+/// Resolved tree → reverse lookup table (scheme §4.3-2).
 ///
-/// 键是 resolved **路径**而不是 resolved id：组件多实例共享组件根 id，id 在树里
-/// 天然重复，只有路径唯一。
+/// The key is the resolved **path**, not the resolved id. Multiple instances of a component share the component root's id, so the id is naturally duplicated in the tree, and only the path is unique.
 pub fn edit_origins(root: &RNode) -> Vec<OriginEntry> {
     let mut out = Vec::new();
     walk_origins(root, String::new(), &mut out);
@@ -831,7 +807,7 @@ fn walk_origins(node: &RNode, path: String, out: &mut Vec<OriginEntry>) {
     }
 }
 
-/// 与 [`crate::editpath::path_segment`] 同规则，但作用在 resolved 树上。
+/// Same rules as [`crate::editpath::path_segment`], but applied to the resolved tree.
 fn resolved_segment(siblings: &[RNode], index: usize) -> String {
     let fallback = format!("{}{index}", crate::editpath::INDEX_PREFIX);
     let Some(node) = siblings.get(index) else {
@@ -848,15 +824,13 @@ fn resolved_segment(siblings: &[RNode], index: usize) -> String {
     if unique { id.to_string() } else { fallback }
 }
 
-/// 文字 part 动画的编译产物（设计 §5.6）。
+/// Compiled output of text part animation (design §5.6).
 ///
-/// 每个 part 一组**通道**（而不是一个 `MotionProgram`）：相对长度因此和元素通道
-/// 走同一条「布局之后求值」的路（`build_channels_after_layout`），`record_text`
-/// 也只需要 `sample_channels`，录制期不做编译。
+/// Each part gets a **group of channels** (rather than one `MotionProgram`). Relative lengths therefore take the same path as element channels, evaluated after layout (`build_channels_after_layout`), and `record_text` only needs `sample_channels`, with no compilation at record time.
 #[derive(Debug, Clone)]
 pub struct PartMotion {
     pub map: motion::PartMap,
-    /// 下标与 `map.ranges` 对齐；空 `Vec` = 该 part 本刻没有任何轨。
+    /// Indices align with `map.ranges`. An empty `Vec` = this part has no tracks at this moment.
     pub channels: Vec<Vec<Channel>>,
 }
 
@@ -966,30 +940,25 @@ impl Default for RNode {
     }
 }
 
-// ── 效果栈、混合与裁剪形状（规范 §6.6 / §6.3） ─────────────────────
+// ── Effect stack, blending and clip shapes (spec §6.6 / §6.3) ─────────────────────
 
-/// 元素上一条已解析的效果配方引用（规范 §6.6）。
+/// A resolved effect recipe reference on an element (spec §6.6).
 ///
-/// `uniforms` 已经过 manifest 的 `resolve_uniforms`：默认值补齐、范围夹紧、
-/// 类型校验完成。**`length` 类参数是画布短边的比例**（与 manifest 的
-/// `basis: canvasShortEdge` 同一口径），因此同一份文档在任何画幅下都得到
-/// 成比例的半径与羽化。
+/// `uniforms` has already gone through the manifest's `resolve_uniforms`: defaults filled in, ranges clamped, types validated. **`length`-type parameters are proportions of the canvas short side** (same convention as the manifest's `basis: canvasShortEdge`), so the same document gets proportionally scaled radii and feathering at any frame size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedEffect {
     pub effect: motion::effect::EffectRef,
     pub uniforms: motion::effect::UniformMap,
 }
 
-/// `style.background` 的**渐变**形态（规范 §6.3）。
+/// The **gradient** form of `style.background` (spec §6.3).
 ///
-/// 只接受结构化对象，不接受 CSS 的 `linear-gradient(...)` 字串——字串在录制期
-/// 只能静默画不出来，而对象形态的每个字段都能在 lint 期校验。色标位置 ∈ [0, 1]，
-/// 几何量都是**元素盒比例**，跟着元素一起变换。
+/// Only a structured object is accepted, not a CSS `linear-gradient(...)` string. A string could only be silently drawn as nothing at record time, whereas each field of the object form can be validated at lint time. Colour-stop positions are in [0, 1]. All geometric quantities are **element box proportions**, transforming together with the element.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BgGradient {
-    /// `angle` 用 CSS 口径：0 = 从下到上，90 = 从左到右，顺时针为正。
+    /// `angle` uses the CSS convention: 0 = bottom to top, 90 = left to right, clockwise is positive.
     Linear { angle: f64, stops: Vec<(f64, Rgba)> },
-    /// 圆心 `(cx, cy)` 是盒比例；`r` 以**盒短边**为基准的比例。
+    /// Centre `(cx, cy)` is in box proportions. `r` is a proportion relative to the **box short side**.
     Radial {
         cx: f64,
         cy: f64,
@@ -1037,8 +1006,7 @@ impl TextStroke {
 }
 
 impl BgGradient {
-    /// 解析 `style.background`：颜色字串返回 `Ok(None)`（交给 `Rgba::parse`），
-    /// 对象形态返回渐变；CSS 渐变字串与不可解析的颜色都是 `schema` 错误。
+    /// Parse `style.background`: a colour string returns `Ok(None)` (handed to `Rgba::parse`), and the object form returns a gradient. A CSS gradient string and an unparseable colour are both `schema` errors.
     pub fn parse(value: &Value) -> Result<Option<BgGradient>> {
         match value {
             Value::Null => Ok(None),
@@ -1109,7 +1077,7 @@ impl BgGradient {
         for (index, item) in items.iter().enumerate() {
             let at = match item.get("at") {
                 None | Some(Value::Null) => {
-                    // 缺省均匀分布
+                    // Default: uniform distribution
                     index as f64 / (items.len() - 1) as f64
                 }
                 Some(v) => v
@@ -1138,11 +1106,9 @@ impl BgGradient {
     }
 }
 
-/// `style.shadow`（规范 §6.3）：元素及其子树的投影。
+/// `style.shadow` (spec §6.3): a drop shadow of the element and its subtree.
 ///
-/// 数值都是**像素**（与 `fontSize` 同口径），定型时按画布短边折成
-/// `filter.dropShadow@1` 的相对长度参数，因此元素带阴影就是效果元素——
-/// 受 §6.6 的嵌套约束，并在分层渲染路径上得到一张离屏 surface。
+/// Numeric values are **pixels** (same convention as `fontSize`). At definition time they are folded, by the canvas short side, into the relative-length parameters of `filter.dropShadow@1`. So an element with a shadow is an effect element: it falls under the nesting constraints of §6.6, and gets an offscreen surface on the layered render path.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxShadow {
     pub color: Rgba,
@@ -1198,7 +1164,7 @@ impl BoxShadow {
         })
     }
 
-    /// 折成 `filter.dropShadow@1`。`short_edge` 是画布短边像素。
+    /// Folded into `filter.dropShadow@1`. `short_edge` is the canvas short side in pixels.
     pub fn to_effect(&self, short_edge: f64) -> Result<ResolvedEffect> {
         use motion::effect::{UniformMap, UniformValue, lookup};
         let manifest = lookup("filter.dropShadow", 1).map_err(|error| anyhow!("{error}"))?;
@@ -1226,8 +1192,7 @@ impl BoxShadow {
     }
 }
 
-/// `style.border`（§6.3）：画在元素盒内侧的一圈描边——外沿就是元素盒，向里收 `width` 像素，
-/// 圆角跟 `borderRadius` 走（内沿圆角 = 外圆角 − width），与 CSS 的 border-box 同一口径；不占布局。
+/// `style.border` (§6.3): a stroke ring drawn on the inside of the element box. The outer edge is the element box, and it shrinks inward by `width` pixels. Corner radius follows `borderRadius` (inner corner radius = outer radius − width), matching CSS's border-box convention. It takes no layout space.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxBorder {
     pub width: f64,
@@ -1262,17 +1227,14 @@ impl BoxBorder {
     }
 }
 
-/// `style.mask`（规范 §6.3）：用**同一 clip 里的另一个元素**作遮罩。
+/// `style.mask` (spec §6.3): uses **another element in the same clip** as the mask.
 ///
-/// 与 `clipPath` 一样是单 surface 语义：录制期编译成 `PushLayer` → 本元素子树 →
-/// `PushMatte` → 遮罩源子树 → `PopMatte{mode}` → `PopLayer`，不需要第二张 surface。
-/// 遮罩源元素**不再在正常流里出画**（它是遮罩定义，同 SVG `<mask>`），按自己的布局
-/// 位置与祖先变换渲染，祖先的不透明度与裁剪不参与。
+/// Like `clipPath`, it has single-surface semantics. At record time it compiles to `PushLayer` → this element's subtree → `PushMatte` → the mask source subtree → `PopMatte{mode}` → `PopLayer`, with no second surface needed. The mask source element **is no longer drawn in the normal flow** (it is a mask definition, as with SVG `<mask>`). It renders at its own layout position and with its ancestors' transforms, and the ancestors' opacity and clipping do not apply.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElementMask {
-    /// 去掉 `#` 的元素 id。
+    /// Element id with the `#` removed.
     pub source: String,
-    /// `mode: "luma"`（按亮度）；缺省 `alpha`。
+    /// `mode: "luma"` (by luminance). Default `alpha`.
     pub luma: bool,
     pub invert: bool,
 }
@@ -1317,20 +1279,17 @@ impl ElementMask {
     }
 }
 
-/// `clipPath` 的 `path` 形状（规范 §6.3）：`d` 在 `viewBox` 坐标里，折线已归一化成
-/// **元素盒比例**（x 按盒宽、y 按盒高拉伸）。只能写在静态 `style.clipPath` 上——
-/// 任意路径之间没有良定义的逐键插值。
+/// `path` shape of `clipPath` (spec §6.3): `d` is in `viewBox` coordinates. Polyline points are normalized to **element box proportions** (x stretched by box width, y by box height). It can only be written on a static `style.clipPath`, since there is no well-defined per-key interpolation between arbitrary paths.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipPoly {
     pub subpaths: Vec<Vec<(f64, f64)>>,
     pub even_odd: bool,
 }
 
-/// `morphTo` 至多这么多个目标形状（规范 §6.2.1）。
+/// `morphTo` allows at most this many target shapes (spec §6.2.1).
 pub const MORPH_TARGETS_MAX: usize = 256;
 
-/// 解析 `path.morphTo`：一个 `d` 字符串或字符串数组。每个目标展平后必须与 `d`
-/// **同拓扑**（子路径数与各子路径顶点数逐一相等），否则 `path-morph-topology`。
+/// Parse `path.morphTo`: a `d` string or an array of strings. Each target, once flattened, must have the **same topology** as `d` (the subpath count and the vertex count of each subpath must match one for one). Otherwise `path-morph-topology`.
 pub fn parse_morph_to(value: &Value, d: Option<&str>) -> Result<Vec<String>> {
     let targets: Vec<String> = match value {
         Value::String(s) => vec![s.clone()],
@@ -1370,7 +1329,7 @@ pub fn parse_morph_to(value: &Value, d: Option<&str>) -> Result<Vec<String>> {
 const CLIP_KEYS_PATH: &[&str] = &["shape", "d", "viewBox", "fillRule"];
 
 impl ClipPoly {
-    /// `value.shape == "path"` 时返回 `Some`；其它形状返回 `None` 交给 [`ClipShape`]。
+    /// Returns `Some` when `value.shape == "path"`. For other shapes, returns `None` and hands off to [`ClipShape`].
     pub fn parse(value: &Value) -> Result<Option<ClipPoly>> {
         let Some(map) = value.as_object() else {
             return Ok(None);
@@ -1429,12 +1388,9 @@ impl ClipPoly {
     }
 }
 
-/// `style.clipPath` 与 `clipPath` 通道的参数化形状（规范 §6.3）。
+/// Parameterized shapes for `style.clipPath` and the `clipPath` channel (spec §6.3).
 ///
-/// 全部取值都是**元素盒的比例**：`inset` 的四边按对应边长，圆角与圆形半径
-/// 按短边。比例形式让 `clipPath` 可以逐键线性插值（`mix_value`），也让同一
-/// 声明在任意尺寸的盒上得到同样的视觉。`polygon` 在本实现里没有光栅化路径，
-/// 解析期直接报 `effect-capability-unsupported`。
+/// All values are **proportions of the element box**: `inset`'s four sides are relative to the corresponding edge length, and corner radii and circle radii are relative to the short side. The proportional form lets `clipPath` interpolate linearly key by key (`mix_value`), and gives the same visual for the same declaration on a box of any size. `polygon` has no rasterized path in this implementation, so it is rejected at parse time with `effect-capability-unsupported`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClipShape {
     Inset {
@@ -1457,13 +1413,13 @@ pub enum ClipShape {
     },
 }
 
-/// 每种形状的封闭键集：多一个键就是 schema 错误（手滑写错不会被静默忽略）。
+/// Closed key set for each shape: an extra key is a schema error, so a typo is never silently ignored.
 const CLIP_KEYS_INSET: &[&str] = &["shape", "top", "right", "bottom", "left", "radius"];
 const CLIP_KEYS_CIRCLE: &[&str] = &["shape", "cx", "cy", "r"];
 const CLIP_KEYS_ELLIPSE: &[&str] = &["shape", "cx", "cy", "rx", "ry"];
 
 impl ClipShape {
-    /// 解析 `clipPath` 取值。`null` ⇒ `None`（通道上表示「本刻不裁剪」）。
+    /// Parse a `clipPath` value. `null` ⇒ `None` (on the channel it means "no clipping at this moment").
     pub fn parse(value: &Value) -> Result<Option<ClipShape>> {
         if value.is_null() {
             return Ok(None);
@@ -1521,7 +1477,7 @@ impl ClipShape {
         }))
     }
 
-    /// 恒等裁剪（不切掉任何东西）⇒ 不必发 `ClipPath` 指令。
+    /// Identity clip (cuts nothing away) ⇒ no need to emit a `ClipPath` instruction.
     pub fn is_identity(&self) -> bool {
         match self {
             ClipShape::Inset {
@@ -1536,7 +1492,7 @@ impl ClipShape {
     }
 }
 
-/// `effects[]` 数组 → 已解析的效果栈（规范 §6.6）。
+/// `effects[]` array → resolved effect stack (spec §6.6).
 pub fn parse_effects(value: &Value) -> Result<Vec<ResolvedEffect>> {
     use motion::effect::{UniformMap, lookup};
 
@@ -1548,7 +1504,7 @@ pub fn parse_effects(value: &Value) -> Result<Vec<ResolvedEffect>> {
         let id = item
             .gstr("preset")
             .ok_or_else(|| anyhow!("schema: effects[] 条目缺少 preset（§6.6）"))?;
-        // 持久化必须写死版本；缺省按 1（首批配方都是 @1），高于实现即 error。
+        // Persisted data must pin the version. The default is 1 (the first batch of recipes are all @1), and a version higher than the implementation is an error.
         let version = match item.get_("presetVersion") {
             Some(value) if !value.is_null() => value
                 .as_u64()
@@ -1628,14 +1584,14 @@ fn uniform_from_json(
     })
 }
 
-// ── 内置 preset（规范附录 B 子集，与 Swift 原型一致） ────────────────
+// ── Built-in presets (subset of spec Appendix B, consistent with the Swift prototype) ────────────────
 //
-// 配方本体已迁到 `core/presets/builtin/motion/bcf.*.json`，由
-// `motion::preset_registry` 嵌入与解析（ADR-M03）。这里只保留取用点。
+// The recipe bodies have moved to `core/presets/builtin/motion/bcf.*.json`, embedded and parsed by
+// `motion::preset_registry` (ADR-M03). Only the access point is kept here.
 
-/// `split.by` → part 单位（规范 §7.9）。
+/// `split.by` → part unit (spec §7.9).
 ///
-/// `line` 的 part map 在宿主字体参与排版后建立，不能提前按文本猜行数。
+/// The part map for `line` is built after the host font has taken part in typesetting. It cannot be guessed ahead of time from text line counts.
 pub fn parse_split_unit(split: &Value) -> Result<motion::PartUnit> {
     match split.gstr("by").unwrap_or("grapheme") {
         "grapheme" => Ok(motion::PartUnit::Char),
@@ -1645,7 +1601,7 @@ pub fn parse_split_unit(split: &Value) -> Result<motion::PartUnit> {
     }
 }
 
-/// `use.stagger.delay` / `RNode::extra_delay` 包裹整棵 flow（规范 §10.3 / §7.5）。
+/// `use.stagger.delay` / `RNode::extra_delay` wraps the whole flow (spec §10.3 / §7.5).
 fn wrap_extra_delay(graph: motion::MotionGraph, extra: f64) -> motion::MotionGraph {
     if extra == 0.0 {
         return graph;
@@ -1660,10 +1616,10 @@ fn wrap_extra_delay(graph: motion::MotionGraph, extra: f64) -> motion::MotionGra
 
 // ── Resolver ─────────────────────────────────────────────────────────
 
-/// 一处媒体引用点（§18.6 引用窗口）：audio clip 或含 video 元素的 visual clip。
+/// One media reference point (§18.6 reference window): an audio clip, or a visual clip containing a video element.
 #[derive(Debug, Clone)]
 struct MediaRef {
-    /// 宿主 clip id（窗口来源）
+    /// Host clip id (source of the window)
     clip_id: String,
     asset_id: String,
     media_start: f64,
@@ -1678,25 +1634,25 @@ pub struct Resolver {
     pub cues: HashMap<String, (f64, f64, f64)>, // (start, dur, end)
     pub clip_wins: HashMap<String, (Option<f64>, Option<f64>)>,
     pub total: f64,
-    /// meta.fps（TimeExpr 求值结果对齐 1/fps 网格，§5.4）
+    /// meta.fps (TimeExpr results are aligned to the 1/fps grid, §5.4)
     pub fps: f64,
-    /// host 探测的媒体元数据（assets::HostInputs），image/video 天然尺寸来源
+    /// Media metadata probed by the host (assets::HostInputs). The source of natural size for image/video.
     pub media: HashMap<String, MediaMeta>,
-    /// host 注入的词级转录（资产 id → 词表），`~` 词锚点求值来源
+    /// Word-level transcript injected by the host (asset id → word list). The source for evaluating `~` word anchors.
     pub transcripts: HashMap<String, Vec<CoreWord>>,
-    /// animatedImage 的逐帧起点毫秒表（assets::HostInputs）
+    /// Per-frame start millisecond table for animatedImage (assets::HostInputs)
     pub frame_tables: HashMap<String, Arc<[i64]>>,
-    /// 媒体引用点索引（resolve() 起始处收集）
+    /// Media reference point index (collected at the start of resolve())
     media_refs: Vec<MediaRef>,
     builtins: Value,
 }
 
 impl Resolver {
-    /// variables 覆盖：`overrides` 以 {"id": value} 形态注入（§11.1）。
+    /// variables overrides: `overrides` is injected in the form {"id": value} (§11.1).
     pub fn new(doc: Value, overrides: Option<&Map<String, Value>>) -> Result<Resolver> {
         let builtins: Value = motion::preset_registry::bcf_builtin_map().clone();
         let vars = crate::assets::effective_vars(&doc, overrides);
-        // asset 变量委托（§11.2）：var 条目物化为 {type, src, hash?}，$assets.* 引用透明可用
+        // asset variable delegation (§11.2): var entries are materialized as {type, src, hash?}, so $assets.* references work transparently
         let raw_assets = doc
             .get_("assets")
             .cloned()
@@ -1737,7 +1693,7 @@ impl Resolver {
         })
     }
 
-    /// 注入 host 探测的媒体元数据与词级转录（assets::HostInputs）；须在 resolve() 前调用。
+    /// Inject host-probed media metadata and the word-level transcript (assets::HostInputs). Must be called before resolve().
     pub fn set_host_inputs(&mut self, inputs: crate::assets::HostInputs) {
         self.media = inputs.media;
         self.transcripts = inputs.transcripts;
@@ -1745,8 +1701,8 @@ impl Resolver {
         self.font_families = inputs.font_families;
     }
 
-    // ── TimeExpr 求值（规范 §5.2）：返回 None 表示 #clip/~word 引用尚未收敛 ──
-    /// 求值结果统一对齐 1/fps 网格（§5.4）。
+    // ── TimeExpr evaluation (spec §5.2): returns None when #clip / ~word references have not yet converged ──
+    /// Evaluation results are uniformly aligned to the 1/fps grid (§5.4).
     pub fn eval_t(&self, expr: &Value) -> Result<Option<f64>> {
         if let Some(n) = expr.as_f64() {
             return Ok(Some(self.align(n)));
@@ -1756,8 +1712,7 @@ impl Resolver {
             .map(|t| clamp(self.align(t), 0.0, self.total + 10.0)))
     }
 
-    /// 同 [`Self::eval_t`]，但**不对齐帧网格、不夹取**：顶层 `events[]`（规范 §4.2）
-    /// 是给音频侧的时刻，毫秒精度，落在片外也要原样报出来。须在 `resolve()` 之后调用。
+    /// Same as [`Self::eval_t`], but **without frame-grid alignment or clamping**. Top-level `events[]` (spec §4.2) are moments for the audio side, at millisecond precision, and out-of-clip ones must still be reported as-is. Must be called after `resolve()`.
     pub fn eval_t_exact(&self, expr: &Value) -> Result<Option<f64>> {
         if let Some(n) = expr.as_f64() {
             return Ok(Some(n));
@@ -1775,7 +1730,7 @@ impl Resolver {
                 offset,
             } => {
                 let b = if sigil == '@' {
-                    // `@doc` 保留锚点（§3.3）：整篇文档窗口 [0, total]，随 reflow 伸缩
+                    // `@doc` reserved anchor (§3.3): the whole-document window [0, total], scaling with reflow
                     if id == "doc" {
                         match mark {
                             Mark::Pct(p) => self.total * p / 100.0,
@@ -1801,7 +1756,7 @@ impl Resolver {
                     let need = if mark == Mark::End { w.1 } else { w.0 };
                     match need {
                         Some(n) => n,
-                        None => return Ok(None), // 定点迭代中尚未解出
+                        None => return Ok(None), // Not yet solved during fixed-point iteration
                     }
                 };
                 b + offset
@@ -1814,14 +1769,14 @@ impl Resolver {
             } => {
                 match self.eval_word_anchor(&ref_id, &word_id, mark_end)? {
                     Some(t) => t + offset,
-                    None => return Ok(None), // 宿主窗口尚未解出
+                    None => return Ok(None), // Host window not yet solved
                 }
             }
         };
         Ok(Some(base))
     }
 
-    /// 对齐到 1/fps 网格（§5.4）。fps 未知（≤0）时原样返回。
+    /// Align to the 1/fps grid (§5.4). When fps is unknown (≤0), return as-is.
     fn align(&self, t: f64) -> f64 {
         if self.fps > 0.0 {
             (t * self.fps).round() / self.fps
@@ -1830,8 +1785,8 @@ impl Resolver {
         }
     }
 
-    /// `~` 词锚点求值（§18.6 mapToDoc）：词的媒体源时刻 → 文档绝对时刻。
-    /// 返回 None 表示某个候选引用窗口在定点迭代中尚未解出。
+    /// `~` word anchor evaluation (§18.6 mapToDoc): the word's media-source time → absolute document time.
+    /// Returns None if some candidate reference window has not yet been solved during fixed-point iteration.
     fn eval_word_anchor(&self, ref_id: &str, word_id: &str, mark_end: bool) -> Result<Option<f64>> {
         let is_asset = self.ctx.assets.get_(ref_id).is_some();
         let is_clip = self.clip_wins.contains_key(ref_id);
@@ -1873,8 +1828,8 @@ impl Resolver {
                 pending = true;
                 continue;
             };
-            // 引用窗口判定（§18.6）：按词首 t0 落入 [mediaStart, mediaStart + 窗口长 × rate)
-            // （loop 的多次映射本实现不展开：按首个周期判定）
+            // Reference window test (§18.6): a word's start t0 falls within [mediaStart, mediaStart + window length × rate)
+            // (this implementation does not expand the multiple mappings of loop; it tests against the first cycle)
             let mut lo = r.media_start;
             let mut hi = r.media_start + (we - ws).max(0.0) * r.rate;
             if let Some((s0, s1)) = r.segment {
@@ -1909,7 +1864,7 @@ impl Resolver {
         }
     }
 
-    // ── preset 展开 ──
+    // ── preset expansion ──
     pub fn expand_preset_def(
         &self,
         name: &str,
@@ -1953,10 +1908,9 @@ impl Resolver {
         Ok((kfs, meta))
     }
 
-    /// preset 的 '%' 帧 → [t0, t0+dur] 绝对时间通道。
+    /// Preset '%' frames → absolute-time channels over [t0, t0+dur].
     ///
-    /// 数值内核在 `motion::lower_bcf`；这里只把通道 IR 接上 `Channel`
-    /// 的 `meta`（countUp 的 prefix/suffix/decimals 属于 BCF 文档域）。
+    /// The numeric kernel lives in `motion::lower_bcf`. Here we only attach the channel IR to `Channel`'s `meta`, since countUp's prefix/suffix/decimals belong to the BCF document domain.
     pub fn lay_preset_frames(
         kfs: &[Value],
         t0: f64,
@@ -1979,13 +1933,12 @@ impl Resolver {
         }
     }
 
-    // ── 元素树展开（组件 / each / stagger / $props）──
+    // ── Element tree expansion (components / each / stagger / $props) ──
     pub fn expand_node(&self, n: &Value, ectx: &Ctx) -> Result<RNode> {
         self.expand_node_guarded(n, ectx, 0, &OriginCtx::root())
     }
 
-    /// 媒体字段解析与校验（§6.5）：`video` 与 `animatedImage` 共用一份，
-    /// audio clip 的 mediaStart 也复用默认规则。
+    /// Media field parsing and validation (§6.5): shared by `video` and `animatedImage`. The mediaStart of audio clips also reuses the default rule.
     fn video_media_fields(n: &Value) -> Result<(f64, f64, Option<(f64, f64)>, bool)> {
         let rate = n.gf64("playbackRate").unwrap_or(1.0);
         if rate <= 0.0 || !rate.is_finite() {
@@ -2012,7 +1965,7 @@ impl Resolver {
             }
             None => None,
         };
-        // mediaStart 缺省 = segment 起点（§6.5）
+        // mediaStart defaults to the segment start (§6.5)
         let media_start = n
             .gf64("mediaStart")
             .unwrap_or(segment.map(|s| s.0).unwrap_or(0.0));
@@ -2020,8 +1973,8 @@ impl Resolver {
         Ok((media_start, rate, segment, loop_media))
     }
 
-    /// 收集全文档媒体引用点（§18.6 引用窗口的静态半边）：
-    /// audio 轨 clip + visual clip 元素树中的 video 节点（含组件根，深度受限）。
+    /// Collect media reference points across the whole document (static half of the §18.6 reference window):
+    /// audio-track clips, plus video nodes in visual clip element trees (including component roots, depth-limited).
     fn collect_media_refs(&self, all_clips: &[(String, Value)]) -> Result<Vec<MediaRef>> {
         fn walk_element(
             rsv: &Resolver,
@@ -2031,7 +1984,7 @@ impl Resolver {
             depth: usize,
         ) -> Result<()> {
             if depth > 64 {
-                return Ok(()); // 组件递归由 expand_node/lint 报错，这里静默截断
+                return Ok(()); // Component recursion is reported as an error by expand_node / lint; here it is silently truncated
             }
             if n.gstr("type") == Some("use") {
                 if let Some(comp) = n
@@ -2044,7 +1997,7 @@ impl Resolver {
                 }
             }
             if n.gstr("type") == Some("video") {
-                // 只静态解析 $assets.* 直引；$props 委托的 src 无法静态定位，跳过
+                // Only direct $assets.* references are resolved statically. A src delegated through $props cannot be located statically, so it is skipped
                 if let Some(aid) = n.gstr("src").and_then(asset_ref_id) {
                     let (media_start, rate, segment, _) = Resolver::video_media_fields(n)?;
                     out.push(MediaRef {
@@ -2152,7 +2105,7 @@ impl Resolver {
                 }
                 let mut ictx = ectx.clone();
                 ictx.props = Some(defaults);
-                // 派生 id 就在这里铸；反查表同处登记，两者不会走岔（方案 §4.3-2）。
+                // Derived ids are minted here. The reverse lookup table is registered at the same place, so the two cannot diverge (scheme §4.3-2).
                 let derived = octx.instance(comp_name, i);
                 let inst = self.expand_node_guarded(
                     comp.get_("root").unwrap_or(&Value::Null),
@@ -2163,12 +2116,10 @@ impl Resolver {
                 let wrapper = RNode {
                     ntype: "box".into(),
                     id: format!("{}-{i}", wrap.id),
-                    animate: n.get_("animate").cloned(), // 原样保留，build_channels 再展开
+                    animate: n.get_("animate").cloned(), // Kept as is; build_channels expands it later
                     extra_delay: stagger_delay * i as f64 + ectx.extra_delay,
                     children: vec![inst],
-                    // 逐实例 wrapper 是编译器铸的合成盒：它的作者节点就是 `use`
-                    // 本身（`authored` 因此留在 clip 空间），组件内部节点的
-                    // `authored` 才从组件根起算。两者靠 `component` 区分。
+                    // The per-instance wrapper is a synthetic box minted by the compiler. Its author node is the `use` itself (so `authored` stays in clip space), while the `authored` of nodes inside the component counts from the component root. The two are told apart by `component`.
                     origin: Some(Box::new(NodeOrigin {
                         authored: octx.path.clone(),
                         ..derived.origin()
@@ -2210,7 +2161,7 @@ impl Resolver {
         }
         if node.ntype == "proc" {
             let proc = crate::proc::ProcSource::parse(&deep_resolve(n, ectx))?;
-            // 缺省铺满画布：雨、夜空通常就是整幅背景层。
+            // Defaults to filling the canvas: rain and the night sky are usually a full-frame background layer.
             let meta = self.doc.get_("meta");
             let (cw, ch) = (
                 meta.and_then(|m| m.gf64("width")).unwrap_or(1920.0),
@@ -2411,8 +2362,7 @@ impl Resolver {
                 bail!("schema: fontWeight 须在 1..1000");
             }
         }
-        // 效果栈 / 混合 / 裁剪形状（规范 §6.6、§6.3）。三者都在这里定型：
-        // 录制期只读已解析结果，不再碰 JSON。
+        // Effect stack / blend / clip shape (spec §6.6, §6.3). All three are finalized here. At record time only the resolved results are read, and JSON is no longer touched.
         if let Some(effects) = n.get_("effects").filter(|v| !v.is_null()) {
             node.effects = parse_effects(&deep_resolve(effects, ectx))?;
         }
@@ -2440,15 +2390,14 @@ impl Resolver {
                 node.clip_shape = ClipShape::parse(clip)?;
             }
         }
-        // `background` 渐变 / `shadow` / `fontStyle` / `mask`（规范 §6.3）：
-        // 都在这里定型并校验——lint 放行而录制期画不出来的键一个都不留。
+        // `background` gradient / `shadow` / `fontStyle` / `mask` (spec §6.3): all are finalized and validated here. Not one key that lint lets through and recording cannot draw is left behind.
         if let Some(bg) = node.style.get("background") {
             node.bg_gradient = BgGradient::parse(bg)?;
         }
         if let Some(shadow) = node.style.get("shadow").filter(|v| !v.is_null()) {
             let shadow = BoxShadow::parse(shadow)?;
             let short_edge = self.canvas_short_edge();
-            // 阴影先于作者显式效果：垫在元素之下，后续滤镜作用在「元素 + 阴影」上。
+            // Shadow comes before the author's explicit effects: it sits beneath the element, and subsequent filters apply to "element + shadow".
             node.effects.insert(0, shadow.to_effect(short_edge)?);
         }
         if let Some(border) = node.style.get("border").filter(|v| !v.is_null()) {
@@ -2482,7 +2431,7 @@ impl Resolver {
             node.ntype.as_str(),
             "image" | "video" | "animatedImage" | "lottie" | "program"
         ) {
-            // src 只接受 "$assets.x"（规范 §11.2 构造保证；lint 已把裸路径拦为 error）
+            // src only accepts "$assets.x" (guaranteed by construction in spec §11.2; lint has already flagged bare paths as errors)
             let src = n.gstr("src").unwrap_or("");
             let id = asset_ref_id(src).ok_or_else(|| {
                 anyhow!(
@@ -2518,7 +2467,7 @@ impl Resolver {
                 }
             }
             if matches!(node.ntype.as_str(), "animatedImage" | "lottie" | "program") {
-                // 媒体字段与 §6.5 同构（`withAudio` / `volume` 除外：三者都没有音轨）
+                // Media fields are isomorphic with §6.5 (except `withAudio` / `volume`, which none of these three has an audio track for)
                 let (media_start, rate, segment, _) = Self::video_media_fields(n)?;
                 node.media_start = media_start;
                 node.playback_rate = rate;
@@ -2529,9 +2478,8 @@ impl Resolver {
                         anyhow!("{} fit \"{s}\" 不在 cover|contain|fill", node.ntype)
                     })?,
                 };
-                // 显式 `loop` 优先；没写则沿用素材自带的 loop count（§6.5.1）。
-                // 元数据缺失时按无限循环兜底——那种情况下帧表也是空的，
-                // 录制期本来就画不出东西，加载阶段已经 fail-fast。
+                // An explicit `loop` takes priority. If not written, it inherits the asset's own loop count (§6.5.1).
+                // When metadata is missing, it falls back to infinite looping. In that case the frame table is also empty, and recording could not draw anything anyway, so loading has already failed fast.
                 node.media_plays = match n.get_("loop").and_then(Value::as_bool) {
                     Some(true) => 0,
                     Some(false) => 1,
@@ -2695,12 +2643,9 @@ impl Resolver {
         Ok(node)
     }
 
-    /// flow / parts 的时间预解（计划 §3.2.2）。
+    /// Time pre-resolution for flow / parts (plan §3.2.2).
     ///
-    /// `ccut-motion` 不认识 TimeExpr（ADR-M01 不反向依赖 `ccut-core`），所以在把
-    /// JSON 交给它之前，这里把每个 op 的 `at` / `repeat.until` 换成**绝对秒**：
-    /// 数字按 clip 局部秒（与 `keyframes[].t` 一致）、`"clip.start"` / `"clip.end"`
-    /// 是规范 §7.5 的两个保留串（它们不是合法 TimeExpr）、其余按 TimeExpr 求值。
+    /// `ccut-motion` does not understand TimeExpr (ADR-M01 forbids a reverse dependency on `ccut-core`), so before handing the JSON to it, each op's `at` / `repeat.until` is converted here into **absolute seconds**. Numbers are clip-local seconds (consistent with `keyframes[].t`). `"clip.start"` / `"clip.end"` are the two reserved strings of spec §7.5 (they are not valid TimeExprs). Everything else is evaluated as a TimeExpr.
     fn preresolve_flow_times(&self, value: &Value, win: (f64, f64)) -> Result<Value> {
         match value {
             Value::Array(items) => Ok(Value::Array(
@@ -2738,8 +2683,7 @@ impl Resolver {
             .ok_or_else(|| anyhow!("time-ref-unknown: flow 时间 {value} 无法求值"))
     }
 
-    /// `CompiledFlow` 的一条轨 → `Channel`。关键帧的 `v` 是原文 JSON
-    /// （可能仍是未求值的相对长度对象），与 legacy 通道走同一条 finalize。
+    /// One track of `CompiledFlow` → `Channel`. The `v` of keyframes is the raw JSON (possibly still an unevaluated relative-length object), and goes through the same finalize as the legacy channels.
     fn flow_track_channel(track: &motion::FlowTrack) -> Channel {
         Channel {
             prop: track.prop.clone(),
@@ -2768,7 +2712,7 @@ impl Resolver {
         }
     }
 
-    /// `animate.flow` → 绝对时间通道（规范 §7.5）。
+    /// `animate.flow` → absolute-time channels (spec §7.5).
     fn flow_channels(&self, flow: &Value, win: (f64, f64), extra: f64) -> Result<Vec<Channel>> {
         fn text_tween(value: &Value) -> bool {
             match value {
@@ -2787,8 +2731,7 @@ impl Resolver {
         let resolved = self.preresolve_flow_times(flow, win)?;
         let mut graph = motion::parse_flow(&resolved, &motion::FlowParseCtx::default())
             .map_err(|error| anyhow!("{error}"))?;
-        // 规范 §10.3：`use.stagger.delay` 与 `RNode::extra_delay` 包裹整棵 flow
-        // （flow 没有 enter 槽），绝对 `at` 也跟着挪。
+        // Spec §10.3: `use.stagger.delay` and `RNode::extra_delay` wrap the whole flow (a flow has no enter slot), and absolute `at` values shift along with it.
         graph = wrap_extra_delay(graph, extra);
         let compiled = motion::compile_flow(&graph, &self.compile_ctx(win))
             .map_err(|error| anyhow!("{error}"))?;
@@ -2799,7 +2742,7 @@ impl Resolver {
             .collect())
     }
 
-    /// `animate.parts` → 每个 part 一组通道（规范 §7.9）。
+    /// `animate.parts` → a group of channels per part (spec §7.9).
     fn part_motion(
         &self,
         parts: &Value,
@@ -2839,25 +2782,23 @@ impl Resolver {
         Ok(Some(PartMotion { map, channels }))
     }
 
-    // ── 元素动画 → 绝对时间通道 ──
+    // ── Element animation → absolute-time channels ──
     //
-    // 阶段 2：通道在这里就铺好（诊断时机不变），但**相对长度不求值**——
-    // `{value, basis, offset}` 原文对象留在 `Kf.v` 里，由布局之后的
-    // `build_channels_after_layout` 换算成 px（设计 §5.5 / §10 阶段 2）。
+    // Phase 2: the channels are laid out here (diagnostic timing is unchanged), but **relative lengths are not evaluated**.
+    // The raw `{value, basis, offset}` objects stay in `Kf.v`, and `build_channels_after_layout` converts them to px after layout (design §5.5 / §10 phase 2).
     pub fn build_channels(&self, node: &mut RNode, win: (f64, f64)) -> Result<()> {
         if matches!(
             node.ntype.as_str(),
             "video" | "animatedImage" | "lottie" | "program" | "composition" | "charGrid" | "proc"
         ) {
-            // 媒体时间 = mediaStart + (t - clip.start) = t - media_t0（rate=1 视角）
+            // Media time = mediaStart + (t - clip.start) = t - media_t0 (rate=1 view)
             node.media_t0 = win.0 - node.media_start;
             node.media_win_start = win.0;
         }
         let mut chs: Vec<Channel> = Vec::new();
         let extra = node.extra_delay;
         if let Some(a) = node.animate.clone() {
-            // 规范 §7.5：同一元素不得同时出现四槽与 `flow`。lint 与 resolve 双保险
-            // （先例：`transition-mismatch`），`ccut render` 也拒绝。
+            // Spec §7.5: the same element must not have both the four slots and `flow`. Checked twice, by lint and resolve (precedent: `transition-mismatch`). `ccut render` also rejects it.
             if a.get_("flow").is_some()
                 && LEGACY_ANIMATE_SLOTS
                     .iter()
@@ -2956,8 +2897,8 @@ impl Resolver {
                         ease: f.gstr("ease").map(String::from),
                     });
                 }
-                // `textCount` 轨可带 `format: { decimals, prefix, suffix, negativePrefix,
-                // grouping, pad }`（§7.1），前三个与 countUp 的展示参数同义。
+                // A `textCount` track may carry `format: { decimals, prefix, suffix, negativePrefix,
+                // grouping, pad }` (§7.1). The first three have the same meaning as countUp's display parameters.
                 let meta = (prop == "textCount")
                     .then(|| kf.get_("format"))
                     .flatten()
@@ -3064,7 +3005,7 @@ impl Resolver {
         Ok(())
     }
 
-    /// 画布短边像素（`meta.width` / `meta.height`）。`style.shadow` 折相对长度用。
+    /// Canvas short side in pixels (`meta.width` / `meta.height`). Used to fold `style.shadow` into relative lengths.
     fn canvas_short_edge(&self) -> f64 {
         let meta = self.doc.get_("meta");
         let w = meta.and_then(|m| m.gf64("width")).unwrap_or(1920.0);
@@ -3072,10 +3013,10 @@ impl Resolver {
         w.min(h).max(1.0)
     }
 
-    /// 一个 preset 引用（`enter` / `exit` / `emphasis[i]`）→ 绝对时间通道。
+    /// One preset reference (`enter` / `exit` / `emphasis[i]`) → absolute-time channels.
     ///
-    /// 三条路径，按规范 §7.4 的「同名时越具体越优先」：项目级 `presets` →
-    /// 通用 manifest（`motion.*` canonical family 与它们的 alias）→ 冻结的 `bcf.*@1`。
+    /// Three paths, following the rule in spec §7.4 that the more specific name wins on a clash: project-level `presets` →
+    /// generic manifest (the `motion.*` canonical families and their aliases) → frozen `bcf.*@1`.
     fn slot_channels(
         &self,
         reference: &Value,
@@ -3132,8 +3073,8 @@ impl Resolver {
                     .collect());
             }
         }
-        // 规范 §7.4：`presetVersion` 高于实现已知版本时报错，不得静默用最新。
-        // 项目级 preset 与冻结的 `bcf.*` 配方都只有 version 1。
+        // Spec §7.4: a `presetVersion` higher than the version the implementation knows is an error. It must not silently use the latest.
+        // Project-level presets and the frozen `bcf.*` recipes both only have version 1.
         if let Some(version) = version {
             if version > 1 {
                 bail!("preset-version-unknown: \"{name}@{version}\" > 1");
@@ -3147,11 +3088,9 @@ impl Resolver {
         Ok(channels)
     }
 
-    // ── 转场词汇（双通道，规范 §9） ──
+    // ── Transition vocabulary (dual channel, spec §9) ──
     //
-    // 配方在 `core/presets/builtin/transition/bcf.*.json`：`prop`、ease 与
-    // 两端的相对长度（`canvasWidth`/`canvasHeight`）都是数据。注意第 3 个参数
-    // `h` 是**半时长**、第 5 个 `canvas_h` 才是画布高。
+    // Recipes live in `core/presets/builtin/transition/bcf.*.json`: `prop`, ease, and the relative lengths at both ends (`canvasWidth` / `canvasHeight`) are all data. Note that the 3rd parameter `h` is the **half duration**, and the 5th, `canvas_h`, is the canvas height.
     fn transition_channels(
         &self,
         preset: &str,
@@ -3173,14 +3112,11 @@ impl Resolver {
         )
     }
 
-    /// `transitionIn/Out` 声明是不是 **Surface Transition**（规范 §9 第二类）。
+    /// Whether a `transitionIn/Out` declaration is a **Surface Transition** (spec §9, second kind).
     ///
-    /// 判定只看名字落在哪张注册表里：先查 Motion 配方（`crossfade` / `slideLeft`
-    /// …），再查 effect 注册表的 `transition.*` 域。两边都没有才是
-    /// `transition-unknown`——**不静默降级**成 crossfade。
+    /// The decision depends only on which registry the name falls into. First check the Motion recipes (`crossfade` / `slideLeft` …), then the effect registry's `transition.*` domain. If neither has it, it is `transition-unknown`. There is **no silent fallback** to crossfade.
     ///
-    /// `fallback` 必须是一条 Motion 配方：降级的落点是属性轨道，不可能是另一条
-    /// 同样跑不动的 Surface 效果。
+    /// `fallback` must be a Motion recipe. A degradation lands on the property track, so it can never be another Surface effect that is equally unable to run.
     #[allow(clippy::too_many_arguments)]
     fn surface_transition(
         &self,
@@ -3210,8 +3146,7 @@ impl Resolver {
         };
         let manifest = match lookup(preset, version) {
             Ok(manifest) => manifest,
-            // 「没这个名字」是 transition-unknown；「没这个版本」是
-            // preset-version-unknown，两者不能混成一句话。
+            // "No such name" is transition-unknown. "No such version" is preset-version-unknown. The two must not be merged into one sentence.
             Err(motion::MotionError::PresetUnknown(_)) => {
                 bail!("transition-unknown: \"{preset}\"")
             }
@@ -3270,14 +3205,14 @@ impl Resolver {
         }))
     }
 
-    // ── 主入口 ──
+    // ── Main entry ──
     pub fn resolve(&mut self) -> Result<Ir> {
         let doc = self.doc.clone();
         let meta = doc.get_("meta").ok_or_else(|| anyhow!("缺少 meta"))?;
         let w = meta.gf64("width").unwrap_or(1920.0);
         let h = meta.gf64("height").unwrap_or(1080.0);
         let fps = meta.gf64("fps").unwrap_or(30.0);
-        // `meta.background`：颜色，或 `{ color, texture }`（规范 §4）。
+        // `meta.background`: a colour, or `{ color, texture }` (spec §4).
         let bg_value = deep_resolve(meta.get_("background").unwrap_or(&Value::Null), &self.ctx);
         let bg_texture = match bg_value.as_object() {
             Some(map) => {
@@ -3306,7 +3241,7 @@ impl Resolver {
             a: 1.0,
         });
 
-        // cue 表；dur 接受 number 或 "$vars.x" 数字变量（§5.1/§11.1）
+        // cue table. dur accepts a number or a "$vars.x" numeric variable (§5.1 / §11.1)
         let mut acc = 0.0;
         let mut scenes: Vec<(String, f64, f64)> = Vec::new();
         for s in doc
@@ -3334,7 +3269,7 @@ impl Resolver {
         }
         self.total = acc;
 
-        // clip 窗口：定点迭代（DAG）
+        // clip window: fixed-point iteration (DAG)
         let mut all_clips: Vec<(String, Value)> = Vec::new();
         for tr in doc
             .get_("tracks")
@@ -3355,7 +3290,7 @@ impl Resolver {
                 self.clip_wins.insert(id.to_string(), (None, None));
             }
         }
-        // 媒体引用点索引（词锚点求值依赖；须先于窗口迭代）
+        // Media reference point index (needed for word-anchor evaluation; must come before window iteration)
         self.media_refs = self.collect_media_refs(&all_clips)?;
         let mut progress = true;
         let mut guard = 0;
@@ -3421,7 +3356,7 @@ impl Resolver {
             surface_transitions: Vec::new(),
         };
 
-        // visual 轨：展开 + 转场物化
+        // visual tracks: expansion + transition materialization
         let mut order = 0usize;
         for tr in doc
             .get_("tracks")
@@ -3498,9 +3433,7 @@ impl Resolver {
                 let half = d / 2.0;
                 prev.render_end = prev.render_end.max(t0 + half);
                 cur.render_start = cur.render_start.min(t0 - half);
-                // 三类转场共用同一个交叠窗口（规范 §9）。Motion 走两侧的属性
-                // 轨道；Surface 走 `Transition` pass，两侧的画面不动、由效果
-                // 合成，因此**不挂 wrap 通道**——挂了就等于把同一个转场做两遍。
+                // All three kinds of transition share the same overlap window (spec §9). Motion goes through the property tracks of both sides. Surface goes through the `Transition` pass, where the pictures on both sides do not move and are composited by the effect, so **no wrap channel is attached**. Attaching one would mean doing the same transition twice.
                 match self.surface_transition(
                     preset,
                     tin.or(tout),
@@ -3528,7 +3461,7 @@ impl Resolver {
                 let mut tree = self.expand_node(el, &self.ctx.clone())?;
                 link_mask_sources(&mut tree)?;
                 self.build_channels(&mut tree, (vc.start, vc.end))?;
-                // withAudio 语法糖（§6.5）：编译期展开为同窗口 audio 条目
+                // withAudio syntactic sugar (§6.5): expanded at compile time into same-window audio entries
                 collect_with_audio(&tree, &vc, &mut ir.audio_clips)?;
                 vc.tree = tree;
                 ir.visual_clips.push(vc);
@@ -3542,7 +3475,7 @@ impl Resolver {
             }
         });
 
-        // camera 轨
+        // camera track
         for tr in doc
             .get_("tracks")
             .and_then(Value::as_array)
@@ -3606,7 +3539,7 @@ impl Resolver {
             }
         }
 
-        // audio 轨（§8.4）：volume 通道支持 %（窗口比例）/ 相对秒 / TimeExpr
+        // audio track (§8.4): the volume channel supports % (window proportion), relative seconds, and TimeExpr
         for (track_index, tr) in doc
             .get_("tracks")
             .and_then(Value::as_array)
@@ -3775,7 +3708,7 @@ impl Resolver {
             }
         }
 
-        // captions 轨（双语 lane，§8.4）
+        // captions track (bilingual lanes, §8.4)
         let cap_defaults = self
             .ctx
             .theme
@@ -3833,7 +3766,7 @@ impl Resolver {
                     cap.offset = px / h;
                 }
                 cap.gap = layout.get("gap").and_then(Value::as_f64).unwrap_or(12.0);
-                // region：矩形内流式排布（§3.6），px 或 "N%"（x/width 对宽、y/height 对高）
+                // region: flow layout inside a rectangle (§3.6), px or "N%" (x/width relative to width, y/height relative to height)
                 if let Some(rg) = layout.get("region").and_then(Value::as_object) {
                     let px = |v: Option<&Value>, span: f64| -> Option<f64> {
                         match v {
@@ -3852,7 +3785,7 @@ impl Resolver {
                     cap.region = Some([rx, ry, rw, rh]);
                 }
                 cap.grow_up = layout.get("grow").and_then(Value::as_str) == Some("up");
-                // anchor 模式换行宽度
+                // anchor-mode line-wrap width
                 match layout.get("maxWidth") {
                     Some(Value::String(s)) => {
                         cap.max_width = s
@@ -4031,7 +3964,7 @@ impl Resolver {
                             we
                         };
                     }
-                    // 末词缺省时长 = 到本条结束
+                    // If the last word has no duration, it lasts until the end of this entry
                     let span = items[i].until_abs - items[i].at_abs;
                     for line in items[i].lines.values_mut() {
                         if let Some(words) = &mut line.words {
@@ -4051,8 +3984,7 @@ impl Resolver {
     }
 }
 
-/// 通道 IR → `Channel`。关键帧的 `v` 是**原文 JSON**：`sample_frames` 在两端
-/// `clone()` 原值、`record_node` 再用 `as_f64` 读回，整数 `0` 不能变成 `0.0`。
+/// Track IR → `Channel`. The `v` of keyframes is **raw JSON**: `sample_frames` `clone()`s the value at both ends, and `record_node` reads it back with `as_f64`, so an integer `0` must not become `0.0`.
 fn channel_from_ir(channel: motion::ChannelIr, meta: Option<Map<String, Value>>) -> Channel {
     Channel::replace(
         channel.prop,
@@ -4069,15 +4001,11 @@ fn channel_from_ir(channel: motion::ChannelIr, meta: Option<Map<String, Value>>)
     )
 }
 
-/// 布局之后把通道里的相对长度换算成 px（设计 §5.5 / §10 阶段 2）。
+/// After layout, converts the relative lengths in the channels to px (design §5.5 / §10 phase 2).
 ///
-/// **必须在 `layout::layout_tree` / `layout::layout_captions` 之后调用**——
-/// `selfWidth` / `parentWidth` 这类基准要静态布局盒才有值，这是 `ccut-core`
-/// resolve 顺序里唯一的结构性调整。`FrameRenderer::new` 已经把
-/// 「布局 → finalize」固化成契约；`ccut lint` 走零度量布局后也调它，
-/// 好让 `relative-basis-unresolved` 在 lint 期就能报出来。
+/// **Must be called after `layout::layout_tree` / `layout::layout_captions`**. Bases such as `selfWidth` / `parentWidth` only have values once the static layout box exists. This is the only structural adjustment in `ccut-core`'s resolve order. `FrameRenderer::new` already fixes "layout → finalize" as a contract. `ccut lint` also calls it after zero-measure layout, so that `relative-basis-unresolved` can be reported at lint time.
 ///
-/// 没有相对长度的文档（今天的全部 golden）在这里**一个字节都不会变**。
+/// Documents without relative lengths (all the goldens today) come out **not a single byte different** here.
 pub fn build_channels_after_layout(ir: &mut Ir) -> Result<()> {
     let canvas = (ir.w, ir.h);
     for clip in &mut ir.visual_clips {
@@ -4090,8 +4018,7 @@ pub fn build_channels_after_layout(ir: &mut Ir) -> Result<()> {
         validate_mask_dependencies(&clip.tree)?;
     }
     for clip in &mut ir.caption_clips {
-        // 字幕 lane 的 `enter` / `exit` 模板是逐条目锚定的，没有单一的自身盒 ⇒
-        // `self*` / `parent*` 在这里报 `relative-basis-unresolved`（规范 §7.8）。
+        // The `enter` / `exit` templates of a caption lane are anchored per entry and have no single self box. So `self*` / `parent*` are reported here as `relative-basis-unresolved` (spec §7.8).
         let ctx = motion::LengthContext::canvas(canvas.0, canvas.1);
         for lane in &mut clip.lanes {
             for kf in lane.enter_kfs.iter_mut().chain(lane.exit_kfs.iter_mut()) {
@@ -4114,9 +4041,8 @@ pub fn build_channels_after_layout(ir: &mut Ir) -> Result<()> {
     Ok(())
 }
 
-/// `rotationX` / `rotationY` 在 allowlist 里（§6.4），但需要透视投影，CPU 参考渲染器
-/// 与 DrawOp v4 都只有仿射变换：与其接受再画成没动，不如在这里拒绝。
-/// `skewX` / `skewY` 是仿射，正常渲染。
+/// `rotationX` / `rotationY` are in the allowlist (§6.4), but they need perspective projection, and both the CPU reference renderer and DrawOp v4 only have affine transforms. Rather than accepting them and drawing them as not moving, reject them here.
+/// `skewX` / `skewY` are affine and render normally.
 fn validate_render_channels(node: &RNode) -> Result<()> {
     let offending = node
         .channels
@@ -4147,8 +4073,7 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
                     channel.prop
                 );
             }
-            // part 只画位移 / 缩放 / 透明度 / 颜色 / 揭示 / 模糊；其余通道写进
-            // animate.parts 会被画成没动，报错而不是静默丢掉（§6.4）。
+            // A part only draws translation / scale / opacity / colour / reveal / blur. Any other channel written into animate.parts would be drawn as not moving, so it errors rather than silently dropping it (§6.4).
             if !matches!(
                 channel.prop.as_str(),
                 "opacity" | "x" | "y" | "scale" | "color" | "textReveal" | "blur"
@@ -4172,10 +4097,9 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
     Ok(())
 }
 
-/// 把 `style.mask.source` 指向的元素标成遮罩源（规范 §6.3）。
+/// Marks the element that `style.mask.source` points to as a mask source (spec §6.3).
 ///
-/// 约束：源必须在同一 clip 的元素树里、不能是被遮罩元素自己或它的祖先 / 后代。
-/// 违反任何一条都是 `mask-source-unknown`——遮罩画不出来不能静默。
+/// Constraints: the source must be in the same clip's element tree, and cannot be the masked element itself or its ancestor / descendant. Violating any of these is `mask-source-unknown`. A mask that cannot be drawn must not fail silently.
 fn link_mask_sources(tree: &mut RNode) -> Result<()> {
     type Wanted = (String, String, Vec<usize>, Vec<usize>, bool);
     fn collect(node: &RNode, path: &mut Vec<usize>, scope: &[usize], out: &mut Vec<Wanted>) {
@@ -4265,7 +4189,7 @@ fn link_mask_sources(tree: &mut RNode) -> Result<()> {
     validate_mask_dependencies(tree)
 }
 
-/// 验证子树和同一局部画布内的遮罩引用；实例之间不共享内部节点身份。
+/// Validates the subtree and mask references within the same local canvas. Instances do not share internal node identity.
 fn validate_mask_dependencies(tree: &RNode) -> Result<()> {
     use std::collections::{HashMap, HashSet};
     type Nodes<'a> = HashMap<(usize, &'a str), &'a RNode>;
@@ -4434,7 +4358,7 @@ fn resolve_channel_lengths(channel: &mut Channel, ctx: &motion::LengthContext) -
     Ok(())
 }
 
-/// 字幕 lane 的 `'%'` 模板（`{prop, frames[]}` 原文），逐条求值。
+/// The `'%'` template of a caption lane (raw `{prop, frames[]}`), evaluated per entry.
 fn resolve_template_lengths(kf: &mut Value, ctx: &motion::LengthContext) -> Result<()> {
     let prop = kf.gstr("prop").unwrap_or_default().to_string();
     let Some(frames) = kf.get_mut("frames").and_then(Value::as_array_mut) else {
@@ -4477,12 +4401,12 @@ fn resolve_frame_lengths(prop: &str, value: &mut Value, ctx: &motion::LengthCont
     Ok(())
 }
 
-/// 静态版本 lay_preset_frames（供字幕 lane 复用，无 meta）
+/// Static version of lay_preset_frames (reused by caption lanes; no meta)
 pub fn lay_static(kfs: &[Value], t0: f64, dur: f64) -> Vec<Channel> {
     Resolver::lay_preset_frames(kfs, t0, dur, None)
 }
 
-/// withAudio: true 的 video 节点 → 同窗口 AudioClip（§6.5 语法糖）。
+/// `withAudio: true` video node → same-window AudioClip (§6.5 syntactic sugar).
 fn collect_with_audio(node: &RNode, vc: &VisualClip, out: &mut Vec<AudioClip>) -> Result<()> {
     use crate::composition::{TimeMap, TimeSpan};
     fn has_audio(node: &RNode) -> bool {

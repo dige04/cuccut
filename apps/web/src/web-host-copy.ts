@@ -14,7 +14,7 @@ import { pl } from './web-host-copy.pl.ts';
 import { tr } from './web-host-copy.tr.ts';
 import { vi } from './web-host-copy.vi.ts';
 
-/** 浏览器宿主做不到的事给的提示（web-host.ts）。英文是键与类型的来源，译文在 `web-host-copy.<语言>.ts`。 */
+/** Hints for things the browser host cannot do (web-host.ts). The English is the source of the keys and types; the translations are in `web-host-copy.<language>.ts`. */
 const en = {
   pickDirectory: 'You can’t choose a folder on this computer from the browser. Use the CucCut desktop app, or open a registered project.',
   pickMedia: 'You can’t import files from this computer in the browser (uploads aren’t supported yet). Use the CucCut desktop app.',

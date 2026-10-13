@@ -5,7 +5,7 @@ import { GLOBAL_FLAGS, flagSpecs } from '../apps/cli/src/catalog/flags.ts';
 import { SNAPSHOT_FILE as CLI_SNAPSHOT_FILE } from '../apps/cli/src/catalog/snapshot.ts';
 import { SNAPSHOT_FILE, buildCatalogSnapshot, snapshotText } from './catalog-snapshot.ts';
 
-/** CLI 的离线目录快照（Agent 面设计 §2.3）：与当前的 `ToolCatalog` 对终端的视图一致，派生出的旗标不与 CLI 自己的重名。 */
+/** The CLI's offline catalog snapshot (Agent surface design §2.3): matches the current `ToolCatalog` as seen from the terminal; flags derived from it do not clash with the CLI's own flags of the same name. */
 describe('CLI 的目录快照', () => {
   it('快照文件与当前的工具目录一致', () => {
     expect(CLI_SNAPSHOT_FILE).toBe(SNAPSHOT_FILE);

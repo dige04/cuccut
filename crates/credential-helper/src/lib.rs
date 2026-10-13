@@ -1,40 +1,40 @@
-//! 凭据助手的协议（架构设计 §6.8）：一个进程处理一个请求。
+//! Protocol of the credential helper (architecture design §6.8): one process handles one request.
 //!
-//! stdin 一行 JSON 请求 `{"op": "get" | "set" | "delete" | "has", "key": string, "secret"?: string}`，
-//! stdout 一行 JSON 响应：成功是 `{"ok": true}`，`get` 另带 `"secret"`，`has` 另带 `"exists"`；
-//! 失败是 `{"ok": false, "error": <错误码>, "message": string}`，错误码是封闭集合（见 [`ErrorCode`]）。
+//! One line of JSON on stdin is the request `{"op": "get" | "set" | "delete" | "has", "key": string, "secret"?: string}`.
+//! One line of JSON on stdout is the response: success is `{"ok": true}`, `get` also carries `"secret"`, and `has` also carries `"exists"`;
+//! failure is `{"ok": false, "error": <error code>, "message": string}`, where the error code comes from a closed set (see [`ErrorCode`]).
 //!
-//! 升级专用的只读操作：`legacy-accounts` 仅枚举 CucCut / VoiceInk 的账号属性，
-//! `legacy-get` 仅按 provider 读取 Windows v2 的 ccut 服务条目；
-//! `legacy-read` 静默读取 macOS CucCut / VoiceInk / ccut 的指定账号，不删除或改写旧凭据。
+//! Read-only operations used only for upgrades: `legacy-accounts` only enumerates the account attributes of CucCut / VoiceInk;
+//! `legacy-get` only reads the Windows v2 ccut service entries by provider;
+//! `legacy-read` silently reads the named accounts of macOS CucCut / VoiceInk / ccut, and does not delete or rewrite old credentials.
 //!
-//! 密钥只经 stdin 与 stdout 传递：不进命令行参数、环境变量、stderr 与错误信息。
+//! Secrets pass only through stdin and stdout: they never go into command-line arguments, environment variables, stderr, or error messages.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub mod keychain;
 
-/// 钥匙串条目的 service；account 是请求里的 key（如 `provider:openai`、`node:<nodeId>`）。
+/// Keychain item service; the account is the key in the request (e.g. `provider:openai`, `node:<nodeId>`).
 pub const SERVICE: &str = "com.cuccut.runtime";
 
-/// 一行请求的上限：key 与密钥都很短，超过的按不合规处理。
+/// Size limit for one request line: keys and secrets are both short, so anything longer is treated as invalid.
 pub const MAX_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_KEY_BYTES: usize = 512;
 
-/// 失败的种类（封闭集合）。
+/// Kinds of failure (a closed set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorCode {
-    /// 没有这个条目（`get` 与 `delete`）。
+    /// The item does not exist (`get` and `delete`).
     NotFound,
-    /// 用户或系统拒绝了访问（取消授权提示、认证失败、不允许交互）。
+    /// The user or the system denied access (authorization prompt cancelled, authentication failed, interaction not allowed).
     Denied,
-    /// 钥匙串此刻不可用（被锁且不能解锁、没有默认钥匙串、缺少权限声明）。
+    /// The keychain is unavailable right now (locked and cannot be unlocked, no default keychain, missing entitlement).
     Unavailable,
-    /// 这个平台没有实现。
+    /// Not implemented on this platform.
     Unsupported,
-    /// 其他错误，包括不合规的请求。
+    /// Other errors, including invalid requests.
     Internal,
 }
 
@@ -53,7 +53,7 @@ impl HelperError {
     }
 }
 
-/// 存放密钥的地方。macOS 上是钥匙串、Windows 上是 Credential Manager（[`keychain::SystemKeychain`]），测试里是内存。
+/// Where secrets are stored. On macOS it is the Keychain, on Windows Credential Manager ([`keychain::SystemKeychain`]); in tests it is in memory.
 pub trait SecretBackend {
     fn get(&self, key: &str) -> Result<String, HelperError>;
     fn set(&self, key: &str, secret: &str) -> Result<(), HelperError>;
@@ -84,7 +84,7 @@ struct Request {
     service: Option<String>,
 }
 
-/// 处理一行请求，返回一行响应（不含换行）。只有密码读取操作成功时带密钥。
+/// Handles one request line and returns one response line (without the newline). A secret is included only when a password read succeeds.
 pub fn handle_line(line: &str, backend: &dyn SecretBackend) -> String {
     let response = match parse(line) {
         Ok(request) => dispatch(&request, backend),
@@ -101,7 +101,7 @@ fn parse(line: &str) -> Result<Request, HelperError> {
     if line.len() > MAX_REQUEST_BYTES {
         return Err(HelperError::new(ErrorCode::Internal, "请求过长"));
     }
-    // 解析错误的细节可能引用请求的片段（其中可能有密钥）：不放进响应。
+    // Parse error details may quote fragments of the request (which may contain a secret), so they are kept out of the response.
     let request: Request = serde_json::from_str(line).map_err(|_| HelperError::new(ErrorCode::Internal, "请求不是合规的 JSON"))?;
     if request.key.is_empty() || request.key.len() > MAX_KEY_BYTES || request.key.chars().any(char::is_control) {
         return Err(HelperError::new(ErrorCode::Internal, "key 不合规"));

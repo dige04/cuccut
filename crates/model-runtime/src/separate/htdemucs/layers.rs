@@ -1,24 +1,22 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucsLayers.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucsLayers.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; the scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! HTDemucs 的卷积 / 编码器 / 解码器构件，逐一对照 speech-swift `HTDemucsLayers.swift`
-//! 与 `DemucsPrimitives.swift`。
+//! The convolution / encoder / decoder building blocks of HTDemucs, each compared against speech-swift `HTDemucsLayers.swift`
+//! and `DemucsPrimitives.swift`.
 //!
-//! 张量沿用 demucs 的 channels-first 布局（NCL / NCHW）；MLX 卷积是 channels-last，
-//! 所以每个卷积前后各转置一次。htdemucs 的 `norm_starts == depth`，HEnc/HDec 里没有
-//! GroupNorm，只有 DConv 带 GroupNorm。权重文件已是 MLX 布局：Conv1d `[C_out, K, C_in]`、
-//! Conv2d `[C_out, H, W, C_in]`、转置卷积同形（`C_out` 在前）。
+//! Tensors follow demucs' channels-first layout (NCL / NCHW). MLX convolutions are channels-last, so each convolution is transposed before and after it. For htdemucs, `norm_starts == depth`: there is no GroupNorm in HEnc/HDec, and only DConv has GroupNorm.
+//! The weight files are already in MLX layout: Conv1d `[C_out, K, C_in]`, Conv2d `[C_out, H, W, C_in]`, and transposed convolutions have the same shape (`C_out` first).
 
 use super::tensor::ops::indexing::IndexOp;
 use super::tensor::{Array, gelu_same_dtype, nn, ops};
 use super::weights::WeightStore;
 use anyhow::{Result, bail};
 
-/// 通道维上的 GLU：前一半 × sigmoid(后一半)，对应 PyTorch `F.glu`。
+/// GLU along the channel dimension: first half × sigmoid(second half), corresponding to PyTorch `F.glu`.
 pub fn glu_axis1(x: &Array) -> Result<Array> {
     let halves = ops::split(x, 2, 1)?;
     let gate = nn::sigmoid(&halves[1])?;
@@ -29,7 +27,7 @@ pub fn gelu(x: &Array) -> Result<Array> {
     gelu_same_dtype(x)
 }
 
-/// Conv1d（channels-first 输入 `[N, C, L]`）。
+/// Conv1d (channels-first input `[N, C, L]`).
 pub struct Conv1dW {
     weight: Array,
     bias: Array,
@@ -68,7 +66,7 @@ impl Conv1dW {
     }
 }
 
-/// Conv2d（channels-first 输入 `[N, C, H, W]`，H 是频率轴、W 是时间轴）。
+/// Conv2d (channels-first input `[N, C, H, W]`, where H is the frequency axis and W is the time axis).
 pub struct Conv2dW {
     weight: Array,
     bias: Array,
@@ -103,7 +101,7 @@ impl Conv2dW {
     }
 }
 
-/// ConvTranspose1d（channels-first，无 padding）。
+/// ConvTranspose1d (channels-first, no padding).
 pub struct ConvT1dW {
     weight: Array,
     bias: Array,
@@ -124,7 +122,7 @@ impl ConvT1dW {
     }
 }
 
-/// ConvTranspose2d（channels-first，无 padding）。
+/// ConvTranspose2d (channels-first, no padding).
 pub struct ConvT2dW {
     weight: Array,
     bias: Array,
@@ -145,7 +143,7 @@ impl ConvT2dW {
     }
 }
 
-/// 频域 / 时域两种卷积的统一封装。
+/// Unified wrapper for frequency-domain and time-domain convolutions.
 pub enum ConvAny {
     Freq(Conv2dW),
     Time(Conv1dW),
@@ -174,8 +172,7 @@ impl ConvTAny {
     }
 }
 
-/// `x * scale`（逐通道）。`channel_last` 为假时按 `[B, C, T]` 广播（DConv），
-/// 为真时按 `[B, ..., C]` 广播（transformer 的 gamma）。
+/// `x * scale` (per channel). When `channel_last` is false, it broadcasts as `[B, C, T]` (DConv); when true, it broadcasts as `[B, ..., C]` (the transformer's gamma).
 pub struct LayerScale {
     scale: Array,
     channel_last: bool,
@@ -194,7 +191,7 @@ impl LayerScale {
     }
 }
 
-/// `nn.GroupNorm(1, C)` 作用在 channels-first `[B, C, L]`：每个样本在 (C, L) 上统计。
+/// `nn.GroupNorm(1, C)` applied to channels-first `[B, C, L]`: each sample is normalized over (C, L).
 pub struct GroupNormNCL {
     weight: Array,
     bias: Array,
@@ -220,7 +217,7 @@ impl GroupNormNCL {
     }
 }
 
-/// DConv 的一个残差块：`[conv(k3, dilation), GN, gelu, conv1x1 → 2C, GN, glu, LayerScale]`。
+/// One residual block of DConv: `[conv(k3, dilation), GN, gelu, conv1x1 → 2C, GN, glu, LayerScale]`.
 struct DConvBlock {
     conv1: Conv1dW,
     norm1: GroupNormNCL,
@@ -229,7 +226,7 @@ struct DConvBlock {
     scale: LayerScale,
 }
 
-/// 残差膨胀卷积分支，作用在 channels-first `[B, C, T]`。
+/// Residual dilated-convolution branch, applied to channels-first `[B, C, T]`.
 pub struct DConv {
     blocks: Vec<DConvBlock>,
 }
@@ -277,7 +274,7 @@ impl DConv {
     }
 }
 
-/// 频域层把 `[B, C, Fr, T]` 折成 `[B*Fr, C, T]` 跑 DConv 再折回。
+/// The frequency-domain layer folds `[B, C, Fr, T]` into `[B*Fr, C, T]`, runs DConv, then folds it back.
 fn dconv_over_freq(dconv: &DConv, y: &Array, freq: bool) -> Result<Array> {
     if !freq {
         return dconv.forward(y);
@@ -288,8 +285,8 @@ fn dconv_over_freq(dconv: &DConv, y: &Array, freq: bool) -> Result<Array> {
     Ok(out.reshape(&[b, fr, c, t])?.transpose_axes(&[0, 2, 1, 3])?)
 }
 
-/// 混合编码器层：`freq` 为真时沿 (freq, time) 做 Conv2d，否则沿 time 做 Conv1d。
-/// 本移植只覆盖 `empty == false`（htdemucs_ft 频率轴不会塌到 1，没有 inject 合并层）。
+/// Hybrid encoder layer: when `freq` is true, it applies Conv2d along (freq, time); otherwise Conv1d along time.
+/// This port only covers `empty == false` (htdemucs_ft's frequency axis does not collapse to 1, so there is no inject merge layer).
 pub struct HEncLayer {
     freq: bool,
     stride: i32,
@@ -393,7 +390,7 @@ impl HEncLayer {
     }
 }
 
-/// 混合解码器层：转置卷积镜像 `HEncLayer`。
+/// Hybrid decoder layer: transposed convolutions mirroring `HEncLayer`.
 pub struct HDecLayer {
     freq: bool,
     last: bool,
@@ -436,7 +433,7 @@ impl HDecLayer {
         let rewrite = if spec.rewrite {
             let k = 1 + 2 * spec.context;
             let key = format!("{}.rewrite", spec.prefix);
-            // 解码器的 rewrite 是方形 (k, k) 卷积、(context, context) padding。
+            // The decoder's rewrite is a square (k, k) convolution with (context, context) padding.
             Some(if spec.freq {
                 ConvAny::Freq(Conv2dW::load(
                     store,
@@ -468,7 +465,7 @@ impl HDecLayer {
         })
     }
 
-    /// 返回 `(输出, pre)`：`pre` 是送进转置卷积的张量（频 / 时分支分叉时用）。
+    /// Returns `(output, pre)`: `pre` is the tensor fed into the transposed convolution (used when the frequency and time branches fork).
     pub fn forward(&self, x0: &Array, skip: Option<&Array>, length: i32) -> Result<(Array, Array)> {
         let mut x = x0.clone();
         if self.freq && x.ndim() == 3 {

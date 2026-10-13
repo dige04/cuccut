@@ -13,32 +13,29 @@ import type { ApplicationLedger, StoredApplication, VideoPlace } from './applica
 import { errorText, jobError, LocalizedError, type JobText } from './job-text.ts';
 
 /**
- * 把一个任务的结果应用到视频（架构设计 §7.3）：
+ * Applies a task's result to the video (architecture design §7.3):
  *
  * ```text
- * 创建 Application（pending，落账）→ 读当前视频、检查目标与输入
- *   → 记下 commandId 与 baseVideoRevision（validating，落账）→ 提交幂等的事务 → 记回执（committed，落账）
+ * create Application (pending, recorded) → read the current video, check target and inputs
+ *   → record commandId and baseVideoRevision (validating, recorded) → submit an idempotent transaction → record the receipt (committed, recorded)
  * ```
  *
- * - 每次提交用新的 `commandId`（`cmd_<applicationId>_<n>`）：同一个命令带不同载荷会被引擎当作幂等冲突，所以重新校验
- *   之后从不复用旧的命令。复用之前一律先按旧命令查回执，查到就是已经提交了，补记，不再写。
- * - 停止屏障（§7.4）：提交之前最后检查一次任务有没有被要求停下；停下了就是 `cancelled`，产物留作候选。
- *   提交带着这次执行（`run`）：停止时 Runtime 先让引擎失效这一代，检查之后才到引擎的那一笔被引擎拒绝（`TASK_STOPPED`），
- *   同样记 `cancelled`（`details.barrier: 'engine'`），不查回执——被拒的提交没有开事务。
- * - 任务保护（§3.2）：智能体任务下的写入带着任务合同对这个视频的保护范围，触碰时引擎整笔拒绝（`TASK_PROTECTED`）。
- *   记 `rejected`、错误码 `TASK_PROTECTED`，不查回执、不重试；产物留作候选，用户可以用 `jobs.reconcile apply` 自己决定。
- * - 视频在读与写之间被改过（`conflict`）时重新读、换命令再提交，至多 `APPLY_ATTEMPTS` 次。
- * - 其他提交错误（引擎重启、连接断开……）不知道事务有没有落下：先按这次的命令查回执，查到算提交，查不到算 `rejected`。
+ * - Each submission uses a new `commandId` (`cmd_<applicationId>_<n>`). The engine treats the same command with a different payload as an idempotency conflict, so after re-validation an old command is never reused. Before anything is reused, the receipt for the old command is looked up first; if found, the change was already committed, so it is backfilled and not written again.
+ * - Stop barrier (§7.4): one last check before submitting that the task has not been asked to stop. If it has, the result is `cancelled` and the artifact is kept as a candidate.
+ *   The submission carries this execution (`run`). When stopping, the Runtime first invalidates this generation on the engine. A submission that gets past the check but reaches the engine afterwards is rejected by the engine (`TASK_STOPPED`) and likewise recorded as `cancelled` (`details.barrier: 'engine'`), without a receipt lookup, since a rejected submission never opened a transaction.
+ * - Task protection (§3.2): writes under an agent task carry the task contract's protection scope for this video. If one is touched, the engine rejects the whole transaction (`TASK_PROTECTED`).
+ *   It is recorded as `rejected` with error code `TASK_PROTECTED`, with no receipt lookup and no retry. The artifact is kept as a candidate, and the user can decide with `jobs.reconcile apply`.
+ * - If the video was changed between read and write (`conflict`), it is re-read and submitted again with a new command, at most `APPLY_ATTEMPTS` times.
+ * - Other submission errors (engine restart, connection dropped…): it is not known whether the transaction landed, so the receipt is looked up by this attempt's command first. Found means committed; not found means `rejected`.
  */
 
 export const APPLY_ATTEMPTS = 3;
 
-/** 目标或输入已经不成立：不猜相邻对象，产物留作候选。构造时给目录文字（`Localized`），引用随任务错误记下。 */
+/** The target or input no longer holds. Do not guess at an adjacent object; the artifact is kept as a candidate. Constructed with the directory text (`Localized`), and the reference is recorded with the task error. */
 export class StaleInput extends LocalizedError {}
 
 /**
- * 应用前的检查拒绝了这次写入，原因有确定的错误码（例如换用文稿时文稿又被改过，`TRANSCRIPT_EDITED`）：记 `rejected`，
- * 不提交、不重试，任务的错误码就是它。
+ * The check before applying rejected this write with a definite error code (for example, the transcript was edited again when switching to it, `TRANSCRIPT_EDITED`). It is recorded as `rejected`, not submitted and not retried, and the task's error code is that code.
  */
 export class ApplyRejected extends LocalizedError {
   readonly code: string;
@@ -51,23 +48,23 @@ export class ApplyRejected extends LocalizedError {
   }
 }
 
-/** 故障注入点（测试用）：在这些时刻模拟进程崩溃。 */
+/** Fault injection points (for tests): simulate a process crash at these moments. */
 export type JobFaultPoint =
-  /** 产物已经写进产物库（发布意图已落账），结果与应用都还没有记下。 */
+  /** The artifact is already written to the artifact store (publish intent recorded), but neither the result nor the application has been recorded. */
   | 'artifact-stored'
-  /** 产物已经发布，还没有创建应用。 */
+  /** The artifact is published, and the application has not been created yet. */
   | 'artifact-published'
-  /** 应用已经记为 `validating`（带 `commandId`），还没有提交事务。 */
+  /** The application is already recorded as `validating` (with `commandId`), and the transaction has not been submitted yet. */
   | 'application-recorded'
-  /** Node 侧的停止检查已经通过，事务正要交给引擎。 */
+  /** The Node-side stop check has passed, and the transaction is about to be handed to the engine. */
   | 'application-submitting'
-  /** 事务已经提交，还没有记下回执。 */
+  /** The transaction is committed, but the receipt has not been recorded yet. */
   | 'application-committed';
 
-/** 返回 `'crash'` 时在这一刻模拟崩溃：之后什么都不落盘，任务被丢下（像进程没了一样）。 */
+/** Returning `'crash'` simulates a crash at this moment: nothing further is persisted and the task is abandoned, as if the process were gone. */
 export type JobFaults = (point: JobFaultPoint, context: { jobId: Id; applicationId?: Id }) => 'crash' | void;
 
-/** 模拟的崩溃：JobManager 收到它就冻结账本、丢下任务。 */
+/** Simulated crash: on receiving it, the JobManager freezes the ledger and abandons the task. */
 export class SimulatedCrash extends Error {
   readonly point: JobFaultPoint;
 
@@ -77,13 +74,13 @@ export class SimulatedCrash extends Error {
   }
 }
 
-/** 任务与流水线的写入所属的执行（§7.4）：`runGeneration` 是十进制整数字符串，重试换代时递增。 */
+/** The execution that the task's and pipeline's writes belong to (§7.4): `runGeneration` is a decimal integer string, incremented on each retry generation. */
 export interface ApplicationRun {
   runId: Id;
   runGeneration: string;
 }
 
-/** 应用要的视频能力（`JobVideos` 的一部分）。 */
+/** Video capabilities that applying needs (part of `JobVideos`). */
 export interface ApplicationVideos {
   apply(
     videoId: Id,
@@ -92,14 +89,14 @@ export interface ApplicationVideos {
   receipt?(videoId: Id, commandId: Id): Promise<AppliedReceipt | null>;
 }
 
-/** 引擎按 `commandId` 查到的回执。 */
+/** The receipt the engine returns for a `commandId`. */
 export interface AppliedReceipt {
   transactionId: Id;
   videoRevision: string;
   refs?: Record<string, Id>;
 }
 
-/** 一次应用要写什么：校验（返回当前视频版本，不成立时抛 `StaleInput`）与操作。 */
+/** What one application writes: validation (returns the current video revision; throws `StaleInput` if it no longer holds) and the operation. */
 export interface ApplicationTarget {
   label: string;
   check(): string;
@@ -117,7 +114,7 @@ export class ApplicationRunner {
     this.#faults = options.faults;
   }
 
-  /** 创建一条应用并落账（`pending`）。 */
+  /** Creates one application and records it (`pending`). */
   async create(input: {
     jobId: Id;
     videoId: Id;
@@ -149,8 +146,8 @@ export class ApplicationRunner {
   }
 
   /**
-   * 校验并提交，直到 `committed`、`stale-input`、`rejected` 或 `cancelled`。返回结束时的应用。
-   * `run` 是这次执行（引擎侧的停止屏障）；用户自己决定的补做（`jobs.reconcile apply`）不带。
+   * Validates and submits until `committed`, `stale-input`, `rejected` or `cancelled`. Returns the application as it ends.
+   * `run` is this execution (the engine-side stop barrier). A re-run that the user decides on (`jobs.reconcile apply`) does not pass it.
    */
   async run(item: StoredApplication, target: ApplicationTarget, stopped: () => boolean, run?: ApplicationRun): Promise<ApplicationRecord> {
     const app = item.record;
@@ -172,7 +169,7 @@ export class ApplicationRunner {
       app.state = 'validating';
       await this.#ledger.put(item);
       this.#fault('application-recorded', app);
-      // 停止屏障：提交之前最后一次检查。
+      // Stop barrier: the last check before submitting.
       if (stopped()) return this.#end(item, 'cancelled', cancelledError());
       this.#fault('application-submitting', app);
       let receipt: AppliedReceipt & { recovered?: true };
@@ -186,11 +183,11 @@ export class ApplicationRunner {
         });
         receipt = { transactionId: result.transactionId ?? '', videoRevision: result.videoRevision ?? '', refs: result.refs ?? {} };
       } catch (error) {
-        // 引擎侧的停止屏障拒绝了这一笔：没有开事务，不必查回执。
+        // The engine-side stop barrier rejected this submission. No transaction was opened, so there is no need to look up the receipt.
         if (taskStopped(error)) return this.#end(item, 'cancelled', { ...cancelledError(), details: { barrier: 'engine' } });
-        // 触碰了任务的保护范围：同样没有开事务；换命令重试也一样，留给用户决定。
+        // It touched the task's protection scope. Likewise no transaction was opened; retrying with a new command will not help either, so it is left to the user.
         if (taskProtected(error)) return this.#end(item, 'rejected', protectedError(error));
-        // 视频在读与写之间被改过：重新读，换一个命令再提交。
+        // The video changed between read and write: re-read it and submit with a new command.
         if (error instanceof RpcError && error.code === 'conflict' && attempt < APPLY_ATTEMPTS) continue;
         const found = await this.lookup(item).catch(() => null);
         if (found) {
@@ -210,7 +207,7 @@ export class ApplicationRunner {
     }
   }
 
-  /** 按这条应用最近的 `commandId` 向引擎查回执；没有提交过、查不到时 null。查询本身失败时抛出。 */
+  /** Looks up the receipt from the engine by this application's most recent `commandId`. null if it was never submitted or the receipt is not found. Throws if the query itself fails. */
   async lookup(item: StoredApplication): Promise<(AppliedReceipt & { recovered: true }) | null> {
     const { commandId, videoId } = item.record;
     if (!commandId || !this.#videos.receipt) return null;
@@ -218,7 +215,7 @@ export class ApplicationRunner {
     return found ? { ...found, recovered: true } : null;
   }
 
-  /** 记下回执（`committed`）。 */
+  /** Records the receipt (`committed`). */
   async commit(item: StoredApplication, receipt: AppliedReceipt & { recovered?: true }): Promise<ApplicationRecord> {
     const app = item.record;
     app.state = 'committed';
@@ -233,7 +230,7 @@ export class ApplicationRunner {
     return structuredClone(app);
   }
 
-  /** 以没有提交的状态结束。 */
+  /** Ends in the not-submitted state. */
   async end(item: StoredApplication, state: Exclude<ApplicationState, 'pending' | 'validating' | 'committed'>, error: JobError) {
     return this.#end(item, state, error);
   }
@@ -250,17 +247,17 @@ export class ApplicationRunner {
   }
 }
 
-/** 引擎的停止屏障拒绝了提交（`TASK_STOPPED`，命令与协议规范 §11.3）。 */
+/** The engine's stop barrier rejected the submission (`TASK_STOPPED`, command and protocol spec §11.3). */
 export function taskStopped(error: unknown): boolean {
   return error instanceof RpcError && (error.details as { code?: unknown } | undefined)?.code === 'TASK_STOPPED';
 }
 
-/** 引擎的任务保护拒绝了提交（`TASK_PROTECTED`，命令与协议规范 §11.2）。 */
+/** The engine's task protection rejected the submission (`TASK_PROTECTED`, command and protocol spec §11.2). */
 export function taskProtected(error: unknown): error is RpcError {
   return error instanceof RpcError && (error.details as { code?: unknown } | undefined)?.code === 'TASK_PROTECTED';
 }
 
-/** 应用记录里的拒绝原因：被触碰的保护（`protectionId`、`target`、`entityIds`）。 */
+/** Rejection reason in the application record: the protection that was touched (`protectionId`, `target`, `entityIds`). */
 function protectedError(error: RpcError): JobError {
   const body = error.details as { details?: { protections?: unknown } } | undefined;
   return jobError('TASK_PROTECTED', J.taskProtected(), { protections: body?.details?.protections ?? [] });
@@ -270,7 +267,7 @@ export function cancelledError(): JobError {
   return jobError('APPLICATION_CANCELLED', J.applicationCancelled());
 }
 
-/** 还没有结束的应用（`pending`、`validating`）。 */
+/** Applications that have not ended yet (`pending`, `validating`). */
 export function applicationOpen(state: ApplicationState): boolean {
   return state === 'pending' || state === 'validating';
 }

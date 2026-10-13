@@ -18,8 +18,7 @@ type FontMethod =
   | 'fonts.usage';
 
 /**
- * `fonts.*` 的处理函数（架构设计 §9.1），由 `handlers.ts` 并进方法表。下载与删除改的是这台机器的字体缓存，只给界面与 CLI：
- * Web 服务的白名单里没有 `fonts.*`，这里对浏览器与对外服务再挡一次（`fonts.resolve` 对它们只解析、不下载）。
+ * Handlers for `fonts.*` (architecture design §9.1), merged into the method table by `handlers.ts`. Downloading and deleting change this machine's font cache and are only for the UI and CLI. The Web service's allowlist does not include `fonts.*`, and it is blocked again here for browsers and external services (`fonts.resolve` only resolves for them, and does not download).
  */
 export function fontMethods(
   fonts: () => FontService,
@@ -31,7 +30,7 @@ export function fontMethods(
     if (!own(principal)) throw new RpcError('forbidden', RcFonts.manageOnlyInAppOrCli());
   };
   return {
-    // 引擎挑好 face，这里给它所在的文件发读取句柄（限定到那一个文件，界面按区间取表）；下载缓存里的文件同样。
+    // The engine picks the face, and this hands out a read handle for the file it lives in (scoped to that one file; the UI reads tables by range). The same applies to files in the download cache.
     'fonts.resolve': async (p, principal) => {
       const { faces, missing } = await fonts().resolve(p.faces, {
         download: (p.download ?? false) && own(principal),
@@ -58,12 +57,12 @@ export function fontMethods(
       ownOnly(principal);
       return fonts().clear();
     },
-    // 样张会联网：同下载一样只给界面与 CLI。
+    // Sample rendering goes online, so like downloading it is only for the UI and CLI.
     'fonts.sample': (p, principal) => {
       ownOnly(principal);
       return fonts().sample(p);
     },
-    // 清点在 Render Worker 里排字（与导出同一份冻结）；状态与下载在字体服务。
+    // The census is typeset in the Render Worker (with the same frozen set as export); status and downloads are in the font service.
     'fonts.usage': async (p, principal) => {
       ownOnly(principal);
       const census = await exports().fontCensus({

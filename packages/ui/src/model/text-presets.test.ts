@@ -3,7 +3,7 @@ import { TEXT_PRESETS, blankTextLayer, preferredLayer, presetLayers, presetsOf, 
 
 const canvas = { width: 1920, height: 1080 };
 const fps = { num: 30, den: 1 };
-/** 量字的替身：一个字 10 像素宽，一行 30 像素高；给了折行宽就按它折。 */
+/** A stand-in for text measurement: each character is 10 pixels wide and a line is 30 pixels high; if a wrap width is given, wrapping follows it. */
 const measure: MeasureText = (text, _style, wrap) => {
   const width = Math.max(...text.split('\n').map((line) => line.length * 10));
   const lines = text.split('\n').reduce((n, line) => n + (wrap ? Math.max(1, Math.ceil((line.length * 10) / wrap)) : 1), 0);
@@ -25,7 +25,7 @@ describe('文字预设', () => {
 
   it('文字没给宽时按量出来的宽落框（画幅宽的百分比），中心在画幅百分比处', () => {
     const [layer] = presetLayers(byId('simple.02'), canvas, fps, measure);
-    // 六个字 60 像素宽：1920 的 3.125%，取一位小数。
+    // Six characters, 60 pixels wide: 3.125% of 1920, to one decimal place.
     expect(layer).toMatchObject({ type: 'text', text: 'Simple', place: { x: 50, y: 50, w: 3.1 } });
   });
 
@@ -54,7 +54,7 @@ describe('文字预设', () => {
     expect(blankTextLayer(canvas, measure)).toMatchObject({
       type: 'text',
       text: '输入文字',
-      // 四个字 40 像素宽：1920 的 2.08%。
+      // Four characters, 40 pixels wide: 2.08% of 1920.
       place: { x: 50, y: 40, w: 2.1 },
     });
   });

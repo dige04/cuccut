@@ -3,9 +3,9 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 /**
- * 剪成短视频交出去的一次（产品设计 §5.10「结果页」）：发到哪条会话、哪个任务（排了队的还没有）、什么时候交的、从哪部视频发起的。
- * 结果页按它认这一轮切出的子视频（`model/shorts-result.ts` `shortsBatch`），`landed` 记着跑完后是否已经把 AI 工具 Tab 翻到结果页，
- * 免得每次打开父视频都再翻一次。
+ * One submission of “剪成短视频”(cut into shorts) (product design §5.10, “结果页”(result page)): which session it was sent to, which task (none yet if it is still queued), when it was submitted, and which video it was started from.
+ * The result page uses it to recognize the child videos cut in this round (`model/shorts-result.ts` `shortsBatch`). `landed` records whether the AI Tools tab has already been flipped to the result page after the run finished,
+ * so it is not flipped again every time the parent video is opened.
  */
 export interface ShortsRun {
   conversationId: Id;
@@ -13,15 +13,15 @@ export interface ShortsRun {
   taskId: Id | null;
   handedAt: string;
   landed: boolean;
-  /** 结果页上次打开的那一支（开着父视频时头上的「第 k/N」停在它）。 */
+  /** The clip last opened on the result page (while the parent video is open, the “第 k/N”(k of N) indicator at the top stays on it). */
   focus: Id | null;
 }
 
-/** 最多留几次：老的从最早交出去的丢起。 */
+/** Maximum number of runs kept: old ones are dropped starting from the earliest submitted. */
 const KEEP = 40;
 
 /**
- * 按会话记（父视频与子视频之间来回切、重启 App 都还在）：持久化方式同 `useAiToolAgentRuns`（ai-tools-nav.ts）。
+ * Recorded per session (survives switching back and forth between parent and child videos, and restarting the app). Persisted the same way as `useAiToolAgentRuns` (ai-tools-nav.ts).
  */
 export const useShortsRuns = create<{ runs: Record<Id, ShortsRun> }>()(
   persist(() => ({ runs: {} as Record<Id, ShortsRun> }), {
@@ -33,7 +33,7 @@ export const useShortsRuns = create<{ runs: Record<Id, ShortsRun> }>()(
   }),
 );
 
-/** 读回来的记录：形状不对的丢掉。 */
+/** Records read back: any with the wrong shape are dropped. */
 export function restoredShortsRuns(persisted: unknown): Record<Id, ShortsRun> {
   const raw = (persisted as { runs?: unknown } | null)?.runs;
   if (!raw || typeof raw !== 'object') return {};
@@ -53,7 +53,7 @@ export function restoredShortsRuns(persisted: unknown): Record<Id, ShortsRun> {
   return runs;
 }
 
-/** 记下新交出去的一次；同一条会话再交一次时覆盖（「再切几支」可能发回同一条会话）。 */
+/** Records a newly submitted run. If the same session is submitted again, it overwrites (“再切几支”(cut a few more) may send back to the same session). */
 export function recordShortsRun(run: Omit<ShortsRun, 'landed' | 'focus'>): void {
   useShortsRuns.setState((s) => {
     const next: Record<Id, ShortsRun> = { ...s.runs, [run.conversationId]: { ...run, landed: false, focus: null } };
@@ -82,7 +82,7 @@ export function focusShortsRun(conversationId: Id, videoId: Id): void {
   });
 }
 
-/** 从这部视频发起的最近一次（没有时 null）。 */
+/** The most recent run started from this video (null if none). */
 export function latestShortsRun(runs: Record<Id, ShortsRun>, parentVideoId: Id): ShortsRun | null {
   let latest: ShortsRun | null = null;
   for (const run of Object.values(runs)) {

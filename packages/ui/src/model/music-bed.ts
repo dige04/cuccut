@@ -4,38 +4,38 @@ import { durationSeconds } from './editor.ts';
 import { M } from './tools-music-copy.ts';
 
 /**
- * 配乐铺满（产品设计 §2.7「生成配乐」、架构设计 §7.9「生成配乐的铺轨」；设计稿 model-music.js `loopLayout`）：
- * 视频比单次上限长时只生成上限长度的一段，加到视频时首尾相接循环铺满——后一段在前一段结束前 `crossfade` 秒进来、两边交叉淡化，
- * 最后一段截到视频结尾、片尾淡出；不拉伸、不改节奏。同一条轨道上的实例不能重叠（视频格式规范 §3.4），接缝两侧交替放在两条音乐轨上；
- * 淡入淡出都在实例 [0, 5] 秒之内、两者之和不超过片段长度（§3.9）。
- * 写入是一笔事务：`addTrack`（一或两条音乐轨）加一个 `insertItems`，每段一个音频实例带 `playDuration`（这就是截断）与 `mix` 的淡化；
- * 一次撤销整笔回去。
+ * Music bed fills the video (product design §2.7 “generate soundtrack”, architecture design §7.9 “bed-laying for generated soundtrack”; design draft model-music.js `loopLayout`):
+ * when the video is longer than a single generation's cap, only one segment of the cap length is generated; when added to the video, segments are laid end to end in a loop to fill it. The next segment comes in `crossfade` seconds before the previous one ends, and the two crossfade.
+ * The last segment is cut at the end of the video, with a fade-out at the end; no stretching, no change of tempo. Instances on the same track cannot overlap (video format spec §3.4), so seams alternate between two music tracks.
+ * Fades all fall within instance [0, 5] seconds, and their sum does not exceed the clip length (§3.9).
+ * Writing is one transaction: `addTrack` (one or two music tracks) plus one `insertItems`, with one audio instance per segment carrying `playDuration` (this is the cut) and `mix` fades.
+ * One undo reverts the whole thing.
  */
 
 export const LOOP = { crossfade: 2, tailFade: 3 } as const;
 
-/** 加到视频的音乐实例的作用（开放词表，§3.1）。 */
+/** Role of a music instance added to the video (open vocabulary, §3.1). */
 export const MUSIC_ROLE = 'music';
-/** 铺上去的每段实例带的扩展（引擎不解释）：是哪个「生成配乐」任务铺的。一部视频只留一床配乐：再铺时先删掉上一床。 */
+/** Extension carried by each segment laid down (the engine does not interpret it): which “generate soundtrack” job laid it. A video keeps only one music bed: when laying a new one, delete the previous one first. */
 export const SOUNDTRACK_EXTENSION = 'cuccut.soundtrack';
 
 export interface LoopPiece {
-  /** 在序列上的起点、长度（秒，精确到毫秒）。 */
+  /** Start point and length on the sequence (seconds, precise to milliseconds). */
   start: number;
   dur: number;
-  /** 交替的两条音乐轨：0 / 1。 */
+  /** The two alternating music tracks: 0 / 1. */
   lane: 0 | 1;
   fadeIn: number;
   fadeOut: number;
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
-/** 向下取整到毫秒：铺上去的长度不能比素材长、不能越过序列末尾。 */
+/** Round down to milliseconds: the length laid must not exceed the source and must not go past the end of the sequence. */
 const floorMs = (n: number) => Math.floor(n * 1000 + 1e-6) / 1000;
 
 /**
- * 一段 `pieceSec` 秒的音乐铺满 `totalSec` 秒：每段从音乐开头起放，后一段在前一段结束前 `crossfade` 秒进来；
- * 最后一段截到视频结尾、带片尾淡出；音乐比视频长时只有一段。时长不成立时空表。
+ * A `pieceSec`-second piece of music fills `totalSec` seconds: each segment plays from the start of the music, and the next comes in `crossfade` seconds before the previous one ends.
+ * The last segment is cut at the end of the video and has a fade-out; if the music is longer than the video, there is only one segment. Empty table if the duration does not hold.
  */
 export function loopLayout(pieceSec: number, totalSec: number, opts: Partial<typeof LOOP> = {}): LoopPiece[] {
   const o = { ...LOOP, ...opts };
@@ -59,7 +59,7 @@ export function loopLayout(pieceSec: number, totalSec: number, opts: Partial<typ
   return out;
 }
 
-/** 加到视频之后的一句：「循环 3 段铺满 742 秒 · 接缝交叉淡化 2 秒 · 片尾淡出 3 秒」；只有一段时只说片尾淡出。 */
+/** One sentence after adding to the video: “Looped 3 segments to fill 742 s · 2 s crossfade at seams · 3 s fade-out at end”; with only one segment, only the end fade-out is mentioned. */
 export function loopSummary(layout: readonly LoopPiece[], totalSec: number): string {
   if (!layout.length) return '';
   const tail = M.tailFade(layout[layout.length - 1]!.fadeOut);
@@ -67,24 +67,24 @@ export function loopSummary(layout: readonly LoopPiece[], totalSec: number): str
   return [M.loopPieces(layout.length, r3(totalSec)), M.seamCrossfade(layout[1]!.fadeIn), tail].join(' · ');
 }
 
-/** 素材当前版本的实际时长（秒）；音乐的长度以做出来的为准，不是请求的目标。 */
+/** Actual duration (seconds) of the current version of the source; the music's length is what was produced, not the requested target. */
 export function pieceSeconds(asset: AssetRecord): number | null {
   const duration = asset.revisions[asset.currentRevision]?.duration;
   return duration ? mediaTimeToSeconds(duration) : null;
 }
 
-/** 整数毫秒写成精确时间。 */
+/** Writes integer milliseconds as an exact time. */
 const ms = (seconds: number): MediaTime => ({ ticks: String(Math.round(seconds * 1000)), timescale: 1000 });
 
-/** 新建音乐轨在同一事务里的 `ref`。 */
+/** `ref` of the new music track in the same transaction. */
 const trackRef = (lane: 0 | 1) => `music-bed-${lane}`;
 
-/** 已经铺在时间线上的配乐实例（带 `SOUNDTRACK_EXTENSION`）。 */
+/** Music bed instances already laid on the timeline (with `SOUNDTRACK_EXTENSION`). */
 export function soundtrackBedItems(sequence: Sequence): AudioItem[] {
   return sequence.items.filter((item): item is AudioItem => item.type === 'audio' && !!item.extensions?.[SOUNDTRACK_EXTENSION]);
 }
 
-/** 时间线上这些配乐实例来自哪些任务。 */
+/** Which jobs these music bed instances on the timeline come from. */
 export function placedSoundtrackJobs(sequence: Sequence): Set<Id> {
   const out = new Set<Id>();
   for (const item of soundtrackBedItems(sequence)) {
@@ -95,7 +95,7 @@ export function placedSoundtrackJobs(sequence: Sequence): Set<Id> {
   return out;
 }
 
-/** 换掉上一床配乐：删掉它的实例，只放着它们的音乐轨一并删掉（轨上还有别的东西就留着）。 */
+/** Replace the previous music bed: delete its instances; the music tracks that held only them are deleted too (tracks with other content are kept). */
 function replaceOperations(sequence: Sequence): EditOperation[] {
   const olds = soundtrackBedItems(sequence);
   if (!olds.length) return [];
@@ -108,9 +108,9 @@ function replaceOperations(sequence: Sequence): EditOperation[] {
 }
 
 /**
- * 把这段音乐循环铺满这部视频的那一笔操作：按实际时长算铺法，新建用到的音乐轨（一或两条），每段一个音频实例
- * （从音乐开头起、`playDuration` 截到该段长度、淡入淡出按铺法，带 `jobId` 的扩展）；上一床配乐在同一笔里换掉。
- * 时长向下取整到毫秒：铺的长度不超过素材、不越过序列末尾。视频没有时长、素材不是音频或没有时长时 null。
+ * The single operation that loops this music across the whole video: computes the laying from the actual duration, creates the music track(s) needed (one or two), and one audio instance per segment
+ * (from the start of the music, `playDuration` cuts it to the segment length, fades per the laying, with a `jobId` extension). The previous music bed is replaced in the same operation.
+ * Duration is rounded down to milliseconds: the length laid does not exceed the source and does not go past the end of the sequence. null if the video has no duration, or the source is not audio or has no duration.
  */
 export function musicBedOperations(sequence: Sequence, asset: AssetRecord, jobId: Id): { operations: EditOperation[]; layout: LoopPiece[]; totalSec: number } | null {
   if (asset.kind !== 'audio') return null;
@@ -122,7 +122,7 @@ export function musicBedOperations(sequence: Sequence, asset: AssetRecord, jobId
   const { num, den } = sequence.fps;
   const lanes = [...new Set(layout.map((p) => p.lane))].sort();
   const items: SequenceItemInput[] = layout.map((p) => {
-    // 起点拆成帧与帧内偏移（视频格式规范 §2.10）：都按毫秒的整数算，不经浮点。
+    // Split the start point into frames and an in-frame offset (video format spec §2.10): both are computed as integer milliseconds, with no floating point.
     const startMs = Math.round(p.start * 1000);
     const fromFrame = Math.floor((startMs * num) / (1000 * den));
     const subframeTicks = startMs * num - fromFrame * den * 1000;
@@ -148,7 +148,7 @@ export function musicBedOperations(sequence: Sequence, asset: AssetRecord, jobId
   return { operations, layout, totalSec: total };
 }
 
-/** 这段素材已经在时间线上了（用户自己放过）：不再自动铺。 */
+/** This source is already on the timeline (the user placed it themselves): no automatic laying. */
 export function assetOnTimeline(sequence: Sequence, assetId: Id): boolean {
   return sequence.items.some((item) => item.type === 'audio' && item.assetRef.id === assetId);
 }

@@ -3,9 +3,8 @@ import { ModelInstallTools, type ModelInstallToolsDeps } from './model-install-t
 import { toolRisk, type ToolConfirmation, type ToolPrincipal } from './tool-scope.ts';
 
 /**
- * `models_install` 与音乐引擎（架构设计 §6.3、§6.5）：音乐模型包（backend `audio-cpp`）的 audio.cpp 引擎是它的必需组件
- * （`audiocpp-engine`），在同一份安装计划里：一次确认，说明里的大小与部件已经含引擎，没有另外的引擎确认与 `engine` 结果。
- * 模型安装与范围都是假的。
+ * `models_install` and the music engine (architecture §6.3, §6.5): the audio.cpp engine of the music model pack (backend `audio-cpp`) is its required component (`audiocpp-engine`) and is in the same install plan. There is one confirmation; the size and parts in the description already include the engine, with no separate engine confirmation and no `engine` result.
+ * The model installation and scope are fakes.
  */
 
 const MUSIC = 'yue2-3b@audio-cpp-q8';

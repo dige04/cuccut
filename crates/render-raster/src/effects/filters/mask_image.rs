@@ -1,7 +1,7 @@
-//! 图像遮罩（`mask.image@1` / `mask.luma@1`）。
+//! Image mask (`mask.image@1` / `mask.luma@1`).
 //!
-//! 第二个输入的 alpha 或亮度作为覆盖率，尺寸必须与主输入一致。
-//! 覆盖率乘在预乘四通道上。
+//! The alpha or luminance of the second input is used as coverage. Its size must match the main input.
+//! Coverage is multiplied onto all four premultiplied channels.
 
 use super::color_adjust::LUMA;
 use super::mask_shape::multiply_pixel_coverage;

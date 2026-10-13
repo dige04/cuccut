@@ -9,7 +9,7 @@ import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 
 type Size = { width: number; height: number };
 
-/** 元素格的缩略图：新建出来的那一层按真实比例画，缩到格子里（四周留一点边）。彩纸格走 `ConfettiThumb`，`playing` 时动起来。 */
+/** Thumbnail for an element cell: the layer just created is drawn at its true aspect ratio and shrunk into the cell, with a little margin on all sides. The confetti cell goes through `ConfettiThumb`, and `playing` makes it move. */
 export function ElementThumb({ tile, canvas, playing = false }: { tile: ElementTile; canvas: Size; playing?: boolean }) {
   if (tile.confetti) return <ConfettiThumb styleKey={tile.confetti} playing={playing} />;
   return <LayerThumb tile={tile} canvas={canvas} />;
@@ -27,7 +27,7 @@ function LayerThumb({ tile, canvas }: { tile: ElementTile; canvas: Size }) {
   return <KernelThumb draw={draw} />;
 }
 
-/** 悬停时从 `from` 秒起按 `loop` 秒循环往前走的时刻（`loop` 为 null 时一直往前）；不播时停在 `from`。 */
+/** The moment hover plays: starting at `from` seconds, moving forward and looping every `loop` seconds (when `loop` is null, keep moving forward). Not playing: stays at `from`. */
 function usePlayhead(playing: boolean, from: number, loop: number | null): number {
   const [time, setTime] = useState(from);
   useEffect(() => {
@@ -47,8 +47,7 @@ function usePlayhead(playing: boolean, from: number, loop: number | null): numbe
 }
 
 /**
- * 彩纸的缩略图（设计稿 `ConfettiTile`）：按格子自己的像素尺寸画一帧，同一枚种子恒得同一幅；`playing` 时从 4.5 秒起
- * 播 4 秒循环。底色由外面的格子给（深底衬亮色粒子）。
+ * Confetti thumbnail (design `ConfettiTile`): draws one frame at the cell's own pixel size; the same seed always gives the same picture. When `playing`, it loops a 4-second segment starting at 4.5 seconds. The background color comes from the cell outside (bright particles on a dark base).
  */
 export function ConfettiThumb({ styleKey, playing = false }: { styleKey: string; playing?: boolean }) {
   const time = usePlayhead(playing, CONFETTI_STILL, CONFETTI_LOOP);
@@ -57,8 +56,7 @@ export function ConfettiThumb({ styleKey, playing = false }: { styleKey: string;
 }
 
 /**
- * 品牌库贴纸的缩略图（元素页「我的贴纸」）：图片直接摆那个文件；Lottie 停在动画正中那一帧（开头常常还是空的），
- * `playing` 时从那一帧起循环播。读不出来就留空格子。
+ * Thumbnail for a brand-library sticker (elements page “我的贴纸” (My stickers)): an image is shown directly from its file; a Lottie stops on the middle frame of its animation (the start is often still empty), and when `playing` it loops from that frame. If it cannot be read, the cell is left blank.
  */
 export function BrandStickerThumb({
   summary,
@@ -103,7 +101,7 @@ function LottieThumb({ url, playing }: { url: string | null; playing: boolean })
   return <KernelThumb draw={draw} live={playing} />;
 }
 
-/** 文字预设卡的缩略图。框宽由画它的内核实例量（与新建时同一个量法）。 */
+/** Thumbnail for a text preset card. The frame width is measured by the core instance that draws it (the same measuring method as at creation). */
 export function PresetThumb({ preset, fps }: { preset: TextPreset; fps: Rate }) {
   const draw = useCallback<ThumbDraw>(
     (planner, width, height, ratio) => presetThumb(planner, preset, fps, ratio, width, height),

@@ -1,25 +1,25 @@
-//! 已冻结的 idle 循环内核（ADR-M08，计划 §2.9）。
+//! The frozen idle loop kernel (ADR-M08, plan §2.9).
 //!
-//! 阶段 1 **不**把 loop 降为关键帧轨：现有实现是
-//! `amp * intensity * sampled_wave(...)` 再整体 `mixed_toward_identity(envelope)`，
-//! 而关键帧轨会先算 `identity + a*w_i` 再插值，两者相差最后一个 ulp，破坏"逐位不变"。
-//! 因此保留一个具名内核，**内核里没有任何自带数字**——振幅、周期、波形、seed、
-//! 晶格、采样点数与包络常量全部来自 manifest（计划 §3.1）。
+//! Stage 1 does **not** lower loop into keyframe tracks. The existing implementation is
+//! `amp * intensity * sampled_wave(...)` followed by a whole-value `mixed_toward_identity(envelope)`. A keyframe track would first
+//! compute `identity + a*w_i` and then interpolate; the two differ in the last ulp, which breaks “bit-for-bit unchanged”. So a named
+//! kernel is kept, and **the kernel contains no numbers of its own**: amplitude, period, waveform, seed, lattice, sample count and
+//! envelope constants all come from the manifest (plan §3.1).
 //!
-//! 函数体逐式来自 `ccut-timeline/src/motion.rs:893-1033`。
+//! Function bodies copied expression-for-expression from `ccut-timeline/src/motion.rs:893-1033`.
 
 use crate::composite::{PostOp, mix_toward_identity};
 use crate::curve::{CurveSpec, sample_curve};
 
-/// `jitter@1` 的晶格宽度（`motion.rs:15`），由 manifest 声明，这里只是缺省。
+/// Lattice width for `jitter@1` (`motion.rs:15`), declared by the manifest; this is only the default.
 pub const DEFAULT_LATTICE: i64 = 8;
-/// 波形重采样点数（`motion.rs:16`），同上。
+/// Waveform resampling point count (`motion.rs:16`), same as above.
 pub const DEFAULT_WAVE_SAMPLES: usize = 32;
-/// `jitter@1` 的缺省 seed（`motion.rs:949`）。
+/// Default seed for `jitter@1` (`motion.rs:949`).
 pub const DEFAULT_NOISE_SEED: u64 = 17;
 
-/// 通道 → seed 序数（`motion.rs:950-957`）。`jitter` 的 dx 用 `seed+101`、dy 用 `seed+202`，
-/// 由 `motion.rs:1127-1148` 的 golden 钉住。manifest 按通道名引用，序数永远是派生的。
+/// Channel → seed ordinal (`motion.rs:950-957`). `jitter`'s dx uses `seed+101` and dy uses `seed+202`, pinned by the golden values
+/// at `motion.rs:1127-1148`. The manifest references channels by name; the ordinal is always derived.
 pub const CHANNEL_ORDINALS: &[(&str, u32)] = &[
     ("opacity", 0),
     ("dx", 1),
@@ -41,10 +41,10 @@ pub enum WaveKind {
     Sine,
     Dip,
     Noise,
-    /// 单调爬坡：phase → phase。唯一一种在相位 1 处取 1 而不是 0 的波形，
-    /// 只给 `rotation` 这类周期通道用（360° ≡ 0°，接缝仍然闭合）。
+    /// Monotonic ramp: phase → phase. The only waveform that takes 1 at phase 1 rather than 0. It is used only for periodic channels
+    /// such as `rotation` (360° ≡ 0°, so the seam still closes).
     Ramp,
-    /// 设计稿 `heartBeat`：两下心跳（主拍 + 0.7 倍副拍）后静止。
+    /// Design draft `heartBeat`: two beats (a main beat plus a 0.7× secondary beat), then still.
     Heartbeat,
 }
 
@@ -61,12 +61,12 @@ impl WaveKind {
     }
 }
 
-/// 具名噪声算法（ADR-M08）。新配方一律 splitmix64，`jitter@1` 冻结在这一支。
+/// Named noise algorithm (ADR-M08). New recipes always use splitmix64; `jitter@1` is frozen on this branch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoiseKind {
     LatticeMurmurV1,
-    /// 规范 §7.3 的 splitmix64（[`crate::rng`]）。阶段 3 起的新配方与
-    /// `animate.flow` 的 `noise` op 都走这一支，缺省 seed **0**。
+    /// The splitmix64 of spec §7.3 ([`crate::rng`]). The new recipes from stage 3 on, and the `noise` op of `animate.flow`, both take
+    /// this branch, with default seed **0**.
     Splitmix64V1,
 }
 
@@ -86,7 +86,7 @@ impl NoiseKind {
         }
     }
 
-    /// 晶格顶点值。两支都把 0 号顶点钉为 0 并按 `lattice` 取模（无缝循环）。
+    /// Lattice vertex values. Both branches pin vertex 0 to 0 and take the modulus by `lattice` (seamless loop).
     pub fn vertex(self, seed: u64, index: i64, lattice: i64) -> f64 {
         match self {
             Self::LatticeMurmurV1 => noise_hash(seed, index, lattice),
@@ -102,12 +102,12 @@ pub struct NoiseSpec {
     pub default_seed: u64,
 }
 
-/// 具名包络算法。
+/// Named envelope algorithm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvelopeKind {
     IdleRampV1,
-    /// 无包络：`amount()` 恒为 1。`animate.flow` 的 `oscillate` / `noise` 用它
-    /// （作者自己用 `delay` / `repeat` 控制起止，内核不再替他做 ramp）。
+    /// No envelope: `amount()` is always 1. `animate.flow`'s `oscillate` / `noise` use it (the author controls start and stop with `delay`
+    /// / `repeat`, and the kernel no longer applies a ramp for them).
     None,
 }
 
@@ -132,7 +132,7 @@ pub struct EnvelopeSpec {
 }
 
 impl EnvelopeSpec {
-    /// 恒等包络（`EnvelopeKind::None`）。其余字段不参与求值，写 0。
+    /// Identity envelope (`EnvelopeKind::None`). The other fields do not take part in evaluation; write 0.
     pub const NONE: Self = Self {
         kind: EnvelopeKind::None,
         ramp_cap: 0.0,
@@ -142,7 +142,7 @@ impl EnvelopeSpec {
         tail_span: 0.0,
     };
 
-    /// 逐式来自 `motion.rs:961-973`。
+    /// Expression-for-expression from `motion.rs:961-973`.
     pub fn amount(&self, idle_local: f64, idle_duration: f64) -> f64 {
         if self.kind == EnvelopeKind::None {
             return 1.0;
@@ -166,13 +166,13 @@ impl EnvelopeSpec {
     }
 }
 
-/// 单通道 idle 循环内核。所有数值都在编译期从 manifest + slot 求出。
+/// Single-channel idle loop kernel. All numeric values are computed at compile time from the manifest and the slot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoopKernel {
     pub wave: WaveKind,
     pub wave_samples: usize,
     pub noise: Option<NoiseSpec>,
-    /// `amp * intensity`，与 `motion.rs:952-957` 的左结合顺序一致。
+    /// `amp * intensity`, with the same left-to-right association as `motion.rs:952-957`.
     pub amplitude: f64,
     pub channel_ordinal: u32,
     pub channel_seed_stride: u64,
@@ -182,15 +182,14 @@ pub struct LoopKernel {
     pub envelope: EnvelopeSpec,
     pub identity: f64,
     pub post: PostOp,
-    /// 多关键帧循环（2026-09-08，元素 loop）。非空时不走波形：按相位落在的
-    /// 段做 `sample_curve(段末帧 curve)` 插值，包络恒 1。波形配方此表恒空，
-    /// 求值与指纹逐位不变。
+    /// Multi-keyframe loop (2026-09-08, element loop). When non-empty, no waveform is used: interpolate with `sample_curve(curve of the
+    /// segment-end frame)` according to the segment the phase falls in, and the envelope is always 1. This table is always empty for
+    /// the waveform recipes, so their evaluation and fingerprints stay bit-for-bit unchanged.
     pub keyframes: Vec<ChannelKey>,
 }
 
-/// 关键帧链的一帧（loop 内核与 enter/exit 的 [`crate::lower_timeline::TweenAtom`]
-/// 共用）：`value` 已按 `identity + (v − identity)·intensity` 折算；
-/// `curve` 是**到达本帧**那一段的缓动。
+/// One frame of a keyframe chain (shared by the loop kernel and the [`crate::lower_timeline::TweenAtom`] of enter / exit): `value`
+/// has already been folded as `identity + (v − identity)·intensity`; `curve` is the easing of the segment **arriving at** this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelKey {
     pub at: f64,
@@ -198,8 +197,8 @@ pub struct ChannelKey {
     pub curve: CurveSpec,
 }
 
-/// 在关键帧链上取相位 `phase ∈ [0, 1]` 的值：段 `[k_i, k_{i+1}]` 内按
-/// `k_{i+1}.curve` 缓动；相位恰在关键帧上时逐位等于该帧 `value`。
+/// Takes the value at phase `phase ∈ [0, 1]` on the keyframe chain. Within segment `[k_i, k_{i+1}]` it is eased by `k_{i+1}.curve`;
+/// when the phase lies exactly on a keyframe, it is bit-for-bit equal to that frame's `value`.
 pub fn sample_keyframes(keys: &[ChannelKey], phase: f64) -> f64 {
     match keys {
         [] => 0.0,
@@ -229,7 +228,7 @@ pub fn sample_keyframes(keys: &[ChannelKey], phase: f64) -> f64 {
 }
 
 impl LoopKernel {
-    /// 逐式来自 `motion.rs:946-975` 的单通道切片。
+    /// Single-channel slice, expression-for-expression from `motion.rs:946-975`.
     pub fn sample(&self, idle_local: f64, idle_duration: f64) -> f64 {
         let phase = idle_local / self.period + self.phase_offset;
         let phase = phase.rem_euclid(1.0);
@@ -248,8 +247,8 @@ impl LoopKernel {
                 self.wave_samples,
                 self.noise.as_ref(),
             );
-        // `motion.rs` 对 identity==0 的通道写 `amp*i*v`、对 identity==1 的通道写
-        // `1.0 + amp*i*v`。两种写法在零的符号上不同，这里逐字保留。
+        // `motion.rs` writes `amp*i*v` for channels with identity == 0 and `1.0 + amp*i*v` for channels with identity == 1. The two forms
+        // differ in the sign of zero, so they are kept verbatim here.
         let raw = if self.identity == 0.0 {
             term
         } else {
@@ -261,7 +260,7 @@ impl LoopKernel {
     }
 }
 
-/// 逐式来自 `motion.rs:985-991`。
+/// Expression-for-expression from `motion.rs:985-991`.
 pub fn wave_value(wave: WaveKind, seed: u64, phase: f64, noise: Option<&NoiseSpec>) -> f64 {
     use std::f64::consts::PI;
     match wave {
@@ -277,8 +276,8 @@ pub fn wave_value(wave: WaveKind, seed: u64, phase: f64, noise: Option<&NoiseSpe
     }
 }
 
-/// 逐式来自设计稿 `model-textanim.js` 的 `heartBeat`：前 15% 一记主拍，
-/// 20%–35% 一记 0.7 倍副拍，其余静止。
+/// Expression-for-expression from the design draft `model-textanim.js` `heartBeat`: one main beat in the first 15%, one 0.7× secondary
+/// beat at 20%–35%, otherwise still.
 pub fn heartbeat_value(u: f64) -> f64 {
     use std::f64::consts::PI;
     if u < 0.15 {
@@ -292,13 +291,13 @@ pub fn heartbeat_value(u: f64) -> f64 {
     }
 }
 
-/// 周期终点（相位 1）的钉值：除 [`WaveKind::Ramp`] 取 1 外都是 0。
+/// The pinned value at the period end (phase 1): 0 for all except [`WaveKind::Ramp`], which takes 1.
 pub fn seam_value(wave: WaveKind) -> f64 {
     if wave == WaveKind::Ramp { 1.0 } else { 0.0 }
 }
 
-/// 逐式来自 `motion.rs:993-1007`。第 `samples` 个采样点被硬钉为
-/// [`seam_value`]（ramp 为 1，其余为 0）。
+/// Expression-for-expression from `motion.rs:993-1007`. The `samples`-th sample point is hard-pinned to [`seam_value`] (1 for ramp,
+/// 0 otherwise).
 pub fn sampled_wave(
     wave: WaveKind,
     seed: u64,
@@ -321,7 +320,7 @@ pub fn sampled_wave(
     start + (end - start) * fraction
 }
 
-/// 逐式来自 `motion.rs:1009-1023`（murmur3 finalizer 风格，晶格 0 号点钉为 0）。
+/// Expression-for-expression from `motion.rs:1009-1023` (murmur3 finalizer style; lattice vertex 0 pinned to 0).
 pub fn noise_hash(seed: u64, index: i64, lattice: i64) -> f64 {
     let index = index.rem_euclid(lattice) as u64;
     if index == 0 {
@@ -338,12 +337,13 @@ pub fn noise_hash(seed: u64, index: i64, lattice: i64) -> f64 {
     (hash % 20_001) as f64 / 10_000.0 - 1.0
 }
 
-/// 逐式来自 `motion.rs:1025-1033`（`lattice-murmur-v1`）。
+/// Expression-for-expression from `motion.rs:1025-1033` (`lattice-murmur-v1`).
 pub fn noise_value(seed: u64, phase: f64, lattice: i64) -> f64 {
     noise_value_of(NoiseKind::LatticeMurmurV1, seed, phase, lattice)
 }
 
-/// 具名噪声内核的平滑晶格插值。顶点算法按 `kind` 分派，插值（smoothstep）共用。
+/// Smooth lattice interpolation for the named noise kernel. The vertex algorithm dispatches on `kind`; the interpolation (smoothstep)
+/// is shared.
 pub fn noise_value_of(kind: NoiseKind, seed: u64, phase: f64, lattice: i64) -> f64 {
     let x = phase.rem_euclid(1.0) * lattice as f64;
     let index = x.floor() as i64;
@@ -360,8 +360,8 @@ mod tests {
 
     #[test]
     fn jitter_matches_voiceink_compiled_golden_samples() {
-        // 与 `ccut-timeline/src/motion.rs::jitter_matches_voiceink_compiled_golden_samples`
-        // 同一组数字，钉住 seed 序数 101/202 与 32 点重采样。
+        // The same set of numbers as `jitter_matches_voiceink_compiled_golden_samples` in `ccut-timeline/src/motion.rs`, pinning the seed
+        // ordinals 101 / 202 and the 32-point resampling.
         let cases = [
             (
                 0.05,
@@ -408,16 +408,16 @@ mod tests {
         };
         assert_eq!(envelope.amount(0.0, 4.0), 0.0);
         assert_eq!(envelope.amount(1.0, 4.0), 1.0);
-        // 短 idle 没有尾部 ramp-out
+        // A short idle has no tail ramp-out
         assert_eq!(envelope.amount(3.9, 4.0), 1.0);
-        // 长 idle 在最后 20% ramp-out
+        // A long idle ramps out over the last 20%
         assert_eq!(envelope.amount(10.0, 10.0), 0.0);
         assert!(envelope.amount(9.0, 10.0) < 1.0);
     }
 
     #[test]
     fn the_two_noise_kernels_stay_separate_and_both_loop_seamlessly() {
-        // ADR-M08：`jitter@1` 的 murmur 内核不得被 splitmix64 改写。
+        // ADR-M08: the murmur kernel of `jitter@1` must not be rewritten with splitmix64.
         let murmur = noise_value_of(NoiseKind::LatticeMurmurV1, 17, 0.37, 8);
         let split = noise_value_of(NoiseKind::Splitmix64V1, 17, 0.37, 8);
         assert_eq!(murmur, noise_value(17, 0.37, 8));

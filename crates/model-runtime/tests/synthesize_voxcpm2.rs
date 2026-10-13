@@ -1,11 +1,10 @@
-//! VoxCPM2 真权重合成：内置音色（高保真续写克隆）、参考录音（可控克隆）与风格指令，
-//! 各念一句中文、一句英文，检查时长合理、不是静音，并把 WAV 写到仓库外供试听。
+//! VoxCPM2 real-weight synthesis: built-in voice (high-fidelity continuation cloning), reference recording (controllable cloning), and style instructions. Each speaks one Chinese and one English sentence. Checks that the duration is reasonable and the output is not silent, and writes the WAVs outside the repo for listening.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test synthesize_voxcpm2 -- --ignored --test-threads=1 --nocapture
 //!
-//! 权重不在（没设 `CUCCUT_TEST_MODELS_DIR` 或没有 `.ccut-manifest.json`）时打印原因后跳过。
-//! WAV 写到 `CUCCUT_TEST_OUTPUT_DIR`（没设时是系统临时目录下的 `cuccut-tts-listen/`）。
+//! If the weights are absent (no `CUCCUT_TEST_MODELS_DIR` or no `.ccut-manifest.json`), the reason is printed and the test is skipped.
+//! WAVs are written to `CUCCUT_TEST_OUTPUT_DIR` (if unset, to the `cuccut-tts-listen/` directory under the system temp directory).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -33,7 +32,7 @@ fn output_dir() -> PathBuf {
     dir
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验文件清单；权重不在时给 `None` 并打印原因。
+/// Builds and validates the file manifest from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
@@ -71,7 +70,7 @@ fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
 }
 
-/// 时长合理（每句 0.5–20 s）、峰值与 RMS 都不是静音。
+/// Duration reasonable (0.5–20 s per sentence), peak and RMS not silent.
 fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     assert_eq!(audio.sample_rate, SAMPLE_RATE);
     let seconds = audio.samples.len() as f32 / audio.sample_rate as f32;
@@ -122,9 +121,9 @@ fn synthesize_pair(engine: &mut dyn TtsEngine, voice: VoiceSpec, instruct: Optio
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with aufklarer/VoxCPM2-MLX-int8 installed"]
 fn voxcpm2_speaks_chinese_and_english_with_builtin_reference_and_clone() {
     let Some(mut engine) = load() else { return };
-    // 内置音色带原文：高保真续写克隆。
+    // Built-in voice with transcript: high-fidelity continuation cloning.
     synthesize_pair(engine.as_mut(), VoiceSpec::Default, None, "builtin");
-    // 参考录音不带原文：可控克隆。
+    // Reference recording without transcript: controllable cloning.
     synthesize_pair(
         engine.as_mut(),
         VoiceSpec::Clone {
@@ -134,6 +133,6 @@ fn voxcpm2_speaks_chinese_and_english_with_builtin_reference_and_clone() {
         None,
         "clone",
     );
-    // 风格指令：拼在正文前，走可控克隆。
+    // Style instruction: prepended to the body text, goes through controllable cloning.
     synthesize_pair(engine.as_mut(), VoiceSpec::Default, Some("用欢快、兴奋的语气"), "instruct");
 }

@@ -1,11 +1,10 @@
-//! Engine Host 进程入口（架构设计 §2.3）。
+//! Engine Host process entry point (architecture design §2.3).
 //!
-//! stdin 每行一个请求 `{"id", "method", "params"}`；stdout 每行一个响应 `{"id", "result"}` / `{"id", "error"}`，
-//! 或一条推送 `{"event": "video.event", "params": VideoEvent}`。推送总在触发它的响应之前写出。
-//! stdout 只写协议；日志写 stderr。stdin 关闭（Runtime 退出）或 stdout 写不进去时退出，锁随进程释放。
+//! stdin takes one request per line `{"id", "method", "params"}`; stdout writes one response per line `{"id", "result"}` / `{"id", "error"}`,
+//! or one push `{"event": "video.event", "params": VideoEvent}`. A push is always written before the response that triggered it.
+//! stdout carries only the protocol; logs go to stderr. The process exits when stdin closes (Runtime exits) or when stdout can no longer be written; the lock is released with the process.
 //!
-//! 请求按到达的顺序处理，只有 `fonts.*`（解析、列族名、检查字体文件）例外：它们交给字体线程（[`fonts::FontWorker`]），第一次要扫一遍本机字体，
-//! 期间别的请求照常处理，它的响应晚一些写出（Runtime 按 `id` 配对，不要求按顺序）。stdin 关闭时等已收下的字体请求答完再退出。
+//! Requests are handled in arrival order, with one exception: `fonts.*` (parsing, listing family names, checking font files) is handed to the font thread ([`fonts::FontWorker`]). The first time, it scans the machine's installed fonts once; during that time other requests proceed as usual, and its responses are written later (the Runtime pairs responses by `id` and does not require order). When stdin closes, it waits for the font requests already received to finish before exiting.
 
 #![allow(clippy::result_large_err)]
 
@@ -25,7 +24,7 @@ use message_ref::msg;
 use serde_json::{Value, json};
 use video_engine::{ErrorBody, Retryability};
 
-/// stdout：主循环与字体线程共用，一行在锁里整行写完。
+/// stdout: shared by the main loop and the font thread; each line is written in full while holding the lock.
 #[derive(Clone)]
 pub struct Output(Arc<Mutex<Box<dyn Write + Send>>>);
 
@@ -38,7 +37,7 @@ impl Output {
         Output(Arc::new(Mutex::new(writer)))
     }
 
-    /// 写一行并刷出去。写不进去时退出：Runtime 不再读，没有人能收到回执，继续运行只会持有锁。
+    /// Writes a line and flushes it. Exits when it cannot be written: the Runtime no longer reads, so no one can receive replies, and continuing to run would only hold the lock.
     pub fn write_line(&self, value: &Value) {
         let mut out = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let ok = serde_json::to_writer(&mut **out, value).is_ok() && out.write_all(b"\n").is_ok() && out.flush().is_ok();
@@ -48,7 +47,7 @@ impl Output {
     }
 }
 
-/// 处理请求时崩溃的回执。
+/// Reply for a crash while handling a request.
 pub fn panic_response(id: Value, method: &str) -> Value {
     eprintln!("engine-host: 处理 {method} 时崩溃");
     let error = ErrorBody::new(

@@ -17,21 +17,21 @@ import { fetchGithubSkill, parseGithubSkillUrl, type GithubFetchOptions } from '
 import { RcSkills } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * skill 的安装动作（架构设计 §12.9）：从本地文件夹添加、从 GitHub 导入、移除。只对桌面界面与 CLI 开放（Web 服务的白名单里没有）。
+ * The install actions for skills (architecture design §12.9): add from a local folder, import from GitHub, remove. Only open to the desktop UI and the CLI (not in the Web service's allowlist).
  *
- * - 只写 skill 自己的目录 `<Runtime Home>/skills/<id>/`：先在 `skills/.staging/` 里拼好、校验通过、写上来源记录，再一次改名过去；
- *   失败时删掉暂存目录，不留下半个 skill。
- * - 目标已存在、或与已有的 skill 同 id 时拒绝（`SKILL_EXISTS`），不覆盖；这一步在复制或联网之前就查。
- * - 不执行任何内容：只复制文件。符号链接、特殊文件、超过文件数或总大小上限的都拒绝。
- * - 来源（文件夹路径，或 GitHub 地址、ref 与提交）记在 skill 目录里的 `SKILL_SOURCE_FILE`，不改用户的 `SKILL.md`。
- * - 同一个 `commandId` 重试返回第一次的结果（还在进行时等它）。
+ * - Only writes the skill's own directory `<Runtime Home>/skills/<id>/`: it is first assembled in `skills/.staging/`, validated, given its source record, and then renamed into place in one step;
+ *   on failure the staging directory is deleted, so no half-installed skill is left behind.
+ * - Rejects with `SKILL_EXISTS` when the target already exists or a skill with the same id exists; never overwrites. This check runs before any copying or network access.
+ * - Executes nothing: it only copies files. Symbolic links, special files, and anything over the file-count or total-size limits are rejected.
+ * - The source (folder path, or GitHub URL, ref and commit) is recorded in `SKILL_SOURCE_FILE` inside the skill directory; the user's `SKILL.md` is not changed.
+ * - A retry with the same `commandId` returns the first result (if that is still in progress, waits for it).
  */
 
 export interface SkillInstallerOptions {
   catalog: SkillCatalog;
   offlineStrict: () => boolean;
   github?: GithubFetchOptions;
-  /** 整次 GitHub 导入的时限（默认 2 分钟）。 */
+  /** Time limit for a whole GitHub import (default 2 minutes). */
   importTimeoutMs?: number;
 }
 
@@ -62,7 +62,7 @@ export class SkillInstaller {
         skillId: id,
       });
     }
-    // 只删用户目录下的这一层子目录。
+    // Only deletes this one level of subdirectory under the user directory.
     if (path.dirname(path.resolve(skill.dir)) !== catalog.userDir) {
       throw new RpcError('invalid-request', RcSkills.notInUserDir({ dir: catalog.userDir }), {
         code: 'SKILL_INVALID',
@@ -81,7 +81,7 @@ export class SkillInstaller {
     if (done) return done;
     const pending = run();
     this.#commands.set(key, pending);
-    // 失败的不记：同一个 commandId 可以重试。
+    // Failures are not recorded: the same commandId can be retried.
     pending.catch(() => this.#commands.delete(key));
     return pending;
   }
@@ -97,7 +97,7 @@ export class SkillInstaller {
     }
     const id = this.#idFor(params.id, path.basename(real), sourceDir);
     const target = await this.#checkFree(id, sourceDir);
-    // 不能把 skills 目录本身（或它的上层）、或已经在里面的目录再添加一次。
+    // Cannot add the skills directory itself (or its parent), or a directory already inside it, again.
     const userReal = await fsp.realpath(this.#options.catalog.userDir).catch(() => this.#options.catalog.userDir);
     if (within(userReal, real) || within(real, userReal)) {
       throw new RpcError('invalid-request', RcSkills.folderOverlapsSkills(), {
@@ -145,7 +145,7 @@ export class SkillInstaller {
       for (const file of listing.files) {
         const dest = path.join(staging, ...file.path.split('/'));
         await fsp.mkdir(path.dirname(dest), { recursive: true });
-        // COPYFILE_EXCL：暂存目录是新建的，不会覆盖任何东西。
+        // COPYFILE_EXCL: the staging directory is newly created, so nothing can be overwritten.
         await fsp.copyFile(path.join(real, ...file.path.split('/')), dest, fsp.constants.COPYFILE_EXCL);
       }
     });
@@ -168,7 +168,7 @@ export class SkillInstaller {
         try {
           fetched = await fetchGithubSkill(ref, staging, { ...this.#options.github, signal });
         } catch (error) {
-          // 下载阶段的错误补上目标目录与来源，界面与 CLI 能照实说明。
+          // Errors from the download stage get the target directory and source attached, so the UI and CLI can report them accurately.
           if (error instanceof RpcError) {
             throw new RpcError(
               error.code,
@@ -201,7 +201,7 @@ export class SkillInstaller {
     }
   }
 
-  /** 给定的 id，或由名字规范化；得不出 id 时请调用方给一个。 */
+  /** The given id, or one normalized from the name; if no id can be derived, the caller must supply one. */
   #idFor(given: string | undefined, name: string, from: string): string {
     const id = given ?? normalizeSkillId(name);
     if (!id) {
@@ -214,7 +214,7 @@ export class SkillInstaller {
     return id;
   }
 
-  /** 目标目录不存在、也没有同 id 的 skill（含内置的）；否则 `SKILL_EXISTS`。返回目标目录。 */
+  /** The target directory must not exist, and no skill with the same id may exist (including built-in ones); otherwise `SKILL_EXISTS`. Returns the target directory. */
   async #checkFree(id: string, from: string): Promise<string> {
     const { catalog } = this.#options;
     const target = path.join(catalog.userDir, id);
@@ -234,7 +234,7 @@ export class SkillInstaller {
     return target;
   }
 
-  /** 在暂存目录里拼好 → 校验 → 写来源 → 改名到目标。任何一步失败都删掉暂存目录。 */
+  /** Assemble in the staging directory → validate → write the source → rename to the target. If any step fails, the staging directory is deleted. */
   async #install(
     id: string,
     target: string,
@@ -262,7 +262,7 @@ export class SkillInstaller {
       await fsp.writeFile(path.join(staging, SKILL_SOURCE_FILE), `${JSON.stringify({ schemaVersion: 1, ...record }, null, 2)}\n`, {
         flag: 'wx',
       });
-      // 改名之前再查一次：这期间别处可能放进了同名目录。改名到已存在的非空目录会失败，也按冲突处理。
+      // Check again before renaming: a directory with the same name may have been put there in the meantime. Renaming onto an existing non-empty directory fails, and is also treated as a conflict.
       if (
         await fsp.lstat(target).then(
           () => true,
@@ -284,7 +284,7 @@ export class SkillInstaller {
     const list = await catalog.list();
     const skill = list.skills.find((s) => s.id === id);
     if (!skill) {
-      // 装进去了却加载不了（例如与内置的同 id 被跳过）：照实说明，目录留着给用户看诊断。
+      // Installed but cannot be loaded (for example, skipped because its id matches a built-in one): report this accurately and leave the directory in place so the user can look at the diagnostics.
       throw new RpcError('conflict', RcSkills.writtenNotLoaded({ path: target }), {
         code: 'SKILL_INVALID',
         skillId: id,

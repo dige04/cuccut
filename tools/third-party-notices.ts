@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
-/** CucCut 许可、源码声明与第三方原始许可的分发清单；桌面、Web 构建和安装包共用。 */
+/** The distribution list for CucCut's license, source declarations, and third-party original licenses; shared by the desktop build, the web build, and the installers. */
 export const DISTRIBUTED_NOTICES = [
   { source: 'LICENSE', fileName: 'LICENSE' },
   { source: 'THIRD_PARTY_NOTICES.md', fileName: 'THIRD_PARTY_NOTICES.md' },
   { source: 'crates/model-runtime/licenses/speech-swift.txt', fileName: 'crates/model-runtime/licenses/speech-swift.txt' },
 ] as const;
 
-/** 声明缺失时让构建失败，避免只分发可执行代码。 */
+/** If a declaration is missing, fail the build, so that only executable code is never distributed on its own. */
 export function thirdPartyNotices(root: string): Plugin {
   return {
     name: 'cuccut:third-party-notices',

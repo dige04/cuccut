@@ -148,14 +148,11 @@ fn adjacent_word_plates_have_deterministic_paint_order() {
     }
 }
 
-/// 逐帧光栅（`text_motion_raster.rs`）的像素身份门：八款设计与几条加压变体
-/// （字形簇级 blur-in + 模糊阴影 / 发光、四种 loop、slide-mask 裁切、CJK）
-/// 在入场、稳定、loop 中段与退出各时刻，两种画幅逐帧 sha256 与 golden 对拍。
+/// Pixel-identity gate for per-frame rasterization (`text_motion_raster.rs`). Eight designs and several stress variants (glyph-cluster-level blur-in with blurred shadow / glow, four loop modes, slide-mask clipping, CJK) are compared against golden per-frame sha256 at both aspect ratios, at entry, steady, mid-loop and exit moments.
 ///
-/// 「只改性能」的改动必须让它保持全等；有意改变像素时 `CCUT_UPDATE_GOLDEN=1` 重写。
-/// 2026-09-28：scratch 复用 / 脏区清理先对 a2d575417 的 golden 全等通过，随后
-/// 亚像素落位 + 变换时 Bilinear + 裁边按覆盖率三处有意改像素，golden 在其后重写。
-/// 只在 macOS 上对拍：旋转走平台 libm 的 `sin_cos`，跨平台末位可能不同。
+/// A change that is "only about performance" must keep this fully identical. When pixels are changed on purpose, rewrite the goldens with `CCUT_UPDATE_GOLDEN=1`.
+/// 2026-09-28: scratch reuse and dirty-region cleanup first matched the a2d575417 goldens exactly. Then sub-pixel placement, Bilinear during transforms, and coverage-based edge trimming intentionally changed pixels in three places, and the goldens were rewritten after that.
+/// Compared on macOS only: rotation uses the platform libm `sin_cos`, whose last digits may differ across platforms.
 #[cfg(target_os = "macos")]
 #[test]
 fn text_motion_frames_match_golden() {
@@ -233,7 +230,7 @@ fn text_motion_frames_match_golden() {
                 let rgba = renderer.render_subtitle_frame(time).unwrap().rgba;
                 hashes.insert(
                     format!("{width}x{height}/{id}/{time}"),
-                    // sha2 0.11 的摘要没有 `LowerHex`：逐字节写出，与 v2 的 `{:x}` 同值。
+                    // sha2 0.11's digest has no `LowerHex`, so write it out byte by byte. The value matches v2's `{:x}`.
                     <sha2::Sha256 as sha2::Digest>::digest(&*rgba)
                         .iter()
                         .map(|b| format!("{b:02x}"))

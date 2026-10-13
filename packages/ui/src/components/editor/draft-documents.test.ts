@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditor } from '../../state/editor-store.ts';
 import { DraftDocuments, draftedBody, dropStaleDraft } from './draft-documents.ts';
 
-// Node 里没有可用的 localStorage：给持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: give persistence an in-memory version, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
@@ -61,16 +61,16 @@ describe('文档草稿', () => {
     const inner = { peek: (id: string, rev: string) => bodies.get(`${id}@${rev}`), load: vi.fn(), subscribe: () => () => {} };
     const documents = new DraftDocuments(inner);
     useEditor.setState({ documentDraft: draft });
-    // 提交了，文档到了 r2，正文还没取到：先画草稿，并且去取 r2（预览拿到的不是 undefined，自己不会去取）。
+    // Committed, the document has reached r2, but the body is not fetched yet: draw the draft first and fetch r2 (the preview gets a value rather than undefined, so it would not fetch on its own).
     expect(documents.peek('doc_style', 'r2')).toEqual({ y: 40 });
     expect(inner.load).toHaveBeenCalledWith('doc_style', 'r2');
     bodies.set('doc_style@r2', { y: 40 });
     expect(documents.peek('doc_style', 'r2')).toEqual({ y: 40 });
     await Promise.resolve();
     expect(useEditor.getState().documentDraft).toBeNull();
-    // 撤销：文档回到 r1。
+    // Undo: the document goes back to r1.
     expect(documents.peek('doc_style', 'r1')).toEqual({ y: 86 });
-    // 拖动中（还在草稿所基于的版本上）不去取。
+    // While dragging (still on the version the draft is based on), do not fetch.
     inner.load.mockClear();
     useEditor.setState({ documentDraft: draft });
     documents.peek('doc_style', 'r1');

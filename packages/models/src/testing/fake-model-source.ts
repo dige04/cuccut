@@ -8,28 +8,28 @@ import { MANIFEST_FILE } from '../model-catalog.ts';
 import type { RepoManifestSpec } from '../repo-manifests.ts';
 
 /**
- * 测试用的假模型来源：只监听本机回环地址的临时端口，按下载来源的路径规则
- * （`<基址>/<owner>/<repo>/resolve/<revision>/<文件路径>`）提供内存里的文件，支持 HEAD、`Range: bytes=n-` 与 `bytes=n-m`。
- * 可以按文件注入故障：返回某个状态码、发出若干字节后断开、发出若干字节后挂起、内容换成坏字节、不理 Range。
- * 测试永远不连真实的模型仓库，也不下载真实的模型。
+ * Fake model source for tests: listens only on a temporary port on the loopback address and serves in-memory files using the download path rule
+ * (`<base>/<owner>/<repo>/resolve/<revision>/<file path>`). Supports HEAD, `Range: bytes=n-` and `bytes=n-m`.
+ * Faults can be injected per file: reply with a status code, disconnect after sending some bytes, hang after sending some bytes, replace the content with bad bytes, or ignore Range.
+ * Tests never connect to a real model repository and never download a real model.
  */
 
 export interface FakeFault {
-  /** 回复这个状态码（没有内容）。 */
+  /** Reply with this status code (no content). */
   status?: number;
-  /** 从这次回复的起点发出这么多字节后断开连接。 */
+  /** Disconnect after sending this many bytes from the start of this reply. */
   breakAfter?: number;
-  /** 发出这么多字节后不再发送，直到客户端断开。 */
+  /** Stop sending after this many bytes, until the client disconnects. */
   stallAfter?: number;
-  /** 内容换成同样长度的坏字节。 */
+  /** Replace the content with bad bytes of the same length. */
   corrupt?: boolean;
-  /** 不理 Range，总是回 200 与整份内容。 */
+  /** Ignore Range; always reply 200 with the full content. */
   ignoreRange?: boolean;
 }
 
 export interface FakeSourceRequest {
   method: string;
-  /** 解码后的仓库内文件路径；不匹配路径规则时是请求路径。 */
+  /** The decoded file path within the repo; the request path when it does not match the path rule. */
   file: string;
   repo: string | null;
   revision: string | null;
@@ -38,16 +38,16 @@ export interface FakeSourceRequest {
 }
 
 export interface FakeModelSource {
-  /** `http://127.0.0.1:<port>`（加上 `prefix`）。 */
+  /** `http://127.0.0.1:<port>` (plus `prefix`). */
   endpoint: string;
   requests: FakeSourceRequest[];
-  /** 放一个文件。 */
+  /** Put one file. */
   put(repo: string, revision: string, file: string, content: Buffer | string): void;
-  /** 给一个文件（任意仓库里同名的路径）排一个故障，用 `times` 次。 */
+  /** Queue a fault for one file (a path of the same name in any repo), for `times` requests. */
   fault(file: string, fault: FakeFault, times?: number): void;
-  /** 每块的大小与块间的间隔（默认 64 KiB、不等）。 */
+  /** Size of each chunk and the pause between chunks (default 64 KiB, irregular). */
   throttle(chunkBytes: number, delayMs: number): void;
-  /** 某个文件被 GET 的次数。 */
+  /** How many times a file has been GET. */
   gets(file: string): number;
   close(): Promise<void>;
 }
@@ -124,7 +124,7 @@ export async function startFakeModelSource(options: { prefix?: string } = {}): P
     let sent = 0;
     while (sent < slice.length) {
       if (fault.breakAfter !== undefined && sent >= fault.breakAfter) {
-        // 让已经写出的字节先到达客户端，再断开。
+        // Let the bytes already written reach the client, then disconnect.
         res.flushHeaders();
         await new Promise((resolve) => setTimeout(resolve, 20));
         req.socket.destroy();
@@ -184,7 +184,7 @@ function parsePath(pathname: string, prefix: string): { repo: string; revision: 
   return { repo: `${segments[0]}/${segments[1]}`, revision: segments[3]!, file: segments.slice(4).join('/') };
 }
 
-/** 一个合成的仓库：文件内容与据此算出的 sha256（测试内容的真实哈希，不是编造的）。 */
+/** A synthetic repo: file contents and the sha256 computed from them (the real hash of the test content, not a made-up one). */
 export interface SyntheticRepo {
   repo: string;
   revision: string;
@@ -195,7 +195,7 @@ export function sha256Of(content: Buffer | string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-/** 合成仓库的内置清单。`sizes: false` 时大小为 null（像真实清单那样要靠 HEAD 取）。 */
+/** The built-in manifest of the synthetic repo. With `sizes: false`, sizes are null (as in a real manifest, they must be fetched with HEAD). */
 export function syntheticManifest(repo: SyntheticRepo, options: { sizes?: boolean; estimatedBytes?: number } = {}): RepoManifestSpec {
   const sizes = options.sizes ?? true;
   const files = Object.entries(repo.files).map(([path, content]) => ({
@@ -212,12 +212,12 @@ export function syntheticManifest(repo: SyntheticRepo, options: { sizes?: boolea
   };
 }
 
-/** 把合成仓库放进假来源。 */
+/** Put the synthetic repo into the fake source. */
 export function serveRepo(source: FakeModelSource, repo: SyntheticRepo): void {
   for (const [file, content] of Object.entries(repo.files)) source.put(repo.repo, repo.revision, file, content);
 }
 
-/** 确定的伪随机字节（测试用的「权重」）。 */
+/** Deterministic pseudo-random bytes (the “weights” for tests). */
 export function syntheticBytes(length: number, seed: number): Buffer {
   const out = Buffer.alloc(length);
   let x = seed >>> 0 || 1;
@@ -230,7 +230,7 @@ export function syntheticBytes(length: number, seed: number): Buffer {
   return out;
 }
 
-/** 两个共用 VAD 组件的合成模型包（引用计数测试用）。 */
+/** Two synthetic model packages that share a VAD component (for reference-counting tests). */
 export function sharedVadBundles(asrA: SyntheticRepo, asrB: SyntheticRepo, vad: SyntheticRepo): BundleDefinition[] {
   const vadSource = { family: 'silero-vad' as const, repo: vad.repo, revision: vad.revision };
   return [
@@ -253,7 +253,7 @@ export function sharedVadBundles(asrA: SyntheticRepo, asrB: SyntheticRepo, vad: 
   ];
 }
 
-/** 直接把合成仓库装进一个模型目录：文件加 `.ccut-manifest.json`（模型目录的移动与识别测试用）。 */
+/** Install the synthetic repo directly into a model directory: its files plus `.ccut-manifest.json` (for tests of moving and recognizing model directories). */
 export async function writeSyntheticRepo(root: string, repo: SyntheticRepo): Promise<void> {
   const dir = path.join(root, ...repo.repo.split('/'));
   await fs.mkdir(dir, { recursive: true });

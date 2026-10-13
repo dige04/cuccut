@@ -15,8 +15,8 @@ export interface CodexInstall {
 }
 
 /**
- * 随桌面应用一起安装的 codex。`~/.codex/config.toml` 是所有客户端共用的，
- * 较新的客户端可能写入旧 CLI 不认识的模型，所以 PATH 上的 codex 不一定能用。
+ * The codex installed along with the desktop app. `~/.codex/config.toml` is shared by all clients,
+ * and newer clients may write models that an older CLI does not recognize, so the codex on PATH may not be usable.
  */
 const BUNDLED_CODEX = [
   '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
@@ -26,8 +26,8 @@ const BUNDLED_CODEX = [
 let located: { at: number; result: Promise<CodexInstall | null> } | null = null;
 
 /**
- * `CUCCUT_CODEX_PATH` 优先；否则在登录 shell 的 PATH 与已知安装位置里取版本最新的一个。
- * 结果缓存 30 秒，避免每次开会话都跑一遍 `--version`。
+ * `CUCCUT_CODEX_PATH` takes precedence; otherwise the newest version among the login shell's PATH and known install locations is used.
+ * The result is cached for 30 seconds, to avoid running `--version` every time a session is opened.
  */
 export function locateCodex(): Promise<CodexInstall | null> {
   if (!located || Date.now() - located.at > 30_000) {
@@ -54,7 +54,7 @@ async function findCodex(): Promise<CodexInstall | null> {
   return pickNewest(candidates, async (command) => ({ command, version: await readCodexVersion(command, env), env }));
 }
 
-/** 用户手动指定的 codex：只认这一个，不再到别处找。不存在或不可执行时为 null。 */
+/** A codex the user specified manually: only this one is accepted, and nothing else is searched for. Null when it does not exist or is not executable. */
 export async function codexAt(command: string): Promise<CodexInstall | null> {
   if (!(await isExecutable(command))) return null;
   const env = await agentEnv();
@@ -71,8 +71,8 @@ async function readCodexVersion(command: string, env: NodeJS.ProcessEnv): Promis
 }
 
 /**
- * `codex login status` 的原文（「Logged in using ChatGPT」「Logged in using an API key - sk-…」）→ 设置页与输入区脚注上的账号描述。
- * 原文里可能带打码的密钥，不往外传；认不出的写成「Codex 账号」。
+ * Raw `codex login status` output (“Logged in using ChatGPT”, “Logged in using an API key - sk-…”) → account description shown in the settings page and the input area footnote.
+ * The raw text may contain a masked key, which is not passed on outside; unrecognized text is written as 「Codex 账号」 (Codex account).
  */
 export function codexAccount(status: string): DriverText {
   const method = /Logged in using (.+)/i.exec(status)?.[1]?.trim().toLowerCase() ?? '';
@@ -84,12 +84,12 @@ export function codexAccount(status: string): DriverText {
   return DriversCodex.codexAccount();
 }
 
-/** `codexAccount` 的文字（当前语言）。 */
+/** Text of `codexAccount` (in the current language). */
 export function describeCodexAccount(status: string): string {
   return String(codexAccount(status));
 }
 
-/** `codex login status` 退出码为 0 表示已登录。 */
+/** An exit code of 0 from `codex login status` means logged in. */
 export async function readCodexLogin(install: CodexInstall): Promise<{ loggedIn: boolean; detail: string }> {
   try {
     const { stdout, stderr } = await run(install.command, ['login', 'status'], {

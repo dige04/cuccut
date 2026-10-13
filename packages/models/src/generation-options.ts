@@ -15,8 +15,7 @@ import { builtinReferenceFile, frozenVoiceOf, planLocalVoice, type LocalVoicePla
 import type { ModelChoice } from './model-selection.ts';
 
 /**
- * 本地模型提交时已经决定的声音与读出的参考录音（`clone`、克隆模型的内置音色）。不给时按请求现算声音，
- * 需要参考录音而没有给出时是调用方的错。
+ * The voice decided at submission for a local model, and the reference recording read from it (`clone`, and the built-in voices of cloning models). When not given, the voice is computed per request. Needing a reference recording without one being provided is a caller error.
  */
 export interface LocalSpeechFreeze {
   plan: LocalVoicePlan;
@@ -24,15 +23,14 @@ export interface LocalSpeechFreeze {
 }
 
 /**
- * 生成请求与模型的特性是否相容，相容时给出冻结的参数（架构设计 §6.2、§6.6）。都在提交时检查，不在执行到一半时失败；
- * 不合的一律 `invalid-request`，`details` 带上模型的限制，不悄悄改参数（不截断文本、不换声音、不改尺寸）。
+ * Checks whether a generation request is compatible with the model's capabilities, and when it is, gives the frozen parameters (architecture design §6.2, §6.6). All checks happen at submission, not partway through execution. Any incompatibility is `invalid-request`, with `details` carrying the model's limits. Parameters are never silently changed: no truncating text, no changing the voice, no changing the size.
  */
 
 export type SpeechParameters = Extract<GenerationParameters, { capability: 'synthesizeSpeech' }>;
 export type ImageParameters = Extract<GenerationParameters, { capability: 'generateImage' }>;
 export type MusicParameters = Extract<GenerationParameters, { capability: 'generateMusic' }>;
 
-/** 按 Unicode 码点计的长度（供应商的字符上限按字符算，代理对算一个）。 */
+/** Length in Unicode code points (the vendors' character limits count characters, so a surrogate pair counts as one). */
 export function codePointLength(text: string): number {
   let length = 0;
   for (const _ of text) length++;
@@ -47,7 +45,7 @@ export function speechParameters(
   const model: SpeechModelInfo = choice.model;
   const where = { providerId: choice.providerId, modelId: choice.modelId };
   if (!model.local) {
-    // 参考录音、描述与扩散旋钮只有本地模型接受。
+    // Reference recordings, descriptions and diffusion knobs are accepted only by local models.
     for (const [key, value] of [
       ['reference', request.reference],
       ['voiceDescription', request.voiceDescription],
@@ -127,7 +125,7 @@ export function speechParameters(
   return { capability: 'synthesizeSpeech', text, voice, language, format, instructions, speed, seed };
 }
 
-/** 本地模型：声音按提交时决定的方式冻结；语言、格式、说明、语速、种子与扩散旋钮按模型描述检查。 */
+/** Local models: the voice is frozen in the way decided at submission. Language, format, description, speed, seed and diffusion knobs are checked against the model's description. */
 function localSpeechParameters(
   choice: ModelChoice<'synthesizeSpeech'>,
   request: SynthesizeSpeechRequest,
@@ -181,7 +179,7 @@ function localSpeechParameters(
         : undefined;
   return {
     capability: 'synthesizeSpeech',
-    // 文本原样冻结：读音标注是文本的一部分，由引擎换成自己的写法。
+    // Text is frozen as-is. Pronunciation annotations are part of the text, and the engine converts them to its own notation.
     text: request.text,
     voice: frozenVoiceOf(plan),
     language,
@@ -250,7 +248,7 @@ export function imageParameters(choice: ModelChoice<'generateImage'>, request: G
   const seed = checkSeed(request.seed, model.acceptsSeed, choice.modelId, where);
   let steps: number | null = null;
   if (request.steps !== undefined) {
-    // 去噪步数只有本地文生图接受，范围见模型描述的 `local.steps`。
+    // Denoising step counts are accepted only by local text-to-image models. The range is given by `local.steps` in the model description.
     const range = model.local?.steps;
     if (!range) throw new RpcError('invalid-request', M.noSteps({ modelId: choice.modelId }), where);
     if (!(Number.isInteger(request.steps) && request.steps >= range.min && request.steps <= range.max)) {
@@ -274,8 +272,7 @@ function languageListed(languages: string[], tag: string): boolean {
 }
 
 /**
- * 音乐生成的参数检查与冻结：风格与歌词按模型的上限，歌曲必须有歌词、纯音乐不收歌词；时长（目标与上限）在模型的范围内，不给上限时
- * 用目标时长、再没有用模型的默认时长；编排与格式按模型声明；seed 没给时留给本地 Provider 冻结（`localMusicSeed`）；步数只有本地模型接受。
+ * Parameter checks and freezing for music generation. Style and lyrics are bounded by the model's limits. Songs must have lyrics, and instrumentals do not accept lyrics. Duration (target and maximum) must be within the model's range. When no maximum is given, the target duration is used; failing that, the model's default duration. Orchestration and format are declared by the model. If no seed is given, it is left for the local Provider to freeze (`localMusicSeed`). Step counts are accepted only by local models.
  */
 export function musicParameters(choice: ModelChoice<'generateMusic'>, request: GenerateMusicRequest, seed: number): MusicParameters {
   const model: MusicModelInfo = choice.model;

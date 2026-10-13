@@ -6,8 +6,7 @@ import { YT_DLP, BUILTIN_TOOL_MANIFESTS } from './tool-manifests.ts';
 import { commandLine, exitCodeText, toolUpdatePlan, updateSucceeded } from './tool-update-plan.ts';
 
 /**
- * 按原安装方式更新的判断（架构设计 §12.9）：在临时目录里摆出各种安装方式的文件布局（Homebrew 的 Cellar、pipx 的 venv、
- * pip 的入口脚本、独立程序与 zipapp，Windows 上 winget、Scoop、Chocolatey 的目录），只看文件，不执行任何程序。
+ * Judges the update by the original install method (architecture design §12.9). It lays out files in a temp directory for each kind of install (Homebrew's Cellar, pipx's venv, pip's entry scripts, standalone programs and zipapps; on Windows, the winget, Scoop, and Chocolatey directories). It looks only at files and does not run any program.
  */
 
 const recipe = BUILTIN_TOOL_MANIFESTS.find((m) => m.name === YT_DLP)!.update!;
@@ -37,10 +36,10 @@ async function link(target: string, file: string): Promise<string> {
 }
 
 const plan = (file: string, searchPath = '') => toolUpdatePlan(file, 'yt-dlp', recipe, searchPath, 'darwin');
-/** Windows 的判断在本机的临时目录里核对：路径仍是本机的写法，只换平台与环境变量。 */
+/** The Windows judgments are checked in a temp directory on this machine. The paths keep the local format; only the platform and the environment variables are swapped. */
 const winPlan = (file: string, env: NodeJS.ProcessEnv = {}, searchPath = '') => toolUpdatePlan(file, 'yt-dlp', recipe, searchPath, 'win32', env);
 const PE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(254)]);
-/** pip（distlib）在 Windows 上生成的入口程序：启动器 + `#!<解释器>` + 含 `__main__.py`（不压缩）的 zip。 */
+/** The entry program that pip (distlib) generates on Windows: a launcher, then `#!<interpreter>`, then a zip with `__main__.py` (stored uncompressed). */
 const launcher = (shebang: string, module = 'yt_dlp') =>
   Buffer.concat([
     PE,
@@ -156,7 +155,7 @@ describe('按原安装方式更新：判断办法', () => {
     const local = path.join(dir, 'Local');
     const pkg = await write(path.join(local, 'Microsoft', 'WinGet', 'Packages', 'yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe', 'yt-dlp.exe'), PE);
     const shim = await link(pkg, path.join(local, 'Microsoft', 'WinGet', 'Links', 'yt-dlp.exe'));
-    // winget 是 WindowsApps 里的应用执行别名，跟随它的 stat 会失败：这里用指向不存在的文件的符号链接代替。
+    // winget is an app execution alias in WindowsApps. Following it with stat fails, so a symbolic link to a file that does not exist is used here instead.
     const apps = path.join(local, 'Microsoft', 'WindowsApps');
     const winget = await link(path.join(dir, 'alias-target'), path.join(apps, 'winget.exe'));
     const args = ['upgrade', '--id', 'yt-dlp.yt-dlp', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity'];
@@ -167,7 +166,7 @@ describe('按原安装方式更新：判断办法', () => {
       runnable: true,
       reason: null,
     });
-    // PATH 里没有 WindowsApps 时看 %LOCALAPPDATA%\Microsoft\WindowsApps。
+    // When WindowsApps is not in PATH, look in %LOCALAPPDATA%\Microsoft\WindowsApps.
     expect((await winPlan(pkg, { LOCALAPPDATA: local }, path.join(dir, 'empty')))!.argv[0]).toBe(winget);
     expect(await winPlan(pkg, {}, path.join(dir, 'empty'))).toMatchObject({
       method: 'winget',
@@ -176,7 +175,7 @@ describe('按原安装方式更新：判断办法', () => {
       runnable: false,
       reason: expect.stringContaining('找不到 winget'),
     });
-    // 全机范围（Program Files\WinGet）：要管理员权限。
+    // Machine-wide scope (Program Files\WinGet): requires admin rights.
     const programFiles = path.join(dir, 'Program Files');
     const machine = await write(path.join(programFiles, 'WinGet', 'Packages', 'yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe', 'yt-dlp.exe'), PE);
     expect(await winPlan(machine, { ProgramFiles: programFiles }, apps)).toMatchObject({
@@ -185,7 +184,7 @@ describe('按原安装方式更新：判断办法', () => {
       runnable: false,
       reason: expect.stringContaining('用管理员身份打开终端执行这条命令'),
     });
-    // 别的包的目录不算。
+    // Directories of other packages do not count.
     const other = await write(path.join(local, 'Microsoft', 'WinGet', 'Packages', 'Other.Tool_Microsoft.Winget.Source_8wekyb3d8bbwe', 'yt-dlp.exe'), PE);
     expect((await winPlan(other, {}, apps))!.method).toBe('standalone');
   });
@@ -200,20 +199,20 @@ describe('按原安装方式更新：判断办法', () => {
     const argv = ['D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Unrestricted', '-File', script, 'update', 'yt-dlp'];
     expect(await winPlan(shim, { SystemRoot: 'D:\\Win' })).toEqual({ method: 'scoop', argv, command: commandLine(argv, 'win32'), runnable: true, reason: null });
     expect((await winPlan(path.join(scoop, 'apps', 'yt-dlp', 'current', 'yt-dlp.exe'), { SystemRoot: 'D:\\Win' }))!.argv).toEqual(argv);
-    // 没有设 SystemRoot、windir 时用 C:\Windows 下的。
+    // With neither SystemRoot nor windir set, use the one under C:\Windows.
     expect((await winPlan(shim))!.argv[0]).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
 
-    // shims 里没有 .shim 的 .exe 不算 Scoop。
+    // An .exe in shims without a .shim beside it does not count as Scoop.
     const bare = await write(path.join(dir, 'other', 'shims', 'yt-dlp.exe'), PE);
     expect((await winPlan(bare))!.method).toBe('standalone');
 
-    // 找不到 Scoop 本身。
+    // Scoop itself is not found.
     const lost = path.join(dir, 'lost-scoop');
     const lostShim = await write(path.join(lost, 'shims', 'yt-dlp.exe'), PE);
     await write(path.join(lost, 'shims', 'yt-dlp.shim'), '');
     expect(await winPlan(lostShim)).toMatchObject({ method: 'scoop', command: 'scoop update yt-dlp', runnable: false, reason: expect.stringContaining('找不到 Scoop 本身') });
 
-    // 全局安装：ProgramData 下，或 SCOOP_GLOBAL 指的目录。
+    // Global install: under ProgramData, or the directory SCOOP_GLOBAL points to.
     const programData = path.join(dir, 'ProgramData');
     const global = await write(path.join(programData, 'scoop', 'shims', 'yt-dlp.exe'), PE);
     await write(path.join(programData, 'scoop', 'shims', 'yt-dlp.shim'), '');
@@ -234,7 +233,7 @@ describe('按原安装方式更新：判断办法', () => {
     const reason = expect.stringContaining('Chocolatey 装的程序要管理员权限');
     const bin = await write(path.join(dir, 'ProgramData', 'chocolatey', 'bin', 'yt-dlp.exe'), PE);
     expect(await winPlan(bin)).toEqual({ method: 'chocolatey', argv: ['choco', 'upgrade', 'yt-dlp'], command: 'choco upgrade yt-dlp', runnable: false, reason, reasonRef: { key: 'rcExternalTools.chocolateyAdmin' } });
-    // ChocolateyInstall 指的目录不叫 chocolatey 时也认得。
+    // Also recognized when the directory ChocolateyInstall points to is not named chocolatey.
     const root = path.join(dir, 'choco-root');
     const lib = await write(path.join(root, 'lib', 'yt-dlp', 'tools', 'yt-dlp.exe'), PE);
     expect(await winPlan(lib, { ChocolateyInstall: root })).toMatchObject({ method: 'chocolatey', runnable: false });
@@ -242,7 +241,7 @@ describe('按原安装方式更新：判断办法', () => {
   });
 
   it('Windows 的 pip：从启动器里的 #! 一行读出解释器，用它执行 -m pip；不在解释器旁边的加 --user；指向 pipx 的 venv 按 pipx', async () => {
-    // 系统里装的 Python：Scripts 在解释器旁边。路径带空格时 #! 一行加双引号。
+    // Python installed on the system: Scripts sits beside the interpreter. When the path has spaces, the #! line is wrapped in double quotes.
     const python = await write(path.join(dir, 'Py thon313', 'python.exe'), PE);
     const exe = await write(path.join(dir, 'Py thon313', 'Scripts', 'yt-dlp.exe'), launcher(`"${python}"`));
     expect(await winPlan(exe)).toEqual({
@@ -252,21 +251,21 @@ describe('按原安装方式更新：判断办法', () => {
       runnable: true,
       reason: null,
     });
-    // venv：解释器与入口在同一个 Scripts 里。
+    // venv: the interpreter and the entry are in the same Scripts directory.
     const venvPython = await write(path.join(dir, 'venv', 'Scripts', 'python.exe'), PE);
     const venvExe = await write(path.join(dir, 'venv', 'Scripts', 'yt-dlp.exe'), launcher(venvPython));
     expect((await winPlan(venvExe))!.argv).toEqual([venvPython, '-m', 'pip', 'install', '-U', 'yt-dlp[default]']);
     // pip install --user：%APPDATA%\Python\Python313\Scripts。
     const userExe = await write(path.join(dir, 'Roaming', 'Python', 'Python313', 'Scripts', 'yt-dlp.exe'), launcher(`"${python}"`));
     expect((await winPlan(userExe))!.argv).toEqual([python, '-m', 'pip', 'install', '-U', '--user', 'yt-dlp[default]']);
-    // pipx 复制出来的入口：解释器在 pipx 的 venv 里。
+    // An entry copied by pipx: the interpreter is in pipx's venv.
     const pipxPython = await write(path.join(dir, 'pipx', 'venvs', 'yt-dlp', 'Scripts', 'python.exe'), PE);
     const pipxExe = await write(path.join(dir, '.local', 'bin', 'yt-dlp.exe'), launcher(pipxPython));
     expect(await winPlan(pipxExe)).toMatchObject({ method: 'pipx', command: 'pipx upgrade yt-dlp', runnable: false });
-    // 解释器不在了：给 py 启动器的命令。
+    // The interpreter is gone: gives the py launcher command.
     const gone = await write(path.join(dir, 'gone', 'Scripts', 'yt-dlp.exe'), launcher(path.join(dir, 'gone', 'python.exe')));
     expect(await winPlan(gone)).toMatchObject({ method: 'pip', command: "py -m pip install -U 'yt-dlp[default]'", runnable: false });
-    // 别的模块的启动器、uv 的启动器：判断不了。
+    // A launcher from another module, or uv's launcher: cannot be judged.
     const other = await write(path.join(dir, 'other', 'Scripts', 'yt-dlp.exe'), launcher(python, 'other_tool'));
     expect(await winPlan(other)).toBeNull();
     const uv = await write(path.join(dir, 'uvbin', 'yt-dlp.exe'), Buffer.concat([PE, Buffer.from('UVSC', 'latin1')]));

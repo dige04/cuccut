@@ -34,10 +34,9 @@ import { deleteDubGroup } from './timeline-commands.ts';
 import { useDocumentBody } from './use-document-body.ts';
 
 /**
- * 一条配音轨此刻的句子：时间线上的块、计划里没合成的、排队重配的，以及它们的计数。行头名字的提示与 ⋯ 的头部共用这一份
- * （设计稿两处都是 `trackLine(d.blocks)`），两边的句数才对得上。
+ * The sentences of one dub track right now: the blocks on the timeline, those not yet synthesized in the plan, those queued for re-dub, and their counts. The name tooltip on the track header and the ⋯ header share this one (the design draft uses `trackLine(d.blocks)` in both places), so the sentence counts on the two match.
  */
-/** 切换配音组播放来源的修改名。 */
+/** Name of the edit that switches the dub group's playback source. */
 const HEAR_LABEL = { dub: EditLabel.hearDub, original: EditLabel.hearOriginal, both: EditLabel.hearBoth };
 
 export function useDubTrack(group: DubGroup, sequence: Sequence, documents: Record<Id, DocumentRecord>, blocks: ReadonlyMap<Id, DubBlock>) {
@@ -51,10 +50,9 @@ export function useDubTrack(group: DubGroup, sequence: Sequence, documents: Reco
 }
 
 /**
- * 配音行头的 ⋯（设计稿 timeline-dub.jsx `DubHead` / `DubHeadMenu`）：头部写这条轨的句数、没合成、过快、静音与重生成中；
- * 听配音 / 听原声 / 两者都听（当前那一项打勾，model/dub-takes.ts 从轨道、静音与闪避反推）；重新生成 N 句…（没合成的与过快的，
- * 打开「改译文并重配」）；重新配音…（翻到工具页的翻译配音，带上这种语言）；移除这组配音（原来在块菜单里）。
- * 重新生成与重新配音是 AI 入口：Web 表面不放。切音源是一笔可撤销的编辑（轨道或实例的静音、闪避的开关），不跑模型。
+ * The ⋯ on the dub track header (design draft timeline-dub.jsx `DubHead` / `DubHeadMenu`): the header gives the track's sentence count, unsynthesized, too fast, muted, and regenerating;
+ * Listen to dub / Listen to original / Listen to both (the current one is checked; model/dub-takes.ts derives it from the track, mute, and ducking); Regenerate N sentences… (the unsynthesized and too-fast ones; opens “Edit translation and re-dub”); Re-dub… (goes to the tool page's translation dub, carrying this language); Remove this dub group (this used to be in the block menu).
+ * Regenerate and re-dub are AI entry points and are not offered on the Web surface. Switching the source is a reversible edit (toggling mute or ducking on the track or the instance) and runs no model.
  */
 export function DubHeadMenu({
   group,
@@ -64,7 +62,7 @@ export function DubHeadMenu({
   blocks,
 }: {
   group: DubGroup;
-  /** 行头的名字（「配音 · 英语」）。 */
+  /** Track header name (“配音 · 英语”, Dub · English). */
   label: string;
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
@@ -90,7 +88,7 @@ export function DubHeadMenu({
     ...(editable && !groupLocked(sequence, group.groupId) ? [] : ['remove']),
   ];
 
-  /** 配音计划正文：先看文档缓存，没有再读。 */
+  /** Body of the dub plan: check the document cache first, and read it only if it isn't there. */
   const readBody = async (record: DocumentRecord | null): Promise<unknown> => {
     if (!record) return null;
     const cached = runtime.videos.documents.peek(record.id, record.currentRevision);
@@ -104,7 +102,7 @@ export function DubHeadMenu({
     let groups;
     try {
       groups = await Promise.all(dubGroups(sequence).map(async (g) => sourceGroup(g.groupId, await readBody(planRecordOf(documents, g.groupId)))));
-      // 读计划的这一会儿视频可能变了：按最新的序列算操作。
+      // The video may have changed while the plan was being read: compute the operations against the latest sequence.
       const snapshot = useVideo.getState().video?.state?.video;
       const fresh = snapshot ? rootSequence(snapshot) : null;
       if (fresh?.id === sequence.id) latest = fresh;

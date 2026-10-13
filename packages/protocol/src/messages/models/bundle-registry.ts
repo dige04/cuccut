@@ -14,7 +14,7 @@ import { pl } from './bundle-registry.pl.ts';
 import { tr } from './bundle-registry.tr.ts';
 import { vi } from './bundle-registry.vi.ts';
 
-/** `packages/models/src/bundle-registry.ts` 给人看的文字：模型包名字与许可摘要（模型名、许可证名、仓库名不翻译）。 */
+/** `packages/models/src/bundle-registry.ts`: text shown to people for model bundle names and licence summaries (model names, licence names and repository names are not translated). */
 const en = {
   speakerDiarizationLabel: 'Speaker diarization',
   qwen3AsrLicense: 'The upstream Qwen3-ASR model card says Apache-2.0, commercial use allowed; the MLX quantized bundle keeps the same license',

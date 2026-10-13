@@ -34,7 +34,7 @@ import { withTextMeasure } from "./text-measure.ts";
 import { useInsertVisual, type InsertRequest } from "./use-insert-visual.ts";
 import { ELEMENTS_COPY as EL } from "./elements-copy.ts";
 
-/** 六列网格：字样卡占三列（两张一行），场景卡占两列（三张一行）。 */
+/** Six-column grid: font-style cards span three columns (two per row), scene cards span two columns (three per row). */
 const grid = style({
   display: "grid",
   gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
@@ -62,7 +62,7 @@ const face = style({
   height: { default: 78, isScene: "auto" },
   aspectRatio: { isScene: "[16 / 9]" },
 });
-/** 卡上画的是导出画面的样子：深色渐变底（原型 .tpm）。 */
+/** The card shows what the exported picture looks like: a dark gradient background (prototype .tpm). */
 const FACE_BACKGROUND = "linear-gradient(135deg, #3B4252 0%, #1F2430 100%)";
 const badge = style({
   position: "absolute",
@@ -94,7 +94,7 @@ const addRow = style({
   marginBottom: 4,
 });
 
-/** 一条预设在提示里的名字：取它第一条文字。 */
+/** A preset's name in the notice: use its first text item. */
 function presetName(preset: TextPreset): string {
   const text = preset.layers.find((layer) => layer.kind === "text")?.text ?? "";
   const line = text.split("\n")[0]!.trim();
@@ -152,9 +152,9 @@ export function useAddTextBox(sequence: Sequence): () => void {
 }
 
 /**
- * 文字面板（原型 §13.5，51 条预设）：「添加文本框」加四类预设；「全部」每类只摆前几格。
- * 点一格就在播放头处新建这一组文字（多层的错峰出现）并选中第一条文字。框由渲染内核量：内核还没载入或正在重新载入时
- * 等它，再按那时的序列建（等的期间序列可能变了）；内核载入失败就提示，不建。
+ * Text panel (prototype §13.5, 51 presets): “添加文本框” (add text box) adds four categories of presets; “全部” (all) shows only the first few cells of each category.
+ * Clicking a cell creates this group of text at the playhead (multi-layer text appears staggered) and selects the first text item. The box is measured by the render kernel: if the kernel has not loaded yet or is reloading, wait for it,
+ * then create using the sequence as it is at that point (the sequence may have changed while waiting); if the kernel fails to load, show a notice and create nothing.
  */
 export function TextPanel({ sequence }: { sequence: Sequence }) {
   const [category, setCategory] = useState<TextCategory>("all");

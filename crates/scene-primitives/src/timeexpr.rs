@@ -1,27 +1,27 @@
-//! TimeExpr 解析（规范 §5.2 / 附录 A EBNF）。
-//! 求值发生在 Resolver（需要 cue 表与 clip 窗口）；此处只做语法解析。
+//! TimeExpr parsing (spec §5.2 / Appendix A EBNF).
+//! Evaluation happens in the Resolver (it needs the cue table and clip windows); this file only does the syntax parsing.
 
 use anyhow::{Result, bail};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeExpr {
-    /// 全片绝对秒
+    /// Absolute seconds on the whole timeline
     Abs(f64),
-    /// @scene / #clip 锚点 + 偏移
+    /// @scene / #clip anchor + offset
     Anchor {
-        /// '@' 场景 或 '#' clip
+        /// '@' scene or '#' clip
         sigil: char,
         id: String,
         mark: Mark,
-        /// 绝对秒偏移（不随伸缩）
+        /// Absolute seconds offset (does not scale)
         offset: f64,
     },
-    /// ~词锚点（规范 §5.2）：锚到某媒体转录中的一个词，经 §18.6 映射求值。
+    /// ~word anchor (spec §5.2): anchors to a word in a media transcript, evaluated through the §18.6 mapping.
     Word {
-        /// 媒体 id 或引用该媒体的 clip id
+        /// Media id, or the id of a clip that references that media
         ref_id: String,
         word_id: String,
-        /// true = 词尾 t1；false = 词首 t0（缺省）
+        /// true = word end t1; false = word start t0 (default)
         mark_end: bool,
         offset: f64,
     },
@@ -31,7 +31,7 @@ pub enum TimeExpr {
 pub enum Mark {
     Start,
     End,
-    /// 场景时长百分比（0..100），仅 @scene 合法
+    /// Percentage of the scene duration (0..100), valid only for @scene
     Pct(f64),
 }
 
@@ -53,8 +53,8 @@ pub fn parse(s: &str) -> Result<TimeExpr> {
     }
 
     // ident: [A-Za-z_][A-Za-z0-9_-]*
-    // '-' 既是 ident 合法字符又是偏移符号（"@growth-0.4"），
-    // 与参考实现的正则回溯一致：从最长 ident 往回试，直到尾部可完整解析。
+    // '-' is both a legal ident character and an offset sign ("@growth-0.4"),
+    // consistent with the regex backtracking of the reference implementation: try from the longest ident backwards until the tail parses completely.
     let rest = &s[1..];
     let mut max_id = 0;
     for (i, c) in rest.char_indices() {
@@ -89,9 +89,9 @@ pub fn parse(s: &str) -> Result<TimeExpr> {
     bail!("非法 TimeExpr: \"{s}\"")
 }
 
-/// `~refId:wordId[:start|:end][±offset]`（附录 A word-anchor）。
-/// 词 id 合法字符含 `.` 与 `-`，因此负偏移只允许出现在显式 `:start`/`:end` 之后；
-/// 正偏移（`+`）不与词 id 字符冲突，可直接跟随。
+/// `~refId:wordId[:start|:end][±offset]` (Appendix A word-anchor).
+/// Legal word id characters include `.` and `-`, so a negative offset is only allowed after an explicit `:start`/`:end`;
+/// a positive offset (`+`) does not conflict with word id characters and can follow directly.
 fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
     // refId: [A-Za-z_][A-Za-z0-9_-]*
     let mut id_end = 0;
@@ -113,7 +113,7 @@ fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
     let Some(after_ref) = rest[id_end..].strip_prefix(':') else {
         bail!("非法 TimeExpr: \"{whole}\"（词锚点须为 ~refId:wordId 形态）");
     };
-    // wordId: [A-Za-z0-9][A-Za-z0-9._-]*（贪婪；'-' 属于词 id，不当负偏移切分）
+    // wordId: [A-Za-z0-9][A-Za-z0-9._-]* (greedy; '-' belongs to the word id and is not split off as a negative offset)
     let mut w_end = 0;
     for (i, c) in after_ref.char_indices() {
         let ok = if i == 0 {
@@ -170,7 +170,7 @@ fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
     })
 }
 
-/// 解析 ident 之后的部分：[.mark][±offset]，必须整段耗尽。
+/// Parses the part after the ident: [.mark][±offset]; it must consume the whole remainder.
 fn parse_tail(tail: &str, sigil: char) -> Option<(Mark, f64)> {
     let mut mark = Mark::Start;
     let mut tail = tail;
@@ -182,7 +182,7 @@ fn parse_tail(tail: &str, sigil: char) -> Option<(Mark, f64)> {
             mark = Mark::End;
             tail = t;
         } else {
-            // 百分比：数字 + '%'
+            // Percentage: number + '%'
             let num_end = after
                 .char_indices()
                 .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
@@ -301,13 +301,13 @@ mod tests {
             parse("~interview:g3.7:start-0.2").unwrap(),
             word("interview", "g3.7", false, -0.2)
         );
-        // 正偏移可直接跟随（'+' 不是词 id 字符）
+        // A positive offset can follow directly ('+' is not a word id character)
         assert_eq!(parse("~m:g3.7+0.2").unwrap(), word("m", "g3.7", false, 0.2));
         assert_eq!(
             parse("~m:g3.7 + 0.2").unwrap(),
             word("m", "g3.7", false, 0.2)
         );
-        // 编辑新造词 id 含 '-'：整段吸收进词 id
+        // Word ids newly created in the editor contain '-': the whole segment is absorbed into the word id
         assert_eq!(
             parse("~m:w1a2b-3").unwrap(),
             word("m", "w1a2b-3", false, 0.0)
@@ -316,7 +316,7 @@ mod tests {
             parse("~m:w1a2b-3:end-0.1").unwrap(),
             word("m", "w1a2b-3", true, -0.1)
         );
-        // clip 限定形态
+        // clip-qualified form
         assert_eq!(
             parse("~clip-a:g0.1").unwrap(),
             word("clip-a", "g0.1", false, 0.0)
@@ -325,12 +325,12 @@ mod tests {
 
     #[test]
     fn parse_word_anchor_errors() {
-        // 无显式 mark 时 " - 0.15" 无法与词 id 区分 → 拒绝
+        // Without an explicit mark, " - 0.15" cannot be told apart from a word id → rejected
         assert!(parse("~m:g3.7 - 0.15").is_err());
-        assert!(parse("~m").is_err()); // 缺 :wordId
+        assert!(parse("~m").is_err()); // Missing :wordId
         assert!(parse("~m:").is_err());
-        assert!(parse("~:g3.7").is_err()); // 缺 refId
-        assert!(parse("~m:g3.7:middle").is_err()); // 未知 mark（:m 不是词 id 字符续段）
+        assert!(parse("~:g3.7").is_err()); // Missing refId
+        assert!(parse("~m:g3.7:middle").is_err()); // Unknown mark (:m is not a continuation of word id characters)
         assert!(parse("~m:g3.7:end+x").is_err());
     }
 }

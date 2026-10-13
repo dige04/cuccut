@@ -14,9 +14,9 @@ import { pl } from './templates-copy.pl.ts';
 import { tr } from './templates-copy.tr.ts';
 import { vi } from './templates-copy.vi.ts';
 
-/** `cuccut templates` 的文案（英文是键与类型的来源，译文在 `templates-copy.<语言>.ts`）。 */
+/** Copy for `cuccut templates` (English is the source of the keys and types; translations are in `templates-copy.<lang>.ts`). */
 const en = {
-  /** `cuccut templates --help` 的正文。 */
+  /** Body of `cuccut templates --help`. */
   help: `Usage:
   cuccut templates                 List available creation templates (built-in and in <CUCCUT_HOME>/templates),
                                    plus template folders that failed to load and why

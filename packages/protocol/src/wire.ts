@@ -3,14 +3,14 @@ import type { Topic } from './events.ts';
 import { localizeText, refOf, type Localized, type MessageRef } from './message-ref.ts';
 import './messages/index.ts';
 
-/** 业务协议版本（`eventProtocolVersion`，架构设计 §13.3）。与 Runtime 版本独立演进。 */
+/** Business protocol version (`eventProtocolVersion`, architecture design §13.3). It evolves independently of the Runtime version. */
 export const PROTOCOL_VERSION = '0.6';
 export const RUNTIME_VERSION = '0.5.0';
 
 export type ClientKind = 'desktop' | 'cli' | 'agent';
 
 /**
- * 连接的第一帧。令牌只在这里出现，不放进 URL（架构设计 §4.2、§12.2）。
+ * First frame of the connection. The token appears only here and is not put in the URL (architecture design §4.2, §12.2).
  */
 export interface HelloFrame {
   type: 'hello';
@@ -49,7 +49,7 @@ export interface EventFrame {
   event: unknown;
 }
 
-/** 连接级错误（握手失败、协议不兼容）。发完即关闭连接。 */
+/** Connection-level error (handshake failure, protocol incompatibility). The connection is closed right after it is sent. */
 export interface FatalFrame {
   type: 'fatal';
   error: RpcErrorPayload;
@@ -58,8 +58,8 @@ export interface FatalFrame {
 export type ServerFrame = WelcomeFrame | ResponseFrame | EventFrame | FatalFrame;
 
 /**
- * 错误合同。错误必须说明真实状态，不能用一个「失败」盖住所有情况
- * （文档约定「合同的状态」）。
+ * Error contract. An error must state the real status, not use one “failed” to cover every case
+ * (documented convention: “the contract's status”).
  */
 export type RpcErrorCode =
   | 'unauthenticated'
@@ -72,17 +72,17 @@ export type RpcErrorCode =
   | 'driver-unavailable'
   | 'driver-failed'
   | 'busy'
-  /** 方法与参数都合法，但这个版本还做不到（例如还没接上的附件通道）；不是参数错。 */
+  /** The method and parameters are both valid, but this version cannot do it yet (for example, an attachment channel that is not connected yet). This is not an argument error. */
   | 'unsupported'
-  /** 视频引擎进程不可用（没有构建、启动失败或崩溃后正在重启）。 */
+  /** The video engine process is unavailable (not built, failed to start, or restarting after a crash). */
   | 'engine-unavailable'
   | 'internal';
 
 export interface RpcErrorPayload {
   code: RpcErrorCode;
-  /** 发出时 Runtime 当前语言的文字。 */
+  /** Text in the Runtime's current language at the time it is emitted. */
   message: string;
-  /** `message` 的消息引用（message-ref.ts）：客户端按自己的语言重新生成。第三方原话、旧版本发来的错误没有。 */
+  /** Message reference (message-ref.ts) for `message`: the client regenerates it in its own language. Third-party verbatim text and errors from older versions have none. */
   messageRef?: MessageRef;
   details?: unknown;
 }
@@ -92,7 +92,7 @@ export class RpcError extends Error {
   readonly details: unknown;
   readonly messageRef: MessageRef | undefined;
 
-  /** `message` 给 `Localized`（`defineCatalog` 的文案）时带上引用，客户端按自己的语言显示。 */
+  /** When `message` is a `Localized` (text from `defineCatalog`), attach the reference so the client shows it in its own language. */
   constructor(code: RpcErrorCode, message: string | Localized, details?: unknown, messageRef?: MessageRef) {
     super(String(message));
     this.name = 'RpcError';
@@ -110,7 +110,7 @@ export class RpcError extends Error {
     };
   }
 
-  /** 收到的错误：有能认出的引用时 `message` 换成本进程当前语言的文字。 */
+  /** Received error: when a recognizable reference is present, `message` is replaced with the text in this process's current language. */
   static from(payload: RpcErrorPayload): RpcError {
     return new RpcError(payload.code, localizeText(payload.message, payload.messageRef), payload.details, payload.messageRef);
   }

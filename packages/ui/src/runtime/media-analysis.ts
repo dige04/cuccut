@@ -1,7 +1,7 @@
 import type { MediaPeaks, MediaThumbnail, VersionRef } from '@cuccut/protocol';
 import { decodePeaks, peakScale } from '../model/clip-media.ts';
 
-/** 解好的波形峰值。`scale` 是显示用的放大倍数（见 `peakScale`）。 */
+/** Decoded waveform peaks. `scale` is the magnification used for display (see `peakScale`). */
 export interface Peaks {
   binsPerSecond: number;
   peaks: Uint8Array;
@@ -17,13 +17,13 @@ export interface MediaAnalysisRequests {
 
 export interface MediaAnalysisCacheOptions {
   now?: () => number;
-  /** 延后执行（轮询峰值、合并通知）。 */
+  /** Deferred execution (polling peaks, coalescing notifications). */
   schedule?: (run: () => void, ms: number) => void;
-  /** 同时在路上的缩略图请求。 */
+  /** Thumbnail requests in flight at the same time. */
   concurrency?: number;
-  /** 最多记住多少张缩略图（data URL，一张几 KB）。 */
+  /** Maximum number of thumbnails remembered (data URLs, a few KB each). */
   maxThumbnails?: number;
-  /** 排队的缩略图最多这么多：再多就丢掉最早排进来的（还看得见的话下次画的时候再排）。 */
+  /** At most this many thumbnails may be queued; beyond that the earliest-queued are dropped (they are queued again next time they are drawn, if still visible). */
   maxQueue?: number;
 }
 
@@ -39,23 +39,23 @@ type ThumbnailEntry =
   | { state: 'ready'; url: string }
   | { state: 'failed'; at: number };
 
-/** 峰值失败之后隔这么久再取，每失败一次翻倍，最多隔一分钟（同 `AssetCache`）。 */
+/** After a failed peaks fetch, wait this long before fetching again; the delay doubles on each failure, up to one minute (same as `AssetCache`). */
 const RETRY_MS = 3000;
 const RETRY_MAX_MS = 60_000;
-/** 一张缩略图失败之后隔这么久才再要。 */
+/** After a thumbnail fails, wait this long before requesting it again. */
 const THUMBNAIL_RETRY_MS = 15_000;
-/** 一个素材还一张都没取到就连续失败这么多次，不再给它要缩略图（没有解码器之类）。 */
+/** If an asset has not yielded a single thumbnail and fails this many times in a row, stop requesting thumbnails for it (for example, when there is no decoder). */
 const THUMBNAIL_DEAD_AFTER = 4;
-/** 合并通知：一批缩略图到了只重画一次。 */
+/** Coalesced notification: when a batch of thumbnails arrives, redraw only once. */
 const NOTIFY_MS = 30;
 
 /**
- * 素材分析结果的缓存（时间线的波形与胶片条）。结果由 Runtime 算（`media.peaks`、`media.thumbnail`），
- * 素材版本的内容不会再变，按「素材@版本」记住，换视频时清空。
+ * Cache of media analysis results (the timeline's waveforms and filmstrips). The Runtime computes the results (`media.peaks`, `media.thumbnail`);
+ * the content of an asset version never changes, so it is remembered under “asset@version” and cleared when the video changes.
  *
- * - `peaks` / `thumbnail` 在渲染里调：没有就去取，取到了通知订阅者重画。
- * - 峰值没算完时 Runtime 回 `pending`，按它给的间隔再问。
- * - 缩略图后要的先取（滚动之后看得见的那几格），同时只发几个请求；记住的张数有上限，最久没用的先丢。
+ * - `peaks` / `thumbnail` are called during rendering: if there is no result, fetch it; when it arrives, notify subscribers to redraw.
+ * - While peaks are still being computed, the Runtime replies `pending`, and the caller asks again after the interval it gives.
+ * - Thumbnails needed first are fetched first (the cells that just scrolled into view), with only a few requests sent at once; the number of remembered thumbnails is capped, and the least recently used are dropped first.
  */
 export class MediaAnalysisCache {
   readonly #requests: MediaAnalysisRequests;
@@ -83,7 +83,7 @@ export class MediaAnalysisCache {
     this.#maxQueue = options.maxQueue ?? 200;
   }
 
-  /** 素材的波形峰值。 */
+  /** The waveform peaks of an asset. */
   peaks(asset: VersionRef): PeaksState {
     const key = assetKeyOf(asset);
     const entry = this.#peaks.get(key);
@@ -98,7 +98,7 @@ export class MediaAnalysisCache {
     return current.state === 'no-audio' ? { state: 'no-audio' } : { state: 'loading' };
   }
 
-  /** 素材在源时间 `at`（秒）的缩略图地址；还没有时返回 null 并去取。 */
+  /** Thumbnail address of the asset at source time `at` (seconds); returns null and fetches if there is none yet. */
   thumbnail(asset: VersionRef, at: number): string | null {
     const assetKey = assetKeyOf(asset);
     const health = this.#health.get(assetKey);
@@ -106,7 +106,7 @@ export class MediaAnalysisCache {
     const key = `${assetKey}#${Math.round(at * 1000)}`;
     const entry = this.#thumbnails.get(key);
     if (entry?.state === 'ready') {
-      // 最近用过的挪到最后，超出上限时从前面丢。
+      // Move recently used items to the end; when over the limit, drop from the front.
       this.#thumbnails.delete(key);
       this.#thumbnails.set(key, entry);
       return entry.url;
@@ -118,7 +118,7 @@ export class MediaAnalysisCache {
       const dropped = this.#queue.shift()!;
       if (this.#thumbnails.get(dropped)?.state === 'queued') this.#thumbnails.delete(dropped);
     }
-    // 渲染里排进来的一批排完再发。
+    // Send a batch queued during rendering only after the whole batch has been queued.
     queueMicrotask(() => this.#pump());
     return null;
   }
@@ -128,10 +128,10 @@ export class MediaAnalysisCache {
     return () => this.#listeners.delete(listener);
   };
 
-  /** 每次通知加一（给 `useSyncExternalStore`）。 */
+  /** Incremented on each notification (for `useSyncExternalStore`). */
   version = (): number => this.#version;
 
-  /** 换了视频：都丢掉，路上的请求回来也不收。 */
+  /** Video changed: drop everything; in-flight requests are ignored when they return. */
   clear(): void {
     this.#generation++;
     this.#peaks.clear();

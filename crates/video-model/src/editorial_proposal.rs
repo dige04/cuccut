@@ -1,7 +1,7 @@
-//! 剪辑提案的正文（视频格式规范 §6.2，文档 `kind: 'editorial-proposal'`）：一个源素材上建议剪掉的区间。
+//! Body of an editorial proposal (video format spec §6.2, document `kind: 'editorial-proposal'`): ranges suggested for removal from a source material.
 //!
-//! 引擎的 `proposeCuts` 按转写检测口癖与长停顿写出它，`acceptCutSuggestions` 把接受的建议编译成剪口（`ref` 是建议的 ID）
-//! 并把它们标成 `accepted`；`putDocument` 写入时用 [`editorial_proposal_body_problems`] 核对。
+//! The engine's `proposeCuts` writes it by detecting verbal tics and long pauses in the transcript; `acceptCutSuggestions` compiles the accepted suggestions into cuts (`ref` is the suggestion's ID)
+//! and marks them `accepted`; `putDocument` checks it with [`editorial_proposal_body_problems`] on write.
 
 use editor_semantics::Ratio;
 use message_ref::{Text, msg};
@@ -18,13 +18,13 @@ pub const EDITORIAL_PROPOSAL_KIND: &str = "editorial-proposal";
 pub struct EditorialProposalBody {
     /// `cuccut.editorial-proposal/1`。
     pub schema: String,
-    /// 每秒的刻度数。
+    /// Ticks per second.
     pub timescale: u64,
-    /// `source-asset`：时刻在被剪素材的时钟上。
+    /// `source-asset`: times are on the clock of the edited material.
     pub clock: String,
-    /// 检测读的转写版本：转写之后改过时建议过期，不能再接受。
+    /// The transcript version the detection read: if the transcript is edited afterwards, the suggestions expire and can no longer be accepted.
     pub speech_ref: ProposalSpeechRef,
-    /// 按 `t0` 排序。
+    /// Sorted by `t0`.
     pub suggestions: Vec<Suggestion>,
 }
 
@@ -38,9 +38,9 @@ pub struct ProposalSpeechRef {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SuggestionKind {
-    /// 口癖：`wordIds` 是被剪的词。
+    /// Verbal tic: `wordIds` are the words to cut.
     Filler,
-    /// 长停顿：压缩到保留的长度，`afterWordId` 是停顿之前的词。
+    /// Long pause: compressed to the kept length; `afterWordId` is the word before the pause.
     Pause,
 }
 
@@ -51,7 +51,7 @@ pub enum SuggestionStatus {
     Accepted,
 }
 
-/// 一条建议：建议剪掉的源区间 `[t0, t1)`，整数刻度写成十进制字符串。
+/// One suggestion: the source range `[t0, t1)` suggested for removal; integer ticks are written as decimal strings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {
@@ -59,35 +59,35 @@ pub struct Suggestion {
     pub kind: SuggestionKind,
     pub t0: String,
     pub t1: String,
-    /// 区间里的词（口癖）。
+    /// The words in the range (verbal tic).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub word_ids: Vec<Id>,
-    /// 停顿之前的词（停顿）。
+    /// The word before the pause (pause).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after_word_id: Option<Id>,
-    /// 区间里的文字：口癖是这些词的原文，停顿为空。
+    /// The text in the range: for a verbal tic, the original text of these words; for a pause, empty.
     pub text: String,
-    /// 理由：检测器写的短句，原样展示。
+    /// Reason: the short sentence written by the detector, shown as is.
     pub reason: String,
-    /// 补充说明，如停顿压缩前后的长度。
+    /// Additional notes, such as the length of a pause before and after compression.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub detail: String,
-    /// 0–1；检测器给不出时没有。
+    /// 0–1; absent when the detector cannot give one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
     pub status: SuggestionStatus,
 }
 
 impl Suggestion {
-    /// 建议在源素材时钟上的精确区间（秒）。刻度不是整数时为 `None`。
+    /// The exact range of the suggestion on the source material's clock (seconds). `None` when the ticks are not integers.
     pub fn range(&self, timescale: u64) -> Option<(Ratio, Ratio)> {
         let at = |ticks: &str| Ratio::new(ticks.parse::<i128>().ok()?, i128::from(timescale));
         Some((at(&self.t0)?, at(&self.t1)?))
     }
 }
 
-/// 正文与 §6.2 不合的地方（空表示合）：形状、`schema`、`clock`、`timescale`、刻度、`0 ≤ t0 < t1`、按 `t0` 排序、
-/// `confidence` 在 0–1 之间、建议的 id 不重复。建议之间可以重叠。
+/// Places where the body does not match §6.2 (empty means it matches): shape, `schema`, `clock`, `timescale`, ticks, `0 ≤ t0 < t1`, sorted by `t0`;
+/// `confidence` between 0 and 1, and suggestion ids not repeated. Suggestions may overlap each other.
 pub fn editorial_proposal_body_problems(body: &Value) -> Vec<Text> {
     let parsed = match serde_json::from_value::<EditorialProposalBody>(body.clone()) {
         Ok(parsed) => parsed,
@@ -176,7 +176,7 @@ mod tests {
         let mut far = one("a", "0", "5");
         far["confidence"] = json!(2);
         assert_eq!(editorial_proposal_body_problems(&body(json!([far]))).len(), 1);
-        // 不认识的建议类别（重复片段还没有检测器）：形状不对。
+        // Unknown suggestion category (there is no detector yet for repeated segments): wrong shape.
         let repeat = json!([{ "id": "a", "kind": "repeat", "t0": "0", "t1": "1", "text": "", "reason": "", "status": "pending" }]);
         assert_eq!(editorial_proposal_body_problems(&body(repeat)).len(), 1);
     }

@@ -1,4 +1,4 @@
-//! 合成模式、后处理与 pose 缓冲（设计 §5.1）。
+//! Composite modes, post-processing and the pose buffer (design §5.1).
 
 use crate::value::{MOTION_PROP_COUNT, MOTION_PROPS, MotionValue, PropertyId};
 
@@ -9,8 +9,7 @@ pub enum CompositeMode {
     Multiply,
 }
 
-/// 属性归一化。`opacity` 在写回时 `clamp(0,1)`、`blur` 在写回时 `max(0)`，
-/// 与 `motion.rs:825`/`:831` 一致。
+/// Property normalization. `opacity` is clamped to `clamp(0,1)` on write-back, and `blur` to `max(0)` on write-back. This matches `motion.rs:825` / `:831`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PostOp {
     None,
@@ -33,7 +32,7 @@ impl PostOp {
         }
     }
 
-    /// 通道 → 缺省后处理（`motion.rs::sample_slot` 的两处收敛）。
+    /// Channel → default post-processing (the two convergence points in `motion.rs::sample_slot`).
     pub fn for_property(prop: &str) -> Self {
         match prop {
             "opacity" => Self::ClampUnit,
@@ -43,22 +42,20 @@ impl PostOp {
     }
 }
 
-/// 属性缺省合成模式（规范 §7.7 / 设计 §5.1）。
+/// The default composite mode for a property (spec §7.7 / design §5.1).
 ///
-/// **只用于新配方**：`timeline.*@1` / `bcf.*@1` 的 lowering 一律显式 `Replace`
-/// （ADR-M08 冻结），legacy 四槽的「最后一条通道赢」因此逐位不变。
+/// **Only for new recipes**: the lowering of `timeline.*@1` / `bcf.*@1` always uses an explicit `Replace` (ADR-M08, frozen). This keeps the legacy four-slot "last channel wins" rule bit-for-bit unchanged.
 pub fn default_mode(prop: &str) -> CompositeMode {
     match prop {
         "x" | "y" | "dx" | "dy" | "rotation" | "rotationX" | "rotationY" | "skewX" | "skewY"
         | "blur" => CompositeMode::Add,
         "scale" | "scaleX" | "scaleY" | "opacity" => CompositeMode::Multiply,
-        // color / backgroundColor / clipPath / pathMorph / borderRadius / pathDraw /
-        // textCount / reveal / volume / cam：枚举、文本、颜色与离散值一律 replace。
+        // color / backgroundColor / clipPath / pathMorph / borderRadius / pathDraw / textCount / reveal / volume / cam: enum, text, color and discrete values are always replace.
         _ => CompositeMode::Replace,
     }
 }
 
-/// 合成的单位元（`base`）。`multiply` 轨的单位元是 1，`add` 轨是 0。
+/// The identity element of the composition (`base`). The identity of a `multiply` track is 1, and that of an `add` track is 0.
 pub fn identity_for(prop: &str) -> f64 {
     match default_mode(prop) {
         CompositeMode::Multiply => 1.0,
@@ -66,29 +63,28 @@ pub fn identity_for(prop: &str) -> f64 {
     }
 }
 
-/// 逐式来自 `motion.rs:48-51`（`AnimationPose::mixed_toward_identity` 的单通道切片）。
+/// Each formula comes from `motion.rs:48-51` (the single-channel slice of `AnimationPose::mixed_toward_identity`).
 pub fn mix_toward_identity(value: f64, identity: f64, amount: f64) -> f64 {
     let amount = amount.clamp(0.0, 1.0);
     identity + (value - identity) * amount
 }
 
-/// 采样输出缓冲。槽位固定，采样期不分配堆内存。
+/// Sampling output buffer. The slots are fixed, so no heap memory is allocated during sampling.
 ///
-/// 折叠顺序是规范 §7.7 / 设计 §5.1 的固定序：
-/// `base → replace（order 大者胜）→ add 求和 → multiply 求积 → 属性归一 / clamp`。
+/// The fold order is the fixed sequence from spec §7.7 / design §5.1:
+/// `base → replace (higher order wins) → add sum → multiply product → property normalization / clamp`.
 ///
-/// **逐位不变性**：阶段 1 的每条轨都是单 replace，折叠退化为
-/// `post(replace.unwrap_or(base))`，与旧实现的 `write(post(value))` 完全相同。
+/// **Bit-for-bit invariance**: each track in stage 1 is a single replace, so the fold reduces to `post(replace.unwrap_or(base))`, exactly the same as the old implementation's `write(post(value))`.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Slot {
-    /// 轨没有覆盖该刻时的落点（`PropertyTrack::base`）。
+    /// The resting value of a track when it has no output at this moment (`PropertyTrack::base`).
     base: Option<MotionValue>,
-    /// `(值, order)`，order 大者胜；同 order 时后写者胜（声明序）。
+    /// `(value, order)`. The higher order wins. With equal orders, the later write wins (declaration order).
     replace: Option<(MotionValue, u32)>,
     add: Option<f64>,
     mul: Option<f64>,
     post: PostOp,
-    /// 有没有 add / multiply 参与。没有时**跳过整条折叠**，保证旧路径逐位不变。
+    /// Whether any add or multiply contribution is present. When none is, **the whole fold is skipped**, which keeps the old path bit-for-bit unchanged.
     composed: bool,
 }
 
@@ -102,8 +98,7 @@ impl Slot {
         if !self.composed {
             return Some(value);
         }
-        // 离散 / 颜色值不参与 add / multiply（规范 §7.7：枚举、文本、布尔一律
-        // replace + step）。取不到标量就原样返回。
+        // Discrete and color values do not take part in add or multiply (spec §7.7: enums, text and booleans are always replace + step). If no scalar can be obtained, the value is returned as-is.
         let Some(mut raw) = value.as_f64() else {
             return Some(value);
         };
@@ -129,7 +124,7 @@ impl PoseBuffer {
         }
     }
 
-    /// 写入一条**轨**的采样值。`post` 在折叠之后施加（规范 §7.7 第 5 步）。
+    /// Write the sampled value of one **track**. `post` is applied after the fold (spec §7.7, step 5).
     pub fn write(
         &mut self,
         prop: &PropertyId,
@@ -168,7 +163,7 @@ impl PoseBuffer {
         }
     }
 
-    /// 该轨在此刻没有输出时的落点（`PropertyTrack::base`）。
+    /// The resting value of this track when it has no output at this moment (`PropertyTrack::base`).
     pub fn write_base(&mut self, prop: &PropertyId, value: MotionValue) {
         let Some(index) = prop.slot() else {
             return;
@@ -187,7 +182,7 @@ impl PoseBuffer {
         self.get(prop).and_then(|value| value.as_f64())
     }
 
-    /// 缺省值回落：`scalar(prop)` 缺席时返回通道 identity。
+    /// Default fallback: when `scalar(prop)` is absent, return the channel identity.
     pub fn scalar_or(&self, prop: &str, identity: f64) -> f64 {
         self.scalar(prop).unwrap_or(identity)
     }
@@ -281,7 +276,7 @@ mod tests {
         write(&mut buf, "scale", 1.06, CompositeMode::Multiply, 1);
         assert_eq!(buf.scalar("scale"), Some(0.8 * 1.06));
 
-        // replace 先赢，add / multiply 再叠上去
+        // replace wins first, then add and multiply are stacked on top
         let mut buf = PoseBuffer::identity();
         write(&mut buf, "y", 100.0, CompositeMode::Replace, 0);
         write(&mut buf, "y", 5.0, CompositeMode::Add, 1);
@@ -294,8 +289,7 @@ mod tests {
         let mut buf = PoseBuffer::identity();
         write(&mut buf, "opacity", 0.8, CompositeMode::Replace, 0);
         write(&mut buf, "opacity", 0.9, CompositeMode::Add, 1);
-        // 先 clamp 会得到 1.0 + 0.9 = 1.9 再 clamp = 1.0；这里也是 1.0，
-        // 但中间量 1.7 未被截断——差别在 multiply 参与时可见。
+        // Clamping first would give 1.0 + 0.9 = 1.9, then clamp = 1.0. Here the result is also 1.0, but the intermediate value 1.7 is not truncated. The difference shows when multiply takes part.
         assert_eq!(buf.scalar("opacity"), Some(1.0));
 
         let mut buf = PoseBuffer::identity();
@@ -306,8 +300,7 @@ mod tests {
 
     #[test]
     fn a_single_replace_track_is_untouched_by_the_fold() {
-        // 阶段 0/1 的全部 golden 依赖这一条：没有 add / multiply 参与时，
-        // 折叠必须**原样返回**写入值（含非标量）。
+        // The stage 0/1 goldens depend on this: when neither add nor multiply takes part, the fold must **return the written value as-is** (including non-scalars).
         let mut buf = PoseBuffer::identity();
         buf.write(
             &PropertyId::known("color"),

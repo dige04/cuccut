@@ -1,15 +1,15 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/QuantizedTextDecoder.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/QuantizedTextDecoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3 文本解码器：GQA 注意力 + Q/K RMSNorm + RoPE + SwiGLU，按 256 步扩容的 KV cache。
+//! Qwen3 text decoder: GQA attention + Q/K RMSNorm + RoPE + SwiGLU, with a KV cache that grows in 256-step increments.
 //!
-//! 除转写用的 `decode` 外，`large`、`load_with_prefix`、`forward_hidden*`、`final_norm`、`into_hidden_prenorm`、
-//! `forward_fused_hidden` 移植自 v2：1.7B 配置给 Qwen3-ASR 1.7B，其余给本地语音合成（Thinker 层融合）
-//! 与本地文生图（Qwen 文本编码器）批次。
+//! Besides `decode`, which is used for transcription, `large`, `load_with_prefix`, `forward_hidden*`, `final_norm`, `into_hidden_prenorm`,
+//! and `forward_fused_hidden` were ported from v2. The 1.7B config goes to Qwen3-ASR 1.7B, and the rest go to the local speech synthesis batch (Thinker layer fusion)
+//! and the local text-to-image batch (Qwen text encoder).
 
 use super::WeightStore;
 use super::layers::{Projection, RmsNorm, TokenEmbedding};
@@ -24,7 +24,7 @@ use mlx_rs::transforms;
 
 const KV_CACHE_STEP: i32 = 256;
 
-/// 按固定步长扩容的 KV cache，避免自回归生成时每个 token 都复制整段缓存。
+/// KV cache that grows in fixed steps, so autoregressive generation does not copy the whole cache for every token.
 pub struct KvCache {
     keys: Option<Array>,
     values: Option<Array>,
@@ -116,7 +116,7 @@ pub struct TextDecoderConfig {
     pub bits: i32,
     pub rope_theta: f32,
     pub rms_eps: f32,
-    /// Qwen3/MOSS 在 RoPE 前使用 Q/K RMSNorm；Qwen2.5-Omni 不使用。
+    /// Qwen3/MOSS apply Q/K RMSNorm before RoPE; Qwen2.5-Omni does not.
     pub qk_norm: bool,
 }
 
@@ -216,7 +216,7 @@ impl TextAttention {
             (key, value)
         };
         let scale = (self.config.head_dim as f32).sqrt().recip();
-        // causal 模式由 MLX 内核自行推导 query 相对 key 末尾的偏移，无需在 host 侧物化掩码。
+        // In causal mode the MLX kernel derives by itself the offset of the query relative to the end of the keys, so no mask needs to be materialized on the host side.
         let mask_mode = match (mask, causal) {
             (Some(mask), _) => Some(ScaledDotProductAttentionMask::Array(mask)),
             (None, true) => Some(ScaledDotProductAttentionMask::Causal),
@@ -297,7 +297,7 @@ impl TextLayer {
         self.mlp.append_quantized_arrays(arrays);
     }
 
-    /// 让本层的量化权重开始异步求值（惰性权重即开始从文件读入）。
+    /// Starts async evaluation of this layer's quantized weights (lazy weights begin reading in from the file).
     fn prefetch(&self) -> Result<()> {
         let mut arrays = Vec::new();
         self.append_quantized_arrays(&mut arrays);
@@ -353,7 +353,7 @@ impl TextDecoder {
                 cache.len()
             );
         }
-        // 单 token 解码天然无需掩码；多 token prefill 交给 MLX 的 causal 模式，不再物化掩码数组。
+        // Single-token decoding naturally needs no mask; multi-token prefill hands off to MLX's causal mode and no longer materializes a mask array.
         let causal = attention_mask.is_none() && sequence > 1;
         let mut hidden = input_embeddings.clone();
         for (layer, layer_cache) in self.layers.iter().zip(cache.iter_mut()) {
@@ -362,12 +362,11 @@ impl TextDecoder {
         Ok((self.norm.forward(&hidden)?, cache))
     }
 
-    /// 无 KV cache 的一次性 prefill，返回末层归一化后的 hidden（**不过** lm_head）。
+    /// One-shot prefill without a KV cache. Returns the hidden states after the final normalization (**without** passing through lm_head).
     ///
-    /// 供 embedding / reranker 这类"只前向一次、只读某个位置"的用法：`decode`
-    /// 走 [`KvCache`]，而 KV cache 只支持 batch size 1，无法批量左 padding。
-    /// `attention_mask` 是可广播到 `[batch, heads, sequence, sequence]` 的**加性**
-    /// 掩码（自带因果与 padding 语义）；为 `None` 时交给 MLX 的 causal 模式。
+    /// For uses like embedding or reranker that "forward once and read only one position": `decode`
+    /// goes through [`KvCache`], and the KV cache only supports batch size 1, so it cannot batch with left padding.
+    /// `attention_mask` is an **additive** mask broadcastable to `[batch, heads, sequence, sequence]` (it carries the causal and padding semantics itself); when it is `None`, MLX's causal mode is used.
     pub fn forward_hidden(&self, input_embeddings: &Array, attention_mask: Option<&Array>) -> Result<Array> {
         let sequence = input_embeddings.dim(1);
         let causal = attention_mask.is_none() && sequence > 1;
@@ -378,8 +377,8 @@ impl TextDecoder {
         self.norm.forward(&hidden)
     }
 
-    /// 与 [`Self::forward_hidden`] 相同，但返回末层 decoder 的原始输出，**不过**最终 RMSNorm。
-    /// Qwen-Image 的文本条件取的就是这一层。
+    /// Same as [`Self::forward_hidden`], but returns the raw output of the last decoder layer, **without** the final RMSNorm.
+    /// Qwen-Image's text conditioning takes exactly this layer.
     pub fn forward_hidden_prenorm(&self, input_embeddings: &Array) -> Result<Array> {
         let causal = input_embeddings.dim(1) > 1;
         let mut hidden = input_embeddings.clone();
@@ -393,9 +392,9 @@ impl TextDecoder {
         self.norm.forward(hidden)
     }
 
-    /// 流式版 [`Self::forward_hidden_prenorm`]：消耗 decoder，嵌入后先丢掉嵌入表，之后逐层
-    /// 求值、立即丢掉该层。配合尚未求值的惰性 safetensors 权重，同时常驻的只有相邻两层；
-    /// 下一层的量化权重在当前层计算时由 CPU stream 异步读入。
+    /// Streaming version of [`Self::forward_hidden_prenorm`]: consumes the decoder, drops the embedding table after embedding, then evaluates
+    /// layer by layer, dropping each layer immediately after. Combined with the not-yet-evaluated lazy safetensors weights, only two adjacent layers are resident at a time;
+    /// the next layer's quantized weights are read in asynchronously on the CPU stream while the current layer computes.
     pub fn into_hidden_prenorm(self, input_ids: &Array) -> Result<Array> {
         let Self { embedding, layers, .. } = self;
         let mut hidden = embedding.forward(input_ids)?;
@@ -416,9 +415,9 @@ impl TextDecoder {
         Ok(hidden)
     }
 
-    /// Qwen2.5-Omni Thinker 的 ELMo 层融合：36 个 decoder hidden state
-    /// 分别做无仿射 LayerNorm，再以 checkpoint 中的 softmax 权重求和。
-    /// 文本-only 输入的位置三元组相同，普通 Qwen RoPE 与 MRoPE 数值等价。
+    /// Qwen2.5-Omni Thinker's ELMo-style layer fusion: the 36 decoder hidden states
+    /// each get a non-affine LayerNorm, then are summed with the softmax weights from the checkpoint.
+    /// For text-only input the position triples are identical, so ordinary Qwen RoPE and MRoPE are numerically equivalent.
     pub fn forward_fused_hidden(&self, input_embeddings: &Array, layer_weights: &Array, layer_scale: &Array) -> Result<Array> {
         if layer_weights.dim(0) != self.layers.len() as i32 {
             bail!(
@@ -456,7 +455,7 @@ impl TextDecoder {
         self.embedding.as_linear(hidden)
     }
 
-    /// 提前物化运行时量化的权重，使原始 bf16 权重在首轮 prefill 前即可释放。
+    /// Materializes runtime-quantized weights early, so the original bf16 weights can be released before the first prefill round.
     pub fn eval_quantized(&self) -> Result<()> {
         let mut arrays = Vec::new();
         self.embedding.append_quantized_arrays(&mut arrays);
@@ -470,7 +469,7 @@ impl TextDecoder {
     }
 }
 
-/// 旧的 host 侧掩码构造，仅保留给 causal 模式的数值对拍测试使用。
+/// The old host-side mask construction, kept only for the numerical comparison tests of causal mode.
 #[cfg(test)]
 fn causal_mask(sequence: i32, cache_length: i32) -> Result<Array> {
     let total = sequence + cache_length;
@@ -545,8 +544,8 @@ mod tests {
         );
     }
 
-    /// causal 模式与 host 侧掩码在带 cache offset（query 对齐到 key 末尾）时必须逐元素一致。
-    /// dtype 需覆盖生产的 bf16：MLX 的 SDPA 按 dtype 分派内核，f32 通过不代表 bf16 通过。
+    /// Causal mode and the host-side mask must match element by element when there is a cache offset (query aligned to the end of the keys).
+    /// The dtype must cover production's bf16: MLX's SDPA dispatches kernels by dtype, so passing in f32 does not imply passing in bf16.
     fn assert_causal_matches_array_mask(
         heads: i32,
         kv_heads: i32,
@@ -575,7 +574,7 @@ mod tests {
             fast::scaled_dot_product_attention(&query, &key, &value, scale, ScaledDotProductAttentionMask::Array(&mask), None).unwrap();
         let actual = fast::scaled_dot_product_attention(&query, &key, &value, scale, ScaledDotProductAttentionMask::Causal, None).unwrap();
         assert_eq!(reference.shape(), actual.shape());
-        // 统一升到 f32 再比较，避免 bf16 下的规约与 item 取值精度损失掩盖真实偏差。
+        // Upcast everything to f32 before comparing, so that bf16 reduction and item-read precision loss do not mask a real deviation.
         let reference = reference.as_dtype(Dtype::Float32).unwrap();
         let actual = actual.as_dtype(Dtype::Float32).unwrap();
         let deviation = ops::abs(ops::subtract(&reference, &actual).unwrap())
@@ -594,13 +593,12 @@ mod tests {
         let _mlx_test_guard = crate::backend::mlx::runtime::MLX_TEST_LOCK
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        // 小尺寸：无 cache、有 cache 两种 offset。
+        // Small sizes: two offset cases, without cache and with cache.
         assert_causal_matches_array_mask(4, 2, 5, 0, 8, Dtype::Float32, 1e-4);
         assert_causal_matches_array_mask(4, 2, 5, 7, 8, Dtype::Float32, 1e-4);
-        // 生产几何：GQA 16/8、head_dim 128、prefill 512 且带非零 cache。
+        // Production geometry: GQA 16/8, head_dim 128, prefill 512 with a non-zero cache.
         assert_causal_matches_array_mask(16, 8, 512, 1_024, 128, Dtype::Float32, 1e-4);
-        // 生产 dtype：bf16 只有 8 位尾数，容差放到 2e-2；若 causal 对齐到 key 起点而非末尾，
-        // 偏差会是 1 量级，远超该阈值，足以判别语义错误。
+        // Production dtype: bf16 has only 8 mantissa bits, so the tolerance is set to 2e-2. If causal aligned to the start of the keys instead of the end, the deviation would be on the order of 1, far above this threshold, which is enough to catch a semantic error.
         assert_causal_matches_array_mask(4, 2, 5, 7, 8, Dtype::Bfloat16, 2e-2);
         assert_causal_matches_array_mask(16, 8, 512, 1_024, 128, Dtype::Bfloat16, 2e-2);
     }

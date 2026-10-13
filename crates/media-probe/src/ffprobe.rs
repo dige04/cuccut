@@ -1,8 +1,6 @@
-//! 可选兜底：一次 `ffprobe` 调用拿齐纯 Rust 路径解不了的容器（AVI / TS / FLV /
-//! HEIC…）的同一组字段。
+//! An optional fallback: one `ffprobe` call gets the same set of fields for the containers the pure Rust path cannot handle (AVI / TS / FLV / HEIC…).
 //!
-//! **二进制路径由调用方给**：本模块只负责执行传进来的那一个可执行文件，不做
-//! 任何 PATH 搜索（见 crate 顶部说明）。
+//! **The binary path is supplied by the caller.** This module only runs the one executable passed in, and does no PATH search at all (see the note at the top of the crate).
 
 use std::path::Path;
 use std::process::Command;
@@ -14,7 +12,7 @@ use crate::{
     AudioInfo, MediaKind, MediaProbe, VideoInfo, display_dimensions_for_rotation, is_image_path,
 };
 
-/// Windows 下避免为子进程弹出控制台窗口。
+/// On Windows, avoids opening a console window for the child process.
 fn hide_console(command: &mut Command) {
     #[cfg(windows)]
     {
@@ -26,7 +24,7 @@ fn hide_console(command: &mut Command) {
     let _ = command;
 }
 
-/// 用指定的 `ffprobe` 可执行文件探测。
+/// Probes using the specified `ffprobe` executable.
 pub fn probe_with_ffprobe(path: &Path, ffprobe: &Path) -> Result<MediaProbe> {
     let mut command = Command::new(ffprobe);
     command
@@ -147,7 +145,7 @@ pub fn probe_with_ffprobe(path: &Path, ffprobe: &Path) -> Result<MediaProbe> {
     })
 }
 
-/// `"30000/1001"` / `"30"` → f64；0 或非法 → `None`。
+/// `"30000/1001"` / `"30"` → f64; 0 or invalid → `None`.
 fn parse_frame_rate(raw: &str) -> Option<f64> {
     let fps = match raw.split_once('/') {
         Some((numerator, denominator)) => {

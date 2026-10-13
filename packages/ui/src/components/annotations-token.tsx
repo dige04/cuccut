@@ -12,7 +12,7 @@ import { itemKey, type AnnotatedEditorKind } from '../model/workspace.ts';
 import { useShell } from '../state/shell-store.ts';
 import { useEditorReveal } from '../state/editor-bridge.ts';
 
-/** composer 上方与 Space 条目的引用标签同一个样子（composer.tsx `tag`）；已发送消息里只是一行淡色的标记。 */
+/** Looks the same as the reference tag above the composer and in Space entries (composer.tsx `tag`); in a sent message it is just a faint one-line marker. */
 const token = style({
   display: 'flex',
   alignItems: 'center',
@@ -25,7 +25,7 @@ const token = style({
   color: { default: 'gray-600', isDraft: 'gray-800' },
   boxSizing: 'border-box',
 });
-/** 原型 home-slides.css `.home-slides-notes__list` 起的那几样。 */
+/** The styles that start from the prototype's home-slides.css `.home-slides-notes__list`. */
 const list = style({ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 360, margin: 0, padding: 0, overflow: 'auto', listStyleType: 'none' });
 const item = style({ display: 'flex', alignItems: 'start', gap: 4 });
 const jump = style({
@@ -63,8 +63,8 @@ const panel = style({ width: 360, maxWidth: '[calc(100vw - 32px)]' });
 const closeIcon = iconStyle({ size: 'XS' });
 
 /**
- * 列表里的一条：草稿里的带自己的 id；已发送的用 `sentAnnotationId` 拼的 id，跳转时临时交给编辑器。
- * `target` 是 deck、设计稿或设计系统目录；`section` 是设计系统里它所在的章节。
+ * One item in the list: drafts carry their own id; sent ones use an id built from `sentAnnotationId`, which is temporarily handed to the editor when jumping.
+ * `target` is the deck, design or design system directory; `section` is the section of the design system it belongs to.
  */
 export interface AnnotationTokenItem {
   id: string;
@@ -78,11 +78,11 @@ export interface AnnotationTokenItem {
 const COPY = { slides: SLIDES, design: DESIGN, 'design-system': DESIGN_SYSTEM } satisfies Record<AnnotatedEditorKind, unknown>;
 
 /**
- * 标注的引用标签（幻灯片 docs/design/slides §8.2 第 5、6 步、设计稿 docs/design/canvas §8.2、设计系统 §10.6；
- * 移植自原型 home-slides-notes.jsx `SlideNotesToken`、home-design-notes.jsx `DesignNotesToken`、
- * home-design-system-notes.jsx `DesignSystemNotesToken`）：composer 上方与已发送的消息里都是「幻灯片标注 · N 条」
- * 「设计稿标注 · N 条」「设计系统标注 · N 条」。点开列出各条：位置、批注，点一条打开（或切到）那份文档并跳到那个位置。
- * 给了 `onRemove` 是草稿，可以逐条移除或全部移除；不给是已发送的消息，只读。
+ * Reference tag for annotations (slides docs/design/slides §8.2 steps 5 and 6, design docs/design/canvas §8.2, design system §10.6;
+ * ported from the prototype's home-slides-notes.jsx `SlideNotesToken`, home-design-notes.jsx `DesignNotesToken`,
+ * and home-design-system-notes.jsx `DesignSystemNotesToken`). Above the composer and in sent messages it reads “幻灯片标注 · N 条” (slide annotations · N items),
+ * “设计稿标注 · N 条” (design annotations · N items), or “设计系统标注 · N 条” (design system annotations · N items). Opening it lists each item: its position and comment; clicking one opens (or switches to) that document and jumps to that position.
+ * When `onRemove` is given it is a draft, and items can be removed one by one or all at once; without it, it is a sent message and is read-only.
  */
 export function AnnotationsToken({
   kind,

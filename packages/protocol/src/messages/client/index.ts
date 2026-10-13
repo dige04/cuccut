@@ -1,5 +1,5 @@
 /**
- * `packages/client` 给人看的文字（message-ref.ts）。每个区域一个 `<区域>.ts` 与它的译文 `<区域>.zh-Hans.ts`，在这里 export 登记。
- * 包外按 `@cuccut/protocol/messages/client` 引用。
+ * Text shown to people for `packages/client` (message-ref.ts). Each area has one `<area>.ts` and its translation `<area>.zh-Hans.ts`, registered here by export.
+ * Outside the package, it is referenced as `@cuccut/protocol/messages/client`.
  */
 export * from './client-connection.ts';

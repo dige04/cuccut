@@ -25,7 +25,7 @@ import { useEntryThumbnail } from '../use-entry-thumbnail.ts';
 import { cardVars, VideoJobRows, VideoStatusBadge } from './video-card-rows.tsx';
 import { T } from './thread-copy.ts';
 
-/** 文件是一行卡片（原型 apprail.css `.chat-output` :127-134）：图标、名字与说明、末尾的去向。 */
+/** A file is a one-line card (prototype apprail.css `.chat-output` :127-134): icon, name and description, and the destination at the end. */
 const outputCard = style({
   display: 'flex',
   alignItems: 'center',
@@ -64,9 +64,8 @@ const outputIcon = style({
 const outputBody = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
 const outputName = style({ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 /**
- * 视频是一张竖排的视频卡（产品设计 §3.2.2、§6.5，原型 apprail.css `.chat-output--movie` :142-155、home-session.jsx
- * `SessionArtifactCard`）：上面 16:9 的画面，能播的点了在卡里原地播，不能播的在右侧打开；下面名字、状态词与时长，旁边一个「打开编辑器」；
- * 再下面一件活一行。
+ * A video is a vertical video card (product design §3.2.2, §6.5; prototype apprail.css `.chat-output--movie` :142-155, home-session.jsx `SessionArtifactCard`): a 16:9 picture on top. If it can play, clicking plays it in place in the card; if not, it opens on the right. Below are the name, status word and duration, with an “打开编辑器” (Open in editor) button beside them.
+ * Below that, one row for a task still running.
  */
 const videoCard = style({
   display: 'flex',
@@ -86,8 +85,8 @@ const videoCard = style({
   color: 'gray-900',
 });
 /**
- * 视频的画面区：有真帧画真帧；拿不到画「暂无缩略图」，源目录不在了画「找不到源文件」；右下角是时长。
- * 能在卡里播的，指针移上去或键盘聚焦时中间出现播放钮（`cc-vcard-play`，video-cards.css）。
+ * The picture area of the video: shows the real frame when there is one; when none can be obtained, shows “暂无缩略图” (No thumbnail); when the source folder is gone, shows “找不到源文件” (Source file not found). The duration is in the bottom-right corner.
+ * For a video that can play in the card, a play button appears in the centre when the pointer moves over it or it gets keyboard focus (`cc-vcard-play`, video-cards.css).
  */
 const videoPreview = style({
   position: 'relative',
@@ -136,7 +135,7 @@ const videoDuration = style({
   borderRadius: 'full',
   backgroundColor: '[rgb(0 0 0 / 0.6)]',
   font: 'code-xs',
-  // font 简写会设置 code 文字色，角标的对比色必须在它之后。
+  // The `font` shorthand sets the code text colour, so the badge's contrast colour must come after it.
   color: 'white',
 });
 const videoFooter = style({ display: 'flex', alignItems: 'center', gap: 12, paddingX: 16, paddingY: 12 });
@@ -147,9 +146,9 @@ const outputDetail = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden
 const outputTail = style({ display: 'flex', flexShrink: 0, color: 'gray-600' });
 
 /**
- * 视频卡的真帧：用 Space 的封面（`space.thumbnail`，宽够卡片在 2 倍屏上画），不用打开编辑器。
- * Space 还没有封面、编辑器开着这部视频时，先画当前快照的封面（`media.thumbnail`，胶片条那一档，较糊）；
- * 编辑器里改了封面那一帧，等条目更新后 Space 的封面跟上。
+ * The real frame on the video card uses the Space's cover (`space.thumbnail`, wide enough to draw the card on 2x displays), so the editor does not need to be opened.
+ * When the Space has no cover yet and the editor has this video open, the current snapshot's cover is drawn first (`media.thumbnail`, the filmstrip size, a bit blurry).
+ * If the cover frame was changed in the editor, the Space's cover catches up once the entry is updated.
  */
 function usePoster(output: ConversationOutput): string | null {
   const thumbnail = useEntryThumbnail(output.kind === 'video' ? output.entry : null);
@@ -166,7 +165,7 @@ function usePoster(output: ConversationOutput): string | null {
   return frame ? media.thumbnail(frame.asset, frame.at) : null;
 }
 
-/** 编辑器开着这部视频、文档里已经有转录（`speech`）：视频卡的「已转录」不必等 Job 记录。 */
+/** When the editor has this video open and the document already has a transcript (`speech`), the video card's “已转录” (Transcribed) does not have to wait for the Job record. */
 function useTranscribedInEditor(output: ConversationOutput): boolean {
   const target = output.video;
   return useVideo(
@@ -179,9 +178,9 @@ function useTranscribedInEditor(output: ConversationOutput): boolean {
 }
 
 /**
- * 一项产物（原型 home-session.jsx `SessionArtifactCard`）：会话头「产物」弹层、线程里的视频卡与每条回复下面的文件共用。
- * 视频在右边的编辑器里打开；视频文件与音频在功能区播放；其它文件在文件夹中显示。`onOpen` 在打开之前调（弹层用来收起）。
- * `jobIds`：视频卡下面列的活（线程里与弹层里都是整条会话在这部视频上的）。
+ * One artifact (prototype home-session.jsx `SessionArtifactCard`): shared by the “产物” (Artifacts) popover in the session header, the video card in the thread, and the files under each reply.
+ * A video opens in the editor on the right; video files and audio play in the feature area; other files are shown in the folder. `onOpen` is called before opening (the popover uses it to close itself).
+ * `jobIds`: the tasks listed under the video card (in the thread and in the popover, these are all the tasks for this whole session on this video).
  */
 export function OutputCard({
   output,
@@ -197,7 +196,7 @@ export function OutputCard({
   onOpen?: () => void;
 }) {
   const transcribed = useTranscribedInEditor(output);
-  // 只取状态词这两个字，进度每一跳不重画整张卡（行自己订阅）。
+  // Only take the two characters of the status word; progress ticks do not redraw the whole card (the row subscribes on its own).
   const statusKey = useJobs((s) => {
     if (output.kind !== 'video') return '';
     const status = videoStatus(output.id, s.jobs, transcribed);
@@ -228,7 +227,7 @@ export function OutputCard({
     .filter(Boolean)
     .join(' · ');
 
-  // 卡里原地播：开合只是这张卡自己的事；点了播放才取媒体句柄，挂上播放器后自动开播。
+  // Playing in place in the card: expanding and collapsing is only this card's concern; the media handle is fetched only when play is clicked, and playback starts automatically once the player is attached.
   const [inline, setInline] = useState<MediaHandle | null>(null);
   const [loading, setLoading] = useState(false);
   const runtime = useRuntime();
@@ -243,26 +242,26 @@ export function OutputCard({
   const activate = () => {
     onOpen?.();
     const shell = useShell.getState();
-    // 原型 home-session.jsx `SessionArtifactCard`：非视频的产物都在功能区的单文件标签里打开；
-    // 那里视频与音频用播放器，其余用查看器，预览不了的如实说明并给「在文件夹中显示」。
+    // Prototype home-session.jsx `SessionArtifactCard`: non-video artifacts all open in a single-file tab in the feature area; there, video and audio use the player and the rest use the viewer. Anything that can't be previewed is stated plainly, with “在文件夹中显示” (Show in folder) offered.
+    //
     if (output.video) shell.openVideo(output.video);
-    // 幻灯片在功能区的幻灯片标签里预览、编辑与标注（docs/design/slides §8.1）。
+    // Slides are previewed, edited and annotated in the slides tab in the feature area (docs/design/slides §8.1).
     else if (slides) shell.openPane({ kind: 'slides', target: slides.target });
-    // 设计稿同样在功能区的设计稿标签里打开（docs/design/canvas §8.1）。
+    // Design drafts likewise open in the design tab in the feature area (docs/design/canvas §8.1).
     else if (design) shell.openPane({ kind: 'design', target: design.target });
-    // 设计系统在功能区的设计系统标签里打开（docs/design/canvas §10.6）。
+    // Design systems open in the design-system tab in the feature area (docs/design/canvas §10.6).
     else if (designSystem) shell.openPane({ kind: 'design-system', target: designSystem.target });
     else if (!isVideo && output.entry) shell.openPane({ kind: 'file', target: { conversationId, path: output.entry.relPath } });
   };
 
   if (isVideo) {
     const showPoster = poster !== null && !missing;
-    // 还不知道在哪打开（流程新建的视频，Space 还没扫到）：画面与「打开编辑器」先置灰。
+    // Not yet known where to open it (a video newly created by a flow that the Space has not scanned yet): the picture and “打开编辑器” (Open in editor) are greyed out for now.
     const canOpen = output.video !== null;
-    // 卡里原地播（产品设计 §3.2.2）：有真帧、Space 里有这条视频、源文件在；播的是视频的原片，不是剪过的版本。
+    // Playing in place in the card (product design §3.2.2): requires a real frame, the video to be in the Space, and the source file to exist; what plays is the video's original footage, not an edited version.
     const canPlay = showPoster && output.entry !== null;
     return (
-      // 画面区里的播放钮与「暂无缩略图」是画面内容，保留自己的尺寸（产品设计 §2.1）
+      // The play button and “暂无缩略图” (No thumbnail) in the picture area are picture content, so they keep their own size (product design §2.1)
       <div className={`${videoCard} ${cardVars}`} data-cc-icons="own">
         {inline ? (
           <div className="cc-vcard-player">

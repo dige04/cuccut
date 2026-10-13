@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CAPTION_FPS, CaptionLoop } from './caption-loop.ts';
 
-// Node 没有 ImageData，补一个装下像素的。
+// Node has no ImageData, so add one that holds the pixels.
 vi.stubGlobal('ImageData', function (data: Uint8ClampedArray, width: number, height: number) {
   return { data, width, height };
 });
 
-/** 4×2 的透明画面，第一行第 `x` 个像素不透明。 */
+/** A transparent 4×2 frame; the x-th pixel of the first row is opaque. */
 function image(x: number): ImageData {
   const data = new Uint8ClampedArray(4 * 2 * 4);
   data.set([255, 0, 0, 255], x * 4);
@@ -33,15 +33,15 @@ describe('字幕样式卡一圈的帧', () => {
     expect(loop.put(1, image(1))).toBe(first);
     expect(loop.get(1)).toBe(first);
     expect(loop.put(2, image(2))).not.toBe(first);
-    // 不相邻的也认得出（第一圈因时钟预算跳过的格，后来补画）。
+    // Cells that are not adjacent are still recognized (cells skipped in the first lap because of the clock budget, drawn later).
     expect(loop.put(9, image(1))).toBe(first);
-    // 画过的格不再收。
+    // Cells already drawn are not collected again.
     expect(loop.put(0, image(3))).toBe(first);
   });
 
   it('一圈每格都画过且都是同一份画面才算不动；清掉之后从头算', () => {
     const loop = new CaptionLoop(4 / CAPTION_FPS);
-    // 跳着画：一圈都是同一份画面照样认得出。
+    // Drawn out of order: a full lap of the same frame is still recognized.
     for (const index of [0, 2, 1]) loop.put(index, image(1));
     expect(loop.still).toBe(false);
     loop.put(3, image(1));

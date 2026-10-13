@@ -15,18 +15,18 @@ import { tr } from './video-cards-copy.tr.ts';
 import { vi } from './video-cards-copy.vi.ts';
 
 /**
- * 视频卡上收起的「之前的 N 项」（产品设计 §3.2.2；原型 agent-cards.jsx `MovieJobRows`）。英文是键与类型的来源，
- * 译文在 `video-cards-copy.<语言>.ts`。卡上其余的字还在 `copy.ts` 的 `VIDEO_CARD_COPY`。
+ * The collapsed “之前的 N 项” (“N earlier items”) on the video card (product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`). The English is the source of the keys and types;
+ * the translations are in `video-cards-copy.<language>.ts`. The rest of the card's text is still in `VIDEO_CARD_COPY` in `copy.ts`.
  */
 const en = {
-  /** 收起那一行的文字。 */
+  /** The text of the collapsed row. */
   earlier: (count: number) => `${count} earlier`,
-  /** 收起的里有失败且带补救或重试的：右侧警示图标后的字。 */
+  /** For a collapsed group that contains a failure with a remedy or retry: the text after the warning icon on the right. */
   pending: (count: number) => (count === 1 ? '1 needs attention' : `${count} need attention`),
-  /** 有待处理时按钮的读屏名：两段字分开念会连成一串，合成一句。 */
+  /** Screen-reader name of the button when items are pending: the two text segments would run together if read separately, so they are combined into one sentence. */
   earlierWithPending: (count: number, pending: number) =>
     `${count} earlier, ${pending === 1 ? '1 needs attention' : `${pending} need attention`}`,
-  /** 展开后的列表。 */
+  /** The expanded list. */
   earlierList: 'Earlier items',
 };
 

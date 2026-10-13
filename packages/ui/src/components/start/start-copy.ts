@@ -14,7 +14,7 @@ import { pl } from './start-copy.pl.ts';
 import { tr } from './start-copy.tr.ts';
 import { vi } from './start-copy.vi.ts';
 
-/** 起始页流程（链接来源、下载工具卡、建视频的跟进、模板库）的文案。英文写在这里，译文在 `start-copy.zh-Hans.ts`。 */
+/** Copy for the start page flows (link source, download-tool card, follow-up after creating a video, template library). English is written here; the translations are in `start-copy.zh-Hans.ts`. */
 const en = {
   downloader: {
     consentFailed: (message: string) => `Couldn’t record your consent: ${message}`,
@@ -71,7 +71,7 @@ const en = {
     change: 'Change…',
   },
   flow: {
-    /** 原因的标题与正文接成一句。 */
+    /** Joins a reason's title and body into one sentence. */
     reason: (parts: readonly string[]) => parts.join(': '),
     undo: 'Undo',
     openVideo: 'Open video',

@@ -1,4 +1,4 @@
-//! HTDemucs-FT 对着 candle 的张量词汇（`tensor/candle.rs`）编译的一份模型图与分离器（见 [`super`]）。
+//! A model graph and separator for HTDemucs-FT, compiled against candle's tensor vocabulary (`tensor/candle.rs`) (see [`super`]).
 
 #[path = "layers.rs"]
 mod layers;

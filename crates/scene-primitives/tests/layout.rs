@@ -110,9 +110,7 @@ fn prepare_svg_scales_paths_and_computes_length() {
     assert!((path.total_len - 300.0).abs() < 1e-9);
 }
 
-/// viewBox 的 `(minX, minY)` 落在 svg 盒的左上角（§6.2.1，与浏览器预览的
-/// `<svg viewBox>` 同义）。原点居中的 viewBox 以前被当成 `0 0 w h`，内容整体
-/// 偏出盒子，旋转（绕盒中心）后偏得更明显。
+/// The `(minX, minY)` of the viewBox lands at the top-left corner of the svg box (§6.2.1, same meaning as `<svg viewBox>` in the browser preview). A viewBox centered on the origin used to be treated as `0 0 w h`, so the content was shifted out of the box as a whole, and the offset was even more visible after rotation (around the box center).
 #[test]
 fn prepare_svg_maps_view_box_origin_to_the_box_corner() {
     let mut svg = node("svg", json!({ "width": 240, "height": 180 }));
@@ -265,7 +263,7 @@ fn place_honors_wrap_layout_precedence_and_column_alignment() {
     );
 }
 
-// ── grid / flex（§6.3 扩展） ──
+// ── grid / flex (§6.3 extension) ──
 
 #[test]
 fn grid_intrinsic_uses_equal_columns_and_row_heights() {
@@ -275,11 +273,11 @@ fn grid_intrinsic_uses_equal_columns_and_row_heights() {
         node("box", json!({ "width": 30, "height": 12 })),
         node("box", json!({ "width": 8, "height": 6 })),
     ];
-    // 列宽 = 最宽子节点 30；宽 = 2*30 + 4；高 = max(20,12) + 4 + 6
+    // column width = widest child 30; width = 2*30 + 4; height = max(20,12) + 4 + 6
     assert_eq!(layout::intrinsic(&mut grid), (64.0, 30.0));
     assert_eq!(layout::layout_mode(&grid).as_deref(), Some("grid"));
 
-    // columns 缺省/非法 → 单列
+    // columns missing or invalid → single column
     let mut one = node("box", json!({ "layout": "grid", "gap": 2 }));
     one.children = vec![
         node("box", json!({ "width": 10, "height": 5 })),
@@ -308,14 +306,14 @@ fn place_grid_wraps_by_columns_and_honors_gap() {
 
     layout::place(&mut grid);
 
-    // 列宽 = (110 - 10) / 2 = 50
+    // column width = (110 - 10) / 2 = 50
     let f = |i: usize| {
         let r = grid.children[i].frame;
         (r.x, r.y, r.w, r.h)
     };
-    assert_eq!(f(0), (15.0, 0.0, 20.0, 30.0)); // 第 0 列居中：(50-20)/2
-    assert_eq!(f(1), (65.0, 0.0, 40.0, 10.0)); // 第 1 列：60 + (50-40)/2
-    assert_eq!(f(2), (0.0, 40.0, 50.0, 8.0)); // 换行：行高 30 + gap 10
+    assert_eq!(f(0), (15.0, 0.0, 20.0, 30.0)); // Column 0 centered: (50-20)/2
+    assert_eq!(f(1), (65.0, 0.0, 40.0, 10.0)); // Column 1: 60 + (50-40)/2
+    assert_eq!(f(2), (0.0, 40.0, 50.0, 8.0)); // Wrapping: row height 30 + gap 10
 }
 
 #[test]
@@ -329,13 +327,13 @@ fn flex_children_share_remaining_main_axis_space() {
     };
     row.children = vec![
         node("box", json!({ "width": 20, "height": 10 })),
-        node("box", json!({ "flex": 1, "height": 10 })), // Spacer：无固有宽
+        node("box", json!({ "flex": 1, "height": 10 })), // Spacer: no intrinsic width
         node("box", json!({ "width": 30, "height": 10 })),
     ];
 
     layout::place(&mut row);
 
-    // 主轴已占 20 + 30 + 2*10 = 70，余 130 全给 flex:1
+    // The main axis already takes 20 + 30 + 2*10 = 70; the remaining 130 all goes to flex:1
     assert_eq!(row.children[0].frame.x, 0.0);
     assert_eq!(
         (row.children[1].frame.x, row.children[1].frame.w),
@@ -343,7 +341,7 @@ fn flex_children_share_remaining_main_axis_space() {
     );
     assert_eq!(row.children[2].frame.x, 170.0);
 
-    // 权重按比例分配；无 flex 时行为不变
+    // Weights are distributed proportionally; without flex the behavior is unchanged
     let mut row2 = node("box", json!({ "layout": "column" }));
     row2.frame = Rect {
         x: 0.0,

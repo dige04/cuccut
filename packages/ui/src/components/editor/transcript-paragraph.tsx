@@ -19,25 +19,23 @@ import { TRANSCRIPT_COPY as C, TRANSCRIPT_TOOLS_COPY as T } from './transcript-c
 import { useHoldRow } from './use-virtual-rows.ts';
 
 /**
- * 文稿里的一段（设计稿 panels.jsx `ParaRow`）：头行是说话人、段首时间（点了跳过去），右边悬停才出的 ↑ ↓（挪到相邻章）、
- * 播放本段与 ⋯ 菜单（复制这一段——按复制设置或只要文字、换到哪一章、剪掉这一段）；下面是词（看原文、双语时）与译文行（看译文、双语时）。
- * 查找命中标在词上（盖住词间空格时连空格一起标）与译文行上。动作都交回文稿面板做（`onAction`）。
+ * One paragraph in the transcript (design panels.jsx `ParaRow`). The header row shows the speaker and the paragraph's start time (click to jump there). On the right are ↑ ↓ (move to the adjacent chapter, shown on hover), play this paragraph, and the ⋯ menu (copy this paragraph per the copy settings or as text only, move to which chapter, cut this paragraph). Below are the words (in the original view or bilingual) and the translation lines (in the translation view or bilingual). Find matches are marked on the words (when a space between words is covered, the space is marked too) and on the translation lines. All actions are passed back to the transcript panel (`onAction`).
  *
- * 段落是文稿虚拟列表里的一行：与上一行的 8px 间距由列表的行外层给；⋯ 菜单开着时要求列表别卸掉这一行（菜单挂在这一行的钮上）。
+ * A paragraph is one row in the transcript virtual list. The 8px gap from the previous row is supplied by the list's row wrapper. While the ⋯ menu is open, the list must not unmount this row, since the menu is attached to the row's button.
  */
 
-/** 一段里的命中，交给段落卡去画。 */
+/** A match within a paragraph, handed to the paragraph card to draw. */
 export interface ParaMarks {
   src: Array<TextRange & { current: boolean }>;
   trans: Array<TextRange & { current: boolean }>;
   key: string;
 }
 
-/** 段落行上的动作。 */
-/** `copy` 只要文字，`copy-set` 按复制设置（transcript-copy-button.tsx）。 */
+/** Actions on a paragraph row. */
+/** `copy` is text only; `copy-set` follows the copy settings (transcript-copy-button.tsx). */
 export type ParagraphAction = 'play' | 'up' | 'down' | 'copy' | 'copy-set' | 'cut';
 
-/** 段落挪到相邻章的两种做法，与挪不了的原因。有两章以上才有。 */
+/** The two ways to move a paragraph to an adjacent chapter, and the reasons it cannot be moved. Only shown with two or more chapters. */
 export interface ParagraphMoves {
   up: ParagraphMove | null;
   down: ParagraphMove | null;
@@ -61,7 +59,7 @@ const paraHead = style({
   height: 20,
   marginBottom: 2,
 });
-/** 段落行右边的几枚钮（设计稿 `.para__act`）：平时透明但占着位置，悬停、键盘焦点在里面或菜单开着时显出来，版面不跳。 */
+/** The few buttons on the right of a paragraph row (design `.para__act`): transparent normally but they keep their space. They show on hover, when keyboard focus is inside, or while a menu is open, without the layout jumping. */
 const paraActs = style({
   display: 'flex',
   alignItems: 'center',
@@ -100,19 +98,19 @@ const paraText = style({
   color: 'gray-800',
   overflowWrap: 'break-word',
 });
-/** 译文行：只看译文时它就是正文；双语对照时降一档（设计稿 `.para__b--tr`）。 */
+/** The translation line: when translation only is shown, it is the body. In bilingual view it is one step smaller (design `.para__b--tr`). */
 const paraTranslation = style({
   font: { default: 'body-sm', isSecondary: 'body-xs' },
   lineHeight: '[1.7]',
-  // 译文没有词级时间：整段播完才退灰（原型 `.para.is-done .para__b--tr`）。
+  // Translations have no word-level timing, so the paragraph only greys out once it has been played through entirely (prototype `.para.is-done .para__b--tr`).
   color: { default: 'gray-800', isSecondary: 'gray-600', isMissing: 'gray-500', isPlayed: 'gray-500' },
   fontStyle: { default: 'normal', isMissing: 'italic' },
   marginTop: { default: 0, isSecondary: 4 },
   overflowWrap: 'break-word',
 });
 /**
- * 词：已读（播放头走过的）退到 gray-500，与剪掉的词同色但不划线、不加底（原型 `.para__w.is-played`）；当前词黄底、选中蓝底都压过已读。
- * 同一段素材用了两次时，播第二处的词既是当前词又已读，所以当前词也写明颜色。
+ * A word: once read (the playhead has passed it), it fades to gray-500. It is the same color as a cut word but has no strikethrough and no background (prototype `.para__w.is-played`). The current word's yellow background and the selected word's blue background take precedence over “already read.”
+ * When the same asset segment is used twice, the second occurrence's word is both the current word and already read, so the current word also states its color explicitly.
  */
 const word = style({
   borderRadius: 'sm',
@@ -136,7 +134,7 @@ const word = style({
     isSelected: 'blue-300',
   },
 });
-/** 查找命中（与字幕面板同一种标法）：当前那一处橙色。 */
+/** A find match (marked the same way as in the subtitle panel): the current one is orange. */
 const mark = style({ borderRadius: 'sm', backgroundColor: { default: 'yellow-200', isCurrent: 'orange-400' }, color: 'gray-900' });
 const wordEditor = style({
   font: 'body-sm',
@@ -153,7 +151,7 @@ const wordEditor = style({
   outlineStyle: 'none',
 });
 
-/** 在命中里切开一段文字画出来；当前那一处带 `data-match-current`，查找时滚到它。 */
+/** Splits the text within a match and draws it. The current match carries `data-match-current`, and find scrolls to it. */
 function highlighted(text: string, ranges: readonly { start: number; end: number; current: boolean }[]): ReactNode {
   if (!ranges.length) return text;
   const parts: ReactNode[] = [];
@@ -201,20 +199,19 @@ export const Paragraph = memo(
     paragraph: TranscriptParagraph;
     text: ParagraphText;
     view: TranscriptView;
-    /** 这一段的译文（看原文时 null，没有对应译文时空串）。 */
+    /** The translation of this paragraph (null in the original view, and an empty string when there is no matching translation). */
     translation: string | null;
     marks: ParaMarks | null;
-    /** 只用来让 memo 比较：这一段里的命中。 */
+    /** Only for the memo comparison: the matches within this paragraph. */
     markKey: string;
     moves: ParagraphMoves | null;
     editable: boolean;
     selected: ReadonlySet<number> | null;
-    /** 只用来让 memo 比较：这一段里选中了哪些词。 */
+    /** Only for the memo comparison: which words in this paragraph are selected. */
     selKey: string;
     active: number | null;
     /**
-     * 已读阈值（见 `paragraphPlayed`）：最早落点的结尾不晚于它的词已读。整段读完是 `Infinity`、没读到是 `-Infinity`，
-     * 只有正在读的段才随播放头变，别的段不跟着重渲。
+     * Read threshold (see `paragraphPlayed`): words whose earliest landing-point end is no later than it count as read. Fully read is `Infinity`, not read is `-Infinity`. Only the paragraph being read changes with the playhead; the other paragraphs do not re-render with it.
      */
     played: number;
     editing: number | null;
@@ -225,8 +222,7 @@ export const Paragraph = memo(
     onCancel(): void;
     onAction(assetId: Id, index: number, action: ParagraphAction, moves: ParagraphMoves | null): void;
     /**
-     * 切出来的子视频：第一个、最后一个留在时间线上的词（`TranscriptWord.index`）。在它们之外划掉的词是片段外的话，
-     * 单击放回这一支，悬停提示这一点。不是子视频或不能改时 null。
+     * Sub-video: the first and last words still on the timeline (`TranscriptWord.index`). Words struck through outside them are sentences outside the clip. Clicking one restores that run, and the hover hint says so. null when this is not a sub-video or it cannot be edited.
      */
     keptFrom?: number | null;
     keptTo?: number | null;
@@ -394,11 +390,11 @@ function WordView({
   spaced: boolean;
   isSelected: boolean;
   isActive: boolean;
-  /** 播放头已经走过（剪掉的词没有落点，永远不算）。 */
+  /** The playhead has passed it (cut words have no landing point, so they never count). */
   isPlayed: boolean;
   isEditing: boolean;
   highlight: WordHighlight | null;
-  /** 子视频片段外的话（单击放回这一支）。 */
+  /** Sub-video: words outside the clip (clicking restores this run). */
   outside: boolean;
   onCommit(assetId: Id, index: number, text: string): void;
   onCancel(): void;
@@ -430,7 +426,7 @@ function WordView({
   );
 }
 
-/** 就地改一个词：回车或失焦提交，Esc 放弃。 */
+/** Edit a word in place: Enter or blur commits, Esc discards. */
 function WordEditor({ initial, onCommit, onCancel }: { initial: string; onCommit(value: string): void; onCancel(): void }) {
   const [value, setValue] = useState(initial);
   const done = useRef(false);

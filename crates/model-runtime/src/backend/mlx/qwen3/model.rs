@@ -1,11 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/Qwen3ASR.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/Qwen3ASR.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3-ASR 的整机：mel → 音频塔 → 文本解码器（贪心解码 + async_eval 投机，慢路径带重复惩罚）。
+//! Qwen3-ASR's full pipeline: mel → audio tower → text decoder (greedy decoding + async_eval speculation; the slow path carries a repetition penalty).
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,7 +26,7 @@ pub use crate::speech::qwen3_asr::{Qwen3Config, TokenizerFiles};
 use crate::speech::tokenizer::Qwen3Tokenizer;
 use crate::speech::{Recognition, RecognitionRequest, SpeechRecognizer};
 
-/// 尺寸档对应的音频塔与文本解码器结构。
+/// Audio tower and text decoder structure for each size tier.
 fn configs_for(size: AsrModelSize, bits: i32) -> (AudioEncoderConfig, TextDecoderConfig) {
     match size {
         AsrModelSize::Small => (AudioEncoderConfig::SMALL, TextDecoderConfig::small(bits)),
@@ -40,14 +40,14 @@ pub struct Qwen3Asr {
     tokenizer: Qwen3Tokenizer,
     feature_pipeline: WhisperFeaturePipeline,
     default_options: Qwen3DecodingOptions,
-    // 字段按声明顺序析构：先释放权重，再清缓存。
+    // Fields are dropped in declaration order: release the weights first, then clear the cache.
     _memory_cache_guard: ModelMemoryCacheGuard,
 }
 
 impl Qwen3Asr {
     pub fn load(config: Qwen3Config, weights: &[&Path], tokenizer: TokenizerFiles<'_>) -> Result<Self> {
         ensure_metal_device()?;
-        // 加载中途出错时也要清掉已读入的权重。
+        // If loading fails midway, also clear the weights that were already read in.
         let memory_cache_guard = ModelMemoryCacheGuard;
         let mut store = WeightStore::load(weights)?;
         let (audio_config, text_config) = configs_for(config.size, config.bits);
@@ -60,7 +60,7 @@ impl Qwen3Asr {
         text_decoder.eval_quantized()?;
         let tokenizer =
             Qwen3Tokenizer::load(tokenizer.vocabulary, tokenizer.merges, tokenizer.config).context("loading the Qwen3 tokenizer")?;
-        // 部分仓库带有转换脚本保留的非推理张量；所有必需张量均已由上面逐键校验。
+        // Some repos carry non-inference tensors left over from the conversion script; all required tensors have already been checked key by key above.
         let _unused_checkpoint_metadata = store.remaining();
         Ok(Self {
             audio_encoder,
@@ -72,7 +72,7 @@ impl Qwen3Asr {
         })
     }
 
-    /// 预热：一秒静音、最多几个 token，让 Metal 内核在第一个任务之前编译好。
+    /// Warm-up: one second of silence and at most a few tokens, so the Metal kernels are compiled before the first task.
     pub fn warmup(&mut self) -> Result<()> {
         let options = Qwen3DecodingOptions {
             max_tokens: 4,
@@ -87,9 +87,9 @@ impl Qwen3Asr {
     }
 
     pub fn transcribe_with_options(&mut self, audio: &[f32], options: &Qwen3DecodingOptions) -> Result<Recognition> {
-        // VAD 会把一段媒体切成许多不同形状的短片段。模型权重仍由 `self` 保留，
-        // 但每个片段的 mel、KV cache 和 logits 都是临时 Metal 缓冲区；在片段结束
-        // 时归还它们，避免 MLX 缓存与 ASR/VAD/强制对齐器同时挤占统一内存。
+        // VAD cuts a media file into many short segments of different shapes. The model weights are still kept by `self`,
+        // but each segment's mel, KV cache and logits are temporary Metal buffers. Return them at the end of each segment
+        // so the MLX cache does not compete with ASR/VAD/the forced aligner for unified memory at the same time.
         let _memory_cache_guard = MemoryCacheGuard::new();
         if audio.is_empty() {
             return Ok(Recognition::default());
@@ -112,7 +112,7 @@ impl Qwen3Asr {
         })
     }
 
-    /// 返回识别文本与模型自报的语言名（自动识别时输出形如 `language English<asr_text>…`）。
+    /// Returns the recognized text and the language name the model reports (when auto-detecting, the output looks like `language English<asr_text>…`).
     fn generate(&self, audio_embeddings: &Array, options: &Qwen3DecodingOptions) -> Result<(String, Option<String>)> {
         let audio_tokens = audio_embeddings.dim(1) as usize;
         let mut ids = vec![IM_START, SYSTEM, NEWLINE];
@@ -204,7 +204,7 @@ impl Qwen3Asr {
 }
 
 impl SpeechRecognizer for Qwen3Asr {
-    /// 提示进 system 段（`Qwen3DecodingOptions::context`）；指定语言时用 `language X<asr_text>` 前缀强制。
+    /// The hint goes into the system segment (`Qwen3DecodingOptions::context`); when a language is specified, it is forced with a `language X<asr_text>` prefix.
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> Result<Recognition> {
         let mut options = self.default_options.clone();
         options.context = request
@@ -270,7 +270,7 @@ mod tests {
     use super::*;
     use crate::speech::qwen3_asr::text_hidden_size;
 
-    /// 共用的尺寸核对（`Qwen3Config::parse`）与这里的结构一致。
+    /// The shared size check (`Qwen3Config::parse`) matches the structure here.
     #[test]
     fn shared_widths_match_the_mlx_configs() {
         for size in [AsrModelSize::Small, AsrModelSize::Large] {

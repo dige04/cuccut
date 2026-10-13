@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FALLBACK, ICONS, KINDS, THINKING, forKind } from './agent-loader.ts';
 
-/** 真实的图形表：取不到（包没装）时跳过对照，其余断言照跑。 */
+/** The real graphic table: if it cannot be loaded (package not installed), the comparison is skipped; other assertions still run. */
 const table: Record<string, unknown> | null = await import('@react-spectrum/ai/loader').then(
   (m) => m as Record<string, unknown>,
   () => null,

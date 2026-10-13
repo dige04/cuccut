@@ -6,8 +6,7 @@ import type { ToolInfo } from './tool-catalog.ts';
 import { allToolSets } from './all-tool-sets.ts';
 
 /**
- * 工具目录项的一致性（架构设计 §3.5，Agent 面设计 §2.2、§2.3）：三个面（工具桥、MCP 服务、CLI）都按目录项派生，
- * 这里断言每一项都写全了，示例能通过自己的 schema，MCP 服务的开放清单与协议常量一致。
+ * Consistency of catalog entries (architecture §3.5, agent-surface design §2.2, §2.3): the three surfaces (tool bridge, MCP service, CLI) are all derived from catalog entries. This asserts that every entry is fully written, that examples pass their own schema, and that the MCP service's open list matches the protocol constants.
  */
 
 interface Entry {
@@ -26,7 +25,7 @@ const entries: Entry[] = allToolSets().flatMap((set) =>
   })),
 );
 
-/** 字段 JSON Schema 里的枚举值：直接的 enum、数组元素的 enum、联合里的 enum。 */
+/** Enum values in a field's JSON Schema: a direct enum, an enum on array items, and an enum inside a union. */
 function enumValues(prop: Record<string, unknown>): unknown[] {
   const values: unknown[] = [];
   const visit = (node: unknown) => {

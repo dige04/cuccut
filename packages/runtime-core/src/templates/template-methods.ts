@@ -10,12 +10,12 @@ import type { TemplateCatalog } from './template-catalog.ts';
 type TemplateMethod = 'templates.list' | 'templates.get' | 'templates.openHandle' | 'conversations.send';
 
 /**
- * `templates.*` 与带模板的 `conversations.send`（模板包规范 §5.2、§6），由 `handlers.ts` 并进方法表。目录只读；
- * 句柄只发给清单登记的随附文件，媒体通道再按真实路径确认它在模板目录里。
- * 点选的 skill（架构设计 §3.8，一个或几个）、幻灯片标注（docs/design/slides §9）、设计稿标注（docs/design/canvas §9）
- * 与设计系统标注（§10.6）
- * 也在这一个发送入口里解析：
- * 模板、skill 与标注各自解析好，一起交给 Harness。
+ * `templates.*` and `conversations.send` with a template (template package spec §5.2, §6), merged into the method table by `handlers.ts`. The directory is read-only;
+ * handles are issued only for the bundled files listed in the manifest, and the media channel then checks by real path that the file is inside the template directory.
+ * The picked skills (architecture design §3.8, one or several), slide annotations (docs/design/slides §9), canvas annotations (docs/design/canvas §9)
+ * and design-system annotations (§10.6)
+ * are also resolved in this one send entry point:
+ * the template, skills and annotations are each resolved, then handed to the Harness together.
  */
 export function templateMethods(deps: {
   templates: TemplateCatalog;

@@ -1,5 +1,4 @@
-//! 复刻 pypinyin 0.55 的 `lazy_pinyin(word, neutral_tone_with_five=True, style=INITIALS / FINALS_TONE3)`：
-//! 汉字段做 mmseg 最长词组匹配，词组取整词读音，其余逐字取默认读音；非汉字段原样作为一项输出。
+//! Replicates pypinyin 0.55's `lazy_pinyin(word, neutral_tone_with_five=True, style=INITIALS / FINALS_TONE3)`: Han-character runs are matched with mmseg longest-phrase matching, where a phrase takes the reading of the whole word, and other characters take their default readings one by one; non-Han runs are output as one item each, unchanged.
 
 use super::data::{HAN_HI, NO_PINYIN, PINYIN};
 
@@ -17,7 +16,7 @@ fn is_prefix(word: &str) -> bool {
     index < phrases.len() && phrases[index].0.starts_with(word)
 }
 
-/// pypinyin `mmseg.Seg.cut`（前缀树逐字延长，失配时切出最近一次完整词组）。
+/// pypinyin `mmseg.Seg.cut` (extends character by character through a prefix tree, and on a mismatch cuts out the most recent complete phrase).
 fn mmseg(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut remain = text;
@@ -61,7 +60,7 @@ fn char_syllable(c: char) -> u16 {
     }
 }
 
-/// pypinyin `simpleseg._seg`：按「是否汉字」切成连续段。
+/// pypinyin `simpleseg._seg`: splits into contiguous runs by "is a Han character".
 fn hans_runs(word: &str) -> Vec<(&str, bool)> {
     let mut runs = Vec::new();
     let mut start = 0;
@@ -80,7 +79,7 @@ fn hans_runs(word: &str) -> Vec<(&str, bool)> {
     runs
 }
 
-/// 返回 `(initials, finals)`，两者等长。
+/// Returns `(initials, finals)`, which are the same length.
 pub fn lazy(word: &str) -> (Vec<String>, Vec<String>) {
     let mut initials = Vec::new();
     let mut finals = Vec::new();
@@ -113,8 +112,8 @@ pub fn lazy(word: &str) -> (Vec<String>, Vec<String>) {
     (initials, finals)
 }
 
-/// 注音（`crate::synthesize::readings::annotate`）用：一段纯汉字的 mmseg 切分，与 [`lazy`] 同一种切法。
-/// 多字词组带整词读音的音节 id；表里只存整词读音与逐字默认读音不同的词组，其余给 `None`。
+/// For phonetic annotation (`crate::synthesize::readings::annotate`): mmseg splitting of a run of pure Han characters, using the same method as [`lazy`].
+/// Syllable ids for multi-character phrases that carry the whole-word reading; the table only stores phrases whose whole-word reading differs from the per-character default readings, and the rest get `None`.
 pub(crate) fn segments(run: &str) -> Vec<(&str, Option<&'static [u16]>)> {
     let tables: &'static super::data::PinyinTables = &PINYIN;
     mmseg(run)
@@ -126,15 +125,14 @@ pub(crate) fn segments(run: &str) -> Vec<(&str, Option<&'static [u16]>)> {
         .collect()
 }
 
-/// 单字默认读音的音节 id；没有读音给 `None`。
+/// Syllable id for a character's default reading; `None` when there is no reading.
 pub(crate) fn default_syllable(c: char) -> Option<u16> {
     let id = char_syllable(c);
     (id != NO_PINYIN).then_some(id)
 }
 
-/// 音节 id → pypinyin `Style.TONE3` 写法（`hang2`、`lv4`、`ju4`、`yuan2`；轻声 `5`）。
-/// 表里存的是 strict 声母 / 韵母，这里按拼写规则拼回（与 `zh.rs::syllable_phones` 同一套规则，
-/// 另加 j / q / x 后 ü 写 u）。
+/// Syllable id → pypinyin `Style.TONE3` spelling (`hang2`, `lv4`, `ju4`, `yuan2`; neutral tone `5`).
+/// The table stores strict initials / finals, so they are reassembled here by spelling rules (the same rules as `zh.rs::syllable_phones`, plus: after j / q / x, ü is written as u).
 pub(crate) fn tone3(id: u16) -> String {
     let (initial, final_) = &PINYIN.syllables[id as usize];
     let Some(tone) = final_.chars().last().filter(char::is_ascii_digit) else {

@@ -2,9 +2,9 @@ import { isDriverId, isMessageRef, type DriverId, type DriverModel, type DriverP
 import { JsonStoreFile, type StoreOptions } from './store-file.ts';
 
 /**
- * 探测结果里属于「这台机器」的事实（架构设计 §3.11）：装没装、哪个版本、在哪、登没登录、模型表。
- * Driver 这一版的常量（名字、命令、最低版本、安装方式、`verified`、`tested`、能力）不在里面：读回来时由 Driver 的 `describe()` 补，
- * 换了 CucCut 版本也不会留下旧的常量。
+ * The facts in a probe result that belong to “this machine” (architecture design §3.11): whether it is installed, which version, where, whether it is logged in, and the model table.
+ * A Driver's constants for this version (name, command, minimum version, install method, `verified`, `tested`, capabilities) are not in here: when read back, they are filled in by the Driver's `describe()`,
+ * so no stale constants are left behind after changing CucCut versions.
  */
 export const DRIVER_PROBE_FACT_KEYS = [
   'state',
@@ -24,7 +24,7 @@ export const DRIVER_PROBE_FACT_KEYS = [
 
 export type DriverProbeFacts = Pick<DriverProbe, (typeof DRIVER_PROBE_FACT_KEYS)[number]>;
 
-/** 一条缓存：本机事实，加上探测时用的用户指定可执行文件（与当前偏好不一致时整条作废）。 */
+/** One cache entry: machine facts, plus the user-specified executable used for the probe (the whole entry is invalidated when it differs from the current preference). */
 export interface StoredDriverProbe extends DriverProbeFacts {
   executableOverride: string | null;
 }
@@ -38,7 +38,7 @@ interface AgentProbesFile {
 
 const STATES = new Set<string>(['ready', 'not-installed', 'outdated', 'signed-out', 'error']);
 
-/** 从探测结果里取出要存的本机事实。 */
+/** Takes the machine facts to store out of a probe result. */
 export function driverProbeFacts(probe: DriverProbe): DriverProbeFacts {
   const facts = {} as Record<string, unknown>;
   for (const key of DRIVER_PROBE_FACT_KEYS) facts[key] = probe[key];
@@ -46,10 +46,10 @@ export function driverProbeFacts(probe: DriverProbe): DriverProbeFacts {
 }
 
 /**
- * Agent 的探测缓存（`<home>/store/agent-probes.json`，架构设计 §3.11）：每个 Driver 最近一次探测的本机事实。
- * Runtime 启动时先拿它给界面，后台重新探测；探测完成一个写一次（整份覆盖，写串行，后一次覆盖前一次）。
+ * The Agent probe cache (`<home>/store/agent-probes.json`, architecture design §3.11): each Driver's machine facts from its most recent probe.
+ * At Runtime startup it is given to the UI first, and a fresh probe runs in the background. Each completed probe writes once (the whole file is overwritten; writes are serial, and a later write overwrites an earlier one).
  *
- * 只是缓存：文件坏了（改名保留）、字段不对的条目当没有，不拦住 Runtime 启动；更新版本写下的不改写（`store-file.ts`）；没注册的 Driver、可执行文件对不上的条目由调用方丢弃。
+ * It is only a cache: a broken file (renamed and kept) or entries with wrong fields are treated as absent and do not block Runtime startup. Content written by a newer version is not rewritten (`store-file.ts`). Entries for unregistered Drivers, or whose executable does not match, are dropped by the caller.
  */
 export class AgentProbeStore {
   readonly #file: JsonStoreFile;
@@ -73,7 +73,7 @@ export class AgentProbeStore {
     return result;
   }
 
-  /** 整份写入。写失败只影响下次启动能不能用上缓存：调用方记日志即可。 */
+  /** Writes the whole file. A failed write only affects whether the cache can be used at the next startup; the caller just logs it. */
   save(drivers: StoredDriverProbes): Promise<void> {
     const snapshot: AgentProbesFile = { schemaVersion: 1, drivers: structuredClone(drivers) };
     this.#saving = this.#saving.catch(() => {}).then(() => this.#file.write(snapshot));

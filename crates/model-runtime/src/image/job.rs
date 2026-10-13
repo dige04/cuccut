@@ -1,12 +1,8 @@
-//! `job.run`（capability `image`）的编排（Model Worker 协议规范 §2.5.3）：冻结参数 → [`ImageRequest`] → 引擎生成 →
-//! `image.png`（`cuccut.image-png/v1`）。
+//! Orchestration of `job.run` (capability `image`) (Model Worker protocol spec §2.5.3): freeze parameters → [`ImageRequest`] → the engine generates → `image.png` (`cuccut.image-png/v1`).
 //!
-//! 阶段：`encoding-prompt` → `denoising`（`job.progress` 的 `steps`：开始时报 `0/n`，每完成一步报一次）→ `decoding`
-//! （VAE 解码与写 PNG）。取消：引擎在步间看取消标志，之后结果是 `outcome: 'cancelled'`，不写输出。
+//! Stages: `encoding-prompt` → `denoising` (`job.progress` in `steps`: reports `0/n` at the start, then once per completed step) → `decoding` (VAE decoding and writing the PNG). Cancellation: the engine checks the cancel flag between steps; afterwards the result is `outcome: 'cancelled'` and no output is written.
 //!
-//! 模型做不到的尺寸在开跑前报 `MODEL_UNSUPPORTED`（`details.reason: 'unsupported-size'`）；Runtime 在提交时已经按模型
-//! 的描述拒绝过，这里是同一条规则在 Worker 一侧的兜底。引擎内部的其余失败是 `INFERENCE_FAILED`（细节只写 stderr，
-//! 消息里不带路径）。
+//! A size the model cannot produce is reported before running as `MODEL_UNSUPPORTED` (`details.reason: 'unsupported-size'`). The Runtime already rejected it at submission based on the model's description, so this is the Worker-side fallback for the same rule. Other engine-internal failures are `INFERENCE_FAILED` (details are written only to stderr; the message contains no paths).
 
 use std::fs::File;
 use std::io::Write;
@@ -23,7 +19,7 @@ use crate::protocol::{
 };
 use crate::transcribe::JobSink;
 
-/// 跑一个文生图任务。返回的错误就是该请求的错误响应。
+/// Runs a text-to-image task. The returned error is the error response for that request.
 pub fn run(
     engine: &mut dyn ImageEngine,
     params: &ImageRunParams,
@@ -127,7 +123,7 @@ fn inference_failed(family: &str, error: &anyhow::Error) -> ErrorBody {
         .with_details(json!({ "family": family, "reason": "generation-failed" }))
 }
 
-/// `image.png`：先写临时文件再重命名。路径是绝对路径（staging 是绝对路径）。
+/// `image.png`: writes to a temporary file first, then renames it. The path is absolute (staging is an absolute path).
 fn write_output(staging: &Path, bytes: &[u8]) -> std::io::Result<OutputFile> {
     let path = staging.join(IMAGE_OUTPUT_FILE);
     let temporary = staging.join(format!("{IMAGE_OUTPUT_FILE}.tmp"));
@@ -156,7 +152,7 @@ mod tests {
     use anyhow::bail;
     use serde_json::Value;
 
-    /// 假引擎：每步报一次进度，按 seed 填一张渐变；`cancel_after` 步后把取消标志置上。
+    /// Fake engine: reports progress once per step and fills a gradient according to the seed; after `cancel_after` steps it sets the cancel flag.
     struct FakeEngine {
         fail: bool,
         wrong_size: bool,
@@ -342,7 +338,7 @@ mod tests {
         assert_eq!(events.phases(), ["encoding-prompt", "denoising"], "no decoding after a cancel");
         assert!(!staging.path().join(IMAGE_OUTPUT_FILE).exists());
 
-        // 开跑前就取消：不碰引擎。
+        // Cancelled before running: the engine is not touched.
         let mut engine = FakeEngine::new();
         let result = run(&mut engine, &params(staging.path()), &CANCEL, &mut Events::default()).unwrap();
         assert_eq!(result.outcome, JobOutcome::Cancelled);

@@ -28,9 +28,9 @@ import { addCustomProvider, addProviderModel, disconnectProvider, saveProviderKe
 import { ADD_MODEL_COPY, CUSTOM_COPY, KEY_COPY, KIND_ITEMS } from './models-copy.ts';
 
 /*
- * 云端页的三个对话框（设计稿 settings-cloud.jsx:383-452）：密钥、添加自建服务商、添加模型。
- * 状态放在对话框外层（S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍，见 name-dialog.tsx）；
- * 失败留在对话框里，把原因写在按钮上面，不吞掉输入。
+ * The three dialogs of the cloud page (design mock settings-cloud.jsx:383-452): key, add custom provider, add model.
+ * State is kept in the outer layer of the dialog (S2's Dialog renders its children once in each of several slots; see name-dialog.tsx).
+ * On failure the reason is written above the button and the input is not lost.
  */
 
 const stack = style({ display: 'flex', flexDirection: 'column', gap: 12 });
@@ -51,8 +51,8 @@ function message(err: unknown): string {
 }
 
 /**
- * 密钥对话框：「验证并保存」= 启用并验证（不过时 Runtime 拒绝、不保存，原因写在这里）；存好之后交给 `onSaved`（顺手刷新模型）。
- * 内置的「移除密钥」清掉密钥并停用；自建的「删除服务商」先确认一次，连同声明的模型一起删。
+ * Key dialog: “验证并保存”(Verify and save) = enable and verify (if it fails, the Runtime rejects it and nothing is saved, and the reason is written here); after saving it hands off to `onSaved`, which also refreshes the models.
+ * The built-in “移除密钥”(Remove key) clears the key and disables; a custom “删除服务商”(Delete provider) asks for confirmation first, then deletes together with its declared models.
  */
 export function KeyDialog({ card, onClose, onSaved }: { card: CloudProviderCard; onClose: () => void; onSaved?: () => void }) {
   const runtime = useRuntime();
@@ -170,8 +170,7 @@ export function KeyDialog({ card, onClose, onSaved }: { card: CloudProviderCard;
 }
 
 /**
- * 用途四选一（设计稿 settings-cloud.jsx:197 KIND_ITEMS）：四档带英文缩写一行约 520px，
- * 放不进 M 号对话框（480px），所以带这一行的两个对话框用 L 号。
+ * Usage, choose one of four (design mock settings-cloud.jsx:197 `KIND_ITEMS`): the four options with English abbreviations take about 520px in one row, which does not fit in an M-size dialog (480px), so the two dialogs that have this row use the L size.
  */
 function KindControl({ value, onChange }: { value: OnlineCapability; onChange: (value: OnlineCapability) => void }) {
   return (
@@ -185,7 +184,7 @@ function KindControl({ value, onChange }: { value: OnlineCapability; onChange: (
   );
 }
 
-/** 添加自建服务商：名字、地址、第一只模型与用途；地址已经登记过时提示改加到那一家下面。 */
+/** Add custom provider: name, address, first model and usage; if the address is already registered, a hint says to add it under that provider instead. */
 export function CustomProviderDialog({
   view,
   initialCapability,
@@ -289,7 +288,7 @@ export function CustomProviderDialog({
   );
 }
 
-/** 在一家自建服务商下添加一只模型：模型 ID 与用途（语音合成可带音色 ID）。 */
+/** Add a model under a custom provider: model ID and usage (speech synthesis may include a voice ID). */
 export function AddModelDialog({
   view,
   providerId,

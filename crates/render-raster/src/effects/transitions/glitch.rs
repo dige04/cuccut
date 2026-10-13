@@ -1,33 +1,26 @@
-//! `transition.glitch@1`：数字故障切换——画面切成条带各自错位、RGB 三通道分离、
-//! 偶尔整帧闪白，出场与入场画面在条带之间来回跳，最后停在入场画面上。
+//! `transition.glitch@1`: digital glitch cut. The picture is split into strips, each shifted out of alignment. The RGB channels separate, and occasionally the whole frame flashes white. The outgoing and incoming pictures jump back and forth between the strips, and the transition finally settles on the incoming picture.
 //!
-//! 全部随机量按 progress 的**档位** `b = ⌊p·steps⌋` 取（`splitmix64(seed, 档位×…)`），
-//! 同一档内画面不变、跨档整体重掷——这就是故障的「卡顿」节奏，而且是 progress
-//! 的纯函数（可 seek）。强度 `I = 1 − |2p − 1|` 在转场正中最大、两端归零；
-//! 条带换成入场画面的比例 `q = clamp((p − 0.25) / 0.5)`，每条带各自掷骰。
+//! All random values are drawn at the **step** of progress, `b = ⌊p·steps⌋` (`splitmix64(seed, step×…)`). Within one step the picture does not change, and every value is re-rolled across steps. This is the "stutter" rhythm of the glitch, and it is a pure function of progress, so it can be seeked. The intensity `I = 1 − |2p − 1|` is largest in the middle of the transition and drops to zero at both ends. The share of strips that switch to the incoming picture is `q = clamp((p − 0.25) / 0.5)`, and each strip rolls its own dice.
 //!
-//! `direction = "vertical"`（缺省）把画面切成**竖条**、各条上下错位，RGB 沿竖直
-//! 方向分离；`"horizontal"` 切成横条、左右错位。错位取样在画布边缘夹取，所以
-//! 移出去的部分会拖出一道边缘像素的拖影。
+//! `direction = "vertical"` (the default) cuts the picture into **vertical strips**, each shifted up or down, and RGB separates along the vertical direction. `"horizontal"` cuts into horizontal strips shifted left or right. Offset sampling is clamped at the canvas edges, so the parts that move out leave a streak of edge pixels.
 //!
-//! 位移全部取整后按最近像素搬运，没有超越函数；`progress = 0` / `1` 直接拷贝
-//! `from` / `to`。
+//! All offsets are rounded to integers and then copied to the nearest pixel. There are no transcendental functions. `progress = 0` / `1` copy `from` / `to` directly.
 
 use motion::rng::splitmix64_unit;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Glitch {
-    /// true = 竖条上下错位；false = 横条左右错位。
+    /// true = vertical strips shifted up and down; false = horizontal strips shifted left and right.
     pub vertical: bool,
-    /// 条带数（取整，2..=400）。
+    /// Number of strips (rounded to an integer, 2..=400).
     pub slices: f64,
-    /// 条带最大错位（像素，已按画布短边换算）。
+    /// Maximum strip offset (pixels, already converted from the canvas short side).
     pub amount: f64,
-    /// RGB 分离距离（像素，已换算）。
+    /// RGB separation distance (pixels, already converted).
     pub rgb: f64,
-    /// progress 上的重掷档数（取整，2..=120）。
+    /// Number of re-roll steps across progress (rounded to an integer, 2..=120).
     pub steps: f64,
-    /// 闪白概率与亮度 `0..1`。
+    /// Flash-white probability and brightness, `0..1`.
     pub flicker: f64,
     pub seed: u64,
 }
@@ -55,14 +48,14 @@ pub fn glitch(
     let to_share = ((progress - 0.25) / 0.5).clamp(0.0, 1.0);
     let random = |slot: i64| splitmix64_unit(params.seed, bucket * 1_048_576 + slot);
 
-    // 切条的轴：竖条沿 x 排开、沿 y 错位；横条反过来。
+    // The cutting axis: vertical strips spread along x and shift along y. Horizontal strips are the reverse.
     let (across, along) = if params.vertical {
         (width as usize, height as usize)
     } else {
         (height as usize, width as usize)
     };
     let slice_count = params.slices.round().clamp(2.0, 400.0) as usize;
-    // 本档的条带宽度：各条 0.3..1.3 的随机权重，按比例铺满整条轴。
+    // Strip widths for this step: each strip gets a random weight of 0.3..1.3, scaled to fill the whole axis.
     let weights: Vec<f64> = (0..slice_count)
         .map(|k| 0.3 + random(k as i64 * 8))
         .collect();
@@ -87,7 +80,7 @@ pub fn glitch(
             }
         })
         .collect();
-    // 每个横坐标（沿切条轴）属于哪一条带。
+    // Which strip each coordinate along the cutting axis belongs to.
     let mut band_of = Vec::with_capacity(across);
     let mut band = 0usize;
     let mut next = weights[0] / total * across as f64;

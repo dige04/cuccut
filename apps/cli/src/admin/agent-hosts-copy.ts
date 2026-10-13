@@ -14,7 +14,7 @@ import { pl } from './agent-hosts-copy.pl.ts';
 import { tr } from './agent-hosts-copy.tr.ts';
 import { vi } from './agent-hosts-copy.vi.ts';
 
-/** 外部 Agent 宿主（`agent-hosts.ts`）报的错（英文是键与类型的来源，译文在 `agent-hosts-copy.<语言>.ts`）。 */
+/** Errors reported by external agent hosts (`agent-hosts.ts`). The English is the source of the keys and types; the translations are in `agent-hosts-copy.<language>.ts`. */
 const en = {
   missingAgent: (hosts: readonly string[]) => `Missing --agent: one of ${hosts.join(', ')}`,
   unknownAgent: (value: string, hosts: readonly string[]) => `Unknown agent "${value}": only ${hosts.join(', ')}`,

@@ -26,19 +26,17 @@ import { parseSkillFrontmatter } from './skill-frontmatter.ts';
 import { RcSkills } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * Agent 的 skill 目录（架构设计 §3.8）：内置目录（随应用发布）与 `<Runtime Home>/skills/`（用户添加、导入或自己放的）。
+ * The agent's skill catalog (architecture design §3.8): the built-in catalog (shipped with the app) and `<Runtime Home>/skills/` (added, imported, or placed by the user).
  *
- * - 每个子目录是一个 skill，id 由目录名规范化（`normalizeSkillId`）；坏目录跳过并记一条诊断，不影响其余的。
- * - 不缓存：每次 `list`、`get`、`require` 都重新读目录，用户放进新目录后再列一次就能看到。
- * - 符号链接不跟随：skill 目录本身是链接、或目录里有链接、特殊文件时整个跳过，不会读到目录外的东西。
- * - 内置与用户目录同 id 时内置的优先，用户的那一份记 `builtin-conflict`。
- * - 开关 = 来源的默认值（`SKILL_DEFAULT_ENABLED`）加上 `SkillPrefsStore` 里的差量。
- * - 说明书页（`setGuidePages`，Agent 面设计 §8.6）：`skills/cuccut/` 按工具桥面渲染出的目录页、做法总览与约定，
- *   在内存里、不在任何目录。它们是会话指导的一部分：总在会话开始的索引里、`skills_read` 能读，但不进 `list()`（设置里的
- *   skill 列表与 `skills_list`），不能开关；同 id 的内置目录与用户目录里的 skill 都让位给它们。
+ * - Each subdirectory is one skill. Its id is derived from the directory name (`normalizeSkillId`). Bad directories are skipped with a diagnostic recorded, without affecting the rest.
+ * - No caching: every `list`, `get` and `require` re-reads the directories, so a new directory the user drops in appears on the next list.
+ * - Symbolic links are not followed. If the skill directory is itself a link, or the directory contains links or special files, the whole thing is skipped, so nothing outside the directory is read.
+ * - When a built-in and a user directory share an id, the built-in one wins, and the user's copy is recorded as `builtin-conflict`.
+ * - Enabled state = the source's default (`SKILL_DEFAULT_ENABLED`) plus the delta in `SkillPrefsStore`.
+ * - Guide pages (`setGuidePages`, Agent surface design §8.6): the catalog pages rendered from `skills/cuccut/` for the tool-bridge surface, along with the approach overview and conventions, are held in memory and not in any directory. They are part of the session guidance: always in the index at session start, and readable via `skills_read`. But they are not included in `list()` (the skill list in settings and `skills_list`), and they cannot be toggled. A built-in directory or user-directory skill with the same id yields to them.
  */
 
-/** 一个加载成功的 skill。`dir` 是 skill 目录的绝对路径。 */
+/** A skill that loaded successfully. `dir` is the absolute path of the skill directory. */
 export interface LoadedSkill {
   id: string;
   name: string;
@@ -48,14 +46,14 @@ export interface LoadedSkill {
   origin: SkillOrigin;
   dir: string;
   source: SkillSource | null;
-  /** 目录里的全部文件（相对路径，`/` 分隔，按路径排序），含 `SKILL.md`，不含点开头的。 */
+  /** All files in the directory (relative paths, `/`-separated, sorted by path), including `SKILL.md` and excluding dot-prefixed ones. */
   files: { path: string; size: number }[];
-  /** `SKILL.md` 全文。 */
+  /** Full text of `SKILL.md`. */
   content: string;
-  /** front matter 之后的正文。 */
+  /** The body after the front matter. */
   body: string;
   updatedAt: string;
-  /** 说明书页（在内存里，只有 `SKILL.md`，就是 `content`）。 */
+  /** Guide page (in memory; it has only `SKILL.md`, which is `content`). */
   guide?: true;
 }
 
@@ -65,19 +63,19 @@ export interface SkillScan {
 }
 
 export interface SkillCatalogOptions {
-  /** 内置 skill 目录；null 表示没有。 */
+  /** Built-in skill directory. null means none. */
   builtinDir: string | null;
-  /** `<Runtime Home>/skills`。不存在时当作空目录。 */
+  /** `<Runtime Home>/skills`. Treated as an empty directory when absent. */
   userDir: string;
   prefs: SkillPrefsStore;
 }
 
-/** 内置 skill 相对仓库根（打包后是 `<resources>`）的位置：说明书 `skills/cuccut/` 下的 `built-in-skills/`。 */
+/** Location of the built-in skills relative to the repository root (`<resources>` when packaged): the `built-in-skills/` under the instruction manual's `skills/cuccut/`. */
 const BUILTIN_SKILLS_PATH = path.join('skills', 'cuccut', 'built-in-skills');
 
 /**
- * 找内置 skill 目录：`CUCCUT_SKILLS_DIR` 环境变量；打包后的应用里是 `<resources>/skills/cuccut/built-in-skills`；开发时从
- * 本模块往上找仓库根下的 `skills/cuccut/built-in-skills/`。都没有时 null。
+ * Finds the built-in skill directory. It checks the `CUCCUT_SKILLS_DIR` environment variable. In the packaged app it is `<resources>/skills/cuccut/built-in-skills`. In development, it walks up from
+ * this module to find `skills/cuccut/built-in-skills/` under the repository root. Null if none is found.
  */
 export function resolveBuiltinSkillsDir(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.CUCCUT_SKILLS_DIR) return env.CUCCUT_SKILLS_DIR;
@@ -90,8 +88,8 @@ export function resolveBuiltinSkillsDir(env: NodeJS.ProcessEnv = process.env): s
 }
 
 /**
- * 开发时从本模块往上找仓库根（`package.json` 的名字是 `cuccut`）下的 `<name>` 目录（可以是多级相对路径）：内置 skill
- * （`skills/cuccut/built-in-skills/`）与说明书（`skills/`）共用。找不到时 null。
+ * In development, walks up from this module to find the repository root (the `package.json` named `cuccut`), then the `<name>` directory under it (which may be a multi-level relative path). Shared by the built-in skills
+ * (`skills/cuccut/built-in-skills/`) and the instruction manual (`skills/`). Null if not found.
  */
 export function findRepoDir(name: string, from: string = path.dirname(fileURLToPath(import.meta.url))): string | null {
   let dir = from;
@@ -104,7 +102,7 @@ export function findRepoDir(name: string, from: string = path.dirname(fileURLToP
   }
 }
 
-/** 仓库根：`package.json` 的名字是 `cuccut`。只认它，免得把仓库外面哪个碰巧有 `skills/` 的目录当成内置目录。 */
+/** Repository root: the `package.json` named `cuccut`. Only this is accepted, so that a `skills/` directory that happens to exist outside the repository is not mistaken for the built-in directory. */
 function isRepoRoot(dir: string): boolean {
   try {
     return (JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as { name?: unknown }).name === 'cuccut';
@@ -142,14 +140,14 @@ export class SkillCatalog {
   }
 
   /**
-   * 说明书页（`guidance.ts` 渲染出的 `pages`）登记成内置 skill。`sourceDir` 是说明书目录，页面的 `dir` 记成来源文件所在的目录。
-   * 每次调用整个替换。
+   * Registers the guide pages (the `pages` rendered by `guidance.ts`) as built-in skills. `sourceDir` is the instruction manual directory. Each page's `dir` is recorded as the directory containing its source file.
+   * Each call replaces the whole set.
    */
   setGuidePages(pages: readonly AgentSkillPage[], sourceDir: string, updatedAt: string = new Date().toISOString()): void {
     this.#guide = pages.map((page) => guidePageSkill(page, sourceDir, updatedAt));
   }
 
-  /** 来源合在一起：说明书页在前，内置目录其次；内置目录与用户目录里与前面同 id 的跳过。 */
+  /** Sources merged together: guide pages first, then the built-in catalog. Built-in and user-directory entries with the same id as earlier ones are skipped. */
   async scan(): Promise<SkillScan> {
     const scanned = this.#options.builtinDir ? await scanSkillDir(this.#options.builtinDir, 'builtin') : { skills: [], diagnostics: [] };
     const user = await scanSkillDir(this.#options.userDir, 'user');
@@ -185,13 +183,13 @@ export class SkillCatalog {
     return { skills, diagnostics };
   }
 
-  /** 设置与 `skills_list` 列出的 skill：不含说明书页。 */
+  /** Skills listed in settings and by `skills_list`. Excludes guide pages. */
   async list(): Promise<SkillListResult> {
     const { skills, diagnostics } = await this.scan();
     return { skills: skills.filter((s) => !s.guide).map((s) => this.summaryOf(s)), diagnostics };
   }
 
-  /** 按 id 取一个可用的 skill；没有（或没能加载）时 `not-found`。 */
+  /** Gets an available skill by id. Returns `not-found` if there is none (or it failed to load). */
   async require(id: string): Promise<LoadedSkill> {
     const found = (await this.scan()).skills.find((s) => s.id === id);
     if (!found) throw new RpcError('not-found', RcSkills.skillNotFound({ id }), { code: 'SKILL_NOT_FOUND', skillId: id });
@@ -211,21 +209,21 @@ export class SkillCatalog {
     return { skill: this.summaryOf(skill), content: skill.content, files };
   }
 
-  /** 读 skill 目录里的一个文本文件：只认文件清单里的路径。 */
+  /** Reads a text file in the skill directory. Only paths in the file manifest are accepted. */
   async readFile(id: string, file: string): Promise<SkillFileContent> {
     return readSkillFile(await this.require(id), file);
   }
 
   async setEnabled(id: string, enabled: boolean): Promise<SkillChangeResult> {
     const skill = await this.require(id);
-    // 说明书页是指导的一部分，不能开关；对设置与 CLI 来说它们不存在。
+    // Guide pages are part of the guidance and cannot be toggled. To settings and the CLI, they do not exist.
     if (skill.guide) throw new RpcError('not-found', RcSkills.skillNotFound({ id }), { code: 'SKILL_NOT_FOUND', skillId: id });
     await this.#options.prefs.set(id, enabled, SKILL_DEFAULT_ENABLED[skill.origin]);
     const list = await this.list();
     return { ...list, skill: list.skills.find((s) => s.id === id) ?? this.summaryOf(skill) };
   }
 
-  /** 开着的 skill（会话开始时的索引用）。 */
+  /** Enabled skills (used for the index at session start). */
   async enabled(): Promise<LoadedSkill[]> {
     return (await this.scan()).skills.filter((s) => this.isEnabled(s));
   }
@@ -253,7 +251,7 @@ export class SkillCatalog {
   }
 }
 
-/** 读一个登记在文件清单里的文本文件；不在清单里 `not-found`，太大或不是 UTF-8 文本 `invalid-request`。 */
+/** Reads a text file registered in the file manifest. Not in the manifest gives `not-found`. Too large, or not UTF-8 text, gives `invalid-request`. */
 export async function readSkillFile(skill: LoadedSkill, file: string): Promise<SkillFileContent> {
   const entry = skill.files.find((f) => f.path === file);
   if (!entry) {
@@ -279,7 +277,7 @@ export async function readSkillFile(skill: LoadedSkill, file: string): Promise<S
   return { path: file, size: Buffer.byteLength(content), content };
 }
 
-/** 读清单里的一个文件为 UTF-8 文本；读之前再确认它仍是目录里的普通文件（不是后来换上的链接）。不是文本时 null。 */
+/** Reads a manifest file as UTF-8 text. Before reading, confirms it is still a regular file in the directory (not a link swapped in later). Returns null if it is not text. */
 async function readText(skill: LoadedSkill, file: string): Promise<string | null> {
   if (skill.guide) return file === SKILL_FILE ? skill.content : null;
   const abs = path.join(skill.dir, ...file.split('/'));
@@ -296,7 +294,7 @@ async function readText(skill: LoadedSkill, file: string): Promise<string | null
   }
 }
 
-/** 说明书页的内存形态：只有一个 `SKILL.md`（渲染好的正文，不带 front matter）。 */
+/** In-memory form of a guide page: only one `SKILL.md` (the rendered body, without front matter). */
 function guidePageSkill(page: AgentSkillPage, sourceDir: string, updatedAt: string): LoadedSkill {
   return {
     id: page.id,
@@ -316,8 +314,7 @@ function guidePageSkill(page: AgentSkillPage, sourceDir: string, updatedAt: stri
 }
 
 /**
- * 读一个目录来源：每个子目录是一个 skill。不是目录的条目与点开头的条目忽略；符号链接不跟随（记诊断）；同一来源里规范化后 id 相同的
- * 都跳过。目录不存在时为空。
+ * Reads a directory source, where each subdirectory is one skill. Non-directory entries and dot-prefixed entries are ignored. Symbolic links are not followed (a diagnostic is recorded). Within the same source, entries whose normalized ids are equal are all skipped. Empty if the directory does not exist.
  */
 export async function scanSkillDir(dir: string, scope: 'builtin' | 'user'): Promise<SkillScan> {
   const root = path.resolve(dir);
@@ -360,8 +357,8 @@ function diagnostic(
 }
 
 /**
- * 读并校验一个 skill 目录：id 能由目录名规范化出来、文件不超过上限且都是普通文件、根目录有 `SKILL.md`（UTF-8、不超过上限）、
- * front matter 有 `name` 与 `description` 且不超长。不合规时返回诊断。
+ * Reads and validates one skill directory. The id must be normalizable from the directory name. Files must not exceed the limit and must all be regular files. The root must have `SKILL.md` (UTF-8, not exceeding the limit).
+ * The front matter must have `name` and `description`, and they must not be too long. If noncompliant, returns diagnostics.
  */
 export async function loadSkill(dir: string, scope: 'builtin' | 'user'): Promise<LoadedSkill | SkillDiagnostic> {
   const invalid = (issues: Localized[]) => diagnostic('invalid', scope, dir, RcSkills.skillInvalid(), issues);
@@ -383,7 +380,7 @@ export async function loadSkill(dir: string, scope: 'builtin' | 'user'): Promise
   return { id, ...parsed.meta, scope, origin, dir, source, files, updatedAt: stat.mtime.toISOString() };
 }
 
-/** `SKILL.md` 的读取与 front matter 校验，添加与导入时校验暂存目录也用它。 */
+/** Reads `SKILL.md` and validates its front matter. The add and import paths also use it to validate the staging directory. */
 export async function readSkillFileMeta(
   file: string,
 ): Promise<{ meta: Pick<LoadedSkill, 'name' | 'description' | 'version' | 'content' | 'body'> } | { problem: true; issues: Localized[] }> {
@@ -412,7 +409,7 @@ export async function readSkillFileMeta(
   return { meta: { name, description, version, content, body: fm.body } };
 }
 
-/** CucCut 记的来源；没有或读不了时 null（当作用户自己放进来的）。 */
+/** The source CucCut recorded. null when absent or unreadable (treated as placed by the user). */
 async function readSkillSource(dir: string): Promise<SkillSource | null> {
   try {
     const stat = await fsp.lstat(path.join(dir, SKILL_SOURCE_FILE));
@@ -427,13 +424,13 @@ async function readSkillSource(dir: string): Promise<SkillSource | null> {
         return { kind: 'github', url, owner, repo, ref, commit, path: sub, importedAt };
     }
   } catch {
-    // 没有来源记录，或坏了：当作用户自己放的。
+    // No source record, or it is corrupted: treat it as placed by the user.
   }
   return null;
 }
 
 /**
- * skill 目录里的全部普通文件（相对路径，`/` 分隔，按路径排序）。点开头的条目忽略；符号链接、特殊文件、文件过多时整个不合规。
+ * All regular files in the skill directory (relative paths, `/`-separated, sorted by path). Dot-prefixed entries are ignored. Symbolic links, special files, or too many files make the whole thing noncompliant.
  */
 export async function listSkillFiles(dir: string): Promise<{ files: { path: string; size: number }[] } | { problem: Localized; tooMany?: true }> {
   const files: { path: string; size: number }[] = [];
@@ -473,7 +470,7 @@ function inside(dir: string, file: string): boolean {
   return resolved.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
 }
 
-/** 读文件，超过 `max` 字节时返回 null（只读到 `max + 1` 字节为止）。 */
+/** Reads a file. Returns null if it exceeds `max` bytes (reads only up to `max + 1` bytes). */
 async function readCapped(file: string, max: number): Promise<Buffer | null> {
   const handle = await fsp.open(file, 'r');
   try {

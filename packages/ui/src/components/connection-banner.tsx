@@ -4,7 +4,7 @@ import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro'
 import { useConnection } from '../state/connection-store.ts';
 import { S } from './shell-copy.ts';
 
-/** 贴着内容区顶边的整条横幅：不占卡片位，不把页面内容挤成两栏。 */
+/** A full-width banner along the top edge of the content area: it takes no card slot and does not squeeze the page content into two columns. */
 const bar = style({
   display: 'flex',
   alignItems: 'center',
@@ -23,7 +23,7 @@ const negativeIcon = iconStyle({ size: 'S', color: 'negative' });
 const title = style({ fontWeight: 'bold', flexShrink: 0 });
 const detail = style({ color: 'neutral-subdued', minWidth: 0, flexGrow: 1 });
 
-/** 与 Runtime 断开时如实说明；「已连接」之前不允许提交（产品设计 §2.4）。 */
+/** When disconnected from the Runtime, say so plainly; no submitting before 「已连接」 (Connected) (product design §2.4). */
 export function ConnectionBanner() {
   const state = useConnection((s) => s.state);
   if (state.status === 'connected' || (state.status === 'connecting' && state.attempt === 0)) return null;

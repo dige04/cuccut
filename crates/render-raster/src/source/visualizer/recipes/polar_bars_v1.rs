@@ -1,14 +1,11 @@
-//! `polar-bars-v1`：`ring_bars`（设计 §7.2）。
+//! `polar-bars-v1`: `ring_bars` (design §7.2).
 //!
-//! 频谱柱绕成一圈：`barCount` 根柱子沿圆周等角分布（从正上方起顺时针），每根柱子
-//! 是一段环形扇区，内沿固定在 `innerRadius × R`，外沿按幅度在 `[innerRadius, 1] × R`
-//! 之间伸缩（`R` 是内切正方形的半边长，配方声明 `aspect: square`）。
+//! Spectrum bars wrapped into a circle: `barCount` bars are spaced at equal angles around the circumference (clockwise from the top), and each bar is an annular sector whose inner edge is fixed at `innerRadius × R`, while its outer edge stretches within `[innerRadius, 1] × R` according to amplitude (`R` is the half-side of the inscribed square; the recipe declares `aspect: square`).
 //!
-//! * `gap` 是**角向槽位的分数**，扇区在槽内居中；
-//! * `minHeight` 与 `easing` 的语义同 `spectrum-bars-v1`。
+//! * `gap` is a **fraction of the angular slot**; the sector is centred within its slot;
+//! * `minHeight` and `easing` have the same meaning as in `spectrum-bars-v1`.
 //!
-//! 每根柱一条 `FillPath`（[`sector_subpath`]），返回 `barCount`。扇区外沿最多到
-//! `R`，整体落在盒内，不需要裁剪。
+//! One `FillPath` per bar ([`sector_subpath`]); returns `barCount`. The outer edge of a sector reaches at most `R`, so everything stays inside the box and no clipping is needed.
 
 use motion::preset_registry::VisualizerBody;
 

@@ -39,7 +39,7 @@ export const column = style({
   boxSizing: 'border-box',
 });
 
-/** 线程里回复正文、步骤行与页脚用的颜色（agent-thread.css 读这些变量）。 */
+/** Colours used in the thread for the reply body, step rows and footer (agent-thread.css reads these variables). */
 const threadVars = style({
   '--cc-at-text': { type: 'color', value: 'gray-800' },
   '--cc-at-heading': { type: 'color', value: 'gray-900' },
@@ -65,7 +65,7 @@ const threadVars = style({
   '--cc-at-focus': { type: 'outlineColor', value: 'focus-ring' },
 });
 
-/** 一行：回复下面挂着产物时，两者之间 8。 */
+/** One row: when artifacts hang below a reply, the gap between them is 8. */
 const row = style({ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 });
 
 /** Outputs under a reply (prototype apprail.css `.chat-outputs` :126): stacked, aligned with the reply's start edge. */
@@ -87,8 +87,8 @@ export function Thread({
   const entries = useSpace((s) => s.entries);
   const projectId = meta?.projectId ?? null;
   const cwd = meta?.cwd;
-  // 每条回复下面的文件：与会话头「产物」同源（conversation-outputs.ts），按任务归到它最后一条回复下面，不截断。
-  // 视频不在这里：视频卡一条会话一部视频一张，挂在最后的引用或还在跑的活所在的最新一轮后面（video-cards.ts）。
+  // Files below each reply come from the same source as the session header's “产物” (Artifacts) (conversation-outputs.ts); each is grouped by task under the last reply of that task, without truncation.
+  // Videos are not here: there is one video card per video per session, placed after the latest turn that holds the last reference or a still-running task (video-cards.ts).
   const outputs = useMemo(
     () =>
       outputsByMessage(
@@ -105,14 +105,14 @@ export function Thread({
   const showColumn = blocks.length > 0 || running;
   const { scrollerRef, columnRef } = useFollowBottom(conversationId, blocks, showColumn);
 
-  // 「当前」的内容块：步骤组在跑时摘要行换成正在跑的那一步。
+  // The “当前” (current) content block: while a step group is running, its summary line switches to the step that is running.
   const lastContent = blocks.findLast((block) => block.type !== 'task');
   const turnList = useMemo(() => turns(blocks), [blocks]);
-  // 失败的恢复区只挂在最后一个任务上，而且会话空闲时才出：之后又跑过别的，旧的失败就不再给出路。
+  // The recovery area for a failure is attached only to the last task, and it appears only when the session is idle: if something else has run since, the old failure no longer offers a way forward.
   const lastTask = blocks.findLast((block) => block.type === 'task');
   const recoverable = !running && lastTask?.type === 'task' && lastTask.item.status === 'failed' ? lastTask.item : undefined;
 
-  // 行间距按相邻种类定（gapBetween）；页脚挂在每一轮最后一行下面，任务状态行本身不占一行。
+  // Row gaps are set by adjacent kind (gapBetween); the footer hangs below the last row of each turn, and the task status row itself takes no row.
   const footerAfter = new Map(turnList.map((turn, i) => [turn.end, { turn, last: i === turnList.length - 1 }]));
   const rows: ReactNode[] = [];
   let prev: RowKind | null = null;
@@ -166,15 +166,14 @@ export function Thread({
   );
 }
 
-/** 这一轮在不在跑：有任务看任务的状态；还没有任务时，会话在跑的最后一轮算在跑。 */
+/** Whether this turn is running: if there is a task, look at the task's status; if there is no task yet, the last turn of a running session counts as running. */
 function turnLive(turn: Turn, runningLast: boolean): boolean {
   if (turn.task) return turn.task.status === 'running' || turn.task.status === 'stopping';
   return runningLast;
 }
 
 /**
- * 跟到底：跟底时内容或视口尺寸一变就钉到底（同一帧合并成一次）；只有带向上输入证据的 scrollTop 变小才脱钩，
- * 滚回距底 1px 内重新跟上。规则见 follow-bottom.ts。
+ * Follow to bottom: while following, any change in content or viewport size pins to the bottom (merged into one per frame). Only a smaller scrollTop that comes with upward-input evidence detaches; scrolling back to within 1px of the bottom re-follows. See follow-bottom.ts for the rules.
  */
 function useFollowBottom(conversationId: string, blocks: unknown, showColumn: boolean) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -192,7 +191,7 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
       if (!el || !current.following) return;
       const now = performance.now();
       if (shouldPin(current, now)) pinToBottom(el, state);
-      // 向上输入还在时间窗口内：先不钉，窗口过后补一次；拖滚动条期间不补，松手时再排。
+      // Upward input is still within the time window: don't pin yet, and pin once after the window has passed; no pinning during scrollbar dragging, and it is scheduled on release.
       else if (retry.current === null && !current.scrollbarDrag)
         retry.current = setTimeout(
           () => {
@@ -204,7 +203,7 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
     });
   }, []);
 
-  // 会话切换时重置为跟底；声明在下面钉底的 effect 之前，同一次提交里先重置再钉。
+  // On session switch, reset to following the bottom; it is declared before the pin-to-bottom effect below, so within the same commit it resets first and then pins.
   useLayoutEffect(() => {
     state.current = { ...initialFollowState(), lastScrollTop: scrollerRef.current?.scrollTop ?? null };
   }, [conversationId]);
@@ -230,9 +229,8 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
       if (state.current.following) schedulePin();
     };
 
-    // 流式文本在同一条上增长、图片加载、块展开，以及视口变矮，都不经过 blocks：靠尺寸变化钉底。
-    // 同一个 observer 看容器和内容列，一帧的所有尺寸变化在一次回调里送到；回调在布局之后、绘制之前，
-    // 直接钉底不会先画出一帧没到底的画面。暂时不能钉（有向上输入）时交给 schedulePin 补。
+    // Streamed text growing within the same message, images loading, blocks expanding, and the viewport getting shorter all bypass `blocks`, so the bottom is pinned via size changes.
+    // One observer watches both the container and the content column, so all size changes in a frame arrive in one callback. The callback runs after layout and before paint, so pinning directly does not paint a frame that isn't at the bottom. When pinning can't happen yet (there is upward input), it is handed to schedulePin to catch up.
     const observer = new ResizeObserver(() => {
       const current = state.current;
       if (!current.following) return;
@@ -252,13 +250,13 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY < 0 && !event.ctrlKey && !nestedCanScrollUp(event.target, el)) intent();
     };
-    // 焦点在 body 时浏览器把键盘滚动交给最近操作过的滚动区，所以在文档上听，只认容器内或 body 上的按键。
+    // When focus is on body, the browser hands keyboard scrolling to the scroll area that was most recently used, so listen on the document and only accept keys whose target is inside the container or on body.
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (!isUpwardKey(event) || isEditable(target)) return;
       if (target instanceof Node && (el.contains(target) || target === doc.body || target === doc.documentElement)) intent();
     };
-    // 按在滚动条上（经典滚动条占宽；覆盖式滚动条 clientWidth 等于 offsetWidth，判不出来）。
+    // A press on the scrollbar (classic scrollbars take up width; with overlay scrollbars clientWidth equals offsetWidth, so this cannot be detected).
     const onPointerDown = (event: PointerEvent) => {
       if (event.target === el && event.offsetX >= el.clientWidth) state.current = beginScrollbarDrag(state.current);
     };
@@ -269,7 +267,7 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
     const onTouchStart = (event: TouchEvent) => {
       touchY = event.touches[0]?.clientY ?? null;
     };
-    // 手指往下移 = 内容往上滚。
+    // Finger moving down = content scrolling up.
     const onTouchMove = (event: TouchEvent) => {
       const y = event.touches[0]?.clientY;
       if (y === undefined) return;
@@ -308,16 +306,16 @@ function useFollowBottom(conversationId: string, blocks: unknown, showColumn: bo
   return { scrollerRef, columnRef };
 }
 
-/** 钉到底，并把钉到的位置记成下次比较的基准：钉底的 scroll 事件可能在监听挂上之前就派发了。 */
+/** Pin to the bottom, and record the pinned position as the baseline for the next comparison: the scroll event from pinning may have been dispatched before the listener was attached. */
 function pinToBottom(el: HTMLElement, state: { current: FollowState }) {
   const max = el.scrollHeight - el.clientHeight;
-  // 弹性超滚（scrollTop 超过最大值）时不动，等它自己回弹。
+  // During elastic overscroll (scrollTop beyond the maximum), do nothing and let it bounce back on its own.
   if (el.scrollTop > max + REFOLLOW_PX) return;
   if (el.scrollTop < max) el.scrollTop = max;
   state.current = { ...state.current, lastScrollTop: el.scrollTop };
 }
 
-/** 滚轮落在一个还能往上滚的嵌套滚动区里：滚动由它消化，不传到线程。 */
+/** When the wheel lands in a nested scroll area that can still scroll up, that area consumes the scroll and it is not passed on to the thread. */
 function nestedCanScrollUp(target: EventTarget | null, container: HTMLElement): boolean {
   for (let node = target instanceof Element ? target : null; node && node !== container; node = node.parentElement) {
     if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue;
@@ -332,7 +330,7 @@ function isEditable(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 }
 
-/** 挂在一块后面的视频卡与下载卡（产品设计 §3.2.2）：与回复正文对齐，竖排。 */
+/** Video cards and download cards hung after a block (product design §3.2.2): aligned with the reply body, stacked vertically. */
 function ThreadCards({ cards, conversationId }: { cards: readonly ThreadCard[]; conversationId: string }) {
   return (
     <div className={messageOutputs} role="group" aria-label={OUTPUT_COPY.messageOutputs}>

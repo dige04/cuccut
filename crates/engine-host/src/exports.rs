@@ -1,6 +1,6 @@
-//! `exports.plan`：导出启动时的冻结（架构设计 §9.11）。在一次请求里读当前的视频快照、要用的文档正文与素材位置，
-//! 求出声音的区间计划或文字的时间线投影（`render-graph`，与预览同一个实现）。引擎宿主按顺序处理请求，
-//! 所以这一份结果对应同一个视频版本；之后的编辑不影响已经冻结的导出。
+//! `exports.plan`: the freeze taken when an export starts (architecture design §9.11). In a single request it reads the current video snapshot, the document bodies it needs, and asset locations,
+//! then computes the audio segment plan or the text timeline projection (`render-graph`, the same implementation as preview). The engine host processes requests in order,
+//! so this one result corresponds to a single video version; later edits do not affect an export that has already been frozen.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,29 +21,29 @@ use video_engine::{ErrorBody, Retryability, Video};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanParams {
     pub video_id: Id,
-    /// `audio`：声音的区间计划；`text`：文档的时间线投影；`video`：成片要冻结的序列、素材与文档，以及每段的画面概览与声音计划。
+    /// `audio`: the audio range plan; `text`: the timeline projection of the document; `video`: the sequences, assets, and documents to freeze for the final cut, plus each segment's visual overview and audio plan.
     kind: String,
     #[serde(default)]
     sequence_id: Option<Id>,
-    /// 序列时间的秒数 `[start, end)`，每段各出一份计划（`parts`，同一个视频版本）；空时是整条序列。
+    /// Sequence time in seconds `[start, end)`; each part gets its own plan (`parts`, same video version); when empty, it is the whole sequence.
     #[serde(default)]
     ranges: Vec<RangeParams>,
-    /// `text` 用：第一份是主文档，第二份（可选）是双语合并的另一种语言。
+    /// For `text`: the first is the main document; the second (optional) is the other language of a merged bilingual pair.
     #[serde(default)]
     document_ids: Vec<Id>,
-    /// `text` 用：只经这些实例投影。
+    /// For `text`: projects only through these instances.
     #[serde(default)]
     scope_item_ids: Vec<Id>,
-    /// `audio` 与 `video` 用：只这一次的声音计划里停用或取消静音哪些实例（例如只要原声、只要一组配音，架构设计 §9.13）。
-    /// `video` 的画面计划与冻结的序列（`document`）不受影响；视频不变。
+    /// For `audio` and `video`: which instances to disable or unmute in this one audio plan only (for example, only the original sound, or only one group of voiceover; architecture design §9.13).
+    /// The visual plan and frozen sequence (`document`) of `video` are not affected; the video itself is unchanged.
     #[serde(default)]
     audio_items: Option<AudioItemSelection>,
-    /// `video` 用：要的输出宽高（像素，都可以不给）。计划的 `output` 是定下的输出尺寸与画面在其中的位置
-    /// （`render_graph::video_plan::output_geometry`）。
+    /// For `video`: the desired output width and height (in pixels; both may be omitted). The plan's `output` is the determined output size and the position of the picture within it
+    /// (`render_graph::video_plan::output_geometry`).
     #[serde(default)]
     output: Option<OutputParams>,
-    /// `video` 用：不冻结素材（`assets` 为空，不看文件在不在、变没变）。清点字体（`fonts.usage`）只排文字与字幕，
-    /// 用不到素材；缺素材的视频照样清点。
+    /// For `video`: does not freeze assets (`assets` is empty; it does not check whether files exist or have changed). Font inventory (`fonts.usage`) covers only text and subtitles,
+    /// which need no assets; a video with missing assets is still inventoried.
     #[serde(default)]
     skip_assets: bool,
 }
@@ -57,8 +57,8 @@ struct OutputParams {
     height: Option<u32>,
 }
 
-/// 声音计划里改用的实例：`disable` 当作停用（不发声，也不触发闪避），`unmute` 当作没有静音（音频实例的 `mix.muted`、
-/// 视频实例的内嵌音频）。哪些实例由调用方按视频里的标记决定；序列里没有的 ID 忽略。
+/// Instances switched in the audio plan: `disable` is treated as disabled (no sound, and does not trigger ducking), and `unmute` is treated as not muted (the `mix.muted` of audio instances,
+/// and the embedded audio of video instances). The caller decides which instances, based on the markers in the video; IDs not in the sequence are ignored.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AudioItemSelection {
@@ -68,7 +68,7 @@ struct AudioItemSelection {
     unmute: Vec<Id>,
 }
 
-/// 在快照的这条序列上套用实例的选择（只影响这一次计划）。
+/// Applies the instance selection to this sequence in the snapshot (affects only this plan).
 fn select_audio_items(items: &mut [TimelineItem], selection: &AudioItemSelection) {
     for item in items {
         let id = item.base().id.clone();
@@ -95,13 +95,13 @@ struct RangeParams {
 const MAX_RANGES: usize = 64;
 const SPEECH_SCHEMA: &str = "cuccut.speech/1";
 
-/// 译文正文（视频格式规范 §5.3）：`/2` 是规范的格式，翻译流程写它；`/1` 是旧项目导入的格式，只读兼容。
-/// 两者都没有时间，不能当主文档投影，只随主文档带上正文，由导出按句子 ID 配。
+/// Translation body (video format spec §5.3): `/2` is the canonical format, which the translation flow writes; `/1` is the format of old imported projects, read-only compatibility.
+/// Neither carries timing, so it cannot be projected as the main document; it is carried along with the main document as body text only, and export matches it to sentences by sentence ID.
 fn is_translation(schema: &str) -> bool {
     matches!(schema, "cuccut.translation/1" | "cuccut.translation/2")
 }
 
-/// 源时钟可以来自文档的来源链（格式规范 §4.6），包括字幕 → 译文 → 转写。
+/// The source clock can come from a document's source chain (format spec §4.6), including subtitle → translation → transcript.
 fn source_asset(documents: &BTreeMap<Id, DocumentRecord>, id: &str) -> Option<Id> {
     let mut current = id;
     let mut visited = BTreeSet::new();
@@ -119,7 +119,7 @@ fn invalid(code: &str, message: impl Into<Text>) -> ErrorBody {
     ErrorBody::new(code, message, Retryability::Never)
 }
 
-/// 秒 → 微秒精度的有理数（与交互预览的入口相同的取整）。
+/// Seconds → rational number at microsecond precision (same rounding as the interactive preview entry point).
 fn seconds(value: f64, field: &str) -> Result<Ratio, ErrorBody> {
     if !value.is_finite() || value < 0.0 {
         return Err(invalid(
@@ -141,7 +141,7 @@ fn plan_error(error: render_graph::PlanError) -> ErrorBody {
 pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
     let snapshot = video.snapshot();
     let sequence_id = value.sequence_id.clone().unwrap_or_else(|| snapshot.root_sequence_id.clone());
-    // 声音计划用的序列：套用了实例的选择的副本（只影响这一次的声音，画面与冻结的序列照原样）。
+    // Sequence used for the audio plan: a copy with the instance selection applied (affects only this audio; the visuals and frozen sequence stay as they are).
     let audio_sequences = match &value.audio_items {
         Some(_) if value.kind != "audio" && value.kind != "video" => {
             return Err(invalid(
@@ -212,7 +212,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
         "fps": sequence.header.fps,
         "canvas": { "width": sequence.header.canvas.width, "height": sequence.header.canvas.height },
     });
-    // 按文稿触发的闪避（视频格式规范 §3.9）：触发区间是整条序列上的有效词流，各段范围共用。
+    // Ducking triggered by the script (video format spec §3.9): the trigger range is the effective word stream across the whole sequence, shared by all segment ranges.
     let transcripts = match value.kind.as_str() {
         "audio" | "video" => speech_documents(video, &snapshot)?,
         _ => Vec::new(),
@@ -274,8 +274,8 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
                     "sourceAssetId": content.document.source_asset_id,
                     "sourceDocumentId": content.document.source_document_id,
                     "schema": schema,
-                    // 译文没有时间：原样带上，由导出按句子 ID 配到主文档的句子上。转写也带上正文：句子的成员与说话人的名字
-                    // （时间一律用 `parts` 里的投影，不用正文里的源时间）。
+                    // The translation has no timing: it is carried over as-is, and export matches it to the main document's sentences by sentence ID. The transcript also carries its body: sentence members and speaker names
+                    // (timing always uses the projection in `parts`, not the source times in the body).
                     "body": if is_translation(&schema) || schema == SPEECH_SCHEMA { content.body.clone() } else { Value::Null },
                 }));
                 contents.push((schema, content));
@@ -296,7 +296,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
             }
             result["documents"] = Value::Array(documents);
             result["parts"] = Value::Array(parts);
-            // ASS 用：显示主文档的第一个字幕实例的样式文档。
+            // For ASS: the style document for displaying the first subtitle instance of the main document.
             let style_id = sequence.items.iter().find_map(|item| match item {
                 TimelineItem::Caption(c) if &c.document_id == primary => c.style_document_id.clone(),
                 _ => None,
@@ -330,7 +330,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
                 }
                 parts.push(json!({ "video": picture, "audio": audio }));
             }
-            // 声波听的是整条序列的声音（格式规范 §3.7），声音段可以在导出范围之外：这些素材也冻结，导出时算它们的频谱。
+            // The waveform listens to the sound of the whole sequence (format spec §3.7); audio segments may lie outside the export range: those assets are also frozen, and their spectra are computed at export time.
             if sequence.items.iter().any(|item| matches!(item, TimelineItem::Visualizer(_))) {
                 let whole = render_graph::audio_plan::plan_audio(view, &sequence_id, None).map_err(plan_error)?;
                 for segment in &whole.segments {
@@ -346,7 +346,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
                     assets.push(asset_entry(video, &snapshot, id, revision)?);
                 }
             }
-            // 逐帧求计划要的那部分视频（`PlanDocument`）：这条序列与它引用的素材记录。
+            // Frame by frame, the part of the video the plan needs (`PlanDocument`): this sequence and the asset records it references.
             let mut records = serde_json::Map::new();
             for item in &sequence.items {
                 for asset in item.asset_refs() {
@@ -360,7 +360,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
                 "sequences": { sequence_id.clone(): sequence },
                 "assets": records,
             });
-            // 字幕的词所在的转写（字幕文档头的 `sourceDocumentId` 指向的 `speech` 文档）一起冻结，逐词动画与强调按它推进。
+            // The transcript containing the subtitle's words (the `speech` document pointed to by `sourceDocumentId` in the subtitle document header) is frozen along with it; word-by-word animation and emphasis advance according to it.
             let transcripts_used: Vec<Id> = document_ids
                 .iter()
                 .filter_map(|id| snapshot.documents.get(id)?.source_document_id.clone())
@@ -377,8 +377,8 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
             let (width, height) = value.output.as_ref().map_or((None, None), |o| (o.width, o.height));
             let canvas = &sequence.header.canvas;
             result["output"] = serde_json::to_value(output_geometry(canvas.width, canvas.height, width, height)).expect("能序列化");
-            // 写了 `speaker` 的声波（格式规范 §3.7）：各说话人在整条序列上说话的区间，与预览同一个求法。视频里没有转写时不给，
-            // 导出按没有转写画（静音并报提示）。
+            // Waveform with `speaker` set (format spec §3.7): the intervals in which each speaker talks across the whole sequence, computed the same way as in preview. Not provided when the video has no transcript;
+            // export renders it as having no transcript (silent, with a notice).
             let speaker_visualizer = sequence.items.iter().any(|item| match item {
                 TimelineItem::Visualizer(v) => v.visualizer.speaker.as_deref().is_some_and(|s| !s.is_empty()),
                 _ => false,
@@ -396,7 +396,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
     Ok(result)
 }
 
-/// 视频里每份转写文档（`kind: speech`）的当前正文：投到序列上就是有效词流（闪避的触发区间、声波的说话人）。
+/// The current body of each transcript document in the video (`kind: speech`): projected onto the sequence it becomes the effective word stream (ducking trigger ranges, waveform speakers).
 fn speech_documents(video: &Video, snapshot: &video_engine::model::VideoSnapshot) -> Result<Vec<DocumentContent>, ErrorBody> {
     let mut contents = Vec::new();
     for (id, record) in &snapshot.documents {
@@ -407,9 +407,9 @@ fn speech_documents(video: &Video, snapshot: &video_engine::model::VideoSnapshot
     Ok(contents)
 }
 
-/// 字幕要读的文档（字幕文档、样式文档或字幕的词所在的转写）的冻结正文。`lineKind` 是字幕行的种类：派生自译文的字幕
-/// 是译文行，其余是原文行（与预览的判断相同）。文档头的 `sourceDocumentId`、`sourceAssetId` 照抄（字幕取词用）。
-/// 文档不在了时正文为 `null`，由导出的预检报出来。
+/// Frozen body of the documents subtitles need to read (the subtitle document, the style document, or the transcript containing the subtitle's words). `lineKind` is the kind of subtitle line: subtitles derived from a translation
+/// are translation lines, and the rest are source-language lines (the same judgment as in preview). `sourceDocumentId` and `sourceAssetId` in the document header are copied as-is (used for looking up subtitle words).
+/// If the document is gone, the body is `null`, and export's pre-check reports it.
 fn caption_document(video: &Video, snapshot: &video_engine::model::VideoSnapshot, id: &Id) -> Value {
     let record = snapshot.documents.get(id);
     let parent_kind = record
@@ -429,7 +429,7 @@ fn caption_document(video: &Video, snapshot: &video_engine::model::VideoSnapshot
     })
 }
 
-/// 一个素材版本的冻结信息：位置、存储方式与指纹。文件不在或大小变了时按引擎的 `ASSET_MISSING` 报。
+/// Frozen info for one asset version: location, storage mode, and fingerprint. If the file is missing or its size has changed, the engine reports `ASSET_MISSING`.
 fn asset_entry(video: &Video, snapshot: &video_engine::model::VideoSnapshot, asset_id: &str, revision: &str) -> Result<Value, ErrorBody> {
     let resolved = video.resolve_asset(asset_id, Some(revision))?;
     let record = snapshot

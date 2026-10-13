@@ -8,7 +8,7 @@ const ctx: TaskContext = { projects: [], conversations: [{ id: 'c2', projectId: 
 const NOW = Date.parse('2026-10-01T10:00:00Z');
 const at = (minute: number) => `2026-10-01T09:${String(minute).padStart(2, '0')}:00Z`;
 
-/** 一条 Job 行；`videoId` 不给时属于打开的视频 v1。 */
+/** A Job row; when `videoId` is not given it belongs to the open video v1. */
 const jobAt = (jobId: string, minute: number, patch: Partial<JobRecord> = {}) =>
   jobRow(job({ jobId, startedAt: at(minute), createdAt: at(minute), ...patch }), ctx);
 

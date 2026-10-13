@@ -1,13 +1,13 @@
-//! 静态布局：flex 简化（row/column + align/justify/gap）+ 绝对定位。
-//! 布局只算一次：动画不改布局，只改变换（规范 §6.4 allowlist 保证）。
-//! 文本度量经 TextMeasure trait 由 host 注入（core 无 I/O）。
+//! Static layout: simplified flex (row/column + align/justify/gap) + absolute positioning.
+//! Layout is computed once: animation does not change layout, only transforms (guaranteed by the §6.4 allowlist).
+//! Text measurement is injected by the host through the TextMeasure trait (core does no I/O).
 
 use crate::color::Rgba;
 use crate::resolve::{CapLane, CapLine, CapLineBox, CapWordBox, Ir, RNode, Rect};
 use crate::svgpath;
 use serde_json::Value;
 
-/// 单行文本度量结果
+/// Result of measuring a single line of text
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TextMetricsLine {
     pub width: f64,
@@ -16,12 +16,11 @@ pub struct TextMetricsLine {
 }
 
 pub trait TextMeasure {
-    /// family 为空 = 缺省无衬线族；有文档字体资产时 host 端 strict 匹配（§8.4 确定性）
+    /// Empty family = default sans-serif family; when the document has font assets, the host matches strictly (§8.4 determinism)
     fn measure(&mut self, text: &str, family: &str, font_size: f64, weight: u16)
     -> TextMetricsLine;
 
-    /// 带 `fontStyle`（§6.3）的度量。缺省实现忽略斜体——只有真的会挑斜体 face 的
-    /// host（`ccut-render` 的 `TextEngine`）需要覆写。
+    /// Measurement with `fontStyle` (§6.3). The default implementation ignores italics; only hosts that really pick italic faces (`TextEngine` in `ccut-render`) need to override it.
     fn measure_styled(
         &mut self,
         text: &str,
@@ -102,7 +101,7 @@ pub fn prepare(node: &mut RNode, m: &mut dyn TextMeasure) {
         .and_then(Value::as_str)
         .unwrap_or("center")
         .to_string();
-    // `anchor: [x, y]`：元素盒比例（规范 §6.3）。关节 pivot 用它。
+    // `anchor: [x, y]`: the box ratio of the element (spec §6.3). Joint pivots use it.
     node.anchor_xy = s.get("anchor").and_then(Value::as_array).and_then(|a| {
         match (
             a.first().and_then(Value::as_f64),
@@ -114,9 +113,7 @@ pub fn prepare(node: &mut RNode, m: &mut dyn TextMeasure) {
     });
 
     if node.ntype == "text" {
-        // 内容轨 `text`（§6.2.2）的其余字符串：没写 `width` 时元素盒按所有关键帧
-        // 字符串里最宽的一个定，切到更长的字符串不会从盒子两侧溢出。写了 `width`
-        // 就以作者为准，这里不收集。
+        // Other strings of a content track `text` (§6.2.2): if `width` is not given, the element box is sized by the widest of all keyframe strings, so switching to a longer string does not overflow on either side of the box. If `width` is given, the author's value wins and nothing is collected here.
         let alternates: Vec<String> = if s.get("width").is_none() {
             node.channels
                 .iter()
@@ -167,7 +164,7 @@ pub fn prepare(node: &mut RNode, m: &mut dyn TextMeasure) {
                 }
                 block.height = offset;
             }
-            // 换了内容的字符串按渲染端同一口径排（无 runs，见 `record_text`）。
+            // Strings with changed content are measured by the same rules as the rendering side (no runs, see `record_text`).
             let widest = alternates
                 .iter()
                 .map(|alternate| {
@@ -216,7 +213,7 @@ pub fn prepare(node: &mut RNode, m: &mut dyn TextMeasure) {
             .or(node.view_box.map(|v| v[2]))
             .unwrap_or(0.0);
         let scale = if vb_w > 0.0 { w / vb_w } else { 1.0 };
-        // viewBox 的 (minX, minY) 落在盒的左上角（§6.2.1）：先平移再等比缩放。
+        // The (minX, minY) of the viewBox lands on the box's top-left corner (§6.2.1): translate first, then scale uniformly.
         let (ox, oy) = node.view_box.map_or((0.0, 0.0), |v| (v[0], v[1]));
         let to_box = |(x, y): (f64, f64)| ((x - ox) * scale, (y - oy) * scale);
         for c in &mut node.children {
@@ -269,7 +266,7 @@ pub fn layout_mode(node: &RNode) -> Option<String> {
     None
 }
 
-/// grid 列数（§6.3）：缺省或非法（≤0）时按 1 列处理
+/// grid column count (§6.3): when missing or invalid (≤0), treated as 1 column
 fn grid_columns(node: &RNode) -> usize {
     node.style
         .get("columns")
@@ -279,7 +276,7 @@ fn grid_columns(node: &RNode) -> usize {
         .unwrap_or(1) as usize
 }
 
-/// 主轴弹性权重（§6.3 `flex`）：非数字或 ≤0 视为不参与分配
+/// Main-axis flex weight (§6.3 `flex`): non-numeric or ≤0 means it does not take part in distribution
 fn flex_weight(node: &RNode) -> f64 {
     node.style
         .get("flex")
@@ -311,8 +308,7 @@ pub fn intrinsic(node: &mut RNode) -> (f64, f64) {
         "svg" => {
             size = (ew.unwrap_or(0.0), eh.unwrap_or(0.0));
         }
-        // image / animatedImage / lottie / program / video：天然尺寸（HostInputs 元数据），
-        // 单边给定时按纵横比推另一边
+        // image / animatedImage / lottie / program / video: natural size (HostInputs metadata); when only one side is given, the other side is derived from the aspect ratio
         "image" | "animatedImage" | "lottie" | "program" | "video" => {
             let (nw, nh) = (node.nat_w, node.nat_h);
             size = match (ew, eh) {
@@ -331,7 +327,7 @@ pub fn intrinsic(node: &mut RNode) -> (f64, f64) {
                     .or_else(|| node.style.get("gap").and_then(Value::as_f64))
                     .unwrap_or(0.0);
                 if mode == "grid" {
-                    // 等宽 n 列、按序自动换行；列宽 = 最宽子节点，行高 = 该行最高子节点
+                    // Fixed n columns, auto-wrapping in order; column width = widest child, row height = tallest child in that row
                     let cols = grid_columns(node);
                     let mut sizes: Vec<(f64, f64)> = Vec::new();
                     for c in &mut node.children {
@@ -402,7 +398,7 @@ pub fn intrinsic(node: &mut RNode) -> (f64, f64) {
     size
 }
 
-/// node.frame 已定，摆放子节点并递归
+/// node.frame is already set; lay out the children and recurse
 pub fn place(node: &mut RNode) {
     if node.ntype == "svg" {
         let sz = (node.frame.w, node.frame.h);
@@ -513,7 +509,7 @@ pub fn place(node: &mut RNode) {
                     (if mode == "row" { cs.0 } else { cs.1 }) + if i > 0 { gap } else { 0.0 };
             }
             let main_span = if mode == "row" { w } else { h };
-            // flex 弹性分配（§6.3）：剩余主轴空间按权重分给声明 flex 的流内子节点
+            // flex distribution (§6.3): the remaining main-axis space is shared by weight among in-flow children that declare flex
             let weights: Vec<f64> = flow_idx
                 .iter()
                 .map(|&i| flex_weight(&node.children[i]))
@@ -576,10 +572,10 @@ pub fn place(node: &mut RNode) {
     }
 }
 
-// ── 字幕确定性排版（§8.4）：core 排行盒，渲染端/预览端/Swift 端只画 ──
+// ── Deterministic subtitle typesetting (§8.4): core lays out line boxes; the render side, preview side, and Swift side only draw ──
 
-/// 词/字之间是否需要空格：拉丁词间加，CJK 之间不加。
-/// 渲染端与浏览器预览端必须使用同一规则（预览端为等价正则实现）。
+/// Whether a space is needed between words/characters: added between Latin words, not between CJK characters.
+/// The rendering side and the browser preview side must use the same rule (the preview side is an equivalent regex implementation).
 pub fn needs_space(prev: &str, next: &str) -> bool {
     let (Some(a), Some(b)) = (prev.chars().last(), next.chars().next()) else {
         return false;
@@ -589,23 +585,23 @@ pub fn needs_space(prev: &str, next: &str) -> bool {
     TAIL.contains(a) && HEAD.contains(b)
 }
 
-/// CJK 表意/假名/全角标点：可逐字断行
+/// CJK ideographs / kana / fullwidth punctuation: may break line character by character
 fn is_cjk(c: char) -> bool {
     matches!(c as u32,
         0x2E80..=0x303F | 0x3040..=0x30FF | 0x3400..=0x4DBF |
         0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF)
 }
 
-/// 断行单元：`lead_space` 表示与前一单元之间需要一个空格宽度
+/// Break unit: `lead_space` means a space width is needed between this unit and the previous one
 struct Tok {
     text: String,
     lead_space: bool,
     width: f64,
-    /// 词级 lane 中回指 `CapLine.words` 的下标
+    /// Index back into `CapLine.words` in the word-level lane
     word_index: Option<usize>,
 }
 
-/// 纯文本切分：空白分词 + CJK 逐字
+/// Plain text split: whitespace tokenization + CJK per character
 fn tokenize_text(text: &str) -> Vec<(String, bool)> {
     let mut out: Vec<(String, bool)> = Vec::new();
     let mut cur = String::new();
@@ -639,7 +635,7 @@ fn tokenize_text(text: &str) -> Vec<(String, bool)> {
     out
 }
 
-/// 一行的排版草稿（尚未定 x/y）
+/// Typesetting draft of one line (x/y not yet decided)
 struct RowDraft {
     text: String,
     w: f64,
@@ -648,8 +644,8 @@ struct RowDraft {
     words: Vec<CapWordBox>,
 }
 
-/// 单个 lane 的一条字幕行 → 行盒草稿。
-/// `wrap_w = None` 或整行放得下时，返回与不换行时逐像素等价的单行。
+/// Single lane's subtitle line → line box draft.
+/// When `wrap_w = None` or the whole line fits, returns a single line identical pixel-for-pixel to the no-wrap case.
 fn build_rows(
     line: &CapLine,
     lane: &CapLane,
@@ -661,7 +657,7 @@ fn build_rows(
     let word_mode = line.words.is_some() && lane.hi_color.is_some();
     let space_w = m.measure(" ", &fam, fs, fw).width;
 
-    // ① 先算不换行行盒：放得下就原样返回，杜绝换行逻辑扰动现有排版
+    // ① First compute the no-wrap line box: if it fits, return it as-is, so line-breaking logic cannot disturb existing layout
     let mut single_words: Vec<CapWordBox> = Vec::new();
     let single_w = if word_mode {
         let words = line.words.as_ref().unwrap();
@@ -696,7 +692,7 @@ fn build_rows(
     }
     let wrap_w = wrap_w.unwrap();
 
-    // ② 贪心断行
+    // ② Greedy line breaking
     let toks: Vec<Tok> = if word_mode {
         let words = line.words.as_ref().unwrap();
         words
@@ -776,8 +772,8 @@ fn build_rows(
         .collect()
 }
 
-/// 为 IR 中所有字幕条计算行盒（§3.6 region/grow + §8.4 anchor/offset）。
-/// 必须在渲染前调用一次；渲染端不再自行排版。
+/// Computes line boxes for all subtitle cues in the IR (§3.6 region/grow + §8.4 anchor/offset).
+/// Must be called once before rendering; the rendering side no longer lays out text on its own.
 pub fn layout_captions(ir: &mut Ir, m: &mut dyn TextMeasure) {
     let (cw, ch) = (ir.w, ir.h);
     for cap in &mut ir.caption_clips {
@@ -792,7 +788,7 @@ pub fn layout_captions(ir: &mut Ir, m: &mut dyn TextMeasure) {
             None => cw / 2.0,
         };
         for item in &mut cap.items {
-            // pass 1：逐 lane 断行
+            // pass 1: line-break each lane
             let mut drafts: Vec<(usize, Vec<RowDraft>)> = Vec::new();
             let mut total_h = 0.0f64;
             for (li, lane) in lanes.iter().enumerate() {
@@ -810,7 +806,7 @@ pub fn layout_captions(ir: &mut Ir, m: &mut dyn TextMeasure) {
             if drafts.is_empty() {
                 continue;
             }
-            // pass 2：定位
+            // pass 2: positioning
             let mut top = match cap.region {
                 Some(r) => {
                     if cap.grow_up {

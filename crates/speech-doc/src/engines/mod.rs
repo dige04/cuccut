@@ -1,8 +1,6 @@
-//! LLM 阶段引擎注册表：统一的「发调用 → 收答案 → 校验 → 应用」生命周期。
+//! LLM stage engine registry: a unified lifecycle of “send call → receive answer → validate → apply”.
 //!
-//! 每个引擎零 I/O、零网络、零时钟：LLM 经 [`crate::llm::LlmJson`] 注入，
-//! 重试退避的 sleep 由宿主闭包注入。全部引擎逻辑可用 [`crate::llm::FakeLlm`]
-//! 离线测试。
+//! Each engine has zero I/O, zero network and zero clock: the LLM is injected via [`crate::llm::LlmJson`], and the sleep for retry backoff is injected by the host closure. All engine logic can be tested offline with [`crate::llm::FakeLlm`].
 
 pub mod align;
 pub mod brief;

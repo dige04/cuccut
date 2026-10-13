@@ -15,10 +15,10 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 两台 Runtime（各自的临时 Home）之间的局域网能力共享，全部经网关：
- * - 节点 A：开启共享（127.0.0.1、系统分配端口、假的 mDNS），合成的默认模型包，假的 Model Worker（故障由控制文件注入）；
- * - 发起端 B：真实的视频引擎，默认没有模型也没有 Worker，经回环 TCP 代理连 A（模拟断流与失联）。
- * 要 engine-host、ffmpeg 与 Apple Silicon（默认模型包是 MLX），缺了就跳过。
+ * LAN capability sharing between two Runtimes (each with its own temp Home), all through the gateway:
+ * - Node A: sharing on (127.0.0.1, a system-assigned port, fake mDNS), a synthesized default model pack, and a fake Model Worker (faults injected via a control file).
+ * - Initiator B: a real video engine, with no model and no Worker by default, connected to A through a loopback TCP proxy (simulating dropped streams and lost contact).
+ * Needs engine-host, ffmpeg and Apple Silicon (the default model pack is MLX); skipped if any is missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -35,7 +35,7 @@ if (!engine) console.warn('跳过两台 Runtime 的节点测试：没有构建 e
 if (!ffmpeg) console.warn('跳过两台 Runtime 的节点测试：没有 ffmpeg');
 if (!appleSilicon) console.warn('跳过两台 Runtime 的节点测试：默认模型包（MLX）只在 Apple Silicon 的 macOS 上可用');
 
-/** 发起端的期限：失联判定缩短到 1.5 秒。 */
+/** Initiator deadline: the lost-contact threshold is shortened to 1.5 seconds. */
 const FAST: Partial<RemoteTiming> = {
   requestTimeoutMs: 3_000,
   transferIdleMs: 5_000,
@@ -58,7 +58,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件。 */
+/** Writes a synthesized manifest and files for each repository in the default model pack. */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -80,7 +80,7 @@ async function installSyntheticModels(modelsDir: string): Promise<void> {
 
 const listDir = (dir: string) => fs.readdir(dir).catch(() => [] as string[]);
 
-/** 可以在测试中途改结果的假发现。 */
+/** A fake discovery whose results can change mid-test. */
 class FakeDiscoverer implements Discoverer {
   nodes: DiscoveredNode[] = [];
   async discover(): Promise<DiscoveredNode[]> {
@@ -93,7 +93,7 @@ interface NodeSide {
   runtime: RunningRuntime;
   client: CucCutClient;
   share: ShareStatus;
-  /** 假 Model Worker 的控制文件：`{ faults: [...] }`，每次 job.run 重新读。 */
+  /** Fake Model Worker control file: `{ faults: [...] }`, re-read on every job.run. */
   faults(list: string[]): Promise<void>;
 }
 
@@ -104,12 +104,12 @@ interface InitiatorSide {
   discoverer: FakeDiscoverer;
   videoId: string;
   assetId: string;
-  /** 主题上收到的全部 jobs 事件（令牌检查用）。 */
+  /** All jobs events received on the topic (for the token check). */
   events: JobsEvent[];
   jobs(): JobsSnapshot | null;
 }
 
-/** 主题事件里的任务记录（`job.updated`），按到达顺序。 */
+/** Job records from the topic events (`job.updated`), in arrival order. */
 const jobUpdates = (events: JobsEvent[]): JobRecord[] => events.flatMap((e) => (e.type === 'job.updated' ? [e.job] : []));
 
 describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：两台 Runtime', () => {
@@ -149,7 +149,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     return resolveRuntimeHome({ CUCCUT_HOME: dir });
   }
 
-  /** 节点 A：每个测试一台新的（本地 Provider 5 分钟内崩溃 3 次会停用模型包）。 */
+  /** Node A: a fresh one per test (a local provider that crashes 3 times within 5 minutes disables the model pack). */
   async function startNode(options: { models?: boolean; faults?: string[] } = {}): Promise<NodeSide> {
     const home = await tempHome('cuccut-node-a-');
     if (options.models !== false) await installSyntheticModels(home.modelsDir);
@@ -172,7 +172,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     return { home, runtime, client, share, faults };
   }
 
-  /** 发起端 B：真实引擎；默认没有模型也没有 Worker。一个视频、一段录音。 */
+  /** Initiator B: a real engine; no model and no Worker by default. One video, one recording. */
   async function startInitiator(options: { local?: boolean; timing?: Partial<RemoteTiming> } = {}): Promise<InitiatorSide> {
     const home = await tempHome('cuccut-initiator-b-');
     if (options.local) await installSyntheticModels(home.modelsDir);
@@ -218,9 +218,9 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     return proxy;
   }
 
-  /** B 经代理与 A 配对，返回 A 的 nodeId。 */
+  /** B pairs with A through the proxy and returns A's nodeId. */
   async function pair(b: InitiatorSide, a: NodeSide, proxy: TcpProxy, alias?: string) {
-    // 配对码用过一次就作废：没有了就让 A 重新发一个。
+    // A pairing code is void once used: when it is gone, have A issue a new one.
     const code =
       pairingCodeOf(await a.client.request('nodes.share.status', {})) ??
       pairingCodeOf(await a.client.request('nodes.share.pairingCode', {}))!;
@@ -234,7 +234,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
       30_000,
     );
 
-  /** B 存下的令牌（只用来检查它没有漏出去，以及直接问节点）。令牌在凭据存储里，不在 nodes.json 里。 */
+  /** The token B stored (used only to check it did not leak, and to ask the node directly). The token lives in the credential store, not in nodes.json. */
   async function storedToken(b: InitiatorSide): Promise<string> {
     const stored = JSON.parse(await fs.readFile(b.home.nodesFile, 'utf8')) as { nodes: Array<{ nodeId: string; token?: string }> };
     expect(stored.nodes[0]).not.toHaveProperty('token');
@@ -281,17 +281,17 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     const status = await a.client.request('nodes.share.status', {});
     expect(status.clients).toEqual([expect.objectContaining({ name: 'Laptop', clientId: b.runtime.initiator.clientId })]);
 
-    // 同一个节点再配对一次：替换记录，别名保留。
+    // Pairing the same node again replaces the record and keeps the alias.
     const again = await pair(b, a, proxy);
     expect(again.alias).toBe('Studio');
     expect((await b.client.request('nodes.list', {})).nodes).toHaveLength(1);
 
-    // 节点连不上：列表照常返回，problem 为 unreachable。
+    // Node unreachable: the list still returns, with problem `unreachable`.
     proxy.down();
     expect((await b.client.request('nodes.list', {})).nodes[0]).toMatchObject({ problem: 'unreachable', health: null });
     proxy.up();
 
-    // 发现：B 自己也在共享，自己的节点不出现在结果里。
+    // Discovery: B is sharing too, but its own node does not appear in the results.
     const own = await b.client.request('nodes.share.start', { port: 0, name: 'Laptop' });
     b.discoverer.nodes = [
       { name: 'Studio', host: '127.0.0.1', port: a.share.port, nodeId: a.share.nodeId },
@@ -324,7 +324,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
       submitter: { kind: 'connection' },
       result: { documentId: expect.any(String), artifactId: expect.stringMatching(/^sha256:/) },
     });
-    // B 的 jobs 主题里看得到节点上的阶段与进度。
+    // B's jobs topic shows the stages and progress on the node.
     const phases = jobUpdates(b.events)
       .filter((job) => job.jobId === jobId)
       .map((job) => job.phase);
@@ -339,7 +339,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(await listDir(b.home.artifactsDir)).toHaveLength(1);
     expect(await listDir(path.join(b.home.stagingDir, 'jobs'))).toEqual([]);
 
-    // A：任务以节点身份提交，没有视频、产物与 staging；节点上的任务已删除（404）。
+    // A: the job is submitted under the node's identity, with no video, artifacts, or staging; the job on the node is deleted (404).
     const remote = (await a.client.request('jobs.list', {})).jobs;
     expect(remote).toEqual([
       expect.objectContaining({
@@ -503,7 +503,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(await settled(b, lost.jobId)).toMatchObject({ state: 'failed', error: { code: 'REMOTE_NODE_LOST' } });
     const records: JobRecord[] = (await b.client.request('jobs.list', {})).jobs;
 
-    // 让日志落盘。
+    // Flush the logs to disk.
     await b.runtime.close();
     await a.runtime.close();
     const haystacks = {

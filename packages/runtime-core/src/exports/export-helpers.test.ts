@@ -19,7 +19,7 @@ import { checkText, displayWidth, renderText, wrapLines, type TextExportInput } 
 import { sourceChapters, sourcePlan } from './text-source.ts';
 import { JobsSpeechDocument } from '@cuccut/protocol/messages/jobs/speech-document.ts';
 
-/** 导出的纯函数部分：不需要引擎与 ffmpeg，总是运行。 */
+/** The pure-function part of export: needs no engine or ffmpeg, and always runs. */
 
 const RANGE = { startSeconds: 0, endSeconds: 10, durationSeconds: 10 };
 
@@ -194,7 +194,7 @@ describe('字幕与文稿', () => {
     });
     const v2 = (units: object[]) =>
       doc('t', 'translation', { language: 'zh', schema: 'cuccut.translation/2', body: { schema: 'cuccut.translation/2', units } });
-    // 转写没有存句子：句子按译文的词成员切，句内 1.5 秒的停顿不拆。
+    // The transcript stores no sentences: sentences are split by the translation's word members, and a 1.5-second pause within a sentence does not split it.
     const unsplit = plan('speech', [
       { id: 'w1', start: 0, end: 0.5, text: 'Hello' },
       { id: 'w2', start: 2, end: 2.5, text: 'world.' },
@@ -219,7 +219,7 @@ describe('字幕与文稿', () => {
     expect(out.content).not.toContain('第二行。');
     expect(out.warnings.map((w) => w.code)).toEqual(['TRANSLATION_SKIPPED_STALE']);
 
-    // 转写存了句子：按句子 ID 配；单元的词成员比剪剩的多时算不完整。
+    // The transcript stores sentences: matched by sentence ID; a unit with more word members than remain after the cut counts as incomplete.
     const partial = renderText(
       input({
         format: 'srt',
@@ -235,7 +235,7 @@ describe('字幕与文稿', () => {
   it.skipIf(!editorWasmAvailable())(
     '双语（translation/2，alignment 为 null）：成员按翻译时的规则从转写的词得出，转写没存句子时每句照样配上译文',
     () => {
-      // 智能体照 documents_read 写的译文：单元没有对齐；转写是 transcribe 写出的，`sentences` 为 null。
+      // A translation the agent wrote following documents_read: the unit is not aligned; the transcript is what transcribe writes, and `sentences` is null.
       const words = [
         { id: 'w1', text: 'Hello', start: 0, end: 500 },
         { id: 'w2', text: 'world.', start: 500, end: 1000 },
@@ -294,7 +294,7 @@ describe('字幕与文稿', () => {
       expect(out.entries).toBe(3);
       expect(out.warnings).toEqual([]);
 
-      // 原句改过（指纹与单元记下的不同）的单元不配，记为过期；其余照配。
+      // A unit whose source sentence was changed (its fingerprint differs from the one recorded on the unit) is not matched and is recorded as stale; the rest match as normal.
       const changed = renderText(
         input({
           format: 'srt',
@@ -314,7 +314,7 @@ describe('字幕与文稿', () => {
       expect(changed.content).toContain('Third one.\n第三句。');
       expect(changed.warnings.map((w) => w.code)).toEqual(['TRANSLATION_SKIPPED_STALE']);
 
-      // 转写存了句子（同样的 ID）：以前对齐为 null 的单元没有成员、整句算不完整；现在按得出的句子核对。
+      // The transcript stores sentences (same IDs): units that were previously aligned to null have no members, so the whole sentence counts as incomplete; now they are checked against the sentences that can be found.
       const stored = renderText(
         input({
           format: 'srt',
@@ -342,7 +342,7 @@ describe('字幕与文稿', () => {
       schema: 'cuccut.translation/2',
       body: { schema: 'cuccut.translation/2', units: [unit('s-w1', '你好世界。', ['w1', 'w2', 'w3'])] },
     });
-    // 规划（text_plan.rs）不出 w2：真实样本里对齐器把它的起止解到同一格。
+    // The plan (text_plan.rs) does not produce w2: in a real sample, the aligner resolved its start and end to the same cell.
     const placed = plan('speech', [
       { id: 'w1', start: 0, end: 0.5, text: 'Hello' },
       { id: 'w3', start: 0.5, end: 1, text: 'world.' },
@@ -427,13 +427,13 @@ describe('字幕与文稿', () => {
     expect(checkText('md', md.content, { entries: md.entries, durationSec: 10 }).ok).toBe(true);
     const txt = renderText(input({ ...transcript, format: 'txt', timestamps: true }));
     expect(txt.content).toBe('— Intro —\n\nHello world. [00:00]\n\n— Part *two* —\n\nSecond line. [00:02]\n');
-    // 时间戳关掉时 Markdown 小标题也不带时刻。
+    // With timestamps off, Markdown subheadings carry no time either.
     expect(renderText(input({ ...transcript, format: 'md' })).content).toBe(
       '# 测试\n\n## Intro\n\nHello world.\n\n## Part \\*two\\*\n\nSecond line.\n',
     );
     expect(txt.headings).toBe(2);
     expect(checkText('txt', txt.content, { entries: txt.entries, durationSec: 10, headings: txt.headings }).ok).toBe(true);
-    // 不给章节时照常分段（同一段）。
+    // With no chapters given, it still segments as usual (one segment).
     expect(renderText(input({ ...transcript, chapters: null, format: 'txt' })).entries).toBe(1);
   });
 
@@ -490,7 +490,7 @@ describe('字幕与文稿', () => {
     );
     expect(checkText('md', md.content, { entries: md.entries, durationSec: 10 }).ok).toBe(true);
     expect(md.entries).toBe(3);
-    // 关掉说话人时文首也不列；纯文本不写文首。
+    // With speakers off, the document head does not list them either; plain text has no document head.
     expect(renderText(input({ ...transcript, speakers: false, format: 'md' })).content).not.toContain('speakers:');
     expect(renderText(input({ ...transcript, format: 'txt' })).content).not.toContain('---');
   });
@@ -548,7 +548,7 @@ describe('字幕与文稿', () => {
         { id: 's3', wordIds: ['w6', 'w7'], paragraphStart: true },
       ],
     };
-    // 时间线上剪掉了 w3–w5：投影只有 w1、w2、w6、w7（w6 接在 1 秒处）。
+    // On the timeline, w3–w5 are cut: the projection has only w1, w2, w6, w7 (w6 follows at 1 second).
     const projected = plan('speech', [
       { id: 'w1', start: 0, end: 0.5, text: 'Hello' },
       { id: 'w2', start: 0.5, end: 1, text: 'world.' },
@@ -578,11 +578,11 @@ describe('字幕与文稿', () => {
     );
     expect(txt.content).toBe('Hello world. [00:00]\n\nCut here. [00:05]\n\nKept end. [00:09]\n');
 
-    // 一段范围只投影到 w2…w6：原文取 w2 到 w6（中间剪掉的也在）。
+    // A range projected only to w2…w6: the original text runs from w2 to w6 (the words cut in between are included too).
     const part = sourcePlan(body, { ...projected, entries: projected.entries.slice(1, 3) }, false);
     expect(part.entries.map((e) => e.id)).toEqual(['w2', 'w3', 'w5', 'w6']);
 
-    // 章节在序列 1 秒处（剪切点之后的第一个词是 w6）：原文里是 9 秒。之后没有文字的章节不要。
+    // The chapter is at 1 second of the sequence (the first word after the cut point is w6): in the original it is at 9 seconds. Chapters with no text after them are dropped.
     expect(
       sourceChapters(
         [
@@ -598,7 +598,7 @@ describe('字幕与文稿', () => {
       { title: 'B', start: 9 },
     ]);
 
-    // 字幕文档：句子按自己的时钟，空白与时间反了的不要。
+    // Subtitle document: sentences use their own clock; entries that are blank or have reversed times are dropped.
     const captions = sourcePlan(
       {
         timescale: 10,
@@ -619,7 +619,7 @@ describe('字幕与文稿', () => {
   });
 
   it('文稿：一个人讲到底也按停顿与篇幅分段，与文稿面板同一套规则', () => {
-    // 没有存句子与段落的转写：一人独白。每句约 50 字，句间停 0.2 秒；第 8 句前停 2.5 秒。
+    // A transcript with no stored sentences or paragraphs: one speaker's monologue. Each sentence is about 50 characters, with 0.2 seconds of pause between sentences; a 2.5-second pause before sentence 8.
     const sentence = 'This sentence is about fifty characters long, ok.'.split(' ');
     let t = 0;
     const words: Array<{ id: string; start: number; end: number; text: string; speaker: string }> = [];
@@ -635,12 +635,12 @@ describe('字幕与文稿', () => {
       input({ kind: 'transcript', format: 'md', primary: { document: doc('d', 'speech'), plan: monologue }, rangeDuration: t }),
     );
     const blocks = md.content.trim().split(/\n\n+/).slice(1);
-    // 句末处满 240 字断一次（第 1–5 句一段），停顿 2.5 秒断一次（第 6–7 句、第 8–10 句）。
+    // A break happens when a sentence ends with 240 characters reached (sentences 1–5 in one paragraph), and at each 2.5-second pause (sentences 6–7, sentences 8–10).
     expect(blocks).toHaveLength(3);
     expect(md.entries).toBe(3);
     expect(checkText('md', md.content, { entries: md.entries, durationSec: t }).ok).toBe(true);
 
-    // 短句之间停顿稍长（0.6 秒以上）但这段还不到 60 字：不断。
+    // Short sentences with a slightly longer pause (over 0.6 seconds), but this paragraph is still under 60 characters: no break.
     const short = plan('speech', [
       { id: 'a', start: 0, end: 0.5, text: 'Hi.' },
       { id: 'b', start: 1.2, end: 1.6, text: 'Okay.' },
@@ -667,7 +667,7 @@ describe('字幕与文稿', () => {
     const one = plan('speech', [{ id: 'w1', start: 0, end: 0.5, text: 'Hi.', speaker: 'a' }]);
     const solo = renderText(input({ kind: 'transcript', format: 'txt', primary: { document: speech, plan: one } }));
     expect(solo.content).toBe(`Ana: Hi.\n`);
-    // 没有说话人的段落没有可写的名字。
+    // A paragraph with no speaker has no name to write.
     const nobody = renderText(input({ kind: 'transcript', format: 'txt', primary: { document: speech, plan: SPEECH } }));
     expect(nobody.content).toBe('Hello world. Second line.\n');
 
@@ -771,7 +771,7 @@ describe('音频混音参数', () => {
     const dense: Array<[number, number]> = Array.from({ length: 20_000 }, (_, i) => [0.5 + i * 0.00005, 0.5 + 0.5 * Math.sin(i / 7)]);
     const segment = { ...base.segments[0]!, gainDb: 0, envelope: dense };
     const { args, graph } = mixArgs({ ...base, segments: [segment] }, new Map([['a@1', asset]]), 48000, 2, '/tmp/out.wav', script);
-    // 超过 macOS 整条命令行的上限（1 MiB）；参数里只有选项与文件名。
+    // Exceeds the macOS whole-command-line limit (1 MiB); the arguments hold only the options and the file name.
     expect(graph.length).toBeGreaterThan(1 << 20);
     expect(args.join(' ').length).toBeLessThan(1024);
     expect(args.slice(args.indexOf('-/filter_complex'), args.indexOf('-/filter_complex') + 2)).toEqual([
@@ -785,7 +785,7 @@ describe('音频混音参数', () => {
     );
   });
 
-  /** 按 ffmpeg 表达式的语义求值（只用到 if/lt/clip/min/cos/sin/pow 与 PI）。 */
+  /** Evaluates by the semantics of the ffmpeg expression (only uses if/lt/clip/min/cos/sin/pow and PI). */
   function evaluate(expression: string, t: number): number {
     const body = expression.replaceAll('if(', 'iff(');
     const fn = new Function('t', 'iff', 'lt', 'clip', 'min', 'cos', 'sin', 'pow', 'PI', `return ${body};`) as (...a: unknown[]) => number;
@@ -802,7 +802,7 @@ describe('音频混音参数', () => {
     );
   }
 
-  /** `render-graph` 的 `knots_at`，照抄来对照。 */
+  /** `knots_at` from `render-graph`, copied here for comparison. */
   function knotsAt(knots: Array<[number, number]>, t: number): number {
     let i = -1;
     knots.forEach(([at], j) => {
@@ -870,7 +870,7 @@ describe('音频混音参数', () => {
     expect(gainExpression({ ...segment, fadeOut: undefined, crossfades: [], ducking: undefined })).toBeNull();
   });
 
-  /** `render-graph` 的 `envelope_at`（预览的 `GainEnvelope::at`），照抄来对照。 */
+  /** `envelope_at` from `render-graph` (the preview's `GainEnvelope::at`), copied here for comparison. */
   function envelopeAt(knots: Array<[number, number]>, t: number): number {
     if (knots.length === 0) return 1;
     if (t <= knots[0]![0]) return knots[0]![1];
@@ -894,7 +894,7 @@ describe('音频混音参数', () => {
       const t = n / 100;
       expect(evaluate(expression, t - 0.5)).toBeCloseTo(envelopeAt(envelope, t), 9);
     }
-    // 第一个折点之前取它的值（不是 0）；0.25 的平台没有插值项。
+    // Before the first breakpoint, take its value (not 0); a plateau at 0.25 has no interpolation term.
     expect(evaluate(expression, 0)).toBe(1);
     expect(expression).toContain('if(lt(t,3.5),0.25,');
     expect(envelopeExpression({ start: 0, envelope: [[0, 0.5]] })).toBe('0.5');
@@ -930,7 +930,7 @@ describe('音频混音参数', () => {
       const expected = envelopeAt(segment.envelope!, t) * fade * 10 ** (-knotsAt(segment.ducking!, t) / 20);
       expect(evaluate(expression, t - 0.5)).toBeCloseTo(expected, 9);
     }
-    // 60 秒的缓动按 0.02 秒烘焙：3001 个折点，二分只比较 12 次。
+    // A 60-second ease baked at 0.02-second steps: 3001 breakpoints, and the binary search compares only 12 times.
     const dense: Array<[number, number]> = Array.from({ length: 3001 }, (_, i) => [i * 0.02, 1 - (i / 3000) ** 2]);
     const long = envelopeExpression({ start: 0, envelope: dense })!;
     for (const t of [0, 0.013, 17.5, 30.01, 59.99, 61]) expect(evaluate(long, t)).toBeCloseTo(envelopeAt(dense, t), 6);
@@ -981,7 +981,7 @@ describe('落点与发布', () => {
     expect(await publishFile(staged, out, 'a.srt', { overwrite: true, fixed: true })).toBe(path.join(out, 'a.srt'));
     expect(await fs.readFile(path.join(out, 'a.srt'), 'utf8')).toBe('new');
     expect((await fs.readdir(out)).sort()).toEqual(['a (2).srt', 'a.srt']);
-    // staging 里的文件还在（之后登记为产物）。
+    // The file in staging still exists (it is registered as an artifact afterward).
     expect(await fs.readFile(staged, 'utf8')).toBe('new');
   });
 });

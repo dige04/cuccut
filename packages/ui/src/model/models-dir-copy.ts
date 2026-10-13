@@ -14,14 +14,14 @@ import { pl } from './models-dir-copy.pl.ts';
 import { tr } from './models-dir-copy.tr.ts';
 import { vi } from './models-dir-copy.vi.ts';
 
-/** 设置 › 本地模型 › 模型目录的文案（英文是键与类型的来源，译文在 `models-dir-copy.<语言>.ts`）。 */
+/** Copy for Settings › Local models › Model directory (the English is the source of the keys and types; translations are in `models-dir-copy.<locale>.ts`). */
 
 const and = (items: readonly string[]) => new Intl.ListFormat(intlLocale(), { type: 'conjunction' }).format(items);
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const models = (n: number) => `${n} ${n === 1 ? 'model' : 'models'}`;
 
 const en = {
-  /** 卡片与对话框里的固定说法。 */
+  /** Fixed wording used in cards and dialogs. */
   dir: {
     title: 'Models folder',
     defaultChip: 'Default',
@@ -52,10 +52,10 @@ const en = {
     pickFailed: (message: string) => `Couldn't choose the folder: ${message}`,
     same: 'This is already the current models folder',
   },
-  /** 卡片副题：已用 · 所在磁盘可用 · 已识别 N 个模型（可用空间查不到时 `free` 为 null）。 */
+  /** Card subtitle: used · free space on the disk · N models recognized (`free` is null when free space cannot be determined). */
   stats: (used: string, free: string | null, count: number) =>
     [`${used} used`, ...(free !== null ? [`${free} free on disk`] : []), `${models(count)} found`].join(' · '),
-  /** 现在不能更改：正在下载的、正在检查的模型名，在用本地模型的任务数。 */
+  /** Cannot be changed right now: names of models being downloaded or checked, and the number of tasks using local models. */
   blocker: (downloading: readonly string[], testing: readonly string[], tasks: number) => {
     const parts: string[] = [];
     if (downloading.length) parts.push(`downloading ${and(downloading)}`);
@@ -71,7 +71,7 @@ const en = {
   nestedTitle: "Can't put it here",
   nestedText:
     'The new location and the current models folder contain each other (one is inside the other). Choose a folder that is neither inside it nor contains it.',
-  /** 新位置里有什么（`bytes` 已格式化）；`free` 是所在磁盘的可用空间，查不到时 null。 */
+  /** What is in the new location (`bytes` already formatted); `free` is the free space on the disk it is on, null when it cannot be determined. */
   found: (count: number, bytes: string, free: string | null) =>
     `${
       count
@@ -82,13 +82,13 @@ const en = {
     `Moving needs ${required}, but the target drive only has ${free} free (${short} short). It won't fit.`,
   moveSameVolume: (size: string) => `Moves ${size} on the same drive, so it's quick. The files won't be kept at the old location afterward.`,
   moveOther: (size: string) => `Moves ${size}. The files won't be kept at the old location afterward.`,
-  /** 只切换位置：新位置里已有几个模型（0 表示不说个数）。 */
+  /** Switch location only: how many models the new location already has (0 means the count is not stated). */
   switchDescription: (count: number) =>
     `Files at the old location are kept, not deleted. Only the ${count ? `${models(count)} ` : 'models '}already in the new location can be used; the rest show as not installed.`,
   appliedMoving: (where: string) => `Started moving models to ${where}`,
   appliedKept: (where: string) => `Models folder changed to ${where} · Files at the old location are kept`,
   applied: (where: string) => `Models folder changed to ${where}`,
-  /** 移动进度；`to` 是缩短过的目标目录，`amount` 是「已移 / 总量」。 */
+  /** Move progress; `to` is the shortened target directory, and `amount` is “已移 / 总量” (moved / total). */
   moveWaiting: (to: string | null) => `Waiting to start moving${to ? ` to ${to}` : ''}…`,
   moveValidating: (amount: string | null) => `Verifying the copied files${amount ? ` (${amount})` : ''}…`,
   movePublishing: 'Finishing the move…',

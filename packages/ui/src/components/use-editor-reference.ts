@@ -11,14 +11,14 @@ import { mediaCandidates } from './editor/transcribe-run.ts';
 import { S } from './shell-copy.ts';
 
 /**
- * 输入框上方的视频引用标签与发送时的上下文（产品设计 §3.2.3、§3.2.4）。
- * 用户移除标签只影响下一条消息；发送前先等编辑器里已经发出的修改都有结果，再取版本。
+ * The video reference chip above the input box and the context sent with a message (product design §3.2.3, §3.2.4).
+ * Removing the chip only affects the next message. Before sending, wait until the edits already sent from the editor have results, then take the version.
  */
 export function useEditorReference(scope: ContextScope): {
   reference: ComposerProps['reference'];
-  /** 发送时调用：要附带时返回这一刻的上下文。 */
+  /** Called when sending: returns the context at this moment if it should be attached. */
   capture(): Promise<EditorContext | undefined>;
-  /** 发送成功后调用：恢复标签。 */
+  /** Called after a successful send: restores the chip. */
   reset(): void;
 } {
   const runtime = useRuntime();
@@ -43,9 +43,8 @@ export function useEditorReference(scope: ContextScope): {
 }
 
 /**
- * @ 补全里「这个视频」那一组的数据（设计稿 model-agent.js `mentionItems`）：会话能附带的那个打开的视频（与引用标签同一判断）
- * 的主序列章节，和时间线上各份转写里出现过的说话人（名字去重）。转写正文经视频的文档缓存取，与文稿面板共用。
- * 没有打开、不在范围内时 null。
+ * The data for the “这个视频” (this video) group in the @ completion (design mockup model-agent.js `mentionItems`): the main sequence chapters of the open video the session can attach (the same check as the reference chip), and the speakers who appear in the transcripts on the timeline (names de-duplicated). The transcript text is fetched through the video's document cache, which the transcript panel shares.
+ * null when nothing is open or in scope.
  */
 export function useVideoMentions(scope: ContextScope): VideoMentions | null {
   const documents = useRuntime().videos.documents;
@@ -58,7 +57,7 @@ export function useVideoMentions(scope: ContextScope): VideoMentions | null {
   );
   const key = speech.map((record) => `${record.id}@${record.currentRevision}`).join(',');
   useEffect(() => {
-    // 按「文档@版本」取：`key` 变了才需要再取。
+    // Fetched by “document@version”: it needs fetching again only when `key` changes.
     for (const record of speech) documents.load(record.id, record.currentRevision);
   }, [documents, key]);
   const subscribe = useCallback((listener: () => void) => documents.subscribe(listener), [documents]);
@@ -76,6 +75,6 @@ export function useVideoMentions(scope: ContextScope): VideoMentions | null {
       }
     }
     return { chapters: visibleChapters(sequenceChapters(sequence)), speakers: [...speakers.values()] };
-    // `ready`：正文取到了才重算。
+    // `ready`: recomputed only once the body has been fetched.
   }, [sequence, speech, documents, ready]);
 }

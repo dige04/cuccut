@@ -1,18 +1,18 @@
-//! Lottie 属性求值：静态值、关键帧、bezier 缓动、hold、位置空间曲线。
+//! Lottie property evaluation: static values, keyframes, bezier easing, hold, and spatial position curves.
 //!
-//! 与 `ccut-motion` 的 `sample(t)` 同一语义——**绝对时间进、值出**，没有增量
-//! 时钟、没有"上一次求到哪"的状态。时间单位是**合成帧**（`f64`），不是秒：
-//! bodymovin 的关键帧时刻 `t` 本来就是帧号，先转秒再转回来只会引入取整。
+//! Same semantics as `sample(t)` in `ccut-motion` — **absolute time in, value out**, with no incremental
+//! clock and no "where it last got to" state. The time unit is **composition frames** (`f64`), not seconds:
+//! bodymovin's keyframe times `t` are already frame numbers, so converting to seconds and back would only introduce rounding.
 //!
-//! 确定性：全部运算是 f64 四则 + 固定迭代次数的 Newton/二分，没有 `Date`、
-//! 没有随机、没有平台相关的超越函数（`sin`/`cos` 只出现在星形与椭圆的
-//! 常量几何里，输入是解析出来的常量或已求值的属性，跨平台同值）。
+//! Determinism: all operations are f64 arithmetic plus Newton/bisection with a fixed iteration count; there is no `Date`,
+//! no randomness, and no platform-dependent transcendental functions (`sin`/`cos` appear only in the constant geometry of stars and ellipses,
+//! whose inputs are parsed constants or already-evaluated properties, and give the same values across platforms).
 
 use anyhow::{Result, bail};
 use serde_json::Value;
 
-/// 一条缓动曲线的一端（bodymovin 的 `i` / `o`）。按维度存：AE 允许每个分量
-/// 各有自己的缓动，长度 1 时全维共用。
+/// One end of an easing curve (bodymovin's `i` / `o`). Stored per dimension: AE allows each component
+/// to have its own easing; when the length is 1 it is shared across all dimensions.
 #[derive(Debug, Clone, Default)]
 pub struct Ease {
     pub x: Vec<f64>,
@@ -36,15 +36,15 @@ impl Ease {
 
 #[derive(Debug, Clone)]
 pub struct Keyframe {
-    /// 关键帧时刻（合成帧号）
+    /// Keyframe time (composition frame number)
     pub t: f64,
     pub start: Vec<f64>,
-    /// bodymovin 5.x 之前把段末值写在本帧的 `e` 里；之后用下一帧的 `s`。
+    /// Before bodymovin 5.x the segment-end value was written in this frame's `e`; afterwards the next frame's `s` is used.
     pub end: Option<Vec<f64>>,
     pub hold: bool,
     pub out: Ease,
     pub inn: Ease,
-    /// 位置属性的空间切线（相对起点 / 终点）
+    /// Spatial tangents of a position property (relative to the start / end point)
     pub to: Option<Vec<f64>>,
     pub ti: Option<Vec<f64>>,
 }
@@ -60,7 +60,7 @@ impl Animated {
         Animated::Static(values)
     }
 
-    /// 该属性在整段时间里恒定吗——静止帧判定用它。
+    /// Is this property constant over the whole span? The still-frame check uses this.
     pub fn is_static(&self) -> bool {
         match self {
             Animated::Static(_) => true,
@@ -88,8 +88,8 @@ impl Animated {
     }
 }
 
-/// 关键帧采样。段内按 `o`/`i` 的三次 bezier 缓动；`h == 1` 保持段首值；
-/// 有空间切线时位置走空间 bezier。两端之外一律 clamp 到端点值。
+/// Keyframe sampling. Within a segment, a cubic bezier ease from `o`/`i`; `h == 1` holds the segment-start value;
+/// when there are spatial tangents, position follows a spatial bezier. Outside both ends, values are clamped to the endpoint values.
 fn sample_keyframes(frames: &[Keyframe], frame: f64) -> Vec<f64> {
     if frames.is_empty() {
         return Vec::new();
@@ -120,7 +120,7 @@ fn sample_keyframes(frames: &[Keyframe], frame: f64) -> Vec<f64> {
     };
     let raw = raw.clamp(0.0, 1.0);
 
-    // 空间曲线：`to` / `ti` 是相对起点 / 终点的控制点偏移（只用第一维的缓动）
+    // Spatial curve: `to` / `ti` are control-point offsets relative to the start / end point (only the first dimension's easing is used)
     if let (Some(to), Some(ti)) = (&a.to, &a.ti)
         && a.start.len() >= 2
         && end.len() >= 2
@@ -154,26 +154,24 @@ fn sample_keyframes(frames: &[Keyframe], frame: f64) -> Vec<f64> {
     out
 }
 
-/// 末端取值。
+/// End-value lookup.
 ///
-/// 新格式的末关键帧自带 `s`；**老格式（`{s, e, t}` 成对）的末项是纯终止符**
-/// ——只有一个 `t`，那一段的终值写在**前一帧**的 `e` 里。踩过一次：末项按
-/// 「`s` 缺席就取自己的 `e`」处理，而它连 `e` 都没有，于是整条属性在末端
-/// 归零（语料里 7 个文件、46 条属性中招）。
+/// In the new format the last keyframe carries its own `s`; **in the old format (`{s, e, t}` pairs) the last entry is a pure terminator**
+/// — it has only a `t`, and that segment's end value is written in the **previous frame's** `e`. We got this wrong once: the last entry was handled as "if `s` is absent, take its own `e`", but it has no `e` either, so the whole property dropped to zero at the end
+/// (7 files and 46 properties in the corpus were hit).
 fn tail_value(frames: &[Keyframe]) -> Vec<f64> {
     let Some(last) = frames.last() else {
         return Vec::new();
     };
-    // 末项自带 `s`（新格式）⇒ 就是它。
+    // The last entry carries its own `s` (new format) ⇒ use it.
     if !last.start.is_empty() {
         return last.start.clone();
     }
     if let Some(end) = &last.end {
         return end.clone();
     }
-    // 末项是纯终止符 ⇒ 往回找最后一个带值的关键帧，取它的**段末值** `e`。
-    // 这里的优先级和上面反过来是有意的：终止符前那一帧的 `s` 是它自己那段的
-    // **起**值，取它等于把整段动画倒放回起点。
+    // The last entry is a pure terminator ⇒ search backwards for the last keyframe that has a value and take its **segment-end value** `e`.
+    // The priority here is deliberately the reverse of the one above: the `s` of the frame just before the terminator is the **start** value of its own segment, and taking it would play the whole animation backwards to its starting point.
     for frame in frames.iter().rev().skip(1) {
         if let Some(end) = &frame.end {
             return end.clone();
@@ -190,13 +188,12 @@ fn cubic(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
     u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3
 }
 
-/// 三次 bezier 缓动 `(0,0) (x1,y1) (x2,y2) (1,1)`：给 x 求 y。
+/// Cubic bezier ease `(0,0) (x1,y1) (x2,y2) (1,1)`: solves y for a given x.
 ///
-/// 固定 12 次 Newton + 30 次二分兜底——**迭代次数是常量**，因此同一输入在
-/// 任何平台上走同样多步、得同样的位。收敛阈值不参与提前退出。
+/// A fixed 12 Newton iterations with a 30-step bisection fallback — **the iteration count is a constant**, so the same input takes the same number of steps and gives the same bits on any platform. The convergence threshold does not participate in early exit.
 pub fn bezier_ease(x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
     let x = x.clamp(0.0, 1.0);
-    // 线性缓动的直通：AE 的默认导出就是 (0,0)-(1,1)
+    // Pass-through for linear easing: AE's default export is (0,0)-(1,1)
     if (x1 - y1).abs() < f64::EPSILON && (x2 - y2).abs() < f64::EPSILON {
         return x;
     }
@@ -215,7 +212,7 @@ pub fn bezier_ease(x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
         t -= (curve_x(t) - x) / d;
         t = t.clamp(0.0, 1.0);
     }
-    // 二分兜底：Newton 在 S 形极端控制点上会跑偏，这一段无条件跑满
+    // Bisection fallback: Newton drifts with extreme S-shaped control points, so this part always runs to completion
     let (mut lo, mut hi) = (0.0f64, 1.0f64);
     let mut u = t;
     for _ in 0..30 {
@@ -230,9 +227,9 @@ pub fn bezier_ease(x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
     curve_y(u)
 }
 
-// ── 解析（serde_json::Value → Animated）─────────────────────────────
+// ── Parsing (serde_json::Value → Animated) ───────────────────────────────
 
-/// 取数组或标量为 `Vec<f64>`。
+/// Takes an array or scalar as `Vec<f64>`.
 fn numbers(value: &Value) -> Vec<f64> {
     match value {
         Value::Number(n) => vec![n.as_f64().unwrap_or(0.0)],
@@ -259,13 +256,13 @@ fn ease(value: Option<&Value>) -> Ease {
     }
 }
 
-/// `{a, k, x?}` → [`Animated`]。`path` 只用于报错定位。
+/// `{a, k, x?}` → [`Animated`]. `path` is used only for error location.
 ///
-/// 表达式（非空字符串 `x`）在这里就是硬错误：它需要一个 JS 求值器，而那与
-/// BCF 的确定性承诺（禁 `Date` / 未播种随机 / 计时器）直接冲突。
+/// An expression (a non-empty string `x`) is a hard error here: it would need a JS evaluator, which directly conflicts with
+/// BCF's determinism guarantee (no `Date` / unseeded randomness / timers).
 pub fn parse_property(path: &str, value: &Value) -> Result<Animated> {
     let Some(map) = value.as_object() else {
-        // 有的素材把常量直接写成裸数组 / 裸数字
+        // Some assets write constants directly as bare arrays / bare numbers
         return Ok(Animated::Static(numbers(value)));
     };
     if let Some(Value::String(expr)) = map.get("x")
@@ -277,13 +274,12 @@ pub fn parse_property(path: &str, value: &Value) -> Result<Animated> {
         );
     }
     let k = map.get("k").unwrap_or(&Value::Null);
-    // **动画性按结构判定，不看 `a` 标志**：`k` 是关键帧字典数组就是关键帧。
-    // lottie-web 的 `PropertyFactory` 就是这么判的（`k.length && typeof k[0]
-    // === 'object'`），因为 `a` 在真实素材里可能整个缺席、也可能写成 0 却带着
-    // 关键帧。踩过一次：某导出器省略 `a`，属性被当成常量，而 `numbers()` 对
-    // 一串对象取不出数 → **静默变 0**（语料里 10 个文件中招：图层不透明度归零
-    // 整层不画、旋转归零、时间重映射归零使预合成定格）。
-    // 这条规则同时覆盖了「`a: 1` 但 `k` 是裸数组」——那是常量，走 Static。
+    // **Animatedness is judged by structure, not by the `a` flag**: if `k` is an array of keyframe dictionaries, it is keyframes.
+    // lottie-web's `PropertyFactory` judges it this way (`k.length && typeof k[0]
+    // === 'object'`), because in real assets `a` may be missing entirely or may be written as 0 while still carrying
+    // keyframes. We got this wrong once: one exporter omitted `a`, the property was treated as a constant, and `numbers()` cannot extract numbers from a
+    // series of objects → **silently became 0** (10 files in the corpus were hit: layer opacity dropped to zero so the whole layer vanished, rotation went to zero, and time remapping went to zero so the precomposition froze).
+    // This rule also covers "`a: 1` but `k` is a bare array" — that is a constant and goes to Static.
     let keyframed = k
         .as_array()
         .is_some_and(|items| items.first().is_some_and(Value::is_object));
@@ -310,14 +306,14 @@ pub fn parse_property(path: &str, value: &Value) -> Result<Animated> {
     if frames.is_empty() {
         return Ok(Animated::Static(Vec::new()));
     }
-    // AE 导出保证 t 单调不减；防御性排序保证二分查找的前提成立
+    // AE exports guarantee t is non-decreasing; a defensive sort makes the binary-search precondition hold
     if frames.windows(2).any(|w| w[0].t > w[1].t) {
         frames.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     }
     Ok(Animated::Keyframed(frames))
 }
 
-/// 可选属性：缺席时给缺省常量。
+/// Optional property: when absent, gives a default constant.
 pub fn parse_property_or(path: &str, value: Option<&Value>, default: &[f64]) -> Result<Animated> {
     match value {
         Some(v) if !v.is_null() => parse_property(path, v),
@@ -394,15 +390,15 @@ mod tests {
             assert!(y >= prev - 1e-12, "缓动必须单调：{i} → {y}");
             prev = y;
         }
-        // 缓入缓出：中点仍是 0.5，两侧被压/拉
+        // Ease in-out: the midpoint is still 0.5, with both sides squeezed/stretched
         assert!((bezier_ease(0.6, 0.0, 0.4, 1.0, 0.5) - 0.5).abs() < 1e-6);
         assert!(bezier_ease(0.6, 0.0, 0.4, 1.0, 0.25) < 0.25);
     }
 
     #[test]
     fn keyframes_are_detected_by_structure_not_by_the_a_flag() {
-        // 真实素材里 `a` 可能整个缺席（语料 10 个文件），也可能写成 0 却带着
-        // 关键帧。判据只看 `k` 的形状——信 `a` 的话属性会静默变 0。
+        // In real assets `a` may be missing entirely (10 files in the corpus), or may be written as 0 while still carrying
+        // keyframes. The criterion looks only at the shape of `k` — trusting `a` would silently turn the property into 0.
         for property in [
             json!({"k": [
                 {"t": 0, "s": [0.0], "o": {"x": [0.0], "y": [0.0]}, "i": {"x": [1.0], "y": [1.0]}},
@@ -422,7 +418,7 @@ mod tests {
             );
             assert_eq!(p.scalar(10.0), 100.0);
         }
-        // 反向：`a: 1` 但 `k` 是裸数组，那是常量
+        // Converse: `a: 1` but `k` is a bare array — that is a constant
         let p = parse_property("t", &json!({"a": 1, "k": [12.0, 34.0]})).unwrap();
         assert!(p.is_static());
         assert_eq!(p.value(7.0), vec![12.0, 34.0]);
@@ -430,8 +426,8 @@ mod tests {
 
     #[test]
     fn legacy_start_end_keyframes_hold_their_final_value() {
-        // 老格式：值成对写在 `s`/`e` 里，**末项是纯终止符**（只有 `t`）。
-        // 末端取值必须回到前一帧的 `e`，而不是归零。
+        // Old format: values are written in pairs in `s`/`e`, and the **last entry is a pure terminator** (only `t`).
+        // The end-value lookup must go back to the previous frame's `e`, not drop to zero.
         let p = parse_property(
             "tm",
             &json!({"a": 1, "k": [
@@ -453,7 +449,7 @@ mod tests {
 
     #[test]
     fn a_trailing_terminator_never_wins_over_a_real_final_value() {
-        // 新格式的末项自带 `s`，不能被"往回找"的兜底逻辑改写
+        // The last entry of the new format carries its own `s` and must not be rewritten by the "search backwards" fallback
         let p = parse_property(
             "t",
             &json!({"a": 1, "k": [
@@ -471,7 +467,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("lottie-unsupported-feature"), "{error}");
-        // 空字符串的 `x` 是导出器噪声，不算表达式
+        // An empty-string `x` is exporter noise and does not count as an expression
         assert!(parse_property("p", &json!({"a": 0, "k": [0], "x": ""})).is_ok());
     }
 

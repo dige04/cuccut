@@ -1,9 +1,6 @@
-//! BCF 混音与母带声明（规范 §4 文档级 `audio`、§8.4 audio clip 的 `fadeIn` / `fadeOut` / `pan` /
-//! `bus` 与 audio 轨的 `muted`）。这里只解析、只给缺省，不碰采样：混音链在 host
-//! （`ccut-render` 的 `audio` 模块）。
+//! BCF mixing and mastering declarations (spec §4 document-level `audio`, and the `fadeIn` / `fadeOut` / `pan` / `bus` of audio clips in §8.4, plus `muted` on audio tracks). This only parses and provides defaults, and does not touch sampling: the mixing chain lives in the host (the `audio` module of `ccut-render`).
 //!
-//! 混音顺序（host 必须照做）：clip 增益与关键帧 → 淡入淡出 → 声像 → 按总线求和 → 闪避
-//! （`from` 总线的说话活跃度压 `to` 总线）→ 总线增益 → 求和 → 母带（响度归一与真峰值限幅交替三轮）。
+//! Mixing order (the host must follow it): clip gain and keyframes → fade in/out → panning → sum by bus → ducking (speech activity on the `from` bus pulls down the `to` bus) → bus gain → sum → mastering (loudness normalization and true-peak limiting alternating over three rounds).
 
 use std::collections::BTreeMap;
 
@@ -12,18 +9,18 @@ use serde_json::Value;
 
 use crate::json::JsonExt;
 
-/// 没写 `bus`、轨 id 也推不出总线时的总线名。
+/// Bus name used when no `bus` is written and the bus cannot be inferred from the track id.
 pub const MAIN_BUS: &str = "main";
 
-/// 闪避缺省：起 20 ms、落 350 ms（与 `ccut-score` 的 `duck` 同一缺省）。
+/// Ducking defaults: attack 20 ms, release 350 ms (the same defaults as `duck` in `ccut-score`).
 pub const DUCK_ATTACK: f64 = 0.02;
 pub const DUCK_RELEASE: f64 = 0.35;
-/// 母带缺省：−16 LUFS、−1.2 dBTP（与 `ccut-score` 预览母带同一缺省）。
+/// Mastering defaults: −16 LUFS, −1.2 dBTP (the same defaults as the `ccut-score` preview mastering).
 pub const MASTER_LUFS: f64 = -16.0;
 pub const MASTER_TRUE_PEAK: f64 = -1.2;
 
-/// 按轨 id 推缺省总线：`score-<bus>` → `<bus>`；其余带 `-` 的取第一个 `-` 之前（`vo-sea` → `vo`）；
-/// 不带 `-` 的、没写 id 的轨（`#<序>`）与 `withAudio` 展开的 clip → [`MAIN_BUS`]。
+/// Infer the default bus from a track id: `score-<bus>` → `<bus>`; otherwise, for ids containing `-`, take the part before the first `-` (`vo-sea` → `vo`);
+/// tracks without `-`, tracks with no written id (`#<index>`), and clips expanded from `withAudio` → [`MAIN_BUS`].
 pub fn default_bus(track: Option<&str>) -> String {
     let Some(id) = track.filter(|id| !id.starts_with('#')) else {
         return MAIN_BUS.to_string();
@@ -37,7 +34,7 @@ pub fn default_bus(track: Option<&str>) -> String {
     }
 }
 
-/// 一条闪避：`from` 总线有声时按 `depth_db` 压低 `to` 里每条总线。
+/// One ducking rule: when the `from` bus has sound, every bus in `to` is lowered by `depth_db`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Duck {
     pub from: String,
@@ -47,29 +44,29 @@ pub struct Duck {
     pub release: f64,
 }
 
-/// 母带目标。
+/// Mastering target.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MasterTarget {
     pub lufs: f64,
     pub true_peak: f64,
 }
 
-/// 文档级 `audio`。
+/// Document-level `audio`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DocAudio {
-    /// 总线增益（dB）；没列的总线 0 dB。
+    /// Bus gain (dB); buses not listed are 0 dB.
     pub buses: BTreeMap<String, f64>,
     pub duck: Vec<Duck>,
     pub master: Option<MasterTarget>,
 }
 
 impl DocAudio {
-    /// 某条总线的增益（dB）。
+    /// Gain of a given bus (dB).
     pub fn bus_gain_db(&self, bus: &str) -> f64 {
         self.buses.get(bus).copied().unwrap_or(0.0)
     }
 
-    /// 解析文档级 `audio`（缺席或 `null` 为 `None`）。
+    /// Parse the document-level `audio` (absent or `null` gives `None`).
     pub fn parse(v: Option<&Value>) -> Result<Option<Self>> {
         let Some(v) = v.filter(|v| !v.is_null()) else {
             return Ok(None);

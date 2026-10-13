@@ -14,18 +14,14 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { EngineHost, resolveEngineHostCommand } from './engine-host.ts';
 
 /**
- * 视频工具的目标（架构设计 §7.9）经网关端到端，真实引擎：
+ * Video tool targets (architecture design §7.9), end to end through the gateway, with the real engine:
  *
- * - 翻译按 Space 条目（`target.entryId`）：没打开的视频以 Runtime 的租约打开、流程结束后放下（按宽限期关闭）；别的连接已经
- *   打开着时接上那一份；被别的进程锁着时 `pipelines.start` 以 `VIDEO_LOCKED` 拒绝、不建任务；回收站里的、不是视频的条目拒绝；
- *   失败之后放下视频，重试时重新打开。
- * - 从链接导入新建视频（假 yt-dlp、本地生成的小媒体）：项目里多一个视频，素材放在主轨从 0 开始，Space 里记下来源是这次运行。
- * - 智能体的 `download` 新建视频：风险仍是 command，项目默认是会话的，别的项目拒绝；不属于项目的会话新建在会话的
- *   工作目录里（与 `videos_create` 同一处，`videos_list` 看得到）；只下载之后按媒体的 `artifactId` 经 `edits_apply` 导入；
- *   不给目标时也可以转写（文件转写，结果在下载目录）。
+ * - Translation by Space entry (`target.entryId`): a video that is not open is opened with a Runtime lease and released when the flow ends (closed after the grace period). When another connection already has it open, that one is attached to. When another process holds its lock, `pipelines.start` rejects with `VIDEO_LOCKED` and no task is created. Entries in the trash, or entries that are not videos, are rejected. After a failure the video is released, and reopened on retry.
+ * - New video from link import (fake yt-dlp, locally generated small media): the project gains one video, the material sits on the main track from 0, and Space records the source as this run.
+ * - The agent's `download` creates a new video. Its risk stays command. The project default is the session's, and other projects are rejected. A session that does not belong to a project creates in the session's working directory (the same place as `videos_create`, visible to `videos_list`). Only after the download is the media imported by its `artifactId` via `edits_apply`. Transcription without a target also works (file transcription, result in the downloads directory).
  *
- * 只连本机回环地址上的假供应商；密钥是测试里编的字符串。没有 engine-host 时跳过；没有 speech-worker 时跳过要翻译完的几项；
- * 没有 ffprobe 时跳过从链接导入的部分。
+ * Connects only to a fake provider on the local loopback address; keys are strings made up for the test. Skipped when there is no engine-host; the items that need a finished translation are skipped when there is no speech-worker;
+ * the link-import part is skipped when there is no ffprobe.
  */
 
 const engine = resolveEngineHostCommand();
@@ -58,7 +54,7 @@ const SPEECH = {
   chapters: [],
 };
 
-/** 假 OpenAI：按 Speech Worker 的请求答（`fakeSpeechAnswer`）；`broken` 次数内翻译页回空文档（不合约定）。 */
+/** Fake OpenAI: answers according to the Speech Worker's requests (`fakeSpeechAnswer`). Within the `broken` count, the translation page returns an empty document (not matching the contract). */
 function translator(state: { broken: number; calls: number }): FakeHandler {
   return (request) => {
     if (request.method === 'GET' && request.path.endsWith('/models')) return { status: 200, json: { object: 'list', data: [] } };
@@ -103,7 +99,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       initiator: { discoverer: null },
       nodes: { host: '127.0.0.1', advertiser: null },
       online: { baseUrls: { openai: `${openai.origin}/v1` }, http: { backoffMs: () => 10 } },
-      // 搜索路径只有一个空目录、不读真实环境里的覆盖、域名解析是假的：不会用到系统里的 yt-dlp，也不联网。
+      // The search path has only one empty directory, does not read overrides from the real environment, and domain resolution is fake: the system yt-dlp is never used, and nothing goes online.
       externalTools: { env: async () => ({ PATH: emptyPath }), overrides: {}, lookup: async () => ['93.184.216.34'] },
     });
     const { endpoint, token } = runtime.discovery;
@@ -128,7 +124,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     await client.request('models.setDefault', { capability: 'generateText', providerId: 'openai' });
   }
 
-  /** 有一份转写的视频，关掉（等 Runtime 真的关了），返回它和它的 Space 条目。 */
+  /** A video with a transcript, closed (waits until the Runtime has really closed it); returns it and its Space entry. */
   async function closedVideo(name = '访谈') {
     const created = await client.request('videos.create', { projectId: project.id, name });
     const videoId = created.ref.videoId;
@@ -171,7 +167,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     return kinds;
   };
 
-  /** 项目目录里的视频目录。 */
+  /** The video directory inside the project directory. */
   const videoDirs = async () => {
     const out: string[] = [];
     for (const name of await fs.readdir(project.path)) {
@@ -191,7 +187,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       status: 'completed',
       output: { entryId, videoId, place: { scope: { projectId: project.id } } },
     });
-    // 租约放下之后没有别的打开者：按宽限期关闭。
+    // After the lease is released with no other opener: closed after the grace period.
     await until(() => runtime.videos.ref(videoId) === null);
     expect(await documentsOf(videoId, relPath)).toContain('translation');
   });
@@ -215,7 +211,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     await configure();
     const { videoId, relPath, entryId } = await closedVideo();
     const videoDir = path.join(project.path, relPath);
-    // SQLite 的 -wal/-shm 随打开与关闭出现、消失：只比视频目录自己的内容。
+    // SQLite -wal/-shm files appear and disappear with open and close, so only the video directory's own contents are compared.
     const listing = async () => (await fs.readdir(videoDir)).filter((n) => !/-(wal|shm)$/.test(n)).sort();
     const filesBefore = await listing();
     const other = await EngineHost.start({ command: engine!, log: silentLogger, onEvent: () => {}, onExit: () => {} });
@@ -246,7 +242,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
 
     const deleted = await client.request('videos.delete', { entryId });
     expect(deleted.status).toBe('trashed');
-    // 删除之前的条目 id 与回收站里的条目 id 都回答在回收站里。
+    // The entry ID from before deletion and the entry ID in the trash both answer as in the trash.
     expect(await refusal(translate({ entryId }))).toBe('SPACE_ENTRY_TRASHED');
     expect(await refusal(translate({ entryId: deleted.entryId }))).toBe('SPACE_ENTRY_TRASHED');
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
@@ -285,11 +281,11 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(job).toMatchObject({ state: 'completed', pipeline: { stoppedAt: null } });
       const summary = job.pipeline!.summary as unknown as LinkImportSummary;
       expect(summary).toMatchObject({ createdVideo: true, videoId: expect.any(String), assetId: expect.any(String) });
-      // 没有设置下载目录：落到主机的下载目录（测试里由 `CUCCUT_DOWNLOADS_DIR` 指到临时目录），不在项目目录里。
+      // No download directory is set: falls back to the host's download directory (in the test, pointed to a temp directory by `CUCCUT_DOWNLOADS_DIR`), not inside the project directory.
       expect(path.dirname(summary.files.media)).toBe(await fs.realpath(process.env.CUCCUT_DOWNLOADS_DIR!));
       const videoId = summary.videoId!;
       expect(job.videoId).toBe(videoId);
-      // 流程放下租约之后视频关闭；项目里只有这一个视频。
+      // After the flow releases its lease, the video closes; the project has only this one video.
       await until(() => runtime.videos.ref(videoId) === null);
       const dirs = await videoDirs();
       expect(dirs).toHaveLength(1);
@@ -302,7 +298,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(root.items).toHaveLength(1);
       const item = root.items[0] as AudioItem;
       expect(item).toMatchObject({ type: 'audio', fromFrame: 0, assetRef: { id: summary.assetId } });
-      // 覆盖整段媒体。
+      // Covers the whole media segment.
       const asset = video.assets[summary.assetId!]!;
       expect(item.playDuration).toEqual(asset.revisions[asset.currentRevision]!.duration);
       const track = root.tracks.find((t) => t.id === item.trackId)!;
@@ -351,10 +347,10 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(job).toMatchObject({ state: 'completed', submitter: { kind: 'agent' } });
       const summary = job.pipeline!.summary as unknown as LinkImportSummary;
       expect(summary.createdVideo).toBe(true);
-      // 智能体新建视频：文件与界面、CLI 一样进下载目录（测试里是 `CUCCUT_DOWNLOADS_DIR`），不进项目；视频链到那里。
+      // A video created by the agent: the file goes to the download directory, as it does for the UI and CLI (in the test, `CUCCUT_DOWNLOADS_DIR`), not to the project; the video links to it there.
       expect(path.dirname(summary.files.media)).toBe(await fs.realpath(process.env.CUCCUT_DOWNLOADS_DIR!));
       await until(() => runtime.videos.ref(summary.videoId!) === null);
-      // jobs_inspect 报出的 videoId 可以直接给 videos_inspect：视频关掉了也按来源目录找到。
+      // The videoId reported by jobs_inspect can be passed straight to videos_inspect: even after the video is closed, it is found through its source directory.
       const byId = await tool(session, 'videos_inspect', { video: summary.videoId! });
       expect(byId.isError).toBe(false);
       expect(byId.body).toMatchObject({ videoId: summary.videoId, name: '智能体的视频' });
@@ -367,7 +363,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       const entry = (await client.request('space.list', { videoId: summary.videoId!, kind: 'video' })).entries[0]!;
       expect(entry.origin).toMatchObject({ jobId: job.jobId, conversationId });
 
-      // 不属于项目的会话：给了别的项目照样 PROJECT_NOT_FOUND（看不到任何项目），不弹确认。
+      // A session that does not belong to a project: giving another project still returns PROJECT_NOT_FOUND (no project is visible at all), with no confirmation prompt.
       const {
         conversation: { id: loose, cwd: looseCwd },
       } = await client.request('conversations.create', { projectId: null });
@@ -382,7 +378,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(hidden).toMatchObject({ isError: true, body: { error: { code: 'PROJECT_NOT_FOUND' } } });
       expect(runtime.harness.approvals.pending()).toEqual([]);
 
-      // 不给项目：与 videos_create 一样建在会话的工作目录里（§3.10），不建项目；流程的新建目标是会话，文件仍进下载目录。
+      // No project given: created in the session's working directory, as with videos_create (§3.10); no project is created. For the flow, the create target is the session, and the file still goes to the download directory.
       const projectsBefore = runtime.harness.listProjects().length;
       const creating = tool(looseSession, 'download', {
         url: 'https://video.example.com/watch?v=abc',
@@ -407,7 +403,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(looseSummary).toMatchObject({ createdVideo: true, videoId: expect.any(String), assetId: expect.any(String) });
       expect(path.dirname(looseSummary.files.media)).toBe(await fs.realpath(process.env.CUCCUT_DOWNLOADS_DIR!));
       await until(() => runtime.videos.ref(looseSummary.videoId!) === null);
-      // 原来的项目里没有多出视频；视频在会话的工作目录里，会话自己的 videos_list 看得到。
+      // No extra video appears in the original project. The video is in the session's working directory, visible to the session's own videos_list.
       expect(await videoDirs()).toHaveLength(1);
       const listed = await tool(looseSession, 'videos_list', {});
       expect(listed.isError).toBe(false);
@@ -443,7 +439,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       const dirs = (await fs.readdir(scratch)).filter((name) => !name.startsWith('.'));
       expect(dirs).toHaveLength(1);
       await fs.access(path.join(scratch, dirs[0]!, 'video.db'));
-      // 同一命令再提交：同一个任务，不另建视频。
+      // The same command submitted again: the same task, no second video is created.
       expect((await client.request('pipelines.start', request)).jobId).toBe(jobId);
       expect(runtime.harness.listProjects()).toHaveLength(before);
       await settle();
@@ -493,7 +489,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
         origin: 'link-import',
         source: { url: 'https://video.example.com/watch?v=abc', jobId: job.jobId },
       });
-      // 下载目录里的文件改过之后不再认这个产物。
+      // After a file in the download directory has changed, this artifact is no longer recognized.
       await fs.appendFile(summary.files.media, 'x');
       const stale = await tool(session, 'edits_apply', {
         video: created.body.videoId,
@@ -517,7 +513,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(started, JSON.stringify(started.body)).toMatchObject({ isError: false, body: { jobId: expect.stringMatching(/^job_/) } });
       expect(started.body).not.toHaveProperty('notice');
       expect(started.body.next).toContain('application/x-subrip');
-      // 假供应商不答转写请求：流程停在转写一步也无妨，这里只看提交的参数。
+      // The fake provider does not answer the transcription request. The flow may stop at the transcription step; here only the submitted parameters are checked.
       const job = await settled(started.body.jobId);
       expect(job.pipeline!.params).toMatchObject({ conversationId: loose, transcribe: true });
       expect(job.pipeline!.params).not.toHaveProperty('videoId');

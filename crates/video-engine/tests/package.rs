@@ -1,5 +1,5 @@
-//! 便携包导入（视频格式规范 §8）：解开的包建成新视频，内容、修订号与文档、素材的各个版本都接上；
-//! 摘要不符、版本更新、引用不全的包被拒绝，且不留下建了一半的目录。不需要 ffprobe。
+//! Portable package import (video format spec §8): an unpacked package becomes a new video, with its content, revision number, documents and every material version reattached;
+//! packages with a mismatched digest, a newer version, or incomplete references are rejected, and no half-built directory is left behind. No ffprobe needed.
 
 #![allow(clippy::result_large_err)]
 
@@ -36,7 +36,7 @@ fn place() -> Value {
     json!({ "x": 50, "y": 50, "w": 50 })
 }
 
-/// 一个有收纳的矢量图、代码包目录、两版转写、字幕与文字实例的视频。
+/// A video with a collected vector image, a code package directory, two versions of a transcript, and caption and text instances.
 fn source_video(root: &Path) -> Video {
     let svg = root.join("logo.svg");
     fs::write(&svg, "<svg xmlns='http://www.w3.org/2000/svg'/>").unwrap();
@@ -84,7 +84,7 @@ fn source_video(root: &Path) -> Video {
     video
 }
 
-/// 按 Runtime 写包的方式把视频摊成一个解开的包目录（素材都已收纳）。
+/// Unpacks the video into an unpacked package directory, the way the Runtime writes packages (materials already collected).
 fn write_package(video: &Video, out: &Path) {
     fs::create_dir_all(out).unwrap();
     let snapshot = video.snapshot();
@@ -119,7 +119,7 @@ fn copy_any(from: &Path, to: &Path) {
     }
 }
 
-/// 去掉视频自身的 ID，比较其余的内容。
+/// Strips the video's own ID and compares the rest of the content.
 fn content(video: &Video) -> Value {
     let mut value = serde_json::to_value(video.snapshot()).unwrap();
     value.as_object_mut().unwrap().remove("id");
@@ -155,7 +155,7 @@ fn a_package_becomes_a_new_video_with_the_same_content_and_versions() {
     let project = imported.project_id().unwrap();
     assert_eq!(project.as_deref(), Some("proj_1"));
 
-    // 重新打开：存储里的版本都在，下一次编辑接着包里的修订号。
+    // Reopen: all versions are still in storage, and the next edit continues from the revision number in the package.
     let id = imported.id().to_string();
     drop(imported);
     let mut reopened = Video::open(&target, OpenMode::Write, &ffprobe()).unwrap();
@@ -178,7 +178,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     write_package(&source, &package);
     let target = root.path().join("导入的视频");
 
-    // 文档正文被改过。
+    // The document body was changed.
     let (doc_id, record) = source.state().documents.iter().next().unwrap();
     let doc_path = package.join(package_document_path(doc_id, &record.current_revision));
     let original = fs::read_to_string(&doc_path).unwrap();
@@ -188,7 +188,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     assert!(!target.exists(), "失败时不留目录");
     fs::write(&doc_path, &original).unwrap();
 
-    // 素材 bytes 被换过（长度不变）。
+    // The material bytes were replaced (length unchanged).
     let (_, asset) = source
         .state()
         .assets
@@ -206,7 +206,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     assert!(!target.exists());
     fs::write(&blob, &bytes).unwrap();
 
-    // 更新的格式版本。
+    // A newer format version.
     let snapshot_path = package.join(PACKAGE_SNAPSHOT);
     let text = fs::read_to_string(&snapshot_path).unwrap();
     let mut snapshot: Value = serde_json::from_str(&text).unwrap();
@@ -215,7 +215,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
     assert_eq!(err.code, "PACKAGE_VERSION_UNSUPPORTED");
 
-    // 引用了包里没有的素材。
+    // References material that is not in the package.
     let mut snapshot: Value = serde_json::from_str(&text).unwrap();
     let seq = snapshot["rootSequenceId"].as_str().unwrap().to_string();
     let items = snapshot["sequences"][&seq]["items"].as_array_mut().unwrap();
@@ -226,7 +226,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     assert_eq!(err.code, "PACKAGE_INVALID");
     assert!(!target.exists());
 
-    // 文档 ID 想借路径越出包目录。
+    // The document ID tries to use a path to escape the package directory.
     let mut snapshot: Value = serde_json::from_str(&text).unwrap();
     let docs = snapshot["documents"].as_object_mut().unwrap();
     let (key, mut doc) = docs.iter().next().map(|(k, v)| (k.clone(), v.clone())).unwrap();
@@ -241,7 +241,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     assert_eq!(err.code, "PACKAGE_INVALID");
     assert!(!target.exists());
 
-    // 目标已经存在时什么也不做。
+    // Does nothing when the target already exists.
     fs::write(&snapshot_path, &text).unwrap();
     fs::create_dir_all(&target).unwrap();
     fs::write(target.join("别人的文件"), "x").unwrap();

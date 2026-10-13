@@ -113,7 +113,7 @@ describe('元素页里的品牌库贴纸', () => {
     expect(stickerMatches('挥手', true, '动态贴纸')).toBe(true);
     expect(stickerMatches('挥手', false, '动态贴纸')).toBe(false);
     expect(stickerMatches('挥手', true, '台标')).toBe(false);
-    // 名字与词表之间断开：名字的尾巴接上词表的头不算命中。
+    // The name and the word list are separated: the tail of the name joined to the head of the word list does not count as a match.
     expect(stickerMatches('挥', false, '挥我')).toBe(false);
   });
 });

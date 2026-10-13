@@ -1,5 +1,5 @@
-//! 字幕确定性排版（§3.6 region/grow + §8.4 anchor/offset）：
-//! core 排行盒，渲染端只画。度量走 FakeMeasure（每字符宽 = fontSize/2）。
+//! Deterministic caption layout (§3.6 region/grow + §8.4 anchor/offset):
+//! core lays out the boxes, and the renderer only draws. Measurement uses FakeMeasure (each character's width = fontSize/2).
 
 use scene_primitives::Resolver;
 use scene_primitives::layout::{self, TextMeasure, TextMetricsLine};
@@ -18,7 +18,7 @@ impl TextMeasure for FakeMeasure {
     }
 }
 
-/// 画布 1000×600、单 lane（fontSize 20 ⇒ 每字符 10px、行高 26、内容高 25）
+/// Canvas 1000×600, single lane (fontSize 20 ⇒ 10px per character, line height 26, content height 25)
 fn doc(layout_json: Value, lane_extra: Value, line: Value) -> Value {
     let mut lane = json!({ "id": "zh", "style": { "fontSize": 20 } });
     for (k, v) in lane_extra.as_object().unwrap() {
@@ -58,7 +58,7 @@ fn anchor_mode_single_line_matches_legacy_geometry() {
     ));
     let bs = boxes(&ir);
     assert_eq!(bs.len(), 1);
-    // total_h = 26；top = 600 − 60 − 26 = 514；内容盒再居中 (26−25)/2
+    // total_h = 26; top = 600 − 60 − 26 = 514; the content box is then centered again: (26−25)/2
     assert_eq!(bs[0].text, "abc");
     assert_eq!(
         (bs[0].x, bs[0].y, bs[0].w, bs[0].h),
@@ -108,7 +108,7 @@ fn region_mode_wraps_cjk_per_char_and_grows_up() {
     assert_eq!(bs.len(), 2);
     assert_eq!(bs[0].text, "一二三四五六七八九十甲乙");
     assert_eq!(bs[1].text, "丙丁戊己");
-    // grow up：块底边贴 region 底 → top = 100 + 200 − 52 = 248；中心 x = 160
+    // grow up: the block's bottom edge sits on the region bottom → top = 100 + 200 − 52 = 248; center x = 160
     assert_eq!((bs[0].x, bs[0].y, bs[0].w), (100.0, 248.5, 120.0));
     assert_eq!((bs[1].x, bs[1].y, bs[1].w), (140.0, 274.5, 40.0));
 }
@@ -121,7 +121,7 @@ fn region_mode_grows_down_by_default() {
         json!({ "text": "一二三四五六七八九十甲乙丙丁戊己" }),
     ));
     let bs = boxes(&ir);
-    // region = (100, 300, 200, 200)；200px 宽放得下 16 字（160）→ 单行
+    // region = (100, 300, 200, 200); a 200px width fits 16 characters (160) → single line
     assert_eq!(bs.len(), 1);
     assert_eq!((bs[0].x, bs[0].y), (120.0, 300.5));
 }
@@ -137,7 +137,7 @@ fn word_lane_keeps_word_boxes_and_resets_dx_per_row() {
         { "t": 1.0, "d": 0.5, "text": "six" }
     ]);
 
-    // ① 放得下：单行，dx 与旧逐词累加一致（空格 10px）
+    // ① Fits: single line, dx matches the old word-by-word accumulation (space 10px)
     let ir = laid_out(doc(
         json!({ "anchor": "bottom", "offset": "10%", "maxWidth": 200 }),
         lane_extra.clone(),
@@ -152,7 +152,7 @@ fn word_lane_keeps_word_boxes_and_resets_dx_per_row() {
     let idx: Vec<usize> = bs[0].words.iter().map(|w| w.index).collect();
     assert_eq!(idx, vec![0, 1, 2]);
 
-    // ② 换行：词保持原子，dx 相对各自行首，index 仍指回 words[]
+    // ② Wrapping: words stay atomic, dx is relative to each line's start, index still points back into words[]
     let words2 = json!([
         { "t": 0.0, "d": 0.5, "text": "one" },
         { "t": 0.5, "d": 0.5, "text": "two" },
@@ -209,7 +209,7 @@ fn two_lanes_stack_with_gap_and_wrapped_rows() {
     let en = lines["en"].boxes.as_ref().unwrap();
     assert_eq!(zh.len(), 2);
     assert_eq!(en.len(), 1);
-    // anchor top、offset 100px → zh 两行（26 each），gap 10 后是 en（行高 13）
+    // anchor top, offset 100px → zh takes two lines (26 each), then after a gap of 10 comes en (line height 13)
     assert_eq!(zh[0].y, 100.5);
     assert_eq!(zh[1].y, 126.5);
     assert_eq!(en[0].y, 100.0 + 52.0 + 10.0 + (13.0 - 12.5) / 2.0);

@@ -10,8 +10,7 @@ import { FAKE_CREDENTIAL_HELPER } from '@cuccut/runtime-storage/testing';
 import { startRuntime, type RunningRuntime } from './runtime.ts';
 
 /**
- * 凭据存储的两个后端经 Runtime 的行为（架构设计 §6.8）。钥匙串后端只用假的助手（`FAKE_CREDENTIAL_HELPER`，存在临时目录），
- * 从不访问系统的钥匙串；密钥是测试里编的字符串。
+ * The behavior of the Runtime's two credential-store backends (architecture design §6.8). The Keychain backend uses only the fake helper (`FAKE_CREDENTIAL_HELPER`, stored in a temp directory) and never touches the system Keychain; the keys are made-up strings in the test.
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-credentials-0123456789';
@@ -39,7 +38,7 @@ interface Side {
   models(): ModelsSnapshot | null;
 }
 
-/** 之前版本留下的明文：模型密钥文件（第 1 版）、启用了的 openai，以及 nodes.json 里的令牌。 */
+/** Plaintext left by earlier versions: the model key file (version 1), the enabled openai, and the tokens in nodes.json. */
 async function writeLegacyHome(home: RuntimeHome): Promise<void> {
   await fs.mkdir(path.dirname(home.modelCredentialsFile), { recursive: true });
   await fs.writeFile(
@@ -100,7 +99,7 @@ async function startSide(options: { helper: 'fake' | null; openai?: FakeProvider
   return { dir, home, helperDir, runtime, client, received, models: () => models };
 }
 
-/** Home 里所有文件的内容（日志、配置、任务账本），用来确认密钥没有落盘。 */
+/** Contents of all files in Home (logs, config, job ledger), used to confirm that no key was written to disk. */
 async function homeText(home: RuntimeHome): Promise<string> {
   const parts: string[] = [];
   for (const entry of await fs.readdir(home.root, { recursive: true, withFileTypes: true })) {
@@ -130,8 +129,8 @@ describe('凭据存储（经 Runtime）', () => {
     side = await startSide({ helper: 'fake', openai });
     const items = async () => JSON.parse(await fs.readFile(path.join(side!.helperDir, 'items.json'), 'utf8')) as Record<string, string>;
 
-    // 迁移：模型密钥与节点令牌进了「钥匙串」，明文文件删掉，nodes.json 里没有令牌了；第 1 版的模型配置换成第 2 版，
-    // 密钥成了账号 main（新键 provider:openai/main，旧键删掉，§6.8）。
+    // Migration: model keys and node tokens moved into the Keychain, the plaintext file is deleted, and nodes.json no longer holds tokens; the version 1 model config is replaced by version 2,
+    // and the key becomes account main (new key provider:openai/main, old key deleted, §6.8).
     expect(await items()).toEqual({ 'provider:openai/main': OPENAI_KEY, 'node:node_old': NODE_TOKEN });
     const services = JSON.parse(await fs.readFile(side.home.modelServicesFile, 'utf8'));
     expect(services.formatVersion).toBe(2);
@@ -142,12 +141,12 @@ describe('凭据存储（经 Runtime）', () => {
     expect(JSON.parse(await fs.readFile(side.home.nodesFile, 'utf8')).nodes[0]).not.toHaveProperty('token');
     expect(await side.runtime.initiator.store.token('node_old')).toBe(NODE_TOKEN);
 
-    // 迁过来的密钥照常可用：视图报告「已设置」，验证用的就是它。
+    // Migrated keys keep working: the view reports “已设置” (set), and validation uses that key.
     expect(openaiView(side.models())).toMatchObject({ available: true, config: { credential: 'set' } });
     await side.client.request('models.configure', { providerId: 'openai', verify: true });
     expect(openai.requests.at(-1)?.headers.authorization).toBe(`Bearer ${OPENAI_KEY}`);
 
-    // 新设的密钥写进「钥匙串」，不写文件；删除自定义端点时删掉它的密钥。
+    // A newly set key is written to the Keychain, not to a file; deleting a custom endpoint deletes its key.
     await side.client.request('models.configure', { providerId: 'google', enabled: true, credential: GOOGLE_KEY });
     await side.client.request('models.configure', {
       providerId: 'custom:box',
@@ -161,7 +160,7 @@ describe('凭据存储（经 Runtime）', () => {
     expect(await items()).not.toHaveProperty('provider:custom:box/main');
     await expect(fs.stat(side.home.modelCredentialsFile)).rejects.toThrow();
 
-    // 删除节点时删掉它的令牌。
+    // Deleting a node deletes its token.
     await side.client.request('nodes.remove', { nodeId: 'node_old' });
     expect(await items()).not.toHaveProperty('node:node_old');
 
@@ -170,7 +169,7 @@ describe('凭据存储（经 Runtime）', () => {
     for (const secret of [...SECRETS, 'box-key-secret']) {
       expect(JSON.stringify(side.received)).not.toContain(secret);
       expect(await homeText(side.home)).not.toContain(secret);
-      // 助手的调用记录里有命令行参数：密钥不在里面（记录本身不含请求体）。
+      // The helper's call records include command-line arguments: keys are not among them (the record itself does not contain the request body).
       expect(calls).not.toContain(secret);
     }
     expect(calls).not.toContain('"secretInEnv":true');
@@ -180,7 +179,7 @@ describe('凭据存储（经 Runtime）', () => {
     side = await startSide({ helper: null });
     const before = await fs.readFile(side.home.modelCredentialsFile, 'utf8');
 
-    // 明文文件原样保留（下次助手可用时再迁），但不拿来用。
+    // The plaintext file is kept as-is (migrated the next time the helper is available), but it is not used.
     expect(await fs.readFile(side.home.modelCredentialsFile, 'utf8')).toBe(before);
     const view = openaiView(side.models());
     expect(view).toMatchObject({ available: false, unavailableReason: 'missing-credential', config: { credential: 'missing' } });
@@ -192,13 +191,13 @@ describe('凭据存储（经 Runtime）', () => {
       .catch((e: unknown) => e);
     expect(failure).toMatchObject({ code: 'conflict', details: { code: 'CREDENTIAL_UNAVAILABLE', reason: 'unavailable' } });
     expect(JSON.stringify(failure)).not.toContain('sk-new-secret-never-stored');
-    // 验证也不拿明文文件里的密钥去用。
+    // Validation also does not use keys from the plaintext file.
     await expect(side.client.request('models.configure', { providerId: 'openai', verify: true })).rejects.toMatchObject({
       details: { code: 'CREDENTIAL_UNAVAILABLE' },
     });
     expect(await fs.readFile(side.home.modelCredentialsFile, 'utf8')).toBe(before);
 
-    // 节点：旧令牌留在 nodes.json 里等迁移，但读不到；删除节点以 CREDENTIAL_UNAVAILABLE 拒绝。
+    // Node: old tokens remain in nodes.json until migration, but cannot be read; deleting a node is rejected with CREDENTIAL_UNAVAILABLE.
     await expect(side.runtime.initiator.store.token('node_old')).rejects.toMatchObject({ code: 'unavailable' });
     expect(JSON.parse(await fs.readFile(side.home.nodesFile, 'utf8')).nodes[0].token).toBe(NODE_TOKEN);
     await expect(side.client.request('nodes.remove', { nodeId: 'node_old' })).rejects.toMatchObject({

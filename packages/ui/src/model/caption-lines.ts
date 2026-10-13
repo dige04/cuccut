@@ -1,17 +1,16 @@
 import { STUDIO_STYLE, asObject, isObject, mergedLineStyle, num, type Json, type LineKind } from '../render/text-style.ts';
 
 /**
- * 字幕属性页的「原文 | 译文」（原型 panel-subprops.jsx 的每轨属性、model-substyle.js 的比例链）：原文与译文共用一份
- * Studio 字幕样式（预览按样式文档把两行叠成一组），各自的不同写在 `origStyle` / `transStyle` 覆盖里——渲染内核
- * （`crates/subtitle-render` 的 `merged_line_style`）与这里量框用的 render/text-style.ts `mergedLineStyle` 都是根样式叠上覆盖，
- * 覆盖里的 null 当没设。
+ * The 「原文 | 译文」 (Original | Translation) split in the caption properties page (prototype panel-subprops.jsx per-track properties, model-substyle.js ratio chain): original and translation share one Studio caption style
+ * (the preview stacks the two lines as a group according to the style document), and their differences are written in the `origStyle` / `transStyle` overrides. The rendering kernel
+ * (`merged_line_style` in `crates/subtitle-render`) and `mergedLineStyle` in render/text-style.ts, which measures the box here, both layer the overrides over the root style,
+ * and a null in an override counts as unset.
  *
- * 字号走比例链（与 `resolveLineStyle` 同一算法）：根字号是 30 号口径；双语时原文 = 根字号 × 双语压缩
- * （`bilingualOrigScale`，缺省 20/30），译文 = 根字号 × 双语压缩 × `transScale`（缺省 32/20）。覆盖里写了 `fontSize`
- * 的那一行用它，不跟比例。
+ * Font size follows a scale chain (same algorithm as `resolveLineStyle`): the root size is on the 30-point basis; in bilingual mode the original = root size × bilingual compression
+ * (`bilingualOrigScale`, default 20/30), and the translation = root size × bilingual compression × `transScale` (default 32/20). A line whose override sets `fontSize` uses that value and does not follow the ratio.
  */
 
-/** 与 render/text-style.ts 的缺省同值（那边没有导出）。 */
+/** Same default values as in render/text-style.ts (that file does not export them). */
 export const ROOT_FONT_SIZE = 30;
 export const BILINGUAL_ORIG_SCALE = 20 / 30;
 export const TRANSLATION_RATIO = 32 / 20;
@@ -20,25 +19,25 @@ export const LINE_STYLE_KEY: Record<LineKind, 'origStyle' | 'transStyle'> = { or
 
 const round = (value: number) => Math.round(value * 1e4) / 1e4;
 
-/** 正文别的字段原样保留，`style` 根对象整个换掉（`patchCaptionStyle` 是浅补丁，删不掉键）。 */
+/** Other body fields are kept as they are; the root `style` object is replaced as a whole (`patchCaptionStyle` is a shallow patch and cannot delete keys). */
 export function withCaptionStyle(body: unknown, style: Json): Json {
   return { ...asObject(body), schema: STUDIO_STYLE, style };
 }
 
 export interface LineSize {
-  /** 这一行画出来的字号（30 号口径）。 */
+  /** The font size this line is drawn at (30-point basis). */
   size: number;
-  /** 覆盖里单独写了字号，不跟比例。 */
+  /** The font size is set separately in the override, so it does not follow the ratio. */
   explicit: boolean;
-  /** 根字号、双语压缩、译文比例。 */
+  /** Root font size, bilingual compression, translation ratio. */
   root: number;
   bi: number;
   k: number;
-  /** 原文行的有效字号（比例链的中间那一环）。 */
+  /** Effective font size of the original line (the middle link of the ratio chain). */
   orig: number;
 }
 
-/** 一行的有效字号。`compact` 是原文与译文叠在一组里（原文按双语压缩缩小）。 */
+/** Effective font size of a line. `compact` means the original and translation are stacked as one group (the original is shrunk by bilingual compression). */
 export function lineSize(root: Json, kind: LineKind, compact: boolean): LineSize {
   const base = Math.max(1, num(root.fontSize, ROOT_FONT_SIZE));
   const bi = Math.max(0.1, num(root.bilingualOrigScale, BILINGUAL_ORIG_SCALE));
@@ -50,17 +49,17 @@ export function lineSize(root: Json, kind: LineKind, compact: boolean): LineSize
   return { size: explicit ? Math.max(1, partial.fontSize as number) : computed, explicit, root: base, bi, k, orig };
 }
 
-/** 属性页上显示的这一行：根样式叠上覆盖，字号换成这一行的有效字号。 */
+/** The line as shown on the properties page: root style with its overrides layered on top, and the font size replaced by this line's effective font size. */
 export function lineView(root: Json, kind: LineKind, compact: boolean): Json {
   return { ...mergedLineStyle(root, kind), fontSize: Math.round(lineSize(root, kind, compact).size * 10) / 10 };
 }
 
 /**
- * 「文字样式」里的一笔修改（`TextStyleEditor` 给的根对象补丁）落进样式之后的根对象。
- * - `own`（双语时选了原文或译文）：写进那一行的覆盖。字号没单独设时按比例链落回去：原文改根字号（÷ 双语压缩，译文跟着按比例变），
- *   译文改 `transScale`。
- * - 不是 `own`（这份样式只管一种行）：写根样式，那一行覆盖里的同名键去掉（不然改了看不见）；字号同样换算回根字号。
- * 覆盖里单独写了字号的，字号改的是那个单独值。
+ * The root object that results after a 「文字样式」 (Text style) edit (a root-object patch given by `TextStyleEditor`) is applied to the style.
+ * - `own` (when the original or translation is selected in bilingual mode): written into that line's overrides. If no font size was set separately, it falls back along the ratio chain: changing the original's root size (÷ bilingual compression; the translation scales with it),
+ *   and changing `transScale` for the translation.
+ * - Not `own` (this style governs only one kind of line): written to the root style, and the same-named keys are removed from that line's overrides (otherwise the change would be invisible); the font size is likewise converted back to the root size.
+ * If a font size was set separately in an override, the change sets that individual value.
  */
 export function editLine(root: Json, patch: Json, kind: LineKind, own: boolean, compact: boolean): Json {
   const key = LINE_STYLE_KEY[kind];
@@ -88,9 +87,8 @@ export function editLine(root: Json, patch: Json, kind: LineKind, own: boolean, 
 }
 
 /**
- * 双语两行一起选中（舞台上框选或 ⇧ 点选了同一份样式的原文与译文）时的一笔修改：写根样式，两行覆盖里的同名键都去掉
- * （不然那一行看不见这一笔）。字号按原文行算（显示的也是原文行的有效字号）：换算回根字号，两行覆盖里单独设的字号去掉，
- * 译文跟比例。
+ * When both lines of a bilingual pair are selected together (the original and translation sharing the same style, selected by box-select on stage or ⇧-click), a change is written to the root style, and the same-named keys are removed from both lines' overrides
+ * (otherwise the change would be invisible on that line). The font size is computed from the original line (the one displayed is the original line's effective font size): converted back to the root size, the separately set sizes in both overrides are removed, and the translation follows the ratio.
  */
 export function editBlock(root: Json, patch: Json): Json {
   const { fontSize, ...rest } = patch;
@@ -107,20 +105,20 @@ export function editBlock(root: Json, patch: Json): Json {
   return next;
 }
 
-/** 这一行覆盖里单独设了几项（null 是「盖掉根样式的值」，也算）。 */
+/** How many items are set separately in this line's overrides (null counts too, as a value that overrides the root style). */
 export function lineOverrides(root: Json, kind: LineKind): number {
   const partial = root[LINE_STYLE_KEY[kind]];
   return isObject(partial) ? Object.keys(partial).length : 0;
 }
 
-/** 这一行全部跟随共用样式：去掉它的覆盖。 */
+/** This line follows the shared style entirely: remove its overrides. */
 export function followShared(root: Json, kind: LineKind): Json {
   const next = { ...root };
   delete next[LINE_STYLE_KEY[kind]];
   return next;
 }
 
-/** 这一行的字号改回跟比例：去掉覆盖里的 `fontSize`。 */
+/** Set this line's font size back to follow the ratio: remove `fontSize` from its overrides. */
 export function followRatio(root: Json, kind: LineKind): Json {
   const key = LINE_STYLE_KEY[kind];
   const partial = isObject(root[key]) ? { ...root[key] } : null;

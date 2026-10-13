@@ -38,8 +38,8 @@ export function installEditorCommentAnchors(
     return {
       "data-id": commentTargetId(prefix, name),
       "data-comment-target": "",
-      // CucCut: 另带原名，宿主的标注层（packages/design-system/src/editor/comment-targets.ts）写位置标签用；
-      // 名字不干净或太长时 data-id 是截短加哈希，认不回原名
+      // CucCut: also carries the original name; the host's annotation layer (packages/design-system/src/editor/comment-targets.ts) uses it to write position labels.
+      // When the name is unclean or too long, data-id is truncated plus a hash, and the original name cannot be recovered.
       "data-comment-name": name,
     };
   }

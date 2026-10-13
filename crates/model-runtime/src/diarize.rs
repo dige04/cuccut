@@ -1,12 +1,8 @@
-//! `job.run`（capability `diarize`）的编排（Model Worker 协议规范 §2.5.5）：给一份已有转写的词区分说话人，不重新识别。
+//! Orchestration of `job.run` (capability `diarize`) (Model Worker protocol spec §2.5.5): assigns speakers to the words of an existing transcript, without re-recognizing.
 //!
-//! 阶段：`decoding`（素材的一段解成 16 kHz 单声道，进度按秒）→ `diarizing`（Pyannote 分段 + WeSpeaker 声纹聚类，
-//! `job.progress` 的单位是 `steps`）→ `finalizing`（区间投影到词、编号、写 `speakers.json`）。
+//! Stages: `decoding` (a segment of the media is decoded to 16 kHz mono; progress in seconds) → `diarizing` (Pyannote segmentation + WeSpeaker voiceprint clustering; the unit of `job.progress` is `steps`) → `finalizing` (intervals are projected onto words, numbered, and `speakers.json` is written).
 //!
-//! 与转写里的说话人区分（架构设计 §6.6 第 7 步）同一套：聚类阈值 [`DEFAULT_MERGE_THRESHOLD`]、不限人数，区间按
-//! [`project_speaker_clusters`] 投影到词（v2 `ccut speakers reidentify` 的「balanced」）；说话人按在时间上第一次出现
-//! 的次序编号 `spk-1`、`spk-2`…，一个词都没分到的排在后面。取消：解码与聚类里都看取消标志；取消的结果
-//! `outcome: 'cancelled'`，不写输出。
+//! Same scheme as speaker assignment in transcription (architecture design §6.6 step 7): clustering threshold [`DEFAULT_MERGE_THRESHOLD`], no limit on the number of speakers; intervals are projected onto words by [`project_speaker_clusters`] (the “balanced” mode of v2 `ccut speakers reidentify`). Speakers are numbered `spk-1`, `spk-2`… in the order they first appear in time; a speaker with no words assigned goes last. Cancellation: both decoding and clustering check the cancel flag; a cancelled result has `outcome: 'cancelled'` and writes no output.
 
 use std::fs::File;
 use std::io::Write;
@@ -31,7 +27,7 @@ use crate::ticks::{seconds_to_ticks, ticks_to_seconds};
 use crate::transcribe::JobSink;
 use crate::{SAMPLE_RATE, WORKER_VERSION};
 
-/// 跑一个说话人区分任务。返回的错误就是该请求的错误响应。
+/// Runs a speaker diarization task. The returned error is the error response for that request.
 pub fn run(
     diarizer: &mut dyn SpeakerDiarization,
     bundle: &VerifiedBundle,
@@ -60,7 +56,7 @@ pub fn run(
         }
     };
 
-    // ---- 解码 ----
+    // ---- Decoding ----
     phase(sink, job_id, "decoding");
     let started = Instant::now();
     let audio_path = staging.join(audio::AUDIO_FILE);
@@ -96,7 +92,7 @@ pub fn run(
         return Ok(cancelled(stats));
     }
 
-    // ---- 说话人区分 ----
+    // ---- Speaker diarization ----
     phase(sink, job_id, "diarizing");
     let started = Instant::now();
     let segments = if samples.is_empty() {
@@ -140,7 +136,7 @@ pub fn run(
         return Ok(cancelled(stats));
     }
 
-    // ---- 投影、编号、写出 ----
+    // ---- Projection, numbering, writing out ----
     phase(sink, job_id, "finalizing");
     let timescale = params.options.timescale;
     let spans: Vec<(f64, f64)> = params
@@ -218,8 +214,7 @@ pub fn run(
     })
 }
 
-/// 簇的编号次序：按投影后第一次出现在词上的次序；一个词都没分到的簇排在后面，按最早的区间（与转写的说话人编号
-/// 同一条规则）。
+/// Numbering order of clusters: by the order in which they first appear on words after projection. Clusters with no words assigned go last, ordered by their earliest interval (same rule as speaker numbering in transcription).
 pub fn cluster_order(projected: &[Option<usize>], ranges: &[SpeakerRange]) -> Vec<usize> {
     let mut order: Vec<usize> = Vec::new();
     for cluster in projected.iter().flatten() {
@@ -262,7 +257,7 @@ fn decode_error(error: DecodeError) -> ErrorBody {
             eprintln!("[model-worker] input unreadable: {detail}");
             ErrorBody::new(codes::INPUT_UNREADABLE, "the input file cannot be read or demuxed")
         }
-        // 调用方先处理了取消。
+        // The caller has already handled cancellation.
         DecodeError::Cancelled => ErrorBody::new(codes::INPUT_UNREADABLE, "the input file cannot be read or demuxed"),
         DecodeError::DecodeFailed(detail) => {
             eprintln!("[model-worker] decode failed: {detail}");
@@ -285,7 +280,7 @@ fn write_failed(detail: &str) -> ErrorBody {
         .with_details(json!({ "file": SPEAKERS_OUTPUT_FILE }))
 }
 
-/// 先写临时文件再重命名。路径是绝对路径（staging 是绝对路径）。
+/// Writes to a temporary file first, then renames it. The path is absolute (staging is an absolute path).
 fn write_output(staging: &Path, bytes: &[u8]) -> std::io::Result<OutputFile> {
     let path = staging.join(SPEAKERS_OUTPUT_FILE);
     let temporary = staging.join(format!("{SPEAKERS_OUTPUT_FILE}.tmp"));
@@ -313,7 +308,7 @@ mod tests {
     use crate::speech::pyannote_common::DiarizedSegment;
     use anyhow::bail;
 
-    /// 假模型：前一半时间是簇 7，后一半是簇 3；`fail` 时报错，`cancel` 时中途要求取消。
+    /// Fake model: the first half of the time is cluster 7, the second half is cluster 3. `fail` makes it return an error; `cancel` requests cancellation midway.
     struct FakeDiarizer {
         fail: bool,
         cancel: Option<&'static AtomicBool>,
@@ -384,7 +379,7 @@ mod tests {
         }
     }
 
-    /// 4 秒 16 kHz 的正弦波 WAV。
+    /// A 4-second 16 kHz sine-wave WAV.
     fn write_wav(dir: &Path) -> String {
         let rate = 16_000u32;
         let samples: Vec<i16> = (0..rate * 4)

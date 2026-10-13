@@ -1,49 +1,49 @@
 import type { FileTarget } from './methods.ts';
 
 /**
- * 会话里的幻灯片（docs/design/slides）：deck 是会话工作目录或项目目录里的一个目录（`deck.json` 加 `slides/*.html`），
- * 在功能区的幻灯片标签里用 Slides 编辑器打开。
+ * Slides in a session (docs/design/slides): a deck is a directory in the session's working directory or the project directory (`deck.json` plus `slides/*.html`),
+ * opened with the Slides editor from the slides tab in the ribbon.
  */
 
-/** deck 的概要（读 `deck.json`）。 */
+/** Deck summary (read from `deck.json`). */
 export interface SlidesDeckInfo {
-  /** `deck.json` 的 `title`，去掉首尾空白；没有时为空串。 */
+  /** The `title` from `deck.json`, trimmed of leading and trailing whitespace; an empty string if there is none. */
   title: string;
   slideCount: number;
 }
 
-/** `slides.open` 的结果。 */
+/** Result of `slides.open`. */
 export interface SlidesOpenResult {
   /**
-   * 编辑器页面的地址，以 `/` 结尾：`<网关 HTTP 基址>/slides/<grant>/`；Web 服务里是同源的相对地址 `/slides/<grant>/`。
-   * grant 只在 Runtime 的内存里，Runtime 重启后要重新打开。
+   * Address of the editor page, ending in `/`: `<gateway HTTP base>/slides/<grant>/`; in the Web service it is the same-origin relative address `/slides/<grant>/`.
+   * The grant exists only in the Runtime's memory, so after the Runtime restarts the deck must be opened again.
    */
   url: string;
   deck: SlidesDeckInfo;
-  /** 这台机器有没有构建编辑器（`npm run build:slides-editor`）。没有时界面显示不可用的说明，不加载 `url`。 */
+  /** Whether this machine has built the editor (`npm run build:slides-editor`). When it has not, the UI shows an unavailable notice and does not load `url`. */
   editorAvailable: boolean;
 }
 
-/** 幻灯片标注的上限（docs/design/slides §9）：一条消息带几条、一条批注多长。 */
+/** Limits on slide annotations (docs/design/slides §9): how many one message can carry, and how long one comment can be. */
 export const SLIDE_ANNOTATION_LIMITS = { perMessage: 20, text: 2000 } as const;
 
 /**
- * 一条幻灯片标注（docs/design/slides §9）：用户在幻灯片标签里点一个元素或框一块区域写的批注。
- * 随 `conversations.send` / `steer` 挂在消息上，Runtime 发送时拼成一段文字交给智能体；会话里的用户消息上另带一份。
+ * One slide annotation (docs/design/slides §9): a comment the user writes by clicking an element or boxing a region in the slides tab.
+ * It is attached to a message via `conversations.send` / `steer`; the Runtime turns it into text when sending and hands it to the agent. The user message in the session carries a copy as well.
  */
 export interface SlideAnnotation {
-  /** deck 目录，与 `slides.open` 的 target 相同。 */
+  /** The deck directory, the same as the target of `slides.open`. */
   deck: FileTarget;
-  /** 运行时的锚点串，用来在编辑器里重新定位与画标记；智能体不需要读懂。 */
+  /** A runtime anchor string, used to re-locate the element and draw markers in the editor; the agent does not need to read it. */
   anchor: string;
-  /** slide id；运行时给的描述里能解析到时填。 */
+  /** The slide id; filled in when it can be resolved from the description given by the runtime. */
   slideId?: string;
-  /** 给人看的位置，例如「第 3 页 › 标题 “…”」。 */
+  /** A human-readable location, e.g. “第 3 页 › 标题 ‘…’” (page 3 › title ‘…’). */
   label: string;
-  /** 运行时为模型生成的定位描述：页号、slide id、元素路径与原文。 */
+  /** The location description the runtime generates for the model: page number, slide id, element path and original text. */
   detail?: string;
-  /** 区域标注为 true。 */
+  /** True for region annotations. */
   area?: boolean;
-  /** 用户写的批注，去掉首尾空白。 */
+  /** The comment the user wrote, trimmed of leading and trailing whitespace. */
   text: string;
 }

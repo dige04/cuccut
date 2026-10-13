@@ -1,21 +1,20 @@
-//! 源语言与译文内容的确定性质量门。
+//! Deterministic quality gates for source-language and translation content.
 //!
-//! 这里只做高精度、可解释的脚本与退化检测，不伪装成完整的统计语言识别器。
-//! 规则宁可放过短句、专名与正常 code-switch，也不误杀它们；整页审计再聚合
-//! 单句信号，抓住“整页原文复制/占位/错误脚本”这类灾难性输出。
+//! This only does high-precision, explainable script and degeneration detection; it does not pose as a full statistical language identifier.
+//! The rules prefer letting short sentences, proper nouns and normal code-switching through over falsely rejecting them; the whole-page audit then aggregates
+//! the per-sentence signals to catch catastrophic output such as “whole page copied from the source / placeholder / wrong script”.
 
 use crate::atomize::{normalize_chars, spaced_script_letter};
 use std::collections::BTreeMap;
 
-/// 改动本常量会让翻译载体字节变化，从而自动失效 provider/agent 历史应答缓存。
+/// Changing this constant changes the bytes of the translation carrier, which automatically invalidates the provider/agent historical response cache.
 pub const TRANSLATION_VALIDATOR_VERSION: u32 = 4;
 
-/// 译文里连续多少个源文表意字符原样出现才算「一段没翻」：短于此的是专名、
-/// 术语与正常的 code-switch（`KV cache 缓存`）。
+/// The number of consecutive source-text ideographic characters appearing verbatim in the translation that counts as an “untranslated run”: anything shorter is a proper noun,
+/// a term, or normal code-switching (`KV cache 缓存`).
 const UNTRANSLATED_RUN_CHARS: usize = 6;
 
-/// 译文整句照抄源文的一段时，那一段至少要有多少个空白分隔的词才算「残句
-/// 照抄」：更短的是专名、片名与术语（`University of Toronto`）。
+/// When a stretch of the translation copies a segment of the source sentence verbatim, that stretch must have at least this many whitespace-separated words to count as a “copied fragment”: shorter ones are proper names, titles and terms (`University of Toronto`).
 const COPIED_FRAGMENT_WORDS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,8 +142,8 @@ fn target_script_mismatch(target_lang: &str, text: &str) -> bool {
         "hi" | "mr" | "ne" => counts.devanagari == 0 && total >= 8,
         "th" => counts.thai == 0 && total >= 8,
         "he" | "yi" => counts.hebrew == 0 && total >= 8,
-        // 英文及大多数拉丁字母语言：允许数字、短专名和少量 code-switch；
-        // 明显由另一套文字主导才拒绝。
+        // English and most Latin-script languages: numbers, short proper nouns and a small amount of code-switching are allowed;
+        // reject only when another writing system clearly dominates.
         _ => {
             let foreign = total.saturating_sub(counts.latin);
             foreign >= 4 && foreign * 100 >= total * 45
@@ -152,12 +151,11 @@ fn target_script_mismatch(target_lang: &str, text: &str) -> bool {
     }
 }
 
-/// 部分照抄：目标语言不用表意文字，译文却带着一段源文里原样存在的、至少
-/// [`UNTRANSLATED_RUN_CHARS`] 个表意字符的连续文字（`毕业 5 年升职升不上去，
-/// internal role transfer 没机会`）。脚本比例门抓不住这种半句没翻的输出：
-/// 拉丁字母够多时它看起来「以目标脚本为主」。只有表意文字源→非表意目标这一
-/// 对文字有此门；其余文字对（含表意目标里照抄的拉丁词，那常是专名与术语）
-/// 不检查。返回那段照抄的文字。
+/// Partial copying: the target language does not use ideographs, yet the translation carries a run of consecutive text that appears verbatim in the source and is at least
+/// [`UNTRANSLATED_RUN_CHARS`] ideographic characters long (`毕业 5 年升职升不上去，
+/// internal role transfer 没机会`). The script-ratio gate cannot catch this kind of half-untranslated output:
+/// when there are enough Latin letters, it looks as if it is “mainly in the target script”. Only the ideographic-source → non-ideographic-target script pair has this gate; other script pairs (including Latin words copied into an ideographic target, which are often proper nouns and terms)
+/// are not checked. Returns the copied text.
 fn untranslated_run(
     normalized_source: &str,
     target_lang: &str,
@@ -190,12 +188,9 @@ fn untranslated_run(
     })
 }
 
-/// 残句照抄：译文整句就是源文里一段连续的词（标点与大小写不计），至少
-/// [`COPIED_FRAGMENT_WORDS`] 个空白分隔的词，源文其余部分没有出现——模型把
-/// 源文的一截原样抄进了译文栏。与目标语言无关；词连写的文字（中日韩、泰文
-/// 等）整句只有一个「词」，够不到门槛，表意文字源由 [`untranslated_run`] 管。
-/// 半句译了半句照抄的输出不在此列：两种文字相同时，照抄的词与本该保留的
-/// 专名、同形词没有确定性的分界。
+/// Copied fragment: the whole translation is one consecutive run of words from the source (punctuation and case ignored), at least
+/// [`COPIED_FRAGMENT_WORDS`] whitespace-separated words, and the rest of the source does not appear — the model copied a slice of the source verbatim into the translation column. This is independent of the target language. Scripts whose words are written without spaces (CJK, Thai, etc.) have a whole sentence as one “word”, which does not reach the threshold; ideographic sources are handled by [`untranslated_run`].
+/// Output that is half translated and half copied is not covered: when the two scripts are the same, there is no deterministic boundary between copied words and proper nouns or homographs that should be kept.
 fn copied_fragment(source: &str, translation: &str) -> bool {
     let words = |text: &str| -> Vec<String> {
         text.split_whitespace()
@@ -212,7 +207,7 @@ fn copied_fragment(source: &str, translation: &str) -> bool {
             .any(|window| window == translation.as_slice())
 }
 
-/// 单句翻译硬门。所有问题都必须在缓存写入与 transcript 提交之前处理。
+/// Hard gate for single-sentence translation. All problems must be handled before the cache write and the transcript commit.
 pub fn translation_quality_issues(
     source: &str,
     target_lang: &str,
@@ -228,8 +223,8 @@ pub fn translation_quality_issues(
     }
     let normalized_source = normalize_chars(source);
     let normalized_target = normalize_chars(trimmed);
-    // 单个空白分隔的词（人名、品牌、口头语）照抄不是没翻；词连写的文字
-    // （中日韩、泰文等）一个「词」可能是整句，不享此例外。
+    // Copying a single whitespace-separated word (a person's name, a brand, a catchphrase) is not untranslated; in scripts written without spaces
+    // (CJK, Thai, etc.) a single “word” may be a whole sentence, so this exception does not apply.
     let single_spaced_word = source.split_whitespace().count() == 1
         && normalized_source.chars().any(char::is_alphanumeric)
         && normalized_source
@@ -273,7 +268,7 @@ pub fn translation_quality_issues(
     issues
 }
 
-/// 返回发生页面/批次级短串塌缩的句 id。至少三句且覆盖过半时才判定。
+/// Returns the sentence ids involved in page- or batch-level collapse into short strings. Judged only when there are at least three sentences and they make up more than half of the page.
 pub fn duplicate_collapse_ids<'a>(
     translations: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
 ) -> Vec<String> {
@@ -303,7 +298,7 @@ pub fn duplicate_collapse_ids<'a>(
         .collect()
 }
 
-/// 由脚本分布给出高置信语言族；无法高置信判断时返回 `None`。
+/// Gives a high-confidence language family from the script distribution; returns `None` when no high-confidence judgment is possible.
 pub fn dominant_script_language(text: &str) -> Option<&'static str> {
     let counts = scripts(text);
     let total = counts.total();
@@ -325,7 +320,7 @@ pub fn dominant_script_language(text: &str) -> Option<&'static str> {
     (count * 100 >= total * 70).then_some(lang)
 }
 
-/// BCP-47 标签是否与高置信脚本族兼容。`latin` 兼容所有常见拉丁语种。
+/// Whether a BCP-47 tag is compatible with a high-confidence script family. `latin` is compatible with all common Latin-script languages.
 pub fn language_matches_script(lang: &str, script_lang: &str) -> bool {
     let lang = primary(lang);
     match script_lang {
@@ -336,32 +331,31 @@ pub fn language_matches_script(lang: &str, script_lang: &str) -> bool {
         "ru" => matches!(lang.as_str(), "ru" | "uk" | "bg" | "sr" | "mk"),
         "ar" => matches!(lang.as_str(), "ar" | "fa" | "ur"),
         "hi" => matches!(lang.as_str(), "hi" | "mr" | "ne"),
-        // 日文可能整段只有汉字而没有假名；Han 主导不能据此排除 ja。
+        // Japanese text may consist entirely of kanji with no kana; Han dominance cannot be used to rule out ja.
         "zh" => matches!(lang.as_str(), "zh" | "ja" | "yue" | "cmn" | "wuu"),
         expected => lang == expected,
     }
 }
 
-/// 早期探针要攒够这么多「脚本字符」才下结论：够抵消片头的口播 / 英文片名，
-/// 又只相当于中文一两分钟、英文半分钟的语音。
+/// The early probe must accumulate this many “script characters” before drawing a conclusion: enough to outweigh an opening voiceover or English title,
+/// yet only about one or two minutes of Chinese speech or half a minute of English speech.
 pub const SOURCE_PROBE_MIN_CHARS: usize = 160;
-/// 攒到这个量脚本分布仍不到高置信（真正的混合语种），探针收手，交给写入前的全文校验。
+/// If, after accumulating this amount, the script distribution still has no high confidence (a genuinely mixed-language recording), the probe stops and leaves it to the full-text check before writing.
 pub const SOURCE_PROBE_MAX_CHARS: usize = 2400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceProbeVerdict {
-    /// 样本还不够，继续喂。
+    /// Not enough samples yet; keep feeding.
     Pending,
-    /// 与期望语言相容，或混合到无法高置信判断；之后不再检查。
+    /// Compatible with the expected language, or mixed to the point that no high-confidence judgment is possible; not checked afterwards.
     Settled,
-    /// 样本的主导脚本（[`dominant_script_language`] 的返回值）与期望语言明显不符。
+    /// The sample's dominant script (the return value of [`dominant_script_language`]) clearly does not match the expected language.
     Mismatch(&'static str),
 }
 
-/// 转录早期的源语言一致性探针：把流式吐出的分段文本喂进来，攒够样本就与期望的
-/// source-lang 对一次脚本。判定口径与写入前的全文校验相同（同一对
-/// [`dominant_script_language`] / [`language_matches_script`]），只是提前到转录
-/// 开头几十秒，而不是整段 ASR 跑完才发现语言给错了。结论一旦给出就不再变化。
+/// Early source-language consistency probe during transcription: streamed segment text is fed in, and once enough samples have accumulated, the script is checked once against the expected
+/// source-lang. The judgment criteria are the same as the full-text check before writing (the same pair
+/// [`dominant_script_language`] / [`language_matches_script`]); it just runs early, in the first few dozen seconds of transcription, instead of discovering after the whole ASR run that the language was set wrong. Once a conclusion is reached it does not change.
 #[derive(Debug, Clone)]
 pub struct SourceLanguageProbe {
     expected: String,
@@ -437,8 +431,8 @@ mod tests {
         );
     }
 
-    /// 单个空白分隔的词照抄（人名、品牌）不是没翻；词连写文字的单「词」
-    /// 可能是整句，照抄仍算。
+    /// Copying a single whitespace-separated word (a person's name, a brand) is not untranslated; in scripts written without spaces, a single “word”
+    /// may be a whole sentence, and copying it still counts.
     #[test]
     fn a_single_spaced_word_copied_verbatim_is_not_a_source_copy() {
         assert!(translation_quality_issues("Dottie.", "zh", "Dottie.").is_empty());
@@ -468,8 +462,8 @@ mod tests {
         );
     }
 
-    /// 半句没翻：拉丁词够多时脚本比例门看不出来，照抄的源文连续片段才是证据。
-    /// 只有表意文字源→非表意目标有此门；表意目标里照抄的拉丁词不查。
+    /// Half-untranslated: when there are enough Latin words, the script-ratio gate cannot see it; a consecutive copied source fragment is the evidence.
+    /// Only the ideographic source → non-ideographic target pair has this gate; Latin words copied into an ideographic target are not checked.
     #[test]
     fn rejects_a_half_translated_sentence_that_keeps_a_source_run() {
         let issues = translation_quality_issues(
@@ -510,8 +504,7 @@ mod tests {
         );
     }
 
-    /// 译文整句只是源文的一截（西语源、英语目标，两边文字相同，脚本门看不
-    /// 出来）：四个词起算。短的专名片段、带了译文的句子、词连写文字不拦。
+    /// The whole translation is just a slice of the source (Spanish source, English target; both use the same script, so the script gate cannot see it): counted from four words onward. Short proper-noun fragments, sentences that already contain some translation, and words-without-spaces scripts are not blocked.
     #[test]
     fn rejects_a_translation_that_is_only_a_verbatim_part_of_the_source() {
         let source = "Aunque Inés salió antes que Mateo, llegó diez minutos después de él.";
@@ -566,7 +559,7 @@ mod tests {
             verdict = probe.observe("我们今天主要讨论 AI 在海外华人社区里的应用和一些实际的例子。");
         }
         assert_eq!(verdict, SourceProbeVerdict::Mismatch("zh"));
-        // 结论不回退。
+        // The conclusion does not revert.
         assert_eq!(
             probe.observe("This is a long English sentence that would not matter anymore."),
             SourceProbeVerdict::Mismatch("zh")
@@ -582,7 +575,7 @@ mod tests {
         }
         assert_eq!(verdict, SourceProbeVerdict::Settled);
 
-        // 中英都不到七成：到上限仍无高置信主导脚本，收手而不是误报。
+        // Neither Chinese nor English reaches 70%: when the cap is hit with still no high-confidence dominant script, stop rather than raise a false alarm.
         let mut mixed = SourceLanguageProbe::new("en");
         let mut verdict = SourceProbeVerdict::Pending;
         for _ in 0..200 {
@@ -592,9 +585,8 @@ mod tests {
         assert_eq!(verdict, SourceProbeVerdict::Settled);
     }
 
-    /// 这道门只看文字脚本、照抄与占位，不看意思：通顺但译错的句子照样通过。
-    /// 验收夹具 `de-07`（条件被改、批准的主体被误读）与 `hi-07`（「第二版」
-    /// 译作「另一个版本」）都不产生任何问题，意思要靠别的机制核对。
+    /// This gate only looks at writing script, copying and placeholders, not meaning: a fluent but mistranslated sentence still passes.
+    /// The acceptance fixtures `de-07` (the condition was changed and the approving party was misread) and `hi-07` (“第二版” (second edition) rendered as “另一个版本” (another version)) produce no issues at all; meaning has to be checked by other mechanisms.
     #[test]
     fn a_fluent_mistranslation_passes_the_script_gate() {
         assert!(

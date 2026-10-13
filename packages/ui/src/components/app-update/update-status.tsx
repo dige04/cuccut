@@ -8,8 +8,8 @@ import { useUpdateActions } from './use-update-actions.ts';
 import { useWaitingCount } from './use-waiting-count.ts';
 
 /*
- * 设置 › 关于的更新状态块（设计稿 settings-update.jsx `UpdateStatus`、settings-update.css `.upd`）：一行状态、进度、
- * 版本说明（最多 6 行）、按钮与「前往下载页」。宿主没有 `updates` 面（网页）时不出现。
+ * Update status block for 设置 › 关于 (Settings › About) (design settings-update.jsx `UpdateStatus`, settings-update.css `.upd`): one line of status, progress,
+ * release notes (up to 6 lines), buttons and “前往下载页” (go to download page). It does not appear when the host has no `updates` surface (the web).
  * Drawn as its own solid panel, left-aligned like every other settings panel.
  */
 
@@ -43,7 +43,7 @@ export function UpdateStatus() {
   const snapshot = useAppUpdate((s) => s.snapshot);
   const waiting = useWaitingCount();
   const act = useUpdateActions();
-  // 「上次检查：…」按分钟走。
+  // “上次检查：…” (last checked: …) ticks by the minute.
   const now = useNow(60_000, snapshot?.state.k === 'idle');
   if (!snapshot) return null;
   const v = view(snapshot.state, { lang: NOTES_LANG, lastCheck: snapshot.lastCheckAt, now: Math.floor(now / 1000), waiting });

@@ -28,41 +28,41 @@ import { usageErrorOf } from '../usage-reporter.ts';
 import { AgentImageGenerator, type AgentReadiness } from './agent-image-generator.ts';
 import { ProvidersAgent as PA, ProvidersConfig as PC } from '@cuccut/protocol/messages/providers';
 
-/** 智能体 Provider 的配置视图：只有开关与启用时间，不用密钥（`credential: 'none'`），没有账号（§6.8）。 */
+/** Config view of the agent provider: only the switch and the enable time, no key (`credential: 'none'`), no account (§6.8). */
 function agentConfigView(view: ProviderConfigView): ProviderConfigView {
   const { accounts: _accounts, ...rest } = view;
   return { ...rest, credential: 'none' };
 }
 
-/** 智能体 Provider 要用的 Driver 注册表的一部分（`DriverRegistry`）。 */
+/** The part of the Driver registry (`DriverRegistry`) that the agent provider uses. */
 export interface AgentDrivers {
   /**
-   * 一个 Driver 的状态：注册表里 `maxAgeMs` 之内的结果直接用，否则只重新探测这一个 Driver 并等它（结果写回注册表的缓存）。
-   * 不等别的 Driver 的探测。没注册为 null。
+   * The status of one Driver: a result within `maxAgeMs` in the registry is used directly. Otherwise only this one Driver is probed again and awaited (the result is written back to the registry's cache).
+   * It does not wait for other Drivers' probes. null if it is not registered.
    */
   current(id: DriverId, maxAgeMs: number): Promise<DriverProbe | null>;
-  /** 没有注册时抛错。 */
+  /** Throws if it is not registered. */
   get(id: DriverId): AgentDriver;
-  /** 用户手动指定的可执行文件；没指定为 null（Driver 自己找）。 */
+  /** Executable file the user specified manually. null if none was specified (the Driver finds it itself). */
   executable(id: DriverId): string | null;
 }
 
 export interface AgentSourceOptions {
   store: ModelServiceStore;
   drivers: AgentDrivers;
-  /** 复用最近一次 Driver 探测的期限（毫秒，默认 10 秒）。 */
+  /** Deadline (milliseconds, default 10 seconds) for reusing the most recent Driver probe. */
   probeMaxAgeMs?: number;
-  /** 一次生成的期限（毫秒，默认 10 分钟）。 */
+  /** Deadline for one generation (milliseconds, default 10 minutes). */
   turnTimeoutMs?: number;
-  /** 用量账本（§6.10）：智能体 Provider 的调用同样记录，`accountId` 为 null，费用未知。 */
+  /** Usage ledger (§6.10): calls from the agent provider are recorded too. `accountId` is null, and the cost is unknown. */
   usage?: UsageLedger;
 }
 
-/** 一个智能体 Provider 的定义。首版只有 `agent:codex` 的 `generateImage`。 */
+/** The definition of one agent provider. The first version only has `generateImage` for `agent:codex`. */
 interface AgentProviderDefinition {
   driverId: DriverId;
   label: string;
-  /** 低于它的版本不可用（`outdated`）：协议按这个版本对照（`codex-protocol.ts`）。 */
+  /** Versions below this are unavailable (`outdated`). The protocol is checked against this version (`codex-protocol.ts`). */
   minVersion: string;
   upgradeHint: Localized;
   model: ImageModelInfo;
@@ -121,27 +121,25 @@ type Availability =
   | { available: true }
   | { available: false; reason: ProviderUnavailableReason; detail: string; detailRef?: MessageRef };
 
-/** 不可用：Runtime 的文案带上引用（界面按当前语言重新生成）。 */
+/** Unavailable. The Runtime's text carries its reference (the UI regenerates it in the current language). */
 function unavailable(reason: ProviderUnavailableReason, detail: Localized): Availability {
   return { available: false, reason, detail: detail.text, detailRef: refOf(detail) };
 }
 
 /**
- * 智能体 Provider 来源（架构设计 §6.9）：本机已安装并登录的智能体运行时，经它的 Driver 作为一个图片 Provider。
- * 首版只有 `agent:codex`（`generateImage`），只在注册了 Codex Driver 时列出。
+ * Agent provider source (architecture design §6.9): an agent runtime installed and signed in on this machine, used as an image provider through its Driver.
+ * The first version only has `agent:codex` (`generateImage`), and it is listed only when the Codex Driver is registered.
  *
- * - 可用性按顺序：Driver 没有安装（`not-installed`）、没有登录（`signed-out`）、别的不可用（`unsupported`）、版本低于
- *   最低版本（`outdated`）、用户没有启用（`not-configured`）。前三样的说明来自 Driver 的探测。
- * - 配置只有开关：没有密钥、端点与模型声明（用的是智能体运行时自己的登录）。启用即同意把提示词与参考图发给它的账号。
- * - 探测：`probe` 总是问 Driver（Driver 注册表短时缓存）；`select` 与 `view` 在用户启用了它时问 Driver，没启用时用
- *   最近一次的结果，一次也没探测过就只报告没有启用——不为没启用的 Provider 去启动外部命令。
- * - 每个 Provider 一个队列，同时只运行 1 个任务。
+ * - Availability is checked in this order: the Driver is not installed (`not-installed`); not signed in (`signed-out`); otherwise unavailable (`unsupported`); version below the minimum (`outdated`); the user has not enabled it (`not-configured`). The explanations for the first three come from the Driver's probe.
+ * - The configuration is only a switch. There is no key, endpoint or model declaration (it uses the agent runtime's own sign-in). Enabling it means consenting to send prompts and reference images to its account.
+ * - Probing: `probe` always asks the Driver (the Driver registry has a short-term cache). `select` and `view` ask the Driver when the user has enabled it. When it is not enabled, they use the most recent result, and if it was never probed, they only report that it is not enabled. External commands are not started for providers that are not enabled.
+ * - One queue per provider, running at most 1 task at a time.
  */
 export class AgentProviderSource implements ProviderSource {
   readonly kind = 'agent' as const;
   readonly #options: AgentSourceOptions;
   readonly #generators = new Map<string, AgentImageGenerator>();
-  /** 最近一次探测到的 Driver 状态。 */
+  /** The most recent Driver status that was probed. */
   readonly #lastInfo = new Map<DriverId, DriverProbe>();
 
   constructor(options: AgentSourceOptions) {
@@ -203,7 +201,7 @@ export class AgentProviderSource implements ProviderSource {
       generator = new AgentImageGenerator({
         providerId,
         label: definition.label,
-        // 执行时再确认一次：排队期间被停用、退出登录或卸载的，不再开会话。
+        // Checked again at execution time: anything disabled, signed out or uninstalled while queued does not open a session.
         ready: () => this.#readiness(providerId, definition),
         instructions: definition.instructions,
         turnText: definition.turnText,
@@ -235,7 +233,7 @@ export class AgentProviderSource implements ProviderSource {
     return [...this.#generators.values()];
   }
 
-  /** 智能体一次只做一件事：每个 Provider 一个队列，同时只运行 1 个任务。 */
+  /** An agent does one thing at a time: one queue per provider, running at most 1 task at a time. */
   queue(providerId: string, _modelId: string): ProviderQueue {
     return { key: providerId, concurrency: 1 };
   }
@@ -244,7 +242,7 @@ export class AgentProviderSource implements ProviderSource {
     return [];
   }
 
-  /** 只接受开关。启用即同意把提示词（与参考图）发给这个智能体运行时登录的账号。 */
+  /** Accepts only the switch. Enabling it means consenting to send the prompt (and reference images) to the account this agent runtime is signed in to. */
   async configure(request: ConfigureProviderRequest): Promise<void> {
     const id = request.providerId;
     const definition = DEFINITIONS[id];
@@ -257,7 +255,7 @@ export class AgentProviderSource implements ProviderSource {
     await this.#options.store.updateProvider(id, { enabled: request.enabled });
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
   #driver(definition: AgentProviderDefinition): AgentDriver | null {
     try {
@@ -293,14 +291,14 @@ export class AgentProviderSource implements ProviderSource {
   }
 }
 
-/** Driver 状态 + 版本 + 开关 → 可用性（顺序见类注释）。 */
+/** Driver status + version + switch → availability (order as in the class comment). */
 function evaluate(definition: AgentProviderDefinition, info: DriverProbe | null, enabled: boolean): Availability {
   const name = definition.label;
   if (!info) return unavailable('unsupported', PC.noStatus({ name }));
-  // Driver 自己报的「版本太旧」与这个 Provider 的最低版本走同一条路：补救都是升级（架构设计 §6.9）。
+  // A “version too old” reported by the Driver itself takes the same path as this provider's minimum version. The remedy in both cases is an upgrade (architecture design §6.9).
   const outdated = info.state === 'outdated' || (info.status === 'available' && (!info.version || compareVersions(info.version, definition.minVersion) < 0));
   if (info.status !== 'available' && !outdated) {
-    // Driver 探测的说明带着它自己的引用（探测结果会缓存）；没有说明时用这里的文案。
+    // The Driver probe's explanation carries its own reference (probe results are cached). When there is no explanation, the copy here is used.
     const fallback = PC.agentUnavailable({ name });
     const detail = info.detail
       ? { detail: info.detail, ...(info.detailRef ? { detailRef: info.detailRef } : {}) }
@@ -323,7 +321,7 @@ function evaluate(definition: AgentProviderDefinition, info: DriverProbe | null,
   return { available: true };
 }
 
-/** 按数字逐段比较 `0.160.0`、`0.160.0-alpha.2` 这样的版本号（预发布后缀当作更多的段）。 */
+/** Compares version numbers such as `0.160.0` and `0.160.0-alpha.2` segment by segment as numbers (a pre-release suffix counts as more segments). */
 function compareVersions(a: string, b: string): number {
   const pa = a.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
   const pb = b.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);

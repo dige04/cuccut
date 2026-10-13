@@ -44,22 +44,22 @@ export interface LibraryServiceOptions {
   dir: string;
   videos: VideoService;
   media: MediaRegistry;
-  /** 产物库：`library.put` 可以拿一个产物当文件来源。 */
+  /** Output library: `library.put` can take an output as a file source. */
   artifacts: { locate(artifactId: string): Promise<string | null> };
-  /** 参考录音的解码校验（与生成输出同一个 ffprobe）。 */
+  /** Decode validation for reference recordings (uses the same ffprobe as generated output). */
   ffprobe: ProbeToolResolver;
 }
 
-/** 同一个 `commandId` 返回同一份结果：记住最近这么多条。 */
+/** The same `commandId` returns the same result. The most recent this many are remembered. */
 const COMMAND_MEMORY = 500;
-/** 新视频采用默认启用的条目时，写入的行为者：不进用户的撤销栈（撤销是用户自己的编辑）。 */
+/** The actor written when a new video takes an entry that is enabled by default. It does not enter the user's undo stack, since undo is the user's own edit. */
 const LIBRARY_ACTOR: Actor = { kind: 'system', id: 'system:library' };
-/** 步骤与它能用的术语表种类。 */
+/** Steps, and the glossary kinds they can use. */
 const STEP_KIND = { transcribe: 'transcription', translate: 'translation' } as const;
 
 /**
- * 用户库的 Runtime 侧（架构设计 §5.9）：`library.*` 方法、`library` 主题，以及把条目拷进视频。
- * 存储、交换格式与授权检查在 `@cuccut/runtime-storage/library`。
+ * The Runtime side of the user library (architecture design §5.9): the `library.*` methods, the `library` topic, and copying entries into a video.
+ * Storage, the exchange format and authorization checks live in `@cuccut/runtime-storage/library`.
  */
 export class LibraryService {
   readonly store: LibraryStore;
@@ -92,12 +92,12 @@ export class LibraryService {
     return new LibraryService(options, store, topic);
   }
 
-  /** 音色克隆要用任务与授权，在它们建好之后接上。 */
+  /** Voice cloning uses tasks and grants, and is wired in after they are built. */
   attachVoiceClones(clones: VoiceCloneService): void {
     this.#clones = clones;
   }
 
-  /** 音色克隆（§5.9）：见 `VoiceCloneService`。 */
+  /** Voice cloning (§5.9): see `VoiceCloneService`. */
   get voiceClones(): VoiceCloneService {
     if (!this.#clones) throw new RpcError('busy', RcLibrary.clonesNotReady());
     return this.#clones;
@@ -156,8 +156,7 @@ export class LibraryService {
   }
 
   /**
-   * 把条目拷进视频：一笔普通的编辑事务，操作者是发起请求的连接（界面与 CLI 是用户）。bytes 收进视频目录（`managed`），
-   * 来源记下库条目与版本；之后库里的修改与删除不影响视频。
+   * Copies an entry into a video: an ordinary edit transaction. The actor is the connection that made the request (the UI and the CLI are users). The bytes are taken into the video directory (`managed`), and the source records the library entry and version. Later changes and deletions in the library do not affect the video.
    */
   async applyToVideo(p: LibraryApplyParams, principal: TrustedPrincipal): Promise<LibraryApplyResult> {
     const { videos } = this.#options;
@@ -226,16 +225,15 @@ export class LibraryService {
     });
   }
 
-  /** 视频里启用的条目（§5.9）：`library-selection` 文档的正文；没有这份文档时是空的。 */
+  /** Entries enabled in a video (§5.9): the body of the `library-selection` document. Empty when that document does not exist. */
   async getVideoSelection(p: RpcParams<'library.getVideoSelection'>): Promise<VideoLibrarySelection> {
     const { document, selection } = await this.#selection(p.videoId);
     return { videoId: p.videoId, documentId: document?.id ?? null, revision: document?.currentRevision ?? null, selection };
   }
 
   /**
-   * 改视频里启用的条目：一笔普通的编辑事务，操作者是发起请求的连接（能撤销）。给了的字段整体替换，其余照旧。
-   * 只校验此刻：术语表在库里、种类与步骤相符；`library:` 音色在库里；说话人在那份转写里。之后库里删了条目，
-   * 用到时再处理（翻译跳过并报告，配音不合成那位说话人的句子并逐句报告）。
+   * Changes the entries enabled in a video: an ordinary edit transaction. The actor is the connection that made the request (undoable). Fields given are replaced as a whole, and the others stay as they were.
+   * Only checks the current moment: glossaries are in the library and their kinds match the steps. `library:` voices are in the library. Speakers are in that transcript. If an entry is later deleted from the library, it is handled when used: translation skips it and reports it, and dubbing does not synthesize sentences from that speaker and reports each one.
    */
   async setVideoSelection(p: LibrarySetSelectionParams, principal: TrustedPrincipal): Promise<LibrarySetSelectionResult> {
     const { videos } = this.#options;
@@ -255,7 +253,7 @@ export class LibraryService {
       if (list.length > MAX_SELECTED_GLOSSARIES) {
         throw new RpcError('invalid-request', RcLibrary.tooManyGlossaries({ max: MAX_SELECTED_GLOSSARIES }));
       }
-      // 只查这次给了的：之前启用、后来删掉的条目留着，用到时再报告。
+      // Only checks what was given this time. Entries enabled earlier and deleted since are kept, and reported when used.
       if (p.glossaries?.[step] === undefined) continue;
       for (const id of list) {
         const entry = this.store.get({ library: 'glossaries', id });
@@ -295,8 +293,7 @@ export class LibraryService {
   }
 
   /**
-   * 新视频采用库里默认启用（`defaultEnabled`）的术语表：写一份 `library-selection`，行为者是 `system:library`
-   * （不进用户的撤销栈）。没有默认启用的条目时不写。对外服务的客户端建的视频不采用（库不对它们开放）。
+   * A new video adopts the glossaries the library enables by default (`defaultEnabled`): it writes one `library-selection`, with the actor `system:library` (not in the user's undo stack). Nothing is written when no entry is enabled by default. Videos created by external service clients do not adopt them, since the library is not open to those clients.
    */
   async adoptDefaults(videoId: Id, principal: TrustedPrincipal): Promise<void> {
     if (principal.kind === 'service') return;
@@ -329,8 +326,7 @@ export class LibraryService {
   }
 
   /**
-   * 视频某一步启用、此刻还在库里且种类相符的术语表（按启用的顺序）。删掉的或种类不符的跳过，放在 `skipped` 里；
-   * 视频没有打开时两边都是空的。转写与翻译在调用没有显式给术语表时用它。
+   * The glossaries a video enables for a step that are still in the library with a matching kind (in enabled order). Deleted ones, or ones with a mismatched kind, are skipped and listed in `skipped`. When the video is not open, both are empty. Transcription and translation use these when the call gives no explicit glossary.
    */
   async enabledGlossaries(videoId: Id, step: 'transcribe' | 'translate'): Promise<{ ids: Id[]; skipped: Id[] }> {
     if (!this.#options.videos.mirror(videoId)) return { ids: [], skipped: [] };
@@ -391,7 +387,7 @@ export class LibraryService {
     }
   }
 
-  /** 固定条目的版本做完一件事：期间别的写入不会清掉它的文件。 */
+  /** A pinned version of an entry completes its work: other writes in the meantime do not clear its files. */
   async #pinned<T>(ref: RpcParams<'library.get'>, fn: (entry: LibraryEntry) => Promise<T>): Promise<T> {
     const holder = newId('libpin');
     const [frozen] = this.store.pin(holder, [ref]);
@@ -418,14 +414,14 @@ export class LibraryService {
     if (existing) return existing as Promise<T>;
     const run = fn();
     this.#commands.set(commandId, run);
-    // 失败的不记：同一个 commandId 可以重试。
+    // Failures are not recorded, so the same commandId can be retried.
     run.catch(() => this.#commands.delete(commandId));
     if (this.#commands.size > COMMAND_MEMORY) this.#commands.delete(this.#commands.keys().next().value!);
     return run;
   }
 }
 
-/** 转写里的说话人：`speakers[].id` 与词上的 `speaker`。 */
+/** Speakers in a transcript: `speakers[].id`, and the `speaker` on words. */
 function speakersOf(body: unknown): Set<string> {
   const b = body as { speakers?: Array<{ id?: unknown }>; words?: Array<{ speaker?: unknown }> } | null;
   const out = new Set<string>();

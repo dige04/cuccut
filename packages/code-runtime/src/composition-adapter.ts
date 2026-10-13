@@ -1,39 +1,39 @@
 /**
- * 页面里的统一取帧脚本（代码包规范 §4.1、§4.7；架构设计 §8.3–§8.4）。
+ * The unified frame-fetching script in the page (code bundle spec §4.1, §4.7; architecture design §8.3–§8.4).
  *
- * 宿主在入口页面加载完之后用 `webContents.executeJavaScript` 注入 `COMPOSITION_ADAPTER_SCRIPT`，得到
- * `window.__cuccutAdapter = { ready, seek }`。两个方法都不抛异常，而是兑现成信封：
- * `{ ok: true, value }` 或 `{ ok: false, code, message }`，`code` 取自 `CODE_BUNDLE_ERROR_CODES`；
- * 这样页面里的错误码不依赖 Electron 怎样序列化被拒绝的 Promise。
+ * After the entry page finishes loading, the host injects `COMPOSITION_ADAPTER_SCRIPT` with `webContents.executeJavaScript`, which yields
+ * `window.__cuccutAdapter = { ready, seek }`. Neither method throws. Instead, each resolves to an envelope:
+ * `{ ok: true, value }` or `{ ok: false, code, message }`, where `code` is taken from `CODE_BUNDLE_ERROR_CODES`.
+ * This way, the error codes from the page do not depend on how Electron serializes a rejected Promise.
  *
- * - `hyperframes/1`：轮询 `window.__timelines[id]`，根元素是 `[data-composition-id="id"]`，尺寸、帧率与时长读根元素的 `data-*`；
- *   `seek(秒)` 调时间线的 `seek`（没有就用 `progress`），再回读 `time()`。时间线比 `data-duration` 短时，越过它的请求按 hold 处理。
- * - `cuccut/1`：轮询 `window.__cuccutCompositions[id]`（`initialize` / `renderAt(time, params)` / `dispose`），
- *   `renderAt(time, params)` 收到微秒时间基的 `MediaTime`（`ticks = round(秒 × 10⁶)`）与空参数对象 `{}`；
- *   它兑现成数字时当作实际采样的秒数，否则采样时间就是目标时间。
+ * - `hyperframes/1`: polls `window.__timelines[id]`. The root element is `[data-composition-id="id"]`, and size, frame rate and duration are read from the root element's `data-*` attributes.
+ *   `seek(seconds)` calls the timeline's `seek` (or `progress` if there is none), then reads back `time()`. When the timeline is shorter than `data-duration`, requests past its end are treated as hold.
+ * - `cuccut/1`: polls `window.__cuccutCompositions[id]` (`initialize` / `renderAt(time, params)` / `dispose`).
+ *   `renderAt(time, params)` receives a `MediaTime` on a microsecond time base (`ticks = round(seconds × 10⁶)`) and an empty parameter object `{}`.
+ *   If it resolves to a number, that is taken as the number of seconds actually sampled. Otherwise, the sample time is the target time.
  *
- * 每次 seek 之后等两次 `requestAnimationFrame`，让 DOM 提交后再截图（§8.4：这只是候选的等待策略）。
+ * After each seek, it waits for two `requestAnimationFrame` calls so the DOM commits before the screenshot (§8.4: this is only a candidate waiting strategy).
  */
 
-/** `ready` 兑现的页面信息。页面没给的字段为 null，由宿主用清单补。 */
+/** The page information resolved by `ready`. Fields the page does not provide are null, and the host fills them in from the manifest. */
 export interface AdapterPageInfo {
   compositionId: string;
   width: number | null;
   height: number | null;
-  /** 根元素 `data-fps` 的原文（`"30"`、`"30000/1001"`）。 */
+  /** The raw text of the root element's `data-fps` (`"30"`, `"30000/1001"`). */
   fps: string | null;
   durationSeconds: number;
 }
 
 export interface AdapterSeekResult {
   sampledSeconds: number;
-  /** 实际求值的目标时间（夹到 `[0, 时长]`，越过时间线自身长度时取时间线长度）。 */
+  /** The actual target time evaluated (clamped to `[0, duration]`; when it is past the timeline's own length, the timeline's length is used). */
   targetSeconds: number;
-  /** 请求超过了时长，被夹到末尾。 */
+  /** The request exceeded the duration and was clamped to the end. */
   clamped: boolean;
 }
 
-/** 宿主给 `ready` 的上下文（来自清单）。 */
+/** The context the host passes to `ready` (from the manifest). */
 export interface AdapterReadyContext {
   width: number;
   height: number;
@@ -41,7 +41,7 @@ export interface AdapterReadyContext {
   durationFrames: number;
 }
 
-// i18n-ignore-start: 注入页面的脚本源码，不是给人看的文字
+// i18n-ignore-start: source code of the injected page script, not user-facing text
 export const COMPOSITION_ADAPTER_SCRIPT = String.raw`(() => {
   if (window.__cuccutAdapter) return;
   const fail = (code, message) => Object.assign(new Error(message), { code });

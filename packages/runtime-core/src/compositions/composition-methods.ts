@@ -15,20 +15,16 @@ export interface CompositionMethodDeps {
   compositions: CompositionService;
   videos: VideoService;
   harness: Harness;
-  /** 帧的读取句柄：Web 服务用它自己的（同源地址、要会话）。 */
+  /** The read handle for frames: the web service uses its own (same-origin address; requires a session). */
   media: MediaRegistry;
 }
 
 /**
- * `compositions.*` 的处理函数（架构设计 §8），由 `handlers.ts` 并进方法表。保留给界面，目前没有界面调用；与工具
- * `compositions_preview` / `compositions_import` 共用 `CompositionService`（参数相同，含 `replace`）：
+ * Handlers for `compositions.*` (architecture §8), merged into the method table by `handlers.ts`. Reserved for the UI; no UI calls it at present. It shares `CompositionService` with the tools `compositions_preview` / `compositions_import` (same parameters, including `replace`):
  *
- * - 视频要已经打开（与 `edits.apply` 相同）；`path` 相对视频的来源目录（项目目录，或不属于项目的会话的工作目录），按真实路径
- *   只能在它里面——桌面界面与 Web 服务同一条规则；预览帧写在来源目录的 `.cuccut-out/frames/<videoId>/`（与智能体的同一个位置），
- *   返回媒体句柄。
- * - 写入的操作者是连接的主体（界面与浏览器是 `user_local`），不经 CucCut 的审批；给了 `conversationId` 时每笔修改在会话里放
- *   一张变更卡（界面发起的 `edits.apply` 不放卡，这里是界面替用户导入了一段代码画面，要在会话里留下回执）。
- * - 服务抛出的 `ToolError` 换成 `RpcError`：文字是目录里的「导入 / 预览失败（错误码）」，错误码、原话、`next` 与验证项放进 `details`。
+ * - The video must already be open (as with `edits.apply`). `path` is relative to the video's source directory (the project directory, or the working directory of a session that is not in a project), and by real path it must stay inside it. The desktop UI and the web service follow the same rule. Preview frames are written to `.cuccut-out/frames/<videoId>/` in the source directory (the same place the agent uses), and the handler returns a media handle.
+ * - The writing operator is the connection's principal (the UI and browser are `user_local`), and it does not go through CucCut's approval. When `conversationId` is given, each edit places a change card in the session. (Edits started by the UI through `edits.apply` place no card; here the UI imports a code visual on the user's behalf, so a receipt should be left in the session.)
+ * - A `ToolError` thrown by the service is converted to `RpcError`: the text is the catalog's "import / preview failed (error code)", and the error code, the original message, `next` and the validation items go into `details`.
  */
 export function compositionMethods(deps: CompositionMethodDeps): Pick<RpcHandlers['methods'], CompositionMethod> {
   const { compositions, videos, harness, media } = deps;
@@ -39,7 +35,7 @@ export function compositionMethods(deps: CompositionMethodDeps): Pick<RpcHandler
     if (!ref || !snapshot) throw new RpcError('not-found', RcVideo.videoNotOpenOpenFirst(), { code: 'VIDEO_NOT_OPEN' });
     return { ref, snapshot };
   };
-  /** 视频的来源目录：所属项目的目录，或不属于项目的会话的工作目录。 */
+  /** The video's source directory: the directory of the project it belongs to, or the working directory of a session that is not in a project. */
   const sourceRoot = (opened: VideoOpenResult): string => {
     const { projectId, conversationId } = opened.ref.source;
     if (projectId) {
@@ -84,7 +80,7 @@ export function compositionMethods(deps: CompositionMethodDeps): Pick<RpcHandler
     },
 
     'compositions.import': async ({ conversationId, ...args }, principal) => {
-      // 先认会话：坏的 ID 不要等烘焙完才发现。
+      // Check the session first: a bad ID should not only be found after baking has finished.
       if (conversationId !== undefined) harness.getConversation(conversationId);
       return rpcErrors('import', () =>
         compositions.import(args, {
@@ -115,7 +111,7 @@ export function compositionMethods(deps: CompositionMethodDeps): Pick<RpcHandler
   };
 }
 
-/** 工具错误的错误码 → RPC 的错误种类；没列出的（代码包与参数的问题）是 `invalid-request`。 */
+/** Maps tool error codes to RPC error kinds; anything not listed (problems with the code package and parameters) is `invalid-request`. */
 const RPC_CODES: Readonly<Record<string, RpcErrorCode>> = {
   COMPOSITION_HOST_UNAVAILABLE: 'unsupported',
   COMPOSITION_BAKE_FAILED: 'unsupported',
@@ -124,7 +120,7 @@ const RPC_CODES: Readonly<Record<string, RpcErrorCode>> = {
   PROJECT_REVISION_CONFLICT: 'conflict',
 };
 
-/** 服务的 `ToolError` 换成 `RpcError`；`RpcError`（视频没打开、引擎的错误）原样抛出。 */
+/** Converts the service's `ToolError` to `RpcError`; an `RpcError` (video not open, engine errors) is thrown through unchanged. */
 async function rpcErrors<T>(action: 'import' | 'preview', run: () => Promise<T>): Promise<T> {
   try {
     return await run();

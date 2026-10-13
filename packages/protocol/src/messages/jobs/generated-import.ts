@@ -14,7 +14,7 @@ import { pl } from './generated-import.pl.ts';
 import { tr } from './generated-import.tr.ts';
 import { vi } from './generated-import.vi.ts';
 
-/** `packages/jobs/src/generated-import.ts`：没给名字时生成结果导入视频用的素材名。 */
+/** `packages/jobs/src/generated-import.ts`: the asset name used when a generated result is imported into the video without a given name. */
 const en = {
   voiceOverName: (p: { head: string }) => `Voice-over: ${p.head}`,
   imageName: (p: { head: string }) => `Image: ${p.head}`,

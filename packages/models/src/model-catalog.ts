@@ -30,26 +30,20 @@ import { REPO_MANIFESTS, repoManifestFor, weightBytes, type RepoManifestSpec } f
 import type { BundleComponent, ModelBundle, ModelFiles } from './worker-contract.ts';
 
 /**
- * 本地模型目录（架构设计 §6.3；Model Worker 协议规范 §4）。
+ * Local model catalog (architecture design §6.3; Model Worker protocol spec §4).
  *
- * 布局：`<models-root>/<owner>/<repo>/`，每个仓库目录带 `.ccut-manifest.json`（与旧版 CucCut 的下载器兼容）。
- * `installed` 只要求清单存在、`revision` 与登记一致、列出的每个文件都存在且大小相符；sha256 的校验是单独的
- * `verify()`，结果缓存在内存里——不在每次查询状态时把几百 MB 读一遍。
+ * Layout: `<models-root>/<owner>/<repo>/`. Each repo directory carries `.ccut-manifest.json` (compatible with the older CucCut's downloader).
+ * `installed` only requires that the manifest exists, that `revision` matches the registration, and that every listed file exists with a matching size. sha256 verification is a separate `verify()`, with results cached in memory, so the state query does not re-read hundreds of MB each time.
  *
- * Worker 的运行状态（`loading` / `ready` / `busy` / `unloading`）由 Worker 池经 `setRuntimeState` 告知；
- * 加载失败与反复崩溃经 `block` 记下，`enable` 清掉。安装与修复的进度由安装任务经 `setInstallState` 告知（`downloading`）。
+ * The Worker's runtime state (`loading` / `ready` / `busy` / `unloading`) is reported by the Worker pool via `setRuntimeState`. Load failures and repeated crashes are recorded via `block`, and `enable` clears them. Progress of installation and repair is reported by the install task via `setInstallState` (`downloading`).
  *
- * 状态按组件算：部分组件装好、另一些缺失时是 `not-installed` / `incomplete`，`components` 列出每个组件；暂存区里留着
- * 没下完的部分时带 `install.state: 'paused'`。这些状态的变化经 `onChange` 通知（`models` 主题的 `bundle.updated`）。
+ * State is computed per component. When some components are installed and others are missing, the state is `not-installed` / `incomplete`, and `components` lists each component. When a partial unfinished download is kept in staging, `install.state: 'paused'`. Changes to these states are notified via `onChange` (the `models` topic's `bundle.updated`).
  *
- * 来自 GitHub 发布页的组件（`release`，音乐模型包的 audio.cpp 引擎）是平台专属的：按 `platformKey` 取压缩包，装在
- * `<toolsDir>/<名字>/<版本>/`（同样带清单）。这台主机没有它的压缩包、又没有 `engineOverride` 时模型包是 `error` / `unsupported`；
- * `engineOverride`（`CUCCUT_AUDIOCPP_CLI`）指向存在的文件时它算装好（`bytes` 为 null），安装计划不碰它。旧版作为受管外部工具装下
- * 的引擎（组件目录里有可执行文件、没有清单）也算装好，校验不查它，修复重新下载压缩包。
+ * Components from a GitHub release page (`release`, the audio.cpp engine for music model packs) are platform-specific: the archive is selected by `platformKey`, and installed in `<toolsDir>/<name>/<version>/` (also with a manifest). When this host has no archive for it and there is no `engineOverride`, the model pack is `error` / `unsupported`. When `engineOverride` (`CUCCUT_AUDIOCPP_CLI`) points to an existing file, it counts as installed (`bytes` is null), and the install plan does not touch it. An engine installed by the older version as a managed external tool (the component directory has an executable and no manifest) also counts as installed; verification does not check it, and repair re-downloads the archive.
  */
 
 export const MANIFEST_FILE = '.ccut-manifest.json';
-/** 分离模型包加载后的权重是文件的几倍：16 位存、32 位算（HTDemucs-FT 实测 673 MB 对 336 MB）。 */
+/** After loading, a separation model pack's weights are several times the file size: stored in 16-bit, computed in 32-bit (HTDemucs-FT measured 673 MB against 336 MB). */
 const SEPARATE_LOADED_WEIGHT_FACTOR = 2;
 
 export interface CcutManifest {
@@ -61,43 +55,40 @@ export interface CcutManifest {
 }
 
 export interface ModelCatalogOptions {
-  /** 模型目录的根。见 `resolveModelsRoot`。 */
+  /** Root of the model catalog. See `resolveModelsRoot`. */
   root: string;
-  /** 换掉内置的模型包登记（测试用）：原样登记，不按平台筛。不给时用 `platformBundles` 筛过的内置登记。 */
+  /** Replace the built-in model pack registry (for tests): register as-is, without platform filtering. When not given, use the built-in registry filtered by `platformBundles`. */
   bundles?: readonly BundleDefinition[];
   platform?: NodeJS.Platform;
   arch?: string;
-  /** 有没有 Model Worker 可执行文件。没有时已安装的模型包显示为 `error` / `worker-missing`。 */
+  /** Whether a Model Worker executable exists. When it does not, installed model packs show as `error` / `worker-missing`. */
   workerAvailable?: () => boolean;
   /**
-   * Runtime Home 的 `tools/`：发布页组件（audio.cpp 引擎）装在 `<toolsDir>/<名字>/<版本>/`。不给时是 `<root>/.ccut-tools`（测试用；
-   * Runtime 总是给）。
+   * Runtime Home's `tools/`: release-page components (the audio.cpp engine) are installed at `<toolsDir>/<name>/<version>/`. When not given, it is `<root>/.ccut-tools` (for tests; the Runtime always provides it).
    */
   toolsDir?: string;
   /**
-   * 引擎的开发者覆盖（Runtime 传 `CUCCUT_AUDIOCPP_CLI`）：指向存在的文件时发布页组件算装好，不下载、不报告平台不支持。
+   * Developer override for the engine (the Runtime passes `CUCCUT_AUDIOCPP_CLI`): when it points to an existing file, the release-page component counts as installed. No download, and platform unsupported is not reported.
    */
   engineOverride?: string | null;
-  /** 发布页组件按哪个平台键取压缩包（测试用）。不给时是 `<platform>-<arch>`。 */
+  /** Platform key used to pick the archive for release-page components (for tests). When not given, it is `<platform>-<arch>`. */
   platformKey?: string;
-  /** 交给 Worker 的 CPU 线程数上限。默认取可用核数减二，至少 1、至多 8。 */
+  /** Upper limit on CPU threads passed to the Worker. Default is available cores minus two, at least 1 and at most 8. */
   threads?: number;
-  /** 换掉内置的仓库清单（测试用）：暂停的安装据它报告总字节数。 */
+  /** Replace the built-in repo manifest (for tests): a paused installation reports its total bytes from it. */
   manifests?: readonly RepoManifestSpec[];
 }
 
 export type RuntimeBundleState = 'loading' | 'ready' | 'busy' | 'unloading';
 
-/** Model Worker 加载一个识别模型包之后约常驻多少（文生图模型包是峰值，见 `imagePeak`）、计在哪个池里（架构设计 §6.5、§7.7）。 */
+/** Roughly how many bytes stay resident after the Model Worker loads a recognition model pack (for text-to-image model packs it is the peak, see `imagePeak`), and which pool it counts toward (architecture design §6.5, §7.7). */
 export interface WorkerFootprint {
   /**
-   * 约常驻的字节数：MLX、Core ML 按存储字节；candle 按位宽换算（`candleResidentBytes`）；GGML 是 Whisper 权重的存储字节
-   * （whisper.cpp 按量化原样加载）加上 candle 的 VAD 与对齐器。
+   * Approximate resident bytes: MLX and Core ML use storage bytes; candle converts by bit width (`candleResidentBytes`); GGML is the storage bytes of Whisper weights (whisper.cpp loads them as quantized) plus candle's VAD and aligner.
    */
   bytes: number;
   /**
-   * `gpuMemory`：权重在 GPU 上（Metal 的统一内存、CUDA 或 Vulkan 的显存）；`memory`：candle 或 GGML 在 CPU 上跑，权重在进程
-   * 内存里。
+   * `gpuMemory`: weights are on the GPU (Metal's unified memory, or CUDA or Vulkan VRAM). `memory`: candle or GGML runs on CPU, and the weights are in process memory.
    */
   pool: 'gpuMemory' | 'memory';
 }
@@ -110,23 +101,22 @@ export interface VerifyResult {
 
 interface DiskCheck {
   ok: boolean;
-  /** 发布页组件由 `engineOverride` 满足（没有自己的文件，`bytes` 报告为 null）。 */
+  /** A release-page component satisfied by `engineOverride` (it has no file of its own; `bytes` is reported as null). */
   overridden?: boolean;
   reason?: ModelBundleReason;
   detail?: ModelText;
-  /** 齐全时清单里的大小之和。 */
+  /** Sum of sizes in the manifest when complete. */
   bytes?: number;
 }
 
 /**
- * 模型目录的根（架构设计 §6.3）：环境变量 `CUCCUT_MODELS_DIR` 优先，其次设置 `models.dir`（`setting`），都没有时
- * `<runtime-home>/models`。
+ * Root of the model catalog (architecture design §6.3): the environment variable `CUCCUT_MODELS_DIR` takes priority, then the `models.dir` setting (`setting`), and if neither is set, `<runtime-home>/models`.
  */
 export function resolveModelsRoot(runtimeHomeRoot: string, env: NodeJS.ProcessEnv = process.env, setting: string | null = null): string {
   return resolveModelsDir(runtimeHomeRoot, env, setting).path;
 }
 
-/** 同 `resolveModelsRoot`，另说明来源：`env`、`setting` 或 `default`。 */
+/** Same as `resolveModelsRoot`, also stating the source: `env`, `setting`, or `default`. */
 export function resolveModelsDir(
   runtimeHomeRoot: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -138,7 +128,7 @@ export function resolveModelsDir(
   return { path: defaultPath, source: 'default', defaultPath };
 }
 
-/** 读一个仓库目录的清单；缺失或不合形状时返回 null。 */
+/** Read a repo directory's manifest; returns null if missing or malformed. */
 export async function readManifest(repoDir: string): Promise<CcutManifest | null> {
   let raw: unknown;
   try {
@@ -161,7 +151,7 @@ export async function readManifest(repoDir: string): Promise<CcutManifest | null
 
 export class ModelCatalog {
   #root: string;
-  /** 正在移动模型目录：模型包都报告为 `error` / `relocating`，不能提交任务，也不交出文件。 */
+  /** The model directory is being moved: all model packs report `error` / `relocating`, no tasks can be submitted, and no files are handed out. */
   #relocating = false;
   readonly #bundles: Map<string, BundleDefinition>;
   readonly #platform: NodeJS.Platform;
@@ -177,7 +167,7 @@ export class ModelCatalog {
   readonly #install = new Map<string, ModelInstallProgress>();
   readonly #listeners = new Set<(bundleId: string) => void>();
   readonly #manifests: readonly RepoManifestSpec[];
-  /** Worker 握手报告的设备（按后端，首选的在前）：candle 模型包据此报告并使用 `cuda` 或 `cpu`，GGML 的 `cuda` / `vulkan` 或 `cpu`。 */
+  /** Devices reported by the Worker handshake (per backend, preferred first): candle model packs report and use `cuda` or `cpu` based on this; GGML's `cuda` / `vulkan` or `cpu`. */
   readonly #workerDevices = new Map<ModelBackend, string>();
 
   constructor(options: ModelCatalogOptions) {
@@ -193,45 +183,44 @@ export class ModelCatalog {
     this.#manifests = options.manifests ?? REPO_MANIFESTS;
   }
 
-  /** 模型目录的根。`setRoot` 之后读到的是新的目录（安装、暂存区、安装记录都跟着它）。 */
+  /** Root of the model catalog. After `setRoot`, reads go to the new directory (installs, staging, and the install record all follow it). */
   get root(): string {
     return this.#root;
   }
 
-  /** 发布页组件（audio.cpp 引擎）的存放处：Runtime Home 的 `tools/`。不随模型目录移动。 */
+  /** Storage for release-page components (the audio.cpp engine): Runtime Home's `tools/`. It does not move with the model directory. */
   get toolsDir(): string {
     return this.#toolsDir ?? path.join(this.#root, '.ccut-tools');
   }
 
-  /** 发布页组件取压缩包用的平台键（`darwin-arm64`、`win32-x64`……）。 */
+  /** Platform key used to fetch release-page component archives (`darwin-arm64`, `win32-x64`, …). */
   get platformKey(): string {
     return this.#platformKey;
   }
 
-  /** 引擎的开发者覆盖（`CUCCUT_AUDIOCPP_CLI`）；没给时 null。 */
+  /** Developer override for the engine (`CUCCUT_AUDIOCPP_CLI`); null when not given. */
   get engineOverride(): string | null {
     return this.#engineOverride;
   }
 
-  /** 发布页组件在这台主机上的压缩包；不是发布页组件、或这个平台没有压缩包时 null。 */
+  /** The release-page component's archive for this host; null if this is not a release-page component or this platform has no archive. */
   releaseAsset(source: Pick<BundleComponentSource, 'release'>): ComponentReleaseAsset | null {
     return source.release ? releaseAsset(source.release, this.#platformKey) : null;
   }
 
-  /** 组件的目录：模型仓库是 `<root>/<owner>/<repo>/`，发布页组件是 `<toolsDir>/<名字>/<版本>/`。 */
+  /** Component directory: a model repo is `<root>/<owner>/<repo>/`, a release-page component is `<toolsDir>/<name>/<version>/`. */
   componentDir(source: Pick<BundleComponentSource, 'repo' | 'release'>): string {
     return source.release ? releaseDir(this.toolsDir, source.release) : this.repoDir(source.repo);
   }
 
-  /** 发布页组件此刻由 `engineOverride` 满足：给了覆盖、而且是存在的文件。 */
+  /** The release-page component is currently satisfied by `engineOverride`: an override is given and it is an existing file. */
   engineOverridden(source: Pick<BundleComponentSource, 'release'>): boolean {
     return source.release !== undefined && this.#engineOverride !== null && isFile(this.#engineOverride);
   }
 
   /**
-   * 一个模型包的引擎可执行文件（绝对路径），给 Runtime 找引擎用（Model Worker 协议规范 §4.4）：给了 `engineOverride` 就只用它（文件
-   * 不存在时 null）；否则是装好的发布页组件里的可执行文件（`<toolsDir>/<名字>/<版本>/<可执行文件>`，旧版装下、没有清单的也算）。
-   * 模型包没有发布页组件、这个平台没有压缩包或还没装时 null。只看文件在不在，不执行它。
+   * The engine executable (absolute path) for a model pack, for the Runtime to locate the engine (Model Worker protocol spec §4.4). When `engineOverride` is given, only it is used (null if the file does not exist). Otherwise it is the executable inside the installed release-page component (`<toolsDir>/<name>/<version>/<executable>`; also counts when installed by the older version without a manifest).
+   * Null when the model pack has no release-page component, when this platform has no archive, or when it is not yet installed. Only checks whether the file exists; does not execute it.
    */
   engineExecutable(bundleId: string): string | null {
     const def = this.#bundles.get(bundleId);
@@ -245,8 +234,7 @@ export class ModelCatalog {
   }
 
   /**
-   * 换模型目录（`models.setDir`，架构设计 §6.3）。调用方先确认没有任务在用、Worker 都已卸下。换过之后，各模型包按新目录里的
-   * 文件重算：清掉校验结果、停用记录与运行状态，逐个通知（`models` 主题的 `bundle.updated`）。
+   * Change the model directory (`models.setDir`, architecture design §6.3). The caller first confirms that no task is using it and all Workers have been unloaded. After the change, each model pack is recomputed from the files in the new directory: verification results, disable records, and runtime states are cleared, and listeners are notified one by one (the `models` topic's `bundle.updated`).
    */
   setRoot(root: string): void {
     this.#root = root;
@@ -256,7 +244,7 @@ export class ModelCatalog {
     for (const bundleId of this.#bundles.keys()) this.changed(bundleId);
   }
 
-  /** 正在移动模型目录（开始与结束时各调一次）：期间模型包都不可用。 */
+  /** The model directory is being moved (called once at start and once at end): model packs are unavailable during this time. */
   setRelocating(relocating: boolean): void {
     if (this.#relocating === relocating) return;
     this.#relocating = relocating;
@@ -267,29 +255,29 @@ export class ModelCatalog {
     return this.#relocating;
   }
 
-  /** 全部登记的模型包。 */
+  /** All registered model packs. */
   definitions(): BundleDefinition[] {
     return [...this.#bundles.values()];
   }
 
-  /** 一个模型包的状态可能变了（运行状态、安装进度、文件、自检）。监听者自己再读 `status`。 */
+  /** A model pack's state may have changed (runtime state, install progress, files, self-test). Listeners read `status` themselves. */
   onChange(listener: (bundleId: string) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  /** 通知监听者：文件或记录变了（安装、删除、自检之后由调用方告知）。 */
+  /** Notify listeners that files or records changed (the caller reports this after install, delete, or self-test). */
   changed(bundleId: string): void {
     for (const listener of this.#listeners) {
       try {
         listener(bundleId);
       } catch {
-        // 监听者自己的错误不影响状态。
+        // A listener's own errors do not affect state.
       }
     }
   }
 
-  /** 安装任务告知进度；null 表示没有安装在进行（回到按文件判断的状态）。 */
+  /** The install task reports progress; null means no install is in progress (back to file-based state). */
   setInstallState(bundleId: string, progress: ModelInstallProgress | null): void {
     if (progress) this.#install.set(bundleId, { ...progress });
     else this.#install.delete(bundleId);
@@ -301,8 +289,7 @@ export class ModelCatalog {
   }
 
   /**
-   * 一个组件（仓库与版本）在磁盘上齐不齐：清单、版本、每个文件存在且大小相符。发布页组件另算 `engineOverride` 与旧版装下的
-   * 可执行文件（见类的说明）。
+   * Whether a component (repo and version) is complete on disk: manifest, version, and every file present with matching size. Release-page components are checked separately for `engineOverride` and for executables installed by the older version (see the class description).
    */
   async componentInstalled(source: Pick<BundleComponentSource, 'repo' | 'revision' | 'release'>): Promise<boolean> {
     return (await this.#checkComponent(source)).ok;
@@ -313,13 +300,12 @@ export class ModelCatalog {
   }
 
   /**
-   * 交给 Worker 的组件：必需组件，加上此刻装好了的可选组件；识别模型包用的「说话人区分」模型包（`diarization`）装好了时，
-   * 再带上它的组件（`segmentation` 与 `speaker`，架构设计 §6.6）。
+   * Components handed to the Worker: the required components, plus the optional components installed at this moment. For recognition model packs, when the speaker-diarization (“说话人区分”) model pack (`diarization`) is installed, its components are included too (`segmentation` and `speaker`, architecture design §6.6).
    */
   async #workerComponents(def: BundleDefinition): Promise<Array<[BundleComponent, BundleComponentSource]>> {
     const out: Array<[BundleComponent, BundleComponentSource]> = [];
     for (const [name, source] of componentsOf(def)) {
-      // 发布页组件（audio.cpp 引擎）不交给 Worker：执行它的 Provider 自己找可执行文件（`engineExecutable`）。
+      // Release-page components (the audio.cpp engine) are not handed to the Worker: the executor that runs them finds the executable itself (`engineExecutable`).
       if (source.release) continue;
       if (source.optional && !(await this.#checkComponent(source)).ok) continue;
       out.push([name, source]);
@@ -331,15 +317,14 @@ export class ModelCatalog {
     return out;
   }
 
-  /** 一个模型包的必需组件都装好了（「说话人区分」模型包装没装好）。 */
+  /** All required components of a model pack are installed (a speaker-diarization (“说话人区分”) pack that is not fully installed does not count). */
   async #packInstalled(def: BundleDefinition): Promise<boolean> {
     for (const [, source] of componentsOf(def)) if (!source.optional && !(await this.#checkComponent(source)).ok) return false;
     return true;
   }
 
   /**
-   * 识别模型包此刻能不能区分说话人：`native` 是自己区分（MOSS），`pack` 是它用的「说话人区分」模型包装好了，否则 `none`
-   * （架构设计 §6.6）。不是识别模型包时 `none`。
+   * Whether this recognition model pack can currently tell speakers apart: `native` means it distinguishes them itself (MOSS); `pack` means the speaker-diarization model pack it uses is installed; otherwise `none` (architecture design §6.6). `none` when it is not a recognition model pack.
    */
   async speakers(bundleId: string): Promise<'native' | 'pack' | 'none'> {
     const def = this.#bundles.get(bundleId);
@@ -349,15 +334,13 @@ export class ModelCatalog {
     return pack && (await this.#packInstalled(pack)) ? 'pack' : 'none';
   }
 
-  /** 用这个「说话人区分」模型包的识别模型包（它装上或删掉之后，这些模型包空闲的 Worker 要重新加载才带上或去掉它的组件）。 */
+  /** Recognition model packs that use this speaker-diarization model pack. After it is installed or deleted, the idle Workers for these model packs must reload to add or remove its components. */
   diarizationUsers(packId: string): string[] {
     return [...this.#bundles.values()].filter((b) => b.diarization === packId).map((b) => b.bundleId);
   }
 
   /**
-   * 识别、分离与「说话人区分」模型包的 Model Worker 要加载多少权重（字节），用来估计它的内存需求：必需组件，加上此刻装好了的可选组件（没装的
-   * Worker 不加载，不计）与装好了的「说话人区分」模型包的组件，按内置清单加起来。分离的权重存成 16 位、加载时升成 32 位，按文件的两倍算（HTDemucs-FT 实测常驻
-   * 673 MB，文件 336 MB）。不认识的模型包、合成的模型包（按固定的需求，待实测）、有组件没有清单时 null。
+   * Bytes of weights the Model Worker loads for recognition, separation, and speaker-diarization model packs (used to estimate memory needs): required components, plus optional components installed at this moment (uninstalled ones are not loaded by the Worker and are not counted), plus the components of the installed speaker-diarization pack, summed from the built-in manifest. Separation weights are stored as 16-bit and upcast to 32-bit on load, so they count as twice the file size (HTDemucs-FT measured 673 MB resident against a 336 MB file). Null for unknown model packs, synthesis model packs (fixed requirement, pending measurement), or when components lack a manifest.
    */
   async workerWeightBytes(bundleId: string): Promise<number | null> {
     const def = this.#bundles.get(bundleId);
@@ -368,11 +351,7 @@ export class ModelCatalog {
   }
 
   /**
-   * 识别、分离与「说话人区分」模型包的 Model Worker 加载后约常驻多少、在哪个池里（`workerWeightBytes` 同样的组件）。MLX、Core ML 是存储字节
-   * （分离按两倍，见 `workerWeightBytes`）、计在 GPU 内存；candle 按设备换算：`cuda` 计在 GPU 内存，`cpu` 计在内存。candle 的
-   * 分离在两种设备上都升成 f32（同 v2），同样按文件的两倍。GGML 的 Whisper 权重按存储字节，VAD 与对齐器在 candle 的 CPU 上按
-   * `cpu` 换算，合计在设备不是 `cpu`（`cuda` 或 `vulkan`）时计在 GPU 内存、`cpu` 时计在内存（架构设计 §6.5）。合成只算 candle 的模型包（同样按设备换算）；
-   * MLX 的合成模型包按固定的需求，null。不知道多大时 null。
+   * Approximate resident bytes after the Model Worker loads recognition, separation, and speaker-diarization model packs, and which pool they count toward (same components as `workerWeightBytes`). MLX and Core ML use storage bytes (separation counts double, see `workerWeightBytes`), counted in GPU memory. candle converts by device: `cuda` counts in GPU memory, `cpu` counts in memory. candle separation upcasts to f32 on both devices (same as v2), also counted at twice the file size. GGML's Whisper weights use storage bytes. The VAD and aligner under candle CPU are converted as `cpu`, and the total counts in GPU memory when the device is not `cpu` (`cuda` or `vulkan`), and in memory when it is `cpu` (architecture design §6.5). Synthesis counts only candle model packs (also converted by device). MLX synthesis model packs use a fixed requirement, null. Null when the size is unknown.
    */
   async workerFootprint(bundleId: string): Promise<WorkerFootprint | null> {
     const def = this.#bundles.get(bundleId);
@@ -402,7 +381,7 @@ export class ModelCatalog {
     return bytes === null ? null : { bytes, pool };
   }
 
-  /** 这些组件在 candle 的 `device` 上约常驻多少（`candleResidentBytes`）；有组件没有清单时 null。 */
+  /** Approximate resident bytes of these components on candle's `device` (`candleResidentBytes`); null when components lack a manifest. */
   #candleBytes(device: string, sources: readonly BundleComponentSource[]): number | null {
     const components: Parameters<typeof candleResidentBytes>[1][number][] = [];
     for (const source of sources) {
@@ -418,9 +397,7 @@ export class ModelCatalog {
   }
 
   /**
-   * 文生图模型包的 Model Worker 峰值、在哪个池里（架构设计 §6.5）：按模型包登记的实测峰值（`image.peakBytes`，Worker 报告的
-   * 设备在 `image.devicePeakBytes` 里时用那个值）。MLX 与 candle 的 CUDA 计在 GPU 内存，candle 的 CPU 计在内存。不是文生图
-   * 模型包时 null。
+   * Model Worker peak for text-to-image model packs, and which pool it counts toward (architecture design §6.5). Uses the registered measured peak for the model pack (`image.peakBytes`; when the device reported by the Worker is in `image.devicePeakBytes`, that value is used). MLX and candle CUDA count toward GPU memory; candle CPU counts toward memory. Null when it is not a text-to-image model pack.
    */
   imagePeak(bundleId: string): WorkerFootprint | null {
     const def = this.#bundles.get(bundleId);
@@ -431,8 +408,7 @@ export class ModelCatalog {
   }
 
   /**
-   * 音乐生成模型包的引擎进程峰值、在哪个池里（架构设计 §6.5）：按模型包登记的估计峰值（`music.peakBytes`）。Apple Silicon 的
-   * 统一内存计在 GPU 内存（与 MLX 相同）；别的平台不知道引擎的构建用 CUDA、Vulkan 还是 CPU，保守地计在内存。不是音乐模型包时 null。
+   * Engine process peak for music generation model packs, and which pool it counts toward (architecture design §6.5). Uses the registered estimated peak for the model pack (`music.peakBytes`). On Apple Silicon, unified memory counts toward GPU memory (same as MLX). On other platforms the engine's build (CUDA, Vulkan, or CPU) is not known, so it conservatively counts toward memory. Null when it is not a music model pack.
    */
   musicPeak(bundleId: string): WorkerFootprint | null {
     const def = this.#bundles.get(bundleId);
@@ -441,15 +417,13 @@ export class ModelCatalog {
     return { bytes: def.music.peakBytes, pool: unified ? 'gpuMemory' : 'memory' };
   }
 
-  /** 这台机器上的默认转写模型包（Apple Silicon 是 MLX 的，别的平台是 candle 的）。 */
+  /** The default transcription model pack on this machine (MLX on Apple Silicon, candle on other platforms). */
   defaultTranscribeBundle(): string {
     return defaultTranscribeBundle(this.#platform, this.#arch);
   }
 
   /**
-   * Worker 握手报告了一个后端的设备（首选的在前；后端不可用时传 null）。candle 与 GGML 模型包的状态与交给 Worker 的设备随它：
-   * candle 有 CUDA 时是 `cuda`，GGML 有 GPU 时是 `cuda` 或 `vulkan`（CUDA 安装包是 `cuda`，Vulkan 安装包是 `vulkan`），否则是登记的
-   * `cpu`。MLX 与 Core ML 的设备是登记好的，不受影响。
+   * The Worker handshake reported a backend's device (preferred first; passes null when the backend is unavailable). The state of candle and GGML model packs, and the device handed to the Worker, follow it: candle uses `cuda` when CUDA is available; GGML uses `cuda` or `vulkan` when a GPU is available (the CUDA install is `cuda`, the Vulkan install is `vulkan`), otherwise the registered `cpu`. MLX and Core ML devices are registered and are unaffected.
    */
   setWorkerDevice(backend: ModelBackend, device: string | null): void {
     if (!followsWorkerDevice(backend)) return;
@@ -468,7 +442,7 @@ export class ModelCatalog {
     return Promise.all([...this.#bundles.keys()].map((bundleId) => this.status(bundleId) as Promise<ModelBundleStatus>));
   }
 
-  /** 一个模型包此刻的状态；不认识的模型包返回 null。 */
+  /** A model pack's current state; returns null for unknown model packs. */
   async status(bundleId: string): Promise<ModelBundleStatus | null> {
     const def = this.#bundles.get(bundleId);
     if (!def) return null;
@@ -496,7 +470,7 @@ export class ModelCatalog {
       ...(source.optional ? { optional: true } : {}),
       ...(source.license ? { license: source.license } : {}),
     }));
-    // 缺可选的组件不影响装没装好；暂停的安装照样算上它在暂存区里的部分。
+    // A missing optional component does not affect whether the pack is installed. A paused installation still counts the part already in staging.
     const missingAny = checks.filter((c) => !c.check.ok);
     const required = checks.filter((c) => !c.source.optional);
     const missing = required.filter((c) => !c.check.ok);
@@ -514,13 +488,13 @@ export class ModelCatalog {
     if (!backendSupported(def.backend, this.#platform, this.#arch)) {
       return make('error', 'unsupported', M.backendUnsupported({ backend: def.backend, platform: this.#platform, arch: this.#arch }));
     }
-    // 发布页组件（audio.cpp 引擎）在这个平台上没有压缩包，又没有 `engineOverride`。
+    // The release-page component (audio.cpp engine) has no archive on this platform, and there is no `engineOverride`.
     const noBuild = checks.find((c) => c.check.reason === 'unsupported');
     if (noBuild) return make('error', 'unsupported', noBuild.check.detail);
     if (this.#relocating) return make('error', 'relocating', M.relocating());
     if (this.#install.has(bundleId)) return make('downloading');
     if (missing.length > 0 && missing.length < required.length) {
-      // 组件列表先连成一串（参数不收数组）：各组件的原因只留当前语言的文本。
+      // The component list is first joined into a string (parameters do not accept arrays): each component's reason keeps only the text in the current language.
       const names = missing
         .map((c) => M.missingComponent({ name: c.name, detail: c.check.detail ?? c.source.repo }).text)
         .join(M.listSeparator().text);
@@ -531,22 +505,21 @@ export class ModelCatalog {
     if (verified && !verified.ok) return make('not-installed', 'hash-mismatch', describeProblems(verified));
     const blocked = this.#blocked.get(bundleId);
     if (blocked) return make(blocked.state, blocked.reason, blocked.detail);
-    // 音乐模型包（`audio-cpp`）不经 Model Worker：引擎是它的组件，缺了就是上面的 `incomplete`。
+    // Music model packs (`audio-cpp`) do not go through the Model Worker. The engine is their component, and when it is missing the state is the `incomplete` above.
     if (def.backend !== 'audio-cpp' && !this.#workerAvailable()) return make('error', 'worker-missing', M.workerMissing());
     const runtime = this.#runtime.get(bundleId);
     return make(runtime ?? 'installed');
   }
 
   /**
-   * Worker 交给 `model.load` 的模型包描述（协议规范 §4）。文件不齐时抛错。`device` 是这个 Worker 握手报告的设备（candle 的
-   * `cuda` 或 `cpu`，GGML 的 `cuda` / `vulkan` 或 `cpu`）；不给时用 `setWorkerDevice` 记下的，再没有就用登记的。
+   * The model pack description the Worker hands to `model.load` (protocol spec §4). Throws when files are incomplete. `device` is the device this Worker reported in its handshake (candle's `cuda` or `cpu`, GGML's `cuda` / `vulkan` or `cpu`). When not given, use the one recorded by `setWorkerDevice`, and if none, the registered one.
    */
   async bundleFor(bundleId: string, options: { memoryBudgetBytes?: number | null; device?: string } = {}): Promise<ModelBundle> {
     const def = this.#bundles.get(bundleId);
     if (!def) throw new Error(M.noBundle({ bundleId }).text);
     if (this.#relocating) throw new Error(M.moving().text);
     const components: ModelBundle['components'] = {};
-    // 没装好的可选组件不交给 Worker；装好了的「说话人区分」模型包的组件一并交给它。
+    // Optional components that are not installed are not handed to the Worker. Components of an installed speaker-diarization model pack are handed over too.
     for (const [name, source] of await this.#workerComponents(def)) {
       const dir = this.repoDir(source.repo);
       const manifest = await readManifest(dir);
@@ -566,19 +539,19 @@ export class ModelCatalog {
     };
   }
 
-  /** 逐个文件算 sha256 并与清单比对。结果缓存在内存里，`status` 据此报告 `hash-mismatch`。 */
+  /** Compute sha256 for each file and compare with the manifest. Results are cached in memory; `status` reports `hash-mismatch` based on them. */
   async verify(bundleId: string): Promise<VerifyResult> {
     const def = this.#bundles.get(bundleId);
     if (!def) throw new Error(M.noBundle({ bundleId }).text);
     const problems: VerifyResult['problems'] = [];
     for (const [, source] of componentsOf(def)) {
-      // 由 `engineOverride` 满足的发布页组件没有自己的文件。
+      // Release-page components satisfied by `engineOverride` have no files of their own.
       if (this.engineOverridden(source)) continue;
       const dir = this.componentDir(source);
       const manifest = await readManifest(dir);
-      // 没装的可选组件不算问题。
+      // Uninstalled optional components do not count as a problem.
       if (source.optional && manifest?.revision !== source.revision) continue;
-      // 旧版装下的引擎（有可执行文件、没有清单）没有可以核对的摘要：算通过，修复会重新下载压缩包。
+      // An engine installed by the older version (has an executable, no manifest) has no digest to check against: it passes. Repair re-downloads the archive.
       if (!manifest && (await this.#legacyRelease(source))) continue;
       if (!manifest) {
         problems.push({ repo: source.repo, path: MANIFEST_FILE, problem: 'missing' });
@@ -601,7 +574,7 @@ export class ModelCatalog {
     return path.join(this.root, ...repo.split('/'));
   }
 
-  /** Worker 池告知运行状态；null 表示没有 Worker 持有它（回到 `installed`）。 */
+  /** The Worker pool reports runtime state; null means no Worker holds it (back to `installed`). */
   setRuntimeState(bundleId: string, state: RuntimeBundleState | null): void {
     const before = this.#runtime.get(bundleId) ?? null;
     if (state) this.#runtime.set(bundleId, state);
@@ -609,7 +582,7 @@ export class ModelCatalog {
     if (before !== state) this.changed(bundleId);
   }
 
-  /** 加载失败或反复崩溃：不再自动拉起，直到 `enable`。 */
+  /** Load failure or repeated crashes: no longer auto-started until `enable`. */
   block(bundleId: string, state: 'not-installed' | 'error', reason: ModelBundleReason, detail?: ModelText): void {
     this.#blocked.set(bundleId, { state, reason, ...(detail ? { detail } : {}) });
     this.#runtime.delete(bundleId);
@@ -620,14 +593,14 @@ export class ModelCatalog {
     return this.#blocked.has(bundleId);
   }
 
-  /** 用户重新启用：清掉加载失败、停用与校验的记录。 */
+  /** Re-enabled by the user: clears the records of load failure, disabling, and verification. */
   enable(bundleId: string): void {
     this.#blocked.delete(bundleId);
     this.#verified.delete(bundleId);
     this.changed(bundleId);
   }
 
-  /** 旧版（受管外部工具）装下的发布页组件：组件目录里有这个平台的可执行文件，没有清单。 */
+  /** Release-page component installed by the older version (as a managed external tool): the component directory has this platform's executable and no manifest. */
   async #legacyRelease(source: Pick<BundleComponentSource, 'repo' | 'release'>): Promise<boolean> {
     const asset = this.releaseAsset(source);
     if (!asset) return false;
@@ -660,14 +633,14 @@ export class ModelCatalog {
     return { ok: true, bytes };
   }
 
-  /** 同样用到这个组件（同一仓库与版本）的其他模型包。 */
+  /** Other model packs that use this same component (same repo and version). */
   #sharers(bundleId: string, source: BundleComponentSource): string[] {
     return [...this.#bundles.values()]
       .filter((b) => b.bundleId !== bundleId && componentsOf(b).some(([, s]) => s.repo === source.repo && s.revision === source.revision))
       .map((b) => b.bundleId);
   }
 
-  /** 缺的组件在暂存区里留下的部分：有时报告为暂停的安装。总字节数只在内置清单给出全部大小时才有。 */
+  /** Partial part of a missing component left in staging: sometimes reported as a paused installation. Total bytes are given only when the built-in manifest provides all sizes. */
   async #paused(sources: BundleComponentSource[]): Promise<ModelInstallProgress | null> {
     let received = 0;
     let total: number | null = 0;
@@ -688,12 +661,12 @@ export class ModelCatalog {
   }
 }
 
-/** 状态是否允许提交任务。 */
+/** Whether the state allows submitting tasks. */
 export function bundleUsable(status: ModelBundleStatus): boolean {
   return status.state !== 'not-installed' && status.state !== 'error' && status.state !== 'downloading';
 }
 
-/** 设备随 Worker 握手的后端：candle（`cuda` / `cpu`）与 GGML（`cuda` / `vulkan` / `cpu`）。 */
+/** Backend devices reported by the Worker handshake: candle (`cuda` / `cpu`) and GGML (`cuda` / `vulkan` / `cpu`). */
 function followsWorkerDevice(backend: ModelBackend): boolean {
   return backend === 'candle' || backend === 'ggml';
 }
@@ -702,7 +675,7 @@ function componentsOf(def: BundleDefinition): Array<[BundleComponent, BundleComp
   return Object.entries(def.components) as Array<[BundleComponent, BundleComponentSource]>;
 }
 
-/** 组件在仓库子目录里（`BundleComponentSource.subdir`）：目录是子目录，只带其下的文件，路径相对它。 */
+/** Component is in a repo subdirectory (`BundleComponentSource.subdir`): the directory is the subdirectory, carrying only the files under it, with paths relative to it. */
 function scopedFiles(
   family: ModelFiles['family'],
   revision: string,
@@ -736,7 +709,7 @@ function isFile(file: string): boolean {
   }
 }
 
-/** 目录根下普通文件的字节数之和（旧版装下、没有清单的引擎目录）。 */
+/** Sum of sizes of regular files directly under the directory root (engine directory installed by the older version, which has no manifest). */
 async function rootFileBytes(dir: string): Promise<number> {
   let total = 0;
   for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {

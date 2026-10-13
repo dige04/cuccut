@@ -1,6 +1,6 @@
 use super::*;
 
-/// 每个词占 0.4 s、词间 0.1 s。
+/// Each word takes 0.4 s, with 0.1 s between words.
 fn rec_words(texts: &[&str]) -> Vec<RecWord> {
     texts
         .iter()
@@ -35,19 +35,19 @@ fn en_fillers() -> Vec<Vec<String>> {
 fn tokens_fold_width_case_and_punctuation_across_scripts() {
     assert_eq!(tokens("Don't STOP, now!"), vec!["dont", "stop", "now"]);
     assert_eq!(tokens("well-known"), vec!["well", "known"]);
-    // 全角字母数字经兼容分解合成后与半角相同。
+    // Full-width letters and digits are the same as half-width after compatibility decomposition and composition.
     assert_eq!(tokens("ＡＢＣ１２"), tokens("abc12"));
-    // 不用空格分词的文字逐字位成词元，拉丁串照旧成词。
+    // Text that is not split by spaces becomes tokens one character per position, while Latin runs still form words as before.
     assert_eq!(
         tokens("我们用iPhone15拍。"),
         vec!["我", "们", "用", "iphone15", "拍"]
     );
-    // 泰文：元音与声调记号并入所属字位，不单独成词元。
+    // Thai: vowels and tone marks are merged into their base character, not made into separate tokens.
     let thai = tokens("สวัสดี");
     assert!(!thai.is_empty());
     assert_eq!(thai.concat(), "สวัสดี");
     assert!(thai.len() < "สวัสดี".chars().count());
-    // 纯标点没有词元。
+    // Pure punctuation produces no tokens.
     assert!(tokens("——！？…").is_empty());
 }
 
@@ -75,7 +75,7 @@ fn repeated_take_in_a_spaceless_script_is_found_per_character() {
 
 #[test]
 fn replacements_are_never_cut() {
-    // 识别听错 / 换说法：两侧同一个缝里都有没对上的词元。
+    // Recognition mishears / rewording: both sides have unmatched tokens in the same gap.
     let script = lines(&["I have three apples here"]);
     let words = rec_words(&["I", "have", "3", "apples", "here"]);
     let plan = plan(&script, &words, Take::Last, None);
@@ -105,8 +105,7 @@ fn fillers_inside_a_false_start_do_not_hide_the_repeat() {
     assert_eq!(spans(&plan), vec![(0, 1, Reason::Repeat)]);
 }
 
-/// 同一句起了几次头：整段不是一个子串，但能由保留段里的子串按顺序拼出来。
-/// 片之间夹着保留段里没有的词（更正词）就不算，归 `extra`（已知边界）。
+/// The same sentence is started several times: the whole span is not a single substring, but it can be assembled in order from substrings in the retained segments. If words not in the retained segments (corrective words) sit between the pieces, it does not count; they go to `extra` (a known boundary).
 #[test]
 fn several_false_starts_in_a_row_are_one_repeat() {
     let script = lines(&["the first step reads the timeline"]);
@@ -138,7 +137,7 @@ fn off_script_speech_is_extra_and_unspoken_lines_are_missing() {
         "hello", "world", "buy", "my", "course", "see", "you", "today",
     ]);
     let plan = plan(&script, &words, Take::Last, None);
-    // 稿第 2 行与录音「buy my course」落在同一个缝里：两侧都有 → 替换，保留。
+    // Script line 2 and the recording "buy my course" fall in the same gap: both sides have content → replacement, kept.
     assert!(plan.segments.is_empty());
     assert!(plan.missing_lines.is_empty());
 
@@ -153,9 +152,7 @@ fn off_script_speech_is_extra_and_unspoken_lines_are_missing() {
     assert_eq!(plan.missing_lines, vec![1]);
 }
 
-/// 已知边界：两遍不完全一样（第一遍说成 X、稿与第二遍是 Y）时，`repeat` 按连续子串
-/// 判不出来，前一遍记成 `extra`；`--take first` 时 LCS 会把稿的首词钉在第一遍，
-/// 剪掉的是两遍中间那一截。结果是确定的，这里钉住，留给后续批次。
+/// Known boundary: when the two takes are not exactly the same (the first take says X, while the script and the second take say Y), `repeat` cannot tell by contiguous substrings, and the earlier take is recorded as `extra`. With `--take first`, LCS pins the script's first word to the first take, so what gets cut is the stretch between the two takes. The result is deterministic; it is pinned here and left for a later batch.
 #[test]
 fn takes_that_differ_by_a_word_are_a_pinned_boundary() {
     let script = lines(&["alpha yankee charlie"]);
@@ -174,7 +171,7 @@ fn words_without_tokens_join_a_segment_only_between_extra_words() {
     assert_eq!(spans(&plan), vec![(3, 5, Reason::Extra)]);
 }
 
-/// 确定性伪随机（LCG），不引 `rand`。
+/// Deterministic pseudo-random generator (LCG); does not pull in `rand`.
 struct Lcg(u64);
 
 impl Lcg {
@@ -187,8 +184,7 @@ impl Lcg {
     }
 }
 
-/// 生成一份稿与一段「念稿录音」：每隔几百词插一次重录（把前面几个词再说一遍）、
-/// 一段稿外话与口癖，偶尔替换一个词、漏念一行。返回（稿行，录音词，插入次数）。
+/// Generate a script and a "read-aloud recording": every few hundred words a re-take is inserted (repeating the preceding few words), along with an off-script aside and a verbal tic; occasionally a word is replaced and a line is skipped. Returns (script lines, recording words, number of insertions).
 fn synthetic(
     seed: u64,
     lines_count: usize,
@@ -205,15 +201,15 @@ fn synthetic(
             .map(|_| word(rng.next(vocabulary)))
             .collect::<Vec<_>>();
         script.push(line.join(" "));
-        // 三种事件互相错开，保证每次插入各成一段、不与漏念的行落进同一个缝（那会成替换）。
+        // The three kinds of events are staggered so that each insertion forms its own segment and does not fall into the same gap as a skipped line (which would make it a replacement).
         if line_index % 97 == 50 {
-            continue; // 漏念一行
+            continue; // skip a line
         }
         let after_missing = line_index % 97 == 51;
         let before_missing = line_index % 97 == 49;
         let repeat = line_index % 23 == 7 && !after_missing;
         if repeat {
-            // 重录：先说前 3 个词，再整行说一遍。
+            // Re-take: say the first 3 words, then read the whole line again.
             spoken.extend(line[..3].iter().cloned());
             inserts += 1;
         }
@@ -241,8 +237,7 @@ fn synthetic(
     (script, words, inserts)
 }
 
-/// 量级：约 10 万词元的稿对 10 万词元的录音。精确 LCS 的单元数与 n+m 成线性、
-/// 远小于 n·m；每一次重录与稿外话都被找到。不量墙钟。
+/// Scale: a script of about 100k tokens against a recording of about 100k tokens. The number of cells in exact LCS is linear in n+m, far less than n·m; every re-take and off-script aside is found. Wall-clock time is not measured.
 #[test]
 fn alignment_work_stays_linear_on_hours_of_speech() {
     let (script, words, inserts) = synthetic(7, 9000, |id| format!("w{id}"), 6000);
@@ -271,7 +266,7 @@ fn alignment_work_stays_linear_on_hours_of_speech() {
     assert!(plan.coverage() > 0.95);
 }
 
-/// 同样的量级在逐字成词元的文字上：字表小、单字几乎都不唯一，锚点靠 k 元组。
+/// The same scale on text tokenized character by character: the character set is small and individual characters are almost never unique, so anchors rely on k-tuples.
 #[test]
 fn alignment_work_stays_linear_for_per_character_tokens() {
     let (script, words, inserts) = synthetic(
@@ -280,7 +275,7 @@ fn alignment_work_stays_linear_for_per_character_tokens() {
         |id| char::from_u32(0x4E00 + id as u32).unwrap().to_string(),
         2500,
     );
-    // 重录与替换的占位词在这里也换成汉字，避免拉丁串变成单个长词元。
+    // The placeholder words for re-takes and replacements are also swapped for Chinese characters here, to avoid a Latin run becoming a single long token.
     let words = words
         .into_iter()
         .map(|mut word| {
@@ -307,7 +302,7 @@ fn alignment_work_stays_linear_for_per_character_tokens() {
     assert_eq!(plan.segments.len(), inserts);
 }
 
-/// 病态输入：没有任何唯一锚点、又超过单缝上限。确定性地整段记为没对上，不 panic。
+/// Pathological input: no unique anchor at all, and it exceeds the single-gap cap. The whole span is deterministically recorded as unmatched, without panicking.
 #[test]
 fn a_gap_without_anchors_beyond_the_cap_is_left_unmatched() {
     let script = lines(&[&"a b ".repeat(3000)]);
@@ -324,14 +319,14 @@ fn a_gap_without_anchors_beyond_the_cap_is_left_unmatched() {
 
 #[test]
 fn silence_threshold_follows_the_material_and_needs_two_bins() {
-    // 50 bin/s：说话 200、停顿 2、单个 bin 的低谷不算。
+    // 50 bins/s: speech of 200 and a pause of 2; a single-bin dip does not count.
     let mut levels = vec![200u8; 100];
     levels[20..30].fill(2);
     levels[60] = 2;
     levels[80..83].fill(3);
     let map = SilenceMap::from_levels(&levels, 50.0);
     assert_eq!(map.runs(), &[(0.4, 0.6), (1.6, 1.66)]);
-    // 底噪整体偏高的素材：阈值跟着底噪抬，但不高过 95 分位往下 15 dB。
+    // Material with an overall high noise floor: the threshold rises with the noise floor, but not above 15 dB below the 95th percentile.
     let mut noisy = vec![200u8; 100];
     noisy[10..40].fill(20);
     let map = SilenceMap::from_levels(&noisy, 50.0);
@@ -343,7 +338,7 @@ fn silence_threshold_follows_the_material_and_needs_two_bins() {
 fn snap_takes_the_nearest_silence_inside_the_window() {
     let map = SilenceMap::from_runs(vec![(1.0, 1.2), (1.5, 1.6), (3.0, 4.0)]);
     assert_eq!(map.snap(1.3, 1.8, 1.4), Some(1.55));
-    // 窗口只截到静音的一部分时取交集的中点。
+    // When the window only covers part of the silence, take the midpoint of the intersection.
     assert_eq!(map.snap(1.1, 1.3, 1.25), Some(1.15));
     assert_eq!(map.snap(2.0, 2.9, 2.5), None);
     assert_eq!(map.snap(2.0, 2.0, 2.0), None);
@@ -373,7 +368,7 @@ fn cut_points_snap_or_fall_back_to_the_gap_midpoint_without_crossing_kept_words(
         last: 1,
         reason: Reason::Extra,
     };
-    // 两端都有静音：起点吸到 1.1–1.3 的中点；终点窗口 [1.7, 2.3] 截到 2.2–2.3，取其中点。
+    // Silence at both ends: the start snaps to the midpoint of 1.1–1.3; the end window [1.7, 2.3] covers 2.2–2.3, so take its midpoint.
     let map = SilenceMap::from_runs(vec![(1.1, 1.3), (2.2, 2.4)]);
     let placed = place_cuts(std::slice::from_ref(&segment), &words, 5.0, Some(&map), 0.3);
     assert_eq!(
@@ -385,7 +380,7 @@ fn cut_points_snap_or_fall_back_to_the_gap_midpoint_without_crossing_kept_words(
             snapped: true
         }]
     );
-    // 起点这侧的静音在窗口外（且越过前一个保留词）：落在词间空档中点，只算一端吸附到。
+    // The silence on the start side is outside the window (and past the preceding retained word): it lands at the midpoint of the inter-word gap, so only one end counts as snapped.
     let map = SilenceMap::from_runs(vec![(0.2, 0.9), (2.2, 2.4)]);
     let placed = place_cuts(std::slice::from_ref(&segment), &words, 5.0, Some(&map), 0.3);
     assert_eq!(
@@ -397,7 +392,7 @@ fn cut_points_snap_or_fall_back_to_the_gap_midpoint_without_crossing_kept_words(
             snapped: false
         }]
     );
-    // 不吸附（没有能量或 --snap 0）：两端都取空档中点。
+    // No snapping (no energy, or --snap 0): both ends take the gap midpoint.
     let placed = place_cuts(std::slice::from_ref(&segment), &words, 5.0, Some(&map), 0.0);
     assert_eq!(
         placed,
@@ -408,7 +403,7 @@ fn cut_points_snap_or_fall_back_to_the_gap_midpoint_without_crossing_kept_words(
             snapped: false
         }]
     );
-    // 首尾没有相邻词时一直剪到 0 与素材末尾。
+    // When there is no adjacent word at the head or tail, cut all the way to 0 and the end of the material.
     let edge = PlanSegment {
         first: 0,
         last: 2,
@@ -453,8 +448,7 @@ fn too_short_cuts_are_dropped() {
     assert!(place_cuts(&[segment], &words, 2.0, None, 0.3).is_empty());
 }
 
-/// 方案稿 §10.5 的三份 fixture，两种文字各一份：稿与录音一致时一刀不剪；
-/// 拿错了稿时覆盖率低于 0.6（门槛在 CLI 层）。
+/// The three fixtures from plan draft §10.5, one per script: when script and recording match, nothing is cut; when the wrong script is used, coverage is below 0.6 (the threshold lives in the CLI layer).
 #[test]
 fn a_faithful_reading_cuts_nothing_and_a_wrong_script_scores_low() {
     let latin_script = lines(&[
@@ -497,7 +491,7 @@ fn a_faithful_reading_cuts_nothing_and_a_wrong_script_scores_low() {
     assert!(faithful.segments.is_empty());
     assert_eq!(faithful.coverage(), 1.0);
 
-    // 拿错了稿：录音讲的是另一件事。
+    // Wrong script: the recording is about something else.
     let wrong_latin = lines(&[
         "Bake the bread for forty minutes until the crust turns golden.",
         "Let it cool on a rack before you slice it.",

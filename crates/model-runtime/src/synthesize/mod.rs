@@ -1,24 +1,18 @@
-//! 语音合成（本地 TTS）：请求与结果类型、引擎 trait、各引擎实现与它们共用的部分。
+//! Speech synthesis (local TTS): request and result types, the engine trait, each engine implementation, and the parts they share.
 //!
-//! 移植自 v2 的 `ccut-tts-core`（类型、切块、WAV、内置音色元数据）与 `ccut-tts`（引擎 trait、
-//! Qwen3-TTS、随包录音）。与 v2 不同的只有边界：v2 按「模型目录 + 相对路径」找文件，这里一律经
-//! [`crate::bundle::VerifiedFiles`] 按清单取（缺文件 `MODEL_NOT_INSTALLED`，缺组件 `MODEL_UNSUPPORTED`，
-//! 后端加载失败原样透传）；参考音频解码走 [`crate::audio::decode_mono`]。张量与设备经 `tensor` 门面：
-//! Apple Silicon 上是 MLX（设备与缓存走 `crate::backend::mlx::runtime`），其余平台开 `backend-candle`
-//! 时是 candle CPU/CUDA（v2 的同一份适配层）。
+//! Ported from v2's `ccut-tts-core` (types, chunking, WAV, built-in voice metadata) and `ccut-tts` (engine trait, Qwen3-TTS, bundled recordings). The only difference from v2 is at the boundary: v2 finds files by "model directory + relative path", while here everything is fetched through [`crate::bundle::VerifiedFiles`] by manifest (missing file → `MODEL_NOT_INSTALLED`, missing component → `MODEL_UNSUPPORTED`, backend load failures are passed through as-is); reference audio decoding goes through [`crate::audio::decode_mono`]. Tensors and devices go through the `tensor` facade: on Apple Silicon it is MLX (device and cache via `crate::backend::mlx::runtime`); on other platforms with `backend-candle` enabled it is candle CPU/CUDA (the same adaptation layer as v2).
 //!
-//! 共用部分，后续引擎（IndexTTS2 / 2.5、GPT-SoVITS、VoxCPM2、OmniVoice）直接复用：
-//! - [`types`]：请求 / 结果 / 进度 / 引擎种类；
-//! - [`text`]：长文本切块（带块之后的边界级别）、切句、语言粗判；
-//! - [`voices`]：八只内置音色（元数据、随包录音、克隆参考的解析）；
-//! - [`wav`]：16-bit PCM WAV 读写；
-//! - [`resample`]：带限插值重采样；
-//! - [`loudness`]：合成结果的峰值上限（−1 dBFS，只缩不放）；
-//! - [`stitch`]：逐块合成后的拼接（去块边界的首尾静音、按边界级别插固定停顿、响度对齐到第一块）；
-//! - `qwen3_tts` 里的 `layers` / `weights` / `sampling`（`pub(crate)`）：v2 的其余引擎就是从这里取
-//!   KV cache、线性层、因果卷积、权重仓与随机数的。
+//! Shared parts, reused directly by the following engines (IndexTTS2 / 2.5, GPT-SoVITS, VoxCPM2, OmniVoice):
+//! - [`types`]: request / result / progress / engine kind;
+//! - [`text`]: long-text chunking (with the boundary level after each chunk), sentence splitting, rough language detection;
+//! - [`voices`]: the eight built-in voices (metadata, bundled recordings, resolution of clone references);
+//! - [`wav`]: 16-bit PCM WAV read/write;
+//! - [`resample`]: band-limited interpolation resampling;
+//! - [`loudness`]: peak ceiling on synthesis results (−1 dBFS, scale down only);
+//! - [`stitch`]: stitching after per-chunk synthesis (trims leading and trailing silence at chunk boundaries, inserts fixed pauses by boundary level, aligns loudness to the first chunk);
+//! - `layers` / `weights` / `sampling` in `qwen3_tts` (`pub(crate)`): the other v2 engines take the KV cache, linear layers, causal convolution, weight store and random numbers from here.
 //!
-//! 引擎实例持有权重与 KV cache，不是 `Send`：在哪个线程加载就在哪个线程合成。
+//! An engine instance holds weights and KV cache and is not `Send`: it is loaded and synthesized on the same thread.
 
 pub mod gpt_sovits;
 pub mod index_tts2;
@@ -47,48 +41,44 @@ use crate::protocol::{ErrorBody, codes};
 use anyhow::Result;
 use serde_json::json;
 
-/// 进度回调；返回 `false` 请求取消，引擎应在下一个安全点返回错误。
+/// Progress callback; returning `false` requests cancellation, and the engine should return an error at the next safe point.
 pub type ProgressSink<'a> = &'a mut dyn FnMut(TtsProgress) -> bool;
 
-/// 一个已加载的本地 TTS 模型。实现持有全部权重与 KV cache，非 `Sync`，
-/// 由上层保证同一时刻只有一个合成在跑（16 GiB Mac 上不能并行两份模型）。
+/// A loaded local TTS model. The implementation holds all weights and the KV cache and is not `Sync`; the caller guarantees that only one synthesis runs at a time (two copies of a model cannot run in parallel on a 16 GiB Mac).
 pub trait TtsEngine {
     fn kind(&self) -> TtsEngineKind;
 
-    /// 输出采样率（Hz）。
+    /// Output sample rate (Hz).
     fn sample_rate(&self) -> u32;
 
-    /// 预置说话人列表（CustomVoice）；克隆专用模型返回空。
+    /// Preset speaker list (CustomVoice); clone-only models return an empty list.
     fn preset_speakers(&self) -> Vec<String> {
         Vec::new()
     }
 
-    /// 把 `<字|读音>` 注音渲染成这只引擎能吃的文字。缺省按 [`TtsEngineKind::readings_support`] 分派到
-    /// 纯函数 [`readings::render`]；`Unsupported` 即「表面文字 + 注记全部 dropped」。需要模型内信息的引擎
-    /// （IndexTTS2 的词表拼音片）覆盖它。改了渲染要抬 [`TtsEngineKind::output_revision`]。
+    /// Renders `<char|reading>` annotations into text this engine can consume. By default, dispatches via [`TtsEngineKind::readings_support`] to the pure function [`readings::render`]; `Unsupported` means the surface text with all annotations dropped. Engines that need in-model information (IndexTTS2's vocabulary pinyin pieces) override it. If the rendering changes, [`TtsEngineKind::output_revision`] must be bumped.
     fn render_readings(&self, annotated: &readings::Annotated) -> readings::Rendered {
         readings::render(self.kind().readings_support(), annotated, None)
     }
 
-    /// 合成整段文本。长文本由实现自行切块、逐块生成并拼接。
+    /// Synthesizes the whole text. For long text, the implementation chunks it itself, generates chunk by chunk, and concatenates the results.
     fn synthesize(&mut self, request: &TtsRequest, progress: ProgressSink<'_>) -> Result<TtsAudio>;
 }
 
-/// 合成要用的已校验文件：主模型，加上引擎需要的伴随组件。
+/// Verified files needed for synthesis: the main model, plus the companion components the engine requires.
 #[derive(Debug, Clone, Copy)]
 pub struct EngineFiles<'a> {
-    /// 主模型（Qwen3-TTS：`config.json` + `*.safetensors` + `vocab.json` / `merges.txt` / `tokenizer_config.json`；
-    /// GPT-SoVITS：chinese-hubert、chinese-roberta、T2S、SoVITS 都在这一个组件里）。
+    /// Main model (Qwen3-TTS: `config.json` + `*.safetensors` + `vocab.json` / `merges.txt` / `tokenizer_config.json`; GPT-SoVITS: chinese-hubert, chinese-roberta, T2S and SoVITS are all in this one component).
     pub model: &'a VerifiedFiles,
-    /// 语音分词器 / codec（Qwen3-TTS：`Qwen/Qwen3-TTS-Tokenizer-12Hz` 的 `*.safetensors`）。
-    /// VoxCPM2 不需要；OmniVoice 的音频分词器在主模型组件的 `audio_tokenizer/` 下，也不用这个。
+    /// Speech tokenizer / codec (Qwen3-TTS: the `*.safetensors` of `Qwen/Qwen3-TTS-Tokenizer-12Hz`).
+    /// VoxCPM2 does not need it; OmniVoice's audio tokenizer is under `audio_tokenizer/` in the main model component, and it does not use this either.
     pub codec: Option<&'a VerifiedFiles>,
-    /// 辅助权重（IndexTTS 2.5：整个 IndexTTS2 仓库，只读其中 `aux/` 下的 w2v-BERT、CAM++、BigVGAN 与统计量）。
-    /// 别的引擎不需要。
+    /// Auxiliary weights (IndexTTS 2.5: the whole IndexTTS2 repository, of which only the w2v-BERT, CAM++, BigVGAN and statistics under `aux/` are read).
+    /// Other engines do not need it.
     pub aux: Option<&'a VerifiedFiles>,
 }
 
-/// 这个构建里有没有可用的本地 TTS 后端：Apple Silicon 的 MLX，或任一平台的 candle（CPU；开 `cuda` 时 NVIDIA GPU）。
+/// Whether this build has a usable local TTS backend: MLX on Apple Silicon, or candle on any platform (CPU; NVIDIA GPU when `cuda` is enabled).
 pub const fn local_tts_available() -> bool {
     cfg!(any(
         feature = "backend-candle",
@@ -96,7 +86,7 @@ pub const fn local_tts_available() -> bool {
     ))
 }
 
-/// 这只引擎在这个构建里能不能加载。没移植的引擎报 `false`。
+/// Whether this engine can load in this build. Engines that have not been ported return `false`.
 pub const fn engine_available(kind: TtsEngineKind) -> bool {
     match kind {
         TtsEngineKind::Qwen3Tts => local_tts_available(),
@@ -107,8 +97,8 @@ pub const fn engine_available(kind: TtsEngineKind) -> bool {
     }
 }
 
-/// 这个构建能加载的合成主模型 family（`components.tts.family`），按 [`TtsEngineKind::ALL`] 的次序。
-/// `worker.hello` 的 `synthesizeFamilies` 就是它；Runtime 不把没列出的 family 交给这个 Worker（协议规范 §2.1）。
+/// The main-model families (`components.tts.family`) this build can load, in the order of [`TtsEngineKind::ALL`].
+/// `synthesizeFamilies` in `worker.hello` is this list; the Runtime does not hand this Worker any family that is not listed (protocol spec §2.1).
 pub fn available_families() -> Vec<&'static str> {
     TtsEngineKind::ALL
         .into_iter()
@@ -117,12 +107,9 @@ pub fn available_families() -> Vec<&'static str> {
         .collect()
 }
 
-/// 加载一只引擎。调用前不需要自己确认设备：实现会先调 `tensor::host::ensure_device`（MLX 是 Metal，candle 是
-/// 本进程的默认设备）。
+/// Loads one engine. The caller does not need to confirm the device beforehand: the implementation calls `tensor::host::ensure_device` first (MLX uses Metal; candle uses this process's default device).
 ///
-/// 错误里的 [`ErrorBody`]（缺文件、缺组件、引擎没有）可以 `downcast_ref` 出来原样上报；其余是加载失败。
-/// 返回的引擎都套着 [`readings::Annotating`]：`<字|读音>` 注音在这一处按引擎渲染，念不了的读音写进
-/// [`TtsAudio::readings_dropped`]；最外层是 [`loudness::PeakLimited`]：整段峰值高于 −1 dBFS 时等比缩到它。
+/// The [`ErrorBody`] in the error (missing file, missing component, no such engine) can be recovered with `downcast_ref` and reported as-is; anything else is a load failure. Returned engines are all wrapped in [`readings::Annotating`]: `<char|reading>` annotations are rendered per engine at this point, and readings that cannot be voiced are recorded in [`TtsAudio::readings_dropped`]; the outermost layer is [`loudness::PeakLimited`]: if the peak of the whole clip is above −1 dBFS, the clip is scaled down to that level.
 pub fn load(kind: TtsEngineKind, files: EngineFiles<'_>) -> Result<Box<dyn TtsEngine>> {
     if !engine_available(kind) {
         return Err(unsupported_engine(kind).into());
@@ -243,7 +230,7 @@ mod tests {
         assert_eq!(error.code, codes::MODEL_UNSUPPORTED);
         assert_eq!(error.details.unwrap()["component"], "codec");
 
-        // 有 codec 组件，但主模型没列 config.json：缺文件是 MODEL_NOT_INSTALLED，在碰 Metal 之前就报。
+        // There is a codec component, but the main model does not list config.json: a missing file is MODEL_NOT_INSTALLED, reported before touching Metal.
         let codec = empty_files();
         let error = error_of(load(
             TtsEngineKind::Qwen3Tts,
@@ -257,7 +244,7 @@ mod tests {
         assert_eq!(error.details.unwrap()["file"], "config.json");
     }
 
-    /// VoxCPM2 / OmniVoice 只要主模型组件；清单没列的文件是 MODEL_NOT_INSTALLED，在碰 Metal 之前就报。
+    /// VoxCPM2 / OmniVoice only need the main model component; a file the manifest does not list is MODEL_NOT_INSTALLED, reported before touching Metal.
     #[cfg(any(
         feature = "backend-candle",
         all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64")
@@ -335,7 +322,7 @@ mod tests {
         }
         .verify("tts")
         .unwrap();
-        // GPT-SoVITS 只有一个组件：codec 给不给都不看。
+        // GPT-SoVITS has only one component: whether a codec is given is not checked.
         let error = error_of(load(
             TtsEngineKind::GptSovits,
             EngineFiles {
@@ -360,11 +347,11 @@ mod tests {
             codec: None,
             aux,
         };
-        // 2.0 只有一个组件：没列 config.yaml 用默认配置，接着缺 bpe.model。
+        // 2.0 has only one component: if config.yaml is not listed, the default configuration is used, and then bpe.model is missing.
         let error = error_of(load(TtsEngineKind::IndexTts2, files(None)));
         assert_eq!(error.code, codes::MODEL_NOT_INSTALLED);
         assert_eq!(error.details.unwrap()["file"], "bpe.model");
-        // 2.5 先要 aux 组件，再要主模型的 config.yaml。
+        // 2.5 first requires the aux component, then the main model's config.yaml.
         let error = error_of(load(TtsEngineKind::IndexTts25, files(None)));
         assert_eq!(error.code, codes::MODEL_UNSUPPORTED);
         assert_eq!(error.details.unwrap()["component"], "aux");

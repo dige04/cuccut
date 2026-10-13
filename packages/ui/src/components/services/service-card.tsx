@@ -7,8 +7,8 @@ import { ServiceIcon, StopIcon } from './service-icon.tsx';
 import { COMMON_COPY } from './services-copy.ts';
 
 /*
- * 服务页共用的块（原型 designs/cuccut/app/page-services.jsx `ServiceCard` / `Lede`、services.css `.svc*`）。
- * 卡片沿用原型的 `Card layer`：圆角 10、gray-50 底、1px gray-200 边。
+ * Shared blocks for the services pages (prototype designs/cuccut/app/page-services.jsx `ServiceCard` / `Lede`, services.css `.svc*`).
+ * The card follows the prototype's `Card layer`: radius 10, gray-50 background, 1px gray-200 border.
  */
 
 export const lede = style({ margin: 0, font: 'body-sm', color: 'gray-600' });
@@ -26,7 +26,7 @@ export const panel = style({
   borderStyle: 'solid',
   borderColor: 'gray-200',
 });
-/** 原型 `.t-section`：11px 粗体、灰、字距略开。 */
+/** Prototype `.t-section`: 11px bold, grey, slightly open letter-spacing. */
 export const sectionTitle = style({ margin: 0, marginTop: 28, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
 const card = style({
@@ -42,7 +42,7 @@ const card = style({
 const head = style({ display: 'flex', alignItems: 'center', gap: 12 });
 const txt = style({ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, minWidth: 0 });
 const title = style({ font: 'title-sm', color: 'gray-900' });
-// `font` 简写带运行时条件时宏会编成静态字符串，所以等宽与否分成两个类。
+// The `font` shorthand with runtime conditions is compiled by the macro into a static string, so monospace or not is split into two classes.
 const sub = style({ font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere', userSelect: 'text' });
 const subMono = style({ font: 'code-sm', color: 'gray-600', overflowWrap: 'anywhere', userSelect: 'text' });
 const foot = style({
@@ -60,7 +60,7 @@ const foot = style({
   borderColor: 'gray-100',
 });
 
-/** 状态块：40×40、圆角 10；在跑绿底、出错橙底，图标跟着换色（services.css `.svc__mark`）。 */
+/** Status block: 40×40, radius 10; green background when running, orange when in error, and the icon changes color with it (services.css `.svc__mark`). */
 const mark = style({
   display: 'flex',
   alignItems: 'center',
@@ -76,14 +76,14 @@ const mark = style({
 export function ServiceMark({ id, state }: { id: ServiceId; state: ServiceState }) {
   const tone = serviceTone(state);
   return (
-    // 图标块里的标识图形统一 20px（产品设计 §2.1）
+    // The mark graphic inside the icon block is uniformly 20px (product design §2.1)
     <span className={mark({ tone })} data-cc-icons="primary" aria-hidden="true">
       <ServiceIcon id={id} error={tone === 'error'} />
     </span>
   );
 }
 
-/** 一颗 6px 的状态灯（services.css `.svclight`）：灰 = 关着、绿 = 在跑、橙 = 出错，起停中深一档灰。 */
+/** A 6px status light (services.css `.svclight`): grey = off, green = running, orange = error; one shade darker grey while starting or stopping. */
 const lightDot = style({
   display: 'inline-block',
   flexShrink: 0,
@@ -97,7 +97,7 @@ export function ServiceLightDot({ tone, busy = false }: { tone: ServiceLight['to
   return <span className={lightDot({ tone, busy })} aria-hidden="true" />;
 }
 
-/** 总览标题旁的一排灯，一项服务一颗（原型 `window.SvcLights`）。 */
+/** A row of lights next to the overview title, one per service (prototype `window.SvcLights`). */
 export function ServiceLights({ lights }: { lights: ServiceLight[] }) {
   return (
     <span className={lightsRow} role="img" aria-label={COMMON_COPY.lightsLabel(lights.map((l) => l.label))}>
@@ -111,8 +111,8 @@ export function ServiceLights({ lights }: { lights: ServiceLight[] }) {
 }
 
 /**
- * 详情页顶上的服务卡：状态块 + 标题 / 副行 + 一个起停按钮 + 页脚。按钮按状态给：开着给停、关着给起、出错给「重新…」、
- * 起停中给禁用的「正在…」、没有后端的不给按钮（原因写在副行里）。
+ * Service card at the top of the detail page: status block, title and subtitle line, one start/stop button, and a footer. The button depends on the state: when on, it offers stop; when off, start; on error, “Restart…”;
+ * while starting or stopping, a disabled “In progress…”; and no button for services without a backend (the reason is written in the subtitle line).
  */
 export function ServiceCard({
   id,
@@ -130,7 +130,7 @@ export function ServiceCard({
   heading: ReactNode;
   subline: ReactNode;
   mono?: boolean;
-  /** 没连上 Runtime 时起停按钮置灰。 */
+  /** The start/stop button is greyed out when the Runtime is not connected. */
   disabled?: boolean;
   onFlip?: (on: boolean) => void;
   footer?: ReactNode;
@@ -152,7 +152,7 @@ export function ServiceCard({
   );
 }
 
-/** 起停按钮（服务卡与总览行共用）。 */
+/** Start/stop button (shared by the service card and the overview row). */
 export function FlipButton({
   id,
   state,
@@ -170,7 +170,7 @@ export function FlipButton({
   primary?: boolean;
 }) {
   const action = serviceQuickAction(id, state);
-  // 没有后端的服务不给起停按钮（原因写在旁边），免得像是「暂时按不了」。
+  // Services with no backend get no start/stop button (the reason is written next to it), so it does not look like it is only temporarily unavailable.
   if (action.kind === 'unavailable') return null;
   if (action.kind === 'busy') {
     return (

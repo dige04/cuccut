@@ -31,7 +31,7 @@ const textArea = style({ width: 'full' });
 const shapePicker = style({ flexGrow: 1, minWidth: 0 });
 const dots = style({ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' });
 
-/** 片段页的末尾几节：外观之后是效果（有 `fx` 的片段）、转场、几何、时间与删除。 */
+/** The trailing sections of the clip page: after appearance come effects (for clips with `fx`), transition, geometry, time and delete. */
 function Tail(props: ItemPageProps<VisualItem>) {
   return (
     <>
@@ -44,7 +44,7 @@ function Tail(props: ItemPageProps<VisualItem>) {
   );
 }
 
-/** 编辑文本：文字、样式（与字幕同一套）、不透明度。 */
+/** Edit text: the text, the style (the same set as captions), and opacity. */
 export function TextPage(props: ItemPageProps<TextItem>) {
   if (props.item.counter) return <CounterPage {...props} counter={props.item.counter} />;
   const { item, sequence, edit, canChange } = props;
@@ -80,7 +80,7 @@ export function TextPage(props: ItemPageProps<TextItem>) {
   );
 }
 
-/** 文字框：失焦提交（⌘↩ 也提交），Esc 放弃。 */
+/** Text box: commits on blur (⌘↩ also commits), Esc discards. */
 function TextBody({ text, isDisabled, onCommit }: { text: string; isDisabled: boolean; onCommit(text: string): void }) {
   const [draft, setDraft] = useState(text);
   useEffect(() => setDraft(text), [text]);
@@ -103,7 +103,7 @@ function TextBody({ text, isDisabled, onCommit }: { text: string; isDisabled: bo
   );
 }
 
-/** 形状：种类、填充与描边（颜色、不透明度、粗细）、圆角，以及不透明度。描边宽与圆角是 540 短边上的像素。 */
+/** Shape: kind, fill and stroke (color, opacity, thickness), corner radius, and opacity. Stroke width and corner radius are pixels at a 540 short side. */
 export function ShapePage(props: ItemPageProps<ShapeItem>) {
   const { item, sequence, edit, canChange } = props;
   const shape = asObject(item.shape);
@@ -207,7 +207,7 @@ export function ShapePage(props: ItemPageProps<ShapeItem>) {
   );
 }
 
-/** 生成类元素页的标题（贴纸、计数器、进度条、声波；计数器与时间线块的类别同名）。 */
+/** Title of the generated-type element pages (stickers, counters, progress bars, waveforms). Counters share their category name with timeline blocks. */
 export function elementTitle(item: VisualItem): string {
   switch (item.type) {
     case 'sticker':
@@ -231,7 +231,7 @@ export function elementTitle(item: VisualItem): string {
   }
 }
 
-/** 种类参数（`sticker`、`progress`、`visualizer`、`confetti`）的改法：拖动叠给预览，松手 `setProps` 整体替换，改一项时其余照抄。 */
+/** How kind parameters (`sticker`, `progress`, `visualizer`, `confetti`) are changed: dragging overlays the preview, and on release `setProps` replaces the whole object. When one item changes, the rest are copied over unchanged. */
 function kindParams(props: ItemPageProps<VisualItem>, values: Json) {
   const { item, sequence, edit, canChange } = props;
   return {
@@ -242,7 +242,7 @@ function kindParams(props: ItemPageProps<VisualItem>, values: Json) {
   };
 }
 
-/** 生成类元素页：参数，之后是外观（不透明度）、几何、时间。 */
+/** Generated-type element page: parameters first, then appearance (opacity), geometry and time. */
 function ElementPage({ children, ...props }: ItemPageProps<VisualItem> & { children: ReactNode }) {
   return (
     <>
@@ -256,7 +256,7 @@ function ElementPage({ children, ...props }: ItemPageProps<VisualItem> & { child
   );
 }
 
-/** 贴纸：模板贴纸换色，动画贴纸选播放方式。 */
+/** Sticker: template stickers can change color; animated stickers choose a play mode. */
 export function StickerPage(props: ItemPageProps<StickerItem>) {
   const params = kindParams(props, asObject(props.item.sticker));
   return (
@@ -266,7 +266,7 @@ export function StickerPage(props: ItemPageProps<StickerItem>) {
   );
 }
 
-/** 进度条。 */
+/** Progress bar. */
 export function ProgressPage(props: ItemPageProps<ProgressItem>) {
   return (
     <ElementPage {...props}>
@@ -275,7 +275,7 @@ export function ProgressPage(props: ItemPageProps<ProgressItem>) {
   );
 }
 
-/** 声波。 */
+/** Waveform. */
 export function VisualizerPage(props: ItemPageProps<VisualizerItem>) {
   return (
     <ElementPage {...props}>
@@ -284,7 +284,7 @@ export function VisualizerPage(props: ItemPageProps<VisualizerItem>) {
   );
 }
 
-/** 彩纸。 */
+/** Confetti. */
 export function ConfettiPage(props: ItemPageProps<ConfettiItem>) {
   return (
     <ElementPage {...props}>
@@ -293,7 +293,7 @@ export function ConfettiPage(props: ItemPageProps<ConfettiItem>) {
   );
 }
 
-/** 计数器（带计时读数的文字）：计时方式与钟面走 `setText` 的 `counter`，数字的样式走 `setStyle`。 */
+/** Counter (text with a timer readout): the timing method and clock face go through `setText` with `counter`, and the number's style goes through `setStyle`. */
 function CounterPage(props: ItemPageProps<TextItem> & { counter: CounterProps }) {
   const { item, sequence, edit, canChange, counter } = props;
   const values: Json = { ...counter, style: asObject(item.style) };
@@ -313,7 +313,7 @@ function CounterPage(props: ItemPageProps<TextItem> & { counter: CounterProps })
   );
 }
 
-/** 属性页还没有专门一页的元素（手绘、占位框、白板）：只给外观、几何与时间。 */
+/** Elements that do not yet have a dedicated page in the properties panel (hand-drawn, placeholder box, whiteboard): only appearance, geometry and time are offered. */
 export function OtherElementPage(props: ItemPageProps<VisualItem>) {
   return (
     <ElementPage {...props}>
@@ -323,7 +323,7 @@ export function OtherElementPage(props: ItemPageProps<VisualItem>) {
   );
 }
 
-/** 合成：代码包的参数要按它的 Schema 校验，引擎还不支持，只读。之后是声音（有的话）、不透明度、几何、时间。 */
+/** Composition: code-package parameters must be validated against its Schema. The engine does not support this yet, so it is read-only. Then audio (if any), opacity, geometry and time. */
 export function CompositionPage(props: ItemPageProps<CompositionItem>) {
   return (
     <>
@@ -346,7 +346,7 @@ interface ParamProps {
   commit(patch: Json): void;
 }
 
-/** 贴纸：模板里的每一种颜色一枚色点，换色写进 `fillOverrides`（键是模板原色）。 */
+/** Sticker: one color dot for each color in the template. Color changes are written to `fillOverrides` (keys are the template's original colors). */
 function StickerParams({ values, isDisabled, live, commit }: ParamProps) {
   const templateId = typeof values.templateId === 'string' ? values.templateId : '';
   const layers = STICKER_TEMPLATES[templateId];
@@ -415,7 +415,7 @@ const LOOPS = [
   },
 ] as const;
 
-/** Lottie：循环播放、只播一次（停在最后一帧）或定格在开头。 */
+/** Lottie: loop, play once (stopping on the last frame), or freeze on the first frame. */
 function LottieParams({ values, isDisabled, commit }: ParamProps) {
   const loop = values.loop === 'once' || values.loop === 'hold' ? values.loop : 'loop';
   return (
@@ -463,7 +463,7 @@ const FORMATS = [
   },
 ] as const;
 
-/** 计数器：倒计时或正计时、钟面格式，以及数字的文字样式（与文字片段同一套）。 */
+/** Counter: countdown or count-up, clock face format, and the number's text style (the same set as text clips). */
 function CounterParams({ values, isDisabled, live, commit }: ParamProps) {
   const style = asObject(values.style);
   return (

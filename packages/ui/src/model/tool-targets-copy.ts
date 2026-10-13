@@ -14,7 +14,7 @@ import { pl } from './tool-targets-copy.pl.ts';
 import { tr } from './tool-targets-copy.tr.ts';
 import { vi } from './tool-targets-copy.vi.ts';
 
-/** 视频工具选择器的文案：标注、置灰原因、「不覆盖」提示、可选的译文（英文是键与类型的来源，译文在 `tool-targets-copy.<语言>.ts`）。 */
+/** Copy for the video tool picker: labels, disabled reasons, the "does not overwrite" hint, and optional translated text (English is the source of keys and types; translations live in `tool-targets-copy.<语言>.ts`). */
 const en = {
   unknownLanguage: 'Unknown language',
   langCount: (label: string, count: number) => `${label} ×${count}`,
@@ -41,13 +41,13 @@ const en = {
   },
   translationOption: (lang: string, nth: number | null) => `${lang} translation${nth === null ? '' : ` #${nth}`}`,
   translatedFrom: (lang: string) => `From the ${lang} transcript`,
-  /** 重新转录的落点（产品设计：重新转录；术语表「落点」）。 */
+  /** Target for a retranscription (product design: retranscribe; glossary term “落点”). */
   destNewVideo: 'New video',
   destNewVideoNote: 'A new video in the same project that links the same asset; this video and its translations stay as they are',
   destReplace: 'Replace this video’s transcript',
   destReplaceNote:
     'Swaps out the current transcript; translations, subtitles and voice-overs carry over in the same change, which you can undo',
-  /** 新建视频的默认名，与 Runtime 的 `retranscribedName` 一致。 */
+  /** Default name for a new video; matches `retranscribedName` in the Runtime. */
   newVideoName: (name: string) => `${name} · Re-transcribed`,
   impactTranslation: (lang: string, units: number) => `${lang} · ${units} ${units === 1 ? 'sentence' : 'sentences'}`,
   impactDub: (lang: string, groups: number) =>

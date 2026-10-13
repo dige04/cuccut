@@ -31,7 +31,7 @@ describe('文稿面板复制的组合', () => {
     expect(copyIncludes(all, 'all')).toEqual(['frontmatter', 'chapters', 'timestamps', 'speakers', 'keepCut']);
     expect(copyIncludes(all, 'chapter')).toEqual(['chapters', 'timestamps', 'speakers']);
     expect(copyIncludes(all, 'para')).toEqual(['timestamps', 'speakers']);
-    // 纯文本这一段只开了章节：写出来与只要文字一样。
+    // In this plain-text section only chapters are turned on: the output is the same as text only.
     expect(scopeIsPlain({ ...bodyOnly, chapters: true }, 'para')).toBe(true);
     expect(scopeIsPlain({ ...bodyOnly, chapters: true }, 'chapter')).toBe(false);
   });

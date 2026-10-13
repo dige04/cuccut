@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { LibraryEntrySummary } from '@cuccut/protocol';
 import { onLibraryEntries } from './library-feed.ts';
 
-/** 我的声音：用户库里 `voices` 的条目（摘要），按名字排。完整内容（逐字稿、语言、授权声明）按需 `library.get`。 */
+/** My voices: entries of `voices` in the user library (summaries), sorted by name. Full content (transcript, language, consent statement) is fetched on demand with `library.get`. */
 export interface VoicesStore {
   ready: boolean;
   voices: LibraryEntrySummary[];

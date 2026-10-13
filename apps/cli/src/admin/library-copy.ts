@@ -14,7 +14,7 @@ import { pl } from './library-copy.pl.ts';
 import { tr } from './library-copy.tr.ts';
 import { vi } from './library-copy.vi.ts';
 
-/** 管理桶 `cuccut library …` 的文案（英文是键与类型的来源，译文在 `library-copy.<语言>.ts`）。 */
+/** Copy for the admin bucket `cuccut library …`. The English is the source of the keys and types; the translations are in `library-copy.<language>.ts`. */
 const en = {
   help: `Usage:
   cuccut library import <file>     Import an exchange file, with its type detected by content (not

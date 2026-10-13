@@ -8,28 +8,25 @@ import { ModelsModelDownloader as M } from '@cuccut/protocol/messages/models/mod
 import { modelTextRef, type ModelText } from './model-text.ts';
 
 /**
- * 模型文件的下载器（架构设计 §6.3）：按清单逐个文件下载到暂存区，逐个核对大小与 sha256，整个仓库齐了再原子地发布。
+ * Downloader for model files (architecture design §6.3): downloads the files in the manifest one by one into the staging area, checks each file's size and sha256, and publishes the whole repository atomically once all of it is present.
  *
- * 暂存区：`<models-root>/.ccut-staging/<owner>/<repo>@<revision>/`，与模型目录在同一个卷上（发布是改名）。
- * - 没下完的文件是 `<path>.part`；核对过 sha256 的文件改名为 `<path>`。暂存区里已经核对过的文件不再下载。
- * - 续传：`.part` 已有 n 字节时带 `Range: bytes=n-`；206 且 `Content-Range` 从 n 开始就接着写。200 表示来源不支持
- *   续传：丢掉这个回复（它的内容不一定完整），不带 Range 从头再要一次；已有的部分不超过 `RESTART_BELOW` 时 5xx 也这样处理
- *   （ModelScope 的小文件对 `bytes=n-` 回 200 却只发一截，或回 502）。续传出来的文件 sha256 不符时，删掉从头再下一次；
- *   从头下的仍不符就是校验失败。
- * - 连不上、5xx、429 与读到一半断开按有界的退避重试（每次从已经写下的字节续传；断开前有进展时重新计数）；
- *   404、401、403 不重试。
- * - 取消（信号中止）立即停下，`.part` 留在暂存区，下次续传。
- * - 发布：把 `.ccut-manifest.json` 写进暂存目录，旧的仓库目录（如果有）改名挪开，暂存目录改名为仓库目录，再删掉旧目录。
+ * Staging area: `<models-root>/.ccut-staging/<owner>/<repo>@<revision>/`, on the same volume as the model directory (publishing is a rename).
+ * - A file not yet finished is `<path>.part`; a file whose sha256 has been checked is renamed to `<path>`. Files in the staging area that are already verified are not downloaded again.
+ * - Resume: when `.part` already has n bytes, send `Range: bytes=n-`. A 206 whose `Content-Range` starts at n continues writing. A 200 means the source does not support resume: discard that response (its content may not be complete) and request again from the start without a Range; the same applies to a 5xx when the existing partial is no larger than `RESTART_BELOW`
+ *   (ModelScope's small files return 200 for `bytes=n-` but send only part of the content, or return 502). If the sha256 of a resumed file does not match, delete it and download again from the start;
+ *   if a file downloaded from the start still does not match, that is a verification failure.
+ * - Connection failure, 5xx, 429 and a connection dropped mid-read are retried with bounded backoff (each time resuming from the bytes already written; the count restarts when there was progress before the drop); 404, 401 and 403 are not retried.
+ * - Cancellation (signal abort) stops immediately; `.part` stays in the staging area and resumes next time.
+ * - Publish: write `.ccut-manifest.json` into the staging directory, move the old repository directory (if any) aside by renaming it, rename the staging directory to the repository directory, then delete the old directory.
  *
- * 错误码各带一条补救说明：`MODEL_DOWNLOAD_NO_SPACE`（磁盘空间不足）、`MODEL_DOWNLOAD_NETWORK`（网络，重试用完）、
- * `MODEL_DOWNLOAD_INTEGRITY`（大小或 sha256 不符）、`MODEL_DOWNLOAD_SOURCE`（来源没有这个文件或拒绝访问）、
- * `MODEL_MANIFEST_INCOMPLETE`（内置清单缺可信的哈希）。
+ * Each error code comes with a remedy note: `MODEL_DOWNLOAD_NO_SPACE` (not enough disk space), `MODEL_DOWNLOAD_NETWORK` (network, retries exhausted),
+ * `MODEL_DOWNLOAD_INTEGRITY` (size or sha256 mismatch), `MODEL_DOWNLOAD_SOURCE` (the source does not have this file or denies access), `MODEL_MANIFEST_INCOMPLETE` (the built-in manifest lacks a trusted hash).
  */
 
 export type DownloadErrorCode =
   'MODEL_DOWNLOAD_NO_SPACE' | 'MODEL_DOWNLOAD_NETWORK' | 'MODEL_DOWNLOAD_INTEGRITY' | 'MODEL_DOWNLOAD_SOURCE' | 'MODEL_MANIFEST_INCOMPLETE';
 
-// 每次读都按当前语言生成（`DownloadError.remedy` 在构造时取）。
+// Built fresh in the current language on every read (`DownloadError.remedy` is taken at construction).
 export const DOWNLOAD_REMEDIES: Readonly<Record<DownloadErrorCode, string>> = live(() => ({
   MODEL_DOWNLOAD_NO_SPACE: M.remedyNoSpace().text,
   MODEL_DOWNLOAD_NETWORK: M.remedyNetwork().text,
@@ -43,7 +40,7 @@ export class DownloadError extends Error {
   readonly remedy: string;
   readonly details: Record<string, unknown>;
 
-  /** 用目录文字构造时的消息引用。 */
+  /** Message reference taken when constructed with directory text. */
   readonly messageRef: MessageRef | undefined;
 
   constructor(code: DownloadErrorCode, message: ModelText, details: Record<string, unknown> = {}) {
@@ -56,7 +53,7 @@ export class DownloadError extends Error {
   }
 }
 
-/** 要下载的一个文件。`size` 未知时只按 sha256 核对。 */
+/** A file to download. When `size` is unknown, verify by sha256 only. */
 export interface DownloadFile {
   path: string;
   size: number | null;
@@ -64,16 +61,16 @@ export interface DownloadFile {
 }
 
 export interface DownloaderOptions {
-  /** 模型目录的根。 */
+  /** Root of the model directory. */
   root: string;
-  /** 下载来源的基址（见 `download-source.ts`）。 */
+  /** Base URL of the download source (see `download-source.ts`). */
   endpoint: string;
   fetch?: typeof fetch;
-  /** 网络错误的重试次数（不含第一次），默认 4。 */
+  /** Number of retries for network errors (not counting the first attempt); default 4. */
   retries?: number;
-  /** 第 n 次重试前等多久（毫秒），默认 1、2、4、8 秒封顶。 */
+  /** How long to wait before the n-th retry, in milliseconds; default 1, 2, 4, 8 seconds, capped. */
   backoffMs?: (attempt: number) => number;
-  /** 多久收不到数据算断开（毫秒），默认 60 秒。 */
+  /** How long without data before the connection counts as dropped, in milliseconds; default 60 seconds. */
   stallMs?: number;
 }
 
@@ -87,10 +84,10 @@ class Retryable extends Error {
   }
 }
 
-/** 内容不对（多出字节）：与 sha256 不符一样处理。 */
+/** Content is wrong (extra bytes): handled the same as a sha256 mismatch. */
 class Oversize extends Error {}
 
-/** 续传请求回 5xx 时，已有的部分不超过这么多字节就从头下载（重下的代价小于卡在不能续传的来源上）。 */
+/** When a resume request returns 5xx and the existing partial is no larger than this many bytes, download from the start (re-downloading costs less than being stuck on a source that cannot resume). */
 const RESTART_BELOW = 64 * 1024 * 1024;
 
 export class ModelDownloader {
@@ -115,8 +112,8 @@ export class ModelDownloader {
   }
 
   /**
-   * 把一个仓库版本的这些文件下载进暂存目录（已经核对过的跳过）。`onBytes` 收到写入的增量；从头重写一个文件时是负数
-   * （扣掉作废的字节）。`sourceRepo` 是下载来源的仓库，与模型目录里的位置 `repo` 不同时才给（仓库清单的 `sourceRepo`）。
+   * Download these files of one repository version into the staging directory (files already verified are skipped). `onBytes` receives the increment written; when a file is rewritten from the start, it is negative
+   * (subtracting the discarded bytes). `sourceRepo` is the repository at the download source, given only when it differs from the `repo` location in the model directory (the `sourceRepo` of the repository manifest).
    */
   async download(
     repo: string,
@@ -135,8 +132,7 @@ export class ModelDownloader {
   }
 
   /**
-   * 按地址下载一个文件到 `stage`（不经模型仓库的地址规则；发布页组件的压缩包，见 `release-component.ts`）：续传、重试、核对大小与
-   * sha256 都与 `download` 相同，核对过的文件留在 `<stage>/<file.path>`，不符时删掉（`MODEL_DOWNLOAD_INTEGRITY`）。
+   * Download one file to `stage` by address (this does not go through the model repository's address rules; used for the archive of a release-page component, see `release-component.ts`): resume, retry, and the size and sha256 checks are the same as `download`. Verified files stay at `<stage>/<file.path>`; on mismatch they are deleted (`MODEL_DOWNLOAD_INTEGRITY`).
    */
   async downloadUrl(
     stage: string,
@@ -150,7 +146,7 @@ export class ModelDownloader {
     await this.#downloadFile(stage, url, file, signal, onBytes);
   }
 
-  /** 修复：把仓库目录里核对过的好文件硬链接（不行就复制）进暂存目录，发布时连同新下载的一起换上。 */
+  /** Repair: hard-link (or copy, if linking fails) the verified good files from the repository directory into the staging directory; they are swapped in at publish time together with the newly downloaded ones. */
   async reuse(repo: string, revision: string, repoDir: string, files: readonly string[]): Promise<void> {
     const stage = stagingDirOf(this.#root, repo, revision);
     for (const file of files) {
@@ -163,8 +159,8 @@ export class ModelDownloader {
   }
 
   /**
-   * 发布：暂存目录里的文件写成清单，原子地换到 `<root>/<owner>/<repo>/`。`files` 是清单要列出的全部文件（含复用的），
-   * 都应已在暂存目录里。清单的 `source` 记这个仓库实际的下载基址（`sourceRepo` 同 `download`）。
+   * Publish: write a manifest from the files in the staging directory, and atomically swap it into `<root>/<owner>/<repo>/`. `files` is every file the manifest should list (including reused ones), all of which should already be in the staging directory.
+   * The manifest's `source` records the base URL actually used to download this repository (`sourceRepo` as in `download`).
    */
   async publish(
     repo: string,
@@ -226,7 +222,7 @@ export class ModelDownloader {
           if (signal.aborted) throw signal.reason ?? error;
           if (error instanceof Oversize) bad = true;
           else if (error instanceof Retryable) {
-            // 断开之前有进展时重新计数：慢而不稳的连接只要还在前进就继续续传。
+            // When progress is made before a drop, restart the count: a slow but unstable connection keeps resuming as long as it keeps moving forward.
             failures = (await sizeOf(part)) > offset ? 1 : failures + 1;
             if (failures > this.#retries) {
               throw new DownloadError('MODEL_DOWNLOAD_NETWORK', M.downloadFailed({ file: file.path, reason: error.reason }), {
@@ -250,7 +246,7 @@ export class ModelDownloader {
         return;
       }
       await truncate(part, onBytes, await sizeOf(part));
-      // 续传出来的文件不符：可能是旧的 `.part` 不对，从头再下一次。
+      // The resumed file does not match: the old `.part` may be bad, so download again from the start.
       if (resumed && !cleanRetried) {
         cleanRetried = true;
         resumed = false;
@@ -300,7 +296,7 @@ export class ModelDownloader {
       arm();
       let response = await request(offset);
       if (offset > 0 && (response.status === 200 || (response.status >= 500 && offset <= RESTART_BELOW))) {
-        // 来源没有按 Range 回这一截：已有的部分作废，从头要。
+        // The source did not return the range requested with Range: discard the existing partial and request from the start.
         await response.body?.cancel().catch(() => {});
         await truncate(part, onBytes, offset);
         offset = 0;
@@ -317,10 +313,10 @@ export class ModelDownloader {
         }
         start = offset;
       } else if (status === 200) {
-        // 从头写（续传请求回 200 的，上面已经不带 Range 重新要过）。
+        // Write from the start (resume requests that got 200 had their Range dropped and were re-requested above).
       } else if (status === 416) {
         await response.body?.cancel().catch(() => {});
-        // 已经收全（大小未知时由 sha256 决定）；否则从头来。
+        // Fully received (when the size is unknown, sha256 decides); otherwise start over.
         if (file.size === null || offset === file.size) return;
         await truncate(part, onBytes, offset);
         throw new Retryable('range-not-satisfiable', status);
@@ -370,7 +366,7 @@ export class ModelDownloader {
   }
 }
 
-/** 默认的可用空间：`statfs` 取最近的已存在的上级目录；查不到时 null。 */
+/** Default free space: `statfs` on the nearest existing parent directory; null if it cannot be determined. */
 export async function diskFreeBytes(dir: string): Promise<number | null> {
   let current = path.resolve(dir);
   for (;;) {

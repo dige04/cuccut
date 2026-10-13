@@ -5,10 +5,9 @@ import type { EngineProtection, VideoService } from '../videos/video-service.ts'
 import { RcCommon, RcModels } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * `edits.applySpeakers`（命令与协议规范 §4.1）：把一次识别说话人（`speakers` 流程）的提案应用到视频，一笔以调用者为
- * 行为者的编辑事务（与 `edits.apply` 相同，`edits.undo` 撤销与重做）。
+ * `edits.applySpeakers` (command and protocol spec §4.1): applies a proposal from speaker identification (the `speakers` pipeline) to a video, as one edit transaction with the caller as actor (same as `edits.apply`; `edits.undo` undoes and redoes it).
  *
- * 任务要是这个视频的、已完成的 `speakers` 流程；转写或它的译文在识别之后改过时 `conflict`（`STALE_JOB_INPUT`）。
+ * The task must be a completed `speakers` pipeline for this video. If the transcript or its translation was edited after identification, it returns `conflict` (`STALE_JOB_INPUT`).
  */
 export async function applySpeakerProposal(
   deps: { videos: VideoService; jobs: Pick<JobManager, 'inspect' | 'artifacts'> },

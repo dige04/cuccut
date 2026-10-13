@@ -1,35 +1,34 @@
-//! Path 的绘制属性（规范 §6.2.1）：纹理填充、描边抖动、线帽 / 接头 / 虚线、
-//! 填充规则，以及 `cadence` 采样域声明（规范 §7.10）。
+//! Drawing attributes of a Path (spec §6.2.1): texture fill, stroke jitter, line caps / joins / dashes,
+//! fill rule, and the `cadence` sampling-domain declaration (spec §7.10).
 //!
-//! 这里只做**解析与校验**（封闭键集、取值域），生成几何是 host 的事
-//! （`ccut-render::source::texture`）。所有长度都在**路径自身坐标系**里
-//! （即 `<Svg viewBox>` 的单位），与 `strokeWidth` 同一口径，随 svg 缩放。
+//! This module only **parses and validates** (closed key set, value ranges). Generating geometry is the host's job
+//! (`ccut-render::source::texture`). All lengths are in the **path's own coordinate system**
+//! (the units of `<Svg viewBox>`), using the same convention as `strokeWidth`, and they scale with the svg.
 
 use crate::color::Rgba;
 use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 
-/// 纹理填充算法版本。改生成规则（行序、取随机数的次序、默认值）必须升版，
-/// 它参与缓存键与几何摘要。
+/// Texture fill algorithm version. Changing the generation rules (row order, the order in which random numbers are drawn, default values) must bump the version. It takes part in the cache key and the geometry digest.
 pub const TEXTURE_ALGORITHM_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Finish {
-    /// 无纹理。让 `finish: "$theme.look.finish"` 可以整片切回平涂。
+    /// No texture. Lets `finish: "$theme.look.finish"` switch a whole piece back to flat fill.
     Flat,
-    /// 平行短线 + 颗粒。
+    /// Parallel short lines + grain.
     Ink,
-    /// 稀疏细线 + 颗粒。
+    /// Sparse thin lines + grain.
     Pencil,
-    /// 只有颗粒。
+    /// Grain only.
     Grain,
-    /// 正交点阵，点面积 = 覆盖率。
+    /// Orthogonal dot grid; dot area = coverage.
     Screen,
-    /// 旋转点阵 + 轻微抖动。
+    /// Rotated dot grid + slight jitter.
     Riso,
     /// Translucent pigment patches, clipped to the original fill geometry.
     Wash,
-    /// 油画笔触：沿 `angle` 一行行铺带鬃毛纹理的笔，底色取路径 `fill`。
+    /// Oil-paint stroke: laid down row by row along `angle`, with bristle-textured brush strokes. The base colour is taken from the path `fill`.
     Paint,
 }
 
@@ -74,7 +73,7 @@ impl Finish {
     }
 }
 
-/// 覆盖率场：标量，或闭集函数（`cx / cy / r` 是路径包围盒的比例）。
+/// Coverage field: a scalar, or a function from a closed set (`cx / cy / r` are proportions of the path's bounding box).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Density {
     Flat(f64),
@@ -93,7 +92,7 @@ pub enum Density {
 }
 
 impl Density {
-    /// `(u, v)` 是包围盒内的比例坐标。返回值夹在 `[0, 1]`。
+    /// `(u, v)` are proportional coordinates within the bounding box. The return value is clamped to `[0, 1]`.
     pub fn at(&self, u: f64, v: f64) -> f64 {
         let value = match *self {
             Density::Flat(value) => value,
@@ -122,29 +121,29 @@ pub struct PathTexture {
     pub finish: Finish,
     pub color: Rgba,
     pub alpha: f64,
-    /// 排线方向 / 点阵旋转（弧度）。
+    /// Hatch direction / dot-grid rotation (radians).
     pub angle: f64,
-    /// 排线行距 / 点阵格距。
+    /// Hatch line spacing / dot-grid cell spacing.
     pub gap: f64,
-    /// 排线单段长度（只对 `ink` / `pencil`）。
+    /// Length of a single hatch segment (only for `ink` / `pencil`).
     pub len: f64,
-    /// 排线线宽（只对 `ink` / `pencil`）。
+    /// Hatch line width (only for `ink` / `pencil`).
     pub width: f64,
     pub density: Density,
     pub jitter: f64,
-    /// 颗粒数量（0 = 不要颗粒）。
+    /// Grain count (0 = no grain).
     pub grain: u32,
     pub grain_color: Option<Rgba>,
     pub grain_alpha: f64,
     pub grain_size: f64,
     pub seed: u64,
-    /// `paint` 的干笔程度 0..1（其它 finish 忽略）。
+    /// Dry-brush amount for `paint`, 0..1 (other finishes ignore it).
     pub dry: f64,
-    /// `paint` 的第二种颜料（其它 finish 忽略）。
+    /// Second paint colour for `paint` (other finishes ignore it).
     pub load: Option<Rgba>,
 }
 
-/// 颗粒数量上限：一条路径的颗粒合成一次 fill，太多只会拖慢光栅化。
+/// Upper limit on grain count: one path's grain is composited as a single fill, so too many just slows rasterization.
 pub const GRAIN_MAX: u32 = 40_000;
 
 const TEXTURE_KEYS: &[&str] = &[
@@ -261,7 +260,7 @@ impl Density {
 }
 
 impl PathTexture {
-    /// `value` 必须已经过 `$theme` / `$vars` 引用解析。`null` ⇒ `None`。
+    /// `value` must already have had `$theme` / `$vars` references resolved. `null` ⇒ `None`.
     pub fn parse(value: &Value) -> Result<Option<PathTexture>> {
         if value.is_null() {
             return Ok(None);
@@ -299,7 +298,7 @@ impl PathTexture {
                 None => bail!("schema: texture.grainColor 不是合法颜色：{value}"),
             },
         };
-        // 各 finish 的缺省值。改这张表 = 改算法版本。
+        // Default value for each finish. Changing this table = changing the algorithm version.
         let (angle, gap, len, width, density, jitter, alpha) = match finish {
             Finish::Pencil => (0.6, 7.0, 22.0, 0.9, 0.3, 1.5, 0.5),
             Finish::Screen => (0.0, 6.0, 0.0, 0.0, 0.4, 0.0, 0.6),
@@ -339,9 +338,8 @@ impl PathTexture {
     }
 }
 
-/// 描边抖动：逐顶点按 `(seed, 顶点序号)` 偏移，填充不跟着动。
-/// `every > 0` ⇒ 每 `every` 个绘制帧重播种一次（boil）；绘制帧率取节点所在
-/// `cadence` 采样域，域外按 [`DEFAULT_DRAW_FPS`]。
+/// Stroke jitter: per-vertex offset keyed by `(seed, vertex index)`. The fill does not move.
+/// `every > 0` ⇒ re-seed once every `every` draw frames (boil). The draw frame rate is taken from the node's `cadence` sampling domain; outside any domain, [`DEFAULT_DRAW_FPS`] is used.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PathWobble {
     pub amp: f64,
@@ -349,7 +347,7 @@ pub struct PathWobble {
     pub every: u32,
 }
 
-/// 没有 `cadence` 采样域时 boil 的计帧频率。
+/// Frame rate at which boil is counted when there is no `cadence` sampling domain.
 pub const DEFAULT_DRAW_FPS: f64 = 12.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,7 +355,7 @@ pub enum BrushKind {
     Clean,
     Pencil,
     Ink,
-    /// 油画笔触：渐细的鬃毛带、干笔断续、两色含色（`ccut-render::source::paint`）。
+    /// Oil-paint stroke: tapering bristle bands, dry-brush breaks, two-colour mixing (`ccut-render::source::paint`).
     Paint,
 }
 
@@ -366,9 +364,9 @@ pub struct StrokeBrush {
     pub kind: BrushKind,
     pub seed: u64,
     pub roughness: f64,
-    /// 只对 `paint`：干笔程度 0..1，缺省 0.35。
+    /// `paint` only: dry-brush amount, 0..1, default 0.35.
     pub dry: f64,
-    /// 只对 `paint`：第二种颜料。
+    /// `paint` only: second paint colour.
     pub load: Option<Rgba>,
 }
 
@@ -388,7 +386,7 @@ impl StrokeBrush {
         if kind != BrushKind::Paint && (map.contains_key("dry") || map.contains_key("load")) {
             bail!("schema: brush.dry / brush.load 只对 kind: \"paint\" 生效");
         }
-        // paint 的 roughness 是观感倍数（1 = 缺省），其余是复线偏移的路径单位
+        // For paint, roughness is a perceptual multiplier (1 = default). The others are double-line offsets in path units.
         let default = if kind == BrushKind::Paint { 1.0 } else { 0.7 };
         let roughness = finite(map, "roughness", "brush")?.unwrap_or(default);
         if !(0.0..=10.0).contains(&roughness) {
@@ -529,7 +527,7 @@ impl LineCap {
             _ => return None,
         })
     }
-    /// `DrawOp::StrokePathPaint.cap` 的编码。
+    /// Encoding of `DrawOp::StrokePathPaint.cap`.
     pub fn code(self) -> u8 {
         match self {
             LineCap::Butt => 0,
@@ -548,7 +546,7 @@ impl LineJoin {
             _ => return None,
         })
     }
-    /// `DrawOp::StrokePathPaint.join` 的编码。
+    /// Encoding of `DrawOp::StrokePathPaint.join`.
     pub fn code(self) -> u8 {
         match self {
             LineJoin::Miter => 0,
@@ -558,7 +556,7 @@ impl LineJoin {
     }
 }
 
-/// `dash`：`[画, 空, 画, 空, …]`，路径自身坐标；奇数个按 SVG 规则重复一遍。
+/// `dash`: `[on, off, on, off, …]`, in the path's own coordinates. With an odd count, it is repeated once, per SVG rules.
 pub fn parse_dash(value: &Value) -> Result<Vec<f64>> {
     if value.is_null() {
         return Ok(Vec::new());
@@ -586,19 +584,19 @@ pub fn parse_dash(value: &Value) -> Result<Vec<f64>> {
     Ok(out)
 }
 
-/// `cadence` 采样域声明（规范 §7.10）。
+/// `cadence` sampling-domain declaration (spec §7.10).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Cadence {
-    /// 没写：沿用父域。
+    /// Omitted: inherit the parent domain.
     #[default]
     Inherit,
-    /// `"none"`：显式退出父域，走真实时间。
+    /// `"none"`: explicitly leave the parent domain and use real time.
     Off,
-    /// `{ fps }`：开一个新的绘制频率域。
+    /// `{ fps }`: open a new drawing-frequency domain.
     Fps(f64),
 }
 
-/// 绘制频率的取值域。上限只是防呆：高于输出帧率的 cadence 没有意义。
+/// Value range for drawing frequency. The upper bound is only a guard: a cadence above the output frame rate is meaningless.
 pub const CADENCE_FPS_RANGE: (f64, f64) = (1.0, 120.0);
 
 impl Cadence {
@@ -623,7 +621,7 @@ impl Cadence {
         }
     }
 
-    /// 在父域 `parent` 之下，本声明生效后的绘制频率。
+    /// The drawing frequency in effect after this declaration, under parent domain `parent`.
     pub fn apply(self, parent: Option<f64>) -> Option<f64> {
         match self {
             Cadence::Inherit => parent,
@@ -633,13 +631,12 @@ impl Cadence {
     }
 }
 
-/// 把真实时间 `t` 量化到 `fps` 的绘制帧起点。整数帧号换算，边界加 1e-9
-/// 防 `k/fps * fps` 的浮点回落。
+/// Quantizes real time `t` to the drawing-frame start for `fps`. Done with integer frame-number arithmetic; the boundary gets +1e-9 to guard against floating-point drift in `k/fps * fps`.
 pub fn hold(t: f64, fps: f64) -> f64 {
     ((t * fps) + 1e-9).floor() / fps
 }
 
-/// `t` 所在的绘制帧编号（boil 的重播种计数）。
+/// The drawing-frame number that `t` falls in (boil's re-seed counter).
 pub fn draw_frame(t: f64, fps: f64) -> u64 {
     ((t * fps) + 1e-9).floor().max(0.0) as u64
 }
@@ -716,7 +713,7 @@ mod tests {
             assert_eq!(draw_frame(t, 12.0), u64::from(k), "k={k}");
             assert!((hold(t, 12.0) - t).abs() < 1e-9);
         }
-        // 24 fps 输出下每张画保持两帧
+        // At 24 fps output, each drawing is held for two frames
         assert_eq!(hold(1.0 / 24.0, 12.0), 0.0);
         assert_eq!(draw_frame(3.0 / 24.0, 12.0), 1);
         assert_eq!(Cadence::parse(&json!("none")).unwrap(), Cadence::Off);
@@ -729,8 +726,8 @@ mod tests {
     }
 }
 
-/// 作者层种子派生：FNV-1a 32 over UTF-8 of `keys.join("/")`。
-/// `@cuccut/sketch` 的 `seedOf` 是同一算法的 JS 实现，由 `ccut-compile/tests/sketch_module.rs` 对拍。
+/// Author-level seed derivation: FNV-1a 32 over UTF-8 of `keys.join("/")`.
+/// `seedOf` in `@cuccut/sketch` is the JS implementation of the same algorithm; `ccut-compile/tests/sketch_module.rs` cross-checks the two.
 pub fn author_seed(keys: &[&str]) -> u32 {
     let mut hash: u32 = 0x811c_9dc5;
     for byte in keys.join("/").bytes() {

@@ -26,9 +26,9 @@ export function AppShell({ platform }: { platform: string }) {
   const route = useShell((s) => s.route);
   const video = routeVideo(route);
 
-  // 打开的视频跟着路由走：同一个视频在 Home 与 Space 之间切换时不重新打开；路由换到另一个视频时，打开它会先关掉旧的。
-  // 路由上没有视频（换到文件标签、换会话、收起右侧区域、去别的入口）时，只要还有哪条会话的功能区标签引用着它就不关——
-  // 编辑器留着选区、播放头与撤销栈，切回来不重新打开；视频标签都关掉了才关，Runtime 在没有打开者之后释放它。
+  // The open video follows the route: switching between Home and Space does not reopen the same video; when the route changes to a different video, opening it first closes the old one.
+  // When the route has no video (switching to a file tab, switching session, collapsing the right panel, or going to another entry), it is not closed as long as any session's panel tab still references it——
+  // the editor keeps its selection, playhead and undo stack, so switching back does not reopen it; it is closed only once all video tabs are closed, and the Runtime releases it after it has no opener.
   const videoKey = video ? JSON.stringify(video) : null;
   const openKey = useVideo((s) => (s.video ? targetKey(s.video.target) : null));
   const referenced = useShell((s) => openKey !== null && isVideoReferenced(s.workspaces, openKey));
@@ -37,11 +37,11 @@ export function AppShell({ platform }: { platform: string }) {
     else if (!referenced) runtime.videos.close();
   }, [runtime, videoKey, referenced]);
 
-  // 忙时排队的消息：哪条会话的任务结束了就发它队首的那一条，不管现在看的是哪个页面。
+  // Messages queued while busy: when a session's task finishes, its first queued message is sent, regardless of which page is currently shown.
   useEffect(() => startQueueRunner(runtime, (message) => ToastQueue.negative(QUEUE_COPY.failed(message), { timeout: 5000 })), [runtime]);
 
-  // 全局快捷键（原型 main.jsx）：⌘[ / ⌘] 后退前进（Windows 与 Linux 用 Alt+←/→），⌘N 新建会话，⇧⌘H Space，
-  // ⇧⌘B 后台任务，⌘, 设置，⌃⌘S 开合侧栏。Windows 与 Linux 上 ⌘ 换成 Ctrl。
+  // Global shortcuts (prototype main.jsx): ⌘[ / ⌘] go back and forward (Alt+←/→ on Windows and Linux), ⌘N new session, ⇧⌘H Space,
+  // ⇧⌘B background tasks, ⌘, settings, ⌃⌘S toggles the sidebar. On Windows and Linux, ⌘ becomes Ctrl.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const action = shellShortcut(event, platform === 'darwin');
@@ -60,8 +60,8 @@ export function AppShell({ platform }: { platform: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [platform]);
 
-  // F1 打开帮助中心（原型 shell.jsx）：已有对话框、菜单或下拉开着时不响应（帮助本身也是对话框，开着时按 F1 不重复打开）。
-  // 提示条（Toast）也带 alertdialog，它在提示区（region）里，不算挡住 F1 的对话框。
+  // F1 opens the help center (prototype shell.jsx): it does nothing while a dialog, menu or dropdown is already open (help is itself a dialog, so pressing F1 while it is open does not open it again).
+  // Toasts also carry alertdialog, but they sit in the notification region, so they do not count as a dialog blocking F1.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'F1' || event.defaultPrevented) return;
@@ -99,16 +99,16 @@ export function AppShell({ platform }: { platform: string }) {
           )}
         </main>
         <HelpCenter platform={platform} />
-        {/* 应用更新：离开设置页照样收主进程的状态、弹 toast；更新窗与停止屏障也挂在这里。 */}
+        {/* App updates: the main process's status is still received and toasts still appear after leaving the settings page; the update window and stop barrier are also mounted here. */}
         <AppUpdateHost />
-        {/* 启动时的旧版项目导入询问：Runtime 发现还没导入的旧版项目、又没有记下决定时问一次（Web 不问）。 */}
+        {/* Startup prompt to import legacy projects: asked once when the Runtime finds legacy projects that have not been imported and no decision has been recorded (the web does not ask). */}
         <LegacyImportHost />
       </div>
     </>
   );
 }
 
-/** 真开着的确认框（S2 AlertDialog）；提示区里的 Toast 同样是 alertdialog，不算。 */
+/** A confirmation dialog that is actually open (S2 AlertDialog); Toasts in the notification region are also alertdialogs, but they do not count. */
 function hasAlertDialog(): boolean {
   return Array.from(document.querySelectorAll('[role="alertdialog"]')).some((el) => !el.closest('[role="region"]'));
 }

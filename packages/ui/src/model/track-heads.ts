@@ -2,24 +2,23 @@ import type { CaptionItem, DocumentRecord, Id, Sequence, Track } from '@cuccut/p
 import { captionKind } from './caption-tracks.ts';
 
 /**
- * 时间线行头的语言标签（原型 model-timeline.js 的 `langTag` / `headTags`，2026-10-08）。行头只有 144px，「字幕 · 简体中文」
- * 这类全名在别的界面语言里更长，放不下；字幕行与配音行写 ZH、EN、PT-BR 这样的短标签，任何界面语言下都一样宽。
- * 原文与译文靠行头图标分开，全名与原文 / 译文进悬停说明。没有语言的行照旧写全名。
+ * Language tags for timeline row heads (prototype model-timeline.js `langTag` / `headTags`, 2026-10-08). A row head is only 144px wide, and full names such as 「字幕 · 简体中文」 (Subtitles · Simplified Chinese) are longer in other UI languages and do not fit, so subtitle and dub rows use short tags such as ZH, EN, PT-BR, which keep the same width in every UI language.
+ * Source and translation are told apart by the row-head icon, and the full name and source / translation go in the hover tooltip. Rows without a language keep writing the full name as before.
  */
 
-/** 语言标签：去掉首尾空白、下划线换成连字符、大写（`pt_BR` → `PT-BR`）。没有语言时是空串。 */
+/** Language tag: trims surrounding whitespace, replaces underscores with hyphens, and uppercases (`pt_BR` → `PT-BR`). Empty string when there is no language. */
 export function languageTag(language: string | null | undefined): string {
   return (language ?? '').trim().replace(/_/g, '-').toUpperCase();
 }
 
-/** 一行的语言：字幕行或配音行，别的行不写标签。 */
+/** A row's language: for subtitle or dub rows only; other rows get no tag. */
 export interface HeadLanguage {
   trackId: Id;
   group: 'subtitle' | 'dub';
   language: string | null;
 }
 
-/** 各行的标签。同一类（字幕 / 配音）里同一个标签不止一行时按行的先后编号（「EN 1」「EN 2」），没有语言的行不在里面。 */
+/** Tags for each row. When the same tag appears on more than one row of the same kind (subtitle / dub), rows are numbered in order (「EN 1」 「EN 2」). Rows without a language are not included. */
 export function headTags(rows: readonly HeadLanguage[]): Map<Id, string> {
   const count = new Map<string, number>();
   for (const row of rows) {
@@ -40,8 +39,8 @@ export function headTags(rows: readonly HeadLanguage[]): Map<Id, string> {
 }
 
 /**
- * 字幕行是哪门语言、原文还是译文：看这条轨上最早的字幕实例引用的字幕文档（与字幕轨条、预览同一个判法）。字幕文档没写语言时
- * 取它派生自的文档（转写或译文）的语言。轨上没有字幕实例时 null。
+ * Which language a subtitle row is in, and whether it is source or translation: look at the subtitle document referenced by the earliest subtitle instance on this track (the same rule as the subtitle track bar and the preview). When the subtitle document has no language written,
+ * use the language of the document it is derived from (transcript or translation). Null when the track has no subtitle instances.
  */
 export function subtitleTrackLanguage(
   sequence: Sequence,

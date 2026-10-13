@@ -38,15 +38,12 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import { jobErrorText, remedyHintText } from '../../model/localized-text.ts';
 
 /**
- * 字幕面板的「生成字幕」「重新转录」（原型 panel-subtitle.jsx 空态 → `LiveHead`）：提交转录流程（`pipelines.start` 的
- * `transcribe`，架构设计 §7.9），经 `jobs` 主题跟住父任务。流程转写之后自己建字幕层（jobs 的 caption-layer.ts，切法与
- * model/speech-cues.ts 相同）：新增一份转写、不覆盖；这个素材已经有原文字幕显示着时，新的一层停用着放上去。完成后按
- * `summary.captions` 选中新的那层、给带「撤销」的提示（撤的是流程建字幕层的那笔事务）。
+ * “Generate subtitles” and “Re-transcribe” in the subtitle panel (prototype panel-subtitle.jsx, empty state → `LiveHead`): submits the transcription flow (`transcribe` of `pipelines.start`, architecture design §7.9) and follows the parent task through the `jobs` topic. After the flow's transcribe step, the flow creates the subtitle layer itself (caption-layer.ts in jobs, split the same way as model/speech-cues.ts). A new transcript is added, not overwritten. When this asset already has original subtitles on screen, the new layer is added disabled. On completion, the new layer is selected per `summary.captions`, with a hint that offers “Undo” (it undoes the transaction that created the subtitle layer in the flow).
  *
- * 用视频里已有的转写生成（`generateFromSpeech`）不再识别，仍在编辑器里切好、一笔事务写进去。
+ * Generating from a transcript already in the video (`generateFromSpeech`) doesn't recognize again; it is still cut in the editor and written as one transaction.
  *
- * 状态放在模块级的 store 里而不是面板里：样式入口卡会切到属性页，字幕面板随之卸载，转录不能因此断了线。
- * 别处（智能体、命令行）发起的转录只显示进度，完成后由用户点「生成字幕」用它写进视频的转写。
+ * The state lives in a module-level store rather than in the panel: the style entry card switches to the properties page, which unmounts the subtitle panel, and the transcription must not lose its connection because of that.
+ * Transcriptions started elsewhere (by an agent, or from the command line) only show progress; after completion, the user clicks “Generate subtitles” to write the transcript into the video.
  */
 
 export type RunStatus = 'submitting' | 'running' | 'writing';
@@ -55,7 +52,7 @@ export interface TranscribeRun {
   videoId: Id;
   assetId: Id;
   assetName: string;
-  /** 提交成功之前、以及直接用已有转写生成时为 null。 */
+  /** null before submission succeeds, and when generating directly from an existing transcript. */
   jobId: Id | null;
   status: RunStatus;
 }
@@ -66,24 +63,24 @@ export interface TranscribeProblem {
   kind: ProblemKind;
   title: string;
   message: string;
-  /** 去模型页、设置或服务页的补救（`jobRemedy`）。 */
+  /** Remedy that sends the user to the model page, settings, or service page (`jobRemedy`). */
   remedy: Remedy | null;
 }
 
 interface SubtitleRunState {
   runs: Record<Id, TranscribeRun>;
   problems: Record<Id, TranscribeProblem>;
-  /** 刚生成的字幕文档：面板下次渲染时选中它。 */
+  /** The subtitle document just generated: the panel selects it on its next render. */
   focus: Record<Id, Id>;
-  /** 每个视频里轨条选中的 chip（面板卸载再挂回来时还在）。 */
+  /** The track chip selected in each video's track bar (kept when the panel unmounts and mounts again). */
   chosen: Record<Id, string>;
-  /** 每个视频的转录设置（语言、模型、提示词）；没有时用默认值。术语表不在这里：那是视频自己记的。 */
+  /** Transcription settings per video (language, model, prompt); default values when none are set. The glossary is not here: the video keeps that itself. */
   setups: Record<Id, TranscribeSetup>;
 }
 
 export const useSubtitleRun = create<SubtitleRunState>()(() => ({ runs: {}, problems: {}, focus: {}, chosen: {}, setups: {} }));
 
-/** 用到的会话能力；测试给假的。 */
+/** Session capabilities used; tests supply fakes. */
 export interface TranscribeDeps {
   runtime: {
     startPipeline(pipeline: string, params: Record<string, unknown>): Promise<Id>;
@@ -94,20 +91,20 @@ export interface TranscribeDeps {
       undo(target: UndoTarget): Promise<TransactionReceipt | null>;
     };
   };
-  /** `undo` 有值时提示带「撤销」。 */
+  /** When `undo` has a value, the hint includes “Undo”. */
   toast(kind: 'positive' | 'neutral' | 'negative', message: string, undo?: () => void): void;
 }
 
 let deps: TranscribeDeps | null = null;
 let unwatch: (() => void) | null = null;
 
-/** 面板挂上时绑定会话与提示；第一次绑定时开始盯 `jobs` 主题。 */
+/** When the panel mounts, binds the session and hints; on the first binding, starts watching the `jobs` topic. */
 export function bindTranscribe(next: TranscribeDeps): void {
   deps = next;
   unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
 }
 
-/** 测试用：解绑并清空状态。 */
+/** For tests: unbind and clear the state. */
 export function resetTranscribe(): void {
   unwatch?.();
   unwatch = null;
@@ -128,7 +125,7 @@ function patchRun(videoId: Id, patch: Partial<TranscribeRun>): void {
   useSubtitleRun.setState((s) => (s.runs[videoId] ? { runs: { ...s.runs, [videoId]: { ...s.runs[videoId]!, ...patch } } } : {}));
 }
 
-/** 结束这一轮；带问题时把问题留在面板上。 */
+/** End this round. If there is a problem, leave it on the panel. */
 function endRun(videoId: Id, problem?: TranscribeProblem): void {
   useSubtitleRun.setState((s) => ({
     runs: without(s.runs, videoId),
@@ -137,9 +134,7 @@ function endRun(videoId: Id, problem?: TranscribeProblem): void {
 }
 
 /**
- * 要用户在任务详情里拿主意的转写 Job（架构设计 §7.5）：结果不明（可能已经计费，不自动重发），或识别结果在、没写进视频
- * （`APPLY_FAILED`、`STALE_JOB_INPUT`，可以重新写入）。转录流程的转写一步碰上这种 Job 时流程失败，这里指到那个 Job；
- * 处理完、转写写进视频之后，「生成字幕」会直接用它。用户自己取消的（`cancelled`，哪怕结果在）不再追问。
+ * A transcribe Job that needs the user to decide in the task details (architecture design §7.5): the result is unknown (it may already be billed, so it is not resent automatically), or the recognition result exists but was not written into the video (`APPLY_FAILED`, `STALE_JOB_INPUT`; it can be written again). When the transcribe step of the transcription flow hits such a Job, the flow fails and points to that Job. Once it has been handled and the transcript has been written into the video, “Generate subtitles” uses it directly. A job the user cancelled (`cancelled`, even if the result exists) is no longer asked about.
  */
 export function awaitingDecision(job: JobRecord): boolean {
   return job.state === 'needs-reconciliation' || (job.state === 'failed' && reconcileOptions(job).includes('apply'));
@@ -163,12 +158,12 @@ export function chooseChip(videoId: Id, key: string): void {
   useSubtitleRun.setState((s) => ({ chosen: { ...s.chosen, [videoId]: key } }));
 }
 
-/** 改这个视频的转录设置（没设过时从默认值改起）。 */
+/** Change this video's transcription settings (starts from the defaults if never set). */
 export function patchSetup(videoId: Id, base: TranscribeSetup, patch: Partial<TranscribeSetup>): void {
   useSubtitleRun.setState((s) => ({ setups: { ...s.setups, [videoId]: { ...(s.setups[videoId] ?? base), ...patch } } }));
 }
 
-/** 让面板选中这份字幕文档（生成或导入之后）。 */
+/** Makes the panel select this subtitle document (after generating or importing it). */
 export function focusDocument(videoId: Id, documentId: Id): void {
   useSubtitleRun.setState((s) => ({ focus: { ...s.focus, [videoId]: documentId } }));
 }
@@ -186,7 +181,7 @@ function isNotConfigured(details: unknown): details is CapabilityNotConfiguredDe
   );
 }
 
-/** 提交时被拒：没有配置转录时就地给出原因、`remedy.hint` 与去处。 */
+/** Submission rejected: when transcription isn't configured, give the reason in place, plus `remedy.hint` and where to go. */
 export function submitProblem(error: unknown): TranscribeProblem {
   const message = error instanceof Error ? error.message : String(error);
   const details = error instanceof RpcError ? error.details : (error as { details?: unknown } | null)?.details;
@@ -203,12 +198,12 @@ export function submitProblem(error: unknown): TranscribeProblem {
 
 export interface MediaCandidate {
   asset: AssetRecord;
-  /** 这段素材已有的转写（最新的那份）：有就直接用它生成，不再识别。 */
+  /** This asset's existing transcript (the latest one). If present, subtitles are generated from it directly, without recognizing again. */
   speech: DocumentRecord | null;
 }
 
 /**
- * 能生成字幕的素材：时间线上放着、能投影到序列上的视频与音频（只在库里的转录了也落不到画面上），按在时间线上第一次出现的先后排。
+ * Assets that can generate subtitles: video and audio placed on the timeline that can be projected onto the sequence. (An asset that is only in the library, even if transcribed, can't reach the picture.) Ordered by first appearance on the timeline.
  */
 export function mediaCandidates(sequence: Sequence, assets: Record<Id, AssetRecord>, documents: Record<Id, DocumentRecord>): MediaCandidate[] {
   const created = (record: DocumentRecord) => record.revisions[record.currentRevision]?.createdAt ?? '';
@@ -226,10 +221,10 @@ export function mediaCandidates(sequence: Sequence, assets: Record<Id, AssetReco
 
 const startFrame = (item: Sequence['items'][number]) => ('span' in item ? item.span.fromFrame : item.fromFrame);
 
-/** 去掉扩展名的素材名，当字幕文档的名字。 */
+/** Asset name without its extension, used as the subtitle document's name. */
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '') || name;
 
-/** 提交转录流程。同一个视频同时只跑一轮。`options` 是转录设置里偏离默认的那几项（`transcribeRequestOptions`）。 */
+/** Submit the transcription flow. Only one round at a time per video. `options` are the transcription settings that differ from the defaults (`transcribeRequestOptions`). */
 export async function startTranscribe(videoId: Id, asset: { id: Id; name: string }, options: TranscribeOptions = {}): Promise<void> {
   const bound = deps;
   if (!bound || useSubtitleRun.getState().runs[videoId]) return;
@@ -237,14 +232,14 @@ export async function startTranscribe(videoId: Id, asset: { id: Id; name: string
   try {
     const jobId = await bound.runtime.startPipeline('transcribe', { ...options, videoId, assetId: asset.id, captionStyle: newCaptionStyle() });
     patchRun(videoId, { jobId, status: 'running' });
-    // 任务事件可能比回执先到。
+    // Task events can arrive before the receipt.
     settle(useJobs.getState().jobs);
   } catch (error) {
     endRun(videoId, submitProblem(error));
   }
 }
 
-/** 不再转录，直接用视频里已有的转写生成字幕。 */
+/** No transcription: generates subtitles directly from the transcript already in the video. */
 export async function generateFromSpeech(videoId: Id, asset: { id: Id; name: string }, speechDocumentId: Id): Promise<void> {
   if (!deps || useSubtitleRun.getState().runs[videoId]) return;
   const run: TranscribeRun = { videoId, assetId: asset.id, assetName: asset.name, jobId: null, status: 'writing' };
@@ -260,7 +255,7 @@ export async function cancelTranscribe(jobId: Id): Promise<void> {
   }
 }
 
-/** 盯着从这里提交的任务：结束了就收尾。每一轮只收一次——先同步改掉状态，后面的事件看到不是 `running` 就跳过。 */
+/** Watch the task submitted from here: when it ends, wrap up. Each round is wrapped up only once. The state is changed synchronously first, so later events that see it isn't `running` skip it. */
 function settle(jobs: readonly JobRecord[]): void {
   for (const run of Object.values(useSubtitleRun.getState().runs)) {
     if (run.status !== 'running' || !run.jobId) continue;
@@ -271,7 +266,7 @@ function settle(jobs: readonly JobRecord[]): void {
   }
 }
 
-/** 转录流程的转写一步提交的 `transcribe` Job（重试过时取最新的）；不是流程或还没提交时 null。 */
+/** The `transcribe` Job submitted by the flow's transcribe step (the latest one if retried). null if this isn't a flow, or it hasn't been submitted yet. */
 export function transcribeStepJob(parent: JobRecord, jobs: readonly JobRecord[]): JobRecord | null {
   if (parent.kind !== 'pipeline') return null;
   return jobs
@@ -288,13 +283,13 @@ function finish(run: TranscribeRun, job: JobRecord, jobs: readonly JobRecord[]):
   if (job.state !== 'completed') {
     const step = transcribeStepJob(job, jobs);
     if (step && awaitingDecision(step)) return report(videoId, decisionProblem(step));
-    // 转写做完了、没有写出文档：没有音轨或没听到说话声（流程这一步记为失败）。
+    // Transcription finished without writing a document: there is no audio track, or no speech was heard (this step is recorded as failed).
     if (step?.state === 'completed' && !step.result?.documentId) return report(videoId, silence(step));
     return report(videoId, {
       kind: 'failed',
       title: job.state === 'interrupted' ? C.interrupted : C.failed,
       message: jobErrorText(job.error) ?? '',
-      // 父任务的种类是 `pipeline`，补救按转写找（凭据、模型包问题去模型页）。
+      // The parent task's kind is `pipeline`, so the remedy is looked up by the transcribe step (credential and model pack problems go to the model page).
       remedy: jobRemedy({ kind: 'transcribe', providerId: job.providerId, error: job.error }),
     });
   }
@@ -309,7 +304,7 @@ function finish(run: TranscribeRun, job: JobRecord, jobs: readonly JobRecord[]):
   const bound = deps;
   const count = captions.cueCount ?? 0;
   const transactionId = captions.transactionId;
-  // 撤销作用在编辑器开着的视频上：换了视频就不给。
+  // Undo applies to the video open in the editor; it isn't offered if the video has changed.
   const here = useVideo.getState().video?.videoId === videoId;
   bound?.toast(
     'positive',
@@ -328,8 +323,8 @@ function silence(job: JobRecord): TranscribeProblem {
 }
 
 /**
- * Runtime 写 `speech`（翻译是 `translation`）文档会推进视频的版本：等快照里出现这份文档再提交，否则拿着旧版本去提交会被当成冲突。
- * 等不到（换了视频、视频重开）时返回 false。
+ * When the Runtime writes a `speech` document (translation is `translation`), it advances the video version. Wait for that document to appear in the snapshot before submitting; otherwise submitting with the old version is treated as a conflict.
+ * Returns false if it never appears (the video changed, or was reopened).
  */
 export function waitForDocument(videoId: Id, documentId: Id, ms = 10_000): Promise<boolean> {
   const ready = () => {
@@ -351,7 +346,7 @@ export function waitForDocument(videoId: Id, documentId: Id, ms = 10_000): Promi
   });
 }
 
-/** 转写已在视频里、但这一轮没生成字幕：留一句话，「生成字幕」会走已有转写那条路。 */
+/** The transcript is already in the video, but this round generated no subtitles: leave a line saying so; “Generate subtitles” will take the path that uses the existing transcript. */
 function leavePending(run: TranscribeRun, message: string = C.pending): void {
   endRun(run.videoId, { kind: 'pending', title: C.pendingTitle, message, remedy: null });
   if (useVideo.getState().video?.videoId !== run.videoId) deps?.toast('neutral', C.otherVideo(run.assetName));
@@ -371,7 +366,7 @@ async function writeCaptions(run: TranscribeRun, speechDocumentId: Id): Promise<
     const snapshot = video?.videoId === videoId && canEdit(video) ? video.state!.video : null;
     const sequence = snapshot ? rootSequence(snapshot) : null;
     if (!sequence) return leavePending(run);
-    // 字幕在素材时钟上切；时间线上一个词也投不到时（素材裁掉了说话的部分）不写。
+    // Subtitles are cut on the asset clock. When no word can be projected onto the timeline (the asset trimmed away the speech), nothing is written.
     const placed = projectSpeech(sequence, assetId, speech.words);
     if (!placed.length) return endRun(videoId, { kind: 'empty', title: C.offTimelineTitle, message: C.offTimeline, remedy: null });
     const cues = deriveCues(speech.words);
@@ -394,7 +389,7 @@ async function writeCaptions(run: TranscribeRun, speechDocumentId: Id): Promise<
       assetId,
       trackName: C.trackName,
     });
-    // 失败时编辑器已经提示了引擎的原话；转写还在视频里，留一句怎么接着做。
+    // On failure the editor has already shown the engine's own words. The transcript is still in the video, so leave a note on how to continue.
     const receipt = await bound.runtime.videos.apply(withNewCaptionStyle(operations, newCaptionStyle()), EditLabel.generateSubtitles());
     if (!receipt) return endRun(videoId, { kind: 'failed', title: C.writeFailedTitle, message: C.pending, remedy: null });
     const documentId = receipt.refs?.['speech-caption'];

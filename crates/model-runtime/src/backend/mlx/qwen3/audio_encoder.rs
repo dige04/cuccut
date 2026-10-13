@@ -1,13 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/AudioEncoder.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/AudioEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3-ASR 的音频塔：三层 stride-2 卷积 + Transformer 编码器（分块注意力）+ 两层投影。
+//! Qwen3-ASR's audio tower: three stride-2 convolution layers + a Transformer encoder (chunked attention) + two projection layers.
 //!
-//! `LARGE`（Qwen3-ASR 1.7B）与 `FORCED_ALIGNER`（Qwen3-ForcedAligner，卷积权重是 PyTorch 布局）移植自 v2。
+//! `LARGE` (Qwen3-ASR 1.7B) and `FORCED_ALIGNER` (Qwen3-ForcedAligner, whose convolution weights use PyTorch layout) were ported from v2.
 
 use super::WeightStore;
 use super::layers::gelu_same_dtype;

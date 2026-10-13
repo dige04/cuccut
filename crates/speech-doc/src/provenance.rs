@@ -1,12 +1,8 @@
-//! 译文溯源（设计 §11.3）：`ai/state/translation.<lang>.json`。
+//! Translation provenance (design §11.3): `ai/state/translation.<lang>.json`.
 //!
-//! 记录「某句译文是依据哪一版术语/上下文产出的」，术语被改动后即可判定该句
-//! 陈旧，而不必整篇重翻。本模块是纯函数：哈希用 [`crate::fingerprint`] 的确
-//! 定性摘要，文件读写与时钟一律在宿主。
+//! Records which version of the terminology/context a sentence's translation was produced from, so that once the terminology is changed the sentence can be judged stale, without re-translating the whole document. This module is pure functions: hashes use the deterministic digests from [`crate::fingerprint`], and file I/O and clocks are all handled by the host.
 //!
-//! 判据（已裁决，见 M4 报告）：**只有命中该句的术语行哈希集合发生变化才算
-//! stale**。摘要/文风差异只作 advisory 上报——否则每次重跑 analysis 让摘要
-//! 换一个字，全文都会被判陈旧，代价与收益完全不成比例。
+//! Criterion (decided, see the M4 report): **only a change in the set of hashes of the terminology rows that hit the sentence counts as stale**. Differences in summary/style are only reported as advisory. Otherwise, every re-run of analysis would change a word of the summary, and the whole document would be judged stale, with a cost wildly out of proportion to the benefit.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,19 +12,19 @@ use crate::engines::brief::{DocumentBrief, GlossaryEntry};
 use crate::engines::translate::term_present;
 use crate::fingerprint::fingerprint_strings;
 
-/// 单句译文的依据快照。
+/// Snapshot of the basis for a single sentence's translation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentenceProvenance {
-    /// 产出该句时的上下文摘要哈希。
+    /// Hash of the context summary at the time the sentence was produced.
     pub context_hash: String,
-    /// 产出该句时的文风哈希（`# Translation Style` + tone）。
+    /// Hash of the writing style at the time the sentence was produced (`# Translation Style` + tone).
     pub style_hash: String,
-    /// 命中该句的术语行哈希，已排序去重。
+    /// Hashes of the terminology rows that hit the sentence, sorted and de-duplicated.
     pub term_hashes: Vec<String>,
 }
 
-/// `ai/state/translation.<lang>.json` 的整体形状：句 id → 快照。
+/// Overall shape of `ai/state/translation.<lang>.json`: sentence id → snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TranslationProvenance {
@@ -44,7 +40,7 @@ impl TranslationProvenance {
         self.sentences.insert(sentence_id.into(), record);
     }
 
-    /// 文档已不存在的句子不留在状态里（否则文件随编辑单调膨胀）。
+    /// Sentences that no longer exist in the document are not kept in the state (otherwise the file would grow monotonically with editing).
     pub fn retain_sentences(&mut self, live: &BTreeSet<String>) {
         self.sentences.retain(|id, _| live.contains(id));
     }
@@ -54,19 +50,16 @@ impl TranslationProvenance {
     }
 }
 
-/// 一次 run 内固定的「当前依据」：由 brief（即 `context.<lang>.md` 的投影）
-/// 一次性算出，逐句复用。
+/// The “current basis” fixed for one run: computed once from the brief (i.e. the projection of `context.<lang>.md`) and reused sentence by sentence.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContextDigest {
     pub context_hash: String,
     pub style_hash: String,
-    /// `(source, hash)`，按 source 排序。
+    /// `(source, hash)`, sorted by source.
     terms: Vec<(String, String)>,
-    /// 是否真有一份可比较的依据（brief 存在）。
+    /// Whether there is actually a comparable basis (the brief exists).
     ///
-    /// 必须与「brief 存在但术语表为空」区分开：后者的空术语集是**真实**依据，
-    /// 用户删光术语理应让相关句子陈旧；而 `--no-brief` 这类根本没有依据的轮次
-    /// 一旦按空集比较，会把整篇已有译文判成陈旧、整篇重翻。
+    /// Must be distinguished from "the brief exists but the terminology table is empty": in the latter case the empty term set is a **real** basis, and the user deleting all terms should make the related sentences stale. A run with no basis at all, such as `--no-brief`, would, if compared against an empty set, judge the entire existing translation stale and re-translate the whole thing.
     basis: bool,
 }
 
@@ -80,9 +73,7 @@ fn term_hash(entry: &GlossaryEntry) -> String {
 }
 
 impl ContextDigest {
-    /// 从生效的双语简报构造。`brief` 为 `None`（本轮根本没有 context 可依据，
-    /// 例如 `--no-brief`）时返回无依据摘要：[`scan_provenance`] 会整体跳过判
-    /// 定，既不判陈旧也不报 advisory，账本原样留给下一次有依据的轮次。
+    /// Constructed from the effective bilingual brief. When `brief` is `None` (this run has no context to base on at all, e.g. `--no-brief`), a no-basis summary is returned: [`scan_provenance`] skips the whole judgment, neither marking anything stale nor reporting advisories, and the ledger is left as-is for the next run that has a basis.
     pub fn from_brief(brief: Option<&DocumentBrief>) -> Self {
         let Some(brief) = brief else {
             return Self::default();
@@ -109,12 +100,12 @@ impl ContextDigest {
         }
     }
 
-    /// 本轮是否真有可比较的依据。
+    /// Whether this run actually has a comparable basis.
     pub fn has_basis(&self) -> bool {
         self.basis
     }
 
-    /// 命中该句源文的术语行哈希（升序去重）。
+    /// Hashes of the terminology rows that hit the sentence's source text (ascending, de-duplicated).
     pub fn term_hashes_for(&self, source_text: &str) -> Vec<String> {
         let mut hits: Vec<String> = self
             .terms
@@ -127,7 +118,7 @@ impl ContextDigest {
         hits
     }
 
-    /// 该句在**当前**依据下应有的快照。
+    /// The snapshot this sentence should have under the **current** basis.
     pub fn record_for(&self, source_text: &str) -> SentenceProvenance {
         SentenceProvenance {
             context_hash: self.context_hash.clone(),
@@ -137,15 +128,15 @@ impl ContextDigest {
     }
 }
 
-/// 溯源扫描结果。
+/// Result of the provenance scan.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProvenanceScan {
-    /// 术语依据变化、必须重翻的句 id。
+    /// Sentence ids whose terminology basis has changed and that must be re-translated.
     pub stale: BTreeSet<String>,
-    /// 有译文但没有溯源记录的句 id（存量项目、或上一版 CLI 写的译文）。
-    /// 只作提示，不触发重翻。
+    /// Sentence ids that have a translation but no provenance record (legacy projects, or translations written by a previous CLI version).
+    /// Advisory only; does not trigger re-translation.
     pub unknown: BTreeSet<String>,
-    /// 术语没变但摘要/文风变了的句 id，仅 advisory。
+    /// Sentence ids whose terminology is unchanged but whose summary/style changed; advisory only.
     pub context_drift: BTreeSet<String>,
 }
 
@@ -155,13 +146,11 @@ impl ProvenanceScan {
     }
 }
 
-/// 扫描已有译文的溯源状态。
+/// Scan the provenance status of existing translations.
 ///
-/// `translated` 是已有该语言译文的句子 `(id, source_text)`——没有译文的句子
-/// 本来就会被 translate 的缺译判据选中，不必进溯源账本。
+/// `translated` is the sentences that already have a translation in this language, as `(id, source_text)`. Sentences without a translation are already picked up by translate's missing-translation criterion, so they need not go into the provenance ledger.
 ///
-/// `digest` 无依据（brief 缺席）时整体不判定：拿空术语集去比对已有记录，会把
-/// 每一条带术语的记录都算成「术语没了」，等于整篇重翻。
+/// When `digest` has no basis (the brief is absent), no judgment is made at all: comparing existing records against an empty terminology set would count every record that carries terms as "terms gone", which amounts to re-translating the whole document.
 pub fn scan_provenance<'a, I>(
     records: &TranslationProvenance,
     digest: &ContextDigest,
@@ -283,8 +272,7 @@ mod tests {
 
     #[test]
     fn missing_brief_never_marks_anything_stale() {
-        // `--no-brief` 之类的轮次没有依据可比。若按空术语集比对，s-1 会被判成
-        // 「术语没了」而整篇重翻——这里必须保持沉默。
+        // Runs such as `--no-brief` have no basis to compare against. If compared against an empty terminology set, s-1 would be judged "terms gone" and the whole document re-translated. This must stay silent here.
         let brief = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
         let digest = ContextDigest::from_brief(Some(&brief));
         let mut records = TranslationProvenance::default();
@@ -298,8 +286,7 @@ mod tests {
 
     #[test]
     fn empty_glossary_is_a_real_basis() {
-        // 与「没有 brief」相反：用户把术语删光了是**真实**依据变化，命中的句子
-        // 应当判陈旧。
+        // Contrast with "no brief": a user deleting all terms is a **real** change in basis, and the affected sentences should be judged stale.
         let before = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
         let digest_before = ContextDigest::from_brief(Some(&before));
         let mut records = TranslationProvenance::default();

@@ -15,17 +15,17 @@ export interface AcpInstall {
 
 const located = new Map<string, { at: number; result: Promise<AcpInstall | null> }>();
 
-/** 覆盖可执行文件位置的环境变量：`CUCCUT_GEMINI_PATH` 之类；id 里的连字符换成下划线（`my-agent` → `CUCCUT_MY_AGENT_PATH`）。 */
+/** The environment variables that override the executable location, e.g. `CUCCUT_GEMINI_PATH`. Hyphens in the id become underscores (`my-agent` → `CUCCUT_MY_AGENT_PATH`). */
 export function acpPathVariable(preset: Pick<AcpPreset, 'id'>): string {
   return `CUCCUT_${preset.id.toUpperCase().replace(/-/g, '_')}_PATH`;
 }
 
 /**
- * `CUCCUT_<ID>_PATH` 优先；否则在登录 shell 的 PATH 与已知安装位置里取版本最新的一个。
- * 结果按预设缓存 30 秒，避免每次开会话都跑一遍 `--version`。
+ * `CUCCUT_<ID>_PATH` takes precedence. Otherwise, among the login shell's PATH and the known install locations, pick the one with the newest version.
+ * Results are cached per preset for 30 seconds, so that `--version` does not run every time a session opens.
  */
 export function locateAcp(preset: AcpPreset): Promise<AcpInstall | null> {
-  // 键里带上命令：用户移除再以同一个 id 添加另一个命令时不沿用旧结果。
+  // The key includes the command: when a user removes an agent and then adds a different command under the same id, the old result is not reused.
   const key = `${preset.id}\0${preset.command}`;
   const hit = located.get(key);
   if (hit && Date.now() - hit.at <= 30_000) return hit.result;
@@ -36,12 +36,12 @@ export function locateAcp(preset: AcpPreset): Promise<AcpInstall | null> {
 
 async function findAcp(preset: AcpPreset): Promise<AcpInstall | null> {
   const env = await agentEnv();
-  // 没有最低版本的（用户添加的）不跑 `--version`：命令可能是 npx 这类，报的不是智能体的版本。
+  // Agents without a minimum version (user-added) do not run `--version`: the command may be something like npx, which would report a version other than the agent's.
   const readVersion = preset.minVersion !== null;
   const version = (command: string) => (readVersion ? readAcpVersion(command, env) : Promise.resolve(null));
   const override = process.env[acpPathVariable(preset)];
   if (override) return { command: override, version: await version(override), env };
-  // 绝对路径（用户添加时可以这样写）：只认这一个。
+  // An absolute path (which users may enter when adding) is accepted as the only candidate.
   if (path.isAbsolute(preset.command)) {
     return (await isExecutable(preset.command)) ? { command: preset.command, version: await version(preset.command), env } : null;
   }
@@ -57,14 +57,14 @@ async function findAcp(preset: AcpPreset): Promise<AcpInstall | null> {
   return pickNewest(candidates, async (command) => ({ command, version: await readAcpVersion(command, env), env }));
 }
 
-/** 用户手动指定的可执行文件：只认这一个，不再到别处找。不存在或不可执行时为 null。 */
+/** The executable the user specified manually. Only this one is accepted; nothing else is searched. Null when it does not exist or is not executable. */
 export async function acpAt(command: string, options: { readVersion?: boolean } = {}): Promise<AcpInstall | null> {
   if (!(await isExecutable(command))) return null;
   const env = await agentEnv();
   return { command, version: options.readVersion === false ? null : await readAcpVersion(command, env), env };
 }
 
-/** `--version` 输出里的第一个版本号（`0.46.0`、`2026.03.30-abc` 里的 `2026.03.30`、`kimi, version 0.11.0`）。 */
+/** The first version number in the `--version` output (`0.46.0`; `2026.03.30` from `2026.03.30-abc`; `0.11.0` from `kimi, version 0.11.0`). */
 export function parseAcpVersion(output: string): string | null {
   return /(\d+(?:\.\d+)+)/.exec(output)?.[1] ?? null;
 }

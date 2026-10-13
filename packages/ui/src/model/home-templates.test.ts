@@ -24,7 +24,7 @@ import {
   templateSpecLine,
 } from './home-templates.ts';
 
-/** 仓库顶层 templates/ 里的内置模板，按 `templates.list` 的样子包一层。 */
+/** Built-in templates from the top-level templates/ folder of the repo, wrapped in the shape of `templates.list`. */
 const TEMPLATES_DIR = path.resolve(import.meta.dirname, '../../../../templates');
 const BUILTIN: TemplateSummary[] = fs
   .readdirSync(TEMPLATES_DIR, { withFileTypes: true })
@@ -149,7 +149,7 @@ describe('模板库的筛选', () => {
     const scenesInMarketing = findTemplates(catalog, '', { kind: 'scene', category: 'marketing' });
     expect(scenesInMarketing.every((t) => t.kind === 'scene' && t.category === 'marketing')).toBe(true);
     expect(findTemplates(catalog, '推广').map((t) => t.id)).toContain('promo-ad');
-    // 标签也算
+    // Tags count too
     expect(findTemplates(catalog, '转化').map((t) => t.id)).toEqual(['promo-ad']);
   });
 

@@ -10,7 +10,7 @@ import { TRANSCRIBE_SETUP_COPY } from './transcribe-copy.ts';
 import { generateFromSpeech, mediaCandidates, startTranscribe, type MediaCandidate } from './transcribe-run.ts';
 import { TranscribeSettings, useTranscribeRequest } from './transcribe-settings.tsx';
 
-/** 转录设置展开后可能比面板高：空态自己滚。 */
+/** Once the transcription settings are expanded they may be taller than the panel, so the empty state scrolls by itself. */
 const scroller = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto' });
 const centered = style({
   display: 'flex',
@@ -29,9 +29,9 @@ const settings = style({ alignSelf: 'stretch', marginTop: 16, textAlign: 'start'
 const settingsNote = style({ margin: 0, marginTop: 4, font: 'ui-xs', color: 'gray-600' });
 
 /**
- * 字幕空态（原型 panel-subtitle.jsx 第 316–324 行）：有媒体时主按钮「生成字幕」，没有媒体时「添加媒体」；导入字幕文件一直在。
- * 要转录的素材只取时间线上放着的：只有一段就直接用，几段时用菜单选。素材已经转写过时直接用那份转写，不再识别。
- * 有要转录的素材时，按钮下面挂折起来的「转录设置」（语言、语音模型、识别提示）；不动它就是默认值。
+ * Subtitle empty state (prototype panel-subtitle.jsx lines 316–324): when there is media, the primary button is “生成字幕” (Generate subtitles); when there is none, “添加媒体” (Add media). Importing a subtitle file is always available.
+ * The clips to transcribe are only those placed on the timeline: with one clip it is used directly, with several a menu picks one. If the clip has already been transcribed, that transcript is used directly and nothing is recognized again.
+ * When there is a clip to transcribe, a collapsed “转录设置” (transcription settings: language, speech model, recognition prompt) hangs below the button; leaving it untouched means the defaults.
  */
 export function SubtitleEmpty({
   videoId,
@@ -47,7 +47,7 @@ export function SubtitleEmpty({
   assets: Record<Id, AssetRecord>;
   documents: Record<Id, DocumentRecord>;
   editable: boolean;
-  /** 这个视频正在转录或生成：按钮先停着，免得连点两次。 */
+  /** This video is being transcribed or generated: the button stays disabled so it cannot be clicked twice. */
   busy: boolean;
   onImport(): void;
 }) {

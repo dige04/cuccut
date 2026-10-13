@@ -1,15 +1,13 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering pipeline and the host byte layer), which do not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! video 元素媒体语义（§6.5）的录制期验证：帧精确量化、越界冻结、
-//! segment/loop 折叠、fit 三模式的变换与源裁剪。无媒体字节（只查 DrawOp）。
+//! Recording-time verification of video element media semantics (§6.5): frame-exact quantization, freezing out of range, segment/loop folding, and the transform and source cropping for the three fit modes. No media bytes (only DrawOp is checked).
 
 use render_raster::drawop::DrawOp;
 use render_raster::{FrameRenderer, TextEngine};
 use serde_json::json;
 
-/// nat 40×20、时长 2s、源帧率 4fps 的视频，四个时段各验一个模式。
+/// A video with natural size 40×20, duration 2s, and source frame rate 4fps; each of the four time segments verifies one mode.
 fn build() -> (scene_primitives::Ir, TextEngine, FrameRenderer) {
     let doc = json!({
         "meta": { "id": "vs", "width": 200, "height": 100, "fps": 10 },
@@ -67,13 +65,13 @@ fn draw_media(
 #[test]
 fn frame_exact_quantization_and_freeze() {
     let (ir, mut engine, renderer) = build();
-    // t=0.9 → srcTime 0.9 → frameIndex floor(0.9×4)=3 → 帧起点 0.75s
+    // t=0.9 → srcTime 0.9 → frameIndex floor(0.9×4)=3 → frame start 0.75s
     let (ms, _, _) = draw_media(&renderer, &ir, &mut engine, 0.9);
     assert_eq!(ms, 750);
-    // t=1.0 → 恰在帧 4 边界 → 1.0s
+    // t=1.0 → exactly on the frame 4 boundary → 1.0s
     let (ms, _, _) = draw_media(&renderer, &ir, &mut engine, 1.0);
     assert_eq!(ms, 1000);
-    // t=2.5 > 源时长 2s → clamp 到末帧 (N−1)/fps = 7/4 = 1.75s（冻结）
+    // t=2.5 > source duration 2s → clamped to the last frame (N−1)/fps = 7/4 = 1.75s (frozen)
     let (ms, _, _) = draw_media(&renderer, &ir, &mut engine, 2.5);
     assert_eq!(ms, 1750);
 }
@@ -81,7 +79,7 @@ fn frame_exact_quantization_and_freeze() {
 #[test]
 fn segment_loop_and_playback_rate() {
     let (ir, mut engine, renderer) = build();
-    // t=9.5：srcTime = 0.5 + (9.5−9)×2 = 1.5 → loop 折叠回 0.5 → 500ms
+    // t=9.5: srcTime = 0.5 + (9.5−9)×2 = 1.5 → loop folds back to 0.5 → 500ms
     let (ms, _, _) = draw_media(&renderer, &ir, &mut engine, 9.5);
     assert_eq!(ms, 500);
     // t=9.2：srcTime = 0.5 + 0.2×2 = 0.9 → floor(3.6)=3 → 750ms
@@ -92,18 +90,18 @@ fn segment_loop_and_playback_rate() {
 #[test]
 fn fit_modes_transform_and_crop() {
     let (ir, mut engine, renderer) = build();
-    // cover（缺省）：box 20×20，nat 40×20 → s = max(0.5, 1) = 1；
-    // 源侧居中裁剪 [10, 0, 20, 20]
+    // cover (default): box 20×20, natural 40×20 → s = max(0.5, 1) = 1;
+    // centered source-side crop [10, 0, 20, 20]
     let (_, src, tf) = draw_media(&renderer, &ir, &mut engine, 1.0);
     assert_eq!(src, [10.0, 0.0, 20.0, 20.0]);
     assert_eq!(tf, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
 
-    // contain：s = min(0.5, 1) = 0.5，垂直居中偏移 (20−20×0.5)/2 = 5，无裁剪
+    // contain: s = min(0.5, 1) = 0.5, vertical centering offset (20−20×0.5)/2 = 5, no cropping
     let (_, src, tf) = draw_media(&renderer, &ir, &mut engine, 4.0);
     assert_eq!(src, [0.0; 4]);
     assert_eq!(tf, [0.5, 0.0, 0.0, 0.5, 0.0, 5.0]);
 
-    // fill：非等比拉伸 sx=0.5, sy=1，无裁剪
+    // fill: non-uniform stretch sx=0.5, sy=1, no cropping
     let (_, src, tf) = draw_media(&renderer, &ir, &mut engine, 7.0);
     assert_eq!(src, [0.0; 4]);
     assert_eq!(tf, [0.5, 0.0, 0.0, 1.0, 0.0, 0.0]);

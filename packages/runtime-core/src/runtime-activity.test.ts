@@ -66,7 +66,7 @@ describe('Runtime 的空闲退出', () => {
     expect(since).toEqual(expect.any(String));
     advance(5 * 60_000);
 
-    // cuccut runtime status：连上、查状态、断开。报出的是查询之前的 idleSince，断开之后也不重新算。
+    // cuccut runtime status: connect, query status, disconnect. It reports the idleSince from before the query, and does not recompute it after disconnect.
     const probe = { kind: 'cli', connectionId: 'c-probe' } as TrustedPrincipal;
     activity.connected(probe);
     activity.requested(probe, 'runtime.status');
@@ -78,7 +78,7 @@ describe('Runtime 的空闲退出', () => {
     activity.check();
     expect(onIdle).toHaveBeenCalledTimes(1);
 
-    // 别的请求：在用，断开之后从断开时重新算。
+    // Other requests: in use; after disconnect, it is recomputed from the disconnect time.
     const later = setup();
     const cli = { kind: 'cli', connectionId: 'c-cli' } as TrustedPrincipal;
     later.activity.connected(cli);

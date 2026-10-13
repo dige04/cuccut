@@ -6,24 +6,20 @@ import type { Modifiers, StageEnv } from './stage-gesture.ts';
 import { GUIDE_TOL, LIMITS, SNAP_PX, aabbOf, boundsOf, boxRect, dragMove, guidesFor, type Guide, type Limits, type Point, type Pose, type Rect } from './stage-pose.ts';
 
 /**
- * 在画面上拖字幕（原型 stage.jsx 的字幕 SelectionBox）：上下左右都能拖，写的是字幕样式根上的水平中心 `x` 与锚线 `y`
- * （画面宽、高的百分比），用同一份样式的字幕一起动，与属性页「位置」里的「水平位置」「距顶」是同一对值。
+ * Dragging subtitles on the frame (the subtitle SelectionBox in the prototype stage.jsx): can be dragged in all four directions. What is written is the horizontal center `x` and the anchor line `y` on the root of the subtitle style (percentages of the frame width and height). Subtitles sharing the same style move together. These are the same pair of values as “Horizontal position” and “Top” under “Position” in the properties panel.
  *
- * 双语（同一份样式下原文、译文两种行都有）时只选中一行，拖的是这一行：写进它的行覆盖 `origStyle` / `transStyle` 的
- * `x`、`y`，它离开两行的堆栈单独摆，另一行留在堆栈里、尽量不挪地方（`movedLineStyle`、`restackedRootY`）。两行都选中才整组动。
+ * With bilingual captions (both the original and the translation lines under one style), only one line is selected and dragged: its line override in `origStyle` / `transStyle` gets `x` and `y` written, so it leaves the stack of the two lines and is positioned on its own, while the other line stays in the stack and moves as little as possible (`movedLineStyle`, `restackedRootY`). Only when both lines are selected do they move as a group.
  *
- * 吸附按渲染器量出来的真实行框算（`CaptionHit`），不按锚点：锚线可能是块的顶边、中线或底边（`verticalAlign`），把它当中心吸
- * 会差出半个到一个块高。框随 `x`、`y` 等量平移，位移直接折成两者的增量。中心吸附、6px 多线吸附、⌥ 关吸附与元素的移动同一套
- * （`dragMove`）。左右的限位按画出来的字算：框的两边不出画（原型只夹中心，80% 宽的字幕框拖到边上会有一截被裁掉）。
+ * Snapping is computed from the real line boxes measured by the renderer (`CaptionHit`), not from the anchor: the anchor line may be the top edge, the midline or the bottom edge of the block (`verticalAlign`), and treating it as the center would be off by half to a full block height. The box is translated by the same amount as `x` and `y`, so the displacement is folded directly into the increments of both. Center snapping, 6px multi-line snapping, and ⌥ to turn off snapping work the same as for element moves (`dragMove`). The left and right limits are computed from the rendered text: the edges of the box do not leave the frame (the prototype only clamps the center, so an 80%-wide caption box dragged to the edge would be partly cropped).
  */
 
-/** 锚线的活动范围（画面高的百分比，原型 `TEXT_LIMITS` 的 y）。 */
+/** Allowed range of the anchor line (percentage of frame height; the y of `TEXT_LIMITS` in the prototype). */
 export const CAPTION_Y_LIMITS = LIMITS.y;
-/** 根样式没写 `x` / `y` 时的水平中心与锚线（与渲染器同值）。 */
+/** Horizontal center and anchor line used when the root style does not set `x` / `y` (same values as the renderer). */
 export const CAPTION_X = 50;
 export const CAPTION_Y = 86;
 
-/** 一次拖字幕：起手时拖的那些行画出来的外包框（画布像素）、起手的水平中心与锚线（整组是根样式的，单行是那一行的）、按下的点。 */
+/** One subtitle drag: the bounding boxes of the dragged lines as rendered at the start (canvas pixels), the horizontal center and anchor line at the start (the root style's for a whole group, that line's own for a single line), and the pointer-down point. */
 export interface CaptionMove {
   box: Rect;
   x0: number;
@@ -32,27 +28,27 @@ export interface CaptionMove {
 }
 
 export interface CaptionMoveFrame {
-  /** 新的水平中心与锚线（一位小数）。 */
+  /** New horizontal center and anchor line (one decimal place). */
   x: number;
   y: number;
-  /** 框比起手时挪了多少画布像素（按取整后的 `x`、`y` 算，画选中框用）。 */
+  /** How many canvas pixels the box has moved since the start (computed from the rounded `x` and `y`, used to draw the selection box). */
   dx: number;
   dy: number;
   guides: Guide[];
 }
 
-/** 这几行的外包框；没有行时是 null。 */
+/** Bounding box of these lines; null when there are no lines. */
 export function captionBox(hits: readonly CaptionHit[]): Rect | null {
   return boundsOf(hits.map((hit) => aabbOf(hit)));
 }
 
-/** 一位小数，且不越过 [lo, hi]：贴边时往里取整，字不会因为取整出画半个像素。 */
+/** One decimal place, never beyond [lo, hi]: when at an edge, rounding goes inward, so the text does not move half a pixel out of frame because of rounding. */
 function within(value: number, lo: number, hi: number): number {
   const r = round1(value);
   return r > hi ? Math.floor(hi * 10) / 10 : r < lo ? Math.ceil(lo * 10) / 10 : r;
 }
 
-/** 指针到了 `p`（画布像素）：按起手状态算这一刻的水平中心与锚线。⌥ 关吸附。 */
+/** Pointer is at `p` (canvas pixels): computes the horizontal center and anchor line for this moment from the start state. ⌥ turns off snapping. */
 export function stepCaptionMove(move: CaptionMove, p: Point, mods: Modifiers, env: StageEnv): CaptionMoveFrame {
   const { canvas, others, pxScale } = env;
   const { box, x0, y0 } = move;
@@ -62,8 +58,8 @@ export function stepCaptionMove(move: CaptionMove, p: Point, mods: Modifiers, en
   const toPct = (px: number, total: number) => (px * 100) / total;
   const toPx = (pct: number, total: number) => (pct * total) / 100;
   const [lo, hi] = CAPTION_Y_LIMITS;
-  // 横向：框的两边夹在画布里，比画布还宽就钉在起手位置。纵向：锚线夹在 4–96%。
-  // 起手时已经在限位外的，限位放宽到包住起手位置，免得一碰就跳（同 moveLimits）。
+  // Horizontal: the box's edges are clamped inside the canvas; if the box is wider than the canvas, it is pinned at the start position. Vertical: the anchor line is clamped to 4–96%.
+  // If it is already outside the limits at the start, the limits are widened to contain the start position, so it does not jump on the first move (same as moveLimits).
   const half = box.w / 2;
   const limits: Limits = {
     x: box.w >= W ? [start.cx, start.cx] : [Math.min(half, start.cx), Math.max(W - half, start.cx)],
@@ -71,7 +67,7 @@ export function stepCaptionMove(move: CaptionMove, p: Point, mods: Modifiers, en
   };
   const snap = mods.alt ? null : { canvas, others, threshold: SNAP_PX * pxScale };
   const moved = dragMove(start, p.x - move.p0.x, p.y - move.p0.y, limits, snap);
-  // 多线吸附叠在夹限位之后；横向按限位折成百分比再夹一次，别的对象的边也拽不出画。没动的那一轴原样留着，不顺手取整。
+  // Multi-line snapping is applied after the limit clamping. Horizontally, the result is converted to percentages according to the limits and clamped once more, so edges of other objects cannot pull it out of frame. An axis that did not move is left as it is, without rounding it along the way.
   const x =
     moved.cx === start.cx
       ? x0
@@ -84,8 +80,7 @@ export function stepCaptionMove(move: CaptionMove, p: Point, mods: Modifiers, en
 }
 
 /**
- * 根样式换上新的水平中心与锚线（没变的那一项不写，免得把缺省值落进文档）。双语里自己定了位置的那一行（行覆盖里 `x`、`y`
- * 都有，渲染器才当它离开堆栈单独摆）跟着平移同样的量，整组一起动。
+ * The root style gets the new horizontal center and anchor line (unchanged values are not written, so defaults do not get saved into the document). In bilingual captions, a line that has its own position (both `x` and `y` in its override, so the renderer treats it as having left the stack and positions it separately) is translated by the same amount, so the whole group moves together.
  */
 export function movedCaptionStyle(root: Json, to: { x: number; y: number }): Json {
   const sx = to.x - num(root.x, CAPTION_X);
@@ -103,9 +98,7 @@ export function movedCaptionStyle(root: Json, to: { x: number; y: number }): Jso
 }
 
 /**
- * 双语里单拖一行的起点。已经单独摆了的（行覆盖里 `x`、`y` 都有）从覆盖里的值起手；还在堆栈里的按这一行画出来的框量：
- * `x` 是框的水平中心（不读根样式的 `x`，居中的字幕外观下渲染器不看它），`y` 是框的垂直中心，配上离开堆栈时写的
- * `verticalAlign: 'center'` 正好落回原处（带内边距的盒子上下对称地包着字形，中心不随内边距变）。
+ * Starting point for dragging a single line in bilingual captions. A line already positioned on its own (both `x` and `y` in its override) starts from the override's values; a line still in the stack is measured from its rendered box: `x` is the box's horizontal center (the root style's `x` is not read, since the renderer ignores it under centered caption styling), and `y` is the box's vertical center. Paired with `verticalAlign: 'center'`, which is written when the line leaves the stack, this puts it back in exactly the same place (a padded box wraps the glyphs symmetrically top and bottom, so the center does not change with padding).
  */
 export function lineMoveStart(root: Json, kind: LineKind, box: Rect, canvas: { width: number; height: number }): { x0: number; y0: number; detached: boolean } {
   const line = root[LINE_STYLE_KEY[kind]];
@@ -118,10 +111,7 @@ export function lineMoveStart(root: Json, kind: LineKind, box: Rect, canvas: { w
 }
 
 /**
- * 双语里单拖一行、这一行头一回离开堆栈时，留在堆栈里的另一行别跟着跳：只剩它一行时渲染器按根样式的锚点重新排它
- * （`place_lines`），块锚点是 center（或没写）时它的字形中心正好压在锚线上，所以把根样式的 `y` 换成它此刻的中心，
- * 它就留在原处。`rest` 是另一行此刻画出来的行框：没画出来、不止一件，或者它自己已经单独摆了，都不用挪（返回 null）。
- * 块锚点是 top / bottom 时要知道内边距才换算得回来（侧车里没有），也返回 null，另一行照渲染器的规则重新排。
+ * When a single line is dragged in bilingual captions and that line leaves the stack for the first time, the other line that stays in the stack must not jump: when only it remains, the renderer re-lays it out from the root style's anchor (`place_lines`). When the block anchor is center (or unset), its glyph center sits exactly on the anchor line, so replacing the root style's `y` with its current center keeps it where it is. `rest` is the other line's currently rendered box: if it was not rendered, if there is more than one item, or if it is already positioned on its own, it does not need to move (returns null). When the block anchor is top / bottom, converting back requires the padding, which is not in the sidecar, so this also returns null and the other line is re-laid out by the renderer's rules.
  */
 export function restackedRootY(root: Json, kind: LineKind, rest: readonly CaptionHit[], canvas: { width: number; height: number }): number | null {
   if (root.verticalAlign === 'top' || root.verticalAlign === 'bottom') return null;
@@ -133,11 +123,7 @@ export function restackedRootY(root: Json, kind: LineKind, rest: readonly Captio
 }
 
 /**
- * 双语里单拖一行之后的根样式：这一行的覆盖写上新的 `x`、`y`（渲染器见 `line_position_override`，两项都在才离开堆栈）。
- * 头一回离开堆栈时一并写 `verticalAlign: 'center'`：`y` 是按框的中心量的，原来的上、下对齐要知道内边距才换算得回来，
- * 侧车里没有。已经单独摆了的保留它自己的对齐。另一行留在堆栈里，按根样式的锚点重新排（只剩它一行）。
- * `anchorY` 是 `restackedRootY` 给的根样式锚线（另一行留在原处），null 不动根样式。
- * 以后要做「放回堆栈」，`verticalAlign` 得与 `x`、`y` 一起去掉，不然留着的 center 会盖掉堆栈里的接缝对齐。
+ * Root style after dragging a single line in bilingual captions: that line's override gets the new `x` and `y` (the renderer, see `line_position_override`, only takes the line out of the stack when both are present). The first time the line leaves the stack, `verticalAlign: 'center'` is also written: `y` is measured from the box's center, and the original top/bottom alignment would need the padding to convert back, which the sidecar does not have. A line that is already positioned on its own keeps its own alignment. The other line stays in the stack and is re-laid out from the root style's anchor (since it is now the only one). `anchorY` is the root anchor line given by `restackedRootY` (the other line stays where it is); null leaves the root style unchanged. If “return to stack” is implemented later, `verticalAlign` must be removed together with `x` and `y`, otherwise the leftover center would override the stack's seam alignment.
  */
 export function movedLineStyle(root: Json, kind: LineKind, to: { x: number; y: number }, detached: boolean, anchorY: number | null = null): Json {
   const key = LINE_STYLE_KEY[kind];

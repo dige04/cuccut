@@ -43,13 +43,8 @@ const pair = style({ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'w
 const radioSub = style({ display: 'block', paddingStart: 24, marginTop: -2, marginBottom: 4, font: 'ui-xs', color: 'gray-600' });
 
 /**
- * 剪成短视频的参数页（原型 panel-aitools-shorts.jsx `ShortsCutSetup`，产品设计 §5.10「参数页」）：只交给 Agent，所以没有「用」一行；
- * 总是新开一条会话，所以也没有「会话」一行。自上而下：说明卡（找出值得单独发的话题、各剪成一支新的子视频），范围与「已经切过的不再找」，
- * 切成什么样（几支、多长缺省都是「自动」——交给 Agent 按话题定，下面一行说明自动怎么定；画幅），取景（画幅不是保留原画幅时），
- * 字幕（带哪几轨、样式），提示词框（意图句加一行一句的参数，最后一行
- * 「找好就直接创建」可以单独删），主按钮与去向。按下就新开会话发出去，那条会话打开到眼前，工具页回列表；这一轮记下来（`recordShortsRun`），
- * 跑完、切出了子视频时这部视频的 AI 工具 Tab 翻到结果页（ai-tools-shorts-result.tsx）。
- * 视频不属于项目时同样新开会话：新会话与视频所在的那条会话共用工作目录（`planHandoff` 的 `folderOf`），不建项目，子视频建在原视频旁边。
+ * Parameter page for cutting shorts (prototype panel-aitools-shorts.jsx `ShortsCutSetup`, product design §5.10 “parameter page”). It is only handed to the Agent, so there is no “use” row, and it always opens a new session, so there is no “session” row. From top to bottom: an explanation card (finds topics worth posting on their own, each cut into a new sub-video); scope and “skip ones already cut”; what to cut into (how many and how long, both defaulting to “auto”, which the Agent decides from the topics, with a line below explaining how auto decides; aspect ratio); framing (when the aspect ratio is not the original); captions (which tracks, style); the prompt box (an intent sentence plus one-line-each parameters; the last line “create directly once found” can be removed on its own); the primary button and where it goes. Pressing it opens a new session with the request sent, brings that session into view, and returns the tool page to the list; the run is recorded (`recordShortsRun`). When it finishes and sub-videos have been cut, this video's AI tools tab switches to the result page (ai-tools-shorts-result.tsx).
+ * When the video does not belong to a project, a new session is opened the same way: it shares the working directory of the session the video lives in (`folderOf` in `planHandoff`), no project is created, and the sub-videos are created next to the original video.
  */
 export function ShortsToolPage({
   videoId,
@@ -61,7 +56,7 @@ export function ShortsToolPage({
   videoId: Id;
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
-  /** 结果页「再切几支」进来：勾上「已经切过的不再找」。 */
+  /** Coming in from the result page's “cut more”: “skip ones already cut” is checked. */
   skipDone?: boolean;
   onBack(): void;
 }) {
@@ -147,7 +142,7 @@ export function ShortsToolPage({
               onSelectionChange={(key) => {
                 if (!key) return;
                 const next = key as ShortsLength;
-                // 切到自定义时从眼下这一档的两头起步；从自动切过去时沿用上回自定义的两头。
+                // When switching to custom, start from both ends of the current range; when switching from auto, reuse the two ends from the last custom setting.
                 const start = range ?? { min: s.lenMin, max: s.lenMax };
                 set(next === 'custom' ? { length: next, lenMin: start.min, lenMax: start.max } : { length: next });
               }}>

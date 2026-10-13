@@ -43,7 +43,7 @@ describe.skipIf(!built)('editor-wasm（Node）', () => {
       end: 1300,
     });
     expect(result.sentences[0]!.fingerprint).toMatch(/^3:w0:w2:[0-9a-z]+$/);
-    // 隐藏的词不进句子，也不算停顿的起点之外的词。
+    // Hidden words are not part of sentences, and do not count as pause starts beyond the starting word.
     expect(result.sentences[1]!.wordIds).toEqual(['w4']);
   });
 
@@ -56,7 +56,7 @@ describe.skipIf(!built)('editor-wasm（Node）', () => {
     expect(changed.sentences[0]!.fingerprint).not.toBe(again.sentences[0]!.fingerprint);
     expect(changed.sentences[1]!.fingerprint).toBe(again.sentences[1]!.fingerprint);
     expect(changed.editViewHash).not.toBe(again.editViewHash);
-    // 全文指纹算全部的词（含隐藏的），改一个字就变。
+    // The full-text fingerprint covers all words (including hidden ones); changing one character changes it.
     expect(again.contentFingerprint).toMatch(/^5:w0:w4:[0-9a-z]+$/);
     expect(changed.contentFingerprint).not.toBe(again.contentFingerprint);
   });

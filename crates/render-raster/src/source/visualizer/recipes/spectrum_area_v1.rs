@@ -1,10 +1,8 @@
-//! `spectrum-area-v1`：`spectrum_area`（设计 §7.2）。
+//! `spectrum-area-v1`: `spectrum_area` (design §7.2).
 //!
-//! 频谱包络的**面积图**：横跨盒宽按 `samples` 个点取频谱幅度（经 `easing`、与
-//! `minHeight` 取大），点连成折线，向下闭合到盒底填主色，再沿同一条折线用副色
-//! 描一道边（宽 `lineWidth × 盒高`）。两种颜色标签是 `Fill` / `Line`。
+//! An **area chart** of the spectrum envelope: across the box width, it takes the spectrum amplitude at `samples` points (shaped by `easing`, and taking the larger of that and `minHeight`), connects the points into a polyline, closes it down to the bottom of the box and fills with the primary colour, then strokes an edge along the same polyline with the secondary colour (width `lineWidth × box height`). The two colour labels are `Fill` / `Line`.
 //!
-//! 一条 `FillPath` + 一条 `StrokePath`，返回 2。
+//! One `FillPath` + one `StrokePath`; returns 2.
 
 use motion::preset_registry::VisualizerBody;
 

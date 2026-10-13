@@ -55,7 +55,7 @@ import { ModelTryNote } from './model-check-line.tsx';
 import { quoted } from './models-copy.ts';
 import { TTS_LOCAL_COPY as COPY } from './tts-local-copy.ts';
 
-/* 设计稿 settings-local.css 的 .ttst：浅底面板，左边一列 48px 的小标题，右边一行行芯片；缩进的块对齐到芯片那一列。 */
+/* Design mock settings-local.css .ttst: a light-background panel, with a 48px column of small titles on the left and rows of chips on the right; indented blocks align to the chip column. */
 const panel = style({
   display: 'flex',
   flexDirection: 'column',
@@ -103,27 +103,26 @@ export interface TtsQuickTestProps {
   bundleId: string;
   name: string;
   model: SpeechModelInfo;
-  /** 装好了的、能克隆的模型名（预设模型上说「我的声音」去哪儿试）。 */
+  /** Installed cloneable model names (on a preset model, says where to try “我的声音”(My Voices)). */
   cloneNames: readonly string[];
-  /** 上次检查没通过时面板开头的提醒（model/model-check.ts `tryNotice`）。 */
+  /** Reminder at the top of the panel when the last check did not pass (model/model-check.ts `tryNotice`). */
   notice?: TryNoteView | null;
-  /** 行上能检查：「模型出错了」时给「检查模型」。 */
+  /** Check can be run on the row: when “模型出错了”(Model errored) appears, offer “检查模型”(Check model). */
   canCheck?: boolean;
-  /** 提醒与失败里的「修复… / 重新检查 / 检查模型」交回给那一行。 */
+  /** The reminder and the failure's “修复… / 重新检查 / 检查模型”(Repair… / Re-check / Check model) are handed back to the row. */
   onCheck?: (k: 'repair' | 'recheck' | 'check') => void;
 }
 
-/** 还没动过的一行：模型的默认选择，没有结果。 */
+/** A row not yet touched: the model's default selection, no result. */
 function freshDraft(model: SpeechModelInfo): QuickDraft {
   return { pick: quickDefaults(model), run: null, last: null };
 }
 
 /**
- * 本地模型那一行的「试听」（设计稿 settings-tts.jsx `TtsQuickTest`）：挑音色、语气与念哪句，提交一次真的
- * `models.synthesizeSpeech`（`provider: 'local'`，`model` 是模型包 ID），进度与结果从 `jobs` 主题读，结果能放、能下载。
- * 选择与最近的结果按模型留着（state/tts-quick-store.ts），收起再展开还在。
- * 试听自己的失败（表单没填好、提交被拒、任务失败）留在面板里，用检查那一套说法（哪里不对 + 怎么办 + 按钮），不弹 toast；
- * 模型上次检查没通过时，面板开头先说这件事（设计稿 model-local-check.js `tryNotice` / `tryFailure`）；那次检查之后试听做成了就不再说。
+ * The “试听”(Trial listen) on a local model row (design mock settings-tts.jsx `TtsQuickTest`): pick a voice, a tone and a sentence to read, and submit one real `models.synthesizeSpeech` (`provider: 'local'`, `model` is the model package ID). Progress and results are read from the `jobs` topic, and the result can be played and downloaded.
+ * The selection and the latest result are kept per model (state/tts-quick-store.ts), so they remain after collapsing and expanding again.
+ * The panel keeps its own failures (form not filled in properly, submit rejected, task failed), using the check wording (what is wrong + what to do + buttons), and shows no toast.
+ * If the model's last check did not pass, the panel opens by saying so (design mock model-local-check.js `tryNotice` / `tryFailure`); it stops saying so once a trial listen has succeeded after that check.
  */
 export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null, canCheck = false, onCheck }: TtsQuickTestProps) {
   const runtime = useRuntime();
@@ -139,7 +138,7 @@ export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null,
   const cancelJob = useCancelJob();
   const download = useDownloadArtifact();
   const [submitting, setSubmitting] = useState(false);
-  // 没交到 Runtime 的这一次：表单没填好，或提交被拒。改了选择就清掉。
+  // A submission that did not reach the Runtime: the form was not filled in properly, or the submit was rejected. Cleared when the selection changes.
   const [issue, setIssue] = useState<Omit<TryFailureInput, 'canCheck'> | null>(null);
 
   const mine = useMemo<MyVoice[]>(() => library.map((v) => ({ id: v.id, name: v.name })), [library]);
@@ -169,8 +168,8 @@ export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null,
   const stale = !!result && result.run.key !== form.key;
   const resultJob = result ? jobs.find((j) => j.jobId === result.run.jobId) : undefined;
   const shownNotice = noticeAfterTry(notice, resultJob?.endedAt ?? resultJob?.updatedAt);
-  // 没做成的一次只在选择没变时说：换了音色或内容，那句就不再是「这一次」的了。
-  // 自己点了取消的不算出错，不再报红。
+  // A failed attempt is only mentioned while the selection has not changed: after changing the voice or the text, that sentence no longer describes “this time”.
+  // Cancelling it oneself is not an error, so it is not shown in red.
   const jobFailed = runState?.status === 'failed' && runJob?.state !== 'cancelled' && run?.key === form.key;
   const failure: Omit<TryFailureInput, 'canCheck'> | null =
     issue ??
@@ -198,9 +197,9 @@ export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null,
     setSubmitting(true);
     try {
       const jobId = await runtime.synthesizeSpeech(form.request);
-      // 上一次做成了的留着：这一次没做成时结果区仍放它。
+      // The last successful result is kept: when this attempt fails, the result area still shows it.
       const keep = run && runState?.status === 'done' ? run : last;
-      // 等提交时又改了选择的，留着改过的那份。
+      // If the selection was changed while submitting, the changed version is kept.
       const latest = useTtsQuick.getState().drafts[bundleId]?.pick ?? pick;
       setDraft(bundleId, { pick: latest, run: { jobId, key: form.key, pick }, last: keep });
     } catch (error) {
@@ -489,7 +488,7 @@ export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null,
   );
 }
 
-/** 失败的 `details.file`（读不出的录音的完整路径）。 */
+/** `details.file` of a failure (the full path of a recording that cannot be read). */
 function fileOf(details: unknown): string | null {
   const file = (details as { file?: unknown } | null | undefined)?.file;
   return typeof file === 'string' ? file : null;

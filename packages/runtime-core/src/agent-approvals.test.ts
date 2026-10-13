@@ -20,10 +20,7 @@ import { startRuntime, type RunningRuntime } from './runtime.ts';
 import { ToolDriver, until, type ToolSession } from './agent-tools/testing/fake-agent.ts';
 
 /**
- * 端到端（架构设计 §3.12，产品设计 §3.2.4）：真实的 Runtime、网关、MCP 端点与客户端，Driver 换成假的。
- * 覆盖 Driver 送上来的审批（访问模式 × 命令、文件修改、工具）、「总是允许」的规则、图片附件的上传与发送、
- * 模型与强度的校验，以及失败原因（errorCode）的透传。CucCut 自己的工具按模式审批、停止与打断时的结清
- * 见 agent-tools/agent-tools.test.ts。不需要引擎。
+ * End to end (architecture design §3.12, product design §3.2.4): real Runtime, gateway, MCP endpoint and client, with the Driver replaced by a fake. Covers approvals sent by the Driver (access mode × command, file changes, tools), “Always allow” rules, image attachment upload and sending, model and effort validation, and pass-through of the failure reason (errorCode). CucCut's own tools are approved by mode, and settling on stop and interrupt is covered in agent-tools/agent-tools.test.ts. No engine is needed.
  */
 
 type Approval = Extract<TimelineItem, { kind: 'approval' }>;
@@ -100,10 +97,10 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     return conversation.id;
   }
 
-  /** 每个会话的原生会话：第一次发送时新建，之后沿用。 */
+  /** One native session per session: created on the first send, reused afterward. */
   const sessionOf = new Map<Id, ToolSession>();
 
-  /** 发一条消息，等假智能体的回合开始。 */
+  /** Sends a message and waits for the fake agent's turn to start. */
   async function send(conversationId: Id, extra: { attachments?: Id[] } = {}) {
     const known = new Set(driver.sessions);
     const { taskId } = await rpc().request('conversations.send', { conversationId, text: 'go', commandId: newId('cmd'), ...extra });
@@ -142,7 +139,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     return rpc().request('agents.respondToApproval', { conversationId, approvalId, decision });
   }
 
-  // ---- 审批：Driver 送上来的 ----
+  // ---- Approvals: sent by the Driver ----
 
   it('访问模式 × Driver 送上来的命令、文件修改与工具：按决策表自动允许、拒绝或询问，自动的留一张已决定的卡并回给原生侧', async () => {
     await start();
@@ -152,7 +149,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
       outside: { kind: 'file-change', reason: null, files: ['../elsewhere/c.ts'], rule: null },
       tool: { kind: 'tool', tool: 'WebFetch', server: null, reason: '抓取网页', files: [], rule: 'WebFetch' },
     });
-    // 风险：命令与 Agent 自带的工具是 command，工作目录内的修改是 edit，目录外的是 high（§3.12 决策表）。
+    // Risk: commands and the Agent's own tools are `command`; edits inside the working directory are `edit`; edits outside it are `high` (§3.12 decision table).
     const expected: Record<AgentMode, Record<string, ApprovalVerdict>> = {
       plan: { command: 'ask', inside: 'deny', outside: 'deny', tool: 'ask' },
       ask: { command: 'ask', inside: 'ask', outside: 'ask', tool: 'ask' },
@@ -193,7 +190,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     await start();
     const command: ApprovalRequest = { kind: 'command', command: 'git status', cwd: null, reason: null, rule: 'git status' };
 
-    // 「本会话允许」交给原生侧（它自己不再问），不存规则。
+    // “Allow for this session” is handled by the native side, which no longer asks; no rule is stored.
     const first = await begin('ask');
     const asked = first.session.requestApproval(command);
     expect((await card(first.conversationId, asked)).status).toBe('pending');
@@ -201,7 +198,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(first.session.responses).toContainEqual({ approvalId: asked, decision: 'accept-for-session' });
     expect((await rpc().request('agents.list', {})).preferences.rules).toEqual([]);
 
-    // 「总是允许」：规则归 CucCut 存，原生侧按会话级放行。
+    // “Always allow”: CucCut stores the rule, and the native side lets the session through.
     const second = await begin('ask');
     const other = second.session.requestApproval(command);
     await respond(second.conversationId, other, 'accept-always');
@@ -214,7 +211,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(await card(third.conversationId, ruled)).toMatchObject({ status: 'accepted', decidedBy: 'rule' });
     expect(third.session.responses).toContainEqual({ approvalId: ruled, decision: 'accept' });
 
-    // 规则只把「询问」变成允许：先给方案档拒绝的文件修改照样拒绝。
+    // A rule only turns “ask” into allow. A file change that the plan tier already rejected is still rejected.
     const planned = await begin('plan');
     const edit = planned.session.requestApproval({ kind: 'file-change', reason: null, files: ['a.ts'], rule: 'git status' });
     expect(await card(planned.conversationId, edit)).toMatchObject({ status: 'declined', decidedBy: 'auto' });
@@ -224,7 +221,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect((await card(third.conversationId, removed)).status).toBe('pending');
   });
 
-  // ---- 附件 ----
+  // ---- Attachments ----
 
   async function upload(bytes: Buffer = PNG, fileName = 'shot.png') {
     const { attachment, uploadUrl } = await rpc().request('attachments.prepare', { fileName, mimeType: 'image/png', size: bytes.length });
@@ -266,7 +263,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     session.finish();
     await until(() => runtime!.harness.agentRun(conversationId).taskId === null);
 
-    // 删除会话：它的图片一起删掉。
+    // Deleting the session deletes its images too.
     await rpc().request('conversations.delete', { conversationId });
     await until(async () => !(await fs.stat(path.join(dir!, 'attachments', first.id)).catch(() => null)));
     expect(await fs.readdir(path.join(dir!, 'attachments'))).toEqual([]);
@@ -279,23 +276,23 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     const { session } = await send(conversationId, { attachments: [sent.id] });
 
     const handle = await rpc().request('media.resolve', { conversationId, attachmentId: sent.id });
-    // 显示用的是用户给的文件名，不是磁盘上的 image.png；地址里不带本机路径。
+    // The display uses the file name the user gave, not image.png on disk; the URL carries no local path.
     expect(handle).toMatchObject({ mimeType: 'image/png', size: PNG.length, fileName: '截图 1.png' });
     expect(handle.url).not.toContain(dir!);
     const response = await fetch(handle.url);
     expect(response.status).toBe(200);
     expect(Buffer.from(await response.arrayBuffer())).toEqual(PNG);
 
-    // 附件不属于这条会话：别的会话拿同一个 ID 也取不到。
+    // An attachment does not belong to this session: another session cannot fetch it, even with the same ID.
     const other = await create('ask');
     expect((await rejection(rpc().request('media.resolve', { conversationId: other, attachmentId: sent.id }))).code).toBe('not-found');
-    // 传完但还没发出去的：不在任何消息里，取不到。
+    // Uploaded but not yet sent: it is in no message, so it cannot be fetched.
     const unsent = await upload(PNG, 'unsent.png');
     expect((await rejection(rpc().request('media.resolve', { conversationId, attachmentId: unsent.id }))).code).toBe('not-found');
-    // 不认识的 ID、不存在的会话。
+    // Unknown ID, nonexistent session.
     expect((await rejection(rpc().request('media.resolve', { conversationId, attachmentId: 'att_nope' }))).code).toBe('not-found');
     expect((await rejection(rpc().request('media.resolve', { conversationId: 'conv_nope', attachmentId: sent.id }))).code).toBe('not-found');
-    // 附件定位不和文件定位混用：多带 path 的按入站校验拒绝。
+    // Attachment addressing is not mixed with file addressing: a request that also carries a path is rejected by inbound validation.
     const mixed = await rejection(rpc().request('media.resolve', { conversationId, attachmentId: sent.id, path: 'x' } as never));
     expect(mixed.code).toBe('invalid-request');
     await finish(conversationId, session);
@@ -311,12 +308,12 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     const conversationId = await create('ask');
     const { attachment } = await rpc().request('attachments.prepare', { fileName: 'a.png', mimeType: 'image/png', size: PNG.length });
     const notUploaded = await rejection(rpc().request('conversations.send', { conversationId, text: 'go', commandId: newId('cmd'), attachments: [attachment.id] }));
-    // 这个 Agent 不支持图片：先于「没上传完」报出来。
+    // This Agent does not support images. That is reported before “not finished uploading”.
     expect(notUploaded.code).toBe('invalid-request');
     expect(notUploaded.message).toContain('不支持图片');
     const uploaded = await upload();
     expect((await rejection(rpc().request('conversations.send', { conversationId, text: 'go', commandId: newId('cmd'), attachments: [uploaded.id] }))).message).toContain('不支持图片');
-    // 被拒绝的发送没有建任务。
+    // A rejected send creates no task.
     expect(runtime!.harness.agentRun(conversationId).taskId).toBeNull();
     expect((await items(conversationId)).filter((i) => i.kind === 'user-message')).toHaveLength(0);
   });
@@ -338,7 +335,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(runtime!.harness.agentRun(conversationId).taskId).toBeNull();
   });
 
-  // ---- 模型与强度 ----
+  // ---- Model and effort ----
 
   it('模型与强度按模型表校验：新建、修改与默认值；只换模型时不适用的强度回到默认', async () => {
     await start({ models: MODELS });
@@ -346,7 +343,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect((await rejection(rpc().request('conversations.create', { ...base, model: 'nope' }))).code).toBe('invalid-request');
     expect((await rejection(rpc().request('conversations.create', { ...base, model: 'model-a', effort: 'max' }))).code).toBe('invalid-request');
     expect((await rejection(rpc().request('conversations.create', { ...base, model: 'model-b', effort: 'low' }))).message).toContain('不分推理强度');
-    // 不给模型：强度按新会话用的模型（推荐模型，这里是 Agent 标的默认）查。
+    // No model given: effort is looked up against the model a new session uses (the recommended model, here the default the Agent declares).
     expect((await rpc().request('conversations.create', { ...base, effort: 'high' })).conversation).toMatchObject({ effort: 'high' });
     expect((await rejection(rpc().request('conversations.create', { ...base, effort: 'max' }))).code).toBe('invalid-request');
 
@@ -357,12 +354,12 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect((await rejection(rpc().request('conversations.update', { conversationId: conversation.id, effort: 'high' }))).code).toBe('invalid-request');
     expect((await rejection(rpc().request('conversations.update', { conversationId: conversation.id, model: 'nope' }))).code).toBe('invalid-request');
 
-    // 默认模型与强度。
+    // Default model and effort.
     expect((await rejection(rpc().request('agents.configure', { driverId: 'codex', defaultModel: 'nope' }))).code).toBe('invalid-request');
     expect((await rejection(rpc().request('agents.configure', { driverId: 'codex', defaultModel: 'model-a', defaultEffort: 'max' }))).code).toBe('invalid-request');
     await rpc().request('agents.configure', { driverId: 'codex', defaultModel: 'model-a', defaultEffort: 'high' });
     expect((await rpc().request('conversations.create', { ...base, driverId: 'codex' })).conversation).toMatchObject({ model: 'model-a', effort: 'high' });
-    // 只换默认模型：旧的强度不适用，回到模型默认。
+    // Changing only the default model: the old effort does not apply, so it falls back to the model's default.
     const view = await rpc().request('agents.configure', { driverId: 'codex', defaultModel: 'model-b' });
     expect(view.preferences.drivers.codex).toMatchObject({ defaultModel: 'model-b', defaultEffort: null });
   });
@@ -373,7 +370,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(conversation).toMatchObject({ model: 'anything', effort: 'whatever' });
   });
 
-  // ---- 失败原因 ----
+  // ---- Failure reasons ----
 
   it('失败原因（errorCode）透传到任务卡片：回合结束带的、之前的 session.error 带的、进程退出', async () => {
     await start();
@@ -393,7 +390,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     c.session.emit({ type: 'session.exited', error: 'boom' });
     expect(await taskCard(c.conversationId, c.taskId)).toMatchObject({ status: 'failed', errorCode: 'AGENT_EXITED' });
 
-    // 成功的回合不带失败原因，即使中途有过可以重试的错误。
+    // A successful turn carries no failure reason, even if a retryable error occurred midway.
     const d = await begin('ask');
     d.session.emit({ type: 'session.error', turnId: d.session.turnId, message: '限流，稍后重试', willRetry: true, code: 'AGENT_RATE_LIMITED' });
     d.session.finish('completed');

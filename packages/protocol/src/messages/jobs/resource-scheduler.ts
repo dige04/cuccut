@@ -14,7 +14,7 @@ import { pl } from './resource-scheduler.pl.ts';
 import { tr } from './resource-scheduler.tr.ts';
 import { vi } from './resource-scheduler.vi.ts';
 
-/** 资源维度的名字（键是 `ResourceDimension`）。 */
+/** Names of the resource dimensions (keys are `ResourceDimension`). */
 const DIMENSIONS: Record<string, string> = {
   memory: 'memory',
   gpuMemory: 'GPU memory',
@@ -22,14 +22,14 @@ const DIMENSIONS: Record<string, string> = {
   scratchDisk: 'disk space',
 };
 
-/** `dimensions` 是逗号分隔的维度键（`memory,gpuMemory`）：在读者的语言里展开成名字。 */
+/** `dimensions` is a comma-separated list of dimension keys (`memory,gpuMemory`), expanded into names in the reader's language. */
 const names = (dimensions: string) =>
   dimensions
     .split(',')
     .map((d) => DIMENSIONS[d] ?? d)
     .join(', ');
 
-/** `packages/jobs/src/resource-scheduler.ts`：排队时在等什么（`JobRecord.wait.detail`）与超出容量的拒绝。 */
+/** `packages/jobs/src/resource-scheduler.ts`: what a queued job is waiting for (`JobRecord.wait.detail`), and rejections for exceeding capacity. */
 const en = {
   dimensionMemory: DIMENSIONS.memory!,
   dimensionGpuMemory: DIMENSIONS.gpuMemory!,

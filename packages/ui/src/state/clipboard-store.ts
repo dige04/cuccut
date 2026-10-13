@@ -2,18 +2,18 @@ import { create } from 'zustand';
 import type { Id, SequenceItem } from '@cuccut/protocol';
 
 /**
- * 时间线的剪贴板（原型 editor-keys 的 clipRef / genRef）：应用内的，不碰系统剪贴板——复制的是片段，不是文本。
- * 不持久化；换视频后仍在，但只能粘回复制它的那个视频（素材与文档的 ID 只在那个视频里有效）。
+ * The timeline clipboard (prototype editor-keys clipRef / genRef): in-app, and it does not touch the system clipboard, because what is copied is clips, not text.
+ * Not persisted. It survives switching videos, but can only be pasted back into the video it was copied from (asset and document IDs are valid only within that video).
  */
 export interface ClipboardStore {
-  /** 复制那一刻的片段快照，按轨道自下而上、时间先后排。 */
+  /** Snapshot of the clips at the moment of copying, ordered by track from bottom to top, then by time. */
   entries: SequenceItem[];
-  /** 从哪个视频复制的。 */
+  /** The video it was copied from. */
   videoId: Id | null;
-  /** 本次会话粘贴（含再制）了几次：每次的副本在画面上多错开一档。 */
+  /** How many times this session has pasted (duplicates included). Each copy is offset one more step on screen. */
   generation: number;
   put(videoId: Id, entries: SequenceItem[]): void;
-  /** 下一次粘贴是第几次。 */
+  /** Which paste number the next paste will be. */
   nextGeneration(): number;
 }
 

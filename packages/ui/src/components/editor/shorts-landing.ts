@@ -9,10 +9,10 @@ import { openShortsResult } from './ai-tools-nav.ts';
 import { latestShortsRun, markShortsRunLanded, useShortsRuns } from './shorts-runs.ts';
 
 /**
- * 剪成短视频跑完就翻到结果页（产品设计 §5.10）：开着的是发起那一轮的父视频、那一轮还没翻过时，看着那条会话；任务结束
- * （完成、失败或停下）且切出了子视频，右侧面板换到 AI 工具 Tab 的结果页。翻没翻都记下（`landed`），之后打开这部视频不再自己翻。
- * 会话里新建了视频、Space 还一支都没收到时先等一等，免得列表是空的就算翻过了。
- * 网页宿主没有 AI 工具 Tab：`enabled` 为 false 时什么都不做。
+ * When a “剪成短视频”(cut into shorts) run finishes, flip to the result page (product design §5.10). If the parent video that started the round is open and that round has not been flipped yet, watch that session. When the task ends
+ * (completed, failed or stopped) and child videos were cut, the right panel switches to the result page of the AI Tools tab. Whether or not it flipped, record it (`landed`), so opening this video later does not flip again by itself.
+ * If a video was just created in the session and no shorts have arrived in Space yet, wait a moment first, so an empty list does not count as already flipped.
+ * The web host has no AI Tools tab: when `enabled` is false, do nothing.
  */
 export function useShortsLanding(videoId: Id | null, enabled: boolean): void {
   const runtime = useRuntime();

@@ -4,24 +4,23 @@ import { killProcessTree } from './process-tree.ts';
 import type { SpawnProcess } from './system-terminal.ts';
 
 /**
- * 在后台进程里跑一条 shell 命令，把输出按行交出来（Agent 的安装、升级命令在设置页里运行，架构设计 §12.9）。
+ * Runs a shell command in a background process and passes its output on line by line (Agent install and upgrade commands run on the settings page, architecture design §12.9).
  *
- * - 经 shell 运行（Unix 是 `/bin/sh -c`，Windows 是 `cmd.exe /d /s /c`）：命令是探测结果里的固定字符串，例如
- *   `brew upgrade codex`；调用方负责只交来这样的命令。
- * - stdin 关闭；Unix 上放进自己的会话（`detached`），没有控制终端：`sudo` 之类要密码的会立刻失败，不会挂住。
- * - stdout 与 stderr 合并，按行送出。进度条用的 `\r` 只留最后一段，终端控制序列（颜色、光标）去掉，一行过长时截断。
- * - `cancel()`：Unix 先给整个进程组 SIGTERM，宽限期后 SIGKILL；Windows 用 `taskkill /T /F` 结束进程树（未验证）。
+ * - Runs through a shell (`/bin/sh -c` on Unix, `cmd.exe /d /s /c` on Windows): the command is a fixed string from a probe result, for example `brew upgrade codex`; the caller is responsible for passing only commands of this kind.
+ * - stdin is closed. On Unix it is placed in its own session (`detached`) with no controlling terminal, so commands such as `sudo` that need a password fail immediately instead of hanging.
+ * - stdout and stderr are merged and sent line by line. Only the last segment of a `\r` used by progress bars is kept; terminal control sequences (colors, cursor) are removed; a line that is too long is truncated.
+ * - `cancel()`: on Unix it sends SIGTERM to the whole process group, then SIGKILL after the grace period; on Windows it ends the process tree with `taskkill /T /F` (not verified).
  */
 
 export interface ShellCommandOptions {
   command: string;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
-  /** 每一批新的输出行。 */
+  /** Each new batch of output lines. */
   onLines: (lines: string[]) => void;
-  /** `cancel()` 之后多久强制结束（默认 3 秒）。 */
+  /** How long after `cancel()` before it is forcibly ended (default 3 seconds). */
   killGraceMs?: number;
-  /** 一行最多保留的字符数（默认 2000）。 */
+  /** Maximum number of characters kept per line (default 2000). */
   maxLineChars?: number;
   platform?: NodeJS.Platform;
   spawn?: SpawnProcess;
@@ -30,9 +29,9 @@ export interface ShellCommandOptions {
 export interface ShellCommandExit {
   code: number | null;
   signal: NodeJS.Signals | null;
-  /** 退出由 `cancel()` 引起。 */
+  /** The exit was caused by `cancel()`. */
   cancelled: boolean;
-  /** 没能启动的原因（例如 shell 不存在）；启动了为 null。 */
+  /** Why it could not start (for example, the shell does not exist); null if it started. */
   error: string | null;
 }
 
@@ -44,7 +43,7 @@ export interface ShellCommandRun {
 
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
-/** 去掉终端控制序列，`\r` 覆盖写只留最后一段非空内容。 */
+/** Removes terminal control sequences; with `\r` overwrites, keeps only the last non-empty segment. */
 export function cleanOutputLine(raw: string, maxChars = 2000): string {
   const segments = raw.replace(ANSI, '').split('\r');
   let line = '';
@@ -54,7 +53,7 @@ export function cleanOutputLine(raw: string, maxChars = 2000): string {
       break;
     }
   }
-  // 其他控制字符（退格、响铃）不进界面；制表符留着。
+  // Other control characters (backspace, bell) do not enter the UI; tabs are kept.
   line = line.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
   return line.length > maxChars ? `${line.slice(0, maxChars)}…` : line;
 }
@@ -88,7 +87,7 @@ export function runShellCommand(options: ShellCommandOptions): ShellCommandRun {
     return { pid: undefined, exited: Promise.resolve({ code: null, signal: null, cancelled: false, error: String(error) }), cancel() {} };
   }
 
-  // 两路各自按行切，切好的行合进同一个输出。
+  // The two streams are each split into lines separately, and the split lines are merged into one output.
   const readers = [child.stdout, child.stderr].map((stream) => {
     const decoder = new StringDecoder('utf8');
     let pending = '';
@@ -107,11 +106,11 @@ export function runShellCommand(options: ShellCommandOptions): ShellCommandRun {
     let spawnError: string | null = null;
     child.once('error', (error) => {
       spawnError = String(error);
-      // 没能启动时不会有 close。
+      // If it could not start, there will be no close.
       if (child.pid === undefined) settle(null, null);
     });
     child.once('close', (code, signal) => settle(code, signal));
-    // 命令留下的后台进程可能一直占着输出管道，`close` 就不来：进程退出后最多再等 2 秒。
+    // A command may leave a background process that keeps holding the output pipe, and then `close` never comes: after the process exits, wait at most 2 more seconds.
     let closeTimer: NodeJS.Timeout | null = null;
     child.once('exit', (code, signal) => {
       closeTimer = setTimeout(() => {
@@ -139,7 +138,7 @@ export function runShellCommand(options: ShellCommandOptions): ShellCommandRun {
       cancelled = true;
       if (child.pid === undefined) return;
       const tree = { platform, spawn: run };
-      // Windows：taskkill /T /F 结束 cmd 下面的 npm、node，没有宽限这一步。（未验证。）
+      // Windows: taskkill /T /F ends the npm and node under cmd; there is no grace step. (Not verified.)
       killProcessTree(child, 'SIGTERM', tree);
       if (windows) return;
       killTimer = setTimeout(() => killProcessTree(child, 'SIGKILL', tree), options.killGraceMs ?? 3000);

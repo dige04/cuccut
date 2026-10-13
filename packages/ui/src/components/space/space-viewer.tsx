@@ -87,20 +87,20 @@ const fileName = style({ font: 'ui', color: 'gray-900', overflow: 'hidden', text
 const fileMeta = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const filesHint = style({ font: 'ui-sm', color: 'gray-600', margin: 0 });
 
-/** 查看框里的动作（由页面接到 Runtime）。 */
+/** Actions in the viewer (wired to the Runtime by the page). */
 export interface ViewerActions {
   onFavorite(entry: SpaceEntry): void;
   onReveal(entry: SpaceEntry): void;
   onContinue(entry: SpaceEntry): void;
   onOpenVideo(entry: SpaceEntry): void;
-  /** 幻灯片（deck 目录）在功能区的幻灯片标签里打开（docs/design/slides §8.1）。 */
+  /** A slide deck (deck directory) opens in the slides tab of the feature area (docs/design/slides §8.1). */
   onOpenSlides(entry: SpaceEntry): void;
-  /** 设计稿（设计稿目录）在功能区的设计稿标签里打开（docs/design/canvas §8.1）。 */
+  /** A design draft (design draft directory) opens in the design draft tab of the feature area (docs/design/canvas §8.1). */
   onOpenDesign(entry: SpaceEntry): void;
-  /** 设计系统（设计系统目录）在功能区的设计系统标签里打开（docs/design/canvas §10）。 */
+  /** A design system (design system directory) opens in the design system tab of the feature area (docs/design/canvas §10). */
   onOpenDesignSystem(entry: SpaceEntry): void;
   onEdit(entry: SpaceEntry): void;
-  /** 便携包打开成新视频。 */
+  /** Open a portable package as a new video. */
   onOpenPackage(entry: SpaceEntry): void;
   onRename(entry: SpaceEntry): void;
   onRestore(entry: SpaceEntry): void;
@@ -108,22 +108,20 @@ export interface ViewerActions {
   onClear(entry: SpaceEntry): void;
   onTask(jobId: Id): void;
   onConversation(conversationId: Id): void;
-  /** 换成另一个条目的查看框：视频名下的文件，或文件所属的视频。 */
+  /** Swap to another item's viewer: a file under a video, or the video a file belongs to. */
   onSwitch(entryId: Id): void;
-  /** 按来源把 Space 筛成从这部视频切出的短视频（产品设计 §4.3、§5.10）。 */
+  /** Filter Space by source so that only the shorts cut from this video are shown (product design §4.3, §5.10). */
   onShorts?(entry: SpaceEntry): void;
   onClose(): void;
 }
 
 /**
- * Space 的查看框（产品设计 §4.5–§4.6；原型 space-viewer.jsx）：预览、事实（来源、文件、时长或尺寸、状态、最近活动、来源会话、
- * 生成方式、工具与位置、版本），缺失、失败、来源已变时如实提示。动作是 在会话中继续 · 查看来源会话 · 在文件夹中显示 · 二次编辑 ·
- * 收藏 · 重命名 · 用工具处理… · 再做一次（工具做出来的）；
- * 回收站里的是恢复与彻底删除，失败的占位是清除与查看任务。做不了的按钮置灰，原因写在下面。
- * 一部视频在「全部」与「视频」里只有一行（§4.3）：它导出、生成的文件列在这部视频的查看框里，点一个换成那个文件；
- * 文件的查看框里「查看视频」换回来。切出的短视频各是一部视频，父视频的查看框里在文件之前一起列，点一支换成它的查看框；
- * 短视频的查看框里「查看来源视频」换回父视频。
- * 条目由外层传进来：S2 的 Dialog 会在几个 slot 里各渲染一遍 children，这里不放状态。
+ * The Space viewer (product design §4.5–§4.6; prototype space-viewer.jsx): preview, facts (source, files, duration or size, status, recent activity, source session,
+ * generation method, tool and location, version), with honest notices when files are missing, failed, or the source has changed. Actions are: continue in session · view source session · show in folder · second-pass edit ·
+ * favorite · rename · process with tool… · do again (for tool-made items); the trash holds restore and delete permanently, and a failed placeholder holds clear and view task. Buttons that cannot be used are greyed out, with the reason written below.
+ * In “全部” (All) and “视频” (Videos), a video takes only one row (§4.3): the files it exported or generated are listed in this video's viewer, and clicking one swaps to that file; in a file's viewer, “查看视频” (View video) swaps back.
+ * The shorts cut from a video are each a video of their own; the parent video's viewer lists them before the files, and clicking one swaps to that short's viewer; in a short's viewer, “查看来源视频” (View source video) swaps back to the parent.
+ * Items are passed in from the outer layer: S2's Dialog renders children in several slots, so no state is kept here.
  */
 export function SpaceViewer({
   entry,
@@ -140,21 +138,21 @@ export function SpaceViewer({
 }: {
   entry: SpaceEntry | null;
   source: string;
-  /** 条目在磁盘上的绝对路径；不在来源目录里的产物没有。 */
+  /** Absolute path of the item on disk; outputs outside the source directory have none. */
   path: string | null;
-  /** 产生它的会话（还在时）。 */
+  /** The session that produced it (while it still exists). */
   conversation: { id: Id; title: string } | null;
   now: number;
   actions: ViewerActions;
-  /** 与工具有关的几样（components/tools/use-entry-tools.ts）。 */
+  /** Tool-related parts (components/tools/use-entry-tools.ts). */
   tools?: EntryTools | null;
-  /** 视频名下的文件（model/space.ts `filesOf`）。 */
+  /** Files under the video (model/space.ts `filesOf`). */
   files?: readonly SpaceEntry[];
-  /** 文件所属的视频（`hostVideoOf`）。 */
+  /** The video a file belongs to (`hostVideoOf`). */
   host?: SpaceEntry | null;
-  /** 从这部视频切出的短视频，新切的在前（model/shorts-result.ts `madeShorts`）。 */
+  /** Shorts cut from this video, newest first (model/shorts-result.ts `madeShorts`). */
   shorts?: readonly SpaceEntry[];
-  /** 短视频的父视频（`parentVideoOf`）。 */
+  /** A short's parent video (`parentVideoOf`). */
   parent?: SpaceEntry | null;
 }) {
   return (
@@ -220,7 +218,7 @@ function ViewerBody({
   const blockedPurge = trashed ? purgeBlock(entry) : null;
   const measure = measureText(entry);
   const status = statusText(entry);
-  // 幻灯片、设计稿与设计系统是一个目录，查看框里不预览，打开到各自的标签里看。
+  // Slides, design drafts and design systems are one directory; the viewer does not preview them, and they open in their own tabs.
   const hasFile = !isVideo && !isSlides && !isDesign && !isDesignSystem && entry.status !== 'generating' && entry.status !== 'failed' && entry.status !== 'missing';
   const origin = entry.origin;
   const generated = origin?.capability
@@ -436,8 +434,8 @@ function ViewerBody({
 }
 
 /**
- * 这部视频切出的短视频（原型 MovieShorts，产品设计 §4.5）：一行一支，写在原片上的区间与时长，点开换成那一支的查看框。
- * 最多露出 `MADE_SHOWN` 支；「在列表中查看」把 Space 筛成这部视频切出的全部（§4.3）。
+ * The shorts cut from this video (prototype MovieShorts, product design §4.5): one row per short, showing its range on the original and its duration; clicking one swaps to that short's viewer.
+ * At most `MADE_SHOWN` are shown; “在列表中查看” (View in list) filters Space to all the shorts cut from this video (§4.3).
  */
 function VideoShorts({ shorts, onSwitch, onList }: { shorts: readonly SpaceEntry[]; onSwitch: (entryId: Id) => void; onList: (() => void) | null }) {
   const shown = shorts.slice(0, MADE_SHOWN);
@@ -483,7 +481,7 @@ function VideoShorts({ shorts, onSwitch, onList }: { shorts: readonly SpaceEntry
   );
 }
 
-/** 视频名下的文件（原型 MovieFiles）：一行一个，点开换成那个文件的查看框。 */
+/** Files under the video (prototype MovieFiles): one row per file; clicking one swaps to that file's viewer. */
 function VideoFiles({ files, onSwitch }: { files: readonly SpaceEntry[]; onSwitch: (entryId: Id) => void }) {
   return (
     <section className={filesSection} aria-label={COPY.filesListLabel}>

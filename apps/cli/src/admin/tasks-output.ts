@@ -11,8 +11,8 @@ import {
 import { M } from './tasks-copy.ts';
 
 /**
- * `cuccut tasks` 的参数与输出：查看任务合同（架构设计 §3.2）。CLI 只读合同；修改经界面或 `tasks.updateContract`。
- * 从 main.ts 分出来，单独可测。
+ * Arguments and output of `cuccut tasks`: viewing a task contract (architecture design §3.2). The CLI only reads contracts; changes go through the UI or `tasks.updateContract`.
+ * Split out of main.ts so it can be tested on its own.
  */
 
 export type TasksCommand =
@@ -77,7 +77,7 @@ export function budgetLabel(policy: TaskBudgetPolicy | null): string {
   return M.budget(calls, spent, reserved, policy.cap ? money(policy.cap) : null, u.unknownCostCalls);
 }
 
-/** 一份合同的全部字段，加上预算用量与（给了时）验收检查的结果。 */
+/** All fields of one contract, plus the budget usage and (when given) the results of acceptance checks. */
 export function formatContract(view: TaskContractView, results: CheckResult[] = []): string[] {
   const c = view.contract;
   const latest = c.revision === view.latestRevision ? M.latest : M.latestIs(view.latestRevision);
@@ -110,13 +110,13 @@ export function formatContract(view: TaskContractView, results: CheckResult[] = 
   return lines;
 }
 
-/** 修订历史，一个修订一行（旧的在前）。 */
+/** Revision history, one revision per line (oldest first). */
 export function formatContractHistory(contracts: TaskContract[]): string[] {
   if (contracts.length === 0) return [M.noContracts];
   return contracts.map((c) => M.historyLine(c.revision, changeLabel(c), AGENT_MODE_LABELS[c.autonomy]));
 }
 
-/** 会话里每个任务的最新合同，一个任务一行（新的在前）。 */
+/** The latest contract for each task in the session, one task per line (newest first). */
 export function formatContractList(contracts: TaskContract[]): string[] {
   if (contracts.length === 0) return [M.noTasks];
   return contracts.map((c) => M.listLine(c.taskId, c.revision, AGENT_MODE_LABELS[c.autonomy], c.goal.replace(/\s+/g, ' ').slice(0, 60)));

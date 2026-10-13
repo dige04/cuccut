@@ -1,24 +1,24 @@
-//! 参考音频线性幅度谱：对照 `GPT_SoVITS/module/mel_processing.py::spectrogram_torch`
-//! （`center=False`，两侧反射填充 `(n_fft - hop) / 2`，periodic Hann 窗，
-//! `sqrt(re² + im² + 1e-8)`）。在 CPU 上计算，两个后端共用。
+//! Linear amplitude spectrogram of the reference audio: matches `spectrogram_torch` in `GPT_SoVITS/module/mel_processing.py`
+//! (`center=False`, reflection padding of `(n_fft - hop) / 2` on both sides, periodic Hann window,
+//! `sqrt(re² + im² + 1e-8)`). Computed on the CPU and shared by both backends.
 
 use anyhow::{Context, Result, ensure};
 use realfft::RealFftPlanner;
 
-/// `s2G2333k.json` 的 `data.filter_length` / `win_length`。
+/// `data.filter_length` / `win_length` from `s2G2333k.json`.
 pub const N_FFT: usize = 2048;
 /// `data.hop_length`。
 pub const HOP_LENGTH: usize = 640;
-/// 单边谱的频点数。
+/// Number of frequency bins in the one-sided spectrum.
 pub const SPEC_BINS: usize = N_FFT / 2 + 1;
 
-/// 线性幅度谱，按 `[bins, frames]` 行优先展平（与 PyTorch `[1, bins, frames]` 布局一致）。
+/// Linear amplitude spectrogram, flattened row-major as `[bins, frames]` (consistent with the PyTorch `[1, bins, frames]` layout).
 pub struct Spectrogram {
     pub data: Vec<f32>,
     pub frames: usize,
 }
 
-/// `F.pad(mode="reflect")`：边界样本本身不重复。
+/// `F.pad(mode="reflect")`: the boundary sample itself is not repeated.
 pub fn reflect_pad(samples: &[f32], pad: usize) -> Result<Vec<f32>> {
     ensure!(samples.len() > pad, "反射填充需要至少 {} 个样本，实际 {}", pad + 1, samples.len());
     let n = samples.len();
@@ -33,7 +33,7 @@ pub fn spectrogram(samples: &[f32]) -> Result<Spectrogram> {
     let padded = reflect_pad(samples, (N_FFT - HOP_LENGTH) / 2)?;
     ensure!(padded.len() >= N_FFT, "参考音频太短，无法计算频谱");
     let frames = (padded.len() - N_FFT) / HOP_LENGTH + 1;
-    // torch.hann_window 默认 periodic=True。
+    // torch.hann_window defaults to periodic=True.
     let window: Vec<f32> = (0..N_FFT)
         .map(|n| {
             let phase = 2.0 * std::f64::consts::PI * n as f64 / N_FFT as f64;
@@ -74,9 +74,9 @@ mod tests {
 
     #[test]
     fn spectrogram_shape_and_peak_bin() {
-        // 1 秒 32 kHz：(32000 + 1408 - 2048) / 640 + 1 = 50 帧。
+        // 1 second at 32 kHz: (32000 + 1408 - 2048) / 640 + 1 = 50 frames.
         let sample_rate = 32_000.0f32;
-        let freq = 1000.0f32; // 恰好落在第 64 个频点
+        let freq = 1000.0f32; // Lands exactly on the 64th frequency bin
         let samples: Vec<f32> = (0..32_000)
             .map(|n| (2.0 * std::f32::consts::PI * freq * n as f32 / sample_rate).sin())
             .collect();
@@ -92,9 +92,9 @@ mod tests {
             .map(|(bin, _)| bin)
             .unwrap();
         assert_eq!(peak, 64);
-        // Hann 窗和为 N/2，单位正弦幅度谱峰值约 N/4。
+        // The Hann window sums to N/2, so the peak of a unit sinusoid's amplitude spectrum is about N/4.
         assert!((column[64] - 512.0).abs() < 1.0, "{}", column[64]);
-        // 静音频点只剩 sqrt(1e-8) 的底噪。
+        // Silent bins retain only the noise floor of sqrt(1e-8).
         let silent = spectrogram(&vec![0.0; 4000]).unwrap();
         assert!(silent.data.iter().all(|v| (v - 1e-4).abs() < 1e-6));
     }

@@ -1,4 +1,4 @@
-//! 切句：复刻上游 `TTS_infer_pack/TextPreprocessor.py` 的 `pre_seg_text`（`cut5`）及其工具函数。
+//! Sentence splitting: replicates `pre_seg_text` (`cut5`) from upstream `TTS_infer_pack/TextPreprocessor.py`, along with its helper functions.
 
 use anyhow::{Result, bail};
 
@@ -11,7 +11,7 @@ pub fn is_split(c: char) -> bool {
     SPLITS.contains(&c)
 }
 
-/// `TextPreprocessor.replace_consecutive_punctuation`：连续的 `!?….,-` 只留第一个。
+/// `TextPreprocessor.replace_consecutive_punctuation`: consecutive `!?….,-` are reduced to the first one.
 pub fn replace_consecutive_punctuation(text: &str) -> String {
     const PUNCTUATION: &[char] = &['!', '?', '…', ',', '.', '-'];
     let mut out = String::with_capacity(text.len());
@@ -26,12 +26,12 @@ pub fn replace_consecutive_punctuation(text: &str) -> String {
     out
 }
 
-/// `get_first`：第一个切分标点之前的部分（去空白）。
+/// `get_first`: the part before the first split punctuation mark (whitespace stripped).
 fn get_first(text: &str) -> &str {
     text.split(is_split).next().unwrap_or("").trim()
 }
 
-/// `cut5`：按标点切，数字间的小数点不切，丢掉纯标点项，用换行连接。
+/// `cut5`: splits on punctuation, does not split at decimal points between digits, drops items that are only punctuation, and joins with newlines.
 fn cut5(input: &str) -> String {
     const PUNDS: &[char] = &[',', '.', ';', '?', '!', '、', '，', '。', '？', '！', '：', '…'];
     let chars: Vec<char> = input.trim_matches('\n').chars().collect();
@@ -84,7 +84,7 @@ fn merge_short_text_in_array(texts: Vec<String>, threshold: usize) -> Vec<String
 
 /// `split_big_text(text, max_len=510)`。
 fn split_big_text(text: &str, max_len: usize) -> Vec<String> {
-    // re.split("([splits])")：文本段与标点交替，首尾可能是空串
+    // re.split("([splits])"): text pieces and punctuation alternate, and the first and last may be empty strings
     let mut segments = Vec::new();
     let mut piece = String::new();
     for c in text.chars() {
@@ -112,7 +112,7 @@ fn split_big_text(text: &str, max_len: usize) -> Vec<String> {
     result
 }
 
-/// `TextPreprocessor.pre_seg_text(text, lang, "cut5")`；调用方先做 `replace_consecutive_punctuation`。
+/// `TextPreprocessor.pre_seg_text(text, lang, "cut5")`; the caller runs `replace_consecutive_punctuation` first.
 pub fn pre_seg_text(text: &str, english: bool) -> Result<Vec<String>> {
     let terminal = if english { "." } else { "。" };
     let text = text.trim_matches('\n');

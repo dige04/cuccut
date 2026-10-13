@@ -20,9 +20,7 @@ import { CODEX_CARD_COPY, CLOUD_COPY, MODELS_PAGE_COPY } from './models-copy.ts'
 import { PANEL } from '../settings/settings-ui.tsx';
 
 /**
- * 「用 Codex 画图」在模型页的两处：图像生成云端页服务商列表的第一张卡（设计稿 settings-cloud.jsx:278-298），
- * 与默认模型菜单里的「Codex CLI · 画图」。开关、能不能打开、原因都复用设置 › Agent 那一行（A2-e）的纯函数与命令，
- * 不另起一份；进页时同样探测一次（Codex 重新检测、升级、登录之后再探测）。
+ * Two places on the models page use “用 Codex 画图”(Draw with Codex): the first card in the cloud provider list of the image generation page (design mock settings-cloud.jsx:278-298), and “Codex CLI · 画图”(Codex CLI · Draw) in the default model menu. The toggle, whether it can be opened, and the reason why all reuse the pure functions and commands of the 设置 › Agent (Settings › Agent) row (A2-e), rather than a separate copy. The page also probes once on entry (probes again after Codex is re-detected, upgraded or logged in).
  */
 export function useCodexImage(active: boolean): { connected: boolean; state: CodexImageRowState | null; registered: boolean } {
   const runtime = useRuntime();
@@ -48,7 +46,7 @@ export function useCodexImage(active: boolean): { connected: boolean; state: Cod
   return { connected, state: driver ? codexImageRow(provider, driver, probe) : null, registered: !!provider };
 }
 
-/** 默认模型菜单里 Codex 那一项的状态；Runtime 没注册 `agent:codex` 时菜单里不出现它。 */
+/** Status of the Codex item in the default model menu; when the Runtime has not registered `agent:codex`, the item does not appear in the menu. */
 export function codexDefaultState(codex: ReturnType<typeof useCodexImage>): CodexDefaultState | null {
   if (!codex.registered) return null;
   const { state } = codex;
@@ -72,8 +70,8 @@ const body = style({ marginTop: 2, marginBottom: 0, font: 'ui-xs', color: 'gray-
 const controls = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
 
 /**
- * 图像生成云端页服务商列表的第一张：能开时给开关，不能开（没装、没登录、太旧）时给「去设置 › Agent」。关掉开关不清默认值。
- * 浏览器里开关置灰（`models.configure` 不在 Web 白名单里），页头的说明已经写了原因。
+ * The first card in the cloud provider list of the image generation page: when it can be turned on, it shows a toggle; when it cannot (not installed, not logged in, too old), it shows “去设置 › Agent”(Go to Settings › Agent). Turning the toggle off does not clear the default value.
+ * In the browser the toggle is greyed out (`models.configure` is not on the Web allowlist); the note in the page header already gives the reason.
  */
 export function CodexImageCard({ codex, isDefault }: { codex: ReturnType<typeof useCodexImage>; isDefault: boolean }) {
   const runtime = useRuntime();

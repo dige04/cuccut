@@ -15,25 +15,24 @@ import { tr } from './copy.tr.ts';
 import { vi } from './copy.vi.ts';
 
 /**
- * 界面里多处共用的文案。英文写在这里，译文在 `copy.zh-Hans.ts`；同一个概念只用一个词，见 docs/glossary.md。
- * 读当前语言的文字要在渲染或调用时读（`M.x`、`revealLabel()`），不要在模块顶层读进常量。
- * 下面的具名导出（`ACCESS_MODE_LABEL`、`TASK_VIEW_COPY`…）都是 `live` 包装：每次读属性取当前语言。
+ * Copy shared across several places in the UI. English is written here, and translations are in `copy.zh-Hans.ts`; one concept uses only one term, see docs/glossary.md.
+ * Read text in the current language at render or call time (`M.x`, `revealLabel()`), not into a constant at module top level.
+ * The named exports below (`ACCESS_MODE_LABEL`, `TASK_VIEW_COPY`…) are all `live` wrappers: each property read picks up the current language.
  */
 const en = {
-  /** 打开系统的文件管理器并选中目标。所有平台同一个说法，不写某个平台专有的文件管理器名字（docs/glossary.md）。 */
+  /** Open the system's file manager and select the target. One wording for all platforms; do not write any platform-specific file manager name (docs/glossary.md). */
   reveal: 'Show in Folder',
   untitled: 'New session',
-  /** 用户消息上方已发送的图片（原型 agent-thread.jsx `UserMsg`）。 */
+  /** Images already sent above a user message (prototype agent-thread.jsx `UserMsg`). */
   sentAttachments: 'Sent files',
-  /** 任务在跑时切换访问模式的提示（原型 model-agent.js `modeToast` 的运行中分支）。 */
+  /** Hint when switching access mode while a task is running (the running branch of prototype model-agent.js `modeToast`). */
   accessModeToast: (label: string) => `The next turn will use “${label}”. This turn keeps its current access mode.`,
-  /** composer 脚注（原型 model-agent.js `composerFoot`）：在哪儿跑、用谁的订阅（空串表示没有账号名）、这一档会不会问你、快捷键。 */
+  /** Composer footnote (prototype model-agent.js `composerFoot`): where it runs, whose subscription is used (an empty string means there is no account name), whether this level asks you first, and the shortcut. */
   composerFoot: (name: string, account: string, foot: string) =>
     `Runs in ${name} on this computer, ${account ? `using your ${account}` : 'using your own subscription'}. ${foot} Enter to send, Shift+Enter for a new line, @ to reference, / for commands.`,
 
   /**
-   * 访问模式（架构设计 §3.12，原型 data.js `agent.modes`）。原型只画四档；「先给方案」是协议里独立的一档，
-   * 输入框下拉只在会话已经处在这一档时列出它（例如经 CLI 切过去的）。
+   * Access modes (architecture design §3.12, prototype data.js `agent.modes`). The prototype shows only four levels; “Propose a plan first” is a separate level in the protocol, and the input dropdown lists it only when the conversation is already at that level (for example, one switched to via the CLI).
    */
   accessModeLabel: {
     plan: 'Plan first',
@@ -56,7 +55,7 @@ const en = {
     stopped: 'Stopped',
     failed: 'Failed',
   },
-  /** composer 脚注的中段：这一档到底会不会问你（原型 model-agent.js `modeFoot`）。 */
+  /** Middle part of the composer footnote: whether this level actually asks you (prototype model-agent.js `modeFoot`). */
   accessModeFoot: {
     plan: 'Plans only and won’t change the video.',
     ask: 'Asks you before every write to the video.',
@@ -64,11 +63,11 @@ const en = {
     auto: 'Routine actions are allowed automatically; risky ones still ask you.',
     fullAccess: 'Writes to the video without asking each time.',
   },
-  /** 模型定位（原型 model-agent-setup.js `TIERS`）。 */
+  /** Model positioning (prototype model-agent-setup.js `TIERS`). */
   modelTierLabel: { balanced: 'Recommended', max: 'Most capable', fast: 'Fastest' },
   /**
-   * 推理强度（原型 data.js `agent.efforts`）：原生 id → 名字与代价。原型的 `mid` 在 Claude 与 Codex 里叫 `medium`。
-   * 原型给「中」的副文案是「默认」：这里改成标在模型自己的默认强度那一行（见 agent-choice.ts `effortRows`）。
+   * Reasoning effort (prototype data.js `agent.efforts`): native id → name and cost. The prototype's `mid` is called `medium` in Claude and Codex.
+   * The prototype's secondary text for “medium” is “default”; here it is changed to mark the row that is the model's own default effort (see `effortRows` in agent-choice.ts).
    */
   effort: {
     low: { label: 'Low', sub: 'Fast, good for small changes' },
@@ -87,11 +86,11 @@ const en = {
     localAccount: 'This computer',
     settings: 'Settings › Agents…',
     settingsSub: 'Coding agent · Subscription · Approval policy',
-    /** 会话有任务后 Agent 固定（架构设计 §3.11：原生会话不能跨 Agent 续）。 */
+    /** Once a conversation has a task, the agent is fixed (architecture design §3.11: a native conversation cannot be continued across agents). */
     locked: 'This session has already started, so its agent can’t change. Start a new session to switch.',
     detecting: 'Detecting agents…',
   },
-  /** Agent 用不了时第一级那一行的副文案（原型 model-agent.js `providerRows`，状态词取 model-agent-setup.js `badge`）。 */
+  /** Secondary text for the top-level row when an agent is unavailable (prototype model-agent.js `providerRows`; the status word is taken from model-agent-setup.js `badge`). */
   driverStateReason: {
     disabled: 'Turned off in Settings',
     'not-installed': 'Not installed',
@@ -99,7 +98,7 @@ const en = {
     outdated: 'Version too old · Check in Settings',
     error: 'Can’t run · Check in Settings',
   },
-  /** 斜杠命令的名字与说明，键是去掉 `/` 的命令名（`SLASH_COMMANDS`）。 */
+  /** Names and descriptions of slash commands; the key is the command name without the `/` (`SLASH_COMMANDS`). */
   slash: {
     polish: { label: 'Polish transcript', sub: 'Fix typos, add punctuation, split paragraphs' },
     chapters: { label: 'Generate chapters', sub: 'Split by topic and add titles' },
@@ -123,16 +122,16 @@ const en = {
     filesMessage: (paths: readonly string[]) => `Files and folders:\n${paths.map(path => JSON.stringify(path)).join('\n')}`,
     pickFailed: (message: string) => `Couldn’t select files: ${message}`,
     webFilesUnsupported: 'Add local files and folders in CucCut desktop. Uploads aren’t available in the Web client yet.',
-    /** @ 补全保留视频与文件引用；不再在 + 菜单里重复列出。 */
+    /** @ completion keeps video and file references; they are no longer listed again in the + menu. */
     mention: 'Reference a video or file',
     slash: 'Use a tool',
-    /** + 菜单：统一附件入口在首项，工具在下一组。 */
+    /** + menu: the unified attachment entry is the first item, and tools are in the next group. */
     attachSection: 'Add',
     referSection: 'References and commands',
     imagesUnsupported: (driverName: string) => `${driverName} doesn’t accept images`,
     noMentionCandidates: 'No videos or files to reference here yet',
   },
-  /** 输入框「+ › 使用 Skill」、输入框上的 skill 标记与会话消息上的标记（产品设计 §3.2.3、§6.9；原型 composer-insert-menu.jsx）。 */
+  /** The input box's “+ › Use Skill”, the skill marker on the input box, and the marker on conversation messages (product design §3.2.3, §6.9; prototype composer-insert-menu.jsx). */
   skill: {
     use: 'Use a skill',
     manage: 'Manage skills…',
@@ -142,18 +141,18 @@ const en = {
     token: (name: string) => `Skill: ${name}`,
     remove: (name: string) => `Remove skill: ${name}`,
   },
-  /** 附图（原型 agent-thread.jsx `composerImageFiles` 与 `addImages`）。 */
+  /** Attached images (prototype agent-thread.jsx `composerImageFiles` and `addImages`). */
   attachment: {
     tooLarge: `Choose images no larger than ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MiB`,
     tooMany: `You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} images`,
-    /** 原型只收 image/*；协议只收这四种（limits.ts），多出来的一句。 */
+    /** The prototype only accepts image/*; the protocol accepts only these four types (limits.ts), so this extra line is added. */
     badType: 'Only PNG, JPEG, GIF, or WebP images can be attached',
     uploadFailed: (message: string) => `Couldn’t upload the image: ${message}`,
     httpFailed: (status: number) => `Upload failed (HTTP ${status})`,
     networkFailed: 'Upload failed: can’t reach the Runtime',
     uploading: 'Uploading images…',
   },
-  /** 忙时排队（会话有任务在跑时发的话）。 */
+  /** Queued while busy (messages sent while a task is running in the conversation). */
   queue: {
     title: (count: number) => `Queued to send · ${count}`,
     images: (count: number) => (count === 1 ? '1 image' : `${count} images`),
@@ -168,7 +167,7 @@ const en = {
     failed: (message: string) => `Couldn’t send the queued message: ${message}`,
     busyPlaceholder: 'The agent is working. Messages you send now are queued until this turn ends',
   },
-  /** 任务失败后的恢复区（原型 agent-thread.jsx `ErrorMsg`）。 */
+  /** Recovery area after a task fails (prototype agent-thread.jsx `ErrorMsg`). */
   recovery: {
     authTitle: (name: string) => `${name} needs you to sign in again`,
     authBody: (name: string) =>
@@ -186,7 +185,7 @@ const en = {
     nothingToResend: 'Can’t find this turn’s message to resend',
     resendFailed: (message: string) => `Couldn’t resend: ${message}`,
   },
-  /** 审批卡（原型 agent-thread.jsx `PermissionMsg`，自动允许的那一行取 model-agent.js `autoAllowLabel`）。 */
+  /** Approval card (prototype agent-thread.jsx `PermissionMsg`; the auto-allow row takes its label from model-agent.js `autoAllowLabel`). */
   approval: {
     title: {
       command: 'The agent wants to run a command',
@@ -210,7 +209,7 @@ const en = {
     copyInput: 'Copy input summary',
     failed: (message: string) => `Couldn’t submit: ${message}`,
   },
-  /** 变更卡的撤销与恢复（原型 agent-thread.jsx `ReceiptMsg`）。 */
+  /** Undo and restore on the change card (prototype agent-thread.jsx `ReceiptMsg`). */
   change: {
     undone: 'Undone · Changes reverted',
     undo: 'Undo',
@@ -218,7 +217,7 @@ const en = {
     openVideo: 'Open video',
     confirmTitle: 'Undo this step?',
     /**
-     * 「恢复」只在这一笔还是你最近一次撤销、之后你没再改这个视频时才有（见 change-card.tsx），不说「随时」。
+     * “Restore” only appears while this change is still your most recent undo and you have not edited this video since (see change-card.tsx). It does not say “at any time”.
      */
     confirmBody: 'The changes this step wrote to the video will be removed. Until you edit this video again, you can bring them back with Restore.',
     cancel: 'Cancel',
@@ -229,9 +228,8 @@ const en = {
     restoreFailed: (message: string) => `Couldn’t restore: ${message}`,
   },
   /**
-   * 空会话（原型 agent-thread.jsx `AgentThread` 的空态，建议取 data.js `agent.chips`）。
-   * 原型说明句里的「@ 可以引用章节、说话人、译文」「写入之前一定先问你」「把视频拖进来」这里还做不到
-   * （@ 只列视频与文件；问不问看访问模式；会话里不能拖入视频），只留做得到的部分。
+   * Empty conversation (the empty state of prototype agent-thread.jsx `AgentThread`; suggestions come from data.js `agent.chips`).
+   * The prototype's explanatory sentences, “@ can reference chapters, speakers, translations”, “ask you before writing anything”, and “drag a video in”, cannot be done here yet (@ lists only videos and files; whether it asks depends on the access mode; videos cannot be dragged into a conversation), so only the parts that work are kept.
    */
   threadEmpty: {
     greetVideo: (name: string) => `What should we do with “${name}”?`,
@@ -252,7 +250,7 @@ const en = {
       'Export bilingual SRT and an MP4 with burned-in subtitles',
     ],
   },
-  /** 产物卡（原型 home-session.jsx `SessionArtifactCard`、`SessionMoviePreview`、`SessionMessageArtifacts`）。 */
+  /** Artifact cards (prototype home-session.jsx `SessionArtifactCard`, `SessionMoviePreview`, `SessionMessageArtifacts`). */
   output: {
     playVideo: (name: string) => `Play video “${name}”`,
     noThumbnail: 'No thumbnail',
@@ -265,8 +263,8 @@ const en = {
     messageOutputs: 'Message outputs',
   },
   /**
-   * 线程里的视频卡与下载卡（产品设计 §3.2.2、§6.5；原型 home-session.jsx `SessionArtifactCard`、agent-cards.jsx `JobRow` / `DownloadCard`）。
-   * 状态词与 Space 的视频状态同一套说法。
+   * Video cards and download cards in the thread (product design §3.2.2, §6.5; prototype home-session.jsx `SessionArtifactCard`, agent-cards.jsx `JobRow` / `DownloadCard`).
+   * The status words use the same wording as the video status in Space.
    */
   videoCard: {
     agentTranslating: 'Agent translating line by line',
@@ -306,7 +304,7 @@ const en = {
     openFailed: (message: string) => `Couldn’t open: ${message}`,
     retryFailed: (message: string) => `Couldn’t try again: ${message}`,
   },
-  /** Home 起始页（产品设计 §3.2.1；原型 page-new.jsx Home、new-agent.jsx）。 */
+  /** Home start page (product design §3.2.1; prototype page-new.jsx Home, new-agent.jsx). */
   home: {
     templates: 'Video templates',
     quickStart: 'Quick start',
@@ -314,7 +312,7 @@ const en = {
     blankVideoTip: 'No transcription, no queue — straight to the editor',
     blankVideoCreated: 'Blank video created',
     blankVideoFailed: (message: string) => `Couldn’t create a blank video: ${message}`,
-    /** 没选项目时新建空白视频，先建一个这样命名的项目。 */
+    /** When no project is selected, a new blank video first creates a project with this name. */
     blankVideoProject: 'Blank video',
     removeTemplate: 'Remove template',
     templateToken: (title: string) => `Template: ${title}`,
@@ -345,10 +343,10 @@ const en = {
     templatePromptLoading: 'Loading prompt…',
     templatePromptFailed: (message: string) => `Couldn’t read the prompt: ${message}`,
     templateSay: 'Try saying',
-    /** 模板详情「需要你补充」与「做法：…」（模板包规范 §5.5、§3.1 `skills`）。 */
+    /** Template details: “Needs your input” and “Approach: …” (template package spec §5.5, §3.1 `skills`). */
     templateFields: 'To fill in',
     templateSkills: (list: string) => `Approach: ${list}`,
-    /** 输入框下面的待填提示（规范 §5.5）：还有几处、是哪些（`labels` 已按当前语言连好），不拦发送。 */
+    /** Pending-fields hint below the input box (spec §5.5): how many places are still to fill in and which ones (`labels` is already joined in the current language); it does not block sending. */
     slotsLeft: (count: number, labels: string) => `${count} left to fill in: ${labels} · You can still send; the agent will ask you first`,
     fillNextSlot: 'Fill in next',
     templateBriefNote: 'Once you pick it, the agent first confirms the topic, goal, audience, and materials with you, then starts making it.',
@@ -368,7 +366,7 @@ const en = {
     addDocument: 'PDF or document',
     addImage: 'Image',
     recentVideos: 'Recent videos',
-    /** 选了最近的视频，原先挂着的视频或音频素材让出位置（一句话只对一条视频说）。 */
+    /** When the most recent video is selected, the video or audio material that was attached before gives up its slot (the sentence speaks to only one video). */
     recentReplaced: (title: string, removed: string) => `Now working on “${title}”; removed “${removed}”`,
     removeMaterial: (name: string) => `Remove asset: ${name}`,
     materialsFull: (max: number, rejected: number) => `You can add up to ${max} assets at a time; ${rejected} weren’t added`,
@@ -383,9 +381,9 @@ const en = {
     enableFailed: (message: string) => `Couldn’t turn on: ${message}`,
   },
   /**
-   * 起始页「快捷开始」的四条（原型 model-newproject.js `STARTERS`）：处理已有视频或音频的常见事，点一下把这句话放进输入框。
-   * 措辞不带「动画」「讲解」「图表」这类词，免得被当成某一类制作。`needs` 是提示里「再把什么拖进输入框」，`link` 是「或贴上什么」
-   *（视频网站的链接也行）。`trans.prompt` 里恰好一处 `{{目标语言}}` 这样的待填项，各语言自己写标签；上次填过的由起始页填进去。
+   * The four “Quick start” entries on the start page (prototype model-newproject.js `STARTERS`): common tasks on existing video or audio; one click puts the sentence into the input box.
+   * The wording avoids words such as “animation”, “explainer” and “chart”, so it is not taken as one particular kind of production. `needs` is the hint “what to drag into the input box next”, and `link` is “or paste what”
+   * (a video-site link also works). `trans.prompt` contains exactly one fill-in slot like `{{目标语言}}`; each language writes its own label, and the start page fills in the value entered last time.
    */
   homeStarter: {
     sub: { title: 'Add subtitles', needs: 'a video', link: 'a video link', prompt: 'Add subtitles to this video.' },
@@ -399,7 +397,7 @@ const en = {
     a2v: { title: 'Audio to video', needs: 'an audio file', link: 'a link', prompt: 'Turn this audio into a video with a background, a waveform, and subtitles.' },
     tip: (needs: string, link: string) => `Fills in the prompt. Then drag ${needs} into the message box, or paste ${link}`,
   },
-  /** 模板分类的显示名（模板包规范 §3.2；键是协议的一部分）。认不出的键由 model/home-templates.ts 兜底按键名显示。 */
+  /** Display names for template categories (template package spec §3.2; the keys are part of the protocol). Unrecognised keys fall back to showing the key name, handled by model/home-templates.ts. */
   templateCategory: {
     all: 'All',
     marketing: 'Marketing',
@@ -410,12 +408,12 @@ const en = {
     'creative-short': 'Creative short',
     'motion-design': 'Motion design',
   },
-  /** 两类模板（规范 §1.2）。 */
+  /** The two kinds of template (spec §1.2). */
   templateKind: { all: 'All', scene: 'Scene templates', example: 'Showcase examples' },
   templateSource: { all: 'All sources', builtin: 'Built-in', user: 'Mine', community: 'Community' },
-  /** 模板自带素材的种类（规范 §3.4）。 */
+  /** Kinds of material bundled with a template (spec §3.4). */
   templateAsset: { image: 'Image', svg: 'SVG', audio: 'Audio', video: 'Video' },
-  /** 模板的画幅与时长文案（原型 model-home-templates.js `spec`、`specLine`）。 */
+  /** Template aspect ratio and duration copy (prototype model-home-templates.js `spec`, `specLine`). */
   templateSpec: {
     allAuto: 'Aspect ratio and duration automatic',
     ratioAuto: 'Aspect ratio automatic',
@@ -423,7 +421,7 @@ const en = {
     sceneDefault: (spec: string) => `${spec} by default; say so in your message to change it`,
     exampleAuto: 'Aspect ratio and duration automatic, decided by the agent from your content',
   },
-  /** 起始页的创建项目对话框（原型 new-agent.jsx `CreateProjectDialog`）。 */
+  /** The create-project dialog on the start page (prototype new-agent.jsx `CreateProjectDialog`). */
   createProject: {
     title: 'Create project',
     close: 'Close create project',
@@ -436,7 +434,7 @@ const en = {
     created: (name: string) => `Created project “${name}”`,
     failed: (message: string) => `Couldn’t create the project: ${message}`,
   },
-  /** 任务种类的名字（原型 page-tasks.jsx `KIND`）。Agent 会话里的任务原型没有单列，叫「Agent 任务」。 */
+  /** Names of task kinds (prototype page-tasks.jsx `KIND`). The prototype does not list tasks from agent conversations separately; they are called “Agent task”. */
   taskKind: {
     agent: 'Agent task',
     transcribe: 'Transcribe',
@@ -457,7 +455,7 @@ const en = {
     agentTranslate: 'Translate',
     legacyImport: 'Import earlier projects',
   },
-  /** Job 的阶段（`JobPhase`）：列表与胶囊念「识别中 · 45%」。 */
+  /** Job phases (`JobPhase`): the list and the pill show “Recognising · 45%”. */
   jobPhase: {
     queued: 'Queued',
     starting: 'Starting',
@@ -478,7 +476,7 @@ const en = {
     applying: 'Writing to video',
     done: 'Done',
   },
-  /** 后台任务页、详情与侧栏。 */
+  /** Background task page, details and sidebar. */
   taskView: {
     queued: 'Queued',
     running: 'In progress',
@@ -549,7 +547,7 @@ const en = {
     documentName: 'Transcript',
     stopFailed: (message: string) => `Couldn’t stop: ${message}`,
     cancelFailed: (message: string) => `Couldn’t cancel: ${message}`,
-    /** 对账（`jobs.reconcile`）：重启后结果不明、中断或没有写进视频的任务，由用户决定。 */
+    /** Reconciliation (`jobs.reconcile`): after a restart, tasks whose result is unknown, that were interrupted, or whose result was never written to the video are left for the user to decide. */
     reconcileRetry: 'Try again',
     reconcileDiscard: 'Discard this result',
     reconcileApply: 'Write to video again',
@@ -565,7 +563,7 @@ const en = {
     remedyNode: 'View remote nodes',
     remedyAgent: 'Open agent settings',
   },
-  /** 任务胶囊与悬停卡（原型 task-pill.jsx、model-task-pill.js）。 */
+  /** Task pill and hover card (prototype task-pill.jsx, model-task-pill.js). */
   taskPill: {
     count: (n: number) => (n === 1 ? '1 background task' : `${n} background tasks`),
     all: 'All tasks',
@@ -575,12 +573,12 @@ const en = {
     startedAt: (ago: string) => `Started ${ago}`,
   },
   /**
-   * 功能区的「项目文件」标签（原型 home-workspace.jsx `WorkspaceFiles` 的 `__browse__` 分支）。
-   * 原型没有的状态（读取中、读不了、目录为空、只列出一部分）按同样口吻补上。
+   * The “Project files” tab in the workspace area (the `__browse__` branch of prototype home-workspace.jsx `WorkspaceFiles`).
+   * States the prototype lacks (loading, cannot read, empty directory, only part listed) are added in the same tone.
    */
   projectFiles: {
     region: 'Project files',
-    /** 不属于项目的会话：根目录是它自己的工作目录。 */
+    /** For a conversation that does not belong to a project: the root is its own working directory. */
     scratchRoot: 'Session folder',
     searchLabel: 'Find project files',
     searchPlaceholder: 'Find files or videos',
@@ -598,8 +596,7 @@ const en = {
     inRoot: 'Project root',
   },
   /**
-   * 功能区的网页标签（原型 home-browser.jsx `WorkspaceBrowser`）。原型用 iframe；这里是宿主的独立网页视图（架构设计 §12.10），
-   * 所以底部那句改成说明隔离；被拒绝的地址（本机地址、非 http/https）、网页进程退出与「这个环境不能内嵌网页」是原型没有的状态。
+   * The web tab in the workspace area (prototype home-browser.jsx `WorkspaceBrowser`). The prototype uses an iframe; here it is the host's own separate web view (architecture design §12.10), so the sentence at the bottom is changed to explain isolation. Refused addresses (local addresses, non-http/https), the web process exiting, and “This environment cannot embed web pages” are states the prototype does not have.
    */
   webTab: {
     back: 'Back',
@@ -656,10 +653,10 @@ const en = {
     newPageHint: 'Write the page here, or ask the agent to edit it.',
     newPageFailed: 'Couldn’t create the web page',
   },
-  /** 时间线的剪贴板、右键菜单与带撤销的提示（原型 editor-keys.jsx、timeline-menu.jsx；原型说「元素」，这里是「片段」）。 */
+  /** Timeline clipboard, context menu and hints with undo (prototype editor-keys.jsx, timeline-menu.jsx; the prototype says “element”, here it is “clip”). */
   timelineEdit: {
     undo: 'Undo',
-    /** `verb` 是本目录里的动作名（`copy`、`cutItem`、`remove`、`duplicate`）。 */
+    /** `verb` is the action name in this directory (`copy`, `cutItem`, `remove`, `duplicate`). */
     pick: (verb: string) => `Select the clips to ${verb.toLowerCase()} first`,
     copied: (n: number) => (n > 1 ? `Copied ${n} clips` : 'Copied clip'),
     cut: (n: number) => (n > 1 ? `Cut ${n} clips` : 'Cut clip'),
@@ -683,7 +680,7 @@ const en = {
     enableHint: 'Back in the picture and exports',
     remove: 'Delete',
   },
-  /** 走带的缩放菜单（原型 data.js `zoomMenu` 与 timeline.jsx 的 Transport）。 */
+  /** Zoom menu for the transport (prototype data.js `zoomMenu` and the Transport in timeline.jsx). */
   timelineZoom: {
     menu: 'Zoom',
     tip: 'Zoom options',
@@ -698,8 +695,8 @@ const en = {
     noSelection: 'Select clips on the timeline first',
   },
   /**
-   * 编辑器快捷键清单（原型 editor-keys.jsx 的 SHEET）：只列这里真有的键。
-   * 键里的 ⌘ 在 Windows 与 Linux 上换成 Ctrl+（见 shortcut-sheet）。
+   * Editor shortcut list (SHEET in prototype editor-keys.jsx): lists only the keys that actually exist here.
+   * The ⌘ in the keys becomes Ctrl+ on Windows and Linux (see shortcut-sheet).
    */
   shortcutSheet: {
     title: 'Keyboard shortcuts',
@@ -731,7 +728,7 @@ const en = {
       ['Open the editor shortcut list', '?'],
     ] as [string, string][],
   },
-  /** Home 功能区：标签条、加号菜单、视图控件、会话列与单文件标签（原型 home-workspace.jsx、shell.jsx）。 */
+  /** Home workspace area: tab strip, plus menu, view controls, conversation column and single-file tabs (prototype home-workspace.jsx, shell.jsx). */
   workspace: {
     tablist: 'Workspace tabs',
     tablistHint: 'Drag tabs to reorder them, or press Alt + Shift + Left/Right Arrow.',
@@ -743,7 +740,7 @@ const en = {
     viewGroup: 'Workspace view',
     resize: 'Resize session column',
     conversation: 'Session',
-    /** 窄窗口里会话标签的提示与读屏名称（产品设计 §3.3）：`status` 是进行中 / 等待批准，没有时省掉。 */
+    /** Tooltip and screen reader name for a conversation tab in a narrow window (product design §3.3): `status` is running / awaiting approval; omitted when absent. */
     conversationTabTip: (title: string, status: string | null) =>
       `Session “${title}”${status ? ` · ${status}` : ''} · Pinned first; can't be moved or closed`,
     conversationTabLabel: (title: string, status: string | null) => `Session “${title}”${status ? `, ${status}` : ''}, pinned first`,
@@ -753,7 +750,7 @@ const en = {
     fileMissing: 'The file was moved or deleted',
     filesNoConversation: 'Once the session is created, files in its folder are listed here.',
   },
-  /** 舞台上的对象：选中框、把手、旋转钮、多选统一框与就地改字（原型 stage-objects.jsx、stage-marquee.jsx）。 */
+  /** Objects on the stage: selection box, handles, rotate button, the unified multi-select box and in-place text editing (prototype stage-objects.jsx, stage-marquee.jsx). */
   stage: {
     label: 'Objects on canvas',
     textEditor: 'Edit text',
@@ -765,7 +762,7 @@ const en = {
     groupCornerTip: 'Scale all proportionally',
     picked: (n: number) => `${n} selected`,
     degrees: (n: number) => `${n}°`,
-    /** 按镜头分段取景时选中一段挂的小牌（原型 `shotBadge`）：子视频时间线上的起止秒。 */
+    /** Small badge shown on a segment selected while framing by shot (prototype `shotBadge`): the start and end seconds on the sub-video timeline. */
     shotPiece: (from: number, to: number) => `This part · ${from}–${to}s`,
     applyAll: 'Apply to whole short',
     applyAllTip: 'Use this part’s framing for every part of this video',
@@ -773,9 +770,8 @@ const en = {
     undo: 'Undo',
   },
   /**
-   * 四项服务的目录与起停用词（原型 model-services.js `SERVICES`）；远端算力沿用「共享」。顺序就是侧栏与总览的顺序。
-   * 模型接口服务在原型里是 Web 服务页里的一节（page-services-api.jsx `ApiSection`）；Runtime 把它做成独立的服务（自己的端口、
-   * 令牌与开关，架构设计 §4.8），这里排在 Web 服务后面。
+   * Catalogue and start/stop verbs for the four services (prototype model-services.js `SERVICES`); remote compute keeps the term “shared”. The order is the order in the sidebar and overview.
+   * In the prototype the model API service is a section on the Web service page (page-services-api.jsx `ApiSection`); the Runtime makes it a separate service (its own port, token and switch; architecture design §4.8), and here it is listed after the Web service.
    */
   service: {
     mcp: {
@@ -815,7 +811,7 @@ const en = {
       stopping: 'Stopping…',
     },
   },
-  /** 服务的状态词（原型 model-services.js `stateLabel`）；`unavailable` 是这个版本的 Runtime 没有提供的服务。 */
+  /** Service status words (prototype model-services.js `stateLabel`); `unavailable` is a service this version of the Runtime does not provide. */
   serviceState: {
     share: { starting: 'Starting to share…', stopping: 'Stopping sharing…', error: 'Sharing stopped unexpectedly', on: 'Sharing', off: 'Not sharing' },
     service: { starting: 'Starting…', stopping: 'Stopping…', error: 'Failed to start', on: 'Running', off: 'Not started' },
@@ -829,21 +825,21 @@ const en = {
     errors: (n: number) => (n === 1 ? '1 error' : `${n} errors`),
     running: (n: number) => `${n} running`,
     open: (name: string) => `Open ${name}`,
-    /** `verb` 是服务自己的启动词（`service.*.start`）。 */
+    /** `verb` is the service's own start verb (`service.*.start`). */
     restart: (verb: string) => `Re${verb.charAt(0).toLowerCase()}${verb.slice(1)}`,
     railAlert: (text: string) => `Services, ${text}`,
     railApprovals: (n: number) => (n === 1 ? 'Services, 1 request awaiting your approval' : `Services, ${n} requests awaiting your approval`),
     loading: 'Loading status…',
     disconnected: 'Not connected to the CucCut Runtime',
     failed: (message: string) => `That didn’t work: ${message}`,
-    /** Runtime 列出了、但这个版本没有提供的服务（`available: false`）：总览行与详情页说清楚为什么不能起停。 */
+    /** Services the Runtime lists but this version does not provide (`available: false`): the overview row and the detail page explain clearly why they cannot be started or stopped. */
     unavailableDetail: 'This version of the CucCut Runtime doesn’t provide this service yet',
     unavailableTitle: (name: string) => `${name} isn’t available yet`,
     notRunning: 'The service isn’t running. Start it first',
     mcpRelated: 'Want Claude Code or Codex in your terminal to learn CucCut’s workflows? Install CucCut’s skill for them — no service needed. See',
     mcpRelatedLink: 'Settings › Skills',
   },
-  /** CucCut Runtime 卡（原服务页的一张卡，现在给设置 › 诊断复用）。 */
+  /** CucCut Runtime card (one card from the old services page, now reused by Settings › Diagnostics). */
   runtimeCard: {
     name: 'CucCut Runtime',
     version: 'Version',
@@ -852,7 +848,7 @@ const en = {
     startedAt: 'Started',
     home: 'Data folder',
   },
-  /** 远端算力页（原型 page-shell.jsx RemotePage）。这个版本只能共享转录，其他几类任务画成禁用并说明原因。 */
+  /** Remote compute page (prototype page-shell.jsx RemotePage). This version can only share transcription; the other task types are drawn as disabled with the reason given. */
   remote: {
     title: 'Remote compute',
     tabsLabel: 'Remote compute views',
@@ -940,7 +936,7 @@ const en = {
     unpairTitle: (name: string) => `Unpair from “${name}”?`,
     unpairBody: 'This computer will no longer appear in the transcription model list. You can pair again any time.',
     unpairDone: 'Unpaired',
-    /** 节点卡上「为什么用不了」：按 `PairedNode.problem` 拼（没有诊断方法，不叫「诊断」）。 */
+    /** “Why it cannot be used” on the node card: assembled from `PairedNode.problem` (there is no diagnostic method, so it is not called “Diagnose”). */
     problem: {
       unreachable: 'Can’t reach this computer. Make sure it has CucCut open with “Share this Mac” on, and both computers are on the same local network.',
       version: 'The two computers run incompatible CucCut versions. Update both to the latest version.',
@@ -973,7 +969,7 @@ const en = {
     },
     pairFailed: (message: string) => `Pairing didn’t work: ${message}`,
   },
-  /** 「提供给其他电脑的任务」的名字（键见 `REMOTE_TASK_COPY`）。`noun` 是缺模型提示里的那类模型。 */
+  /** Names of “tasks offered to other computers” (keys in `REMOTE_TASK_COPY`). `noun` is the kind of model named in the missing-model hint. */
   remoteTask: {
     asr: { name: 'Transcription', noun: 'transcription model' },
     tts: { name: 'Voice-over', noun: 'voice-over model' },
@@ -982,7 +978,7 @@ const en = {
     download: { name: 'Video download', noun: null },
     export: { name: 'Video export', noun: null },
   },
-  /** 帮助中心（原型 help-center.jsx）：外框、分类、搜索、快速上手、快捷键页与入口。 */
+  /** Help center (prototype help-center.jsx): frame, categories, search, quick start, shortcuts page and entry point. */
   help: {
     title: 'Help Center',
     subtitle: 'Look things up any time and get going',
@@ -1034,14 +1030,14 @@ const en = {
     entryLabel: 'Help Center',
     settingsEntry: 'Help',
   },
-  /** 编辑器预览的监听音量与全屏（快捷键 ↑/↓、M、F；原型 editor-keys.jsx 借全屏播放器的键）。只是这个窗口听到、看到的，不进视频。 */
+  /** Editor preview listening volume and fullscreen (shortcuts ↑/↓, M, F; prototype editor-keys.jsx borrows the keys of the fullscreen player). It only affects what this window hears and shows; it is not put into the video. */
   previewKeys: {
     volume: (volume: number) => `Preview volume ${volume}`,
     muted: 'Preview muted',
     unmuted: (volume: number) => `Preview unmuted · Volume ${volume}`,
     fullscreenFailed: 'Couldn’t show the preview full screen',
   },
-  /** 画布浮动工具条与多选页（原型 stage-toolbar.jsx、stage-toolbar-menu.jsx、panel-elements.jsx MultiSelectPanel）。 */
+  /** Floating canvas toolbar and multi-select page (prototype stage-toolbar.jsx, stage-toolbar-menu.jsx, panel-elements.jsx MultiSelectPanel). */
   stageToolbar: {
     label: 'Clip toolbar',
     more: 'More',
@@ -1079,7 +1075,7 @@ const en = {
     dragNote: 'Drag one of them on the canvas to move them together. Select a single clip to change properties one by one.',
     hint: 'Align, distribute, duplicate, and delete each count as a single undo step.',
   },
-  /** @ 补全分组（设计稿 model-agent.js `mentionItems` 的本视频一组）：打开的视频里的章节与说话人在前。 */
+  /** @ completion group (the this-video group of design-draft model-agent.js `mentionItems`): chapters and speakers in the open video come first. */
   mentionGroups: {
     video: 'This video',
     files: 'Videos and files',
@@ -1092,22 +1088,22 @@ export const revealLabel = () => M.reveal;
 export const untitled = () => M.untitled;
 export const sentAttachmentsLabel = () => M.sentAttachments;
 
-// ---- 具名导出：形状与旧版一致，每次读属性取当前语言 ----
+// ---- Named exports: same shape as before; each property read picks up the current language ----
 
 export const ACCESS_MODE_LABEL: Record<AgentMode, string> = live(() => M.accessModeLabel);
 export const ACCESS_MODE_HINT: Record<AgentMode, string> = live(() => M.accessModeHint);
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = live(() => M.taskStatusLabel);
 
-// ---- 输入区（原型 agent-thread.jsx Composer、model-agent.js、data.js `agent`） ----
+// ---- Input area (prototype agent-thread.jsx Composer, model-agent.js, data.js `agent`) ----
 
 export const ACCESS_MODE_FOOT: Record<AgentMode, string> = live(() => M.accessModeFoot);
 
-/** 任务在跑时切换访问模式的提示（原型 model-agent.js `modeToast` 的运行中分支）。 */
+/** Hint when switching access mode while a task is running (the running branch of prototype model-agent.js `modeToast`). */
 export function accessModeToast(mode: AgentMode): string {
   return M.accessModeToast(ACCESS_MODE_LABEL[mode]);
 }
 
-/** composer 脚注（原型 model-agent.js `composerFoot`）：在哪儿跑、用谁的订阅、这一档会不会问你、快捷键。 */
+/** Composer footnote (prototype model-agent.js `composerFoot`): where it runs, whose subscription is used, whether this level asks you first, and the shortcut. */
 export function composerFoot(driverName: string | null, account: string | null, mode: AgentMode): string {
   const name = driverName ?? 'Claude Code';
   const acct = (account ?? '').split(' · ')[0]!.trim();
@@ -1120,7 +1116,7 @@ export const AGENT_PICKER = live(() => M.agentPicker);
 export const DRIVER_STATE_REASON: Record<Exclude<DriverState, 'ready'>, string> = live(() => M.driverStateReason);
 
 type SlashKey = keyof CopyMessages['slash'];
-/** 一条斜杠命令：命令与图标是固定数据，名字与说明在读的时候按当前语言取。 */
+/** One slash command: the command and icon are fixed data; the name and description are read in the current language at read time. */
 function slash<C extends `/${SlashKey}`, I extends string>(cmd: C, icon: I) {
   const key = cmd.slice(1) as SlashKey;
   return {
@@ -1136,8 +1132,8 @@ function slash<C extends `/${SlashKey}`, I extends string>(cmd: C, icon: I) {
 }
 
 /**
- * 斜杠命令（原型 data.js `agent.slash`，产品设计 §5.10）：`/` 点名一个工具，选中只把 `/xxx ` 留在正文里，后面接着说，Agent 自己解释。
- * 原型的智能裁剪与剪成短视频还没有接入 Agent 的流程，不列进来。
+ * Slash commands (prototype data.js `agent.slash`, product design §5.10): `/` names a tool; selecting it leaves only `/xxx ` in the message body, you keep talking after it, and the agent explains it itself.
+ * The prototype's smart trimming and cutting into short videos are not yet connected to the agent flow, so they are not listed.
  */
 export const SLASH_COMMANDS = [
   slash('/polish', 'sparkle'),
@@ -1163,7 +1159,7 @@ export const ATTACHMENT_COPY = live(() => M.attachment);
 export const QUEUE_COPY = live(() => M.queue);
 export const RECOVERY_COPY = live(() => M.recovery);
 
-// ---- 会话线程（原型 agent-thread.jsx `PermissionMsg`、`ReceiptMsg`、`UserMsg`、`AgentThread` 空态；home-session.jsx 产物卡） ----
+// ---- Conversation thread (prototype agent-thread.jsx `PermissionMsg`, `ReceiptMsg`, `UserMsg`, the `AgentThread` empty state; home-session.jsx artifact cards) ----
 
 export const APPROVAL_COPY = live(() => M.approval);
 export const CHANGE_COPY = live(() => M.change);
@@ -1173,7 +1169,7 @@ export const VIDEO_CARD_COPY = live(() => M.videoCard);
 export const HOME_COPY = live(() => M.home);
 export const HOME_STARTER_COPY = live(() => M.homeStarter);
 
-/** 模板来源筛选用的键（model/home-templates.ts `HomeTemplate.source`）：内置目录、用户目录，清单写了社区的算社区。 */
+/** Keys for filtering template sources (`HomeTemplate.source` in model/home-templates.ts): built-in catalogue and user directory; a manifest that names a community source counts as community. */
 export type TemplateSourceKey = 'builtin' | 'user' | 'community';
 
 export const TEMPLATE_CATEGORY_LABEL = live(() => M.templateCategory);
@@ -1183,7 +1179,7 @@ export const TEMPLATE_ASSET_LABEL = live(() => M.templateAsset);
 export const TEMPLATE_SPEC_COPY = live(() => M.templateSpec);
 export const CREATE_PROJECT_COPY = live(() => M.createProject);
 
-// ---- 后台任务统一视图与任务胶囊（原型 page-tasks.jsx、model-task-facts.js、task-pill.jsx、model-task-pill.js） ----
+// ---- Unified background-task view and task pill (prototype page-tasks.jsx, model-task-facts.js, task-pill.jsx, model-task-pill.js) ----
 
 export const TASK_KIND_LABEL = live(() => M.taskKind);
 export const JOB_PHASE_LABEL: Record<JobPhase, string> = live(() => M.jobPhase);
@@ -1197,7 +1193,7 @@ export const SHORTCUT_SHEET_COPY = live(() => M.shortcutSheet);
 export const WORKSPACE_COPY = live(() => M.workspace);
 export const STAGE_COPY = live(() => M.stage);
 
-// ---- 服务（原型 page-services.jsx、model-services.js、page-shell.jsx RemotePage；产品设计 §2.1） ----
+// ---- Services (prototype page-services.jsx, model-services.js, page-shell.jsx RemotePage; product design §2.1) ----
 
 export const SERVICE_COPY = live(() => M.service);
 export const SERVICE_STATE_COPY = live(() => M.serviceState);
@@ -1206,7 +1202,7 @@ export const RUNTIME_CARD_COPY = live(() => M.runtimeCard);
 export const REMOTE_COPY = live(() => M.remote);
 
 type RemoteTaskKey = keyof CopyMessages['remoteTask'];
-/** 一类可提供给其他电脑的任务：键与能力名是固定数据，名字在读的时候按当前语言取。 */
+/** One kind of task offered to other computers: the key and capability name are fixed data; the name is read in the current language at read time. */
 function remoteTask<K extends RemoteTaskKey, C extends string | null>(key: K, capability: C) {
   return {
     key,
@@ -1221,8 +1217,8 @@ function remoteTask<K extends RemoteTaskKey, C extends string | null>(key: K, ca
 }
 
 /**
- * 「提供给其他电脑的任务」的目录（原型 model-services.js `REMOTE_TASKS`）。`capability` 是节点协议里可共享的能力名
- * （`NODE_SHAREABLE_CAPABILITIES`）；为 null 的几类这个版本没有后端，画成禁用。
+ * Catalogue of “tasks offered to other computers” (prototype model-services.js `REMOTE_TASKS`). `capability` is the capability name that can be shared in the node protocol
+ * (`NODE_SHAREABLE_CAPABILITIES`); the types whose value is null have no backend in this version and are drawn as disabled.
  */
 export const REMOTE_TASK_COPY = [
   remoteTask('asr', 'transcribe'),
@@ -1236,7 +1232,7 @@ export const REMOTE_TASK_COPY = [
 export const HELP_COPY = live(() => M.help);
 export const PREVIEW_KEYS_COPY = live(() => M.previewKeys);
 
-// ---- 画布浮动工具条与多选页 ----
+// ---- Floating canvas toolbar and multi-select page ----
 
 export const STAGE_TOOLBAR_COPY = live(() => M.stageToolbar);
 export const MENTION_GROUPS = live(() => M.mentionGroups);

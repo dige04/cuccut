@@ -1,7 +1,6 @@
-//! 已准备的 BCF 文档：native、WASM 和导出共用的布局、录制与帧计划入口。
+//! Prepared BCF document: the entry point for layout, recording and frame planning shared by native, WASM and export.
 //!
-//! 调用方先加载资源并 resolve，再创建本会话。会话不读文件、不解码媒体、
-//! 不拥有播放时钟。文档或资源内容改变时创建新会话，准备成功后再原子替换旧会话。
+//! The caller loads resources and resolves them first, then creates this session. The session reads no files, decodes no media, and does not own the playback clock. When the document or resource content changes, create a new session, and atomically replace the old session only after preparation succeeds.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -15,15 +14,14 @@ use crate::{
     PreflightReport, SurfaceCache, TextEngine, execute_plan, execute_plan_with_fingerprints,
 };
 
-/// 不含宿主资源句柄的已准备文档。每个渲染 worker 持有自己的会话。
+/// Prepared document without host resource handles. Each render worker holds its own session.
 pub struct PreparedBcf {
     compiled: Arc<Compiled>,
     text: TextEngine,
     surfaces: SurfaceCache,
 }
 
-/// 准备完就只读的那部分：布局后的 IR、动画编译与帧计划器。并行 worker 共享这一份，
-/// 各自只带文字引擎与执行器（与 `ccut render` 的逐核分工同一个切法）。
+/// The part that is read-only once prepared: the laid-out IR, animation compilation and the frame planner. Parallel workers share this one, each carrying only a text engine and an executor (the same split as `ccut render`'s per-core division).
 struct Compiled {
     ir: Ir,
     renderer: FrameRenderer,
@@ -31,8 +29,8 @@ struct Compiled {
 }
 
 impl PreparedBcf {
-    /// 对已注入媒体元数据的 IR 完成布局、动画编译与能力预检。
-    /// `text` 的字体和 `lotties` 均由宿主提供，不能在采样时补载。
+    /// Completes layout, animation compilation and capability pre-checks for an IR whose media metadata has already been injected.
+    /// `text`'s fonts and `lotties` are both provided by the host and cannot be loaded during sampling.
     pub fn new(
         mut ir: Ir,
         mut text: TextEngine,
@@ -52,7 +50,7 @@ impl PreparedBcf {
         })
     }
 
-    /// 只读已布局的文档；音频计划、场景时间轴和媒体需求由宿主消费。
+    /// Read-only laid-out document; the audio plan, scene timeline and media requirements are consumed by the host.
     pub fn ir(&self) -> &Ir {
         &self.compiled.ir
     }
@@ -61,8 +59,8 @@ impl PreparedBcf {
         self.compiled.planner.report()
     }
 
-    /// 独立采样任意非负项目时刻，不依赖此前播放或 seek 顺序。
-    /// 不隐式量化或钳制末帧；播放控制与导出使用各自显式的采样时刻。
+    /// Samples any non-negative project time independently, without depending on prior playback or seek order.
+    /// Does not implicitly quantize or clamp the final frame; playback control and export each use their own explicitly specified sample times.
     pub fn plan(&mut self, time: f64) -> Result<FramePlan> {
         if !time.is_finite() || time < 0.0 {
             bail!("bcf-time-invalid: 采样时刻必须是非负有限秒数");
@@ -70,14 +68,12 @@ impl PreparedBcf {
         Ok(self.compiled.plan(&mut self.text, time))
     }
 
-    /// 并行渲染的共享句柄：布局与帧计划器只读共享，可以搬进别的线程，在那边
-    /// [`SharedBcf::worker`] 起各自的渲染单元。
+    /// Shared handle for parallel rendering: the layout and frame planner are shared read-only and can be moved to another thread, where [`SharedBcf::worker`] starts each render unit.
     pub fn shared(&self) -> SharedBcf {
         SharedBcf(self.compiled.clone())
     }
 
-    /// CPU reference 的执行入口。媒体帧通过显式 host 边界提供；GPU 调用方消费
-    /// [`Self::plan`]，不能用平坦 DrawOp 路径替代带效果的计划。
+    /// Entry point for CPU reference execution. Media frames are provided through an explicit host boundary. GPU callers consume [`Self::plan`] and must not substitute the flat DrawOp path for the plan that carries effects.
     pub fn render_cpu<M: FrameMedia>(
         &mut self,
         time: f64,
@@ -86,8 +82,7 @@ impl PreparedBcf {
         self.render_cpu_width(time, media, self.compiled.renderer.width)
     }
 
-    /// 只改变光栅分辨率，保持作者画布、布局与时钟：预览按舞台宽度，导出按成片里
-    /// 需要的宽度（可以大于作者宽度，受 `max_surface` 限制）。
+    /// Changes only the raster resolution, keeping the author's canvas, layout and clock. Preview uses the stage width; export uses the width the final output needs (it may exceed the author's width, limited by `max_surface`).
     pub fn render_cpu_width<M: FrameMedia>(
         &mut self,
         time: f64,
@@ -173,7 +168,7 @@ impl Compiled {
     }
 }
 
-/// [`PreparedBcf::shared`] 的句柄。克隆只加一次引用计数。
+/// Handle from [`PreparedBcf::shared`]. Cloning adds only one reference count.
 #[derive(Clone)]
 pub struct SharedBcf(Arc<Compiled>);
 
@@ -182,8 +177,7 @@ impl SharedBcf {
         &self.0.ir
     }
 
-    /// 一个渲染单元。文字引擎由调用方按同一套字体另建（`TextEngine::for_document`），
-    /// 与 `ccut render` 每个 worker 一份的做法相同。
+    /// A render unit. The caller builds its text engine separately from the same fonts (`TextEngine::for_document`), the same approach as `ccut render`, which has one per worker.
     pub fn worker(&self, text: TextEngine) -> BcfFrameWorker {
         BcfFrameWorker {
             compiled: self.0.clone(),
@@ -193,10 +187,7 @@ impl SharedBcf {
     }
 }
 
-/// [`SharedBcf::worker`] 拿到的并行渲染单元：CPU reference，与
-/// [`PreparedBcf::render_cpu_width`] 出同样的像素。先 [`Self::plan`]（原宽度）或
-/// [`Self::plan_width`] 拿计划与帧指纹，调用方可以按指纹复用已有的整帧，未命中再
-/// [`Self::execute`]。
+/// A parallel render unit obtained from [`SharedBcf::worker`]: CPU reference, producing the same pixels as [`PreparedBcf::render_cpu_width`]. Call [`Self::plan`] (original width) or [`Self::plan_width`] first to get the plan and frame fingerprint. The caller may reuse an existing whole frame by fingerprint; on a miss, call [`Self::execute`].
 pub struct BcfFrameWorker {
     compiled: Arc<Compiled>,
     text: TextEngine,
@@ -204,8 +195,7 @@ pub struct BcfFrameWorker {
 }
 
 impl BcfFrameWorker {
-    /// `time` 的帧计划与它的 surface 指纹表（整帧指纹在表里 `plan.output` 那一格，
-    /// 也作为元组第二项单独给出）。
+    /// The frame plan for `time` and its surface fingerprint table (the whole-frame fingerprint is in the table's `plan.output` slot, and is also given separately as the tuple's second item).
     pub fn plan(&mut self, time: f64) -> Result<(FramePlan, u64, BTreeMap<u32, u64>)> {
         if !time.is_finite() || time < 0.0 {
             bail!("bcf-time-invalid: 采样时刻必须是非负有限秒数");
@@ -232,7 +222,7 @@ impl BcfFrameWorker {
         Ok((plan, frame, fingerprints))
     }
 
-    /// 执行 [`Self::plan`] 给出的计划；`fingerprints` 必须是同一次 `plan` 的那张表。
+    /// Executes the plan given by [`Self::plan`]; `fingerprints` must be the table from the same `plan` call.
     pub fn execute<M: FrameMedia>(
         &mut self,
         plan: &FramePlan,

@@ -7,44 +7,43 @@ import { SPEAKERS_COPY as C } from './speakers-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * 工具页 › 识别说话人（原型 panel-aitools-flows.jsx `SpeakerFlow`，架构设计 §6.6）：提交 `pipelines.start`（`speakers`），
- * 经 `jobs` 主题跟住父任务；完成时父任务的 `pipeline.summary` 是提案（还没写进视频），进确认页。确认页改过名字后
- * 「应用」走 `edits.applySpeakers`（一笔编辑事务），收据上撤销与重做都按事务撤（撤销那笔撤销即重做）。
+ * Tools page › Identify speakers (prototype panel-aitools-flows.jsx `SpeakerFlow`, architecture design §6.6): submits `pipelines.start` (`speakers`) and follows the parent task through the `jobs` topic. When it completes, the parent task's `pipeline.summary` is the proposal (not yet written into the video), which goes to the confirm page. After names are changed on the confirm page,
+ * “应用”(apply) goes through `edits.applySpeakers` (one edit transaction). On the receipt, undo and redo both act on whole transactions (undoing that undo is the redo).
  *
- * 状态放在模块级 store 里（同 translate-run.ts）：工具页可能被关掉、换到别的面板，识别不能因此断线，确认页也还在。
- * 「说话人区分」模型包没装时，设置页先开下载；下载任务完成后这里接着自动开始识别（`awaitInstall`）。
+ * State lives in a module-level store (same as translate-run.ts). The Tools page may be closed or switched to another panel, and identification must not drop because of that; the confirm page also remains.
+ * If the “说话人区分”(speaker diarization) model pack is not installed, the settings page opens the download first. After the download task completes, identification starts automatically here (`awaitInstall`).
  */
 
 export type SpeakersRunStatus = 'submitting' | 'running';
 
 export interface SpeakersRun {
   videoId: Id;
-  /** 提交成功之前为 null。 */
+  /** Null until the submission succeeds. */
   jobId: Id | null;
   status: SpeakersRunStatus;
-  /** 重试时任务的 `updatedAt`：镜像里还是那条已经结束的记录时不收尾（同 translate-run.ts）。 */
+  /** The task's `updatedAt` on retry: if the mirror still holds the record for the already-finished run, do not finalize (same as translate-run.ts). */
   retriedAt: string | null;
 }
 
-/** 确认页：识别结果与用户改过的名字。 */
+/** Confirm page: the identification result and the names the user has edited. */
 export interface SpeakersProposal {
   videoId: Id;
   jobId: Id;
   summary: SpeakersSummary;
-  /** 说话人 ID → 改过的名字（输入框里的原样）。 */
+  /** Speaker ID → edited name (exactly as typed in the input). */
   names: Record<Id, string>;
   applying: boolean;
 }
 
-/** 应用之后的收据。 */
+/** Receipt after applying. */
 export interface SpeakersReceipt {
   videoId: Id;
   jobId: Id;
   summary: SpeakersSummary;
   names: Record<Id, string>;
-  /** 应用（或重做）的那笔事务；没有可撤销的改动时 null（不给撤销）。 */
+  /** The transaction for apply (or redo); null when there is no change to undo (no undo offered). */
   transactionId: Id | null;
-  /** 撤销那笔事务：重做就是撤销它。 */
+  /** Undoes that transaction: redo is undoing it. */
   undoTransactionId: Id | null;
   undone: boolean;
   busy: boolean;
@@ -56,9 +55,9 @@ export interface SpeakersProblem {
   kind: SpeakersProblemKind;
   title: string;
   message: string;
-  /** 能从停下的那一步重跑的任务（`pipelines.retry`）。 */
+  /** Tasks that can be re-run from the step where they stopped (`pipelines.retry`). */
   retryJobId: Id | null;
-  /** 后台任务里要人决定的那一个。 */
+  /** The one background task that needs a human decision. */
   taskId: Id | null;
 }
 
@@ -67,7 +66,7 @@ interface SpeakersRunState {
   proposals: Record<Id, SpeakersProposal>;
   receipts: Record<Id, SpeakersReceipt>;
   problems: Record<Id, SpeakersProblem>;
-  /** 等着模型包下载完再开始的视频 → 下载任务。 */
+  /** Videos waiting for the model pack to finish downloading before starting → the download task. */
   installs: Record<Id, Id>;
 }
 
@@ -77,7 +76,7 @@ export const useSpeakersRun = create<SpeakersRunState>()(() => ({ ...EMPTY }));
 
 export const SPEAKERS_PIPELINE = 'speakers';
 
-/** 用到的会话能力；测试给假的。 */
+/** Session capabilities used; tests supply fakes. */
 export interface SpeakersDeps {
   runtime: {
     startPipeline(pipeline: string, params: Record<string, unknown>): Promise<Id>;
@@ -94,13 +93,13 @@ export interface SpeakersDeps {
 let deps: SpeakersDeps | null = null;
 let unwatch: (() => void) | null = null;
 
-/** 工具页挂上时绑定会话与提示；第一次绑定时开始盯 `jobs` 主题。 */
+/** Binds the session and prompt when the Tools page mounts; on the first binding, starts watching the `jobs` topic. */
 export function bindSpeakers(next: SpeakersDeps): void {
   deps = next;
   unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
 }
 
-/** 测试用：解绑并清空状态。 */
+/** For tests: unbinds and clears state. */
 export function resetSpeakers(): void {
   unwatch?.();
   unwatch = null;
@@ -133,12 +132,12 @@ export function dismissSpeakersProblem(videoId: Id): void {
   useSpeakersRun.setState((s) => ({ problems: without(s.problems, videoId) }));
 }
 
-/** 收据上的「完成」、确认页的「放弃」：回到设置态。 */
+/** “完成”(done) on the receipt and “放弃”(discard) on the confirm page return to the settings state. */
 export function closeSpeakers(videoId: Id): void {
   useSpeakersRun.setState((s) => ({ proposals: without(s.proposals, videoId), receipts: without(s.receipts, videoId) }));
 }
 
-/** 开始识别（`documentId`：视频里有几份转写时选哪一份）。同一个视频同时只跑一次。 */
+/** Starts identification (`documentId`: which transcript to use when the video has several). Only one run per video at a time. */
 export async function startSpeakers(videoId: Id, documentId?: Id): Promise<boolean> {
   const bound = deps;
   if (!bound || useSpeakersRun.getState().runs[videoId]) return false;
@@ -154,7 +153,7 @@ export async function startSpeakers(videoId: Id, documentId?: Id): Promise<boole
     useSpeakersRun.setState((s) =>
       s.runs[videoId] ? { runs: { ...s.runs, [videoId]: { ...s.runs[videoId]!, jobId, status: 'running' } } } : {},
     );
-    // 任务事件可能比回执先到。
+    // Task events may arrive before the receipt.
     settle(useJobs.getState().jobs);
     return true;
   } catch (error) {
@@ -163,13 +162,13 @@ export async function startSpeakers(videoId: Id, documentId?: Id): Promise<boole
   }
 }
 
-/** 模型包的下载任务提交了：下完（`completed`）就开始识别；失败或取消时不开始（下载自己的提示说原因）。 */
+/** The model pack's download task was submitted: once it finishes (`completed`), identification starts; if it fails or is cancelled, it does not start (the download's own notice states the reason). */
 export function awaitInstall(videoId: Id, installJobId: Id): void {
   useSpeakersRun.setState((s) => ({ installs: { ...s.installs, [videoId]: installJobId }, problems: without(s.problems, videoId) }));
   settle(useJobs.getState().jobs);
 }
 
-/** 从停下的那一步重跑同一个任务（`pipelines.retry`）。 */
+/** Re-runs the same task from the step where it stopped (`pipelines.retry`). */
 export async function retrySpeakers(videoId: Id): Promise<void> {
   const bound = deps;
   const jobId = useSpeakersRun.getState().problems[videoId]?.retryJobId;
@@ -199,7 +198,7 @@ export async function cancelSpeakers(jobId: Id): Promise<void> {
   }
 }
 
-/** 盯着从这里提交的任务与等着的下载：结束了就收尾。每一轮只收一次——先同步改掉状态。 */
+/** Watches the tasks submitted from here and the pending downloads, and finalizes when they end. Each round finalizes only once: the state is changed synchronously first. */
 function settle(jobs: readonly JobRecord[]): void {
   const state = useSpeakersRun.getState();
   for (const run of Object.values(state.runs)) {
@@ -254,15 +253,15 @@ function finish(run: SpeakersRun, job: JobRecord): void {
   }));
 }
 
-/** 确认页改名（输入框里的原样；提交时去掉首尾空白，空的不提交）。 */
+/** Rename on the confirm page (exactly as typed in the input; leading and trailing whitespace is trimmed on submit, and an empty name is not submitted). */
 export function renameSpeaker(videoId: Id, speakerId: Id, name: string): void {
   const proposal = useSpeakersRun.getState().proposals[videoId];
   if (proposal) patch('proposals', videoId, { names: { ...proposal.names, [speakerId]: name } });
 }
 
 /**
- * 应用（`edits.applySpeakers`）。失败时（多半是识别之后文稿或译文改过）放下这份提案、留一句原因，设置页给「再跑一次」；
- * 编辑器同时照常提示引擎或 Runtime 的原话。
+ * Apply (`edits.applySpeakers`). On failure (most likely the script or translation was changed after identification), the proposal is dropped and a reason is left, and the settings page offers “再跑一次”(run again).
+ * The editor also shows the engine's or Runtime's original message as usual.
  */
 export async function applySpeakers(videoId: Id): Promise<boolean> {
   const bound = deps;
@@ -300,7 +299,7 @@ export async function applySpeakers(videoId: Id): Promise<boolean> {
   return true;
 }
 
-/** 收据上的「撤销」：撤应用（或重做）的那一笔。 */
+/** “撤销”(undo) on the receipt: undoes the apply (or redo) transaction. */
 export async function undoSpeakers(videoId: Id): Promise<void> {
   const bound = deps;
   const receipt = useSpeakersRun.getState().receipts[videoId];
@@ -315,7 +314,7 @@ export async function undoSpeakers(videoId: Id): Promise<void> {
   patch('receipts', videoId, { busy: false, undone: true, undoTransactionId: result.transactionId });
 }
 
-/** 收据上的「重做」：撤销那笔撤销。 */
+/** “重做”(redo) on the receipt: undoes that undo. */
 export async function redoSpeakers(videoId: Id): Promise<void> {
   const bound = deps;
   const receipt = useSpeakersRun.getState().receipts[videoId];

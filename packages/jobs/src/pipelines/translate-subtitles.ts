@@ -47,39 +47,39 @@ import {
 } from './subtitle-file.ts';
 
 /**
- * 字幕文件的翻译（架构设计 §7.9）：一个 SRT 或 WebVTT 文件 → 同样条数、同样时间码的译文字幕文件。文件到文件，不建视频、
- * 不碰视频；由流程自己逐批调用文本模型（与 `translate` 共用 translation-batches.ts 的分批、提示词、核对与重发），不启动智能体。
+ * Subtitle file translation (architecture design §7.9): one SRT or WebVTT file → a translated subtitle file with the same cue count and timecodes. File to file; creates no video and does not touch any video.
+ * The flow itself calls the text model batch by batch (sharing batching, prompts, checking and resending with `translate` via translation-batches.ts), and does not start an agent.
  *
- * 步骤：读取字幕（严格解析，读不准的文件在启动时就已拒绝；解析结果发布为产物）→ 翻译（文本为空的条不送；每条一个 ID，
- * 按 ID 一一对应）→ 核对（写出字幕文件再读回来：条数、每条的起止时间与原文件一致，送去翻译的条都有译文）→ 发布（写到输出目录，
- * 不覆盖已有的文件）。输出记为没有视频的生成记录：`result.outputs[0]` 带 `path`，`artifactId` 是文件内容的摘要（文件也在产物库里）。
+ * Steps: read the subtitles (strict parsing; a file that cannot be read exactly is already rejected at startup; the parse result is published as an artifact) → translate (cues with empty text are not sent; each cue has one ID,
+ * matched one to one by ID) → check (write the subtitle file and read it back: cue count, and each cue's start and end times match the source file, and every cue sent for translation has a translation) → publish (written to the output directory,
+ * existing files are not overwritten). The output is recorded as a generation record with no video: `result.outputs[0]` carries `path`, and `artifactId` is a digest of the file content (the file is also in the artifact store).
  */
 
 export const TRANSLATE_SUBTITLES_PIPELINE = 'translate-subtitles';
 
 export interface TranslateSubtitlesDeps {
-  /** 进程内的文本生成（与 `models.generateText` 共用并发与计数）。 */
+  /** In-process text generation (shares concurrency and counting with `models.generateText`). */
   text: Pick<TextGenerator, 'generate'>;
-  /** 启动时选定 Provider 与模型（§6.2）；没有配置时抛 `CAPABILITY_NOT_CONFIGURED`。 */
+  /** Selects the provider and model at startup (§6.2); throws `CAPABILITY_NOT_CONFIGURED` when not configured. */
   selectText(target: { provider?: string; model?: string }): Promise<{ providerId: string; modelId: string; model: TextModelInfo }>;
-  /** 一批的输出不合约定时再发几次（默认 2）。 */
+  /** How many more times to send a batch whose output does not meet the contract (default 2). */
   batchRetries?: number;
-  /** 同时在途的批数（默认 4）。 */
+  /** Number of batches in flight at the same time (default 4). */
   concurrency?: number;
-  /** 用户库（翻译用术语表）；没有时只能用调用时直接给的术语。 */
+  /** User library (glossaries for translation); without it, only terms supplied directly in the call can be used. */
   library?: GlossaryLibrary;
-  /** 产物库：用到库里的术语表时把内容写成产物。 */
+  /** Artifact store: when a glossary from the library is used, its content is written as an artifact. */
   artifacts?: Pick<ArtifactStore, 'put'>;
-  /** 发布时先试硬链接（见 `publishFile`）；false 时走复制。测试用。 */
+  /** When publishing, try a hard link first (see `publishFile`); when `false`, copy instead. For tests. */
   hardLink?: boolean;
   /**
-   * 不给 `outDir` 时的保存位置（§7.9「保存位置」，Runtime 按设置与主机决定）；提交时冻结进参数。没有接线时（只在单测里）
-   * 写在源文件旁边。
+   * The save location when `outDir` is not given (§7.9 “save location”; the Runtime decides from settings and the host); frozen into the parameters at submission. When not wired up (only in unit tests),
+   * it is written next to the source file.
    */
   saveDirectory?: () => string;
 }
 
-/** 冻结的参数：Provider 与模型、批大小、输出格式都已确定。 */
+/** Frozen parameters: provider and model, batch size and output format are all settled. */
 export interface FrozenTranslateSubtitlesParams extends TranslateSubtitlesParams {
   provider: string;
   model: string;
@@ -96,7 +96,7 @@ const MEDIA_TYPES: Record<SubtitleFormat, string> = { srt: 'application/x-subrip
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     input: {
       ...fileInputSchema(
         `字幕文件的绝对路径（.srt 或 .vtt；至多 ${MAX_SUBTITLE_BYTES} 字节、${MAX_SUBTITLE_CUES} 条）`,
@@ -121,9 +121,9 @@ const PARAMS_SCHEMA = {
 };
 
 interface ReadOutput extends Record<string, unknown> {
-  /** 解析结果（`SubtitleDocument`）的产物。 */
+  /** Artifact of the parse result (`SubtitleDocument`). */
   artifactId: string;
-  /** 源文件的大小、修改时间与内容摘要：重试时核对，变了就重新读取。 */
+  /** Source file size, modification time and content digest: checked on retry; if they changed, the file is read again. */
   size: number;
   mtimeMs: number;
   contentHash: string;
@@ -141,7 +141,7 @@ interface TranslateOutput extends Record<string, unknown> {
 }
 
 interface CheckOutput extends Record<string, unknown> {
-  /** 写好的字幕文件（产物库里的 `.srt` / `.vtt`）。 */
+  /** The written subtitle file (`.srt` / `.vtt` in the artifact store). */
   artifactId: string;
   byteLength: number;
   cueCount: number;
@@ -167,11 +167,11 @@ export function translateSubtitlesPipeline(
     paramsSchema: PARAMS_SCHEMA,
     parse: parseTranslateSubtitlesParams,
     async prepare(params, options) {
-      // 读不准的文件启动时就拒绝，不建任务：`invalid-request` 带 `details.code`。
+      // Files that cannot be read exactly are rejected at startup, and no task is created: `invalid-request` with `details.code`.
       const { bytes } = await readInput(params.input, (code, message, details) =>
         code === 'INPUT_UNREADABLE' ? new RpcError('not-found', message) : new RpcError('invalid-request', message, details),
       );
-      // 保存位置（§7.9）：给了用它，否则 Runtime 的保存位置；提交时冻结，不存在时创建，不能写入时拒绝。
+      // Save location (§7.9): use it when given, otherwise the Runtime's save location; frozen at submission, created if it does not exist, rejected if not writable.
       const outDir = params.outDir ?? deps.saveDirectory?.();
       if (outDir !== undefined) await ensureSaveDirectory(outDir);
       const glossaryUse =
@@ -234,7 +234,7 @@ export function translateSubtitlesPipeline(
           };
           return { output, result: { documentId: null, artifactId } };
         },
-        // 源文件改过：之前的解析过期，重试时重新读取、重新翻译。
+        // Source file changed: the earlier parse is stale, so on retry it is read again and translated again.
         reusable: async (output, { params, artifacts }) => {
           const read = output as ReadOutput;
           const stat = await fs.stat(params.input).catch(() => null);
@@ -261,7 +261,7 @@ export function translateSubtitlesPipeline(
           progress(null, 'publishing');
           const stored = await artifacts.locate(checked.artifactId);
           if (!stored) throw new PipelineStepError('ARTIFACT_NOT_FOUND', J.artifactGone({ artifactId: checked.artifactId }));
-          // 先复制到 staging 再发布：输出文件与产物库里的那份不共用一个 inode（用户改输出不会改到产物）。
+          // Copy to staging before publishing: the output file and the one in the artifact store do not share an inode (so when the user edits the output, the artifact is not changed).
           const local = path.join(staging, `translated.${params.format}`);
           await fs.copyFile(stored, local);
           signal.throwIfAborted();
@@ -363,8 +363,8 @@ export function parseTranslateSubtitlesParams(raw: Record<string, unknown>): Tra
 }
 
 /**
- * 读源文件：是文件、不超过大小上限、能严格解析、至少有一条有文本。不合时以 `fail` 造的错误抛出（启动时是 `RpcError`，
- * 执行时是 `PipelineStepError`；文件不在了是 `INPUT_UNREADABLE`）。
+ * Reads the source file: it must be a file, must not exceed the size limit, must parse strictly, and must have at least one cue with text. When it does not meet these, the error built by `fail` is thrown (`RpcError` at startup,
+ * `PipelineStepError` during execution; if the file is gone, `INPUT_UNREADABLE`).
  */
 async function readInput(
   file: string,
@@ -393,7 +393,7 @@ async function readInput(
   return { bytes, stat: { size: stat.size, mtimeMs: stat.mtimeMs }, document };
 }
 
-/** 有文本的条按 `c<序号>` 送去翻译（translation-batches.ts）：整步要么得到全部译文，要么失败。 */
+/** Cues with text are sent for translation as `c<index>` (translation-batches.ts): the whole step either gets all translations or fails. */
 async function translateCues(
   deps: TranslateSubtitlesDeps,
   context: PipelineStepContext<FrozenTranslateSubtitlesParams>,
@@ -440,7 +440,7 @@ async function translateCues(
   return { output, result: { documentId: null, artifactId } };
 }
 
-/** 写出字幕文件再读回来核对：条数、每条的起止时间（同一格式时连时间行）与原文件一致，送去翻译的条都有译文。 */
+/** Writes the subtitle file and reads it back to check: cue count, and each cue's start and end times (the whole timing line when the format is the same) match the source file, and every cue sent for translation has a translation. */
 async function check(context: PipelineStepContext<FrozenTranslateSubtitlesParams>): Promise<StepResult> {
   const { params, outputs, artifacts, progress, warn } = context;
   progress(null, 'validating');

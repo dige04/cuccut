@@ -1,23 +1,15 @@
-//! `filter.godRays@1`：体积光 / 光柱——取亮部 → 以光源为中心做径向拉伸模糊 →
-//! 乘色调后加回原图。
+//! `filter.godRays@1`: volumetric light / light shafts. Take the bright areas, apply a radial stretch blur centered on the light source, multiply by the tint, then add the result back onto the original image.
 //!
-//! 1. **亮通**：预乘 RGB 最大分量 `m` 超过 `threshold` 的部分按
-//!    `w = clamp((m − t) / (1 − t))` 整像素加权（保留色相，金色线稿拖出金色光）；
-//!    同时 2×2 降采样到半分辨率——光柱本来就是低频的，半分辨率省四分之三的取样。
-//! 2. **拉伸**：与 `filter.radialBlur` 同一套三遍对数步长缩放取样
-//!    （[`super::radial_blur::zoom_passes`]），中心是光源；`length` 是最远取样点朝光源
-//!    走过的比例，`decay` 让远处的取样权重降到 `1 − decay`。像素 p 收到的光来自
-//!    「p → 光源」连线上的亮部，所以亮物体会朝**背离光源**的方向拖出光柱。
-//! 3. **加回**：双线性上采样到原分辨率，RGB × `tint`（RGB）× `intensity`、alpha ×
-//!    `tint.a` × `intensity` 加到原图上，结果夹到 alpha ≥ RGB（与 `filter.bloom` 同一口径：
-//!    透明底上的亮物体会长出带 alpha 的光柱）。
+//! 1. **Bright pass**: the part where the premultiplied RGB max component `m` exceeds `threshold` is weighted per pixel by `w = clamp((m − t) / (1 − t))`. This keeps the hue, so a golden line drawing drags out golden light. At the same time it is downsampled 2×2 to half resolution, because light shafts are low-frequency anyway and half resolution saves three quarters of the samples.
+//! 2. **Stretch**: uses the same three-pass log-step scaled sampling as `filter.radialBlur` ([`super::radial_blur::zoom_passes`]), centered on the light source. `length` is the fraction of the way the farthest sample point travels toward the light source, and `decay` lowers the weight of distant samples to `1 − decay`. Pixel p receives light from the bright areas on the line "p → light source", so bright objects drag light shafts in the direction **away from** the light source.
+//! 3. **Add back**: bilinear upsample to the original resolution, then add RGB × `tint` (RGB) × `intensity` and alpha × `tint.a` × `intensity` onto the original image. The result is clamped so alpha ≥ RGB. This follows the same convention as `filter.bloom`: on a transparent background, bright objects grow light shafts that carry alpha.
 //!
-//! 光源坐标是画布（= 输入 surface）宽高的比例，可以落在画面外（天窗在画框上方）。
-//! 数值：f32 四则运算，超越函数只在进像素循环前用 `libm` 算权重表。
+//! The light source coordinates are ratios of the canvas (= input surface) width and height. They may fall outside the frame, for example a skylight above the top edge of the picture.
+//! Numerics: f32 arithmetic. The transcendental functions are computed with `libm` only, to build the weight table before the per-pixel loop.
 
 use super::radial_blur::{Px, bilinear, zoom_passes};
 
-/// 每遍取样数：三遍共 512 个等效采样点。
+/// Samples per pass: three passes give 512 effective sample points in total.
 const TAPS: u32 = 8;
 
 #[derive(Debug, Clone, Copy)]
@@ -25,12 +17,12 @@ pub struct GodRays {
     pub cx: f64,
     pub cy: f64,
     pub threshold: f64,
-    /// 最远取样点朝光源走过的比例 `0..0.95`。
+    /// Fraction of the way the farthest sample point travels toward the light source, `0..0.95`.
     pub length: f64,
     pub intensity: f64,
-    /// `0..1`：最远处的权重是 `1 − decay`。
+    /// `0..1`: the weight of the farthest sample is `1 − decay`.
     pub decay: f64,
-    /// 非预乘 RGBA 0..1。
+    /// Non-premultiplied RGBA, 0..1.
     pub tint: [f64; 4],
 }
 
@@ -42,7 +34,7 @@ pub fn god_rays(data: &mut [u8], width: usize, height: usize, params: &GodRays) 
     let threshold = params.threshold.clamp(0.0, 0.999) as f32;
     let (hw, hh) = (width.div_ceil(2), height.div_ceil(2));
 
-    // 1. 亮通 + 2×2 降采样（边缘夹取）。
+    // 1. Bright pass + 2×2 downsample (edge clamping).
     let bright = |x: usize, y: usize| -> Px {
         let offset = (y.min(height - 1) * width + x.min(width - 1)) * 4;
         let px = &data[offset..offset + 4];
@@ -68,7 +60,7 @@ pub fn god_rays(data: &mut [u8], width: usize, height: usize, params: &GodRays) 
         }
     }
 
-    // 2. 以光源为中心的径向拉伸（半分辨率像素坐标）。
+    // 2. Radial stretch centered on the light source (half-resolution pixel coordinates).
     let center = (
         params.cx * width as f64 / 2.0,
         params.cy * height as f64 / 2.0,
@@ -84,7 +76,7 @@ pub fn god_rays(data: &mut [u8], width: usize, height: usize, params: &GodRays) 
         1.0 - params.decay.clamp(0.0, 0.9999),
     );
 
-    // 3. 上采样、上色、加回。
+    // 3. Upsample, tint, add back.
     let gain = params.intensity as f32;
     let tint = [
         params.tint[0].clamp(0.0, 1.0) as f32 * gain,
@@ -149,7 +141,7 @@ mod tests {
     fn a_bright_spot_casts_a_shaft_away_from_the_light() {
         let size = 96;
         let mut data: Vec<u8> = (0..size * size).flat_map(|_| [0, 0, 0, 255]).collect();
-        // 光源在上边缘正中，亮块在 (48, 24) 附近。
+        // Light source at the middle of the top edge; the bright block is near (48, 24).
         for y in 22..26 {
             for x in 46..50 {
                 let offset = (y * size + x) * 4;
@@ -158,7 +150,7 @@ mod tests {
         }
         god_rays(&mut data, size, size, &params());
         let red = |x: usize, y: usize| data[(y * size + x) * 4];
-        // 亮块下方（背离光源）被照亮，上方（光源一侧）与侧面仍暗。
+        // The area below the bright block (away from the light source) is lit. The area above it (the light-source side) and the sides stay dark.
         assert!(red(48, 40) > 10, "下方应有光柱：{}", red(48, 40));
         assert!(red(48, 40) > red(48, 60), "光柱应随距离衰减");
         assert_eq!(red(48, 12), 0, "光源一侧不应有光");

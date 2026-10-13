@@ -4,8 +4,8 @@ import { M } from './library-copy.ts';
 import { formatVideoSelection, libraryLabel, parseIdList, parseLibraryName, parseSpeakerVoice } from './library-output.ts';
 
 /**
- * 管理桶 `cuccut library import|export|remove|voice-clone|voice-clone-remove|video-selection`（架构设计 §5.9）。
- * 列出与查看在 Agent 面（`library list|show`）。
+ * Admin bucket `cuccut library import|export|remove|voice-clone|voice-clone-remove|video-selection` (Architecture design §5.9).
+ * Listing and viewing are on the Agent surface (`library list|show`).
  */
 export const library = defineNoun({
   name: 'library',

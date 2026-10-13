@@ -1,24 +1,24 @@
-//! `Lottie`：bodymovin 子集的纯 Rust [`VisualSource`]（设计 §7 / ADR-M11）。
+//! `Lottie`: a pure-Rust [`VisualSource`] for the bodymovin subset (design §7 / ADR-M11).
 //!
-//! **主路径不是光栅化，是发 DrawOp**：形状 / 描边 / 渐变 / 遮罩 / 预合成全部
-//! 落到 `FillPathPaint`、`StrokePathPaint`、`ClipPath`、`PushMatte` 这些原语上，
-//! 与 BCF 自己的元素共用同一条指令流、同一份帧指纹、同一套静止帧缓存；矢量
-//! 内容跟着元素盒缩放，不会先烤成素材原尺寸的位图再拉伸。
+//! **The main path is not rasterization but emitting DrawOps**: shapes / strokes / gradients / masks / precomps all
+//! lower to primitives such as `FillPathPaint`, `StrokePathPaint`, `ClipPath` and `PushMatte`,
+//! sharing the same instruction stream, frame fingerprint and still-frame cache as BCF's own elements; vector
+//! content scales with the element box instead of being baked into a bitmap at the asset's native size and then stretched.
 //!
-//! 子集边界由 2026-08-20 的 100 素材普查划定（`core/fixtures/lottie/README.md`
-//! 与设计 §14 开放问题 #1），**解析期就是守门人**：
+//! The subset boundary was set by a survey of 100 assets on 2026-08-20 (`core/fixtures/lottie/README.md`
+//! and design §14 open question #1). **Parsing is the gatekeeper**:
 //!
-//! | | 首版处置 |
+//! | | First-release handling |
 //! | --- | --- |
-//! | shapes / gradients / trimPaths / masks(add) / mattes / precomps(含 tm) / solids / images / markers / roundedCorners / blendModes / mergePaths `mm=1` / 关键帧动画 | 支持 |
-//! | 无 expressions 的 `ef ty ∈ 0..=7` 表达式控制器组 | 忽略 + [`LOTTIE_RULE`] warn |
-//! | text 图层、expressions、布尔 merge、光栅效果、repeater、3D、autoOrient、非 add 遮罩、遮罩羽化 | [`LOTTIE_RULE`] fail-fast |
+//! | shapes / gradients / trimPaths / masks(add) / mattes / precomps (incl. tm) / solids / images / markers / roundedCorners / blendModes / mergePaths `mm=1` / keyframe animation | Supported |
+//! | Expression-controller groups `ef ty ∈ 0..=7` without expressions | Ignored + [`LOTTIE_RULE`] warn |
+//! | text layers, expressions, boolean merge, raster effects, repeater, 3D, autoOrient, non-add masks, mask feathering | [`LOTTIE_RULE`] fail-fast |
 //!
-//! 不静默降级：拿不准的东西一律报错，而不是画一张"差不多"的图。
+//! No silent degradation: anything uncertain is reported as an error rather than drawing a "close enough" picture.
 //!
-//! 字节可以是展开的 bodymovin JSON，也可以是 `.lottie` 压缩包（[`archive`]）：包里取一段动画，
-//! 图片子资源从包里补成内嵌字节。图片子资源可以是位图（PNG / JPEG / GIF 首帧 / WebP）或 SVG（`svg` feature，
-//! 按资源声明的 `w`×`h` 光栅）。
+//! The bytes may be expanded bodymovin JSON or a `.lottie` archive ([`archive`]): one animation is taken from the archive,
+//! and image sub-assets are filled in from the archive as embedded bytes. Image sub-assets may be bitmaps (PNG / JPEG / first GIF frame / WebP) or SVG (`svg` feature,
+//! rasterized at the asset's declared `w`×`h`).
 
 pub mod archive;
 pub mod geometry;
@@ -40,33 +40,33 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tiny_skia::Pixmap;
 
-/// 规范 §16 的诊断码。warn（表达式控制器）与 fail（子集之外）共用一个码，
-/// 靠 severity 区分——`ccut lint` 的表就是这么组织的。
+/// Diagnostic code from spec §16. Warnings (expression controllers) and failures (outside the subset) share one code,
+/// told apart by severity, the way the `ccut lint` table is organized.
 pub const LOTTIE_RULE: &str = "lottie-unsupported-feature";
 
-/// 指纹里的渲染器身份。lowering 语义（路径生成、trim 采样数、渐变色标合并）
-/// 一改就必须换指纹，否则旧缓存会喂出新像素。
+/// Renderer identity inside the fingerprint. Any change to lowering semantics (path generation, trim sample count, gradient stop merging)
+/// must change the fingerprint, or old caches would serve stale pixels.
 const RENDERER_TAG: &[u8] = b"ccut.source.lottie/v1\0";
 
-/// Lottie 文档引用的一个图片子资源。
+/// An image sub-asset referenced by the Lottie document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRequirement {
     /// bodymovin `assets[].id`
     pub id: String,
-    /// DrawOp string 侧表里的资产名（全局唯一，形如 `lottie:<owner>/<id>`）
+    /// Asset name in the DrawOp string side table (globally unique, of the form `lottie:<owner>/<id>`)
     pub asset_name: String,
-    /// 相对 **Lottie 文档所在目录** 的路径；内嵌资源为 `None`
+    /// Path relative to the **directory containing the Lottie document**; `None` for embedded assets
     pub path: Option<String>,
-    /// 内嵌的字节：data URI（`e: 1`），或 `.lottie` 压缩包里按路径找到的文件
+    /// Embedded bytes: a data URI (`e: 1`), or a file found by path in a `.lottie` archive
     pub embedded: Option<Vec<u8>>,
-    /// 资源声明的宽高（`w` / `h`，取整；没写是 0）。SVG 子资源按它光栅。
+    /// Width and height declared by the asset (`w` / `h`, rounded; 0 if absent). SVG sub-assets are rasterized to this size.
     pub width: u32,
     pub height: u32,
 }
 
 impl ImageRequirement {
-    /// 子资源字节 → 预乘的像素。SVG（`svg` feature）按声明的宽高光栅（没声明时用 SVG 自己的尺寸），
-    /// 位图按原尺寸解码。解不开是 `lottie-asset-missing` 错误。各条读入路径（内嵌、压缩包、磁盘）共用这一份。
+    /// Sub-asset bytes → premultiplied pixels. SVG (`svg` feature) is rasterized at the declared width and height (or the SVG's own size if none is declared),
+    /// bitmaps are decoded at their native size. Failure to decode is a `lottie-asset-missing` error. All read paths (embedded, archive, disk) share this one.
     pub fn decode(&self, bytes: &[u8]) -> Result<Pixmap> {
         let missing =
             |what: String| anyhow!("lottie-asset-missing: 图片子资源 \"{}\" {what}", self.id);
@@ -89,7 +89,7 @@ impl ImageRequirement {
     }
 }
 
-/// 字节看起来是不是 SVG（跳过 BOM 与前导空白后以 `<svg` / `<?xml` 开头）。
+/// Whether the bytes look like SVG (after skipping any BOM and leading whitespace, they start with `<svg` / `<?xml`).
 fn looks_like_svg(bytes: &[u8]) -> bool {
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     let start = bytes
@@ -100,7 +100,7 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     head.starts_with(b"<svg") || head.starts_with(b"<?xml")
 }
 
-/// SVG 子资源光栅到 `width`×`height`（两边各自缩放，与位图子资源按声明框铺满同口径）；没声明时用 SVG 自己的尺寸。
+/// Rasterizes an SVG sub-asset to `width`×`height` (each side scaled independently, same convention as bitmap sub-assets filling the declared box); uses the SVG's own size when none is declared.
 #[cfg(feature = "svg")]
 fn decode_svg(bytes: &[u8], width: u32, height: u32) -> Result<Pixmap> {
     use resvg::usvg::Tree;
@@ -129,28 +129,28 @@ fn decode_svg(_bytes: &[u8], _width: u32, _height: u32) -> Result<Pixmap> {
 pub struct Lottie {
     doc: Animation,
     meta: SourceMetadata,
-    /// 文档字节的摘要；子资源摘要在 [`Lottie::attach_images`] 里并进来
+    /// Digest of the document bytes; sub-asset digests are folded in by [`Lottie::attach_images`]
     doc_digest: [u8; 32],
     hash: ContentHash,
     diagnostics: Vec<PreflightDiagnostic>,
     requirements: Vec<ImageRequirement>,
-    /// bodymovin asset id → DrawOp 资产名
+    /// bodymovin asset id → DrawOp asset name
     image_names: BTreeMap<String, String>,
-    /// 独立采样（[`VisualSource::sample`]）用的像素；元素路径走 `MediaStore`
+    /// Pixels used for standalone sampling ([`VisualSource::sample`]); the element path goes through `MediaStore`
     images: BTreeMap<String, Arc<Pixmap>>,
-    /// 已挂子资源的 `(资产名, 字节摘要)`，按名排序——换色与挂图谁先谁后都得到
-    /// 同一个指纹（[`Lottie::rehash`]）。
+    /// `(asset name, byte digest)` of attached sub-assets, sorted by name — recoloring and attaching images in either order yield
+    /// the same fingerprint ([`Lottie::rehash`]).
     image_digests: Vec<(String, [u8; 32])>,
 }
 
 impl Lottie {
-    /// 字节 → 已校验的 Lottie 源。
+    /// Bytes → validated Lottie source.
     ///
-    /// `owner` 是 BCF 的 asset id（子资源命名用），`src` 只用于报错定位。
-    /// 子集之外的特性在这里就是 `Err`，warn 级进 [`Lottie::diagnostics`]。
+    /// `owner` is the BCF asset id (used to name sub-assets), `src` is used only for error location.
+    /// Features outside the subset are `Err` here; warn-level items go into [`Lottie::diagnostics`].
     ///
-    /// `.lottie` 压缩包按 [`archive`] 的规则取一段动画；只写路径的图片子资源先在包里找，找到的
-    /// 补成 [`ImageRequirement::embedded`]，找不到的留着路径（之后照旧是 `lottie-asset-missing`）。
+    /// A `.lottie` archive yields one animation following the rules of [`archive`]; image sub-assets that have only a path are looked up in the archive first, and any found are
+    /// turned into [`ImageRequirement::embedded`]; those not found keep their path (and remain `lottie-asset-missing` later).
     pub fn parse(owner: &str, src: &str, bytes: &[u8]) -> Result<Lottie> {
         let zip = if archive::looks_like_zip(bytes) {
             let opened = archive::Archive::open(bytes)
@@ -215,7 +215,7 @@ impl Lottie {
             width: doc.width.round().max(1.0) as u32,
             height: doc.height.round().max(1.0) as u32,
             frame_starts_ms: frame_table(doc.ip, doc.op, doc.fr),
-            // Lottie 容器不带播放遍数：播放器一律循环，文档写不写 `loop` 才是判据
+            // The Lottie container carries no play count: players always loop, so whether the document writes `loop` is the criterion
             loops: SourceLoop::Infinite,
         };
         Ok(Lottie {
@@ -231,9 +231,9 @@ impl Lottie {
         })
     }
 
-    /// 解码并挂上**内嵌**的图片子资源（data URI 或 `.lottie` 包里的文件；位图与 SVG 见 [`ImageRequirement::decode`]），
-    /// 不读盘、不依赖 `media`，预览的 WASM 与原生同一份。只有路径、没有内嵌字节的子资源，或解不开的格式是
-    /// `lottie-asset-missing` 错误。返回挂上的个数。
+    /// Decodes and attaches **embedded** image sub-assets (data URIs or files in a `.lottie` archive; bitmaps and SVG see [`ImageRequirement::decode`]),
+    /// without touching disk or depending on `media`; the preview WASM and native builds share this code. Sub-assets that have only a path and no embedded bytes, or in an undecodable format, are
+    /// `lottie-asset-missing` errors. Returns the number attached.
     pub fn attach_embedded_images(&mut self) -> Result<usize> {
         let mut loaded = Vec::new();
         for requirement in &self.requirements {
@@ -256,16 +256,16 @@ impl Lottie {
         Ok(count)
     }
 
-    /// 产品层 `sticker.fillOverrides` 的 Lottie 落点：把文档里所有**纯色**填充 /
-    /// 描边（`fl` / `st`，含关键帧的段首段末值）与纯色图层（solid）中，颜色等于
-    /// 覆盖表键的，换成对应值。键与值都是 `#RRGGBB`（大小写不敏感；带 `AA` 的
-    /// 值只取 RGB——Lottie 的透明度是独立属性，不在换色范围内）。
+    /// Lottie landing point for the product-level `sticker.fillOverrides`: replaces, in the document, every **solid-color** fill /
+    /// stroke (`fl` / `st`, including the first and last keyframe values of animated ones) and solid layers (solid) whose color equals
+    /// an override key, with the corresponding value. Keys and values are `#RRGGBB` (case-insensitive; a value with `AA`
+    /// contributes only its RGB — Lottie opacity is a separate property and is not part of recoloring).
     ///
-    /// 渐变不换：SVG 侧的 `svg_fill::apply_overrides` 同样只认纯色，两边口径
-    /// 一致，属性页也只从纯色里采可编辑色。
+    /// Gradients are not replaced: the SVG-side `svg_fill::apply_overrides` likewise only recognizes solid colors, so both sides use the same convention,
+    /// and the property page only samples editable colors from solid fills.
     ///
-    /// 返回命中的属性数；覆盖表并进内容指纹，同源不同覆盖表的两份 Lottie
-    /// 指纹必不相同（静止帧缓存与素材共享都按指纹走）。
+    /// Returns the number of properties hit. The override table is folded into the content fingerprint, so two Lottie
+    /// files from the same source with different override tables must have different fingerprints (still-frame caches and asset sharing both key on the fingerprint).
     pub fn apply_fill_overrides(&mut self, overrides: &BTreeMap<String, String>) -> usize {
         let table: Vec<([f64; 3], [f64; 3])> = overrides
             .iter()
@@ -309,20 +309,20 @@ impl Lottie {
         hits
     }
 
-    /// warn 级诊断（表达式控制器等）。fail 级在 [`Lottie::parse`] 就是 `Err`。
+    /// Warning-level diagnostics (expression controllers, etc.). Failure-level ones are `Err` already in [`Lottie::parse`].
     pub fn diagnostics(&self) -> &[PreflightDiagnostic] {
         &self.diagnostics
     }
 
-    /// 需要 host 预加载的图片子资源（按 asset id 排序，确定性）。
+    /// Image sub-assets the host must preload (sorted by asset id, deterministic).
     pub fn image_requirements(&self) -> &[ImageRequirement] {
         &self.requirements
     }
 
-    /// 挂上已解码的子资源，并把它们的字节摘要并进内容指纹。
+    /// Attaches decoded sub-assets and folds their byte digests into the content fingerprint.
     ///
-    /// `loaded` 是 `(资产名, 原始字节, 已解码像素)`；顺序无关——内部按资产名
-    /// 排序后再进哈希链，因此 host 用什么顺序读盘都得到同一个指纹。
+    /// `loaded` is `(asset name, raw bytes, decoded pixels)`; order does not matter — the function sorts by asset name
+    /// before feeding the hash chain, so the host gets the same fingerprint whatever order it reads files in.
     pub fn attach_images(&mut self, loaded: Vec<(String, Vec<u8>, Arc<Pixmap>)>) {
         for (name, bytes, pixmap) in loaded {
             let digest: [u8; 32] = Sha256::digest(&bytes).into();
@@ -334,7 +334,7 @@ impl Lottie {
         self.rehash();
     }
 
-    /// 内容指纹 = 渲染器身份 ∘ 文档摘要（含换色表）∘ 子资源摘要链。
+    /// Content fingerprint = renderer identity ∘ document digest (including the recolor table) ∘ sub-asset digest chain.
     fn rehash(&mut self) {
         let mut hasher = Sha256::new();
         hasher.update(RENDERER_TAG);
@@ -351,18 +351,18 @@ impl Lottie {
         &self.meta
     }
 
-    /// 合成帧率。
+    /// Composition frame rate.
     pub fn frame_rate(&self) -> f64 {
         self.doc.fr
     }
 
-    /// 逐帧起点毫秒表（N+1 项）——`HostInputs` 回填给 core，录制期按它把源
-    /// 时间量化到帧起点，同一帧窗口因此发出逐字节相同的指令。
+    /// Per-frame start time table in milliseconds (N+1 entries) — `HostInputs` backfills it to core; during recording it quantizes source
+    /// time to the frame start, so every time within the same frame window emits byte-identical instructions.
     pub fn frame_starts_ms(&self) -> &[i64] {
         &self.meta.frame_starts_ms
     }
 
-    /// bodymovin `markers`（名字 → 帧号 / 时长）。
+    /// bodymovin `markers` (name → frame number / duration).
     pub fn markers(&self) -> Vec<(String, f64, f64)> {
         self.doc
             .markers
@@ -371,15 +371,15 @@ impl Lottie {
             .collect()
     }
 
-    /// 源时间 → 合成帧号（先量化到帧起点，再换算成整数帧）。
+    /// Source time → composition frame number (quantized to the frame start first, then converted to an integer frame).
     fn frame_at(&self, time: MediaTime) -> f64 {
         self.doc.ip + self.meta.frame_at(time) as f64
     }
 
-    /// **元素路径的正式入口**：把 `time` 时刻的画面直接录进指令流。
+    /// **Official entry point for the element path**: records the frame at `time` directly into the instruction stream.
     ///
-    /// `tf` 把 Lottie 的合成坐标系（左上原点、`w × h`）放到画布上，通常是
-    /// 「元素盒变换 ∘ fit 缩放」。
+    /// `tf` places Lottie's composition coordinate system (top-left origin, `w × h`) onto the canvas; it is usually
+    /// “element box transform ∘ fit scaling”.
     pub fn record(
         &self,
         time: MediaTime,
@@ -398,7 +398,7 @@ impl Lottie {
     }
 }
 
-/// `[ip, op)` 的逐帧起点毫秒表。整数运算：`round(k * 1000 / fr)`。
+/// Per-frame start-time table in milliseconds for `[ip, op)`. Integer arithmetic: `round(k * 1000 / fr)`.
 fn frame_table(ip: f64, op: f64, fr: f64) -> Vec<i64> {
     let count = (op - ip).max(0.0).round() as i64;
     let count = count.max(1);
@@ -407,7 +407,7 @@ fn frame_table(ip: f64, op: f64, fr: f64) -> Vec<i64> {
         .collect()
 }
 
-/// `#RRGGBB` / `#RRGGBBAA` → 0..1 的 RGB；其它写法一律 `None`（与 SVG 换色同口径）。
+/// `#RRGGBB` / `#RRGGBBAA` → RGB in 0..1; any other form is always `None` (same convention as SVG recoloring).
 fn parse_hex_rgb(text: &str) -> Option<[f64; 3]> {
     let hex = text.trim().strip_prefix('#')?;
     if hex.len() != 6 && hex.len() != 8 {
@@ -421,7 +421,7 @@ fn parse_hex_rgb(text: &str) -> Option<[f64; 3]> {
     ])
 }
 
-/// 属性值（3 或 4 分量，0..1 或 0..255 两种方言）→ 8 位量化的 RGB 三元组。
+/// Property value (3 or 4 components, in either the 0..1 or 0..255 dialect) → 8-bit quantized RGB triple.
 fn quantised_rgb(value: &[f64]) -> Option<[u8; 3]> {
     if value.len() < 3 {
         return None;
@@ -443,7 +443,7 @@ fn lookup_color(table: &[([f64; 3], [f64; 3])], value: [f64; 3]) -> Option<[f64;
         .map(|(_, to)| *to)
 }
 
-/// 换掉一条 `Animated` 颜色里的所有纯色值（静态值、关键帧段首、段末）。
+/// Replaces all solid color values in one `Animated` color (static value, keyframe segment starts, and segment ends).
 fn recolor_animated(color: &mut value::Animated, table: &[([f64; 3], [f64; 3])]) -> usize {
     let mut hits = 0;
     let mut swap = |slot: &mut Vec<f64>| {
@@ -486,13 +486,12 @@ fn recolor_shapes(items: &mut [schema::ShapeItem], table: &[([f64; 3], [f64; 3])
 }
 
 impl Lottie {
-    /// 按**指定像素尺寸**光栅化一帧：合成坐标系等比缩放到 `width × height`。
+    /// Rasterizes one frame at the **specified pixel size**: the composition coordinate system is scaled uniformly to `width × height`.
     ///
-    /// [`VisualSource::sample`] 恒用素材原尺寸，GPU 场景却是把这张纹理画进元素
-    /// 盒里——1024² 的原件画进 461² 的贴纸盒，多出来的四倍像素要在 CPU 上逐层
-    /// 分配、合成、上传，最后被 GPU 缩掉。缩放钉在**光栅之前**（`record` 的
-    /// affine 上），于是矢量几何、描边宽度与遮罩都按目标尺寸求值，不是先出大图
-    /// 再重采样。
+    /// [`VisualSource::sample`] always uses the asset's native size, but in the GPU scene this texture is drawn into the element
+    /// box — a 1024² original drawn into a 461² sticker box would make the surplus four-times pixels allocated, composited and uploaded layer by layer on the CPU,
+    /// and finally shrunk by the GPU. Scaling is pinned **before rasterization** (on the affine of `record`), so vector geometry, stroke widths and masks are evaluated at the target size, not by first producing a large image
+    /// and resampling it.
     pub fn sample_scaled(&self, time: MediaTime, width: u32, height: u32) -> Result<SourceFrame> {
         let width = width.max(1);
         let height = height.max(1);
@@ -514,7 +513,7 @@ impl Lottie {
     }
 }
 
-/// [`VisualSource::sample`] 的媒体入口：Lottie 自己的子资源。
+/// Media entry point for [`VisualSource::sample`]: Lottie's own sub-assets.
 struct OwnImages<'a>(&'a BTreeMap<String, Arc<Pixmap>>);
 
 impl crate::raster::FrameMedia for OwnImages<'_> {
@@ -535,7 +534,7 @@ impl VisualSource for Lottie {
         Ok(self.meta.clone())
     }
 
-    /// 子资源在 host 侧收集并经 [`Lottie::attach_images`] 挂上；这里只复核齐全。
+    /// Sub-assets are collected on the host side and attached via [`Lottie::attach_images`]; here we only re-check that they are complete.
     fn prepare(&self, _ctx: &PrepareCtx) -> Result<()> {
         for requirement in &self.requirements {
             if !self.images.contains_key(&requirement.asset_name) {
@@ -549,14 +548,13 @@ impl VisualSource for Lottie {
         Ok(())
     }
 
-    /// 通用采样口：按**素材原尺寸**光栅化一帧。
+    /// General sampling entry point: rasterizes one frame at the **asset's native size**.
     ///
-    /// 元素渲染**不走这里**（那条路是 [`Lottie::record`]，直接发 DrawOp、跟着
-    /// 元素盒缩放）；本函数留给 source conformance、`ccut probe` 的缩略与
-    /// 将来可能出现的「把 Lottie 当普通图像源」的调用方。
+    /// Element rendering **does not go through here** (that path is [`Lottie::record`], which emits DrawOps directly and scales with
+    /// the element box); this function is kept for source conformance, the thumbnails of `ccut probe`, and any future caller that treats Lottie as a plain image source.
     ///
-    /// GPU 场景要的是一张纹理而不是指令流，所以它也得从这条路取像素——但必须
-    /// 走 [`Lottie::sample_scaled`] 按元素盒的实际像素尺寸要，别按原件尺寸要。
+    /// The GPU scene needs a texture rather than an instruction stream, so it too must take pixels from this path — but it must
+    /// go through [`Lottie::sample_scaled`] and request the element box's actual pixel size, not the original asset size.
     fn sample(&self, time: MediaTime) -> Result<SourceFrame> {
         self.sample_scaled(time, self.meta.width, self.meta.height)
     }
@@ -607,7 +605,7 @@ mod tests {
     #[test]
     fn the_frame_table_quantises_time_to_whole_composition_frames() {
         let lottie = Lottie::parse("l", "l.json", &doc(serde_json::json!({}))).unwrap();
-        // 25fps ⇒ 每帧 40ms
+        // 25 fps ⇒ 40 ms per frame
         assert_eq!(lottie.frame_starts_ms()[..3], [0, 40, 80]);
         assert_eq!(lottie.frame_at(MediaTime::from_millis(0)), 0.0);
         assert_eq!(lottie.frame_at(MediaTime::from_millis(39)), 0.0);
@@ -615,7 +613,7 @@ mod tests {
         assert_eq!(lottie.frame_at(MediaTime::from_millis(79)), 1.0);
     }
 
-    /// 产品层换色：命中的纯色换掉、指纹跟着变；不命中什么都不动。
+    /// Product-level recoloring: matched solid colors are replaced and the fingerprint changes with them; nothing is touched when nothing matches.
     #[test]
     fn fill_overrides_recolour_flat_fills_and_change_the_fingerprint() {
         let bytes = std::fs::read(concat!(
@@ -628,7 +626,7 @@ mod tests {
         let mut miss = Lottie::parse("s", "shapes-only.json", &bytes).unwrap();
 
         let mut overrides = BTreeMap::new();
-        // 夹具的填充是 [0.13, 0.44, 0.9] ⇒ #2170e6（8 位量化后比对，大小写不敏感）。
+        // The fixture's fill is [0.13, 0.44, 0.9] ⇒ #2170e6 (compared after 8-bit quantization, case-insensitive).
         overrides.insert("#2170E6".to_owned(), "#00C853".to_owned());
         assert_eq!(recoloured.apply_fill_overrides(&overrides), 1);
         assert_ne!(plain.fingerprint(), recoloured.fingerprint());
@@ -645,7 +643,7 @@ mod tests {
         assert!(centre(&after).green() > centre(&after).blue());
     }
 
-    /// 一张 4×4 的纯色 PNG。
+    /// A 4×4 solid-color PNG.
     fn png(rgba: [u8; 4]) -> Vec<u8> {
         let image = image::RgbaImage::from_pixel(4, 4, image::Rgba(rgba));
         let mut out = std::io::Cursor::new(Vec::new());
@@ -653,7 +651,7 @@ mod tests {
         out.into_inner()
     }
 
-    /// 合成里只有一个图片图层，引用 `img_0`。
+    /// The composition has only one image layer, referencing `img_0`.
     fn image_doc(asset: serde_json::Value) -> serde_json::Value {
         let mut asset = asset;
         asset["id"] = serde_json::json!("img_0");
@@ -693,13 +691,13 @@ mod tests {
         assert_eq!(lottie.attach_embedded_images().unwrap(), 1);
         assert_eq!(centre(&lottie), [255, 0, 0, 255]);
 
-        // 包里没有这张图：照旧是 `lottie-asset-missing`。
+        // The archive lacks this image: it is still `lottie-asset-missing`.
         let bytes = archive::tests::zip(&[("animations/hero.json", &json, true)]);
         let mut lottie = Lottie::parse("l", "hero.lottie", &bytes).unwrap();
         let error = lottie.attach_embedded_images().unwrap_err().to_string();
         assert!(error.starts_with("lottie-asset-missing"), "{error}");
 
-        // 读不开的包与没有动画的包是解析错误。
+        // An archive that cannot be opened and an archive with no animation are parse errors.
         assert!(
             Lottie::parse("l", "l.lottie", b"PK\x03\x04rest")
                 .unwrap_err()
@@ -718,7 +716,7 @@ mod tests {
     #[cfg(feature = "svg")]
     #[test]
     fn svg_images_are_rasterised_at_their_declared_size() {
-        // 2×2 的 SVG 声明成 4×4：铺满声明的框。
+        // A 2×2 SVG declared as 4×4: fills the declared box.
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="%2300ff00"/></svg>"#;
         let doc = image_doc(
             serde_json::json!({"w": 4, "h": 4, "e": 1, "p": format!("data:image/svg+xml;utf8,{svg}")}),
@@ -730,7 +728,7 @@ mod tests {
         assert_eq!(frame.pixel(3, 3).unwrap().alpha(), 255, "铺满 4×4");
         assert_eq!(frame.pixel(5, 5).unwrap().alpha(), 0, "框外是空的");
 
-        // 包里的 SVG 文件也一样。
+        // The same applies to SVG files in the archive.
         let json = serde_json::to_vec(&image_doc(
             serde_json::json!({"w": 4, "h": 4, "u": "images/", "p": "a.svg"}),
         ))
@@ -743,7 +741,7 @@ mod tests {
         lottie.attach_embedded_images().unwrap();
         assert_eq!(centre(&lottie), [0, 255, 0, 255]);
 
-        // 坏的 SVG：`lottie-asset-missing`。
+        // Broken SVG: `lottie-asset-missing`.
         let doc = image_doc(
             serde_json::json!({"w": 4, "h": 4, "e": 1, "p": "data:image/svg+xml;utf8,<svg"}),
         );
@@ -830,12 +828,12 @@ mod tests {
             shuffled.into_iter().rev().collect::<Vec<_>>(),
             "乱序采样必须逐字节等于顺序采样"
         );
-        // 同一帧窗口里的两个时刻取到同一张画面
+        // Two times within the same frame window get the same picture
         let a = lottie.sample(MediaTime::from_millis(200)).unwrap();
         let b = lottie.sample(MediaTime::from_millis(239)).unwrap();
         assert_eq!(a.index, b.index);
         assert_eq!(a.pixmap.data(), b.pixmap.data());
-        // 跨帧边界必变（位置在动）
+        // Must change across a frame boundary (position is moving)
         let c = lottie.sample(MediaTime::from_millis(240)).unwrap();
         assert_ne!(a.pixmap.data(), c.pixmap.data());
     }

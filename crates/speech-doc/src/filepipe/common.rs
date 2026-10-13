@@ -1,40 +1,26 @@
-//! filepipe 公共层：协议常量、错误码、诊断通道、载体元数据、输入清洗。
+//! filepipe common layer: protocol constants, error codes, diagnostics channel, carrier metadata, and input sanitization.
 //!
-//! 本模块零 I/O、零时钟、零随机；所有函数都是纯函数。
+//! This module has zero I/O, zero clock, and zero randomness; all functions are pure.
 
 use serde::{Deserialize, Serialize};
 
-/// 文件契约协议版本（写入 manifest.json 的 `protocolVersion`）。
+/// File contract protocol version (written to `protocolVersion` in manifest.json).
 pub const PROTOCOL_VERSION: &str = "file-v1";
 
-/// 历史 JSON 单轮契约的协议版本。
+/// Protocol version of the legacy JSON single-turn contract.
 ///
-/// 文件契约 kind 已单轨化到 [`PROTOCOL_VERSION`]；该常量只用于仍是单轮
-/// JSON 载荷的 kind（`polish-retry`、`segment`、`broll`、`cleanup`）及历史任务
-/// 目录的识别（含 2026-08 之前 NDJSON 契约的 `chapters` 任务）。
+/// The file contract kinds have been unified onto [`PROTOCOL_VERSION`]; this constant is only used to recognize kinds whose payload is still a single-turn JSON (`polish-retry`, `segment`, `broll`, `cleanup`) and legacy task directories (including `chapters` tasks from the NDJSON contract before 2026-08).
 pub const PROTOCOL_VERSION_JSON: &str = "json-v0";
 
-/// 某个 LLM 调用 kind 是否走 file-v1 文件载体。
+/// Whether a given LLM call kind goes through the file-v1 file carrier.
 ///
-/// core 与宿主执行层共用这一个判据：`make_llm` 构造出来的执行器在一条命令里会被
-/// 多个阶段共享（translate 与 align 同用一个 `AgentLlm`），只有这个函数能保证
-/// 「谁写 `.html` / 谁标 `file-v1`」两边不会各判各的。
+/// core and the host execution layer share this single criterion: an executor built by `make_llm` is shared by several stages within one command (translate and align use the same `AgentLlm`), and only this function can guarantee that both sides agree on "who writes `.html`" and "who tags `file-v1`".
 ///
-/// 判据是**字面全等**的 kind 列表：`polish-retry`（低相似单句重试）仍然是
-/// json-v0 单轮契约，绝不会被 `polish` 这一项捎带进文件载体。
-/// `segment-repair`（polish 波次后的定向补分段：带行号句行块，答案只回行号
-/// 区间）、`seam-repair`（polish 波次后的页缝判定：页 k 末段尾窗 + 页 k+1
-/// 首段头窗一块，同一索引载体）、`punct-repair`（polish 波次后对超长句只加
-/// 句末标点的定向修复）与 `speaker-repair`（polish **前置**的说话人归属修复：
-/// 按词编号的窗口，答案只回 `起-止 标签` 区间）与 `speaker-names`（polish
-/// **收尾**的说话人实名推断：开场白与首次登场证据，答案只回 `标签 = 名字` 行）
-/// 都是纯文本文件载体。
-/// `align-edges`（块对齐边，缺省对齐载体）与 `align-rewrite`（单调化显示改写）
-/// 都是 HTML 表格载体（对齐块设计 §6）。
-/// `chapters`（Map 页：段落 HTML → 章节标题/概要/首段锚）与 `chapters-outline`
-/// （Reduce：话题单元大纲 → 全局章节）都是 HTML 载体（[`super::chapters_html`]）。
-/// `translate-lines`（`--align-fusion lines`）是翻译的行文本载体
-/// （[`super::lines_translation`]），纯文本。
+/// The criterion is a **literal exact-match** list of kinds. `polish-retry` (retry of a low-similarity single sentence) is still a json-v0 single-turn contract, and must never be carried into the file carrier by the `polish` entry.
+/// `segment-repair` (a targeted segmentation fix after a polish wave: a block of sentences with line numbers, whose answer returns only line-number ranges), `seam-repair` (a page-seam judgment after a polish wave: the tail window of the last segment of page k plus the head window of the first segment of page k+1, in one block on the same index carrier), `punct-repair` (a targeted fix after a polish wave that only adds sentence-final punctuation to over-long sentences), `speaker-repair` (a speaker attribution fix run **before** polish: a window keyed by word numbers, whose answer returns only `start-end label` ranges), and `speaker-names` (speaker real-name inference run at the **end** of polish: opening lines and first-appearance evidence, whose answer returns only `label = name` lines) are all plain-text file carriers.
+/// `align-edges` (block alignment edges, the default align carrier) and `align-rewrite` (monotonic display rewrite) are both HTML table carriers (block alignment design §6).
+/// `chapters` (Map page: paragraph HTML → chapter title, summary, opening anchor) and `chapters-outline` (Reduce: topic-unit outline → global chapters) are both HTML carriers ([`super::chapters_html`]).
+/// `translate-lines` (`--align-fusion lines`) is the line-text carrier for translation ([`super::lines_translation`]), plain text.
 pub fn uses_file_contract(kind: &str) -> bool {
     matches!(
         kind,
@@ -56,147 +42,128 @@ pub fn uses_file_contract(kind: &str) -> bool {
     )
 }
 
-/// 一次页级尝试的材料，供宿主写 `ai/<stage>/…/vNNN/`（§4/§11）。
+/// Material for one page-level attempt, for the host to write `ai/<stage>/…/vNNN/` (§4/§11).
 ///
-/// core 不做 I/O、不取时钟、不哈希：文件名、`sha256` 与时间戳全部由宿主补。
-/// translate 与 polish 共用同一形状（见各自的类型别名），避免宿主为每个阶段
-/// 各写一份产物落盘器。
+/// core does no I/O, takes no clock, and computes no hashes: file names, `sha256`, and timestamps are all filled in by the host. translate and polish share the same shape (see their respective type aliases), so the host does not need a separate artifact writer for each stage.
 #[derive(Debug, Clone)]
 pub struct PageAttempt<'a> {
-    /// 页 id（`p001`…；translate 跨页的全局残余波次为 `residual`）。
+    /// Page id (`p001`…; for translate's global residual wave across pages it is `residual`).
     pub page_id: &'a str,
-    /// 该页的第几次尝试，1 起。
+    /// Which attempt this is for the page, 1-based.
     pub attempt: u32,
-    /// 实际发出的渲染文本（即 `DocumentRequest.input.content`）。
+    /// The render text actually sent (i.e. `DocumentRequest.input.content`).
     pub input: &'a str,
-    /// 模型原样输出。
+    /// Raw model output, as emitted.
     pub output: &'a str,
-    /// 解析出的 §10 问题。
+    /// Parsed §10 issues.
     pub problems: &'a [Problem],
-    /// 本页是否整体被接受。
+    /// Whether this page was accepted as a whole.
     pub accepted: bool,
 }
 
-/// translate 载体的 `data-ccut-format` 值。
+/// `data-ccut-format` value of the translate carrier.
 pub const TRANSLATION_SOURCE_FORMAT: &str = "translation-source/1";
-/// align 载体的 `data-ccut-format` 值。
+/// `data-ccut-format` value of the align carrier.
 pub const ALIGN_TABLE_FORMAT: &str = "align-table/1";
-/// align 缺省载体（对齐块设计 §6.1）：块对齐边表的 `data-ccut-format` 值。
+/// Default align carrier (block alignment design §6.1): `data-ccut-format` value of the block alignment edge table.
 pub const ALIGN_EDGES_FORMAT: &str = "align-edges/1";
-/// 单调化显示改写窄任务（对齐块设计 §6.3）的 `data-ccut-format` 值。
+/// `data-ccut-format` value of the monotonic display rewrite narrow task (block alignment design §6.3).
 pub const ALIGN_REWRITE_FORMAT: &str = "align-rewrite/1";
-/// polish 载体的格式标识（纯文本无处安放属性，仅用于 manifest/请求元数据）。
+/// Format tag for the polish carrier (plain text has nowhere to put attributes; used only in manifest and request metadata).
 pub const POLISH_TEXT_FORMAT: &str = "polish-text/1";
-/// context.md 载体的格式标识（写入 frontmatter 的 `format`）。
+/// Format tag for the context.md carrier (written as `format` in the frontmatter).
 pub const CONTEXT_DOC_FORMAT: &str = "context-doc/1";
 
-/// 输出尺寸上限系数（§16）。
+/// Output size cap coefficient (§16).
 ///
-/// **硬顶语义**（重试策略重设计 R2）：护栏不再是「答案是否偏长」的质量判据，
-/// 而是「载荷是否还值得解析」的最后一道闸。偏长但结构完整的答案（例如 analysis
-/// 把常用词也写成术语行）由各 kind 的单元级规则去重/截断，只有超过硬顶才判
-/// page-fatal。系数因此从 4× 上调到 8×。
+/// **Hard-ceiling semantics** (retry strategy redesign R2): the guard is no longer a quality criterion of "is the answer too long", but the last gate of "is the payload still worth parsing". Answers that are long but structurally complete (for example, an analysis that also writes common words as term rows) are handled by per-unit rules in each kind that de-duplicate or truncate; only exceeding the hard ceiling counts as page-fatal. The coefficient is therefore raised from 4× to 8×.
 pub const OUTPUT_SIZE_MULTIPLIER: usize = 8;
-/// 输出尺寸上限下限值，避免极短输入把阈值压到不可用。
+/// Lower bound of the output size cap, so that very short inputs do not drive the threshold to unusable levels.
 pub const OUTPUT_SIZE_FLOOR_CHARS: usize = 4096;
 
-/// 输入字符数 → 允许的最大输出字符数。
+/// Input character count → maximum allowed output character count.
 pub fn max_output_chars(input_chars: usize) -> usize {
     input_chars
         .saturating_mul(OUTPUT_SIZE_MULTIPLIER)
         .max(OUTPUT_SIZE_FLOOR_CHARS)
 }
 
-/// §10 协议错误码（闭集）。只有这些码可以进入重试/审计账本。
+/// §10 protocol error codes (closed set). Only these codes may enter the retry and audit ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProblemCode {
-    /// 文档被截断（期望 id 的连续后缀缺失）。
+    /// Document was truncated (a contiguous suffix of expected ids is missing).
     DocumentTruncated,
-    /// 输出被包裹在代码块/寒暄里且无法零成本剥离。
+    /// Output is wrapped in a code block or small talk and cannot be stripped at zero cost.
     DocumentWrapped,
-    /// 输入自身的冻结内容与行数约束互相冲突；需先修正计划。
+    /// The input's own frozen content conflicts with the row-count constraints; the plan must be fixed first.
     InputConflict,
-    /// 输出体积超过按输入估算的上限（§16 附加码）。
+    /// Output volume exceeds the limit estimated from the input (§16 additional code).
     DocumentOversize,
-    /// 只读区/源文被修改。
+    /// Read-only region or source text was modified.
     SourceDrift,
-    /// 期望的 id 未出现（散点缺失）。
+    /// An expected id did not appear (scattered missing).
     MissingId,
-    /// 译文为空。
+    /// Translation is empty.
     EmptyTranslation,
-    /// 同一 id 出现多次。
+    /// The same id appears more than once.
     DuplicateId,
-    /// 出现协议外的 id。
+    /// An id outside the protocol appears.
     UnknownId,
-    /// 句子被搬到了别的段落/分组。
+    /// A sentence was moved to a different paragraph or group.
     ParagraphMove,
-    /// 冻结内容（`data-editable="false"`）被修改。
+    /// Frozen content (`data-editable="false"`) was modified.
     FrozenModified,
-    /// 锁定术语未出现在译文中。
+    /// Locked term does not appear in the translation.
     GlossaryMissing,
-    /// 译文主体文字脚本与目标语言明显不符。
+    /// The script of the translation's body text clearly does not match the target language.
     TargetLanguageMismatch,
-    /// 译文是 TODO / Translation. / 待翻译等占位文本。
+    /// Translation is placeholder text such as TODO / Translation. / 待翻译 ("to be translated").
     TranslationPlaceholder,
-    /// 译文逐字复制源文。
+    /// Translation copies the source text verbatim.
     TranslationSourceCopy,
-    /// 长源句只返回异常短译文。
+    /// A long source sentence received only an abnormally short translation.
     TranslationTooShort,
-    /// 一页大量句子塌缩成同一个短字符串。
+    /// A large number of sentences on one page collapsed into the same short string.
     TranslationDuplicateCollapse,
-    /// 行文本载体：相邻两块正文几乎相同——模型为凑 `≥k` 块数把同一段译文
-    /// 写了两遍。该句拒收重问，不让重复文字进字幕。
+    /// Line-text carrier: two adjacent body blocks are nearly identical. The model wrote the same translated passage twice to pad the `≥k` block count. The sentence is rejected and re-asked, so duplicated text does not go into subtitles.
     TranslationChunkRepeat,
-    /// 行片拼接结果与句级译文不一致。
+    /// Line-piece concatenation result is inconsistent with the sentence-level translation.
     AlignContentDrift,
-    /// 行片超过硬上限。
+    /// Line piece exceeds the hard limit.
     AlignOverHard,
-    /// 行片切分落在非法接缝上。
+    /// Line-piece split falls on an illegal seam.
     AlignIllegalSeam,
-    /// 块对齐边载体：`span` 文本拼接与译文不一致（对齐块设计 §6.1）。
+    /// Block alignment edge carrier: the concatenated `span` text does not match the translation (block alignment design §6.1).
     AlignEdgeText,
-    /// 块对齐边载体：`data-src` 序号非法（越界、不可解析、跨块重复）。
+    /// Block alignment edge carrier: `data-src` index is invalid (out of range, unparseable, or duplicated across blocks).
     AlignEdgeOrdinal,
-    /// context 文档结构或取值非法（未知 Category、表头不符、缺必需小节）。
+    /// context document structure or values are invalid (unknown Category, header mismatch, missing required section).
     ///
-    /// §10 表面向分页编辑阶段，未覆盖 context.md 的结构校验；本码是本实现
-    /// 相对设计文档的第二处补充（第一处是 [`ProblemCode::DocumentOversize`]）。
+    /// §10 is oriented to the page-level editing stage and does not cover structural validation of context.md. This code is the second addition relative to the design document in this implementation (the first is [`ProblemCode::DocumentOversize`]).
     ContextInvalid,
-    /// 单个段落超过词数阈值（分段退化：模型没分段，糊成超长段落）。
-    /// 主 polish 页**不因它拒收**（正文首轮即接受）；它只出现在波次后的
-    /// `segment-repair` 索引契约答案里：某块只回了一个区间而整块超限，
-    /// detail 即定向重试指令（含最少段数）。轮次耗尽后由引擎按停顿等级
-    /// 确定性收口，出口不再有超限段落。
+    /// A single paragraph exceeds the word-count threshold (segmentation degradation: the model did not split paragraphs and merged them into one overlong paragraph).
+    /// The main polish page **is not rejected because of it** (the body is accepted on the first round). It only appears in the `segment-repair` index-contract answer after a wave: a block returned only one range while the whole block exceeds the limit, and the detail is the targeted retry instruction (including the minimum number of segments). After the rounds run out, the engine deterministically closes out by pause level, so no over-limit paragraphs remain on exit.
     ParagraphOversize,
-    /// 索引契约（`segment-repair` / `seam-repair`）答案的行号区间非法：缺块、
-    /// 没有区间、不从 1 开始、不首尾相接、不覆盖到末行或越界。detail 定位
-    /// 首个缺陷，是下一轮的定向指令。
+    /// The line-number ranges in an index-contract answer (`segment-repair` / `seam-repair`) are illegal: a block is missing, has no range, does not start from 1, is not contiguous end to end, does not cover up to the last line, or goes out of bounds. The detail locates the first defect and is the targeted instruction for the next round.
     RangeInvalid,
-    /// 单个映射句超过跨度上限（源字符 / 时长 / 显示单位）且模型没有把它切开。
-    /// 主 polish 页**不因它拒收**（正文首轮即接受）；它只出现在波次后的
-    /// `punct-repair` 定向修复答案里：某句被原样复述却一个句末标点都没加，
-    /// detail 即定向重试指令。轮次耗尽后由引擎按源时间轴确定性切句兜底。
+    /// A single mapped sentence exceeds the span limit (source characters, duration, or display units) and the model did not split it.
+    /// The main polish page **is not rejected because of it**. It only appears in the `punct-repair` targeted-fix answer after a wave: a sentence was restated verbatim without adding any sentence-final punctuation, and the detail is the targeted retry instruction. After the rounds run out, the engine falls back to deterministic sentence splitting on the source timeline.
     SentenceOversize,
-    /// 章节标题为空（chapters 载体：标题元素内无文字）。
+    /// Chapter title is empty (chapters carrier: no text inside the title element).
     EmptyTitle,
-    /// 章节数明显超过 `data-aim`（chapters-outline 载体：Reduce 只是照抄大纲、没有合并）。
+    /// Chapter count clearly exceeds `data-aim` (chapters-outline carrier: Reduce just copied the outline without merging).
     ChapterOverflow,
-    /// 表面级瑕疵：冲突相邻标点、20+ 字母粘连的 Latin 串、悬垂假句末。
+    /// Surface-level blemishes: conflicting adjacent punctuation, Latin runs of 20+ letters glued together, dangling fake sentence endings.
     ///
-    /// 这类问题**从不拒页**（重试策略重设计 R1「advisory / unit」）：能代码归一
-    /// 的先归一，剩下的按**句**进补做队列（`polish-retry` 的 `reason =
-    /// surface-artifact`），耗尽后保留模型文本并计数。本码替代 polish /
-    /// punct-repair 里对 [`ProblemCode::DocumentOversize`] 的误用——那让一句的
-    /// 表面瑕疵拒掉整页并重掷全部句子。
+    /// These problems **never reject a page** (retry strategy redesign R1, "advisory / unit"): whatever can be normalized in code is normalized first, and the rest is queued per **sentence** for a re-do (`polish-retry` with `reason = surface-artifact`). When exhausted, the model text is kept and counted. This code replaces the misuse of [`ProblemCode::DocumentOversize`] in polish and punct-repair, which rejected the whole page and re-rolled all sentences because of one sentence's surface blemish.
     SurfaceArtifact,
-    /// `speaker-names` 答案里的实名不合法：不是 `标签 = 名字` 形式、空值、
-    /// 超长（模型把整句介绍抄了回来）、含 `=`，或名字本身仍是占位标签。
+    /// Invalid real name in a `speaker-names` answer: not in the `label = name` form, an empty value, overlong (the model copied an entire introduction back), contains `=`, or the name itself is still a placeholder label.
     SpeakerNameInvalid,
 }
 
 impl ProblemCode {
-    /// 机器可读的码字符串（kebab-case，与 §10 表一致）。
+    /// Machine-readable code string (kebab-case, consistent with the §10 table).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::DocumentTruncated => "document-truncated",
@@ -240,55 +207,52 @@ impl std::fmt::Display for ProblemCode {
     }
 }
 
-/// 非协议诊断码：只做可观测性，不参与重试账本。
+/// Non-protocol diagnostic code: for observability only, does not take part in the retry ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WarningCode {
-    /// 剥掉了单层代码块包裹（零成本恢复）。
+    /// Stripped a single layer of code-block wrapping (recovered at zero cost).
     WrapperStripped,
-    /// 剥掉了非法控制/不可见字符。
+    /// Stripped illegal control or invisible characters.
     ControlStripped,
-    /// 合并了 ≥3 连续换行。
+    /// Merged three or more consecutive newlines.
     BlankLinesCollapsed,
-    /// 残留的软标记被剥除。
+    /// Stripped leftover soft markers.
     MarkerResidue,
-    /// 丢弃了不安全节点（script/style/iframe…）。
+    /// Dropped unsafe nodes (script, style, iframe…).
     NodeDropped,
-    /// 丢弃了非白名单属性。
+    /// Dropped non-whitelisted attributes.
     AttributeDropped,
-    /// 渲染时中和了与哨兵字面量冲突的源文。
+    /// Neutralized source text that conflicts with a sentinel literal at render time.
     SentinelNeutralized,
-    /// `rowspan` 与实际组内行数不符（纯冗余校验）。
+    /// `rowspan` does not match the actual number of rows in the group (purely redundant check).
     RowspanMismatch,
-    /// 出现在协议外、被忽略的内容。
+    /// Out-of-protocol content that was ignored.
     ContentIgnored,
-    /// 程序按 ⏹ 强制补回的段落边界。
+    /// Paragraph boundary forcibly restored by the program at ⏹.
     BoundaryForced,
-    /// 对齐行片超过 hard 且译文不存在合法切分（巨型 Latin 记号、每条缝都是
-    /// 客观语病）：提交期放行，引擎按 hard 机械硬切。片内或整句存在合法切分
-    /// 时仍报 [`ProblemCode::AlignOverHard`]（带切法提示）。
+    /// An aligned line piece exceeds hard, and the translation has no legal split (giant Latin tokens, where every seam is an objective grammatical error): accepted at submit time, and the engine hard-splits mechanically at hard. When a legal split exists within the piece or the whole sentence, [`ProblemCode::AlignOverHard`] is still reported (with a split hint).
     AlignOverHardUncuttable,
-    /// chapters 载体：模型写的锚 id 不存在，已按开头片段唯一命中的段落修复。
+    /// chapters carrier: the anchor id the model wrote does not exist; repaired to the paragraph uniquely matched by its opening snippet.
     AnchorRepaired,
-    /// chapters 载体：锚 id 存在，但锚上的开头片段与该段实际开头不符（以 id 为准）。
+    /// chapters carrier: the anchor id exists, but the opening snippet on the anchor does not match the paragraph's actual opening (the id takes precedence).
     AnchorTextMismatch,
-    /// 同一 id / Source 出现多次，已代码合并或取首个（R2 代码先修）。
+    /// The same id or Source appeared more than once; merged in code, or the first one kept (R2 code-first fix).
     DuplicateId,
-    /// 行被确定性修复后接受：列数补齐/并回、未知取值降级、垃圾行丢弃。
+    /// Row accepted after deterministic repair: column count padded or merged back, unknown values downgraded, garbage rows dropped.
     RowRepaired,
-    /// 哨兵栅栏缺失，已由相邻栅栏推断出核心区边界（polish `recover_fences`）。
+    /// Sentinel fence missing; core region boundaries inferred from adjacent fences (polish `recover_fences`).
     FenceRecovered,
-    /// 冲突的相邻标点已被代码归一（保留表达该边界的那一个）。
+    /// Conflicting adjacent punctuation normalized in code (keeping the one that expresses the boundary).
     PunctuationNormalized,
-    /// 表面级瑕疵（悬垂假句末 / 粘连 Latin 串），只记诊断、不拒收；引擎按句
-    /// 进补做队列（见 [`ProblemCode::SurfaceArtifact`]）。
+    /// Surface-level blemish (dangling fake sentence ending or glued Latin run): only a diagnostic is recorded, not rejected; the engine queues the sentence for a re-do (see [`ProblemCode::SurfaceArtifact`]).
     SurfaceArtifact,
-    /// 冻结内容被改动或被搬动，已忽略模型文本、保留既有译文。
+    /// Frozen content was altered or moved; the model text was ignored and the existing translation kept.
     FrozenIgnored,
 }
 
 impl WarningCode {
-    /// 机器可读的码字符串。
+    /// Machine-readable code string.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::WrapperStripped => "wrapper-stripped",
@@ -320,31 +284,31 @@ impl std::fmt::Display for WarningCode {
     }
 }
 
-/// 问题定位信息。
+/// Problem location info.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ProblemScope {
-    /// 整份文档。
+    /// Whole document.
     Document,
-    /// 某一页。
+    /// A single page.
     Page {
-        /// 页 id（如 `p001`）。
+        /// Page id (e.g. `p001`).
         id: String,
     },
-    /// 某个句子/分组 id（如 `s-g1.0`）。
+    /// A sentence or group id (e.g. `s-g1.0`).
     Sentence {
-        /// 句 id。
+        /// Sentence id.
         id: String,
     },
-    /// 核心区里的第 n 个段落（0 基）。
+    /// The n-th paragraph in the core region (0-based).
     Paragraph {
-        /// 段落序号。
+        /// Paragraph index.
         index: usize,
     },
 }
 
 impl ProblemScope {
-    /// 人读定位串。
+    /// Human-readable location string.
     pub fn describe(&self) -> String {
         match self {
             Self::Document => "document".to_owned(),
@@ -355,20 +319,20 @@ impl ProblemScope {
     }
 }
 
-/// 协议级问题：机器可读 code + 人读 message + 定位。
+/// Protocol-level problem: machine-readable code, human-readable message, and location.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Problem {
-    /// §10 错误码。
+    /// §10 error code.
     pub code: ProblemCode,
-    /// 定位信息。
+    /// Location info.
     pub scope: ProblemScope,
-    /// 人读说明（用于回灌给模型）。
+    /// Human-readable explanation (used to feed back to the model).
     pub detail: String,
 }
 
 impl Problem {
-    /// 文档级问题。
+    /// Document-level problem.
     pub fn document(code: ProblemCode, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -377,7 +341,7 @@ impl Problem {
         }
     }
 
-    /// 页级问题。
+    /// Page-level problem.
     pub fn page(code: ProblemCode, id: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -386,7 +350,7 @@ impl Problem {
         }
     }
 
-    /// 句级问题。
+    /// Sentence-level problem.
     pub fn sentence(code: ProblemCode, id: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -395,7 +359,7 @@ impl Problem {
         }
     }
 
-    /// 段落级问题。
+    /// Paragraph-level problem.
     pub fn paragraph(code: ProblemCode, index: usize, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -404,26 +368,26 @@ impl Problem {
         }
     }
 
-    /// 单行人读描述。
+    /// One-line human-readable description.
     pub fn message(&self) -> String {
         format!("[{}] {}: {}", self.code, self.scope.describe(), self.detail)
     }
 }
 
-/// 非协议诊断。
+/// Non-protocol diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Warning {
-    /// 诊断码。
+    /// Diagnostic code.
     pub code: WarningCode,
-    /// 定位信息。
+    /// Location info.
     pub scope: ProblemScope,
-    /// 人读说明。
+    /// Human-readable explanation.
     pub detail: String,
 }
 
 impl Warning {
-    /// 文档级诊断。
+    /// Document-level diagnostic.
     pub fn document(code: WarningCode, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -432,7 +396,7 @@ impl Warning {
         }
     }
 
-    /// 页级诊断。
+    /// Page-level diagnostic.
     pub fn page(code: WarningCode, id: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -441,7 +405,7 @@ impl Warning {
         }
     }
 
-    /// 句级诊断。
+    /// Sentence-level diagnostic.
     pub fn sentence(code: WarningCode, id: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -450,7 +414,7 @@ impl Warning {
         }
     }
 
-    /// 段落级诊断。
+    /// Paragraph-level diagnostic.
     pub fn paragraph(code: WarningCode, index: usize, detail: impl Into<String>) -> Self {
         Self {
             code,
@@ -460,40 +424,40 @@ impl Warning {
     }
 }
 
-/// 一次解析的全部诊断输出。
+/// All diagnostic output of one parse.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostics {
-    /// 协议级问题（进重试账本）。
+    /// Protocol-level problem (enters the retry ledger).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<Problem>,
-    /// 非协议诊断（仅可观测性）。
+    /// Non-protocol diagnostic (observability only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<Warning>,
 }
 
 impl Diagnostics {
-    /// 空诊断。
+    /// Empty diagnostics.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// 追加协议问题。
+    /// Append a protocol problem.
     pub fn push_problem(&mut self, problem: Problem) {
         self.problems.push(problem);
     }
 
-    /// 追加诊断。
+    /// Append a diagnostic.
     pub fn push_warning(&mut self, warning: Warning) {
         self.warnings.push(warning);
     }
 
-    /// 是否存在协议问题。
+    /// Whether any protocol problem exists.
     pub fn has_problems(&self) -> bool {
         !self.problems.is_empty()
     }
 
-    /// 出现过的协议错误码（去重、有序）。
+    /// Protocol error codes that occurred (deduplicated, ordered).
     pub fn codes(&self) -> Vec<ProblemCode> {
         let mut codes: Vec<ProblemCode> = self.problems.iter().map(|p| p.code).collect();
         codes.sort_unstable();
@@ -501,28 +465,28 @@ impl Diagnostics {
         codes
     }
 
-    /// 是否命中某个错误码。
+    /// Whether a given error code is hit.
     pub fn has_code(&self, code: ProblemCode) -> bool {
         self.problems.iter().any(|p| p.code == code)
     }
 }
 
-/// 载体格式。
+/// Carrier format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentFormat {
-    /// 纯文本（polish）。
+    /// Plain text (polish).
     Txt,
     /// Markdown（context/analysis）。
     Markdown,
     /// HTML（translate/align）。
     Html,
-    /// JSON（manifest 等结构化产物）。
+    /// JSON (structured artifacts such as the manifest).
     Json,
 }
 
 impl DocumentFormat {
-    /// 文件扩展名（不含点）。
+    /// File extension (without the dot).
     pub fn extension(self) -> &'static str {
         match self {
             Self::Txt => "txt",
@@ -532,29 +496,29 @@ impl DocumentFormat {
         }
     }
 
-    /// 协议里使用的格式名。
+    /// Format name used by the protocol.
     pub fn as_str(self) -> &'static str {
         self.extension()
     }
 }
 
-/// §9.1 文档产物。core 不做 I/O：`sha256` 由宿主计算后填入。
+/// §9.1 document artifact. core does no I/O: `sha256` is computed by the host and filled in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentArtifact {
-    /// 逻辑文件名（如 `p001.src.html`），不含路径。
+    /// Logical file name (e.g. `p001.src.html`), without path.
     pub name: String,
-    /// 载体格式。
+    /// Carrier format.
     pub format: DocumentFormat,
-    /// 文档全文。
+    /// Full document text.
     pub content: String,
-    /// 宿主计算的内容摘要；core 内部不计算也不校验。
+    /// Content digest computed by the host; core neither computes nor verifies it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub sha256: String,
 }
 
 impl DocumentArtifact {
-    /// 构造产物（`sha256` 留空，由宿主补齐）。
+    /// Construct an artifact (`sha256` left empty, to be filled in by the host).
     pub fn new(
         name: impl Into<String>,
         format: DocumentFormat,
@@ -568,39 +532,39 @@ impl DocumentArtifact {
         }
     }
 
-    /// 附上宿主计算的摘要。
+    /// Attach the digest computed by the host.
     pub fn with_sha256(mut self, sha256: impl Into<String>) -> Self {
         self.sha256 = sha256.into();
         self
     }
 }
 
-/// §9.1 文档请求：执行层与 LLM 之间的载体无关约定。
+/// §9.1 document request: a carrier-agnostic agreement between the execution layer and the LLM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentRequest {
-    /// 阶段名（`analysis` / `polish` / `translate` / `align`）。
+    /// Stage name (`analysis` / `polish` / `translate` / `align`).
     pub kind: String,
-    /// 契约正文（提示词/规则说明）。
+    /// Contract body (prompt and rule description).
     pub contract: String,
-    /// 待编辑的输入文档。
+    /// Input document to be edited.
     pub input: DocumentArtifact,
-    /// 只读参考文档（context.md、术语表等）。
+    /// Read-only reference documents (context.md, glossary, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<DocumentArtifact>,
-    /// 期望的输出格式。
+    /// Expected output format.
     pub output_format: DocumentFormat,
-    /// 第几次尝试（0 基）。
+    /// Which attempt this is (0-based).
     pub attempt: u32,
-    /// 上一次尝试的协议问题（回灌给模型）。
+    /// Protocol problems from the previous attempt (fed back to the model).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<Problem>,
-    /// 采样温度。
+    /// Sampling temperature.
     pub temperature: f32,
 }
 
 impl DocumentRequest {
-    /// 构造首次请求。
+    /// Construct the first request.
     pub fn new(
         kind: impl Into<String>,
         contract: impl Into<String>,
@@ -620,32 +584,32 @@ impl DocumentRequest {
     }
 }
 
-/// 是否为不允许进入载体的控制/不可见字符（§16）。
+/// Whether it is a control or invisible character that is not allowed into a carrier (§16).
 ///
-/// 保留 `\n`、`\t` 以及 ZWJ/ZWNJ（emoji 与印度语系/波斯语必需）。
+/// Keeps `\n`, `\t`, and ZWJ/ZWNJ (required for emoji and Indic and Persian scripts).
 pub fn is_illegal_payload_char(ch: char) -> bool {
     match ch {
         '\n' | '\t' => false,
         '\u{200C}' | '\u{200D}' => false,
         c if (c as u32) < 0x20 => true,
         '\u{7F}'..='\u{9F}' => true,
-        // 方向控制与不可见空白
+        // Directional controls and invisible whitespace
         '\u{200B}' | '\u{200E}' | '\u{200F}' | '\u{FEFF}' => true,
         '\u{202A}'..='\u{202E}' => true,
         '\u{2060}'..='\u{2064}' => true,
         '\u{2066}'..='\u{2069}' => true,
-        // 行/段分隔符：语义上等价换行，但会破坏行导向解析
+        // Line and paragraph separators: semantically equivalent to newlines, but they break line-oriented parsing
         '\u{2028}' | '\u{2029}' => true,
         _ => false,
     }
 }
 
-/// 是否含非法控制/不可见字符。
+/// Whether it contains illegal control or invisible characters.
 pub fn contains_illegal_chars(text: &str) -> bool {
     text.chars().any(is_illegal_payload_char)
 }
 
-/// 渲染侧清洗：统一换行为 `\n` 并删除非法控制/不可见字符。
+/// Render-side sanitization: unify line endings to `\n` and delete illegal control and invisible characters.
 pub fn sanitize_payload_text(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -664,29 +628,29 @@ pub fn sanitize_payload_text(text: &str) -> String {
     output
 }
 
-/// 单行清洗：在 [`sanitize_payload_text`] 基础上把换行/制表折成空格并压缩空白。
+/// Single-line sanitization: on top of [`sanitize_payload_text`], fold newlines and tabs into spaces and compress whitespace.
 pub fn sanitize_inline_text(text: &str) -> String {
     let cleaned = sanitize_payload_text(text);
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 归一化后的模型输出。
+/// Normalized model output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedOutput {
-    /// 归一化文本。
+    /// Normalized text.
     pub text: String,
-    /// 是否剥掉了 BOM。
+    /// Whether the BOM was stripped.
     pub bom_stripped: bool,
-    /// 是否做过换行归一（CR / CRLF → LF）。
+    /// Whether newline normalization was performed (CR and CRLF → LF).
     pub newlines_normalized: bool,
-    /// 是否剥掉了非法控制字符。
+    /// Whether illegal control characters were stripped.
     pub control_stripped: bool,
-    /// 是否剥掉了单层代码块包裹。
+    /// Whether a single layer of code-block wrapping was stripped.
     pub wrapper_stripped: bool,
 }
 
 impl NormalizedOutput {
-    /// 把归一化过程中的动作转成诊断项。
+    /// Convert the actions taken during normalization into diagnostic items.
     pub fn warnings(&self) -> Vec<Warning> {
         let mut warnings = Vec::new();
         if self.wrapper_stripped {
@@ -705,8 +669,8 @@ impl NormalizedOutput {
     }
 }
 
-/// 四种载体共用的解析前归一化（§10.2 零成本恢复）：
-/// 去 BOM → 换行归一 → 删非法控制字符 → 剥单层代码块包裹。
+/// Pre-parse normalization shared by the four carriers (§10.2 zero-cost recovery):
+/// strip BOM → normalize newlines → delete illegal control characters → strip a single layer of code-block wrapping.
 pub fn normalize_llm_output(raw: &str) -> NormalizedOutput {
     let (body, bom_stripped) = match raw.strip_prefix('\u{FEFF}') {
         Some(rest) => (rest, true),
@@ -727,7 +691,7 @@ pub fn normalize_llm_output(raw: &str) -> NormalizedOutput {
     }
 }
 
-/// 剥掉恰好一层完整的 ``` / ~~~ 代码块包裹；不满足条件时原样返回。
+/// Strip exactly one complete layer of ``` or ~~~ code-block wrapping; otherwise return unchanged.
 fn strip_single_code_fence(text: &str) -> (String, bool) {
     let lines: Vec<&str> = text.lines().collect();
     let fence_indices: Vec<usize> = lines
@@ -759,7 +723,7 @@ fn strip_single_code_fence(text: &str) -> (String, bool) {
     (body, true)
 }
 
-/// 输出体积护栏（§16）：超过 [`max_output_chars`] 即报 `document-oversize`。
+/// Output size guard (§16): exceeding [`max_output_chars`] reports `document-oversize`.
 pub fn guard_output_size(input: &str, output: &str) -> Option<Problem> {
     let limit = max_output_chars(input.chars().count());
     let actual = output.chars().count();
@@ -833,9 +797,7 @@ mod tests {
         assert!(normalized.newlines_normalized);
     }
 
-    /// 硬顶语义（R2）：8× 输入才拒。真实事故里 11k 字输入配 50–67k 字答案
-    /// （flash 把常用词也写成术语行）曾越过 4× 旧线而整页重试三轮全灭；抬到
-    /// 8× 后照常解析，多出的行由 analysis 的单元级规则去重与截断。
+    /// Hard-ceiling semantics (R2): rejected only beyond 8× the input. In a real incident, an 11k-character input paired with a 50–67k-character answer (flash wrote common words as term rows too) crossed the old 4× line, and all three page retries failed. Raised to 8×, it now parses normally, and the extra rows are de-duplicated and truncated by analysis's per-unit rules.
     #[test]
     fn output_size_guard_uses_input_multiple() {
         assert_eq!(max_output_chars(10), OUTPUT_SIZE_FLOOR_CHARS);

@@ -1,12 +1,12 @@
-//! 对齐 golden 集（`ccut-align-golden/1`）的解析与校验。
+//! Parsing and validation of the alignment golden set (`ccut-align-golden/1`).
 //!
-//! 数据落在 `core/fixtures/align/golden/<project>/<lang>.json`，格式与字段语义
-//! 见同目录 `README.md`。本模块**只做解析与纯校验**：`ccut-flow-core` 不做
-//! I/O，读文件由测试宿主（`tests/golden_align.rs`）负责，这里只暴露
-//! [`GoldenFile::from_str`]。
+//! The data lives in `core/fixtures/align/golden/<project>/<lang>.json`; for the format and field semantics,
+//! see `README.md` in the same directory. This module **only does parsing and pure validation**: `ccut-flow-core` does no
+//! I/O; reading files is the job of the test harness (`tests/golden_align.rs`), and this module only exposes
+//! [`GoldenFile::from_str`].
 //!
-//! 指标计算在 [`crate::metrics`]（[`crate::metrics::bead_prf`] /
-//! [`crate::metrics::boundary_f1`] / [`crate::metrics::path_exact_match`]）。
+//! Metric computation is in [`crate::metrics`] ([`crate::metrics::bead_prf`] /
+//! [`crate::metrics::boundary_f1`] / [`crate::metrics::path_exact_match`]).
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -14,11 +14,11 @@ use serde::{Deserialize, Serialize};
 use crate::doc::Correspondence;
 use crate::metrics::{Bead, beads_contiguous};
 
-/// golden 文件的 schema 串。
+/// Schema string of the golden file.
 pub const GOLDEN_SCHEMA: &str = "ccut-align-golden/1";
 
-/// 12 类标注现象对应的 13 个 tag 值（`omission` / `addition` 是"省译/增译"
-/// 一类的两个方向）。顺序即 README 中的列出顺序。
+/// 13 tag values corresponding to 12 classes of annotated phenomena (`omission` / `addition` are the two directions of the "omitted translation / added translation"
+/// class). The order is the order listed in the README.
 pub const GOLDEN_TAGS: &[&str] = &[
     "1:1",
     "1:N",
@@ -35,12 +35,12 @@ pub const GOLDEN_TAGS: &[&str] = &[
     "hard-negative",
 ];
 
-/// 一个 bead 的落盘形态：`[start, end)` 半开区间。
+/// On-disk form of a bead: a half-open interval `[start, end)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoldenBead {
-    /// 源词下标半开区间（下标即 `sourceWords` 的位置）。
+    /// Half-open interval of source word indices (the index is the position in `sourceWords`).
     pub src: [usize; 2],
-    /// 目标 `chars()` 半开区间（下标即 `target.chars()` 的位置）。
+    /// Half-open interval over target `chars()` (the index is the position in `target.chars()`).
     pub tgt: [usize; 2],
 }
 
@@ -50,43 +50,43 @@ impl GoldenBead {
     }
 }
 
-/// 硬锚：某个源词必须落到的目标字符区间（数字、专名、原样 Latin、锁定术语）。
+/// Hard anchor: the target character interval that a given source word must land in (numbers, proper nouns, Latin kept as-is, locked terms).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoldenAnchor {
-    /// 源词下标。
+    /// Source word index.
     pub src: usize,
-    /// 目标 `chars()` 半开区间。
+    /// Half-open interval over target `chars()`.
     pub tgt: [usize; 2],
 }
 
-/// 该句的人工期望。
+/// Human-labelled expectation for this sentence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoldenExpectation {
-    /// 期望的对应粒度：`block` = 可块级对照，`sentence` = 只能整句对应。
+    /// Expected correspondence granularity: `block` = can be compared at block level, `sentence` = only whole-sentence correspondence is possible.
     pub correspondence: Correspondence,
-    /// 人工认为至少应达到的块数（通常 = `beads.len()`）。
+    /// Minimum number of blocks a human judges should be reached (usually = `beads.len()`).
     pub min_blocks: usize,
-    /// 相邻 hard negative 对：本例必须能与该用例区分。
+    /// Adjacent hard-negative pair: this case must be distinguishable from that case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hard_negative_of: Option<String>,
 }
 
-/// 一条 golden 用例。
+/// One golden case.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoldenCase {
-    /// 全局唯一用例 id（`<project-short>-<lang>-<序号>`）。
+    /// Globally unique case id (`<project-short>-<lang>-<index>`).
     pub id: String,
-    /// 该 transcript 真实派生出的句 id（`s-<首词 id>`）。
+    /// The sentence id actually derived from this transcript (`s-<first word id>`).
     pub sentence_id: String,
-    /// 句内词文本，必须与派生 Sentence 的词逐一相等。
+    /// Word text within the sentence; must match the derived Sentence's words one by one.
     pub source_words: Vec<String>,
-    /// 人工确认的目标语整句译文；`beads[].tgt` 是它的 `chars()` 下标。
+    /// Human-confirmed whole-sentence translation in the target language; `beads[].tgt` are indices into its `chars()`.
     pub target: String,
-    /// 现象标签，取值见 [`GOLDEN_TAGS`]。
+    /// Phenomenon tag; for the allowed values see [`GOLDEN_TAGS`].
     pub tags: Vec<String>,
-    /// 人工标注的最小单调对齐块划分（两侧连续全覆盖且单调）。
+    /// Human-annotated minimal monotone alignment block partition (contiguous, full coverage on both sides, and monotone).
     pub beads: Vec<GoldenBead>,
     #[serde(default)]
     pub hard_anchors: Vec<GoldenAnchor>,
@@ -94,19 +94,19 @@ pub struct GoldenCase {
 }
 
 impl GoldenCase {
-    /// 标注的 bead 序列。
+    /// The annotated bead sequence.
     pub fn beads(&self) -> Vec<Bead> {
         self.beads.iter().map(GoldenBead::bead).collect()
     }
 
-    /// 目标文本字符数。
+    /// Number of characters in the target text.
     pub fn target_chars(&self) -> usize {
         self.target.chars().count()
     }
 
-    /// 结构自检（不查 transcript，那部分由宿主对照派生 Sentence 完成）：
-    /// tag 合法、bead 两侧连续全覆盖且单调、硬锚落在自己源词所属的 bead 内、
-    /// `minBlocks` 不超过标注块数。
+    /// Structural self-check (does not check the transcript; that part is done by the host against the derived Sentence):
+    /// tags are valid, beads are contiguous with full coverage and monotone on both sides, hard anchors fall within the bead that owns their source word, and
+    /// `minBlocks` does not exceed the number of annotated blocks.
     pub fn validate(&self) -> Result<()> {
         if self.id.is_empty() || self.sentence_id.is_empty() {
             bail!("golden 用例缺少 id / sentenceId");
@@ -153,24 +153,24 @@ impl GoldenCase {
     }
 }
 
-/// 一个 `<project>/<lang>.json` 文件。
+/// One `<project>/<lang>.json` file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoldenFile {
-    /// 恒为 [`GOLDEN_SCHEMA`]。
+    /// Always [`GOLDEN_SCHEMA`].
     pub schema: String,
-    /// `examples/<project>.ccut` 的目录名（不含 `.ccut`）。
+    /// The directory name of `examples/<project>.ccut` (without `.ccut`).
     pub project: String,
-    /// 目标语言（BCP-47 主子标签）。
+    /// Target language (BCP-47 primary subtag).
     pub lang: String,
     pub cases: Vec<GoldenCase>,
 }
 
 impl GoldenFile {
-    /// 解析并做结构自检（无 I/O）。
+    /// Parses and performs the structural self-check (no I/O).
     ///
-    /// 刻意不实现 `std::str::FromStr`：错误类型是 `anyhow::Error`，且这里只
-    /// 服务测试宿主，不需要 `"...".parse()` 的泛型入口。
+    /// Deliberately does not implement `std::str::FromStr`: the error type is `anyhow::Error`, and this only
+    /// serves the test harness, so it has no need for the generic `"...".parse()` entry point.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(text: &str) -> Result<Self> {
         let file: Self = serde_json::from_str(text)?;
@@ -178,7 +178,7 @@ impl GoldenFile {
         Ok(file)
     }
 
-    /// schema、语言、用例 id 唯一性与逐条 [`GoldenCase::validate`]。
+    /// Checks the schema, the language, uniqueness of case ids, and runs [`GoldenCase::validate`] on each case.
     pub fn validate(&self) -> Result<()> {
         if self.schema != GOLDEN_SCHEMA {
             bail!("未知 golden schema {}", self.schema);

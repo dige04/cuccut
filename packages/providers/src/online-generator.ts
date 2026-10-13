@@ -21,16 +21,16 @@ export interface OnlineGeneratorOptions {
   label: () => string;
   speech: SpeechAdapter | null;
   image: ImageAdapter | null;
-  /** 执行时的配置（含从凭据存储取出的密钥）；没有启用或没有密钥时 null，凭据存储不可用时抛 `ProviderFailure`。 */
+  /** Configuration at execution time (including the key retrieved from the credential store); null if not enabled or if there is no key; throws `ProviderFailure` if the credential store is unavailable. */
   config: () => Promise<AdapterConfig | null>;
   http?: AdapterHttp;
-  /** 调用结束时的报告（用量账本与账号状态，§6.10）。 */
+  /** Report at the end of a call (usage ledger and account status, §6.10). */
   report?: CallReporter;
 }
 
 /**
- * 在线 Provider 的生成执行者（架构设计 §6.4、§6.6）：执行时再读一次配置，按冻结的模型与参数发一次请求，
- * 把响应写成 staging 里的 `output-<n>.<ext>` 并算好摘要。不重试换模型，不截断文本；校验与发布在 JobManager 里。
+ * Generation executor for online providers (architecture design §6.4, §6.6): re-reads the configuration at execution time, sends one request with the frozen model and parameters,
+ * and writes the response to `output-<n>.<ext>` in staging and computes its digest. It does not retry with a different model and does not truncate text; validation and publishing happen in JobManager.
  */
 export class OnlineGenerator implements GenerationProvider {
   readonly id: string;
@@ -48,9 +48,9 @@ export class OnlineGenerator implements GenerationProvider {
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) controller.abort();
     this.#inflight.add(controller);
-    // 这次尝试用的密钥：出错时据此去掉错误文本里的密钥，不在错误处理里再取一次。
+    // The key used for this attempt: on error, it is used to strip the key from the error text, rather than fetching it again in the error handling.
     let secret: string | null = null;
-    // 请求发出时记下（用量账本只记真的发出了请求的调用）。
+    // Recorded when the request is sent (the usage ledger only records calls that actually sent a request).
     const call: { sent: { accountId: string | null; startedAt: number } | null } = { sent: null };
     const report = (units: UsageUnits, error?: unknown) => {
       if (!call.sent || !this.#options.report) return;
@@ -78,7 +78,7 @@ export class OnlineGenerator implements GenerationProvider {
         report({}, error);
         throw error;
       }
-      // 意料之外的错误：文本可能来自供应商的响应，去掉密钥再报告。
+      // Unexpected error: the text may come from the provider's response, so strip the key before reporting.
       const message = error instanceof Error ? error.message : String(error);
       const failure = new ProviderFailure('protocol', redact(PC.generateFailed({ label: this.#options.label(), message }).text, secret ? [secret] : []));
       report({}, failure);
@@ -120,11 +120,11 @@ export class OnlineGenerator implements GenerationProvider {
       };
     }
 
-    // 文本生成走 `OnlineTextProvider`（经 `TextRunner`），不会派到这里。
+    // Text generation goes through `OnlineTextProvider` (via `TextRunner`) and is not dispatched here.
     if (parameters.capability === 'generateText') {
       throw new ProviderFailure('unavailable', PC.noTextGeneration({ label }).text, { providerId: this.id });
     }
-    // 音乐生成只有本地 Provider（`OnlineCapability` 不含它），不会派到这里。
+    // Music generation is available only from local providers (`OnlineCapability` does not include it), and is not dispatched here.
     if (parameters.capability === 'generateMusic') {
       throw new ProviderFailure('unavailable', PC.noTextGeneration({ label }).text, { providerId: this.id });
     }
@@ -163,7 +163,7 @@ export class OnlineGenerator implements GenerationProvider {
   }
 }
 
-/** 用量（§6.10）：语音合成是字符数（按 Unicode 码点），生图是张数。 */
+/** Usage (§6.10): speech synthesis is counted in characters (by Unicode code point), image generation in images. */
 function unitsOf(run: GenerationRun, outputs: number): UsageUnits {
   const parameters = run.parameters;
   if (parameters.capability === 'synthesizeSpeech') return { chars: codePointLength(parameters.text) };

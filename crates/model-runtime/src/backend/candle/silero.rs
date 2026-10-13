@@ -1,14 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift`。
+//! Parts of this file's implementation draw on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream files: `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model pack and transcription interface; the original upstream source attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! Silero VAD v6.2.1（candle，CPU），镜像 mlx 后端 `silero.rs`。
+//! Silero VAD v6.2.1 (candle, CPU), mirroring the mlx backend `silero.rs`.
 //!
-//! STFT/编码器卷积按块批量执行；128 维 LSTMCell 与单神经元 decoder 在
-//! host 侧顺序执行（模型仅 1.2 MB，逐块张量往返反而更慢）。
+//! The STFT and encoder convolutions run in batches over chunks; the 128-dim LSTMCell and the single-neuron decoder run sequentially on the host (the model is only 1.2 MB, so round-tripping tensors chunk by chunk would be slower).
 
 use std::path::Path;
 
@@ -50,7 +49,7 @@ pub struct SileroVad {
     encoder: Vec<Conv1d>,
     lstm_wx_t: Tensor,
     lstm_bias: Tensor,
-    /// host 侧 LSTM 循环权重，行主序 [4*hidden][hidden]。
+    /// LSTM recurrent weights on the host side, row-major [4*hidden][hidden].
     lstm_wh_host: Vec<f32>,
     decoder_weight_host: Vec<f32>,
     decoder_bias_host: f32,
@@ -62,9 +61,9 @@ pub struct SileroVad {
 }
 
 impl SileroVad {
-    /// 从列出的 safetensors 文件加载。任何一个权重没有用上都是错误：说明文件不是这个网络。
+    /// Loads from the listed safetensors files. Any weight left unused is an error: it means the file is not this network.
     pub fn load(files: &[&Path]) -> Result<Self> {
-        // Silero 逐块顺序推理，GPU 无收益，固定用 CPU。
+        // Silero runs chunk by chunk sequentially, so a GPU gains nothing; it always uses the CPU.
         let device = Device::Cpu;
         let mut store = WeightStore::load(files, &device)?;
         let stft = conv1d(&mut store, "stft", 128, 0, false)?;
@@ -120,8 +119,7 @@ impl SileroVad {
         self
     }
 
-    /// 把 N 个完整块的 STFT+编码器+输入投影批量执行，返回
-    /// [N, 4*hidden] 的门输入（已含 Wx 投影与偏置）。
+    /// Runs STFT + encoder + input projection for N complete chunks as a batch, returning the gate inputs of shape [N, 4*hidden] (the Wx projection and bias are already included).
     fn projected_gates(&mut self, chunks: &[f32], count: usize) -> Result<Vec<f32>> {
         let window = CONTEXT_SIZE + CHUNK_SIZE + CONTEXT_SIZE;
         let mut stacked = Vec::with_capacity(count * window);
@@ -132,7 +130,7 @@ impl SileroVad {
             full[CONTEXT_SIZE..].copy_from_slice(chunk);
             self.context.copy_from_slice(&chunk[CHUNK_SIZE - CONTEXT_SIZE..]);
             stacked.extend_from_slice(&full);
-            // 与参考实现一致的“镜像”尾部：full[574]、full[573]、…、full[511]。
+            // The “mirrored” tail matches the reference implementation: full[574], full[573], …, full[511].
             for offset in 0..CONTEXT_SIZE {
                 stacked.push(full[full.len() - 2 - offset]);
             }
@@ -147,7 +145,7 @@ impl SileroVad {
         for convolution in &self.encoder {
             x = convolution.forward(&x)?.relu()?;
         }
-        // [count, 128, 1] → [count, 128] → 投影到 [count, 512]。
+        // [count, 128, 1] → [count, 128] → projected to [count, 512].
         let flattened = x.reshape((count, LSTM_HIDDEN))?;
         let projected = flattened
             .matmul(&self.lstm_wx_t)?
@@ -155,7 +153,7 @@ impl SileroVad {
         Ok(projected.flatten_all()?.to_vec1::<f32>()?)
     }
 
-    /// host 上执行单步 LSTMCell + decoder，返回语音概率。
+    /// Runs one LSTMCell step and the decoder on the host, returning the speech probability.
     fn lstm_step(&mut self, gates_in: &[f32]) -> f32 {
         let mut gates = [0.0_f32; LSTM_GATES];
         gates.copy_from_slice(gates_in);
@@ -256,7 +254,7 @@ impl VoiceActivityDetection for SileroVad {
 }
 
 fn conv1d(store: &mut WeightStore, prefix: &str, stride: usize, padding: usize, has_bias: bool) -> Result<Conv1d> {
-    // MLX Conv1d 布局 [out, k, in] → candle [out, in, k]。
+    // MLX Conv1d layout [out, k, in] → candle [out, in, k].
     let weight = take_weight(store, &format!("{prefix}.weight"))?.permute((0, 2, 1))?.contiguous()?;
     let bias = has_bias.then(|| take_weight(store, &format!("{prefix}.bias"))).transpose()?;
     Ok(Conv1d {

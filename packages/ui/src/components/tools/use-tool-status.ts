@@ -9,13 +9,12 @@ import { useModels } from '../../state/models-store.ts';
 import { FORM_COPY } from './tools-copy.ts';
 
 /**
- * 工具此刻能不能用（`tools.list`）与 Runtime 注册了哪些流程（`pipelines.list`）。目录页与各工具页共用一份，
- * 挂载时、模型能力视图变了（连上 / 断开服务商、装好模型）时重读。状态没到时不判断：提交按钮不能按，也不回退到写死的流程名。
+ * Whether the tools can be used right now (`tools.list`) and which flows the Runtime has registered (`pipelines.list`). Shared by the catalog page and each tool page; read on mount, and again when the model capability view changes (a provider connected or disconnected, a model installed). Nothing is judged until the status arrives: the submit button stays disabled, and there is no fallback to hard-coded flow names.
  */
 
 interface ToolStatusState {
   tools: ToolStatus[] | null;
-  /** `tools.list` 的保存位置；没给（Web 服务）时 null。 */
+  /** The save location from `tools.list`; null when not given (Web service). */
   saveDirectory: string | null;
   pipelines: PipelineInfo[] | null;
   error: string | null;
@@ -23,7 +22,7 @@ interface ToolStatusState {
 
 const useToolStatusStore = create<ToolStatusState>()(() => ({ tools: null, saveDirectory: null, pipelines: null, error: null }));
 
-/** 同一个能力视图只读一次（几个组件同时挂载时不重复请求）。 */
+/** The same capability view is read only once (several components mounting at the same time do not send duplicate requests). */
 let loadedFor: { session: RuntimeSession; view: unknown } | null = null;
 
 function load(session: RuntimeSession, view: unknown): void {
@@ -34,7 +33,7 @@ function load(session: RuntimeSession, view: unknown): void {
     useToolStatusStore.setState({
       tools: tools.status === 'fulfilled' ? tools.value.tools : useToolStatusStore.getState().tools,
       saveDirectory: tools.status === 'fulfilled' ? (tools.value.saveDirectory ?? null) : useToolStatusStore.getState().saveDirectory,
-      // 读不到流程表（例如网页会话不开放）时不按流程判断，只看 `tools.list`。
+      // If the flow table cannot be read (e.g. web sessions do not expose it), do not judge by flow; only look at `tools.list`.
       pipelines: pipelines.status === 'fulfilled' ? pipelines.value : null,
       error: tools.status === 'rejected' ? (tools.reason instanceof Error ? tools.reason.message : String(tools.reason)) : null,
     });
@@ -42,8 +41,7 @@ function load(session: RuntimeSession, view: unknown): void {
 }
 
 /**
- * 工具的现状变了、能力视图却没变时（例如下载工具刚装好、同意过）重读一次：清掉「读过了」的记号，下一次挂载或调用时重读。
- * 给了会话就马上重读。
+ * When the tool's status changes but the capability view does not (e.g. the download tool was just installed and consented), re-read once: clears the “already read” mark so the next mount or call re-reads it. If a session is given, re-read immediately.
  */
 export function invalidateToolStatus(session?: RuntimeSession): void {
   const view = loadedFor?.view;
@@ -52,15 +50,15 @@ export function invalidateToolStatus(session?: RuntimeSession): void {
 }
 
 export interface ToolStatusView {
-  /** `tools.list` 到了没有。 */
+  /** Whether `tools.list` has arrived. */
   ready: boolean;
   byId: ReadonlyMap<string, ToolStatus>;
   /**
-   * 保存位置（架构设计 §7.9）：工具没有视频的结果落在这里；Web 服务不给（null）——这时工具页没有保存位置一行，直接任务也不带 `saveDir`。
+   * Save location (architecture design §7.9): results of tools that produce no video land here; the Web service does not provide one (null), in which case the tool page has no save-location row and direct jobs do not carry `saveDir` either.
    */
   saveDirectory: string | null;
   pipelines: readonly PipelineInfo[] | null;
-  /** `tools.list` 读失败时的原因。 */
+  /** The reason `tools.list` failed to read. */
   error: string | null;
 }
 
@@ -77,8 +75,7 @@ export function useToolStatus(): ToolStatusView {
 }
 
 /**
- * 这个工具从这种输入开始时为什么按不了：`tools.list` 的第一条原因（带补救），或执行它的流程不在 `pipelines.list` 里。
- * 能用时 null；状态还没到时 undefined。
+ * Why this tool cannot be run from this kind of input: the first reason from `tools.list` (with a remedy), or the flow that runs it is not in `pipelines.list`. null when usable; undefined while the status has not arrived.
  */
 export function blockOf(
   status: ToolStatusView,

@@ -1,49 +1,28 @@
-//! 字幕样式扁平根键 ↔ `voiceInkContexts` 的双向对账。
+//! Two-way reconciliation between the flat root keys of the subtitle style and `voiceInkContexts`.
 //!
-//! `studio/style.json` 同时承载两层真相：
+//! `studio/style.json` holds two layers of truth at once:
 //!
-//! - `voiceInkContexts.{sub,bi}`：Mac 编辑器的**无损**模型，两个上下文各有
-//!   `orig`/`trans` 两行的完整外观、几何与逐词动画；
-//! - 扁平根键：**单上下文**投影，Web 预览、GPUI 面板、烧录端
-//!   `studio_export::resolve_line_style` 与六种可编辑工程导出都直接读它。
+//! - `voiceInkContexts.{sub,bi}`: the **lossless** model of the Mac editor. Each of the two contexts has the complete appearance, geometry and per-word animation of its `orig` and `trans` lines;
+//! - the flat root keys: a **single-context** projection. The Web preview, the GPUI panel, the burn-in side `studio_export::resolve_line_style` and the six editable project exports all read these directly.
 //!
-//! Mac 写入时两层一起刷新（`ProductSubtitleStyleAdapter.replacingStyle` →
-//! `mergeFlat`，`apps/mac/Sources/VoiceInk/Adapters/ProductSubtitleStyleAdapter.swift:36-50`
-//! 与 `:222-282`），读取时 contexts 解得出来就整块采用（`:27-33`）。CLI 的两条写
-//! 路径过去只碰扁平层：
+//! When the Mac writes, both layers are refreshed together (`ProductSubtitleStyleAdapter.replacingStyle` → `mergeFlat`, `apps/mac/Sources/VoiceInk/Adapters/ProductSubtitleStyleAdapter.swift:36-50` and `:222-282`). When it reads, contexts that can be decoded are adopted as a whole (`:27-33`). The CLI's two write paths used to touch only the flat layer:
 //!
-//! - `ccut studio apply` 的 `style` 覆盖层做顶层浅合并，contexts 原封不动 ——
-//!   Web 改了模式/字号，apply 之后 Mac 仍然读旧 contexts；
-//! - `POST __ccut/style/apply` 是整份替换 —— 请求体不带 contexts（GPUI 的
-//!   `adapters/stylepane.rs` 只写根键与行级 partial）时会把盘上的 contexts 整块删掉。
+//! - The `style` overlay of `ccut studio apply` does a shallow top-level merge and leaves contexts untouched, so after the Web changes the mode or font size and apply runs, the Mac still reads the old contexts;
+//! - `POST __ccut/style/apply` is a full replacement. When the request body carries no contexts (GPUI's `adapters/stylepane.rs` writes only root keys and line-level partials), the contexts on disk are deleted as a whole.
 //!
-//! 本模块把两条路径收束到同一套语义：**先把本次明确改动的扁平键下沉到 contexts
-//! （flat → contexts），再用 contexts 重算扁平投影（contexts → flat）**。顺序不能
-//! 颠倒：只改根键的客户端会把读到的旧 contexts 原样带回来，先重算就会把用户刚做的
-//! 改动盖回去。
+//! This module converges both paths on one set of semantics: **first sink the flat keys explicitly changed in this write down into the contexts (flat → contexts), then recompute the flat projection from the contexts (contexts → flat)**. The order must not be reversed: a client that changes only root keys carries back the old contexts it read, and recomputing first would overwrite the change the user has just made.
 //!
-//! 「哪个上下文」的判定与 Mac 反向。Mac 靠 diff 找出被改的那个 set，CLI 没有这个
-//! 信息，只能从**文档自己的字幕轨集**反推：含译文轨 → `bi`，否则 → `sub`（`sub`
-//! 的 mode 被 `SubtitleStyleContexts.setMode` 钉死成单行，不携带意图）。轨集只有
-//! 原文轨、而用户正在编辑 `bi` 那套外观时会与 `sub` 撞在同一个判定上，所以两条写
-//! 路径都接受一个可选的 `ctx` 提示（`"sub"`/`"bi"`），页面知道自己在哪个 tab 时
-//! 应当带上。
+//! The determination of "which context" is the reverse of the Mac's. The Mac finds the changed set by diff; the CLI has no such information and can only infer it from the **document's own subtitle track set**: if it contains a translation track, the context is `bi`; otherwise it is `sub` (`sub`'s mode is pinned to single-line by `SubtitleStyleContexts.setMode` and carries no intent). When the track set holds only original-text tracks while the user is editing the `bi` appearance, the inference collides with `sub`, so both write paths accept an optional `ctx` hint (`"sub"` / `"bi"`), which the page should send when it knows which tab it is on.
 //!
-//! # 轨集是文档真相，`mode` 是只写的兼容投影
+//! # The track set is the document's truth; `mode` is a write-only compatibility projection
 //!
-//! 画面/timeline 上摆着哪几条字幕轨由根键 `tracks` 声明，读取一律走
-//! [`resolve_track_set`](crate::resolve_track_set)（读时迁移，绝不
-//! 写回）。扁平 `mode` 与 `voiceInkContexts.bi.mode` 降为由轨集派生的兼容字段，
-//! 每次落盘经 [`canonicalize_track_set`] 统一回写——历史写者留下的文档仍带它们，靠
-//! resolve 的「不一致以兼容信号为准」保持互通（信号取 `bi.mode`，不可解析才回落
-//! 根 `mode`）。
+//! Which subtitle tracks are placed on the screen or timeline is declared by the root key `tracks`. Reads always go through [`resolve_track_set`](crate::resolve_track_set) (migrate on read, never write back). The flat `mode` and `voiceInkContexts.bi.mode` are demoted to compatibility fields derived from the track set, and every save writes them back through [`canonicalize_track_set`]. Documents left by earlier writers still carry them, and resolve's rule that "on inconsistency the compatibility signal wins" keeps those documents interoperable (the signal is `bi.mode`, falling back to the root `mode` only when `bi.mode` cannot be parsed).
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
 pub const CONTEXTS_KEY: &str = "voiceInkContexts";
 
-/// 字幕样式的两个持久上下文——定义已随写事务信封下沉到
-/// `ccut-subtitle-render`（[`StyleContext::of_style`] 也在那边），这里只保留原路径。
+/// The two persistent contexts of the subtitle style. Their definition has moved, together with the write-transaction envelope, to `ccut-subtitle-render` ([`StyleContext::of_style`] is also there); only the original path is kept here.
 pub use crate::StyleContext;
 pub use crate::text_design::validate_motion_tree;
 
@@ -54,7 +33,7 @@ pub enum BilingualScope {
     Translation,
 }
 
-/// 与 `mergeFlat` 一一对应的「整组」键：落在被选中上下文的 set 上。
+/// The "whole group" keys that correspond one-to-one with `mergeFlat`: they land on the set of the selected context.
 const SET_KEYS: &[&str] = &[
     "x",
     "y",
@@ -65,11 +44,10 @@ const SET_KEYS: &[&str] = &[
     "transition",
 ];
 
-/// 只属于双语上下文的 set 键：`sub` 被钉死成单行，这些键在它身上没有意义
-/// （`SubtitleStyleContexts.swift:466-481`）。
+/// Set keys that belong only to the bilingual context. `sub` is pinned to single-line, so these keys have no meaning on it (`SubtitleStyleContexts.swift:466-481`).
 const BI_SET_KEYS: &[&str] = &["mode", "order", "gap", "backgroundMode"];
 
-/// 扁平外观键 → 上下文行样式字段。同名的那一批。
+/// Flat appearance keys mapped to context line-style fields. The same-named batch.
 const LOOK_KEYS: &[(&str, &str)] = &[
     ("textMotion", "textMotion"),
     ("wordBackground", "wordBackground"),
@@ -91,7 +69,7 @@ const LOOK_KEYS: &[(&str, &str)] = &[
     ("emphasisLook", "emphasisLook"),
 ];
 
-/// 需要改写字段名或形状的外观键，与上面那批合起来就是 `linePartial` 的全集。
+/// Appearance keys whose field name or shape must be rewritten. Together with the batch above they make up the full set of `linePartial`.
 const LOOK_KEYS_MAPPED: &[&str] = &[
     "fontFamily",
     "bold",
@@ -101,14 +79,13 @@ const LOOK_KEYS_MAPPED: &[&str] = &[
     "wordAnimation",
 ];
 
-/// 尺寸键：不直接落字段，走比例链（见 `sink_sizes`）。
+/// Size keys: they do not land in a field directly; they go through the proportional chain (see `sink_sizes`).
 const SIZE_KEYS: &[&str] = &["fontSize", "bilingualOrigScale", "transScale"];
 
-/// 行级 partial：整块视为一次「明确改动」，逐键下沉到对应行。
+/// Line-level partial: the whole block counts as one "explicit change", sunk key by key into the corresponding line.
 const LINE_PARTIAL_KEYS: &[(&str, &str)] = &[("origStyle", "orig"), ("transStyle", "trans")];
 
-/// `contexts` 是否是可用的两上下文结构。与 Mac `decode(StyleContexts.self, …)`
-/// 解不出来就回退同义：结构不对就当没有，绝不半途改写。
+/// Whether `contexts` is a usable two-context structure. If Mac's `decode(StyleContexts.self, …)` fails, the same fallback applies: a wrong structure counts as absent, and nothing is rewritten halfway.
 pub fn valid_contexts(contexts: &Value) -> bool {
     let Some(contexts) = contexts.as_object() else {
         return false;
@@ -123,11 +100,9 @@ pub fn valid_contexts(contexts: &Value) -> bool {
     })
 }
 
-/// 本次写入代表的上下文：显式提示优先，其次按文档轨集判定。
+/// The context this write represents: an explicit hint takes priority; otherwise it is determined by the document's track set.
 ///
-/// 无提示时走轨集（[`StyleContext::of_style`]）而不是扁平 `mode`：`mode` 已经降为
-/// 由轨集派生的兼容字段，这里再读一次它就是第二处判据。这一条保住 apps/mac 不带
-/// `ctx` 的 `/style/apply`——含译文轨的文档照样落在 `bi` 上下文。
+/// Without a hint, the track set ([`StyleContext::of_style`]) is used rather than the flat `mode`. `mode` has been demoted to a compatibility field derived from the track set, so reading it here would be a second criterion. This keeps `/style/apply` from apps/mac working without `ctx`: a document containing a translation track still lands on the `bi` context.
 fn selected_context(style: &Value, hint: Option<&str>) -> &'static str {
     match hint {
         Some("bi") => "bi",
@@ -136,8 +111,7 @@ fn selected_context(style: &Value, hint: Option<&str>) -> &'static str {
     }
 }
 
-/// 被选中上下文里承载扁平根字号与外观的那一行 —— 与 `mergeFlat` 的
-/// `let line = bilingual && set.mode == "trans" ? set.trans : set.orig` 同一判据。
+/// The line in the selected context that carries the flat root font size and appearance. It uses the same criterion as `mergeFlat`'s `let line = bilingual && set.mode == "trans" ? set.trans : set.orig`.
 fn selected_line(contexts: &Value, ctx: &str) -> &'static str {
     if ctx == "bi" && contexts["bi"]["mode"].as_str() == Some("trans") {
         "trans"
@@ -146,10 +120,9 @@ fn selected_line(contexts: &Value, ctx: &str) -> &'static str {
     }
 }
 
-/// `after` 相对 `before` 明确改动的根键（不含 contexts 自身与版本戳）。
+/// Root keys explicitly changed in `after` relative to `before` (excluding `contexts` itself and the version stamp).
 ///
-/// **被删掉的键也算改动**：Mac 用「删键」表达「没有意见」（`verticalAlign` 的块级
-/// 锚点清除就是删键），漏掉它会让下沉看不见这次清除，再被重算原样加回去。
+/// **Deleted keys also count as changes.** Mac uses key deletion to express "no opinion" (clearing the block-level anchor of `verticalAlign` is a key deletion). Missing it would make the sinking step blind to the clear, and the recomputation would add the value back unchanged.
 pub fn changed_flat_keys(before: &Value, after: &Value) -> BTreeSet<String> {
     let empty = Map::new();
     let before = before.as_object().unwrap_or(&empty);
@@ -201,10 +174,9 @@ fn merged_flat_line(style: &Value, partial_key: &str) -> Value {
     Value::Object(merged)
 }
 
-/// 扁平文字外观 → `voiceInkContexts.*.{orig,trans}` 的完整行记录。
+/// Flat text appearance → full line records of `voiceInkContexts.*.{orig,trans}`.
 ///
-/// 这是 flat-only 项目第一次做上下文编辑时的兼容桥；正常项目已有 contexts，不走
-/// 这里。只搬既有 schema 能表达的字段，不凭空补产品默认。
+/// This is the compatibility bridge for the first context edit on a flat-only project. Normal projects already have contexts and do not go through here. It moves only the fields the existing schema can express, and does not invent product defaults.
 fn record_from_flat(flat: &Value, font_size: f64) -> Value {
     let mut line_style = Map::new();
     for (flat_key, field) in LOOK_KEYS {
@@ -285,10 +257,9 @@ fn set_from_flat(style: &Value, mode: &str, orig: Value, trans: Value) -> Value 
     set
 }
 
-/// 为 flat-only 样式在内存中补齐两套无损上下文。
+/// Builds, in memory, the two lossless contexts for a flat-only style.
 ///
-/// 函数不做 I/O；调用方只有在用户真正编辑后才把返回值提交。尺寸严格沿用既有
-/// `fontSize × bilingualOrigScale × transScale` 链，首次 materialize 不改变画面。
+/// The function does no I/O. The caller commits the return value only after the user has actually edited. Sizes strictly follow the existing `fontSize × bilingualOrigScale × transScale` chain, so the first materialization does not change the picture.
 pub fn materialize_contexts(style: &Value) -> Value {
     if valid_contexts(&style[CONTEXTS_KEY]) {
         return style.clone();
@@ -317,8 +288,7 @@ pub fn materialize_contexts(style: &Value) -> Value {
     let mut bi_trans = record_from_flat(&merged_flat_line(style, "transStyle"), trans_size);
     copy_line_geometry(&mut bi_orig, &style["origStyle"]);
     copy_line_geometry(&mut bi_trans, &style["transStyle"]);
-    // 双语上下文的 mode 由轨集派生（缺席轨集与 `mode` 时统一回落 `orig`），
-    // 与 [`canonicalize_track_set`] 同一份判据。
+    // The mode of a bilingual context is derived from the track set (when both the track set and `mode` are absent, it falls back uniformly to `orig`), using the same criterion as [`canonicalize_track_set`].
     let mode = crate::mode_token(crate::StudioMode::of_style(style));
     result[CONTEXTS_KEY] = json!({
         "sub": set_from_flat(style, "orig", sub_orig, sub_trans),
@@ -381,11 +351,9 @@ fn partial_from_record(record: &Value, bilingual: bool) -> Value {
     Value::Object(partial)
 }
 
-/// 取某一套上下文的等价扁平编辑投影。
+/// Gets the equivalent flat editing projection of one set of contexts.
 ///
-/// 与 Web `subtitle-rendering.js::contextStyle` 同义：根键给共享控件读取，双语
-/// `origStyle` / `transStyle` 给行级控件读取。返回值始终保留完整 contexts，因此
-/// 后续整文档提交不会删掉另一套样式。
+/// Equivalent in meaning to Web `subtitle-rendering.js::contextStyle`: root keys are read by the shared controls, and the bilingual `origStyle` / `transStyle` by the line-level controls. The return value always keeps the complete contexts, so a later whole-document commit does not delete the other set's style.
 pub fn context_style(style: &Value, context: StyleContext) -> Value {
     let mut result = materialize_contexts(style);
     let contexts = result[CONTEXTS_KEY].clone();
@@ -400,7 +368,7 @@ pub fn context_style(style: &Value, context: StyleContext) -> Value {
     result
 }
 
-/// 双语两行共同的扁平字段，以及当前不一致的字段名。
+/// The flat fields common to both bilingual lines, and the field names that currently differ.
 pub fn bilingual_common(style: &Value) -> (Value, BTreeSet<String>) {
     let projected = context_style(style, StyleContext::Bilingual);
     let empty = Map::new();
@@ -422,15 +390,14 @@ pub fn bilingual_common(style: &Value) -> (Value, BTreeSet<String>) {
     (Value::Object(common), mixed)
 }
 
-/// 可由“共同 / 原文 / 译文”作用域控制的文字外观键。
+/// Text appearance keys that the "shared / original / translation" scope can control.
 pub fn is_line_look_key(key: &str) -> bool {
     key == "fontSize"
         || LOOK_KEYS.iter().any(|(flat, _)| *flat == key)
         || LOOK_KEYS_MAPPED.contains(&key)
 }
 
-/// 将一组扁平文字字段写入双语指定作用域。共同作用域同时更新两行；行级作用域
-/// 只更新对应记录。返回值保留完整 contexts 并重建当前双语根投影。
+/// Writes a group of flat text fields into the specified bilingual scope. The shared scope updates both lines; a line scope updates only its own record. The return value keeps the complete contexts and rebuilds the current bilingual root projection.
 pub fn apply_bilingual_scope(style: &Value, scope: BilingualScope, patch: &Value) -> Value {
     let before = context_style(style, StyleContext::Bilingual);
     let Some(fields) = patch.as_object() else {
@@ -457,9 +424,8 @@ pub fn apply_bilingual_scope(style: &Value, scope: BilingualScope, patch: &Value
     candidate
 }
 
-/// 把一行的**外观**从扁平形状下沉到上下文行记录（`{style, anim}`）。
-/// `wanted` 决定哪些键算「本次明确改动」——只下沉它选中的键，整份重拍会把用户
-/// 在另一个上下文/另一行单独调过的样式抹掉。
+/// Sinks one line's **appearance** from the flat shape into the context line record (`{style, anim}`).
+/// `wanted` decides which keys count as "explicitly changed by this write". Only the keys it selects are sunk; re-capturing the whole set would wipe out styling the user adjusted separately in another context or on another line.
 fn sink_look(line: &mut Value, flat: &Value, wanted: &dyn Fn(&str) -> bool) {
     if wanted("wordAnimation") && !flat["wordAnimation"].is_null() {
         *slot(line, "anim") = flat["wordAnimation"].clone();
@@ -500,8 +466,7 @@ fn sink_look(line: &mut Value, flat: &Value, wanted: &dyn Fn(&str) -> bool) {
     {
         style["bgOn"] = json!(background);
     }
-    // `outline` 是老的布尔投影，它写的是 `textOutline.on`：必须在 textOutline
-    // 整组之后，否则整组克隆会把刚写进去的开关盖掉。
+    // `outline` is the old boolean projection, and it writes `textOutline.on`. It must come after the whole `textOutline` group, otherwise cloning the group would overwrite the switch just written.
     if wanted("outline")
         && let Some(outline) = flat["outline"].as_bool()
     {
@@ -509,12 +474,9 @@ fn sink_look(line: &mut Value, flat: &Value, wanted: &dyn Fn(&str) -> bool) {
     }
 }
 
-/// 尺寸：`mergeFlat` 的严格反向。
+/// Size: the strict inverse of `mergeFlat`.
 ///
-/// `mergeFlat` 写的是「被选中那一行的绝对字号 + 双语对的两个比值」
-/// （`bilingualOrigScale = bi.orig / 根`、`transScale = bi.trans / bi.orig`），
-/// 所以反向也只动**本次真的被改过**的那一端，另一端保持绝对值不变 —— 与 Mac
-/// 「改原文行不动译文行、只让比值跟着变」的行为一致。
+/// `mergeFlat` writes "the absolute font size of the selected line, plus the two ratios of the bilingual pair" (`bilingualOrigScale = bi.orig / root`, `transScale = bi.trans / bi.orig`). The inverse therefore also moves only the end that was **actually changed** in this write; the other end keeps its absolute value. This matches the Mac's behaviour: editing the original line does not move the translation line, only the ratio follows.
 fn sink_sizes(contexts: &mut Value, flat: &Value, ctx: &str, changed: &BTreeSet<String>) {
     let line = selected_line(contexts, ctx);
     let base = number(&flat["fontSize"]).map(|size| size.max(1.0));
@@ -530,8 +492,7 @@ fn sink_sizes(contexts: &mut Value, flat: &Value, ctx: &str, changed: &BTreeSet<
             .pointer(&format!("/bi/{line}/style/fontSize"))
             .and_then(number)
     };
-    // 双语原文行：`sub` 被选中时它由「根 × bilingualOrigScale」编码（Mac 从 sub
-    // flush 出来的正是这个形状）；`bi` 的译文行被选中时基准换成译文行。
+    // Bilingual original line: when `sub` is selected, it is encoded as "root × bilingualOrigScale" (exactly the shape the Mac flushes from `sub`). When the translation line of `bi` is selected, the base switches to the translation line.
     if changed.contains("bilingualOrigScale")
         && let Some(scale) = orig_scale
     {
@@ -556,7 +517,7 @@ fn sink_sizes(contexts: &mut Value, flat: &Value, ctx: &str, changed: &BTreeSet<
     }
 }
 
-/// flat → contexts：把本次明确改动的扁平键下沉到被选中的上下文。
+/// flat → contexts: sinks the flat keys explicitly changed in this write down into the selected context.
 fn sink(style: &Value, contexts: &mut Value, ctx: &str, changed: &BTreeSet<String>) {
     let line = selected_line(contexts, ctx);
     let wanted = |key: &str| changed.contains(key);
@@ -568,8 +529,7 @@ fn sink(style: &Value, contexts: &mut Value, ctx: &str, changed: &BTreeSet<Strin
         if !changed.contains(*key) {
             continue;
         }
-        // 缺席即「没有意见」（Mac `mergeFlat` 对 verticalAlign 是赋 nil 删键），
-        // 所以清除时也要把 set 上的键删掉，而不是留一个陈旧值。
+        // Absence means "no opinion" (on the Mac, `mergeFlat` assigns nil for verticalAlign, which deletes the key). So on a clear, the key must also be deleted from the set, rather than leaving a stale value.
         if style[*key].is_null() {
             if let Some(set) = contexts[ctx].as_object_mut() {
                 set.remove(*key);
@@ -578,8 +538,7 @@ fn sink(style: &Value, contexts: &mut Value, ctx: &str, changed: &BTreeSet<Strin
             contexts[ctx][*key] = style[*key].clone();
         }
     }
-    // 标点是**项目级**开关：Mac 的 setPunct 同时写两个上下文
-    // （`SubtitleStyleContexts.swift:450-458`）。
+    // Punctuation is a **project-level** switch: the Mac's `setPunct` writes both contexts (`SubtitleStyleContexts.swift:450-458`).
     if changed.contains("punct") && !style["punct"].is_null() {
         for name in ["sub", "bi"] {
             contexts[name]["punct"] = style["punct"].clone();
@@ -591,8 +550,7 @@ fn sink(style: &Value, contexts: &mut Value, ctx: &str, changed: &BTreeSet<Strin
         }
     }
     sink_sizes(contexts, style, ctx, changed);
-    // 行级 partial 只有双语上下文产出（Mac `linePartial(_:bilingual:)` 与
-    // `lineGeom` 的 `guard ctx == .bi`）。整块 partial 里出现的键就是本次改动。
+    // Line-level partials are produced only by bilingual contexts (Mac `linePartial(_:bilingual:)` and `lineGeom`'s `guard ctx == .bi`). Keys that appear in a whole-block partial are this write's changes.
     for (flat_key, line_name) in LINE_PARTIAL_KEYS {
         if !changed.contains(*flat_key) {
             continue;
@@ -614,24 +572,19 @@ fn sink(style: &Value, contexts: &mut Value, ctx: &str, changed: &BTreeSet<Strin
                 None => {}
             }
         }
-        // 行级 `fontSize` 是**显式绕过比例链**的旁路（`resolve_line_style` 的
-        // explicit_size），Mac 也把它读回上下文行样式。
+        // Line-level `fontSize` is a side path that **explicitly bypasses the proportional chain** (`resolve_line_style`'s `explicit_size`). The Mac also reads it back into the context line style.
         if let Some(size) = fields.get("fontSize").and_then(number) {
             object_slot(record, "style")["fontSize"] = json!(size.max(1.0));
         }
     }
 }
 
-/// contexts → flat：把一个上下文拍平成扁平根键。
+/// contexts → flat: flattens one context into the flat root keys.
 ///
-/// 与 Mac `mergeFlat`（`ProductSubtitleStyleAdapter.swift:222-282`）逐键对应，
-/// 两处刻意的差别：
+/// Corresponds key by key to Mac `mergeFlat` (`ProductSubtitleStyleAdapter.swift:222-282`), with two deliberate differences:
 ///
-/// - **缺席不写**。Mac 那边 set 是强类型模型，字段永远在；这里的 contexts 可能是
-///   手写或半迁移的 JSON，缺字段时保留调用方给的底（迁移路径的底是
-///   `studio::default_style()`），而不是塞一个凭空的缺省值。
-/// - 行级 partial（`origStyle`/`transStyle`）不在这里产出：它们是 Mac 侧新加的行级
-///   覆盖，CLI 只在有人明确写它们时下沉，不主动补写，免得给烧录端凭空多一层覆盖。
+/// - **Absent is not written.** On the Mac side the set is a strongly typed model, so its fields are always present. Here the contexts may be hand-written or half-migrated JSON, so when a field is missing, the base supplied by the caller is kept (the base on the migration path is `studio::default_style()`), rather than inserting a fabricated default.
+/// - Line-level partials (`origStyle` / `transStyle`) are not produced here. They are line-level overrides that the Mac side added recently. The CLI sinks them only when someone explicitly writes them, and does not backfill them proactively, so that no extra override layer appears for the burn-in side.
 pub fn project_flat(style: &mut Value, contexts: &Value, ctx: &str) {
     let set = &contexts[ctx];
     let bi = &contexts["bi"];
@@ -642,13 +595,9 @@ pub fn project_flat(style: &mut Value, contexts: &Value, ctx: &str) {
             style[key] = value.clone();
         }
     };
-    // `mode` 只有双语上下文携带意图，而且已经降级为由轨集派生的兼容字段：这里
-    // 只把 Mac 的 Show 三档（写在 `bi.mode` 上）带回扁平层，随后由
-    // [`canonicalize_track_set`] 统一裁决轨集并回写 `mode`。
+    // `mode` is carried as intent only by the bilingual context, and it has already been demoted to a compatibility field derived from the track set. Here we only carry the Mac's three Show states (written on `bi.mode`) back to the flat layer. Afterwards [`canonicalize_track_set`] adjudicates the track set uniformly and writes `mode` back.
     //
-    // 非 `bi` 上下文**不再**无条件写 `mode="orig"`（旧病灶）：那一句会把双语文档
-    // 在任何一次单行上下文的样式写入里压成单行，而上下文只描述「样式写给谁」，
-    // 从来不是「画面上摆着哪几条轨」。
+    // A non-`bi` context **no longer** unconditionally writes `mode="orig"`. That was the old root cause: the line would collapse a bilingual document into single-line on any single-line context style write. A context describes "who the style is written for"; it never describes "which tracks are on the screen".
     if ctx == "bi" {
         put(style, "mode", &set["mode"]);
     }
@@ -681,12 +630,11 @@ pub fn project_flat(style: &mut Value, contexts: &Value, ctx: &str) {
         }));
     }
     for (flat, source) in LOOK_KEYS {
-        // `align` 等同名键走这里；`textOutline`/`dropShadow` 整组克隆。
+        // `align` and other same-named keys are handled here; `textOutline` and `dropShadow` are cloned as whole groups.
         put(style, flat, &line_style[*source]);
     }
     for key in SET_KEYS {
-        // `verticalAlign` 是 M120 块级锚点：缺席表示「没有意见」，必须删键而不是
-        // 留一个上一次 flush 的陈旧值（Mac 是 `.map(JSONValue.string)` 赋 nil）。
+        // `verticalAlign` is the M120 block-level anchor. Absence means "no opinion", so the key must be deleted rather than left holding a stale value from the last flush (the Mac assigns nil through `.map(JSONValue.string)`).
         if *key == "verticalAlign" {
             match set[*key].as_str() {
                 Some(value) => style[*key] = json!(value),
@@ -700,17 +648,14 @@ pub fn project_flat(style: &mut Value, contexts: &Value, ctx: &str) {
         }
         put(style, key, &set[*key]);
     }
-    // `order`/`gap`/`backgroundMode` 永远取自双语上下文，下沉时也只写它：Mac 是从
-    // 被 flush 的那个 set 取的，但单行上下文里这三个键描述的「两行怎么排」根本没有
-    // 消费方，两边取同一处才能保证页面改了之后原样读回来。
+    // `order`, `gap` and `backgroundMode` are always taken from the bilingual context, and sinking writes only there. The Mac takes them from the set being flushed, but in a single-line context these three keys describe "how the two lines are arranged", which has no consumer. Taking them from the same place on both sides is what guarantees the page reads them back unchanged after an edit.
     for key in BI_SET_KEYS {
         if *key != "mode" {
             put(style, key, &bi[*key]);
         }
     }
     put(style, "wordAnimation", &line["anim"]);
-    // 两个比值永远量自**双语对**，基准是刚写下的根字号 —— 与 `mergeFlat` 同一句：
-    // 从 `sub` 拍平时根是单行原文的字号，比值仍描述双语栈。
+    // The two ratios are always measured against the **bilingual pair**, with the base being the root font size just written. This is the same sentence as `mergeFlat`: when flattening from `sub`, the root is the font size of the single original line, yet the ratios still describe the bilingual stack.
     let selected = number(&line_style["fontSize"]).unwrap_or(0.0);
     let original = bi
         .pointer("/orig/style/fontSize")
@@ -726,15 +671,12 @@ pub fn project_flat(style: &mut Value, contexts: &Value, ctx: &str) {
     }
 }
 
-/// 一次完整对账：先下沉本次改动，再用 contexts 重算扁平投影。
+/// A complete reconciliation: first sink this write's changes, then recompute the flat projection from the contexts.
 ///
-/// 没有可用 contexts 时**逐比特不动**（纯 Web 项目、未迁移的旧项目），与 Web
-/// `subtitle-rendering.js` 的 `contextStyle` 同一条豁免。
+/// When there are no usable contexts, **nothing changes bit for bit** (pure Web projects and unmigrated old projects). This is the same exemption as Web `subtitle-rendering.js`'s `contextStyle`.
 pub fn reconcile(style: &mut Value, changed: &BTreeSet<String>, ctx_hint: Option<&str>) {
     let mut contexts = style[CONTEXTS_KEY].clone();
-    // 本次没有任何「上下文承载得住」的键在改（只改了 preset 名、captionEmphasis
-    // 之类）时逐比特不动：重算扁平层是有副作用的（会把历史遗留的、与 contexts 不
-    // 一致的根键拉回 contexts 真相），不该被一次无关写入顺带触发。
+    // If this write changes no key that a context can carry (only the preset name or `captionEmphasis` and the like change), nothing changes bit for bit. Recomputing the flat layer has side effects: it pulls root keys that are inconsistent with the contexts, left over from history, back to the contexts' truth. That should not be triggered incidentally by an unrelated write.
     if !valid_contexts(&contexts) || !changed.iter().any(|key| is_context_backed_key(key)) {
         return;
     }
@@ -744,15 +686,11 @@ pub fn reconcile(style: &mut Value, changed: &BTreeSet<String>, ctx_hint: Option
     style[CONTEXTS_KEY] = contexts;
 }
 
-/// `POST __ccut/style/apply` 的整份替换语义。
+/// The full-replacement semantics of `POST __ccut/style/apply`.
 ///
-/// 1. 请求体不带 contexts 而盘上有 → **继承**盘上的（GPUI 只写根键，整份替换会把
-///    Mac 的无损真相整块删掉）。
-/// 2. 请求体自带的 contexts 与盘上不同 → 客户端是上下文感知的（Mac 走
-///    `replacingStyle`，两层一起给），整份采信，不再对账：Rust 侧的拍平选不出
-///    「被改的那个 set」，重算反而会把 Mac 刚写的扁平层打回另一个上下文。
-/// 3. 其余情况（继承而来，或与盘上逐比特相同）→ 根键差异集就是本次改动意图，
-///    走 `reconcile` 双向闭合。
+/// 1. If the request body carries no contexts but the disk has them → **inherit** the disk's contexts. GPUI writes only root keys, and a full replacement would delete the Mac's lossless truth wholesale.
+/// 2. If the request body's contexts differ from the disk's → the client is context-aware (the Mac goes through `replacingStyle` and delivers both layers together). Accept them wholesale and do not reconcile: the Rust side's flattening cannot tell which set was changed, and recomputing would push the flat layer the Mac just wrote back onto the other context.
+/// 3. Otherwise (inherited, or bit-identical to the disk) → the set of root-key differences is this write's intent, and `reconcile` runs to close it in both directions.
 pub fn reconcile_replacement(candidate: &mut Value, before: &Value, ctx_hint: Option<&str>) {
     let stored = &before[CONTEXTS_KEY];
     let inherited = if candidate[CONTEXTS_KEY].is_null() && !stored.is_null() {
@@ -768,7 +706,7 @@ pub fn reconcile_replacement(candidate: &mut Value, before: &Value, ctx_hint: Op
     reconcile(candidate, &changed, ctx_hint);
 }
 
-/// 覆盖层/请求体里的可选上下文提示。
+/// The optional context hint in the overlay or request body.
 pub fn ctx_hint(value: &Value) -> Option<&str> {
     match value.as_str() {
         Some("sub") | Some("bi") => value.as_str(),
@@ -776,24 +714,19 @@ pub fn ctx_hint(value: &Value) -> Option<&str> {
     }
 }
 
-/// 本次写入有没有显式声明轨集。
+/// Whether this write explicitly declares a track set.
 ///
-/// [`resolve_track_set`](crate::resolve_track_set) 第 3 步在
-/// `tracks` 与兼容信号（`bi.mode` 优先，其次根 `mode`）不一致时以信号为准（旧写者
-/// 更新）。这条规则在**读**路径
-/// 上正确，在**写**路径上会把新模型客户端的轨集写入变成空操作：请求体只带
-/// `{"tracks": [...]}`，盘上那份陈旧的 `mode` 在浅合并里活了下来，于是轨集被按
-/// `mode` 重派生回原样。所以写路径必须把「谁是本次意图」告诉 canonicalize。
+/// Step 3 of [`resolve_track_set`](crate::resolve_track_set) takes the signal as authoritative when `tracks` and the compatibility signals (`bi.mode` first, then the root `mode`) disagree; an old writer has updated them. This rule is correct on the **read** path. On the **write** path it turns a new-model client's track-set write into a no-op: the request body carries only `{"tracks": [...]}`, the stale `mode` on disk survives the shallow merge, and the track set is re-derived from `mode` back to its original value. So the write path must tell canonicalize who the intent of this write belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrackSetIntent {
-    /// 写者没提轨集：沿用 resolve 的兼容裁决（不一致以兼容信号为准）。
+    /// The writer did not supply a track set, so keep resolve's compatibility adjudication (on inconsistency the compatibility signal wins).
     Inherited,
-    /// 写者本次显式写了 `tracks` 且没写 `mode`：轨集就是意图，丢掉陈旧 `mode`。
+    /// The writer explicitly wrote `tracks` in this write without writing `mode`. The track set is the intent, so the stale `mode` is discarded.
     Authored,
 }
 
 impl TrackSetIntent {
-    /// 从本次写入明确改动的键集判断意图。
+    /// Judges intent from the set of keys explicitly changed by this write.
     pub fn of_changed<'a>(changed: impl IntoIterator<Item = &'a str>) -> Self {
         let mut tracks = false;
         let mut mode = false;
@@ -812,17 +745,14 @@ impl TrackSetIntent {
     }
 }
 
-/// 无译文护栏的开关。
+/// The no-translation guard switch.
 ///
-/// 两层真相的分工是既有裁决，本轮只换判据不换分工：**样式 sidecar
-/// （`studio/style.json`）留意图，投影（`studio/data.json`）落可渲染的事实**。
-/// 用户在还没翻译时就摆好双语，意图必须留在 sidecar 里，译文一到位就原样回到
-/// 双语；而投影那一份必须摘掉译文轨，否则渲染与导出会在 render_plan 直接 bail。
+/// The division of labour between the two layers of truth is an existing ruling. This round changes only the criterion, not the division: **the style sidecar (`studio/style.json`) keeps the intent, and the projection (`studio/data.json`) holds the renderable facts**. If the user sets up bilingual before the translation exists, the intent must stay in the sidecar, so it returns to bilingual unchanged once the translation arrives. The projection, however, must drop the translation track; otherwise rendering and export would bail out in `render_plan` directly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TranslationGuard {
-    /// 保留轨集里的译文轨（样式 sidecar 的写路径）。
+    /// Keeps the translation track in the track set (the write path for the style sidecar).
     Keep,
-    /// 摘掉译文轨（投影落盘、旧文档迁移与存量修复）。
+    /// Drops the translation track (projection saves, old-document migration and repair of existing data).
     Drop,
 }
 
@@ -836,23 +766,16 @@ impl TranslationGuard {
     }
 }
 
-/// 样式落盘前的唯一一次轨集裁决 —— 写侧单点。
+/// The single track-set adjudication before style is saved: the single point on the write side.
 ///
-/// 1. `tracks := resolve(style)`（`Authored` 时先丢掉两个陈旧兼容信号：根 `mode`
-///    与 `voiceInkContexts.bi.mode`，否则本次「拿下/放回译文轨」会被上一轮的
-///    `bi.mode` 一票否决）；
-/// 2. `Drop` 时摘掉译文轨（空了补 `[source]`）——这是旧 `mode` 无译文护栏的轨集版；
-/// 3. 回写兼容投影：`style.mode`、`voiceInkContexts.bi.mode` 都取
-///    `mode_of(tracks)`，`sub.mode` 维持 `"orig"`（Mac 的 `sub` 被钉死成单行）。
-///    `bi.mode` 必须**无条件**跟着轨集走：它是读侧裁决的首选信号，留在陈旧值上
-///    会让下一次 `resolve` 把刚摘掉的译文轨原样放回来（读写不再幂等）。
+/// 1. `tracks := resolve(style)`. For `Authored`, first discard the two stale compatibility signals, the root `mode` and `voiceInkContexts.bi.mode`. Otherwise this round's "take the translation track off / put it back" would be vetoed by the previous round's `bi.mode`.
+/// 2. For `Drop`, remove the translation track (if the set becomes empty, fill in `[source]`). This is the track-set version of the old `mode` no-translation guard.
+/// 3. Write back the compatibility projections: `style.mode` and `voiceInkContexts.bi.mode` both take `mode_of(tracks)`, and `sub.mode` stays `"orig"` (the Mac pins `sub` to single-line).
+///    `bi.mode` **must** follow the track set unconditionally. It is the preferred signal for read-side adjudication, and if it were left at a stale value, the next `resolve` would put back the translation track that was just removed, and reading and writing would no longer be idempotent.
 ///
-/// **只在写路径调用。** 只读路径（渲染、预览、导出）一律走
-/// [`resolve_track_set`](crate::resolve_track_set)，读时迁移不写回。
+/// **Called only on the write path.** All read paths (rendering, preview, export) go through [`resolve_track_set`](crate::resolve_track_set), which migrates on read and does not write back.
 ///
-/// 必须在 [`reconcile`] **之后**调用，且不能塞进 `reconcile` 里面：`reconcile` 在
-/// 「没有上下文承载得住的键在改」时逐比特不动，只带 `tracks` 的补丁会正好撞上
-/// 那条早退，`mode` 与 `bi.mode` 就留在陈旧值上。
+/// It must be called **after** [`reconcile`], and it must not be folded inside `reconcile`. `reconcile` leaves everything bit-identical when "no key that a context can carry is changing", so a patch carrying only `tracks` would hit exactly that early return, and `mode` and `bi.mode` would stay at stale values.
 pub fn canonicalize_track_set(style: &mut Value, guard: TranslationGuard, intent: TrackSetIntent) {
     if !style.is_object() {
         return;
@@ -861,7 +784,7 @@ pub fn canonicalize_track_set(style: &mut Value, guard: TranslationGuard, intent
         if let Some(object) = style.as_object_mut() {
             object.remove("mode");
         }
-        // 用 `get_mut` 而不是索引：索引会给缺席的 `voiceInkContexts` 插一个 null 出来。
+        // Use `get_mut` rather than indexing: indexing would insert a null for an absent `voiceInkContexts`.
         if let Some(set) = style
             .get_mut(CONTEXTS_KEY)
             .and_then(|contexts| contexts.get_mut("bi"))
@@ -886,10 +809,9 @@ pub fn canonicalize_track_set(style: &mut Value, guard: TranslationGuard, intent
     }
 }
 
-/// 给轨集补语言标注：只填空缺，已有 `lang` 不动（用户/上游更清楚）。
+/// Fills in language annotations on the track set. Only blanks are filled; an existing `lang` is left alone, because the user or upstream knows better.
 ///
-/// 语言是投影层才知道的信息（transcript `meta.lang` 与当前投影目标语），
-/// `default_style` 拿不到，所以拆成独立一步，落盘前紧跟 canonicalize。
+/// Language is information only the projection layer knows (the transcript `meta.lang` and the current projection target language). `default_style` cannot access it, so it is a separate step, run right before canonicalize at save time.
 pub fn seed_track_langs(style: &mut Value, source_lang: Option<&str>, target_lang: Option<&str>) {
     let Some(tracks) = style["tracks"].as_array_mut() else {
         return;
@@ -909,7 +831,7 @@ pub fn seed_track_langs(style: &mut Value, source_lang: Option<&str>, target_lan
     }
 }
 
-/// 一次扁平覆盖层写入涉及的全部可下沉键（供调用方判断是否值得对账）。
+/// All sinkable keys involved in one flat overlay write (so callers can judge whether reconciliation is worth doing).
 pub fn is_context_backed_key(key: &str) -> bool {
     SET_KEYS.contains(&key)
         || BI_SET_KEYS.contains(&key)
@@ -940,8 +862,7 @@ mod tests {
         })
     }
 
-    /// 实测形状：扁平根是 `sub` 上下文拍平出来的（29 / 0.5517 / 1.8125 ↔
-    /// bi.orig 16、bi.trans 29），mode 因此是 `orig`。
+    /// Measured shape: the flat root is flattened from the `sub` context (29 / 0.5517 / 1.8125 ↔ bi.orig 16, bi.trans 29), so `mode` is `orig`.
     fn flat() -> Value {
         json!({
             "mode": "orig", "punct": true, "fontSize": 29.0, "fontColor": "#ffffff",
@@ -961,12 +882,12 @@ mod tests {
         style["mode"] = json!("bi");
         reconcile(&mut style, &changed(&["mode"]), None);
         assert_eq!(style[CONTEXTS_KEY]["bi"]["mode"], "bi");
-        // 选中的上下文换成 bi，扁平根随之变成 bi 的投影。
+        // With the selected context switched to `bi`, the flat root becomes the projection of `bi`.
         assert_eq!(style["mode"], "bi");
         assert_eq!(style["fontSize"].as_f64(), Some(16.0));
         assert_eq!(style["bilingualOrigScale"].as_f64(), Some(1.0));
         assert_eq!(style["transScale"].as_f64(), Some(29.0 / 16.0));
-        // 单行上下文没有被这次切换动过。
+        // The single-line context was not touched by this switch.
         assert_eq!(
             style[CONTEXTS_KEY]["sub"]["orig"]["style"]["fontSize"].as_f64(),
             Some(29.0)
@@ -991,17 +912,16 @@ mod tests {
             contexts["bi"]["trans"]["style"]["fontSize"].as_f64(),
             Some(29.0)
         );
-        // 双语比值跟着新的根字号重算，绝对字号不变 —— 与 Mac 一致。
+        // The bilingual ratios are recomputed against the new root font size, so the absolute font size stays unchanged. This matches the Mac.
         assert_eq!(style["bilingualOrigScale"].as_f64(), Some(16.0 / 40.0));
     }
 
-    /// apps/mac 的 `/style/apply` 不带 `ctx`。轨集含译文轨的文档必须落在 `bi`
-    /// 上下文，否则 Mac 的双语外观会被写进单行的 `sub` 里。
+    /// apps/mac's `/style/apply` carries no `ctx`. A document whose track set contains a translation track must land in the `bi` context, otherwise the Mac's bilingual appearance would be written into the single-line `sub`.
     #[test]
     fn a_translation_track_selects_the_bilingual_context_without_a_ctx_hint() {
         let mut style = flat();
         style["tracks"] = json!([{"role": "source"}, {"role": "translation"}]);
-        // 两个兼容信号（根 `mode` 与 `bi.mode`）都拿掉：轨集必须自己把上下文选到 `bi`。
+        // Remove both compatibility signals (root `mode` and `bi.mode`). The track set itself must select `bi` as the context.
         style.as_object_mut().expect("object").remove("mode");
         style[CONTEXTS_KEY]["bi"]
             .as_object_mut()
@@ -1013,15 +933,14 @@ mod tests {
             style[CONTEXTS_KEY]["bi"]["orig"]["style"]["fontSize"].as_f64(),
             Some(20.0)
         );
-        // 单行上下文一动不动。
+        // The single-line context does not move at all.
         assert_eq!(
             style[CONTEXTS_KEY]["sub"]["orig"]["style"]["fontSize"].as_f64(),
             Some(29.0)
         );
     }
 
-    /// 旧写者（apps/mac）无条件回写扁平 `mode`。`mode` 与 `tracks` 打架时以 `mode`
-    /// 为准：新模型的写者两者永远一致，不一致只可能来自旧写者，它的值更新。
+    /// The old writer (apps/mac) unconditionally writes back the flat `mode`. When `mode` conflicts with `tracks`, `mode` wins. A new-model writer always keeps the two in agreement, so a disagreement can only come from an old writer, and its value is the newer one.
     #[test]
     fn a_legacy_mode_writeback_wins_over_a_stale_track_set() {
         let mut style = json!({
@@ -1037,8 +956,7 @@ mod tests {
         assert_eq!(style["mode"], "orig");
     }
 
-    /// 反过来：本次写入显式给了 `tracks` 而没碰 `mode`，轨集就是意图。没有这一条，
-    /// 新模型客户端的「把译文轨拿下来」会被盘上那个陈旧 `mode` 一票否决。
+    /// The reverse: this write explicitly gave `tracks` and did not touch `mode`, so the track set is the intent. Without this rule, a new-model client's "take the translation track off" would be vetoed by the stale `mode` on disk.
     #[test]
     fn an_authored_track_set_wins_over_the_stale_mode_it_replaces() {
         let mut style = json!({
@@ -1054,24 +972,21 @@ mod tests {
         assert_eq!(style["tracks"], json!([{"role": "source"}]));
         assert_eq!(style["mode"], "orig");
         assert_eq!(style[CONTEXTS_KEY]["sub"]["mode"], "orig");
-        // 两个兼容信号都跟着走：`bi.mode` 排在根 `mode` 前面，留在 `"bi"` 上会让下一次
-        // resolve 把刚拿下来的译文轨原样放回去。
+        // Both compatibility signals follow the track set. `bi.mode` comes before the root `mode`, so leaving it at `"bi"` would make the next resolve put back the translation track that was just taken off.
         assert_eq!(style[CONTEXTS_KEY]["bi"]["mode"], "orig");
-        // 落盘形态自洽：再 resolve 一次拿到同一个轨集（读写幂等）。
+        // The saved form is self-consistent: resolving it again yields the same track set (read and write are idempotent).
         assert_eq!(
             crate::tracks_json(&crate::resolve_track_set(&style)),
             style["tracks"]
         );
     }
 
-    /// Mac 在 Subtitle Tab 改样式会从被钉死单行的 `.sub` set 刷出一个没有意义的
-    /// 根 `mode="orig"`，用户真正看到的模式在 `bi.mode` 上。按根 `mode` 重派生会把
-    /// 译文轨静默拿掉，所以裁决信号首选 `bi.mode`。
+    /// When the Mac changes style in the Subtitle tab, it flushes a meaningless root `mode="orig"` from the pinned single-line `.sub` set, while the mode the user actually sees is on `bi.mode`. Re-deriving from the root `mode` would silently remove the translation track, so the preferred adjudication signal is `bi.mode`.
     #[test]
     fn the_bilingual_context_mode_outranks_a_flushed_flat_mode() {
         let mut contexts = contexts();
         contexts["bi"]["mode"] = json!("bi");
-        // 无 tracks：从信号派生。
+        // No tracks: derive from the signals.
         let mut style = json!({"mode": "orig", CONTEXTS_KEY: contexts.clone()});
         canonicalize_track_set(
             &mut style,
@@ -1084,7 +999,7 @@ mod tests {
         );
         assert_eq!(style["mode"], "bi");
 
-        // 有 tracks 且与信号打架：仍以 `bi.mode` 为准，同 role 的 lang 沿用。
+        // Has tracks but conflicts with the signals: `bi.mode` still wins, and the `lang` of the same role is kept.
         let mut style = json!({
             "mode": "orig",
             "tracks": [{"role": "source", "lang": "en"}],
@@ -1101,7 +1016,7 @@ mod tests {
         );
     }
 
-    /// 写侧裁决与 Studio 的 JS 镜像共用同一张黄金表，逐行消费。
+    /// The write-side adjudication and Studio's JS mirror share the same golden table, consumed row by row.
     #[test]
     fn canonicalization_matches_the_shared_contract_fixture() {
         let contract: Value = serde_json::from_str(include_str!(
@@ -1121,8 +1036,7 @@ mod tests {
                     TrackSetIntent::Inherited
                 }
             };
-            // `guard: "drop"` 表示这一行走投影那条路（护栏生效），护栏本身仍由
-            // `hasTranslation` 决定；`guard: "keep"` 是 sidecar 写路径，不看它。
+            // `guard: "drop"` means this row takes the projection path (the guard applies); the guard itself is still decided by `hasTranslation`. `guard: "keep"` is the sidecar write path, which ignores it.
             let guard = match row["guard"].as_str().expect("guard") {
                 "drop" => TranslationGuard::of_has_translation(
                     row["hasTranslation"].as_bool().unwrap_or(false),
@@ -1141,7 +1055,7 @@ mod tests {
                     assert_eq!(style[CONTEXTS_KEY][name]["mode"], set["mode"], "{case}");
                 }
             }
-            // 落盘形态自洽：读侧再裁一次拿到同一个轨集。
+            // The saved form is self-consistent: the read side adjudicates once more and gets the same track set.
             assert_eq!(
                 crate::tracks_json(&crate::resolve_track_set(&style)),
                 style["tracks"],
@@ -1150,7 +1064,7 @@ mod tests {
         }
     }
 
-    /// 没有 `voiceInkContexts` 的文档（Studio/Web 自己写出来的扁平样式）回落根 `mode`。
+    /// A document without `voiceInkContexts` (a flat style written by Studio or Web itself) falls back to the root `mode`.
     #[test]
     fn a_document_without_contexts_falls_back_to_the_flat_mode() {
         let mut style = json!({"mode": "bi"});
@@ -1163,19 +1077,18 @@ mod tests {
             style["tracks"],
             json!([{"role": "source"}, {"role": "translation"}])
         );
-        // 没有上下文就不要凭空造一个出来。
+        // Do not conjure a context out of nothing when there is none.
         assert!(style.get(CONTEXTS_KEY).is_none());
     }
 
-    /// 只带 `tracks` 的补丁撞不响 `reconcile` 的早退，也必须拿到裁决——这条钉住
-    /// 「canonicalize 不能塞进 reconcile 里面」。
+    /// A patch carrying only `tracks` hits the early return of `reconcile`, and must still get adjudication. This pins down that "canonicalize must not be folded inside reconcile".
     #[test]
     fn a_tracks_only_patch_is_canonicalized_outside_reconcile() {
         let mut style = flat();
         style["tracks"] = json!([{"role": "source"}, {"role": "translation"}]);
         let changed = changed(&["tracks"]);
         reconcile(&mut style, &changed, None);
-        // reconcile 逐比特不动：`tracks` 不是上下文承载得住的键。
+        // `reconcile` leaves everything bit-identical: `tracks` is not a key that a context can carry.
         assert_eq!(style["mode"], "orig");
         canonicalize_track_set(
             &mut style,
@@ -1186,7 +1099,7 @@ mod tests {
         assert_eq!(style[CONTEXTS_KEY]["bi"]["mode"], "bi");
     }
 
-    /// 无译文护栏是投影那一份的事：sidecar 留意图。
+    /// The no-translation guard belongs only to the projection copy: the sidecar keeps the intent.
     #[test]
     fn the_translation_guard_only_drops_the_track_where_it_is_asked_to() {
         let seed = json!({"mode": "bi", "tracks": [{"role": "source"}, {"role": "translation"}]});
@@ -1203,7 +1116,7 @@ mod tests {
         assert_eq!(dropped["mode"], "orig");
     }
 
-    /// 摘掉唯一一条轨之后轨集不能空：`[source]` 兜底。
+    /// After the only track is removed, the track set must not be empty: fall back to `[source]`.
     #[test]
     fn a_translation_only_track_set_falls_back_to_source_without_translation() {
         let mut style = json!({"tracks": [{"role": "translation", "lang": "zh"}]});
@@ -1216,7 +1129,7 @@ mod tests {
         assert_eq!(style["mode"], "orig");
     }
 
-    /// 语言标注只补空缺。
+    /// Language annotations only fill blanks.
     #[test]
     fn track_languages_are_seeded_without_overwriting_authored_values() {
         let mut style = json!({
@@ -1281,7 +1194,7 @@ mod tests {
             line["fontFamily"],
             json!({"type":"default","fontFamily":"Montserrat"})
         );
-        // 双语上下文完全没有被单行上下文的改动波及。
+        // The bilingual contexts were not affected at all by the single-line context change.
         assert_eq!(
             style[CONTEXTS_KEY]["bi"]["orig"]["style"]["fontColor"],
             "#ffffff"

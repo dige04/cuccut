@@ -41,8 +41,8 @@ import { Chips } from './model-parts.tsx';
 import { PANEL } from '../settings/settings-ui.tsx';
 
 /*
- * 设置 › 本地模型 › 模型目录（架构设计 §6.3；设计稿 settings-models-dir.jsx / .css 的 .mdir）。各分类的本地模型页顶部共用：
- * 当前目录与用量、更改 / 在文件夹中显示 / 恢复默认、更改确认框、移动进度。浏览器里不显示（Web 白名单不含这几个方法）。
+ * Settings › Local models › Model directory (architecture design §6.3; design mock settings-models-dir.jsx / .css `.mdir`). Shared by the top of each category's local models page:
+ * the current directory and its usage, change / show in folder / restore default, the change confirmation box, and move progress. Not shown in the browser (the Web allowlist does not include these methods).
  */
 
 const card = style({
@@ -88,7 +88,7 @@ const dialogPath = style({ font: 'code-sm', overflowWrap: 'anywhere', userSelect
 const waiting = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'gray-700' });
 const problem = style({ margin: 0, font: 'ui-sm', color: 'negative-900', overflowWrap: 'anywhere' });
 
-/** 模型目录卡片。浏览器里返回 null。 */
+/** Model directory card. Returns null in the browser. */
 export function ModelsDirCard() {
   const runtime = useRuntime();
   const web = runtime.host.platform === 'web';
@@ -115,7 +115,7 @@ export function ModelsDirCard() {
     );
   }, [runtime, web]);
 
-  // 设置变了（别的窗口、CLI 改的）、模型包的状态变了（装好、删掉、换了目录）都重新读一次。
+  // Re-read when the setting changes (another window, changed by the CLI) and when model package state changes (installed, deleted, directory changed).
   useEffect(() => refresh(), [refresh, setting, bundles]);
 
   const moveJob = info?.moveJobId ? jobs.find((j) => j.jobId === info.moveJobId) : undefined;
@@ -242,8 +242,7 @@ type Phase =
   { kind: 'checking' } | { kind: 'ready'; inspection: ModelsDirInspection; plan: ChangePlan } | { kind: 'failed'; message: string };
 
 /**
- * 更改确认框：先只读地查看选定的文件夹（`models.inspectDir`），说明里面已有几个模型、磁盘可用多少；当前目录里有模型时
- * 在「移过去」与「只切换位置」之间选。Runtime 拒绝时原因留在框里。`target` 为 null 时是恢复默认位置。
+ * Change confirmation box: first inspects the chosen folder read-only (`models.inspectDir`), and says how many models are already in it and how much disk space is available. When the current directory has models, it offers a choice between “移过去”(Move it there) and “只切换位置”(Only switch location). If the Runtime rejects it, the reason stays in the box. A `target` of null means restoring the default location.
  */
 function ChangeDialog({
   target,

@@ -8,8 +8,7 @@ import { createFakeAcp, type FakeAcp } from '../testing/fake-acp.ts';
 import { AcpProcess } from './acp-connection.ts';
 
 /**
- * 智能体进程结束时，它派生的进程一起结束（POSIX 上是整个进程组）。假智能体按 `helper` 场景派生一个不理会 SIGTERM 的子进程，
- * 像 cursor-agent 启动时跑的 rg：只结束智能体本身的话，它留成孤儿。
+ * When the agent process ends, the processes it spawned end with it (on POSIX, the whole process group). The fake agent, in the `helper` scenario, spawns a child process that ignores SIGTERM, like the rg that cursor-agent runs at startup. If only the agent itself is ended, that child is left behind as an orphan.
  */
 
 function alive(pid: number): boolean {
@@ -41,7 +40,7 @@ describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智�
 
   afterEach(async () => {
     await Promise.all(open.splice(0).map((proc) => proc.close()));
-    // 断言失败时也不留下测试自己的进程。
+    // Do not leave the test's own processes behind, even when an assertion fails.
     for (const pid of helpers()) if (alive(pid)) process.kill(pid, 'SIGKILL');
     await fs.rm(dir, { recursive: true, force: true });
   });
@@ -76,7 +75,7 @@ describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智�
   it('智能体自己退出：它留下的进程随即被强杀，不必等关闭', async () => {
     const proc = await start();
     const [helper] = helpers();
-    // 假智能体在 stdin 关闭时退出。
+    // The fake agent exits when stdin is closed.
     proc.child.stdin!.end();
     expect(await proc.exited).toBeNull();
     await until(() => !alive(helper!), 2_000);

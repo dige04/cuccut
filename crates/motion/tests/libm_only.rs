@@ -1,25 +1,15 @@
-//! 动画取样的超越函数只走 `libm` crate，不调 std 的同名方法。
+//! Transcendental functions used for animation sampling go only through the `libm` crate, not the same-named std methods.
 //!
-//! `f64::sin` / `cos` / `exp` / `powf` 这类函数在 macOS native 调系统 libm，在 wasm32 调
-//! compiler-builtins 自带的那份，末位不同。本 crate 的缓动、弹簧与循环波形是 Web 预览
-//! （wasm32）与导出、`MotionProgram` 烘焙（native）共用的取样核：差 1 ULP，两边姿态就
-//! 不同，违背规范 §14.1、§15.1 对动画采样承诺的字节级确定。`libm` 是纯 Rust 的 musl
-//! 移植，每个目标跑同一份算法。
+//! Functions such as `f64::sin` / `cos` / `exp` / `powf` call the system libm on native macOS, and on wasm32 they call the copy bundled in compiler-builtins; the last bit differs. In this crate, the easing, spring and cyclic waveform are the sampling core shared by the web preview (wasm32), export and `MotionProgram` baking (native). A 1 ULP difference would make the poses on the two sides differ, violating the byte-level determinism of animation sampling promised in spec §14.1 and §15.1. `libm` is a pure-Rust port of musl, so every target runs the same algorithm.
 //!
-//! 底数为 2 的幂写 `libm::exp2(x)`，**不写** `libm::pow(2.0, x)`：LLVM 早把 std 的
-//! `2f64.powf(x)` 改写成了 `exp2`，写 `exp2` 时 wasm32 一位不动；换成 `pow`，缓动的
-//! 指数区间 `[-10, 0]` 上有 9.7% 的点要差 1 ULP。
+//! For powers of base 2, write `libm::exp2(x)`, **not** `libm::pow(2.0, x)`: LLVM already rewrote std's `2f64.powf(x)` into `exp2`, so writing `exp2` leaves wasm32 bit-identical; switching to `pow` would make 9.7% of the points on the easing exponent interval `[-10, 0]` differ by 1 ULP.
 //!
-//! 扫描是文本级的：跳过注释行，针是 `x.sin(` 与路径 `f64::sin` 两种写法。四则运算、`sqrt`、
-//! `floor` / `round`、`abs`、`to_radians`、`mul_add` 是 IEEE 正确舍入的基本运算；`powi`
-//! 只用 2、3 次幂，两个目标都是同序乘法。这些都不在针里。wasm32 真产物由
-//! `apps/web/tests/unit/render/wasm-motion-parity.test.ts` 对拍
-//! （`core/fixtures/motion/wasm-parity.json`）。
+//! The scan is text-level: comment lines are skipped, and the needles are `x.sin(` and the path form `f64::sin`. Four arithmetic operations, `sqrt`, `floor` / `round`, `abs`, `to_radians` and `mul_add` are IEEE correctly rounded basic operations; `powi` is only used with powers 2 and 3, which both targets compute as the same-order multiplications. None of these are in the needles. The actual wasm32 build output is cross-checked by `apps/web/tests/unit/render/wasm-motion-parity.test.ts` (`core/fixtures/motion/wasm-parity.json`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// std 上会落到平台数学库的 `f32` / `f64` 方法。
+/// The `f32` / `f64` methods that std dispatches to the platform math library.
 const TRANSCENDENTAL: &[&str] = &[
     "sin", "cos", "tan", "sin_cos", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
     "asinh", "acosh", "atanh", "exp", "exp2", "exp_m1", "ln", "ln_1p", "log", "log2", "log10",
@@ -30,7 +20,7 @@ const HINT: &str = "改调 libm：同名的直接换（`x.sin()` → `libm::sin(
                     `ln_1p` → `log1p`，`exp_m1` → `expm1`，`sin_cos` → `sin` + `cos`，\
                     `powf` → `pow`，底数为 2 的写 `exp2`";
 
-/// 一行里调到的 std 超越函数：方法调用 `x.sin(`，或路径 `f64::sin`（调用或当函数值传）。
+/// A std transcendental function called on a line: a method call `x.sin(`, or the path `f64::sin` (called, or passed as a function value).
 fn std_calls(line: &str) -> Vec<&'static str> {
     TRANSCENDENTAL
         .iter()

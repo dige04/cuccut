@@ -14,7 +14,7 @@ import { pl } from './download-source.pl.ts';
 import { tr } from './download-source.tr.ts';
 import { vi } from './download-source.vi.ts';
 
-/** `packages/models/src/download-source.ts` 给人看的文字：模型下载来源的错误。 */
+/** `packages/models/src/download-source.ts`: text shown to people for errors from model download sources. */
 const en = {
   invalidEndpoint: (p: { name: string }) => `${p.name} must be a base URL starting with http(s)://, without credentials, query parameters, or a fragment`,
 };

@@ -41,27 +41,25 @@ import {
 import { RcFonts } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 按需下载的字体（架构设计 §9.1）：字体目录、下载缓存、下载任务与导出用到时的冻结。
+ * Downloaded fonts (architecture design §9.1): font catalogue, download cache, download tasks, and freezing for export when used.
  *
- * - 解析顺序：随内核发布的字体 → 本机已装的字体 → 下载缓存 → 下载。本机有这个族时不下载；要的字重按目录对到这个族
- *   实际有的字重（与引擎挑 face 同一套 CSS 匹配），缓存里有那个 face 就不下载。
- * - 下载是任务（`kind: 'fontDownload'`，一个族的几个 face，进度经 `jobs` 主题）；导出在自己的任务里下载（进度与取消随导出）。
- *   同一个 face 同时只下载一次：后来的请求等同一个下载。
- * - 下载：CSS 接口只带族名与字重、斜体（固定的 User-Agent，不发别的信息）；文件只从配置的文件主机（https）取；下载完由引擎
- *   按渲染用的同一套解析核对（读得出字体、族名对得上、大小在上限内），过了才改名进缓存。日志只记族名，不记地址。
- * - 还没结束的导出用着的 face（冻结了的文件、在等下载的 face）不删（`FONT_IN_USE`）；任务结束时解除。
+ * - Resolution order: fonts shipped with the kernel → locally installed fonts → download cache → download. If the family is installed locally, nothing is downloaded. The requested weight is mapped via the catalogue to a weight the family actually has (the same CSS matching as the engine's face selection); if that face is already cached, nothing is downloaded.
+ * - Downloads are tasks (`kind: 'fontDownload'`, several faces per family, progress through the `jobs` topic). Export downloads within its own task (progress and cancellation follow the export).
+ *   The same face is downloaded only once at a time: later requests wait for the same download.
+ * - Download: the CSS endpoint gets only the family name, weight, and italic (fixed User-Agent, no other information sent). Files come only from the configured file host (https). After download, the engine verifies the file with the same parsing used for rendering (it can read the font, the family name matches, and the size is within the limit), and only then is it renamed into the cache. Logs record the family name only, never the URL.
+ * - Faces in use by an unfinished export (frozen files, faces waiting on a download) are not deleted (`FONT_IN_USE`); this is released when the task ends.
  */
 
-/** CSS 回应的上限。 */
-/** 样张（只含族名的几个字）的上限：拉丁字母几 KB，中日韩也只是几个字。 */
+/** Upper limit for a CSS response. */
+/** Upper limit for a sample (a few characters containing only the family name): a few KB for Latin letters; CJK is just a few characters. */
 const MAX_SAMPLE_BYTES = 1024 * 1024;
-/** 同时取几个样张（选字列表一屏十几行一起要）。 */
+/** Fetches at most this many samples at once (the font picker requests a dozen or more rows together). */
 const SAMPLE_CONCURRENCY = 4;
 
 const MAX_CSS_BYTES = 256 * 1024;
-/** 一个字体文件的上限（低于引擎的 96 MB 抽取上限；中日韩字体的整个文件约 10–20 MB）。 */
+/** Upper limit for a single font file (below the engine's 96 MB extraction limit; a whole CJK font file is about 10–20 MB). */
 export const MAX_FONT_FILE_BYTES = 64 * 1024 * 1024;
-/** 自动下载失败之后多久内不再自动重试（手动下载不受限）。 */
+/** After an automatic download fails, no automatic retry for this long (manual downloads are not limited). */
 const FAILURE_COOLDOWN_MS = 10 * 60_000;
 const DOWNLOAD_QUEUE = { key: 'font-download', concurrency: 2 };
 const PROGRESS_INTERVAL_MS = 250;
@@ -81,13 +79,13 @@ export interface FontServiceOptions {
   videos: Pick<VideoService, 'fontFaces' | 'fontFamilies' | 'inspectFont'>;
   log: Logger;
   settings: () => FontSettings;
-  /** 测试注入的字体目录。 */
+  /** Font catalogue injected by tests. */
   catalogue?: FontCatalogue;
-  /** 测试注入的 fetch 与退避。 */
+  /** fetch and backoff injected by tests. */
   download?: FontDownloadOptions;
 }
 
-/** 下载被取消（任务取消、删除、导出取消）。 */
+/** Download cancelled (task cancelled, deleted, or export cancelled). */
 class FontDownloadCancelled extends Error {
   constructor() {
     super(RcFonts.downloadCancelled().text);
@@ -95,19 +93,19 @@ class FontDownloadCancelled extends Error {
   }
 }
 
-/** 一个在下载（或排队等下载）的 face。 */
+/** A face being downloaded (or queued to download). */
 interface Inflight {
   key: string;
   entry: CatalogueFamily;
   face: FontFaceStyle;
-  /** 负责下载的任务：`fontDownload` 任务或导出任务。 */
+  /** The task responsible for the download: a `fontDownload` task or an export task. */
   jobId: Id | null;
   controller: AbortController;
   promise: Promise<FontCacheEntry>;
   received: number;
   total: number | null;
   begin(): Promise<FontCacheEntry>;
-  /** 任务没跑就结束了（排队时取消）：没开始的当作取消。 */
+  /** Task ended without running (cancelled while queued): anything that never started counts as cancelled. */
   abandon(): void;
 }
 
@@ -119,10 +117,10 @@ interface Failure {
   time: number;
 }
 
-/** 一个 face 怎么得到：交给引擎（随内核、本机、缓存里有或不在目录里），或要下载。 */
+/** How a face is obtained: handed to the engine (shipped with the kernel, local, already in the cache, or not in the catalogue), or it must be downloaded. */
 type FacePlan = { kind: 'engine' } | { kind: 'download'; entry: CatalogueFamily; face: FontFaceStyle; key: string };
 
-/** 导出冻结时一个 face 怎么办：交给引擎、在任务里下载，或不下载（`reason` 说明原因）。 */
+/** What happens to a face when an export freezes: handed to the engine, downloaded within the task, or not downloaded (`reason` explains why). */
 export type ExportFacePlan = { kind: 'engine' } | { kind: 'download' } | { kind: 'skip'; reason: string };
 
 export class FontService {
@@ -130,12 +128,12 @@ export class FontService {
   readonly catalogue: FontCatalogue;
   readonly #options: FontServiceOptions;
   readonly #inflight = new Map<string, Inflight>();
-  /** 每个 face 最近一次失败（按 face）；每个族最近一次失败（选字列表）。 */
+  /** Most recent failure for each face (per face); most recent failure for each family (for the font picker). */
   readonly #failures = new Map<string, Failure>();
   readonly #familyFailures = new Map<string, Failure>();
-  /** 还没结束的导出用着的：冻结了的缓存文件、在等下载的 face。 */
+  /** Used by unfinished exports: frozen cache files and faces waiting on a download. */
   readonly #pins = new Map<Id, { files: Set<string>; faces: Set<string> }>();
-  /** 在取的样张（同一个族同时只取一次）与排队等着取的。 */
+  /** Samples being fetched (one fetch per family at a time) and samples queued to be fetched. */
   readonly #samples = new Map<string, Promise<FontSampleResult>>();
   #sampleSlots = SAMPLE_CONCURRENCY;
   readonly #sampleQueue: (() => void)[] = [];
@@ -143,7 +141,7 @@ export class FontService {
   constructor(options: FontServiceOptions) {
     this.#options = options;
     this.cache = new FontCache(options.dir, { log: options.log });
-    // `CUCCUT_FONT_DOWNLOADS=off`（测试的默认，见 vitest.config.ts）：没有字体目录，什么也不下载，只用本机字体。
+    // `CUCCUT_FONT_DOWNLOADS=off` (the test default, see vitest.config.ts): no font catalogue, nothing is downloaded, and only local fonts are used.
     this.catalogue =
       options.catalogue ??
       (process.env.CUCCUT_FONT_DOWNLOADS === 'off'
@@ -151,11 +149,10 @@ export class FontService {
         : FontCatalogue.builtin());
   }
 
-  // ---- 解析（预览与导出） ----
+  // ---- Resolution (preview and export) ----
 
   /**
-   * `fonts.resolve`：按 face 解析（随内核的族不会来问）。`download` 时字体目录里有、还没下载的 face 按设置自动下载，
-   * 记为 `downloading`；正在下载的同样记 `downloading`，不拿缓存里别的字重凑数（下载完再问一次就是要的那个）。
+   * `fonts.resolve`: resolves per face (families shipped with the kernel never ask). With `download`, faces that are in the font catalogue but not yet downloaded are downloaded automatically per settings and marked `downloading`. Faces already downloading are also marked `downloading`, and are not filled in from another weight in the cache (once the download finishes, asking again gives the requested face).
    */
   async resolve(faces: FontFaceQuery[], options: { download: boolean; submitter: JobSubmitter }): Promise<LocalFontFaces> {
     const settings = this.#options.settings();
@@ -183,7 +180,7 @@ export class FontService {
         toDownload.set(plan.entry.family, group);
         continue;
       }
-      // 不下载：缓存里有这个族别的字重时照样给（总比回退字体近），没有时说明为什么。
+      // Without download: if the cache holds another weight of this family, it is still returned (closer than a fallback font). Otherwise, the reason is stated.
       ask.push(query);
       reasons.set(queryKey(query), failure ? { reason: 'download-failed', code: failure.code } : { reason: 'downloadable' });
     }
@@ -201,7 +198,7 @@ export class FontService {
     };
   }
 
-  /** 导出冻结时：每个 face 交给引擎、在导出任务里下载，或不下载（自动下载关着、严格离线）。 */
+  /** When an export freezes: each face is handed to the engine, downloaded within the export task, or not downloaded (auto-download off, or strict offline). */
   async planExport(faces: readonly FontFaceQuery[]): Promise<Map<string, ExportFacePlan>> {
     const settings = this.#options.settings();
     const local = await this.#localFamilies();
@@ -218,8 +215,7 @@ export class FontService {
   }
 
   /**
-   * 导出任务开始画之前：下载这些 face（已经在下载的等同一个下载），进度按字节报，`signal` 中止时停下。返回每个 face 的
-   * 结果：下载好了（或本来就有）为 null，否则是给人看的原因。
+   * Before the export task starts drawing: downloads these faces (faces already downloading are awaited together with the same download). Progress is reported by bytes; stops when `signal` aborts. Returns a result for each face: null if it was downloaded (or was already present), otherwise a human-readable reason.
    */
   async ensureForExport(
     faces: readonly FontFaceQuery[],
@@ -250,7 +246,7 @@ export class FontService {
       for (const inflight of owned) inflight.controller.abort(new FontDownloadCancelled());
     };
     signal.addEventListener('abort', onAbort, { once: true });
-    // 失败了的 face 不再算进进度：一个 404（从没拿到大小）不该让整个导出的进度只剩字节数、没有百分比。
+    // A failed face is no longer counted in progress: a 404 (which never returned a size) should not leave the export's progress with only bytes and no percentage.
     const failed = new Set<Inflight>();
     for (const inflight of unique) inflight.promise.catch(() => failed.add(inflight));
     const timer = setInterval(() => report(), PROGRESS_INTERVAL_MS);
@@ -284,7 +280,7 @@ export class FontService {
     }
   }
 
-  /** 导出冻结了下载缓存里的文件、或在等下载的 face：任务结束之前不删（`FONT_IN_USE`）。 */
+  /** An export has frozen a file from the download cache, or faces waiting on a download: not deleted until the task finishes (`FONT_IN_USE`). */
   pin(jobId: Id, use: { files?: readonly string[]; faces?: readonly FontFaceQuery[] }): void {
     for (const file of use.files ?? []) this.#pinFile(jobId, file);
     for (const face of use.faces ?? []) {
@@ -293,13 +289,13 @@ export class FontService {
     }
   }
 
-  /** 是不是下载缓存里的文件。 */
+  /** Whether this is a file in the download cache. */
   isCached(file: string): boolean {
     const relative = path.relative(this.cache.filesDir, file);
     return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
   }
 
-  // ---- 选字列表与缓存 ----
+  // ---- Picker list and cache ----
 
   async catalogueList(params: FontsCatalogueParams): Promise<FontsCatalogueResult> {
     const local = await this.#localFamilies();
@@ -315,7 +311,7 @@ export class FontService {
     if (params.families) {
       for (const name of params.families) add(this.#statusOf(name, local, cached));
     } else {
-      // 随内核的、已下载的在前，其余按目录的热门程度，目录里没有的本机字体最后（按名字）。
+      // Those shipped with the kernel and already downloaded come first; the rest follow catalogue popularity; locally installed fonts not in the catalogue come last (by name).
       for (const name of BUNDLED_FONT_FAMILIES) add(this.#statusOf(name, local, cached));
       for (const name of [...cached.keys()].sort()) add(this.#statusOf(cached.get(name)![0]!.family, local, cached));
       for (const entry of this.catalogue.families()) add(this.#statusOf(entry.family, local, cached));
@@ -334,7 +330,7 @@ export class FontService {
     return { total: filtered.length, families: filtered.slice(offset, offset + limit), catalogueDate: this.catalogue.date };
   }
 
-  /** `fonts.download`：下载一个族（默认正体的常规与粗体）。失败之后再调就是重试。 */
+  /** `fonts.download`: downloads a family (by default, the upright regular and bold). Calling it again after a failure is a retry. */
   async download(
     params: { family: string; faces?: FontFaceStyle[]; commandId?: Id },
     submitter: JobSubmitter,
@@ -379,11 +375,11 @@ export class FontService {
     return { faces, totalBytes: faces.reduce((sum, f) => sum + f.sizeBytes, 0), inUse };
   }
 
-  // ---- 视频用到的字体与样张 ----
+  // ---- Fonts used by video, and samples ----
 
   /**
-   * `fonts.usage`：Render Worker 清点出的 face（`census`）按族归好，每个族带此刻的状态与内核此刻用什么画它。
-   * `download` 时还没下载的 face 走 `resolve` 的同一条规则（自动下载、严格离线、十分钟内失败过的不自动重试，取消的不算失败）。
+   * `fonts.usage`: groups the faces the Render Worker censused (`census`) by family. Each family carries its current status and what the kernel is drawing it with right now.
+   * For `download`, faces not yet downloaded follow the same rules as `resolve` (auto-download, strict offline, faces that failed in the last ten minutes are not retried automatically, and cancellations do not count as failures).
    */
   async usage(
     census: { faces: readonly { family: string; weight: number; italic: boolean; bundled: boolean }[]; fallback: string },
@@ -426,8 +422,7 @@ export class FontService {
   }
 
   /**
-   * `fonts.sample`：只含族名那几个字的子集（CSS 接口的 `text` 参数），给选字列表把族名画成这个族的样子。与下载同一套
-   * 接口设置、文件主机限制、大小上限与不跟随重定向；严格离线时不取。取到的存在 `<字体缓存>/samples/`，下次直接读。
+   * `fonts.sample`: a subset containing only the characters of the family name (the CSS endpoint's `text` parameter), so the font picker can draw the family name in that family. Same endpoint settings, file-host restriction, size limit, and no-redirect policy as downloads. Not fetched in strict offline mode. Fetched samples are stored in `<font cache>/samples/` and read directly next time.
    */
   async sample(params: { family: string }): Promise<FontSampleResult> {
     const entry = this.catalogue.get(params.family);
@@ -508,7 +503,7 @@ export class FontService {
       const bytes = await fs.readFile(temp);
       const format = sniffFontFormat(bytes);
       if (!format) throw new FontDownloadError('FONT_DOWNLOAD_INTEGRITY', RcFonts.sampleNotUsable({ label }));
-      // TrueType / OpenType 再按渲染用的解析核对一遍；WOFF 与 WOFF2 是压缩的，引擎读不了，只认文件头（界面的浏览器自己会解）。
+      // TrueType / OpenType files are then checked again with the same parsing used for rendering. WOFF and WOFF2 are compressed and the engine cannot read them, so only the file header is checked (the browser in the UI decodes them itself).
       if (format === 'truetype' || format === 'opentype') {
         try {
           if ((await this.#options.videos.inspectFont(temp)).length === 0) throw new Error('empty');
@@ -523,7 +518,7 @@ export class FontService {
     }
   }
 
-  /** `fonts.remove`：删除一个族下载的 face；还没结束的导出用着时拒绝，在下载的先取消。 */
+  /** `fonts.remove`: deletes the files of a family's downloaded faces. Rejected while an unfinished export is using them; a download in progress is cancelled first. */
   async remove(params: { family: string; faces?: FontFaceStyle[] }): Promise<FontRemoveResult> {
     const family = params.family.trim().toLowerCase();
     const matches = (face: { family: string; weight: number; italic: boolean }) =>
@@ -547,7 +542,7 @@ export class FontService {
     return { removed: entries.map(publicFace), freedBytes: sum(entries), kept: [] };
   }
 
-  /** `fonts.clear`：清空下载缓存，还没结束的导出用着的留下。 */
+  /** `fonts.clear`: empties the download cache; faces used by an unfinished export are kept. */
   async clear(): Promise<FontRemoveResult> {
     const entries = await this.cache.list();
     const kept = entries.filter((e) => this.#usersOf(e).length > 0);
@@ -560,9 +555,9 @@ export class FontService {
     return { removed: removed.map(publicFace), freedBytes: sum(removed), kept: kept.map(publicFace) };
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
-  /** 本机已装的族（小写 → 原名）。 */
+  /** Families installed locally (lowercase → original name). */
   async #localFamilies(): Promise<Map<string, string>> {
     const families = await this.#options.videos.fontFamilies();
     return new Map(families.filter((f) => !isBundledFamily(f)).map((f) => [f.toLowerCase(), f]));
@@ -579,15 +574,14 @@ export class FontService {
   }
 
   /**
-   * 十分钟内自动下载失败过的 face 不再自动下载。取消（取消下载、取消导出、删除）不是失败：选字列表照样记「已取消」，
-   * 但不挡下一次自动下载。
+   * Faces whose automatic download failed within the last ten minutes are not automatically downloaded again. Cancellation (cancelling a download, cancelling an export, or deletion) is not a failure: the picker still records “已取消” (cancelled), but it does not block the next automatic download.
    */
   #recentFailure(key: string): Failure | null {
     const failure = this.#failures.get(key);
     return failure && failure.code !== 'CANCELLED' && Date.now() - failure.time < FAILURE_COOLDOWN_MS ? failure : null;
   }
 
-  /** 登记一个 face 的下载（还没开始）；`begin` 才开始。结束（成功或失败）时撤下登记、记下失败。 */
+  /** Registers a face's download (not yet started); `begin` starts it. When it ends (success or failure), the registration is removed and any failure is recorded. */
   #register(entry: CatalogueFamily, face: FontFaceStyle, jobId: Id | null): Inflight {
     const key = faceKey({ family: entry.family, ...face });
     let settle!: { resolve: (value: FontCacheEntry) => void; reject: (error: unknown) => void };
@@ -643,7 +637,7 @@ export class FontService {
     return inflight;
   }
 
-  /** 提交一个族的下载任务（几个 face）。face 在提交时就登记，同一个 face 后来的请求等这个任务。 */
+  /** Submits a family's download task (several faces). Faces are registered at submission; later requests for the same face wait on this task. */
   #submitJob(entry: CatalogueFamily, faces: FontFaceStyle[], submitter: JobSubmitter, commandId?: Id): Id {
     const spec = { task: 'fontDownload' as const, family: entry.family, faces };
     const hash = `sha256:${sha256Hex(canonicalJson(spec))}`;
@@ -730,7 +724,7 @@ export class FontService {
     return { documentId: null, artifactId };
   }
 
-  /** 下载一个 face：CSS → 文件 → 引擎核对 → 改名进缓存。 */
+  /** Downloads one face: CSS → file → engine verification → rename into the cache. */
   async #fetchFace(inflight: Inflight): Promise<FontCacheEntry> {
     const { entry, face } = inflight;
     const signal = inflight.controller.signal;
@@ -857,8 +851,7 @@ export class FontService {
   }
 
   /**
-   * 还没结束的任务的钉住。任务的终态先发布、落盘之后才算 `settled`（那时才放开钉住）：客户端收到终态就来取已下载列表或
-   * 删除，这中间已经结束的任务不再算在用。
+   * Pins for unfinished tasks. A task counts as `settled` only after its terminal state has been published and written to disk (the pin is released only then). When a client receives the terminal state and fetches the downloaded list or deletes, a task that has just ended in between is no longer counted as in use.
    */
   #livePins(): [Id, { files: Set<string>; faces: Set<string> }][] {
     return [...this.#pins].filter(([jobId]) => {
@@ -922,12 +915,12 @@ export class FontService {
   }
 }
 
-/** 样张里的字：族名去掉空白与重复的字（按出现的次序）。 */
+/** Characters in a sample: the family name with whitespace and duplicate characters removed (in order of appearance). */
 export function sampleText(family: string): string {
   return [...new Set([...family.replace(/\s+/g, '')])].join('');
 }
 
-/** 按文件头认字体格式。 */
+/** Identifies the font format from the file header. */
 export function sniffFontFormat(bytes: Uint8Array): FontSampleFormat | null {
   if (bytes.length < 4) return null;
   const tag = String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!);
@@ -938,14 +931,14 @@ export function sniffFontFormat(bytes: Uint8Array): FontSampleFormat | null {
   return null;
 }
 
-/** 缓存里的样张（文件名的扩展名就是格式）。 */
+/** A cached sample (the file extension gives the format). */
 async function readSample(file: string): Promise<Pick<FontSampleResult, 'data' | 'format'> | null> {
   for (const format of ['truetype', 'opentype', 'woff2', 'woff'] as const) {
     try {
       const bytes = await fs.readFile(`${file}.${format}`);
       return { data: bytes.toString('base64'), format };
     } catch {
-      // 没有这个格式的
+      // Not of this format
     }
   }
   return null;

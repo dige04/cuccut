@@ -24,61 +24,59 @@ import { ProviderFailure } from './transcribe-provider.ts';
 import { modelTextRef, type ModelText } from './model-text.ts';
 
 /**
- * `generateText`（架构设计 §6.1、§6.4）：文本模型的一次调用。两个入口共用一条执行路径：
+ * `generateText` (architecture design §6.1, §6.4): one call to a text model. Two entry points share one execution path:
  *
- * - **任务**：`models.generateText` 提交一个 Job，执行者是 `TextJobGenerator`，全文写进 staging，由 JobManager 校验、发布为产物；
- * - **进程内**：流程（翻译、润色、分章……）经 `TextGenerator.generate()` 直接拿结果，不建 Job。
+ * - **Task**: `models.generateText` submits a Job, executed by `TextJobGenerator`; the full text is written to staging, and JobManager validates it and publishes it as an artifact;
+ * - **In-process**: flows (translation, polishing, chapter splitting...) get the result directly through `TextGenerator.generate()`, without creating a Job.
  *
- * 两者都经同一个 `TextRunner`：每个 Provider 一个并发上限（能力参数 `concurrency`，默认 4，任务与进程内调用共用）、
- * 调用计数，以及 `finishText` 的结果检查（结构化输出按 schema 校验，`length` 不算完整的成功）。
- * 连不上、超时、5xx 与带 `Retry-After` 的 429 由在线 Provider 的 HTTP 层有界重试（§6.4）；这里不再重试，
- * 不换 Provider 或模型；输出不合 schema 不重试（§6.2）。
+ * Both go through the same `TextRunner`: a concurrency cap per Provider (capability parameter `concurrency`, default 4, shared by tasks and in-process calls), call counting, and the result check in `finishText` (structured output is validated against the schema; `length` does not count as a complete success).
+ * Connection failures, timeouts, 5xx, and 429 with `Retry-After` are retried with bounded backoff by the HTTP layer of the online Provider (§6.4); there is no retry here, and no switch of Provider or model. Output that fails the schema is not retried (§6.2).
  */
 
 export type TextParameters = Extract<GenerationParameters, { capability: 'generateText' }>;
 
-/** 提交时冻结的一次调用。 */
+/** One call, frozen at submission time. */
 export interface TextRun {
   providerId: string;
   modelId: string;
   parameters: TextParameters;
-  /** 用量账本（§6.10）的来源：任务是 `job`，进程内调用默认 `inline`。 */
+  /** Source for the usage ledger (§6.10): a task is `job`; in-process calls default to `inline`. */
   source?: UsageSource;
   ref?: UsageRecord['ref'];
 }
 
-/** 适配器读出的一次响应：原样的文本、结束原因与用量。检查在 `finishText` 里。 */
+/** One response read by the adapter: the text as-is, the finish reason, and usage. Checks happen in `finishText`. */
 export interface TextReply {
   text: string;
   finishReason: TextFinishReason;
   usage: TextUsage | null;
-  /** 供应商报告的模型版本；没有时 null。 */
+  /** Model version reported by the provider; null if none. */
   modelVersion: string | null;
-  /** 适配器版本。 */
+  /** Adapter version. */
   workerVersion: string;
 }
 
-/** 执行过程中的回调（计数用）。 */
+/** Callback during execution (for counting). */
 export interface TextCallHooks {
-  /** HTTP 层每退避重试一次调用一次。 */
+  /** Called once for each backoff retry in the HTTP layer. */
   retry(): void;
 }
 
-/** 一个 Provider 的文本执行者：按冻结的参数发一次请求。失败抛 `ProviderFailure`；`signal` 中止时尽快抛出。 */
+/** The text executor for one Provider: sends one request with the frozen parameters. Throws `ProviderFailure` on failure; throws as soon as possible when `signal` aborts. */
 export interface TextProvider {
   readonly id: string;
   generateText(run: TextRun, signal: AbortSignal, hooks: TextCallHooks): Promise<TextReply>;
 }
 
-/** 一次调用的结果（进程内入口直接拿到；任务把全文发布为产物，摘要写进 `result.text`）。 */
+/** The result of one call (the in-process entry gets it directly; a task publishes the full text as an artifact, and the summary goes into `result.text`). */
 export interface TextResult {
   providerId: string;
   modelId: string;
-  /** 模型输出的全文。结构化输出时是 JSON 文本。 */
+  /** The full model output. For structured output, this is JSON text. */
   text: string;
-  /** 结构化输出：校验过的值。 */
+  /** Structured output: the validated value. */
   json?: unknown;
-  /** `length` 只出现在纯文本：结构化输出被截断一律失败。 */
+  /** `length` only appears for plain text: truncated structured output always fails. */
   finishReason: 'stop' | 'length';
   usage: TextUsage | null;
   modelVersion: string | null;
@@ -87,9 +85,9 @@ export interface TextResult {
   workerVersion: string;
 }
 
-// ---- 提交时：检查并冻结参数 ----
+// ---- At submission: check and freeze parameters ----
 
-/** 最接近的一档；一样近时取高的。`supported` 为空时 null。 */
+/** The closest tier; on a tie, the higher one. Null when `supported` is empty. */
 export function nearestEffort(requested: TextEffort, supported: readonly TextEffort[]): TextEffort | null {
   if (supported.includes(requested)) return requested;
   const rank = (e: TextEffort) => TEXT_EFFORTS.indexOf(e);
@@ -107,9 +105,9 @@ export function nearestEffort(requested: TextEffort, supported: readonly TextEff
 }
 
 /**
- * 请求与模型的特性是否相容，相容时给出冻结的参数（§6.2）。不合的一律 `invalid-request`，`details` 带上模型的限制：
- * 输出上限超过模型的、模型不接受的 `temperature` / `seed` / 结构化输出、编译不过的 JSON Schema。
- * 推理强度不拒绝：没给时用能力参数的默认值，模型没有那一档时换成最接近的一档，不能调节时忽略（都在结果里注明）。
+ * Whether the request is compatible with the model's features; when compatible, gives the frozen parameters (§6.2). Incompatible requests always fail with `invalid-request`, and `details` carries the model's limits:
+ * an output limit above the model's, a `temperature` / `seed` / structured output the model does not accept, or a JSON Schema that does not compile.
+ * Reasoning effort is never rejected: when not given, the capability parameter's default is used; when the model has no such tier, it is swapped for the closest tier; when it cannot be adjusted, it is ignored (all noted in the result).
  */
 export function textParameters(
   choice: ModelChoice<'generateText'>,
@@ -125,7 +123,7 @@ export function textParameters(
   if (messages.some((m) => !['system', 'user', 'assistant'].includes(m.role))) {
     throw new RpcError('invalid-request', M.badRole());
   }
-  // 粗查：按字符数估的输入明显超过上下文时在提交时拒绝（一个 token 至少一个字符）。精确的检查在供应商那里（`INPUT_TOO_LONG`）。
+  // Rough check: input whose character-count estimate clearly exceeds the context is rejected at submission (one token is at least one character). The exact check is done by the provider (`INPUT_TOO_LONG`).
   const chars = messages.reduce((sum, m) => sum + codePointLength(m.content), 0);
   if (chars > model.contextTokens * 8) {
     throw new RpcError('invalid-request', M.inputTooLong({ chars, modelId: choice.modelId, contextTokens: model.contextTokens }), {
@@ -177,7 +175,7 @@ export function textParameters(
   return { capability: 'generateText', messages, responseFormat, maxOutputTokens, temperature, requestedEffort, effort, seed };
 }
 
-/** 推理强度被换档或忽略时的说明。 */
+/** Note for when reasoning effort is swapped to another tier or ignored. */
 export function effortNotes(parameters: TextParameters, modelId: string): string[] {
   const { requestedEffort, effort } = parameters;
   if (requestedEffort === null || requestedEffort === effort) return [];
@@ -185,13 +183,13 @@ export function effortNotes(parameters: TextParameters, modelId: string): string
   return [M.effortChanged({ modelId, requested: requestedEffort, applied: effort }).text];
 }
 
-// ---- 响应：检查 ----
+// ---- Response: check ----
 
 /**
- * 检查一次响应（§6.4 的输出合同）：
- * - `content-filter` → `PROVIDER_REJECTED`（`reason: 'content-filter'`）；
- * - 结构化输出：被截断（`length`）、不是 JSON、不合 schema → `MODEL_OUTPUT_INVALID`（`reason`：`length`、`schema`）；
- * - 纯文本：空输出 → `MODEL_OUTPUT_INVALID`（`reason: 'empty'`）；`length` 照样返回，由调用方当作不完整的结果。
+ * Checks one response (the output contract of §6.4):
+ * - `content-filter` → `PROVIDER_REJECTED` (`reason: 'content-filter'`);
+ * - structured output: truncated (`length`), not JSON, or not matching the schema → `MODEL_OUTPUT_INVALID` (`reason`: `length`, `schema`);
+ * - plain text: empty output → `MODEL_OUTPUT_INVALID` (`reason: 'empty'`); `length` is still returned, and the caller treats it as an incomplete result.
  */
 export function finishText(run: TextRun, reply: TextReply, label: string): TextResult {
   const { parameters } = run;
@@ -243,25 +241,25 @@ function invalidOutput(reason: 'length' | 'schema' | 'empty', message: ModelText
   return new ProviderFailure('protocol', message, { reason, problems });
 }
 
-// ---- 共用的执行：并发上限与计数 ----
+// ---- Shared execution: concurrency cap and counting ----
 
 export interface TextCallStats {
-  /** 发出的调用（每次 `generate` 或任务的一次执行算一次）。 */
+  /** Calls made (each `generate`, or each execution of a task, counts once). */
   calls: number;
-  /** HTTP 层的退避重试次数。 */
+  /** Number of backoff retries in the HTTP layer. */
   retries: number;
-  /** 以失败结束的调用（不含取消）。 */
+  /** Calls that ended in failure (cancellations not included). */
   failures: number;
 }
 
 export interface TextRunnerOptions {
-  /** 一个 Provider 同时进行的调用数；每次排队时读一次（改了配置立即生效）。 */
+  /** Number of calls one Provider runs at the same time; read each time a call is queued (config changes take effect immediately). */
   concurrency(providerId: string): number;
-  /** 给人看的 Provider 名字。 */
+  /** Human-readable Provider name. */
   label?(providerId: string): string;
 }
 
-/** 调用被取消（`signal` 中止）。 */
+/** The call was cancelled (`signal` aborted). */
 export class TextCallCancelled extends Error {
   constructor() {
     super('Call cancelled');
@@ -283,7 +281,7 @@ export class TextRunner {
     this.#options = options;
   }
 
-  /** 按冻结的参数执行一次：排到这个 Provider 的并发名额，发请求，检查响应。失败抛 `ProviderFailure`，取消抛 `TextCallCancelled`。 */
+  /** Executes once with the frozen parameters: waits for a concurrency slot on this Provider, sends the request, and checks the response. Throws `ProviderFailure` on failure and `TextCallCancelled` on cancellation. */
   async run(provider: TextProvider, run: TextRun, signal: AbortSignal): Promise<TextResult> {
     if (signal.aborted) throw new TextCallCancelled();
     await this.#acquire(run.providerId, signal);
@@ -302,12 +300,12 @@ export class TextRunner {
     }
   }
 
-  /** 各 Provider 的计数（拷贝）。 */
+  /** Per-Provider counts (a copy). */
   stats(): Record<string, TextCallStats> {
     return Object.fromEntries([...this.#stats].map(([id, s]) => [id, { ...s }]));
   }
 
-  /** 此刻在进行的调用数（测试与诊断用）。 */
+  /** Number of calls in progress right now (for tests and diagnostics). */
   active(providerId: string): number {
     return this.#gates.get(providerId)?.active ?? 0;
   }
@@ -363,9 +361,9 @@ export class TextRunner {
   }
 }
 
-// ---- 任务入口的执行者 ----
+// ---- Executor for the task entry point ----
 
-/** 任务的一次执行：经 `TextRunner` 调用，把全文写进 staging（`output-1.txt` 或 `output-1.json`），交给 JobManager 校验与发布。 */
+/** One execution of a task: calls through `TextRunner`, writes the full text to staging (`output-1.txt` or `output-1.json`), and hands it to JobManager to validate and publish. */
 export class TextJobGenerator implements GenerationProvider {
   readonly id: string;
   readonly #runner: TextRunner;
@@ -428,9 +426,9 @@ export class TextJobGenerator implements GenerationProvider {
   }
 }
 
-// ---- 进程内入口 ----
+// ---- In-process entry point ----
 
-/** 进程内调用的错误：错误码与任务的同一个封闭集合（命令与协议规范 §11.3），另加 `CANCELLED`。 */
+/** Errors from in-process calls: the same closed set of error codes as tasks (command and protocol spec §11.3), plus `CANCELLED`. */
 export type TextErrorCode =
   | 'PROVIDER_AUTH_FAILED'
   | 'PROVIDER_QUOTA_EXCEEDED'
@@ -445,7 +443,7 @@ export class TextGenerationError extends Error {
   readonly code: TextErrorCode;
   readonly details: Record<string, unknown>;
 
-  /** 用目录文字构造时的消息引用。 */
+  /** Message reference, used when constructed from catalog text. */
   readonly messageRef: MessageRef | undefined;
 
   constructor(code: TextErrorCode, message: ModelText, details: Record<string, unknown> = {}) {
@@ -459,7 +457,7 @@ export class TextGenerationError extends Error {
 
 const REJECTION_CODES = new Set(['PROVIDER_AUTH_FAILED', 'PROVIDER_QUOTA_EXCEEDED', 'PROVIDER_REJECTED', 'INPUT_TOO_LONG']);
 
-/** `ProviderFailure` → 封闭的错误码（与 JobManager 给任务的错误码相同）。 */
+/** `ProviderFailure` → a closed error code (the same error codes JobManager gives tasks). */
 export function textErrorOf(failure: ProviderFailure, providerId: string): TextGenerationError {
   const { code, ...rest } = failure.details;
   switch (failure.kind) {
@@ -478,25 +476,25 @@ export function textErrorOf(failure: ProviderFailure, providerId: string): TextG
   }
 }
 
-/** 进程内的请求：同 `models.generateText` 的参数，没有 `commandId`。 */
+/** In-process request: the same parameters as `models.generateText`, without `commandId`. */
 export type TextGenerateRequest = Omit<GenerateTextRequest, 'commandId'>;
 
 /**
- * 进程内的文本生成入口：选择（§6.2，同任务）→ 冻结参数 → 经共用的 `TextRunner` 执行。
- * 选择与参数的错误照提交时的样子抛 `RpcError`（`CAPABILITY_NOT_CONFIGURED`、`invalid-request`、`not-found`）；
- * 执行的错误抛 `TextGenerationError`。
+ * In-process text generation entry point: selection (§6.2, same as for tasks) → freeze parameters → execute through the shared `TextRunner`.
+ * Selection and parameter errors throw `RpcError` in the same form as at submission (`CAPABILITY_NOT_CONFIGURED`, `invalid-request`, `not-found`);
+ * execution errors throw `TextGenerationError`.
  */
 export interface TextGenerator {
-  /** `source` 与 `ref` 写进用量账本（§6.10）：默认 `inline`；智能体工具直接发起的给 `agent-tool`。 */
+  /** `source` and `ref` are written to the usage ledger (§6.10): default `inline`; calls started directly by an agent tool use `agent-tool`. */
   generate(
     request: TextGenerateRequest,
     options?: { signal?: AbortSignal; source?: 'inline' | 'agent-tool'; ref?: UsageRecord['ref'] },
   ): Promise<TextResult>;
-  /** 各 Provider 的调用、重试与失败计数（任务与进程内调用合计）。 */
+  /** Per-Provider counts of calls, retries, and failures (tasks and in-process calls combined). */
   stats(): Record<string, TextCallStats>;
 }
 
-/** 选择一次调用的 Provider 与模型，交出执行者与参数默认值（`ModelServices.selectText` 实现它）。 */
+/** Selects the Provider and model for one call, and hands back the executor and the parameter defaults (`ModelServices.selectText` implements it). */
 export interface TextSelection extends ModelChoice<'generateText'> {
   text: TextProvider;
   defaults: TextCapabilityParameters;

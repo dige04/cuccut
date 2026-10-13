@@ -105,15 +105,15 @@ describe('JsonStoreFile', () => {
     await store.write({ schemaVersion: 1 });
     await store.write({ schemaVersion: 1 });
     expect(await fs.readFile(file, 'utf8')).toBe(text);
-    // 读的一条加上跳过写入的一条（只记一次）。
+    // One entry read, plus one entry that was skipped on write (counted once).
     expect(log.warn).toHaveBeenCalledTimes(2);
   });
 });
 
-/** 一类可以从空开始的 Store：坏文件改名保留、版本过高不改名也不覆盖、空文件按没有处理。 */
+/** A class of Store that can start empty: a corrupt file is renamed and kept. A version that is too high is neither renamed nor overwritten. An empty file is treated as missing. */
 interface Case {
   name: string;
-  /** 打开并读入；返回 Store 当前内容的摘要（空时与 `empty` 相等）。 */
+  /** Opens and reads the store. Returns a digest of the Store's current content (equal to `empty` when empty). */
   load: (file: string, log: StoreLog) => Promise<{ summary: unknown; write: () => Promise<unknown> }>;
   empty: unknown;
   versionKey?: string;

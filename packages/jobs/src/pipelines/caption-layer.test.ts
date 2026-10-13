@@ -21,9 +21,7 @@ import {
 import { PipelineStepError } from './pipeline.ts';
 
 /**
- * 没有 Worker 字幕条的译文（智能体自己写的）建字幕层：`translationCues` 与编辑器的同名函数切法相同（期望值照
- * `packages/ui/src/model/translation-cues.test.ts`），`planCaptionLayer` 算出的事务与编辑器「放到画面上」相同；
- * 已有字幕层时照样新建一层（§7.9「不覆盖」）。
+ * For a translation with no Worker caption cues (written by the agent itself), build the caption layer: `translationCues` splits cues the same way as the editor's function of the same name (expected values follow `packages/ui/src/model/translation-cues.test.ts`), and the transaction computed by `planCaptionLayer` is the same as the editor's “放到画面上” (put on screen). An existing caption layer does not stop a new one from being built (§7.9 “no overwrite”).
  */
 
 const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };
@@ -297,7 +295,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     const seq = sequence([video('a', 0, 90), caption('o1', 's1', 'orig')], tracks);
     const created = await plan(seq, translation(true));
     expect(types(created)).toEqual(['addTrack', 'putDocument', 'putDocument', 'setCaptionStyle', 'insertItems']);
-    // 新建的样式是默认预设（规范 §5.6）：经典涂装（黑色描边、投影），普通逗号句号换成空格。
+    // The new style is the default preset (spec §5.6): the classic look (black outline, drop shadow), with ordinary commas and periods replaced by spaces.
     expect(created.operations[2]).toMatchObject({ kind: 'caption-style', body: DEFAULT_CAPTION_STYLE_BODY });
     expect(DEFAULT_CAPTION_STYLE_BODY.style).toMatchObject({
       fontColor: '#FFFFFF',
@@ -340,7 +338,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     });
     expect(both.operations.some((op) => op.type === 'updateItem' || op.type === 'setCaptionStyle')).toBe(false);
 
-    // 没有空着的字幕轨：原文的轨道新建，排在样式前面。
+    // No free caption track: the original-text track is created new and placed before the style.
     const noTrack = await planCaptionLayer(reader(), {
       videoId: 'v',
       sequence: sequence([video('a', 0, 90)]),
@@ -353,13 +351,13 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(noTrack.operations[0]).toMatchObject({ ref: 'original-caption-track' });
     expect(noTrack.operations[3]).toMatchObject({ items: [{ trackRef: 'original-caption-track' }] });
 
-    // 不给 pairOriginal（固定流程）：只建译文的一层，paired 为 null。
+    // Without pairOriginal (fixed pipeline): only the translation's layer is created; paired is null.
     const only = await plan(seq, translation(true));
     expect(types(only)).toEqual(['addTrack', 'putDocument', 'insertItems']);
     expect(only).toMatchObject({ paired: null });
     expect(only).not.toHaveProperty('original');
 
-    // 同一份译文已有一层显示着：新的一层停用着放上去，也不顺带建原文。
+    // The same translation already has a layer showing: the new layer is placed disabled, and the original is not created along with it.
     const shown = sequence([video('a', 0, 90), caption('t1', 's2', 'tcap')], [...tracks, track('s2', 2, 'subtitle')]);
     const dup = await planCaptionLayer(reader(), {
       videoId: 'v',

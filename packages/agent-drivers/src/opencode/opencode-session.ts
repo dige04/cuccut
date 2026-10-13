@@ -1,13 +1,11 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * packages/server/src/server/agent/providers/opencode/v2/session.ts（先订阅事件流、等 `server.connected`；按 sessionID
- * 过滤事件；`mcp.add` 远程 MCP 后轮询 `mcp.list` 到 connected；开发者指令写进会话的 instructions 条目；恢复时
- * `session.get`），v2/turns.ts（回合由 `session.execution.*` 收尾、`session.active` 确认不再运行、steer 用
- * `delivery: 'steer'`、中断用 `session.interrupt`），v2/permissions.ts（`permission.asked` / `permission.replied`、
- * 以 once / reject 作答），v2/timeline.ts（文字与推理按 assistantMessageID 与 ordinal 分段）。
- * 改成 CucCut 的 AgentSession 事件：一个会话一个 serve 进程；「本会话放行」由 Driver 自己记，从不回原生的 always；
- * 访问模式映射成会话的权限规则（两边取更严的）；拒绝一个工具后 OpenCode 以 `interrupted(shutdown)` 结束执行，
- * 这里记成回合完成、那一步记成 declined。
+ * Parts of the mechanism are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * packages/server/src/server/agent/providers/opencode/v2/session.ts (subscribe to the event stream first, wait for `server.connected`; filter events by sessionID;
+ * after adding a remote MCP server with `mcp.add`, poll `mcp.list` until it is connected; developer instructions are written into the session's instructions entry; on resume,
+ * `session.get`), v2/turns.ts (a turn is closed by `session.execution.*`, `session.active` confirms it is no longer running, steer uses
+ * `delivery: 'steer'`, interrupt uses `session.interrupt`), v2/permissions.ts (`permission.asked` / `permission.replied`,
+ * answered with once / reject), v2/timeline.ts (text and reasoning are split by assistantMessageID and ordinal).
+ * Changed to CucCut's AgentSession events: one serve process per session; “allow for this session” is recorded by the Driver itself and never passed back as the native always; access mode maps to the session's permission rules (the stricter of the two sides wins); after a tool is denied, OpenCode ends execution with `interrupted(shutdown)`, so here the turn is recorded as completed and that step as declined.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -42,15 +40,15 @@ import { modelRef, waitForLocation } from './opencode-models.ts';
 import { OPENCODE_PRESET } from './opencode-preset.ts';
 import { OpenCodeHttpError, OpenCodeServer, type OpenCodeEvent } from './opencode-server.ts';
 
-/** OpenCode 的会话能力：v2 有插话（`delivery: 'steer'`）、原生审批、按 id 恢复，提示词可以带图片（data URI）。 */
+/** OpenCode's session capabilities: v2 supports mid-turn steering (`delivery: 'steer'`), native approvals, resume by id, and prompts can carry images (data URI). */
 export function openCodeCapabilities(): DriverProbe['capabilities'] {
   return { steer: true, approvals: true, resume: true, images: true };
 }
 
-/** Driver id（`BUILTIN_DRIVER_IDS` 里的 `opencode`）。 */
+/** Driver id (`opencode` in `BUILTIN_DRIVER_IDS`). */
 export const OPENCODE_DRIVER_ID: DriverId = 'opencode';
 
-/** 执行结束之后等多久再确认会话不再运行（排在后面的插话会立即开始下一次执行）。 */
+/** How long to wait after execution ends before confirming the session is no longer running (a queued steer starts the next execution immediately). */
 const SETTLE_MS = 150;
 
 interface OpenMessage {
@@ -62,16 +60,16 @@ interface OpenMessage {
 interface Turn {
   id: string;
   cancelled: boolean;
-  /** 这一轮里 CucCut 拒绝过工具：OpenCode 随后以 `interrupted(shutdown)` 结束执行。 */
+  /** In this turn CucCut denied a tool, so OpenCode ends execution with `interrupted(shutdown)`. */
   rejected: boolean;
   messages: Map<string, OpenMessage>;
   tools: Map<string, ToolState>;
   finished: Set<string>;
   declined: Set<string>;
-  /** 最近一次执行的结局；新的执行开始时清掉。 */
+  /** Outcome of the most recent execution; cleared when a new execution starts. */
   ending: { kind: 'succeeded' | 'failed' | 'interrupted'; error: string | null; reason: string | null } | null;
   settleTimer: NodeJS.Timeout | null;
-  /** 这一轮的提示词送到了（成功与否都算结束）：插话与中断等它，免得插话排到正文前面、中断落在执行开始之前。 */
+  /** The prompt for this turn was delivered (success or failure both count as done). Steer and interrupt wait for it, so a steer is not queued ahead of the body and an interrupt does not land before execution starts. */
   submitted: Promise<void>;
 }
 
@@ -92,12 +90,12 @@ export class OpenCodeSession implements AgentSession {
   readonly #mcpNames: string[];
   readonly #listeners = new Set<(event: AgentEvent) => void>();
   readonly #approvals = new Map<Id, PendingApproval>();
-  /** 「本会话放行」过的类别（`approvalOf` 的分类键）：之后同类的请求直接答应，不再来问。 */
+  /** Categories “allowed for this session” (the classification key of `approvalOf`): later requests of the same kind are approved directly without asking again. */
   readonly #grants = new Set<string>();
   #sessionId: string | null = null;
   #mode: AgentMode | null = null;
   #model: { providerID: string; id: string; variant?: string } | null = null;
-  /** 开发者指令写不进会话的 instructions 条目时（接口不在），在第一轮前面附上。 */
+  /** When developer instructions cannot be written into the session's instructions entry (the interface is missing), attach them in front of the first turn. */
   #instructions: string | null = null;
   #turn: Turn | null = null;
   #closed = false;
@@ -119,7 +117,7 @@ export class OpenCodeSession implements AgentSession {
     startupTimeoutMs?: number,
   ): Promise<OpenCodeSession> {
     if (options.confinement) {
-      // OpenCode 的权限规则管不住命令写到哪里、联不联网，做不到只写工作目录（架构设计 §6.9）。
+      // OpenCode's permission rules cannot control where commands write or whether they reach the network, so they cannot be limited to writing only the working directory (architecture design §6.9).
       throw new RpcError('driver-unavailable', DriversCommon.confinedUnsupported({ name: OPENCODE_PRESET.name }));
     }
     let server: OpenCodeServer;
@@ -145,7 +143,7 @@ export class OpenCodeSession implements AgentSession {
   async #open(options: CreateSessionOptions, timeoutMs: number): Promise<void> {
     const server = this.#server;
     const cwd = options.cwd;
-    // 先订阅事件流再建会话、发提示词：之后的事件一条不漏。
+    // Subscribe to the event stream before creating the session and sending the prompt, so no later event is missed.
     const connected = new Promise<void>((resolve) => (this.#connected = resolve));
     this.#unsubscribe = server.subscribe(
       (event) => this.#onEvent(event),
@@ -161,7 +159,7 @@ export class OpenCodeSession implements AgentSession {
         const res = await server.request<{ data: SessionInfo }>('GET', `/api/session/${encodeURIComponent(resumeId)}`);
         this.#adopt(res.data);
       } catch (error) {
-        // 原生会话恢复不了时如实告知，不假装上下文还在（架构设计 §2.5）。
+        // If native session resume fails, say so honestly rather than pretending the context is still there (architecture design §2.5).
         this.#log.warn('OpenCode session resume failed; starting a new one', { error: message(error) });
         this.#warn(DriversCommon.resumeFailed({ name: OPENCODE_PRESET.name, error: message(error) }));
       }
@@ -187,7 +185,7 @@ export class OpenCodeSession implements AgentSession {
     this.#model = info.model ?? null;
   }
 
-  /** 把 CucCut 的 MCP 服务登记到这个 serve 进程（只在内存里，不写 OpenCode 的配置文件），等到连上。 */
+  /** Register CucCut's MCP services with this serve process (in memory only, not written to OpenCode's config file), and wait until they are connected. */
   async #connectMcp(options: CreateSessionOptions, timeoutMs: number): Promise<void> {
     const servers = Object.entries(options.mcpServers ?? {});
     if (servers.length === 0) return;
@@ -238,7 +236,7 @@ export class OpenCodeSession implements AgentSession {
       });
     } catch (error) {
       if (!(error instanceof OpenCodeHttpError) || error.status !== 404) throw error;
-      // 这个版本没有会话的 instructions 条目（实验接口）：退回到第一轮前面附上。
+      // This version has no session instructions entry (experimental interface): fall back to attaching them in front of the first turn.
       this.#instructions = text;
     }
   }
@@ -272,7 +270,7 @@ export class OpenCodeSession implements AgentSession {
     turn.submitted = this.#server.request('POST', `/api/session/${sessionId}/prompt`, { body }).then(
       () => undefined,
       (error: unknown) => {
-        // 进程退了：交给 session.exited（Harness 记成 AGENT_EXITED），这里不再报一遍。
+        // The process exited: leave it to session.exited (the Harness records AGENT_EXITED); not reported again here.
         if (this.#server.hasExited) return this.#dropTurn(turn);
         this.#finishTurn(turn, 'failed', DriversOpencode.promptRejected({ name: OPENCODE_PRESET.name, error: message(error) }), null);
       },
@@ -306,7 +304,7 @@ export class OpenCodeSession implements AgentSession {
       const res = await this.#server.request<{ interrupted?: boolean }>('POST', `/api/session/${this.#requireSession()}/interrupt`, {
         timeoutMs: 15_000,
       });
-      // 没有在运行（执行刚好结束、提示词还没开始执行）：确认一下会话状态再收尾。
+      // Not running (execution just ended, and the prompt has not started executing yet): confirm the session state before finishing.
       if (res?.interrupted !== true) this.#scheduleSettle(turn, 0);
       return { status: 'requested' };
     } catch (error) {
@@ -319,7 +317,7 @@ export class OpenCodeSession implements AgentSession {
     const pending = this.#approvals.get(approvalId);
     if (!pending) return;
     this.#approvals.delete(approvalId);
-    // 「总是允许」的规则归 Harness 存；原生侧只按会话级放行处理，由这里记住，不回 OpenCode 的 always（它会写进原生的规则）。
+    // “Always allow” rules are stored by the Harness. The native side only handles session-level allow, which is recorded here; the always is not sent back to OpenCode (it would be written into native rules).
     if (response.decision === 'accept-for-session' || response.decision === 'accept-always') this.#grants.add(pending.grantKey);
     const accept = response.decision === 'accept' || response.decision === 'accept-for-session' || response.decision === 'accept-always';
     if (!accept) this.#markRejected(pending);
@@ -332,7 +330,7 @@ export class OpenCodeSession implements AgentSession {
     const early = this.#early;
     if (early) {
       this.#early = null;
-      // 订阅方可能还没登记好这个会话（AgentManager 订阅之后才记下它）：下一个微任务再补发。
+      // The subscriber may not have registered this session yet (AgentManager records it only after subscribing): re-emit on the next microtask.
       queueMicrotask(() => early.forEach((event) => this.#emit(event)));
     }
     return () => this.#listeners.delete(listener);
@@ -349,11 +347,11 @@ export class OpenCodeSession implements AgentSession {
     if (turn?.settleTimer) clearTimeout(turn.settleTimer);
     await this.#settleApprovals(null, false);
     this.#unsubscribe?.();
-    // 不删原生会话：之后还要按 id 恢复。
+    // Do not delete the native session: it must be resumable by id later.
     await this.#server.close();
   }
 
-  // ---- 每一轮的模式与模型 ----
+  // ---- Mode and model for each turn ----
 
   async #applyMode(mode: AgentMode): Promise<void> {
     if (mode === this.#mode) return;
@@ -361,14 +359,14 @@ export class OpenCodeSession implements AgentSession {
       await this.#server.request('PATCH', `/api/session/${this.#requireSession()}`, { body: { permissions: permissionRules(mode) } });
       this.#mode = mode;
     } catch (error) {
-      // 设不上就不开这一轮：按更宽的规则跑会越过 CucCut 的访问模式。
+      // If it cannot be set, do not start this turn: running with broader rules would get past CucCut's access mode.
       throw agentError('driver-failed', DriversOpencode.setModeFailed({ name: OPENCODE_PRESET.name, error: message(error) }), null);
     }
   }
 
   async #applyModel(model: { providerID: string; id: string; variant?: string }): Promise<void> {
     const current = this.#model;
-    // `default` 是 OpenCode 自己的「不设强度」。
+    // `default` is OpenCode's own “no effort set”.
     const variant = (ref: { variant?: string } | null) => (ref?.variant && ref.variant !== 'default' ? ref.variant : null);
     if (current && current.providerID === model.providerID && current.id === model.id && variant(current) === variant(model)) return;
     try {
@@ -383,7 +381,7 @@ export class OpenCodeSession implements AgentSession {
     }
   }
 
-  /** CucCut 的输入 → `session.prompt` 的请求体：图片作为 data URI 文件（不支持图片时 Harness 不会传）。 */
+  /** CucCut input → `session.prompt` request body: images as data URI files (the Harness does not pass them when images are unsupported). */
   async #prompt(input: AgentInput): Promise<{ text: string; files?: Array<{ uri: string; name: string }> }> {
     const text = this.#instructions ? `<system-instructions>\n${this.#instructions}\n</system-instructions>\n\n${input.text}` : input.text;
     const files: Array<{ uri: string; name: string }> = [];
@@ -394,7 +392,7 @@ export class OpenCodeSession implements AgentSession {
     return files.length > 0 ? { text, files } : { text };
   }
 
-  // ---- 事件流 ----
+  // ---- Event stream ----
 
   #onEvent(event: OpenCodeEvent): void {
     if (event.type === 'server.connected') {
@@ -410,7 +408,7 @@ export class OpenCodeSession implements AgentSession {
       return;
     }
     if (event.type === 'permission.replied') {
-      // 别处（例如 OpenCode 自己的界面）答了：收起 CucCut 这边的卡片。
+      // Answered elsewhere (for example in OpenCode's own UI): dismiss the card on CucCut's side.
       const requestId = data.requestID;
       for (const [approvalId, pending] of this.#approvals) {
         if (pending.requestId !== requestId) continue;
@@ -532,7 +530,7 @@ export class OpenCodeSession implements AgentSession {
   #onPermission(request: PermissionRequest): void {
     const turn = this.#turn;
     if (!turn || turn.cancelled || this.#closed) {
-      // 回合之外（或已在取消）的请求没人来批：拒绝。
+      // Requests outside a turn (or while cancelling) have no one to approve them: deny.
       void this.#reply(request.id, 'reject');
       return;
     }
@@ -566,7 +564,7 @@ export class OpenCodeSession implements AgentSession {
     if (pending.toolId) turn.declined.add(pending.toolId);
   }
 
-  /** 执行结束（或中断没有命中）之后：稍等片刻，确认会话不再运行再收尾；期间开始了新的执行就继续这一轮。 */
+  /** After execution ends (or an interrupt matched nothing): wait briefly, confirm the session is no longer running, then finish. If a new execution starts in the meantime, continue this turn. */
   #scheduleSettle(turn: Turn, delayMs: number): void {
     if (turn.settleTimer) clearTimeout(turn.settleTimer);
     turn.settleTimer = setTimeout(() => {
@@ -581,7 +579,7 @@ export class OpenCodeSession implements AgentSession {
       const res = await this.#server.request<{ data?: Record<string, unknown> }>('GET', '/api/session/active');
       if (this.#turn !== turn || turn.settleTimer) return;
       if (this.#sessionId && res?.data?.[this.#sessionId]) {
-        // 还在运行：等它的执行事件。
+        // Still running: wait for its execution events.
         if (!turn.ending) return;
         this.#scheduleSettle(turn, SETTLE_MS * 4);
         return;
@@ -618,7 +616,7 @@ export class OpenCodeSession implements AgentSession {
       this.#emit({ type: 'item.completed', turnId: turn.id, item: { kind: message.kind, id: message.id, text: message.text } });
     }
     turn.messages.clear();
-    // 回合结束时还没有终态的步骤：被拒的记成 declined，别的不能当成完成。
+    // Steps still without a terminal state when the turn ends: denied ones are recorded as declined; others must not count as completed.
     for (const [id, tool] of turn.tools) {
       if (turn.finished.has(id)) continue;
       turn.finished.add(id);
@@ -635,7 +633,7 @@ export class OpenCodeSession implements AgentSession {
     if (this.#turn === turn) this.#turn = null;
   }
 
-  /** 挂着的审批收起（`reject` 为 true 时同时回原生侧拒绝）。`turnId` 为 null 时全部。 */
+  /** Dismiss pending approvals (when `reject` is true, also deny them on the native side). When `turnId` is null, dismiss all of them. */
   async #settleApprovals(turnId: string | null, reject: boolean): Promise<void> {
     const replies: Promise<void>[] = [];
     for (const [approvalId, pending] of this.#approvals) {
@@ -649,10 +647,10 @@ export class OpenCodeSession implements AgentSession {
 
   async #onStreamClosed(error: DriverText | null): Promise<void> {
     if (this.#closed || this.#server.hasExited) return;
-    // 进程退出时事件流往往先断：稍等一下，是退出就按退出报（原因更准）。
+    // When the process exits, the event stream often drops first: wait a moment. If it was an exit, report it as an exit (the reason is more accurate).
     await Promise.race([this.#server.exited, new Promise((resolve) => setTimeout(resolve, 1_000).unref())]);
     if (this.#closed || this.#server.hasExited) return;
-    // 事件流断了就收不到回合的进展：当作智能体退出，结束 serve（随后发 session.exited）。
+    // Once the event stream drops, turn progress cannot be received: treat it as the agent exiting, and end serve (then emit session.exited).
     this.#log.warn('OpenCode event stream disconnected', { error: textOf(error) });
     this.#streamError = DriversOpencode.streamLost({ error: error ?? DriversCommon.unknownReason() });
     void this.#server.close();
@@ -679,7 +677,7 @@ export class OpenCodeSession implements AgentSession {
   }
 
   #emit(event: AgentEvent): void {
-    // 开会话期间的提示（恢复失败、MCP 连不上）在 Harness 订阅之前发出：先存着，订阅时补发。
+    // Hints emitted during session startup (resume failure, MCP not connecting) come before the Harness subscribes: hold them and re-emit on subscribe.
     if (this.#early) {
       this.#early.push(event);
       return;

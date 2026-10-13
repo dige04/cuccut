@@ -1,10 +1,10 @@
-//! 8 位 RGBA → PNG（`cuccut.image-png/v1`）。v2 在内核里用 `image` crate 编码；这里只要 PNG，直接用 `png`。
+//! 8-bit RGBA → PNG (`cuccut.image-png/v1`). v2 encodes with the `image` crate inside its kernel; here only PNG is needed, so `png` is used directly.
 
 use anyhow::{Result, ensure};
 
 use super::RawImage;
 
-/// 编码成 PNG 字节。像素数与宽高对不上是错误。
+/// Encodes to PNG bytes. A mismatch between the pixel count and width × height is an error.
 pub fn encode_rgba(image: &RawImage) -> Result<Vec<u8>> {
     let expected = image.width as usize * image.height as usize * 4;
     ensure!(image.width > 0 && image.height > 0, "图片宽高为 0");

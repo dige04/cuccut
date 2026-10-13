@@ -1,11 +1,11 @@
 /**
- * 代码包运行时（架构设计 §8、§13.1 `code-runtime`）：浏览器合成的导入验证、离屏执行、取帧与烘焙。
+ * Code-package runtime (architecture design §8, §13.1 `code-runtime`): import validation, off-screen execution, frame capture and baking for browser compositions.
  *
- * - `bundle-inspect.ts`：读目录、拒绝符号链接与白名单外的文件、算 `contentHash`、校验或合成清单、静态扫描网络引用。
- * - `composition-host.ts`：Electron 离屏窗口的宿主进程（JSON 行子进程），拦截一切非 `file:` / `data:` 请求。
- * - `composition-adapter.ts`：两种作者合同（`cuccut/1`、`hyperframes/1`）在页面里的统一取帧脚本。
- * - `bundle-verify.ts`：代码包规范 §6.2 的验证项，产出 `CodeBundleVerificationReport`。
- * - `composition-bake.ts`：按输出帧率逐帧取 PNG，经 ffmpeg 封成带 alpha 的 QuickTime，产出 `BakeRecord` 的素材侧字段。
+ * - `bundle-inspect.ts`: reads the directory, rejects symbolic links and files outside the allowlist, computes `contentHash`, validates or synthesizes the manifest, and statically scans for network references.
+ * - `composition-host.ts`: the host process for Electron off-screen windows (a JSON-line child process), which intercepts every request other than `file:` / `data:`.
+ * - `composition-adapter.ts`: the unified frame-capture script in the page for the two author contracts (`cuccut/1`, `hyperframes/1`).
+ * - `bundle-verify.ts`: the verification items of the code-package spec §6.2, producing `CodeBundleVerificationReport`.
+ * - `composition-bake.ts`: captures PNGs frame by frame at the output frame rate, encodes them via ffmpeg into an alpha QuickTime, and produces the asset-side fields of `BakeRecord`.
  */
 
 export {

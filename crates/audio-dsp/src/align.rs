@@ -1,8 +1,8 @@
-//! 延迟与相位对齐：整数 / 分数延迟、FFT 互相关找时差与极性、把一条信号对齐到参考。
+//! Delay and phase alignment: integer / fractional delay, FFT cross-correlation to find the time offset and polarity, and aligning one signal to a reference.
 
 use crate::fft::{Fft, next_pow2};
 
-/// 整数延迟（正数往后推、负数往前拉），长度不变，空出的地方补零。
+/// Integer delay (positive shifts later, negative pulls earlier); length unchanged, vacated positions are zero-filled.
 pub fn delay(x: &[f32], lag: isize) -> Vec<f32> {
     let n = x.len() as isize;
     (0..n)
@@ -13,7 +13,7 @@ pub fn delay(x: &[f32], lag: isize) -> Vec<f32> {
         .collect()
 }
 
-/// 分数延迟（秒，可为负）：整数部分直接移位，小数部分用 Kaiser 窗 sinc（前后各 16 抽头）插值。
+/// Fractional delay (seconds, may be negative): the integer part is a direct shift; the fractional part is interpolated with a Kaiser-windowed sinc (16 taps on each side).
 pub fn fractional_delay(x: &[f32], seconds: f64, sr: f64) -> Vec<f32> {
     let d = seconds * sr;
     let whole = libm::floor(d);
@@ -66,16 +66,16 @@ pub fn fractional_delay(x: &[f32], seconds: f64, sr: f64) -> Vec<f32> {
         .collect()
 }
 
-/// 互相关结果。
+/// Cross-correlation result.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Lag {
-    /// `x` 相对 `reference` 晚了多少个采样（正数：`x` 要往前拉这么多才对齐）。
+    /// How many samples `x` is later than `reference` (positive: `x` must be pulled earlier by this much to align).
     pub lag: isize,
-    /// 该时差下的归一化相关系数（−1..1）；负数表示极性相反。
+    /// Normalized correlation coefficient at this offset (−1..1); a negative value means opposite polarity.
     pub correlation: f64,
 }
 
-/// 在 `±max_lag` 内按 |相关| 最大找 `x` 相对 `reference` 的时差（FFT 互相关）。
+/// Find the offset of `x` relative to `reference` within `±max_lag`, maximizing |correlation| (FFT cross-correlation).
 pub fn find_lag(reference: &[f32], x: &[f32], max_lag: usize) -> Lag {
     let n = reference.len().max(x.len());
     let size = next_pow2(n + max_lag + 1).max(2);
@@ -121,7 +121,7 @@ pub fn find_lag(reference: &[f32], x: &[f32], max_lag: usize) -> Lag {
     best
 }
 
-/// 把 `x` 对齐到 `reference`：按 [`find_lag`] 移位，极性相反时翻转。返回对齐后的信号与时差。
+/// Align `x` to `reference`: shift by [`find_lag`], and flip if the polarity is opposite. Returns the aligned signal and the offset.
 pub fn align_to(reference: &[f32], x: &[f32], max_lag: usize) -> (Vec<f32>, Lag) {
     let lag = find_lag(reference, x, max_lag);
     let mut y = delay(x, -lag.lag);

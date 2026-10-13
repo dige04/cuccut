@@ -19,7 +19,7 @@ import { ColorField, Note, PRow, Sec, SecHead, Seg, ValueRow } from './inspector
 
 type PaletteId = (typeof SEQUENCE_PALETTES)[number]['id'] | 'custom';
 
-/** 画幅档的版面默认（内核 `LayoutTokens`：横 / 方 / 竖），属性页没有排版计划，按画布比例取。 */
+/** Default layout for the aspect-ratio tiers (core `LayoutTokens`: landscape, square, portrait). The properties page has no layout plan, so it uses the canvas ratio. */
 function layoutTokens(canvas: { width: number; height: number }): { density: number; fit: number } {
   const ratio = canvas.width / Math.max(1, canvas.height);
   if (ratio > 1.2) return { density: 0.65, fit: 0.6 };
@@ -51,12 +51,9 @@ const samePalette = (a: SequencePalette, b: SequencePalette) =>
 const pct = (value: number) => Math.round(value * 100);
 
 /**
- * 字幕属性页「倒鸭子」（原型 panel-daoyazi.jsx，字幕样式模型设计 §6 / §9）：`layout.mode === 'sequence'` 时代替「当前词」
- * 与「动效」两段。整条轨的选项（预设、动感、配色、换一版、镜头与排版）落在 `wordAnimation.caption` 里；只写用户改过的
- * 镜头键（显式写出的会盖过预设档）。
+ * Caption properties page “倒鸭子” (reverse) (prototype panel-daoyazi.jsx; caption style model design §6 / §9): when `layout.mode === 'sequence'`, it replaces the “当前词” (current word) and “动效” (motion) sections. The options for the whole track (presets, dynamics, color scheme, “换一版” (another version), camera and layout) are stored in `wordAnimation.caption`. Only camera keys the user has changed are written; explicitly written keys override the preset.
  *
- * TODO（逐段操作）：只给当前动画段换一版（`seqSeeds`）、主角词、断段与固定行要按段落实例记录，Studio 样式还没有落点，
- * 先不出。
+ * TODO (per-segment operations): rerolling only the current animation segment (`seqSeeds`), hero words, segment breaks and fixed lines need to be recorded per paragraph instance. Studio style has no place for them yet, so they are not shown for now.
  */
 export function CaptionSequenceSection(props: WordSectionProps & { canvas: { width: number; height: number } }) {
   const { isDisabled, onLive, onCommit, canvas } = props;
@@ -111,7 +108,7 @@ export function CaptionSequenceSection(props: WordSectionProps & { canvas: { wid
             value={o.preset}
             options={(['standard', 'light'] as const).map((key) => ({ key, label: P.sequencePresets[key] }))}
             isDisabled={isDisabled}
-            // 换预设档时清掉显式的镜头键：写出来的会盖过预设档（内核 `from_value`）。
+            // When switching preset tiers, clear the explicit camera keys: written ones would override the preset (core `from_value`).
             onChange={(preset) =>
               commit((s) => ({
                 ...s,
@@ -140,7 +137,7 @@ export function CaptionSequenceSection(props: WordSectionProps & { canvas: { wid
                 aria-pressed={paletteId === p.id}
                 isDisabled={isDisabled}
                 className={({ isFocusVisible, isDisabled: off }) => swatch({ isOn: paletteId === p.id, isFocusVisible, isDisabled: off })}
-                // 配色色块画的是视频画面里的颜色，不随界面主题变。
+                // The color swatches show colors from the video frame, so they do not change with the UI theme.
                 style={{
                   background: `linear-gradient(135deg, ${p.palette.accent} 0 50%, ${p.palette.secondary} 50% 100%)`,
                   boxShadow: `inset 0 0 0 3px ${p.palette.primary}`,

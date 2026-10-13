@@ -4,7 +4,7 @@ import { ApiError } from './model-api-errors.ts';
 import { chatRequest } from './model-api-openai.ts';
 import { listModels, resolveModel } from './model-api-routing.ts';
 
-/** 模型接口服务的路由与参数映射（不需要 Runtime）：节点与智能体的开关、名字的三种写法、聊天参数。 */
+/** Routing and parameter mapping of the model API service (does not need the Runtime): node and agent switches, the three ways of writing a name, chat parameters. */
 
 function provider(providerId: string, kind: ProviderKind, models: string[], available = true) {
   return { providerId, kind, label: providerId, config: null, available, models: models.map((modelId) => ({ modelId, available: true })) };
@@ -68,7 +68,7 @@ describe('模型接口服务的路由', () => {
       modelId: 'gpt-6',
     });
 
-    // 开关关着：那一类的模型按名请求是 404；这种能力一个可路由的都没有时 503。
+    // Switch off: a request by name for a model of that kind is 404; when the capability has no routable model at all, 503.
     expect(failure(() => resolveModel('node:studio/qwen3-asr', 'transcribe', VIEW, OFF, ALIASES))).toMatchObject({
       status: 404,
       code: 'MODEL_NOT_FOUND',
@@ -77,7 +77,7 @@ describe('模型接口服务的路由', () => {
       status: 503,
       code: 'CAPABILITY_NOT_CONFIGURED',
     });
-    // 别名的能力不对、Provider 不可用：404 / 503。
+    // Alias with the wrong capability, or provider unavailable: 404 / 503.
     expect(failure(() => resolveModel('whisper-1', 'generateText', VIEW, all, ALIASES))).toMatchObject({ status: 404 });
     expect(failure(() => resolveModel('openai/gpt-image-1', 'generateImage', VIEW, all, ALIASES))).toMatchObject({ status: 503 });
   });

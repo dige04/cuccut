@@ -18,12 +18,10 @@ import { translationMessages, translationSchema } from './translation-prompts.ts
 import { joinWords, sourceSentences, translationProblems, type FrozenSource } from './translation-document.ts';
 
 /**
- * 翻译流程（架构设计 §7.9，视频格式规范 §5.3）：句子的读取与派生（字幕与翻译核心的规则，经 `@cuccut/editor-wasm`）、
- * 参数，以及整条流程对着进程内的假视频：翻译这一步是真的 Speech Worker（`CUCCUT_SPEECH_WORKER` 或引擎宿主旁边），
- * 每次模型调用经真实的 `TextRunner` 交给假的文本 Provider（`fakeSpeechAnswer`）。覆盖正常完成、截断的答案重发、
- * 一直不合时停在翻译这一步且不写视频、没有配置文本模型、执行期间源文档改了、字幕层（只看译文与双语、撤销用的事务）、
- * 预算拒绝带着 `pendingGrants`、停止（中断）之后从检查点续跑不重做、取消。经网关与真实引擎的端到端测试在 runtime-core。
- * 没有构建 Speech Worker 或 editor-wasm 时这些流程测试跳过。
+ * Translation flow (architecture design §7.9, video format spec §5.3): reading and deriving sentences (subtitle and translation core rules, via `@cuccut/editor-wasm`),
+ * parameters, and the whole flow run against an in-process fake video. The translation step is the real Speech Worker (`CUCCUT_SPEECH_WORKER` or next to the engine host),
+ * and each model call goes through the real `TextRunner` to a fake text provider (`fakeSpeechAnswer`). Covers normal completion, resending of truncated answers, staying at the translation step without writing the video when output never matches, no text model configured, the source document changing during execution, the subtitle layer (translation-only and bilingual, the transaction used for undo), budget rejection carrying `pendingGrants`, resuming from the checkpoint after a stop (interruption) without redoing work, and cancellation. End-to-end tests through the gateway and the real engine are in runtime-core.
+ * These flow tests are skipped when the Speech Worker or editor-wasm is not built.
  */
 
 const command = resolveSpeechWorkerCommand(process.env.CUCCUT_ENGINE_HOST ?? null);
@@ -61,7 +59,7 @@ function speechBody(words: Word[], sentences: unknown = null, speakers: Array<{ 
   };
 }
 
-/** n 句英文，每句三个词，句间停顿 2.1 秒；`speakers` 时两个说话人轮流。 */
+/** n English sentences, three words each, with a 2.1-second pause between sentences; with `speakers`, two speakers take turns. */
 function sentencesBody(n: number, speakers = false) {
   const words: Word[] = [];
   for (let i = 0; i < n; i++) {
@@ -102,7 +100,7 @@ describe.skipIf(!wasm)('原文的句子（字幕与翻译核心的规则）', ()
     );
     expect('sentences' in read && read.derivation).toBe('speech-doc/sentences');
     const sentences = 'sentences' in read ? read.sentences : [];
-    // 1.5 秒（e → f）不断，1.9 秒（g → h）断；换说话人断。
+    // A 1.5-second gap (e → f) does not break the sentence, a 1.9-second gap (g → h) does; a speaker change breaks it.
     expect(sentences.map((s) => [s.id, s.text, s.wordIds, s.start, s.end])).toEqual([
       ['s-a', '你好；世界。', ['a', 'b'], 0, 200],
       ['s-c', 'Hello there short gap', ['c', 'e', 'f', 'g'], 300, 2300],
@@ -200,8 +198,8 @@ describe('拼接、提示词与批的核对（字幕文件的翻译用）', () =
 });
 
 /**
- * 进程内的假视频：文档、版本、根序列与写入的编辑。根序列默认是空的（字幕层这一步投不到画面上，照样完成）；
- * `placeAsset` 把一个取用素材的视频实例放上去，转写记下这个素材。每次提交回一笔事务的 ID。
+ * In-process fake video: documents, versions, the root sequence and the edits written. The root sequence is empty by default (the subtitle-layer step does not show on screen, but still completes);
+ * `placeAsset` puts a video instance that uses an asset onto it, and the transcription records that asset. Each commit returns a transaction ID.
  */
 class FakeVideos implements CaptionVideos {
   revision = 'r1';
@@ -210,7 +208,7 @@ class FakeVideos implements CaptionVideos {
   applied: Array<{ commandId: string; expectedRevision: string; operations: EditOperation[] }> = [];
   open = true;
   translations = 0;
-  /** 根序列上的实例（默认没有）。 */
+  /** Instances on the root sequence (none by default). */
   items: unknown[] = [];
   tracks: unknown[] = [];
 
@@ -266,21 +264,21 @@ class FakeVideos implements CaptionVideos {
     return { revision: rev, body: structuredClone(this.bodies.get(`${documentId}@${rev}`)) };
   }
 
-  /** 别处（编辑器、智能体）写了一份文档的新版本。 */
+  /** A new version of a document was written elsewhere (by the editor or an agent). */
   putBody(id: string, body: unknown, revision: string): void {
     this.documents[id]!.currentRevision = revision;
     this.bodies.set(`${id}@${revision}`, body);
     this.revision = `r${Number(this.revision.slice(1)) + 1}`;
   }
 
-  /** 一份文档当前版本的正文。 */
+  /** Body of a document's current version. */
   body<T = Record<string, unknown>>(id: string): T {
     return structuredClone(this.bodies.get(`${id}@${this.documents[id]!.currentRevision}`)) as T;
   }
 
   /**
-   * 译文文档依次是 doc_tr1、doc_tr2……；字幕文档、样式是 doc_cap<n>；字幕实例记到根序列上。给了 `documentId` 的
-   * `putDocument` 写那份文档的下一个版本（d1 → d2）。
+   * Translation documents are doc_tr1, doc_tr2, ... in order; subtitle documents and styles are doc_cap<n>; subtitle instances are recorded on the root sequence. A `putDocument` given a `documentId`
+   * writes the next version of that document (d1 → d2).
    */
   async apply(_videoId: string, request: { commandId: string; expectedRevision: string; operations: EditOperation[] }) {
     if (request.expectedRevision !== this.revision) throw new RpcError('conflict', '版本不符');
@@ -331,8 +329,8 @@ class FakeVideos implements CaptionVideos {
 }
 
 /**
- * 假的文本 Provider：按 Speech Worker 的请求答（`fakeSpeechAnswer`）；`hook` 可以在某次调用时改答案、抛错或等着。
- * `finish` 为 `length` 时当作被截断。
+ * Fake text provider: answers according to the Speech Worker's requests (`fakeSpeechAnswer`); `hook` can change the answer on a given call, throw, or wait.
+ * When `finish` is `length`, the answer is treated as truncated.
  */
 class FakeText implements TextProvider {
   readonly id = 'fake';
@@ -358,7 +356,7 @@ class FakeText implements TextProvider {
     return this.runs.map((run) => run.parameters.messages.find((m) => m.role === 'user')!.content);
   }
 
-  /** 翻译页请求过的句子 ID。 */
+  /** Sentence IDs requested by the translation page. */
   translated(from = 0): string[] {
     return this.users()
       .slice(from)
@@ -376,7 +374,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
   let configured: boolean;
   let model: TextModelInfo;
   let deps: Parameters<typeof translatePipeline>[0];
-  /** 经流程发出的每一次 `generate`（Runtime 的授权与账本包在这一层）；`refuse` 可以在某次调用时拒绝。 */
+  /** Every `generate` issued through the flow (the Runtime's authorization and ledger wrap around this layer); `refuse` can reject a given call. */
   let generated: number;
   let refuse: ((user: string) => Error | null) | null;
 
@@ -481,11 +479,11 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
     const record = await translate({ style: '口语', glossary: [{ source: 'Hello', target: '你好' }] });
     expect(record.state, JSON.stringify(record.error)).toBe('completed');
     expect(record).toMatchObject({ providerId: 'fake', modelId: 'writer', videoId: 'vid_1' });
-    // 流程参数默认不建字幕层：最后一步 captions 跳过。
+    // By default the flow parameters do not build a subtitle layer: the final captions step is skipped.
     expect(record.pipeline!.steps.map((s) => s.status)).toEqual(['skipped', 'completed', 'completed', 'completed', 'completed', 'skipped']);
     expect(record.pipeline!.summary).toMatchObject({ captions: { status: 'disabled', documentId: null } });
     expect(record.pipeline!.params).toMatchObject({ documentId: 'doc_speech', provider: 'fake', model: 'writer' });
-    // 每次调用都显式用冻结的模型；术语表与风格进系统消息。
+    // Every call explicitly uses the frozen model; the glossary and style go into the system message.
     expect(text.runs.length).toBeGreaterThan(0);
     expect(text.runs.every((r) => r.providerId === 'fake' && r.modelId === 'writer')).toBe(true);
     const system = text.runs.find((r) => r.parameters.messages[0]!.role === 'system')!.parameters.messages[0]!.content;
@@ -533,13 +531,13 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       targetLanguage: 'zh-CN',
       unitCount: 45,
     });
-    // 调用的事实计数在翻译这一步的进度里：经流程发出的每一次调用。
+    // The call count is reflected in the translation step's progress: every call issued through the flow.
     const progress = stepJob(record, 'translate').progress!;
     expect(progress).toMatchObject({ done: 45, total: 45, unit: 'units' });
     expect(progress.calls!.calls).toBe(generated);
     expect(generated).toBe(text.runs.length);
 
-    // 再翻译一次：新增一份文档，不替换已有的。
+    // Translate again: adds a new document and does not replace the existing one.
     const again = await translate();
     expect(again.state).toBe('completed');
     expect(videos.applied).toHaveLength(2);
@@ -619,7 +617,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
 
   it('执行期间源文档改了：写入失败（STALE_JOB_INPUT），视频不变；重试从源文档的当前版本重新读取并翻译', async () => {
     text.hook = () => {
-      // 第一次调用时用户改了转写：源文档有了新版本。
+      // On the first call, the user edited the transcript: the source document has a new version.
       if (videos.documents.doc_speech!.currentRevision === 'd1') {
         videos.bodies.set('doc_speech@d2', sentencesBody(2));
         videos.documents.doc_speech!.currentRevision = 'd2';
@@ -679,7 +677,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       expect(Number.isInteger(cue.start) && Number.isInteger(cue.end) && (cue.end as number) > (cue.start as number)).toBe(true);
       expect(cue.id).toMatch(/^q-t-s-w\d+a(~\d+)?$/);
     }
-    // 只看译文（默认）：新建一条这门语言的字幕轨，实例盖住取用素材的实例。
+    // Translation only (default): creates a subtitle track in this language, with the instance covering the instance that uses the asset.
     expect(captionsOp.operations.find((op) => op.type === 'addTrack')).toMatchObject({ kind: 'subtitle' });
     expect(captionsOp.operations.find((op) => op.type === 'insertItems')).toMatchObject({
       items: [{ type: 'caption', scopeItemIds: ['item_v'], documentRef: 'caption' }],
@@ -693,14 +691,14 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
         bilingual: false,
       },
     });
-    // 编辑器的「撤销」按这笔事务撤：建字幕层是单独的一笔，写译文是另一笔。
+    // The editor's “undo” reverts this transaction: creating the subtitle layer is a separate transaction, and writing the translation is another.
     expect((record.pipeline!.summary as { captions: { transactionId?: string } }).captions.transactionId).toBe('txn_2');
   }, 60_000);
 
   it('双语字幕层：与配对的原文字幕层共用一份新建的样式，原文被拿下的放回来', async () => {
     videos.putSpeech('doc_speech', sentencesBody(4), 'd1', 'asset_1');
     videos.placeAsset('asset_1');
-    // 原文字幕层（从这份转写生成，拿下了）。
+    // Source subtitle layer (generated from this transcript and taken over).
     videos.documents.cap_orig = {
       id: 'cap_orig',
       kind: 'caption',
@@ -729,7 +727,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
   }, 60_000);
 
   it('字幕层：captions: true 才建；同一份译文已经有字幕层时这一步跳过，摘要指向已有的那层；不给或 false 时跳过并说明；bilingual 要配 captions: true', async () => {
-    // 视频里已经有派生自（下一份写入的）译文 doc_tr1 的字幕层（例如编辑器在这期间建的）。
+    // The video already has a subtitle layer derived from the translation doc_tr1 (the one written next) (for example, one the editor created in the meantime).
     videos.documents.cap_1 = {
       id: 'cap_1',
       kind: 'caption',
@@ -772,7 +770,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
   ] as const)(
     '没有字幕层这一步的旧记录：重试时这一步按冻结的参数决定——%s',
     async (_label, params, status, captions) => {
-      // 旧版本的流程（没有 captions 这一步）写入失败，记录落盘。
+      // The old version of the flow (without the captions step) failed to write, and the record is saved to disk.
       const oldDir = path.join(dir, `old-${status}`);
       const oldJobs = testJobManager(oldDir);
       await oldJobs.open();
@@ -800,7 +798,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       expect(oldJobs.inspect(jobId).state).toBe('failed');
       await oldJobs.shutdown();
 
-      // 新版本打开同一份账本，重试。
+      // The new version opens the same ledger and retries.
       videos.apply = original;
       const newJobs = testJobManager(oldDir);
       await newJobs.open();
@@ -849,7 +847,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       pipeline: { stoppedAt: 'translate' },
     });
     expect(videos.applied).toEqual([]);
-    // 拒绝的那次没有发给模型：经流程发出的调用与模型收到的一致。
+    // The rejected call was never sent to the model: the calls issued through the flow match what the model received.
     expect(generated).toBe(text.runs.length);
     const done = new Set(text.translated());
     expect(done.size).toBeGreaterThan(0);
@@ -892,12 +890,12 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
     await stopping;
     await runner.idle();
     expect(videos.applied).toEqual([]);
-    // 第一页答完、记进了检查点；第二页没有答完。
+    // The first page was answered and recorded in the checkpoint; the second page was not answered.
     const firstPage = requestedSentences(text.users().filter((user) => speechRequestKind(user) === 'translate')[0]!);
     expect(firstPage.length).toBeGreaterThan(0);
     expect(firstPage.length).toBeLessThan(400);
 
-    // 重启：同一份账本与 staging。
+    // Restart: the same ledger and staging.
     text.hook = null;
     jobs = testJobManager(dir);
     await jobs.open();
@@ -940,7 +938,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
     type Cue = { id: string; start: number; end: number; text: string };
     const captionId = () => Object.values(videos.documents).find((d) => d.kind === 'caption')!.id;
 
-    /** 整篇翻译一次、建好字幕层（6 句，两个说话人），返回译文与字幕文档当时的正文。 */
+    /** Translates the whole text once and builds the subtitle layer (6 sentences, two speakers), returning the translation and the subtitle document's body at that time. */
     async function translated(): Promise<{ units: Unit[]; cues: Cue[] }> {
       videos.putSpeech('doc_speech', sentencesBody(6, true), 'd1', 'asset_1');
       videos.placeAsset('asset_1');
@@ -949,7 +947,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       return { units: videos.body<{ units: Unit[] }>('doc_tr1').units, cues: videos.body<{ cues: Cue[] }>(captionId()).cues };
     }
 
-    /** 转写改了一个词（新版本 d2）。 */
+    /** The transcript changed one word (new version d2). */
     function editWord(wordId: string, change: Record<string, unknown>): void {
       const body = videos.body<{ words: Array<Record<string, unknown>> }>('doc_speech');
       Object.assign(body.words.find((w) => w.id === wordId)!, change);
@@ -959,7 +957,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
     it('不点名：只重译原句改过与标了过期的句子，写成同一份译文的新版本；字幕层在同一笔事务里只换这几句的字幕条', async () => {
       const before = await translated();
       editWord('w2b', { text: 'numeral' });
-      // 用户在编辑器里把第 5 句标为过期。
+      // The user marked sentence 5 as stale in the editor.
       const marked = videos.body<{ units: Unit[] }>('doc_tr1');
       marked.units[4]!.status = 'stale';
       videos.putBody('doc_tr1', marked, 'd2');
@@ -970,7 +968,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       const record = await translate({ translationId: 'doc_tr1' });
       expect(record.state, JSON.stringify(record.error)).toBe('completed');
       expect(new Set(text.translated(from))).toEqual(new Set(['s-w2a', 's-w4a']));
-      // 一笔事务：译文的新版本与字幕文档，不新建文档、不新建字幕层。
+      // One transaction: the new translation version and the subtitle document, without creating a new document or a new subtitle layer.
       expect(videos.applied).toHaveLength(applied + 1);
       const ops = videos.applied.at(-1)!.operations as Array<Extract<EditOperation, { type: 'putDocument' }>>;
       expect(ops.map((op) => [op.type, op.documentId, op.kind])).toEqual([
@@ -994,13 +992,13 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       });
       expect(units.units[2]!.sourceFingerprint).not.toBe(before.units[2]!.sourceFingerprint);
 
-      // 字幕层：这两句的字幕条换成新译文、时间仍在原句之内；别的条逐字不变。
+      // Subtitle layer: the cues for these two sentences are replaced with the new translation, with their times still within the original sentences; other cues are unchanged word for word.
       const cues = videos.body<{ cues: Cue[] }>(captionId()).cues;
       const mine = (cue: Cue) => /^q-t-s-w[24]a(~\d+)?$/.test(cue.id);
       expect(cues.filter((c) => !mine(c))).toEqual(before.cues.filter((c) => !mine(c)));
       expect(cues.filter(mine).every((c) => c.text.includes('新的') || !c.text.includes('好的'))).toBe(true);
       expect(cues.filter(mine).length).toBeGreaterThan(0);
-      // 时间轴照旧：同一句的字幕条与重译之前同样的起止。
+      // Timeline unchanged: the cue for the same sentence has the same start and end as before the re-translation.
       const timing = (list: Cue[]) => list.filter(mine).map((c) => [c.id, c.start, c.end]);
       expect(timing(cues)).toEqual(timing(before.cues));
       expect(cues.find((c) => c.id === 'q-t-s-w2a')).toMatchObject({ speaker: '主持人' });
@@ -1013,7 +1011,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       });
       expect(record.pipeline!.summary).not.toHaveProperty('captions');
 
-      // 都新鲜了：再不点名地刷新，启动就拒绝。
+      // All are fresh: refreshing again without naming any sentence is rejected at startup.
       await expect(runner.start({ pipeline: 'translate', params: { videoId: 'vid_1', targetLanguage: 'zh-CN', translationId: 'doc_tr1' } }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({
         code: 'invalid-request',
       });
@@ -1030,7 +1028,7 @@ describe.skipIf(!command || !wasm)('翻译流程（真的 Speech Worker，假的
       expect(units[1]!.naturalText).toContain('新的');
       expect(units.filter((_, i) => i !== 1)).toEqual(before.units.filter((_, i) => i !== 1));
 
-      // 隐藏第 4 句的首词：句子 ID 换成 s-w3b，原来的单元 t-s-w3a 成了没有原句的。
+      // Hide the first word of sentence 4: the sentence ID becomes s-w3b, and the original unit t-s-w3a is left without a source sentence.
       editWord('w3a', { hidden: true });
       const removal = await translate({ translationId: 'doc_tr1' });
       expect(removal.state, JSON.stringify(removal.error)).toBe('completed');
@@ -1157,7 +1155,7 @@ describe.skipIf(!command || !wasm)('翻译流程用库里的术语表', () => {
       })
     ).entry;
 
-  /** 视频里启用的翻译用术语表（`library-selection` 文档）。 */
+  /** Translation glossaries enabled in the video (`library-selection` document). */
   const enable = (ids: string[]) => {
     videos.documents.doc_sel = {
       id: 'doc_sel',
@@ -1201,7 +1199,7 @@ describe.skipIf(!command || !wasm)('翻译流程用库里的术语表', () => {
 
     const record = await translate({ glossaries: [{ id: product.id }], glossary: [{ source: 'CucCut', target: '宝剪' }] });
     expect(record.state, JSON.stringify(record.error)).toBe('completed');
-    // 同一写法调用时给的库里的术语表优先于视频启用的；术语进 Speech Worker 的系统消息。
+    // When the same call supplies a library glossary, it takes precedence over the one enabled in the video; the terms go into the Speech Worker's system message.
     const system = systemPrompts().join('\n');
     expect(system).toContain('Hello → 您好');
     expect(system).toContain('number → 号');
@@ -1223,7 +1221,7 @@ describe.skipIf(!command || !wasm)('翻译流程用库里的术语表', () => {
         { library: 'glossaries', id: video.id, version: 1, contentHash: video.contentHash, name: '视频词' },
       ],
       inline: { contentHash: expect.stringMatching(/^sha256:/), count: 1 },
-      // 原文里出现过的术语（CucCut 没出现，不记）。
+      // Terms that appear in the source text (CucCut does not appear in it, so it is not recorded).
       terms: [
         { entryId: product.id, source: 'Hello', target: '您好' },
         { entryId: video.id, source: 'number', target: '号' },

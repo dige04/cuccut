@@ -17,7 +17,7 @@ const scroll = style({ overflow: 'auto', flexGrow: 1, minHeight: 0, backgroundCo
 const paper = style({ position: 'relative', marginX: 'auto', backgroundColor: 'white', color: 'black', width: 'fit' });
 const note = style({ padding: 24, font: 'ui-sm', color: 'gray-600' });
 
-/** PDF.js 与参考 panel 一样使用独立 Worker、canvas 和可选中的文本层；仅渲染当前页。 */
+/** Like the reference panel, PDF.js uses a separate Worker, canvas and selectable text layer; only the current page is rendered. */
 export default function PdfPreview({ url, fileName }: { url: string; fileName: string }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState('');

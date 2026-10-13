@@ -1,11 +1,9 @@
-// ElevenLabs 即时音色克隆（Instant Voice Cloning，架构设计 §5.9）。2026-10-03 按公开文档写成，离线没能逐项核对：
+// ElevenLabs Instant Voice Cloning (architecture design §5.9). Written from the public documentation on 2026-10-03, and not checked item by item offline:
 //   https://elevenlabs.io/docs/api-reference/voices/ivc/create
 //   https://elevenlabs.io/docs/api-reference/voices/delete
-// 按文档写的：`POST {base}/voices/add`，请求头 `xi-api-key`，multipart/form-data：`name`（必填）、`files`（一个或多个音频文件，
-// 必填）、`description`（可选）、`remove_background_noise`（可选，默认 false，不发）；200 的响应体 `{ voice_id, requires_verification }`。
-// `DELETE {base}/voices/{voice_id}`，200 的响应体 `{ status: 'ok' }`。
-// 没能确认、列在架构设计 §14 待评审的：音色已经不存在时删除返回的状态码（按 404 当作「远端已经没有」）；`requires_verification`
-// 为 true 时克隆能不能立即用于合成（照常记为有效，合成失败时如实报告）；单个文件与总上传大小的上限（参考录音本身不超过库的上限）。
+// As written in the docs: `POST {base}/voices/add`, with the request header `xi-api-key`, multipart/form-data: `name` (required), `files` (one or more audio files, required), `description` (optional), `remove_background_noise` (optional, default false, not sent). A 200 response body is `{ voice_id, requires_verification }`.
+// `DELETE {base}/voices/{voice_id}`, with a 200 response body of `{ status: 'ok' }`.
+// Not confirmed, and listed in architecture design §14 for review: the status code returned when deleting a voice that no longer exists (treated as 404, meaning “already gone on the remote side”). Whether a clone can be used for synthesis immediately when `requires_verification` is true (it is recorded as valid as usual, and a synthesis failure is reported honestly). The limits on a single file and on total upload size (the reference recording itself does not exceed the library's limit).
 import fs from 'node:fs/promises';
 import { ProviderFailure } from '@cuccut/models';
 import { voiceCloneTimeoutMs, type VoiceCloneAdapter, type VoiceCloneDeleteRequest, type VoiceCloneRequest } from '../adapter.ts';
@@ -20,7 +18,7 @@ export class ElevenLabsVoiceCloneAdapter implements VoiceCloneAdapter {
     const { config } = request;
     const bytes = await fs.readFile(request.file);
     const response = await providerFetch(
-      // 上传只发一次：5xx 之后重发可能在供应商那边多建一个克隆。
+      // The upload is sent only once. Resending after a 5xx may create an extra clone on the provider's side.
       httpOptions(config, { ...request.http, attempts: 1 }),
       {
         method: 'POST',

@@ -1,21 +1,13 @@
-//! 投影 / 发光（`filter.dropShadow@1`）。
+//! Drop shadow / glow (`filter.dropShadow@1`).
 //!
-//! 结构与 `studio_export/render_plan.rs` 的字幕 glow 一致：**效果层 → bounded
-//! blur → 预乘 source-over 垫在原图之下**。这里把它写成一个单输入滤镜：阴影层
-//! 由输入自身的 alpha 着色而来。阴影层只开内容附近的局部窗口（不再整幅分配、
-//! 整幅拷贝），结果与整幅 `box_blur_bounded` + `composite_premultiplied_rgba`
-//! 逐字节相同，单测对拍。
+//! The structure matches the subtitle glow in `studio_export/render_plan.rs`: **effect layer → bounded blur → premultiplied source-over placed beneath the original image**. Here it is written as a single-input filter: the shadow layer is colored from the input's own alpha. The shadow layer only opens a local window near the content (no longer allocating or copying the whole frame), and the result is byte-identical to the whole-frame `box_blur_bounded` + `composite_premultiplied_rgba`, checked by unit tests.
 
 use super::blur::{ContentBox, MAX_BLUR_RADIUS, alpha_bbox, box_blur_premul_u8};
 use super::composite_premul::composite_premultiplied_row;
 
-/// `color` 是非预乘 RGBA 0..1；`dx`/`dy` 是整数像素位移。
+/// `color` is non-premultiplied RGBA 0..1; `dx`/`dy` are integer pixel offsets.
 ///
-/// 只在一块局部窗口里干活：窗口 = 位移后内容盒外扩 2×radius（夹在画布内）
-/// 与原内容盒的并集。与整幅阴影层逐字节相同的理由同 `box_blur_bounded`——
-/// 窗口里离非画布边界不足 radius 的像素，其模糊窗口只读得到零，两种算法都
-/// 得 0；其余像素的窗口不越出局部窗口。写回范围（模糊盒 ∪ 内容盒）也落在
-/// 窗口内。单测对拍整幅实现。
+/// Works only in a local window: the window is the union of the offset content box expanded by 2×radius (clamped to the canvas) and the original content box. It is byte-identical to the whole-frame shadow layer for the same reason as `box_blur_bounded`: pixels in the window that are more than radius away from the non-canvas boundary read only zeros in their blur window, so both algorithms give 0, and the windows of the other pixels do not extend beyond the local window. The write-back range (blur box ∪ content box) also falls within the window. Unit tests compare against the whole-frame implementation.
 pub fn drop_shadow(
     data: &mut [u8],
     width: u32,
@@ -31,7 +23,7 @@ pub fn drop_shadow(
         return;
     }
     let Some(content) = alpha_bbox(data, width_usize, height_usize) else {
-        return; // 整幅透明：没有可投影的内容
+        return; // Fully transparent: there is no content to cast a shadow
     };
     let shifted = ContentBox {
         rows: (content.rows.start as i64 + i64::from(dy)).clamp(0, height_usize as i64) as usize
@@ -67,8 +59,7 @@ pub fn drop_shadow(
     let local =
         |x: usize, y: usize| ((y - window.rows.start) * window_width + x - window.cols.start) * 4;
 
-    // 阴影层：把输入的 alpha 按 color 着色，并整体位移。着色只取决于 alpha
-    // 字节，先按 256 档查表（与逐像素现算同一个表达式）。
+    // Shadow layer: colors the input's alpha with `color` and shifts it as a whole. The coloring depends only on the alpha byte, so it is first looked up in a 256-entry table (the same expression as per-pixel computation).
     let (cr, cg, cb, ca) = (
         color[0].clamp(0.0, 1.0),
         color[1].clamp(0.0, 1.0),
@@ -122,7 +113,7 @@ pub fn drop_shadow(
         }
     };
 
-    // 阴影在下、原图在上：先把原图叠到阴影层，再把并集搬回。
+    // Shadow beneath, original image on top: first composite the original onto the shadow layer, then copy the union back.
     for y in content.rows.clone() {
         let start = local(content.cols.start, y);
         let end = local(content.cols.end, y);
@@ -150,7 +141,7 @@ mod tests {
     use super::super::composite_premul::composite_premultiplied_rgba;
     use super::*;
 
-    /// 窗口化之前的整幅实现，作对照组。
+    /// The whole-frame implementation from before windowing, kept as a control.
     fn reference_drop_shadow(
         data: &mut [u8],
         width: u32,
@@ -239,7 +230,7 @@ mod tests {
         let (width, height) = (71_u32, 47_u32);
         for round in 0..400 {
             let mut data = vec![0_u8; (width * height * 4) as usize];
-            // 随机矩形内撒合法预乘像素；偶尔贴边、偶尔只有一个像素。
+            // Inside random rectangles, scatter valid premultiplied pixels; sometimes touching the edge, sometimes just one pixel.
             let x0 = rng.below(width);
             let y0 = rng.below(height);
             let (w, h) = match round % 4 {
@@ -262,7 +253,7 @@ mod tests {
             let radius = [0, 1, 2, 5, 13, 40, 300][rng.below(7) as usize];
             let dx = rng.below(61) as i32 - 30;
             let dy = if round % 9 == 0 {
-                height as i32 + 3 // 整个阴影落到画布外
+                height as i32 + 3 // The whole shadow falls outside the canvas
             } else {
                 rng.below(41) as i32 - 20
             };

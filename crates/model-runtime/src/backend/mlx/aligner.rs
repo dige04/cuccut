@@ -1,16 +1,16 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/ForcedAligner.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/ForcedAligner.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3-ForcedAligner（0.6B，MLX 量化）：已知文本 + 音频 → 词时间。移植自 v2 `ccut-speech` 的 `aligner.rs`。
+//! Qwen3-ForcedAligner (0.6B, MLX quantized): known text + audio → word timings. Ported from v2 `ccut-speech`'s `aligner.rs`.
 //!
-//! 一次非自回归前向：音频塔编码、文本里每个词后面放两个时间戳槽，分类头在槽上给出 0.08 秒一格的时间，再单调化。
-//! 长音频（> 240 秒）的分段驱动在 [`crate::speech::align_common`]。
+//! One non-autoregressive forward pass: the audio tower encodes, two timestamp slots follow each word in the text, and a classification head gives times on those slots in 0.08 s steps, which are then made monotonic.
+//! The segmented driver for long audio (> 240 s) is in [`crate::speech::align_common`].
 //!
-//! v3 只改边界：文件按模型包清单取（[`VerifiedFiles`]），量化位数从 `quantize_config.json` 读，不再从仓库名推断。
+//! v3 changes only the boundary: files are taken from the model pack manifest ([`VerifiedFiles`]), and the quantization bit width is read from `quantize_config.json` instead of being inferred from the repo name.
 
 use anyhow::{Context, Result};
 use mlx_rs::Array;
@@ -40,8 +40,8 @@ pub struct ForcedAligner {
 }
 
 impl ForcedAligner {
-    /// 从 `aligner` 组件的文件加载：目录顶层的 `*.safetensors`、`vocab.json`（必需），`merges.txt`、
-    /// `tokenizer_config.json`、`quantize_config.json`（列出了才读）。
+    /// Loads from the files of the `aligner` component: the top-level `*.safetensors` and `vocab.json` in the directory (required), plus `merges.txt`,
+    /// `tokenizer_config.json` and `quantize_config.json` (read only if listed).
     pub fn load(files: &VerifiedFiles) -> Result<Self> {
         runtime::ensure_metal_device()?;
         let bits = aligner_quantization_bits(files.path("quantize_config.json"))?;
@@ -69,8 +69,8 @@ impl ForcedAligner {
     }
 
     fn align_once(&mut self, audio: &[f32], text: &str, language: &str) -> Result<Vec<AlignedWord>> {
-        // 与 Qwen3 ASR 一样，对齐器按 VAD 片段反复执行。只释放本轮已经不用的
-        // Metal 临时缓冲区，权重仍留在 `self`，以限制峰值而不牺牲后续片段的加载时间。
+        // As with Qwen3 ASR, the aligner runs repeatedly over VAD segments. Release only the Metal temporary buffers that this round no longer uses;
+        // the weights stay in `self`, which bounds peak memory without sacrificing load time for later segments.
         let _memory_cache_guard = MemoryCacheGuard::new();
         if audio.is_empty() || text.trim().is_empty() {
             return Ok(Vec::new());
@@ -94,8 +94,8 @@ impl ForcedAligner {
         let after = input_embeddings.index((.., audio_end as i32.., ..));
         let input_embeddings = mlx_rs::ops::concatenate_axis(&[before, typed_audio, after], 1)?;
         let (hidden, _) = self.text_decoder.decode(&input_embeddings, None, None)?;
-        // 只在时间戳位置上计算分类 logits：先按位置取 hidden 再投影，
-        // 避免整个序列 × 词表的大 matmul,也避免逐位置的 GPU 同步。
+        // Compute classification logits only at the timestamp positions: gather the hidden states at those positions first, then project,
+        // avoiding a large matmul over the whole sequence × vocabulary, and avoiding a GPU sync per position.
         let positions = input
             .timestamp_positions
             .iter()

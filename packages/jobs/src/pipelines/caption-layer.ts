@@ -30,46 +30,31 @@ import { readArtifact } from './translation-batches.ts';
 import type { PipelineVideos } from './translate.ts';
 
 /**
- * 固定流程的「建立字幕层」一步（架构设计 §7.9，产品设计 S01、S02）：给一份文稿（`speech`）或一份译文（`translation`）
- * 在根序列上建一层可编辑的字幕，一笔事务（视频格式规范 §3.8、§4.6）：
+ * The “建立字幕层” (create caption layer) step of the fixed pipeline (architecture design §7.9, product design S01, S02): given a script (`speech`) or a translation (`translation`), creates an editable caption layer on the root sequence in one transaction (video format spec §3.8, §4.6):
  *
- * - 写一份 `caption` 文档（`cuccut.caption/1`，素材时钟，派生自那份文稿或译文，记下素材与来源的版本，
- *   `extensions.pipeline` 记下这次运行），放一个字幕实例：作用实例是时间线上取用这个素材的实例，区间盖住它们；之后剪切、
- *   移动媒体，字幕跟着走。文稿的字幕条与编辑器的「生成字幕」切法相同（`caption-cues.ts`）；译文的字幕条是翻译时 Speech Worker
- *   按字幕与翻译核心的对齐切好的（产物 `cuccut.speech-worker.cues/1`），原样写进去。智能体自己写的译文没有 Worker 的字幕条
- *   （`captions_create`，§3.5）：按句级对齐取原句的时间、按显示宽度切条，与编辑器的「放到画面上」相同（`translationCues`）。
- * - 「字幕层」是根序列上引用这种字幕文档的字幕实例（§3.8：字幕显示靠实例）；只有文档、没有实例的不算。
- *   同一份文稿（译文）已经有字幕层时这一步记为 `skipped`，不建第二条字幕轨（S01 的通过标准）；只看派生关系
- *   （`sourceDocumentId`），编辑器建的与流程建的一视同仁。
- * - 时间线上没有取用这个素材的实例时不建（字幕投不到画面上），这一步照样完成并告警 `CAPTIONS_NOT_ON_TIMELINE`；
- *   切不出字幕条（没有词、译文全空）时告警 `CAPTIONS_EMPTY`。
+ * - Writes a `caption` document (`cuccut.caption/1`, on the media clock, derived from that script or translation, recording the versions of the media and the source; `extensions.pipeline` records this run) and places a caption instance. The acting instance is the instance on the timeline that uses this asset, and the range covers them; later, when the media is cut or moved, the captions follow it. The script's cues are split the same way as the editor's “生成字幕” (generate captions) (`caption-cues.ts`). The translation's cues were split by the Speech Worker at translation time, aligning captions to the translation core (artifact `cuccut.speech-worker.cues/1`), and are written as-is. A translation the agent wrote itself has no Worker cues (`captions_create`, §3.5): it takes the timing of the original sentences via sentence-level alignment and splits cues by display width, the same as the editor's “放到画面上” (put on screen) (`translationCues`).
+ * - The “字幕层” (caption layer) is a caption instance on the root sequence that references this kind of caption document (§3.8: caption display is driven by instances); a document without an instance does not count.
+ *   If the same script (translation) already has a caption layer, this step is recorded as `skipped`, and no second caption track is created (S01's acceptance criterion). Only the derivation (`sourceDocumentId`) is checked, so layers made in the editor and layers made by the pipeline are treated alike.
+ * - If no instance on the timeline uses this asset, the layer is not created (captions could not appear on screen); the step still completes and warns `CAPTIONS_NOT_ON_TIMELINE`. If no cues can be split (no words, or the translation is entirely empty), it warns `CAPTIONS_EMPTY`.
  *
- * 显示（§3.8「各自启用或停用」）：
- * - 文稿：放在第一条空着、没锁的字幕轨上，没有就新建一条。这个素材已经有别的原文字幕层显示在画面上时，新的一层
- *   以停用（`enabled: false`，编辑器里是「拿下来」的虚线 chip）放上去，不动已有的那层——同一种语言叠两层字是重复，
- *   选用哪一份是编辑器里的决定（§7.9「不覆盖」）；没有时直接显示。
- * - 译文：与编辑器的「放到画面上」相同。新建一条这门语言的字幕轨；只看译文（默认）时把配对的原文字幕层从画面上拿下
- *   （`enabled: false`，不删）；双语时两层共用一份字幕样式（预览按样式文档叠成两行，§5.6），原文没有样式时新建一份默认样式，
- *   原文被拿下的放回来。配对的原文锁住时不动它，只在它有样式时共用。
- * - 双语而时间线上没有这份转写的原文字幕层时（`pairOriginal`，智能体的 `captions_create`）：同一笔事务里先给转写建原文字幕层
- *   （与「文稿」的切法与放置相同，用自己的 ref），再建译文的一层，两层共用新建的样式；一次调用就是双语，撤销时两层一起撤。
- *   新的译文层本来就要停用着放上去（同一份译文已有一层显示着）时不顺带建原文。
+ * Display (§3.8, “enable or disable each separately”):
+ * - Script: placed on the first empty, unlocked caption track; a new track is created if there is none. When this asset already has another original caption layer displayed on screen, the new layer is placed disabled (`enabled: false`, shown as the dashed “pulled off” chip in the editor) and the existing layer is left alone. Two layers of the same language stacked on top of each other is duplication, and choosing which one to use is a decision made in the editor (§7.9 “no overwrite”). Otherwise it is shown directly.
+ * - Translation: same as the editor's “放到画面上” (put on screen). Creates a new track for this language. When only the translation is shown (the default), the paired original caption layer is taken off the screen (`enabled: false`, not deleted). When bilingual, the two layers share one caption style (the preview stacks them as two lines according to the style document, §5.6); if the original has no style, a new default style is created, and an original that was taken off is put back. If the paired original is locked, it is not touched; it only shares its style when it has one.
+ * - Bilingual, when the timeline has no original caption layer for this transcript (`pairOriginal`, the agent's `captions_create`): in the same transaction, first create the transcript's original caption layer (placed and split the same way as for a “script”, using its own ref), then create the translation's layer. The two layers share the newly created style. One call makes it bilingual, and undo reverts both layers together. If the new translation layer has to be placed disabled (the same translation already has a layer showing), the original is not created along with it.
  */
 
 type Json = Record<string, unknown>;
 
-/** 写字幕要读根序列（轨道与实例）。 */
+/** Writing captions reads the root sequence (tracks and instances). */
 export interface CaptionVideos extends PipelineVideos {
-  /** 根序列此刻的轨道与实例；视频没打开时 null。 */
+  /** The root sequence's tracks and instances at this moment; null when no video is open. */
   rootSequence(videoId: Id): Sequence | null;
 }
 
-/** 编辑器的 Studio 字幕样式（`packages/ui/src/render/text-style.ts` 的 `STUDIO_STYLE`）；双语时新建的默认样式用它。 */
+/** The editor's Studio caption style (`STUDIO_STYLE` in `packages/ui/src/render/text-style.ts`); the default style created for bilingual use is taken from it. */
 const STUDIO_STYLE = 'cuccut.legacy-studio-style/0.1';
 /**
- * 双语时新建的字幕样式：默认预设（视频格式规范 §5.6「默认预设」），与编辑器的 `DEFAULT_CAPTION_STYLE`
- * （`packages/ui/src/model/property-values.ts`，「经典」涂装、它的当前词变色加 `punct: true`）和渲染内核没有样式文档时的
- * `video_model::caption_style::default_studio_style` 逐字段相同；jobs 不能依赖 UI，所以这里各留一份，三处一起改。
+ * Caption style created for bilingual use: the default preset (video format spec §5.6, “default preset”), field-for-field identical to the editor's `DEFAULT_CAPTION_STYLE` (`packages/ui/src/model/property-values.ts`: the “classic” livery, with its current-word color change plus `punct: true`) and to `video_model::caption_style::default_studio_style`, which the render kernel uses when there is no style document. jobs cannot depend on the UI, so each keeps its own copy here; change all three together.
  */
 export const DEFAULT_CAPTION_STYLE_BODY: Json = {
   schema: STUDIO_STYLE,
@@ -98,7 +83,7 @@ export const DEFAULT_CAPTION_STYLE_BODY: Json = {
     punct: true,
   },
 };
-/** 可选的新字幕样式文档；未知 schema 不进入渲染器，已有样式不会被它覆盖。 */
+/** Optional new caption style document; an unknown schema does not reach the renderer, and an existing style is never overwritten by it. */
 export function readCaptionStyle(value: unknown): Json | undefined {
   if (value === undefined) return undefined;
   const object = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -132,14 +117,13 @@ function withCaptionStyle(operations: EditOperation[], body: Json): EditOperatio
   ];
 }
 
-/** 文稿字幕的来源记录（与编辑器 speech-cues.ts 的 `SPEECH_CAPTION_EXTENSION` 相同）。 */
+/** Source record for script captions (same as `SPEECH_CAPTION_EXTENSION` in the editor's speech-cues.ts). */
 export const SPEECH_CAPTION_EXTENSION = 'cuccut.speechCues';
-/** 译文字幕的来源记录（与编辑器 translation-cues.ts 的 `TRANSLATION_CAPTION_EXTENSION` 相同）。 */
+/** Source record for translation captions (same as `TRANSLATION_CAPTION_EXTENSION` in the editor's translation-cues.ts). */
 export const TRANSLATION_CAPTION_EXTENSION = 'cuccut.translationCues';
 
 /**
- * 字幕文档是不是从这份译文生成的（与编辑器 `translation-cues.ts` 的 `derivedFrom` 相同）：只有这种在译文改了之后跟着换
- * 字幕条；别处生成的切法不同，不去动。
+ * Whether the caption document was generated from this translation (same as `derivedFrom` in the editor's `translation-cues.ts`). Only this kind has its cues regenerated when the translation changes; cues split some other way are left alone.
  */
 export function derivedFrom(record: DocumentRecord, translationDocumentId: Id): boolean {
   const ext = record.extensions?.[TRANSLATION_CAPTION_EXTENSION] as { translationDocumentId?: unknown } | undefined;
@@ -147,54 +131,52 @@ export function derivedFrom(record: DocumentRecord, translationDocumentId: Id): 
 }
 const APPLY_ATTEMPTS = 3;
 
-/** 这一步的产出：建了的字幕文档与显示状态；没建时 `documentId` 为 null、`reason` 说明为什么。 */
+/** Output of this step: the caption document created and the display state. When nothing was created, `documentId` is null and `reason` says why. */
 export interface CaptionLayerOutput {
   documentId: Id | null;
   cueCount: number;
-  /** 新建的一层是否显示在画面上。 */
+  /** Whether the new layer is displayed on screen. */
   enabled: boolean;
   bilingual?: boolean;
-  /** 建字幕层的那笔事务（编辑器的「撤销」按它撤）；没建或 Runtime 没给时没有。 */
+  /** The transaction that created the caption layer (the editor's “undo” reverts it). None if nothing was created, or the Runtime did not provide one. */
   transactionId?: Id;
-  /** 没建：已经有了（执行期间别处建的）、素材不在时间线上、没有可显示的字幕条。 */
+  /** Not created: already exists (created elsewhere during execution), the asset is not on the timeline, or there are no displayable cues. */
   reason?: 'existing' | 'not-on-timeline' | 'empty';
 }
 
 /**
- * 字幕层从哪来：一份文稿；一份译文，连同翻译时 Speech Worker 切好的字幕条（产物）；或一份没有 Worker 字幕条的译文
- * （智能体自己写的），字幕条按单元的句级对齐（`alignment.sourceWordIds`）取原句的时间、按显示宽度切（`translationCues`）。
+ * Where the caption layer comes from: a script; a translation together with the cues the Speech Worker split at translation time (artifact); or a translation without Worker cues (written by the agent). For the last kind, each cue takes its timing from the original sentence via the unit's sentence-level alignment (`alignment.sourceWordIds`) and is split by display width (`translationCues`).
  */
 export type CaptionSource =
   | { kind: 'speech'; documentId: Id }
   | { kind: 'translation'; documentId: Id; bilingual: boolean; cuesArtifactId: string }
   | { kind: 'translation'; documentId: Id; bilingual: boolean; cues: 'sentence-alignment' };
 
-/** 算字幕层只读文档的正文。 */
+/** Reads the body of the document the caption layer is computed from (read-only). */
 export type CaptionDocumentReader = Pick<PipelineVideos, 'document'>;
 
-/** 建字幕层的那笔事务（还没提交）。 */
+/** The transaction that creates the caption layer (not yet committed). */
 export interface CaptionLayerPlan {
   operations: EditOperation[];
   cueCount: number;
-  /** 新建的一层是否显示在画面上。 */
+  /** Whether the new layer is displayed on screen. */
   enabled: boolean;
-  /** 同一份文档已有的字幕层；新的一层照样建（§7.9「不覆盖」）。没有时 null。 */
+  /** Existing caption layer for the same document. The new layer is still created (§7.9 “no overwrite”). null if none. */
   existing: { documentId: Id; itemIds: Id[] } | null;
-  /** 译文：和它配对的、已有的原文字幕层（双语时共用样式、放回画面）；没有时 null。文稿没有这一项。 */
+  /** Translation only: the existing original caption layer paired with it (shares style and is put back on screen when bilingual); null if none. Scripts have no such field. */
   paired?: { documentId: Id; itemIds: Id[] } | null;
   /**
-   * 译文双语而时间线上没有原文字幕层（`pairOriginal`）：同一笔事务里顺带建的原文字幕层。`documentRef` 是它的字幕文档在事务里的
-   * `ref`（回执的 `refs` 按它给出文档 ID）。没有顺带建时没有这一项。
+   * For a bilingual translation when the timeline has no original caption layer (`pairOriginal`): the original caption layer created along with it in the same transaction. `documentRef` is the ref of its caption document in the transaction (the receipt's `refs` gives the document ID by this ref). Absent when none was created along with it.
    */
   original?: { documentRef: string; cueCount: number };
 }
 
-/** 新建的字幕文档在事务里的 `ref`：回执的 `refs` 按它给出文档 ID。 */
+/** `ref` of the new caption document in the transaction: the receipt's `refs` gives the document ID by this ref. */
 export const CAPTION_DOCUMENT_REF = 'caption';
-/** 双语时顺带建的原文字幕层：它的字幕文档在事务里的 `ref`。 */
+/** For a bilingual translation, the original caption layer created along with it: its caption document's `ref` in the transaction. */
 export const ORIGINAL_CAPTION_DOCUMENT_REF = 'original-caption';
 
-/** 根序列上派生自这份文档的字幕层（字幕实例引用的 `caption` 文档的 `sourceDocumentId` 是它）；没有时 null。 */
+/** The caption layer on the root sequence derived from this document (the `sourceDocumentId` of the `caption` document that the caption instance references is this document); null if none. */
 export function existingCaptionLayer(
   sequence: Sequence,
   documents: Record<Id, DocumentRecord>,
@@ -212,8 +194,8 @@ export function existingCaptionLayer(
 }
 
 /**
- * 「建立字幕层」这一步。`source` 从参数与之前的产出读出要建字幕的文档（没有时不建）；`videoId` 同理。
- * 关掉（`enabled` 返回 false）或已有字幕层时记为 `skipped`。
+ * The “create caption layer” step. `source` reads from the arguments and earlier outputs the document to caption (none: not created); `videoId` likewise.
+ * If it is turned off (`enabled` returns false) or a caption layer already exists, it is recorded as `skipped`.
  */
 export function captionsStep<P>(
   videos: CaptionVideos,
@@ -235,7 +217,7 @@ export function captionsStep<P>(
       if (!videoId || !source) return true;
       const state = videos.state(videoId);
       const sequence = videos.rootSequence(videoId);
-      // 视频没开着时照常执行，由这一步报出来。
+      // Runs as usual when no video is open; this step reports it.
       if (!state || !sequence) return true;
       return existingCaptionLayer(sequence, state.documents, source.documentId) === null;
     },
@@ -249,7 +231,7 @@ export function captionsStep<P>(
   };
 }
 
-/** 父任务摘要里的 `captions`：这一步的产出，或跳过的原因（关掉了、已有字幕层）。 */
+/** The `captions` entry in the parent task's summary: this step's output, or the reason it was skipped (turned off, or a caption layer already exists). */
 export function captionsSummary(
   videos: CaptionVideos,
   enabled: boolean,
@@ -288,7 +270,7 @@ async function buildCaptionLayer<P>(
     const state = videos.state(videoId);
     const sequence = videos.rootSequence(videoId);
     if (!state || !sequence) throw new PipelineStepError('VIDEO_NOT_OPEN', J.videoClosed(), {});
-    // 别处（编辑器）在这期间建了：不再建第二层。
+    // Created elsewhere (in the editor) in the meantime: do not create a second layer.
     const existing = existingCaptionLayer(sequence, state.documents, source.documentId);
     if (existing) return { documentId: existing.documentId, cueCount: 0, enabled: false, reason: 'existing' };
     const plan = await planCaptionLayer(videos, {
@@ -326,7 +308,7 @@ async function buildCaptionLayer<P>(
         ...(receipt.transactionId !== undefined ? { transactionId: receipt.transactionId } : {}),
       };
     } catch (error) {
-      // 视频在读与写之间被改过：重新读、重新算，换一个命令再提交。
+      // The video was changed between read and write: re-read, recompute, and submit again with a new command.
       if (error instanceof RpcError && error.code === 'conflict' && attempt < APPLY_ATTEMPTS) continue;
       if (error instanceof PipelineStepError) throw error;
       throw new PipelineStepError('APPLY_FAILED', J.rejected(), {
@@ -344,13 +326,10 @@ const ORIGINAL_TRACK_REF = 'original-caption-track';
 const STYLE_REF = 'caption-style';
 
 /**
- * 算出给一份文稿或译文建字幕层的一笔事务，不提交：固定流程的 `captions` 一步与智能体的 `captions_create`（§3.5）共用。
- * `pipeline` 是流程的运行记录（写进字幕文档的 `extensions.pipeline`），智能体的调用没有。
+ * Computes, without committing, the transaction that creates a caption layer for a script or translation. Shared by the fixed pipeline's `captions` step and the agent's `captions_create` (§3.5).
+ * `pipeline` is the pipeline's run record (written into the caption document's `extensions.pipeline`); agent calls have none.
  *
- * 同一份文档已有字幕层时照样算出新的一层（§7.9「不覆盖」），`existing` 指出已有的那层；要不要建由调用方决定（流程跳过）。
- * 新的原文字幕层在同一素材已有原文字幕显示着时停用着放上去；新的译文字幕层在同一份译文已有的一层显示着时同样停用着放上去，
- * 也不去动配对的原文（不叠两层同一种语言的字）。`pairOriginal` 时双语的译文没有配对的原文字幕层就在同一笔事务里先给转写建一层
- * （`original`）。文档不在、种类不对或正文读不了时抛 `PipelineStepError`。
+ * If the same document already has a caption layer, a new layer is still computed (§7.9 “no overwrite”). `existing` points to the existing layer. Whether to create it is up to the caller (the pipeline skips). A new original caption layer is placed disabled if the same asset already has original captions displayed. A new translation layer is likewise placed disabled if a layer for the same translation is already displayed, and it does not touch the paired original (two layers of the same language are not stacked). For `pairOriginal`, a bilingual translation with no paired original caption layer first gets a layer for the transcript (`original`) in the same transaction. If the document is missing, of the wrong kind, or its body cannot be read, it throws `PipelineStepError`.
  */
 async function planCaptionLayerBase(
   videos: CaptionDocumentReader,
@@ -359,10 +338,10 @@ async function planCaptionLayerBase(
     sequence: Sequence;
     documents: Record<Id, DocumentRecord>;
     source: CaptionSource;
-    /** Worker 字幕条的产物库：带 `cuesArtifactId` 的译文要。 */
+    /** Artifact store for Worker cues: needed for translations with `cuesArtifactId`. */
     artifacts?: ArtifactStore;
     pipeline?: Json;
-    /** 双语的译文没有配对的原文字幕层时顺带建一层（智能体的 `captions_create`）；默认不建，只建译文的一层。 */
+    /** For a bilingual translation with no paired original caption layer, also create one (the agent's `captions_create`); by default only the translation's layer is created. */
     pairOriginal?: boolean;
     captionStyle?: Json;
   },
@@ -380,7 +359,7 @@ async function planCaptionLayerBase(
   return sentenceTranslationPlan(videos, videoId, record, sequence, documents, options);
 }
 
-/** 新建时才套用传入的客户端偏好；字幕与样式同一笔事务，撤销时一起回去。 */
+/** Client preferences passed in are applied only when creating new; captions and style are one transaction, reverted together on undo. */
 export async function planCaptionLayer(videos: CaptionDocumentReader, request: Parameters<typeof planCaptionLayerBase>[1]): Promise<Plan> {
   const plan = await planCaptionLayerBase(videos, request);
   return 'reason' in plan || !request.captionStyle ? plan : { ...plan, operations: withCaptionStyle(plan.operations, request.captionStyle) };
@@ -396,7 +375,7 @@ async function speechPlan(
   existing: CaptionLayerPlan['existing'],
 ): Promise<Plan> {
   if (record.kind !== 'speech') throw new PipelineStepError('INPUT_UNREADABLE', J.notSpeech(), { documentId: record.id });
-  // 先看投不投得到画面上（不是素材的转写、素材不在时间线上），再读正文。
+  // First check whether it can be shown on screen (not the asset's transcript, or the asset is not on the timeline), then read the body.
   const assetId = record.sourceAssetId;
   const placement = assetId ? captionPlacement(sequence, assetId) : null;
   if (!assetId || !placement) return { reason: 'not-on-timeline' };
@@ -413,8 +392,7 @@ async function speechPlan(
 }
 
 /**
- * 给一份转写建原文字幕层的操作：切条、挑空着的字幕轨（没有就新建一条，`refs.trackRef`）、写字幕文档（`refs.documentRef`）、
- * 放实例。切不出字幕条时 null。`styleDocumentRef` 是同一事务里前面新建的字幕样式（双语时与译文共用），放实例时直接带上。
+ * Operation that creates an original caption layer for a transcript: split cues, pick an empty caption track (create one if none, `refs.trackRef`), write the caption document (`refs.documentRef`), and place the instance. null if no cues can be split. `styleDocumentRef` is the caption style created earlier in the same transaction (shared with the translation when bilingual); it is attached directly when the instance is placed.
  */
 function speechOperations(
   source: { record: DocumentRecord; revision: string; speech: CueWords; assetId: Id; placement: CaptionPlacement },
@@ -429,7 +407,7 @@ function speechOperations(
   const cues = deriveCues(speech.words);
   if (!cues.length) return null;
   const body = captionBody(cues, speech.speakers);
-  // 这个素材已经有原文字幕显示着：新的一层停用着放上去，不叠两层同一种语言的字。
+  // This asset already has original captions showing: the new layer is placed disabled, so two layers of the same language are not stacked.
   const shown = sequence.items.some(
     (item) =>
       item.type === 'caption' &&
@@ -478,7 +456,7 @@ function speechOperations(
   return { operations, cueCount: cues.length, enabled: !shown };
 }
 
-/** 译文字幕层怎么建：双语与否、没有原文字幕层时顺不顺带建、流程的运行记录、同一份译文已有的一层。 */
+/** How the translation's caption layer is created: bilingual or not, whether to also create the original layer when none exists, the pipeline's run record, and the existing layer for the same translation. */
 interface TranslationOptions {
   bilingual: boolean;
   pairOriginal: boolean;
@@ -498,16 +476,14 @@ async function translationPlan(
 ): Promise<Plan> {
   const read = await readTranslationSource(videos, videoId, record, sequence, documents);
   if ('reason' in read) return read;
-  // 字幕条是翻译时切好的（转写时钟的整数刻度）；说话人的显示名取转写里的。
+  // The cues were split at translation time (integer ticks on the transcript clock); speaker display names are taken from the transcript.
   const workerCues = await readArtifact<SpeechWorkerCues>(artifacts, source.cuesArtifactId);
   const body = workerCaptionBody(workerCues, sentenceSpeakers(read.speech.words), read.speech.speakers);
   return translationOperations(read, body, sequence, documents, options);
 }
 
 /**
- * 没有 Worker 字幕条的译文（智能体自己写的）：每个单元按句级对齐（`alignment.sourceWordIds`）取原句成员词的时间，按显示宽度
- * 切条（`translationCues`，与编辑器的「放到画面上」相同），不经 Worker 的模型对齐。没有对齐的单元（`alignment` 为 null）切不出
- * 时间：有这样的单元时以 `TRANSLATION_UNALIGNED` 拒绝，不悄悄少几句（重新写一次译文，Runtime 会按句子补上对齐）。
+ * A translation without Worker cues (written by the agent): each unit takes the timing of its member words in the original sentence via sentence-level alignment (`alignment.sourceWordIds`), and is split by display width (`translationCues`, same as the editor's “放到画面上” (put on screen)). The model alignment of the Worker is not used. A unit with no alignment (`alignment` is null) cannot be timed: if any such unit exists, it is rejected with `TRANSLATION_UNALIGNED`, rather than silently dropping a few sentences. (Rewrite the translation; the Runtime will add the sentence alignment.)
  */
 async function sentenceTranslationPlan(
   videos: CaptionDocumentReader,
@@ -537,7 +513,7 @@ async function sentenceTranslationPlan(
   return translationOperations(read, captionBody(cues, read.speech.speakers), sequence, documents, options);
 }
 
-/** 译文正文里的单元（只认切字幕要的几项）；不是数组时 null。 */
+/** Units in the translation body (only the fields needed for captions); null if it is not an array. */
 function translationUnits(value: unknown): CueTranslationUnit[] | null {
   if (!Array.isArray(value)) return null;
   return value.flatMap((raw): CueTranslationUnit[] => {
@@ -559,7 +535,7 @@ function translationUnits(value: unknown): CueTranslationUnit[] | null {
   });
 }
 
-/** 字幕实例放在哪：盖住时间线上取用这个素材的实例的区间，与作用实例。 */
+/** Where the caption instance is placed: the range covering the instances on the timeline that use this asset, and the acting instance. */
 export interface CaptionPlacement {
   span: { fromFrame: number; durationFrames: number };
   scopeItemIds: Id[];
@@ -570,16 +546,16 @@ interface TranslationSource {
   content: { revision: string; body: unknown };
   translation: { language?: unknown; sourceBasis?: { speechRef?: { id?: unknown; revision?: unknown } }; units?: unknown } | null;
   speechRecord: DocumentRecord;
-  /** 译文译自转写的哪个版本（译文记的 `sourceBasis`；没记时是读到的版本）。 */
+  /** The transcript version this translation was translated from (the translation's recorded `sourceBasis`; the version read if none is recorded). */
   speechRevision: string;
-  /** 转写此刻的版本（读正文用的）：顺带建的原文字幕层记它。 */
+  /** The transcript's current version (used when reading the body); recorded on the original caption layer created along with it. */
   speechCurrentRevision: string;
   speech: CueWords;
   assetId: Id;
   placement: CaptionPlacement;
 }
 
-/** 读译文与它译自的转写，并看投不投得到画面上（转写不是素材的、素材不在时间线上时不投）。 */
+/** Reads the translation and the transcript it was translated from, and checks whether it can be shown on screen (not shown if the transcript is not the asset's, or the asset is not on the timeline). */
 async function readTranslationSource(
   videos: CaptionDocumentReader,
   videoId: Id,
@@ -595,7 +571,7 @@ async function readTranslationSource(
   if (record.kind !== 'translation' || !speechRecord) {
     throw new PipelineStepError('INPUT_UNREADABLE', J.noSourceSpeech(), { documentId: record.id });
   }
-  // 先看投不投得到画面上（转写不是素材的、素材不在时间线上），再读正文。
+  // First check whether it can be shown on screen (transcript not the asset's, or asset not on the timeline), then read the body.
   const assetId = speechRecord.sourceAssetId;
   const placement = assetId ? captionPlacement(sequence, assetId) : null;
   if (!assetId || !placement) return { reason: 'not-on-timeline' };
@@ -618,10 +594,7 @@ async function readTranslationSource(
 }
 
 /**
- * 译文字幕层的一笔事务（与编辑器的 `translationCaptionOperations` 相同）：新建一条这门语言的字幕轨、写字幕文档、放字幕实例；
- * 只看译文时把配对的原文拿下（不删），双语时两层共用一份字幕样式、原文放回画面。同一份译文已有一层显示着时，新的一层停用着
- * 放上去，配对的原文不动。双语而没有配对的原文时（`pairOriginal`）排在前面先建原文的一层：新建的样式先写，原文的实例放上去时
- * 直接带上它，译文的实例也用它。
+ * Transaction for the translation's caption layer (same as the editor's `translationCaptionOperations`): creates a new caption track for this language, writes the caption document, and places the caption instance. When only the translation is shown, the paired original is taken off (not deleted). When bilingual, the two layers share one caption style, and the original is put back on screen. If the same translation already has a layer showing, the new layer is placed disabled and the paired original is left alone. When bilingual with no paired original (`pairOriginal`), the original's layer comes first: the new style is written first, the original's instance is placed with it directly, and the translation's instance uses it too.
  */
 function translationOperations(
   read: TranslationSource,
@@ -638,7 +611,7 @@ function translationOperations(
   const name = language ? languageName(language) : J.translationName().text;
   const paired = pairedOriginal(sequence, documents, speechRecord.id);
   const duplicateShown = existing !== null && existingShown(sequence, existing.itemIds);
-  // 双语而时间线上没有原文字幕层：先给转写建一层，与译文共用新建的样式。
+  // Bilingual, but the timeline has no original caption layer: create one for the transcript first, sharing the newly created style with the translation.
   const original =
     bilingual && options.pairOriginal && !paired && !duplicateShown
       ? speechOperations(
@@ -653,7 +626,7 @@ function translationOperations(
   const operations: EditOperation[] = [];
   if (original) {
     const [first, ...rest] = original.operations;
-    // 样式要先于原文的实例写入；原文的轨道（有时要新建）照样排在最前面。
+    // The style must be written before the original's instance; the original's track (created if needed) still goes first.
     if (first!.type === 'addTrack') operations.push(first!);
     operations.push({
       type: 'putDocument',
@@ -740,21 +713,21 @@ function translationOperations(
   };
 }
 
-/** 已有的一层有实例显示在画面上。 */
+/** The existing layer has an instance displayed on screen. */
 function existingShown(sequence: Sequence, itemIds: readonly Id[]): boolean {
   return sequence.items.some((item) => itemIds.includes(item.id) && item.enabled);
 }
 
-/** 句子 ID（`s-<首词 ID>`）→ 首词的说话人：Worker 的字幕条按句子记，说话人跟着那一句。 */
+/** Sentence ID (`s-<first word ID>`) → speaker of the first word. Worker cues are per sentence, and the speaker follows that sentence. */
 export function sentenceSpeakers(words: ReadonlyArray<{ id: string; speaker?: string }>): Map<string, string> {
   const out = new Map<string, string>();
   for (const word of words) if (word.speaker !== undefined) out.set(`s-${word.id.replace(/~\d+$/, '')}`, word.speaker);
   return out;
 }
 
-// ---- 序列 ----
+// ---- Sequence ----
 
-/** 字幕层是原文还是译文：看字幕文档派生自哪种文档（与编辑器 caption-tracks.ts 的 `captionKind` 相同）。 */
+/** Whether a caption layer is original or translation: determined by which kind of document the caption document is derived from (same as `captionKind` in the editor's caption-tracks.ts). */
 function captionKind(documentId: Id, documents: Record<Id, DocumentRecord>): 'original' | 'translation' {
   const record = documents[documentId];
   const parent = record?.sourceDocumentId ? documents[record.sourceDocumentId] : undefined;
@@ -764,15 +737,14 @@ function captionKind(documentId: Id, documents: Record<Id, DocumentRecord>): 'or
 interface CaptionGroup {
   documentId: Id;
   itemIds: Id[];
-  /** 全部实例都停用了（编辑器里「拿下来」的）。 */
+  /** All instances are disabled (the ones “pulled off” in the editor). */
   shelved: boolean;
   locked: boolean;
   styleDocumentId?: Id;
 }
 
 /**
- * 和译文配对的原文字幕层（编辑器 translation-cues.ts 的 `pairedOriginal`）：从同一份转写生成的那层；没有时画面上的
- * 第一层原文。一层是一条字幕轨上的一份字幕文档（实例被切开成几段时算同一层）。
+ * The original caption layer paired with the translation (`pairedOriginal` in the editor's translation-cues.ts): the layer generated from the same transcript; if there is none, the first original layer on screen. A layer is one caption document on one caption track (an instance split into several segments still counts as one layer).
  */
 function pairedOriginal(sequence: Sequence, documents: Record<Id, DocumentRecord>, speechDocumentId: Id): CaptionGroup | null {
   const tracks = new Map(sequence.tracks.map((track) => [track.id, track]));
@@ -803,7 +775,7 @@ function pairedOriginal(sequence: Sequence, documents: Record<Id, DocumentRecord
   );
 }
 
-/** 实例取用的素材：视频与音频的素材，合成的预渲染替身（没有时是代码包）。 */
+/** Assets the instances use: video and audio assets, and the pre-rendered stand-in of a composition (if none, the code package). */
 function sourceAsset(item: SequenceItem): Id | undefined {
   if (item.type === 'video' || item.type === 'audio') return item.assetRef.id;
   if (item.type === 'composition') return (item.prerender ?? (item.source.kind === 'bundle' ? item.source.assetRef : undefined))?.id;
@@ -817,8 +789,7 @@ function linear(item: SequenceItem): boolean {
 }
 
 /**
- * 素材时钟上的字幕实例放在哪（编辑器 speech-cues.ts 的 `captionPlacement`）：作用实例是时间线上取用这个素材的实例
- * （按起点排），区间盖住它们。时间线上没有这样的实例时 null。
+ * Where the caption instance is placed on the media clock (`captionPlacement` in the editor's speech-cues.ts). The acting instance is the instance on the timeline that uses this asset (sorted by start), and the range covers them. null if there is no such instance on the timeline.
  */
 export function captionPlacement(sequence: Sequence, assetId: Id): CaptionPlacement | null {
   const perSecond = sequence.fps.num / sequence.fps.den;
@@ -837,7 +808,7 @@ export function captionPlacement(sequence: Sequence, assetId: Id): CaptionPlacem
   };
 }
 
-/** 轨道在 [start, end) 帧里是空的（编辑器 editor-ops.ts 的 `trackFree`）。 */
+/** The track is empty over the frame range [start, end) (`trackFree` in the editor's editor-ops.ts). */
 function trackFree(sequence: Sequence, trackId: Id, start: number, end: number): boolean {
   const perSecond = sequence.fps.num / sequence.fps.den;
   return sequence.items.every((item) => {
@@ -849,7 +820,7 @@ function trackFree(sequence: Sequence, trackId: Id, start: number, end: number):
   });
 }
 
-/** 语言标签 → 这门语言自己的叫法（`en` → English）；认不出时原样返回（与编辑器的字幕轨名相同）。 */
+/** Language tag → the language's own name (`en` → English). Returned as-is when not recognized (same as the editor's caption track names). */
 function languageName(tag: string): string {
   try {
     const name = new Intl.DisplayNames([tag], { type: 'language' }).of(tag);

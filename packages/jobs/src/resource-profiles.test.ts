@@ -16,7 +16,7 @@ import { ResourceScheduler } from './resource-scheduler.ts';
 
 const GiB = 1024 * 1024 * 1024;
 
-/** 按默认预留：这个模型包的 Model Worker 能不能被准入。统一内存的 Mac 有 GPU 的估计；别的机器不知道 GPU 有多少。 */
+/** Reserved by default: whether this model package's Model Worker can be admitted. The GPU estimate applies to unified-memory Macs; on other machines the GPU size is unknown. */
 function admitted(
   bundleId: string,
   footprint: WorkerFootprint | null,
@@ -54,12 +54,12 @@ describe('Model Worker 的需求', () => {
   });
 
   it('Apple Silicon：识别与分离模型包按权重估计（分离按文件的两倍），8 GiB 的 Mac 也放得下；合成模型包仍是原来的固定需求', async () => {
-    // 模型目录是空的：可选组件都没装。
+    // The model catalog is empty: the optional components are not installed.
     const catalog = new ModelCatalog({ root: noModels, platform: 'darwin', arch: 'arm64' });
     for (const def of catalog.definitions()) {
       const footprint = await catalog.workerFootprint(def.bundleId);
       const demand = localTranscribeResources(def.bundleId, footprint).holder.demand;
-      // 识别与已有转写的说话人区分（单独加载「说话人区分」模型包）都按必需组件的权重估计。
+      // Recognition and speaker diarization with existing transcripts (loading the "speaker diarization" model package separately) are both estimated by the weight of the required components.
       if (def.capability === 'transcribe' || def.capability === 'diarize') {
         expect(footprint, def.bundleId).toEqual({ bytes: weightBytes(requiredSources(def)), pool: 'gpuMemory' });
         expect(await catalog.workerWeightBytes(def.bundleId), def.bundleId).toBe(footprint!.bytes);
@@ -84,7 +84,7 @@ describe('Model Worker 的需求', () => {
   it('candle：CPU 上按参数个数 × 4 计在内存，CUDA 上按 × 2 计在 GPU 内存；16 GiB 的机器放得下 0.6B 与 MOSS', async () => {
     const catalog = new ModelCatalog({ root: noModels, platform: 'linux', arch: 'x64' });
     const cpu = (await catalog.workerFootprint('qwen3-asr-0.6b@candle'))!;
-    // Qwen3-ASR 0.6B 与 Silero：约 7.8 亿参数，f32 约 3.1 GB（实测加载后约 3.7 GiB，含解码缓冲）。
+    // Qwen3-ASR 0.6B and Silero: about 780 million parameters, about 3.1 GB at f32 (measured about 3.7 GiB after loading, including decode buffers).
     expect(cpu).toEqual({ bytes: (782_426_112 + 309_121) * 4, pool: 'memory' });
     expect(localTranscribeResources('qwen3-asr-0.6b@candle', cpu).holder.demand).toEqual({
       memory: cpu.bytes + 1 * GiB,
@@ -95,7 +95,7 @@ describe('Model Worker 的需求', () => {
       const footprint = await catalog.workerFootprint(bundleId);
       expect(admitted(bundleId, footprint, 16 * GiB, 'background', false), bundleId).toBe(true);
     }
-    // 1.7B 在 CPU 上约 8 GB：8 GiB 的机器放不下。
+    // 1.7B on CPU is about 8 GB: a machine with 8 GiB cannot hold it.
     const large = await catalog.workerFootprint('qwen3-asr-1.7b@candle');
     expect(large!.bytes).toBeGreaterThan(8 * GiB * 0.9);
     expect(admitted('qwen3-asr-1.7b@candle', large, 8 * GiB, 'background', false)).toBe(false);
@@ -118,7 +118,7 @@ describe('Model Worker 的需求', () => {
     catalog.setWorkerDevice('ggml', 'vulkan');
     expect((await catalog.workerFootprint('whisper-large-v3-turbo@ggml'))!.pool).toBe('gpuMemory');
     expect((await catalog.status('whisper-large-v3-turbo@ggml'))!.device).toBe('vulkan');
-    // CUDA 安装包的 Worker 报 `cuda`：同样计在 GPU 内存。
+    // A Worker from the CUDA install package reports `cuda`: it is also counted as GPU memory.
     catalog.setWorkerDevice('ggml', 'cuda');
     expect((await catalog.workerFootprint('whisper-large-v3-turbo@ggml'))!.pool).toBe('gpuMemory');
     expect((await catalog.status('whisper-large-v3-turbo@ggml'))!.device).toBe('cuda');
@@ -135,7 +135,7 @@ describe('Model Worker 的需求', () => {
     expect(resources.demand).toEqual({ scratchDisk: 64 * 1024 * 1024 });
     expect(localImageResources('x', null).holder.demand).toEqual(MODEL_WORKER_DEMAND);
     expect(localImageResources('x', { bytes: 6 * GiB, pool: 'gpuMemory' }).holder.demand.gpuMemory).toBe(6 * GiB);
-    // 峰值已含激活：不像识别那样另加 1 GiB。
+    // The peak already includes activations: unlike recognition, no extra 1 GiB is added.
     expect(localImageResources('x', { bytes: 0.5 * GiB, pool: 'gpuMemory' }).holder.demand).toEqual(MODEL_WORKER_DEMAND);
     const capacity: ResourceCapacity = {
       memory: 8 * GiB,
@@ -161,7 +161,7 @@ describe('Model Worker 的需求', () => {
       ...MODEL_WORKER_DEMAND,
       gpuMemory: candle.image!.devicePeakBytes!.cuda,
     });
-    // 非统一内存、不知道 GPU 有多少：系统预留 25%（至少 2 GiB），交互预留 1 GiB。
+    // Non-unified memory, GPU size unknown: reserve 25% for the system (at least 2 GiB), and 1 GiB for interactive.
     const check = (totalMemory: number, priority: ResourcePriority) => {
       const capacity: ResourceCapacity = {
         memory: totalMemory,
@@ -175,7 +175,7 @@ describe('Model Worker 的需求', () => {
       return scheduler.check({ owner: 'job', label: 'image', priority, ...cpu }) === null;
     };
     for (const priority of ['background', 'interactive'] as const) expect(check(16 * GiB, priority), priority).toBe(true);
-    // 8 GiB：后台只剩 5 GiB，放不下；交互不扣交互预留，剩 6 GiB，刚好放下。
+    // 8 GiB: the background only has 5 GiB left, which doesn't fit. Interactive does not subtract the interactive reserve, so 6 GiB remains, just enough.
     expect(check(8 * GiB, 'background')).toBe(false);
     expect(check(8 * GiB, 'interactive')).toBe(true);
   });

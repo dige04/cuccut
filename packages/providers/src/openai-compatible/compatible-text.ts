@@ -1,7 +1,7 @@
-// OpenAI 兼容端点的文本模型（`generateText`，架构设计 §6.4）：用户声明 `capability` 为 `generateText` 的模型，请求形状同
-// OpenAI 的 Chat Completions（见 openai/chat-completions.ts），输出上限用 `max_tokens`。都是假定，没有逐家确认：端点接受
-// `response_format: { type: 'json_schema' }`（不接受的会忽略或拒绝；输出照样在本地按 schema 校验）；声明了 `efforts` 时才发
-// `reasoning_effort`。没声明的限制取保守值：上下文 32768 token、单次输出 4096 token。
+// Text models for OpenAI-compatible endpoints (`generateText`, architecture design §6.4): users declare models with `capability` `generateText`, and the request shape matches
+// OpenAI's Chat Completions (see openai/chat-completions.ts), with the output limit given as `max_tokens`. All of this is assumed, not confirmed for each implementation: endpoints accept
+// `response_format: { type: 'json_schema' }` (endpoints that do not accept it ignore or reject it; output is still validated against the schema locally); `reasoning_effort` is sent only when `efforts` is declared.
+// Limits that are not declared use conservative values: a 32768-token context and 4096-token single output.
 import type { TextReply } from '@cuccut/models';
 import type { DeclaredModel, TextModelInfo } from '@cuccut/protocol';
 import type { AdapterConfig, AdapterHttp, ModelLister, ProviderListing, TextAdapter, TextRequest } from '../adapter.ts';
@@ -40,7 +40,7 @@ export function declaredTextInfo(model: DeclaredModel, isDefault: boolean): Text
     contextTokens: model.contextTokens ?? 32_768,
     maxOutputTokens: model.maxOutputTokens ?? 4096,
     efforts,
-    // 声明了推理强度时不知道端点的默认是哪一档。
+    // When reasoning effort is declared, the endpoint's default level is not known.
     defaultEffort: null,
     structuredOutput: model.structuredOutput ?? true,
     acceptsTemperature: true,

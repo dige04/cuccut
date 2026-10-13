@@ -14,7 +14,7 @@ import { pl } from './elements-copy.pl.ts';
 import { tr } from './elements-copy.tr.ts';
 import { vi } from './elements-copy.vi.ts';
 
-/** 元素、文字面板与侧栏工具条的文案。译文在 `elements-copy.zh-Hans.ts`。 */
+/** Copy for the elements panel, the text panel and the sidebar toolbar. Translations are in `elements-copy.zh-Hans.ts`. */
 const en = {
   all: 'All',
   sticker: 'Stickers',

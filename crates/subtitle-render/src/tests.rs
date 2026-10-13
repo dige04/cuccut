@@ -1,27 +1,21 @@
-// overlay 内核的单元测试，随内核一起从 `core/crates/ccut-kernel/src/cmd/studio_export/tests.rs`
-// 搬来（主方案 D2）。
+// Unit tests for the overlay kernel, moved along with the kernel from `core/crates/ccut-kernel/src/cmd/studio_export/tests.rs` (master plan D2).
 //
-// 切分轴线是**是否需要 `OverlayHost`**，不是「是否属于字幕」：
-// `OverlayRenderPlan::compile*` 只吃一份内存里的 Studio 正文，纯函数，测试留这里；
-// `compile_project*` / `load_overlay_document` 第一步就要 `studio_timeline_projection`
-// （时间轴投影 + 词时钟 + HistoryStore rev），那是注入项，真实现在 CLI，
-// 于是这些测试连同 `motion_baseline_tests` 一起留在 `cargo test -p ccut`。
-// 在 crate 里给它们造一个假 host 会正好变成本 crate 明令禁止的第二份实现。
+// The axis of the split is **whether an `OverlayHost` is needed**, not whether the test belongs to subtitles.
+// `OverlayRenderPlan::compile*` only consumes an in-memory Studio body. It is a pure function, so its tests stay here. `compile_project*` and `load_overlay_document` need `studio_timeline_projection` as their very first step (timeline projection, word clock and HistoryStore rev). That is an injected item whose real implementation lives in the CLI, so those tests stay in `cargo test -p ccut`, together with `motion_baseline_tests`. Creating a fake host inside this crate for them would turn into exactly the second implementation this crate explicitly forbids.
 //
-// 少数夹具 helper（document / style_document 等）两边都要用，两侧各留一份：
-// 它们是 JSON 字面量，不是第二份实现。
+// A few fixture helpers (document, style_document and so on) are needed on both sides, so each side keeps its own copy. They are JSON literals, not a second implementation.
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
     use sha2::{Digest, Sha256};
 
-    /// sha2 0.11 的摘要（hybrid-array）没有 `LowerHex`：逐字节写出，与 v2 的 `{:x}` 同值。
+    /// The sha2 0.11 digest (hybrid-array) has no `LowerHex`, so write it out byte by byte. The value is the same as v2's `{:x}`.
     fn lower_hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    /// 合成 token：汉字与全角标点宽 1 个字号，其余 0.55 个字号；不走字体，只测断点算法。
+    /// Synthetic tokens: CJK characters and full-width punctuation are one font size wide; everything else is 0.55 font size. No font is used; only the breaking algorithm is tested.
     fn synthetic_tokens(text: &str, font_size: f64) -> Vec<(String, LayoutToken)> {
         text.split_word_bounds()
             .map(|piece| {
@@ -106,7 +100,7 @@ mod tests {
 
     #[test]
     fn cjk_breaks_keep_kinsoku_units_and_balance_without_extra_lines() {
-        // 三期播客实测里折坏的句子（利/益、10/亿、1870/年代、行首「：？」、孤字尾行）。
+        // Sentences that were broken wrongly in the real measurements of a three-episode podcast: 利/益, 10/亿, 1870/年代, a line starting with “：？”, and a lone character stranded on the last line.
         let sentences = [
             "这就是问题所在：我们到底应该如何去衡量利益？还是说根本就无法衡量",
             "1870年代的铁路泡沫破裂之后，大家又花了10亿美元去建设新的网络",
@@ -114,8 +108,7 @@ mod tests {
             "他说：「我们必须先解决自己的问题」，然后才能谈合作、谈发布、谈超越。",
             "用 GPT-4 做的实验 比原来快了200倍 便宜了400倍",
         ];
-        // 标点禁则总能靠挪一个字满足，逐例必守；数字连单位、拉丁串不拆、不留孤字是软约束，
-        // 行数卡死时（三行刚好装满）允许让步，只要求整轮扫下来是少数。
+        // The punctuation prohibition rules can always be satisfied by moving one character, so they must hold in every case. Keeping a number with its unit, not splitting Latin runs and not leaving a lone character are soft constraints. When the line count is capped tightly (exactly three full lines), conceding is allowed. The requirement is only that across the whole sweep, the majority hold.
         let (mut soft, mut cases) = (0, 0);
         for text in sentences {
             for tenths in 60..=200 {
@@ -148,7 +141,7 @@ mod tests {
             soft * 20 <= cases,
             "{soft} of {cases} layouts bent a soft rule"
         );
-        // 两行时落在停顿处而不是填满第一行：隐藏逗号留下的空格、问号之后。
+        // With two lines, break at a pause rather than filling the first line: the space left by a hidden comma, and the spot after a question mark.
         assert_eq!(
             broken_lines("ChatGPT 发布之后 所有人都在问这件事", 12.0),
             ["ChatGPT 发布之后", "所有人都在问这件事"]
@@ -157,8 +150,7 @@ mod tests {
             broken_lines("我们到底应该如何衡量？还是说根本无法衡量", 12.0),
             ["我们到底应该如何衡量？", "还是说根本无法衡量"]
         );
-        // 译文里数字与单位之间带空格（「10 亿」）：空格不算停顿，照样不拆（播客复验里折成「10 / 亿」）。
-        // 同样是软约束：只有不拆就得多折一行时才让步。
+        // In the translation, a space between a number and its unit ("10 亿") is not a pause, so it must still not be split. It was split into "10 / 亿" in the podcast re-check. This is also a soft constraint: concede only when not splitting would need one more line.
         let text = "用户始终不到 10 亿 差不多就是这样？";
         let split = |lines: &[String]| {
             lines
@@ -185,7 +177,7 @@ mod tests {
         assert!(!"한국어 자막".chars().any(is_cjk_char));
     }
 
-    /// 节点的可比较投影：只看类型与关键几何，避免把 `Arc` 地址写进断言。
+    /// A comparable projection of a node: only the type and key geometry are considered, so `Arc` addresses are not written into assertions.
     fn scene_node_shapes(nodes: &[element_draw::SceneNode]) -> Vec<String> {
         nodes
             .iter()
@@ -223,21 +215,17 @@ mod tests {
         })
     }
 
-    /// 「预览 = 导出」的最小可证形式（主方案 M1-R3）。
+    /// The minimal provable form of "preview = export" (master plan M1-R3).
     ///
-    /// App v2 走 [`OverlayRenderPlan::render_rgba_frame`] 直接上传 premultiplied
-    /// RGBA，serve 走 [`OverlayRenderPlan::render_png`] 发 PNG。两条路必须是
-    /// 同一帧的两种封装：PNG 解出来的像素与 RGBA 缓冲区逐字节相同，三个身份
-    /// （字幕内容键 / DrawOp 指纹 / 下一次变化时刻）也必须一致。
+    /// The App v2 path uploads premultiplied RGBA directly through [`OverlayRenderPlan::render_rgba_frame`], and serve sends a PNG through [`OverlayRenderPlan::render_png`]. The two paths must be two encodings of the same frame: the pixels decoded from the PNG must be byte-identical to the RGBA buffer, and the three identities (the subtitle content key, the DrawOp fingerprint and the next-change moment) must also agree.
     ///
-    /// 这里刻意用 `compile`（吃内存里的正文，不碰项目投影），所以断言不依赖
-    /// 任何 host 注入，纯内核对拍。
+    /// This deliberately uses `compile`, which takes the in-memory body without touching the project projection, so the assertions depend on no host injection. It is a pure kernel cross-check.
     #[test]
     fn render_png_is_the_encoded_form_of_render_rgba_frame() {
         let document = document("Karaoke", "fade");
         let mut plan = OverlayRenderPlan::compile(&document, 320, 180, 3.0, 30.0, None).unwrap();
 
-        // 逐词动画里取三个时刻：入场前、第一词高亮中、第二词高亮中。
+        // Three moments are taken within the word animation: before entry, while the first word is highlighted, and while the second word is highlighted.
         for time in [0.4, 0.9, 1.8] {
             let rgba = plan.render_rgba_frame(time).unwrap();
             let png = plan.render_png(time).unwrap();
@@ -523,11 +511,7 @@ mod tests {
         assert_eq!(pixel(7, 0), &[0, 0, 0, 255]);
     }
 
-    /// `place.opacity = 0` + 黑底是**普通项目导出的每一帧**：媒体被搬到时间轴
-    /// （`main.detached`）之后，main 层就是靠它隐藏的。这一档在 `raster.rs` 里
-    /// 走按行填黑的短路，绕开整条 tiny-skia 通路（实测 249 ms/帧 → ~0）。
-    /// 这里钉住短路的两个契约：输出是一张不透明纯黑底，且不越界写 stride 的
-    /// 行尾填充。
+    /// `place.opacity = 0` plus a black background is **what every frame of a normal project export looks like**. After the media is moved onto the timeline (`main.detached`), the main layer is hidden by exactly this. This case takes a short circuit in `raster.rs` that fills black row by row and bypasses the whole tiny-skia path (measured 249 ms/frame → ~0). This test pins two contracts of the short circuit: the output is an opaque pure-black background, and the row-end padding of the stride is not written out of bounds.
     #[test]
     fn opacity_zero_on_black_background_yields_an_opaque_black_frame() {
         let stride = 8 * 4 + 12;
@@ -560,8 +544,7 @@ mod tests {
         }
     }
 
-    /// 模糊底那一档不能跟着短路：它的内容就是源画面的模糊版，`opacity = 0`
-    /// 只是让源画面不再叠在模糊底上，底本身仍要真的算出来。
+    /// The blurred-background case must not take the short circuit. Its content is a blurred version of the source frame. `opacity = 0` only stops the source frame from being layered over the blurred background; the background itself must still be truly computed.
     #[test]
     fn opacity_zero_on_blur_background_still_derives_from_the_source_frame() {
         let mut pixels = vec![0_u8; 8 * 4 * 4];
@@ -580,10 +563,7 @@ mod tests {
         );
     }
 
-    /// 那条按行填黑的快路和导出侧「整条跳过铺底 / 上传」的短路必须共用同一个
-    /// 判据，否则两边一漂就是「循环以为不用喂源帧、光栅却真去画源帧」。
-    /// [`main_transform_is_uniform_black`] 是那份唯一真身，这里钉住它的边界：
-    /// 只有 `opacity == 0` ＋ 黑底成立，模糊底、部分透明与缺省都不成立。
+    /// The row-fill-black fast path and the export side's short circuit that skips painting the background or uploading altogether must share the same criterion. Otherwise, if the two drift apart, the loop believes there is no need to feed source frames while the rasteriser actually draws them. [`main_transform_is_uniform_black`] is the only real implementation. This test pins its boundary: it holds only when `opacity == 0` and the background is black. A blurred background, partial transparency and the defaults do not qualify.
     #[test]
     fn only_a_fully_transparent_main_on_black_counts_as_a_uniform_black_base() {
         let main = |value: serde_json::Value| serde_json::from_value::<Main>(value).unwrap();
@@ -591,21 +571,21 @@ mod tests {
             "place": {"opacity": 0},
             "background": "black"
         })))));
-        // background 缺省就是黑底。
+        // The background defaults to black.
         assert!(main_transform_is_uniform_black(Some(&main(
             json!({"place": {"opacity": 0}})
         ))));
-        // 模糊底的内容来自源画面，跳不过去。
+        // The content of a blurred background comes from the source frame, so it cannot be skipped.
         assert!(!main_transform_is_uniform_black(Some(&main(json!({
             "place": {"opacity": 0},
             "background": "blur"
         })))));
-        // 还透出一点点就得照常画。
+        // If even a little still shows through, it must be drawn as usual.
         assert!(!main_transform_is_uniform_black(Some(&main(json!({
             "place": {"opacity": 0.01},
             "background": "black"
         })))));
-        // 没有 place 时 opacity 缺省是 1。
+        // With no `place`, the opacity defaults to 1.
         assert!(!main_transform_is_uniform_black(Some(&main(
             json!({"background": "black"})
         ))));
@@ -690,10 +670,8 @@ mod tests {
         assert!(first.len() > 20);
     }
 
-    /// M118 对拍：Mac 现在把每行的外观投影为 `origStyle` / `transStyle`。
-    /// 烧录的译文行必须用自己的字体/颜色/字重/描边/背景，而不是根节点那一行的；
-    /// 同时字号仍由 `bilingualOrigScale` / `transScale` 推出——partial 里没有
-    /// `fontSize`，紧凑原文才不会退回独立行的字号。
+    /// M118 cross-check: the Mac now projects each line's appearance as `origStyle` / `transStyle`.
+    /// The burned-in translation line must use its own font, colour, weight, outline and background, not those of the line at the root node. The font size is still derived from `bilingualOrigScale` / `transScale`. The partial has no `fontSize`, so the compact original text does not fall back to the font size of a separate line.
     #[test]
     fn per_line_style_overrides_reach_the_burned_bilingual_lines() {
         let mut style = document("None", "none")["style"].clone();
@@ -716,8 +694,7 @@ mod tests {
 
         assert_eq!(orig.font_name, "Montserrat");
         assert_eq!(trans.font_name, "Bebas Neue");
-        // 根节点是加粗/描边/带背景的原文行，这三个扁平布尔值优先级高于结构化
-        // 字段，partial 必须能压过它们。
+        // The root node is the original line in bold, outlined and with a background. These three flat booleans take priority over the structured fields, so the partial must be able to override them.
         assert!(orig.bold && !trans.bold);
         assert!(orig.outline_on && !trans.outline_on);
         assert!(orig.background_on && !trans.background_on);
@@ -733,12 +710,11 @@ mod tests {
         let canvas = f64::from(1080_u32) / REFERENCE_SHORT_EDGE;
         assert!((orig.font_size - 30.0 * 0.6 * canvas).abs() < 1e-9);
         assert!((trans.font_size - 30.0 * 0.6 * 1.25 * canvas).abs() < 1e-9);
-        // 字距也归一化到这一行自己的字号（原型的 `letterSpacing` 是 1/100 em）：
-        // 译文逻辑字号 30 × 0.6 × 1.25 = 22.5 ⇒ size_scale = 0.75 · canvas。
+        // Letter spacing is also normalised to this line's own font size (the prototype's `letterSpacing` is 1/100 em). Translation logical font size 30 × 0.6 × 1.25 = 22.5 ⇒ size_scale = 0.75 · canvas.
         assert!((trans.letter_spacing - 4.0 * 0.75 * canvas).abs() < 1e-9);
     }
 
-    /// 两条原文字幕、无出入场留白，方便按时刻各取一条。
+    /// Two original-text subtitles with no in or out margin, so that one can easily be picked at each moment.
     fn two_cue_document(style: Value) -> Value {
         let mut base = document("None", "none")["style"].clone();
         base["displayTiming"] = json!({"leadIn": 0, "tail": 0});
@@ -770,7 +746,7 @@ mod tests {
     #[test]
     fn a_cue_style_restyles_only_its_own_cue_in_layout_and_pixels() {
         let document = two_cue_document(json!({
-            // 单行模式里 origStyle 的同名键不能压过逐条覆盖。
+            // In single-line mode, the same-named keys in `origStyle` must not override the per-cue overrides.
             "origStyle": {"fontColor": "#00FF00"},
             "cueStyles": {"q2": {"source": {"fontColor": "#FF0000", "fontSize": 60}}}
         }));
@@ -1012,9 +988,7 @@ mod tests {
         }
     }
 
-    /// 效果层模糊半径的上限必须随字号走。Mac / Web 预览都不夹取，面板上限
-    /// （glow range 100 ⇒ 0.9·fontSize，shadow blur 0.5 ⇒ 0.5·fontSize）必须原样
-    /// 落到烧录；旧的硬编码 10px 会在 4K 上把柔和阴影烧成硬边。
+    /// The upper limit of the effect layer's blur radius must follow the font size. The Mac and Web previews do not clamp it. The panel limits (glow range 100 ⇒ 0.9·fontSize, shadow blur 0.5 ⇒ 0.5·fontSize) must carry through unchanged to the burn-in. The old hard-coded 10px would turn soft shadows into hard edges at 4K.
     #[test]
     fn effect_blur_ceiling_scales_with_font_size() {
         let mut style = document("None", "none")["style"].clone();
@@ -1043,8 +1017,8 @@ mod tests {
 
     const PLACE_GAP: f64 = 6.0;
 
-    /// 每行都只占 1 行（实际高 == 参考高）、且没有任何显式锚点的堆栈输入。
-    /// 这是垂直锚点上线前后必须逐比特一致的那条基线。
+    /// A stack input in which every line takes exactly one line (actual height equals reference height) and there are no explicit anchors at all.
+    /// This is the baseline that must be bit-identical before and after the vertical anchor was introduced.
     fn single_row_boxes(heights: &[f64], overrides: &[Option<(f64, f64)>]) -> Vec<LineBox> {
         heights
             .iter()
@@ -1059,11 +1033,9 @@ mod tests {
             .collect()
     }
 
-    /// 等价性哨兵（不得放宽）：每行都只占 1 行时，槽位 + 接缝的新算法必须逐比特
-    /// 还原「总高居中 + 逐行累加实际高」的老公式。下面三组落点是改造前的输出。
+    /// Equivalence sentinel (must not be loosened): when every line occupies exactly one line, the new slot-and-seam algorithm must restore, bit for bit, the old formula of "centre the total height, then accumulate each line's actual height". The three landing points below are the output from before the refactor.
     ///
-    /// 行级位置覆盖的三种情形也在这里一次算出：两行都覆盖时各自独立居中；只覆盖
-    /// 一行时堆栈里只剩另一行，塌成单行居中于锚点；都不覆盖时是老公式。
+    /// The three cases of line-level position override are also computed here in one pass. When both lines are overridden, each is centred independently. When only one line is overridden, the stack holds only the other line, and it collapses to a single line centred on the anchor. When neither is overridden, the old formula applies.
     #[test]
     fn line_positions_lift_only_the_covered_lines_out_of_the_stack() {
         let heights = [40.0, 20.0];
@@ -1105,7 +1077,7 @@ mod tests {
         );
         let placed = place_lines(&first, anchor, gap, frame, None, StackPlate::Separate);
         assert_eq!(placed, vec![(200.0, 280.0), (500.0, 850.0)]);
-        // 契约：剩下的那一行必须与「本来就只有它一行」落在同一处。
+        // Contract: the remaining line must land in the same place as it would if it were the only line from the start.
         assert_eq!(
             place_lines(
                 &single_row_boxes(&heights[1..], &[None]),
@@ -1119,11 +1091,9 @@ mod tests {
         );
     }
 
-    /// 接缝钉死：折行只在自己那一侧生长，另一行的落点一动不动。
+    /// Seam pinning: wrapping grows only on its own side, and the other line's landing point does not move at all.
     ///
-    /// 槽位高度取「单行参考高度」而不是折行后的实际高度，所以上行折成两行时向上
-    /// 长，下行折成两行时向下长；两者之间那道 gap 的两个端点都保持原位。这是
-    /// 双语字幕「改一行不动另一行」的全部依据。
+    /// The slot height is taken as the "single-line reference height", not the actual height after wrapping. So when the upper line wraps to two lines it grows upward, and when the lower line wraps it grows downward. The two endpoints of the gap between them both stay in place. This is the whole basis for bilingual subtitles' "changing one line does not move the other".
     #[test]
     fn wrapped_lines_grow_away_from_the_seam() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
@@ -1156,7 +1126,7 @@ mod tests {
         );
         assert_eq!(baseline, vec![(500.0, 827.0), (500.0, 873.0)]);
 
-        // 上行折成两行（40 → 80）：贴槽底向上长，下行纹丝不动。
+        // The upper line wraps to two lines (40 → 80): it grows upward from the slot bottom, and the lower line does not move at all.
         let upper = place_lines(
             &boxes([80.0, 20.0]),
             anchor,
@@ -1166,10 +1136,10 @@ mod tests {
             StackPlate::Separate,
         );
         assert_eq!(upper, vec![(500.0, 787.0), (500.0, 873.0)]);
-        // 接缝仍是 6：上行底边 787+80=867，下行顶边 873。
+        // The seam is still 6: the upper line's bottom edge is 787+80=867, and the lower line's top edge is 873.
         assert!((873.0 - (787.0 + 80.0) - gap).abs() < 1e-9);
 
-        // 下行折成两行（20 → 40）：贴槽顶向下长，上行纹丝不动。
+        // The lower line wraps to two lines (20 → 40): it grows downward from the slot top, and the upper line does not move at all.
         let lower = place_lines(
             &boxes([40.0, 40.0]),
             anchor,
@@ -1181,10 +1151,9 @@ mod tests {
         assert_eq!(lower, vec![(500.0, 827.0), (500.0, 873.0)]);
     }
 
-    /// 单语（堆栈只剩一行）时槽位退回实际高度：折行的块仍居中于锚点。
+    /// When only one line is left in the stack, the slot falls back to the actual height, and a wrapped block is still centred on the anchor.
     ///
-    /// 若照抄「槽位一律是单行参考高度」，这里会整体偏 `参考高/2`，把所有既有的
-    /// 单语折行字幕搬走。等价性哨兵（都不折行）抓不到这一条，所以单列一测。
+    /// If one copied "the slot is always the single-line reference height", everything would shift by `reference height / 2`, moving every existing single-language wrapped subtitle. The equivalence sentinel (no wrapping) cannot catch this, so it gets its own test.
     #[test]
     fn a_lone_wrapped_line_still_centers_on_the_anchor() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
@@ -1206,7 +1175,7 @@ mod tests {
             place_lines(&wrapped, anchor, gap, frame, None, StackPlate::Separate),
             vec![(500.0, 820.0)]
         );
-        // 只覆盖一行、剩下的那行又折了行时同理：塌回「本来就只有它」的落点。
+        // The same holds when only one line is overridden and the other line has wrapped: it falls back to the landing point it would have as the only line.
         let mixed = vec![
             LineBox {
                 height: 40.0,
@@ -1223,8 +1192,7 @@ mod tests {
         );
     }
 
-    /// 块级锚点作用在整栈上：top → 栈顶边压锚线，bottom → 栈底边压锚线，
-    /// center（以及缺席）→ 栈中心压锚线（现状）。行序永不翻转。
+    /// The block-level anchor acts on the whole stack. top → the top edge of the stack presses on the anchor line; bottom → the bottom edge of the stack presses on the anchor line; center (and absent) → the centre of the stack presses on the anchor line (the current behaviour). The order of lines never flips.
     #[test]
     fn the_block_anchor_hangs_the_whole_stack_off_the_anchor_line() {
         let heights = [40.0, 20.0];
@@ -1246,7 +1214,7 @@ mod tests {
             vec![(500.0, 794.0), (500.0, 840.0)]
         );
 
-        // 单行块（含折行）：三态就是「顶边 / 中心 / 底边压线」。
+        // Single-line block (including a wrapped one): the three states are "top edge, centre, or bottom edge pressed onto the line".
         let lone = vec![LineBox {
             height: 80.0,
             reference: 40.0,
@@ -1261,12 +1229,11 @@ mod tests {
         assert_eq!(lone_top(Some(VerticalAlign::Bottom)), 780.0);
     }
 
-    /// 行级锚点压过槽内接缝默认值；脱离堆栈的行按自己的锚点挂在 `(x%, y%)` 上，
-    /// 缺席仍是 center，老文档因此零回归。
+    /// Line-level anchors override the default seam placement inside the slot. A line detached from the stack hangs on `(x%, y%)` by its own anchor. When absent, it is still centre, so old documents have zero regressions.
     #[test]
     fn line_anchors_override_the_seam_and_place_detached_lines() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
-        // 上行折成两行、但显式要求贴槽顶：向下长，会压过接缝。
+        // The upper line wraps to two lines, but is explicitly asked to stick to the slot top, so it grows downward and overrides the seam.
         let forced = vec![
             LineBox {
                 height: 80.0,
@@ -1288,7 +1255,7 @@ mod tests {
             vec![(500.0, 827.0), (500.0, 873.0)]
         );
 
-        // 脱离行：y% = 30 → 300px 锚线，块高 40。
+        // Detached line: y% = 30 → 300px anchor line, block height 40.
         let detached = |align| {
             place_lines(
                 &[LineBox {
@@ -1311,8 +1278,7 @@ mod tests {
         assert_eq!(detached(Some(VerticalAlign::Bottom)), (200.0, 260.0));
     }
 
-    /// 共享底板取摆放后的实际范围：折行的行长出槽位，底板必须跟着长；
-    /// 都不折行时结果与「锚点 ± 总高/2」逐比特相同。
+    /// The shared plate uses the actual range after placement. When wrapped lines grow beyond the slot, the plate must grow with them. When nothing wraps, the result is bit-identical to "anchor ± total height / 2".
     #[test]
     fn the_shared_background_spans_the_placed_lines() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
@@ -1337,10 +1303,10 @@ mod tests {
             },
         ];
         let placed = place_lines(&wrapped, anchor, gap, frame, None, StackPlate::Separate);
-        // 上行 787..867、下行 873..913：底板两头都长出来了。
+        // The upper line spans 787..867 and the lower line 873..913, so the plate has grown out at both ends.
         assert_eq!(stacked_span(&placed, &wrapped), Some((787.0, 913.0)));
 
-        // 脱离堆栈的行不进共享底板；全部脱离时没有共享底板可画。
+        // Lines detached from the stack do not enter the shared plate. If all lines are detached, there is no shared plate to draw.
         let detached = vec![
             LineBox {
                 over: Some((20.0, 5.0)),
@@ -1353,10 +1319,9 @@ mod tests {
         assert_eq!(stacked_span(&[], &[]), None);
     }
 
-    /// 非对称内边距的两行堆栈：上行 `pad_v` 10、下行 4。
+    /// A two-line stack with asymmetric inner padding: the upper line's `pad_v` is 10, the lower line's is 4.
     ///
-    /// 护栏一律用不等的两个值：对称 fixture 下「每行用自己的 pad_v」和「两行共用
-    /// 一个 pad_v」都会通过，只有非对称才钉得住 Mac 的逐行语义。
+    /// The guards all use unequal values. With symmetric fixtures, both "each line uses its own pad_v" and "both lines share one pad_v" would pass. Only an asymmetric fixture pins down the Mac's per-line semantics.
     fn padded_pair() -> Vec<LineBox> {
         vec![
             LineBox {
@@ -1376,15 +1341,14 @@ mod tests {
         ]
     }
 
-    /// 逐行底板：槽位含 `2 × pad_v`，那道 gap 落在两块**底板**之间而不是字形之间。
+    /// Per-line plates: the slot includes `2 × pad_v`, and the gap falls between the two **plates**, not between the glyphs.
     ///
-    /// 视觉上的缝是两块板的间距；照旧把 gap 记在字形之间，双语字幕的两块底板会
-    /// 贴死甚至互相压住。字形之间因此拉开 `gap + pad_v上 + pad_v下`，非对称时不等分。
+    /// The visible gap is the spacing between the two plates. If the gap were still recorded between glyphs, the two bilingual plates would touch or even overlap. So the space between glyphs is widened by `gap + upper pad_v + lower pad_v`, and it is not split evenly when the padding is asymmetric.
     #[test]
     fn padded_slots_put_the_gap_between_the_plates_not_the_glyphs() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
         let lines = padded_pair();
-        // 槽高 = 参考高 + 2 × 自己的 pad_v：60 与 28，总高 60 + 28 + 6 = 94。
+        // Slot height = reference height + 2 × its own pad_v: 60 and 28, total 60 + 28 + 6 = 94.
         assert_eq!(
             stacked_extent(&lines, gap, StackPlate::Separate),
             StackExtent {
@@ -1392,7 +1356,7 @@ mod tests {
                 total_height: 94.0,
             }
         );
-        // 返回的永远是字形顶边：含内边距的盒顶再进 pad_v。
+        // The return value is always the glyph top edge: the box top, which includes padding, is further inset by pad_v.
         let placed = place_lines(&lines, anchor, gap, frame, None, StackPlate::Separate);
         assert_eq!(placed, vec![(500.0, 823.0), (500.0, 883.0)]);
 
@@ -1404,7 +1368,7 @@ mod tests {
             gap + lines[0].pad_v + lines[1].pad_v
         );
 
-        // pad_v 全为 0 时逐比特退回无内边距的老落点（等价性哨兵的那三个数）。
+        // When all pad_v values are 0, it falls back bit for bit to the old landing point without padding (the three numbers in the equivalence sentinel).
         let bare = single_row_boxes(&[40.0, 20.0], &[None, None]);
         assert_eq!(
             place_lines(&bare, anchor, gap, frame, None, StackPlate::Separate),
@@ -1412,9 +1376,9 @@ mod tests {
         );
     }
 
-    /// 块级锚点钉的是**含内边距**的整栈盒：top → 板顶压锚线，bottom → 板底压锚线。
+    /// The block-level anchor pins the whole stack's box **including padding**: top → the top edge of the plate presses on the anchor line; bottom → the bottom edge of the plate presses on the anchor line.
     ///
-    /// 钉字形边会让开着底板的字幕整体越界——底板比字形多出一条 pad_v。
+    /// Pinning the glyph edge would push a subtitle with a plate out of bounds, because the plate has one extra pad_v beyond the glyphs.
     #[test]
     fn the_block_anchor_pins_the_padded_stack_edges() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
@@ -1430,7 +1394,7 @@ mod tests {
             placed(Some(VerticalAlign::Bottom)),
             vec![(500.0, 776.0), (500.0, 836.0)]
         );
-        // 上行板顶 = 锚线；下行板底 = 锚线。
+        // The upper line's plate top is the anchor line; the lower line's plate bottom is the anchor line.
         assert_eq!(
             placed(Some(VerticalAlign::Top))[0].1 - lines[0].pad_v,
             anchor.1
@@ -1439,16 +1403,15 @@ mod tests {
         assert_eq!(bottom[1].1 + lines[1].height + lines[1].pad_v, anchor.1);
     }
 
-    /// 共享底板：槽位与缝都留在裸字形上，块级锚点钉的是**那块板**的边。
+    /// Shared plate: the slot and the gap both remain on the bare glyphs, and the block-level anchor pins the edges of **that plate**.
     ///
-    /// 板内边距记在整栈外面（Mac 的 `platePadV`），所以字形落点与 pad = 0 的逐行
-    /// 模式逐比特相同——共享模式下改 backgroundPadding 只该让板长胖，不该挪字。
+    /// The padding inside the plate is recorded outside the whole stack (the Mac's `platePadV`), so the glyph placement is bit-identical to the per-line mode with pad = 0. In shared mode, changing `backgroundPadding` should only make the plate grow; it should not move the text.
     #[test]
     fn the_shared_plate_edge_is_what_the_block_anchor_pins() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
         let lines = padded_pair();
         let plate = StackPlate::Shared { pad_v: 12.0 };
-        // 槽位仍是裸参考高（40 + 20 + 6），板内边距 12 × 2 记在外面。
+        // The slot is still the bare reference height (40 + 20 + 6), and the in-plate padding 12 × 2 is recorded outside it.
         assert_eq!(
             stacked_extent(&lines, gap, plate),
             StackExtent {
@@ -1459,7 +1422,7 @@ mod tests {
         let placed = |align| place_lines(&lines, anchor, gap, frame, align, plate);
         assert_eq!(placed(None), vec![(500.0, 827.0), (500.0, 873.0)]);
 
-        // 板 = 字形范围向外扩一条 platePadV；源行字形顶距板顶恰好 platePadV。
+        // Plate = the glyph range expanded outward by one `platePadV`. The source line's glyph top sits exactly `platePadV` below the plate top.
         let span = stacked_span(&placed(None), &lines).expect("堆栈里有两行");
         assert_eq!((span.0 - 12.0, span.1 + 12.0), (815.0, 905.0));
         assert_eq!(placed(None)[0].1 - (span.0 - 12.0), 12.0);
@@ -1475,16 +1438,14 @@ mod tests {
         );
     }
 
-    /// 共享底板选行：`!源行有真背景 && 译文行有真背景 ? 译文行 : 源行`。
+    /// Shared-plate line selection: `!source line has a real background && translation line has a real background ? translation line : source line`.
     ///
-    /// 要害分支是「两行都没真背景」——此时仍然取**源行**。板固然不画，可它的 pad 会经
-    /// `StackPlate::Shared` 的 `plate_pad_v` 撑开整个槽位盒；两行 backgroundPadding
-    /// 不对称时选错行，就是与 Mac / Web 实打实的几何分叉，而不是「反正看不见」。
+    /// The crux is the branch where neither line has a real background. Even then, the **source line** is still chosen. The plate is indeed not drawn, but its pad still stretches the whole slot box through the `plate_pad_v` of `StackPlate::Shared`. Choosing the wrong line when the two lines' `backgroundPadding` is asymmetric is a real geometric divergence from the Mac and Web, not a case of "it's invisible anyway".
     ///
-    /// fixture 的两个 pad 故意不等：相等时无论取哪行都通过，钉不住任何东西。
+    /// The fixture's two pads are deliberately unequal. When they are equal, either choice passes, and nothing is pinned down.
     #[test]
     fn the_shared_plate_spec_falls_back_to_the_translation_only_when_it_has_a_background() {
-        // 每个候选是 (backgroundPadding 派生出的 pad, 这一行画得出真底板吗)。
+        // Each candidate is (the pad derived from backgroundPadding, whether this line can draw a real plate).
         let (source_pad, trans_pad) = (20.0_f64, 5.0_f64);
         let pad_of = |line: Option<(f64, bool)>| line.map(|(pad, _)| pad);
         let pick = |source: Option<(f64, bool)>, trans: Option<(f64, bool)>| {
@@ -1493,18 +1454,18 @@ mod tests {
         let source = |bg| Some((source_pad, bg));
         let trans = |bg| Some((trans_pad, bg));
 
-        // 两行都没真背景 → 源行。fallback 要求译文行**自己**有背景，缺一不可。
+        // Neither line has a real background → the source line. The fallback requires the translation line **itself** to have a background; both conditions are necessary.
         assert_eq!(pick(source(false), trans(false)), Some(source_pad));
         assert_eq!(pick(source(false), trans(true)), Some(trans_pad));
-        // 源行自己画得出板时，译文行有没有都不影响。
+        // When the source line itself can draw a plate, whether the translation line has one makes no difference.
         assert_eq!(pick(source(true), trans(false)), Some(source_pad));
         assert_eq!(pick(source(true), trans(true)), Some(source_pad));
-        // 堆栈里只剩一行（另一行脱离或没启用）时就是它自己说了算。
+        // When only one line remains in the stack (the other is detached or disabled), that line decides on its own.
         assert_eq!(pick(source(false), None), Some(source_pad));
         assert_eq!(pick(None, trans(false)), Some(trans_pad));
         assert_eq!(pick(None, None), None);
 
-        // 选中的 pad 确实进入摆放：两个候选给出的槽位盒高差 (20 − 5) × 2。
+        // The selected pad does enter the placement: the difference in slot box height between the two candidates is (20 − 5) × 2.
         let extent = |pad| {
             stacked_extent(&padded_pair(), PLACE_GAP, StackPlate::Shared { pad_v: pad })
                 .total_height
@@ -1515,10 +1476,10 @@ mod tests {
         );
     }
 
-    /// 脱离堆栈的行按自己**含内边距**的盒子挂在 `(x%, y%)` 上：
-    /// top → 板顶压线、center（含缺席）→ 板中压线、bottom → 板底压线。
+    /// A line detached from the stack hangs on `(x%, y%)` by its own box **including padding**:
+    /// top → the top of the plate presses on the line; center (including absent) → the middle of the plate presses on the line; bottom → the bottom of the plate presses on the line.
     ///
-    /// 脱离行永远自己画底板（共享板包不住不连续的区间），所以板模式与它无关。
+    /// A detached line always draws its own plate, because a shared plate cannot cover a discontinuous range, so the plate mode does not affect it.
     #[test]
     fn detached_line_anchors_pin_the_padded_box_edges() {
         let (anchor, frame, gap) = (PLACE_ANCHOR, PLACE_FRAME, PLACE_GAP);
@@ -1544,11 +1505,11 @@ mod tests {
         assert_eq!(detached(Some(VerticalAlign::Center)), (200.0, 280.0));
         assert_eq!(detached(Some(VerticalAlign::Top)), (200.0, 310.0));
         assert_eq!(detached(Some(VerticalAlign::Bottom)), (200.0, 250.0));
-        // 盒高 60 的三条边分别压在 y% = 30 → 300 那条线上。
+        // The three edges of a box 60 tall each press on the y% = 30 → 300 line.
         assert_eq!(detached(Some(VerticalAlign::Top)).1 - 10.0, 300.0);
         assert_eq!(detached(None).1 - 10.0 + 30.0, 300.0);
         assert_eq!(detached(Some(VerticalAlign::Bottom)).1 + 40.0 + 10.0, 300.0);
-        // 板模式与脱离行无关。
+        // The plate mode is irrelevant to detached lines.
         assert_eq!(
             place_lines(
                 &[line(None)],
@@ -1562,21 +1523,16 @@ mod tests {
         );
     }
 
-    /// `pad_v` 恒等于 `pad_h / PLATE_PAD_ASPECT`——原型
-    /// `designs/cuccut/app/panel-substyle.jsx:82-86` 的 `padOf` 只有一个 `pad`：
-    /// 竖向 `pad·fz/100`，横向再乘 1.4。此前核心按「底板是不是块」在 0.62 / 0.45
-    /// 之间挑系数，两档的横竖比（1.6 与 2.2）都比原型的 1.4 扁，字上下贴着板边。
-    /// `backgroundStyle == "block"` 现在只决定最小宽度。
+    /// `pad_v` always equals `pad_h / PLATE_PAD_ASPECT`. The prototype `designs/cuccut/app/panel-substyle.jsx:82-86` `padOf` has only one `pad`: vertically `pad·fz/100`, and horizontally multiplied by 1.4. Previously the core chose a coefficient between 0.62 and 0.45 depending on whether the plate was a block. Both resulting aspect ratios (1.6 and 2.2) were flatter than the prototype's 1.4, so the text sat pressed against the plate edges top and bottom. `backgroundStyle == "block"` now determines only the minimum width.
     ///
-    /// 关掉底板不会让 pad_v 归零——不画板的行照样撑开自己的槽位，否则同一份文档
-    /// 「关一下背景」就会把另一行搬走。
+    /// Turning the plate off does not bring `pad_v` to zero. A line that does not draw a plate still stretches its own slot. Otherwise, "toggling the background once" on the same document would move the other line.
     #[test]
     fn the_plate_padding_keeps_the_prototype_aspect_ratio() {
         let mut style = document("None", "none")["style"].clone();
         style["backgroundPadding"] = json!(20);
         style["background"] = json!(true);
         style["backgroundStyle"] = json!("wrap");
-        // 短边 1080 → canvas_scale 2.0；pad_h = 20 × 2 × 0.8 = 32。
+        // Short side 1080 → canvas_scale 2.0; pad_h = 20 × 2 × 0.8 = 32.
         let resolve =
             |style: &Value| resolve_line_style(style, LineKind::Original, 1920, 1080, false);
 
@@ -1596,13 +1552,9 @@ mod tests {
         assert!((off.background_pad_h - 32.0).abs() < 1e-9);
         assert!((off.background_pad_v - 32.0 / PLATE_PAD_ASPECT).abs() < 1e-9);
 
-        // 行级 partial 各自覆盖 backgroundPadding：非对称 pad_v 是合法输入，
-        // 共享底板因此不能「随便挑一行」取 padding。
+        // Line-level partials each override `backgroundPadding`. An asymmetric `pad_v` is a legal input, so the shared plate cannot pick a line arbitrarily for its padding.
         //
-        // 译文行的 `pad_h` 还跟着**它自己的字号**走：这里的译文逻辑字号是
-        // 30 × (20/30) × (32/20) = 32，短边 1080 ⇒ font_size 64，于是
-        // pad_h = 5 × (64/30) × 0.8。此前乘的是 canvas_scale（2.0），译文行的
-        // 底板与原文行一样厚，双语行看上去像两块不同比例的板。
+        // The translation line's `pad_h` also follows **its own font size**. Here the translation's logical font size is 30 × (20/30) × (32/20) = 32, and with short side 1080 ⇒ font_size 64, so pad_h = 5 × (64/30) × 0.8. Previously it was multiplied by canvas_scale (2.0), so the translation line's plate was as thick as the original line's, and the bilingual lines looked like two plates of different proportions.
         style["mode"] = json!("bi");
         style["transStyle"] = json!({"backgroundPadding": 5});
         let trans = resolve_line_style(&style, LineKind::Translation, 1920, 1080, true);
@@ -1611,8 +1563,8 @@ mod tests {
         assert!((trans.background_pad_v - trans.background_pad_h / PLATE_PAD_ASPECT).abs() < 1e-9);
     }
 
-    /// 严格白名单：只有 `"top" | "center" | "bottom"` 三个字符串算数，别的一律缺席。
-    /// 「显式 center」与「缺席」必须可区分——后者才走接缝规则。
+    /// Strict whitelist: only the three strings `"top" | "center" | "bottom"` count; anything else is treated as absent.
+    /// "Explicit center" and "absent" must be distinguishable, since only absence goes through the seam rule.
     #[test]
     fn vertical_align_only_accepts_the_three_legal_strings() {
         for (value, expected) in [
@@ -1638,8 +1590,8 @@ mod tests {
         assert_eq!(parse_vertical_align(None), None);
     }
 
-    /// 行级垂直锚点与行级位置同纪律：只读 partial、只在双语上下文消费。
-    /// 走合并样式会让根节点的块级锚点冒充成每一行的显式值，接缝规则就废了。
+    /// Line-level vertical anchors follow the same discipline as line-level position: they read only partials and are consumed only in bilingual contexts.
+    /// Reading them from the merged style would let the root node's block-level anchor pass as an explicit value on every line, and the seam rule would be pointless.
     #[test]
     fn line_vertical_align_reads_the_partial_in_a_bilingual_context_only() {
         let style = json!({
@@ -1651,12 +1603,12 @@ mod tests {
             line_vertical_align(&style, LineKind::Original, StudioMode::Bilingual),
             Some(VerticalAlign::Bottom)
         );
-        // 根节点的 "top" 不得渗进译文行。
+        // The root node's "top" must not leak into the translation line.
         assert_eq!(
             line_vertical_align(&style, LineKind::Translation, StudioMode::Bilingual),
             None
         );
-        // 单行导出忽略残留的行级锚点。
+        // Single-line export ignores stale line-level anchors.
         assert_eq!(
             line_vertical_align(&style, LineKind::Original, StudioMode::Original),
             None
@@ -1672,8 +1624,7 @@ mod tests {
         );
     }
 
-    /// x、y 必须成对出现才算行级覆盖，而且只在双语上下文消费。这两条同时挡住了
-    /// 「从合并样式读到根锚点」和「单行导出被上一次双语摆放搬走」两种回归。
+    /// `x` and `y` must appear as a pair to count as a line-level override, and they are consumed only in bilingual contexts. Together these guard against two regressions: reading the root anchor from the merged style, and a single-line export being moved by an earlier bilingual placement.
     #[test]
     fn line_positions_need_both_axes_and_a_bilingual_context() {
         let style = json!({
@@ -1730,8 +1681,7 @@ mod tests {
             .unwrap()
     }
 
-    /// 回归保护：只写一个轴、或在单行模式下留着两个轴，烧录结果都必须与完全没有
-    /// 这些键时逐字节相同。
+    /// Regression guard: if only one axis is written, or both axes are left in single-line mode, the burned-in result must be byte-identical to the result when none of these keys exist.
     #[test]
     fn half_written_line_positions_leave_the_burn_in_byte_identical() {
         let base = positioned_bilingual_document();
@@ -1758,11 +1708,9 @@ mod tests {
         assert_eq!(burned_rgba(&single), single_baseline);
     }
 
-    /// 像素级接缝钉死：一行折行后只往自己那一侧长，另一行烧在原处一动不动。
+    /// Pixel-level seam pinning: when one line wraps, it grows only on its own side, and the other line burned in at its original place does not move at all.
     ///
-    /// 改造前整栈按实际总高重新居中，原文一折行译文就会被推走；这条断言是双语
-    /// 字幕「改一行不动另一行」在烧录链上的验收口。两种 `order` 都验，因为折行的
-    /// 那一行在上、在下时生长方向相反。
+    /// Before the refactor, the whole stack was re-centred by its actual total height, so when the original text wrapped, the translation was pushed away. This assertion is the acceptance point on the burn-in path for bilingual subtitles' "changing one line does not move the other". Both `order` values are tested, because the wrapping line grows in opposite directions depending on whether it is above or below.
     #[test]
     fn a_wrapped_burned_line_grows_away_from_the_seam() {
         let rows = |document: &Value| {
@@ -1774,7 +1722,7 @@ mod tests {
             let mut flat = positioned_bilingual_document();
             flat["style"]["order"] = order.clone();
             let mut wrapped = flat.clone();
-            // 硬换行把原文摊成两行；译文的四个汉字仍是一行。
+            // A hard line break splits the original text into two lines, while the translation's four Chinese characters remain one line.
             wrapped["cues"][0]["text"] = json!("Hello\nworld");
             let (pinned, pushed) = (rows(&flat), rows(&wrapped));
             if original_on_top {
@@ -1799,8 +1747,7 @@ mod tests {
         }
     }
 
-    /// 三情形的像素落点：两行都覆盖 → 各自独立居中；只覆盖一行 → 另一行塌回锚点
-    /// 的单行位置；都不覆盖 → 仍贴着底部锚点。
+    /// Pixel landing points for the three cases. Both lines overridden → each is centred independently. Only one line overridden → the other line collapses back to the single-line position at the anchor. Neither overridden → it still sits near the bottom anchor.
     #[test]
     fn line_positions_move_only_the_covered_burned_lines() {
         let base = positioned_bilingual_document();
@@ -1811,11 +1758,11 @@ mod tests {
                 .rows
         };
 
-        // 都不覆盖：整组仍在 y=86% 的锚点附近。
+        // Neither overridden: the whole group still sits near the y=86% anchor.
         let stacked = rows(&base);
         assert!(stacked.start > 240, "锚点堆栈不应上移：{stacked:?}");
 
-        // 两行都覆盖：一行在上四分之一，一行在下四分之一，中间是空的。
+        // Both overridden: one line in the top quarter and one in the bottom quarter, with nothing in between.
         let mut both = base.clone();
         both["style"]["origStyle"] = json!({"x": 25, "y": 15});
         both["style"]["transStyle"] = json!({"x": 75, "y": 85});
@@ -1826,7 +1773,7 @@ mod tests {
         );
         assert!(both_rows.end > 280, "被覆盖的译文行没有下移：{both_rows:?}");
 
-        // 只覆盖原文行：译文行的堆栈只剩自己，必须与单行模式的落点完全一致。
+        // Only the original line overridden: the translation line's stack holds only itself, so it must match the landing point of single-line mode exactly.
         let mut only_original = base.clone();
         only_original["style"]["origStyle"] = json!({"x": 25, "y": 15});
         let mixed = burned_rgba(&only_original);
@@ -1837,7 +1784,7 @@ mod tests {
         translation_only["style"]["mode"] = json!("trans");
         let solo = burned_rgba(&translation_only);
         let solo_box = alpha_bbox(&solo, 640, 360).expect("字幕帧必须有非零像素");
-        // 译文行的像素与单行模式逐字节一致：只截出译文所在的那几行来比。
+        // The translation line's pixels are byte-identical to single-line mode. Compare only the rows that contain the translation.
         let band = |rgba: &[u8], rows: std::ops::Range<usize>| {
             rgba[rows.start * 640 * 4..rows.end * 640 * 4].to_vec()
         };
@@ -1848,9 +1795,8 @@ mod tests {
         );
     }
 
-    /// 跨端约定：`width`/`scale`/`rotation`/转场仍是整组属性，支点是全局锚点。
-    /// 被覆盖的行只是换了落点，仍然跟着同一个组变换走——所以离锚点越远，转场
-    /// 期间被拉动得越多。这条不是实现细节，是三端必须一致的取舍。
+    /// Cross-platform convention: `width`, `scale`, `rotation` and transitions remain whole-group properties, with the pivot at the global anchor.
+    /// An overridden line merely has a different landing point and still follows the same group transform. So the farther a line is from the anchor, the more it is pulled during a transition. This is not an implementation detail; it is a trade-off that all three platforms must keep consistent.
     #[test]
     fn floating_lines_still_ride_the_group_transition() {
         let mut document = positioned_bilingual_document();
@@ -1859,7 +1805,7 @@ mod tests {
         document["style"]["origStyle"] = json!({"x": 25, "y": 15});
 
         let mut plan = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
-        // 显示窗从 0.9 开始（cue 1.0 减 leadIn 0.1），magic-pop@50 的时长是 0.1s。
+        // The display window starts at 0.9 (cue 1.0 minus leadIn 0.1); magic-pop@50 lasts 0.1s.
         let opening = plan.render_rgba(0.9).unwrap();
         let settled = plan.render_rgba(1.5).unwrap();
         let opening_box = alpha_bbox(&opening, 640, 360).expect("转场首帧必须有非零像素");
@@ -1975,9 +1921,7 @@ mod tests {
         assert_eq!(&dark[sample * 4..sample * 4 + 4], &expected);
     }
 
-    /// CPU 导出（`composite_bgra`）与 GPU 场景同一层序：元素 → 字幕 → 模板前景。
-    /// 盖满画面的元素（主视频被元素化时就是这样）不得把字幕盖掉；非 normal 字幕
-    /// 的底是「视频 + 元素」，与 GPU 按目标取样的口径相同。
+    /// CPU export (`composite_bgra`) and the GPU scene share the same layer order: element → subtitle → template foreground. An element that covers the whole frame (as happens when the main video is turned into an element) must not hide the subtitles. For non-normal subtitles, the background is "video + element", the same sampling convention the GPU uses when sampling per target.
     #[test]
     fn cpu_composite_keeps_captions_above_full_canvas_elements() {
         let full_canvas_element = json!({"tracks": [{"elements": [{
@@ -2073,13 +2017,9 @@ mod tests {
                     })
                 },
             );
-        // 底板纵向内边距是 pad_h ÷ 1.4（原型 `panel-substyle.jsx` 的 `padOf`：横向
-        // 比纵向宽 1.4 倍），不再是 pad_h × 0.45：包围盒因此比上一版上下各放 2px。
-        // 字形落点没变——单行块居中于锚点时 pad_v 在上下对消。
+        // The plate's vertical inner padding is pad_h ÷ 1.4 (prototype `panel-substyle.jsx`'s `padOf`: horizontally 1.4 times wider than vertically), no longer pad_h × 0.45. So the bounding box is 2px taller at the top and bottom than in the previous version. The glyph placement has not changed: for a single-line block centred on the anchor, pad_v cancels out top and bottom.
         assert_eq!(bounds, Some((255, 293, 384, 325)));
-        // 描边宽度改口径（`textOutline.width` 是可见外扩量 ⇒ 居中线宽再乘 0.5）后
-        // 字形描边变细一半；本轮几何对齐原型又改了底板纵向内边距（pad_h ÷ 1.4）、
-        // 字距按本行字号缩放、阴影模糊不再被 0.9·字号夹住，像素随之重算。
+        // After the outline width's basis changed (`textOutline.width` is the visible outward spread, so the centred stroke width is multiplied by 0.5), the glyph outline became half as thick. This round, to align the geometry with the prototype, the plate's vertical inner padding changed (pad_h ÷ 1.4), letter spacing scales with this line's font size, and the shadow blur is no longer clamped to 0.9·font size. The pixels were recomputed accordingly.
         assert_eq!(
             lower_hex(&Sha256::digest(&rgba)),
             "86559b4099654620b8a690e0cda9dfcb171128e13f5b77a5ca01a24833ab6bc9"
@@ -2185,9 +2125,7 @@ mod tests {
         }
     }
 
-    /// 浏览器保留的显式 raster 交付口必须是 `putImageData` 能直接吃的形状
-    /// （straight alpha ＋ 非零子矩形）。已发布样式都应走 GPU scene；这个入口
-    /// 只服务无效 glyph / scene 上限等运行时兜底，不能再由目录样式触发。
+    /// The explicit raster delivery port kept for the browser must have a shape that `putImageData` can consume directly (straight alpha plus a non-zero sub-rectangle). Published styles should all go through the GPU scene. This entry serves only runtime fallbacks such as invalid glyphs or scene limits, and catalogue styles must no longer trigger it.
     #[test]
     fn browser_raster_layer_is_the_straight_alpha_subrect_of_the_cpu_subtitle_frame() {
         let mut doc = document("boxHighlight", "none");
@@ -2214,8 +2152,7 @@ mod tests {
             layer.width as usize * layer.height as usize * 4
         );
 
-        // 逐像素对位：alpha 不动，颜色通道只许被放大。半透明边缘一个都没放大
-        // 就说明没解预乘——那会给每个抗锯齿字形边缘描一道暗边。
+        // Pixel-by-pixel alignment: alpha stays unchanged and only the colour channels may be amplified. If not a single semi-transparent edge was amplified, un-premultiplication was not done, and that would draw a dark outline on every anti-aliased glyph edge.
         let mut lifted = 0usize;
         for row in 0..layer.height as usize {
             for col in 0..layer.width as usize {
@@ -2235,15 +2172,12 @@ mod tests {
         }
         assert!(lifted > 0, "没有一个半透明像素被解乘，解预乘没生效");
 
-        // 同一时刻重问必须逐字节一致（宿主拿 key 决定能不能留住上一帧位图）。
+        // Asking the same question at the same moment must yield byte-identical results (the host uses the key to decide whether it can keep the previous frame bitmap).
         let again = plan.render_subtitle_raster_layer(0.54).unwrap();
         assert_eq!(again.key, layer.key);
         assert_eq!(again.rgba, layer.rgba);
 
-        // 键必须在**同一个词内**逐帧推进。宿主的 `unchanged` 只看键：键若按
-        // (cue, 当前词) 定身份，第一帧之后每帧都会 `unchanged`，字幕出得来但动画
-        // 冻住——静态截图看不出来的假修复。逐词动画正是靠 `motion_id.is_some()`
-        // 同时点亮 `word_box_animated`，让缓存键带上帧号。
+        // The key must advance frame by frame **within the same word**. The host's `unchanged` looks only at the key. If the key were identified by (cue, current word), every frame after the first would be `unchanged`, so the subtitle would show but its animation would freeze. That is a fake fix that a static screenshot cannot reveal. Word-level animation is exactly why `motion_id.is_some()` also lights `word_box_animated`, so the cache key carries the frame number.
         let mid_word = plan.render_subtitle_raster_layer(1.5).unwrap();
         let late_word = plan.render_subtitle_raster_layer(2.0).unwrap();
         assert_ne!(
@@ -2255,7 +2189,7 @@ mod tests {
             "同一个词内像素没变，逐词动画根本没在动"
         );
 
-        // 透明时刻交付空图层而不是整幅透明缓冲（宿主据此整块卸掉图层）。
+        // At a transparent moment, deliver an empty layer rather than a whole transparent buffer (the host uses this to drop the layer entirely).
         doc["style"]["displayTiming"] = json!({"leadIn": 0, "tail": 0});
         doc["cues"][0]["start"] = json!(1.5);
         let mut quiet = OverlayRenderPlan::compile(&doc, 320, 180, 3.0, 30.0, None).unwrap();
@@ -2592,8 +2526,7 @@ mod tests {
         }
     }
 
-    /// 倒鸭子端到端：`caption-daoyazi` 让 `OverlayRenderPlan` 接管原文轨，CPU 与 GPU
-    /// 两条路都画出序列层（裁在字幕区域），且 seek-safe；译文行仍走 cue 级排版。
+    /// Daoyazi (倒鸭子) end-to-end: the `caption-daoyazi` style makes `OverlayRenderPlan` take over the original-text track. Both the CPU and GPU paths draw the sequence layer (cropped to the subtitle area), and it is seek-safe. The translation line still goes through cue-level layout.
     #[test]
     fn daoyazi_sequence_takes_over_the_original_track_on_both_render_paths() {
         let mut styled = document("None", "none");
@@ -2899,8 +2832,7 @@ mod tests {
             ("caption-glitch-rgb", 0.016),
             ("caption-gradient-fill", 0.015),
             ("caption-highlight", 0.014),
-            // 当前 CoreText ↔ cosmic-text 基线为 3.2569%；保留 0.14 个百分点
-            // 的既定跨引擎光栅化余量，仍能捕获布局、时序或效果漂移。
+            // The current CoreText ↔ cosmic-text baseline is 3.2569%. The established cross-engine rasterisation margin of 0.14 percentage points is kept, so drift in layout, timing or effects is still caught.
             ("caption-kinetic-slam", 0.034),
             ("caption-matrix-decode", 0.012),
             ("caption-neon-accent", 0.014),
@@ -2912,8 +2844,7 @@ mod tests {
             ("caption-weight-shift", 0.016),
         ]);
         for descriptor in caption_recipe_descriptors() {
-            // 跨句序列配方（倒鸭子）的画面由 `CaptionSequencePlan` 接管，不是 cue 级
-            // 接触表；它的像素回归在 `caption_sequence_tests` 与端到端测试里。
+            // The picture for the cross-sentence sequence recipe (Daoyazi) is taken over by `CaptionSequencePlan`, not by a cue-level contact sheet. Its pixel regression lives in `caption_sequence_tests` and the end-to-end tests.
             if descriptor.is_sequence() {
                 continue;
             }
@@ -3047,12 +2978,9 @@ mod tests {
         );
     }
 
-    /// 方案 §5.4 S14：字幕入场姿态由 serve 烘进 PNG，客户端不能也不该二次施加，
-    /// 所以 Mac `Stage/Frame/StageFrameMotion.swift::subtitlePoseNodes` 的两处压制
-    /// （任意字幕被选中 / Designed Caption 让位）只能从这里开口。
+    /// Plan §5.4 S14: the subtitle's entry pose is baked into the PNG by serve. The client cannot and should not apply it again, so the two suppressions in the Mac's `Stage/Frame/StageFrameMotion.swift::subtitlePoseNodes` (any subtitle being selected, and a Designed Caption yielding) can only be opened from here.
     ///
-    /// 三条不变量：压制后的入场帧 == 落定帧；键必须与不压制时区分开（否则
-    /// Designed Caption 的逐帧键会在同一帧号上撞成一张图）；默认仍是不压制。
+    /// Three invariants: after suppression, the entry frame equals the settled frame; the keys must be distinguishable from the unsuppressed case (otherwise a Designed Caption's per-frame keys would collide into one image on the same frame number); and the default remains unsuppressed.
     #[test]
     fn suppressed_transition_renders_the_settled_pose_without_colliding_keys() {
         let pixels = |frame: &OverlayFrame| Pixmap::decode_png(&frame.png).unwrap().data().to_vec();
@@ -3067,7 +2995,7 @@ mod tests {
         suppressed.set_suppress_transition(true);
         let suppressed_entrance = suppressed.render_png(0.01).unwrap();
 
-        // 同一时刻、无转场的那份文档就是压制后应有的样子（逐词状态一并对上）。
+        // The document at the same moment with no transition is exactly what it should look like after suppression (the per-word state matches too).
         let mut without =
             OverlayRenderPlan::compile(&document("None", "none"), 640, 360, 3.0, 30.0, None)
                 .unwrap();
@@ -3075,9 +3003,9 @@ mod tests {
         assert_eq!(pixels(&suppressed_entrance), pixels(&plain));
         assert_ne!(pixels(&animating), pixels(&plain));
 
-        // 键必须分得开：同一实例在两种压制状态间切换时不得复用上一张缓存帧。
+        // The keys must be distinguishable: the same instance switching between the two suppression states must not reuse the previously cached frame.
         assert_ne!(animating.subtitle_key, suppressed_entrance.subtitle_key);
-        // 落定之后两条路径本就是同一张图，键也应当一致（不该无谓打散缓存）。
+        // Once settled, the two paths are already the same image, so the keys should match as well (the cache should not be needlessly split).
         assert_eq!(
             plan.render_png(1.0).unwrap().subtitle_key,
             suppressed.render_png(1.0).unwrap().subtitle_key
@@ -3210,8 +3138,7 @@ mod tests {
                 &animation,
                 row["index"].as_u64().unwrap() as usize,
                 row["current"].as_u64().unwrap() as usize,
-                // 共享 fixture 里没有一条带块轨的效果；相位取 0 即可，
-                // 没有 `box_track` 的效果对它免疫。
+                // No effect in the shared fixture has a block track. Phase 0 is enough, and an effect without a `box_track` is immune to it.
                 0.0,
             );
             let expected = &row["expected"];
@@ -3402,9 +3329,7 @@ mod tests {
         );
     }
 
-    /// 帧级合成缓存的正确性前提：顺序渲染（缓存生效）与冷启动单帧渲染逐字节
-    /// 一致。采样点覆盖入场转场、逐词边界、静止段与显示窗边缘——整片导出与
-    /// 区间重渲（补丁窗冷启动）共用这条等价性。
+    /// The correctness premise of the frame-level compositing cache: sequential rendering (cache active) and a cold-start single-frame render are byte-identical. The sampling points cover the entry transition, word boundaries, still segments and the edges of the display window. The full-film export and the interval re-render (a cold start for a patch window) share this equivalence.
     #[test]
     fn sequential_cached_composites_match_cold_renders() {
         let doc = document("Color", "magic-fade");
@@ -3427,15 +3352,14 @@ mod tests {
         }
     }
 
-    /// 发光（`effect_on`）+ 双语的文档：字幕渲染会走「每行一张整幅效果层 →
-    /// 模糊 → 预乘合成」的路径，也就是 bbox 化与 scratch 复用改动的目标。
+    /// A document with glow (`effect_on`) and bilingual lines: subtitle rendering takes the path "one full-frame effect layer per line → blur → premultiplied compositing", which is the target of the bbox and scratch-reuse changes.
     fn glowing_bilingual_document(transition: &str) -> Value {
         let mut document = document("Highlight", transition);
         document["style"]["mode"] = json!("bi");
         document["style"]["glow"] = json!({
             "on": true, "color": "#FF3366", "intensity": 80, "range": 40
         });
-        // 收窄显示窗，让片头片尾留出真正的空白帧。
+        // Narrow the display window so that the head and tail leave genuinely blank frames.
         document["style"]["displayTiming"] = json!({"leadIn": 0.1, "tail": 0.1});
         document["cues"] = json!([{
             "id": "q1", "start": 1.0, "end": 2.0, "text": "Hello world",
@@ -3451,8 +3375,7 @@ mod tests {
         document
     }
 
-    /// 模糊后返回的包围盒必须覆盖全部非零字节——bbox 化合成与 scratch 复用
-    /// 的清零都建立在这条不变式上。
+    /// The bounding box returned after blurring must cover all non-zero bytes. Both the bbox compositing and the clearing of the scratch reuse are built on this invariant.
     #[test]
     fn blur_bounds_cover_every_nonzero_byte() {
         let width = 96_u32;
@@ -3486,9 +3409,7 @@ mod tests {
         }
     }
 
-    /// 与 [`sequential_cached_composites_match_cold_renders`] 同样的等价性，
-    /// 但文档开启发光并使用双语——一帧内有两条效果行，能抓到 scratch 缓冲
-    /// 未清零导致的跨帧/跨行残留。
+    /// The same equivalence as [`sequential_cached_composites_match_cold_renders`], but the document enables glow and uses bilingual lines. One frame then has two effect lines, which can catch residue across frames and lines caused by the scratch buffer not being cleared.
     #[test]
     fn glowing_bilingual_cached_composites_match_cold_renders() {
         let doc = glowing_bilingual_document("magic-fade");
@@ -3507,12 +3428,12 @@ mod tests {
         }
     }
 
-    /// 显示窗外必须判定为整帧透明，并且合成完全不触碰目标缓冲。
+    /// Outside the display window, the frame must be judged fully transparent, and compositing must not touch the target buffer at all.
     #[test]
     fn blank_overlay_windows_leave_the_destination_untouched() {
         let doc = glowing_bilingual_document("none");
         let mut plan = OverlayRenderPlan::compile(&doc, 320, 180, 3.0, 30.0, None).unwrap();
-        // 显示窗是 [0.9, 2.1)：片头片尾都是真正的空白帧。
+        // The display window is [0.9, 2.1), so both the head and the tail are genuinely blank frames.
         assert!(plan.overlay_is_blank(0.0).unwrap());
         assert!(!plan.overlay_is_blank(1.5).unwrap());
         assert!(plan.overlay_is_blank(2.9).unwrap());
@@ -3521,8 +3442,7 @@ mod tests {
         assert!(blank.iter().all(|&byte| byte == 24));
     }
 
-    /// 局部（内容包围盒）模糊必须与整帧模糊逐字节一致——含内容贴边、
-    /// 贴角时窗口收缩语义的对齐。
+    /// Local blur over the content bounding box must be byte-identical to full-frame blur, including the alignment of the window-shrinking semantics when content touches an edge or a corner.
     #[test]
     fn content_box_blur_matches_full_frame_blur() {
         let width = 64_u32;
@@ -3544,8 +3464,7 @@ mod tests {
         }
     }
 
-    /// `OverlayIncludes` 与 `ccut-editable::builder::include_element` 必须逐条同构：
-    /// 同一份 `--no-*` 组合下，「先烧录预览再导可编辑工程」两边看到的元素集合要一致。
+    /// `OverlayIncludes` and `ccut-editable::builder::include_element` must be isomorphic item by item. Under the same `--no-*` combination, the element set seen by "burn-in preview first, then export an editable project" must agree on both sides.
     #[test]
     fn overlay_includes_mirror_the_editable_export_element_gates() {
         let element = |kind: &str, role: Option<&str>| -> Element {
@@ -3559,7 +3478,7 @@ mod tests {
         assert!(all.allows(&element("text", None)));
         assert!(all.allows(&element("image", None)));
         assert!(all.allows(&element("video", None)));
-        // 叠加层不承载音频：音轨由 timeline_media 预合成进源媒体。
+        // The overlay carries no audio: the audio track is pre-mixed into the source media by timeline_media.
         assert!(!all.allows(&element("audio", None)));
 
         let no_texts = OverlayIncludes {
@@ -3577,7 +3496,7 @@ mod tests {
         assert!(!no_overlays.allows(&element("video", None)));
         assert!(no_overlays.allows(&element("text", None)));
 
-        // 水印角色先于 kind 判定，但只在水印被排除时短路。
+        // The watermark role is judged before kind, but it short-circuits only when the watermark is excluded.
         let no_watermarks = OverlayIncludes {
             watermarks: false,
             ..OverlayIncludes::ALL
@@ -3585,15 +3504,14 @@ mod tests {
         assert!(!no_watermarks.allows(&element("text", Some("watermark"))));
         assert!(!no_watermarks.allows(&element("image", Some("watermark"))));
         assert!(no_watermarks.allows(&element("text", None)));
-        // 保留水印但排除文字：水印文字仍要过 kind 这一关，跟着文字一起消失。
+        // Keep the watermark but exclude the text: the watermark text must still pass the kind check, and it disappears together with the text.
         assert!(!no_texts.allows(&element("text", Some("watermark"))));
-        // 其余角色不享受任何豁免。
+        // No other role enjoys any exemption.
         assert!(!no_texts.allows(&element("text", Some("screentext"))));
         assert!(!no_overlays.allows(&element("video", Some("broll"))));
     }
 
-    /// 关掉烧录后，显示模式的前提校验必须一并让路：没有译文也照样能导一版干净画面，
-    /// 而不是因为「模式要求译文」把整次导出拒掉。
+    /// After burn-in is turned off, the precondition check of the display mode must also yield. A clean picture can be exported even without a translation, rather than the whole export being rejected because "the mode requires a translation".
     #[test]
     fn disabled_subtitles_skip_the_display_mode_preconditions() {
         let document = document("none", "none");
@@ -3617,16 +3535,14 @@ mod tests {
                 "{mode} 关掉烧录后不得画出任何字幕"
             );
         }
-        // 对照组：保留烧录时同一份文档照样画得出原文。
+        // Control group: with burn-in retained, the same document still draws the original text.
         let mut plan = compile(OverlayIncludes::ALL, "original").unwrap();
         let mut frame = vec![24_u8; 320 * 180 * 4];
         plan.composite_bgra(&mut frame, 320 * 4, 1.5).unwrap();
         assert!(frame.iter().any(|&byte| byte != 24));
     }
 
-    /// 无译文是投影前就能确定的失败。这里故意不给项目注册 OverlayHost：若实现
-    /// 先尝试读取活时间轴，错误会变成“host 未注册”，也会重新引入超长文档的
-    /// 整体深拷峰值。
+    /// A missing translation is a failure that is certain before projection. This test deliberately does not register an OverlayHost for the project. If the implementation first tried to read the live timeline, the error would become "host not registered", and it would reintroduce the peak caused by deep-copying an overlong document.
     #[test]
     fn project_compile_rejects_missing_translation_before_live_projection() {
         let project = tempfile::tempdir().unwrap();
@@ -3696,12 +3612,12 @@ mod tests {
         assert_eq!(translated_line[0].kind, LineKind::Translation);
         assert_eq!(translated_line[0].item.text, "你好");
 
-        // 缺译句：译文轨里没有这一句，画面上就该什么都没有——绝不拿原文顶替。
+        // A missing translation sentence: the translation track has no such sentence, so the picture should show nothing. The original must never be substituted in.
         assert!(
             translated.active_layouts(3.0).is_empty(),
             "缺译句在译文模式下不排任何行"
         );
-        // 逐像素确认「什么都没有」也包括字幕背景框：整帧必须一个字节都没被改。
+        // Pixel-by-pixel confirmation that "nothing" also includes the subtitle background box: not a single byte of the whole frame may change.
         let mut frame = vec![24_u8; 640 * 360 * 4];
         translated.composite_bgra(&mut frame, 640 * 4, 3.0).unwrap();
         assert!(
@@ -3709,8 +3625,7 @@ mod tests {
             "缺译句期间不画文字，也不画背景框"
         );
 
-        // 双语模式语义不变：原文行照常，缺的只是译文行，同样不会多出一条用原文
-        // 冒充的译文行。
+        // Bilingual mode semantics are unchanged: the original line appears as usual, only the missing translation line is absent, and no extra translation line appears using the original as a stand-in.
 
         let mut bilingual =
             OverlayRenderPlan::compile(&document, 640, 360, 4.0, 30.0, Some("bilingual")).unwrap();
@@ -3719,13 +3634,11 @@ mod tests {
         assert_eq!(bilingual_fallback[0].kind, LineKind::Original);
         assert_eq!(bilingual_fallback[0].item.text, "Source fallback");
 
-        // 留空了，信封就更必须数得出来：覆盖率与上面真正被烧录的那一行同源，差值
-        // 正好是被留空的 s2。看不见的缺译只有配上计数才不是静默丢句。
+        // Left blank, so the envelope must count it even more clearly. Coverage comes from the same source as the line actually burned in above, and the difference is exactly the blanked s2. A missing translation that is invisible becomes a silent drop of a sentence only if it is not paired with a count.
         assert_eq!(sentence_translation_coverage(&document), (1, 2));
     }
 
-    /// 句边界漂移让旧译文键成为孤儿：`trans` 里的条目一条都没少，但没有一条挂得上
-    /// 当前派生出来的句 id。覆盖率必须报 0/N，而不是被「有译文」的粗判蒙混过去。
+    /// A sentence-boundary drift makes the old translation keys orphans: no entry in `trans` is missing, yet none of them attaches to any currently derived sentence id. Coverage must report 0/N, rather than being glossed over by the coarse "has a translation" check.
     #[test]
     fn sentence_coverage_counts_orphaned_translation_keys_as_missing() {
         let drifted = json!({
@@ -3739,7 +3652,7 @@ mod tests {
                 {"id": "s-w4", "cueIds": ["q2"], "start": 2.0, "end": 4.0,
                     "text": "Source fallback.", "trans": ""}
             ],
-            // 旧边界下的句 id：内容还在，键已经指不到任何一句。
+            // Sentence ids under the old boundaries: the content is still there, but the keys no longer point to any sentence.
             "transCues": [
                 {"id": "s-w0", "sid": "s-w0", "kind": "sentence",
                     "start": 0.0, "end": 4.0, "text": "你好，回退。"}
@@ -3747,8 +3660,7 @@ mod tests {
         });
         assert_eq!(sentence_translation_coverage(&drifted), (0, 2));
 
-        // 同一批 transCue 挂回正确的句 id 就该满覆盖——判据是 sid 对得上，
-        // 不是「transCues 非空」。
+        // The same batch of transCues reattached to the correct sentence ids should give full coverage. The criterion is that the sids match, not that "transCues is non-empty".
         let mut anchored = drifted.clone();
         anchored["transCues"] = json!([
             {"id": "s-w1", "sid": "s-w1", "kind": "sentence",
@@ -3759,8 +3671,7 @@ mod tests {
         assert_eq!(sentence_translation_coverage(&anchored), (2, 2));
     }
 
-    /// `--no-*` 不改文档却决定画哪些元素，必须自成一段进帧缓存键；画质档只改码率、
-    /// 不改像素，必须留在外面。
+    /// `--no-*` does not change the document, yet it decides which elements are drawn, so it must form a segment of its own in the frame cache key. The quality preset only changes the bitrate, not the pixels, so it must stay out of the key.
     #[test]
     fn include_flags_split_the_frame_cache_key() {
         let document = document("none", "none");
@@ -3793,9 +3704,7 @@ mod tests {
         assert_eq!(base, key(OverlayIncludes::default()));
     }
 
-    /// 导出期样式覆盖（`ccut export --to mp4 --sub-style`）：本次烧录必须逐像素
-    /// 等于「项目样式就是这份 blob」，项目 `studio/style.json` 投影与 `edits.json`
-    /// 里尚未提交的样式改动一并出局；同时一个字节的项目状态都不许写。
+    /// An export-time style override (`ccut export --to mp4 --sub-style`): this burn-in must be pixel-identical to "the project style is exactly this blob". The project's `studio/style.json` projection and the uncommitted style changes in `edits.json` are both excluded. And not a single byte of project state may be written.
     #[test]
     fn export_time_subtitle_style_override_replaces_project_style_and_pending_edits() {
         let temp = tempfile::tempdir().unwrap();
@@ -3806,7 +3715,7 @@ mod tests {
         data["rev"] = json!(7);
         let project_style = data["style"].clone();
         let data_bytes = serde_json::to_vec_pretty(&data).unwrap();
-        // 页面上改了颜色但还没 apply：这层覆盖平时是生效的。
+        // A colour was changed on the page but not yet applied: this override is normally in effect.
         let edits = json!({
             "style": {
                 "base": serde_json::to_string(&project_style).unwrap(),
@@ -3877,9 +3786,7 @@ mod tests {
         );
     }
 
-    /// 覆盖文件读不出来就必须炸：静默退回项目样式会让用户拿到一份看着正常、
-    /// 样式却不对的产物。非对象 JSON 尤其危险——所有 `style.get()` 都会落空，
-    /// 渲染会用一整套默认值。
+    /// If the override file cannot be read, it must fail loudly. Silently falling back to the project style would give the user an output that looks normal but has the wrong style. Non-object JSON is especially dangerous: every `style.get()` would miss, and rendering would use an entire set of defaults.
     #[test]
     fn subtitle_style_override_rejects_missing_broken_and_non_object_files() {
         let temp = tempfile::tempdir().unwrap();
@@ -3903,7 +3810,7 @@ mod tests {
         }
     }
 
-    /// 无字幕区间整帧透明，混合必须完全跳过、保持解码基帧原样。
+    /// In intervals with no subtitles the frame is fully transparent, so mixing must be skipped entirely and the decoded base frame kept as is.
     #[test]
     fn blank_gap_frames_leave_base_untouched() {
         let mut doc = document("Color", "none");
@@ -3919,14 +3826,14 @@ mod tests {
         assert!(visible.iter().any(|&byte| byte != 24));
     }
 
-    /// 水印在渲染期被抬到最上层（M5-B8，设计文档 §20 #10）。
+    /// The watermark is lifted to the top layer at render time (M5-B8, design document §20 #10).
     ///
-    /// 两件事一起断言，因为只断言前一件会让一个「全部倒序」的实现也通过：
+    /// Two things are asserted together, because asserting only the first would let an implementation that reverses everything also pass:
     ///
-    /// 1. **跨类**：不管水印写在哪条轨、轨内排第几，它都排在所有非水印之后；
-    /// 2. **同类稳定**：水印之间仍是文档顺序（先轨后元素），没有被重排。
+    /// 1. **Across classes**: wherever the watermark is written, on whichever track and at whatever position within the track, it sorts after all non-watermarks.
+    /// 2. **Stable within a class**: watermarks remain in document order (track first, then element) and are not reordered.
     ///
-    /// 这条路径同时供预览与 CLI 导出使用，所以它也是「两端层级恒等」的守卫。
+    /// This path serves both preview and CLI export, so it is also the guard that keeps the layer order identical at both ends.
     #[test]
     fn watermarks_are_hoisted_above_every_other_element_but_keep_their_own_order() {
         fn element(id: &str, watermark: bool) -> Value {
@@ -3948,8 +3855,7 @@ mod tests {
         });
 
         let mut plan = OverlayRenderPlan::compile(&document, 320, 180, 3.0, 30.0, None).unwrap();
-        // timeline.json 不存在 → 空 TimelineDocument；这些元素不引用媒体源，
-        // 所以整条路径不碰磁盘，项目目录给个不存在的路径即可。
+        // If timeline.json does not exist, the result is an empty TimelineDocument. These elements reference no media source, so the whole path never touches the disk, and the project directory can be given a path that does not exist.
         plan.load_timeline_elements(
             std::path::Path::new("/nonexistent/cuccut-b8-watermark-order"),
             &document,
@@ -4017,10 +3923,7 @@ mod tests {
         );
     }
 
-    /// 分离出来的主视频就是一件普通视频元素：叠放只看轨序（`tracks[]` 越靠后越在上），
-    /// 挪到图形轨之上就盖住图形，CPU 光栅与 GPU 场景同一顺序。导出把恒等主视频还原成
-    /// 底图只在它本来就是最底层时发生（`ccut-kernel` 的 `reattach_identity_main`）；
-    /// 这条守的是渲染层自己不给 `srcId: main` 另开特判。
+    /// A separated main video is an ordinary video element. Stacking depends only on track order (the later in `tracks[]`, the higher). Moved above the graphics track, it covers the graphics, and the CPU raster and the GPU scene use the same order. Export restores the identity main video to the base image only when it was already the bottom layer (`reattach_identity_main` in `ccut-kernel`). This test guards that the rendering layer itself does not give `srcId: main` a separate special case.
     #[test]
     fn detached_main_video_stacks_by_track_order() {
         let project = tempfile::tempdir().unwrap();
@@ -4201,12 +4104,11 @@ mod tests {
         );
     }
 
-    // ── 模板层 ────────────────────────────────────────────────────────
+    // ── Template layer ────────────────────────────────────────────────────────
 
-    /// 一份只有一条整宽章节条的模板：`y`/`h` 是画面百分比。
+    /// A template with only one full-width chapter bar: `y` and `h` are percentages of the frame.
     ///
-    /// 直接构造 `TemplateScene` 而不是注册假 host——本文件开头那条纪律禁的是
-    /// 「造第二份 OverlayHost 实现」，不是禁止喂它的产物。
+    /// It constructs `TemplateScene` directly rather than registering a fake host. The discipline stated at the top of this file forbids creating a second `OverlayHost` implementation. It does not forbid feeding that host its outputs.
     fn chapter_bar_doc(y: f64, h: f64) -> timeline::template::TemplateDoc {
         use timeline::template::{ChapterFill, LayerBox, LayerKind, TemplateLayer};
         let mut doc = timeline::template::blank(timeline::template::TemplateCanvas::Wide);
@@ -4243,10 +4145,9 @@ mod tests {
             .sum()
     }
 
-    /// 模板层真的画进了上屏/导出的那一帧，而且落在层声明的位置。
+    /// The template layer is really drawn into the frame that appears on screen or in export, and it lands where the layer declares.
     ///
-    /// 判别性在两条：① 不带模板时那一行必须是全透明的（否则测的是别的东西）；
-    /// ② 模板带之外的行仍然全透明（否则说明整幅被涂了底）。
+    /// Two discriminators: ① without a template, that row must be fully transparent (otherwise the test measures something else); ② outside the template band, the rows must still be fully transparent (otherwise the whole frame would have been painted).
     #[test]
     fn a_template_layer_paints_into_the_overlay_frame() {
         let document = document("none", "none");
@@ -4255,17 +4156,17 @@ mod tests {
         assert_eq!(alpha_rows(&before, 640, 4), 0, "没套模板时顶栏必须全透明");
 
         let mut plan = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
-        // 顶部 48px ⇒ 360 高画布的 13.33%
+        // Top 48px ⇒ 13.33% of a 360-high canvas
         plan.set_template_scene(Some(chrome_scene(0.0, 48.0 / 3.6)));
         let after = plan.render_rgba(1.0).unwrap();
         assert!(alpha_rows(&after, 640, 4) > 0, "顶栏应当被模板层填满");
-        // 顶部模板不触发字幕避让：第 200 行有字幕，两次渲染必须逐字节相同
+        // A top template does not trigger subtitle avoidance: line 200 has a subtitle, and the two renders must be byte-identical
         let row = |rgba: &[u8]| rgba[200 * 640 * 4..201 * 640 * 4].to_vec();
         assert_eq!(row(&before), row(&after), "模板带之外不该被涂到");
         assert_ne!(before, after, "带模板的这一帧不该与没套时逐字节相同");
     }
 
-    /// 浏览器的模板层出口：裁到模板带的子矩形，alpha 与整幅 overlay 里那一带一致。
+    /// The browser's template-layer output: cropped to the template band's sub-rectangle, with alpha consistent with that band in the full overlay.
     #[test]
     fn the_template_raster_layer_is_the_cropped_chrome_band() {
         let document = document("none", "none");
@@ -4295,7 +4196,7 @@ mod tests {
         assert!(layer.next_change.is_some(), "模板层逐帧给下一次变化");
     }
 
-    /// wasm 宿主的模板输入：章节表按口径过滤、台标 key 取自文档、交进来的像素被预乘。
+    /// The wasm host's template input: the chapter table is filtered by the stated criteria, the logo keys are taken from the document, and the pixels passed in are premultiplied.
     #[test]
     fn template_source_parses_chapters_and_premultiplies_logos() {
         let mut doc = logo_doc((10.0, 10.0, 20.0, 10.0), false, 1.0);
@@ -4341,8 +4242,7 @@ mod tests {
         assert!(TemplateSource::from_json("{", "[]", "").is_err());
     }
 
-    /// DrawOp 指纹必须跟着模板层的像素走：资源名里不带这一帧的像素身份，
-    /// 客户端会把动起来的章节条当成「没变」而复用旧图。
+    /// The DrawOp fingerprint must follow the template layer's pixels. If the resource name does not carry this frame's pixel identity, the client would treat a moving chapter bar as "unchanged" and reuse the old image.
     #[test]
     fn the_frame_identity_follows_the_template_pixels() {
         let document = document("none", "none");
@@ -4366,17 +4266,17 @@ mod tests {
         );
     }
 
-    /// 层盒是画面百分比：同一份模板画到不同尺寸的画布上，占的行数按比例走。
+    /// Layer boxes are percentages of the frame. The same template drawn on canvases of different sizes takes up rows in proportion.
     #[test]
     fn a_template_layer_scales_to_the_overlay_canvas() {
         let document = document("none", "none");
         let mut plan = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
-        // 顶栏 6.67% ⇒ 360 高画布上是 24px
+        // A top bar of 6.67% ⇒ 24px on a 360-high canvas
         plan.set_template_scene(Some(chrome_scene(0.0, 24.0 / 3.6)));
         let rgba = plan.render_rgba(1.0).unwrap();
         assert!(alpha_rows(&rgba, 640, 20) > 0, "第 20 行应当仍在顶栏内");
         assert_eq!(alpha_rows(&rgba, 640, 30), 0, "第 30 行应当已在顶栏之下");
-        // 整行都画满：横向丢了百分比就会只剩左半边
+        // The whole row is filled: if the horizontal percentage were dropped, only the left half would remain.
         let row = &rgba[4 * 640 * 4..5 * 640 * 4];
         assert!(
             row.chunks_exact(4).all(|pixel| pixel[3] > 0),
@@ -4384,10 +4284,9 @@ mod tests {
         );
     }
 
-    /// 字幕避让：底部有整宽模板带时，字幕锚线抬到带的上沿（原型 `subsBottom`）。
+    /// Subtitle avoidance: when a full-width template band sits at the bottom, the subtitle anchor line is raised to the band's upper edge (prototype `subsBottom`).
     ///
-    /// 走的是 `stack_layout` 这唯一漏斗。判别点是「只挪位置、不改长相」：
-    /// 字号必须一个像素都不变；顶部模板或关掉 `subsAvoid` 时不抬。
+    /// It goes through `stack_layout`, the only funnel. The discriminator is that it "only moves the position and does not change the appearance": the font size must not change by a single pixel. With a top template, or with `subsAvoid` off, it does not raise.
     #[test]
     fn a_bottom_template_strip_lifts_the_subtitle_stack_without_restyling_it() {
         let document = document("none", "none");
@@ -4399,7 +4298,7 @@ mod tests {
             "默认锚线在 86%"
         );
 
-        // 底部 y=80%、高 20% 的章节条 ⇒ subs_bottom = 22 ⇒ 锚线最多 78%
+        // A bottom chapter bar at y=80% with height 20% ⇒ subs_bottom = 22 ⇒ the anchor line is at most 78%
         let mut lifted = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
         lifted.set_template_scene(Some(chrome_scene(80.0, 20.0)));
         let lifted_anchor = lifted.stack_layout(&[], 1.0).anchor;
@@ -4412,25 +4311,24 @@ mod tests {
             "避让只管摆位，字号不能被动"
         );
 
-        // 顶部模板不避让
+        // A top template does not trigger avoidance
         let mut top = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
         top.set_template_scene(Some(chrome_scene(0.0, 12.0)));
         assert_eq!(top.stack_layout(&[], 1.0).anchor, plain_anchor);
 
-        // 关掉 subsAvoid 也不避让
+        // With subsAvoid turned off, there is no avoidance either
         let mut doc = chapter_bar_doc(80.0, 20.0);
         doc.subs_avoid = false;
         let mut off = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
         off.set_template_scene(Some(TemplateScene::new(doc, vec![], "T", vec![])));
         assert_eq!(off.stack_layout(&[], 1.0).anchor, plain_anchor);
 
-        // 撤掉模板恢复原位
+        // Removing the template restores the original position
         lifted.set_template_scene(None);
         assert_eq!(lifted.stack_layout(&[], 1.0).anchor, plain_anchor);
     }
 
-    /// 元素指纹出口是跨引擎门禁；模板层是 host 光栅化的，必须主动拒绝而不是
-    /// 给一个比不了的数。
+    /// The element fingerprint output is the cross-engine gate. The template layer is rasterised by the host, so it must actively refuse rather than return a number it cannot match.
     #[test]
     fn the_element_fingerprint_refuses_to_speak_for_a_template_layer() {
         let document = document("none", "none");
@@ -4443,15 +4341,14 @@ mod tests {
         assert!(error.contains("模板层"), "{error}");
     }
 
-    /// 十七款内置模板（简体中文词表）两种画幅各一帧 + 字体三态，像素 sha256 与 golden 对拍。
+    /// The seventeen built-in templates (Simplified Chinese word list): one frame each in two aspect ratios, plus three font states, with pixel sha256 cross-checked against golden.
     ///
-    /// 与其它 golden 一样：`CCUT_UPDATE_GOLDEN=1` 重写。判别点是逐款不同：
-    /// 十七款之间、同款两画幅之间、三种字体解析之间，任意两张都不得相同。
+    /// As with the other goldens, `CCUT_UPDATE_GOLDEN=1` rewrites them. The discriminator is that each one is different: between the seventeen templates, between the two aspect ratios of the same template, and between the three font resolutions, no two images may be identical.
     #[test]
     fn builtin_templates_render_to_golden_frames() {
         use timeline::template::ChapterSpan;
         let chapters = vec![
-            // 拉丁标题：CJK 会被字体引擎强制落到 Noto Sans SC，字体三态就测不出差别
+            // Latin title: CJK would be forced by the font engine onto Noto Sans SC, so the three font states would show no difference
             ChapterSpan {
                 id: "c1".into(),
                 title: "Intro".into(),
@@ -4471,7 +4368,7 @@ mod tests {
                 end: 3.0,
             },
         ];
-        // 内置字体集 strict 模式：不碰系统字体，任何机器上像素逐位一致
+        // Built-in font set in strict mode: system fonts are not touched, so the pixels are bit-identical on any machine
         let fonts = bundled_studio_fonts();
         let mut hashes = std::collections::BTreeMap::new();
         for doc in timeline::template::builtins() {
@@ -4499,7 +4396,7 @@ mod tests {
                 hashes.insert(format!("{}/{label}", doc.id), sha256_hex(pixmap.data()));
             }
         }
-        // 字体三态：mono 层固定等宽、模板自带字体、缺族回退到字幕字体
+        // Three font states: the mono layer is always monospace, the template carries its own font, and a missing family falls back to the subtitle font
         let mut mono = chapter_bar_doc(0.0, 12.0);
         mono.layers.push(timeline::template::TemplateLayer {
             id: "clock".to_string(),
@@ -4546,14 +4443,14 @@ mod tests {
             "font/missing".to_string(),
             sha256_hex(render(missing).data()),
         );
-        // 缺族回退 = 跟随字幕字体，与不声明字体时逐字节相同
+        // Missing-family fallback = follow the subtitle font, byte-identical to not declaring a font at all
         assert_eq!(
             hashes["font/missing"], hashes["font/mono"],
             "缺族必须回退到 fallback_family"
         );
 
         let distinct: std::collections::BTreeSet<_> = hashes.values().collect();
-        // 只有 font/missing 与 font/mono 允许相同
+        // Only font/missing and font/mono are allowed to be the same
         assert_eq!(distinct.len(), hashes.len() - 1, "{hashes:#?}");
 
         let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4573,7 +4470,7 @@ mod tests {
         );
     }
 
-    /// 一层文字台标的模板（黑底徽章，alpha 能精确量），盒子与 `tile` / `opacity` 可调。
+    /// A template with one text-logo layer (a black badge, so alpha can be measured precisely). The box, `tile` and `opacity` are adjustable.
     fn logo_doc(
         rect: (f64, f64, f64, f64),
         tile: bool,
@@ -4630,8 +4527,7 @@ mod tests {
             .unwrap_or(0)
     }
 
-    /// 台标层 `opacity` 是整层不透明度（夹到 0.05–1）；关掉的层在编辑态固定 0.35，
-    /// 不与层自己的不透明度相乘（原型 `opacity: !l.on ? 0.35 : layerOpacity(l)`）。
+    /// The logo layer's `opacity` is the opacity of the whole layer (clamped to 0.05–1). A layer that is off is fixed at 0.35 in editing mode and is not multiplied by the layer's own opacity (prototype `opacity: !l.on ? 0.35 : layerOpacity(l)`).
     #[test]
     fn logo_opacity_fades_the_whole_layer() {
         let solid = render_logo_doc(logo_doc((10.0, 10.0, 40.0, 20.0), false, 1.0), false);
@@ -4652,8 +4548,7 @@ mod tests {
         assert!((89..=90).contains(&dim), "关掉的层编辑态 0.35 → {dim}");
     }
 
-    /// 台标层 `align`（2026-09-15）：徽章底色照旧铺满盒子，字在徽章内边距里靠左 / 居中 / 靠右；
-    /// 图片台标等比放进盒子后，横向余量同样按对齐分配。
+    /// Logo layer `align` (2026-09-15): the badge background still fills the box, and the text sits left, centred or right within the badge's padding. For an image logo, after it is fitted proportionally into the box, the horizontal slack is likewise split by the alignment.
     #[test]
     fn logo_align_places_text_and_image_inside_the_box() {
         use timeline::template::{LayerKind, LogoSrc, TemplateDoc, TextAlign};
@@ -4663,7 +4558,7 @@ mod tests {
             }
             doc
         }
-        // 满足条件的像素横向跨度：(最左列, 最右列)
+        // Horizontal span of the qualifying pixels: (leftmost column, rightmost column)
         fn span(pixmap: &Pixmap, lit: impl Fn(u8, u8) -> bool) -> (usize, usize) {
             let width = pixmap.width() as usize;
             let xs: Vec<usize> = pixmap
@@ -4678,7 +4573,7 @@ mod tests {
                 *xs.iter().max().expect("有墨迹"),
             )
         }
-        // 盒子 = 画面 (32,18)–(160,54)；字号 6% × 180 = 10.8px，徽章内边距 0.6em ≈ 6.5px
+        // Box = frame (32,18)–(160,54); font size 6% × 180 = 10.8px; badge padding 0.6em ≈ 6.5px
         let frame = |value| {
             render_logo_doc(
                 aligned(logo_doc((10.0, 10.0, 40.0, 20.0), false, 1.0), value),
@@ -4735,18 +4630,17 @@ mod tests {
             .unwrap();
             span(&pixmap, |_, alpha| alpha > 128)
         };
-        // 10×10 放进 128×36 成 36×36：余量 92px 全在右 / 两边各半 / 全在左
+        // 10×10 fitted into 128×36 gives 36×36; the 92px of slack is entirely on the right, split evenly on both sides, or entirely on the left
         assert_eq!(picture(TextAlign::Left), (32, 67));
         assert_eq!(picture(TextAlign::Center), (78, 113));
         assert_eq!(picture(TextAlign::Right), (124, 159));
     }
 
-    /// 写死的 `pad` 按画面高算、与字号无关：字号不同的台标字与文字层从同一条竖线起笔。
-    /// 不写时照旧按各自字号推（徽章 0.6em、文字层 0.5em），起笔位置随字号错开。
+    /// A fixed `pad` is computed against the frame height and is independent of font size, so logo text and text layers of different font sizes start from the same vertical line. When it is not set, each still derives from its own font size (badge 0.6em, text layer 0.5em), so their starting lines are offset by font size.
     #[test]
     fn explicit_pad_lines_up_text_of_different_sizes() {
         use timeline::template::{LayerBox, LayerKind, TemplateLayer, TextAlign};
-        // 盒子 = 画面 (32,18)–(288,72)；字号 6% / 9% / 14% × 180 = 10.8 / 16.2 / 25.2px
+        // Box = frame (32,18)–(288,72); font sizes 6% / 9% / 14% × 180 = 10.8 / 16.2 / 25.2px
         let doc = |size: f64, logo: bool, pad: Option<f64>| {
             let mut doc = logo_doc((10.0, 10.0, 80.0, 30.0), false, 1.0);
             if logo {
@@ -4780,7 +4674,7 @@ mod tests {
             }
             doc
         };
-        // 白字最左一列
+        // Leftmost column of the white text
         let start = |doc| {
             let pixmap = render_logo_doc(doc, false);
             let width = pixmap.width() as usize;
@@ -4801,29 +4695,28 @@ mod tests {
                 .collect()
         };
         let spread = |xs: &[usize]| xs.iter().max().unwrap() - xs.iter().min().unwrap();
-        // pad 5% × 180 = 9px：字从 32 + 9 = 41 起，只差字形自带的左侧留白（随字号略涨）
+        // pad 5% × 180 = 9px: the text starts at 32 + 9 = 41, differing only by the glyph's own left-side bearing (which grows slightly with font size)
         let fixed = starts(Some(5.0));
         assert!(
             fixed.iter().all(|x| (41..=44).contains(x)),
             "起笔在盒子左缘 + 9px：{fixed:?}"
         );
         assert!(spread(&fixed) <= 2, "三层同一条起笔线：{fixed:?}");
-        // 不写：6.5 / 8.1 / 12.6px，三条起笔线错开
+        // Not set: 6.5 / 8.1 / 12.6px, so the three starting lines are offset
         let legacy = starts(None);
         assert!(spread(&legacy) >= 5, "按字号推的内边距对不齐：{legacy:?}");
-        // 0 就是贴盒子左缘
+        // 0 means flush against the box's left edge
         let flush = starts(Some(0.0));
         assert!(flush.iter().all(|x| (32..=35).contains(x)), "{flush:?}");
     }
 
-    /// 平铺台标：同一枚台标铺进盒子后绕盒心斜放放大——墨迹越出盒子（放大旋转后的角），
-    /// 但画面四角仍然干净（`overflow: hidden` 裁在变换前的盒子上，随层一起旋转）。
+    /// Tiled logo: the same logo is tiled into the box and then tilted diagonally about the box centre and enlarged. The ink spills beyond the box (the corners after enlargement and rotation), but the four corners of the frame stay clean (`overflow: hidden` clips against the box before the transform, so it rotates with the layer).
     #[test]
     fn tiled_logo_spills_past_its_box_but_clips_to_the_rotated_box() {
         let flat = render_logo_doc(logo_doc((25.0, 25.0, 50.0, 50.0), false, 1.0), false);
         let tiled = render_logo_doc(logo_doc((25.0, 25.0, 50.0, 50.0), true, 1.0), false);
         assert_ne!(sha256_hex(flat.data()), sha256_hex(tiled.data()));
-        // 盒子 = 画面 (80,45)–(240,135)
+        // Box = frame (80,45)–(240,135)
         let outside = |pixmap: &Pixmap| {
             (0..pixmap.height())
                 .flat_map(|y| (0..pixmap.width()).map(move |x| (x, y)))
@@ -4842,32 +4735,31 @@ mod tests {
         }
     }
 
-    /// 平铺排布就是原型的 flex 换行：`padding: 1em`、`gap: 1.6em 2.4em`、行内行间都
-    /// `space-around`，放不下时按 `safe center` 贴起点溢出。
+    /// The tile arrangement is the prototype's flex wrapping: `padding: 1em`, `gap: 1.6em 2.4em`, with both in-line and between-line `space-around`. When it does not fit, it sticks to the start per `safe center` and overflows.
     #[test]
     fn tile_layout_follows_flex_wrap_space_around() {
         use crate::template_layer::{TILE_UNITS, tile_positions};
-        // 1000×500 盒、em 10、单元 50×12：内容 980×480，一行 13 枚（13·50 + 12·24 = 938 ≤ 980）
+        // 1000×500 box, em 10, cell 50×12: content 980×480, 13 per row (13·50 + 12·24 = 938 ≤ 980)
         let pos = tile_positions(1000.0, 500.0, 10.0, 50.0, 12.0, TILE_UNITS);
         assert_eq!(pos.len(), 24);
         let (first, second) = pos.split_at(13);
         assert!(first.iter().all(|p| p.1 == first[0].1));
         assert!(second.iter().all(|p| p.1 == second[0].1));
         assert!(second[0].1 > first[0].1);
-        // 行内 space-around：首尾留白相等，首项留白 = 剩余 / (2n)
+        // In-line space-around: equal margins at the first and last items; the first item's margin = remainder / (2n)
         let lead = first[0].0 - 10.0;
         assert!((lead - 42.0 / 26.0).abs() < 1e-9, "{lead}");
         assert!((lead - (990.0 - (first[12].0 + 50.0))).abs() < 1e-9);
         let lead2 = second[0].0 - 10.0;
         assert!((lead2 - (990.0 - (second[10].0 + 50.0))).abs() < 1e-9);
-        // 行间 space-around：上下留白相等
+        // Between-line space-around: equal margins above and below
         let top = first[0].1 - 10.0;
         assert!((top - (490.0 - (second[0].1 + 12.0))).abs() < 1e-9);
         assert!((top - (480.0 - 24.0 - 16.0) / 4.0).abs() < 1e-9, "{top}");
-        // 一枚都放不下：仍排一枚，横向贴起点溢出（`safe center`），纵向放得下照旧 space-around
+        // Not even one fits: still lay out one, overflowing horizontally from the start (`safe center`); vertically, if it fits, still use space-around as usual
         let tight = tile_positions(40.0, 40.0, 10.0, 50.0, 12.0, 1);
         assert_eq!(tight, vec![(10.0, 10.0 + 4.0)]);
-        // 行数溢出（原型舞台上 14% × 8% 的台标盒铺 24 行）：首行贴 padding，不往上溢出
+        // Row overflow (the prototype stage's 14% × 8% logo box tiling 24 rows): the first row sticks to the padding and does not overflow upward
         let rows = tile_positions(82.3, 26.5, 10.6, 33.9, 16.9, TILE_UNITS);
         assert_eq!(rows.len(), 24);
         assert!((rows[0].1 - 10.6).abs() < 1e-9, "{:?}", rows[0]);
@@ -4879,8 +4771,7 @@ mod tests {
         assert!((rows[0].0 - 24.2).abs() < 0.05, "{:?}", rows[0]);
     }
 
-    /// R1 场景出口必须从真实 Overlay plan 组装，而不是测试手写一张
-    /// `SceneFrame`。节点顺序、指纹和调度时刻三个身份在这里一起钉住。
+    /// The R1 scene output must be assembled from a real Overlay plan, not a `SceneFrame` hand-written by the test. The three identities (node order, fingerprint and scheduled moment) are pinned down together here.
     #[test]
     fn the_element_scene_is_assembled_from_the_canonical_overlay_plan() {
         let mut source = document("none", "none");
@@ -4935,8 +4826,7 @@ mod tests {
         assert_eq!(scene.next_change, Some(38.0 / 30.0));
     }
 
-    /// R2 glyph scene 必须消费现有 OverlayRenderPlan 的排版结果；同一时刻重求场景
-    /// 时 mask 像素命中 TextEngine 的 Arc 缓存，而不是再次跑 swash 或整幅光栅。
+    /// The R2 glyph scene must consume the layout result of the existing OverlayRenderPlan. When the scene is requested again at the same moment, the mask pixels hit the TextEngine's Arc cache, rather than running swash again or rasterising the whole frame again.
     #[test]
     fn plain_subtitles_become_reusable_glyph_scene_masks() {
         let mut source = document("None", "none");
@@ -5163,8 +5053,7 @@ mod tests {
         assert!((motion.start - 0.0).abs() < 1e-9);
         assert!((motion.end - 0.1).abs() < 1e-9);
 
-        // 项目帧边界上，合成器连续采样必须与旧 CPU 配方的 round-both-ends
-        // 采样逐字段一致；只有显示器补出的子帧允许是连续中间态。
+        // On project frame boundaries, the compositor's continuous sampling must match field by field the round-both-ends sampling of the old CPU recipe. Only sub-frames generated by the display are allowed to be a continuous intermediate state.
         let frame_time = 1.0 / 30.0;
         let sampled = motion.sample(frame_time);
         let second = plan.subtitle_scene_frame(frame_time).unwrap();
@@ -5445,8 +5334,7 @@ mod tests {
         );
     }
 
-    /// 第 156 轮：文字元素的 `block` 底板只在用户给了 `place.w` 时才撑满
-    /// 换行宽；没给宽度时底板贴着文字（原型 `padOf`/`block` 同理）。
+    /// Round 156: the `block` plate of a text element fills the wrapping width only when the user has given `place.w`. When no width is given, the plate hugs the text (prototype `padOf` / `block` is the same).
     #[test]
     fn text_element_block_plate_hugs_text_unless_width_is_set() {
         let render = |place: serde_json::Value| {
@@ -5669,8 +5557,7 @@ mod tests {
         );
     }
 
-    /// 字幕行缺省在字幕块自己的宽里对齐（块居中在锚点上，v2 的 Studio 样式就是这样）；根样式带
-    /// `alignWithinWrap` 时在折行宽度里对齐，块贴折行区域的左边或右边（定位框样式用它）。
+    /// A subtitle line is aligned by default within its subtitle block's own width (the block is centred on the anchor, as v2's Studio style does). When the root style carries `alignWithinWrap`, alignment happens within the wrap width, and the block sticks to the left or right edge of the wrap area (positioned-box styles use this).
     #[test]
     fn captions_align_within_the_wrap_width_only_when_the_root_asks() {
         let layouts = |within: Option<bool>, align: &str| {
@@ -5796,12 +5683,9 @@ mod tests {
         ));
     }
 
-    /// 「药丸高亮」的块在词的窗口里胀缩：两个时刻取帧，`w`/`h` 与块 alpha 都
-    /// 必须不同。恒定矩形（今天所有其余经典效果）在这条断言下会立刻红。
+    /// The "pill highlight" block expands and contracts within the word's window. Sampling two moments, both `w`/`h` and the block alpha must differ. A constant rectangle (as all other classic effects are today) would turn this assertion red immediately.
     ///
-    /// 相位取自**当前词自己的窗口**（`world` 是 1.3–2.5s）：`t=1.3` 落在
-    /// `phase 0`（scale .9 / alpha .75），`t=2.14` 落在 `phase 0.7`
-    /// （scale 1.1 / alpha 1）。
+    /// The phase is taken from **the current word's own window** (`world` is 1.3–2.5s). `t=1.3` falls on `phase 0` (scale .9 / alpha .75), and `t=2.14` falls on `phase 0.7` (scale 1.1 / alpha 1).
     #[test]
     fn legacy_pill_highlight_scene_breathes_across_the_word_window() {
         let scene_for = |time: f64| {
@@ -5850,24 +5734,23 @@ mod tests {
         let (low_x, low_y, low_w, low_h, low_r, low_a) = plate_of(&scene_for(1.3));
         let (high_x, high_y, high_w, high_h, high_r, high_a) = plate_of(&scene_for(2.14));
 
-        // 胀缩是真的：宽高圆角同倍变大，块 alpha 也不再是常数。
+        // The expansion and contraction are real: width, height and corner radius all grow by the same factor, and the block alpha is no longer constant.
         assert!(high_w > low_w, "{low_w} → {high_w}");
         assert!(high_h > low_h, "{low_h} → {high_h}");
         assert!(high_r > low_r, "{low_r} → {high_r}");
         assert!(high_a > low_a, "{low_a} → {high_a}");
-        // 块 alpha 与词 opacity 分开：Highlight 的词 opacity 恒为 1，块却是 .75。
+        // The block alpha is separate from the word opacity: the Highlight's word opacity is always 1, while the block is .75.
         assert!((f64::from(low_a) - 0.75).abs() < 1e-3, "{low_a}");
         assert!((f64::from(high_a) - 1.0).abs() < 1e-3, "{high_a}");
-        // 绕矩形中心缩放：两帧的中心必须重合（左上角对齐就会往右下漂）。
+        // Scaling about the rectangle's centre: the centres of the two frames must coincide (aligning the top-left corner would drift to the bottom-right).
         assert!((f64::from(low_x + low_w / 2.0 - high_x - high_w / 2.0)).abs() < 1e-3);
         assert!((f64::from(low_y + low_h / 2.0 - high_y - high_h / 2.0)).abs() < 1e-3);
-        // .9 → 1.1 的比例（宽高各自按同一倍数走）。
+        // The ratio goes from .9 to 1.1 (width and height each follow the same factor).
         assert!((f64::from(high_w / low_w) - 11.0 / 9.0).abs() < 1e-3);
         assert!((f64::from(high_h / low_h) - 11.0 / 9.0).abs() < 1e-3);
     }
 
-    /// 曲线取值的精确对拍（原型 `designs/cuccut/app/model-subanim.test.js:91-113`
-    /// 的静帧基准 `SAMPLE_ON = 0.35`：`scale ≈ 1.0`、`alpha = 0.875`）。
+    /// An exact check of the curve values (the prototype `designs/cuccut/app/model-subanim.test.js:91-113` static baseline `SAMPLE_ON = 0.35`: `scale ≈ 1.0`, `alpha = 0.875`).
     #[test]
     fn the_pill_highlight_track_samples_match_the_prototype_curve() {
         let animation = word_animation(&json!({"wordAnimation": {
@@ -5883,7 +5766,7 @@ mod tests {
         assert!(track.is_animated());
         for (phase, scale, alpha) in [
             (0.0, 0.9, 0.75),
-            // sinInOut 在段中点对称，0.35 正好是 [0, 0.7] 的中点。
+            // sinInOut is symmetric about the midpoint of the segment, and 0.35 is exactly the midpoint of [0, 0.7].
             (0.35, 1.0, 0.875),
             (0.7, 1.1, 1.0),
             (1.0, 1.0, 1.0),
@@ -5899,7 +5782,7 @@ mod tests {
                 "phase {phase} alpha {sampled_alpha}"
             );
         }
-        // 相位只对当前词生效，块也只画在当前词上。
+        // The phase applies only to the current word, and the block is drawn only on the current word.
         let on = word_state(&animation, 1, 1, 0.0);
         assert_eq!(on.box_scale, Some(0.9));
         assert_eq!(on.box_opacity, Some(0.75));
@@ -5907,13 +5790,13 @@ mod tests {
         assert_eq!(off.box_scale, None);
         assert_eq!(off.box_opacity, None);
 
-        // 没有块轨的效果一字不变：`box_*` 恒为 `None`，块回到常量矩形。
+        // An effect without a block track is unchanged: `box_*` is always `None`, and the block reverts to a constant rectangle.
         let plain = word_animation(&json!({"wordAnimation": {"animationName": "Highlight"}}));
         assert!(plain.box_track.is_none());
         assert_eq!(word_state(&plain, 1, 1, 0.35).box_scale, None);
         assert_eq!(word_state(&plain, 1, 1, 0.35).box_opacity, None);
 
-        // 词内相位读的是那个词自己的窗口。
+        // The in-word phase reads that word's own window.
         let item = TimedItem {
             id: "q1".to_owned(),
             series_index: 0,
@@ -5937,7 +5820,7 @@ mod tests {
         };
         assert!((word_phase(&item, 0, 0.85) - 0.35).abs() < 1e-9);
         assert!((word_phase(&item, 1, 1.85) - 0.35).abs() < 1e-9);
-        // 越界与零长窗口都落 0，不是 NaN。
+        // Out-of-range and zero-length windows give 0, not NaN.
         assert_eq!(word_phase(&item, 0, 0.0), 0.0);
         assert_eq!(word_phase(&item, 9, 1.0), 0.0);
     }
@@ -6856,8 +6739,7 @@ mod tests {
         );
     }
 
-    /// R2/R4 还没有交付给 compositor 的 host 光栅元素必须显式触发
-    /// CPU fallback，不能只在 GPU 场景里悄悄消失。
+    /// A host raster element that the R2/R4 compositor hand-off has not yet delivered must explicitly trigger the CPU fallback. It must not quietly disappear, only in the GPU scene.
     #[test]
     fn the_element_scene_rejects_host_rasterized_elements() {
         let mut source = document("none", "none");
@@ -6879,11 +6761,9 @@ mod tests {
         assert!(error.contains("host-text"), "{error}");
     }
 
-    /// 素材贴纸的 `sticker.fillOverrides` 必须换到**画面**上。
+    /// The material sticker's `sticker.fillOverrides` must be applied to the **picture**.
     ///
-    /// 光栅缓存按 source id 键，换色是元素级的：不另起变体的话，属性页把橙色
-    /// 点成绿色、工具条色块也变绿，舞台却仍是橙色（用户 2026-09-08 回报）。
-    /// 这里同源两个贴纸各带一张覆盖表，画面上必须出现两种颜色。
+    /// The raster cache is keyed by source id, and recolouring is element-level. Without a separate variant, the property page would turn an orange dot green, and the toolbar colour block would turn green as well, while the stage stayed orange (reported by a user on 2026-09-08). Here, two stickers from the same source each carry a colour override table, and the picture must show two colours.
     #[test]
     fn an_asset_stickers_fill_override_reaches_the_pixels() {
         let project = tempfile::tempdir().unwrap();
@@ -6931,7 +6811,7 @@ mod tests {
             let at = (y * 320 + x) * 4;
             (rgba[at], rgba[at + 1], rgba[at + 2])
         };
-        // 两个贴纸各占画幅 20% 宽，中心在 25% / 75% 处。
+        // Each of the two stickers takes 20% of the frame width, with centres at 25% and 75%.
         let (left_r, left_g, _) = sample(80, 90);
         let (right_r, right_g, _) = sample(240, 90);
         assert!(
@@ -6943,8 +6823,7 @@ mod tests {
             "带 fillOverrides 的贴纸必须换成绿色，实测 {right_r},{right_g}"
         );
 
-        // GPU 合成路径走的是另一处取帧（`compositor_media_nodes`），必须拿到
-        // 同一张换色图，否则预览与导出会在换色上分家。
+        // The GPU compositing path fetches frames through another route (`compositor_media_nodes`), and it must get the same recoloured image, otherwise preview and export would diverge on recolouring.
         plan.compositor_scene_support().unwrap();
         plan.compositor_scene_frame(1.0).unwrap();
         let texture = plan
@@ -6961,9 +6840,7 @@ mod tests {
         );
     }
 
-    /// Timeline 0.7：`sources[].kind: "lottie"` 由素材贴纸引用，按 `sticker.loop`
-    /// 逐帧采样；`fillOverrides` 换的是 bodymovin 的纯色填充。CPU overlay 与 GPU
-    /// 合成两条取帧路径必须拿到同一张图。
+    /// Timeline 0.7: `sources[].kind: "lottie"` is referenced by material stickers and sampled frame by frame per `sticker.loop`. `fillOverrides` replaces the bodymovin solid fill. The CPU overlay and the GPU compositing frame-fetch routes must get the same image.
     #[test]
     fn a_lottie_source_renders_as_an_asset_sticker_with_fill_overrides() {
         let project = tempfile::tempdir().unwrap();
@@ -7009,7 +6886,7 @@ mod tests {
         let mut plan = OverlayRenderPlan::compile(&source, 320, 320, 6.0, 30.0, None).unwrap();
         plan.load_timeline_elements(project.path(), &source)
             .unwrap();
-        // 贴纸时长 2 s、元素占位 6 s：3.5 s 处已经绕回第二圈，loop 语义下仍要有像素。
+        // The sticker lasts 2 s and the element placeholder is 6 s. At 3.5 s it has already wrapped into the second cycle, and under loop semantics there must still be pixels.
         let rgba = plan.render_rgba(3.5).unwrap();
         let sample = |x: usize, y: usize| {
             let at = (y * 320 + x) * 4;
@@ -7033,7 +6910,7 @@ mod tests {
             right_g > right_b && right_g > right_r,
             "带 fillOverrides 的 Lottie 必须换成绿色，实测 {right_r},{right_g},{right_b}"
         );
-        // 圆外（画幅四角）必须透明：说明按素材 200×200 原尺寸光栅、没被拉成方块。
+        // Outside the circle (the corners of the frame) must be transparent. This shows it was rasterised at the material's native 200×200 size and was not stretched into a square.
         let (_, _, _, corner_a) = sample(16, 16);
         assert_eq!(corner_a, 0, "Lottie 贴纸的圆外区域必须透明");
 
@@ -7045,9 +6922,7 @@ mod tests {
         let center = texture
             .pixel(texture.width() / 2, texture.height() / 2)
             .unwrap();
-        // 纹理按**元素盒的实际像素**光栅，不按素材 200×200 的原尺寸：320 画幅上
-        // 占 40% 就是 128 px。矢量动图在原尺寸上多算的那些像素最后会被 GPU 缩掉，
-        // 算了等于白算（见 `compositor_media_nodes` 里的目标尺寸推导）。
+        // The texture is rasterised at the **actual pixel size of the element box**, not at the material's native 200×200 size. On a 320-wide frame, 40% is 128 px. The extra pixels computed at a vector animation's native size would be scaled away by the GPU in the end, so computing them is wasted (see the target-size derivation in `compositor_media_nodes`).
         assert_eq!((texture.width(), texture.height()), (128, 128));
         assert!(
             center.green() > center.blue(),
@@ -7177,11 +7052,9 @@ mod tests {
         );
     }
 
-    /// [`SceneIdentity::Skip`] 只准少算身份，不准换画面。
+    /// [`SceneIdentity::Skip`] may only economise on identity computation; it must not change the picture.
     ///
-    /// 导出用 Skip 是为了省掉每帧一趟整帧像素的 FNV-1a（720p 实测 3.3 ms/帧），
-    /// 前提是它对 scene 本身零影响：节点、采样钟与 `next_change` 都必须与
-    /// [`SceneIdentity::Full`] 逐项相同，只有 `fingerprint` 归零。
+    /// Export uses Skip to avoid the per-frame FNV-1a over all frame pixels (measured at 3.3 ms/frame at 720p), on the premise that it has zero effect on the scene itself. The nodes, the sampling clock and `next_change` must all be identical item by item to [`SceneIdentity::Full`], and only `fingerprint` is zeroed.
     #[test]
     fn skipping_scene_identity_changes_nothing_but_the_fingerprint() {
         let project = tempfile::tempdir().unwrap();
@@ -7231,9 +7104,7 @@ mod tests {
         }
     }
 
-    /// [`SceneIdentity::Structural`] 是预览的去重身份：不读像素，但节点、采样钟与
-    /// `next_change` 与 [`SceneIdentity::Full`] 逐项相同；同一时刻两次求值身份稳定，
-    /// 元素几何一变身份就变（像素代理只替掉像素位，几何仍逐字段冻结）。
+    /// [`SceneIdentity::Structural`] is the preview's de-duplication identity. It does not read pixels, but the nodes, the sampling clock and `next_change` are identical item by item to [`SceneIdentity::Full`]. At the same moment, two evaluations give a stable identity, and any change in element geometry changes the identity (the pixel proxy replaces only the pixel position; the geometry is still frozen field by field).
     #[test]
     fn structural_scene_identity_matches_full_scene_without_reading_pixels() {
         let project = tempfile::tempdir().unwrap();
@@ -7296,7 +7167,7 @@ mod tests {
             );
             structural_at.push(structural.fingerprint);
         }
-        // 静态图 + 无字幕：三个时刻画面相同，去重身份也必须相同，否则每帧都会白上传一次。
+        // Static image with no subtitles: the three moments give the same picture, and the de-duplication identity must also be the same, otherwise every frame would wastefully re-upload.
         assert_eq!(structural_at[0], structural_at[1]);
         assert_eq!(structural_at[1], structural_at[2]);
 
@@ -7528,7 +7399,7 @@ mod tests {
         assert_eq!(plan.render_rgba_frame(0.5).unwrap().rgba, base.rgba);
     }
 
-    /// 白板测试共用的源图：左半是一笔黑墨（细线），右半是一块红色色块。
+    /// The source image shared by the whiteboard tests: the left half is one black ink stroke (a thin line), and the right half is a red colour block.
     fn ccut_subtitle_render_whiteboard_project() -> (tempfile::TempDir, Value) {
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(project.path().join("media")).unwrap();
@@ -7582,9 +7453,7 @@ mod tests {
             .count()
     }
 
-    /// GPU 合成场景（离屏导出与 App 预览）里白板件不能被静默丢掉：CPU 只产出
-    /// 天然尺寸的揭示纹理，fit / mask / pose 留给 GPU TextureNode；像素与 CPU
-    /// overlay 同源（前段无红、hold 段红块完整），且画时内按帧调度。
+    /// In the GPU compositing scene (offscreen export and App preview), a whiteboard piece must not be silently dropped. The CPU produces only the reveal texture at its natural size, while fit, mask and pose are left to the GPU TextureNode. The pixels come from the same source as the CPU overlay (no red in the front section, the red block complete in the hold section), and the reveal is scheduled per frame.
     #[test]
     fn compositor_scene_keeps_whiteboard_at_source_size_and_gpu_places_it() {
         let (project, timeline) = ccut_subtitle_render_whiteboard_project();
@@ -7641,12 +7510,9 @@ mod tests {
         assert!(!structural.nodes.is_empty());
     }
 
-    /// 源图比元素盒大时，揭示场按**盒子的像素**跑，不在源图天然尺寸上白算。
+    /// When the source image is larger than the element box, the reveal field runs at **the box's pixel size**, not at the source image's natural size.
     ///
-    /// 160×90 的画幅上 `w: 80` 的盒子是 128 px 宽，而源图 240×120——缩到
-    /// 128×64 去揭示，最后那张纹理就是 128×64。盒子反过来比源大时不缩（见
-    /// [`Self::compositor_scene_keeps_whiteboard_at_source_size_and_gpu_places_it`]
-    /// 那条：320 画幅上盒子 256 px，比 240 的源还宽，放大交给 GPU）。
+    /// On a 160×90 frame, a box with `w: 80` is 128 px wide, while the source is 240×120. It is scaled to 128×64 for the reveal, so the final texture is 128×64. When the box is larger than the source, it is not scaled down (see [`Self::compositor_scene_keeps_whiteboard_at_source_size_and_gpu_places_it`]: on a 320 frame the box is 256 px, wider than the 240 source, so enlargement is left to the GPU).
     #[test]
     fn a_whiteboard_larger_than_its_box_reveals_at_the_box_size() {
         let (project, timeline) = ccut_subtitle_render_whiteboard_project();
@@ -7677,7 +7543,7 @@ mod tests {
             "缩过之后前段照旧只有墨线"
         );
 
-        // 揭示照常推进：`draw` 之后红块要完整出现（按面积等比缩，1/3.5 左右）。
+        // The reveal progresses as usual: after `draw`, the red block must appear in full (scaled by area, roughly 1/3.5).
         let held = plan.compositor_scene_frame(3.0).unwrap();
         let [element_draw::SceneNode::Texture(node)] = held.nodes.as_slice() else {
             panic!("hold 段仍是一条 TextureNode")
@@ -7692,9 +7558,7 @@ mod tests {
         );
     }
 
-    /// 白板件走 Image 的几何与遮罩路径，只在像素上按显露场揭示：
-    /// `draw` 之前逐步出现（墨先于色），`draw` 之后与同源 image 件逐像素一致；
-    /// 任意时刻的帧只是 `t` 的函数——乱序采样与顺序采样必须给出同一批像素。
+    /// The whiteboard piece follows the Image geometry and mask path, and is revealed on the pixels only by the exposure field. Before `draw`, it appears step by step (ink before colour). After `draw`, it is pixel-identical to the same-source image piece. A frame at any moment is only a function of `t`: out-of-order sampling and sequential sampling must yield the same pixels.
     #[test]
     fn whiteboard_reveals_ink_before_color_and_is_order_independent() {
         let (project, timeline) = ccut_subtitle_render_whiteboard_project();
@@ -7722,7 +7586,7 @@ mod tests {
         assert!(red_held > 1000, "hold 段红块完整：{red_held}");
         assert_ne!(start.rgba, early.rgba, "前段应已经出现墨线");
 
-        // hold 段与同源 image 件逐像素一致——白板不改几何、不改遮罩、不改合成。
+        // The hold section is pixel-identical to the same-source image piece: the whiteboard does not change geometry, mask or compositing.
         let mut as_image = source.clone();
         as_image["timeline"]["tracks"][0]["elements"][0]["kind"] = json!("image");
         as_image["timeline"]["tracks"][0]["elements"][0]
@@ -7736,7 +7600,7 @@ mod tests {
             .unwrap();
         assert_eq!(image_plan.render_rgba_frame(3.0).unwrap().rgba, held.rgba);
 
-        // 乱序采样：新计划先取 3.0 再取 1.7、0.5、0.0，像素必须与顺序采样一致。
+        // Out-of-order sampling: the new plan first samples at 3.0, then at 1.7, 0.5 and 0.0. The pixels must match sequential sampling.
         let mut shuffled = OverlayRenderPlan::compile(&source, 320, 180, 4.0, 30.0, None).unwrap();
         shuffled
             .load_timeline_elements(project.path(), &source)
@@ -7748,7 +7612,7 @@ mod tests {
         assert_eq!(plan.whiteboard_cache.len(), 1, "同一源同一参数只分析一次");
     }
 
-    /// `beats` 改变揭示顺序：把红块钉在 0 秒、墨线钉在后面，前段就该先出红。
+    /// `beats` changes the reveal order. Pin the red block to 0 seconds and the ink line to a later time, and red should appear first in the front section.
     #[test]
     fn whiteboard_beats_override_reading_order() {
         let (project, mut timeline) = ccut_subtitle_render_whiteboard_project();
@@ -7772,7 +7636,7 @@ mod tests {
         );
     }
 
-    /// 两个彩纸试穿测试共用的构造：窗口只在补幽灵时用得上。
+    /// The shared setup for the two confetti try-on tests. The window is needed only when a ghost is filled in.
     fn ccut_subtitle_render_confetti_peek(id: &str, style: &str) -> ConfettiPeek {
         ConfettiPeek {
             id: id.to_owned(),
@@ -7784,8 +7648,7 @@ mod tests {
         }
     }
 
-    /// 彩纸试穿走**就地补丁**：换款只改计划里那一件的 `confetti`，撤回把原配方
-    /// 写回去。宿主因此不用为了「找回原值」整份重编译一次（第 236 轮）。
+    /// Confetti try-on uses an **in-place patch**. Switching styles changes only that one piece's `confetti` in the plan, and undoing writes the original recipe back. The host therefore does not have to fully recompile once just to recover the original value (round 236).
     #[test]
     fn confetti_peek_swaps_a_recipe_in_place_and_restores_it() {
         let mut source = document("None", "none");
@@ -7810,7 +7673,7 @@ mod tests {
             "换款要真的改到 draw ops，否则宿主的同指纹去重会把预览帧吞掉"
         );
 
-        // 连换两款：第二款必须从**原配方**换起，而不是从第一款换起。
+        // Switching twice in a row: the second style must start from the **original recipe**, not from the first style.
         plan.set_confetti_peek(Some(ccut_subtitle_render_confetti_peek(
             "cft",
             "hearts-petals",
@@ -7828,8 +7691,7 @@ mod tests {
         assert_eq!(restored.rgba, base.rgba);
     }
 
-    /// 计划里没有目标件时凭空补一件幽灵：素材库网格上还没有选中件，这是那条链
-    /// 唯一能在舞台上看见效果的办法（第 236 轮）。撤回整件摘掉，一个像素不留。
+    /// When the target piece is absent from the plan, a ghost piece is conjured out of nothing. On the material library grid no piece is selected yet, and this is the only way that chain can show an effect on the stage (round 236). Undoing removes the whole piece, leaving not a pixel behind.
     #[test]
     fn confetti_peek_conjures_a_ghost_when_the_element_is_absent() {
         let mut source = document("None", "none");
@@ -7860,10 +7722,7 @@ mod tests {
         assert_eq!(cleared.rgba, base.rgba);
     }
 
-    /// 悬停试穿的本地钟必须在 **GPU 合成路径**上也算数。macOS App 的舞台走的是
-    /// `compositor_scene_frame`，一度只有文字分支查 `sample_time_for`，其余元素
-    /// 拿全局播放头求值：幽灵彩纸的 `start` 正好等于播放头，于是永远停在局部
-    /// 0 秒——一颗粒子都没发射出来，舞台上什么都看不见（第 236 轮）。
+    /// The hover try-on's local clock must also count on the **GPU compositing path**. The macOS App's stage goes through `compositor_scene_frame`. At one point only the text branch consulted `sample_time_for`, while the other elements were evaluated at the global playhead. The ghost confetti's `start` happened to equal the playhead, so it stayed stuck at local time 0, no particle was ever emitted, and nothing appeared on the stage (round 236).
     #[test]
     fn the_peek_clock_drives_non_text_elements_on_the_gpu_path() {
         let mut source = document("None", "none");
@@ -7875,7 +7734,7 @@ mod tests {
         let mut plan = OverlayRenderPlan::compile(&source, 320, 180, 6.0, 30.0, None).unwrap();
         plan.load_projected_timeline_elements(&source).unwrap();
 
-        // 播放头钉死在这一件的起点：不看本地钟就等于局部 0 秒。
+        // The playhead is pinned to the start of this piece: without consulting the local clock, it equals local time 0.
         let at_start = plan.compositor_scene_frame(1.0).unwrap().fingerprint;
         let cpu_at_start = plan.render_rgba_frame(1.0).unwrap().draw_op_fingerprint;
 
@@ -7891,7 +7750,7 @@ mod tests {
             "CPU overlay 路径也得认本地钟"
         );
 
-        // 撤回本地钟＝回到播放头，两条路径都要回到原样。
+        // Undoing the local clock returns to the playhead; both paths must return to their original state.
         plan.set_element_sample_time(None);
         assert_eq!(
             plan.compositor_scene_frame(1.0).unwrap().fingerprint,
@@ -7903,10 +7762,7 @@ mod tests {
         );
     }
 
-    /// 上一条与幽灵件合起来才是用户的真实场景：素材库网格上**没有选中件**时，
-    /// 悬停靠 `set_confetti_peek` 凭空补一件 `__confetti_peek__`，窗口起点就是
-    /// 当前播放头，而 macOS App 的舞台走 GPU 合成路径。幽灵必须挤进 `active`
-    /// 过滤、活过 `compositor_scene_support`，并且按本地钟往前跑（第 236 轮）。
+    /// The previous test, together with the ghost piece, makes up the user's real scenario. When **no piece is selected** on the material library grid, hover uses `set_confetti_peek` to conjure a `__confetti_peek__` out of nothing, with the window starting at the current playhead. The macOS App's stage goes through the GPU compositing path. The ghost must squeeze into the `active` filter, survive `compositor_scene_support`, and run forward according to the local clock (round 236).
     #[test]
     fn a_confetti_ghost_lands_on_the_gpu_compositor_scene() {
         let mut source = document("None", "none");
@@ -7921,7 +7777,7 @@ mod tests {
         plan.set_confetti_peek(Some(ghost));
         let at_local_zero = plan.compositor_scene_frame(1.0).unwrap().fingerprint;
 
-        // 本地钟往前推 1 秒：认钟才有粒子，不认钟就永远停在窗口起点。
+        // Advance the local clock by 1 second: the clock being honoured is what produces particles. If it were not honoured, the ghost would stay stuck at the window start.
         plan.set_element_sample_time(Some(("__confetti_peek__".to_owned(), 2.0)));
         let running = plan.compositor_scene_frame(1.0).unwrap().fingerprint;
         assert_ne!(running, bare, "幽灵件没进 GPU 合成场景：舞台上什么都没有");
@@ -7930,16 +7786,13 @@ mod tests {
             "幽灵件停在局部 0 秒：一颗粒子都没发射出来"
         );
 
-        // 撤回试穿要一个像素不留。
+        // Undoing the try-on must leave not a single pixel behind.
         plan.set_element_sample_time(None);
         plan.set_confetti_peek(None);
         assert_eq!(plan.compositor_scene_frame(1.0).unwrap().fingerprint, bare);
     }
 
-    /// 舞台拖拽期的预览只改内存里的 `place`，磁盘投影文档不动，因此
-    /// `definition_key` 不变。SceneFrame 身份必须自己覆盖文本几何，否则每
-    /// 一帧预览都会被宿主的 `overlay_fingerprint` 去重守卫整帧丢掉——选框
-    /// 在动、glyph 却钉在原地，直到松手提交才跳过去。
+    /// During stage dragging, the preview changes only the `place` in memory; the on-disk projection document does not move, so `definition_key` does not change. The SceneFrame identity must itself cover the text geometry. Otherwise every preview frame would be dropped by the host's `overlay_fingerprint` de-duplication guard: the selection box moves while the glyphs stay pinned in place, until release commits and they jump.
     #[test]
     fn compositor_scene_fingerprint_follows_in_memory_text_geometry() {
         let mut source = document("None", "none");
@@ -7964,7 +7817,7 @@ mod tests {
             "同一份计划的同一时刻必须稳定复现身份，去重守卫才成立"
         );
 
-        // `apps/cuccut` 的 `apply_element_preview` 就是这么改的：只写 Place。
+        // This is how `apply_element_preview` in `apps/cuccut` does it: it writes only Place.
         for (field, patch) in [
             (
                 "x",
@@ -8014,7 +7867,7 @@ mod tests {
         plan.compositor_scene_support().unwrap();
     }
 
-    // ── 字幕轨集：文档真相与 `mode` 兼容投影 ──
+    // ── Subtitle track set: document truth and the `mode` compatibility projection ──
 
     #[test]
     fn a_track_set_derives_the_compatibility_mode() {
@@ -8047,7 +7900,7 @@ mod tests {
         );
     }
 
-    /// 旧文档没有 `tracks`：从兼容 `mode` 派生，两者都缺席时是单条原文轨。
+    /// An old document has no `tracks`: they are derived from the compatibility `mode`. If both are absent, it is a single original-text track.
     #[test]
     fn a_legacy_style_without_tracks_migrates_from_its_mode_at_read_time() {
         assert_eq!(
@@ -8065,15 +7918,14 @@ mod tests {
             resolve_track_set(&json!({})),
             vec![SubtitleTrack::source(None)]
         );
-        // 认不出来的 `mode` 与缺席同义，不 panic 也不猜。
+        // An unrecognised `mode` is treated the same as absent: no panic and no guessing.
         assert_eq!(
             resolve_track_set(&json!({"mode": "nonsense"})),
             vec![SubtitleTrack::source(None)]
         );
     }
 
-    /// apps/mac 无条件回写扁平 `mode`。两者打架时以 `mode` 为准并重派生轨集，
-    /// 同 role 的语言标注沿用。
+    /// apps/mac unconditionally writes back the flat `mode`. When the two conflict, `mode` wins and the track set is re-derived, and the language annotations of the same role are kept.
     #[test]
     fn a_conflicting_legacy_mode_rederives_the_track_set_and_keeps_langs() {
         let style = json!({
@@ -8109,7 +7961,7 @@ mod tests {
         );
     }
 
-    /// 不给 `--mode` 的导出按轨集烧译文轨，不再读扁平 `mode`。
+    /// An export without `--mode` burns the translation track according to the track set, and no longer reads the flat `mode`.
     #[test]
     fn the_burn_in_mode_falls_back_to_the_document_track_set() {
         let mut document =
@@ -8122,7 +7974,7 @@ mod tests {
         );
         document["style"]["tracks"] = json!([{"role": "source"}]);
         assert_eq!(translation_burn_in_mode(&document, None), None);
-        // `--mode` 仍然是一次性编译参数，优先于文档轨集。
+        // `--mode` is still a one-off compile parameter and takes precedence over the document's track set.
         document["style"]["tracks"] = json!([{"role": "source"}]);
         assert_eq!(
             translation_burn_in_mode(&document, Some("bilingual")),
@@ -8130,8 +7982,7 @@ mod tests {
         );
     }
 
-    /// D10：`hidden` 缺省不落盘（老文档字节不变），置位时才写出来，并且能原样
-    /// 穿过读时迁移。
+    /// D10: `hidden` is not written to disk by default (so old document bytes are unchanged). It is written out only when set, and it passes through read-time migration unchanged.
     #[test]
     fn a_hidden_track_round_trips_through_the_track_set() {
         let tracks = vec![
@@ -8147,15 +7998,14 @@ mod tests {
             ])
         );
         assert_eq!(resolve_track_set(&json!({"tracks": json})), tracks);
-        // `hidden: false` 与缺席同义。
+        // `hidden: false` is treated the same as absent.
         assert_eq!(
             resolve_track_set(&json!({"tracks": [{"role": "source", "hidden": false}]})),
             vec![SubtitleTrack::source(None)]
         );
     }
 
-    /// D10 的核心不变式：根 `mode` 描述**声明**的轨集（关掉一条轨不改声明），
-    /// 生效模式才跳过 `hidden`。两者分开，「放回」才拿得回原样。
+    /// D10's core invariant: the root `mode` describes the **declared** track set (turning a track off does not change the declaration), and only the effective mode skips `hidden`. Keeping the two separate is what allows "putting it back" to recover the original.
     #[test]
     fn hidden_narrows_the_effective_mode_but_not_the_declared_one() {
         let style = json!({"tracks": [
@@ -8169,7 +8019,7 @@ mod tests {
             vec![SubtitleTrack::source(None)]
         );
         assert_eq!(effective_mode(&style), Some(StudioMode::Original));
-        // 写路径 canonicalize 照样写声明的 `mode`，并把 `hidden` 原样带过去。
+        // The write path still canonicalizes the declared `mode` and carries `hidden` through unchanged.
         let mut settled = style.clone();
         crate::style_sync::canonicalize_track_set(
             &mut settled,
@@ -8180,7 +8030,7 @@ mod tests {
         assert_eq!(settled["tracks"], style["tracks"]);
     }
 
-    /// 全部字幕轨都被关掉 = 这次一条字幕都不烧（等价 `--no-subs`）。
+    /// With all subtitle tracks turned off, this export burns no subtitles at all (equivalent to `--no-subs`).
     #[test]
     fn an_all_hidden_track_set_has_no_effective_mode() {
         let style = json!({"tracks": [
@@ -8193,7 +8043,7 @@ mod tests {
         assert_eq!(translation_burn_in_mode(&document, None), None);
     }
 
-    /// 关掉译文轨后，不给 `--mode` 的导出不再烧译文。
+    /// After the translation track is turned off, an export without `--mode` no longer burns the translation.
     #[test]
     fn the_burn_in_mode_skips_hidden_tracks() {
         let mut document = json!({"style": {"tracks": [
@@ -8203,15 +8053,14 @@ mod tests {
         assert_eq!(translation_burn_in_mode(&document, None), Some("bilingual"));
         document["style"]["tracks"][1]["hidden"] = json!(true);
         assert_eq!(translation_burn_in_mode(&document, None), None);
-        // 显式 `--mode` 仍然优先。
+        // An explicit `--mode` still takes precedence.
         assert_eq!(
             translation_burn_in_mode(&document, Some("translated")),
             Some("translated")
         );
     }
 
-    /// 同 role 的重复条目在解析时就被丢掉，所以「生效译文轨 >1 条」的告警判据
-    /// 只能从原始数组上取。
+    /// Duplicate entries for the same role are dropped at parse time, so the warning criterion for "more than one effective translation track" can only be taken from the raw array.
     #[test]
     fn duplicate_roles_are_reported_from_the_raw_track_array() {
         let style = json!({"tracks": [
@@ -8232,8 +8081,7 @@ mod tests {
         assert!(duplicate_track_roles(&json!({})).is_empty());
     }
 
-    /// 轨集裁决与 Studio 的 JS 镜像共用一张黄金表：两边逐行消费同一份夹具，
-    /// 谁改了规则不同步，另一边立刻红。
+    /// The track-set adjudication and Studio's JS mirror share one golden table. Both sides consume the same fixture row by row, so whichever side changes the rules out of sync turns the other side red.
     #[test]
     fn the_track_set_resolver_matches_the_shared_contract_fixture() {
         let contract: Value = serde_json::from_str(include_str!(
@@ -8253,7 +8101,7 @@ mod tests {
                 row["expected"]["mode"].as_str().expect("expected.mode"),
                 "{case}"
             );
-            // 读时迁移必须幂等：裁决出来的轨集再解析一次结果不变。
+            // Read-time migration must be idempotent: parsing the adjudicated track set again gives the same result.
             let settled = json!({"tracks": tracks_json(&tracks)});
             assert_eq!(
                 tracks_json(&resolve_track_set(&settled)),
@@ -8278,7 +8126,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// 共享正文借来后：别处还持有就深拷，独占就原地拆出；两条路都叠 edits.json。
+    /// After a shared body is borrowed: if someone else still holds it, deep-copy it; if it is exclusive, split it out in place. Both paths overlay edits.json.
     #[cfg(feature = "host")]
     #[test]
     fn preview_document_from_shared_clones_only_when_shared() {
@@ -8315,9 +8163,7 @@ mod tests {
         );
     }
 
-    /// 转录中的实时段（台账 #219 缺口 ①）：cue 流整份被换掉，译文轴清空，
-    /// 但 `timeline` 原样留着——分离主轨的主视频住在元素层里，被顺手删掉
-    /// 舞台就整片黑。
+    /// A live segment during transcription (ledger #219, gap ①): the cue stream is replaced wholesale and the translation axis is emptied, but `timeline` is left as is. The main video of a detached main track lives in the element layer, and deleting it by accident would turn the whole stage black.
     #[test]
     fn live_cues_replace_the_cue_stream_and_keep_the_timeline() {
         let mut document = json!({
@@ -8348,7 +8194,7 @@ mod tests {
         );
     }
 
-    /// 倒挂的段（识别器修订过 start 的边角）不能出负长度的 cue。
+    /// A reversed segment (a corner case where the recogniser revised the start) must not produce a cue with negative length.
     #[test]
     fn live_cues_clamp_inverted_spans() {
         let mut document = json!({ "cues": [] });
@@ -8357,7 +8203,7 @@ mod tests {
         assert_eq!(document["cues"][0]["end"], 4.0);
     }
 
-    /// kinetic-wave 两条 cue：0–2s 带动效，2–4s 用逐条覆盖撤掉动效。
+    /// Two kinetic-wave cues: 0–2s with motion, and 2–4s with the motion removed by a per-cue override.
     #[cfg(feature = "host")]
     fn text_motion_split_document() -> Value {
         let design = crate::text_design::designs()
@@ -8392,10 +8238,7 @@ mod tests {
         out
     }
 
-    /// 分层文字动画按帧判：带动效的 cue 活动时字幕层报 `WordAnimation`，
-    /// 另一条用逐条覆盖撤掉动效的 cue 照常出 glyph scene。整片 GPU 场景不再因此
-    /// 判死——动效帧的字幕层是一张 CPU 光栅裁出的 1:1 纹理，逐字节就是
-    /// `render_subtitle_frame` 那张图的子矩形，槽名在帧间保持稳定。
+    /// Layered text animation is judged per frame: a subtitle layer reports `WordAnimation` while a cue with animation is active, and another cue whose animation is removed by a per-cue override still produces a glyph scene as usual. The whole-film GPU scene is no longer ruled out by this. The subtitle layer on an animated frame is a 1:1 texture cropped from the CPU raster, byte-identical to the sub-rectangle of the image from `render_subtitle_frame`, and the slot name stays stable between frames.
     #[cfg(feature = "host")]
     #[test]
     fn text_motion_subtitles_rasterize_into_a_texture_node_per_frame() {
@@ -8468,7 +8311,7 @@ mod tests {
         );
     }
 
-    /// 0–3 秒的文字元素，只有 0.6 秒 `rise` 入场（没有循环、没有退场）。
+    /// A text element from 0–3 seconds, with only a 0.6-second `rise` entrance (no loop, no exit).
     #[cfg(feature = "host")]
     fn rise_title_plan() -> OverlayRenderPlan {
         let mut source = document("None", "none");
@@ -8495,8 +8338,7 @@ mod tests {
         plan
     }
 
-    /// 入场结束后的 hold 段完全静止：Structural 身份整段不变、`next_change` 直接
-    /// 指到元素 end（没有退场），不逐帧重光栅 / 重传；入场中逐帧变。
+    /// After the entrance ends, the hold section is completely still: Structural identity is unchanged for the whole segment, and `next_change` points directly to the element's end (there is no exit). There is no per-frame re-rasterise or re-upload. It changes frame by frame during the entrance.
     #[test]
     #[cfg(feature = "host")]
     fn text_motion_elements_hold_one_identity_while_still() {
@@ -8529,8 +8371,7 @@ mod tests {
         }
     }
 
-    /// `ccut element style --patch` 能把 `textMotion` 写进文字元素：这一件在 GPU
-    /// 场景里同样是元素位置上的一张 CPU 光栅纹理，动的帧逐帧重建、静止段跳到下一个边界。
+    /// `ccut element style --patch` can write `textMotion` into a text element. In the GPU scene this piece is likewise a CPU-rasterised texture at the element's position. Moving frames are rebuilt per frame, and still segments jump to the next boundary.
     #[cfg(feature = "host")]
     #[test]
     fn text_elements_with_text_motion_become_texture_nodes() {

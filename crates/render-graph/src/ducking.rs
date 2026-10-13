@@ -1,15 +1,10 @@
-//! 闪避展开成增益包络（视频格式规范 §3.9）：唯一的一份规则，帧计划与导出都从这里取。
+//! Ducking expanded into a gain envelope (video format spec §3.9): the single rule set; both the frame plan and export take it from here.
 //!
-//! 曲线取 v2（`timeline::duck::duck_curve`）：一条规则的触发区间先合并（间隔不超过 max(0.5 秒, attack + release)
-//! 的并成一段），每段 `[s, e]` 展开成增益曲线上的四个点 (s − attack, 1)、(s, g)、(e, g)、(e + release, 1)，
-//! g = 10^(−depth/20)，点之间在线性增益上插值；attack、release 小于 0.001 秒按 0.001 秒算。同一个实例落在几条规则的
-//! 目标组里时各条的增益相乘。压低量（dB）从实例的增益（含淡入淡出）里减去，也就是在振幅上相乘。
+//! The curve uses v2 (`timeline::duck::duck_curve`): the trigger intervals of a rule are merged first (intervals separated by no more than max(0.5 s, attack + release) are merged into one segment). Each segment `[s, e]` expands into four points on the gain curve: (s − attack, 1), (s, g), (e, g), (e + release, 1), with g = 10^(−depth/20), and points interpolated linearly in linear gain; attack and release smaller than 0.001 s are treated as 0.001 s. When one instance falls in the target groups of several rules, their gains are multiplied. The attenuation (dB) is subtracted from the instance's gain (including fades), i.e. multiplied in amplitude.
 //!
-//! 触发区间：按实例触发的是组里发声实例的序列区间；按文稿触发的是当前有效词流里每个词在序列上的区间，由调用方
-//! 给出（[`speech_activity`](crate::audio_plan::speech_activity)）：导出的声音计划与预览的逐帧计划用同一份词流。没有给出词流时
-//! 按文稿触发的规则不展开。
+//! Trigger intervals: for instance-triggered rules these are the sequence intervals of the sounding instances in the group; for script-triggered rules these are the interval on the sequence of each word in the current effective word stream, supplied by the caller ([`speech_activity`](crate::audio_plan::speech_activity)). The export sound plan and the preview's per-frame plan use the same word stream. When no word stream is given, script-triggered rules are not expanded.
 //!
-//! 按区间算，不看信号电平：结果只取决于时间线与文稿，逐帧确定。
+//! Computed by interval, not by signal level: the result depends only on the timeline and the script, so it is deterministic frame by frame.
 
 use editor_semantics::Rate;
 use timeline::duck::{Duck, ENVELOPE_BAKE_STEP, GainEnvelope, duck_curve};
@@ -19,20 +14,19 @@ use video_model::{DuckingRule, Sequence, TimelineItem, Track};
 use crate::audio_plan::knots_at;
 use crate::{PlanError, TrackRules, audio_bounds, span_bounds};
 
-/// 一个实例受到的闪避：各条规则的增益曲线相乘之后烘焙成的 dB 折点。逐帧计划与导出读的是同一串折点，两边逐点一致。
+/// The ducking one instance receives: the gain curves of each rule multiplied together, then baked into dB breakpoints. The frame plan and export read the same sequence of breakpoints, so they match point for point.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DuckingEnvelope {
     knots: Vec<(f64, f64)>,
 }
 
 impl DuckingEnvelope {
-    /// 实例在序列里受到的闪避，不展开按文稿触发的规则（没有给出词流）。不在任何启用的规则的目标组里时为
-    /// 空包络（处处 0 dB）。
+    /// The ducking an instance receives on the sequence; script-triggered rules are not expanded (no word stream was given). When the instance is not in the target group of any enabled rule, it is an empty envelope (0 dB everywhere).
     pub fn for_item(sequence: &Sequence, item: &TimelineItem, fps: Rate) -> Result<DuckingEnvelope, PlanError> {
         DuckingEnvelope::for_item_with_speech(sequence, item, fps, None)
     }
 
-    /// 同 [`for_item`](Self::for_item)；`speech` 是有效词流在序列上的区间（秒），给了时按文稿触发的规则也展开。
+    /// Same as [`for_item`](Self::for_item); `speech` is the effective word stream's intervals on the sequence (seconds). When given, script-triggered rules are also expanded.
     pub fn for_item_with_speech(
         sequence: &Sequence,
         item: &TimelineItem,
@@ -70,24 +64,23 @@ impl DuckingEnvelope {
         self.knots.is_empty()
     }
 
-    /// `t`（秒）这一刻压低多少 dB（≥ 0）：在折点之间按 dB 线性插值。
+    /// How many dB to attenuate at `t` (seconds) (≥ 0): linear interpolation in dB between breakpoints.
     pub fn reduction_db(&self, t: f64) -> f64 {
         knots_at(&self.knots, t)
     }
 
-    /// 整条包络的折点 `(秒, 压低 dB)`，按时间排序：折点之间在 dB 上线性插值，第一个之前与最后一个之后是 0。
+    /// The breakpoints `(seconds, attenuation dB)` of the whole envelope, sorted by time: linear interpolation in dB between breakpoints; 0 before the first and after the last.
     pub fn knots(&self) -> Vec<(f64, f64)> {
         self.knots.clone()
     }
 }
 
-/// `t` 这一刻各条规则的增益相乘之后压低多少 dB。
+/// How many dB to attenuate at `t`, after multiplying together the gains of each rule at this moment.
 fn exact_reduction_db(curves: &[GainEnvelope], t: f64) -> f64 {
     curves.iter().map(|curve| -volume_to_db(curve.at(t))).sum::<f64>().max(0.0)
 }
 
-/// 烘焙：每条曲线的折点都取，增益在斜坡上线性、换成 dB 不再线性，斜坡再按 `ENVELOPE_BAKE_STEP`（0.02 秒）
-/// 等分取样；每个时刻的值取各条规则增益之积。
+/// Baking: every breakpoint of each curve is kept; gain is linear on the ramps but dB is no longer linear, so each ramp is sampled at equal intervals of `ENVELOPE_BAKE_STEP` (0.02 s); the value at each moment is the product of the gains of each rule.
 fn bake(curves: &[GainEnvelope]) -> Vec<(f64, f64)> {
     let mut times: Vec<f64> = Vec::new();
     for curve in curves {
@@ -107,7 +100,7 @@ fn bake(curves: &[GainEnvelope]) -> Vec<(f64, f64)> {
     times.into_iter().map(|t| (t, exact_reduction_db(curves, t))).collect()
 }
 
-/// 规则的参数换成 v2 的 `Duck`（曲线只有一份，在 `timeline::duck`）。
+/// The rule's parameters converted to v2's `Duck` (the curve exists in only one place, in `timeline::duck`).
 fn duck_of(rule: &DuckingRule) -> Result<Duck, PlanError> {
     let seconds = |m: &editor_semantics::MediaTime, field: &str| -> Result<f64, PlanError> {
         let v = m.to_ratio(field)?.to_f64();
@@ -121,7 +114,7 @@ fn duck_of(rule: &DuckingRule) -> Result<Duck, PlanError> {
     })
 }
 
-/// 按实例触发的区间（秒，未合并）：组里启用、所在轨道发声、本身发声的实例，不含目标自己。
+/// Intervals (seconds, not merged) that trigger by instance: sounding instances in the group that are enabled, on a sounding track, and sounding themselves; excludes the target itself.
 fn trigger_intervals(
     sequence: &Sequence,
     rule: &DuckingRule,
@@ -162,7 +155,7 @@ fn trigger_intervals(
 mod tests {
     use super::*;
 
-    /// 一条规则：压低 `depth` dB，触发区间 `activity`。
+    /// One rule: attenuates by `depth` dB, with trigger intervals `activity`.
     fn curve(depth: f64, attack: f64, release: f64, activity: &[(f64, f64)]) -> GainEnvelope {
         let duck = Duck {
             under: String::new(),
@@ -188,7 +181,7 @@ mod tests {
         assert_eq!(env.reduction_db(1.0), 0.0);
         near(env.reduction_db(2.0), 12.0);
         near(env.reduction_db(3.5), 12.0);
-        // 斜坡的中点落在取样点上：增益是 1 与 g 的平均，不是 dB 的平均。
+        // The midpoint of the ramp falls on a sample point: the gain is the average of 1 and g, not the average of the dB values.
         near(env.reduction_db(1.8), -volume_to_db((1.0 + floor) / 2.0));
         near(env.reduction_db(4.5), -volume_to_db((1.0 + floor) / 2.0));
         assert!(env.reduction_db(1.8) < 6.0);
@@ -197,10 +190,10 @@ mod tests {
 
     #[test]
     fn triggers_closer_than_half_a_second_merge() {
-        // 间隔 0.4 秒（< max(0.5, attack + release)）：并成一段，中间不回升。
+        // Gap of 0.4 s (< max(0.5, attack + release)): merged into one segment, with no recovery in between.
         let env = envelope(vec![curve(10.0, 0.02, 0.35, &[(1.0, 2.0), (2.4, 3.0)])]);
         near(env.reduction_db(2.2), 10.0);
-        // 间隔 0.6 秒：两段，中间回到 0 dB。
+        // Gap of 0.6 s: two segments, back to 0 dB in between.
         let env = envelope(vec![curve(10.0, 0.02, 0.35, &[(1.0, 2.0), (2.6, 3.0)])]);
         assert_eq!(env.reduction_db(2.45), 0.0);
     }
@@ -232,7 +225,7 @@ mod tests {
         let knots = env.knots();
         assert_eq!(knots.first().map(|k| k.1), Some(0.0));
         assert_eq!(knots.last().map(|k| k.1), Some(0.0));
-        // 斜坡取样不超过 0.02 秒一个；折点之间按 dB 线性插值，与真实曲线的差不超过 0.5 dB。
+        // Ramps are sampled no more than once every 0.02 s; between breakpoints dB is interpolated linearly, and the difference from the true curve is no more than 0.5 dB.
         for pair in knots.windows(2) {
             let ((t0, d0), (t1, d1)) = (pair[0], pair[1]);
             if d0 != d1 {

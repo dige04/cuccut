@@ -19,19 +19,18 @@ import type { Logger } from '@cuccut/harness';
 import type { RpcHandlers } from './handlers.ts';
 
 /**
- * 已认证连接的身份（架构设计 §4.2）。由 Runtime 构造，公共请求不能自己声明。`service` 只由对外服务（§4.8）为通过认证的外部请求构造，
- * `web` 只由 Web 服务为通过会话认证的浏览器连接构造（操作者是用户本人）；网关的 hello 不接受这两个种类：外部请求不能冒充界面连接。
- * `local` 只由 `catalog.call` 为 CLI 与桌面连接的目录调用构造（`LocalPrincipal`，§3.5），沿用发起调用的连接，写入算用户本人。
+ * Identity of an authenticated connection (architecture design §4.2). Constructed by the Runtime; public requests cannot declare it themselves. `service` is constructed only by the external service (§4.8) for external requests that pass authentication. `web` is constructed only by the Web service for browser connections authenticated by session (the operator is the user themselves). The gateway's hello does not accept these two kinds, so external requests cannot impersonate UI connections.
+ * `local` is constructed only by `catalog.call` for CLI and desktop connections making catalogue calls (`LocalPrincipal`, §3.5), inheriting the connection that made the call; writes count as the user's own.
  */
 export interface TrustedPrincipal {
   connectionId: string;
   kind: ClientKind | 'service' | 'web' | 'local';
   name: string;
-  /** `web`：浏览器会话的 ID（吊销会话时按它断开连接）。 */
+  /** `web`: the browser session ID (used to disconnect when the session is revoked). */
   sessionId?: string;
 }
 
-/** 升级时由外层认证给出的身份（Web 服务的会话 cookie）：有它时 hello 不再比对令牌。 */
+/** Identity given by outer authentication at upgrade time (the Web service's session cookie): when present, hello no longer compares tokens. */
 export interface GatewayIdentity {
   kind: 'web';
   name: string;
@@ -43,24 +42,24 @@ export interface GatewayOptions {
   runtime: RuntimeInfo;
   handlers: RpcHandlers;
   log: Logger;
-  /** 额外允许的 Origin（开发服务器）。无 Origin、`null` 与 `file://` 总是允许。 */
+  /** Extra allowed Origin (the dev server). No Origin, `null`, and `file://` are always allowed. */
   allowedOrigins?: readonly string[];
-  /** 同一端口上的 HTTP 请求（媒体通道）。返回 false 表示不认识，回 404。 */
+  /** HTTP requests on the same port (the media channel). Returns false if not recognized, which responds with a 404. */
   http?: (request: IncomingMessage, response: ServerResponse) => boolean;
-  /** 已认证的连接断开（释放它打开的视频之类）。 */
+  /** Authenticated connection closed (releases things it opened, such as videos). */
   onDisconnect?: (principal: TrustedPrincipal) => void;
-  /** 握手成功（Web 服务按会话数连接）。 */
+  /** Handshake succeeded (the Web service counts connections per session). */
   onConnect?: (principal: TrustedPrincipal) => void;
-  /** 握手之后的每个请求（含 `subscribe`），在分发之前（Runtime 据此判断连接是否在用）。 */
+  /** Every request after the handshake (including `subscribe`), before dispatch (the Runtime uses this to tell whether the connection is in use). */
   onRequest?: (principal: TrustedPrincipal, method: RpcMethod) => void;
   /**
-   * 方法与主题的白名单（Web 服务）：在分发之前同步检查，`subscribe` 也经过这里（按 `params.topic`）。
-   * 返回错误表示拒绝，原样回给调用方。
+   * Allowlist of methods and topics (Web service): checked synchronously before dispatch. `subscribe` also goes through here (by `params.topic`).
+   * Returns an error to reject; it is returned to the caller unchanged.
    */
   authorize?: (method: RpcMethod, params: unknown, principal: TrustedPrincipal) => RpcError | null;
 }
 
-/** 网关的来源规则，媒体通道的 CORS 也用它。 */
+/** The gateway's origin rules; the media channel's CORS also uses them. */
 export function originAllowed(origin: string | undefined, allowedOrigins: readonly string[] = []): boolean {
   if (origin === undefined || origin === 'null' || origin === 'file://') return true;
   return allowedOrigins.includes(origin);
@@ -68,13 +67,13 @@ export function originAllowed(origin: string | undefined, allowedOrigins: readon
 
 const HELLO_TIMEOUT_MS = 5_000;
 const HEARTBEAT_MS = 30_000;
-/** 发送缓冲超过这个量就断开，让客户端重连后按序号补发或取快照，而不是在内存里无限堆积。 */
+/** If the send buffer exceeds this amount, disconnect, so the client reconnects and resumes by sequence number or fetches a snapshot, instead of piling up in memory without limit. */
 const MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 
 /**
- * 本机网关（架构设计 §4）。只监听回环地址：同一个端口上，WebSocket 走协议，第一帧必须是带令牌的 hello；
- * 普通 HTTP 只服务媒体通道（§4.5）。
+ * Local gateway (architecture design §4). Listens only on the loopback address. On the same port, WebSocket carries the protocol, and the first frame must be a hello with a token.
+ * Plain HTTP serves only the media channel (§4.5).
  */
 export class Gateway {
   readonly #options: GatewayOptions;
@@ -94,8 +93,7 @@ export class Gateway {
     const http = createServer((request, response) => {
       if (!this.#options.http?.(request, response)) response.writeHead(404).end();
     });
-    // 先监听再挂 WebSocketServer：它会把 http 的 error 转发到自己身上，监听失败（端口被占）时没人接，
-    // 进程收到未处理的 error，这里的 Promise 也永远不会落定。失败时原样抛出，不留下任何句柄。
+    // Listen first, then attach the WebSocketServer: it forwards the http server's error to itself. If listening fails (port in use), nothing is there to handle the error, the process gets an unhandled error, and this Promise never settles. On failure, the error is thrown as is, and no handles are left behind.
     await new Promise<void>((resolve, reject) => {
       http.once('error', reject);
       http.listen(port, host, () => {
@@ -112,8 +110,8 @@ export class Gateway {
   }
 
   /**
-   * 别的 HTTP 服务器上的 WebSocket 升级（Web 服务）：来源与认证由调用方先查过，`identity` 是认证得到的身份。
-   * 这个网关不自己监听。
+   * WebSocket upgrade on another HTTP server (Web service): the caller has already checked origin and authentication, and `identity` is the identity obtained from authentication.
+   * This gateway does not listen on its own.
    */
   upgrade(request: IncomingMessage, socket: Duplex, head: Buffer, identity: GatewayIdentity): void {
     if (this.#closed) {
@@ -124,7 +122,7 @@ export class Gateway {
     server.handleUpgrade(request, socket, head, (ws) => this.#accept(ws, request, identity));
   }
 
-  /** 断开符合条件的已认证连接（吊销浏览器会话）。 */
+  /** Disconnects the matching authenticated connections (revokes browser sessions). */
   disconnectWhere(predicate: (principal: TrustedPrincipal) => boolean, reason: string): number {
     let count = 0;
     for (const connection of this.#connections) {
@@ -164,7 +162,7 @@ export class Gateway {
 
   #accept(socket: WebSocket, request: IncomingMessage, identity?: GatewayIdentity): void {
     const origin = request.headers.origin;
-    // 外层认证过的升级（Web 服务）由外层按它自己的来源规则查过。
+    // An upgrade already authenticated by the outer layer (Web service) was checked by that layer against its own origin rules.
     if (!identity && !this.#originAllowed(origin)) {
       this.#log.warn('Refused origin', { origin });
       socket.close(1008, 'origin not allowed');
@@ -262,7 +260,7 @@ class Connection {
     const parsed = helloFrameSchema.safeParse(frame);
     if (!parsed.success) return this.#fatal(new RpcError('unauthenticated', RcGateway.helloRequired()));
     const hello = parsed.data;
-    // 升级时已经认证过的连接（浏览器会话）不比对令牌：页面拿不到任何令牌，身份来自会话。
+    // A connection already authenticated at upgrade time (browser session) is not checked against a token: the page gets no token, and the identity comes from the session.
     if (!this.#identity && !tokenMatches(hello.token, this.#options.token)) {
       return this.#fatal(new RpcError('unauthenticated', RcGateway.invalidToken()));
     }
@@ -287,7 +285,7 @@ class Connection {
     const denied = this.#options.authorize?.(method, params, this.#principal!);
     if (denied) return this.#respondError(id, denied);
     this.#options.onRequest?.(this.#principal!, method);
-    // 订阅必须同步完成：登记监听、算出快照或补发、写回响应在同一段里，之后的事件才保证排在响应后面。
+    // Subscription must complete synchronously: register the listener, compute the snapshot or replay, and write the response in the same block, so that later events are guaranteed to come after the response.
     if (method === 'subscribe') {
       try {
         const { topic, afterSeq } = params as { topic: Topic; afterSeq?: string };

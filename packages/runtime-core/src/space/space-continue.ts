@@ -13,17 +13,15 @@ import { projectOf, visibleTo } from './space-queries.ts';
 import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 从 Space 条目继续一段会话（`space.continueInConversation`，架构设计 §5.7）。只建（或找到）会话、附上条目的引用，不启动任务：
- * 引用随用户下一次发送附在消息后面。
+ * Continue a conversation from a Space entry (`space.continueInConversation`, architecture design §5.7). Only creates (or finds) the conversation and attaches a reference to the entry; no task is started. The reference is attached to the user's next message.
  *
- * 放进哪个会话：
- * - 给了 `conversationId`：用它。它要看得到这个条目（与智能体工具 `space_list` 同一条规则，`visibleTo` 的 `source` 视角），
- *   否则以 `SPACE_CONVERSATION_MISMATCH` 拒绝：引用放进去了，智能体也取不到内容。
- * - 属于项目的条目：在那个项目里新建会话。项目里的会话各有各的话题，不猜该接哪一个。
- * - 不属于项目的条目：回到它所在（或产生它）的会话，那个会话不在了时新建一个不属于项目的会话。
+ * Which conversation it goes into:
+ * - If `conversationId` is given, use it. It must be able to see the entry (the same rule as the agent tool `space_list`, from the `source` perspective of `visibleTo`). Otherwise it is rejected with `SPACE_CONVERSATION_MISMATCH`: the reference would be put in, but the agent could not fetch the content.
+ * - An entry that belongs to a project: create a new conversation in that project. Conversations in a project each have their own topic, so it does not guess which one to attach to.
+ * - An entry that does not belong to a project: return to the conversation it is in (or that produced it). If that conversation no longer exists, create a new conversation that does not belong to a project.
  *
- * 带的上下文只有条目的标识与元数据（`SpaceEntryReference`），不读文件内容。回收站里的条目拒绝（`SPACE_ENTRY_TRASHED`）。
- * `commandId` 重试时回答同一个会话，不重复新建。
+ * The context carried is only the entry's identifier and metadata (`SpaceEntryReference`); file contents are not read. Entries in the trash are rejected (`SPACE_ENTRY_TRASHED`).
+ * On a retry with the same `commandId`, it answers with the same conversation; no new one is created.
  */
 export async function continueInConversation(
   space: SpaceCatalog,
@@ -51,13 +49,13 @@ export async function continueInConversation(
     conversation = origin ? findConversation(harness, origin) : null;
   }
   if (!conversation) {
-    // 同一个 `commandId` 重试时拿到的是上次建的会话：按调用之前有没有这个会话判断，不比较时间戳（同一毫秒里分不出先后）。
+    // On a retry with the same `commandId`, the conversation returned is the one created last time. This is judged by whether the conversation existed before the call, not by timestamps (two events in the same millisecond cannot be ordered).
     const existing = new Set(harness.directorySnapshot().conversations.map((c) => c.id));
     conversation = await harness.createConversation({
       projectId,
       ...(params.commandId ? { commandId: `space-continue:${params.commandId}` } : {}),
     });
-    // 引用按条目去重，再挂一次无害。
+    // References are de-duplicated by entry, so attaching again is harmless.
     created = !existing.has(conversation.id);
   }
   conversation = harness.attachReference(conversation.id, reference);
@@ -72,7 +70,7 @@ function findConversation(harness: Harness, conversationId: Id): Conversation | 
   }
 }
 
-/** 条目的引用：标识与元数据，不含文件内容与生成参数。 */
+/** The entry's reference: identifier and metadata, not file contents or generation parameters. */
 export function referenceOf(entry: SpaceEntry): SpaceEntryReference {
   const inSource = entry.source.projectId !== null || entry.source.conversationId !== null;
   return {

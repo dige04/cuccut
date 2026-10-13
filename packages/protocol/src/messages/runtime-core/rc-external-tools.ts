@@ -14,12 +14,12 @@ import { pl } from './rc-external-tools.pl.ts';
 import { tr } from './rc-external-tools.tr.ts';
 import { vi } from './rc-external-tools.vi.ts';
 
-/** 外部工具（external-tools/）的错误、状态说明与补救。英文是键与类型的来源，译文在 `rc-external-tools.<语言>.ts`。 */
+/** Errors, status descriptions and remedies for external tools (external-tools/). English is the source of keys and types; translations are in `rc-external-tools.<language>.ts`. */
 const en = {
   manageOnlyInAppOrCli: 'External tools can only be managed in the desktop app or the CLI',
   videoNotOpen: "The video isn't open",
 
-  // 能不能用（toolUseProblem）
+  // Whether usable (toolUseProblem)
   toolUpdating: (p: { label: string }) => `${p.label} is updating`,
   waitForUpdate: (p: { jobId: string }) => `Try again after update task ${p.jobId} finishes`,
   toolNotInstalled: (p: { label: string }) => `${p.label} isn't installed`,
@@ -30,7 +30,7 @@ const en = {
   consentRemedy: (p: { name: string }) =>
     `Try again after the user consents: externalTools.consent (cuccut external-tools consent ${p.name}), or consent while installing (externalTools.install with consent: true)`,
 
-  // 指定路径、安装、更新
+  // Specified path, install, update
   notExecutable: (p: { path: string }) => `${p.path} isn't an executable file`,
   notWindowsProgram: (p: { path: string }) =>
     `${p.path} isn't a Windows program (.exe): CucCut doesn't run external tools through a command interpreter`,
@@ -60,7 +60,7 @@ const en = {
   endpointBadForm:
     'The external tool download source must be a base address starting with http(s)://, without credentials, query parameters, or a fragment',
 
-  // 探测（状态里的 reason / remedy）
+  // Probe (reason / remedy in status)
   sourceEnvVar: (p: { name: string }) => `the environment variable ${p.name}`,
   sourceUserPath: 'the path you set',
   sourceManaged: 'the copy CucCut downloaded',
@@ -77,7 +77,7 @@ const en = {
     `Download ${p.version} with externalTools.install, or update the ${p.label} on your system`,
   updateTool: (p: { label: string }) => `Update ${p.label}`,
 
-  // 安装与更新任务
+  // Install and update tasks
   diskFull: 'The disk filled up while writing the tool file',
   downloadedCannotRun: (p: { label: string; reason: string }) => `The downloaded ${p.label} can't run: ${p.reason}`,
   updateStopped: 'Update stopped',
@@ -87,7 +87,7 @@ const en = {
   updateCannotStart: (p: { reason: string }) => `The update command couldn't start (${p.reason})`,
   updateFailedRemedy: (p: { command: string }) => `Check the output in the task, or run ${p.command} in a terminal and then detect again`,
 
-  // 下载（tool-download）
+  // Download (tool-download)
   remedyNoSpace: 'The disk with the Runtime Home is out of space. Free up space, then install again',
   remedyNetwork:
     'The network is unreachable or the download was interrupted. Check the network and install again (the downloaded part resumes), or switch mirrors in "Tool download source" under Settings › General',
@@ -101,7 +101,7 @@ const en = {
   largerThanManifest: (p: { file: string }) => `${p.file} is larger than the manifest says`,
   archiveBroken: (p: { file: string; reason: string }) => `${p.file} could not be unpacked: ${p.reason}`,
 
-  // 登记表（tool-manifests）
+  // Manifest registry (tool-manifests)
   ytDlpLicense: 'Unlicense (source); the standalone executable includes GPLv3+ components and is GPLv3+ as a whole',
   ytDlpPurpose: 'Import from link: reads the video page and downloads media and subtitles',
   ytDlpMissingRemedy:
@@ -110,13 +110,13 @@ const en = {
   noReleaseForPlatform: (p: { platform: string }) => `No release file for this machine (${p.platform})`,
   noTrustedSha: "The built-in manifest doesn't have a trusted sha256 for this file yet, so it can't be downloaded",
 
-  // 探测命令（tool-probe）
+  // Probe command (tool-probe)
   probeCannotStart: (p: { error: string }) => `Can't start: ${p.error}`,
   probeTimeout: (p: { command: string; seconds: number }) => `${p.command} didn't finish within ${p.seconds} seconds`,
   probeCannotStartCode: (p: { code: string }) => `Can't start (${p.code})`,
   probeExited: (p: { code: string; detail: string }) => `Exited with ${p.code}${p.detail ? `: ${p.detail}` : ''}`,
 
-  // 按原安装方式更新（tool-update-plan）
+  // Update using the original install method (tool-update-plan)
   pipxMissing: (p: { label: string }) => `This ${p.label} was installed with pipx, but pipx isn't on the PATH.`,
   brewMissing: (p: { label: string; brew: string }) => `This ${p.label} was installed with Homebrew, but that Homebrew's ${p.brew} can't be found.`,
   wingetMachineWide: (p: { label: string; dir: string }) =>

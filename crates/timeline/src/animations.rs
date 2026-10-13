@@ -27,7 +27,7 @@ impl AnimationSlotKind {
         }
     }
 
-    /// 该槽可供**新写入**的 preset 词表（exit 不含 0.1 兼容名，那些只准读入）。
+    /// The preset vocabulary this slot may use for **new writes** (exit does not include the 0.1 compatibility names, which may only be read in).
     pub fn presets(self) -> &'static [&'static str] {
         match self {
             Self::Enter => ENTER_PRESETS,

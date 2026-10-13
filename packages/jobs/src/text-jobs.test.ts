@@ -17,8 +17,7 @@ import {
 import { JobManager, type JobVideos, type TranscribeRouter } from './job-manager.ts';
 
 /**
- * 文本生成任务在 JobManager 里的生命周期（架构设计 §6.4、§7.9）：冻结参数、执行（经共用的 `TextRunner`）、
- * 校验、发布为产物、结果的预览与警告，以及各种失败。Provider 是假的；真实的适配器在 providers 与 runtime-core 的测试里。
+ * Lifecycle in JobManager of text generation tasks (architecture design §6.4, §7.9): frozen parameters, execution (via the shared `TextRunner`), validation, publishing as artifacts, result preview and warnings, and the various failures. The Provider is fake; real adapters are covered by the tests in providers and runtime-core.
  */
 
 const MODEL: TextModelInfo = {
@@ -165,7 +164,7 @@ describe('文本生成任务（JobManager）', () => {
         responseFormat: { type: 'text' },
         maxOutputTokens: 500,
         temperature: null,
-        // 能力参数的默认推理强度是 minimal，模型没有这一档：换成最接近的 low。
+        // The default reasoning effort for capability parameters is minimal, which this model does not have, so it is switched to the nearest one, low.
         requestedEffort: 'minimal',
         effort: 'low',
         seed: null,

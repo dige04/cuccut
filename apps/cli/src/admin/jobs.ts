@@ -3,8 +3,8 @@ import { M } from './jobs-copy.ts';
 import { formatReconcileResult, formatResources, parseJobsArgs } from './jobs-output.ts';
 
 /**
- * 管理桶 `cuccut jobs resources|reconcile`（架构设计 §7.6、§7.7）。任务的列出、查看、等待、取消与重试在 Agent 面
- * （`jobs list|inspect|wait|cancel|retry`）。
+ * Admin bucket `cuccut jobs resources|reconcile` (Architecture design §7.6, §7.7). Listing, inspecting, waiting on, cancelling and retrying tasks are on the Agent surface
+ * (`jobs list|inspect|wait|cancel|retry`).
  */
 export const jobs = defineNoun({
   name: 'jobs',

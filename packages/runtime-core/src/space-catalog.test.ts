@@ -37,7 +37,7 @@ describe('Space 扫描', () => {
     await touch('sub/b.png');
     await touch('.git/c.png');
     await touch('.cuccut/d.png');
-    // 项目标记目录：既不是条目，也不往里走。
+    // Project marker directory: it is neither an entry nor descended into.
     await touch('.ccut/project.json', '{}');
     await touch('.ccut/f.png');
     await touch('node_modules/e.png');

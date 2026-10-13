@@ -3,11 +3,11 @@ import { NODE_SERVICE_TYPE } from '@cuccut/protocol';
 import type { NodeLogger } from './node-logger.ts';
 
 /**
- * mDNS 登记（节点协议规范 §12）：节点服务监听时登记 `_cuccut-node._tcp`，实例名为节点的名字，
- * TXT 记录 `id=<nodeId>`、`v=<nodeProtocolVersion>`。TXT 只用于展示，不构成信任。
+ * mDNS registration (node protocol spec §12): when the node service starts listening, it registers `_cuccut-node._tcp`, with the instance name set to the node's name,
+ * and TXT records `id=<nodeId>` and `v=<nodeProtocolVersion>`. TXT is for display only and does not establish trust.
  *
- * macOS 用系统的 `dns-sd -R`（进程活着登记就在，结束进程即注销）；其他平台本版不登记。
- * 测试一律注入假的 `Advertiser`，不碰真实的 mDNS。
+ * On macOS, the system's `dns-sd -R` is used (the registration stays while the process is alive and ends when the process exits). Other platforms do not register in this version.
+ * Tests always inject a fake `Advertiser` and never touch the real mDNS.
  */
 
 export interface AdvertiseInfo {
@@ -70,7 +70,7 @@ export class DnsSdAdvertiser implements Advertiser {
   }
 }
 
-/** 本平台的默认登记方式：macOS 用 `dns-sd`，其他平台不登记。 */
+/** Default registration method for this platform: `dns-sd` on macOS; other platforms do not register. */
 export function defaultAdvertiser(platform: NodeJS.Platform = process.platform, log?: NodeLogger): Advertiser {
   return platform === 'darwin' ? new DnsSdAdvertiser(log ? { log } : {}) : noopAdvertiser;
 }

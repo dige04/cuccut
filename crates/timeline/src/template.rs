@@ -1,11 +1,10 @@
-//! 模板层文档的纯派生：校验、盒子几何、章节分段、变量填充、字幕避让、内置十七款
-//! （跟随界面语言、按组分节）与实例化 / 品牌库合并。形状在 `ccut-protocol::template`，
-//! 一比一对应原型 `designs/cuccut/app/model-template.js`（第 112 轮；2026-09-14 模板与水印
-//! 合并、按组分节与平台款，台账 2026-09-14-230340；2026-09-15 台标层 `align`、竖屏切片改深色
-//! 标题卡）；这里不做 I/O、不画像素。
+//! Pure derivations for the template-layer document: validation, box geometry, chapter segmentation, variable filling, subtitle avoidance, the seventeen built-in templates
+//! (following the UI language, grouped into sections), and instantiation and brand-kit merging. The shapes live in `ccut-protocol::template`, one-to-one with the prototype `designs/cuccut/app/model-template.js` (round 112; 2026-09-14 templates and watermarks
+//! merged, sections by group and the platform variants, ledger 2026-09-14-230340; 2026-09-15 logo layer `align`, and the vertical slice switched to a dark title card).
+//! No I/O here, and no pixels are drawn.
 //!
-//! 坐标全是画面百分比（左上原点）；`play_t` / `dur` / 章节 `start` / `end` 用同一时钟
-//! （渲染侧传时间轴时钟，章节已映射到时间轴）。
+//! Coordinates are all percentages of the frame (origin at top-left); `play_t` / `dur` / chapter `start` / `end` use the same clock
+//! (the renderer passes the timeline clock, and chapters are already mapped onto the timeline).
 
 use std::collections::BTreeMap;
 
@@ -13,14 +12,14 @@ pub use crate::protocol::template::*;
 
 use crate::schema::TimelineError;
 
-/// 画面框像素尺寸（拖动 / 拉伸把像素位移折成百分比时用）。
+/// Frame size in pixels (used when converting pixel drags and stretches into percentages).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame {
     pub w: f64,
     pub h: f64,
 }
 
-/// 一段章节（时间轴时钟）。
+/// One chapter (timeline clock).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChapterSpan {
     pub id: String,
@@ -29,15 +28,15 @@ pub struct ChapterSpan {
     pub end: f64,
 }
 
-/// 章节条上的一段。
+/// One segment on the chapter bar.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     pub id: String,
     pub title: String,
     pub start: f64,
-    /// 段长（≥ 0.001），章节条按它做 flex 分配。
+    /// Segment length (≥ 0.001); the chapter bar uses it for flex distribution.
     pub span: f64,
-    /// 这一段自身的播放进度 0..=1。
+    /// Playback progress of this segment itself, 0..=1.
     pub done: f64,
     pub state: SegmentState,
 }
@@ -49,18 +48,18 @@ pub enum SegmentState {
     Todo,
 }
 
-/// 品牌库合并结果。
+/// Result of merging into the brand kit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MergeOutcome {
     pub list: Vec<TemplateDoc>,
     pub doc: TemplateDoc,
-    /// `true` = 同名覆盖了已有的一条；`false` = 新增。
+    /// `true` = an existing entry with the same name was overwritten; `false` = added as new.
     pub updated: bool,
 }
 
-/// 内置的空白模板 id。
+/// The id of the built-in blank template.
 pub const BLANK_ID: &str = "tpl-new";
-/// 品牌库模板 id 前缀。
+/// Id prefix for brand-kit templates.
 pub const BRAND_ID_PREFIX: &str = "tpl-brand-";
 
 const WHITE: &str = "#FFFFFF";
@@ -71,31 +70,31 @@ const BLUE: &str = "#3B63FB";
 const YELLOW: &str = "#FFE14D";
 const PINK: &str = "#FF4D7A";
 const TEAL: &str = "#1FB6C9";
-/// 竖屏切片标题卡里次一级的章节名：比标题白暗一档的浅灰。
+/// Secondary chapter name on the vertical-slice title card: a light grey one step darker than the title's white.
 const MIST: &str = "#D9D9D9";
-/// 竖屏切片四层字共用的左右内边距（画面高的 1.2%，1080×1920 下 23px，等于标题按 0.5em 推的旧值）。
+/// Left and right padding shared by the four text layers of the vertical slice (1.2% of frame height; 23px at 1080×1920, equal to the old value the title got from 0.5em).
 const VERTICAL_PAD: f64 = 1.2;
 
 fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
     v.max(lo).min(hi)
 }
 
-/// 一位小数。
+/// One decimal place.
 pub fn r1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
-// ---------- 校验 ----------
+// ---------- Validation ----------
 
-/// 校验一套模板：id 合法且层 id 唯一、颜色 `#RRGGBB[AA]`、盒子在画面内且不小于最小尺寸、
-/// 字号为正、`hue` 在集合里、`LogoSrc::File` 是项目相对路径。
+/// Validates a template: ids are legal and layer ids are unique, colours are `#RRGGBB[AA]`, boxes lie within the frame and are not smaller than the minimum size,
+/// font sizes are positive, `hue` is in the set, and `LogoSrc::File` is a project-relative path.
 pub fn validate(doc: &TemplateDoc) -> Result<(), TimelineError> {
     crate::protocol::template::validate(doc).map_err(TimelineError::Invalid)
 }
 
-// ---------- 盒子几何 ----------
+// ---------- Box geometry ----------
 
-/// 先夹尺寸再夹位置，一位小数。
+/// Clamp the size first, then the position; one decimal place.
 pub fn clamp_box(b: LayerBox) -> LayerBox {
     let w = clamp(b.w, MIN_W, 100.0);
     let h = clamp(b.h, MIN_H, 100.0);
@@ -107,7 +106,7 @@ pub fn clamp_box(b: LayerBox) -> LayerBox {
     }
 }
 
-/// 拖动：像素位移折成百分比后整体平移。
+/// Drag: the pixel displacement is converted to percentages, then the whole box is translated.
 pub fn drag_box(box0: LayerBox, dx: f64, dy: f64, frame: Frame) -> LayerBox {
     clamp_box(LayerBox {
         x: box0.x + dx / frame.w * 100.0,
@@ -116,7 +115,7 @@ pub fn drag_box(box0: LayerBox, dx: f64, dy: f64, frame: Frame) -> LayerBox {
     })
 }
 
-/// 右下角拉伸：只改宽高。
+/// Bottom-right corner stretch: changes only width and height.
 pub fn resize_box(box0: LayerBox, dx: f64, dy: f64, frame: Frame) -> LayerBox {
     clamp_box(LayerBox {
         w: box0.w + dx / frame.w * 100.0,
@@ -125,7 +124,7 @@ pub fn resize_box(box0: LayerBox, dx: f64, dy: f64, frame: Frame) -> LayerBox {
     })
 }
 
-/// 版面编辑器的八个拉伸把手（四角 + 四边）。
+/// The eight stretch handles of the layout editor (four corners and four edges).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Handle {
     N,
@@ -150,7 +149,7 @@ impl Handle {
         Handle::W,
     ];
 
-    /// 线上名字：`n` `s` `e` `w` `ne` `nw` `se` `sw`。
+    /// Wire names: `n` `s` `e` `w` `ne` `nw` `se` `sw`.
     pub fn as_str(self) -> &'static str {
         match self {
             Handle::N => "n",
@@ -168,7 +167,7 @@ impl Handle {
         Handle::ALL.into_iter().find(|h| h.as_str() == s)
     }
 
-    /// 横向动哪条边：`-1` 左边、`1` 右边、`0` 不动。
+    /// Which horizontal edge moves: `-1` left edge, `1` right edge, `0` does not move.
     pub fn sx(self) -> i8 {
         match self {
             Handle::W | Handle::NW | Handle::SW => -1,
@@ -177,7 +176,7 @@ impl Handle {
         }
     }
 
-    /// 纵向动哪条边：`-1` 上边、`1` 下边、`0` 不动。
+    /// Which vertical edge moves: `-1` top edge, `1` bottom edge, `0` does not move.
     pub fn sy(self) -> i8 {
         match self {
             Handle::N | Handle::NE | Handle::NW => -1,
@@ -187,7 +186,7 @@ impl Handle {
     }
 }
 
-/// 一根轴上拖一条边：对边锚定，拖动的边夹在画面内且与对边至少隔 `min`。
+/// Drag one edge along one axis: the opposite edge is anchored, and the dragged edge is clamped within the frame and stays at least `min` away from the opposite edge.
 fn drag_edge(start: f64, size: f64, delta: f64, side: i8, min: f64) -> (f64, f64) {
     let lo = start;
     let hi = start + size;
@@ -204,9 +203,9 @@ fn drag_edge(start: f64, size: f64, delta: f64, side: i8, min: f64) -> (f64, f64
     }
 }
 
-/// 八把手拉伸：`dx` / `dy` 是像素位移，被拖的边跟手、对边不动；最后过 [`clamp_box`]。
+/// Eight-handle stretch: `dx` and `dy` are pixel displacements; the dragged edge follows the pointer while the opposite edge stays put; the result then passes through [`clamp_box`].
 ///
-/// [`resize_box`] 等价于 `resize_box_from(.., Handle::SE, ..)`（右下角把手）。
+/// [`resize_box`] is equivalent to `resize_box_from(.., Handle::SE, ..)` (the bottom-right handle).
 pub fn resize_box_from(box0: LayerBox, handle: Handle, dx: f64, dy: f64, frame: Frame) -> LayerBox {
     let dxp = if frame.w > 0.0 {
         dx / frame.w * 100.0
@@ -223,7 +222,7 @@ pub fn resize_box_from(box0: LayerBox, handle: Handle, dx: f64, dy: f64, frame: 
     clamp_box(LayerBox { x, y, w, h })
 }
 
-/// 命中：自顶向下（数组末尾先），跳过关掉的层，闭区间。
+/// Hit test: top-down (end of the array first), skipping hidden layers; closed interval.
 pub fn hit_test(doc: &TemplateDoc, x: f64, y: f64) -> Option<&TemplateLayer> {
     doc.layers.iter().rev().find(|l| {
         let b = &l.rect;
@@ -231,9 +230,9 @@ pub fn hit_test(doc: &TemplateDoc, x: f64, y: f64) -> Option<&TemplateLayer> {
     })
 }
 
-// ---------- 章节分段 / 变量 ----------
+// ---------- Chapter segmentation / variables ----------
 
-/// 播放进度 0..=1。
+/// Playback progress, 0..=1.
 pub fn progress(play_t: f64, dur: f64) -> f64 {
     if dur <= 0.0 {
         return 0.0;
@@ -241,7 +240,7 @@ pub fn progress(play_t: f64, dur: f64) -> f64 {
     clamp(play_t / dur, 0.0, 1.0)
 }
 
-/// 章节条的分段：空章节表 = 整长一段。
+/// Segmentation of the chapter bar: an empty chapter table means one segment spanning the whole length.
 pub fn segments(chapters: &[ChapterSpan], play_t: f64, dur: f64) -> Vec<Segment> {
     let whole;
     let list: &[ChapterSpan] = if chapters.is_empty() {
@@ -278,7 +277,7 @@ pub fn segments(chapters: &[ChapterSpan], play_t: f64, dur: f64) -> Vec<Segment>
         .collect()
 }
 
-/// `h:mm:ss`（≥ 1 小时）或 `m:ss`。
+/// `h:mm:ss` (≥ 1 hour) or `m:ss`.
 pub fn timecode(seconds: f64) -> String {
     let s = seconds.max(0.0).floor() as u64;
     let h = s / 3600;
@@ -291,8 +290,8 @@ pub fn timecode(seconds: f64) -> String {
     }
 }
 
-/// 文字层变量表：当前章节名 / 序号 / 章节数 / 时间 / 剩余 / 总长 / 百分比 + 调用方附加
-/// （如 `title`）。当前章节 = 首个正在播的段；都不在播时，播完取末段，否则取首段。
+/// Text-layer variable table: current chapter name, index, chapter count, time, remaining, total length and percentage, plus caller-supplied extras
+/// (such as `title`). Current chapter = the first segment currently playing; when none is playing, use the last segment if playback has finished, otherwise the first segment.
 pub fn vars(
     chapters: &[ChapterSpan],
     play_t: f64,
@@ -321,7 +320,7 @@ pub fn vars(
     out
 }
 
-/// `{name}` 替换；未知变量原样保留。
+/// Replaces `{name}`; unknown variables are kept as they are.
 pub fn fill(text: &str, vars: &BTreeMap<String, String>) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -352,8 +351,8 @@ pub fn fill(text: &str, vars: &BTreeMap<String, String>) -> String {
     out
 }
 
-/// 字幕底线应抬到的百分比：只看打开的、y ≥ 50 的整宽横条类层，取 `100 - y + 2` 与
-/// `base` 的最大值。没有这样的层返回 `base`。
+/// The percentage the subtitle baseline should be raised to: only considers open, full-width horizontal-bar-type layers with y ≥ 50, taking the maximum of `100 - y + 2` and
+/// `base`. If there is no such layer, returns `base`.
 pub fn subs_bottom(doc: &TemplateDoc, base: f64) -> f64 {
     let mut out = base;
     if !doc.subs_avoid {
@@ -367,7 +366,7 @@ pub fn subs_bottom(doc: &TemplateDoc, base: f64) -> f64 {
     out
 }
 
-// ---------- 内置 / 实例 / 品牌库 ----------
+// ---------- Built-in / instances / brand kit ----------
 
 fn layer(id: &str, rect: LayerBox, kind: LayerKind) -> TemplateLayer {
     TemplateLayer {
@@ -393,7 +392,7 @@ fn logo_text(text: &str, bg: Option<&str>, color: &str, shape: LogoShape, size: 
     }
 }
 
-/// 台标层改整层不透明度与平铺（半透明台标、内置水印用）。
+/// Sets the whole-layer opacity and tiling of a logo layer (used for semi-transparent logos and built-in watermarks).
 fn faded(mut kind: LayerKind, value: f64, tiled: bool) -> LayerKind {
     if let LayerKind::Logo { opacity, tile, .. } = &mut kind {
         *opacity = value;
@@ -402,7 +401,7 @@ fn faded(mut kind: LayerKind, value: f64, tiled: bool) -> LayerKind {
     kind
 }
 
-/// 台标层改字 / 图在盒子里的水平对齐（缺省居中）。
+/// Horizontal alignment of the text or image within the box for a logo layer (defaults to centred).
 fn aligned(mut kind: LayerKind, value: TextAlign) -> LayerKind {
     if let LayerKind::Logo { align, .. } = &mut kind {
         *align = value;
@@ -410,8 +409,8 @@ fn aligned(mut kind: LayerKind, value: TextAlign) -> LayerKind {
     kind
 }
 
-/// 文字层 / 台标层写死字的左右内边距（画面高的百分比）。几层字号不同的字要从同一条竖线
-/// 起笔时用：缺省内边距按各自字号推，字号一变起笔位置就跟着变。
+/// Fixed left and right padding for text and logo layers (percentage of frame height). Used when several layers with different font sizes must start from the same vertical line:
+/// by default the padding is derived from each layer's own font size, so changing a font size would shift the start position.
 fn padded(mut kind: LayerKind, value: f64) -> LayerKind {
     if let LayerKind::Logo { pad, .. } | LayerKind::Text { pad, .. } = &mut kind {
         *pad = Some(value);
@@ -494,25 +493,25 @@ fn doc(
     }
 }
 
-/// 「套用时画幅」+ 画幅锁（原型第 218 轮）：套用时一并改项目画幅，之后在舞台与项目设置里
-/// 改不了，要改先到模板设置解锁。
+/// "Apply frame size" and the frame-size lock (prototype round 218): applying also changes the project's frame size, after which it cannot be changed on the stage or in project settings;
+/// to change it, unlock it first in template settings.
 fn locked(mut doc: TemplateDoc, ratio: &str) -> TemplateDoc {
     doc.ratio = Some(ratio.to_owned());
     doc.lock_ratio = true;
     doc
 }
 
-/// 水印类（`tag: "watermark"`）。
+/// Watermark category (`tag: "watermark"`).
 fn watermark(mut doc: TemplateDoc) -> TemplateDoc {
     doc.tag = Some(TAG_WATERMARK.to_owned());
     doc
 }
 
-// ---------- 内置目录的语言与分组（2026-09-14） ----------
+// ---------- Languages and groups of the built-in catalogue (2026-09-14) ----------
 
-/// 内置目录跟随的界面语言（原型 `LANGS`）：名字、说明与画进画面的示例文字（品牌名 / 社交名 /
-/// 讲者 / 集数 / 话题标签……）按语言换，id 与层结构各语言一致。没有词表的界面语言按英文出
-/// （原型 `LANG_FALLBACK`）；CLI、内核与没有语言上下文的调用方用简体中文。
+/// The UI languages the built-in catalogue follows (prototype `LANGS`): names, descriptions, and the sample text drawn into the frame (brand name, social handle,
+/// speaker, episode number, hashtags, etc.) change per language, while ids and layer structure are the same across languages. UI languages without a word list fall back to English
+/// (prototype `LANG_FALLBACK`); the CLI, the core, and callers without a language context use Simplified Chinese.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TemplateLang {
     #[default]
@@ -530,7 +529,7 @@ impl TemplateLang {
         TemplateLang::Ja,
     ];
 
-    /// 词表键：`zh` / `zh-Hant` / `en` / `ja`。
+    /// Word-list keys: `zh` / `zh-Hant` / `en` / `ja`.
     pub fn as_str(self) -> &'static str {
         match self {
             TemplateLang::Zh => "zh",
@@ -540,7 +539,7 @@ impl TemplateLang {
         }
     }
 
-    /// 按词表键解析（不分大小写）；不认识的返回 `None`。
+    /// Parses by word-list key (case-insensitive); returns `None` for unknown keys.
     pub fn parse(key: &str) -> Option<Self> {
         let key = key.trim();
         Self::ALL
@@ -548,8 +547,8 @@ impl TemplateLang {
             .find(|lang| lang.as_str().eq_ignore_ascii_case(key))
     }
 
-    /// BCP 47 语言标签 → 目录语言（原型 `systemLang`）：`zh` 带 Hant / TW / HK / MO 的归繁中、
-    /// 其余 `zh` 归简中，`ja` 归日文，其余一律英文。`_` 当 `-` 看（系统 locale 写法）。
+    /// BCP 47 language tag → catalogue language (prototype `systemLang`): `zh` with Hant / TW / HK / MO maps to Traditional Chinese,
+    /// other `zh` maps to Simplified Chinese, `ja` maps to Japanese, and everything else maps to English. `_` is treated as `-` (system locale notation).
     pub fn from_tag(tag: &str) -> Self {
         let tag = tag.trim().to_ascii_lowercase().replace('_', "-");
         let primary = |p: &str| tag == p || tag.starts_with(&format!("{p}-"));
@@ -579,7 +578,7 @@ impl TemplateLang {
     }
 }
 
-/// 一种语言的内置目录词表（原型 `BC_TPL.STR` 逐字；演示品牌「科浪」不是真实品牌）。
+/// The built-in catalogue word list for one language (prototype `BC_TPL.STR`, verbatim; the demo brand 「科浪」 is not a real brand).
 struct Vocab {
     brand: &'static str,
     handle: &'static str,
@@ -590,14 +589,14 @@ struct Vocab {
     subscribe: &'static str,
     save: &'static str,
     part: &'static str,
-    /// 组名，按 [`GROUPS`] 顺序。
+    /// Group names, in [`GROUPS`] order.
     groups: [&'static str; 9],
-    /// 每款内置 `(id, 名字, 说明)`，按 [`BUILTIN_IDS`] 顺序。
+    /// Each built-in `(id, name, description)`, in [`BUILTIN_IDS`] order.
     docs: [(&'static str, &'static str, &'static str); 17],
 }
 
 impl Vocab {
-    /// `(名字, 说明)`；词表缺这一款时给空串，校验会拦下（测试锁住不缺）。
+    /// `(name, description)`; if the word list lacks this entry, an empty string is given and validation catches it (a test locks it so nothing is missing).
     fn doc(&self, id: &str) -> (&'static str, &'static str) {
         self.docs
             .iter()
@@ -1047,8 +1046,8 @@ const JA: Vocab = Vocab {
     ],
 };
 
-/// 目录分组的组键与顺序（原型 `GROUPS`）：内置按 `group` 归组，品牌库里的一律归 `brand`，
-/// 空组不出现。
+/// Group keys and order for the catalogue (prototype `GROUPS`): built-ins are grouped by `group`, brand-kit entries always go to `brand`,
+/// and empty groups do not appear.
 pub const GROUPS: [&str; 9] = [
     "chapters",
     "info",
@@ -1060,15 +1059,15 @@ pub const GROUPS: [&str; 9] = [
     "watermark",
     "brand",
 ];
-/// 品牌库组键。
+/// Brand-kit group key.
 pub const GROUP_BRAND: &str = "brand";
-/// 水印组键。
+/// Watermark group key.
 pub const GROUP_WATERMARK: &str = "watermark";
-/// `group` 缺省或不认识时归到的组键（信息条）。
+/// The group key used when `group` is missing or unrecognised (info bar).
 pub const GROUP_FALLBACK: &str = "info";
 
-/// 一条模板的组键（原型 `groupKey`）：`brand` 为真（品牌库里的定义，不管从哪来）一律归品牌库；
-/// 否则按 `group`，缺省或不认识归「信息条」。
+/// The group key of one template (prototype `groupKey`): if `brand` is true (a definition in the brand kit, regardless of where it came from), it always goes to the brand kit;
+/// otherwise it follows `group`, and a missing or unrecognised value goes to "info bar".
 pub fn group_key(doc: &TemplateDoc, brand: bool) -> &'static str {
     if brand {
         return GROUP_BRAND;
@@ -1079,7 +1078,7 @@ pub fn group_key(doc: &TemplateDoc, brand: bool) -> &'static str {
         .unwrap_or(GROUP_FALLBACK)
 }
 
-/// 组名（原型 `groupLabel`）；不认识的组键原样返回。
+/// Group label (prototype `groupLabel`); an unrecognised group key is returned as it is.
 pub fn group_label(key: &str, lang: TemplateLang) -> &str {
     match GROUPS.iter().position(|k| *k == key) {
         Some(index) => lang.vocab().groups[index],
@@ -1087,15 +1086,15 @@ pub fn group_label(key: &str, lang: TemplateLang) -> &str {
     }
 }
 
-/// 目录的一节：组键与节内条目（保持输入顺序）。
+/// One section of the catalogue: group key and the entries within it (keeps input order).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateGroup<T> {
     pub key: &'static str,
     pub items: Vec<T>,
 }
 
-/// 按组分节（原型 `groupTemplates`）：`key_of` 给每条的组键（一般是 [`group_key`]），节按
-/// [`GROUPS`] 顺序排，空组不出现；不在 `GROUPS` 里的键归「信息条」。
+/// Sectioning by group (prototype `groupTemplates`): `key_of` gives each entry's group key (usually [`group_key`]); sections are ordered by
+/// [`GROUPS`], empty groups do not appear, and keys not in `GROUPS` go to "info bar".
 pub fn group_templates<T>(
     items: impl IntoIterator<Item = T>,
     key_of: impl Fn(&T) -> &'static str,
@@ -1118,7 +1117,7 @@ pub fn group_templates<T>(
         .collect()
 }
 
-/// 内置目录的 id，按目录顺序（各语言一致）。
+/// The ids of the built-in catalogue, in catalogue order (the same across languages).
 pub const BUILTIN_IDS: [&str; 17] = [
     "tpl-chapter-bar",
     "tpl-chapter-dim",
@@ -1139,18 +1138,18 @@ pub const BUILTIN_IDS: [&str; 17] = [
     "tpl-wm-handle",
 ];
 
-/// 是否是内置目录的 id（不构造文档；实例来源判定用，与语言无关）。
+/// Whether this is an id from the built-in catalogue (builds no document; used to decide an instance's origin, independent of language).
 pub fn is_builtin_id(id: &str) -> bool {
     BUILTIN_IDS.contains(&id)
 }
 
-/// 内置十七款，简体中文；CLI、内核与没有语言上下文的调用方用这份。
+/// The seventeen built-ins in Simplified Chinese; the CLI, the core, and callers without a language context use this set.
 pub fn builtins() -> Vec<TemplateDoc> {
     builtins_in(TemplateLang::Zh)
 }
 
-/// 按界面语言出内置十七款（原型 `builtins(lang)` 逐字段迁移，rgba 已换成 hex8，没写字重的
-/// 文字层记 700）。竖屏各款与讲座顶栏锁画幅；平台竖屏款的层只在平台 UI 安全区里、不画进度条。
+/// Produces the seventeen built-ins for the UI language (prototype `builtins(lang)`, migrated field by field; rgba has been changed to hex8; text layers without a specified weight are recorded as 700).
+/// The vertical variants and the lecture top bar lock the frame size; the layers of the platform vertical variants sit only inside the platform UI safe area and do not draw a progress bar.
 pub fn builtins_in(lang: TemplateLang) -> Vec<TemplateDoc> {
     let v = lang.vocab();
     let wide = TemplateCanvas::Wide;
@@ -1365,9 +1364,9 @@ pub fn builtins_in(lang: TemplateLang) -> Vec<TemplateDoc> {
                 "vertical",
                 tall,
                 vec![
-                    // 台标字靠左（盒子与右上角计数同宽）。四层字的盒子左右缘都落在 6% / 94%，
-                    // 内边距统一写死 VERTICAL_PAD：台标字、标题、章节名从同一条竖线起笔，
-                    // 计数的右缘与台标字左右对称。
+                    // The logo text is left-aligned (the box and the top-right counter have the same width). The left and right edges of the four text layers' boxes fall at 6% and 94%,
+                    // and the padding is fixed at VERTICAL_PAD for all: logo text, title and chapter name start from the same vertical line,
+                    // and the right edge of the counter is symmetric with the logo text.
                     layer(
                         "l-lg",
                         LayerBox::new(6.0, 4.0, 24.0, 3.2),
@@ -1395,8 +1394,8 @@ pub fn builtins_in(lang: TemplateLang) -> Vec<TemplateDoc> {
                             VERTICAL_PAD,
                         ),
                     ),
-                    // 标题卡：两行同宽同底、上下相接（接缝落在 17.5%，1.25% 的整数倍，
-                    // 两块半透明底不叠出亮缝 / 暗缝）；视频标题大而粗，章节名小一号、浅灰。
+                    // Title card: the two lines have the same width and background, stacked with no gap (the seam falls at 17.5%, an integer multiple of 1.25%,
+                    // so the two semi-transparent backgrounds do not produce a bright or dark seam); the video title is large and bold, and the chapter name is one size smaller and light grey.
                     layer(
                         "l-tt",
                         LayerBox::new(6.0, 12.5, 88.0, 5.0),
@@ -1744,12 +1743,12 @@ pub fn builtins_in(lang: TemplateLang) -> Vec<TemplateDoc> {
     ]
 }
 
-/// 按 id 找内置（简体中文）。
+/// Finds a built-in by id (Simplified Chinese).
 pub fn builtin(id: &str) -> Option<TemplateDoc> {
     builtin_in(id, TemplateLang::Zh)
 }
 
-/// 按 id 找内置（指定语言）。
+/// Finds a built-in by id (given language).
 pub fn builtin_in(id: &str, lang: TemplateLang) -> Option<TemplateDoc> {
     if !is_builtin_id(id) {
         return None;
@@ -1757,12 +1756,12 @@ pub fn builtin_in(id: &str, lang: TemplateLang) -> Option<TemplateDoc> {
     builtins_in(lang).into_iter().find(|d| d.id == id)
 }
 
-/// 新建一层的默认参数，简体中文（原型 `newLayer`）。
+/// Default parameters for a newly created layer, Simplified Chinese (prototype `newLayer`).
 pub fn new_layer_kind(kind: &str) -> Option<(LayerBox, LayerKind)> {
     new_layer_kind_in(kind, TemplateLang::Zh)
 }
 
-/// 按界面语言新建一层：台标的默认文字是该语言的示例品牌名。
+/// Creates a layer for the UI language: the default text of a logo layer is that language's sample brand name.
 pub fn new_layer_kind_in(kind: &str, lang: TemplateLang) -> Option<(LayerBox, LayerKind)> {
     Some(match kind {
         "chapters" => (
@@ -1793,7 +1792,7 @@ pub fn new_layer_kind_in(kind: &str, lang: TemplateLang) -> Option<(LayerBox, La
     })
 }
 
-/// `prefix` + 未被占用的最小正整数。
+/// `prefix` plus the smallest unused positive integer.
 pub fn next_id<'a>(prefix: &str, taken: impl IntoIterator<Item = &'a str>) -> String {
     let taken: Vec<&str> = taken.into_iter().collect();
     let mut n = 1;
@@ -1806,7 +1805,7 @@ pub fn next_id<'a>(prefix: &str, taken: impl IntoIterator<Item = &'a str>) -> St
     }
 }
 
-/// 空白模板。
+/// Blank template.
 pub fn blank(canvas: TemplateCanvas) -> TemplateDoc {
     TemplateDoc {
         id: BLANK_ID.to_string(),
@@ -1827,7 +1826,7 @@ pub fn blank(canvas: TemplateCanvas) -> TemplateDoc {
     }
 }
 
-/// 定义 → 实例：深拷贝、记来源、去内置标记。
+/// Definition → instance: deep copy, record the source, remove the built-in marker.
 pub fn instance(def: &TemplateDoc) -> TemplateDoc {
     let mut out = def.clone();
     out.from = Some(def.id.clone());
@@ -1835,12 +1834,12 @@ pub fn instance(def: &TemplateDoc) -> TemplateDoc {
     out
 }
 
-/// 品牌库里下一个空闲 id。
+/// The next free id in the brand kit.
 pub fn next_brand_id(list: &[TemplateDoc]) -> String {
     next_id(BRAND_ID_PREFIX, list.iter().map(|d| d.id.as_str()))
 }
 
-/// 存进品牌库：同名覆盖（保留原 id），否则分配新 id 追加；去掉 `from` 与内置标记。
+/// Saves into the brand kit: same name overwrites (keeping the original id), otherwise a new id is assigned and it is appended; removes `from` and the built-in marker.
 pub fn merge_into_brand(list: &[TemplateDoc], doc: &TemplateDoc, name: &str) -> MergeOutcome {
     let mut saved = doc.clone();
     saved.name = name.to_string();
@@ -1866,15 +1865,15 @@ pub fn merge_into_brand(list: &[TemplateDoc], doc: &TemplateDoc, name: &str) -> 
     }
 }
 
-// ---------- 旧水印预设 → 品牌库模板（2026-09-14） ----------
+// ---------- Legacy watermark presets → brand-kit templates (2026-09-14) ----------
 
-/// 由旧水印导入的模板的唯一一层台标 id（与内置水印同一个）。
+/// The single logo-layer id of a template imported from a legacy watermark (the same one used by the built-in watermark).
 pub const WATERMARK_LAYER_ID: &str = "l-wm";
-/// [`from_watermark`] 给的 id 前缀；存进品牌库时 [`merge_into_brand`] 会换成品牌库 id。
+/// The id prefix given by [`from_watermark`]; when saved into the brand kit, [`merge_into_brand`] replaces it with a brand-kit id.
 pub const WATERMARK_ID_PREFIX: &str = "tpl-wm-";
 
-/// 图片水印指向的品牌库 Logo：`value` 是 Logo id（Brand kit 的写法），老数据按名字对
-/// （原型按图片名找）。绝对路径或对不上的返回 `None`。
+/// The brand-kit logo that an image watermark points to: `value` is the logo id (the Brand kit convention); older data is matched by name
+/// (the prototype looks it up by image name). Absolute paths, or ones that do not match, return `None`.
 fn watermark_logo<'a>(
     w: &crate::protocol::brand::Watermark,
     logos: &'a [crate::protocol::brand::Logo],
@@ -1889,8 +1888,8 @@ fn watermark_logo<'a>(
     })
 }
 
-/// 旧水印在品牌库里的模板名：`name` 非空优先；图片水印回落它指向的 Logo 名；再回落
-/// `value`（Brand kit 水印列表同一口径）。导入与「移出品牌库时连带删掉源水印」都按它对。
+/// The template name of a legacy watermark in the brand kit: a non-empty `name` takes priority; an image watermark falls back to the name of the logo it points to; then falls back to
+/// `value` (the same rule as the Brand kit watermark list). Both import and "when removed from the brand kit, also delete the source watermark" match on this.
 pub fn watermark_template_name(
     w: &crate::protocol::brand::Watermark,
     logos: &[crate::protocol::brand::Logo],
@@ -1904,9 +1903,8 @@ pub fn watermark_template_name(
     }
 }
 
-/// 一条旧水印 → 一条只有台标层的品牌库定义（原型 `BC_TPL.fromWatermark`，PD §14.5「旧水印
-/// 导入」）：平铺 → 铺满整幅、`tile`、22%；角标 → 右下角 18×8 的盒子、75%。图片水印对得上
-/// 品牌库 Logo 就当图片台标，对不上（绝对路径 / 已删）退成写着名字的文字台标。
+/// One legacy watermark → one brand-kit definition containing only a logo layer (prototype `BC_TPL.fromWatermark`, PD §14.5 "legacy watermark
+/// import"): tiled → covers the whole frame, `tile`, 22%; corner badge → an 18×8 box at the bottom-right, 75%. An image watermark that matches a brand-kit logo becomes an image logo layer; one that does not match (absolute path or deleted) falls back to a text logo layer showing the name.
 pub fn from_watermark(
     w: &crate::protocol::brand::Watermark,
     logos: &[crate::protocol::brand::Logo],
@@ -1961,9 +1959,9 @@ pub fn from_watermark(
     }
 }
 
-/// 旧水印导进品牌库（原型 `BC_TPL.importWatermarks`）：逐条 [`from_watermark`] 再
-/// [`merge_into_brand`]。**库里已有同名模板的跳过**而不是覆盖——Web 每次读品牌库都会补跑
-/// 一遍，覆盖会把用户改过的导入模板冲回原样；首次导入时两者等价，重复导入幂等。
+/// Imports legacy watermarks into the brand kit (prototype `BC_TPL.importWatermarks`): for each one, [`from_watermark`] then
+/// [`merge_into_brand`]. **Templates with the same name already in the library are skipped rather than overwritten.** The Web re-runs this every time it reads the brand kit,
+/// and overwriting would reset imported templates the user has edited. On a first import the two are equivalent, and repeated imports are idempotent.
 pub fn import_watermarks(
     list: &[TemplateDoc],
     watermarks: &[crate::protocol::brand::Watermark],
@@ -2033,7 +2031,7 @@ mod tests {
         }
         let list = builtins();
         assert_eq!(list, builtins_in(TemplateLang::default()));
-        // 画幅锁：讲座顶栏锁 16:9；竖屏切片与四款平台竖屏款锁 9:16；其余横屏不锁。
+        // Frame-size locks: the lecture top bar locks 16:9; the vertical slice and the four platform vertical variants lock 9:16; other landscape templates are not locked.
         for d in &list {
             match d.id.as_str() {
                 "tpl-talk-top" => {
@@ -2046,7 +2044,7 @@ mod tests {
                     assert_eq!(d.canvas, TemplateCanvas::Tall, "{}", d.id);
                     assert_eq!(d.ratio.as_deref(), Some("9:16"), "{}", d.id);
                     assert!(ratio_locked(d), "{}", d.id);
-                    // 竖屏各款不画进度条（原型 2026-09-14）。
+                    // The vertical variants do not draw a progress bar (prototype 2026-09-14).
                     assert!(
                         d.layers.iter().all(|l| l.kind.name() != "progress"),
                         "{}",
@@ -2064,7 +2062,7 @@ mod tests {
             ratio_lock(&talk).map(|lock| lock.name),
             Some("讲座顶栏".to_owned())
         );
-        // 实例化保留锁与分组、标签：项目里的实例照样锁画幅，解锁只动实例。
+        // Instantiation keeps the lock, group and tags: instances in a project still lock the frame size, and unlocking only affects the instance.
         let inst = instance(&builtin("tpl-vertical").unwrap());
         assert!(ratio_locked(&inst));
         assert_eq!(inst.group.as_deref(), Some("vertical"));
@@ -2076,7 +2074,7 @@ mod tests {
         assert!(!is_builtin_id("tpl-brand-1") && !is_builtin_id(BLANK_ID));
     }
 
-    /// 各语言只换字串：抹掉名字、说明与画进画面的文字后逐字段相同。
+    /// Each language only swaps strings: once the names, descriptions and on-frame text are removed, the fields are identical field by field.
     #[test]
     fn builtins_share_structure_across_languages() {
         fn blanked(mut d: TemplateDoc) -> TemplateDoc {
@@ -2123,14 +2121,14 @@ mod tests {
             "@kelang.studio"
         );
         assert_ne!(by(Ja, "tpl-xhs-list").name, by(En, "tpl-xhs-list").name);
-        // 变量占位符不翻译。
+        // Variable placeholders are not translated.
         assert_eq!(layer_text(&by(Ja, "tpl-vertical"), "l-tt"), "{title}");
         assert_eq!(layer_text(&by(Ja, "tpl-vertical"), "l-ct"), "{chapter}");
     }
 
-    /// 竖屏切片（原型 2026-09-15）：视频标题为主、章节名为次，两行拼成一张深色半透明卡；
-    /// 台标字靠左，与标题、章节名共用写死的内边距从同一条竖线起笔；
-    /// 内置里只有它的台标写了非居中的对齐、只有它写了内边距。
+    /// Vertical slice (prototype 2026-09-15): the video title is primary and the chapter name secondary; the two lines form one dark semi-transparent card;
+    /// the logo text is left-aligned and starts from the same vertical line as the title and chapter name, sharing a fixed padding;
+    /// among the built-ins, only this one's logo specifies a non-centred alignment, and only this one specifies padding.
     #[test]
     fn vertical_clip_title_card_has_hierarchy_and_left_logo() {
         let v = builtin("tpl-vertical").unwrap();
@@ -2184,8 +2182,8 @@ mod tests {
                 ..
             }
         ));
-        // 字的起笔位置 = 盒子左缘 + 内边距。三层字号各不相同，内边距必须是写死的同一个值，
-        // 按字号推的缺省值会让三条起笔线错开。计数靠右，右缘与台标字左右对称。
+        // Text start position = box left edge + padding. The three text layers have different font sizes, so the padding must be the same fixed value;
+        // a default derived from font size would offset the three start lines. The counter sits to the right, and its right edge is symmetric with the logo text.
         let pad_of = |layer: &TemplateLayer| match &layer.kind {
             LayerKind::Logo { pad, .. } | LayerKind::Text { pad, .. } => {
                 pad.unwrap_or_else(|| panic!("{} 要写死内边距", layer.id))
@@ -2323,7 +2321,7 @@ mod tests {
         };
         assert!(src.is_text(), "对不上品牌库 Logo 退成文字");
         assert_eq!(text, "missing.png");
-        // 幂等：再导一遍不产生第二份，也不覆盖已有那条。
+        // Idempotent: importing again does not create a second copy, and does not overwrite the existing one.
         let mut edited = list.clone();
         edited[1].layers[0].rect = LayerBox::new(10.0, 10.0, 50.0, 50.0);
         let again = import_watermarks(&edited, &wms, &logos, TemplateLang::Zh);
@@ -2332,7 +2330,7 @@ mod tests {
             from_watermark(&wms[0], &logos, TemplateLang::En).desc,
             "Imported from watermark · Tiled"
         );
-        // 导入的定义能照常实例化。
+        // Imported definitions can still be instantiated as usual.
         assert_eq!(instance(&list[1]).from.as_deref(), Some("tpl-brand-2"));
     }
 
@@ -2351,7 +2349,7 @@ mod tests {
             assert_eq!(d.layers[0].id, "l-wm");
             assert_eq!(d.layers[0].kind.name(), "logo");
             assert!(!d.is_imported_watermark());
-            // 台标层不是横条，不抬字幕。
+            // A logo layer is not a horizontal bar, so it does not raise subtitles.
             assert_eq!(subs_bottom(d, 0.0), 0.0);
         }
         assert!(
@@ -2369,7 +2367,7 @@ mod tests {
         let handle = builtin("tpl-wm-handle").unwrap();
         assert!(!handle.layers[0].kind.tiled());
         assert_eq!(handle.layers[0].kind.opacity(), 0.85);
-        // 半透明台标不只水印有：播客与平台竖屏款的台标也带不透明度。
+        // Semi-transparent logos are not only for watermarks: the logos of the podcast and the platform vertical variants also have opacity.
         assert_eq!(
             builtin("tpl-podcast").unwrap().layers[4].kind.opacity(),
             0.8
@@ -2419,7 +2417,7 @@ mod tests {
         assert_eq!(counts, [3, 3, 1, 2, 2, 2, 1, 3]);
         assert_eq!(groups[3].items[0].id, "tpl-dy-title", "节内保持目录顺序");
 
-        // 品牌库里的一律归品牌库；group 缺省或不认识的归信息条。
+        // Anything in the brand kit always goes to the brand kit; a missing or unrecognised group goes to info bar.
         let mut saved = builtin("tpl-wm-tiled").unwrap();
         saved.id = "tpl-brand-1".into();
         let mut odd = builtin("tpl-chapter-bar").unwrap();
@@ -2448,7 +2446,7 @@ mod tests {
                 ("brand", vec!["tpl-brand-1"]),
             ]
         );
-        // 不在 GROUPS 里的键也归信息条。
+        // Keys not in GROUPS also go to info bar.
         let stray = group_templates([1], |_| "nope");
         assert_eq!(stray[0].key, GROUP_FALLBACK);
 
@@ -2507,26 +2505,26 @@ mod tests {
             h: 500.0,
         };
         let b0 = LayerBox::new(20.0, 20.0, 40.0, 20.0);
-        // 右下 = 旧 resize_box。
+        // Bottom-right = the old resize_box.
         assert_eq!(
             resize_box_from(b0, Handle::SE, 100.0, 50.0, frame),
             resize_box(b0, 100.0, 50.0, frame)
         );
-        // 左边：右边 60 不动。
+        // Left edge: the right edge at 60 stays put.
         let b = resize_box_from(b0, Handle::W, -100.0, 999.0, frame);
         assert_eq!(b, LayerBox::new(10.0, 20.0, 50.0, 20.0));
-        // 上边：底边 40 不动。
+        // Top edge: the bottom edge at 40 stays put.
         let b = resize_box_from(b0, Handle::N, 999.0, 50.0, frame);
         assert_eq!(b, LayerBox::new(20.0, 30.0, 40.0, 10.0));
-        // 左上角拖过对边：停在最小尺寸，对边仍不动。
+        // Top-left corner dragged past the opposite edge: stops at the minimum size, and the opposite edge still does not move.
         let b = resize_box_from(b0, Handle::NW, 5000.0, 5000.0, frame);
         assert_eq!(b, LayerBox::new(56.0, 39.4, 4.0, 0.6));
-        // 拖出画面：夹在边界。
+        // Dragged out of the frame: clamped at the boundary.
         let b = resize_box_from(b0, Handle::NE, 9000.0, -9000.0, frame);
         assert_eq!(b, LayerBox::new(20.0, 0.0, 80.0, 40.0));
         let b = resize_box_from(b0, Handle::SW, -9000.0, 9000.0, frame);
         assert_eq!(b, LayerBox::new(0.0, 20.0, 60.0, 80.0));
-        // 纯横 / 纯纵把手不碰另一根轴。
+        // Pure horizontal or pure vertical handles do not touch the other axis.
         let b = resize_box_from(b0, Handle::E, 100.0, 300.0, frame);
         assert_eq!(b, LayerBox::new(20.0, 20.0, 50.0, 20.0));
         let b = resize_box_from(b0, Handle::S, 300.0, 50.0, frame);
@@ -2570,7 +2568,7 @@ mod tests {
         assert!(hit_test(&d, 50.0, 50.0).is_none());
         d.layers[1].on = false;
         assert!(hit_test(&d, 5.0, 85.0).is_none());
-        // 闭区间：边界也算命中。
+        // Closed interval: a hit on the boundary counts.
         assert_eq!(
             hit_test(&d, 0.0, 100.0).map(|l| l.id.as_str()),
             Some("l-ch")
@@ -2604,7 +2602,7 @@ mod tests {
         assert_eq!(v["total"], "3:26");
         assert_eq!(v["percent"], "49%");
         assert_eq!(v["title"], "演示项目");
-        // 播完取末段，没开始取首段。
+        // If playback has finished, take the last segment; if it has not started, take the first.
         assert_eq!(vars(&ch, 206.0, 206.0, &[])["chapter"], "收尾");
         assert_eq!(vars(&ch, 300.0, 206.0, &[])["percent"], "100%");
         assert_eq!(vars(&ch, -1.0, 206.0, &[])["chapter"], "开场");
@@ -2693,7 +2691,7 @@ mod tests {
             validate(&d).unwrap();
         }
         assert!(new_layer_kind("sticker").is_none());
-        // 新台标层的默认文字跟随语言，其余参数各语言一致。
+        // The default text of a new logo layer follows the language; the other parameters are the same across languages.
         let (_, zh) = new_layer_kind("logo").unwrap();
         let (_, en) = new_layer_kind_in("logo", TemplateLang::En).unwrap();
         assert!(matches!(&zh, LayerKind::Logo { text, .. } if text == "科浪访谈"));

@@ -14,7 +14,7 @@ const GROUPS: Record<string, readonly string[]> = {
 const FLAGS = ['on', 'punct', 'bold', 'italic', 'underline', 'background', 'bgOn', 'outline'];
 const STRINGS = ['fontFamily', 'fontStyle', 'fontColor', 'color', 'textAlign', 'align', 'textTransform', 'backgroundColor', 'backgroundStyle', 'fontSizeBasis'];
 function valid(key: string, value: unknown): boolean {
-  // 预设用 null 遮掉旧涂装的别名；其他选项不能用 null 代替有效值。
+  // Presets use null to mask aliases of the old paint; other options cannot use null in place of a valid value.
   if (value === null) return PAINT_KEYS.includes(key);
   if (FLAGS.includes(key)) return typeof value === 'boolean';
   if (key === 'verticalAlign') return ['top', 'center', 'bottom'].includes(String(value));
@@ -27,7 +27,7 @@ function valid(key: string, value: unknown): boolean {
   return true;
 }
 
-/** 只保存属性选项；语言、正文、单句覆盖、视频标识与未知字段永不跨视频带入。 */
+/** Only property options are saved; language, body, per-cue overrides, the video identifier and unknown fields are never carried across videos. */
 function pick(value: unknown, keys: readonly string[]): Json {
   const source = asObject(value);
   const out: Json = {};
@@ -48,7 +48,7 @@ export function cleanCaptionPreferences(value: unknown): Json {
   return out;
 }
 
-/** 仅记本次真正提交的修改，打开旧视频或拖动预览不会改变偏好。删掉覆盖也记住。 */
+/** Only changes actually committed are recorded; opening an old video or dragging the preview does not change the preference. Deleting an override is also remembered. */
 export function rememberCaptionPreferences(saved: Json, before: Json, after: Json, singleLine?: LineKind): Json {
   const next = cleanCaptionPreferences(saved);
   const a = cleanCaptionPreferences(before);
@@ -86,7 +86,7 @@ export function preferredCaptionStyle(preferences: unknown): Json {
   return { ...DEFAULT_CAPTION_STYLE, style: { ...asObject(DEFAULT_CAPTION_STYLE.style), ...cleanCaptionPreferences(preferences) } };
 }
 
-/** 新建字幕的一笔事务同时写入偏好；共用已有样式的译文仍以该视频的样式为准。 */
+/** The transaction that creates new captions also writes the preference; a translation that shares an existing style still follows that video's style. */
 export function withNewCaptionStyle(operations: EditOperation[], body: Json): EditOperation[] {
   const freshStyle = operations.find((op) => op.type === 'putDocument' && op.kind === 'caption-style' && !op.documentId);
   if (freshStyle) return operations.map((op) => (op === freshStyle ? { ...op, body } : op));

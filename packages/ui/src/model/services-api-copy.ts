@@ -14,7 +14,7 @@ import { pl } from './services-api-copy.pl.ts';
 import { tr } from './services-api-copy.tr.ts';
 import { vi } from './services-api-copy.vi.ts';
 
-/** 模型接口服务页的文案：能力名、端点、路由开关、能力与别名的说明、别名校验（译文在 `services-api-copy.<语言>.ts`）。 */
+/** Copy for the model API service page: capability names, endpoints, routing switches, descriptions of capabilities and aliases, and alias validation (translations are in `services-api-copy.<language>.ts`). */
 const en = {
   capabilities: {
     transcribe: 'Transcribe',

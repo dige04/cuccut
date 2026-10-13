@@ -1,23 +1,20 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/WeightLoading.swift`。
+//! Parts of this file's implementation draw on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/WeightLoading.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model pack and transcription interface; the original upstream source attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the source, see the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! safetensors 权重加载 + MLX 仿射量化的加载期反量化。
+//! safetensors weight loading, plus load-time dequantization of MLX affine quantization.
 //!
-//! MLX 量化格式：`weight` 是打包的 uint32（每个 u32 按低位在前存 `32/bits`
-//! 个量化值），`scales`/`biases` 按每 `group_size` 个输入维一组。反量化为
-//! `w = q * scale + bias`，与 MLX `quantized_matmul` 内部使用的权重逐值一致，
-//! 因此可以直接复用现有 MLX 模型仓库而无需重新发布权重。
+//! MLX quantization format: `weight` is packed uint32 (each u32 stores `32/bits` quantized values, low bits first), and `scales`/`biases` are grouped per `group_size` input dimensions. Dequantization gives `w = q * scale + bias`, which matches value for value the weights used internally by MLX `quantized_matmul`, so existing MLX model repositories can be reused directly without republishing the weights.
 
 use anyhow::{Context, Result, bail};
 use candle_core::{DType, Device, Tensor};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// 强制计算精度的环境变量（诊断用）。
+/// Environment variable that forces the compute precision (for diagnostics).
 pub const COMPUTE_DTYPE_ENV: &str = "CUCCUT_CANDLE_DTYPE";
 
 pub struct WeightStore {
@@ -35,7 +32,7 @@ impl WeightStore {
         }
     }
 
-    /// 读入 `files` 列出的全部 safetensors 分片，去掉 `thinker.` 前缀。
+    /// Reads all safetensors shards listed in `files` and strips the `thinker.` prefix.
     pub fn load(files: &[&Path], device: &Device) -> Result<Self> {
         if files.is_empty() {
             bail!("no safetensors files to load");
@@ -63,7 +60,7 @@ impl WeightStore {
         &self.device
     }
 
-    /// 本模型的计算精度：CPU 恒为 f32，CUDA 上沿用 checkpoint 自身的半精度。
+    /// This model's compute precision: always f32 on CPU; on CUDA it keeps the checkpoint's own half precision.
     pub fn compute_dtype(&self) -> DType {
         self.compute_dtype
     }
@@ -80,7 +77,7 @@ impl WeightStore {
         self.values.remove(key)
     }
 
-    /// 取权重并转为 f32（bf16/f16 上转换）。
+    /// Fetches a weight and converts it to f32 (upcasting from bf16/f16).
     pub fn take_f32(&mut self, key: &str) -> Result<Tensor> {
         Ok(self.take(key)?.to_dtype(DType::F32)?)
     }
@@ -89,7 +86,7 @@ impl WeightStore {
         self.take_optional(key).map(|tensor| Ok(tensor.to_dtype(DType::F32)?)).transpose()
     }
 
-    /// 取权重并转为本模型的计算精度（CPU 上等价于 `take_f32`）。
+    /// Fetches a weight and converts it to this model's compute precision (on CPU this is equivalent to `take_f32`).
     pub fn take_compute(&mut self, key: &str) -> Result<Tensor> {
         Ok(self.take(key)?.to_dtype(self.compute_dtype)?)
     }
@@ -99,10 +96,9 @@ impl WeightStore {
         self.take_optional(key).map(|tensor| Ok(tensor.to_dtype(dtype)?)).transpose()
     }
 
-    /// 线性/嵌入层权重：checkpoint 带 `scales` 时反量化，否则直接转精度。
+    /// Linear/embedding layer weights: dequantized when the checkpoint has `scales`, otherwise just converted to the compute precision.
     ///
-    /// 与 mlx 后端不同，float 权重不做运行时再量化——反量化结果直接落到本
-    /// 模型的计算精度，免去 candle 侧的量化 matmul 依赖。
+    /// Unlike the mlx backend, float weights are not re-quantized at runtime: the dequantized result goes straight into this model's compute precision, which avoids a quantized-matmul dependency on the candle side.
     pub fn take_dequantized(&mut self, prefix: &str, group_size: usize, bits: usize) -> Result<Tensor> {
         let weight = self.take(&format!("{prefix}.weight"))?;
         if let Some(scales) = self.take_optional(&format!("{prefix}.scales")) {
@@ -121,9 +117,9 @@ impl WeightStore {
     }
 }
 
-/// 选择计算精度。CPU 固定 f32；CUDA 上沿用 checkpoint 自身的半精度
-/// （MOSS/Qwen3-ASR 为 bf16，对齐器为 f16），既省一半显存又不引入额外的
-/// 数值转换。`CUCCUT_CANDLE_DTYPE=f32|bf16|f16` 可强制覆盖，便于排查精度问题。
+/// Chooses the compute precision. CPU is fixed at f32; CUDA keeps the checkpoint's own half precision
+/// (bf16 for MOSS/Qwen3-ASR, f16 for the aligner), which halves VRAM use without adding extra
+/// numeric conversions. `CUCCUT_CANDLE_DTYPE=f32|bf16|f16` can force an override, which helps when debugging precision issues.
 fn resolve_compute_dtype(device: &Device, values: &HashMap<String, Tensor>) -> Result<DType> {
     if let Some(raw) = std::env::var_os(COMPUTE_DTYPE_ENV) {
         let raw = raw.to_string_lossy().trim().to_lowercase();
@@ -155,10 +151,9 @@ fn resolve_compute_dtype(device: &Device, values: &HashMap<String, Tensor>) -> R
     })
 }
 
-/// MLX 仿射反量化：`weight` [rows, cols*bits/32] 的 u32，每个 u32 低位在前
-/// 存 `32/bits` 个量化值；`scales`/`biases` [rows, cols/group_size]。
+/// MLX affine dequantization: `weight` is u32 of shape [rows, cols*bits/32], each u32 storing `32/bits` quantized values with low bits first; `scales`/`biases` are [rows, cols/group_size].
 pub fn dequantize_affine(weight: &Tensor, scales: &Tensor, biases: &Tensor, group_size: usize, bits: usize) -> Result<Tensor> {
-    // 与 mlx 后端的 `Projection` 一致：带 scales 的权重只认 4 或 8 位；配置没声明量化（按 16 位）时解包只会算出乱码。
+    // Consistent with the mlx backend's `Projection`: weights with scales accept only 4 or 8 bits; when the config does not declare quantization (treated as 16 bits), unpacking would only produce garbage.
     if !matches!(bits, 4 | 8) {
         bail!("unsupported quantization width: {bits} bits (weights with scales need a declared 4- or 8-bit quantization)");
     }
@@ -191,7 +186,7 @@ pub fn dequantize_affine(weight: &Tensor, scales: &Tensor, biases: &Tensor, grou
     }
     let mask = if bits == 32 { u32::MAX } else { (1_u32 << bits) - 1 };
     let mut output = vec![0.0_f32; rows * columns];
-    // 逐行独立，按行分片多线程展开：大模型加载期这段标量循环原本是瓶颈。
+    // Each row is independent, so the expansion is split by row across threads: this scalar loop at load time was the bottleneck for large models.
     let threads = std::thread::available_parallelism()
         .map(|value| value.get())
         .unwrap_or(1)
@@ -232,11 +227,11 @@ mod tests {
     use super::*;
     use candle_core::Device;
 
-    /// 按 MLX 语义手工打包一个 4bit 量化矩阵，验证反量化公式与位序。
+    /// Hand-packs a 4-bit quantized matrix with MLX semantics, to verify the dequantization formula and bit order.
     #[test]
     fn dequantizes_hand_packed_affine_weights() {
         let device = Device::Cpu;
-        // 一行 8 个值（一个 u32），group_size 8：q = [0,1,2,…,7]，低位在前。
+        // One row has 8 values (one u32), group_size 8: q = [0,1,2,…,7], low bits first.
         let mut word = 0_u32;
         for (offset, q) in (0..8_u32).enumerate() {
             word |= q << (offset * 4);
@@ -257,7 +252,7 @@ mod tests {
         let scales = Tensor::from_vec(vec![1.0_f32], (1, 1), &device).unwrap();
         let biases = Tensor::from_vec(vec![0.0_f32], (1, 1), &device).unwrap();
         assert!(dequantize_affine(&weight, &scales, &biases, 8, 5).is_err());
-        // 配置没声明量化时按 16 位：带 scales 的权重同样拒绝。
+        // When the config does not declare quantization, it is treated as 16 bits: weights with scales are rejected too.
         assert!(dequantize_affine(&weight, &scales, &biases, 8, 16).is_err());
     }
 }

@@ -11,9 +11,7 @@ import { RUN_COPY, TASK_RUN_COPY } from '../tools/tools-copy.ts';
 import { useRunRetry, useVideoTools } from '../tools/use-video-tools.ts';
 
 /*
- * 后台任务详情里的视频工具运行（设计稿 tool-run-view.jsx `ToolTaskPanel`、page-tasks.jsx）：按 Runtime 给的步骤显示进度；
- * 停住时说停在哪一步、可以从这一步重试（被当场授权拒绝时在这里确认）；完成后「打开编辑」；「查看结果 / 回到工具」打开
- * 工具页的这次运行。
+ * Video tool runs in the background task details (design draft tool-run-view.jsx `ToolTaskPanel`, page-tasks.jsx): shows progress by the steps the Runtime provides; when it stops, it says at which step, and can retry from that step (a permission denied on the spot is confirmed here); when complete, “打开编辑” (Open in editor); “查看结果 / 回到工具” (View result / Back to tool) opens this run on the tool page.
  */
 
 const panel = style({ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16, maxWidth: 560 });
@@ -30,7 +28,7 @@ export function ToolRunPanel({ job, tool }: { job: JobRecord; tool: VideoToolId 
   const done = run.status === 'done';
   const failed = run.status === 'failed';
   const stopped = failed || run.status === 'cancelled';
-  // 转录停在「主轨上有几个素材」时要在工具页选素材重新开始，这里不给重试。
+  // When transcription stops at “主轨上有几个素材” (the main track has several assets), the asset has to be chosen again on the tool page to restart, so no retry is offered here.
   const assets = ambiguousAssets(job);
   const remedy = failed ? jobRemedy(job) : null;
   const keepsVideo = run.steps.some((s) => s.name === 'create' && s.status === 'done');

@@ -18,12 +18,11 @@ import { EXPORT_COPY } from './export-copy.ts';
 import { Lane, Lanes, Note, NoteRow, Quick, QuickField, Sec, TextLink } from './export-parts.tsx';
 
 /**
- * 「范围」一节（设计稿 export-range.jsx）：整片 / 按章节 / 按片段 / 自定义。视频页与音频页共用一份状态。
+ * "Range" section (design mockup export-range.jsx): whole piece / by chapter / by clip / custom. The Video and Audio pages share one state.
  *
- * - 按章节、按片段多选：修剪条上每段一格（点格子就是勾 / 取消），下面是同一份勾选的列表；相邻的段拼成一段。
- * - 自定义是一对起止：修剪条换成 S2 的 RangeSlider，旁边可输入的时间码，「取此刻」取编辑器播放头。
- * - 勾了不相邻的几段：设计稿可以「合成一份」；Runtime 不能把不相邻的段接成一个文件（`ranges` 每段各出一个），
- *   这一档置灰并写明原因。
+ * - By chapter and by clip, with multi-select: on the trim bar each segment is one cell (clicking a cell ticks or unticks it), and below is the list of the same selection; adjacent segments are merged into one.
+ * - Custom is a start and end pair: the trim bar becomes an S2 RangeSlider, beside it are editable timecodes, and "Use current" takes the editor playhead.
+ * - When several non-adjacent segments are ticked: the mockup can "merge into one file"; the Runtime cannot join non-adjacent segments into one file (`ranges` produces one file per segment), so this option is disabled with the reason stated.
  */
 
 const strip = style({ position: 'relative', height: 24, marginTop: 8, borderRadius: 'default', backgroundColor: 'gray-100', overflow: 'hidden' });
@@ -53,7 +52,7 @@ const timeField = style({ width: 88 });
 const fullWidth = style({ width: 'full' });
 const list = style({ marginTop: 8, maxHeight: 200, overflowY: 'auto' });
 
-/** 范围一节要的东西：视频页与音频页共用的那份状态，加上从序列读出的章节、片段与总长。 */
+/** What the range section needs: the state shared by the Video and Audio pages, plus the chapters, clips and total length read from the sequence. */
 export interface RangeBundle {
   state: RangeState;
   onChange: (next: RangeState) => void;
@@ -183,7 +182,7 @@ export function ExportRangeSection({ state, onChange, chapters, clips, duration,
   );
 }
 
-/** 时间码输入（设计稿 `TimeField`）：失焦或回车才提交，不合法就回到原值；旁边「取此刻」取编辑器播放头。 */
+/** Timecode input (mockup `TimeField`): committed on blur or Enter; an invalid value reverts to the original; beside it, "Use current" takes the editor playhead. */
 function TimeInput({ label, ariaLabel, value, onCommit, onNow }: { label: string; ariaLabel: string; value: number; onCommit: (t: number) => void; onNow: () => void }) {
   const [draft, setDraft] = useState(formatRangeTime(value));
   useEffect(() => setDraft(formatRangeTime(value)), [value]);

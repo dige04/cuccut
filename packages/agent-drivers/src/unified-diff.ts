@@ -1,16 +1,16 @@
 import path from 'node:path';
 
 /**
- * 改文件的步骤的 `output` 用的 unified diff（架构设计 §3.1）：Claude 与 ACP 的 Driver 共用的几样。
+ * The unified diff used for the `output` of file-editing steps (architecture design §3.1). It holds the pieces shared by the Claude and ACP Drivers.
  */
 
-/** 按行拆开；末尾的换行不多出一个空行。 */
+/** Splits into lines; a trailing newline does not add an extra empty line. */
 export function diffBodyLines(text: string): string[] {
   if (text === '') return [];
   return text.replace(/\r?\n$/, '').split(/\r?\n/);
 }
 
-/** 文件头里的路径：在工作目录里的写相对路径（`a/` / `b/` 前缀）；不在、或没有工作目录时用原路径。 */
+/** The path in the file header: relative to the working directory (with `a/` / `b/` prefixes) when the file is inside it; the original path when it is not, or when there is no working directory. */
 export function diffPath(file: string, cwd: string | null): { a: string; b: string } {
   const relative = cwd && path.isAbsolute(file) ? path.relative(cwd, file) : null;
   if (relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
@@ -24,9 +24,7 @@ export function diffPath(file: string, cwd: string | null): { a: string; b: stri
 const CONTEXT_LINES = 3;
 
 /**
- * 两段文字之间的 unified diff（一个块）：去掉两头相同的行，前后各留至多 3 行上下文。`oldText` 为 null 表示新建
- * （旧侧 `/dev/null`）。行号相对给出的文字：给的是整个文件时就是文件里的行号；只给了改动片段（有的智能体这样给）时
- * 是片段里的行号。两边相同时为 null。
+ * The unified diff between two texts (one hunk): removes the lines common to both ends, and keeps at most 3 lines of context before and after. `oldText` null means a new file (old side `/dev/null`). Line numbers are relative to the text given: when the whole file is given, they are file line numbers; when only a changed fragment is given (some agents do this), they are fragment line numbers. Null when the two are identical.
  */
 export function textDiff(file: { a: string; b: string }, oldText: string | null, newText: string): string | null {
   const before = oldText === null ? [] : diffBodyLines(oldText);
@@ -44,7 +42,7 @@ export function textDiff(file: { a: string; b: string }, oldText: string | null,
   const trailing = before.slice(before.length - tail, Math.min(before.length, before.length - tail + CONTEXT_LINES));
   const oldCount = leading.length + removed.length + trailing.length;
   const newCount = leading.length + added.length + trailing.length;
-  // unified diff 的约定：某一侧为 0 行时，起始行号写它前面那一行（空文件写 0）。
+  // unified diff convention: when one side has 0 lines, its start line number is the line before it (an empty file uses 0).
   const oldStart = oldCount === 0 ? start : start + 1;
   const newStart = newCount === 0 ? start : start + 1;
   return [

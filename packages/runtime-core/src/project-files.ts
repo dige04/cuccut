@@ -15,26 +15,24 @@ import { classifyFile, isIgnoredName } from './space-catalog.ts';
 import { RcRuntime } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 项目文件浏览（架构设计 §11.2）：只读，限定在会话所属项目的目录（或无项目会话的工作目录）里。
+ * Project file browsing (architecture design §11.2): read-only, limited to the directory of the project the session belongs to (or the working directory of a session without a project).
  *
- * - `dir` 与每一项都要在根目录之内：`dir` 解析符号链接之后越界就拒绝（`invalid-request`），
- *   指出根目录的符号链接与悬空链接不列。
- * - 跳过隐藏文件与依赖目录（与 Space 同一张忽略表：`.git`、`.cuccut`、`node_modules` 等）。
- * - 查找时不进入符号链接目录（避免绕圈），也不进入视频目录（含 `video.db`）、幻灯片目录（含 `deck.json`）与设计稿目录
- *   （含 `canvas.json`）与设计系统目录（含 `design-system.json`），整个目录算一项。
- * - 返回的 `path` 按目录的逻辑路径拼出（不从真实路径反推），可以原样交给 `{ conversationId, path }`。
+ * - `dir` and every entry must be inside the root directory. If `dir` goes out of bounds after resolving symlinks, it is rejected (`invalid-request`). Symlinks that point out of the root, and dangling links, are not listed.
+ * - Hidden files and dependency directories are skipped, using the same ignore table as Space: `.git`, `.cuccut`, `node_modules`, and so on.
+ * - When searching, it does not enter symlinked directories (to avoid loops), and does not enter video directories (containing `video.db`), slide directories (containing `deck.json`), design canvas directories (containing `canvas.json`), or design system directories (containing `design-system.json`). Each of those counts as one entry as a whole.
+ * - The returned `path` is built from the directory's logical path (not inferred from the real path), so it can be passed as-is to `{ conversationId, path }`.
  */
 
 export interface ProjectFilesLimits {
-  /** 不给 `limit` 时，列一层最多返回多少项。 */
+  /** Without a `limit`, the maximum number of entries a one-level listing returns. */
   listLimit: number;
-  /** 不给 `limit` 时，查找最多返回多少项。 */
+  /** Without a `limit`, the maximum number of results a search returns. */
   searchLimit: number;
-  /** 查找时进入子目录的最大深度，`dir` 本身是 0。 */
+  /** The maximum depth a search goes into subdirectories; `dir` itself is 0. */
   maxDepth: number;
-  /** 查找时最多看多少个目录项，防止很大的目录查个没完。 */
+  /** The maximum number of directory entries a search examines, so a very large directory cannot be searched forever. */
   maxVisited: number;
-  /** 查找时最多留多少个候选（排序之前）。 */
+  /** The maximum number of candidates a search keeps (before sorting). */
   maxCandidates: number;
 }
 
@@ -52,15 +50,15 @@ export interface ProjectFilesParams {
   limit?: number;
 }
 
-/** 一个候选：先定下名字、类型与排序信息，最后只给要返回的那几项取大小与时间。 */
+/** A candidate: first settle its name, type and sort info; only the entries to be returned get their size and time fetched at the end. */
 interface Candidate {
   path: string;
   name: string;
-  /** 用来取大小与时间的真实路径（符号链接已解析）。 */
+  /** The real path used to fetch size and time (symlinks resolved). */
   full: string;
   isDir: boolean;
   kind: SpaceEntryKind | null;
-  /** 已经取过的状态（符号链接、视频目录的 `video.db`）。 */
+  /** States already fetched (symlinks, and the `video.db` of video directories). */
   stat: Stats | null;
   depth: number;
   rank: number;
@@ -82,7 +80,7 @@ function joinRel(rel: string, name: string): string {
   return rel ? `${rel}/${name}` : name;
 }
 
-/** 含 `video.db`（改名之前是 `movie.db`）的目录是一个视频；返回数据库文件的状态。 */
+/** A directory containing `video.db` (called `movie.db` before the rename) is a video; returns the state of the database file. */
 async function videoDb(dir: string): Promise<Stats | null> {
   for (const name of ['video.db', 'movie.db']) {
     const stat = await fsp.stat(path.join(dir, name)).catch(() => null);
@@ -91,27 +89,27 @@ async function videoDb(dir: string): Promise<Stats | null> {
   return null;
 }
 
-/** 幻灯片目录（含合法 `deck.json`，docs/design/slides §7.3）的 `deck.json` 状态；不是时 null。 */
+/** The state of `deck.json` for a slide directory (one containing a valid `deck.json`, docs/design/slides §7.3); null if it is not one. */
 async function deckFile(dir: string): Promise<Stats | null> {
   if (!(await readDeckSummary(dir))) return null;
   return fsp.stat(path.join(dir, DECK_FILE)).catch(() => null);
 }
 
-/** 设计稿目录（docs/design/canvas §2.1）：有合格的 canvas.json 时返回它的状态，否则 null。 */
+/** Design canvas directory (docs/design/canvas §2.1): returns the state of a valid canvas.json if there is one, otherwise null. */
 async function canvasFile(dir: string): Promise<Stats | null> {
   if (!(await readCanvasInfo(dir))) return null;
   return fsp.stat(path.join(dir, CANVAS_FILE)).catch(() => null);
 }
 
-/** 设计系统目录（docs/design/canvas §10.1）：有合格的 design-system.json 时返回它的状态，否则 null。 */
+/** Design system directory (docs/design/canvas §10.1): returns the state of a valid design-system.json if there is one, otherwise null. */
 async function designSystemFile(dir: string): Promise<Stats | null> {
   if (!(await readDesignSystemInfo(dir))) return null;
   return fsp.stat(path.join(dir, DESIGN_SYSTEM_FILE)).catch(() => null);
 }
 
 /**
- * 看一个目录项：符号链接解析到真实路径，越界或悬空返回 null；不是普通文件或目录的也返回 null。
- * 普通目录项不做 realpath：它的父目录已经确认在根目录之内。
+ * Looks at one directory entry. A symlink is resolved to its real path; if it is out of bounds or dangling, returns null. Entries that are neither regular files nor directories also return null.
+ * Ordinary entries are not realpath'd, because their parent directory is already confirmed to be inside the root.
  */
 async function inspect(
   rootReal: string,
@@ -131,7 +129,7 @@ async function inspect(
   return null;
 }
 
-/** 名字匹配的名次：完全相同 0，开头相同 1，包含 2；不匹配 -1。 */
+/** Ranking of a name match: exact match 0, prefix match 1, contains 2; no match -1. */
 function matchRank(name: string, query: string): number {
   const lower = name.toLowerCase();
   if (lower === query) return 0;
@@ -139,7 +137,7 @@ function matchRank(name: string, query: string): number {
   return lower.includes(query) ? 2 : -1;
 }
 
-/** 解析 `dir`：返回逻辑上的相对路径（`/` 分隔）与真实路径。 */
+/** Resolves `dir`: returns the logical relative path (`/`-separated) and the real path. */
 async function resolveDir(root: string, rootReal: string, dir: string | undefined): Promise<{ rel: string; real: string }> {
   const raw = dir ?? '';
   if (raw.includes('\0')) throw new RpcError('invalid-request', RcRuntime.folderPathInvalid());
@@ -171,7 +169,7 @@ async function readDir(dir: string): Promise<Dirent[] | null> {
   }
 }
 
-/** 给要返回的候选取大小与时间。取不到（期间被删掉）的丢掉。 */
+/** Fetches size and time for the candidates to return. Any that fail to fetch (deleted in the meantime) are dropped. */
 async function toEntries(candidates: Candidate[]): Promise<ProjectFileEntry[]> {
   const entries = await Promise.all(
     candidates.map(async (c): Promise<ProjectFileEntry | null> => {
@@ -273,7 +271,7 @@ async function search(
       }
       if (isIgnoredName(dirent.name)) continue;
       const rank = matchRank(dirent.name, query);
-      // 不匹配的文件不用再看；目录还要往里走。
+      // A non-matching file need not be looked at again; a directory still has to be searched inside.
       if (rank < 0 && !dirent.isDirectory()) continue;
       const candidate = await candidateOf(rootReal, real, rel, dirent, depth, rank);
       if (!candidate) continue;
@@ -297,7 +295,7 @@ async function search(
 }
 
 /**
- * `projects.files.list` 的实现。`root` 是登记的根目录（项目目录或会话工作目录），返回里原样带回。
+ * Implementation of `projects.files.list`. `root` is the registered root directory (the project directory or the session's working directory), returned as-is.
  */
 export async function listProjectFiles(
   root: string,

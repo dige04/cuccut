@@ -1,11 +1,10 @@
-//! 标量基 2 复数 FFT（迭代、原地），旋转因子由 `libm` 算。
+//! Scalar radix-2 complex FFT (iterative, in place); twiddle factors computed with `libm`.
 //!
-//! 为什么不用 `rustfft`：见 crate 文档「确定性」一段。这里只做离线渲染用得到的两件事——
-//! 塑形噪声（[`crate::noise`]）与分块卷积（[`crate::reverb`]）——长度一律补到 2 的幂。
+//! Why not `rustfft`: see the “determinism” section of the crate docs. Only the two things needed for offline rendering are done here: shaped noise ([`crate::noise`]) and block convolution ([`crate::reverb`]). Lengths are always padded to a power of 2.
 
 use crate::math::TAU;
 
-/// 一个长度的 FFT 计划：旋转因子表与位反转表。复用它可以省掉重复的 `sin` / `cos`。
+/// An FFT plan for one length: twiddle factor table and bit-reversal table. Reusing it avoids repeated `sin` / `cos`.
 #[derive(Clone, Debug)]
 pub struct Fft {
     n: usize,
@@ -15,7 +14,7 @@ pub struct Fft {
 }
 
 impl Fft {
-    /// `n` 必须是 2 的幂且 ≥ 2。
+    /// `n` must be a power of 2 and ≥ 2.
     pub fn new(n: usize) -> Self {
         assert!(
             n >= 2 && n.is_power_of_two(),
@@ -44,12 +43,12 @@ impl Fft {
         self.n == 0
     }
 
-    /// 正变换：`X[k] = Σ x[n]·e^{-2πikn/N}`（不归一）。
+    /// Forward transform: `X[k] = Σ x[n]·e^{-2πikn/N}` (unnormalized).
     pub fn forward(&self, re: &mut [f64], im: &mut [f64]) {
         self.transform(re, im, -1.0);
     }
 
-    /// 逆变换，含 `1/N` 归一：`inverse(forward(x)) == x`（浮点误差内）。
+    /// Inverse transform, with `1/N` normalization: `inverse(forward(x)) == x` (within floating-point error).
     pub fn inverse(&self, re: &mut [f64], im: &mut [f64]) {
         self.transform(re, im, 1.0);
         let scale = 1.0 / self.n as f64;
@@ -99,7 +98,7 @@ impl Fft {
     }
 }
 
-/// 两条实信号一次复数 FFT：把 `a + i·b` 变换后拆开，返回 `(A, B)` 的实部与虚部（全长 N）。
+/// Two real signals with one complex FFT: transform `a + i·b` and split it, returning the real and imaginary parts of `(A, B)` (full length N).
 pub fn forward_pair(fft: &Fft, a: &[f64], b: &[f64]) -> ([Vec<f64>; 2], [Vec<f64>; 2]) {
     let n = fft.len();
     let mut re = vec![0.0; n];
@@ -122,7 +121,7 @@ pub fn forward_pair(fft: &Fft, a: &[f64], b: &[f64]) -> ([Vec<f64>; 2], [Vec<f64
     ([ar, ai], [br, bi])
 }
 
-/// 不小于 `n` 的 2 的幂（至少 2）。
+/// The power of 2 not less than `n` (at least 2).
 pub fn next_pow2(n: usize) -> usize {
     n.max(2).next_power_of_two()
 }

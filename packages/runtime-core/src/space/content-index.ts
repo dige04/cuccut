@@ -8,16 +8,13 @@ import { ContentStore, type StoredVideo } from './content-store.ts';
 import { RcSpace } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 跨视频的内容索引（架构设计 §5.11）。派生缓存：一个 SQLite 库（`<cache>/content-index/index.db`，见 `content-store.ts`），
- * 记下索引时的视频版本、可检索的段落（FTS5）与视频事实（Space 目录的派生状态；工具候选输入要的文稿、译文与配音组，§7.9）。
- * 视频的记录与事实同时留在内存里（同步查询用），段落只在库里。删掉库文件可以重建；库的格式版本不对时删库，全部排队重读。
+ * Cross-video content index (architecture design §5.11). A derived cache: one SQLite database (`<cache>/content-index/index.db`, see `content-store.ts`),
+ * which records the video version at indexing time, the searchable segments (FTS5), and video facts (the derived state for the Space catalog; the transcripts, translations and dubbing groups that tool candidate inputs need, §7.9). A video's record and facts are kept in memory at the same time (for synchronous queries); segments live only in the database. Deleting the database file allows a rebuild; when the database's format version does not match, the database is deleted and everything is queued for re-reading.
  *
- * - 视频目录由 Space 目录的扫描给出（`sync`）；没有打开的视频也在里面。读取走 VideoService 的只读查询
- *   （引擎的 `videos.inspect` 与 `videos.readContent`），不直接读 `video.db`，不打开视频，不占写锁。
- * - 增量：目录的修改时间变了先 `peek` 一次版本，版本没变只记下新的修改时间；已打开视频提交新版本时由 `touched` 触发。
- *   一次只读一个视频，避免启动时一下子把引擎占满。
- * - 读不了的视频（引擎不可用、旧版引擎没有 `videos.readContent`、库损坏）记为失败，等下一次变化或重建再试；
- *   检索时它们算「还没有索引」，结果标明不完整。
+ * - Video directories come from the Space catalog's scan (`sync`); unopened videos are included too. Reads go through VideoService's read-only queries (the engine's `videos.inspect` and `videos.readContent`), not by reading `video.db` directly; they neither open the video nor take the write lock.
+ * - Incremental: when a directory's modification time changes, the version is first checked with `peek`; if the version has not changed, only the new modification time is recorded. For open videos, `touched` triggers when a new version is committed.
+ * - Only one video is read at a time, so that startup does not saturate the engine all at once.
+ * - Videos that cannot be read (engine unavailable, old engine without `videos.readContent`, corrupt database) are recorded as failed and retried on the next change or rebuild. During search they count as “not yet indexed”, and results are marked incomplete.
  */
 
 export interface ContentReader {
@@ -26,13 +23,13 @@ export interface ContentReader {
 }
 
 /**
- * 一个视频的索引记录（不含段落，段落只在库里）：`dir` 是视频目录的真实路径，`mtimeMs` 是索引时目录的修改时间
- * （`video.db` 与 WAL）。
+ * Index record for one video (without segments; segments live only in the database): `dir` is the real path of the video directory, and `mtimeMs` is the directory's modification time at indexing time
+ * (`video.db` and the WAL).
  */
 export type IndexedVideo = StoredVideo;
 
 export interface ContentIndexOptions {
-  /** 缓存目录：`<home>/cache/content-index`。 */
+  /** Cache directory: `<home>/cache/content-index`. */
   dir: string;
   reader: ContentReader | null;
   log: Logger;
@@ -43,22 +40,22 @@ export class ContentIndex {
   readonly #reader: ContentReader | null;
   readonly #log: Logger;
   readonly #listeners = new Set<() => void>();
-  /** 真实路径 → 索引。 */
+  /** Real path → index. */
   readonly #videos = new Map<string, IndexedVideo>();
-  /** Space 目录此刻知道的视频目录：真实路径 → 修改时间。 */
+  /** Video directories the Space catalog knows about right now: real path → modification time. */
   #wanted = new Map<string, number>();
-  /** 扫描给的路径 → 真实路径。 */
+  /** Path given by the scan → real path. */
   #aliases = new Map<string, string>();
-  /** 重建中：记录还在，但要重读。 */
+  /** Rebuilding: the record is still there, but it must be re-read. */
   readonly #stale = new Set<string>();
   readonly #pending = new Set<string>();
   readonly #failed = new Map<string, string>();
   #current: string | null = null;
-  /** 等某个视频读完的（`ensure`）。 */
+  /** Waiting for a particular video to finish reading (`ensure`). */
   readonly #waiters = new Map<string, Set<() => void>>();
   #worker: Promise<void> | null = null;
   #closed = false;
-  /** 库：第一次用到时打开；打不开时 null（索引只留在内存里，检索没有段落）。 */
+  /** The database: opened on first use; null if it cannot be opened (the index then stays in memory only, and search has no segments). */
   #store: ContentStore | null | undefined;
 
   constructor(options: ContentIndexOptions) {
@@ -67,7 +64,7 @@ export class ContentIndex {
     this.#log = options.log.child('content-index');
   }
 
-  /** 有视频索引完成或被移除时通知（Space 目录据此重算派生状态）。返回取消函数。 */
+  /** Notifies when a video's index completes or is removed (the Space catalog recomputes its derived state on this). Returns an unsubscribe function. */
   listen(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
@@ -78,8 +75,8 @@ export class ContentIndex {
   }
 
   /**
-   * 读回上次留下的索引。库坏掉或格式版本不对时删库重建（全部视频算没有索引，`sync` 时排队）。
-   * 早先每个视频一个 JSON 文件的缓存（`<摘要>.json`）直接删掉，不迁移。
+   * Reads back the index left by the last run. If the database is corrupt or its format version does not match, the database is deleted and rebuilt (all videos count as unindexed and are queued on `sync`).
+   * The older cache with one JSON file per video (`<digest>.json`) is simply deleted, not migrated.
    */
   async load(): Promise<void> {
     const names = await fs.readdir(this.#dir).catch(() => [] as string[]);
@@ -107,8 +104,8 @@ export class ContentIndex {
   }
 
   /**
-   * 在这些视频（调用方排好的顺序）里检索（`content-search.ts`）。落后于当前版本的视频照样用库里旧的段落；
-   * 库打不开、读库出错或已经关闭时没有命中（记日志）。
+   * Searches these videos (in the order the caller arranged) (`content-search.ts`). Videos behind the current version still use the older segments in the database.
+   * When the database cannot be opened, a read fails, or it is already closed, there are no hits (logged).
    */
   search(videos: readonly SearchableVideo[], query: SearchQuery): { hits: SpaceSearchHit[]; truncated: boolean } {
     const store = this.#closed ? null : this.#open();
@@ -122,10 +119,10 @@ export class ContentIndex {
   }
 
   /**
-   * 来源目录里此刻的全部视频目录（扫描的绝对路径与修改时间）。不在里面的索引删掉；新的、变了的排队。
+   * All video directories in the source directory at this moment (absolute paths and modification times from the scan). Indexes for directories not in there are deleted; new and changed ones are queued.
    */
   async sync(locations: readonly { dir: string; mtimeMs: number }[]): Promise<void> {
-    // 先算出新的表再整体换上：解析真实路径的期间，查询仍看到旧的。
+    // Compute the new table first and then swap it in as a whole: while real paths are being resolved, queries still see the old one.
     const wanted = new Map<string, number>();
     const aliases = new Map<string, string>();
     for (const location of locations) {
@@ -158,7 +155,7 @@ export class ContentIndex {
     if (removed) this.#changed();
   }
 
-  /** 已打开的视频提交了新版本（VideoService 的变化通知）。 */
+  /** An open video committed a new version (change notification from VideoService). */
   touched(given: string, revision: string): void {
     const dir = this.#aliases.get(given) ?? given;
     const indexed = this.#videos.get(dir);
@@ -168,8 +165,8 @@ export class ContentIndex {
   }
 
   /**
-   * 整体重建：把全部视频排队重读（不走版本比对的捷径），每个视频读完在一个事务里换掉它的记录与段落。重读完之前旧的记录
-   * 仍可查询，但都算待索引，检索结果标明不完整；Space 目录的派生状态也不会因此闪一下。返回要重建的视频数。
+   * Full rebuild: queues all videos for re-reading (without the version-comparison shortcut). When each video finishes reading, its record and segments are replaced in one transaction. Until re-reading finishes, the old records
+   * can still be queried, but all count as pending indexing, and search results are marked incomplete. The Space catalog's derived state does not flicker because of it. Returns the number of videos to rebuild.
    */
   async rebuild(): Promise<number> {
     for (const dir of this.#videos.keys()) this.#stale.add(dir);
@@ -178,14 +175,14 @@ export class ContentIndex {
     return this.#wanted.size;
   }
 
-  /** 视频目录（扫描给的路径或真实路径）的索引；还没有时 null。可能是旧版本的（变化还在排队）。 */
+  /** The index of a video directory (path given by the scan or real path); null if there is none yet. It may be from an older version (changes are still queued). */
   at(dir: string): IndexedVideo | null {
     return this.#videos.get(this.#aliases.get(dir) ?? dir) ?? null;
   }
 
   /**
-   * 这个视频目录的索引，必要时等它读完：还没有索引（或只有待重建的旧记录）时排到队首先读，读完返回。Space 的缩略图用：
-   * 卡片出现时只等这一个视频，不等整个队列。不在 Space 目录里、读失败过、超时或已经关闭时返回手上有的（可能是 null）。
+   * The index of this video directory, waiting for it to finish reading if necessary: when there is no index yet (or only old records awaiting rebuild), it is moved to the head of the queue and read first, then returned. Used for Space thumbnails:
+   * when a card appears, only this one video is waited for, not the whole queue. If it is not in the Space directory, has failed reading before, times out, or the index is closed, it returns what it has (possibly null).
    */
   async ensure(given: string, timeoutMs = 15_000): Promise<IndexedVideo | null> {
     const dir = this.#aliases.get(given) ?? given;
@@ -214,7 +211,7 @@ export class ContentIndex {
     return this.#videos.get(dir) ?? null;
   }
 
-  /** 这些视频目录里还没有当前索引的个数（排队中、正在读、读失败、从来没有）。不给时是全部。 */
+  /** Count of these video directories that do not yet have a current index (queued, being read, read failed, never indexed). When not given, counts all of them. */
   pendingCount(dirs?: readonly string[]): number {
     const list = dirs ? dirs.map((dir) => this.#aliases.get(dir) ?? dir) : [...this.#wanted.keys()];
     let pending = 0;
@@ -225,17 +222,17 @@ export class ContentIndex {
     return pending;
   }
 
-  /** 这个视频目录的索引是不是当前的（读过、不在排队、没有失败、不是待重建的旧记录）。 */
+  /** Whether this video directory's index is current (read, not queued, no failure, not an old record awaiting rebuild). */
   current(dir: string): boolean {
     return this.pendingCount([dir]) === 0;
   }
 
-  /** 读失败的视频与原因（诊断用）。 */
+  /** Videos that failed to read, with reasons (for diagnostics). */
   failures(): { dir: string; reason: string }[] {
     return [...this.#failed].map(([dir, reason]) => ({ dir, reason }));
   }
 
-  /** 队列清空（测试用）。 */
+  /** Empties the queue (for tests). */
   async idle(): Promise<void> {
     while (this.#worker) await this.#worker;
   }
@@ -277,7 +274,7 @@ export class ContentIndex {
     for (const done of [...(this.#waiters.get(dir) ?? [])]) done();
   }
 
-  /** 读一个视频；返回索引是否变了。 */
+  /** Reads one video; returns whether its index changed. */
   async #refresh(dir: string): Promise<boolean> {
     const mtimeMs = this.#wanted.get(dir);
     if (mtimeMs === undefined) return false;
@@ -312,7 +309,7 @@ export class ContentIndex {
         problems: extracted.problems,
       };
       if (this.#closed) return false;
-      // 视频已经从目录里移走（读的期间 `sync` 过）：不写回。
+      // The video has already been removed from the directory (a `sync` ran during the read): do not write back.
       if (!this.#wanted.has(dir)) return false;
       store?.replace(record, extracted.segments);
       this.#videos.set(dir, record);

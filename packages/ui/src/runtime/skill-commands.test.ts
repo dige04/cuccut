@@ -29,7 +29,7 @@ function summary(id: string, patch: Partial<SkillSummary> = {}): SkillSummary {
   };
 }
 
-/** 假的会话：只有 `client.request`，按方法名回答，记下每次调用。 */
+/** Fake session: only has `client.request`, answers by method name, and records each call. */
 function fakeSession(answer: (method: string, params: Record<string, unknown>) => unknown) {
   const calls: { method: string; params: Record<string, unknown> }[] = [];
   const session = {

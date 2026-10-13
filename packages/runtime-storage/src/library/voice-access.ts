@@ -2,7 +2,7 @@ import type { FrozenLibraryEntry, Id, LibraryEntry } from '@cuccut/protocol';
 import { libraryError } from './library-errors.ts';
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
-/** 合成请求里指向音色库的写法：`library:<条目 ID>`。 */
+/** The syntax in a synthesis request that points to the voice library: `library:<entry ID>`. */
 export const LIBRARY_VOICE_PREFIX = 'library:';
 
 export function parseLibraryVoice(voice: string | undefined): Id | null {
@@ -10,8 +10,8 @@ export function parseLibraryVoice(voice: string | undefined): Id | null {
 }
 
 /**
- * 出站授权（架构设计 §5.9、§12.5）：把这段声音上传给供应商（克隆）之前必须调用。没有授权声明时拒绝，
- * `conflict` + `VOICE_CONSENT_REQUIRED`：由用户在音色里补上声明后再试，不换一种办法绕过。
+ * Outbound authorization (architecture design §5.9, §12.5): must be called before this voice audio is uploaded to a vendor (cloning). Rejected when there is no consent statement:
+ * `conflict` + `VOICE_CONSENT_REQUIRED`. The user must add the statement to the voice and retry, not work around it another way.
  */
 export function assertVoiceUploadAllowed(voice: LibraryEntry<'voices'>, providerId: string): void {
   const { consent } = voice.content;
@@ -25,11 +25,11 @@ export function assertVoiceUploadAllowed(voice: LibraryEntry<'voices'>, provider
 }
 
 /**
- * `library:<id>` 在一个 Provider 上的音色：用它的有效克隆。没有克隆、或克隆已过期（参考录音变了、条目删了）时拒绝，
- * `conflict` + `VOICE_CLONE_REQUIRED`（`details.reason`：`missing`、`stale`）：先创建克隆再合成。
+ * A voice `library:<id>` on a Provider uses its valid clone. Rejected when there is no clone, or the clone has expired (the reference recording changed, or the entry was deleted):
+ * `conflict` + `VOICE_CLONE_REQUIRED` (`details.reason`: `missing`, `stale`). Create the clone before synthesizing.
  */
 export function resolveVoiceClone(voice: LibraryEntry<'voices'>, providerId: string): { voiceId: string; entry: FrozenLibraryEntry } {
-  // 撤回了授权声明的声音，已有的克隆也不再使用。
+  // A voice whose consent statement was withdrawn: its existing clones are no longer used either.
   assertVoiceUploadAllowed(voice, providerId);
   const clone = voice.clones?.[providerId];
   const entry: FrozenLibraryEntry = { library: 'voices', id: voice.id, version: voice.version, contentHash: voice.contentHash };

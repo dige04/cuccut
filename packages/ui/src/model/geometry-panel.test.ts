@@ -4,7 +4,7 @@ import type { Pose } from './stage-pose.ts';
 
 const canvas = { width: 1920, height: 1080 };
 
-/** 盒：中心与尺寸（画布像素）。 */
+/** Box: center and size (canvas pixels). */
 function pose(cx: number, cy: number, w: number, h: number, rotation = 0): Pose {
   return { cx, cy, w, h, rotation };
 }

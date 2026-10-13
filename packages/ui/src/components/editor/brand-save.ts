@@ -9,8 +9,7 @@ import { useVideo } from '../../state/video-store.ts';
 import { BRAND_COPY as IB } from './brand-copy.ts';
 
 /**
- * 把视频里正在用的一份字幕样式存进品牌库（品牌页的「存当前样式」与舞台字幕工具条的「存到品牌库」共用）：
- * 读那份 `caption-style` 文档的当前版本，结果用提示条说。存进去了返回 true。
+ * Stores the caption style in use in this video into the brand library (shared by the brand page's “Store current style” and the stage caption toolbar's “Store to brand library”): reads the current version of that `caption-style` document and reports the result with a toast. Returns true if it was stored.
  */
 export async function saveCaptionStyleToBrand(runtime: RuntimeSession, record: DocumentRecord): Promise<boolean> {
   const video = useVideo.getState().video;
@@ -27,7 +26,7 @@ export async function saveCaptionStyleToBrand(runtime: RuntimeSession, record: D
       return false;
     }
     const videoName = video.state?.video.name;
-    // 缺省的样式文档都叫同一个名字（按建它时的语言）：带上视频名，存了几份也分得清。
+    // Default style documents all share one name (in the language used when they were created), so the video name is added: several stored styles can then be told apart.
     const isDefaultName = isDefaultStyleName(record.name) || record.name === IB.captionStyle;
     const name = clipBrandName(isDefaultName && videoName ? IB.captionStyleName(videoName) : record.name) || IB.captionStyle;
     await putLibraryEntry(runtime, { library: 'brand', content: { name, kind: 'captionStyle', style: body as CaptionStyleBody } });
@@ -40,8 +39,7 @@ export async function saveCaptionStyleToBrand(runtime: RuntimeSession, record: D
 }
 
 /**
- * 把视频里的一个素材存进品牌库的某一节（品牌页的素材列表与舞台工具条的「存到品牌库」共用）：生成的用产物，
- * 链接的用原文件（`source` 由 `assetLibrarySource` 给）。结果用提示条说，存进去了返回 true。
+ * Stores one asset from the video into a section of the brand library (shared by the brand page's asset list and the stage toolbar's “Store to brand library”): generated assets use the product, linked assets use the original file (`source` comes from `assetLibrarySource`). The result is reported with a toast; returns true if it was stored.
  */
 export async function saveAssetToBrand(runtime: RuntimeSession, asset: AssetRecord, kind: BrandMediaKind, source: LibrarySource): Promise<boolean> {
   const name = clipBrandName(asset.name) || IB.untitled;

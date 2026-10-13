@@ -16,19 +16,18 @@ import { M } from './voices-library-copy.ts';
 import { jobErrorText, remedyHintText, remedyText } from './localized-text.ts';
 
 /**
- * 模型 › 语音合成 › 我的声音的纯逻辑（架构设计 §5.9，设计稿 settings-voices.jsx）：一行音色怎么显示、各 Provider 上的克隆、
- * 新建与编辑的表单、删除前要先删哪些克隆、错误怎么说。命令在 components/models/voice-actions.ts。
+ * Pure logic for Models › Speech synthesis › 我的声音 (My voices) (architecture design §5.9, design mockup settings-voices.jsx): how a voice row is displayed, cloning on each provider, the create and edit forms, which clones must be deleted before a voice is deleted, and how errors are worded. Commands are in components/models/voice-actions.ts.
  */
 
 export type VoiceEntry = LibraryEntry<'voices'>;
 
-/** 能建克隆的 Provider：Runtime 现在只有 ElevenLabs 有克隆接口，别的以 `VOICE_CLONE_UNSUPPORTED` 拒绝。 */
+/** Providers that can create clones. The Runtime currently has a cloning API only for ElevenLabs; others are rejected with `VOICE_CLONE_UNSUPPORTED`. */
 export const VOICE_CLONE_PROVIDERS: readonly string[] = ['elevenlabs'];
-/** 勾上「本人声明」时写进 `consent.statement` 的话（按当前界面语言；存下后原话不变）。 */
+/** The statement written into `consent.statement` when “I declare” is ticked (in the current UI language; once saved, the original wording does not change). */
 export function voiceConsentStatement(): string {
   return M.consentStatement;
 }
-/** 参考录音只收这三种（Runtime 按文件头认，再用 ffprobe 解一遍）。 */
+/** Reference recordings accept only these three formats (the Runtime checks the file header, then parses it again with ffprobe). */
 export const VOICE_AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac'];
 export const VOICE_PACKAGE_EXTENSION = 'bcvoice';
 export const VOICE_NAME_MAX = 200;
@@ -36,17 +35,17 @@ export const VOICE_TRANSCRIPT_MAX = 10_000;
 
 const chars = (s: string) => [...s].length;
 
-// ---- 克隆 ----
+// ---- Cloning ----
 
 export interface CloneProvider {
   providerId: string;
   label: string;
   available: boolean;
-  /** 不可用时 Runtime 给的说明（没有启用、没有设置密钥……）。 */
+  /** The explanation the Runtime gives when unavailable (not enabled, no key set, …). */
   detail: string | null;
 }
 
-/** 这个 Runtime 里能克隆、且在语音合成能力下登记了的 Provider。 */
+/** The providers in this Runtime that can clone and are registered under the speech synthesis capability. */
 export function cloneProviders(view: ModelCapabilitiesView | null): CloneProvider[] {
   const providers = view?.synthesizeSpeech.providers ?? [];
   return VOICE_CLONE_PROVIDERS.flatMap((providerId) => {
@@ -58,7 +57,7 @@ export function cloneProviders(view: ModelCapabilitiesView | null): CloneProvide
 
 const LIVE: readonly JobRecord['state'][] = ['queued', 'running'];
 
-/** 这只音色在这个 Provider 上最近一次克隆任务。 */
+/** The most recent cloning task for this voice on this provider. */
 export function latestCloneJob(jobs: readonly JobRecord[], voiceId: string, providerId: string): JobRecord | null {
   let latest: JobRecord | null = null;
   for (const job of jobs) {
@@ -71,18 +70,18 @@ export function latestCloneJob(jobs: readonly JobRecord[], voiceId: string, prov
 export interface CloneRow {
   providerId: string;
   label: string;
-  /** `none`：这个 Provider 上还没有克隆。 */
+  /** `none`: no clone exists on this provider yet. */
   state: 'valid' | 'stale' | 'none';
   running: boolean;
-  /** 最近一次克隆失败的原因（之后没有建成）。 */
+  /** The reason for the most recent clone failure (no clone was created afterwards). */
   failure: string | null;
-  /** 「上传到 X」能不能点；不能时 `why` 说原因。有效的克隆不再给这一项。 */
+  /** Whether “Upload to X” can be clicked. When it cannot, `why` gives the reason. A valid clone no longer shows this item. */
   create: { enabled: boolean; why: string | null } | null;
-  /** 有克隆记录（有效或过期）时可以删。 */
+  /** Can be deleted when a clone record exists (valid or expired). */
   removable: boolean;
 }
 
-/** 一只音色在各个能克隆的 Provider 上的状态；条目里记着、但这个 Runtime 已经不登记的 Provider 也列出来，好让人删掉。 */
+/** The status of one voice on each provider that can clone. Providers recorded in the entry but no longer registered in this Runtime are also listed, so they can be deleted. */
 export function cloneRows(voice: LibraryEntrySummary, providers: readonly CloneProvider[], jobs: readonly JobRecord[]): CloneRow[] {
   const ids = [...providers.map((p) => p.providerId)];
   for (const c of voice.clones ?? []) if (!ids.includes(c.providerId)) ids.push(c.providerId);
@@ -110,9 +109,9 @@ export function cloneRows(voice: LibraryEntrySummary, providers: readonly CloneP
   });
 }
 
-// ---- 一行的显示 ----
+// ---- Display of a row ----
 
-/** 名字旁边的标签：没有本人声明、各 Provider 上的克隆。 */
+/** Label beside the name: the missing self-declaration, and the clones on each provider. */
 export function voiceChips(voice: LibraryEntrySummary, providers: readonly CloneProvider[]): ModelChip[] {
   const chips: ModelChip[] = [];
   if (!voice.consentDeclared) chips.push({ label: M.consentUnstated, tone: 'neutral' });
@@ -125,7 +124,7 @@ export function voiceChips(voice: LibraryEntrySummary, providers: readonly Clone
 
 const FORMAT: Record<string, string> = { 'audio/wav': 'WAV', 'audio/mpeg': 'MP3', 'audio/flac': 'FLAC' };
 
-/** 名字下面的一行：语言 · 录音格式与大小 · 来源 · 什么时候改的。 */
+/** The line under the name: language · recording format and size · source · when it was last changed. */
 export function voiceMeta(entry: VoiceEntry, now = Date.now()): string {
   const c = entry.content;
   const parts = [
@@ -137,11 +136,11 @@ export function voiceMeta(entry: VoiceEntry, now = Date.now()): string {
   return parts.join(' · ');
 }
 
-// ---- 新建与编辑 ----
+// ---- Create and edit ----
 
 export interface VoiceForm {
   name: string;
-  /** BCP 47；空串 = 不知道。 */
+  /** BCP 47; an empty string means unknown. */
   language: string;
   transcript: string;
   consent: boolean;
@@ -158,7 +157,7 @@ function baseName(path: string): string {
   return dot > 0 ? file.slice(0, dot) : file;
 }
 
-/** 从文件新建：名字先用文件名（不带扩展名）。 */
+/** When created from a file, the name starts as the file name without its extension. */
 export function formForFile(path: string): VoiceForm {
   return { name: [...baseName(path).trim()].slice(0, VOICE_NAME_MAX).join(''), language: '', transcript: '', consent: false };
 }
@@ -181,7 +180,7 @@ export function formValid(form: VoiceForm): boolean {
   return !errors.name && !errors.transcript;
 }
 
-/** 语言下拉：不知道 + 常用语言；条目里的语言不在常用里时也列出来。 */
+/** Language dropdown: unknown, plus common languages. A language in the entry that is not among the common ones is also listed. */
 export function voiceLanguageOptions(current: string): LanguageOption[] {
   const options = languageOptions('any', M.dontKnow);
   if (current && !options.some((o) => o.key === current)) options.push({ key: current, label: langName(current) });
@@ -189,8 +188,8 @@ export function voiceLanguageOptions(current: string): LanguageOption[] {
 }
 
 /**
- * 表单 → `library.put` 的内容。授权声明：勾着时沿用条目里原有的那句（声明的原话不变，Runtime 才保留原来的声明时间），
- * 没有原话时用固定的一句；不勾时撤销声明。
+ * Form → content for `library.put`. Declaration: when ticked, keep the sentence originally saved in the entry (the original wording stays unchanged, so the Runtime keeps the original declaration time).
+ * If there was no original wording, use a fixed sentence. When unticked, revoke the declaration.
  */
 export function voiceContentInput(form: VoiceForm, origin: VoiceContent['origin'], previous: VoiceContent | null): LibraryPutParams['content'] {
   const kept = previous?.consent.declared && previous.consent.statement ? previous.consent.statement : null;
@@ -203,12 +202,12 @@ export function voiceContentInput(form: VoiceForm, origin: VoiceContent['origin'
   };
 }
 
-/** 从一个音频文件新建一只音色（参考录音由 Runtime 从这个路径拷进库里）。 */
+/** Creates one voice from an audio file (the Runtime copies the reference recording from this path into the library). */
 export function createVoiceRequest(form: VoiceForm, path: string): Omit<LibraryPutParams, 'commandId'> {
   return { library: 'voices', content: voiceContentInput(form, 'imported', null), source: { path } };
 }
 
-/** 改名字、语言、逐字稿或声明：不给 `source`，沿用原来的录音；带上版本号，别处先改了时被拒。 */
+/** Changing the name, language, transcript, or declaration: do not pass `source`, so the original recording is kept. Include the version number, so a change made elsewhere first is rejected. */
 export function editVoiceRequest(form: VoiceForm, entry: VoiceEntry): Omit<LibraryPutParams, 'commandId'> {
   return {
     library: 'voices',
@@ -218,13 +217,13 @@ export function editVoiceRequest(form: VoiceForm, entry: VoiceEntry): Omit<Libra
   };
 }
 
-/** 选音频文件时的粗筛（按扩展名）；真正的判断在 Runtime。 */
+/** A rough filter for choosing an audio file (by extension). The real check is in the Runtime. */
 export function isVoiceAudioPath(path: string): boolean {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   return VOICE_AUDIO_EXTENSIONS.includes(ext);
 }
 
-/** 导出音色包的默认文件名：`名字.bcvoice`，去掉文件名里不能用的字符。 */
+/** Default file name for an exported voice package: `名字.bcvoice` (name.bcvoice), with characters not allowed in file names removed. */
 export function voicePackageName(name: string): string {
   // eslint-disable-next-line no-control-regex
   const cleaned = [...name.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '')]
@@ -234,9 +233,9 @@ export function voicePackageName(name: string): string {
   return `${cleaned || 'voice'}.${VOICE_PACKAGE_EXTENSION}`;
 }
 
-// ---- 删除 ----
+// ---- Delete ----
 
-/** 删除一只音色前要先删掉的克隆（有效的与过期的都删：只删条目会在供应商那边留下克隆，界面上却再也找不到它）。 */
+/** The clones to delete before a voice is deleted. Both valid and expired ones are deleted: deleting only the entry would leave the clone on the provider's side, and the UI could no longer find it. */
 export function clonesToRemove(voice: LibraryEntrySummary): string[] {
   return (voice.clones ?? []).map((c) => c.providerId);
 }
@@ -246,12 +245,12 @@ export function deleteBody(voice: LibraryEntrySummary, providers: readonly Clone
   return M.deleteBody(labels.length ? M.deleteClones(labels) : '');
 }
 
-/** 上传前的告知（设计稿的 uploadNotice；这里没有录音时长，给的是大小）。 */
+/** The notice before upload (the mockup's uploadNotice; there is no recording duration here, so the size is given). */
 export function uploadNotice(voice: LibraryEntrySummary, label: string, entry: VoiceEntry | null): string {
   return M.uploadNotice(voice.name, entry ? fmtSize(entry.content.reference.byteLength) : null, label);
 }
 
-// ---- 错误 ----
+// ---- Errors ----
 
 function str(details: unknown, key: string): string | null {
   const v = (details as Record<string, unknown> | null | undefined)?.[key];
@@ -262,7 +261,7 @@ function remedyHint(details: unknown): string | null {
   return remedyText(details) ?? remedyHintText((details as { remedy?: unknown } | null | undefined)?.remedy);
 }
 
-/** 按错误码补一句怎么办（音色的保存、导入导出、克隆与删除）。 */
+/** Adds a sentence on what to do for each error code (saving voices, import and export, cloning and deleting). */
 export function errorText(code: string | null, message: string, details: unknown): string {
   const add = (remedy: string | null) => (remedy ? M.withRemedy(message, remedy) : message);
   switch (code) {
@@ -281,16 +280,16 @@ export function errorText(code: string | null, message: string, details: unknown
   }
 }
 
-/** RPC 被拒时的一句话（错误码在 `details.code`）。 */
+/** A one-sentence message when an RPC is rejected (the error code is in `details.code`). */
 export function rpcErrorText(error: unknown): string {
-  // RpcError 带 `messageRef` 时按当前界面语言重新生成。
+  // When an RpcError carries `messageRef`, the message is regenerated in the current UI language.
   const ref = (error as { messageRef?: MessageRef } | null)?.messageRef;
   const message = localizeText(error instanceof Error ? error.message : String(error), ref);
   const details = (error as { details?: unknown } | null)?.details;
   return errorText(str(details, 'code'), message, details);
 }
 
-/** 错误码（`details.code`）。 */
+/** Error codes (`details.code`). */
 export function errorCode(error: unknown): string | null {
   return str((error as { details?: unknown } | null)?.details, 'code');
 }

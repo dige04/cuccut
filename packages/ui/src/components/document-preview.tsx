@@ -29,7 +29,7 @@ export function SourcePreview({ text }: { text: string }) {
   </span>)}</code></pre>;
 }
 
-/** 静态 HTML：保留排版，禁脚本、表单与导航；资源仅允许内嵌图片和字体，不带应用身份。 */
+/** Static HTML: keep the layout; disallow scripts, forms and navigation; resources may only be embedded images and fonts, with no app identity. */
 export function isolatedHtml(text: string): string {
   const clean = DOMPurify.sanitize(text, {
     WHOLE_DOCUMENT: true,
@@ -41,8 +41,8 @@ export function isolatedHtml(text: string): string {
 }
 
 /**
- * Markdown 文章里的图片：相对路径按文章所在目录解析（`siblingMediaTarget`），经 `media.resolve` 取受限句柄显示，取不到时
- * 显示替代文字；带协议的地址照原来的方式交给 `<img>`（地址已经过 react-markdown 的默认过滤）。
+ * Images in a Markdown article: relative paths are resolved against the article's directory (`siblingMediaTarget`), shown through a restricted handle from `media.resolve`; when that fails,
+ * the alt text is shown; addresses with a protocol are passed to `<img>` as before (the address has already been through react-markdown's default filtering).
  */
 function DocumentImage({ src, alt, base }: { src?: string; alt?: string; base?: MediaTarget }) {
   const runtime = useRuntime();
@@ -64,7 +64,7 @@ function DocumentImage({ src, alt, base }: { src?: string; alt?: string; base?: 
       () => { if (!cancelled) setUrl('failed'); },
     );
     return () => { cancelled = true; };
-    // base 由 JSON 唯一确定，不把每次新建的对象放进依赖。
+    // base is determined solely by the JSON; do not put a newly created object on each render into the dependencies.
   }, [runtime, src, local, base && JSON.stringify(base)]);
   if (!src) return alt ? <span>{alt}</span> : null;
   if (!local) return <img src={src} alt={alt ?? ''} />;

@@ -39,12 +39,10 @@ import { TaskFacts } from './task-sections.tsx';
 import { TK } from './tasks-copy.ts';
 
 /*
- * 从链接导入的任务详情（设计稿 import-panel.jsx `ImportTask`、import-flow.css）：大标题与一句说明、三步（下载视频 ·
- * 确认媒体并建视频 · 生成字幕）、媒体卡、当前状态与进度、失败的说法与补救（下载工具卡片就地处理）、动作行、下载位置与工具。
- * 后两步有一半来自流程执行器（flow-runner.ts）：只在这次运行里知道；应用重启过时给「用下载的文件新建视频」。
+ * Task detail for a link import (design draft import-panel.jsx `ImportTask`, import-flow.css): large title with one sentence of explanation, three steps (download the video · confirm the media and create the video · generate subtitles), the media card, current status and progress, the failure message and remedies (the download-tool card is handled in place), the action row, and the download location and tools.
+ * The last two steps are partly driven by the flow executor (flow-runner.ts): it only knows about them during this run. After an app restart, the option “用下载的文件新建视频” (create video from the downloaded file) is offered instead.
  *
- * 与设计稿的出入：没有「删除记录」（Runtime 没有删任务的接口）；没有 Homebrew 阻塞态的整块接管与安装选项
- * （Runtime 的安装只有一种：CucCut 自己管理的独立副本）；下载速度不显示（子任务只报字节数）。
+ * Differences from the design draft: there is no “删除记录” (delete record), because the Runtime has no interface for deleting tasks; there is no full takeover for the blocked Homebrew state and no install options (the Runtime has only one kind of install: a separate copy that CucCut manages itself); download speed is not shown (subtasks only report byte counts).
  */
 
 const steps = style({ display: 'flex', gap: 16, listStyleType: 'none', margin: 0, padding: 0 });
@@ -148,7 +146,7 @@ const STAGE_LABEL = live((): Record<StageState, string> => TK.link.stage);
 
 const ACTION_LABEL = live((): Record<LinkAction, string> => TK.link.action);
 
-/** 换个链接、重新导入：到「工具 › 从链接导入」，链接先填好（首页不再有链接入口）。 */
+/** To change the link and import again: go to “工具 › 从链接导入” (Tools › Import from link), where the link is already filled in (the start page no longer has a link entry point). */
 function openLinkTool(url: string): void {
   const tools = useVideoTools.getState();
   tools.patch('link-import', { url });
@@ -156,7 +154,7 @@ function openLinkTool(url: string): void {
   useShell.getState().go({ tab: 'tools', tool: 'link-import' });
 }
 
-/** 失败时的说法与补救按钮；`tools` 是首要补救时直接摆出下载工具卡片（装好或同意之后再重试）。 */
+/** The failure message and the remedy button; when `tools` is the primary remedy, the download-tool card is shown directly (retry after it is installed or agreed to). */
 function Recovery({ job, issue, run }: { job: JobRecord; issue: LinkIssue; run: FlowRun | null }) {
   const runtime = useRuntime();
   const toolsFirst = issue.actions[0] === 'tools';
@@ -169,7 +167,7 @@ function Recovery({ job, issue, run }: { job: JobRecord; issue: LinkIssue; run: 
   const flow = run?.flow ?? (frozen.audioOnly ? 'a2v' : 'sub');
   const url = frozen.url.startsWith('http') ? frozen.url : '';
 
-  // 下载工具是首要补救时，装好之后还要接着重试；列表里没有重试就补一个。
+  // When the download tool is the primary remedy, the retry must still follow after installing it; if the list has no retry, add one.
   const buttons: LinkAction[] = toolsFirst
     ? [...issue.actions.filter((a) => a !== 'tools'), ...(issue.actions.includes('retry') ? [] : ['retry' as const])]
     : issue.actions;
@@ -183,7 +181,7 @@ function Recovery({ job, issue, run }: { job: JobRecord; issue: LinkIssue; run: 
   const act = (action: LinkAction) => {
     if (action === 'retry') retry();
     else if (action === 'change-link' || action === 'restart') openLinkTool(url);
-    // 改用本地文件：到这个项目的起始页，输入框空着时填上对应的快捷开始（加字幕，纯音频是音频转视频），文件从「+」或拖放加。
+    // To use a local file instead: go to this project's start page; when the input box is empty, fill in the matching quick start (add subtitles; for audio-only it is audio-to-video). Add the file with “+” or drag and drop.
     else if (action === 'use-file') openHome(projectId, { prompt: starterOf(flow === 'a2v' ? 'a2v' : 'sub').prompt });
     else if (action === 'tools') setToolsOpen((v) => !v);
     else void changeDownloadDir(runtime);
@@ -230,7 +228,7 @@ function Recovery({ job, issue, run }: { job: JobRecord; issue: LinkIssue; run: 
   );
 }
 
-/** 下载工具的原话：可以选中复制，也给一个复制按钮。 */
+/** The download tool's original wording: can be selected and copied, and a copy button is also provided. */
 function Diagnostic({ text }: { text: string }) {
   const [note, setNote] = useState('');
   useEffect(() => setNote(''), [text]);
@@ -265,7 +263,7 @@ function StageDot({ state, n }: { state: StageState; n: number }) {
   return <>{n}</>;
 }
 
-/** 状态区的一句补充：下载字节、检查文件、跟进到哪了、停下之后留下了什么。 */
+/** One line of supplement in the status area: download bytes, file checks, how far follow-up got, and what was left behind after stopping. */
 function statusDetail(job: JobRecord, run: FlowRun | null, download: { text: string } | null, hasVideo: boolean): string {
   if (job.state === 'queued') return TK.link.queued;
   if (isJobLive(job)) {
@@ -294,7 +292,7 @@ export function LinkImportDetail({ row: taskRow, job, backButton }: { row: TaskR
   const [adopting, setAdopting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  // 首页的执行器也要在这里挂上：应用从任务详情起步（或首页没开过）时，下载完成后的跟进照样接得上。
+  // The start page's executor must also be mounted here: when the app starts from task details (or the start page was never opened), the follow-up after the download still connects.
   useEffect(() => bindFlowRunner({ runtime, toast: flowToast }), [runtime]);
 
   const follow = followOf(run);

@@ -31,12 +31,12 @@ import { MUSIC_TOOL_COPY as COPY } from './music-tool-copy.ts';
 import { RECORD_COPY } from './tools-copy.ts';
 import { copyText, useArtifactUrl, useCancelJob, useDownloadArtifact, useRecordRetry } from './use-tool-records.ts';
 
-/* 设计稿 tool-music.jsx `RecordCard`：风格、状态、歌词第一行、元数据、在跑的阶段与预计耗时，做好后播放、下载与产物行。 */
+/* Design file tool-music.jsx `RecordCard`: style, status, first line of lyrics, metadata, the running stage and estimated time; once done, playback, download and the output row. */
 
 const audio = style({ width: 'full', height: 36 });
 const progress = style({ width: 'full' });
 
-/** 「再试一次 / 重新排队」：中断的就地重跑，其余照冻结的参数原样再提交（见 `useRecordRetry`）。 */
+/** “再试一次 / 重新排队” (Try again / Requeue): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useMusicRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -168,7 +168,7 @@ export function MusicRecord({
   );
 }
 
-/** 重新提交过的不再给按钮，写「已重新提交」；在途时转圈。 */
+/** Items that have been resubmitted no longer get the button and show “已重新提交” (Resubmitted); a spinner shows while in flight. */
 function RetryButton({ label, again }: { label: string; again: ReturnType<typeof useMusicRetry> }) {
   if (again.done) return <span className={detail}>{RECORD_COPY.retried}</span>;
   return (
@@ -178,7 +178,7 @@ function RetryButton({ label, again }: { label: string; again: ReturnType<typeof
   );
 }
 
-/** 做完的那一条：播放器、下载、写到上限的提醒，以及它在 Space 里的条目（产物行：在 Space 中查看、交给 Agent、以此新建视频）。 */
+/** The finished item: the player, download, the reminder when it reaches the limit, and its entry in the Space (output row: view in Space, hand to Agent, create a new video from it). */
 function MusicResult({ job }: { job: JobRecord }) {
   const out = audioOutput(job);
   const media = useArtifactUrl(out?.artifactId ?? null);

@@ -4,7 +4,7 @@ import { accountOf, driverModels, modelRef } from './opencode-models.ts';
 import { approvalOf, editDiff, permissionRules, toolItem, type ToolState } from './opencode-items.ts';
 import { parseFrame } from './opencode-server.ts';
 
-/** 纯函数：版本、模型 id、权限规则、权限请求与工具步骤的映射、SSE 帧。样本取自 OpenCode 2.0.24 的真实输出。 */
+/** Pure functions: version, model id, permission rules, mapping of permission requests and tool steps, SSE frames. Samples are taken from real OpenCode 2.0.24 output. */
 
 const PATCH = 'Index: notes.txt\n===\n--- notes.txt\n+++ notes.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n';
 

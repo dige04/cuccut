@@ -1,66 +1,54 @@
-//! 白板手绘元素的分析与逐帧内核（`docs/design/video/ccut-whiteboard-animation-design.md` §4）。
+//! Analysis and per-frame kernel for hand-drawn whiteboard elements (`docs/design/video/ccut-whiteboard-animation-design.md` §4).
 //!
-//! 一张静态图 → 「谁先画、谁后画」的时间场 → 任意 `t` 的揭示帧。两件事分开：
+//! A static image → a time field of "what gets drawn first, what later" → the reveal frame at any `t`. Two things are kept separate:
 //!
-//! * [`analyze`]——**一次性**分析：像素分类（纸 / 墨线 / 色块）→ 膨胀 → 连通域
-//!   （`strict` 时再按 `box` 逐像素切开）→ 排序（`beats` 分组 → 阅读带 → 质心 x）
-//!   → 每组一段组窗 `[at, end]`（`natural` 时按自然速度画完后定格到 `end`）→ 组内按
-//!   √面积分配 → 域内测地 BFS 时间场。结果 [`WhiteboardAnalysis`] 由 host 按
-//!   `(源 id, props)` 记忆化（旁白同步设计稿 §6）。
-//! * [`whiteboard_frame`]——**逐帧**：`field ≤ t` 的像素取源图，其余透明（或纸色），
-//!   `t < 1` 时在笔锋位置画一支矢量笔。每帧只是一次掩码比较 + 一次 blit。
+//! * [`analyze`] — **one-off** analysis: pixel classification (paper / ink line / colour block) → dilation → connected components (with `strict`, further split per pixel by `box`) → ordering (`beats` grouping → reading band → centroid x) → one window `[at, end]` per group (with `natural`, the group is drawn at natural speed and then holds at `end`) → within a group, time is allocated by √area → in-region geodesic BFS time field. The resulting [`WhiteboardAnalysis`] is memoised by the host keyed on `(source id, props)` (narration sync design §6).
+//! * [`whiteboard_frame`] — **per frame**: pixels with `field ≤ t` take the source image, the rest are transparent (or paper colour), and when `t < 1` a vector pen is drawn at the pen-tip position. Each frame is just one mask comparison plus one blit.
 //!
-//! 与本目录其余源同一条纪律：**无状态、无随机数、不依赖上一帧**——同一 `t` 在
-//! App 预览 / 导出 / `ccut render --t` 三处逐字节一致，乱序采样 == 顺序采样。
+//! Same discipline as the rest of this directory: **stateless, no random numbers, no dependence on the previous frame** — the same `t` gives byte-identical output in the App preview, export, and `ccut render --t`; out-of-order sampling == sorted sampling.
 //!
-//! 本模块只依赖 tiny-skia，属于 `wasm-safe` 最小集。`WhiteboardProps`
-//! （`ccut-timeline`）→ [`WhiteboardParams`] 的换算（秒 → 归一化）住在
-//! `ccut-timeline-render`，本 crate 不认识 Timeline 的类型。
+//! This module depends only on tiny-skia, and belongs to the `wasm-safe` minimal set. The conversion from `WhiteboardProps` (`ccut-timeline`) → [`WhiteboardParams`] (seconds → normalised) lives in `ccut-timeline-render`; this crate does not know the Timeline types.
 
 use std::collections::VecDeque;
 
 use tiny_skia::{Color, LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
-/// 分析用的工作分辨率上限（长边像素）。更大的源图先按最近邻聚合到这个尺度再分析，
-/// 时间场按整数比例映射回自然分辨率。960 是原型验证过的尺度：4K 源图的 BFS 也在
-/// 百毫秒量级。
+/// Upper bound on the working resolution used for analysis (pixels on the long side). Larger source images are first aggregated to this scale with nearest-neighbour sampling before analysis, and the time field is mapped back to natural resolution by an integer ratio. 960 is the scale verified by the prototype: BFS on a 4K source also takes on the order of a hundred milliseconds.
 pub const WORK_LONG_EDGE: u32 = 960;
-/// 笔画周围多宽的纸像素算作它的晕圈（自然像素）：出图 PNG 的抗锯齿 / 压缩振铃约 5 px。
+/// How wide a band of paper pixels around a stroke counts as its halo (natural pixels): the anti-aliasing / compression ringing of exported PNGs is about 5 px.
 pub const HALO_RADIUS_PX: u32 = 6;
 
-/// 墨线膨胀半径（工作分辨率像素）：把断笔、锯齿边连成一笔。
+/// Ink-line dilation radius (working-resolution pixels): joins broken strokes and jagged edges into one stroke.
 const DILATE_RADIUS: i32 = 3;
 
-/// 面积小于此值（工作分辨率像素）的连通域并入最近的域，噪点不单独成笔。
+/// Connected components smaller than this area (working-resolution pixels) are merged into the nearest component, so specks do not become strokes of their own.
 const MIN_COMPONENT_AREA: usize = 12;
 
-/// `inkFirst` 时墨线占时间窗的比例；色块占余下部分。
+/// With `inkFirst`, the fraction of the time window given to ink lines; colour blocks take the remainder.
 pub const INK_SHARE: f64 = 0.7;
 
-/// 阅读带数：先按 `ymin` 落在第几个 `H / READING_BANDS` 带，再按 x 排。
+/// Number of reading bands: first by which `H / READING_BANDS` band `ymin` falls in, then by x.
 const READING_BANDS: usize = 8;
 
-/// 时间场的量化档数。`0` 恒为「一开始就可见」（纸像素），`1..=FIELD_MAX` 是
-/// 墨线 / 色块的揭示时刻；`t` 归一化后乘上它取整比较。
+/// Number of quantisation levels of the time field. `0` always means "visible from the start" (paper pixels); `1..=FIELD_MAX` are the reveal times of ink lines / colour blocks; `t` is normalised, multiplied by this, and compared after rounding.
 const FIELD_MAX: u32 = 65_534;
 
-/// 笔锋窗口：`field ∈ (t − HAND_WINDOW, t]` 的像素质心是手的位置。
+/// Pen-tip window: the centroid of the pixels with `field ∈ (t − HAND_WINDOW, t]` is the hand's position.
 const HAND_WINDOW: f64 = 0.02;
 
-/// 笔的样式（`hand` 属性）。
+/// Pen style (the `hand` attribute).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WhiteboardHand {
-    /// 粗头马克笔（缺省）。
+    /// Thick-tip marker (default).
     #[default]
     Marker,
-    /// 细杆钢笔。
+    /// Thin-barrel fountain pen.
     Pen,
-    /// 不画笔。
+    /// No pen drawn.
     None,
 }
 
-/// 语义顺序提示（`beats[]`）。`at` / `end` 已归一化到 `[0, 1]`（相对 `draw`）；
-/// `end` 缺席 = 下一拍的 `at`（末拍 = 1）；`rect` 是画面百分比矩形 `[x, y, w, h]`。
+/// Semantic ordering hint (`beats[]`). `at` / `end` are already normalised to `[0, 1]` (relative to `draw`); when `end` is absent it equals the next beat's `at` (the last beat = 1); `rect` is a rectangle in percent of the frame `[x, y, w, h]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhiteboardBeat {
     pub at: f64,
@@ -69,7 +57,7 @@ pub struct WhiteboardBeat {
 }
 
 impl WhiteboardBeat {
-    /// 只有起点的节拍（0.8 的形状）。
+    /// A beat with only a start point (the 0.8 shape).
     pub fn at(at: f64, rect: [f64; 4]) -> Self {
         Self {
             at,
@@ -79,14 +67,13 @@ impl WhiteboardBeat {
     }
 }
 
-/// 每拍的节奏（`pace`，旁白同步设计稿 §5）。
+/// Per-beat pacing (`pace`, narration sync design §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WhiteboardPace {
-    /// 组窗撑满：这拍的笔画拉伸到整个 `[at, end]`（0.8 的行为）。
+    /// Fill the group window: this beat's strokes stretch across the whole `[at, end]` (the 0.8 behaviour).
     #[default]
     Stretch,
-    /// 按自然速度（`path / 900 px/s + 0.25 s/域`，不夹）画完后定格到 `end`；
-    /// 自然时长超过组窗时压缩到组窗并记 `compressed`。
+    /// Draw at natural speed (`path / 900 px/s + 0.25 s/region`, not clamped), then hold at `end`; if the natural duration exceeds the group window, compress to the group window and record `compressed`.
     Natural,
 }
 
@@ -99,25 +86,23 @@ impl WhiteboardPace {
     }
 }
 
-/// 分析参数。样式（笔、纸色）不在这里——它们不影响时间场，只影响帧。
+/// Analysis parameters. Style (pen, paper colour) is not here: it does not affect the time field, only the frames.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhiteboardParams {
-    /// 先墨线后色块（缺省 `true`）；`false` 时两类混排，只按位置排序。
+    /// Ink lines before colour blocks (default `true`); when `false`, the two kinds are interleaved and sorted by position only.
     pub ink_first: bool,
-    /// 语义顺序提示；空 = 纯几何顺序。
+    /// Semantic ordering hints; empty = pure geometric order.
     pub beats: Vec<WhiteboardBeat>,
-    /// 每拍撑满组窗还是画完定格。
+    /// Each beat either fills its group window or holds after finishing.
     pub pace: WhiteboardPace,
-    /// `box` 是硬遮罩：逐像素按矩形标 owner（后拍覆盖），跨 box 的连通域按像素切开，
-    /// 膨胀不跨 owner，不在任何 box 里的前景排到末拍之后（`[end_末, 1]`）。
+    /// `box` is a hard mask: each pixel is tagged with an owner by rectangle (later beats overwrite earlier ones); connected components that span boxes are split by pixel; dilation does not cross owners; foreground outside every box is scheduled after the last beat (`[end_last, 1]`).
     pub strict: bool,
-    /// 生效画时（秒）：`natural` 把自然秒换算到归一化时间轴用；`0` = 未知（按 stretch）。
+    /// Effective drawing time (seconds): used by `natural` to convert natural seconds to the normalised timeline; `0` = unknown (treated as stretch).
     pub draw_seconds: f64,
 }
 
 impl WhiteboardParams {
-    /// 几何基线的副本：去掉 `beats`、回到 `stretch`。`draw` 缺席时先用它拿自然时长
-    /// 与 `boxes`，再按最终 `draw` 归一化 `beats` 做第二次分析。
+    /// A copy of the geometric baseline: `beats` removed, reset to `stretch`. When `draw` is absent, this is first used to get the natural duration and `boxes`, then a second analysis normalises `beats` against the final `draw`.
     pub fn beats_cleared(mut self) -> Self {
         self.beats.clear();
         self.pace = WhiteboardPace::Stretch;
@@ -126,7 +111,7 @@ impl WhiteboardParams {
         self
     }
 
-    /// 只影响几何基线以外的分析：有 beats、或 `natural`。
+    /// Only affects analysis beyond the geometric baseline: when there are beats, or `natural`.
     pub fn needs_second_pass(&self) -> bool {
         !self.beats.is_empty() || self.pace == WhiteboardPace::Natural
     }
@@ -144,35 +129,35 @@ impl Default for WhiteboardParams {
     }
 }
 
-/// 一拍（组）的时间账（归一化到 `draw`）。
+/// The time budget of one beat (group), normalised to `draw`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhiteboardGroup {
-    /// 组窗 `[at, end]`。
+    /// Group window `[at, end]`.
     pub window: [f64; 2],
-    /// 这拍墨线画完的时刻：`stretch` = `end`；`natural` = `at + 自然时长`（不超过 `end`）。
+    /// The moment this beat's ink lines finish: with `stretch` = `end`; with `natural` = `at + natural duration` (not exceeding `end`).
     pub draw_end: f64,
-    /// 这拍成员的自然时长（秒，不夹）。
+    /// Natural duration of this beat's members in seconds (not clamped).
     pub natural_seconds: f64,
-    /// `natural` 下自然时长超过组窗，被压缩到组窗（`whiteboard-window-too-short`）。
+    /// Under `natural`, when the natural duration exceeds the group window, it is compressed to the group window (`whiteboard-window-too-short`).
     pub compressed: bool,
-    /// 没有任何连通域落进这拍（`whiteboard-empty-box`）。
+    /// No connected component falls into this beat (`whiteboard-empty-box`).
     pub empty: bool,
 }
 
-/// 一个连通域的外接框（阅读序，`ccut whiteboard probe` 的 `boxes[]`）。
+/// The bounding box of one connected component (reading order; the `boxes[]` of `ccut whiteboard probe`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhiteboardBox {
-    /// 画面百分比 `[x, y, w, h]`。
+    /// Percent of frame `[x, y, w, h]`.
     pub rect: [f64; 4],
-    /// 真实前景像素数（工作分辨率）。
+    /// Number of real foreground pixels (working resolution).
     pub area: usize,
-    /// 墨线（`true`）还是色块。
+    /// Ink line (`true`) or colour block.
     pub ink: bool,
-    /// 单独画这一域的自然时长（秒）。
+    /// Natural duration in seconds of drawing this region alone.
     pub natural_seconds: f64,
 }
 
-/// 像素类别（工作分辨率与自然分辨率共用）。
+/// Pixel class (shared by working and natural resolution).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum Class {
@@ -181,32 +166,30 @@ enum Class {
     Color = 2,
 }
 
-/// 一张源图的分析结果：自然分辨率的量化时间场 + 统计。
+/// The analysis result for one source image: the quantised time field at natural resolution, plus statistics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhiteboardAnalysis {
     width: u32,
     height: u32,
-    /// 每个自然像素的揭示时刻（`0` = 一开始可见；`1..=FIELD_MAX` 归一化到 `draw`）。
+    /// The reveal time of each natural pixel (`0` = visible from the start; `1..=FIELD_MAX` normalised to `draw`).
     field: Vec<u16>,
-    /// 工作分辨率的墨线 / 色块像素数与连通域数（探测输出与自然时长推算用）。
+    /// Ink-line and colour-block pixel counts and connected-component counts at working resolution (used for probe output and natural-duration estimation).
     pub ink_pixels: usize,
     pub color_pixels: usize,
     pub components: usize,
-    /// 工作分辨率面积（`ink_pixels / work_area` 即墨线占比）。
+    /// Working-resolution area (`ink_pixels / work_area` is the ink-line share).
     pub work_area: usize,
-    /// 全部连通域测地 BFS 最长路径之和（工作像素）——「笔要走多远」。
+    /// Sum of the longest geodesic BFS paths over all connected components (working pixels) — "how far the pen has to travel".
     pub path_length: usize,
-    /// 每拍的时间账（无 beats 时恰一组 `[0, 1]`）。
+    /// Time budget per beat (with no beats, exactly one group `[0, 1]`).
     pub groups: Vec<WhiteboardGroup>,
-    /// `strict` 下不在任何 `box` 里的前景像素数（工作分辨率）；非 strict 恒 0。
+    /// Number of foreground pixels outside every `box` under `strict` (working resolution); always 0 when not strict.
     pub unassigned_foreground: usize,
-    /// 连通域外接框，阅读序（与 beats 无关）。
+    /// Connected-component bounding boxes in reading order (independent of beats).
     pub boxes: Vec<WhiteboardBox>,
-    /// hold 段（没有新笔落下）手停在末笔上：`natural` 为 `true`；`stretch` 保持 0.8 的帧。
+    /// In a hold segment (no new stroke landing), the hand rests on the last stroke: `natural` gives `true`; `stretch` keeps the 0.8 frames.
     pub hold_hand: bool,
-    /// 源图自带的不透明纸面代表色（预乘 RGBA，取全部不透明纸面像素的均值）；透明底为
-    /// `None`。没给 `paper` 时，还没画到的不透明笔画像素先铺这个色，而不是挖成透明洞
-    /// 让项目背景（常见是黑画面）透出来冒充墨线。
+    /// The representative colour of the source image's own opaque paper surface (premultiplied RGBA, the mean over all opaque paper pixels); `None` for a transparent background. When no `paper` is given, opaque stroke pixels not yet drawn are first filled with this colour, rather than being cut out as transparent holes that let the project background (often a black frame) show through and pass for ink lines.
     pub paper_fill: Option<[u8; 4]>,
 }
 
@@ -219,7 +202,7 @@ impl WhiteboardAnalysis {
         self.height
     }
 
-    /// 墨线占比（工作分辨率）。
+    /// Ink-line share (working resolution).
     pub fn ink_ratio(&self) -> f64 {
         if self.work_area == 0 {
             0.0
@@ -228,19 +211,17 @@ impl WhiteboardAnalysis {
         }
     }
 
-    /// 推算的自然作画时长（秒）：笔以约 900 工作像素/秒的速度走完全部测地路径，
-    /// 每个域再加 0.25 s 的提笔换位；夹在 `[1, 15]` 秒。只是缺省值的来源，
-    /// 作者随时用 `draw` 覆盖。
+    /// Estimated natural drawing duration in seconds: the pen covers all geodesic paths at about 900 working pixels/s, plus 0.25 s per region for lifting and repositioning; clamped to `[1, 15]` seconds. This is only the source of the default value; the author can override it with `draw` at any time.
     pub fn natural_draw_seconds(&self) -> f64 {
         natural_seconds(self.path_length, self.components).clamp(1.0, 15.0)
     }
 
-    /// 不夹的自然时长（秒）：`groups[].natural_seconds` 之和。
+    /// Unclamped natural duration in seconds: the sum of `groups[].natural_seconds`.
     pub fn natural_seconds_unclamped(&self) -> f64 {
         natural_seconds(self.path_length, self.components)
     }
 
-    /// 归一化时刻 `t` 下已揭示的像素数（测试与探测用）。
+    /// Number of revealed pixels at normalised time `t` (for tests and probing).
     pub fn revealed_count(&self, t: f64) -> usize {
         let threshold = quantize(t);
         self.field
@@ -249,14 +230,14 @@ impl WhiteboardAnalysis {
             .count()
     }
 
-    /// 自然像素 `(x, y)` 的揭示时刻（归一化；纸像素为 `0`）。
+    /// Reveal time of natural pixel `(x, y)` (normalised; paper pixels are `0`).
     pub fn reveal_at(&self, x: u32, y: u32) -> f64 {
         let q = self.field[(y * self.width + x) as usize];
         f64::from(q) / f64::from(FIELD_MAX)
     }
 }
 
-/// 笔速模型：约 900 工作像素/秒，每个域再加 0.25 s 提笔换位。
+/// Pen-speed model: about 900 working pixels/s, plus 0.25 s per region for lifting and repositioning.
 fn natural_seconds(path_length: usize, components: usize) -> f64 {
     path_length as f64 / 900.0 + components as f64 * 0.25
 }
@@ -271,13 +252,13 @@ fn quantize(t: f64) -> u32 {
     }
 }
 
-/// premultiplied RGBA → 类别。
+/// Premultiplied RGBA → class.
 fn classify(px: &[u8]) -> Class {
     let a = px[3];
     if a < 8 {
         return Class::Paper;
     }
-    // 反预乘后再取亮度 / 饱和度，半透明边缘不会因为预乘变暗被误判成墨线。
+    // Un-premultiply before taking brightness / saturation, so semi-transparent edges that look darker from premultiplication are not misclassified as ink lines.
     let un = |c: u8| -> u32 { (u32::from(c) * 255 + u32::from(a) / 2) / u32::from(a) };
     let (r, g, b) = (un(px[0]).min(255), un(px[1]).min(255), un(px[2]).min(255));
     let lum = (r * 299 + g * 587 + b * 114) / 1000;
@@ -291,12 +272,12 @@ fn classify(px: &[u8]) -> Class {
     }
 }
 
-/// 一个连通域（工作分辨率）。
+/// One connected component (working resolution).
 struct Component {
     class: Class,
-    /// 域内真实（未膨胀）像素的工作坐标索引。
+    /// Working-coordinate indices of the real (undilated) pixels in the region.
     pixels: Vec<u32>,
-    /// 膨胀掩码上属于本域的全部像素索引（测地 BFS 的行走面）。
+    /// Indices of all pixels in the dilated mask that belong to this region (the walkable surface for the geodesic BFS).
     footprint: Vec<u32>,
     xmin: u32,
     xmax: u32,
@@ -304,7 +285,7 @@ struct Component {
     ymax: u32,
     cx: f64,
     cy: f64,
-    /// `strict` 下的归属拍；`None` = 不在任何 box 里（非 strict 不用）。
+    /// The owning beat under `strict`; `None` = not inside any box (not used when not strict).
     owner: Option<usize>,
 }
 
@@ -347,9 +328,9 @@ fn rect_contains(rect: [f64; 4], px: f64, py: f64) -> bool {
     px >= rect[0] && px <= rect[0] + rect[2] && py >= rect[1] && py <= rect[1] + rect[3]
 }
 
-/// 分析一张源图。`src` 为 premultiplied RGBA。
+/// Analyses one source image. `src` is premultiplied RGBA.
 ///
-/// 结果只取决于像素与 `params`，不含任何随机性。
+/// The result depends only on the pixels and `params`; it contains no randomness.
 pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
     let width = src.width();
     let height = src.height();
@@ -363,8 +344,8 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
     let wh = u32::div_ceil(height, scale).max(1);
     let work_area = (ww * wh) as usize;
 
-    // 1. 分类（自然分辨率）并聚合到工作格：格内只要有墨线就是墨线，否则有色块
-    //    就是色块——保证每个自然墨线像素都落在一个有限时刻的格里。
+    // 1. Classify (natural resolution) and aggregate into working cells: a cell is ink if it contains any ink line, otherwise a colour block if it contains one —
+    //    this guarantees every natural ink-line pixel falls in a cell with a finite time.
     let mut natural_class = vec![Class::Paper; (width * height) as usize];
     let mut work_class = vec![Class::Paper; work_area];
     let (mut paper_sum, mut paper_count) = ([0u64; 3], 0u64);
@@ -397,7 +378,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
         [avg(paper_sum[0]), avg(paper_sum[1]), avg(paper_sum[2]), 255]
     });
 
-    // 2–3. 膨胀 + 连通域，墨线与色块各自成域。
+    // 2–3. Dilation + connected components; ink lines and colour blocks form their own regions.
     let mut components = Vec::new();
     for class in [Class::Ink, Class::Color] {
         let mask: Vec<bool> = work_class.iter().map(|&c| c == class).collect();
@@ -409,8 +390,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
     }
     merge_small_components(&mut components);
 
-    // 3b. strict：逐像素按 box 标 owner（后拍覆盖），跨 box 的域按像素切开；膨胀面同样
-    //     按 owner 切，所以测地行走不会跨 box。
+    // 3b. strict: tag each pixel with its owner by box (later beats overwrite), split regions that span boxes by pixel; the dilated surface is also split by owner, so geodesic walks never cross boxes.
     let beat_count = params.beats.len();
     let strict = params.strict && beat_count > 0;
     let mut unassigned_foreground = 0usize;
@@ -431,7 +411,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
             .sum();
     }
 
-    // 4. 排序：beat 分组 → 阅读带 → 质心 x。
+    // 4. Ordering: beat grouping → reading band → centroid x.
     let band = (wh as f64 / READING_BANDS as f64).max(1.0);
     let reading_key = |c: &Component| ((c.ymin as f64 / band) as usize, c.cx);
     let group_of = |c: &Component| -> usize {
@@ -443,7 +423,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
         }
         let px = c.cx / ww as f64 * 100.0;
         let py = c.cy / wh as f64 * 100.0;
-        // 先取包含质心的第一个 beat；都不包含时取质心到矩形距离最近的 beat。
+        // Take the first beat whose rectangle contains the centroid; if none contains it, take the beat whose rectangle is nearest to the centroid.
         if let Some(i) = params
             .beats
             .iter()
@@ -478,13 +458,13 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
             .then(ia.cmp(ib))
     });
 
-    // 域内测地距离先算好：natural 要在分配窗前知道每组的自然时长。
+    // Compute the in-region geodesic distances first: `natural` needs each group's natural duration before the windows are allocated.
     let distances: Vec<(Vec<u32>, u32)> = components
         .iter()
         .map(|c| geodesic_distances(c, ww, wh))
         .collect();
 
-    // 阅读序外接框（与 beats 无关）：probe 的 `boxes[]` 与 sync 兜底的原料。
+    // Reading-order bounding boxes (independent of beats): the source for probe's `boxes[]` and for the sync fallback.
     let mut reading: Vec<usize> = (0..components.len()).collect();
     reading.sort_by(|&a, &b| {
         let (band_a, cx_a) = reading_key(&components[a]);
@@ -512,10 +492,8 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
         })
         .collect();
 
-    // 5. 时间窗：每个 beat 组一段 `[at_g, end_g]`（`end` 缺席 = 下一拍 at，末拍 = 1）；
-    //    strict 多一组「末拍之后」`[end_末, 1]` 收未归属前景。`natural` 时组内只用
-    //    `[at_g, at_g + 自然时长]`，其余定格。组内 inkFirst 再切成墨线 `[0, 0.7]`
-    //    与色块 `[0.7, 1]`，各类内部按 √面积分配。
+    // 5. Time windows: each beat group gets one `[at_g, end_g]` (when `end` is absent = next beat's at, last beat = 1);
+    //    under `strict` one extra group "after the last beat" `[end_last, 1]` collects unowned foreground. With `natural`, the group uses only `[at_g, at_g + natural duration]` and holds for the rest. Within a group, inkFirst further splits into ink lines `[0, 0.7]` and colour blocks `[0.7, 1]`, and each kind is allocated by √area.
     let group_count = if beat_count == 0 {
         1
     } else if strict {
@@ -612,14 +590,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
         }
     }
 
-    // 6. 映射回自然分辨率：前景像素取所在工作格的时刻（至少为 1，保证 t = 0 时
-    //    一笔都没露）。纸像素分两种：离前景远的恒为 0（真正的纸，始终按源图显示，
-    //    纸纹不会在末尾突然出现）；贴着前景的跟最早揭示的那个前景走——出图工具的
-    //    PNG 里笔画边缘有一圈几像素宽、亮度刚过纸阈值的浅灰（抗锯齿 / 压缩振铃），
-    //    恒为 0 会让整张图在一笔没画时就以淡淡的轮廓全部显形。「贴着」按工作格上
-    //    Chebyshev 半径 `HALO_RADIUS_PX` 算：先把前景格的时刻放进网格（纸格为
-    //    MAX），再做两次一维最小值扫描。只管不透明的纸像素：透明底的半透明边缘
-    //    本来就按反预乘色分进墨线 / 色块，全透明像素画不画都看不见。
+    // 6. Map back to natural resolution: foreground pixels take the time of the working cell they are in (at least 1, so that no stroke is visible at t = 0). Paper pixels come in two kinds: those far from foreground are always 0 (true paper, always shown from the source image, so the paper texture does not suddenly appear at the end); those next to foreground follow the earliest-revealed foreground nearby. In PNGs from export tools, stroke edges have a halo a few pixels wide of light grey whose brightness just passes the paper threshold (anti-aliasing / compression ringing); keeping it at 0 would make the whole image appear as faint outlines before any stroke is drawn. "Next to" is computed as Chebyshev radius `HALO_RADIUS_PX` on working cells: first put the foreground cells' times into a grid (paper cells = MAX), then do two 1-D minimum scans. Only opaque paper pixels are handled: semi-transparent edges of a transparent background are already sorted into ink lines / colour blocks by un-premultiplied colour, and fully transparent pixels are invisible whether drawn or not.
     let src_data = src.data();
     let halo_cells = HALO_RADIUS_PX.div_ceil(scale) as usize;
     let mut halo_work: Vec<u16> = (0..work_area)
@@ -690,8 +661,7 @@ pub fn analyze(src: &Pixmap, params: &WhiteboardParams) -> WhiteboardAnalysis {
     }
 }
 
-/// `strict`：把每个域按像素 owner 切成若干子域（`None` = 不在任何 box 里）。
-/// 膨胀面按同一规则切，子域之间不共享行走面。
+/// `strict`: splits each region into sub-regions by pixel owner (`None` = not inside any box). The dilated surface is split by the same rule, so sub-regions do not share walkable surface.
 fn split_by_owner(
     components: Vec<Component>,
     w: u32,
@@ -796,8 +766,7 @@ fn label_components(
     }
 }
 
-/// 面积小于 [`MIN_COMPONENT_AREA`] 的域并入**同类**中质心最近的大域；没有大域
-/// 时保留原样。
+/// Regions with area below [`MIN_COMPONENT_AREA`] are merged into the nearest large region of the **same kind** (by centroid); if there is no large region, they are kept as they are.
 fn merge_small_components(components: &mut Vec<Component>) {
     let small: Vec<usize> = (0..components.len())
         .filter(|&i| components[i].pixels.len() < MIN_COMPONENT_AREA)
@@ -845,11 +814,9 @@ fn merge_small_components(components: &mut Vec<Component>) {
     });
 }
 
-/// 域内测地 BFS：从最左上的真实像素出发，沿膨胀掩码行走。返回与 `pixels` 对齐的
-/// 到达序号（走不到的为 `u32::MAX`）与最长路径（工作像素）。
+/// In-region geodesic BFS: starts from the top-left-most real pixel and walks along the dilated mask. Returns arrival indices aligned with `pixels` (`u32::MAX` for unreachable pixels) and the longest path (working pixels).
 ///
-/// 并入过小域后 `footprint` 可能不连通（小域的落脚面与大域相隔几像素）；
-/// 走不到的像素按最远时刻落笔，不会被漏掉。
+/// After small regions are merged in, `footprint` may be disconnected (the footing of a small region can be a few pixels away from the large one); unreachable pixels are drawn at the latest time, so none are missed.
 fn geodesic_distances(component: &Component, w: u32, h: u32) -> (Vec<u32>, u32) {
     let (wi, hi) = (w as i32, h as i32);
     let start = component
@@ -898,7 +865,7 @@ fn geodesic_distances(component: &Component, w: u32, h: u32) -> (Vec<u32>, u32) 
     )
 }
 
-/// 把到达序号归一化到 `[t0, t0 + dur]` 写进时间场。
+/// Normalises the arrival indices to `[t0, t0 + dur]` and writes them into the time field.
 fn write_field(
     component: &Component,
     dist: &[u32],
@@ -917,17 +884,16 @@ fn write_field(
         let t = t0 + dur * frac;
         let q = quantize(t).clamp(1, FIELD_MAX) as u16;
         let slot = &mut field[p as usize];
-        // 同一格被两个域触及时取更早的时刻。
+        // When two regions touch the same cell, the earlier time wins.
         if *slot == u16::MAX || q < *slot {
             *slot = q;
         }
     }
 }
 
-/// 一帧：`t` 是归一化进度（`elapsed / draw`），`≥ 1` 为画完。
+/// One frame: `t` is the normalised progress (`elapsed / draw`); `≥ 1` means finished.
 ///
-/// 输出与源图同尺寸、premultiplied RGBA。`paper` 给出时整幅先填纸色。
-/// `t ≥ 1` 且无纸色时输出与源图逐字节相等。
+/// The output has the same size as the source image, premultiplied RGBA. When `paper` is given, the whole frame is first filled with the paper colour. When `t ≥ 1` and there is no paper colour, the output is byte-identical to the source image.
 pub fn whiteboard_frame(
     analysis: &WhiteboardAnalysis,
     src: &Pixmap,
@@ -946,15 +912,14 @@ pub fn whiteboard_frame(
     let src_data = src.data();
     let out_data = out.data_mut();
     let (mut front_x, mut front_y, mut front_n) = (0f64, 0f64, 0usize);
-    // hold 段的手：已揭示像素里时刻最晚的那一笔的质心（只在 `hold_hand` 时用）。
+    // The hand in a hold segment: the centroid of the latest-revealed stroke among the revealed pixels (used only when `hold_hand`).
     let (mut last_q, mut last_x, mut last_y, mut last_n) = (0u32, 0f64, 0f64, 0usize);
     let window = (HAND_WINDOW * f64::from(FIELD_MAX)) as u32;
     let lower = threshold.saturating_sub(window);
     for (i, &q) in analysis.field.iter().enumerate() {
         let q = u32::from(q);
         if q > threshold {
-            // 还没画到：显式纸色已铺底；没给纸色时，源图自己的不透明纸面顶上，
-            // 只有透明底才真的透出下层。
+            // Not yet drawn: an explicit paper colour is laid down first; without one, the source image's own opaque paper surface is on top, and only a transparent background actually lets the layer below show through.
             if paper.is_none()
                 && let Some(fill) = analysis.paper_fill
                 && src_data[i * 4 + 3] == 255
@@ -981,7 +946,7 @@ pub fn whiteboard_frame(
             continue;
         }
         if paper.is_some() && px[3] < 255 {
-            // 半透明源像素叠在纸色上（source-over，预乘）。
+            // Semi-transparent source pixels are composited over the paper colour (source-over, premultiplied).
             let a = u32::from(px[3]);
             for c in 0..4 {
                 let dst = u32::from(out_data[i * 4 + c]);
@@ -1010,7 +975,7 @@ pub fn whiteboard_frame(
     out
 }
 
-/// 矢量笔：笔尖落在 `(x, y)`，笔杆朝右下 55°。尺寸随画面短边走。
+/// Vector pen: tip at `(x, y)`, barrel pointing down-right at 55°. Size scales with the frame's short side.
 fn draw_hand(out: &mut Pixmap, hand: WhiteboardHand, x: f64, y: f64) {
     let short = f64::from(out.width().min(out.height())).max(1.0);
     let (len, width, body, cap, band) = match hand {
@@ -1036,7 +1001,7 @@ fn draw_hand(out: &mut Pixmap, hand: WhiteboardHand, x: f64, y: f64) {
     let mut paint = Paint::default();
     paint.anti_alias = true;
 
-    // 影子：笔尖处一枚偏移的淡椭圆，让笔「贴在纸上」。
+    // Shadow: a faint offset ellipse at the tip, so the pen looks like it is resting on the paper.
     let shadow_r = (width * 0.7) as f32;
     if let Some(shadow) = PathBuilder::from_circle(
         x as f32 + shadow_r * 0.4,
@@ -1053,7 +1018,7 @@ fn draw_hand(out: &mut Pixmap, hand: WhiteboardHand, x: f64, y: f64) {
         );
     }
 
-    // 笔尖：从笔尖到 0.14·len 的锥形。
+    // Nib: a cone from the tip to 0.14·len.
     let tip_len = len * 0.14;
     let tip_w = width * 0.9;
     let (nx, ny) = (-dy, dx);
@@ -1099,7 +1064,7 @@ fn draw_hand(out: &mut Pixmap, hand: WhiteboardHand, x: f64, y: f64) {
         };
         out.stroke_path(&path, &p, &stroke, Transform::identity(), None);
     };
-    // 笔杆、色环、尾帽。
+    // Barrel, colour ring, end cap.
     stroke_segment(out, tip_len + width * 0.3, len, width, body);
     stroke_segment(
         out,
@@ -1115,7 +1080,7 @@ fn draw_hand(out: &mut Pixmap, hand: WhiteboardHand, x: f64, y: f64) {
 mod tests {
     use super::*;
 
-    /// 三笔墨线（左上横线、右上横线、下方竖线）+ 右下一块红色块，透明底。
+    /// Three ink lines (top-left horizontal, top-right horizontal, lower vertical) plus a red block at the bottom right, transparent background.
     fn sample() -> Pixmap {
         let mut pm = Pixmap::new(200, 120).unwrap();
         let mut paint = Paint::default();
@@ -1170,7 +1135,7 @@ mod tests {
         assert_eq!(f1.data(), src.data());
     }
 
-    /// 不透明白底的源（AI 出图的常态）：没给 `paper` 时未画到的笔画铺源图纸色，不挖透明洞。
+    /// Opaque white-background source (the usual case for AI-generated images): without `paper`, undrawn strokes are filled with the source image's paper colour rather than cut out as transparent holes.
     #[test]
     fn opaque_paper_source_fills_unrevealed_strokes_with_its_own_paper() {
         let mut src = sample();
@@ -1194,7 +1159,7 @@ mod tests {
         );
         let f1 = whiteboard_frame(&a, &src, 1.0, WhiteboardHand::None, None);
         assert_eq!(f1.data(), src.data());
-        // 显式纸色优先于源图纸面。
+        // An explicit paper colour takes precedence over the source image's paper surface.
         let f0 = whiteboard_frame(
             &a,
             &src,
@@ -1202,28 +1167,26 @@ mod tests {
             WhiteboardHand::None,
             Some(Color::from_rgba8(0, 0, 255, 255)),
         );
-        // 源图自带的纸面像素一开始就可见（与 0.8 相同），笔画处先是显式纸色。
+        // The source image's own paper pixels are visible from the start (same as 0.8); at the strokes, the explicit paper colour comes first.
         let px = |pm: &Pixmap, x: usize, y: usize| {
             pm.data()[(y * 200 + x) * 4..(y * 200 + x) * 4 + 4].to_vec()
         };
         assert_eq!(px(&f0, 68, 11), [0, 0, 255, 255]);
-        // 贴着笔画的纸像素算晕圈，跟笔画走；离笔画超过 HALO_RADIUS_PX 的才是纸。
+        // Paper pixels next to a stroke count as halo and follow the stroke; only those more than HALO_RADIUS_PX away from a stroke are paper.
         assert_eq!(px(&f0, 5, 5), [0, 0, 255, 255]);
         assert_eq!(px(&f0, 100, 110), [250, 250, 250, 255]);
-        // 透明底的源仍然透明。
+        // A transparent source stays transparent.
         let t = sample();
         assert_eq!(analyze(&t, &WhiteboardParams::default()).paper_fill, None);
     }
 
-    /// 笔画的抗锯齿边缘是亮度刚过纸阈值的浅灰（被分成纸）：它们跟所在工作格的
-    /// 笔画一起揭示，t = 0 时铺纸色，不能一开始就以淡轮廓显形；远离笔画的纸像素
-    /// 仍恒为 0，始终按源图显示。
+    /// The anti-aliased edges of strokes are light grey whose brightness just passes the paper threshold (so they are classed as paper): they are revealed together with the strokes of their working cell, and at t = 0 they are paper-coloured, so they must not appear as faint outlines from the start. Paper pixels far from strokes remain 0 and are always shown from the source image.
     #[test]
     fn antialiased_halo_around_strokes_is_revealed_with_the_stroke() {
         let mut src = Pixmap::new(200, 120).unwrap();
         src.fill(Color::from_rgba8(255, 255, 255, 255));
         let mut paint = Paint::default();
-        // 3 px 宽的浅灰晕圈（lum 240 > 235 → 纸）包着一条黑线。
+        // A 3 px wide light-grey halo (lum 240 > 235 → paper) surrounds a black line.
         paint.set_color(Color::from_rgba8(240, 240, 240, 255));
         let halo =
             PathBuilder::from_rect(tiny_skia::Rect::from_xywh(19.0, 50.0, 122.0, 8.0).unwrap());
@@ -1250,7 +1213,7 @@ mod tests {
         let px = |pm: &Pixmap, x: usize, y: usize| {
             pm.data()[(y * 200 + x) * 4..(y * 200 + x) * 4 + 4].to_vec()
         };
-        // 晕圈像素跟线走：t = 0 时是纸色，不是源图的浅灰；远处的纸恒为源图。
+        // Halo pixels follow the line: at t = 0 they are paper colour, not the source image's light grey; distant paper is always the source image.
         assert!(a.reveal_at(30, 50) > 0.0);
         assert!(a.reveal_at(19, 53) > 0.0);
         assert!(a.reveal_at(30, 57) > 0.0);
@@ -1278,7 +1241,7 @@ mod tests {
             assert!(n >= last, "t={i}/20 revealed {n} < {last}");
             last = n;
         }
-        // 色块像素（130..180, 60..100）在 0.7 之前一个都不出现；墨线在 0.7 时全部出现。
+        // Colour-block pixels (130..180, 60..100) do not appear at all before 0.7; ink lines have all appeared by 0.7.
         let f = whiteboard_frame(&a, &src, INK_SHARE - 0.001, WhiteboardHand::None, None);
         for y in 60..100u32 {
             for x in 130..180u32 {
@@ -1294,10 +1257,10 @@ mod tests {
     #[test]
     fn beats_reorder_components() {
         let src = sample();
-        // 缺省：左上横线先于右上横线。
+        // Default: the top-left horizontal line comes before the top-right horizontal line.
         let a = analyze(&src, &WhiteboardParams::default());
         assert!(a.reveal_at(12, 11) < a.reveal_at(122, 13));
-        // beats：先画右半，再画左半。
+        // beats: draw the right half first, then the left half.
         let b = analyze(
             &src,
             &WhiteboardParams {
@@ -1317,8 +1280,7 @@ mod tests {
         assert_eq!(b.unassigned_foreground, 0);
     }
 
-    /// `end`：组窗右缘不再是下一拍的 `at`。左半 `[0, 0.3]`、右半 `[0.5, 1]`，
-    /// `(0.3, 0.5)` 之间没有任何像素落笔。
+    /// `end`: the right edge of the group window is no longer the next beat's `at`. Left half `[0, 0.3]`, right half `[0.5, 1]`; no pixel is drawn between `(0.3, 0.5)`.
     #[test]
     fn beat_end_closes_the_window_before_the_next_beat() {
         let src = sample();
@@ -1342,8 +1304,7 @@ mod tests {
         assert_eq!(a.revealed_count(0.3), a.revealed_count(0.499));
     }
 
-    /// `natural`：画时远长于自然时长时，笔画在开头按自然速度画完，其余定格；
-    /// hold 段手停在末笔上（stretch 下同一时刻没有新笔就不画手）。
+    /// `natural`: when the drawing time is much longer than the natural duration, the strokes are drawn at natural speed at the start and the rest holds; in a hold segment the hand rests on the last stroke (under stretch, if there is no new stroke at that moment, no hand is drawn).
     #[test]
     fn natural_pace_draws_at_natural_speed_then_holds() {
         let src = sample();
@@ -1368,12 +1329,12 @@ mod tests {
         assert!((a.groups[0].natural_seconds - natural).abs() < 1e-9);
         assert_eq!(a.revealed_count(0.11), a.revealed_count(1.0));
         assert!(a.revealed_count(0.05) < a.revealed_count(1.0));
-        // hold 段仍有手；stretch 的画完前每一刻都有新笔，这里只验 natural。
+        // The hand is still present in the hold segment; under stretch there is a new stroke at every moment before drawing finishes, so only natural is checked here.
         let bare = whiteboard_frame(&a, &src, 0.6, WhiteboardHand::None, None);
         let with_hand = whiteboard_frame(&a, &src, 0.6, WhiteboardHand::Marker, None);
         assert!(count_visible(&with_hand) > count_visible(&bare));
         assert!(a.hold_hand);
-        // 组窗短于自然时长：压缩到组窗并记 compressed。
+        // Group window shorter than natural duration: compress to the group window and record `compressed`.
         let tight = analyze(
             &src,
             &WhiteboardParams {
@@ -1384,7 +1345,7 @@ mod tests {
         );
         assert!(tight.groups[0].compressed);
         assert_eq!(tight.groups[0].draw_end, 1.0);
-        // draw_seconds 未知 = stretch。
+        // draw_seconds unknown = stretch.
         let unknown = analyze(
             &src,
             &WhiteboardParams {
@@ -1395,8 +1356,7 @@ mod tests {
         assert_eq!(unknown.groups[0].draw_end, 1.0);
     }
 
-    /// `strict`：box 是硬遮罩。左上横线（x 10..70）被 `[0, 0, 20, 100]`（x < 40 px）
-    /// 切开：左段属第一拍，右段不在任何 box 里 → 排到末拍之后 `[0.5, 1]`。
+    /// `strict`: boxes are hard masks. The top-left horizontal line (x 10..70) is cut by `[0, 0, 20, 100]` (x < 40 px): the left segment belongs to the first beat, and the right segment is in no box → scheduled after the last beat `[0.5, 1]`.
     #[test]
     fn strict_boxes_split_components_and_park_unassigned_foreground_after_the_last_beat() {
         let src = sample();
@@ -1418,7 +1378,7 @@ mod tests {
         assert!(a.unassigned_foreground > 0);
         assert_eq!(a.groups.len(), 1);
         assert!(!a.groups[0].empty);
-        // 非 strict 的同一 box：整条横线归第一拍（质心在 box 里），没有未归属。
+        // Same box without strict: the whole horizontal line belongs to the first beat (its centroid is inside the box), with no unowned part.
         let loose = analyze(
             &src,
             &WhiteboardParams {
@@ -1432,7 +1392,7 @@ mod tests {
         );
         assert!(loose.reveal_at(60, 11) <= 0.5);
         assert_eq!(loose.unassigned_foreground, 0);
-        // 后拍覆盖前拍：第一拍的 box 被第二拍整个盖住 → 第一拍扣空。
+        // A later beat overrides an earlier one: the first beat's box is entirely covered by the second beat's box → the first beat ends up with nothing.
         let covered = analyze(
             &src,
             &WhiteboardParams {
@@ -1449,7 +1409,7 @@ mod tests {
         assert!(covered.reveal_at(12, 11) >= 0.5);
     }
 
-    /// `boxes[]`：四个连通域按阅读序给外接框（百分比）、面积与单域自然时长。
+    /// `boxes[]`: for the four connected components, in reading order, their bounding boxes (percent), areas, and per-region natural durations.
     #[test]
     fn boxes_list_components_in_reading_order() {
         let src = sample();
@@ -1475,9 +1435,9 @@ mod tests {
         let f1 = whiteboard_frame(&a, &src, 0.4, WhiteboardHand::Marker, paper);
         let f2 = whiteboard_frame(&a, &src, 0.4, WhiteboardHand::Marker, paper);
         assert_eq!(f1.data(), f2.data());
-        // 纸色铺满整幅。
+        // The paper colour fills the whole frame.
         assert_eq!(count_visible(&f1), 200 * 120);
-        // 笔在 t < 1 时可见：透明底 + 无纸色的帧里，可见像素多于纯揭示像素。
+        // The pen is visible when t < 1: in a frame with a transparent background and no paper colour, there are more visible pixels than purely revealed pixels.
         let bare = whiteboard_frame(&a, &src, 0.4, WhiteboardHand::None, None);
         let with_hand = whiteboard_frame(&a, &src, 0.4, WhiteboardHand::Pen, None);
         assert!(count_visible(&with_hand) > count_visible(&bare));
@@ -1500,7 +1460,7 @@ mod tests {
         let a = analyze(&pm, &WhiteboardParams::default());
         assert_eq!(a.components, 1);
         assert!(a.work_area <= (WORK_LONG_EDGE * WORK_LONG_EDGE) as usize);
-        // 1 px 细线在聚合后仍全部有时刻，画完等于源图。
+        // 1 px thin lines still all have times after aggregation, so the finished frame equals the source image.
         let f1 = whiteboard_frame(&a, &pm, 1.0, WhiteboardHand::None, None);
         assert_eq!(f1.data(), pm.data());
         assert_eq!(a.revealed_count(0.0), 2400 * 1200 - 600);

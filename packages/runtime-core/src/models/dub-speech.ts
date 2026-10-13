@@ -7,21 +7,20 @@ import { RcModels } from '@cuccut/protocol/messages/runtime-core';
 import { localizedOf } from '../localized.ts';
 
 /**
- * 翻译配音的逐句合成（架构设计 §7.9）：流程在进程内调用语音合成的 Provider，不经 JobManager 的提交，所以选择、参数检查、
- * 库里音色的换算与授权都在这里：
+ * Sentence-by-sentence synthesis for dubbing (architecture design §7.9). The flow calls the speech synthesis Provider in-process rather than submitting through JobManager, so selection, parameter checks, library voice resolution and authorization all live here:
  *
- * - 启动时选定 Provider 与模型（§6.2），按模型检查音色、语言与格式（与 `models.synthesizeSpeech` 同一份 `speechParameters`）；
- *   格式优先 WAV（对齐按采样数算，不受 MP3 编码延迟的影响）；
- * - `library:<id>` 每次调用都重新换成这个 Provider 上的有效克隆（克隆在两次调用之间可能过期或被删）；
- * - 每次调用（含重发）各预留一次授权与预算、结束时结算；外发的是译文（`transcript`）。本机与节点的 Provider 不经授权；
- * - Provider 的失败换成任务的错误码（与生成任务相同）。
+ * - The Provider and model are chosen at start (§6.2); the voice, language and format are checked against the model (same `speechParameters` as `models.synthesizeSpeech`);
+ *   WAV is preferred for the format (alignment is counted in samples, so it is unaffected by MP3 encoder delay);
+ * - `library:<id>` is resolved to a valid clone on this Provider on every call (a clone may expire or be deleted between calls);
+ * - Each call (including retries) reserves one authorization and budget and settles when it ends; what is sent out is the translation (`transcript`). Local and node Providers do not go through authorization;
+ * - Provider failures are mapped to the task's error codes (same as generation tasks).
  */
 
-/** 配音外发的数据：要合成的译文。 */
+/** Data sent out for dubbing: the translated text to synthesize. */
 export const DUB_DATA_KINDS: GrantDataKind[] = ['transcript'];
 
 const FORMAT_PREFERENCE: SpeechFormat[] = ['wav', 'flac', 'mp3'];
-/** 库里的音色只给本机的用户用（与 `models.synthesizeSpeech` 的会话提交同等）。 */
+/** Library voices are only for users on this machine (same as session submission for `models.synthesizeSpeech`). */
 const PIPELINE_SUBMITTER: JobSubmitter = { kind: 'pipeline', id: 'dub' };
 
 export function dubSpeech(options: { services: ModelServices; grants: GrantService; library: JobLibrary | undefined }): DubSpeech {
@@ -31,7 +30,7 @@ export function dubSpeech(options: { services: ModelServices; grants: GrantServi
       ...(provider !== undefined ? { provider } : {}),
       ...(model !== undefined ? { model } : {}),
     });
-  /** 冻结一次调用的参数；`library:<id>` 换成克隆的 voiceId。 */
+  /** Freezes the parameters of one call; `library:<id>` is replaced with the cloned voiceId. */
   const parameters = (
     selection: GenerationSelection<'synthesizeSpeech'>,
     voice: DubVoice | null,
@@ -53,7 +52,7 @@ export function dubSpeech(options: { services: ModelServices; grants: GrantServi
       const model = selection.model;
       const format = FORMAT_PREFERENCE.find((f) => model.formats.includes(f));
       if (!format) throw new RpcError('invalid-request', RcModels.noAlignableFormat({ modelId: selection.modelId }), { formats: model.formats });
-      // 用一句占位的文本检查音色、语言与格式（文本本身逐句检查）。
+      // Check the voice, language and format with a placeholder sentence (the text itself is checked sentence by sentence).
       const checked = parameters(selection, null, {
         text: '.',
         language: target.language,
@@ -76,7 +75,7 @@ export function dubSpeech(options: { services: ModelServices; grants: GrantServi
       let frozen;
       try {
         selection = await select(voice.providerId, voice.modelId);
-        // 种子（句级重配）：冻结时已经按模型检查过；模型后来不接受了时不传（`speechParameters` 会拒绝）。
+        // Seed (per-sentence re-dub): already checked against the model when frozen; not passed if the model later stops accepting it (`speechParameters` would reject it).
         const seed = request.seed !== undefined && selection.model.acceptsSeed ? { seed: request.seed } : {};
         frozen = parameters(selection, voice, { text: request.text, voice: voice.voice, language: request.language, ...seed });
       } catch (error) {
@@ -134,9 +133,7 @@ export function dubSpeech(options: { services: ModelServices; grants: GrantServi
 }
 
 /**
- * 配音被拒在授权上时的下一步（架构设计 §12.5、§14 已定）：Provider 启用时的默认授权不含文字稿（`transcript`），配音要把译文
- * （缺译文时还有原文）交出去，所以第一次配音会以 `GRANT_REQUIRED` 被拒。这里不放宽授权，只把补救说清楚：要发哪一条授权
- * （`remedy.commands` 已经是那条 `cuccut grants create …`），发了之后重新执行。只改提示，错误码与其余细节不变。
+ * Next step when dubbing is rejected on authorization (architecture design §12.5, §14 settled): the default authorization a Provider gets when enabled does not include transcripts (`transcript`), but dubbing has to send out the translation (or the original text when there is no translation), so the first dub is rejected with `GRANT_REQUIRED`. The authorization is not loosened here; only the remedy is made clear: which authorization to issue (`remedy.commands` is already that `cuccut grants create …`), and to run again after it is issued. Only the hint changes; the error code and other details stay the same.
  */
 export function withDubGrantGuidance<P, R>(definition: PipelineDefinition<P, R>): PipelineDefinition<P, R> {
   return {
@@ -172,12 +169,12 @@ export function dubGrantError(error: unknown): unknown {
   );
 }
 
-/** 带消息引用的步骤错误（`PipelineStepError` 只收字符串，引用另挂在 `messageRef` 上）。 */
+/** Step error with a message reference (`PipelineStepError` only takes strings, so the reference is attached separately on `messageRef`). */
 function localizedStepError(code: string, message: Localized): PipelineStepError {
   return Object.assign(new PipelineStepError(code, message.text), { messageRef: refOf(message) });
 }
 
-/** `library:<id>` 换成克隆；库里删了的音色报 `VOICE_NOT_FOUND`（配音按说话人逐句报告时要与别的失败分开）。 */
+/** Replaces `library:<id>` with the clone; a voice deleted from the library reports `VOICE_NOT_FOUND` (kept separate from other failures when dubbing reports per speaker, sentence by sentence). */
 function voiceFromLibrary(library: JobLibrary | undefined, voice: string | undefined, providerId: string) {
   try {
     return libraryVoice(library, voice, providerId, PIPELINE_SUBMITTER);
@@ -189,7 +186,7 @@ function voiceFromLibrary(library: JobLibrary | undefined, voice: string | undef
   }
 }
 
-/** Provider 的失败与提交时的拒绝换成步骤的错误（错误码同生成任务）。 */
+/** Provider failures and rejections at submission are mapped to step errors (same error codes as generation tasks). */
 function stepError(error: unknown, providerId: string): unknown {
   if (error instanceof PipelineStepError) return error;
   if (error instanceof ProviderFailure) {

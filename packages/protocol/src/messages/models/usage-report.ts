@@ -14,7 +14,7 @@ import { pl } from './usage-report.pl.ts';
 import { tr } from './usage-report.tr.ts';
 import { vi } from './usage-report.vi.ts';
 
-/** `packages/models/src/usage-report.ts` 给人看的文字：用量报告里的行名。 */
+/** Human-facing text for `packages/models/src/usage-report.ts`: row names in the usage report. */
 const en = {
   noAccount: (p: { provider: string }) => `${p.provider} (no account)`,
 };

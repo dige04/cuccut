@@ -1,48 +1,47 @@
 /**
- * `bindings/editor-wasm` 的 TS 一侧（架构设计 §1.4、§13.1、§13.6）：界面与 Node 要的领域规则经这里调 Rust 的那一份，TS 不另写。
- * - 转写正文的句子与原文指纹（字幕与翻译核心）：翻译流程、译文核对、配音判过期、内容索引（Node）与界面的逐句对照（浏览器）；
- * - 舞台的框（`render-graph` 的 `item_box`）：`place` 与画布像素框互换、种类的缺省落位，与帧计划画层同一个实现；
- * - 引擎校验用的取值区间与缺省值（效果、闪避、音量、关键帧、动画）：界面的数字框按它们封顶；
- * - 已有转写的识别说话人（架构设计 §6.6）：声纹区分的结果做成提案、确认后应用（字幕与翻译核心的说话人应用）；
- * - 来源自带章节（架构设计 §3.5、§7.9）：平台的 `chapters[]`、简介里的时间戳大纲或显式大纲，吸附到转写的段落、句子起点。
+ * The TS side of `bindings/editor-wasm` (architecture design §1.4, §13.1, §13.6): the domain rules that the UI and Node need are called here from the single Rust implementation; TS does not reimplement them.
+ * - Sentences of the transcript body and the source fingerprint (core of subtitles and translation): translation flow, translation checking, dubbing staleness checks, the content index (Node), and sentence-by-sentence alignment in the UI (browser);
+ * - Stage boxes (`item_box` from `render-graph`): swapping `place` and canvas pixel boxes, default placement by kind, same implementation as the frame plan layers;
+ * - Value ranges and defaults used by engine validation (effects, ducking, volume, keyframes, animation): the UI's number inputs are capped by them;
+ * - Speakers recognized in an existing transcript (architecture design §6.6): voiceprint separation results become a proposal, applied after confirmation (speaker application in the subtitle and translation core);
+ * - Chapters from the source (architecture design §3.5, §7.9): the platform's `chapters[]`, timestamped outlines in the description, or explicit outlines, snapped to transcript paragraph and sentence starts.
  *
- * 实例化是同步的（WASM 不到 1 MB，浏览器主线程同步编译的上限是 8 MB），所以调用方可以在渲染里直接调。
- * 载入字节的方式按环境分开：`node.ts` 从文件读，`browser.ts` 由 Vite 内联；两边导出同一组函数。
+ * Instantiation is synchronous (WASM is under 1 MB, and the browser main thread's synchronous compile limit is 8 MB), so callers can call it directly during rendering.
+ * How the bytes are loaded differs by environment: `node.ts` reads from a file, `browser.ts` inlines via Vite; both export the same set of functions.
  */
 
 export const SENTENCE_DERIVATION = 'speech-doc/sentences';
 
-/** 一句原文。`start` / `end` 是首词起点与末词终点，转写正文 `timescale` 下的整数刻度。 */
+/** A sentence of the source text. `start` / `end` are the start of the first word and the end of the last word, as integer ticks at the transcript body's `timescale`. */
 export interface SourceSentence {
-  /** `s-<首词 ID>`。 */
+  /** `s-<first word ID>`. */
   id: string;
-  /** 句内可见的词，按词序；隐藏的词不在里面。 */
+  /** Visible words in the sentence, in word order; hidden words are not included. */
   wordIds: string[];
   text: string;
-  /** 核心的内容指纹：`<词数>:<首词 ID>:<末词 ID>:<FNV-1a 的 36 进制>`。 */
+  /** The core's content fingerprint: `<word count>:<first word ID>:<last word ID>:<FNV-1a in base 36>`. */
   fingerprint: string;
-  /** 首词的说话人；没有时省略。不进指纹。 */
+  /** The speaker of the first word; omitted if none. Not included in the fingerprint. */
   speaker?: string;
   start: number;
   end: number;
 }
 
-/** 一份转写的全部句子。 */
+/** All sentences of a transcript. */
 export interface SpeechSentences {
   derivation: typeof SENTENCE_DERIVATION;
-  /** 转写正文的 `timescale`（没有时按 1 000 000）。 */
+  /** The transcript body's `timescale` (defaults to 1 000 000 if absent). */
   timescale: number;
-  /** 派生规则与全部句子的 ID、指纹的摘要（`sourceBasis.editViewHash`）。 */
+  /** Derivation rules and a digest of all sentence IDs and fingerprints (`sourceBasis.editViewHash`). */
   editViewHash: string;
   /**
-   * 全文的内容指纹（核心的 `fingerprint`，算全部的词、含隐藏的）：与正文 `stages.asr` 同一种写法，二者不同说明转写之后
-   * 有人改过原文（视频格式规范 §5.5）。
+   * The full-text content fingerprint (the core's `fingerprint`, covering all words including hidden ones): same scheme as `stages.asr` in the body; if they differ, someone edited the source after transcription (video format spec §5.5).
    */
   contentFingerprint: string;
   sentences: SourceSentence[];
 }
 
-/** 推框要看的实例字段（多给的字段不管，新建之前的草稿层也行）。 */
+/** Instance fields needed for box pushing (extra fields are ignored; draft layers before creation also work). */
 export interface StageItem {
   type: string;
   place?: object;
@@ -52,7 +51,7 @@ export interface StageItem {
   crop?: object;
 }
 
-/** 实例引用的素材（合成是预渲染）里推框要看的部分：种类与那个版本的视频信息。 */
+/** Assets referenced by the instance (compositions are prerendered): the parts box pushing needs, namely kind and that version's video info. */
 export interface StageAsset {
   kind: string;
   video?: { displayWidth: number; displayHeight: number; pixelAspectRatio: { num: number; den: number } };
@@ -63,7 +62,7 @@ export interface StageCanvas {
   height: number;
 }
 
-/** 框：中心、未旋转的宽高（画布像素，左上原点）、绕中心顺时针的角度（度）。 */
+/** Box: center, unrotated width and height (canvas pixels, top-left origin), clockwise rotation around the center (degrees). */
 export interface StagePose {
   cx: number;
   cy: number;
@@ -75,11 +74,11 @@ export interface StagePose {
 export interface StageBox extends StagePose {
   flipX: boolean;
   flipY: boolean;
-  /** 铺满画布：框不看 `place` 的位置与大小，只能转。 */
+  /** Fills the canvas: the box ignores `place` position and size and can only rotate. */
   fullscreen: boolean;
 }
 
-/** 写回 `place` 的字段：只有取整后与此刻不同的才有（百分比与角度一位小数，`scaleY` 三位）。 */
+/** Fields written back to `place`: only those that differ from the current value after rounding (percentages and angles to one decimal, `scaleY` to three). */
 export interface PlaceChange {
   x?: number;
   y?: number;
@@ -88,17 +87,17 @@ export interface PlaceChange {
   rot?: number;
 }
 
-/** 种类的缺省落位：中心（画幅百分比）与框宽（宽度基准的百分比）。 */
+/** Default placement by kind: center (percent of frame) and box width (percent of the width basis). */
 export interface PlaceDefault {
   x: number;
   y: number;
   w: number;
 }
 
-/** 含两端的区间 `[下限, 上限]`。 */
+/** Inclusive range `[min, max]`. */
 export type Range = readonly [number, number];
 
-/** 引擎校验用的取值区间与缺省值（滑杆的常用范围、步长与读数倍率是界面的设计，不在这里）。 */
+/** Value ranges and defaults used by engine validation (common slider ranges, step sizes and readout multipliers are UI design and are not here). */
 export interface EngineRanges {
   fx: {
     /** `grayscale`、`sharpen`、`noise`、`vignette`、`effectIntensity`。 */
@@ -106,28 +105,28 @@ export interface EngineRanges {
     /** `brightness`、`contrast`、`exposure`、`hue`、`saturation`。 */
     adjust: Range;
     temperature: Range;
-    /** 540 短边下的像素。 */
+    /** Pixels at a 540 short side. */
     blur: Range;
     shadowBlur: Range;
     shadowOpacity: Range;
-    /** 下限不含 0。 */
+    /** The lower bound excludes 0. */
     strokeWidthMax: number;
   };
   ducking: { depth: Range; time: Range; defaults: { depth: number; attack: number; release: number } };
-  /** 实例音量与音量包络（线性倍数）。 */
+  /** Instance volume and volume envelope (linear multipliers). */
   volume: Range;
   keyframes: { maxPerProp: number; opacity: Range; volume: Range; percent: Range };
   animation: { duration: Range; period: Range; intensity: Range };
   confetti: {
     maxColors: number;
-    /** 12 种单位形（属性页的次序）。 */
+    /** 12 unit shapes (order of the properties page). */
     shapes: readonly string[];
     size: Range;
     speed: Range;
     gravity: Range;
     drift: Range;
     spin: Range;
-    /** 参考 540 短边下的 px/s²。 */
+    /** px/s² at a reference 540 short side. */
     wind: Range;
     opacity: Range;
     rate: Range;
@@ -135,22 +134,22 @@ export interface EngineRanges {
     interval: Range;
     angle: Range;
     spread: Range;
-    /** `origin.x` 与 `origin.y`（盒内 %）。 */
+    /** `origin.x` and `origin.y` (% within the box). */
     origin: Range;
   };
 }
 
-/** 进度条的一款：`bar` 用整个框，`square` 在框里取内切正方形，`frame` 是铺满画幅的边框。 */
+/** One style of progress bar: `bar` uses the whole box, `square` takes the inscribed square within the box, `frame` is a border covering the full frame. */
 export interface ProgressPreset {
   id: string;
   aspect: 'bar' | 'square' | 'frame';
   mainColor: string;
   secondaryColor: string;
-  /** 属性页出几个色板（0–2）。 */
+  /** Number of color palettes on the properties page (0–2). */
   numColors: number;
 }
 
-/** 声波的一款：`hasControl` 为 false 的款读时域，dB 窗、平滑与增益对它不起作用。 */
+/** One style of waveform: styles where `hasControl` is false read the time domain; the dB window, smoothing and gain have no effect on them. */
 export interface VisualizerPreset {
   id: string;
   aspect: 'free' | 'square';
@@ -162,12 +161,12 @@ export interface VisualizerPreset {
   numColors: number;
 }
 
-/** 彩纸的一款：色板、形状混合与缺省的发射参数。发射器的位置是盒内 %，`angle` 以屏幕坐标计（90 向下、−90 向上）。 */
+/** One style of confetti: palette, shape mix and default emission parameters. Emitter position is % within the box; `angle` is in screen coordinates (90 downward, −90 upward). */
 export interface ConfettiPreset {
   id: string;
   colors: readonly string[];
   shapes: readonly string[];
-  /** 改编来源（`库名/部件`）。 */
+  /** Adaptation source (`library/part`). */
   sources: readonly string[];
   hasEmitterControl: boolean;
   emit: { mode: 'continuous' | 'burst'; rate: number; count: number; interval: number };
@@ -176,16 +175,16 @@ export interface ConfettiPreset {
   spread: number;
 }
 
-/** 元素的样式目录（目录次序），读渲染用的同一份内置配方。 */
+/** Element style catalog (catalog order), read with the same built-in recipes used for rendering. */
 export interface ElementPresets {
   progress: readonly ProgressPreset[];
   visualizer: readonly VisualizerPreset[];
-  /** 声波旧 style id → 当前目录的款。 */
+  /** Old waveform style id → current catalog style. */
   visualizerAliases: Readonly<Record<string, string>>;
   confetti: readonly ConfettiPreset[];
 }
 
-/** 一段试听：这位说话人的一句，`start` / `end` 是转写正文 `timescale` 下的刻度。 */
+/** An audition clip: one sentence from this speaker; `start` / `end` are ticks at the transcript body's `timescale`. */
 export interface SpeakerClip {
   sentenceId: string;
   start: number;
@@ -193,54 +192,54 @@ export interface SpeakerClip {
   text: string;
 }
 
-/** 提案里的一位说话人（应用后的样子）。 */
+/** A speaker in the proposal (as it will look after applying). */
 export interface ProposedSpeaker {
   id: string;
   name: string;
-  /** 转写里原来没有的说话人。 */
+  /** A speaker that was not in the transcript before. */
   isNew: boolean;
   words: number;
-  /** 这位说话人的词的总时长（秒）。 */
+  /** Total duration of this speaker's words (seconds). */
   seconds: number;
   sentences: number;
   clips: SpeakerClip[];
 }
 
-/** 识别说话人的提案：应用的一次试算。 */
+/** A speaker-recognition proposal: a trial computation of applying it. */
 export interface SpeakerProposal {
-  /** 换说话人的词：词 ID → 说话人 ID（只列有变化的）。 */
+  /** Speaker reassignments for words: word ID → speaker ID (only changed ones listed). */
   wordSpeakers: Record<string, string>;
-  /** 按在正文里第一次出现的次序。 */
+  /** In the order of first appearance in the body. */
   speakers: ProposedSpeaker[];
-  /** 换了说话人的词数；0 表示与现状相同。 */
+  /** Number of words whose speaker changed; 0 means same as now. */
   relabeled: number;
-  /** 会按新边界重切的译文条数（各语言相加），不重新翻译。 */
+  /** Number of translation entries (summed across languages) that will be re-cut at the new boundaries; not re-translated. */
   translationsSplit: number;
 }
 
-/** 应用的结果：新的转写正文与有变化的译文正文。 */
+/** Result of applying: the new transcript body and the translation bodies that changed. */
 export interface AppliedSpeakers {
   speech: Record<string, unknown>;
-  /** 与输入的译文一一对应：有变化的是整份新正文，没变的为 null。 */
+  /** One-to-one with the input translation bodies: changed ones are the whole new body; unchanged ones are null. */
   translations: Array<(Record<string, unknown> & { language: string }) | null>;
   relabeled: number;
   translationsSplit: number;
   sentencesSplit: number;
-  /** v3 格式装不下而丢掉的内容（正常为空）。 */
+  /** Content dropped because the v3 format cannot hold it (normally empty). */
   dropped: string[];
 }
 
-/** 来源给的一章（作者的原始时间，源时间秒，未吸附）。简介里解析出的大纲没有 `end`。 */
+/** A chapter from the source (the author's original time, source-time seconds, not snapped). Outlines parsed from the description have no `end`. */
 export interface SourceChapter {
   start: number;
   end?: number;
   title: string;
 }
 
-/** 吸附的结果：同一秒窗里恰一个候选（`matched`）、多个同层候选（`ambiguous`，缺省取最近的）、放宽窗里的段落或句起点（`snapped`）、附近没有结构起点（`unanchored`，保留原时间）。 */
+/** Snap result: exactly one candidate in the same-second window (`matched`), multiple same-level candidates (`ambiguous`, defaults to the nearest), a paragraph or sentence start in the widened window (`snapped`), or no structural start nearby (`unanchored`, original time kept). */
 export type SourceChapterStatus = 'matched' | 'ambiguous' | 'snapped' | 'unanchored';
 
-/** 转写上可以当章节起点的位置：段落 > 句 > cue > 词。`time` 是源时间秒，`snippet` 是从这里开始的几个词。 */
+/** Positions in the transcript usable as chapter starts: paragraph > sentence > cue > word. `time` is source-time seconds; `snippet` is a few words from that point. */
 export interface SourceChapterAnchor {
   tier: 'paragraph' | 'sentence' | 'cue' | 'word';
   id: string;
@@ -248,19 +247,19 @@ export interface SourceChapterAnchor {
   snippet: string;
 }
 
-/** 一条来源章节的吸附。 */
+/** A snap of one source chapter. */
 export interface SourceChapterEntry {
   source: { start: number; title: string };
   status: SourceChapterStatus;
-  /** 吸附后的起点（源时间秒）；`unanchored` 时是作者的原时间。 */
+  /** The start point after snapping (source-time seconds); the author's original time when `unanchored`. */
   at: number;
-  /** 选中的锚；`unanchored` 时没有。 */
+  /** The selected anchor; absent when `unanchored`. */
   anchor?: SourceChapterAnchor;
-  /** 按时间排好的候选；`ambiguous` 时多个。 */
+  /** Candidates sorted by time; multiple when `ambiguous`. */
   candidates: SourceChapterAnchor[];
 }
 
-/** 清洗后的一章（源时间秒）：丢空标题、按起点排序、同起点去重、首章钳到 0、丢非严格递增；`end` 是下一章的起点，末章是素材时长。 */
+/** A cleaned chapter (source-time seconds): drops empty titles, sorts by start, deduplicates same starts, clamps the first chapter to 0, drops non-strictly-increasing ones; `end` is the next chapter's start, and the last chapter ends at the material's duration. */
 export interface SourceChapterRow {
   title: string;
   start: number;
@@ -268,21 +267,21 @@ export interface SourceChapterRow {
   status: SourceChapterStatus;
 }
 
-/** `sourceChapters` 的输入。时间都是素材（源）时间。 */
+/** Input for `sourceChapters`. All times are source (material) times. */
 export interface SourceChaptersInput {
-  /** 素材的转写正文（`cuccut.speech/1`）；没有转写或 `snap: false` 时省略，所有条目保留原时间。 */
+  /** The material's transcript body (`cuccut.speech/1`); omitted if there is no transcript or `snap: false`, in which case all entries keep their original times. */
   speech?: unknown;
-  /** 素材的来源元数据（`provenance.source`）：先读 `chapters[]`（`start_time | start`、`end_time | end`、`title`），没有再解析 `description`。 */
+  /** The material's source metadata (`provenance.source`): reads `chapters[]` first (`start_time | start`, `end_time | end`, `title`), and parses `description` only if absent. */
   source?: unknown;
-  /** 显式大纲，优先于 `source`：`[{ at, title }]`（秒），或一段原文（按时间戳大纲解析，至少两条）。 */
+  /** Explicit outline, takes precedence over `source`: `[{ at, title }]` (seconds), or raw text (parsed as a timestamped outline, at least two entries). */
   outline?: ReadonlyArray<{ at: number; title: string }> | string;
-  /** 素材时长（秒）：末章的终点。 */
+  /** Material duration (seconds): the end of the last chapter. */
   durationSeconds: number;
-  /** 默认 true；false 时只解析、不吸附。 */
+  /** Default true; false means parse only, no snapping. */
   snap?: boolean;
 }
 
-/** 来源章节的解析与吸附。没有来源章节时 `sourceChapters` 与 `rows` 为空（不报错）。 */
+/** Parsing and snapping of source chapters. With no source chapters, `sourceChapters` and `rows` are empty (no error). */
 export interface SourceChaptersResult {
   sourceChapters: SourceChapter[];
   entries: SourceChapterEntry[];
@@ -290,7 +289,7 @@ export interface SourceChaptersResult {
   summary: { entries: number; matched: number; ambiguous: number; snapped: number; unanchored: number };
 }
 
-/** WASM 拒绝的输入：`INVALID_SPEECH`（转写正文不合格式）、`INVALID_INPUT`（输入不是约定的形状）、`INVALID_PROPOSAL`（说话人提案与正文对不上）。 */
+/** Input rejected by WASM: `INVALID_SPEECH` (transcript body not in valid format), `INVALID_INPUT` (input not in the agreed shape), `INVALID_PROPOSAL` (speaker proposal doesn't match the body). */
 export class EditorWasmError extends Error {
   readonly code: string;
   constructor(code: string, message: string) {
@@ -300,7 +299,7 @@ export class EditorWasmError extends Error {
   }
 }
 
-/** WASM 还没有构建（先运行 `npm run build:wasm`）。带 `code`：流程的一步因它失败时，错误码与说明原样进任务记录。 */
+/** WASM not built yet (run `npm run build:wasm` first). With a `code`: when a flow step fails because of it, the error code and description are passed through as-is to the task record. */
 export class EditorWasmUnavailable extends Error {
   readonly code = 'EDITOR_WASM_UNAVAILABLE';
   constructor(detail: string) {
@@ -310,15 +309,14 @@ export class EditorWasmUnavailable extends Error {
 }
 
 /**
- * 由 WASM 算出的模块级常量（取值区间、元素配方，以及由它们拼成的目录）：第一次读的时候才算。模块载入时不碰 WASM，
- * 没有构建时界面照常载入，读到这份常量才抛 `EditorWasmUnavailable`；算失败了下次读再算。
- * 代理的目标就是装结果的那个对象或数组，算出来后整个填进去，之后的读取都落在它上面。
+ * Module-level constants computed by WASM (value ranges, element recipes, and the catalog built from them): computed on first read. Loading the module doesn't touch WASM, so the UI still loads without a build; reading these constants throws `EditorWasmUnavailable`; if computation fails, the next read tries again.
+ * The proxy's target is the object or array that holds the result; once computed, the whole thing is filled in, and later reads land on it.
  */
 export function lazyObject<T extends object>(init: () => T): T {
   return filledOnFirstRead({} as T, init, (target, value) => Object.assign(target, value));
 }
 
-/** 同 `lazyObject`，结果是数组（`Array.isArray`、展开与数组方法照常）。 */
+/** Same as `lazyObject`, but the result is an array (`Array.isArray`, spreading and array methods work as usual). */
 export function lazyArray<T>(init: () => readonly T[]): readonly T[] {
   return filledOnFirstRead([] as T[], init, (target, value) => target.push(...value));
 }
@@ -367,57 +365,54 @@ export class EditorSemantics {
     this.exports = exports;
   }
 
-  /** 同步编译并实例化。 */
+  /** Compile and instantiate synchronously. */
   static instantiate(bytes: Uint8Array<ArrayBuffer>): EditorSemantics {
     const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {});
     return new EditorSemantics(instance.exports as unknown as Exports);
   }
 
   /**
-   * 转写正文（`cuccut.speech/1`）的句子：句末标点、停顿不少于 1.8 秒、换说话人、句内 80 词、分段与章节边界断句；
-   * 正文里存下的 `sentences` 不参与。正文不合格式、词缺源时间或说话人不合法时抛 `EditorWasmError`。
+   * Sentences of the transcript body (`cuccut.speech/1`): split at sentence-ending punctuation, pauses of at least 1.8 seconds, speaker changes, 80 words within a sentence, and segment and chapter boundaries; `sentences` stored in the body are not used. Throws `EditorWasmError` if the body is malformed, a word lacks source time, or a speaker is invalid.
    */
   speechSentences(body: unknown): SpeechSentences {
     return this.call('bc_speech_sentences', body);
   }
 
-  /** 实例在画布上的框（帧计划按它画）。 */
+  /** The instance's box on the canvas (the frame plan draws from it). */
   stageBox(item: StageItem, canvas: StageCanvas, asset?: StageAsset): StageBox {
     return this.call('bc_stage_box', { item, asset, canvas });
   }
 
   /**
-   * 框 → `place`（`stageBox` 的反函数）：`scale` 不动，框宽折成 `w`，框高写进 `scaleY`（按落盘的宽推出的自然高之比）；
-   * 铺满画布的只写角度。什么都没变是空对象。
+   * Box → `place` (the inverse of `stageBox`): `scale` is left alone, box width is folded into `w`, box height is written to `scaleY` (the ratio of the natural height inferred from the saved width); for a full-canvas item only the angle is written. If nothing changed, returns an empty object.
    */
   stagePlace(item: StageItem, pose: StagePose, canvas: StageCanvas, asset?: StageAsset): PlaceChange {
     return this.call('bc_stage_place', { item, asset, canvas, pose });
   }
 
-  /** 种类的缺省落位：`place` 一个字段都不写时框落在哪。 */
+  /** Default placement by kind: where the box lands when no `place` field is written at all. */
   placeDefault(type: string): PlaceDefault {
     return this.call('bc_place_default', { type });
   }
 
-  /** 引擎校验用的取值区间与缺省值（不变的表，取一次）。 */
+  /** Value ranges and defaults used by engine validation (a constant table, read once). */
   engineRanges(): EngineRanges {
     return (this.ranges ??= this.call<EngineRanges>('bc_engine_ranges', {}));
   }
 
-  /** 声波、进度条与彩纸的样式目录（不变的表，取一次）。 */
+  /** Style catalogs for waveform, progress bar and confetti (constant tables, read once). */
   elementPresets(): ElementPresets {
     return (this.presets ??= this.call<ElementPresets>('bc_element_presets', {}));
   }
 
   /**
-   * 识别说话人的提案：`labels` 与正文的词一一对应（声纹区分投影到的聚类，没有证据为 null）。聚类按重叠时长复用已有的
-   * 说话人，复用不上的新建 `spk-<n>`「说话人 n」。`translations` 只给 `cuccut.translation/2` 的正文。
+   * Speaker-recognition proposal: `labels` correspond one-to-one with the body's words (clusters projected from voiceprint separation; null where there is no evidence). Clusters reuse existing speakers by overlap duration; those that can't be reused become new `spk-<n>` "Speaker n". `translations` is only given for `cuccut.translation/2` bodies.
    */
   speakerProposal(speech: unknown, translations: readonly unknown[], labels: ReadonlyArray<string | null>): SpeakerProposal {
     return this.call('bc_speaker_proposal', { speech, translations, labels });
   }
 
-  /** 应用提案（`speakers` 带确认页上改过的名字）：新的说话人边界切开句子时译文按自然缝重切，不重新翻译。 */
+  /** Applies a proposal (`speakers` carries names edited on the confirmation page): when new speaker boundaries split sentences, translations are re-cut at natural seams and not re-translated. */
   applySpeakers(
     speech: unknown,
     translations: readonly unknown[],
@@ -428,8 +423,7 @@ export class EditorSemantics {
   }
 
   /**
-   * 来源自带章节：显式大纲优先，其次素材的来源元数据（结构化 `chapters[]`，没有再解析简介里的时间戳大纲）；有转写时把每条吸到
-   * 最近的段落、句子起点（作者的时间戳只精确到秒，常比话题起点早几秒）。时间都是源时间秒，投影到时间线由调用方做。
+   * Chapters from the source: an explicit outline takes precedence, then the material's source metadata (structured `chapters[]`; if absent, a timestamped outline parsed from the description). When there is a transcript, each entry is snapped to the nearest paragraph or sentence start (authors' timestamps are only precise to the second and often come a few seconds before the topic starts). All times are source-time seconds; projection onto the timeline is done by the caller.
    */
   sourceChapters(input: SourceChaptersInput): SourceChaptersResult {
     return this.call('bc_source_chapters', input);
@@ -448,7 +442,7 @@ export class EditorSemantics {
     try {
       new Uint8Array(exports.memory.buffer, ptr, input.length).set(input);
       const status = exports[name](ptr, input.length);
-      // 调用之后内存可能长过，重新取 buffer。
+      // After the call, memory may have grown; re-fetch the buffer.
       const output = decoder.decode(new Uint8Array(exports.memory.buffer, exports.bc_output_ptr(), exports.bc_output_len()));
       const value = JSON.parse(output) as unknown;
       if (status !== 0) {
@@ -462,7 +456,7 @@ export class EditorSemantics {
   }
 }
 
-/** 同步的函数形式（Node 与浏览器两侧导出同一组）：`get` 第一次调用时载入 WASM。 */
+/** Synchronous function form (Node and browser both export the same set): `get` loads the WASM on the first call. */
 export function semanticsApi(get: () => EditorSemantics) {
   return {
     speechSentences: (body: unknown): SpeechSentences => get().speechSentences(body),

@@ -7,8 +7,7 @@ import type { EditorActions } from './editor-context.tsx';
 import { TRANSCRIPT_COPY as C } from './transcript-copy.ts';
 
 /**
- * 文稿面板与时间线剪口共用的提交：一笔事务，落地后给一条带「撤销」的提示。引擎拒绝（轨道锁着 `TARGET_LOCKED`、
- * 重叠等）时由编辑器统一报错，这里不再说一遍。做不到的（模型层先算出来的）照实说为什么。
+ * Shared submission for the transcript panel and the timeline cut: one transaction, with an “Undo” hint after it lands. When the engine rejects it (track locked `TARGET_LOCKED`, overlap, and so on), the editor reports the error uniformly, so it is not repeated here. Things that can't be done (worked out first in the model layer) say why.
  */
 
 type Actions = Pick<EditorActions, 'apply' | 'undo'>;
@@ -34,8 +33,7 @@ export async function applyCut(actions: Actions, plan: CutPlan, fps: Rate): Prom
 }
 
 /**
- * 恢复是新的一笔事务，不是撤销（AT-08）：之后加的补充画面不受影响。剪口找不到接缝、只从剪口集合里去掉的（回执的
- * `cutsNotRelaid`），补一句说明。
+ * Restoring is a new transaction, not an undo (AT-08): supplementary footage added later isn't affected. A cut that can't find its seam and was only removed from the cut set (`cutsNotRelaid` in the receipt) gets a note saying so.
  */
 export async function applyRestore(actions: Actions, plan: RestorePlan): Promise<boolean> {
   if (!plan.ok) {
@@ -50,8 +48,7 @@ export async function applyRestore(actions: Actions, plan: RestorePlan): Promise
 }
 
 /**
- * 拖剪口带的边改剪切范围（原型 editor-cuts.jsx 的 `retime`）：恢复这一处 + 剪新区间是一笔事务，撤销一步回去；
- * 拖到零宽就是恢复，照恢复说。`before` 是原来剪掉的长度（秒）。
+ * Dragging a cut band's edge to change the cut range (prototype editor-cuts.jsx `retime`): restoring this spot plus cutting the new range is one transaction, undone in one step. Dragged to zero width, it is a restore and is reported as one. `before` is the original cut length, in seconds.
  */
 export async function applyRetime(actions: Actions, plan: RetimePlan | null, fps: Rate, before: number): Promise<boolean> {
   if (!plan) return false;
@@ -66,15 +63,15 @@ export async function applyRetime(actions: Actions, plan: RetimePlan | null, fps
   return true;
 }
 
-// ---- 文稿的查找替换、复制、换章与剪章（设计稿 panels.jsx `TranscriptPanel`、`ParaRow`、`ScopeMenu`） ----
-// 这个文件只往后加：新用到的导入写在这里。
+// ---- Transcript find and replace, copy, chapter move, and chapter cut (design draft panels.jsx `TranscriptPanel`, `ParaRow`, `ScopeMenu`) ----
+// This file only grows at the end: new imports are written here.
 
 import type { EditOperation } from '@cuccut/protocol';
 import { EditLabel } from '@cuccut/protocol/messages/ui';
 import type { ChapterCutRefusal, ChapterSpan, ParagraphMove } from '../../model/chapters.ts';
 import { TRANSCRIPT_TOOLS_COPY as T } from './transcript-copy.ts';
 
-/** 放进剪贴板：成功时说复制了什么（`done`；null 时不弹，由调用方自己表示，如导出预览的对勾），浏览器拒绝时照实说。 */
+/** Put on the clipboard. On success it says what was copied (`done`; null means no pop-up, and the caller shows its own indication, such as the check mark in the export preview). If the browser refuses, it says so plainly. */
 export async function copyToClipboard(text: string, done: string | null): Promise<boolean> {
   if (!text.trim()) {
     ToastQueue.neutral(T.copyEmpty, { timeout: 3000 });
@@ -90,7 +87,7 @@ export async function copyToClipboard(text: string, done: string | null): Promis
   return true;
 }
 
-/** 查找替换：几份转写各写一个新版本（`putDocument`），放在同一笔事务里，一次撤销。音画不动。 */
+/** Find and replace: each of several transcripts gets a new version (`putDocument`), in the same transaction, undone in one step. Audio and picture are untouched. */
 export async function applyTextReplace(actions: Actions, operations: EditOperation[], count: number): Promise<boolean> {
   if (!operations.length || !count) {
     ToastQueue.neutral(T.replaceNothing, { timeout: 3000 });
@@ -102,7 +99,7 @@ export async function applyTextReplace(actions: Actions, operations: EditOperati
   return true;
 }
 
-/** 把一段挪到相邻章：挪的是那一条章节边界（`upsertChapter`），同侧的邻居一起走。挪不了的由调用方先说清楚。 */
+/** Move a paragraph to the adjacent chapter: moves that chapter boundary (`upsertChapter`), and neighbors on the same side move with it. The caller explains first if it can't be moved. */
 export async function applyParagraphMove(actions: Actions, move: ParagraphMove): Promise<boolean> {
   const receipt = await actions.apply([move.operation], EditLabel.moveText());
   if (!receipt) return false;
@@ -110,7 +107,7 @@ export async function applyParagraphMove(actions: Actions, move: ParagraphMove):
   return true;
 }
 
-/** 剪掉一章：`removeRange` + 删标记 + 后面的章前移，一笔事务。 */
+/** Cut a chapter: `removeRange`, plus a delete marker, plus shifting the following chapters forward, as one transaction. */
 export async function applyChapterCut(
   actions: Actions,
   chapter: ChapterSpan,

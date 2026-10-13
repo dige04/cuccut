@@ -11,7 +11,7 @@ const label = style({ flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverfl
 const line = style({ flexGrow: 1, minWidth: 16, height: 0, borderTopWidth: 1, borderStyle: 'dashed', borderColor: 'gray-300', borderBottomWidth: 0, borderStartWidth: 0, borderEndWidth: 0 });
 const acts = style({ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 });
 
-/** 剪缝那一行的文字：还收着时说收着多长，都铺开了说铺开了几句。 */
+/** The line text of a fold seam: while still folded, say how long it is; once spread out, say how many sentences were revealed. */
 export function foldText(fold: ShortsFold): string {
   if (fold.count > 0) {
     const length = formatDuration(fold.seconds * 1000);
@@ -21,8 +21,7 @@ export function foldText(fold: ShortsFold): string {
 }
 
 /**
- * 子视频文稿里片段外收起来的那一截（原型 panel-transcript-cut.jsx `ShortsFoldSeam`，产品设计 §5.10）：「前面 / 后面 X 已剪掉」，
- * 「展开 N 句」一次铺出靠近片段的一批，铺开过的可以「收起」。没有整截恢复的按钮：要放回哪句点哪句。
+ * The folded-out part of a sub-video transcript (prototype panel-transcript-cut.jsx `ShortsFoldSeam`, product design §5.10): “前面 / 后面 X 已剪掉” (X sentences before / after have been cut). “Expand N sentences” reveals one batch close to the clip at a time, and an expanded part can be “collapsed.” There is no button to restore the whole run at once: click each sentence to put it back.
  */
 export function ShortsFoldSeam({ fold, onMore, onCollapse }: { fold: ShortsFold; onMore(): void; onCollapse(): void }) {
   const text = foldText(fold);

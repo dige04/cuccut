@@ -1,7 +1,6 @@
-//! `BlendMode` → tiny-skia。
+//! `BlendMode` → tiny-skia.
 //!
-//! `motion::effect::BlendMode` 是唯一来源（编号进 DrawOp v3 的
-//! `PushLayer{blend}` 与 `composite/blend.json`）；这里只做后端映射。
+//! `motion::effect::BlendMode` is the single source (its numbering goes into DrawOp v3's `PushLayer{blend}` and `composite/blend.json`); this file only does the backend mapping.
 
 use motion::effect::BlendMode;
 

@@ -14,7 +14,7 @@ import { setupLog } from './agent-setup.ts';
 
 const C = () => AGENT_COPY.command;
 
-/** 复制到剪贴板；拿不到剪贴板权限时让用户自己选中复制（命令与路径都可选中）。 */
+/** Copies to the clipboard. If clipboard permission is unavailable, asks the user to select and copy manually (both commands and paths are selectable). */
 export async function copyText(value: string, label: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(value);
@@ -36,7 +36,7 @@ const block = style({
   backgroundColor: 'gray-100',
 });
 const code = style({ flexGrow: 1, minWidth: 0, font: 'code-sm', color: 'gray-900', overflowWrap: 'anywhere', userSelect: 'text' });
-// 日志框（settings-agent.css:43-46 的 agset-run）：等宽、可选中、固定高度滚动。
+// Log box (settings-agent.css:43-46, agset-run): monospace, selectable, fixed height with scrolling.
 const log = style({
   boxSizing: 'border-box',
   margin: 0,
@@ -62,28 +62,27 @@ const stopIcon = iconStyle({ size: 'S', color: 'neutral' });
 const runText = style({ flexGrow: 1, flexBasis: 0, minWidth: 200 });
 
 /**
- * 命令左边的 ▶（设计稿 settings-agent-provider.jsx:24-76 的 useCmdRun / CmdRun）。运行状态在 Runtime（`agent-setup` 主题），
- * 卡片把这条命令最近的一次交进来；起跑前的确认、停止、改到终端里运行都由卡片接。
+ * The ▶ to the left of a command (design mock settings-agent-provider.jsx:24-76, useCmdRun / CmdRun). Run state lives in the Runtime (`agent-setup` topic). The card passes in this command's most recent run;
+ * the confirmation before starting, stop, and running in a terminal are all handled by the card.
  */
 export interface CommandRunner {
-  /** 这条命令最近的一次运行（没有、或不再显示时为 null）。 */
+  /** The most recent run of this command (null if there is none, or it is no longer shown). */
   run: AgentSetupRun | null;
-  /** 同一个 Agent 的别的命令正在跑，或者还没连上 Runtime：▶ 不可点。 */
+  /** Another command of the same Agent is running, or not yet connected to the Runtime: ▶ is not clickable. */
   isDisabled: boolean;
-  /** 点 ▶：卡片先弹确认（显示完整命令），确认后才运行。 */
+  /** Clicking ▶: the card first shows a confirmation (with the full command); it runs only after confirming. */
   onRun: () => void;
   onStop: () => void;
-  /** 失败后「在终端里运行」：交给系统终端（要输入密码的在这里跑不了）。 */
+  /** After a failure, “Run in terminal”: hands off to the system terminal (anything that needs a password cannot run here). */
   onTerminal: () => void;
 }
 
 /**
- * 一条命令或路径：原样展示，右边一颗复制。
+ * One command or path: shown as-is, with a copy button on the right.
  *
- * 给了 `runner`（只有 brew、npm 这类安装、升级命令）时左边多一颗 ▶：用户确认后由 Runtime 在应用内运行，
- * 输出原样显示在命令下面的日志框里（也记进 Runtime 日志），运行中 ▶ 变 ■ 可以停止；失败时给「在终端里运行」。
- * `curl … | bash` 这类官方脚本和登录命令不给 ▶，只复制或交给系统终端（架构设计 §12.9）。
- * `note` 排在命令与日志框之间（前置条件这类，设计稿 CmdRun 的顺序）。
+ * When a `runner` is given (only for install and upgrade commands such as brew or npm), a ▶ appears on the left. After user confirmation, the Runtime runs it inside the app. Output is shown as-is in the log box under the command (and also recorded in the Runtime log). While running, ▶ becomes ■ and can be stopped. On failure, “Run in terminal” is offered.
+ * Official scripts such as `curl … | bash`, and login commands, get no ▶; they are only copied or handed to the system terminal (architecture design §12.9).
+ * `note` sits between the command and the log box (for prerequisites and the like; order as in the design mock's CmdRun).
  */
 export function CommandBlock({ value, copyLabel, runner, note }: { value: string; copyLabel: string; runner?: CommandRunner; note?: ReactNode }) {
   const running = runner?.run?.state === 'running';
@@ -111,7 +110,7 @@ export function CommandBlock({ value, copyLabel, runner, note }: { value: string
   );
 }
 
-/** 日志框与一行结果。新输出到了就滚到底；用户往上翻着看时不抢滚动条。 */
+/** The log box and a result line. New output scrolls to the bottom; it does not fight the scrollbar when the user is scrolling up to read. */
 function RunOutput({ run, onTerminal }: { run: AgentSetupRun; onTerminal: () => void }) {
   const ref = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
@@ -165,7 +164,7 @@ function RunOutput({ run, onTerminal }: { run: AgentSetupRun; onTerminal: () => 
   );
 }
 
-/** 失败的那一句括号里写什么：有退出码写退出码（设计稿原文）；没能启动、被信号结束的设计稿没有，按事实写。 */
+/** What goes in the parentheses of the failure sentence: if there is an exit code, write the exit code (as in the original design mock). The design mock has nothing for a command that could not start or was ended by a signal, so state the facts. */
 function failureReason(run: Pick<AgentSetupRun, 'exitCode' | 'error'>): string {
   if (run.exitCode !== null) return C().exitCode(run.exitCode);
   if (run.error) return C().startFailed(run.error);
@@ -175,8 +174,8 @@ function failureReason(run: Pick<AgentSetupRun, 'exitCode' | 'error'>): string {
 const dialogCode = style({ display: 'block', marginY: 12, padding: 12, borderRadius: 'lg', backgroundColor: 'gray-100', font: 'code-sm', color: 'gray-900', overflowWrap: 'anywhere', userSelect: 'text' });
 
 /**
- * 运行前的确认（架构设计 §12.9：用户逐次确认，确认时显示完整命令）。设计稿点 ▶ 直接起跑，没有这一步；按钮用动词「运行」。
- * 放进调用方的 `DialogContainer`。
+ * Confirmation before running (architecture design §12.9: the user confirms each time, and the full command is shown when confirming). The design mock starts immediately on ▶ with no such step. The button uses the verb “Run”.
+ * Placed in the caller's `DialogContainer`.
  */
 export function RunCommandDialog({ action, name, command, onRun }: { action: AgentSetupAction; name: string; command: string; onRun: () => void }) {
   return (
@@ -195,8 +194,8 @@ const field = style({ display: 'flex', alignItems: 'end', flexWrap: 'wrap', gap:
 const input = style({ flexGrow: 1, minWidth: 220 });
 
 /**
- * 手动指定可执行文件：填完整路径保存；清空保存或点「恢复自动查找」回到自动查找。
- * 保存后 Runtime 用新位置重新探测，返回的就是新结果，不用再点重新检测。
+ * Manually specify the executable: enter the full path and save. Clearing and saving, or clicking “Restore automatic lookup”, returns to automatic lookup.
+ * After saving, the Runtime re-detects at the new location and returns the new result, so there is no need to click re-check.
  */
 export function ExecutableField({ driver, label, isDisabled }: { driver: DriverInfo; label?: string; isDisabled?: boolean }) {
   const runtime = useRuntime();

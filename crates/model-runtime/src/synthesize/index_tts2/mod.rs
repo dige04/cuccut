@@ -1,26 +1,26 @@
-//! IndexTTS2 与 IndexTTS 2.5（mlx-rs 实现，移植自 v2 `ccut-tts::index_tts2`）。
+//! IndexTTS2 and IndexTTS 2.5 (mlx-rs implementation, ported from v2 `ccut-tts::index_tts2`).
 //!
-//! 部分实现移植自 speech-swift（https://github.com/soniqo/speech-swift ，Apache License 2.0，
-//! Copyright 2025 Ivan Digital），有修改：改写为 Rust / mlx-rs，推理流程按官方 `indextts/infer_v2.py` /
-//! `infer_v2_5.py` 校正，并按本仓库的模型包与错误约定接入。
+//! Parts are ported from speech-swift (https://github.com/soniqo/speech-swift, Apache License 2.0,
+//! Copyright 2025 Ivan Digital) with modifications: rewritten in Rust / mlx-rs, the inference flow is corrected against the official `indextts/infer_v2.py` /
+//! `infer_v2_5.py`, and it is wired up according to this repository's model-package and error conventions.
 //! SPDX-License-Identifier: Apache-2.0
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 流水线：参考音频 → w2v-BERT 2.0（第 17 层）→ MaskGCT 语义码本量化 →
-//! CAMPPlus 192 维音色 → GPT 语义 token 生成 → S2Mel（DiT 流匹配）→ BigVGAN
-//! （22.05 kHz）。情感由 feat1/feat2 矩阵或参考音频控制；`qwen0.6bemo4-merge`
-//! 文本情感模型不在范围内。
+//! Pipeline: reference audio → w2v-BERT 2.0 (layer 17) → MaskGCT semantic codebook quantization →
+//! CAMPPlus 192-dim speaker embedding → GPT semantic token generation → S2Mel (DiT flow matching) → BigVGAN
+//! (22.05 kHz). Emotion is controlled by the feat1/feat2 matrices or by reference audio; the `qwen0.6bemo4-merge`
+//! text-emotion model is out of scope.
 //!
-//! IndexTTS 2.5（[`IndexTts25`]）复用同一套模型图：tiktoken 多语言前端在 `v25`，
-//! GPT 条件改为 CAM++ 风格投影，语义码经 2.5 码本解码器得到 S2Mel 内容特征，
-//! w2v-BERT / CAM++ / BigVGAN 与 2.0 相同。
+//! IndexTTS 2.5 ([`IndexTts25`]) reuses the same model graph: the tiktoken multilingual frontend lives in `v25`,
+//! the GPT conditioning is changed to a CAM++-style projection, semantic codes go through the 2.5 codebook decoder to get S2Mel content features,
+//! and w2v-BERT / CAM++ / BigVGAN are the same as in 2.0.
 //!
-//! w2v-BERT / CAM++ / BigVGAN 与统计量在 IndexTTS2 仓库里：2.0 的主模型组件就是这个仓库；2.5 的主模型组件
-//! 是 2.5 仓库，另带 `aux` 组件指向 IndexTTS2 仓库。引擎只读清单列出的文件。
+//! The w2v-BERT / CAM++ / BigVGAN weights and statistics live in the IndexTTS2 repository: for 2.0 the main model components are in this repository; for 2.5 the main model components
+//! are in the 2.5 repository, with an extra `aux` component pointing to the IndexTTS2 repository. The engine reads only the files listed in the manifest.
 //!
-//! 纯逻辑模块（配置、SentencePiece、文本规范化、分词、切段、情感向量、CPU
-//! DSP）不带 cfg 门，全平台编译并带单测；模型图（`mlx`，目录名沿用 MLX 来源）
-//! 经 `synthesize::tensor` 门面编译：Apple Silicon 上是 MLX，其余平台开 `backend-candle` 时是 candle CPU/CUDA。
+//! Pure-logic modules (config, SentencePiece, text normalization, tokenization, segmentation, emotion vectors, CPU
+//! DSP) have no cfg gate, compile on all platforms and carry unit tests. The model graph (`mlx`, the directory name is inherited from the MLX origin)
+//! is compiled through the `synthesize::tensor` facade: MLX on Apple Silicon, and candle CPU/CUDA on other platforms when `backend-candle` is enabled.
 
 pub mod config;
 pub mod dsp;
@@ -32,7 +32,7 @@ pub mod sentencepiece;
 pub mod tokenizer;
 pub mod v25;
 
-/// IndexTTS 2.5 语速倍率（`TtsRequest::speed`）的合法区间 `[0.5, 1.5]`。
+/// Valid range `[0.5, 1.5]` for the IndexTTS 2.5 speed multiplier (`TtsRequest::speed`).
 pub const SPEAKING_RATE_RANGE: (f32, f32) = (0.5, 1.5);
 
 #[cfg(any(

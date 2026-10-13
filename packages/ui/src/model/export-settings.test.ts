@@ -78,7 +78,7 @@ describe('成片设置', () => {
     expect(outputSize(1080, { w: 9, h: 16 })).toEqual({ width: 1080, height: 1920 });
     expect(outputSize(720, { w: 4, h: 5 })).toEqual({ width: 720, height: 900 });
     expect(outputSize(1080, { w: 16, h: 9 })).toEqual({ width: 1920, height: 1080 });
-    // 缺省的分辨率档（画布本来的短边）也带宽高。
+    // The default resolution tier (the canvas's own short edge) also carries width and height.
     expect(videoSettings({ ...DEFAULT_VIDEO_FORM, ratio: '9:16' }, canvas, {}, DEFAULT_LOUDNESS_FORM)).toEqual({
       kind: 'video',
       format: 'mp4',
@@ -94,7 +94,7 @@ describe('成片设置', () => {
       ['1080p', 1080, 1350, true],
       ['720p', 720, 900, false],
     ]);
-    // 推出来超过输出上限的档不列：2880 短边的画布出 9:16，画布本来的那一档高 5120，从 4K 起。
+    // Tiers that would exceed the output limit are not listed: a canvas with a 2880 short edge exporting 9:16 has its own tier at 5120 tall, starting from 4K.
     const big = { width: 5120, height: 2880 };
     expect(resolutionChoices(big, { key: '9:16', w: 9, h: 16 }).map((c) => [c.label, c.width, c.height])).toEqual([
       ['4K', 2160, 3840],
@@ -105,7 +105,7 @@ describe('成片设置', () => {
       width: 2160,
       height: 3840,
     });
-    // 与画布同比例的档等于跟随画布：不带宽高。
+    // A tier with the same ratio as the canvas is the same as following the canvas: no width or height.
     expect(videoSettings({ ...DEFAULT_VIDEO_FORM, ratio: '16:9' }, canvas, {}, DEFAULT_LOUDNESS_FORM)).toEqual({
       kind: 'video',
       format: 'mp4',
@@ -215,7 +215,7 @@ describe('字幕设置', () => {
     expect(defaultFileNames('访谈: 第一期', { kind: 'subtitles', format: 'srt', documentId: 'zh', bilingual: { documentId: 'en' } }, documents)).toEqual(['访谈_ 第一期.zh-en.srt']);
     expect(defaultFileNames('访谈', { kind: 'subtitles', format: 'vtt', documentId: 'speech_x' }, documents)).toEqual(['访谈.subtitles.vtt']);
     expect(defaultFileNames('访谈', { kind: 'video', format: 'mp4' }, documents)).toEqual(['访谈.mp4']);
-    // 成片：画面里烧着的字幕语言，从上到下（隐藏的 s3 不算）；不烧字幕时没有后缀。
+    // Final video: the subtitle languages burned into the picture, top to bottom (hidden s3 is not counted); with no burned-in subtitles there is no suffix.
     expect(defaultFileNames('访谈', { kind: 'video', format: 'mp4' }, documents, seq)).toEqual(['访谈.en-zh.mp4']);
     expect(defaultFileNames('访谈', { kind: 'video', format: 'mp4', burnCaptions: false }, documents, seq)).toEqual(['访谈.mp4']);
     expect(defaultFileNames('访谈', { kind: 'video', format: 'webm', ranges: [{ start: 0, end: 1 }, { start: 2, end: 3 }] }, documents, seq)).toEqual([

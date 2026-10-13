@@ -38,7 +38,7 @@ import { useAssetUrl } from './use-asset-url.ts';
 import { MEDIA_COPY as MC } from './media-copy.ts';
 
 const body = style({ display: 'flex', flexDirection: 'column', gap: 8 });
-/** 导入框（原型 .vl-import）：虚线框，左边说明，右边「导入」；文件可以直接拖进来。 */
+/** Import box (prototype .vl-import): dashed box, description on the left, “Import” on the right; files can be dragged straight in. */
 const importBox = style({
   display: 'flex',
   alignItems: 'center',
@@ -59,13 +59,13 @@ const heading = style({ display: 'flex', alignItems: 'baseline', justifyContent:
 const list = style({ display: 'flex', flexDirection: 'column', gap: 4, margin: 0, padding: 0, listStyleType: 'none' });
 const empty = style({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingY: 24, textAlign: 'center' });
 const foot = style({ font: 'ui-xs', color: 'gray-600', margin: 0, paddingX: 4 });
-/** 音频页顶上那一行生成入口（原型 .mact）：生成语音 / 克隆声音。 */
+/** The generate entry row at the top of the audio page (prototype .mact): Generate voice / Clone voice. */
 const genRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
-/** 图片页的两段（视频素材 | AI 生成）：页签撑满页头下面，各段自己滚动。 */
+/** The two segments of the image page (video media | AI generate): the tabs fill the area below the page header, and each segment scrolls on its own. */
 const sourceTabs = style({ flexGrow: 1, flexShrink: 1, minHeight: 0 });
 const sourceTabList = style({ marginX: 12, marginTop: 4 });
 const sourcePane = style({ boxSizing: 'border-box', height: 'full', overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 12 });
-/** 素材卡片（原型 .vl-row）：缩略格 96×54，名字、规格、用在哪里，右边「添加到时间线」。 */
+/** Media card (prototype .vl-row): 96×54 thumbnail cell, name, specs, where it is used, and “Add to timeline” on the right. */
 const card = style({
   display: 'flex',
   alignItems: 'center',
@@ -113,7 +113,7 @@ const nameStyle = style({
 });
 const meta = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const used = style({ font: 'ui-xs', color: 'gray-700' });
-/** 音频卡的缩略格本身就是试听钮（原型 .fthumb--btn）：悬停或在放时露出播放 / 暂停，进度盖在下沿。 */
+/** The thumbnail cell of an audio card is itself the preview button (prototype .fthumb--btn): play / pause shows on hover or while playing, and the progress overlays the bottom edge. */
 const thumbButton = style({
   position: 'relative',
   display: 'flex',
@@ -155,8 +155,8 @@ const againRow = style({ display: 'flex', alignItems: 'center', gap: 8, paddingX
 const KIND_ICON = { video: Video, image: Image, audio: MusicNote };
 
 /**
- * 素材面板（产品设计 §5.9）：图片、视频、音频素材各一页，都是视频自己的素材库。导入与添加到时间线是两个动作：
- * 导入把文件收进素材库；「添加到时间线」放在播放头处，也可以把素材拖到时间线的某一行。
+ * Media panel (product design §5.9): image, video and audio media each get a page, and all of them are the video's own media library. Importing and adding to the timeline are two separate actions:
+ * importing brings the file into the media library; “Add to timeline” places it at the playhead, and media can also be dragged onto a row of the timeline.
  */
 export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; sequence: Sequence; assets: Record<Id, AssetRecord> }) {
   const runtime = useRuntime();
@@ -164,16 +164,16 @@ export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; se
   const editable = useVideo((s) => canEdit(s.video));
   const [over, setOver] = useState(false);
   const available = libraryAssets(assets, kind);
-  // 生成语音 / 克隆声音与 AI 生图只在桌面端（网页宿主只留导入，原型 model-surface.js）。
+  // Generate voice / Clone voice and AI image generation are desktop-only (the web host keeps only import; prototype model-surface.js).
   const videoId = useVideo((s) => s.video?.videoId ?? null);
   const ai = runtime.host.platform !== 'web' && videoId !== null;
   const gen = useMediaGen(videoId);
   const setGen = useMediaGenStore((s) => s.patch);
-  // 音频页按配音分组（设计稿 `audioGroups`）：每组配音一张卡，散装文件照旧平铺在组下面。
+  // The audio page groups by dub (design draft `audioGroups`): one card per dub group; loose files stay laid out flat below the groups as before.
   const shape = kind === 'audio' ? dubGroupIds(sequence, available) : { groups: [], loose: available };
-  // 试听：一次只放一个（状态在列表上）。
+  // Preview: only one plays at a time (the state lives on the list).
   const [audition, setAudition] = useState<Id | null>(null);
-  // 翻译配音的家在工具页里（设计稿 2026-09-16）：这里只指路。
+  // The home for translated dubbing is on the tools page (design draft 2026-09-16); this page only points there.
   const redub = () => {
     if (videoId) openAiTool(videoId, 'dub');
   };
@@ -206,7 +206,7 @@ export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; se
 
   const library = (
     <div className={body}>
-      {/* 父视频的「切出的短视频」（产品设计 §5.10，原型 panel-media.jsx 把它放在视频库上面）：没有子视频时不占地方。 */}
+      {/* The parent video's “Short clips cut out” (product design §5.10; the prototype panel-media.jsx places it above the video library): takes no space when there are no child videos. */}
       {kind === 'video' && videoId ? <ShortsMadeGroup videoId={videoId} /> : null}
       {ai && kind === 'audio' ? (
         <div className={genRow}>
@@ -301,7 +301,7 @@ export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; se
     </div>
   );
 
-  // 图片页：视频素材 | AI 生成两段（设计稿 panel-media.jsx `IMAGE_TABS`），选在哪一段按视频记着。
+  // Image page: two segments, video media | AI generate (design draft panel-media.jsx `IMAGE_TABS`); which segment is selected is remembered per video.
   if (ai && kind === 'image') {
     return (
       <>
@@ -365,9 +365,9 @@ function AssetRow({
   const parts: string[] = [];
   if (revision?.video) parts.push(`${revision.video.displayWidth}×${revision.video.displayHeight}`);
   if (revision) parts.push(formatBytes(revision.byteLength));
-  // 链接的素材留在原处，没有复制进视频目录。
+  // Linked media stays in its original location and is not copied into the video folder.
   if (revision?.storage.mode === 'linked') parts.push(MC.linked);
-  // 生成来的（生成语音、AI 生图）带一枚「生成」，出处（任务、模型、参数）随素材记着。
+  // Generated media (generated voice, AI-generated images) carries a “Generated” badge; its provenance (task, model, parameters) is recorded with the media.
   if (revision?.provenance.origin === 'generated') parts.push(generatedMark());
   return (
     <li
@@ -378,7 +378,7 @@ function AssetRow({
         event.dataTransfer.effectAllowed = 'copy';
       }}>
       {asset.kind === 'audio' ? (
-        // 音频卡的缩略格就是试听钮（设计稿 2026-09-11）：点一下就地放，不必先加到时间线；时长位在放的时候改成已播时间。
+        // The thumbnail cell of an audio card is the preview button (design draft 2026-09-11): one click plays it in place, with no need to add it to the timeline first; while playing, the duration slot changes to elapsed time.
         <button
           type="button"
           className={thumbButton({ isPlaying: playing })}
@@ -425,7 +425,7 @@ function AssetRow({
   );
 }
 
-/** 试听中的那一段：地址按素材版本向 Runtime 要，取到就放；放完或出错就停。 */
+/** The clip being previewed: the address is requested from the Runtime per media version and played once received; stops when it ends or on error. */
 function Audition({ asset, onTime, onEnd }: { asset: AssetRecord; onTime(seconds: number): void; onEnd(): void }) {
   const videoId = useVideo((s) => s.video?.videoId ?? null);
   const { url, error } = useAssetUrl(videoId, { id: asset.id, revision: asset.currentRevision });
@@ -433,7 +433,7 @@ function Audition({ asset, onTime, onEnd }: { asset: AssetRecord; onTime(seconds
     if (!error) return;
     ToastQueue.negative(MC.auditionFailed(asset.name, error), { timeout: 4000 });
     onEnd();
-  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps -- 只在出错那一刻提示一次
+  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps -- only prompt once, at the moment of the error
   return url && !error ? (
     <audio
       src={url}

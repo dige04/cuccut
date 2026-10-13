@@ -18,26 +18,26 @@ import { decodeVoicePackage, encodeVoicePackage, safeFileName, VOICE_PACKAGE_MAX
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 交换文件（架构设计 §5.9）：导入按内容识别类型，不看扩展名。
+ * Exchange files (architecture design §5.9): import identifies the type by content, not by extension.
  *
- * | 内容 | 认作 |
+ * | Content | Recognized as |
  * | --- | --- |
- * | front matter 里有 `format: cuccut.glossary` 的文本 | 术语表（`glossary-markdown.ts`） |
- * | `format: cuccut.voice-package` 的 JSON | 音色（`voice-package.ts`） |
- * | `format: cuccut.library-item` 的 JSON | 品牌库的颜色或字幕样式 |
- * | Lottie 的 JSON，或 `.lottie` 压缩包（zip 里有 `animations/*.json`） | 品牌库的贴纸 |
- * | png、jpeg、gif、webp | 品牌库的图片（贴纸要导入之后再改种类） |
- * | mp4、mov、webm、mkv | 品牌库的视频 |
- * | ttf、otf、woff2 | 品牌库的字体 |
+ * | Text with `format: cuccut.glossary` in its front matter | Glossary (`glossary-markdown.ts`) |
+ * | JSON with `format: cuccut.voice-package` | Voice (`voice-package.ts`) |
+ * | JSON with `format: cuccut.library-item` | Brand library color or subtitle style |
+ * | Lottie JSON, or a `.lottie` archive (zip containing `animations/*.json`) | Brand library sticker |
+ * | png, jpeg, gif, webp | Brand library image (stickers must be re-kinded after import) |
+ * | mp4, mov, webm, mkv | Brand library video |
+ * | ttf, otf, woff2 | Brand library font |
  *
- * 单独的音频文件不能导入：音色还要逐字稿与授权声明，要用音色包，或在应用里新建音色。
+ * Standalone audio files cannot be imported. A voice also needs a transcript and a consent statement, so use a voice package, or create the voice in the app.
  */
 
 export const LIBRARY_ITEM_FORMAT = 'cuccut.library-item';
 export const LIBRARY_ITEM_VERSION = 1;
-/** 导入文件的总上限（品牌库的视频）。 */
+/** Overall limit for imported files (brand library videos). */
 const IMPORT_MAX_BYTES = 4096 * 1024 * 1024;
-/** `.lottie` 压缩包的上限（与品牌库收 Lottie 贴纸的上限相同）。 */
+/** Limit for a `.lottie` archive (same as the limit for Lottie stickers accepted by the brand library). */
 const DOTLOTTIE_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface ImportCandidate {
@@ -111,7 +111,7 @@ function decodeLibraryItem(value: unknown): LibraryContentInput {
   return fields;
 }
 
-/** 把条目写成交换文件。目标已存在时不覆盖（`conflict`）。 */
+/** Writes an entry as an exchange file. Does not overwrite if the target already exists (`conflict`). */
 export async function writeLibraryExport(store: LibraryStore, entry: LibraryEntry, target: string): Promise<LibraryExportResult> {
   if (!path.isAbsolute(target)) throw new RpcError('invalid-request', SL.exportPathAbsolute());
   const frozen = { library: entry.library, id: entry.id, version: entry.version, contentHash: entry.contentHash };

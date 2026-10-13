@@ -144,7 +144,7 @@ describe('framingShots', () => {
 
   it('counts shots from settings.crops, falling back to framing.shots', () => {
     const crops = [{ from: 0, to: 10, ...crop }, { from: 10, to: 20, ...crop }, { from: 20, to: 30, ...crop }];
-    // 剪口把一个镜头拆成了两段：framing.shots 比镜头多，按 settings.crops 数。
+    // The cut split one shot into two segments, so framing.shots has more entries than the shots; counted by settings.crops.
     const shots = [...crops, { from: 31, to: 32, ...crop }].map(({ from, to }) => ({ from, to, crop }));
     expect(derivation({ settings: { crops }, framing: { assetId: 'a1', shots } })?.shots).toBe(3);
     expect(derivation({ framing: { assetId: 'a1', shots: shots.slice(0, 2) } })?.shots).toBe(2);

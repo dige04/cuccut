@@ -1,7 +1,7 @@
 import http from 'node:http';
 
 /**
- * 测试用的外部 MCP 客户端：用原始 HTTP 请求，`Host`、`Origin` 与 `Authorization` 都由测试决定（fetch 不让改 `Host`）。
+ * Test-only external MCP client: sends raw HTTP requests. `Host`, `Origin` and `Authorization` are all set by the test (fetch does not allow changing `Host`).
  */
 
 export interface RawResponse {
@@ -44,7 +44,7 @@ export function raw(
 
 let rpcId = 0;
 
-/** 以一个客户端令牌调用 MCP 方法。 */
+/** Calls an MCP method with one client token. */
 export async function rpc(
   url: string,
   token: string,
@@ -56,10 +56,10 @@ export async function rpc(
   return { status: 200, ...(JSON.parse(response.body) as object) };
 }
 
-/** 工具结果的形态随工具而变，测试里按需取字段。 */
+/** The shape of a tool result varies by tool, so tests pick out fields as needed. */
 export type Loose = any;
 
-/** 调用一个工具：结果的 JSON 正文与是否出错。 */
+/** Calls one tool: the JSON body of the result and whether it is an error. */
 export async function call(
   url: string,
   token: string,

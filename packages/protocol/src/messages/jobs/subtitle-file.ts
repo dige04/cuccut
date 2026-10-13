@@ -14,7 +14,7 @@ import { pl } from './subtitle-file.pl.ts';
 import { tr } from './subtitle-file.tr.ts';
 import { vi } from './subtitle-file.vi.ts';
 
-/** `packages/jobs/src/pipelines/subtitle-file.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/subtitle-file.ts`. */
 const en = {
   tooLarge: (p: { bytes: number; limit: number }) => `The subtitle file is ${p.bytes} bytes, over the limit of ${p.limit}`,
   tooManyCues: (p: { limit: number }) => `More than ${p.limit} subtitles`,

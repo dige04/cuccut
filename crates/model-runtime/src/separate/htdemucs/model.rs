@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/SourceSeparation/HTDemucs/HTDemucs.swift`。
+//! Parts are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/SourceSeparation/HTDemucs/HTDemucs.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-bundle interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 单个 HTDemucs 子模型的前向，逐一对照 speech-swift `HTDemucs.swift`
-//! （init 里的层循环由 `config::layer_plan` 给出；STFT / iSTFT 在 CPU 用 realfft 完成）。
+//! Forward pass of a single HTDemucs sub-model, checked line by line against speech-swift `HTDemucs.swift`
+//! (the layer loop in init is given by `config::layer_plan`; STFT / iSTFT are done on the CPU with realfft).
 
 use super::layers::{Conv1dW, HDecLayer, HDecSpec, HEncLayer, HEncSpec};
 use super::tensor::ops::indexing::IndexOp;
@@ -27,7 +27,7 @@ pub struct HtDemucsModel {
     tencoder: Vec<HEncLayer>,
     decoder: Vec<HDecLayer>,
     tdecoder: Vec<HDecLayer>,
-    /// 已乘好 `emb_scale × freq_emb` 的频率嵌入，`[1, C, freqs, 1]`。
+    /// Frequency embedding with `emb_scale × freq_emb` already multiplied in, `[1, C, freqs, 1]`.
     freq_emb: Array,
     channel_upsampler: Conv1dW,
     channel_downsampler: Conv1dW,
@@ -88,7 +88,7 @@ impl HtDemucsModel {
                     dconv: dconv_enc,
                 },
             )?);
-            // Swift 里 decoder 每次 insert(at: 0)，所以 `decoder.{i}` 对应 plan[depth-1-i]。
+            // In Swift the decoder calls insert(at: 0) each time, so `decoder.{i}` corresponds to plan[depth-1-i].
             let dec_index = depth - 1 - index;
             decoder.push(HDecLayer::load(
                 store,
@@ -123,7 +123,7 @@ impl HtDemucsModel {
                 },
             )?);
         }
-        // Swift 的 dec 数组是 insert(at: 0) 得到的：dec[0] 是最深层。
+        // The Swift dec array is built with insert(at: 0): dec[0] is the deepest layer.
         decoder.reverse();
         tdecoder.reverse();
 
@@ -176,8 +176,8 @@ impl HtDemucsModel {
         })
     }
 
-    /// `mix`：`audio_channels` 路等长样本（不超过 `training_length`）；
-    /// 返回第 `source` 个声部的各路样本，长度与输入相同。
+    /// `mix`: `audio_channels` channels of equal-length samples (no longer than `training_length`);
+    /// returns the channels of the `source`-th stem, with the same length as the input.
     pub fn forward(&self, mix: &[Vec<f32>], source: usize) -> Result<Vec<Vec<f32>>> {
         let c = self.audio_channels;
         if mix.len() != c {
@@ -197,7 +197,7 @@ impl HtDemucsModel {
             bail!("各声道长度不一致");
         }
         let tl = self.training_length;
-        // 右侧补零到 training_length（Swift：lengthPrePad）。
+        // Zero-pad on the right up to training_length (Swift: lengthPrePad).
         let padded: Vec<Vec<f32>> = mix
             .iter()
             .map(|ch| {
@@ -207,7 +207,7 @@ impl HtDemucsModel {
             })
             .collect();
 
-        // z = spec(mix) → CaC：[1, 2C, Fq, le]，通道 2c = 实部、2c+1 = 虚部。
+        // z = spec(mix) → CaC: [1, 2C, Fq, le], channel 2c = real part, 2c+1 = imaginary part.
         let mut fq = 0usize;
         let mut le = 0usize;
         let mut cac = Vec::new();
@@ -232,7 +232,7 @@ impl HtDemucsModel {
         let stdt = ops::sqrt(&xt0.var_axes(&[1, 2], true, 0)?)?;
         let mut xt = xt0.subtract(&meant)?.divide(&stdt.add(Array::from_f32(1e-5))?)?;
 
-        // 编码
+        // Encoder
         let mut saved = Vec::with_capacity(self.depth);
         let mut saved_t = Vec::with_capacity(self.depth);
         let mut lengths = Vec::with_capacity(self.depth);
@@ -256,7 +256,7 @@ impl HtDemucsModel {
             transforms::eval([&x, &xt])?;
         }
 
-        // 跨域 transformer（bottom_channels 上下采样）
+        // Cross-domain transformer (up/down-sampled by bottom_channels)
         {
             let (b, ch, f, t) = (x.dim(0), x.dim(1), x.dim(2), x.dim(3));
             let bc = self.bottom_channels as i32;
@@ -274,7 +274,7 @@ impl HtDemucsModel {
             transforms::eval([&x, &xt])?;
         }
 
-        // 解码
+        // Decoder
         for idx in 0..self.depth {
             let skip = saved.pop().context("saved 栈为空")?;
             let len = lengths.pop().context("lengths 栈为空")?;
@@ -287,7 +287,7 @@ impl HtDemucsModel {
             transforms::eval([&x, &xt])?;
         }
 
-        // 反归一化并只取目标声部（CaC：声部 s 的通道区间 [s*2C, (s+1)*2C)）。
+        // Denormalize and take only the target stem (CaC: stem s's channel range is [s*2C, (s+1)*2C)).
         let s = source as i32;
         let c2 = (2 * c) as i32;
         let x_src = x.index((.., s * c2..(s + 1) * c2, .., ..)).multiply(&std)?.add(&mean)?;

@@ -6,14 +6,13 @@ import { syncDir } from '@cuccut/runtime-storage';
 import { sha256Hex } from './input-hash.ts';
 
 /**
- * 最小的内容寻址产物库（架构设计 §5.1、§7.3）：`<artifacts>/<sha256hex>.<ext>`，`artifactId = 'sha256:<hex>'`。
- * 转写结果是 `.json`；生成的媒体按格式（`.mp3`、`.wav`、`.flac`、`.png`、`.jpg`、`.webp`）；导出的文件按格式
- * （字幕与文稿 `.srt`、`.vtt`、`.ass`、`.md`、`.txt`、`.json`，音频 `.wav`、`.mp3`、`.m4a`，成片 `.mp4`、`.webm`）。
- * 写入是临时文件写完（或克隆完）fsync、rename、再 fsync 目录：兑现时内容与改名都已交给磁盘，任务账本引用的产物断电后也是完整的
- * （macOS 上 Node 的 fsync 不是 `F_FULLFSYNC`）。同一内容只存一份，发布后不可变。
+ * Minimal content-addressed artifact store (architecture design §5.1, §7.3): `<artifacts>/<sha256hex>.<ext>`, `artifactId = 'sha256:<hex>'`.
+ * Transcription results are `.json`. Generated media follows its format (`.mp3`, `.wav`, `.flac`, `.png`, `.jpg`, `.webp`). Exported files follow theirs (subtitles and transcripts `.srt`, `.vtt`, `.ass`, `.md`, `.txt`, `.json`; audio `.wav`, `.mp3`, `.m4a`; finished video `.mp4`, `.webm`).
+ * A write is: temp file fully written (or cloned), fsync, rename, then fsync the directory. When it is acknowledged, the content and the rename have both been handed to the disk, so the artifacts that the task ledger references are intact even after a power loss
+ * (on macOS, Node's fsync is not `F_FULLFSYNC`). The same content is stored once. Once published, it is immutable.
  */
 
-/** 产物文件可用的扩展名。 */
+/** Extensions usable for artifact files. */
 export const ARTIFACT_EXTENSIONS = [
   'json',
   'txt',
@@ -33,12 +32,12 @@ export const ARTIFACT_EXTENSIONS = [
 ] as const;
 export type ArtifactExtension = (typeof ARTIFACT_EXTENSIONS)[number];
 
-/** 清扫产物库时的宽限期：修改时间在这之内的文件不删（刚发布、还没记账的产物，写到一半的临时文件）。 */
+/** Grace period when sweeping the artifact store: files modified within this window are not deleted (just-published artifacts not yet recorded, and temp files still being written). */
 export const ARTIFACT_SWEEP_GRACE_MS = 60 * 60 * 1000;
 
 const ARTIFACT_FILE = new RegExp(`^([0-9a-f]{64})\\.(?:${ARTIFACT_EXTENSIONS.join('|')})$`);
 
-/** 一轮清扫的结果：看过的产物文件数、删掉的产物与临时文件、释放的字节、删不掉的个数。 */
+/** Result of one sweep: artifact files examined, artifacts and temp files deleted, bytes freed, and the number that could not be deleted. */
 export interface ArtifactSweepResult {
   scanned: number;
   removed: number;
@@ -47,7 +46,7 @@ export interface ArtifactSweepResult {
   failed: number;
 }
 
-/** 在一个值（任务记录、冻结的规格、发布意图、产物记录）里找出全部 `sha256:<hex>`，加进 `into`。 */
+/** Finds all `sha256:<hex>` in a value (task record, frozen spec, publish intent, artifact record) and adds them to `into`. */
 export function collectArtifactIds(value: unknown, into: Set<string> = new Set()): Set<string> {
   const text = JSON.stringify(value);
   if (text === undefined) return into;
@@ -60,14 +59,14 @@ async function touch(file: string): Promise<void> {
   await fs.utimes(file, now, now).catch(() => {});
 }
 
-/** 一段内容的产物 ID（`sha256:<hex>`）：写进产物库之前就算得出，发布意图据此先落账（§7.3）。 */
+/** The artifact ID (`sha256:<hex>`) of a piece of content. It is computed before the content is written to the artifact store, so the publish intent can be recorded first (§7.3). */
 export function artifactIdOf(bytes: Uint8Array): string {
   return `sha256:${sha256Hex(bytes)}`;
 }
 
 export class ArtifactStore {
   readonly dir: string;
-  /** 清扫进行期间写入（或命中已有文件）的摘要：这一轮不删它们，即使开始时算的引用集合里没有。 */
+  /** Digests written (or matched to an existing file) while a sweep is running. This round does not delete them, even if they were not in the reference set computed when it started. */
   #touched = new Set<string>();
   #sweeping = false;
 
@@ -76,15 +75,14 @@ export class ArtifactStore {
   }
 
   /**
-   * 删掉没有引用的产物（架构设计 §7.3）。`referenced` 是 `sha256:<hex>` 或裸的 hex。
+   * Deletes unreferenced artifacts (architecture design §7.3). `referenced` is `sha256:<hex>` or bare hex.
    *
-   * - 名字是 `<64 位 hex>.<已知扩展名>` 的文件：不在引用集合里、修改时间早于宽限期（默认 1 小时）时删除。产物先写进库、
-   *   之后才记账，刚发布的文件可能还没有任何引用；`put` 命中已有内容时会刷新修改时间，宽限期因此对重新发布的内容也成立。
-   * - 写到一半留下的 `*.tmp`：修改时间早于宽限期时删除。
-   * - 其他文件与子目录不动。
-   * - 给了 `notBefore` 时，修改时间早于它的产物不删（开始保留引用之前的产物，无从知道还有没有人用）。
+   * - Files named `<64 hex digits>.<known extension>`: deleted when they are not in the reference set and their modification time is earlier than the grace period (default 1 hour). An artifact is written into the store before it is recorded, so a just-published file may not have any reference yet. `put` on existing content refreshes the modification time, so the grace period also holds for re-published content.
+   * - A `*.tmp` left by a write that stopped halfway: deleted when its modification time is earlier than the grace period.
+   * - Other files and subdirectories are left alone.
+   * - When `notBefore` is given, artifacts whose modification time is earlier than it are not deleted (artifacts from before reference retention began; there is no way to know whether anyone still uses them).
    *
-   * 删除前再看一次修改时间，清扫期间被 `put` 过的不删。同一实例同一时间只跑一轮，重入时返回 null。
+   * The modification time is checked again just before deleting, so anything `put` during the sweep is not deleted. Only one round runs on the same instance at a time; a re-entrant call returns null.
    */
   async sweep(
     referenced: ReadonlySet<string>,
@@ -164,7 +162,7 @@ export class ArtifactStore {
     return { artifactId: `sha256:${hex}`, path: file };
   }
 
-  /** 把一个文件存为产物（边读边算摘要，不整个读进内存；导出的音频与成片用它）。文件系统支持时克隆而不复制（APFS）。 */
+  /** Stores a file as an artifact (the digest is computed while reading, without loading the whole file into memory; used for exported audio and video). Clones rather than copies when the filesystem supports it (APFS). */
   async putFile(source: string, extension: ArtifactExtension): Promise<{ artifactId: string; path: string; byteLength: number }> {
     const hash = createHash('sha256');
     let byteLength = 0;
@@ -185,7 +183,7 @@ export class ArtifactStore {
       await publish(tmp, file, async () => {
         await fs.copyFile(source, tmp, constants.COPYFILE_FICLONE);
         await fs.chmod(tmp, 0o644);
-        // 克隆（或复制）出来的文件同样要 fsync。用 r+ 打开：Windows 上只读句柄不能 fsync。
+        // Cloned (or copied) files must also be fsync'd. Open with r+: on Windows a read-only handle cannot be fsync'd.
         const handle = await fs.open(tmp, 'r+');
         try {
           await handle.sync();
@@ -197,13 +195,13 @@ export class ArtifactStore {
     return { artifactId: `sha256:${hex}`, path: file, byteLength };
   }
 
-  /** JSON 产物（转写结果）的路径。 */
+  /** Path of a JSON artifact (transcription result). */
   pathOf(artifactId: string): string | null {
     const match = /^sha256:([0-9a-f]{64})$/.exec(artifactId);
     return match ? path.join(this.dir, `${match[1]}.json`) : null;
   }
 
-  /** 任何扩展名的产物的路径；不存在时 null。 */
+  /** Path of an artifact with any extension; null if it does not exist. */
   async locate(artifactId: string): Promise<string | null> {
     const match = /^sha256:([0-9a-f]{64})$/.exec(artifactId);
     if (!match) return null;
@@ -221,8 +219,7 @@ export class ArtifactStore {
   }
 
   /**
-   * 产物在、内容与摘要相符。写入会 fsync 之后才改名，正常情况下不会残缺；仍然核对，覆盖这个改动之前写下的产物、
-   * 磁盘自己的写缓存（macOS 的 fsync 不清它）与外部改动。
+   * Checks that the artifact exists and that its content matches its digest. Writes fsync before rename, so under normal conditions they are not truncated. This is still checked, to cover artifacts written before this change, the disk's own write cache (macOS fsync does not flush it), and external modification.
    */
   async verify(artifactId: string): Promise<boolean> {
     const file = await this.locate(artifactId);
@@ -242,7 +239,7 @@ export class ArtifactStore {
   }
 }
 
-/** 写临时文件（`write` 负责写完并 fsync）、改名到位、fsync 目录；失败时删掉临时文件。 */
+/** Writes the temp file (`write` is responsible for writing it fully and fsync'ing), renames it into place, and fsyncs the directory. On failure, deletes the temp file. */
 async function publish(tmp: string, file: string, write: () => Promise<void>): Promise<void> {
   try {
     await write();
@@ -255,9 +252,9 @@ async function publish(tmp: string, file: string, write: () => Promise<void>): P
 }
 
 /**
- * 一个任务输出的文件（智能体与对外服务按 `artifactId` 用它：`importAsset`、`artifacts_save`）。产物库里有就用库里的；
- * 没有时看输出登记的 `path`（从链接导入、文件转码这类发布到用户目录的输出不进产物库，`artifactId` 是那个文件的内容摘要）：
- * 文件还在、大小与登记的一致、内容摘要与 `artifactId` 相同才用它，否则 null（挪走、删掉或改过都算不在了）。
+ * The file for a task's output (agents and external services use it by `artifactId`: `importAsset`, `artifacts_save`). If the artifact store has it, the store's copy is used.
+ * Otherwise the output's recorded `path` is checked. Outputs published into the user's directory, such as imports from links or file transcodes, are not in the artifact store, and their `artifactId` is the content digest of that file.
+ * It is used only if the file still exists, its size matches the recorded one, and its content digest equals `artifactId`. Otherwise null (moved, deleted or modified all count as gone).
  */
 export async function locateArtifact(
   store: ArtifactStore,

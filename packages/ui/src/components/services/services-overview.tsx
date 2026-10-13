@@ -57,8 +57,8 @@ export function ServicesOverview() {
 }
 
 /**
- * 一行副文：出错说原因；远端算力开着说节点名与地址；MCP 说开放范围与权限（原型 `mcpSub`）；Web 与模型接口开着说地址；
- * Runtime 没有提供的说为什么；其余说这项服务是做什么的。
+ * One line of secondary text: on error, it says the cause. Remote compute when on says the node name and address; MCP says the access scope and permissions (prototype `mcpSub`); Web and model API when on say the address.
+ * Where the Runtime does not provide something, it says why; otherwise it says what this service does.
  */
 function useItemDetail(id: ServiceId, state: ServiceState): string {
   const share = useShare((s) => s.status);

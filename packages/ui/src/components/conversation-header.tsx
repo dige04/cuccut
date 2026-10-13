@@ -143,7 +143,7 @@ export function SessionMenu({ conversation }: { conversation: Conversation }) {
   );
 }
 
-/** 这条会话的来源目录里的条目：项目会话看项目目录，不属于项目的会话看它自己的工作目录。 */
+/** The entries in this conversation's source directory: a project conversation uses the project directory; a conversation outside any project uses its own working directory. */
 function useSourceEntries(conversation: Conversation, accept: (entry: SpaceEntry) => boolean) {
   const all = useSpace((s) => s.entries);
   return all
@@ -229,7 +229,7 @@ function VideoSubmenu({ conversation }: { conversation: Conversation }) {
   );
 }
 
-/** 在功能区播放来源目录里的视频文件或音频（产品设计 §3.3「用户手动打开」）：开成一个文件标签。 */
+/** Play a video file or audio from the source directory in the feature area (product design §3.3 「用户手动打开」 (opened manually by the user)): opens as a file tab. */
 function MediaSubmenu({ conversation }: { conversation: Conversation }) {
   const ready = useSpace((s) => s.ready);
   const play = usePlayInPane();

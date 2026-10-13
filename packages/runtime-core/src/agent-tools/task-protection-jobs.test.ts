@@ -13,10 +13,9 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { ToolDriver, tool, until, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * 任务下的后台写入受任务保护（架构设计 §3.2、§7.3）：假智能体经真实的 MCP 端点在一个保护了整个视频的任务里提交生成
- * （本机回环地址上的假 OpenAI）与从链接导入（假 yt-dlp），结果应用到视频时带着任务合同的保护，真实引擎整笔拒绝：
- * 生成任务的应用记为 `rejected`（`TASK_PROTECTED`），产物留作候选，用户用 `jobs.reconcile apply` 自己决定应用；
- * 流程停在导入一步（`TASK_PROTECTED`），下载的文件留着。用户自己提交的同类任务照常写入。没有 engine-host 或 ffprobe 时跳过。
+ * Background writes under a task are protected by the task (architecture §3.2, §7.3). A fake agent, through the real MCP endpoint, submits a generation (a fake OpenAI on a loopback address) and an import from a link (a fake yt-dlp) inside a task that protects the whole video. The results, applied to the video, carry the task contract's protection, and the real engine rejects the whole transaction:
+ * the generation job's application is recorded as `rejected` (`TASK_PROTECTED`), the artifact is kept as a candidate, and the user decides for themselves to apply it with `jobs.reconcile apply`;
+ * the flow stops at the import step (`TASK_PROTECTED`), and the downloaded file is kept. Jobs of the same kind that the user submits directly are written as normal. Skipped without engine-host or ffprobe.
  */
 
 const engine = resolveEngineHostCommand();
@@ -59,7 +58,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
       modelWorker: null,
       jobIdleMs: 60_000,
       online: { baseUrls: { openai: `${openai.origin}/v1` }, http: { backoffMs: () => 10 } },
-      // PATH 只有一个空目录、不读真实环境里的覆盖：用到的 yt-dlp 只有测试指定的假工具。
+      // PATH holds only an empty directory and does not read overrides from the real environment: the yt-dlp used is only the fake tool the test specifies.
       externalTools: { env: async () => ({ PATH: emptyPath }), overrides: {}, lookup: async () => ['93.184.216.34'] },
     });
     const { endpoint, token } = runtime.discovery;
@@ -86,7 +85,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  /** 建一个保护整个视频的智能体任务，等假智能体的回合开始。 */
+  /** Create an agent task that protects the whole video, and wait for the fake agent's turn to start. */
   async function protectedTask(): Promise<{ taskId: Id; session: ToolSession }> {
     const { taskId } = await client.request('tasks.create', {
       conversationId,
@@ -134,19 +133,19 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
         }),
       }),
     ]);
-    // 什么都没写；产物还在（是候选）。
+    // Nothing is written; the artifact is still there (it is a candidate).
     expect(video().revision).toBe(before.revision);
     expect(Object.keys(video().assets)).toEqual(Object.keys(before.assets));
     const artifactId = job.result!.outputs![0]!.artifactId;
     expect(await runtime.models.jobs.artifacts.locate(artifactId)).toBeTruthy();
     expect(openai.requests.filter((r) => r.path.endsWith('/audio/speech'))).toHaveLength(1);
 
-    // 智能体看得到原因，被告知不要绕过。
+    // The agent sees the reason and is told not to work around it.
     const inspected = await tool(session, 'jobs_inspect', { jobId });
     expect(inspected.body).toMatchObject({ state: 'failed', applications: [{ state: 'rejected', videoId }] });
     expect(inspected.body.next).toContain('Do not import it again with edits_apply');
 
-    // 用户自己决定应用：不受任务保护限制，不再调用供应商。
+    // The user decides to apply it: not subject to the task protection, and the provider is not called again.
     const applied = await client.request('jobs.reconcile', { jobId, decision: 'apply' });
     expect(applied).toMatchObject({ state: 'completed', error: null });
     expect(applied.applications!.map((a) => a.state)).toEqual(['rejected', 'committed']);
@@ -154,7 +153,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     expect(video().assets[assetId]).toBeTruthy();
     expect(openai.requests.filter((r) => r.path.endsWith('/audio/speech'))).toHaveLength(1);
 
-    // 用户在界面里提交到同一个视频的生成：不在任务里，照常写入。
+    // A generation the user submits from the UI to the same video is not in the task, so it is written as normal.
     const { jobId: userJob } = await client.request('models.synthesizeSpeech', { text: '用户的旁白', provider: 'openai', videoId });
     const done = await settled(userJob);
     expect(done.state, JSON.stringify(done.error)).toBe('completed');
@@ -181,7 +180,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     const inspected = await tool(session, 'jobs_inspect', { jobId: job.jobId });
     expect(inspected.body.next).toContain('do not change');
 
-    // 用户在界面里启动的同一条流程不在任务里：照常导入。
+    // The same flow the user starts in the UI is not in a task: it is imported as normal.
     const { jobId: userJob } = await client.request('pipelines.start', {
       pipeline: 'link-import',
       params: { url: 'https://video.example.com/watch?v=user', videoId },

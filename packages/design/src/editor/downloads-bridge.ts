@@ -1,10 +1,10 @@
 /**
- * 设计稿运行时的 `downloads` 能力（docs/design/canvas §4、§8.3）：导出的文件在 iframe 里，保存要由 CucCut 界面来做。
+ * The `downloads` capability of the design canvas runtime (docs/design/canvas §4, §8.3): exported files are in the iframe, so saving has to be done by the CucCut UI.
  *
- * 运行时导出（整份设计稿、单个画板、选区）时调 `save({ filename, data })`，这里转成 `editor:save-file` 发给父窗口；
- * 父窗口交给浏览器下载或弹存储对话框，回 `editor:save-file-result`。`declined`（用户取消了）与 `failed` 都拒绝，
- * 错误带 `code`：运行时把 `declined` 当作用户取消，别的当作宿主没能保存（单个画板的导出退回 iframe 里的浏览器下载）。
- * 不设超时：存储对话框可以一直开着。
+ * When the runtime exports (the whole canvas, a single board, or a selection), it calls `save({ filename, data })`, which is converted here to `editor:save-file` and sent to the parent window.
+ * The parent window hands it to the browser download or opens a save dialog, and replies with `editor:save-file-result`. Both `declined` (the user cancelled) and `failed` reject,
+ * with the error carrying `code`. The runtime treats `declined` as the user cancelling, and anything else as the host failing to save (single-board export falls back to the browser download inside the iframe).
+ * No timeout: the save dialog may stay open indefinitely.
  */
 import type { SaveFileOutcome } from '@cuccut/slides/editor-messages';
 import type { ParentLink } from '@cuccut/slides/editor';
@@ -12,7 +12,7 @@ import type { ParentLink } from '@cuccut/slides/editor';
 export interface HostSaveFile {
   filename: string;
   data: Blob | ArrayBuffer;
-  /** 父窗口经 frame 协议要的那次导出的编号；CucCut 不用它对应。 */
+  /** The number of that export request that the parent window expects via the frame protocol; CucCut does not use it to match replies. */
   request?: string;
 }
 
@@ -22,11 +22,11 @@ export interface HostDownloadsCapability {
 
 export interface DownloadsBridge {
   capability: HostDownloadsCapability;
-  /** 停止收父窗口的消息，等着的都按没保存处理。 */
+  /** Stops listening to parent-window messages; any pending requests are treated as not saved. */
   dispose(): void;
 }
 
-/** 拒绝时给运行时读的错误：`code` 是 `declined` 或 `failed`（export/downloads.tsx 的 downloadErrorCode）。 */
+/** Error given to the runtime on rejection: `code` is `declined` or `failed` (downloadErrorCode in export/downloads.tsx). */
 class SaveFileError extends Error {
   readonly code: Exclude<SaveFileOutcome, 'saved'>;
   constructor(code: Exclude<SaveFileOutcome, 'saved'>) {

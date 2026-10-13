@@ -4,10 +4,10 @@ import type { RuntimeHome } from './home.ts';
 import { readJson, writeJsonAtomic } from './json-file.ts';
 
 /**
- * 发现信息与实例锁（架构设计 §2.2）。
+ * Discovery info and the instance lock (architecture design §2.2).
  *
- * 发现文件里有连接令牌，只给当前用户读写（0600）。读到发现文件不代表 Runtime 可用：
- * 调用方还要验证进程存活并完成握手。
+ * The discovery file holds a connection token, and only the current user can read or write it (0600). Reading the discovery file does not mean the Runtime is usable:
+ * the caller must also verify that the process is alive and complete the handshake.
  */
 export async function writeDiscovery(home: RuntimeHome, discovery: RuntimeDiscovery): Promise<void> {
   await writeJsonAtomic(home.discoveryFile, discovery, { mode: 0o600 });
@@ -41,7 +41,7 @@ interface LockRecord {
 export type LockResult = { ok: true } | { ok: false; holder: LockRecord };
 
 /**
- * 取得实例锁。锁文件记录持有者 PID；持有者已退出时才接管（不因为「看起来过期」就抢）。
+ * Acquires the instance lock. The lock file records the holder's PID. The lock is taken over only when the holder has exited (it is not grabbed just because it “looks stale”).
  */
 export async function acquireInstanceLock(home: RuntimeHome, instanceId: string): Promise<LockResult> {
   await fs.mkdir(home.root, { recursive: true });

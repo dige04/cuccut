@@ -14,7 +14,7 @@ import { MusicIcon } from '../music-icon.tsx';
 
 type IconComponent = ComponentType<ComponentProps<typeof AudioWave>>;
 
-/** 工具目录的图标（设计稿 model-tools.js `GROUPS` 的 `icon`）：总览卡片与侧栏共用。 */
+/** Icons for the tool catalog (the `icon` in design file model-tools.js `GROUPS`): shared by the overview cards and the sidebar. */
 export const TOOL_ICON: Record<ToolIcon, IconComponent> = {
   transcript: Transcript,
   translate: Translate,

@@ -1,11 +1,8 @@
-//! whisper.cpp 的 Whisper large-v3 / large-v3 Turbo 句级转录器（从 v2 `ccut-speech` 的 `ggml_backend/whisper.rs` 原样移植）。
+//! Segment-level transcriber for Whisper large-v3 / large-v3 Turbo on whisper.cpp (ported unchanged from v2 `ccut-speech`'s `ggml_backend/whisper.rs`).
 //!
-//! 与 CoreML 版（[`crate::backend::coreml`]）同一口径：贪心解码、按 30 s 窗切、词级时间
-//! 交给统一的 forced aligner；这里把「mel → 编码 → 解码」整段换成
-//! `whisper_full`，切窗与温度回退用 whisper.cpp 自己的实现。
+//! Same approach as the CoreML version ([`crate::backend::coreml`]): greedy decoding, 30 s windows, word-level timing handed to the shared forced aligner. Here the whole "mel → encode → decode" step is replaced by `whisper_full`; windowing and temperature fallback use whisper.cpp's own implementation.
 //!
-//! v3 的边界：权重文件由加载器从清单里取（[`super::GgmlBackend`]）；识别经 [`SpeechRecognizer`] 接进转写流水线，
-//! 提示（`hint`）作 initial prompt（v2 的 `HintKind::Prompt`）；设备由模型包决定（[`WhisperGgml::load_on`]）。
+//! v3 scope: the weight file is taken from the manifest by the loader ([`super::GgmlBackend`]). Recognition enters the transcription pipeline through [`SpeechRecognizer`]; the hint (`hint`) is used as the initial prompt (v2's `HintKind::Prompt`); the device is decided by the model pack ([`WhisperGgml::load_on`]).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -17,10 +14,10 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use super::{GgmlDevice, default_device};
 use crate::speech::{Recognition, RecognitionRequest, SpeechRecognizer};
 
-/// whisper.cpp 解码线程上限；再多只会在小核上互相抢。
+/// Upper limit on whisper.cpp decoding threads; more would only compete with each other on the small cores.
 const MAX_THREADS: usize = 8;
 
-/// ggml 版 Whisper。一个实例可复用多次 `transcribe`（每次新建 state）。
+/// GGML build of Whisper. One instance can be reused for multiple `transcribe` calls (a new state is created each time).
 pub struct WhisperGgml {
     context: WhisperContext,
     device: GgmlDevice,
@@ -28,7 +25,7 @@ pub struct WhisperGgml {
     cancel: Option<Arc<AtomicBool>>,
 }
 
-/// v2 `TranscriptionResult` 里 Whisper 用到的两项：句级文本与识别出的语言码。
+/// The two fields Whisper fills in v2's `TranscriptionResult`: the segment-level text and the detected language code.
 #[derive(Debug)]
 struct TranscriptionResult {
     text: String,
@@ -36,18 +33,18 @@ struct TranscriptionResult {
 }
 
 impl WhisperGgml {
-    /// 加载单文件 GGML 权重（`ggml-large-v3-turbo-q8_0.bin` 之类），设备取本进程的默认设备。
+    /// Loads a single-file GGML weight (such as `ggml-large-v3-turbo-q8_0.bin`); the device is this process's default device.
     pub fn load(weights: &Path) -> Result<Self> {
         Self::load_on(weights, None)
     }
 
-    /// 同 [`Self::load`]，`device` 给定时用它（模型包的设备是 `cpu` 时传 CPU 设备）。
+    /// Same as [`Self::load`], but uses `device` when given (when the model pack's device is `cpu`, pass the CPU device).
     pub fn load_on(weights: &Path, device: Option<GgmlDevice>) -> Result<Self> {
         if !weights.is_file() {
             bail!("Whisper GGML 权重不存在：{}", weights.display());
         }
-        // whisper.cpp / ggml 默认把加载日志直接打到 stderr；装一次钩子收掉，
-        // 只保留我们自己的一行设备日志。
+        // whisper.cpp / ggml sends its loading logs straight to stderr by default; install a hook once to suppress them,
+        // keeping only our own one-line device log.
         whisper_rs::install_logging_hooks();
         let device = device.unwrap_or_else(default_device);
         let mut params = WhisperContextParameters::default();
@@ -72,7 +69,7 @@ impl WhisperGgml {
         })
     }
 
-    /// 取消标志：置 true 后 whisper.cpp 在下一个解码步中断，`transcribe` 返回错误。
+    /// Cancel flag: once set to true, whisper.cpp aborts at the next decoding step and `transcribe` returns an error.
     pub fn with_cancel_flag(mut self, flag: Arc<AtomicBool>) -> Self {
         self.cancel = Some(flag);
         self
@@ -93,8 +90,8 @@ impl WhisperGgml {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_n_threads(self.threads as i32);
         params.set_translate(false);
-        // 与 CoreML 版一致：每个 30 s 窗独立解码，不把上一窗文本当提示——
-        // 长音频里的重复循环大多来自跨窗提示。
+        // As in the CoreML version, each 30 s window is decoded independently and the previous window's text is not used as a prompt;
+        // repetition loops in long audio mostly come from cross-window prompts.
         params.set_no_context(true);
         params.set_single_segment(false);
         params.set_suppress_blank(true);
@@ -111,9 +108,9 @@ impl WhisperGgml {
                 params.set_detect_language(false);
             }
         }
-        // 识别提示：whisper.cpp 把它 tokenize 进 `prompt_past`，模型当**前文**读。
-        // `no_context` 在 initial prompt 之前清空历史，两者并存没有冲突；提示因此
-        // 逐段都生效，而不是只喂给第一段。
+        // Recognition prompt: whisper.cpp tokenizes it into `prompt_past`, and the model reads it as **preceding context**.
+        // `no_context` clears the history before the initial prompt, so the two do not conflict; the prompt therefore
+        // applies to every segment, not just the first one.
         let prompt = prompt.map(sanitize_prompt);
         if let Some(text) = prompt.as_deref().filter(|text| !text.is_empty()) {
             params.set_initial_prompt(text);
@@ -147,8 +144,8 @@ impl WhisperGgml {
     }
 }
 
-/// 转写流水线的一段：断言的语言作语言参数，识别提示作 initial prompt（v2 的 `HintKind::Prompt`）。
-/// Whisper 报的是语言码（`en`、`yue`），不是 Qwen3-ASR 那样的语言名。
+/// One segment of the transcription pipeline: the asserted language goes in as the language parameter, and the recognition hint as the initial prompt (v2's `HintKind::Prompt`).
+/// Whisper reports language codes (`en`, `yue`), not language names like Qwen3-ASR does.
 impl SpeechRecognizer for WhisperGgml {
     fn recognize(&mut self, audio: &[f32], request: &RecognitionRequest<'_>) -> Result<Recognition> {
         let result = self.transcribe_audio(audio, request.language, request.context)?;
@@ -160,13 +157,13 @@ impl SpeechRecognizer for WhisperGgml {
     }
 }
 
-/// `whisper_rs::FullParams::set_initial_prompt` 内部建 `CString`，**遇内嵌 NUL 会
-/// panic**。提示词一路从用户输入过来，所以在这里把 NUL 换成空格而不是相信调用方。
+/// `whisper_rs::FullParams::set_initial_prompt` builds a `CString` internally, and **an embedded NUL causes a
+/// panic**. The prompt comes in from user input all the way, so here NUL is replaced with a space rather than trusting the caller.
 fn sanitize_prompt(text: &str) -> String {
     text.replace('\0', " ").trim().to_owned()
 }
 
-/// 把 CucCut 的语言标签（`zh-Hans` / `en-US` / `yue`）压成 whisper.cpp 认的两字母码。
+/// Reduces CucCut's language tags (`zh-Hans` / `en-US` / `yue`) to the two-letter codes that whisper.cpp accepts.
 pub fn whisper_language_code(hint: &str) -> String {
     let lowered = hint.trim().to_ascii_lowercase();
     let head = lowered.split(['-', '_']).next().unwrap_or("").to_owned();
@@ -179,7 +176,7 @@ pub fn whisper_language_code(hint: &str) -> String {
     }
 }
 
-/// 与 CoreML 版 `transcribe_audio` 的拼接口径一致：段与段之间一个空格，整体 trim。
+/// Matches the joining rule of the CoreML version's `transcribe_audio`: one space between segments, then trim the whole result.
 pub fn join_segments(pieces: &[String]) -> String {
     pieces.join(" ").trim().to_owned()
 }
@@ -223,7 +220,7 @@ mod tests {
         assert!(format!("{error:#}").contains("不存在"));
     }
 
-    /// 带权重的端到端只在真机手动跑：`CUCCUT_WHISPER_GGML=/path/ggml-large-v3-turbo-q8_0.bin`。
+    /// End-to-end runs with weights are only done manually on a real device: `CUCCUT_WHISPER_GGML=/path/ggml-large-v3-turbo-q8_0.bin`.
     #[test]
     #[ignore]
     fn transcribes_silence_with_real_weights() {

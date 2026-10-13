@@ -19,22 +19,22 @@ import type { VideoService } from './video-service.ts';
 import { RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 删除与恢复视频（架构设计 §5.5、§5.7）。删除是把整个视频目录移进同一个来源目录里的回收站 `.ccut-trash/<trashId>/<目录名>`：
- * 同一个卷上的改名，不复制、不删任何东西，可以恢复；物理删除走 Space 的 `space.purge` 与回收站的保留期，在那里查引用。
+ * Delete and restore videos (architecture design §5.5, §5.7). Deleting moves the whole video directory into the trash inside the same source directory, at `.ccut-trash/<trashId>/<directory name>`:
+ * a rename on the same volume, copying and deleting nothing, so it can be restored. Physical deletion goes through Space's `space.purge` and the trash's retention period, where references are checked.
  *
- * - 链接素材的原文件不在视频目录里，删除与物理删除都不碰；物理删除只删归视频管理的文件（`SpaceCatalog.#purgeVideo`）。
- * - 视频目录是来源目录本身（项目目录、会话的工作目录）或装着某个来源目录时，动任何东西之前以 `VIDEO_TRASH_SOURCE_ROOT` 拒绝。
- * - 删除前：别的连接打开着（`VIDEO_IN_USE`）、有内部租约或进行中的任务与导出（`VIDEO_BUSY`）时拒绝；只有调用方自己打开着时先替它关掉
- *   （`video.closed`，`reason: 'deleted'`）。移动期间持有视频的写锁，别的进程锁着时是引擎的 `VIDEO_LOCKED`。
- * - 先在 `space.json` 里记下删除（记录与回收站标记），再移动目录；移动失败时去掉记录。中途崩溃由 Space 启动时按目录实际在哪里核对。
- * - 回收站里的条目 id 由来源与它在回收站里的位置决定（原来的位置之后可能放进另一个视频）；删除之前的 id 仍可用来撤销与恢复。
+ * - The original files of linked media are not in the video directory, so deletion and physical deletion do not touch them; physical deletion only deletes files the video manages (`SpaceCatalog.#purgeVideo`).
+ * - If the video directory is a source directory itself (the project directory, a session's working directory) or contains one, it is refused with `VIDEO_TRASH_SOURCE_ROOT` before anything is touched.
+ * - Before deleting: refuse when another connection has the video open (`VIDEO_IN_USE`), or when it has internal leases or running jobs and exports (`VIDEO_BUSY`); only if the caller itself has it open, close it first
+ *   (`video.closed`, `reason: 'deleted'`). The video's write lock is held during the move; if another process holds the lock, it is the engine's `VIDEO_LOCKED`.
+ * - Record the deletion in `space.json` first (the record and the trash marker), then move the directory; if the move fails, remove the record. A crash midway is reconciled by Space at startup, by checking where the directory actually is.
+ * - The entry id in the trash is determined by the source and its position in the trash (another video may later be placed at the original position); ids from before the deletion can still be used to undo and restore.
  */
 
 export interface VideoTrashDeps {
   space: SpaceCatalog;
   videos: VideoService;
   jobs: { list(): JobRecord[] };
-  /** 文件目标到来源目录与文件（与 `videos.open` 同一个解析）。 */
+  /** File target to source directory and file (same resolution as `videos.open`). */
   resolve: (target: FileTarget) => { root: string; file: string };
   log: Logger;
 }
@@ -44,7 +44,7 @@ export type VideoDeleteTarget = FileTarget | { videoId: Id };
 export class VideoTrash {
   readonly #deps: VideoTrashDeps;
   readonly #log: Logger;
-  /** 删除与恢复一个接一个做：两次移动不会交错。 */
+  /** Deleting and restoring run one at a time: two moves never interleave. */
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(deps: VideoTrashDeps) {
@@ -68,7 +68,7 @@ export class VideoTrash {
 
   async #delete(target: VideoDeleteTarget, principal: TrustedPrincipal): Promise<VideoDeleteResult> {
     const { space, videos } = this.#deps;
-    // 已经删除了的（重复的请求、撤销之前又点了一次）：照样回答同一个结果。
+    // Already deleted (a repeated request, or a second click before undo): still answer with the same result.
     if ('entryId' in target) {
       const trashed = space.trashedVideo(target.entryId);
       if (trashed) return this.#result(trashed.entryId, trashed.record);
@@ -76,7 +76,7 @@ export class VideoTrash {
     const info = await this.#locate(target);
     const dir = await fs.realpath(info.dir);
     const rootReal = await fs.realpath(info.root);
-    // 视频目录是来源目录本身（或装着某个来源目录）：改名会把项目或会话的目录整个挪走，也挪不进自己的子目录。动任何东西之前拒绝。
+    // The video directory is a source directory itself (or contains one): renaming would move the whole project or session directory away, and it cannot be moved into its own subdirectory. Refuse before touching anything.
     if (await this.#holdsSourceRoot(dir, rootReal)) throw sourceRootError();
     const indexed = info.entry.ref && 'videoId' in info.entry.ref ? info.entry.ref.videoId : null;
     const videoId =
@@ -144,7 +144,7 @@ export class VideoTrash {
     const related = record.videoId
       ? this.#deps.space
           .entries()
-          // 派生的子视频（origin 同样指向父视频）是独立的视频，不算它生成、导出的条目。
+          // A derived child video (its origin also points to the parent video) is an independent video, and does not count as an entry it generated or exported.
           .filter((e) => e.id !== entryId && e.kind !== 'video' && e.origin?.videoId === record.videoId)
           .map((e) => e.id)
       : [];
@@ -163,7 +163,7 @@ export class VideoTrash {
       const { root, file } = this.#deps.resolve(target);
       dir = path.resolve(root, file);
       if (/^(video|movie)\.db$/.test(path.basename(dir))) dir = path.dirname(dir);
-      // 路径只在给定的项目或会话目录里找：不借一个来源的名义删另一个来源里的视频。
+      // The path is only looked up in the given project or session directory: do not use one source's name to delete a video in another source.
       const rel = path.relative(root, dir);
       if (rel === '' && (await isVideoDir(dir))) throw sourceRootError();
       if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) dir = null;
@@ -173,7 +173,7 @@ export class VideoTrash {
     return info;
   }
 
-  /** `dir` 是不是某个来源目录本身，或者装着某个来源目录（都按真实路径比）。 */
+  /** Whether `dir` is a source directory itself, or contains a source directory (both compared by real path). */
   async #holdsSourceRoot(dir: string, rootReal: string): Promise<boolean> {
     const roots = [rootReal, ...(await Promise.all(this.#deps.space.sourceRoots().map((root) => fs.realpath(root).catch(() => null))))];
     return roots.some((root) => {

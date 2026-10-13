@@ -22,10 +22,7 @@ import { AddModelDialog, CustomProviderDialog, KeyDialog } from './provider-dial
 import { TextParamRows } from './text-params.tsx';
 
 /**
- * 模型 › 云端模型（设计稿 settings-cloud.jsx:220-342）：标题与说明、默认模型（文本生成多两行：推理强度、并发请求数）、
- * 服务商列表（图像档第一张是 Codex CLI），以及密钥、自建服务商、添加模型、测试四个对话框。用途档由左栏的能力分类决定；
- * 音源分离、画面理解只有本地页，深链到云端页时如实说没有。浏览器里只能看与测试：Web 白名单不含 `models.configure`、
- * `models.setDefault` 等，默认模型、参数、密钥、刷新与添加都置灰，页头下写一句。
+ * Models › Cloud models (design mockup settings-cloud.jsx:220-342): the title and description; the default model (text generation has two more rows: reasoning effort and the concurrent request count); the provider list (the first card in the image tier is Codex CLI); and four dialogs: keys, self-hosted providers, add model, and test. The use tier is set by the capability category on the left. Source separation and image understanding exist only on the local page, so a deep link to the cloud page says they are not available. In the browser you can only view and test: the Web allowlist does not include `models.configure`, `models.setDefault` and the like, so the default model, parameters, keys, refresh and add are disabled, with one sentence under the page header.
  */
 export function CloudModels({ category }: { category: ModelCategory }) {
   const capability = categoryCapability(category);
@@ -42,10 +39,10 @@ type DialogState =
 
 const EMPTY_KEY = 'empty';
 const webNote = style({ marginTop: 0, marginBottom: 16, font: 'ui-sm', color: 'gray-800', overflowWrap: 'anywhere' });
-/** 分组的 id 与选项的 id 在同一个集合里，必须错开（分组 `none` 撞上「用本地模型」那一项的 `none` 会让整页崩掉）。 */
+/** Group ids and option ids share one collection and must be kept apart (a group with id `none` colliding with the "use local model" option's `none` would crash the whole page). */
 const sectionId = (key: string) => `section:${key}`;
 
-/** 菜单的一项。直接返回 PickerItem（包一层组件的话 S2 的集合认不出它）。 */
+/** One item of the menu. Returns a PickerItem directly (wrapping it in a component would stop S2's collection from recognizing it). */
 function pickerOption(item: DefaultOption) {
   return (
     <PickerItem key={item.key} id={item.key} textValue={item.label}>
@@ -65,10 +62,10 @@ function CloudCapability({ capability }: { capability: OnlineCapability }) {
   const codex = useCodexImage(capability === 'generateImage');
   const [dialog, setDialog] = useState<DialogState>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  // 这次打开页面以来的测试：模型 → 状态；在跑的从 `jobs` 主题读。
+  // Tests since the page was opened: model → status; the ones still running are read from the `jobs` topic.
   const [runs, setRuns] = useState<Record<string, ProbeState>>({});
   const [busy, setBusy] = useState(false);
-  // 正在刷新的那一家（设计稿一次只刷一家：刷新中各家的刷新与密钥按钮都等着）。
+  // The provider currently refreshing (the mockup refreshes one at a time: while one is refreshing, every refresh and key button waits).
   const [refreshing, setRefreshing] = useState<string | null>(null);
 
   if (!view) return <PageStatus>{connected ? MODELS_PAGE_COPY.loading : MODELS_PAGE_COPY.offline}</PageStatus>;
@@ -91,7 +88,7 @@ function CloudCapability({ capability }: { capability: OnlineCapability }) {
     return run?.status === 'running' ? probeFromJob(run.jobId, jobs.find((j) => j.jobId === run.jobId)) : run;
   };
 
-  /** 换了用途的东西加好后跳到那一类的云端页（设计稿 `setKind`）。 */
+  /** After adding something for a different use, jump to that category's cloud page (mockup `setKind`). */
   const showCapability = (next: OnlineCapability) => {
     if (next !== capability) replace({ tab: 'models', category: capabilityCategory(next), page: 'cloud' });
   };
@@ -108,7 +105,7 @@ function CloudCapability({ capability }: { capability: OnlineCapability }) {
     }
   };
 
-  /** 卡头的「刷新」（设计稿 settings-cloud.jsx `refresh` / `refreshVoices`）：展开这家，结果经 `models` 主题回到说明行与模型行。 */
+  /** The "Refresh" on the card header (mockup settings-cloud.jsx `refresh` / `refreshVoices`): expands this provider; results come back through the `models` topic to the note line and the model rows. */
   const refresh = async (providerId: string) => {
     if (refreshing) return;
     setRefreshing(providerId);

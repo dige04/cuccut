@@ -19,8 +19,8 @@ import { LibraryStore } from '@cuccut/runtime-storage/library';
 import { JobManager, type JobVideos, type TranscribeRouter } from './job-manager.ts';
 
 /**
- * 任务里的用户库（架构设计 §5.9）：转写的术语表进提示、Job 冻结条目的版本与摘要、任务期间固定版本；
- * 合成的 `library:<id>` 音色用所选 Provider 上的有效克隆。Provider 是假的，库是真的（临时目录）。
+ * The user library in tasks (architecture design §5.9): the transcription glossary goes into the prompt; the Job freezes entry versions and digests; versions are pinned for the duration of the task.
+ * A synthesized `library:<id>` voice uses the valid clone on the chosen Provider. The Provider is a fake; the library is real (temp directory).
  */
 
 const ASR: TranscribeModelInfo = {
@@ -52,7 +52,7 @@ const TTS: SpeechModelInfo = {
 };
 const WAV = Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVEfmt ', 'latin1'), Buffer.alloc(64, 1)]);
 
-/** 记下每次尝试，然后一直等到被取消。 */
+/** Records each attempt, then waits until cancelled. */
 class HoldingTranscriber implements TranscribeProvider {
   readonly id = 'fake';
   readonly runs: TranscribeRun[] = [];
@@ -211,7 +211,7 @@ describe('任务里的用户库', () => {
       glossaryHint: { status: 'sent', terms: 3, dropped: 0 },
     });
 
-    // 任务进行中改了术语表：旧版本被固定着，还读得到。
+    // The glossary was changed during the task: the old version is pinned and still readable.
     await library.put({ library: 'glossaries', id: a.id, content: { ...a.content, name: '甲改' } });
     expect(library.get({ library: 'glossaries', id: a.id, version: 1 }).contentHash).toBe(a.contentHash);
 
@@ -300,14 +300,14 @@ describe('任务里的用户库', () => {
     };
     const voice = (await library.put({ library: 'voices', content, file: { path: ref } })).entry;
 
-    // 没有克隆
+    // no clone
     const missing = await rejection(
       manager.submitSynthesizeSpeech({ text: '你好', voice: `library:${voice.id}`, provider: 'openai' }, submitter),
     );
     expect(missing.code).toBe('conflict');
     expect(missing.details).toMatchObject({ code: 'VOICE_CLONE_REQUIRED', reason: 'missing', providerId: 'openai' });
 
-    // 有效的克隆：执行者收到的是克隆的音色 ID，Job 记下冻结的音色条目。
+    // valid clone: the executor receives the cloned voice ID, and the Job records the frozen voice entry.
     await library.recordClone(voice.id, 'openai', 'clone-123');
     const { jobId } = await manager.submitSynthesizeSpeech({ text: '你好', voice: `library:${voice.id}`, provider: 'openai' }, submitter);
     const run = await until(() => generator.runs[0]);
@@ -315,14 +315,14 @@ describe('任务里的用户库', () => {
     expect(manager.inspect(jobId).library).toEqual({
       entries: [{ library: 'voices', id: voice.id, version: 1, contentHash: voice.contentHash }],
     });
-    // 别的 Provider 上没有克隆
+    // no clone on another Provider
     expect(
       (await rejection(manager.submitSynthesizeSpeech({ text: '你好', voice: `library:${voice.id}`, provider: 'google' }, submitter)))
         .details,
     ).toMatchObject({ code: 'VOICE_CLONE_REQUIRED', reason: 'missing' });
     await manager.cancel(jobId);
 
-    // 换了参考录音：克隆过期
+    // reference recording replaced: clone expired
     const ref2 = path.join(dir, 'ref2.wav');
     await fs.writeFile(ref2, Buffer.concat([WAV, Buffer.from('2')]));
     await library.put({ library: 'voices', id: voice.id, content, file: { path: ref2 } });

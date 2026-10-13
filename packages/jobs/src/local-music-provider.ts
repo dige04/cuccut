@@ -20,35 +20,34 @@ import { jobWarning } from './job-text.ts';
 import { silentLog, type JobsLogger } from './jobs-logger.ts';
 
 /**
- * 本地音乐生成的 Provider（架构设计 §6.1、§6.3）：`generateMusic` 的 `local` 执行者。每个任务起一个 audio.cpp 引擎进程
- * （`audiocpp_cli`），读模型包目录里的 GGUF，把 WAV 写进这次尝试的 staging；没有 Model Worker 参与，也不常驻。
+ * Provider for local music generation (architecture design §6.1, §6.3): the `local` executor of `generateMusic`. Each job starts one audio.cpp engine process
+ * (`audiocpp_cli`), reads the GGUF in the model package directory, and writes the WAV into this attempt's staging. No Model Worker takes part, and it is not resident.
  *
- * - 引擎找不到时 `unavailable`，原因 `not-installed`：引擎是模型包的必需组件（`audiocpp-engine`），没装时模型目录同样把模型包
- *   标成 `not-installed` / `incomplete`，下载或修复模型包即可。
- * - 进度：引擎不报告步数，进入生成阶段后只有不定进度；完成时报 1/1。
- * - 取消：先 SIGTERM 整个进程组（Windows 上 taskkill 整棵树），宽限期后 SIGKILL；进程退出后以 `cancelled` 兑现。
- * - 输出撞上 `maxDurationSec` 换算的 token 上限（WAV 时长达到上限的 98%）时记 `output-truncated` 警告，任务照样完成。
- * - 失败：进程起不来 `unavailable`；非零退出 `crashed` 并带 stderr 的尾巴；退出了却没有 WAV `protocol`。
+ * - When the engine is not found: `unavailable`, reason `not-installed`. The engine is a required component of the model package (`audiocpp-engine`); when it is not installed, the model catalog likewise marks the model package as `not-installed` / `incomplete`, and downloading or repairing the model package is enough.
+ * - Progress: the engine does not report steps; once in the generation stage there is only indeterminate progress; on completion it reports 1/1.
+ * - Cancellation: first SIGTERM the whole process group (on Windows, taskkill the whole tree), then SIGKILL after a grace period; after the process exits, it settles as `cancelled`.
+ * - When the output hits the token limit converted from `maxDurationSec` (WAV duration reaches 98% of the limit), an `output-truncated` warning is recorded, and the job still completes.
+ * - Failure: a process that cannot start is `unavailable`; a non-zero exit is `crashed`, with the tail of stderr; exiting without a WAV is `protocol`.
  */
 
 export interface LocalMusicProviderOptions {
   catalog: ModelCatalog;
-  /** 一个模型包的引擎可执行文件的路径；null 表示找不到。每次任务重新解析（模型包装好后无需重启）。 */
+  /** The path to the engine executable for a model package; null means not found. Re-resolved for each job (no restart needed after the model package is installed). */
   engine: (bundleId: string) => string | null;
-  /** 启动引擎的环境（登录 shell 的 PATH，与 Model Worker 相同）。 */
+  /** The environment that starts the engine (the login shell's PATH, same as the Model Worker). */
   env: () => Promise<NodeJS.ProcessEnv>;
-  /** 引擎后端（`metal` / `cuda` / `vulkan` / `cpu`）；null 时由引擎按构建自己选。 */
+  /** The engine backend (`metal` / `cuda` / `vulkan` / `cpu`); when null, the engine chooses based on its build. */
   backend?: string | null;
   threads?: number;
   log?: JobsLogger;
   cancelGraceMs?: number;
-  /** 测试用：换掉 `spawn`。 */
+  /** For tests: replaces `spawn`. */
   spawn?: typeof spawn;
 }
 
-/** WAV 时长达到上限的这个比例就算撞上限。 */
+/** A WAV duration reaching this proportion of the limit counts as hitting the limit. */
 const TRUNCATED_RATIO = 0.98;
-/** stderr 留给失败说明的尾巴长度。 */
+/** Length of the stderr tail kept for the failure explanation. */
 const STDERR_TAIL = 2000;
 
 export class LocalMusicProvider implements GenerationProvider {
@@ -79,7 +78,7 @@ export class LocalMusicProvider implements GenerationProvider {
     return this.generateMusic(run, sink, signal);
   }
 
-  /** 一次生成；`options.steps` 是自检给的少步数（正式提交由冻结参数决定）。 */
+  /** One generation; `options.steps` is the reduced step count given by the self-check (formal submission is decided by frozen parameters). */
   async generateMusic(
     run: GenerationRun,
     sink: GenerationSink,
@@ -139,7 +138,7 @@ export class LocalMusicProvider implements GenerationProvider {
     for (const child of this.#active) killProcessTree(child, 'SIGTERM');
   }
 
-  /** 引擎的进程：等它退出；信号中止时结束整个进程组并等它退出。 */
+  /** The engine process: waits for it to exit; on a signal abort, ends the whole process group and waits for it to exit. */
   #runEngine(
     engine: string,
     args: string[],
@@ -193,7 +192,7 @@ export class LocalMusicProvider implements GenerationProvider {
     });
   }
 
-  /** 约定的输出文件；引擎按自己的规则改了名时退回 staging 里任意一个 WAV。 */
+  /** The agreed output file; if the engine renamed it by its own rules, falls back to any WAV in staging. */
   async #findOutput(staging: string, expected: string): Promise<string | null> {
     if (await exists(expected)) return expected;
     const entries = await fs.readdir(staging).catch(() => []);

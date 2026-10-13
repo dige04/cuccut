@@ -1,13 +1,8 @@
-//! 关键帧吸附（`MediaStore::set_keyframe_snap`）的取帧语义。
+//! Frame-fetch semantics of keyframe snapping (`MediaStore::set_keyframe_snap`).
 //!
-//! 交互式预览**拖动中**把取帧时刻吸到它之前最近的关键帧：每次跳转只付「重开 +
-//! 解一帧」的价，画面与目标时刻最多差一个 GOP。松手后回到精确路径时必须拿到
-//! 与从未吸附过完全相同的帧——`docs/design/bcf/cuccut-format-spec.md` §15.1 的「取哪一
-//! 帧」硬承诺不受拖动影响。
+//! During **dragging** in interactive preview, the frame-fetch time snaps to the nearest keyframe before it: each jump only pays the cost of “reopen + decode one frame”, and the picture is at most one GOP away from the target time. After release, when returning to the exact path, the frame obtained must be exactly the same as if it had never been snapped — the hard guarantee of “which frame to take” in §15.1 of `docs/design/bcf/cuccut-format-spec.md` is not affected by dragging.
 //!
-//! 只有原生流（macOS AVFoundation）答得出关键帧表；别的后端上吸附是 no-op，
-//! 本文件的等价断言依然成立（近似帧 = 精确帧）。夹具用 ffmpeg 现生成，探测
-//! 不到就整体跳过（仓库既有礼节）。
+//! Only the native stream (macOS AVFoundation) can answer with a keyframe table; on other backends snapping is a no-op, and the equivalence assertions in this file still hold (approximate frame = exact frame). The fixture is generated on the fly with ffmpeg; if it cannot be probed, the whole file is skipped (the repository's existing convention).
 #![cfg(feature = "media")]
 
 use std::path::{Path, PathBuf};
@@ -20,7 +15,7 @@ use serde_json::{Value, json};
 const PLAN_FPS: f64 = 30.0;
 const SOURCE_FPS: u32 = 30;
 const DURATION_SECONDS: u32 = 6;
-/// 固定 GOP：每 30 帧（1 秒）一个关键帧，吸附落点可以事先算出来。
+/// Fixed GOP: one keyframe every 30 frames (1 second), so snap targets can be computed in advance.
 const GOP_FRAMES: u32 = 30;
 
 fn ffmpeg_available() -> bool {
@@ -33,8 +28,8 @@ fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
-/// `testsrc` 每帧都带可见的帧计数，逐帧像素互不相同；`-g 30 -keyint_min 30
-/// -sc_threshold 0` 把关键帧钉死在整秒上。
+/// `testsrc` carries a visible frame counter in every frame, so per-frame pixels all differ; `-g 30 -keyint_min 30
+/// -sc_threshold 0` pins the keyframes to whole seconds.
 fn fixture() -> Option<(tempfile::TempDir, PathBuf)> {
     if !ffmpeg_available() {
         return None;
@@ -102,14 +97,13 @@ fn frame(media: &mut MediaStore, time: f64) -> Vec<u8> {
         .to_vec()
 }
 
-/// 精确路径从未吸附过时在 `time` 取到的帧。
+/// The frame obtained at `time` when the exact path has never snapped.
 fn exact_frame(dir: &Path, time: f64) -> Vec<u8> {
     let mut media = store(dir);
     frame(&mut media, time)
 }
 
-/// 吸附中的帧要么等于目标时刻的精确帧（后端答不出关键帧表），要么等于目标
-/// 之前那个整秒关键帧的精确帧；松手后精确请求拿到的帧与从未吸附过一致。
+/// A frame during snapping is either equal to the exact frame at the target time (the backend cannot answer with a keyframe table), or equal to the exact frame of the whole-second keyframe before the target; after release, an exact request obtains a frame identical to one that was never snapped.
 #[test]
 fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
     let Some((dir, _assets)) = fixture() else {
@@ -119,7 +113,7 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
     let mut media = store(dir.path());
     frame(&mut media, 0.0);
     media.set_keyframe_snap(true);
-    // 3.5 s 落在 GOP 中间：关键帧在 3.0 s。
+    // 3.5 s falls in the middle of a GOP: the keyframe is at 3.0 s.
     let snapped = frame(&mut media, 3.5);
     let expected = if native {
         exact_frame(dir.path(), 3.0)
@@ -127,7 +121,7 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
         exact_frame(dir.path(), 3.5)
     };
     assert_eq!(snapped, expected, "拖动中 t=3.5 应落在它之前的关键帧上");
-    // 原生流在同一 GOP 内复用近似帧；ffmpeg 后端不吸附，继续精确取帧。
+    // The native stream reuses the approximate frame within the same GOP; the ffmpeg backend does not snap and keeps fetching exact frames.
     let expected_next = if native {
         snapped
     } else {
@@ -137,14 +131,14 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
         frame(&mut media, 3.8) == expected_next,
         "同一 GOP 内的后续帧应遵守后端的吸附能力"
     );
-    // 松手：精确路径必须给出与从未吸附过相同的帧。
+    // Release: the exact path must give the same frame as one that was never snapped.
     media.set_keyframe_snap(false);
     assert_eq!(
         frame(&mut media, 3.8),
         exact_frame(dir.path(), 3.8),
         "松手后的精确帧必须与从未吸附过一致"
     );
-    // 之后顺序推进（播放）也不受影响。
+    // Afterwards, sequential advance (playback) is also unaffected.
     let step = 1.0 / PLAN_FPS;
     assert_eq!(
         frame(&mut media, 3.8 + step),
@@ -152,7 +146,7 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
     );
 }
 
-/// 吸附时向后拖同样按关键帧取，且切回精确路径后向后跳的帧也正确。
+/// Dragging backwards while snapping likewise fetches by keyframe, and after switching back to the exact path, the frames for a backward jump are also correct.
 #[test]
 fn snapping_backwards_and_far_forward_stays_consistent() {
     let Some((dir, _assets)) = fixture() else {
@@ -172,7 +166,7 @@ fn snapping_backwards_and_far_forward_stays_consistent() {
     assert_eq!(frame(&mut media, 2.3), exact_frame(dir.path(), 2.3));
 }
 
-/// 默认关闭：不显式打开时行为与改动前一字不差（导出走的就是这条）。
+/// Off by default: when not explicitly enabled, behaviour is word-for-word identical to before the change (export takes this path).
 #[test]
 fn keyframe_snap_is_off_by_default() {
     let Some((dir, _assets)) = fixture() else {
@@ -183,7 +177,7 @@ fn keyframe_snap_is_off_by_default() {
     assert_eq!(frame(&mut media, 3.5), exact_frame(dir.path(), 3.5));
 }
 
-/// 点名 ffmpeg 的 H.264 解码器，在有原生后端的机器上也覆盖不吸附的路径。
+/// Names ffmpeg's H.264 decoder explicitly, so that the non-snapping path is also covered on machines that have a native backend.
 #[test]
 fn ffmpeg_keyframe_snap_keeps_exact_frames_within_the_same_gop() {
     let Some((dir, _assets)) = fixture() else {

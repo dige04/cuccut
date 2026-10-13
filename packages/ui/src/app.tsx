@@ -12,18 +12,17 @@ import { useLanguageSync, useLocale } from './state/locale.ts';
 import { useShell } from './state/shell-store.ts';
 import { installToastAutoDismiss, type ToastQueueLike } from './toast-timing.ts';
 
-// toast 只停几秒，带按钮的也一样（toast-timing.ts）。
+// Toasts stay up for only a few seconds, including ones with buttons (toast-timing.ts).
 installToastAutoDismiss(ToastQueue as unknown as ToastQueueLike);
 
 const rootStyle = style({ height: 'screen', overflow: 'hidden' });
 
 /**
- * 桌面端界面的根。宿主只提供连接信息与少量原生能力，其余都经 Runtime。
- * `initialHref` 是启动时要去的界面内链接（`hrefFor` 的形状）：Web 客户端从地址栏取（访问链接可以直达一个视频的编辑器，
- * `webVideoHref`），桌面端不给。
+ * Root of the desktop UI. The host only provides connection info and a few native capabilities; everything else goes through the Runtime.
+ * `initialHref` is the in-app link to go to at startup (the shape of `hrefFor`): the web client takes it from the address bar (an access link can open a video's editor directly, `webVideoHref`); the desktop app does not provide it.
  */
 export function App({ host, initialHref }: { host: HostBridge; initialHref?: string }) {
-  // 只在第一次渲染时去一次；路由不持久化，之后的去向由界面自己决定。
+  // Goes there only once, on the first render; routes are not persisted, and later destinations are decided by the UI itself.
   useState(() => {
     if (initialHref) useShell.getState().navigate(initialHref);
   });
@@ -31,7 +30,7 @@ export function App({ host, initialHref }: { host: HostBridge; initialHref?: str
   const navigate = useShell((s) => s.navigate);
   const locale = useLocale();
 
-  // 会话随 effect 建立和释放：StrictMode 下 effect 会先跑一遍再清理，关掉的客户端不能复用。
+  // The session is created and released with the effect: under StrictMode the effect runs once and is then cleaned up, so a closed client must not be reused.
   useEffect(() => {
     const next = new RuntimeSession(host);
     next.start();
@@ -50,7 +49,7 @@ export function App({ host, initialHref }: { host: HostBridge; initialHref?: str
         router={{ navigate }}
         styles={rootStyle}>
         <LanguageSync />
-        {/* 换语言时整棵界面重画：文案目录在读的时候取当前语言，局部状态随之复位，跨屏状态在 store 里。 */}
+        {/* When the language changes, the whole UI is redrawn: the copy catalog reads the current language when it is read, local state resets with it, and cross-screen state lives in the store. */}
         <AppShell key={locale} platform={host.platform} />
         {/* Toasts sit near the top, under the navigation bar (agentcut sonner; offset in theme/cuccut.css). */}
         <ToastContainer placement="top" />

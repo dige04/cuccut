@@ -24,9 +24,9 @@ import { renewPairingCode, revokeShareClient, setShareCapability } from './share
 import { useFlipShare } from './use-share-status.ts';
 
 /*
- * 远端算力 ›「共享这台 Mac」（原型 designs/cuccut/app/page-shell.jsx `RemotePage` 的 share 页签，services.css `.pairblk` / `.rtask__chips`）。
- * 读写的都是 `nodes.share.*`。原型里这个版本没有后端的几项没画：配对码开关（pairMode=open）、并发任务数、
- * OpenAI 兼容端点、「打开 CucCut 时自动开始共享」勾选（共享开着时 Runtime 启动就自动继续，写成页脚的一句事实）。
+ * Remote compute › “Share this Mac” (prototype designs/cuccut/app/page-shell.jsx `RemotePage` share tab, services.css `.pairblk` / `.rtask__chips`).
+ * Reads and writes only `nodes.share.*`. Several items in the prototype that have no backend in this version are not drawn: the pairing code toggle (pairMode=open), the concurrent task count,
+ * the OpenAI-compatible endpoint, and the “Start sharing automatically when CucCut opens” checkbox. While sharing is on, the Runtime resumes it automatically at startup, which is written as one factual line in the footer.
  */
 
 const note = style({ margin: 0, marginTop: 8, font: 'ui-sm', color: 'gray-600' });
@@ -42,7 +42,7 @@ const fix = style({
   backgroundColor: 'gray-75',
 });
 const grow = style({ flexGrow: 1, minWidth: 0 });
-/** 原型 ui.css `.setrow`：一行一项，标签 + 副文在左，值或控件在右，1px gray-100 分隔。 */
+/** Prototype ui.css `.setrow`: one item per row, label and secondary text on the left, value or control on the right, with a 1px gray-100 divider. */
 const row = style({
   display: 'flex',
   alignItems: 'center',

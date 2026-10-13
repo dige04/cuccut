@@ -20,16 +20,12 @@ import { vi } from './tool-space-input.vi.ts';
 export { spaceKindsOf };
 
 /**
- * Space 条目作为工具的输入（产品设计 §2.7「页面」第 1 条、§4.5「用工具处理…」；架构设计 §7.9「Space 条目作输入」；
- * 设计稿 model-tool-space-input.js）。纯函数。
+ * Space items as tool inputs (product design §2.7 “pages” item 1, §4.5 “Process with tool…”; architecture design §7.9 “Space items as input”; design file model-tool-space-input.js). Pure functions.
  *
- * 哪个工具收哪几种条目只在工具目录（model/tool-catalog.ts 输入的 `kinds`）声明一次，两个方向都从它派生：工具 → 条目
- * （Space 选择器的候选）与条目 → 工具（查看器的「用工具处理…」）。种类是 Runtime 解析 `{ entryId }` 时接受的子集
- * （runtime-core space-inputs.ts：媒体是视频素材、成片与音频，字幕文件翻译是字幕，素材是文档与字幕）；`video` 是可编辑的
- * 视频，候选另从 `tools.candidates` 来（带文稿）。
+ * Which tool accepts which item kinds is declared once, in the tool catalog (`kinds` of the inputs in model/tool-catalog.ts), and both directions derive from it: tool → items (the candidates in the Space picker) and item → tools (the viewer’s “Process with tool…”). The kinds are a subset of what Runtime accepts when it resolves `{ entryId }` (runtime-core space-inputs.ts: media means video assets, finished videos, and audio; caption-file translation means captions; material means documents and captions). `video` is an editable video; its candidates come separately from `tools.candidates` (which carry the transcript).
  */
 
-/** 条目不能选的原因（译文在 `tool-space-input.<语言>.ts`）。 */
+/** Why an item cannot be chosen (translations are in `tool-space-input.<lang>.ts`). */
 const en = {
   reasons: {
     trashed: 'In the Trash',
@@ -47,7 +43,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 
 export const SPACE_INPUT_COPY: ToolSpaceInputMessages['reasons'] = live(() => M.reasons);
 
-/** 「视频、视频素材、成片、音频」。 */
+/** “video, video material, finished video, audio”. */
 export function spaceKindsText(tool: ToolId): string {
   return M.joinKinds(spaceKindsOf(tool).map((k) => KIND_LABEL[k]));
 }
@@ -58,7 +54,7 @@ function extOf(entry: Pick<SpaceEntry, 'fileName' | 'name'>): string {
   return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
-/** 条目本身为什么不能当输入（与工具无关的那部分）；能用时 null。种类不合不在这里（不列）。 */
+/** Why the item itself cannot be used as input (the part that is independent of tools). null when usable. Mismatched kinds are not here; they are not listed. */
 export function entryReason(entry: SpaceEntry): string | null {
   if (entry.user.trashedAt) return SPACE_INPUT_COPY.trashed;
   if (entry.status === 'generating') return SPACE_INPUT_COPY.generating;
@@ -69,7 +65,7 @@ export function entryReason(entry: SpaceEntry): string | null {
   return null;
 }
 
-/** Space 选择器的一行：视频行带 `tools.candidates` 的候选（文稿、标签、置灰原因），别的行带条目。 */
+/** One row of the Space picker. Video rows carry the candidates from `tools.candidates` (transcript, labels, greyed-out reason); other rows carry items. */
 export interface SpaceRow {
   entryId: Id;
   name: string;
@@ -88,8 +84,7 @@ function matches(name: string, query: string): boolean {
 }
 
 /**
- * 工具的 Space 候选：只列这个工具收的种类，回收站里的不列；能选的排前面，同组按最近活动。视频行取自
- * `videoRows`（`tools.candidates` 的行，调用方已按搜索词筛过），其余取自 Space 目录的条目。
+ * Candidates for a tool in Space: only the kinds this tool accepts are listed, and trashed items are not. Selectable ones come first; within each group, the most recent activity comes first. Video rows come from `videoRows` (the rows of `tools.candidates`; the caller has already filtered them by search term). The rest come from the items in the Space directory.
  */
 export function spaceRows(tool: ToolId, entries: readonly SpaceEntry[], videoRows: readonly PickerRow[], query = ''): SpaceRow[] {
   const kinds = spaceKindsOf(tool);
@@ -121,15 +116,14 @@ export function spaceRows(tool: ToolId, entries: readonly SpaceEntry[], videoRow
 }
 
 /**
- * 选中的条目按哪种输入提交（`tools.list` 的可用性与 `executionByInput` 按它选）：可编辑的视频写进它（`video`），
- * 生成语音与文本生成的文档、字幕是素材（`document`），其余当文件用（`file`）。
+ * The input kind an selected item is submitted as (`tools.list` availability and `executionByInput` select by it): an editable video is written into (`video`); generated speech, and documents and captions from text generation, are material (`document`); everything else is used as a file (`file`).
  */
 export function inputKindOf(tool: ToolId, kind: SpaceEntryKind): ToolInputKind {
   if (kind === 'video') return 'video';
   return tool === 'synthesize-speech' || tool === 'generate-text' ? 'document' : 'file';
 }
 
-/** 条目 → 收它的工具（Space 查看器「用工具处理…」，§4.5），按目录顺序；回收站里的条目没有。 */
+/** Items → the tools that accept them (the Space viewer’s “Process with tool…”, §4.5), in catalog order. Trashed items have none. */
 export function toolsForEntry(entry: Pick<SpaceEntry, 'kind' | 'user'>): ToolId[] {
   if (entry.user.trashedAt) return [];
   return TOOLS.filter((t) => !t.planned && spaceKindsOf(t.id).includes(entry.kind)).map((t) => t.id);

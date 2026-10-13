@@ -31,10 +31,7 @@ import { cancellationFacts, recoveryAction, type RemoteTaskQuery, type RemoteTas
 import { reconcileChoices } from './job-reconcile.ts';
 
 /**
- * 重启恢复与对账（架构设计 §7.2–§7.5）：用故障注入在几个时刻模拟崩溃（产物写进产物库、结果还没记下；产物发布后、应用前；
- * 账本写下命令后、提交前；提交后、记回执前），丢下旧的 JobManager、在同一个目录上新建一个（就像进程重启），断言不重复写入、不重新生成、
- * 预算只结算一次、状态正确；再把 `jobs.reconcile` 的每个决定都走一遍。视频引擎是假的（记下按命令提交的回执），
- * 真实引擎的端到端测试在 runtime-core。
+ * Restart recovery and reconciliation (architecture design §7.2–§7.5): fault injection simulates crashes at several points (the output has been written to the asset library but the result is not yet recorded; after the output is published but before it is applied; after the ledger records the command but before commit; after commit but before the receipt is recorded). The old JobManager is dropped and a new one is created on the same directory (as a process restart would). The tests assert that nothing is written twice, nothing is regenerated, budget is settled only once, and the state is correct; then every decision of `jobs.reconcile` is run through. The video engine is fake (it records receipts for committed commands); end-to-end tests with the real engine are in runtime-core.
  */
 
 const MODEL: SpeechModelInfo = {
@@ -57,7 +54,7 @@ const MODEL: SpeechModelInfo = {
 const CONNECTION: JobSubmitter = { kind: 'connection', id: 'conn_1' };
 const AGENT: JobSubmitter = { kind: 'agent', id: 'run_1', taskId: 'task_1' };
 
-/** 在线（外发）的假生成器：默认写一个「mp3」；`hold()` 之后的调用永远不返回（模拟崩溃时还在跑）。 */
+/** Fake online (outbound) generator: by default writes an "mp3"; calls after `hold()` never return (simulating a call still running at the moment of a crash). */
 class FakeGenerator implements GenerationProvider {
   readonly id = 'fake';
   readonly runs: GenerationRun[] = [];
@@ -90,22 +87,22 @@ class FakeGenerator implements GenerationProvider {
 
 const PLACE = { root: '/fake/videos/mov_1', file: '.', scope: 'project' };
 
-/** 假的视频与引擎：引擎按 `commandId` 记下回执（跨「重启」保留）；Runtime 重启后视频没有打开，按位置重新打开。 */
+/** Fake video and engine: the engine records receipts by `commandId` (kept across "restarts"); after a Runtime restart the video is not open and is reopened by position. */
 class FakeVideos implements JobVideos {
   open = true;
-  /** 目录不见了：重新打开时 `missing`。 */
+  /** Directory is gone: `missing` on reopen. */
   gone = false;
   revision = 1;
   leases = 0;
-  /** 真正落下的提交（引擎里的事务）。 */
+  /** The commit that actually landed (a transaction in the engine). */
   committed: Array<{ commandId: string; operations: EditOperation[] }> = [];
   receipts = new Map<string, AppliedReceipt>();
   receiptQueries: string[] = [];
   receiptFails = false;
   reopened = 0;
-  /** 引擎侧的停止屏障：runId → 失效到的代。 */
+  /** Engine-side stop barrier: runId → the generation up to which it was invalidated. */
   invalidated = new Map<string, number>();
-  /** 带着 run 到达的提交（看提交有没有带上执行）。 */
+  /** Commits that arrive carrying a run (to check whether the commit carries the execution). */
   runs: Array<ApplicationRun | undefined> = [];
 
   retain(): void {
@@ -152,7 +149,7 @@ class FakeVideos implements JobVideos {
     request: { commandId: string; expectedRevision: string; operations: EditOperation[]; run?: ApplicationRun },
   ) {
     this.runs.push(request.run);
-    // 幂等：同一个命令再来一次只返回原来的回执。
+    // Idempotent: the same command arriving again only returns the original receipt.
     const existing = this.receipts.get(request.commandId);
     if (existing) return existing;
     const stopped = request.run && this.invalidated.get(request.run.runId);
@@ -179,7 +176,7 @@ class FakeVideos implements JobVideos {
   }
 }
 
-/** 假的授权服务：开始执行过的预留按保守规则结算（与 grant-store 一致）；每笔预留只能结算一次。 */
+/** Fake authorization service: reservations whose execution has started are settled under the conservative rule (consistent with grant-store); each reservation can be settled only once. */
 class FakeAdmission implements JobAdmission {
   admitted = 0;
   started = new Set<string>();
@@ -198,7 +195,7 @@ class FakeAdmission implements JobAdmission {
     };
   }
 
-  /** 设了时，「已开始」落盘之后进程就没了（start 永远不兑现）。 */
+  /** When set, the process is gone right after “started” is persisted (start never completes). */
   crashAfterStart = false;
 
   async start(use: JobGrantUse) {
@@ -282,7 +279,7 @@ describe('重启恢复与对账（JobManager）', () => {
     });
   }
 
-  /** 丢下旧的 JobManager（不正常停止），在同一个目录上新建一个；Runtime 重启后视频没有打开。 */
+  /** Drops the old JobManager (not a clean stop) and creates a new one on the same directory; after a Runtime restart the video is not open. */
   async function restart(): Promise<JobManager> {
     videos.open = false;
     videos.leases = 0;
@@ -326,14 +323,14 @@ describe('重启恢复与对账（JobManager）', () => {
     return jobs.find((job) => job.record.jobId === jobId)?.record;
   }
 
-  /** 应用账本（权威）里这个任务的应用：崩溃之后内存里的投影不再更新，看磁盘。 */
+  /** This job's apply in the apply ledger (authoritative): after a crash the in-memory projection no longer updates, so read from disk. */
   async function ledgerApps(jobId: string): Promise<NonNullable<JobRecord['applications']>> {
     const ledger = new ApplicationLedger(path.join(dir, 'store', 'applications.jsonl'));
     await ledger.load();
     return ledger.forJob(jobId).map((item) => item.record);
   }
 
-  /** 发布时按完成结算，之后无论应用怎样都不再结算。 */
+  /** Settled at publish time on completion; after that, no further settlement regardless of how the apply goes. */
   function expectSettledOnce(job: JobRecord): void {
     expect(job.grant?.settled).toMatchObject({ basis: 'unknown', calls: 1 });
     expect(admission.settles).toEqual([{ reservationId: job.grant!.reservationId, basis: 'unknown' }]);
@@ -358,7 +355,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(job.result).toMatchObject({ outputs: [{ assetId: 'ast_1_1' }] });
     expect(job.result!.artifactId).toBe(before.result!.artifactId);
     expectSettledOnce(job);
-    // 视频的租约在结束时还回去。
+    // The video's lease is returned at the end.
     expect(videos.leases).toBe(0);
     expect(await stored(before.jobId)).toMatchObject({ state: 'completed' });
   });
@@ -407,13 +404,13 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(job.result).not.toBeNull();
     expect(videos.committed).toHaveLength(1);
     expect(videos.leases).toBe(0);
-    // 视频重新打开过，对账时仍然开着。
+    // The video was reopened and is still open at reconciliation.
     expect(await manager.reconcile(before.jobId, 'apply').catch((e: unknown) => e)).toMatchObject({
       code: 'busy',
       details: { code: 'RECEIPT_UNKNOWN' },
     });
     expect(videos.committed).toHaveLength(1);
-    // 引擎恢复：查到上次其实已经提交，补记回执，仍然只有一笔。
+    // Engine recovery: found that the last commit had in fact landed; backfill the receipt, and there is still only one.
     videos.receiptFails = false;
     const applied = await manager.reconcile(before.jobId, 'apply');
     expect(applied.state).toBe('completed');
@@ -444,7 +441,7 @@ describe('重启恢复与对账（JobManager）', () => {
       code: 'not-found',
       details: { code: 'VIDEO_NOT_OPEN' },
     });
-    // 用户重新打开视频后可以应用：新建一次应用。
+    // After the user reopens the video, apply is allowed: create a new apply.
     videos.open = true;
     const applied = await manager.reconcile(before.jobId, 'apply');
     expect(applied).toMatchObject({ state: 'completed', error: null });
@@ -470,12 +467,12 @@ describe('重启恢复与对账（JobManager）', () => {
     const applied = await manager.reconcile(job.jobId, 'apply');
     expect(applied.state).toBe('completed');
     expect(applied).not.toHaveProperty('cancellation');
-    // 先按被拦下的那条命令查回执（没有提交过），再新建一次应用。
+    // First look up the receipt by the blocked command (nothing was committed), then create a new apply.
     expect(videos.receiptQueries).toEqual([job.applications![0]!.commandId]);
     expect(applied.applications!.map((a) => a.state)).toEqual(['cancelled', 'committed']);
     expect(videos.committed).toHaveLength(1);
     expectSettledOnce(applied);
-    // 已经应用过：不能再 apply。
+    // Already applied: cannot apply again.
     expect(await manager.reconcile(job.jobId, 'apply').catch((e: unknown) => e)).toMatchObject({
       code: 'conflict',
       details: { code: 'RECONCILE_NOT_ALLOWED', state: 'completed', allowed: [] },
@@ -490,13 +487,13 @@ describe('重启恢复与对账（JobManager）', () => {
       state: 'cancelled',
       error: { code: 'APPLICATION_CANCELLED', details: { barrier: 'engine' } },
     });
-    // 提交带着这次执行；引擎拒绝，没有事务，也没有为它查回执。
+    // The commit carries this execution; the engine rejects it, with no transaction and no receipt lookup for it.
     expect(videos.runs).toEqual([{ runId: job.jobId, runGeneration: '1' }]);
     expect(videos.invalidated.get(job.jobId)).toBe(1);
     expect(videos.committed).toHaveLength(0);
     expect(videos.receiptQueries).toEqual([]);
     expectSettledOnce(job);
-    // 用户自己决定的 apply 不带执行，不受屏障影响。
+    // An apply the user decides on by themselves carries no execution and is not affected by the barrier.
     crashAt = null;
     const applied = await manager.reconcile(job.jobId, 'apply');
     expect(applied.state).toBe('completed');
@@ -523,7 +520,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(job.applications).toEqual([expect.objectContaining({ state: 'committed', artifactIds: intent.artifactIds })]);
     expectSettledOnce(job);
     expect(videos.leases).toBe(0);
-    // 意图在结果与应用记下之后清掉。
+    // The intent is cleared after the result and the apply are recorded.
     const after = { jobs: await new JobLedger(paths.jobsFile).load() };
     expect(after.jobs.find((j) => j.record.jobId === before.jobId)).not.toHaveProperty('publishing');
   });
@@ -546,7 +543,7 @@ describe('重启恢复与对账（JobManager）', () => {
     admission.crashAfterStart = true;
     const { jobId } = await manager.submitSynthesizeSpeech({ text: '一', videoId: 'mov_1' }, CONNECTION);
     await until(async () => admission.started.has('rsv_1') && (await stored(jobId))?.state === 'queued');
-    // 进程没了：旧的 JobManager 丢下（它停在「已开始」之后），账本里还是排队。
+    // Process gone: the old JobManager is dropped (it stopped after “started”); the ledger still shows queued.
     admission.crashAfterStart = false;
 
     await restart();
@@ -588,9 +585,9 @@ describe('重启恢复与对账（JobManager）', () => {
     const queued = await manager.submitSynthesizeSpeech({ text: '二', videoId: 'mov_1' }, CONNECTION);
     const agent = await manager.submitSynthesizeSpeech({ text: '三', videoId: 'mov_1' }, AGENT);
     await until(async () => (await stored(running.jobId))?.state === 'running' && (await stored(agent.jobId))?.state === 'queued');
-    // 进程没了：旧的 JobManager 丢下（它的生成永远不返回）。
+    // Process gone: the old JobManager is dropped (its generation never returns).
     generator.release();
-    // 只有第一个开始了；排队的只预留。
+    // Only the first one started; the queued one only reserved.
     expect([...admission.started]).toEqual(['rsv_1']);
 
     await restart();
@@ -599,9 +596,9 @@ describe('重启恢复与对账（JobManager）', () => {
       error: { code: 'JOB_NEEDS_RECONCILIATION' },
       grant: { reservationId: 'rsv_1', settled: { basis: 'conservative', calls: 1 } },
     });
-    // 智能体提交的排队任务：中断，不执行已经停止的旧 Run。
+    // Queued agent-submitted job: interrupted; an old Run that has already stopped is not executed.
     expect(manager.inspect(agent.jobId)).toMatchObject({ state: 'interrupted', error: { code: 'JOB_INTERRUPTED' } });
-    // 排队的重新准入（旧的预留释放），同一次尝试；跑完并应用。
+    // The queued job is admitted again (the old reservation released), same attempt; it runs and is applied.
     expect(await manager.settled(queued.jobId)).toBe('completed');
     const requeued = manager.inspect(queued.jobId);
     expect(requeued).toMatchObject({ attempt: 1, grant: { reservationId: 'rsv_4', settled: { basis: 'unknown' } } });
@@ -611,22 +608,22 @@ describe('重启恢复与对账（JobManager）', () => {
       { reservationId: 'rsv_3', basis: 'released' },
       { reservationId: 'rsv_4', basis: 'unknown' },
     ]);
-    // 只有重新排队的跑了生成；needs-reconciliation 的从不自动重发。
+    // Only the re-queued one ran generation; needs-reconciliation is never automatically re-sent.
     expect(generator.runs.map((r) => r.jobId)).toEqual([running.jobId, queued.jobId]);
     expect(videos.committed).toHaveLength(1);
 
-    // 不合法的决定：结果不明的调用没有产物，不能 apply。
+    // Invalid decision: a call with an unknown result has no output, so it cannot be applied.
     expect(await manager.reconcile(running.jobId, 'apply').catch((e: unknown) => e)).toMatchObject({
       code: 'conflict',
       details: { code: 'RECONCILE_NOT_ALLOWED', state: 'needs-reconciliation', decision: 'apply', allowed: ['retry', 'discard'] },
     });
-    // retry：同一个任务回到排队，attempt 加一，新的预留；上一次的保守结算留在历史里。
+    // retry: the same job returns to the queue, attempt increments by one, with a new reservation; the conservative settlement from before stays in history.
     const retried = await manager.reconcile(running.jobId, 'retry');
     expect(retried).toMatchObject({ state: 'queued', attempt: 2, error: null, result: null, grant: { reservationId: 'rsv_5' } });
     expect(retried.grant!.retries).toEqual([expect.objectContaining({ basis: 'conservative' })]);
     expect(await manager.settled(running.jobId)).toBe('completed');
     expect(generator.runs).toHaveLength(3);
-    // interrupted 的智能体任务：用户可以 retry，不能 discard。
+    // Agent job in interrupted: the user can retry it, but cannot discard it.
     expect(await manager.reconcile(agent.jobId, 'discard').catch((e: unknown) => e)).toMatchObject({
       details: { code: 'RECONCILE_NOT_ALLOWED', allowed: ['retry'] },
     });
@@ -659,7 +656,7 @@ describe('重启恢复与对账（JobManager）', () => {
     });
     expect(await manager.reconcile('job_none', 'discard').catch((e: unknown) => e)).toMatchObject({ code: 'not-found' });
     expect(generator.runs).toHaveLength(1);
-    // 重启后仍是这个结果。
+    // Still the same result after restart.
     await manager.shutdown();
     await restart();
     expect(manager.inspect(jobId)).toMatchObject({ state: 'cancelled', cancellation: { remote: 'unknown' } });
@@ -686,12 +683,12 @@ describe('重启恢复与对账（JobManager）', () => {
       const { jobId } = await manager.submitSynthesizeSpeech({ text }, CONNECTION);
       ids.push(jobId);
       await until(async () => (await stored(jobId))?.state === 'running');
-      // 把这个「崩溃时在跑」的记录留在账本里，换一个新的 JobManager 造下一个。
+      // Leave this “running at crash” record in the ledger, and create the next one with a new JobManager.
       manager = create();
       await manager.open();
     }
     generator.release();
-    // 给记录补上远端任务 ID（现有的适配器都没有，这里模拟一个支持查询的 Provider），恢复成崩溃时在跑的样子。
+    // Backfill the record with a remote task ID (none of the existing adapters has one; here we simulate a Provider that supports querying), restoring it to the state it had at crash.
     const edit = new JobLedger(paths.jobsFile);
     const data = { jobs: await edit.load() };
     expect(data.jobs.map((j) => j.record.state)).toEqual(['needs-reconciliation', 'needs-reconciliation', 'needs-reconciliation']);
@@ -752,7 +749,7 @@ describe('恢复矩阵与对账的规则', () => {
     expect(recoveryAction(job({ providerId: 'local' }), undefined, undefined)).toEqual({ kind: 'interrupt' });
     expect(recoveryAction(job({ providerId: 'node:nod_1' }), undefined, undefined)).toEqual({ kind: 'interrupt' });
     expect(recoveryAction(job({}), undefined, undefined)).toEqual({ kind: 'reconcile' });
-    // 不能由用户重试的在线调用只是中断：固定流程的步骤、没有视频的转写、不经模型的任务。
+    // Online calls the user cannot retry are only interrupted: fixed-pipeline steps, transcription without video, and tasks that do not go through a model.
     expect(recoveryAction(job({ parentJobId: 'job_p' }), undefined, undefined)).toEqual({ kind: 'interrupt' });
     expect(recoveryAction(job({ kind: 'transcribe', videoId: null }, { track: 0 }), undefined, undefined)).toEqual({ kind: 'interrupt' });
     expect(recoveryAction(job({ kind: 'export' }, { task: 'export' }), undefined, undefined)).toEqual({ kind: 'interrupt' });
@@ -760,7 +757,7 @@ describe('恢复矩阵与对账的规则', () => {
     const remote: RemoteTaskQuery = { supports: (id) => id === 'fake', query: async () => ({ status: 'running' }) };
     expect(recoveryAction({ ...job({}), remoteTaskId: 'r1' }, undefined, remote)).toEqual({ kind: 'query-remote', remoteTaskId: 'r1' });
     expect(recoveryAction({ ...job({ providerId: 'other' }), remoteTaskId: 'r1' }, undefined, remote)).toEqual({ kind: 'reconcile' });
-    // 应用没有结束的，先补做应用。
+    // Apply not finished: complete the apply first.
     expect(recoveryAction(job({}), app('validating'), undefined)).toEqual({ kind: 'resume-application' });
     expect(recoveryAction(job({ state: 'completed' }), app('committed'), undefined)).toEqual({ kind: 'keep' });
   });
@@ -795,7 +792,7 @@ describe('恢复矩阵与对账的规则', () => {
     expect(reconcileChoices(job({ state: 'completed', result }), app('committed'))).toEqual([]);
     expect(reconcileChoices(job({ state: 'failed', result: null }), app('stale-input'))).toEqual([]);
     expect(reconcileChoices(job({ state: 'failed', result, videoId: null }), app('stale-input'))).toEqual([]);
-    // 转写：有视频的可以重试，没有视频的（模型接口服务的转写）不行。
+    // Transcription: with video it can be retried; without video (transcription served by the model-interface service) it cannot.
     const transcribe = { track: 0 };
     expect(reconcileChoices(job({ state: 'interrupted', kind: 'transcribe' }, transcribe), undefined)).toEqual(['retry']);
     expect(reconcileChoices(job({ state: 'interrupted', kind: 'transcribe', videoId: null }, transcribe), undefined)).toEqual([]);

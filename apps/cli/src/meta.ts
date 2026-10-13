@@ -4,11 +4,10 @@ import { CliError, type ExitCode, type Output } from './envelope.ts';
 import { findRuntime, openClient, type Session } from './runtime/connection.ts';
 
 /**
- * 元命令 `version` 与 `status`（Agent 面设计 §4.5）。`version` 是裸 JSON，不拉起 Runtime；`status` 走信封，按 §5.6 找不到时
- * 拉起，报告此刻能做什么，不可用的带补救命令。
+ * Meta commands `version` and `status` (Agent-facing design §4.5). `version` is bare JSON and does not start the Runtime. `status` uses the envelope; if the Runtime cannot be found it is started (per §5.6), and it reports what can be done right now, with remedy commands for anything unavailable.
  */
 
-/** `cuccut version`：CLI、Runtime（在跑时）与接口版本。 */
+/** `cuccut version`: the CLI, the Runtime (when running) and the interface version. */
 export async function version(output: Output, home: string): Promise<ExitCode> {
   const cli = { version: RUNTIME_VERSION, interfaceVersion: MCP_INTERFACE_VERSION };
   const discovery = findRuntime(home);
@@ -31,14 +30,13 @@ export async function version(output: Output, home: string): Promise<ExitCode> {
       client.close();
     }
   } catch (error) {
-    // 连不上（或协议不同）也照样报 CLI 的版本：版本命令本来就是排查这个用的。
+    // Report the CLI's version even when the connection fails (or the protocol differs): the version command exists precisely for troubleshooting.
     return output.raw({ cli, runtime: { pid: discovery.pid, error: error instanceof CliError ? error.body() : String(error) } });
   }
 }
 
 /**
- * `cuccut status`：Runtime、每种能力的默认与可用性、本地模型包、外部工具。默认只给摘要（每种能力此刻用哪个、哪些能用；
- * 模型包的状态）；`--full` 时能力与模型包是 `models_capabilities`、`models_list` 的完整结果（各 Provider 的模型、参数与限制）。
+ * `cuccut status`: the Runtime, the default and availability of each capability, local model packs, and external tools. By default it gives only a summary (which provider each capability uses right now, which ones are usable; the status of model packs). With `--full`, the capabilities and model packs are the full results of `models_capabilities` and `models_list` (each provider's models, parameters and limits).
  */
 export async function status(output: Output, session: Session, cwd: string, options: { full: boolean }): Promise<ExitCode> {
   const { client, info, catalog, started } = session;
@@ -73,7 +71,7 @@ export async function status(output: Output, session: Session, cwd: string, opti
   );
 }
 
-/** 能力的摘要：此刻用哪个、哪些服务能用、下一步；不带各服务的模型清单与参数。取不到时原样（`{ error }`）。 */
+/** Summary of capabilities: which one is in use now, which services are usable, and the next step; it omits each service's model list and parameters. When it cannot be obtained, it is returned unchanged (`{ error }`). */
 function capabilitySummary(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.capabilities)) return value;
   return {
@@ -88,7 +86,7 @@ function capabilitySummary(value: unknown): unknown {
   };
 }
 
-/** 本地模型包的摘要：每个包的能力与状态（不可用时的原因）。 */
+/** Summary of local model packs: each pack's capabilities and status (the reason when unavailable). */
 function bundleSummary(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.bundles)) return value;
   return {
@@ -106,7 +104,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** 外部工具的摘要与补救命令（管理桶的 `external-tools`）。 */
+/** Summary of external tools and their remedy commands (the admin bucket's `external-tools`). */
 function externalTool(probed: ExternalToolStatus) {
   const tool = localizeToolStatus(probed);
   const remedy: string[] = [];

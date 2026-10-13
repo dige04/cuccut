@@ -11,8 +11,7 @@ import { EngineHost, resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 端到端：真实的 engine-host。内容索引只经引擎的只读查询（`videos.readContent`、`videos.inspect`）读视频：
- * 打开着的视频编辑之后增量更新，没有打开的视频照样能索引、不被占住写锁；重建期间结果标明不完整。
+ * End-to-end, with a real engine-host. The content index reads videos only through the engine's read-only queries (`videos.readContent`, `videos.inspect`). An open video that is edited is incrementally updated afterwards; a video that is not open can still be indexed and does not hold the write lock. During a rebuild, the result is marked as incomplete.
  */
 
 const engine = resolveEngineHostCommand();
@@ -131,12 +130,12 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     expect(hit.time.end - hit.time.start).toBeCloseTo(1.5, 3);
     expect(hit.entryId).toBe((await client.request('space.list', { videoId: open.videoId, kind: 'video' })).entries[0]!.id);
 
-    // 没打开的视频被索引读过之后，照样能打开来编辑（只读打开不占写锁）。
+    // A video that is not open, once read by indexing, can still be opened for editing afterwards (a read-only open does not take the write lock).
     const reopened = await client.request('videos.open', { projectId: project.id, path: closed.relPath });
     expect(reopened.ref.videoId).toBe(closed.videoId);
     await client.request('videos.close', { videoId: closed.videoId });
 
-    // 打开着的视频提交新版本：不用重扫，变化通知触发重新索引。
+    // An open video submits a new version: no rescan is needed, the change notification triggers re-indexing.
     const before = await client.request('space.search', { query: '调色' });
     expect(before.hits).toEqual([]);
     const mirror = runtime.videos.mirror(open.videoId)!;
@@ -153,13 +152,13 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
       hits: [{ videoId: open.videoId, indexedRevision: runtime.videos.mirror(open.videoId)!.video.revision }],
     });
 
-    // 重建：返回时内容索引还在后台重读，之后完整。
+    // Rebuild: on return, the content index is still re-reading in the background; it is complete afterwards.
     const rebuilt = await client.request('space.rebuildIndex', {});
     expect(rebuilt.entries).toBeGreaterThanOrEqual(2);
     await runtime.space.idle();
     expect(await client.request('space.search', { query: '剪辑' })).toMatchObject({ complete: true, hits: [{}, {}] });
 
-    // 视频条目移进回收站是删除视频（移动目录）；拿删除之前的 id 恢复，回到原处、原来的 id。
+    // Moving a video entry into the trash is deleting the video (moving its directory). Restoring it with the id from before deletion puts it back in place, with the original id.
     const video = (await client.request('space.list', { videoId: closed.videoId })).entries[0]!;
     const trashed = await client.request('space.trash', { entryId: video.id });
     expect(trashed.entry.id).not.toBe(video.id);
@@ -192,7 +191,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     async () => {
       const ref = await videoWithCaption('访谈', '今天讲剪辑技巧');
       const original = path.join(project.path, ref.relPath);
-      // 一个原地链接的素材：项目里的文件（不是视频目录里的）。
+      // A linked-in-place asset: a file in the project (not in the video directory).
       const linked = path.join(project.path, 'raw', 'tone.wav');
       await fs.mkdir(path.dirname(linked), { recursive: true });
       execFileSync('ffmpeg', [
@@ -220,22 +219,22 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
       await settle();
       const live = (await client.request('space.list', { videoId: ref.videoId, kind: 'video' })).entries[0]!;
 
-      // 来源目录里的视频不在 Space 里直接物理删除。
+      // A video in a source directory is not physically deleted directly in Space.
       expect(await refusal(client.request('space.purge', { entryId: live.id }))).toBe('SPACE_PURGE_VIDEO');
 
-      // 别的连接开着：拒绝。
+      // Another connection has it open: refused.
       const second = await connect();
       await second.request('videos.open', { projectId: project.id, path: ref.relPath });
       expect(await refusal(client.request('videos.delete', { entryId: live.id }))).toBe('VIDEO_IN_USE');
       await second.request('videos.close', { videoId: ref.videoId });
       second.close();
 
-      // Runtime 内部还用着（任务、导出的租约）：拒绝。
+      // Still in use inside the Runtime (job and export leases): refused.
       runtime.videos.retain(ref.videoId);
       expect(await refusal(client.request('videos.delete', { videoId: ref.videoId }))).toBe('VIDEO_BUSY');
       runtime.videos.release(ref.videoId);
 
-      // 只有自己开着：替它关掉（video.closed，reason deleted），整个目录移进回收站。
+      // Only this app has it open: it is closed on its behalf (video.closed, reason deleted), and the whole directory is moved into the trash.
       const closed: string[] = [];
       client.subscribeVideo(ref.videoId, {
         snapshot: () => {},
@@ -263,13 +262,13 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
       expect((await client.request('space.list', { kind: 'video' })).entries).toEqual([]);
       expect((await client.request('space.list', { trash: 'only' })).entries.map((e) => e.id)).toEqual([deleted.entryId]);
       expect(runtime.space.videos()).toEqual([]);
-      // 回收站里的视频打不开；重复删除回答同一个结果。
+      // A video in the trash cannot be opened; repeated deletion returns the same result.
       const trashPath = runtime.space.trashedVideo(deleted.entryId)!.record.trashRelPath;
       await fs.access(path.join(project.path, trashPath, 'video.db'));
       expect(await refusal(client.request('videos.open', { projectId: project.id, path: trashPath }))).toBe('VIDEO_TRASHED');
       expect((await client.request('videos.delete', { entryId: live.id })).entryId).toBe(deleted.entryId);
 
-      // 撤销：界面拿着删除之前的 id 改回收站标记。
+      // Undo: the UI uses the pre-deletion id to change the trash marker back.
       const undone = await client.request('space.update', { entryId: live.id, trashed: false });
       expect(undone.entry).toMatchObject({ id: live.id, relPath: ref.relPath, user: { trashedAt: null } });
       await fs.access(path.join(original, 'video.db'));
@@ -278,7 +277,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
       expect(reopened.ref.videoId).toBe(ref.videoId);
       await client.request('videos.close', { videoId: ref.videoId });
 
-      // 被别的进程锁着：引擎的 VIDEO_LOCKED，目录不动。
+      // Locked by another process: the engine's VIDEO_LOCKED; the directory is left untouched.
       const other = await EngineHost.start({ command: engine!, log: silentLogger, onEvent: () => {}, onExit: () => {} });
       try {
         await other.request('videos.open', { path: original });
@@ -289,17 +288,17 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
         await other.close();
       }
 
-      // 再删一次，原来的位置被占了：恢复时换个名字。
+      // Deleted again while the original location is now occupied: a different name is used on restore.
       const again = await client.request('space.trash', { entryId: live.id });
       await fs.mkdir(original);
       const restored = await client.request('videos.restore', { entryId: again.entry.id });
       expect(restored).toMatchObject({ renamed: true, relPath: `${ref.relPath} 2`, entry: { kind: 'video', relPath: `${ref.relPath} 2` } });
-      // 视频 id 由内容索引读到之后补上。
+      // The video id is filled in after the content index reads it.
       await runtime.space.idle();
       expect((await client.request('space.get', { entryId: restored.entry.id })).entry.ref).toEqual({ videoId: ref.videoId });
       await fs.rmdir(original);
 
-      // 删除后物理删除：只删视频目录，链接素材的原文件还在。
+      // Physical deletion after deleting: only the video directory is removed; the original file of a linked asset remains.
       const last = await client.request('videos.delete', { entryId: restored.entry.id });
       expect(await client.request('space.purge', { entryId: last.entryId })).toEqual({ status: 'purged', entryId: last.entryId });
       await expect(fs.stat(path.join(project.path, `${ref.relPath} 2`))).rejects.toThrow();
@@ -312,7 +311,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
   it('视频目录就是另一个项目的目录：删除在动任何东西之前以 VIDEO_TRASH_SOURCE_ROOT 拒绝', async () => {
     const ref = await videoWithCaption('整个项目', '根目录就是视频');
     const videoDir = path.join(project.path, ref.relPath);
-    // 用户把这个视频目录本身当成一个项目打开：它是那个项目的来源目录。
+    // The user opened this video directory itself as a project: it is that project's source directory.
     const { project: inner } = await client.request('projects.open', { path: videoDir });
     await settle();
     const live = (await client.request('space.list', { videoId: ref.videoId, kind: 'video' })).entries[0]!;
@@ -331,7 +330,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     ]) {
       expect(await refusal(client.request('videos.delete', target)), JSON.stringify(target)).toBe('VIDEO_TRASH_SOURCE_ROOT');
     }
-    // 什么都没动：目录还在原处，没有回收站记录，视频还开着。
+    // Nothing was touched: the directory is still in place, there is no trash record, and the video is still open.
     await fs.access(path.join(videoDir, 'video.db'));
     await expect(fs.stat(path.join(project.path, '.ccut-trash'))).rejects.toThrow();
     expect((await client.request('space.list', { trash: 'only' })).entries).toEqual([]);

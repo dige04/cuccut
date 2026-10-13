@@ -6,12 +6,12 @@ import { createCommentsBridge, type ParentLink, type PinLayer } from '@cuccut/sl
 import { createCommentLabels } from './comment-labels.ts';
 import { describeTarget, fileOf, findTarget, installCommentTargets, pinPoint, prefixOf, readTarget, REVEAL_COMMENT_TARGET_EVENT } from './comment-targets.ts';
 
-/** 设计系统标注的目标层（docs/design/canvas §10.6）：DOM 上标的目标、位置标签、标注模式与编号标记。 */
+/** Target layer for design system annotations (docs/design/canvas §10.6): targets marked on the DOM, position labels, annotation mode and numbered markers. */
 
 const win = window as unknown as Window & typeof globalThis;
 
 beforeEach(() => {
-  // 测试进程钉在简体中文（vitest.config.ts 的 CUCCUT_LOCALE）；这里要按参数换语言
+  // The test process is pinned to Simplified Chinese (CUCCUT_LOCALE in vitest.config.ts); here the language has to be switched by parameter
   vi.stubEnv('CUCCUT_LOCALE', '');
 });
 
@@ -22,7 +22,7 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-cuccut-annotating');
 });
 
-/** 一页设计系统：Colors 一章里一个颜色组（标题行是目标、组上是锚点）与一个 token，Components 一章里一个组件，另有一个弹层。 */
+/** One design system page: in the Colors chapter, one color group (the header row is the target, the anchor is on the group) and one token; in the Components chapter, one component; plus one popover. */
 function page() {
   document.body.innerHTML = `
     <main>
@@ -87,7 +87,7 @@ describe('位置的说法', () => {
       label: 'Overview › 封面',
       detail: 'Cover in section readme (components/Cover/preview.html) · ds-cover',
     });
-    // 弹层里的目标不在章节里；名字太长时截短
+    // Targets inside a popover are not in a chapter; long names are truncated
     const long = { anchor: 'picker-x', prefix: 'picker', name: 'x'.repeat(50) };
     expect(describeTarget(long, zh)).toEqual({ label: `取色器 “${'x'.repeat(40)}…”`, detail: `Color picker "${'x'.repeat(50)}" (tokens.json) · picker-x` });
     expect(describeTarget({ anchor: 'zzz-a', prefix: 'zzz', name: '' }, zh)).toEqual({ label: '元素', detail: 'Element · zzz-a' });
@@ -145,7 +145,7 @@ describe('点中的目标', () => {
     tok.getBoundingClientRect = () => ({ left: 100, top: -80, right: 300, bottom: -40, width: 200, height: 40, x: 100, y: -80 }) as DOMRect;
     expect(pinPoint(tok, win)).toBeNull();
     const main = document.querySelector('main')!;
-    // 设计系统滚的是里面的容器（overflow-y: auto），不是窗口
+    // The design system scrolls the container inside it (overflow-y: auto), not the window
     main.style.overflowY = 'auto';
     main.getBoundingClientRect = () => ({ left: 0, top: 300, right: 800, bottom: 700, width: 800, height: 400, x: 0, y: 300 }) as DOMRect;
     tok.getBoundingClientRect = () => ({ left: 100, top: 200, right: 300, bottom: 240, width: 200, height: 40, x: 100, y: 200 }) as DOMRect;
@@ -153,7 +153,7 @@ describe('点中的目标', () => {
   });
 });
 
-/** 假的父窗口通道与编号标记图层：记下 iframe 发出的消息与画的标记。 */
+/** Fake parent-window channel and numbered-marker layer: records the messages the iframe sends and the markers drawn. */
 function fakeParent() {
   const sent: EditorToHostMessage[] = [];
   const listeners = new Set<(message: HostToEditorMessage) => void>();
@@ -216,7 +216,7 @@ describe('installCommentTargets', () => {
     parent.deliver({ type: 'editor:composer-closed', requestId: 'r1' });
     expect($('comp').hasAttribute('data-cuccut-picked')).toBe(false);
 
-    // 不在目标上的、不收批注区域里的点击照常交给页面
+    // Clicks that are not on a target, and not in an area that accepts no annotations, are passed to the page as usual
     const sent = parent.sent.length;
     click($('plain'));
     click($('note'));

@@ -3,16 +3,16 @@ import { NODE_SERVICE_TYPE, type DiscoveredNode } from '@cuccut/protocol';
 import type { NodeLogger } from '../node-logger.ts';
 
 /**
- * 发现（节点协议规范 §12）：浏览局域网里登记了 `_cuccut-node._tcp` 的节点。结果只用于展示与预填地址，不构成信任：
- * 配对时以 `/v1/health` 与配对结果里的 `nodeId` 为准。
+ * Discovery (node protocol spec §12): browse the LAN for nodes that register `_cuccut-node._tcp`. The results are only for display and pre-filling addresses; they do not establish trust:
+ * at pairing time, `/v1/health` and the `nodeId` in the pairing result are authoritative.
  *
- * macOS 用系统的 `dns-sd`：`-B` 浏览实例 → 每个实例 `-L` 解析出主机、端口与 TXT（`id=<nodeId>`）→ `-G v4` 取主机的
- * IPv4 地址。`dns-sd` 不会自己结束，所有子进程在期限到时一律杀掉；输出逐行解析，认不出的行跳过。其他平台返回空列表。
- * 测试注入假的 `Discoverer`，不碰真实的 mDNS。
+ * macOS uses the system `dns-sd`: `-B` browses instances → for each instance, `-L` resolves the host, port and TXT (`id=<nodeId>`) → `-G v4` gets the host's
+ * IPv4 addresses. `dns-sd` never ends on its own; all child processes are killed when the deadline arrives. Output is parsed line by line, and unrecognized lines are skipped. Other platforms return an empty list.
+ * Tests inject a fake `Discoverer` and never touch the real mDNS.
  */
 
 export interface Discoverer {
-  /** 在 `timeoutMs` 内能发现的节点（期限到即返回）。 */
+  /** Nodes discovered within `timeoutMs` (returns when the deadline arrives). */
   discover(timeoutMs: number): Promise<DiscoveredNode[]>;
 }
 
@@ -22,7 +22,7 @@ export const noDiscoverer: Discoverer = {
   },
 };
 
-// ---- 解析（输出格式见测试里抓取的样本） ----
+// ---- Parsing (output formats; samples captured in the tests) ----
 
 const TIMESTAMP = String.raw`^\s*\d{1,2}:\d{2}:\d{2}\.\d{3}\s+`;
 const TIMESTAMP_LINE = new RegExp(TIMESTAMP);
@@ -32,11 +32,11 @@ const ADDRESS_LINE = new RegExp(String.raw`${TIMESTAMP}(Add|Rmv)\s+[0-9a-fA-F]+\
 
 export interface BrowseEvent {
   action: 'add' | 'remove';
-  /** 实例名（节点的名字），原样。 */
+  /** Instance name (the node's name), as is. */
   name: string;
 }
 
-/** `dns-sd -B` 的一行 → 实例的出现或消失；不是本服务类型的行与表头返回 null。 */
+/** One line of `dns-sd -B` → an instance appearing or disappearing; lines that are not for this service type, and header lines, return null. */
 export function parseBrowseLine(line: string): BrowseEvent | null {
   const match = BROWSE_LINE.exec(line);
   if (!match) return null;
@@ -52,8 +52,8 @@ export interface LookupResult {
 }
 
 /**
- * `dns-sd -L` 的输出 → 主机、端口与 TXT。主机去掉末尾的点；TXT 在 "can be reached at" 的下一行，
- * 以空格分隔的 `key=value`（`\ ` 是值里的空格）。还没有解析出来时返回 null。
+ * `dns-sd -L` output → host, port and TXT. The trailing dot is removed from the host. TXT is on the line after "can be reached at",
+ * as space-separated `key=value` (`\ ` is a space within a value). Returns null when not yet parsed.
  */
 export function parseLookupOutput(output: string): LookupResult | null {
   const lines = output.split(/\r?\n/);
@@ -77,7 +77,7 @@ export function parseLookupOutput(output: string): LookupResult | null {
   return null;
 }
 
-/** `dns-sd -G v4` 的输出 → 出现过的 IPv4 地址（按出现顺序去重；`No Such Record` 与 0.0.0.0 不算）。 */
+/** `dns-sd -G v4` output → IPv4 addresses seen (deduplicated, in order of appearance; `No Such Record` and 0.0.0.0 are excluded). */
 export function parseAddressOutput(output: string): string[] {
   const addresses: string[] = [];
   for (const line of output.split(/\r?\n/)) {
@@ -91,7 +91,7 @@ export function parseAddressOutput(output: string): string[] {
   return addresses;
 }
 
-/** 挑一个给别的机器连的地址：私网地址优先，其次其他地址；链路本地与回环最后（同一台机器上的节点只有回环）。 */
+/** Pick an address for other machines to connect to: private-network addresses first, then other addresses; link-local and loopback last (a node on the same machine only has loopback). */
 export function pickAddress(addresses: string[]): string | null {
   const rank = (address: string) => {
     if (address.startsWith('127.')) return 3;
@@ -102,7 +102,7 @@ export function pickAddress(addresses: string[]): string | null {
   return sorted[0] ?? null;
 }
 
-/** `dns-sd` 的转义：`\DDD` 是十进制字节，`\x` 是字符本身。 */
+/** `dns-sd` escaping: `\DDD` is a decimal byte, `\x` is the character itself. */
 export function unescapeDnsSd(text: string): string {
   const bytes: number[] = [];
   for (let i = 0; i < text.length; i++) {
@@ -133,15 +133,15 @@ function isPrivateIPv4(address: string): boolean {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
-// ---- macOS 的 dns-sd ----
+// ---- macOS dns-sd ----
 
-/** 解析一个实例的地址时，第一个地址出现之后再等多久收集其他接口上的地址。 */
+/** When resolving an instance's addresses, how long to keep collecting addresses on other interfaces after the first address appears. */
 const ADDRESS_SETTLE_MS = 200;
 const OUTPUT_LIMIT = 1024 * 1024;
 
 interface RunControl {
   stop(): void;
-  /** 再等 `ms` 收集输出，然后叫停。 */
+  /** Keep collecting output for another `ms`, then stop. */
   stopAfter(ms: number): void;
 }
 
@@ -160,7 +160,7 @@ export class DnsSdDiscoverer implements Discoverer {
     const found = new Map<string, DiscoveredNode>();
     const resolving = new Map<string, Promise<void>>();
 
-    /** 跑一个 `dns-sd`，直到 `onOutput` 叫停、进程退出或期限到；之后一律杀掉。 */
+    /** Run one `dns-sd` until `onOutput` stops it, the process exits, or the deadline arrives; then always kill it. */
     const run = (args: string[], onOutput: (all: string, control: RunControl) => void): Promise<void> =>
       new Promise((resolve) => {
         const remaining = deadline - Date.now();
@@ -197,7 +197,7 @@ export class DnsSdDiscoverer implements Discoverer {
         child.stdout!.setEncoding('utf8');
         child.stdout!.on('data', (chunk: string) => {
           if (done) return;
-          // 防御：异常大的输出不再累积。
+          // Defense: abnormally large output is no longer accumulated.
           if (output.length < OUTPUT_LIMIT) output += chunk;
           onOutput(output, control);
         });
@@ -241,7 +241,7 @@ export class DnsSdDiscoverer implements Discoverer {
   }
 }
 
-/** 同一个节点可能在多个接口上出现：按 `nodeId`（没有时按名字）去重。 */
+/** The same node may appear on several interfaces: deduplicate by `nodeId` (or by name when there is none). */
 function dedupe(nodes: DiscoveredNode[]): DiscoveredNode[] {
   const seen = new Set<string>();
   return nodes.filter((node) => {
@@ -252,7 +252,7 @@ function dedupe(nodes: DiscoveredNode[]): DiscoveredNode[] {
   });
 }
 
-/** 本平台的默认发现方式：macOS 用 `dns-sd`，其他平台不浏览。 */
+/** Default discovery method for this platform: macOS uses `dns-sd`; other platforms do not browse. */
 export function defaultDiscoverer(platform: NodeJS.Platform = process.platform, log?: NodeLogger): Discoverer {
   return platform === 'darwin' ? new DnsSdDiscoverer(log ? { log } : {}) : noDiscoverer;
 }

@@ -3,15 +3,15 @@ import { useSkills } from '../state/skills-store.ts';
 import type { RuntimeSession } from './session.ts';
 
 /**
- * Agent 的 skill（`skills.*`，产品设计 §6.9）：列表进 state/skills-store，开关、添加、导入与移除返回的整份列表直接写回。
- * 单独成文件，不把会话通道撑大（同 template-commands.ts）。
+ * Agent skills (`skills.*`, product design §6.9): the list goes into state/skills-store; the whole list returned by toggle, add, import and remove is written back directly.
+ * Kept in its own file so the session channel does not grow (same as template-commands.ts).
  */
 
 type Session = Pick<RuntimeSession, 'client'>;
 
 let listing: Promise<void> | null = null;
 
-/** 取一次列表；已经在取时不重复发。旧的列表在取的过程中照常显示。 */
+/** Fetch the list once; do not send a duplicate while already fetching. The old list keeps displaying while the fetch is in progress. */
 export function loadSkills(session: Session): Promise<void> {
   if (listing) return listing;
   useSkills.getState().begin();
@@ -33,37 +33,37 @@ async function apply<T extends SkillChangeResult | SkillRemoveResult>(pending: P
   return result;
 }
 
-/** 一个 skill 的摘要、`SKILL.md` 全文与文件清单。 */
+/** One skill's summary, the full `SKILL.md` text, and its file list. */
 export function getSkill(session: Session, id: string): Promise<SkillDetail> {
   return session.client.request('skills.get', { id });
 }
 
-/** 读 skill 目录里的一个文本文件（`skills.get` 文件清单里 `text` 为真的）。 */
+/** Read one text file in the skill directory (one whose `text` is true in the `skills.get` file list). */
 export function readSkillFile(session: Session, id: string, path: string): Promise<SkillFileContent> {
   return session.client.request('skills.readFile', { id, path });
 }
 
-/** 开关：从下一次新开始的 Agent 会话起生效。 */
+/** Toggle: takes effect from the next Agent session that starts. */
 export function setSkillEnabled(session: Session, id: string, enabled: boolean): Promise<SkillChangeResult> {
   return apply(session.client.request('skills.setEnabled', { id, enabled }));
 }
 
-/** 从本地文件夹添加（复制进 Runtime 的 skill 目录，归「我的」，默认开）。 */
+/** Add from a local folder (copied into the Runtime's skill directory, filed under “我的” (Mine), on by default). */
 export function addSkillFromFolder(session: Session, path: string): Promise<SkillChangeResult> {
   return apply(session.client.request('skills.add', { path, commandId: newId('cmd') }));
 }
 
-/** 从 GitHub 导入（只下载那个目录下的文件、不执行，归「第三方」，默认关）。 */
+/** Import from GitHub (only downloads the files in that directory, does not run them; filed under “第三方” (Third-party), off by default). */
 export function importSkillFromGithub(session: Session, url: string): Promise<SkillChangeResult> {
   return apply(session.client.request('skills.importGithub', { url: url.trim(), commandId: newId('cmd') }));
 }
 
-/** 移除「我的」或「第三方」skill：删掉它在 Runtime skill 目录里的文件夹，不能撤销。 */
+/** Remove a skill under “我的” (Mine) or “第三方” (Third-party): deletes its folder in the Runtime skill directory; this cannot be undone. */
 export function removeSkill(session: Session, id: string): Promise<SkillRemoveResult> {
   return apply(session.client.request('skills.remove', { id }));
 }
 
-/** 测试用：清掉进行中的请求。 */
+/** For tests: clear in-progress requests. */
 export function resetSkillCommands(): void {
   listing = null;
 }

@@ -6,17 +6,16 @@ import type { InspectedBundle } from './bundle-inspect.ts';
 import { frameTicketAt, type CompositionHost } from './composition-host.ts';
 
 /**
- * 烘焙（代码包规范 §7）：按输出帧率逐帧取 PNG，经 ffmpeg 的 `image2pipe` 封进 QuickTime。
+ * Baking (code bundle spec §7): fetches a PNG for each frame at the output frame rate, and muxes them into QuickTime through ffmpeg's `image2pipe`.
  *
- * 带 alpha 时用 `prores_ks` 4444 + `yuva444p10le`（导入端按 `pix_fmt` 以 `yuva` 开头判定有透明），
- * 不透明时用 422 HQ + `yuv422p10le`。第 k 帧的局部时间是 `k × den / num` 秒，票据里是精确的 `MediaTime`。
+ * With alpha, it uses `prores_ks` 4444 + `yuva444p10le` (the importer decides transparency by whether `pix_fmt` starts with `yuva`). When opaque, it uses 422 HQ + `yuv422p10le`. The local time of frame k is `k × den / num` seconds, and the ticket holds the exact `MediaTime`.
  */
 
 export interface BakeOptions {
   fps: Rate;
-  /** 输出文件（`.mov`）。 */
+  /** The output file (`.mov`). */
   outputFile: string;
-  /** ffmpeg 可执行文件。 */
+  /** The ffmpeg executable. */
   ffmpeg: string;
   alpha: boolean;
   signal?: AbortSignal;
@@ -29,7 +28,7 @@ export interface BakeResult {
   fps: Rate;
   durationSeconds: number;
   encoding: BakeRecord['encoding'];
-  /** 每帧 PNG 的 sha256。 */
+  /** The sha256 of each frame's PNG. */
   frameHashes: string[];
   outputProfileHash: string;
   timeMapHash: string;
@@ -38,7 +37,7 @@ export interface BakeResult {
 
 const sha256Hex = (data: string | Buffer) => crypto.createHash('sha256').update(data).digest('hex');
 
-/** ffmpeg 旁边的 ffprobe（同目录、同扩展名；只给了命令名时也只换名字）。 */
+/** The ffprobe next to ffmpeg (same directory, same extension; when only a command name is given, only the name is swapped). */
 export function ffprobePathFor(ffmpeg: string): string {
   const base = path.basename(ffmpeg);
   const probe = base.replace(/ffmpeg/i, 'ffprobe');
@@ -46,7 +45,7 @@ export function ffprobePathFor(ffmpeg: string): string {
   return ffmpeg === base ? probe : path.join(path.dirname(ffmpeg), probe);
 }
 
-/** 缺省的 ffmpeg：`CUCCUT_FFMPEG`，否则 PATH 里的 `ffmpeg`。 */
+/** The default ffmpeg: `CUCCUT_FFMPEG`, otherwise `ffmpeg` on PATH. */
 export function resolveFfmpeg(env: NodeJS.ProcessEnv = process.env): string {
   return env.CUCCUT_FFMPEG || 'ffmpeg';
 }

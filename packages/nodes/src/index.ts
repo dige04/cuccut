@@ -25,7 +25,7 @@ export { sourceAllowed } from './source-gate.ts';
 export { DnsSdAdvertiser, defaultAdvertiser, noopAdvertiser, type AdvertiseInfo, type Advertiser } from './advertiser.ts';
 export { silentNodeLog, type NodeLogger } from './node-logger.ts';
 
-// ---- 发起端（规范 §9–§12） ----
+// ---- Initiator (spec §9–§12) ----
 export { NodeInitiator, type NodeInitiatorOptions } from './client/node-initiator.ts';
 export { NodeStore, CLIENT_ID_PATTERN, type PairedNodeRecord } from './client/node-store.ts';
 export { NodeProviderSource, type NodeSourceInitiator } from './client/node-source.ts';

@@ -7,8 +7,7 @@ import { chooseChip, focusDocument } from './transcribe-run.ts';
 import { openFlow, setCompare } from './translate-run.ts';
 
 /**
- * 从画面上的字幕打开字幕面板（舞台上双击字幕、字幕工具条的 Edit）：落在这条字幕的文档上，译文字幕对照着它的译文；
- * 收起样式库与翻译流程，露出字幕列表。
+ * Opens the caption panel from a caption on screen (double-click a caption on the stage, or the Edit button on the caption toolbar): lands on this caption's document, with the translated caption shown alongside its translation; collapses the style library and the translation flow, and reveals the caption list.
  */
 export function openCaptionEditor(item: CaptionItem): void {
   const video = useVideo.getState().video;
@@ -24,7 +23,7 @@ export function openCaptionEditor(item: CaptionItem): void {
   useEditor.getState().showPanel('subtitle');
 }
 
-/** 打开字幕样式库，落在这一枚字幕轨 chip 上（字幕属性页的「更换样式」、字幕工具条的 Styles）。 */
+/** Opens the caption style library, landing on this caption track chip (the properties page's “Change style”, the caption toolbar's Styles). */
 export function openCaptionStyles(chipKey: string | undefined): void {
   const videoId = useVideo.getState().video?.videoId;
   if (videoId && chipKey) {
@@ -34,10 +33,10 @@ export function openCaptionStyles(chipKey: string | undefined): void {
   useEditor.getState().showPanel('subtitle');
 }
 
-/** 属性页里要滚到的那一段（字幕工具条的「动画」→「当前词」）；属性页滚到之后清掉。 */
+/** The section of the properties page to scroll to (the caption toolbar's “Animation” → “Current word”); cleared once the properties page has scrolled. */
 export const useCaptionSection = create<{ focus: 'active' | null }>(() => ({ focus: null }));
 
-/** 字幕工具条的「动画」：选中这条字幕、打开属性页，滚到「当前词」那一段（倒鸭子时是倒鸭子那一段）。 */
+/** The caption toolbar's “Animation”: selects this caption, opens the properties page, and scrolls to the “Current word” section (for the 倒鸭子 (daoyazi) effect, to that section). */
 export function openCaptionActive(item: CaptionItem): void {
   const videoId = useVideo.getState().video?.videoId;
   if (videoId) openGallery(videoId, false);

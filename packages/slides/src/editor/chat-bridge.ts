@@ -1,19 +1,17 @@
 /**
- * 把提示交给智能体会话的桥（docs/design/slides §4、§8.3）：运行时的 `chat.suggestPrompt` 在 iframe 里，会话的输入框在父窗口。
+ * Bridge that hands prompts to the agent session (docs/design/slides §4, §8.3). The runtime's `chat.suggestPrompt` runs in the iframe, while the session's input box is in the parent window.
  *
- * 运行时在「让智能体修好这页」等处调 `suggestPrompt(prompt)`，这里转成 `editor:suggest-prompt` 发给父窗口；
- * 父窗口把提示放进这个会话的输入框，回 `editor:suggest-prompt-result`。没放进去（标签页不属于会话）或父窗口没回应时拒绝，
- * 运行时改为把提示复制到剪贴板。
+ * The runtime calls `suggestPrompt(prompt)` at places such as “让智能体修好这页” (“have the agent fix this page”). Here it is converted to `editor:suggest-prompt` and sent to the parent window; the parent puts the prompt into this session's input box and replies with `editor:suggest-prompt-result`. If it was not put in (the tab does not belong to the session) or the parent does not reply, this rejects, and the runtime copies the prompt to the clipboard instead.
  */
 import type { ParentLink } from './comments-bridge.ts';
 import type { HostChatCapability } from './slides-host.ts';
 
-/** 父窗口多久没回应算没放进去。 */
+/** How long to wait for the parent window's reply before counting the prompt as not put in. */
 const SUGGEST_TIMEOUT_MS = 5000;
 
 export interface ChatBridge {
   capability: HostChatCapability;
-  /** 停止收父窗口的消息，等着的都按没放进去处理。 */
+  /** Stops listening for parent window messages; all waiting calls are treated as not put in. */
   dispose(): void;
 }
 

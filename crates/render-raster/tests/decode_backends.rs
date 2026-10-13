@@ -1,19 +1,16 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `audio::mix_audio_reported`
-//! （host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `audio::mix_audio_reported` (the host byte layer), and it does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! 解码后端选择的验收（WP6a）：视频帧与音频 clip 各自走了原生还是 ffmpeg。
+//! Acceptance test for decode backend selection (WP6a): whether video frames and audio clips each went through the native path or ffmpeg.
 //!
-//! 按 `docs/design/bcf/cuccut-format-spec.md` §15.1「解码后端必须可观测」，这两条路径的
-//! 像素/样本只承诺语义等价 + 容差，所以"实际用了哪个后端"必须能问出来。本文件
-//! 钉住的就是那个选择规则：
+//! Per `docs/design/bcf/cuccut-format-spec.md` §15.1 “decode backends must be observable”, the pixels/samples of these two paths only promise semantic equivalence plus tolerance, so “which backend was actually used” must be queryable. This file pins down exactly that selection rule:
 //!
-//! - macOS / Windows 上的 MP4 → 平台原生（AVFoundation / Media Foundation）
-//! - WebM（平台解码器打不开的容器）→ ffmpeg 兜底
-//! - Linux（`media_native::available()` 为 false）→ 一律 ffmpeg
-//! - 常速音频 clip → Symphonia；变速 clip → ffmpeg `atempo`
+//! - MP4 on macOS / Windows → platform native (AVFoundation / Media Foundation)
+//! - WebM (a container the platform decoder cannot open) → ffmpeg fallback
+//! - Linux (`media_native::available()` is false) → always ffmpeg
+//! - Constant-speed audio clip → Symphonia; variable-speed clip → ffmpeg `atempo`
 //!
-//! 夹具用 ffmpeg 现生成，探测不到就整体跳过（仓库既有礼节）。
+//! Fixtures are generated with ffmpeg on the fly; if ffmpeg is not detected, the whole test is skipped (the repository's existing convention).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -43,15 +40,15 @@ fn ff(args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-/// 一份最小夹具：
+/// A minimal fixture set:
 ///
-/// - `clip.mp4`：H.264，无音轨。
-/// - `clip.webm`：VP9，**不带 alpha**——纯粹是"平台解码器打不开的容器"。
-/// - `rotated.mp4`：`clip.mp4` 的 stream-copy，只加 90° display matrix。
-/// - `tone.wav`：44.1 kHz 立体声正弦（刻意不是 48 kHz，让重采样真的跑起来）。
-/// - `av.mp4`：H.264 + AAC 的 2 秒素材，给 `withAudio` 展开的变速 clip 用
-///   （音频轨上的 clip 恒为 1 倍速，`rate != 1` 只可能来自 video 元素的
-///   `playbackRate`，见 `ccut-core` 的 `collect_with_audio`）。
+/// - `clip.mp4`: H.264, no audio track.
+/// - `clip.webm`: VP9, **no alpha**: purely a “container the platform decoder cannot open”.
+/// - `rotated.mp4`: a stream copy of `clip.mp4` with only a 90° display matrix added.
+/// - `tone.wav`: 44.1 kHz stereo sine (deliberately not 48 kHz, so resampling really runs).
+/// - `av.mp4`: 2-second H.264 + AAC material, for the variable-speed clip that `withAudio` expands to
+///   (a clip on an audio track is always 1× speed; `rate != 1` can only come from the video element's
+///   `playbackRate`, see `collect_with_audio` in `ccut-core`).
 fn fixtures() -> Option<(tempfile::TempDir, PathBuf)> {
     if !ffmpeg_available() {
         return None;
@@ -79,8 +76,7 @@ fn fixtures() -> Option<(tempfile::TempDir, PathBuf)> {
         "yuv420p",
         "-c:v",
         "libvpx-vp9",
-        // 编码质量无所谓，只要是个能解的 WebM：realtime + 最快档，别让夹具
-        // 生成本身成为测试里最慢的一步。
+        // Encoding quality does not matter, as long as it is a WebM that can be decoded: realtime + fastest preset, so that fixture generation itself does not become the slowest step in the test.
         "-deadline",
         "realtime",
         "-cpu-used",
@@ -118,8 +114,7 @@ fn fixtures() -> Option<(tempfile::TempDir, PathBuf)> {
     }
     let rotated = assets.join("rotated.mp4");
     if !ff(&[
-        // FFmpeg 7+ 的显式 display-matrix 写法。老 ffmpeg 失败时
-        // 保留其他基线夹具，旋转用例自己 skip。
+        // The explicit display-matrix syntax for FFmpeg 7+. When an old ffmpeg fails, the other baseline fixtures are kept, and the rotation case skips itself.
         "-display_rotation",
         "90",
         "-i",
@@ -133,7 +128,7 @@ fn fixtures() -> Option<(tempfile::TempDir, PathBuf)> {
     Some((dir, assets))
 }
 
-/// 只含一个视频元素的最小文档。
+/// A minimal document containing only one video element.
 fn video_doc(src: &str) -> Value {
     json!({
         "meta": { "id": "backend", "width": 160, "height": 90, "fps": 25 },
@@ -156,12 +151,12 @@ fn backend_for(dir: &Path, src: &str) -> Option<&'static str> {
     resolver.set_host_inputs(assets.inputs.clone());
     let ir = resolver.resolve().unwrap();
     let mut media = MediaStore::new(assets, ir.fps);
-    // 真的解一帧：后端要到开解码器时才定下来。
+    // Actually decode one frame: the backend is only determined when the decoder is opened.
     media.video_frame("clip", 0.2).expect("取帧");
     media.video_backend("clip")
 }
 
-/// MP4 走原生（有原生后端的平台上），WebM 一律回落 ffmpeg。
+/// MP4 uses native decoding (on platforms that have a native backend); WebM always falls back to ffmpeg.
 #[test]
 fn an_mp4_decodes_natively_while_a_webm_falls_back_to_ffmpeg() {
     let Some((dir, _assets)) = fixtures() else {
@@ -184,10 +179,7 @@ fn an_mp4_decodes_natively_while_a_webm_falls_back_to_ffmpeg() {
     );
 }
 
-/// 两条后端交出的画面在跨后端容差内一致（§15.1）：同一段素材，一次经原生、
-/// 一次经 ffmpeg（WebM 是同一份 `testsrc` 的另一种封装），中心像素的主导结构
-/// 必须一致——这里用整幅平均色做粗判，细粒度的 SSIM 对拍在
-/// `ccut-media-native` 的 `frame_stream.rs`。
+/// The frames produced by the two backends agree within the cross-backend tolerance (§15.1): the same footage, once through native and once through ffmpeg (WebM is another container of the same `testsrc`), must have matching dominant structure at the center pixels. Here a coarse check uses the whole-frame average color; fine-grained SSIM comparison lives in `frame_stream.rs` in `ccut-media-native`.
 #[test]
 fn both_backends_agree_on_what_the_frame_looks_like() {
     let Some((dir, _assets)) = fixtures() else {
@@ -223,10 +215,10 @@ fn both_backends_agree_on_what_the_frame_looks_like() {
     }
 }
 
-/// 90° 旋转素材的两条解码路径都必须按 display 几何交帧：
+/// Both decode paths for 90°-rotated footage must deliver frames according to the display geometry:
 ///
-/// - 原生路径不再因为拿 natural 编码尺寸校验而误回落；
-/// - ffmpeg autorotate 路径的 rawvideo 不再被按 natural 行宽构造 Pixmap。
+/// - The native path no longer falls back by mistake because it validates against the natural encoded size;
+/// - The rawvideo from the ffmpeg autorotate path is no longer used to construct a Pixmap based on the natural row width.
 #[test]
 fn rotated_video_uses_display_geometry_on_native_and_ffmpeg_paths() {
     let Some((dir, assets_dir)) = fixtures() else {
@@ -265,8 +257,7 @@ fn rotated_video_uses_display_geometry_on_native_and_ffmpeg_paths() {
     };
     assert_eq!(preferred.video_backend("clip"), Some(expected));
 
-    // 显式 decoder 名会让 VideoReader 跳过原生后端；这是已有 alpha
-    // WebM 走 ffmpeg 的同一选择机制，用 H.264 名只为在测试里强制该路径。
+    // Naming the decoder explicitly makes VideoReader skip the native backend. This is the same selection mechanism that already sends alpha WebM to ffmpeg, and naming H.264 is only to force that path in the test.
     let mut fallback_assets = load_assets(&doc, dir.path()).expect("重新加载旋转视频");
     fallback_assets
         .videos
@@ -282,7 +273,7 @@ fn rotated_video_uses_display_geometry_on_native_and_ffmpeg_paths() {
     );
 }
 
-/// 中段 RMS（掐掉首尾各 10 ms 的重采样过渡带）。
+/// Mid-section RMS (trimming the 10 ms resampling transition band at both the start and the end).
 fn middle_rms(samples: &[f32]) -> f64 {
     let skip = audio::SAMPLE_RATE as usize / 100 * 2;
     let core = &samples[skip..samples.len() - skip];
@@ -381,8 +372,7 @@ fn streamed_mix_matches_reference_across_windows_and_clip_block_boundaries() {
     );
 }
 
-/// 混音链（§4 `audio`、§8.4 淡入淡出 / 声像 / 总线 / muted）：内存与流式两条路径逐位相同，
-/// 母带压住真峰值，静音轨等于没有这条轨。
+/// Mix chain (§4 `audio`, §8.4 fades / pan / bus / muted): the in-memory and streaming paths are bit-for-bit identical, the master limits the true peak, and a muted track is equivalent to having no such track.
 #[test]
 fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
     let Some((dir, _)) = fixtures() else {
@@ -431,7 +421,7 @@ fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
     assert!(master.true_peak <= -1.5 + 1e-6, "{master:?}");
     assert!((master.lufs + 18.0).abs() < 1.0, "{master:?}");
 
-    // 时间轴另放旁白：闪避仍跟着它，母带不施加并报提醒。
+    // A narration is placed elsewhere on the timeline: ducking still follows it, the master does not apply it, and a warning is reported.
     let exclude = std::collections::BTreeSet::from(["line".to_string()]);
     let partial = audio::mix_audio_file(&ir, &assets, &exclude, || Ok(()))
         .unwrap()
@@ -439,7 +429,7 @@ fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
     assert!(partial.master.is_none());
     assert!(partial.warnings[0].starts_with("audio-master-skipped"));
 
-    // muted 轨与删掉这条轨逐位相同。
+    // A muted track is bit-for-bit identical to deleting that track.
     let (muted_ir, assets) = resolved(doc(true, true));
     assert_eq!(muted_ir.audio_clips.len(), 2, "编译保留静音轨的 clip");
     let muted = audio::mix_audio_reported(&muted_ir, &assets)
@@ -454,7 +444,7 @@ fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
     assert_ne!(muted.pcm, memory.pcm);
 }
 
-/// 一个只有 `tone.wav` 的音频轨单 clip 文档（恒为 1 倍速）。
+/// A document with a single audio-track clip containing only `tone.wav` (always 1× speed).
 fn mix_tone(dir: &Path) -> audio::AudioMix {
     mix(
         json!({
@@ -471,8 +461,7 @@ fn mix_tone(dir: &Path) -> audio::AudioMix {
     )
 }
 
-/// `withAudio` 展开的 clip：倍速由 video 元素的 `playbackRate` 决定，这是
-/// `AudioClip::rate != 1` 的**唯一**来源。
+/// A clip expanded from `withAudio`: its speed is set by the video element's `playbackRate`. This is the **only** source of `AudioClip::rate != 1`.
 fn mix_video_audio(dir: &Path, rate: f64) -> audio::AudioMix {
     mix(
         json!({
@@ -492,9 +481,8 @@ fn mix_video_audio(dir: &Path, rate: f64) -> audio::AudioMix {
     )
 }
 
-/// 常速音频 clip 走 Symphonia，变速 clip 留给 ffmpeg 的 `atempo`（WP6a 的
-/// 取舍：保音高时间拉伸没有可放心接入的纯 Rust 实现，见 `audio.rs` 头部）。
-/// 两条路径的输出契约（48 kHz 立体声、长度、电平）必须一致。
+/// Constant-speed audio clips go through Symphonia; variable-speed clips are left to ffmpeg's `atempo` (a WP6a trade-off: there is no pure-Rust implementation of pitch-preserving time stretching that can be safely adopted; see the header of `audio.rs`).
+/// The output contract of the two paths (48 kHz stereo, length, level) must match.
 #[test]
 fn constant_rate_audio_uses_symphonia_and_rate_changed_audio_uses_ffmpeg() {
     let Some((dir, _assets)) = fixtures() else {
@@ -514,7 +502,7 @@ fn constant_rate_audio_uses_symphonia_and_rate_changed_audio_uses_ffmpeg() {
             vec![expected],
             "rate={rate} 应走 {expected}"
         );
-        // 混音长度契约与后端无关：全片 1 秒 × 48 kHz × 立体声 × f32。
+        // The mix-length contract is independent of the backend: for the whole film, 1 second × 48 kHz × stereo × f32.
         assert_eq!(
             mix.pcm.len(),
             audio::SAMPLE_RATE as usize * 2 * 4,
@@ -522,8 +510,8 @@ fn constant_rate_audio_uses_symphonia_and_rate_changed_audio_uses_ffmpeg() {
         );
         measured.push(middle_rms(&to_samples(&mix.pcm)));
     }
-    // 变速的是**时间轴**不是电平：同一条正弦在 1x 与 2x 下 RMS 应当一致。
-    // 这条把"后端换了但声音没换"钉死，不依赖 lavfi sine 的绝对幅度。
+    // Variable speed changes the **timeline**, not the level: the same sine should have the same RMS at 1× and 2×.
+    // This pins down “the backend changed but the sound did not”, without relying on the absolute amplitude of the lavfi sine.
     let (constant, stretched) = (measured[0], measured[1]);
     assert!(constant > 0.02, "常速 RMS {constant:.4} 异常（几乎静音）");
     assert!(
@@ -532,11 +520,9 @@ fn constant_rate_audio_uses_symphonia_and_rate_changed_audio_uses_ffmpeg() {
     );
 }
 
-/// 常速路径的重采样正确性：Symphonia + 多相 sinc（44.1 kHz → 48 kHz）与迁移前
-/// `ffmpeg -f f32le -ac 2 -ar 48000` 的输出，长度逐样一致、RMS 在 2% 以内。
+/// Resampling correctness on the constant-speed path: the output of Symphonia + polyphase sinc (44.1 kHz → 48 kHz) and the output of `ffmpeg -f f32le -ac 2 -ar 48000` from before the migration match sample for sample in length, with RMS within 2%.
 ///
-/// 这条比"和自己比"强：参照物是**真正的 ffmpeg 解码 + swresample**，量的是
-/// 换了解码器之后声音有没有变。
+/// This is stronger than “comparing against itself”: the reference is **a real ffmpeg decode + swresample**, and what it measures is whether the sound changed after the decoder was swapped.
 #[test]
 fn the_symphonia_path_matches_the_ffmpeg_reference_pcm() {
     symphonia_matches_ffmpeg(2);
@@ -576,7 +562,7 @@ fn symphonia_matches_ffmpeg(channels: u16) {
         .expect("ffmpeg 参照解码");
     assert!(reference.status.success());
     let theirs = to_samples(&reference.stdout);
-    // 两侧都是 1 秒的 48 kHz 立体声；混音侧按全片长度补零，参照侧就是 -t 的长度。
+    // Both sides are 1 second of 48 kHz stereo. The mix side is zero-padded to the full film length, and the reference side is exactly the length given by -t.
     assert_eq!(
         theirs.len(),
         audio::SAMPLE_RATE as usize * 2,
@@ -588,7 +574,7 @@ fn symphonia_matches_ffmpeg(channels: u16) {
         (ours_rms - theirs_rms).abs() < theirs_rms * 0.02,
         "Symphonia RMS {ours_rms:.5} 与 ffmpeg RMS {theirs_rms:.5} 相差超过 2%"
     );
-    // 逐样最大偏差：44.1 → 48 的插值核不同，但同一条 440 Hz 正弦上不该差很多。
+    // Maximum per-sample deviation: the interpolation kernels for 44.1 → 48 differ, but on the same 440 Hz sine they should not differ by much.
     let worst = ours
         .iter()
         .zip(&theirs)

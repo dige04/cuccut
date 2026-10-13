@@ -3,7 +3,7 @@ import { captionBody, deriveCues, readSpeechWords } from './caption-cues.ts';
 
 type W = [id: string, start: number, end: number, text: string, flags?: { hidden?: boolean; timingQuality?: string }];
 
-/** 转写正文：秒写成微秒刻度（本地转写流程写的刻度）。 */
+/** Transcript body: seconds written as microsecond ticks (the ticks the local transcription flow writes). */
 function speechBody(list: W[]) {
   return {
     schema: 'cuccut.speech/1',
@@ -24,7 +24,7 @@ function speechBody(list: W[]) {
 
 describe('读转写（与编辑器的 speech-cues.ts 同一条规则）', () => {
   it('零时长的词不丢：后面有空隙就占一小段（至多 0.08 秒），整句进同一条字幕', () => {
-    // 真实样本：对齐器把「ask—you」的起止解到同一格，后面有 0.24 秒的空隙。
+    // Real sample: the aligner resolved "ask—you" to the same cell, and there is a 0.24-second gap after it.
     const read = readSpeechWords(
       speechBody([
         ['w1', 14.716, 14.956, 'just'],

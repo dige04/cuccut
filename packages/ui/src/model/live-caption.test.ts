@@ -64,7 +64,7 @@ describe('liveCaptionCues', () => {
   });
 
   it('剪掉的部分没有字幕、错开的实例按时间线时间放（与时间线临时行同一套投影）', () => {
-    // 素材 0–10 秒放在序列 0–5 秒（取素材 0–5），素材 20–30 秒放在序列 5–15 秒。
+    // Material 0–10 s placed at sequence 0–5 s (taking material 0–5), material 20–30 s placed at sequence 5–15 s.
     const seq = sequence([video('i1', 0, 150, 0), video('i2', 150, 300, 20)]);
     const placed = placeSegments(seq, 'a1', [
       { start: 1, end: 3, text: '开场' },
@@ -118,7 +118,7 @@ describe('withLiveCaption', () => {
       scopeItemIds: [],
       paintOrder: 1,
     });
-    // 原序列不动。
+    // The original sequence is left unchanged.
     expect(seq.items).toHaveLength(1);
     expect(seq.tracks).toHaveLength(1);
   });

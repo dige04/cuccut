@@ -1,35 +1,25 @@
-//! 跨表面共享的文档判据——**唯一真身**。
+//! Document predicates shared across all surfaces. **This is the single source of truth.**
 //!
-//! 2026-09-16 全局审计发现「旧式文档 / 分离文档」「原声在哪」「成片有多长」三条
-//! 规则在内核各 crate、App、Web 里各有一份实现，口径互相漂移（无 `main` 对象时
-//! 有的算旧式有的算元素文档；原声有的排除 `hasAudio:false` 有的不排；成片长度有的
-//! 按源时钟有的按元素）。三条规则从此只在这里定义，各处只负责把自己手里的类型
-//! （`TimelineDocument` / 编辑器投影 / 原始 JSON）投成规则的入参：
+//! On 2026-09-16 a global audit found that three rules ("legacy vs. detached document", "where the original audio is", and "how long the finished cut is") each had their own implementation in the kernel crates, the App and the Web, and the criteria had drifted apart (without a `main` object, some counted it as legacy and some as element-only; original audio sometimes excluded `hasAudio:false` and sometimes didn't; the cut length was sometimes measured on the source clock and sometimes by elements). From now on the three rules are defined only here. Each surface only projects its own types (`TimelineDocument` / editor projection / raw JSON) into the rules' inputs:
 //!
-//! - [`legacy_main`]：文档有没有**特权主轨**。没标 `main.detached`，且真的有一条
-//!   主轨片段序列——显式 `clips[]`，或 arrange 为有时长的 `main` 源合成的隐式整段
-//!   clip。空白项目（`main` 缺席 / `null`、没有 clips、没有主媒体）**不是**旧式
-//!   文档而是纯元素文档：所有轨平等，没有主视频也没有主音频。
-//! - [`content_end`]：成片长度。分离 / 纯元素文档只由元素的显式末端决定（空则 0）；
-//!   旧式文档是主轨片段与元素末端的并集。
-//! - [`original_audio`]：原声在哪。旧式文档在 `main.muted`；其余文档 = 时间轴上
-//!   **每一个** `kind:"video"` 元素自带的声音（任何轨、任何 `srcId`），源明确标了
-//!   `hasAudio:false` 的除外；分离出来的 `kind:"audio"` 元素是普通音轨，不算原声。
+//! - [`legacy_main`]: whether the document has a **privileged main track**. It is not marked `main.detached`, and there really is a main-track clip sequence, either explicit `clips[]` or the implicit whole-length clip that arrange synthesizes for a `main` source with a duration. An empty project (`main` absent / `null`, no clips, no main media) is **not** a legacy document but an element-only document: all tracks are equal, with no main video and no main audio.
+//! - [`content_end`]: the length of the finished cut. For detached / element-only documents it is determined only by the elements' explicit ends (0 if none); a legacy document is the union of the main-track clips and the element ends.
+//! - [`original_audio`]: where the original audio is. In a legacy document it is `main.muted`. For other documents it is the sound carried by **every** `kind:"video"` element on the timeline (any track, any `srcId`), except where the source is explicitly marked `hasAudio:false`. A detached `kind:"audio"` element is an ordinary audio track and does not count as original audio.
 use crate::arrange::TimelineProjection;
 use crate::schema::{ElementKind, TimeValue, TimelineDocument};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
-// 旧式特权主轨
+// Legacy privileged main track
 // ---------------------------------------------------------------------------
 
-/// 文档有没有旧式特权主轨：没标 `detached`，且真的有主轨片段（显式或隐式）。
+/// Whether the document has a legacy privileged main track: not marked `detached`, and it actually has main-track clips (explicit or implicit).
 pub fn legacy_main(detached: bool, has_main_clips: bool) -> bool {
     !detached && has_main_clips
 }
 
-/// 原始 JSON（`timeline.json` 或 studio 投影）的 `main.detached`。
+/// `main.detached` of the raw JSON (`timeline.json` or the studio projection).
 pub fn detached_json(timeline: &Value) -> bool {
     timeline
         .pointer("/main/detached")
@@ -37,9 +27,7 @@ pub fn detached_json(timeline: &Value) -> bool {
         .unwrap_or(false)
 }
 
-/// 原始 JSON 上的 [`legacy_main`]。`main_duration` 是主媒体时长（arrange 会为
-/// 有时长的 `main` 源合成隐式整段 clip）；调用方不知道就传 0，那就只认显式
-/// `clips[]`。
+/// [`legacy_main`] on raw JSON. `main_duration` is the main media's duration (arrange synthesizes an implicit whole-length clip for a `main` source that has a duration). If the caller does not know it, pass 0, in which case only explicit `clips[]` count.
 pub fn legacy_main_json(timeline: &Value, main_duration: f64) -> bool {
     let has_clips = timeline
         .get("clips")
@@ -52,29 +40,27 @@ pub fn legacy_main_json(timeline: &Value, main_duration: f64) -> bool {
 }
 
 impl TimelineDocument {
-    /// `main.detached` 已经标上（主视频已拆成普通元素）。
+    /// `main.detached` is already set (the main video has been split into ordinary elements).
     pub fn is_detached(&self) -> bool {
         self.main.as_ref().is_some_and(|main| main.detached)
     }
 
-    /// [`legacy_main`]，只认显式 `clips[]`（没有投影时的判据）。
+    /// [`legacy_main`], counting only explicit `clips[]` (the criterion when there is no projection).
     pub fn has_legacy_main(&self) -> bool {
         legacy_main(self.is_detached(), !self.clips.is_empty())
     }
 
-    /// [`legacy_main`]，认投影里的片段（含 arrange 合成的隐式整段 clip）。
+    /// [`legacy_main`], counting the clips in the projection (including the implicit whole-length clip synthesized by arrange).
     pub fn has_legacy_main_with(&self, projection: &TimelineProjection) -> bool {
         legacy_main(self.is_detached(), !projection.clips().is_empty())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 成片长度
+// Finished cut length
 // ---------------------------------------------------------------------------
 
-/// 成片长度。`element_ends` 是元素的显式末端（`end: None` / 词锚 / 非有限值不算，
-/// 它们跟随片尾、不能反过来延长片尾）；`clip_ends` 是主轨片段的时间轴末端，只在
-/// 旧式文档参与。隐藏 / 静音不改变排布长度。
+/// Finished cut length. `element_ends` are the elements' explicit ends (`end: None`, word anchors and non-finite values do not count; they follow the end of the cut and cannot extend it in return). `clip_ends` are the timeline ends of the main-track clips, and only take part for legacy documents. Hiding or muting does not change the layout length.
 pub fn content_end(
     legacy: bool,
     element_ends: impl IntoIterator<Item = f64>,
@@ -105,7 +91,7 @@ impl TimelineDocument {
             })
     }
 
-    /// [`content_end`]：主轨片段的末端就是投影时长。
+    /// [`content_end`]: the end of the main-track clips is the projection's duration.
     pub fn content_end(&self, projection: &TimelineProjection) -> f64 {
         content_end(
             self.has_legacy_main_with(projection),
@@ -116,16 +102,16 @@ impl TimelineDocument {
 }
 
 // ---------------------------------------------------------------------------
-// 原声
+// Original audio
 // ---------------------------------------------------------------------------
 
-/// 一个可能承载原声的元素，由调用方从自己的类型投出来。
+/// An element that may carry original audio, projected by the caller from its own type.
 #[derive(Debug, Clone, Copy)]
 pub struct AudioCarrier<'a> {
     pub id: &'a str,
     /// `kind == "video"`。
     pub video: bool,
-    /// 源登记的 `hasAudio`；未登记 / 未知按有声算。
+    /// The source's registered `hasAudio`. Unregistered or unknown counts as having audio.
     pub source_has_audio: Option<bool>,
     pub hidden: bool,
     pub muted: bool,
@@ -133,23 +119,21 @@ pub struct AudioCarrier<'a> {
     pub track_muted: bool,
 }
 
-/// 原声在哪、开没开。
+/// Where the original audio is, and whether it is on.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginalAudio {
-    /// 旧式文档：原声是主轨，开关位在 `main.muted`，`element_ids` 为空。
+    /// Legacy document: the original audio is the main track, its switch is `main.muted`, and `element_ids` is empty.
     pub legacy_main: bool,
-    /// 有没有原声可开关（没有就不列 `audio` 泳道）。旧式文档恒有。
+    /// Whether there is original audio to toggle (if not, no `audio` lane is listed). Legacy documents always have it.
     pub has: bool,
-    /// 原声关着。元素文档 = 没有任何一个承载元素还在出声（元素与所在轨都没
-    /// hidden / muted）；没有承载元素时没有声音可出，算关。
+    /// Original audio is off. For an element document: none of the carrying elements is still producing sound (neither the element nor its track is hidden / muted). With no carrying element there is no sound to output, so it counts as off.
     pub muted: bool,
-    /// 承载原声的元素 id，文档序。
+    /// IDs of the elements carrying original audio, in document order.
     pub element_ids: Vec<String>,
 }
 
-/// [`OriginalAudio`] 的唯一算法。`legacy_main_muted` 是旧式文档的 `main.muted`
-/// （不是旧式文档传 `None`）。
+/// The single algorithm behind [`OriginalAudio`]. `legacy_main_muted` is the `main.muted` of a legacy document (pass `None` for documents that are not legacy).
 pub fn original_audio<'a>(
     legacy_main_muted: Option<bool>,
     carriers: impl IntoIterator<Item = AudioCarrier<'a>>,
@@ -212,8 +196,7 @@ fn flag(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 
-/// [`original_audio`] on raw JSON（`timeline.json` 或 studio 投影；只认显式
-/// `clips[]`，见 [`legacy_main_json`]）。
+/// [`original_audio`] on raw JSON (`timeline.json` or a studio projection; counts only explicit `clips[]`, see [`legacy_main_json`]).
 pub fn original_audio_json(timeline: &Value) -> OriginalAudio {
     let legacy = legacy_main_json(timeline, 0.0)
         .then(|| timeline.get("main").is_some_and(|main| flag(main, "muted")));
@@ -250,9 +233,7 @@ pub fn original_audio_json(timeline: &Value) -> OriginalAudio {
     )
 }
 
-/// 开 / 关原声的唯一写法：旧式文档写 `main.muted`；其余文档写每个承载元素的
-/// `muted`，`main.muted`（若有）保持原样——分离文档的 `main.muted` 必须是 true，
-/// 否则 `[amain]` 会把同一段声音再混一遍。
+/// The only way to turn original audio on or off. A legacy document writes `main.muted`; other documents write `muted` on each carrying element, and `main.muted` (if present) is left unchanged. In a detached document `main.muted` must be true, otherwise `[amain]` would mix the same sound in a second time.
 pub fn set_original_audio_muted_json(timeline: &mut Value, muted: bool) {
     let audio = original_audio_json(timeline);
     if audio.legacy_main {
@@ -283,20 +264,18 @@ pub fn set_original_audio_muted_json(timeline: &mut Value, muted: bool) {
 }
 
 // ---------------------------------------------------------------------------
-// 开放式（空白）项目
+// Open-ended (blank) projects
 // ---------------------------------------------------------------------------
 
-/// 开放式项目在内容尾之后保留的可落点空档（秒，原型 `BLANK_TAIL`）：标尺 / scrub
-/// 条铺到 `content_end + OPEN_TAIL`，播放头才有地方落到「下一件元素该开始的位置」。
+/// The landing gap (in seconds; prototype `BLANK_TAIL`) that an open-ended project keeps after the end of its content. The ruler / scrub bar extends to `content_end + OPEN_TAIL`, so the playhead has somewhere to land at “the position where the next element should start”.
 pub const OPEN_TAIL: f64 = 10.0;
 
-/// 开放式项目：没有主轨片段、也没有主媒体——成片时长完全由元素撑出来，没有片尾
-/// 可以截断新建元素或播放头。分离文档只要还留着 `clips[]` 源时钟就不是开放式。
+/// Open-ended project: no main-track clips and no main media. The length of the finished cut is set entirely by the elements, and there is no end-of-cut that could truncate newly created elements or the playhead. A detached document is not open-ended as long as it still keeps `clips[]` on the source clock.
 pub fn open_ended(has_main_clips: bool, has_main_media: bool) -> bool {
     !has_main_clips && !has_main_media
 }
 
-/// 原始 JSON 上的 [`open_ended`]：只认显式 `clips[]`。
+/// [`open_ended`] on raw JSON: counts only explicit `clips[]`.
 pub fn open_ended_json(timeline: &Value, has_main_media: bool) -> bool {
     let has_clips = timeline
         .get("clips")
@@ -305,8 +284,7 @@ pub fn open_ended_json(timeline: &Value, has_main_media: bool) -> bool {
     open_ended(has_clips, has_main_media)
 }
 
-/// 标尺 / scrub 条铺到哪里：开放式项目在内容尾之后多留 [`OPEN_TAIL`]，有片尾的
-/// 项目就是片长本身。
+/// How far the ruler / scrub bar extends: an open-ended project keeps an extra [`OPEN_TAIL`] after the end of its content. A project with an end-of-cut is simply its own length.
 pub fn display_duration(content_end: f64, open_ended: bool) -> f64 {
     let base = if content_end.is_finite() {
         content_end.max(0.0)
@@ -317,7 +295,7 @@ pub fn display_duration(content_end: f64, open_ended: bool) -> f64 {
 }
 
 impl TimelineDocument {
-    /// [`open_ended`]：`has_main_media` 由宿主判（项目清单 / `meta.media`）。
+    /// [`open_ended`]: `has_main_media` is decided by the host (the project manifest / `meta.media`).
     pub fn is_open_ended(&self, has_main_media: bool) -> bool {
         open_ended(!self.clips.is_empty(), has_main_media)
     }
@@ -352,15 +330,14 @@ mod tests {
             .expect("投影")
     }
 
-    /// 空白项目（无 `main`、无 clips、无主媒体）是元素文档；有显式 clips 或隐式
-    /// 整段 clip 且没标 detached 才是旧式；标了 detached 永远不是。
+    /// A blank project (no `main`, no clips, no main media) is an element document. It is legacy only if it has explicit clips, or an implicit whole-length clip, and is not marked detached. A document marked detached is never legacy.
     #[test]
     fn legacy_main_needs_a_real_clip_track_and_no_detached_flag() {
         let blank = document(json!({"ccutTimeline": "0.1", "tracks": []}));
         assert!(!blank.has_legacy_main());
         assert!(!blank.has_legacy_main_with(&projection(&blank, 0.0)));
         assert!(!blank.is_detached());
-        // 有主媒体：arrange 合成隐式 clip，投影判据认它，纯文档判据不认。
+        // Has main media: arrange synthesizes an implicit clip. The projection criterion counts it; the pure-document criterion does not.
         assert!(blank.has_legacy_main_with(&projection(&blank, 30.0)));
         assert!(!blank.has_legacy_main());
 
@@ -392,7 +369,7 @@ mod tests {
         ]}]);
         let open_ended = document(json!({"ccutTimeline": "0.1", "tracks": tracks}));
         assert_eq!(open_ended.content_end(&projection(&open_ended, 0.0)), 14.0);
-        // 隐式整段主轨 30s：旧式文档取并集。
+        // Implicit whole-length main track of 30s: a legacy document takes the union.
         assert_eq!(open_ended.content_end(&projection(&open_ended, 30.0)), 30.0);
         assert_eq!(open_ended.content_end(&projection(&open_ended, 8.0)), 14.0);
         let detached = document(json!({"ccutTimeline": "0.1", "tracks": tracks,
@@ -458,7 +435,7 @@ mod tests {
         );
         assert!(!original_audio_json(&off).muted);
 
-        // 整轨静音 ⇒ 关；没有承载元素 ⇒ 没有原声、算关。
+        // Whole track muted means off. No carrying element means no original audio, so it counts as off.
         let mut track_muted = doc.clone();
         track_muted["tracks"][0]["muted"] = json!(true);
         assert!(original_audio_json(&track_muted).muted);
@@ -489,7 +466,7 @@ mod tests {
         assert_eq!(legacy["main"]["muted"], json!(false));
         assert_eq!(legacy["tracks"][0]["elements"][0].get("muted"), None);
 
-        // `main` 对象在但没有 clips、没有主媒体：空白项目，原声在元素上。
+        // The `main` object is present but there are no clips and no main media: a blank project, with the original audio on the elements.
         let blank = json!({"main": {}, "tracks": [{"id": "tv", "kind": "overlay", "elements": [
             {"id": "v1", "kind": "video", "srcId": "src-x"}]}]});
         let audio = original_audio_json(&blank);

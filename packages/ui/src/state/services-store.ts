@@ -3,9 +3,9 @@ import { applyServicesEvent } from '@cuccut/client';
 import type { ServiceApproval, ServiceStatus, ServicesEvent, ServicesSnapshot } from '@cuccut/protocol';
 
 /**
- * 对外服务的镜像（架构设计 §4.8；命令与协议规范 §10.4 的 `services` 主题）：每项服务的状态、配置、客户端与最近的请求，
- * 加上待处理的服务审批。只由 Runtime 的快照与事件改写；订阅由 rail 常驻的 hook 开（`RuntimeSession.watchServices`），
- * 断开时清掉，免得拿旧状态报错。总览、侧栏的灯、rail 的角标与各服务页读同一份。
+ * Mirror of external services (architecture design §4.8; the `services` topic in the command and protocol spec §10.4): the state, configuration, clients and recent requests of each service,
+ * plus pending service approvals. It is rewritten only by the Runtime's snapshots and events. The subscription is opened by a hook that stays mounted in the rail (`RuntimeSession.watchServices`)
+ * and cleared on disconnect, so stale state is never reported as an error. The overview, the sidebar light, the rail badge and each service page read the same copy.
  */
 export interface ServicesStore {
   ready: boolean;

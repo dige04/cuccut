@@ -29,20 +29,18 @@ import { CAPTION_STYLE_COPY as S } from './subtitle-copy.ts';
 import { useCaptionStyle } from './use-caption-style.ts';
 
 /**
- * 字幕的浮动工具条（原型 stage-toolbar.jsx 的 `subtitle` 一条）：选中画面上的字幕时浮在字幕框上方。
- * 改的是字幕样式文档，与字幕属性页同一条写法（见 inspector-caption.tsx）：拖动中只叠给预览，松手写入新版本，
- * 用同一份样式的字幕一起变。
+ * Floating toolbar for captions (the `subtitle` entry in prototype stage-toolbar.jsx): when a caption on the picture is selected, it floats above the caption box.
+ * It edits the caption style document, written the same way as the caption properties page (see inspector-caption.tsx). While dragging it is only overlaid on the preview; on release a new version is written, and captions that share the same style change together.
  *
- * 改哪一行：选中一行就是那一行（双语时写进它的覆盖）；双语两行一起选中时两行一起改（写根样式）。条子最前的
- * 「原文 | 译文」两枚换一行来编辑，与属性页顶部那排是同一个开关（选中的是哪一件）。
+ * Which line is changed: if one line is selected, that line is changed (in bilingual mode, written into its override). If both bilingual lines are selected, both change together (written to the root style). The two “原文 | 译文”(source | translation) buttons at the front of the bar switch which line is being edited. They are the same switch as the row at the top of the properties page (which item is selected).
  */
 
 const scope = style({ display: 'flex', alignItems: 'center', gap: '[2px]' });
 
-/** 大小写钮上画的字形（原型 `case`）。 */
+/** The glyph drawn on the case button (prototype `case`). */
 const CASE_GLYPH: Record<CaptionCase, string> = { none: 'Aa', uppercase: 'AB', title: 'Ab', lowercase: 'ab' };
 
-/** 双语时条子最前那两枚：画面上这一刻的那一行优先，没有就用那条字幕轨上的第一段。 */
+/** The two buttons at the front of the bar in bilingual mode: the line currently on the picture takes priority; if there is none, the first segment on that caption track is used. */
 interface Line {
   kind: LineKind;
   itemId: Id;
@@ -56,10 +54,10 @@ export function StageCaptionToolbar({
   view,
   yielding,
 }: {
-  /** 选中的字幕（至少一件，同一份样式）。 */
+  /** Selected captions (at least one, with the same style). */
   items: CaptionItem[];
   sequence: Sequence;
-  /** 这一帧画面上全部字幕行的几何。 */
+  /** Geometry of all caption lines on this frame of the picture. */
   hits: readonly CaptionHit[];
   frame: FrameRect;
   view: View;
@@ -74,7 +72,7 @@ export function StageCaptionToolbar({
   const web = runtime.host.platform === 'web';
   const spec = useMemo(() => captionToolbar({ paired, styled, web }), [paired, styled, web]);
 
-  // 条子落在整块字幕上方：双语时两行一起算，选中下面一行也不会盖住上面一行。
+  // The bar sits above the whole caption block: in bilingual mode both lines are counted together, so selecting the lower line will not cover the upper one.
   const byId = new Map(sequence.items.map((item) => [item.id, item]));
   const shares = (id: Id) => {
     const item = byId.get(id);
@@ -191,7 +189,7 @@ export function StageCaptionToolbar({
     }
   };
 
-  // 字幕框上方没有旋转钮：条子离框 12px，贴着舞台顶就翻到下方。
+  // There is no rotate knob above the caption box: the bar sits 12px from the box, and flips below it when it would touch the top of the stage.
   const box = { x: frame.left + aabb.x * view.kx, y: frame.top + aabb.y * view.ky, w: aabb.w * view.kx, h: aabb.h * view.ky };
   return (
     <FloatingBar box={box} knob={false} yielding={yielding} label={TOOLBAR_COPY.subtitleBar}>

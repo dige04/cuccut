@@ -134,33 +134,31 @@ import { useVisibleLane } from "./use-visible-lane.ts";
 import "./editor.css";
 import { EDITOR_COPY as E } from "./editor-copy.ts";
 
-/** 拖素材时用的数据类型：素材面板 → 时间线。 */
+/** Data type used when dragging an asset: asset panel → timeline. */
 export const ASSET_DRAG_TYPE = "application/x-cuccut-asset";
 
-/** 行头列宽（原型 144）。 */
+/** Header column width (prototype 144). */
 const HEAD = 144;
-/** 泳道左右的内边距；style 宏要能静态求值，写字面量，与 model/timeline-zoom 的 ZOOM_PAD 同值。 */
+/** Left and right padding of the lane. The style macro must evaluate statically, so this is a literal, with the same value as ZOOM_PAD in model/timeline-zoom. */
 const PAD = 12;
 const MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 const RULER = 24;
 /**
- * 行高：放视频的画面行要画胶片条与原声波形，高一些；别的行（图片、文字、声音、配音、字幕）看不到缩略图，一样矮，与字幕行同高
- * （原型 LANE_H，2026-10-08）。
+ * Row height: picture rows with video, which draw a filmstrip and the original-audio waveform, are taller. Other rows (image, text, sound, dub, subtitle) show no thumbnails, so they are equally short, the same height as subtitle rows (prototype LANE_H, 2026-10-08).
  */
 const MEDIA_ROW_HEIGHT = 64;
 const ROW_HEIGHT = 40;
-/** 吸附阈值（像素，原型 10px）。 */
+/** Snap threshold (pixels; prototype 10px). */
 const SNAP_PX = 10;
-/** 按下后移动超过这么多像素才算拖动。 */
+/** Moving more than this many pixels after pressing counts as a drag. */
 const DRAG_PX = 3;
-/** 视频片段窄于这个宽度就不画胶片条与波形，只留色块。 */
+/** Video clips narrower than this don't draw the filmstrip and waveform; only the color block remains. */
 const MEDIA_MIN_PX = 12;
-/** 在空白处按下后拖过这么多像素才算框选，否则是一次点空白（设计稿 timeline.jsx `beginMarquee`）。 */
+/** Dragging more than this many pixels after pressing on blank space counts as a marquee selection; otherwise it's a click on blank space (design draft timeline.jsx `beginMarquee`). */
 const MARQUEE_PX = 4;
 
 /**
- * 时间线自己摆滚动位置（缩放、播放跟随）：设完当场补发一次 `scroll`，看得见的范围（useVisibleLane）在画上去之前就换好，
- * 不等浏览器下一帧才派发的那次（窗口在后台时还可能不派发）。
+ * The timeline sets its own scroll position (zoom, playhead follow). Right after setting it, a `scroll` is dispatched, so the visible range (useVisibleLane) is updated before painting, instead of waiting for the browser's next dispatch of that event (which may not happen while the window is in the background).
  */
 function scrollLaneTo(element: HTMLDivElement, left: number) {
   element.scrollLeft = left;
@@ -229,9 +227,9 @@ const tickLabel = style({
   whiteSpace: "nowrap",
   paddingStart: 4,
 });
-/** 行与行之间不画线（同原型），靠行头列与片段区分。 */
+/** No lines are drawn between rows (same as the prototype); rows are told apart by the header column and the clips. */
 const row = style({ position: "relative", display: "flex" });
-/** 拖行头换顺序时，落点那一行上缘或下缘的一条线。 */
+/** When dragging a header to reorder, a line on the top or bottom edge of the row where it would drop. */
 const trackDropLine = style({
   position: "absolute",
   insetStart: 0,
@@ -241,7 +239,7 @@ const trackDropLine = style({
   zIndex: 3,
   pointerEvents: "none",
 });
-/** 行头：类别图标 + 名字，开关靠右（原型 `.trow__hd`）；停用的行连名字一起降低强调。 */
+/** Header: category icon and name, with the toggle on the right (prototype `.trow__hd`); the name of a disabled row is also de-emphasized. */
 const header = style({
   position: "sticky",
   insetStart: 0,
@@ -273,7 +271,7 @@ const headerLabel = style({
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 });
-/** 字幕行与配音行的语言标签（ZH、EN、PT-BR，原型 `.thd__lang`）：任何界面语言下都放得下，全名在悬停说明里。 */
+/** Language tags on subtitle and dub row headers (ZH, EN, PT-BR; prototype `.thd__lang`). They fit in any UI language; the full name is in the hover description. */
 const headerTag = style({
   flexShrink: 0,
   marginEnd: "auto",
@@ -290,8 +288,7 @@ const headerToggles = style({
   flexShrink: 0,
 });
 /**
- * 配音行头「有句过快或没合成」的小黄点（设计稿 `.thd__fast`：不是出错，不用橙红）。行头只有 144px，点占在名字后面会把
- * 「配音 · 英语」挤成省略号，所以挂在轨道图标的右上角，不占名字的地方。
+ * The small yellow dot on dub row headers when a sentence is too fast or not synthesized (design draft `.thd__fast`: this is not an error, so it is not orange-red). The header is only 144px. Putting the dot after the name would squeeze “配音 · 英语” into an ellipsis, so it is attached to the top-right corner of the track icon and takes no space from the name.
  */
 const headerFlag = style({
   position: "absolute",
@@ -308,9 +305,8 @@ const TRACK_ICON: Record<Track["kind"], typeof Video> = {
   subtitle: CloseCaptions,
 };
 /**
- * 一条轨的片段区。片段与配音块的字体在这里设、由它们继承（轨里别的字都自带字体：读数、字幕块）。
- * 整片入镜一次挂上几千个片段与配音块，元素上样式宏的原子类越多样式计算越慢；所以片段只留随状态变的几项在样式宏里，
- * 不变的几何与排版放在 editor.css 的 `.cc-clip`，字体靠继承。
+ * The clip area of one track. The fonts of clips and dub blocks are set here and inherited by them (other text in the track sets its own font: counters, subtitle blocks).
+ * Mounting thousands of clips and dub blocks for a whole film at once: the more atomic classes a style macro puts on an element, the slower the style calculation. So clips keep only the few state-varying properties in the style macro; the unchanging geometry and typography are in editor.css `.cc-clip`, and the font is inherited.
  */
 const lane = style({
   position: "relative",
@@ -439,15 +435,14 @@ const emptyBox = style({
   pointerEvents: "none",
 });
 
-/** 拖行头的落点：同一叠里的另一行，放在它显示上的上面还是下面。 */
+/** Drop position when dragging a header: another row in the same stack, placed above or below it on screen. */
 interface TrackDrop {
   trackId: Id;
   position: "above" | "below";
 }
 
 /**
- * 时间线上的上下 → `moveTrack` 的上下：画面与字幕行按 `order` 从高到低排（上面的在前面），声音行从低到高
- * （model/editor.ts 的 `trackRows`），所以声音行的「上面」是 `order` 更小的那边。
+ * Up and down on the timeline → up and down for `moveTrack`: picture and subtitle rows are sorted by `order` from high to low (higher ones first); sound rows are sorted from low to high (model/editor.ts `trackRows`). So the “above” of a sound row is the side with the smaller `order`.
  */
 function trackPlacement(
   kind: Track["kind"],
@@ -457,7 +452,7 @@ function trackPlacement(
   return position === "above" ? "below" : "above";
 }
 
-/** 拖到紧挨着自己的行、又落在靠自己的那一边：位置不变，不算换。 */
+/** Dragged to the row right next to its own, on the side nearest to itself: the position is unchanged and it doesn't count as a move. */
 function trackDropChanges(
   rows: readonly { track: Track }[],
   trackId: Id,
@@ -480,7 +475,7 @@ type Gesture =
       started: boolean;
       deltaFrames: number;
       trackId: Id | null;
-      /** 换轨道时片段在原来那一行里纵向挪多少像素（元素不换父节点，指针捕获不断）。 */
+      /** How many pixels a clip moves vertically within its row when the track changes (the element does not change parent, so pointer capture isn't broken). */
       offsetY: number;
       snap: number | null;
     }
@@ -492,16 +487,16 @@ type Gesture =
       snap: number | null;
     }
   | {
-      /** 按住行头拖，换这条轨道在同一叠里的上下：目标是同一叠（画面与字幕一叠、声音一叠）的另一行，放在它上面或下面（显示上的上下）。 */
+      /** Hold a header and drag to reorder this track up or down within its stack. The target is another row in the same stack (picture and subtitle form one stack, sound forms another), placed above or below it (up and down on screen). */
       kind: "track";
       trackId: Id;
       originY: number;
       started: boolean;
-      /** 行跟着指针挪多少像素。 */
+      /** How many pixels the row follows the pointer. */
       offsetY: number;
       target: TrackDrop | null;
     }
-  /** 拖配音块的右缘改语速：松手一次 `setSpeed`。`room` 是到同轨下一件起点的长度。 */
+  /** Dragging a dub block's right edge changes that sentence's speed; one `setSpeed` on release. `room` is the length up to the start of the next item on the same track. */
   | {
       kind: "stretch";
       itemId: Id;
@@ -511,7 +506,7 @@ type Gesture =
       stretch: Stretch | null;
     }
   | {
-      /** 在空白处拖出矩形框选：起点记成时间（缩放了也不漂）与内容坐标里的纵向位置；当前点按最后一次指针位置算。 */
+      /** Pressing blank space and dragging out a rectangle marquee-selects. The start is recorded as a time (so it doesn't drift when zoomed) and as a vertical position in content coordinates; the current point is computed from the last pointer position. */
       kind: "marquee";
       t0: number;
       y0: number;
@@ -519,13 +514,13 @@ type Gesture =
       y1: number;
       clientX: number;
       clientY: number;
-      /** 按着 ⇧ / ⌘ / Ctrl：并入原选区。 */
+      /** Holding ⇧ / ⌘ / Ctrl: merge into the existing selection. */
       additive: boolean;
       started: boolean;
     };
 
 export interface TimelineHandle {
-  /** 缩放动作（走带的缩放菜单、按钮与快捷键共用这一处）：要用到泳道宽、滚动位置与播放头。 */
+  /** Zoom action (shared by the zoom menu on the transport bar, the buttons, and the shortcuts): uses the lane width, the scroll position, and the playhead. */
   zoom(action: ZoomAction): void;
 }
 
@@ -549,7 +544,7 @@ export function Timeline({
   const editable = useVideo((s) => canEdit(s.video));
   const pps = useEditor((s) => s.pxPerSecond);
   const selection = useEditor((s) => s.selection);
-  // ⌥←/→ 还没提交的微调：按同一个视频版本画位移，版本变了（提交落地）就不再叠加。
+  // ⌥←/→ nudges not yet committed: draw the offset against the same video version. When the version changes (the commit has landed), it no longer stacks.
   const nudge = useEditor((s) => s.nudge);
   const revision = useVideo((s) => s.video?.state?.video.revision);
   const nudged = nudge && nudge.revision === revision ? nudge : null;
@@ -557,11 +552,11 @@ export function Timeline({
   const { select, toggleSelect, setZoom } = useEditor.getState();
   const scrollRef = useRef<HTMLDivElement>(null);
   const laneRefs = useRef(new Map<Id, HTMLDivElement>());
-  // 时间线滚动区的宽（含行头列）；ResizeObserver 量出来之前是 null。
+  // Width of the timeline scroll area (including the header column); null until the ResizeObserver has measured it.
   const [measured, setViewport] = useState<number | null>(null);
   const viewport = measured ?? 800;
   const [gesture, setGestureState] = useState<Gesture | null>(null);
-  // 指针事件可能比重绘来得快：手势以 ref 为准，state 只用来重画。
+  // Pointer events may arrive faster than repaints: gestures use the ref as the source of truth; state is only used to redraw.
   const gestureRef = useRef<Gesture | null>(null);
   const setGesture = (next: Gesture | null) => {
     gestureRef.current = next;
@@ -571,7 +566,7 @@ export function Timeline({
   const fps = sequence.fps;
   const perSecond = fps.num / fps.den;
   const rows = useMemo(() => timelineRows(sequence), [sequence]);
-  // 放视频的画面行（高一些，见 MEDIA_ROW_HEIGHT）。
+  // Picture rows with video (taller; see MEDIA_ROW_HEIGHT).
   const mediaTracks = useMemo(
     () =>
       new Set(
@@ -585,7 +580,7 @@ export function Timeline({
     track.kind === "visual" && mediaTracks.has(track.id)
       ? MEDIA_ROW_HEIGHT
       : ROW_HEIGHT;
-  // 字幕行与配音行头上的语言标签，字幕行是原文还是译文（model/track-heads.ts）。
+  // Language tag on subtitle and dub row headers, and whether a subtitle row is the original or the translation (model/track-heads.ts).
   const heads = useMemo(() => {
     const languages: HeadLanguage[] = [];
     const kinds = new Map<Id, "original" | "translation">();
@@ -621,7 +616,7 @@ export function Timeline({
     () => new Map(sequence.items.map((i) => [i.id, i])),
     [sequence.items],
   );
-  // 每条轨的件按起点排好：只画与看得见的时间窗相交的那几件（model/timeline-window.ts）。
+  // Items on each track are sorted by start: only those that intersect the visible time window are drawn (model/timeline-window.ts).
   const lanes = useMemo(() => {
     const byTrack = new Map<Id, SequenceItem[]>();
     for (const item of sequence.items) {
@@ -637,11 +632,11 @@ export function Timeline({
     );
   }, [sequence.items, fps]);
   const dubs = useDubBlocks(sequence, documents, assets);
-  // 第一次转录时还没有字幕轨：识别出来的段落先画在一条临时行里（timeline-live.tsx）。
+  // During the first transcription there is no subtitle track yet, so the recognized paragraphs are drawn first on a temporary row (timeline-live.tsx).
   const liveRows = useLiveRows(videoId, sequence, documents);
-  // 转录过、却一条字幕轨都没有（转录时没建字幕层）：文稿画在一条只读行里，时间线不是空的。
+  // Transcribed, but no subtitle track exists at all (no subtitle layer was created during transcription): the transcript is drawn on a read-only row, so the timeline isn't empty.
   const transcripts = useTranscriptRows(sequence, documents, liveRows);
-  // 看得见的横向范围（泳道坐标，像素），左右各多一屏：滚动、缩放、播放翻页时不露白。
+  // Visible horizontal range (lane coordinates, pixels), with one extra screen on each side, so no blank area shows while scrolling, zooming, or paging through playback.
   const view = useVisibleLane(scrollRef, HEAD, 1);
 
   const xOf = (seconds: number) => PAD + seconds * pps;
@@ -657,16 +652,16 @@ export function Timeline({
     return () => observer.disconnect();
   }, []);
 
-  // 缩小的下限跟着时长与泳道宽走：长视频能缩到整片入镜。量出泳道宽之前不写，免得拿猜的宽度把记着的缩放夹走。
+  // The lower zoom limit follows the duration and the lane width, so a long video can zoom out to fit the whole film. It is not written until the lane width is measured, so a guessed width doesn't clamp the remembered zoom.
   useEffect(() => {
     if (measured !== null)
       useEditor.getState().setZoomFloor(zoomFloor(duration, measured - HEAD));
   }, [measured, duration]);
 
-  // 缩放之后的滚动位置：按新的每秒像素数算，在新宽度画上去之后（useLayoutEffect）设。
-  // ⌘/Ctrl + 滚轮缩放以指针下的时间为锚点。React 的 wheel 监听是被动的，这里自己挂。
+  // The scroll position after zooming is computed from the new pixels-per-second and set after the new width has been painted (useLayoutEffect).
+  // ⌘/Ctrl + wheel zooms anchored on the time under the pointer. React's wheel listener is passive, so this attaches its own.
   const zoomAnchor = useRef<((pps: number) => number) | null>(null);
-  /** 换缩放并按 `scrollFor` 摆滚动位置；缩放被夹住没变时直接摆，不留下过期的锚。 */
+  /** Change the zoom and set the scroll position by `scrollFor`. When the zoom is clamped and unchanged, set the scroll directly, without leaving a stale anchor. */
   const zoomTo = (next: number, scrollFor: (pps: number) => number) => {
     const before = useEditor.getState().pxPerSecond;
     zoomAnchor.current = scrollFor;
@@ -687,7 +682,7 @@ export function Timeline({
       const x = event.clientX - rect.left - HEAD;
       const current = useEditor.getState().pxPerSecond;
       const seconds = (element.scrollLeft + x - PAD) / current;
-      // zoomTo 只碰 ref 与 store，首次渲染的这一份一直可用。
+      // zoomTo only touches the ref and the store, so the copy from the first render is always usable.
       zoomTo(current * Math.exp(-event.deltaY / 300), (next) =>
         anchoredScroll(seconds, x, next),
       );
@@ -696,7 +691,7 @@ export function Timeline({
     return () => element.removeEventListener("wheel", onWheel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // 没有锚（下限夹住了缩放）也补发一次 scroll：内容变窄时浏览器夹住的滚动位置要当场换成新的可见范围。
+  // With no anchor (the lower limit clamped the zoom), still dispatch a scroll once: when the content gets narrower, the scroll position the browser clamped must be switched to the new visible range right away.
   useLayoutEffect(() => {
     const scrollFor = zoomAnchor.current;
     const element = scrollRef.current;
@@ -733,7 +728,7 @@ export function Timeline({
         span,
       );
       if (!plan) return;
-      // 计划里的滚动按计划的缩放算；store 夹出来的值与它不同（下限还没写入）时按同一个锚重算。
+      // The planned scroll is computed from the planned zoom. If the value the store clamped to differs from it (the lower limit isn't written yet), recompute with the same anchor.
       const anchor = (plan.scroll + lane / 2 - PAD) / plan.pxPerSecond;
       zoomTo(plan.pxPerSecond, (next) =>
         next === plan.pxPerSecond
@@ -743,7 +738,7 @@ export function Timeline({
     },
   };
 
-  // ---- 坐标 ----
+  // ---- coordinates ----
 
   const frameAtClientX = (clientX: number) => {
     const element = scrollRef.current;
@@ -763,7 +758,7 @@ export function Timeline({
     }
     return null;
   };
-  /** 视口坐标 → 时间线内容坐标（随滚动走的那一层：左边含行头列，上边含刻度尺）。 */
+  /** Viewport coordinates → timeline content coordinates (the layer that scrolls; left includes the header column, top includes the ruler). */
   const contentPoint = (clientX: number, clientY: number) => {
     const element = scrollRef.current;
     if (!element) return { x: 0, y: 0 };
@@ -773,7 +768,7 @@ export function Timeline({
       y: clientY - rect.top - element.clientTop + element.scrollTop,
     };
   };
-  /** 各行在内容坐标里的纵向位置（量 DOM：行的 offsetParent 就是内容层）。 */
+  /** Vertical position of each row in content coordinates (measured from the DOM: the row's offsetParent is the content layer). */
   const measureLanes = (): MarqueeLane[] =>
     rows.flatMap(({ track }) => {
       const element = laneRefs.current.get(track.id);
@@ -799,7 +794,7 @@ export function Timeline({
   };
   const snapThreshold = (SNAP_PX / pps) * perSecond;
 
-  /** 在阈值内吸附到最近的目标；`edges` 是正在动的边（帧），返回要补的偏移。 */
+  /** Snap to the nearest target within the threshold. `edges` are the edges being moved (frames); returns the offset to apply. */
   const snapOffset = (
     edges: number[],
     targets: number[],
@@ -818,15 +813,15 @@ export function Timeline({
     return best ?? { offset: 0, at: null };
   };
 
-  // ---- 手势 ----
-  // 按下后在 window 上跟踪移动与松开，不依赖元素的指针捕获：拖动中窗口失焦会丢掉捕获，指针也可能离开片段。
-  // 没收到松开（在别的窗口里松开了）就作废，不提交。
+  // ---- gestures ----
+  // After pressing, movement and release are tracked on window rather than relying on element pointer capture: during a drag the capture is lost if the window loses focus, and the pointer may leave the clip.
+  // If no release arrives (it was released in another window), the gesture is abandoned and not committed.
 
   const onClipPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
     item: SequenceItem,
   ) => {
-    // 右键（以及 macOS 上的 ⌃点按）开菜单，不动选区、不起手势（见 onClipContextMenu）。
+    // Right-click (and macOS ⌃-click) opens the menu without changing the selection or starting a gesture (see onClipContextMenu).
     if (event.button !== 0 || (MAC && event.ctrlKey)) {
       event.stopPropagation();
       return;
@@ -853,7 +848,7 @@ export function Timeline({
     });
   };
 
-  /** 右键片段：没选中它就先只选它（原型 timeline-menu.jsx），菜单开在指针处。 */
+  /** Right-clicking a clip: if it isn't selected, select only it first (prototype timeline-menu.jsx), and the menu opens at the pointer. */
   const onClipContextMenu = (
     event: ReactMouseEvent<HTMLDivElement>,
     item: SequenceItem,
@@ -885,7 +880,7 @@ export function Timeline({
     });
   };
 
-  /** 配音块的右缘：拖它改这一句的语速（设计稿 timeline-dub.jsx `beginStretch`）。 */
+  /** The right edge of a dub block: drag it to change this sentence's speed (design draft timeline-dub.jsx `beginStretch`). */
   const onStretchPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
     item: AudioItem,
@@ -905,7 +900,7 @@ export function Timeline({
     });
   };
 
-  /** 同一叠（画面与字幕一叠、声音一叠）的行不止一条时行头可以拖着换顺序（锁着的不拖，只读时不拖）。 */
+  /** When more than one row is in the same stack (picture and subtitle in one stack, sound in one), headers can be dragged to reorder them. Locked rows don't drag; read-only doesn't drag either. */
   const canDragTrack = (track: Track) =>
     editable &&
     !track.locked &&
@@ -913,7 +908,7 @@ export function Timeline({
       (r) => stackingGroup(r.track.kind) === stackingGroup(track.kind),
     ).length > 1;
 
-  /** 按住行头：拖起来就换这条轨道的上下（设计稿里行头可拖）。按在开关钮上不算。 */
+  /** Hold a header: drag to reorder this track up or down (the design draft allows dragging headers). Pressing on the toggle button doesn't count. */
   const onHeaderPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
     track: Track,
@@ -932,12 +927,12 @@ export function Timeline({
     });
   };
 
-  /** 在轨道区空白处按下：拖出矩形就框选，没拖起来就是点空白（清选区；按着修饰键时不动）。片段、行头、刻度尺自己拦下了按下。 */
+  /** Pressing on blank space in the track area: dragging out a rectangle marquee-selects; without dragging, it's a click on blank space (clears the selection; no change while a modifier key is held). Clips, headers, and the ruler handle their own presses. */
   const onBlankPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const element = scrollRef.current;
     if (event.button !== 0 || (MAC && event.ctrlKey) || !element) return;
     const rect = element.getBoundingClientRect();
-    // 按在滚动条上不算。
+    // Pressing on a scrollbar doesn't count.
     if (
       event.clientX - rect.left - element.clientLeft >= element.clientWidth ||
       event.clientY - rect.top - element.clientTop >= element.clientHeight
@@ -958,7 +953,7 @@ export function Timeline({
     });
   };
 
-  /** 框选的当前点跟着指针（拖动中滚动了也按最后一次指针位置重算）。 */
+  /** The marquee's current point follows the pointer (if the view scrolls while dragging, it is recomputed from the last pointer position). */
   const marqueeTo = (
     gesture: Extract<Gesture, { kind: "marquee" }>,
     clientX: number,
@@ -991,7 +986,7 @@ export function Timeline({
     if (gesture.kind === "track") {
       const dy = event.clientY - gesture.originY;
       if (!gesture.started && Math.abs(dy) < DRAG_PX) return;
-      // 落点取指针所在的同一叠的行；指针在行与行的缝里、或拖出了最上 / 最下一行（底下那行常被裁掉一截）时取最近的一行，按在它上半还是下半分上下。
+      // The drop target is a row in the same stack as the pointer. When the pointer is between rows, or dragged past the top or bottom row (the bottom row is often partly clipped), use the nearest row; whether to go above or below is decided by whether it lands in that row's upper or lower half.
       const own = tracks.get(gesture.trackId);
       let target: TrackDrop | null = null;
       let nearest = Number.POSITIVE_INFINITY;
@@ -1166,7 +1161,7 @@ export function Timeline({
       if (event.buttons === 0) setGesture(null);
       else gestureHandlers.current.move(event);
     };
-    // 松开的位置也算一次移动：快速拖动时浏览器会合并 pointermove，最后一段可能只出现在 pointerup 里。
+    // The release position also counts as a move: during a fast drag the browser coalesces pointermove events, so the last segment may only appear in pointerup.
     const onUp = (event: PointerEvent) => {
       gestureHandlers.current.move(event);
       gestureHandlers.current.end();
@@ -1190,7 +1185,7 @@ export function Timeline({
     };
   }, [gestureActive]);
 
-  // 框选中滚动（滚轮、触控板）：指针没动，矩形的当前点跟着内容走。
+  // Scrolling during a marquee (wheel, trackpad): the pointer hasn't moved, so the rectangle's current point moves with the content.
   const marqueeTracking = useRef(marqueeTo);
   marqueeTracking.current = marqueeTo;
   const marqueeActive = gesture?.kind === "marquee";
@@ -1206,7 +1201,7 @@ export function Timeline({
     return () => element.removeEventListener("scroll", onScroll);
   }, [marqueeActive]);
 
-  // ---- 拖入：素材面板里的素材，或从电脑里拖进来的文件 ----
+  // ---- Drag in: an asset from the asset panel, or a file dragged in from the computer ----
 
   const acceptsDrop = (event: DragEvent) =>
     editable &&
@@ -1260,7 +1255,7 @@ export function Timeline({
     );
   };
 
-  // ---- 播放头：点刻度尺定位，按住拖动 ----
+  // ---- Playhead: click the ruler to position it, press and hold to drag ----
 
   const scrub = useRef(false);
   const onRulerPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1292,10 +1287,8 @@ export function Timeline({
       ? gesture.itemId
       : null;
 
-  // ---- 只画时间窗里的件 ----
-  // 窗外的件不挂 DOM。不管在不在窗里都要画的：按着的那一件（移动、裁边、拉伸都对它 setPointerCapture，卸掉就丢了捕获）
-  // 与右键菜单的那一件；正在拖、正在微调的几件按挪过之后的位置判断。选中的不必钉住：选中态在 store 里，滚回来重新挂上
-  // 照样画成选中。片段与配音块都不接焦点（剪口带另算，见 timeline-seams.tsx）。
+  // ---- Only draw items inside the time window ----
+  // Items outside the window get no DOM. Items that must be drawn even outside the window: the one being pressed (move, trim, and stretch all call setPointerCapture on it, and unmounting drops the capture) and the one with the right-click menu. Items being dragged or nudged are judged by their moved positions. Selected items needn't be pinned: the selection state lives in the store, so when scrolled back in they're mounted again and drawn as selected. Clips and dub blocks don't take focus (cut bands are handled separately; see timeline-seams.tsx).
   const windowFrom = ((view.left - PAD) / pps) * perSecond;
   const windowTo = ((view.right - PAD) / pps) * perSecond;
   const pinned: SequenceItem[] = [];
@@ -1467,7 +1460,7 @@ export function Timeline({
   };
 
   const snapFrameAt = moving?.snap ?? trimming?.snap ?? null;
-  // 拖配音块右缘时的读数：新语速与新时长，贴着右缘（设计稿 `.ttip`「1.25× · 2.40 s」）。
+  // Readout while dragging a dub block's right edge: the new speed and the new duration, next to the right edge (design draft `.ttip`, “1.25× · 2.40 s”).
   const stretchReadout = (() => {
     const item = stretching?.stretch ? items.get(stretching.itemId) : undefined;
     const dub = item ? dubs.get(item.id) : undefined;
@@ -1480,15 +1473,14 @@ export function Timeline({
     };
   })();
   /**
-   * 行头。字幕行写语言标签（译文换翻译图标），全名与原文 / 译文进悬停说明；配音行整条轨只放一组配音时写语言标签、全名
-   * 「配音 · 语言」进悬停说明，句数、小黄点与末尾的 ⋯ 见 DubTrackHeader。
+   * Track header. Subtitle rows show a language tag (a translation icon replaces it for translated rows); the full name and original / translation go in the hover description. For a dub row where the whole track holds just one dub group, the language tag is shown and the full name “配音 · 语言” (Dub · language) goes in the hover description. The sentence count, the yellow dot, and the trailing ⋯ are in DubTrackHeader.
    */
   const trackHeader = (track: Track, label: string) => {
     const group =
       track.kind === "audio" ? dubTrackGroup(sequence, track.id) : null;
     const tag = heads.tags.get(track.id);
     if (!group) {
-      // 配音分离出的分轨：行头写「背景声 · 语言」「人声 · 语言」，同配音行。
+      // Dub stems split off a dub: the headers read “背景声 · 语言” (Background · language) and “人声 · 语言” (Vocals · language), same as dub rows.
       const stem =
         track.kind === "audio" ? stemTrackOf(sequence, track.id) : null;
       const name = stem?.language
@@ -1633,7 +1625,7 @@ export function Timeline({
               className={row}
               style={{
                 height: rowHeight(track),
-                // 拖行头时这一行跟着指针走（不换父节点，指针捕获不断），压在别的行上面。
+                // While a header is being dragged, this row follows the pointer (no reparenting, so pointer capture holds) and is layered over the other rows.
                 transform:
                   draggingTrack?.trackId === track.id
                     ? `translateY(${draggingTrack.offsetY}px)`
@@ -1719,7 +1711,7 @@ export function Timeline({
             </div>
           ))}
 
-          {/* 剪口带贯穿所有轨道（原型 timeline-cutbands.jsx）；拖片段、微调时先收起，框选时留着。 */}
+          {/* Cut bands run through all tracks (prototype timeline-cutbands.jsx). They are collapsed while clips are dragged or nudged, and kept while marquee-selecting. */}
           {(gesture && gesture.kind !== "marquee") || nudged ? null : (
             <CutBands
               sequence={sequence}
@@ -1757,7 +1749,7 @@ export function Timeline({
             />
           ) : null}
           {marquee ? (
-            // 压在片段（z 1–6）之上、不接指针；矩形本身与舞台的框选同一个样子。
+            // Layered above the clips (z 1–6); doesn't take pointer events. The rectangle itself looks the same as the stage marquee.
             <div
               style={{
                 position: "absolute",
@@ -1785,7 +1777,7 @@ export function Timeline({
   );
 }
 
-/** 播放头单独订阅：播放时每帧只重画这一条线，竖贯整个轨道区（轨道少时也到底）。播放中跑出可见范围时，视图跟着翻页。 */
+/** The playhead subscribes separately: while playing, only this line is redrawn each frame. It runs the full height of the track area (down to the bottom even when there are few tracks). When playback runs past the visible range, the view pages along. */
 function Playhead({
   pps,
   scroller,
@@ -1801,7 +1793,7 @@ function Playhead({
     if (!element || !playing) return;
     const x = left - HEAD;
     const visible = element.clientWidth - HEAD;
-    // 右边留 PAD：「适应窗口」时片尾正好落在 visible - PAD，播到片尾也不翻页。
+    // The right side keeps PAD: with “fit to window”, the end of the film lands exactly at visible - PAD, so playing to the end doesn't page the view.
     if (x < element.scrollLeft || x > element.scrollLeft + visible - PAD)
       scrollLaneTo(element, Math.max(0, Math.round(x - visible / 4)));
   }, [left, playing, scroller]);
@@ -1810,7 +1802,7 @@ function Playhead({
   return <div className="cc-playhead" style={{ left }} aria-hidden />;
 }
 
-/** 刻度尺上的播放头小旗：放在已经吸顶的刻度尺里，竖向滚动时留在上沿；与竖线同一个 `playheadX`，同样单独订阅，播放时只重画它。 */
+/** The playhead flag on the ruler: placed in the ruler, which is already sticky, so it stays at the top edge during vertical scrolling. It uses the same `playheadX` as the vertical line and subscribes separately too, so only it is redrawn during playback. */
 function PlayheadFlag({
   pps,
   scroller,
@@ -1847,8 +1839,7 @@ function useScrolledUnderHeads(
 }
 
 /**
- * 播放头在泳道里的横坐标，取整到设备像素：竖线的边框按整像素画，小旗的斜边按亚像素抗锯齿，
- * 不取整时两者各自舍入，移动中相差在 ±1px 间来回跳；取整后两者相对位置恒定。HEAD 是整数，竖线加上它不影响取整。
+ * The horizontal position of the playhead in the lane, rounded to device pixels. The vertical line's border is drawn on whole pixels, while the flag's diagonal edge is anti-aliased at sub-pixel positions. Without rounding, each rounds separately, and while moving they jump back and forth within ±1px; after rounding, their relative position stays constant. HEAD is an integer, so adding it to the vertical line doesn't affect the rounding.
  */
 function playheadX(seconds: number, pps: number) {
   const dpr = window.devicePixelRatio || 1;
@@ -1856,8 +1847,7 @@ function playheadX(seconds: number, pps: number) {
 }
 
 /**
- * 配音行的行头：名字的提示写这条轨的句数（没合成、过快、静音、重生成中），有句过快或没合成时亮小黄点；末尾一个 ⋯
- * （timeline-dub-head.tsx）。计数与 ⋯ 的头部同一份（设计稿两处都是 `trackLine`）。
+ * Dub track header: the tooltip on the name gives this track's sentence count (not synthesized, too fast, muted, regenerating). When a sentence is too fast or not synthesized, a small yellow dot lights up. A ⋯ sits at the end (timeline-dub-head.tsx). The count and the ⋯ header share one source (the design draft uses `trackLine` in both places).
  */
 function DubTrackHeader({
   track,
@@ -1874,7 +1864,7 @@ function DubTrackHeader({
   track: Track;
   group: DubGroup;
   name: string;
-  /** 语言标签（EN、ZH），没有语言时不给、行头写全名。 */
+  /** Language tag (EN, ZH). Not given when there is no language; the header then shows the full name. */
   tag?: string;
   sequence: Sequence;
   documents: Record<Id, DocumentRecord>;
@@ -1922,21 +1912,21 @@ function TrackHeader({
   onDragStart,
 }: {
   track: Track;
-  /** 全名：没有标签时写在行头上，开关的读屏名也用它。 */
+  /** Full name: written on the header when there is no tag; also used as the screen reader name for the toggle. */
   label: string;
-  /** 语言标签（字幕行、配音行）：给了就写它，不写全名。 */
+  /** Language tag (subtitle and dub rows): when given, it is shown instead of the full name. */
   tag?: string;
-  /** 换掉按类别的图标（译文字幕行是翻译图标）。 */
+  /** Replaces the icon by category (translated subtitle rows show the translation icon). */
   icon?: typeof Video;
-  /** 悬停在名字上的说明（配音行写句数、过快与静音）。 */
+  /** Hover description on the name (dub rows give the sentence count, too-fast sentences, and muting). */
   hint: string;
-  /** 配音行有句过快：名字后面一个小黄点。 */
+  /** Dub row with too-fast sentences: a small yellow dot after the name. */
   flag: boolean;
-  /** 配音行末尾的 ⋯。 */
+  /** The ⋯ at the end of a dub row. */
   menu?: ReactNode;
   editable: boolean;
   sequenceId: Id;
-  /** 同一叠的行不止一条时可以拖着换顺序。 */
+  /** When there is more than one row in the same stack, they can be reordered by dragging. */
   draggable: boolean;
   onDragStart(event: ReactPointerEvent<HTMLDivElement>): void;
 }) {

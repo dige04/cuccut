@@ -49,16 +49,16 @@ import { useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * 设计稿 tool-llm.jsx `LlmToolPage kind='text'`（44-104）：一次文本模型调用，不建 Agent 会话、不调工具。
- * 左边按统一骨架（产品设计 §2.7）：说明、生成要求（「填入示例」、字数 / 16,000）、模型（「管理文本模型」去模型页）；右边「生成记录」与「在 Space 中查看」。
- * 提交走 `models.generateText`，记录是 `jobs` 主题里这类任务；结果由 Runtime 列成 Space 的一份文档（架构设计 §5.7）。
- * 可以附上 Space 里的一份文档或字幕（`material`，架构设计 §7.9）；从 Space 查看器带来的条目预先附上。
+ * Design file tool-llm.jsx `LlmToolPage kind='text'` (44-104): one text-model call, with no Agent session and no tool calls.
+ * On the left, following the common skeleton (product design §2.7): description, generation requirements (“填入示例” (Fill in example), character count / 16,000), and model (“管理文本模型” (Manage text models) goes to the models page); on the right, “生成记录” (Generation records) and “在 Space 中查看” (View in Space).
+ * Submission goes through `models.generateText`; the records are jobs of this kind in the `jobs` topic; the result is listed by the Runtime as one document in the Space (architecture design §5.7).
+ * A document or subtitle from the Space (`material`, architecture design §7.9) can be attached; an entry brought from the Space viewer is attached in advance.
  */
 
 const lede = style({ margin: 0, font: 'ui-sm', color: 'gray-700' });
 const textFoot = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
 
-/** 文本生成（本机或云端的文本模型）。 */
+/** Text generation (local or cloud text models). */
 export function TextTool() {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
@@ -72,9 +72,9 @@ export function TextTool() {
   const [submitting, setSubmitting] = useState(false);
   const submitFailed = useSubmitFailed('generateText', TEXT_COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
-  // 「更改…」选的目录只活在这一页（不写回设置）。
+  // The directory picked with “更改…” (Change…) lives only on this page (it is not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
-  // 附带的 Space 条目：`attach` 打开选择器，`entryId` 是选中的那条。只活在这一页。
+  // The attached Space entry: `attach` opens the picker, and `entryId` is the one selected. It lives only on this page.
   const [attach, setAttach] = useState(false);
   const [entryId, setEntryId] = useState<Id | null>(null);
   usePreset('generate-text', (id) => {
@@ -91,7 +91,7 @@ export function TextTool() {
   const base = reason ? { text: reason, bad: true } : textStatus(draft, option, tried);
   const status = !base.bad && needEntry ? { text: FORM_COPY.needEntry, bad: tried } : base;
   const toSettings = () => go({ tab: 'models', category: 'llm', page: option?.local ? 'local' : 'cloud' });
-  // 取消了的不列（可能已经计费的照实留一张），与生成图片一致；空态按列出来的算。
+  // Cancelled items are not listed (one that may already have been billed is kept, to be accurate), consistent with image generation; the empty state is based on what is listed.
   const shown = listedRecords(records.list);
 
   const generate = () => {

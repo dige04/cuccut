@@ -5,9 +5,9 @@ import { DriversCodex, DriversCommon } from '@cuccut/protocol/messages/agent-dri
 import { LocalizedError } from '../driver-text.ts';
 
 /**
- * `codex app-server` 的 stdio 传输：每行一个 JSON 对象，JSON-RPC 形状但不带 `"jsonrpc"` 字段。
- * 三种入站消息：对我方请求的响应（有 id、有 result/error）、服务端请求（有 id 与 method）、
- * 通知（有 method、无 id）。服务端请求的 id 可能是字符串或数字，原样回写。
+ * The stdio transport for `codex app-server`: one JSON object per line, JSON-RPC shape but without a `"jsonrpc"` field.
+ * Three kinds of inbound messages: responses to our requests (have an id, and a result or error), server requests (have an id and a method),
+ * and notifications (have a method, no id). A server request's id may be a string or a number; it is echoed back as-is.
  */
 
 export type RpcId = string | number;
@@ -24,7 +24,7 @@ export class CodexRpcError extends Error {
   }
 }
 
-/** 请求处理器抛出它表示「不回写响应」：服务端已经自行结算了这个请求。 */
+/** A request handler throws this to mean "do not write a response": the server has already settled the request itself. */
 export const NO_RESPONSE = Symbol('no-response');
 
 export type ServerRequestHandler = (params: unknown, id: RpcId) => Promise<unknown> | unknown;
@@ -107,7 +107,7 @@ export class CodexRpcConnection {
     if (!this.#closed) this.#write(params === undefined ? { method } : { method, params });
   }
 
-  /** 关闭 stdin 请它退出；超时后 SIGTERM，再超时 SIGKILL。 */
+  /** Close stdin to ask it to exit; after a timeout send SIGTERM, and after another timeout SIGKILL. */
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
@@ -169,7 +169,7 @@ export class CodexRpcConnection {
     const handler = this.#handlers.get(method);
     if (!handler) {
       this.#log.warn('codex sent an unsupported server request', { method });
-      // i18n-ignore: 回给 codex app-server 的协议错误，不给人看
+      // i18n-ignore: protocol error returned to codex app-server, not shown to people
       this.#write({ id, error: { code: -32601, message: `CucCut 不支持 ${method}` } });
       return;
     }

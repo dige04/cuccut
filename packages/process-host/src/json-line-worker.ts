@@ -4,17 +4,16 @@ import { refOf, type Localized, type MessageRef } from '@cuccut/protocol';
 import { ProcessHostWorker as W } from '@cuccut/protocol/messages/process-host';
 
 /**
- * 私有执行器通道（架构设计 §13.1 `process-host`）：stdio 上的 JSON 行子进程客户端。
+ * Private executor channel (architecture design §13.1 `process-host`): a JSON-line child process client over stdio.
  *
- * 协议与 Engine Host、Model Worker 相同：请求 `{id, method, params}`，响应 `{id, result}` / `{id, error}`，
- * 推送 `{event, params}`。这里不认识任何方法或事件的名字，只负责：
+ * The protocol is the same as Engine Host and Model Worker: requests `{id, method, params}`, responses `{id, result}` / `{id, error}`, pushes `{event, params}`. This module does not know any method or event names; it is only responsible for:
  *
- * - 递增的数字 `id` 与在途请求表；子进程退出时所有在途请求以 `WorkerExitedError` 拒绝；
- * - 可选的请求超时（不给就不超时：一次推理可以跑好几分钟）；
- * - stderr 只记最后一段（默认 64 KiB），供崩溃诊断取尾部；
- * - `close()` 关 stdin 让子进程自己退出，超过宽限期 SIGKILL；`kill()` 立即结束。
+ * - incrementing numeric `id`s and the table of in-flight requests; when the child exits, all in-flight requests are rejected with `WorkerExitedError`;
+ * - an optional request timeout (none by default: one inference can run for several minutes);
+ * - stderr keeps only its last segment (64 KiB by default), for taking the tail in crash diagnostics;
+ * - `close()` closes stdin so the child exits by itself, with SIGKILL after the grace period; `kill()` ends it immediately.
  *
- * 由 `close()` / `kill()` 引起的退出标为 `expected`，调用方据此区分正常停止与崩溃。
+ * An exit caused by `close()` / `kill()` is marked `expected`, so callers can tell a normal stop from a crash.
  */
 
 export interface WorkerCommand {
@@ -25,9 +24,9 @@ export interface WorkerCommand {
 }
 
 export interface JsonLineWorkerOptions extends WorkerCommand {
-  /** stderr 尾部保留的字节数（默认 64 KiB）。 */
+  /** Number of bytes of stderr tail kept (default 64 KiB). */
   stderrLimitBytes?: number;
-  /** 每一行 stderr（日志转发用）。 */
+  /** Each line of stderr (for log forwarding). */
   onStderrLine?: (line: string) => void;
 }
 
@@ -39,11 +38,11 @@ export interface WorkerEvent {
 export interface WorkerExit {
   code: number | null;
   signal: NodeJS.Signals | null;
-  /** 退出由 `close()` / `kill()` 引起。 */
+  /** The exit was caused by `close()` / `kill()`. */
   expected: boolean;
 }
 
-/** 子进程返回的错误体。形状不对时 `code` 为 `MALFORMED_ERROR`。 */
+/** The error body returned by the child process. If its shape is wrong, `code` is `MALFORMED_ERROR`. */
 export interface WorkerErrorBody {
   code: string;
   message: string;
@@ -51,11 +50,11 @@ export interface WorkerErrorBody {
   details?: unknown;
 }
 
-/** 请求得到了错误响应。 */
+/** The request received an error response. */
 export class WorkerRequestError extends Error {
   readonly method: string;
   readonly body: WorkerErrorBody;
-  /** 说明的消息引用，供按读者语言重新显示。 */
+  /** Message reference for the explanation, for re-display in the reader's language. */
   readonly messageRef: MessageRef;
 
   constructor(method: string, body: WorkerErrorBody) {
@@ -72,11 +71,11 @@ export class WorkerRequestError extends Error {
   }
 }
 
-/** 请求在途时子进程退出了（或者请求发出时它已经不在）。 */
+/** The child process exited while the request was in flight (or it was already gone when the request was sent). */
 export class WorkerExitedError extends Error {
   readonly method: string;
   readonly exit: WorkerExit | null;
-  /** 说明的消息引用，供按读者语言重新显示。 */
+  /** Message reference for the explanation, for re-display in the reader's language. */
   readonly messageRef: MessageRef;
 
   constructor(method: string, exit: WorkerExit | null) {
@@ -94,7 +93,7 @@ export class WorkerExitedError extends Error {
 export class WorkerTimeoutError extends Error {
   readonly method: string;
   readonly timeoutMs: number;
-  /** 说明的消息引用，供按读者语言重新显示。 */
+  /** Message reference for the explanation, for re-display in the reader's language. */
   readonly messageRef: MessageRef;
 
   constructor(method: string, timeoutMs: number) {
@@ -108,7 +107,7 @@ export class WorkerTimeoutError extends Error {
 }
 
 export class WorkerSpawnError extends Error {
-  /** 说明的消息引用，供按读者语言重新显示。 */
+  /** Message reference for the explanation, for re-display in the reader's language. */
   readonly messageRef: MessageRef;
 
   constructor(command: string, cause: Error) {
@@ -153,7 +152,7 @@ export class JsonLineWorker {
       readline.createInterface({ input: child.stderr, crlfDelay: Infinity }).on('line', (line) => onLine(line));
     }
     child.stdin.on('error', () => {});
-    // `close` 而不是 `exit`：stdio 读完之后才算退出，子进程退出前写出的最后几行响应不会丢。
+    // `close` rather than `exit`: the process counts as exited only after stdio has been read to the end, so the last few response lines the child wrote before exiting are not lost.
     this.#exited = new Promise((resolve) => {
       child.once('close', (code, signal) => {
         const exit: WorkerExit = { code, signal, expected: this.#expected };
@@ -169,7 +168,7 @@ export class JsonLineWorker {
     });
   }
 
-  /** 启动子进程；进程起来（`spawn` 事件）就返回，不发任何请求。 */
+  /** Starts the child process; returns once the process is up (the `spawn` event), without sending any request. */
   static start(options: JsonLineWorkerOptions): Promise<JsonLineWorker> {
     return new Promise((resolve, reject) => {
       const child = spawn(options.command, [...(options.args ?? [])], {
@@ -190,7 +189,7 @@ export class JsonLineWorker {
     return this.#exit === null;
   }
 
-  /** 进程退出时兑现；已经退出时立即兑现。 */
+  /** Resolves when the process exits; resolves immediately if it has already exited. */
   get exited(): Promise<WorkerExit> {
     return this.#exited;
   }
@@ -222,7 +221,7 @@ export class JsonLineWorker {
     return () => this.#exitListeners.delete(listener);
   }
 
-  /** 关 stdin，让子进程处理完已收到的请求后自己退出；超过宽限期 SIGKILL。 */
+  /** Closes stdin so the child process finishes the requests it has received and exits by itself; SIGKILL after the grace period. */
   async close(graceMs = DEFAULT_GRACE_MS): Promise<WorkerExit> {
     if (this.#exit) return this.#exit;
     this.#expected = true;
@@ -233,7 +232,7 @@ export class JsonLineWorker {
     return exit;
   }
 
-  /** 立即结束子进程。 */
+  /** Ends the child process immediately. */
   async kill(signal: NodeJS.Signals = 'SIGKILL'): Promise<WorkerExit> {
     if (this.#exit) return this.#exit;
     this.#expected = true;
@@ -241,7 +240,7 @@ export class JsonLineWorker {
     return this.#exited;
   }
 
-  /** stderr 的最后一段（最多 `stderrLimitBytes` 字节），按 UTF-8 解码。 */
+  /** The last segment of stderr (at most `stderrLimitBytes` bytes), decoded as UTF-8. */
   stderrTail(): string {
     return Buffer.concat(this.#stderr).toString('utf8');
   }
@@ -276,7 +275,7 @@ export class JsonLineWorker {
         try {
           listener(event);
         } catch {
-          // 监听者自己的异常不影响通道。
+          // An exception thrown by a listener itself does not affect the channel.
         }
       }
       return;

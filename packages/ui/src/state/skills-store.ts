@@ -3,25 +3,25 @@ import type { SkillDiagnostic, SkillListResult, SkillSummary } from '@cuccut/pro
 import { sortSkills } from '../model/agent-skills.ts';
 
 /**
- * Runtime 的 skill 目录（`skills.list`，产品设计 §6.9）在界面里的一份：设置 › Skills 与输入框「+ › 使用 Skill」共用。
- * Runtime 不推送变化，由界面在设置页与输入框挂上、重新连上时各取一次（runtime/skill-commands.ts）；
- * 开关、添加、导入与移除都返回整份列表，拿到就整份写回。取过一次之后再取时旧的列表照常显示，取失败也不清掉。
+ * The UI copy of the Runtime's skill catalog (`skills.list`, product design §6.9): shared by Settings › Skills and the input box's "+ › Use Skill".
+ * The Runtime does not push changes; the UI fetches it once each when the settings page and input box mount and when reconnecting (runtime/skill-commands.ts);
+ * toggle, add, import and remove all return the whole list, which is written back whole. Once fetched, the old list keeps showing on later fetches, and a failed fetch does not clear it.
  */
 export interface SkillsStore {
-  /** `loading`：正在取（不管之前有没有）；`failed`：最近一次没取到。 */
+  /** `loading`: fetching now (whether or not there was data before); `failed`: the latest fetch did not succeed. */
   status: 'idle' | 'loading' | 'ready' | 'failed';
-  /** 取到过至少一次。 */
+  /** Has been fetched at least once. */
   loaded: boolean;
   skills: SkillSummary[];
   diagnostics: SkillDiagnostic[];
   error: string | null;
   begin(): void;
-  /** 列表或变更类方法的结果：整份写回。 */
+  /** Result of list or mutation methods: written back as a whole. */
   succeed(result: SkillListResult): void;
   fail(message: string): void;
 }
 
-/** 还没取过时的样子（测试里也用它复位）。 */
+/** The state before any fetch (also used to reset in tests). */
 export function emptySkills(): Pick<SkillsStore, 'status' | 'loaded' | 'skills' | 'diagnostics' | 'error'> {
   return { status: 'idle', loaded: false, skills: [], diagnostics: [], error: null };
 }

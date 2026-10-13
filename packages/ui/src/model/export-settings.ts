@@ -29,7 +29,7 @@ import { pl } from './export-settings.pl.ts';
 import { tr } from './export-settings.tr.ts';
 import { vi } from './export-settings.vi.ts';
 
-/** 导出设置的文案（英文是键与类型的来源，译文在 `export-settings.zh-Hans.ts`）。格式名（WAV、SRT……）不进目录。 */
+/** Export settings copy (English is the source of keys and types; translations are in `export-settings.zh-Hans.ts`). Format names (WAV, SRT, ...) are not put in the catalog. */
 const en = {
   quality: { small: 'Smaller file', standard: 'Standard', high: 'High quality' } as Record<'small' | 'standard' | 'high', string>,
   qualityNote: {
@@ -70,22 +70,22 @@ export type ExportSettingsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 导出弹层各页的设置 → `exports.create` 的 `settings`（设计稿 model-export.js、model-audio-export.js、model-loudness.js、
- * model-transcript.js；架构设计 §9.13，合同见 packages/protocol/src/exports.ts）。
+ * Settings on each page of the export popover → `settings` of `exports.create` (design draft model-export.js, model-audio-export.js, model-loudness.js,
+ * model-transcript.js; architecture design §9.13; the contract is in packages/protocol/src/exports.ts).
  *
- * 只算 Runtime 认的东西：设计稿里 Runtime 没有对应参数的（码率与体积预估、逐轨覆盖、人声分份……）不在这里，
- * 界面上置灰并写明原因。
+ * Only what the Runtime recognizes is computed: anything in the design draft that the Runtime has no matching parameter for (bitrate and size estimates, per-track overrides, splitting voices into parts, ...) is not here;
+ * the UI greys it out and states the reason.
  */
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
-// ---- 成片：体积档 ----
+// ---- Final video: size tiers ----
 
 export type QualityKey = 'small' | 'standard' | 'high';
 
 /**
- * 体积三档（设计稿 `QUALITY`）。设计稿按码率倍率算；Runtime 的成片参数是恒定质量（crf）或目标码率，这里落成 H.264 的 crf：
- * 省空间 26、标准不带（Runtime 默认 20）、高画质 16。没有码率与体积预估（Runtime 不给），说明句只写质量的取舍。
+ * Three size tiers (design draft `QUALITY`). The design draft works from bitrate multipliers; the Runtime's final-video parameters are constant quality (crf) or a target bitrate, so here they map to H.264 crf:
+ * smaller file 26, standard leaves it unset (the Runtime default is 20), high quality 16. There is no bitrate or size estimate (the Runtime does not give one), so the description covers only the quality trade-off.
  */
 export const QUALITY_CHOICES: readonly { key: QualityKey; label: string; crf: number | undefined; note: string }[] = [
   ...(
@@ -106,20 +106,20 @@ export const QUALITY_CHOICES: readonly { key: QualityKey; label: string; crf: nu
   })),
 ];
 
-// ---- 成片：分辨率 ----
+// ---- Final video: resolution ----
 
 export interface ResolutionChoice {
-  /** 短边（像素）：分辨率承诺的那条边。 */
+  /** Short edge (pixels): the edge that the resolution refers to. */
   short: number;
   width: number;
   height: number;
   /** 「4K」「1080p」。 */
   label: string;
-  /** 画布本来的尺寸（不带 `height`）。 */
+  /** The canvas's own size (no `height`). */
   source: boolean;
 }
 
-/** 短边 → 展示名（设计稿 `resLabel`）：2160 念「4K」，其余念「{短边}p」。 */
+/** Short edge → display name (design draft `resLabel`): 2160 reads as “4K”, the rest read as “{short edge}p”. */
 export function resolutionLabel(short: number): string {
   return short === 2160 ? '4K' : `${short}p`;
 }
@@ -127,11 +127,11 @@ export function resolutionLabel(short: number): string {
 const STANDARD_SHORTS = [2160, 1080, 720];
 
 /**
- * 可选分辨率（设计稿 `resChoices`）：画布本来的尺寸排第一（默认），往下是比它小的标准档。不往上放大——
- * 放大不会让画面更清楚。宽高按画布比例、取偶数（与 Runtime 对 yuv420p 的处理一致）。
+ * Selectable resolutions (design draft `resChoices`): the canvas's own size comes first (the default), followed by smaller standard tiers. Nothing is scaled up —
+ * scaling up does not make the picture any clearer. Width and height follow the canvas ratio and are rounded to even numbers (consistent with how the Runtime handles yuv420p).
  *
- * 选了别的画幅（`ratio`）时短边照旧由档位定，长边按画幅推、取偶数（`outputSize`）；推出来超过 `exports.create` 上限
- * （宽 7680、高 4320）的档不列（例如短边大于 2430 的画布出 9:16 时，画布本来的那一档）。
+ * When another aspect ratio (`ratio`) is chosen, the short edge is still set by the tier, and the long edge is derived from the aspect ratio and rounded to an even number (`outputSize`); tiers that would exceed the `exports.create` limits
+ * (width 7680, height 4320) are not listed (for example, for a canvas whose short edge is over 2430 exporting 9:16, the canvas's own tier).
  */
 export function resolutionChoices(canvas: { width: number; height: number }, ratio?: RatioChoice): ResolutionChoice[] {
   const shortSide = Math.min(canvas.width, canvas.height);
@@ -145,24 +145,24 @@ export function resolutionChoices(canvas: { width: number; height: number }, rat
   return ratio ? all.filter((c) => c.width <= MAX_OUTPUT.width && c.height <= MAX_OUTPUT.height) : all;
 }
 
-/** `exports.create` 的输出宽高上限（packages/protocol/src/schemas.ts）。 */
+/** Output width and height limits for `exports.create` (packages/protocol/src/schemas.ts). */
 const MAX_OUTPUT = { width: 7680, height: 4320 };
 
-// ---- 成片：画幅 ----
+// ---- Final video: aspect ratio ----
 
 export type RatioKey = '16:9' | '9:16' | '1:1' | '4:5';
 
 export interface RatioChoice {
   key: RatioKey;
-  /** 宽 : 高。 */
+  /** Width : height. */
   w: number;
   h: number;
 }
 
 /**
- * 换画幅导出的常用档：横屏、竖屏、方形与 4:5 竖幅（设计稿 data.js 的 `ratios` 另有 4:3、2.35:1 等、没有 4:5，这里只取这四档）。
- * 与设计稿按新画幅裁切不同，v3 换画幅是加黑边：画面按画布比例放到放得下的最大、居中，其余是黑色，排版不重排
- * （架构设计 §14「成片导出的输出比例」）。缺省「跟随画布」，不带宽高。
+ * Common presets for exporting at another aspect ratio: landscape, portrait, square and 4:5 portrait (the design draft's `ratios` in data.js also has 4:3, 2.35:1 and others, but no 4:5; only these four are taken here).
+ * Unlike the design draft, which crops to the new aspect ratio, v3 changes the aspect ratio by adding black bars: the picture is scaled by the canvas ratio to the largest size that fits and centered, the rest is black, and the layout is not reflowed
+ * (architecture design §14, “output ratio for final video export”). The default “follow canvas” carries no width or height.
  */
 export const RATIO_CHOICES: readonly RatioChoice[] = [
   { key: '16:9', w: 16, h: 9 },
@@ -171,18 +171,18 @@ export const RATIO_CHOICES: readonly RatioChoice[] = [
   { key: '4:5', w: 4, h: 5 },
 ];
 
-/** 画布能选的画幅：与画布比例相同的档不列（它就是「跟随画布」）。 */
+/** Aspect ratios the canvas can choose: presets with the same ratio as the canvas are not listed (that one is “follow canvas”). */
 export function ratioChoices(canvas: { width: number; height: number }): RatioChoice[] {
   return RATIO_CHOICES.filter((r) => r.w * canvas.height !== r.h * canvas.width);
 }
 
-/** 输出尺寸（v2 `dims`）：短边由分辨率定，长边按画幅推、取偶数——9:16 的 1080 是 1080×1920。 */
+/** Output size (v2 `dims`): the short edge is set by the resolution, the long edge is derived from the aspect ratio and rounded to an even number; 1080 at 9:16 is 1080×1920. */
 export function outputSize(short: number, ratio: { w: number; h: number }): { width: number; height: number } {
   const s = even(short);
   return ratio.w >= ratio.h ? { width: even((s * ratio.w) / ratio.h), height: s } : { width: s, height: even((s * ratio.h) / ratio.w) };
 }
 
-// ---- 响度（设计稿 model-loudness.js）----
+// ---- Loudness (design draft model-loudness.js) ----
 
 export interface LoudnessForm {
   on: boolean;
@@ -190,19 +190,19 @@ export interface LoudnessForm {
   truePeak: number;
 }
 
-/** 缺省关；打开后的初值取 Runtime 的缺省目标（−16 LUFS、−1.2 dBTP）。 */
+/** Off by default; when turned on, the initial values are the Runtime's default targets (−16 LUFS, −1.2 dBTP). */
 export const DEFAULT_LOUDNESS_FORM: LoudnessForm = { on: false, lufs: DEFAULT_LOUDNESS_TARGET.integratedLufs, truePeak: DEFAULT_LOUDNESS_TARGET.truePeakDb };
-/** 常用档：流媒体 −14、播客 / 短视频 −16、−19、广播 EBU R128 −23、ATSC A/85 −24。 */
+/** Common presets: streaming −14; podcast / short video −16, −19; broadcast EBU R128 −23; ATSC A/85 −24. */
 export const LUFS_CHOICES = [-14, -16, -19, -23, -24];
 export const TRUE_PEAK_CHOICES = [-1, -1.2, -1.5, -2];
 
-/** 排版减号（U+2212），一位小数只在需要时出现：−16、−1.5。 */
+/** Typographic minus sign (U+2212); one decimal place appears only when needed: −16, −1.5. */
 export function formatDb(value: number): string {
   const n = Math.round(value * 10) / 10;
   return `${n < 0 ? '−' : ''}${Math.abs(n)}`;
 }
 
-/** 下拉里的档：当前值不在常用档里时补进去，从大到小排。 */
+/** Presets in the dropdown: if the current value is not among the common presets, it is added, sorted from largest to smallest. */
 export function dbChoices(list: readonly number[], value: number): number[] {
   return [...new Set([...list, value])].sort((a, b) => b - a);
 }
@@ -215,18 +215,18 @@ export function loudnessNote(form: LoudnessForm): string {
   return form.on ? M.loudnessOn(formatDb(form.lufs), formatDb(form.truePeak)) : M.loudnessOff;
 }
 
-// ---- 成片 ----
+// ---- Final video ----
 
 export interface VideoForm {
   quality: QualityKey;
-  /** 选的短边；null 是画布本来的尺寸。 */
+  /** The chosen short edge; null means the canvas's own size. */
   short: number | null;
-  /** 换的画幅；null 是跟随画布。 */
+  /** The chosen aspect ratio; null means follow the canvas. */
   ratio: RatioKey | null;
   burnCaptions: boolean;
-  /** 画不出来的内容：默认拒绝；被拒后用户选「跳过它们再导」时是 `skip`。 */
+  /** Content that cannot be drawn: rejected by default; after a rejection, if the user chooses “skip them and export again” (跳过它们再导), it is `skip`. */
   onUnsupported: 'fail' | 'skip';
-  /** 成片的声音来源（与音频导出相同，只换声音，画面照旧）。 */
+  /** Sound source for the final video (same as audio export; only the sound changes, the picture stays the same). */
   source: AudioSourceKey;
 }
 
@@ -239,7 +239,7 @@ export const DEFAULT_VIDEO_FORM: VideoForm = {
   source: 'mix',
 };
 
-/** 表单里的画幅落到这块画布上：跟随画布或与画布同比例时是 undefined。 */
+/** The form's aspect ratio applied to this canvas: undefined when following the canvas or when it matches the canvas ratio. */
 export function videoRatio(form: Pick<VideoForm, 'ratio'>, canvas: { width: number; height: number }): RatioChoice | undefined {
   return ratioChoices(canvas).find((r) => r.key === form.ratio);
 }
@@ -254,7 +254,7 @@ export function videoSettings(form: VideoForm, canvas: { width: number; height: 
     kind: 'video',
     format: 'mp4',
     ...scope,
-    // 换画幅时宽高都给（引擎加黑边）；只换分辨率时只给高，宽按画布比例。
+    // When the aspect ratio changes, give both width and height (the engine adds black bars); when only the resolution changes, give only height, and width follows the canvas ratio.
     ...(ratio && choice ? { width: choice.width, height: choice.height } : choice && !choice.source ? { height: choice.height } : {}),
     ...(crf !== undefined ? { crf } : {}),
     burnCaptions: form.burnCaptions,
@@ -264,7 +264,7 @@ export function videoSettings(form: VideoForm, canvas: { width: number; height: 
   };
 }
 
-// ---- 音频（设计稿 model-audio-export.js）----
+// ---- Audio (design draft model-audio-export.js) ----
 
 export const AUDIO_FORMATS: readonly { key: AudioExportFormat; label: string; lossless: boolean; note: string }[] = [
   ...(
@@ -285,11 +285,11 @@ export const AUDIO_FORMATS: readonly { key: AudioExportFormat; label: string; lo
 export const BITRATES = [128, 192, 320];
 export const DEFAULT_BITRATE = 192;
 
-/** 一组配音：实例 `extensions['cuccut.dub']` 带同一个 `groupId`、没有 `stem`（分离出的背景带 `stem`，不算配音本体）。 */
+/** A dub group: instances whose `extensions['cuccut.dub']` carries the same `groupId` and that have no `stem` (separated background tracks carry a `stem` and are not the dub itself). */
 export interface DubGroup {
   groupId: string;
   language: string | null;
-  /** 「English 配音」。 */
+  /** “English 配音” (English dub). */
   label: string;
   items: number;
 }
@@ -307,7 +307,7 @@ export function dubGroups(sequence: Sequence): DubGroup[] {
   return [...groups.values()];
 }
 
-/** 快速选择（设计稿 `presets`）：成片混音 / 只要原声 / 每组配音各一档。「只要音乐」Runtime 没有对应的声音来源，置灰。 */
+/** Quick choices (design draft `presets`): final mix / original sound only / one option per dub group. “只要音乐” (music only) has no matching sound source in the Runtime, so it is greyed out. */
 export type AudioSourceKey = 'mix' | 'original' | `dub:${string}`;
 
 export interface AudioSourceChoice {
@@ -337,7 +337,7 @@ export interface AudioForm {
 
 export const DEFAULT_AUDIO_FORM: AudioForm = { format: 'mp3', bitrate: DEFAULT_BITRATE, channels: 2, source: 'mix' };
 
-/** WAV 不接受码率；混音（缺省来源）不带 `source`。 */
+/** WAV does not accept a bitrate; the mix (the default source) carries no `source`. */
 export function audioSettings(form: AudioForm, scope: ExportScope, loudness: LoudnessForm): ExportSettings {
   const target = loudnessTarget(loudness);
   return {
@@ -356,7 +356,7 @@ export function audioQualityLine(form: AudioForm): string {
   return form.format === 'wav' ? `48 kHz · 16-bit · ${channels}` : `${form.bitrate} kbps · ${channels}`;
 }
 
-// ---- 字幕 ----
+// ---- Subtitles ----
 
 export const SUBTITLE_FORMATS: readonly { key: SubtitleExportFormat; label: string; note: string }[] = [
   ...(
@@ -375,20 +375,20 @@ export const SUBTITLE_FORMATS: readonly { key: SubtitleExportFormat; label: stri
   })),
 ];
 
-/** 「导哪几条」的一行：一份字幕文档（同一份文档在几条轨上只算一行）。 */
+/** A row in “which tracks to export” (导哪几条): one subtitle document (the same document on several tracks counts as one row). */
 export interface SubtitleLane {
   documentId: Id;
-  /** 「原文」或语言名（与字幕轨条同一个叫法）。 */
+  /** “原文” (original text) or a language name (named the same as on the subtitle track bar). */
   label: string;
-  /** 文档名。 */
+  /** Document name. */
   name: string;
   kind: 'original' | 'translation' | 'speech';
   language: string | null;
-  /** 时间轴上开着（有启用的实例、轨道没被停用）。 */
+  /** On the timeline (has enabled instances and the track is not disabled). */
   shown: boolean;
 }
 
-/** 时间轴上的字幕文档；一条字幕轨都没有时退回转写文档（`speech`），Runtime 会把它投影到时间线上。 */
+/** Subtitle documents on the timeline; when there are no subtitle tracks, falls back to the transcript document (`speech`), which the Runtime projects onto the timeline. */
 export function subtitleLanes(sequence: Sequence, documents: Record<Id, DocumentRecord>): SubtitleLane[] {
   const lanes: SubtitleLane[] = [];
   for (const chip of captionChips(sequence, documents)) {
@@ -405,7 +405,7 @@ export function subtitleLanes(sequence: Sequence, documents: Record<Id, Document
     .map((d) => ({ documentId: d.id, label: M.transcription, name: d.name, kind: 'speech' as const, language: d.language ?? null, shown: false }));
 }
 
-/** 打开时勾上时间轴上开着的；一条都没开时勾第一条。 */
+/** When opened, checks the ones that are on in the timeline; if none are on, checks the first one. */
 export function initialSubtitlePick(lanes: readonly SubtitleLane[]): Id[] {
   const shown = lanes.filter((l) => l.shown).map((l) => l.documentId);
   return shown.length ? shown : lanes.slice(0, 1).map((l) => l.documentId);
@@ -414,14 +414,14 @@ export function initialSubtitlePick(lanes: readonly SubtitleLane[]): Id[] {
 export type SubtitleBlock = 'none' | 'too-many' | 'each';
 
 export interface SubtitlePlan {
-  /** 发给 Runtime 的文档参数；不能导时为 null。 */
+  /** The document parameters sent to the Runtime; null when it cannot be exported. */
   options: { documentId: Id; bilingual?: { documentId: Id } } | null;
   block: SubtitleBlock | null;
 }
 
 /**
- * 勾选 → 文档参数。一次导出只出一份字幕文件：一条是它自己；两条且「合成一份」是双语（原文在前）；
- * 两条「各出一份」与三条以上 Runtime 一次做不了（要分几次导），置灰。
+ * Selection → document parameters. One export produces only one subtitle file: one entry is itself; two entries with “combine into one” are bilingual (original text first);
+ * two entries with “one file each” and three or more entries cannot be done by the Runtime in one go (they would need several exports), so they are greyed out.
  */
 export function subtitlePlan(lanes: readonly SubtitleLane[], picked: readonly Id[], merge: boolean): SubtitlePlan {
   const ordered = lanes.filter((l) => picked.includes(l.documentId));
@@ -436,7 +436,7 @@ export function subtitleSettings(format: SubtitleExportFormat, options: NonNulla
   return { kind: 'subtitles', format, ...scope, ...options };
 }
 
-// ---- 文稿（设计稿 model-transcript.js、export-transcript.jsx）----
+// ---- Transcript (design draft model-transcript.js, export-transcript.jsx) ----
 
 export const TRANSCRIPT_FORMATS: readonly { key: TranscriptExportFormat; label: string; note: string }[] = [
   {
@@ -457,7 +457,7 @@ export const TRANSCRIPT_FORMATS: readonly { key: TranscriptExportFormat; label: 
   },
 ];
 
-/** 文稿的一份来源：转写（或时间轴上的字幕），连同派生自它的译文。 */
+/** One source for a transcript: the transcription (or the subtitles on the timeline), together with the translation derived from it. */
 export interface TranscriptSource {
   documentId: Id;
   name: string;
@@ -466,8 +466,8 @@ export interface TranscriptSource {
 }
 
 /**
- * 能出文稿的文档：先看转写（`speech`），没有时看时间轴上启用的字幕（与 Runtime 选文稿主文档的顺序一致）。
- * 译文（`translation`）只能作双语的另一份，不能单独成稿——Runtime 的主文档只认转写与字幕。
+ * Documents that can produce a transcript: the transcription (`speech`) is checked first, and if there is none, the enabled subtitles on the timeline (in the same order the Runtime uses to pick the main transcript document).
+ * A translation (`translation`) can only be the second document of a bilingual pair, not a transcript on its own — the Runtime's main document accepts only transcriptions and subtitles.
  */
 export function transcriptSources(sequence: Sequence, documents: Record<Id, DocumentRecord>): TranscriptSource[] {
   const all = Object.values(documents);
@@ -490,20 +490,20 @@ export function transcriptSources(sequence: Sequence, documents: Record<Id, Docu
 
 export interface TranscriptForm {
   documentId: Id | null;
-  /** 双语对照的译文；null 是只出原文。 */
+  /** The translation for bilingual comparison; null means only the original text is exported. */
   translationId: Id | null;
   format: TranscriptExportFormat;
   timestamps: boolean;
-  /** 文首元信息：只有 Markdown 写，纯文本时不带。 */
+  /** Front-matter metadata: written only for Markdown; omitted for plain text. */
   frontmatter: boolean;
-  /** 章节小标题：视频没有章节标记时由界面关掉。 */
+  /** Chapter subheadings: turned off by the UI when the video has no chapter markers. */
   chapters: boolean;
   speakers: boolean;
-  /** 跳过剪掉的部分；关掉时是剪之前的整份原文，时间按素材算。 */
+  /** Skip the cut-out parts; when off, it is the full original text before cutting, with times based on the source asset. */
   skipCut: boolean;
 }
 
-/** 只带与协议默认值（文首、章节、时间戳关；说话人、跳过剪掉的部分开）不同的选项。 */
+/** Only includes options that differ from the protocol defaults (front matter, chapters and timestamps off; speaker names and skipping cut-out parts on). */
 
 export function transcriptSettings(form: TranscriptForm, documentId: Id, scope: ExportScope): ExportSettings {
   return {
@@ -520,7 +520,7 @@ export function transcriptSettings(form: TranscriptForm, documentId: Id, scope: 
   };
 }
 
-// ---- 工程 ----
+// ---- Project ----
 
 export type ProjectTarget = 'xmeml' | 'portable';
 
@@ -530,18 +530,18 @@ export function projectSettings(target: ProjectTarget, missingAssets: 'fail' | '
     : { kind: 'project', format: 'xmeml' };
 }
 
-// ---- 文件名 ----
+// ---- File name ----
 
-/** 与 Runtime 同一个规则（export-publish.ts `safeFileStem`）：去掉文件名里不能用的字符，空了叫 video。 */
+/** Same rule as the Runtime (export-publish.ts `safeFileStem`): strips characters not allowed in file names; if nothing is left, it becomes “video”. */
 export function safeFileStem(name: string): string {
   const cleaned = name.replace(/[/\\:*?"<>|\u0000-\u001f\u007f]/g, '_').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 120);
   return cleaned || 'video';
 }
 
 /**
- * 提交前的预计文件名（Runtime 的默认命名，见 `ExportDestination`）：「视频名.种类后缀.扩展名」，成片的后缀是画面里烧着的
- * 字幕语言（`burnedCaptionLanguages`，要给 `sequence`；没有烧字幕时不加），几段各出一份时加 `.partN`。
- * 重名时 Runtime 会再加序号，所以这只是预计；提交后改读任务记录里的文件名。
+ * The expected file name before submission (the Runtime's default naming, see `ExportDestination`): “video name.kind suffix.extension”. A final video's suffix is the subtitle language burned into the picture
+ * (`burnedCaptionLanguages`, which needs `sequence`; no suffix when no subtitles are burned in), and `.partN` is added when several segments are each exported as a file.
+ * If the name clashes, the Runtime adds a number, so this is only an estimate; after submission, read the file name from the job record instead.
  */
 export function defaultFileNames(
   videoName: string,
@@ -569,8 +569,8 @@ export function defaultFileNames(
 }
 
 /**
- * 成片没挑位置时导到哪：原视频所在的文件夹（`file` 是主素材的绝对路径，`assetFilePath` 的结果）。素材在视频目录里面
- * （收进来的、托管的）时 null，交给 Runtime 的缺省（项目下的 `exports/`），不往视频目录里写。macOS / Linux 与 Windows 的路径都认。
+ * Where a final video goes when no location was chosen: the folder that holds the source video (`file` is the absolute path of the main asset, the result of `assetFilePath`). When the asset is inside the video's directory
+ * (imported and managed), it is null and the Runtime's default (`exports/` under the project) is used, so nothing is written into the video directory. Both macOS / Linux and Windows paths are recognized.
  */
 export function exportSourceDir(file: string | null, videoDir: string | null): string | null {
   if (!file) return null;
@@ -592,8 +592,8 @@ export function exportSourceDir(file: string | null, videoDir: string | null): s
 }
 
 /**
- * 这次导出交给 Runtime 的目录（`destination.dir`）：这次挑的（null 是「用默认位置」）优先，其次是挑过记着的；都没有时
- * 成片导到原视频所在的文件夹（`exportSourceDir`），别的种类 null，交给 Runtime 的缺省（项目下的 `exports/`）。
+ * The directory handed to the Runtime for this export (`destination.dir`): the one chosen this time (null means “use default location”) takes priority, then the one remembered from before; if neither exists,
+ * a final video goes to the folder that holds the source video (`exportSourceDir`), and other kinds are null, leaving the Runtime's default (`exports/` under the project).
  */
 export function exportTargetDir(
   kind: ExportSettings['kind'],
@@ -605,24 +605,24 @@ export function exportTargetDir(
   return saved ?? (kind === 'video' ? sourceDir : null);
 }
 
-// ---- 音频：每种配音各一份（设计稿 export-audio.jsx「人声分几份」、model-audio-export.js `voiceParts` / `audioFiles`）----
+// ---- Audio: one file per dub type (design draft export-audio.jsx “how many voice files”, model-audio-export.js `voiceParts` / `audioFiles`) ----
 
-/** 「人声分几份」：`one` 按快速选择混成一份；`each` 每组配音各出一份（每份一次 `exports.create`）。 */
+/** “How many voice files” (人声分几份): `one` mixes according to the quick choice into one file; `each` produces one file per dub group (each file is one `exports.create` call). */
 export type VoiceSplit = 'one' | 'each';
 
-/** 每种一份里的一份：一组配音、它的导出设置与文件名。 */
+/** One of the per-type files: a dub group, with its export settings and file name. */
 export interface DubPart {
   groupId: string;
   label: string;
   settings: ExportSettings;
   /**
-   * 只出一个文件时给的固定文件名（`视频名.audio.<语言>.<扩展名>`），一眼看出是哪种配音；Runtime 的默认命名不带配音组。
-   * 范围是几段各出一份时 `destination.fileName` 用不了（会套到每一段上），为 null，按 Runtime 的默认命名编号。
+   * The fixed file name given when only one file is produced (`视频名.audio.<语言>.<扩展名>`, that is, video name.audio.language.extension), so you can tell at a glance which dub it is; the Runtime's default naming does not include the dub group.
+   * When the range is several segments each exported as a file, `destination.fileName` cannot be used (it would apply to every segment), so it is null and the Runtime's default naming numbers them.
    */
   fileName: string | null;
 }
 
-/** 文件名里的配音标签：语言代码；没有语言的按位置叫 dub1、dub2；撞了的加 -2、-3。 */
+/** The dub label in the file name: the language code; dubs with no language are named by position, dub1, dub2; clashes get -2, -3 added. */
 export function dubTags(groups: readonly Pick<DubGroup, 'language'>[]): string[] {
   const seen = new Map<string, number>();
   return groups.map((g, i) => {
@@ -634,8 +634,8 @@ export function dubTags(groups: readonly Pick<DubGroup, 'language'>[]): string[]
 }
 
 /**
- * 每组配音各一份：来源是 `{ dubGroupId }`——只有这一组配音，原声、音乐、别的配音与分离出的背景声都不进
- * （设计稿里每份还带自己的背景声和音乐，Runtime 的声音来源表达不了）。
+ * One file per dub group: the source is `{ dubGroupId }`, meaning only this dub group; the original sound, music, other dubs and separated background sound are all left out
+ * (the design draft gives each file its own background sound and music, which the Runtime's sound-source format cannot express).
  */
 export function dubParts(groups: readonly DubGroup[], form: AudioForm, scope: ExportScope, loudness: LoudnessForm, videoName: string): DubPart[] {
   const tags = dubTags(groups);

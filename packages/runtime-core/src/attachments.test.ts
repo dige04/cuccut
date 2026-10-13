@@ -8,7 +8,7 @@ import { silentLogger } from '@cuccut/harness';
 import { MAX_ATTACHMENT_BYTES, RpcError } from '@cuccut/protocol';
 import { AttachmentStore, type AttachmentStoreOptions } from './attachments.ts';
 
-/** 附件仓库：登记 → 经本机 HTTP 上传 → 发送时换成文件；以及过期、孤儿与各种拒绝。 */
+/** Attachment store: register → upload over local HTTP → swap for a file when sending; plus expiry, orphans, and the various rejections. */
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const ALLOWED = 'http://localhost:5173';
@@ -67,7 +67,7 @@ describe('附件仓库', () => {
     expect(attachment).toMatchObject({ kind: 'image', fileName: '截图 1.png', mimeType: 'image/png', size: PNG.length });
     expect(uploadUrl).toMatch(new RegExp(`^${base}/attachments/[A-Za-z0-9_-]{43}$`));
 
-    // 还没上传：发送要等它传完。
+    // Not yet uploaded: sending waits until the upload finishes.
     expect((await rejects(store.resolve([attachment.id]))).code).toBe('invalid-request');
 
     const uploaded = await put(uploadUrl, PNG);
@@ -77,9 +77,9 @@ describe('附件仓库', () => {
     expect(await fs.readFile(resolved!.path)).toEqual(PNG);
     expect(await fs.readdir(path.join(dir, attachment.id))).toEqual(['image.png']);
 
-    // 地址只能用一次。
+    // The address can be used only once.
     expect((await put(uploadUrl, PNG)).status).toBe(409);
-    // 不认识的附件。
+    // An unknown attachment.
     expect((await rejects(store.resolve(['att_00000000000000000000000000000000']))).code).toBe('not-found');
   });
 
@@ -91,7 +91,7 @@ describe('附件仓库', () => {
     for (const fileName of ['../../etc/passwd', 'a\\b.png', '..', '.', '', 'a\u0000.png', 'x'.repeat(256)]) {
       expect((await rejects(store.prepare({ fileName, mimeType: 'image/png', size: 10 }))).code).toBe('invalid-request');
     }
-    // 没有留下任何目录。
+    // No directory is left behind.
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
@@ -100,7 +100,7 @@ describe('附件仓库', () => {
 
     const wrongType = await prepare();
     expect((await put(wrongType.uploadUrl, PNG, { 'Content-Type': 'image/jpeg' })).status).toBe(415);
-    // 被拒绝之前没有作废令牌：同一个地址还能用正确的格式上传。
+    // Before the rejection the token is not invalidated: the same address can still be uploaded to with the correct format.
     expect((await put(wrongType.uploadUrl, PNG)).status).toBe(204);
 
     const tooLong = await prepare();
@@ -124,7 +124,7 @@ describe('附件仓库', () => {
     expect(fromUi.headers.get('access-control-allow-origin')).toBe(ALLOWED);
     expect((await fetch(foreign.uploadUrl)).status).toBe(405);
 
-    // 只有传完的两个留下文件。
+    // Only the two that finished uploading leave files behind.
     const files = (await fs.readdir(dir, { recursive: true })).filter((f) => f.endsWith('.png'));
     expect(files).toHaveLength(2);
     expect((await fs.readdir(dir, { recursive: true })).some((f) => f.endsWith('.part'))).toBe(false);
@@ -163,7 +163,7 @@ describe('附件仓库', () => {
     expect(await store.resolve([sent.attachment.id])).toHaveLength(1);
     expect(await fs.readdir(dir)).toEqual([sent.attachment.id]);
 
-    // 会话删除时一并删掉。
+    // Removed together with the session when it is deleted.
     await store.discard([sent.attachment.id, '../escape']);
     expect(await fs.readdir(dir)).toEqual([]);
   });

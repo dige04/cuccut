@@ -6,12 +6,12 @@ import { refOf, RpcError, type Localized, type MessageRef, type VideoRef } from 
 import { RcExport } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 导出的落点与发布（架构设计 §9.11）：默认在视频来源目录（项目目录，或不属于项目的会话的工作目录）下的 `exports/`；
- * 文件名是「视频名.种类后缀.扩展名」，重名时加序号「 (2)」，不覆盖已有的文件，除非明确要求。
+ * Export destination and publishing (architecture design §9.11): by default under `exports/` in the video's source directory (the project directory, or the working directory of a session that is not in a project);
+ * the file name is "video name.kind suffix.extension"; a name collision appends a sequence number " (2)"; existing files are not overwritten unless overwrite is explicitly requested.
  *
- * 发布：先把 staging 里校验过的文件复制到目标目录里的隐藏临时文件（staging 与目标可能不在一个卷上），再用硬链接
- * 把它挂到最终的名字上——链接在名字已存在时失败，不会覆盖别人的文件，也不会有写了一半的文件出现在最终的名字下。
- * 目标卷不支持硬链接（例如 exFAT）时退回「确认不存在再改名」，两步之间有很短的竞态窗口。要求覆盖时直接改名替换。
+ * Publishing: first copy the verified file from staging into a hidden temp file in the target directory (staging and the target may be on different volumes), then attach it to the final name with a hard link.
+ * The link fails if the name already exists, so it never overwrites someone else's file, and a half-written file never appears under the final name.
+ * If the target volume does not support hard links (for example exFAT), it falls back to "confirm the name does not exist, then rename"; there is a very short race window between the two steps. When overwrite is requested, it renames directly to replace the file.
  */
 
 export class DestinationError extends Error {
@@ -32,13 +32,13 @@ export class DestinationError extends Error {
   }
 }
 
-/** 视频的来源目录：视频目录去掉相对来源目录的路径。 */
+/** The video's source directory: the video directory with the path relative to the source directory removed. */
 export function sourceRoot(ref: VideoRef): string {
   const depth = ref.relPath.split('/').filter((s) => s && s !== '.').length;
   return depth === 0 ? path.dirname(ref.path) : path.resolve(ref.path, ...Array<string>(depth).fill('..'));
 }
 
-/** 文件名里不能有的字符换成 `_`；空名用 `video`。 */
+/** Characters not allowed in file names are replaced with `_`; an empty name becomes `video`. */
 export function safeFileStem(name: string): string {
   const cleaned = name
     .replace(/[/\\:*?"<>|\u0000-\u001f\u007f]/g, '_')
@@ -47,12 +47,12 @@ export function safeFileStem(name: string): string {
   return cleaned || 'video';
 }
 
-/** 给定的文件名补上（或换成）正确的扩展名。 */
+/** Adds (or replaces) the correct extension on the given file name. */
 export function withExtension(fileName: string, extension: string): string {
   return path.extname(fileName).toLowerCase() === `.${extension}` ? fileName : `${fileName}.${extension}`;
 }
 
-/** 第 n 个候选名：`a.srt`、`a (2).srt`、`a (3).srt`…… */
+/** The nth candidate name: `a.srt`, `a (2).srt`, `a (3).srt`, and so on. */
 export function candidateName(fileName: string, n: number): string {
   if (n <= 1) return fileName;
   const ext = path.extname(fileName);
@@ -67,7 +67,7 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /**
- * 预检目标目录：给了的必须是已经存在、可写的绝对路径；默认的 `exports/` 按需建。返回目录的绝对路径。
+ * Preflights the target directory: if given, it must be an existing, writable absolute path; the default `exports/` is created as needed. Returns the absolute path of the directory.
  */
 export async function prepareDirectory(dir: string, isDefault: boolean): Promise<string> {
   if (!path.isAbsolute(dir)) throw new DestinationError('EXPORT_DESTINATION_UNWRITABLE', RcExport.destinationNotAbsolute(), dir);
@@ -86,7 +86,7 @@ export async function prepareDirectory(dir: string, isDefault: boolean): Promise
   return dir;
 }
 
-/** 预检：给定的文件名已经存在而没有要求覆盖时拒绝。默认名重名时发布再加序号，这里不拒绝。 */
+/** Preflight: rejects a given file name that already exists when overwrite was not requested. A default name that collides gets a sequence number at publish time, so it is not rejected here. */
 export async function checkFixedName(dir: string, fileName: string, overwrite: boolean): Promise<void> {
   const file = path.join(dir, fileName);
   if (!overwrite && (await exists(file))) {
@@ -95,8 +95,8 @@ export async function checkFixedName(dir: string, fileName: string, overwrite: b
 }
 
 /**
- * 把 staging 里的文件发布到 `dir/fileName`。`fixed` 时名字不能变（重名就拒绝），否则重名加序号。
- * 返回最终的绝对路径。临时文件在任何结局下都清掉。
+ * Publishes the file from staging to `dir/fileName`. With `fixed`, the name cannot change (a collision is rejected); otherwise a collision adds a sequence number.
+ * Returns the final absolute path. The temp file is always cleaned up, whatever the outcome.
  */
 export async function publishFile(
   staged: string,
@@ -118,20 +118,20 @@ export async function publishFile(
   return publishInPlace(tmp, dir, fileName, options);
 }
 
-/** 目标目录里的隐藏临时文件名：发布前的输出先写在这里。 */
+/** The hidden temp file name in the target directory: output is written here before it is published. */
 export function hiddenTemp(dir: string, fileName: string): string {
   return path.join(dir, `.${fileName}.${randomUUID().slice(0, 8)}.tmp`);
 }
 
-/** `name` 是不是 `hiddenTemp` 为输出 `fileName` 取的临时文件名（`.<fileName>.<8 位十六进制>.tmp`）。 */
+/** Whether `name` is the temp file name that `hiddenTemp` produces for the output `fileName` (`.<fileName>.<8 hex digits>.tmp`). */
 export function isHiddenTempOf(name: string, fileName: string): boolean {
   const prefix = `.${fileName}.`;
   return name.startsWith(prefix) && /^[0-9a-f]{8}\.tmp$/.test(name.slice(prefix.length));
 }
 
 /**
- * 把已经写在目标目录里的隐藏临时文件 `tmp` 挂到最终的名字上（规则同 `publishFile`）。便携包直接写在目标目录里，
- * 不经 staging 再复制一遍。临时文件在任何结局下都清掉。
+ * Attaches the hidden temp file `tmp`, which is already written in the target directory, to the final name (same rules as `publishFile`). A portable package is written directly in the target directory,
+ * so it is not copied again through staging. The temp file is always cleaned up, whatever the outcome.
  */
 export async function publishInPlace(
   tmp: string,
@@ -157,7 +157,7 @@ export async function publishInPlace(
           if (options.fixed) throw new DestinationError('EXPORT_DESTINATION_EXISTS', RcExport.destinationFileExists({ fileName: name }), final);
           continue;
         }
-        // 不支持硬链接的卷：确认不存在再改名。
+        // Volume without hard-link support: confirm the name does not exist, then rename.
         if (await exists(final)) {
           if (options.fixed) throw new DestinationError('EXPORT_DESTINATION_EXISTS', RcExport.destinationFileExists({ fileName: name }), final);
           continue;

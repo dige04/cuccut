@@ -1,8 +1,7 @@
 import type { ModelFamily } from './worker-contract.ts';
 
 /**
- * 各识别模型族认的语言（主语言子标签，Model Worker 协议规范 §2.5.1）。与 Worker 的 `speech::language` 逐条一致：断言的
- * 语言不在表里时 Worker 以 `MODEL_UNSUPPORTED`（`unsupported-language`）拒绝，Runtime 据此在提交时就拒绝。
+ * The languages each recognition model family accepts (primary language subtags, Model Worker protocol spec §2.5.1). These match the Worker's `speech::language` entry for entry: when an asserted language is not in the table, the Worker rejects it with `MODEL_UNSUPPORTED` (`unsupported-language`), and the Runtime rejects it at submission on that basis.
  */
 
 /** Qwen3-ASR 0.6B / 1.7B。 */
@@ -143,7 +142,7 @@ export const WHISPER_LANGUAGES: readonly string[] = [
   'yue',
 ];
 
-/** MOSS-Transcribe-Diarize：语言目录里的全部主语种。 */
+/** MOSS-Transcribe-Diarize: all primary languages in the language catalog. */
 export const MOSS_LANGUAGES: readonly string[] = [
   'zh',
   'en',
@@ -248,7 +247,7 @@ export const MOSS_LANGUAGES: readonly string[] = [
   'fil',
 ];
 
-/** 这个识别主模型族认的语言；不是识别主模型的 family 为 null。 */
+/** Languages accepted by this primary recognition model family. The family is null for models that are not a primary recognition model. */
 export function transcribeLanguages(family: ModelFamily): readonly string[] | null {
   switch (family) {
     case 'qwen3-asr':

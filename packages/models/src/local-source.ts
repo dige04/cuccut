@@ -22,14 +22,9 @@ import type { DescribeMode, ProviderQueue, ProviderSource } from './provider-sou
 import type { TranscribeProvider } from './transcribe-provider.ts';
 
 /**
- * 本地 Provider（`local`）：本机的 Model Worker 与模型目录（架构设计 §6.3、§6.5）。模型是模型包，`modelId` 即 `bundleId`；
- * 每个模型包一个队列，同时只运行一个任务（与节点服务代别人执行的任务共用）。
+ * Local provider (`local`): the machine's Model Worker and model catalog (architecture design §6.3, §6.5). Models are model packs; `modelId` is the `bundleId`. Each model pack has one queue, running only one task at a time (shared with tasks executed for other nodes).
  *
- * `transcribe` 来自识别的模型包，`synthesizeSpeech` 来自语音合成的模型包（`capability: 'synthesize'`），`generateImage` 来自
- * 文生图的模型包（`capability: 'image'`），`separateAudio` 来自分离的模型包（`capability: 'separate'`，翻译配音用，由 Runtime
- * 直接交给 Model Worker，不经这里的执行者）。合成与生图没有出厂默认（§6.2）：模型的 `default` 只决定显式指定
- * `provider: 'local'` 而不给模型时用哪个；分离与识别有出厂默认，`default` 就是它。模型包按平台筛过（`platformBundles`），
- * 这台机器上不列出的模型包不会成为默认。
+ * `transcribe` comes from speech-recognition model packs, `synthesizeSpeech` from speech-synthesis model packs (`capability: 'synthesize'`), `generateImage` from text-to-image model packs (`capability: 'image'`), and `separateAudio` from separation model packs (`capability: 'separate'`, used for dubbing; the Runtime hands it directly to the Model Worker, bypassing the executor here). Synthesis and image generation have no factory default (§6.2): a model's `default` only decides which model is used when `provider: 'local'` is set without a model; separation and recognition have factory defaults, and `default` is that one. Model packs are filtered by platform (`platformBundles`); model packs not listed on this machine never become the default.
  */
 export class LocalProviderSource implements ProviderSource {
   readonly kind = 'local' as const;
@@ -44,7 +39,7 @@ export class LocalProviderSource implements ProviderSource {
     transcriber: TranscribeProvider | null;
     speech?: GenerationProvider | null;
     image?: GenerationProvider | null;
-    /** 音乐生成的执行者。引擎（audio.cpp）是模型包的必需组件，可执行文件由目录的 `engineExecutable` 给出。 */
+    /** Executor for music generation. The engine (audio.cpp) is a required component of the model pack; its executable is given by the directory's `engineExecutable`. */
     music?: GenerationProvider | null;
   }) {
     this.#catalog = options.catalog;
@@ -128,7 +123,7 @@ export class LocalProviderSource implements ProviderSource {
     };
   }
 
-  /** 语音合成的模型包：登记了才有这项能力；没有一个可用时整项不可用（原因取第一个的）。 */
+  /** Speech-synthesis model packs: the capability exists only if one is registered; when none is available, the whole capability is unavailable (the reason is taken from the first one). */
   #speechCapability(all: ModelBundleStatus[]): { synthesizeSpeech?: ProviderCapability<SpeechModelInfo> } {
     const models = all
       .filter((s) => s.capability === 'synthesize')
@@ -159,7 +154,7 @@ export class LocalProviderSource implements ProviderSource {
     };
   }
 
-  /** 分离的模型包：登记了才有这项能力；默认是按 ID 排第一个可用的（都不可用时第一个，原因取它的）。 */
+  /** Separation model packs: the capability exists only if one is registered; the default is the first available one sorted by ID (if none is available, the first one, with its reason). */
   #separateCapability(all: ModelBundleStatus[]): { separateAudio?: ProviderCapability<SeparateModelInfo> } {
     const models: SeparateModelInfo[] = all
       .filter((s) => s.capability === 'separate')
@@ -190,7 +185,7 @@ export class LocalProviderSource implements ProviderSource {
     };
   }
 
-  /** 文生图的模型包：登记了才有这项能力；没有一个可用时整项不可用（原因取第一个的）。 */
+  /** Text-to-image model packs: the capability exists only if one is registered; when none is available, the whole capability is unavailable (the reason is taken from the first one). */
   #imageCapability(all: ModelBundleStatus[]): { generateImage?: ProviderCapability<ImageModelInfo> } {
     const models = all
       .filter((s) => s.capability === 'image')
@@ -222,9 +217,7 @@ export class LocalProviderSource implements ProviderSource {
   }
 
   /**
-   * 音乐生成的模型包：登记了才有这项能力。引擎（audio.cpp）是模型包的必需组件，随模型一起下载：引擎没装时模型包是
-   * `not-installed` / `incomplete`，原因是 `not-installed`（下载或修复模型包即可）；只有这个平台没有引擎包时模型包是
-   * `error` / `unsupported`，原因才是 `unsupported`。
+   * Music generation model packs: the capability exists only if one is registered. The engine (audio.cpp) is a required component of the model pack, downloaded together with the model. When the engine is not installed, the model pack is `not-installed` / `incomplete`, with reason `not-installed` (downloading or repairing the model pack is enough). Only when this platform has no engine pack is the model pack `error` / `unsupported`, and only then is the reason `unsupported`.
    */
   #musicCapability(all: ModelBundleStatus[]): { generateMusic?: ProviderCapability<MusicModelInfo> } {
     const models = all
@@ -263,7 +256,7 @@ export class LocalProviderSource implements ProviderSource {
     const usable = bundleUsable(status);
     const reason = usable ? undefined : unavailableReasonOf(status);
     const selfSegmenting = def?.components.asr?.family === 'moss-transcribe-diarize';
-    // 「说话人区分」模型包的必需组件都装好了，转写之后能区分说话人（§6.6）；MOSS 自己区分。
+    // The required components of the speaker-diarization model pack are all installed, so after transcription speakers can be told apart (§6.6). MOSS distinguishes speakers itself.
     const pack = def?.diarization ? all.find((s) => s.bundleId === def.diarization) : undefined;
     const packInstalled = pack?.components?.filter((c) => !c.optional).every((c) => c.state === 'installed') ?? false;
     return {
@@ -271,13 +264,12 @@ export class LocalProviderSource implements ProviderSource {
       label: status.label ?? status.bundleId,
       maxInputBytes: null,
       maxDurationSec: null,
-      // 对齐器是可选组件：装好了词时间才是对齐出来的；没有时词按字符长度插值，标 `estimated`（§6.6 第 5 步）。自己切段的模型
-      // （MOSS）只对齐长于 5 秒的行，其余的行仍是估计，不算原生词时间。
+      // The aligner is an optional component: when installed, word timings are aligned; when absent, words are interpolated by character length and marked `estimated` (§6.6 step 5). Models that segment on their own (MOSS) align only lines longer than 5 seconds; other lines remain estimated and do not count as native word timings.
       wordTimestamps:
         !selfSegmenting && status.components?.some((c) => c.component === 'aligner' && c.state === 'installed') ? 'native' : 'none',
-      // 断言的语言按 `asr` 的模型族把关（Worker 同样的表）；认不出的模型族不限。
+      // The language assertion is gated by the `asr` model family (same table as the Worker); unrecognized model families are not restricted.
       languages: asrLanguagesOf(def),
-      // MOSS 没有识别提示的通道：不收提示（Worker 收到也只报 `hint-ignored`）。
+      // MOSS has no channel for recognition hints: hints are not accepted (the Worker would only report `hint-ignored` if it received one).
       acceptsHint: !selfSegmenting,
       speakers: selfSegmenting ? 'native' : packInstalled ? 'pack' : 'none',
       ...(!selfSegmenting && def?.diarization ? { diarizationPack: def.diarization } : {}),
@@ -295,7 +287,7 @@ function asrLanguagesOf(def: BundleDefinition | null): 'any' | string[] {
   return languages ? [...languages] : 'any';
 }
 
-/** 模型包的状态 → 不可用的原因。 */
+/** Model pack status → reason for unavailability. */
 export function unavailableReasonOf(status: ModelBundleStatus): ProviderUnavailableReason {
   if (status.state === 'not-installed' || status.state === 'downloading') return 'not-installed';
   switch (status.reason) {
@@ -311,7 +303,7 @@ export function unavailableReasonOf(status: ModelBundleStatus): ProviderUnavaila
   }
 }
 
-/** 不可用的原因连同它的消息引用一起带上（界面按自己的语言重新生成）。 */
+/** The unavailability reason is carried together with its message reference (the UI regenerates it in its own language). */
 function detailOf(from: { detail?: string; detailRef?: MessageRef } | undefined): { detail?: string; detailRef?: MessageRef } {
   if (!from?.detail) return {};
   return from.detailRef ? { detail: from.detail, detailRef: from.detailRef } : { detail: from.detail };

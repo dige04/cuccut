@@ -1,10 +1,10 @@
 /**
- * 快捷键的写法：清单一律按 macOS 记（⌘ ⇧ ⌥），Windows 与 Linux 上把修饰键换成 Ctrl+、Shift+、Alt+。
- * 编辑器的快捷键清单（shortcut-sheet）与帮助中心的快捷键页共用这一处（原型 help-center.jsx `keyLabel`）。
+ * Shortcut notation: the list is always written for macOS (⌘ ⇧ ⌥); on Windows and Linux the modifier keys are replaced with Ctrl+, Shift+ and Alt+.
+ * The editor's shortcut sheet (shortcut-sheet) and the shortcuts page of the help center share this one place (prototype help-center.jsx `keyLabel`).
  */
 export function keyLabel(keys: string, mac: boolean): string {
   if (mac) return keys;
-  // 单独写的修饰键（「⇧ 走 5%」「⌥ 以中心对称」）后面跟空格，不加「+」。
+  // A modifier written on its own, as in “⇧ 走 5%” (⇧ moves 5%) or “⌥ 以中心对称” (⌥ mirrors about the center), is followed by a space, not by “+”.
   return keys
     .replace(/⇧(?= )/g, 'Shift')
     .replace(/⌘(?= )/g, 'Ctrl')

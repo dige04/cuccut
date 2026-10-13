@@ -14,7 +14,7 @@ import { pl } from './text-generation.pl.ts';
 import { tr } from './text-generation.tr.ts';
 import { vi } from './text-generation.vi.ts';
 
-/** `packages/models/src/text-generation.ts` 给人看的文字：文本生成的参数检查、输出检查与说明。 */
+/** Human-facing text for `packages/models/src/text-generation.ts`: parameter checks, output checks and explanations for text generation. */
 const en = {
   noMessage: 'At least one non-empty user or assistant message is required',
   badRole: 'A message role must be system, user, or assistant',

@@ -1,17 +1,13 @@
-//! 字体（架构设计 §9.1）：字体线程答的三个方法。
+//! Fonts (architecture design §9.1): the three methods answered by the font thread.
 //!
-//! - `fonts.resolve`：按「族名、字重、斜体」挑一个 face（与排版引擎同一套匹配），给出它在哪个文件、文件里第几个，以及
-//!   把它抽成单独字体的做法（新的文件头与每张表从哪里搬到哪里）。先在本机字体里挑；本机没有这个族时，再到 Runtime
-//!   给的下载缓存目录（`cacheDir`，按需下载的字体）里挑。每个 face 标明来源（`local` / `downloaded`）。编辑器预览经
-//!   Runtime 的读取句柄按区间取这些表拼起来注入 WASM 渲染器；成片导出冻结时记下同一份解析，Render Worker 按同一个做法
-//!   读文件拼出同样的字节。只按调用方给的 face 去找。
-//! - `fonts.families`：本机已装的族名（只有名字，没有路径）。选字列表据此标出「本机」，Runtime 据此不去下载本机已有的族。
-//! - `fonts.inspect`：检查一个字体文件（下载之后核对）：大小在上限内、按渲染用的同一套解析读得出哪些 face，以及它们的
-//!   族名、字重、斜体。
+//! - `fonts.resolve`: picks a face by “family name, weight, italic” (using the same matching as the layout engine), and reports which file it is in, its index within that file, and
+//!   how to extract it as a standalone font (where the new file header and each table are moved from and to). It picks from local fonts first; when the family is not installed locally, it then looks in the download cache directory given by the Runtime
+//!   (`cacheDir`, fonts downloaded on demand). Each face is labeled with its source (`local` / `downloaded`). The editor preview fetches these tables through the Runtime's read handle by range, splices them together and injects them into the WASM renderer; when a finished export freezes, it records the same resolution, and the Render Worker reads the files and splices the same bytes using the same method. It looks only for the faces the caller gives.
+//! - `fonts.families`: the family names installed locally (names only, no paths). The font picker uses it to mark “local”, and the Runtime uses it to avoid downloading families already installed locally.
+//! - `fonts.inspect`: checks a font file (for verification after download): its size is within the limit, which faces can be read by the same parsing used for rendering, and their
+//!   family name, weight, and italic flag.
 //!
-//! 进程里的请求由 [`FontWorker`] 在自己的线程上答：第一次要扫一遍本机字体的名字表（几百毫秒到一两秒），扫的期间
-//! 引擎宿主照常处理别的请求；之后的请求直接查扫好的索引。有找不到的 face、而字体目录在扫过之后又变过（装了新字体、
-//! 下载了字体）时重扫一遍再答，所以引擎宿主开着的时候新装、新下载的字体也找得到。
+//! Requests in the process are answered by [`FontWorker`] on its own thread. The first time, it has to scan the name tables of the locally installed fonts (a few hundred milliseconds to a second or two); during the scan, the engine host keeps handling other requests as usual; later requests query the completed index directly. If a face cannot be found and the font directories have changed since the scan (new fonts installed, fonts downloaded), it rescans before answering, so fonts installed or downloaded while the engine host is running can still be found.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -27,10 +23,10 @@ use video_engine::{ErrorBody, Retryability};
 
 use crate::Output;
 
-/// 一个待答的请求：`id`、方法与 `params`。
+/// A pending request: `id`, method, and `params`.
 type Request = (Value, String, Value);
 
-/// 字体线程：到第一个 `fonts.*` 请求才起，按收到的顺序逐个答，响应直接写 stdout。
+/// Font thread: started on the first `fonts.*` request; answers requests one by one in the order received, writing responses directly to stdout.
 pub struct FontWorker {
     out: Output,
     queue: Option<(Sender<Request>, JoinHandle<()>)>,
@@ -41,7 +37,7 @@ impl FontWorker {
         FontWorker { out, queue: None }
     }
 
-    /// 收下一个请求（`id`、方法与 `params`），交给字体线程。
+    /// Accepts the next request (`id`, method, and `params`) and hands it to the font thread.
     pub fn submit(&mut self, id: Value, method: &str, params: Value) {
         let (sender, _) = self.queue.get_or_insert_with(|| {
             let (sender, receiver) = channel::<Request>();
@@ -60,7 +56,7 @@ impl FontWorker {
         sender.send((id, method.to_string(), params)).expect("字体线程只在 finish 之后退出");
     }
 
-    /// 不再收请求：等已收下的都答完。
+    /// Stops accepting requests: waits until all accepted ones have been answered.
     pub fn finish(self) {
         if let Some((sender, handle)) = self.queue {
             drop(sender);
@@ -69,7 +65,7 @@ impl FontWorker {
     }
 }
 
-/// 字体线程扫好的字体：本机字体（第一次用时 `scan`，测试可用 `CUCCUT_FONT_DIRS` 换成指定目录）与下载缓存目录里的字体。
+/// Fonts scanned by the font thread: local fonts (`scan` on first use; tests can use `CUCCUT_FONT_DIRS` to substitute specific directories) and fonts in the download cache directory.
 struct FontState {
     scan: fn() -> FontLibrary,
     system: Option<FontLibrary>,
@@ -89,7 +85,7 @@ impl FontState {
         self.system.get_or_insert_with(self.scan)
     }
 
-    /// 下载缓存目录里的字体：第一次用或换了目录时扫。
+    /// Fonts in the download cache directory: scanned on first use or when the directory changes.
     fn cache(&mut self, dir: &Path) -> &FontLibrary {
         if self.cache.as_ref().is_none_or(|(at, _)| at != dir) {
             self.cache = Some((dir.to_path_buf(), FontLibrary::from_dirs(&[dir.to_path_buf()])));
@@ -97,7 +93,7 @@ impl FontState {
         &self.cache.as_ref().expect("刚扫好").1
     }
 
-    /// 扫过之后变过的字体目录重扫；有重扫的返回真。
+    /// Rescans font directories that have changed since the last scan; returns true if a rescan happened.
     fn rescan_changed(&mut self) -> bool {
         let mut rescanned = false;
         if self.system.as_ref().is_some_and(FontLibrary::changed) {
@@ -113,7 +109,7 @@ impl FontState {
         rescanned
     }
 
-    /// 本机有这个族时只按本机的挑（与只有本机字体时一样）；本机没有这个族时到下载缓存里挑。
+    /// When the family is installed locally, pick only from local fonts (the same as when there are only local fonts); when it is not, pick from the download cache.
     fn pick(&mut self, query: &FaceQuery, cache_dir: Option<&Path>) -> Result<(FontFace, &'static str), Missing> {
         match (self.system().resolve_face(query), cache_dir) {
             (Ok(face), _) => Ok((face, "local")),
@@ -123,7 +119,7 @@ impl FontState {
     }
 }
 
-/// 一个请求的回执行（崩溃时是 `ENGINE_PANIC`）。
+/// The response line for one request (on a crash it is `ENGINE_PANIC`).
 fn answer(id: Value, method: &str, params: Value, state: &mut FontState) -> Value {
     let outcome = catch_unwind(AssertUnwindSafe(|| match method {
         "fonts.resolve" => parse::<ResolveParams>(params).and_then(|p| resolve(&p, state)),
@@ -150,14 +146,14 @@ fn parse<T: DeserializeOwned>(params: Value) -> Result<T, ErrorBody> {
         ))
 }
 
-/// 一次最多问几个 face。
+/// Maximum number of faces asked for in one request.
 const MAX_FACES: usize = 32;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolveParams {
     faces: Vec<FaceParam>,
-    /// 下载缓存目录（绝对路径）：本机没有的族再到这里找。不给时只找本机字体。
+    /// Download cache directory (absolute path): families not installed locally are looked up here. If not given, only local fonts are searched.
     #[serde(default)]
     cache_dir: Option<PathBuf>,
 }
@@ -180,7 +176,7 @@ struct InspectParams {
     path: PathBuf,
 }
 
-/// 先本机、后下载缓存地解析；有找不到的、字体目录又变过时重扫再答。
+/// Resolves locally first, then from the download cache; if something cannot be found and the font directories have changed, rescans before answering.
 fn resolve(p: &ResolveParams, state: &mut FontState) -> Result<Value, ErrorBody> {
     check(p)?;
     let result = resolve_in(state, p);
@@ -219,9 +215,8 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// `{ faces: [{ family, weight, italic, source, path, faceIndex, fileSize, size, header, tables: [{ from, length, to }] }],
-/// missing: [{ family, weight, italic, reason }] }`：重复的请求只答一次、按请求的顺序。`source` 是 `local`（本机字体）
-/// 或 `downloaded`（下载缓存）；`header` 是抽出来的字体的文件头（十六进制），`tables` 是每张表从原文件的 `from` 起
-/// `length` 个字节放到新字体的 `to`，`size` 是拼好之后的字节数。
+/// missing: [{ family, weight, italic, reason }] }`: duplicate requests are answered only once, in request order. `source` is `local` (local font)
+/// or `downloaded` (download cache); `header` is the file header of the extracted font (hex), and `tables` gives for each table that `length` bytes starting at `from` in the original file go to `to` in the new font; `size` is the number of bytes after assembly.
 fn resolve_in(state: &mut FontState, p: &ResolveParams) -> Value {
     let mut faces = Vec::new();
     let mut missing = Vec::new();
@@ -273,7 +268,7 @@ fn resolve_in(state: &mut FontState, p: &ResolveParams) -> Value {
     json!({ "faces": faces, "missing": missing })
 }
 
-/// `{ families: [族名…] }`：本机已装的族（字体目录变过时先重扫）。
+/// `{ families: [family names…] }`: families installed locally (rescans first if the font directories have changed).
 fn families(state: &mut FontState) -> Value {
     if state.system.as_ref().is_some_and(FontLibrary::changed) {
         state.system = Some((state.scan)());
@@ -281,8 +276,8 @@ fn families(state: &mut FontState) -> Value {
     json!({ "families": state.system().families() })
 }
 
-/// `{ faces: [{ index, families, postScriptName, weight, italic }] }`：文件超过 [`MAX_FACE_BYTES`]、读不出字体、表在
-/// 文件之外时以 `FONT_INVALID` 拒绝。
+/// `{ faces: [{ index, families, postScriptName, weight, italic }] }`: rejected with `FONT_INVALID` if the file exceeds [`MAX_FACE_BYTES`], the font cannot be read, or a table lies outside
+/// the file.
 fn inspect(p: &InspectParams) -> Result<Value, ErrorBody> {
     if !p.path.is_absolute() {
         return Err(ErrorBody::new(
@@ -361,7 +356,7 @@ mod tests {
             result["missing"],
             json!([{ "family": "Nowhere Sans", "weight": 700, "italic": true, "reason": "not-found" }])
         );
-        // 照这份做法从文件里搬表，拼出来的与抽 face 的结果相同。
+        // Moving tables out of the file using this method produces the same result as extracting the face.
         let header = face["header"].as_str().unwrap();
         let mut out = vec![0u8; face["size"].as_u64().unwrap() as usize];
         for (i, byte) in (0..header.len()).step_by(2).enumerate() {
@@ -378,7 +373,7 @@ mod tests {
         assert_eq!(out, font_files::extract_face(&bytes, 0).unwrap());
     }
 
-    /// 引擎宿主开着的时候装了新字体：找不到、字体目录又变过时重扫，这次就找得到；目录没变时不重扫。
+    /// New fonts installed while the engine host is running: if a lookup fails and the font directories have changed, it rescans, so the lookup succeeds this time; if the directories have not changed, it does not rescan.
     #[test]
     fn a_font_installed_after_the_scan_is_found_on_the_next_miss() {
         let dir = tempfile::tempdir().unwrap();
@@ -394,7 +389,7 @@ mod tests {
         assert!(!state.rescan_changed());
     }
 
-    /// 本机没有的族到下载缓存里找（标 `downloaded`）；缓存里后来下载到的也找得到；本机有的族只认本机的。
+    /// Families not installed locally are looked up in the download cache (marked `downloaded`); fonts downloaded into the cache later are also found; families installed locally are matched only against local fonts.
     #[test]
     fn families_missing_locally_resolve_from_the_download_cache() {
         let local = tempfile::tempdir().unwrap();
@@ -411,7 +406,7 @@ mod tests {
         assert_eq!(first["faces"][0]["source"], "local");
         assert_eq!(first["faces"][0]["path"], json!(local.path().join("anton.ttf")));
         assert_eq!(first["missing"][0]["family"], "Permanent Marker");
-        // 下载完成：文件进了缓存目录，下次找不到时重扫缓存。
+        // Download finished: the file is now in the cache directory; if the next lookup fails, the cache is rescanned.
         let sub = cache.path().join("permanent-marker");
         std::fs::create_dir(&sub).unwrap();
         std::fs::copy(bundled("PermanentMarker-Regular.ttf"), sub.join("permanent-marker-400.ttf")).unwrap();
@@ -419,7 +414,7 @@ mod tests {
         assert_eq!(second["missing"], json!([]), "{second}");
         assert_eq!(second["faces"][1]["source"], "downloaded");
         assert_eq!(second["faces"][1]["path"], json!(sub.join("permanent-marker-400.ttf")));
-        // 不给缓存目录时只找本机。
+        // If no cache directory is given, only local fonts are searched.
         let only_local = resolve(
             &params(json!({ "faces": [{ "family": "Permanent Marker", "weight": 400, "italic": false }] })),
             &mut state,
@@ -459,7 +454,7 @@ mod tests {
         assert_eq!(inspect(&InspectParams { path: "a.ttf".into() }).unwrap_err().code, "INVALID_PARAMS");
     }
 
-    /// 写进内存的 stdout。
+    /// Stdout written to memory.
     #[derive(Clone, Default)]
     struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
 

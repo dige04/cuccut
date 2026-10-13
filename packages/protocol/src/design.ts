@@ -1,50 +1,48 @@
 import type { FileTarget } from './methods.ts';
 
 /**
- * 会话里的设计稿（docs/design/canvas）：设计稿是会话工作目录或项目目录里的一个目录（`canvas.json` v3 加画板文件 `*.dc.html`），
- * 在功能区的设计稿标签里用设计稿编辑器打开。
+ * A design in a session (docs/design/canvas): a design is a directory in the session working directory or the project directory (`canvas.json` v3 plus board files `*.dc.html`), opened in the design editor from the design tab of the feature area.
  */
 
-/** 设计稿的概要（读 `canvas.json`）。 */
+/** Summary of a design (read from `canvas.json`). */
 export interface DesignCanvasInfo {
-  /** `canvas.json` 的 `title`，去掉首尾空白；没有时用目录名。 */
+  /** The `title` of `canvas.json`, trimmed; the directory name when there is none. */
   title: string;
-  /** `boards` 里的画板数。 */
+  /** Number of boards in `boards`. */
   boardCount: number;
 }
 
-/** `design.open` 的结果。 */
+/** Result of `design.open`. */
 export interface DesignOpenResult {
   /**
-   * 编辑器页面的地址，以 `/` 结尾：`<网关 HTTP 基址>/design/<grant>/`；Web 服务里是相对地址 `/design/<grant>/`，
-   * 由 Web 客户端换到另一个回环主机名再加载（docs/design/canvas §6.2）。grant 只在 Runtime 的内存里，Runtime 重启后要重新打开。
+   * Address of the editor page, ending with `/`: `<gateway HTTP base URL>/design/<grant>/`. In the web service it is the relative address `/design/<grant>/`, which the web client swaps for another loopback hostname before loading (docs/design/canvas §6.2). The grant lives only in the Runtime's memory; after the Runtime restarts it must be opened again.
    */
   url: string;
   canvas: DesignCanvasInfo;
-  /** 这台机器有没有构建编辑器（`npm run build:design-editor`）。没有时界面显示不可用的说明，不加载 `url`。 */
+  /** Whether the editor has been built on this machine (`npm run build:design-editor`). When it has not, the UI shows an explanation that it is unavailable and does not load `url`. */
   editorAvailable: boolean;
 }
 
-/** 设计稿标注的上限（docs/design/canvas §9）：与幻灯片标注相同。 */
+/** Annotation limit for designs (docs/design/canvas §9): the same as for slide annotations. */
 export const DESIGN_ANNOTATION_LIMITS = { perMessage: 20, text: 2000 } as const;
 
 /**
- * 一条设计稿标注（docs/design/canvas §9）：用户在设计稿标签里点一个元素或框一块区域写的批注。
- * 随 `conversations.send` / `steer` 挂在消息上，Runtime 发送时拼成一段文字交给智能体；会话里的用户消息上另带一份。
+ * One design annotation (docs/design/canvas §9): a comment the user writes after clicking an element or boxing a region in the design tab.
+ * It is attached to the message with `conversations.send` / `steer`; when sending, the Runtime turns it into text for the agent. The user message in the session carries a copy as well.
  */
 export interface DesignAnnotation {
-  /** 设计稿目录，与 `design.open` 的 target 相同。 */
+  /** Design directory; same as the target of `design.open`. */
   canvas: FileTarget;
-  /** 运行时的锚点串，用来在编辑器里重新定位与画标记；智能体不需要读懂。 */
+  /** The runtime's anchor string, used to relocate it in the editor and draw markers; the agent does not need to understand it. */
   anchor: string;
-  /** 画板文件（相对设计稿目录）；运行时的描述里能解析到时填。 */
+  /** Board file (relative to the design directory); filled in when the runtime's description can resolve it. */
   board?: string;
-  /** 给人看的位置，例如 `Main › 按钮 "立即预订"`。 */
+  /** Location for people to read, e.g. `Main › 按钮 “立即预订”` (Main › button “Book now”). */
   label: string;
-  /** 运行时为模型生成的定位描述（英文）。 */
+  /** Location description generated for the model by the runtime (English). */
   detail?: string;
-  /** 区域标注为 true。 */
+  /** True for region annotations. */
   area?: boolean;
-  /** 用户写的批注，去掉首尾空白。 */
+  /** The comment the user wrote, trimmed. */
   text: string;
 }

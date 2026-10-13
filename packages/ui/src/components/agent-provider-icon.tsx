@@ -14,10 +14,10 @@ import pi from './vendor-icons/pi.svg';
 import xai from './vendor-icons/xai.svg';
 
 /*
- * Agent 图标（产品设计 §3.2.3；原型 vendor-icon.jsx `VendorIcon`）：`vendor-icons/` 里的 SVG 与原型 designs/cuccut/assets/vendors
- * 逐字节相同（lobe-icons，MIT，署名见仓库根的 THIRD_PARTY_NOTICES.md；原型的 icon-sync.test.js 核对两份一致）。
- * 用 createIcon 包一层、画在 20 网格上，放进 ActionButton 与 MenuItem 的图标槽时和 S2 workflow 图标一样定位、按紧凑档显示 16px（app.css）；
- * 单色的当遮罩填 currentColor（行停用时跟着变淡），彩色的原样画，用户添加的 Agent 画名字首字母。
+ * Agent icons (product design §3.2.3; prototype vendor-icon.jsx `VendorIcon`): the SVGs in `vendor-icons/` are byte-for-byte identical
+ * to those in the prototype's designs/cuccut/assets/vendors (lobe-icons, MIT; attribution is in THIRD_PARTY_NOTICES.md at the repo root; the prototype's icon-sync.test.js checks that the two copies match).
+ * Wrapped with createIcon and drawn on a 20 grid; when placed in the icon slot of ActionButton and MenuItem it is positioned like the S2 workflow icons and shows at 16px in the compact level (app.css);
+ * single-colour icons are filled with currentColor as a mask (they fade along with the row when it is disabled), colour icons are drawn as they are, and user-added Agents are drawn with the first letter of their name.
  */
 const FILES: Readonly<Record<string, string>> = { anthropic, codex, cursor, githubcopilot, google, moonshot, opencode, pi, xai };
 
@@ -70,7 +70,7 @@ function iconFor(spec: AgentIconSpec): IconComponent {
   return icon;
 }
 
-/** 某个 Agent 的图标；`slot` 等透传给 S2 的图标（默认进 `icon` 槽）。 */
+/** An Agent's icon; `slot` and similar props pass through to the S2 icon (by default it goes into the `icon` slot). */
 export function AgentProviderIcon({
   driver,
   ...props

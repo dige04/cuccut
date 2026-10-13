@@ -11,27 +11,27 @@ import type { ModelCategory } from './settings-nav.ts';
 import { M } from './models-local-copy.ts';
 
 /**
- * 模型 › 本地模型（设计稿 settings-local.jsx）：`models` 主题里的模型包按类分「已安装 / 可下载」（自己的文件在不在盘上，见
- * `localGroups`），加上默认模型菜单。
- * 安装、修复与删除的确认、进度和补救在 models-install.ts，检查在 model-check.ts。
+ * Model › Local models (design draft settings-local.jsx): model packs in the `models` theme are split by class into “Installed / Downloadable” (whether their own files are on disk, see
+ * `localGroups`), plus the default-model menu.
+ * Confirmations, progress and remediation for install, repair and removal are in models-install.ts; checks are in model-check.ts.
  */
 
-/** 本机 Provider 的 ID（packages/models/src/local-source.ts）。 */
+/** ID of the local Provider (packages/models/src/local-source.ts). */
 export const LOCAL_PROVIDER = 'local';
 
-/** 本机列出的文生图模型：模型包 ID → 描述（「试画」读提示词上限与可用性）。 */
+/** Local text-to-image models: model pack ID → description (“Test draw” reads the prompt length limit and availability). */
 export function localImageModels(view: ModelCapabilitiesView | null): Map<string, ImageModelInfo> {
   const local = view?.generateImage.providers.find((p) => p.providerId === LOCAL_PROVIDER);
   return new Map((local?.models ?? []).map((m) => [m.modelId, m]));
 }
 
-/** 本机列出的音乐生成模型（按模型包 ID）：没装好的也在，`available` 说能不能用。 */
+/** Local music-generation models (by model pack ID): ones not yet fully installed are included too; `available` says whether they can be used. */
 export function localMusicModels(view: ModelCapabilitiesView | null): Map<string, MusicModelInfo> {
   const local = view?.generateMusic.providers.find((p) => p.providerId === LOCAL_PROVIDER);
   return new Map((local?.models ?? []).map((m) => [m.modelId, m]));
 }
 
-/** 模型包属于哪一类：转写、对齐与说话人区分都是语音识别，合成是语音合成，文生图是图像生成，分离是音源分离。 */
+/** Which class a model pack belongs to: transcription, alignment and speaker diarization are speech recognition; synthesis is speech synthesis; text-to-image is image generation; separation is audio source separation. */
 export function bundleCategory(bundle: Pick<ModelBundleStatus, 'capability'>): ModelCategory {
   switch (bundle.capability) {
     case 'transcribe':
@@ -55,8 +55,7 @@ export interface LocalGroups {
 }
 
 /**
- * 模型包装好了没有（能用）：必需组件都装好（含加载失败、停用、校验不符的）就算；没有组件信息时按状态，`not-installed` 与第一次
- * 下载中的不算。分组不看它：权重在、缺公共组件的也在「已安装」（`localGroups`）。
+ * Whether the model pack is installed (usable): counts when all required components are installed (including ones that failed to load, were disabled, or failed verification); without component info, go by status, and `not-installed` and ones in their first download don't count. Grouping ignores this: a pack with weights present but missing common components is still under “Installed” (`localGroups`).
  */
 export function isBundleInstalled(bundle: Pick<ModelBundleStatus, 'state' | 'components'>): boolean {
   const required = bundle.components?.filter((c) => !c.optional);
@@ -65,10 +64,7 @@ export function isBundleInstalled(bundle: Pick<ModelBundleStatus, 'state' | 'com
 }
 
 /**
- * 「补齐」要下载的组件（设计稿 settings-local.jsx 的 `half`）：模型包自己的文件在盘上（`ownFiles`，见 `hasOwnFiles`；默认按装好
- * 没有算），还缺的组件。装好了的只会缺可选组件（对齐器、说话人模型），照常可用，补上之后多出词级时间、跨块合并说话人；权重在、缺
- * 公共组件的补上才能用。`models.install` 只下载缺的这几件。自己的文件不在的、这台电脑跑不了的不算（前者走「下载」，后者补了也
- * 用不上）。
+ * Components to download for “Complete” (design draft settings-local.jsx `half`): the pack's own files are on disk (`ownFiles`, see `hasOwnFiles`; by default, counts as not installed if it is installed), and some components are still missing. An installed pack only lacks optional components (aligner, speaker model) and works as usual; adding them gives word-level timing and cross-chunk speaker merging; with weights present but common components missing, adding them is what makes it usable. `models.install` downloads only the missing pieces. Packs whose own files are not present, or that can't run on this computer, are not counted (the former uses “Download”, and the latter wouldn't be usable even after adding).
  */
 export function missingParts(
   bundle: Pick<ModelBundleStatus, 'state' | 'reason' | 'components'>,
@@ -78,28 +74,26 @@ export function missingParts(
   return (bundle.components ?? []).filter((c) => c.state === 'missing');
 }
 
-/** 组件给人看的名字；没列的用组件名。 */
+/** Human-readable name of the component; falls back to the component name if not listed. */
 export function componentLabel(component: string): string {
   return M.componentName[component] ?? component;
 }
 
-/** 组件做什么的一句（公共组件那一行）；没列的 null。 */
+/** One-sentence description of what the component does (the line on common components); null if not listed. */
 export function componentDesc(component: string): string | null {
   return M.componentDesc[component] ?? null;
 }
 
 /**
- * 组件从哪里下载（详情里组件那一行）：GitHub 发布页的（音乐模型包的 audio.cpp 引擎）写「GitHub 发布 <仓库> <标签>」，标签原样；
- * 模型仓库的写 `<仓库>@<提交前 7 位>`。
+ * Where the component is downloaded from (the component line in details): GitHub release pages (the audio.cpp engine for music model packs) read “GitHub release <repo> <tag>”, with the tag verbatim;
+ * model repos read `<repo>@<first 7 characters of the commit hash>`.
  */
 export function componentSource(c: Pick<ModelComponentStatus, 'repo' | 'revision' | 'origin'>): string {
   return c.origin === 'github-release' ? M.githubRelease(c.repo, c.revision) : `${c.repo}@${c.revision.slice(0, 7)}`;
 }
 
 /**
- * 这一类的模型包分「已安装 / 可下载」（设计稿 model-local-models.js `catalog`）：自己的文件在盘上的（`hasOwnFiles`）在「已安装」，
- * 权重在、缺公共组件的也是，行上「补齐」。`placed`：下载中的模型包上一次在哪一组（true 为「已安装」）。Runtime 每装好一个组件
- * 就更新一次状态，第一次下载时权重先到，行会在下载途中跳进「已安装」；记着的按记着的放，下载结束（或丢掉）再按文件归组。
+ * Model packs of this class are split into “Installed / Downloadable” (design draft model-local-models.js `catalog`): those with their own files on disk (`hasOwnFiles`) are under “Installed”, as are those whose weights are present but whose common components are missing, with a “Complete” action on their row. `placed`: the group a downloading model pack was last placed in (true means “Installed”). The Runtime updates the status each time a component is installed; on the first download the weights arrive first, so the row jumps to “Installed” partway through the download. A remembered placement stays where it was remembered; once the download ends (or is discarded), it is grouped by files again.
  */
 export function localGroups(
   bundles: readonly ModelBundleStatus[],
@@ -112,7 +106,7 @@ export function localGroups(
   return { installed: mine.filter(installed), available: mine.filter((b) => !installed(b)) };
 }
 
-/** 下载中的模型包这一次在哪一组：交给下一次 `localGroups` 的 `placed`。 */
+/** Which group a downloading model pack is in this time: passed to the next `placed` of `localGroups`. */
 export function installingPlacement(groups: LocalGroups): Map<string, boolean> {
   const placed = new Map<string, boolean>();
   for (const b of groups.installed) if (b.install) placed.set(b.bundleId, true);
@@ -127,8 +121,7 @@ export interface ModelChip {
 }
 
 /**
- * 一行模型包的标签：默认、Worker 状态、不可用的原因，缺的组件（`missingParts`，`ownFiles` 同它）。只是「已安装、没加载」时不加
- * 标签；正在下载的不写缺什么。
+ * Labels for a model pack row: default, Worker status, reason it is unavailable, and missing components (`missingParts`; `ownFiles` is the same). Nothing is added for “installed but not loaded”; a downloading pack doesn't say what is missing.
  */
 export function bundleChips(bundle: ModelBundleStatus, isDefault: boolean, ownFiles = isBundleInstalled(bundle)): ModelChip[] {
   const chips: ModelChip[] = isDefault ? [{ label: M.chipDefault, tone: 'accent' }] : [];
@@ -149,8 +142,7 @@ export function bundleChips(bundle: ModelBundleStatus, isDefault: boolean, ownFi
       chips.push({ label: bundle.reason ? M.reason[bundle.reason] : M.chipUnavailable, tone: 'negative' });
       break;
     case 'not-installed':
-      // 装过但文件不对的给个提示；从没装过的不加标签。缺组件（`incomplete`）的由下面「缺 …」说清楚是哪几件，别人装上了
-      // 公共组件、自己一件没有的也不算装过。
+      // Show a hint for a pack that was installed but whose files are wrong; never-installed packs get no label. Missing components (`incomplete`) are spelled out by the “Missing …” text below, which says which pieces; a pack whose common components were installed by someone else, with none of its own, also doesn't count as installed.
       if (bundle.reason && bundle.reason !== 'missing-manifest' && bundle.reason !== 'incomplete') {
         chips.push({ label: M.reason[bundle.reason], tone: 'notice' });
       }
@@ -165,34 +157,34 @@ export function bundleChips(bundle: ModelBundleStatus, isDefault: boolean, ownFi
 
 const BACKEND_LABEL: Record<ModelBundleStatus['backend'], string> = { mlx: 'MLX', coreml: 'Core ML', candle: 'Candle', ggml: 'GGML', 'audio-cpp': 'audio.cpp' };
 
-/** 一行模型包的事实：用途 · 后端 · 设备 · 补充说明。 */
+/** One-line facts for a model pack row: purpose · backend · device · notes. */
 export function bundleFacts(bundle: ModelBundleStatus): string {
   return [M.capability[bundle.capability], BACKEND_LABEL[bundle.backend], bundle.device, localizeText(bundle.detail, bundle.detailRef)]
     .filter(Boolean)
     .join(' · ');
 }
 
-/** 反复崩溃停用、或加载失败的模型包可以重新启用（`models.enable`）。它会清掉校验记录，下次加载重新校验，所以只在这时调。 */
+/** A model pack disabled after repeated crashes, or that failed to load, can be re-enabled (`models.enable`). It clears the verification record so the next load re-verifies, so only call it at that point. */
 export function canReenable(bundle: Pick<ModelBundleStatus, 'state' | 'reason'>): boolean {
   return bundle.state === 'error' && (bundle.reason === 'resource' || bundle.reason === 'load-failed');
 }
 
-/** 本地页默认菜单里「自动选择」的键。 */
+/** Key for the “Auto select” item in the local page's default menu. */
 export const AUTO_DEFAULT = 'auto';
 
 export interface LocalDefaultPicker {
-  /** null：没有勾着的项——默认是云端或节点的模型（Picker 显示 `other`），或语音合成还没设默认（显示「未设置」）。 */
+  /** null: no item is checked. The default is a cloud or node model (the Picker shows `other`), or speech synthesis has no default set yet (shows “Not set”). */
   selectedKey: string | null;
   items: { key: string; label: string }[];
-  /** 默认不是本机模型时它的名字（服务商 · 模型）。 */
+  /** Name (provider · model) of the default when it is not a local model. */
   other: string | null;
-  /** 「自动选择」此刻落到哪只本机模型。 */
+  /** Which local model “Auto select” currently resolves to. */
   autoUses: string | null;
-  /** 菜单里有没有「自动选择」：语音识别与音源分离有出厂默认（架构设计 §6.2），语音合成没有。 */
+  /** Whether the menu has “Auto select”: speech recognition and source separation have factory defaults (architecture design §6.2); speech synthesis does not. */
   hasAuto: boolean;
 }
 
-/** 本地页能设默认的几种模型包与它们在能力视图里的名字。 */
+/** The kinds of model packs the local page can set as default, and their names in the capability view. */
 export type LocalDefaultCapability = 'transcribe' | 'synthesize' | 'image' | 'separate' | 'music';
 export const VIEW_CAPABILITY = {
   transcribe: 'transcribe',
@@ -202,18 +194,17 @@ export const VIEW_CAPABILITY = {
   music: 'generateMusic',
 } as const;
 
-/** 模型包给人看的名字：登记的模型包都有 `label`；旧的快照没有时退回 `bundleId`。 */
+/** Human-readable name of a model pack: registered packs all have `label`; older snapshots without it fall back to `bundleId`. */
 export function bundleName(bundle: Pick<ModelBundleStatus, 'bundleId' | 'label'>): string {
   return bundle.label ?? bundle.bundleId;
 }
 
 /**
- * 本地页的默认模型菜单。
- * - 语音识别与音源分离：「自动选择」= 不设默认，用出厂默认的本机模型包；其余是装好的这一类模型包。
- * - 语音合成、图像生成与音乐生成：没有出厂默认（架构设计 §6.2），菜单里没有「自动选择」；没设或设的那只已不可选时什么都不勾、显示
- *   「未设置」，只列装好的这一类模型包。
- *   想清掉默认在云端页选「每次选择」。
- * 一种能力只有一个默认值，与云端页共用——默认是云端或节点的模型时这里不勾任何一项，如实说出来；选一只本地的会替换它。
+ * Default model menu on the local page.
+ * - Speech recognition and source separation: “Auto select” = no default set, using the factory-default local model pack; the rest are the installed packs of this class.
+ * - Speech synthesis, image generation and music generation: no factory default (architecture design §6.2), so there is no “Auto select” in the menu; if none is set, or the one set is no longer selectable, nothing is checked and it shows “Not set”; only installed packs of this class are listed.
+ *   To clear the default, choose “Choose each time” on the cloud page.
+ * Each capability has only one default value, shared with the cloud page. When the default is a cloud or node model, nothing is checked here, stated honestly; choosing a local one replaces it.
  */
 export function localDefaultPicker(
   view: ModelCapabilitiesView | null,
@@ -221,7 +212,7 @@ export function localDefaultPicker(
   kind: LocalDefaultCapability = 'transcribe',
 ): LocalDefaultPicker {
   const hasAuto = kind === 'transcribe' || kind === 'separate';
-  // 语音识别与音源分离沿用原来的判法（不是 not-installed 就列）；语音合成与图像生成只列装齐了的，第一次下载中的不算。
+  // Speech recognition and source separation keep the original rule (listed unless the status is not-installed); speech synthesis and image generation only list packs that are fully installed, and ones in their first download don't count.
   const installed = bundles.filter((b) => b.capability === kind && (hasAuto ? b.state !== 'not-installed' : isBundleInstalled(b)));
   const items = [...(hasAuto ? [{ key: AUTO_DEFAULT, label: M.auto }] : []), ...installed.map((b) => ({ key: b.bundleId, label: bundleName(b) }))];
   const capability = view?.[VIEW_CAPABILITY[kind]];
@@ -231,8 +222,8 @@ export function localDefaultPicker(
   const current = capability?.default ?? null;
   if (!current) return { selectedKey: hasAuto ? AUTO_DEFAULT : null, items, other: null, autoUses, hasAuto };
   if (current.providerId === LOCAL_PROVIDER) {
-    // 语音合成与图像生成没有出厂默认：存着的默认已不在可选里（在别处删了或缺组件）按「未设置」算（设计稿 `defaultView`）。删除模型包时
-    // Runtime 已经清掉指向它的默认值（架构设计 §6.8），这里兜住没经 `models.remove` 的情况。
+    // Speech synthesis and image generation have no factory default: a stored default that is no longer selectable (deleted elsewhere, or missing components) counts as “Not set” (design draft `defaultView`). When a model pack is deleted,
+    // the Runtime already clears defaults pointing to it (architecture design §6.8); this covers cases that did not go through `models.remove`.
     if (!hasAuto && !items.some((i) => i.key === current.modelId)) return { selectedKey: null, items, other: null, autoUses, hasAuto };
     if (!items.some((i) => i.key === current.modelId)) {
       const known = bundles.find((b) => b.bundleId === current.modelId);
@@ -244,39 +235,37 @@ export function localDefaultPicker(
   return { selectedKey: null, items, other: `${provider?.label ?? current.providerId} · ${current.modelId}`, autoUses, hasAuto };
 }
 
-/** 本地菜单的一项 → `models.setDefault` 的参数。 */
+/** One item of the local menu → arguments for `models.setDefault`. */
 export function localDefaultChoice(key: string): { providerId: string | null; modelId?: string } {
   return key === AUTO_DEFAULT ? { providerId: null } : { providerId: LOCAL_PROVIDER, modelId: key };
 }
 
-// ---- 公共组件 ----
+// ---- Common components ----
 
 /**
- * 同一个组件：组件名 + 仓库 + 版本。只看仓库会把 IndexTTS2 的权重（`tts`）与 IndexTTS 2.5 借来的辅助件（`aux`）算成公共组件，
- * 设计稿把后者算作 2.5 自己的（model-local-models.js `layout`）。
+ * Same component: component name + repo + version. Looking only at the repo would count IndexTTS2's weights (`tts`) and the auxiliary parts borrowed by IndexTTS 2.5 (`aux`) as common components; the design draft counts the latter as belonging to 2.5 itself (model-local-models.js `layout`).
  */
 function componentKey(c: Pick<ModelComponentStatus, 'component' | 'repo' | 'revision'>): string {
   return `${c.component}:${c.repo}@${c.revision}`;
 }
 
-/** 公共组件区里的顺序（设计稿 data.js `setComponents`：VAD、对齐器、分词器、声纹嵌入……）；没列的排后面。 */
+/** Order in the common-components area (design draft data.js `setComponents`: VAD, aligner, tokenizer, speaker embedding…); unlisted ones go last. */
 const SHARED_ORDER = ['vad', 'aligner', 'tokenizer', 'speaker', 'segmentation', 'codec', 'aux', 'audiocpp-engine'];
 
 export interface SharedComponent {
   key: string;
-  /** 组件名（`vad`、`aligner`……）。 */
+  /** Component name (`vad`, `aligner`…). */
   component: string;
   repo: string;
   installed: boolean;
-  /** 装好时占的，没装时要下载的；都不知道时 null。 */
+  /** Size taken when installed, to download when not installed; null if unknown. */
   bytes: number | null;
-  /** 声明它的模型包，按 ID 排（与「已安装 / 可下载」同序）。 */
+  /** Model packs that declare it, sorted by ID (same order as “Installed / Downloadable”). */
   users: ModelBundleStatus[];
 }
 
 /**
- * 一类的公共组件（设计稿 model-local-models.js `layout`）：这一类里两只及以上模型包声明的同一个组件。公共与否只看目录、不看装没装，
- * 删掉一只模型不会让组件从这里消失。没有组件信息的旧快照没有公共组件。
+ * Common components of a class (design draft model-local-models.js `layout`): a component declared by two or more model packs in this class. Whether it is common depends only on the catalog, not on whether it is installed; deleting one model does not make the component disappear from here. Old snapshots without component info have no common components.
  */
 export function sharedComponents(bundles: readonly ModelBundleStatus[], category: ModelCategory): SharedComponent[] {
   const byKey = new Map<string, { status: ModelComponentStatus[]; users: ModelBundleStatus[] }>();
@@ -307,9 +296,7 @@ export function sharedComponents(bundles: readonly ModelBundleStatus[], category
 }
 
 /**
- * 模型包自己的文件在盘上（设计稿的 `on[m.id]`，权重在）：装好了，或者公共组件、可选组件以外有装好的组件——权重在、缺公共组件的
- * （`incomplete`）也算。只是公共组件被别的模型装上了的、只有可选组件的不算；GitHub 发布页的组件（audio.cpp 引擎，装在 Runtime
- * Home 的 `tools/` 下，也可能是 `CUCCUT_AUDIOCPP_CLI` 指的自建引擎）也不算，只有引擎没有权重的仍是「可下载」。
+ * The model pack's own files are on disk (the design draft's `on[m.id]`, weights present): installed, or there are installed components beyond the common and optional ones. Weights present but common components missing (`incomplete`) also counts. Only common components installed by another model, with optional components alone, doesn't count; components from GitHub release pages (the audio.cpp engine, installed under `tools/` in the Runtime Home, or the self-built engine pointed to by `CUCCUT_AUDIOCPP_CLI`) also don't count; an engine with no weights is still “Downloadable”.
  */
 export function hasOwnFiles(bundle: ModelBundleStatus, shared: readonly SharedComponent[]): boolean {
   if (isBundleInstalled(bundle)) return true;
@@ -320,8 +307,7 @@ export function hasOwnFiles(bundle: ModelBundleStatus, shared: readonly SharedCo
 }
 
 /**
- * 装齐这只模型包还要下载多少（设计稿 `needSize`）：缺的组件的清单大小之和，可选的也算（安装与补齐都下载它）。有组件不知道大小，
- * 或没有组件信息时 null。
+ * How much more must be downloaded to complete this model pack (design draft `needSize`): the sum of the sizes of the missing components in the manifest, including optional ones (both install and complete download them). null if any component's size is unknown, or when there is no component info.
  */
 export function needBytes(bundle: Pick<ModelBundleStatus, 'components'>): number | null {
   if (!bundle.components?.length) return null;
@@ -335,8 +321,7 @@ export function needBytes(bundle: Pick<ModelBundleStatus, 'components'>): number
 }
 
 /**
- * 就地下载那一处写多大（与设置页那一行同一个数）：有组件信息时就是 `needBytes`——权重在、缺公共组件的只算缺的，有缺的组件不知道
- * 大小时不写；没有组件信息的旧快照用随附清单估的 `estimatedBytes`。不知道、或什么都不缺时 null。
+ * The size shown at the in-place download spot (same number as the settings page row): with component info it is `needBytes`. With weights present and common components missing, only the missing part counts; if a missing component's size is unknown, nothing is written. Old snapshots without component info use `estimatedBytes`, estimated from the bundled manifest. null when unknown or when nothing is missing.
  */
 export function downloadBytes(bundle: Pick<ModelBundleStatus, 'components' | 'estimatedBytes'>): number | null {
   return (bundle.components?.length ? needBytes(bundle) : bundle.estimatedBytes) || null;
@@ -347,16 +332,15 @@ const cannotRun = (b: ModelBundleStatus) => b.reason === 'unsupported' || b.reas
 
 export type SharedAction =
   | { kind: 'installed' }
-  /** 用到它的模型包正在下载（这里点的补齐，或行上的下载、补齐）：缺的组件跟着它下，显示它的进度。 */
+  /** A model pack that uses it is downloading (either the Complete clicked here, or the Download/Complete on a row): missing components download along with it, and its progress is shown. */
   | { kind: 'running'; bundle: ModelBundleStatus }
-  /** 「下载」= 补齐 `target`（只下它缺的）。 */
+  /** “Download” = complete `target` (only downloads what it is missing). */
   | { kind: 'get'; target: ModelBundleStatus }
-  /** 没有自己文件在盘上的模型用它：不给按钮，等装模型时一起下载。 */
+  /** For models that don't have their own files on disk: no button; they wait to download together when the model is installed. */
   | { kind: 'later' };
 
 /**
- * 公共组件那一行右边做什么（设计稿 model-local-models.js `compAction`）。组件不单独装：缺的时候借一只文件在盘上、用到它、这台电脑
- * 跑得了的模型包去补齐，挑要下得最少的那只（大小不知道的排后面），一样多按 ID 顺序。
+ * What the right side of a common-component row does (design draft model-local-models.js `compAction`). Components are not installed on their own: when one is missing, borrow it from a model pack that has its own files on disk, that is used, and that this computer can run, to complete it, picking the one with the least to download (unknown sizes sort last); on a tie, by ID order.
  */
 export function sharedAction(c: SharedComponent, shared: readonly SharedComponent[]): SharedAction {
   if (c.installed) return { kind: 'installed' };
@@ -375,29 +359,28 @@ export function sharedAction(c: SharedComponent, shared: readonly SharedComponen
   return target ? { kind: 'get', target } : { kind: 'later' };
 }
 
-/** 公共组件那一行的副题（设计稿 `compUsage`）：文件在盘上的模型几只在用、一共几只需要。 */
+/** Subtitle of a common-component row (design draft `compUsage`): how many of the models with files on disk use it, and how many need it in total. */
 export function sharedUsage(c: SharedComponent, shared: readonly SharedComponent[]): { live: number; all: number } {
   return { live: c.users.filter((b) => hasOwnFiles(b, shared)).length, all: c.users.length };
 }
 
-/** 待补全的公共组件（设计稿 `catalog.repair`）：缺着，又有文件在盘上的模型要用它。有的话公共组件区自动展开。 */
+/** Common components awaiting completion (design draft `catalog.repair`): missing, while a model with files on disk needs it. When there are any, the common-components area expands automatically. */
 export function sharedRepair(shared: readonly SharedComponent[]): SharedComponent[] {
   return shared.filter((c) => !c.installed && c.users.some((b) => hasOwnFiles(b, shared)));
 }
 
-// ---- 许可 ----
+// ---- License ----
 
 export interface LicenseLine {
-  /** 「模型权重」或组件的名字。 */
+  /** Name of the “model weights” or of the component. */
   part: string;
-  /** 是组件的许可（不是权重的）。 */
+  /** Whether this is a component's license (not the weights'). */
   component: boolean;
   license: ModelLicense;
 }
 
 /**
- * 详情「许可」那一行列什么（设计稿 model-local-models.js `licenseLines`）：权重的许可，再加上组件里要署名（CC-BY）或与权重许可
- * 不同的，每件一条。`weights`：权重的许可（模型包登记的，语音合成的再看模型描述）。都没有许可时空表，这一行不画。
+ * What the “License” row in details lists (design draft model-local-models.js `licenseLines`): the weights' license, plus one line for each component that requires attribution (CC-BY) or has a license different from the weights'. `weights`: the weights' license (registered by the model pack; for speech synthesis, also read from the model description). With no licenses at all, an empty table; the row is not drawn.
  */
 export function licenseLines(bundle: Pick<ModelBundleStatus, 'components'>, weights: ModelLicense | null): LicenseLine[] {
   const lines: LicenseLine[] = weights ? [{ part: M.weights, component: false, license: weights }] : [];
@@ -411,7 +394,7 @@ export function licenseLines(bundle: Pick<ModelBundleStatus, 'components'>, weig
   return lines;
 }
 
-/** 一条许可的说法：只有一条且是权重的不写「模型权重 · 」。 */
+/** Wording for one license: when there is only one and it is the weights', don't write “Model weights · ”. */
 export function licenseLineText(line: LicenseLine, count: number): string {
   return `${count > 1 || line.component ? `${line.part} · ` : ''}${line.license.name} · ${line.license.summary}`;
 }

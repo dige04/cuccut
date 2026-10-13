@@ -33,9 +33,8 @@ import { RejectedAlert, RemedyButtons } from './export-remedy.tsx';
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 弹层盯着的那一次导出（设计稿 export.jsx 的运行 / 完成 / 取消态）：读 jobs-store 里的任务记录；速度与剩余时间按最近几秒的进度推算
- * （`useExportSpeed`），算不出时不写。
- * 关掉弹层不会停下导出；取消要先确认一句，开始保存文件之后停不下来（Runtime 只在保存前检查取消）。
+ * The export the panel is watching (the running / done / cancelled states of the mockup's export.jsx): reads the job record in jobs-store. Speed and time remaining are estimated from progress over the last few seconds (`useExportSpeed`), and not written when they cannot be computed.
+ * Closing the panel does not stop the export. Cancelling asks for confirmation first, and once files start being saved it cannot be stopped (the Runtime only checks for cancellation before saving).
  */
 
 const head = style({ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 });
@@ -68,7 +67,7 @@ export function ExportJobView({
   job: JobRecord;
   env: ExportEnv;
   submitter: ExportSubmit;
-  /** 回到设置页（重新设置 / 再导一份）。 */
+  /** Back to the settings page (set again / export another copy). */
   onReset: () => void;
   onClose: () => void;
 }) {
@@ -104,17 +103,17 @@ function plannedLine(job: JobRecord): string {
   return files.length === 1 ? files[0]! : EXPORT_COPY.plannedFiles(files[0]!, files.length);
 }
 
-/** 运行态：进度条与百分比只读 Runtime 报的进度；没有总量时是不定进度。渲染时跟着 fps 与预计剩余时间。 */
+/** Running state: the progress bar and percentage only show the progress the Runtime reports; with no total it is indeterminate. While rendering, it follows fps and the estimated time remaining. */
 function ExportRunning({ job, onClose }: { job: JobRecord; onClose: () => void }) {
   const runtime = useRuntime();
   const [asking, setAsking] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pending = cancelPending(job) || cancelling;
   const pct = job.state === 'running' ? jobPercent(job) : null;
-  // 下载字体时阶段里已经念了族与百分比，不再念字节。
+  // While downloading fonts, the phase already reads the family and percentage, so bytes are not shown here.
   const fontPhase = useExportFontPhase(job);
   const progress = fontPhase ? null : exportProgressLine(job);
-  // 速度只在渲染时有（`export-speed.ts`）；下载字体时阶段里已经念了进度，不再写。
+  // Speed only exists at render time (`export-speed.ts`); during the font download, the phase already reads the progress, so nothing is written here.
   const speed = exportSpeedParts(useExportSpeed(fontPhase ? null : job.jobId));
   const title = job.state === 'queued' ? EXPORT_COPY.queued : pending ? EXPORT_COPY.cancelling : EXPORT_COPY.running;
 
@@ -183,7 +182,7 @@ function ExportRunning({ job, onClose }: { job: JobRecord; onClose: () => void }
   );
 }
 
-/** 已发布的文件：文件名取实际路径，一行一个，可以在文件夹中显示。 */
+/** Published files: the filename uses the actual path, one per line, and can be revealed in the folder. */
 function Outputs({ outputs }: { outputs: readonly ExportOutputFact[] }) {
   const runtime = useRuntime();
   if (!outputs.length) return null;
@@ -206,9 +205,9 @@ function Outputs({ outputs }: { outputs: readonly ExportOutputFact[] }) {
   );
 }
 
-/** 导出时记下的提醒：跳过的内容、没写进工程的对象、响度测不出……逐条照 Runtime 的原话列。 */
+/** Notices recorded during export: skipped content, objects not written into the project, loudness that could not be measured... each listed one by one with the Runtime's own words. */
 function Warnings({ job }: { job: JobRecord }) {
-  // 字体用回退代替的那几条单独列在上面（ExportFontFallbacks），内核对同一个族的缺字体提示不再重复。
+  // Font fallbacks are listed separately above (ExportFontFallbacks); the kernel's missing-font notice for the same family is not repeated.
   const warnings = exportWarnings({ warnings: exportOtherWarnings(job.warnings) });
   if (!warnings.length) return null;
   return (
@@ -274,7 +273,7 @@ function ExportCancelled({ job, onReset, onClose }: { job: JobRecord; onReset: (
   );
 }
 
-/** Runtime 停止或重启时还没做完：不会续跑，照原样再导一次或回去改设置。 */
+/** The Runtime stopped or restarted before this finished: it does not resume. Export again as is, or go back and change the settings. */
 function ExportInterrupted({ job, env, submitter, onReset }: { job: JobRecord; env: ExportEnv; submitter: ExportSubmit; onReset: () => void }) {
   const settings = job.export?.settings ?? null;
   return (
@@ -300,8 +299,8 @@ function ExportInterrupted({ job, env, submitter, onReset }: { job: JobRecord; e
 }
 
 /**
- * 失败：Runtime 的原话与逐项清单（失败码见 export-service.ts 的 TaskFailure），只发布了一部分时列出已经保存的文件；
- * 能直接做的补救（换个位置）放在提醒里，或照原样再导一次。
+ * Failed: the Runtime's own words and the itemized list (failure codes see export-service.ts TaskFailure). If only part was published, the files already saved are listed.
+ * The remedy the UI can do directly (another location) goes in the notices, or export again as is.
  */
 function ExportFailed({ job, env, submitter, onReset }: { job: JobRecord; env: ExportEnv; submitter: ExportSubmit; onReset: () => void }) {
   const settings = job.export?.settings ?? null;

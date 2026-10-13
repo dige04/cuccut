@@ -1,11 +1,10 @@
-//! OmniVoice 真权重合成：内置音色（克隆）念中英文各一句、受限词表的声音描述（音色设计）、
-//! 目标时长；检查时长合理、不是静音，并把 WAV 写到仓库外供试听。
+//! OmniVoice real-weight synthesis: the built-in voice (cloning) speaks one Chinese and one English sentence; a voice description from a restricted vocabulary (voice design); a target duration. Checks that the duration is reasonable and the output is not silent, and writes the WAVs outside the repo for listening.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test synthesize_omnivoice -- --ignored --test-threads=1 --nocapture
 //!
-//! 权重不在（没设 `CUCCUT_TEST_MODELS_DIR` 或没有 `.ccut-manifest.json`）时打印原因后跳过。
-//! WAV 写到 `CUCCUT_TEST_OUTPUT_DIR`（没设时是系统临时目录下的 `cuccut-tts-listen/`）。
+//! If the weights are absent (no `CUCCUT_TEST_MODELS_DIR` or no `.ccut-manifest.json`), the reason is printed and the test is skipped.
+//! WAVs are written to `CUCCUT_TEST_OUTPUT_DIR` (if unset, to the `cuccut-tts-listen/` directory under the system temp directory).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -33,7 +32,7 @@ fn output_dir() -> PathBuf {
     dir
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验文件清单；权重不在时给 `None` 并打印原因。
+/// Builds and validates the file manifest from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
@@ -67,7 +66,7 @@ fn verified(repo: &str, family: &str, component: &'static str) -> Option<Verifie
     )
 }
 
-/// 时长合理（每句 0.5–20 s）、峰值与 RMS 都不是静音。返回秒数。
+/// Duration reasonable (0.5–20 s per sentence), peak and RMS not silent. Returns seconds.
 fn check_and_write(audio: &TtsAudio, name: &str) -> f32 {
     assert_eq!(audio.sample_rate, SAMPLE_RATE);
     let seconds = audio.samples.len() as f32 / audio.sample_rate as f32;
@@ -110,7 +109,7 @@ fn omnivoice_speaks_chinese_and_english_designs_a_voice_and_meets_a_target_durat
     assert_eq!(engine.kind(), TtsEngineKind::OmniVoice);
     assert_eq!(engine.sample_rate(), SAMPLE_RATE);
 
-    // 默认音色 = 该语言的内置音色作参考（克隆）。
+    // Default voice: the language's built-in voice as the reference (cloning).
     for (lang, text) in [("zh", ZH), ("en", EN)] {
         let mut request = TtsRequest::new(text, VoiceSpec::Default);
         request.language = Some(lang.to_owned());
@@ -118,7 +117,7 @@ fn omnivoice_speaks_chinese_and_english_designs_a_voice_and_meets_a_target_durat
         synthesize_one(engine.as_mut(), &request, &format!("omnivoice-builtin-{lang}"));
     }
 
-    // 受限词表的声音描述（音色设计，不带参考音频）：英文词条配英文正文，中文词条配中文正文。
+    // Voice description from a restricted vocabulary (voice design, no reference audio): English entries go with English body text, Chinese entries with Chinese body text.
     for (lang, text, instruct) in [("en", EN, "female, low pitch, british accent"), ("zh", ZH, "男，老年，四川话")] {
         let mut request = TtsRequest::new(text, VoiceSpec::Default);
         request.language = Some(lang.to_owned());
@@ -127,7 +126,7 @@ fn omnivoice_speaks_chinese_and_english_designs_a_voice_and_meets_a_target_durat
         synthesize_one(engine.as_mut(), &request, &format!("omnivoice-design-{lang}"));
     }
 
-    // 目标时长：单块直接定 token 数；后处理去长静音、两侧各补 0.1 s，所以只要求接近目标。
+    // Target duration: a single chunk sets the token count directly. Post-processing removes long silences and adds 0.1 s on each side, so only closeness to the target is required.
     let target = 6.0;
     let mut request = TtsRequest::new(ZH, VoiceSpec::Default);
     request.language = Some("zh".to_owned());

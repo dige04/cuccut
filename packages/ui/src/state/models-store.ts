@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { applyModelsEvent } from '@cuccut/client';
 import type { ModelBundleStatus, ModelCapabilitiesView, ModelsEvent, ModelsSnapshot } from '@cuccut/protocol';
 
-/** 模型服务的只读视图镜像（架构设计 §6.8）：每种能力下各 Provider 的模型、默认值与可用性，加上本地模型包的状态。 */
+/** Read-only view mirror of the model services (architecture design §6.8): for each capability, each Provider's models, defaults and availability, plus the state of local model packages. */
 export interface ModelsStore {
   ready: boolean;
   capabilities: ModelCapabilitiesView | null;
@@ -18,7 +18,7 @@ export const useModels = create<ModelsStore>()((set) => ({
   replace: (snapshot) => set({ ready: true, capabilities: snapshot.capabilities, bundles: snapshot.bundles }),
   apply: (event) =>
     set((s) => {
-      // 快照到之前不会有 bundle 事件；真来了也只是先记下这一个包。
+      // No bundle events arrive before the snapshot. If one does come, just record that one package first.
       const base: ModelsSnapshot = { capabilities: s.capabilities as ModelCapabilitiesView, bundles: s.bundles };
       const next = applyModelsEvent(base, event);
       return { ready: next.capabilities !== null, capabilities: next.capabilities, bundles: next.bundles };

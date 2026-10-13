@@ -1,27 +1,20 @@
-//! CucCut 音频派生数据的纯函数层：**字节进、字节出，无任何 I/O**。
+//! A pure-function layer for CucCut's audio-derived data: **bytes in, bytes out, no I/O at all**.
 //!
-//! 两种缓存格式各管一件事，互不影响：
+//! The two cache formats each handle one thing and do not affect each other:
 //!
-//! - [`bcw1`]：峰值包络（50 bins/s，单字节幅度）。只喂时间轴 UI 的音轨图，
-//!   **不驱动像素**，因此不进渲染指纹。格式逻辑自 `apps/cli` 的波形服务迁入，
-//!   字节布局逐位不变。
-//! - [`bcs1`]：频谱（时域行 + 频域行的定长帧）。驱动 visualizer 元素的像素，
-//!   因此 header 自带内容 hash 并进渲染指纹。
+//! - [`bcw1`]: peak envelope (50 bins/s, single-byte amplitude). It only feeds the audio-track graphic in the timeline UI and **does not drive pixels**, so it is not in the render fingerprint. The format logic was migrated from the waveform service in `apps/cli`; the byte layout is unchanged bit for bit.
+//! - [`bcs1`]: spectrum (fixed-length frames of time-domain rows plus frequency-domain rows). It drives the pixels of the visualizer element, so its header carries the content hash and it goes into the render fingerprint.
 //!
-//! 解码由调用方（host）完成：`ccut_speech::audio::decode_mono_48k` 给出 48 kHz
-//! 单声道 f32 PCM，本 crate 只负责 PCM → 字节与字节 → 视图。
+//! Decoding is done by the caller (the host): `ccut_speech::audio::decode_mono_48k` gives 48 kHz mono f32 PCM. This crate only handles PCM → bytes and bytes → view.
 //!
-//! [`remap`] 是元素级参数（`minDb` / `maxDb` / `smoothing` / `gain`）的重映射与
-//! 平滑，**不进缓存**：一份 canonical 窗的 BCS1 服务任意参数组合。
+//! [`remap`] is the remapping and smoothing of element-level parameters (`minDb` / `maxDb` / `smoothing` / `gain`). **It is not cached**: one canonical-window BCS1 serves any combination of parameters.
 
 pub mod bcs1;
 pub mod bcw1;
-/// 单声道 PCM → 节拍 / 小节 / 段落（`ccut beats` 的算法层）。与 [`dsp`] 同受
-/// `dsp` feature 控制：都要 real FFT。
+/// Mono PCM → beats / bars / sections (the algorithm layer of `ccut beats`). Like [`dsp`], it is controlled by the `dsp` feature, since both need the real FFT.
 #[cfg(feature = "dsp")]
 pub mod beats;
-/// PCM → BCS1 的 STFT。默认开启；只读 BCS1 的消费方可以
-/// `default-features = false` 关掉，realfft 随之退出依赖图。
+/// STFT from PCM to BCS1. On by default. Consumers that only read BCS1 can turn it off with `default-features = false`, and realfft then drops out of the dependency graph.
 #[cfg(feature = "dsp")]
 pub mod dsp;
 pub mod remap;
@@ -30,7 +23,7 @@ pub use bcs1::{Bcs1Header, Bcs1View, SpectrumBackend};
 pub use bcw1::Bcw1Info;
 pub use remap::Remapper;
 
-/// FNV-1a 64 位。BCW1 的文件名指纹与 BCS1 的内容 hash 共用同一个实现。
+/// FNV-1a 64-bit. BCW1's file-name fingerprint and BCS1's content hash share the same implementation.
 #[derive(Debug, Clone, Copy)]
 pub struct Fnv1a64(u64);
 

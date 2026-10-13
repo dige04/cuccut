@@ -7,17 +7,15 @@ import { parseSilences, type Silence } from './chunk-plan.ts';
 import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 
 /**
- * 在线 Provider 的音频准备（架构设计 §6.4）：ffmpeg 把素材的一条音轨解成单声道 16 kHz 的 WAV（staging 里的母带），
- * 在母带上找静音，再按切片计划把每一块编码成供应商接受的格式。素材文件只经 ffmpeg 流式读取，不整读进内存。
+ * Audio preparation for online providers (architecture design §6.4): ffmpeg decodes one audio track of the asset into a mono 16 kHz WAV (the master, in staging). Silence is found on the master, and then each chunk is encoded into a format the provider accepts, according to the chunk plan. The asset file is read only by ffmpeg, streamed, and never read entirely into memory.
  *
- * 安全口径同 Model Worker 的解码（`crates/model-runtime/src/audio.rs`）：不经 shell，只许读本地文件，
- * 只许白名单里的解复用器；ffmpeg 的输出里有路径，错误信息里不带它。
+ * The security rules are the same as the Model Worker's decoding (`crates/model-runtime/src/audio.rs`): no shell, only local files may be read, and only demuxers on the allowlist are used. ffmpeg's output contains paths, and the error messages do not include them.
  */
 
-/** 与 Model Worker 相同的解复用器白名单（素材的媒体类型不一定随任务保存，统一用这一份）。 */
+/** The same demuxer allowlist as the Model Worker. The asset's media type is not necessarily saved with the task, so one list is used for everything. */
 export const DEMUXER_ALLOWLIST = 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,aac,mp3,wav,flac,ogg';
 export const SAMPLE_RATE = 16_000;
-/** 母带：16 位单声道，每秒的字节数。 */
+/** The master: 16-bit mono, bytes per second. */
 export const MASTER_BYTES_PER_SEC = SAMPLE_RATE * 2;
 
 export interface FfmpegTool {
@@ -26,7 +24,7 @@ export interface FfmpegTool {
 }
 export type FfmpegResolver = () => Promise<FfmpegTool>;
 
-/** 切片的编码。`bytesPerSec` 是这种编码每秒最多的字节数（算切片上限用），`overheadBytes` 是容器的固定开销。 */
+/** Chunk encoding. `bytesPerSec` is the most bytes per second this encoding can produce (used to compute the chunk cap). `overheadBytes` is the container's fixed overhead. */
 export type ChunkFormat = 'wav' | 'flac' | 'm4a';
 export const CHUNK_FORMATS: Record<
   ChunkFormat,
@@ -39,7 +37,7 @@ export const CHUNK_FORMATS: Record<
     overheadBytes: 1024,
     args: ['-c:a', 'pcm_s16le', '-f', 'wav'],
   },
-  // FLAC 不会比原始 PCM 大多少；按 PCM 算并留余量。
+  // FLAC is not much larger than raw PCM. It is computed as PCM, with a margin.
   flac: {
     extension: 'flac',
     mimeType: 'audio/flac',
@@ -47,7 +45,7 @@ export const CHUNK_FORMATS: Record<
     overheadBytes: 8192,
     args: ['-c:a', 'flac', '-f', 'flac'],
   },
-  // AAC 64 kbit/s：每秒约 8000 字节，按 9000 算。
+  // AAC 64 kbit/s is about 8000 bytes per second, computed here as 9000.
   m4a: {
     extension: 'm4a',
     mimeType: 'audio/mp4',
@@ -61,23 +59,23 @@ const STDERR_LIMIT = 1024 * 1024;
 const EXTRACT_TIMEOUT_MS = 60 * 60_000;
 const SILENCE_TIMEOUT_MS = 30 * 60_000;
 const ENCODE_TIMEOUT_MS = 10 * 60_000;
-/** 解出来的音频比请求的 range 短这么多秒以上，就报 `range-clamped`（同 Model Worker）。 */
+/** If the decoded audio is shorter than the requested range by this many seconds or more, report `range-clamped` (same as the Model Worker). */
 export const RANGE_CLAMP_TOLERANCE_SEC = 0.05;
 
 export interface ExtractRequest {
   ffmpeg: FfmpegResolver;
-  /** 素材文件（绝对路径）。 */
+  /** Asset file (absolute path). */
   file: string;
-  /** 第几条音轨（`0:a:<track>`）。 */
+  /** Which audio track (`0:a:<track>`). */
   track: number;
-  /** 只解这一段（秒）；`durationSec` 为 null 时到结尾。 */
+  /** Decode only this segment (seconds). When `durationSec` is null, decode to the end. */
   range?: { startSec: number; durationSec: number | null };
-  /** 母带写在这里。 */
+  /** The master is written here. */
   out: string;
   signal: AbortSignal;
 }
 
-/** 解出母带。素材没有这条音轨时返回 `no-audio-track`。 */
+/** Decodes the master. Returns `no-audio-track` if the asset has no such track. */
 export async function extractAudio(request: ExtractRequest): Promise<{ durationSec: number } | 'no-audio-track'> {
   const before: string[] = [];
   if (request.range && request.range.startSec > 0) before.push('-ss', request.range.startSec.toFixed(6));
@@ -116,7 +114,7 @@ export async function extractAudio(request: ExtractRequest): Promise<{ durationS
   return { durationSec: await wavDurationSec(request.out) };
 }
 
-/** 在母带上找静音（`silencedetect`）。只为切片找切点，失败时返回空表（退回硬切）。 */
+/** Finds silence on the master (`silencedetect`). It is only used to find cut points for chunking. On failure it returns an empty table (falls back to hard cuts). */
 export async function detectSilences(request: {
   ffmpeg: FfmpegResolver;
   master: string;
@@ -146,7 +144,7 @@ export async function detectSilences(request: {
   return parseSilences(run.stderr, request.durationSec);
 }
 
-/** 从母带切出 [start, end) 编码成一块。 */
+/** Cuts [start, end) out of the master and encodes it as one chunk. */
 export async function encodeChunk(request: {
   ffmpeg: FfmpegResolver;
   master: string;
@@ -181,7 +179,7 @@ export async function encodeChunk(request: {
   return { path: request.out, byteLength: stat.size };
 }
 
-/** 读 WAV 的 `fmt ` 与 `data` 块算时长（ffmpeg 可能在前面加 `LIST` 块，不能假定头是 44 字节）。 */
+/** Reads the `fmt ` and `data` blocks of the WAV to compute the duration. ffmpeg may put a `LIST` block in front, so the header cannot be assumed to be 44 bytes. */
 export async function wavDurationSec(file: string): Promise<number> {
   const handle = await fs.open(file, 'r');
   try {
@@ -200,7 +198,7 @@ export async function wavDurationSec(file: string): Promise<number> {
       if (id === 'fmt ' && body + 12 <= head.length) byteRate = head.readUInt32LE(body + 8);
       if (id === 'data') {
         if (byteRate <= 0) break;
-        // 写不了长度的流式 WAV 里 data 的长度是 0 或 0xFFFFFFFF：按文件的实际大小算。
+        // In a streamed WAV that cannot write its length, the data length is 0 or 0xFFFFFFFF. Compute it from the file's actual size.
         const bytes = size === 0 || size === 0xffffffff || body + size > stat.size ? stat.size - body : size;
         return bytes / byteRate;
       }
@@ -214,7 +212,7 @@ export async function wavDurationSec(file: string): Promise<number> {
 
 const COMMON_ARGS = ['-nostdin', '-hide_banner', '-protocol_whitelist', 'file'] as const;
 
-/** 运行一次 ffmpeg：不经 shell；`signal` 中止时结束进程并抛 `ProviderAborted`。 */
+/** Runs one ffmpeg: no shell. When `signal` aborts, it ends the process and throws `ProviderAborted`. */
 function runFfmpeg(
   resolve: FfmpegResolver,
   args: string[],

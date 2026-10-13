@@ -18,8 +18,7 @@ import {
 import { COMPAT_VENDORS } from './vendor-catalog.ts';
 
 /**
- * 服务商目录的新成员与账号（架构设计 §6.4、§6.8、§6.10）：Anthropic 原生适配器、OpenAI 兼容服务商的结构化输出写法、
- * 账号的地区与基址优先级、调用结果写进账号状态与用量账本。只对着本机的假供应商；密钥是这里编的字符串。
+ * New members and accounts in the provider catalog (architecture design §6.4, §6.8, §6.10): the Anthropic native adapter, the structured-output style for OpenAI-compatible providers, account region and base URL priority, and writing call results into account state and the usage ledger. It runs only against the local fake provider; the keys here are made-up strings.
  */
 
 const KEY_A = 'sk-ant-test-ONLY-FOR-TESTS-aaaaaaaaaaaa';
@@ -280,7 +279,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
       try {
         await body({ source, store, ledger, dir });
       } finally {
-        // 账本追加与最近使用时间的写入是在后台排队的：删目录之前等它们写完。
+        // Ledger appends and last-used time writes are queued in the background, so wait for them to finish before deleting the directory.
         await ledger.flush();
         await store.flush();
       }
@@ -329,7 +328,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
       return anthropicReply(request, 'ok');
     });
     await withSource({ anthropic: `${server.origin}/preset` }, async ({ source }) => {
-      // 加账号不等于启用（启用是对外发的授权，§6.8）。
+      // Adding an account does not mean enabling it. Enabling is the authorization to send outbound requests (§6.8).
       await source.addAccount({ providerId: 'anthropic', credential: KEY_A });
       await expect(generate(source, 'anthropic', 'claude-sonnet-5-5')).rejects.toMatchObject({ kind: 'unavailable' });
       await source.configure({ providerId: 'anthropic', enabled: true });
@@ -353,7 +352,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
       await generate(source, 'anthropic', 'claude-sonnet-5-5');
       reply = () => ({ status: 401, json: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } } });
       await expect(generate(source, 'anthropic', 'claude-sonnet-5-5')).rejects.toBeInstanceOf(ProviderFailure);
-      // 第一个账号失败也不改用第二个（§6.2）。
+      // A failure on the first account does not switch to the second (§6.2).
       expect(server!.requests.map((r) => r.headers['x-api-key'])).toEqual([KEY_A, KEY_A]);
       let accounts = (await source.describe('anthropic', 'view'))!.config!.accounts!;
       expect(accounts.map((a) => [a.label, a.status.state])).toEqual([
@@ -361,7 +360,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
         [null, 'unknown'],
       ]);
 
-      // 换到第二个账号（排到最前）之后用它；限速记下到期时间。
+      // After switching to the second account (moved to the front), use it. A rate limit records its expiry time.
       const second = accounts[1]!.accountId;
       await source.arrangeAccounts({ providerId: 'anthropic', order: [second, 'main'] });
       reply = () => ({

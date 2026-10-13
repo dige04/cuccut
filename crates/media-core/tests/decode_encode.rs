@@ -1,4 +1,4 @@
-//! 经本机 ffmpeg 的解码与编码。没有 ffmpeg 时跳过（CI 与没装 ffmpeg 的机器）。
+//! Decoding and encoding through the local ffmpeg. Skipped when there is no ffmpeg (CI, and machines without ffmpeg installed).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,7 +30,7 @@ fn ffmpeg(tools: &Tools, args: &[&str]) {
     assert!(status.success(), "ffmpeg {args:?}");
 }
 
-/// 2 秒、10 fps：第 1 秒红，之后蓝；每 5 帧一个关键帧。
+/// 2 s, 10 fps: red for the first second, then blue; a keyframe every 5 frames.
 fn red_then_blue(tools: &Tools, dir: &Path) -> PathBuf {
     let path = dir.join("rb.mp4");
     ffmpeg(
@@ -75,20 +75,20 @@ fn decoder_walks_forward_and_restarts_on_backward_jumps() {
     let mut decoder = VideoDecoder::new(&tools, &path, 0.0, 32, 18);
     assert!(is_red(center(decoder.frame_at(0.0).unwrap())));
     assert!(is_red(center(decoder.frame_at(0.95).unwrap())));
-    // 第 10 帧的时间戳正好是 1 秒：精确的时刻取到它。
+    // The timestamp of frame 10 is exactly 1 second, so an exact time picks it up.
     assert!(is_blue(center(decoder.frame_at(1.0).unwrap())));
     assert!(is_blue(center(decoder.frame_at(1.55).unwrap())));
     assert_eq!(decoder.restarts(), 0);
     assert_eq!(decoder.frame_at(1.55).unwrap().width, 32);
-    // 读到末尾之后停在最后一帧。
+    // After reading to the end, stay on the last frame.
     assert!(is_blue(center(decoder.frame_at(3.0).unwrap())));
-    // 倒退时重开。
+    // Reopen on rewind.
     assert!(is_red(center(decoder.frame_at(0.3).unwrap())));
     assert_eq!(decoder.restarts(), 1);
-    // 向前跳得很远也重开（从目标前的关键帧开始），不一路解过去。
+    // A long forward jump also reopens (starting from the keyframe before the target) rather than decoding all the way through.
     assert!(is_blue(center(decoder.frame_at(9.0).unwrap())));
     assert_eq!(decoder.restarts(), 2);
-    // 闲置关掉之后再用到：重开解码流，也算一次。
+    // Used again after being idle and shut down: reopening the decode stream also counts as one.
     decoder.close();
     assert!(is_blue(center(decoder.frame_at(1.2).unwrap())));
     assert_eq!(decoder.restarts(), 3);
@@ -106,15 +106,15 @@ fn decoder_hands_over_frames_and_tells_when_the_frame_changes() {
     let picture = decoder.swap_current(Vec::new()).unwrap();
     assert_eq!((picture.width, picture.height, picture.data.len()), (32, 18, 32 * 18 * 4));
     assert!(is_red(center(&picture)));
-    // 还没到下一帧（10 fps）：代号不变，调用方接着用换走的像素。
+    // Not yet at the next frame (10 fps): the generation is unchanged, and the caller keeps using the pixels it swapped out.
     assert_eq!(decoder.advance(0.05).unwrap(), first);
-    // 换上新的一帧：代号变了，换出来的是新的像素；还回去的缓冲之后被回收。
+    // A new frame is swapped in: the generation changes, and the swapped-out pixels are the new ones; the buffers returned are recycled later.
     let second = decoder.advance(1.0).unwrap();
     assert_ne!(second, first);
     let picture = decoder.swap_current(picture.data).unwrap();
     assert!(is_blue(center(&picture)));
     assert_eq!(picture.data.len(), 32 * 18 * 4);
-    // 重开之后代号接着数，不回到用过的值。
+    // After reopening, the generation keeps counting and does not return to a value already used.
     assert!(decoder.advance(0.2).unwrap() > second);
     assert!(is_red(center(&decoder.swap_current(Vec::new()).unwrap())));
 }
@@ -147,7 +147,7 @@ fn still_decodes_first_frame_and_probe_reports_missing_video() {
         &["-f", "lavfi", "-i", "sine=frequency=440:duration=0.2", wav.to_str().unwrap()],
     );
     assert_eq!(probe_picture(&tools, &wav).unwrap(), None);
-    // 带 alpha 的像素格式，与像素格式写着不带 alpha、容器标了 alpha_mode 的 VP9 WebM，都算可能带透明。
+    // A pixel format with alpha, and a VP9 WebM whose pixel format says no alpha but whose container flags alpha_mode, both count as possibly transparent.
     let rgba = dir.path().join("rgba.png");
     ffmpeg(
         &tools,
@@ -237,7 +237,7 @@ fn encoder_muxes_frames_and_padded_audio_to_equal_length() {
     let audio_duration: f64 = audio["duration"].as_str().unwrap().parse().unwrap();
     assert!((audio_duration - 1.0).abs() < 0.05, "声音补到画面的长度：{audio_duration}");
 
-    // 放弃时删掉输出。
+    // Delete the output when abandoning.
     let aborted = dir.path().join("aborted.mp4");
     let mut encoder = Encoder::start(&tools, &EncodeSettings { audio: None, ..settings }, &aborted).unwrap();
     encoder.write(&frame).unwrap();
@@ -273,7 +273,7 @@ fn queued_encoder_writes_every_frame_and_reports_a_dead_encoder() {
         value["streams"][0]["nb_read_frames"].as_str().unwrap().to_string()
     };
 
-    // 池里的缓冲铺好了颜色、长度是一帧；交进去的帧都写进去，收尾之后文件完整。
+    // The buffers in the pool are filled with the colour and are one frame long; every frame handed in is written, and after wrapping up the file is complete.
     let out = dir.path().join("queued.mp4");
     let mut queued = QueuedEncoder::new(Encoder::start(&tools, &settings, &out).unwrap(), 2, [0, 0, 0, 255]);
     for i in 0..12u8 {
@@ -289,7 +289,7 @@ fn queued_encoder_writes_every_frame_and_reports_a_dead_encoder() {
     queued.finish().unwrap();
     assert_eq!(count_frames(&out), "12");
 
-    // 放弃：排着的帧不写，输出删掉。
+    // Abandon: the queued frames are not written, and the output is deleted.
     let aborted = dir.path().join("queued-aborted.mp4");
     let mut queued = QueuedEncoder::new(Encoder::start(&tools, &settings, &aborted).unwrap(), 2, [0; 4]);
     let frame = queued.buffer().unwrap();
@@ -297,7 +297,7 @@ fn queued_encoder_writes_every_frame_and_reports_a_dead_encoder() {
     queued.abort();
     assert!(!aborted.exists());
 
-    // 编码器死了（输出写不出来）：合成线程很快在取缓冲或交帧时拿到写线程的错误。
+    // The encoder has died (the output cannot be written): the compositing thread soon gets the write thread's error when it takes a buffer or hands in a frame.
     let broken = dir.path().join("missing-dir").join("out.mp4");
     let mut queued = QueuedEncoder::new(Encoder::start(&tools, &settings, &broken).unwrap(), 2, [0; 4]);
     let error = (0..1000)
@@ -324,11 +324,11 @@ fn a_failing_native_source_falls_back_to_ffmpeg_from_the_same_time() {
     };
     let mut decoder = VideoDecoder::new(&tools, &path, 0.0, 32, 18).with_native(native);
     assert_eq!(decoder.backend(), "test-native");
-    // 从 1.2 秒起：原生打不开，ffmpeg 接着从 1.2 秒解，画面是蓝的。
+    // From 1.2 s: native cannot open, so ffmpeg continues decoding from 1.2 s, and the picture is blue.
     assert!(is_blue(center(decoder.frame_at(1.2).unwrap())));
     assert_eq!(decoder.backend(), "ffmpeg");
     assert_eq!(decoder.fallback().map(|f| f.reason), Some("open-failed"));
-    // 回落不算重开；之后的倒退照常重开（只走 ffmpeg）。
+    // The fallback does not count as a reopen; later rewinds reopen as usual (ffmpeg only).
     assert_eq!(decoder.restarts(), 0);
     assert!(is_red(center(decoder.frame_at(0.3).unwrap())));
     assert_eq!(decoder.restarts(), 1);
@@ -346,7 +346,7 @@ fn queued_encoder_opens_its_sink_on_the_writer_thread_and_reports_open_failures(
         finished: bool,
         aborted: bool,
     }
-    /// 记账的输出：故意不是 `Send`（`Rc`），只在写线程里构造和使用。
+    /// The accounting output: deliberately not `Send` (it holds an `Rc`), and constructed and used only on the write thread.
     struct Recording {
         log: Arc<Mutex<Log>>,
         _not_send: std::rc::Rc<()>,
@@ -403,7 +403,7 @@ fn queued_encoder_opens_its_sink_on_the_writer_thread_and_reports_open_failures(
         assert_eq!((done.finished, done.aborted), (false, true));
     }
 
-    // 打不开：错误原样交回，调用方可以换一种输出。
+    // Cannot open: the error is returned as is, and the caller may use a different output.
     let error = QueuedEncoder::spawn(16, 2, [0; 4], || Err(MediaError::new("EXPORT_ENCODE_FAILED", "原生写入器打不开")))
         .err()
         .expect("打开失败要报出来");

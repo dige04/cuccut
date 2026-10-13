@@ -90,7 +90,7 @@ describe('字幕文件的严格解析', () => {
   it('解码：UTF-16 的 BOM、不是 UTF-8 时按 GB18030', () => {
     const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(SRT, 'utf16le')]);
     expect(decodeSubtitleBytes(utf16).replace(/^﻿/, '')).toBe(SRT);
-    // 「你好」的 GBK 编码
+    // GBK encoding of “你好”
     expect(decodeSubtitleBytes(Buffer.from([0xc4, 0xe3, 0xba, 0xc3]))).toBe('你好');
   });
 
@@ -117,7 +117,7 @@ describe('字幕文件的严格解析', () => {
     expect(plainLines(vtt.cues[0]!, 'vtt')).toEqual({ lines: ['Hi & welcome'], marked: true });
     expect(cueText(['Hello there,', 'my friend.'])).toBe('Hello there, my friend.');
     expect(cueText(['你好，', '朋友'])).toBe('你好，朋友');
-    // SRT 里不是标签的尖括号照留
+    // Keep angle brackets in SRT that are not tags
     expect(plainLines({ ...srt.cues[3]!, lines: ['a < b > c'] }, 'srt').lines).toEqual(['a < b > c']);
   });
 

@@ -5,9 +5,9 @@ import { defineNoun, readStdin } from './context.ts';
 import { M } from './text-copy.ts';
 
 /**
- * `cuccut text <提示>`：调用一次文本模型（`models.generateText`），等它结束，经 `artifacts.openHandle` 取回全文。
- * 给人读时全文写 stdout（模型、用量与说明写 stderr，方便接管道）；`--json` 时全文放在结果的 `text` 里。
- * 给了 `--out` 时全文写进文件，结果里是任务与产物的摘要。
+ * `cuccut text <prompt>`: calls the text model once (`models.generateText`), waits for it to finish, and gets the full text back via `artifacts.openHandle`.
+ * For human reading, the full text is written to stdout (model, usage and notes go to stderr, so it can be piped); with `--json`, the full text is in the `text` field of the result.
+ * With `--out`, the full text is written to a file, and the result is a summary of the task and artifact.
  */
 export const text = defineNoun({
   name: 'text',

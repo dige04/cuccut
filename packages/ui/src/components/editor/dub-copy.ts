@@ -14,17 +14,17 @@ import { plDub, plDubRegen, plTimelineDub } from './dub-copy.pl.ts';
 import { trDub, trDubRegen, trTimelineDub } from './dub-copy.tr.ts';
 import { viDub, viDubRegen, viTimelineDub } from './dub-copy.vi.ts';
 
-/** 「n 句」：英文按单复数。 */
+/** “n sentences”: English follows singular and plural. */
 const sentences = (n: number) => `${n} sentence${n === 1 ? '' : 's'}`;
-/** 「这一句 / 这 n 句」。 */
+/** “This sentence” / “these n sentences”. */
 const these = (n: number) => (n > 1 ? `these ${n} sentences` : 'this sentence');
 
 /**
- * 翻译配音的文案（设置页、运行态、授权询问、问题与收据）。设计稿：panel-dub-setup.jsx `DubSetup`、panel-dub.jsx。
- * 译文在 `dub-copy.zh-Hans.ts`；界面英文里配音叫 Voice-over（docs/glossary.md）。
+ * Copy for translated voice-over (the settings page, running state, authorization prompts, issues and receipts). Design: panel-dub-setup.jsx `DubSetup`, panel-dub.jsx.
+ * Translations are in `dub-copy.zh-Hans.ts`; in the English UI, dubbing is called Voice-over (docs/glossary.md).
  */
 const dub = {
-  // 设置页
+  // Settings page
   title: 'Translated voice-over',
   back: 'Back',
   web: 'Translated voice-over needs the desktop app',
@@ -72,7 +72,7 @@ const dub = {
   sourceVideo: 'Assigned',
   sourceParams: 'Default voice',
   sourceDefault: 'Model default',
-  /** 说话人这一行实际用哪个音色；模型默认的 label 自带「模型默认」，不再重复来源。 */
+  /** The voice a speaker's row actually uses; the model default's label already says “model default”, so the source is not repeated. */
   effective: (label: string, source: string | null) => (source ? `Using: ${label} (${source})` : `Using: ${label}`),
   speakerWarning: (reason: string) => `This speaker’s sentences won’t be synthesized: ${reason}`,
   manageVoices: 'Manage My voices…',
@@ -81,7 +81,7 @@ const dub = {
   separateHint: 'The voice-over replaces only the speech; music and ambient sound stay',
   separateMissing: 'No separation model is available on this computer; even if turned on, separation is skipped and the original audio is processed as a whole.',
   installSeparate: 'Install separation model…',
-  /** 分离开着、分离模型还没装时的门卡与主按钮（设计稿 panel-dub-setup.jsx「还要下载 X · 大小」「下载模型并配成…」）。 */
+  /** The gate card and primary button when separation is on but the separation model is not installed yet (design panel-dub-setup.jsx: “还要下载 X · 大小” (still need to download X · size) and “下载模型并配成…” (download the model and set up…)). */
   separateDownload: (name: string) => `${name} needs to be downloaded`,
   separateDownloadBody: 'The button below downloads it first and starts the voice-over once it’s installed. Downloading doesn’t use the task queue.',
   separateWaiting: (name: string, pct: number | null) =>
@@ -92,8 +92,7 @@ const dub = {
   originalPicker: 'What happens to the original audio when the voice-over plays',
   originalLabel: { duck: 'Lower', mute: 'Mute', keep: 'Keep' } satisfies Record<DubOriginalAudio, string>,
   /**
-   * 混音一节的说明（设计稿 panel-dub-setup.jsx）：分离时背景声单独成轨、原声只剩人声（压低时人声在「人声」轨上压低），
-   * 不分离时原声整条静音或压低；`keep` 不动原声，也不分离。
+   * Explanation of the mix section (design panel-dub-setup.jsx): when separating, the background sound becomes its own track and the original keeps only the vocals (when ducked, the vocals are lowered on the “vocals” track); without separation, the original is fully muted or lowered; `keep` leaves the original alone and does not separate.
    */
   mixHint: (o: { separated: boolean; original: DubOriginalAudio; duckDb: number }) =>
     o.original === 'keep'
@@ -114,7 +113,7 @@ const dub = {
   stylePlaceholder: 'For example: conversational, concise; keep names in the original',
   styleHint: 'Optional; up to 500 characters.',
   cta: (language: string) => `Voice in ${language}`,
-  /** 按钮下的说明：写进哪几条轨（分离时多「背景声」，压低时再多「人声」）。 */
+  /** Text under the button: which tracks get written (when separating, one extra “background sound”; when ducking, one more “vocals”). */
   ctaHint: (language: string, stems: { separated: boolean; original: DubOriginalAudio }) => {
     const tracks = [`“Voice-over · ${language}”`];
     if (stems.separated && stems.original !== 'keep') tracks.push('“Background”');
@@ -127,7 +126,7 @@ const dub = {
   busy: 'This video already has a voice-over in progress; wait for it to finish before starting another.',
   readOnly: 'The video is read-only, so it can’t get a voice-over.',
 
-  // 运行态
+  // Running state
   submitting: 'Submitting voice-over',
   queued: 'Queued',
   running: (language: string) => `Voicing · ${language}`,
@@ -141,7 +140,7 @@ const dub = {
   liveNote: 'When done, the Runtime writes it straight to the timeline, and you can undo it at any time. You can leave this page.',
   foreign: 'This voice-over wasn’t started here. When it finishes, check the timeline; undo with the editor’s Undo.',
 
-  // 授权
+  // Authorization
   grantTitle: (recipient: string) => `No permission yet to send the transcript to ${recipient}`,
   grantBody:
     'Voice-over sends the translation to synthesize (and the original where a translation is missing) to the provider. Grant a permission limited to this video to continue; nothing is sent without it.',
@@ -157,7 +156,7 @@ const dub = {
   grantNext: 'When translation and synthesis use different providers, each needs its own permission.',
   commands: 'Command line',
 
-  // 问题
+  // Issues
   notConfigured: 'Voice-over isn’t available yet',
   submitFailed: 'Couldn’t start the voice-over',
   failed: 'Voice-over failed',
@@ -174,7 +173,7 @@ const dub = {
   stoppedAt: (synthesized: number, remaining: number) => `Stopped after synthesizing ${sentences(synthesized)}; ${remaining} remaining`,
   dismiss: 'OK',
 
-  // 收据
+  // Receipts
   doneTitle: (language: string) => `Voiced in ${language}`,
   doneToast: (language: string, placed: number) => `Voiced in ${language} · ${sentences(placed)} placed on the timeline`,
   placed: (placed: number, total: number) => `${placed} / ${total} sentences placed on the timeline`,
@@ -215,7 +214,7 @@ const dub = {
 export type DubMessages = typeof dub;
 export const DUB_COPY = defineMessages(dub, { 'zh-Hans': zhDub, 'zh-Hant': zhHantDub, ja: jaDub, ko: koDub, es: esDub, fr: frDub, de: deDub, nl: nlDub, 'pt-BR': ptBRDub, it: itDub, ru: ruDub, pl: plDub, tr: trDub, vi: viDub });
 
-/** 说话人音色的来源，按当前语言读。 */
+/** The source of a speaker's voice, read in the current language. */
 export const DUB_SPEAKER_SOURCE = {
   get video() {
     return DUB_COPY.sourceVideo;
@@ -228,14 +227,14 @@ export const DUB_SPEAKER_SOURCE = {
   },
 };
 
-/** 时间线上的配音块与块菜单（设计稿 timeline-dub.jsx `DubBlock` / `DubBlockMenu`，model-dub.js `selectionTitle`；`trackLine` 见 DUB_REGEN_COPY.headLine）。 */
+/** The voice-over block on the timeline and its block menu (design timeline-dub.jsx `DubBlock` / `DubBlockMenu`, model-dub.js `selectionTitle`; for `trackLine`, see DUB_REGEN_COPY.headLine). */
 const timelineDub = {
   trackLabel: (language: string) => `Voice-over · ${language}`,
-  /** 这组配音分离出的分轨的行头（设计稿 model-timeline.js 的「背景声」行）；人声只在原声压低时有。 */
+  /** The row label for the track separated out of this dub (design model-timeline.js “Background sound” row); the vocals exist only when the original is lowered. */
   stemTrackLabel: (stem: 'background' | 'vocals', language: string) => `${stem === 'vocals' ? 'Vocals' : 'Background'} · ${language}`,
-  /** 块上的语速角标：1.0× 不写，快过上限写「1.62× · 过快」。 */
+  /** The speed badge on the block: 1.0× is not shown; over the limit it shows “1.62× · too fast”. */
   rate: (rate: number, fast: boolean) => `${rate.toFixed(2)}×${fast ? ' · too fast' : ''}`,
-  /** 拖右缘时的读数。 */
+  /** The readout when dragging the right edge. */
   stretching: (rate: number, seconds: number) => `${rate.toFixed(2)}× · ${seconds.toFixed(2)} s`,
   tip: (parts: { text: string; speaker: string | null; rate: string; muted: boolean; manual: boolean; editable: boolean }) =>
     [
@@ -271,9 +270,9 @@ const timelineDub = {
 export type TimelineDubMessages = typeof timelineDub;
 export const TIMELINE_DUB_COPY = defineMessages(timelineDub, { 'zh-Hans': zhTimelineDub, 'zh-Hant': zhHantTimelineDub, ja: jaTimelineDub, ko: koTimelineDub, es: esTimelineDub, fr: frTimelineDub, de: deTimelineDub, nl: nlTimelineDub, 'pt-BR': ptBRTimelineDub, it: itTimelineDub, ru: ruTimelineDub, pl: plTimelineDub, tr: trTimelineDub, vi: viTimelineDub });
 
-/** 句级重配（时间线配音行头的 ⋯、块菜单、改译文并重配、属性页的版本；设计稿 timeline-dub.jsx、panel-dub-fit.jsx、panel-audio-sentence.jsx）。 */
+/** Per-sentence re-dub (the ⋯ on the timeline's dub row header, the block menu, editing the translation and re-dubbing, the versions on the properties page; design timeline-dub.jsx, panel-dub-fit.jsx, panel-audio-sentence.jsx). */
 const dubRegen = {
-  // ---- 行头 ⋯ ----
+  // ---- Row header ⋯ ----
   headMenu: (label: string) => `“${label}” track`,
   headLine: (c: { total: number; fast: number; muted: number; failed: number; queued: number }) =>
     [
@@ -308,19 +307,19 @@ const dubRegen = {
   redubHint: 'Opens Translated voice-over: change the language or voice and redo the whole group',
   readOnly: 'The video is read-only',
 
-  // ---- 块菜单 ----
+  // ---- Block menu ----
   regenBlocks: (n: number) => `Regenerate ${these(n)}`,
   regenBlocksHint: 'Synthesize the same translation and voice again · new seed · the old take is kept',
   retext: 'Edit translation and revoice…',
   retextHint: 'Check lengths and edit the translation first, then revoice only these sentences',
   inQueue: 'Some sentences are regenerating',
 
-  // ---- 块 ----
+  // ---- Block ----
   queued: 'Regenerating…',
   queuedTip: (text: string) => `${text} · regenerating`,
   version: (k: number, seed: number | null) => (seed === null ? `Take ${k}` : `Take ${k} · seed ${seed}`),
 
-  // ---- 提交与收尾 ----
+  // ---- Submit and wrap-up ----
   submitted: (n: number) => `Started regenerating ${sentences(n)} of voice-over`,
   submitFailed: (message: string) => `Couldn’t start regenerating: ${message}`,
   grantRefused: (recipient: string) =>
@@ -342,7 +341,7 @@ const dubRegen = {
   undo: 'Undo',
   undoMissing: 'Couldn’t find the edit this regeneration wrote; use the editor’s Undo',
 
-  // ---- 改译文并重配 ----
+  // ---- Edit translation and re-dub ----
   fitTitle: (n: number) => `Edit translation and revoice ${sentences(n)}`,
   fitIntro:
     'You’re editing the translated sentence that gets spoken (edited ones are marked reviewed); subtitles made from it aren’t re-split. Each sentence is synthesized again with a new seed, and the old take is kept.',
@@ -357,7 +356,7 @@ const dubRegen = {
   fitSubmit: (n: number, changed: number) => (changed ? `Edit ${changed} and revoice ${sentences(n)}` : `Revoice ${sentences(n)}`),
   fitBusy: 'Submitting…',
 
-  // ---- 属性页的版本 ----
+  // ---- Versions on the properties page ----
   takesTitle: 'Takes',
   takesAside: (n: number) => `${n} take${n === 1 ? '' : 's'}`,
   takeCurrent: 'Current',

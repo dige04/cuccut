@@ -2,8 +2,8 @@ import { SETTING_DESCRIPTIONS, SETTING_KEYS, isSettingKey, type SettingKey, type
 import { M } from './settings-copy.ts';
 
 /**
- * `cuccut settings` 的参数与输出（架构设计 §5.10）。从 main.ts 分出来，单独可测。
- * 取值是否合法由 Runtime 判断（`settings.set` 整批校验）；这里只认键名，给出可读的用法错误。
+ * Arguments and output of `cuccut settings` (Architecture design §5.10). Split out of main.ts so it can be tested on its own.
+ * Whether a value is valid is decided by the Runtime (`settings.set` validates the whole batch). Here we only recognize key names and give readable usage errors.
  */
 
 export type SettingsCommand =
@@ -36,7 +36,7 @@ export function parseSettingsArgs(args: string[]): SettingsCommand {
   throw new Error(M.usage);
 }
 
-/** 值按 JSON 解析（`true`、`20`、`null`、`{"cjk":18,"other":40}`）；解析不了就当作字符串（`authorized`、`/Users/me/Downloads`）。 */
+/** Values are parsed as JSON (`true`, `20`, `null`, `{"cjk":18,"other":40}`). If they cannot be parsed, they are treated as strings (`authorized`, `/Users/me/Downloads`). */
 export function parseSettingValue(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -45,7 +45,7 @@ export function parseSettingValue(text: string): unknown {
   }
 }
 
-/** 一个取值的文本：JSON，对象的键按字母排序。 */
+/** A value as text: JSON, with object keys sorted alphabetically. */
 export function formatSettingValue(value: unknown): string {
   return JSON.stringify(canonical(value));
 }
@@ -64,13 +64,13 @@ export function isDefaultValue(view: SettingsSnapshot, key: SettingKey): boolean
   return formatSettingValue(view.settings[key]) === formatSettingValue(view.defaults[key]);
 }
 
-/** 一行：`键  当前值  默认` 或 `键  当前值  已修改（默认 …）`。 */
+/** One line: `key  current value  default`, or `key  current value  modified (default …)`. */
 export function formatSettingLine(view: SettingsSnapshot, key: SettingKey, width = key.length): string {
   const marker = isDefaultValue(view, key) ? M.isDefault : M.modified(formatSettingValue(view.defaults[key]));
   return `${key.padEnd(width)}  ${formatSettingValue(view.settings[key])}  ${marker}`;
 }
 
-/** `cuccut settings`：全部键，按注册表的顺序，每个键下面一行说明。 */
+/** `cuccut settings`: all keys, in the order of the registry, with a description line under each key. */
 export function formatSettings(view: SettingsSnapshot): string[] {
   const width = Math.max(...SETTING_KEYS.map((key) => key.length));
   return SETTING_KEYS.flatMap((key) => [formatSettingLine(view, key, width), `  ${SETTING_DESCRIPTIONS[key]}`]);

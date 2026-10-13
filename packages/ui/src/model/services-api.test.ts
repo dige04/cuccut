@@ -42,7 +42,7 @@ describe('路由', () => {
   it('每种能力能路由到几个模型：只算可用、并且打开了路由的', () => {
     const view = fixtureView();
     expect(routableModelCount(view, 'transcribe', LOCAL_ONLY)).toBe(1);
-    // OpenAI 两个 + ASR Box 一个；Google 不可用不算。
+    // Two OpenAI + one ASR Box; Google being unavailable doesn't count.
     expect(routableModelCount(view, 'transcribe', ONLINE)).toBe(4);
     expect(capabilityLine(view, 'transcribe', LOCAL_ONLY)).toBe('1 个模型可用');
   });
@@ -105,7 +105,7 @@ describe('令牌与片段', () => {
   it('只替换不带客户端名的占位符，片段里每一处都换', () => {
     const snippet = `OPENAI_API_KEY=<令牌>\nAuthorization: Bearer <令牌>`;
     expect(withToken(snippet, 'tok')).toBe('OPENAI_API_KEY=tok\nAuthorization: Bearer tok');
-    // Runtime 按它自己的语言写占位符，与界面语言无关。
+    // Runtime writes its placeholders in its own language, regardless of the UI language.
     expect(withToken('OPENAI_API_KEY=<token>', 'tok')).toBe('OPENAI_API_KEY=tok');
     expect(withToken('<Claude 的令牌>', 'tok')).toBe('<Claude 的令牌>');
   });

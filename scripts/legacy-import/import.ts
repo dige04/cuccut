@@ -1,4 +1,4 @@
-// 把 cuccut-app 的 `.ccut` 项目与外部视频项目导入成视频。用法见同目录的 README.md。
+// Imports cuccut-app's `.ccut` projects and external video projects as videos. Usage is in the README.md in the same directory.
 //
 //   node scripts/legacy-import/import.ts --ccut <旧项目目录> --external <外部项目目录> --out <项目文件夹> [--dry-run] [--replace] [--only <名字片段>]
 
@@ -41,12 +41,12 @@ function fail(message: string): never {
   process.exit(2);
 }
 
-// ── 收集计划 ──────────────────────────────────────────────────────────
+// ── Collection plan ──────────────────────────────────────────────────────────
 const taken = new Set<string>();
 const plans: ProjectPlan[] = [];
 const skipped: string[] = [];
 for (const root of values.ccut.map((dir) => path.resolve(dir))) {
-  // 既可以给单个 `.ccut` 目录，也可以给装着它们的目录。
+  // Can be given a single `.ccut` directory, or a directory containing several of them.
   const dirs = existsSync(path.join(root, 'project.json'))
     ? [root]
     : readdirSync(root)
@@ -68,13 +68,13 @@ const wanted = values.only.map((text) => text.toLowerCase());
 const selected = wanted.length === 0 ? plans : plans.filter((plan) => wanted.some((text) => plan.key.toLowerCase().includes(text)));
 if (selected.length === 0) fail('没有选中任何项目');
 
-// ── 执行 ──────────────────────────────────────────────────────────────
+// ── Execution ──────────────────────────────────────────────────────────────
 const started = Date.now();
 if (dryRun) {
   for (const plan of selected) {
     try {
       const content = planContent(plan, dryAssets(plan));
-      // 预演把每个视频会写进去的内容留一份，方便逐个检查；文档正文只留概要。
+      // A copy of what each video will write is kept for dry-run, so each can be checked one by one; document bodies keep only a summary.
       const documents = content.documents.map(({ body, ...doc }) => ({ ...doc, bodyBytes: JSON.stringify(body).length }));
       mkdirSync(path.join(reportDir, 'plans'), { recursive: true });
       writeFileSync(path.join(reportDir, 'plans', `${plan.dirName}.json`), `${JSON.stringify({ ...content, documents }, null, 2)}\n`);
@@ -111,7 +111,7 @@ function progress(plan: ProjectPlan): void {
   process.stderr.write(`${r.failed.length ? '✗' : '✓'} ${plan.key} · ${r.kind} · ${items} 个实例 ${flags.join(' · ')}\n`);
 }
 
-// ── 报告 ──────────────────────────────────────────────────────────────
+// ── Report ──────────────────────────────────────────────────────────────
 const reports = selected.map((plan) => plan.report);
 const suffix = dryRun ? '.dry-run' : '';
 mkdirSync(reportDir, { recursive: true });

@@ -100,7 +100,7 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     root = path.join(dir, 'project');
     cacheDir = path.join(dir, 'cache');
     await fs.mkdir(root);
-    // 两秒：前一秒半幅正弦，后一秒静音。
+    // Two seconds: the first second and a half is a sine wave at half amplitude, and the last half second is silence.
     execFileSync('ffmpeg', [
       '-v',
       'error',
@@ -247,7 +247,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     const alpha = await analysis().fileFrame({ root, file: 'alpha.png' }, { at: 0, width: 320 });
     expect(alpha).toMatchObject({ mimeType: 'image/png', width: 320, height: 180 });
     expect(alpha.data.subarray(1, 4).toString('latin1')).toBe('PNG');
-    expect(alpha.data[25]).toBe(6); // IHDR 的颜色类型：RGBA，透明保留
+    expect(alpha.data[25]).toBe(6); // IHDR color type: RGBA, transparency kept
     expect(await analysis().fileFrame({ root, file: 'photo.jpg' }, { at: 0, width: 320 })).toMatchObject({
       mimeType: 'image/jpeg',
       width: 320,
@@ -266,11 +266,11 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     const first = await analysis().fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 });
     expect(first).toMatchObject({ width: 200, height: 100 });
     expect(await analysis({ ffmpeg: noFfmpeg }).fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 })).toEqual(first);
-    // 宽不同是另一份缓存。
+    // A different width is a different cache entry.
     expect(await codeOf(analysis({ ffmpeg: noFfmpeg }).fileFrame({ root, file: 'changing.png' }, { at: 0, width: 100 }))).toBe('internal');
     make(['-f', 'lavfi', '-i', 'color=c=blue:s=300x100', '-frames:v', '1'], 'changing.png');
     expect(await analysis().fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 })).toMatchObject({ width: 300, height: 100 });
-    // 大小不变、只改修改时间也重新取。
+    // Same size, only the modification time changed: fetch again.
     const later = new Date(Date.now() + 60_000);
     await fs.utimes(file, later, later);
     expect(await codeOf(analysis({ ffmpeg: noFfmpeg }).fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 }))).toBe('internal');

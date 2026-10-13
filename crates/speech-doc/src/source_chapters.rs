@@ -1,16 +1,8 @@
-//! 来源自带章节（source chapters）。
+//! Source chapters.
 //!
-//! 视频平台常把作者写好的章节随视频发布：yt-dlp 的 info JSON 有 `chapters[]`
-//! （YouTube 的显式章节，或它从描述里抽出的时间戳），描述正文里也常有
-//! `Timestamps:` / `OUTLINE:` 这样的时间戳大纲（`0:00 - Intro`、
-//! `00:01:19 The Normal One —— 普通人`，超过一小时的条目带小时位）。本模块把这两种
-//! 来源整理成 [`SourceChapter`]，并提供**不经模型**的吸附：作者的时间戳最多精确到秒，
-//! 又常常比真正的话题起点早几秒，所以直采时把每条吸到 transcript 最近的结构起点
-//! （段落 > 句 > cue > 词）；同一层里落在同一秒的多个候选标为 ambiguous，交给用户确认。
+//! Video platforms often publish author-written chapters with the video. yt-dlp's info JSON has `chapters[]` (YouTube's explicit chapters, or timestamps it extracted from the description). The description body often has timestamp outlines such as `Timestamps:` / `OUTLINE:` (`0:00 - Intro`, `00:01:19 The Normal One —— 普通人 (an ordinary person)`, where entries over an hour carry an hour field). This module organizes these two kinds of source into [`SourceChapter`] and provides **model-free** snapping. Author timestamps are precise to at most one second and often start a few seconds earlier than the real topic start. So when taking them directly, each one is snapped to the nearest structural start in the transcript (paragraph > sentence > cue > word). Multiple candidates in the same tier that fall on the same second are marked ambiguous and left for the user to confirm.
 //!
-//! 纯函数、零 I/O：宿主负责读 project.json / 侧车；CLI 侧用 [`doc_anchors`] 从
-//! transcript 派生锚点，App 侧用投影派生（`ccut-editor-core::source_chapters`）。
-//! 有模型时整份大纲进分章契约（`engines::chapters`），模型仍在段落投影上锚定。
+//! Pure functions, zero I/O. The host reads project.json / sidecars. The CLI side derives anchors from the transcript with [`doc_anchors`], and the App side derives them from projections (`ccut-editor-core::source_chapters`). When a model is present, the whole outline goes into the chaptering contract (`engines::chapters`), and the model still anchors on the paragraph projection.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,28 +11,28 @@ use crate::cue::{derive_cues, derive_paras, join_words};
 use crate::doc::TranscriptDoc;
 use crate::sentence::derive_sentences;
 
-/// 来源给出的一章：作者的原始时间，未吸附。
+/// A chapter as given by the source: the author's original time, not snapped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceChapter {
-    /// 起点秒。
+    /// Start, in seconds.
     pub start: f64,
-    /// 终点秒；描述里解析出的大纲没有终点。
+    /// End, in seconds. An outline parsed from a description has no end.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<f64>,
     pub title: String,
 }
 
-/// 大纲里最多保留多少条（7 小时录音也不会有更多真章节；防住把整段歌词当章节）。
+/// At most this many entries are kept from an outline. A 7-hour recording would not have more real chapters, and this guards against treating a whole block of lyrics as chapters.
 const MAX_SOURCE_CHAPTERS: usize = 400;
-/// 标题最多保留的字符数（进模型契约与面板都够用）。
+/// Maximum characters kept for a title (enough for the model contract and the panel).
 const MAX_TITLE_CHARS: usize = 160;
-/// 同一份大纲里相邻两条之间允许隔多少行（一行空行或说明行）。
+/// How many lines may separate two adjacent entries in the same outline (one blank line or one note line).
 const MAX_LINE_GAP: usize = 3;
 
-// ── 时间戳与描述解析 ─────────────────────────────────────────────────────
+// ── Timestamp and description parsing ─────────────────────────────────────────────────────
 
-/// `M:SS` / `MM:SS` / `MMM:SS` / `H:MM:SS` / `HH:MM:SS` → 秒；别的形状 `None`。
+/// `M:SS` / `MM:SS` / `MMM:SS` / `H:MM:SS` / `HH:MM:SS` → seconds. Any other shape → `None`.
 pub fn parse_clock(text: &str) -> Option<f64> {
     let parts: Vec<&str> = text.split(':').collect();
     if !(2..=3).contains(&parts.len())
@@ -76,7 +68,7 @@ pub fn parse_clock(text: &str) -> Option<f64> {
     Some((hours * 3_600 + minutes * 60 + seconds) as f64)
 }
 
-/// 秒 → `HH:MM:SS`（floor），与 `chapters-source/1` 的 `data-at` 同一口径。
+/// Seconds → `HH:MM:SS` (floor), with the same convention as `data-at` in `chapters-source/1`.
 pub fn clock(seconds: f64) -> String {
     let total = seconds.max(0.0).floor() as u64;
     format!(
@@ -103,7 +95,7 @@ fn is_opening_bracket(c: char) -> bool {
     matches!(c, '(' | '[' | '{' | '【' | '（' | '〔' | '<' | '《')
 }
 
-/// 标题清洗：去两端分隔符与括号、压掉控制字符、截长。
+/// Title cleanup: strip separators and brackets at both ends, remove control characters, truncate if long.
 fn clean_title(text: &str) -> String {
     let trimmed = text
         .trim_matches(|c: char| is_separator(c) || is_closing_bracket(c) || is_opening_bracket(c))
@@ -144,9 +136,9 @@ struct LineCandidate {
     title: String,
 }
 
-/// 一行里的时间戳 + 标题。行首优先；行尾形只在行首没有时间戳时才算。
+/// A timestamp plus title in one line. A leading timestamp takes precedence. A trailing form counts only when there is no leading timestamp.
 fn scan_line(line: &str) -> Option<(ClockForm, f64, String)> {
-    // 行首：去掉列表符号 / 括号 / 表情等一切非字母数字前缀，再去掉 `1.` / `1)` 编号。
+    // Leading form: strip list markers, brackets, emoji, and any other non-alphanumeric prefix, then strip `1.` / `1)` numbering.
     let body = line.trim_start_matches(|c: char| !c.is_alphanumeric());
     let body = strip_ordinal(body);
     let token_len = body
@@ -154,7 +146,7 @@ fn scan_line(line: &str) -> Option<(ClockForm, f64, String)> {
         .find(|(_, c)| !(c.is_ascii_digit() || *c == ':'))
         .map(|(index, _)| index)
         .unwrap_or(body.len());
-    // `4:00: Fifth` 的冒号分隔符会粘在时间戳后面，剥掉再解析。
+    // The colon separator in `4:00: Fifth` sticks to the timestamp, so strip it before parsing.
     let token = body[..token_len].trim_end_matches(':');
     let token_len = token.len();
     let boundary_ok = body[token_len..]
@@ -169,7 +161,7 @@ fn scan_line(line: &str) -> Option<(ClockForm, f64, String)> {
         return None;
     }
 
-    // 行尾：`标题 - 0:00` / `标题 (0:00)`。
+    // Trailing form: `title - 0:00` / `title (0:00)`.
     let trimmed = line.trim_end_matches(|c: char| !c.is_alphanumeric());
     let tail_start = trimmed
         .char_indices()
@@ -192,7 +184,7 @@ fn scan_line(line: &str) -> Option<(ClockForm, f64, String)> {
     None
 }
 
-/// `1. ` / `12) ` 这样的编号前缀；时间戳自身以 `:` 紧跟数字，不会被误剥。
+/// Numbering prefixes such as `1. ` / `12) `. A timestamp itself has `:` directly followed by digits, so it is not stripped by mistake.
 fn strip_ordinal(text: &str) -> &str {
     let digits = text
         .char_indices()
@@ -212,11 +204,9 @@ fn strip_ordinal(text: &str) -> &str {
     }
 }
 
-/// 从视频描述里抽时间戳大纲。
+/// Extract a timestamp outline from a video description.
 ///
-/// 规则：逐行找「行首时间戳 + 标题」或「标题 + 行尾时间戳」；两种形都出现时只取
-/// 多数形（避免 `视频总长 45:00` 这类行混进来）；按行序切成时间不减的连续段
-/// （相邻两条隔太多行也断开），取最长的一段，至少两条才算大纲。
+/// Rules: scan line by line for "leading timestamp + title" or "title + trailing timestamp". When both forms appear, take only the majority form, so lines like `视频总长 45:00` (total video length) do not get mixed in. Split into contiguous segments by line order whose times do not decrease (adjacent entries separated by too many lines also break the segment), then take the longest segment. At least two entries are needed to count as an outline.
 pub fn parse_description(description: &str) -> Vec<SourceChapter> {
     let mut candidates: Vec<LineCandidate> = Vec::new();
     for (line_index, line) in description.lines().enumerate() {
@@ -269,8 +259,7 @@ pub fn parse_description(description: &str) -> Vec<SourceChapter> {
     )
 }
 
-/// yt-dlp info JSON（或落盘的 `sourceMetadata`）的 `chapters[]`：
-/// `{start_time, end_time, title}`（yt-dlp）与 `{start, end, title}`（项目清单）都认。
+/// `chapters[]` from the yt-dlp info JSON (or a persisted `sourceMetadata`). Both `{start_time, end_time, title}` (yt-dlp) and `{start, end, title}` (project manifest) are accepted.
 pub fn from_info_json(info: &Value) -> Vec<SourceChapter> {
     let Some(items) = info.get("chapters").and_then(Value::as_array) else {
         return Vec::new();
@@ -294,8 +283,7 @@ pub fn from_info_json(info: &Value) -> Vec<SourceChapter> {
     )
 }
 
-/// 一份来源元数据对象（`sourceMetadata` 或 yt-dlp info）里的章节：
-/// 先取结构化 `chapters[]`，没有再解析 `description`。
+/// Chapters from one source metadata object (`sourceMetadata` or yt-dlp info). Take the structured `chapters[]` first. If there are none, parse `description`.
 pub fn from_metadata(source: &Value) -> Vec<SourceChapter> {
     let chapters = from_info_json(source);
     if !chapters.is_empty() {
@@ -308,7 +296,7 @@ pub fn from_metadata(source: &Value) -> Vec<SourceChapter> {
         .unwrap_or_default()
 }
 
-/// 排序、去掉非法时间与同起点重复、截条数。
+/// Sort, drop invalid times and duplicate starts, and cap the count.
 pub fn normalize(mut chapters: Vec<SourceChapter>) -> Vec<SourceChapter> {
     chapters.retain(|chapter| chapter.start.is_finite() && chapter.start >= 0.0);
     chapters.sort_by(|a, b| a.start.total_cmp(&b.start));
@@ -327,9 +315,9 @@ pub fn normalize(mut chapters: Vec<SourceChapter>) -> Vec<SourceChapter> {
     chapters
 }
 
-// ── 吸附 ────────────────────────────────────────────────────────────────
+// ── Snapping ────────────────────────────────────────────────────────────────
 
-/// 锚点层级，高层优先：段落起点（含说话人切换）> 句起点 > cue 起点 > 词起点。
+/// Anchor layers, higher layers first: paragraph start (including speaker change) > sentence start > cue start > word start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AnchorTier {
@@ -339,38 +327,38 @@ pub enum AnchorTier {
     Word,
 }
 
-/// transcript 上一个可以当章节起点的位置。
+/// A position in the transcript that can serve as a chapter start.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Anchor {
     pub tier: AnchorTier,
-    /// 起点秒（首词 t0）。
+    /// Start in seconds (the first word's t0).
     pub time: f64,
-    /// 结构 id：段 `p-…` / 句 `s-…` / cue `q-…` / 词 id。
+    /// Structural id: paragraph `p-…` / sentence `s-…` / cue `q-…` / word id.
     pub id: String,
-    /// 从这里开始的几个词，给确认用。
+    /// The first few words from here on, for user confirmation.
     pub snippet: String,
 }
 
-/// 「同一秒」窗：作者时间戳精确到秒，真起点落在 `[t - NEAR_BEFORE, t + NEAR_AFTER)`。
+/// "Same second" window: author timestamps are precise to the second, so the real start falls within `[t - NEAR_BEFORE, t + NEAR_AFTER)`.
 pub const NEAR_BEFORE: f64 = 1.0;
 pub const NEAR_AFTER: f64 = 2.0;
-/// 放宽窗：只对段落 / 句起点开放，吃掉「作者把时间写早（晚）了几秒」。
+/// Relaxed window: opened only for paragraph / sentence starts, to absorb "the author wrote the time a few seconds early (or late)".
 pub const WIDE_BEFORE: f64 = 4.0;
 pub const WIDE_AFTER: f64 = 6.0;
-/// ambiguous 时最多摆几个候选。
+/// At most this many candidates are shown when ambiguous.
 const MAX_CANDIDATES: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapStatus {
-    /// 同一秒窗里恰有一个候选。
+    /// Exactly one candidate in the same-second window.
     Matched,
-    /// 同一秒窗里有多个同层候选，缺省取最近的，等用户确认。
+    /// Several same-tier candidates in the same-second window. By default take the nearest, pending user confirmation.
     Ambiguous,
-    /// 同一秒窗里没有，放宽到几秒内的段落 / 句起点。
+    /// None in the same-second window. Relax to paragraph / sentence starts within a few seconds.
     Snapped,
-    /// 附近没有任何结构起点，按作者原时间写入。
+    /// No structural start nearby. Written at the author's original time.
     Unanchored,
 }
 
@@ -378,7 +366,7 @@ pub enum SnapStatus {
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
     pub anchor: Anchor,
-    /// 锚点相对来源时间的偏移秒（正 = 锚点在时间戳之后）。
+    /// Offset of the anchor in seconds from the source time (positive = the anchor is after the timestamp).
     pub offset: f64,
 }
 
@@ -387,21 +375,21 @@ pub struct Candidate {
 pub struct SnapEntry {
     pub source: SourceChapter,
     pub status: SnapStatus,
-    /// 按时间排好的候选；`Matched` / `Snapped` 恰一个，`Unanchored` 为空。
+    /// Candidates sorted by time. `Matched` / `Snapped` have exactly one; `Unanchored` has none.
     pub candidates: Vec<Candidate>,
-    /// 选中的候选下标；`None` = 用来源原时间。
+    /// Index of the selected candidate. `None` = use the source's original time.
     pub pick: Option<usize>,
 }
 
 impl SnapEntry {
-    /// 当前生效的起点。
+    /// The start currently in effect.
     pub fn start(&self) -> f64 {
         self.pick
             .and_then(|pick| self.candidates.get(pick))
             .map_or(self.source.start, |candidate| candidate.anchor.time)
     }
 
-    /// 当前生效的锚 id（原时间时 `None`）。
+    /// The anchor id currently in effect (`None` for the original time).
     pub fn anchor_id(&self) -> Option<&str> {
         self.pick
             .and_then(|pick| self.candidates.get(pick))
@@ -427,7 +415,7 @@ impl SnapPlan {
             .count()
     }
 
-    /// 改一条的选择；`None` = 用来源原时间。越界下标忽略。
+    /// The user's choice for one entry. `None` = use the source's original time. Out-of-range indexes are ignored.
     pub fn set_pick(&mut self, entry: usize, pick: Option<usize>) {
         if let Some(item) = self.entries.get_mut(entry)
             && pick.is_none_or(|pick| pick < item.candidates.len())
@@ -436,7 +424,7 @@ impl SnapPlan {
         }
     }
 
-    /// 文档重投影后重算了计划：同一条来源、同一组候选的用户选择原样带过来。
+    /// After the document is re-projected and the plan recomputed, the user's selections for the same source and the same set of candidates are carried over as-is.
     pub fn inherit_picks(&mut self, previous: &SnapPlan) {
         for entry in &mut self.entries {
             let Some(old) = previous
@@ -458,7 +446,7 @@ impl SnapPlan {
         }
     }
 
-    /// `(标题, 生效起点)`，按来源顺序；交给 [`resolve_rows`] 清洗。
+    /// `(title, effective start)` in source order. Passed to [`resolve_rows`] for cleaning.
     pub fn rows(&self) -> Vec<(String, f64)> {
         self.entries
             .iter()
@@ -467,7 +455,7 @@ impl SnapPlan {
     }
 }
 
-/// 把来源章节吸到锚点上。`anchors` 不要求有序。
+/// Snap source chapters onto the anchors. `anchors` need not be sorted.
 pub fn snap_to_anchors(source: &[SourceChapter], anchors: &[Anchor]) -> SnapPlan {
     let mut by_tier: [Vec<&Anchor>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for anchor in anchors {
@@ -494,14 +482,14 @@ pub fn snap_to_anchors(source: &[SourceChapter], anchors: &[Anchor]) -> SnapPlan
         .iter()
         .map(|chapter| {
             let t = chapter.start;
-            // 同一秒窗，逐层找。
+            // Same-second window, searched tier by tier.
             for tier in [AnchorTier::Paragraph, AnchorTier::Sentence, AnchorTier::Cue] {
                 let near = within(tier, t, NEAR_BEFORE, NEAR_AFTER);
                 if !near.is_empty() {
                     return entry_from_near(chapter, near);
                 }
             }
-            // 放宽窗：只认段落 / 句起点，取最近的一个。
+            // Relaxed window: only paragraph / sentence starts count. Take the nearest one.
             for tier in [AnchorTier::Paragraph, AnchorTier::Sentence] {
                 let wide = within(tier, t, WIDE_BEFORE, WIDE_AFTER);
                 if let Some(best) = nearest(&wide) {
@@ -528,7 +516,7 @@ pub fn snap_to_anchors(source: &[SourceChapter], anchors: &[Anchor]) -> SnapPlan
     SnapPlan { entries }
 }
 
-/// 同一秒窗里的候选：一个即命中；多个则留最近的几个（按时间排），缺省选最近。
+/// Candidates in the same-second window: one is a hit. With several, keep the nearest few (sorted by time), defaulting to the nearest.
 fn entry_from_near(chapter: &SourceChapter, mut near: Vec<Candidate>) -> SnapEntry {
     if near.len() == 1 {
         return SnapEntry {
@@ -550,7 +538,7 @@ fn entry_from_near(chapter: &SourceChapter, mut near: Vec<Candidate>) -> SnapEnt
     }
 }
 
-/// 距离序：越近越好，同距离时间戳之后的优先（作者一般把时间写在话题开始前）。
+/// Distance order: closer is better. At equal distance, the one after the timestamp takes priority, since authors usually write the time just before the topic starts.
 fn rank(candidate: &Candidate) -> f64 {
     candidate.offset.abs() + if candidate.offset < 0.0 { 0.01 } else { 0.0 }
 }
@@ -563,8 +551,7 @@ fn nearest(candidates: &[Candidate]) -> Option<usize> {
         .map(|(index, _)| index)
 }
 
-/// transcript 的四层锚点（§18.5 规范派生：段落 / 句 / cue / 词起点），
-/// 与 LLM 分章共用同一份段落投影。
+/// The four anchor layers of the transcript (§18.5 normative derivation: paragraph / sentence / cue / word starts), sharing the same paragraph projection as LLM chaptering.
 pub fn doc_anchors(doc: &TranscriptDoc) -> Vec<Anchor> {
     let cues = derive_cues(doc, &crate::layout_profile::cue_params_for_doc(doc));
     let paras = derive_paras(doc, &cues);
@@ -626,9 +613,9 @@ pub fn doc_anchors(doc: &TranscriptDoc) -> Vec<Anchor> {
     anchors
 }
 
-// ── 清洗 ────────────────────────────────────────────────────────────────
+// ── Cleaning ────────────────────────────────────────────────────────────────
 
-/// 清洗后的一章（时间版的七步清洗结果）。
+/// One chapter after cleaning (the result of the time-based seven-step cleanup).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedRow {
     pub title: String,
@@ -636,9 +623,7 @@ pub struct ResolvedRow {
     pub end: f64,
 }
 
-/// 时间版的确定性清洗（对拍 `engines::chapters::build_plan`）：丢空标题 →
-/// 按（起点, 顺序）排序 → 同起点去重 → 首章钳 0 → 丢非严格递增 → 回填
-/// `end = 下一章.start`，末章 = 媒体时长。
+/// Deterministic time-based cleanup (cross-checked against `engines::chapters::build_plan`): drop empty titles → sort by (start, order) → dedupe same starts → clamp the first chapter to 0 → drop non-strictly-increasing entries → backfill `end = next chapter.start`, with the last chapter ending at the media duration.
 pub fn resolve_rows(rows: &[(String, f64)], duration: f64) -> Vec<ResolvedRow> {
     let mut ordered: Vec<(usize, &str, f64)> = rows
         .iter()
@@ -761,16 +746,16 @@ mod tests {
         assert!(parse_description("Watch until 12:34 for the reveal.").is_empty());
         assert!(parse_description("0:00 Intro").is_empty());
         assert!(parse_description("No chapters here.\nJust text.").is_empty());
-        // 行首形占多数时，行尾形的「视频总长」行不混进来。
+        // When the leading form is the majority, the trailing-form "total video length" line is not mixed in.
         let mixed = "0:00 Intro\n3:00 Body\n6:00 Outro\n\nVideo length: 45:00";
         let chapters = parse_description(mixed);
         assert_eq!(chapters.len(), 3);
         assert_eq!(chapters[2].title, "Outro");
-        // 隔了很多行的零星时间戳不续进大纲。
+        // Sporadic timestamps separated by many lines do not continue the outline.
         let far =
             "0:00 Intro\n3:00 Body\n6:00 Outro\n\n\n\nabout\nmore text\n\n45:00 correction note";
         assert_eq!(parse_description(far).len(), 3);
-        // 时间倒退切断一段，取最长的一段。
+        // A time regression cuts a segment. Take the longest segment.
         let broken = "Part 1: 3:00\n\n0:00 Intro\n2:00 Second\n4:00 Third";
         let chapters = parse_description(broken);
         assert_eq!(chapters.len(), 3);
@@ -829,16 +814,16 @@ mod tests {
             anchor(AnchorTier::Sentence, 0.2, "s-a"),
             anchor(AnchorTier::Word, 0.2, "a"),
             anchor(AnchorTier::Word, 0.7, "b"),
-            // 107：段落起点在 +1.4，句起点在 +0.1 —— 段落层优先。
+            // 107: paragraph start at +1.4, sentence start at +0.1. The paragraph layer takes priority.
             anchor(AnchorTier::Sentence, 107.1, "s-c"),
             anchor(AnchorTier::Paragraph, 108.4, "p-d"),
-            // 271：同一秒里两个句起点，段落没有。
+            // 271: two sentence starts in the same second, no paragraph start.
             anchor(AnchorTier::Sentence, 270.6, "s-e"),
             anchor(AnchorTier::Sentence, 271.9, "s-f"),
             anchor(AnchorTier::Cue, 270.6, "q-e"),
-            // 425：同一秒窗空，段落起点在 +5 → 放宽吸附。
+            // 425: the same-second window is empty and the paragraph start is at +5, so relax snapping.
             anchor(AnchorTier::Paragraph, 430.0, "p-g"),
-            // 598：只有词。
+            // 598: words only.
             anchor(AnchorTier::Word, 598.3, "h"),
             anchor(AnchorTier::Word, 598.9, "i"),
         ];

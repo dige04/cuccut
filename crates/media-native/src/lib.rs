@@ -1,49 +1,33 @@
 /*!
- * ccut-media-native —— 平台原生媒体解码原语。
+ * ccut-media-native — platform-native media decoding primitives.
  *
- * 一句话职责：**在不启动 ffmpeg 子进程的前提下，从本地视频里取得 CPU 像素或
- * 平台 GPU surface**。与 `ccut-media-probe`（"这个文件是什么"）互补：那边回答
- * 元数据，这边回答帧。
+ * In one sentence: **get CPU pixels or a platform GPU surface from a local video, without starting an ffmpeg subprocess**. It complements `ccut-media-probe` ("what is this file"). That one answers metadata questions, and this one answers frame questions.
  *
- * ## 三种取像素的方式
+ * ## Three ways to get pixels
  *
- * - [`extract_frame_rgba`]（WP5a）：给定时间点解**一帧**、缩放到目标宽度、交出
- *   RGBA8。服务的是缩略图 / filmstrip / 取景帧这类"一次一帧、随机时间点"的
- *   需求——原本每一格都要 fork 一个 `ffmpeg -ss ... -frames:v 1`。
- * - [`open_frame_stream`]（WP6a）：给定起点与合成帧率的**顺序帧流**，服务 BCF
- *   渲染管线的逐帧供片——原本每个 clip 一条 `ffmpeg … -f rawvideo` 管道。
- * - Windows 上的 `open_dxgi_frame_server`（统一渲染 R4）：`IMFMediaEngine` 在
- *   frame-server 模式把播放帧直接写进三槽 D3D11 BGRA 纹理池，并随帧交出 NT
- *   共享句柄与共享 fence 值。实时路径不生成 CPU 像素副本。
+ * - [`extract_frame_rgba`] (WP5a): decodes **one frame** at a given time point, scales it to the target width, and hands out RGBA8. It serves the "one frame at a time, at random time points" needs of thumbnails, filmstrips and viewfinder frames. Originally, every cell forked a `ffmpeg -ss ... -frames:v 1`.
+ * - [`open_frame_stream`] (WP6a): a **sequential frame stream** from a starting point and a composition frame rate. It supplies frames one by one to the BCF render pipeline. Originally, each clip had one `ffmpeg … -f rawvideo` pipe.
+ * - `open_dxgi_frame_server` on Windows (unified render R4): `IMFMediaEngine` in frame-server mode writes played frames directly into a three-slot D3D11 BGRA texture pool, and hands out an NT shared handle and a shared fence value with each frame. The real-time path makes no CPU copy of the pixels.
  *
- * 三者不共用一个"通用解码器"抽象：取舍完全不同（顺序解码不能每帧重新 seek，
- * 随机取帧不能建一次 reader 从头读，实时播放不能把 GPU surface 降成 CPU 字节），
- * 平台层各自用系统给对应场景准备的接口。
+ * These three do not share one "generic decoder" abstraction. Their trade-offs are completely different: sequential decoding cannot re-seek every frame, random frame fetching cannot build one reader and read from the start, and real-time playback cannot reduce a GPU surface to CPU bytes. So the platform layer uses the interface the system provides for each scenario.
  *
- * ## 反方向：写像素
+ * ## The reverse direction: writing pixels
  *
- * [`open_mp4_writer`]（WP6b）是同一条规矩的镜像——**在不启动 ffmpeg 子进程的
- * 前提下，把逐帧 RGBA + 整段混音 PCM 写成 H.264/AAC 的 MP4**。契约、后端表与
- * 码率策略见 [`Mp4Writer`] 与 [`video_bitrate`]。
+ * [`open_mp4_writer`] (WP6b) is the mirror image of the same rule. **Without starting an ffmpeg subprocess, it writes per-frame RGBA plus the full mixed PCM audio as an H.264/AAC MP4.** The contract, backend table and bitrate policy are in [`Mp4Writer`] and [`video_bitrate`].
  *
- * ## 后端
+ * ## Backends
  *
- * | 平台 | 后端 | 单帧 | 顺序流 | 实时 GPU 播放帧 | MP4 写入 |
+ * | Platform | Backend | Single frame | Sequential stream | Real-time GPU playback frame | MP4 writing |
  * | --- | --- | --- | --- | --- | --- |
- * | macOS | AVFoundation | `AVAssetImageGenerator`（容差为零的精确取帧）+ CoreGraphics 位图上下文转 RGBA | `AVAssetReader` + `AVAssetReaderTrackOutput`（32BGRA） | App 播放层持有 `CVPixelBuffer` / IOSurface | `AVAssetWriter` + 像素缓冲适配器（VideoToolbox H.264 + AAC） |
- * | Windows | Media Foundation | `IMFSourceReader` + `MFVideoFormat_RGB32`，seek 后按时间戳推进到目标帧 | 同一个 source reader，seek 后一路 `ReadSample` | `IMFMediaEngine` frame-server → 三槽共享 D3D11 BGRA 纹理 + shared fence | `IMFSinkWriter` + H.264 MFT（NV12 输入）+ AAC MFT |
- * | 其余（Linux…） | 无 | [`available`] 返回 `false`，返回 `Err` | 同左 | 无 | [`encode_available`] 返回 `false`，同左 |
+ * | macOS | AVFoundation | `AVAssetImageGenerator` (exact frame fetch with zero tolerance) + CoreGraphics bitmap context converted to RGBA | `AVAssetReader` + `AVAssetReaderTrackOutput` (32BGRA) | The app's playback layer holds `CVPixelBuffer` / IOSurface | `AVAssetWriter` + pixel buffer adaptor (VideoToolbox H.264 + AAC) |
+ * | Windows | Media Foundation | `IMFSourceReader` + `MFVideoFormat_RGB32`, advancing to the target frame by timestamp after a seek | Same source reader, `ReadSample` all the way through after a seek | `IMFMediaEngine` frame-server → three-slot shared D3D11 BGRA textures + shared fence | `IMFSinkWriter` + H.264 MFT (NV12 input) + AAC MFT |
+ * | Others (Linux…) | None | [`available`] returns `false`, and returns `Err` | Same as left | None | [`encode_available`] returns `false`, same as left |
  *
- * **调用方必须自带 ffmpeg 兜底**：本 crate 不发现、不启动任何外部二进制（那是
- * `ccut-exec` 的职责），也不承诺解得开每一种容器。原生失败就是失败，回落与否
- * 由调用方决定。
+ * **The caller must bring its own ffmpeg fallback.** This crate does not discover or start any external binary (that is the job of `ccut-exec`), and it does not promise to decode every container. A native failure is simply a failure. Whether to fall back is up to the caller.
  *
- * ## 确定性边界
+ * ## Determinism boundary
  *
- * 解码出来的像素属于平台解码器：同一份 H.264 码流在 VideoToolbox、Media
- * Foundation 与 ffmpeg swscale 上，YUV→RGB 的矩阵实现、色度上采样与舍入并不
- * 相同。按 `docs/design/bcf/cuccut-format-spec.md` §15.1，视频帧解码像素只承诺**语义等价
- * + 容差**（跨后端灰度 SSIM ≥ 0.95），"取哪一帧"仍是硬承诺。缩略图不是 golden。
+ * Decoded pixels belong to the platform decoder. The same H.264 bitstream on VideoToolbox, Media Foundation and ffmpeg swscale does not share the same YUV→RGB matrix implementation, chroma upsampling or rounding. Per `docs/design/bcf/cuccut-format-spec.md` §15.1, decoded video-frame pixels promise only **semantic equivalence + tolerance** (cross-backend grayscale SSIM ≥ 0.95). "Which frame is taken" remains a hard promise. Thumbnails are not golden.
  */
 
 use std::path::Path;
@@ -80,10 +64,9 @@ pub use playback_windows::{
 };
 pub use scale::{resize_rgba, rotate_rgba, scaled_height};
 
-/// 一帧解码结果：紧密排布（stride = `width * 4`）的 top-down RGBA8。
+/// One decoded frame: tightly packed top-down RGBA8 (stride = `width * 4`).
 ///
-/// alpha 恒为 255：视频帧没有透明度，而下游（`image` 编 JPEG、tiny-skia 合成）
-/// 都假定画布不透明，让平台解码器的"未定义 alpha 字节"漏下去只会变成黑图。
+/// Alpha is always 255. Video frames have no transparency, and downstream code (`image` encoding JPEG, tiny-skia compositing) assumes an opaque canvas. Letting the platform decoder's "undefined alpha bytes" leak through would only turn into a black image.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RgbaFrame {
     pub width: u32,
@@ -103,7 +86,7 @@ impl std::fmt::Debug for RgbaFrame {
 }
 
 impl RgbaFrame {
-    /// 从紧密排布的 RGBA8 字节构造；长度不符时报错而不是留一个半截帧。
+    /// Constructs from tightly packed RGBA8 bytes. If the length does not match, it reports an error instead of leaving a half-built frame.
     pub fn new(width: u32, height: u32, data: Vec<u8>) -> Result<Self> {
         let expected = width as usize * height as usize * 4;
         if width == 0 || height == 0 || data.len() != expected {
@@ -119,7 +102,7 @@ impl RgbaFrame {
         })
     }
 
-    /// `(x, y)` 处的 RGBA；越界返回 `None`。测试与像素判定用。
+    /// The RGBA at `(x, y)`. Returns `None` when out of bounds. Used by tests and pixel checks.
     pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 4]> {
         if x >= self.width || y >= self.height {
             return None;
@@ -134,15 +117,14 @@ impl RgbaFrame {
     }
 }
 
-/// 当前平台是否有原生解码实现（单帧抽取与顺序帧流同进同出）。
+/// Whether the current platform has a native decoding implementation. Single-frame extraction and sequential frame streams are available together.
 ///
-/// `true` 不代表任意文件都解得开（编码 / 容器仍可能不受支持），只代表"值得先试
-/// 原生路径"。调用方据此决定要不要在原生失败时打 ffmpeg 兜底的日志。
+/// `true` does not mean every file can be decoded, since codecs and containers may still be unsupported. It only means "worth trying the native path first". Callers use it to decide whether to log an ffmpeg fallback when the native path fails.
 pub const fn available() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
-/// 当前平台原生后端的标识。按 §15.1「解码后端必须可观测」用于诊断输出。
+/// The identifier of the current platform's native backend. Per §15.1 "the decoding backend must be observable", it is used in diagnostic output.
 pub const fn backend() -> &'static str {
     #[cfg(target_os = "macos")]
     {
@@ -150,10 +132,7 @@ pub const fn backend() -> &'static str {
     }
     #[cfg(target_os = "windows")]
     {
-        // 与 `native_video/platform.rs` 等处的导出后端标识同名（WP5b 统一取值
-        // 表）：仓库里 Windows 编码侧一律写 `"media-foundation"`（带连字符），
-        // 这里之前独自写的是 `"mediafoundation"`——没有任何契约信封读过这个
-        // 值（只进内部错误文案），改名不破坏兼容性。
+        // Same name as the export backend identifiers in `native_video/platform.rs` and elsewhere (the unified value table of WP5b). In the repo, the Windows encoding side always writes "media-foundation" (with a hyphen). This place previously wrote "mediafoundation" on its own. No contract envelope has ever read this value (it only went into internal error text), so renaming it does not break compatibility.
         "media-foundation"
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -162,23 +141,15 @@ pub const fn backend() -> &'static str {
     }
 }
 
-/// 在 `time_seconds` 处解一帧，缩放到 `target_width`（高度按源显示宽高比、
-/// 偶数对齐），返回 RGBA8。
+/// Decodes one frame at `time_seconds`, scaled to `target_width`. The height follows the source's display aspect ratio and is aligned to an even number. Returns RGBA8.
 ///
-/// 语义对齐迁移前的 `ffmpeg -ss <t> -i <src> -frames:v 1 -vf scale=<w>:-2`：
+/// Semantics aligned with the pre-migration `ffmpeg -ss <t> -i <src> -frames:v 1 -vf scale=<w>:-2`:
 ///
-/// - **取哪一帧**：覆盖 `t` 的那一帧（`t` 落在某帧的呈现区间内即取该帧），不是
-///   "`t` 之后的第一个关键帧"。macOS 由 `requestedTimeTolerance*` 置零保证，
-///   Windows 由 seek 后按时间戳逐帧推进保证。
-/// - **旋转**：按容器的旋转元数据摆正到显示方向（ffmpeg CLI 的 autorotate 默认
-///   开启，两条路径因此一致）。注意这与 `ccut-media-probe` 的 `naturalW/H`
-///   **不同口径**：那边是不含旋转的编码尺寸。
-/// - **尺寸**：宽恰为 `target_width`，高由显示宽高比推出并偶数对齐
-///   （[`scaled_height`]）。源比目标小时同样放大，不像平台 API 的
-///   `maximumSize` 那样只缩不放。
+/// - **Which frame is taken**: the frame that covers `t`. If `t` falls within a frame's presentation interval, that frame is taken. It is not "the first keyframe after `t`". On macOS, `requestedTimeTolerance*` set to zero guarantees this. On Windows, advancing frame by frame by timestamp after the seek guarantees it.
+/// - **Rotation**: the frame is rotated upright to display orientation according to the container's rotation metadata. ffmpeg CLI's autorotate is on by default, so the two paths agree. Note that this is a **different basis** from `naturalW/H` in `ccut-media-probe`, which is the encoded size without rotation.
+/// - **Size**: the width is exactly `target_width`. The height follows from the display aspect ratio and is aligned to an even number ([`scaled_height`]). If the source is smaller than the target, it is scaled up too, unlike the platform API's `maximumSize`, which only scales down.
 ///
-/// 尺寸只依赖 `(源显示尺寸, target_width)`，与 `t` 无关：同一个文件的每一格
-/// filmstrip 因此必然同尺寸，拼图不需要再对齐。
+/// The size depends only on `(source display size, target_width)`, not on `t`. So every cell of a file's filmstrip has the same size, and the mosaic needs no further alignment.
 pub fn extract_frame_rgba(path: &Path, time_seconds: f64, target_width: u32) -> Result<RgbaFrame> {
     if target_width == 0 {
         anyhow::bail!("target_width 必须 > 0");

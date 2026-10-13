@@ -6,24 +6,24 @@ import { sniffBytes, VOICE_AUDIO_TYPES } from './media-sniff.ts';
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 音色包 `.bcvoice`（架构设计 §5.9）：一个 UTF-8 的 JSON 文件，参考录音以 base64 内嵌。
+ * Voice package `.bcvoice` (architecture design §5.9): a UTF-8 JSON file with the reference recording embedded as base64.
  *
  * ```json
  * {
  *   "format": "cuccut.voice-package",
  *   "version": 1,
  *   "name": "我的声音",
- *   "language": "zh-CN",            // 可为 null
+ *   "language": "zh-CN",            // may be null
  *   "transcript": "参考录音的逐字稿",
- *   "origin": "recorded",           // 或 imported
+ *   "origin": "recorded",           // or imported
  *   "consent": { "declared": true, "declaredAt": "2026-…Z", "statement": "…" },
  *   "reference": { "fileName": "ref.wav", "mediaType": "audio/wav", "sha256": "sha256:<hex>", "byteLength": 123, "data": "<base64>" }
  * }
  * ```
  *
- * - 只包含声音本身与授权声明；各 Provider 上的克隆不导出（换一台机器、换一个账号都要重新克隆）。
- * - 校验：`format` 与 `version`；字段的类型与长度；整个文件 ≤ 32 MiB，录音 ≤ 20 MiB；base64 解出的字节数与摘要和声明一致；
- *   文件头是 wav、mp3 或 flac，且与 `mediaType` 一致；最后由 Runtime 用 ffprobe 解码一遍（库里的 `validateAudio`）。
+ * - Contains only the voice itself and the consent statement. Clones on each Provider are not exported (re-cloning is needed on another machine or under another account).
+ * - Validation: `format` and `version`; the types and lengths of fields; the whole file must be ≤ 32 MiB and the recording ≤ 20 MiB; the byte count decoded from base64 must match the digest and the declaration;
+ *   the file header must be wav, mp3, or flac and must match `mediaType`. Finally, the Runtime decodes it once with ffprobe (`validateAudio` in the library).
  */
 
 export const VOICE_PACKAGE_FORMAT = 'cuccut.voice-package';
@@ -33,7 +33,7 @@ export const VOICE_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
 
 export interface DecodedVoicePackage {
   fields: VoiceFields;
-  /** 包里记的授权时间；导入时沿用。 */
+  /** The consent time recorded in the package. Kept on import. */
   declaredAt: string | null;
   reference: { bytes: Buffer; fileName: string; mediaType: string };
 }
@@ -61,7 +61,7 @@ export function encodeVoicePackage(content: VoiceContent, reference: Buffer): st
   )}\n`;
 }
 
-/** `value` 是解析过的 JSON。 */
+/** `value` is the parsed JSON. */
 export function decodeVoicePackage(value: unknown): DecodedVoicePackage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw formatInvalid(SL.voicePackageNotObject());
   const v = value as Record<string, unknown>;
@@ -97,7 +97,7 @@ export function decodeVoicePackage(value: unknown): DecodedVoicePackage {
   return { fields, declaredAt, reference: { bytes, fileName, mediaType: sniffed.mediaType } };
 }
 
-/** 只留文件名本身：去掉目录与控制字符。 */
+/** Keep only the file name itself: remove directories and control characters. */
 export function safeFileName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? '';
   // eslint-disable-next-line no-control-regex

@@ -1,14 +1,14 @@
 /*
- * 部分机制移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra），modified：
- * - packages/server/src/server/agent/providers/claude/agent.ts 的 createAsyncMessageInput（流式输入队列）
- * - packages/server/src/server/agent/providers/claude/query.ts 的 queryFactory 注入
+ * Some mechanisms are ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra), modified:
+ * - createAsyncMessageInput in packages/server/src/server/agent/providers/claude/agent.ts (streaming input queue)
+ * - queryFactory injection in packages/server/src/server/agent/providers/claude/query.ts
  */
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelInfo, Options, PermissionMode, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 /**
- * Driver 用到的那部分 `Query`。SDK 的 `query()` 返回值在结构上满足它；测试注入的假 Query
- * （`testing/fake-claude.ts`）只实现这些，不必追着 SDK 完整的 `Query` 类型走。
+ * The part of `Query` that the driver uses. The SDK's `query()` return value structurally satisfies it; the fake Query injected by tests
+ * (`testing/fake-claude.ts`) implements only these, so it does not have to keep up with the SDK's full `Query` type.
  */
 export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
   interrupt(): Promise<unknown>;
@@ -23,20 +23,20 @@ export interface ClaudeQueryParams {
   options: Options;
 }
 
-/** 起一个 Query。默认用 SDK 的 `query()`；测试注入假的，不起进程、不登录。 */
+/** Starts a Query. Uses the SDK's `query()` by default; tests inject a fake one, which starts no process and does not log in. */
 export type ClaudeQueryFactory = (params: ClaudeQueryParams) => ClaudeQuery;
 
 export const sdkQueryFactory: ClaudeQueryFactory = (params) => sdkQuery(params);
 
 /**
- * 长驻 Query 的流式输入：一个可以随时 push 的队列。
+ * Streaming input of a long-lived Query: a queue to which items can be pushed at any time.
  *
- * 整个会话只有这一条输入流。追加消息（steer）也 push 到这里，而不是另调 `Query.streamInput()`：
- * SDK 的 streamInput 在传入的 iterable 结束后会关掉 CLI 的 stdin，会话就再也收不到消息了。
+ * The whole session has only this one input stream. Appended messages (steer) are also pushed here, rather than calling `Query.streamInput()` separately:
+ * the SDK's streamInput closes the CLI's stdin once the passed iterable ends, and the session would never receive messages again.
  */
 export interface MessageInput<T> {
   push(item: T): void;
-  /** 结束输入：CLI 读到 stdin 结束后退出。 */
+  /** End input: the CLI exits once it reads the end of stdin. */
   end(): void;
   readonly iterable: AsyncIterable<T>;
 }

@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import type { QuickPick } from '../model/tts-quick-test.ts';
 
-/** 一次提交的试听：任务 ID、提交时的请求身份与选择（结果行按它写）。 */
+/** Preview for one submission: task ID, the request identity and choices at submit time (the result row is written from it). */
 export interface QuickRun {
   jobId: string;
   key: string;
   pick: QuickPick;
 }
 
-/** 一行模型的试听草稿：选择、最近一次提交、上一段做成了的（最近一次没做成时仍放它）。 */
+/** Preview draft for one model row: choices, the latest submission, and the previous successful result (kept when the latest one did not succeed). */
 export interface QuickDraft {
   pick: QuickPick;
   run: QuickRun | null;
@@ -16,8 +16,8 @@ export interface QuickDraft {
 }
 
 /**
- * 设置 › 模型 › 语音合成 › 本地模型的「试听」：哪几行展开着、每只模型的选择与最近的结果。按模型包 ID 记，收起、换页再回来都还在；
- * 只在这次运行里有效，不落盘。任务本身在 `jobs` 主题里，这里只记 ID。
+ * "Preview" for local models under Settings › Models › Speech synthesis: which rows are expanded, and each model's choices and latest results. Keyed by model pack ID; it survives collapsing, switching pages and coming back;
+ * valid only for this run, not saved to disk. The tasks themselves are in the `jobs` topic; only IDs are recorded here.
  */
 export interface TtsQuickStore {
   open: string[];

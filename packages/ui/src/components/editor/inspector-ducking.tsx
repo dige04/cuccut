@@ -23,15 +23,14 @@ const footer = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-
 const footerText = style({ flexGrow: 1 });
 
 /**
- * 压低原声（视频格式规范 §3.9 的闪避）：选中的片段在另一条轨道发声时自动压低。规则存在序列上，压低多少、压下与回升
- * 的快慢都在这一张卡里；改动松手即提交。预览与导出用同一份增益包络（帧计划算好的增益）。
+ * Lower the original audio (ducking, video format spec §3.9): when the selected clip is audible on another track, its original audio is automatically lowered. The rule lives on the sequence. How much to lower, and how fast it ducks and recovers, are set in this card. The change is committed on release. Preview and export use the same gain envelope (the gain computed by the frame plan).
  */
 export function DuckingCard({ item, sequence, edit, canChange }: ItemPageProps<AudioItem | VideoItem>) {
   const rule = duckingRuleFor(sequence, item);
   const options = triggerOptions(sequence, item);
   const on = !!rule?.enabled;
   const trigger = rule ? singleTrigger(rule) : null;
-  // 规则跟着的轨道已经没有发声的片段（或被删掉）时，也列出来，否则选择框是空的。
+  // When the track the rule follows no longer has any audible clip (or it was deleted), still list it, or the selection box would be empty.
   const listed = trigger && !options.some((o) => o.key === trigger) ? [...options, { key: trigger, label: IC.silentTrack }] : options;
   const values = rule ? ruleValues(rule) : null;
   const shared = !!rule && !isOwnRule(rule, item);

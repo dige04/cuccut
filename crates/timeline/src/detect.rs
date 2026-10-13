@@ -139,9 +139,7 @@ const VI_SOFT: &[&[&str]] = &[
     &["ừ"],
 ];
 
-/// 按语言取口癖短语（硬口癖 + 软口癖，与 [`detect_fillers`] 同一张表），每条短语是
-/// 若干已归一的词。`lang` 按主子标签比较（`en-US` → `en`）；没有这门语言的表时返回
-/// `None`，调用方据此不产出口癖类（`ccut cut script` 把这类段落归 `extra`）。
+/// Gets the filler phrases for a language (hard fillers + soft fillers, from the same table as [`detect_fillers`]); each phrase is a sequence of normalized words. `lang` is compared by its primary subtag (`en-US` → `en`). It returns `None` when there is no table for this language, and the caller then produces no filler category (`ccut cut script` files such segments under `extra`).
 pub fn filler_phrases(lang: &str) -> Option<Vec<Vec<String>>> {
     let primary = lang
         .split(['-', '_'])
@@ -461,7 +459,7 @@ mod tests {
                 .unwrap()
                 .contains(&vec!["呃".to_owned()])
         );
-        // 没有表的语言不给短语，调用方据此不产出口癖类。
+        // A language without a table gets no phrases, so the caller produces no filler category.
         assert!(filler_phrases("vi-VN").unwrap().contains(&vec!["ừm".to_owned()]));
         assert_eq!(filler_phrases("ja"), None);
         assert_eq!(filler_phrases(""), None);

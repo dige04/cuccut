@@ -1,10 +1,6 @@
-//! 等价的 Timeline 与 BCF 文档必须得到同一个 `MotionProgram` 指纹
-//! （设计 §10 阶段 1 验收）。
+//! Equivalent Timeline and BCF documents must yield the same `MotionProgram` fingerprint (design §10 stage 1 acceptance).
 //!
-//! 映射表刻意留在测试里，不进生产代码：只有**语义上确实是同一条配方**的组合
-//! 才有资格参与。`timeline.enter.fade` 的缺省曲线是 `easeOutCubic`，
-//! 而 BCF `fadeIn` 的关键帧没有 ease（等价 `linear`），所以 Timeline 侧显式
-//! 写 `ease: "linear"`；`exit: none` 用来阻断镜像退场。
+//! The mapping table is deliberately kept in the test and not in production code: only combinations that are **semantically the same recipe** are eligible. `timeline.enter.fade`'s default curve is `easeOutCubic`, while BCF `fadeIn`'s keyframes have no ease (equivalent to `linear`), so the Timeline side explicitly writes `ease: "linear"`. `exit: none` is used to block the mirrored exit.
 
 use motion::lower_bcf::{preset_channels, to_program};
 use motion::lower_timeline::{AnimationInput, SlotInput, Window, lower_timeline_animation};
@@ -37,7 +33,7 @@ fn timeline_fade(dur: f64) -> motion::MotionProgram {
         },
     )
     .expect("timeline program");
-    // Timeline 的窗口是元素局部时间；比对前平移到绝对时间。
+    // The Timeline window is element-local time; shift to absolute time before comparing.
     lowered.program.rebased(START)
 }
 
@@ -67,7 +63,7 @@ fn timeline_fade_and_bcf_fade_in_share_one_fingerprint() {
 
 #[test]
 fn the_provenance_fingerprint_still_separates_the_two_registries() {
-    // 等价指纹相同，但配方来源不同：full 指纹必须能区分。
+    // Equivalent fingerprints, but the recipe sources differ: the full fingerprint must be able to tell them apart.
     assert_ne!(
         timeline_fade(DUR).full_fingerprint(),
         bcf_fade_in(START, DUR).full_fingerprint()
@@ -88,7 +84,7 @@ fn the_fingerprint_is_sensitive_to_time_and_duration() {
 
 #[test]
 fn integer_and_float_endpoints_do_not_split_the_fingerprint() {
-    // BCF `fadeIn` 的端点是整数 `0`/`1`，Timeline 侧是 `0.0`/`1.0`。
+    // BCF `fadeIn`'s endpoints are integer `0`/`1`; on the Timeline side they are `0.0`/`1.0`.
     let bcf = bcf_fade_in(START, DUR);
     let track = &bcf.property_tracks[0];
     assert_eq!(track.property.as_str(), "opacity");

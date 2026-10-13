@@ -1,7 +1,6 @@
-//! Surface 级缓存（设计 §6.6）。键 = surface 内容指纹。
+//! Surface-level cache (design §6.6). Key = surface content fingerprint.
 //!
-//! 帧数与字节**双上限**：1080p 一张 8.3MB、4K 一张 33MB，只按帧数限容会在
-//! 高分辨率下驻留数百 MB。命中计数上浮到 `RenderStats.reused_surfaces`。
+//! Both a frame-count and a byte **dual limit**: one 1080p frame is 8.3 MB and one 4K frame is 33 MB, so limiting only by frame count would keep several hundred MB resident at high resolution. Hit counts are surfaced to `RenderStats.reused_surfaces`.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -9,7 +8,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tiny_skia::Pixmap;
 
-/// 默认字节上限：128MB（1080p 约 15 张，4K 约 3 张）。
+/// Default byte limit: 128 MB (about 15 at 1080p, about 3 at 4K).
 pub const DEFAULT_SURFACE_CACHE_BYTES: usize = 128 << 20;
 
 pub struct SurfaceCache {
@@ -29,7 +28,7 @@ impl SurfaceCache {
         }
     }
 
-    /// 转场两侧 + 效果链中间产物的常用容量。
+    /// Typical capacity for the intermediate products on both sides of a transition and in an effect chain.
     pub fn with_frame_cap(frame_cap: usize) -> Self {
         SurfaceCache::new(frame_cap, DEFAULT_SURFACE_CACHE_BYTES)
     }
@@ -53,7 +52,7 @@ impl SurfaceCache {
             return;
         }
         if bytes > self.byte_cap {
-            return; // 单张就超预算：不缓存，也不把已有条目全部挤掉
+            return; // A single entry exceeds the budget: do not cache it, and do not evict all existing entries either
         }
         entries.push_back((key, value));
         let mut total: usize = entries.iter().map(|(_, v)| pixmap_bytes(v)).sum();
@@ -114,7 +113,7 @@ mod tests {
 
     #[test]
     fn byte_cap_evicts_before_frame_cap() {
-        // 每张 8×8 = 256 字节；上限 600 字节 ⇒ 最多 2 张。
+        // Each 8×8 is 256 bytes; limit 600 bytes ⇒ at most 2 entries.
         let cache = SurfaceCache::new(64, 600);
         cache.put(1, pixmap(8));
         cache.put(2, pixmap(8));

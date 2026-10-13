@@ -19,11 +19,11 @@ import { Harness } from './harness.ts';
 import { silentLogger } from './logger.ts';
 import type { TaskBudgetPort } from './task-contracts.ts';
 
-/** 任务合同（架构设计 §3.2）：默认合同、修订与持久、修改的限制、改变目标与验收检查。假 Driver，全部在临时目录里。 */
+/** Task contracts (architecture design §3.2): default contract, revisions and persistence, limits on changes, changing the goal and acceptance checks. Fake Driver, everything in a temp directory. */
 
 const capabilities: DriverProbe['capabilities'] = { steer: false, approvals: true, resume: false, images: false };
 
-/** 回合开始后一直开着，直到测试 `finish()`；中断请求很快以 interrupted 结束回合。 */
+/** Stays open from turn start until the test calls `finish()`. An interrupt request ends the turn quickly with interrupted. */
 class Session implements AgentSession {
   readonly id = newId('fake');
   readonly capabilities = capabilities;
@@ -112,7 +112,7 @@ class Driver implements AgentDriver {
   }
 }
 
-/** 内存里的任务预算账本：只记上限（用量的规则由授权账本测）。 */
+/** In-memory task budget ledger. It records only the limit (the rules for usage are tested in the grant ledger). */
 class Budgets implements TaskBudgetPort {
   readonly policies = new Map<Id, TaskBudgetPolicy>();
 
@@ -185,7 +185,7 @@ async function rejectionOf(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-/** 发送并等回合开始。 */
+/** Sends and waits for the turn to start. */
 async function start(conversationId: Id, text: string, extra: Partial<Parameters<Harness['send']>[0]> = {}) {
   const { taskId } = await harness.send({ conversationId, text, commandId: newId('cmd'), ...extra });
   const session = await until(() => driver.sessions.at(-1));
@@ -243,7 +243,7 @@ describe('任务合同', () => {
     });
     expect(budget).toMatchObject({ taskId, maxCalls: null, cap: null });
 
-    // 会话快照：任务条目带着合同；任务中心：任务行带着修订号。
+    // Session snapshot: task entries carry the contract. Task center: task rows carry the revision number.
     const task = harness.getConversation(conversation.id).items.find((i) => i.id === taskId);
     expect(task).toMatchObject({ kind: 'task', contract: { revision: 1, goal: '把开头剪短' } });
     expect(harness.tasksSnapshot().tasks.find((t) => t.taskId === taskId)).toMatchObject({ contractRevision: 1 });
@@ -284,16 +284,16 @@ describe('任务合同', () => {
       budgetPolicyRef: first.budgetPolicyRef,
     });
     expect(budgets.taskBudget(taskId)).toMatchObject({ maxCalls: 2, cap: { amount: '1.00', currency: 'USD' } });
-    // 同一个 commandId 只生效一次。
+    // The same commandId takes effect only once.
     expect(harness.updateContract({ taskId, expectedRevision: 1, commandId, patch: {} }).contract.revision).toBe(2);
 
-    // 修订号不对：冲突，不产生修订。
+    // Wrong revision number: conflict, no revision is produced.
     const stale = rejection(() =>
       harness.updateContract({ taskId, expectedRevision: 1, commandId: newId('cmd'), patch: { constraints: [] } }),
     );
     expect(stale).toMatchObject({ code: 'conflict', details: { code: 'CONTRACT_REVISION_CONFLICT', currentRevision: 2 } });
 
-    // 合同的 autonomy 就是会话的模式：经合同改等于切换模式；切换会话的模式也给合同记一个修订。
+    // The contract's autonomy is the session's mode: changing it through the contract is the same as switching mode, and switching the session's mode also records a revision on the contract.
     const third = harness.updateContract({ taskId, expectedRevision: 2, commandId: newId('cmd'), patch: { autonomy: 'auto' } }).contract;
     expect(third).toMatchObject({ revision: 3, autonomy: 'auto', change: { reason: 'updated', fields: ['autonomy'] } });
     expect(harness.agentRun(conversation.id).mode).toBe('auto');
@@ -305,27 +305,27 @@ describe('任务合同', () => {
       change: { reason: 'mode', fields: ['autonomy'] },
     });
 
-    // 检查结果。
+    // Check result.
     const [check] = harness.listChecks(taskId).checks;
     const recorded = harness.recordCheck({ taskId, checkId: check!.checkId, outcome: 'passed', note: '逐句核对过' }, 'agent').result;
     expect(recorded).toMatchObject({ checkId: check!.checkId, contractRevision: 4, outcome: 'passed', recordedBy: 'agent' });
     expect(rejection(() => harness.recordCheck({ taskId, checkId: 'check_nope', outcome: 'passed' }))).toMatchObject({ code: 'not-found' });
 
-    // 旧修订可查。
+    // Old revisions can still be queried.
     expect(harness.getContract(taskId, 1)).toMatchObject({ contract: { revision: 1, protectedRefs: [] }, latestRevision: 4 });
     expect(harness.listContracts({ taskId }).contracts.map((c) => c.revision)).toEqual([1, 2, 3, 4]);
     expect(rejection(() => harness.getContract(taskId, 9))).toMatchObject({ code: 'not-found' });
 
     session.finish();
     await until(() => harness.agentRun(conversation.id).taskId === null);
-    // 任务结束之后不能再改（要换目标用 changeGoal），检查结果仍可以记。
+    // After the task ends it can no longer be changed (use changeGoal for a new goal), but check results can still be recorded.
     expect(rejection(() => harness.updateContract({ taskId, expectedRevision: 4, commandId: newId('cmd'), patch: {} }))).toMatchObject({
       code: 'conflict',
       details: { code: 'TASK_NOT_RUNNING' },
     });
     harness.recordCheck({ taskId, checkId: check!.checkId, outcome: 'failed' });
 
-    // 重启：从磁盘读回。
+    // Restart: read back from disk.
     await harness.shutdown();
     harness = await open();
     expect(harness.listContracts({ taskId }).contracts.map((c) => c.revision)).toEqual([1, 2, 3, 4]);
@@ -413,14 +413,14 @@ describe('任务合同', () => {
     const notice = harness.getConversation(conversation.id).items.find((i) => i.kind === 'notice' && i.text.includes('照常完成'));
     expect(notice).toBeDefined();
 
-    // 新任务结束之后再换目标：stop 仍取消这个会话还没结束的 Job。
+    // After a new task ends, changing the goal again: stop still cancels this session's Job that has not yet ended.
     driver.sessions.at(-1)!.finish();
     await until(() => harness.agentRun(conversation.id).taskId === null);
     const again = await harness.changeGoal({ taskId: kept.taskId, goal: '换成中文', previousWork: 'stop', commandId: newId('cmd') });
     expect(cancelled).toEqual([conversation.id]);
     expect(again.contract.supersedes).toEqual({ taskId: kept.taskId, previousWork: 'stop' });
 
-    // 别的任务在运行时不能换旧任务的目标。
+    // While another task is running, the goal of an old task cannot be changed.
     const busy = await rejectionOf(harness.changeGoal({ taskId, goal: 'x', previousWork: 'stop', commandId: newId('cmd') }));
     expect(busy.code).toBe('busy');
   });
@@ -431,7 +431,7 @@ describe('任务合同', () => {
     session.finish();
     await until(() => harness.agentRun(conversation.id).taskId === null);
     await harness.shutdown();
-    // 去掉合同，模拟早先的记录：写成旧格式的整份 `<id>.json`，读入时迁移。
+    // Remove the contract to simulate an earlier record: written in the old format as a whole `<id>.json`, migrated on read.
     const log = path.join(home.conversationsDir, `${conversation.id}.jsonl`);
     const store = new ConversationStore(home.conversationsDir);
     await store.load();

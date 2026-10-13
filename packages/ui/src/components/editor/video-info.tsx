@@ -14,8 +14,8 @@ const NO_ASSETS: Record<Id, AssetRecord> = {};
 const NO_DOCUMENTS: Record<Id, DocumentRecord> = {};
 
 /**
- * 编辑器顶栏 ⓘ 打开的视频详情：事实都从打开的视频快照与转写正文里来。正文与文稿面板同一份缓存，面板没取过时按同样方式取。
- * 名字经 `renameVideo` 改，与点标题改名是同一笔修改；视频暂时不能修改时名称置灰。
+ * Video details opened by ⓘ in the editor top bar: all the facts come from the opened video's snapshot and the transcript body. The body shares a cache with the transcript panel; if the panel has not fetched it, it is fetched the same way.
+ * Renaming goes through `renameVideo`, the same edit as renaming by clicking the title. When the video cannot currently be edited, the name is greyed out.
  */
 export function EditorVideoInfo({ video, sequence, onClose }: { video: OpenVideo; sequence: Sequence | null; onClose(): void }) {
   const { apply } = useEditorActions();
@@ -55,17 +55,17 @@ export function EditorVideoInfo({ video, sequence, onClose }: { video: OpenVideo
   );
 }
 
-/** 几份文档的正文（同 `useDocumentBody`，一次接一组）：没取到的先是 undefined，取到了重画。 */
+/** Bodies of several documents (same as `useDocumentBody`, subscribed as a group): undefined until fetched, redrawn once fetched. */
 function useDocumentBodies(records: readonly DocumentRecord[]): unknown[] {
   const documents = useRuntime().videos.documents;
   const keys = records.map((r) => `${r.id}@${r.currentRevision}`).join('|');
   useEffect(() => {
     for (const record of records) documents.load(record.id, record.currentRevision);
-    // keys 已经概括了 records 里要取的东西。
+    // keys already summarizes what records needs to fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents, keys]);
   const subscribe = useCallback((listener: () => void) => documents.subscribe(listener), [documents]);
-  // 快照取一个字符串签名，免得每次渲染都是新数组；真正的正文在渲染时 peek。
+  // The snapshot takes a string signature, so that every render does not produce a new array. The actual body is peeked at render time.
   useSyncExternalStore(subscribe, () => records.map((r) => (documents.peek(r.id, r.currentRevision) === undefined ? 0 : 1)).join(''));
   return records.map((r) => documents.peek(r.id, r.currentRevision));
 }

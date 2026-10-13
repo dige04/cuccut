@@ -15,7 +15,7 @@ import {
 } from './font-library-store.ts';
 import { useJobs } from './jobs-store.ts';
 
-// Node 里没有可用的 localStorage：给「最近用过」的持久化一个内存版本，先于 store 模块加载。
+// Node has no usable localStorage: give the "recently used" persistence an in-memory version, loaded before the store module.
 vi.hoisted(() => {
   const data = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
@@ -45,7 +45,7 @@ const status = (family: string, patch: Partial<FontFamilyStatus> = {}): FontFami
   ...patch,
 });
 
-/** 假的 Runtime：记下请求，按方法给回应。 */
+/** Fake Runtime: records requests and replies by method. */
 function fakeClient(handlers: Record<string, (params: Record<string, unknown>) => unknown>) {
   const calls: [string, Record<string, unknown>][] = [];
   return {
@@ -203,7 +203,7 @@ describe('字体库的状态', () => {
     const client = fakeClient({ 'fonts.downloaded': () => ({ faces: [lobster], totalBytes: 10, inUse }) });
     useFontLibrary.setState({ downloaded: { faces: [lobster], totalBytes: 10, inUse: [] } });
     const stop = startFontLibrarySync(client);
-    // 挂上时不重取（设置页自己取过）；别的任务变化不重取。
+    // Not refetched on mount (the settings page fetched it itself). Changes to other tasks do not refetch.
     useJobs.setState({ jobs: [job({ jobId: 'job_t', kind: 'transcribe' })] });
     await settle();
     expect(client.calls).toEqual([]);
@@ -211,7 +211,7 @@ describe('字体库的状态', () => {
     useJobs.setState({ jobs: [job({ jobId: 'job_e', kind: 'export', state: 'queued', phase: 'queued' })] });
     await settle();
     expect(useFontLibrary.getState().downloaded!.inUse).toEqual(['Lobster']);
-    // 同一个导出往下走（排队 → 生成）不重取。
+    // The same export moving on (queued → generating) does not refetch.
     useJobs.setState({ jobs: [job({ jobId: 'job_e', kind: 'export', phase: 'generating' })] });
     await settle();
     expect(client.calls).toHaveLength(1);
@@ -234,7 +234,7 @@ describe('字体库的状态', () => {
       fallback: 'Noto Sans SC',
     });
     const whole: FontsUsageResult = { families: [used('Lobster'), used('Ma Shan Zheng')], fallback: 'Noto Sans SC', started: [] };
-    // 字幕用 Ma Shan Zheng，文字用 Lobster。回应按请求的反序到：先请求的（烧）后到。
+    // Subtitles use Ma Shan Zheng, text uses Lobster. Responses arrive in reverse request order: the one requested first (burn) arrives last.
     const replies: (() => void)[] = [];
     const client = fakeClient({
       'fonts.usage': (p) =>

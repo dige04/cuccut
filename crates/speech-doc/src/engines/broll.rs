@@ -1,4 +1,4 @@
-//! B-roll 内容建议：LLM 只看编号句子，宿主用稳定词 id 还原时间锚。
+//! B-roll content suggestions: the LLM sees only numbered sentences, and the host restores time anchors from stable word ids.
 
 use serde::{Deserialize, Serialize};
 
@@ -66,8 +66,7 @@ pub fn lint_agent_answer(payload: &str, answer: &str) -> Vec<String> {
         Ok(value) => value,
         Err(error) => return vec![error.to_string()],
     };
-    // 镜像引擎的单元验收（§2.5）：单条非法只丢那一条，答案照常可用；只有
-    // **全部**非法（且确实给了建议）才判整份答案不可用。
+    // Unit acceptance for the mirror engine (§2.5): a single illegal item drops only that item, and the answer stays usable. Only when **all** items are illegal (and suggestions were actually given) is the whole answer judged unusable.
     let offered = answer.suggestions.len();
     let problems: Vec<String> = answer
         .suggestions
@@ -132,9 +131,7 @@ start/end are inclusive zero-based sentence indices. Never emit timestamps or me
                 .then(|| "the previous suggestions used invalid sentence ranges".to_owned()),
         })?;
         let answer: Answer = decode(&raw)?;
-        // 单元验收（重试策略重设计 §2.5）：非法建议**丢该条**，其余照常收下；
-        // 全部非法（且模型确实给了建议）才判整份答案不可用并重试。B-roll 建议
-        // 之间彼此独立，为一条越界区间重掷整份答案是纯烧 token。
+        // Unit acceptance (retry-strategy redesign §2.5): an illegal suggestion **drops that item**, and the rest are accepted as usual. Only when all of them are illegal (and the model did give suggestions) is the whole answer judged unusable and retried. B-roll suggestions are independent of each other. Re-rolling the whole answer over one out-of-range interval is pure token waste.
         let offered = answer.suggestions.len();
         let mut dropped = 0usize;
         let accepted: Vec<BrollSuggestion> = answer
@@ -228,7 +225,7 @@ mod tests {
         assert_eq!(artifact.suggestions[0].last_word_id, "w1");
     }
 
-    /// §2.5：单条非法建议只丢那一条，其余照常接受，不重掷整份答案。
+    /// §2.5: a single illegal suggestion drops only that one. The rest are accepted, and the whole answer is not re-rolled.
     #[test]
     fn broll_drops_invalid_suggestions_instead_of_rejecting_all() {
         let mut doc = TranscriptDoc::new(
@@ -264,7 +261,7 @@ mod tests {
                 glue: false,
             },
         ];
-        // 第一条越界、第二条模式非法、第三条合法。
+        // The first is out of range, the second has an illegal mode, the third is legal.
         let mut llm = FakeLlm::ok([r#"{"suggestions":[
                 {"start":0,"end":9,"mode":"pip","query":"out of range","reason":""},
                 {"start":0,"end":0,"mode":"banner","query":"bad mode","reason":""},
@@ -276,7 +273,7 @@ mod tests {
         assert_eq!(artifact.suggestions.len(), 1);
         assert_eq!(artifact.suggestions[0].query, "planet Mars orbit");
 
-        // 全部非法才判整份答案不可用（这里三次都坏 ⇒ 重试耗尽后上抛）。
+        // Only if all are illegal is the whole answer judged unusable (here all three are bad ⇒ after retries are exhausted, propagate).
         let mut llm = FakeLlm::ok([
             r#"{"suggestions":[{"start":0,"end":9,"mode":"pip","query":"x","reason":""}]}"#,
             r#"{"suggestions":[{"start":0,"end":9,"mode":"pip","query":"x","reason":""}]}"#,

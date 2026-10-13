@@ -1,6 +1,6 @@
 import type { Seq } from './domain.ts';
 
-/** 序号在线上是十进制字符串（D06），比较与递增走 BigInt。 */
+/** On the wire, sequence numbers are decimal strings (D06); comparison and increment use BigInt. */
 export const ZERO_SEQ: Seq = '0';
 
 export function nextSeq(seq: Seq): Seq {

@@ -29,7 +29,7 @@ import { vi } from './font-library.vi.ts';
 const fontsN = (n: number) => (n === 1 ? '1 font' : `${n} fonts`);
 const familiesN = (n: number) => (n === 1 ? '1 family' : `${n} families`);
 
-/** 字体库的文案（英文是键与类型的来源，译文在 `font-library.zh-Hans.ts`）。族名、许可名、Google Fonts 不翻。 */
+/** Copy for the font library (the English is the source of keys and types; translations are in `font-library.zh-Hans.ts`). Family names, license names and Google Fonts are not translated. */
 const en = {
   state: {
     'built-in': 'Built-in',
@@ -99,7 +99,7 @@ const en = {
   barMissed: (n: number) => `${fontsN(n)} couldn’t be fetched; showing a fallback font`,
   skipped: 'Skipped',
   notDownloaded: 'Not downloaded',
-  /** 一串族名（导出那几句里）。 */
+  /** A list of family names (in the export sentences). */
   quoteList: (names: readonly string[]) => new Intl.ListFormat(intlLocale(), { type: 'conjunction' }).format(names.map((n) => `“${n}”`)),
   exportPending: (names: string, n: number) =>
     `${names} ${n === 1 ? 'is' : 'are'} still downloading · Export waits for ${n === 1 ? 'it' : 'them'} before rendering`,
@@ -123,17 +123,16 @@ export type FontLibraryMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 按需下载的字体在界面上的读法（产品设计 §5.9「字体」、§7.6；架构设计 §9.1；原型 model-font-library.js）。
+ * How downloadable fonts are presented in the UI (product design §5.9 “字体” (Fonts), §7.6; architecture design §9.1; prototype model-font-library.js).
  *
- * 选字框、编辑器顶上的字体条、导出面板与设置 › 字体读同一份状态：每个族一条 `FontFamilyStatus`（`fonts.catalogue`），
- * 在跑的下载叠上 `jobs` 主题里 `fontDownload` 任务的字节进度（`modelId` 是族名）。这里只做「算」：合表、排序、筛选、
- * 分段、每一行末尾放什么、进度怎么念、镜像地址是否合规、打开视频与导出时要说什么。状态的推进在 state/font-library-store.ts。
+ * The font picker, the font bar at the top of the editor, the export panel and Settings › Fonts all read the same state: one `FontFamilyStatus` per family (`fonts.catalogue`),
+ * with the byte progress of the running `fontDownload` task in the `jobs` topic overlaid (`modelId` is the family name). This file only does the computing: merging tables, sorting, filtering,
+ * sectioning, what goes at the end of each row, how progress is read out, whether the mirror address is valid, and what is said when opening a video and when exporting. State transitions happen in state/font-library-store.ts.
  *
- * 与原型的差别（真实数据决定）：
- * - 字体目录不带文件大小：下载钮的提示不写「约 X」，详情只在下载之后写大小；选中时给不给「取消下载」按文字判断
- *   （中日韩字体一个字重就有几 MB，拉丁字体一两百 KB）。
- * - 回退字体是渲染内核的回退族（`fonts.usage` 的 `fallback`，随内核的思源黑体），不按分类示意。
- * - 样张只画族名（`fonts.sample` 只带族名里的字），不补「永和九年」这类本文字的字。
+ * Differences from the prototype (real data decides):
+ * - The font catalogue carries no file sizes: the download button hint does not say “约 X” (about X), and sizes appear in the details only after download. Whether “取消下载” (Cancel download) is offered on selection is decided by the text (CJK fonts are several MB per weight, Latin fonts are one or two hundred KB).
+ * - The fallback font is the render kernel's fallback family (`fonts.usage`'s `fallback`, the Source Han Sans bundled with the kernel), not illustrated by category.
+ * - Samples draw only the family name (`fonts.sample` carries only the characters in the family name), and do not fill in characters like “永和九年” from the body text.
  */
 
 export const FONT_STATE_LABEL: Record<FontFamilyState, string> = live(() => M.state);
@@ -165,17 +164,17 @@ export const FONT_SCRIPTS: readonly { key: FontScript; label: string }[] = (
 }));
 
 /**
- * 渲染内核的回退族：`fonts.usage` 报的是权威的那一个（Render Worker 给的）；还没清点时（选字框里刚选的族）用同一个值。
+ * Fallback family of the render kernel: `fonts.usage` reports the authoritative one (given by the Render Worker); before the inventory has run (a family just picked in the font picker), the same value is used.
  */
 export const KERNEL_FALLBACK = 'Noto Sans SC';
 
-/** 「系统字体」：文字没有指定字体时的取值（渲染内核用缺省字体），不在字体目录里。 */
+/** “系统字体” (System font): the value used when text has no font set (the render kernel uses its default font); not in the font catalogue. */
 export const SYSTEM_FONT = 'system';
 
-/** 隐私说明（详情页，原型原文）。 */
+/** Privacy note (details page, original prototype text). */
 export let FONT_PRIVACY_NOTE: string = M.privacyNote;
 export let FONT_OFFLINE_NOTE: string = M.offlineNote;
-/** 严格离线模式开着时（原型没有这一种：真实应用的 Runtime 这时不下载字体，也不取样张）。 */
+/** When strict offline mode is on (the prototype has no such mode: the real app's Runtime does not download fonts or fetch samples then). */
 export let FONT_STRICT_OFFLINE_NOTE: string = M.strictOfflineNote;
 onLocaleChange(() => {
   FONT_PRIVACY_NOTE = M.privacyNote;
@@ -188,14 +187,14 @@ export interface FontProgress {
   total: number | null;
 }
 
-/** 一行：Runtime 的状态，叠上在跑的下载任务的进度。 */
+/** One row: the Runtime's status, with the progress of the running download task overlaid. */
 export interface FontRow extends FontFamilyStatus {
   progress: FontProgress | null;
-  /** 下载任务排在同时下载的上限后面、还没开始（任务记录的 `wait.reason === 'concurrency'`）。 */
+  /** A download task queued behind the concurrent-download limit and not yet started (the task record's `wait.reason === 'concurrency'`). */
   waiting: boolean;
 }
 
-/** 下载中的一行此刻念什么：排在上限后面的念「等待中」；开始了的念进度，还没收到字节、也不知道总大小时念「下载中」。 */
+/** What a downloading row reads right now: rows queued behind the limit read “等待中” (Waiting); started rows read the progress, and when no bytes have arrived yet and the total size is unknown they read “下载中” (Downloading). */
 export function downloadingLabel(f: Pick<FontRow, 'progress' | 'waiting'>): string {
   if (f.waiting) return M.waiting;
   return progressText(f.progress) || FONT_STATE_LABEL.downloading;
@@ -209,11 +208,11 @@ export function fmtBytes(n: number): string {
   return `${b} B`;
 }
 
-/** 进度怎么念：知道总数时是百分比，不知道时只念收到了多少。 */
+/** How progress is read out: a percentage when the total is known, otherwise only the number of bytes received. */
 export function progressText(p: FontProgress | null): string {
   if (!p) return '';
   if (p.total) return `${Math.min(100, Math.floor((p.done / p.total) * 100))}%`;
-  // 还没收到字节也不知道总大小：不念「0 B」（行尾与字体条念「下载中」，见 downloadingLabel）。
+  // No bytes received and total size unknown: do not read “0 B” (the row end and the font bar read “下载中” (Downloading), see downloadingLabel).
   return p.done > 0 ? fmtBytes(p.done) : '';
 }
 
@@ -221,10 +220,10 @@ export function progressValue(p: FontProgress | null): number | null {
   return p && p.total ? Math.min(100, (p.done / p.total) * 100) : null;
 }
 
-/** 族名的比较键。 */
+/** Comparison key for family names. */
 export const familyKey = (family: string) => family.trim().toLowerCase();
 
-/** 在跑的 `fontDownload` 任务，按族（`modelId`）。 */
+/** Running `fontDownload` tasks, keyed by family (`modelId`). */
 export function liveFontJobs(jobs: readonly JobRecord[]): Map<string, JobRecord> {
   const out = new Map<string, JobRecord>();
   for (const job of jobs) if (job.kind === 'fontDownload' && jobLive(job)) out.set(familyKey(job.modelId), job);
@@ -232,11 +231,11 @@ export function liveFontJobs(jobs: readonly JobRecord[]): Map<string, JobRecord>
 }
 
 /**
- * 叠上在跑的任务：任务在跑就是下载中（进度用任务的字节进度，比列表的快照新）；Runtime 说在下载（导出任务里的下载，
- * 不是 `fontDownload` 任务）时用状态里的字节数。
+ * Overlays the running tasks: a running task means downloading (progress uses the task's byte progress, which is newer than the list snapshot); when the Runtime says it is downloading (a download inside an export task,
+ * not a `fontDownload` task), the byte count from the state is used.
  *
- * 「等待中」只给真的排在同时下载的上限后面的任务（Runtime 同时下两个，排着的任务记录带 `wait`）。刚提交、马上就开始的任务
- * 先发一条不带 `wait` 的 `queued`，接着是 `running`：这一下照下载中念，不闪「等待中」。
+ * “等待中” (Waiting) is only given to tasks truly queued behind the concurrent-download limit (the Runtime downloads two at a time, and queued task records carry `wait`). A task just submitted that starts right away
+ * first emits a `queued` without `wait`, then `running`: that moment reads as downloading and does not flash “等待中”.
  */
 export function liveRow(status: FontFamilyStatus, job: JobRecord | undefined): FontRow {
   if (job && job.state !== 'queued' && job.progress?.unit === 'bytes') {
@@ -258,14 +257,14 @@ export function liveRow(status: FontFamilyStatus, job: JobRecord | undefined): F
   return { ...status, progress: null, waiting: false };
 }
 
-/** 能不能下载（选中时开始下载、行尾给下载或重试）。 */
+/** Whether it can be downloaded (download starts on selection; the row end offers download or retry). */
 export const canDownload = (f: Pick<FontFamilyStatus, 'state'>) => f.state === 'downloadable' || f.state === 'failed';
 
-/** 一个族是否画得出来（随内核、本机或下载缓存里有）。 */
+/** Whether a family can be rendered (available from the kernel, on this machine, or in the download cache). */
 export const isReady = (f: Pick<FontFamilyStatus, 'state' | 'downloaded'>) =>
   f.state === 'built-in' || f.state === 'installed' || f.state === 'downloaded' || f.downloaded.length > 0;
 
-/** 选字框里排好的次序，记成 族名 → 序号：打开着的选字框用它排，下载完成不挪行（表外的族排在后面）。 */
+/** The order arranged in the font picker, recorded as family name → index: an open picker sorts by it, so a completed download does not move rows (families outside the table go at the end). */
 export function orderKey(rows: readonly Pick<FontFamilyStatus, 'family'>[]): Map<string, number> {
   return new Map(rows.map((f, i) => [familyKey(f.family), i]));
 }
@@ -282,7 +281,7 @@ export interface FontQuery {
   script?: FontScript | null;
 }
 
-/** 按族名（包含、不分大小写）、分类与文字筛。 */
+/** Filters by family name (substring match, case-insensitive), category and sample text. */
 export function filterRows<T extends FontFamilyStatus>(rows: readonly T[], q: FontQuery): T[] {
   const query = (q.query ?? '').trim().toLowerCase();
   return rows.filter(
@@ -297,8 +296,8 @@ export interface FontSection<T> {
 }
 
 /**
- * 选字框的分段：「这个视频里用到」「最近用过」，然后是全部字体（同一张表的不同取法，不去重）。有检索词或筛选时合成一条
- * 「搜索结果」。原型的「品牌字体」一段没有：品牌库的字体还不能在字体框里选（library-brand.ts）。
+ * Sections of the font picker: “这个视频里用到” (Used in this video), “最近用过” (Recently used), then all fonts (different ways of taking the same table, not de-duplicated). When there is a search term or filter, these merge into one
+ * “搜索结果” (Search results) section. The prototype's “品牌字体” (Brand fonts) section is absent: brand library fonts cannot yet be picked in the font picker (library-brand.ts).
  */
 export function fontSections<T extends FontFamilyStatus>(
   rows: readonly T[],
@@ -318,7 +317,7 @@ export function fontSections<T extends FontFamilyStatus>(
   return out;
 }
 
-/** 列表头「全部字体 · 可下载 N 个」的 N：字体目录里的族（随内核、本机已装的目录字体也算）。 */
+/** The N in the list header “全部字体 · 可下载 N 个” (All fonts · N downloadable): families in the font catalogue (catalogue fonts bundled with the kernel or already installed on this machine also count). */
 export const catalogueCount = (rows: readonly FontFamilyStatus[]) => rows.filter((f) => f.category !== null).length;
 
 export type RowEnd =
@@ -328,7 +327,7 @@ export type RowEnd =
   | { kind: 'retry'; label: string; message: string }
   | { kind: 'none' };
 
-/** 每一行末尾放什么。 */
+/** What goes at the end of each row. */
 export function rowEnd(f: FontRow): RowEnd {
   switch (f.state) {
     case 'built-in':
@@ -351,12 +350,12 @@ export function rowEnd(f: FontRow): RowEnd {
   }
 }
 
-/** 中日韩字体：一个字重就有几 MB，下载要一阵子。 */
+/** CJK fonts: a single weight is several MB, so the download takes a while. */
 export const isLargeFont = (f: Pick<FontFamilyStatus, 'scripts'>) => f.scripts.some((s) => s === 'chinese' || s === 'japanese' || s === 'korean');
 
 /**
- * 选中一个还没下载的族时的提示：立即生效，先用回退字体显示，下载好后自动换上。大的（中日韩）给「取消下载」，
- * 小的一两秒就到，提示自己消失。
+ * Hint shown when selecting a family that has not been downloaded yet: it takes effect immediately, showing the fallback font first, then switches automatically once the download finishes. Large (CJK) families get “取消下载” (Cancel download),
+ * small ones arrive within a second or two, and the hint disappears by itself.
  */
 export function pickToast(f: Pick<FontFamilyStatus, 'family' | 'scripts'>, fallback = KERNEL_FALLBACK): { text: string; cancellable: boolean } {
   return { text: M.pickToast(f.family, fallback), cancellable: isLargeFont(f) };
@@ -364,7 +363,7 @@ export function pickToast(f: Pick<FontFamilyStatus, 'family' | 'scripts'>, fallb
 
 export const alreadyDownloadedText = (family: string) => M.alreadyDownloaded(family);
 
-/** 详情页的几行。 */
+/** Lines on the details page. */
 export function detailRows(f: FontRow): [string, string][] {
   const end = rowEnd(f);
   const category = FONT_CATEGORIES.find((c) => c.key === f.category)?.label;
@@ -385,7 +384,7 @@ export function detailRows(f: FontRow): [string, string][] {
   return rows.filter((r): r is [string, string] => r !== null);
 }
 
-/** 镜像地址：空 = 用默认；否则必须是 https、没有账号、查询参数与片段。返回错误文案或 null。 */
+/** Mirror address: empty = use the default; otherwise it must be https, with no account, query parameters or fragment. Returns an error message or null. */
 export function mirrorError(value: string | null | undefined): string | null {
   const v = String(value ?? '').trim();
   if (!v) return null;
@@ -406,12 +405,12 @@ export interface DownloadedRow {
   weights: string;
   sizeBytes: number;
   licence: string;
-  /** 最近一次下载的时间（ISO）。 */
+  /** Time of the most recent download (ISO). */
   at: string;
   inUse: boolean;
 }
 
-/** 设置里的已下载列表：每个族一行（字重、大小、许可、下载时间、是否有导出在用），以及总大小。 */
+/** The downloaded list in Settings: one row per family (weights, size, license, download time, whether an export is using it), plus the total size. */
 export function downloadedList(faces: readonly DownloadedFontFace[], inUse: readonly string[]): { rows: DownloadedRow[]; totalBytes: number } {
   const busy = new Set(inUse.map(familyKey));
   const groups = new Map<string, DownloadedFontFace[]>();
@@ -439,7 +438,7 @@ export function downloadedList(faces: readonly DownloadedFontFace[], inUse: read
   return { rows, totalBytes: rows.reduce((s, r) => s + r.sizeBytes, 0) };
 }
 
-/** 「已清空 3 个族，释放 12.4 MB · 导出在用的 1 个留下」。 */
+/** "Cleared 3 font families, freed 12.4 MB · the 1 in use for export is kept". */
 export function clearedText(removed: readonly { family: string }[], freedBytes: number, kept: readonly { family: string }[]): string {
   const families = (list: readonly { family: string }[]) => new Set(list.map((f) => familyKey(f.family))).size;
   const k = families(kept);
@@ -454,20 +453,20 @@ export function clearConfirmBody(rows: readonly DownloadedRow[], totalBytes: num
   );
 }
 
-// ---- 打开视频时的字体条 ----
+// ---- Font bar when opening a video ----
 
-/** 打开视频的那一批：用到的族里要下载的（`fonts.usage` 时还没画得出来、字体目录里有的）。 */
+/** The batch for opening a video: families used in it that need downloading (not yet renderable per `fonts.usage`, but present in the font catalogue). */
 export interface FontBatch {
   videoId: string;
   families: string[];
-  /** 自动下载开着（这一批由 Runtime 开始下载）或关着（等用户点「下载」）。 */
+  /** Auto-download is on (the Runtime starts this batch) or off (waits for the user to click “下载” (Download)). */
   mode: 'auto' | 'off';
-  /** 用户点了「跳过这个」的族（取消记为 `CANCELLED`，条上念「已跳过」）。 */
+  /** Families the user skipped with “跳过这个” (Skip this) (cancellation is recorded as `CANCELLED`, and the bar reads “已跳过” (Skipped)). */
   skipped: string[];
   dismissed: boolean;
 }
 
-/** 打开视频时这一批里有哪些族：字体目录里有、此刻画不出来的（不在目录里的族下载不了，内核照回退字体画并提示）。 */
+/** Which families are in this batch when a video is opened: those in the font catalogue that cannot be rendered right now (families not in the catalogue cannot be downloaded; the kernel renders them with the fallback font and shows a notice). */
 export function batchFamilies(usage: readonly FontUsageFamily[]): string[] {
   return usage.filter((f) => f.fallback !== null && f.status.source === 'google-fonts' && f.status.state !== 'unavailable').map((f) => f.family);
 }
@@ -505,11 +504,11 @@ function reasonOf(outcome: Outcome, f: FontRow | undefined): string {
 }
 
 /**
- * 字体条画什么（null 不画）。Runtime 并行下载（同时两个），条上照原型一个一个念：第几个、在下哪一个与它的进度。
- * - 进行中：「正在下载这个视频用到的字体 · 1/3 · 族名 42%」，可以跳过当前这个或全部取消；
- * - 全部到了：一句「已就绪」，3 秒后自己收起；
- * - 有没取到的：「2 个字体没取到，正在用回退字体显示」，展开是 族 → 回退字体 · 原因，每个可以重试；
- * - 自动下载关着：「这个视频用到 2 个没下载的字体，正在用回退字体显示」，可以一次下载，或去设置。
+ * What the font bar shows (null shows nothing). The Runtime downloads in parallel (two at a time), but the bar reads them one by one as in the prototype: which one of how many, which one is downloading now and its progress.
+ * - In progress: “正在下载这个视频用到的字体 · 1/3 · 族名 42%” (Downloading the fonts used in this video · 1/3 · family name 42%); the current one can be skipped or all can be cancelled;
+ * - All arrived: a single “已就绪” (Ready) line that collapses by itself after 3 seconds;
+ * - Some not obtained: “2 个字体没取到，正在用回退字体显示” (2 fonts not obtained, showing with the fallback font); expanding shows family → fallback font · reason, and each can be retried;
+ * - Auto-download off: “这个视频用到 2 个没下载的字体，正在用回退字体显示” (This video uses 2 fonts not yet downloaded, showing with the fallback font); they can be downloaded at once, or the user can go to Settings.
  */
 export function fontBar(batch: FontBatch | null, byName: ReadonlyMap<string, FontRow>, fallbackOf: (family: string) => string): FontBar | null {
   if (!batch || batch.dismissed || batch.families.length === 0) return null;
@@ -545,19 +544,19 @@ export function fontBar(batch: FontBatch | null, byName: ReadonlyMap<string, Fon
   };
 }
 
-// ---- 导出 ----
+// ---- Export ----
 
 export interface ExportFontLine {
   tone: 'info' | 'notice';
   families: string[];
   text: string;
-  /** 行尾那个链接的字（点了都是下载这几个族）。 */
+  /** The text of the link at the row end (clicking it downloads these families). */
   action?: string;
 }
 
 /**
- * 导出面板（视频页）关于字体的几句：用到的族里还在下载的、失败的、没下载的（自动下载开着 / 关着）。导出会先等在下载的；
- * 没取到的照回退字体画，导出结果里有一条警告（`FONT_NOT_DOWNLOADED`）。不拦导出，也不要先选替代字体。
+ * The sentences about fonts in the export panel (video page): among the families used, those still downloading, failed, or not downloaded (auto-download on / off). Export waits for downloads in progress first;
+ * families not obtained are rendered with the fallback font, and the export result has a warning (`FONT_NOT_DOWNLOADED`). Export is not blocked, and no substitute font is chosen first.
  */
 export function exportFontNote(usage: readonly FontUsageFamily[], byName: ReadonlyMap<string, FontRow>, autoDownload: boolean): ExportFontLine[] {
   const used = usage
@@ -597,7 +596,7 @@ export function exportFontNote(usage: readonly FontUsageFamily[], byName: Readon
   return lines;
 }
 
-/** 导出完成时的一句：没取到、照回退字体画的族（`FONT_NOT_DOWNLOADED` 警告，一个族说一次）。 */
+/** The line shown when export completes: families not obtained and rendered with the fallback font (`FONT_NOT_DOWNLOADED` warning, one mention per family). */
 export function exportFontFallbacks(warnings: readonly JobWarning[]): string | null {
   const seen = new Set<string>();
   const parts: string[] = [];
@@ -614,21 +613,21 @@ export function exportFontFallbacks(warnings: readonly JobWarning[]): string | n
 }
 
 /**
- * 导出结果里其余的提醒：去掉 `FONT_NOT_DOWNLOADED`（单独列在上面），也去掉渲染内核对同一个族报的缺字体提示
- * （`EXPORT_RENDER_NOTE`「…字体 "X" 在当前字体库中不可用…」），免得一个族说两遍。别的族的缺字体提示照留。
+ * The other reminders in the export result: drop `FONT_NOT_DOWNLOADED` (listed separately above), and also drop the missing-font notice the render kernel reports for the same family
+ * (`EXPORT_RENDER_NOTE`, “…字体 "X" 在当前字体库中不可用…” (…font "X" is not available in the current font library…)), so a family is not mentioned twice. Missing-font notices for other families are kept.
  */
 export function exportOtherWarnings(warnings: readonly JobWarning[]): JobWarning[] {
   const covered = new Set(warnings.flatMap((w) => (w.code === 'FONT_NOT_DOWNLOADED' && w.font ? [familyKey(w.font.family)] : [])));
   return warnings.filter((w) => {
     if (w.code === 'FONT_NOT_DOWNLOADED') return false;
     if (w.code !== 'EXPORT_RENDER_NOTE' || !w.detail) return true;
-    // i18n-ignore: 匹配渲染内核报来的原话（数据，不是界面文案）
+    // i18n-ignore: matches the verbatim text reported by the render kernel (data, not UI copy)
     const family = /字体 "((?:[^"\\]|\\.)*)" 在当前字体库中不可用/.exec(w.detail)?.[1];
     return family === undefined || !covered.has(familyKey(family.replace(/\\(.)/g, '$1')));
   });
 }
 
-/** 导出准备阶段下载字体时：「下载字体 · Ma Shan Zheng 42%」（百分比是导出任务等的全部字体的字节进度）。 */
+/** While downloading fonts in the export preparation phase: “下载字体 · Ma Shan Zheng 42%” (Downloading fonts · Ma Shan Zheng 42%) (the percentage is the byte progress of all fonts the export task is waiting for). */
 export function exportFontPhase(job: Pick<JobRecord, 'phase' | 'progress' | 'state'>, downloading: readonly Pick<FontFamilyStatus, 'family'>[]): string | null {
   if (job.state !== 'running' || job.phase !== 'downloading') return null;
   const p = job.progress?.unit === 'bytes' ? job.progress : null;
@@ -637,15 +636,15 @@ export function exportFontPhase(job: Pick<JobRecord, 'phase' | 'progress' | 'sta
   return M.exportPhase(parts.length ? parts.join(' ') : null);
 }
 
-// ---- 最近用过 ----
+// ---- Recently used ----
 
 export function pushRecent(recent: readonly string[], family: string, limit = 8): string[] {
   return [family, ...recent.filter((n) => familyKey(n) !== familyKey(family))].slice(0, limit);
 }
 
-// ---- 选字框的整表 ----
+// ---- Full table of the font picker ----
 
-/** 字体框里显示的名字：「系统字体」之外就是族名本身。 */
+/** The name shown in the font picker: the family name itself, except for “系统字体” (System font). */
 export const fontLabel = (family: string) => (family === SYSTEM_FONT ? M.systemFont : family);
 
 function placeholderStatus(family: string, state: FontFamilyState): FontFamilyStatus {
@@ -667,8 +666,8 @@ function placeholderStatus(family: string, state: FontFamilyState): FontFamilySt
 }
 
 /**
- * 选字框的整表：Runtime 给的次序，最前面是「系统字体」（文字原来的缺省值，留着可选）；当前值不在表里（字体目录与本机都没有）
- * 时补在最后一行，标「没有这个字体」，免得字体框里看不到现值。
+ * The full table of the font picker: in the order the Runtime gives, with “系统字体” (System font) first (the text's original default, kept as an option); when the current value is not in the table (it is in neither the font catalogue nor on this machine),
+ * it is appended as the last row, marked “没有这个字体” (Font not available), so the current value stays visible in the font picker.
  */
 export function pickerRows(statuses: Readonly<Record<string, FontFamilyStatus>>, order: readonly string[], current: string): FontFamilyStatus[] {
   const rows: FontFamilyStatus[] = [placeholderStatus(SYSTEM_FONT, 'built-in')];
@@ -681,16 +680,16 @@ export function pickerRows(statuses: Readonly<Record<string, FontFamilyStatus>>,
   return rows;
 }
 
-// ---- 删除与错误 ----
+// ---- Deletion and errors ----
 
-/** Runtime 拒绝时的错误码（`details.code`）与说明。 */
+/** Error codes (`details.code`) and descriptions for when the Runtime rejects a request. */
 export function fontError(error: unknown): { code: string | null; message: string } {
   const e = error as { message?: unknown; details?: { code?: unknown } } | null;
   const code = typeof e?.details?.code === 'string' ? e.details.code : null;
   return { code, message: typeof e?.message === 'string' && e.message ? e.message : M.errorFallback };
 }
 
-/** 删除一个族下载的文件之后的提示：还没结束的导出在用（`FONT_IN_USE`）时说什么时候能删（原型原文）。 */
+/** Hint after deleting a family's downloaded files: when an export still in progress is using it (`FONT_IN_USE`), says when it can be deleted (original prototype text). */
 export function removeToast(family: string, error: unknown | null): { text: string; tone: 'neutral' | 'notice' } {
   if (error === null) return { text: M.removed(family), tone: 'neutral' };
   const { code, message } = fontError(error);

@@ -14,7 +14,7 @@ import { pl } from './music-local-copy.pl.ts';
 import { tr } from './music-local-copy.tr.ts';
 import { vi } from './music-local-copy.vi.ts';
 
-/** 设置 › 模型 › 音乐生成 › 本地模型（设计稿 settings-music.jsx）的文案；译文在 `music-local-copy.<语言>.ts`。 */
+/** Text for Settings › Models › Music generation › Local models (design mock settings-music.jsx); translations are in `music-local-copy.<语言>.ts`. */
 const en = {
   defaultDesc: 'Preselected when you generate music; with no default you choose the model yourself, and your choice wins.',
   cloudDefault: (name: string) => `The default is ${name}; choosing a local model here replaces it.`,

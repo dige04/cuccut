@@ -14,7 +14,7 @@ import { pl } from './dub-group-copy.pl.ts';
 import { tr } from './dub-group-copy.tr.ts';
 import { vi } from './dub-group-copy.vi.ts';
 
-/** 素材面板里配音组卡片（菜单、状态、提示）的文案。译文在 `dub-group-copy.zh-Hans.ts`。 */
+/** Copy for the dub group card in the asset panel (menu, status, notices). Translations are in `dub-group-copy.zh-Hans.ts`. */
 const en = {
   track: 'Show this track on the timeline',
   trackGone: 'This voice-over group is no longer on the timeline',

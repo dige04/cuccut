@@ -1,4 +1,4 @@
-//! 元素的样式目录经 WASM 入口：次序、默认颜色、dB 窗与彩纸的发射参数都是内置配方里的值。
+//! Element style catalog through the WASM entry: order, default colors, the dB window and confetti emission parameters are the values from the built-in recipes.
 
 use editor_wasm::presets::element_presets;
 use editor_wasm::ranges::engine_ranges;

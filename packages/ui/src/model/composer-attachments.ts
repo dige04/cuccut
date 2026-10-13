@@ -2,8 +2,8 @@ import { ATTACHMENT_MIME_TYPES, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_MESSAG
 import { ATTACHMENT_COPY } from '../copy.ts';
 
 /**
- * 输入区附图的校验（产品设计 §3.2.4，原型 agent-thread.jsx `composerImageFiles` / `addImages`）。
- * 客户端先拦，Runtime 再验；上限与格式都取 limits.ts，不在这里另写一份。
+ * Validation of images attached in the composer (product design §3.2.4; prototype `composerImageFiles` / `addImages` in agent-thread.jsx).
+ * The client checks first, then the Runtime validates; the limits and formats both come from limits.ts, not written out again here.
  */
 
 export type AttachmentRejection = 'type' | 'size' | 'count';
@@ -17,7 +17,7 @@ export function isAttachmentMimeType(type: string): type is AttachmentMimeType {
   return (ATTACHMENT_MIME_TYPES as readonly string[]).includes(type);
 }
 
-/** 单张能不能收：格式在白名单里，大小在 (0, 上限] 之间。 */
+/** Whether a single image is accepted: its format is on the allow-list and its size is between 0 (exclusive) and the limit (inclusive). */
 export function checkImage(file: ImageCandidate): AttachmentRejection | null {
   if (!isAttachmentMimeType(file.type)) return 'type';
   if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) return 'size';
@@ -25,8 +25,8 @@ export function checkImage(file: ImageCandidate): AttachmentRejection | null {
 }
 
 /**
- * 一批新图片（选文件、粘贴、拖放）里收哪些。逐张判断：合格的按顺序收，直到这条消息的张数上限；
- * 不合格的和放不下的退回，`rejected` 给第一条原因，界面只提示一句。
+ * Which images to accept from a new batch (picked files, pasted, or dropped). Each is checked in turn: eligible ones are accepted in order until the message's image count limit is reached;
+ * ineligible ones and ones that do not fit are returned, and `rejected` gives the first reason; the UI shows just one line.
  */
 export function admitImages<T extends ImageCandidate>(
   existing: number,

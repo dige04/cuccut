@@ -1,5 +1,5 @@
-//! FlowMatchEulerDiscreteScheduler，按 `scheduler/scheduler_config.json` 的配置复刻
-//! （动态 shift、指数型 time shift、`shift_terminal` 拉伸）。纯逻辑，全平台编译。
+//! FlowMatchEulerDiscreteScheduler, replicated from the config in `scheduler/scheduler_config.json`
+//! (dynamic shift, exponential time shift, `shift_terminal` stretch). Pure logic, compiled on all platforms.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -42,20 +42,20 @@ fn d_shift() -> f64 {
 }
 
 impl SchedulerConfig {
-    /// 读 `scheduler/scheduler_config.json`（由调用方按清单取出路径）。
+    /// Reads `scheduler/scheduler_config.json` (the caller resolves the path from the manifest).
     pub fn load(path: &Path) -> Result<Self> {
         let s = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         Ok(serde_json::from_str(&s)?)
     }
 
-    /// 管线的 `calculate_shift`：按图像 token 数线性插值出 mu。
+    /// The pipeline's `calculate_shift`: linearly interpolates mu from the number of image tokens.
     pub fn mu(&self, image_seq_len: usize) -> f64 {
         let m = (self.max_shift - self.base_shift) / (self.max_image_seq_len as f64 - self.base_image_seq_len as f64);
         let b = self.base_shift - m * self.base_image_seq_len as f64;
         image_seq_len as f64 * m + b
     }
 
-    /// 返回 N+1 个 sigma（末尾补 0）。模型收到的 timestep 就是 sigma（管线里 t/1000）。
+    /// Returns N+1 sigmas (padded with 0 at the end). The timestep the model receives is the sigma (t/1000 in the pipeline).
     pub fn sigmas(&self, steps: usize, image_seq_len: usize) -> Vec<f64> {
         assert!(steps >= 1);
         // np.linspace(1.0, 1/N, N)
@@ -85,7 +85,7 @@ impl SchedulerConfig {
                 *v = self.shift * *v / (1.0 + (self.shift - 1.0) * *v);
             }
         }
-        // 只有一步时末项就是 1.0，拉伸会 0/0（diffusers 同样得 NaN），此时不拉伸。
+        // With only one step the last entry is 1.0, so the stretch would be 0/0 (diffusers also gets NaN). In that case, no stretch.
         if let Some(term) = self.shift_terminal.filter(|t| *t > 0.0 && steps > 1) {
             let last = 1.0 - *s.last().unwrap();
             let scale = last / (1.0 - term);

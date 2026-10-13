@@ -3,16 +3,16 @@ import os from 'node:os';
 import type { ResourceCapacity, ResourceCapacitySetting } from '@cuccut/protocol';
 
 /**
- * 机器的容量（架构设计 §7.6、§7.7、§9.6）：只用 Node 标准库。
+ * Machine capacity (architecture design §7.6, §7.7, §9.6): uses only the Node standard library.
  *
- * - 内存：`os.totalmem()`；CPU 线程：`os.availableParallelism()`。
- * - GPU 内存：Apple 芯片是统一内存，GPU 能用的按内存的 2/3（32 GiB 以上按 3/4）估计，GPU 的需求同时计入内存；
- *   其余机器没有不加依赖的查法，报告未知、不按它准入（§9.6「未知时报告未知」）。
- * - 磁盘：staging 所在卷的可用空间（`fs.statfs`），后台刷新，准入只读缓存的值。
- * - 偏好设置 `resources.capacity` 可以覆盖内存、GPU 内存与线程数（某项为 null 时照旧自动）。
+ * - Memory: `os.totalmem()`; CPU threads: `os.availableParallelism()`.
+ * - GPU memory: Apple chips have unified memory, so the amount the GPU can use is estimated as 2/3 of memory (3/4 for 32 GiB and above), and GPU demand is counted in memory at the same time.
+ *   Other machines have no dependency-free way to query it, so they report it as unknown and do not admit based on it (§9.6 “report unknown when unknown”).
+ * - Disk: the available space on the volume containing staging (`fs.statfs`), refreshed in the background; admission only reads the cached value.
+ * - The preference `resources.capacity` can override memory, GPU memory and thread count (when an item is null, it stays automatic).
  */
 
-/** 调度读容量的来源：`current()` 同步给出最近的值；`refresh()` 重新探测会变的部分（磁盘）。 */
+/** The source of capacity for scheduling: `current()` synchronously gives the most recent value; `refresh()` re-probes the parts that change (disk). */
 export interface CapacitySource {
   current(): ResourceCapacity;
   refresh?(): Promise<void>;
@@ -26,11 +26,11 @@ export interface SystemFacts {
 }
 
 export interface MachineCapacityOptions {
-  /** staging 目录：按它所在的卷算磁盘。不给时磁盘未知。 */
+  /** The staging directory: disk is measured on the volume it lives on. When not given, disk is unknown. */
   scratchDir?: string;
-  /** 偏好设置的覆盖（每次读都重新取，改了设置立即生效）。 */
+  /** The override from preferences (re-read on every read, so changes take effect immediately). */
   override?: () => ResourceCapacitySetting | null;
-  /** 测试注入：替换操作系统给出的事实。 */
+  /** Injection for tests: replaces the facts given by the OS. */
   system?: Partial<SystemFacts>;
 }
 
@@ -41,7 +41,7 @@ export function systemFacts(): SystemFacts {
   return { platform: process.platform, arch: process.arch, totalMemory: os.totalmem(), cpuThreads: os.availableParallelism() };
 }
 
-/** 统一内存的机器上 GPU 能用的量（估计）：32 GiB 及以下按 2/3，以上按 3/4。 */
+/** The amount the GPU can use on a unified-memory machine (estimate): 2/3 for 32 GiB and below, 3/4 above that. */
 export function unifiedGpuEstimate(totalMemory: number): number {
   return Math.floor(totalMemory <= 32 * GiB ? (totalMemory * 2) / 3 : (totalMemory * 3) / 4);
 }
@@ -91,7 +91,7 @@ export class MachineCapacity implements CapacitySource {
   }
 }
 
-/** 读设置出错（还没打开、文件坏了）时当作没有覆盖。 */
+/** When reading settings fails (not yet opened, file corrupted), treat it as having no override. */
 function safeOverride(read: (() => ResourceCapacitySetting | null) | undefined): ResourceCapacitySetting | null {
   try {
     return read?.() ?? null;

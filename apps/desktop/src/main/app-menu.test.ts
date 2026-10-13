@@ -30,7 +30,7 @@ describe('appMenuTemplate', () => {
     expect(labels(menu)).toEqual(['CucCut', 'File', 'Edit', 'View', 'Window']);
     expect(labels(submenu(menu[0]))).toContain('Quit CucCut');
     expect(submenu(menu[2]).find((item) => item.role === 'copy')?.label).toBe('Copy');
-    // 「窗口」菜单带 role，macOS 才会列出打开的窗口。
+    // The “窗口” (Window) menu carries a role, which is what makes macOS list the open windows.
     expect(menu[4]?.role).toBe('window');
   });
 

@@ -2,16 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * 不属于项目的会话的工作目录（`RuntimeHome.scratchDir/<会话>/`）与项目目录之间搬东西（架构设计 §3.10）。
- * 只做文件系统的事：判断里面有没有视频、取视频的名字、把条目搬进项目目录。会话与项目的记录由 Harness 管。
+ * Moves items between the working directory of a session that does not belong to a project (`RuntimeHome.scratchDir/<session>/`) and the project directory (architecture design §3.10).
+ * Filesystem work only: checks whether a video is in it, gets the video's name, moves the entries into the project directory. Session and project records are managed by the Harness.
  */
 
-/** 视频目录的标志（视频格式规范 §1）；改名之前的目录只有 `movie.db`。 */
+/** Marker of a video directory (video format spec §1); directories from before the rename contain only `movie.db`. */
 const VIDEO_DB_FILES = ['video.db', 'movie.db'];
-/** 找视频时往下走的最大深度（与 Space 的扫描相同）。 */
+/** Maximum depth to descend when looking for a video (same as Space's scan). */
 const MAX_DEPTH = 6;
 
-/** 目录本身是不是一个视频。 */
+/** Whether the directory itself is a video. */
 export async function isVideoDirectory(dir: string): Promise<boolean> {
   for (const name of VIDEO_DB_FILES) {
     const stat = await fs.stat(path.join(dir, name)).catch(() => null);
@@ -20,7 +20,7 @@ export async function isVideoDirectory(dir: string): Promise<boolean> {
   return false;
 }
 
-/** 目录里（含子目录，跳过隐藏目录与符号链接）有没有视频。目录不在时为 false。 */
+/** Whether the directory contains a video, including in subdirectories (hidden directories and symbolic links are skipped). False when the directory does not exist. */
 export async function containsVideo(dir: string, depth = 0): Promise<boolean> {
   let entries: import('node:fs').Dirent[];
   try {
@@ -38,8 +38,8 @@ export async function containsVideo(dir: string, depth = 0): Promise<boolean> {
 }
 
 /**
- * 目录里（规则同 `containsVideo`）最早建的视频的名字（视频目录名），给按视频命名的项目用。没有视频时为 null。
- * 先后按视频库文件的创建时间（取不到时修改时间），同时的按名字。
+ * The name of the earliest-created video in the directory (same rules as `containsVideo`), i.e. the video directory name, for projects named after a video. null when there is no video.
+ * Ordered by the creation time of the video library file (modification time if that is unavailable), ties broken by name.
  */
 export async function firstVideoName(dir: string): Promise<string | null> {
   const found: { name: string; at: number }[] = [];
@@ -71,15 +71,15 @@ async function videoCreatedAt(dir: string): Promise<number | null> {
   return null;
 }
 
-/** `child` 是否在 `parent` 里面（不含 `parent` 本身）。 */
+/** Whether `child` is inside `parent` (not counting `parent` itself). */
 export function isInside(parent: string, child: string): boolean {
   const rel = path.relative(path.resolve(parent), path.resolve(child));
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 /**
- * 把一个文件或目录搬到 `destDir` 下，名字已被占用时加序号（`名字 2`、`名字 3`…，扩展名保留）。同一卷上是改名；
- * 跨卷（`EXDEV`）时复制过去再删掉原来的。返回目标里的名字。
+ * Moves a file or directory under `destDir`. If the name is taken, a number is added (`name 2`, `name 3`…, extension kept). On the same volume this is a rename;
+ * across volumes (`EXDEV`) it copies and then deletes the original. Returns the name in the target.
  */
 export async function moveInto(source: string, destDir: string, name = path.basename(source)): Promise<string> {
   const ext = path.extname(name);
@@ -87,7 +87,7 @@ export async function moveInto(source: string, destDir: string, name = path.base
   for (let n = 1; n < 1000; n++) {
     const candidate = n === 1 ? name : `${stem} ${n}${ext}`;
     const target = path.join(destDir, candidate);
-    // `rename` 会替换一个空目录或已有文件：先确认目标不在。
+    // `rename` replaces an empty directory or an existing file, so first confirm the target does not exist.
     if (await fs.lstat(target).then(() => true, () => false)) continue;
     try {
       await fs.rename(source, target);
@@ -102,8 +102,8 @@ export async function moveInto(source: string, destDir: string, name = path.base
 }
 
 /**
- * 把 `from` 里的条目（不含 `skip` 里的名字、`skipHidden` 时的隐藏条目，与 `busy` 里的目录及包含它们的目录）原样搬进 `to`，相对路径不变（重名的加序号）。
- * `from` 不在时什么也不做。返回搬走的条目：原名 → 目标里的名字。
+ * Moves the entries in `from` as they are into `to` (excluding names in `skip`, hidden entries when `skipHidden`, and the directories in `busy` along with the directories that contain them). Relative paths stay the same (duplicates get a number).
+ * Does nothing when `from` does not exist. Returns the moved entries: original name → name in the target.
  */
 export async function moveEntries(
   from: string,
@@ -127,7 +127,7 @@ export async function moveEntries(
   return moved;
 }
 
-/** 删除一个空目录；不空或不在时什么也不做。 */
+/** Deletes an empty directory. Does nothing if it is not empty or does not exist. */
 export async function removeIfEmpty(dir: string): Promise<boolean> {
   try {
     await fs.rmdir(dir);
@@ -137,7 +137,7 @@ export async function removeIfEmpty(dir: string): Promise<boolean> {
   }
 }
 
-/** 绑定时记下的项目目录还能不能接着用：在、是目录，并且是空的或已经是项目（有 `.ccut`，上次搬到一半）。 */
+/** Whether the project directory recorded at binding can still be used: it exists, is a directory, and is either empty or already a project (has `.ccut`, meaning a previous move stopped halfway). */
 export async function reusableProjectDir(dir: string): Promise<boolean> {
   let names: string[];
   try {

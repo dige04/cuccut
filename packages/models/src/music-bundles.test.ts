@@ -35,7 +35,7 @@ import { AUDIO_CPP_ENGINE_COMPONENT, AUDIO_CPP_RELEASE } from './music-engine.ts
 import { repoManifestFor } from './repo-manifests.ts';
 import { MUSIC_OUTPUT_FILE } from './worker-contract.ts';
 
-/** 本地音乐生成的模型包登记、模型描述、冻结参数到引擎命令行的换算与自检判定（架构设计 §6.1、§6.3；Model Worker 协议规范 §4.4）。 */
+/** Registration of locally generated music model packages, model descriptions, conversion of frozen parameters to engine command-line arguments, and the self-test verdict (architecture design §6.1, §6.3; Model Worker protocol spec §4.4). */
 
 const YUE = MUSIC_BUNDLES[0]!;
 const GiB = 1024 * 1024 * 1024;
@@ -125,7 +125,7 @@ describe('本地音乐模型包的登记', () => {
           backend: 'audio-cpp',
         });
       }
-      // 引擎是第二个必需组件：权重齐了、引擎没装时是 incomplete（下载或修复模型包补上），Model Worker 在不在与它无关。
+      // The engine is the second required component: if the weights are present but the engine is not installed, the status is incomplete (download or repair of the model package fixes it); whether the Model Worker is present has nothing to do with it.
       await writeRepo(
         dir,
         YUE.components.music!.repo,
@@ -154,9 +154,9 @@ describe('本地音乐模型包的登记', () => {
       catalog.changed(YUE.bundleId);
       expect(await catalog.status(YUE.bundleId)).toMatchObject({ state: 'installed' });
       expect(catalog.engineExecutable(YUE.bundleId)).toBe(exe);
-      // 交给执行者的组件不含引擎（它不是 Worker 读的权重）。
+      // The component handed to the executor does not include the engine (it is not the weights that the Worker reads).
       expect(Object.keys((await catalog.bundleFor(YUE.bundleId)).components)).toEqual(['music']);
-      // 这个平台没有引擎包：error / unsupported，说明里写平台。
+      // This platform has no engine package: error / unsupported, with the platform named in the description.
       const arm = new ModelCatalog({ root: dir, platform: 'linux', arch: 'arm64', workerAvailable: () => false });
       const unsupported = await arm.status(YUE.bundleId);
       expect(unsupported).toMatchObject({ state: 'error', reason: 'unsupported' });
@@ -329,7 +329,7 @@ describe('模型描述与冻结参数', () => {
       'semantic_max_tokens=2250',
     );
     expect(option('--request-option', 'num_inference_steps=')).toBeUndefined();
-    // 相对于模型根，不是绝对路径：引擎拒绝绝对路径
+    // Relative to the model root, not an absolute path: the engine rejects absolute paths
     expect(option('--session-option', 'yue2.model_gguf=')).toBe(`yue2.model_gguf=${YUE.music!.files.model}`);
     expect(option('--session-option', 'yue2.vae_gguf=')).toBe(`yue2.vae_gguf=${YUE.music!.files.vae}`);
     expect(args[args.indexOf('--out-dir') + 1]).toBe('/staging');
@@ -509,8 +509,8 @@ describe('自检', () => {
   });
 });
 
-/** 在模型目录里写一个合成的仓库：几个小文件和与之相符的清单。 */
-/** 旧版装下的引擎：`<root>/.ccut-tools/audiocpp/<版本>/` 里只有可执行文件、没有清单（算装好了）。返回可执行文件路径。 */
+/** Writes a synthetic repository into the model directory: a few small files and a matching manifest. */
+/** Engine installed by an old version: `<root>/.ccut-tools/audiocpp/<version>/` holds only the executable, with no manifest (it counts as installed). Returns the executable's path. */
 async function writeEngine(root: string, executable: string): Promise<string> {
   const dir = path.join(root, '.ccut-tools', AUDIO_CPP_RELEASE.name, AUDIO_CPP_RELEASE.version);
   await fs.mkdir(dir, { recursive: true });
@@ -549,7 +549,7 @@ async function writeRepo(
   );
 }
 
-/** 合成一段 16 位单声道 WAV：`sample(i)` 是 -1..1 的样本。 */
+/** Synthesises a 16-bit mono WAV: `sample(i)` is the sample at index i, in the range -1..1. */
 function wav(options: {
   seconds: number;
   rate?: number;

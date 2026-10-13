@@ -1,4 +1,4 @@
-//! 颜色解析与插值（#hex / rgb() / rgba()），与 Swift 原型 RGBA 逐式一致。
+//! Color parsing and interpolation (#hex / rgb() / rgba()), formula-for-formula consistent with the Swift prototype's RGBA.
 
 use serde_json::Value;
 

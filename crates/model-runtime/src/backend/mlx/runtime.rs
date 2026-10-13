@@ -1,4 +1,4 @@
-//! MLX 运行时的公共部分：Metal 设备探测、缓存上限、缓存清理守卫、权重读取与内存快照。
+//! Shared parts of the MLX runtime: Metal device detection, cache limits, cache-clearing guards, weight reading, and memory snapshots.
 
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void};
@@ -34,32 +34,32 @@ unsafe extern "C" {
     fn objc_release(object: *mut c_void);
 }
 
-/// 进 MLX 之前先确认系统默认 Metal 设备存在。
+/// Before entering MLX, first confirm that the system default Metal device exists.
 ///
-/// 沙箱里 `MTLCreateSystemDefaultDevice()` 返回 nil，MLX 随后在 C++ 里抛 `metal::Device` 初始化异常；
-/// 那个异常穿过 mlx-c 撞进 Rust 就是 `Rust cannot catch foreign exceptions`，整个进程 abort。
-/// 这里先用 Metal 的 C 入口探一下，没有设备就返回普通错误。
+/// In the sandbox, `MTLCreateSystemDefaultDevice()` returns nil, and MLX then throws a `metal::Device` initialization exception in C++.
+/// That exception crossing mlx-c into Rust becomes `Rust cannot catch foreign exceptions`, which aborts the whole process.
+/// Here we first probe with Metal's C entry point; if there is no device, return an ordinary error.
 pub fn ensure_metal_device() -> Result<()> {
-    // SAFETY: 纯 C 入口，无参数；返回一个 +1 的 ObjC 对象或 nil。
+    // SAFETY: pure C entry point with no arguments; returns a +1 ObjC object or nil.
     let device = unsafe { MTLCreateSystemDefaultDevice() };
     if device.is_null() {
         bail!("no Metal device available (MTLCreateSystemDefaultDevice returned nil)");
     }
-    // SAFETY: `device` 非空且由上面的 create 调用持有一个引用，这里归还它。
+    // SAFETY: `device` is non-null and holds one reference from the create call above; release it here.
     unsafe { objc_release(device) };
     Ok(())
 }
 
-/// 把 MLX 已释放缓冲区的缓存限制在 2 GiB 与物理内存 1/8 中的较小值。
+/// Caps the cache of MLX-freed buffers at the smaller of 2 GiB and 1/8 of physical memory.
 ///
-/// MLX 默认按 GPU 推荐工作集设置缓存，在 16 GiB Mac 上接近 10 GiB。转录期间不断产生不同形状的临时
-/// Metal 缓冲区；不设上限时，这些已释放但仍被缓存的缓冲区会把进程 footprint 推到 11 GiB 以上。
+/// By default MLX sets the cache based on the GPU's recommended working set, which is close to 10 GiB on a 16 GiB Mac. During transcription, many temporary
+/// Metal buffers of different shapes are continually created. Without a cap, these freed-but-still-cached buffers push the process footprint above 11 GiB.
 pub fn configure_memory_cache() -> Result<usize> {
     ensure_metal_device()?;
     let physical_memory = physical_memory_bytes().context("reading physical memory size")?;
     let limit = cache_limit_for_physical_memory(physical_memory);
     let mut previous_limit = 0;
-    // SAFETY: `previous_limit` 是有效的可写 size_t 指针。
+    // SAFETY: `previous_limit` is a valid writable size_t pointer.
     let status = unsafe { mlx_sys::mlx_set_cache_limit(&mut previous_limit, limit) };
     if status != 0 {
         bail!("mlx_set_cache_limit failed (status {status})");
@@ -67,9 +67,9 @@ pub fn configure_memory_cache() -> Result<usize> {
     Ok(limit)
 }
 
-/// 立即把 MLX 已释放的 Metal 缓冲区归还给系统。
+/// Immediately returns MLX's freed Metal buffers to the system.
 pub fn clear_memory_cache() -> Result<()> {
-    // SAFETY: 没有参数；模型仍在使用的活跃缓冲区不会被释放。
+    // SAFETY: no arguments; active buffers still in use by the model are not freed.
     let status = unsafe { mlx_sys::mlx_clear_cache() };
     if status != 0 {
         bail!("mlx_clear_cache failed (status {status})");
@@ -77,7 +77,7 @@ pub fn clear_memory_cache() -> Result<()> {
     Ok(())
 }
 
-/// 作用域结束（成功、失败或提前返回）时释放本轮推理留下的 MLX 临时缓存。
+/// When the scope ends (success, failure or early return), releases the MLX temporary cache left by this round of inference.
 #[derive(Default)]
 pub struct MemoryCacheGuard;
 
@@ -93,15 +93,15 @@ impl Drop for MemoryCacheGuard {
     }
 }
 
-/// 模型生命周期清理；放在模型结构体的最后一个字段，让权重先析构。构造前须确认 Metal 可用。
-/// 与逐段的 [`MemoryCacheGuard`] 不同，卸载时还要等 GPU 完成：eval 提交的命令可能仍持有数组，
-/// 否则它们会在 clear 之后回到缓存。
+/// Model lifecycle cleanup; placed as the last field of the model struct so the weights are dropped first. Metal availability must be confirmed before construction.
+/// Unlike the per-segment [`MemoryCacheGuard`], unloading must also wait for the GPU to finish: commands submitted by eval may still hold arrays,
+/// otherwise they would return to the cache after clear.
 pub struct ModelMemoryCacheGuard;
 
 impl Drop for ModelMemoryCacheGuard {
     fn drop(&mut self) {
         let stream = mlx_rs::Stream::task_local_or_default();
-        // SAFETY: stream 在本调用期间存活；只等待该 stream 上已提交的工作。
+        // SAFETY: the stream lives for the duration of this call; it waits only for work already submitted on that stream.
         unsafe {
             let _ = mlx_sys::mlx_synchronize(stream.as_ptr());
         }
@@ -113,11 +113,11 @@ fn cache_limit_for_physical_memory(physical_memory: usize) -> usize {
     MAX_CACHE_BYTES.min(physical_memory / PHYSICAL_MEMORY_CACHE_DIVISOR)
 }
 
-/// 本机物理内存（字节）。
+/// Physical memory of this machine (bytes).
 pub fn physical_memory_bytes() -> Result<usize> {
     let mut value = 0_u64;
     let mut length = size_of::<u64>();
-    // SAFETY: `hw.memsize` 是以 NUL 结尾的常量；输出缓冲区与长度均有效，不传写值参数。
+    // SAFETY: `hw.memsize` is a NUL-terminated constant; the output buffer and length are valid, and no write-value argument is passed.
     let status = unsafe {
         sysctlbyname(
             c"hw.memsize".as_ptr(),
@@ -133,14 +133,14 @@ pub fn physical_memory_bytes() -> Result<usize> {
     usize::try_from(value).context("physical memory size overflows usize")
 }
 
-/// 读取并合并给定的 safetensors 文件（只读这些文件，不扫描目录）。键重复是错误。
+/// Reads and merges the given safetensors files (reads only these files, does not scan the directory). A duplicate key is an error.
 pub fn load_safetensors(files: &[&Path]) -> Result<HashMap<String, Array>> {
     load_safetensors_impl(files, |_| true, WeightEvaluation::Batch)
 }
 
-/// 读取给定的 safetensors，但只保留匹配的张量。MLX 的 safetensors 读取是惰性的；
-/// 在 `eval` 前丢掉未匹配数组，可避免 Qwen2.5-Omni 这类多模态快照把视觉塔、
-/// 音频塔、Talker 与 LM head 一并搬进统一内存。
+/// Reads the given safetensors but keeps only the matching tensors. MLX's safetensors reading is lazy;
+/// dropping unmatched arrays before `eval` prevents multimodal snapshots like Qwen2.5-Omni from moving the vision tower,
+/// audio tower, Talker and LM head into unified memory.
 pub fn load_safetensors_filtered(files: &[&Path], keep: impl Fn(&str) -> bool) -> Result<HashMap<String, Array>> {
     load_safetensors_impl(files, keep, WeightEvaluation::PerTensor)
 }
@@ -175,9 +175,9 @@ fn load_safetensors_impl(files: &[&Path], keep: impl Fn(&str) -> bool, evaluatio
         }
     }
     if matches!(evaluation, WeightEvaluation::PerTensor) {
-        // 不把数 GB 的 Omni 文本骨干塞进同一个 Metal command buffer。16 GiB M2
-        // 上整批 eval 偶发触发 macOS GPU watchdog；逐张量物化的峰值相同，但每个
-        // command buffer 都足够短，模型加载可重复。
+        // Don't stuff several GB of the Omni text backbone into a single Metal command buffer. On a 16 GiB M2,
+        // evaluating the whole batch occasionally trips macOS's GPU watchdog. Materializing tensor by tensor gives the same peak, but each
+        // command buffer is short enough, so model loading is repeatable.
         let mut keys = weights.keys().collect::<Vec<_>>();
         keys.sort();
         for key in keys {
@@ -189,12 +189,12 @@ fn load_safetensors_impl(files: &[&Path], keep: impl Fn(&str) -> bool, evaluatio
     Ok(weights)
 }
 
-/// MLX 侧内存快照（active / cache / peak，字节）。
+/// MLX-side memory snapshot (active / cache / peak, bytes).
 pub fn memory_snapshot() -> (usize, usize, usize) {
     let mut active = 0_usize;
     let mut cache = 0_usize;
     let mut peak = 0_usize;
-    // SAFETY: 三个指针都指向有效的 size_t；查询失败时保持 0。
+    // SAFETY: all three pointers point to valid size_t values; on query failure they stay 0.
     unsafe {
         let _ = mlx_sys::mlx_get_active_memory(&mut active);
         let _ = mlx_sys::mlx_get_cache_memory(&mut cache);
@@ -203,12 +203,12 @@ pub fn memory_snapshot() -> (usize, usize, usize) {
     (active, cache, peak)
 }
 
-/// `CCUT_SPEECH_TIMING=1` 时向 stderr 输出分阶段计时（benchmark/诊断用）。
+/// When `CCUT_SPEECH_TIMING=1`, prints per-stage timings to stderr (for benchmarking and diagnostics).
 pub use crate::backend::speech_timing_enabled;
 
-/// 触发一个最小 Metal 计算，验证 MLX 运行时（v2 的 `ccut doctor` 用它；v3 的诊断入口接入前没有调用方）。
+/// Triggers a minimal Metal computation to verify the MLX runtime (v2's `ccut doctor` used it; v3 has no caller until the diagnostic entry point is wired in).
 ///
-/// 先过 [`ensure_metal_device`]：没有设备时返回错误而不是让 MLX 把进程 abort。
+/// Passes [`ensure_metal_device`] first: without a device it returns an error instead of letting MLX abort the process.
 pub fn metal_probe() -> Result<()> {
     ensure_metal_device()?;
     let values = Array::from_slice(&[1.0_f32, 2.0, 3.0, 4.0], &[2, 2]);
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn metal_device_probe_is_a_plain_result() {
-        // 有 GPU 的机器上必须 Ok；沙箱里（没有设备）必须是普通 Err 而不是 abort。
+        // On a machine with a GPU this must return Ok; in the sandbox (no device) it must be an ordinary Err, not an abort.
         match ensure_metal_device() {
             Ok(()) => {}
             Err(error) => assert!(format!("{error:#}").contains("Metal"), "{error:#}"),

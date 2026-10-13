@@ -1,27 +1,26 @@
-//! k2-fsa OmniVoice：Qwen3 底座的掩码离散扩散 + Higgs 音频分词器，24 kHz（mlx-rs 实现，移植自 v2 `ccut-tts::omnivoice`）。
-//! 权重 `aufklarer/OmniVoice-MLX-int8`；音频分词器在同一仓库的 `audio_tokenizer/` 下。
+//! k2-fsa OmniVoice: masked discrete diffusion on a Qwen3 base, plus the Higgs audio tokenizer, 24 kHz (mlx-rs implementation, ported from v2 `ccut-tts::omnivoice`).
+//! Weights `aufklarer/OmniVoice-MLX-int8`; the audio tokenizer is under `audio_tokenizer/` in the same repository.
 //!
-//! 部分实现移植自 speech-swift（https://github.com/soniqo/speech-swift ，Apache License 2.0，
-//! Copyright 2025 Ivan Digital），有修改：改写为 Rust / mlx-rs，并按本仓库的模型包与错误约定接入。
+//! Parts are ported from speech-swift (https://github.com/soniqo/speech-swift , Apache License 2.0,
+//! Copyright 2025 Ivan Digital), with modifications: rewritten in Rust / mlx-rs, and wired in following this repository's model package and error conventions.
 //! SPDX-License-Identifier: Apache-2.0
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! 纯逻辑子模块（配置解析、分词、文本与音频前后处理、instruct 词表）不带 cfg 门，全平台编译并带单测；
-//! 模型图与 [`OmniVoice`] 经 `synthesize::tensor` 门面编译：Apple Silicon 上是 MLX，其余平台开 `backend-candle` 时是 candle CPU/CUDA。
+//! Pure-logic submodules (config parsing, tokenization, text and audio pre/post-processing, instruct vocabulary) have no cfg gate and compile on all platforms with unit tests;
+//! the model graph and [`OmniVoice`] compile through the `synthesize::tensor` facade: MLX on Apple Silicon, and candle CPU/CUDA on other platforms when `backend-candle` is enabled.
 
-/// 无分类器引导强度的官方默认（`guidance_scale`）。
+/// Official default guidance strength for classifier-free guidance (`guidance_scale`).
 pub const DEFAULT_CFG: f32 = 2.0;
-/// 迭代解码步数的官方默认（`num_step`）。
+/// Official default number of iterative decoding steps (`num_step`).
 pub const DEFAULT_STEPS: usize = 32;
-/// 单段目标时长上限（秒）。
+/// Upper limit of the target duration for a single segment (seconds).
 pub const MAX_TARGET_SECONDS: f64 = 60.0;
-/// 界面与参数表的语速 `(最小, 最大, 步长)`（含两端），取官方 Gradio demo（k2-fsa/OmniVoice
-/// `omnivoice/cli/demo.py`）的滑杆。模型本身只要求 `speed > 0`、`cfg ≥ 0`（0 = 不做引导）、`steps ≥ 1`，
-/// 引擎按这个下限校验，区间不进引擎。
+/// Speed range `(min, max, step)` for the UI and parameter table, inclusive of both ends, taken from the sliders of the official Gradio demo (k2-fsa/OmniVoice
+/// `omnivoice/cli/demo.py`). The model itself only requires `speed > 0`, `cfg ≥ 0` (0 = no guidance), and `steps ≥ 1`; the engine validates against that lower bound, and the range is not part of the engine.
 pub const SPEED_RANGE: (f32, f32, f32) = (0.5, 1.5, 0.05);
-/// CFG 的 `(最小, 最大, 步长)`，来源同 [`SPEED_RANGE`]。
+/// CFG `(min, max, step)`, same source as [`SPEED_RANGE`].
 pub const CFG_RANGE: (f32, f32, f32) = (0.0, 4.0, 0.1);
-/// 步数的 `(最小, 最大, 步长)`，来源同 [`SPEED_RANGE`]。
+/// Steps `(min, max, step)`, same source as [`SPEED_RANGE`].
 pub const STEPS_RANGE: (usize, usize, usize) = (4, 64, 1);
 
 pub mod audio;

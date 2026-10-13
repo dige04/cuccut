@@ -14,7 +14,7 @@ import { pl } from './download-transcript.pl.ts';
 import { tr } from './download-transcript.tr.ts';
 import { vi } from './download-transcript.vi.ts';
 
-/** `packages/jobs/src/pipelines/download-transcript.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/download-transcript.ts`. */
 const en = {
   fileTranscribeUnavailable: 'File transcription is unavailable',
   notCompleted: "Transcription didn't complete; the video file was kept",

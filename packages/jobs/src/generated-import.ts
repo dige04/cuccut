@@ -2,11 +2,10 @@ import type { EditOperation, GenerationParameters, JobRecord } from '@cuccut/pro
 import { JobsGeneratedImport as J } from '@cuccut/protocol/messages/jobs/generated-import.ts';
 
 /**
- * 生成的输出导入视频的那一个操作（架构设计 §5.7、§7.3）。生成任务给了视频时由 JobManager 用它导入；没给视频的任务，
- * 之后把产物「加到视频」也用它（智能体经 `edits_apply` 的 `importAsset` + `artifactId`），两条路记下的来源完全相同。
+ * The single operation that imports a generated output into a video (architecture design §5.7, §7.3). When a generation task is given a video, the JobManager imports with it. For a task given no video, a later “add the artifact to the video” also uses it (the agent, via `importAsset` + `artifactId` in `edits_apply`). Both routes record exactly the same source.
  *
- * - bytes 总是收进视频目录（`managed`）：产物库里的文件不是用户的原文件，不能链接（视频格式规范 §4.2）。
- * - 来源只记任务、Provider、模型、参数与摘要，不记原文与提示词（它们只在任务记录里）。
+ * - Bytes always go into the video directory (`managed`). Files in the artifact store are not the user's original files and cannot be linked (video format spec §4.2).
+ * - The source records only the task, Provider, model, parameters and digest, not the original text or prompt (those live only in the task record).
  */
 export function generatedImportOperation(
   record: JobRecord,
@@ -38,7 +37,7 @@ export function generatedImportOperation(
   };
 }
 
-/** 不给名字时的素材名：种类加原文或提示词的开头。（文本生成不导入视频，这里只为类型完整。） */
+/** Asset name used when no name is given: the kind, plus the start of the original text or prompt. (Text generation does not import into a video; this is here only so the type is complete.) */
 function defaultAssetName(parameters: GenerationParameters): string {
   const source =
     parameters.capability === 'synthesizeSpeech'

@@ -3,17 +3,15 @@ import type { Localized } from '@cuccut/protocol';
 import { ASR_RESULT_SCHEMA, ASR_WARNING_CODES, TIMING_QUALITIES, type AsrResult } from './worker-contract.ts';
 
 /**
- * `cuccut.asr-result/v1` 的校验（Model Worker 协议规范 §6）。Runtime 在发布产物之前执行；不通过就是
- * `MODEL_OUTPUT_INVALID`，不重试同一输入。
+ * Validation of `cuccut.asr-result/v1` (Model Worker protocol spec §6). The Runtime runs it before publishing the artifact. A failure is `MODEL_OUTPUT_INVALID`, and the same input is not retried.
  *
- * 不检查的两条：`aligned` 的词要求 ASR 自身有词级时间能力——Runtime 看不出这一点，只在没有对齐器时也接受；
- * `provenance.inputHash`——`job.run` 不携带输入 hash，Worker 无从回填（见最终报告）。
+ * Two checks are not performed. The first: `aligned` words require the ASR itself to have word-level timing capability. The Runtime cannot tell this, so it only accepts them when there is no aligner. The second: `provenance.inputHash`. `job.run` does not carry an input hash, so the Worker cannot fill it in (see the final report).
  */
 
 export interface AsrExpectations {
-  /** 请求里断言的语言：`language.source === 'asserted'` 时结果必须等于它。 */
+  /** The language asserted in the request: when `language.source === 'asserted'`, the result must equal it. */
   assertedLanguage?: string;
-  /** 这次尝试的 `runGeneration`，结果的 `provenance.runGeneration` 必须原样回填。 */
+  /** The `runGeneration` of this attempt. The result's `provenance.runGeneration` must be echoed back unchanged. */
   runGeneration?: number;
 }
 
@@ -21,7 +19,7 @@ export type AsrValidation = { ok: true; result: AsrResult } | { ok: false; probl
 
 const MAX_PROBLEMS = 20;
 
-/** 合法的 BCP 47 标签返回规范形式，否则 null。 */
+/** Returns the canonical form of a valid BCP 47 tag, otherwise null. */
 export function canonicalLanguageTag(tag: string): string | null {
   try {
     const [canonical] = Intl.getCanonicalLocales(tag);
@@ -33,7 +31,7 @@ export function canonicalLanguageTag(tag: string): string | null {
 
 export function validateAsrResult(value: unknown, expect: AsrExpectations = {}): AsrValidation {
   const problems: string[] = [];
-  // problems 是给人看的文本（调用方只收字符串）；按生成时的语言存文本，不带引用。
+  // `problems` is human-readable text (callers only receive strings). Text is stored in the language it was generated in, without citations.
   const fail = (message: Localized) => {
     if (problems.length < MAX_PROBLEMS) problems.push(message.text);
   };
@@ -49,7 +47,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
   if (!isNonNegativeInt(duration)) fail(M.durationInvalid());
   const limit = isNonNegativeInt(duration) ? duration : Number.MAX_SAFE_INTEGER;
 
-  // 语言
+  // Language
   if (!isObject(r.language)) fail(M.languageNotObject());
   else {
     const { tag, source, confidence } = r.language;
@@ -64,7 +62,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
     }
   }
 
-  // 说话人
+  // Speakers
   const speakerIds = new Set<string>();
   if (!Array.isArray(r.speakers)) fail(M.speakersNotArray());
   else
@@ -77,7 +75,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
       }
     }
 
-  // 分段与词
+  // Segments and words
   if (!Array.isArray(r.segments)) fail(M.segmentsNotArray());
   else {
     if (outcome !== 'transcribed' && r.segments.length > 0) fail(M.segmentsNotEmpty({ outcome: String(outcome) }));
@@ -122,7 +120,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
     });
   }
 
-  // 覆盖范围
+  // Coverage
   if (!Array.isArray(r.coverage)) fail(M.coverageNotArray());
   else
     r.coverage.forEach((range: unknown, i: number) => {
@@ -130,7 +128,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
       if (range.start > range.end || range.end > limit) fail(M.coverageOutOfRange({ at: `coverage[${i}]` }));
     });
 
-  // 警告
+  // Warnings
   if (!Array.isArray(r.warnings)) fail(M.warningsNotArray());
   else
     r.warnings.forEach((warning: unknown, i: number) => {
@@ -138,7 +136,7 @@ export function validateAsrResult(value: unknown, expect: AsrExpectations = {}):
       else if (warning.segmentId !== undefined && typeof warning.segmentId !== 'string') fail(M.warningSegmentIdInvalid({ at: `warnings[${i}]` }));
     });
 
-  // 来源
+  // Source
   if (!isObject(r.provenance)) fail(M.provenanceNotObject());
   else {
     const p = r.provenance;

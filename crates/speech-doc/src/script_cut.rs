@@ -1,23 +1,13 @@
-//! 按稿预剪（`ccut cut script`）的确定性引擎：稿与识别出来的转录做序列比对，
-//! 找出录音里多说的连续词段，分成 `repeat` / `filler` / `extra` 三种原因，再把
-//! 起止吸附到素材自己的静音处。规格见口播成片方案稿 §5.1。
+//! Deterministic engine for the script pre-cut (`ccut cut script`): aligns the script with the transcript recognized from the recording as a sequence, finds consecutive word spans that the recording has beyond the script, classifies them into three reasons `repeat` / `filler` / `extra`, then snaps the start and end of each cut to the clip's own silences. Spec: see the spoken-video plan doc §5.1.
 //!
-//! 本模块零 I/O：稿的读法（纯文本 / SRT / LRC / JSON）在 [`crate::script`]，
-//! 音频能量由 host 读成 BCW1 峰值后以 [`SilenceMap`] 交进来，写入时间轴在
-//! `ccut-workspace`。
+//! This module does no I/O. Reading the script (plain text / SRT / LRC / JSON) lives in [`crate::script`]. The host reads the audio energy into BCW1 peak values and passes it in as a [`SilenceMap`]. Writing to the timeline happens in `ccut-workspace`.
 //!
-//! **与语言无关**：
-//! - 词元化只看 Unicode 属性：兼容分解后再合成（NFKC）、小写，去掉标点、符号与空白；
-//!   不用空格分词的文字（汉字、假名、谚文、泰文、老挝文、高棉文、缅甸文、藏文等）
-//!   按字位逐个成词元，其余文字按连续的字母数字成词。撇号只去掉、不断词。
-//! - 替换（识别听错、换了个说法）**永不剪**，所以比对不需要读音归一化，也不展开数字。
-//! - 口癖表是按语言的数据，由调用方按转录语言传入；没有表时不产出 `filler`，这类段落归 `extra`。
+//! **Language-independent**:
+//! - Tokenization only looks at Unicode properties: compatibility decomposition followed by recomposition (NFKC), lowercasing, and removal of punctuation, symbols and whitespace. Scripts that do not separate words with spaces (Han, kana, Hangul, Thai, Lao, Khmer, Myanmar, Tibetan, etc.) become one token per character. Other text is grouped into runs of consecutive letters and digits. Apostrophes are removed but do not split words.
+//! - Substitutions (the speaker misheard a word or phrased it differently) are **never cut**, so alignment needs no pronunciation normalization, and numbers are not expanded.
+//! - The filler table is per-language data, passed in by the caller according to the transcript language. Without a table no `filler` is produced, and those spans are classed as `extra`.
 //!
-//! **规模**：比对不是平方算法。先剥公共前后缀，再取两侧都只出现一次的 k 元组做锚点
-//! （k 依次取 8 / 4 / 2 / 1），用最长递增子序列挑出一条单调锚链，锚点之间的缝递归；
-//! 缝缩到 [`GAP_CELL_CAP`] 以内才交给 [`crate::lcs::lcs_matches`] 做精确 LCS。
-//! 既找不到锚点又超过上限的缝整段记为没对上（确定性；多半是拿错了稿，覆盖率会低）。
-//! [`AlignStats`] 记下实际做了多少 LCS 单元，量级测试用它钉住「不是平方」。
+//! **Scale**: alignment is not quadratic. It first strips the common prefix and suffix, then takes k-grams that occur exactly once on both sides as anchors (k tried in the order 8 / 4 / 2 / 1), uses the longest increasing subsequence to pick a monotone anchor chain, and recurses into the gaps between anchors. A gap is handed to exact LCS in [`crate::lcs::lcs_matches`] only once it shrinks to within [`GAP_CELL_CAP`]. A gap that has no anchors and exceeds the cap is recorded as wholly unmatched (deterministic; usually means the wrong script was used, so coverage will be low). [`AlignStats`] records how many LCS cells were actually computed, and the scale test uses it to pin down "not quadratic".
 
 use std::collections::HashMap;
 
@@ -27,28 +17,28 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::lcs::{AtomInterner, lcs_matches};
 
-/// 单个缝交给精确 LCS 的单元上限（(n+1)·(m+1)）。约 2000 × 2000 词元。
+/// Upper limit on the cells ((n+1)·(m+1)) handed to exact LCS for a single gap. About 2000 × 2000 tokens.
 pub const GAP_CELL_CAP: usize = 4_000_000;
-/// 锚点 k 元组的长度，从长到短依次尝试。
+/// Length of the anchor k-gram, tried from longest to shortest.
 const ANCHOR_WIDTHS: [usize; 4] = [8, 4, 2, 1];
-/// `repeat` 判定看紧邻保留段的窗口：`2 × 段长 + REPEAT_WINDOW_SLACK` 个词元。
+/// The `repeat` check looks at the window next to the kept segment: `2 × segment length + REPEAT_WINDOW_SLACK` tokens.
 const REPEAT_WINDOW_SLACK: usize = 8;
-/// 同一句起了几次头时，拼成 `repeat` 的每一片至少这么多个词元（一个词元的片太容易撞上）。
+/// When the same sentence is started more than once, each piece that is assembled into a `repeat` must be at least this many tokens (a one-token piece matches too easily).
 const REPEAT_MIN_PIECE_TOKENS: usize = 2;
-/// 超过这么多词元的段不按片拼（见 [`covered_by_pieces`]）。
+/// Segments longer than this many tokens are not assembled from pieces (see [`covered_by_pieces`]).
 const REPEAT_PIECE_MAX_TOKENS: usize = 512;
-/// 短于这个时长的剪口丢掉（秒）。
+/// Cuts shorter than this duration are dropped (seconds).
 pub const MIN_CUT_SECONDS: f64 = 0.05;
-/// 静音阈值：取包络 95 分位往下这么多分贝。
+/// Silence threshold: this many decibels below the envelope's 95th percentile.
 const SILENCE_BELOW_HIGH_DB: f64 = 35.0;
-/// 静音阈值下限：底噪（10 分位）往上这么多分贝……
+/// Lower bound of the silence threshold: this many decibels above the noise floor (10th percentile)...
 const SILENCE_ABOVE_FLOOR_DB: f64 = 6.0;
-/// ……但不高过 95 分位往下这么多分贝（底噪很高的素材宁可吸附不到）。
+/// ...but the lower bound is not allowed to rise above this many decibels below the 95th percentile (material with a very high noise floor would otherwise find almost no silence to snap to).
 const SILENCE_MAX_BELOW_HIGH_DB: f64 = 15.0;
-/// 静音段至少连续这么多个 bin。
+/// A silent span must be at least this many consecutive bins long.
 const SILENCE_MIN_BINS: usize = 2;
 
-/// 保留哪一遍。`Last` 是缺省：同一句说了两遍，留后一遍。
+/// Which take to keep. `Last` is the default: when a sentence was said twice, keep the later take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Take {
     Last,
@@ -72,7 +62,7 @@ impl Take {
     }
 }
 
-/// 候选剪口的原因。
+/// Reason for a candidate cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reason {
     Repeat,
@@ -89,7 +79,7 @@ impl Reason {
         }
     }
 
-    /// 写进时间轴溯源的剪口类别。
+    /// Cut category recorded in the timeline's provenance.
     pub fn cut_kind(self) -> &'static str {
         match self {
             Self::Repeat => "badTake",
@@ -99,7 +89,7 @@ impl Reason {
     }
 }
 
-/// 录音一侧的一个转录词（调用方已去掉 `hidden` 的词）。
+/// A transcript word on the recording side (the caller has already removed `hidden` words).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecWord {
     pub text: String,
@@ -107,7 +97,7 @@ pub struct RecWord {
     pub t1: f64,
 }
 
-/// 一段录音多出来的连续词（词下标闭区间）。
+/// A run of consecutive words the recording has beyond the script (inclusive word index range).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlanSegment {
     pub first: usize,
@@ -115,33 +105,33 @@ pub struct PlanSegment {
     pub reason: Reason,
 }
 
-/// 比对的开销记录。
+/// Record of the alignment cost.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AlignStats {
-    /// 交给精确 LCS 的单元总数。
+    /// Total number of units handed to exact LCS.
     pub lcs_cells: u64,
-    /// 找锚点时入表的 k 元组总数。
+    /// Total number of k-grams entered into the table when searching for anchors.
     pub hashed: u64,
-    /// 既找不到锚点、又超过上限而整段记为没对上的缝里，稿一侧的词元数。
+    /// In gaps that have no anchors, exceed the cap, and were therefore recorded wholly as unmatched: the number of script-side tokens.
     pub unresolved_script_tokens: usize,
-    /// 同上，录音一侧的词元数。
+    /// Same as above, for the recording-side token count.
     pub unresolved_rec_tokens: usize,
 }
 
-/// 比对与分类的结果。
+/// Result of alignment and classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchPlan {
     pub script_tokens: usize,
     pub matched: usize,
-    /// 录音多出来的段，按时间顺序。
+    /// Spans the recording has beyond the script, in time order.
     pub segments: Vec<PlanSegment>,
-    /// 整行都没念的稿行（0 起的行下标）。
+    /// Script lines that were not spoken at all (0-based line indices).
     pub missing_lines: Vec<usize>,
     pub stats: AlignStats,
 }
 
 impl MatchPlan {
-    /// 稿的词元里对上的比例；稿里没有词元时是 0。
+    /// Share of the script's tokens that were matched; 0 if the script has no tokens.
     pub fn coverage(&self) -> f64 {
         if self.script_tokens == 0 {
             0.0
@@ -151,26 +141,26 @@ impl MatchPlan {
     }
 }
 
-/// 不用空格分词、按字位逐个成词元的文字。
+/// Text that does not separate words with spaces, tokenized one character per token.
 fn is_spaceless_char(ch: char) -> bool {
     matches!(ch as u32,
-        0x0E00..=0x0EFF      // 泰文、老挝文
-        | 0x0F00..=0x0FFF    // 藏文
-        | 0x1000..=0x109F    // 缅甸文
-        | 0x1100..=0x11FF    // 谚文字母
-        | 0x1780..=0x17FF    // 高棉文
-        | 0x19E0..=0x19FF    // 高棉符号
-        | 0x2E80..=0x2FDF    // 部首
-        | 0x3040..=0x30FF    // 假名
-        | 0x3100..=0x312F    // 注音
-        | 0x3130..=0x318F    // 谚文兼容字母
-        | 0x31A0..=0x31FF    // 注音扩展、片假名音标扩展
-        | 0x3400..=0x4DBF    // 汉字扩展 A
-        | 0x4E00..=0x9FFF    // 汉字
-        | 0xA000..=0xA4CF    // 彝文
-        | 0xAC00..=0xD7AF    // 谚文音节
-        | 0xF900..=0xFAFF    // 兼容汉字
-        | 0x20000..=0x323AF  // 汉字扩展 B 起
+        0x0E00..=0x0EFF      // Thai, Lao
+        | 0x0F00..=0x0FFF    // Tibetan
+        | 0x1000..=0x109F    // Myanmar
+        | 0x1100..=0x11FF    // Hangul jamo
+        | 0x1780..=0x17FF    // Khmer
+        | 0x19E0..=0x19FF    // Khmer symbols
+        | 0x2E80..=0x2FDF    // Radicals
+        | 0x3040..=0x30FF    // Kana
+        | 0x3100..=0x312F    // Bopomofo
+        | 0x3130..=0x318F    // Hangul compatibility jamo
+        | 0x31A0..=0x31FF    // Bopomofo Extended, Katakana Phonetic Extensions
+        | 0x3400..=0x4DBF    // CJK Unified Ideographs Extension A
+        | 0x4E00..=0x9FFF    // Han
+        | 0xA000..=0xA4CF    // Yi
+        | 0xAC00..=0xD7AF    // Hangul syllables
+        | 0xF900..=0xFAFF    // CJK compatibility ideographs
+        | 0x20000..=0x323AF  // From CJK Unified Ideographs Extension B onward
     )
 }
 
@@ -192,12 +182,12 @@ fn is_word_char(ch: char) -> bool {
     )
 }
 
-/// 撇号类：去掉，但不断词（`don't` 与 `dont` 同一个词元）。
+/// Apostrophe-like marks: removed, but do not split words (`don't` and `dont` are the same token).
 fn is_apostrophe(ch: char) -> bool {
     matches!(ch, '\'' | '\u{2019}' | '\u{02BC}' | '\u{2018}' | '\u{FF07}')
 }
 
-/// 一段文本的归一化词元（见模块文档）。
+/// Normalized tokens of a piece of text (see the module docs).
 pub fn tokens(text: &str) -> Vec<String> {
     let normalized: String = text.nfkc().flat_map(char::to_lowercase).collect();
     let mut out = Vec::new();
@@ -228,15 +218,14 @@ pub fn tokens(text: &str) -> Vec<String> {
     out
 }
 
-/// 口癖比较用的词键：小写并去掉首尾非字母数字（与 `cut detect` 的口癖归一化同一口径）。
+/// Word key for filler comparison: lowercased, with leading and trailing non-alphanumeric characters removed (same normalization as the filler handling in `cut detect`).
 pub fn filler_key(text: &str) -> String {
     text.to_lowercase()
         .trim_matches(|ch: char| !ch.is_alphanumeric())
         .to_owned()
 }
 
-/// 比对并分类。`lines` 是按稿读法切出来的行；`fillers` 是口癖短语（每条短语是若干
-/// 已按 [`filler_key`] 归一的词），`None` 表示这门语言没有口癖表。
+/// Align and classify. `lines` are the lines split out according to the script reading. `fillers` are filler phrases (each phrase is a sequence of words already normalized by [`filler_key`]). `None` means this language has no filler table.
 pub fn plan(
     lines: &[String],
     words: &[RecWord],
@@ -298,7 +287,7 @@ pub fn plan(
         }
     }
 
-    // 词的状态：任一词元对上或落在替换里就保留；全是录音多就是候选；没有词元的中性。
+    // Word state: if any of its tokens is matched or falls in a substitution, keep it. If all of its tokens are recording-extra, it is a candidate. A word with no tokens is neutral.
     #[derive(Clone, Copy, PartialEq)]
     enum WordState {
         Kept,
@@ -386,9 +375,9 @@ pub fn plan(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TokenState {
     Matched,
-    /// 同一个缝里两侧都有没对上的词元：替换，保留。
+    /// Within one gap, when both sides have unmatched tokens: a substitution, keep.
     Replaced,
-    /// 纯稿多 / 纯录音多。
+    /// Pure script-extra / pure recording-extra.
     Unmatched,
 }
 
@@ -414,12 +403,10 @@ fn classify_tokens(
     (script_state, rec_state)
 }
 
-/// 纯录音多的缝（稿一侧为空）沿录音滑动，使同样的词保留在 `take` 指定的那一遍：
-/// `Last` 往前滑（前一遍被剪），`First` 往后滑。只在相邻的匹配两侧都与缝紧邻、
-/// 稿一侧连续时滑，保证滑动不会把插入并进替换。
+/// A pure recording-extra gap (empty script side) slides along the recording so that the same words stay in the take chosen by `take`. `Last` slides forward (the earlier take gets cut), `First` slides backward. It slides only when the matches on both sides adjacent to the gap are contiguous and the script side is contiguous, so that sliding never merges an insertion into a substitution.
 fn slide_insertions(pairs: &mut [(usize, usize)], script_len: usize, rec: &[u32], take: Take) {
     let count = pairs.len();
-    // 匹配 q 挪动后，它另一侧的缝在稿一侧必须仍是空的，否则插入会并进替换。
+    // After match q moves, the gap on its other side must still be empty on the script side, otherwise the insertion would merge into a substitution.
     let script_contiguous_left = |pairs: &[(usize, usize)], q: usize| {
         if q == 0 {
             pairs[0].0 == 0
@@ -437,19 +424,19 @@ fn slide_insertions(pairs: &mut [(usize, usize)], script_len: usize, rec: &[u32]
     match take {
         Take::Last => {
             for p in 1..count {
-                // 缝在 pairs[p-1] 与 pairs[p] 之间；稿一侧连续才是纯录音多。
+                // The gap lies between pairs[p-1] and pairs[p]. It is pure recording-extra only when the script side is contiguous.
                 if pairs[p].0 != pairs[p - 1].0 + 1 || pairs[p].1 == pairs[p - 1].1 + 1 {
                     continue;
                 }
-                let mut q = p - 1; // 缝左边紧邻的匹配
+                let mut q = p - 1; // Match immediately to the left of the gap
                 loop {
-                    let gap_end = pairs[q + 1].1; // 缝的开区间右端
+                    let gap_end = pairs[q + 1].1; // Right end of the gap's open interval
                     let left = pairs[q].1;
                     if rec[left] != rec[gap_end - 1] || !script_contiguous_left(pairs, q) {
                         break;
                     }
                     pairs[q].1 = gap_end - 1;
-                    // 再左边一格也是紧邻的匹配才接着滑。
+                    // Keep sliding only if the match one further left is also adjacent.
                     if q == 0 || pairs[q - 1].1 + 1 != left {
                         break;
                     }
@@ -462,7 +449,7 @@ fn slide_insertions(pairs: &mut [(usize, usize)], script_len: usize, rec: &[u32]
                 if pairs[p + 1].0 != pairs[p].0 + 1 || pairs[p + 1].1 == pairs[p].1 + 1 {
                     continue;
                 }
-                let mut q = p + 1; // 缝右边紧邻的匹配
+                let mut q = p + 1; // Match immediately to the right of the gap
                 loop {
                     let gap_start = pairs[q - 1].1 + 1;
                     let right = pairs[q].1;
@@ -480,7 +467,7 @@ fn slide_insertions(pairs: &mut [(usize, usize)], script_len: usize, rec: &[u32]
     }
 }
 
-/// 贪心地用口癖短语覆盖一段词，返回每个词是否被覆盖（长短语优先）。
+/// Greedily covers a span of words with filler phrases and returns whether each word is covered (longer phrases take priority).
 fn filler_cover(keys: &[String], phrases: &[Vec<String>]) -> Vec<bool> {
     let mut covered = vec![false; keys.len()];
     let mut index = 0;
@@ -508,10 +495,7 @@ fn filler_cover(keys: &[String], phrases: &[Vec<String>]) -> Vec<bool> {
     covered
 }
 
-/// 段的词元（去掉口癖）能否由 `take` 那一侧紧邻保留段里的连续子串拼出来：整段是一个
-/// 子串，或者按顺序切成若干片、每片至少 [`REPEAT_MIN_PIECE_TOKENS`] 个词元且各自是子串
-/// （同一句起了几次头：「第一步读时间轴。第一步。」）。片之间夹着保留段里没有的词
-/// （道歉、更正词）就不算，这类段落归 `extra`。
+/// Whether the segment's tokens (with fillers removed) can be assembled from consecutive substrings of the kept segment adjacent on the `take` side. Either the whole segment is one substring, or it is cut in order into several pieces, each piece at least [`REPEAT_MIN_PIECE_TOKENS`] tokens long and each itself a substring (the same sentence started several times, e.g. “第一步读时间轴。第一步。” ("Step one: read the timeline. Step one.")). Pieces separated by words not found in the kept segment (apology or correction words) do not count; such spans are classed as `extra`.
 fn is_repeat(
     needle: &[u32],
     rec: &[u32],
@@ -545,14 +529,13 @@ fn is_repeat(
     contains_run(&haystack, needle) || covered_by_pieces(&haystack, needle)
 }
 
-/// `needle` 能否按顺序切成若干片，每片至少 [`REPEAT_MIN_PIECE_TOKENS`] 个词元、各自是
-/// `haystack` 的连续子串。超过 [`REPEAT_PIECE_MAX_TOKENS`] 的段不切（长段多半是稿外话）。
+/// Whether `needle` can be cut in order into several pieces, each at least [`REPEAT_MIN_PIECE_TOKENS`] tokens long and each a consecutive substring of `haystack`. Segments longer than [`REPEAT_PIECE_MAX_TOKENS`] are not cut (long segments are mostly off-script talk).
 fn covered_by_pieces(haystack: &[u32], needle: &[u32]) -> bool {
     let n = needle.len();
     if n < REPEAT_MIN_PIECE_TOKENS || n > REPEAT_PIECE_MAX_TOKENS {
         return false;
     }
-    // 从 i 起、在 haystack 里出现过的最长前缀长度（出现过的串，其前缀也都出现过）。
+    // Length of the longest prefix starting at i that occurs in haystack (if a string occurs, all its prefixes occur too).
     let longest = (0..n)
         .map(|i| {
             (0..haystack.len())
@@ -575,7 +558,7 @@ fn covered_by_pieces(haystack: &[u32], needle: &[u32]) -> bool {
     reachable[0]
 }
 
-/// KMP：`needle` 是否是 `haystack` 的连续子串。
+/// KMP: whether `needle` is a consecutive substring of `haystack`.
 fn contains_run(haystack: &[u32], needle: &[u32]) -> bool {
     if needle.is_empty() || needle.len() > haystack.len() {
         return needle.is_empty();
@@ -606,7 +589,7 @@ fn contains_run(haystack: &[u32], needle: &[u32]) -> bool {
     false
 }
 
-/// 两串词元的保序匹配对（偏早：同样长的匹配里取靠前的那一遍）。
+/// Order-preserving match pairs between two token strings (biased early: among equally long matches, take the earlier one).
 pub fn align(a: &[u32], b: &[u32], stats: &mut AlignStats) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     align_range(a, b, 0, a.len(), 0, b.len(), stats, &mut out);
@@ -669,8 +652,7 @@ fn align_range(
     out.extend((0..suffix).map(|k| (a1 + k, b1 + k)));
 }
 
-/// 在 `[a0,a1) × [b0,b1)` 里取两侧都只出现一次的 `width` 元组，按稿的位置排好后
-/// 取录音位置的最长严格递增子序列，再去掉互相重叠的，得到一条单调、不重叠的锚链。
+/// In `[a0,a1) × [b0,b1)`, take the `width`-tuples that occur exactly once on each side, sort them by script position, take the longest strictly increasing subsequence of recording positions, then remove any that overlap. The result is a monotone, non-overlapping anchor chain.
 #[allow(clippy::too_many_arguments)]
 fn find_anchors(
     a: &[u32],
@@ -685,7 +667,7 @@ fn find_anchors(
     if a1 - a0 < width || b1 - b0 < width {
         return Vec::new();
     }
-    // (稿里出现次数, 稿位置, 录音里出现次数, 录音位置)
+    // (occurrence count in script, script position, occurrence count in recording, recording position)
     let mut table: HashMap<&[u32], (u32, usize, u32, usize)> = HashMap::new();
     for i in a0..=a1 - width {
         let entry = table.entry(&a[i..i + width]).or_insert((0, i, 0, 0));
@@ -719,9 +701,9 @@ fn find_anchors(
     anchors
 }
 
-/// 按第一维已排序的点列，取第二维严格递增的最长子序列（O(r log r)，同长取字典序靠前的）。
+/// For points already sorted by the first dimension, take the longest subsequence that is strictly increasing in the second dimension (O(r log r); among equal lengths, take the lexicographically earlier one).
 fn longest_increasing_by_second(points: &[(usize, usize)]) -> Vec<(usize, usize)> {
-    let mut tails: Vec<usize> = Vec::new(); // tails[k] = 长度 k+1 的链的末点下标
+    let mut tails: Vec<usize> = Vec::new(); // tails[k] = index of the end point of the chain of length k+1
     let mut parent = vec![usize::MAX; points.len()];
     for (index, &(_, value)) in points.iter().enumerate() {
         let position = tails.partition_point(|&tail| points[tail].1 < value);
@@ -744,19 +726,16 @@ fn longest_increasing_by_second(points: &[(usize, usize)]) -> Vec<(usize, usize)
     chain
 }
 
-/// 素材的静音区间（秒，按时间排序、互不相交）。
+/// Silent intervals of the material (seconds, sorted by time, mutually disjoint).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SilenceMap {
     runs: Vec<(f64, f64)>,
 }
 
 impl SilenceMap {
-    /// 从每秒 `bins_per_second` 个 bin 的峰值包络（BCW1 字节）求静音区间。
+    /// Derives silent intervals from a peak envelope (BCW1 bytes) with `bins_per_second` bins per second.
     ///
-    /// 阈值取这条素材自己的响度分布：95 分位往下 [`SILENCE_BELOW_HIGH_DB`]；
-    /// 下限是底噪（10 分位）往上 [`SILENCE_ABOVE_FLOOR_DB`]，但下限本身不高过
-    /// 95 分位往下 [`SILENCE_MAX_BELOW_HIGH_DB`]。连续至少 [`SILENCE_MIN_BINS`] 个
-    /// 不高于阈值的 bin 才算静音。
+    /// The threshold is taken from this material's own loudness distribution: [`SILENCE_BELOW_HIGH_DB`] below the 95th percentile. The lower bound is [`SILENCE_ABOVE_FLOOR_DB`] above the noise floor (10th percentile), but the lower bound itself is not allowed to rise above [`SILENCE_MAX_BELOW_HIGH_DB`] below the 95th percentile. A silence requires at least [`SILENCE_MIN_BINS`] consecutive bins that do not exceed the threshold.
     pub fn from_levels(levels: &[u8], bins_per_second: f64) -> Self {
         if levels.is_empty() || bins_per_second <= 0.0 || !bins_per_second.is_finite() {
             return Self::default();
@@ -801,7 +780,7 @@ impl SilenceMap {
         Self { runs }
     }
 
-    /// 直接给出静音区间（测试与别的能量来源用）。
+    /// Gives silent intervals directly (for tests and other energy sources).
     pub fn from_runs(mut runs: Vec<(f64, f64)>) -> Self {
         runs.retain(|(start, end)| end > start);
         runs.sort_by(|left, right| left.0.total_cmp(&right.0));
@@ -812,7 +791,7 @@ impl SilenceMap {
         &self.runs
     }
 
-    /// 在 `[lo, hi]` 里找离 `target` 最近的静音，返回「静音 ∩ 窗口」的中点。
+    /// Within `[lo, hi]`, finds the silence closest to `target` and returns the midpoint of "silence ∩ window".
     pub fn snap(&self, lo: f64, hi: f64, target: f64) -> Option<f64> {
         if !(hi > lo) {
             return None;
@@ -837,13 +816,13 @@ impl SilenceMap {
     }
 }
 
-/// 落好切点的剪口（源秒，已取整到毫秒）。
+/// A cut with its cut points set (source seconds, rounded to milliseconds).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlacedCut {
     pub segment: usize,
     pub t0: f64,
     pub t1: f64,
-    /// 两端都吸附到静音。
+    /// Both ends snapped to silence.
     pub snapped: bool,
 }
 
@@ -851,10 +830,8 @@ fn round_ms(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
 }
 
-/// 给每个候选段落切点：先取词边界，再在 `snap` 秒内吸附到最近的静音；吸附不到的
-/// 切点落在词间空档的中点。段落前面没有词时起点取 0，后面没有词时终点取 `duration`
-/// （录音开头 / 末尾整段多出来的，连同前后的空白一起剪掉）。
-/// 切点不会越过相邻的保留词。短于 [`MIN_CUT_SECONDS`] 的剪口丢掉。
+/// Assigns cut points to each candidate segment. It first takes the word boundaries, then snaps to the nearest silence within `snap` seconds. Cut points that cannot snap fall at the midpoint of the gap between words. If the segment has no word before it, its start is 0. If it has no word after it, its end is `duration`, so the whole stretch of extra material at the start or end of the recording is cut together with the surrounding whitespace.
+/// Cut points never cross an adjacent kept word. Cuts shorter than [`MIN_CUT_SECONDS`] are dropped.
 pub fn place_cuts(
     segments: &[PlanSegment],
     words: &[RecWord],
@@ -889,7 +866,7 @@ pub fn place_cuts(
                 tail.t1,
             )
         });
-        // 前面没有词（段落在录音开头）时一直剪到 0；后面没有词时一直剪到素材末尾。
+        // If no word comes before the segment (the segment is at the start of the recording), cut all the way to 0. If no word comes after it, cut all the way to the end of the material.
         let has_prev = segment.first > 0;
         let has_next = segment.last + 1 < words.len();
         let t0 = round_ms(start_snap.unwrap_or(if has_prev {

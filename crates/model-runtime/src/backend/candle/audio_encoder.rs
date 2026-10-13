@@ -1,14 +1,13 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/AudioEncoder.swift`。
+//! Parts of this file are implemented with reference to speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/AudioEncoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; scope of sources: see `THIRD_PARTY_NOTICES.md` in the root directory.
 //!
-//! Qwen3 音频塔（candle），镜像 mlx 后端 `qwen3/audio_encoder.rs`。
+//! Qwen3 audio tower (candle), mirroring the mlx backend `qwen3/audio_encoder.rs`.
 //!
-//! candle 卷积使用 NCHW 布局；MLX checkpoint 的 Conv2d 权重为
-//! [out, kh, kw, in]，加载时转为 candle 的 [out, in, kh, kw]。
+//! candle convolutions use NCHW layout; the Conv2d weights in the MLX checkpoint are [out, kh, kw, in], and are converted to candle's [out, in, kh, kw] at load time.
 
 use super::layers::{Dense, LayerNorm, gelu, mask_bias, scaled_dot_product_attention};
 use super::weights::WeightStore;
@@ -60,7 +59,7 @@ impl AudioAttention {
         let (batch, sequence, hidden) = input.dims3()?;
         let head_dim = hidden / self.heads;
         let shape = (batch, sequence, self.heads, head_dim);
-        // SDPA 直接把张量交给 gemm，音频塔没有 KV cache 视图，需自行连续化。
+        // SDPA hands tensors straight to gemm; the audio tower has no KV cache view, so it must make them contiguous itself.
         let query = self.q_proj.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
         let key = self.k_proj.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
         let value = self.v_proj.forward(input)?.reshape(shape)?.transpose(1, 2)?.contiguous()?;
@@ -136,7 +135,7 @@ impl Qwen3AudioEncoder {
         })
     }
 
-    /// 输出 [total_tokens, output_dim]。
+    /// Output [total_tokens, output_dim].
     pub fn encode(&self, features: &TimeMajorMelFeatures) -> Result<Tensor> {
         if features.time_frames == 0 || features.mel_bins != 128 {
             bail!(
@@ -149,7 +148,7 @@ impl Qwen3AudioEncoder {
         let dtype = self.conv_out.dtype();
         let chunk_lengths = input_chunk_lengths(features.time_frames, 100);
         let maximum_chunk = chunk_lengths.iter().copied().max().unwrap_or(100);
-        // NCHW：[chunks, 1, mel, time]，与 mlx NHWC 的 [chunks, mel, time, 1] 等价。
+        // NCHW: [chunks, 1, mel, time], equivalent to mlx NHWC's [chunks, mel, time, 1].
         let mut padded = vec![0.0_f32; chunk_lengths.len() * features.mel_bins * maximum_chunk];
         let mut source_time = 0;
         for (chunk, length) in chunk_lengths.iter().copied().enumerate() {
@@ -167,7 +166,7 @@ impl Qwen3AudioEncoder {
         hidden = gelu(&self.conv2.forward(&hidden)?)?;
         hidden = gelu(&self.conv3.forward(&hidden)?)?;
 
-        // [b, c, f, t] → [b, t, c, f] → [b, t, c*f]（与 mlx 的通道在外、频率在内一致）。
+        // [b, c, f, t] → [b, t, c, f] → [b, t, c*f] (consistent with mlx, where channel is outer and frequency is inner).
         let (batch, channels, frequency, time) = hidden.dims4()?;
         hidden = hidden.permute((0, 3, 1, 2))?.reshape((batch, time, channels * frequency))?;
         hidden = self.conv_out.forward(&hidden)?;
@@ -200,8 +199,8 @@ impl Qwen3AudioEncoder {
 
 fn load_conv2d(store: &mut WeightStore, prefix: &str, pytorch_layout: bool) -> Result<Conv2d> {
     let mut weight = store.take_compute(&format!("{prefix}.weight"))?;
-    // MLX 布局 [out, kh, kw, in] → candle [out, in, kh, kw]；
-    // PyTorch 布局（对齐器 checkpoint）本身就是 candle 需要的。
+    // MLX layout [out, kh, kw, in] → candle [out, in, kh, kw];
+    // the PyTorch layout (aligner checkpoint) is already what candle needs.
     if !pytorch_layout {
         weight = weight.permute((0, 3, 1, 2))?;
     }

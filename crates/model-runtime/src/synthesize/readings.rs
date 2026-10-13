@@ -1,16 +1,14 @@
-//! TTS 合成前的注音（多音字读音），移植自 v2 `ccut-tts::text::readings` 与 `ccut-tts::engine` 的注音包装层。
+//! Pinyin readings (pronunciations of polyphonic characters) applied before TTS synthesis, ported from the v2 `ccut-tts::text::readings` and the reading wrapper layer of `ccut-tts::engine`.
 //!
-//! 架构设计 §6.1：读音标注是输入文本的一部分，由适配器转成各模型自己的写法；模型不支持时如实报告，不静默丢弃。
+//! Architecture design §6.1: reading annotation is part of the input text, and the adapter converts it into each model's own notation; when a model does not support it, report that honestly rather than silently dropping it.
 //!
-//! - 语法 `<表面|读音>` 的解析 / 去注记 / 原样拼回在 [`syntax`]，这里整体转出；
-//! - [`annotate`]：词典判定——词组表（mmseg 最长匹配）定下的读音记成 [`Origin::Phrase`] 注记，
-//!   剩下的语境多音字单字列成 [`Candidate`]；
-//! - [`parse_for_engine`]：引擎包装层用的解析，把与词组表一致的多字注记认回 [`Origin::Phrase`]；
-//! - [`render`]：按引擎的 [`ReadingsSupport`] 把注记渲染成它能吃的文字，渲染不了的进 `dropped`（软失败）；
-//! - [`Annotating`]：[`crate::synthesize::load`] 给每只引擎套的包装层，注音的唯一解析点。
+//! - Parsing / stripping / re-emitting of the `<surface|reading>` syntax is in [`syntax`], re-exported here as a whole;
+//! - [`annotate`]: dictionary decision. Readings fixed by the phrase table (mmseg longest match) are recorded as [`Origin::Phrase`] annotations; the remaining context-dependent polyphonic single characters are listed as [`Candidate`];
+//! - [`parse_for_engine`]: parsing used by the engine wrapper layer; multi-character annotations that match the phrase table are recognized as [`Origin::Phrase`];
+//! - [`render`]: renders annotations, according to the engine's [`ReadingsSupport`], into text the engine can consume; what cannot be rendered goes into `dropped` (soft failure);
+//! - [`Annotating`]: the wrapper layer that [`crate::synthesize::load`] wraps around each engine; the single resolution point for annotations.
 //!
-//! 数据在 `readings/data/`（来源、许可与 SHA-256 见 `readings/data/README.md`）；词组表与单字默认读音复用
-//! GPT-SoVITS 前端内嵌的 pypinyin 表。
+//! The data is in `readings/data/` (sources, licenses and SHA-256 are in `readings/data/README.md`); the phrase table and single-character default readings reuse the pypinyin table embedded in the GPT-SoVITS front end.
 
 pub mod syntax;
 
@@ -26,24 +24,22 @@ use super::gpt_sovits::text::pinyin;
 use super::types::{TtsAudio, TtsEngineKind, TtsRequest};
 use super::{ProgressSink, TtsEngine};
 
-/// IndexTTS2 渲染出的拼音片用这对私用区字符包住，`normalizer.rs` 据此在数字规范化前把它护住、
-/// 之后还原成两侧带空格的片（不会被当成数字读出来，也不会与相邻拉丁字母粘成一个词）。
+/// The pinyin pieces rendered by IndexTTS2 are wrapped in this pair of private-use-area characters. `normalizer.rs` uses them to protect the piece before number normalization, then restores it as a piece with spaces on both sides (so it is not read out as a number, and does not merge with adjacent Latin letters into one word).
 pub const PIECE_OPEN: char = '\u{E000}';
 pub const PIECE_CLOSE: char = '\u{E001}';
 
-/// 引擎渲染后的文字与没能按注记念的部分。
+/// The engine-rendered text, and the part that could not be read as annotated.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rendered {
     pub text: String,
-    /// 没按注记念的（引擎不认、词表没有这个片、没有代表字）；句子照常合成。
+    /// Parts not read as annotated (the engine does not accept them, the vocabulary has no such piece, or there is no representative character); the sentence is still synthesized as usual.
     pub dropped: Vec<Reading>,
 }
 
-/// 一只引擎怎么吃读音：能力值与 [`TtsEngineKind::readings_support`] 住在 [`super::types`]。
+/// How an engine consumes readings. The capability value and [`TtsEngineKind::readings_support`] live in [`super::types`].
 pub use super::types::ReadingsSupport;
 
-/// 按渲染方式把注记渲染成引擎要的文字。`pinyin_pieces` 是 IndexTTS2 词表里的拼音片集合
-/// （大写、无 `▁`），只有 [`ReadingsSupport::InlinePinyin`] 读它；给 `None` 时那一类全部 drop。
+/// Renders annotations into the text the engine needs, according to the rendering method. `pinyin_pieces` is the set of pinyin pieces in the IndexTTS2 vocabulary (uppercase, without `▁`); only [`ReadingsSupport::InlinePinyin`] reads it; when given `None`, that whole category is dropped.
 pub fn render(support: ReadingsSupport, annotated: &Annotated, pinyin_pieces: Option<&HashSet<String>>) -> Rendered {
     match support {
         ReadingsSupport::Annotated => Rendered {
@@ -56,16 +52,15 @@ pub fn render(support: ReadingsSupport, annotated: &Annotated, pinyin_pieces: Op
     }
 }
 
-/// 不认读音的引擎：表面文字，注记全部 drop（词组读音除外：引擎按自己的词组表念，不算没念，见 [`Origin::Phrase`]）。
+/// Engines that do not accept readings: surface text, with all annotations dropped. Phrase readings are the exception: the engine reads them with its own phrase table, so they are not counted as unread (see [`Origin::Phrase`]).
 pub fn render_unsupported(annotated: &Annotated) -> Rendered {
     let mut out = render_per_char(annotated, |_, _, _| CharRender::Keep);
     out.dropped = annotated.readings.iter().filter(|r| r.origin != Origin::Phrase).cloned().collect();
     out
 }
 
-/// 引擎包装层的解析：[`parse`] 之后把「多字注记、读音与词组表完全一致」的认回 [`Origin::Phrase`]。
-/// 注记只住在文字里、来源不随文字走（`to_text` 之后都成了手写）；这一步让 [`annotate`]
-/// 补的词组注记与手写的同款注记一样，在 Qwen3 上不被换成别字、在不认读音的引擎上不报 dropped。
+/// Parsing for the engine wrapper layer: after [`parse`], multi-character annotations whose reading exactly matches the phrase table are recognized as [`Origin::Phrase`].
+/// Annotations live only in the text, and their source does not travel with the text (after `to_text` they all look hand-written). This step makes the phrase annotations added by [`annotate`] behave like hand-written annotations of the same kind: on Qwen3 they are not swapped for another character, and on engines that do not accept readings they are not reported as dropped.
 pub fn parse_for_engine(text: &str) -> Annotated {
     let mut annotated = parse(text);
     if annotated.readings.iter().any(|r| r.end - r.start >= 2) {
@@ -79,7 +74,7 @@ pub fn parse_for_engine(text: &str) -> Annotated {
     annotated
 }
 
-/// 一整段汉字恰好是词组表里的一个词时，它的读音（TONE3，空格分）。
+/// The reading (TONE3, space-separated) of a whole run of Han characters that is exactly one word in the phrase table.
 fn phrase_reading(span: &[char]) -> Option<String> {
     if !span.iter().all(|&c| is_han(c)) {
         return None;
@@ -91,8 +86,8 @@ fn phrase_reading(span: &[char]) -> Option<String> {
     }
 }
 
-/// 畸形注记在表面文字里是字面 `<表面|读音>`；不吃这个语法的引擎只该念到表面那几个字。
-/// 返回表面文字里要跳过的位置（`<`、`|读音>`）。
+/// A malformed annotation is literally `<surface|reading>` in the surface text; engines that do not accept this syntax should speak only the surface characters.
+/// Returns the positions in the surface text to skip (`<`, `|reading>`).
 fn malformed_brackets(annotated: &Annotated, len: usize) -> Vec<bool> {
     let mut skip = vec![false; len];
     for m in &annotated.malformed {
@@ -106,14 +101,14 @@ fn malformed_brackets(annotated: &Annotated, len: usize) -> Vec<bool> {
 }
 
 enum CharRender {
-    /// 原字照送（这个字本来只有这一个读音）。
+    /// Keep the character as is (this character has only this one reading).
     Keep,
     Replace(String),
     Drop,
 }
 
-/// 逐字渲染：注记里的每个字配它的音节，由 `decide` 决定换成什么；drop 按字记。
-/// 畸形注记只留表面那几个字（括号与读音不送给引擎）。
+/// Character-by-character rendering: each character in the annotation is paired with its syllable, and `decide` determines what it is replaced with; drops are counted per character.
+/// A malformed annotation keeps only the surface characters (the brackets and reading are not sent to the engine).
 fn render_per_char(annotated: &Annotated, mut decide: impl FnMut(char, &str, Origin) -> CharRender) -> Rendered {
     let mut out = Rendered::default();
     let mut readings = annotated.readings.iter().peekable();
@@ -157,12 +152,12 @@ fn is_han(c: char) -> bool {
     ('\u{4E00}'..='\u{9FFF}').contains(&c)
 }
 
-/// 这个字本来就只有这一个读音，注记对它是空操作。
+/// This character has only this one reading, so the annotation is a no-op for it.
 fn only_reading_is(c: char, syllable: &str) -> bool {
     !HETERONYMS.contains_key(&c) && pinyin::default_syllable(c).is_some_and(|id| pinyin::tone3(id) == syllable)
 }
 
-/// IndexTTS2：字 → 大写拼音片（`XING2`，ü 写 `V`），只在词表有这个片时换。
+/// IndexTTS2: character → uppercase pinyin piece (`XING2`; ü is written `V`), replaced only when the vocabulary contains that piece.
 pub fn render_inline_pinyin(annotated: &Annotated, pinyin_pieces: Option<&HashSet<String>>) -> Rendered {
     render_per_char(annotated, |c, syllable, origin| {
         if !is_han(c) {
@@ -174,15 +169,14 @@ pub fn render_inline_pinyin(annotated: &Annotated, pinyin_pieces: Option<&HashSe
         let piece = inline_pinyin_piece(syllable);
         match pinyin_pieces {
             Some(pieces) if pieces.contains(&piece) => CharRender::Replace(format!("{PIECE_OPEN}{piece}{PIECE_CLOSE}")),
-            // 词组读音没有片：原字照送、引擎按自己的词组切分念，不算没念。
+            // A phrase reading has no piece: the character is kept as is and the engine reads it with its own phrase segmentation; this is not counted as unread.
             _ if origin == Origin::Phrase => CharRender::Keep,
             _ => CharRender::Drop,
         }
     })
 }
 
-/// 读音 → IndexTTS2 词表里的片名：大写；j / q / x 后的 ü 词表写 `V`（`JV4`、`XVE2`，没有 `JU4`），
-/// y 后照 TONE3 写 `U`（`YU2`）。
+/// Reading → piece name in the IndexTTS2 vocabulary: uppercase. ü after j / q / x is written `V` in the vocabulary (`JV4`, `XVE2`; there is no `JU4`); after y, per TONE3, it is written `U` (`YU2`).
 fn inline_pinyin_piece(syllable: &str) -> String {
     let mut piece = syllable.to_ascii_uppercase();
     if matches!(piece.as_bytes(), [b'J' | b'Q' | b'X', b'U', ..]) {
@@ -191,7 +185,7 @@ fn inline_pinyin_piece(syllable: &str) -> String {
     piece
 }
 
-/// Qwen3-TTS：字 → 同读音代表字；词组表来源的注记不换也不报。
+/// Qwen3-TTS: character → representative character with the same reading. Annotations from the phrase table are neither replaced nor reported.
 pub fn render_homophone(annotated: &Annotated) -> Rendered {
     render_per_char(annotated, |c, syllable, origin| {
         if origin == Origin::Phrase {
@@ -210,7 +204,7 @@ pub fn render_homophone(annotated: &Annotated) -> Rendered {
     })
 }
 
-/// 一个字的全部读音（默认读音在前）；非多音字给它唯一的读音，没有读音给空。
+/// All readings of a character (default reading first). A non-polyphonic character gets its only reading; a character with no reading gets empty.
 pub fn readings_of(c: char) -> Vec<String> {
     match HETERONYMS.get(&c) {
         Some(entry) => entry.all.clone(),
@@ -218,22 +212,19 @@ pub fn readings_of(c: char) -> Vec<String> {
     }
 }
 
-/// 是不是精选的语境多音字（`readings/data/context_heteronyms.txt`）。
+/// Whether it is a curated context-dependent polyphonic character (`readings/data/context_heteronyms.txt`).
 pub fn is_context_heteronym(c: char) -> bool {
     CONTEXT.contains(&c)
 }
 
-/// [`annotate`] 的选项。
+/// Options for [`annotate`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnnotateOptions {
-    /// 候选单字也按词典默认读音写成 [`Origin::Dict`] 注记。v2 CLI 的自动注音不开（只列候选），
-    /// 有人审阅或 LLM 收尾的宿主再决定。
+    /// Candidate single characters are also written as [`Origin::Dict`] annotations using the dictionary default reading. The v2 CLI's automatic annotation is off (it only lists candidates); hosts with human review or LLM finishing decide that themselves.
     pub dict_readings: bool,
 }
 
-/// 词典判定：手写注记原样保留；其余汉字按词组表（mmseg 最长匹配）切分，
-/// 词组读音把某个语境多音字定到**非默认**读音时（`银行` → `hang2`），整词记一条 `Phrase` 注记；
-/// 词组没盖住的语境多音字单字列进 `candidates`。
+/// Dictionary decision: hand-written annotations are kept as they are; other Han characters are segmented by the phrase table (mmseg longest match). When a phrase reading fixes a context-dependent polyphonic character to a **non-default** reading (`银行` (bank) → `hang2`), one `Phrase` annotation is recorded for the whole word; context-dependent polyphonic single characters not covered by a phrase are listed in `candidates`.
 pub fn annotate(text: &str, options: AnnotateOptions) -> Annotated {
     let mut annotated = parse(text);
     let chars: Vec<char> = annotated.surface.chars().collect();
@@ -300,9 +291,7 @@ pub fn annotate(text: &str, options: AnnotateOptions) -> Annotated {
 
 // ---------------------------------------------------------------- 包装层
 
-/// [`crate::synthesize::load`] 返回的包装层：注音的唯一解析点，每只引擎都经它合成。没有注记时原样透传；
-/// 有注记时向内层要渲染结果（[`TtsEngine::render_readings`]），把渲染后的文字换进请求副本再合成，
-/// 没能按注记念的读音写进 [`TtsAudio::readings_dropped`]——不认读音的引擎在这里如实报告，不静默丢弃。
+/// The wrapper returned by [`crate::synthesize::load`]: the single resolution point for annotations, through which every engine synthesizes. Without annotations it passes the request through unchanged; with annotations it asks the inner engine for the rendered result ([`TtsEngine::render_readings`]), swaps the rendered text into a copy of the request and synthesizes that. Readings that could not be read as annotated are written into [`TtsAudio::readings_dropped`]: engines that do not accept readings report this honestly here rather than silently dropping it.
 pub struct Annotating {
     inner: Box<dyn TtsEngine>,
 }

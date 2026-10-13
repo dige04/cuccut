@@ -10,9 +10,8 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, tool, until, type ToolSession } from '../agent-tools/testing/fake-agent.ts';
 
 /**
- * 数据外发的授权与预算端到端（架构设计 §12.5、§7.8、§6.8）：会话里的智能体经真实的 MCP 端点调用模型工具，界面连接直接提交，
- * 都走同一个 JobManager 的接纳；在线 Provider 只对本机回环地址上的假供应商。密钥是测试里编的字符串。
- * 不需要视频引擎；任务提交之后是否完成与授权无关（没有 ffprobe 时语音任务会失败，结算照样按规则计）。
+ * End-to-end test of data outbound grants and budgets (architecture design §12.5, §7.8, §6.8): an agent in the session calls model tools through the real MCP endpoint, and the UI connection submits directly. Both go through the same JobManager admission. Online providers are a fake provider on a loopback address. Keys are strings made up in the test.
+ * No video engine is needed. Whether the task completes after submission is unrelated to the grant (without ffprobe, voice tasks fail, but settlement still follows the rules).
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-grants-0123456789';
@@ -60,7 +59,7 @@ async function shutdown(side: Side | undefined): Promise<void> {
   await side.runtime.close();
 }
 
-/** 发一条消息（指定访问模式），等假智能体的回合开始。 */
+/** Sends a message (with the given access mode) and waits for the fake agent's turn to start. */
 async function send(side: Side, accessMode: AgentMode): Promise<{ taskId: Id; session: ToolSession }> {
   const { taskId } = await side.client.request('conversations.send', {
     conversationId: side.conversationId,
@@ -132,7 +131,7 @@ describe('数据外发的授权与预算', () => {
     expect(covered.body).toMatchObject({ approval: { mode: 'auto', risk: 'command', decidedBy: 'auto' } });
     expect(s.runtime.models.jobs.inspect(covered.body.jobId).grant).toMatchObject({ grantId: byDefault!.grantId, dataKinds: ['document'] });
 
-    // 撤销之后：同样的调用要新的授权，风险 high，审批里列出要交出的数据。
+    // After revocation: the same call needs a new grant, risk is high, and the approval lists the data to be handed over.
     await s.client.request('grants.revoke', { grantId: byDefault!.grantId });
     const first = tool(session, 'speak', { text: 'again', provider: 'openai' });
     const asked = await until(() => s.runtime.harness.approvals.pending()[0]);
@@ -142,7 +141,7 @@ describe('数据外发的授权与预算', () => {
       grants: [{ recipient: 'openai', dataKinds: ['document'], capability: 'synthesizeSpeech', reason: 'revoked', cost: 'unknown' }],
     });
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(1);
-    // 不带选择 = 只这一次。
+    // No choice given = this time only.
     await s.client.request('approvals.respond', { approvalId: asked.approvalId, decision: 'allow' });
     const once = (await first).body;
     expect(once.approval).toEqual({ mode: 'auto', risk: 'high', decidedBy: 'user' });
@@ -155,7 +154,7 @@ describe('数据外发的授权与预算', () => {
       usage: { calls: expect.any(Number) },
     });
 
-    // 只这一次的授权不覆盖下一次：再问；这次发放持续授权（全部视频）。
+    // A this-time-only grant does not cover the next call: ask again. This time, issue a persistent grant (all videos).
     const second = tool(session, 'speak', { text: 'third', provider: 'openai' });
     const askedAgain = await until(() => s.runtime.harness.approvals.pending()[0]);
     expect(askedAgain.approvalId).not.toBe(asked.approvalId);
@@ -168,13 +167,13 @@ describe('数据外发的授权与预算', () => {
     const persistent = (await grantsOf(s)).find((g) => g.origin === 'approval' && !g.once)!;
     expect(persistent).toMatchObject({ scope: { videoId: null }, taskId: null, maxCalls: null });
 
-    // 持续授权覆盖之后不再问。
+    // Once the persistent grant covers it, no longer ask.
     const after = await tool(session, 'speak', { text: 'fourth', provider: 'openai' });
     expect(after.body.approval).toEqual({ mode: 'auto', risk: 'command', decidedBy: 'auto' });
     expect(s.runtime.harness.approvals.pending()).toEqual([]);
     expect(s.runtime.models.jobs.inspect(after.body.jobId).grant!.grantId).toBe(persistent.grantId);
 
-    // 不涉及外发的审批不能带授权的选择。
+    // An approval that does not involve outbound transfer cannot carry a grant choice.
     await expect(
       s.client.request('approvals.respond', { approvalId: 'apv_none', decision: 'allow', grant: { persist: false } }),
     ).resolves.toEqual({ status: 'already-resolved' });
@@ -254,7 +253,7 @@ describe('数据外发的授权与预算', () => {
     expect(usage.jobs).toHaveLength(2);
     expect(usage.grant.usage.calls + usage.grant.usage.reservedCalls).toBe(2);
 
-    // 已有授权覆盖的项不再申请。
+    // Items already covered by an existing grant are not requested again.
     const again = await tool(session, 'grants_request', {
       items: [{ capability: 'transcribe', provider: 'openai', calls: 1, purpose: '转写采访' }],
     });
@@ -310,7 +309,7 @@ describe('数据外发的授权与预算', () => {
     const use = s.runtime.models.jobs.inspect(allowed.body.jobId).grant!;
     expect(use.grantId).not.toBe(grant.grantId);
     expect(use).toMatchObject({ budgetMode: 'per-call-unknown-cost', reserved: { calls: 1, amount: null } });
-    // 有金额上限的授权没有被动用。
+    // The grant with an amount cap was not used.
     expect((await s.client.request('grants.usage', { grantId: grant.grantId })).grant.usage).toMatchObject({ calls: 0, reservedCalls: 0 });
   });
 
@@ -331,18 +330,18 @@ describe('数据外发的授权与预算', () => {
 
     const first = await tool(session, 'speak', { text: '第一段', provider: 'openai' });
     expect(first.isError).toBe(false);
-    // 授权（默认授权，不限次数）放行，任务预算不放行：明确的错误码，不建任务，也不进审批。
+    // The grant (default, unlimited count) allows it, but the task budget does not: a clear error code; no task is created, and nothing enters approval.
     const second = await tool(session, 'speak', { text: '第二段', provider: 'openai' });
     expect(second.isError).toBe(true);
     expect(second.body.error).toMatchObject({ code: 'TASK_BUDGET_EXCEEDED', taskId, measure: 'calls', taskBudget: { maxCalls: 1 } });
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(1);
     expect(s.runtime.harness.approvals.pending()).toEqual([]);
-    // 任务里启动的流程：子步骤经父任务找到所在的智能体任务，一样计入。
+    // A flow started within a task: its sub-steps find the agent task through the parent task and count toward it in the same way.
     expect(s.runtime.models.grants.taskOf({ kind: 'pipeline', id: first.body.jobId })).toBe(taskId);
 
     const view = await s.client.request('tasks.getContract', { taskId });
     expect(view.budget!.usage.calls + view.budget!.usage.reservedCalls).toBe(1);
-    // 用户改成金额上限：模型没有价格，估不出，任务预算无法保证。
+    // The user changed it to an amount cap: the model has no price, so the amount cannot be estimated and the task budget cannot be guaranteed.
     await s.client.request('tasks.updateContract', {
       taskId,
       expectedRevision: view.contract.revision,
@@ -352,14 +351,14 @@ describe('数据外发的授权与预算', () => {
     const third = await tool(session, 'speak', { text: '第三段', provider: 'openai' });
     expect(third.body.error).toMatchObject({ code: 'TASK_BUDGET_UNVERIFIABLE', taskId });
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(1);
-    // 智能体不能自己放宽预算。
+    // An agent cannot loosen its own budget.
     const widened = await tool(session, 'tasks_update_contract', {
       expectedRevision: view.contract.revision + 1,
       patch: { budget: { maxCalls: null, cap: null } },
     });
     expect(widened.body.error).toMatchObject({ code: 'CONTRACT_FIELD_READONLY', fields: ['budget'] });
 
-    // 界面连接直接提交的不在任务里，不受任务预算限制。
+    // Submissions made directly from the UI connection are not inside a task, so task budgets do not limit them.
     await s.client.request('models.synthesizeSpeech', { text: '界面', provider: 'openai' });
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(2);
   });
@@ -368,17 +367,17 @@ describe('数据外发的授权与预算', () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const byDefault = await revokeDefault(s);
-    // 账本是延后写入的：先等它落盘再看文件。
+    // The ledger is written later, so wait for it to be flushed before checking the file.
     await s.runtime.models.grants.flush();
     expect((await fs.stat(s.home.grantsFile)).mode & 0o777).toBe(0o600);
 
-    // 重启：撤销的不补发（同一次启用）。
+    // Restart: revoked grants are not reissued (same enablement).
     await shutdown(s);
     side = await boot(dir!, openai!);
     expect(await grantsOf(side)).toEqual([]);
     expect((await grantsOf(side, true)).find((g) => g.grantId === byDefault.grantId)).toMatchObject({ state: 'revoked' });
 
-    // 停用再启用：新的一次启用，另发一条；停用时撤销它。
+    // Disable, then enable again: this is a new enablement, and another grant is issued; disabling revokes it.
     await side.client.request('models.configure', { providerId: 'openai', enabled: false });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true });
     const [fresh] = await until(async () => {
@@ -390,7 +389,7 @@ describe('数据外发的授权与预算', () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: false });
     await until(async () => (await grantsOf(side!)).length === 0);
 
-    // 旧版本写的配置：启用着但没有启用时间；授权账本也还没有。升级后照样有默认授权，原有的调用不变。
+    // Config written by an old version: enabled, but with no enablement time; the grant ledger does not exist yet. After the upgrade, the default grant still applies and the existing calls are unchanged.
     await side.client.request('models.configure', { providerId: 'openai', enabled: true });
     await shutdown(side);
     const services = JSON.parse(await fs.readFile(side.home.modelServicesFile, 'utf8'));

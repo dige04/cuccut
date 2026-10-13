@@ -15,18 +15,17 @@ import { TopicLog, type Logger } from '@cuccut/harness';
 import type { ServiceApprovals } from './service-approvals.ts';
 
 /**
- * 对外服务的统一管理（架构设计 §4.8）。一个服务是一个 `ManagedService`：`start` / `stop` / `status` / `applyConfig`。
+ * Unified management of external services (architecture design §4.8). A service is a `ManagedService`: `start` / `stop` / `status` / `applyConfig`.
  *
- * - 状态 `off`、`starting`、`on`、`stopping`、`error` 由这里维护；投影服务（节点服务）的状态来自它自己的权威（`nodes.share.*`），
- *   这里只转述，不另存一份。
- * - 默认 `off`；`restore` 只开启配置了随 Runtime 启动的服务。开启失败（端口被占用）进入 `error` 并说明原因，不换端口、不影响 Runtime。
- * - 这个版本没有提供的服务照样列出（`available: false`，状态总是 `off`），开启时以 `SERVICE_NOT_AVAILABLE` 拒绝。
- * - 状态变化与服务审批经 `services` 主题送达。
+ * - The states `off`, `starting`, `on`, `stopping`, and `error` are maintained here. A projected service's state (the node service) comes from its own authority (`nodes.share.*`), and is only relayed here, not stored separately.
+ * - The default is `off`; `restore` only starts services configured to start with the Runtime. A failed start (port taken) enters `error` with the reason, does not switch ports, and does not affect the Runtime.
+ * - Services not provided in this version are still listed (`available: false`, status always `off`), and starting them is rejected with `SERVICE_NOT_AVAILABLE`.
+ * - State changes and service approvals are delivered via the `services` topic.
  */
 
-/** 服务自己报告的部分：状态之外的配置与运行信息。 */
+/** The part the service reports itself: config and runtime info beyond the state. */
 export type ServiceReport = Omit<ServiceStatus, 'serviceId' | 'label' | 'available' | 'state' | 'error'> & {
-  /** 投影服务自己给出状态与原因。 */
+  /** A projected service gives its own state and reason. */
   state?: ServiceState;
   error?: string | null;
 };
@@ -34,20 +33,20 @@ export type ServiceReport = Omit<ServiceStatus, 'serviceId' | 'label' | 'availab
 export interface ManagedService {
   readonly id: ServiceId;
   readonly label: string;
-  /** 这个版本是否提供。 */
+  /** Whether this version provides it. */
   readonly available: boolean;
-  /** 状态来自服务自己的权威（节点服务）：`status()` 带 `state` 与 `error`。 */
+  /** The state comes from the service's own authority (the node service): `status()` carries `state` and `error`. */
   readonly projected?: boolean;
-  /** 开始监听。失败时抛出，消息就是给用户看的原因。 */
+  /** Starts listening. Throws on failure; the message is the reason shown to the user. */
   start(): Promise<void>;
-  /** 停止监听并断开已有连接。 */
+  /** Stops listening and disconnects existing connections. */
   stop(): Promise<void>;
   status(): ServiceReport;
-  /** 改配置并落盘。返回 true 表示开着时要按新配置重启监听（例如端口变了）。 */
+  /** Changes the config and persists it. Returns true if, while running, the listener must restart with the new config (e.g., the port changed). */
   applyConfig(params: ServiceConfigureParams): Promise<boolean>;
 }
 
-/** 这个版本没有提供的服务：列出来，状态总是 `off`。 */
+/** Services not provided in this version: listed, with status always `off`. */
 export class UnavailableService implements ManagedService {
   readonly available = false;
   readonly id: ServiceId;
@@ -84,7 +83,7 @@ export class ServiceManager {
   readonly approvals: ServiceApprovals;
   readonly #services = new Map<ServiceId, ManagedService>();
   readonly #states = new Map<ServiceId, { state: ServiceState; error: string | null; errorRef?: MessageRef }>();
-  /** 每个服务同时只有一个开启、停止或改配置在进行。 */
+  /** Each service has at most one start, stop, or config change in progress at a time. */
   readonly #queues = new Map<ServiceId, Promise<unknown>>();
   readonly #log: Logger;
   #closed = false;
@@ -95,7 +94,7 @@ export class ServiceManager {
     this.approvals = options.approvals(this);
   }
 
-  /** 登记一个服务。同一个 ID 只能登记一次。 */
+  /** Registers a service. The same ID can be registered only once. */
   register(service: ManagedService): void {
     if (this.#services.has(service.id)) throw new Error(`Service ${service.id} is already registered`);
     this.#services.set(service.id, service);
@@ -106,7 +105,7 @@ export class ServiceManager {
     return { services: this.list(), approvals: this.approvals.pending() };
   }
 
-  /** 全部服务，按 `SERVICE_IDS` 的顺序。 */
+  /** All services, in the order of `SERVICE_IDS`. */
   list(): ServiceStatus[] {
     return SERVICE_IDS.flatMap((id) => (this.#services.has(id) ? [this.status(id)] : []));
   }
@@ -117,7 +116,7 @@ export class ServiceManager {
     const own = this.#states.get(serviceId)!;
     const { state: projectedState, error: projectedError, ...rest } = report;
     const state = service.projected ? (projectedState ?? 'off') : own.state;
-    // 投影服务在开启、停止的过程中也报告过渡状态。
+    // Projected services also report transitional states while starting and stopping.
     const transitional = own.state === 'starting' || own.state === 'stopping' ? own.state : null;
     return {
       serviceId,
@@ -130,7 +129,7 @@ export class ServiceManager {
     };
   }
 
-  /** 服务的状态或配置变了（投影服务的权威被改过、客户端或最近的请求变了）：送一条 `service.updated`。 */
+  /** The service's state or config changed (the projected service's authority was modified, or clients or recent requests changed): send one `service.updated`. */
   refresh(serviceId: ServiceId): void {
     if (!this.#services.has(serviceId)) return;
     this.topic.publish({ type: 'service.updated', service: this.status(serviceId) });
@@ -161,7 +160,7 @@ export class ServiceManager {
     return this.#serialize(params.serviceId, async () => {
       const restart = await service.applyConfig(params);
       const state = this.status(params.serviceId).state;
-      // 开着（或开启失败）时按新配置重新开启：改了端口就在新端口上试。
+      // If it is running (or the start failed), restart with the new config: if the port changed, try the new port.
       if (restart && !this.#closed && (state === 'on' || state === 'error')) {
         await this.#halt(service);
         await this.#run(service);
@@ -172,7 +171,7 @@ export class ServiceManager {
     });
   }
 
-  /** Runtime 启动时：开启配置了随 Runtime 启动的服务。失败只影响那个服务的状态。 */
+  /** On Runtime start: starts the services configured to start with the Runtime. A failure only affects that service's state. */
   async restore(): Promise<void> {
     for (const service of this.#services.values()) {
       if (!service.available || service.projected || !service.status().autostart) continue;
@@ -182,7 +181,7 @@ export class ServiceManager {
     }
   }
 
-  /** Runtime 停止：停掉开着的服务（投影服务由它自己的权威停），待处理的审批全部取消。 */
+  /** Runtime stop: stops the running services (projected services are stopped by their own authority), and cancels all pending approvals. */
   async close(): Promise<void> {
     this.#closed = true;
     await Promise.all(
@@ -201,7 +200,7 @@ export class ServiceManager {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.#log.warn('Service failed to start', { serviceId: service.id, error: reason });
-      // 投影服务的失败由它自己的权威记着（例如端口被占用时节点服务不抛出，状态里有原因）；抛出的是请求本身的错误，原样交给调用方。
+      // A projected service's failure is recorded by its own authority (e.g., when the port is taken, the node service does not throw, and the reason is in its state); what is thrown is the request's own error, passed to the caller as is.
       if (service.projected) {
         this.#set(service.id, 'off', null);
         throw error;

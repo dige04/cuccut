@@ -1,28 +1,28 @@
 /**
- * 界面语言（架构设计 §5.10 `ui.language`、仓库约定 §5）：界面、Runtime 与 CLI 给人看的文字共用这一套。
+ * Interface language (architecture design §5.10 `ui.language`, repository convention §5): the interface, the Runtime and the CLI share one set of text shown to people.
  *
- * - 出货语言见 `LOCALES`；英文是缺省与兜底：系统语言没有对应的出货语言时用英文，译文缺条目时回退英文。
- * - 进程里只有一个当前语言（`getLocale`）。界面按偏好与系统语言解析后 `setLocale`；Runtime 按 `ui.language` 设置；
- *   CLI 按环境。环境变量 `CUCCUT_LOCALE` 优先于一切（测试与排查用）。
- * - 文案按模块写成目录：`defineMessages(en, { 'zh-Hans': zh })`。英文目录决定键与类型，其他语言必须逐键对上；条目可以是
- *   字符串，也可以是函数（语序、单复数各语言自己处理）。返回的对象在每次读属性时取当前语言，所以**不要在模块顶层读它**
- *   （那样会把读到的文字冻结在加载时的语言里）。
+ * - The shipped languages are in `LOCALES`. English is the default and the fallback: when the system language has no matching shipped language, English is used, and when a translation lacks an entry, it falls back to English.
+ * - A process has only one current language (`getLocale`). The interface resolves it from its preference and the system language, then calls `setLocale`; the Runtime follows the `ui.language` setting; the CLI follows the environment.
+ *   The environment variable `CUCCUT_LOCALE` takes precedence over everything (for tests and troubleshooting).
+ * - Message catalogs are written per module: `defineMessages(en, { 'zh-Hans': zh })`. The English catalog defines the keys and types, and other languages must match it key for key. An entry can be a string or a function
+ *   (each language handles word order and plurals itself). The returned object picks the current language on every property read, so **do not read it at module top level**
+ *   (that would freeze the text in the language that was current at load time).
  */
 
-/** 出货语言，按设置 › 通用里语言列表的顺序（设计稿 page-settings.jsx）。 */
+/** The shipped languages, in the order of the language list under Settings › General (design file page-settings.jsx). */
 export const LOCALES = ['zh-Hans', 'zh-Hant', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'nl', 'pt-BR', 'it', 'ru', 'pl', 'tr', 'vi'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-/** 界面语言的偏好：`system` 跟随系统，否则是一种出货语言。 */
+/** Interface language preference: `system` follows the system; otherwise, one shipped language. */
 export type LanguagePreference = 'system' | Locale;
 export const LANGUAGE_PREFERENCES = ['system', ...LOCALES] as const satisfies readonly LanguagePreference[];
 
 export const DEFAULT_LOCALE: Locale = 'en';
 
-/** 语言的自称：不随界面语言变化。 */
+/** A language's self-name: it does not change with the interface language. */
 export const LOCALE_NATIVE_NAMES: Readonly<Record<Locale, string>> = {
   en: 'English',
-  // i18n-ignore-start: 语言的自称
+  // i18n-ignore-start: language self-names
   'zh-Hans': '简体中文',
   'zh-Hant': '繁體中文',
   ja: '日本語',
@@ -40,7 +40,7 @@ export const LOCALE_NATIVE_NAMES: Readonly<Record<Locale, string>> = {
   // i18n-ignore-end
 };
 
-/** 给 `Intl`、React Spectrum 的 `Provider` 与 `<html lang>` 用的 BCP 47 标签。 */
+/** BCP 47 tag for `Intl`, React Spectrum's `Provider`, and `<html lang>`. */
 export const LOCALE_TAGS: Readonly<Record<Locale, string>> = { 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', en: 'en-US', ja: 'ja-JP', ko: 'ko-KR', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', nl: 'nl-NL', 'pt-BR': 'pt-BR', it: 'it-IT', ru: 'ru-RU', pl: 'pl-PL', tr: 'tr-TR', vi: 'vi-VN' };
 
 export function isLocale(value: unknown): value is Locale {
@@ -56,8 +56,8 @@ function shipped(code: string): Locale | null {
 }
 
 /**
- * 一个 BCP 47 / POSIX 标签对应的出货语言；没有对应时 null。中文按文字分：写明 `Hant`，或地区是台湾、香港、澳门（`zh-TW`、
- * `zh_HK.UTF-8`）归繁体，写明 `Hans` 与其余写法归简体。葡萄牙语的各地区都归 `pt-BR`：读巴西葡语比读英文近。其余按主语言。
+ * The shipped language for a BCP 47 / POSIX tag; null when there is none. Chinese is split by script: a tag that specifies `Hant`, or whose region is Taiwan, Hong Kong or Macau (`zh-TW`, `zh_HK.UTF-8`), maps to Traditional;
+ * a tag that specifies `Hans`, and the other forms, map to Simplified. All regions of Portuguese map to `pt-BR`: reading Brazilian Portuguese is closer than reading English. Others follow the primary language.
  */
 export function localeOfTag(tag: string | null | undefined): Locale | null {
   const lower = (tag ?? '').trim().toLowerCase();
@@ -71,7 +71,7 @@ export function localeOfTag(tag: string | null | undefined): Locale | null {
   return shipped(primary);
 }
 
-/** 按优先顺序排好的系统语言里，第一个有出货语言的；都没有时英文。 */
+/** Among the system languages in priority order, the first one that has a shipped language; English if none does. */
 export function matchLocale(tags: readonly (string | null | undefined)[]): Locale {
   for (const tag of tags) {
     const hit = localeOfTag(tag);
@@ -84,15 +84,15 @@ export function resolveLanguage(preference: LanguagePreference | null | undefine
   return isLocale(preference) ? preference : matchLocale(systemTags);
 }
 
-/** `CUCCUT_LOCALE` 指定的语言；没设或不认识时 null。 */
+/** The language specified by `CUCCUT_LOCALE`; null if it is unset or not recognized. */
 export function localeOverride(): Locale | null {
   const env = typeof process === 'undefined' ? undefined : process.env?.CUCCUT_LOCALE;
   return env ? localeOfTag(env) : null;
 }
 
 /**
- * 非界面进程（Runtime、CLI）眼里的系统语言，按优先顺序：桌面端拉起 Runtime 时传的 `CUCCUT_SYSTEM_LANGUAGES`（逗号分隔，
- * 取自操作系统的首选语言）、POSIX 的 `LC_ALL` / `LC_MESSAGES` / `LANG`，最后是 `Intl` 的缺省语言。
+ * The system language as seen by non-interface processes (the Runtime, the CLI), in priority order: `CUCCUT_SYSTEM_LANGUAGES` (comma-separated, taken from the OS preferred languages), which the desktop app passes when it launches the Runtime;
+ * POSIX `LC_ALL` / `LC_MESSAGES` / `LANG`; and finally the `Intl` default language.
  */
 export function processLanguageTags(): string[] {
   const env = typeof process === 'undefined' ? {} : (process.env ?? {});
@@ -101,7 +101,7 @@ export function processLanguageTags(): string[] {
   try {
     tags.push(Intl.DateTimeFormat().resolvedOptions().locale);
   } catch {
-    // 没有 Intl 的环境：按上面的取。
+    // Environments without Intl: take the value from the list above.
   }
   return tags.filter(Boolean);
 }
@@ -113,7 +113,7 @@ export function getLocale(): Locale {
   return current;
 }
 
-/** 换当前语言。`CUCCUT_LOCALE` 设了时以它为准，这里的取值被忽略。 */
+/** Changes the current language. When `CUCCUT_LOCALE` is set, it takes precedence and the value passed here is ignored. */
 export function setLocale(locale: Locale): void {
   const next = localeOverride() ?? locale;
   if (next === current) return;
@@ -126,31 +126,31 @@ export function onLocaleChange(listener: (locale: Locale) => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** 当前语言的 BCP 47 标签，给 `Intl.*`、`localeCompare` 用。 */
+/** BCP 47 tag of the current language, for `Intl.*` and `localeCompare`. */
 export function intlLocale(locale: Locale = current): string {
   return LOCALE_TAGS[locale];
 }
 
 /**
- * 按语言的复数规则挑词形，译文里带数量的句子用：`forms` 的键是 `Intl.PluralRules` 的类别，缺的类别回退 `other`。
- * 语言显式传（译文文件只属于一种语言，例如 `pluralForm('ru', n, { one: 'видео', few: …, many: …, other: … })`），不读当前语言。
+ * Picks the word form by the language's plural rules, for sentences in translations that contain a count: the keys of `forms` are `Intl.PluralRules` categories, and a missing category falls back to `other`.
+ * The language is passed explicitly (a translation file belongs to one language, for example `pluralForm('ru', n, { one: 'видео', few: …, many: …, other: … })`); the current language is not read.
  */
 export function pluralForm<T>(locale: string, n: number, forms: { readonly [K in Intl.LDMLPluralRule]?: T } & { readonly other: T }): T {
   let category: Intl.LDMLPluralRule = 'other';
   try {
     category = new Intl.PluralRules(locale).select(n);
   } catch {
-    // 不认识的语言标签：用 other。
+    // Unrecognized language tag: use other.
   }
   return forms[category] ?? forms.other;
 }
 
-/** 除英文以外每种出货语言的译文；类型跟英文目录一致，缺键、多键都是类型错误。 */
+/** Translations for every shipped language except English. The type follows the English catalog: missing keys and extra keys are both type errors. */
 export type Translations<T> = { readonly [L in Exclude<Locale, 'en'>]: NoInfer<T> };
 
 /**
- * 一个模块的文案目录。返回的对象与英文目录同形，读属性时取当前语言的那一条；某语言缺这一条（只会发生在运行期拼装的目录里）
- * 时回退英文。
+ * A module's message catalog. The returned object has the same shape as the English catalog, and each property read returns the entry in the current language. If a language lacks this entry (which only happens with catalogs assembled at runtime),
+ * it falls back to English.
  */
 export function defineMessages<T extends object>(en: T, translations: Translations<T>): T {
   const tables: Record<Locale, T> = { en, ...translations };
@@ -168,15 +168,15 @@ export function defineMessages<T extends object>(en: T, translations: Translatio
 }
 
 /**
- * 只给了部分语言的译文：测试里的临时目录用，缺的语言在运行期回退英文。出货的目录不要用它，缺一种语言应当是类型错误。
+ * Translations for only some of the languages: used for temporary directories in tests, where the missing languages fall back to English at runtime. Do not use it for shipped catalogs; a missing language should be a type error.
  */
 export function partialTranslations<T>(translations: Partial<Translations<T>>): Translations<T> {
   return translations as Translations<T>;
 }
 
 /**
- * 把「每次读都要取当前语言」的对象包成一个稳定的引用：模块想保留旧的具名导出（例如 `Record<Mode, string>`）时用，
- * `export const MODE_LABEL = live(() => M.modeLabel)`。只转发读，不支持写。
+ * Wraps an object that must read the current language on every access in a stable reference. Used when a module wants to keep an old named export (for example `Record<Mode, string>`):
+ * `export const MODE_LABEL = live(() => M.modeLabel)`. Only reads are forwarded; writes are not supported.
  */
 export function live<T extends object>(read: () => T): T {
   return new Proxy({} as T, {

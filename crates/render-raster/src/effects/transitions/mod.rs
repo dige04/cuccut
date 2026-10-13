@@ -1,16 +1,12 @@
-//! Surface Transition 的 strict CPU 参考实现（规范 §9，设计 §6.4）。
+//! Strict CPU reference implementation of the Surface Transitions (spec §9, design §6.4).
 //!
-//! 四条 v1 配方共用一条**端点纪律**：`progress` 是闭区间 `[0, 1]`，
-//! `progress = 0` 的输出必须与 `from` 逐字节相同、`= 1` 与 `to` 逐字节相同
-//! （规范 §9 的 conformance 要求）。这条纪律决定了实现形态：
+//! The four v1 recipes share one **endpoint discipline**. `progress` is the closed interval `[0, 1]`. The output at `progress = 0` must be byte-for-byte equal to `from`, and at `= 1` it must be byte-for-byte equal to `to` (the conformance requirement of spec §9). This discipline shapes the implementation:
 //!
-//! * 覆盖率是 0 或 1 的像素**直接拷贝原字节**，不进混合式；
-//! * 混合式本身是整数的（[`lerp_premul_u8`]），`a = 0` / `a = 255` 也各自
-//!   恒等，因此「拷贝」与「混合」两条路在端点上不会打架；
-//! * 扫掠范围多给一个像素（`span + softness + 1`）——少了它，硬边在
-//!   `progress = 1` 时会漏掉最后一列 / 最远那个角。
+//! * A pixel whose coverage is 0 or 1 **copies the original bytes directly** and does not go through the blend formula.
+//! * The blend formula itself is an integer formula ([`lerp_premul_u8`]). `a = 0` and `a = 255` are each an identity too, so the copy path and the blend path do not conflict at the endpoints.
+//! * The sweep range gets one extra pixel (`span + softness + 1`). Without it, a hard edge would miss the last column or the farthest corner at `progress = 1`.
 //!
-//! 颜色契约与阶段 4 的滤镜一致：预乘 sRGB / u8（manifest 声明）。
+//! The color contract matches the stage-4 filters: premultiplied sRGB / u8, as declared by the manifest.
 
 pub mod circle_crop;
 pub mod crossfade;
@@ -20,7 +16,7 @@ pub mod shatter;
 pub mod slide;
 pub mod wipe;
 
-/// 沿轴方向。`slide` 与 `wipe` 的 `direction` 参数解析结果。
+/// Axis direction. The parsed result of the `direction` parameter for `slide` and `wipe`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Left,
@@ -45,27 +41,23 @@ impl Direction {
     }
 }
 
-/// 预乘 u8 的整数插值：`a = 0` 还原 `from`、`a = 255` 还原 `to`。
+/// Integer interpolation of premultiplied u8: `a = 0` gives `from`, and `a = 255` gives `to`.
 ///
-/// `(f×(255−a) + t×a + 127) / 255` 的截断除法在两端都精确：
-/// `a = 0` ⇒ `(f×255 + 127)/255 = f`（余数 127 < 255）；`a = 255` ⇒ `t`。
-/// 换成浮点 `f + (t − f)×p` 再 `round()` 在端点也对，但中间会带上二进制舍入的
-/// 尾巴——strict 等级要的是可以逐字节复现的算术。
+/// The truncating division in `(f×(255−a) + t×a + 127) / 255` is exact at both ends. `a = 0` ⇒ `(f×255 + 127)/255 = f` (remainder 127 < 255). `a = 255` ⇒ `t`. Using floating point `f + (t − f)×p` followed by `round()` is also right at the endpoints, but the intermediate values carry binary rounding tails. The strict level needs arithmetic that can be reproduced byte for byte.
 #[inline]
 pub fn lerp_premul_u8(from: u8, to: u8, a: u32) -> u8 {
     ((u32::from(from) * (255 - a) + u32::from(to) * a + 127) / 255) as u8
 }
 
-/// 覆盖率 → 混合权重。`cov ≤ 0` / `≥ 1` 由调用方走拷贝分支，这里只管中间段。
+/// Coverage to blend weight. `cov ≤ 0` and `≥ 1` are handled by the caller's copy branch. This function handles only the middle range.
 #[inline]
 pub fn coverage_to_alpha(coverage: f64) -> u32 {
     (coverage.clamp(0.0, 1.0) * 255.0).round() as u32
 }
 
-/// 按逐像素覆盖率把 `from`、`to` 合成到 `out`。
+/// Composites `from` and `to` into `out` according to the per-pixel coverage.
 ///
-/// `coverage` 返回 0 ⇒ 原样拷 `from` 的四个字节，返回 1 ⇒ 拷 `to` 的。
-/// 端点的逐字节相等由这条捷径保证，而不是靠混合式凑巧。
+/// A coverage of 0 copies the four bytes of `from` as they are. A coverage of 1 copies those of `to`. This shortcut guarantees the byte equality at the endpoints. The blend formula does not get it right by coincidence.
 pub fn composite_by_coverage(
     from: &[u8],
     to: &[u8],
@@ -93,15 +85,15 @@ pub fn composite_by_coverage(
     }
 }
 
-/// 扫掠位置：`progress × (span + softness + 1)`。
+/// Sweep position: `progress × (span + softness + 1)`.
 ///
-/// 那个 `+ 1` 是端点纪律的一部分（见模块头）。
+/// The `+ 1` is part of the endpoint discipline (see the module header).
 #[inline]
 pub fn sweep_edge(progress: f64, span: f64, softness: f64) -> f64 {
     progress.clamp(0.0, 1.0) * (span + softness + 1.0)
 }
 
-/// 扫掠覆盖率：`softness = 0` 是硬边，否则是宽度为 `softness` 的线性过渡带。
+/// Sweep coverage: `softness = 0` is a hard edge. Otherwise it is a linear transition band with width `softness`.
 #[inline]
 pub fn sweep_coverage(edge: f64, u: f64, softness: f64) -> f64 {
     if softness <= 0.0 {
@@ -129,7 +121,7 @@ mod tests {
     fn the_sweep_covers_the_whole_axis_at_progress_one() {
         for softness in [0.0, 0.5, 4.0] {
             let edge = sweep_edge(1.0, 48.0, softness);
-            // 最后一列的 u = span − 1；必须完全被覆盖。
+            // The last column has u = span − 1. It must be fully covered.
             assert_eq!(sweep_coverage(edge, 47.0, softness), 1.0);
             let start = sweep_edge(0.0, 48.0, softness);
             assert_eq!(sweep_coverage(start, 0.0, softness), 0.0);

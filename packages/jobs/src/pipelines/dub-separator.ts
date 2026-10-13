@@ -7,26 +7,24 @@ import { probeMedia, runFfmpeg, type MediaToolResolver } from './ffmpeg.ts';
 import { errorText } from '../job-text.ts';
 import { PipelineStepError } from './pipeline.ts';
 
-/** 分离的输出与输入的时长容差（与 `stemProblems` 相同，一帧音频 20 毫秒）。 */
+/** Tolerance between the separation output's duration and the input's (same as `stemProblems`: one audio frame, 20 ms). */
 const DURATION_TOLERANCE_SEC = 0.02;
-/** Model Worker 接受的输出采样率（Model Worker 协议规范 §2.5.4）。 */
+/** Output sample rate accepted by the Model Worker (Model Worker protocol spec §2.5.4). */
 const MIN_SAMPLE_RATE = 8_000;
 const MAX_SAMPLE_RATE = 192_000;
 
 export interface LocalDubSeparatorOptions {
   provider: { separate(run: LocalSeparateRun, signal: AbortSignal): Promise<LocalSeparateOutcome> };
-  /** 执行分离的本地模型包。 */
+  /** The local model pack that runs the separation. */
   bundleId: string;
-  /** 它的 Model Worker 要加载的权重（字节）；不知道时 null。 */
+  /** Weight file size (bytes) that its Model Worker loads; null if unknown. */
   workerWeightBytes?: number | null;
   ffmpeg: MediaToolResolver;
   ffprobe: MediaToolResolver;
 }
 
 /**
- * 翻译配音的人声与背景分离（架构设计 §6.1 `separateAudio`、§7.9）由本机的分离模型包执行：素材的第一条音轨整段交给
- * Model Worker（`job.run` 的 `separate`），输出的采样率取输入音轨的。Worker 按音轨的长度写输出，容器时长（ffprobe 的
- * `format.duration`，`stemProblems` 拿它比）与音轨差出容差时，两路输出都用 ffmpeg 补静音或截到容器时长。
+ * Separating vocals from background for a dubbed translation (architecture design §6.1 `separateAudio`, §7.9) is run by the local separation model pack. The first audio track of the asset is passed whole to the Model Worker (`separate` in `job.run`), and the output sample rate is taken from the input track. The Worker writes its output to the track's length. When the container duration (ffprobe's `format.duration`, which `stemProblems` compares against) differs from the track by more than the tolerance, both outputs are padded with silence or truncated to the container duration with ffmpeg.
  */
 export function localDubSeparator(options: LocalDubSeparatorOptions): DubSeparator {
   const { provider, bundleId, ffmpeg, ffprobe } = options;
@@ -62,7 +60,7 @@ export function localDubSeparator(options: LocalDubSeparatorOptions): DubSeparat
   };
 }
 
-/** 补静音或截断到 `seconds` 秒，写在原文件旁边（`<名>.fit.wav`），格式不变（16-bit PCM WAV）。 */
+/** Pads with silence or truncates to `seconds` seconds, written next to the original file (`<name>.fit.wav`). The format is unchanged (16-bit PCM WAV). */
 async function fitDuration(ffmpeg: MediaToolResolver, file: string, seconds: number, signal: AbortSignal): Promise<string> {
   const out = path.join(path.dirname(file), `${path.basename(file, '.wav')}.fit.wav`);
   const args = ['-y', '-v', 'error', '-progress', 'pipe:1', '-nostats', '-i', `file:${file}`];
@@ -71,11 +69,11 @@ async function fitDuration(ffmpeg: MediaToolResolver, file: string, seconds: num
   return out;
 }
 
-/** Provider 的失败 → 流程这一步的错误码（与转写、生成任务的映射相同；识别说话人的区分一步同样用它）。 */
+/** Provider failure → this step's error code (same mapping as for the transcription and generation tasks; the speaker-distinguishing step uses it too). */
 export function providerStepError(error: unknown): unknown {
   if (!(error instanceof ProviderFailure)) return error;
   const details = { ...error.details, providerId: 'local' };
-  // 供应商错误带着消息引用时一并记下。
+  // When the vendor error carries a message reference, record it too.
   const message = errorText(error);
   switch (error.kind) {
     case 'crashed':

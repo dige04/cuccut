@@ -13,10 +13,9 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, mcp, tool, until, type Loose, type ToolSession } from './testing/fake-agent.ts';
 
 /**
- * 模型工具端到端（架构设计 §3.5、§6.2）：假智能体拿着会话令牌经真实的 MCP 端点调用 `models_*` 与 `jobs_*`（任务工具在 `job-tools.ts`，
- * 这里借真实的模型任务端到端覆盖 `jobs_inspect` / `jobs_cancel`），
- * 任务走与网关相同的 JobManager → 本机回环地址上的假供应商 → ffprobe 校验 → 产物；给了视频时经真实引擎导入为素材。
- * 密钥是测试里编的字符串，从不连真实的服务。需要 ffprobe / engine-host / ffmpeg 的部分缺了就跳过。
+ * Model tools end to end (architecture §3.5, §6.2): a fake agent, holding a session token, calls `models_*` and `jobs_*` through the real MCP endpoint (the job tools live in `job-tools.ts`; here a real model job covers `jobs_inspect` / `jobs_cancel` end to end).
+ * The job takes the same path as the gateway: JobManager → a fake provider on a loopback address → ffprobe validation → artifact. When a video is given, the artifact is imported as an asset through the real engine.
+ * The keys are strings made up in the test and never reach a real service. Parts that need ffprobe / engine-host / ffmpeg are skipped if missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -44,7 +43,7 @@ interface Side {
   client: CucCutClient;
   project: Project;
   conversationId: Id;
-  /** 智能体收到的每一个工具结果（检查里面没有密钥）。 */
+  /** Every tool result the agent receives (the check confirms no key appears in it). */
   results: unknown[];
 }
 
@@ -89,7 +88,7 @@ async function stopSide(side: Side | undefined): Promise<void> {
   await fs.rm(side.dir, { recursive: true, force: true });
 }
 
-/** 发一条消息，等假智能体的回合开始。 */
+/** Send a message and wait for the fake agent's turn to start. */
 async function send(
   side: Side,
   options: { autonomy?: Autonomy; accessMode?: AgentMode; conversationId?: Id } = {},
@@ -108,14 +107,14 @@ async function send(
   return { taskId, session };
 }
 
-/** 以智能体的身份调用工具，并记下结果。 */
+/** Call the tool as the agent and record the result. */
 async function call(side: Side, session: ToolSession, name: string, args: Record<string, unknown>) {
   const result = await tool(session, name, args);
   side.results.push(result);
   return result;
 }
 
-/** 轮询 `jobs_inspect` 直到任务终结（不另外读 Runtime 的内部状态）。 */
+/** Poll `jobs_inspect` until the job reaches a terminal state (without reading the Runtime's internal state separately). */
 async function settle(side: Side, session: ToolSession, jobId: string): Promise<Loose> {
   return until(async () => {
     const { isError, body } = await call(side, session, 'jobs_inspect', { jobId });
@@ -124,7 +123,7 @@ async function settle(side: Side, session: ToolSession, jobId: string): Promise<
   }, 15_000);
 }
 
-/** 智能体看到的工具结果、日志、账本与配置文件里都不能出现密钥。 */
+/** No key may appear in the tool results the agent sees, the logs, the ledger, or the config file. */
 async function expectNoSecret(side: Side, secret: string) {
   expect(JSON.stringify(side.results)).not.toContain(secret);
   const files = [path.join(side.home.logsDir, 'runtime.log'), side.home.jobsFile, side.home.modelServicesFile];
@@ -182,9 +181,9 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       '/settings/models/music',
     ]);
     expect(before.body.capabilities[0].next).toContain('Markdown settings link');
-    // 文本生成也列出（带能力参数），但没有提交它的工具。
+    // Text generation is also listed (with its capability parameters), but no tool submits it.
     expect(before.body.capabilities[3]).toMatchObject({ parameters: { effort: null, concurrency: 4 } });
-    // 目录里所有提供文本生成的服务商（§6.4），都没有配置。
+    // Every provider offering text generation in the catalog (§6.4) is unconfigured.
     const textProviders = before.body.capabilities[3].providers.map((p: Loose) => p.providerId);
     expect(textProviders.slice(0, 3)).toEqual(['openai', 'google', 'anthropic']);
     expect(textProviders).toEqual(expect.arrayContaining(['deepseek', 'qwen', 'openrouter']));
@@ -192,13 +191,13 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(names.filter((n) => /text/i.test(n))).toEqual([]);
     const speech = before.body.capabilities[1];
     expect(speech).toMatchObject({ default: null, effective: null, usableProviders: [] });
-    // 本机列出没装的合成模型包；在线的没有配置。
+    // Locally listed speech-synthesis model packs that are not installed; online ones are not configured.
     expect(speech.providers.map((p: Loose) => p.providerId)).toEqual(['local', 'openai', 'elevenlabs']);
     expect(speech.providers[0]).toMatchObject({ kind: 'local', available: false, unavailableReason: 'not-installed' });
     expect(speech.providers[1]).toMatchObject({ kind: 'online', available: false, unavailableReason: 'not-configured', enabled: false });
     expect(speech.next).toContain('Settings');
 
-    // 用户在设置里启用 OpenAI（这是用户的操作，工具做不到）。
+    // The user enables OpenAI in settings (this is the user's action; the tools cannot do it).
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await side.client.request('models.setDefault', { capability: 'generateImage', providerId: 'openai' });
     const after = await call(side, session, 'models_capabilities', { capability: 'generateImage' });
@@ -212,7 +211,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     });
     const model = image.providers.find((p: Loose) => p.providerId === 'openai').models.find((m: Loose) => m.modelId === 'gpt-image-2');
     expect(model).toMatchObject({ maxCount: expect.any(Number), maxPromptChars: expect.any(Number), sizes: expect.any(Array) });
-    // 智能体 Provider 也列出，带着如实的限制（这里的假 Driver 版本是 0，所以版本太旧）。
+    // Agent providers are listed too, with honest limits (the fake driver version here is 0, so the version is too old).
     const agent = image.providers.find((p: Loose) => p.providerId === 'agent:codex');
     expect(agent).toMatchObject({ kind: 'agent', available: false, unavailableReason: 'outdated', enabled: false });
     expect(agent.models[0]).toMatchObject({ maxCount: 1, sizes: [], acceptsSeed: false, cost: 'subscription', notes: expect.any(String) });
@@ -226,7 +225,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     side = await startSide({ openai });
     const { session } = await send(side);
 
-    // 图片生成的本机模型包不作补救（界面只回落到云端）：补救是配置在线服务。
+    // The local image-generation model pack offers no remedy (the UI only falls back to the cloud): the remedy is configuring an online service.
     const image = await call(side, session, 'image', { prompt: 'a cat' });
     expect(image.isError).toBe(true);
     expect(image.body.error).toMatchObject({
@@ -239,7 +238,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(image.body.error.next).toContain('other providers');
     expect(image.body.error.remedy.settingsHref).toBe('/settings/models/image');
     expect(image.body.error.next).toContain('Markdown settings link');
-    // 点名还没配置的在线服务：补救是去设置里配置它。
+    // Naming an online service that is not yet configured: the remedy is to configure it in settings.
     const online = await call(side, session, 'image', { prompt: 'a cat', provider: 'openai' });
     expect(online.isError).toBe(true);
     expect(online.body.error).toMatchObject({
@@ -251,7 +250,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(online.body.error.next).toContain('shell commands, scripts');
     expect(online.body.error.next).toContain('other providers');
 
-    // 语音合成有本机模型包可装：补救是安装模型包（或配置在线服务）。
+    // Speech synthesis has a local model pack to install: the remedy is to install the pack (or configure an online service).
     const speech = await call(side, session, 'speak', { text: '你好' });
     expect(speech.isError).toBe(true);
     expect(speech.body.error).toMatchObject({
@@ -267,7 +266,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     ]);
     expect(speech.body.error.next).toContain('shell commands, scripts');
 
-    // 启用了但没有默认值：提示设默认值。
+    // Enabled but with no default: prompt to set a default.
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const noDefault = await call(side, session, 'speak', { text: '你好' });
     expect(noDefault.body.error).toMatchObject({
@@ -277,7 +276,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     });
     expect(noDefault.body.error.remedy.commands).toEqual(['cuccut models default synthesizeSpeech openai']);
 
-    // 超过模型上限：在提交时拒绝，说明上限，由智能体自己分段。
+    // Over the model's limit: rejected at submission, the limit is stated, and the agent splits it itself.
     const tooLong = await call(side, session, 'speak', { text: 'a'.repeat(4097), provider: 'openai' });
     expect(tooLong.body.error).toMatchObject({
       code: 'INPUT_TOO_LONG',
@@ -286,7 +285,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(tooLong.body.error.message).toContain('4096');
     expect(tooLong.body.error.next).toContain('pieces of at most 4096 characters and submit them one by one');
 
-    // 模型没有的音色：invalid-request，带模型的音色清单。
+    // A voice the model does not have: invalid-request, with the model's voice list.
     const badVoice = await call(side, session, 'speak', {
       text: 'hi',
       provider: 'openai',
@@ -295,7 +294,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     });
     expect(badVoice.body.error).toMatchObject({ code: 'INVALID_REQUEST', details: { voices: expect.any(Array) } });
     expect(badVoice.body.error.next).toContain('details.voices');
-    // 用户库的音色与网关同一条路解析（JobManager）：库里没有这个音色时 not-found，不创建任务。
+    // Voices in the user's library are resolved the same way as the gateway (JobManager): if the voice is not in the library, not-found, and no job is created.
     const noLibraryVoice = await call(side, session, 'speak', {
       text: 'hi',
       provider: 'openai',
@@ -303,11 +302,11 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     });
     expect(noLibraryVoice.isError).toBe(true);
     expect(noLibraryVoice.body.error.code).toBe('NOT_FOUND');
-    // 参数形状不对：工具层拒绝。
+    // Wrong parameter shape: rejected at the tool layer.
     const badShape = await call(side, session, 'image', { prompt: 'x', size: 'huge', apiKey: 'x' });
     expect(badShape.body.error.code).toBe('INVALID_ARGUMENTS');
 
-    // 用户停用了：remedy 是重新启用。
+    // The user disabled it: the remedy is to re-enable it.
     await side.client.request('models.configure', { providerId: 'openai', enabled: false });
     const disabled = await call(side, session, 'image', { prompt: 'a cat', provider: 'openai' });
     expect(disabled.body.error).toMatchObject({
@@ -420,7 +419,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     expect(job.parameters.text).toBeUndefined();
     expect(job.outputs[0].media).toMatchObject({ kind: 'audio', sampleRate: 44100, channels: 1 });
     expect(job.next).toContain('artifact');
-    // 账本里留下同样的提交者（重启之后仍可归属）。
+    // The ledger keeps the same submitter (still attributable after a restart).
     const ledger = { jobs: await new JobLedger(side.home.jobsFile).load() };
     expect(ledger.jobs[0]!.record.submitter).toEqual({ kind: 'agent', id: side.conversationId, taskId });
     await expectNoSecret(side, OPENAI_KEY);
@@ -454,7 +453,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     const { body } = await call(side, session, 'speak', { text: 'hi', provider: 'openai' });
     await openai.waitForRequests(1);
     await until(async () => (await call(side, session, 'jobs_inspect', { jobId: body.jobId })).body.phase === 'generating');
-    // 取消是 command：默认的 auto 模式下自动放行，结果里记下依据。
+    // Cancel is a command: auto-allowed in the default auto mode, with the basis recorded in the result.
     expect((await call(side, session, 'jobs_cancel', { jobId: body.jobId })).body).toEqual({
       jobId: body.jobId,
       state: 'cancelled',
@@ -462,14 +461,14 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     });
     expect((await call(side, session, 'jobs_inspect', { jobId: body.jobId })).body).toMatchObject({ state: 'cancelled' });
 
-    // 用户在工具页提交的、不属于任何视频的任务：智能体看不到。
+    // A job the user submitted on the tools page that belongs to no video: the agent cannot see it.
     openai.handler = fakeOpenAiHandler();
     const user = await side.client.request('models.synthesizeSpeech', { text: 'user text', provider: 'openai' });
     expect((await call(side, session, 'jobs_inspect', { jobId: user.jobId })).body.error.code).toBe('JOB_NOT_FOUND');
     expect((await call(side, session, 'jobs_cancel', { jobId: user.jobId })).body.error.code).toBe('JOB_NOT_FOUND');
     expect((await call(side, session, 'jobs_inspect', { jobId: 'job_missing' })).body.error.code).toBe('JOB_NOT_FOUND');
 
-    // 另一个会话的智能体也看不到这个会话的任务。
+    // An agent in another session cannot see this session's jobs either.
     const other = await side.client.request('conversations.create', { projectId: side.project.id });
     const { session: otherSession } = await send(side, { conversationId: other.conversation.id });
     expect(otherSession).not.toBe(session);
@@ -485,7 +484,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     const bytes = (await side.runtime.models.jobs.artifacts.read(artifactId))!;
     const root = await fs.realpath(side.project.path);
 
-    // 省略扩展名时补上产物的；中间的目录新建。
+    // When the extension is omitted, the artifact's is added; intermediate directories are created.
     const saved = await call(side, session, 'artifacts_save', { artifactId, path: 'out/voice' });
     expect(saved.isError).toBe(false);
     expect(saved.body).toMatchObject({
@@ -499,7 +498,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     });
     expect(await fs.readFile(path.join(root, 'out', 'voice.mp3'))).toEqual(bytes);
 
-    // 已经存在：不带 overwrite 拒绝（不生成审批），带了是 high：auto 模式下也要问用户，拒绝时不写，允许后才替换。
+    // Already exists: rejected without overwrite (no approval is generated). With overwrite it is high: the user is asked even in auto mode; on refusal nothing is written, and replacement happens only after approval.
     await fs.writeFile(path.join(root, 'out', 'voice.mp3'), 'mine');
     const exists = await call(side, session, 'artifacts_save', { artifactId, path: 'out/voice.mp3' });
     expect(exists.body.error.code).toBe('PATH_EXISTS');
@@ -533,7 +532,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
       ['accepted', 'high', 'auto', 'user'],
     ]);
 
-    // 写到外面：..、绝对路径、经过指向别处的符号链接目录、目标本身是符号链接。
+    // Writes outside: `..`, absolute paths, going through a symlinked directory that points elsewhere, and a target that is itself a symlink.
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-outside-'));
     try {
       await fs.writeFile(path.join(outside, 'victim.mp3'), 'keep');
@@ -552,7 +551,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
       await fs.rm(outside, { recursive: true, force: true });
     }
 
-    // 视频目录与 .ccut 不写；扩展名要与产物一致。
+    // The video directory and .ccut are not written to; the extension must match the artifact.
     await fs.mkdir(path.join(root, 'clip-video'));
     await fs.writeFile(path.join(root, 'clip-video', 'video.db'), '');
     expect((await call(side, session, 'artifacts_save', { artifactId, path: 'clip-video/a.mp3' })).body.error.code).toBe(
@@ -561,7 +560,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     expect((await call(side, session, 'artifacts_save', { artifactId, path: '.ccut/a.mp3' })).body.error.code).toBe('PATH_INSIDE_VIDEO');
     expect((await call(side, session, 'artifacts_save', { artifactId, path: 'a.wav' })).body.error.code).toBe('EXTENSION_MISMATCH');
 
-    // 用户在工具页生成的（不属于任何视频）与不存在的产物：一样回答找不到。
+    // An artifact the user generated on the tools page (belonging to no video) and a nonexistent artifact get the same "not found" answer.
     const user = await side.client.request('models.synthesizeSpeech', { text: 'user text', provider: 'openai', format: 'wav' });
     expect(await side.runtime.models.jobs.settled(user.jobId)).toBe('completed');
     const userArtifact = side.runtime.models.jobs.inspect(user.jobId).result!.outputs![0]!.artifactId;
@@ -573,7 +572,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     expect((await call(side, session, 'artifacts_save', { artifactId: missing, path: 'x.mp3' })).body.error.code).toBe(
       'ARTIFACT_NOT_FOUND',
     );
-    // 另一个会话的智能体用不了这个会话的产物。
+    // An agent in another session cannot use this session's artifact.
     const other = await side.client.request('conversations.create', { projectId: side.project.id });
     const { session: otherSession } = await send(side, { conversationId: other.conversation.id });
     expect((await call(side, otherSession, 'artifacts_save', { artifactId, path: 'other.mp3' })).body.error.code).toBe(
@@ -594,7 +593,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     const running = await call(side, session, 'speak', { text: '一直在跑', provider: 'openai' });
     const second = await call(side, session, 'image', { prompt: 'still going', provider: 'openai' });
     await openai.waitForRequests(3);
-    // 另一个会话的智能体与用户自己的任务（排在后面，可能还在排队）。
+    // An agent in another session versus the user's own jobs (queued behind them, possibly still waiting).
     const other = await side.client.request('conversations.create', { projectId: side.project.id });
     const { session: otherSession } = await send(side, { conversationId: other.conversation.id });
     const foreign = await call(side, otherSession, 'speak', { text: '别的会话', provider: 'openai' });
@@ -602,7 +601,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     const jobs = side.runtime.models.jobs;
     expect(jobs.inspect(running.body.jobId).state).toBe('running');
 
-    // 次级操作「停止回复」：只停回合，不取消任务。
+    // Secondary action "Stop reply": stops the turn only; does not cancel the job.
     expect(await side.client.request('agents.interrupt', { conversationId: side.conversationId })).toEqual({ status: 'requested' });
     expect(jobs.inspect(running.body.jobId).state).toBe('running');
 
@@ -612,7 +611,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     session.finish('interrupted');
     await until(() => side.runtime.harness.agentRun(side.conversationId).taskId === null);
 
-    // 完成的保留结果；别的会话与用户的任务没有被取消。
+    // Finished results are kept; jobs of other sessions and of the user are not cancelled.
     expect(jobs.inspect(done.body.jobId)).toMatchObject({
       state: 'completed',
       result: { outputs: [{ artifactId: completed.outputs[0].artifactId }] },
@@ -676,7 +675,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     expect(speechJob).toMatchObject({ state: 'completed', videoId, outputs: [{ mediaType: 'audio/mpeg', assetId: expect.any(String) }] });
     expect(imageJob).toMatchObject({ state: 'completed', videoId, outputs: [{ mediaType: 'image/png', assetId: expect.any(String) }] });
     expect(speechJob.next).toContain('addItem');
-    // 应用记录智能体看得到（只有状态与原因）；没有对账的工具（工具列表见 agent-tools.test.ts）。
+    // The application record is visible to the agent (only status and reason); tools without reconciliation (see agent-tools.test.ts for the tool list).
     expect(speechJob.applications).toEqual([{ state: 'committed', videoId }]);
 
     const video = side.runtime.videos.mirror(videoId)!.video;
@@ -698,7 +697,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
 
   it('没带视频的产物：edits_apply 的 importAsset + artifactId 导入为 managed 素材，来源与带视频的生成相同，不再调用供应商', async () => {
     const { session } = await send(side);
-    // 同样的文本，一次带视频、一次不带：两条路导入的素材来源要一样。带视频的那次用 wav：bytes 不同，引擎才不会复用同一个素材。
+    // The same text, once with a video and once without: the asset source from both paths should be the same. The with-video run uses wav: its bytes differ, so the engine does not reuse the same asset.
     const submit = async (name: string, args: Record<string, unknown>) =>
       settle(side, session, (await call(side, session, name, args)).body.jobId);
     const withVideo = await submit('speak', {
@@ -755,7 +754,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
         parameters: { capability: 'synthesizeSpeech', voice: 'marin', format: 'mp3', language: null },
       },
     });
-    // 与带视频的那次同一个形状：除了任务号、输入 hash（含视频与格式）、产物与格式，来源完全相同；原文不进来源。
+    // Same shape as the with-video run: apart from the job number, the input hash (which includes the video and format), and the artifact and format, the source is entirely the same; the original text does not enter the source.
     const comparable = (r: typeof revision) => {
       const { jobId: _j, inputHash: _i, artifactId: _a, parameters, ...rest } = r.provenance.source as Record<string, Loose>;
       const { format: _f, ...others } = parameters;
@@ -763,13 +762,13 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     };
     expect(comparable(revision)).toEqual(comparable(reference));
     expect(JSON.stringify(revision.provenance)).not.toContain('后来才放进视频');
-    // 放上了时间线；多张图的默认名带序号，给了 name 时用它。
+    // Placed on the timeline; for several images the default name carries a sequence number, and when a name is given it is used.
     expect(JSON.stringify(video.sequences)).toContain(voice.id);
     expect(find(images.jobId, images.outputs[1].artifactId).asset.name).toBe('第二张');
     expect(find(images.jobId, images.outputs[0].artifactId).asset.name).toBe('图片：two frames 1');
 
-    // 拒绝：path 与 artifactId 同时给、要链接、自带来源、不存在的产物、用户在工具页生成的；视频不变。
-    // 用户的任务要有智能体没生成过的 bytes（假供应商的第 i 张图各不相同）：第三张。
+    // Rejected: path and artifactId given together, a link, its own source, a nonexistent artifact, or an artifact the user generated on the tools page; the video is unchanged.
+    // The user's job needs bytes the agent never generated (the fake provider's i-th image differs each time): the third one.
     const user = await side.client.request('models.generateImage', { prompt: 'user only', provider: 'openai', count: 3 });
     expect(await side.runtime.models.jobs.settled(user.jobId)).toBe('completed');
     const userArtifact = side.runtime.models.jobs.inspect(user.jobId).result!.outputs![2]!.artifactId;
@@ -832,14 +831,14 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     });
     const newVideoId = job.pipeline.summary.videoId as Id;
     expect(newVideoId).not.toBe(videoId);
-    // 新视频与 videos_create 建在同一处（会话所属的项目），智能体看得到。
+    // The new video is created in the same place as videos_create (the session's project), and the agent can see it.
     expect(side.runtime.videos.ref(newVideoId)?.source.projectId).toBe(side.project.id);
     const listed = await call(side, session, 'videos_list', {});
     expect(JSON.stringify(listed.body)).toContain(newVideoId);
     const document = await side.client.request('documents.read', { videoId: newVideoId, documentId: job.pipeline.summary.documentId });
     expect((document.body as { words: { text: string }[] }).words.map((w) => w.text)).toEqual(['hello', 'world']);
 
-    // 只要文稿：不建视频，写到 outDir。
+    // Script only: no video is created; it is written to outDir.
     const outDir = path.join(fixtures, 'transcripts');
     const only = await call(side, session, 'transcribe', { file: audio, noVideo: true, outDir });
     const fileJob = await settle(side, session, only.body.jobId);
@@ -848,7 +847,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     expect(await fs.readFile(path.join(outDir, 'voice.txt'), 'utf8')).toContain('hello');
     expect(fileJob.next).toContain('TXT');
 
-    // 参数组合不对：不提交。
+    // Wrong combination of parameters: nothing is submitted.
     for (const args of [{}, { file: audio, video: videoPath }, { file: audio, asset: 'ast_x' }, { video: videoPath, noVideo: true }]) {
       expect((await call(side, session, 'transcribe', args)).body.error.code, JSON.stringify(args)).toBe('INVALID_ARGUMENTS');
     }
@@ -869,7 +868,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     expect(missing.body.error.code).toMatch(/VIDEO_NOT_FOUND|VIDEO_OUTSIDE_WORKSPACE/);
     expect(side.runtime.models.jobs.list()).toEqual([]);
 
-    // 用户直接提交的任务：别处视频上的看不到，本目录视频上的看得到（只读）。
+    // A job the user submitted directly: not visible on videos elsewhere, visible on videos in this directory (read-only).
     const hidden = await side.client.request('models.generateImage', { prompt: 'secret plan', provider: 'openai', videoId: outsideId });
     const visible = await side.client.request('models.generateImage', { prompt: 'shared', provider: 'openai', videoId });
     expect((await call(side, session, 'jobs_inspect', { jobId: hidden.jobId })).body.error.code).toBe('JOB_NOT_FOUND');

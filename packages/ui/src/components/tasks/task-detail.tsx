@@ -53,7 +53,7 @@ function Panel({ error = false, children }: { error?: boolean; children: ReactNo
   );
 }
 
-/** 任务详情（原型 page-tasks.jsx `TaskDetailPage`）：Agent 任务与 Job 共用一页，按 ID 先找任务再找 Job。 */
+/** Task detail (prototype page-tasks.jsx `TaskDetailPage`): agent tasks and Jobs share one page; looks up a task by ID first, then a Job. */
 export function TaskDetail({ taskId }: { taskId: Id }) {
   const { rows, ready } = useTaskRows({ fold: false });
   const row = rows.find((r) => r.id === taskId);
@@ -78,9 +78,9 @@ export function TaskDetail({ taskId }: { taskId: Id }) {
       </UtilityShell>
     );
   }
-  // 导入旧版项目有自己的一页（计数、没导入的原因与补救、已导入 / 已跳过）。
+  // Importing legacy projects has its own page (counts, reasons for items not imported and remedies, imported / skipped).
   if (row.origin === 'legacy-import' && legacyRun) return <LegacyImportDetail row={row} run={legacyRun} backButton={backButton} />;
-  // 从链接导入有自己的一页（三步、补救、下载工具）。
+  // Importing from a link has its own page (three steps, remedies, download tool).
   if (job && isLinkImport(job) && !toolRunOf(job)) return <LinkImportDetail row={row} job={job} backButton={backButton} />;
   return <TaskDetailBody row={row} job={job} task={task} backButton={backButton} />;
 }
@@ -93,9 +93,9 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
   const speed = exportSpeedParts(useExportSpeed(job?.jobId));
   const remedy = job ? jobRemedy(job) : null;
   const failed = job ? job.state === 'failed' : task?.status === 'failed';
-  // 视频工具的运行（转录、翻译字幕、翻译配音）：步骤、停住的说明与重试都在 ToolRunPanel 里，不再另写一段失败说明。
+  // Video tool runs (transcription, subtitle translation, dubbing translation): steps, the explanation for a stop, and retries all live in ToolRunPanel; no separate failure message is written here.
   const toolRun = job ? toolRunOf(job) : null;
-  // 工具页的直接任务与文件转码：失败原因写在「重试」上面，「重试 / 再做一次」回到参数已经填好的工具页（产品设计 §2.7）。
+  // Direct tool-page tasks and file transcoding: the failure reason is written above “重试” (Retry), and “重试 / 再做一次” (Retry / Run again) returns to the tool page with its parameters already filled in (product design §2.7).
   const rerun = job ? rerunOf(job) : null;
   const refill = rerun?.mode === 'refill' ? rerun : null;
   const actionHint =
@@ -196,7 +196,7 @@ const RECONCILE_LABEL: Record<JobReconcileDecision, string> = {
   apply: TASK_VIEW_COPY.reconcileApply,
 };
 
-/** 对账的几个决定（`jobs.reconcile`，架构设计 §7.5）：每个一行，按钮旁写清后果。结果经 `jobs` 主题回来。 */
+/** The reconciliation decisions (`jobs.reconcile`, architecture design §7.5): one line each, with the consequence stated next to the button. Results come back through the `jobs` topic. */
 function ReconcileActions({ job }: { job: JobRecord }) {
   const runtime = useRuntime();
   const [busy, setBusy] = useState(false);

@@ -4,12 +4,11 @@ import type { NodeService } from '@cuccut/nodes';
 import type { ManagedService, ServiceReport } from './service-manager.ts';
 
 /**
- * 节点服务在 ServiceManager 里的样子（架构设计 §4.8、§6.7）。权威是 `NodeService`（`nodes.share.*` 与 `node-share.json`），
- * 这里只把它的状态投影成统一的形状，不另存一份：
+ * What the node service looks like in ServiceManager (architecture design §4.8, §6.7). The authority is `NodeService` (`nodes.share.*` and `node-share.json`); here its state is only projected into a unified shape, with no separate copy:
  *
- * - 共享没开：`off`；开着且在监听：`on`；开着却没在监听（端口被占用）：`error`，原因来自节点服务；
- * - 「随 Runtime 启动」就是共享的开关（开着的共享在 Runtime 启动时恢复监听）；
- * - 配置（端口、名字、配对、能力）只用 `nodes.share.*`；配对码与已配对客户端只在 `nodes.share.status` 里，不在这里转述。
+ * - Sharing off: `off`; on and listening: `on`; on but not listening (port taken): `error`, with the reason from the node service;
+ * - "Start with Runtime" is the sharing switch itself (sharing that is on resumes listening when the Runtime starts);
+ * - Config (port, name, pairing, capabilities) is only through `nodes.share.*`; the pairing code and paired clients appear only in `nodes.share.status`, and are not paraphrased here.
  */
 export class NodeServiceAdapter implements ManagedService {
   readonly id = 'node' as const;

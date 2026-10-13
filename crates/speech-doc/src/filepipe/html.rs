@@ -1,7 +1,7 @@
-//! filepipe 的 HTML 工具层：转义、宽容解析、白名单清洗、按 id 定位。
+//! filepipe's HTML utility layer: escaping, tolerant parsing, allowlist sanitizing, locating by id.
 //!
-//! 红线：**标签名不进协议**。所有定位一律走 `id` / `data-*` 属性，
-//! 解析结果只做结构提取，绝不执行任何 HTML。
+//! Red line: **tag names are not part of the protocol**. All locating goes through `id` / `data-*` attributes;
+//! parse results only extract structure and never execute any HTML.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,16 +13,16 @@ use crate::engines::markers::collapse_cjk_spaces;
 
 use super::common::{Warning, WarningCode};
 
-/// 丢弃的不安全元素（§16）。
+/// Unsafe elements that are dropped (§16).
 const DROPPED_TAGS: &[&str] = &[
     "script", "style", "iframe", "object", "embed", "applet", "link", "meta", "base", "frame",
     "frameset", "noscript",
 ];
 
-/// 保留的属性白名单；此外 `data-*` 一律保留，其余一律丢弃。
+/// Allowlisted attributes to keep; in addition, `data-*` is always kept, and all others are dropped.
 const ALLOWED_ATTRS: &[&str] = &["id", "class", "lang", "scope", "rowspan", "colspan"];
 
-/// 文本节点内容转义（`&`、`<`、`>`）。
+/// Escapes text node content (`&`, `<`, `>`).
 pub fn escape_text(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -36,7 +36,7 @@ pub fn escape_text(text: &str) -> String {
     output
 }
 
-/// 属性值转义（在 [`escape_text`] 基础上加引号）。
+/// Escapes attribute values (on top of [`escape_text`], also adds quotes).
 pub fn escape_attr(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -52,56 +52,56 @@ pub fn escape_attr(text: &str) -> String {
     output
 }
 
-/// 清洗后的 DOM 节点。
+/// A sanitized DOM node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
-    /// 元素节点。
+    /// An element node.
     Element(Element),
-    /// 文本节点。
+    /// A text node.
     Text(String),
 }
 
-/// 清洗后的元素节点。
+/// A sanitized element node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Element {
-    /// 小写标签名（仅用于诊断，不参与协议判定）。
+    /// Lowercased tag name (for diagnostics only, not used in protocol decisions).
     pub tag: String,
-    /// 白名单属性（属性名小写）。
+    /// Allowlisted attributes (attribute names lowercased).
     pub attrs: BTreeMap<String, String>,
-    /// 子节点。
+    /// Child nodes.
     pub children: Vec<Node>,
 }
 
 impl Element {
-    /// 读取属性。
+    /// Reads an attribute.
     pub fn attr(&self, name: &str) -> Option<&str> {
         self.attrs.get(name).map(String::as_str)
     }
 
-    /// 读取 `id`。
+    /// Reads `id`.
     pub fn id(&self) -> Option<&str> {
         self.attr("id")
     }
 
-    /// 是否带有某个 class（空白分隔，逐字节匹配）。
+    /// Whether it has a given class (whitespace-separated, byte-for-byte match).
     pub fn has_class(&self, class: &str) -> bool {
         self.attr("class")
             .is_some_and(|value| value.split_whitespace().any(|item| item == class))
     }
 
-    /// 原样拼接的后代文本。
+    /// Descendant text concatenated as-is.
     pub fn raw_text(&self) -> String {
         let mut output = String::new();
         collect_text(&self.children, &mut output);
         output
     }
 
-    /// 归一化后代文本：压缩空白 + 折叠 CJK 之间的空格。
+    /// Normalized descendant text: collapses whitespace and removes spaces between CJK characters.
     pub fn text(&self) -> String {
         normalize_html_text(&self.raw_text())
     }
 
-    /// 直接子元素。
+    /// Direct child elements.
     pub fn child_elements(&self) -> Vec<&Element> {
         self.children
             .iter()
@@ -112,7 +112,7 @@ impl Element {
             .collect()
     }
 
-    /// 前序遍历的全部后代元素（不含自身）。
+    /// All descendant elements in pre-order (excluding self).
     pub fn descendants(&self) -> Vec<&Element> {
         let mut output = Vec::new();
         collect_elements(&self.children, &mut output);
@@ -120,7 +120,7 @@ impl Element {
     }
 }
 
-/// HTML 文本归一化：压缩空白后折叠 CJK 空格。
+/// HTML text normalization: collapses whitespace, then removes spaces between CJK characters.
 pub fn normalize_html_text(text: &str) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
     collapse_cjk_spaces(&collapsed)
@@ -146,26 +146,26 @@ fn collect_elements<'a>(nodes: &'a [Node], output: &mut Vec<&'a Element>) {
     }
 }
 
-/// 清洗后的文档树。
+/// The sanitized document tree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HtmlTree {
-    /// 顶层节点。
+    /// Top-level nodes.
     pub roots: Vec<Node>,
-    /// 被丢弃的不安全标签名。
+    /// Dropped unsafe tag names.
     pub dropped_tags: BTreeSet<String>,
-    /// 被丢弃的非白名单属性名。
+    /// Dropped non-allowlisted attribute names.
     pub dropped_attrs: BTreeSet<String>,
 }
 
 impl HtmlTree {
-    /// 前序遍历的全部元素。
+    /// All elements in pre-order.
     pub fn elements(&self) -> Vec<&Element> {
         let mut output = Vec::new();
         collect_elements(&self.roots, &mut output);
         output
     }
 
-    /// 按属性名筛选元素（前序）。
+    /// Selects elements by attribute name (pre-order).
     pub fn elements_with_attr(&self, name: &str) -> Vec<&Element> {
         self.elements()
             .into_iter()
@@ -173,14 +173,14 @@ impl HtmlTree {
             .collect()
     }
 
-    /// 全文归一化文本。
+    /// Normalized text of the whole document.
     pub fn text(&self) -> String {
         let mut output = String::new();
         collect_text(&self.roots, &mut output);
         normalize_html_text(&output)
     }
 
-    /// 清洗动作转诊断项。
+    /// Converts sanitize actions into diagnostic items.
     pub fn warnings(&self) -> Vec<Warning> {
         let mut warnings = Vec::new();
         if !self.dropped_tags.is_empty() {
@@ -213,13 +213,13 @@ impl HtmlTree {
     }
 }
 
-/// 以文档模式宽容解析并清洗。
+/// Parses in document mode with tolerance, then sanitizes.
 pub fn parse_html(input: &str) -> HtmlTree {
     let dom = parse_document(RcDom::default(), ParseOpts::default()).one(input);
     build_tree(&dom.document)
 }
 
-/// 以 `<table>` 片段上下文解析：模型只回 `<tbody>`/`<tr>` 时文档模式会整片丢弃。
+/// Parses in `<table>` fragment context: in document mode the whole fragment is dropped when the model returns only `<tbody>`/`<tr>`.
 pub fn parse_html_in_table(input: &str) -> HtmlTree {
     let context = QualName::new(None, ns!(html), local_name!("table"));
     let dom = parse_fragment(
@@ -267,8 +267,8 @@ fn convert_children(handle: &Handle, output: &mut Vec<Node>, tree: &mut HtmlTree
                 }
                 let mut children = Vec::new();
                 convert_children(child, &mut children, tree);
-                // `html`/`head`/`body` 是解析器补出来的骨架，直接提升子节点，
-                // 让协议层只面对内容元素。
+                // `html`/`head`/`body` are skeleton elements the parser adds; their children are promoted directly,
+                // so the protocol layer only deals with content elements.
                 if matches!(tag.as_str(), "html" | "head" | "body") && kept.is_empty() {
                     output.extend(children);
                 } else {
@@ -287,9 +287,9 @@ fn convert_children(handle: &Handle, output: &mut Vec<Node>, tree: &mut HtmlTree
     }
 }
 
-/// 按 `id` 建索引（逐字节精确匹配，不做大小写折叠）。
+/// Builds an index by `id` (exact byte match, no case folding).
 ///
-/// 返回 `(索引, 重复出现的 id)`；重复 id 只保留首次出现的元素。
+/// Returns `(index, duplicated ids)`; for duplicate ids only the first occurrence is kept.
 pub fn index_by_id(tree: &HtmlTree) -> (BTreeMap<String, &Element>, Vec<String>) {
     let mut index: BTreeMap<String, &Element> = BTreeMap::new();
     let mut duplicates = Vec::new();

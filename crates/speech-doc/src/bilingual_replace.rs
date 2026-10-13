@@ -1,13 +1,8 @@
-//! 双语 Find & Replace 的源指纹收口。
+//! Source fingerprint handling for bilingual Find & Replace.
 //!
-//! Mac `TranslateFindReplace.trReplaceMatches` 在同一撤销事务里先改译文、再改
-//! 原文；只有同一语义段落的两侧都真的变化时，才为**编辑前已有 stamp 且仍
-//! 新鲜**的源句确认新指纹。这个判断不能留给 UI，也不能用文档级“全部刷新”
-//! 代替，否则会把早已过期、与本次替换无关的译文洗成 fresh。
+//! The Mac `TranslateFindReplace.trReplaceMatches` changes the translation first and then the source, in one undo transaction. A source sentence gets a new fingerprint only when both sides of the same semantic paragraph have actually changed, and only if it already had a stamp before the edit and that stamp is still fresh. This decision cannot be left to the UI, and a document-level “refresh all” cannot replace it, because that would turn translations that went stale long ago and have nothing to do with this replacement into fresh ones.
 //!
-//! 源文本重铺还可能改掉 Sentence 首词 id。本模块在编辑前冻结句序与起点，
-//! 编辑后只在二者仍吻合时把所有语言的句键状态重挂到新 id；这与 Mac
-//! `editSpan` 保留首词 id 的可见结果等价，同时不要求宿主复制句级表结构。
+//! Re-flowing the source text can also change the first-word id of a Sentence. Before the edit, this module freezes the sentence order and starting points. After the edit, it re-attaches the sentence-key state of every language to the new id, but only if both still match. This gives the same visible result as Mac `editSpan`, which keeps the first-word id, without requiring the host to copy the sentence-level table structure.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,15 +24,14 @@ struct SyncCandidate {
     paragraph: usize,
 }
 
-/// 编辑后句键重挂与源指纹确认的结果。
+/// Result of re-attaching sentence keys after the edit and confirming source fingerprints.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BilingualReplaceFinalize {
     pub rekeyed_sentences: usize,
     pub synced_stamps: usize,
 }
 
-/// 编辑前冻结的最小计划。宿主可先执行任意数量的译文与源文 CAS；全部成功后
-/// 再调用 [`finalize`](Self::finalize)，失败事务则直接丢弃本值。
+/// The minimal plan frozen before the edit. The host may run any number of translation and source CAS operations first. After they all succeed, call [`finalize`](Self::finalize); if the transaction fails, drop this value.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BilingualReplacePlan {
     language: Option<String>,
@@ -47,9 +41,8 @@ pub struct BilingualReplacePlan {
 }
 
 impl BilingualReplacePlan {
-    /// `source_word_ids` 是本批真的会改写的原文词跨度；`target_sentence_ids` 是
-    /// 本批真的会改写的译文 Sentence（piece ref 要由宿主先去掉 `#N`）。
-    /// `language = None` 仍会保留句键重挂，但不会确认任何 stamp。
+    /// `source_word_ids` are the source word spans that this batch will really rewrite; `target_sentence_ids` are the translation Sentences that this batch will really rewrite (the host must strip `#N` from the piece ref first).
+    /// `language = None` still re-attaches sentence keys, but does not confirm any stamp.
     pub fn capture(
         doc: &TranscriptDoc,
         language: Option<&str>,
@@ -65,8 +58,7 @@ impl BilingualReplacePlan {
         let source_ids: BTreeSet<&str> = source_word_ids.iter().map(String::as_str).collect();
         let target_ids: BTreeSet<&str> = target_sentence_ids.iter().map(String::as_str).collect();
 
-        // Mac `paragraphPairs` 用严格时间相交，并在一个组意外跨段时以后一个段
-        // 覆盖前一个段。按段落顺序反复 insert 即得到相同归属。
+        // Mac `paragraphPairs` uses strict time intersection, and when a group unexpectedly spans paragraphs, the later paragraph overrides the earlier one. Inserting repeatedly in paragraph order gives the same attribution.
         let mut paragraph_of_sentence = BTreeMap::new();
         for (paragraph_index, paragraph) in paras.iter().enumerate() {
             let Some(first) = paragraph
@@ -145,7 +137,7 @@ impl BilingualReplacePlan {
         }
     }
 
-    /// 全部文本操作成功后收口。句序或起点已变化的候选一律放弃，不猜归属。
+    /// Finalizes after all text operations succeed. Candidates whose sentence order or starting point has changed are discarded; no ownership is guessed.
     pub fn finalize(self, doc: &mut TranscriptDoc) -> BilingualReplaceFinalize {
         if self.source_sentences.is_empty() {
             return BilingualReplaceFinalize::default();
@@ -213,7 +205,7 @@ impl BilingualReplacePlan {
 
 fn rekey_nested<T>(tables: &mut BTreeMap<String, BTreeMap<String, T>>, moves: &[(String, String)]) {
     for table in tables.values_mut() {
-        // 先全部 remove、后全部 insert，避免 A→B、B→C 之类的键链吞值。
+        // Remove all keys first, then insert all, so that key chains such as A→B and B→C do not swallow values.
         let moved = moves
             .iter()
             .filter_map(|(old, new)| table.remove(old).map(|value| (new.clone(), value)))

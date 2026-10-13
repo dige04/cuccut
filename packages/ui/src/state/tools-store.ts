@@ -9,32 +9,32 @@ import { BLANK_COMPRESS, BLANK_EXTRACT, BLANK_MERGE, type TranscodeDraft } from 
 import type { TranscribeMode } from '../model/tools-transcribe.ts';
 import { BLANK_TTS, type TtsDraft } from '../model/tools-tts.ts';
 
-/** 转录工具的表单：选的文件只留在这次运行里（路径可能过期），方式、模型与语言跟着草稿记住。 */
+/** Form of the transcription tool: the chosen file is kept only for this run (the path may expire); the method, model and language are remembered with the draft. */
 export interface TranscribeDraft {
   path: string | null;
   mode: TranscribeMode | null;
   model: string | null;
   language: string;
-  /** 「更多选项 › 识别说话人」亲手拨过的值，换模型也留着；null 为没拨过（按模型与装没装「说话人区分」决定）。 */
+  /** Value the user set by hand for "More options › Identify speakers"; kept when the model changes. null means never set by hand (decided by the model and whether "speaker diarization" is installed). */
   speakers: boolean | null;
 }
 
 export const BLANK_TRANSCRIBE: TranscribeDraft = { path: null, mode: null, model: null, language: '', speakers: null };
 
 /**
- * 工具页的本机状态（设计稿里各工具的 `jobs.draft`）：表单草稿，切走再回来还在；「删除这条记录」藏起来的任务；重新提交过的记录。
- * 记录本身不在这里——它们是 `jobs` 主题里的任务（model/tools-records.ts）。
+ * Local state of the tools page (the `jobs.draft` of each tool in the design): form drafts, kept when switching away and back; tasks hidden by "Delete this record"; records that were resubmitted.
+ * The records themselves are not here; they are tasks in the `jobs` topic (model/tools-records.ts).
  */
 export interface ToolsStore {
   hidden: Id[];
-  /** 这次运行里已经照原参数重新提交过的没做成的记录：不再给「再试一次」，连点不会多扣一次钱。不落盘。 */
+  /** Failed records already resubmitted with the original parameters in this run: "Try again" is no longer offered, so repeated clicks do not charge again. Not saved to disk. */
   retried: Id[];
   tts: TtsDraft;
   image: ImageDraft;
   music: MusicDraft;
   text: TextDraft;
   transcribe: TranscribeDraft;
-  /** 压缩视频、合并视频与提取音频的表单：选的文件只留在这次运行里（同转录），编码设置与输出目录跟着草稿记住。 */
+  /** Form for compressing video, merging video and extracting audio: the chosen files are kept only for this run (as with transcription); encoding settings and output directory are remembered with the draft. */
   compress: TranscodeDraft;
   merge: TranscodeDraft;
   extract: TranscodeDraft;
@@ -78,7 +78,7 @@ export const useTools = create<ToolsStore>()(
       name: 'cuccut.tools',
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // 保存位置的「更改…」只改这一次：输出目录不跨次保留。
+      // "Change…" for the save location only changes it this once: the output directory is not kept across runs.
       partialize: (s) => ({
         hidden: s.hidden,
         tts: s.tts,
@@ -90,7 +90,7 @@ export const useTools = create<ToolsStore>()(
         merge: { ...s.merge, inputs: [], outDir: null },
         extract: { ...s.extract, inputs: [], outDir: null },
       }),
-      // 字段以后加了，旧草稿缺的那几项用空表单补上。
+      // When fields are added later, the entries missing from an old draft are filled in with an empty form.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<Pick<ToolsStore, 'hidden' | 'tts' | 'image' | 'music' | 'text' | 'transcribe' | 'compress' | 'merge' | 'extract'>>;
         return {

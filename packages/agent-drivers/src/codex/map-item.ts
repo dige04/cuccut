@@ -2,7 +2,7 @@ import type { ToolCallStatus } from '@cuccut/protocol';
 import type { AgentItem } from '@cuccut/harness';
 import type { CodexThreadItem } from './codex-protocol.ts';
 
-/** Codex 的 ThreadItem → 驱动无关的 AgentItem。纯函数。 */
+/** Codex's ThreadItem → driver-independent AgentItem. Pure function. */
 export function mapCodexItem(raw: CodexThreadItem): AgentItem {
   const item = raw as CodexThreadItem & Record<string, unknown>;
   switch (item.type) {
@@ -94,8 +94,8 @@ export function mapCodexItem(raw: CodexThreadItem): AgentItem {
 }
 
 /**
- * Codex 把命令包在登录 shell 里（`/bin/zsh -lc 'ls -la'`）。标题只显示里面那条命令；
- * 完整命令放在详情里。审批卡不走这里，用户批准的是 Codex 真正要执行的原文。
+ * Codex wraps commands in a login shell (`/bin/zsh -lc 'ls -la'`). The title shows only the command inside; the full command goes in the details.
+ * The approval card does not go through here: the user approves the original text of what Codex will actually run.
  */
 export function unwrapShell(command: string): string {
   const match = /^(?:\/(?:usr\/)?bin\/)?(?:ba|z)?sh\s+-l?c\s+([\s\S]+)$/.exec(command.trim());
@@ -103,7 +103,7 @@ export function unwrapShell(command: string): string {
   const body = match[1]!;
   if (/^'[\s\S]*'$/.test(body)) {
     const inner = body.slice(1, -1);
-    // 单引号里只允许 '\'' 这种转义；还有别的单引号就说明不是一整段，原样返回。
+    // Inside single quotes only the '\'' escape is allowed; any other single quote means it is not one whole string, so it is returned unchanged.
     return inner.replaceAll(`'\\''`, '').includes(`'`) ? command : inner.replaceAll(`'\\''`, `'`);
   }
   if (/^"[\s\S]*"$/.test(body)) return body.slice(1, -1).replace(/\\(["\\$`])/g, '$1');

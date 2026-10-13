@@ -3,21 +3,18 @@ import { JobsTranslationDocument as J } from '@cuccut/protocol/messages/jobs/tra
 import { TRANSLATION_SCHEMA, translationShapeProblems, type SourceSentence, type TranslationBody, type TranslationUnit } from './translation-document.ts';
 
 /**
- * 就地刷新一份译文（`translate` 给了 `translationId`，架构设计 §7.9）：挑出要重译的句子与要去掉的单元，把 Speech Worker
- * 重译的那几句并回原来的译文。
+ * Refreshes a translation in place (`translate` given a `translationId`, architecture design §7.9): picks the sentences to retranslate and the units to remove, and merges the sentences the Speech Worker retranslated back into the original translation.
  *
- * 一句译文的状态与编辑器（`packages/ui/src/model/translation-doc.ts` 的 `unitState`）同一个判法：标了过期（`status: 'stale'`）、
- * 原句的内容指纹与翻译时的不同、译文是空的，都要重译；转写里有、译文里还没有单元的句子也要译。原句已经不在转写里的单元
- * （删了词、首词被隐藏而换了句子 ID、同一句的第二个单元）去掉：不点名时全部去掉；点名时只去掉与点名句子共用原文词的。
+ * A sentence's translation state uses the same test as the editor (`unitState` in `packages/ui/src/model/translation-doc.ts`): a unit marked stale (`status: 'stale'`), whose source content fingerprint differs from the one at translation time, or whose translation is empty, must be retranslated. Sentences that are in the transcript but have no unit in the translation yet are also translated. Units whose source sentence is no longer in the transcript (words deleted, the first word hidden so the sentence ID changed, or a second unit for the same sentence) are removed. When no sentences are named, all of them are removed; when sentences are named, only those that share source words with the named sentences are removed.
  */
 
-/** 要做的事：重译的句子（按转写的句序）与去掉的单元。 */
+/** Work to do: the sentences to retranslate (in transcript order) and the units to remove. */
 export interface RefreshPlan {
   sentences: Id[];
   removeUnitIds: Id[];
 }
 
-/** 读得出、能就地刷新的译文正文（`cuccut.translation/2`，单元至少有 ID、句子 ID 与文本）；否则 null。 */
+/** A translation body that can be read and refreshed in place (`cuccut.translation/2`, with units that have at least an ID, a sentence ID and text); otherwise null. */
 export function refreshableTranslation(body: unknown): TranslationBody | null {
   const t = body as Partial<TranslationBody> | null;
   if (!t || typeof t !== 'object' || t.schema !== TRANSLATION_SCHEMA || typeof t.language !== 'string' || !Array.isArray(t.units)) return null;
@@ -30,8 +27,7 @@ export function refreshableTranslation(body: unknown): TranslationBody | null {
 const unitText = (unit: TranslationUnit) => (unit.displayRewrite?.text || unit.naturalText).trim();
 
 /**
- * 挑出要重译的句子与要去掉的单元。`explicit` 是调用时点名的句子（译文新鲜的也重译）；点名了转写里没有的句子时返回
- * `{ unknown }`。
+ * Picks the sentences to retranslate and the units to remove. `explicit` holds the sentences named in the call (retranslated even when their translation is current). Returns `{ unknown }` when a named sentence is not in the transcript.
  */
 export function refreshPlan(
   translation: TranslationBody,
@@ -41,7 +37,7 @@ export function refreshPlan(
   const known = new Map(sentences.map((s) => [s.id, s]));
   const first = new Map<Id, TranslationUnit>();
   for (const unit of translation.units) if (!first.has(unit.sourceSentenceId)) first.set(unit.sourceSentenceId, unit);
-  // 原句不在了的单元，与同一句的第二个单元。
+  // Units whose source sentence is gone, and a second unit for the same sentence.
   const orphans = translation.units.filter((unit) => !known.has(unit.sourceSentenceId) || first.get(unit.sourceSentenceId) !== unit);
 
   if (explicit) {
@@ -62,11 +58,9 @@ export function refreshPlan(
 }
 
 /**
- * 把 Worker 重译的句子并回原来的译文：原来的单元按原样、原顺序保留；重译的句子换成 Worker 的单元（单元 ID 照旧）；
- * 去掉的单元拿掉；原来没有单元的句子插在前面最近一句已有译文的单元后面（与编辑器 `editUnit` 新建单元的位置相同）。
- * `sourceBasis` 换成这次的原文版本，`glossaryRef` 与别的单元不动。
+ * Merges the Worker's retranslated sentences back into the original translation. Original units are kept as they were, in their original order. Retranslated sentences are replaced with the Worker's units (unit IDs unchanged). Removed units are dropped. Sentences that had no unit before are inserted after the unit of the nearest preceding sentence that already has a translation (the same position where the editor's `editUnit` creates a new unit). `sourceBasis` is replaced with this run's source version; `glossaryRef` and the other units are left alone.
  *
- * 只核对重译的那几句：Worker 交回了、句子 ID 与指纹是冻结的那一句的、有译文、`textHash` 对得上。有问题时返回 `{ problems }`。
+ * Only the retranslated sentences are checked: the Worker returned them, their sentence IDs and fingerprints match the frozen sentence, they have a translation, and `textHash` matches. Returns `{ problems }` when there are problems.
  */
 export function mergeRefresh(
   base: TranslationBody,
@@ -111,7 +105,7 @@ export function mergeRefresh(
     for (let n = 2; ids.has(unit.id); n++) unit.id = `t-${id}-${n}`;
     ids.add(unit.id);
     changedUnitIds.push(unit.id);
-    // 插在前面最近一句已有译文的单元后面；前面都没有时放在最前。
+    // Inserted after the unit of the nearest preceding sentence that already has a translation. If there is none before it, placed first.
     let at = 0;
     for (let i = (order.get(id) ?? 0) - 1; i >= 0; i--) {
       const found = units.findIndex((u) => u.sourceSentenceId === sentences[i]!.id);

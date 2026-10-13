@@ -3,8 +3,8 @@ import { applyDirectoryEvent } from '@cuccut/client';
 import type { Conversation, DirectoryEvent, DirectorySnapshot, Id, Project } from '@cuccut/protocol';
 
 /**
- * 目录镜像：项目与会话列表（侧栏的投影）。只由 Runtime 的快照与事件改写，
- * 界面不在这里做乐观修改（架构设计 §11.4）。
+ * Directory mirror: the project and session lists (a projection for the sidebar). Only the Runtime's snapshots and events rewrite it;
+ * the UI makes no optimistic changes here (architecture design §11.4).
  */
 export interface DirectoryStore extends DirectorySnapshot {
   ready: boolean;

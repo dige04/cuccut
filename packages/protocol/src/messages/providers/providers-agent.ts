@@ -14,7 +14,7 @@ import { pl } from './providers-agent.pl.ts';
 import { tr } from './providers-agent.tr.ts';
 import { vi } from './providers-agent.vi.ts';
 
-/** 用本机 Agent 生成图片的 Provider（`agent:codex`）的说明与错误（`packages/providers`）。`label` 是 Agent 的名字。 */
+/** Descriptions and errors for the provider that generates images with the local agent (`agent:codex`) (`packages/providers`). `label` is the agent's name. */
 const en = {
   codexUpgradeHint: 'Update the Codex CLI (for example, npm install -g @openai/codex@latest), then check again',
   codexImageModel: 'Codex image generation (model chosen by Codex and your account)',

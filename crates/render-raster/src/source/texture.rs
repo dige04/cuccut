@@ -1,16 +1,12 @@
-//! Path 的渲染期纹理填充（规范 §6.2.1）：排线、点阵与颗粒。
+//! Render-time texture fill for paths (spec §6.2.1): hatching, dot screens, and grain.
 //!
-//! 遵守本目录的采样纪律，而且更强——纹理**根本没有时间参数**：几何只由
-//! `(包围盒, 纹理参数, seed, 算法版本)` 决定，在路径局部坐标里生成，调用方
-//! 把它裁剪进路径并套上节点变换。因此
+//! This follows the sampling discipline of this directory, and more strictly: the texture has **no time parameter at all**. Its geometry is determined only by `(bounding box, texture parameters, seed, algorithm version)`. It is generated in path-local coordinates, and the caller clips it into the path and applies the node transform. Therefore:
 //!
-//! * 纹理随部件刚性变换一起动，只改位置不重造纹理；
-//! * 改颜色 / alpha 不改拓扑（它们不进生成函数）；
-//! * 乱序采样、冷热缓存、并行 worker 得到逐字节相同的指令流。
+//! * the texture moves rigidly with its part. Only the position changes, and the texture is not regenerated;
+//! * changing color or alpha does not change the topology (they do not enter the generation function);
+//! * out-of-order sampling, cold or warm caches, and parallel workers all produce byte-identical command streams.
 //!
-//! 三个随机流（排线 / 点阵 / 颗粒）各用一个派生 seed，互不挪位：调排线密度
-//! 不会让颗粒换位置。每个候选单元消耗固定个数的随机数，「留不留」只是比较，
-//! 所以改 `density` 只增删笔画、不移动其余笔画。
+//! The three random streams (hatching, dots, grain) each use a derived seed, so they do not shift each other. Adjusting the hatching density does not move the grain. Each candidate cell consumes a fixed number of random numbers, and "keep or drop" is just a comparison. So changing `density` only adds or removes strokes and does not move the others.
 
 use crate::drawop::{PathData, path_from_skia};
 use motion::rng::splitmix64_unit;
@@ -24,22 +20,22 @@ const STREAM_DOTS: u64 = 0x646F_7473_0000_0002;
 const STREAM_GRAIN: u64 = 0x6772_6169_6E00_0003;
 const STREAM_PAINT: u64 = 0x7061_696E_7400_0004;
 
-/// 单条路径的点阵上限：超过就按比例放大格距（保持覆盖率观感，不爆内存）。
+/// Dot cap per path: above it, the grid spacing is scaled up proportionally, keeping the apparent coverage without blowing up memory.
 const DOTS_MAX: f64 = 60_000.0;
-/// 排线段数上限，同理。
+/// Cap on the number of hatch segments, likewise.
 const HATCH_MAX: f64 = 80_000.0;
 
-/// 一份纹理几何：都在路径局部坐标（已乘 `svg_scale`）里。
+/// One texture's geometry, all in path-local coordinates (already multiplied by `svg_scale`).
 #[derive(Debug, Default, PartialEq)]
 pub struct TextureGeom {
-    /// 排线：一条多子路径，一次 stroke。
+    /// Hatching: one path with multiple subpaths, stroked in one stroke.
     pub hatch: Option<(PathData, f32)>,
-    /// 点阵：一条多子路径，一次 fill。
+    /// Dot matrix: one path with multiple subpaths, filled in one fill.
     pub dots: Option<PathData>,
-    /// 颗粒：一条多子路径，一次 fill。
+    /// Grain: one path with multiple subpaths, filled in one fill.
     pub grain: Option<PathData>,
     pub wash: Vec<(PathData, f64, [f32; 3])>,
-    /// `paint`：按明暗 / 含色分桶的笔触（`source::paint`），录制期按路径 `fill` 上色。
+    /// `paint`: strokes bucketed by shade or by color (`source::paint`), colored at recording time from the path's `fill`.
     pub paint: crate::source::paint::PaintGeom,
 }
 
@@ -72,8 +68,7 @@ impl Stream {
     }
 }
 
-/// `bbox` = `(x0, y0, x1, y1)`，路径局部坐标；`scale` = `svg_scale`（纹理参数在
-/// viewBox 单位里，乘它落到局部坐标）。
+/// `bbox` = `(x0, y0, x1, y1)`, in path-local coordinates. `scale` = `svg_scale` (the texture parameters are in viewBox units, so multiply by it to reach local coordinates).
 pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> TextureGeom {
     let (x0, y0, x1, y1) = bbox;
     let (bw, bh) = (x1 - x0, y1 - y0);
@@ -84,7 +79,7 @@ pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> Tex
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let half = (bw * bw + bh * bh).sqrt() / 2.0;
     let (ca, sa) = (tx.angle.cos(), tx.angle.sin());
-    // 旋转晶格坐标 (u, v) → 局部坐标
+    // Rotated lattice coordinates (u, v) → local coordinates
     let to_local = |u: f64, v: f64| (cx + u * ca - v * sa, cy + u * sa + v * ca);
     let inside =
         |x: f64, y: f64, pad: f64| x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad;
@@ -139,13 +134,13 @@ pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> Tex
         let n = (half / gap).ceil() as i64;
         for row in -n..=n {
             for column in -n..=n {
-                // 每格固定消耗两个随机数，抖动为 0 时也照取（拓扑与 jitter 无关）
+                // Each cell always consumes two random numbers, even when jitter is 0 (the topology is independent of jitter)
                 let jx = (rng.unit() - 0.5) * jit;
                 let jy = (rng.unit() - 0.5) * jit;
                 let (x, y) = to_local(column as f64 * gap + jx, row as f64 * gap + jy);
                 let cover = tx.density.at((x - x0) / bw, (y - y0) / bh);
-                // 点面积 / 格面积 = 覆盖率 ⇒ r = gap·√(cover/π)，封顶到格对角的一半
-                // v2 原样：0.7071 是取整过的常数，换成 FRAC_1_SQRT_2 会改像素；只放行 clippy。
+                // Dot area / cell area = coverage ⇒ r = gap·√(cover/π), capped at half the cell diagonal.
+                // v2 kept as is: 0.7071 is a rounded constant, and swapping in FRAC_1_SQRT_2 would change the pixels. This is only an exemption for clippy.
                 #[allow(clippy::approx_constant)]
                 let r = (gap * (cover / std::f64::consts::PI).sqrt()).min(gap * 0.7071);
                 if r < 0.05 || !inside(x, y, r) {
@@ -211,8 +206,7 @@ pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> Tex
         geom.paint = paint::strokes(&list, &params);
     }
 
-    // `grain` finish 没写颗粒数时按面积给：每个 gap² 晶格一粒，再由 density 决定
-    // 留多少。其它 finish 的 `grain` 是叠加的颗粒层，缺省没有。
+    // When the `grain` finish does not specify a grain count, it is set by area: one grain per gap² lattice cell, and then density decides how many are kept. For other finishes, `grain` is an overlaid grain layer, and there is none by default.
     let is_grain = tx.finish == scene_primitives::pathstyle::Finish::Grain;
     let count = if tx.grain == 0 && is_grain {
         let cell = (tx.gap * scale).powi(2);
@@ -229,7 +223,7 @@ pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> Tex
             let gx = x0 + fx * bw;
             let gy = y0 + fy * bh;
             let gs = tx.grain_size * scale * (0.4 + rng.unit());
-            // 每粒固定消耗四个随机数；density 只对 `grain` finish 生效
+            // Each grain always consumes four random numbers. density applies only to the `grain` finish
             let keep = rng.unit();
             if is_grain && keep >= tx.density.at(fx, fy) {
                 continue;
@@ -248,8 +242,7 @@ pub fn generate(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> Tex
     geom
 }
 
-/// 缓存键：几何摘要（包围盒 + 缩放）、finish 参数、seed、算法版本。颜色与
-/// alpha 不进键——它们不影响几何。
+/// Cache key: geometry digest (bounding box + scale), finish parameters, seed, and algorithm version. Color and alpha are not in the key, because they do not affect the geometry.
 pub fn cache_key(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> u64 {
     use scene_primitives::pathstyle::Density;
     let mut bytes: Vec<u8> = Vec::with_capacity(160);
@@ -277,7 +270,7 @@ pub fn cache_key(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> u6
     }
     bytes.extend(tx.grain.to_le_bytes());
     bytes.extend(tx.seed.to_le_bytes());
-    // 只有 paint 读这两项：其它 finish 的键不变
+    // Only paint reads these two items: the keys of other finishes are unchanged
     if tx.finish == scene_primitives::pathstyle::Finish::Paint {
         bytes.extend(crate::source::paint::PAINT_ALGORITHM_VERSION.to_le_bytes());
         bytes.extend(tx.dry.to_bits().to_le_bytes());
@@ -286,14 +279,13 @@ pub fn cache_key(bbox: (f64, f64, f64, f64), tx: &PathTexture, scale: f64) -> u6
     crate::drawop::fnv1a64(&bytes)
 }
 
-/// 录制器持有的纹理缓存。`record` 取 `&self` 且会被多个 worker 共用，所以是
-/// `Mutex`；命中与否不影响输出（生成是纯函数），只影响耗时。
+/// The texture cache held by the recorder. `record` takes `&self` and is shared by multiple workers, so it is a `Mutex`. A hit or miss does not affect the output (generation is a pure function); it only affects the time taken.
 #[derive(Default)]
 pub struct TextureCache {
     map: Mutex<HashMap<u64, Arc<TextureGeom>>>,
 }
 
-/// 缓存条目上限：超过就整表清空（手绘片一般几十到几百条）。
+/// Cap on cache entries: when exceeded, the whole table is cleared. A hand-drawn piece typically has dozens to hundreds of entries.
 const CACHE_MAX: usize = 4096;
 
 impl TextureCache {
@@ -374,7 +366,7 @@ mod tests {
         );
         let (lo, hi) = (lo.hatch.unwrap().0, hi.hatch.unwrap().0);
         assert!(hi.0.len() > lo.0.len());
-        // 低密度的每一笔都原样出现在高密度里
+        // Every stroke at low density also appears, unchanged, at high density
         let hi_moves: Vec<_> = hi.0.chunks(2).collect();
         for stroke in lo.0.chunks(2) {
             assert!(hi_moves.contains(&stroke));
@@ -386,7 +378,7 @@ mod tests {
         let t = tx(json!({ "finish": "screen", "gap": 10, "density": 0.5 }));
         let geom = generate((0.0, 0.0, 400.0, 400.0), &t, 1.0);
         let dots = geom.dots.unwrap();
-        // push_circle = Move + 4 曲线 + Close
+        // push_circle = Move + 4 curves + Close
         let count = dots.0.iter().filter(|seg| seg.verb == 0).count() as f64;
         let r = 10.0 * (0.5 / std::f64::consts::PI).sqrt();
         let covered = count * std::f64::consts::PI * r * r / (400.0 * 400.0);

@@ -63,7 +63,7 @@ describe('界面文案跟随界面语言', () => {
     try {
       first = CONFETTI_STYLES[0]!.name;
     } catch {
-      return; // 没有构建编辑语义 WASM 时款式目录读不到，跳过。
+      return; // Skip when the style catalog cannot be read because the editing-semantics WASM is not built.
     }
     expect(first).toBe('缤纷纸片雨');
     english();

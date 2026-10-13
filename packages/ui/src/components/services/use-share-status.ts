@@ -11,11 +11,11 @@ import { useNow } from '../use-now.ts';
 import { flipShare, refreshNodes, refreshShare } from './share-commands.ts';
 
 /**
- * 节点协议没有订阅主题（`nodes.*` 只有请求），共享状态靠轮询：
- * - 每次连上 Runtime 读一次（rail 的角标与侧栏的灯靠它），断开时清掉，免得拿旧状态报错；
- * - 服务页开着、窗口在前台时每 5 秒读一次 `nodes.share.status`（本机请求，便宜）；
- * - 「使用其他电脑」开着时每 15 秒读一次 `nodes.list`（每个节点要实时探测，最长 2 秒）。
- * 窗口切到后台就停，回到前台立刻读一次。
+ * The node protocol has no topic subscription (`nodes.*` only has requests), so shared status is polled:
+ * - Read once on every connection to the Runtime (the rail badge and the sidebar light rely on it), and cleared on disconnect so stale state is not reported as an error;
+ * - While the services page is open and the window is in the foreground, `nodes.share.status` is read every 5 seconds (a local request, so cheap);
+ * - While “Use other computers” is on, `nodes.list` is read every 15 seconds (each node is probed live, up to 2 seconds).
+ * Polling stops when the window goes to the background, and reads once immediately when it returns to the foreground.
  */
 export const SHARE_POLL_MS = 5_000;
 export const NODES_POLL_MS = 15_000;
@@ -51,7 +51,7 @@ function useVisiblePolling(task: () => void, intervalMs: number, enabled: boolea
   }, [intervalMs, enabled]);
 }
 
-/** 连上就读一次共享状态，断开就清掉。只在常驻的地方挂一次（rail）。 */
+/** Reads the shared state once on connect, and clears it on disconnect. Mounted only once, in the always-present place (the rail). */
 function useShareOnConnect() {
   const runtime = useRuntime();
   const connectionId = useConnectionId();
@@ -65,14 +65,14 @@ function useShareOnConnect() {
   }, [runtime, connectionId]);
 }
 
-/** 服务页开着时轮询共享状态。 */
+/** Polls the shared state while the services page is open. */
 export function useSharePolling() {
   const runtime = useRuntime();
   const connectionId = useConnectionId();
   useVisiblePolling(() => void refreshShare(runtime), SHARE_POLL_MS, connectionId !== null);
 }
 
-/** 「使用其他电脑」开着时轮询已配对的节点。 */
+/** Polls the paired nodes while “Use other computers” is on. */
 export function useNodesPolling() {
   const runtime = useRuntime();
   const connectionId = useConnectionId();
@@ -80,8 +80,8 @@ export function useNodesPolling() {
 }
 
 /**
- * 连上 Runtime 就订阅 `services` 主题（架构设计 §4.8；命令与协议规范 §10.4），断开时清掉镜像。客户端每个主题只留一个订阅，
- * 所以只在常驻的地方挂一次（rail）；重连后客户端自己续订、重发快照。
+ * On connecting to the Runtime, subscribes to the `services` topic (architecture design §4.8; command and protocol spec §10.4), and clears the mirror on disconnect. The client keeps only one subscription per topic,
+ * so it is mounted only once, in the always-present place (the rail). After reconnection the client resubscribes itself and resends the snapshot.
  */
 function useServicesTopic() {
   const runtime = useRuntime();
@@ -98,7 +98,7 @@ function useServicesTopic() {
   }, [runtime, connectionId]);
 }
 
-/** 四项服务此刻的状态（总览、侧栏、rail 共用）：MCP、Web、模型接口读 `services` 主题；远端算力另有共享状态的轮询。 */
+/** The status of the four services right now (shared by the overview, sidebar and rail): MCP, Web and model API read the `services` topic; remote compute has its own shared-status polling. */
 export function useServiceStates(): ServiceStates {
   const services = useServices((s) => s.services);
   const share = useShare((s) => s.status);
@@ -106,7 +106,7 @@ export function useServiceStates(): ServiceStates {
   return serviceStates(services, share, phase);
 }
 
-/** 开始 / 停止共享（服务卡与总览行共用）：成功给一句提示，失败说原因。 */
+/** Start or stop sharing (shared by the service card and the overview row): on success, shows a hint; on failure, says the cause. */
 export function useFlipShare(): (on: boolean) => void {
   const runtime = useRuntime();
   return (on) => {
@@ -121,8 +121,8 @@ export function useFlipShare(): (on: boolean) => void {
 }
 
 /**
- * rail「服务」的角标：有服务出错、或外部客户端的请求在等确认（服务审批，50 秒时限）时给一句读屏用的说法，否则 null。
- * 顺带负责连上时读一次共享状态、订阅 `services` 主题。有审批在等时每秒重算一次，过了时限的不再算。
+ * Badge on the rail's “Services”: when a service is in error, or external client requests are waiting for confirmation (service approval, 50-second deadline), it gives a sentence for screen readers; otherwise null.
+ * It also reads the shared state once on connect and subscribes to the `services` topic. While approvals are waiting, it recomputes every second; approvals past their deadline are no longer counted.
  */
 export function useServicesAlert(): string | null {
   useShareOnConnect();

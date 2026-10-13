@@ -1,16 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/IndexTTS2TTS/IndexTTS2TextNormalizer.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/IndexTTS2TTS/IndexTTS2TextNormalizer.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 数字读法归一化：对照 speech-swift `IndexTTS2TextNormalizer.swift` 移植。
+//! Number-reading normalization: ported from speech-swift `IndexTTS2TextNormalizer.swift`.
 //!
-//! 代替上游 WeTextProcessing（`tn.chinese` / `tn.english`）的一个紧凑实现：
-//! 词表里没有数字 piece，留着的数字都会变成 `<unk>`，所以在 `char_rep_map`
-//! 与 CJK 预切分之前先把基数、年份、时刻、小数、百分比、分数、金额、序数、
-//! 负数、千分位与手机号读出来；其他内容原样保留。它不是上游 FST 语法的移植。
+//! A compact replacement for the upstream WeTextProcessing (`tn.chinese` / `tn.english`): the vocabulary has no digit pieces, so any digits left in would become `<unk>`. Therefore, before `char_rep_map`
+//! and CJK pre-segmentation, it reads out cardinals, years, times, decimals, percentages, fractions, amounts, ordinals,
+//! negative numbers, thousands separators and mobile phone numbers; everything else is kept as is. It is not a port of the upstream FST grammar.
 
 use crate::synthesize::readings::{PIECE_CLOSE, PIECE_OPEN};
 use fancy_regex::Regex;
@@ -18,13 +17,11 @@ use std::sync::LazyLock;
 
 pub struct TextNormalizer;
 
-/// 数字规范化期间代替一个拼音片的占位字符（私用区；不是数字、拉丁字母或汉字）。
+/// Placeholder character that stands in for a pinyin piece during number normalization (private-use area; not a digit, Latin letter or Han character).
 const PIECE_PLACEHOLDER: char = '\u{E002}';
 
 impl TextNormalizer {
-    /// 注音渲染出的拼音片（`PIECE_OPEN`…`PIECE_CLOSE` 包住的 `XING2`）先换成占位字符、规范化之后
-    /// 再还原成两侧带空格的片（上游 `_protect_pinyin` 同款），声调数字不会被读成「二」，
-    /// 片也不会与相邻拉丁字母粘成一个词。只护这对哨兵包住的片，正文里的 `A4`、`AI2.0` 照旧规范化。
+    /// Pinyin pieces produced by zhuyin rendering (`XING2`, wrapped by `PIECE_OPEN`…`PIECE_CLOSE`) are first swapped for placeholder characters and, after normalization, restored as pieces with spaces on both sides (same as upstream `_protect_pinyin`). This keeps the tone digit from being read as “二” (two), and keeps the piece from fusing with adjacent Latin letters into one word. Only pieces wrapped by this sentinel pair are protected; `A4` and `AI2.0` in the body text are still normalized as before.
     pub fn normalize(text: &str) -> String {
         if !text.contains(PIECE_OPEN) && !text.contains(PIECE_CLOSE) {
             return Self::normalize_plain(text);
@@ -73,7 +70,7 @@ impl TextNormalizer {
         }
     }
 
-    /// 上游 `use_chinese`：含汉字，或完全没有拉丁字母。
+    /// Upstream `use_chinese`: contains Han characters, or has no Latin letters at all.
     pub fn uses_chinese_front_end(text: &str) -> bool {
         let has_han = text.chars().any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
         let has_latin = text.chars().any(is_latin_letter);
@@ -81,7 +78,7 @@ impl TextNormalizer {
     }
 }
 
-// MARK: - 中文
+// MARK: - Chinese
 
 fn normalize_chinese(text: &str) -> String {
     let mut s = strip_thousands_separators(text);
@@ -138,7 +135,7 @@ fn zh_digits(digits: &str) -> String {
         .collect()
 }
 
-/// 带 万 / 亿 节的标准基数读法，零段只读一个「零」。
+/// Standard cardinal reading with 万 / 亿 sections; a run of zero sections is read as a single “零” (zero).
 fn zh_cardinal(digit_string: &str) -> String {
     let all: Vec<usize> = digit_string.chars().filter_map(|c| c.to_digit(10).map(|d| d as usize)).collect();
     let first = all.iter().position(|d| *d != 0);
@@ -185,7 +182,7 @@ fn zh_cardinal(digit_string: &str) -> String {
     result
 }
 
-// MARK: - 英文
+// MARK: - English
 
 fn normalize_english(text: &str) -> String {
     let mut s = strip_thousands_separators(text);
@@ -388,18 +385,18 @@ fn en_time(hour: &str, minute: &str) -> String {
     format!("{hour_words} {}", en_cardinal(minute_value))
 }
 
-// MARK: - 共享模式
+// MARK: - Shared patterns
 
 struct Pattern(Regex);
 
 impl Pattern {
     fn new(pattern: &str) -> Self {
-        // 模式都是静态字面量，写错属于编程错误。
+        // The patterns are all static literals; a mistake in one is a programming error.
         Self(Regex::new(pattern).expect("静态正则应能编译"))
     }
 
-    /// 把每个匹配替换成 `transform(groups)`，`groups[0]` 是整段匹配。
-    /// `pad_letters` 时，替换文本紧邻拉丁字母的一侧补一个空格，让数字词保持独立。
+    /// Replaces each match with `transform(groups)`, where `groups[0]` is the whole match.
+    /// With `pad_letters`, a space is added on the side of the replacement text that is adjacent to a Latin letter, so the number word stays separate.
     fn replace(&self, text: &str, pad_letters: bool, transform: impl Fn(&[String]) -> String) -> String {
         let mut result = String::with_capacity(text.len());
         let mut cursor = 0usize;
@@ -487,11 +484,11 @@ mod tests {
             TextNormalizer::normalize(&format!("他才{open}XING2{close}，走了3步")),
             "他才 XING2 ，走了三步"
         );
-        // 没有数字时也要去掉哨兵。
+        // Sentinels are also removed when there are no digits.
         assert_eq!(TextNormalizer::normalize(&format!("觉得{open}XING2{close}")), "觉得 XING2 ");
-        // 整句只剩拼音片也走中文路径（不会被当成英文把 2 读成 two）。
+        // A sentence consisting only of pinyin pieces also takes the Chinese path (so it is not treated as English and does not read 2 as “two”).
         assert_eq!(TextNormalizer::normalize(&format!("{open}HANG2{close}")), " HANG2 ");
-        // 没被哨兵包住的字母数字照旧规范化。
+        // Alphanumerics not wrapped by sentinels are normalized as before.
         assert_eq!(TextNormalizer::normalize("A4纸"), "A四纸");
     }
 

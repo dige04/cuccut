@@ -14,7 +14,7 @@ import { pl } from './job-reconcile.pl.ts';
 import { tr } from './job-reconcile.tr.ts';
 import { vi } from './job-reconcile.vi.ts';
 
-/** `packages/jobs/src/job-reconcile.ts`：对账决定不被允许时。`allowed` 是决定名（`retry`、`discard`、`apply`）连成的一串。 */
+/** `packages/jobs/src/job-reconcile.ts`: when a reconciliation decision is not allowed. `allowed` is the decision names (`retry`, `discard`, `apply`) joined into a list. */
 const en = {
   onlyAllowed: (p: { allowed: string }) => `This task can only: ${p.allowed}`,
   noneAllowed: 'This task has no reconcile decision available right now',

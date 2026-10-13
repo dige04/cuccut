@@ -121,7 +121,7 @@ import { focusPromptEnd, usePromptValue } from './use-prompt-value.ts';
 import { useSkillsLoader } from './use-skills.ts';
 
 const wrap = style({
-  // PromptTokenField 的提示是输入区自己的 :empty::before，默认继承正文色；app.css 拿这个变量把它降到 gray-500（原型 spectrum.css）。
+  // PromptTokenField's placeholder is the input area's own :empty::before, which inherits the body text colour by default; app.css uses this variable to lower it to gray-500 (prototype spectrum.css).
   '--cc-prompt-placeholder': { type: 'color', value: 'gray-500' },
   flexShrink: 0,
   width: 'full',
@@ -130,11 +130,11 @@ const wrap = style({
   paddingX: { default: 24, isCompact: 12, isStart: 0 },
   paddingBottom: { default: 16, isStart: 0 },
   boxSizing: 'border-box',
-  // 起始页的项目托盘压在输入框底下：输入框要盖在它上面。
+  // The project tray on the start page sits under the input box, so the input box must overlay it.
   position: { isStart: 'relative' },
   zIndex: { isStart: 1 },
 });
-/** 起始页把文件拖到输入框上时描一圈（原型 spectrum.css `.cc-ai-home.is-over`）。 */
+/** On the start page, an outline is drawn around the input box when a file is dragged over it (prototype spectrum.css `.cc-ai-home.is-over`). */
 const dropZone = style({
   borderRadius: 'xl',
   outlineStyle: { default: 'none', isOver: 'solid' },
@@ -142,7 +142,7 @@ const dropZone = style({
   outlineOffset: 2,
   outlineColor: 'blue-900',
 });
-/** 输入框自己的工具栏（原型 .cc-ai-toolbar）：+、访问模式，右边是 Agent · 模型与发送 / 停止。 */
+/** The input box's own toolbar (prototype .cc-ai-toolbar): +, access mode; on the right, Agent · model and the send / stop button. */
 const toolbar = style({ display: 'flex', alignItems: 'center', gap: { default: 8, isCompact: 4 }, width: 'full', minWidth: 0 });
 const tags = style({ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 });
 const tag = style({
@@ -165,7 +165,7 @@ const toolCta = style({ width: 'full', marginTop: 8 });
 const toolHint = style({ margin: 0, marginTop: '[6px]', font: 'ui-xs', color: 'gray-600', lineHeight: '[1.5]' });
 const foot = style({ font: 'ui-xs', color: { default: 'gray-500', isError: 'negative' }, paddingX: 4, paddingTop: 4, minHeight: 16 });
 
-/** 斜杠命令的图标（原型 data.js `agent.slash`）。 */
+/** Icon for slash commands (prototype data.js `agent.slash`). */
 const SLASH_ICON: Record<SlashCommand['icon'], ComponentType> = {
   translate: Translate,
   sparkle: MagicWand,
@@ -185,7 +185,7 @@ const SLASH_ICON: Record<SlashCommand['icon'], ComponentType> = {
 
 const IMAGE_TYPES = [...ATTACHMENT_MIME_TYPES];
 
-/** composer 上方的一组还没发出的标注（幻灯片、设计稿或设计系统）：可以逐条移除或全部移除。 */
+/** A group of unsent annotations above the composer (slides, design, or design system): they can be removed one by one or all at once. */
 export interface ComposerAnnotations {
   items: readonly AnnotationTokenItem[];
   onRemove(id: string): void;
@@ -193,60 +193,60 @@ export interface ComposerAnnotations {
 }
 
 export interface ComposerProps {
-  /** 草稿的键：会话 ID，或新会话用的草稿键。 */
+  /** Draft key: the session ID, or the draft key used for a new session. */
   draftKey: string;
-  /** 这条消息交给哪个 Agent：会话上的，或新会话草稿上的选择，再不然默认的那个。 */
+  /** Which Agent this message is handed to: the one on the session, or the choice on the new-session draft, or else the default one. */
   driverId: DriverId | null;
-  /** null = Agent 默认模型。 */
+  /** null = the Agent's default model. */
   model: string | null;
-  /** null = 模型自己的默认强度。 */
+  /** null = the model's own default reasoning effort. */
   effort: string | null;
-  /** 会话有过任务后 Agent 固定成这一个。 */
+  /** Once the session has had a task, the Agent is fixed to this one. */
   lockedTo: DriverId | null;
   onAgentChange(change: AgentChange): void;
-  /** 访问模式（架构设计 §3.12）：建好的会话取会话上的，新会话取草稿上的选择。随时可以切，下一轮生效。 */
+  /** Access mode (architecture design §3.12): an existing session uses the one on the session, and a new session uses the choice on the draft. It can be switched at any time and takes effect in the next turn. */
   accessMode: AgentMode;
   onAccessModeChange(mode: AgentMode): void;
   busy: boolean;
-  /** 忙的时候还能发：进排队，等这一轮结束（会话页）。 */
+  /** Can still be sent while busy: it is queued until the current turn ends (session page). */
   queueWhileBusy?: boolean;
   stopping?: boolean;
   placeholder: string;
   autoFocus?: boolean;
-  /** @ 候选的范围：会话所在的项目，或它自己的工作目录。 */
+  /** Scope of @ candidates: the project the session is in, or its own working directory. */
   mentionScope: MentionScope;
-  /**
-   * 发送；图片已经上传完，`skills` 是「+ › 使用 Skill」点选的那几个（按挂上的顺序，没有时为空）。
-   * 返回 false 表示没有发出去，保留草稿（含点选的 skill）。
+  /**   /**
+   * Send. Images have already finished uploading; `skills` are the ones picked from “+ › 使用 Skill” (Use Skill), in the order they were attached (empty when none).
+   * Returns false if it was not sent, and keeps the draft (including the picked skills).
    */
   onSend(text: string, attachments: AttachmentRef[], skills: SkillSendRef[]): Promise<boolean>;
-  /**
-   * 发送前的准备（如让打开着的幻灯片编辑器保存完），在清空输入框之前跑：等的时候正文与附件都留在框里，发送按钮显示进行中。
-   * 返回 false 不发，草稿原样留着（提示由调用方给）。
+  /**   /**
+   * Preparation before sending (for example, having the open slides editor finish saving), run before the input box is cleared: while waiting, the text and attachments stay in the box, and the send button shows that it is in progress.
+   * Returns false to skip sending; the draft is left as it is (the caller shows the message).
    */
   beforeSend?(): Promise<boolean>;
   onStop?(): void;
-  /** 输入框上方的引用标签（产品设计 §3.2.3）：随这条消息交给智能体的编辑器状态。可以移除。 */
+  /** Reference tag above the input box (product design §3.2.3): the editor state handed to the agent along with this message. Can be removed. */
   reference?: { label: string; description: string; onRemove(): void } | null;
-  /**
-   * 输入框上方：从 Space「在会话中继续」附上、还没发出的条目（架构设计 §5.7），随下一条消息交给智能体。
-   * Runtime 只能一起去掉（`conversations.update` 的 `pendingReferences: null`），所以只有一个移除按钮。
+  /**   /**
+   * Above the input box: items attached from Space with “在会话中继续” (continue in session) that have not been sent yet (architecture design §5.7); they are handed to the agent with the next message.
+   * The Runtime can only remove them all together (`conversations.update` with `pendingReferences: null`), so there is only one remove button.
    */
   spaceReferences?: { items: { id: string; label: string; description: string }[]; onClear(): void } | null;
-  /**
-   * 输入框上方：幻灯片标签里加进对话、还没发出的标注（docs/design/slides §8.2），「幻灯片标注 · N 条」。
-   * 有标注时正文空着也能发（`onSend` 收到空正文，由调用方补一句）。
+  /**   /**
+   * Above the input box: slide annotations added to the conversation from the slides tab that have not been sent yet (docs/design/slides §8.2), “幻灯片标注 · N 条” (slide annotations · N items).
+   * When there are annotations, it can be sent even with an empty body (`onSend` receives an empty body, and the caller adds a sentence).
    */
   slideAnnotations?: ComposerAnnotations | null;
-  /** 输入框上方：设计稿标签里加进对话、还没发出的标注（docs/design/canvas §8.2），「设计稿标注 · N 条」；其余同 `slideAnnotations`。 */
+  /** Above the input box: design annotations added to the conversation from the design tab that have not been sent yet (docs/design/canvas §8.2), “设计稿标注 · N 条” (design annotations · N items); otherwise the same as `slideAnnotations`. */
   designAnnotations?: ComposerAnnotations | null;
-  /** 输入框上方：设计系统标签里加进对话、还没发出的标注（docs/design/canvas §10.6），「设计系统标注 · N 条」；其余同 `slideAnnotations`。 */
+  /** Above the input box: design system annotations added to the conversation from the design system tab that have not been sent yet (docs/design/canvas §10.6), “设计系统标注 · N 条” (design system annotations · N items); otherwise the same as `slideAnnotations`. */
   designSystemAnnotations?: ComposerAnnotations | null;
-  /** 输入框上方：排队等发送的消息。 */
+  /** Above the input box: messages queued to be sent. */
   queue?: ReactNode;
-  /** 新会话起始页（原型 new-agent.jsx `AgentHero`）才传；会话里不传，输入区保持原样。 */
+  /** Passed only for the new-session start page (prototype new-agent.jsx `AgentHero`); not passed inside a session, where the input area stays as it is. */
   start?: ComposerStart;
-  /** AI 工具参数页的提示词框（原型 tool-prompt.jsx）才传；正文由工具页持有，不进会话草稿。 */
+  /** Passed only for the prompt box on the AI tool parameters page (prototype tool-prompt.jsx); the body is held by the tool page and does not go into the session draft. */
   tool?: ComposerTool;
   /**
    * Send is neutral instead of yellow: the composer shares the view with the video editor, whose Export is the view's
@@ -256,60 +256,59 @@ export interface ComposerProps {
 }
 
 /**
- * AI 工具参数页的提示词框（产品设计 §5.10 参数页第 3、4 段）：同一个输入框，正文是工具页持有的提示词（没改过时是模板，
- * 跟着范围与勾选项变），没有 `/`（已经在工具页里了），`@` 与附件照旧；「+ › 使用 Skill」挂到工具页的 skill 列表上。
- * 工具栏里没有发送钮：主按钮在框下面，全宽、写明动作，再下面一行说清按下去会去哪。Enter 换行，不发送。
+ * Prompt box on the AI tool parameters page (product design §5.10, paragraphs 3 and 4 of the parameters page): the same input box. The body is the prompt held by the tool page (it is the template until edited, and it changes with the scope and checked options); there is no `/` (already inside a tool page), while `@` and attachments work as before; “+ › 使用 Skill” (Use Skill) attaches to the tool page's skill list.
+ * There is no send button in the toolbar: the main button sits below the box, full width, with its action named, and one more line below it explains where pressing it leads. Enter inserts a newline and does not send.
  */
 export interface ComposerTool {
-  /** 框里的话：没改过时是 `defaultText`。 */
+  /** The text in the box: `defaultText` until it is edited. */
   text: string;
-  /** 用户改了正文。 */
+  /** Whether the user has edited the body. */
   onText(text: string): void;
-  /** 正文上方：挂着的 skill（工具页自己画，标着哪个是这个工具的做法）。 */
+  /** Above the body: the attached skills (drawn by the tool page itself, marking which one is this tool's approach). */
   tokens: ReactNode;
-  /** 「+ › 使用 Skill」点选了一个：接在挂着的后面，已经挂着的不重复。 */
+  /** One picked from “+ › 使用 Skill” (Use Skill): appended after the attached ones; skills already attached are not repeated. */
   onSkill(id: string): void;
-  /** 框与主按钮之间的说明行（没挂 skill 时的那一行）。 */
+  /** The note line between the box and the main button (the line shown when no skill is attached). */
   notice?: ReactNode;
   /**
-   * 直接调模型时底栏右边换成文本模型的选择（原型 tool-prompt.jsx `ToolModelPick`），不出访问模式与 Agent 选择；
-   * 交给 Agent 时不传。
-   */
+ * When calling the model directly, the right side of the bottom bar is replaced with a text model picker (prototype tool-prompt.jsx `ToolModelPick`), and the access mode and Agent picker are not shown;
+ * not passed when handing off to an Agent.
+ */
   picker?: ReactNode;
-  /** 说明行之后、主按钮之前：按框里已附上的附件（`count` 个，其中 `images` 张图片）写的那行（直接调模型时「发给模型的」）。 */
+  /** The line after the note and before the main button, written according to the attachments already in the box (`count` in total, of which `images` are images) (when calling the model directly, “发给模型的” (sent to the model)). */
   context?(attachments: { count: number; images: number }): ReactNode;
-  /** 主按钮的字与它下面那行去向说明。 */
+  /** The main button's label and the line below it explaining where it leads. */
   cta: string;
   hint: string;
-  /** 主按钮不能按（视频还没打开、勾选项全没选……）。 */
+  /** The main button cannot be pressed (the video is not open yet, no checked options are selected…). */
   isDisabled?: boolean;
-  /** 按下主按钮：图片已经上传完。返回 false 表示没有交出去，附件留着。 */
+  /** Pressing the main button: images have already finished uploading. Returns false if it was not handed off, and the attachments stay. */
   onStart(text: string, attachments: AttachmentRef[]): Promise<boolean>;
 }
 
-/** 起始页的输入框：模板 token 与素材、「+」菜单（文件和文件夹、使用 Skill、最近的视频）与拖放，正文空着时按附件判断能不能发。 */
+/** Start page input box: template tokens and assets, the “+” menu (files and folders, Use Skill, recent videos) and drag-and-drop; when the body is empty, whether it can be sent is decided by the attachments. */
 export interface ComposerStart {
-  /** 正文上方：点选的 skill、选中的模板、交给 Agent 的本机素材（起始页自己画 skill 标记，和模板排在一行）。 */
+  /** Above the body: picked skills, the selected template, and local assets handed to the Agent (the start page draws the skill tags itself, lined up in one row with the templates). */
   tokens: ReactNode;
-  /** 有没有一个 Agent 能用；没有时藏起访问模式与 Agent 选择，起始页下面换成指引卡。 */
+  /** Whether any Agent is usable; when none is, the access mode and Agent picker are hidden, and a guidance card replaces the area below the start page. */
   ready: boolean;
-  /** 正文空着也能发：附了图片或素材（只选模板不算）。 */
+  /** Can be sent with an empty body if images or assets are attached (selecting only a template does not count). */
   canSendEmpty(imageCount: number): boolean;
-  /** 统一选择或拖放得到的本机文件与目录路径。 */
+  /** Local file and directory paths obtained from the unified picker or drag-and-drop. */
   onPaths(paths: readonly string[]): void;
-  /**
-   * 待填项（模板包规范 §5.5）：每加一，输入框拿回焦点并选中光标之后的下一个占位 token（到末尾从头找）。
-   * 起始页在填入带占位符的提示词后、点「填下一处」时加；0 = 还没要求过。
+  /**   /**
+   * Fill-in items (template package spec §5.5): each increment returns focus to the input box and selects the next placeholder token after the cursor (searching from the start when it reaches the end).
+   * The start page increments it when “填下一处” (fill next) is clicked after a prompt with placeholders is inserted; 0 = not yet requested.
    */
   selectSlot?: number;
-  /** 「+ › 最近的视频」：选一个，这次会话就针对那个已有的视频。没有可列的视频时这一项不出现。 */
+  /** “+ › 最近的视频” (recent videos): pick one, and this session targets that existing video. This item does not appear when there are no videos to list. */
   recent: { items: readonly { id: string; label: string; description: string }[]; onPick(id: string): void };
 }
 
 /**
- * 输入区（产品设计 §3.2.3，原型 agent-thread.jsx `Composer`）：S2 AI 的 PromptField 管正文、附图、补全、发送与停止；
- * 工具栏里是「+」（文件和文件夹、使用 Skill、斜杠命令）、访问模式、Agent · 模型 · 推理强度。
- * Enter 发送，Shift+Enter 换行；输入法组合中的 Enter 只上屏不发送（TokenField 只在 insertParagraph 时提交）。
+ * Input area (product design §3.2.3, prototype agent-thread.jsx `Composer`): S2 AI's PromptField handles the body, attached images, completion, sending and stopping;
+ * the toolbar has “+” (files and folders, Use Skill, slash commands), access mode, and Agent · model · reasoning effort.
+ * Enter sends, Shift+Enter inserts a newline; during IME composition, Enter only commits the text and does not send (TokenField commits only on insertParagraph).
  */
 export function Composer(props: ComposerProps) {
   const { draftKey, driverId, model, effort, lockedTo, onAgentChange, accessMode, onAccessModeChange } = props;
@@ -321,21 +320,21 @@ export function Composer(props: ComposerProps) {
   const runtime = useRuntime();
   const shellDraft = useShell((s) => s.drafts[draftKey] ?? '');
   const setShellDraft = useShell((s) => s.setDraft);
-  // 工具页的提示词框：正文在工具页手里，不写会话草稿。
+  // The tool page's prompt box: the body is held by the tool page and is not written to the session draft.
   const draft = tool ? tool.text : shellDraft;
   const setDraft = (key: string, text: string) => (tool ? tool.onText(text) : setShellDraft(key, text));
   const connected = useConnection((s) => s.state.status === 'connected');
   const drivers = useConnection((s) => s.drivers);
-  // 找不到这个 Agent 的探测结果时一律显示「正在检测」：通常它在 `checking` 里（首次探测还没完）；
-  // 极少数情况下它既不在结果里也不在 `checking` 里（这版 Runtime 没注册它），也按检测中处理，不另给一种状态。
-  // 有结果但不可用（含磁盘缓存里旧的「没登录」）照旧 blocked，Runtime 启动后的后台刷新会推送纠正。
+  // When no probe result is found for this Agent, always show “正在检测” (detecting): usually it is in `checking` (the first probe has not finished);
+  // in rare cases it is in neither the results nor `checking` (this version of the Runtime does not register it), and it is also treated as detecting, with no separate state.
+  // When there is a result but it is unusable (including an old “没登录” (not signed in) from the disk cache), it stays blocked as before; the background refresh after the Runtime starts will push a correction.
   const driver = drivers?.find((d) => d.id === driverId) ?? null;
   const entries = useSpace((s) => s.entries);
   const videoMentions = useVideoMentions(mentionScope);
   const images = useDraftImageList(draftKey);
   const files = useDraftFileList(draftKey);
   const [picking, setPicking] = useState(false);
-  // 「+ › 使用 Skill」点选的那几个（按草稿键存，按挂上的顺序，不重复）与 skill 列表（挂上、重连时取）。
+  // The ones picked from “+ › 使用 Skill” (Use Skill) (stored by draft key, in attached order, without duplicates), and the skill list (fetched on attach and on reconnect).
   const skillIds = useDraftSkillIds(draftKey);
   const skills = useSkillsLoader();
   const skillName = (id: string) => skills.skills.find((s) => s.id === id)?.name ?? id;
@@ -347,14 +346,14 @@ export function Composer(props: ComposerProps) {
   const filePicker = useRef<HTMLInputElement>(null);
   const [previewAttachment, setPreviewAttachment] = useState<DraftImage | null>(null);
   useEffect(() => setPreviewAttachment(null), [draftKey]);
-  // 保留正常留白时 520px 的内容断点（起始页没有留白）；量外框，避免 24 / 12px 留白使临界宽度来回切换。
+  // Keeps the 520px content breakpoint for normal padding (the start page has no padding); measures the outer frame, so that 24 / 12px padding does not make the threshold width flip back and forth.
   const compact = useNarrow(wrapRef, start ? 520 : 520 + 24 * 2, 'border-box');
   useEffect(() => {
     if (autoFocus) focusPromptEnd(ref.current?.UNSAFE_getDOMNode());
-    // 只在挂上时聚焦一次，和原生 autoFocus 一样。
+    // Focuses only once, when mounted, the same as native autoFocus.
   }, []);
-  // 选中下一处待填项（原型 ui.jsx PromptField 的 `selectSlot`）：TokenField 只在已聚焦时才把程序设的选区写回 DOM，所以先聚焦、稍等再选。
-  // 失焦后再聚焦，TokenField 会按 DOM 把光标重设到末尾：从哪里往后找要在聚焦之前记下（选中的 token 或光标所在的片段）。
+  // Selects the next fill-in item (prototype ui.jsx PromptField's `selectSlot`): TokenField only writes a programmatically set selection back to the DOM while focused, so it focuses first and waits briefly before selecting.
+  // After blur and refocus, TokenField resets the cursor to the end based on the DOM, so where to search from is recorded before focusing (the selected token, or the fragment the cursor is in).
   const slotTick = start?.selectSlot ?? 0;
   useEffect(() => {
     if (!slotTick) return undefined;
@@ -362,7 +361,7 @@ export function Composer(props: ComposerProps) {
     ref.current?.UNSAFE_getDOMNode()?.querySelector<HTMLElement>('[role="textbox"]')?.focus();
     const id = window.setTimeout(() => selectSlot(from), 60);
     return () => window.clearTimeout(id);
-    // 只跟着计数走；起点取这次渲染的值，选区按 state 里最新的值算。
+    // Only follows the count; the starting point takes the value from this render, and the selection is computed from the latest value in state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotTick]);
 
@@ -382,7 +381,7 @@ export function Composer(props: ComposerProps) {
         : null;
   const uploading = images.some((image) => image.progress !== null);
   const hasText = draft.trim().length > 0;
-  // 起始页：正文空着时，附了图片或素材也能发（只选模板不行）。
+  // Start page: when the body is empty, it can still be sent if images or assets are attached (selecting only a template is not enough).
   const hasContent =
     hasText ||
     !!files.length ||
@@ -400,7 +399,7 @@ export function Composer(props: ComposerProps) {
   const dragDepth = useRef(0);
 
   const refocus = () =>
-    // 「+」菜单关上时焦点先回到按钮（弹层动画约 400ms，同 InsertMenuButton），再把光标放回正文末尾。
+    // When the “+” menu closes, focus first returns to the button (the popover animation takes about 400ms, the same as InsertMenuButton), and then the cursor is put back at the end of the body.
     window.setTimeout(() => focusPromptEnd(ref.current?.UNSAFE_getDOMNode()), 400);
 
   const admit = (incoming: Pick<DraftImage, 'id' | 'file' | 'url'>[]) => {
@@ -428,7 +427,7 @@ export function Composer(props: ComposerProps) {
     setUploadError(null);
   };
 
-  // PromptField 自己处理粘贴与拖放（只收 acceptedAttachmentTypes 里的格式）、点缩略图的 × 移除；这里只做校验与收回预览地址。
+  // PromptField handles paste and drag-and-drop itself (it accepts only the formats in acceptedAttachmentTypes) and removal via × on thumbnails; here we only validate and revoke preview URLs.
   const onAttachmentsChange = (next: PromptFieldAttachment[]) => {
     const nextIds = new Set(next.map((a) => a.id));
     const currentIds = new Set(images.map((i) => i.id));
@@ -436,7 +435,7 @@ export function Composer(props: ComposerProps) {
     admit(next.filter((a) => !currentIds.has(a.id)).map((a) => ({ id: a.id, file: a.file, url: a.image })));
   };
 
-  // 统一入口：图片沿用上传通道；本机文件与目录作为可移除引用交给 Agent。
+  // Unified entry point: images use the upload channel; local files and directories are handed to the Agent as removable references.
   const addLocalFiles = (incoming: readonly MessageFile[]) => {
     if (start) start.onPaths(incoming.map((file) => file.path));
     else {
@@ -520,7 +519,7 @@ export function Composer(props: ComposerProps) {
       event.stopPropagation();
       event.dataTransfer.dropEffect = 'copy';
     },
-    // 移进子元素时也会触发 dragleave：数进出的层数，全离开了才收起描边。
+    // Moving into a child element also fires dragleave: count the enter/leave depth, and only remove the outline once everything has left.
     onDragLeaveCapture: (event: DragEvent) => {
       if (!carriesFiles(event)) return;
       event.stopPropagation();
@@ -535,7 +534,7 @@ export function Composer(props: ComposerProps) {
       setOver(false);
       takeFiles([...event.dataTransfer.files]);
     },
-    // 只拦带文件的粘贴；粘贴文字照常进正文。
+    // Only intercepts pastes that carry files; pasted text still goes into the body as usual.
     onPasteCapture: (event: ClipboardEvent) => {
       const files = [...event.clipboardData.files];
       if (!files.length) return;
@@ -560,13 +559,13 @@ export function Composer(props: ComposerProps) {
         ? await uploadDraftImages(draftKey, (file, onProgress) => runtime.uploadAttachment(file, onProgress))
         : [];
     } catch (error) {
-      // 上传没成：文字与图片都留着，失败的那张标红，脚注说原因；再按发送只重传没传上的。
+      // If the upload failed, the text and images are all kept, the failed image is marked red, and a footnote gives the reason; pressing send again re-uploads only those that did not go up.
       setUploadError(ATTACHMENT_COPY.uploadFailed((error as Error).message));
       setSending(false);
       return;
     }
     if (tool) {
-      // 工具页：正文留在框里（交出去之后工具页回到列表），只在交出去之后清掉附件。
+      // Tool page: the body stays in the box (after it is handed off, the tool page returns to the list), and attachments are cleared only after handoff.
       try {
         if (await tool.onStart(text, attachments)) {
           useDraftImages.getState().clear(draftKey);
@@ -588,7 +587,7 @@ export function Composer(props: ComposerProps) {
       if (ok) {
         useDraftImages.getState().clear(draftKey);
         useDraftFiles.getState().sent(draftKey, sentFiles);
-        // 发出去了：发出去的那几个 skill 跟着摘掉（这期间新挂的留着）。
+        // Once sent, the skills that were sent are removed along with it (any attached during this time are kept).
         for (const id of picked) useDraftSkills.getState().remove(draftKey, id);
       } else setDraft(draftKey, originalText);
     } finally {
@@ -599,7 +598,7 @@ export function Composer(props: ComposerProps) {
 
   const changeAccessMode = (mode: AgentMode) => {
     onAccessModeChange(mode);
-    // 任务在跑时切档：这一轮仍按发送时的那一档（原型 model-agent.js `modeToast`）。
+    // Switching levels while a task is running: this turn still uses the level from when it was sent (prototype model-agent.js `modeToast`).
     if (busy) {
       const show = mode === 'fullAccess' ? ToastQueue.info : ToastQueue.neutral;
       show(accessModeToast(mode), { timeout: 5000 });
@@ -611,13 +610,13 @@ export function Composer(props: ComposerProps) {
     const active = activeCompletion(before);
     if (!active || active.raw !== filterValue) return null;
     if (active.kind === 'slash') {
-      // 工具页里没有 `/`：已经在一个工具里了。
+      // No `/` on the tool page: you are already inside a tool.
       if (tool) return null;
       const matches = slashMatches(active.query);
       return matches.length ? matches.map((command) => <SlashItem key={command.cmd} command={command} insert />) : null;
     }
     const candidates = mentionCandidates(entries, mentionScope, active.query);
-    // 打开的视频里的章节与说话人排在前面一组（设计稿 model-agent.js `mentionItems`：先本视频，再别的）。
+    // Chapters and speakers in the open video are listed first as a group (design model-agent.js `mentionItems`: this video first, then the others).
     const fromVideo = videoMentions ? videoMentionCandidates(videoMentions, active.query) : [];
     if (!candidates.length && !fromVideo.length) {
       return active.query
@@ -690,9 +689,9 @@ export function Composer(props: ComposerProps) {
     blocked ??
     uploadError ??
     (driver ? composerFoot(driver.name, localizeText(driver.account, driver.accountRef) ?? null, accessMode) : AGENT_PICKER.detecting);
-  // 窄的时候省掉说明性的脚注（原型 compact），挡住发送的原因照样显示。
-  // 起始页的设计稿没有脚注：只留上传失败与挡住发送的原因；Agent 都用不了时下面有指引卡，不再重复。
-  // 工具页的提示词框也没有脚注（原型 tool-prompt.jsx）：按键说明不适用（Enter 换行、没有 /），去向写在主按钮下面。
+  // When narrow, the explanatory footnote is dropped (prototype compact), but the reason that blocks sending still shows.
+  // The start page design has no footnote: only upload failures and reasons that block sending remain; when no Agent is usable, a guidance card sits below, so it is not repeated.
+  // The tool page's prompt box has no footnote either (prototype tool-prompt.jsx): key hints do not apply (Enter inserts a newline, no `/`), and the destination is written below the main button.
   const showFoot = start
     ? !!uploadError || (!!blocked && start.ready)
     : tool
@@ -701,8 +700,8 @@ export function Composer(props: ComposerProps) {
   const showPickers = !start || start.ready;
   const accessPicker = <AccessPicker value={accessMode} compact={compact} onChange={changeAccessMode} />;
 
-  // 「+ › 使用 Skill ▸」（原型 composer-insert-menu.jsx）：全部 skill，开着的在前；末尾「管理 Skills…」去设置。
-  // 还没取到、取不到或一个都没有时，只有一行说明和「管理 Skills…」。
+  // “+ › 使用 Skill ▸” (Use Skill) (prototype composer-insert-menu.jsx): all skills, enabled ones first; at the end, “管理 Skills…” (Manage Skills…) goes to settings.
+  // When not yet fetched, failed to fetch, or there are none at all, there is only one line of explanation and “管理 Skills…” (Manage Skills…).
   const skillItems = skillMenuItems(skills.skills);
   const skillNote = !skills.loaded ? (skills.status === 'failed' ? SKILL_COPY.loadFailed : SKILL_COPY.loading) : SKILL_COPY.none;
   const skillMenu = (
@@ -751,12 +750,12 @@ export function Composer(props: ComposerProps) {
       </Menu>
     </SubmenuTrigger>
   );
-  // 打开「+」时顺手重取一次 skill 列表：别的窗口刚添加、移除的也能列出来（旧的列表照常显示）。
+  // When the “+” is opened, the skill list is re-fetched as well: skills just added or removed in another window also show up (the old list still shows as usual).
   const onInsertOpen = (open: boolean) => {
     if (open && connected) skills.retry();
   };
 
-  // product-design §3.2.3：两个输入区共用同一个附件首项；已有内容继续通过 @ 补全引用。
+  // product-design §3.2.3: the two input areas share the same first attachment item; existing content continues to be referenced through @ completion.
   const insert = (
     <MenuTrigger align="start" direction="top" onOpenChange={onInsertOpen}>
       <ActionButton size="S" UNSAFE_className="cc-composer-attach" aria-label={COMPOSER_MENU.attachSection}>
@@ -905,7 +904,7 @@ export function Composer(props: ComposerProps) {
               ))}
             </div>
           )}
-          {/* 会话输入框上点选的 skill（起始页的画在 start.tokens 里，和模板一排）。 */}
+          {/* Skills picked on the session input box (the start page's are kept in start.tokens, in one row with the templates). */}
           {!start && !tool && skillIds.length ? (
             <div className={composerTokenList}>
               {skillIds.map((id) => (
@@ -1021,7 +1020,7 @@ export function Composer(props: ComposerProps) {
               {insert}
               {start || tool?.picker ? null : accessPicker}
               <span className={spacer} />
-              {/* 起始页按设计稿把访问模式放在右边，和 Agent 选择挨着；没有一个 Agent 能用时两个都藏起来。 */}
+              {/* On the start page, following the design, the access mode sits on the right, next to the Agent picker; when no Agent is usable, both are hidden. */}
               {start && showPickers ? accessPicker : null}
               {tool?.picker ? tool.picker : null}
               {showPickers && !tool?.picker ? (
@@ -1071,8 +1070,8 @@ export function Composer(props: ComposerProps) {
 }
 
 /**
- * 提示词框里的 Enter 换行、不发送（主按钮在框下面）。PromptField 总把 Enter 当提交，所以在它之前接住；
- * 补全弹层开着（选候选）、输入法组合中、带修饰键时照旧交给它。
+ * In the prompt box, Enter inserts a newline and does not send (the main button sits below the box). PromptField always treats Enter as submit, so this intercepts it before PromptField;
+ * when the completion popover is open (choosing a candidate), during IME composition, or with a modifier key, it is still passed to PromptField as usual.
  */
 function toolEnter(event: KeyboardEvent<HTMLDivElement>, value: PromptFieldValue, setValue: (value: PromptFieldValue) => void) {
   const target = event.target as HTMLElement;
@@ -1084,7 +1083,7 @@ function toolEnter(event: KeyboardEvent<HTMLDivElement>, value: PromptFieldValue
   setValue(value.replaceRange(start, end, '\n'));
 }
 
-/** 斜杠命令一行：图标、`/命令 · 标签`、一句副文案。`insert`：补全弹层里用，选中替换正在敲的 /token。 */
+/** One slash-command line: icon, `/命令 · 标签` (/command · label), and a one-line subtitle. `insert`: used in the completion popover; selecting it replaces the /token being typed. */
 function SlashItem({ command, insert }: { command: SlashCommand; insert?: boolean }) {
   const Icon = SLASH_ICON[command.icon];
   const content = (

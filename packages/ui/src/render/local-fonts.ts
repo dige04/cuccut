@@ -1,21 +1,20 @@
 import type { FontFaceQuery, FontsResolveResult } from '@cuccut/protocol';
 import { R } from './render-copy.ts';
 
-/** 一次 `fonts.resolve` 最多问几个 face（与协议一致）。 */
+/** Maximum number of faces asked for in one `fonts.resolve` call (consistent with the protocol). */
 const RESOLVE_BATCH = 32;
-/** 同时按区间取几张表。 */
+/** How many table ranges are fetched at the same time. */
 const FETCH_CONCURRENCY = 4;
 
 /**
- * 一个本机字体 face：`key` 认同一个 face（几个查询落到同一个 face 时只注入一次）；`load` 重新要一次它的字节（渲染内核
- * 重新载入、缩略图的实例新建时用，界面不留字节的副本）。
+ * A local font face: `key` identifies one face (when several queries land on the same face, it is injected only once). `load` asks again for its bytes (used when the render kernel reloads and when a thumbnail instance is created, so the UI keeps no copy of the bytes).
  */
 export interface LocalFont {
   key: string;
   load(): Promise<Uint8Array>;
 }
 
-/** 取到的 face：哪个查询要的、它是谁、字节（注入渲染内核之后就不再留着）。 */
+/** A face that was obtained: which query asked for it, what it is, and its bytes (no longer kept once injected into the render kernel). */
 export interface LoadedFace {
   query: FontFaceQuery;
   font: LocalFont;
@@ -23,8 +22,7 @@ export interface LoadedFace {
 }
 
 /**
- * 预览要的本机字体：按 face（族名、字重、斜体）给出抽好的字体字节（找不到的不给）。同一批里先到的（本机就有的、已经
- * 下载好的）经 `onPartial` 先给，不等这一批里还在下载的；先给过的不再出现在最后的结果里。
+ * Local fonts that preview needs: for each face (family name, weight, italic), the extracted font bytes (faces not found are not given). Within a batch, those that arrive first (available locally, already downloaded) are given first through `onPartial`, without waiting for ones in the batch still downloading. Faces already given do not appear again in the final result.
  */
 export interface FontSource {
   load(faces: readonly FontFaceQuery[], onPartial?: (faces: LoadedFace[]) => void): Promise<LoadedFace[]>;
@@ -32,14 +30,13 @@ export interface FontSource {
 
 type ResolvedFace = FontsResolveResult['faces'][number];
 
-/** 认同一个 face：文件名、文件字节数与文件里第几个。 */
+/** Identifies a face: file name, file byte count, and its index within the file. */
 function faceKey(face: ResolvedFace): string {
   return `${face.file.fileName}\u0000${face.fileSize}\u0000${face.faceIndex}`;
 }
 
 /**
- * 按引擎给的做法拼出这一个 face：文件头之后，每张表按区间（`Range`）从文件里取。只认 206 且字节数对得上的回应——
- * 回了整个文件（200）的不读，免得把整个字体集合拉下来。
+ * Assembles this one face the way the engine specifies: after the file header, each table is fetched from the file by range (`Range`). Only responses with 206 and a matching byte count are accepted. A response that returns the whole file (200) is not read, so the whole font collection is not pulled down.
  */
 async function assemble(face: ResolvedFace, fetcher: (url: string, init?: RequestInit) => Promise<Response>): Promise<Uint8Array> {
   const out = new Uint8Array(face.size);
@@ -65,10 +62,8 @@ async function assemble(face: ResolvedFace, fetcher: (url: string, init?: Reques
 }
 
 /**
- * 经 Runtime 的 `fonts.resolve` 取本机字体（架构设计 §9.1）：引擎按「族名、字重、斜体」挑 face（与成片导出冻结的是
- * 同一份解析与抽法），这里按读取句柄只取这个 face 的表拼成单独的字体——字体集合（一个几十 MB 的 .ttc 里有几十个
- * face）不整个下载。只要预览报缺的族里排字点了名的 face，不列字体目录。同一个 face（几个查询落到它时）只给一次。
- * 浏览器会话没有这个方法，请求被拒时当作都没有。
+ * Fetches local fonts through the Runtime's `fonts.resolve` (architecture design §9.1). The engine picks the face by family name, weight and italic (the same resolution and extraction that export freezes). Here, only that face's tables are fetched through a read handle and assembled into a separate font, so a font collection (a .ttc of tens of MB holding dozens of faces) is not downloaded whole. When the preview only reports missing families, faces named during typesetting are used, and the font catalog is not listed. The same face (when several queries land on it) is given only once.
+ * The browser session has no such method; when the request is rejected, every face is treated as absent.
  */
 export function runtimeFonts(
   resolve: (faces: FontFaceQuery[], onPartial?: (faces: ResolvedFace[]) => void) => Promise<FontsResolveResult>,
@@ -77,7 +72,7 @@ export function runtimeFonts(
   const given = new Set<string>();
   const font = (query: FontFaceQuery, face: ResolvedFace): LocalFont => ({
     key: faceKey(face),
-    // 句柄会过期：重新要的时候重新解析一次。
+    // Handles expire: when asked again, resolve again first.
     async load() {
       const { faces } = await resolve([query]);
       const again = faces.find((f) => faceKey(f) === faceKey(face));
@@ -85,7 +80,7 @@ export function runtimeFonts(
       return assemble(again, fetcher);
     },
   });
-  /** 一批 face 里还没给过的，取字节；取不到时放回去，下次还能再要。 */
+  /** From a batch of faces, fetch the bytes of those not yet given; if a fetch fails, put it back so it can be asked for again next time. */
   const take = async (pairs: readonly { query: FontFaceQuery; face: ResolvedFace }[]): Promise<LoadedFace[]> => {
     const fresh = pairs.filter(({ face }) => {
       const key = faceKey(face);
@@ -115,7 +110,7 @@ export function runtimeFonts(
         const batch = queries.slice(start, start + RESOLVE_BATCH);
         const partial = onPartial
           ? (faces: ResolvedFace[]) => {
-              // 先到的先给；取不到的（`take` 已放回）留给最后一起再试。
+              // First to arrive are given first; those that could not be fetched (`take` has put them back) are left to be tried again together at the end.
               early.push(
                 take(match(batch, faces)).then(
                   (loaded) => void (loaded.length && onPartial(loaded)),
@@ -128,7 +123,7 @@ export function runtimeFonts(
         found.push(...match(batch, faces));
       }
       await Promise.all(early);
-      // 这一批没取到的下次还能再要。
+      // Those not fetched in this batch can be asked for again next time.
       return take(found);
     },
   };

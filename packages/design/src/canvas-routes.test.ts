@@ -253,7 +253,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     options = { canEdit: true, blobScope: 'design' };
     expect((await fetch(`${base}/_blob/${deckBlob.id}`)).status).toBe(404);
     expect((await fetch(`${base}/_blob/${uploaded.id}`)).status).toBe(200);
-    // grant 下的素材只在自己的目录里找
+    // Assets under a grant are looked up only in their own directory
     expect((await fetch(at(`_blob/${deckBlob.id}`))).status).toBe(404);
   });
 

@@ -1,22 +1,21 @@
-//! IndexTTS 2.5（`mlx-community/IndexTTS-2.5-fp16`）检查点的键名与张量布局重映射。
+//! Remaps key names and tensor layouts for the IndexTTS 2.5 (`mlx-community/IndexTTS-2.5-fp16`) checkpoint.
 //!
-//! 该检查点由 MLX 转换器导出：卷积是 MLX 布局 `[O, K, I]`、GPT-2 块是 `nn.Linear`
-//! `[out, in]`、weight-norm 已预融合，部分模块也改了名。这里把它就地改写成 2.0
-//! 加载器（`gpt.rs` / `s2mel.rs` / `semantic_codec.rs`）期望的 PyTorch 布局与键名，
-//! 让 2.5 复用同一套模型图。官方 2.5 的 Conformer / Perceiver / S2Mel 与 2.0 是同一批类，
-//! 差别只在检查点格式。
+//! The checkpoint was exported by an MLX converter: convolutions use the MLX layout `[O, K, I]`, GPT-2 blocks are `nn.Linear`
+//! `[out, in]`, weight-norm is already fused, and some modules were renamed. This code rewrites it in place into the PyTorch layout and key names
+//! expected by the 2.0 loaders (`gpt.rs` / `s2mel.rs` / `semantic_codec.rs`), so that 2.5 can reuse the same model graph. The official 2.5 Conformer / Perceiver / S2Mel are the same classes as in 2.0;
+//! the only difference is the checkpoint format.
 
 use super::weights::WeightMap;
 use crate::synthesize::tensor::{Array, ops};
 use anyhow::{Result, bail, ensure};
 
-/// 情感 Conformer 位置编码长度（2.0 检查点里存的 `pe` 是 `[1, 5000, 512]`）。
+/// Emotion Conformer positional-encoding length (the `pe` stored in the 2.0 checkpoint is `[1, 5000, 512]`).
 const CONFORMER_PE_LEN: usize = 5000;
 const EMO_ENCODER: &str = "emo_conditioning_encoder";
 const EMO_PERCEIVER: &str = "emo_perceiver_encoder";
 
-/// GPT：GPT-2 块 Linear `[out, in]` → Conv1D `[in, out]`；情感 Conformer 卷积回 torch 布局；
-/// Perceiver 拆开的 k/v 合并回 `to_kv`；补上检查点省略的正弦位置编码。
+/// GPT: GPT-2 block Linear `[out, in]` → Conv1D `[in, out]`; emotion Conformer convolutions converted back to torch layout;
+/// the split k/v of the Perceiver are merged back into `to_kv`; the sinusoidal positional encoding omitted by the checkpoint is filled in.
 pub fn remap_gpt(w: &mut WeightMap) -> Result<()> {
     let conv_key = format!("{EMO_ENCODER}.embed.conv.weight");
     if !w.contains(&conv_key) {
@@ -57,7 +56,7 @@ pub fn remap_gpt(w: &mut WeightMap) -> Result<()> {
     remap_perceiver(w, EMO_PERCEIVER)
 }
 
-/// S2Mel：卷积回 torch 布局，改回 2.0 键名并加 `net.` 前缀。
+/// S2Mel: convolutions converted back to torch layout, key names reverted to 2.0, and the `net.` prefix added.
 pub fn remap_s2mel(w: &mut WeightMap) -> Result<()> {
     if w.keys().iter().any(|k| k.starts_with("net.")) {
         bail!("不是 IndexTTS 2.5 MLX S2Mel 检查点：键已带 net. 前缀");
@@ -67,7 +66,7 @@ pub fn remap_s2mel(w: &mut WeightMap) -> Result<()> {
     Ok(())
 }
 
-/// 语义码本：只有卷积布局不同，键名与 2.0 相同（weight-norm 已预融合）。
+/// Semantic codebook: only the convolution layout differs; key names match 2.0 (weight-norm already fused).
 pub fn remap_codec(w: &mut WeightMap) -> Result<()> {
     if w.contains("quantizer.quantizers.0.in_project.weight_v") {
         bail!("不是 IndexTTS 2.5 MLX 语义码本检查点：仍是 weight-norm 布局");
@@ -97,8 +96,8 @@ fn is_gpt2_block_weight(key: &str) -> bool {
         .any(|suffix| key.ends_with(suffix))
 }
 
-/// `layers.{i}.0.linear_{q,k,v,out}` → `to_q` / `to_kv`（k 在前）/ `to_out`；
-/// `layers.{i}.1.w_{1,2}` → `layers.{i}.1.{0,2}`；`norm.weight` → `norm.gamma`。
+/// `layers.{i}.0.linear_{q,k,v,out}` → `to_q` / `to_kv` (k first) / `to_out`;
+/// `layers.{i}.1.w_{1,2}` → `layers.{i}.1.{0,2}`; `norm.weight` → `norm.gamma`.
 fn remap_perceiver(w: &mut WeightMap, prefix: &str) -> Result<()> {
     w.rename(&format!("{prefix}.norm.weight"), format!("{prefix}.norm.gamma"));
     let mut layer = 0;
@@ -124,7 +123,7 @@ fn remap_perceiver(w: &mut WeightMap, prefix: &str) -> Result<()> {
     Ok(())
 }
 
-/// 2.5 S2Mel 键名 → 2.0 键名（含 `net.` 前缀）。
+/// 2.5 S2Mel key names → 2.0 key names (including the `net.` prefix).
 fn s2mel_key(key: &str) -> String {
     let mut k = key.to_string();
     for embedder in ["t_embedder", "t_embedder2"] {
@@ -147,8 +146,8 @@ fn s2mel_key(key: &str) -> String {
     format!("net.{k}")
 }
 
-/// ESPnet / WeNet `PositionalEncoding`：`pe[p, 2i] = sin(p·d_i)`、`pe[p, 2i+1] = cos(p·d_i)`，
-/// `d_i = exp(2i · −ln(10000)/dim)`。角度按 torch 的 f32 算，行主序 `[len, dim]`。
+/// ESPnet / WeNet `PositionalEncoding`: `pe[p, 2i] = sin(p·d_i)`, `pe[p, 2i+1] = cos(p·d_i)`,
+/// `d_i = exp(2i · −ln(10000)/dim)`. Angles are computed in torch's f32; row-major `[len, dim]`.
 fn sinusoidal_position_encoding(len: usize, dim: usize) -> Vec<f32> {
     let scale = -(10000f32.ln() / dim as f32);
     let div: Vec<f32> = (0..dim).step_by(2).map(|i| (i as f32 * scale).exp()).collect();

@@ -107,7 +107,7 @@ const delta = style({
   color: { default: "gray-700", isShifted: "orange-900" },
 });
 
-/** 页标题（原型 panel-*.jsx）。 */
+/** Page title (prototype panel-*.jsx). */
 function pageTitle(item: SequenceItem): string {
   switch (item.type) {
     case "video":
@@ -126,8 +126,8 @@ function pageTitle(item: SequenceItem): string {
 }
 
 /**
- * 属性页（产品设计 §5.1、§5.8）：选中一个片段时按它的类型给出能改的一切（内容 → 外观 → 几何 → 时间 → 删除）；
- * 页底是上一次修改的回执。Only mounted with something picked (inspector-column.tsx); the video as a whole is in Video settings.拖动中的值只叠给预览，松手才提交（见 use-item-edit）。
+ * Properties panel (product design §5.1, §5.8): when a clip is selected, it offers everything editable for that clip type (content → appearance → geometry → timing → delete);
+ * the bottom of the panel is the receipt for the last change. Only mounted with something picked (inspector-column.tsx); the video as a whole is in Video settings. Values being dragged are overlaid on the preview only; they are committed on release (see use-item-edit).
  */
 export function Inspector({
   sequence,
@@ -187,7 +187,7 @@ export function Inspector({
   );
 }
 
-/** 选中一个片段：名字、锁定提示，然后是这种片段的页。 */
+/** Selected clip: name and lock hint, then the page for this kind of clip. */
 function ItemPage({
   item,
   sequence,
@@ -275,9 +275,9 @@ const pair = style({
 const fill = style({ width: "full" });
 
 /**
- * 多选页（原型 panel-elements.jsx 的 MultiSelectPanel）：只做对全体成立的事——对齐、分布、复制、删除。
- * 对齐与分布按每件旋转后的外包盒量（model/stage-align），参照选区或整块画布，整批一笔事务、一步撤销；
- * 主视频、音频、字幕与锁定的片段不参与。几何段只读，显示第一件。
+ * Multi-select panel (MultiSelectPanel in prototype panel-elements.jsx): only does what holds for every item: align, distribute, duplicate, delete.
+ * Alignment and distribution use each item's rotated bounding box (model/stage-align), relative to the selection or the whole canvas; a whole batch is one transaction and one undo step;
+ * the main video, audio, subtitles and locked clips are excluded. The geometry section is read-only and shows the first item.
  */
 function Multiple({
   items,
@@ -425,7 +425,7 @@ function Multiple({
   );
 }
 
-/** 多选时的几何段：只读，显示第一件（原型 MultiSelectPanel 同样如此，多选不做批量数值编辑）。 */
+/** Geometry section when multiple items are selected: read-only, shows the first item (the prototype MultiSelectPanel does the same; multi-select does not do batch numeric editing). */
 function FirstGeometry({
   item,
   sequence,
@@ -501,7 +501,7 @@ function ReceiptCard({
   );
 }
 
-/** 请求的时间与实际落点（产品设计 §5.8）：看到「10.000 秒」不应掩盖实际落在 10.010 秒。 */
+/** Requested time vs. actual landing point (product design §5.8): seeing “10.000 s” should not hide that it actually lands at 10.010 s. */
 function TimeResolution({
   resolution,
 }: {

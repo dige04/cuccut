@@ -17,14 +17,12 @@ import { textHash, type TranslationBody } from './translation-doc.ts';
 import { dubMark, type DubBlock } from './timeline-dub.ts';
 
 /**
- * 句级重配（设计稿 model-dub.js「块级管理」与「版」，timeline-dub.jsx 的行头与块菜单）：每句配音的多个版本、哪几句在重配、
- * 哪几句要重新生成、切换版本与切换音源要发的操作。不碰 React。
+ * Sentence-level redubbing (design draft model-dub.js “块级管理” (block-level management) and “版” (takes); timeline-dub.jsx row headers and block menu): the multiple versions of each sentence's dub, which sentences are being redubbed, which sentences need regenerating, and the operations to send when switching versions or switching audio source. It does not touch React.
  *
- * 数据从哪来：
- * - 配音计划单元的 `extensions['cuccut.dub']`：`take`（当前版本）、`seed`、`takes[]`（`DubPlanTake`）；旧计划没有版本时
- *   已经放上的那一版在视图上补成第 1 版（不改计划，与 Runtime 重配时补记的口径相同）；
- * - 在跑的配音流程冻结的 `pipeline.params.regroup`（`FrozenDubRegroup`）：哪一组的哪几句在重配；
- * - 计划单元的 `status`：`failed`（音色不可用）与 `needs-fit`（放不下）且时间线上没有这一句的，是「没合成」的句。
+ * Where the data comes from:
+ * - The dub plan unit's `extensions['cuccut.dub']`: `take` (the current version), `seed`, and `takes[]` (`DubPlanTake`). For an old plan with no versions, the version already placed is filled in as version 1 in the view. The plan itself is not changed. This is the same convention the Runtime uses when it backfills on redub.
+ * - The frozen `pipeline.params.regroup` (`FrozenDubRegroup`) of the running dub flow: which sentences of which group are being redubbed.
+ * - The plan unit's `status`: a sentence that is `failed` (voice unavailable) or `needs-fit` (does not fit) and is not on the timeline counts as “没合成” (not synthesized).
  */
 
 type Json = Record<string, unknown>;
@@ -32,24 +30,24 @@ const isObject = (value: unknown): value is Json => typeof value === 'object' &&
 const str = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
-// ---- 版本 ----
+// ---- Versions ----
 
 export interface UnitTakes {
-  /** 译文单元（实例上的 `unitId`）。 */
+  /** The translation unit (the `unitId` on an instance). */
   unitId: Id;
-  /** 计划里的单元 ID（`d-<unitId>`）。 */
+  /** The unit ID in the plan (`d-<unitId>`). */
   planUnitId: Id;
   status: string | null;
-  /** 当前版本；没有版本时 null。 */
+  /** The current version. null when there are no versions. */
   take: number | null;
   seed: number | null;
-  /** 按版号升序。 */
+  /** Sorted by version number, ascending. */
   takes: DubPlanTake[];
-  /** 放不下时超出的秒数（`needs-fit`）。 */
+  /** The seconds over the limit when it does not fit (`needs-fit`). */
   overflowSeconds: number | null;
-  /** 音色不可用没有合成（`failed`）。 */
+  /** Not synthesized because the voice is unavailable (`failed`). */
   voiceUnavailable: boolean;
-  /** 原句不在时间线上（`draft`）。 */
+  /** The original sentence is not on the timeline (`draft`). */
   offTimeline: boolean;
 }
 
@@ -79,14 +77,14 @@ function readTake(raw: unknown): DubPlanTake | null {
   };
 }
 
-/** 计划单元的译文单元 ID（`translationUnitId`，旧的退回 `d-<unitId>`）。 */
+/** The translation unit ID of the plan unit (`translationUnitId`; older ones fall back to `d-<unitId>`). */
 function unitIdOf(raw: Json): Id | null {
   const own = isObject(raw.extensions) ? raw.extensions[DUB_EXTENSION] : undefined;
   const id = str(raw.id);
   return (isObject(own) ? str(own.translationUnitId) : null) ?? (id?.startsWith('d-') ? id.slice(2) : null);
 }
 
-/** 一个计划单元的版本。旧计划（没有 `takes`）里已经放上的那一版补成第 1 版。 */
+/** The versions of one plan unit. In old plans (without `takes`), the version already placed is filled in as version 1. */
 export function unitTakes(raw: unknown): UnitTakes | null {
   if (!isObject(raw)) return null;
   const unitId = unitIdOf(raw);
@@ -133,7 +131,7 @@ export function unitTakes(raw: unknown): UnitTakes | null {
   };
 }
 
-/** 计划里每句的版本，按计划的次序。 */
+/** The versions for each sentence in the plan, in plan order. */
 export function planTakes(body: unknown): Map<Id, UnitTakes> {
   const out = new Map<Id, UnitTakes>();
   if (!isObject(body) || !Array.isArray(body.units)) return out;
@@ -149,25 +147,25 @@ export function activeTake(unit: Pick<UnitTakes, 'take' | 'takes'> | null | unde
   return unit.takes.find((t) => t.k === unit.take) ?? null;
 }
 
-/** 当前版本以外的版本（归档）。 */
+/** The versions other than the current one (archived). */
 export function archivedTakes(unit: Pick<UnitTakes, 'take' | 'takes'> | null | undefined): DubPlanTake[] {
   if (!unit) return [];
   return unit.takes.filter((t) => t.k !== unit.take);
 }
 
-/** 这一版放上时间线的长度（秒）；没放上（放不下）时 null。 */
+/** The length in seconds of this version when placed on the timeline. null when not placed (it did not fit). */
 export function takeSeconds(take: Pick<DubPlanTake, 'samples' | 'sampleRate'>): number | null {
   return take.samples !== null && take.sampleRate !== null && take.sampleRate > 0 ? take.samples / take.sampleRate : null;
 }
 
-/** 块提示里的版本：只有一版时不写；种子没有时不写种子。 */
+/** The version shown in the block hint. Omitted when there is only one version. The seed is omitted when there is none. */
 export function versionTip(unit: Pick<UnitTakes, 'take' | 'takes'> | null | undefined): { k: number; seed: number | null } | null {
   if (!unit || unit.takes.length <= 1) return null;
   const take = activeTake(unit);
   return take ? { k: take.k, seed: take.seed } : null;
 }
 
-// ---- 哪几句在重配 ----
+// ---- Which sentences are being redubbed ----
 
 export interface RegroupJob {
   jobId: Id;
@@ -176,7 +174,7 @@ export interface RegroupJob {
   seed: number | null;
 }
 
-/** 这个视频在跑的句级重配（冻结参数里有 `regroup`）。 */
+/** The sentence-level redub running for this video (the frozen parameters contain `regroup`). */
 export function regroupJobs(jobs: readonly JobRecord[], videoId: Id | null): RegroupJob[] {
   const out: RegroupJob[] = [];
   for (const job of jobs) {
@@ -193,10 +191,10 @@ export function regroupJobs(jobs: readonly JobRecord[], videoId: Id | null): Reg
   return out;
 }
 
-/** 一句在不在重配的键。 */
+/** The key for whether a sentence is being redubbed. */
 export const queuedId = (groupId: string, unitId: Id) => `${groupId}\t${unitId}`;
 
-/** 在重配的句子，排好序拼成一个串：任务进度事件很多，界面用它当选择器的值，句子没变时不重画时间线。 */
+/** The sentences being redubbed, sorted and joined into one string. Task progress events are frequent, and the UI uses it as the selector value so the timeline is not redrawn when the sentences have not changed. */
 export function queuedKey(jobs: readonly JobRecord[], videoId: Id | null): string {
   const ids = new Set<string>();
   for (const job of regroupJobs(jobs, videoId)) for (const unitId of job.units) ids.add(queuedId(job.groupId, unitId));
@@ -208,8 +206,8 @@ export function queuedSet(key: string): ReadonlySet<string> {
 }
 
 /**
- * 时间线的配音块叠上「在重配」与当前版本（块本身在 model/timeline-dub.ts 算；这两样来自任务与计划的版本）。
- * 没有变化的块原样返回，不新建对象。
+ * Overlays “在重配” (being redubbed) and the current version on the timeline's dub blocks. The blocks themselves are computed in model/timeline-dub.ts. These two come from the task and the plan's versions.
+ * Unchanged blocks are returned as they are, without creating new objects.
  */
 export function withRegen(blocks: ReadonlyMap<Id, DubBlock>, plans: ReadonlyMap<string, unknown>, queued: ReadonlySet<string>): ReadonlyMap<Id, DubBlock> {
   const byGroup = new Map<string, Map<Id, UnitTakes>>();
@@ -231,16 +229,16 @@ export function withRegen(blocks: ReadonlyMap<Id, DubBlock>, plans: ReadonlyMap<
   return out;
 }
 
-// ---- 要重新生成的句 ----
+// ---- Sentences to regenerate ----
 
 export interface FailedUnit {
   unitId: Id;
-  /** `voice`：音色不可用没有合成；`overlong`：合成了但放不下。 */
+  /** `voice`: the voice is unavailable, so nothing was synthesized. `overlong`: it was synthesized but does not fit. */
   reason: 'voice' | 'overlong';
   overflowSeconds: number | null;
 }
 
-/** 这一组在时间线上的句子（实例上的 `unitId`）。 */
+/** The sentences of this group on the timeline (the `unitId` on an instance). */
 export function placedUnits(sequence: Sequence, groupId: string): Set<Id> {
   const out = new Set<Id>();
   for (const item of sequence.items) {
@@ -250,7 +248,7 @@ export function placedUnits(sequence: Sequence, groupId: string): Set<Id> {
   return out;
 }
 
-/** 没合成出来的句：计划里 `failed`（音色不可用）或 `needs-fit`（放不下），而且时间线上没有这一句。按计划的次序。 */
+/** Sentences that were not synthesized: `failed` (voice unavailable) or `needs-fit` (does not fit) in the plan, and not on the timeline. In plan order. */
 export function failedUnits(planBody: unknown, placed: ReadonlySet<Id>): FailedUnit[] {
   const out: FailedUnit[] = [];
   for (const unit of planTakes(planBody).values()) {
@@ -261,7 +259,7 @@ export function failedUnits(planBody: unknown, placed: ReadonlySet<Id>): FailedU
   return out;
 }
 
-/** 计划里每句的序号（从 1 起；计划的单元按句子的次序）：没有译文可对时，改译文并重配的对话框靠它写第几句。 */
+/** Each sentence's sequence number in the plan (from 1; plan units follow the sentence order). When there is no translation to match, the dialog for changing a translation and redubbing uses it to write the sentence number. */
 export function planUnitOrder(planBody: unknown): Map<Id, number> {
   const out = new Map<Id, number>();
   if (!isObject(planBody) || !Array.isArray(planBody.units)) return out;
@@ -272,7 +270,7 @@ export function planUnitOrder(planBody: unknown): Map<Id, number> {
   return out;
 }
 
-/** 要重新生成的候选：没合成的 + 过快的块（设计稿 `regenCandidates`）。不重复，没合成的在前；正在重配的不算。 */
+/** Candidates to regenerate: the not-synthesized sentences plus the too-fast blocks (design draft `regenCandidates`). No duplicates; not-synthesized ones come first. Sentences being redubbed are excluded. */
 export function regenCandidates(
   failed: readonly FailedUnit[],
   blocks: Iterable<Pick<DubBlock, 'groupId' | 'unitId' | 'fast'>>,
@@ -285,7 +283,7 @@ export function regenCandidates(
 }
 
 export interface TrackCounts {
-  /** 时间线上的句 + 没合成的句。 */
+  /** The sentences on the timeline plus the not-synthesized sentences. */
   total: number;
   fast: number;
   muted: number;
@@ -293,7 +291,7 @@ export interface TrackCounts {
   queued: number;
 }
 
-/** 一条配音轨的计数（设计稿 `blockCounts`）：排队重配的块照旧按现在这一版算过快（重配好之前放的还是它）。 */
+/** The counts for one dub track (design draft `blockCounts`). Blocks queued for redub still count as too fast under the current version, since until the redub finishes, what was placed before is still this version. */
 export function trackCounts(
   blocks: Iterable<Pick<DubBlock, 'fast' | 'muted' | 'groupId' | 'unitId'>>,
   failed: readonly FailedUnit[],
@@ -310,9 +308,9 @@ export function trackCounts(
   return counts;
 }
 
-// ---- 切换版本 ----
+// ---- Switching versions ----
 
-/** 按产物找这一版的素材（引擎不回收素材；导入时素材来源记着 `artifactId`）。 */
+/** Find this version's source by its artifact. The engine does not reclaim sources, and on import the source records `artifactId`. */
 export function assetOfArtifact(assets: Record<Id, AssetRecord>, artifactId: string | null): { id: Id; revision: string } | null {
   if (!artifactId) return null;
   for (const asset of Object.values(assets)) {
@@ -324,7 +322,7 @@ export function assetOfArtifact(assets: Record<Id, AssetRecord>, artifactId: str
   return null;
 }
 
-/** 这一版能不能放回时间线：放上过（有长度）、素材找得到。 */
+/** Whether this version can be put back on the timeline: it was placed before (it has a length), and its source can be found. */
 export function takeRef(take: DubPlanTake, assets: Record<Id, AssetRecord>): { id: Id; revision: string } | null {
   if (takeSeconds(take) === null) return null;
   return take.assetRef ?? assetOfArtifact(assets, take.artifactId);
@@ -332,7 +330,7 @@ export function takeRef(take: DubPlanTake, assets: Record<Id, AssetRecord>): { i
 
 export interface SwitchTakeInput {
   sequence: Sequence;
-  /** 这一句现在的实例（位置、音量、名字照它）。 */
+  /** The current instance of this sentence (its position, volume and name follow it). */
   item: AudioItem;
   record: Pick<DocumentRecord, 'id' | 'revisions' | 'currentRevision'>;
   body: unknown;
@@ -342,9 +340,7 @@ export interface SwitchTakeInput {
 }
 
 /**
- * 切到第 k 版（一笔可撤销的编辑）：删掉这一句在这一组里的实例、用那一版的素材放回原处（起点、音量、静音、名字照现在的，
- * 速率回到 1）、写配音计划的新版本（`take` 改成 k，被换下的那一版补记素材，之后能切回）。已经是当前版本、那一版没放上过
- * 或找不到素材时 null（界面置灰）。
+ * Switch to version k (one undoable edit): delete this sentence's instance in this group, put that version's source back in the same place (start, volume, mute and name stay as they are now; speed returns to 1), and write a new version of the dub plan (`take` becomes k; the version it replaces has its source recorded, so it can be switched back to later). Returns null when it is already the current version, when that version was never placed, or when its source cannot be found (the UI greys it out).
  */
 export function switchTakeOperations(input: SwitchTakeInput): EditOperation[] | null {
   const { sequence, item, record, unitId, k, assets } = input;
@@ -419,19 +415,19 @@ export function switchTakeOperations(input: SwitchTakeInput): EditOperation[] | 
   ];
 }
 
-// ---- 听配音 / 听原声 / 两者都听 ----
+// ---- Listen to dub / Listen to original / Listen to both ----
 
 export type DubSource = 'dub' | 'original' | 'both' | 'none';
 
-/** 一组配音的音源相关部分：配音块、它自己分离出的背景声与人声、原声的处理与记下的原声实例。 */
+/** The source-related parts of one dub group: the dub blocks, the background and vocals it separated itself, how the original is handled, and the original instances recorded. */
 export interface SourceGroup {
   groupId: string;
   policy: DubOriginalAudio | null;
-  /** 这组配音静音的原声实例（`mute` 时，或分离过的 `duck` 换成两轨的实例；计划里记着）。 */
+  /** The original instances of this group that are muted (for `mute`, or for `duck` after separation, which swaps in two track instances; recorded in the plan). */
   mutedItemIds: Id[];
 }
 
-/** 从配音计划正文读原声的处理。 */
+/** How the original is handled, read from the dub plan body. */
 export function sourceGroup(groupId: string, planBody: unknown): SourceGroup {
   const policy = isObject(planBody) ? planBody.originalDialoguePolicy : undefined;
   return {
@@ -446,7 +442,7 @@ function stemOf(item: SequenceItem): string | null {
   return isObject(own) && own.stem !== undefined ? str(own.groupId) : null;
 }
 
-/** 这组的配音块与分离出的两轨（背景声、人声）。 */
+/** This group's dub blocks and the two separated tracks (background and vocals). */
 function groupItems(sequence: Sequence, groupId: string) {
   const dubs: SequenceItem[] = [];
   const beds: SequenceItem[] = [];
@@ -459,26 +455,26 @@ function groupItems(sequence: Sequence, groupId: string) {
 
 const itemSilent = (item: SequenceItem) => (item.type === 'audio' ? item.mix.muted === true : item.type === 'video' ? !item.embeddedAudio.enabled : true);
 
-/** 一批实例有没有出声的（实例没静音、所在轨道没静音）。 */
+/** Whether a batch of instances makes sound (the instance is not muted, and its track is not muted). */
 function audible(sequence: Sequence, items: readonly SequenceItem[]): boolean {
   const muted = new Set(sequence.tracks.filter((t) => t.muted).map((t) => t.id));
   return items.some((item) => !itemSilent(item) && !muted.has(item.trackId));
 }
 
-/** 以这组配音轨为触发的闪避规则。 */
+/** The ducking rule triggered by this dub track group. */
 function duckRules(sequence: Sequence, items: readonly SequenceItem[]) {
   const tracks = new Set(items.map((i) => i.trackId));
   return (sequence.ducking ?? []).filter((rule) => rule.trigger.kind === 'items' && rule.trigger.trackIds?.some((id) => tracks.has(id)));
 }
 
-/** 这一组现在在听什么（设计稿 model-tts.js `sourceOf`）。 */
+/** What this group is currently playing (design draft model-tts.js `sourceOf`). */
 export function sourceOf(sequence: Sequence, group: SourceGroup): DubSource {
   const { dubs } = groupItems(sequence, group.groupId);
   const dub = audible(sequence, dubs);
   const byId = new Map(sequence.items.map((i) => [i.id, i]));
   const rules = duckRules(sequence, dubs);
   let orig: boolean;
-  // 静音过的原声实例（`mute`，或分离过的 `duck`：原声实例换成了背景声与人声两轨）看它们自己。
+  // Muted originals (for `mute`, or for `duck` after separation, where the original instance was swapped for background and vocals tracks) check their own state.
   if (group.policy === 'mute' || group.mutedItemIds.length > 0) {
     const originals = group.mutedItemIds.flatMap((id) => byId.get(id) ?? []);
     orig = originals.length === 0 || audible(sequence, originals);
@@ -494,14 +490,13 @@ export function sourceOf(sequence: Sequence, group: SourceGroup): DubSource {
   return orig && dub ? 'both' : 'none';
 }
 
-/** 「听配音」能不能做：`keep` 的组没有记下原声是哪几段，听配音与两者都听是一回事。 */
+/** Whether “听配音” (listen to dub) can be done. For a `keep` group the original segments were not recorded, so listen-to-dub and listen-to-both are the same thing. */
 export function canListenDub(group: SourceGroup): boolean {
   return group.policy === 'mute' || group.policy === 'duck';
 }
 
 /**
- * 把一批实例开或关：整条轨道只放这批实例时改轨道的静音（不碰各块自己的静音），否则逐件改实例的静音。
- * 只发状态真的要变的。
+ * Turn a batch of instances on or off. If the whole track holds only these instances, change the track's mute (not each block's own mute). Otherwise change each instance's mute. Only send when the state actually changes.
  */
 function sideOperations(sequence: Sequence, items: readonly SequenceItem[], on: boolean): EditOperation[] {
   const ops: EditOperation[] = [];
@@ -525,12 +520,11 @@ function sideOperations(sequence: Sequence, items: readonly SequenceItem[], on: 
 }
 
 /**
- * 切换音源（设计稿 model-tts.js `switchSource`）：
- * - 听配音：这组的配音与分轨（背景声、人声）开，别的语言的配音与分轨关；静音记下的原声（`mute` 的原句实例，分离过的 `duck`
- *   换成两轨的实例），`duck` 时打开闪避；
- * - 听原声：所有配音与分轨关，原声恢复（各组静音过的原声取消静音，闪避关掉）；
- * - 两者都听：这组的配音开、别的关，分轨都关（原声本来就带背景与人声），原声恢复、闪避关掉。
- * `keep` 的组原声不动。`groups` 是序列上全部的配音组（含 `target` 那一组）。
+ * Switch the audio source (design draft model-tts.js `switchSource`):
+ * - Listen to dub: this group's dub and tracks (background and vocals) are on. Other languages' dub and tracks are off. The recorded originals are muted (`mute` original-sentence instances, or the two-track instances after `duck` separation). For `duck`, ducking is turned on.
+ * - Listen to original: all dub and tracks are off, and the originals are restored (originals muted by any group are unmuted, and ducking is off).
+ * - Listen to both: this group's dub is on and the others are off. All tracks are off, since the original already contains background and vocals. The originals are restored, and ducking is off.
+ * A `keep` group's originals are left alone. `groups` is all the dub groups on the sequence, including the `target` group.
  */
 export function switchSourceOperations(
   sequence: Sequence,
@@ -547,7 +541,7 @@ export function switchSourceOperations(
     ops.push(...sideOperations(sequence, dubs, mine && target !== 'original'));
     ops.push(...sideOperations(sequence, beds, mine && target === 'dub'));
   }
-  // 原声：只有「听配音」时静音这组记下的那几段（`mute` 的原句实例，或分离过的 `duck` 换成两轨的实例）；别的情况各组静音过的都恢复。
+  // Originals: only when listening to dub is this group's recorded segments muted (`mute` original-sentence instances, or the two-track instances after `duck` separation). In other cases, every group's muted originals are restored.
   const muteNow = new Set(target === 'dub' ? self.mutedItemIds : []);
   const touched = new Set<Id>();
   for (const group of groups) for (const id of group.mutedItemIds) touched.add(id);
@@ -557,7 +551,7 @@ export function switchSourceOperations(
     const want = muteNow.has(item.id);
     if (itemSilent(item) !== want) ops.push({ type: 'setAudioMix', sequenceId: sequence.id, itemId: item.id, muted: want });
   }
-  // 闪避：这组 `duck` 时听配音打开、别的关；别的组的闪避不动（它们的配音已经关了）。
+  // Ducking: for this group, `duck` turns it on when listening to dub and off otherwise. Other groups' ducking is not touched (their dub is already off).
   if (self.policy === 'duck') {
     const { dubs } = groupItems(sequence, groupId);
     for (const rule of duckRules(sequence, dubs)) {
@@ -568,11 +562,10 @@ export function switchSourceOperations(
   return ops;
 }
 
-// ---- 改译文并重配 ----
+// ---- Change the translation and redub ----
 
 /**
- * 改几句译文（「改译文并重配」的第一步）：合成念的是译文的 `naturalText`，所以改的是它（有字幕显示改写的单元，改写不动、
- * 字幕照旧），改过的单元记为 `reviewed`、`textHash` 跟着换。文字没变或是空的不改。没有改动时 null。
+ * Change the translation of several sentences (step one of “改译文并重配” (change translation and redub)). Synthesis reads the translation's `naturalText`, so that is what changes. For a unit whose subtitles show a rewrite, the rewrite is not touched and the subtitles stay as they are. The changed unit is marked `reviewed`, and its `textHash` is updated. Unchanged or empty text is not changed. Returns null when nothing changed.
  */
 export async function retextTranslation(body: TranslationBody, texts: ReadonlyMap<Id, string>): Promise<{ body: TranslationBody; changed: Id[] } | null> {
   const changed: Id[] = [];

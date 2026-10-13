@@ -27,8 +27,7 @@ const tile = style({ width: 'full' });
 const grow = style({ flexGrow: 1, minWidth: 0 });
 
 /**
- * 转场（视频格式规范 §3.9）：「进入」是片段开头那条边，「离开」是结尾那条边。选即应用（`setTransition`，可撤销），
- * 选「无」删掉。同一轨道上首尾相接的邻居在时可以和它衔接（两侧转场），否则另一侧是透明的、露出下面的轨道。
+ * Transition (video format spec §3.9): “进入” (in) is the edge at the start of the clip, and “离开” (out) is the edge at its end. Choosing one applies it immediately (`setTransition`, undoable). Choosing “无” (none) removes it. A neighbor on the same track that is directly adjacent, end to start, can blend with it in time (transitions on both sides). Otherwise the other side is transparent, exposing the track underneath.
  */
 export function TransitionSection({ item, sequence, edit, canChange }: ItemPageProps<Exclude<SequenceItem, { type: 'audio' | 'caption' }>>) {
   const [slot, setSlot] = useState<TransitionSlot>('in');

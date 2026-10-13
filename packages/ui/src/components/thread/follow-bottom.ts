@@ -1,32 +1,32 @@
 /**
- * 会话线程「跟到底」的状态机，不依赖 DOM。
+ * State machine for “跟到底” (follow to bottom) in the session thread. Does not depend on the DOM.
  *
- * - 脱钩：正在跟、scrollTop 比上一次小、且最近有向上的用户输入证据（滚轮、键盘、滚动条拖动、触摸）。
- *   只有 scrollTop 变小而没有输入证据时（上方块折叠、窗口变矮、内容缩短被浏览器夹紧），维持跟底。
- * - 重新跟上：scrollTop 比上一次大，且距底 ≤ REFOLLOW_PX。内容缩短把视口被动带到底不算。
- * - 其他情况维持原值。
+ * - Detach: currently following, scrollTop is smaller than last time, and there is recent evidence of user input upward (wheel, keyboard, dragging the scrollbar, touch).
+ *   When scrollTop gets smaller without any input evidence (a block above collapses, the window gets shorter, or the content shrinks and the browser clamps it), following is kept.
+ * - Re-follow: scrollTop is larger than last time, and the distance to the bottom is ≤ REFOLLOW_PX. The viewport being passively carried to the bottom by content shrinking does not count.
+ * - In other cases the current value is kept.
  */
 
-/** 向上输入证据的有效窗口。 */
+/** The validity window for upward-input evidence. */
 export const UPWARD_INTENT_WINDOW_MS = 100;
-/** 重新跟上要求的距底距离，容纳亚像素误差。 */
+/** Distance from the bottom required to re-follow, allowing for sub-pixel error. */
 export const REFOLLOW_PX = 1;
-/** 「接近底部」：只用于展示类判断，不参与脱钩与跟上。 */
+/** “接近底部” (near the bottom): used only for display decisions; it plays no part in detaching or re-following. */
 export const NEAR_BOTTOM_PX = 64;
 
 export interface FollowState {
   following: boolean;
-  /** 上一次 scroll 事件观察到的 scrollTop；null 表示还没观察过。 */
+  /** The scrollTop observed at the last scroll event; null means not yet observed. */
   lastScrollTop: number | null;
-  /** 最近一次向上输入的时间戳（毫秒）；null 表示没有。 */
+  /** Timestamp (ms) of the most recent upward input; null means none. */
   upwardIntentAt: number | null;
-  /** 正在拖滚动条：拖动可能远超时间窗口，期间一直算有向上输入证据。 */
+  /** Dragging the scrollbar: a drag can last well beyond the time window, so during it there is always counted as upward-input evidence. */
   scrollbarDrag: boolean;
 }
 
 export interface ScrollSample {
   scrollTop: number;
-  /** scrollHeight - scrollTop - clientHeight；弹性超滚时可能为负。 */
+  /** scrollHeight - scrollTop - clientHeight; can be negative during elastic overscroll. */
   distanceFromBottom: number;
   now: number;
 }
@@ -52,7 +52,7 @@ export function hasUpwardIntent(state: FollowState, now: number): boolean {
   return state.upwardIntentAt !== null && now - state.upwardIntentAt <= UPWARD_INTENT_WINDOW_MS;
 }
 
-/** 时间窗口内的向上输入还要多久过期（毫秒）；没有则为 0。滚动条拖动不计入。 */
+/** How long (ms) until the upward input within the time window expires; 0 if there is none. Scrollbar dragging is not counted. */
 export function upwardIntentRemaining(state: FollowState, now: number): number {
   if (state.upwardIntentAt === null) return 0;
   return Math.max(0, UPWARD_INTENT_WINDOW_MS - (now - state.upwardIntentAt));
@@ -68,7 +68,7 @@ export function nextFollowState(state: FollowState, sample: ScrollSample): Follo
   return { ...state, following, lastScrollTop: sample.scrollTop };
 }
 
-/** 跟底时是否该把视口钉到底：最近有向上输入时先不钉，免得盖掉还没派发 scroll 事件的用户滚动。 */
+/** Whether, while following, the viewport should be pinned to the bottom: when there was recent upward input, don't pin yet, so as not to override a user scroll whose scroll event has not been dispatched. */
 export function shouldPin(state: FollowState, now: number): boolean {
   return state.following && !hasUpwardIntent(state, now);
 }
@@ -78,8 +78,8 @@ export function isNearBottom(distanceFromBottom: number): boolean {
 }
 
 /**
- * 会让滚动区向上走的按键：ArrowUp、PageUp、Home（含 Cmd/Ctrl 组合，「到顶」）、Shift+Space。
- * 是否在可编辑元素里由调用方判断。
+ * Keys that scroll the area upward: ArrowUp, PageUp, Home (including Cmd/Ctrl combinations, “到顶” (go to top)), and Shift+Space.
+ * Whether the focus is inside an editable element is decided by the caller.
  */
 export function isUpwardKey(event: { key: string; shiftKey: boolean }): boolean {
   if (event.key === ' ' || event.key === 'Spacebar') return event.shiftKey;

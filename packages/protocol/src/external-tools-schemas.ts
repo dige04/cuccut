@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 
-/** `externalTools.*` 的入站校验（架构设计 §12.9），由 `schemas.ts` 并进方法表。 */
+/** Inbound validation for `externalTools.*` (architecture design §12.9), merged into the method table by `schemas.ts`. */
 
 const id = z.string().min(1).max(200);
 const name = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, { error: () => V.toolNameChars().text });
-/** 本机的绝对路径：POSIX 的 `/…` 或 Windows 的 `C:\…`。不含 NUL。 */
+/** An absolute local path: POSIX `/…` or Windows `C:\…`. Does not contain NUL. */
 const absolutePath = z
   .string()
   .max(4096)
   .regex(/^(?:\/|[A-Za-z]:[\\/])[^\0]*$/, { error: () => V.absolutePath().text });
-/** 经网关表达的同意方式：界面或 CLI。会话里的批准（`agent-approval`）只由 Runtime 自己记。 */
+/** The consent method expressed through the gateway: the UI or the CLI. Approval within a session (`agent-approval`) is recorded by the Runtime alone. */
 const via = z.enum(['app', 'cli']);
 
 export const EXTERNAL_TOOL_PARAM_SCHEMAS = {

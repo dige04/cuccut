@@ -32,15 +32,14 @@ function effectTitle(kind: EffectKind): string {
 }
 
 /**
- * 效果（视频格式规范 §3.8 的 `fx`）：每张卡管 `fx` 里的几项，拖动只叠给预览，松手整份提交一次（`setEffects`）。
- * 长度是 540 短边下的像素。页上没有控件的字段原样留着，页上写明。
+ * Effects (`fx` in video format spec §3.8): each card manages several items in `fx`. Dragging only overlays the preview, and the whole set is committed once on release (`setEffects`). Lengths are pixels at a 540 short side. Fields that have no control on this page are kept as they are, and the page says so.
  */
 export function EffectsSection({ item, sequence, edit, canChange }: ItemPageProps<EffectItem>) {
   const effects = item.fx;
   const kinds = effectKindsFor(item);
   const live = (next: Fx) => edit.live({ fx: Object.keys(next).length ? next : null });
   const commit = (next: Fx) => edit.commit([setEffectsOperation(sequence.id, item.id, next)]);
-  // 开关与重置：先叠给预览（开关立刻翻过去），再提交。
+  // Toggle and reset: overlay the preview first (the toggle flips immediately), then commit.
   const apply = (next: Fx) => {
     live(next);
     commit(next);

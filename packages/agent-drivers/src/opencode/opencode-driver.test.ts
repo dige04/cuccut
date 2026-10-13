@@ -6,7 +6,7 @@ import { silentLogger } from '@cuccut/harness';
 import { createFakeOpenCode, type FakeOpenCode } from '../testing/fake-opencode.ts';
 import { OpenCodeDriver } from './opencode-driver.ts';
 
-/** OpenCode Driver 的探测，对着假 opencode：版本判定、模型表、账号说明、缓存与强制刷新。 */
+/** Probing of the OpenCode Driver against a fake opencode: version check, model table, account notes, caching, and forced refresh. */
 describe('OpenCodeDriver.probe（假 opencode）', () => {
   let dir: string;
   let fake: FakeOpenCode;
@@ -41,11 +41,11 @@ describe('OpenCodeDriver.probe（假 opencode）', () => {
     expect(probe.models.find((m) => m.isDefault)?.id).toBe('opencode/fledge-alpha-free');
     expect(probe.models[1]!.efforts.map((e) => e.id)).toEqual(['low', 'high', 'max']);
     expect(probe.install.map((o) => o.command)).toEqual(['npm install -g @opencode/cli']);
-    // 冷启动的目录先回空的插件表：读模型表之前等到它非空。
+    // On cold start the directory first returns an empty plugin table: wait until it is non-empty before reading the model table.
     const plugins = fake.requests('GET', '/api/plugin');
     expect(plugins.length).toBeGreaterThanOrEqual(2);
     expect(plugins[0]!.location).toBe(os.homedir());
-    // 探测用的 serve 用完即关。
+    // The serve used for probing is shut down right after use.
     await expect.poll(() => fake.log().filter((e) => e.kind === 'exit').length).toBe(1);
   });
 

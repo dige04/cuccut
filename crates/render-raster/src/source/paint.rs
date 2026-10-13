@@ -1,15 +1,13 @@
-//! 油画笔触（规范 §6.9 `brush.kind: "paint"` 与 §6.2.1 `texture.finish: "paint"`）。
+//! Oil-paint strokes (spec §6.9 `brush.kind: "paint"` and §6.2.1 `texture.finish: "paint"`).
 //!
-//! 一笔 = 中心折线 + 线宽 W。沿弧长重采样，按「起笔略窄 → 满宽 → 收笔渐细」的
-//! 宽度曲线展开成若干条**鬃毛带**；每条带有自己的明暗与含色（第二种颜料），沿
-//! 笔方向按噪声断开（干笔：越到笔尾越断，边上的带先断），首尾按圆笔头缩进。
-//! 输出按 `(含色档, 明暗档)` 分桶的多边形——每桶一次 `FillPath`，不论一条
-//! path 里有多少笔，指令数至多 `3 × 5` 个。
+//! A stroke = a center polyline plus line width W. It is resampled along arc length and expanded, following a width curve of "slightly narrow at the start → full width → tapering at the end", into several **bristle bands**; each band has its own shading and color mix (a second pigment), is broken up along the stroke direction by noise (dry brush: the further toward the tail, the more it breaks, and edge bands break first), and the ends are inset as a round brush tip.
+//! The output is polygons bucketed by `(color-mix tier, shade tier)` — one `FillPath` per bucket, and regardless of how many strokes are in one
+//! path, there are at most `3 × 5` instructions.
 //!
-//! 与 `texture` 同一套纪律：**没有时间参数**，几何只由（折线、线宽、笔刷参数、
-//! 可见区间、算法版本）决定；颜色不进生成函数（[`tone_color`] 在录制期上色）。
-//! 描进度（`pathDraw` / `pathStart` / `pathEnd`）只改可见区间：宽度曲线始终按
-//! 整笔算，所以画到一半的笔没有提前收尖，前沿是一排圆头鬃毛。
+//! Same discipline as `texture`: **no time parameter**; geometry is determined only by (polyline, line width, brush parameters,
+//! visible interval, algorithm version); color does not enter the generation function ([`tone_color`] colors at record time).
+//! Drawing progress (`pathDraw` / `pathStart` / `pathEnd`) changes only the visible interval: the width curve is always computed over
+//! the whole stroke, so a half-drawn stroke is not tapered early; the leading edge is a row of round-tipped bristles.
 
 use crate::drawop::{PathData, path_from_skia};
 use motion::rng::splitmix64_unit;
@@ -18,14 +16,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use tiny_skia::PathBuilder;
 
-/// 改采样、带数、噪声或分档规则必须升版；它参与缓存键。
+/// Changing sampling, band count, noise or tiering rules must bump the version; it takes part in the cache key.
 pub const PAINT_ALGORITHM_VERSION: u32 = 1;
 
-/// 明暗档：`-TONE_STEPS..=TONE_STEPS`。
+/// Shade tier: `-TONE_STEPS..=TONE_STEPS`.
 pub const TONE_STEPS: i8 = 2;
-/// 含色档 0 / 1 / 2 与第二种颜料的混合比例。
+/// Color-mix tiers 0 / 1 / 2 and the mixing ratio of the second pigment.
 const LOAD_MIX: [f64; 3] = [0.0, 0.45, 0.85];
-/// 最亮 / 最暗一档相对底色提亮或压暗的比例。
+/// The proportion by which the lightest / darkest tier brightens or darkens the base color.
 const TONE_SPAN: f64 = 0.2;
 
 const STREAM_WIDTH: u64 = 0x7061_696E_7400_0001;
@@ -35,23 +33,23 @@ const STREAM_WAVE: u64 = 0x7061_696E_7400_0004;
 const STREAM_EDGE: u64 = 0x7061_696E_7400_0005;
 const STREAM_FILL: u64 = 0x7061_696E_7400_0006;
 
-/// 单条折线的重采样点数上限。
+/// Upper limit on resampled points for a single polyline.
 const SAMPLES_MAX: f64 = 800.0;
-/// `texture.finish: "paint"` 一条路径至多铺多少笔：超过就按比例放大行距与笔长。
+/// Maximum number of strokes laid on one path for `texture.finish: "paint"`: beyond that, line spacing and stroke length are scaled up proportionally.
 const FILL_STROKES_MAX: f64 = 4000.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PaintParams {
     pub seed: u64,
-    /// 0..10，1 = 缺省观感：宽度起伏、鬃毛明暗与毛边都按它缩放，0 = 平涂色带。
+    /// 0..10; 1 = default look: width variation, bristle shading and fringe are all scaled by it; 0 = flat color bands.
     pub rough: f64,
-    /// 0..1：干笔程度。0 = 整笔饱满，1 = 笔尾大片露底。
+    /// 0..1: degree of dry brush. 0 = the whole stroke is full, 1 = large areas of bare ground show at the tail.
     pub dry: f64,
-    /// 有没有第二种颜料。没有时含色档恒为 0，省下两倍的指令。
+    /// Whether a second pigment is used. When not, the color-mix tier is always 0, saving double the instructions.
     pub load: bool,
 }
 
-/// 一份笔触几何：`(含色档, 明暗档, 多边形)`，按 `(含色档, 明暗档)` 升序。
+/// One stroke's geometry: `(color-mix tier, shade tier, polygon)`, sorted ascending by `(color-mix tier, shade tier)`.
 #[derive(Debug, Default, PartialEq)]
 pub struct PaintGeom {
     pub buckets: Vec<(u8, i8, PathData)>,
@@ -63,7 +61,7 @@ impl PaintGeom {
     }
 }
 
-/// 按档上色：先按含色档混入第二种颜料，再按明暗档提亮 / 压暗。alpha 取底色的。
+/// Colors by tier: first mixes in the second pigment by color-mix tier, then brightens / darkens by shade tier. Alpha is taken from the base color.
 pub fn tone_color(base: &Rgba, load: Option<&Rgba>, load_level: u8, tone: i8) -> Rgba {
     let mut c = *base;
     if let Some(l) = load {
@@ -86,7 +84,7 @@ pub fn tone_color(base: &Rgba, load: Option<&Rgba>, load_level: u8, tone: i8) ->
     c
 }
 
-/// 描边：`subpaths` 每条是一笔，`vis` 是按**全部子路径首尾相接**的弧长比例区间。
+/// Stroke: each of `subpaths` is one stroke; `vis` is an arc-length proportion interval over **all subpaths joined end to end**.
 pub fn brush(
     subpaths: &[Vec<(f64, f64)>],
     width: f64,
@@ -100,7 +98,7 @@ pub fn brush(
     let mut offset = 0.0;
     for (index, (poly, len)) in subpaths.iter().zip(&lens).enumerate() {
         let (lo, hi) = ((a - offset).max(0.0), (b - offset).min(*len));
-        // 零长的一笔（一个点）：可见区间扫到它所在的弧长位置就画；整条路径都是点时按比例区间判
+        // A zero-length stroke (a single point): drawn when the visible interval sweeps over its arc-length position; when the whole path is points, judged by the proportional interval
         let dot_visible = if total > 0.0 {
             b > a && a <= offset && b >= offset
         } else {
@@ -115,7 +113,7 @@ pub fn brush(
     out.finish()
 }
 
-/// 一组整笔（折线, 线宽），全部可见。`texture.finish: "paint"` 用。
+/// A set of whole strokes (polyline, line width), all visible. Used by `texture.finish: "paint"`.
 pub fn strokes(list: &[(Vec<(f64, f64)>, f64)], params: &PaintParams) -> PaintGeom {
     let mut out = Buckets::default();
     for (index, (poly, width)) in list.iter().enumerate() {
@@ -125,8 +123,8 @@ pub fn strokes(list: &[(Vec<(f64, f64)>, f64)], params: &PaintParams) -> PaintGe
     out.finish()
 }
 
-/// `texture.finish: "paint"`：沿 `angle` 一行行铺笔，行距 `gap`、笔长 `len`、
-/// 笔宽 `width`、端点抖动 `jitter`，`density` 决定每笔去留。调用方裁剪进路径。
+/// `texture.finish: "paint"`: lays strokes row by row along `angle`, with row spacing `gap`, stroke length `len`,
+/// stroke width `width`, endpoint jitter `jitter`; `density` decides whether each stroke stays. The caller clips to the path.
 pub fn fill_layout(
     bbox: (f64, f64, f64, f64),
     tx: &scene_primitives::pathstyle::PathTexture,
@@ -164,7 +162,7 @@ pub fn fill_layout(
     while v <= half {
         let mut u = -half - unit() * len;
         while u <= half {
-            // 每笔固定消耗七个随机数：`density` 只决定去留，不挪动别的笔
+            // Each stroke consumes exactly seven random numbers: `density` only decides whether it stays, and does not shift other strokes
             let keep = unit();
             let l = len * (0.6 + unit() * 0.8);
             let j0 = (unit() - 0.5) * jit;
@@ -179,7 +177,7 @@ pub fn fill_layout(
                     to_local(u + l * k, v + off)
                 })
                 .collect();
-            // 隔行反向：起笔的粗头与收笔的尖交错，不排成一个方向的鱼鳞
+            // Alternate rows reversed: the thick starts and pointed ends of strokes interleave, rather than forming fish scales all in one direction
             if (row + (lift < 0.3) as u64) % 2 == 1 {
                 poly.reverse();
             }
@@ -245,7 +243,7 @@ fn smooth(e0: f64, e1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// 一维值噪声，`[0, 1]`。
+/// One-dimensional value noise, `[0, 1]`.
 fn vnoise(seed: u64, x: f64) -> f64 {
     let i = x.floor();
     let f = x - i;
@@ -270,7 +268,7 @@ struct Sample {
     hw: f64,
 }
 
-/// 折线按弧长取点。
+/// Samples points along the polyline by arc length.
 struct Line<'a> {
     pts: &'a [(f64, f64)],
     cum: Vec<f64>,
@@ -309,7 +307,7 @@ impl<'a> Line<'a> {
     }
 }
 
-/// 一笔。`vis` 是这条折线上的可见弧长区间（绝对长度）。
+/// One stroke. `vis` is the visible arc-length interval on this polyline (absolute length).
 fn stroke(
     poly: &[(f64, f64)],
     width: f64,
@@ -321,7 +319,7 @@ fn stroke(
     if poly.is_empty() || !(width > 0.0) || !width.is_finite() {
         return;
     }
-    // 零长的一笔（一个点）画成顺着 x 的一小抹
+    // A zero-length stroke (a single point) is drawn as a small smear running along x
     let dab;
     let (poly, vis) = if poly_len(poly) <= 1e-9 {
         let (x, y) = poly[0];
@@ -339,14 +337,14 @@ fn stroke(
     let rr = p.rough.clamp(0.0, 2.0);
     let dry = p.dry.clamp(0.0, 1.0);
 
-    // 1. 重采样：点距约 W/4
+    // 1. Resample: point spacing about W/4
     let mut h = (width / 4.0).clamp(0.5, 12.0);
     if len / h > SAMPLES_MAX {
         h = len / SAMPLES_MAX;
     }
     let m = ((len / h).ceil() as usize).max(2);
     let step = len / m as f64;
-    // 起笔 / 收笔渐变段：按笔长的比例，长笔封顶到几倍笔宽
+    // Start / end taper segments: proportional to stroke length, with long strokes capped at a multiple of the stroke width
     let ts = (0.14 * len).min(2.0 * width) / len;
     let te = (0.34 * len).min(4.0 * width) / len;
     let reach = (width * 0.5).max(step);
@@ -389,11 +387,11 @@ fn stroke(
         }
     };
 
-    // 2. 鬃毛带
+    // 2. Bristle bands
     let nb = ((width * 0.3).round() as usize).clamp(3, 40);
     let band = 2.0 / nb as f64;
     let half = band * 0.5 * 1.18;
-    // 短笔的圆头缩进按比例收，免得整笔被缩没
+    // The round-tip inset of short strokes is scaled down proportionally, so the whole stroke is not eaten away
     let short = (len / (1.5 * width)).min(1.0);
     let (vis_lo, vis_hi) = vis;
     for j in 0..nb {
@@ -404,7 +402,7 @@ fn stroke(
         let (tone_h, load_h, body) = (r(0) * 2.0 - 1.0, r(1), r(2));
         let s0 = (0.5 * width * cap + r(3) * 0.25 * width * rr) * short;
         let s1 = len - (0.35 * width * cap + r(4) * 0.3 * width * rr) * short;
-        // 画到一半：前沿与尾沿都是一排圆头
+        // Half-drawn: both the leading and trailing edges are rows of round tips
         let front = if vis_hi < len - 1e-9 {
             vis_hi - 0.35 * width * cap * short
         } else {
@@ -429,7 +427,7 @@ fn stroke(
             let thr = dry * (0.1 + 0.95 * smooth(0.35, 1.0, t)) - 0.05 + dry_edge;
             cov > thr
         };
-        // 候选位置：区间两端 + 其间的采样点
+        // Candidate positions: both ends of the interval + the sample points between them
         let mut stops = vec![lo];
         let first = (lo / step).floor() as usize + 1;
         for k in first..=m {
@@ -461,7 +459,7 @@ fn stroke(
     }
 }
 
-/// 一段连续的鬃毛带 → 一个多边形。`run` = `(弧长, 该处 streak)`。
+/// A continuous run of bristle bands → one polygon. `run` = `(arc length, streak at that point)`.
 #[allow(clippy::too_many_arguments)]
 fn emit(
     run: &[(f64, f64)],
@@ -516,8 +514,8 @@ fn emit(
     out.push(load, tone, &left, &right);
 }
 
-/// 描边笔触的几何缓存：键 = 折线逐点位 + 线宽 + 参数 + 可见区间 + 算法版本。
-/// 命中与否不影响输出，只影响耗时。
+/// Geometry cache for stroke brushes: key = per-point positions of the polyline + line width + parameters + visible interval + algorithm version.
+/// Whether it hits does not affect the output, only the time taken.
 #[derive(Default)]
 pub struct PaintCache {
     map: Mutex<HashMap<u64, Arc<PaintGeom>>>,
@@ -663,7 +661,7 @@ mod tests {
     fn dryer_brush_breaks_more() {
         let wet = brush(&[arc()], 40.0, &PaintParams { dry: 0.0, ..P }, (0.0, 1.0));
         let dry = brush(&[arc()], 40.0, &PaintParams { dry: 1.0, ..P }, (0.0, 1.0));
-        // 断开 = 更多子路径（Move 动词）
+        // A break = more subpaths (Move verb)
         let moves = |g: &PaintGeom| {
             g.buckets
                 .iter()

@@ -8,25 +8,24 @@ import { draftedBody, dropStaleDraft } from './draft-documents.ts';
 import { useDocumentBody } from './use-document-body.ts';
 
 export interface CaptionStyleState {
-  /** 字幕样式文档；字幕还在用缺省样式时没有（第一次修改新建一份）。 */
+  /** Caption style document. Does not exist while captions still use the default style (created on the first edit). */
   record: DocumentRecord | undefined;
-  /** 正文叠上草稿；还没取到是 undefined。 */
+  /** Body with the draft overlaid; undefined before it is fetched. */
   body: unknown;
-  /** Studio 根样式；正文还没取到或样式格式认不出时是 null。 */
+  /** Studio root style; null when the body is not yet fetched or the style format is not recognized. */
   root: Json | null;
-  /** 这一件所在的那枚字幕轨 chip。 */
+  /** The caption track chip this item belongs to. */
   chip: CaptionChip | undefined;
-  /** 这一件是原文还是译文。 */
+  /** Whether this item is the original or the translation. */
   own: LineKind;
-  /** 画面上用这份样式的字幕（还没有样式时：同样没有样式、能改、第一次修改会一起挂上的那些）。 */
+  /** Captions on screen that use this style. When there is no style yet: those that also have none, can be edited, and will be attached together on the first edit. */
   sharing: CaptionChip[];
-  /** 原文与译文共用这份样式，叠成双语两行。 */
+  /** Original and translation share this style, stacked as two bilingual lines. */
   paired: boolean;
 }
 
 /**
- * 一条字幕的样式文档（字幕属性页与舞台上的字幕工具条共用）：正文叠上拖动中的草稿，新版本的正文到了就丢掉旧草稿；
- * 这份样式管哪几种行，原文与译文都在就是双语两行。
+ * Style document for a caption (shared by the caption property page and the caption toolbar on the stage): overlays the draft being dragged, and when a new body version arrives, discards the old draft. This style governs which kinds of line: when both original and translation exist, it is two bilingual lines.
  */
 export function useCaptionStyle(item: CaptionItem, sequence: Sequence, documents: Record<Id, DocumentRecord>): CaptionStyleState {
   const record = item.styleDocumentId ? documents[item.styleDocumentId] : undefined;

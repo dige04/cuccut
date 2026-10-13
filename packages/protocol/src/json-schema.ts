@@ -3,19 +3,16 @@ import { refOf, type Localized, type MessageRef } from './message-ref.ts';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
 
 /**
- * 结构化输出的 JSON Schema（`models.generateText` 的 `responseFormat.schema`，架构设计 §6.4）：提交时编译一次，
- * 不合法的 schema 在提交时拒绝；模型的输出在返回之前按它校验。单独的子路径导出，界面打包不带上 zod。
+ * JSON Schema for structured output (`responseFormat.schema` of `models.generateText`, architecture design §6.4). It is compiled once at submission, and an invalid schema is rejected at submission. The model's output is validated against it before it is returned. This is a separate subpath export, so the UI bundle does not include zod.
  *
- * 支持 zod `fromJSONSchema` 认得的那部分（type、properties、required、additionalProperties、items、enum、const、
- * anyOf/oneOf/allOf、长度与范围、pattern、format、本地 `$ref`）；外部 `$ref` 与认不出的 `type` 是不合法的 schema。
- * 根必须是 `type: 'object'`：各供应商的结构化输出都以对象为根。
+ * Supports the parts that zod's `fromJSONSchema` recognizes (type, properties, required, additionalProperties, items, enum, const, anyOf/oneOf/allOf, length and range limits, pattern, format, local `$ref`). External `$ref` and unrecognized `type` values make the schema invalid. The root must be `type: 'object'`, because every provider's structured output is rooted in an object.
  */
 
-/** schema 的规范 JSON 至多这么长（字节）。 */
+/** The canonical JSON of a schema may be at most this long (bytes). */
 export const MAX_JSON_SCHEMA_BYTES = 100_000;
 
 export class JsonSchemaError extends Error {
-  /** 说明的消息引用，供按读者语言重新显示。 */
+  /** Message reference for the explanation, so it can be shown again in the reader's language. */
   readonly messageRef?: MessageRef;
   constructor(message: string | Localized) {
     super(String(message));
@@ -25,7 +22,7 @@ export class JsonSchemaError extends Error {
 }
 
 export interface CompiledJsonSchema {
-  /** 不合的地方（`路径：说明`），至多 20 条；合格时为空。 */
+  /** Places that do not match (`path: explanation`), at most 20 entries; empty when valid. */
   validate(value: unknown): string[];
 }
 

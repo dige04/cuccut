@@ -31,7 +31,7 @@ import { jobErrorText, jobWaitText, remedyHintText, remedyText } from './localiz
 import { jobRemedy } from './task-facts.ts';
 import { problemText } from './tools-gallery.ts';
 
-// 一个只给测试用的目录：引用存下之后按读者的语言重新生成。
+// A catalog just for the tests: after the reference is stored, the text is regenerated in the reader's language.
 const R = defineCatalog(
   'uiRefTest',
   {
@@ -64,7 +64,7 @@ const R = defineCatalog(
   }),
 );
 
-/** 在中文下写成（存下的是中文原话），再切到英文读。 */
+/** Written in Chinese (the stored original is Chinese), then switched to English to read. */
 function stored(make: () => { text: string } & MessageRef): { text: string; ref: MessageRef } {
   const message = make();
   return { text: message.text, ref: refOf(message) };

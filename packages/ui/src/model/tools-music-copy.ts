@@ -14,7 +14,7 @@ import { pl } from './tools-music-copy.pl.ts';
 import { tr } from './tools-music-copy.tr.ts';
 import { vi } from './tools-music-copy.vi.ts';
 
-/** 本机音乐生成的文案（译文在 `tools-music-copy.<语言>.ts`）。 */
+/** Copy for local music generation (translations in `tools-music-copy.<语言>.ts`). */
 const en = {
   modes: {
     instrumental: { label: 'Instrumental', desc: 'No vocals, just music in the style you describe' },
@@ -58,7 +58,7 @@ const en = {
   seed: (seed: number) => `Seed ${seed}`,
   steps: (n: number) => `${n} ${n === 1 ? 'step' : 'steps'}`,
   took: (n: number) => `took ${n} s`,
-  // 配乐铺满（music-bed.ts）
+  // Music bed fill (music-bed.ts)
   musicTrack: (n: number) => (n === 1 ? 'Music' : `Music ${n}`),
   tailFade: (sec: number) => `fades out over the last ${sec} s`,
   loopPieces: (n: number, total: number) => `loops ${n} times to fill ${total} s`,

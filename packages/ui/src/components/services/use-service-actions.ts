@@ -9,11 +9,11 @@ import { COMMON_COPY } from './services-copy.ts';
 import { useFlipShare } from './use-share-status.ts';
 
 /*
- * 服务页的动作（架构设计 §4.8）：起停、改配置、复制。结果都经 `services` 主题回到 services-store；
- * 这里只把返回的状态先灌一次（主题的事件随后到，内容相同），并给一句提示。
+ * Actions for the services page (architecture design §4.8): start/stop, change config, copy. Results all come back to services-store through the `services` topic.
+ * Here, the returned state is first written into the mirror once (the topic event arrives afterwards with the same content), and a hint is shown.
  */
 
-/** 把一项服务的新状态写进镜像（不等主题事件，按钮立刻跟上）。 */
+/** Writes the new state of one service into the mirror (it does not wait for the topic event, so the button catches up immediately). */
 export function putService(service: ServiceStatus) {
   useServices.getState().apply({ type: 'service.updated', service });
 }
@@ -23,8 +23,8 @@ function failed(error: unknown) {
 }
 
 /**
- * 起停一项服务（总览行与服务卡共用）。远端算力走 `nodes.share.*`（共享状态更细，见 use-share-status.ts）；
- * 其余走 `services.start` / `services.stop`。端口被占用时 `services.start` 照常返回、状态是 `error`，这时说原因。
+ * Start or stop one service (shared by the overview row and the service card). Remote compute goes through `nodes.share.*` (its shared state is finer-grained; see use-share-status.ts).
+ * The rest go through `services.start` / `services.stop`. When the port is occupied, `services.start` still returns normally with status `error`; the cause is shown then.
  */
 export function useFlipService(id: ServiceId): (on: boolean) => void {
   const runtime = useRuntime();
@@ -48,8 +48,8 @@ export function useFlipService(id: ServiceId): (on: boolean) => void {
 }
 
 /**
- * 改一项服务的配置：立即生效。成功时给 `done` 那句（不给就不提示），失败说原因；返回是否成功。
- * 开着（或出错）的服务改了端口会按新端口重开：新端口被占用时配置照样保存、服务进入 `error`，这时说没能重启与原因。
+ * Change the config of one service: takes effect immediately. On success it shows the `done` message (if none is given, no hint is shown); on failure it says the cause. Returns whether it succeeded.
+ * If a running (or errored) service has its port changed, it restarts on the new port. If the new port is occupied, the config is still saved and the service enters `error`; then it says the restart failed, and why.
  */
 export function useConfigureService(): (params: ServiceConfigureParams, done?: string) => Promise<boolean> {
   const runtime = useRuntime();
@@ -59,7 +59,7 @@ export function useConfigureService(): (params: ServiceConfigureParams, done?: s
         const before = useServices.getState().services.find((s) => s.serviceId === params.serviceId);
         const service = await runtime.configureService(params);
         putService(service);
-        // 原本好好的、或原本就出错但这次换了原因（例如为躲开被占的端口换了一个，新端口也被占）都要说；原因没变就不重复。
+        // If it was working before, or was already in error but the cause has changed this time (e.g. switched to another port to avoid the occupied one, and the new one is also occupied), always say so. If the cause is unchanged, don't repeat it.
         if (service.state === 'error' && (before?.state !== 'error' || before.error !== service.error))
           ToastQueue.negative(COMMON_COPY.restartFailed(service.error ?? COMMON_COPY.errorFix), { timeout: 5000 });
         else if (done) ToastQueue.neutral(done, { timeout: 3000 });
@@ -73,7 +73,7 @@ export function useConfigureService(): (params: ServiceConfigureParams, done?: s
   );
 }
 
-/** 复制到剪贴板并提示「…已复制」；剪贴板不可用时请用户自己选中复制。 */
+/** Copies to the clipboard and shows “…copied”; when the clipboard is unavailable, asks the user to select and copy manually. */
 export function copyText(text: string, label: string) {
   if (!navigator.clipboard) {
     ToastQueue.negative(COMMON_COPY.copyFailed, { timeout: 5000 });
@@ -85,5 +85,5 @@ export function copyText(text: string, label: string) {
   );
 }
 
-/** 失败的通用提示（客户端、别名、会话等子动作共用）。 */
+/** Generic failure message (shared by the client, alias, session and other sub-actions). */
 export const toastFailure = failed;

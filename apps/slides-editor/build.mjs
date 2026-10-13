@@ -1,9 +1,9 @@
-// 构建幻灯片编辑器（docs/design/slides §3），产物都在 dist/：
-//   index.html、assets/**   编辑器页面，Runtime 在 /slides/<grant>/ 下提供
-//   node/compiler.cjs        只装模块、不挂界面的运行时，slides_check 在 Node 里调它的编译器
-//   third-party-licenses.txt、node/third-party-licenses.txt   两者打进去的第三方代码的原始许可
+// Builds the slides editor (docs/design/slides §3); the outputs are all in dist/:
+//   index.html, assets/**   the editor page; the Runtime serves it under /slides/<grant>/
+//   node/compiler.cjs       a runtime that loads modules without mounting any UI; slides_check calls its compiler in Node
+//   third-party-licenses.txt, node/third-party-licenses.txt   the original licenses of the third-party code bundled into both
 //
-// 运行时是工作区里的 @cuccut/slides-runtime，页面模板是本目录的 index.html。输入没变时跳过，--force 强制重建。
+// The runtime is @cuccut/slides-runtime in the workspace; the page template is index.html in this directory. If the inputs have not changed, the build is skipped; --force forces a rebuild.
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -17,7 +17,7 @@ const runtimeDir = join(repoRoot, 'packages', 'slides-runtime');
 const dist = join(appDir, 'dist');
 const compilerFile = join(dist, 'node', 'compiler.cjs');
 
-/** 目录里最新的修改时间（跳过 node_modules、dist 与以点开头的）。 */
+/** The latest modification time in the directory (skips node_modules, dist, and dot-prefixed entries). */
 function newest(target) {
   if (!existsSync(target)) return 0;
   const info = statSync(target);
@@ -47,11 +47,11 @@ if (!process.argv.includes('--force') && existsSync(join(dist, 'index.html')) &&
   }
 }
 
-// 1. 编辑器页面
+// 1. Editor page
 const { build } = await import('vite');
 await build({ configFile: join(appDir, 'vite.config.ts'), logLevel: 'warn' });
 
-// 2. Node 用的编译器（vite 构建会清空 dist，所以放在后面）
+// 2. The compiler for Node (the vite build empties dist, so this runs after it)
 const esbuild = await import('esbuild');
 const compiled = await esbuild.build({
   stdin: {
@@ -65,7 +65,7 @@ const compiled = await esbuild.build({
   platform: 'node',
   format: 'cjs',
   target: 'es2022',
-  // 编辑器界面的样式与字体在 Node 里用不上
+  // The editor UI's styles and fonts are not needed in Node
   loader: { '.css': 'empty', '.woff2': 'empty' },
   logLevel: 'error',
   absWorkingDir: repoRoot,
@@ -73,7 +73,7 @@ const compiled = await esbuild.build({
   define: { 'process.env.NODE_ENV': '"production"' },
   plugins: [
     {
-      // PptxGenJS 的应用扩展，与 vite.config.ts 里的同一份
+      // PptxGenJS application extension, the same one as in vite.config.ts
       name: 'cuccut-pptxgenjs-extensions',
       setup(build) {
         build.onLoad({ filter: /[\\/]pptxgenjs[\\/]dist[\\/][^\\/]+\.js$/ }, args => {

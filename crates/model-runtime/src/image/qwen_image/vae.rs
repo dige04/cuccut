@@ -1,11 +1,10 @@
-//! AutoencoderKLQwenImage21 的单帧（图像）特化，NHWC。
+//! Single-frame (image) specialization of AutoencoderKLQwenImage21, NHWC.
 //!
-//! 参考实现是 Wan 系的 3D 因果 VAE，但 2.1 已把 CausalConv3d 特化成 2D 卷积；单帧解码时所有
-//! `time_conv` 都走 "Rep"/首块分支而被跳过，所以这里只剩 2D 卷积、通道 RMSNorm、单头注意力，
-//! 以及残差上 / 下采样块里的 DupUp3D / AvgDown3D 捷径（首帧版本）。
+//! The reference implementation is the Wan-family 3D causal VAE, but 2.1 already specialized CausalConv3d into 2D convolution. When decoding a single frame, all `time_conv` take the "Rep"/first-chunk branch and are skipped,
+//! so what remains here is 2D convolution, channel RMSNorm, single-head attention, and the DupUp3D / AvgDown3D shortcuts in the residual up/down-sampling blocks (first-frame version).
 //!
-//! 权重在两种包里都存成 F32（4-bit 包是 MLX 布局、8-bit 包是 PyTorch 布局，加载时统一成
-//! MLX 布局），逐张量转成计算精度（缺省 f16，`--vae-dtype` 可换 bf16 / f32 对照）。
+//! Weights are stored as F32 in both packages (the 4-bit package uses MLX layout, the 8-bit package uses PyTorch layout; both are unified to MLX layout at load time),
+//! and converted per tensor to the compute precision (default f16; `--vae-dtype` can switch to bf16 / f32 for comparison).
 
 use crate::backend::mlx::qwen3::WeightStore;
 use anyhow::{Context, Result, bail};
@@ -20,10 +19,9 @@ const TEMPORAL_DOWN: [bool; 4] = [false, true, true, true];
 const NUM_RES: usize = 2;
 pub const Z_DIM: i32 = 64;
 
-/// 卷积层。3×3 核在加载时做空间翻转，前向以 `flip=true`（真卷积）调用，结果仍是原来的互相关，
-/// 但 MLX 因此不走 Winograd 而走 implicit GEMM：Winograd 每次调用都要现分配 64×C×O 的变换核
-/// （1152 通道 f16 为 170 MB）、约 1.8× 输入与 1.8× 输出的变换张量和一份补零拷贝，1024² 解码
-/// 峰值因此高出 0.6 GB；implicit GEMM 只分配输出，代价是 VAE 解码慢约 1.5×（整段生成里不到 1%）。
+/// Convolution layer. The 3×3 kernel is spatially flipped at load time, and the forward pass is called with `flip=true` (true convolution). The result is still the original cross-correlation,
+/// but MLX then does not use Winograd and uses implicit GEMM instead. Winograd allocates a 64×C×O transformed kernel on every call (170 MB for 1152 channels in f16), transformed tensors of about 1.8× the input and 1.8× the output,
+/// and a zero-padded copy; the 1024² decoding peak is therefore 0.6 GB higher. Implicit GEMM only allocates the output, at the cost of VAE decoding being about 1.5× slower (under 1% of the whole generation).
 struct Conv {
     w: Array,
     b: Array,
@@ -34,7 +32,7 @@ struct Conv {
 
 impl Conv {
     fn load(s: &mut WeightStore, p: &str, pad: i32, stride: i32) -> Result<Self> {
-        // 权重是 [O, kh, kw, C]。
+        // Weights are [O, kh, kw, C].
         let mut w = s.take(&format!("{p}.weight"))?;
         let flip = w.dim(1) > 1;
         if flip {
@@ -72,9 +70,9 @@ impl Conv {
         Ok(self.conv(x, self.stride, self.pad)?.add(&self.b)?)
     }
 
-    /// 高分辨率 3×3 卷积按行条带算（每条带上下各带 1 行 halo），并逐条求值，压住单次卷积
-    /// 的输出与临时缓冲（缺省的尾段条带下很少触发，主要护着 `--vae-tail-rows 0`）。
-    /// 补零也逐条做（只在图像上下边缘补行），不物化整张补零拷贝。
+    /// High-resolution 3×3 convolutions are computed in row strips (each strip carries 1 halo row above and below), and evaluated strip by strip, to keep the output and temporary buffers of a single convolution down
+    /// (rarely triggered with the default tail strips; mainly guards `--vae-tail-rows 0`).
+    /// Zero padding is also done strip by strip (rows are padded only at the top and bottom edges of the image), without materializing a full padded copy.
     fn forward_bands(&self, x: &Array, bands: i64) -> Result<Array> {
         let h = x.dim(1);
         let rows = ((h as i64 + bands - 1) / bands) as i32;
@@ -89,8 +87,7 @@ impl Conv {
         Ok(ops::concatenate_axis(&outs, 1)?)
     }
 
-    /// `slab` 是输入的 `[u0, u1)` 行，算输出的 `[r0, r1)` 行：`u0`/`u1` 被图像边缘截掉的那
-    /// 一行补零，左右各补一列。`add` 是这几行要加的残差捷径。求值后返回。
+    /// `slab` is the input rows `[u0, u1)`, computing the output rows `[r0, r1)`: for `u0`/`u1`, the row cut off by the image edge is zero-padded, and one column is padded on each side. `add` is the residual shortcut to add to these rows. Returns after evaluating.
     fn conv_rows(&self, slab: &Array, r0: i32, r1: i32, u0: i32, u1: i32, add: Option<Array>) -> Result<Array> {
         let widths = [(0, 0), (u0 - (r0 - 1), (r1 + 1) - u1), (1, 1), (0, 0)];
         let slab = ops::pad(slab, &widths[..], None, None)?;
@@ -102,9 +99,8 @@ impl Conv {
         Ok(y)
     }
 
-    /// `conv(upsample2x(x)) + shortcut`，大图按输出行条带算：每条只把需要的低分辨率行（含
-    /// halo）上采样，整张 2× 张量、它的补零拷贝与整张捷径都不物化。`shortcut(a, b)` 给出
-    /// 输出第 `[a, b)` 行的捷径（`a`、`b` 都是偶数）。
+    /// `conv(upsample2x(x)) + shortcut`. Large images are computed by output row strips: each strip upsamples only the low-resolution rows it needs (including halo),
+    /// so the full 2× tensor, its zero-padded copy and the full shortcut are never materialized. `shortcut(a, b)` gives the shortcut for output rows `[a, b)` (`a` and `b` are both even).
     fn forward_up2(&self, x: &Array, shortcut: impl Fn(i32, i32) -> Result<Array>) -> Result<Array> {
         let (h, w, c) = (x.dim(1), x.dim(2), x.dim(3));
         let hu = 2 * h;
@@ -118,7 +114,7 @@ impl Conv {
         let mut r0 = 0;
         while r0 < hu {
             let r1 = (r0 + rows).min(hu);
-            // 需要上采样后的 [u0, u1) 行，它们来自低分辨率的 [l0, l1) 行。
+            // Needs the upsampled rows [u0, u1), which come from the low-resolution rows [l0, l1).
             let (u0, u1) = ((r0 - 1).max(0), (r1 + 1).min(hu));
             let (l0, l1) = (u0 / 2, (u1 + 1) / 2);
             let up = upsample2x(&x.index((.., l0..l1, .., ..)))?;
@@ -130,10 +126,10 @@ impl Conv {
     }
 }
 
-/// 超过这个元素数（f32 约 256 MB）的 3×3 卷积输入改走条带。
+/// 3×3 convolution inputs above this element count (about 256 MB in f32) switch to strips.
 const BAND_ELEMS: i64 = 64 << 20;
 
-/// `F.normalize(x, dim=C) * sqrt(C) * gamma` 等价于通道上的 RMSNorm。
+/// `F.normalize(x, dim=C) * sqrt(C) * gamma` is equivalent to a channel-wise RMSNorm.
 struct RmsNorm {
     gamma: Array,
 }
@@ -235,7 +231,7 @@ impl MidBlock {
     }
 }
 
-/// nearest 2x（整数倍时 nearest-exact 就是逐像素复制）。
+/// nearest 2x (at integer scale factors, nearest-exact is per-pixel copying).
 fn upsample2x(x: &Array) -> Result<Array> {
     let (h, w, c) = (x.dim(1), x.dim(2), x.dim(3));
     let y = x.reshape(&[1, h, 1, w, 1, c])?;
@@ -243,8 +239,8 @@ fn upsample2x(x: &Array) -> Result<Array> {
     Ok(y.reshape(&[1, 2 * h, 2 * w, c])?)
 }
 
-/// DupUp3D 的首帧分支：通道按 `repeat_interleave` 展开，取时间相位 `ft-1`，再像素重排 2x。
-/// 输出通道 `o`、子像素 `(b1,b2)` 读输入通道 `(o*ft*4 + (ft-1)*4 + b1*2 + b2) / r`。
+/// First-frame branch of DupUp3D: channels are expanded with `repeat_interleave`, the temporal phase `ft-1` is taken, then pixel-shuffled 2x.
+/// Output channel `o`, sub-pixel `(b1,b2)` reads input channel `(o*ft*4 + (ft-1)*4 + b1*2 + b2) / r`.
 fn dup_up(x: &Array, in_dim: i32, out_dim: i32, ft: i32) -> Result<Array> {
     let r = out_dim * ft * 4 / in_dim;
     let mut idx = Vec::with_capacity((out_dim * 4) as usize);
@@ -278,7 +274,7 @@ impl UpBlock {
             y.eval()?;
         }
         if let Some(up) = &self.upsampler {
-            // 捷径 DupUp3D 逐像素只看输入的对应位置，输出第 [a, b) 行来自输入第 [a/2, b/2) 行。
+            // The shortcut DupUp3D only looks at the corresponding input position per pixel: output rows [a, b) come from input rows [a/2, b/2).
             let shortcut = |a: i32, b: i32| {
                 let rows = x.index((.., a / 2..b / 2, .., ..));
                 dup_up(&rows, self.in_dim, self.out_dim, self.ft)
@@ -290,26 +286,25 @@ impl UpBlock {
     }
 }
 
-/// 从这个 up_block 起（连同 norm_out / conv_out）按行条带解码：它之后的激活占了解码内存的
-/// 大头（1024² 时单张就 0.6–1.2 GB），而它之前的通道多、分辨率低，整张算更划算。
+/// From this up_block onward (together with norm_out / conv_out), decoding is done by row strips. The activations after it take up most of the decoding memory
+/// (0.6–1.2 GB for one tensor at 1024²), while the layers before it have more channels and lower resolution, so computing them whole is more efficient.
 const TAIL_FROM: usize = 2;
 
-/// 尾段条带在 `TAIL_FROM` 输入分辨率上下各多带的行数。尾段只有逐像素的通道 RMSNorm、1×1
-/// 捷径、最近邻上采样与 3×3 卷积；从输出往回数，conv_out + up_block 4 的 6 个卷积是 4× 分辨率
-/// 上的 7 行，加 up_block 3 上采样卷积 1 行 → 2× 分辨率上 4 行，再加 up_block 3 的 6 个卷积与
-/// up_block 2 的上采样卷积 → 11 行 → 1× 分辨率上 6 行，加 up_block 2 的 6 个卷积 = 12 行。
-/// 条带边缘的零填充误差每过一个卷积往里渗 1 行，12 行 halo 把它们全部挡在裁掉的部分里。
+/// Number of extra rows above and below each tail strip, at the `TAIL_FROM` input resolution. The tail only has per-pixel channel RMSNorm, 1×1 shortcuts, nearest-neighbor upsampling and 3×3 convolutions.
+/// Counting back from the output: the 6 convolutions of conv_out + up_block 4 need 7 rows at 4× resolution, plus 1 row for the up_block 3 upsampling convolution → 4 rows at 2× resolution;
+/// adding the 6 convolutions of up_block 3 and the upsampling convolution of up_block 2 → 11 rows → 6 rows at 1× resolution; adding the 6 convolutions of up_block 2 = 12 rows.
+/// The zero-padding error at a strip edge leaks 1 row inward per convolution, so a 12-row halo keeps all of it inside the cropped part.
 const TAIL_HALO: i32 = 12;
 
-/// 自动选条带行数：尾段最大的张量在 4× 分辨率、288 通道上（每个输入行对应 4 行 × 4 倍宽），
-/// 让它连 halo 在内不超过 `TAIL_ELEMS`。
+/// Automatically chooses the strip row count. The largest tensor in the tail is at 4× resolution with 288 channels (each input row corresponds to 4 rows × 4× width),
+/// so that it, including the halo, does not exceed `TAIL_ELEMS`.
 fn auto_tail_rows(width: i32) -> i32 {
     let per_row = 16 * width as i64 * 288;
     ((TAIL_ELEMS / per_row.max(1)) as i32 - 2 * TAIL_HALO).max(TAIL_HALO)
 }
 
-/// 尾段一条带里最大张量的元素上限。1024² 时是 8 条 × 32 行，解码 MLX 峰值 0.87 GB（86 行
-/// 1.23 GB、整张 2.26 GB），已经高过 DiT 阶段（0.63 GB），所以不为省 halo 重算放大条带。
+/// Upper limit on the elements of the largest tensor within one tail strip. At 1024², it is 8 strips × 32 rows, with a decoding MLX peak of 0.87 GB (86 rows: 1.23 GB; whole image: 2.26 GB).
+/// That already exceeds the DiT stage (0.63 GB), so strips are not enlarged to save halo recomputation.
 const TAIL_ELEMS: i64 = 64 << 20;
 
 pub struct Decoder {
@@ -330,8 +325,8 @@ struct VaeConfig {
     latents_std: Vec<f32>,
 }
 
-/// 惰性打开后逐张量转成 `dtype` 并立即求值：F32 原件一次只在内存里留一个张量。
-/// `time_conv` 只在多帧时使用，单帧不读。
+/// After lazy opening, each tensor is converted to `dtype` and evaluated immediately, so the F32 originals keep only one tensor in memory at a time.
+/// `time_conv` is only used for multi-frame input; it is not read for single frames.
 fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<WeightStore> {
     let lazy = super::weights::lazy(files, move |k| {
         let ours = match prefix {
@@ -341,9 +336,8 @@ fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<W
         ours && !k.contains(".time_conv.")
     })
     .context("加载 VAE 权重")?;
-    // mlx-community 包是 MLX 布局（卷积核 [O,kh,kw,C]、gamma [C]），ddalcu 8-bit 包保留
-    // PyTorch 布局（[O,C,kh,kw]、gamma [C,1,1(,1)]）。3×3 核在 C=3/4 时两种形状可能一样，所以
-    // 按这一半的 (post_)quant_conv（C→C 的 1×1 卷积，C > 1）整体判定。
+    // The mlx-community package uses MLX layout (conv kernel [O,kh,kw,C], gamma [C]); the ddalcu 8-bit package keeps PyTorch layout ([O,C,kh,kw], gamma [C,1,1(,1)]).
+    // When C=3/4, the 3×3 kernel shapes can be identical in both layouts, so the layout is decided as a whole from this half's (post_)quant_conv (a 1×1 convolution C→C, C > 1).
     let probe = if prefix == "decoder" {
         "post_quant_conv.weight"
     } else {
@@ -373,7 +367,7 @@ fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<W
 }
 
 impl Decoder {
-    /// `files` 是 `vae/` 下的 safetensors 分片，`config` 是 `vae/config.json`。
+    /// `files` are the safetensors shards under `vae/`, and `config` is `vae/config.json`.
     pub fn load(files: &[PathBuf], config: &Path, dtype: Dtype) -> Result<Self> {
         let cfg: VaeConfig = serde_json::from_str(&std::fs::read_to_string(config).context("读取 vae/config.json")?)?;
         if cfg.latents_mean.len() != Z_DIM as usize || cfg.latents_std.len() != Z_DIM as usize {
@@ -425,15 +419,14 @@ impl Decoder {
         Ok(me)
     }
 
-    /// DiT 空间的 latent（`[1,h,w,64]`，已按 mean/std 归一化）→ `[1,H,W,4]`，范围 [-1,1]。
-    /// 反归一化在 f32 下做，之后才转成 VAE 的计算精度。
+    /// DiT-space latent (`[1,h,w,64]`, already normalized by mean/std) → `[1,H,W,4]`, range [-1,1].
+    /// Denormalization is done in f32, and only then is it converted to the VAE's compute precision.
     pub fn decode_normalized(self, latents: &Array, tail_rows: Option<usize>) -> Result<Array> {
         let z = latents.as_dtype(Dtype::Float32)?.multiply(&self.std)?.add(&self.mean)?;
         self.decode_raw(&z, tail_rows)
     }
 
-    /// 编码器原始 mu（未归一化）→ 图像。前段（mid 与 up_block 0–1）算完即丢权重，尾段按
-    /// `tail_rows` 行一条带（`None` 自动选，`Some(0)` 整张）。
+    /// Raw encoder mu (not normalized) → image. The front stages (mid and up_block 0–1) drop their weights as soon as they are computed; the tail is processed in strips of `tail_rows` rows (`None` auto-selects, `Some(0)` processes the whole image).
     pub fn decode_raw(self, z: &Array, tail_rows: Option<usize>) -> Result<Array> {
         let Self {
             post_quant_conv,
@@ -475,7 +468,7 @@ impl Decoder {
             }
             let y = conv_out.forward(&nn::silu(norm_out.forward(&y)?)?)?;
             let y = y.index((.., (r0 - a) * scale..(r1 - a) * scale, .., ..));
-            // f16 上溢会以 inf/NaN 出现；clip 之前查，之后 NaN 可能被夹成边界值。
+            // f16 overflow shows up as inf/NaN; check before clip, since after clipping NaN may be clamped to the boundary value.
             let finite = y.is_finite()?.all(None)?;
             finite.eval()?;
             if !finite.item::<bool>() {

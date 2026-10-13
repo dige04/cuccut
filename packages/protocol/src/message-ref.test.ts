@@ -44,7 +44,7 @@ describe('message references', () => {
   it('falls back to the stored text for unknown keys and missing references', () => {
     expect(formatRef({ key: 'nope.never' }, 'stored text')).toBe('stored text');
     expect(localizeText('stored text', undefined)).toBe('stored text');
-    // 外层认得、内层是更新的版本才有的键：内层用它生成时的文字。
+    // Keys that the outer layer recognizes but that only the newer inner version has: the inner layer uses the text it generated them with.
     const outer = { key: 'refTest.wrapped', params: { reason: { key: 'nope.newer', text: 'Disk full' } } };
     expect(formatRef(outer, 'x')).toBe('Export failed: Disk full');
   });

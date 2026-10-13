@@ -3,18 +3,18 @@ import { LOCAL_PROVIDER, bundleChips, type ModelChip } from './models-local.ts';
 import { M } from './models-tts-local-copy.ts';
 
 /**
- * 设置 › 模型 › 语音合成 › 本地模型的一行（设计稿 settings-local.jsx 的 ModelRow、model-tts.js 的 `modelBrief`）：
- * 行上只写「能拿它做什么」——出声方式、要不要自己给录音、风格、会念哪些语言、体积；许可不许商用的标出来。
- * 事实都从 `local` Provider 的 `synthesizeSpeech` 模型描述（`SpeechModelInfo.local`）来，不按模型名猜。
+ * One row of a local speech-synthesis model under Settings › Models › Speech synthesis (design draft settings-local.jsx ModelRow, model-tts.js `modelBrief`):
+ * the row says only “what you can do with it”: how it produces sound, whether you must supply your own recording, style, which languages it speaks, and size. Licenses that forbid commercial use are flagged.
+ * Facts all come from the `synthesizeSpeech` model description of the `local` Provider (`SpeechModelInfo.local`), not guessed from the model name.
  */
 
-/** `local` Provider 列出的合成模型，按模型包 ID 取（本地模型的 `modelId` 就是 `bundleId`）。 */
+/** Synthesis models listed by the `local` Provider, taken by model pack ID (a local model's `modelId` is its `bundleId`). */
 export function localSpeechModels(view: ModelCapabilitiesView | null): Map<string, SpeechModelInfo> {
   const local = view?.synthesizeSpeech.providers.find((p) => p.providerId === LOCAL_PROVIDER);
   return new Map((local?.models ?? []).map((m) => [m.modelId, m]));
 }
 
-/** 试听面板怎么出声：模型自带说话人（`preset`）、按描述造声（`describe`），或内置音色与克隆（`clone`）。 */
+/** How the preview panel produces sound: the model's own speaker (`preset`), a voice from description (`describe`), or built-in voices and cloning (`clone`). */
 export type QuickKind = 'preset' | 'describe' | 'clone';
 
 export function quickKind(model: Pick<SpeechModelInfo, 'voiceModes' | 'local'>): QuickKind {
@@ -23,12 +23,12 @@ export function quickKind(model: Pick<SpeechModelInfo, 'voiceModes' | 'local'>):
   return 'preset';
 }
 
-/** 能用一段录音克隆（「我的声音」能在它上面试）。 */
+/** Can clone from a recording (“My voice” can be tried on it). */
 export function canClone(model: Pick<SpeechModelInfo, 'voiceModes'>): boolean {
   return model.voiceModes.includes('clone');
 }
 
-/** 会念哪些语言：不限时写「语言不限」；多于五种只写前四种和总数。 */
+/** Which languages it speaks: when unrestricted, write “Any language”; with more than five, only the first four and the total. */
 export function languagesFact(languages: SpeechModelInfo['languages']): string {
   if (languages === 'any') return M.languagesAny;
   const short = languages.map((c) => M.languageShort(c));
@@ -41,7 +41,7 @@ export interface TtsBrief {
 }
 
 /**
- * 行上的简介（设计稿 `modelBrief`）。情绪控制这一版的请求还不带（`LocalSpeechTraits.emotion` 只描述引擎），行上不写「情绪可调」。
+ * Brief on the row (design draft `modelBrief`). Emotion control is not yet included in requests in this version (`LocalSpeechTraits.emotion` only describes the engine), so the row does not say “emotion adjustable”.
  */
 export function ttsBrief(model: SpeechModelInfo): TtsBrief {
   const local = model.local;
@@ -73,19 +73,19 @@ export function ttsBrief(model: SpeechModelInfo): TtsBrief {
   return { summary, facts };
 }
 
-/** 装好的组件一共多大（没装齐或没报大小时 null；共享组件按它占的算）。 */
+/** Total size of the installed components (null if not fully installed or if sizes are not reported; shared components count by their share). */
 export function installedBytes(bundle: Pick<ModelBundleStatus, 'components'>): number | null {
   const comps = bundle.components;
   if (!comps?.length || comps.some((c) => c.bytes === null)) return null;
   return comps.reduce((sum, c) => sum + (c.bytes ?? 0), 0);
 }
 
-/** 只许非商业用途的许可（行上标「仅限非商用」，下载前要让人看到）；可商用的给 null。 */
+/** License permitting only non-commercial use (the row marks “Non-commercial only”, shown to the user before download); commercially usable ones get null. */
 export function nonCommercial(license: ModelLicense | undefined | null): ModelLicense | null {
   return license && !license.commercialUse ? license : null;
 }
 
-/** 许可地址里的上游主（huggingface.co/k2-fsa/OmniVoice → k2-fsa），找不到就写许可名。 */
+/** The upstream owner in the license URL (huggingface.co/k2-fsa/OmniVoice → k2-fsa); if not found, write the license name. */
 export function licenseOwner(license: Pick<ModelLicense, 'url' | 'name'>): string {
   try {
     const owner = new URL(license.url).pathname.split('/').filter(Boolean)[0];
@@ -95,12 +95,12 @@ export function licenseOwner(license: Pick<ModelLicense, 'url' | 'name'>): strin
   }
 }
 
-/** 许可提要一行（设计稿 `ttsLicenseBrief`）：「CC-BY-NC-4.0 · 只许非商业用途 · 商用要向 k2-fsa 另行申请」。 */
+/** One-line license summary (design draft `ttsLicenseBrief`): “CC-BY-NC-4.0 · non-commercial use only · commercial use requires a separate application to k2-fsa”. */
 export function licenseBrief(license: ModelLicense): string {
   return license.commercialUse ? M.licenseCommercial(license.name) : M.licenseNonCommercial(license.name, licenseOwner(license));
 }
 
-/** 合成模型包一行的标签：默认、Worker 状态、缺的组件（`ownFiles` 同 `bundleChips`），再加「仅限非商用」。 */
+/** Label for a synthesis model pack row: default, Worker status, missing components (`ownFiles`, same as `bundleChips`), plus “Non-commercial only”. */
 export function ttsChips(bundle: ModelBundleStatus, isDefault: boolean, ownFiles?: boolean): ModelChip[] {
   const chips = bundleChips(bundle, isDefault, ownFiles);
   if (nonCommercial(bundle.license)) chips.push({ label: M.nonCommercialChip, tone: 'notice' });
@@ -108,17 +108,15 @@ export function ttsChips(bundle: ModelBundleStatus, isDefault: boolean, ownFiles
 }
 
 /**
- * 引擎家族的说明（设计稿 model-tts.js 的 ENGINES `desc`，按 `LocalSpeechTraits.family` 取）。
- * 只写这一版能用上的：情绪控制、按目标时长合成这些引擎能力还没接到请求里，不写。
+ * Engine family description (design draft model-tts.js ENGINES `desc`, taken by `LocalSpeechTraits.family`).
+ * Only what this version can use is written: emotion control and synthesis to a target duration are engine capabilities not yet wired into requests, so they are not mentioned.
  */
 export function familyDesc(model: Pick<SpeechModelInfo, 'local'>): string | null {
   return model.local ? (M.familyDesc[model.local.family] ?? null) : null;
 }
 
 /**
- * 试听前要先说清楚的一句（设计稿 `quickSlow`）；没有就是 null。模型描述的 `notes` 优先（candle 在 CPU 上比实时慢几倍到上百倍，
- * 一次试听要等几分钟，这时 VoxCPM2 的实时率与大模型的说法都不对），其次按描述造声的说明、VoxCPM2 的实时率、不许商用，
- * 最后是大模型的慢。
+ * A sentence to state clearly before previewing (design draft `quickSlow`); null if none. The model description's `notes` take priority (candle on CPU is several times to a hundred times slower than real time, so one preview takes minutes, and then VoxCPM2's real-time-factor claim and the large-model claim are both wrong). Next come the voice-from-description note, VoxCPM2's real-time factor, the non-commercial restriction, and finally the large model's slowness.
  */
 export function quickNote(model: SpeechModelInfo): string | null {
   if (model.notes) return model.notes;

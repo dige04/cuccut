@@ -1,8 +1,6 @@
-//! CucCut 产品剪辑域的纯函数核心。
+//! The pure-function core of CucCut's product editing domain.
 //!
-//! 本 crate 不做 I/O：源级无损 cuts、媒体视图、时间轴 clips、词锚点与
-//! `timeline.json` schema 都在这里求值。CLI、serve、Studio 与原生客户端必须
-//! 消费同一结果，不能各自复制时间语义。
+//! This crate performs no I/O: source-level lossless cuts, media views, timeline clips, word anchors and the `timeline.json` schema are all evaluated here. The CLI, serve, Studio and native clients must consume the same results and must not each copy the timing semantics.
 
 #![recursion_limit = "512"]
 

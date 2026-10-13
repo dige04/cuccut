@@ -14,7 +14,7 @@ vi.hoisted(() => {
 const KEY = 'cuccut.transcript-copy';
 
 beforeEach(async () => {
-  // setState 也会写进存储：清掉再重载，回到没存过的样子。
+  // setState also writes to storage: clear it and reload, returning to the never-saved state.
   useTranscriptCopyPrefs.setState({ ...COPY_DEFAULTS });
   localStorage.removeItem(KEY);
   await useTranscriptCopyPrefs.persist.rehydrate();

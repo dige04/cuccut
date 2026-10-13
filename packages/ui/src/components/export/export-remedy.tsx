@@ -6,11 +6,11 @@ import { EXPORT_COPY } from './export-copy.ts';
 import { ProblemAlert, usePickDir } from './export-parts.tsx';
 
 /**
- * 被拒或失败之后界面能直接做的那一步（架构设计 §9.11 的拒绝码，Runtime export-service.ts 的 `details`）：
- * - 成片有画不出来的内容：`onUnsupported: 'skip'` 重提（每项记一条警告）；
- * - 便携包有读不到的素材：`missingAssets: 'skip'` 重提（清单里如实标缺失）；
- * - 位置写不进、同名、空间不够、保存失败：换个目录再导；
- * - 几份文档都能导：指定一份再导。
+ * The step the UI can take directly after a rejection or failure (architecture design §9.11 rejection codes, Runtime export-service.ts `details`):
+ * - The output has content that cannot be rendered: resubmit with `onUnsupported: 'skip'` (one warning recorded per item);
+ * - The portable bundle has assets that cannot be read: resubmit with `missingAssets: 'skip'` (the list honestly marks them as missing);
+ * - The location cannot be written, a name conflicts, there is not enough space, or saving failed: export again to another folder;
+ * - Several documents can be exported: pick one and export again.
  */
 export function RemedyButtons({
   problem,
@@ -71,7 +71,7 @@ export function RemedyButtons({
   }
 }
 
-/** 提交被拒：原因加补救按钮。 */
+/** Submission rejected: the reason plus a remedy button. */
 export function RejectedAlert({
   problem,
   settings,

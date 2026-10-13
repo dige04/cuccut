@@ -14,7 +14,7 @@ import { pl } from './rc-design-system.pl.ts';
 import { tr } from './rc-design-system.tr.ts';
 import { vi } from './rc-design-system.vi.ts';
 
-/** 会话里的设计系统（docs/design/canvas §10）。英文是键与类型的来源，译文在 `rc-design-system.<语言>.ts`。 */
+/** Design systems in a session (docs/design/canvas §10). English is the source of keys and types; translations are in `rc-design-system.<language>.ts`. */
 const en = {
   notASystem: "This folder isn't a design system: it has no valid design-system.json",
 };

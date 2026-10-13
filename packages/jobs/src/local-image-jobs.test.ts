@@ -24,9 +24,8 @@ import { ResourceScheduler } from './resource-scheduler.ts';
 import { FAKE_MODEL_WORKER } from './index.ts';
 
 /**
- * 本地文生图走完整条路（架构设计 §6.1、§6.5）：ModelServices 选择 `local` 的生图模型，JobManager 在提交时冻结尺寸与 seed，
- * 本地 Provider 在 Model Worker 进程里执行（假的 Worker，`testing/fake-model-worker.ts`），输出按生成任务的规则校验与发布。
- * 模型包是测试用的：candle 后端（任何平台都能跑），模型描述借真实模型包的。
+ * Local text-to-image runs the full path (architecture design §6.1, §6.5): ModelServices selects the `local` image model, JobManager freezes the size and seed at submission, and the local Provider executes in the Model Worker process (a fake Worker, `testing/fake-model-worker.ts`). Output is validated and published by the rules for generation jobs.
+ * The model package is for testing: a candle backend (runs on any platform), with the model description borrowed from a real model package.
  */
 
 const GiB = 1024 * 1024 * 1024;
@@ -131,7 +130,7 @@ describe('本地文生图（假 Model Worker）', () => {
       videos: new FakeVideos(),
       library,
       resources: scheduler,
-      // 解码校验：用自检的 PNG 解析代替 ffprobe。
+      // Decode validation: uses the self-checking PNG parser in place of ffprobe.
       probe: async (file) => {
         const parsed = inspectPng(await fs.readFile(file));
         return parsed.ok
@@ -172,7 +171,7 @@ describe('本地文生图（假 Model Worker）', () => {
       cost: 'free-local',
       local: { steps: { min: 8, max: 40, step: 4, default: 20 } },
     });
-    // 试画的 512² 能提交，但不进画幅（宽高比只有长边 1024 的几档）。
+    // A trial 512² submits successfully but does not enter the aspect ratios (only the few ratios whose long side is 1024).
     expect(capability.models[0]!.aspectRatios.map((a) => a.size)).not.toContain('512x512');
   });
 

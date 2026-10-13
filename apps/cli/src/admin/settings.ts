@@ -3,7 +3,7 @@ import { defineNoun } from './context.ts';
 import { M } from './settings-copy.ts';
 import { formatSettingLine, formatSettingValue, formatSettings, parseSettingsArgs } from './settings-output.ts';
 
-/** `cuccut settings`：经 `settings.get` / `settings.set` 读写 Runtime 持有的偏好设置（架构设计 §5.10）。 */
+/** `cuccut settings`: reads and writes the preferences held by the Runtime through `settings.get` / `settings.set` (Architecture design §5.10). */
 export const settings = defineNoun({
   name: 'settings',
   get usage() {
@@ -13,7 +13,7 @@ export const settings = defineNoun({
   async run(ctx) {
     const command = ctx.parse(() => parseSettingsArgs(ctx.args));
     if (command.kind === 'list') {
-      // 不给 `keys` 时是全部键。
+      // When `keys` is not given, all keys are shown.
       const view = (await ctx.client.request('settings.get', {})) as SettingsSnapshot;
       return ctx.done(view, formatSettings(view));
     }
@@ -23,7 +23,7 @@ export const settings = defineNoun({
     }
     const value = command.kind === 'set' ? command.value : null;
     const view = await ctx.client.request('settings.set', { values: { [command.key]: value } }).catch((error: unknown) => {
-      // 键已经在本地认过，被拒绝就是值不合规定：给出这个键的说明，而不是笼统的「参数不合法」。
+      // Keys are already checked locally. If a value is rejected, it does not meet the rules, so give that key's explanation rather than a generic "invalid argument".
       if (error instanceof RpcError && error.code === 'invalid-request') {
         throw ctx.usageError(M.settingRejected(command.key, formatSettingValue(value), SETTING_DESCRIPTIONS[command.key]));
       }

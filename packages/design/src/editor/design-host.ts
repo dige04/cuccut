@@ -1,21 +1,21 @@
 /**
- * 设计稿运行时（@cuccut/design-runtime）从 globalThis.designHost 读取的宿主能力（docs/design/canvas §4）。
- * 原运行时读 globalThis.claude；移植时把这些读取点都改成了 designHost，每处带 `CucCut:` 注释。
+ * Host capabilities that the design canvas runtime (@cuccut/design-runtime) reads from globalThis.designHost (docs/design/canvas §4).
+ * The original runtime read globalThis.claude. When porting, all of these read points were changed to designHost, each marked with a `CucCut:` comment.
  *
- * 宿主对象与幻灯片编辑器是同一个（@cuccut/slides/editor 的 connectEditorHost），所以形状就是 SlidesHost。
- * 各能力在运行时里的读取点（路径相对 packages/design-runtime/src）：
- *   artifact / self  platform/design-files-port.ts、platform/publish.ts、platform/document-store.ts（publish 批量写文件，带 ifMatch）
- *   user             platform/user-capabilities.ts（id / canEdit / can / profiles；不提供 me，运行时当作取不到当前用户的资料）
- *   assets           platform/image-upload.ts（粘贴、拖入的图片与字体，返回 /_blob/<id>）
- *   comments         comments/host-controller.ts（customAnchors：运行时算锚点，宿主弹批注框）
- *   chat             canvas/claude-handoff.tsx（「交给智能体」的提示放进会话的输入框）
- *   downloads        export/downloads.tsx 的 saveThroughHost（导出的文件交给父窗口保存，downloads-bridge.ts；页面单独打开时不提供）
- * 不提供（运行时都有兜底，见 packages/design-runtime/README.md）：
- *   use       按名字异步取能力；没有时 platform/host-capabilities.ts 直接读上面的字段，不等待
- *   sample    快速编辑要宿主代为调用模型（fast-edit/sampling-capability.ts）；功能开关里快速编辑也是关的
- *   db、room  旧的数据库存储与多人在线（platform/database-adapter.ts）；运行时按文件模式、单用户工作
- *   hot       外部改动就地应用（platform/hot-reload.ts）；CucCut 改为先发布未保存的改动再重新载入
- *   commentLabels 只有幻灯片运行时会问
+ * The host object is the same one the slide editor uses (connectEditorHost from @cuccut/slides/editor), so its shape is SlidesHost.
+ * Where each capability is read in the runtime (paths relative to packages/design-runtime/src):
+ *   artifact / self  platform/design-files-port.ts, platform/publish.ts, platform/document-store.ts (publish batch-writes files, with ifMatch)
+ *   user             platform/user-capabilities.ts (id / canEdit / can / profiles; `me` is not provided, so the runtime treats the current user's profile as unavailable)
+ *   assets           platform/image-upload.ts (images and fonts pasted or dragged in, returning /_blob/<id>)
+ *   comments         comments/host-controller.ts (customAnchors: the runtime computes anchors, and the host opens the comment box)
+ *   chat             canvas/claude-handoff.tsx (the "hand off to agent" prompt is placed in the session's input box)
+ *   downloads        export/downloads.tsx saveThroughHost (exported files are handed to the parent window to save, downloads-bridge.ts; not provided when the page is opened standalone)
+ * Not provided (the runtime has fallbacks for all of them, see packages/design-runtime/README.md):
+ *   use       asynchronously gets a capability by name; without it, platform/host-capabilities.ts reads the fields above directly, without waiting
+ *   sample    fast edit needs the host to call the model on its behalf (fast-edit/sampling-capability.ts); fast edit is also off in the feature flags
+ *   db, room  the old database storage and multi-user online (platform/database-adapter.ts); the runtime works in file mode, single-user
+ *   hot       applies external changes in place (platform/hot-reload.ts); CucCut instead publishes unsaved changes and then reloads
+ *   commentLabels only the slide runtime asks for this
  */
 import type { SlidesHost } from '@cuccut/slides/editor';
 import type { HostDownloadsCapability } from './downloads-bridge.ts';
@@ -25,6 +25,6 @@ export type { HostDownloadsCapability, HostSaveFile } from './downloads-bridge.t
 export type DesignHost = Omit<SlidesHost, 'commentLabels' | 'use'> & { downloads?: HostDownloadsCapability };
 
 declare global {
-  // eslint-disable-next-line no-var -- 全局变量只能用 var 声明
+  // eslint-disable-next-line no-var -- global variables can only be declared with var
   var designHost: DesignHost | undefined;
 }

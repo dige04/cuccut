@@ -4,20 +4,20 @@ import { RpcError, SKILL_FILE, SKILL_LIMITS, type Localized } from '@cuccut/prot
 import { RcSkills } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 从 GitHub 取一个 skill 目录（架构设计 §12.9）。只用 GitHub 的公开接口：
+ * Fetches a skill directory from GitHub (architecture design §12.9). Uses only GitHub's public interfaces:
  *
- * 1. 地址里没写 `ref` 时取仓库的默认分支；把 `ref` 解析成提交 sha（之后都按这个提交取，导入的内容与记下的提交一致）；
- * 2. 从根树沿子目录一级一级找到目标目录的树，再递归列出它下面的条目（只列这个目录，不列整个仓库）；
- * 3. 先查条目：根目录要有 `SKILL.md`，不得有符号链接，文件数与总大小不超过上限，点开头的条目与子模块不取；都过了才下载；
- * 4. 按提交从 raw 地址逐个下载文件，按清单里的大小设上限，写进调用方给的暂存目录。
+ * 1. If the address has no `ref`, uses the repository's default branch. Resolves `ref` to a commit sha, so everything after is fetched at that commit and the imported content matches the recorded commit.
+ * 2. From the root tree, walks subdirectories level by level to find the target directory's tree, then recursively lists the entries under it (only this directory, not the whole repository).
+ * 3. Checks the entries first. The root must have `SKILL.md`. There must be no symbolic links. The file count and total size must not exceed the limits. Dot-prefixed entries and submodules are not fetched. Files are downloaded only after all of this passes.
+ * 4. Downloads files one by one from the raw address at that commit, sets a size limit per the manifest, and writes them into the staging directory the caller provided.
  *
- * 不执行任何下载的内容。没有重试：失败如实报告，用户再导入一次即可。每个请求有超时，整次导入另有总时限。
+ * Does not execute any downloaded content. No retries: failures are reported as they are, and the user simply imports again. Each request has a timeout, and the whole import has an overall time limit.
  */
 
 export const GITHUB_API_BASE = 'https://api.github.com';
 export const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com';
 const ALLOWED_HOSTS = new Set(['api.github.com', 'raw.githubusercontent.com', 'codeload.github.com']);
-/** 一次 JSON 回应（仓库信息、一级树、递归树）的上限。 */
+/** Upper limit for one JSON response (repository info, first-level tree, recursive tree). */
 const JSON_MAX_BYTES = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
 const NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
@@ -25,17 +25,17 @@ const NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 export interface GithubSkillRef {
   owner: string;
   repo: string;
-  /** 地址里写的分支、标签或提交；没写时 null（用默认分支）。 */
+  /** Branch, tag or commit written in the address. null when not given (the default branch is used). */
   ref: string | null;
-  /** 仓库里的子目录，`/` 分隔；仓库根为空串。 */
+  /** Subdirectory in the repository, `/`-separated. Empty string for the repository root. */
   path: string;
-  /** 规范化的地址。 */
+  /** The normalized address. */
   url: string;
 }
 
 export interface GithubFetchOptions {
   fetch?: typeof fetch;
-  /** 测试用：换掉接口与 raw 的基址。 */
+  /** For tests: replaces the base URLs of the API and raw. */
   apiBase?: string;
   rawBase?: string;
   signal?: AbortSignal;
@@ -46,8 +46,8 @@ function urlInvalid(message: Localized, input: string): RpcError {
 }
 
 /**
- * 认 `owner/repo`、`https://github.com/<owner>/<repo>`（可带 `.git`、末尾斜杠、查询与锚点）与
- * `https://github.com/<owner>/<repo>/tree/<ref>/<子目录>`。`ref` 取 `tree/` 之后的一段：名字里带 `/` 的分支要换成提交 sha 或标签再导入。
+ * Recognizes `owner/repo`, `https://github.com/<owner>/<repo>` (may carry `.git`, a trailing slash, a query and a fragment), and
+ * `https://github.com/<owner>/<repo>/tree/<ref>/<subdirectory>`. `ref` takes the segment after `tree/`. A branch whose name contains `/` must be replaced by a commit sha or tag before importing.
  */
 export function parseGithubSkillUrl(input: string): GithubSkillRef {
   const raw = input.trim();
@@ -99,8 +99,8 @@ interface TreeEntry {
 }
 
 /**
- * 把 `ref` 指的那个目录下载到 `staging`（必须已存在且为空）。返回实际用的 `ref` 与提交。
- * 内容不合规（缺 `SKILL.md`、有符号链接）时 `SKILL_INVALID`，超过上限时 `SKILL_TOO_LARGE`，都在下载文件之前。
+ * Downloads the directory that `ref` points to into `staging` (which must already exist and be empty). Returns the actual `ref` used and the commit.
+ * If the content is noncompliant (missing `SKILL.md`, or has symbolic links), it fails with `SKILL_INVALID`. If it exceeds the limit, it fails with `SKILL_TOO_LARGE`. Both checks happen before any file is downloaded.
  */
 export async function fetchGithubSkill(
   target: GithubSkillRef,
@@ -121,7 +121,7 @@ export async function fetchGithubSkill(
   ).trim();
   if (!/^[0-9a-f]{40}$/.test(commit)) throw http.network(RcSkills.noRefCommit({ where, ref }));
 
-  // 沿子目录一级一级往下找，只列需要的那几层。
+  // Walks down the subdirectories level by level, listing only the layers that are needed.
   let treeSha = commit;
   const segments = target.path ? target.path.split('/') : [];
   for (let i = 0; i < segments.length; i++) {
@@ -161,7 +161,7 @@ export async function fetchGithubSkill(
         blobs.push({ path: entry.path, size: typeof entry.size === 'number' ? entry.size : 0 });
       }
     }
-    // `tree` 是目录本身（递归列表里已经展开），`commit` 是子模块：都不取。
+    // `tree` is the directory itself (already expanded in the recursive listing), and `commit` is a submodule. Neither is fetched.
   }
   if (!blobs.some((b) => b.path === SKILL_FILE)) issues.push(RcSkills.folderRootMissingFile({ file: SKILL_FILE }));
   if (issues.length) {
@@ -199,7 +199,7 @@ export async function fetchGithubSkill(
   return { ref, commit, files: blobs.length, bytes: received };
 }
 
-/** 几个请求共用的部分：超时、上限、状态码换成错误码、重定向只认 GitHub 的主机。 */
+/** Shared parts of several requests: timeout, limits, status codes mapped to error codes, and redirects accepted only to GitHub's hosts. */
 class GithubHttp {
   readonly #fetch: typeof fetch;
   readonly #api: string;
@@ -247,13 +247,13 @@ class GithubHttp {
     } catch {
       throw this.network(timeout.aborted ? RcSkills.githubConnectTimeout({ what }) : RcSkills.githubUnreachable({ what }));
     }
-    // 跟随了重定向（例如仓库改了名）时，最后的地址仍要在 GitHub 的主机上。
+    // When a redirect was followed (for example, the repository was renamed), the final address must still be on GitHub's host.
     if (response.url && response.redirected) {
       let host = '';
       try {
         host = new URL(response.url).hostname;
       } catch {
-        // 地址不合法：按不认识的主机处理。
+        // Invalid address: handled as an unrecognized host.
       }
       if (!ALLOWED_HOSTS.has(host)) {
         await response.body?.cancel().catch(() => {});

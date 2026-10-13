@@ -1,6 +1,6 @@
-//! 闪避规则的设置与删除（视频格式规范 §3.9）。展开成增益包络在 `render-graph` 里。
+//! Setting and deleting ducking rules (video format spec §3.9). Expanded into a gain envelope in `render-graph`.
 //!
-//! 深度、起落时长的区间与缺省取 v2 的 `timeline::duck` 常量。
+//! The ranges for depth and fade in/out durations, and the defaults, are taken from v2's `timeline::duck` constants.
 
 use std::collections::BTreeSet;
 
@@ -27,8 +27,8 @@ pub(crate) struct DuckingInput<'a> {
     pub release: Option<&'a str>,
 }
 
-/// 新建或修改一条闪避规则。新建要有 `trigger` 与 `target`；修改只改给出的字段，空的名字去掉名字。
-/// 目标组里的轨道与实例须没有锁定（规则改变它们的声音）；触发组只是被读，不要求。
+/// Creates or modifies a ducking rule. Creating requires `trigger` and `target`; modifying changes only the fields given, and an empty name removes the name.
+/// The tracks and instances in the target group must not be locked (the rule changes their sound). The trigger group is only read, so no such requirement applies.
 pub(crate) fn set_ducking(state: &mut VideoState, input: DuckingInput<'_>) -> EngineResult<()> {
     let (sequence_id, _, _) = require_sequence(state, Some(input.sequence_id))?;
     let sequence_id = sequence_id.to_string();
@@ -90,7 +90,7 @@ pub(crate) fn set_ducking(state: &mut VideoState, input: DuckingInput<'_>) -> En
     if let Some(r) = input.release {
         rule.release = ramp(r, "release")?;
     }
-    // 只校验这次给出的组：组里引用的轨道或实例被删掉之后，规则照样能改别的字段（渲染时那一项不匹配任何实例）。
+    // Only the groups given in this call are validated: after a track or instance referenced in a group is deleted, the rule can still change other fields (at render time that entry matches no instance).
     if input.trigger.is_some()
         && let Some(group) = rule.trigger.group()
     {
@@ -159,7 +159,7 @@ pub(crate) fn remove_ducking(state: &mut VideoState, sequence_id: Option<&str>, 
     Ok(())
 }
 
-/// 拆分实例时，点名了它的组同时点名右半：两半的声音照旧触发或被压低。
+/// When an instance is split and its group names it, the right half is also named: both halves still trigger or are ducked as before.
 pub(crate) fn follow_split(state: &mut VideoState, item_id: &str, right_id: &str) {
     for placed in state.ducking.values_mut() {
         let rule = &mut placed.value;
@@ -171,7 +171,7 @@ pub(crate) fn follow_split(state: &mut VideoState, item_id: &str, right_id: &str
     }
 }
 
-/// 合并之后：组里的靠后那件换成留下的那件。
+/// After merging: in the group, the later item is replaced with the one that remains.
 pub(crate) fn follow_join(state: &mut VideoState, early_id: &str, late_id: &str) {
     for placed in state.ducking.values_mut() {
         let rule = &mut placed.value;
@@ -181,7 +181,7 @@ pub(crate) fn follow_join(state: &mut VideoState, early_id: &str, late_id: &str)
     }
 }
 
-/// 组非空；轨道与实例都在这个序列里，且是有声音的种类（音频轨道；音频、视频、合成实例）。
+/// The group is non-empty; the tracks and instances are all in this sequence and are of a kind that carries sound (audio tracks; audio, video and composition instances).
 fn check_group(state: &VideoState, sequence_id: &str, group: &DuckingGroup, field: &str) -> EngineResult<()> {
     if group.is_empty() {
         return Err(ErrorBody::invalid_operation(msg!("engine.duckingGroupEmpty", "{field} needs at least one track or clip", field)));
@@ -227,7 +227,7 @@ fn check_group(state: &VideoState, sequence_id: &str, group: &DuckingGroup, fiel
     Ok(())
 }
 
-/// 起落时长：十进制秒，在 `timeline::duck::DUCK_TIME_RANGE` 里。
+/// Fade in/out duration: decimal seconds, within `timeline::duck::DUCK_TIME_RANGE`.
 fn ramp(text: &str, field: &str) -> EngineResult<MediaTime> {
     let value = editor_semantics::parse_decimal_seconds(text, field)?;
     let (lo, hi) = timeline::duck::DUCK_TIME_RANGE;
@@ -238,7 +238,7 @@ fn ramp(text: &str, field: &str) -> EngineResult<MediaTime> {
     Ok(MediaTime::from_ratio(value, field)?)
 }
 
-/// v2 的缺省起落（秒，f64）写成十进制字符串再走同一条解析。
+/// The v2 default fades (seconds, f64) are written as decimal strings and then go through the same parsing.
 fn default_ramp(seconds: f64, field: &str) -> EngineResult<MediaTime> {
     ramp(&format!("{seconds}"), field)
 }

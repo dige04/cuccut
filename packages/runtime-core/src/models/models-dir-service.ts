@@ -40,45 +40,44 @@ import { RcModels } from '@cuccut/protocol/messages/runtime-core';
 import { taskFailure } from '../localized.ts';
 
 /**
- * 模型目录（架构设计 §6.3）：`models.getDir` / `inspectDir` / `setDir`。
+ * Model directory (architecture design §6.3): `models.getDir` / `inspectDir` / `setDir`.
  *
- * 生效的目录：Runtime 启动时环境变量 `CUCCUT_MODELS_DIR` 给了目录就用它（只读，`setDir` 以 `MODELS_DIR_ENV_LOCKED`
- * 拒绝）；否则用设置 `models.dir`；都没有时 `<runtime-home>/models`。
+ * Effective directory: if the environment variable `CUCCUT_MODELS_DIR` gives a directory when the Runtime starts, it is used (read-only; `setDir` rejects with `MODELS_DIR_ENV_LOCKED`). Otherwise the setting `models.dir`; if neither, `<runtime-home>/models`.
  *
- * 更改的顺序：查在用（排队或进行中的本地模型任务、移动）→ 卸下所有空闲的 Worker（有忙的就拒绝）→ 再查一次 →
- * `switch` 时写设置、换模型目录的根；`move` 时提交一个 `modelsMove` 任务，期间模型包都报告为 `relocating`、不能提交任务，
- * 搬完、校验完再写设置、换根、删原目录里的文件。中途失败或取消时回滚，设置与模型目录不变。
+ * Order of changes: check what is in use (queued or running local-model jobs, moves) → unload all idle Workers (reject if any is busy) → check again →
+ * for `switch`, write the setting and change the model directory root; for `move`, submit a `modelsMove` job. During it, all model packs report `relocating` and no jobs can be submitted.
+ * After moving and verifying, write the setting, change the root, and delete the files in the original directory. If it fails or is cancelled midway, roll back: the setting and the model directory are unchanged.
  */
 
 const MOVE_QUEUE = { key: 'models:dir', concurrency: 1 };
-/** 移动进度最多每这么久报一次。 */
+/** Move progress is reported at most this often. */
 const PROGRESS_INTERVAL_MS = 250;
-/** 不带模型包、也算在用模型目录的任务种类。 */
+/** Job kinds that count as using the model directory even without a model pack. */
 const DIR_KINDS = new Set<JobRecord['kind']>(['modelInstall', 'modelTest', 'modelsMove']);
 
 export interface ModelsDirServiceOptions {
-  /** 缺省目录：`<runtime-home>/models`。 */
+  /** Default directory: `<runtime-home>/models`. */
   defaultDir: string;
-  /** Runtime 启动时环境变量给的目录；没有时 null（这时设置生效）。 */
+  /** Directory given by the environment variable when the Runtime starts; null otherwise (then the setting applies). */
   envDir: string | null;
-  /** 设置 `models.dir` 的读写（写盘成功才算改了）。 */
+  /** Reads and writes the `models.dir` setting (a change counts only once written to disk). */
   setting: { get(): string | null; set(value: string | null): Promise<void> };
   catalog: ModelCatalog;
   provider: LocalTranscribeProvider;
   jobs: JobManager;
   log: Logger;
-  /** 所在磁盘的可用空间（测试注入）；默认按 statfs。 */
+  /** Free space on the disk holding the directory (injected in tests); defaults to statfs. */
   freeBytes?: (dir: string) => Promise<number | null>;
-  /** 换了目录之后重算能力视图。 */
+  /** Recomputes the capability view after the directory changes. */
   refresh: () => void;
-  /** 测试用的钩子。 */
+  /** Test hook. */
   testing?: ModelsDirTestHooks;
 }
 
 export interface ModelsDirTestHooks {
-  /** 每个仓库放到位之前调一次（卡住移动、注入中途的失败）。 */
+  /** Called once before each repository is put in place (to stall a move, or to inject a failure midway). */
   beforePlace?: (repo: string) => Promise<void> | void;
-  /** 代替按 `stat.dev` 判断两个目录在不在同一块盘（假装跨盘）。 */
+  /** Replaces the check of whether two directories are on the same disk via `stat.dev` (to pretend they are on different disks). */
   sameVolume?: (a: string, b: string) => Promise<boolean>;
 }
 
@@ -87,7 +86,7 @@ export class ModelsDirService {
   readonly #log: Logger;
   readonly #freeBytes: (dir: string) => Promise<number | null>;
   readonly #sameVolume: (a: string, b: string) => Promise<boolean>;
-  /** 移动任务 → 目标目录（给 `getDir` 的 `moveTo`）。 */
+  /** Move job → target directory (the `moveTo` for `getDir`). */
   readonly #moveTargets = new Map<Id, string>();
 
   constructor(options: ModelsDirServiceOptions) {
@@ -95,7 +94,7 @@ export class ModelsDirService {
     this.#log = options.log.child('models-dir');
     this.#freeBytes = options.freeBytes ?? diskFreeBytes;
     this.#sameVolume = options.testing?.sameVolume ?? sameVolume;
-    // 排队时就被取消、Runtime 停止时中断的移动没有跑到 `finally`：回到可用。
+    // A move cancelled while queued, or interrupted when the Runtime stops, does not reach `finally`: back to available.
     options.jobs.onChange((job) => {
       if (job.kind === 'modelsMove' && isTerminal(job.state)) this.#moveTargets.delete(job.jobId);
       if (job.kind === 'modelsMove' && isTerminal(job.state) && !this.#activeMove()) {
@@ -105,7 +104,7 @@ export class ModelsDirService {
     });
   }
 
-  /** 生效的目录与来源（只看配置，不碰磁盘）。 */
+  /** Effective directory and its source (looks at configuration only, does not touch the disk). */
   resolve(): { path: string; source: ModelsDirSource } {
     if (this.#options.envDir) return { path: this.#options.envDir, source: 'env' };
     const setting = this.#options.setting.get();
@@ -113,7 +112,7 @@ export class ModelsDirService {
     return { path: this.#options.defaultDir, source: 'default' };
   }
 
-  /** Runtime 启动时：上次的移动没有做完时回滚（原目录里留着日志）。 */
+  /** When the Runtime starts: roll back a move that did not finish (the log is left in the original directory). */
   async recover(): Promise<void> {
     const root = this.#options.catalog.root;
     const recovered = await recoverMove(root).catch((error: unknown) => {
@@ -134,7 +133,7 @@ export class ModelsDirService {
     const access = await dirAccess(root);
     const scan = await scanModelsDir(root, catalog.definitions());
     const bundles = await catalog.list();
-    // 与 `scanModelsDir` 同一条规则：发布页组件（音乐引擎）在 Runtime Home 的 `tools/` 里，不算这个文件夹里的模型。
+    // Same rule as `scanModelsDir`: the publishing-page component (the music engine) lives in the Runtime Home's `tools/` and is not counted as a model in this folder.
     const modelCount = bundles.filter((b) => {
       const required = (b.components ?? []).filter((c) => !c.optional && c.origin !== 'github-release');
       return required.length > 0 && required.every((c) => c.state === 'installed');
@@ -187,7 +186,7 @@ export class ModelsDirService {
     };
   }
 
-  /** 更改模型目录。 */
+  /** Changes the model directory. */
   async setDir(
     params: { path: string | null; mode: ModelsDirMode; commandId?: Id },
     submitter: JobSubmitter,
@@ -202,7 +201,7 @@ export class ModelsDirService {
         path: this.#options.envDir,
       });
     }
-    // 正在移动时一律不改（连「改回当前位置」也不行：移动完成后当前位置就变了）。
+    // While a move is in progress, nothing changes (not even switching back to the current location, since the current location changes once the move completes).
     const move = this.#activeMove();
     if (move) {
       throw new RpcError('conflict', RcModels.movingDirWaitOrCancel(), { code: 'MODEL_IN_USE', jobIds: [move.jobId] });
@@ -242,7 +241,7 @@ export class ModelsDirService {
     return { dir: await this.getDir(), jobId: await this.#submitMove(target, submitter, params.commandId) };
   }
 
-  /** 正在用本地模型的任务（排队或进行中）：转写、合成、安装、自测、移动。 */
+  /** Tasks that use a local model (queued or running): transcription, synthesis, install, self-test, move. */
   inUse(): Id[] {
     return this.#options.jobs
       .list()
@@ -250,12 +249,12 @@ export class ModelsDirService {
       .map((j) => j.jobId);
   }
 
-  /** 进行中的移动；没有时 null。 */
+  /** The move in progress; null when there is none. */
   activeMove(): JobRecord | null {
     return this.#activeMove();
   }
 
-  /** 没有任务在用、所有 Worker 都卸下了；否则 `MODEL_IN_USE`。 */
+  /** No task in use and all Workers unloaded; otherwise `MODEL_IN_USE`. */
   async #quiesce(): Promise<void> {
     const refuse = (jobIds: Id[]): never => {
       throw new RpcError('conflict', RcModels.dirInUse(), { code: 'MODEL_IN_USE', jobIds });
@@ -295,7 +294,7 @@ export class ModelsDirService {
       submitter,
     );
     this.#moveTargets.set(jobId, target);
-    // 提交之后马上不可用：排队的这一会儿也不能有新的本地任务进来。
+    // Unavailable as soon as it is submitted: during the queued period, no new local tasks may come in either.
     this.#options.catalog.setRelocating(true);
     this.#options.refresh();
     this.#log.info('Models folder move submitted', { jobId, from, to: target, bytes: plan.bytes, sameVolume: same });
@@ -334,7 +333,7 @@ export class ModelsDirService {
       try {
         await this.#options.setting.set(to === this.#options.defaultDir ? null : to);
       } catch (error) {
-        // 换不过去：把搬过去的撤回来，模型目录照旧。
+        // Cannot switch: withdraw what was moved over, and the model directory stays as it was.
         await undoMove(
           from,
           to,

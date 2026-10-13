@@ -14,7 +14,7 @@ import { pl } from './rc-ai-tools.pl.ts';
 import { tr } from './rc-ai-tools.tr.ts';
 import { vi } from './rc-ai-tools.vi.ts';
 
-/** AI 工具的「直接调模型」（`ai-tool` 流程，`ai-tools/ai-tool-pipeline.ts`）：流程名、步骤、错误与编辑历史里的名字。英文是键与类型的来源。 */
+/** The AI tools' “direct model call” (`ai-tool` flow, `ai-tools/ai-tool-pipeline.ts`): the flow name, steps, errors and the name shown in edit history. English is the source of keys and types. */
 const en = {
   label: "AI tool (direct model call)",
   description: "Sends a prompt with this video's transcript, chapters and attachments straight to a text model, with no agent or conversation. Polish and chapters are written to the video as one undoable change; the other tools return text to read and copy.",

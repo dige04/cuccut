@@ -32,47 +32,47 @@ import { createHeldVideo, importMedia, transcribeInVideo, type MediaVideos, type
 import { createScopeOf, readCreateTarget, targetSchema, targetStep, type PipelineTargets } from './video-target.ts';
 
 /**
- * 转录（架构设计 §7.9；转录工具的后端）：解析目标 →（新建视频时）新建视频、导入本机媒体并放上时间线 → 转写 → 建立字幕层。
+ * Transcription (architecture design §7.9; the backend of the transcription tool): resolve the target → (when creating a new video) create the video, import local media and place it on the timeline → transcribe → build the subtitle layer.
  *
- * 与 `models.transcribe` 提交的转写 Job 同名、不是一回事：这里是父任务（`kind: 'pipeline'`，`pipeline.name: 'transcribe'`），
- * 它的「转写」一步提交一个 `transcribe` Job（提交者 `{ kind: 'pipeline', id: <父任务> }`）并等它完成。
+ * It shares its name with the transcription Job submitted by `models.transcribe`, but it is a different thing: this is the parent task (`kind: 'pipeline'`, `pipeline.name: 'transcribe'`),
+ * and its “transcribe” step submits one `transcribe` Job (submitter `{ kind: 'pipeline', id: <父任务> }`) and waits for it to complete.
  *
- * - 「应用」并在转写里：转写 Job 自己把语音文档应用到视频（§7.3，`putDocument` 一份新的 `speech`，`extensions.jobId`
- *   记着那个 Job），流程不再写一遍，所以没有单独的 `apply` 一步。
- * - 素材：给了 `assetId` 用它；不给时取根序列主轨（第一条有媒体实例的视频轨，没有时第一条有媒体实例的音频轨）上的素材，
- *   不止一个时以 `TRANSCRIBE_ASSET_AMBIGUOUS` 拒绝、没有时 `TRANSCRIBE_ASSET_NOT_FOUND`（要给出 `assetId`）。
- * - 落点（§7.9「转录」）：视频里已有这个素材的转写时不在这部视频里新增第二份。`destination: 'new-video'`（缺省）时 `create`
- *   一步在原视频所在的项目（或会话的来源目录）里新建视频、以链接素材导入同一份文件并放上主轨，之后的步骤都对新视频做；
- *   `replace` 时转写 Job 应用结果就是换用文稿的那笔事务（`transcript-switch.ts`：新版本、结转译文、字幕与配音），字幕层已在那里
- *   重新切过，`captions` 一步按已有字幕层的规则跳过。没有这个素材的转写时两种都直接写进它（摘要的 `target: 'first'`）。
- *   落点在提交时定下并冻结（重试不再改）。
- * - 手工修改闸门：`replace` 而当前文稿的全文指纹与 `stages.asr` 不符（用户改过原文）、又没给 `acceptEdited` 时，提交时以
- *   `TRANSCRIPT_EDITED` 拒绝、不建任务；提交时的指纹随请求冻结，应用前转写 Job 再核对一次。没有 `stages.asr` 的文稿当作没改过。
- * - 一个素材有几份转写（之前的版本允许）时，换用的是根序列上有字幕层的那份，都没有时取最近写过的那份。
- * - 新建视频（`target.create` 带 `media`）：在项目里新建（与 `videos.create` 同一条路径），`media` 以链接素材导入
- *   （文件留在原处），同一笔事务放上主轨；来源 `origin: 'file-import'` 记文件路径与这次运行。名字不给时取文件名。
- * - 重试：新建、导入、转写各自认回上次做了一半的（`video-create.ts`），不会多出视频、素材或转写；
- *   转写完成之后文档被删了时重新转写。
- * - 只给文件（`file`，不给 `videoId` / `target`）：不建视频，「转写」一步提交没有视频的转写 Job 并等它完成，再把
- *   `<源文件名>.txt` 与 `.srt` 写到保存位置（`outDir`，不给时是 Runtime 的保存位置，提交时冻结；与从链接下载的转录同一段
- *   代码，`download-transcript.ts`）；字幕层这一步跳过。`file` 是 Space 条目（`{ entryId }`）时由方法层先换成路径。
+ * - “Apply” happens within the transcription: the transcription Job itself applies the speech document to the video (§7.3, `putDocument` a new `speech`, with `extensions.jobId`
+ *   recording that Job), so the flow does not write it again, and there is therefore no separate `apply` step.
+ * - Asset: when `assetId` is given, it is used; otherwise the asset on the root sequence's main track is taken (the first video track with a media instance, or when there is none, the first audio track with a media instance),
+ *   rejected with `TRANSCRIBE_ASSET_AMBIGUOUS` when there is more than one, and `TRANSCRIBE_ASSET_NOT_FOUND` when there is none (`assetId` must then be given).
+ * - Destination (§7.9 “transcription”): when the video already has a transcription of this asset, a second copy is not added to this video. With `destination: 'new-video'` (the default), the `create`
+ *   step creates a new video in the project containing the original video (or the session's source directory), imports the same file as a linked asset and places it on the main track; subsequent steps then operate on the new video;
+ *   with `replace`, the transcription Job's apply result is the transaction that swaps in the transcript (`transcript-switch.ts`: new version, carried-over translations, captions and dubbing). The subtitle layer has already been
+ *   re-cut there, so the `captions` step is skipped according to the existing subtitle-layer rules. For an asset that has no transcription yet, both options write directly into it (summary `target: 'first'`).
+ *   The destination is fixed and frozen at submission (retries do not change it).
+ * - Manual-edit gate: with `replace`, when the current transcript's full-text fingerprint does not match `stages.asr` (the user edited the source text) and `acceptEdited` is not given, the request is rejected at submission with
+ *   `TRANSCRIPT_EDITED` and no task is created; the fingerprint at submission is frozen with the request, and the transcription Job checks it again before applying. A transcript without `stages.asr` is treated as unedited.
+ * - When an asset has several transcriptions (earlier versions allowed this), the one swapped in is the one on the root sequence that has a subtitle layer; if none has one, the most recently written one is taken.
+ * - New video (`target.create` with `media`): created in the project (the same path as `videos.create`), `media` is imported as a linked asset
+ *   (the file stays where it is) and placed on the main track in the same transaction; the origin `origin: 'file-import'` records the file path and this run. When no name is given, the file name is used.
+ * - Retries: creating, importing and transcribing each recognize what was half-done last time (`video-create.ts`), so no extra video, asset or transcription is created;
+ *   if the document was deleted after transcription completed, transcription runs again.
+ * - File only (`file`, without `videoId` / `target`): no video is created; the “transcribe” step submits a transcription Job without a video and waits for it to complete, then writes
+ *   `<源文件名>.txt` and `.srt` to the save location (`outDir`; when not given, the Runtime's save location, frozen at submission; the same code path as transcripts downloaded from links, `download-transcript.ts`);
+ *   the subtitle layer step is skipped. When `file` is a Space entry (`{ entryId }`), the method layer first replaces it with a path.
  */
 
 export const TRANSCRIBE_PIPELINE = 'transcribe';
 
 export interface TranscribeDeps {
   videos: CaptionVideos & MediaVideos;
-  /** 转写：选定 Provider 与模型（没有配置时 `CAPABILITY_NOT_CONFIGURED`）、提交与等待。 */
+  /** Transcription: selects the provider and model (`CAPABILITY_NOT_CONFIGURED` when not configured), submits, and waits. */
   transcriber: PipelineTranscriber;
-  /** 新建视频（`target.create`）。没有时 `create` 被拒绝。 */
+  /** Create a new video (`target.create`). Without it, `create` is rejected. */
   targets?: Pick<PipelineTargets, 'reserve' | 'create'>;
-  /** 视频里启用、此刻还在库里的转写术语表（§5.9，按启用的顺序）；不给时不套术语表。 */
+  /** Transcription glossaries enabled in the video that are still in the library at this moment (§5.9, in enabled order); when not given, no glossary is applied. */
   enabledGlossaries?: (videoId: Id) => Promise<Id[]>;
-  /** 只给文件时、不给 `outDir` 的保存位置（§7.9）；没有接线时（只在单测里）写在源文件旁边。 */
+  /** The save location when only a file is given and `outDir` is not (§7.9); when not wired up (only in unit tests), written next to the source file. */
   saveDirectory?: () => string;
   /**
-   * 落点 `new-video` 要的原视频事实：名字与所在的范围（项目或会话），以及素材当前版本的文件。没有接线时 `new-video` 被拒绝
-   * （`PIPELINE_TARGET_UNSUPPORTED`）。
+   * Facts about the original video needed by the `new-video` destination: its name and scope (project or session), and the asset's current version file. When not wired up, `new-video` is rejected
+   * (`PIPELINE_TARGET_UNSUPPORTED`).
    */
   sources?: {
     video(videoId: Id): { name: string; scope: PipelineCreateScope } | null;
@@ -80,13 +80,13 @@ export interface TranscribeDeps {
   };
 }
 
-/** 提交时定下的落点（见文件头）。 */
+/** The destination fixed at submission (see the file header). */
 export type TranscribeLanding =
   | { kind: 'first' }
   | { kind: 'new-video'; sourceVideoId: Id; assetId: Id; name: string; scope: PipelineCreateScope }
   | { kind: 'replace'; assetId: Id; replace: TranscriptReplace };
 
-/** 校验过的参数：给定的视频、新建视频的目标，或只给文件（`file` 已是绝对路径）。 */
+/** Validated parameters: a given video, a target for a new video, or a file only (`file` is already an absolute path). */
 export interface CheckedTranscribeParams extends Omit<TranscribeParams, 'videoId'> {
   videoId?: Id;
   create?: PipelineCreateTarget & { media: string };
@@ -94,14 +94,14 @@ export interface CheckedTranscribeParams extends Omit<TranscribeParams, 'videoId
   outDir?: string;
 }
 
-/** 冻结的参数：Provider 与模型已选定，`captions` 已补上默认值。 */
+/** Frozen parameters: provider and model are selected, and `captions` has its default filled in. */
 export interface FrozenTranscribeParams extends CheckedTranscribeParams {
   provider: string;
   model: string;
   captions: boolean;
-  /** 转写时套用视频里启用的转写术语表：启动它的不是对外服务的客户端（与 `models.transcribe` 相同，对外服务不碰用户库）。 */
+  /** Applies the transcription glossaries enabled in the video during transcription. The client that starts it is not an externally facing one (same as `models.transcribe`; external services do not touch the user library). */
   videoGlossaries?: boolean;
-  /** 给定视频时的落点（提交时定下）；新建视频与只给文件时没有。 */
+  /** The destination when a video is given (fixed at submission); absent for a new video or a file-only run. */
   landing?: TranscribeLanding;
 }
 
@@ -111,7 +111,7 @@ interface CreateOutput extends Record<string, unknown> {
   assetId: Id;
 }
 
-/** 只给文件时「转写」一步的产出。 */
+/** Output of the “transcribe” step when only a file is given. */
 interface FileTranscribeOutput extends Record<string, unknown> {
   jobId: Id;
   files: string[];
@@ -123,20 +123,20 @@ interface TranscribeOutput extends Record<string, unknown> {
   jobId: Id;
   videoId: Id;
   documentId: Id;
-  /** 转写 Job 的结果产物（逐段的转写结果）。 */
+  /** Result artifact of the transcription Job (the transcription result, segment by segment). */
   artifactId: string;
   assetId: Id;
-  /** 写入文稿的那笔事务（换用文稿时是撤销用的那笔）；查不到时 null。 */
+  /** The transaction that wrote the transcript (for a swap, the one used for undo); null when not found. */
   transactionId: Id | null;
 }
 
-/** 识别提示的上限，与 `models.transcribe` 的 `hint` 相同。 */
+/** Upper limit on recognition hints, the same as `hint` in `models.transcribe`. */
 const HINT_MAX = 1200;
 
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     videoId: { type: 'string', description: '已打开的视频（等同 target: { videoId }）' },
     target: targetSchema('要转录的视频：已打开的、Space 里的视频条目（流程期间由 Runtime 打开），或新建视频并导入本机媒体', {
       projectId: '新视频所在的项目',
@@ -203,12 +203,12 @@ export function transcribePipeline(deps: TranscribeDeps): PipelineDefinition<Fro
       if (params.file !== undefined) return prepareFile(deps, params, retry);
       if (params.create) {
         if (!deps.targets) throw new RpcError('invalid-request', JobsTranscribe.cannotCreateVideo(), { code: 'PIPELINE_TARGET_UNSUPPORTED' });
-        // 重试时新建这一步完成过就不再读文件。
+        // On retry, if the create step has already completed, the file is not read again.
         if (!retry) await checkMedia(params.create.media);
       } else if (params.videoId === undefined || !deps.videos.state(params.videoId)) {
         throw new RpcError('not-found', JobsTranscribe.videoNotOpen());
       }
-      // 落点提交时定下；重试沿用冻结的那个（之前的尝试可能已经写进去了）。
+      // The destination is fixed at submission; a retry keeps the frozen one (an earlier attempt may already have written to it).
       const frozenLanding = (params as FrozenTranscribeParams).landing;
       const landing = params.create ? undefined : (frozenLanding ?? (await resolveLanding(deps, params, params.videoId!)));
       const selection = await deps.transcriber.check({
@@ -254,7 +254,7 @@ export function transcribePipeline(deps: TranscribeDeps): PipelineDefinition<Fro
         name: 'transcribe',
         label: () => JobsTranscribe.stepTranscribe(),
         run: (context) => (context.params.file !== undefined ? transcribeFile(deps, context) : transcribe(deps, context)),
-        // 文档被删了：重试时重新转写。只给文件的转写完成过就不重做（文稿已经写出）。
+        // The document was deleted: retry transcribes again. A file-only transcription that has completed is not redone (the transcript has already been written out).
         reusable: async (output) => {
           if ('files' in output) return true;
           const out = output as TranscribeOutput;
@@ -367,7 +367,7 @@ export function parseTranscribeParams(raw: Record<string, unknown>): CheckedTran
   const translations = reader.oneOf('translations', ['carry', 'discard'] as const);
   const acceptEdited = raw.acceptEdited;
   if (acceptEdited !== undefined && typeof acceptEdited !== 'boolean') throw invalid('acceptEdited', JobsParams.mustBeBoolean());
-  // 落点的几个参数只配已有的视频（`{ videoId }`、`{ entryId }`）。
+  // The destination parameters apply only to existing videos (`{ videoId }`, `{ entryId }`).
   const landingKey = (['destination', 'name', 'translations', 'acceptEdited'] as const).find((key) => raw[key] !== undefined);
   if (landingKey && (raw.file !== undefined || raw.target !== undefined)) throw invalid(landingKey, JobsTranscribe.landingNeedsVideo());
   if (name !== undefined && destination === 'replace') throw invalid('name', JobsTranscribe.nameNewVideoOnly());
@@ -390,7 +390,7 @@ export function parseTranscribeParams(raw: Record<string, unknown>): CheckedTran
     };
   }
   if (outDir !== undefined) throw invalid('outDir', JobsTranscribe.outDirFileOnly());
-  // `{ videoId }` 与 `{ entryId }` 的目标由 PipelineRunner 换成了顶层的 `videoId`；这里只剩新建。
+  // The targets `{ videoId }` and `{ entryId }` are replaced by PipelineRunner with the top-level `videoId`; only creation remains here.
   const create = raw.target === undefined ? undefined : createOf(raw.target);
   if (create && videoId !== undefined) throw invalid('target', JobsParams.createExcludesVideoId());
   if (create && assetId !== undefined) throw invalid('assetId', JobsTranscribe.assetIdWithCreate());
@@ -422,7 +422,7 @@ function createOf(target: unknown): PipelineCreateTarget & { media: string } {
   return { ...create, media: create.media };
 }
 
-/** 只给文件的 `file`：绝对路径。Space 条目（`{ entryId }`）要由方法层先换成路径，到这里还没换是调用方的错。 */
+/** `file` when only a file is given: an absolute path. A Space entry (`{ entryId }`) must first be replaced with a path by the method layer; if it is still unreplaced here, that is a caller error. */
 function fileOf(value: unknown): string {
   if (typeof value === 'string') {
     if (!path.isAbsolute(value)) throw invalid('file', JobsParams.mustBeAbsolutePath());
@@ -432,14 +432,14 @@ function fileOf(value: unknown): string {
   throw invalid('file', JobsTranscribe.fileShape());
 }
 
-/** 只给文件：检查文件、冻结输出目录与 Provider；没有视频。 */
+/** File only: checks the file, freezes the output directory and provider; no video. */
 async function prepareFile(deps: TranscribeDeps, params: CheckedTranscribeParams, retry: boolean) {
   const file = params.file!;
   if (!deps.transcriber.submitFile) {
     throw new RpcError('conflict', JobsTranscribe.cannotTranscribeFile(), { code: 'CAPABILITY_NOT_CONFIGURED', capability: 'transcribe' });
   }
   if (!retry) await checkMedia(file);
-  // 保存位置（§7.9）：给了用它，否则 Runtime 的保存位置；提交时冻结，不存在时创建，不能写入时拒绝。
+  // Save location (§7.9): use it when given, otherwise the Runtime's save location; frozen at submission, created if it does not exist, rejected if not writable.
   const outDir = params.outDir ?? deps.saveDirectory?.() ?? path.dirname(file);
   await ensureSaveDirectory(outDir);
   const selection = await deps.transcriber.check({
@@ -462,7 +462,7 @@ async function prepareFile(deps: TranscribeDeps, params: CheckedTranscribeParams
   };
 }
 
-/** 只给文件的转写：提交没有视频的转写并等它完成，把 TXT 与 SRT 以源文件名写到输出目录。 */
+/** File-only transcription: submits a transcription without a video, waits for it to complete, and writes the TXT and SRT to the output directory under the source file name. */
 async function transcribeFile(
   deps: TranscribeDeps,
   context: PipelineStepContext<FrozenTranscribeParams>,
@@ -486,20 +486,20 @@ async function transcribeFile(
   };
 }
 
-/** 媒体文件在、是普通文件；不在时 `not-found`。 */
+/** The media file exists and is a regular file; `not-found` when it does not. */
 async function checkMedia(media: string): Promise<void> {
   const stat = await fs.stat(media).catch(() => null);
   if (!stat?.isFile()) throw new RpcError('not-found', JobsTranscribe.mediaToImportNotFound(), { code: 'INPUT_NOT_FOUND' });
 }
 
-/** 转写写进的视频：新建了视频（`target.create` 或落点 `new-video`）时是新视频，否则是给定的视频。 */
+/** The video the transcription is written into: the new video when one was created (`target.create` or destination `new-video`), otherwise the given video. */
 function targetVideo(params: FrozenTranscribeParams, outputs: StepOutputs): Id | null {
   return (outputs.create as CreateOutput | undefined)?.videoId ?? params.videoId ?? null;
 }
 
 /**
- * 给定视频的落点（见文件头）。素材没给又认不出主轨上唯一的那个时按 `first` 走，转写这一步照旧报素材的错。`replace` 在这里过
- * 手工修改闸门，并冻结文稿的版本与全文指纹。
+ * The destination for a given video (see the file header). When no asset is given and the single one on the main track cannot be identified, `first` is used, and the transcription step still reports the asset error. `replace` passes the
+ * manual-edit gate here, and freezes the transcript's version and full-text fingerprint.
  */
 async function resolveLanding(deps: TranscribeDeps, params: CheckedTranscribeParams, videoId: Id): Promise<TranscribeLanding> {
   const state = deps.videos.state(videoId)!;
@@ -550,7 +550,7 @@ async function resolveLanding(deps: TranscribeDeps, params: CheckedTranscribePar
   };
 }
 
-/** 素材的几份转写里要换用的那份：根序列上有字幕层的，都没有（或都有）时取最近写过的。 */
+/** Which of an asset's transcriptions to swap in: the one with a subtitle layer on the root sequence; when none has one (or all do), the most recently written. */
 function currentTranscript(
   transcripts: DocumentRecord[],
   sequence: Sequence | null,
@@ -564,13 +564,13 @@ function currentTranscript(
   return ranked[0]!;
 }
 
-/** 换用文稿那笔事务记在文稿扩展里的影响（与新版本同一笔事务落下）；不是这次转写记的时 null。 */
+/** The effect of the transcript-swap transaction recorded in the transcript extension (committed in the same transaction as the new version); null when this transcription did not record it. */
 function switchImpact(record: DocumentRecord | undefined, jobId: Id): TranscriptSwitchImpact | null {
   const value = record?.extensions?.[TRANSCRIPT_SWITCH_EXTENSION] as { jobId?: unknown; impact?: TranscriptSwitchImpact } | undefined;
   return value && value.jobId === jobId && value.impact ? value.impact : null;
 }
 
-/** 落点 `new-video`：在原视频的范围里新建视频，以链接素材导入同一份素材文件并放上主轨。 */
+/** Destination `new-video`: creates a video within the scope of the original video, imports the same asset file as a linked asset, and places it on the main track. */
 async function createLinkedVideo(
   deps: TranscribeDeps,
   context: PipelineStepContext<FrozenTranscribeParams>,
@@ -595,7 +595,7 @@ async function createLinkedVideo(
   return { output: { videoId: lease.videoId, place: lease.place, assetId } };
 }
 
-/** 新建视频并导入媒体（同一笔事务放上主轨）。 */
+/** Creates a video and imports the media (placed on the main track in the same transaction). */
 async function createVideo(deps: TranscribeDeps, context: PipelineStepContext<FrozenTranscribeParams>): Promise<{ output: CreateOutput }> {
   const create = context.params.create!;
   if (!deps.targets) throw new PipelineStepError('PIPELINE_TARGET_UNSUPPORTED', JobsTranscribe.cannotCreateVideo(), {});
@@ -623,11 +623,11 @@ async function transcribe(
   const videoId = targetVideo(params, outputs);
   if (!videoId) throw new PipelineStepError('INTERNAL', JobsTranscribe.noVideo(), {});
   const created = outputs.create as CreateOutput | undefined;
-  // 新建的视频里转写导入的那个素材；落点 `new-video` 时给定的 `assetId` 是原视频里的。
+  // The asset that the transcription imports into the new video; for destination `new-video`, the given `assetId` is the one in the original video.
   const assetId = created?.assetId ?? params.assetId ?? mainAsset(deps.videos, videoId);
   const landing = params.landing;
-  // 视频里启用的转写术语表（§5.9）：与 `models.transcribe` 一样在提交转写时读出（新建的视频此刻已采用库里默认启用的），
-  // 版本由转写 Job 冻结。
+  // Transcription glossaries enabled in the video (§5.9): read at submission time, as with `models.transcribe` (a newly created video has already adopted the library's default-enabled ones at this point);
+  // the version is frozen by the transcription Job.
   const glossaries = params.videoGlossaries && deps.enabledGlossaries ? await deps.enabledGlossaries(videoId) : [];
   const { jobId, documentId, artifactId, transactionId } = await transcribeInVideo(
     deps.transcriber,
@@ -643,7 +643,7 @@ async function transcribe(
       ...(glossaries.length ? { glossaries: glossaries.map((id) => ({ id })) } : {}),
       ...(landing?.kind === 'replace' ? { replace: landing.replace } : {}),
     },
-    // 上次完成的转写写入的文档被删了：重新转写。
+    // The document written by the last completed transcription was deleted: transcribe again.
     (job) => !!job.result?.documentId && deps.videos.state(videoId)?.documents[job.result.documentId]?.kind === 'speech',
   );
   if (!documentId || !artifactId) throw new PipelineStepError('APPLY_FAILED', JobsTranscribe.notApplied(), { jobId });
@@ -653,14 +653,14 @@ async function transcribe(
   };
 }
 
-/** 这次写入的文稿区分出几位说话人（文档版本概要里的 `speakerCount`）；读不出时 null。 */
+/** Number of speakers distinguished in the transcript written this time (`speakerCount` in the document version summary); null when it cannot be read. */
 function speakerCountOf(record: DocumentRecord | undefined): number | null {
   const summary = record?.revisions[record.currentRevision]?.summary;
   const count = summary && typeof summary === 'object' ? (summary as { speakerCount?: unknown }).speakerCount : undefined;
   return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : null;
 }
 
-/** 主轨上唯一的素材（见文件头）；视频没打开时 `VIDEO_NOT_OPEN`。 */
+/** The single asset on the main track (see the file header); `VIDEO_NOT_OPEN` when the video is not open. */
 function mainAsset(videos: CaptionVideos, videoId: Id): Id {
   const sequence = videos.rootSequence(videoId);
   if (!sequence) throw new PipelineStepError('VIDEO_NOT_OPEN', JobsTranscribe.videoClosed(), {});
@@ -675,8 +675,7 @@ function mainAsset(videos: CaptionVideos, videoId: Id): Id {
 }
 
 /**
- * 主轨：第一条（`order` 最小）有音视频实例的画面轨，没有时第一条有音视频实例的音频轨；返回它上面的素材（去重，按在时间线上
- * 出现的先后）。
+ * Main track: the first video track (smallest `order`) that has audio/video instances, or when there is none, the first audio track that has them; returns the assets on it (deduplicated, in the order they appear on the timeline).
  */
 export function mainTrackAssets(sequence: Sequence): Id[] {
   const media = (trackId: Id) =>

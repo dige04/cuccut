@@ -14,10 +14,8 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 
 /**
- * 重启恢复与对账的端到端（架构设计 §7.2–§7.5）：真实的视频引擎、假的 Model Worker 与本机回环地址上的假供应商。
- * 用故障注入在发布与应用闭环的几个时刻模拟崩溃，关掉 Runtime、在同一个 `CUCCUT_HOME` 上重新启动，断言视频里只多了一笔
- * `system:jobs` 的写入、没有重新推理或重新请求供应商；再经网关走 `jobs.reconcile`。停止与提交赛跑时，引擎侧的停止屏障
- * 拒绝那一笔提交；外发请求到达供应商时，授权账本里这笔预留已经记为开始。
+ * End-to-end restart recovery and reconciliation (architecture design §7.2–§7.5): the real video engine, a fake Model Worker, and fake providers on the loopback address.
+ * Fault injection simulates a crash at several points in the publish-and-apply loop; Runtime is shut down and restarted on the same `CUCCUT_HOME`. It asserts that the video gains only one `system:jobs` write, and that nothing is re-inferred or re-requested from the provider; then `jobs.reconcile` is run through the gateway. When stop races with submit, the engine-side stop barrier rejects that submission; when the outgoing request reaches the provider, the reservation in the authorization ledger is already recorded as started.
  */
 
 const engine = resolveEngineHostCommand();
@@ -31,7 +29,7 @@ const tool = (name: string) => {
 };
 const ffmpeg = tool('ffmpeg');
 const ffprobe = tool(process.env.CUCCUT_FFPROBE || 'ffprobe');
-/** 这台机器上的默认转写模型包：Apple Silicon 是 MLX 的，别的平台是 candle 的（同样的仓库）。 */
+/** Default transcription model bundle on this machine: MLX on Apple Silicon, candle on other platforms (same repository). */
 const DEFAULT_TRANSCRIBE_BUNDLE = defaultTranscribeBundle(process.platform, process.arch);
 
 if (!engine) console.warn('跳过重启恢复的端到端测试：没有构建 engine-host（npm run build:engine）');
@@ -48,7 +46,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件（同 model-jobs.test.ts）。 */
+/** Writes a synthetic manifest and files for each repository of the default model bundle (same as model-jobs.test.ts). */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -68,13 +66,13 @@ async function installSyntheticModels(modelsDir: string): Promise<void> {
   }
 }
 
-/** 一个 Runtime 进程的一生：同一个 home 上可以关掉再启动（模拟崩溃后的重启）。 */
+/** The lifetime of one Runtime process: it can be shut down and started again on the same home (simulating a restart after a crash). */
 class Life {
   readonly dir: string;
   readonly home: RuntimeHome;
   runtime!: RunningRuntime;
   client!: CucCutClient;
-  /** 在这个时刻模拟一次崩溃（触发后清空）；`action` 时不崩溃，只在这个时刻做点什么。 */
+  /** Simulates a crash at this point (cleared once triggered); with `action`, it does not crash and only performs something at this point. */
   crashAt: { point: JobFaultPoint; action?: (jobId: string) => void } | null = null;
   crashed = false;
   #openai: FakeProviderServer | null;
@@ -112,7 +110,7 @@ class Life {
     await this.client.connect();
   }
 
-  /** 关掉 Runtime、在同一个 home 上重新启动，等恢复处理完。 */
+  /** Shuts down Runtime, restarts it on the same home, and waits for recovery to finish. */
   async restart(): Promise<void> {
     await this.stop();
     this.crashAt = null;
@@ -136,7 +134,7 @@ class Life {
     });
   }
 
-  /** 重启之后按位置重新打开视频，读它的快照与 `system:jobs` 的写入。 */
+  /** After restart, reopens the video by its location and reads its snapshot and `system:jobs` writes. */
   async video(project: Project, ref: VideoRef) {
     const opened = await this.client.request('videos.open', { projectId: project.id, path: ref.relPath });
     const { entries } = await this.client.request('videos.history', { videoId: ref.videoId });
@@ -189,7 +187,7 @@ describe.skipIf(!engine || !ffmpeg)('崩溃后重启：转写（真实引擎 + �
       await until(() => life.crashed);
       const before = await life.inspect(jobId);
       if (point === 'artifact-stored') {
-        // 产物写好了，结果还没记进任务：重启后按发布意图认领。
+        // The artifact is written, but the result is not yet recorded on the task: after restart, it is claimed by publish intent.
         expect(before).toMatchObject({ state: 'running', phase: 'publishing', result: null });
       } else {
         expect(before).toMatchObject({ state: 'running', phase: 'applying', result: { artifactId: expect.stringMatching(/^sha256:/) } });
@@ -213,7 +211,7 @@ describe.skipIf(!engine || !ffmpeg)('崩溃后重启：转写（真实引擎 + �
       expect(jobWrites[0]!.commandId).toBe(app!.commandId);
       const speech = Object.values(video.documents).filter((d) => d.kind === 'speech');
       expect(speech.map((d) => d.id)).toEqual([job.result!.documentId]);
-      // 没有重新推理：产物库里只有这一份原始结果。
+      // No re-inference: the artifact library holds only this one original result.
       expect(await fs.readdir(life.home.artifactsDir)).toHaveLength(1);
     },
   );
@@ -261,7 +259,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     const video = life.runtime.videos.mirror(ref.videoId)!.video;
     expect(Object.keys(video.assets)).toEqual([assetId]);
     expect(speechRequests()).toHaveLength(1);
-    // 不合法的决定：conflict，details 给出当前状态与允许的决定。
+    // Invalid decision: conflict; details give the current state and the allowed decisions.
     expect(await life.client.request('jobs.reconcile', { jobId, decision: 'apply' }).catch((e: unknown) => e)).toMatchObject({
       code: 'conflict',
       details: { code: 'RECONCILE_NOT_ALLOWED', state: 'completed', allowed: [] },
@@ -281,11 +279,11 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     const { entries } = await life.client.request('videos.history', { videoId: ref.videoId });
     expect(entries.filter((e) => e.actor.id === 'system:jobs')).toEqual([]);
     expect(life.runtime.videos.mirror(ref.videoId)!.video.assets).toEqual({});
-    // 引擎没有为这条命令开事务：按命令查不到回执。
+    // The engine did not open a transaction for this command: no receipt can be found by command.
     const commandId = cancelled.applications![0]!.commandId!;
     expect(await life.runtime.videos.receiptFor(ref.videoId, commandId)).toBeNull();
     expect(speechRequests()).toHaveLength(1);
-    // 用户自己决定的 apply 不受屏障影响。
+    // An apply the user decided on themselves is not affected by the barrier.
     const applied = await life.client.request('jobs.reconcile', { jobId, decision: 'apply' });
     expect(applied.state).toBe('completed');
     expect(Object.keys(life.runtime.videos.mirror(ref.videoId)!.video.assets)).toHaveLength(1);
@@ -303,7 +301,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(Object.keys(video.assets)).toEqual([job.result!.outputs![0]!.assetId]);
     expect(speechRequests()).toHaveLength(1);
     expect(await fs.readdir(life.home.artifactsDir)).toHaveLength(1);
-    // 预算只结算一次：一次调用，按完成，没有留着的预留。
+    // The budget is settled once: one call, settled as completed, with no reservation left over.
     expect(job.grant?.settled).toMatchObject({ calls: 1 });
     const { grants } = await life.client.request('grants.list', { recipient: 'openai', includeEnded: true });
     expect(grants.map((g) => g.usage)).toEqual([expect.objectContaining({ calls: 1, reservedCalls: 0 })]);
@@ -335,7 +333,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(jobWrites).toHaveLength(1);
     expect(Object.keys(video.assets)).toEqual([job.result!.outputs![0]!.assetId]);
     expect(speechRequests()).toHaveLength(1);
-    // 预算（这里没有授权，记录里没有 grant）不会因为补做应用再结算一次；已经完成的任务没有对账决定。
+    // The budget (there is no authorization here, and the record has no grant) is not settled again because the apply was redone; a task that has already completed has no reconciliation decision.
     expect(await life.client.request('jobs.reconcile', { jobId, decision: 'retry' }).catch((e: unknown) => e)).toMatchObject({
       details: { code: 'RECONCILE_NOT_ALLOWED', allowed: [] },
     });
@@ -358,7 +356,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     });
     await life.client.request('videos.open', { projectId: project.id, path: ref.relPath });
     const retried = await life.client.request('jobs.reconcile', { jobId, decision: 'retry' });
-    // 回到排队、attempt 加一（返回时可能已经开始跑）。
+    // Back to queued, attempt incremented by one (it may already be running by the time it returns).
     expect(retried).toMatchObject({ attempt: 2, error: null, result: null });
     expect(['queued', 'running']).toContain(retried.state);
     const done = await life.settled(jobId);

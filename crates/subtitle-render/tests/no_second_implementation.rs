@@ -1,51 +1,36 @@
-//! 「字幕排版只能有一份实现」的门禁（主方案 D2 / D6）。
+//! The gate "subtitle layout may have only one implementation" (main plan D2 / D6).
 //!
-//! App v2 的整条价值链押在这一条上：CLI 烧录与 App 预览必须是同一个内核，
-//! 「同一输入同像素，差异即 bug」（M1-R3）。搬迁只是把代码挪过来，挡不住
-//! 三个月后有人在 `apps/cuccut` 里「先写个简版排版顶一下」——那份副本会安静
-//! 地跟内核分叉，而所有测试照样绿。
+//! The whole value chain of App v2 rests on this one: CLI burn-in and App preview must be the same kernel, "same input, same pixels, any difference is a bug" (M1-R3). Moving code only relocates it. It cannot stop someone three months from now from writing a "quick simplified layout to plug the gap" inside `apps/cuccut`. That copy would quietly fork from the kernel while every test stays green.
 //!
-//! 于是这里扫源码：内核的入口名、样式投影函数、共享比例常量与频谱缓存路径的
-//! 构造，只允许出现在本 crate 里。宿主可以随便调用，但不能自己再写一份。
+//! So this scans source text. The kernel's entry-point names, the style projection function, the shared ratio constants, and the construction of the spectrum cache path may appear only in this crate. Hosts may call them freely, but may not write their own copy.
 //!
-//! 扫描是文本级的，故意粗糙：它抓的是「有人复刻了同名实现」这件事，不追求
-//! 语义精确。误报的正确处理方式是把它登记进 [`ALLOWED`] 并写清理由，不是把
-//! 针挪个名字绕过去。
+//! The scan is text-level and deliberately coarse. It catches "someone reproduced an implementation with the same name", and does not aim for semantic precision. The right way to handle a false positive is to register it in [`ALLOWED`] with a stated reason, not to slip the needle past by renaming it.
 //!
-//! 唯一的例外是**标识符前缀**：`enum LineKind` 这根针会顺带抓住
-//! `enum LineKindName`——那是另一个名字的另一个类型，不是复刻。所以匹配收在
-//! 词边界上（见 [`needle_hits`]），而不是往 [`ALLOWED`] 里塞路径条目：塞路径会连带
-//! 放行同一个文件里将来真出现的 `enum LineKind` 本体。
+//! The only exception is **identifier prefixes**: the needle `enum LineKind` would also catch `enum LineKindName`. That is another type with another name, not a copy. So matching is confined to word boundaries (see [`needle_hits`]), instead of adding path entries to [`ALLOWED`]. Adding a path would also exempt a real future `enum LineKind` definition in the same file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 被扫描的宿主源码树。内核之外的 crate 同样不许复刻。
+/// The scanned host source tree. Crates outside the kernel likewise may not duplicate the implementation.
 ///
-/// v3：v2 扫的是 `apps/cli/src`、`apps/cuccut/src` 与 `core/crates`；v3 的 Rust 都在 `crates/` 与
-/// `bindings/`（`apps/` 是 TypeScript）。
+/// v3: v2 scanned `apps/cli/src`, `apps/cuccut/src` and `core/crates`. v3's Rust lives in `crates/` and `bindings/` (`apps/` is TypeScript).
 const SCANNED: &[&str] = &["crates", "bindings"];
 
-/// 已知且刻意保留的命中：`(路径后缀, 针, 理由)`。
+/// Known and deliberately retained hits: `(path suffix, needle, reason)`.
 ///
-/// 只有两类条目有资格进来：**该符号的唯一定义处**，和**函数体只有一行转发的
-/// 宿主壳**。新增一条必须写明属于哪一类——「暂时先放着」不是理由，把针改个
-/// 名字绕过去更不是。
+/// Only two kinds of entry qualify: **the single definition site of that symbol**, and **a host shell whose function body is a one-line forward**. A new entry must state which kind it is. "Leave it here for now" is not a reason, and renaming the needle to slip past is even less acceptable.
 const ALLOWED: &[(&str, &str, &str)] = &[
     (
         "timeline/src/effects.rs",
         "const REFERENCE_SHORT_EDGE",
         "参考短边的唯一定义处；本 crate 与 timeline-render / render-raster 都从这里取。",
     ),
-    // v2 另有一条 `ccut-serve/src/endpoints/media.rs` 的 `fn media_fingerprint`（一行转发的宿主壳）；
-    // `ccut-serve` 不移植（架构设计 §13.6），条目随之删掉，否则下面的自检会报它失效。
+    // v2 also had `fn media_fingerprint` in `ccut-serve/src/endpoints/media.rs` (a one-line forwarding host shell). `ccut-serve` is not ported (architecture design §13.6), so the entry is removed with it. Otherwise the self-check below would report it as stale.
 ];
 
 fn repo_root() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // `exists()` 而不是 `is_dir()`：在 git worktree 里 `.git` 是一个**文件**
-    // （内容为 `gitdir: …`）。收紧成 `is_dir()` 会让这个门禁在每个 worktree 里
-    // 一路向上走到文件系统根然后 panic——而 agent 恰恰都在 worktree 里干活。
+    // `exists()` rather than `is_dir()`: in a git worktree, `.git` is a **file** (content `gitdir: …`). Tightening to `is_dir()` would make this gate walk up to the filesystem root and panic in every worktree, and agents do their work precisely in worktrees.
     while !dir.join(".git").exists() {
         dir = dir
             .parent()
@@ -67,7 +52,7 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
             continue;
         }
         if path.is_dir() {
-            // 内核自己就是那份唯一实现，不参与扫描。
+            // The kernel is itself the single implementation and does not take part in the scan.
             if path.ends_with("subtitle-render") {
                 continue;
             }
@@ -78,16 +63,11 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 词边界匹配：命中之后紧跟字母 / 数字 / 下划线的不算。
+/// Word-boundary matching: a hit followed by a letter, digit or underscore does not count.
 ///
-/// `ccut-wasm-editor` 的 `enum LineKindName` 是给 JS 用的线名枚举，带两个
-/// `From` 与 `ccut_editor_core::selection::LineKind` 互转，本身没有第二份判据；
-/// 但子串匹配会把它当成 `enum LineKind` 的复刻。
+/// The `enum LineKindName` in `ccut-wasm-editor` is a wire-name enum for JS, with two `From` impls converting to and from `ccut_editor_core::selection::LineKind`. It carries no second copy of the logic. But substring matching would treat it as a copy of `enum LineKind`.
 ///
-/// 只收紧**尾侧**：`": &str = \".spectrum.bin\""` 这类针本来就以标点开头，
-/// 前缀也加边界会把它整根废掉。代价是 `enum LineKindV2` 这种「换个后缀另写
-/// 一份」不再被抓——门禁本来就只防同名复刻，改名绕过在模块文档里已经写明
-/// 不是可接受做法。
+/// Only the **trailing** side is tightened. Needles such as `": &str = \".spectrum.bin\""` already begin with punctuation, and adding a boundary to their prefix would break them completely. The cost is that `enum LineKindV2`, which writes another copy under a different suffix, is no longer caught. The gate exists only to block same-name copies, and the module docs already state that renaming to slip past is not an acceptable practice.
 fn needle_hits(line: &str, needle: &str) -> bool {
     line.match_indices(needle).any(|(at, _)| {
         line[at + needle.len()..]
@@ -117,7 +97,7 @@ fn scan(needles: &[&str], guidance: &str) {
         let relative = file.strip_prefix(&root).unwrap_or(file);
         let relative = relative.to_string_lossy().replace('\\', "/");
         for (index, line) in text.lines().enumerate() {
-            // 注释与文档里提到内核的名字是好事，不是复刻。
+            // Mentioning the kernel's name in comments and docs is fine. It is not a copy.
             let code = line.trim_start();
             if code.starts_with("//") || code.starts_with("*") {
                 continue;
@@ -144,7 +124,7 @@ fn scan(needles: &[&str], guidance: &str) {
     );
 }
 
-/// A：overlay 渲染计划的入口只能来自 `subtitle_render`。
+/// A: the entry point of the overlay render plan may only come from `subtitle_render`.
 #[test]
 fn no_host_defines_its_own_overlay_render_plan() {
     scan(
@@ -161,7 +141,7 @@ fn no_host_defines_its_own_overlay_render_plan() {
     );
 }
 
-/// B：字幕样式投影（扁平 blob → 行样式）只能有一处。
+/// B: subtitle style projection (flat blob → line style) may exist in only one place.
 #[test]
 fn no_host_reimplements_the_subtitle_style_projection() {
     scan(
@@ -170,10 +150,7 @@ fn no_host_reimplements_the_subtitle_style_projection() {
             "fn merged_line_style",
             "fn apply_preview_overlays",
             "fn caption_recipe",
-            // 带 `{`：针要抓的是「又声明了一个 `LineKind`」，不是任何以它开头的
-            // 名字。少了这个花括号，`ccut-wasm-editor` 那个 `enum LineKindName`
-            // （`"orig" | "trans"` 的 JSON 线名壳，两个 `From` 转到内核 LineKind）
-            // 会被当成第二份实现。
+            // With `{`: the needle is meant to catch "another `LineKind` was declared", not any name that merely starts with it. Without this brace, the `enum LineKindName` in `ccut-wasm-editor` (a JSON wire-name shell `"orig" | "trans"` with two `From`s into the kernel LineKind) would be treated as a second implementation.
             "enum LineKind {",
             "struct LineStyle",
         ],
@@ -182,7 +159,7 @@ fn no_host_reimplements_the_subtitle_style_projection() {
     );
 }
 
-/// C：跨端共享的比例常量不许各写各的字面量。
+/// C: shared cross-platform ratio constants must not each be written as their own literals.
 #[test]
 fn no_host_redeclares_the_shared_layout_ratios() {
     scan(
@@ -196,10 +173,9 @@ fn no_host_redeclares_the_shared_layout_ratios() {
     );
 }
 
-/// D：BCS1 频谱缓存的文件名规则只能有一处。
+/// D: the filename rule for the BCS1 spectrum cache may exist in only one place.
 ///
-/// 分叉的症状很有迷惑性：`ccut spectrum` 刚生成过，渲染却说「找不到频谱，
-/// 请先运行 ccut spectrum」——因为两边算出的文件名不是同一个。
+/// The symptom of a fork is misleading. Right after `ccut spectrum` has generated the file, rendering says "spectrum not found, please run ccut spectrum first", because the two sides compute different filenames.
 #[test]
 fn no_host_reconstructs_the_spectrum_cache_path() {
     scan(
@@ -213,26 +189,17 @@ fn no_host_reconstructs_the_spectrum_cache_path() {
     );
 }
 
-/// E：样式画廊只能描述「要什么样式」，不能自己算一份渲染几何。
+/// E: the style gallery may only describe "which style is wanted". It may not compute its own render geometry.
 ///
-/// 第 62 轮曾经在原型里用 540px 参考画布、`displayPadding` 和一套
-/// `fontPx * pad / 80` 公式。样式卡片必须把完整 style blob 交给共享内核；这些
-/// 原型私有公式一旦进宿主，就会让 tile、stage 与导出各画一套。
+/// In round 62 the prototype used a 540px reference canvas, `displayPadding`, and a `fontPx * pad / 80` formula. A style card must hand the complete style blob to the shared kernel. Once these prototype-private formulas enter the host, the tile, stage and export each draw their own version.
 ///
-/// 名单跟着代码走：`stylepane` / `tile_beat` 两族在 P2 第四批（`e8d2ee26`）与
-/// 第十二批（`bdce1fd6`）下沉进 `ccut-editor-core`，App 侧同名文件已删，所以
-/// 这里同时盯**新家**与仍留在 App 的那一半。名单里的文件缺失会直接 panic —
-/// 那正是这条门禁想要的响动：下次搬家必须回来改这份名单，而不是让扫描静默
-/// 落空。
-// v3：点名的文件在 v2 的 `ccut-editor-core` 与 `apps/cuccut`，v3 还没有样式画廊的 Rust 实现。
+/// The list follows the code. The `stylepane` / `tile_beat` families were moved down into `ccut-editor-core` in P2 batch four (`e8d2ee26`) and batch twelve (`bdce1fd6`), and the App-side files of the same names were deleted. So this checks both the **new home** and the half still in the App. A file on the list that is missing panics directly. That is exactly the alarm this gate is meant to raise: the next move must come back and update this list, rather than the scan silently finding nothing.
+// v3: the named files were in v2's `ccut-editor-core` and `apps/cuccut`. v3 does not yet have a Rust implementation of the style gallery.
 #[test]
 #[ignore = "点名 v2 的 ccut-editor-core 与 apps/cuccut 的样式画廊源文件：待 ccut-editor-core 移植"]
 fn subtitle_style_gallery_has_no_prototype_render_math() {
     let root = repo_root();
-    // 点名的这几份是 App 侧样式画廊的取数面：卡片目录、悬停即预览的覆盖层、
-    // 小样节拍。`adapters/stylepane.rs` 曾经也在这里，`e8d2ee26` 把 stylepane
-    // 集群沉进 `ccut-editor-core` 时删掉了它——core 那份归上面 A–D 的全量扫描管，
-    // 不再由本条点名。
+    // The files named here are the data-fetching surface of the App-side style gallery: the card catalog, the hover-to-preview overlay, and the mini-sample beat. `adapters/stylepane.rs` used to be here too, but `e8d2ee26` deleted it when it moved the stylepane cluster down into `ccut-editor-core`. Core's copy is covered by the full scan of A–D above, so it is no longer named by this entry.
     let mut files = vec![
         root.join("core/crates/ccut-editor-core/src/stylepane.rs"),
         root.join("core/crates/ccut-editor-core/src/style_library.rs"),
@@ -260,9 +227,7 @@ fn subtitle_style_gallery_has_no_prototype_render_math() {
     ];
     let mut hits = Vec::new();
     for file in files {
-        // 点名的文件被改名／搬走时要在这里炸出**是哪一份、该怎么办**：原来的
-        // `expect("style gallery source is readable")` 只留下一个 `NotFound`，
-        // `adapters/stylepane.rs` 删掉后这条门就一直红着没人看得出所以然。
+        // When a named file is renamed or moved, this must fail loudly and say **which one and what to do**. The original `expect("style gallery source is readable")` left only a bare `NotFound`. After `adapters/stylepane.rs` was deleted, this gate stayed red for a long time and nobody could tell why.
         let text = fs::read_to_string(&file).unwrap_or_else(|err| {
             panic!(
                 "读不到点名的样式画廊源文件 {}：{err}\n\
@@ -296,16 +261,11 @@ fn subtitle_style_gallery_has_no_prototype_render_math() {
     );
 }
 
-/// ALLOWED 里已经不再命中的条目要报错。
+/// Entries in ALLOWED that no longer hit must be reported as errors.
 ///
-/// 这张名单是「明知故犯并写明理由」的登记表，不是永久豁免：被放行的那一行删掉
-/// 之后条目还留着，下次同一个文件里真出现一份 `fn media_fingerprint` 复刻时，
-/// 门禁会一声不吭地放行。`ccut-serve/src/thin_shell_gate.rs` 的 `unused_allow`
-/// 是同一条自检。
+/// This list is a register of "known and deliberately done, with reasons stated", not a permanent exemption. If the line that was exempted is deleted but the entry stays, the next time a real `fn media_fingerprint` copy appears in that same file the gate would let it through silently. `unused_allow` in `ccut-serve/src/thin_shell_gate.rs` is the same self-check.
 ///
-/// 这里的判定能做到**精确到针**：ALLOWED 的三元组本来就带针，所以直接问
-/// 「这根针在这个文件里还命中吗」，与 [`scan`] 的放行判据逐字同源（同样按
-/// [`needle_hits`] 的词边界、同样跳过注释行）。
+/// The check here can be exact **down to the needle**. ALLOWED triples already carry the needle, so it asks directly whether this needle still hits in this file. It uses the same criteria as [`scan`]'s exemption check, word for word from the same source: the same [`needle_hits`] word boundary, and the same skipping of comment lines.
 #[test]
 fn the_allowlist_has_no_stale_entries() {
     let root = repo_root();

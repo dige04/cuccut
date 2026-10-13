@@ -26,9 +26,9 @@ import { useDocumentBody } from './use-document-body.ts';
 
 const icon = iconStyle({ size: 'XS' });
 const label = style({ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-/** 行头的呼吸点（原型 `.thd__live`）：这一行还在长；百分比不写在行头里，进提示。 */
+/** Breathing dot in the track header (prototype `.thd__live`): this row is still growing. The percentage is not written in the header; it goes into the tooltip. */
 const dot = style({ flexShrink: 0, width: 6, height: 6, marginEnd: 8, borderRadius: 'full', backgroundColor: 'purple-900' });
-/** 已识别的段落：与字幕片段里的句子块同一个样子（timeline-cues.tsx），只读，点了跳过去。 */
+/** Recognized paragraphs: same look as the sentence blocks in the subtitle clip (timeline-cues.tsx), read-only; clicking jumps there. */
 const cue = style({
   position: 'absolute',
   top: 4,
@@ -45,7 +45,7 @@ const cue = style({
   cursor: 'pointer',
 });
 const cueText = style({ truncate: true, minWidth: 0 });
-/** 只读文稿行的句子块（原型 ui.css `.ttx`）：中性灰底深字，与字幕的颜色分开——它不上画面、不进导出；没有选中态。 */
+/** Sentence blocks on the read-only transcript row (prototype ui.css `.ttx`): neutral gray fill with dark text, kept distinct from subtitle colors, since it doesn't go on screen and isn't exported; no selected state. */
 const transcriptCue = style({
   position: 'absolute',
   top: 4,
@@ -61,9 +61,9 @@ const transcriptCue = style({
   overflow: 'hidden',
   cursor: 'pointer',
 });
-/** 最后一段末尾的光标（原型 `.tcue__cur`）：这里还在长。 */
+/** Cursor at the end of the last paragraph (prototype `.tcue__cur`): this is still growing. */
 const caret = style({ flexShrink: 0, width: 1, height: 10, marginStart: 2, backgroundColor: 'purple-1100' });
-/** 还没转录到的那段（原型 `.tpend`）：斜纹、低对比，前缘一道实线；它不是块，点了只是跳过去。 */
+/** The segment not yet transcribed (prototype `.tpend`): diagonal stripes, low contrast, a solid line on the leading edge. It is not a block; clicking it just moves the playhead there. */
 const band = style({
   position: 'absolute',
   top: 4,
@@ -87,14 +87,14 @@ const band = style({
 const bandDot = style({ flexShrink: 0, width: 6, height: 6, borderRadius: 'full', backgroundColor: 'purple-900' });
 const bandText = style({ overflow: 'hidden', textOverflow: 'ellipsis' });
 
-/** 句子块窄于这个宽度就不写字（同 timeline-cues.tsx）。 */
+/** Sentence blocks narrower than this width don't show text (same as timeline-cues.tsx). */
 const LABEL_MIN_PX = 45;
-/** 相邻两句之间留的缝。 */
+/** Gap left between adjacent sentences. */
 const GAP_PX = 2;
 
 /**
- * 时间线上要画临时转录行的转写 Job（`jobId`）：第一次转录、时间线上取用了这个素材、还没有它的字幕（`liveRowShown`）。
- * 选出的是一串 ID，进度与段落每来一条不会让整条时间线重画；画内容的 `LiveCaptionRow` 自己订阅。
+ * Transcribe Jobs (`jobId`) that should draw a temporary transcript row on the timeline: the first transcription, the timeline has used this asset, and it has no subtitles yet (`liveRowShown`).
+ * The selection is a string of IDs, so progress and paragraph events don't redraw the whole timeline; `LiveCaptionRow`, which draws the content, subscribes to its own updates.
  */
 export function useLiveRows(videoId: Id | null, sequence: Sequence, documents: Record<Id, DocumentRecord>): Id[] {
   const key = useJobs((s) =>
@@ -116,10 +116,8 @@ export function useLiveRows(videoId: Id | null, sequence: Sequence, documents: R
 }
 
 /**
- * 转录中的临时字幕行（原型 timeline-rows.jsx `SubsRow` 第 220 轮）。第一次转录时还没有字幕轨——转录流程最后一步才建——所以
- * 这一行不属于哪条轨，占在字幕行的位置上：已识别的段落一段一块，最后一段末尾挂光标；从转录位置到素材末尾是「转录中」待定带。
- * 段落按素材时钟，经取用这个素材的实例投到时间线上（`placeSegments`），裁掉、错开的实例照样放对。只读：不进选区、不能拖，
- * 点块或带只是跳播放头。行头只有图标、名字与呼吸点，没有开关（还不是一条轨）。
+ * Temporary subtitle row during transcription (prototype timeline-rows.jsx `SubsRow`, round 220). During the first transcription there is no subtitle track yet (it is created as the last step of the transcription flow), so this row belongs to no track and takes the place of the subtitle row: each recognized paragraph is one block, and the last one has a cursor at its end; from the transcription position to the end of the asset is a “转录中” pending band (“transcribing”).
+ * Paragraphs are on the asset clock and are projected onto the timeline through the instances that use this asset (`placeSegments`), so instances that are trimmed or offset still land in the right place. Read-only: not selectable and can't be dragged; clicking a block or the band only moves the playhead. The header has only an icon, a name, and a breathing dot, with no toggle (it isn't a track yet).
  */
 export function LiveCaptionRow({
   jobId,
@@ -144,9 +142,9 @@ export function LiveCaptionRow({
   laneClass: string;
   laneWidth: number;
   pps: number;
-  /** 序列时间（秒）→ 轨道内容里的横坐标。 */
+  /** Sequence time (seconds) → x coordinate in the track content. */
   xOf(seconds: number): number;
-  /** 看得见的横向范围（轨道内容坐标）。 */
+  /** Visible horizontal range (track content coordinates). */
   view: { left: number; right: number };
   onSeek(seconds: number): void;
 }) {
@@ -174,7 +172,7 @@ export function LiveCaptionRow({
   const remain = pending && duration ? formatClock(duration - at) : null;
   const tip = C.liveTip(pct, formatClock(at), remain);
   const last = placed.length ? placed[placed.length - 1]! : null;
-  // 不让空白处的框选从这一行起手：这一行没有可选的东西。
+  // Don't let a marquee selection that starts on blank space begin on this row: there is nothing selectable on it.
   const hold = (event: ReactPointerEvent) => event.stopPropagation();
 
   return (
@@ -212,7 +210,7 @@ export function LiveCaptionRow({
               style={{ left: x0, width }}
               title={tip}
               onClick={(event) => {
-                // 带上点哪里播放头就落哪里——它是时间线上一段普通的地面，不是可选中的块。
+                // When you click the band, the playhead lands where you clicked: it is ordinary ground on the timeline, not a selectable block.
                 const rect = event.currentTarget.getBoundingClientRect();
                 onSeek(Math.max(b.start, Math.min(b.end, b.start + (event.clientX - rect.left) / pps)));
               }}>
@@ -231,8 +229,7 @@ export function LiveCaptionRow({
 }
 
 /**
- * 时间线上要画只读文稿行的素材（`transcriptRows`）：一条字幕轨都没有、素材转录过。正画着临时转录行（`liveRows`）的素材不算，
- * 免得转写落地、字幕层还没建好时同一段话画两行。
+ * Assets that should draw the read-only transcript row on the timeline (`transcriptRows`): the asset has no subtitle track at all, and it has been transcribed. Assets that are currently drawing a temporary transcript row (`liveRows`) are excluded, so that when the transcription lands but the subtitle layer isn't built yet, the same speech isn't drawn in two rows.
  */
 export function useTranscriptRows(sequence: Sequence, documents: Record<Id, DocumentRecord>, liveRows: readonly Id[]): TranscriptRowSource[] {
   const live = useJobs((s) => liveRows.map((jobId) => s.jobs.find((j) => j.jobId === jobId)?.assetId ?? '').join(' '));
@@ -240,8 +237,7 @@ export function useTranscriptRows(sequence: Sequence, documents: Record<Id, Docu
 }
 
 /**
- * 只读的「文稿」行（原型 timeline-rows.jsx `TranscriptRow`）：视频转录过、却还没有字幕轨时，文稿一句一块落在字幕行的位置上，
- * 看得见哪里在说话。它不是轨：行头只有图标与名字，没有开关；块不可选中、不可裁，点一句只把播放头落到句首。
+ * Read-only “transcript” row (prototype timeline-rows.jsx `TranscriptRow`): when the video has been transcribed but has no subtitle track yet, the transcript is laid out one sentence per block in the subtitle row's position, so you can see where speech happens. It isn't a track: the header has only an icon and a name, with no toggle. Blocks can't be selected or trimmed; clicking a sentence only moves the playhead to its start.
  */
 export function TranscriptRow({
   source,
@@ -262,15 +258,15 @@ export function TranscriptRow({
   headerClass: string;
   laneClass: string;
   laneWidth: number;
-  /** 序列时间（秒）→ 轨道内容里的横坐标。 */
+  /** Sequence time (seconds) → x coordinate in the track content. */
   xOf(seconds: number): number;
-  /** 看得见的横向范围（轨道内容坐标）。 */
+  /** Visible horizontal range (track content coordinates). */
   view: { left: number; right: number };
   onSeek(seconds: number): void;
 }) {
   const body = useDocumentBody(source.speech);
   const placed = useMemo(() => placeTranscript(sequence, source.assetId, body), [sequence, source.assetId, body]);
-  // 不让空白处的框选从这一行起手：这一行没有可选的东西。
+  // Don't let a marquee selection that starts on blank space begin on this row: there is nothing selectable on it.
   const hold = (event: ReactPointerEvent) => event.stopPropagation();
   return (
     <div className={rowClass} style={{ height }}>

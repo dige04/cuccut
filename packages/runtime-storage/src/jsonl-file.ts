@@ -4,35 +4,34 @@ import path from 'node:path';
 import { syncDir } from './json-file.ts';
 
 /**
- * 只追加的 JSONL 文件：一行一个 JSON 值，第一行是文件头。给按条记账、每次只改几条的账本用（任务与应用两本账，
- * 架构设计 §7.3）：追加几行就 fsync，不再整文件重写；行数多了由调用方整份压缩成新文件。
+ * Append-only JSONL file: one JSON value per line, and the first line is the header. For ledgers that account per entry and change only a few entries at a time (the task and app ledgers, architecture design §7.3). Appending a few lines fsyncs, with no whole-file rewrite; when there are too many lines, the caller compacts the file into a new one as a whole.
  *
- * - `appendJsonl`：追加若干行并 fsync 文件；文件是新建的（或空的）先写文件头，并 fsync 目录。
- * - `readJsonl`：读出各行；末尾被截断的残行（崩溃）与认不出的行跳过并计数；第一行认不出时整个文件算坏的。
- * - `compactJsonl`：把文件头与全部行写到临时文件、fsync、改名替换、再 fsync 目录。
+ * - `appendJsonl`: append lines and fsync the file; if the file is new (or empty), write the header first and fsync the directory.
+ * - `readJsonl`: read the lines. A truncated trailing line (crash) and lines that cannot be recognized are skipped and counted. If the first line cannot be recognized, the whole file is treated as corrupt.
+ * - `compactJsonl`: write the header and all lines to a temporary file, fsync it, rename it over the original, then fsync the directory.
  *
- * 三者都不排队：同一个文件的追加与压缩由调用方放在同一条串行写链上。macOS 上 Node 的 fsync 不是 `F_FULLFSYNC`。
+ * None of the three queues. The caller must put appends and compaction on the same file on the same serial write chain. On macOS, Node's fsync is not `F_FULLFSYNC`.
  *
- * `durable: false`（缺省 true）：追加与压缩都不 fsync 文件与目录，给不要求断电后也在的数据用（会话记录，§3.10）。
+ * `durable: false` (default true): appends and compaction do not fsync the file or the directory. For data that does not need to survive a power loss (session records, §3.10).
  */
 
 export interface JsonlWriteOptions {
   header: unknown;
   mode?: number;
-  /** 缺省 true：fsync 文件，新建或改名时再 fsync 目录。false 时都不做。 */
+  /** Default true: fsync the file, and when creating or renaming, also fsync the directory. When false, do neither. */
   durable?: boolean;
 }
 
 export interface JsonlReadResult {
-  /** 第一行（文件头）；空文件时 null。 */
+  /** First line (the header); null for an empty file. */
   header: unknown;
-  /** 文件头之后能解析的各行，按文件里的顺序。 */
+  /** Lines after the header that can be parsed, in file order. */
   rows: unknown[];
-  /** 跳过的行数（不含末尾的残行）。 */
+  /** Number of skipped lines (not counting the trailing torn line). */
   skipped: number;
-  /** 最后一行没有换行结尾（崩溃时写了一半）：解析不了时跳过，解析得了也照收。 */
+  /** The last line has no trailing newline (a crash cut the write short): skipped if it cannot be parsed, kept if it can. */
   truncatedTail: boolean;
-  /** 文件头之后的行数（含跳过的与残行），供调用方判断何时压缩。 */
+  /** Number of lines after the header (including skipped and torn lines), so the caller can decide when to compact. */
   lines: number;
   bytes: number;
 }
@@ -47,7 +46,7 @@ export class JsonlCorruptError extends Error {
   }
 }
 
-/** 文件不在时 null；第一行（文件头）不是 JSON 时抛 `JsonlCorruptError`。 */
+/** `null` if the file does not exist. Throws `JsonlCorruptError` if the first line (the header) is not JSON. */
 export async function readJsonl(file: string): Promise<JsonlReadResult | null> {
   let text: string;
   try {
@@ -61,7 +60,7 @@ export async function readJsonl(file: string): Promise<JsonlReadResult | null> {
   const truncatedTail = !text.endsWith('\n');
   const parts = text.split('\n');
   if (!truncatedTail) parts.pop();
-  // 整个文件只有半行：第一次追加（文件头与第一行一起写）时崩溃，或者正好读在那次写入中间。按空文件处理。
+  // The whole file is only a partial line: it crashed during the first append (the header and first line are written together), or the read landed in the middle of that write. Treat it as an empty file.
   if (truncatedTail && parts.length === 1) return { header: null, rows: [], skipped: 0, truncatedTail, lines: 0, bytes };
   let header: unknown;
   try {
@@ -85,14 +84,14 @@ export async function readJsonl(file: string): Promise<JsonlReadResult | null> {
 }
 
 /**
- * 追加若干行（已经序列化、不含换行）并 fsync。文件不在或是空的时先写 `header`，并 fsync 目录（让新建的文件落盘）。
- * 文件末尾没有换行（上次写了一半）时先补一个换行，新行不会接在残行后面。返回写入的字节数。
+ * Append several lines (already serialized, without newlines) and fsync. If the file is missing or empty, write `header` first and fsync the directory (so the new file reaches the disk).
+ * If the file does not end with a newline (the previous write was cut short), add one first so the new lines do not join the torn line. Returns the number of bytes written.
  */
 export async function appendJsonl(file: string, rows: readonly string[], options: JsonlWriteOptions): Promise<number> {
   const durable = options.durable ?? true;
   const dir = path.dirname(file);
   await fs.mkdir(dir, { recursive: true });
-  // `a+`：写入总在末尾，还能读最后一个字节。
+  // `a+`: writes always go to the end, and the last byte can still be read.
   const handle = await fs.open(file, 'a+', options.mode ?? 0o644);
   let created = false;
   let written: number;
@@ -118,7 +117,7 @@ export async function appendJsonl(file: string, rows: readonly string[], options
   return written;
 }
 
-/** 原子地把文件换成文件头加这些行：临时文件写完 fsync，改名，再 fsync 目录。返回新文件的字节数。 */
+/** Atomically replace the file with the header plus these lines: write the temporary file, fsync it, rename it, then fsync the directory. Returns the byte size of the new file. */
 export async function compactJsonl(file: string, rows: readonly string[], options: JsonlWriteOptions): Promise<number> {
   const durable = options.durable ?? true;
   const dir = path.dirname(file);
@@ -144,7 +143,7 @@ export async function compactJsonl(file: string, rows: readonly string[], option
   return Buffer.byteLength(text);
 }
 
-/** 认不出的文件改名保留（`<文件>.corrupt-<时间>`），不静默覆盖。返回改名后的路径。 */
+/** An unrecognizable file is kept by renaming it (`<file>.corrupt-<time>`), not silently overwritten. Returns the renamed path. */
 export async function quarantineFile(file: string): Promise<string> {
   const to = `${file}.corrupt-${Date.now()}`;
   await fs.rename(file, to).catch(() => {});

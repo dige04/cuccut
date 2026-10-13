@@ -14,7 +14,7 @@ import { pl } from './transition-panel-copy.pl.ts';
 import { tr } from './transition-panel-copy.tr.ts';
 import { vi } from './transition-panel-copy.vi.ts';
 
-/** 属性页「转场」一节的文案（model/transition-panel.ts；译文在 `transition-panel-copy.<语言>.ts`）。 */
+/** Copy for the “Transition” section of the properties page (model/transition-panel.ts; translations are in `transition-panel-copy.<lang>.ts`). */
 const en = {
   slot: { in: 'In', out: 'Out' },
   choice: {

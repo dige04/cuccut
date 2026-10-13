@@ -1,22 +1,12 @@
 /*!
- * ccut-render —— host 侧：资源加载（sha256 校验 / 图像解码 / 媒体探测）、
- * 文本引擎（cosmic-text，支持文档字体 strict 模式）、DrawOp 帧指令 IR
- * （确定性二进制编码 + 指纹）、tiny-skia 光栅化重放、媒体帧供给
- * （video 顺序解码）、音频混音、ffmpeg 管道 MP4 合成。
- * core 保持无 I/O，此 crate 拥有全部字节与进程。
+ * ccut-render —— host side: resource loading (sha256 verification / image decoding / media probing), text engine (cosmic-text, with strict mode for document fonts), DrawOp frame instruction IR (deterministic binary encoding + fingerprint), tiny-skia rasterization replay, media frame supply (sequential video decoding), audio mixing, and ffmpeg pipe MP4 composition. core stays free of I/O; this crate owns all bytes and processes.
  */
 
-// ── 元素方案 §9.1 / §10 P6a 的 feature 门禁。
+// ── Feature gate for the element plan §9.1 / §10 P6a.
 //
-// 门开在 **`target_arch = "wasm32"`** 上而不是「`wasm-safe` 与 `media` 互斥」
-// 上，理由是 cargo 的 **feature unification**：`cargo build --workspace` 会把
-// `apps/cli`（要 `media`）和 `ccut-wasm`（要 `wasm-safe`）对同一个
-// `ccut-render` 的 feature 取并集，纯 feature 级的互斥断言会把整个 workspace
-// 构建判死——而那次构建里根本没有 wasm 目标，两个 feature 并存无害
-// （`media` 是超集，`wasm-safe` 自己不打开任何东西）。
+// The gate is keyed on **`target_arch = "wasm32"`** rather than on “`wasm-safe` and `media` are mutually exclusive”, because of cargo's **feature unification**: `cargo build --workspace` unions the features of the same `ccut-render` crate across `apps/cli` (which needs `media`) and `ccut-wasm` (which needs `wasm-safe`). A pure feature-level mutual-exclusion assertion would fail the whole workspace build, yet that build has no wasm target at all, and having both features enabled together is harmless (`media` is a superset, and `wasm-safe` itself opens nothing).
 //
-// 真正要防的事只有一件：**别把 ffmpeg 子进程 / host SVG 解码编进浏览器**。
-// BCF 文档的布局、录制和帧计划是无 I/O 的共享实现，WASM 同样可用。
+// Only one thing really needs guarding: **keep the ffmpeg subprocess / host SVG decoding out of the browser build**. The BCF document layout, recording and frame planning are shared implementations with no I/O, so they are available to WASM as well.
 #[cfg(all(target_arch = "wasm32", feature = "media"))]
 compile_error!(
     "wasm32 目标不得打开 ccut-render 的 `media`（ffmpeg 子进程 / host resvg）：\
@@ -28,8 +18,7 @@ compile_error!(
      `gpu-webgpu` / `gpu-webgl`（两者合开即 `gpu-web`）"
 );
 
-// v3：`program` 与 GPU 的依赖没有声明（见 Cargo.toml 文件头），feature 只是占位。
-// 打开它们时在这里给出可读的原因，而不是一串「找不到 crate」。
+// v3: the dependencies of `program` and GPU are not declared (see the header of Cargo.toml), so the features are only placeholders. When they are enabled, give a readable reason here rather than a string of “crate not found” errors.
 #[cfg(feature = "program")]
 compile_error!(
     "render-raster 的 `program` 不可用：它要的 ccut-compile（BCF 编译，oxc + rquickjs）\
@@ -57,8 +46,7 @@ pub mod motion_blur;
 pub mod plan;
 #[cfg(feature = "program")]
 pub mod program;
-// 不开 `program` 时 `program` 资产在加载期就报错，`LoadedAssets::programs` 恒为空：这里只留一个
-// 无值的 `ProgramSource`，帧供给（`media.rs`）里查 `programs` 的分支原样编译、永远不命中。
+// When `program` is not enabled, `program` assets fail at load time and `LoadedAssets::programs` is always empty. Here we keep only a value-less `ProgramSource`, so the branch in frame supply (`media.rs`) that looks up `programs` still compiles as written and simply never matches.
 #[cfg(all(feature = "media", not(feature = "program")))]
 #[path = "program_absent.rs"]
 pub mod program;
@@ -91,11 +79,9 @@ pub use plan::{
     execute_plan_with_fingerprints, execute_plan_with_inputs, shader_for,
 };
 
-/// naga 的转出口（`wgsl-validate` feature，`gpu` 带着它）。
+/// Re-export of naga (the `wgsl-validate` feature, which `gpu` brings along).
 ///
-/// shader 的静态校验测试住在 `tests/`，而 Cargo 的 dev-dependencies 没法跟着
-/// 本 crate 的 feature 走；从这里转出去，测试就与库用同一个 naga 版本——
-/// 校验和转译目标不会因为两处版本漂移而对不上。
+/// The static shader validation tests live in `tests/`, and Cargo's dev-dependencies cannot follow this crate's features. Re-exporting from here means the tests use the same naga version as the library, so validation and translation targets cannot drift apart because of version mismatches in two places.
 #[cfg(feature = "wgsl-validate")]
 pub use naga;
 pub use raster::{FrameMedia, rasterize_with_media};
@@ -104,9 +90,7 @@ pub use source::{
     SourceMetadata, VisualSource,
 };
 
-/// 字幕入场姿态配方（`transition.caption.*@1`）的转出口。与 `effects` 里那两个
-/// 值类型同一个理由：host 侧（`apps/cli`）只依赖 `ccut-render`，不必为了取一份
-/// 配方再连一条 `ccut-motion` 的边。
+/// Re-export of the caption entrance pose recipe (`transition.caption.*@1`). Same reason as the two value types in `effects`: the host side (`apps/cli`) depends only on `ccut-render`, and does not need an extra `ccut-motion` edge just to obtain one recipe.
 pub use motion::preset_registry::{
     CaptionChannel, CaptionTransitionRecipe, caption_transition, caption_transitions,
 };

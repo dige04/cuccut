@@ -38,14 +38,14 @@ import { RECORD_COPY, TRANSCODE_COPY } from './tools-copy.ts';
 import { TranscodeRecord } from './transcode-record.tsx';
 
 /*
- * 压缩视频与合并视频共用的部件（设计稿 tool-video.jsx 的共享层：拖放区、片段行、ffmpeg 卡、右栏「任务队列」）。
- * 选文件三条路：拖进来（桌面端经 `pathForFile` 拿到路径）、「选择视频…」（`cuccut:pick-media`）、粘贴完整路径——
- * 最后一条在浏览器预览里拿不到原生对话框时也能用。
+ * Components shared by compress video and merge video (the shared layer of design file tool-video.jsx: drop zone, clip rows, ffmpeg card, and the right-column “任务队列” (job queue)).
+ * Three ways to pick files: drag them in (on desktop, the path comes from `pathForFile`), “选择视频…” (Choose video…, `cuccut:pick-media`), or paste the full path —
+ * the last one also works in the browser preview, where no native dialog is available.
  */
 
-// ---- 记录与 ffmpeg ----
+// ---- Records and ffmpeg ----
 
-/** `transcode` 的记录（压缩与合并在一起）：`jobs` 主题里这台电脑的界面提交的父任务，去掉本机藏起来的。 */
+/** Records of `transcode` (compress and merge together): the parent jobs in the `jobs` topic that this machine's UI submitted, minus those hidden locally. */
 export function useTranscodeRecords(): { ready: boolean; list: JobRecord[]; all: JobRecord[]; live: number } {
   const ready = useJobs((s) => s.ready);
   const all = useJobs((s) => s.jobs);
@@ -57,8 +57,8 @@ export function useTranscodeRecords(): { ready: boolean; list: JobRecord[]; all:
 export type FfmpegState = { status: 'checking' } | { status: 'done'; line: FfmpegLine } | { status: 'failed'; message: string };
 
 /**
- * 这台电脑上的 ffmpeg（`externalTools.detect`，只跑 `ffmpeg -version`、不联网）。浏览器里不检测（Runtime 不对网页开放）。
- * 检测本身失败时不拦提交：Runtime 提交时会再查一次，不可用就以原因拒绝。
+ * ffmpeg on this computer (`externalTools.detect`; it only runs `ffmpeg -version` and makes no network calls). Not detected in the browser (the Runtime does not expose it to web pages).
+ * If the detection itself fails, submission is not blocked: the Runtime checks again on submit and refuses with the reason if it is unavailable.
  */
 export function useFfmpeg(enabled: boolean): { state: FfmpegState; recheck: () => void } {
   const runtime = useRuntime();
@@ -76,7 +76,7 @@ export function useFfmpeg(enabled: boolean): { state: FfmpegState; recheck: () =
   return { state, recheck };
 }
 
-/** ffmpeg 不能用时的门卡（设计稿 `FfmpegCard` 的「要先装」；装与升级 Runtime 不代办，照它给的修法写）。 */
+/** Gate card when ffmpeg is unusable (design file `FfmpegCard`'s “要先装” (has to be installed first)); the Runtime does not install or upgrade it on the user's behalf, so the fix it gives is written as is. */
 export function FfmpegGate({ state, recheck }: { state: FfmpegState; recheck: () => void }) {
   if (state.status !== 'done' || state.line.ready) return null;
   return (
@@ -92,7 +92,7 @@ export function FfmpegGate({ state, recheck }: { state: FfmpegState; recheck: ()
   );
 }
 
-// ---- 选文件 ----
+// ---- Choosing files ----
 
 const dropZone = style({ width: 'full' });
 const dropBody = style({
@@ -113,7 +113,7 @@ const pathRow = style({ display: 'flex', alignItems: 'end', gap: 8, minWidth: 0 
 const pathField = style({ flexGrow: 1, minWidth: 0 });
 
 /**
- * 拖放区与「选择视频…」，下面一行粘贴路径。空的时候是大块的拖放区（设计稿 `.vdrop`）；已经有文件时收成一行，还能再拖进来。
+ * Drop zone and “选择视频…” (Choose video…), with a paste-path line below. When empty, it is a large drop zone (design file `.vdrop`); once a file is present it collapses to one line, and files can still be dragged in.
  */
 export function FilePicker({
   inputs,
@@ -126,7 +126,7 @@ export function FilePicker({
   onChange: (inputs: string[]) => void;
   title: string;
   sub: string;
-  /** 提取音频另收音频文件。 */
+  /** Extract audio collects audio files separately. */
   withAudio?: boolean;
 }) {
   const runtime = useRuntime();
@@ -190,7 +190,7 @@ export function FilePicker({
           value={typed}
           onChange={setTyped}
           onKeyDown={(e) => {
-            // React Aria 默认拦住键盘事件冒泡；⌘↵ 要放行给 Workbench 提交。
+            // React Aria stops keyboard event bubbling by default; ⌘↵ must be let through so it reaches the Workbench submit.
             if (e.key !== 'Enter' || e.metaKey || e.ctrlKey) return e.continuePropagation();
             e.preventDefault();
             addTyped();
@@ -253,7 +253,7 @@ const indicator = style({
   outlineStyle: 'none',
 });
 
-/** 一个图标按钮带提示（设计稿 `IconBtn tip`）。 */
+/** An icon button with a tooltip (design file `IconBtn tip`). */
 function IconButton({ label, onPress, isDisabled, children }: { label: string; onPress: () => void; isDisabled?: boolean; children: ReactNode }) {
   return (
     <TooltipTrigger>
@@ -266,8 +266,8 @@ function IconButton({ label, onPress, isDisabled, children }: { label: string; o
 }
 
 /**
- * 选好的文件（设计稿 `ClipRow` / `SourceRow`）：合并时带序号、拖动手柄与上移 / 下移（RAC 的拖放，键盘也能拖），
- * 压缩时只有移出。同一个文件只进一次，所以路径（Space 条目是 `space:<entryId>`）就是行的 key。
+ * Selected files (design file `ClipRow` / `SourceRow`): when merging, they have an index, a drag handle and move up / down buttons (RAC drag-and-drop, which also works with the keyboard);
+ * when compressing, there is only remove. The same file is added only once, so the path (for a Space entry, `space:<entryId>`) is the row's key.
  */
 export function InputList({
   inputs,
@@ -343,11 +343,11 @@ export function InputList({
   );
 }
 
-// ---- 右栏 ----
+// ---- Right column ----
 
 /**
- * 右栏「处理记录」：压缩与合并的记录列在一起（设计稿 `JobList`）。取消了的照设计稿留一张「重新排队」
- * （本机执行，不计费）；没做成的、做完的都列。「带回左边再来一版」由记录卡自己按它是压缩还是合并带回对应的页。
+ * Right column “处理记录” (processing records): compress and merge records are listed together (design file `JobList`). Cancelled items keep one “重新排队” (Requeue) entry, as in the design
+ * (it runs locally and is not billed); both failed and finished items are listed. “带回左边再来一版” (Bring back to the left to make another version) is handled by the record card itself, which brings back the matching page depending on whether it was a compress or merge.
  */
 export function TranscodeSide() {
   const records = useTranscodeRecords();

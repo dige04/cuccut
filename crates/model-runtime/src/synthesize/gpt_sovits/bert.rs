@@ -1,6 +1,4 @@
-//! chinese-roberta-wwm-ext-large（HF `BertModel`）：GPT-SoVITS 取 `hidden_states[-3]`
-//! （embedding 之后第 22 层的输出）作为中文段的逐字特征，按 `word2ph` 展开到音素粒度，
-//! 对照 `TTS_infer_pack/TextPreprocessor.py::get_bert_feature`。
+//! chinese-roberta-wwm-ext-large (HF `BertModel`): GPT-SoVITS takes `hidden_states[-3]` (the output of layer 22 after the embeddings) as the per-character features for Chinese segments, expands them to phoneme granularity via `word2ph`, matching `TTS_infer_pack/TextPreprocessor.py::get_bert_feature`.
 
 use super::layers::{LayerNorm, Linear, act};
 use super::weights::WeightMap;
@@ -13,14 +11,13 @@ use std::path::Path;
 const HIDDEN: i32 = 1024;
 const HEADS: i32 = 16;
 const HEAD_DIM: i32 = HIDDEN / HEADS;
-/// `hidden_states[-3]`：24 层里只需要跑前 22 层。
+/// `hidden_states[-3]`: of the 24 layers, only the first 22 need to run.
 const USED_LAYERS: usize = 22;
 const LAYER_NORM_EPS: f32 = 1e-12;
 const MAX_POSITIONS: usize = 512;
 pub const FEATURE_DIM: usize = HIDDEN as usize;
 
-/// `tokenizer.json` 的 WordPiece 词表。GPT-SoVITS 中文规范化后的文本只剩汉字与标点，
-/// BERT 的 `handle_chinese_chars` / 标点切分对它们都是一字一 token，所以按字查表即可。
+/// WordPiece vocabulary from `tokenizer.json`. After GPT-SoVITS Chinese normalization the text contains only Han characters and punctuation, and BERT's `handle_chinese_chars` / punctuation splitting makes each of these exactly one token, so a per-character lookup is enough.
 pub struct BertVocab {
     ids: HashMap<String, i32>,
     cls: i32,
@@ -45,7 +42,7 @@ impl BertVocab {
         Ok(Self { ids, cls, sep, unk })
     }
 
-    /// `[CLS] 字… [SEP]`；BertNormalizer 会转小写，词表外的字记为 `[UNK]`。
+    /// `[CLS] chars… [SEP]`; BertNormalizer lowercases, and characters outside the vocabulary map to `[UNK]`.
     pub fn encode_chars(&self, text: &str) -> Vec<i32> {
         let mut out = Vec::with_capacity(text.chars().count() + 2);
         out.push(self.cls);
@@ -127,7 +124,7 @@ impl Bert {
         })
     }
 
-    /// 规范化后的中文文本 → `[Σword2ph, 1024]` 行优先的逐音素特征。
+    /// Normalized Chinese text → row-major per-phoneme features of shape `[Σword2ph, 1024]`.
     pub fn phone_features(&self, text: &str, word2ph: &[usize]) -> Result<Vec<f32>> {
         let ids = self.vocab.encode_chars(text);
         ensure!(

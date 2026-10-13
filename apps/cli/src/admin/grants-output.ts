@@ -18,11 +18,11 @@ import {
 import { M } from './grants-copy.ts';
 
 /**
- * `cuccut grants` 的参数与输出，以及 `cuccut approvals allow --persist` 的授权选择（架构设计 §12.5、§7.8）。
- * 从 main.ts 分出来，单独可测。
+ * Arguments and output of `cuccut grants`, and the grant choice of `cuccut approvals allow --persist` (Architecture design §12.5, §7.8).
+ * Split out of main.ts so it can be tested on its own.
  */
 
-/** 命令行上与授权有关的选项（main.ts 的全局选项里的这几个）。 */
+/** Command-line options related to grants (the ones among main.ts's global options). */
 export interface GrantOptions {
   recipient?: string | undefined;
   data?: string | undefined;
@@ -108,8 +108,8 @@ export function parseGrantsArgs(args: string[], options: GrantOptions): GrantsCo
 }
 
 /**
- * `cuccut approvals allow <id>` 的授权选择：不给 `--persist` 时不带（只这一次）；给了时同时发放持续授权，
- * `--scope video|all`、`--max-calls`、`--budget` + `--currency`、`--expires` 是它的范围与上限。
+ * The grant choice for `cuccut approvals allow <id>`. Without `--persist`, none is attached (this time only). When given, an ongoing grant is issued as well,
+ * and `--scope video|all`, `--max-calls`, `--budget` + `--currency`, and `--expires` are its scope and limits.
  */
 export function parseApprovalGrantChoice(options: GrantOptions): ApprovalGrantChoice | undefined {
   const extras = [options.scope, options.maxCalls, options.budget, options.currency, options.expires].some((v) => v !== undefined);
@@ -142,7 +142,7 @@ function parseDataKinds(value: string): GrantDataKind[] {
   return [...new Set(kinds)] as GrantDataKind[];
 }
 
-/** `--max-calls <n|none>`：none 为不限。 */
+/** `--max-calls <n|none>`: none means unlimited. */
 function parseMaxCalls(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined;
   if (value === 'none') return null;
@@ -151,7 +151,7 @@ function parseMaxCalls(value: string | undefined): number | null | undefined {
   return n;
 }
 
-/** `--budget <金额>` + `--currency <币种>`：十进制字符串，不用浮点数。 */
+/** `--budget <amount>` + `--currency <currency>`: a decimal string, not a floating-point number. */
 function parseBudget(budget: string | undefined, currency: string | undefined): Money | undefined {
   if (budget === undefined) {
     if (currency !== undefined) throw new Error(M.currencyNeedsBudget);
@@ -163,7 +163,7 @@ function parseBudget(budget: string | undefined, currency: string | undefined): 
   return { amount: budget, currency: code };
 }
 
-/** `--expires <ISO 时间|none>`。 */
+/** `--expires <ISO time|none>`. */
 function parseExpires(value: string | undefined): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === 'none') return null;
@@ -184,7 +184,7 @@ function money(value: Money | null): string {
   return value ? `${value.amount} ${value.currency}` : '—';
 }
 
-/** 一条授权的用量：次数（含预留）与金额（有上限时）。 */
+/** Usage of one grant: count (including reservations) and amount (when there is a limit). */
 export function usageLabel(grant: Grant): string {
   const { usage } = grant;
   const calls = M.calls(usage.calls, usage.reservedCalls, grant.maxCalls);
@@ -193,7 +193,7 @@ export function usageLabel(grant: Grant): string {
   return M.callsAndAmount(calls, usage.amount ?? '0', reserved, grant.budgetCap.amount, grant.budgetCap.currency);
 }
 
-/** 授权，一条一行：id、状态、接收方、数据、范围、预算与用量、来源。 */
+/** Grants, one per line: id, status, recipient, data, scope, budget and usage, source. */
 export function formatGrants(grants: Grant[]): string[] {
   if (grants.length === 0) return [M.noGrants];
   return grants.map((g) =>
@@ -213,7 +213,7 @@ export function formatGrants(grants: Grant[]): string[] {
   );
 }
 
-/** 撤销的结果：撤销之后不再有新的调用；已经交出的数据与已经计入的费用如实列出。 */
+/** Result of revoking: after revocation, no new calls are made. Data already handed over and costs already counted are listed as they are. */
 export function formatRevoke(result: GrantRevokeResult): string[] {
   const { alreadySent } = result;
   return [
@@ -224,7 +224,7 @@ export function formatRevoke(result: GrantRevokeResult): string[] {
   ];
 }
 
-/** 用量报告：授权本身，加上用过它的任务（预留与结算）。 */
+/** Usage report: the grant itself, plus the tasks that used it (reservations and settlements). */
 export function formatUsage(report: GrantUsageReport): string[] {
   const lines = formatGrants([report.grant]);
   if (report.jobs.length === 0) return [...lines, M.noJobs];
@@ -235,7 +235,7 @@ export function formatUsage(report: GrantUsageReport): string[] {
   return lines;
 }
 
-/** 审批里要授权的数据外发（`cuccut approvals` 列表里每条审批的附加行）。 */
+/** Data-egress grant in an approval (the extra line on each approval in the `cuccut approvals` list). */
 export function formatApprovalGrants(approval: PendingApproval): string[] {
   return (approval.grants ?? []).map((item) =>
     M.approvalGrant({

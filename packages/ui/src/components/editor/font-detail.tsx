@@ -10,8 +10,7 @@ import { cancelFamily, downloadFamily, removeFamily, requestSample, useFontLibra
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * 字体详情（原型 panel-font-picker.jsx 的 FontDetail）：状态、来源、分类与文字、字重、大小与许可；按状态给下载、取消下载、
- * 重试、删除下载的文件，最后是「用这个字体」。
+ * Font details (prototype panel-font-picker.jsx's FontDetail): status, source, category and sample text, weights, size and license. Depending on the status it offers download, cancel download, retry, and delete the downloaded files, and finally “用这个字体” (use this font).
  */
 
 const wrap = style({ paddingY: 4 });
@@ -31,11 +30,11 @@ const value = style({ margin: 0, minWidth: 0, color: 'gray-900', overflowWrap: '
 const fine = style({ marginTop: 0, marginBottom: 12, marginX: 4, font: 'ui-xs', color: 'gray-600' });
 const actions = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'end', gap: '[6px]' });
 
-/** Runtime 拒绝时把它的说明念出来。 */
+/** When the Runtime rejects an action, read out its explanation. */
 export const toastError = (error: unknown) => ToastQueue.negative(fontError(error).message, { timeout: 5000 });
 
 /**
- * `inline`：在属性栏里就地展开（和编辑器的「导出」同屏），「用这个字体」退成中性按钮；在弹层里它是那一层唯一的主按钮。
+ * `inline`: expands in place in the properties bar (on the same screen as the editor's “导出” (Export)), and “用这个字体” (use this font) becomes a neutral button. In a popover, it is the only primary button on that layer.
  */
 export function FontDetail({ row: f, onBack, onPick, inline = false }: { row: FontRow; onBack(): void; onPick(): void; inline?: boolean }) {
   const { client } = useRuntime();

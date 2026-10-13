@@ -1,16 +1,15 @@
 import type { Easing, Id, Revision, VersionRef } from '@cuccut/protocol';
 
 /**
- * 帧计划（架构设计 §9.1）：Rust `render-graph` 的输出，经 WASM 交给界面。字段与 `crates/render-graph` 的
- * serde 输出一一对应；计划只说「画什么、画在哪」，像素由合成器按它去画。
+ * Frame plan (architecture design §9.1): the output of Rust `render-graph`, passed to the UI through WASM. Fields map one-to-one to the serde output of `crates/render-graph`. The plan only says what to draw and where; the compositor draws the pixels according to it.
  */
 export interface FramePlan {
   sequenceId: Id;
   sequenceRevision: Revision;
-  /** 这一刻所在的视频帧（向下取整）。 */
+  /** The video frame at this moment (rounded down). */
   frame: number;
   canvas: PlanCanvas;
-  /** 按合成顺序：先画的在下面。 */
+  /** In composition order: layers drawn first are underneath. */
   layers: VisualLayer[];
   voices: AudioVoice[];
 }
@@ -25,35 +24,34 @@ export interface PlanCanvas {
 type Matrix = [number, number, number, number, number, number];
 
 /**
- * 一个画面层。`matrix` 把单位正方形映到画布像素，即 Canvas 2D 的 `setTransform(a, b, c, d, e, f)`：
- * 视频与图片把源画面的 `sourceRect`（相对显示尺寸归一化的 `[u0, v0, u1, v1]`）画进单位正方形；
- * 文字、图形、生成器与不支持的层的单位正方形是实例的布局框（已含翻转）；字幕的单位正方形是整张画布。
+ * One picture layer. `matrix` maps the unit square to canvas pixels, i.e. the `setTransform(a, b, c, d, e, f)` of Canvas 2D.
+ * For video and images, the source's `sourceRect` (`[u0, v0, u1, v1]`, normalized to the display size) is drawn into the unit square. For text, shapes, generators and unsupported layers, the unit square is the instance's layout box (flip already applied). For captions, the unit square is the whole canvas.
  */
 export type VisualLayer = MediaLayer | TextLayer | ShapeLayer | GeneratorLayer | CaptionLayer | UnsupportedLayer;
 
 interface LayerBase {
-  /** 出这一层的实例。 */
+  /** The instance this layer is drawn from. */
   itemId: Id;
   matrix: Matrix;
   opacity: number;
-  /** 启用的效果，按作用顺序（格式规范 §3.9）；没有时省略。认不出的种类带 `unsupported`，跳过并报出来。 */
+  /** Enabled effects, in application order (format spec §3.9); omitted when there are none. Unrecognized kinds carry `unsupported`; they are skipped and reported. */
   effects?: LayerEffect[];
-  /** 这一刻这一层在转场里（格式规范 §3.9）。 */
+  /** Whether this layer is inside a transition at this moment (format spec §3.9). */
   transition?: LayerTransition;
 }
 
 export interface LayerEffect {
   id: Id;
   kind: string;
-  /** 空的时候省略。 */
+  /** Omitted when empty. */
   params?: Record<string, unknown>;
-  /** 画不出来的原因：`unknown-kind`、`reserved`（如 `lut`）、`invalid-params`。 */
+  /** Reasons it cannot be drawn: `unknown-kind`, `reserved` (e.g. `lut`), `invalid-params`. */
   unsupported?: string;
 }
 
 /**
- * 层所在的转场。`progress` 是这一刻在窗口里的位置（0–1），`eased` 是缓动之后的值，画法都按 `eased`。
- * 两侧转场的另一侧在 `partner` 里（它在自己的区间之外，源时刻在 handles 里）；单侧转场没有 `partner`，另一侧是透明。
+ * The transition the layer is in. `progress` is this moment's position within the window (0–1); `eased` is the value after easing, and all drawing uses `eased`.
+ * The other side of a two-sided transition is in `partner` (it lies outside its own range; the source moments are in handles). A one-sided transition has no `partner`; the other side is transparent.
  */
 export interface LayerTransition {
   id: Id;
@@ -62,28 +60,28 @@ export interface LayerTransition {
   easing: Easing;
   progress: number;
   eased: number;
-  /** 这一层是出场的一侧还是入场的一侧。 */
+  /** Whether this layer is the outgoing side or the incoming side of the transition. */
   role: 'outgoing' | 'incoming';
   partner?: VisualLayer;
-  /** 认不出的种类：按硬切画（只画这一层）并报出来。 */
+  /** Unrecognized kinds: drawn as a hard cut (only this layer is drawn) and reported. */
   unsupported?: string;
 }
 
 export interface MediaLayer extends LayerBase {
-  /** `video` 层不一定来自视频实例：带预渲染替身的合成也按视频层给出，`asset` 是替身。 */
+  /** A `video` layer does not necessarily come from a video instance: compositions with a pre-rendered stand-in are also given as video layers, and `asset` is the stand-in. */
   kind: 'video' | 'image';
-  /** 这一层取画面的素材。要用哪个素材只看这里，不从实例上推。 */
+  /** The asset this layer takes its picture from. Which asset to use is read only from here; it is not inferred from the instance. */
   asset: VersionRef;
-  /** 视频要取的源时刻（秒）；图片没有。 */
+  /** Source moment (seconds) to take the video frame from; images have none. */
   sourceSeconds?: number;
-  /** 源时间相对序列时间的速度；定格是 0。图片没有。 */
+  /** Speed of source time relative to sequence time; a freeze frame is 0. Images have none. */
   sourceRate?: number;
   sourceRect: [number, number, number, number];
 }
 
 export interface TextLayer extends LayerBase {
   kind: 'text';
-  /** 文字实例的样式对象（与字幕样式同一套字段）。 */
+  /** Style object of a text instance (same fields as the caption style). */
   content: { text: string; style: Record<string, unknown> };
 }
 
@@ -92,17 +90,17 @@ export interface ShapeLayer extends LayerBase {
   content: { shape: Record<string, unknown> };
 }
 
-/** 内置生成器按局部时刻画出来的画面。 */
+/** The picture a built-in generator draws at its local moment. */
 export interface GeneratorLayer extends LayerBase {
   kind: 'generator';
-  /** 合成的局部时刻（经过它的时间映射）与速度。 */
+  /** The composition's local moment (after its time mapping) and speed. */
   sourceSeconds: number;
   sourceRate: number;
   content: {
     generator: string;
     version: number;
     parameters: Record<string, unknown>;
-    /** 这一刻离实例开始过了多久、实例一共多长（序列时间，秒）。 */
+    /** How long since the instance started at this moment, and how long the instance is in total (sequence time, seconds). */
     elapsedSeconds: number;
     durationSeconds: number;
   };
@@ -111,17 +109,17 @@ export interface GeneratorLayer extends LayerBase {
 export interface CaptionLayer extends LayerBase {
   kind: 'caption';
   content: {
-    /** 字幕实例跟随文档的当前版本。 */
+    /** A caption instance follows the document's current version. */
     documentId: Id;
     styleDocumentId?: Id;
-    /** 这一刻的序列时间：文档在序列时钟上时按它找句子。 */
+    /** The sequence time at this moment: when the document is on the sequence clock, sentences are looked up by it. */
     sequenceSeconds: number;
-    /** 文档在源素材时钟上时，这一刻经过哪个作用实例、落在它的源的哪一刻。 */
+    /** When the document is on the source asset's clock: which effect instance this moment passes through, and which moment of its source it falls on. */
     scope?: { itemId: Id; asset: VersionRef; sourceSeconds: number };
   };
 }
 
-/** 该有画面但计划给不出画法（没有预渲染替身的代码包合成、手绘、占位框、白板、素材贴纸、模板层）：要明确报出来，不画成空白。 */
+/** A picture should be here, but the plan cannot give a way to draw it (a code-package composition without a pre-rendered stand-in, hand-drawn, placeholder box, whiteboard, asset sticker, template layer). It must be reported explicitly, not drawn as blank. */
 export interface UnsupportedLayer extends LayerBase {
   kind: 'unsupported';
   asset?: VersionRef;
@@ -132,21 +130,21 @@ export function isMediaLayer(layer: VisualLayer): layer is MediaLayer {
   return layer.kind === 'video' || layer.kind === 'image';
 }
 
-/** 画进自己布局框的层：文字、图形、生成器与不支持的层。 */
+/** Layers drawn into their own layout box: text, shapes, generators and unsupported layers. */
 export type BoxLayer = TextLayer | ShapeLayer | GeneratorLayer | UnsupportedLayer;
 
 export interface AudioVoice {
   itemId: Id;
-  /** `embedded`：视频实例（或带预渲染替身的合成）自带的声音，`asset` 是出声的视频素材；`audio`：音频轨道上的实例。 */
+  /** `embedded`: sound belonging to a video instance (or a composition with a pre-rendered stand-in); `asset` is the video asset that produces the sound. `audio`: an instance on an audio track. */
   source: 'embedded' | 'audio';
   asset: VersionRef;
   sourceSeconds: number;
   sourceRate: number;
-  /** 这一刻的增益：实例的增益、淡入淡出、转场的声音交叉淡化与闪避都已算进去。 */
+  /** Gain at this moment: the instance's gain, fades in and out, the transition's sound crossfade and ducking are all already included. */
   gainDb: number;
-  /** 闪避正在压低这个声音时，压低之前的增益。没有被压低时省略。 */
+  /** The gain before ducking, while ducking is pulling this sound down. Omitted when it is not being pulled down. */
   unduckedGainDb?: number;
-  /** 转场的声音交叉淡化里的声音（两侧都带同一个转场 ID）。 */
+  /** The sound in a transition's crossfade (both sides carry the same transition ID). */
   transitionId?: Id;
 }
 

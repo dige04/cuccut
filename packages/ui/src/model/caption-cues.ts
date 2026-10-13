@@ -2,7 +2,7 @@ import type { CaptionItem, Sequence, SequenceItem } from '@cuccut/protocol';
 import type { CaptionTrack } from '../render/captions.ts';
 import { itemFrames } from './editor.ts';
 
-/** 投到序列上的一句字幕（秒）。同一句经两个作用实例出现两次时 `key` 不同，`cueId` 相同。 */
+/** A subtitle line projected onto the sequence (seconds). When the same line appears twice through two applying instances, `key` differs and `cueId` is the same. */
 export interface PlacedCue {
   key: string;
   cueId: string;
@@ -11,7 +11,7 @@ export interface PlacedCue {
   text: string;
 }
 
-/** `interval` 扣掉 `taken` 里的区间之后剩下的部分（按先后）。 */
+/** The part of `interval` left after subtracting the ranges in `taken` (in order). */
 function subtract(interval: [number, number], taken: ReadonlyArray<[number, number]>): Array<[number, number]> {
   let parts = [interval];
   for (const [a, b] of taken) {
@@ -30,11 +30,11 @@ function subtract(interval: [number, number], taken: ReadonlyArray<[number, numb
 }
 
 /**
- * 字幕实例的句子在序列上的位置（时间线用）。有作用实例时只在它们覆盖的区间里出现（与 render-graph 一致）：
- * 文档在源素材时钟上时经实例的时间映射投过去，落在哪个实例的源区间里就出现在那个实例下面，剪掉的部分不出现；
- * 作用实例一个都找不到（都删了）时什么也不出现。没有作用实例时文档时间就是序列时间。
- * 作用实例按列出的次序各占别人没占的区间（text_plan.rs 的 `caption-items`），链在一起的音视频不出两份。
- * 结果按开始时刻排好，裁在字幕实例自己的区间里。
+ * Where a caption instance's sentences sit on the sequence (for the timeline). When there are applying instances, they appear only in the ranges those instances cover (consistent with render-graph):
+ * when the document is on the source-asset clock, it is projected through the instance's time mapping and shows under whichever instance's source range it falls in; cut-away parts do not appear;
+ * when no applying instance is found at all (all deleted), nothing appears. Without applying instances, document time is sequence time.
+ * Applying instances each take the ranges no other instance has taken, in the order listed (`caption-items` in text_plan.rs), so linked audio and video do not produce two copies.
+ * Results are sorted by start time and trimmed to the caption instance's own range.
  */
 export function placeCues(item: CaptionItem, sequence: Sequence, track: CaptionTrack): PlacedCue[] {
   const perSecond = sequence.fps.num / sequence.fps.den;
@@ -88,8 +88,8 @@ export function placeCues(item: CaptionItem, sequence: Sequence, track: CaptionT
 const placedCache = new WeakMap<CaptionTrack, WeakMap<Sequence, WeakMap<CaptionItem, readonly PlacedCue[]>>>();
 
 /**
- * `placeCues` 的缓存版：按字幕文档（`readCaptions` 按正文缓存，同一版本是同一个对象）、序列版本与实例记在组件外，
- * 字幕面板与时间线共用，切面板重新挂载时不再整遍重排。三者都是不可变快照，任何一个换了就是新的一份。
+ * The cached version of `placeCues`: keyed by the caption document (`readCaptions` caches by body, so the same version is the same object), the sequence version and the instances, kept outside the component,
+ * so that the caption panel and the timeline share it, and remounting the panel when switching no longer re-places everything. All three are immutable snapshots; if any one changes, it is a new result.
  */
 export function placedCues(item: CaptionItem, sequence: Sequence, track: CaptionTrack): readonly PlacedCue[] {
   let bySequence = placedCache.get(track);

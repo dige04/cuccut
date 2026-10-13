@@ -114,10 +114,10 @@ type Load<T> =
   { key: string; state: 'loading' } | { key: string; state: 'ready'; value: T } | { key: string; state: 'failed'; message: string };
 
 /**
- * skill 详情（原型 settings-agent-skill-detail.jsx `AgentSkillDetail` 与文件视图，简化到后端有的数据）：名称、来源徽标与版本、开关、
- * 描述、来源与放在哪里、`SKILL.md` 正文（去掉 front matter 后按 Markdown 画）、文件清单（文本文件点开经 `skills.readFile` 看原文）、移除。
- * 原型里的分类、作者、「试一下」示例没有后端数据，不做；移除会删掉目录、不能撤销，所以不用原型的撤销 toast，由调用方先弹确认。
- * 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+ * Skill details (prototype settings-agent-skill-detail.jsx `AgentSkillDetail` and its file view, simplified to the data the backend has): name, source badge and version, toggle,
+ * description, source and where it lives, the `SKILL.md` body (rendered as Markdown after the front matter is removed), the file list (text files open to show their content via `skills.readFile`), and remove.
+ * The prototype’s category, author and “Try it” examples have no backend data, so they are not built. Removal deletes the directory and cannot be undone, so the prototype’s undo toast is not used; the caller shows a confirmation first.
+ * State lives in the outer layer of the dialog, because S2’s Dialog renders its children again in several slots.
  */
 export function SkillDetailDialog({
   skill,
@@ -133,7 +133,7 @@ export function SkillDetailDialog({
   onClose(): void;
 }) {
   const runtime = useRuntime();
-  // 摘要变了（开关、重新导入）时重取正文与清单；只换开关不重取。
+  // When the summary changes (toggle, re-import), the body and file list are fetched again. Switching the toggle alone does not refetch.
   const key = skill ? `${skill.id}@${skill.updatedAt}@${skill.fileCount}` : '';
   const [detail, setDetail] = useState<Load<SkillDetail>>({ key, state: 'loading' });
   const [file, setFile] = useState<(Load<string> & { path: string; skill: string }) | null>(null);
@@ -150,7 +150,7 @@ export function SkillDetailDialog({
     return () => {
       cancelled = true;
     };
-    // skill 只经 key 生效。
+    // The skill takes effect only through its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, key]);
 
@@ -321,8 +321,8 @@ function SkillInfo({
 }
 
 /**
- * 从 GitHub 导入（原型 `AgentSkillAddGithub`）：输入地址，说明只下载那个目录下的文件、不执行，第三方默认关；
- * 导入中按钮转圈、输入框不可改；失败按错误码说人话（已存在、地址不对、超限、离线、限流），留在对话框里不吞掉输入。
+ * Import from GitHub (prototype `AgentSkillAddGithub`): enter the address. It explains that only the files in that directory are downloaded and nothing is executed, and third-party is off by default.
+ * While importing, the button spins and the input cannot be edited. On failure, the error code is turned into plain language (already exists, wrong address, over the limit, offline, rate limited), and the dialog stays open without discarding the input.
  */
 export function GithubImportDialog({ open, onImport, onClose }: { open: boolean; onImport(url: string): Promise<void>; onClose(): void }) {
   const [url, setUrl] = useState('');

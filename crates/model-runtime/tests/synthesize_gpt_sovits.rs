@@ -1,10 +1,9 @@
-//! GPT-SoVITS v2 真权重合成：用内置音色的随包录音与它的原文做参考，念一句带读音注记的中文、
-//! 一句英文，检查时长合理、不是静音、没有严重削波，注记按「不认读音」如实报告，并把 WAV 写到仓库外供试听。
+//! GPT-SoVITS v2 real-weight synthesis: using the built-in voice's bundled recording and its transcript as the reference, speak one Chinese sentence with a pronunciation annotation and one English sentence. Check that the duration is reasonable, the output is not silent, and there is no severe clipping. Annotations are reported honestly as “pronunciation not recognized”, and the WAVs are written outside the repo for listening.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test synthesize_gpt_sovits -- --ignored --test-threads=1 --nocapture
 //!
-//! WAV 写到 `CUCCUT_TEST_OUTPUT_DIR`（没设时是系统临时目录下的 `cuccut-tts-listen/`）。
+//! WAVs are written to `CUCCUT_TEST_OUTPUT_DIR` (if unset, to the `cuccut-tts-listen/` directory under the system temp directory).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -21,7 +20,7 @@ use serde_json::Value;
 
 const REPO: &str = "PJMixers-Dev/lj1995_GPT-SoVITS-safetensors";
 
-/// 一个读音注记：GPT-SoVITS 不认读音，送进模型的是表面文字，注记报进 `readings_dropped`。
+/// A pronunciation annotation. GPT-SoVITS does not recognize readings: what is fed to the model is the surface text, and the annotation is reported in `readings_dropped`.
 const ZH: &str = "他在这一<行|hang2>做了十年，今天下午三点我们开会讨论新版本的发布计划。";
 const EN: &str = "The quick brown fox jumps over the lazy dog near the river bank.";
 
@@ -37,7 +36,7 @@ fn output_dir() -> PathBuf {
     dir
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验一个组件的文件清单。
+/// Builds and validates a component's file manifest from `<models-root>/<repo>/.ccut-manifest.json`.
 fn verified(repo: &str, family: &str, component: &'static str) -> VerifiedFiles {
     let dir = models_root().join(repo);
     let manifest: Value =
@@ -62,7 +61,7 @@ fn verified(repo: &str, family: &str, component: &'static str) -> VerifiedFiles 
     .expect("verify bundle files")
 }
 
-/// 时长合理（每句 0.5–20 s）、峰值与 RMS 都不是静音、削波（|x| ≥ 0.999）的样本不到 0.1%。
+/// Samples with reasonable duration (0.5–20 s per sentence), with peak and RMS that are not silent, and with fewer than 0.1% clipped samples (|x| ≥ 0.999).
 fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     assert_eq!(audio.sample_rate, 32_000);
     let seconds = audio.samples.len() as f32 / audio.sample_rate as f32;
@@ -104,7 +103,7 @@ fn builtin_voices_speak_chinese_with_a_reading_and_english() {
     assert_eq!(engine.sample_rate(), 32_000);
     assert!(engine.preset_speakers().contains(&"zh-female".to_owned()));
 
-    // 内置音色：随包录音 + 原文作参考（有参考文本的克隆路径）。
+    // Built-in voice: the bundled recording plus its transcript as the reference (the cloning path with reference text).
     for (lang, text, speaker) in [("zh", ZH, "zh-female"), ("en", EN, "en-male")] {
         let mut request = TtsRequest::new(
             text,
@@ -123,7 +122,7 @@ fn builtin_voices_speak_chinese_with_a_reading_and_english() {
         );
         check_and_write(&audio, &format!("gpt-sovits-{speaker}-{lang}"));
         if lang == "zh" {
-            // 不认读音：如实报告，偏移落在去注记后的表面文字上（「他在这一行」的「行」）。
+            // Pronunciation not recognized: report it honestly; the offset falls on the surface text after the annotation is stripped (the “行” in “他在这一行”).
             assert_eq!(audio.readings_dropped.len(), 1, "{:?}", audio.readings_dropped);
             let dropped = &audio.readings_dropped[0];
             assert_eq!((dropped.start, dropped.end), (4, 5));

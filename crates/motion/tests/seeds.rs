@@ -1,5 +1,4 @@
-//! 阶段 3 验收（设计 §10 阶段 3 / §11）：随机效果必须显式播种、缺省 0，
-//! 同 seed 同输出、异 seed 只影响声明为随机的通道，乱序采样与顺序采样一致。
+//! Phase 3 acceptance (design §10 phase 3 / §11): random effects must be seeded explicitly, with a default of 0; the same seed gives the same output; a different seed only affects channels declared as random; out-of-order sampling matches in-order sampling.
 
 use motion::composite::PoseBuffer;
 use motion::graph::{CompileCtx, compile};
@@ -84,7 +83,7 @@ fn the_channel_key_derives_a_separate_sub_seed() {
     assert!(differs, "channel 应当派生出不同的子种子");
 }
 
-/// 乱序采样 = 顺序采样（阶段 0 的写法：固定 splitmix64 种子 Fisher–Yates）。
+/// Out-of-order sampling = in-order sampling (the phase 0 approach: a fixed splitmix64 seed with Fisher–Yates).
 #[test]
 fn shuffled_sampling_matches_sequential_sampling() {
     let program = program(json!({

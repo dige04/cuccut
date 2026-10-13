@@ -1,23 +1,23 @@
 import { create } from 'zustand';
 
 /**
- * 编辑器标签（幻灯片、设计稿、设计系统）之外的地方对打开着的编辑器的两个要求（docs/design/slides §8.2、docs/design/canvas §8.2），
- * 按标签的 `itemKey`（`slides:<targetKey>`、`design:<targetKey>`、`design-system:<targetKey>`）找到它：
+ * Two requirements placed on open editors from outside the editor tabs (slides, design, design system) (docs/design/slides §8.2, docs/design/canvas §8.2).
+ * They find the editor by the tab's `itemKey` (`slides:<targetKey>`, `design:<targetKey>`, `design-system:<targetKey>`):
  *
- * - **发送前保存**：编辑器里改了字还没发布完时，先让它发布完再发消息，智能体读到的是用户看到的版本。
- *   标签页在编辑器载入后登记，卸下时注销；没打开这份文档的不用等。
- * - **跳到标注所在的位置**：已发送消息里的标注点一条，先打开（或切到）这份文档的标签，
- *   标签页在编辑器载入后取走这个要求再跳。
+ * - **Save before sending**: if the editor has edits that are not yet published, have it publish them before the message is sent, so the agent reads the version the user sees.
+ *   A tab registers its editor after the editor loads, and unregisters it when unmounted. Documents that are not open do not need to wait.
+ * - **Jump to where an annotation is**: clicking an annotation in a sent message first opens (or switches to) the tab for that document.
+ *   The tab takes the request after the editor loads, and then jumps.
  */
 
-/** 一个打开着的编辑器：`flush` 让它发布完，返回保存成了没有；`name` 是这份文档当前的名字，没保存成时提示里写出来。 */
+/** An open editor. `flush` makes it publish, and returns whether it saved. `name` is the document's current name, written into the prompt if it did not save. */
 interface Flusher {
   flush(): Promise<boolean>;
   name(): string;
 }
 const flushers = new Map<string, Set<Flusher>>();
 
-/** 标签页登记它的编辑器；返回注销函数。 */
+/** A tab registers its editor. Returns an unregister function. */
 export function registerEditorFlush(key: string, flusher: Flusher): () => void {
   let set = flushers.get(key);
   if (!set) flushers.set(key, (set = new Set()));
@@ -29,8 +29,8 @@ export function registerEditorFlush(key: string, flusher: Flusher): () => void {
 }
 
 /**
- * 让这几份文档打开着的编辑器都把改动发布完；返回没保存成的那几份的名字（同名的只算一次），都保存好了时为空。
- * 不拦发送，由调用方决定。
+ * Have every open editor for these documents publish its changes. Returns the names of the ones that did not save (same names counted once), or empty if all saved.
+ * It does not block sending. The caller decides.
  */
 export async function flushEditors(keys: Iterable<string>): Promise<string[]> {
   const pending = [...new Set(keys)].flatMap((key) =>
@@ -41,8 +41,8 @@ export async function flushEditors(keys: Iterable<string>): Promise<string[]> {
 }
 
 /**
- * 等着跳过去的一处：`id` 是编辑器里这条标注的 id，`anchor` 是它的锚点，`section` 是设计系统里它所在的章节（先到那一章）。
- * `seq` 让同一处再点一次也算新的要求。
+ * A pending jump target: `id` is the id of this annotation in the editor, `anchor` is its anchor, and `section` is the design-system section it is in (go to that chapter first).
+ * `seq` makes clicking the same place again count as a new request.
  */
 export interface EditorReveal {
   id: string;
@@ -54,7 +54,7 @@ export interface EditorReveal {
 interface EditorRevealStore {
   reveals: Record<string, EditorReveal>;
   request(key: string, id: string, anchor: string, section?: string): void;
-  /** 标签页取走（取走后清掉）。 */
+  /** Taken by the tab (cleared after it is taken). */
   take(key: string, seq: number): void;
 }
 

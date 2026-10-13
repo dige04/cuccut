@@ -1,21 +1,20 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/AudioCommon/SentencePieceModel.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/AudioCommon/SentencePieceModel.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 极简 SentencePiece `.model`（`sentencepiece_model.proto`）读取器。
+//! Minimal SentencePiece `.model` (`sentencepiece_model.proto`) reader.
 //!
-//! 对照 speech-swift `AudioCommon/SentencePieceModel.swift` 移植：只解析
-//! `ModelProto.pieces`（字段 1）里每个 `SentencePiece` 的 `piece`（字段 1，
-//! 字符串）、`score`（字段 2，fixed32）与 `type`（字段 3，varint），不依赖
-//! protobuf 运行时；编码 / 解码逻辑由 `tokenizer` 模块在其上构建。
+//! Ported from speech-swift `AudioCommon/SentencePieceModel.swift`: only parses the `piece` (field 1,
+//! string), `score` (field 2, fixed32) and `type` (field 3, varint) of each `SentencePiece` in `ModelProto.pieces` (field 1), without depending on
+//! the protobuf runtime; encoding / decoding logic is built on top of it in the `tokenizer` module.
 
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 
-/// `sentencepiece_model.proto` 里的 piece 类型常量。
+/// Piece type constants from `sentencepiece_model.proto`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PieceType {
     Normal = 1,
@@ -52,7 +51,7 @@ impl Piece {
         PieceType::from_raw(self.kind)
     }
 
-    /// control / unknown / unused / byte 四类都不参与 Unigram 格子。
+    /// The control, unknown, unused and byte types do not take part in the Unigram lattice.
     pub fn is_control_or_unknown(&self) -> bool {
         matches!(
             self.piece_type(),
@@ -173,7 +172,7 @@ fn skip_field(data: &[u8], offset: usize, wire: usize) -> usize {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    /// 手工编码一个 `ModelProto`，供 tokenizer 单测使用。
+    /// Hand-encodes a `ModelProto`, for use in tokenizer unit tests.
     pub fn encode_model(pieces: &[(&str, f32, i32)]) -> Vec<u8> {
         fn varint(mut value: usize, out: &mut Vec<u8>) {
             loop {
@@ -200,7 +199,7 @@ pub(crate) mod test_support {
             varint(body.len(), &mut out);
             out.extend_from_slice(&body);
         }
-        // 顶层再塞一个无关字段（trainer_spec，字段 2，长度定界）验证跳过逻辑。
+        // Adds an unrelated top-level field (trainer_spec, field 2, length-delimited) to verify the skipping logic.
         out.push((2 << 3) | 2);
         out.push(2);
         out.extend_from_slice(&[0x08, 0x01]);

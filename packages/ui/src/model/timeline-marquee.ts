@@ -3,23 +3,22 @@ import { itemFrames } from './editor.ts';
 import { rectsCross, type Rect } from './stage-pose.ts';
 
 /**
- * 时间线框选（设计稿 timeline.jsx `beginMarquee`，产品设计 §7）：在轨道区空白处拖出矩形，框到的实例全选、跨轨道。
- * 命中判据与舞台同一个（`rectsCross`：相交就算、贴边不算），只是盒不从 DOM 量，而是按「时段 × 行」现算——
- * 时间线上一件实例的盒就是它的时段和它那一行（整行高度，同设计稿）。锁着的轨道与锁着的实例不选。
- * 字幕实例不选：一个字幕实例通常铺满整条字幕轨，框到一角就选中整层、按 Delete 整层没了；设计稿框的是一句句字幕，从不选中整条字幕轨。
- * 跟着视频的字幕（`scopeItemIds`）随视频一起删、一起合拢（timeline-ripple.ts）。要选整层就点字幕行。
+ * Marquee selection on the timeline (design mockup timeline.jsx `beginMarquee`, product design §7): dragging a rectangle over empty space in the track area selects every instance it touches, across tracks.
+ * The hit test is the same as the stage's (`rectsCross`: intersecting counts, touching edges do not), but the box is not measured from the DOM; it is computed from time span × row. An instance's box on the timeline is its time span and its row (the full row height, as in the design mockup). Locked tracks and locked instances are not selected.
+ * Subtitle instances are not selected: a subtitle instance usually fills the whole subtitle track, so a box clipping one corner would select the whole layer and Delete would remove the whole layer; the design mockup boxes individual subtitle lines and never selects the whole subtitle track.
+ * Subtitles that follow the video (`scopeItemIds`) are deleted and closed up together with it (timeline-ripple.ts). To select a whole layer, click its subtitle row.
  *
- * 坐标都在时间线的内容坐标系里（随滚动走的那一层：左边含行头列，上边含刻度尺），所以滚动与缩放下不漂。
+ * Coordinates are all in the timeline's content coordinate system (the layer that scrolls: the left side includes the row-header column, and the top includes the ruler), so they do not drift when scrolling or zooming.
  */
 
-/** 一行在内容坐标系里的纵向位置。 */
+/** Vertical position of a row in the content coordinate system. */
 export interface MarqueeLane {
   trackId: Id;
   top: number;
   height: number;
 }
 
-/** 横向换算：内容坐标 x = `head + pad + 秒 × pxPerSecond`。 */
+/** Horizontal conversion: content coordinate x = `head + pad + seconds × pxPerSecond`. */
 export interface MarqueeLayout {
   head: number;
   pad: number;
@@ -27,7 +26,7 @@ export interface MarqueeLayout {
   lanes: readonly MarqueeLane[];
 }
 
-/** 一件实例在内容坐标系里的盒；它所在的轨道没有画出来时 null。 */
+/** An instance's box in the content coordinate system; null when its track is not drawn. */
 export function itemBox(sequence: Sequence, itemId: Id, layout: MarqueeLayout): Rect | null {
   const item = sequence.items.find((candidate) => candidate.id === itemId);
   const lane = item ? layout.lanes.find((l) => l.trackId === item.trackId) : undefined;
@@ -39,7 +38,7 @@ export function itemBox(sequence: Sequence, itemId: Id, layout: MarqueeLayout): 
   return { x: x0, y: lane.top, w: Math.max(0, x1 - x0), h: lane.height };
 }
 
-/** 框到的实例（按序列里的次序）：跳过锁着的轨道、锁着的实例与字幕实例。 */
+/** Instances caught by the marquee (in sequence order): locked tracks, locked instances and subtitle instances are skipped. */
 export function marqueeItems(sequence: Sequence, layout: MarqueeLayout, rect: Rect): Id[] {
   const locked = new Set(sequence.tracks.filter((t) => t.locked).map((t) => t.id));
   const hits: Id[] = [];
@@ -51,7 +50,7 @@ export function marqueeItems(sequence: Sequence, layout: MarqueeLayout, rect: Re
   return hits;
 }
 
-/** 松手后的选区：按着 ⇧ / ⌘ 是在原选区上并入（去重，不是反选），否则换成框到的。 */
+/** The selection after release: holding ⇧ / ⌘ merges into the existing selection (deduplicated, not toggled); otherwise it is replaced by what was caught. */
 export function marqueeSelection(current: readonly Id[], hits: readonly Id[], additive: boolean): Id[] {
   return additive ? [...new Set([...current, ...hits])] : [...hits];
 }

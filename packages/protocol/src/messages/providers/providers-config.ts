@@ -14,7 +14,7 @@ import { pl } from './providers-config.pl.ts';
 import { tr } from './providers-config.tr.ts';
 import { vi } from './providers-config.vi.ts';
 
-/** 在线服务与智能体 Provider 的配置、可用性与名字（`packages/providers`）。`label` / `name` 是服务的名字。 */
+/** Configuration, availability and names of online service and agent providers (`packages/providers`). `label` / `name` is the service's name. */
 const en = {
   listSeparator: ', ',
   vendorKimi: 'Kimi (Moonshot)',

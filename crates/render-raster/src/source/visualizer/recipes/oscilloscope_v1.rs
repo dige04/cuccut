@@ -1,20 +1,18 @@
-//! `oscilloscope-v1`：`oscilloscope` / `ring_wave`（设计 §7.2）。
+//! `oscilloscope-v1`: `oscilloscope` / `ring_wave` (design §7.2).
 //!
-//! 唯一读**时域行**的算法：把一帧波形按 `samples` 个点采样成一条折线描边。
-//! 波形字节以 [`TIME_DOMAIN_SILENCE`]（128）为零点，`amplitude` 是满摆幅占
-//! 半盒高（或半径带宽）的分数。
+//! The only algorithm that reads the **time-domain row**: it samples one waveform frame at `samples` points and strokes it as a polyline.
+//! Waveform bytes use [`TIME_DOMAIN_SILENCE`] (128) as the zero point; `amplitude` is the fraction of half the box height (or of the radial band) that a full-scale swing covers.
 //!
-//! | 样式 | `layout` | `samples` | `lineWidth` | `amplitude` | `baseRadius` |
+//! | Style | `layout` | `samples` | `lineWidth` | `amplitude` | `baseRadius` |
 //! | --- | --- | --- | --- | --- | --- |
 //! | `oscilloscope` | linear | 128 | 0.02 | 0.9 | 0 |
 //! | `ring_wave` | polar | 128 | 0.015 | 0.6 | 0.6 |
 //!
-//! * `linear`：横跨盒宽，围绕盒子中线上下摆动；
-//! * `polar`：绕内切圆一圈（从正上方起顺时针），基圆半径 `baseRadius × R`，
-//!   摆幅在 `[baseRadius, 1] × R` 里，路径闭合成环。
+//! * `linear`: spans the box width and swings above and below the box's centre line;
+//! * `polar`: goes once around the inscribed circle (clockwise from the top), base radius `baseRadius × R`, swing within `[baseRadius, 1] × R`, and the path closes into a ring.
 //!
-//! 静音也画一条直线 / 一个圆——示波器没信号时屏幕上就是那条线。
-//! 一条 `StrokePath`（宽 `lineWidth × 盒高`），返回 1。只用主色。
+//! Silence also draws a straight line / a circle — when the oscilloscope has no signal, the screen shows just that line.
+//! One `StrokePath` (width `lineWidth × box height`), returns 1. Uses the primary colour only.
 
 use motion::preset_registry::VisualizerBody;
 
@@ -58,7 +56,7 @@ pub(crate) fn draw(
     }
     let row = time_row(viz, body.bin_width);
     let zero = f64::from(TIME_DOMAIN_SILENCE) / f64::from(u8::MAX);
-    // 波形值：以静音电平为零点的 [-1, 1]，再乘摆幅。
+    // Waveform value: [-1, 1] with the silence level as zero, then multiplied by the swing.
     let value = |u: f64| ((sample_row_linear(&row, u) - zero) * 2.0 * amplitude).clamp(-1.0, 1.0);
 
     let points: Vec<(f64, f64)> = match layout {
@@ -74,7 +72,7 @@ pub(crate) fn draw(
             let center = bbox.center();
             (0..samples)
                 .map(|index| {
-                    // 闭环：最后一个点不与第一个点重合，`close` 收口。
+                    // Closed loop: the last point does not coincide with the first, so `close` closes it.
                     let u = index as f64 / samples as f64;
                     let r = (base + value(u) * (radius - base)).max(0.0);
                     polar(center, r, u * std::f64::consts::TAU)

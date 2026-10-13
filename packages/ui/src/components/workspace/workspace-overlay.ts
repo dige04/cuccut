@@ -1,15 +1,11 @@
 import { useLayoutEffect } from 'react';
 
 /**
- * 盖在功能区上、但不是模态的覆盖层的登记（Electron 的内嵌网页视图据此让开）。
+ * Registration of overlays that sit over the workspace area but are not modal (the Electron embedded web view makes way for them).
  *
- * 原生网页视图（宿主的 `WebContentsView`）永远画在渲染进程的 DOM 之上，DOM 里的浮层压不住它。菜单、模态框与 Popover
- * 会给其余节点加 aria-hidden / inert，`workspace-panes.tsx` 的 `useCovered` 据此把网页视图整块隐藏；不加这些属性的覆盖层
- * （标签与分栏的拖动遮罩、侧栏浮出、页签缩略卡）在显示期间登记到这里：计数大于 0 时 `document.body` 带
- * `data-workspace-overlay`，`useCovered` 看到它同样隐藏网页视图，全部撤销后恢复。整块隐藏，不做局部裁切。
+ * The native web view (the host's `WebContentsView`) is always painted above the renderer's DOM, so DOM overlays cannot cover it. Menus, modal dialogs and Popovers add aria-hidden / inert to the other nodes, and `useCovered` in `workspace-panes.tsx` uses that to hide the whole web view. Overlays without these attributes (the drag masks for tabs and splits, the sidebar flyout, the tab thumbnail card) register here while shown: when the count is greater than 0, `document.body` carries `data-workspace-overlay`, and `useCovered` sees it and hides the web view too; it is restored once all are withdrawn. The whole view is hidden; no partial clipping.
  *
- * 侧栏浮层要指针在 Rail 入口上停 100 ms 才出现、缩略卡要在页签上停 500 ms，划过 Rail 或普通地悬停页签不会登记，
- * 网页视图不会因此闪烁。
+ * The sidebar flyout appears only after the pointer rests on a Rail entry for 100 ms, and the thumbnail card only after 500 ms on a tab. Passing over the Rail or ordinarily hovering a tab does not register, so the web view does not flicker.
  */
 export const WORKSPACE_OVERLAY_ATTRIBUTE = 'data-workspace-overlay';
 
@@ -18,7 +14,7 @@ interface OverlayTarget {
   removeAttribute(name: string): void;
 }
 
-/** 计数器本体：`target` 取挂属性的元素（缺省 `document.body`；测试里给假的）。 */
+/** The counter itself: `target` is the element the attribute is set on (defaults to `document.body`; a fake one in tests). */
 export function createWorkspaceOverlays(target: () => OverlayTarget | null) {
   let count = 0;
   const sync = () => {
@@ -28,7 +24,7 @@ export function createWorkspaceOverlays(target: () => OverlayTarget | null) {
     else element.removeAttribute(WORKSPACE_OVERLAY_ATTRIBUTE);
   };
   return {
-    /** 登记一个覆盖层，返回撤销函数（重复调用只撤销一次）。 */
+    /** Register an overlay; returns an undo function (calling it more than once undoes only once). */
     register(): () => void {
       count += 1;
       sync();
@@ -48,7 +44,7 @@ const overlays = createWorkspaceOverlays(() => (typeof document === 'undefined' 
 
 export const registerWorkspaceOverlay = overlays.register;
 
-/** `active` 为真期间登记为覆盖层（卸载或变假时撤销）；布局阶段登记，与覆盖层同一帧画出。 */
+/** While `active` is true, register as an overlay (undone on unmount or when it turns false). Registration happens in the layout phase, so it paints in the same frame as the overlay. */
 export function useWorkspaceOverlay(active: boolean): void {
   useLayoutEffect(() => (active ? registerWorkspaceOverlay() : undefined), [active]);
 }

@@ -1,62 +1,61 @@
 import { EXPORT_MAX_CUE_SECONDS, type Id } from '@cuccut/protocol';
 
 /**
- * 转写（`cuccut.speech/1`）→ 字幕条（`cuccut.caption/1` 的正文）：在素材时钟上把词表贪心切成一条条字幕；译文的字幕条由
- * Speech Worker 切好，这里只写成字幕文档（`workerCaptionBody`）。固定流程建立字幕层（`caption-layer.ts`）用。
+ * Transcript (`cuccut.speech/1`) → caption cues (the body of `cuccut.caption/1`): on the source clock, the word list is greedily split into caption cues. Translation caption cues are cut by the Speech Worker, and here they are only written as a caption document (`workerCaptionBody`). Used by the fixed flow that builds the caption layer (`caption-layer.ts`).
  *
- * 来源（modified）：照搬编辑器的 `packages/ui/src/model/speech-cues.ts`（`readSpeechWords`、`splitUntimed`、`deriveCues`、
- * `speechCaptionBody`），切法、取整与字幕条 ID 都相同，所以流程建的字幕层与编辑器里「生成字幕」建的是同一种东西。
- * 译文字幕条的 ID 与编辑器的「放上画面」相同（`q-<单元 ID>`，同一单元的后几条跟 `~n`），之后在编辑器里改一句译文时找得到它的几条。
- * 切条的贪心阶梯本身移植自旧版 `ccut-flow-core` 的 `cue.rs` / `atomize.rs`（规范 §18.5），细节见 UI 那份的说明。
+ * Source (modified): copied from the editor's `packages/ui/src/model/speech-cues.ts` (`readSpeechWords`, `splitUntimed`, `deriveCues`,
+ * `speechCaptionBody`). The cutting method, rounding and caption cue IDs are the same, so the caption layer the flow builds is the same kind of thing as one built by “generate captions” in the editor.
+ * The IDs of translation caption cues are the same as the editor's “put on picture” (`q-<unit ID>`; the later cues of the same unit follow `~n`), so that when one translated sentence is later edited in the editor, its cues can be found.
+ * The greedy stepping algorithm for cutting cues is itself ported from the legacy `ccut-flow-core` `cue.rs` / `atomize.rs` (spec §18.5); details are in the notes for the UI copy.
  *
- * 智能体自己写的译文（没有 Worker 的字幕条）按句级对齐切条：`translationCues`，照搬编辑器的 `translation-cues.ts`。
+ * Caption cues for translations the agent wrote itself (without a Worker's caption cues) are cut by sentence-level alignment: `translationCues`, copied from the editor's `translation-cues.ts`.
  *
- * 架构偏差：这套规则本该只有一份（在 `crates/speech-doc`，与导出共用）。编辑器那份在 UI 的模型层，jobs 不能依赖 UI
- * （UI 也不能依赖只在 Node 里跑的 jobs），眼下各留一份；改切法时两处一起改（架构设计 §14「转录工具的字幕层」）。
+ * Architecture deviation: this logic should exist only once (in `crates/speech-doc`, shared with export). The editor's copy is in the UI model layer, and jobs cannot depend on the UI
+ * (and the UI cannot depend on jobs, which only run in Node), so for now each keeps its own copy. When the cutting method changes, change both together (architecture design §14 “the caption layer of the transcription tool”).
  */
 
 type Json = Record<string, unknown>;
 
 export const CAPTION_SCHEMA = 'cuccut.caption/1';
 
-/** cue.rs 的规范缺省参数（§18.5），宽度按显示宽度数。 */
+/** cue.rs's canonical default parameters (§18.5); widths are counted in display width. */
 export const CUE_PARAMS = {
   maxChars: 42,
   pauseSec: 0.6,
-  /** 从句标点（逗号类）断行的最短行宽。 */
+  /** The shortest line width for breaking at clause punctuation (comma class). */
   minClauseChars: 12,
   minPauseChars: 20,
-  /** 破折号断行的最短行宽，比逗号档低。 */
+  /** The shortest line width for breaking at dashes; lower than the comma tier. */
   minDashChars: 6,
   overflowSlack: 8,
 } as const;
 
 export type CueParams = { [K in keyof typeof CUE_PARAMS]: number };
 
-/** 远端导出的分句停顿（秒）：没存句子的转写，词间停顿超过它就分句。 */
+/** The sentence-splitting pause (seconds) for remote export: for a transcript without stored sentences, a sentence is split when the pause between words exceeds this. */
 const PAUSE_SECONDS = 1;
 
-// ---- 字符规则 ----
+// ---- Character rules ----
 
 const SENTENCE_END = /[.!?\u{3002}\u{ff01}\u{ff1f}\u{2026}]["'\u{201d}\u{2019}\u{ff09})\]]*$/u;
 const NO_SPACE_BEFORE =
   /^[,.!?;:%)\]}'\u{2019}\u{201d}\u{2026}\u{ff0c}\u{3002}\u{ff01}\u{ff1f}\u{ff1b}\u{ff1a}\u{3001}\u{ff09}\u{300d}\u{300f}\u{3011}\u{300b}]/u;
 const WIDE =
   /[\u{1100}-\u{115f}\u{2e80}-\u{303e}\u{3041}-\u{33ff}\u{3400}-\u{4dbf}\u{4e00}-\u{9fff}\u{a000}-\u{a4cf}\u{ac00}-\u{d7a3}\u{f900}-\u{faff}\u{fe30}-\u{fe4f}\u{ff00}-\u{ff60}\u{ffe0}-\u{ffe6}\u{20000}-\u{3fffd}]/u;
-/** 谚文：显示上是全角，但韩文词之间用空格隔开。 */
+/** Hangul: displayed as full-width, but words in Korean are separated by spaces. */
 const HANGUL = /[\u{1100}-\u{11ff}\u{3130}-\u{318f}\u{a960}-\u{a97f}\u{ac00}-\u{d7a3}\u{d7b0}-\u{d7ff}]/u;
 
-/** 显示宽度：全角字算 2。 */
+/** Display width: full-width characters count as 2. */
 export function displayWidth(text: string): number {
   let width = 0;
   for (const char of text) width += WIDE.test(char) ? 2 : 1;
   return width;
 }
 
-/** 两个词之间要不要空格：西文与韩文的词之间要；挨着汉字、假名、全角符号的不要。 */
+/** Whether a space goes between two words: required between Western and Korean words; not when adjacent to Han characters, kana or full-width symbols. */
 const spaced = (char: string) => !WIDE.test(char) || HANGUL.test(char);
 
-/** 词拼成文字：词自带前导空格的原样接；否则西文、韩文词之间加空格，汉字、假名与标点前不加。 */
+/** Joins words into text: a word that carries its own leading space is kept as is; otherwise a space goes between Western and Korean words, and none goes before Han characters, kana and punctuation. */
 function joinCueWords(tokens: readonly string[], leadingSpaces: boolean): string {
   if (leadingSpaces) return tokens.join('').replace(/\s+/g, ' ').trim();
   let out = '';
@@ -75,21 +74,21 @@ function joinCueWords(tokens: readonly string[], leadingSpaces: boolean): string
   return out;
 }
 
-// ---- 标点 ----
+// ---- Punctuation ----
 
-// i18n-ignore-start: 断句用的中英文标点集合
+// i18n-ignore-start: set of Chinese and English punctuation used for sentence breaking
 const CLOSERS = new Set(['”', '"', '’', "'", '」', '』', '）', ')', ']', '》']);
 const TERMINAL = new Set(['。', '．', '.', '？', '?', '！', '!', '…']);
 const CLAUSE_END = new Set([',', ';', ':', '—', '–', '，', '；', '：', '、']);
 // i18n-ignore-end
-/** 小写词干缩写表：`Dr.` 的句点不是句末。 */
+/** Table of lowercase stem abbreviations: the period in `Dr.` is not a sentence end. */
 // prettier-ignore
 const SENTENCE_ABBREV = new Set([
   'mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'rev', 'hon', 'fr', 'gen', 'gov', 'sen',
   'rep', 'col', 'lt', 'sgt', 'capt', 'vs', 'etc', 'inc', 'ltd', 'corp', 'dept', 'vol', 'fig',
 ]);
 
-/** 句末：至多跳过一个右引号或括号后是终止标点；`.` 的词干里另有 `.` 或词干是缩写时不算。 */
+/** Sentence end: skips at most one closing quote or bracket, after which a terminal punctuation mark counts; for `.`, it does not count when the stem contains another `.` or the stem is an abbreviation. */
 function sentenceEnd(token: string): boolean {
   const chars = [...token];
   let index = chars.length;
@@ -106,7 +105,7 @@ function sentenceEnd(token: string): boolean {
   return true;
 }
 
-/** 从句标点：至多跳过一个右引号或括号后的尾标点；不是时返回 null。 */
+/** Clause punctuation: skips at most one trailing punctuation mark after a closing quote or bracket; returns null if there is none. */
 function clauseEndChar(token: string): string | null {
   const chars = [...token];
   let index = chars.length;
@@ -116,24 +115,24 @@ function clauseEndChar(token: string): string | null {
   return CLAUSE_END.has(last) ? last : null;
 }
 
-// ---- 读转写 ----
+// ---- Reading the transcript ----
 
-/** 转写里的一个词（素材时钟，秒）。 */
+/** One word in the transcript (source clock, seconds). */
 export interface CueWord {
   id: string;
   start: number;
   end: number;
-  /** 原样保留（不 trim）：有的识别器用前导空格表示词间空白。 */
+  /** Kept as is (not trimmed): some recognizers use a leading space to express the whitespace between words. */
   text: string;
   speaker?: string;
   sentenceId?: string;
-  /** 这一句标了段首、且这是句子的第一个成员。 */
+  /** This sentence is marked as a paragraph start, and this is the first member of the sentence. */
   paragraphStart: boolean;
 }
 
 export interface CueWords {
   words: CueWord[];
-  /** 说话人 ID → 显示名。 */
+  /** Speaker ID → display name. */
   speakers: Map<string, string>;
 }
 
@@ -142,8 +141,8 @@ const finite = (value: unknown): number | null => (typeof value === 'number' && 
 const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
 /**
- * 读 `cuccut.speech/1` 的词：跳过隐藏的、空白的与时长不为正的词；句子认 `wordIds` 与 `first` / `last` 两种写法。
- * 不是转写正文时返回 null。没有词时间的整段按 `splitUntimed` 拆开。
+ * Reads the words of `cuccut.speech/1`: skips hidden, blank and non-positive-duration words. Sentences are recognized in two forms: `wordIds`, and `first` / `last`.
+ * Returns null when it is not a transcript body. A whole segment without word timings is split by `splitUntimed`.
  */
 export function readSpeechWords(body: unknown, params: CueParams = CUE_PARAMS): CueWords | null {
   if (!isObject(body) || body.schema !== 'cuccut.speech/1' || !Array.isArray(body.words)) return null;
@@ -175,7 +174,7 @@ export function readSpeechWords(body: unknown, params: CueParams = CUE_PARAMS): 
   }
   const words: CueWord[] = [];
   const leading = raw.some((word) => /^\s/.test(text(word.text) ?? ''));
-  // 零时长的词前面还没有词时，文字先记着，接到下一个词的前面。
+  // When there is no word yet before a zero-duration word, its text is kept and attached to the front of the next word.
   let carried = '';
   raw.forEach((word, i) => {
     if (word.hidden === true) return;
@@ -185,7 +184,7 @@ export function readSpeechWords(body: unknown, params: CueParams = CUE_PARAMS): 
     let end = finite(word.end);
     if (start === null || end === null) return;
     if (end <= start) {
-      // 零时长的词（转写给的词时间塌成一点）不丢：后面有空隙就占一小段，没有就把文字并进相邻的词。
+      // Zero-duration words (word timings in the transcript collapsed to a point) are not dropped: if there is a gap after them, they take a small slice of it; if not, their text is merged into the adjacent word.
       end = slotAfter(raw, i, start, scale);
       if (end === null) {
         const previous = words.at(-1);
@@ -223,12 +222,12 @@ export function readSpeechWords(body: unknown, params: CueParams = CUE_PARAMS): 
   return { words, speakers };
 }
 
-/** 零时长的词占的名义时长（秒）：对齐器的一个时间格。 */
+/** The nominal duration (seconds) a zero-duration word occupies: one time cell of the aligner. */
 const NOMINAL_WORD_SECONDS = 0.08;
 
 /**
- * 零时长的词在后面的空隙里占一小段（刻度）：到下一个有时间的词（隐藏的也算，它的时间还在）的起点为止、至多一个名义时长；
- * 后面没有词时直接补一个名义时长；下一个词就从这里开始（没有空隙）时返回 null。
+ * A zero-duration word takes a small slice (in ticks) of the gap after it: up to the start of the next word with a time (hidden words count too, since their time is still there), and at most one nominal duration.
+ * When there is no word after it, one nominal duration is added directly. When the next word starts right here (no gap), it returns null.
  */
 function slotAfter(raw: readonly Json[], index: number, start: number, scale: number): number | null {
   for (let n = index + 1; n < raw.length; n++) {
@@ -242,8 +241,8 @@ function slotAfter(raw: readonly Json[], index: number, start: number, scale: nu
 const BREAK_AFTER = new Set([...TERMINAL, ...CLAUSE_END]);
 
 /**
- * 没有词时间的一段拆成几块：在空白处与句末、从句标点之后断开，宽过 `maxChars` 的再按宽度切；时间按各块的显示宽度在
- * [start, end] 里线性分。拆不开时原样一块。
+ * A segment without word timings is split into several blocks: it breaks at whitespace, at sentence ends and after clause punctuation; a block wider than `maxChars` is further cut by width. Time is divided linearly
+ * across [start, end] by each block's display width. If it cannot be split, it stays one block.
  */
 export function splitUntimed(
   value: string,
@@ -261,7 +260,7 @@ export function splitUntimed(
   chars.forEach((char, i) => {
     if (/\s/.test(char)) return push();
     current += char;
-    // 标点后面紧跟着字的（中日文不用空格）：挨着全角字时才断，`2.14`、`3:30`、`1,000` 不断。
+    // Punctuation immediately followed by a character (Chinese and Japanese do not use spaces): break only when next to a full-width character; `2.14`, `3:30` and `1,000` do not break.
     const next = chars[i + 1];
     if (next === undefined || /\s/.test(next) || CLOSERS.has(next)) return;
     if (!BREAK_AFTER.has(char) && !CLOSERS.has(char)) return;
@@ -280,7 +279,7 @@ export function splitUntimed(
   });
 }
 
-/** 宽过 `maxChars` 的一块按显示宽度切成差不多一样宽的几段。 */
+/** A block wider than `maxChars` is cut by display width into several segments of roughly equal width. */
 function chopWide(chunk: string, maxChars: number): string[] {
   const width = displayWidth(chunk);
   if (width <= maxChars) return [chunk];
@@ -302,21 +301,21 @@ function chopWide(chunk: string, maxChars: number): string[] {
   return out;
 }
 
-// ---- 切条 ----
+// ---- Cutting cues ----
 
 export interface DerivedCue {
-  /** `q-` + 首词 ID。 */
+  /** `q-` + the first word's ID. */
   id: string;
   start: number;
   end: number;
   text: string;
-  /** 首词的说话人 ID。 */
+  /** The speaker ID of the first word. */
   speaker?: string;
-  /** 这一条的词（按开始时刻），写成字幕句子的 `words`。 */
+  /** The words of this cue (ordered by start time), written as the caption sentence's `words`. */
   wordIds: string[];
 }
 
-/** 段首、换说话人、换句（没存句子时停顿超过 1 秒或句末标点）与一条超过 7 秒时一定断开。 */
+/** A break is always made at a paragraph start, at a speaker change, at a sentence change (when sentences are not stored: a pause over 1 second, or sentence-final punctuation), and when a cue exceeds 7 seconds. */
 function mustBreak(last: CueWord, next: CueWord, first: CueWord): boolean {
   if (next.paragraphStart) return true;
   if ((last.speaker ?? null) !== (next.speaker ?? null)) return true;
@@ -326,7 +325,7 @@ function mustBreak(last: CueWord, next: CueWord, first: CueWord): boolean {
   return next.end - first.start > EXPORT_MAX_CUE_SECONDS;
 }
 
-/** 断行阶梯：句末 > 从句标点（破折号门槛更低）> 长停顿 > 溢出（下一个词收在标点上且不超余量时延长收入）。 */
+/** The line-break ladder: sentence end > clause punctuation (the dash threshold is lower) > long pause > overflow (when the next word ends on punctuation and fits within the margin, it is extended to include that word). */
 function autoBreak(word: CueWord, next: CueWord, lineWidth: number, projected: number, params: CueParams): boolean {
   const token = word.text.trim();
   if (sentenceEnd(token)) return true;
@@ -341,7 +340,7 @@ function autoBreak(word: CueWord, next: CueWord, lineWidth: number, projected: n
   return false;
 }
 
-/** 按素材时钟上的词切字幕条（贪心扫描），词按开始时刻排。 */
+/** Cuts caption cues by the words on the source clock (greedy scan); words are ordered by start time. */
 export function deriveCues(source: readonly CueWord[], params: CueParams = CUE_PARAMS): DerivedCue[] {
   const words = [...source].sort((a, b) => a.start - b.start);
   const leading = words.some((word) => /^\s/.test(word.text));
@@ -381,9 +380,9 @@ export function deriveCues(source: readonly CueWord[], params: CueParams = CUE_P
   return cues;
 }
 
-// ---- 译文切条 ----
+// ---- Translation cue cutting ----
 
-/** 译文单元里切字幕要用的几项（`cuccut.translation/2`，视频格式规范 §5.3）。 */
+/** The parameters used when cutting captions for a translation unit (`cuccut.translation/2`, video format spec §5.3). */
 export interface CueTranslationUnit {
   id: Id;
   naturalText: string;
@@ -392,19 +391,18 @@ export interface CueTranslationUnit {
   status: string;
 }
 
-/** `w12~3`（没有词时间的段拆出来的块）→ `w12`。 */
+/** `w12~3` (a block split out of a segment without word timings) → `w12`. */
 const baseWordId = (id: string) => id.replace(/~\d+$/, '');
 
 /**
- * 译文单元 → 字幕条（素材时钟，秒）：一句译文的时间取原句成员词（`alignment.sourceWordIds`）的时间，按 `splitUntimed`
- * 在空白与标点处拆开、时间按显示宽度插值，再交 `deriveCues` 贪心切条（一条不超过 7 秒、不跨出原句）。显示宽度按
- * `displayWidth`：汉字、假名、谚文与全角符号算 2，其余文字算 1；中文、日文按标点断，韩文与西文按空格断，两样都没有的
- * 文字（如泰文）按宽度切。标了过期的、没有译文的、原句的词一个也找不到的单元不出字幕。字幕条的 ID 是 `q-<单元 ID>`，
- * 同一句拆出来的后几条跟 `~n`。
+ * Translation unit → caption cues (source clock, seconds): the time of a translated sentence takes the times of the source sentence's member words (`alignment.sourceWordIds`), which are split by `splitUntimed`
+ * at whitespace and punctuation, with time interpolated by display width. Then `deriveCues` greedily cuts cues (each no more than 7 seconds, and never crossing the source sentence). Display width follows
+ * `displayWidth`: Han characters, kana, Hangul and full-width symbols count as 2, other text counts as 1. Chinese and Japanese break at punctuation; Korean and Western text breaks at spaces; text with neither (such as Thai) is cut by width. Units marked stale, units with no translation, and units where none of the source sentence's words can be found produce no captions. The caption cue ID is `q-<unit ID>`,
+ * and the later cues cut from the same sentence follow `~n`.
  *
- * 来源（modified）：照搬编辑器的 `packages/ui/src/model/translation-cues.ts`（`translationCues`），切法、时间与 ID 都相同，
- * 所以智能体建的译文字幕层，之后在编辑器里改一句译文时 `retextCaption` 照样找得到它的几条。两份并存的原因见文件头的
- * 「架构偏差」；改切法时两处一起改，`caption-layer.test.ts` 用编辑器那份的样例核对两边相同。
+ * Source (modified): copied from the editor's `packages/ui/src/model/translation-cues.ts` (`translationCues`). The cutting method, time and IDs are the same,
+ * so a translation caption layer the agent builds can still find its cues via `retextCaption` when one translated sentence is later edited in the editor. The reason for the two copies is in the file header under
+ * “Architecture deviation”; when the cutting method changes, change both together. `caption-layer.test.ts` checks that both match, using the editor copy's samples.
  */
 export function translationCues(speech: CueWords, units: readonly CueTranslationUnit[], params: CueParams = CUE_PARAMS): DerivedCue[] {
   const byBase = new Map<string, CueWord[]>();
@@ -428,7 +426,7 @@ export function translationCues(speech: CueWords, units: readonly CueTranslation
         end: piece.end,
         text: piece.text.trim(),
         ...(speaker !== undefined ? { speaker } : {}),
-        // 一句译文自成一句：不和相邻的译文接成一条。
+        // A translated sentence stands alone: it is not joined into one cue with the adjacent translated sentences.
         sentenceId: unit.id,
         paragraphStart: false,
       });
@@ -437,11 +435,11 @@ export function translationCues(speech: CueWords, units: readonly CueTranslation
   return deriveCues(pseudo, params);
 }
 
-// ---- 写成字幕文档 ----
+// ---- Writing as a caption document ----
 
 /**
- * 字幕条 → `cuccut.caption/1` 正文：素材时钟、毫秒刻度。取整后修：结束不早于开始、不压到下一条，取整撞在一起时把下一条
- * 的开始推到这一条的结束。只有出现两个以上说话人时才写 `speaker`（写显示名）。
+ * Caption cues → `cuccut.caption/1` body: source clock, millisecond ticks. After rounding, it fixes things: the end is not earlier than the start, and a cue is not pushed into the next one. When rounding makes two cues collide, the next cue's start is pushed to this cue's end.
+ * `speaker` is written only when two or more speakers appear (it writes the display name).
  */
 export function captionBody(cues: readonly DerivedCue[], speakers: ReadonlyMap<string, string>): Json {
   const many = new Set(cues.map((cue) => cue.speaker ?? '')).size > 1;
@@ -470,14 +468,14 @@ export function captionBody(cues: readonly DerivedCue[], speakers: ReadonlyMap<s
   };
 }
 
-/** 字幕句子指向转写里的哪些词（视频格式规范 §3.8）：首词到末词。渲染按它取词做逐词动画与强调。 */
+/** Which words in the transcript a caption sentence points to (video format spec §3.8): from the first word to the last word. Rendering uses it to fetch words for per-word animation and emphasis. */
 function wordRange(wordIds: readonly string[]): { words?: { first: string; last: string } } {
   return wordIds.length ? { words: { first: wordIds[0]!, last: wordIds[wordIds.length - 1]! } } : {};
 }
 
 /**
- * Speech Worker 切好的译文字幕条 → `cuccut.caption/1` 正文：素材时钟、转写的刻度（整数刻度原样写，不经秒）。字幕条的 ID 是
- * `q-<单元 ID>`，同一单元的后几条跟 `~2`、`~3`……；只有出现两个以上说话人时才写 `speaker`（写显示名）。
+ * Translation caption cues cut by the Speech Worker → `cuccut.caption/1` body: source clock, the transcript's ticks (integer ticks are written as they are, not converted via seconds). Caption cue IDs are
+ * `q-<unit ID>`; the later cues of the same unit follow `~2`, `~3`…; `speaker` is written only when two or more speakers appear (it writes the display name).
  */
 export function workerCaptionBody(
   cues: { timescale: number; cues: ReadonlyArray<{ unitId: Id | null; sentenceId: Id; text: string; start: number; end: number }> },
@@ -506,9 +504,9 @@ export function workerCaptionBody(
   };
 }
 
-// ---- 只换一句译文的字幕条 ----
+// ---- Caption cues for replacing only one translated sentence ----
 
-/** 字幕条是不是这一句译文的：`q-<单元 ID>` 之后要么结束，要么紧跟 `~`（`t-s-w1` 不吞掉 `t-s-w10`）。 */
+/** Whether a caption cue belongs to this translated sentence: after `q-<unit ID>` comes either the end or `~` (so `t-s-w1` does not swallow `t-s-w10`). */
 export function cueOfUnit(cueId: string, unitId: Id): boolean {
   const base = `q-${unitId}`;
   if (!cueId.startsWith(base)) return false;
@@ -516,7 +514,7 @@ export function cueOfUnit(cueId: string, unitId: Id): boolean {
   return rest === '' || rest[0] === '~';
 }
 
-/** 换进字幕正文的一条：时间是秒（素材时钟），`speaker` 是转写里的说话人 ID。 */
+/** One cue swapped into the caption body: times in seconds (source clock); `speaker` is the speaker ID in the transcript. */
 export interface RetextCue {
   id: string;
   start: number;
@@ -534,11 +532,10 @@ interface BodyCue {
 }
 
 /**
- * 换掉一句译文之后的字幕正文：去掉这一句原来的几条，`fresh` 放回原处（没有原来的就按时间插进去；`fresh` 为空就是去掉这一句），
- * 再照 `captionBody` 的取整规矩修掉重叠。别的条原样不动（手工改过的字也保留）。只有原来写了说话人时新条才写（写显示名）。
+ * The caption body after one translated sentence is replaced: this sentence's original cues are removed, and `fresh` is put back in their place (if there were no originals, it is inserted by time; if `fresh` is empty, the sentence is just removed).
+ * Overlaps are then fixed using `captionBody`'s rounding rules. Other cues are left untouched, including hand-edited text. New cues get a speaker only if the originals had one (it writes the display name).
  *
- * 来源（modified）：照搬编辑器的 `packages/ui/src/model/translation-cues.ts`（`retextCaption`），行为相同；就地重译
- * （`translate.ts`）与智能体写译文之后同步字幕层用它。改规矩时两处一起改。
+ * Source (modified): copied from the editor's `packages/ui/src/model/translation-cues.ts` (`retextCaption`), with the same behavior. It is used by in-place retranslation (`translate.ts`) and by syncing the caption layer after the agent writes a translation. When the rules change, change both together.
  */
 export function retextCaption(body: Json, unitId: Id, fresh: readonly RetextCue[], speakers: ReadonlyMap<string, string>): Json {
   const scale = typeof body.timescale === 'number' && body.timescale > 0 ? body.timescale : 1000;
@@ -572,8 +569,8 @@ export function retextCaption(body: Json, unitId: Id, fresh: readonly RetextCue[
 }
 
 /**
- * Speech Worker 切好的字幕条里一个单元的那几条 → `retextCaption` 的输入（秒；ID 与 `workerCaptionBody` 同一个编号：
- * `q-<单元 ID>`，后几条跟 `~2`、`~3`……）。
+ * The cues of one unit, cut by the Speech Worker → the input to `retextCaption` (seconds; the IDs use the same numbering as `workerCaptionBody`:
+ * `q-<unit ID>`, with later cues following `~2`, `~3`…).
  */
 export function workerUnitCues(
   cues: { timescale: number; cues: ReadonlyArray<{ unitId: Id | null; sentenceId: Id; text: string; start: number; end: number }> },

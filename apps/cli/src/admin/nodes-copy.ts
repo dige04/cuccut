@@ -14,7 +14,7 @@ import { pl } from './nodes-copy.pl.ts';
 import { tr } from './nodes-copy.tr.ts';
 import { vi } from './nodes-copy.vi.ts';
 
-/** `cuccut nodes` 与 `cuccut share` 的文案（英文是键与类型的来源，译文在 `nodes-copy.<语言>.ts`）。 */
+/** Copy for `cuccut nodes` and `cuccut share`. The English is the source of the keys and types; the translations are in `nodes-copy.<language>.ts`. */
 const en = {
   nodesHelp: (port: number) => `Usage:
   cuccut nodes                     List paired LAN nodes (each with a live probe)

@@ -8,13 +8,13 @@ import { BRAND_COPY as IB } from './brand-copy.ts';
 const colorRow = style({ display: 'flex', alignItems: 'end', gap: 8 });
 const grow = style({ flexGrow: 1, minWidth: 0 });
 
-/** 新建品牌色时先给的颜色（设计稿的蓝）。 */
+/** The color offered first when creating a new brand color (the mockup's blue). */
 const START = '#3B63FB';
 
 /**
- * 新建品牌色：名字与色值。色值可以点色块用取色面板挑，也可以直接写 hex（`#RGB`、`#RRGGBB` 或带不透明度的 `#RRGGBBAA`）。
- * 名字空着时用色值当名字。`onSubmit` 返回 false 时留在对话框里（失败的提示由它给）。
- * 状态放在对话框外层：S2 的 Dialog 会把 children 在几个 slot 里各渲染一遍。
+ * Create a new brand color: name and color value. The value can be picked with the swatch color panel, or typed directly as hex (`#RGB`, `#RRGGBB`, or `#RRGGBBAA` with opacity).
+ * If the name is left empty, the color value is used as the name. When `onSubmit` returns false, the dialog stays open (the failure message is shown by it).
+ * State lives outside the dialog: S2's Dialog renders its children in several slots.
  */
 export function NewColorDialog({ onSubmit, onClose }: { onSubmit(name: string, value: string): Promise<boolean>; onClose(): void }) {
   const [name, setName] = useState('');

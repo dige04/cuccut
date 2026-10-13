@@ -1,51 +1,33 @@
-//! §18 词原子 Transcript 文档模型（ccutTranscript 0.5，0.3 / 0.4 只读兼容）。
+//! §18 word-atom Transcript document model (ccutTranscript 0.5; read-compatible with 0.3 and 0.4).
 //!
-//! `words[]` 是唯一持久化的文本与时间来源；Cue/Sentence/Para 是派生投影
-//! （见 `cue` / `sentence` 模块）；用户与 AI 的结构性干预落在以词 id 为键的
-//! 稀疏覆盖表。0.3 相对 0.2 的增量（v0.3 设计 §4）：`trans` 从 Cue 键改为
-//! **句键真相**（`s-<首词id>` → 完整自然译句），新增 `transAlign` 对齐覆盖
-//! 层（每句的展示切分：mode + 源 Cue 结构快照 + pieces）。
+//! `words[]` is the only persisted source of text and timing. Cue, Sentence and Para are derived projections (see the `cue` and `sentence` modules). Structural interventions by the user and the AI are kept in sparse override tables keyed by word id. Changes from 0.2 to 0.3 (v0.3 design §4): `trans` changed from being keyed by Cue to **sentence-keyed truth** (`s-<first word id>` → complete natural translated sentence), and a new `transAlign` alignment-override layer was added (the display segmentation of each sentence: mode, a snapshot of the source Cue structure, and pieces).
 //!
-//! 0.4 相对 0.3 的增量（对齐块设计 §5）：
-//! - `autoBreaks[profile]`：布局优化器按 `LayoutProfile` 键控的自动断点 pin，
-//!   与用户显式意图 `breaks` 分离；派生时 `breaks` 覆盖同键自动 pin；
-//! - `transDisplay[lang][sid]`：只在触发"单调化显示改写"时存在的字幕用译文，
-//!   自然译句 `trans` 保持不变；
-//! - `transAlign` 条目新增 `blocks[]`（最小单调对齐块）、`correspondence`
-//!   （`block` | `sentence`，取代旧 `crossing`）、`textBasis`（pieces 拼接
-//!   等于 `trans` 还是 `transDisplay`）与 `aligner` 来源标识。
+//! Changes from 0.3 to 0.4 (alignment block design §5):
+//! - `autoBreaks[profile]`: automatic break pins keyed by `LayoutProfile`, from the layout optimizer, kept separate from the user's explicit `breaks` intent. On derivation, `breaks` overrides the same key.
+//! - `transDisplay[lang][sid]`: subtitle translation that exists only when the “monotonic display rewrite” is triggered. The natural translation `trans` is unchanged.
+//! - Entries in `transAlign` gain `blocks[]` (minimal monotonic alignment blocks), `correspondence` (`block` or `sentence`, replacing the old `crossing`), `textBasis` (whether the pieces concatenate to `trans` or `transDisplay`), and an `aligner` source tag.
 //!
-//! 0.5 相对 0.4 的增量（韩文按空格分词，`ccut-korean-word-spacing-design.md`）：
-//! - 拼接规则变了：谚文与谚文之间按词加空格（[`crate::atomize::sep_len`]），
-//!   新建的韩文文稿一个어절一个词；
-//! - `words[].glue`（稀疏）：这个词与前一个词之间不加空格，不论规则怎么判。
-//!   0.5 之前的韩文文稿每个音节一个词，读入时给规则变化会撑开的词缝打上
-//!   标记（[`mark_legacy_glue`]），词 id、覆盖表、指纹、显示都不变。任何途径
-//!   反序列化出来的 [`TranscriptDoc`] 都已做过这一步，版本号同时升到当前。
-//!   泰、老挝、缅甸、高棉、藏文这类词间不写空格的文字，新建稿时按词切开，
-//!   短语内的词缝也带这个标记（[`crate::atomize::atomize_words`]，
-//!   `ccut-unspaced-script-segmentation-design.md`）；格式仍是 0.5，已有文稿不迁移。
+//! Changes from 0.4 to 0.5 (Korean space-separated word segmentation, `ccut-korean-word-spacing-design.md`):
+//! - The concatenation rule changed: between Hangul and Hangul, a space is added per word ([`crate::atomize::sep_len`]). Newly created Korean transcripts have one eojeol per word.
+//! - `words[].glue` (sparse): no space between this word and the previous one, however the rule judges. Korean transcripts from before 0.5 have one word per syllable. When read in, the word gaps that the new rule would open are marked ([`mark_legacy_glue`]). Word ids, override tables, fingerprints and display are unchanged. Any [`TranscriptDoc`] deserialized by any route has already gone through this step, and its version is raised to the current one at the same time. For scripts that put no spaces between words (Thai, Lao, Burmese, Khmer and Tibetan), newly created transcripts are split into words, and the gaps inside a phrase also carry this marker ([`crate::atomize::atomize_words`], `ccut-unspaced-script-segmentation-design.md`). The format is still 0.5, and existing transcripts are not migrated.
 
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// 词原子。字段名刻意极短——几万词要进 JSON。
+/// Word atom. Field names are deliberately very short, since tens of thousands of words go into the JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Word {
-    /// 文档内唯一、一经分配永不复用。导入 `g<行>.<列>`；编辑新造 `w<base36ms>-<n>`。
+    /// Unique within the document and never reused once assigned. Imports use `g<row>.<column>`; edits create `w<base36ms>-<n>`.
     pub id: String,
-    /// 起止媒体源秒，`t0 <= t1`，厘秒精度。
+    /// Start and end in seconds of the source media, with `t0 <= t1` and centisecond precision.
     pub t0: f64,
     pub t1: f64,
     pub text: String,
-    /// 说话人 id，必须存在于 `speakers` 表。
+    /// Speaker id. It must exist in the `speakers` table.
     pub sp: String,
-    /// 「贴前」：为真时这个词与前一个词之间不加空格，不论拼接规则怎么判
-    /// （0.5 起；稀疏，缺省省略）。词不存空白，空格每次由
-    /// [`crate::atomize::sep_len`] 现算；规则答不对的地方靠它记住原样。
-    /// 拼接、量宽、断点判断都要认它（[`crate::atomize::JoinWord`]）。
+    /// “Glue to previous”: when true, this word gets no space before the previous one, however the join rule judges (since 0.5; sparse, omitted by default). Words store no whitespace. Spaces are computed each time by [`crate::atomize::sep_len`]. Where the rule gets it wrong, this flag keeps the original. Concatenation, width measurement and break decisions must all respect it ([`crate::atomize::JoinWord`]).
     #[serde(default, skip_serializing_if = "is_false")]
     pub glue: bool,
 }
@@ -77,10 +59,10 @@ pub struct Chapter {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocMedia {
-    /// 项目清单里的媒体 id（有项目容器时）。
+    /// Media id in the project manifest (when there is a project container).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// CLI 平铺项目模式下的媒体路径。
+    /// Media path in CLI flat-project mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub hash: String,
@@ -95,11 +77,11 @@ pub struct DocEngine {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// true = 引擎给出真实词时间戳；false = 按字符权重合成。
+    /// true means the engine gave real word timestamps; false means they were synthesized by character weight.
     pub aligned_words: bool,
 }
 
-/// 分句覆盖：`break` 强制断 / `nobreak` 抑制默认断点。
+/// Per-sentence break overrides: `break` forces a break, and `nobreak` suppresses the default break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BreakOverride {
@@ -107,23 +89,21 @@ pub enum BreakOverride {
     Nobreak,
 }
 
-/// 对齐策略（v0.3 §5）：句内译文如何切成展示行。
+/// Alignment strategy (v0.3 §5): how the translation within a sentence is split into display lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlignMode {
-    /// 各自对齐：译文按目标语自身习惯切行，不与源 Cue 建立对应（零 LLM）。
+    /// Separate alignment: the translation is split into lines by the target language's own habits, with no correspondence to source Cues (zero LLM).
     #[serde(rename = "independent")]
     Independent,
-    /// 多对一：译片锚定到连续源词区间；源 Cue 只负责独立换行。**默认策略**。
+    /// Many-to-one: translation pieces are anchored to contiguous source word ranges. Source Cues only decide independent line breaks. **The default strategy.**
     #[serde(rename = "manyToOne")]
     ManyToOne,
-    /// 旧版强制源 Cue 一对一模式，仅用于读取历史项目；新对齐不再生成。
+    /// Legacy forced one-to-one source-Cue mode, kept only to read old projects. New alignments no longer generate it.
     #[serde(rename = "oneToOne")]
     OneToOne,
 }
 
-/// 译文展示片。manyToOne 的 `from..=to` 是句内源词下标区间；independent
-/// 不带（通常由字符占比锚定到句内词边缘；片数多于源词时在整句词时窗内按
-/// 阅读长度排时）。旧版 Cue 锚定片只为反序列化兼容保留，不再视为有效对齐。
+/// A translation display piece. For manyToOne, `from..=to` is the range of source word indexes within the sentence. independent has none; it is usually anchored to the edges of the sentence's words by character proportion, and when there are more pieces than source words, they are timed by reading length within the sentence's whole word window. Legacy Cue-anchored pieces are kept only for backward-compatible deserialization and are no longer treated as valid alignments.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransPiece {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -133,94 +113,82 @@ pub struct TransPiece {
     pub text: String,
 }
 
-/// 双语对应粒度（对齐块设计 §4.5 / §5）。
+/// Bilingual correspondence granularity (alignment block design §4.5 and §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Correspondence {
-    /// 每片译文与其 `from..=to` 源词区间语义对应（片边界只落在对齐块边界上）。
+    /// The semantic correspondence of each translation piece to its `from..=to` source word range. Piece boundaries fall only on alignment block boundaries.
     Block,
-    /// 只保证整句对应：源、译共用整句时窗，不宣称逐片对应。
+    /// Guarantees only whole-sentence correspondence. The source and translation share the whole sentence's time window, and per-piece correspondence is not claimed.
     Sentence,
 }
 
-/// `pieces` 拼接等于哪份译文文本。
+/// Which translation text the concatenation of `pieces` equals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TextBasis {
-    /// 自然译句 `trans[lang][sid]`（缺省）。
+    /// Natural translated sentence `trans[lang][sid]` (the default).
     #[default]
     Trans,
-    /// 单调化显示改写 `transDisplay[lang][sid].text`。
+    /// Monotonic display rewrite `transDisplay[lang][sid].text`.
     Display,
 }
 
-/// 最小单调对齐块（对齐块设计 §4.3）：源侧 `src = (from, to)` 是句内词序闭区间
-/// （与 `TransPiece.from/to` 同一下标空间，指向 `TransAlign.words`），目标侧
-/// `tgt = (from, to)` 是 `concat(pieces.text)` 上的字符半开区间。块之间按序
-/// 单调、互不重叠、连续覆盖；块内允许多对多与局部乱序。
+/// Minimal monotonic alignment block (alignment block design §4.3). The source side `src = (from, to)` is a closed interval of word order within the sentence, in the same index space as `TransPiece.from/to` and pointing to `TransAlign.words`. The target side `tgt = (from, to)` is a half-open character interval over `concat(pieces.text)`. Blocks are monotonic in order, do not overlap, and cover continuously. Within a block, many-to-many and local reordering are allowed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlignBlock {
     pub src: (usize, usize),
     pub tgt: (usize, usize),
-    /// 支撑该块两侧边界的对齐边最小权重；缺省表示未知/确定性构造。
+    /// The minimum weight of the alignment edges that support the two boundaries of the block. Default means unknown or deterministic construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
-    /// `local-reorder`（块内存在交叉边）、`anchor`（含硬锚）、`weak`（仅软边）等。
+    /// `local-reorder` (a crossing edge exists within the block), `anchor` (contains hard anchors), `weak` (soft edges only), and so on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flags: Vec<String>,
 }
 
-/// 单调化显示改写（对齐块设计 §4.5 / §6.3）：为满足字幕硬上限而按源语顺序
-/// 改写的译句。只在触发改写时存在；`trans` 仍是自然译句真相。
+/// Monotonic display rewrite (alignment block design §4.5 and §6.3): a translated sentence rewritten in source-language order to meet the subtitle hard limit. It exists only when a rewrite is triggered. `trans` remains the truth for the natural translation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransDisplay {
     pub text: String,
-    /// 改写来源标识，如 `monotonic-rewrite`。
+    /// Rewrite source tag, such as `monotonic-rewrite`.
     pub basis: String,
-    /// 改写所依据的 `trans` 文本指纹；不符 ⇒ `display-stale`（删改写与该句对齐）。
+    /// Text fingerprint of the `trans` that the rewrite was based on. A mismatch ⇒ `display-stale` (the rewrite is deleted and the sentence is realigned).
     pub trans_fingerprint: String,
 }
 
-/// 一句译文的对齐覆盖层（v0.3 §4，0.4 增补见模块文档）。不变量（violated ⇒
-/// align-stale，展示降级整句上屏）：`normalize(concat(pieces.text)) ==
-/// normalize(基准文本)`，基准文本由 `text_basis` 决定；manyToOne 的 `words`
-/// 是当前句内完整词序列，或时间线 cut 后的有序可见词子序列；锚定片的
-/// from/to 连续、无重叠并覆盖 `words`；`blocks` 非空时每片边界必须落在块
-/// 边界上。independent 可用同一 `words` 子序列限定展示时窗，空数组仍表示
-/// 完整句。翻译流不依赖源 Cue 结构。
+/// Alignment override layer for one translated sentence (v0.3 §4; the 0.4 additions are described in the module docs). Invariants (a violation ⇒ align-stale, and the display falls back to showing the whole sentence): `normalize(concat(pieces.text)) == normalize(base text)`, where the base text is set by `text_basis`. For manyToOne, `words` is either the complete ordered word sequence of the current sentence, or an ordered subsequence of visible words after a timeline cut. Anchored pieces' from/to must be contiguous, non-overlapping and cover `words`. When `blocks` is non-empty, every piece boundary must fall on a block boundary. independent may use the same `words` subsequence to limit its display window, and an empty array still means the whole sentence. The translation flow does not depend on the source Cue structure.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransAlign {
     pub mode: AlignMode,
-    /// 旧版语序交叉标记，仅用于读取已经生成的项目：读入时按
-    /// `correspondence = sentence` 解释（见 [`TransAlign::correspondence`]）。
-    /// 新对齐恒写 false，且该字段不再放宽目标片 hard 上限；缺字段按 false 解释。
+    /// Legacy word-order crossing flag, kept only for reading projects that were already generated. On read it is interpreted as `correspondence = sentence` (see [`TransAlign::correspondence`]). New alignments always write false, and this field no longer relaxes the hard limit on target pieces. A missing field is read as false.
     #[serde(default, skip_serializing_if = "is_false")]
     pub crossing: bool,
-    /// 旧版源 Cue 快照，仅用于读取历史项目；新写入恒为空，校验不读取。
+    /// Legacy source-Cue snapshot, kept only for reading historical projects. New writes always leave it empty, and validation does not read it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cues: Vec<String>,
-    /// manyToOne 的句内源词 id 快照；空数组/缺字段表示无词锚或旧 Cue 条目。
+    /// Snapshot of the source word ids within the sentence for manyToOne. An empty array or a missing field means there is no word anchor or it is a legacy Cue entry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub words: Vec<String>,
-    /// 显式对应粒度；缺省由 mode/crossing 推导（[`TransAlign::correspondence`]）。
+    /// Explicit correspondence granularity. When absent, it is derived from mode and crossing ([`TransAlign::correspondence`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correspondence: Option<Correspondence>,
-    /// `pieces` 拼接等于哪份文本；缺省 `trans`。
+    /// Which text the concatenation of `pieces` equals. Defaults to `trans`.
     #[serde(default, skip_serializing_if = "text_basis_is_trans")]
     pub text_basis: TextBasis,
-    /// 对齐边来源标识（如 `llm-chunk+anchor/1`、`deterministic/1`）。
+    /// Alignment edge source tag (such as `llm-chunk+anchor/1` or `deterministic/1`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aligner: Option<String>,
-    /// 最小单调对齐块；空 = 无块层（旧条目或 independent），此时每片视为一块。
+    /// Minimal monotonic alignment blocks. Empty means there is no block layer (legacy entries or independent), in which case each piece counts as one block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<AlignBlock>,
     pub pieces: Vec<TransPiece>,
 }
 
 impl TransAlign {
-    /// 新写入条目的最小构造：无旧字段、无块层、缺省 `trans` 基准。
+    /// Minimal construction of a newly written entry: no legacy fields, no block layer, and `trans` as the default base.
     pub fn new(mode: AlignMode, words: Vec<String>, pieces: Vec<TransPiece>) -> Self {
         Self {
             mode,
@@ -235,8 +203,7 @@ impl TransAlign {
         }
     }
 
-    /// 生效的对应粒度：显式字段优先；否则旧 `crossing`、`independent` 与
-    /// 无词锚条目都只保证整句对应，其余 manyToOne 词锚条目按块对应。
+    /// The effective correspondence granularity. An explicit field takes priority. Otherwise, legacy `crossing`, `independent` and entries without word anchors guarantee only whole-sentence correspondence, and the remaining word-anchored manyToOne entries correspond by block.
     pub fn correspondence(&self) -> Correspondence {
         if let Some(explicit) = self.correspondence {
             return explicit;
@@ -253,33 +220,31 @@ fn text_basis_is_trans(value: &TextBasis) -> bool {
     *value == TextBasis::Trans
 }
 
-/// 阶段戳（§3.3）：谁写/谁读/何时过期见管线设计的规则表。
+/// Stage stamp (§3.3). See the rules table in the pipeline design for who writes it, who reads it, and when it expires.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stages {
-    /// 内容指纹：转录完成时的文本。不符 ⇒ 存在人工文本编辑。
+    /// Content fingerprint: the text at the time transcription completed. A mismatch ⇒ a manual text edit exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asr: Option<String>,
-    /// 版式指纹：breaks+paraBreaks+hidden 排序串。不符 ⇒ 存在人工版式干预。
+    /// Layout fingerprint: sorted serialization of breaks, paraBreaks and hidden. A mismatch ⇒ a manual layout intervention exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asr_layout: Option<String>,
-    /// 内容指纹：润色提交时。
+    /// Content fingerprint: at the time the polish was submitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub polish: Option<String>,
-    /// 结构指纹（id）：分段提交时。纯文本润色不使其过期；重转录使其过期。
+    /// Structural fingerprint (ids): at the time the segments were submitted. Pure text polish does not expire it; re-transcription does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment: Option<String>,
-    /// 内容指纹：章节提交时。
+    /// Content fingerprint: at the time the chapters were submitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapters: Option<String>,
-    /// 文稿对齐戳（`ccut transcribe --script`）：词时间来自强制对齐而不是 ASR。
-    /// 重转录（ASR）时不带这一项。
+    /// Script alignment stamp (`ccut transcribe --script`): the word timings come from forced alignment rather than ASR. Re-transcription (ASR) does not carry this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aligned: Option<AlignedStage>,
 }
 
-/// `stages.aligned`：`mode` 目前只有 `script`；`coverage` 是对齐到有效时长（≥ 20 ms）
-/// 的字符占文稿字符的比例；`lowConfidence` 是时长塌成 0 的词 id，供 Agent 复核。
+/// `stages.aligned`: `mode` currently only has `script`. `coverage` is the proportion of script characters aligned to a valid duration (≥ 20 ms). `lowConfidence` lists the ids of words whose duration collapsed to 0, for the Agent to review.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlignedStage {
@@ -299,20 +264,16 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// 这个版本号的文稿是否早于「贴前」标记（0.5）：读入时要按旧拼接规则补标记。
+/// Whether a transcript of this version predates the “glue to previous” marker (0.5). On read, the markers must be added under the old join rule.
 fn predates_glue(version: Option<&str>) -> bool {
     version.is_some_and(|version| {
         version != TRANSCRIPT_VERSION && SUPPORTED_TRANSCRIPT_VERSIONS.contains(&version)
     })
 }
 
-/// 0.5 之前的文稿里每个词该不该带「贴前」标记，按词序给出。
+/// For each word in a transcript from before 0.5, whether it should carry a “glue to previous” marker, given in word order.
 ///
-/// 判据是 [`crate::atomize::legacy_glue`]：旧规则不加空格、新规则会加的词缝。
-/// 可见词与它前面**最近的可见词**比（显示、导出、发给模型的文本拼的都是
-/// 可见词，这样迁移前后逐字相同）；隐藏词与紧挨着的前一个词比。已知取舍：
-/// 两个谚文词之间夹着一个不以谚文收尾的隐藏词（带逗号的语气词、拉丁词）
-/// 时，标记记的是「隐藏时贴着」，把那个词恢复显示后它后面会少一个空格。
+/// The criterion is [`crate::atomize::legacy_glue`]: a word gap that the old rule leaves unspaced but the new rule would space. A visible word is compared with **the nearest visible word before it**. Display, export and the text sent to the model are all built from visible words, so the text is identical before and after migration. A hidden word is compared with the word immediately before it. Known trade-off: when a hidden word that does not end in Hangul (a comma-marked interjection, a Latin word) sits between two Hangul words, the marker records “attached while hidden”. Once that word is shown again, the space after it goes missing.
 fn legacy_glue_flags<'a>(words: impl Iterator<Item = (&'a str, bool)>) -> Vec<bool> {
     let mut flags = Vec::new();
     let mut previous: Option<&str> = None;
@@ -328,7 +289,7 @@ fn legacy_glue_flags<'a>(words: impl Iterator<Item = (&'a str, bool)>) -> Vec<bo
     flags
 }
 
-/// 给 0.5 之前建的词补「贴前」标记（已有的标记保留）。`hidden` 是文稿的隐藏表。
+/// Adds “glue to previous” markers to words in transcripts created before 0.5. Existing markers are kept. `hidden` is the transcript's hidden table.
 pub fn mark_legacy_glue(words: &mut [Word], hidden: &BTreeMap<String, bool>) {
     let flags = legacy_glue_flags(words.iter().map(|word| {
         (
@@ -341,9 +302,7 @@ pub fn mark_legacy_glue(words: &mut [Word], hidden: &BTreeMap<String, bool>) {
     }
 }
 
-/// [`mark_legacy_glue`] 的 JSON 版：给不经 [`TranscriptDoc`]、直接改写
-/// `transcript.json` 的升级路径用。只在文稿版本早于 0.5 时动 `words[]`，返回
-/// 新打上标记的词数；版本号由调用方改写。
+/// The JSON version of [`mark_legacy_glue`], for upgrade paths that bypass [`TranscriptDoc`] and rewrite `transcript.json` directly. It only touches `words[]` when the transcript version is earlier than 0.5, and returns the number of newly marked words. The caller rewrites the version number.
 pub fn mark_legacy_glue_in_json(value: &mut serde_json::Value) -> usize {
     if !predates_glue(value["ccutTranscript"].as_str()) {
         return 0;
@@ -382,9 +341,7 @@ fn json_legacy_glue_flags(value: &serde_json::Value) -> Vec<bool> {
     }))
 }
 
-/// 从 transcript JSON 的 `words[]` 按数组顺序取每个词的「贴前」标记，不过滤任何
-/// 元素。给不经 [`TranscriptDoc`] 反序列化、直接读 JSON 拼正文的调用方用。
-/// 0.5 之前的文稿没有存标记，按 [`mark_legacy_glue`] 的同一条规则现算。
+/// Takes each word's “glue to previous” marker from the transcript JSON's `words[]`, in array order, without filtering any element. For callers that read the JSON directly to build text without deserializing into [`TranscriptDoc`]. Transcripts from before 0.5 do not store markers, so they are computed on the fly under the same rule as [`mark_legacy_glue`].
 pub fn word_glue_flags(value: &serde_json::Value) -> Vec<bool> {
     let stored = value["words"]
         .as_array()
@@ -405,14 +362,13 @@ pub fn word_glue_flags(value: &serde_json::Value) -> Vec<bool> {
         .collect()
 }
 
-// `remote = "Self"`：derive 生成的是同名的固有函数，trait 实现写在下面——
-// 反序列化之后要过一遍 [`TranscriptDoc::adopt_current_version`]。
+// `remote = "Self"`: derive generates an inherent function of the same name, and the trait implementation is written below. After deserialization, it must go through [`TranscriptDoc::adopt_current_version`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", remote = "Self")]
 pub struct TranscriptDoc {
     pub ccut_transcript: String,
     pub media: DocMedia,
-    /// 主语言（BCP-47）。
+    /// Primary language (BCP-47).
     pub lang: String,
     pub engine: DocEngine,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -424,38 +380,36 @@ pub struct TranscriptDoc {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chapters: Vec<Chapter>,
 
-    /// 用户显式断句意图（0.4 起不再承载优化器结果）。
+    /// The user's explicit break intent (since 0.4 it no longer carries optimizer results).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub breaks: BTreeMap<String, BreakOverride>,
-    /// 布局优化器输出：`LayoutProfile` id → 词 id → 自动 pin。派生 Cue 时与
-    /// `breaks` 合并，同键以 `breaks` 为准（[`TranscriptDoc::effective_breaks`]）。
+    /// Layout optimizer output: `LayoutProfile` id → word id → automatic pin. When Cues are derived, it is merged with `breaks`, and `breaks` wins on the same key ([`TranscriptDoc::effective_breaks`]).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auto_breaks: BTreeMap<String, BTreeMap<String, BreakOverride>>,
-    /// 当前编辑/派生所用的 `LayoutProfile` id；缺省 [`DEFAULT_LAYOUT_PROFILE`]。
+    /// The `LayoutProfile` id used by the current edit or derivation. Defaults to [`DEFAULT_LAYOUT_PROFILE`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_profile: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub para_breaks: BTreeMap<String, bool>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub hidden: BTreeMap<String, bool>,
-    /// 译文真相：lang → 句 id（`s-<首词id>`）→ 完整自然译句（Phase-1）。
+    /// Translation truth: language → sentence id (`s-<first word id>`) → complete natural translated sentence (Phase 1).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub trans: BTreeMap<String, BTreeMap<String, String>>,
-    /// 单调化显示改写：lang → 句 id → 字幕用译句。只在触发改写时存在。
+    /// Monotonic display rewrite: language → sentence id → translated sentence used for subtitles. Exists only when a rewrite has been triggered.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub trans_display: BTreeMap<String, BTreeMap<String, TransDisplay>>,
-    /// 对齐覆盖层：lang → 句 id → 展示切分（Phase-2）。无条目 = 未对齐
-    /// （合法中间态，展示降级整句上屏）。
+    /// Alignment override layer: language → sentence id → display segmentation (Phase 2). No entry means not aligned, which is a legal intermediate state; the display falls back to showing the whole sentence.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub trans_align: BTreeMap<String, BTreeMap<String, TransAlign>>,
 
     #[serde(default, skip_serializing_if = "Stages::is_empty")]
     pub stages: Stages,
-    /// lang → { 句 id → 该句源文指纹 }。不符 ⇒ translation-stale。
+    /// language → { sentence id → the source-text fingerprint of that sentence }. A mismatch ⇒ translation-stale.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub trans_src: BTreeMap<String, BTreeMap<String, String>>,
 
-    /// 写入必须经 CLI；直接手改会破坏指纹与不变量。
+    /// Writes must go through the CLI. Direct hand edits break the fingerprints and invariants.
     #[serde(default, skip_serializing_if = "is_false")]
     pub read_only_note: bool,
 }
@@ -466,8 +420,7 @@ impl Serialize for TranscriptDoc {
     }
 }
 
-/// 不论从哪里反序列化（`from_json`、审阅候选、`project init --transcript`），
-/// 拿到手的文稿都已是当前版本的语义：旧版的词缝补好了「贴前」标记。
+/// No matter where it is deserialized from (`from_json`, review candidates, `project init --transcript`), the transcript in hand already has the semantics of the current version. Glue markers have been filled in for legacy words.
 impl<'de> Deserialize<'de> for TranscriptDoc {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut doc = Self::deserialize(deserializer)?;
@@ -476,16 +429,15 @@ impl<'de> Deserialize<'de> for TranscriptDoc {
     }
 }
 
-/// 当前写出的 transcript 版本。
+/// The transcript version currently written.
 ///
-/// 移植自 CucCut v2 `ccut-protocol` 的 `versions::TRANSCRIPT_CURRENT`（值不变）。
+/// Ported from `versions::TRANSCRIPT_CURRENT` in CucCut v2 `ccut-protocol` (value unchanged).
 pub const TRANSCRIPT_VERSION: &str = "0.5";
-/// 可读取的版本：旧版是当前版本的子集（0.4、0.5 都只增字段），读入后按当前
-/// 语义处理；0.5 改了拼接规则，旧版的词在读入时补「贴前」标记保持原样。
+/// Readable versions: older versions are a subset of the current one (0.4 and 0.5 only add fields), and they are handled under current semantics after reading. 0.5 changed the join rule, so for legacy words, the glue markers are added on read and the original output is preserved.
 ///
-/// 移植自 CucCut v2 `ccut-protocol` 的 `versions::TRANSCRIPT_SUPPORTED`（值不变）。
+/// Ported from `versions::TRANSCRIPT_SUPPORTED` in CucCut v2 `ccut-protocol` (value unchanged).
 pub const SUPPORTED_TRANSCRIPT_VERSIONS: &[&str] = &["0.3", "0.4", TRANSCRIPT_VERSION];
-/// 缺省 `LayoutProfile` id：数值即 0.3 时代的全部常量。
+/// The default `LayoutProfile` id. Its numeric value covers all the constants of the 0.3 era.
 pub const DEFAULT_LAYOUT_PROFILE: &str = "default";
 
 impl TranscriptDoc {
@@ -513,15 +465,14 @@ impl TranscriptDoc {
         }
     }
 
-    /// 生效的 `LayoutProfile` id。
+    /// The effective `LayoutProfile` id.
     pub fn layout_profile_id(&self) -> &str {
         self.layout_profile
             .as_deref()
             .unwrap_or(DEFAULT_LAYOUT_PROFILE)
     }
 
-    /// 派生 Cue 用的合并 pin 表：`autoBreaks[profile]` 打底，`breaks` 覆盖同键。
-    /// 三端（Rust / Swift / JS）替换 §18.5 里对 `breaks` 的读取即可，派生算法不变。
+    /// The merged pin table used for derived Cues: `autoBreaks[profile]` is the base, and `breaks` overrides the same key. The three platforms (Rust, Swift, JS) only need to replace their reads of `breaks` in §18.5. The derivation algorithm is unchanged.
     pub fn effective_breaks(&self, profile: &str) -> BTreeMap<String, BreakOverride> {
         let mut merged = self.auto_breaks.get(profile).cloned().unwrap_or_default();
         for (id, value) in &self.breaks {
@@ -530,8 +481,7 @@ impl TranscriptDoc {
         merged
     }
 
-    /// 版式串：breaks/paraBreaks/hidden 的排序序列化，供 `stages.asrLayout`。
-    /// 只统计用户意图，`autoBreaks` 不参与——优化器重跑不算人工版式干预。
+    /// Layout string: a sorted serialization of breaks, paraBreaks and hidden, used by `stages.asrLayout`. It counts only user intent; `autoBreaks` is not included, so re-running the optimizer does not count as a manual layout intervention.
     pub fn layout_strings(&self) -> Vec<String> {
         let mut items = Vec::new();
         for (id, value) in &self.breaks {
@@ -555,11 +505,10 @@ impl TranscriptDoc {
         items
     }
 
-    /// schema + 语义校验（`transcript-word-order` 等）。
+    /// Schema and semantic validation (`transcript-word-order`, etc.).
     pub fn validate(&self) -> Result<()> {
         if !SUPPORTED_TRANSCRIPT_VERSIONS.contains(&self.ccut_transcript.as_str()) {
-            // 版本不认识不是数据损坏：多半是这个 CLI 比项目旧。把「我支持什么、
-            // 项目是什么、去哪查我是谁」一次讲全，别让调用方以为 transcript 坏了。
+            // An unrecognized version is not data corruption. Most likely this CLI is older than the project. Say in one go what I support, what the project is, and where to look up who I am, so the caller does not think the transcript is broken.
             bail!(
                 "不支持的 transcript 版本 {}（本 CLI 只认 {}）：这不是文件损坏，多半是当前 ccut 比项目旧；用 `ccut --json version` 核对正在运行的二进制与提交，再升级到能写出 {} 的构建",
                 self.ccut_transcript,
@@ -587,7 +536,7 @@ impl TranscriptDoc {
                 word.t0.is_finite() && word.t1.is_finite() && word.t0 >= 0.0 && word.t1 >= word.t0,
                 "时间范围无效",
             )?;
-            // 容忍浮点/厘秒取整边界的半 tick 逃逸。
+            // Tolerate half-tick leaks at floating-point and centisecond rounding boundaries.
             check(
                 word.t1 <= self.media.duration + 0.005,
                 "词时间越出 media.duration",
@@ -623,7 +572,7 @@ impl TranscriptDoc {
         Ok(())
     }
 
-    /// 覆盖表/译文表引用不存在词 id 的孤儿键（warn 级，`transcript-orphan-override`）。
+    /// Orphan keys in the override and translation tables that reference nonexistent word ids (warn level, `transcript-orphan-override`).
     pub fn orphan_overrides(&self) -> Vec<String> {
         let ids: std::collections::HashSet<&str> =
             self.words.iter().map(|word| word.id.as_str()).collect();
@@ -644,11 +593,9 @@ impl TranscriptDoc {
         orphans
     }
 
-    /// 删除覆盖表中已经无法指向当前词流的键，并返回删除数量。
+    /// Deletes keys in the override table that can no longer point at the current word stream, and returns the number deleted.
     ///
-    /// 文本重绑定可能替换词 id；这些旧键继续留在文档里既不能恢复用户意图，
-    /// 还会让交付检查永久报 `transcript-orphan-override`。调用方应在完成一次
-    /// 原子化文本替换后、重算版式指纹前执行本收尾。
+    /// Text rebinding can replace word ids. If these old keys stay in the document, they cannot restore user intent, and they keep the delivery check reporting `transcript-orphan-override` forever. Callers should run this cleanup after one atomic text replacement, and before recomputing the layout fingerprint.
     pub fn prune_orphan_overrides(&mut self) -> usize {
         let ids: std::collections::HashSet<String> =
             self.words.iter().map(|word| word.id.clone()).collect();
@@ -665,9 +612,7 @@ impl TranscriptDoc {
         before - (self.breaks.len() + auto_len(self) + self.para_breaks.len() + self.hidden.len())
     }
 
-    /// 旧版（仍在支持范围内）的文稿升到当前版本的语义：给规则变化会撑开的
-    /// 词缝补「贴前」标记，版本号改成 [`TRANSCRIPT_VERSION`]。不认识的版本
-    /// 原样留着，由 [`TranscriptDoc::validate`] 拒绝。幂等。
+    /// Semantics for upgrading an older (still supported) transcript to the current version: adds “glue to previous” markers to word gaps that the rule change would open up, and changes the version number to [`TRANSCRIPT_VERSION`]. An unrecognized version is left as it is and rejected by [`TranscriptDoc::validate`]. Idempotent.
     fn adopt_current_version(&mut self) {
         if !predates_glue(Some(&self.ccut_transcript)) {
             return;
@@ -676,10 +621,7 @@ impl TranscriptDoc {
         self.ccut_transcript = TRANSCRIPT_VERSION.to_owned();
     }
 
-    /// 解析并按当前版本语义读入：旧版文档只增不改，读入后版本号升为
-    /// [`TRANSCRIPT_VERSION`]（回写即完成升级；旧字段 `crossing`/`cues` 原样保留，
-    /// 由 [`TransAlign::correspondence`] 等读取侧解释；0.5 之前的词补
-    /// 「贴前」标记——反序列化时已做）。
+    /// Parses and reads under current-version semantics. Older documents only add fields and change none, so after reading, the version number is raised to [`TRANSCRIPT_VERSION`] (writing it back completes the upgrade). Legacy fields `crossing` and `cues` are kept as they are, and read-side code such as [`TransAlign::correspondence`] interprets them. Words from before 0.5 get glue markers, which are added during deserialization.
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
         let doc: TranscriptDoc = serde_json::from_slice(bytes).context("解析 transcript JSON")?;
         doc.validate()?;
@@ -797,7 +739,7 @@ mod tests {
     }
 
     fn legacy_korean_json(version: &str) -> serde_json::Value {
-        // 0.5 之前建的韩文文稿：每个音节一个词，`~k` 是同一个转录词切出来的。
+        // Korean transcripts created before 0.5: one word per syllable, and the `~k` words were split from the same transcript word.
         let texts = [
             "저", "는", "내", "일", "iPhone", "을", "샀", "다.", "어,", "그", "래", "요",
         ];
@@ -825,8 +767,7 @@ mod tests {
         })
     }
 
-    /// 旧版韩文文稿读进来：词 id、文本、时间、覆盖表、指纹一个不变，只多出
-    /// 「贴前」标记；按新规则拼出来的文本与 0.5 之前逐字相同。
+    /// When an older Korean transcript is read in, the word ids, text, timings, override tables and fingerprints are all unchanged, and only “glue to previous” markers are added. The text assembled under the new rule is identical to what it was before 0.5.
     #[test]
     fn a_pre_0_5_korean_document_reads_with_glue_and_the_same_text() {
         for version in ["0.3", "0.4"] {
@@ -848,9 +789,9 @@ mod tests {
                 crate::atomize::join_word_texts(doc.words.iter()),
                 "저는내일 iPhone 을샀다. 어, 그래요"
             );
-            // 直接读 JSON 的调用方拿到同一组标记。
+            // Callers that read JSON directly get the same set of markers.
             assert_eq!(word_glue_flags(&json), glue);
-            // JSON 升级路径打上同一组标记，且幂等。
+            // The JSON upgrade path applies the same set of markers, and it is idempotent.
             let mut upgraded = json.clone();
             assert_eq!(mark_legacy_glue_in_json(&mut upgraded), 7);
             upgraded["ccutTranscript"] = serde_json::json!(TRANSCRIPT_VERSION);
@@ -858,7 +799,7 @@ mod tests {
             assert_eq!(word_glue_flags(&upgraded), glue);
             let reread = TranscriptDoc::from_json(&serde_json::to_vec(&upgraded).unwrap()).unwrap();
             assert_eq!(reread, doc);
-            // 写出再读回：标记落盘，不再靠规则现算。
+            // Once written out and read back, the markers are persisted and are no longer computed from the rule.
             let written = serde_json::to_value(&doc).unwrap();
             assert_eq!(written["ccutTranscript"], "0.5");
             assert_eq!(written["words"][1]["glue"], true);
@@ -868,19 +809,17 @@ mod tests {
                 doc
             );
         }
-        // 不经 `from_json` 的反序列化（审阅候选、`project init --transcript`）
-        // 同样补标记。
+        // Deserialization that bypasses `from_json` (review candidates, `project init --transcript`) also adds the markers.
         let direct: TranscriptDoc = serde_json::from_value(legacy_korean_json("0.4")).unwrap();
         assert!(direct.words[1].glue);
         assert_eq!(direct.ccut_transcript, "0.5");
     }
 
-    /// 隐藏词：可见词与前面最近的可见词比，显示出来的文本迁移前后相同。
+    /// Hidden word: a visible word is compared with the nearest visible word before it, so the displayed text is the same before and after migration.
     #[test]
     fn legacy_glue_follows_the_visible_neighbour_across_a_hidden_word() {
         let mut json = legacy_korean_json("0.4");
-        // 「어,」被隐藏：0.5 之前「다.」后面直接显示「그」，中间有空格（句号
-        // 之后）；把「다.」换成不带句号的「다」，旧显示就是贴着的「다그」。
+        // 「어,」 ("uh,") is hidden. Before 0.5, 「다.」 followed directly by a displayed 「그」 had a space between them, after the period. If 「다.」 is replaced with 「다」 without the period, the old display would be the attached 「다그」.
         json["words"][7]["text"] = serde_json::json!("다");
         json["hidden"] = serde_json::json!({"g1.8": true});
         let doc = TranscriptDoc::from_json(&serde_json::to_vec(&json).unwrap()).unwrap();
@@ -895,7 +834,7 @@ mod tests {
         );
     }
 
-    /// 0.5 的文稿不再按规则补标记：新建的韩文文稿一个어절一个词，没有标记。
+    /// Transcripts at 0.5 no longer add markers by rule. Newly created Korean transcripts have one eojeol per word, with no markers.
     #[test]
     fn a_0_5_document_is_read_as_written() {
         let mut json = legacy_korean_json("0.5");
@@ -903,7 +842,7 @@ mod tests {
         assert!(doc.words.iter().all(|word| !word.glue));
         assert_eq!(word_glue_flags(&json), vec![false; 12]);
         assert_eq!(mark_legacy_glue_in_json(&mut json), 0);
-        // 中文、日文、英文的旧文稿读进来没有任何词带标记。
+        // Legacy Chinese, Japanese and English transcripts have no words carrying markers when they are read in.
         for texts in [
             vec!["你", "好，", "世", "界。"],
             vec!["他", "用", "Agent", "来", "做"],
@@ -998,7 +937,7 @@ mod tests {
         assert_eq!(align["blocks"][0]["tgt"], serde_json::json!([0, 5]));
         assert_eq!(align["blocks"][0]["flags"][0], "anchor");
         assert_eq!(align["pieces"][0]["from"], 0);
-        // independent 片不落 from/to 键；缺省 textBasis/correspondence 不落键。
+        // Independent pieces do not store from/to keys. Default textBasis and correspondence values are not stored as keys.
         doc.trans_align.get_mut("zh").unwrap().insert(
             "s-g1.0".to_owned(),
             TransAlign::new(
@@ -1054,13 +993,13 @@ mod tests {
         assert_eq!(entry.correspondence(), Correspondence::Sentence);
         assert_eq!(entry.text_basis, TextBasis::Trans);
         assert!(entry.blocks.is_empty());
-        // 未标 crossing 的词锚 manyToOne 条目按块对应；independent 按整句对应。
+        // Word-anchored manyToOne entries without a crossing flag correspond by block. Independent entries correspond by whole sentence.
         let mut plain = entry.clone();
         plain.crossing = false;
         assert_eq!(plain.correspondence(), Correspondence::Block);
         plain.mode = AlignMode::Independent;
         assert_eq!(plain.correspondence(), Correspondence::Sentence);
-        // 支持范围之外的版本仍拒绝。
+        // Versions outside the supported range are still rejected.
         let mut bad = json.clone();
         bad["ccutTranscript"] = serde_json::json!("0.2");
         assert!(TranscriptDoc::from_json(serde_json::to_vec(&bad).unwrap().as_slice()).is_err());
@@ -1076,10 +1015,10 @@ mod tests {
         let merged = doc.effective_breaks("default");
         assert_eq!(merged["g1.0"], BreakOverride::Nobreak);
         assert_eq!(merged["g1.1"], BreakOverride::Break);
-        // 未知 profile 只剩用户 pin；版式指纹只看用户 pin。
+        // An unknown profile keeps only user pins. The layout fingerprint looks only at user pins.
         assert_eq!(doc.effective_breaks("portrait").len(), 1);
         assert_eq!(doc.layout_strings(), vec!["b:g1.0=nobreak".to_owned()]);
-        // 孤儿清理覆盖 autoBreaks。
+        // Orphan cleanup also covers autoBreaks.
         auto_orphan(&mut doc);
         assert_eq!(doc.orphan_overrides(), vec!["gone".to_owned()]);
         assert_eq!(doc.prune_orphan_overrides(), 1);

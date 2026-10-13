@@ -18,7 +18,7 @@ import { tr } from './tools-records.tr.ts';
 import { vi } from './tools-records.vi.ts';
 import { jobErrorText, jobWaitText } from './localized-text.ts';
 
-/** 记录卡的状态词与原因（译文在 `tools-records.<语言>.ts`）。 */
+/** Status words and reasons for record cards (translations in `tools-records.<语言>.ts`). */
 const en = {
   generating: 'Generating',
   queued: 'Queued',
@@ -34,17 +34,17 @@ export type ToolsRecordsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 工具页右栏的记录（设计稿 tool-tts.jsx「生成记录」、tool-image.jsx、tool-transcribe.jsx「转录记录」）：
- * 不是工具页自己记的一份，而是 `jobs` 主题里这类任务的子集——这台电脑上的界面（连接）提交的、不属于任何视频的。
- * 模型页的「测试合成 / 测试生图」也是这样提交的，会一起出现在这里，如实列出（那也是一次真实的调用）。
- * 「删除这条记录」只在本机藏起来：Runtime 没有删除 Job 的方法，后台任务里照样能看到。
+ * Records in the right column of the tools page (design mocks tool-tts.jsx "Generation records", tool-image.jsx, tool-transcribe.jsx "Transcription records"):
+ * not a separate list the tools page keeps itself, but the subset of `jobs` topic tasks of this kind: submitted from this computer's UI (connection), and not belonging to any video.
+ * The models page's "Test synthesis" / "Test image generation" are submitted the same way and also appear here, listed honestly (that is also a real call).
+ * "Delete this record" only hides it locally: the Runtime has no method to delete a Job, and it is still visible among background tasks.
  */
 
 function isLive(job: Pick<JobRecord, 'state' | 'endedAt'>): boolean {
   return jobLive(job);
 }
 
-/** 这类工具的记录，新的在前；本机藏起来的不列。 */
+/** Records of this kind, newest first; those hidden locally are not listed. */
 export function toolJobs(jobs: readonly JobRecord[], kind: JobKind, hidden: readonly Id[]): JobRecord[] {
   const skip = new Set(hidden);
   return jobs
@@ -52,19 +52,19 @@ export function toolJobs(jobs: readonly JobRecord[], kind: JobKind, hidden: read
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** 右栏列出的记录：取消了的不列，只有可能已经计费的照实留下（`cancellation.cost` 不是 `none`）。 */
+/** Records listed in the right column: cancelled ones are not listed; ones that may already have been charged are kept as they are (`cancellation.cost` is not `none`). */
 export function listedRecords(list: readonly JobRecord[]): JobRecord[] {
   return list.filter((job) => job.state !== 'cancelled' || (!!job.cancellation && job.cancellation.cost !== 'none'));
 }
 
-/** 进行中（排队或在跑）的条数：右栏标题旁的「N 条进行中」。 */
+/** Count of in-progress records (queued or running): the "N in progress" beside the right column's title. */
 export function liveCount(list: readonly JobRecord[]): number {
   return list.filter(isLive).length;
 }
 
 /**
- * 排队的任务前面还有几条（设计稿 model-tools.js `aheadOf`）。Runtime 按执行者排队：云端每家一条队，
- * 所以只数同一个 Provider 上、比它早提交、还没结束的任务（在跑的也算）。`all` 传全部任务，视频里的也占队。
+ * How many tasks are ahead of a queued one (design mock model-tools.js `aheadOf`). The Runtime queues per executor: each cloud provider has its own queue,
+ * so only count tasks on the same provider that were submitted earlier and haven't finished (running ones count too). `all` passes all tasks; ones in videos also take a place in the queue.
  */
 export function aheadOf(all: readonly JobRecord[], job: JobRecord): number {
   const at = Date.parse(job.createdAt);
@@ -72,23 +72,23 @@ export function aheadOf(all: readonly JobRecord[], job: JobRecord): number {
 }
 
 /**
- * 排队时 Runtime 记着的在等什么（`JobRecord.wait`：同一队列的并发名额，或机器上的资源，架构设计 §7.6、§7.7），
- * 是给人看的一句；还没有时 null，由调用方退回 `aheadOf` 的估计。
+ * What the Runtime recorded a queued task as waiting for (`JobRecord.wait`: a concurrency slot in the same queue, or a machine resource; architecture design §7.6, §7.7),
+ * a sentence for people to read. null when there is none yet, and the caller falls back to the `aheadOf` estimate.
  */
 export function queuedDetail(job: Pick<JobRecord, 'state' | 'wait'>): string | null {
   return job.state === 'queued' ? jobWaitText(job.wait) : null;
 }
 
-/** 本机藏起来的记录最多记这么多条，旧的先忘。 */
+/** Hidden local records are kept up to this many; the oldest are forgotten first. */
 export const HIDDEN_LIMIT = 500;
 
-/** 藏起一条记录（已经藏过的不重复记）。 */
+/** Hide a record (one already hidden is not recorded again). */
 export function hideJob(hidden: readonly Id[], jobId: Id): Id[] {
   if (hidden.includes(jobId)) return [...hidden];
   return [...hidden, jobId].slice(-HIDDEN_LIMIT);
 }
 
-// ---- 记录卡的状态 ----
+// ---- Record card status ----
 
 export type RecordStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted' | 'needs-reconciliation';
 
@@ -97,7 +97,7 @@ export function recordStatus(job: Pick<JobRecord, 'state' | 'endedAt'>): RecordS
   return job.state === 'completed' ? 'done' : job.state;
 }
 
-/** 记录卡右上角那个词（设计稿 tool-tts.jsx `RecordCard`）：做完了写多久前，其余写状态。 */
+/** The word in a record card's top-right corner (design mock tool-tts.jsx `RecordCard`): for a finished one, how long ago; otherwise the status. */
 export function stateLabel(job: Pick<JobRecord, 'state' | 'endedAt' | 'createdAt'>, now: number): string {
   switch (job.state) {
     case 'completed':
@@ -117,15 +117,15 @@ export function stateLabel(job: Pick<JobRecord, 'state' | 'endedAt' | 'createdAt
   }
 }
 
-/** 没做成的记录（失败、中断、结果不明）：卡片按出错画，给出原因。 */
+/** A record that didn't succeed (failed, interrupted, outcome unknown): the card is drawn as an error, with the reason. */
 export function didNotFinish(job: Pick<JobRecord, 'state' | 'endedAt'>): boolean {
   if (jobRetrying(job)) return false;
   return job.state === 'failed' || job.state === 'interrupted' || job.state === 'needs-reconciliation';
 }
 
 /**
- * 在跑的那一行：阶段、几张里的第几张（生图一次多张时）、百分比。总量未知时不写百分比（不伪造）。
- * 「生成中 1/4 · 25%」「生成中」「保存结果 · 100%」。
+ * The line shown while running: stage, which one of several (when an image generation makes several), and the percentage. The percentage is not written when the total is unknown (no fabrication).
+ * "Generating 1/4 · 25%", "Generating", "Saving result · 100%".
  */
 export function phaseLabel(job: Pick<JobRecord, 'phase' | 'progress'>): string {
   const p = job.progress;
@@ -134,7 +134,7 @@ export function phaseLabel(job: Pick<JobRecord, 'phase' | 'progress'>): string {
   return `${JOB_PHASE_LABEL[job.phase]}${count}${pct !== null ? ` · ${pct}%` : ''}`;
 }
 
-/** 没做成时的一句：失败带 Runtime 的原因，中断说明是 Runtime 停了。 */
+/** A sentence for a record that didn't succeed: failures carry the Runtime's reason; an interruption says the Runtime was stopped. */
 export function failureText(job: Pick<JobRecord, 'state' | 'error'>): string {
   if (job.state === 'interrupted') return M.interrupted;
   if (job.state === 'needs-reconciliation') return M.reconcile;

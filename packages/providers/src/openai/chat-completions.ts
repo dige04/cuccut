@@ -1,17 +1,13 @@
-// OpenAI Chat Completions（`generateText`，架构设计 §6.4）：OpenAI 与 OpenAI 兼容端点共用的请求与响应形状。
-// 2026-10-03 读过的文档：
+// OpenAI Chat Completions (`generateText`, architecture design §6.4): the request and response shape shared by OpenAI and OpenAI-compatible endpoints.
+// Docs read on 2026-10-03:
 //   https://platform.openai.com/docs/api-reference/chat/create
 //   https://platform.openai.com/docs/guides/structured-outputs
 //   https://platform.openai.com/docs/guides/reasoning
 //   https://platform.openai.com/docs/guides/error-codes
-// 文档确认的：`POST {base}/chat/completions`（JSON，Bearer）；`messages[{ role, content }]`；`max_completion_tokens`
-// （推理模型不再接受 `max_tokens`）；`reasoning_effort`；`response_format: { type: 'json_schema', json_schema: { name, schema,
-// strict } }`；`seed`；`choices[0].message.content` / `.refusal`、`finish_reason`（`stop`、`length`、`content_filter`……）；
-// `usage.prompt_tokens` / `completion_tokens`；`model` 是带日期的快照名；上下文过长是 400 `context_length_exceeded`，
-// 模型不存在是 404 `model_not_found`，额度用尽是 429 `insufficient_quota`。
-// 取舍：选 Chat Completions 而不是 Responses，兼容端点几乎都只实现它，两边共用一份代码。`strict` 发 false：严格模式只接受
-// schema 的一个子集（全部字段必填、不许额外字段），任意的 schema 会在执行时被拒绝；不论供应商是否严格遵守，输出都在本地
-// 按 schema 校验。兼容端点用 `max_tokens`（自建服务普遍只认它）。
+// Confirmed by the docs: `POST {base}/chat/completions` (JSON, Bearer); `messages[{ role, content }]`; `max_completion_tokens` (reasoning models no longer accept `max_tokens`); `reasoning_effort`; `response_format: { type: 'json_schema', json_schema: { name, schema,
+// strict } }`; `seed`; `choices[0].message.content` / `.refusal`, `finish_reason` (`stop`, `length`, `content_filter`, ...);
+// `usage.prompt_tokens` / `completion_tokens`; `model` is a dated snapshot name; context too long is 400 `context_length_exceeded`, model not found is 404 `model_not_found`, quota exhausted is 429 `insufficient_quota`.
+// Trade-off: Chat Completions rather than Responses, because almost every compatible endpoint implements only this one, so both share one code path. `strict` is sent as false: strict mode accepts only a subset of schemas (all fields required, no extra fields), and an arbitrary schema would be rejected at run time. Whether or not a provider enforces it strictly, the output is validated locally against the schema. Compatible endpoints use `max_tokens` (self-hosted servers generally accept only that).
 import { ProviderFailure, type TextParameters, type TextReply } from '@cuccut/models';
 import type { TextFinishReason } from '@cuccut/protocol';
 import { textTimeoutMs, type TextRequest } from '../adapter.ts';
@@ -22,11 +18,10 @@ import { ProvidersHttp as PH } from '@cuccut/protocol/messages/providers';
 export interface ChatCompletionsStyle {
   label: string;
   version: string;
-  /** 输出上限的字段名。 */
+  /** Field name for the output limit. */
   maxTokensField: 'max_completion_tokens' | 'max_tokens';
   /**
-   * 结构化输出的写法：`json_schema`（默认）发 schema；`json_object` 给只支持 JSON 模式的服务商——要 JSON 对象，并把 schema
-   * 写进一条系统消息。两种写法的输出都在本地按 schema 校验。
+   * Structured output styles: `json_schema` (default) sends the schema; `json_object` is for providers that support only JSON mode. It asks for a JSON object and puts the schema into a system message. Output from both styles is validated locally against the schema.
    */
   jsonMode?: 'json_schema' | 'json_object';
 }
@@ -77,7 +72,7 @@ export function parseChatCompletion(value: unknown, style: Pick<ChatCompletionsS
   const choice = Array.isArray(value.choices) ? value.choices.find(isObject) : undefined;
   if (!choice) throw new ProviderFailure('protocol', PH.missingField({ label: style.label, field: 'choices' }).text);
   const message = isObject(choice.message) ? choice.message : {};
-  // 结构化输出时模型拒绝回答（`refusal`）：按内容过滤处理。
+  // Model refused to answer during structured output (`refusal`): handled as content filtering.
   const refused = typeof message.refusal === 'string' && message.refusal.trim().length > 0;
   const text = typeof message.content === 'string' ? message.content : '';
   const finishReason: TextFinishReason = refused ? 'content-filter' : finishOf(choice.finish_reason, style.label);
@@ -91,7 +86,7 @@ export function parseChatCompletion(value: unknown, style: Pick<ChatCompletionsS
   };
 }
 
-/** `prompt_tokens` 已含缓存命中；命中数在 `prompt_tokens_details.cached_tokens`，有的服务商写 `prompt_cache_hit_tokens`。 */
+/** `prompt_tokens` already includes cache hits; the hit count is in `prompt_tokens_details.cached_tokens`, and some providers use `prompt_cache_hit_tokens`. */
 function usageOf(usage: Record<string, unknown>): NonNullable<TextReply['usage']> {
   const details = isObject(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {};
   const cached = countOf(details.cached_tokens) ?? countOf(usage.prompt_cache_hit_tokens);
@@ -103,14 +98,14 @@ function usageOf(usage: Record<string, unknown>): NonNullable<TextReply['usage']
 }
 
 function finishOf(value: unknown, label: string): TextFinishReason {
-  // 有的兼容端点不给 `finish_reason`：当作正常结束。
+  // Some compatible endpoints do not send `finish_reason`: treat it as a normal stop.
   if (value === 'stop' || value === null || value === undefined) return 'stop';
   if (value === 'length') return 'length';
   if (value === 'content_filter') return 'content-filter';
   throw new ProviderFailure('protocol', PH.unexpectedFinish({ label, reason: String(value).slice(0, 40) }).text);
 }
 
-/** 上下文过长 → `INPUT_TOO_LONG`；模型不存在 → `PROVIDER_REJECTED`（`model-not-found`）；输入被内容过滤 → `content-filter`。 */
+/** Context too long → `INPUT_TOO_LONG`; model not found → `PROVIDER_REJECTED` (`model-not-found`); input blocked by content filter → `content-filter`. */
 export function classifyChatCompletions(status: number, body: string): { code: RejectionCode; reason?: string } | null {
   const code = errorCode(body);
   if (code === 'context_length_exceeded' || (status === 400 && /maximum context length|context length|too many tokens/i.test(body))) {

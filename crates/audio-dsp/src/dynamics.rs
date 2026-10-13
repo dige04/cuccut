@@ -1,21 +1,20 @@
-//! 动态：10 ms 块 RMS、单极点起落跟随、块序列插回采样、说话活跃度（连续 0..1）、
-//! activity 闪避、glue 压缩。与参考工程 `block_rms` / `follow` / `to_samples` / `activity` 同口径。
+//! Dynamics: 10 ms block RMS, one-pole attack/release follower, block sequence interpolated back to samples, speech activity (continuous 0..1), activity ducking, and glue compression. Same conventions as the reference project's `block_rms` / `follow` / `to_samples` / `activity`.
 
 use crate::math::{db_to_gain, gain_to_db};
 use crate::stereo::Stereo;
 
-/// 块长（秒）。
+/// Block length (seconds).
 pub const BLOCK_SECONDS: f64 = 0.01;
-/// activity 的下限（dBFS）：跟随电平在它以下算“没在说话”。
+/// Lower bound of activity (dBFS): when the follower level is below it, it counts as “not speaking”.
 pub const ACTIVITY_FLOOR_DB: f64 = -48.0;
-/// activity 从 0 升到 1 跨的 dB 数。
+/// Number of dB over which activity rises from 0 to 1.
 pub const ACTIVITY_RANGE_DB: f64 = 14.0;
 
 fn block_len(sr: f64) -> usize {
     libm::round(BLOCK_SECONDS * sr).max(1.0) as usize
 }
 
-/// 多声道的块 RMS：先逐采样取各声道均方，再按块求 RMS；不满一块的尾巴丢弃（与参考同）。
+/// Multichannel block RMS: first take each channel's mean square per sample, then the RMS per block; a tail shorter than a block is discarded (same as the reference).
 pub fn block_rms(chans: &[&[f32]], sr: f64) -> Vec<f64> {
     let blk = block_len(sr);
     let n = chans.iter().map(|c| c.len()).min().unwrap_or(0);
@@ -35,7 +34,7 @@ pub fn block_rms(chans: &[&[f32]], sr: f64) -> Vec<f64> {
         .collect()
 }
 
-/// 块序列上的单极点起落跟随（`att` / `rel` 秒）：上升用 attack 系数、下降用 release 系数。
+/// One-pole attack/release follower over a block sequence (`att` / `rel` seconds): rising uses the attack coefficient, falling uses the release coefficient.
 pub fn follow(v: &[f64], att: f64, rel: f64) -> Vec<f64> {
     let a = libm::exp(-BLOCK_SECONDS / att);
     let r = libm::exp(-BLOCK_SECONDS / rel);
@@ -52,7 +51,7 @@ pub fn follow(v: &[f64], att: f64, rel: f64) -> Vec<f64> {
         .collect()
 }
 
-/// 块序列 → 逐采样（块中心线性插值，两端保持）。
+/// Block sequence → per-sample (linear interpolation at block centers, ends held).
 pub fn blocks_to_samples(g: &[f64], n: usize, sr: f64) -> Vec<f32> {
     if g.is_empty() {
         return vec![0.0; n];
@@ -60,8 +59,7 @@ pub fn blocks_to_samples(g: &[f64], n: usize, sr: f64) -> Vec<f32> {
     (0..n).map(|i| block_value_at(g, i, sr) as f32).collect()
 }
 
-/// [`blocks_to_samples`] 的单点版：第 `i` 个采样处的值（`g` 非空）。按窗口流式处理整片时用它，
-/// 不必把逐采样曲线整条摊开。
+/// Single-point version of [`blocks_to_samples`]: the value at sample `i` (`g` non-empty). Use it when streaming through a whole piece window by window, without spreading out the full per-sample curve.
 pub fn block_value_at(g: &[f64], i: usize, sr: f64) -> f64 {
     let blk = block_len(sr) as f64;
     let pos = (i as f64 - blk / 2.0) / blk;
@@ -76,8 +74,7 @@ pub fn block_value_at(g: &[f64], i: usize, sr: f64) -> f64 {
     g[j] + (g[j + 1] - g[j]) * u
 }
 
-/// 块 RMS → 活跃度块序列：按 `att` / `rel` 跟随，dB 值从 `floor_db` 到 `floor_db + range_db`
-/// 线性映射并夹到 [0, 1]。
+/// Block RMS → activity block sequence: follow with `att` / `rel`; the dB value is linearly mapped from `floor_db` to `floor_db + range_db` and clamped to [0, 1].
 pub fn activity_blocks(rms: &[f64], att: f64, rel: f64, floor_db: f64, range_db: f64) -> Vec<f64> {
     follow(rms, att, rel)
         .into_iter()
@@ -86,14 +83,13 @@ pub fn activity_blocks(rms: &[f64], att: f64, rel: f64, floor_db: f64, range_db:
         .collect()
 }
 
-/// 连续的“有人在说话”0..1：干声跟随电平（20 ms 起 / 350 ms 落）的 dB 值
-/// 从 `floor_db` 到 `floor_db + range_db` 线性映射并夹到 [0, 1]。长度 `n`。
+/// Continuous “someone is speaking” 0..1: the dB value of the dry-voice follower level (20 ms attack / 350 ms release) is linearly mapped from `floor_db` to `floor_db + range_db` and clamped to [0, 1]. Length `n`.
 pub fn activity(chans: &[&[f32]], n: usize, sr: f64, floor_db: f64, range_db: f64) -> Vec<f32> {
     let e = activity_blocks(&block_rms(chans, sr), 0.02, 0.35, floor_db, range_db);
     blocks_to_samples(&e, n, sr)
 }
 
-/// 闪避增益：`db(−depth_db · activity)`；`depth_db` 可逐采样（风暴里闪得更深）。
+/// Ducking gain: `db(−depth_db · activity)`; `depth_db` can vary per sample (ducks more deeply during storms).
 pub fn duck_gain(activity: &[f32], depth_db: &[f32]) -> Vec<f32> {
     assert_eq!(activity.len(), depth_db.len(), "duck curves length");
     activity
@@ -103,7 +99,7 @@ pub fn duck_gain(activity: &[f32], depth_db: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// glue 压缩的参数。
+/// Glue compression parameters.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Glue {
     pub threshold_db: f64,
@@ -113,7 +109,7 @@ pub struct Glue {
 }
 
 impl Default for Glue {
-    /// −20 dBFS 以上 2:1，30 ms / 250 ms（参考工程母带）。
+    /// 2:1 above −20 dBFS, 30 ms / 250 ms (reference project mastering).
     fn default() -> Self {
         Self {
             threshold_db: -20.0,
@@ -124,7 +120,7 @@ impl Default for Glue {
     }
 }
 
-/// glue 压缩的逐采样增益（线性）：跟随电平超出门限的部分按 `1 − 1/ratio` 压下。
+/// Glue compression per-sample gain (linear): the part of the follower level above the threshold is reduced by `1 − 1/ratio`.
 pub fn glue_gain(chans: &[&[f32]], n: usize, sr: f64, glue: Glue) -> Vec<f32> {
     let slope = 1.0 - 1.0 / glue.ratio.max(1.0);
     let gr: Vec<f64> = follow(&block_rms(chans, sr), glue.attack, glue.release)
@@ -137,7 +133,7 @@ pub fn glue_gain(chans: &[&[f32]], n: usize, sr: f64, glue: Glue) -> Vec<f32> {
         .collect()
 }
 
-/// 对立体声就地做 glue 压缩。
+/// Apply glue compression in place to stereo.
 pub fn glue_stereo(x: &mut Stereo, sr: f64, glue: Glue) {
     let g = glue_gain(&x.channels(), x.len(), sr, glue);
     x.apply_gain(&g);
@@ -180,7 +176,7 @@ mod tests {
 
     #[test]
     fn glue_compresses_above_threshold_by_ratio() {
-        // 正弦峰值 0.5 → RMS ≈ −9 dBFS，超门限 11 dB，2:1 应压 5.5 dB。
+        // A sine peak of 0.5 → RMS ≈ −9 dBFS, 11 dB over the threshold, so 2:1 should reduce by 5.5 dB.
         let x = tone(96_000, 0.5);
         let g = glue_gain(&[&x], x.len(), SR, Glue::default());
         let gr = gain_to_db(g[80_000] as f64);

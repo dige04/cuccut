@@ -8,36 +8,36 @@ import { transcriptParagraphs, transcriptWords } from './transcript-cut.ts';
 import { M } from './video-info-copy.ts';
 
 /**
- * 视频详情框（设计稿 project-info.jsx、model-project-info.js）的行装配。纯函数，不碰 React 与 Runtime。
+ * Row assembly for the video details dialog (design mockup project-info.jsx, model-project-info.js). Pure functions; no React or Runtime.
  *
- * 两个入口共用同一份分区行：编辑器顶栏标题旁的 ⓘ，与 Space 视频卡 / 行的「视频详情…」。渲染与「复制全部」也共用同一份——
- * 屏幕上看得见的每一行都能原样粘出去，复制文本里也不出现屏幕上没有的行。
+ * Both entry points share the same section rows: the ⓘ next to the editor's top-bar title, and “Video details…” on Space's video card and row. Rendering and “Copy all” share the same source as well:
+ * every row visible on screen can be pasted out as is, and the copied text contains no row that is not on screen.
  *
- * 照设计稿的三条语义：
- * 1. 缺的行整行省略，不写占位；三项内容计数全 0 时「内容」行不出；空分区连标题一起丢。
- * 2. 内容与译文只有编辑器那条路给得出（要读已打开视频的文稿），是调用方传进来的 `extras`；Space 那条路只有条目记录。
- * 3. 省略号只进眼睛不进剪贴板：hero 的文件名显示时中间省略，复制走完整值，「位置」行始终是完整路径。
+ * Three rules from the mockup:
+ * 1. A missing row is omitted entirely, with no placeholder. When all three content counts are 0, the “Content” row is omitted. An empty section drops its title too.
+ * 2. Content and translations can only come from the editor path (they require reading the open video's transcript), and the caller passes them in as `extras`. The Space path only has entry records.
+ * 3. Ellipses are for the eye only, not the clipboard: the hero's file name is truncated in the middle when shown, and copying takes the full value. The “Location” row is always the full path.
  *
- * 与设计稿的出入：
- * - 没有「播放量」：链接导入记下的来源元数据里没有这一项。
- * - 「网址」是「来源信息」里的只读行（链接导入记下的原网页），不是可编辑的表单项；简介、备注没有地方存，界面置灰写明原因，
- *   也就不进「复制全部」（设计稿的「详情」一段）。
- * - 来源种类按素材记下的 `provenance.origin` 写，认不出的种类不写；设计稿的「录制」现在没有对应的来源。
- * - 设计稿的「位置」是源文件；这里「位置」是视频目录，主素材是链接的原文件时另有一行「源文件」（从网址下载的在下载目录里，
- *   不在视频旁边）。两行都带 `reveal`：桌面端在行尾放「在文件夹中显示」。收进视频目录的素材由 CucCut 管理，没有这一行。
+ * Differences from the mockup:
+ * - There is no “play count”: the source metadata recorded by a link import has no such item.
+ * - “URL” is a read-only row in “Source info” (the original web page recorded by a link import), not an editable form field. Description and notes have nowhere to be stored, so the UI greys them out and says why,
+ *   and they are not included in “Copy all” (the mockup's “Details” section).
+ * - The source kind is written from the material's recorded `provenance.origin`. Unrecognized kinds are not written. The mockup's “Recording” has no matching source now.
+ * - The mockup's “Location” is the source file. Here “Location” is the video directory. When the main material is the link's original file, an extra “Source file” row appears (for a download from a URL, it is in the downloads directory,
+ *   not beside the video). Both rows carry `reveal`: on desktop, “Show in folder” sits at the end of the row. Material brought into the video directory is managed by CucCut, so it has no such row.
  *
- * 「来源信息」里的原标题与原简介是下载时记下的平台原文（`provenance.source.title`、`description`）：原标题与视频名一样时省略
- * （hero 已经写着）；原简介可以很长，标 `long`，框里限高滚动，复制仍是全文。
+ * The original title and original description in “Source info” are the platform's original text recorded at download time (`provenance.source.title`, `description`). The original title is omitted when it matches the video name
+ * (the hero already shows it). The original description can be very long; it is marked `long`, shown in a height-limited box that scrolls, and copying still gives the full text.
  */
 
 export interface InfoRow {
   label: string;
   value: string;
-  /** 路径、ID、网址这类用等宽字。 */
+  /** Paths, IDs and URLs use a monospace font. */
   mono: boolean;
-  /** 磁盘上的位置：行尾放「在文件夹中显示」（能交给系统文件管理器时）。 */
+  /** Location on disk: “Show in folder” at the end of the row (when it can be handed to the system file manager). */
   reveal?: string;
-  /** 长文本（原简介）：限高滚动。 */
+  /** Long text (the original description): limited height, scrolls. */
   long?: boolean;
 }
 
@@ -46,10 +46,10 @@ export interface InfoSection {
   rows: InfoRow[];
 }
 
-/** hero 第二行（源文件名）在对话框里放得下的字符数。 */
+/** Number of characters the hero's second line (the source file name) fits in the dialog. */
 export const HERO_NAME_MAX = 56;
 
-/** 两个分区的标题：「来源与媒体」「来源信息」。 */
+/** Titles of the two sections: “Source and media”, “Source info”. */
 export const VIDEO_INFO_SECTION: { media: string; source: string } = live(() => M.section);
 
 const row = (label: string, value: string, mono = false, extra: Pick<InfoRow, 'reveal' | 'long'> = {}): InfoRow => ({ label, value, mono, ...extra });
@@ -58,7 +58,7 @@ const str = (value: unknown): string | null => (typeof value === 'string' && val
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** 中间省略：留头留尾砍中段——尾巴留住扩展名，头部留住能认出是谁。按字符（不是 UTF-16 码元）数。 */
+/** Middle truncation: keep the head and the tail and cut out the middle. The tail keeps the extension; the head keeps enough to tell what it is. Counted in characters (not UTF-16 code units). */
 export function elideMiddle(value: string, max: number): string {
   const chars = Array.from(value);
   if (chars.length <= max || max < 4) return value;
@@ -67,13 +67,13 @@ export function elideMiddle(value: string, max: number): string {
   return `${chars.slice(0, head).join('')}…${chars.slice(chars.length - tail).join('')}`;
 }
 
-/** `20260420` → `2026-04-20`；不是八位数字就是 null（整行不出，不猜格式）。 */
+/** `20260420` → `2026-04-20`. If it is not eight digits, null (the whole row is omitted; the format is not guessed). */
 export function prettyDate(raw: unknown): string | null {
   if (typeof raw !== 'string' || !/^\d{8}$/.test(raw)) return null;
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6)}`;
 }
 
-/** 「内容」一行：`3 位说话人 · 4 章 · 62 段`。为 0 的项省略，全 0 时整行缺席。 */
+/** The “Content” row: `3 speakers · 4 chapters · 62 segments`. Items that are 0 are omitted; when all are 0, the whole row is absent. */
 export function contentsRow(speakers: number, chapters: number, paragraphs: number): InfoRow | null {
   const parts: string[] = [];
   if (speakers > 0) parts.push(M.speakers(speakers));
@@ -82,13 +82,13 @@ export function contentsRow(speakers: number, chapters: number, paragraphs: numb
   return parts.length ? row(M.row.contents, parts.join(' · ')) : null;
 }
 
-/** 「译文」一行：各份译文的目标语，用「、」连。没有译文时缺席。 */
+/** The “Translations” row: the target languages of the translations, joined with “、”. Absent when there are no translations. */
 export function translationRow(targets: readonly string[]): InfoRow | null {
   const names = targets.map((t) => t.trim()).filter(Boolean);
   return names.length ? row(M.row.translation, M.list(names)) : null;
 }
 
-/** 来源种类（素材的 `provenance.origin`）。认不出的种类返回 null，不猜。 */
+/** Source kind (the material's `provenance.origin`). Returns null for unrecognized kinds rather than guessing. */
 export function sourceKindLabel(origin: string | null | undefined): string | null {
   switch (origin) {
     case 'link-import':
@@ -102,31 +102,31 @@ export function sourceKindLabel(origin: string | null | undefined): string | nul
 }
 
 export interface HeroSource {
-  /** 来源种类：网址导入、本地文件……认不出时 null。 */
+  /** Source kind: URL import, local file, …. null when it is not recognized. */
   kind: string | null;
-  /** 导入时的原文件名（完整值）。 */
+  /** Original file name at import time (full value). */
   fileName: string | null;
 }
 
-/** hero 那行的复制形态：`本地文件 · talk.mp4`。缺的那半边省掉，两边都缺时 null。 */
+/** The copy form of the hero row: `本地文件 · talk.mp4` (local file · talk.mp4). The half that is missing is dropped; null when both are missing. */
 export function heroLine(source: HeroSource | null): string | null {
   if (!source) return null;
   return [source.kind, source.fileName?.trim()].filter(Boolean).join(' · ') || null;
 }
 
-/** 链接导入记下的来源元数据（`provenance.source`），逐项放行。 */
+/** The source metadata recorded by a link import (`provenance.source`), passed through item by item. */
 export interface LinkFacts {
-  /** 平台上的标题（下载时记下的，视频改名后不变）。 */
+  /** The title on the platform (recorded at download time; it does not change when the video is renamed). */
   title: string | null;
-  /** 平台上的简介原文。 */
+  /** The original description text on the platform. */
   description: string | null;
   uploader: string | null;
-  /** 发布日期，`YYYY-MM-DD`。 */
+  /** Publish date, `YYYY-MM-DD`. */
   published: string | null;
   platform: string | null;
-  /** 平台上的视频 ID。 */
+  /** The video ID on the platform. */
   mediaId: string | null;
-  /** 原网页（没有时用下载用的链接）。 */
+  /** The original web page (or, if there is none, the link used for download). */
   url: string | null;
 }
 
@@ -145,8 +145,8 @@ export function linkFacts(provenance: Pick<Provenance, 'origin' | 'source'> | nu
 }
 
 /**
- * 转写用的模型（`cuccut.speech/1` 的 `engine`）：在线模型写模型 ID，本机模型写模型包（没有包时写模型族）。旧项目导入的正文
- * 形状不一，认不出时 null。
+ * The model used for transcription (`engine` in `cuccut.speech/1`): for online models, the model ID; for local models, the model pack (or the model family when there is no pack). The body of projects imported from older versions
+ * has varying shapes; null when it is not recognized.
  */
 export function speechModel(body: unknown): string | null {
   if (!isObject(body)) return null;
@@ -158,17 +158,17 @@ export function speechModel(body: unknown): string | null {
   return str(engine.bundleId) ?? str(asr?.family) ?? str(engine.model) ?? str(engine.provider);
 }
 
-/** 只读区要的事实。缺的一律 null，对应的行整行省略。 */
+/** The facts the read-only area needs. Missing ones are null, and the corresponding row is omitted entirely. */
 export interface VideoInfoFacts {
   title: string;
   source: HeroSource | null;
-  /** 视频目录的完整路径。 */
+  /** The full path of the video directory. */
   location: string | null;
-  /** 主素材的原文件（链接的素材才有；收进视频目录的由 CucCut 管理，不给路径）。 */
+  /** The original file of the main material (only for linked material; material brought into the video directory is managed by CucCut and gives no path). */
   file?: string | null;
-  /** `时长 · 分辨率 · 帧率`（Space 那条路只有时长与分辨率）。 */
+  /** `duration · resolution · frame rate` (the Space path has only duration and resolution). */
   media: string | null;
-  /** `模型 · 语言`。 */
+  /** `model · language`. */
   transcript: string | null;
   link: LinkFacts | null;
 }
@@ -177,15 +177,15 @@ export interface SnapshotInput {
   title: string;
   location: string | null;
   sequence: Sequence | null;
-  /** 时间线上放着的视频与音频，按第一次出现的先后（`mediaCandidates`）；第一个当作主素材。 */
+  /** The video and audio placed on the timeline, in order of first appearance (`mediaCandidates`); the first one is treated as the main material. */
   candidates: readonly { asset: AssetRecord; speech: DocumentRecord | null }[];
-  /** 第一份转写（第一个有转写的素材）的正文；还没取到时 undefined。 */
+  /** The body of the first transcript (the first material that has one); undefined if not fetched yet. */
   speechBody: unknown;
-  /** 语言标签 → 名字（`langName`）；测试里注入，免得依赖运行环境的 Intl。 */
+  /** Language tag → name (`langName`); injected in tests so they do not depend on the runtime Intl. */
   languageName: (tag: string) => string;
 }
 
-/** 编辑器那条路：从打开的视频快照装配。 */
+/** The editor path: assembled from a snapshot of the open video. */
 export function snapshotFacts(input: SnapshotInput): VideoInfoFacts {
   const { sequence, candidates } = input;
   const main = candidates[0]?.asset ?? null;
@@ -204,7 +204,7 @@ export function snapshotFacts(input: SnapshotInput): VideoInfoFacts {
   return { title: input.title, source, location: input.location, file, media, transcript, link: linkFacts(provenance) };
 }
 
-/** Space 那条路：手上只有条目记录，不为详情框打开视频。没有的行省略。 */
+/** The Space path: only entry records are at hand; it does not open the video for the details dialog. Missing rows are omitted. */
 export function entryFacts(entry: Pick<SpaceEntry, 'kind' | 'media'>, title: string, location: string | null): VideoInfoFacts {
   return { title, source: null, location, media: measureText(entry), transcript: null, link: null };
 }
@@ -216,8 +216,8 @@ export interface ContentCounts {
 }
 
 /**
- * 内容计数，口径与文稿面板一致：说话人按每份转写里出现过的说话人数相加，段落按文稿面板的分段相加，章节是序列上的章节标记。
- * 正文还没取到的转写先不计。
+ * Content counts, using the same basis as the transcript panel. Speakers are summed over the number of speakers appearing in each transcript; segments are summed by the transcript panel's paragraphing; chapters are the chapter markers on the sequence.
+ * Transcripts whose body has not been fetched yet are not counted for now.
  */
 export function contentCounts(sequence: Sequence, sources: readonly { assetId: Id; body: unknown }[]): ContentCounts {
   let speakers = 0;
@@ -233,7 +233,7 @@ export function contentCounts(sequence: Sequence, sources: readonly { assetId: I
   return { speakers, chapters, paragraphs };
 }
 
-/** 各份译文的目标语（去重，按出现的先后）。 */
+/** The target languages of the translations (deduplicated, in order of appearance). */
 export function translationTargets(documents: Record<Id, DocumentRecord>, languageName: (tag: string) => string): string[] {
   const tags: string[] = [];
   for (const record of Object.values(documents)) {
@@ -242,12 +242,12 @@ export function translationTargets(documents: Record<Id, DocumentRecord>, langua
   return tags.map(languageName);
 }
 
-/** 编辑器那条路多出来的两行，顺序即渲染顺序。 */
+/** The two extra rows on the editor path. Their order is the rendering order. */
 export function editorExtras(counts: ContentCounts, targets: readonly string[]): InfoRow[] {
   return [contentsRow(counts.speakers, counts.chapters, counts.paragraphs), translationRow(targets)].filter((r): r is InfoRow => r !== null);
 }
 
-/** 只读区的全部分区。`extras` 接在「来源与媒体」的尾巴上；空分区整个丢掉。 */
+/** All sections of the read-only area. `extras` is attached to the end of “Source and media”; empty sections are dropped entirely. */
 export function sections(facts: VideoInfoFacts, extras: readonly InfoRow[] = []): InfoSection[] {
   const media: InfoRow[] = [];
   if (facts.location) media.push(row(M.row.location, facts.location, true, { reveal: facts.location }));
@@ -272,7 +272,7 @@ export function sections(facts: VideoInfoFacts, extras: readonly InfoRow[] = [])
   ].filter((s) => s.rows.length > 0);
 }
 
-/** 一段可直接粘贴的纯文本：标题、hero 各一行，分区之间空一行，值内换行缩进两格。 */
+/** Plain text that can be pasted as is: the title and the hero, one line each; sections separated by a blank line; line breaks inside a value indented by two spaces. */
 export function copyText(title: string, hero: string | null, list: readonly InfoSection[]): string {
   const lines: string[] = [];
   if (title.trim()) lines.push(title.trim());

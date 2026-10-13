@@ -1,14 +1,11 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
-//! v3：`program` 资产要 `ccut-compile`（不移植，架构设计 §13.6），本文件门在占位的
-//! `program` feature 上，不编译。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer`
+//! (the BCF document rendering path and the host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
+//! v3: the `program` asset requires `ccut-compile` (not ported, architecture design §13.6), so this file is gated on the placeholder `program` feature and is not compiled.
 #![cfg(feature = "program")]
 
-//! `program` 元素的端到端语义（规范 §6.5.3）：模块图加载 → resolve → 录制期按
-//! 帧表量化 → QuickJS 逐帧出 SVG → resvg 光栅化取像素。
+//! End-to-end semantics of the `program` element (spec §6.5.3): module graph loading → resolve → quantization against the frame table at recording time → QuickJS produces SVG per frame → resvg rasterizes to get pixels.
 //!
-//! 夹具在 `core/fixtures/program/`：`frames.tsx` 把帧号编码进整幅底色
-//! （r = frame % 256，g = frame / 256），于是取一个像素就能读回画的是第几帧。
+//! The fixture lives in `core/fixtures/program/`: `frames.tsx` encodes the frame number into the whole-canvas background color (r = frame % 256, g = frame / 256), so sampling one pixel reads back which frame was drawn.
 
 use render_raster::drawop::DrawOp;
 use render_raster::{
@@ -22,7 +19,7 @@ fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/program")
 }
 
-/// 帧号程序：16×8，`frames` 帧，帧率与文档相同；clip 从第 `start_frame` 个文档帧开始。
+/// Frame-number program: 16×8, `frames` frames, same frame rate as the document; the clip starts at document frame `start_frame`.
 fn frames_doc(fps: f64, frames: u32, start_frame: u32, element: Value) -> Value {
     let start = f64::from(start_frame) / fps;
     let end = start + f64::from(frames) / fps + 1.0;
@@ -91,7 +88,7 @@ fn build_with(doc: Value, assets: Arc<LoadedAssets>) -> Harness {
 }
 
 impl Harness {
-    /// 该时刻 `DrawMedia` 记录的源毫秒（= 帧起点）。
+    /// Source milliseconds recorded by `DrawMedia` at this moment (= frame start).
     fn media_ms(&mut self, t: f64) -> i64 {
         let frame = self.renderer.record(&self.ir, &mut self.engine, t);
         let hits: Vec<i64> = frame
@@ -106,7 +103,7 @@ impl Harness {
         hits[0]
     }
 
-    /// 走帧计划与 CPU 执行器（导出同一条路）取该时刻 (x, y) 的像素。
+    /// Takes the pixel at (x, y) at this moment, via the frame plan and the CPU executor (which take the same path as export).
     fn pixel_at(&mut self, t: f64, x: u32, y: u32) -> (u8, u8, u8, u8) {
         let pm = self
             .planner
@@ -122,14 +119,14 @@ impl Harness {
         (p.red(), p.green(), p.blue(), p.alpha())
     }
 
-    /// 读回 `frames.tsx` 画的帧号。
+    /// Reads back the frame number drawn by `frames.tsx`.
     fn drawn_frame(&mut self, t: f64) -> u32 {
         let (r, g, b, a) = self.pixel_at(t, 8, 4);
         assert_eq!((b, a), (7, 255), "t={t} 不是帧号程序的底色");
         u32::from(r) + 256 * u32::from(g)
     }
 
-    /// 导出帧缓存的键：两帧键相同就会复用同一张画面。
+    /// Key for the export frame cache: two frames with the same key reuse the same picture.
     fn fingerprint(&mut self, t: f64) -> u64 {
         let plan = self
             .planner
@@ -144,8 +141,7 @@ fn starts(fps: f64, frames: u32) -> Vec<i64> {
         .collect()
 }
 
-/// 文档帧率与程序帧率相同时，片段内第 k 个文档帧画的就是程序第 k 帧——
-/// 包括帧起点恰落在半毫秒上的帧率（48 fps 的第 3 帧是 62.5 ms）与不从 0 开始的 clip。
+/// When the document frame rate equals the program frame rate, the k-th document frame in the clip draws program frame k, including frame rates whose frame starts land on half-millisecond values (frame 3 at 48 fps is 62.5 ms) and clips that do not start at 0.
 #[test]
 fn document_frames_map_one_to_one_onto_program_frames() {
     for fps in [24.0, 25.0, 30000.0 / 1001.0, 30.0, 48.0, 60.0] {
@@ -166,8 +162,7 @@ fn document_frames_map_one_to_one_onto_program_frames() {
     }
 }
 
-/// 导出按帧计划指纹复用画面：相邻两帧的指纹必须不同，同一程序帧里的两个文档帧
-/// （文档 60 fps、程序 30 fps）必须相同。
+/// Export reuses pictures by frame-plan fingerprint: adjacent frames must have different fingerprints, and two document frames within the same program frame (document 60 fps, program 30 fps) must be identical.
 #[test]
 fn the_export_frame_cache_keys_on_the_program_frame() {
     let mut doc = frames_doc(60.0, 30, 0, element(json!({})));
@@ -182,11 +177,11 @@ fn the_export_frame_cache_keys_on_the_program_frame() {
     }
 }
 
-/// `playbackRate` / `loop` 与视频、动图同一套公式。
+/// `playbackRate` / `loop` use the same formulas as video and animated images.
 #[test]
 fn playback_rate_and_loop_fold_like_other_timed_media() {
     let fps = 30.0;
-    // rate 2：文档第 f 帧画程序第 2f 帧；10 帧的程序默认循环。
+    // rate 2: document frame f draws program frame 2f; a 10-frame program loops by default.
     let mut h = build(frames_doc(
         fps,
         10,
@@ -196,7 +191,7 @@ fn playback_rate_and_loop_fold_like_other_timed_media() {
     for f in 0..12u32 {
         assert_eq!(h.drawn_frame(f64::from(f) / fps), (2 * f) % 10, "f={f}");
     }
-    // loop false：放完冻结在末帧。
+    // loop false: freezes on the last frame after playback ends.
     let mut h = build(frames_doc(fps, 10, 0, element(json!({ "loop": false }))));
     assert_eq!(h.drawn_frame(9.0 / fps), 9);
     assert_eq!(h.drawn_frame(25.0 / fps), 9);
@@ -222,7 +217,7 @@ fn sprite_doc(files: Value, props: Value) -> Value {
     })
 }
 
-/// 相对导入、`asset()` 取 `files` 里的 SVG、HTML 盒子三样都画出来。
+/// Relative imports, `asset()` taking an SVG from `files`, and an HTML box are all drawn.
 #[test]
 fn modules_files_and_html_boxes_render() {
     let mut h = build(sprite_doc(json!(["dot.svg"]), json!({})));
@@ -230,8 +225,7 @@ fn modules_files_and_html_boxes_render() {
     assert_eq!(h.pixel_at(0.0, 24, 8), (0xf0, 0xd0, 0x00, 255), "HTML 盒子");
 }
 
-/// `asset()` 引用了 `files` 之外的文件：加载期的首帧探测就报 `program-file-missing`，
-/// 不去读盘（文件其实就在夹具目录里）。
+/// `asset()` references a file outside `files`: the first-frame probe at load time reports `program-file-missing`, without reading from disk (the file is actually in the fixture directory).
 #[test]
 fn a_file_outside_files_is_reported_not_read() {
     let doc = sprite_doc(json!([]), json!({}));
@@ -246,8 +240,7 @@ fn a_file_outside_files_is_reported_not_read() {
     );
 }
 
-/// `asset()` 的路径用 `..` 越出文档目录：只有求值时才知道，加载期的首帧探测报
-/// `program-path-escape`（与 lint 对 `src` / `imports` / `files` 同一个码），消息点名路径与改法。
+/// An `asset()` path escapes the document directory with `..`. This is only known at evaluation time, so the first-frame probe at load time reports `program-path-escape` (the same code lint uses for `src` / `imports` / `files`), and the message names the path and the fix.
 #[test]
 fn an_asset_path_escaping_the_document_directory_is_program_path_escape() {
     let doc = sprite_doc(json!(["dot.svg"]), json!({ "src": "../program/dot.svg" }));
@@ -267,8 +260,7 @@ fn an_asset_path_escaping_the_document_directory_is_program_path_escape() {
     }
 }
 
-/// 运行时认得但画不出来的写法（这里是 `textShadow`）在加载期报
-/// `program-degraded` warn，画面照常出。
+/// A construct the runtime recognizes but cannot draw (here `textShadow`) raises a `program-degraded` warning at load time; the picture is still drawn.
 #[test]
 fn unsupported_styles_surface_as_degraded_warnings() {
     let doc = sprite_doc(json!(["dot.svg"]), json!({ "odd": true }));
@@ -289,7 +281,7 @@ fn unsupported_styles_surface_as_degraded_warnings() {
     assert!(clean.source_diagnostics.is_empty());
 }
 
-/// `backdrop.tsx` 里的一个导出，整幅画在 `width`×`height` 上。
+/// An export from `backdrop.tsx`; the whole picture is drawn on `width`×`height`.
 fn backdrop_doc(export: &str, width: u32, height: u32) -> Value {
     json!({
         "meta": { "id": "bd", "width": width, "height": height, "fps": 30 },
@@ -309,18 +301,17 @@ fn backdrop_doc(export: &str, width: u32, height: u32) -> Value {
     })
 }
 
-/// `backdropFilter` 把盒子后面已经画好的东西（嵌在 flex、transform 与 overflow:hidden 里也一样）
-/// 糊掉，只在盒子里；父级 `opacity < 1` 是 backdrop root，盒子只看得到父级里先画的东西。
+/// `backdropFilter` blurs what has already been drawn behind the box (also when the box is nested in flex, transform and overflow:hidden), and only inside the box. A parent with `opacity < 1` is the backdrop root, so the box can only see what was drawn earlier inside that parent.
 #[test]
 fn backdrop_filter_blurs_what_is_behind_inside_its_root() {
     let mut h = build(backdrop_doc("Backdrop", 64, 32));
     let white = (255, 255, 255, 255);
     let black = (0, 0, 0, 255);
-    // 盒子（8..24）外：条纹原样
+    // Outside the box (8..24): stripes unchanged
     assert_eq!(h.pixel_at(0.0, 2, 16), white);
     assert_eq!(h.pixel_at(0.0, 3, 16), black);
     assert_eq!(h.pixel_at(0.0, 16, 4), white);
-    // 盒子里：条纹抹成均匀的灰
+    // Inside the box: stripes blurred to uniform grey
     let inside: Vec<u8> = (10..22).map(|x| h.pixel_at(0.0, x, 16).0).collect();
     let lo = *inside.iter().min().unwrap();
     let hi = *inside.iter().max().unwrap();
@@ -328,13 +319,13 @@ fn backdrop_filter_blurs_what_is_behind_inside_its_root() {
         hi - lo < 24 && lo > 90 && hi < 170,
         "盒子里应是灰：{inside:?}"
     );
-    // 右半：父级自成 backdrop root，里面在盒子之前没有画任何东西，条纹不糊
+    // Right half: the parent is its own backdrop root and nothing was drawn inside it before the box, so the stripes are not blurred
     assert_eq!(h.pixel_at(0.0, 40, 16), white);
     assert_eq!(h.pixel_at(0.0, 41, 16), black);
     assert!(h.planner.report().diagnostics.is_empty());
 }
 
-/// flex 里只写了 `width` / `height` 属性的 `<svg>` 按这个固有尺寸参与排布（居中）。
+/// An `<svg>` in flex that has only `width` / `height` attributes participates in layout at this intrinsic size (centered).
 #[test]
 fn flex_items_use_the_intrinsic_size_of_svg() {
     let mut h = build(backdrop_doc("FlexIcon", 88, 88));
@@ -348,8 +339,7 @@ fn flex_items_use_the_intrinsic_size_of_svg() {
     assert_eq!(h.pixel_at(0.0, 44, 17), bg);
 }
 
-/// 加载期只试渲首帧；后段帧才碰到的降级写法与缺字形在渲染后由
-/// `render_diagnostics` 交出，带最早出现的帧号，不和加载期的重复。
+/// Load time only tries rendering the first frame. Degraded constructs and missing glyphs that only appear in later frames are reported by `render_diagnostics` after rendering, carrying the earliest frame number where they appear, and do not duplicate the load-time ones.
 #[test]
 fn warnings_after_the_first_frame_are_reported_after_rendering() {
     let doc = backdrop_doc("Late", 16, 16);
@@ -386,7 +376,7 @@ fn warnings_after_the_first_frame_are_reported_after_rendering() {
     );
 }
 
-/// `probes.tsx` 里的一个导出，整幅画在 48×24 上。
+/// An export from `probes.tsx`; the whole picture is drawn on 48×24.
 fn probes_doc(export: &str) -> Value {
     let mut doc = backdrop_doc(export, 48, 24);
     doc["assets"]["prog"]["src"] = json!("probes.tsx");
@@ -402,8 +392,7 @@ fn degraded_messages(assets: &LoadedAssets) -> Vec<String> {
         .collect()
 }
 
-/// 组件改写模块顶层的可变状态：加载期把首帧求值两次，画出的不一样就报
-/// `program-degraded`；只读的顶层常量表不报。
+/// A component rewrites mutable module-top-level state: at load time the first-frame evaluation is run twice, and if the two outputs differ it reports `program-degraded`. Read-only top-level constant tables are not reported.
 #[test]
 fn module_state_that_changes_across_evaluations_is_reported() {
     let stateful = load_assets(&probes_doc("Stateful"), &fixture_dir()).expect("load_assets");
@@ -419,8 +408,7 @@ fn module_state_that_changes_across_evaluations_is_reported() {
     );
 }
 
-/// 字体库里没有的字族（这里名字里带「24pt」，运行时要给它加引号才是合法的 CSS）：
-/// 文字落到缺省无衬线字体照样画出来，并报 `program-degraded` 点名这个字族。
+/// A font family not present in the font library (here the name contains "24pt", which must be quoted at runtime to be valid CSS): the text falls back to the default sans-serif font and is still drawn, and `program-degraded` is reported naming this font family.
 #[test]
 fn an_unknown_font_family_falls_back_and_is_reported() {
     let assets =

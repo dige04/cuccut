@@ -1,15 +1,13 @@
-//! 七个声波配方共用的小件：频带幅度、颜色插值、压 path。
+//! Small helpers shared by the seven waveform recipes: band amplitude, colour interpolation, and path pushing.
 //!
-//! 这里只有**换算**，没有任何样式参数（与 [`crate::source::kernel`] 同一纪律）。
+//! This file contains only **conversions**, with no style parameters at all (same discipline as [`crate::source::kernel`]).
 
 use crate::drawop::{Color4, DrawOp, FrameBuilder, Mat6, PathData, PathSeg};
 use crate::source::kernel::{Easing, path_seg_close, path_seg_line, path_seg_move};
 
-/// 频域行在归一化区间 `[from, to)` 上的**平均幅度**（0..1）。
+/// The **average amplitude** (0..1) of the frequency-domain row over the normalised range `[from, to)`.
 ///
-/// 分频带的样式（`pulse-rings-v1` / `ribbons-v1`）把可用的 bin 等分成 N 段，
-/// 每段一个数；取平均而不是取峰值，是为了让一段里的单个尖峰不把整条环 / 丝带
-/// 打满。区间至少覆盖一个 bin（`to` 向上取整、且不小于 `from + 1`）。
+/// Band-split styles (`pulse-rings-v1` / `ribbons-v1`) divide the usable bins into N equal segments and use one value per segment. The average rather than the peak is used so that a single spike within a segment does not saturate the whole ring / ribbon. The range always covers at least one bin (`to` is rounded up, and is at least `from + 1`).
 pub(crate) fn band_amplitude(row: &[u8], from: f64, to: f64) -> f64 {
     if row.is_empty() {
         return 0.0;
@@ -21,10 +19,9 @@ pub(crate) fn band_amplitude(row: &[u8], from: f64, to: f64) -> f64 {
     sum / ((end - start) as f64 * f64::from(u8::MAX))
 }
 
-/// 配方的 `easing` 字段 → 曲线；缺失或未知名按恒等处理。
+/// The recipe's `easing` field → curve; a missing or unknown name is treated as identity.
 ///
-/// 未知名在注册表解析期就被拦下（`manifest-invalid`），绘制端读到 `None` 只可能
-/// 是有人绕过了注册表，此时不 panic。
+/// Unknown names are rejected at registry parse time (`manifest-invalid`). When the draw side reads `None`, the only possible cause is that someone bypassed the registry; in that case it does not panic.
 pub(crate) fn easing_of(recipe: &motion::preset_registry::Recipe) -> Easing {
     recipe
         .text("easing")
@@ -32,7 +29,7 @@ pub(crate) fn easing_of(recipe: &motion::preset_registry::Recipe) -> Easing {
         .unwrap_or(Easing::None)
 }
 
-/// 两色线性插值（逐通道，含 alpha），`t` 夹在 `[0, 1]`。
+/// Linear interpolation between two colours (per channel, including alpha), with `t` clamped to `[0, 1]`.
 pub(crate) fn mix_color(a: Color4, b: Color4, t: f64) -> Color4 {
     let t = t.clamp(0.0, 1.0) as f32;
     [
@@ -43,7 +40,7 @@ pub(crate) fn mix_color(a: Color4, b: Color4, t: f64) -> Color4 {
     ]
 }
 
-/// 一串画布点 → 折线子路径（`closed` 时收口）。少于两个点什么都不产生。
+/// A list of canvas points → polyline subpath (closed when `closed`). Produces nothing for fewer than two points.
 pub(crate) fn polyline(points: &[(f64, f64)], closed: bool) -> Vec<PathSeg> {
     let mut out = Vec::with_capacity(points.len() + 1);
     let Some((first, rest)) = points.split_first() else {
@@ -62,7 +59,7 @@ pub(crate) fn polyline(points: &[(f64, f64)], closed: bool) -> Vec<PathSeg> {
     out
 }
 
-/// 压一条 `FillPath`；空 path 不压（返回 `false`）。
+/// Pushes a `FillPath`; an empty path is not pushed (returns `false`).
 pub(crate) fn push_fill(
     builder: &mut FrameBuilder,
     path: Vec<PathSeg>,
@@ -81,7 +78,7 @@ pub(crate) fn push_fill(
     true
 }
 
-/// 压一条 `StrokePath`；空 path 或非正线宽不压（返回 `false`）。
+/// Pushes a `StrokePath`; an empty path or a non-positive line width is not pushed (returns `false`).
 pub(crate) fn push_stroke(
     builder: &mut FrameBuilder,
     path: Vec<PathSeg>,
@@ -112,7 +109,7 @@ mod tests {
         assert_eq!(band_amplitude(&row, 0.0, 0.25), 0.0);
         assert_eq!(band_amplitude(&row, 0.25, 0.75), 1.0);
         assert_eq!(band_amplitude(&row, 0.0, 1.0), 0.5);
-        // 区间退化到零宽也至少读一个 bin。
+        // Even a range collapsed to zero width reads at least one bin.
         assert_eq!(band_amplitude(&row, 0.5, 0.5), 1.0);
         assert_eq!(band_amplitude(&[], 0.0, 1.0), 0.0);
     }

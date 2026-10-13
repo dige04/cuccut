@@ -1,4 +1,4 @@
-//! 协议层的行为：用内存里的存放代替钥匙串，不访问系统的安全存储。
+//! Protocol-layer behavior: uses in-memory storage in place of the keychain, and does not touch the system's secure storage.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 #[derive(Default)]
 struct Memory {
     items: RefCell<HashMap<String, String>>,
-    /// 设了的话，每个操作都以这个错误失败。
+    /// If set, every operation fails with this error.
     fail: Option<ErrorCode>,
 }
 
@@ -135,9 +135,9 @@ fn malformed_requests_are_internal_and_never_echo_the_secret() {
     assert!(memory.items.borrow().is_empty());
 }
 
-/// 真实钥匙串的往返。会在登录钥匙串里写入并删除一个测试条目，可能弹出授权提示，所以默认不跑。
+/// Round trip against the real keychain. It writes and then deletes a test entry in the login keychain, and may pop up an authorization prompt, so it does not run by default.
 ///
-/// 手动运行（macOS 钥匙串或 Windows Credential Manager）：
+/// To run manually (macOS Keychain or Windows Credential Manager):
 ///
 /// ```sh
 /// CARGO_TARGET_DIR=/Volumes/ExtremeSSD/cargo-target/credential-store \

@@ -1,47 +1,47 @@
 import type { Locale } from '@cuccut/protocol';
 
-/** 宿主（Electron 预加载脚本）提供的原生能力。界面包不直接依赖 Electron。 */
+/** Native capabilities provided by the host (the Electron preload script). The UI package does not depend on Electron directly. */
 export interface HostBridge {
   platform: string;
-  /** Web 服务未开放附件上传时为 false；桌面网关默认支持。 */
+  /** False when the web service does not open attachment upload; the desktop gateway supports it by default. */
   supportsImageAttachments?: boolean;
   /** Same-origin, authenticated upload support for ordinary documents/media. */
   supportsFileAttachments?: boolean;
   getConnection(): Promise<{ endpoint: string; token: string }>;
   /**
-   * 选一个本机目录；取消时 null。`title` 是对话框标题（例如选保存位置时），不给时是「打开项目目录」。
-   * 浏览器里不能选，提示之后返回 null。
+   * Pick a local directory; null when cancelled. `title` is the dialog title (for example when choosing a save location); when not given it is “Open project directory”.
+   * In the browser it cannot be picked; a hint is shown and then null is returned.
    */
   pickDirectory(options?: { title?: string }): Promise<string | null>;
-  /** 选要导入的素材文件（视频、音频、图片）。取消时返回空数组。 */
+  /** Pick material files to import (video, audio, images). Returns an empty array when cancelled. */
   pickMediaFiles(): Promise<string[]>;
-  /** 拖进窗口的文件在磁盘上的路径；不是本地文件时返回空字符串。 */
+  /** The on-disk path of a file dragged into the window; returns an empty string when it is not a local file. */
   pathForFile(file: File): string;
   revealPath(target: string): Promise<void>;
-  /** 系统默认应用打开本地文档或媒体；null 不支持，空串成功，其余为系统错误。Web 没有此能力。 */
+  /** Open a local document or media with the system's default app; null means unsupported, an empty string means success, anything else is a system error. The web has no such capability. */
   openFile?(target: string): Promise<string | null>;
-  /** 内嵌网页（桌面端才有）。浏览器预览里没有：网页标签显示「这个环境不能内嵌网页」。 */
+  /** Embedded web pages (desktop only). Not present in browser preview: web tabs show “This environment cannot embed web pages”. */
   web?: WebHost;
-  /** 用系统浏览器打开 http/https 网址（桌面端才有）。 */
+  /** Open an http/https address in the system browser (desktop only). */
   openExternal?(url: string): Promise<void>;
-  /** 按类型选要打开的文件（系统的打开对话框）。取消时返回空数组。没有它的宿主里，界面把要用它的入口置灰。 */
+  /** Pick files to open by type (the system open dialog). Returns an empty array when cancelled. In hosts without it, the UI greys out the entry points that need it. */
   pickFiles?(options: PickFilesOptions): Promise<string[]>;
-  /** 会话附件的统一选择器：本机文件和目录；支持的图片可附带原始字节。Web 没有本机路径能力。 */
+  /** The unified picker for conversation attachments: local files and directories; supported images may carry their raw bytes. The web has no local-path capability. */
   pickMessageFiles?(options: PickMessageFilesOptions): Promise<MessageFile[]>;
-  /** 选一个保存位置（系统的存储对话框）。取消时返回 null。没有它时，原生另存为不可用；视频导出仍可交给 Runtime 保存。 */
+  /** Pick a save location (the system save dialog). Returns null when cancelled. Without it, native “Save as” is unavailable; video export can still be handed to the Runtime to save. */
   pickSavePath?(options: PickSavePathOptions): Promise<string | null>;
   /**
-   * 把界面手上的文件字节存到用户在系统存储对话框里选的位置（对话框与写入都在主进程里），返回存下的路径；取消时 null，写不进去时抛错。
-   * 桌面端才有；Web 没有它，界面改为交给浏览器下载（设计稿的导出，docs/design/canvas §8.3）。
+   * Save the file bytes the UI holds to the location the user picks in the system save dialog (both the dialog and the write happen in the main process), and return the saved path; null when cancelled, and throws when the write fails.
+   * Desktop only; the web does not have it, and the UI hands the file to the browser to download instead (design canvas export, docs/design/canvas §8.3).
    */
   saveFile?(options: SaveFileOptions): Promise<string | null>;
-  /** 应用自动更新（架构设计 §2.6，桌面端才有）。没有它的宿主里，更新相关的界面一概不出现。 */
+  /** App auto-update (architecture design §2.6, desktop only). In hosts without it, no update-related UI appears at all. */
   updates?: UpdatesHost;
-  /** 界面语言变了（启动时也调一次）：宿主据此换原生菜单与对话框的语言。没有它的宿主不管。 */
+  /** The UI language changed (also called once at startup): the host switches the language of native menus and dialogs accordingly. Hosts without it do nothing. */
   setLocale?(locale: Locale): void;
 }
 
-/** 打开 / 存储对话框里的一组文件类型：扩展名不带点，`*` 表示所有文件。 */
+/** A set of file types in the open / save dialog: extensions without the dot; `*` means all files. */
 export interface FileFilter {
   name: string;
   extensions: string[];
@@ -51,14 +51,14 @@ export interface PickFilesOptions {
   title?: string;
   buttonLabel?: string;
   filters?: FileFilter[];
-  /** 允许多选；默认单选。 */
+  /** Allow multiple selection; single selection by default. */
   multiple?: boolean;
 }
 
 export interface MessageFile {
   path: string;
   kind: 'file' | 'directory';
-  /** 仅用户刚选中的、符合附图大小与格式上限的图片。 */
+  /** Only images the user has just selected that meet the attachment size and format limits. */
   image?: { mimeType: string; bytes: Uint8Array };
 }
 
@@ -67,33 +67,33 @@ export interface PickMessageFilesOptions {
   filesLabel: string;
   foldersLabel: string;
   cancelLabel: string;
-  /** Agent 能收图片时才读取图片字节；否则只传本机引用。 */
+  /** Image bytes are read only when the agent can accept images; otherwise only a local reference is passed. */
   images: boolean;
 }
 
 export interface PickSavePathOptions {
   title?: string;
   buttonLabel?: string;
-  /** 建议的文件名（只取文件名部分，目录由系统对话框决定）。 */
+  /** Suggested file name (only the file-name part is used; the directory is decided by the system dialog). */
   defaultName?: string;
-  /** 系统保存对话框初始打开的绝对目录；不给时沿用系统的位置。 */
+  /** The absolute directory the system save dialog opens at first; when not given, the system's default location is used. */
   defaultDir?: string;
   filters?: FileFilter[];
 }
 
 export interface SaveFileOptions extends PickSavePathOptions {
-  /** 要写进去的内容。 */
+  /** The content to write. */
   data: Uint8Array;
 }
 
 /**
- * 网页标签（架构设计 §12.10）：宿主给每个标签一个独立的原生网页视图（`persist:web` 分区、沙箱、没有预加载脚本）。
- * 视图盖在界面之上，位置由界面经 `setBounds` 报给宿主（窗口内的 CSS 像素）。
+ * Web tabs (architecture design §12.10): the host gives each tab its own native web view (`persist:web` partition, sandboxed, no preload script).
+ * The view sits above the UI, and its position is reported to the host by the UI through `setBounds` (CSS pixels within the window).
  */
 export interface WebHost {
-  /** 新建一个网页视图，先隐藏；返回标签 id。 */
+  /** Create a new web view, hidden at first; returns the tab id. */
   create(): Promise<string>;
-  /** 打开一个网址。被规则拒绝时不打开，同时推一条带 `blocked` 的状态。 */
+  /** Open a URL. If a rule refuses it, it is not opened, and a status carrying `blocked` is pushed. */
   navigate(id: string, url: string): Promise<WebNavigateResult>;
   back(id: string): void;
   forward(id: string): void;
@@ -103,18 +103,18 @@ export interface WebHost {
   setViewport(id: string, size: { width: number; height: number } | null): void;
   onShortcut(listener: (event: { id: string; action: 'focus-address' | 'find' | 'reload' | 'force-reload' }) => void): () => void;
   stop(id: string): void;
-  /** 缩放百分比，宿主收进 50–200。 */
+  /** Zoom percentage; the host clamps it to 50–200. */
   setZoom(id: string, percent: number): void;
   setBounds(id: string, bounds: { x: number; y: number; width: number; height: number }): void;
   setVisible(id: string, visible: boolean): void;
   destroy(id: string): void;
-  /** 所有标签的状态变化；返回取消订阅。 */
+  /** Status changes for all tabs; returns an unsubscribe function. */
   onState(listener: (state: WebTabState) => void): () => void;
-  /** 清掉网页分区里的 Cookie、存储与缓存（给设置页的按钮用）。 */
+  /** Clear cookies, storage and cache in the web partition (for the button on the settings page). */
   clearData(): Promise<void>;
 }
 
-/** 被宿主拒绝的原因：不是网址、不是 http/https、本机回环地址、应用自己的页面。 */
+/** Reasons the host refuses: not a URL, not http/https, a loopback local address, or the app's own page. */
 export type WebBlockReason = 'invalid' | 'scheme' | 'loopback' | 'app-origin';
 
 export type WebNavigateResult = { ok: true; url: string } | { ok: false; reason: WebBlockReason };
@@ -137,29 +137,27 @@ export interface WebTabState {
 }
 
 /**
- * 应用自动更新（架构设计 §2.6、设计稿 §17.7）：检查更新源、后台下载、校验大小与摘要、换包都在宿主的主进程里，
- * Runtime 不参与。状态机也在主进程（`apps/desktop/src/main/app-update-rules.ts`）；界面只镜像它推来的状态、
- * 发起动作，并在安装前过停止屏障（有活动任务时先问用户）。下载完成从不自动重启；已下载时正常退出应用，主进程在退出途中
- * 装好、不重新打开。
+ * App auto-update (architecture design §2.6, design draft §17.7): checking the update source, background download, verifying size and digest, and swapping the package all happen in the host's main process,
+ * and the Runtime does not take part. The state machine is also in the main process (`apps/desktop/src/main/app-update-rules.ts`); the UI only mirrors the state it pushes and starts actions, and passes the stop barrier before installing (asks the user first when there are active tasks). Download completion never restarts automatically; when something is downloaded, the app exits normally, and the main process installs it on the way out and does not reopen it.
  */
 export interface UpdatesHost {
-  /** 现在的状态。 */
+  /** The current state. */
   get(): Promise<AppUpdateSnapshot>;
-  /** 状态变了就推一份完整的；返回取消订阅。 */
+  /** Push a full copy whenever the state changes; returns an unsubscribe function. */
   onState(listener: (snapshot: AppUpdateSnapshot) => void): () => void;
-  /** 自动检查之后要提醒的事（toast）；返回取消订阅。 */
+  /** Notices to show after an automatic check (toast); returns an unsubscribe function. */
   onNotice(listener: (notice: AppUpdateNotice) => void): () => void;
-  /** 更新偏好（Runtime 持有的 `updates.autoCheck` / `updates.autoDownload`，§5.10）。收到之前主进程不做自动检查。 */
+  /** Update preferences (`updates.autoCheck` / `updates.autoDownload` held by the Runtime, §5.10). The main process does no automatic checks until it receives them. */
   configure(prefs: AppUpdatePrefs): void;
-  /** 手动检查（关于页的「检查更新」与出错后的「重试」）。 */
+  /** Manual check (the “Check for updates” on the About page and “Retry” after an error). */
   check(): Promise<void>;
-  /** 下载并校验（「下载并安装」与下载出错后的「重试」）：下载到 100% 后先校验、就位，再进「已下载」。 */
+  /** Download and verify (“Download and install”, and “Retry” after a download error): after the download reaches 100%, it is verified and put in place first, then enters “Downloaded”. */
   download(): Promise<void>;
-  /** 取消在下的下载（含 100% 之后的校验段），回到「有新版本」。 */
+  /** Cancel the download in progress (including the verification phase after 100%), returning to “New version available”. */
   cancel(): Promise<void>;
-  /** 「重启并更新」：起换包程序，然后应用正常退出，换完重新打开。停止屏障由界面在调用前过完。 */
+  /** “Restart and update”: starts the package-swap program, then the app exits normally, and reopens after the swap. The UI passes the stop barrier before calling it. */
   install(): Promise<void>;
-  /** 用系统浏览器打开下载页。 */
+  /** Open the download page in the system browser. */
   openDownloadPage(): Promise<void>;
 }
 
@@ -168,36 +166,34 @@ export interface AppUpdatePrefs {
   autoDownload: boolean;
 }
 
-/** 安装包的形态：macOS 的公证 ZIP（主路径）与 DMG（兼容），Windows 的安装器。 */
+/** Installer package forms: the notarised ZIP for macOS (the main path) and DMG (for compatibility), and the installer for Windows. */
 export type AppUpdateFormat = 'zip' | 'dmg' | 'exe';
 
-/** schema-1 更新清单里这一版的信息（主进程校验过）。说明的语言由界面挑。 */
+/** Information about this version from the schema-1 update manifest (verified by the main process). The UI picks the language of the notes. */
 export interface AppUpdateInfo {
   version: string;
   build: number;
   date: string;
-  /** 新版本要求的最低系统版本（只在 macOS 上比较）。 */
+  /** The minimum OS version the new version requires (compared on macOS only). */
   minimumSystemVersion: string | null;
   notes: string;
-  /** 各语言的说明，键是语言码（`zh-Hans`、`en`…）。 */
+  /** Notes in each language; the keys are language codes (`zh-Hans`, `en`, …). */
   notesLocalized: Record<string, string>;
   format: AppUpdateFormat;
   url: string;
   size: number;
-  /** 64 位十六进制，小写。 */
+  /** 64-digit hexadecimal, lowercase. */
   sha256: string;
 }
 
 /**
- * 出错的类别，界面按它出文案：检查失败、下载没完成、校验不过（文件已删）、签名与当前应用不一致、
- * 安装没完成、这台机器不能自己换包（已显示安装包并打开下载页）。
+ * Error categories; the UI shows its copy according to these: the check failed, the download did not finish, verification failed (file deleted), the signature does not match the current app,
+ * the install did not finish, or this machine cannot swap the package itself (the installer has been shown and the download page opened).
  */
 export type AppUpdateFailure = 'check' | 'download' | 'verify' | 'signature' | 'install' | 'manual';
 
 /**
- * 更新的状态（设计稿 model-app-update.js 的状态机）。`available.bg` / `ready.bg` 是在途的静默检查（自动检查发起时
- * 已有新版本或已下载，显示态不变）；`systemUnmet` 是新版本要求、本机达不到的 macOS 版本。`downloading` 的 `pct` 到 100
- * 之后是校验段（核对、解开、验签），完了才进 `ready`。
+ * Update state (the state machine in design draft model-app-update.js). `available.bg` / `ready.bg` are silent checks in flight (when an automatic check starts while a new version is already available or downloaded, the displayed state does not change); `systemUnmet` is a macOS version the new version requires and this machine does not meet. After `pct` of `downloading` reaches 100, it is the verification phase (checking, unpacking, verifying the signature), and only then does it enter `ready`.
  */
 export type AppUpdateState =
   | { k: 'unsupported'; why: 'dev' | 'appStore' }
@@ -212,11 +208,11 @@ export type AppUpdateState =
 
 export interface AppUpdateSnapshot {
   state: AppUpdateState;
-  /** 上次检查的时刻（unix 秒）；这次启动还没检查过时 null。 */
+  /** Time of the last check (unix seconds); null when no check has been made since this launch. */
   lastCheckAt: number | null;
-  /** 正在运行的版本。 */
+  /** The version currently running. */
   current: { version: string; build: number };
 }
 
-/** 自动检查之后的提醒：自动下载关着时「可以更新了」，后台下载好了「已下载」（每个 build 一次）。 */
+/** Reminders after an automatic check: “Update available” when auto-download is off, and “Downloaded” when the background download has finished (once per build). */
 export type AppUpdateNotice = { kind: 'available'; info: AppUpdateInfo } | { kind: 'ready'; info: AppUpdateInfo };

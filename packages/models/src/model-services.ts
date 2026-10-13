@@ -36,23 +36,22 @@ import type { UsageLedger } from './usage-ledger.ts';
 import { buildUsageReport } from './usage-report.ts';
 
 /**
- * 模型服务（架构设计 §6.1、§6.2、§6.8）：Provider 注册表、配置与选择的入口。
+ * Model services (architecture design §6.1, §6.2, §6.8): the entry point for the provider registry, configuration and selection.
  *
- * - `capabilities()` 是 `models.capabilities` 的视图（会探测节点）；`view()` 是最近一次算出的视图，`models` 主题的快照用它；
- * - 配置、默认值变化后重算视图（不联网），与上一次不同时通知 `onChange`；
- * - `selectTranscribe()` / `selectGeneration()` 在提交时确定 Provider 与模型（`select` 取法，不联网），交出执行者与队列；
- * - `generateText` 的任务与进程内调用（`textGenerator()`）共用一个 `TextRunner`：每个 Provider 的并发上限取能力参数
- *   `concurrency`，任务的队列也按它排（队列键 `<providerId>:generateText`，不与同一个 Provider 的语音、图片任务抢名额）。
+ * - `capabilities()` is the view for `models.capabilities` (it probes nodes); `view()` is the most recently computed view, which the `models` topic snapshot uses;
+ * - After configuration or default changes, recompute the view (no network), and notify `onChange` if it differs from the last one;
+ * - `selectTranscribe()` / `selectGeneration()` determine the provider and model at submission (the `select` method, no network), and hand over the executor and queue;
+ * - The `generateText` task and in-process calls (`textGenerator()`) share one `TextRunner`: each provider's concurrency cap is taken from the capability parameter `concurrency`, and the task queue is ordered by it (queue key `<providerId>:generateText`, which does not compete for slots with speech or image tasks of the same provider).
  */
 
 export interface ModelServicesOptions {
   store: ModelServiceStore;
   sources: ProviderSource[];
-  /** 用量账本（§6.10）：`models.usage` 读它；不给时报告为空。 */
+  /** Usage ledger (§6.10): `models.usage` reads it; when not given, it reports empty. */
   usage?: UsageLedger;
 }
 
-/** `models.transcribe` 的目标写法：新的 `provider` / `model` 与旧的 `node` / `bundleId`。 */
+/** Target forms for `models.transcribe`: the new `provider` / `model` and the old `node` / `bundleId`. */
 export interface TranscribeTarget {
   provider?: string;
   model?: string;
@@ -61,13 +60,13 @@ export interface TranscribeTarget {
 }
 
 export interface TranscribeSelection extends ModelChoice<'transcribe'> {
-  /** 本地与节点的模型包；在线为 null。 */
+  /** Local and node model packages; null for online. */
   bundleId: string | null;
   transcriber: TranscribeProvider;
   queue: ProviderQueue;
 }
 
-/** `models.synthesizeSpeech` / `models.generateImage` 的目标写法。 */
+/** Target forms for `models.synthesizeSpeech` / `models.generateImage`. */
 export interface GenerationTarget {
   provider?: string;
   model?: string;
@@ -76,7 +75,7 @@ export interface GenerationTarget {
 export interface GenerationSelection<C extends GenerationCapability = GenerationCapability> extends ModelChoice<C> {
   generator: GenerationProvider;
   queue: ProviderQueue;
-  /** `generateText`：提交时用的参数默认值（推理强度）。 */
+  /** `generateText`: parameter default used at submission (reasoning effort). */
   textDefaults?: TextCapabilityParameters;
 }
 
@@ -95,24 +94,24 @@ export class ModelServices {
     this.store = options.store;
     this.#sources = options.sources;
     this.#usage = options.usage ?? null;
-    // 账号状态（最近一次调用的结果）变化时重算视图，经 `capabilities.updated` 送达（§6.8）。
+    // When account state (the result of the most recent call) changes, recompute the view, delivered via `capabilities.updated` (§6.8).
     this.store.onAccountChange(() => void this.refresh().catch(() => {}));
     this.#view = emptyView();
     this.#viewKey = JSON.stringify(this.#view);
     this.#textRunner = new TextRunner({ concurrency: () => this.store.textParameters().concurrency });
   }
 
-  /** `models.capabilities`：探测节点（每个至多 2 秒，并行），更新缓存的视图。 */
+  /** `models.capabilities`: probes nodes (at most 2 seconds each, in parallel) and updates the cached view. */
   async capabilities(): Promise<ModelCapabilitiesView> {
     return this.#recompute('probe');
   }
 
-  /** 最近一次算出的视图（同步）。 */
+  /** The most recently computed view (synchronous). */
   view(): ModelCapabilitiesView {
     return structuredClone(this.#view);
   }
 
-  /** 配置、模型包或节点变化之后重算视图（不联网）。 */
+  /** Recompute the view after a config, model package or node change (no network). */
   refresh(): Promise<ModelCapabilitiesView> {
     return this.#recompute('view');
   }
@@ -122,7 +121,7 @@ export class ModelServices {
     return () => this.#listeners.delete(listener);
   }
 
-  /** 一个 Provider 的完整视图；不存在时 `not-found`。 */
+  /** Full view of one provider; `not-found` if it does not exist. */
   async provider(providerId: string): Promise<ProviderView> {
     const { source, id } = this.#resolve(providerId);
     const view = await source.describe(id, 'view');
@@ -147,7 +146,7 @@ export class ModelServices {
     await this.refresh();
   }
 
-  /** `models.addAccount`（§6.8）：返回这个 Provider 的视图。本机、节点与智能体 Provider 没有账号，`invalid-request`。 */
+  /** `models.addAccount` (§6.8): returns this provider's view. Local, node and agent providers have no accounts: `invalid-request`. */
   async addAccount(request: AddProviderAccountRequest): Promise<ProviderView> {
     await this.#accountSource(request.providerId).addAccount!(request);
     await this.refresh();
@@ -173,8 +172,8 @@ export class ModelServices {
   }
 
   /**
-   * `models.usage`（§6.10）：读账本，按时段与服务商汇总，读的时候按价目表估价。账本读不了时抛出（不当作空）；
-   * 账号的显示名取现在的配置（名字，没有时掩码），已经删掉的账号按 `accountId` 列出。
+   * `models.usage` (§6.10): reads the ledger, aggregates by time period and vendor, and estimates prices at read time using the price table. If the ledger cannot be read, throw (do not treat it as empty);
+   * an account's display name uses the current config (the name, or the mask if there is none), and accounts already deleted are listed by `accountId`.
    */
   async usage(request: UsageRequest, now: Date = new Date()): Promise<UsageReport> {
     const records = this.#usage ? await this.#usage.read() : [];
@@ -201,7 +200,7 @@ export class ModelServices {
     return source;
   }
 
-  /** 改能力参数的默认值（首版只有 `generateText`），返回补全后的值。并发上限对之后排队的调用立即生效。 */
+  /** Change the capability parameter defaults (only `generateText` for now), returning the filled-in values. Concurrency caps take effect immediately for calls queued afterward. */
   async setCapabilityParameters(request: SetCapabilityParametersRequest): Promise<TextCapabilityParameters> {
     if (request.capability !== 'generateText') throw new RpcError('invalid-request', M.noCapabilityParameters({ capability: request.capability }));
     const parameters = await this.store.setTextParameters({
@@ -212,7 +211,7 @@ export class ModelServices {
     return parameters;
   }
 
-  /** 向一个在线 Provider 取模型（与音色）列表（§6.8）。取不到时照旧用内置列表，`ok: false`。 */
+  /** Fetch the model (and voice) list from an online provider (§6.8). If it cannot be fetched, the built-in list continues to be used, with `ok: false`. */
   async refreshProvider(providerId: string): Promise<{ provider: ProviderView; refreshed: ProviderRefreshStatus }> {
     const { source, id } = this.#resolve(providerId);
     if (!source.refresh) throw new RpcError('invalid-request', M.noRefresh());
@@ -221,18 +220,18 @@ export class ModelServices {
     return { provider: await this.provider(id), refreshed };
   }
 
-  /** 进程内的文本生成入口（§6.1）：与 `models.generateText` 的任务共用选择、并发上限、计数与结果检查。 */
+  /** In-process text generation entry (§6.1): shares selection, concurrency caps, counting and result checks with the `models.generateText` task. */
   textGenerator(): TextGenerator {
     this.#textGenerator ??= createTextGenerator({ select: (target) => this.selectText(target), runner: this.#textRunner });
     return this.#textGenerator;
   }
 
-  /** `generateText` 各 Provider 的调用、重试与失败计数。 */
+  /** Calls, retries and failure counts for `generateText`, per provider. */
   textStats(): Record<string, TextCallStats> {
     return this.#textRunner.stats();
   }
 
-  /** 设置或清除一种能力的默认值。Provider 要存在并声明这种能力；不给模型时用它的默认模型。不要求此刻可用。 */
+  /** Set or clear the default for one capability. The provider must exist and declare this capability; if no model is given, its default model is used. It does not need to be available right now. */
   async setDefault(capability: ModelServiceCapability, providerId: string | null, modelId?: string): Promise<ModelRef | null> {
     if (providerId === null) {
       if (modelId !== undefined) throw new RpcError('invalid-request', M.clearWithModel());
@@ -259,8 +258,8 @@ export class ModelServices {
   }
 
   /**
-   * 删除本地模型包之后（`models.remove`，§6.8）：没有出厂默认的能力里指向它的默认值清掉，回到「未设置」；`transcribe` 有出厂
-   * 默认，指向它的默认值保留并报告为不可用。返回清掉了哪些能力。
+   * After a local model package is deleted (`models.remove`, §6.8): defaults pointing to it are cleared for capabilities without a factory default, returning them to "unset"; `transcribe` has a factory
+   * default, so a default pointing to it is kept and reported as unavailable. Returns which capabilities were cleared.
    */
   async clearLocalDefaults(bundleId: string): Promise<ModelServiceCapability[]> {
     const cleared = MODEL_SERVICE_CAPABILITIES.filter((capability) => {
@@ -274,7 +273,7 @@ export class ModelServices {
     return cleared;
   }
 
-  /** 提交时选择 `transcribe` 的 Provider 与模型（§6.2）。不可用时抛 `CAPABILITY_NOT_CONFIGURED`。 */
+  /** Choose the provider and model for `transcribe` at submission (§6.2). Throws `CAPABILITY_NOT_CONFIGURED` if unavailable. */
   async selectTranscribe(target: TranscribeTarget): Promise<TranscribeSelection> {
     let provider: string | undefined;
     if (target.provider !== undefined) provider = this.#resolve(target.provider).id;
@@ -315,8 +314,8 @@ export class ModelServices {
   }
 
   /**
-   * 提交时选择生成能力的 Provider 与模型（§6.2）。这两种能力没有出厂默认：不显式指定、也没有用户默认值时
-   * 抛 `CAPABILITY_NOT_CONFIGURED`（`reason: 'no-default'`）。
+   * Choose the provider and model for generation capabilities at submission (§6.2). These two capabilities have no factory default: if none is specified explicitly and there is no user default,
+   * throw `CAPABILITY_NOT_CONFIGURED` (`reason: 'no-default'`).
    */
   async selectGeneration<C extends GenerationCapability>(capability: C, target: GenerationTarget): Promise<GenerationSelection<C>> {
     const provider = target.provider !== undefined ? this.#resolve(target.provider).id : undefined;
@@ -357,8 +356,8 @@ export class ModelServices {
   }
 
   /**
-   * 选择 `separateAudio` 的 Provider 与模型（§6.2，有出厂默认）：只有本机的分离模型包，由调用方（翻译配音）直接交给
-   * Model Worker，这里只定模型。不可用时抛 `CAPABILITY_NOT_CONFIGURED`。
+   * Choose the provider and model for `separateAudio` (§6.2, has a factory default): there is only the local separation model package, and the caller (translation dubbing) hands it directly to
+   * the Model Worker; this only decides the model. Throws `CAPABILITY_NOT_CONFIGURED` if unavailable.
    */
   async selectSeparate(target: GenerationTarget): Promise<ModelChoice<'separateAudio'>> {
     const provider = target.provider !== undefined ? this.#resolve(target.provider).id : undefined;
@@ -371,7 +370,7 @@ export class ModelServices {
     });
   }
 
-  /** 选择 `generateText` 的 Provider 与模型（§6.2，没有出厂默认），交出文本执行者与参数默认值。 */
+  /** Choose the provider and model for `generateText` (§6.2, no factory default), returning the text executor and the parameter defaults. */
   async selectText(target: GenerationTarget): Promise<TextSelection> {
     const provider = target.provider !== undefined ? this.#resolve(target.provider).id : undefined;
     const providers = await this.#list('select');
@@ -399,28 +398,28 @@ export class ModelServices {
     return { ...choice, text, defaults: this.store.textParameters() };
   }
 
-  /** 一个 `providerId` 的执行者（本地文件任务等不经选择的路径用）。 */
+  /** The executor for a `providerId` (used by paths that skip selection, such as local file tasks). */
   transcriber(providerId: string): TranscribeProvider | null {
     return this.#owner(providerId)?.transcriber(providerId) ?? null;
   }
 
-  /** 所有转写执行者（去重）。 */
+  /** All transcription executors (deduplicated). */
   executors(): TranscribeProvider[] {
     return [...new Set(this.#sources.flatMap((s) => s.executors()))];
   }
 
-  /** 所有生成执行者（去重）。 */
+  /** All generation executors (deduplicated). */
   generators(): GenerationProvider[] {
     return [...new Set([...this.#sources.flatMap((s) => s.generators?.() ?? []), ...this.#textJobs.values()])];
   }
 
-  // ---- 内部 ----
+  // ---- internal ----
 
   #owner(providerId: string): ProviderSource | undefined {
     return this.#sources.find((s) => s.owns(providerId));
   }
 
-  /** 规范化：别名 → `node:<nodeId>`。不认识时 `not-found`。 */
+  /** Normalize: alias → `node:<nodeId>`. `not-found` if unrecognized. */
   #resolve(providerId: string): { source: ProviderSource; id: string } {
     const source = this.#owner(providerId);
     const id = source?.resolve(providerId) ?? null;
@@ -443,7 +442,7 @@ export class ModelServices {
         if (!cap) continue;
         entries.push({ providerId: p.providerId, kind: p.kind, label: p.label, config: p.config, ...structuredClone(cap) });
       }
-      // 生图的本地 Provider 排在在线与智能体之后（设计稿的模型菜单：云端、Codex、本机）。
+      // Local providers for image generation are ordered after online and agent ones (the design mockup's model menu: cloud, Codex, local).
       if (capability === 'generateImage') entries.sort((a, b) => Number(a.kind === 'local') - Number(b.kind === 'local'));
       view[capability] = { default: userDefault, effective: effectiveChoice({ capability, userDefault, providers }), providers: entries };
       if (capability === 'generateText') view[capability].parameters = this.store.textParameters();

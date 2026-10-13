@@ -2,15 +2,13 @@ import type { CucCutStepKind } from './agent-tool-steps.ts';
 import type { StepKind } from './thread.ts';
 
 /**
- * 会话线程「智能体在干活」的像素加载图形（PixelLoader，产品设计 §3.2.2 的「进行状态」）用哪几个图（原型 model-agent-loader.js）。
- * 这里只给图形的名字；视图按名字从 `@react-spectrum/ai/loader` 取像素格并按键缓存，保证数组引用不变
- * （PixelLoader 拿到新的数组引用就从第一个图重新播）。一个名字循环播；多个名字轮流播，每个图约 2.4 秒。
+ * Which images the pixel loader graphic uses while an agent is working in the session thread (the “in progress” state in product design §3.2.2; prototype model-agent-loader.js).
+ * This only gives the graphic names. The view fetches the pixel cells by name from `@react-spectrum/ai/loader` and caches them by key, so the array reference stays stable (PixelLoader restarts from the first image whenever it receives a new array reference). One name loops; several names take turns, about 2.4 seconds per image.
  *
- * 一个会话里最多两处在动：正在跑的那一步（按类别的短序列）与回合页脚「正在工作」前（`THINKING`）；
- * 工作组标题前是这一步类别的第一个图，静止；会话输入框不放动画。
+ * At most two things move in a session at once: the step that is running (a short sequence by category), and the “Working” (`THINKING`) before the turn footer. The image before a work-group heading is the first image for that step's category, and it is static; the session input box has no animation.
  */
 
-/** 随 @react-spectrum/ai 0.4.0 的全部图案类图形。字母类图形与含字母的预设拼的是第三方字标，不用。 */
+/** All the pattern-type graphics from @react-spectrum/ai 0.4.0. The letter-based graphics and presets that contain letters render third-party wordmarks, so they are not used. */
 export const ICONS = Object.freeze([
   'aiLogo',
   'brush',
@@ -47,7 +45,7 @@ export const ICONS = Object.freeze([
 
 export type LoaderIcon = (typeof ICONS)[number];
 
-/** 通用序列，用到全部图形，aiLogo 打头；相邻两个图尽量不同类（声音、画面、文字、文件、数据交替出现）。 */
+/** A generic sequence that uses all graphics, starting with aiLogo; adjacent graphics are kept in different categories where possible (sound, picture, text, file, and data alternate). */
 export const THINKING: readonly LoaderIcon[] = Object.freeze([
   'aiLogo',
   'wand',
@@ -82,31 +80,31 @@ export const THINKING: readonly LoaderIcon[] = Object.freeze([
   'floppy',
 ]);
 
-/** 认不出的类别（以及通用的「其他工具」）。 */
+/** Unrecognized categories (and the generic “other tools”). */
 export const FALLBACK: readonly LoaderIcon[] = Object.freeze(['aiLogo', 'flower', 'trefoil']);
 
-/** 加载图形的键：通用步骤类别、CucCut 工具的类别（agent-tool-steps.ts）与流式的思考行。 */
+/** Keys for loading graphics: generic step categories, CucCut tool categories (agent-tool-steps.ts), and the streaming thinking line. */
 export type LoaderKind = StepKind | CucCutStepKind | 'reasoning';
 
 const seq = (...names: LoaderIcon[]): readonly LoaderIcon[] => Object.freeze(names);
 
-/** 类别 → 2–4 个图的短序列。按类型穷举：新增步骤类别时这里编译不过，得给它挑图。 */
+/** Category → a short sequence of 2–4 graphics. Exhaustive by type: adding a new step category makes this fail to compile, so a graphic has to be chosen for it. */
 export const KINDS: Readonly<Record<LoaderKind, readonly LoaderIcon[]>> = Object.freeze({
-  /* 通用类别 */
+  /* Generic categories */
   command: seq('dial', 'potion', 'trefoil'),
   read: seq('document', 'page', 'eye'),
   edit: seq('pencil', 'brush', 'document'),
   search: seq('mag', 'filter', 'eye'),
   other: FALLBACK,
   reasoning: seq('aiLogo', 'flower', 'potion'),
-  /* 声音与文字 */
+  /* Sound and text */
   transcribe: seq('microphone', 'comment', 'page'),
   speech: seq('microphone', 'comment'),
   translate: seq('comment', 'page', 'document'),
   captions: seq('comment', 'page', 'timeline'),
-  /* 画面 */
+  /* Picture */
   image: seq('image', 'brush', 'wand', 'eyedrop'),
-  /* 视频与时间线上的活 */
+  /* Video and activity on the timeline */
   'video-list': seq('folder', 'image', 'eye'),
   'video-create': seq('image', 'wand', 'timeline'),
   'video-read': seq('eye', 'image', 'timeline'),
@@ -114,30 +112,30 @@ export const KINDS: Readonly<Record<LoaderKind, readonly LoaderIcon[]>> = Object
   cut: seq('timeline', 'crop', 'lasso'),
   'edit-video': seq('timeline', 'slider', 'wand', 'pencil'),
   undo: seq('journey', 'arrow', 'timeline'),
-  /* 文稿与文件 */
+  /* Documents and files */
   'document-read': seq('document', 'page', 'eye'),
   space: seq('folder', 'shop', 'cart'),
   'space-search': seq('mag', 'filter', 'folder'),
-  /* 进出 */
+  /* In and out */
   import: seq('cloud', 'arrow', 'folder'),
   download: seq('cloud', 'arrow', 'floppy'),
   'downloads-save': seq('floppy', 'folder'),
   export: seq('floppy', 'arrow', 'journey'),
   artifact: seq('floppy', 'folder', 'cart'),
-  /* 任务、模型、技能与授权 */
+  /* Tasks, models, skills and permissions */
   job: seq('hourglass', 'bargraph', 'graph'),
   models: seq('dial', 'graph', 'potion'),
   'model-install': seq('cloud', 'arrow', 'dial'),
   skill: seq('page', 'potion', 'wand'),
   grant: seq('hourglass', 'dial'),
   contract: seq('document', 'pencil', 'page'),
-  /* 幻灯片、设计稿与设计系统 */
+  /* Slides, design drafts and design systems */
   slides: seq('page', 'eye', 'pencil'),
   design: seq('brush', 'eyedrop', 'eye'),
   'design-system': seq('eyedrop', 'slider', 'document'),
 });
 
-/** 类别 → 图形名序列；认不出的走 FALLBACK。同一个类别每次返回同一个（冻结的）数组。 */
+/** Category → sequence of graphic names; unrecognized categories fall back to FALLBACK. The same category always returns the same (frozen) array. */
 export function forKind(kind: string): readonly LoaderIcon[] {
   return Object.hasOwn(KINDS, kind) ? KINDS[kind as LoaderKind] : FALLBACK;
 }

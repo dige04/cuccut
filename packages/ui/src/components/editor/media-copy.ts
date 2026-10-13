@@ -15,10 +15,10 @@ import { pl } from './media-copy.pl.ts';
 import { tr } from './media-copy.tr.ts';
 import { vi } from './media-copy.vi.ts';
 
-/** 句中用的素材类名（小写）。 */
+/** Lowercase media class name used inside sentences. */
 const noun: Record<PlaceableKind, string> = { video: 'video', image: 'image', audio: 'audio' };
 
-/** 素材面板、素材卡片菜单、预览与替换素材窗口的文案。译文在 `media-copy.zh-Hans.ts`。 */
+/** Copy for the media panel, the media card menu, and the preview and replace-media windows. Translations are in `media-copy.zh-Hans.ts`. */
 const en = {
   kindName: (kind: PlaceableKind): string => ({ video: 'Video', image: 'Image', audio: 'Audio' })[kind],
   panelTitle: (kind: PlaceableKind): string => ({ video: 'Video', image: 'Images', audio: 'Audio' })[kind],

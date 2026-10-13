@@ -2,21 +2,21 @@ import { create } from 'zustand';
 import type { Actor, FileTarget, Id, MessageRef, VideoRef, VideoTopicSnapshot, TransactionReceipt, UndoState } from '@cuccut/protocol';
 
 /**
- * 编辑器打开的视频：Runtime 镜像经主题同步过来的投影，以及这个窗口发出的命令的状态。
- * 视频的内容只由主题更新，界面不在本地改它（架构设计 §11.1）。
+ * The video open in the editor: the projection of the Runtime mirror synced through the topic, and the state of commands sent from this window.
+ * The video's content is updated only by the topic; the UI does not change it locally (architecture design §11.1).
  */
 
 /**
- * - `opening`：正在打开或重新打开。
- * - `ready`：已追平，可以提交修改。
- * - `stale`：连接断了或视频在 Runtime 里关闭了；显示的是最后看到的版本，不能提交（产品设计 §2.6）。
- * - `error`：打不开。
+ * - `opening`: opening or reopening.
+ * - `ready`: caught up; changes can be submitted.
+ * - `stale`: the connection dropped or the video was closed in the Runtime; the last version seen is shown and changes cannot be submitted (product design §2.6).
+ * - `error`: cannot be opened.
  */
 export type VideoStatus = 'opening' | 'ready' | 'stale' | 'error';
 
 export interface CommandError {
   message: string;
-  /** 引擎的错误码，例如 `PROJECT_REVISION_CONFLICT`、`TIMELINE_OVERLAP`。 */
+  /** Engine error codes, e.g. `PROJECT_REVISION_CONFLICT`, `TIMELINE_OVERLAP`. */
   code: string | null;
 }
 
@@ -27,14 +27,14 @@ export interface OpenVideo {
   state: VideoTopicSnapshot | null;
   status: VideoStatus;
   error: string | null;
-  /** 已发出、还没有回执的命令数。 */
+  /** Number of commands sent that have not yet received a reply. */
   inFlight: number;
   lastReceipt: TransactionReceipt | null;
-  /** 最近一笔落到视频上的修改是谁做的（来自主题事件，包括别的窗口和智能体）。修改名用 `localizeText(label, labelRef)` 显示。 */
+  /** Who made the most recent change that landed on the video (from topic events, including other windows and agents). The change name is shown with `localizeText(label, labelRef)`. */
   lastChange: { by: Actor['kind']; label: string; labelRef?: MessageRef | undefined } | null;
   commandError: CommandError | null;
   undo: UndoState;
-  /** 收到过几次 `video.replaced`（引擎重启后整体替换）：素材状态要重查。 */
+  /** Number of times `video.replaced` has been received (the whole video is replaced after an engine restart): material state must be re-queried. */
   replaced?: number;
 }
 
@@ -67,7 +67,7 @@ export const useVideo = create<VideoStore>()((set) => ({
   clear: () => set({ video: null }),
 }));
 
-/** 当前能不能提交修改：已追平、没有在重新打开。 */
+/** Whether changes can be submitted now: caught up and not reopening. */
 export function canEdit(video: OpenVideo | null): boolean {
   return video?.status === 'ready' && video.state !== null;
 }

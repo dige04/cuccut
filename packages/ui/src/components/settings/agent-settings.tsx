@@ -12,8 +12,8 @@ const FACT_ICON = { cli: DeviceLaptop, plan: CheckmarkCircle, ask: Lock } as con
 const factIconSize = iconStyle({ size: 'S' });
 
 /**
- * 设置 › Agent 提供方（设计稿 page-settings-agent.jsx 的 AgentSection）：标题与一句话由设置页的 SectionHeader 画；这里是三条事实，
- * 然后是提供方内容，页底接「高级与排障」。不再分页签；Skills 与 Agent 权限各在自己的页（设置 › Skills、设置 › 隐私与权限）。
+ * Settings › Agent providers (AgentSection in the design mockup page-settings-agent.jsx): the title and one-line summary are drawn by the settings page’s SectionHeader. Here come three facts,
+ * then the provider content, with “Advanced and troubleshooting” at the bottom. No more tabs. Skills and Agent permissions each have their own page (Settings › Skills, Settings › Privacy & permissions).
  */
 export function AgentSettings() {
   return (

@@ -1,14 +1,10 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering pipeline and the host byte layer), which do not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! 阶段 3 验收（设计 §10 阶段 3）：中英文 / emoji / 连字的 part 映射正确，
-//! `record_text` 逐 part 施加 pose 而不动布局盒。
+//! Stage 3 acceptance (design §10 stage 3): the part mapping is correct for Chinese/English text, emoji, and ligatures, and `record_text` applies the pose per part without moving the layout box.
 //!
-//! 这里**不进 golden**：字形像素依赖系统字体解析与 shaping，跨机器会产生与动画
-//! 无关的假红（阶段 0 §15 偏离 2 已经为 `studio_export` 记过同一条理由）。
-//! 断言只落在与字体无关的结构性质上：每个 part 至少有一个字形、part 边界随
-//! 时间推进逐个亮起、布局盒逐位不变。
+//! **Not golden-tested here**: glyph pixels depend on system font resolution and shaping, and would produce false failures across machines that have nothing to do with animation (stage 0 §15 deviation 2 already recorded the same reason for `studio_export`).
+//! The assertions only cover structural properties that are independent of the font: each part has at least one glyph, part boundaries light up one by one as time advances, and the layout box stays identical at every position.
 
 use render_raster::drawop::DrawOp;
 use render_raster::{FrameRenderer, TextEngine};
@@ -120,7 +116,7 @@ fn fill_paths(frame: &render_raster::drawop::FrameOps) -> usize {
         .count()
 }
 
-/// 每个 part 至少命中一个字形（否则 part 动画会对某些字"没反应"）。
+/// Each part hits at least one glyph (otherwise the part animation would appear to "not react" for some characters).
 #[test]
 fn every_part_owns_at_least_one_glyph_across_scripts() {
     let mut engine = TextEngine::new();
@@ -132,7 +128,7 @@ fn every_part_owns_at_least_one_glyph_across_scripts() {
         ("Hi 👨‍👩‍👧 🇯🇵 ok", "grapheme"),
         ("waffle office ffi", "word"),
     ] {
-        // part map 经生产路径拿（`ccut-render` 不直接依赖 `ccut-motion`）。
+        // The part map is obtained through the production path (`ccut-render` does not depend on `ccut-motion` directly).
         let ir = resolve(doc(text, split, typewriter(0.05)));
         let map = &ir.visual_clips[0]
             .tree
@@ -149,8 +145,7 @@ fn every_part_owns_at_least_one_glyph_across_scripts() {
             });
             hit[part] = true;
         }
-        // 连字（ffi）会让一个字形覆盖多个 grapheme，但按 `cluster.start` 归属后
-        // 仍然每个 **word** part 都有字形；grapheme 级的空 part 是已知取舍。
+        // A ligature (ffi) can make one glyph cover multiple graphemes, but after attributing by `cluster.start`, every **word** part still has a glyph; a grapheme-level empty part is a known trade-off.
         assert!(
             hit.iter().all(|seen| *seen),
             "{text} / {split}: 有 part 没有任何字形（hit={hit:?}）"
@@ -158,7 +153,7 @@ fn every_part_owns_at_least_one_glyph_across_scripts() {
     }
 }
 
-/// 打字机：随着时间推进，画出来的字形数单调不减，最终等于整串。
+/// Typewriter: as time advances, the number of drawn glyphs never decreases, and finally equals the full string.
 #[test]
 fn typewriter_reveals_parts_one_by_one() {
     let mut ir = resolve(doc("CucCut 剪辑 v2", "word", typewriter(0.2)));
@@ -192,7 +187,7 @@ fn typewriter_reveals_parts_one_by_one() {
     );
 }
 
-/// part 动画不改变布局盒（规范 §7.9）。
+/// Part animation does not change the layout box (spec §7.9).
 #[test]
 fn part_motion_leaves_the_layout_box_untouched() {
     let mut engine = TextEngine::new();
@@ -214,8 +209,7 @@ fn part_motion_leaves_the_layout_box_untouched() {
     assert_eq!((a.x, a.y, a.w, a.h), (b.x, b.y, b.w, b.h));
 }
 
-/// 录制是 `(ir, t)` 的纯函数：同一时刻的两次录制逐字节相同，
-/// 且乱序录制与顺序录制得到同一串指纹（part 采样不引入状态）。
+/// Recording is a pure function of `(ir, t)`: two recordings at the same instant are byte-identical, and recording out of order yields the same sequence of fingerprints as recording in order (part sampling introduces no state).
 #[test]
 fn part_recording_stays_a_pure_function_of_time() {
     let mut ir = resolve(doc("CucCut 剪辑 v2", "word", typewriter(0.12)));
@@ -235,8 +229,7 @@ fn part_recording_stays_a_pure_function_of_time() {
     assert_eq!(forward, backward);
 }
 
-/// `karaokeScale` 走 part 锚点缩放：峰值时刻的指令与静止时刻不同，
-/// 但字形数一致（缩放不吞字）。
+/// `karaokeScale` scales around the part anchor: the instructions at peak time differ from those at rest, but the glyph count is the same (scaling does not swallow glyphs).
 #[test]
 fn karaoke_scale_changes_transforms_without_dropping_glyphs() {
     let mut ir = resolve(doc(

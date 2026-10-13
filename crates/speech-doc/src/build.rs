@@ -1,8 +1,6 @@
-//! 词化落盘（阶段〇）：ASR rows → §18 词原子 transcript。
+//! Word tokenization written to disk (stage 0): ASR rows → §18 word-atom transcript.
 //!
-//! 对拍 voice-ink `DocBuilder`：每行有真实词时间则单调钳进行窗，否则按
-//! `wWeight` 字符权重合成；词再经 atomize 细分（CJK 逐字，子 id `~k`）；
-//! 行级说话人下沉为词的 `sp`；说话人切换点吸附到自然停顿；收尾归一化 + 修复。
+//! Matches voice-ink `DocBuilder`: if a row has real word timings, they are clamped monotonically into the row's window; otherwise they are synthesized by `wWeight` character weights. Words are then subdivided by atomize (CJK character by character, sub-id `~k`); the row-level speaker is pushed down to each word's `sp`; speaker-switch points snap to natural pauses; finally normalization and repair.
 
 use std::collections::BTreeMap;
 
@@ -17,18 +15,18 @@ use crate::doc::{DocEngine, DocMedia, Speaker, TranscriptDoc, Word};
 use crate::fingerprint::fingerprint;
 use crate::timing::{normalize_doc_words, r2, word_timing_repair};
 
-/// 说话人切换点吸附的最小停顿 / 搜索窗口（`DocBuilder.snapPause/snapWindow`）。
+/// Minimum pause and search window for snapping a speaker-switch point (`DocBuilder.snapPause/snapWindow`).
 const SPEAKER_SNAP_MIN_PAUSE: f64 = 0.25;
 const SPEAKER_SNAP_WINDOW: f64 = 1.0;
-/// 说话人色相环（`DocBuilder.speakerHues`）。
+/// Speaker hue wheel (`DocBuilder.speakerHues`).
 const SPEAKER_HUES: [u32; 8] = [222, 152, 28, 282, 350, 82, 190, 330];
 
-/// 空白切分（`TranscriptModel.tokenize`）。
+/// Whitespace split (`TranscriptModel.tokenize`).
 fn tokenize(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_owned).collect()
 }
 
-/// 无真实词时间的兜底：行时长按 `wWeight` 比例切给各 token（`wordsFromSegments`）。
+/// Fallback for when there are no real word timings: the row duration is split across tokens in proportion to `wWeight` (`wordsFromSegments`).
 pub fn synthesize_words(text: &str, row_start: f64, row_end: f64) -> Vec<WordIn> {
     let tokens = tokenize(text);
     if tokens.is_empty() {
@@ -52,14 +50,9 @@ pub fn synthesize_words(text: &str, row_start: f64, row_end: f64) -> Vec<WordIn>
     words
 }
 
-/// 词内原子化（`TranscriptModel.atomized`）：CJK 逐字、标点归前；多原子词按
-/// `wWeight` 比例切时间，子 id `<id>~<k>`。
+/// Intra-word atomization (`TranscriptModel.atomized`): CJK character by character, punctuation attached to the preceding character; for a word that splits into several atoms, time is divided in proportion to `wWeight`, with sub-ids `<id>~<k>`.
 ///
-/// 泰、老挝、缅甸、高棉文字的词再按词切开（[`atomize_words`]），藏文在音节符
-/// 处切开；词内后续各段带「贴前」标记（原文没有空格），时间按字素簇
-/// （grapheme cluster）个数分摊。输入的第三项是这个转录词与前一个转录词之间的
-/// 标记（[`script_glue_from_text`]），落在它的第一段上。不含这些文字的词与
-/// 以前逐字节相同。
+/// Words in Thai, Lao, Burmese and Khmer scripts are further split into words ([`atomize_words`]), and Tibetan is split at syllable marks. Later segments within a word carry a “glue to previous” flag (the source text has no space there), and time is apportioned by the number of grapheme clusters. The third item of the input is the marker between this transcribed word and the previous one ([`script_glue_from_text`]), and it falls on the word's first segment. Words that contain none of these scripts are byte-for-byte identical to before.
 fn atomized(words: Vec<(String, WordIn, bool)>) -> Vec<(String, WordIn, bool)> {
     let mut output = Vec::with_capacity(words.len());
     for (id, word, glue) in words {
@@ -118,10 +111,9 @@ fn atomized(words: Vec<(String, WordIn, bool)>) -> Vec<(String, WordIn, bool)> {
     output
 }
 
-/// 一个已有时间的词按 [`atomized`] 的同一条规则拆成原子：CJK 逐字、标点归前，多原子词的时间按字符权重分摊，
-/// 子 id `<id>~<k>`，`glue` 落在第一段上。返回 `(id, 文字, 开始, 结束, 贴前)`；不用拆的词原样一段。
+/// An already-timed word is split into atoms by the same rules as [`atomized`]: CJK character by character, punctuation attached to the preceding character, and for a multi-atom word the time is divided by character weight, with sub-ids `<id>~<k>`; `glue` falls on the first segment. Returns `(id, text, start, end, glue_to_previous)`; a word that need not be split is returned as one segment unchanged.
 ///
-/// 字幕把转写的词交给渲染内核时用它：逐字落盘之前的转写里还有多字的词，逐词动画也要逐字推进。
+/// Subtitles use this when handing transcribed words to the rendering kernel: transcripts from before per-character write-out still contain multi-character words, and word-by-word animation still has to advance character by character.
 pub fn atomize_timed_word(
     id: &str,
     text: &str,
@@ -140,21 +132,12 @@ pub fn atomize_timed_word(
         .collect()
 }
 
-/// 行级说话人标签落成词 `sp` 之后要不要再动切换点。
+/// Whether to touch the switch points again after row-level speaker labels have been pushed down to word `sp`.
 ///
-/// 两种策略对应两种证据来源，不是"松/严"两档：
+/// The two strategies correspond to two sources of evidence, not to a “loose/strict” pair:
 ///
-/// - [`SnapToPauses`](Self::SnapToPauses)：标签来自与文本分离的区间投影
-///   （voice-ink `DocBuilder` 的传统形态、pyannote 一类"谁在什么时候发声"的
-///   区间），边界只是时间上的最大重叠，落在词中间很常见——于是两遍吸附：
-///   夹心短岛并回、切换点挪到 ±1s 内最优停顿/句末。
-/// - [`RowAuthoritative`](Self::RowAuthoritative)：标签是联合 ASR+diarization
-///   模型（MOSS）在生成文本时一并给出的**文本归属判决**，行边界只是时间戳有
-///   slop。这时吸附只会帮倒忙：实测 7h 双人访谈里 Pass 2 把答句开头的"呃"、
-///   句尾的"一个经历对"挪给了对方，Pass 1 在 MOSS 没出标点的分块里把 142 个
-///   真实应答"嗯/哦是吗/当然"整行并进了对方的句子（无标点 ⇒ "前词非句末"
-///   恒成立）。行级归属权威 ⇒ 一个词都不挪，时间重叠交给
-///   [`word_timing_repair`] 钳时间。
+/// - [`SnapToPauses`](Self::SnapToPauses): the labels come from interval projections separate from the text (the traditional form of voice-ink `DocBuilder`, and intervals such as pyannote's “who is speaking when”). The boundary is only the maximum temporal overlap, so it often falls in the middle of a word. Two passes of snapping are used: short islands sandwiched between one speaker's words are merged back, and each switch point moves to the best pause or sentence end within ±1s.
+/// - [`RowAuthoritative`](Self::RowAuthoritative): the label is the **text attribution verdict** that the joint ASR+diarization model (MOSS) gives while generating the text. Row boundaries are only timestamps with some slop. In this case snapping only does harm. In a measured 7h two-person interview, Pass 2 moved the 「呃」 ("er") that opens an answer and the 「一个经历对」 ("a pair of experiences") that closes an answer over to the other speaker. Pass 1, in MOSS chunks with no punctuation, merged 142 real acknowledgements (「嗯」「哦是吗」「当然」, "mm", "oh really?", "of course") wholesale into the other person's sentence, because with no punctuation the preceding word is never sentence-final. With row-level attribution authoritative, no word moves. Time overlaps are left to [`word_timing_repair`], which clamps the timings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpeakerBoundaryPolicy {
     #[default]
@@ -162,12 +145,9 @@ pub enum SpeakerBoundaryPolicy {
     RowAuthoritative,
 }
 
-/// rows → §18 词原子 transcript。`engine.aligned_words` 表达引擎是否给出过
-/// 真实词时间戳（合成路径照样满足全部时间约束，消费方无需区分）。
+/// rows → §18 word-atom transcript. `engine.aligned_words` says whether the engine has ever given real word timestamps. The synthesis path still meets all the time constraints, so consumers need not tell them apart.
 ///
-/// 说话人切换点按 [`SpeakerBoundaryPolicy::SnapToPauses`] 处理；行级标签来自
-/// 联合模型（MOSS）时用 [`build_doc_with_policy`] 传
-/// [`SpeakerBoundaryPolicy::RowAuthoritative`]。
+/// Speaker switch points are handled by [`SpeakerBoundaryPolicy::SnapToPauses`]. When row-level labels come from the joint model (MOSS), pass [`SpeakerBoundaryPolicy::RowAuthoritative`] through [`build_doc_with_policy`].
 pub fn build_doc(
     rows: &[RowIn],
     media: DocMedia,
@@ -185,7 +165,7 @@ pub fn build_doc(
     )
 }
 
-/// [`build_doc`] 的显式说话人边界策略形态。
+/// The explicit speaker-boundary policy form of [`build_doc`].
 pub fn build_doc_with_policy(
     rows: &[RowIn],
     media: DocMedia,
@@ -205,7 +185,7 @@ pub fn build_doc_with_policy(
     sorted.sort_by(|a, b| a.start.total_cmp(&b.start));
 
     let mut speaker_ids: BTreeMap<String, String> = BTreeMap::new();
-    let mut speaker_order: Vec<(String, String)> = Vec::new(); // (sp id, 显示名)
+    let mut speaker_order: Vec<(String, String)> = Vec::new(); // (speaker id, display name)
 
     for (row_index, row) in sorted.iter().enumerate() {
         let row_start = row.start.clamp(0.0, duration);
@@ -215,7 +195,7 @@ pub fn build_doc_with_policy(
         let mut row_words: Vec<(String, WordIn, bool)> =
             match row.words.as_ref().filter(|words| !words.is_empty()) {
                 Some(real) => {
-                    // 单调钳进行窗（对齐器偶尔越界一格）。
+                    // Clamp monotonically into the window (the aligner occasionally overshoots by one cell).
                     let mut previous = row_start;
                     let timed: Vec<(String, WordIn)> = real
                         .iter()
@@ -235,8 +215,7 @@ pub fn build_doc_with_policy(
                         })
                         .filter(|(_, word)| !word.text.is_empty())
                         .collect();
-                    // 引擎按词给了时间（强制对齐器对泰文一类先分词再对齐）：
-                    // 词与词之间原文没有空格的，按行文本补「贴前」标记。
+                    // When the engine gives timings per word (forced aligners such as the Thai one segment words before aligning): between words where the source text has no space, add a “glue to previous” marker from the line text.
                     let texts: Vec<&str> =
                         timed.iter().map(|(_, word)| word.text.as_str()).collect();
                     let glue = script_glue_from_text(&texts, &row.text)
@@ -282,7 +261,7 @@ pub fn build_doc_with_policy(
                 t1: word.end,
                 text: word.text,
                 sp: sp.clone(),
-                // 行首词与上一行之间按行分开，不贴。
+                // The first word of a line is separated from the previous line by the line break, so it is not glued.
                 glue: glue && index > 0,
             });
         }
@@ -317,7 +296,7 @@ fn gap_at(words: &[Word], index: usize) -> f64 {
     (words[index].t0 - words[index - 1].t1).max(0.0)
 }
 
-/// 边界打分（`TranscriptBoundary.features`）：score = gap + 句末加成 0.6。
+/// Boundary scoring (`TranscriptBoundary.features`): score = gap + 0.6 sentence-end bonus.
 fn boundary_score(words: &[Word], index: usize) -> Option<f64> {
     if index == 0 || index >= words.len() {
         return None;
@@ -331,13 +310,12 @@ fn boundary_score(words: &[Word], index: usize) -> Option<f64> {
     Some(gap + bonus)
 }
 
-/// 说话人切换点吸附（`DocBuilder.snapToPauses` 两遍）。
+/// Speaker switch-point snapping (`DocBuilder.snapToPauses`, two passes).
 fn snap_to_pauses(words: &mut [Word]) {
     if words.len() < 2 {
         return;
     }
-    // Pass 1:同说话人夹心里的短外来岛吸收回去——[i, j) 是外来说话人,
-    // 两侧同说话人;j-i < 4、总时长 ≤ 1.2s、岛前无停顿、前词非句末 ⇒ 并回。
+    // Pass 1: a short foreign island sandwiched in one speaker's run is absorbed back. [i, j) is a foreign speaker with the same speaker on both sides; if j-i < 4, total duration ≤ 1.2s, there is no pause before the island, and the preceding word is not sentence-final ⇒ merge it back.
     let mut i = 1;
     while i < words.len() {
         if words[i].sp == words[i - 1].sp {
@@ -363,7 +341,7 @@ fn snap_to_pauses(words: &mut [Word]) {
         }
         i = j;
     }
-    // Pass 2:剩余切换点在 ±1s 窗口内挑最优停顿/句末边界。
+    // Pass 2: among the remaining switch points, pick the best pause or sentence boundary within a ±1s window.
     let boundaries: Vec<usize> = (1..words.len())
         .filter(|&index| words[index].sp != words[index - 1].sp)
         .collect();
@@ -372,10 +350,10 @@ fn snap_to_pauses(words: &mut [Word]) {
         if gap_at(words, boundary) >= SPEAKER_SNAP_MIN_PAUSE
             || ends_sentence(&words[boundary - 1].text)
         {
-            continue; // 已经落在自然边界上
+            continue; // Already on a natural boundary
         }
-        let mut best: Option<(usize, f64)> = None; // (候选切点, score)
-        // 向左:候选 j,words[..j] 保持左侧说话人。
+        let mut best: Option<(usize, f64)> = None; // (candidate cut point, score)
+        // Leftward: candidate j; words[..j] stay with the left-side speaker.
         let mut j = boundary;
         while j >= 1 && words[j - 1].sp == words[boundary - 1].sp {
             if (boundary_time - words[j].t0).abs() > SPEAKER_SNAP_WINDOW {
@@ -392,7 +370,7 @@ fn snap_to_pauses(words: &mut [Word]) {
             }
             j -= 1;
         }
-        // 向右:候选 j,words[boundary..j] 归给左侧说话人。
+        // Rightward: candidate j; words[boundary..j] go to the left-side speaker.
         let mut j = boundary + 1;
         while j < words.len() && words[j].sp == words[boundary].sp {
             if (words[j].t0 - boundary_time).abs() > SPEAKER_SNAP_WINDOW {
@@ -489,7 +467,7 @@ mod tests {
             assert!(pair[0].3 <= pair[1].2 + 1e-9);
         }
         assert!(atoms[0].4 && !atoms[1].4);
-        // 西文的词与单字原样一段。
+        // Western words and single characters are each kept as one segment.
         assert_eq!(
             atomize_timed_word("w2", "Labs.", 0.0, 1.0, false),
             vec![("w2".into(), "Labs.".into(), 0.0, 1.0, false)]
@@ -501,9 +479,7 @@ mod tests {
         crate::atomize::join_word_texts(doc.words.iter())
     }
 
-    /// 泰文行（引擎只给行文本）：短语按词切开，词内后续各段带「贴前」标记，
-    /// 时间在短语的时间窗里按字素簇分摊；读回来与行文本逐字相同，短语之间的
-    /// 空格还在。
+    /// Thai line (the engine gives only the line text): phrases are split into words; later segments within a word carry the “glue to previous” marker; time is apportioned by grapheme clusters within the phrase's time window. Read back, it is identical to the line text, and the spaces between phrases remain.
     #[test]
     fn build_splits_thai_phrases_into_glued_words() {
         let text = "ลลิตาไม่ได้ยกเลิกการประชุม แต่เลื่อนไปเป็นวันพฤหัสบดี";
@@ -528,9 +504,7 @@ mod tests {
         }
     }
 
-    /// 强制对齐器对泰文先分词再对齐，引擎按词给时间：词与词之间按行文本补
-    /// 标记，时间用引擎给的。没有这一步时这些词各自独立、拼接时按词间补空格
-    /// （`join_word_texts` 对两个不带标记的泰文词加一个空格）。
+    /// The forced aligner segments Thai before aligning, and the engine gives time per word. Markers are added between words from the line text, and the engine's times are used. Without this step, the words stand alone, and joining them adds a space between words (`join_word_texts` adds one space between two unmarked Thai words).
     #[test]
     fn build_glues_engine_timed_thai_words_from_the_row_text() {
         let text = "ลลิตาไม่ได้ยกเลิก การประชุม";
@@ -570,7 +544,7 @@ mod tests {
         assert_eq!(first("การ").t0, 2.6);
     }
 
-    /// 不含这些文字的行与以前逐字节相同：没有标记。
+    /// Lines without these scripts are byte-for-byte identical to before: no markers.
     #[test]
     fn build_leaves_other_scripts_unglued() {
         for (text, lang) in [
@@ -585,8 +559,7 @@ mod tests {
         }
     }
 
-    /// 韩文按空格成词：一个어절一个词，不拆音节，也不带「贴前」标记；读回来
-    /// 空格都在。
+    /// Korean is split into words at spaces: one eojeol is one word, not split into syllables, and no “glue to previous” marker. Read back, all the spaces are there.
     #[test]
     fn build_keeps_korean_rows_one_word_per_space_delimited_unit() {
         let doc = build_doc(
@@ -663,7 +636,7 @@ mod tests {
 
     #[test]
     fn short_foreign_island_is_absorbed() {
-        // A 的词流中夹了一个紧贴的 B 词(短、无停顿、前词非句末)⇒ 吸收回 A。
+        // If a B word sits tightly in A's word stream (short, no pause, preceding word not sentence-final) ⇒ absorb it back into A.
         let mut row_a = RowIn::new(0.0, 2.0, "one two");
         row_a.speaker = Some("A".to_owned());
         let mut row_b = RowIn::new(2.0, 2.4, "blip");
@@ -688,17 +661,17 @@ mod tests {
                 start: 1.7,
                 end: 2.0,
                 text: "two".to_owned(),
-            }, // 1.0→1.7 停顿
+            }, // 1.0→1.7 pause
         ]);
         let mut row_b = RowIn::new(2.0, 6.0, "three four five six seven");
         row_b.speaker = Some("B".to_owned());
         let doc = build_doc(&[row_a, row_b], media(), "en", engine(), None);
-        // "two" 紧贴 "three"(gap 0),切点吸附到 0.7s 停顿,"two" 划给 B。
+        // "two" is tightly adjacent to "three" (gap 0). The cut snaps to the 0.7s pause, and "two" goes to B.
         assert_eq!(doc.words[1].text, "two");
         assert_eq!(doc.words[1].sp, doc.words[2].sp);
     }
 
-    /// 词流按 `sp` 分段后的 `(说话人, 拼接文本)` 序列。
+    /// The `(speaker, concatenated text)` sequence of the word stream after it is split by `sp`.
     fn turns(doc: &TranscriptDoc) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = Vec::new();
         for word in &doc.words {
@@ -710,7 +683,7 @@ mod tests {
         out
     }
 
-    /// 逐字等分时间的 CJK 行（MOSS 的词时间戳形态）。
+    /// A CJK line with characters given equal time shares (the form of MOSS's word timestamps).
     fn cjk_row(start: f64, end: f64, text: &str, speaker: &str) -> RowIn {
         let chars: Vec<char> = text.chars().collect();
         let step = (end - start) / chars.len() as f64;
@@ -730,15 +703,12 @@ mod tests {
         row
     }
 
-    /// 夹具取自 MOSS 7h 双人访谈的原始行（`asr-rows.json` 719–725s）：
-    /// 问句"当时打什么游戏"与答句"呃很多啊…"之间只有 0.19s，而"呃"之后有
-    /// 0.48s 停顿。区间投影策略会把切点吸附到那个停顿、把答句开头的"呃"
-    /// 挪给提问者；行级权威策略一个词都不挪。
+    /// Fixture from the raw MOSS 7h two-person interview rows (`asr-rows.json`, 719–725s). The question 「当时打什么游戏」 ("what game were you playing back then") and the answer 「呃很多啊…」 ("er, lots of them…") are only 0.19s apart, but there is a 0.48s pause after 「呃」. The interval-projection strategy would snap the cut to that pause and give the 「呃」 that opens the answer to the questioner. The row-authoritative strategy moves no word at all.
     #[test]
     fn row_authoritative_policy_keeps_the_answer_opening_filler_with_the_answerer() {
         let question = cjk_row(718.14, 719.22, "当时打什么游戏", "S01");
         let mut answer = cjk_row(719.41, 724.99, "呃很多啊打DOTA啊什么的", "S02");
-        // "呃" 之后 0.48s 停顿。
+        // 0.48s pause after 「呃」.
         let words = answer.words.as_mut().unwrap();
         words[0].end = 719.41;
         words[1].start = 719.89;
@@ -776,9 +746,7 @@ mod tests {
         );
     }
 
-    /// 同一夹具 154s 处：MOSS 没出标点的分块里，S02 长句中间夹着 S01 的一个
-    /// "嗯"（0.31s、两侧间隙 0.13s / 0.01s）。Pass 1 的"前词非句末"在无标点块
-    /// 里恒成立，会把这个真实应答整行并进 S02；行级权威策略保留它。
+    /// Same fixture at 154s: in an unpunctuated MOSS chunk, an S01 「嗯」 (0.31s, with gaps of 0.13s and 0.01s on either side) sits in the middle of a long S02 sentence. Pass 1's “preceding word is not sentence-final” always holds in an unpunctuated chunk, so it would merge this real acknowledgement wholesale into S02. The row-authoritative strategy keeps it.
     #[test]
     fn row_authoritative_policy_keeps_backchannel_rows_in_unpunctuated_chunks() {
         let rows = vec![
@@ -809,8 +777,7 @@ mod tests {
         assert_eq!(turned[1], ("s2".to_owned(), "嗯".to_owned()));
     }
 
-    /// 同一夹具 742s 处：MOSS 相邻行在时间上重叠（S02 行到 742.51，S01 行从
-    /// 742.30 起）。行级权威策略只钳时间，不把重叠区的词划给对方。
+    /// Same fixture at 742s: adjacent MOSS rows overlap in time (the S02 row runs to 742.51, and the S01 row starts at 742.30). The row-authoritative strategy only clamps the timings, and does not give the words in the overlap to the other speaker.
     #[test]
     fn row_authoritative_policy_resolves_overlap_by_time_not_by_relabeling() {
         let rows = vec![

@@ -1,24 +1,15 @@
-//! 分章节引擎（源自 voice-ink `ChapterPromptBuilder` + `ChapterPlanBuilder` +
-//! `CLIFlowChapters`，2026-08 起改为 file-v1 HTML 载体 + 分页 Map/Reduce）。
+//! Chapter segmentation engine (derived from voice-ink `ChapterPromptBuilder` + `ChapterPlanBuilder` + `CLIFlowChapters`; since 2026-08 it uses the file-v1 HTML carrier and paged Map/Reduce).
 //!
-//! - 段落投影按词预算分页（[`budgets::CHAPTERS`]，段落是原子）。**单页**直接一次
-//!   调用出章节（行为与旧的整篇单次一致，只是载体换成 HTML）。
-//! - **多页**走两级：Map 每页并行一次调用（kind `chapters`）切「话题单元」
-//!   （标题 + 一句概要 + 首段锚）；Reduce 一次小调用（kind `chapters-outline`）
-//!   在全部单元的大纲上按全局目标合并/取舍/统一命名，锚只能取自单元起点。
-//! - 分层降级、整体永不失败：某页 Map 重试耗尽 → 该页降级为无标题占位单元
-//!   （保留该页已解析出的最好一次结果优先）；Reduce 重试耗尽 → 直接采用 Map
-//!   单元作为章节。Terminal/Cancelled 照旧直接中止。
-//! - 模型输出经 [`crate::filepipe::parse_chapters_output`] 解析后仍走七步确定性
-//!   清洗，任何一步都不信任模型；章节是时间锚定的覆盖层，写回只动 `doc.chapters`
-//!   与 `stages.chapters`，绝不触碰文本/译文层。
+//! - Paragraph projection is paged by word budget ([`budgets::CHAPTERS`]; paragraphs are atomic). **A single page** produces the chapters in one direct call (the behavior matches the old whole-document single call, only the carrier changes to HTML).
+//! - **Multiple pages** use two levels. Map runs one call per page in parallel (kind `chapters`) to cut "topic units" (title + one-sentence summary + first-paragraph anchor). Reduce runs one small call (kind `chapters-outline`) over the outline of all units, merging, pruning and unifying the naming against the global goal. Anchors can only be taken from the start of a unit.
+//! - Layered degradation that never fails overall. If a page's Map retries are exhausted, that page degrades to an untitled placeholder unit (the best result that page parsed is preferred). If Reduce retries are exhausted, the Map units are adopted directly as the chapters. Terminal/Cancelled still abort directly, as before.
+//! - Model output, after being parsed by [`crate::filepipe::parse_chapters_output`], still goes through seven deterministic cleaning steps. No step trusts the model. Chapters are a time-anchored overlay. Write-back only touches `doc.chapters` and `stages.chapters`, and never the text or translation layers.
 //!
-//! 与 voice-ink 的刻意偏差：
-//! - 段落来源是 §18.5 规范派生（`derive_cues` + `derive_paras`），段 id 用
-//!   `para.id`（`p-<首词id>`）；voice-ink 用编辑器文档的 paragraphs(doc)。
-//! - 媒体上下文是宿主从项目清单整理出的有界文本，不在 core 做 I/O。
-//! - 章节 id 基毫秒由 `ChaptersOptions.now_ms` 注入（core 零时钟）。
-//! - 章节数上限随时长放大（[`chapter_count`]），不再固定 20。
+//! Deliberate deviations from voice-ink:
+//! - The paragraph source is derived from the §18.5 canonical derivation (`derive_cues` + `derive_paras`), and paragraph ids use `para.id` (`p-<first-word-id>`). voice-ink uses the paragraphs of the editor document.
+//! - The media context is bounded text compiled by the host from the project manifest, not I/O inside core.
+//! - The base milliseconds for chapter ids are injected by `ChaptersOptions.now_ms` (core has no clock).
+//! - The upper bound on the chapter count scales with duration ([`chapter_count`]); it is no longer fixed at 20.
 
 use crate::atomize::word_count;
 use crate::cue::{derive_cues, derive_paras, join_words};
@@ -35,24 +26,21 @@ use crate::source_chapters::{SnapPlan, SourceChapter, clock, resolve_rows};
 
 #[derive(Debug, Clone)]
 pub struct ChaptersOptions {
-    /// 目标章节数；缺省由时长与粒度估算。
+    /// Target chapter count. By default estimated from duration and granularity.
     pub target: Option<usize>,
-    /// 标题风格（voice-ink CLI 缺省 "short"）。
+    /// Title style (the voice-ink CLI default is "short").
     pub title_style: Option<String>,
-    /// 风格示例（voice-ink 里按 title_style 查 SampleData 表；此处由调用方传入）。
+    /// Style example (voice-ink looks up a SampleData table by title_style; here it is passed in by the caller).
     pub examples: Vec<String>,
     pub instructions: Option<String>,
     pub reference_context: Option<String>,
-    /// "balanced"（300s/章）| "broad"（600s）| "detailed"（150s）。
+    /// "balanced" (300s/chapter) | "broad" (600s) | "detailed" (150s).
     pub granularity: String,
-    /// 章节 id 基毫秒（`c-<base36(now_ms)>-<index>`），由宿主注入墙钟。
+    /// Base milliseconds for chapter ids (`c-<base36(now_ms)>-<index>`), with the wall clock injected by the host.
     pub now_ms: u64,
-    /// 页预算（源文词数，[`crate::atomize::word_count`] 口径）；宿主可用
-    /// `CCUT_LLM_PAGE_WORDS` 覆盖。
+    /// Page budget (source word count, [`crate::atomize::word_count`] basis). The host may override it with `CCUT_LLM_PAGE_WORDS`.
     pub page_budget: usize,
-    /// 来源自带的章节（yt-dlp `chapters[]` 或描述里的时间戳大纲），按起点排好。
-    /// 非空时整份大纲进契约当参考，缺省目标章数改为它的条数，多页时每页的
-    /// `data-aim` 改为落在该页的条数；模型仍在段落投影上锚定。
+    /// Chapters that come with the source (yt-dlp `chapters[]`, or a timestamp outline in the description), sorted by start. When non-empty, the whole outline goes into the contract as reference. The default target chapter count becomes its item count, and for multiple pages each page's `data-aim` becomes the number of items falling in that page. The model still anchors on the paragraph projection.
     pub source_chapters: Vec<SourceChapter>,
 }
 
@@ -72,41 +60,40 @@ impl Default for ChaptersOptions {
     }
 }
 
-/// 一页（Map 部分）的运行记录，进产物 `parts[]` 便于排查长录音。
+/// Run record of one page (the Map part), recorded in the artifact's `parts[]` to make troubleshooting long recordings easier.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChapterPart {
-    /// 页 id（`p001`…），与产物目录 `pages/pNNN.*` 同名。
+    /// Page id (`p001`…), with the same name as the artifact directory `pages/pNNN.*`.
     pub id: String,
-    /// 本页时间范围（起始秒）。
+    /// Start time of this page's range (seconds).
     pub start: f64,
-    /// 本页时间范围（结束秒 = 下一页起始或媒体时长）。
+    /// End time of this page's range (seconds; the start of the next page or the media duration).
     pub end: f64,
-    /// 本页段落数。
+    /// Number of paragraphs on this page.
     pub segments: usize,
-    /// 本页解析出的话题单元数（单页路径下即章节候选数）。
+    /// Number of topic units parsed from this page (on the single-page path, the number of chapter candidates).
     pub units: usize,
-    /// 本页实际调用次数。
+    /// Actual number of calls made for this page.
     pub attempts: u32,
-    /// 重试耗尽后降级：占位单元或采用了不完整的最好一次结果。
+    /// Degraded after retries are exhausted: a placeholder unit, or an incomplete best-attempt result was adopted.
     pub degraded: bool,
 }
 
-/// 分章节结果。
+/// Result of chapter segmentation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChaptersOutcome {
-    /// 已写回 `doc.chapters` 的章节。
+    /// Chapters already written back to `doc.chapters`.
     pub chapters: Vec<Chapter>,
-    /// 各页运行记录（单页路径恰一项）。
+    /// Run records for each page (the single-page path has exactly one entry).
     pub parts: Vec<ChapterPart>,
-    /// Reduce 调用次数（单页路径为 0）。
+    /// Number of Reduce calls (0 on the single-page path).
     pub outline_attempts: u32,
-    /// Reduce 重试耗尽、直接采用 Map 单元作为章节。
+    /// Reduce retries exhausted; the Map units are adopted directly as the chapters.
     pub outline_fallback: bool,
 }
 
-/// Map 页契约（system）。页级差异（第几部分、时间范围、单元目标）全部在载体
-/// 属性里：agent 路径的契约文件按 kind 唯一，不能逐页不同。
+/// Map page contract (system). Per-page differences (which part, the time range, the unit target) are all in the carrier attributes. The contract file on the agent path is unique per kind and cannot differ per page.
 const CHAPTERS_MAP_CONTRACT: &str = r#"You split a transcript into chapters at natural topic boundaries.
 
 Input: an HTML <article> whose <p id="…" data-at="HH:MM:SS"> elements are the transcript paragraphs, in order. The root carries lang (the transcript language), data-part="k/N" (which part of the recording this is), data-range, data-total (whole recording length) and data-aim (roughly how many chapters to produce for this input).
@@ -122,7 +109,7 @@ Rules:
 - If data-part is not the first part, the beginning may continue a topic from the previous part — then the first chapter of your answer simply starts later; do not force a chapter at the very first paragraph.
 - Titles and summaries must be non-empty and distinct, written in the transcript's own language (the root's lang attribute — e.g. English titles for an English transcript) unless the extra instructions ask for another language. Emit nothing besides the elements above."#;
 
-/// Reduce 契约（system）。
+/// Reduce contract (system).
 const CHAPTERS_OUTLINE_CONTRACT: &str = r#"You turn a chronological outline of topic units into the final chapter list of a long recording.
 
 Input: an HTML <article> listing topic units in order. Each unit is <h2 data-at="HH:MM:SS">title</h2>, an optional <p class="summary">, and <p id="ID">opening words</p> — the paragraph where that unit starts. The units were produced part by part; <hr data-seam="k|k+1"> marks where two parts were cut, so a topic may be artificially split around it. An empty <h2 data-untitled="true"> is a part that could not be summarised. The root carries lang (the transcript language), data-units (how many units are listed), data-total and data-aim (how many chapters to end with).
@@ -137,15 +124,11 @@ Rules:
 - Do not copy the outline. The answer must have at most data-aim chapters (fewer is fine): when data-units exceeds data-aim you must merge consecutive units that belong to one broader topic into a single chapter — its anchor is the first merged unit's <p id>, its title and summary cover the whole merged span. Merge especially across a seam. Untitled units get a title from context or are merged into a neighbour.
 - Titles must be non-empty, distinct and consistent in style, written in the transcript's own language (the root's lang attribute) unless the extra instructions ask for another language. Emit nothing besides the elements above."#;
 
-/// 每小时章节数上限：`chapter_count` 的上限随时长放大，`max(20, round(小时数 × 20))`。
+/// Upper bound on chapters per hour: the upper bound of `chapter_count` scales with duration, `max(20, round(hours × 20))`.
 pub const MAX_CHAPTERS_PER_HOUR: f64 = 20.0;
 
-/// 目标章节数（源自 `PolishEstimator.chapterCount`）：
-/// broad ≈10 分钟/章、balanced ≈5、detailed ≈2.5；下限 2，上限
-/// `max(20, round(时长小时数 × 20))`——≤60 分钟的媒体与旧的固定 2–20 完全一致
-/// （balanced/broad 到 100 分钟都一致），长录音不再被钳到 20 章而把边界全挤进
-/// 开头。Mac `PolishEstimator.chapterCount` 与 GPUI `ai_estimates::chapter_count`
-/// 是本函数的平价副本，改这里必须同步。
+/// Target chapter count (from `PolishEstimator.chapterCount`):
+/// broad ≈ 10 min/chapter, balanced ≈ 5, detailed ≈ 2.5. Lower bound 2, upper bound `max(20, round(duration in hours × 20))`. Media up to 60 minutes is exactly the same as the old fixed 2–20 (balanced/broad are the same up to 100 minutes). Long recordings are no longer clamped to 20 chapters, which squeezed all the boundaries into the opening. The Mac `PolishEstimator.chapterCount` and GPUI `ai_estimates::chapter_count` are parity copies of this function; changes here must be synced there.
 pub fn chapter_count(duration: f64, granularity: &str) -> usize {
     let cap = ((duration.max(0.0) / 3600.0) * MAX_CHAPTERS_PER_HOUR)
         .round()
@@ -161,11 +144,9 @@ fn seconds_per_chapter(granularity: &str) -> f64 {
     }
 }
 
-/// Map 页的话题单元目标：与章节粒度同档（页时长 / 粒度秒），钳 2–40。
+/// Topic-unit target per Map page: the same tier as the chapter granularity (page duration / granularity seconds), clamped to 2–40.
 ///
-/// 曾按 1.5 倍细切让 Reduce 合并，实测 deepseek-v4-flash（非 thinking）对
-/// 「合并到 data-aim」的指令三次都照抄大纲；单元目标与章节同档后 Reduce 只需
-/// 处理页缝与统一命名，`chapter-overflow` 护栏退为兜底。
+/// It was previously cut 1.5× finer so Reduce could merge. Measured: deepseek-v4-flash (non-thinking) copied the outline verbatim three times out of three for the instruction "merge to data-aim". With the unit target at the same tier as the chapters, Reduce only needs to handle page seams and unified naming, and the `chapter-overflow` guard is demoted to a fallback.
 fn units_target(page_duration: f64, granularity: &str) -> usize {
     let per_unit = seconds_per_chapter(granularity);
     ((page_duration.max(0.0) / per_unit).round() as i64).clamp(2, 40) as usize
@@ -185,8 +166,7 @@ fn base36(mut value: u64) -> String {
     String::from_utf8(output).expect("base36 digits are ASCII")
 }
 
-/// 段落投影：`(段id, 段起始秒, 段落文本)`，来源是 §18.5 规范派生
-/// （`derive_cues` + `derive_paras`），段 id 用 `para.id`（`p-<首词id>`）。
+/// Paragraph projection: `(paragraph id, paragraph start seconds, paragraph text)`. The source is the §18.5 canonical derivation (`derive_cues` + `derive_paras`), and the paragraph id is `para.id` (`p-<first-word-id>`).
 fn derived_segments(doc: &TranscriptDoc) -> Vec<ChapterAnchor> {
     let cues = derive_cues(doc, &crate::layout_profile::cue_params_for_doc(doc));
     derive_paras(doc, &cues)
@@ -207,8 +187,7 @@ fn derived_segments(doc: &TranscriptDoc) -> Vec<ChapterAnchor> {
         .collect()
 }
 
-/// 用户级设定（标题风格、示例、指令、录音背景）拼进契约尾部；同一次运行内
-/// 所有页共用，因此进 system 而不进载体。
+/// User-level settings (title style, examples, instructions, recording background) are appended to the end of the contract. All pages in one run share them, so they go into the system prompt rather than the carrier.
 fn contract_with_options(base: &str, options: &ChaptersOptions) -> String {
     let title_style = options.title_style.as_deref().unwrap_or("short");
     let mut system = format!("{base}\n\nTitle style: {title_style}.");
@@ -245,13 +224,12 @@ fn contract_with_options(base: &str, options: &ChaptersOptions) -> String {
     system
 }
 
-/// 来源大纲进契约的引言：作者时间戳只到秒且常比真起点早几秒，所以是「优先采用」
-/// 而不是「照抄」，锚定仍必须落在输入里的段 id 上。
+/// Lead-in for the source outline entering the contract: author timestamps are only to the second and often a few seconds earlier than the true start, so the outline is "preferred" rather than "copied verbatim". Anchoring must still land on paragraph ids present in the input.
 const SOURCE_CHAPTERS_HINT: &str = "\nChapters published with the source video (the author's own outline; times are approximate and may be a few seconds off). Prefer these boundaries and titles wherever the transcript agrees — still anchor every chapter on a paragraph id from the input, and only add, merge or drop chapters where the transcript clearly diverges. Keep the author's title language and wording. Entries outside this part's data-range belong to other parts:";
 const MAX_HINT_CHAPTERS: usize = 200;
 const MAX_HINT_TITLE_CHARS: usize = 120;
 
-/// 落在 `[start, end)` 的来源章节数；首页把早于首段起点的条目（`0:00 Intro`）也算进来。
+/// Number of source chapters falling in `[start, end)`. On the first page, entries earlier than the first paragraph's start (such as `0:00 Intro`) are counted too.
 fn source_count_in(source: &[SourceChapter], range: (f64, f64), first_page: bool) -> usize {
     source
         .iter()
@@ -261,7 +239,7 @@ fn source_count_in(source: &[SourceChapter], range: (f64, f64), first_page: bool
         .count()
 }
 
-/// 页划分：段落为原子、按词预算均衡分页；返回每页的段落下标区间。
+/// Page division: paragraphs are atomic and are paged evenly by word budget. Returns the paragraph index range of each page.
 fn plan_pages(segments: &[ChapterAnchor], page_budget: usize) -> Vec<std::ops::Range<usize>> {
     let costs = segments
         .iter()
@@ -293,16 +271,14 @@ fn describe_problems(parsed: &crate::filepipe::ChaptersParsed) -> String {
         .join("; ")
 }
 
-/// 一页/一次 Map 或 Reduce 调用的解析结果（供重试判定与降级兜底）。
+/// Parse result of one page or one Map or Reduce call (for retry decisions and degradation fallback).
 struct PageResult {
     rows: Vec<ParsedChapterRow>,
-    /// 解析出的行虽非空但带协议问题（部分行被丢弃）——重试耗尽时仍可采用。
+    /// Parsed rows that are non-empty but carry protocol problems (some rows were dropped). Still adoptable when retries are exhausted.
     partial: bool,
 }
 
-/// 批量执行一组同 kind 的调用：每次尝试的解析结果先经 `on_attempt` 归档，
-/// 有行且无问题即接受；有行但有问题时保留为「最好一次」并重试；重试耗尽后
-/// 非终止性错误不再上抛，交由调用方按 `best[index]` 降级。
+/// Batch execution of a group of calls of the same kind. Each attempt's parse result is archived via `on_attempt` first. If there are rows and no problems, it is accepted. If there are rows but problems, it is kept as the "best attempt" and retried. After retries are exhausted, non-terminal errors are no longer propagated, and the caller degrades per `best[index]`.
 #[allow(clippy::too_many_arguments)]
 fn run_batch(
     llm: &mut dyn LlmJson,
@@ -360,8 +336,7 @@ fn run_batch(
                 )))
             }
         },
-        // 重试原因只带结构化 problems：`LlmError::Malformed` 的 Display 前缀是
-        // 「returned unusable JSON」，对 HTML 载体是误导。
+        // Retry reasons carry only the structured problems. The Display prefix of `LlmError::Malformed` is "returned unusable JSON", which is misleading for the HTML carrier.
         &mut |_, error| match error {
             LlmError::Malformed(detail) => detail.clone(),
             other => other.to_string(),
@@ -375,14 +350,13 @@ fn run_batch(
     }
     match result {
         Ok(()) => Ok(()),
-        // 重试耗尽的 Malformed / 可重试 HTTP：留给调用方按 best 降级。
+        // Malformed after retries are exhausted, and retryable HTTP errors: left to the caller to degrade by best.
         Err(error) if error.is_retryable() => Ok(()),
         Err(error) => Err(error),
     }
 }
 
-/// 分章节主入口：分页 → 单页直出 / 多页 Map+Reduce → 七步清洗 → 写回
-/// `doc.chapters`（id `c-<base36(now_ms)>-<index>`）与 `stages.chapters`。
+/// Main chapter entry point: paging → single page direct output, or multi-page Map+Reduce → seven-step cleaning → write back to `doc.chapters` (id `c-<base36(now_ms)>-<index>`) and `stages.chapters`.
 pub fn run_chapters(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -429,7 +403,7 @@ pub fn run_chapters(
         })
         .collect::<Vec<_>>();
 
-    // ── Map（单页时即为唯一一次调用）──
+    // ── Map (on a single page this is the only call) ──
     let map_contract = contract_with_options(CHAPTERS_MAP_CONTRACT, options);
     let inputs = pages
         .iter()
@@ -506,7 +480,7 @@ pub fn run_chapters(
             degraded,
         });
         if rows.is_empty() {
-            // 页降级：无标题占位单元，锚在本页首段，Reduce 负责命名或并入邻章。
+            // Page degradation: an untitled placeholder unit, anchored at this page's first paragraph. Reduce is responsible for naming it or merging it into a neighboring chapter.
             let first = &segments[range.start];
             units.push(OutlineUnit {
                 anchor: ChapterAnchor {
@@ -537,7 +511,7 @@ pub fn run_chapters(
         }
     }
 
-    // ── 单页：Map 结果即章节 ──
+    // ── Single page: the Map result is the chapters ──
     if part_count == 1 {
         let rows = units
             .into_iter()
@@ -570,8 +544,7 @@ pub fn run_chapters(
     let outline_id = ["outline".to_owned()];
     let mut outline_tries = [0_u32];
     let mut outline_best: [Option<PageResult>; 1] = [None];
-    // Reduce 的行数护栏：超出 aim 两成即 `chapter-overflow` 重试（模型常照抄大纲）；
-    // 三次仍超则采用行数最多的一次（章节偏多但完整覆盖）。
+    // Line-count guard for Reduce: exceeding aim by 20% triggers a `chapter-overflow` retry (the model often copies the outline verbatim). If it is still over after three attempts, adopt the attempt with the most lines (more chapters but complete coverage).
     run_batch(
         llm,
         &outline_request,
@@ -591,7 +564,7 @@ pub fn run_chapters(
                 .collect::<Vec<_>>(),
             false,
         ),
-        // Reduce 兜底：直接采用 Map 单元（占位单元没有标题，跳过；其时间并入前一章）。
+        // Reduce fallback: adopt the Map units directly. Placeholder units have no title and are skipped; their time merges into the previous chapter.
         None => (
             units
                 .into_iter()
@@ -609,7 +582,7 @@ pub fn run_chapters(
     })
 }
 
-/// agent 提交期 lint（`chapters` / `chapters-outline` 共用）：与引擎同一份解析器。
+/// Agent submit-time lint (shared by `chapters` and `chapters-outline`): uses the same parser as the engine.
 pub fn lint_agent_answer_file(payload: &str, answer: &str) -> Vec<String> {
     lint_chapters_answer(payload, answer)
 }
@@ -617,16 +590,14 @@ pub fn lint_agent_answer_file(payload: &str, answer: &str) -> Vec<String> {
 #[derive(Debug, Clone, PartialEq)]
 struct PlanRow {
     title: String,
-    /// 该章起点所在的段 id（清洗后必然是既有段起点）。
+    /// The id of the paragraph where this chapter starts (after cleaning it is necessarily an existing paragraph start).
     seg_id: String,
     start: f64,
     end: f64,
 }
 
-/// 七步确定性清洗（对拍 `ChapterPlanBuilder.build`）：
-/// 建索引 → 丢空标题 → 丢未知段 id → 按（段起始时间, 输出顺序）排序 →
-/// 跳过重复起点 → 首章起点钳 0 → 跳过非严格递增；回填 end=下一章 start，
-/// 末章 = 媒体时长。
+/// Seven-step deterministic cleaning (mirrors `ChapterPlanBuilder.build`):
+/// build the index → drop empty titles → drop unknown paragraph ids → sort by (paragraph start time, output order) → skip duplicate starts → clamp the first chapter's start to 0 → skip any that are not strictly increasing. Backfill end = the next chapter's start, and the last chapter's end = the media duration.
 fn build_plan(
     rows: &[(String, String)],
     segments: &[ChapterAnchor],
@@ -634,7 +605,7 @@ fn build_plan(
 ) -> Vec<PlanRow> {
     let mut start_by_id: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
     for segment in segments {
-        // 病态文档同 id 多段:保留首现(对拍 first(where:) 行为)。
+        // A pathological document with the same id on several paragraphs: keep the first occurrence (mirrors the first(where:) behavior).
         start_by_id
             .entry(segment.id.as_str())
             .or_insert(segment.start);
@@ -706,13 +677,12 @@ fn require_plan(plan: Vec<PlanRow>) -> Result<Vec<PlanRow>, LlmError> {
     Ok(plan)
 }
 
-/// 章节 id 前缀 `c-<base36(now_ms)>`；App 侧直采来源章节时与 CLI 同一口径。
+/// Chapter id prefix `c-<base36(now_ms)>`. When the App captures source chapters directly, it uses the same basis as the CLI.
 pub fn chapter_id_base(now_ms: u64) -> String {
     format!("c-{}", base36(now_ms))
 }
 
-/// 不经模型：把来源章节的吸附计划写回 `doc.chapters` + `stages.chapters`，
-/// id 与阶段戳口径同 [`commit_chapters`]。清洗后一章都不剩时报错。
+/// Not via the model: writes the source-chapter snap plan straight back to `doc.chapters` and `stages.chapters`. The ids and stage stamps follow the same basis as [`commit_chapters`]. Errors if no chapters remain after cleaning.
 pub fn commit_source_chapters(
     doc: &mut TranscriptDoc,
     plan: &SnapPlan,
@@ -746,7 +716,7 @@ pub fn commit_source_chapters(
     Ok(commit_chapters(doc, plan, now_ms))
 }
 
-/// 写回 `doc.chapters` + `stages.chapters`。id 方案不变。
+/// Writes back `doc.chapters` and `stages.chapters`. The id scheme is unchanged.
 fn commit_chapters(doc: &mut TranscriptDoc, plan: Vec<PlanRow>, now_ms: u64) -> Vec<Chapter> {
     let base = chapter_id_base(now_ms);
     doc.chapters = plan
@@ -795,7 +765,7 @@ mod tests {
                 },
             );
         }
-        // 两个说话人 → 两个派生段落 p-g1.0 / p-g2.0。
+        // Two speakers → two derived paragraphs, p-g1.0 and p-g2.0.
         let words = [
             ("g1.0", 0.0, 0.4, "hello", "s1"),
             ("g1.1", 0.4, 0.8, "world.", "s1"),
@@ -816,7 +786,7 @@ mod tests {
         doc
     }
 
-    /// 长文档：`paragraphs` 个说话人交替段落，每段 `words_per_para` 个词，每词 1 秒。
+    /// Long document: alternating-speaker paragraphs, `words_per_para` words per paragraph, one second per word.
     fn make_long_doc(paragraphs: usize, words_per_para: usize) -> TranscriptDoc {
         let mut doc = make_doc();
         doc.words.clear();
@@ -888,7 +858,7 @@ mod tests {
         assert_eq!(outcome.parts[0].attempts, 1);
         assert!(!outcome.parts[0].degraded);
         assert_eq!(outcome.outline_attempts, 0);
-        // prompt:kind/temperature/载体形状。
+        // prompt: kind / temperature / carrier shape.
         assert_eq!(llm.calls.len(), 1);
         assert_eq!(llm.calls[0].0, "chapters");
         assert!(
@@ -913,7 +883,7 @@ mod tests {
     #[test]
     fn cleanup_drops_junk_sorts_dedupes_and_clamps() {
         let mut doc = make_doc();
-        // 乱序 + 围栏 + 闲话 + 重复起点 + 未知 id + 空标题。
+        // Out of order + code fences + chatter + duplicate starts + unknown ids + empty titles.
         let raw = concat!(
             "Sure, here are the chapters:\n",
             "```html\n",
@@ -924,11 +894,11 @@ mod tests {
             "<h2>Ghost</h2><p id=\"p-nope\">zzz</p>\n",
             "```"
         );
-        // §2.4：空标题与幽灵锚都是行级丢弃 ⇒ 首轮即接受，不再为它们重试整页。
+        // §2.4: empty titles and ghost anchors are both row-level drops ⇒ accepted on the first round. The whole page is no longer retried for them.
         let mut llm = fake([raw]);
         let outcome = run(&mut doc, &mut llm, &ChaptersOptions::default()).unwrap();
         let chapters = &outcome.chapters;
-        // Early 排到首章并钳 0;Late 保留;Dup(同起点)与 Ghost/空标题丢弃。
+        // Early is sorted to the first chapter and clamped to 0. Late is kept. Dup (same start) and Ghost/empty title are dropped.
         let titles: Vec<&str> = chapters.iter().map(|c| c.title.as_str()).collect();
         assert_eq!(titles, vec!["Early", "Late"]);
         assert_eq!(chapters[0].start, 0.0);
@@ -949,10 +919,10 @@ mod tests {
         assert_eq!(llm.calls.len(), 2);
         assert_eq!(llm.calls[0].3, None);
         assert!(llm.calls[1].3.as_deref().unwrap().contains("missing-id"));
-        // 两次都是同一载体。
+        // Both times are the same carrier.
         assert_eq!(llm.calls[0].2, llm.calls[1].2);
 
-        // 三次仍空 → Malformed,文档不动。
+        // Still empty after three tries → Malformed, document untouched.
         let mut doc = make_doc();
         let mut llm = FakeLlm::ok(["nope", "still nope", "nada"]);
         let result = run(&mut doc, &mut llm, &ChaptersOptions::default());
@@ -975,18 +945,18 @@ mod tests {
         assert_eq!(chapter_count(3000.0, "balanced"), 10);
         assert_eq!(chapter_count(3000.0, "broad"), 5);
         assert_eq!(chapter_count(3000.0, "detailed"), 20);
-        assert_eq!(chapter_count(100.0, "balanced"), 2); // 下限 2
+        assert_eq!(chapter_count(100.0, "balanced"), 2); // lower bound 2
         assert_eq!(chapter_count(750.0, "balanced"), 3); // round(2.5) → 3(half away from zero)
-        // ≤60 分钟仍是旧的 2–20：上限 max(20, round(小时 × 20))。
+        // Media ≤60 minutes is still the old 2–20: upper bound max(20, round(hours × 20)).
         assert_eq!(chapter_count(3600.0, "detailed"), 20);
         assert_eq!(chapter_count(6000.0, "balanced"), 20);
-        // 长录音上限随时长放大：每小时 20 章。
+        // The upper bound for long recordings scales with duration: 20 chapters per hour.
         assert_eq!(chapter_count(6000.0, "detailed"), 33);
         assert_eq!(chapter_count(7200.0, "balanced"), 24);
         assert_eq!(chapter_count(24277.0, "balanced"), 81);
         assert_eq!(chapter_count(24277.0, "detailed"), 135);
         assert_eq!(chapter_count(24277.0, "broad"), 40);
-        // target 显式覆盖公式。
+        // An explicit target overrides the formula.
         let mut doc = make_doc();
         let answer = html(&[("A", "p-g1.0")]);
         let mut llm = fake([answer.as_str()]);
@@ -1000,7 +970,7 @@ mod tests {
 
     #[test]
     fn multi_page_map_reduce_merges_units_into_chapters() {
-        // 6 段 × 10 词，预算 20 词 → 3 页各 2 段。
+        // 6 paragraphs × 10 words, budget 20 words → 3 pages of 2 paragraphs each.
         let mut doc = make_long_doc(6, 10);
         let options = ChaptersOptions {
             page_budget: 20,
@@ -1008,10 +978,10 @@ mod tests {
             ..ChaptersOptions::default()
         };
         let map1 = html(&[("Opening", "p-g1.0"), ("Second", "p-g2.0")]);
-        // 第 2 页首单元不从页首开始（延续上一话题），第 3 页正常。
+        // The first unit on page 2 does not start at the top of the page (it continues the previous topic). Page 3 is normal.
         let map2 = html(&[("Fourth", "p-g4.0")]);
         let map3 = html(&[("Fifth", "p-g5.0"), ("Sixth", "p-g6.0")]);
-        // Reduce：合并 Second+Fourth、丢 Sixth。
+        // Reduce: merge Second and Fourth, drop Sixth.
         let reduce = html(&[
             ("Opening", "p-g1.0"),
             ("Middle", "p-g2.0"),
@@ -1050,7 +1020,7 @@ mod tests {
 
     #[test]
     fn reduce_that_copies_the_outline_is_retried_with_chapter_overflow() {
-        // 60s 文档 → 目标 2 章 → Reduce 上限 4；Map 共 5 单元，Reduce 首答照抄 5 单元。
+        // 60s document → target 2 chapters → Reduce cap 4. Map has 5 units in total, and Reduce's first answer copies the 5 units verbatim.
         let mut doc = make_long_doc(6, 10);
         let options = ChaptersOptions {
             page_budget: 20,
@@ -1090,7 +1060,7 @@ mod tests {
         assert_eq!(outcome.outline_attempts, 2);
         assert!(!outcome.outline_fallback);
 
-        // 三次都照抄 → 采用照抄结果（章节偏多但覆盖完整），不失败。
+        // Copied verbatim three times → adopt the verbatim result (more chapters but full coverage). No failure.
         let mut doc = make_long_doc(6, 10);
         let mut llm = fake([
             map1.as_str(),
@@ -1114,7 +1084,7 @@ mod tests {
             ..ChaptersOptions::default()
         };
         let map1 = html(&[("Opening", "p-g1.0"), ("Second", "p-g2.0")]);
-        // 第 2 页三次都没有可用行 → 占位单元；Reduce 三次都失败 → 采用 Map 单元。
+        // Page 2 had no usable rows in three tries → placeholder unit. Reduce failed three times → adopt the Map units.
         let mut llm = fake([
             map1.as_str(),
             "garbage",
@@ -1134,7 +1104,7 @@ mod tests {
         assert!(outcome.parts[1].degraded);
         assert_eq!(outcome.parts[1].attempts, 3);
         assert_eq!(outcome.parts[1].units, 1);
-        // 占位单元无标题被跳过，其时间并入 Second。
+        // The placeholder unit has no title and is skipped; its time goes into Second.
         let titles: Vec<&str> = outcome.chapters.iter().map(|c| c.title.as_str()).collect();
         assert_eq!(titles, ["Opening", "Second"]);
         assert_eq!(outcome.chapters[1].end, 40.0);
@@ -1150,7 +1120,7 @@ mod tests {
         assert_eq!(pages.iter().map(|r| r.len()).sum::<usize>(), 9);
         assert!(pages.iter().all(|r| !r.is_empty()));
         assert!(pages.len() >= 3);
-        // 单段超预算仍独占一页而不被拆开。
+        // A single paragraph that exceeds the budget still takes a page on its own and is not split.
         let big = derived_segments(&make_long_doc(1, 200));
         assert_eq!(plan_pages(&big, 30), vec![0..1]);
         assert_eq!(units_target(2000.0, "balanced"), 7);
@@ -1186,11 +1156,11 @@ mod tests {
         assert!(system.contains(
             "\n00:00:00 Intro\n00:01:19 The Normal One —— 普通人\n06:18:45 \"42\" wrapped"
         ));
-        // 缺省目标 = 大纲条数（不是 600s → 2 的时长公式）。
+        // The default target = the outline's item count (not the duration formula of 600s → 2).
         assert!(llm.calls[0].2.contains("data-aim=\"3\""));
         assert_eq!(doc.chapters.len(), 2);
 
-        // 显式 --target 仍优先。
+        // An explicit --target still takes priority.
         let mut doc = make_doc();
         let mut llm = fake([answer.as_str()]);
         let options = ChaptersOptions {
@@ -1208,11 +1178,11 @@ mod tests {
 
     #[test]
     fn multi_page_aims_count_the_source_entries_on_each_page() {
-        // 6 段 × 10 词，预算 20 词 → 3 页（0–20s / 20–40s / 40–60s）。
+        // 6 paragraphs × 10 words, budget 20 words → 3 pages (0–20s / 20–40s / 40–60s).
         let mut doc = make_long_doc(6, 10);
         let options = ChaptersOptions {
             page_budget: 20,
-            // 第 1 页两条（含早于首段的 0:00），第 2 页零条 → 下限 1，第 3 页一条。
+            // Page 1 has two entries (including the 0:00 earlier than the first paragraph), page 2 has zero → lower bound 1, page 3 has one.
             source_chapters: vec![src(0.0, "A"), src(12.0, "B"), src(41.0, "C")],
             ..ChaptersOptions::default()
         };

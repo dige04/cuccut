@@ -1,7 +1,7 @@
 import type { VersionRef } from '@cuccut/protocol';
 import { RT } from './runtime-copy.ts';
 
-/** 素材字节怎么变成能用的东西（Lottie 动画、频谱……）；`release` 在缓存丢掉它时调用。 */
+/** How asset bytes become usable things (Lottie animations, spectrums, …); `release` is called when the cache drops it. */
 interface Decoder<T> {
   readonly name: string;
   decode(response: Response): Promise<T>;
@@ -15,7 +15,7 @@ type Entry =
 
 export type AssetState<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'failed'; message: string };
 
-/** 取失败之后隔这么久再取，每失败一次翻倍，最多隔一分钟（Runtime 重启时会失败一阵）。 */
+/** After a failed fetch, wait this long before fetching again. The delay doubles on each failure, up to one minute (the Runtime fails for a while when it restarts). */
 const RETRY_MS = 3000;
 const RETRY_MAX_MS = 60_000;
 
@@ -25,8 +25,8 @@ export interface AssetCacheOptions {
 }
 
 /**
- * 素材内容的缓存：一个素材版本的字节不会再变，按「解码器:素材@版本」记住解出来的东西，预览各处共用。
- * 媒体地址每次取之前现要（句柄有期限）；取到了通知订阅者重画。
+ * Cache of asset contents: the bytes of one asset version never change, so the decoded result is remembered under “decoder:asset@version” and shared across all previews.
+ * The media address is requested fresh before each fetch (handles expire); when a fetch completes, subscribers are notified to redraw.
  */
 export class AssetCache {
   readonly #resolve: (asset: VersionRef) => Promise<string>;
@@ -42,7 +42,7 @@ export class AssetCache {
     this.#now = options.now ?? (() => performance.now());
   }
 
-  /** 解好的内容；还没有就去取（React 渲染与画帧里都能调）。失败后重试期间仍报失败，不在两种状态间闪。 */
+  /** The decoded content; if there is none yet, fetch it (callable during React rendering and frame drawing). While retrying after a failure it still reports failure, so it does not flicker between the two states. */
   get<T>(asset: VersionRef, decoder: Decoder<T>): AssetState<T> {
     const k = `${decoder.name}:${asset.id}@${asset.revision}`;
     const entry = this.#entries.get(k);
@@ -62,14 +62,14 @@ export class AssetCache {
     return () => this.#listeners.delete(listener);
   }
 
-  /** 换了视频：解好的都释放，路上的请求回来也不收。 */
+  /** Video changed: release all decoded content; in-flight requests are ignored when they return. */
   clear(): void {
     this.#generation++;
     for (const entry of this.#entries.values()) if (entry.state === 'ready') entry.release();
     this.#entries.clear();
   }
 
-  /** 忘掉还在路上的请求（预览卡住时的「重试」）：之后再要就重新发，路上的回来也不收；解好的照留。 */
+  /** Forget in-flight requests (the “retry” when a preview is stuck): the next request is sent anew, and in-flight responses are ignored when they return; decoded content is kept. */
   forgetPending(): void {
     for (const [k, entry] of [...this.#entries]) {
       if (entry.state === 'loading' || (entry.state === 'failed' && entry.retrying)) this.#entries.delete(k);
@@ -79,7 +79,7 @@ export class AssetCache {
   #load<T>(k: string, asset: VersionRef, decoder: Decoder<T>, failures: number): void {
     const generation = this.#generation;
     if (!this.#entries.has(k)) this.#entries.set(k, { state: 'loading' });
-    // 路上的这一次：被 `forgetPending` 忘掉（或换成了新的一次）之后回来不收。
+    // This in-flight request: once it is forgotten by `forgetPending` (or replaced by a new one), its response is ignored when it returns.
     const pending = this.#entries.get(k);
     this.#resolve(asset)
       .then((url) => this.#fetch(url))

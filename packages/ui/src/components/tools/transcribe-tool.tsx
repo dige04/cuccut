@@ -46,15 +46,11 @@ import { defaultProject, useToolStart, useVideoTools, type TranscribeDraft } fro
 import { DuplicateAlert, firstWhy, lede, SubmitBar, usePreset, useRefreshWhenReady } from './video-tool-parts.tsx';
 
 /*
- * 工具 › 转录（设计稿 tool-transcribe.jsx `TranscribeToolPage`、tools.css `.tool-transcribe__input`；产品设计 §2.7 表二「转录」）：
- * 从本机文件、Space（媒体条目或可编辑的视频）或一个链接开始。文件、媒体条目与链接缺省不建视频：文稿（TXT）与字幕（SRT）
- * 保存到保存位置（只给文件的 `transcribe`，`TranscribeFileParams`）；改选「新建视频并放进项目」时新建视频（素材留在原处只做
- * 链接），带文稿与可编辑的字幕层。选可编辑的视频时写进它；已有文稿时给落点（产品设计 §5.11）：缺省新建一部视频，
- * 或「取代这部视频的文稿」（换用文稿，选它时显示影响卡；文稿被改过时 Runtime 拒绝，页面给「仍要取代」）。
- * 「重试转录…」（Space，§4.4）带来失败的任务：照它预填语音模型、语言与说话人，并说明上次失败的原因。执行方式读 `tools.list`。
+ * Tools › Transcribe (design mockup tool-transcribe.jsx `TranscribeToolPage`, tools.css `.tool-transcribe__input`; product design §2.7 table 2, “转录” (Transcribe)):
+ * start from a local file, a Space item (a media entry or an editable video), or a link. For files, media entries and links, no video is created by default: the transcript (TXT) and subtitles (SRT) are saved to the save location (files only, `transcribe`, `TranscribeFileParams`). If “新建视频并放进项目” (create a new video and put it in the project) is chosen instead, a new video is created (the source stays where it is and is only linked), with the transcript and an editable subtitle layer. Choosing an editable video writes into it. When the video already has a transcript, a destination is offered (product design §5.11): by default a new video is created, or “取代这部视频的文稿” (replace this video's transcript): the new transcript replaces the old one; choosing it shows an impact card; if the transcript was edited, the Runtime refuses and the page offers “仍要取代” (replace anyway).
+ * “重试转录…” (Retry transcription…) (Space, §4.4) brings a failed job: it pre-fills the speech model, language and speaker identification from that job, and explains why it failed last time. The execution method is read from `tools.list`.
  *
- * 链接来源由「从链接导入」的流程执行（`link-import` 带 `transcribe: true`，可用性也看它）：那条路径还不能选语音模型与语言、
- * 不建字幕层，也没有这一次的保存位置（下载到设置里的保存位置），页面照实说。
+ * Link sources are run by the “从链接导入” (import from link) flow (`link-import` with `transcribe: true`; its availability is checked there too). That path cannot yet choose the speech model or language, does not create a subtitle layer, and has no save location for this run (it downloads to the save location in settings); the page says so.
  */
 
 const dropZone = style({ width: 'full', minHeight: 200 });
@@ -114,8 +110,8 @@ export function TranscribeTool() {
   const create = !intoVideo && draft.target === 'create';
   const url = draft.url.trim();
   const urlOk = urlValid(url);
-  // 「识别说话人」总是明确给 true / false（设计稿 `speakers: sp.on`），不让 Runtime 按模型猜；只给文件的转录不收它。
-  // 落点（§5.11）：视频已有文稿时才有；在这部视频上选过就用选的，否则缺省新建视频。
+  // “识别说话人” (identify speakers) is always set explicitly to true or false (mockup `speakers: sp.on`), so the Runtime does not guess from the model; it is not accepted when transcribing files only.
+  // Destination (§5.11): only offered when the video already has a transcript; if a choice was made on this video, use it, otherwise default to a new video.
   const retarget = intoVideo && row.video ? retargetOptions(row.video) : null;
   const ownDest = retarget && draft.dest?.entryId === row?.entryId ? draft.dest : null;
   const destination = retarget ? (ownDest?.destination ?? DEFAULT_DESTINATION) : null;
@@ -130,7 +126,7 @@ export function TranscribeTool() {
     : {};
   const spaceMedia = row && !intoVideo && row.entry ? entryPath(row.entry, { projects, conversations }) : null;
 
-  // 链接来源的可用性与执行方式都看从链接导入；Space 条目按它是视频还是文件。
+  // The availability and execution method for link sources come from Import from link; Space entries depend on whether the entry is a video or a file.
   const via = link ? 'link-import' : 'transcribe';
   const input = link ? 'link' : row ? inputKindOf('transcribe', row.kind) : 'file';
   const block = blockOf(status, via, input, link ? ['transcribe'] : []);
@@ -169,7 +165,7 @@ export function TranscribeTool() {
         : writesVideo && asr.speakers.s.missing
           ? TRANSCRIBE_TOOL_COPY.needSpeakers
           : null;
-  // 下载工具没就绪时 Runtime 的原因是写给命令行的（externalTools.consent…）；页面里就是下载工具卡，先指向它。
+  // When the download tool is not ready, the Runtime's reason is written for the command line (externalTools.consent…); on this page it is the download-tool card, so point to that first.
   const needTool = downloader.updating ? FORM_COPY.toolUpdating : FORM_COPY.needTool;
   const why = firstWhy(
     link && block && !downloader.ready ? needTool : block,
@@ -298,9 +294,9 @@ export function TranscribeTool() {
   );
 }
 
-// ---- 重新转录 ----
+// ---- Re-transcribe ----
 
-/** 选「取代」时的影响卡（设计稿 `ReplaceImpact`）：每种译文一行、规则一句、每种语言的配音一行、可以撤销。 */
+/** The impact card shown when “取代” (replace) is chosen (design mockup `ReplaceImpact`): one line per translation, one sentence for the rule, one line of dubbing per language; can be undone. */
 function ReplaceImpactCard({ video }: { video: Pick<PickerRow, 'documents'> }) {
   const im = replaceImpact(video);
   const row = (key: string, label: string, text: string) => (
@@ -322,7 +318,7 @@ function ReplaceImpactCard({ video }: { video: Pick<PickerRow, 'documents'> }) {
   );
 }
 
-/** 「重试转录…」带来的失败（设计稿 `RetryAlert`）：原因、上次的模型与多久前。 */
+/** The failure from “重试转录…” (retry transcription…) (design mockup `RetryAlert`): the reason, the previous model, and how long ago it happened. */
 function RetryAlert({ job }: { job: JobRecord }) {
   const p = retryParamsOf(job);
   const view = useModels((s) => s.capabilities);
@@ -338,7 +334,7 @@ function RetryAlert({ job }: { job: JobRecord }) {
   );
 }
 
-/** 照失败那次填语音模型、语言与识别说话人（工具页的语音模型存在 tools-store）。模型在两张单子里都找不到时不改。 */
+/** Fills in the speech model, language and speaker identification from the failed run (the page's speech model is stored in tools-store). If the model is in neither list, it is left unchanged. */
 function prefillAsr(job: JobRecord): void {
   const p = retryParamsOf(job);
   const view = useModels.getState().capabilities;
@@ -358,9 +354,9 @@ function prefillAsr(job: JobRecord): void {
   useTools.getState().patchTranscribe(patch);
 }
 
-// ---- 本机文件 ----
+// ---- Local file ----
 
-/** 拖入或选一份音视频（设计稿 `.tool-transcribe__input`）。 */
+/** Drag in or choose one audio or video file (design mockup `.tool-transcribe__input`). */
 function FileDrop({ path, onPath }: { path: string | null; onPath: (path: string | null) => void }) {
   const runtime = useRuntime();
   const take = (next: string) => {

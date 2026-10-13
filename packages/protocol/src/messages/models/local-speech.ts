@@ -14,7 +14,7 @@ import { pl } from './local-speech.pl.ts';
 import { tr } from './local-speech.tr.ts';
 import { vi } from './local-speech.vi.ts';
 
-/** `packages/models/src/local-speech.ts` 给人看的文字：本地语音合成的耗时提示与提交时拒绝的原因。 */
+/** `packages/models/src/local-speech.ts`: text shown to people with the duration hint for local speech synthesis, and the reasons for rejection at submission. */
 const en = {
   paceQwen06: 'about 55 times slower than real time, so a 3-second line takes two to three minutes',
   paceQwen17: 'expected to be slower than the 0.6B (about 55 times slower than real time); this one has not been measured',

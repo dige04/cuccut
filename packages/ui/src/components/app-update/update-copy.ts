@@ -14,7 +14,7 @@ import { pl } from './update-copy.pl.ts';
 import { tr } from './update-copy.tr.ts';
 import { vi } from './update-copy.vi.ts';
 
-/** 更新动作失败时说的是哪一步。 */
+/** Which step the update action was on when it failed. */
 export type UpdateStep = 'install' | 'check' | 'download' | 'cancel' | 'retry' | 'downloadPage';
 
 const STEP: Record<UpdateStep, string> = {
@@ -26,7 +26,7 @@ const STEP: Record<UpdateStep, string> = {
   downloadPage: 'open the download page',
 };
 
-/** 应用更新（关于页、更新窗）的文案。英文写在这里，译文在 `update-copy.zh-Hans.ts`。 */
+/** Copy for app updates (the About page and the update window). English is written here; the translations are in `update-copy.zh-Hans.ts`. */
 const en = {
   failed: (step: UpdateStep, message: string) => `Couldn’t ${STEP[step]}: ${message}`,
   progress: 'Download progress',

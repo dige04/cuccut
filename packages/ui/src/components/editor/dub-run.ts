@@ -28,47 +28,44 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import { jobErrorText, remedyHintText } from '../../model/localized-text.ts';
 
 /**
- * 工具页 › 翻译配音的运行态（设计稿 panel-dub.jsx 的进度、问题与收据）：提交 `pipelines.start`（`dub`），经 `jobs` 主题跟住
- * 父任务；完成时 Runtime 已经在一笔事务里把这组配音写进视频，这里只读摘要、留一张带「撤销这组配音」的收据。
+ * Tool page › running state of translated voice-over (design panel-dub.jsx progress, issues and receipts): submits `pipelines.start` (`dub`) and follows the parent task through the `jobs` topic. On completion the Runtime has already written the dub group into the video in one transaction, so here we only read the summary and leave a receipt with “Undo this dub”.
  *
- * - 授权：第一次配音被 `GRANT_REQUIRED` / `GRANT_REVOKED`（`forbidden`）拒绝时不报错，留一张「询问」：用户在确认框里看清外发
- *   什么、给谁、限哪个视频、用途之后才发 `grants.create`，成功后用同样的参数重新提交。翻译与合成交给不同服务商时可能连着
- *   被拒两轮（接收方不同），每轮各问一次；同一接收方、同一组数据发过还被拒时停下报错，不循环。
- * - 失败、中断：给原因、补救与「重试」（`pipelines.retry`，同一个任务从停下的那一步接着做）。重试也可能被授权拒绝，同样询问。
- * - 撤销：首选撤掉应用配音的那一笔（`videos.undo`），撤不了（之后又改过）时退回部分撤销（model/dub-undo.ts）。
+ * - Authorization: when the first dub is refused with `GRANT_REQUIRED` / `GRANT_REVOKED` (`forbidden`), no error is raised; a “question” card is left instead. Only after the user confirms in the dialog, having seen clearly what goes out, to whom, limited to which video, and for what purpose, is `grants.create` sent, and on success the same parameters are resubmitted. When translation and synthesis go to different providers, it can be refused twice in a row (different recipients), with a question asked each time. If the same recipient and the same data were already sent and still refused, it stops with an error instead of looping.
+ *   - Failure or interruption: gives the reason, the remedy, and “Retry” (`pipelines.retry`, which resumes the same task from the step where it stopped). A retry can also be refused for authorization, and is asked the same way.
+ *   - Undo: prefers undoing the operation that applied the dub (`videos.undo`); when that is not possible (it was edited afterwards), falls back to partial undo (model/dub-undo.ts).
  *
- * 状态放在模块级 store 里（同 translate-run.ts）：离开这一页、去设置发授权、去模型页配服务商，配音都不断线。
- * 不自动重试：重跑会再调用在线模型。
+ * State lives in a module-level store (same as translate-run.ts): leaving this page, going to settings to grant authorization, or going to the model page to configure a provider does not disconnect the dub.
+ * No automatic retry: rerunning calls the online model again.
  */
 
 export type DubRunStatus = 'submitting' | 'running' | 'settling';
 
-/** 开始时的设置：收尾、询问与重试照它说话。 */
+/** The settings at start: wrap-up, questions and retries follow them. */
 export interface DubIntent {
   videoId: Id;
-  /** 配成的语言（BCP 47）。 */
+  /** The language dubbed into (BCP 47). */
   language: string;
-  /** 视频的名字：授权的用途与确认框里写它。 */
+  /** The video's name: used in the authorization purpose and the confirmation dialog. */
   videoName: string | null;
 }
 
 export interface DubRun extends DubIntent {
-  /** 提交成功之前为 null（重试时是那个任务）。 */
+  /** Null until submit succeeds (during a retry, it is that task). */
   jobId: Id | null;
   status: DubRunStatus;
-  /** 重试时任务的 `updatedAt`：镜像里还是那条已经结束的记录时不收尾（同 translate-run.ts）。 */
+  /** During a retry, the task's `updatedAt`: when the mirror still has the already-ended record, do not wrap up (same as translate-run.ts). */
   retriedAt: string | null;
 }
 
-/** 被授权拒绝之后要接着做的：用同一份参数重新开始，或重试同一个任务。 */
+/** What to do after an authorization refusal: restart with the same parameters, or retry the same task. */
 export type DubResume = { kind: 'start'; params: DubParams; intent: DubIntent } | { kind: 'retry'; jobId: Id; intent: DubIntent };
 
 export interface DubAsk {
   refusal: GrantRefusal;
-  /** 授权的用途（确认框里照写，`grants.create` 照发）。 */
+  /** The purpose of the authorization (written as is in the confirmation dialog; sent as is with `grants.create`). */
   purpose: string;
   resume: DubResume;
-  /** 这一串里已经发过的（接收方 + 数据种类）：发过还被拒时停下。 */
+  /** The (recipient + data kind) pairs already sent in this chain: stop when one was sent and is still refused. */
   granted: string[];
   status: 'asking' | 'granting';
   error: string | null;
@@ -81,26 +78,26 @@ export interface DubProblem {
   title: string;
   message: string;
   remedy: Remedy | null;
-  /** 能重试的流程：同一个任务；`note` 说重试会不会为做过的再花钱。 */
+  /** A flow that can be retried: the same task; `note` says whether a retry would spend money again on what was already done. */
   retry: { jobId: Id; note: 'charges' | 'partial' | 'free' | null; intent: DubIntent } | null;
-  /** 逐句的事实（哪些句子没合成、为什么）。 */
+  /** Per-sentence facts (which sentences were not synthesized, and why). */
   facts: DubFailureFacts | null;
 }
 
-/** 一次配音完成后的收据：一次 AI run 收尾一定留一个能撤销的出口。 */
+/** The receipt after a dub completes: one AI run always leaves an undoable exit when it ends. */
 export interface DubReceipt {
   jobId: Id;
   videoId: Id;
   summary: DubSummary;
-  /** `duck` 时的压低量（冻结参数里的）。 */
+  /** The ducking amount when `duck` (from the frozen params). */
   duckDb: number | null;
   warnings: Array<{ code: string; title: string; detail: string }>;
-  /** 撤掉了那一笔（`full`），还是撤不了、退回部分撤销（`partial`）。 */
+  /** Whether the operation was undone (`full`), or could not be and fell back to partial undo (`partial`). */
   undone: 'full' | 'partial' | null;
   undoing: boolean;
 }
 
-/** 开始前先下载分离模型（设计稿 panel-dub.jsx「下载模型并…」）：下载任务结束时照 `resume` 开始，没装好就不开始。 */
+/** Before starting, downloads the separation model first (design panel-dub.jsx “Download model and…”): when the download task ends, starts with `resume`; if it did not install properly, does not start. */
 export interface DubInstallWait {
   jobId: Id;
   resume: Extract<DubResume, { kind: 'start' }>;
@@ -118,7 +115,7 @@ const EMPTY: DubRunState = { runs: {}, problems: {}, asks: {}, receipts: {}, ins
 
 export const useDubRun = create<DubRunState>()(() => ({ ...EMPTY }));
 
-/** 用到的会话能力；测试给假的。 */
+/** The session capabilities used; tests supply fakes. */
 export interface DubDeps {
   runtime: {
     startDub(params: DubParams): Promise<Id>;
@@ -132,20 +129,20 @@ export interface DubDeps {
       clearError(): void;
     };
   };
-  /** `undo` 有值时提示带「撤销」。 */
+  /** When `undo` has a value, the notice has “Undo”. */
   toast(kind: 'positive' | 'neutral' | 'negative', message: string, undo?: () => void): void;
 }
 
 let deps: DubDeps | null = null;
 let unwatch: (() => void) | null = null;
 
-/** 工具页挂上时绑定会话与提示；第一次绑定时开始盯 `jobs` 主题。 */
+/** When the tool page mounts, binds the session and the notices; on the first binding, starts watching the `jobs` topic. */
 export function bindDub(next: DubDeps): void {
   deps = next;
   unwatch ??= useJobs.subscribe((state) => settle(state.jobs));
 }
 
-/** 测试用：解绑并清空状态。 */
+/** For tests: unbinds and clears state. */
 export function resetDub(): void {
   unwatch?.();
   unwatch = null;
@@ -208,7 +205,7 @@ function isNotConfigured(details: unknown): details is CapabilityNotConfiguredDe
   );
 }
 
-/** 提交时被拒（不是授权）：没有配置语音合成或文本模型时就地给 `remedy.hint` 与去模型页的路；别的照原话。 */
+/** When a submit is rejected (not an authorization refusal): if no speech synthesis or text model is configured, shows `remedy.hint` in place along with the path to the model page; otherwise passes the original message through. */
 export function dubSubmitProblem(error: unknown, retry: DubProblem['retry'] = null): DubProblem {
   const message = messageOf(error);
   const details = error instanceof RpcError ? error.details : (error as { details?: unknown } | null)?.details;
@@ -227,8 +224,8 @@ export function dubSubmitProblem(error: unknown, retry: DubProblem['retry'] = nu
 }
 
 /**
- * 提交（开始或重试）。被授权拒绝时转成询问（同一接收方、同一组数据发过还被拒时报错）；成功返回任务 ID。
- * `granted` 是这一串里已经发过的授权。
+ * Submit (start or retry). A refusal for authorization is turned into a question (if the same recipient and the same data were sent and are still refused, an error is raised instead). On success, returns the task ID.
+ * `granted` is the authorizations already sent in this chain.
  */
 async function submit(resume: DubResume, granted: readonly string[]): Promise<Id | null> {
   const bound = deps;
@@ -241,7 +238,7 @@ async function submit(resume: DubResume, granted: readonly string[]): Promise<Id
     if (resume.kind === 'start') {
       const jobId = await bound.runtime.startDub(resume.params);
       patchRun(videoId, { jobId, status: 'running' });
-      // 任务事件可能比回执先到；这是新任务，镜像里不会有它结束了的旧记录。
+      // A task event may arrive before the receipt; this is a new task, so the mirror has no old ended record of it.
       settle(useJobs.getState().jobs);
       return jobId;
     }
@@ -264,7 +261,7 @@ async function submit(resume: DubResume, granted: readonly string[]): Promise<Id
   }
 }
 
-/** 开始配音。同一个视频同时只配一次（两组配音会抢同一批原句的静音与闪避）。成功返回任务 ID。 */
+/** Starts voice-over dubbing. Only one dub per video at a time (two groups would fight over the same original sentences' muting and ducking). Returns the task ID on success. */
 export async function startDub(params: DubParams, intent: DubIntent): Promise<Id | null> {
   if (!deps || useDubRun.getState().runs[intent.videoId]) return null;
   useDubRun.setState((s) => ({ receipts: without(s.receipts, intent.videoId) }));
@@ -272,8 +269,8 @@ export async function startDub(params: DubParams, intent: DubIntent): Promise<Id
 }
 
 /**
- * 分离模型的下载任务提交了：下完（`completed`）就用同一份参数开始配音；失败或取消时不开始，提示一句（下载自己的提示说原因）。
- * 等着的时候离开这一页也不断（同 speakers-run.ts 的 `awaitInstall`）。
+ * The separation model's download task was submitted: when it completes (`completed`), dubbing starts with the same parameters; on failure or cancel, it does not start, and a notice says so (the download's own notice gives the reason).
+ * Staying on this page while waiting does not disconnect it (same as `awaitInstall` in speakers-run.ts).
  */
 export function awaitDubInstall(installJobId: Id, params: DubParams, intent: DubIntent): void {
   const wait: DubInstallWait = { jobId: installJobId, resume: { kind: 'start', params, intent } };
@@ -282,8 +279,7 @@ export function awaitDubInstall(installJobId: Id, params: DubParams, intent: Dub
 }
 
 /**
- * 用户在确认框里按了「发放并继续」：发 `grants.create`（只限这个视频、按次计、金额未知），成功后接着开始或重试。
- * 发放失败时留在询问上、写明原因。返回新开始的任务 ID（重试时是原来的任务）。
+ * The user pressed “Grant and continue” in the confirmation dialog: sends `grants.create` (limited to this video, per use, amount unknown), and on success starts or retries. If granting fails, the question stays open and the reason is written there. Returns the newly started task ID (during a retry, the original task).
  */
 export async function confirmGrant(videoId: Id): Promise<Id | null> {
   const bound = deps;
@@ -299,7 +295,7 @@ export async function confirmGrant(videoId: Id): Promise<Id | null> {
   return submit(current.resume, [...current.granted, refusalKey(current.refusal)]);
 }
 
-/** 不发授权：收起询问。被拒的是重试时，留着「重试」。 */
+/** Do not grant: closes the question. If it was a refused retry, “Retry” is kept. */
 export function dismissAsk(videoId: Id): void {
   const current = useDubRun.getState().asks[videoId];
   useDubRun.setState((s) => ({ asks: without(s.asks, videoId) }));
@@ -317,7 +313,7 @@ export function dismissAsk(videoId: Id): void {
   useDubRun.setState((s) => ({ problems: { ...s.problems, [videoId]: problem } }));
 }
 
-/** 从停下的那一步重跑同一个任务（`pipelines.retry`）。 */
+/** Reruns the same task from the step where it stopped (`pipelines.retry`). */
 export async function retryDub(videoId: Id): Promise<void> {
   const retry = useDubRun.getState().problems[videoId]?.retry;
   if (!deps || !retry || useDubRun.getState().runs[videoId]) return;
@@ -332,7 +328,7 @@ export async function cancelDub(jobId: Id): Promise<void> {
   }
 }
 
-/** 盯着从这里提交的任务与等着的下载：结束了就收尾。每一轮只收一次——先同步改掉状态，后面的事件看到不是 `running` 就跳过。 */
+/** Watches the tasks submitted from here and the pending download: wraps up when they end. Each round is wrapped up only once: the state is changed synchronously first, so later events that see it is no longer `running` skip it. */
 function settle(jobs: readonly JobRecord[]): void {
   for (const run of Object.values(useDubRun.getState().runs)) {
     if (run.status !== 'running' || !run.jobId) continue;
@@ -360,7 +356,7 @@ function finish(run: DubRun, job: JobRecord): void {
     return;
   }
   if (job.state !== 'completed') {
-    // 跑到一半授权被撤销、到期：同样询问，确认后重试。
+    // Authorization revoked or expired midway through the run: the same question is asked; after confirmation, it retries.
     const refusal = grantRefusal(job.error);
     if (refusal) {
       ask(run.videoId, {
@@ -404,9 +400,7 @@ function finish(run: DubRun, job: JobRecord): void {
 }
 
 /**
- * 收据上的「撤销这组配音」：先撤掉应用配音的那一笔（配音计划文档最早一个版本的 `createdBy`，撤销时从快照里现读）；
- * 撤不了（之后又改过：`UNDO_CONFLICT`；已经撤过：`UNDO_UNAVAILABLE`）时退回部分撤销：一笔事务删掉这一组的实例、
- * 恢复这次静音的、去掉以配音轨触发的闪避（配音计划正文里记着静音了哪些）。部分撤销成功后清掉编辑器上那条撤销失败的错误。
+ * “Undo this dub” on the receipt: first undoes the operation that applied the dub (the `createdBy` of the earliest version of the dub plan document, read from the snapshot at undo time). If that cannot be undone (edited afterwards: `UNDO_CONFLICT`; already undone: `UNDO_UNAVAILABLE`), falls back to partial undo: one transaction deletes this group's instances, restores the clips that were muted this time, and removes the ducking triggered by the dub track (the muted items are recorded in the dub plan body). After a successful partial undo, the undo-failure error on the editor is cleared.
  */
 export async function undoDub(videoId: Id): Promise<void> {
   const bound = deps;
@@ -430,7 +424,7 @@ export async function undoDub(videoId: Id): Promise<void> {
       patchReceipt(videoId, { undone: 'full', undoing: false });
       return;
     }
-    // 退回部分撤销：按现在的快照算还剩什么。
+    // Falling back to partial undo: work out what is left from the current snapshot.
     const snapshot = snapshotOf();
     const sequence = snapshot
       ? (Object.values(snapshot.sequences).find((s) => s.tracks.some((t) => t.id === summary.trackId)) ?? rootSequence(snapshot))
@@ -445,12 +439,12 @@ export async function undoDub(videoId: Id): Promise<void> {
       try {
         muted = mutedItemsOf((await bound.runtime.readDocument(videoId, summary.planDocumentId)).body);
       } catch {
-        // 读不到配音计划：静音的实例恢复不了，别的照做。
+        // The dub plan cannot be read: the muted instances cannot be restored; do the rest.
       }
     }
     const fallback = fallbackUndoOperations(sequence, { groupId: summary.groupId, trackId: summary.trackId }, muted);
     if (fallback.operations.length === 0) {
-      // 什么都不剩（比如已经用编辑器的撤销撤过）：那条撤销失败不必再挂着。
+      // Nothing is left (for example, it was already undone with the editor's undo): the undo-failure notice need not stay up.
       bound.runtime.videos.clearError();
       patchReceipt(videoId, { undone: snapshot.documents[summary.planDocumentId] ? 'partial' : 'full', undoing: false });
       return;

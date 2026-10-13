@@ -14,7 +14,7 @@ import { pl } from './space-actions-copy.pl.ts';
 import { tr } from './space-actions-copy.tr.ts';
 import { vi } from './space-actions-copy.vi.ts';
 
-/** Space 条目动作的文案（model/space-actions.ts；译文在 `space-actions-copy.<语言>.ts`）。 */
+/** Copy for Space item actions (model/space-actions.ts; translations are in `space-actions-copy.<locale>.ts`). */
 const en = {
   edit: {
     video: 'Open video',
@@ -50,7 +50,7 @@ const en = {
   copiedAll: 'copied into the project’s imports/',
   copiedSome: (count: number) => `${count} copied into the project’s imports/`,
   notImported: (count: number) => `${count} not imported`,
-  /** 随消息带上的条目：`names` 是前两个名字，`total` 是总数。 */
+  /** Items carried with the message: `names` are the first two names, `total` is the total count. */
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `“${name}”`).join(', ');
     return total > names.length ? `Library items ${quoted} and ${total - names.length} more` : `Library ${total === 1 ? 'item' : 'items'} ${quoted}`;

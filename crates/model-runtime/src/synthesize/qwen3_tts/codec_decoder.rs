@@ -1,12 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/Qwen3TTS/SpeechTokenizerDecoder.swift`。
+//! Parts rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/Qwen3TTS/SpeechTokenizerDecoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model package interface.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; scope of the sources is in the root `THIRD_PARTY_NOTICES.md`.
 //!
-//! 语音分词器解码器（Mimi 结构）：16 组 codebook → 24 kHz 波形。
-//! 权重是 Qwen3-TTS-Tokenizer-12Hz `model.safetensors` 里的 `decoder.*`（F32，PyTorch 布局）。
+//! Speech tokenizer decoder (Mimi structure): 16 codebook groups → 24 kHz waveform.
+//! Weights are the `decoder.*` entries in Qwen3-TTS-Tokenizer-12Hz `model.safetensors` (F32, PyTorch layout).
 
 use crate::synthesize::tensor::fast::{self, ScaledDotProductAttentionMask};
 use crate::synthesize::tensor::nn::silu;
@@ -21,7 +21,7 @@ use super::layers::{CausalConv1d, CausalConvTranspose1d, LayerNorm, Linear, RmsN
 use super::tokens::{NUM_CODEBOOKS, SAMPLES_PER_FRAME};
 use super::weights::Weights;
 
-/// 隐藏维 512、16 头 × 64 的解码器 transformer 尺寸（`SpeechTokenizerDecoderConfig`）。
+/// Decoder transformer dimensions: hidden size 512, 16 heads × 64 (`SpeechTokenizerDecoderConfig`).
 const NUM_HEADS: i32 = 16;
 const HEAD_DIM: i32 = 64;
 const NUM_LAYERS: usize = 8;
@@ -29,7 +29,7 @@ const ROPE_THETA: f32 = 10_000.0;
 const RMS_NORM_EPS: f32 = 1e-8;
 const LAYER_NORM_EPS: f32 = 1e-5;
 const UPSAMPLE_RATES: [i32; 4] = [8, 5, 4, 3];
-/// 分块解码：每块 25 帧，左侧带 10 帧上下文。
+/// Chunked decoding: 25 frames per chunk, with 10 frames of left context.
 const CHUNK_SIZE: i32 = 25;
 const LEFT_CONTEXT: i32 = 10;
 
@@ -73,7 +73,7 @@ fn load_causal_conv_transpose(weights: &mut Weights, prefix: &str, stride: i32) 
     Ok(CausalConvTranspose1d::new(weight, bias, stride))
 }
 
-/// ConvNeXt 块：深度卷积 → LayerNorm → Linear → GELU → Linear → gamma 缩放 + 残差。
+/// ConvNeXt block: depthwise conv → LayerNorm → Linear → GELU → Linear → gamma scaling + residual.
 struct ConvNeXtBlock {
     dwconv: CausalConv1d,
     norm: LayerNorm,
@@ -104,7 +104,7 @@ impl ConvNeXtBlock {
     }
 }
 
-/// 残差单元：Snake → 空洞卷积(k7) → Snake → 1×1 卷积 + 残差。
+/// Residual unit: Snake → dilated conv (k7) → Snake → 1×1 conv + residual.
 struct ResidualUnit {
     act1: SnakeBeta,
     conv1: CausalConv1d,
@@ -131,7 +131,7 @@ impl ResidualUnit {
     }
 }
 
-/// 上采样块：Snake → 转置卷积(k=2·stride) → 3 个残差单元（dilation 1/3/9）。
+/// Upsampling block: Snake → transposed conv (k=2·stride) → 3 residual units (dilation 1/3/9).
 struct DecoderBlock {
     snake: SnakeBeta,
     upsample: CausalConvTranspose1d,
@@ -161,7 +161,7 @@ impl DecoderBlock {
     }
 }
 
-/// 解码器 transformer 的注意力：16 头 × 64，无偏置，RoPE θ=10000。
+/// Attention in the decoder transformer: 16 heads × 64, no bias, RoPE θ=10000.
 struct TransformerAttention {
     q_proj: Linear,
     k_proj: Linear,
@@ -239,7 +239,7 @@ impl TransformerLayer {
     }
 }
 
-/// `input_proj(1024→512) → 8 层 → RMSNorm → output_proj(512→1024)`。
+/// `input_proj(1024→512) → 8 layers → RMSNorm → output_proj(512→1024)`.
 struct DecoderTransformer {
     input_proj: Linear,
     layers: Vec<TransformerLayer>,
@@ -277,7 +277,7 @@ impl DecoderTransformer {
     }
 }
 
-/// `where(cols > rows, -1e9, 0)` 形状 `[1, 1, S, S]`。
+/// `where(cols > rows, -1e9, 0)`, shape `[1, 1, S, S]`.
 pub(super) fn additive_causal_mask(seq_len: i32, dtype: Dtype) -> Result<Array> {
     let rows = ops::arange::<i32, i32>(None, seq_len, None)?.reshape(&[seq_len, 1])?;
     let cols = ops::arange::<i32, i32>(None, seq_len, None)?.reshape(&[1, seq_len])?;
@@ -285,7 +285,7 @@ pub(super) fn additive_causal_mask(seq_len: i32, dtype: Dtype) -> Result<Array> 
     Ok(mask.reshape(&[1, 1, seq_len, seq_len])?.as_dtype(dtype)?)
 }
 
-/// 一个码本：`codebook = embedding_sum / max(cluster_usage, 1e-7)`（或直接用 `embed`）。
+/// One codebook: `codebook = embedding_sum / max(cluster_usage, 1e-7)` (or use `embed` directly).
 fn load_codebook(weights: &mut Weights, prefix: &str) -> Result<Array> {
     if let Some(embed) = weights.take_optional(&format!("{prefix}.embed")) {
         return Ok(embed);
@@ -296,10 +296,10 @@ fn load_codebook(weights: &mut Weights, prefix: &str) -> Result<Array> {
     Ok(sum.divide(&clamped)?)
 }
 
-/// 残差矢量量化的解码侧：每个码本查表求和，再过 1×1 输出投影。
+/// Decoding side of residual vector quantization: each codebook is looked up and summed, then passed through a 1×1 output projection.
 struct ResidualVectorQuantizer {
     codebooks: Vec<Array>,
-    /// `[out, in]`，由 Conv1d `[out, in, 1]` 权重压掉核维得到。
+    /// `[out, in]`, obtained by squeezing the kernel dimension from a Conv1d `[out, in, 1]` weight.
     output_proj: Array,
 }
 
@@ -334,7 +334,7 @@ impl ResidualVectorQuantizer {
     }
 }
 
-/// 完整解码器。
+/// The full decoder.
 pub struct CodecDecoder {
     rvq_first: ResidualVectorQuantizer,
     rvq_rest: ResidualVectorQuantizer,
@@ -351,7 +351,7 @@ pub struct CodecDecoder {
 }
 
 impl CodecDecoder {
-    /// `weights` 已剥掉 `decoder.` 前缀。
+    /// `weights` already has the `decoder.` prefix stripped.
     pub fn load(weights: &mut Weights) -> Result<Self> {
         let mut blocks = Vec::with_capacity(UPSAMPLE_RATES.len());
         for (index, stride) in UPSAMPLE_RATES.into_iter().enumerate() {
@@ -373,8 +373,8 @@ impl CodecDecoder {
         })
     }
 
-    /// `codes [B, 16, T]` → `[B, T*1920, 1]`。不裁到 [-1, 1]：Base 的输出常超过满幅，硬裁会削平波形，
-    /// 由 [`crate::synthesize::loudness`] 按整段峰值等比缩小。
+    /// `codes [B, 16, T]` → `[B, T*1920, 1]`. Not clamped to [-1, 1]: Base output often exceeds full scale, and hard clipping would flatten the waveform;
+    /// [`crate::synthesize::loudness`] scales the whole segment down proportionally by its peak.
     fn forward(&self, codes: &Array) -> Result<Array> {
         if codes.dim(1) != NUM_CODEBOOKS as i32 {
             bail!("解码器需要 {} 组 codebook，实际 {}", NUM_CODEBOOKS, codes.dim(1));
@@ -397,7 +397,7 @@ impl CodecDecoder {
         Ok(h)
     }
 
-    /// 分块解码：每块带 10 帧左上下文，裁掉上下文对应的样本。
+    /// Chunked decoding: each chunk carries 10 frames of left context, and the samples corresponding to that context are trimmed.
     pub fn chunked_decode(&self, codes: &Array) -> Result<Array> {
         let num_frames = codes.dim(2);
         if num_frames <= CHUNK_SIZE + LEFT_CONTEXT {
@@ -426,7 +426,7 @@ impl CodecDecoder {
         Ok(ops::concatenate_axis(&refs, 1)?)
     }
 
-    /// 把 codes 解成 host 侧 f32 样本（24 kHz 单声道）。
+    /// Decodes codes into host-side f32 samples (24 kHz mono).
     pub fn decode_to_samples(&self, codes: &Array) -> Result<Vec<f32>> {
         let waveform = self.chunked_decode(codes)?;
         let flat = waveform.reshape(&[-1])?.as_dtype(Dtype::Float32)?;

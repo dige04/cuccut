@@ -10,9 +10,7 @@ import { fakeProbe, until } from './agent-tools/testing/fake-agent.ts';
 import { startRuntime, type RunningRuntime } from './runtime.ts';
 
 /**
- * 端到端（架构设计 §12.9）：真实的 Runtime、网关与客户端，Driver 的探测结果换成假的。
- * 安装命令指向临时目录里的小脚本（输出几行后按场景 0 / 非 0 退出），不碰 brew、npm、curl 与网络；
- * 系统终端换成记录调用的假实现，不真的打开终端。
+ * End to end (architecture design §12.9): real Runtime, gateway and client, with the Driver's probe results replaced by fakes. The install command points to a small script in a temporary directory, which prints a few lines and exits 0 or non-zero depending on the scenario. It does not touch brew, npm, curl or the network. The system terminal is replaced by a fake that records calls, so no terminal actually opens.
  */
 
 class SetupDriver implements AgentDriver {
@@ -24,7 +22,7 @@ class SetupDriver implements AgentDriver {
     this.dir = dir;
   }
 
-  /** 版本从临时目录里的标记文件读：安装脚本写了它，重新探测就能看到新版本。 */
+  /** The version is read from a marker file in the temporary directory. The install script writes it, so re-probing sees the new version. */
   async probe(): Promise<DriverProbe> {
     this.probes++;
     const version = await fs.readFile(path.join(this.dir, 'version'), 'utf8').catch(() => null);
@@ -105,12 +103,12 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     return error as RpcError;
   }
 
-  /** 「重新检测」：强制探测，探完才返回（§3.11），之后的 `agents.list` 就是新结果。 */
+  /** “Re-check”: forces a probe and returns only after the probe finishes (§3.11), so the next `agents.list` gives the new result. */
   async function detect() {
     await client.request('agents.detect', { driverId: 'codex' });
   }
 
-  /** 等镜像里这次运行到终态。 */
+  /** Waits for this run in the mirror to reach a terminal state. */
   function finished(runId: string): Promise<AgentSetupRun> {
     return until(() => {
       const run = mirror.runs.find((r) => r.runId === runId);
@@ -128,7 +126,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect(done.output.filter((line) => line.startsWith('==>'))).toEqual(['==> 下载', '==> 完成']);
     expect(done.output).toContain('警告');
     expect(driver.probes).toBeGreaterThan(probesBefore);
-    // 收到终态时缓存已经是新的探测结果。
+    // When the terminal state arrives, the cache already holds the new probe result.
     expect((await client.request('agents.list', {})).drivers[0]!.version).toBe('2.0.0');
   });
 
@@ -158,7 +156,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
   it('script 类、探测里没有的方式、参数里夹带命令：都拒绝，不运行', async () => {
     const script = await rejection(client.request('agents.runSetup', { driverId: 'codex', action: 'install', kind: 'script', commandId: newId('cmd') }));
     expect(script.code).toBe('invalid-request');
-    // 只注册了 codex。
+    // Only codex is registered.
     expect((await rejection(client.request('agents.runSetup', { driverId: 'claude', action: 'install', kind: 'brew', commandId: newId('cmd') }))).code).toBe(
       'driver-unavailable',
     );

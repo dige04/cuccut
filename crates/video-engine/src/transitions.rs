@@ -1,8 +1,7 @@
-//! 转场的设置、删除与编辑之后的存续（视频格式规范 §3.9）。
+//! What happens to transitions after they are set, deleted, or edited (video format spec §3.9).
 //!
-//! 规则只有一套，三处共用：`setTransition` 不成立就拒绝；一笔事务的全部操作执行完之后，不再成立的转场被删掉并在回执里报告；
-//! 撤销之后会有不成立的转场时按撤销冲突拒绝。handles 不够时不缩短两侧转场；单侧转场随实例变短（生效长度
-//! min(D, ⌊L/2⌋)），不删除，回执里列出。种类与单侧的时长区间取 v2 的 `timeline::video_transitions`。
+//! There is only one set of rules, shared by three places: `setTransition` is rejected if the rules do not hold; after all operations of a transaction have run, transitions that no longer hold are deleted and reported in the receipt;
+//! after an undo, if a transition that does not hold would remain, the undo is rejected as an undo conflict. When handles are insufficient, the transitions on both sides are not shortened; a one-sided transition shortens along with its instance (effective length min(D, ⌊L/2⌋)), is not deleted, and is listed in the receipt. The kinds and the duration ranges for one-sided transitions come from v2's `timeline::video_transitions`.
 
 use std::collections::BTreeMap;
 
@@ -17,7 +16,7 @@ use crate::ops::{EditContext, ensure_editable, item_in, require_sequence};
 use crate::receipt::{RemovedTransition, ShortenedTransition, TransitionRemoval};
 use crate::state::{Placed, VideoState};
 
-/// 两侧转场最长 10 秒（按序列帧率换算）。
+/// A two-sided transition is at most 10 seconds long (converted at the sequence frame rate).
 const MAX_TRANSITION_SECONDS: i64 = 10;
 
 pub(crate) struct TransitionInput<'a> {
@@ -26,7 +25,7 @@ pub(crate) struct TransitionInput<'a> {
     pub right_item_id: Option<&'a str>,
     pub kind: &'a str,
     pub params: Option<&'a Map<String, Value>>,
-    /// 单侧转场可以不给，取 v2 的缺省 0.5 秒；两侧转场必须给。
+    /// A one-sided transition may be omitted, and then v2's default of 0.5 seconds is used; two-sided transitions must be given.
     pub duration: Option<&'a TimelineTimeInput>,
     pub alignment: Option<FrameAlignment>,
     pub easing: Option<Easing>,
@@ -34,8 +33,8 @@ pub(crate) struct TransitionInput<'a> {
     pub audio_crossfade: Option<bool>,
 }
 
-/// 设置一个转场。一条边（实例的开头或结尾）上只有一个转场：同一对实例上已有的就地替换（保留 ID），
-/// 占着同一条边的其他转场被删掉。
+/// Sets a transition. An edge (the start or end of an instance) can hold only one transition: an existing one on the same pair of instances is replaced in place (its ID is kept),
+/// and other transitions occupying the same edge are deleted.
 pub(crate) fn set_transition(state: &mut VideoState, input: TransitionInput<'_>, ctx: &mut EditContext<'_>) -> EngineResult<()> {
     let (sequence_id, fps, seq_revision) = require_sequence(state, input.sequence_id)?;
     let sequence_id = sequence_id.to_string();
@@ -152,7 +151,7 @@ pub(crate) fn set_transition(state: &mut VideoState, input: TransitionInput<'_>,
 
     let left = input.left_item_id.map(str::to_string);
     let right = input.right_item_id.map(str::to_string);
-    // 同一对实例上已有的转场保留 ID；占着同一条边的其他转场删掉。
+    // An existing transition on the same pair of instances keeps its ID; other transitions occupying the same edge are deleted.
     let mut keep_id = None;
     let mut replaced = Vec::new();
     for (id, placed) in &state.transitions {
@@ -221,7 +220,7 @@ pub(crate) fn remove_transition(state: &mut VideoState, sequence_id: Option<&str
     Ok(())
 }
 
-/// 拆分之后，原实例的出场转场跟着右半段（它现在拥有原来的结尾）；入场转场留在左半段。
+/// After a split, the original instance's out-transition goes with the right half (which now owns the original end); the in-transition stays with the left half.
 pub(crate) fn follow_split(state: &mut VideoState, item_id: &str, right_id: &str) {
     for placed in state.transitions.values_mut() {
         if placed.value.left_item_id.as_deref() == Some(item_id) {
@@ -230,8 +229,8 @@ pub(crate) fn follow_split(state: &mut VideoState, item_id: &str, right_id: &str
     }
 }
 
-/// 合并之后：靠后那件的出场（及它在左侧的两侧转场）归留下的那件。两件之间的转场与靠后那件的入场随它删掉，
-/// 由 [`reconcile_transitions`] 报告。
+/// After a merge: the out-transition of the later piece (and its two-sided transitions on the left) goes to the piece that is kept. The transition between the two pieces and the later piece's in-transition are deleted along with it,
+/// and reported by [`reconcile_transitions`].
 pub(crate) fn follow_join(state: &mut VideoState, early_id: &str, late_id: &str) {
     for placed in state.transitions.values_mut() {
         if placed.value.left_item_id.as_deref() == Some(late_id) {
@@ -240,15 +239,15 @@ pub(crate) fn follow_join(state: &mut VideoState, early_id: &str, late_id: &str)
     }
 }
 
-/// 一笔事务里转场的变化：删掉的与变短的。
+/// The transition changes in a transaction: those deleted and those shortened.
 #[derive(Debug, Default)]
 pub struct TransitionChanges {
     pub removed: Vec<RemovedTransition>,
     pub shortened: Vec<ShortenedTransition>,
 }
 
-/// 一笔事务的操作全部执行之后：删掉不再成立的转场，返回删了哪些、为什么；再列出这笔事务里变短的单侧转场
-/// （生效长度小于写入长度，且与事务之前不同）。
+/// After all operations of a transaction have run: deletes transitions that no longer hold, and returns which were deleted and why; then lists the one-sided transitions in this transaction that were shortened
+/// (effective length less than the written length, and different from before the transaction).
 pub fn reconcile_transitions(before: &VideoState, state: &mut VideoState) -> EngineResult<TransitionChanges> {
     let removed = invalid_transitions(state)?;
     for r in &removed {
@@ -283,13 +282,13 @@ pub fn reconcile_transitions(before: &VideoState, state: &mut VideoState) -> Eng
     Ok(TransitionChanges { removed, shortened })
 }
 
-/// 秒数取最近的帧。
+/// Seconds are rounded to the nearest frame.
 fn nearest_frames(seconds: f64, fps: Rate) -> i64 {
     (seconds * fps.ratio().to_f64()).round() as i64
 }
 
-/// 不成立的转场，按 ID 排序。先逐个检查；剩下的按窗口开始帧（相同时按 ID）依次保留，
-/// 与已保留的、共用一个实例的转场窗口重叠的删掉——开始得早的留下。
+/// Transitions that do not hold, sorted by ID. They are checked one by one first; the remaining ones are kept in order of window start frame (ties broken by ID),
+/// and any that overlap a kept transition sharing an instance are deleted, so the one that starts earlier is kept.
 pub fn invalid_transitions(state: &VideoState) -> EngineResult<Vec<RemovedTransition>> {
     let mut removed: BTreeMap<Id, TransitionRemoval> = BTreeMap::new();
     let mut candidates = Vec::new();
@@ -330,7 +329,7 @@ fn window_of(state: &VideoState, t: &Transition) -> Option<(i64, i64)> {
     t.window(span(&t.left_item_id), span(&t.right_item_id))
 }
 
-/// 同一实例上与 `t` 的窗口重叠的另一个转场。
+/// Another transition on the same instance whose window overlaps with `t`.
 fn overlapping<'s>(state: &'s VideoState, t: &Transition) -> EngineResult<Option<&'s Id>> {
     let Some((start, end)) = window_of(state, t) else {
         return Ok(None);
@@ -349,8 +348,8 @@ fn overlapping<'s>(state: &'s VideoState, t: &Transition) -> EngineResult<Option
     Ok(None)
 }
 
-/// 一个转场是否成立：实例都在、都是画面片段；两侧在同一轨道上首尾相接；窗口在两侧实例的合并区间之内
-/// （单边在实例之内）；两侧的 handles 够用。不成立时给出原因与对应的错误。
+/// Whether a transition holds: both instances exist and are picture clips; the two sides are on the same track and end-to-start adjacent; the window lies within the merged range of the two instances
+/// (for a one-sided transition, within the instance); and the handles on both sides are sufficient. If it does not hold, the reason and the corresponding error are given.
 fn check_transition(state: &VideoState, sequence_id: &str, t: &Transition, fps: Rate) -> Result<(), (TransitionRemoval, ErrorBody)> {
     let fail = |reason, err: ErrorBody| Err((reason, err.entities([t.id.clone()])));
     let mut items = Vec::new();
@@ -390,7 +389,7 @@ fn check_transition(state: &VideoState, sequence_id: &str, t: &Transition, fps: 
                 .details(json!({ "windowFrames": [start, end], "itemFrames": [lo, hi], "durationFrames": t.duration_frames })),
         );
     }
-    // 两侧转场：左侧要在自己的结尾之后再画到窗口结束，右侧要在自己的开头之前从窗口开始画。
+    // Two-sided transition: the left side must keep drawing after its own end up to the window end; the right side must start drawing from the window start, before its own start.
     if let (Some(l), Some(ls), Some(r), Some(rs)) = (left, left_span, right, right_span) {
         let tail_needed = (end - ls.end_frame()).max(0);
         let head_needed = (rs.from_frame - start).max(0);
@@ -435,8 +434,8 @@ fn check_transition(state: &VideoState, sequence_id: &str, t: &Transition, fps: 
     Ok(())
 }
 
-/// 实例在开头之前（`head`）或结尾之后能多画多少帧。`None` 表示不受限：图片、文字、图形、定格，
-/// 不知道长度的素材，以及没有预渲染替身的合成的结尾。
+/// How many extra frames the instance can draw before its start (`head`) or after its end. `None` means unlimited: images, text, graphics, freeze frames,
+/// assets of unknown length, and the end of compositions with no pre-rendered stand-in.
 fn handle_frames(state: &VideoState, item: &TimelineItem, fps: Rate, head: bool) -> EngineResult<Option<i64>> {
     let (map, source) = match item {
         TimelineItem::Video(v) => (&v.time_map, Some(&v.asset_ref)),
@@ -450,7 +449,7 @@ fn handle_frames(state: &VideoState, item: &TimelineItem, fps: Rate, head: bool)
     let overflow = || ErrorBody::time(editor_semantics::TimeError::Overflow { field: "handles".into() });
     let start = frame_time(span.from_frame as i128, fps).ok_or_else(overflow)?;
     let end = frame_time(span.end_frame() as i128, fps).ok_or_else(overflow)?;
-    // 源上还剩的时长，换回序列时间（除以速度），再换成整帧（向下取整）。
+    // The remaining duration of the source, converted back to sequence time (divided by speed), then converted to whole frames (rounded down).
     let spare = if head {
         map_time(map, start, start)?
     } else {

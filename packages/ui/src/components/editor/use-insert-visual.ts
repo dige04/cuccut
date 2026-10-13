@@ -12,17 +12,17 @@ import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 export interface InsertRequest {
   span: FrameSpan;
   layers: readonly VisualLayer[];
-  /** 撤销记录与提示里的名字（「贴纸 · 心形」）。 */
+  /** Name used in undo records and hints (“贴纸 · 心形” (Sticker · Heart)). */
   label: string;
-  /** 新建的轨道叫什么。 */
+  /** What the newly created track is called. */
   trackName?: string;
-  /** 建好之后选中第几层（文字预设选第一条文字）。 */
+  /** Which layer is selected after creation (text presets select the first text layer). */
   selectLayer?: number;
 }
 
 /**
- * 元素与文字面板的「点一下就新建」（原型 §14）：在播放头处新建、选中、翻到属性页，提示里带起止与「撤销」。
- * 回执先于视频事件到不了：选中用的 ID 从回执里取，再按新视频筛掉轨道与文档。
+ * “Click to create” from the Elements and Text panels (prototype §14): create at the playhead, select it, and switch to the property page. The hint includes start and end, plus “撤销” (Undo).
+ * The receipt can arrive before the video event, so the ID to select is taken from the receipt; then tracks and documents are filtered by the new video.
  */
 export function useInsertVisual(): (sequence: Sequence, request: InsertRequest) => Promise<void> {
   const { apply, undo } = useEditorActions();

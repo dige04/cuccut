@@ -21,12 +21,12 @@ import { ToolOutputRow, useJobOutputs } from './tool-outputs.tsx';
 import { RECORD_COPY, TTS_COPY } from './tools-copy.ts';
 import { copyText, useArtifactUrl, useCancelJob, useDownloadArtifact, useRecordRetry } from './use-tool-records.ts';
 
-/* 设计稿 tool-tts.jsx `RecordCard`（157-219）：标题、状态、文字、元数据、在跑的进度或播放器与下载。 */
+/* Design mockup tool-tts.jsx `RecordCard` (157-219): title, status, text, metadata, the progress or player while running, and download. */
 
 const audio = style({ width: 'full', height: 36 });
 const progress = style({ width: 'full' });
 
-/** 「再试一次 / 重新排队」：中断的就地重跑，其余照冻结的参数原样再提交（见 `useRecordRetry`）。 */
+/** “再试一次 / 重新排队” (retry / re-queue): an interrupted item reruns in place; others are resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useSpeechRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -156,7 +156,7 @@ export function TtsRecord({
   );
 }
 
-/** 重新提交过的不再给按钮，写「已重新提交」；在途时转圈。 */
+/** Items that were resubmitted no longer show the button and read “已重新提交” (resubmitted); a spinner shows while in progress. */
 function RetryButton({ label, again }: { label: string; again: ReturnType<typeof useSpeechRetry> }) {
   if (again.done) return <span className={detail}>{RECORD_COPY.retried}</span>;
   return (
@@ -166,7 +166,7 @@ function RetryButton({ label, again }: { label: string; again: ReturnType<typeof
   );
 }
 
-/** 做完的那一条：播放器、下载，以及它在 Space 里的条目（产物行：在 Space 中查看、交给 Agent、以此新建视频）。 */
+/** A finished item: the player, download, and its entry in Space (output row: view in Space, hand to Agent, create a video from it). */
 function SpeechResult({ job }: { job: JobRecord }) {
   const out = audioOutput(job);
   const media = useArtifactUrl(out?.artifactId ?? null);

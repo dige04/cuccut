@@ -5,7 +5,7 @@ import { toCatalog } from './codex/codex-models.ts';
 import { FAKE_CLAUDE_MODELS } from './testing/fake-claude.ts';
 import { fakeModel } from './testing/fake-codex.ts';
 
-/** 推荐模型（2026-09-29 用户裁决）放到两家 Driver 真实转出来的模型表上：不因 CLI 标的默认或表里的次序落到贵的那一档。 */
+/** Recommended model (user decision of 2026-09-29): tested against the model tables that both Drivers actually produce. Do not fall to the expensive tier because of the CLI's stated default or the order in the table. */
 describe('推荐模型 × Driver 的模型表', () => {
   it('Claude Code：CLI 的默认是 Opus、Fable 排在 Sonnet 前面，推荐的仍是 Sonnet；问不到模型表时的精简表也是', () => {
     const models = mapClaudeModels(FAKE_CLAUDE_MODELS);
@@ -22,7 +22,7 @@ describe('推荐模型 × Driver 的模型表', () => {
       fakeModel('gpt-5.6-sol'),
     ]);
     expect(recommendedDriverModel('codex', models)?.id).toBe('gpt-6-sol');
-    // 假 codex 的默认场景。
+    // Default scenario of the fake codex.
     expect(
       recommendedDriverModel('codex', toCatalog([fakeModel('fake-luna'), fakeModel('fake-sol', { isDefault: true })]).models)?.id,
     ).toBe('fake-sol');

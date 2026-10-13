@@ -9,8 +9,7 @@ import { PiDriver } from './pi-driver.ts';
 import { piAccessWarning } from './pi-session.ts';
 
 /**
- * Pi 会话对着假 pi：一轮的事件映射（文字、思考、工具）、开发者指令与 MCP 的注入、模型与强度、图片、steer、中断、
- * 进程异常退出、恢复。假 pi 在进程启动时读场景，所以改场景之后要新开会话。
+ * Pi session against a fake pi: one turn's event mapping (text, thinking, tools), injection of developer instructions and MCP, model and effort, images, steer, interrupt, unexpected process exit, and resume. The fake pi reads its scenario when the process starts, so after changing the scenario, start a new session.
  */
 
 async function until<T>(read: () => T | undefined | null | false, timeoutMs = 8_000): Promise<T> {
@@ -131,7 +130,7 @@ describe('PiSession（假 pi）', () => {
     expect(tools[3]!.output).toBe('one\nthree\n');
     expect(tools[4]!.detail).toBe('{"projectId":"p1"}');
     expect(tools.every((t) => typeof t.durationMs === 'number')).toBe(true);
-    // bash 的部分输出按增量到达。
+    // bash partial output arrives in increments.
     expect(events.some((e) => e.type === 'item.delta' && e.channel === 'output' && e.delta === 'one\n')).toBe(true);
 
     const texts = items().filter((i) => i.kind === 'agent-message' || i.kind === 'reasoning');
@@ -144,7 +143,7 @@ describe('PiSession（假 pi）', () => {
     expect(deltas.join('')).toBe('All done.');
     expect(events.find((e) => e.type === 'item.started' && e.item.id === message.id)).toBeTruthy();
 
-    // 恢复句柄：pi 的会话文件。
+    // Resume handle: pi's session file.
     const handle = session.describePersistence();
     expect(handle).toMatchObject({ driverId: 'pi', data: { sessionFile: expect.stringContaining(fake.sessionsDir) } });
   });

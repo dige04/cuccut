@@ -16,14 +16,14 @@ import { pl } from './project-files.pl.ts';
 import { tr } from './project-files.tr.ts';
 import { vi } from './project-files.vi.ts';
 
-/** 认不出类型的条目叫什么（译文在 `project-files.<语言>.ts`）。 */
+/** Name for entries whose type is not recognized (translations are in `project-files.<lang>.ts`). */
 const en = { folder: 'Folder', file: 'File' };
 export type ProjectFilesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 项目文件浏览的纯函数（产品设计 §3.3「项目文件」标签）：面包屑、上一级、每行的说明文字与打开时的定位。
- * 目录用相对根目录、`/` 分隔的路径表示，根目录是空字符串。
+ * Pure functions for browsing project files (product design §3.3 “Project files” tab): breadcrumbs, the parent level, each row's description text, and the location when opened.
+ * Directories are represented as paths relative to the root, `/`-separated; the root is an empty string.
  */
 
 export interface Crumb {
@@ -31,25 +31,25 @@ export interface Crumb {
   dir: string;
 }
 
-/** 面包屑：根目录（显示 `rootLabel`）加上每一级子目录。 */
+/** Breadcrumbs: the root (showing `rootLabel`) plus each subdirectory level. */
 export function breadcrumbs(dir: string, rootLabel: string): Crumb[] {
   const parts = dir.split('/').filter(Boolean);
   return [{ label: rootLabel, dir: '' }, ...parts.map((label, i) => ({ label, dir: parts.slice(0, i + 1).join('/') }))];
 }
 
-/** 上一级目录；已经在根目录时返回 null。 */
+/** The parent directory; returns null when already at the root. */
 export function parentDir(dir: string): string | null {
   const parts = dir.split('/').filter(Boolean);
   return parts.length ? parts.slice(0, -1).join('/') : null;
 }
 
-/** 条目所在的目录（查找结果里显示在名字下面）；在根目录时为空字符串。 */
+/** The directory the entry is in (shown below the name in search results); an empty string at the root. */
 export function entryFolder(path: string): string {
   const slash = path.lastIndexOf('/');
   return slash > 0 ? path.slice(0, slash) : '';
 }
 
-/** 一行的说明：类型（认不出的文件叫「文件」）· 大小 · 修改时间。 */
+/** Description of a row: type (unrecognized files are called “File”) · size · modified time. */
 export function entryMeta(entry: ProjectFileEntry, now = Date.now()): string {
   const kind = entry.kind ? KIND_LABEL[entry.kind] : entry.isDir ? M.folder : M.file;
   const parts = [kind];
@@ -58,14 +58,14 @@ export function entryMeta(entry: ProjectFileEntry, now = Date.now()): string {
   return parts.join(' · ');
 }
 
-/** 打开一个条目时交出去的定位：会话工作目录里的相对路径（与 `media.resolve` 同一种写法）。 */
+/** Location handed over when an entry is opened: the path relative to the session working directory (same format as `media.resolve`). */
 export function projectFileTarget(conversationId: Id, entry: Pick<ProjectFileEntry, 'path'>): FileTarget {
   return { conversationId, path: entry.path };
 }
 
 /**
- * 视频目录交给视频查看器，幻灯片目录交给幻灯片标签（docs/design/slides §8.1），设计稿目录交给设计稿标签（docs/design/canvas §8.1），
- * 设计系统目录交给设计系统标签（§10），普通目录进入，其余是文件。
+ * Video directories go to the video viewer, slide directories to the slides tab (docs/design/slides §8.1), design-draft directories to the design tab (docs/design/canvas §8.1),
+ * and design-system directories to the design-system tab (§10). Ordinary directories are entered; the rest are files.
  */
 export function entryAction(
   entry: Pick<ProjectFileEntry, 'isDir' | 'kind'>,

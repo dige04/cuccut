@@ -29,11 +29,11 @@ import { useToolStart, useVideoTools, type DubDraft } from './use-video-tools.ts
 import { DuplicateAlert, firstWhy, lede, SubmitBar, TextModelField, usePreset } from './video-tool-parts.tsx';
 
 /*
- * 工具 › 翻译配音（设计稿 tool-dub.jsx `DubToolPage`）：选 Space 里转录过的视频；有译文时直接选用，没有就先翻译（要一只
- * 文本模型）。结果写进这个视频：新的一组配音，原来的配音保留。提交走 `dub` 流程；音色不选（用引擎的默认音色），
- * 音色、时长对比与逐句管理在编辑器的翻译配音里。
+ * Tools › Translate and dub (design file tool-dub.jsx `DubToolPage`): pick a video transcribed in the Space; if a translation exists it is used directly, otherwise it is translated first (this needs a
+ * text model). The result is written into this video as a new set of dubbing, and the original dubbing is kept. Submission goes through the `dub` flow. No voice is chosen (the engine's default voice is used);
+ * voice, duration comparison and line-by-line management are in the editor's translate-and-dub.
  *
- * 与设计稿的出入：配音引擎只列在线服务（同编辑器里的翻译配音，`dub` 流程这一版不接本机引擎）。
+ * Differences from the design file: the dubbing engine lists only online services (as with translate-and-dub in the editor; the `dub` flow does not connect to a local engine in this version).
  */
 
 const NEW = 'new';

@@ -49,7 +49,7 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import { useDocumentBody } from './use-document-body.ts';
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 12, paddingBottom: 16 });
-/** 工具页顶上那张说明卡（原型 .aicard）。 */
+/** The explanation card at the top of the tool page (prototype .aicard). */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -64,7 +64,7 @@ const card = style({
 const problemBox = style({ marginBottom: 12 });
 const cardTitle = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
 const secHead = style({ marginTop: 16, marginBottom: 8, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
-/** 设置态里的一行（原型 .tsetup__row）：左边标签、右边控件。 */
+/** A row in the settings state (prototype .tsetup__row): label on the left, control on the right. */
 const rows = style({ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 });
 const row = style({ display: 'flex', alignItems: 'start', gap: 8 });
 const rowLabel = style({ flexShrink: 0, width: 56, paddingTop: 4, font: 'ui-sm', color: 'gray-700' });
@@ -74,11 +74,11 @@ const option = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
 const optionSub = style({ paddingStart: 24, font: 'ui-xs', color: 'gray-600' });
 const hint = style({ margin: 0, font: 'ui-xs', color: 'gray-600', lineHeight: '[1.5]' });
 const field = style({ width: 'full' });
-/** 说明卡最后一行：按下去会不会改视频（原型 .ail__effect）。 */
+/** The last line of the explanation card: whether pressing it will change the video (prototype .ail__effect). */
 const effect = style({ display: 'flex', alignItems: 'start', gap: '[6px]', marginTop: 4, color: 'gray-700' });
 const effectIcon = iconStyle({ size: 'S' });
 
-/** 设置态里的一行：左边标签、右边控件（剪成短视频的参数页也用）。 */
+/** A row in the settings state: label on the left, control on the right (also used by the short-video parameters page). */
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className={row}>
@@ -88,7 +88,7 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** 一个勾选项，下面一行小字说明。 */
+/** A checkbox option, with a small line of explanation underneath. */
 export function Option({
   label,
   sub,
@@ -112,7 +112,7 @@ export function Option({
   );
 }
 
-/** 工具页顶上那张说明卡：名字、说明、会不会改视频（产品设计 §5.10「参数页」第 1 段）。 */
+/** The explanation card at the top of the tool page: name, description, and whether it changes the video (product design §5.10 「参数页」 (parameters page), paragraph 1). */
 export function ToolCard({ name, lines, effect: what }: { name: string; lines: readonly string[]; effect: string }) {
   return (
     <div className={card}>
@@ -129,10 +129,9 @@ export function ToolCard({ name, lines, effect: what }: { name: string; lines: r
 }
 
 /**
- * 交给 Agent 的工具页（原型 panel-aitools.jsx `DocFlow`、panel-aitools-write.jsx、panel-aitools-cover.jsx 的设置态，产品设计 §5.10「参数页」）：
- * 说明卡（名字、说明、会不会改视频），设置行（「用」、范围、会话，再接工具自己的勾选项与数字），提示词框（预填模板、挂着这个工具的
- * skill），主按钮与一行去向。语言、风格、篇幅、视角写在提示词里，不再是下拉。按下就发出去，工具页回到列表；找可剪的口与刷新过期译文
- * 留在原地（`agentStaysOnPage`），这一页换成进度卡（`AiToolAgentRun`），「重新设置」或结束后的「完成」回到这里。
+ * The tool page for handing off to an Agent (prototype panel-aitools.jsx `DocFlow`, panel-aitools-write.jsx, and the settings states of panel-aitools-cover.jsx; product design §5.10 「参数页」 (parameters page)):
+ * the explanation card (name, description, whether it changes the video), setting rows (「用」 (Use), range, conversation, plus the tool's own checkboxes and numbers), the prompt box (pre-filled template, with this tool's skill attached),
+ * the main button, and a destination line. Language, style, length and point of view are written in the prompt, no longer dropdowns. Pressing it sends and returns the tool page to the list; finding cut points and refreshing stale translations stay in place (`agentStaysOnPage`), and this page turns into a progress card (`AiToolAgentRun`); 「重新设置」 (Set up again) or 「完成」 (Done) after it finishes returns here.
  */
 export function AiAgentToolPage({
   videoId,
@@ -159,8 +158,8 @@ export function AiAgentToolPage({
   const scopeIndex = chapters.findIndex((c) => c.id === scopeKey);
   const scope = scopeIndex >= 0 ? C.scopeChapter(scopeIndex + 1, chapters[scopeIndex]!.label) : null;
 
-  // 「用」：按工具记住交给 Agent 还是直接调模型（直接调模型做不了的工具总是交给 Agent）。刷新过期译文直接调模型时
-  // 不走 `ai-tool`，走翻译流程的就地刷新（`viaRefresh`）。
+  // 「用」 (Use): remembered per tool, whether to hand off to the Agent or call a model directly (tools that cannot call a model directly always go to the Agent). When refreshing stale translations by calling the model directly,
+  // `ai-tool` is not used; the in-place refresh of the translation flow is used instead (`viaRefresh`).
   const kind = directTool(tool);
   const savedRunner = useAiToolRunner((s) => s.runners[tool]);
   const setRunner = useAiToolRunner((s) => s.setRunner);
@@ -177,10 +176,10 @@ export function AiAgentToolPage({
   const receipt = useAiToolRun((s) => s.receipts[key] ?? null);
   const problem = useAiToolRun((s) => s.problems[key] ?? null);
   const modelSection = useRef<HTMLDivElement>(null);
-  // 留在原地的工具交出去的那一次：有就画进度卡。
+  // The one-time handoff from a tool that stays in place: show the progress card if there is one.
   const stays = agentStaysOnPage(tool);
   const draftKey = toolDraftKey(videoId, tool);
-  // 重启后读回来、还没认过的（`restored`）先不画：认上了才接着画，跑完了的会被丢掉。
+  // Records read back after a restart that have not yet been adopted (`restored`) are not shown first: they are shown only once adopted; ones that already finished get dropped.
   const agentRun = useAiToolAgentRuns((s) => (stays ? (s.runs[draftKey] ?? null) : null));
 
   const [pre, setPre] = useState(true);
@@ -188,7 +187,7 @@ export function AiAgentToolPage({
   const [stale, setStale] = useState({ edited: true, cut: true });
 
   const [platform, setPlatform] = useState('');
-  // 写博客的「添加关键帧插图」：默认不加；画面只有 Agent 取得到，直接调模型时置灰、也不进模板。
+  // Blog's 「添加关键帧插图」 (Add keyframe illustrations) option: off by default. The picture is only available to the Agent, so when calling the model directly it is greyed out and not included in the template.
   const [frames, setFrames] = useState(false);
   const framesOn = tool === 'blog' && frames && !viaModel;
   const [count, setCount] = useState<number>(tool === 'cover' ? COVER_COUNT.initial : TITLE_COUNT.initial);
@@ -197,8 +196,8 @@ export function AiAgentToolPage({
   const [coverText, setCoverText] = useState<CoverText>('phrase');
   const projectRatio = canvasRatio(sequence.canvas.width, sequence.canvas.height);
 
-  // 重新转录的「更多选项 › 识别说话人」（设计稿 panel-aitools.jsx）：按生效的默认语音模型说；只改提示词，
-  // 「说话人区分」没装也不拦「交给 Agent」。
+  // Re-transcribe's 「更多选项 › 识别说话人」 (More options › Identify speakers) (design draft panel-aitools.jsx): describes it using the default speech model in effect; it only changes the prompt,
+  // and does not block 「交给 Agent」 (Hand to Agent) even when 「说话人区分」 (speaker diarization) is not installed.
   const asrView = useModels((s) => s.capabilities);
   const asrRef = tool === 'retranscribe' ? (asrView?.transcribe.effective ?? null) : null;
   const asrInfo = asrView && asrRef ? transcribeModelInfo(asrView, asrRef) : null;
@@ -230,11 +229,11 @@ export function AiAgentToolPage({
     count: tool === 'title' || tool === 'cover' ? count : null,
     extra,
   });
-  // 语言写在模板里：跟文稿（用户要别的语言就改这一句）。
+  // The language is written into the template: it follows the script (if the user wants another language, they change this sentence).
   const template = toolTemplate(tool, intent);
   const staleEmpty = tool === 'stale' && !stale.edited && !stale.cut;
 
-  // 直接调模型：发给模型的是哪份转写、范围里几段（口径同文稿面板）。
+  // Calling the model directly: which transcript is sent to the model, and how many segments are in the range (counted the same way as the script panel).
   const speech = useMemo(() => Object.values(documents).find((d) => d.kind === 'speech' && !!d.sourceAssetId) ?? null, [documents]);
   const speechBody = useDocumentBody(viaModel && speech ? speech : undefined);
   const range = viaModel && directHasScope(viaModel) && scopeIndex >= 0 ? chapters[scopeIndex]! : null;
@@ -259,7 +258,7 @@ export function AiAgentToolPage({
           </div>
         ),
         onNotReady: () => {
-          // 不灰掉按钮：说清楚差什么，把门卡带到眼前（同翻译页）。
+          // The button is not greyed out: say clearly what is missing and bring the gate into view (same as the translation page).
           modelSection.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           ToastQueue.neutral(model.selected?.why ?? C.noTextModel, { timeout: 4000 });
         },
@@ -283,7 +282,7 @@ export function AiAgentToolPage({
 
   if (agentRun && !agentRun.restored) return <AiToolAgentRun videoId={videoId} tool={tool} run={agentRun} onBack={onBack} />;
 
-  // 就地刷新跑着：参数页原地换成进度（从字幕面板发起的同一份也算）；跑完回到参数页，提示里给撤销（translate-run.ts）。
+  // Refresh running in place: the parameters page turns into progress in place (the one started from the subtitle panel also counts); when done it returns to the parameters page, and the message offers undo (translate-run.ts).
   if (refreshLive) {
     return (
       <>
@@ -295,8 +294,8 @@ export function AiAgentToolPage({
     );
   }
 
-  // 直接调模型跑着、出了结果或收据：这一页换成那一态（同识别说话人的四态页）。结果与收据页的「返回」与「完成」一样回到参数页
-  // （设置与提示词都还在），参数页的「返回」才回列表；跑着时没有参数页可回，「返回」回列表、任务在后台接着跑。
+  // Calling the model directly is running, or has produced a result or receipt: this page turns into that state (same as the four-state page for identifying speakers). The 「返回」 (Back) and 「完成」 (Done) on the result and receipt pages both return to the parameters page
+  // (settings and prompt still there); 「返回」 (Back) on the parameters page goes back to the list. While running there is no parameters page to return to, so 「返回」 (Back) goes to the list and the task keeps running in the background.
   if (kind && (run || result || receipt)) {
     return (
       <>

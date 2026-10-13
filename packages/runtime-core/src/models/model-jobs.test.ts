@@ -13,8 +13,8 @@ import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 
 /**
- * 端到端：网关 → JobManager → 本地 Provider → 假的 Model Worker（Node 脚本）→ 真实的视频引擎写 speech 文档。
- * 模型目录是合成的清单与小文件；要 engine-host 与 ffmpeg，默认模型包要 Apple Silicon 的 macOS，缺了就跳过。
+ * End-to-end: gateway → JobManager → local Provider → fake Model Worker (a Node script) → the real video engine writes the speech document.
+ * The model directory holds a synthetic manifest and small files; it needs engine-host and ffmpeg, and the default model bundle needs macOS on Apple Silicon; the test is skipped if these are missing.
  */
 
 const engine = resolveEngineHostCommand();
@@ -26,7 +26,7 @@ const ffmpeg = (() => {
     return false;
   }
 })();
-/** 这台机器上的默认转写模型包：Apple Silicon 是 MLX 的，别的平台是 candle 的（同样的仓库）。 */
+/** Default transcription model bundle on this machine: MLX on Apple Silicon, candle on other platforms (same repository). */
 const DEFAULT_TRANSCRIBE_BUNDLE = defaultTranscribeBundle(process.platform, process.arch);
 
 if (!engine) console.warn('跳过转写端到端测试：没有构建 engine-host（npm run build:engine）');
@@ -42,7 +42,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件。 */
+/** Writes a synthetic manifest and files for each repository of the default model bundle. */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -95,7 +95,7 @@ describe('模型与任务方法（不需要引擎）', () => {
         reason: 'worker-missing',
       }),
     );
-    // 本地语音合成的模型包也列出，没装就是 not-installed。
+    // The local speech synthesis model bundle is also listed; if not installed it shows as not-installed.
     expect(bundles.filter((b) => b.capability === 'synthesize').every((b) => b.state === 'not-installed')).toBe(true);
     expect(await client.request('jobs.list', {})).toEqual({ jobs: [] });
     const missing = await client.request('jobs.inspect', { jobId: 'job_nope' }).catch((e: unknown) => e);
@@ -197,7 +197,7 @@ describe.skipIf(!engine || !ffmpeg)('转写（真实引擎 + 假 Model Worker）
       result: { documentId: expect.any(String), artifactId: expect.stringMatching(/^sha256:/) },
     });
     expect(await client.request('jobs.inspect', { jobId })).toEqual(done);
-    // 识别途中的段落经 `job.segments` 到达，任务结束后镜像里不再有。
+    // Segments recognized midway arrive through `job.segments`; after the task ends they are no longer in the mirror.
     expect(live).toEqual([
       { from: 0, texts: ['testing one two'] },
       { from: 1, texts: ['three cuccut is'] },
@@ -224,8 +224,7 @@ describe.skipIf(!engine || !ffmpeg)('转写（真实引擎 + 假 Model Worker）
     expect(entries[0]).toMatchObject({ actor: { kind: 'system', id: 'system:jobs' } });
     expect((await bundleOf())!.state).toBe('ready');
 
-    // 同样的输入再提交一次是新的任务（上一个已经结束）。P0 不替换已有的 speech 文档（可能有手工修改，
-    // 架构设计 §7.3），而是新增一份。
+    // Submitting the same input again creates a new task (the previous one has already ended). P0 does not replace an existing speech document (it may have manual edits, architecture design §7.3); it adds a new one instead.
     const again = await client.request('models.transcribe', { videoId, assetId });
     expect(again.jobId).not.toBe(jobId);
     const second = await until(() => jobs!.jobs.find((j) => j.jobId === again.jobId && j.state === 'completed'));

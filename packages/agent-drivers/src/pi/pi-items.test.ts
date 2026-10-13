@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileChangeDiff, PiItemMapper, piToolItem, toolResult } from './pi-items.ts';
 
-/** pi 工具结果的解析：形状取自 pi 1.0.4 的真实输出，另有旧式字段的退路。 */
+/** Parsing of pi tool results: the shapes come from pi 1.0.4's real output, with fallbacks for older field names. */
 describe('pi 工具条目', () => {
   it('bash：structuredContent 优先；没有时从文字里剥掉退出码那一行', () => {
     expect(

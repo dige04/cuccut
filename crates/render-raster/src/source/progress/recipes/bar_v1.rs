@@ -1,12 +1,8 @@
-//! `bar-v1`：`normal` / `rounded`（设计 §7.4）。
+//! `bar-v1`: `normal` / `rounded` (design §7.4).
 //!
-//! 参考实现（`progress_normal.frag` / `progress_rounded.frag`）：底色铺满整只
-//! quad，`texCoord.x < u_progress` 的部分换成主色；`rounded` 另外乘一张
-//! **胶囊形 alpha 遮罩**（`radius = 200px` 的圆角矩形）。
+//! Reference implementation (`progress_normal.frag` / `progress_rounded.frag`): the base color fills the whole quad, and the part where `texCoord.x < u_progress` is replaced with the primary color. `rounded` also multiplies by a **capsule-shaped alpha mask** (a rounded rectangle with `radius = 200px`).
 //!
-//! 矢量化的关键：颜色分界是**竖直硬边**，圆角只属于外轮廓。因此
-//! `radiusPx > 0` 时压一层 `ClipPath`（圆角矩形）再画两块直角矩形——
-//! 直接给进度块也加圆角会让它的右端变成一个不该存在的圆头。
+//! The key to vectorizing: the color boundary is a **vertical hard edge**, and rounding belongs only to the outer outline. So when `radiusPx > 0`, push one `ClipPath` (a rounded rectangle) and then draw two square rectangles. Adding rounding directly to the progress block would give its right end a round head that should not exist.
 
 use motion::preset_registry::ProgressBody;
 use serde_json::Value;
@@ -27,8 +23,7 @@ pub(crate) fn draw(
     let Some(direction) = recipe.text("direction") else {
         return 0;
     };
-    // `corner: {"kind":"none"}` 是直角；`{"kind":"capsule", "radiusPx": …}`
-    // 的像素长度按 host 给的系数折算，再夹到半个短边以内（见 draw.rs 模块文档）。
+    // `corner: {"kind":"none"}` is square. `{"kind":"capsule", "radiusPx": …}` has its pixel length converted with the factor the host supplies, then clamped to within half the short edge (see the module docs of draw.rs).
     let radius = recipe
         .object("corner")
         .filter(|corner| corner.get("kind").and_then(Value::as_str) == Some("capsule"))
@@ -54,8 +49,7 @@ pub(crate) fn draw(
     });
     let filled = bbox.w * progress;
     if filled > 0.0 {
-        // `rtl` 目前没有配方在用，但取值域是注册表的封闭枚举（`ENUM_KEYS`），
-        // 按数据分派而不是按 id。
+        // No recipe uses `rtl` yet, but its value domain is a closed enum in the registry (`ENUM_KEYS`), so it dispatches on the data rather than on the id.
         let x = if direction == "rtl" {
             bbox.x + bbox.w - filled
         } else {

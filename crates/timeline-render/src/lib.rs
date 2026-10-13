@@ -1,25 +1,25 @@
 /*!
- * ccut-timeline-render —— **契约层 × 图元层的交汇层**。
+ * ccut-timeline-render —— **the intersection layer of the contract layer and the primitive layer**.
  *
- * Timeline 元素（`ccut-timeline` 的 `ElementKind` + 四组 Props + 几何默认表）
- * → DrawOp 指令流（`ccut-render` 的 `FrameBuilder`）以及同源的实时
- * [`SceneFrame`] / [`SceneNode`]。纯函数、无 I/O：不读盘、不起进程、不认识
- * 任何 host 的类型，因此 `apps/cli`、`ccut-wasm` 与 compositor 用的是**同一份**
- * 实现。
+ * Timeline elements (`ElementKind` of `ccut-timeline` + the four Props groups + the geometry default table)
+ * → DrawOp instruction stream (`FrameBuilder` of `ccut-render`), plus the same-source live
+ * [`SceneFrame`] / [`SceneNode`]. Pure functions, no I/O: no disk reads, no process spawning, and no
+ * knowledge of any host's types, so `apps/cli`, `ccut-wasm` and the compositor use **the same**
+ * implementation.
  *
- * 设计依据：[docs/design/bcf/ccut-element-render-foundation-design.md] §9.1（P6 要把
- * `render_plan.rs` 的纯几何 / DrawOp 组装下沉到 core 才能编进 wasm）与 §10 P6
- * 的验收标准（wasm 的 `fingerprintAt(t)` 与 CLI 的 DrawOp 指纹逐位相同）。
- * 「为什么是新 crate 而不是把 `ccut-timeline` 接进 `ccut-render`」写在
- * `Cargo.toml` 的注释里。
+ * Design basis: [docs/design/bcf/ccut-element-render-foundation-design.md] §9.1 (P6 needs the pure geometry /
+ * DrawOp assembly of `render_plan.rs` pushed down into core before it can be compiled into wasm) and the
+ * acceptance criteria of §10 P6 (wasm's `fingerprintAt(t)` must be bit-identical to the CLI's DrawOp fingerprint).
+ * The reasoning for "a new crate rather than plugging `ccut-timeline` into `ccut-render`" is written in the comments
+ * of `Cargo.toml`.
  *
- * ## 边界
+ * ## Boundary
  *
- * [`push_element`] 只画**矢量直出**的元素：`shape` / `visualizer` / `progress`，
- * 以及 **`template` 源的 `sticker`**（P7b：内置模板库是归一化 path，不是
- * SVG 字节，所以不需要 resvg）。实时 scene 另可由 [`external_media_scene_nodes`]
- * 接受 host 注入的自然尺寸，产出不含平台句柄的 texture node；解码与纹理上传
- * 仍归 host。`text` 仍需共享排版/glyph scene，`audio` 不出画面。
+ * [`push_element`] only draws **directly vector** elements: `shape` / `visualizer` / `progress`,
+ * plus **`sticker` with a `template` source** (P7b: the built-in template library is normalized paths, not
+ * SVG bytes, so no resvg is needed). For the live scene, [`external_media_scene_nodes`] may additionally accept
+ * natural sizes injected by the host and produce texture nodes that carry no platform handles; decoding and texture upload
+ * still belong to the host. `text` still needs the shared typesetting/glyph scene, and `audio` produces no picture.
  */
 
 pub mod draw;

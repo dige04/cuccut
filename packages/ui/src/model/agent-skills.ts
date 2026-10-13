@@ -14,7 +14,7 @@ import { pl } from './agent-skills.pl.ts';
 import { tr } from './agent-skills.tr.ts';
 import { vi } from './agent-skills.vi.ts';
 
-/** Skills 设置与错误的文案（英文是键与类型的来源，译文在 `agent-skills.zh-Hans.ts`）。 */
+/** Copy for Skills settings and errors (the English is the source of keys and types; translations are in `agent-skills.zh-Hans.ts`). */
 const en = {
   origin: { builtin: 'Built-in', personal: 'Mine', 'third-party': 'Third-party' } as Record<SkillOrigin, string>,
   all: 'All',
@@ -54,11 +54,10 @@ export type AgentSkillsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 内置 Agent 自己用的 skill（产品设计 §6.9，原型 model-agent-skills.js）：设置 › Skills 的搜索、按来源筛选与计数，
- * 输入框「+ › 使用 Skill」的条目，以及 `skills.*` 错误码换成的人话。名称、描述按原样，不假定语言。
+ * The skills the built-in agents use themselves (product design §6.9, prototype model-agent-skills.js): search and source filtering with counts in Settings › Skills, the “+ › Use Skill” entries in the input box, and plain-language versions of the `skills.*` error codes. Names and descriptions are kept as they are, with no assumption about language.
  */
 
-/** 筛选页签：全部，或一种来源。 */
+/** Filter tabs: all, or one source. */
 export type SkillTab = 'all' | SkillOrigin;
 
 export const SKILL_ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = live(() => M.origin);
@@ -72,14 +71,14 @@ export const SKILL_TABS: readonly { key: SkillTab; label: string }[] = (['all', 
 
 const ORIGIN_ORDER: Readonly<Record<SkillOrigin, number>> = { builtin: 0, personal: 1, 'third-party': 2 };
 
-/** `skills.list` 的顺序不是合同：按来源（内置、我的、第三方），再按名称排，名称相同按 id。 */
+/** The order from `skills.list` is not a contract: sort by source (built-in, mine, third-party), then by name; ties are broken by id. */
 export function sortSkills(list: readonly SkillSummary[]): SkillSummary[] {
   return [...list].sort(
     (a, b) => ORIGIN_ORDER[a.origin] - ORIGIN_ORDER[b.origin] || a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
   );
 }
 
-/** 先按页签（来源）筛，再按名称、描述、id 搜（不分大小写）；顺序不变。 */
+/** Filter first by tab (source), then search by name, description, and id (case-insensitive); the order is unchanged. */
 export function filterSkills(list: readonly SkillSummary[], query: string, tab: SkillTab): SkillSummary[] {
   const q = query.trim().toLocaleLowerCase();
   return list.filter(
@@ -87,7 +86,7 @@ export function filterSkills(list: readonly SkillSummary[], query: string, tab: 
   );
 }
 
-/** 各页签的计数；给了搜索词就是搜索之后的计数。 */
+/** Count for each tab; when a search term is given, it is the count after searching. */
 export function countSkills(list: readonly SkillSummary[], query: string): Record<SkillTab, number> {
   const rows = filterSkills(list, query, 'all');
   return {
@@ -98,14 +97,14 @@ export function countSkills(list: readonly SkillSummary[], query: string): Recor
   };
 }
 
-/** 一行放得下的描述：折掉换行与连续空白，超过 `max` 个字符时截断加省略号（按码点截，不切坏表情或增补字符）。 */
+/** A description that fits on one line: collapses line breaks and runs of whitespace, and truncates to `max` characters with an ellipsis when longer (truncation by code point, so emoji and supplementary characters are not split). */
 export function clipLine(text: string, max = 60): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   const chars = [...flat];
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : flat;
 }
 
-/** 输入框上挂 skill：接在后面，已经挂着的不重复（产品设计 §6.9「点选」，原型 tool-prompt.jsx `addSkill`）。 */
+/** Attaches a skill to the input box: appended after the existing ones; a skill already attached is not duplicated (product design §6.9 “pick”; prototype tool-prompt.jsx `addSkill`). */
 export function appendSkillId(ids: readonly string[], id: string): string[] {
   return ids.includes(id) ? [...ids] : [...ids, id];
 }
@@ -117,18 +116,18 @@ export interface SkillMenuItem {
   enabled: boolean;
 }
 
-/** 输入框「+ › 使用 Skill」的条目：全部 skill，开着的在前，组内保持列表顺序；描述截成一行。 */
+/** The “+ › Use Skill” entries in the input box: all skills, enabled ones first, with the list order kept within each group; descriptions are cut to one line. */
 export function skillMenuItems(list: readonly SkillSummary[]): SkillMenuItem[] {
   const rows = list.map((s) => ({ id: s.id, name: s.name, description: clipLine(s.description), enabled: s.enabled }));
   return [...rows.filter((s) => s.enabled), ...rows.filter((s) => !s.enabled)];
 }
 
-/** 卡片底部的一行：来源 · 版本。 */
+/** The one line at the bottom of a card: source · version. */
 export function skillMetaLine(skill: Pick<SkillSummary, 'origin' | 'version'>): string {
   return [SKILL_ORIGIN_LABEL[skill.origin], skill.version ? `v${skill.version}` : null].filter(Boolean).join(' · ');
 }
 
-/** 详情里的来源：本地文件夹的路径，或 GitHub 地址@ref（提交取前 7 位）。内置与自己放进目录的为 null。 */
+/** The source in details: a local folder path, or a GitHub address@ref (commit shortened to the first 7 characters). null for built-in skills and skills placed in the directory by the user. */
 export function skillSourceLine(source: SkillSource | null): string | null {
   if (!source) return null;
   if (source.kind === 'local') return source.path;
@@ -136,14 +135,14 @@ export function skillSourceLine(source: SkillSource | null): string | null {
   return `${source.url}@${source.ref}${commit}`;
 }
 
-/** `SKILL.md` 去掉开头的 front matter（名称、描述、版本已在详情顶上），只留正文。 */
+/** Strips the front matter from the start of `SKILL.md` (name, description, and version are already shown at the top of details), keeping only the body. */
 export function skillBody(content: string): string {
   const text = content.replace(/^﻿/, '').replace(/\r\n/g, '\n');
   const match = /^---\n[\s\S]*?\n---[ \t]*(?:\n|$)/.exec(text);
   return (match ? text.slice(match[0].length) : text).replace(/^\n+/, '');
 }
 
-/** 文件大小：字节、KB、MB。 */
+/** File size: bytes, KB, MB. */
 export function fileSizeLabel(bytes: number): string {
   if (bytes < 1024) return M.bytes(bytes);
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
@@ -154,7 +153,7 @@ export type SkillAction = 'load' | 'toggle' | 'add' | 'import' | 'remove' | 'rea
 
 const ACTION_LABEL: Readonly<Record<SkillAction, string>> = live(() => M.action);
 
-/** `RpcError.details.code`（Runtime 的细分错误码）；没有时为 null。 */
+/** `RpcError.details.code` (the Runtime's detailed error code); null when there is none. */
 export function skillErrorCode(error: unknown): string | null {
   if (!(error instanceof RpcError)) return null;
   const details = error.details;
@@ -169,8 +168,8 @@ function detailsOf(error: unknown): Record<string, unknown> {
 }
 
 /**
- * `skills.*` 的错误 → 一句人话（产品设计 §6.9：超限、缺 SKILL.md、地址不对、网络或访问次数受限都如实说明）。
- * 认不出的错误码退回 Runtime 自己的说明。
+ * Turns a `skills.*` error into one plain sentence (product design §6.9: exceeding limits, missing SKILL.md, a wrong address, and network or access-limit problems are all stated honestly).
+ * Unrecognized error codes fall back to the Runtime's own description.
  */
 export function skillErrorMessage(error: unknown, action: SkillAction): string {
   const code = skillErrorCode(error);
@@ -214,7 +213,7 @@ export function skillErrorMessage(error: unknown, action: SkillAction): string {
   }
 }
 
-/** 发送失败的提示：点选的 skill 出了问题（例如刚被移除）时说 skill 的原因，其余照旧「没能发送：…」。 */
+/** The message when sending fails: if a picked skill caused the problem (for example, it was just removed), the message gives the skill's reason; otherwise the usual “Could not send: …” (没能发送：…). */
 export function sendFailureMessage(error: unknown): string {
   return skillErrorCode(error)?.startsWith('SKILL_')
     ? skillErrorMessage(error, 'send')

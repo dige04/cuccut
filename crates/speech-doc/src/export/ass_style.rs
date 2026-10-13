@@ -1,21 +1,17 @@
-//! ASS 软字幕头：主样式名、双语译文样式名与 `--no-style` 的固定头。
+//! ASS soft subtitle header: the main style name, the bilingual translation style name, and the fixed header for `--no-style`.
 //!
-//! 移植自 CucCut v2 `ccut-kernel` 的 `cmd/studio_export/ass_style.rs`。从工程样式合成
-//! `[V4+ Styles]` 的 `ass_style_sheet` 及其换算（`ass_style_row`、`ass_number`、
-//! `ass_color`、`ass_font_*`、`line_block_height`）依赖字幕渲染内核的
-//! `LineStyle` / `resolve_line_style`，在 `subtitle-render` 的 `ass_style`（本 crate 不依赖渲染）；
-//! 读画幅的 `ass_play_res*` 读工程文件，不移植。两行 `Format:` 两边共用，所以是 `pub`。
+//! Ported from CucCut v2 `ccut-kernel`'s `cmd/studio_export/ass_style.rs`. The `ass_style_sheet` that composes `[V4+ Styles]` from the project style, and its conversions (`ass_style_row`, `ass_number`, `ass_color`, `ass_font_*`, `line_block_height`), depend on the subtitle rendering kernel's `LineStyle` / `resolve_line_style`, which live in `subtitle-render`'s `ass_style` (this crate does not depend on rendering). `ass_play_res*`, which reads the frame dimensions, reads the project file and is not ported. The two `Format:` lines are shared by both sides, so they are `pub`.
 
-/// Dialogue 声明的主样式名。历史产物一直叫 `CucCut`，保持不变。
+/// The style name that Dialogue declares as its main style. Historically it has always been called `CucCut`; kept unchanged.
 pub const ASS_PRIMARY_STYLE: &str = "CucCut";
-/// 双语第二行（译文）的样式名，靠行内 `{\r}` 切换。
+/// The style name of the bilingual second line (the translation), switched to via the inline `{\r}`.
 pub const ASS_TRANSLATION_STYLE: &str = "CucCutTrans";
 
-/// ASS 头 + 双语第二行要切换到的样式名。
+/// The ASS header, plus the style name that the bilingual second line switches to.
 #[derive(Debug, Clone)]
 pub struct AssStyleSheet {
     pub header: String,
-    /// `Some` 时，双语正文的第二行前会插入 `{\r<name>}`。
+    /// When `Some`, `{\r<name>}` is inserted before the second line of a bilingual body.
     pub translation_style: Option<String>,
 }
 
@@ -24,7 +20,7 @@ pub const ASS_EVENT_FORMAT: &str =
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text";
 
 impl AssStyleSheet {
-    /// `--no-style` 的逃生舱：VoiceInk 时代的固定头，与 1.x 产物逐字节一致。
+    /// The `--no-style` escape hatch: the fixed header from the VoiceInk era, byte-identical to 1.x output.
     pub fn legacy() -> Self {
         Self {
             header: format!(

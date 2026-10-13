@@ -14,7 +14,7 @@ import { pl } from './services-mcp-copy.pl.ts';
 import { tr } from './services-mcp-copy.tr.ts';
 import { vi } from './services-mcp-copy.vi.ts';
 
-/** MCP 服务页的文案：访问等级、开放范围、工具目录与去向、最近请求、外发授权（译文在 `services-mcp-copy.<语言>.ts`）。 */
+/** Copy for the MCP service page: access levels, scope, the tool catalog and where its calls go, recent requests, and outbound authorization (translations are in `services-mcp-copy.<language>.ts`). */
 const en = {
   levels: {
     read: { title: 'Read only', desc: 'View video info, transcripts, and processing status' },

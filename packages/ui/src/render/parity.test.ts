@@ -6,9 +6,8 @@ import type { AssetRecord, Sequence } from '@cuccut/protocol';
 import { hitAt } from '../model/stage-hit.ts';
 import { type FrozenDocument, RenderPlanner, type RenderWarning, type SkippedItem, type SpeechTranscript } from './render-planner.ts';
 
-// 预览与导出画出同一帧：夹具由 `cargo test -p frame-render --test parity` 按导出的路子（原生构建、`plan_frame`、
-// 内置字体）画出来，记下每帧的 SHA-256；这里把同一份输入送进编出来的预览 WASM，逐帧比字节。
-// 两边是同一份 Rust 代码；WASM 开了 SIMD（simd128），实测与原生构建逐字节一致，所以不留容差：哪一帧不同就是实现分叉了。
+// Preview and export draw the same frame: the fixture is drawn by `cargo test -p frame-render --test parity` following the export path (native build, `plan_frame`, built-in fonts), and the SHA-256 of each frame is recorded. Here the same input is fed into the compiled preview WASM, and the bytes are compared frame by frame.
+// Both sides are the same Rust code. WASM is built with SIMD (simd128), and in practice it matches the native build byte for byte, so no tolerance is allowed: any frame that differs means the implementations have diverged.
 const wasm = fileURLToPath(new URL('./generated/preview.wasm', import.meta.url));
 const fixture = fileURLToPath(new URL('../../../../crates/frame-render/tests/fixtures/parity.json', import.meta.url));
 const fonts = fileURLToPath(new URL('../../../../crates/render-raster/assets/fonts/', import.meta.url));
@@ -33,11 +32,11 @@ interface Scene {
   video: { sequences: Record<string, Sequence>; assets: Record<string, AssetRecord> };
   documents: FrozenDocument[];
   pictures: { itemId: string; width: number; height: number; bands: Rgba[] }[];
-  /** 文本素材给 `text`，二进制素材（如 `.lottie` 压缩包）给十六进制的 `hex`。 */
+  /** Text assets are given as `text`; binary assets (such as `.lottie` archives) are given as hex in `hex`. */
   assets: { key: string; text?: string; hex?: string }[];
   spectra: { itemId: string; hex: string }[];
   audioSpectra: { key: string; hex: string }[];
-  /** 视频里的转写（声波的 `speaker` 用）；没有时不送。 */
+  /** Transcript of the video (used for the waveform's `speaker`); not sent when absent. */
   speech?: SpeechTranscript[];
   shots: Shot[];
 }
@@ -48,7 +47,7 @@ interface Fixture {
   scenes: Scene[];
 }
 
-/** 竖条画面：第 x 列的颜色是 `bands[floor(x * n / w)]`（与 Rust 那边同一个规则）。 */
+/** Striped picture: the color of column x is `bands[floor(x * n / w)]` (same rule as on the Rust side). */
 function bands(width: number, height: number, colours: Rgba[]): Uint8Array {
   const out = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) {
@@ -57,7 +56,7 @@ function bands(width: number, height: number, colours: Rgba[]): Uint8Array {
   return out;
 }
 
-/** 把场景的视频、文档、素材、频谱与转写送进计划器。 */
+/** Feeds the scene's video, documents, assets, spectra and transcript into the planner. */
 function load(planner: RenderPlanner, scene: Scene, sequenceId: string): void {
   planner.setVideo({ sequence: scene.video.sequences[sequenceId]!, assets: scene.video.assets });
   planner.setDocuments(scene.documents);
@@ -74,7 +73,7 @@ function load(planner: RenderPlanner, scene: Scene, sequenceId: string): void {
   if (scene.speech) planner.setSpeech(scene.speech);
 }
 
-/** 送上场景的画面，按镜头的尺寸与开关画 `seconds` 这一刻。 */
+/** Puts the scene's picture in, and draws the `seconds` moment according to the shot's size and toggles. */
 function draw(
   planner: RenderPlanner,
   scene: Scene,
@@ -141,7 +140,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
   });
 
   it('逐词动画在几个阶段各取一帧，帧帧不同', () => {
-    // 定位框样式的逐字显现：起点什么都不画、之后一个词一个词亮出来；四帧都在下面逐字节比。
+    // Word-by-word reveal in the positioned-box style: starts drawing nothing, then words light up one by one. The four frames below are compared byte by byte.
     const reveal = data.scenes.find((scene) => scene.name === 'captions-boxed-reveal');
     expect(reveal?.shots.map((shot) => shot.frame)).toEqual([0, 15, 31, 75]);
     expect(new Set(reveal?.shots.map((shot) => shot.sha256)).size).toBe(4);
@@ -151,7 +150,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     const base = await RenderPlanner.instantiate(readFileSync(wasm));
     base.addFonts(base.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     for (const scene of data.scenes) {
-      // 每个场景一个新实例：缓存（Lottie、频谱轨）不跨场景，与原生那边每个场景一个渲染器相同。
+      // Each scene gets a new instance: caches (Lottie, the spectrum track) do not carry across scenes, the same as the native side, which has one renderer per scene.
       const planner = await base.fork();
       load(planner, scene, data.sequenceId);
       for (const shot of scene.shots) {
@@ -174,7 +173,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
       const planner = await base.fork();
       load(planner, scene, data.sequenceId);
       for (const shot of scene.shots) {
-        // 按降过的分辨率画下一帧（播放中），窗口改了大小再画一帧（第三种尺寸换掉最久没用的那台），再停在这一帧画原尺寸。
+        // Draws the next frame at a reduced resolution (during playback), redraws one frame when the window is resized (the third size evicts the one unused longest), then draws this frame at full size when stopped.
         const scaled = (factor: number) => ({ ...shot, width: Math.round(shot.width * factor), height: Math.round(shot.height * factor) });
         draw(planner, scene, scaled(0.75), (shot.frame + 1) / data.fps);
         draw(planner, scene, scaled(0.5), (shot.frame + 2) / data.fps);
@@ -212,7 +211,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     ];
     for (const { name, scene: sceneName, change } of changes) {
       const original = sceneNamed(sceneName);
-      // 画字幕、内容动得最晚的那一帧（关键帧的终点）。
+      // The frame where the captions and the content that moves last have finished (the end of the keyframes).
       const shot = original.shots.filter((shot) => shot.captions).at(-1)!;
       const seconds = shot.frame / data.fps;
       const playback = { ...shot, width: Math.round(shot.width * 0.75), height: Math.round(shot.height * 0.75) };
@@ -227,7 +226,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
       load(warm, changed, data.sequenceId);
       const fresh = await base.fork();
       load(fresh, changed, data.sequenceId);
-      // 播放的那台刚画过；停住的那台闲着，也要按新的内容画。
+      // The one that is playing has just drawn; the idle one that has stopped still needs to be drawn with the new content.
       for (const size of [playback, shot]) {
         draw(warm, changed, size, seconds);
         draw(fresh, changed, size, seconds);

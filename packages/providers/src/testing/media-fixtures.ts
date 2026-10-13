@@ -1,11 +1,10 @@
 import zlib from 'node:zlib';
 
 /**
- * 测试用的最小媒体文件（纯 JS 生成，不依赖 ffmpeg）：ffprobe 能解码的 WAV、MP3（静音帧）与 PNG，
- * 以及只有文件头对、内容解不开的坏文件。
+ * Minimal media files for tests, generated in plain JS without ffmpeg: WAV and MP3 (silent frames) that ffprobe can decode, PNG, and bad files whose header is valid but whose content cannot be decoded.
  */
 
-/** 16 位单声道 PCM 的 WAV（静音）。 */
+/** 16-bit mono PCM WAV (silence). */
 export function wavFixture(durationSec = 0.5, sampleRate = 24_000): Buffer {
   const samples = Math.round(durationSec * sampleRate);
   const data = samples * 2;
@@ -27,7 +26,7 @@ export function wavFixture(durationSec = 0.5, sampleRate = 24_000): Buffer {
 }
 
 /**
- * MPEG-1 Layer III、128 kbps、44.1 kHz、单声道的静音帧（边信息全零，解出来是静音）。每帧 417 字节、1152 个采样。
+ * Silent MPEG-1 Layer III frames at 128 kbps, 44.1 kHz, mono (side information all zeros, so it decodes to silence). Each frame is 417 bytes and 1152 samples.
  */
 export function mp3Fixture(frames = 20): Buffer {
   const frame = Buffer.alloc(417);
@@ -38,12 +37,12 @@ export function mp3Fixture(frames = 20): Buffer {
   return Buffer.concat(Array.from({ length: frames }, () => frame));
 }
 
-/** 纯色 RGB 的 PNG；`shade` 不同，内容就不同。 */
+/** Solid-colour RGB PNG; a different `shade` gives different content. */
 export function pngFixture(width = 16, height = 9, shade = 0): Buffer {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
-  header[8] = 8; // 位深
+  header[8] = 8; // Bit depth
   header[9] = 2; // RGB
   const rows = Buffer.alloc((width * 3 + 1) * height);
   for (let y = 0; y < height; y++) {
@@ -57,12 +56,12 @@ export function pngFixture(width = 16, height = 9, shade = 0): Buffer {
   ]);
 }
 
-/** 文件头是 PNG、内容解不开。 */
+/** File header is PNG, but the content cannot be decoded. */
 export function corruptPngFixture(): Buffer {
   return Buffer.concat([pngFixture().subarray(0, 8), Buffer.from('not really a png at all')]);
 }
 
-/** 文件头是 RIFF/WAVE、内容解不开。 */
+/** File header is RIFF/WAVE, but the content cannot be decoded. */
 export function corruptWavFixture(): Buffer {
   return Buffer.concat([Buffer.from('RIFF\x10\x00\x00\x00WAVE', 'latin1'), Buffer.from('garbage-garbage')]);
 }

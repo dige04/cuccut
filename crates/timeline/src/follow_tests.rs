@@ -14,8 +14,7 @@ fn doc(value: Value) -> TimelineDocument {
     serde_json::from_value(value).expect("timeline fixture")
 }
 
-/// `det.ccut` 的形状：源 12 秒、一件 0–12 秒的分离画面，外加一件压在 2–4 上的 B-roll、
-/// 一件词锚点文字、一条通铺配乐、一件不设终点的角标。
+/// The shape of `det.ccut`: a source of 12 seconds, one separated picture covering 0–12 seconds, plus a B-roll stacked over 2–4, a word-anchored text element, a full-width background music track, and a corner badge with no end point.
 fn detached() -> TimelineDocument {
     doc(json!({
         "ccutTimeline": "0.11",
@@ -58,7 +57,7 @@ fn ids() -> impl FnMut() -> String {
     }
 }
 
-/// 一项写入：先按 `op` 改时钟，再以这一项之前的时钟为基准跟随。
+/// One write: first changes the clock according to `op`, then follows using the clock from before this item as the baseline.
 fn step(
     document: &mut TimelineDocument,
     next_id: &mut dyn FnMut() -> String,
@@ -110,7 +109,7 @@ fn span(element: &Element) -> (Option<f64>, Option<f64>, Option<f64>) {
     )
 }
 
-/// 画面：`(start, end, srcStart)`，按成片时间排序。
+/// Picture: `(start, end, srcStart)`, sorted by timeline time.
 fn pictures_of(document: &TimelineDocument) -> Vec<(f64, f64, f64)> {
     let mut out: Vec<(f64, f64, f64)> = document.tracks[0]
         .elements
@@ -127,7 +126,7 @@ fn pictures_of(document: &TimelineDocument) -> Vec<(f64, f64, f64)> {
     out
 }
 
-/// 画面对源的覆盖：合并后的 `[源起, 源止)` 列表。
+/// The coverage of the picture over the source: the merged `[source start, source end)` list.
 fn coverage(document: &TimelineDocument) -> Vec<(f64, f64)> {
     let mut spans: Vec<(f64, f64)> = pictures_of(document)
         .into_iter()
@@ -153,8 +152,8 @@ fn bytes(document: &TimelineDocument, id: &str) -> String {
     serde_json::to_string(element(document, id)).unwrap()
 }
 
-/// 实测缺陷：分离文档上剪 2–4，画面仍是 0–12、导出 12 秒。跟随之后画面覆盖 0–2（源 0–2）
-/// 与 2–10（源 4–12），内容末尾 10 秒；恢复这处剪口回到 0–12 的覆盖。
+/// Observed defect: on a separated document, cutting 2–4 leaves the picture at 0–12 and the export 12 seconds long. After following, the picture covers 0–2 (source 0–2)
+/// and 2–10 (source 4–12), with the last 10 seconds of content; restore this cut to bring the coverage back to 0–12.
 #[test]
 fn cutting_a_detached_document_takes_the_picture_along_and_restore_brings_it_back() {
     let mut document = detached();
@@ -199,8 +198,8 @@ fn cutting_a_detached_document_takes_the_picture_along_and_restore_brings_it_bac
     assert!(report.removed.is_empty() && report.created.is_empty());
 }
 
-/// B-roll 按规则缩短 / 删除 / 推后并同步 `srcStart`；词锚点与不设终点的逐字节不变；
-/// 通铺配乐在剪口时缩短。
+/// B-roll is shortened / deleted / pushed later by the rules and its `srcStart` is kept in sync; word anchors and elements with no end point are unchanged byte for byte;
+/// the full-width background music is shortened at the cut.
 #[test]
 fn numeric_elements_shorten_drop_or_advance_and_anchors_stay_put() {
     let mut document = detached();
@@ -215,7 +214,7 @@ fn numeric_elements_shorten_drop_or_advance_and_anchors_stay_put() {
     );
     assert!(!has(&document, "broll-inside"));
     assert_eq!(report.removed, vec!["broll-inside".to_owned()]);
-    // 起点 3 落在剪口里：推到 4（推后 1 秒），srcStart 同步前移 1 秒。
+    // Start 3 falls inside the cut: push to 4 (pushed later by 1 second), and srcStart moves forward by 1 second in sync.
     assert_eq!(
         span(element(&document, "broll-late")),
         (Some(2.0), Some(4.0), Some(1.0))
@@ -269,7 +268,7 @@ fn doc_element(value: Value) -> Element {
     serde_json::from_value(value).unwrap()
 }
 
-/// 挪片段：画面跟着片段走；起止都在同一片段里的跟着走；跨片段的（通铺配乐、跨缝文字）原地不动。
+/// Moving a segment: the picture moves along with the segment; those whose start and end both lie within the same segment move along; those that span segments (background music, text across a seam) stay in place.
 #[test]
 fn moving_a_clip_carries_its_picture_and_contained_elements_only() {
     let mut document = two_clips();
@@ -290,7 +289,7 @@ fn moving_a_clip_carries_its_picture_and_contained_elements_only() {
         span(element(&document, "inside-c2")),
         (Some(1.0), Some(3.0), None)
     );
-    // 起止都在 c1（0–5）里的 B-roll 跟着 c1 挪到 7 之后；跨 c1/c2 缝的 broll-late 不动。
+    // B-roll whose start and end are both within c1 (0–5) moves with c1 to after 7; broll-late, which crosses the c1/c2 seam, does not move.
     assert_eq!(
         span(element(&document, "broll")),
         (Some(8.0), Some(10.0), Some(5.0))
@@ -309,7 +308,7 @@ fn moving_a_clip_carries_its_picture_and_contained_elements_only() {
     assert_eq!(report.retimed.len(), 5);
 }
 
-/// 删片段：它的画面整件删除并列出；后面的元素涟漪前移。
+/// Deleting a segment: its picture is deleted entirely and listed; the elements after it ripple forward.
 #[test]
 fn removing_a_clip_drops_its_picture_and_ripples_the_rest() {
     let mut document = two_clips();
@@ -333,7 +332,7 @@ fn removing_a_clip_drops_its_picture_and_ripples_the_rest() {
     );
 }
 
-/// 分割：画面在缝上切开，右半取新 id 并归到新片段；其它元素沿用现状（切开压在分割点上的）。
+/// Splitting: the picture is cut at the seam, the right half takes a new id and is assigned to the new segment; other elements keep their current state (those stacked on the split point are cut).
 #[test]
 fn splitting_cuts_the_picture_and_every_numeric_lane_at_the_seam() {
     let mut document = detached();
@@ -361,7 +360,7 @@ fn splitting_cuts_the_picture_and_every_numeric_lane_at_the_seam() {
             clip_id: Some("c2".to_owned()),
         }
     );
-    // 压在缝上的 B-roll 与配乐被切开（右半 srcStart 前进）；缝前的 B-roll 不动。按轨序发 id。
+    // B-roll and music sitting on the seam are cut (the right half's srcStart advances); B-roll before the seam is unchanged. IDs are issued in track order.
     assert_eq!(
         span(element(&document, "broll-late")),
         (Some(3.0), Some(5.0), Some(0.0))
@@ -382,7 +381,7 @@ fn splitting_cuts_the_picture_and_every_numeric_lane_at_the_seam() {
     assert!(has(&document, "badge") && has(&document, "words"));
 }
 
-/// 修剪外扩：新露出的源区间由相邻画面补上（段首由后一件向前补）；用户删过画面的片段不补。
+/// Trim expansion: the newly exposed source range is filled by the adjacent picture (at the start of a segment, filled backward from the next item); segments whose picture the user deleted are not filled.
 #[test]
 fn trimming_outward_extends_the_neighbouring_picture_but_never_resurrects_a_deleted_one() {
     let mut document = detached();
@@ -404,8 +403,8 @@ fn trimming_outward_extends_the_neighbouring_picture_but_never_resurrects_a_dele
     assert_eq!(pictures_of(&trimmed), vec![(0.0, 12.0, 0.0)]);
     assert_eq!(trimmed.tracks[0].elements[0].id, "video-c1-1");
 
-    // 用户把画面缩到源 2–6：操作前就可见却没画面的 6–10 不补；新露出的 0–2 挨着画面，
-    // 由它向前补；新露出的 10–12 隔着旧空当，照邻件复制一件。
+    // The user shrinks the picture to source 2–6: 6–10, which had a visible picture before the operation but now has none, is not filled; the newly exposed 0–2, adjacent to the picture, is filled backward by it;
+    // the newly exposed 10–12, across the old gap, is filled by copying a neighbouring item.
     let mut shortened = document.clone();
     shortened.tracks[0].elements[0].end = Some(TimeValue::Seconds(4.0));
     let report = step(&mut shortened, &mut ids(), ClockEdit::Retime, |d| {
@@ -435,7 +434,7 @@ fn trimming_outward_extends_the_neighbouring_picture_but_never_resurrects_a_dele
     );
 }
 
-/// 恢复一处剪口时，隔着用户删过的空当的新露出区间照邻件复制一件，不连带补上删过的部分。
+/// When restoring a cut point, the newly exposed range across a gap the user deleted is filled by copying a neighbouring item, and the deleted part is not filled along with it.
 #[test]
 fn restoring_across_a_deleted_gap_clones_instead_of_stretching() {
     let mut document = detached();
@@ -445,7 +444,7 @@ fn restoring_across_a_deleted_gap_clones_instead_of_stretching() {
     step(&mut document, &mut next_id, ClockEdit::Retime, |d| {
         add_cuts(d, &[("cut-1", 6.0, 8.0)])
     });
-    // 用户删掉源 2–4 的画面：留下源 0–2 与源 4–6、8–12。
+    // The user deletes the picture of source 2–4: source 0–2, source 4–6 and 8–12 are left.
     let first = element(&document, "video-c1-1").clone();
     let mut left = first.clone();
     left.end = Some(TimeValue::Seconds(2.0));
@@ -472,7 +471,7 @@ fn restoring_across_a_deleted_gap_clones_instead_of_stretching() {
     assert!(report.created.is_empty(), "新露出的 6–8 由前一件延长补上");
 }
 
-/// 新加的片段按分离缺省新建画面；倍速改时钟时画面的 `rate` 跟上。
+/// A newly added segment is created with the default separated picture; when the clock is changed by speed, the picture's `rate` follows.
 #[test]
 fn a_new_clip_gets_a_default_picture_and_rate_changes_retime_it() {
     let mut document = detached();
@@ -520,7 +519,7 @@ fn a_new_clip_gets_a_default_picture_and_rate_changes_retime_it() {
     );
 }
 
-/// 连续多次剪口与一次性剪同一批区间结果一致（画面、B-roll、配乐、新 id 逐字节相同）。
+/// Making several cuts in succession gives the same result as cutting the same batch of intervals at once (picture, B-roll, music, and new IDs are byte-for-byte identical).
 #[test]
 fn cutting_one_at_a_time_equals_cutting_the_batch() {
     let cuts = [
@@ -546,7 +545,7 @@ fn cutting_one_at_a_time_equals_cutting_the_batch() {
     );
 }
 
-/// 剪了再恢复：画面对源的覆盖回到原状（任意剪口组合、任意恢复顺序）。
+/// Cut and then restore: the coverage of the picture over the source returns to its original state (any combination of cuts, any order of restoration).
 #[test]
 fn every_cut_then_restore_order_returns_the_original_coverage() {
     let cuts = [
@@ -580,7 +579,7 @@ fn every_cut_then_restore_order_returns_the_original_coverage() {
     }
 }
 
-/// 旧式文档没有画面可认领，其它元素照样跟随（等同原来的删片段涟漪）。
+/// A legacy document has no picture to claim; other elements still follow as usual (equivalent to the original segment-deletion ripple).
 #[test]
 fn legacy_documents_ripple_numeric_elements_without_claiming_pictures() {
     let mut document = doc(json!({
@@ -642,7 +641,7 @@ fn legacy_documents_ripple_numeric_elements_without_claiming_pictures() {
     ));
 }
 
-/// 超出片尾的部分保持到片尾的距离。
+/// Anything beyond the tail keeps its distance to the tail.
 #[test]
 fn elements_past_the_clock_end_keep_their_distance_to_it() {
     let mut document = detached();
@@ -683,8 +682,8 @@ fn reports_merge_across_one_transaction_and_serialize_the_receipt_shape() {
     );
 }
 
-/// 规模：数小时素材、上千剪口、上万元素是默认场景。5 千剪口 × 5 万元素一次跟随要远低于秒级；
-/// 平方算法（2.5 亿次比较）在这个量级上会慢两个数量级。
+/// Scale: hours of material, thousands of cuts and tens of thousands of elements are the default scenario. A single follow over 5 thousand cuts × 50 thousand elements must be far below one second;
+/// a quadratic algorithm (250 million comparisons) would be two orders of magnitude slower at that scale.
 #[test]
 fn following_thousands_of_cuts_and_tens_of_thousands_of_elements_stays_linearithmic() {
     const SOURCE: f64 = 36_000.0;
@@ -727,7 +726,7 @@ fn following_thousands_of_cuts_and_tens_of_thousands_of_elements_stays_linearith
 
     let before = clock_snapshot(&document);
     let started = std::time::Instant::now();
-    // 每段中间再剪一刀：5 千处新剪口一次跟随。
+    // Cut once more in the middle of each segment: 5 thousand new cuts followed in one pass.
     let extra: Vec<Cut> = projection.clips()[0]
         .segments
         .iter()
@@ -761,11 +760,11 @@ fn following_thousands_of_cuts_and_tens_of_thousands_of_elements_stays_linearith
 }
 
 // ---------------------------------------------------------------------------
-// 陈旧画面：旧版本剪口不带画面留下的文档
+// Stale pictures: documents left by old-version cuts that did not carry their pictures along
 // ---------------------------------------------------------------------------
 
-/// 旧缺陷留下的形状：已剪 2–4，画面仍是 0–12（源 0）。它对不上折叠后的任何一段，却对得上
-/// 不计剪口的时钟。
+/// The shape left by the old defect: 2–4 is cut, but the picture is still 0–12 (source 0). It does not match any segment of the folded result, but it does match
+/// the clock that does not count cuts.
 fn stale() -> TimelineDocument {
     let mut document = detached();
     add_cuts(&mut document, &[("cut-1", 2.0, 4.0)]);
@@ -785,7 +784,7 @@ fn assignments(document: &TimelineDocument) -> BTreeMap<String, Vec<String>> {
     picture_assignments(document, &projection)
 }
 
-/// 认得出：陈旧画面报出来，但不进 `clip list` 的归属；恢复剪口后原地不动、成了跟得上的画面。
+/// Recognised: a stale picture is reported, but it is not included in `clip list` attribution; after restoring the cut it stays put and becomes a picture that follows properly.
 #[test]
 fn a_stale_picture_is_recognised_and_restoring_the_cut_leaves_it_in_place() {
     let mut document = stale();
@@ -809,7 +808,7 @@ fn a_stale_picture_is_recognised_and_restoring_the_cut_leaves_it_in_place() {
     assert_eq!(assignments(&document)["c1"], vec!["video-c1-1".to_owned()]);
 }
 
-/// 再剪一刀：陈旧画面按源区间收到操作后的各段上，等于先补放了历史剪口 2–4。
+/// Cutting once more: the stale picture is distributed over the segments left after the operation by its source range, equivalent to first back-filling the historical cut 2–4.
 #[test]
 fn cutting_again_fits_a_stale_picture_onto_every_segment() {
     let mut document = stale();
@@ -820,7 +819,7 @@ fn cutting_again_fits_a_stale_picture_onto_every_segment() {
         pictures_of(&document),
         vec![(0.0, 2.0, 0.0), (2.0, 4.0, 4.0), (4.0, 9.0, 7.0)]
     );
-    // 只看时钟：夹具里的配乐当年也没跟剪口（0–12 超出成片 2 秒），按规则 3 保持到片尾的距离。
+    // Clock only: the music in the fixture also did not follow the cut at the time (0–12 exceeds the 2-second timeline), so by rule 3 it is kept at its distance to the tail.
     assert_eq!(
         TimelineProjection::build(&document, &durations())
             .unwrap()
@@ -846,7 +845,7 @@ fn cutting_again_fits_a_stale_picture_onto_every_segment() {
     assert_eq!(assignments(&document)["c1"].len(), 3);
 }
 
-/// 分割：陈旧画面收到左片段的两段与右片段上，右片段那件取新 id 归到新片段。
+/// Splitting: the stale picture is distributed over the two halves of the left segment and the right segment; the item in the right segment takes a new id and is assigned to the new segment.
 #[test]
 fn splitting_fits_a_stale_picture_onto_both_halves() {
     let mut document = stale();
@@ -889,11 +888,11 @@ fn splitting_fits_a_stale_picture_onto_both_halves() {
     assert_eq!(owned["c2"], vec!["el-2".to_owned()]);
 }
 
-/// 不认领：有意摆的叠加视频（源同步但起点不在片段未折叠的位置上），以及片段已有跟得上的画面时
-/// 另一件恰好对得上未折叠时钟的视频。它们按数字时间跟随，不当画面分段。
+/// Not claimed: an intentionally placed overlay video (source-synchronised but whose start is not at the unfolded position of the segment), and another video that happens to match the unfolded clock
+/// when the segment already has a picture that follows properly. These follow by their numeric time and are not treated as picture segments.
 #[test]
 fn deliberate_overlay_video_is_never_claimed_as_a_stale_picture() {
-    // 片段自己的画面被删了，只剩一件从源 0 播起、摆在 1–3 的叠加视频。
+    // The segment's own picture was deleted, leaving only an overlay video that plays from source 0 and sits at 1–3.
     let mut document = stale();
     document.tracks[0].elements[0] = doc_element(json!(
         {"id": "pip", "kind": "video", "srcId": "main", "srcStart": 0.0, "start": 1.0, "end": 3.0}
@@ -913,7 +912,7 @@ fn deliberate_overlay_video_is_never_claimed_as_a_stale_picture() {
             .all(|created| created.clip_id.is_none())
     );
 
-    // 画面已经跟上剪口；另一件对得上未折叠时钟的视频不算这个片段的画面。
+    // The picture has already followed the cut; another video that matches the unfolded clock does not count as this segment's picture.
     let mut document = detached();
     let mut next_id = ids();
     step(&mut document, &mut next_id, ClockEdit::Retime, |d| {
@@ -936,7 +935,7 @@ fn deliberate_overlay_video_is_never_claimed_as_a_stale_picture() {
 }
 
 // ---------------------------------------------------------------------------
-// 关键帧与闪避跟着走（G6 × G4）
+// Keyframes and ducking follow along (G6 × G4)
 // ---------------------------------------------------------------------------
 
 fn keyframes_of(value: Value) -> Option<crate::keyframes::Keyframes> {
@@ -965,8 +964,7 @@ fn close(actual: &[(Value, f64)], expected: &[(Value, f64)]) {
     }
 }
 
-/// 剪口把带关键帧的片段画面切成两件：秒写法按各自的源区间换算、边界补取样帧；百分比按
-/// 各自那一份改写，两件在接缝处的值就是原动画在那一刻的值。
+/// A cut splits the picture of a segment that has keyframes into two items: second-based notation is converted by each item's own source range, and sampled frames are added at the boundaries; percentages are rewritten into each item's own share, and the value at the seam is the value of the original animation at that moment.
 #[test]
 fn a_mid_cut_divides_picture_keyframes_between_the_two_pieces() {
     let mut document = detached();
@@ -998,8 +996,8 @@ fn a_mid_cut_divides_picture_keyframes_between_the_two_pieces() {
     document.validate().expect("跟随后的关键帧仍合法");
 }
 
-/// 一件元素只被修剪：秒写法按起点被推后的量平移（去掉的帧换成 0 处的取样帧），百分比
-/// 原样（随新时长伸缩）。
+/// An element that was only trimmed: second-based notation is shifted by the amount its start was pushed later (the frames dropped are replaced by a sampled frame at 0), while percentages
+/// are kept as-is (they scale with the new duration).
 #[test]
 fn a_head_trim_shifts_second_keyframes_and_keeps_percent_ones() {
     let mut document = detached();
@@ -1025,7 +1023,7 @@ fn a_head_trim_shifts_second_keyframes_and_keeps_percent_ones() {
     );
 }
 
-/// 分割缝切开带关键帧与闪避的配乐：两半各自改写百分比、在缝上连续；`duck` 两半都带。
+/// A split seam cuts background music that has keyframes and ducking: each half rewrites its percentages on its own, and it stays continuous at the seam; `duck` is carried by both halves.
 #[test]
 fn splitting_divides_keyframes_and_copies_duck_to_both_halves() {
     let mut document = detached();
@@ -1062,7 +1060,7 @@ fn splitting_divides_keyframes_and_copies_duck_to_both_halves() {
     document.validate().expect("分割后仍合法");
 }
 
-/// 跟随删光了被闪避引用的那条轨上的元素：轨留着（空），`duck.under` 不悬空，写入仍合法。
+/// Following deletes all the elements on the track that a ducking references: the track remains (empty), `duck.under` does not dangle, and the write is still valid.
 #[test]
 fn a_ducked_track_survives_being_emptied_by_follow() {
     let mut document = detached();
@@ -1087,7 +1085,7 @@ fn a_ducked_track_survives_being_emptied_by_follow() {
     document.validate().expect("duck.under 仍指向存在的轨");
 }
 
-/// 没有关键帧的元素跟随之后也不会多出 `keyframes`。
+/// An element without keyframes does not gain `keyframes` after following.
 #[test]
 fn follow_never_adds_keyframes_to_elements_without_them() {
     let mut document = detached();

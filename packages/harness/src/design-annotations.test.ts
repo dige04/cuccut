@@ -16,7 +16,7 @@ import {
 } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
-/** 设计稿标注（docs/design/canvas §9）与设计系统标注（§10.6）随消息发出，与设计稿、设计系统卡片（§7.3、§10.5）。假 Driver，全部在临时目录里。 */
+/** Design-canvas annotations (docs/design/canvas §9) and design-system annotations (§10.6) are sent with messages, alongside design cards and design-system cards (§7.3, §10.5). Fake Driver, all in a temp directory. */
 
 const note = (over: Partial<DesignAnnotation> = {}): DesignAnnotation => ({
   canvas: { conversationId: 'c', path: 'poster' },
@@ -106,7 +106,7 @@ describe('withDesignSystemAnnotations', () => {
 
 const capabilities: DriverProbe['capabilities'] = { steer: true, approvals: true, resume: false, images: false };
 
-/** 回合开始后一直开着；收下插话。 */
+/** Stays open from turn start; accepts interjections. */
 class Session implements AgentSession {
   readonly id = newId('fake');
   readonly capabilities = capabilities;

@@ -1,4 +1,4 @@
-//! 改名为「视频」之前的目录布局（`movie.db`、`movie.lock`、`cuccut.movie`）在打开时就地升级一次。
+//! The directory layout from before the rename to “视频” (video) (`movie.db`, `movie.lock`, `cuccut.movie`) is upgraded in place once, when it is opened.
 
 #![allow(clippy::result_large_err)]
 
@@ -33,7 +33,7 @@ fn tx(video: &Video, command_id: &str, operation: serde_json::Value) -> VideoTra
     }
 }
 
-/// 把当前布局的目录倒回旧布局：与升级相反的表、列、JSON 键与格式标识，再把文件改回旧名。
+/// Rolls the current-layout directory back to the old layout: the reverse of the upgrade, with the same tables, columns, JSON keys and format markers, then renames the files back to their old names.
 fn downgrade(dir: &Path) {
     let conn = rusqlite::Connection::open(dir.join("video.db")).unwrap();
     let back = |column: &str| {
@@ -103,7 +103,7 @@ fn a_movie_db_directory_is_upgraded_in_place_on_open() {
     assert_eq!(video.events_after(0, 10).unwrap(), events);
     assert_eq!(video.find_receipt("cmd_rename").unwrap(), Some(receipt));
 
-    // 撤销记录里的实体种类也升级了：撤销两步，名字回到原来的。
+    // The entity kinds in the undo records were upgraded too: undo two steps, and the names return to the originals.
     for step in ["cmd_undo_1", "cmd_undo_2"] {
         let request = UndoRequest {
             command_id: step.into(),
@@ -117,7 +117,7 @@ fn a_movie_db_directory_is_upgraded_in_place_on_open() {
     assert!(video.snapshot().checkpoints.is_empty());
     drop(video);
 
-    // 已经升级过的目录照常打开。
+    // A directory that has already been upgraded opens as usual.
     assert_eq!(
         Video::open(dir.path(), OpenMode::ReadOnly, &ffprobe()).unwrap().snapshot().name,
         "旧视频"

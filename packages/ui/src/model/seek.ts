@@ -1,9 +1,7 @@
 /**
- * 定位排队（产品设计 §11.1 的 0.3 出口条件「拖动定位时旧画面不覆盖新请求」，架构设计 §4.5）。
+ * Seek queue (product design §11.1, exit condition for 0.3: “while dragging to seek, an old frame must not overwrite the new request”; architecture design §4.5).
  *
- * 媒体元素同一时间只做一次 seek。拖动时新请求来得比 seek 完成快：只记下最新的一个，
- * 上一次 seek 完成（`seeked`）后再发它，中间的请求直接丢掉。正在定位时，界面显示的位置是
- * 最新的请求，而不是媒体元素报上来的旧时间；全部落地后才回到读媒体元素自己的时间。
+ * A media element can run only one seek at a time. While dragging, new requests arrive faster than seeks complete: only the latest one is kept, and it is sent once the previous seek completes (`seeked`); the requests in between are simply dropped. While seeking, the position the UI shows is the latest request, not the old time reported by the media element; only after everything has landed does it return to the media element's own time.
  */
 
 export interface Seekable {
@@ -19,13 +17,13 @@ export class SeekQueue {
     this.#media = media;
   }
 
-  /** 请求定位到 `time` 秒。 */
+  /** Requests a seek to `time` seconds. */
   request(time: number): void {
     if (this.#inFlight === null) this.#apply(time);
     else this.#pending = time;
   }
 
-  /** 媒体元素的 `seeked`。还有排着的请求就接着发；返回是否全部落地。 */
+  /** The media element's `seeked`. If requests are still queued, sends the next one; returns whether all of them have landed. */
   settle(): boolean {
     if (this.#inFlight === null) return true;
     if (this.#pending !== null) {
@@ -38,13 +36,13 @@ export class SeekQueue {
     return true;
   }
 
-  /** 换了文件或加载失败：丢掉所有请求。 */
+  /** File changed or loading failed: drops all requests. */
   reset(): void {
     this.#inFlight = null;
     this.#pending = null;
   }
 
-  /** 正在定位时应当显示的位置（最新的请求）；没有在定位时为 null。 */
+  /** The position to show while seeking (the latest request); null when not seeking. */
   get target(): number | null {
     return this.#pending ?? this.#inFlight;
   }

@@ -65,7 +65,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
       expect(a.receipt.sampledSeconds).toBeCloseTo(0.5, 6);
       expect(a.png.subarray(1, 4).toString('latin1')).toBe('PNG');
       expect(a.captureMode).toBe('capturePage');
-      // 透明窗口：盒子之外是透明的。
+      // Transparent window: outside the box is transparent.
       expect(a.transparentPixels).toBeGreaterThan(1280 * 720 * 0.9);
       const past = await session.frame(at(bundle, 2.5));
       expect(past.receipt.clampedToDuration).toBe(true);
@@ -84,7 +84,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
       expect(ticket.localTime).toEqual({ ticks: String(15 * 1001), timescale: 30000 });
       const frame = await session.frame(ticket);
       expect(frame.receipt.requestedSeconds).toBeCloseTo((15 * 1001) / 30000, 9);
-      // 不透明窗口不统计透明像素。
+      // An opaque window does not count transparent pixels.
       expect(frame.receipt.alphaMode).toBe('opaque');
       expect(frame.transparentPixels).toBe(0);
     } finally {

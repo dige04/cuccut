@@ -19,9 +19,7 @@ import type { ItemPageProps } from './inspector-sections.tsx';
 import { useDocumentBody } from './use-document-body.ts';
 
 /**
- * 属性页里一句配音的版本（设计稿 panel-audio-sentence.jsx 的「版」）：一版一行，新的在上——第 k 版、种子、时长、对齐加的速；
- * 当前那一版标「当前」，其余给「换回这一版」（model/dub-takes.ts `switchTakeOperations`，一笔可撤销的编辑，不重新合成）。
- * 下面一个「重新生成这一句」（桌面端；换个种子再合成，旧的一版留着）。不是配音块、或计划里没有这一句时不画。
+ * The takes of one dubbed sentence on the properties page (design panel-audio-sentence.jsx's “版”): one take per row, newest on top. Each shows take k, seed, duration, and the speed-up added by alignment. The current take is marked “当前” (current), and the others get “换回这一版” (switch back to this take), a single undoable edit (model/dub-takes.ts `switchTakeOperations`) that does not re-synthesize. Below is “重新生成这一句” (regenerate this sentence) (desktop only; re-synthesizes with a different seed and keeps the old take). Not drawn when the clip is not a dub clip, or the sentence is not in the plan.
  */
 export function DubTakesSection(props: ItemPageProps<AudioItem>) {
   const mark = dubMark(props.item);

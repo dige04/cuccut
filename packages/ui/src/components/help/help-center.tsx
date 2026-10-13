@@ -34,8 +34,7 @@ const SECTIONS: readonly { id: Section; icon: typeof Play }[] = [
 ];
 
 /**
- * 帮助中心（原型 help-center.jsx / help-center.css）：挂在外壳一处，经 useHelp 开合。内容是内置的离线指南
- * （model/help-guides.ts），不连网。
+ * Help center (prototype help-center.jsx / help-center.css): mounted once in the shell, opened and closed via useHelp. The content is the built-in offline guides (model/help-guides.ts), with no network access.
  *
  * The surface is agentcut's dialog (cc/ui/dialog.tsx): near-black translucent material with a fine lit edge, 20px
  * corners and a blurred dim backdrop; the footer sits on a darker strip. Esc, the close button and a click on the
@@ -47,8 +46,8 @@ export function HelpCenter({ platform }: { platform: string }) {
   const close = useHelp((s) => s.close);
   const searchRef = useRef<TextFieldRef>(null);
 
-  // 焦点归还：S2 弹层（RAC FocusScope）关闭时自己把焦点还给打开前的元素；它没还成（比如来源在弹层开着时被换掉了）
-  // 而且来源还在页面上时，这里补一次。
+  // Focus return: the S2 popover (RAC FocusScope) returns focus to the element from before it opened when it closes; if it did not manage to (for example, the source was swapped while the popover was open) and the source is still on the page, it is restored here once.
+  //
   useEffect(() => {
     if (isOpen) return;
     const origin = useHelp.getState().origin;
@@ -60,7 +59,7 @@ export function HelpCenter({ platform }: { platform: string }) {
     return () => window.clearTimeout(timer);
   }, [isOpen]);
 
-  // 每次打开按打开次数换 key 重新开始（上一次的分节、搜索与文章不带过来）。
+  // Each open restarts with a new key based on the open count (sections, search and the article from the last time are not carried over).
   return (
     <Dialog open={isOpen} onOpenChange={(open) => (open ? undefined : close())}>
       <DialogContent
@@ -97,8 +96,8 @@ function HelpDialog({ mac: macDefault, searchRef, onClose }: { mac: boolean; sea
     setArticle(null);
   };
 
-  // 去做（原型 `navigate`）：先关帮助，再去对应的地方。只做这里真能到的（见 model/help-guides 的 helpCta）；
-  // `close` 只关帮助，回到视频。
+  // Go and do it (prototype `navigate`): close help first, then go to the place. Only go where this can really reach (see helpCta in model/help-guides); `close` only closes help and returns to the video.
+  //
   const act = (cta: HelpCta) => {
     onClose();
     const shell = useShell.getState();
@@ -222,7 +221,7 @@ function HelpDialog({ mac: macDefault, searchRef, onClose }: { mac: boolean; sea
   );
 }
 
-/** 原型 .help-center：填满对话框（高 min(716px, 视口 − 48px)）；底色是对话框自己的材质，这里不再铺一层。 */
+/** Prototype .help-center: fills the dialog (height min(716px, viewport − 48px)); the background is the dialog's own material, so no extra layer is laid here. */
 const shell = style({
   display: 'flex',
   flexDirection: 'column',
@@ -262,9 +261,9 @@ const nav = style({
   borderEndWidth: 1,
   borderStyle: 'solid',
 });
-/** 原型 .t-section：11px 粗体灰字。 */
+/** Prototype .t-section: 11px bold grey text. */
 const navTitle = style({ marginX: 12, marginBottom: 12, font: 'ui-xs', fontWeight: 'bold', color: 'gray-600' });
-/** 原型 .siderow, in agentcut's rail shape: 12px corners (a two-line label stays a card, not a lozenge); fills in dialog-fills.ts. */
+/** Prototype .siderow, in agentcut's rail shape: 12px corners (a two-line label stays a card, not a lozenge); fills in dialog-fills.ts. */
 const navRow = style<{ isHovered: boolean; isFocusVisible: boolean; isCurrent: boolean }>({
   display: 'flex',
   alignItems: 'center',

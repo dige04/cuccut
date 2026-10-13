@@ -63,7 +63,7 @@ describe('生成字幕的转录设置', () => {
     expect(picked.explicit).toBe(false);
     expect(picked.option?.key).toBe('local/qwen3-asr-0.6b@mlx-4bit');
     expect(transcribeRequestOptions(DEFAULT_TRANSCRIBE_SETUP, picked)).toEqual({});
-    // 没有默认值也一样：Runtime 照旧以「没配置」拒绝并给去处。
+    // Same when there is no default: the Runtime still rejects it as 「没配置」 (not configured) and gives a next step.
     expect(transcribeRequestOptions(DEFAULT_TRANSCRIBE_SETUP, pickModel(options, null, null))).toEqual({});
   });
 
@@ -117,7 +117,7 @@ describe('生成字幕的转录设置', () => {
   it('提示的篇幅与 Runtime 拼法同口径：去重、第一条换行接、之后顿号，放不下的计数', () => {
     expect(hintBudget('播客', [glossary(['林澈', '周远']), glossary(['周远', 'CucCut'])])).toEqual({ custom: 2, terms: 3, dropped: 0, chars: 15 });
     expect(hintBudget('', [glossary(['林澈', '周远'])])).toEqual({ custom: 0, terms: 2, dropped: 0, chars: 5 });
-    // 上限 6：「ab\nccc」6 个字刚好，「、dd」放不下。
+    // Limit 6: 「ab\nccc」 is exactly 6 characters, 「、dd」 does not fit.
     expect(hintBudget('ab', [glossary(['ccc', 'dd'])], 6)).toEqual({ custom: 2, terms: 1, dropped: 1, chars: 6 });
     expect(budgetLine('Whisper', { custom: 0, terms: 3, dropped: 2, chars: 40 })).toBe(
       '送给 Whisper：没有提示词 + 3 个写法 · 约 40 / 1200 字 · 还有 2 条放不下，排在前面的表先进',

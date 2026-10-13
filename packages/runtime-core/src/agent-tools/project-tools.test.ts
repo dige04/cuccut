@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProjectTools } from './project-tools.ts';
 import type { ToolPrincipal, ToolScope } from './tool-scope.ts';
 
-/** `projects_list` 一个项目都没有时：各个面的 next 给出各自能走的路（终端的情形不必起 Runtime）。 */
+/** When `projects_list` has no projects at all: each surface's `next` gives the path it can take (the terminal case does not need the Runtime started). */
 describe('projects_list 的空列表', () => {
   const scope = {
     authorize: (principal: ToolPrincipal) => ({ principal, submitter: { kind: 'connection', id: 'c' } }),

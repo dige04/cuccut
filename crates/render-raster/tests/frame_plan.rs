@@ -1,8 +1,7 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering pipeline and host byte layer), and does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! `FramePlan` 的结构、折叠保证与分层指纹（设计 §6.1 / §6.6）。
+//! The structure, folding guarantees and layered fingerprints of `FramePlan` (design §6.1 / §6.6).
 
 use motion::effect::{BlendMode, EffectRef, UniformMap, UniformValue};
 use render_raster::drawop::{self, DrawOp, FrameOps, PathData, PathSeg};
@@ -63,7 +62,7 @@ fn sample_ops() -> FrameOps {
     }
 }
 
-// ── 折叠保证 ─────────────────────────────────────────────────────────
+// ── Folding guarantees ─────────────────────────────────────────────────────
 
 #[test]
 fn single_draw_plan_is_folded_and_validates() {
@@ -76,8 +75,8 @@ fn single_draw_plan_is_folded_and_validates() {
     assert_eq!(plan.passes[0].output(), plan.output);
 }
 
-/// 折叠计划的执行结果必须与「直接光栅化同一条指令流」逐字节相同——
-/// 这是「引入 Render Graph 不改任何像素」的构造性证据。
+/// The result of executing a folded plan must be byte-identical to “rasterizing the same instruction stream directly” —
+/// this is the constructive evidence that “introducing the Render Graph changes no pixels”.
 #[test]
 fn folded_plan_execution_matches_direct_rasterization() {
     let direct = render_raster::rasterize_with_media(&sample_ops(), 32, 24, &mut empty_media())
@@ -102,7 +101,7 @@ fn executor_rejects_a_plan_compiled_for_another_backend() {
     );
 }
 
-// ── 结构断言：真实文档每个采样时刻都折叠成单个 Draw pass ──────────────
+// ── Structural assertion: at every sample time, the real document folds into a single Draw pass ──────────────
 
 struct FixedMeasure;
 
@@ -135,8 +134,7 @@ fn media_demo_ir() -> Ir {
     inputs.insert_audio("tone", 30.0);
     let mut resolver = Resolver::new(doc, None).unwrap();
     resolver.set_host_inputs(inputs);
-    // 布局由 `FrameRenderer::new` 用真实字体引擎做，`FixedMeasure` 只在
-    // 需要脱离系统字体时用得上（这里不需要）。
+    // Layout is done by `FrameRenderer::new` with the real font engine; `FixedMeasure` is only useful when it must be decoupled from system fonts (not needed here).
     let _ = std::marker::PhantomData::<FixedMeasure>;
     resolver.resolve().unwrap()
 }
@@ -191,8 +189,8 @@ fn launch_folds_to_a_single_draw_pass_at_every_sampled_time() {
     assert_every_frame_folds(&mut ir, &times, "launch");
 }
 
-/// 帧指纹（输出 surface 内容指纹）与 DrawOp 原语指纹必须**一一对应**：
-/// 同一张画布上，指令流相同 ⇔ 帧指纹相同。
+/// Frame fingerprints (fingerprints of the output surface contents) and DrawOp primitive fingerprints must **correspond one to one**:
+/// on the same canvas, identical instruction streams ⇔ identical frame fingerprints.
 #[test]
 fn frame_fingerprint_is_in_bijection_with_the_drawop_fingerprint() {
     let mut ir = media_demo_ir();
@@ -218,7 +216,7 @@ fn frame_fingerprint_is_in_bijection_with_the_drawop_fingerprint() {
     }
 }
 
-// ── 指纹与编码 ───────────────────────────────────────────────────────
+// ── Fingerprints and encoding ───────────────────────────────────────────────────────
 
 #[test]
 fn plan_encoding_is_deterministic_and_normalizes_negative_zero() {
@@ -301,7 +299,7 @@ fn surface_fingerprint_depends_on_the_whole_upstream_chain() {
     };
     let a = build([1.0, 0.0, 0.0, 1.0]);
     let b = build([0.0, 1.0, 0.0, 1.0]);
-    // 上游 Draw 换了颜色 ⇒ 下游 Filter 的 surface 指纹必须跟着变。
+    // If the upstream Draw changes colour ⇒ the downstream Filter's surface fingerprint must change with it.
     assert_ne!(
         a.surface_fingerprint(SurfaceId::OUTPUT).unwrap(),
         b.surface_fingerprint(SurfaceId::OUTPUT).unwrap()
@@ -310,7 +308,7 @@ fn surface_fingerprint_depends_on_the_whole_upstream_chain() {
         a.frame_fingerprint().unwrap(),
         b.frame_fingerprint().unwrap()
     );
-    // 同一张计划两次求值必须逐位相同。
+    // Evaluating the same plan twice must give bit-identical results.
     assert_eq!(
         a.frame_fingerprint().unwrap(),
         a.frame_fingerprint().unwrap()
@@ -429,7 +427,7 @@ fn composite_pass_blends_two_surfaces_and_reuses_cached_inputs() {
         "第二次执行应当全部命中：{}",
         cache.hits()
     );
-    // 蓝色不透明层盖在最上面
+    // The opaque blue layer sits on top
     assert_eq!(&first[0..4], &[0, 0, 255, 255]);
 }
 
@@ -451,10 +449,10 @@ fn preflight_rejects_a_canvas_larger_than_the_backend_can_hold() {
     );
 }
 
-// ── 外部输入 surface ─────────────────────────────────────────────────
+// ── External input surface ─────────────────────────────────────────────────
 
-/// `External` surface 让「已经画好的一张 pixmap」直接进效果链，不经 blit——
-/// 这是 `studio_export` 的姿态模糊能位精确地表达成 Filter pass 的前提。
+/// The `External` surface lets an “already-drawn pixmap” enter the effect chain directly, without a blit —
+/// this is the precondition that lets `studio_export`'s pose blur be expressed bit-exactly as a Filter pass.
 #[test]
 fn an_external_surface_feeds_a_filter_pass_without_a_blit() {
     let mut source = tiny_skia::Pixmap::new(8, 8).unwrap();
@@ -485,7 +483,7 @@ fn an_external_surface_feeds_a_filter_pass_without_a_blit() {
         &external,
     )
     .unwrap();
-    // radius = 0 是恒等变换 ⇒ 输入原样出来，证明中间没有 blit
+    // radius = 0 is the identity ⇒ the input comes out unchanged, proving there is no blit in between
     assert_eq!(out.data(), source.data());
 }
 
@@ -534,7 +532,7 @@ fn an_external_surface_must_be_provided_and_cannot_be_cached() {
     );
 }
 
-/// Filter pass 现在真的会跑效果（commit 4 之前它是 `unsupported`）。
+/// Filter passes now really run the effect (before commit 4 it was `unsupported`).
 #[test]
 fn a_filter_pass_runs_the_registered_cpu_reference() {
     let mut source = tiny_skia::Pixmap::new(16, 16).unwrap();
@@ -561,13 +559,12 @@ fn a_filter_pass_runs_the_registered_cpu_reference() {
         &std::collections::BTreeMap::from([(0u32, source)]),
     )
     .unwrap();
-    // Rec.709 的红 ⇒ 0.2126 × 255 ≈ 54，三通道相等
+    // Red in Rec.709 ⇒ 0.2126 × 255 ≈ 54, all three channels equal
     assert_eq!(&out.data()[..4], &[54, 54, 54, 255]);
 }
 
-/// `Transition` pass 走的是 `CpuExecutor::transition`，与 `Filter` 同一条
-/// 「按 manifest 的具名内核找 CPU reference」的路。这里用两张纯色外部 surface
-/// 验证整条计划链路（阶段 5）。
+/// The `Transition` pass goes through `CpuExecutor::transition`, the same route as `Filter`:
+/// “look up the CPU reference by the named kernel in the manifest”. Here two solid-colour external surfaces are used to verify the entire plan chain (stage 5).
 #[test]
 fn a_transition_pass_runs_the_registered_cpu_reference() {
     let solid = |r, g, b| {
@@ -605,16 +602,15 @@ fn a_transition_pass_runs_the_registered_cpu_reference() {
         .unwrap()
     };
 
-    // 端点逐字节等于输入；中点是整数混合式的结果：a = round(0.5×255) = 128，
-    // r = (255×127 + 127)/255 = 127、b = (255×128 + 127)/255 = 128（截断除法，
-    // 因此不对称——浮点插值再取整会给出 [128, 0, 128]）。
+    // The endpoints are byte-equal to the inputs; the midpoint is the result of integer blending: a = round(0.5×255) = 128,
+    // r = (255×127 + 127)/255 = 127, b = (255×128 + 127)/255 = 128 (truncating division, so it is asymmetric — float interpolation followed by rounding would give [128, 0, 128]).
     assert_eq!(run(0.0).data(), from.data());
     assert_eq!(run(1.0).data(), to.data());
     assert_eq!(&run(0.5).data()[..4], &[127, 0, 128, 255]);
 }
 
-/// `Transition` pass 的两张输入都进 surface 指纹：换掉任意一侧、换 progress、
-/// 换效果版本，输出 surface 的身份都必须变。
+/// Both inputs of a `Transition` pass go into the surface fingerprint: swapping either side, changing progress,
+/// or changing the effect version must each change the identity of the output surface.
 #[test]
 fn both_transition_inputs_enter_the_surface_fingerprint() {
     let build = |progress: f32, swap: bool, version: u32| {

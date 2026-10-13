@@ -21,11 +21,9 @@ import { Note, PRow, Sec, SecHead, Seg, ValueRow } from './inspector-controls.ts
 const NONE = '';
 
 /**
- * 字幕属性页「动效」（原型 panel-submotion.jsx，字幕样式模型设计 §5 / §9）：入场、退场、循环三个阶段各挑一条，选中后
- * 可调单位、时长与强弱。每一格是这一行只挂这一段动效（当前词不动）的缩略图。
+ * Caption properties page “动效” (motion) (prototype panel-submotion.jsx; caption style model design §5 / §9): for the entry, exit and loop phases, pick one for each. Once selected, its unit, duration and strength can be adjusted. Each cell is a thumbnail with only this motion applied to this line (the current word is unchanged).
  *
- * 触发由动效自己定：「念到时」那几条（落入、浮入、翻页……）是逐词动画目录的连续轨，内核按念到的词逐词画；其余是
- * `textMotion`，出现时触发。Studio 样式没有地方另记触发，这里只显示、不能改；译文没有逐词时间，「念到时」那几条不出。
+ * The trigger is decided by the motion itself. The “念到时” (on reading) ones, such as drop-in, float-in and page-turn, belong to the continuous track of the per-word animation catalog, and the core draws them word by word as they are read. The rest are `textMotion`, which trigger on appearance. The Studio style has no other place to record a trigger, so here it is only shown and cannot be changed. The translation has no per-word timing, so the “念到时” (on reading) ones are not offered.
  */
 export function CaptionMotionSection(props: WordSectionProps) {
   const { root, kind, paired, isDisabled, onLive, onCommit } = props;
@@ -53,7 +51,7 @@ export function CaptionMotionSection(props: WordSectionProps) {
           motion: effect ? { [stage]: effect } : undefined,
         })),
       })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- presets 由 stage 与 source 决定
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- presets are determined by stage and source
     [root, kind, paired, stage, source],
   );
 
@@ -116,7 +114,7 @@ export function CaptionMotionSection(props: WordSectionProps) {
                 <Seg
                   label={P.trigger}
                   value="enter"
-                  // 「念到时」只给源语言的行；Studio 的 textMotion 只认出现时，这一格锁着。
+                  // “念到时” (on reading) is offered only for the source-language line. Studio's textMotion only recognizes on-appearance, so this cell is locked.
                   options={[
                     { key: 'enter', label: P.triggers.enter },
                     ...(source ? [{ key: 'spoken', label: P.triggers.spoken }] : []),

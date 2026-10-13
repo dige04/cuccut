@@ -3,9 +3,9 @@ import type { LibraryEntrySummary, LibraryName } from '@cuccut/protocol';
 import { onLibraryEntries } from './library-feed.ts';
 
 /**
- * 术语表与品牌库的镜像（`library` 主题，架构设计 §5.9）：两个库的条目概要，按名字排（与 Runtime 的 `library.list` 同序）。
- * 只有列表；颜色值、术语与文件要用 `library.get` 取详情。快照到之前 `ready` 为 false。
- * 主题只订阅一次，经 `library-feed` 分给各个库的镜像（音色在 `voices-store`）。
+ * Mirror of the glossary and the brand kit (`library` topic, architecture design §5.9): entry summaries for the two libraries, sorted by name (same order as the Runtime's `library.list`).
+ * Only the list. Color values, terms and files are fetched in detail with `library.get`. `ready` is false until the snapshot arrives.
+ * The topic is subscribed once and distributed to each library's mirror through `library-feed`. Voices are in `voices-store`.
  */
 export interface LibraryStore {
   ready: boolean;

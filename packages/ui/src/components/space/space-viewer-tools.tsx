@@ -7,11 +7,11 @@ import { ENTRY_TOOL_COPY as COPY } from '../tools/tools-copy.ts';
 import type { EntryTools } from '../tools/use-entry-tools.ts';
 
 /*
- * Space 查看框里与工具有关的几样（产品设计 §4.5、§2.7「页面」；设计稿 space-viewer.jsx）：事实里写做出它的工具与所在位置，
- * 底栏有「用工具处理…」（进工具页时这个条目已经选好）与「再做一次」（回到参数已填好的工具页，视频工具打开那次运行）。
+ * The tool-related parts of the Space viewer (product design §4.5, §2.7 “页面” (Page); design draft space-viewer.jsx): the facts state which tool made it and where it lives;
+ * the bottom bar has “用工具处理…” (Process with tool…), with the item already selected when the tool page opens, and “再做一次” (Do again), which goes back to the tool page with the parameters filled in and reopens the video tool's run.
  */
 
-/** 事实表里的「工具」「位置」两行；`term` / `value` 用查看框自己的样式。 */
+/** The “工具” (Tool) and “位置” (Location) rows in the facts table; `term` / `value` use the viewer's own styles. */
 export function ToolFacts({ tools, term, value }: { tools: EntryTools | null; term: string; value: string }) {
   if (!tools) return null;
   const { origin, location } = tools;
@@ -36,7 +36,7 @@ export function ToolFacts({ tools, term, value }: { tools: EntryTools | null; te
   );
 }
 
-/** 底栏的「用工具处理…」与「再做一次 / 重试」。按下先关掉查看框再去工具页。 */
+/** The bottom bar's “用工具处理…” (Process with tool…) and “再做一次 / 重试” (Do again / Retry). Pressing one closes the viewer first, then goes to the tool page. */
 export function ToolActions({ entry, tools, onClose }: { entry: SpaceEntry; tools: EntryTools | null; onClose: () => void }) {
   if (!tools) return null;
   const rerun = tools.origin?.rerun ?? null;

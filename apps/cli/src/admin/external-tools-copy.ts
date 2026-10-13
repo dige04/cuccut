@@ -14,9 +14,9 @@ import { pl } from './external-tools-copy.pl.ts';
 import { tr } from './external-tools-copy.tr.ts';
 import { vi } from './external-tools-copy.vi.ts';
 
-/** `cuccut external-tools …` 的文案（英文是键与类型的来源，译文在 `external-tools-copy.<语言>.ts`）。 */
+/** Copy for `cuccut external-tools …`. The English is the source of the keys and types; the translations are in `external-tools-copy.<language>.ts`. */
 const en = {
-  /** `cuccut external-tools --help` 与 `cuccut help external-tools` 的正文。 */
+  /** The body of `cuccut external-tools --help` and `cuccut help external-tools`. */
   help: `Usage:
   cuccut external-tools [list]     External tools (yt-dlp, ffmpeg): status, version, path,
                                    source, and whether you've agreed to use them
@@ -108,7 +108,7 @@ const en = {
   notTtyConfirmRun: 'Not running in a terminal: add --yes once the user confirms running it',
   notDownloaded: 'Not downloaded',
   notRun: 'Not run',
-  /** 任务失败后 stderr 上的补救（不缩进；状态行里缩进的是 `remedyLine`）。 */
+  /** The remedy written to stderr after a task fails (not indented; the indented line on the status line is `remedyLine`). */
   remedy: (remedy: string) => `To fix: ${remedy}`,
   partialDownloadKept: (name: string) => `The downloaded part is kept: run cuccut external-tools install ${name} to resume`,
   alreadyUpdating: (jobId: string) => `Already updating (task ${jobId}); showing output`,

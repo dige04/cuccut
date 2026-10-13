@@ -8,9 +8,9 @@ export interface FileContentInfo { contentKind: FileContentKind; mimeType: strin
 const ARCHIVES = new Set(['zip', 'gz', 'bz2', 'xz', '7z', 'rar', 'tar', 'zst', 'lz', 'lzh', 'cab', 'ar', 'iso']);
 const binary = (): FileContentInfo => ({ contentKind: 'binary', mimeType: 'application/octet-stream' });
 
-/** 内容优先；仅在确认是文本之后，用扩展名保留 JSON、字幕等文本媒体类型。 */
+/** Content sniffing comes first; only after confirming the content is text does the extension decide whether to keep a text media type such as JSON or subtitles. */
 export async function classifyFileContent(sample: Uint8Array, complete: boolean, name: string): Promise<FileContentInfo> {
-  // 不为识别扩展名解压容器：压缩包先按头部识别，避免小采样触发大规模解压。
+  // Do not decompress a container to recognize its extension: archives are identified by their header first, so a small sample does not trigger large-scale decompression.
   const begins = (...signature: number[]) => signature.every((byte, i) => sample[i] === byte);
   const archiveMime = begins(0x50, 0x4b, 3, 4) || begins(0x50, 0x4b, 5, 6) || begins(0x50, 0x4b, 7, 8) ? 'application/zip'
     : begins(0x1f, 0x8b) ? 'application/gzip'
@@ -21,7 +21,7 @@ export async function classifyFileContent(sample: Uint8Array, complete: boolean,
     : begins(0xfd, 0x37, 0x7a, 0x58, 0x5a, 0) ? 'application/x-xz' : null;
   if (archiveMime) return { contentKind: 'archive', mimeType: archiveMime };
   let detected: Awaited<ReturnType<typeof fileTypeFromBuffer>>;
-  try { detected = await fileTypeFromBuffer(sample); } catch { /* 容器的索引可能超出采样范围；不继续读整个文件。 */ }
+  try { detected = await fileTypeFromBuffer(sample); } catch { /* The container's index may lie beyond the sampled range; do not keep reading the whole file. */ }
   if (detected && detected.mime !== 'application/xml') {
     const contentKind: FileContentKind = detected.mime.startsWith('image/') ? 'image'
       : detected.mime.startsWith('video/') ? 'video'
@@ -35,7 +35,7 @@ export async function classifyFileContent(sample: Uint8Array, complete: boolean,
   let text: string;
   try { text = new TextDecoder(encoding, { fatal: true }).decode(sample, { stream: !complete }); }
   catch { return binary(); }
-  // NUL 与不可打印控制字符不能当作文本；保留换行、制表、回车与换页。
+  // NUL and non-printable control characters cannot count as text; keep newline, tab, carriage return, and form feed.
   if (/[\u0000-\u0008\u000b\u000e-\u001f\u007f-\u009f]/u.test(text)) return binary();
   const start = text.trimStart().replace(/^<\?xml[\s\S]*?\?>\s*/i, '').replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
   if (/^<svg(?:[\s/>])|^<!doctype\s+svg\b/i.test(start)) return { contentKind: 'image', mimeType: 'image/svg+xml' };
@@ -48,7 +48,7 @@ export async function classifyFileContent(sample: Uint8Array, complete: boolean,
   return { contentKind: 'text', mimeType: `${mime}; charset=${encoding}`, textEncoding: encoding };
 }
 
-/** 调用方先按资源作用域校验真实路径。只读一个有界前缀，并拒绝打开时被换成的末级符号链接。 */
+/** The caller first validates the real path against the resource scope. Reads only a bounded prefix, and rejects a final-component symbolic link that was swapped in at open time. */
 export async function inspectFileContent(file: string, size: number): Promise<FileContentInfo> {
   const flags = constants.O_RDONLY | (process.platform === 'win32' ? 0 : constants.O_NOFOLLOW | constants.O_NONBLOCK);
   const handle = await fs.open(file, flags);

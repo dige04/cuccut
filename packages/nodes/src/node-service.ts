@@ -25,16 +25,16 @@ import { ShareStore, loadShareFile, type ShareFile } from './share-store.ts';
 import { NodesServer as NS } from '@cuccut/protocol/messages/nodes';
 
 /**
- * 节点服务（架构设计 §6.7、§12.7；节点协议规范）：共享这台电脑的模型能力。
+ * Node service (architecture design §6.7, §12.7; node protocol spec): shares this computer's model capabilities.
  *
- * 用户经本机网关的 `nodes.share.*` 开关它；开着时在所有 IPv4 接口（测试里是回环）上监听一个端口，与本机网关分开。
- * 开关、`nodeId`、名字、端口、各能力的开关与已配对客户端持久在 `node-share.json`；`enabled` 为真时 Runtime 启动即监听，
- * 不自动生成配对码。端口被占用时 Runtime 照常启动，`ShareStatus.listening` 为 false，`error` 说明原因。
+ * The user turns it on and off through the local gateway's `nodes.share.*`. While on, it listens on one port on all IPv4 interfaces (loopback in tests), separate from the local gateway.
+ * The switch, `nodeId`, name, port, per-capability switches and paired clients are persisted in `node-share.json`. When `enabled` is true, the Runtime starts listening at launch;
+ * no pairing code is generated automatically. If the port is occupied, the Runtime still starts, `ShareStatus.listening` is false, and `error` explains why.
  *
- * 能力的分项开关（规范 §11）：第一次开启共享时，此刻支持共享的能力全部打开；之后新加入的能力默认关闭。开关立即生效：
- * 健康端点照实报告，关闭后新任务以 `403 CAPABILITY_DISABLED` 拒绝，已经接受的任务照常跑完。
+ * Per-capability switches (spec §11): the first time sharing is turned on, all capabilities that support sharing at that moment are turned on; capabilities added later default to off. Switches take effect immediately:
+ * the health endpoint reports honestly; once a capability is turned off, new tasks are rejected with `403 CAPABILITY_DISABLED`, while tasks already accepted run to completion.
  *
- * 远端任务交给 `NodeJobs`，它驱动的是 Runtime 唯一的 JobManager。
+ * Remote tasks are handed to `NodeJobs`, which drives the Runtime's single JobManager.
  */
 
 export interface NodeServiceOptions {
@@ -45,21 +45,21 @@ export interface NodeServiceOptions {
   runner: NodeJobRunner;
   models: NodeModels;
   log?: NodeLogger;
-  /** 监听的地址（默认 `0.0.0.0`；测试用 `127.0.0.1`）。 */
+  /** Address to listen on (default `0.0.0.0`; tests use `127.0.0.1`). */
   host?: string;
-  /** mDNS 登记；默认按平台（macOS 用 `dns-sd`），null 表示不登记。 */
+  /** mDNS registration; the default depends on the platform (macOS uses `dns-sd`). null means no registration. */
   advertiser?: Advertiser | null;
   clock?: Clock;
   limits?: Partial<NodeLimits>;
   pairing?: Partial<PairingLimits>;
   freeBytes?: (dir: string) => Promise<number>;
-  /** 支持共享的模型能力（默认 `NODE_SHAREABLE_CAPABILITIES`；测试用它模拟将来新加的能力）。 */
+  /** Model capabilities that support sharing (default `NODE_SHAREABLE_CAPABILITIES`; tests use it to simulate a capability added in the future). */
   shareableCapabilities?: readonly string[];
-  /** 事件流心跳间隔（默认 15 秒）。 */
+  /** Heartbeat interval for the event stream (default 15 seconds). */
   heartbeatMs?: number;
-  /** 默认名字（默认主机名）。 */
+  /** Default name (default: the hostname). */
   hostname?: () => string;
-  /** 监听所有接口时 `ShareStatus.addresses` 列出的本机地址（默认取本机非回环的 IPv4）。 */
+  /** The machine's local addresses that `ShareStatus.addresses` lists when listening on all interfaces (default: the machine's non-loopback IPv4 addresses). */
   addresses?: () => string[];
 }
 
@@ -75,12 +75,12 @@ export class NodeService {
   #pairing: Pairing;
   #server: http.Server | null = null;
   #boundPort: number | null = null;
-  /** 实际绑定的地址（`server.address()`），没在监听时为 null。 */
+  /** The address actually bound (`server.address()`); null when not listening. */
   #boundAddress: string | null = null;
   #error: string | null = null;
-  /** `node-share.json` 读不了或认不出：共享关着、不能修改，也不写那个文件。 */
+  /** If `node-share.json` cannot be read or recognized, sharing stays off, cannot be changed, and that file is not written. */
   readonly #unreadable: string | null;
-  /** 开关操作串行。 */
+  /** Switch operations are serialized. */
   #chain: Promise<unknown> = Promise.resolve();
   #closed = false;
 
@@ -106,9 +106,9 @@ export class NodeService {
   }
 
   /**
-   * 读持久状态、清掉上次留下的远端任务目录；开关是开的就开始监听（不生成配对码）。
-   * `node-share.json` 读不了或认不出时不让 Runtime 启动失败：共享按关着处理，修改共享的操作以 `conflict` 拒绝，
-   * `ShareStatus.error` 说明原因；文件原样留着，修好或移走之后重启生效。
+   * Read the persistent state and clear the remote task directories left over from last time. If the switch is on, start listening (no pairing code is generated).
+   * If `node-share.json` cannot be read or recognized, Runtime startup does not fail: sharing is treated as off, and operations that change sharing are rejected with `conflict`.
+   * `ShareStatus.error` explains why. The file is left as it is, and takes effect after it is repaired or removed and the app restarts.
    */
   static async open(options: NodeServiceOptions): Promise<NodeService> {
     const log = options.log ?? silentNodeLog;
@@ -131,7 +131,7 @@ export class NodeService {
     return service;
   }
 
-  // ---- 本机网关的 nodes.share.*（规范 §10） ----
+  // ---- Local gateway nodes.share.* (spec §10) ----
 
   start(params: ShareStartParams = {}): Promise<ShareStatus> {
     return this.#serial(async () => {
@@ -204,8 +204,8 @@ export class NodeService {
   }
 
   /**
-   * 打开或关闭一种能力的共享（规范 §10、§11），持久并立即生效：健康端点随即报告新状态；关闭只拦新任务，
-   * 已经接受的任务（含还在等上传的）照常跑完。共享没开时也可以设，开启时沿用。
+   * Turn sharing of one capability on or off (spec §10, §11). The change is persisted and takes effect immediately: the health endpoint reports the new state at once. Turning it off only stops new tasks;
+   * tasks already accepted (including those still waiting for upload) run to completion. It can be set even while sharing is off, and is carried over when sharing is enabled.
    */
   setCapability(capability: string, enabled: boolean): Promise<ShareStatus> {
     return this.#serial(async () => {
@@ -224,12 +224,12 @@ export class NodeService {
     });
   }
 
-  /** 监听中的实际端口（测试与诊断用）。 */
+  /** The port actually being listened on (for tests and diagnostics). */
   get port(): number | null {
     return this.#boundPort;
   }
 
-  /** Runtime 停止：取消并删除远端任务，关闭监听与 mDNS 登记。开关保持原样，下次启动恢复。 */
+  /** Runtime stop: cancel and delete remote tasks, then close the listener and the mDNS registration. The switches are left as they are and restored on the next start. */
   close(): Promise<void> {
     return this.#serial(async () => {
       if (this.#closed) return;
@@ -241,7 +241,7 @@ export class NodeService {
     });
   }
 
-  // ---- 节点协议 ----
+  // ---- Node protocol ----
 
   async health(): Promise<NodeHealth> {
     const bundles = (await this.#options.models.list()).filter((b) => b.capability === 'transcribe');
@@ -279,23 +279,23 @@ export class NodeService {
       }
       throw new NodeHttpError(NODE_ERROR.PAIRING_CODE_INVALID, NS.pairingCodeInvalid().text);
     }
-    // 同一个 clientId 重新配对：旧令牌已失效，它之前的任务不受影响。
+    // The same clientId paired again: the old token is no longer valid; its earlier tasks are unaffected.
     this.#share.clients = this.#pairing.clients();
     await this.#save();
     this.#log.info('Client paired', { clientId });
     return { nodeId: this.#share.nodeId!, name: this.#name(), token: outcome.token };
   }
 
-  // ---- 内部 ----
+  // ---- Internal ----
 
-  /** 还没有开启过共享时，按开启时的默认（全开）报告；之后以持久的表为准，表里没有的能力算关闭。 */
+  /** If sharing has never been turned on, reports the defaults in effect at enable time (all on). Afterwards the persisted table governs; capabilities missing from the table count as off. */
   #capabilityEnabled(capability: string): boolean {
     if (!this.#shareable.includes(capability)) return false;
     const capabilities = this.#share.capabilities;
     return capabilities === null ? true : capabilities[capability]?.enabled === true;
   }
 
-  /** 第一次开启共享（或第一次设开关）时：此刻支持共享的能力全部打开。 */
+  /** The first time sharing is turned on (or the first switch is set): all capabilities that support sharing at that moment are turned on. */
   #initialCapabilities(): Record<string, { enabled: boolean }> {
     return Object.fromEntries(this.#shareable.map((c) => [c, { enabled: true }]));
   }
@@ -324,7 +324,7 @@ export class NodeService {
       ...(this.#options.heartbeatMs !== undefined ? { heartbeatMs: this.#options.heartbeatMs } : {}),
     });
     const server = http.createServer(handler);
-    // 大文件的上传由任务的上传期限管，不用 Node 默认的整请求 300 秒。
+    // Large file uploads are governed by the task's upload deadline, not Node's default 300-second limit for the whole request.
     server.requestTimeout = 0;
     try {
       await new Promise<void>((resolve, reject) => {
@@ -364,12 +364,12 @@ export class NodeService {
     if (!server) return;
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
-      // 事件流与上传是长连接：一并断开。
+      // The event stream and uploads are long-lived connections: disconnect them together.
       server.closeAllConnections();
     });
   }
 
-  /** 共享关闭与 Runtime 停止共用：先取消并删除远端任务（事件流收到终态），再关监听与登记。 */
+  /** Shared by turning sharing off and stopping the Runtime: first cancel and delete the remote tasks (the event stream receives the terminal state), then close the listener and the registration. */
   async #shutdown(): Promise<void> {
     await this.jobs.closeAll();
     await this.#unlisten();
@@ -398,8 +398,8 @@ function defaultHostname(): string {
 }
 
 /**
- * 节点服务此刻能被连上的地址：没在监听时为空；绑定在所有接口（`0.0.0.0`、`::`）上时是本机的局域网地址；
- * 绑定在具体地址上（包括回环地址）时只有这一个地址，别的接口连不上。
+ * Addresses at which the node service can currently be reached. Empty when not listening. When bound to all interfaces (`0.0.0.0`, `::`), these are the machine's LAN addresses.
+ * When bound to a specific address (including the loopback address), only that one address is listed, and other interfaces cannot reach it.
  */
 export function shareAddresses(boundAddress: string | null, interfaces: () => string[]): string[] {
   if (boundAddress === null) return [];
@@ -407,7 +407,7 @@ export function shareAddresses(boundAddress: string | null, interfaces: () => st
   return [boundAddress];
 }
 
-/** 本机可供别人连接的非回环 IPv4 地址。 */
+/** The machine's non-loopback IPv4 addresses that others can connect to. */
 export function lanAddresses(): string[] {
   const found: string[] = [];
   for (const list of Object.values(os.networkInterfaces())) {

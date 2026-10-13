@@ -1,8 +1,8 @@
-//! 前端公开接口的无外部文件回归：期望值取自上游 Python（G2PW 关闭）的 golden 输出。
+//! Regression tests for the frontend's public interface that need no external files: expected values are taken from the golden output of upstream Python (G2PW disabled).
 
 use super::*;
 
-/// 内嵌数据与 `data/README.md` 登记的 SHA-256 对拍（v3 新增：数据原样带自 v2，改了要同步登记）。
+/// Checks the embedded data against the SHA-256 hashes recorded in `data/README.md` (new in v3: the data is carried over from v2 unchanged; if it changes, the record must be updated too).
 #[test]
 fn data_files_match_the_readme_digests() {
     use sha2::{Digest, Sha256};

@@ -1,16 +1,16 @@
 import { isLocale, resolveLanguage, type Locale } from '@cuccut/protocol';
 
 /*
- * 主进程的界面语言（仓库约定 §5）：菜单与对话框跟界面用同一种语言。启动时界面还没告诉主进程，先按系统的首选语言定一个；
- * 之后界面每次换语言（启动时也一次）经 `cuccut:set-locale` 告诉主进程（preload 的 `setLocale`，界面的 `useLanguageSync`）。
+ * The main process's UI language (repository convention §5): menus and dialogs use the same language as the UI. At launch the UI has not yet told the main process, so a language is first chosen from the system's preferred language.
+ * Afterwards, each time the UI changes language (and once at launch), it tells the main process via `cuccut:set-locale` (preload's `setLocale`, the UI's `useLanguageSync`).
  */
 
-/** 界面还没告诉主进程之前的语言：跟随系统的首选语言，没有对应的出货语言时英文。 */
+/** The language used before the UI has told the main process: it follows the system's preferred language, and English if there is no matching shipped language. */
 export function startupLocale(systemLanguages: readonly string[]): Locale {
   return resolveLanguage('system', systemLanguages);
 }
 
-/** 渲染进程传来的语言：只认出货语言，别的（类型不对、不认识的标签）丢掉。 */
+/** Language sent from the renderer process: only shipped languages are accepted. Anything else (wrong type, unrecognised tag) is dropped. */
 export function localeFromRenderer(value: unknown): Locale | null {
   return isLocale(value) ? value : null;
 }

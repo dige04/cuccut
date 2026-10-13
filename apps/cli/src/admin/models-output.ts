@@ -24,11 +24,11 @@ import { remedyText } from '../localized-text.ts';
 import { M } from './models-copy.ts';
 
 /**
- * `cuccut models` 管理命令（repair / cancel / remove / dir / accounts / usage）的输出与参数（架构设计 §6.3）。列出、安装与
- * 检查是派生命令（`models list|install|test`）。大小未知时不显示百分比。
+ * Output and arguments of the `cuccut models` admin commands (repair / cancel / remove / dir / accounts / usage) (Architecture design §6.3). Listing, installing and
+ * checking are derived commands (`models list|install|test`). When the size is unknown, no percentage is shown.
  */
 
-/** 字节数给人看：B、KB、MB、GB，保留一位小数。 */
+/** Byte counts for people to read: B, KB, MB, GB, with one decimal place. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -41,17 +41,17 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-/** 已收到 / 总量；总量未知时只给已收到的字节，不给百分比。 */
+/** Received / total. When the total is unknown, only the bytes received are shown, with no percentage. */
 export function formatByteProgress(done: number, total: number | null): string {
   if (total === null || total <= 0) return M.byteProgressUnknown(formatBytes(done));
   const percent = Math.min(100, Math.floor((done / total) * 100));
   return M.byteProgress(formatBytes(done), formatBytes(total), percent);
 }
 
-/** 安装或修复（`models install` / `models repair`）。 */
+/** Install or repair (`models install` / `models repair`). */
 export type InstallVerb = 'install' | 'repair';
 
-/** 一个模型包的几行：状态、组件、安装进度与最近一次检查。 */
+/** A few lines for one model package: status, components, install progress and the most recent check. */
 export function formatBundleLines(bundle: ModelBundleStatus): string[] {
   const state = M.bundleState(M.bundleStates[bundle.state], bundle.state, bundle.reason);
   const lines = [
@@ -87,7 +87,7 @@ function checkRemedyLines(bundleId: string, code: string | undefined | null): st
   return [];
 }
 
-/** 安装或修复的计划：下载什么、多大、从哪里、磁盘够不够。 */
+/** The plan for an install or repair: what is downloaded, how large, from where, and whether the disk has enough room. */
 export function formatInstallPlan(plan: ModelInstallPlan, verb: InstallVerb): string[] {
   const repair = verb === 'repair';
   if (plan.upToDate) return [M.upToDate(repair, plan.bundleId)];
@@ -107,13 +107,13 @@ export function formatInstallPlan(plan: ModelInstallPlan, verb: InstallVerb): st
   return lines;
 }
 
-/** 确认的提问。 */
+/** A confirmation prompt. */
 export function installPrompt(plan: ModelInstallPlan, verb: InstallVerb): string {
   const size = plan.downloadBytes === null ? M.sizeAbout(formatBytes(plan.estimatedBytes)) : formatBytes(plan.downloadBytes);
   return M.installPrompt(verb === 'repair', size);
 }
 
-/** 安装或修复的任务没成：补救说明；磁盘空间不足、带着字节数时先说这次要多少、只剩多少。 */
+/** The install or repair task failed: a remedy note. For insufficient disk space with byte counts, first say how much this time needs and how much is left. */
 export function installFailureLines(error: JobRecord['error']): string[] {
   const details = (error?.details ?? {}) as { remedy?: unknown; requiredBytes?: unknown; availableBytes?: unknown };
   const lines: string[] = [];
@@ -127,8 +127,8 @@ export function installFailureLines(error: JobRecord['error']): string[] {
 }
 
 /**
- * `cuccut models remove <id>`：`custom:` 开头的与目录里的在线服务商（`onlineProviders`，从能力视图取）是服务商
- * （§6.8：目录里的服务商移除即停用并删掉全部账号与凭据），其余是本地模型包。
+ * `cuccut models remove <id>`: IDs starting with `custom:`, and the online providers in the directory (`onlineProviders`, taken from the capability view), are providers
+ * (§6.8: removing a directory provider deactivates it and deletes all its accounts and credentials). The rest are local model packages.
  */
 export function removeTarget(id: string, onlineProviders: readonly string[] = []): 'provider' | 'bundle' {
   return id.startsWith('custom:') || onlineProviders.includes(id) ? 'provider' : 'bundle';
@@ -143,7 +143,7 @@ export function formatRemoveResult(result: ModelRemoveResult): string[] {
   return lines;
 }
 
-/** `cuccut models dir`：当前的模型目录、来源与用量。 */
+/** `cuccut models dir`: the current model directory, its source, and its usage. */
 export function formatModelsDir(info: ModelsDirInfo): string[] {
   const lines = [info.path, M.dirSource(M.dirSources[info.source])];
   if (!info.exists) lines.push(M.dirMissing);
@@ -156,8 +156,8 @@ export function formatModelsDir(info: ModelsDirInfo): string[] {
 }
 
 /**
- * 更改模型目录的第一步：先看当前目录的来源，环境变量指定时直接以 `MODELS_DIR_ENV_LOCKED` 失败（与 `models.setDir` 同样的
- * 拒绝），不去查看新位置、不打印说明；否则只读地查看新位置（`null` 是缺省目录）。
+ * First step of changing the model directory: check the source of the current directory. If an environment variable sets it, fail at once with `MODELS_DIR_ENV_LOCKED` (the same refusal as `models.setDir`),
+ * without looking at the new location or printing an explanation. Otherwise, only read the new location (`null` is the default directory).
  */
 export async function inspectDirChange(
   api: { getDir: () => Promise<ModelsDirInfo>; inspectDir: (path: string | null) => Promise<ModelsDirInspection> },
@@ -173,7 +173,7 @@ export async function inspectDirChange(
   return api.inspectDir(target);
 }
 
-/** 选定文件夹的问题；没有问题时 null。 */
+/** The problem with the chosen folder, or null when there is no problem. */
 export function dirProblem(inspection: ModelsDirInspection): string | null {
   switch (inspection.problem) {
     case 'missing':
@@ -189,7 +189,7 @@ export function dirProblem(inspection: ModelsDirInspection): string | null {
   }
 }
 
-/** 更改前的说明：新位置里已有的模型、可用空间，以及移动要写多少。 */
+/** Explanation before the change: models already in the new location, available space, and how much writing the move requires. */
 export function formatDirInspection(inspection: ModelsDirInspection): string[] {
   const found = inspection.found.bundleIds.length;
   const lines = [
@@ -206,7 +206,7 @@ export function formatDirInspection(inspection: ModelsDirInspection): string[] {
 }
 
 /**
- * 没给 `--move` / `--switch` 时用哪种：当前目录里没有模型时只切换；有时要用户选（返回 null）。两个都给时报错。
+ * Which one to use when neither `--move` nor `--switch` is given: when there are no models in the current directory, only switch. When there are, the user chooses (returns null). Both given is an error.
  */
 export function dirMode(flags: { move?: boolean; switch?: boolean }, inspection: ModelsDirInspection): ModelsDirMode | null {
   if (flags.move && flags.switch) throw new Error(M.moveOrSwitch);
@@ -215,9 +215,9 @@ export function dirMode(flags: { move?: boolean; switch?: boolean }, inspection:
   return inspection.current.bytes > 0 ? null : 'switch';
 }
 
-// ---- 服务商的账号与用量（架构设计 §6.8、§6.10）：`models accounts`、`models usage` ----
+// ---- Provider accounts and usage (Architecture design §6.8, §6.10): `models accounts`, `models usage` ----
 
-/** 账号的状态给人看：限速时带上恢复时间（本机时间）。 */
+/** Account status for people to read. When rate-limited, includes the recovery time (local time). */
 export function accountStateLabel(status: ProviderAccountStatus): string {
   const label = (M.accountStates as Record<string, string>)[status.state] ?? status.state;
   if (status.state === 'rate-limited' && status.until) {
@@ -227,8 +227,8 @@ export function accountStateLabel(status: ProviderAccountStatus): string {
 }
 
 /**
- * 一家服务商的账号，一个一行，按先后排（调用用第一个启用且有密钥的，出错不换下一个）。只有掩码，从不显示密钥。
- * `current` 标出此刻会用的那个。
+ * A provider's accounts, one per line, in order. Calls use the first account that is enabled and has a key; on error they do not move on to the next. Only masks are shown, never the key.
+ * `current` marks the one that will be used right now.
  */
 export function formatAccountLines(accounts: readonly ProviderAccountView[], indent = '    '): string[] {
   if (accounts.length === 0) return [`${indent}${M.noAccounts}`];
@@ -247,13 +247,13 @@ export function formatAccountLines(accounts: readonly ProviderAccountView[], ind
   });
 }
 
-/** `accounts use <账号>`：把这个账号排到最前，其余保持原来的先后。认 accountId，也认唯一的名字。 */
+/** `accounts use <account>`: moves this account to the front and keeps the others in their original order. Accepts an accountId, or a name that is unique. */
 export function accountOrderWithFirst(accounts: readonly ProviderAccountView[], ref: string): string[] {
   const account = findAccount(accounts, ref);
   return [account.accountId, ...accounts.filter((a) => a.accountId !== account.accountId).map((a) => a.accountId)];
 }
 
-/** 按 accountId 或唯一的名字找账号；找不到或名字重复时报错（列出可选的）。 */
+/** Finds an account by accountId or by a unique name. Errors when it is not found or the name is duplicated (lists the options). */
 export function findAccount(accounts: readonly ProviderAccountView[], ref: string): ProviderAccountView {
   const byId = accounts.find((a) => a.accountId === ref);
   if (byId) return byId;
@@ -266,13 +266,13 @@ export function findAccount(accounts: readonly ProviderAccountView[], ref: strin
 
 export const USAGE_PERIOD_LABELS: Record<UsagePeriod, string> = live(() => M.usagePeriods);
 
-/** 金额：一种币种一项，不换算；空时 null。 */
+/** Amounts: one item per currency, not converted. null when empty. */
 export function formatMoney(list: readonly Money[]): string | null {
   if (list.length === 0) return null;
   return list.map((m) => (m.currency === 'USD' ? `$${m.amount}` : `${m.amount} ${m.currency}`)).join(' + ');
 }
 
-/** 用量给人看：只列有的项。 */
+/** Usage for people to read: lists only the items that exist. */
 export function formatUnits(units: UsageUnits): string {
   const count = (n: number) => n.toLocaleString(intlLocale());
   const parts: string[] = [];
@@ -295,8 +295,8 @@ function formatRow(row: UsageRow, total: number): string {
 }
 
 /**
- * `cuccut models usage` 的输出（§6.10）：三种金额分开写，不合成一个数——估算标「≈」，报告的照写，费用未知的只报次数；
- * 不同币种分开列。然后是按服务商、能力、模型、账号的拆分。没有调用时一句说明。
+ * Output of `cuccut models usage` (§6.10): the three kinds of amount are written separately and never merged into one number. Estimates are marked “≈”, reported amounts are written as reported, and where the cost is unknown only the count is reported.
+ * Different currencies are listed separately. Then comes the breakdown by provider, capability, model and account. When there are no calls, a one-sentence note.
  */
 export function formatUsageReport(report: UsageReport, period: UsagePeriod, providerId?: string): string[] {
   const lines = [M.usageHeader(providerId, M.usagePeriods[period], report.period.from, report.period.to)];

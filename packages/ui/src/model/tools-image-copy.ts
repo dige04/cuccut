@@ -14,7 +14,7 @@ import { pl } from './tools-image-copy.pl.ts';
 import { tr } from './tools-image-copy.tr.ts';
 import { vi } from './tools-image-copy.vi.ts';
 
-/** 生成图片工作台的文案（译文在 `tools-image-copy.<语言>.ts`）。 */
+/** Copy for the image generation workbench (translations in `tools-image-copy.<语言>.ts`). */
 const en = {
   emptyPrompt: 'Describe the picture first',
   promptTooLong: (n: number, max: number) => `Prompt is ${n} characters · this model takes at most ${max}`,

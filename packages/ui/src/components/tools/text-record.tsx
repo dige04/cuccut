@@ -30,9 +30,9 @@ import { RECORD_COPY, TEXT_COPY } from './tools-copy.ts';
 import { copyText, useCancelJob, useDownloadArtifact, useRecordRetry } from './use-tool-records.ts';
 
 /*
- * 设计稿 tool-llm.jsx 的记录卡（`.ttsrec`，85-90）：在跑时「等待模型返回…」可取消；做完了是结果名、模型、全文预览
- * （tools.css `.tool-llm__result`：最高 320、可滚、保留换行、12px）和「复制 / 下载」；没做成的给原因。
- * 取消了的不列（可能已经计费的照实留一张，见 tools-records.ts `listedRecords`）。
+ * Record card from design file tool-llm.jsx (`.ttsrec`, 85-90): while running, “等待模型返回…” (Waiting for the model to respond…) can be cancelled; when done, it shows the result name, model, a full-text preview
+ * (tools.css `.tool-llm__result`: max height 320, scrollable, line breaks preserved, 12px) and “复制 / 下载” (Copy / Download); a failed one gives the reason.
+ * Cancelled items are not listed (one that may already have been billed is kept, to be accurate; see `listedRecords` in tools-records.ts).
  */
 
 const result = style({
@@ -56,7 +56,7 @@ const errorTitle = style({ margin: 0, font: 'ui-sm', fontWeight: 'bold', color: 
 const warn = style({ margin: 0, font: 'ui-xs', color: 'orange-1000', overflowWrap: 'anywhere' });
 const note = style({ margin: 0, font: 'ui-xs', color: 'gray-600', overflowWrap: 'anywhere' });
 
-/** 「再试一次」：中断的就地重跑，其余照冻结的参数原样再提交（见 `useRecordRetry`）。 */
+/** “再试一次” (Try again): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useTextRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -70,7 +70,7 @@ function useTextRetry(job: JobRecord) {
   );
 }
 
-/** 右栏的一条文本生成记录：按状态画成结果卡、进度卡或警示卡。 */
+/** One text-generation record in the right column: drawn as a result card, progress card or warning card, depending on its status. */
 export function TextRecord({
   job,
   all,
@@ -120,7 +120,7 @@ function ErrorCard({ job, provider }: { job: JobRecord; provider: string }) {
   const go = useShell((s) => s.go);
   const hide = useTools((s) => s.hide);
   const again = useTextRetry(job);
-  // 结果不明的要先对账（任务详情里决定再试或放弃），这里不给重试、也不让藏起来。
+  // Results of unknown status must be reconciled first (decide to retry or give up in the job details); no retry is offered here, and they cannot be hidden.
   if (job.state === 'needs-reconciliation') {
     return (
       <RecordCard failed label={textPrompt(job)}>
@@ -160,7 +160,7 @@ function ErrorCard({ job, provider }: { job: JobRecord; provider: string }) {
   );
 }
 
-/** 取消了但可能已经计费的一条：照实写费用，可以藏起来。 */
+/** A cancelled item that may already have been billed: the cost is shown as is, and it can be hidden. */
 function CancelledCard({ job, cost }: { job: JobRecord; cost: string }) {
   const hide = useTools((s) => s.hide);
   return (
@@ -201,7 +201,7 @@ function DoneCard({ job, provider, now, onAgain }: { job: JobRecord; provider: s
     }
   };
 
-  /** 复制全文：预览就是全文时直接复制，否则经受限地址读产物。 */
+  /** Copy the full text: if the preview is already the full text, copy it directly; otherwise read the output through a restricted address. */
   const copyAll = async () => {
     if (!text) return;
     if (!text.previewTruncated || !artifactId) {

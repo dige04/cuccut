@@ -61,7 +61,7 @@ import {
 } from './speech-worker.ts';
 import { mergeRefresh, refreshPlan, refreshableTranslation, type RefreshPlan } from './translation-refresh.ts';
 
-// 抽到 translation-batches.ts 的部分，原样从这里导出（翻译配音与测试从这里引用）。
+// The part moved into translation-batches.ts is re-exported unchanged from here (dubbing and tests import it from this file).
 export {
   GLOSSARIES_SCHEMA,
   checkBatch,
@@ -72,40 +72,28 @@ export {
 } from './translation-batches.ts';
 
 /**
- * 翻译（架构设计 §7.9）：视频里一份 `speech` 文档 → 一份新的 `translation` 文档（视频格式规范 §5.3）。
- * 从工具入口发起，由流程调用文本模型，不启动智能体；文本模型没有配置时启动就以 `CAPABILITY_NOT_CONFIGURED`
- * 拒绝，不改交智能体。
+ * Translation (architecture design §7.9): one `speech` document in a video → one new `translation` document (video format spec §5.3).
+ * Started from the tool entry point. The pipeline calls the text model and does not start an agent. If no text model is configured, startup rejects with `CAPABILITY_NOT_CONFIGURED` and does not hand over to an agent.
  *
- * 步骤：读取原文（冻结源文档的当前版本与正文、按字幕与翻译核心的规则切好句子，发布为产物）→ 翻译（在 Speech Worker 里由
- * 字幕与翻译核心完成：译向简报、分页翻译、对齐与收尾，每一次模型调用经这里的 `generateText` 发出；检查点在这一步的 staging
- * 里，中断或失败之后重试从检查点继续；产出译文正文与目标语言的字幕条，`speech-worker.ts`）→ 组装（核对 Worker 的译文与冻结的
- * 原文逐句对应、按 §5.3 校验）→ 写入视频（以 `system:pipeline` 经 Application 提交 `putDocument`，受版本校验）→ 建立目标语言的
- * 字幕层（`caption-layer.ts`，字幕条用 Worker 切好的；只在 `captions: true` 时建，不给时这一步跳过，同一份译文已有字幕层时也跳过；
- * 工具入口、CLI 与编辑器的「翻译成…」都带上 `captions: true`。`bilingual` 时与原文共用样式双语显示，默认只显示
- * 译文、配对的原文字幕层从画面上拿下）。
+ * Steps: read the source (freeze the current version and body of the source document, split it into sentences by the subtitle and translation core's rules, and publish the result as an artifact) → translate (done in the Speech Worker by the subtitle and translation core: a target-direction brief, page-by-page translation, alignment and wrap-up; every model call goes out through `generateText` here; checkpoints live in this step's staging, so after an interruption or failure a retry resumes from the checkpoint; it produces the translation body and the target-language subtitle cues, `speech-worker.ts`) → assemble (check that the Worker's translation corresponds sentence by sentence with the frozen source, and validate against §5.3) → write to the video (submit `putDocument` through Application as `system:pipeline`, with version checking) → create the target-language caption layer (`caption-layer.ts`, using the cues the Worker split; created only when `captions: true` is given, skipped when it is not, and also skipped when this translation already has a caption layer; the tool entry point, the CLI and the editor's "Translate to…" all pass `captions: true`. With `bilingual`, the two share a style and display as bilingual; by default only the translation is shown, and the paired source caption layer is removed from the picture).
  *
- * 重新执行：每次都新增一份译文文档，不替换已有的（它们可能有手工修改，架构设计 §10.3；与转写一致，§7.3）。
- * 执行期间源文档改了（或删了）：写入这一步以 `STALE_JOB_INPUT` 失败，视频不变，产物保留；重试时读取原文这一步
- * 的产出不再可用，从当前版本重新读取、重新翻译。
+ * Re-running: each run adds a new translation document and does not replace existing ones, since they may have manual edits (architecture design §10.3; consistent with transcription, §7.3).
+ * If the source document changed (or was deleted) during the run: the write step fails with `STALE_JOB_INPUT`, the video is unchanged, and artifacts are kept. On retry, the read-source step's output is no longer usable, so the source is re-read from the current version and translated again.
  *
- * 就地刷新（给了 `translationId`）：读取原文这一步同时冻结那份译文的当前版本，挑出要重译的句子（标了过期、原句改过、
- * 还没有译文，或 `sentences` 点名的）与原句已经不在的单元（`translation-refresh.ts`）；Worker 以那份译文为底稿只重译这几句；
- * 组装把它们并回原来的译文，别的单元原样；写入是一笔事务：同一份译文文档的新版本，连同从它生成的字幕文档里这几句的字幕条
- * （别的条不动，时间仍取原句成员词的时间），撤销一次两边一起回去。不新建字幕层（`captions` 不能给）。执行期间转写或这份
- * 译文改了：写入以 `STALE_JOB_INPUT` 失败，视频不变。
+ * In-place refresh (when `translationId` is given): the read-source step also freezes the current version of that translation, and picks the sentences to retranslate (marked stale, whose source changed, that have no translation yet, or that `sentences` names) and the units whose source sentence is no longer there (`translation-refresh.ts`). The Worker uses that translation as a base and retranslates only those sentences. Assembly merges them back into the original translation and leaves other units as they are. The write is one transaction: a new version of the same translation document, together with the caption cues for those sentences in the caption documents generated from it (other cues are untouched, and their times still come from the source sentence's member words). A single undo reverts both sides together. No new caption layer is created (`captions` cannot be given). If the transcript or this translation changed during the run, the write fails with `STALE_JOB_INPUT` and the video is unchanged.
  */
 
 export const TRANSLATE_PIPELINE = 'translate';
 
-/** 翻译流程需要的视频能力；由 Runtime 用 VideoService 实现，写入的行为者是 `system:pipeline`。 */
+/** Video capabilities the translation pipeline needs. The Runtime implements them with VideoService, and writes are attributed to `system:pipeline`. */
 export interface PipelineVideos {
-  /** 视频此刻的版本、根序列与文档记录；没打开时 null。 */
+  /** The video's current version, root sequence and document records; null when it is not open. */
   state(videoId: Id): { revision: string; rootSequenceId: Id; documents: Record<Id, DocumentRecord> } | null;
-  /** 一份文档某个版本（不给时当前版本）的正文。 */
+  /** The body of one version of a document (the current version when none is given). */
   document(videoId: Id, documentId: Id, revision?: string): Promise<{ revision: string; body: unknown }>;
-  /** 素材当前版本的事实（内容指纹、时长、采样率）；素材不在时 null。不给时翻译按转写里最后一个词的终点当素材时长。 */
+  /** Facts about the media's current version (content fingerprint, duration, sample rate); null when the media is not present. When not given, translation uses the end time of the last word in the transcript as the media duration. */
   asset?(videoId: Id, assetId: Id): { contentHash: string; duration?: MediaTime; sampleRate?: number } | null;
-  /** 以 `system:pipeline` 的身份提交一笔编辑；`run` 是这次执行（引擎据此执行停止屏障，§7.4）。 */
+  /** Commits one edit as `system:pipeline`. `run` is this execution (the engine uses it to enforce the stop barrier, §7.4). */
   apply(
     videoId: Id,
     request: {
@@ -120,27 +108,27 @@ export interface PipelineVideos {
 
 export interface TranslateDeps {
   videos: CaptionVideos;
-  /** 进程内的文本生成（与 `models.generateText` 共用并发与计数）。 */
+  /** In-process text generation (shares concurrency and call counting with `models.generateText`). */
   text: Pick<TextGenerator, 'generate'>;
-  /** 启动时选定 Provider 与模型（§6.2）；没有配置时抛 `CAPABILITY_NOT_CONFIGURED`。 */
+  /** Provider and model selected at startup (§6.2); throws `CAPABILITY_NOT_CONFIGURED` when none is configured. */
   selectText(target: { provider?: string; model?: string }): Promise<{ providerId: string; modelId: string; model: TextModelInfo }>;
-  /** Speech Worker 的命令（`resolveSpeechWorkerCommand`）；没有构建时 null，翻译这一步以 `WORKER_FAILED` 失败。 */
+  /** The Speech Worker command (`resolveSpeechWorkerCommand`); null when it has not been built, and the translation step then fails with `WORKER_FAILED`. */
   speechWorker(): string | WorkerCommand | null;
-  /** 字幕与翻译核心退避时长的倍数（默认 1；测试调小）。 */
+  /** Multiplier for the subtitle and translation core's backoff durations (default 1; tests lower it). */
   backoffScale?: number;
-  /** 用户库（翻译用术语表）；没有时只能用调用时直接给的术语。 */
+  /** User library (glossaries for translation). Without it, only terms passed directly in the call can be used. */
   library?: GlossaryLibrary;
-  /** 产物库：启动时把用到的库里术语表的内容写成产物（之后只读它，不再读库）。用到库里的术语表时必须有。 */
+  /** Artifact store: at startup, writes the contents of the library glossaries in use as artifacts (after that only the artifacts are read, not the library). Required when a library glossary is used. */
   artifacts?: Pick<ArtifactStore, 'put'>;
 }
 
-/** 冻结的参数：源文档、Provider 与模型、批大小都已确定。 */
+/** Frozen parameters: the source document, Provider and model, and batch size are all fixed. */
 export interface FrozenTranslateParams extends TranslateParams {
   documentId: Id;
   provider: string;
   model: string;
   batchSize: number;
-  /** 启动时冻结的术语表；调用时没给、视频里也没启用时没有。 */
+  /** Glossary frozen at startup. Absent when none was passed in the call and the video does not enable one. */
   glossaryUse?: FrozenGlossaryUse;
 }
 
@@ -150,7 +138,7 @@ const APPLY_ATTEMPTS = 3;
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
+    // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     videoId: { type: 'string', description: '已打开的视频（等同 target: { videoId }）' },
     target: targetSchema('要翻译的视频：已打开的，或 Space 里的视频条目（流程期间由 Runtime 打开）；与 videoId 给一个', null),
     documentId: { type: 'string', description: '源 speech 文档；视频里只有一份时可以不给' },
@@ -199,26 +187,26 @@ const PARAMS_SCHEMA = {
 
 interface FreezeOutput extends Record<string, unknown> {
   artifactId: string;
-  /** 冻结的转写正文（Speech Worker 的输入）。 */
+  /** Frozen transcript body (the Speech Worker's input). */
   speechArtifactId: string;
-  /** 转写所属素材的事实（Speech Worker 把字幕条夹在素材时长之内）。 */
+  /** Facts about the media the transcript belongs to (the Speech Worker clamps subtitle cues within the media duration). */
   media: SpeechTranslateInput['media'];
   documentId: Id;
   revision: string;
   sentenceCount: number;
-  /** 就地刷新：冻结的那份译文（正文是产物）与要做的事。 */
+  /** In-place refresh: the frozen translation (its body is an artifact) and the work to do. */
   translation?: { documentId: Id; revision: string; artifactId: string };
   plan?: RefreshPlan;
 }
 
 interface TranslateOutput extends Record<string, unknown> {
-  /** Worker 写出的译文正文。 */
+  /** Translation body written by the Worker. */
   artifactId: string;
-  /** Worker 切好的目标语言字幕条（`cuccut.speech-worker.cues/1`）。 */
+  /** Target-language subtitle cues split by the Worker (`cuccut.speech-worker.cues/1`). */
   cuesArtifactId: string;
   calls: { calls: number; retries: number; failures: number };
   modelVersion: string | null;
-  /** 去重之后的术语条数；`cappedBatches` 是摘要里沿用的字段，字幕与翻译核心不截断术语，总是 0。 */
+  /** Number of glossary entries after deduplication. `cappedBatches` is a field carried over in the summary; the subtitle and translation core never truncates terms, so it is always 0. */
   glossaryTerms?: number;
   cappedBatches?: number;
 }
@@ -226,13 +214,13 @@ interface TranslateOutput extends Record<string, unknown> {
 interface AssembleOutput extends Record<string, unknown> {
   artifactId: string;
   unitCount: number;
-  /** 就地刷新：换成新译文的单元（含新建的）。 */
+  /** In-place refresh: the units replaced with new translations (including newly created units). */
   changedUnitIds?: Id[];
 }
 
 interface WriteOutput extends Record<string, unknown> {
   documentId: Id;
-  /** 就地刷新：写入之后译文的版本、跟着换了字幕条的字幕文档与那笔事务。 */
+  /** In-place refresh: the translation's version after the write, the caption documents whose cues were replaced, and that transaction. */
   revision?: string;
   captionDocumentIds?: Id[];
   transactionId?: Id;
@@ -252,7 +240,7 @@ export function translatePipeline(deps: TranslateDeps): PipelineDefinition<Froze
       const refresh = params.translationId !== undefined ? await prepareRefresh(deps.videos, params, state.documents) : null;
       const documentId = refresh?.documentId ?? pickSource(state.documents, params.documentId);
       sameLanguageCheck(state.documents[documentId]?.language ?? null, params.targetLanguage);
-      // 重试沿用冻结的术语表；第一次启动时解析调用时给的与视频启用的，冻结版本、内容写成产物。
+      // Retries reuse the frozen glossary. On first startup, the glossary passed in the call and the one enabled in the video are resolved, and their versions and contents are frozen and written as artifacts.
       const glossaryUse =
         'glossaryUse' in params || options.retry
           ? (params as FrozenTranslateParams).glossaryUse
@@ -295,7 +283,7 @@ export function translatePipeline(deps: TranslateDeps): PipelineDefinition<Froze
         name: 'freeze-source',
         label: () => J.stepFreezeSource(),
         run: (context) => freezeSource(deps.videos, context),
-        // 源文档有了新版本：冻结的原文过期，重试时从当前版本重新读取。没有冻结正文的旧产出也重新读取。
+        // The source document has a new version: the frozen source is stale, so retries re-read it from the current version. Old outputs without a frozen body are also re-read.
         reusable: async (output, { params, artifacts }) => {
           const o = output as Partial<FreezeOutput>;
           const documents = deps.videos.state(params.videoId)?.documents;
@@ -343,7 +331,7 @@ export function translatePipeline(deps: TranslateDeps): PipelineDefinition<Froze
               result: { documentId: null, artifactId },
             };
           }
-          // Worker 的句子与这里冻结的句子出自同一套规则：逐句的 ID、指纹与 editViewHash 都要对得上。
+          // The Worker's sentences and the sentences frozen here come from the same rules, so each sentence's ID, fingerprint and editViewHash must match.
           const problems = translationProblems(body, source);
           if (problems.length > 0) {
             throw new PipelineStepError('WORKER_OUTPUT_INVALID', J.workerMismatch(), {
@@ -496,9 +484,8 @@ export function parseTranslateParams(raw: Record<string, unknown>): TranslatePar
 }
 
 /**
- * 就地刷新的启动核对：译文文档在、是 `translation`、记着译自哪份转写（给了 `documentId` 时要一致）、语言与 `targetLanguage`
- * 相同、正文是能就地刷新的 `/2`；按当前版本挑出要做的事，点名了转写里没有的句子、或没有要做的事时 `invalid-request`。
- * 返回原文的文档与参与去重的键（译文的版本与要做的事）。
+ * Startup checks for an in-place refresh: the translation document exists and is a `translation`; it records which transcript it was translated from (must match `documentId` when given); its language matches `targetLanguage`; and its body is a `/2` that can be refreshed in place. Picks the work to do from the current version; returns `invalid-request` when a named sentence is not in the transcript or when there is no work to do.
+ * Returns the source document and the keys used for deduplication (the translation's version and the work to do).
  */
 async function prepareRefresh(
   videos: PipelineVideos,
@@ -530,7 +517,7 @@ async function prepareRefresh(
   return { documentId, key: { translationId, revision: record.currentRevision, plan } };
 }
 
-/** 启动时解析术语表：调用时给的与视频里启用的；用到库里的条目时把内容写成产物。都没有时 undefined。 */
+/** Resolves the glossary at startup: the one passed in the call and the one enabled in the video. When library entries are used, their contents are written as artifacts. undefined when neither exists. */
 async function freezeGlossaries(
   deps: TranslateDeps,
   params: TranslateParams,
@@ -552,7 +539,7 @@ async function freezeGlossaries(
   });
 }
 
-/** 源文档：指明的那份（必须是 `speech`），或视频里唯一的一份。 */
+/** Source document: the one specified (must be a `speech`), or the only one in the video. */
 export function pickSource(documents: Record<Id, DocumentRecord>, documentId: Id | undefined): Id {
   if (documentId !== undefined) {
     const document = documents[documentId];
@@ -606,7 +593,7 @@ async function freezeSource(videos: PipelineVideos, context: PipelineStepContext
   return { output, result: { documentId: null, artifactId } };
 }
 
-/** 就地刷新：冻结那份译文的当前版本（正文发布为产物），按冻结的原文挑出要做的事。 */
+/** In-place refresh: the current version of the frozen translation (its body is published as an artifact), with the work to do picked against the frozen source. */
 async function freezeRefresh(
   videos: PipelineVideos,
   context: PipelineStepContext<FrozenTranslateParams>,
@@ -628,8 +615,7 @@ async function freezeRefresh(
 }
 
 /**
- * Speech Worker 要的素材事实：素材当前版本的内容指纹、时长与采样率。拿不到时（转写不属于素材、Runtime 没给）内容指纹留空，
- * 时长按转写里最后一个句子的终点（Worker 只用它把字幕条夹在素材之内）。
+ * Media facts the Speech Worker needs: the content fingerprint, duration and sample rate of the media's current version. When these cannot be obtained (the transcript does not belong to a media item, or the Runtime did not supply them), the content fingerprint is left empty, and the duration is taken from the end of the last sentence in the transcript (the Worker only uses it to keep subtitle cues within the media).
  */
 function mediaFacts(
   videos: PipelineVideos,
@@ -647,7 +633,7 @@ function mediaFacts(
   };
 }
 
-/** 原文与目标语言的主子标签相同时不翻译（Speech Worker 也会拒绝）：启动时就以 `invalid-request` 拒绝，不建任务。 */
+/** No translation when the source and target have the same primary language subtag (the Speech Worker also rejects this). Rejected at startup with `invalid-request`, and no job is created. */
 function sameLanguageCheck(sourceLanguage: string | null, targetLanguage: string): void {
   const primary = (tag: string) => tag.split('-')[0]!.toLowerCase();
   if (sourceLanguage && primary(sourceLanguage) === primary(targetLanguage)) {
@@ -659,9 +645,7 @@ function sameLanguageCheck(sourceLanguage: string | null, targetLanguage: string
 }
 
 /**
- * 在 Speech Worker 里翻译（`speech-worker.ts`）：冻结的转写正文、素材事实、术语与风格提示交给字幕与翻译核心，每一次模型调用
- * 经 `deps.text`（授权、预算、账本与停止屏障都在那边）。staging 是这一步专用的子目录，检查点在里面：中断或失败之后重试，
- * 已经译好的页不再请求。产出的译文正文与字幕条发布为产物。
+ * Translates in the Speech Worker (`speech-worker.ts`): the frozen transcript body, media facts, glossary and style hints are passed to the subtitle and translation core. Every model call goes through `deps.text` (authorization, budget, ledger and stop barrier are all handled there). staging is a subdirectory used only by this step, and checkpoints live inside it: after an interruption or failure, a retry does not request pages that were already translated. The translation body and subtitle cues produced are published as artifacts.
  */
 async function translateWithWorker(deps: TranslateDeps, context: PipelineStepContext<FrozenTranslateParams>): Promise<StepResult> {
   const { params, outputs, artifacts, signal, progress, staging } = context;
@@ -675,7 +659,7 @@ async function translateWithWorker(deps: TranslateDeps, context: PipelineStepCon
   const source = await readArtifact<FrozenSource>(artifacts, frozen.artifactId);
   const base = frozen.translation ? await readArtifact<TranslationBody>(artifacts, frozen.translation.artifactId) : null;
   if (base && frozen.plan?.sentences.length === 0) {
-    // 只有要去掉的单元：不必调用模型，产出是指向这次原文的底稿与空的字幕条。
+    // Only units to remove: no model call is needed. The output is a base pointing to this source, with empty subtitle cues.
     const body: TranslationBody = {
       ...base,
       sourceBasis: { ...base.sourceBasis, speechRef: source.speechRef, sequenceId: source.sequenceId, editViewHash: source.editViewHash },
@@ -695,7 +679,7 @@ async function translateWithWorker(deps: TranslateDeps, context: PipelineStepCon
   const snapshot = await loadGlossaries(artifacts, params);
   const terms = promptTerms(snapshot);
   const glossaryRef = glossaryRefOf(snapshot, source.sentences.map((s) => s.text).join('\n'));
-  // 模型的限制（输出上限、是否接受温度）按冻结的 Provider 与模型取。
+  // Model limits (output cap, whether temperature is accepted) are taken from the frozen Provider and model.
   const selection = await deps.selectText({ provider: params.provider, model: params.model });
   const result = await runSpeechTranslate({
     command,
@@ -783,7 +767,7 @@ async function writeTranslation(videos: PipelineVideos, context: PipelineStepCon
       if (!documentId) throw new PipelineStepError('APPLY_FAILED', J.noDocumentId());
       return { output: { documentId } satisfies WriteOutput, result: { documentId, artifactId: assembled.artifactId } };
     } catch (error) {
-      // 视频在读与写之间被改过：重新读、重新核对源文档，换一个命令再提交。
+      // The video was changed between read and write: read again, re-check the source document, and submit again with a new command.
       if (error instanceof RpcError && error.code === 'conflict' && attempt < APPLY_ATTEMPTS) continue;
       if (error instanceof PipelineStepError) throw error;
       throw new PipelineStepError('APPLY_FAILED', J.rejected(), {
@@ -794,9 +778,7 @@ async function writeTranslation(videos: PipelineVideos, context: PipelineStepCon
 }
 
 /**
- * 就地刷新的写入：一笔事务写同一份译文文档的新版本，连同从它生成的每份字幕文档里重译的与去掉的那几句的字幕条
- * （`retextCaption`，字幕条用 Worker 切好的，别的条不动）。提交之前核对转写与这份译文都还是冻结的版本；视频在读与写之间
- * 被改过（`conflict`）时重新读字幕文档、换一个命令再提交。
+ * In-place refresh write: one transaction writes a new version of the same translation document, together with the cues in each caption document generated from it for the sentences that were retranslated or removed (`retextCaption`; the cues are the ones the Worker split, and other cues are left alone). Before committing, it checks that the transcript and this translation are still at the frozen versions. If the video was changed between read and write (`conflict`), the caption documents are read again and the command is resubmitted with a new one.
  */
 async function writeRefresh(videos: PipelineVideos, context: PipelineStepContext<FrozenTranslateParams>): Promise<StepResult> {
   const { params, outputs, artifacts, progress, jobId, run } = context;

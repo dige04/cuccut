@@ -1,20 +1,17 @@
 /**
- * deck 存储：把 Slides 运行时期望的宿主文件接口落到会话工作目录里的一份 deck 上（docs/design/slides §2）。
+ * Deck storage: maps the host file interface that the Slides runtime expects onto a deck in the session working directory (docs/design/slides §2).
  *
- * 运行时看到的路径带 `project/` 前缀，磁盘上是 deck 目录里的同名文件：
+ * Paths the runtime sees carry a `project/` prefix; on disk they are the same-named files in the deck directory:
  *   project/deck.json          ↔ <deck>/deck.json
  *   project/slides/<id>.html   ↔ <deck>/slides/<id>.html
  *   project/ds/**              ↔ <deck>/ds/**
- *   /_blob/<id>                ↔ <deck>/assets/<id>.<ext>（Content-Type 记在 assets/index.json）
- * 只有这几类文件进清单、可以读写；deck 目录里别的文件（智能体的草稿、素材原图）编辑器看不到也改不了。
- * 路径上有符号链接的一律当作不存在、不可写：符号链接可能指到 deck 目录外。
+ *   /_blob/<id>                ↔ <deck>/assets/<id>.<ext> (Content-Type recorded in assets/index.json)
+ * Only these kinds of files are in the manifest and can be read or written. Other files in the deck directory (the agent's drafts, original asset images) are not visible to the editor and cannot be changed by it. A path containing a symbolic link is treated as nonexistent and not writable, since a symlink may point outside the deck directory.
  *
- * 设计稿（docs/design/canvas §2.2）用同一个存储，只是文件布局不同：把 `DeckLayout` 换成 `@cuccut/design` 的布局，
- * 整个目录里的普通文件（不含 `assets/`、以点开头的与符号链接）都进清单。默认是 deck 的布局（`DECK_LAYOUT`）。
- * 设计系统（docs/design/canvas §10.1）的布局在 `@cuccut/design-system`：`assets/<组>/` 是内容，上传的素材放在
- * `DeckLayout.blobDir`（`_blobs/`），`/_blob/<id>` 从那里取。
+ * Design canvases (docs/design/canvas §2.2) use the same storage with a different file layout: swap `DeckLayout` for the layout from `@cuccut/design`, and all regular files in the directory (excluding `assets/`, dot-prefixed names and symlinks) go into the manifest. The default is the deck layout (`DECK_LAYOUT`).
+ * The design system (docs/design/canvas §10.1) layout is in `@cuccut/design-system`: `assets/<group>/` is content, uploaded assets go into `DeckLayout.blobDir` (`_blobs/`), and `/_blob/<id>` is served from there.
  *
- * 读写的 HTTP 路由在 deck-routes.ts；协议类型见 file-protocol.ts。
+ * The read and write HTTP routes are in deck-routes.ts; protocol types are in file-protocol.ts.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, watch, type FSWatcher } from 'node:fs';
@@ -37,9 +34,8 @@ import {
 } from './file-protocol.ts';
 
 /**
- * 按扩展名给的 Content-Type（清单的 `contentType` 与 `project/*` 的响应头）。`project/*` 带 `nosniff`，所以页面要当
- * 子资源加载的类型都得列在这里：设计系统的预览用 `<script src>` 加载 `.js`（docs/design/canvas §10.4），类型不对时浏览器拒绝执行。
- * 取值同原版设计系统的 `FILE_MIME_TYPES_BY_EXTENSION`，另加 `mov`。
+ * Content-Type by file extension (the manifest's `contentType` and the response headers for `project/*`). `project/*` carries `nosniff`, so every type a page loads as a sub-resource must be listed here: the design system preview loads `.js` with `<script src>` (docs/design/canvas §10.4), and browsers refuse to run it if the type is wrong.
+ * The values match the original design system's `FILE_MIME_TYPES_BY_EXTENSION`, plus `mov`.
  */
 const MIME: Record<string, string> = {
   html: 'text/html',
@@ -72,7 +68,7 @@ const MIME: Record<string, string> = {
   wasm: 'application/wasm',
 };
 
-/** 素材文件的扩展名：按 Content-Type 取，认不出的存成 .bin。 */
+/** Asset file extension, chosen by Content-Type; unrecognized types are stored as .bin. */
 const EXT_BY_MIME: Record<string, string> = {
   'image/svg+xml': 'svg',
   'image/png': 'png',
@@ -93,7 +89,7 @@ const EXT_BY_MIME: Record<string, string> = {
   'application/pdf': 'pdf',
 };
 
-/** deck 目录里放素材的子目录（`DeckLayout.blobDir` 的默认值）与它的类型索引。 */
+/** Subdirectory in the deck directory for assets (the default for `DeckLayout.blobDir`) and its type index. */
 export const ASSETS_DIR = 'assets';
 const ASSET_INDEX = 'index.json';
 
@@ -111,8 +107,8 @@ export function sha256(bytes: Uint8Array | string): Sha256 {
 }
 
 /**
- * 运行时路径 → deck 目录里的相对路径；不是可读写的那几类文件时返回 null。
- * `project/deck.json`、`project/slides/<名>.html`（只一层）、`project/ds/**`。
+ * Runtime path → relative path in the deck directory; returns null for files that are not one of the readable and writable kinds.
+ * `project/deck.json`, `project/slides/<name>.html` (one level only), `project/ds/**`.
  */
 export function deckFileOf(runtimePath: string): string | null {
   if (!isProjectPath(runtimePath)) return null;
@@ -120,7 +116,7 @@ export function deckFileOf(runtimePath: string): string | null {
   return isDeckFile(rel) ? rel : null;
 }
 
-/** deck 目录里的相对路径（`/` 分隔）是否属于编辑器可见的文件。以点开头的段一律不算。 */
+/** Whether a relative path (`/`-separated) in the deck directory is a file visible to the editor. Any segment starting with a dot never counts. */
 export function isDeckFile(rel: string): boolean {
   const parts = rel.split('/');
   if (parts.some(part => part === '' || part === '.' || part === '..' || part.startsWith('.'))) return false;
@@ -130,34 +126,33 @@ export function isDeckFile(rel: string): boolean {
 }
 
 /**
- * 编辑器服务的文件布局：哪些文件进清单、可以读写，清单与监听从哪些目录开始。deck 用 `DECK_LAYOUT`；
- * 设计稿的布局在 `@cuccut/design`（canvas-layout.ts），设计系统的在 `@cuccut/design-system`，由 Runtime 交给 SlidesServer。
- * 以点开头的段与符号链接不论布局都不算；素材目录（`blobDir`）由存储自己管，布局不应把它算进来。
+ * File layout served by the editor: which files go into the manifest, which can be read and written, and which directories the manifest and watcher start from. Decks use `DECK_LAYOUT`; the design canvas layout is in `@cuccut/design` (canvas-layout.ts), the design system's is in `@cuccut/design-system`, and the Runtime hands it to SlidesServer.
+ * Segments starting with a dot and symlinks never count under any layout. The asset directory (`blobDir`) is managed by the storage itself, and a layout should not count it.
  */
 export interface DeckLayout {
-  /** 上传的素材放在哪个子目录（`<id>.<ext>` 与类型索引 `index.json`）。不给时是 `assets`。 */
+  /** Subdirectory where uploaded assets go (`<id>.<ext>` and the type index `index.json`). Defaults to `assets`. */
   readonly blobDir?: string;
-  /** 目录里的相对路径（`/` 分隔）是否属于编辑器可见、可写的文件。 */
+  /** Whether a relative path (`/`-separated) in the directory is a file visible to the editor and writable. */
   isFile(rel: string): boolean;
-  /** 清单与监听从哪些目录开始（`''` 是根）；`descend` 时往下走子目录。 */
+  /** The directories the manifest and watcher start from (`''` is the root); with `descend`, subdirectories are walked too. */
   readonly roots: readonly { readonly rel: string; readonly descend: boolean }[];
-  /** 往下走时进不进这个子目录（相对路径）。不给时进所有不以点开头的。 */
+  /** Whether to enter this subdirectory (relative path) when descending. If not given, all subdirectories not starting with a dot are entered. */
   descendInto?(rel: string): boolean;
-  /** 监听报上来这个相对路径变了时要不要重新比对清单：可见的文件，或可能装着它们的目录。 */
+  /** When the watcher reports that this relative path changed, whether to re-compare the manifest: a visible file, or a directory that may contain them. */
   watches(rel: string): boolean;
-  /** 清单至多列几个文件；超出时只列遍历（按名字排序）到的前这么多个，并经 `onTruncated` 记一次。 */
+  /** The manifest lists at most this many files; when exceeded, only the first this many files found in traversal order (sorted by name) are listed, and `onTruncated` is called once. */
   readonly maxFiles?: number;
-  /** 一次发布里写入内容的合计上限（字节，解码后）。 */
+  /** Total upper limit of content written in one publish (bytes, after decoding). */
   readonly maxPublishBytes?: number;
-  /** 发布时单个文件的上限（字节，解码后）。 */
+  /** Per-file upper limit when publishing (bytes, after decoding). */
   readonly maxFileBytes?: number;
-  /** 上传一个素材的上限（字节）；按 Content-Type 区分（例如 SVG 更小）。不给时只受路由的请求体上限约束。 */
+  /** Upper limit for uploading one asset (bytes); differs by Content-Type (e.g. SVG is smaller). If not given, only the route's request body limit applies. */
   maxBlobBytes?(contentType: string): number;
-  /** 发布到不可写的路径时给编辑器的说明。 */
+  /** Message given to the editor when publishing to a non-writable path. */
   readOnlyMessage(runtimePath: string): string;
 }
 
-/** deck 的布局（docs/design/slides §2.2）：`deck.json`、`slides/*.html`（只一层）、`ds/**`。 */
+/** Deck layout (docs/design/slides §2.2): `deck.json`, `slides/*.html` (one level only), `ds/**`. */
 export const DECK_LAYOUT: DeckLayout = {
   isFile: isDeckFile,
   roots: [
@@ -170,17 +165,17 @@ export const DECK_LAYOUT: DeckLayout = {
 };
 
 export interface DeckStoreOptions {
-  /** 清单第一次超出 `layout.maxFiles` 时调用（每个存储只调一次）。 */
+  /** Called the first time the manifest exceeds `layout.maxFiles` (once per storage only). */
   onTruncated?: (limit: number) => void;
 }
 
-/** publish 的结果，按 HTTP 状态区分成功和各类失败。 */
+/** Result of a publish; distinguishes success from the various failures by HTTP status. */
 export type PublishOutcome =
   | { status: 200; body: PublishResult }
   | { status: 409; body: ConflictError }
   | { status: 400 | 413; body: GenericPublishError };
 
-/** 按布局列出可见文件的相对路径（不跟随符号链接、跳过以点开头的）。目录按名字排序遍历，超过 `limit` 时停下。 */
+/** Lists the relative paths of visible files under the layout (does not follow symlinks; skips dot-prefixed names). Directories are traversed in name order and it stops when `limit` is reached. */
 async function collectFiles(root: string, layout: DeckLayout, limit: number): Promise<{ rels: string[]; truncated: boolean }> {
   const rels: string[] = [];
   const seen = new Set<string>();
@@ -217,7 +212,7 @@ async function collectFiles(root: string, layout: DeckLayout, limit: number): Pr
   return { rels, truncated };
 }
 
-/** 原子写：同目录下以点开头的临时文件（Space 与外部改动监听都跳过）写完再 rename。 */
+/** Atomic write: writes a dot-prefixed temp file in the same directory (Space and the external-change watcher skip it), then renames it. */
 async function writeFileAtomic(file: string, bytes: Uint8Array): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
@@ -231,10 +226,10 @@ async function writeFileAtomic(file: string, bytes: Uint8Array): Promise<void> {
 }
 
 export class DeckStore {
-  /** deck 目录（含 deck.json 的那一层），或设计稿目录（含 canvas.json 的那一层）。 */
+  /** Deck directory (the level containing deck.json), or design canvas directory (the level containing canvas.json). */
   readonly root: string;
   readonly layout: DeckLayout;
-  /** 本进程刚写过的文件（运行时路径）→ 写入时的 sha（删除记为 ""），用来区分「编辑器自己保存」和「外部改动」。 */
+  /** Runtime paths of files this process has just written → the sha at write time (deletions recorded as ""), used to tell "the editor saved it itself" from "external change". */
   readonly ownWrites = new Map<string, Sha256 | ''>();
   private queue: Promise<unknown> = Promise.resolve();
   private seq = 0;
@@ -247,12 +242,12 @@ export class DeckStore {
     this.onTruncated = options.onTruncated;
   }
 
-  /** 上传素材所在的子目录。 */
+  /** Subdirectory where uploaded assets are placed. */
   get blobDir(): string {
     return this.layout.blobDir ?? ASSETS_DIR;
   }
 
-  /** 运行时路径 → 目录里的相对路径；不是这个布局可读写的文件时 null。 */
+  /** Runtime path → relative path in the directory; null for files this layout cannot read or write. */
   fileOf(runtimePath: string): string | null {
     if (!isProjectPath(runtimePath)) return null;
     const rel = runtimePath.slice('project/'.length);
@@ -260,13 +255,13 @@ export class DeckStore {
   }
 
   /**
-   * deck 目录里一个文件的磁盘路径（文件本身可以还不存在）。路径上任何一段是符号链接、或这个名字不是普通文件时 null。
+   * Disk path of a file in the deck directory (the file itself may not exist yet). null if any segment of the path is a symlink, or the name is not a regular file.
    */
   private async diskPath(rel: string): Promise<string | null> {
     const realRoot = await realpath(this.root).catch(() => null);
     if (realRoot === null) return null;
     const file = path.join(realRoot, ...rel.split('/'));
-    // 从文件所在目录往上找到第一个存在的目录，它的真实路径必须就是它自己
+    // From the file's directory, go up to the first directory that exists; its real path must be itself
     for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
       const real = await realpath(dir).catch(() => null);
       if (real === null) continue;
@@ -306,7 +301,7 @@ export class DeckStore {
     }
   }
 
-  /** 串行执行，保证 ifMatch 检查和写入之间没有交错。 */
+  /** Runs serially, so there is no interleaving between the ifMatch check and the write. */
   publish(files: Record<string, WireEntry>): Promise<PublishOutcome> {
     const run = this.queue.then(() => this.publishNow(files));
     this.queue = run.catch(() => undefined);
@@ -339,7 +334,7 @@ export class DeckStore {
     const conflicts: ConflictPath[] = [];
     for (const [p, entry] of Object.entries(batch)) {
       const expected = entry?.ifMatch;
-      // null 要求文件还不存在：与「不存在」的 null 相比，已经有了就冲突。
+      // null requires the file to not exist yet: unlike "does not exist" null, an existing file is a conflict.
       if (expected === undefined) continue;
       const actual = before.files[p]?.sha256 ?? null;
       if (actual !== expected) conflicts.push({ path: p, actual, expected });
@@ -358,7 +353,7 @@ export class DeckStore {
       }
       const bytes = Buffer.from(entry.base64, 'base64');
       const sha = sha256(bytes);
-      // 先登记再写：fs.watch 的回调可能在写入返回前就到
+      // Register before writing: the fs.watch callback may arrive before the write returns
       this.ownWrites.set(p, sha);
       await writeFileAtomic(file, bytes);
       shas[p] = sha;
@@ -379,9 +374,9 @@ export class DeckStore {
     }
   }
 
-  /** 素材按内容寻址：id 是 sha256 的前 32 位，同一张图只存一份。 */
+  /** Assets are content-addressed: the id is the first 32 hex characters of sha256, so the same image is stored once. */
   putBlob(bytes: Uint8Array, contentType: string): Promise<UploadResult> {
-    // 与发布共用队列：素材目录里 index.json 的读改写不能交错
+    // Shares the queue with publishing: the read-modify-write of index.json in the asset directory must not interleave
     const run = this.queue.then(() => this.putBlobNow(bytes, contentType));
     this.queue = run.catch(() => undefined);
     return run;
@@ -405,7 +400,7 @@ export class DeckStore {
     return { id, url: `/_blob/${id}`, sizeBytes: bytes.byteLength };
   }
 
-  /** 素材目录里以 `<id>.` 开头的那个文件。 */
+  /** The file in the asset directory whose name starts with `<id>.`. */
   private async findBlobFile(id: string): Promise<string | null> {
     try {
       const name = (await readdir(path.join(this.root, this.blobDir))).find(n => n.startsWith(`${id}.`) && !n.endsWith('.tmp'));
@@ -421,7 +416,7 @@ export class DeckStore {
     return BLOB_ID_PATTERN.test(id) && (await this.findBlobFile(id)) !== null;
   }
 
-  /** 素材的磁盘文件与 Content-Type（路由按文件流式返回）。 */
+  /** The asset's disk file and Content-Type (the route streams the file back). */
   async blobFile(id: string): Promise<{ file: string; contentType: string } | null> {
     if (!BLOB_ID_PATTERN.test(id)) return null;
     const file = await this.findBlobFile(id);
@@ -440,8 +435,7 @@ export class DeckStore {
   }
 
   /**
-   * 这些运行时路径里，哪些的当前内容不是本进程写进去的。`seen` 是调用方已经知道的内容（开始监听时盘上的、报过的）：
-   * 与它一致的也不算；查过的路径记成当前内容。
+   * Among these runtime paths, which have current content not written by this process. `seen` is content the caller already knows (what was on disk when watching started, or what was already reported): content matching it does not count either. Checked paths are recorded at their current content.
    */
   async externalChanges(paths: Iterable<string>, seen?: Map<string, Sha256 | ''>): Promise<string[]> {
     const external: string[] = [];
@@ -462,7 +456,7 @@ export class DeckStore {
   }
 }
 
-/** 版本号由清单内容决定：内容不变，版本不变。 */
+/** The version number is determined by the manifest content: same content, same version. */
 export function versionOf(files: Record<string, ListingEntry>): string {
   const digest = sha256(
     Object.entries(files)
@@ -472,18 +466,17 @@ export function versionOf(files: Record<string, ListingEntry>): string {
   return 'local-' + digest.slice(0, 16);
 }
 
-/** fs.watch 报上来的相对路径里，任何一段以 . 开头（.swp、sed 的 .!123!x.html、本模块的临时文件）都不算 deck 改动。 */
+/** If any segment of a relative path reported by fs.watch starts with `.` (.swp files, sed's .!123!x.html, this module's temp files), it does not count as a deck change. */
 export function isIgnoredWatchPath(rel: string): boolean {
   return rel.split('/').some(part => part.startsWith('.'));
 }
 
 /**
- * 监听 deck 目录：被编辑器以外的东西改了（智能体用文件工具改 slide、重写 deck.json），去抖 300 ms 后
- * 回调一次。编辑器自己保存的文件 sha 与 ownWrites 一致，不触发；内容与开始监听时一样的也不触发（macOS 的 FSEvents
- * 会补报监听开始前不久的写入，比如刚建好的 deck）。只监听目录：Linux 的递归 fs.watch 会监听文件 inode，
- * 原子保存替换文件后会丢掉后续修改。目录增删时重建目录监听，并按完整清单识别新增与删除。返回停止监听的函数。
- * 监听哪些目录按存储的布局（`DeckLayout.roots` 与 `descendInto`）；设计稿是整棵目录树（不含 `assets/` 与隐藏目录），
- * 设计系统是整棵目录树（不含 `_blobs/` 与隐藏目录），目录数按 `maxFiles` 封顶。
+ * Watches the deck directory. When something other than the editor changes it (the agent edits a slide with file tools, or rewrites deck.json), the callback fires once after a 300 ms debounce.
+ * A file the editor saved itself has a sha matching ownWrites and does not trigger it. Content identical to what it was when watching started does not trigger either (macOS FSEvents can report writes from shortly before watching started, e.g. a newly created deck). Only directories are watched: Linux's recursive fs.watch watches file inodes, and after an atomic save replaces a file, later changes to it would be lost.
+ * Directory watches are rebuilt when directories are added or removed, and new and deleted files are identified by the full manifest.
+ * Which directories are watched follows the storage layout (`DeckLayout.roots` and `descendInto`). A design canvas is the whole directory tree (excluding `assets/` and hidden directories); a design system is the whole directory tree (excluding `_blobs/` and hidden directories). The number of directories is capped by `maxFiles`.
+ * Returns a function that stops watching.
  */
 export function watchExternalEdits(store: DeckStore, onChange: (event: DeckChangeEvent) => void, onError: (error: unknown) => void = () => {}): () => void {
   let timer: NodeJS.Timeout | undefined;
@@ -526,8 +519,8 @@ export function watchExternalEdits(store: DeckStore, onChange: (event: DeckChang
         if (stopped) return;
         if (name) {
           const changed = path.join(dir, String(name));
-          // Linux 删除重建目录时可能复用 inode；收到父目录的 rename 就废弃旧 handle，
-          // 不能只靠 refresh 的 dev/ino 判断。子目录的监听也仍绑定在被删除的树上。
+          // On Linux, deleting and recreating a directory may reuse the inode. On receiving a rename of the parent directory, discard the old handle;
+          // do not rely only on the dev/ino check in refresh. Subdirectory watches are also still bound to the deleted tree.
           if (event === 'rename' && watchers.has(changed)) {
             for (const [watchedDir, item] of watchers) {
               if (watchedDir === changed || watchedDir.startsWith(changed + path.sep)) {

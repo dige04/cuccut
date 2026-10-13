@@ -1,16 +1,15 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/ChatterboxTTS/CAMPPlus.swift / Sources/IndexTTS2TTS/IndexTTS2CAMPPlusAdapter.swift`。
+//! Parts of the implementation are rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream files: `Sources/ChatterboxTTS/CAMPPlus.swift / Sources/IndexTTS2TTS/IndexTTS2CAMPPlusAdapter.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementation in Rust and adapted it to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources see `THIRD_PARTY_NOTICES.md` at the root.
 //!
-//! CAM++ 说话人编码器（对照 speech-swift `ChatterboxTTS/CAMPPlus.swift` 与
-//! `IndexTTS2CAMPPlusAdapter.swift`）。
+//! CAM++ speaker encoder (corresponds to speech-swift `ChatterboxTTS/CAMPPlus.swift` and
+//! `IndexTTS2CAMPPlusAdapter.swift`).
 //!
-//! 直接按原始 checkpoint 的键（`head.*` / `xvector.*`）加载，不做 Swift 那套
-//! 模块名重映射。层间张量统一用通道在后的 `[B, T, C]`（Swift 是 `(B, C, T)`
-//! 并在每层前后交换轴），数学上完全等价；FCM 头在 NHWC 上运行。
+//! Loads directly with the original checkpoint's keys (`head.*` / `xvector.*`), without Swift's module-name remapping. Inter-layer tensors
+//! uniformly use the channel-last `[B, T, C]` layout (Swift uses `(B, C, T)` and swaps axes around each layer); mathematically fully equivalent. The FCM head runs in NHWC.
 
 use super::layers::{BatchNorm, Conv1d, Conv2d};
 use super::weights::WeightMap;
@@ -24,14 +23,14 @@ const FEAT_DIM: i32 = 80;
 const GROWTH_RATE: i32 = 32;
 const INIT_CHANNELS: i32 = 128;
 const SEG_LEN: i32 = 100;
-/// 三个稠密块：(层数, 卷积核, 膨胀)。
+/// Three dense blocks: (number of layers, kernel size, dilation).
 const BLOCK_SPECS: [(usize, i32, i32); 3] = [(12, 3, 1), (24, 3, 2), (16, 3, 2)];
 
 fn relu(x: &Array) -> Result<Array> {
     Ok(ops::maximum(x, &Array::from_f32(0.0))?)
 }
 
-/// `BatchNorm(+ReLU)`，通道在最后一维。
+/// `BatchNorm(+ReLU)`, channel in the last dimension.
 struct NonLinear {
     bn: BatchNorm,
     relu: bool,
@@ -92,7 +91,7 @@ impl BasicResBlock {
     }
 }
 
-/// FCM 前端：小 2D ResNet，把 `(B, F, T)` 变成 `(B, C·H, T)`。
+/// FCM front end: a small 2D ResNet that turns `(B, F, T)` into `(B, C·H, T)`.
 struct Fcm {
     conv1: Conv2d,
     bn1: BatchNorm,
@@ -120,8 +119,8 @@ impl Fcm {
         })
     }
 
-    /// 输入 `[B, T, F]`，输出通道在后的 `[B, T, C·H]`（通道序与 Swift 的
-    /// `transposed(0, 3, 1, 2).reshaped([b, c*h, w])` 一致）。
+    /// Input `[B, T, F]`, output channel-last `[B, T, C·H]` (the channel order matches Swift's
+    /// `transposed(0, 3, 1, 2).reshaped([b, c*h, w])`).
     fn forward(&self, features: &Array) -> Result<Array> {
         // (B, T, F) -> (B, F, T) -> NHWC (B, H=F, W=T, C=1)
         let mut out = features.swap_axes(1, 2)?.expand_dims(-1)?;
@@ -189,8 +188,8 @@ impl CamLayer {
         Ok(y * m)
     }
 
-    /// 分段平均池化并广播回 T，对照官方 `F.avg_pool1d(ceil_mode=True)`：
-    /// 末段不满 [`SEG_LEN`] 时只按实际帧数求平均（不把补零算进分母）。
+    /// Segment-wise average pooling broadcast back to T, corresponding to the official `F.avg_pool1d(ceil_mode=True)`:
+    /// when the last segment is shorter than [`SEG_LEN`], average only over the actual frame count (zero padding is not counted in the denominator).
     fn seg_pooling(x: &Array) -> Result<Array> {
         let (b, t, c) = (x.dim(0), x.dim(1), x.dim(2));
         let n_segs = (t + SEG_LEN - 1) / SEG_LEN;
@@ -208,7 +207,7 @@ impl CamLayer {
     }
 }
 
-/// `ceil_mode` 分段后每段的实际帧数（末段可能不满 `seg_len`）。
+/// Actual frame count of each segment after `ceil_mode` segmentation (the last segment may be shorter than `seg_len`).
 fn seg_frame_counts(t: i32, seg_len: i32) -> Vec<i32> {
     (0..(t + seg_len - 1) / seg_len).map(|i| (t - i * seg_len).min(seg_len)).collect()
 }
@@ -253,7 +252,7 @@ impl CamDenseTdnnBlock {
         Ok(Self { layers })
     }
 
-    /// 每层输出沿通道轴拼接。
+    /// Concatenate each layer's output along the channel axis.
     fn forward(&self, x: &Array) -> Result<Array> {
         let mut out = x.clone();
         for layer in &self.layers {
@@ -291,7 +290,7 @@ impl DenseLayer {
     fn load(w: &mut WeightMap, prefix: &str) -> Result<Self> {
         Ok(Self {
             linear: Conv1d::load(w, &format!("{prefix}.linear"))?,
-            // config_str="batchnorm_"：无仿射、无 ReLU。
+            // config_str="batchnorm_": no affine transform, no ReLU.
             nonlinear: NonLinear::load(w, &format!("{prefix}.nonlinear.batchnorm"), false)?,
         })
     }
@@ -304,7 +303,7 @@ impl DenseLayer {
     }
 }
 
-/// CAM++：16 kHz 波形 → 192 维 x-vector。
+/// CAM++: 16 kHz waveform → 192-dim x-vector.
 pub struct CampPlus {
     head: Fcm,
     tdnn: TdnnLayer,
@@ -338,7 +337,7 @@ impl CampPlus {
         })
     }
 
-    /// 特征 `[B, T, 80]` → 嵌入 `[B, 192]`。
+    /// Features `[B, T, 80]` → embedding `[B, 192]`.
     pub fn forward(&self, features: &Array) -> Result<Array> {
         let mut x = self.head.forward(features)?;
         x = self.tdnn.forward(&x)?;
@@ -351,7 +350,7 @@ impl CampPlus {
         self.dense.forward(&pooled)
     }
 
-    /// 与 Swift `inference` 相同：Kaldi fbank → 减时间均值 → 网络。
+    /// Same as Swift `inference`: Kaldi fbank → subtract time mean → network.
     pub fn inference(&self, wav_16k: &[f32]) -> Result<Array> {
         let (feat, frames) = dsp::campplus_fbank(wav_16k);
         let feat = Array::from_slice(&feat, &[1, frames as i32, FEAT_DIM]);
@@ -361,8 +360,8 @@ impl CampPlus {
         Ok(emb)
     }
 
-    /// 统计池化：沿时间轴 `concat(mean, std)`，`[B, T, C]` → `[B, 2C]`；
-    /// std 与官方 `x.std(unbiased=True)` 相同，用无偏方差、不加 eps。
+    /// Statistics pooling: `concat(mean, std)` along the time axis, `[B, T, C]` → `[B, 2C]`;
+    /// std matches the official `x.std(unbiased=True)`, using unbiased variance and no eps.
     fn statistics_pooling(x: &Array) -> Result<Array> {
         let mean = x.mean_axis(1, false)?;
         let var = x.var_axis(1, false, 1)?;
@@ -382,8 +381,8 @@ mod tests {
         assert_eq!(seg_frame_counts(7, 100), vec![7]);
     }
 
-    /// 官方 `F.avg_pool1d(ones(135), 100, 100, ceil_mode=True)` = `[1, 1]`：
-    /// 末段 35 帧的平均仍是 1，不被补零稀释成 0.35。
+    /// Official `F.avg_pool1d(ones(135), 100, 100, ceil_mode=True)` = `[1, 1]`:
+    /// the average of the last 35 frames is still 1, not diluted to 0.35 by zero padding.
     #[test]
     fn seg_pooling_tail_mean_ignores_padding() {
         let x = Array::from_slice(&[1.0f32; 135 * 2], &[1, 135, 2]);
@@ -393,7 +392,7 @@ mod tests {
         assert!(values.iter().all(|v| (v - 1.0).abs() < 1e-6), "{values:?}");
     }
 
-    /// 官方 `x.std(unbiased=True)`：`[1, 2, 3, 4]` 的 std = sqrt(5/3)。
+    /// Official `x.std(unbiased=True)`: the std of `[1, 2, 3, 4]` is sqrt(5/3).
     #[test]
     fn statistics_pooling_uses_unbiased_std() {
         let x = Array::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4, 1]);

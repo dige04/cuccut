@@ -30,14 +30,14 @@ import { pl } from './export-job.pl.ts';
 import { tr } from './export-job.tr.ts';
 import { vi } from './export-job.vi.ts';
 
-/** 内部检查的导出保留后台任务记录，但不作为会话交付。旧记录没有用途时照常显示。 */
+/** Exports from internal checks keep a background job record but are not delivered as session output. Old records are still shown as usual. */
 export function isPreviewExport(job: JobRecord): boolean {
   return job.kind === 'export' && job.export?.settings.purpose === 'preview';
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** 导出任务的文案（英文是键与类型的来源，译文在 `export-job.zh-Hans.ts`）。 */
+/** Export job copy (English is the source of keys and types; translations are in `export-job.zh-Hans.ts`). */
 const en = {
   tabVideo: 'Video',
   tabAudio: 'Audio',
@@ -91,9 +91,9 @@ export type ExportJobMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 导出任务（`kind: 'export'` 的 JobRecord）在界面上的读法（设计稿 export.jsx 的运行 / 完成 / 取消态，架构设计 §9.11）：
- * 顶栏按钮、弹层与后台任务读同一条记录。进度只读 Runtime 报的 `progress`，没有总量时不念百分比；
- * 速度（fps）与预计剩余时间由界面按最近几秒的进度推算（`export-speed.ts`），算不出时不写。
+ * How an export job (a JobRecord with `kind: 'export'`) reads in the UI (the running / done / cancelled states in the design draft's export.jsx, architecture design §9.11):
+ * the top-bar button, the popover and the background job all read the same record. Progress reads only the `progress` the Runtime reports; when there is no total, no percentage is read out;
+ * speed (fps) and estimated time remaining are computed by the UI from the progress of the last few seconds (`export-speed.ts`), and are left out when they cannot be computed.
  */
 
 export type ExportTab = 'video' | 'audio' | 'subtitles' | 'transcript' | 'project';
@@ -131,24 +131,24 @@ export const EXPORT_TABS: readonly { key: ExportTab; label: string }[] = [
   },
 ];
 
-/** 导出种类落在哪一页：便携包与工程都在「工程」页。 */
+/** Which page each export kind belongs to: portable packages and projects are both on the “Project” page. */
 export function tabOfKind(kind: ExportKind): ExportTab {
   return kind === 'portable' || kind === 'project' ? 'project' : kind;
 }
 
 const newestFirst = (a: JobRecord, b: JobRecord) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.jobId.localeCompare(a.jobId);
 
-/** 这个视频的导出任务，后起的在前。 */
+/** Export jobs for this video; newer ones come first. */
 export function videoExports(jobs: readonly JobRecord[], videoId: Id): JobRecord[] {
   return jobs.filter((j) => j.kind === 'export' && j.videoId === videoId).sort(newestFirst);
 }
 
-/** 这个视频最近一条还没结束的导出（谁提交的都算：App、智能体、命令行）。 */
+/** The most recent export for this video that has not yet finished (regardless of who submitted it: the app, an agent, or the command line). */
 export function latestLiveExport(jobs: readonly JobRecord[], videoId: Id): JobRecord | null {
   return videoExports(jobs, videoId).find(jobLive) ?? null;
 }
 
-/** 顶栏按钮的字：没在导时是「导出」；在导时「导出中 · 31%」，没有总量时「导出中…」，排队时「导出排队中」。 */
+/** Top-bar button text: when not exporting it is “导出” (Export); while exporting, “导出中 · 31%” (Exporting · 31%); with no total, “导出中…” (Exporting…); when queued, “导出排队中” (Export queued). */
 export function exportButtonLabel(job: JobRecord | null): string {
   if (!job) return M.export;
   if (job.state === 'queued') return M.queued;
@@ -175,7 +175,7 @@ export function exportView(job: JobRecord): ExportView {
 const FORMAT_LABEL: Record<string, string> = live(() => M.formats);
 const formatLabel = (format: string) => FORMAT_LABEL[format] ?? format.toUpperCase();
 
-/** 「导出视频 · MP4」「导出字幕 · SRT」「导出便携包」。 */
+/** “导出视频 · MP4” (Export video · MP4), “导出字幕 · SRT” (Export subtitles · SRT), “导出便携包” (Export portable package). */
 export function exportTitle(settings: ExportSettings): string {
   switch (settings.kind) {
     case 'video':
@@ -195,9 +195,9 @@ export function exportTitle(settings: ExportSettings): string {
 
 const GENERATING: Record<ExportKind, string> = live(() => M.generating);
 
-/** 阶段：生成这一步按种类说（编码、混音、打包……），校验与保存沿用通用的说法。 */
+/** Stages: the generation step is named by kind (encoding, mixing, packaging, ...); validation and saving use the common wording. */
 export function exportPhaseLabel(job: Pick<JobRecord, 'state' | 'endedAt' | 'phase' | 'export' | 'wait'>): string {
-  // 排队时照 Runtime 记着的说在等什么（并发名额或机器资源，架构设计 §7.6）。
+  // While queued, say what it is waiting for as recorded by the Runtime (a concurrency slot or machine resources; architecture design §7.6).
   if (job.state === 'queued') return jobWaitText(job.wait) ?? JOB_PHASE_LABEL.queued;
   if (jobRetrying(job)) return M.retrying;
   if (job.phase === 'generating' && job.export) return GENERATING[job.export.settings.kind];
@@ -205,7 +205,7 @@ export function exportPhaseLabel(job: Pick<JobRecord, 'state' | 'endedAt' | 'pha
   return JOB_PHASE_LABEL[job.phase];
 }
 
-/** 进度的事实：已画 1,200 / 3,600 帧、已处理 0:40 / 3:00（音频：混音，开了响度标准化时连同母带）、已写 1 / 3 个文件、已打包 120 MB / 1.2 GB。 */
+/** Progress facts: 1,200 / 3,600 frames drawn; 0:40 / 3:00 processed (audio: mixing, including the master when loudness normalization is on); 1 / 3 files written; 120 MB / 1.2 GB packaged. */
 export function exportProgressLine(job: Pick<JobRecord, 'progress' | 'state'>): string | null {
   const p = job.progress;
   if (!p || job.state !== 'running') return null;
@@ -225,12 +225,12 @@ export function exportProgressLine(job: Pick<JobRecord, 'progress' | 'state'>): 
   }
 }
 
-/** 预计剩余时间：「剩余 1:23」，超过一小时「剩余 1:02:03」。算不出时 null。 */
+/** Estimated time remaining: “剩余 1:23” (1:23 left), or “剩余 1:02:03” (1:02:03 left) when over an hour. null when it cannot be computed. */
 export function exportTimeLeft(speed: ExportSpeed | null): string | null {
   return speed ? M.timeLeft(formatClock(Math.ceil(speed.secondsLeft))) : null;
 }
 
-/** 速度与预计剩余时间：「58 fps」「剩余 1:23」；进度单位不是帧时只有剩余时间。算不出时空。 */
+/** Speed and estimated time remaining: “58 fps”, “剩余 1:23” (1:23 left); when the progress unit is not frames, only the remaining time is shown. Empty when it cannot be computed. */
 export function exportSpeedParts(speed: ExportSpeed | null): string[] {
   if (!speed) return [];
   const parts: string[] = [];
@@ -241,7 +241,7 @@ export function exportSpeedParts(speed: ExportSpeed | null): string[] {
 
 const basename = (file: string) => file.split(/[\\/]/).pop() || file;
 
-/** 正在写的文件：提交时定下的名字（发布时重名会再加序号，以完成后的路径为准）。 */
+/** The file being written: the name set at submission (if the name clashes at publish time a number is appended; the path after completion is authoritative). */
 export function exportPlannedFiles(job: Pick<JobRecord, 'export'>): string[] {
   return job.export?.destination.files ?? [];
 }
@@ -250,7 +250,7 @@ export interface ExportOutputFact {
   key: string;
   name: string;
   path: string | null;
-  /** 「1920×1080 · 3:26 · 84 MB」「312 条 · 18 KB」。 */
+  /** “1920×1080 · 3:26 · 84 MB”, “312 条 · 18 KB” (312 entries · 18 KB). */
   meta: string;
 }
 
@@ -273,7 +273,7 @@ function outputMeta(output: GeneratedOutput): string {
   }
 }
 
-/** 已经发布的文件（完成；或失败但发布了一部分）：文件名取实际路径，重名加过的序号也在里面。 */
+/** Files already published (completed, or failed but partly published): file names use the actual path, and any number appended to avoid a clash is included. */
 export function exportOutputs(job: Pick<JobRecord, 'result'>): ExportOutputFact[] {
   return (job.result?.outputs ?? []).map((o, i) => ({
     key: `${o.artifactId}:${i}`,
@@ -283,12 +283,12 @@ export function exportOutputs(job: Pick<JobRecord, 'result'>): ExportOutputFact[
   }));
 }
 
-/** 导出所在的目录（「在文件夹中显示」没有文件时打开目录）。 */
+/** The directory the export is in (“在文件夹中显示” (Show in folder) opens the directory when there is no file). */
 export function exportDir(job: Pick<JobRecord, 'export'>): string | null {
   return job.export?.destination.dir ?? null;
 }
 
-/** 完成态的一行：「访谈.mp4 · 84 MB」；几个文件时「3 个文件 · 共 120 MB」。 */
+/** The one-line completed state: “访谈.mp4 · 84 MB”; for several files, “3 个文件 · 共 120 MB” (3 files · 120 MB total). */
 export function exportDoneLine(job: Pick<JobRecord, 'result'>): string {
   const outputs = job.result?.outputs ?? [];
   if (!outputs.length) return '';
@@ -296,18 +296,18 @@ export function exportDoneLine(job: Pick<JobRecord, 'result'>): string {
   return outputs.length === 1 ? `${basename(outputs[0]!.path ?? outputs[0]!.artifactId)} · ${total}` : M.doneMany(outputs.length, total);
 }
 
-/** 取消的结果：取消只在开始保存文件之前生效，没写完的文件随之删掉。 */
+/** Cancel result: cancellation takes effect only before file saving begins; any unfinished file is deleted along with it. */
 export function cancelledLine(job: Pick<JobRecord, 'result'>): string {
   const saved = job.result?.outputs?.length ?? 0;
   return saved ? M.cancelledKept(saved) : M.cancelledRemoved;
 }
 
-/** 已经点了取消、还没停下（开始保存文件之后不再中途停下）。 */
+/** Cancel has been clicked but has not yet stopped (once file saving has started, it no longer stops midway). */
 export function cancelPending(job: Pick<JobRecord, 'cancellation' | 'state' | 'endedAt'>): boolean {
   return !!job.cancellation && jobLive(job);
 }
 
-/** 警告：逐条列出（跳过的内容、没写进工程的对象、响度测不出……），同码同句的只留一条。 */
+/** Warnings: listed one by one (skipped content, objects not written into the project, loudness that cannot be measured, ...); identical code and message are kept only once. */
 export function exportWarnings(job: Pick<JobRecord, 'warnings'>): string[] {
   return [...new Set(job.warnings.map((w) => localizeText(w.detail, w.detailRef) ?? w.code))];
 }

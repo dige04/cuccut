@@ -47,7 +47,7 @@ const cues = [
 
 describe('字幕句子投到时间线', () => {
   it('经作用实例的时间映射投影：剪掉的源区间不出现，跨剪切点的句子被裁开', () => {
-    // 第一段取源 0–5 秒放在 0–5 秒，第二段取源 10–13 秒放在 5–8 秒。
+    // The first segment takes source 0–5 s and places it at 0–5 s; the second takes source 10–13 s and places it at 5–8 s.
     const first = clip('v_a', 0, 150, 0);
     const second = clip('v_b', 150, 90, 300);
     const caption: CaptionItem = {
@@ -95,7 +95,7 @@ describe('字幕句子投到时间线', () => {
       scopeItemIds: ['gone'],
     };
     expect(placeCues(caption, sequence([caption]), { clock: 'source-asset', cues })).toEqual([]);
-    // 实例占序列 3–5 秒：序列时钟的句子裁在这一段里。
+    // The instance occupies sequence 3–5 s: sentences on the sequence clock are trimmed to this range.
     const scoped = { ...caption, scopeItemIds: ['gone', 'v_a'] };
     const placed = placeCues(scoped, sequence([clip('v_a', 90, 60, 0), scoped]), { clock: 'sequence', cues });
     expect(placed).toEqual([{ key: 'v_a:b', cueId: 'b', start: 4, end: 5, text: '二' }]);
@@ -111,7 +111,7 @@ describe('字幕句子投到时间线', () => {
       documentId: 'doc',
       scopeItemIds: ['v_a', 'v_b'],
     };
-    // 两个实例都取源 0 秒起放在 0 秒；后一个更长，只多出 5–8 秒那一段。
+    // Both instances take source from 0 s and place it at 0 s; the later one is longer, so only its 5–8 s part extends beyond.
     const placed = placeCues(caption, sequence([clip('v_a', 0, 150, 0), clip('v_b', 0, 240, 0), caption]), { clock: 'source-asset', cues });
     expect(placed.map((cue) => [cue.key, cue.start, cue.end])).toEqual([
       ['v_a:a', 1, 2],

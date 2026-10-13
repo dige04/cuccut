@@ -1,19 +1,17 @@
-//! translate 编排里不碰 provider、不写盘的纯判定。
+//! Pure decisions in the translate orchestration that never touch a provider or write to disk.
 //!
-//! 移植自 CucCut v2 `ccut-engine` 的 `flows/translate.rs`：`narrow_to_stale` 与黏结
-//! 收尾轮的计划 / 跳过提示（`plan_row_repair_tail`、`row_repair_tail_skip_advisory`）。
-//! [`ROW_DEFICIT_MAX_KEYS`] 来自同目录的 `flows/refine.rs`。编排本身（调用 provider、
-//! 落审计工件的 `run_row_repair_tail`，读 `project.json` 的 `align_params_for`）不在这里；
-//! 后者的阈值逻辑就是 [`crate::split::TransParams::for_delivery`] / `with_fit`。
+//! Ported from CucCut v2 `ccut-engine`'s `flows/translate.rs`: `narrow_to_stale`, and the plan / skip advisory for the row-repair tail round (`plan_row_repair_tail`, `row_repair_tail_skip_advisory`).
+//! [`ROW_DEFICIT_MAX_KEYS`] comes from `flows/refine.rs` in the same directory. The orchestration itself (calling the provider, `run_row_repair_tail` which writes the audit artifacts, and reading `align_params_for` from `project.json`) is not here;
+//! its threshold logic is [`crate::split::TransParams::for_delivery`] / `with_fit`.
 
 use std::collections::BTreeSet;
 
-/// 单轮 paired 定向重切的最大句数。refine 的黏结轮与 translate 收尾轮共用同一
-/// 上限：两处各写一份字面量，只会在调参时分叉成两种批量语义。
+/// Maximum number of sentences in one round of targeted paired re-splitting. The refine row-repair round and the translate tail round share the same
+/// cap. If each kept its own literal, the two would only drift apart into two batch semantics when tuning.
 pub const ROW_DEFICIT_MAX_KEYS: usize = 40;
 
-/// `--only-stale` / `--after-cut`：把本语言的 stale 句并成定向集；显式 `--sentences`
-/// 存在时取交集。空集是合法结果（本语言没有 stale 句 → 本轮不翻不对齐）。
+/// `--only-stale` / `--after-cut`: merges this language's stale sentences into the targeted set. When an explicit `--sentences`
+/// is given, the intersection is taken. An empty set is a valid result (this language has no stale sentences, so this round neither translates nor aligns).
 pub fn narrow_to_stale<K: Ord>(explicit: Option<&BTreeSet<K>>, stale: BTreeSet<K>) -> BTreeSet<K> {
     match explicit {
         Some(filter) => stale
@@ -24,16 +22,16 @@ pub fn narrow_to_stale<K: Ord>(explicit: Option<&BTreeSet<K>>, stale: BTreeSet<K
     }
 }
 
-/// 黏结自动收尾轮被跳过的原因。四种都是正常路径，不是失败。
+/// Why the automatic row-repair tail round was skipped. All four are normal paths, not failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowRepairTailSkip {
-    /// 调用方显式关闭（`--no-row-repair` / refine 的防套娃）。
+    /// The caller turned it off explicitly (`--no-row-repair`, or refine's guard against recursion).
     OptedOut,
-    /// 本轮主对齐已经是 paired：它自己就是重切轮，不再叠一轮。
+    /// The main alignment of this round is already paired: it is itself the re-split round, so no extra round is stacked on top.
     AlreadyPaired,
-    /// 本轮没有任何写入：重复跑 translate 是 no-op，收尾轮也必须是 no-op。
+    /// This round wrote nothing. Re-running translate is a no-op, and the tail round must be a no-op too.
     NoWrites,
-    /// 检测无命中：没有黏结就没有要修的。
+    /// Detection found no hits: no row-sticking means nothing to repair.
     NoHits,
 }
 
@@ -48,21 +46,20 @@ impl RowRepairTailSkip {
     }
 }
 
-/// 收尾轮的定向计划。
+/// Targeted plan for the tail round.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowRepairTailPlan {
-    /// 截断到 `ROW_DEFICIT_MAX_KEYS` 后的定向句集，作为 `AlignOptions::sentences`。
+    /// Targeted sentence set truncated to `ROW_DEFICIT_MAX_KEYS`, used as `AlignOptions::sentences`.
     pub keys: BTreeSet<String>,
-    /// 完整命中集，作为 `AlignOptions::density_sentences`；引擎据此把「本轮上限
-    /// 截掉、留给下一轮」的差额算进 `row_repair.capped`。
+    /// The full set of hits, used as `AlignOptions::density_sentences`. The engine uses it to count the difference that this round's cap
+    /// cut off and left for the next round into `row_repair.capped`.
     pub density_sentences: BTreeSet<String>,
 }
 
-/// 纯判定：本轮是否要跑黏结收尾轮，跑的话定向哪些句。零 LLM 调用。
+/// Pure decision: whether this round should run the row-repair tail round, and if so which sentences to target. Makes zero LLM calls.
 ///
-/// 检测复用 `ccut check` 的 `align-row-deficit` 唯一谓词入口
-/// `row_deficit_issues`，不在这里复制阈值；译文 cue 必须**在主对齐之后**重新
-/// 派生（它读 `trans` / `transAlign`，两者刚被主轮改过）。
+/// Detection reuses `row_deficit_issues`, the single predicate entry point for `align-row-deficit` in `ccut check`,
+/// and does not copy the thresholds here. Translation cues must be derived **after the main alignment** (they read `trans` / `transAlign`, which the main round has just changed).
 pub fn plan_row_repair_tail(
     doc: &crate::doc::TranscriptDoc,
     sentences: &[crate::sentence::Sentence],
@@ -88,8 +85,8 @@ pub fn plan_row_repair_tail(
             .into_iter()
             .map(|issue| issue.key)
             .collect();
-    // 定向重翻只收尾自己这轮碰过的句：本轮没翻的句上的黏结属于历史遗留，
-    // 交给 check + refine-align，不在这里扩大写面。
+    // Targeted re-translation only finishes the sentences this round touched. Row-sticking on sentences this round did not translate is legacy,
+    // left to check + refine-align, and this does not widen the write scope here.
     if let Some(filter) = sentence_filter {
         hits.retain(|key| filter.contains(key));
     }
@@ -103,15 +100,13 @@ pub fn plan_row_repair_tail(
     })
 }
 
-/// 收尾轮被跳过时该说的话：只在「本轮主对齐就是 paired 重切轮」且跑完仍有黏结
-/// 时出声，返回一条 advisory。纯判定，零 LLM 调用。
+/// What to say when the tail round is skipped: it speaks up, returning one advisory, only when "this round's main alignment is itself the paired re-split round" and row-sticking still remains after it ran.
+/// Pure decision, zero LLM calls.
 ///
-/// 另外三种跳过刻意不报。`opted-out` 里混着 refine 内部的防套娃（见
-/// [`RowRepairTailSkip::OptedOut`]），refine 每轮都会命中，报出来就是一条永远
-/// 为真的噪音；`no-writes` 是幂等空跑，本轮什么也没改；`no-hits` 本来就没有
-/// 黏结。留下的 `already-paired` 才是真信号：调用方点名要重切，跑完还剩黏结，
-/// 而收尾轮按设计不会在 paired 轮上再叠一轮，于是这批句在 `--json` 之外没有
-/// 任何提示。
+/// The other three skips are deliberately not reported. `opted-out` mixes in refine's internal recursion guard (see
+/// [`RowRepairTailSkip::OptedOut`]); refine hits it on every round, so reporting it would be noise that is always true. `no-writes` is an idempotent empty run: this round changed nothing. `no-hits` never had
+/// any row-sticking to begin with. The remaining `already-paired` is the real signal: the caller explicitly asked for a re-split, row-sticking is still left after it ran, and by design the tail round will not stack another round on a paired round. Without this advisory, these sentences get
+/// no hint outside `--json`.
 pub fn row_repair_tail_skip_advisory(
     doc: &crate::doc::TranscriptDoc,
     sentences: &[crate::sentence::Sentence],
@@ -178,8 +173,8 @@ mod tests {
         )
     }
 
-    /// 装一条**有效的整句** ManyToOne 条目：这正是黏结的现场形态，也是
-    /// 收尾轮必须 `force: true` 的原因——非 force 轮会把这类句整批跳过。
+    /// Installs one **valid whole-sentence** ManyToOne entry. This is exactly the live shape of row-sticking, and also why
+    /// the tail round must pass `force: true`: a non-force round would skip this kind of sentence in bulk.
     fn glue_sentence(doc: &mut TranscriptDoc, sentence_id: &str, word_ids: Vec<String>) {
         let last = word_ids.len() - 1;
         doc.trans
@@ -200,7 +195,7 @@ mod tests {
         );
     }
 
-    /// 单句黏结：4 源行 + 1 条覆盖全句的译文 cue，驻留 30s。
+    /// Single-sentence row-sticking: 4 source lines + 1 translation cue covering the whole sentence, held for 30s.
     fn glued_doc() -> (TranscriptDoc, Vec<Cue>, Vec<Sentence>) {
         let mut doc = doc_with_rows(&[RowIn::new(0.0, 30.0, SOURCE_TEXT)]);
         let word_ids = doc.words.iter().map(|word| word.id.clone()).collect();
@@ -236,8 +231,8 @@ mod tests {
         )
     }
 
-    /// `--only-stale` 与 `--sentences` 取交集；没有显式定向集时 stale 集就是定向集；
-    /// 空集是合法结果（本语言没有 stale 句 → 本轮什么都不翻）。
+    /// `--only-stale` and `--sentences` are intersected. When there is no explicit targeted set, the stale set is the targeted set;
+    /// an empty set is a valid result (this language has no stale sentences, so this round translates nothing).
     #[test]
     fn only_stale_narrows_the_targeted_set() {
         let stale: BTreeSet<String> = ["s-1", "s-2", "s-3"].map(str::to_owned).into();
@@ -289,7 +284,7 @@ mod tests {
 
     #[test]
     fn tail_is_skipped_when_the_round_wrote_nothing() {
-        // 幂等：重复跑一次 translate 是 no-op，收尾轮也必须是 no-op。
+        // Idempotent: running translate again is a no-op, and the tail round must be a no-op too.
         let (doc, cues, sentences) = glued_doc();
         assert_eq!(
             plan(
@@ -307,7 +302,7 @@ mod tests {
 
     #[test]
     fn tail_is_skipped_when_nothing_is_glued() {
-        // 没有黏结的项目：翻译输出零漂移，收尾轮一次调用都不发。
+        // Project with no row-sticking: translation output has zero drift, and the tail round sends no calls at all.
         let doc = doc_with_rows(&[RowIn::new(0.0, 3.0, "a short clean line.")]);
         let (cues, sentences) = derive(&doc);
         let mut doc = doc;
@@ -331,8 +326,8 @@ mod tests {
 
     #[test]
     fn tail_only_targets_sentences_this_round_touched() {
-        // 定向重翻只收尾自己碰过的句：本轮 filter 之外的历史黏结交给
-        // check + refine-align，不在这里扩大写面。
+        // Targeted re-translation only finishes the sentences it touched. Legacy row-sticking outside this round's filter is left to
+        // check + refine-align, and this does not widen the write scope here.
         let (doc, cues, sentences) = glued_doc();
         let filter = BTreeSet::from(["s-g9.9".to_owned()]);
         assert_eq!(
@@ -349,7 +344,7 @@ mod tests {
         );
     }
 
-    /// 本轮主对齐就是 paired、跑完仍有黏结：收尾轮不会再叠一轮，必须出声。
+    /// This round's main alignment is already paired and row-sticking remains after it ran. The tail round will not stack another round, so it must speak up.
     #[test]
     fn a_skipped_tail_after_a_paired_round_still_reports_the_remaining_glue() {
         let (doc, cues, sentences) = glued_doc();
@@ -366,8 +361,8 @@ mod tests {
         assert!(advisory.contains("refine-align"), "{advisory}");
     }
 
-    /// `opted-out` 里混着 refine 内部的防套娃：报出来就是一条永远为真的噪音。
-    /// `no-writes` / `no-hits` 同理不报。
+    /// `opted-out` mixes in refine's internal recursion guard: reporting it would be noise that is always true.
+    /// `no-writes` / `no-hits` are likewise not reported.
     #[test]
     fn the_other_skip_reasons_stay_silent_even_with_glue_left() {
         let (doc, cues, sentences) = glued_doc();
@@ -384,7 +379,7 @@ mod tests {
         }
     }
 
-    /// 没有黏结剩下时不出声。
+    /// Stays silent when no row-sticking is left.
     #[test]
     fn a_skipped_paired_tail_without_glue_says_nothing() {
         let mut doc = doc_with_rows(&[RowIn::new(0.0, 3.0, SOURCE_TEXT)]);
@@ -437,8 +432,8 @@ mod tests {
             None,
         )
         .expect("45 句黏结");
-        // 截断只影响本轮定向的句集；完整命中集仍整份交给引擎，差额由引擎
-        // 记进 `row_repair.capped`（留给下一轮）。
+        // Truncation only affects this round's targeted sentence set. The complete hit set is still handed to the engine in full, and the engine records the
+        // difference in `row_repair.capped` (left for the next round).
         assert_eq!(plan.keys.len(), ROW_DEFICIT_MAX_KEYS);
         assert_eq!(plan.density_sentences.len(), 45);
         assert!(plan.density_sentences.is_superset(&plan.keys));

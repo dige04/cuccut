@@ -3,20 +3,19 @@ import type { EditorThread } from '@cuccut/slides/editor-messages';
 import { targetKey } from './workspace.ts';
 
 /**
- * 会话里的幻灯片标注（docs/design/slides §8.2、§9）：草稿的增删、编辑器里的编号标记与发送时交出去的那一份。
- * 移植自原型 designs/cuccut/app/model-home-slides.js（`add`、`remove`、`pins`）。纯函数，无 React、无 DOM。
+ * Slide annotations in a session (docs/design/slides §8.2, §9): adding and removing drafts, the numbered markers in the editor, and the copy handed over on send.
+ * Ported from the prototype designs/cuccut/app/model-home-slides.js (`add`, `remove`, `pins`). Pure functions, no React, no DOM.
  *
- * 草稿挂在会话上（草稿键是会话 id）：幻灯片标签往里加，composer 读它显示「幻灯片标注 · N 条」，发送后随消息记入会话，
- * 草稿清空，编辑器里的编号标记随之消失。编号是在整份草稿里的序号，composer 列表、编辑器标记与给智能体的那段文字一致。
+ * The draft is attached to the session (the draft key is the session id): the slide tag adds to it, the composer reads it to show “Slide annotations · N”, and after sending it is recorded with the message in the session, the draft is cleared, and the numbered markers in the editor disappear. Numbers are the sequence over the whole draft; the composer list, the editor markers, and the text given to the agent agree.
  */
 
-/** 草稿里的一条：协议的 `SlideAnnotation` 加一个只在界面里用的 id（删除、编辑器的编号标记、跳转用）。 */
+/** One item in the draft: the protocol's `SlideAnnotation` plus an id used only in the UI (for deletion, the editor's numbered markers, and jumping). */
 export type DraftSlideAnnotation = SlideAnnotation & { id: string };
 
-/** 加不进去的原因：空的、超长的、超过条数的。 */
+/** Reason an item cannot be added: empty, too long, or over the item-count limit. */
 export type SlideAnnotationError = 'empty' | 'too-long' | 'too-many';
 
-/** 新加一条：批注去掉首尾空白；空的、超长的、超过条数的都不收。 */
+/** Add a new item: the note is trimmed of leading and trailing whitespace; empty, too long, or over-limit items are not accepted. */
 export function addSlideAnnotation(
   list: readonly DraftSlideAnnotation[],
   note: DraftSlideAnnotation,
@@ -32,13 +31,13 @@ export function removeSlideAnnotation(list: readonly DraftSlideAnnotation[], id:
   return list.some((n) => n.id === id) ? list.filter((n) => n.id !== id) : list;
 }
 
-/** 编辑器里这份 deck 的编号标记：编号是在整份草稿里的序号，与 composer 列表一致。 */
+/** The numbered markers for this deck in the editor: numbers are the sequence over the whole draft, matching the composer list. */
 export function deckThreads(list: readonly DraftSlideAnnotation[], deck: FileTarget): EditorThread[] {
   const key = targetKey(deck);
   return list.flatMap((n, i) => (targetKey(n.deck) === key ? [{ id: n.id, anchor: n.anchor, n: i + 1 }] : []));
 }
 
-/** 随消息交出去的那一份：去掉界面里的 id，字段按协议排。 */
+/** The copy handed over with the message: UI ids removed, fields in protocol order. */
 export function sentSlideAnnotations(list: readonly DraftSlideAnnotation[]): SlideAnnotation[] {
   return list.map(({ deck, anchor, slideId, label, detail, area, text }) => ({
     deck,
@@ -52,14 +51,14 @@ export function sentSlideAnnotations(list: readonly DraftSlideAnnotation[]): Sli
 }
 
 /**
- * 运行时给模型的定位描述里带的 slide id（`Slide 3 #s03 …`、`Area on slide 3 #s03 …`）；没有时 undefined。
- * 只有 deck 里写了 id 的页才有。
+ * The slide id carried in the location description given to the model by the runtime (`Slide 3 #s03 …`, `Area on slide 3 #s03 …`); undefined when there is none.
+ * Only slides that have an id written in the deck have one.
  */
 export function slideIdOfDetail(detail: string | undefined): string | undefined {
   return detail?.match(/\b[Ss]lide \d+ #([A-Za-z0-9][\w-]{0,199})/)?.[1];
 }
 
-/** 已发送消息里的一条在编辑器里跳转用的 id：消息 id 加序号（发出去的不在草稿里，没有草稿 id）。 */
+/** The id used to jump to an item in an already-sent message in the editor: the message id plus a sequence number (sent items are no longer in the draft, so they have no draft id). */
 export function sentAnnotationId(messageId: string, index: number): string {
   return `${messageId}:${index}`;
 }

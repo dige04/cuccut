@@ -1,11 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/Qwen3ASR.swift`。
+//! Parts of this file reference speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/Qwen3ASR.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backends, model bundles and transcription interfaces; the original upstream source notice is kept.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3-ASR 的解码选项、确定性惩罚、复读检测与音频塔的分块长度。
+//! Qwen3-ASR's decoding options, determinism penalties, repetition detection, and the chunk length of the audio tower.
 
 use std::collections::HashSet;
 
@@ -151,7 +151,7 @@ pub fn downsampled_length(mut input_length: usize) -> usize {
     input_length
 }
 
-/// Qwen3-ASR 的尺寸档。0.6B 是 `Small`，1.7B 是 `Large`；结构参数见 `backend::mlx::qwen3`。
+/// Qwen3-ASR size tiers. 0.6B is `Small`, 1.7B is `Large`; for structural parameters see `backend::mlx::qwen3`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AsrModelSize {
     Small,
@@ -232,19 +232,19 @@ mod tests {
         assert_eq!(AsrModelSize::detect_bits("model-0.6B"), 4);
     }
 
-    // 移植自 v2 `ccut-speech-core/tests/core.rs` 的 `qwen_decoding_policy_chunking_and_model_detection_match_reference`，
-    // 只补上面几个测试没覆盖到的边界。
+    // Ported from the `qwen_decoding_policy_chunking_and_model_detection_match_reference` test in v2 `ccut-speech-core/tests/core.rs`,
+    // adding only the boundary cases that the tests above do not cover.
     #[test]
     fn decoding_policy_boundaries_match_reference() {
         let options = Qwen3DecodingOptions::default();
         assert_eq!(options.max_tokens, 448);
-        // 恰好 15 秒不算长输入。
+        // Exactly 15 seconds does not count as long input.
         let mut long = options.clone();
         long.long_input_no_repeat_ngram_size = 4;
         assert_eq!(long.adapted_for(15.0).no_repeat_ngram_size, 0);
         assert_eq!(long.adapted_for(15.01).no_repeat_ngram_size, 4);
         assert_eq!(forbidden_next_tokens(&[1, 2, 3, 1, 2, 4, 1, 2], 3), vec![3, 4]);
-        // 越界的 token（-1、99）直接跳过，不能 panic。
+        // Out-of-range tokens (-1, 99) are skipped and must not panic.
         let mut scores = vec![10.0, -4.0, 1.0];
         let penalty = Qwen3DecodingOptions {
             repetition_penalty: 2.0,

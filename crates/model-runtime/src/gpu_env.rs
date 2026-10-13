@@ -1,12 +1,11 @@
-//! `CUCCUT_GPU` 开关（从 v2 的 `CCUT_GPU` 移植）：一个环境变量约束全部非 Apple 的 GPU 推理线（candle CUDA，以及
-//! Whisper 的 ggml CUDA / Vulkan 线）。
+//! `CUCCUT_GPU` switch (ported from v2's `CCUT_GPU`): one environment variable constrains all non-Apple GPU inference paths (candle CUDA, and the ggml CUDA / Vulkan paths of Whisper).
 //!
-//! 驱动异常时用户需要一个不改构建就能强制 CPU 的逃生口；各条 GPU 线共用一个名字，文档只需解释一次。
+//! When a driver misbehaves, users need an escape hatch that forces CPU without changing the build. The GPU paths share one name, so the docs only need to explain it once.
 
-/// 强制 CPU 的环境变量名。
+/// Name of the environment variable that forces CPU.
 pub const GPU_ENV: &str = "CUCCUT_GPU";
 
-/// `CUCCUT_GPU` 是否显式关闭了 GPU 推理（`off` / `0` / `false` / `cpu` / `no`，不分大小写）。
+/// Whether `CUCCUT_GPU` explicitly turns off GPU inference (`off` / `0` / `false` / `cpu` / `no`, case-insensitive).
 pub fn gpu_disabled_by_env() -> bool {
     gpu_disabled_by_value(std::env::var(GPU_ENV).ok().as_deref())
 }

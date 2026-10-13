@@ -4,18 +4,16 @@ import { writeJsonAtomic } from './json-file.ts';
 import { quarantineFile } from './jsonl-file.ts';
 
 /**
- * 整文件 JSON 的 Store 读文件的统一规则（架构设计 §5.2）。
+ * The unified rules for reading a whole-file JSON Store (architecture design §5.2).
  *
- * - 文件不在：`missing`。空文件（或只有空白）：`empty`，按不在处理，记一条 warn，不改名（没有可留的内容）。
- * - 读不了（权限、是目录等文件系统错误）：原样抛出，不当作坏文件。
- * - 不是 JSON、顶层不是对象，或 `recognize` 认不出：改名保留（`<文件>.corrupt-<时间>`，`quarantineFile`），记 warn，
- *   `quarantined`，调用方从空（默认值）开始。
- * - 版本字段高于已知（更新的 CucCut 写下的）：记 warn，`newer-version`，按空处理但**不改名**；`JsonStoreFile` 之后不再写这个文件，
- *   免得降级运行时覆盖掉新版本的数据。版本检查在形状检查之前：新版本的文件形状不同，也不能被当成坏文件改名。
- * - `quarantine: false`（凭据与授权这类不能静默丢的）：认不出时不改名，返回 `unrecognized`，由调用方让启动失败或进入降级状态。
+ * - File absent: `missing`. Empty file (or whitespace only): `empty`, treated as absent, logs one warn, and is not renamed (there is no content to keep).
+ * - Unreadable (permissions, is a directory, or other filesystem errors): rethrown as-is, not treated as a corrupt file.
+ * - Not JSON, top level not an object, or not recognized by `recognize`: renamed to keep it (`<file>.corrupt-<time>`, `quarantineFile`), logs a warn, returns `quarantined`, and the caller starts from empty (defaults).
+ * - Version field higher than known (written by a newer CucCut): logs a warn, returns `newer-version`, treated as empty but **not renamed**; `JsonStoreFile` no longer writes this file afterward, so a downgraded runtime does not overwrite data from the newer version. The version check comes before the shape check: a newer version's file may have a different shape, and must not be renamed as a corrupt file.
+ * - `quarantine: false` (for credentials and authorization, which must not be silently lost): when not recognized, the file is not renamed and `unrecognized` is returned, so the caller makes startup fail or enters a degraded state.
  */
 
-/** Store 用的最小日志接口；Harness 的 `Logger` 在结构上满足它。 */
+/** Minimal logging interface for the Store; the Harness `Logger` structurally satisfies it. */
 export interface StoreLog {
   info(message: string, fields?: Record<string, unknown>): void;
   warn(message: string, fields?: Record<string, unknown>): void;
@@ -26,21 +24,21 @@ export interface StoreOptions {
 }
 
 export interface StoreFileVersion {
-  /** 版本字段名，例如 `schemaVersion`、`formatVersion`。 */
+  /** Name of the version field, e.g. `schemaVersion`, `formatVersion`. */
   key: string;
-  /** 这一版认识的最高版本。 */
+  /** The highest version this release recognizes. */
   known: number;
-  /** 把字段值换成版本号；缺省只认数字。认不出时 null（交给 `recognize` 判断）。 */
+  /** Turns a field value into a version number; only numbers are accepted by default. Returns null when not recognized (leaves the decision to `recognize`). */
   parse?: (value: unknown) => number | null;
 }
 
 export interface ReadStoreFileOptions<T> {
   log?: StoreLog | undefined;
-  /** 缺省 `{ key: 'schemaVersion', known: 1 }`；null 表示文件没有版本字段。 */
+  /** Default `{ key: 'schemaVersion', known: 1 }`; null means the file has no version field. */
   version?: StoreFileVersion | null;
-  /** 顶层对象 → 值；认不出时 null。 */
+  /** Top-level object → value; null when not recognized. */
   recognize: (raw: Record<string, unknown>) => T | null;
-  /** 缺省 true：认不出时改名保留。false 时不改名，返回 `unrecognized`。 */
+  /** Default true: when not recognized, the file is renamed to keep it. false means no rename; returns `unrecognized`. */
   quarantine?: boolean;
 }
 
@@ -99,8 +97,7 @@ export async function readJsonOrQuarantine<T>(file: string, options: ReadStoreFi
 }
 
 /**
- * 一个整文件 JSON 的 Store 文件：按上面的规则读；读到更新版本的文件之后进入只读，之后的写入跳过（改动只留在内存里，
- * 记一次 warn），文件保持原样。
+ * A whole-file JSON Store file: read according to the rules above. After reading a file written by a newer version, it becomes read-only: later writes are skipped (changes stay in memory only, with one warn logged), and the file is left as it is.
  */
 export class JsonStoreFile {
   readonly file: string;
@@ -113,14 +110,14 @@ export class JsonStoreFile {
     this.#log = log;
   }
 
-  /** 读到了更新版本写下的文件（或读不了而按空处理）：不再写它。 */
+  /** A file written by a newer version was read (or could not be read and was treated as empty): do not write it. */
   get readOnly(): boolean {
     return this.#readOnly;
   }
 
   /**
-   * `tolerateReadErrors`：文件系统读不了（权限等）时不抛出，记 warn、按空处理并进入只读（读不到的文件不覆盖）。
-   * 给不拦住 Runtime 启动的偏好与缓存用。
+   * `tolerateReadErrors`: when the filesystem cannot be read (permissions, etc.), do not throw; log a warn, treat as empty, and become read-only (a file that could not be read is not overwritten).
+   * For preferences and caches that should not block Runtime startup.
    */
   async read<T>(options: Omit<ReadStoreFileOptions<T>, 'log'> & { tolerateReadErrors?: boolean }): Promise<StoreFileRead<T>> {
     this.#warned = false;

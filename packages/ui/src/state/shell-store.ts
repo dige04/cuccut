@@ -52,16 +52,16 @@ import {
 export type { SettingsSection } from '../model/settings-nav.ts';
 export { SETTINGS_SECTIONS } from '../model/settings-nav.ts';
 
-/** 一级入口（App rail，产品设计 §2.1 用户修订）。 */
+/** Top-level entry (App rail, product design §2.1, revised by user). */
 export type Tab = 'home' | 'space' | 'tasks' | 'models' | 'services' | 'tools' | 'settings';
 
 /**
- * Home 的 `pane`：会话右侧功能区当前的标签（视频、文件、项目文件、网页）；同一条会话的其他标签记在 `workspaces` 里。
- * Space 的 `video`：在 Space 打开的视频（产品设计 §5.1），编辑器加悬浮会话；关闭回到列表。
+ * Home's `pane`: the current tab of the conversation's right-side panel (video, files, project files, web page); the other tabs of the same conversation are recorded in `workspaces`.
+ * Space's `video`: the video opened in Space (product design §5.1), with the editor plus a floating conversation; closing returns to the list.
  */
 export type Route =
   | { tab: 'home'; conversationId: Id | null; projectId: Id | null; pane?: WorkspaceItem }
-  /** `from`：只看从这部视频派生的视频（剪成短视频结果页的「在 Space 里看这几支」、查看框的「查看切出的短视频」）。 */
+  /** `from`: show only videos derived from this video ("Watch these in Space" on the short-video result page, and "View cut short videos" in the viewer). */
   | { tab: 'space'; category: SpaceCategory; projectId: Id | null; video?: FileTarget; from?: Id }
   | { tab: 'settings'; section: SettingsSection }
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
@@ -76,113 +76,113 @@ export const SIDEBAR_MIN = 200;
 export const SIDEBAR_MAX = 420;
 const HISTORY_MAX = 50;
 
-/** 新会话的草稿键。 */
+/** Draft key for a new conversation. */
 export const NEW_DRAFT = 'new';
 
 export const HOME: Route = { tab: 'home', conversationId: null, projectId: null };
 
 /**
- * 只属于这台机器、这个窗口的界面状态：路由与前进后退、各入口上次停留的地方、侧栏、草稿、偏好。
- * 业务状态不放这里，它们来自 Runtime。
+ * UI state that belongs only to this machine and this window: routing and back/forward, the last place each entry was left, the sidebar, drafts, and preferences.
+ * Business state does not go here; it comes from the Runtime.
  */
 export interface ShellStore {
   route: Route;
   back: Route[];
   forward: Route[];
-  /** 每个入口上次停留的地方：点 rail 回到那里（产品设计 §2.1）。 */
+  /** The last place each entry was left: clicking the rail returns there (product design §2.1). */
   lastRoute: Partial<Record<Tab, Route>>;
   sidebarWidth: number;
   sidebarHidden: boolean;
   drafts: Record<string, string>;
-  /** 还没建出来的新会话（草稿键）选的访问模式。建好的会话的访问模式在 Runtime 里，不在这里。 */
+  /** Access mode chosen for a new conversation not yet created (draft key). The access mode of a created conversation lives in the Runtime, not here. */
   draftAccessModes: Record<string, AgentMode>;
   expandedProjects: Id[];
-  /** Home 侧栏「整理侧栏」：按项目分组，或所有会话在一个列表中。 */
+  /** Home sidebar "Organize sidebar": group by project, or put all conversations in one list. */
   sidebarGrouping: 'project' | 'flat';
   sidebarSort: SidebarSort;
   colorScheme: ColorScheme;
-  /** 界面语言（设置 › 通用）：`system` 跟随系统。桌面端还把它写进 Runtime 的 `ui.language`（state/locale.ts）。 */
+  /** UI language (Settings › General): `system` follows the OS. The desktop app also writes it to the Runtime's `ui.language` (state/locale.ts). */
   language: LanguagePreference;
   spaceView: 'grid' | 'list';
   spaceSort: SpaceSort;
-  /** 每条会话（新会话按项目）的功能区标签（产品设计 §3.3 用户修订）。 */
+  /** Side panel tabs for each conversation (new conversations by project) (product design §3.3, revised by user). */
   workspaces: Record<string, WorkspaceTabs>;
   /**
-   * 每条会话（新会话按草稿键）自己的视图：功能区收起与完整视图（产品设计 §2.5、§3.3 用户修订）。换会话不改别的会话的视图。
-   * 单条标签条（窄窗口、完整视图）里收起就是选中了会话标签（`showConversation`）。记在本机。
+   * The view of each conversation (new conversations by draft key): side panel collapsed, and full view (product design §2.5, §3.3, revised by user). Switching conversations does not change other conversations' views.
+   * In the single tab strip (narrow window, full view), collapsing means selecting the conversation tab (`showConversation`). Recorded on this machine.
    */
   views: Record<string, WorkspaceView>;
-  /** Home 会话列的宽度（与右侧标签共用一个，原型 `dockW`）。 */
+  /** Width of the Home conversation column (shares one width with the right-side tabs, prototype `dockW`). */
   dockWidth: number;
   /**
-   * 窄窗口（放不下会话列与编辑器，产品设计 §2.5、§3.3）：单列，会话是标签条里固定的第一个标签。
-   * 由 HomePage 量出来写进来，标题栏照着排。
+   * Narrow window (no room for the conversation column and the editor, product design §2.5, §3.3): single column, with the conversation as the fixed first tab in the tab strip.
+   * HomePage measures and writes it here; the title bar lays out accordingly.
    */
   workspaceNarrow: boolean;
-  /** 切到窄窗口之前功能区是不是用户收起的：切回并排时，只有它为真且一直停在会话标签上才保持收起。不记在本机。 */
+  /** Whether the user had collapsed the side panel before switching to a narrow window: when switching back to side-by-side, it stays collapsed only if this is true and it has stayed on the conversation tab. Not recorded on this machine. */
   hiddenBeforeNarrow: boolean;
-  /** 网页标签的页面标题（按标签 id），用作标签名；不记在本机，重开后页面载入时再报。 */
+  /** Page title of a web tab (keyed by tab id), used as the tab name; not recorded on this machine, reported again when the page loads after reopening. */
   webTitles: Record<string, string>;
-  /** 模型页每一类上次停留的页签。 */
+  /** The tab last open for each category on the models page. */
   modelPages: Partial<Record<ModelCategory, ModelPage>>;
-  /** 还没建出来的新会话（草稿键）选的 Agent、模型与推理强度；建好的会话的选择在 Runtime 里。 */
+  /** Agent, model and reasoning effort chosen for a new conversation not yet created (draft key); the choices of a created conversation are in the Runtime. */
   draftAgents: Record<string, AgentChoice>;
-  /** 每条会话忙时排队、等当前任务结束再发的消息。 */
+  /** Messages queued for each conversation while it is busy, to be sent after the current task ends. */
   queues: Record<Id, QueuedMessage[]>;
   /**
-   * Space 里打开的视频右下角悬浮会话最近发起的那条会话（按视频的 `targetKey`）：最小化图标的状态点看它，工具页「交给 Agent」接着它。
-   * 输入框本身每次都是新会话（产品设计 §5.1）。只在这次运行里记着。
+   * The conversation most recently started from the floating conversation at the bottom-right of a video opened in Space (keyed by the video's `targetKey`): the status dot on the minimized icon reads it, and the tool page's "Hand to Agent" continues it.
+   * The input box itself always starts a new conversation (product design §5.1). Remembered only for this run.
    */
   videoChats: Record<string, Id>;
-  /** 悬浮会话最小化成图标；默认展开，最小化后记在本机。 */
+  /** The floating conversation minimized to an icon; expanded by default, and the minimized state is recorded on this machine. */
   videoChatMin: boolean;
   navigate(href: string): void;
   go(route: Route): void;
-  /** 替换当前位置，不进历史（筛选、分类这类原地切换）。 */
+  /** Replace the current location without adding a history entry (in-place switches such as filters and categories). */
   replace(route: Route): void;
   goBack(): void;
   goForward(): void;
-  /** 点 rail：去这个入口上次停留的地方；已经在这个入口时回到它的起点。 */
+  /** Click the rail: go to where this entry was last left; if already in this entry, return to its start. */
   goTab(tab: Tab): void;
-  /** 在当前入口打开视频（Home 或 Space）；在其他页时去 Home。 */
+  /** Open a video in the current entry (Home or Space); on other pages, go to Home. */
   openVideo(video: FileTarget, from?: { conversationId?: Id | null; projectId?: Id | null }): void;
-  /** 关闭视频，回到打开它之前的位置（Home：关掉这个标签，旁边的标签接上）。 */
+  /** Close the video and return to where it was opened from (Home: closes this tab, and the neighbouring tab takes over). */
   closeVideo(): void;
-  /** 在当前 Home 会话的功能区打开一个标签；不在 Home 时去 Home。 */
+  /** Open a tab in the side panel of the current Home conversation; when not in Home, go to Home. */
   openPane(item: WorkspaceItem, from?: { conversationId?: Id | null; projectId?: Id | null }): void;
   selectPane(key: string): void;
   replaceFilePane(key: string, target: MediaTarget): void;
   /**
-   * 把当前 Home 会话的标签 `key` 原地换成 `item`（新标签页起始页的工具卡：新建网页、浏览项目文件）：位置不变、路由换到新标签、不进历史；
-   * `item` 已在别处打开时挪到这个位置（model/workspace.ts `replaceTab`）。没有 `key` 这个标签时等于 `openPane`。
+   * Replace tab `key` of the current Home conversation in place with `item` (tool cards on the new-tab start page: new web page, browse project files): the position stays, the route moves to the new tab, and there is no history entry;
+   * if `item` is already open elsewhere, it is moved to this position (model/workspace.ts `replaceTab`). If there is no tab `key`, it is the same as `openPane`.
    */
   replaceWorkspaceTab(key: string, item: WorkspaceItem): void;
   closePane(key: string): void;
   movePane(key: string, target: string, after: boolean): void;
-  /** 新会话发出第一句、变成真正的会话时，把起始页上开着的标签与视图带过去。 */
+  /** When a new conversation sends its first message and becomes a real conversation, carry over the tabs and views open on the start page. */
   carryWorkspace(from: string, to: Id): void;
   /**
-   * 标题栏「标签页」按钮（model/workspace.ts `tabsButton`）：没有标签时打开新标签页（空地址的网页标签）并显示分屏；
-   * 完整视图里回到分屏；分屏显示着时收起；收起了就回到当前、收起前或最后一个标签。
+   * The title bar "Tabs" button (model/workspace.ts `tabsButton`): with no tabs, opens a new tab page (a web tab with an empty address) and shows split view;
+   * in full view, returns to split view; while split view is shown, collapses it; when collapsed, returns to the current, pre-collapse, or last tab.
    */
   toggleWorkspace(): void;
-  /** 进入 / 退出完整视图。进入时保留屏幕上的样子（`fullViewEntry`）；退出时会话回到左边，上次的标签回到右边。窄窗口里没有这个按钮。 */
+  /** Enter or exit full view. On entry, the on-screen layout is kept (`fullViewEntry`); on exit the conversation returns to the left and the last tab returns to the right. This button does not appear in narrow windows. */
   toggleWorkspaceFull(): void;
-  /** 已打开的标签页列表：选中这个标签并显示分屏，`full` 时直接进完整视图。 */
+  /** The list of open tab pages: selects this tab and shows split view; with `full`, enters full view directly. */
   showWorkspaceTab(key: string, full: boolean): void;
-  /** 选中会话标签（单条标签条里）：只收起功能区；路由、标签与编辑器状态都不动。 */
+  /** Select the conversation tab (in the single tab strip): only collapses the side panel; route, tabs and editor state are unchanged. */
   showConversation(): void;
-  /** 让会话露出来：窄窗口里选中会话标签，完整视图退回分屏；会话本来就看得见时什么都不做。 */
+  /** Bring the conversation into view: in a narrow window, select the conversation tab and leave full view for split view; do nothing if the conversation is already visible. */
   revealConversation(): void;
   setDockWidth(width: number): void;
   resizeWorkspace(width: number, contentWidth: number): void;
   /**
-   * 量出来的窄 / 宽。模式没变什么都不做；`initial`（挂载后第一次量）只记下模式，不切换标签。
-   * 并排 → 单列：焦点在会话区（`focusInConversation`）或功能区本来就收起时选会话标签，否则停在当前标签。
-   * 单列 → 并排：会话列与上次的标签都回来；只有切过来之前就收起、并且一直停在会话标签上，才保持收起。
+   * The measured narrow or wide state. If the mode has not changed, do nothing; `initial` (the first measurement after mounting) only records the mode and does not switch tabs.
+   * Side by side → single column: if focus is in the conversation area (`focusInConversation`) or the side panel was already collapsed, select the conversation tab; otherwise stay on the current tab.
+   * Single column → side by side: the conversation column and the last tab come back; it stays collapsed only if it was collapsed before the switch and has stayed on the conversation tab.
    */
   setWorkspaceNarrow(narrow: boolean, options?: { focusInConversation?: boolean; initial?: boolean }): void;
-  /** 网页标签里的页面换了地址：改那组标签里的 `url`，不切换当前标签；它正是当前标签时就地换掉路由（不进历史）。 */
+  /** The page in a web tab changed address: update `url` in that group of tabs without switching the current tab; if it is the current tab, replace the route in place (no history entry). */
   setWebUrl(book: string, id: string, url: string): void;
   setWebTitle(id: string, title: string): void;
   setModelPage(category: ModelCategory, page: ModelPage): void;
@@ -191,7 +191,7 @@ export interface ShellStore {
   setDraft(key: string, text: string): void;
   setDraftAccessMode(key: string, mode: AgentMode | null): void;
   setDraftAgent(key: string, choice: AgentChoice | null): void;
-  /** 按最新的队列改；改成空的就把这条会话的队列删掉。 */
+  /** Update according to the latest queue; if it becomes empty, delete this conversation's queue. */
   setQueue(conversationId: Id, update: (queue: readonly QueuedMessage[]) => QueuedMessage[]): void;
   setVideoChat(key: string, conversationId: Id | null): void;
   setVideoChatMin(min: boolean): void;
@@ -324,7 +324,7 @@ export const useShell = create<ShellStore>()(
         const next = closeTab(workspaces[book] ?? EMPTY_WORKSPACE, key);
         const pane = next.tabs.find((t) => itemKey(t) === next.active);
         const { pane: _pane, ...rest } = route;
-        // 关掉最后一个标签就离开完整视图，回到只有会话。选中会话标签时关掉后面那个标签不把视图带到邻居上（hidden 不动）。
+        // Closing the last tab leaves full view and returns to conversation only. When the conversation tab is selected, closing the tab after it does not carry the view over to the neighbour (`hidden` is unchanged).
         set((s) => ({ workspaces: { ...s.workspaces, [book]: next }, ...(next.tabs.length ? {} : patchView(s, DEFAULT_VIEW)) }));
         get().replace(pane ? { ...rest, pane } : rest);
       },
@@ -492,14 +492,14 @@ export const useShell = create<ShellStore>()(
 );
 
 /**
- * 1 → 2 只是加了字段：旧值照用，新字段取默认（之后加的字段同理，不必升版本）。
- * 2 → 3：自主模式（plan / controlled / authorized）换成访问模式，并且建好的会话的模式搬进了 Runtime。
- * 旧值不翻译：草稿上的选择丢掉，回到 Runtime 给的初值；不认识的值一律不留（拿不准就问）。
- * 3 → 4：加了新会话草稿上的 Agent 选择（`draftAgents`）与忙时排队（`queues`）；旧数据里没有，取默认。
- * 有这两项时逐条校验，形状不对的丢掉（以后再升版本时，旧数据也经这里清洗）。
- * v4 之内加的 `dockWidth`（会话列宽）、标签组的 `last`（收起前的标签）、`videoChatMin`（悬浮会话最小化）与 `language`（界面语言）都是可缺的字段：旧数据里没有就取默认，不升版本。
- * 4 → 5：功能区的收起与完整视图从全局开关改成每条会话一份（`views`），并记在本机。v4 的全局开关本来就不记在本机，
- * 万一读回里有也丢掉，各会话从默认视图开始；有 `views` 时逐条校验，只留布尔的 `hidden` / `full`。
+ * 1 → 2 only added fields: old values are used as they are, and new fields take their defaults (later added fields are handled the same way, without bumping the version).
+ * 2 → 3: autonomous modes (plan / controlled / authorized) are replaced by access modes, and the modes of created conversations were moved to the Runtime.
+ * Old values are not translated: choices on drafts are dropped and fall back to the initial values given by the Runtime; unrecognized values are never kept (when in doubt, ask).
+ * 3 → 4: added the Agent choice on new-conversation drafts (`draftAgents`) and busy-time queues (`queues`); old data does not have them, so defaults are used.
+ * When these two are present, each entry is validated, and entries of the wrong shape are dropped (when the version is bumped later, old data is also cleaned here).
+ * `dockWidth` (conversation column width), the group's `last` (the tab before collapse), `videoChatMin` (floating conversation minimized) and `language` (UI language), added within v4, are optional fields: if old data lacks them, defaults are used, without bumping the version.
+ * 4 → 5: the collapse and full view of the side panel changed from a global switch to one per conversation (`views`), recorded on this machine. v4's global switch was never recorded on this machine,
+ * so if it appears on read-back it is also dropped, and each conversation starts from the default view; when `views` is present each entry is validated, keeping only boolean `hidden` / `full`.
  */
 export function migrateShell(persisted: unknown, version: number): Partial<ShellStore> {
   const state = { ...(persisted as Record<string, unknown>) };
@@ -533,7 +533,7 @@ function cleanViews(value: unknown): Record<string, WorkspaceView> {
   );
 }
 
-/** 当前 Home 位置的视图键；不在 Home 时为 null。 */
+/** View key of the current Home location; null when not in Home. */
 function currentKey(s: Pick<ShellStore, 'route'>): string | null {
   return s.route.tab === 'home' ? workspaceKey(s.route.conversationId, s.route.projectId) : null;
 }
@@ -543,7 +543,7 @@ function currentView(s: Pick<ShellStore, 'route' | 'views'>): WorkspaceView {
   return (key && s.views[key]) || DEFAULT_VIEW;
 }
 
-/** 改当前 Home 位置的视图（不在 Home 时不改）；没有变化时返回空补丁。 */
+/** Change the view of the current Home location (no change when not in Home); returns an empty patch when nothing changed. */
 function patchView(s: Pick<ShellStore, 'route' | 'views'>, patch: Partial<WorkspaceView>): Partial<ShellStore> {
   const key = currentKey(s);
   if (!key) return {};
@@ -555,8 +555,8 @@ function patchView(s: Pick<ShellStore, 'route' | 'views'>, patch: Partial<Worksp
 }
 
 /**
- * 某个 Home 位置的布局（model/workspace.ts `workspaceMode`）：标签数、功能区是否显示、完整视图、单条标签条、是否选中了会话标签。
- * 不在 Home 时为 null。
+ * Layout of a Home location (model/workspace.ts `workspaceMode`): tab count, whether the side panel is shown, full view, single tab strip, and whether the conversation tab is selected.
+ * null when not in Home.
  */
 export function homeMode(
   s: Pick<ShellStore, 'route' | 'views' | 'workspaces' | 'workspaceNarrow'>,
@@ -568,7 +568,7 @@ export function homeMode(
   return { key, count, ...workspaceMode({ active, count, view: s.views[key] ?? DEFAULT_VIEW, narrow: s.workspaceNarrow }) };
 }
 
-/** 这条会话正在 Home 里、并且看得见（不是单条标签条里选着别的标签）。 */
+/** This conversation is in Home and visible (not another tab selected in the single tab strip). */
 export function conversationVisible(s: Pick<ShellStore, 'route' | 'views' | 'workspaces' | 'workspaceNarrow'>, conversationId: Id): boolean {
   const mode = homeMode(s);
   return !!mode && s.route.tab === 'home' && s.route.conversationId === conversationId && !(mode.single && mode.visible);
@@ -577,14 +577,14 @@ export function conversationVisible(s: Pick<ShellStore, 'route' | 'views' | 'wor
 type Get = () => ShellStore;
 type Set = (partial: Partial<ShellStore> | ((s: ShellStore) => Partial<ShellStore>)) => void;
 
-/** 退出完整视图：会话回到左边，上次的标签回到右边（路由上没有标签时回到收起前或最后一个）。 */
+/** Exit full view: the conversation returns to the left and the last tab returns to the right (when the route has no tab, returns to the pre-collapse or last one). */
 function exitFull(get: Get, set: Set): void {
   set((s) => ({ ...patchView(s, DEFAULT_VIEW), hiddenBeforeNarrow: false }));
   const { route } = get();
   if (route.tab === 'home' && !route.pane) showRemembered(get, set);
 }
 
-/** 显示分屏：回到当前、收起前或最后一个标签。 */
+/** Show split view: return to the current, pre-collapse, or last tab. */
 function showRemembered(get: Get, set: Set): void {
   const { route, workspaces, go } = get();
   if (route.tab !== 'home') return;
@@ -618,7 +618,7 @@ function cleanQueues(value: unknown): Record<Id, QueuedMessage[]> {
   );
 }
 
-/** `models` 是设置内部的内容路由，保留它以兼容已有调用方；不对应独立 Rail 入口。 */
+/** `models` is an internal content route of Settings, kept for compatibility with existing callers; it does not correspond to a separate Rail entry. */
 export function railTabOf(route: Route): Exclude<Tab, 'models'> {
   return route.tab === 'models' ? 'settings' : route.tab;
 }
@@ -632,8 +632,8 @@ export function defaultRoute(tab: Tab): Route {
 }
 
 /**
- * 进到一个 Home 位置时，那条会话的标签组跟着路由变（当前标签加进去、或收起）。视图（收起、完整视图）按会话各记一份，换会话不改；
- * 路由上没有标签时完整视图照旧，选中的是会话标签。换了会话只忘掉「切到窄窗口之前收起过」。
+ * When entering a Home location, that conversation's tab group changes with the route (the current tab is added, or it collapses). Views (collapsed, full view) are recorded per conversation, and switching conversations does not change them;
+ * when the route has no tab, full view stays as it is, and the selected one is the conversation tab. Switching conversations only forgets "was collapsed before switching to a narrow window".
  */
 function arrive(s: ShellStore, route: Route): Partial<ShellStore> {
   if (route.tab !== 'home') return {};
@@ -647,7 +647,7 @@ function arrive(s: ShellStore, route: Route): Partial<ShellStore> {
   };
 }
 
-/** Home 功能区开着的视频（Home 的当前标签，或 Space 打开的视频）。 */
+/** The video open in the Home side panel (the current Home tab, or the video opened in Space). */
 export function routeVideo(route: Route): FileTarget | undefined {
   if (route.tab === 'space') return route.video;
   if (route.tab === 'home' && route.pane?.kind === 'video') return route.pane.target;
@@ -659,18 +659,18 @@ function sameRoute(a: Route, b: Route): boolean {
 }
 
 /**
- * 有页面侧栏的入口：标题栏的侧栏开合钮只在这些页出现。打开视频时侧栏还在——视频属于它的入口。
- * 设置（含模型配置）自带分节导航，没有页面侧栏。
+ * Entries that have a page sidebar: the sidebar open/close button in the title bar appears only on these pages. The sidebar stays when a video is opened, because the video belongs to its entry.
+ * Settings (including model configuration) has its own sectioned navigation and no page sidebar.
  */
 export function hasSidebar(route: Route): boolean {
   return route.tab !== 'settings' && route.tab !== 'models';
 }
 
 /**
- * 界面内链接：`/home`、`/c/<会话>`、`/p/<项目>`（在这个项目里新建会话），Home 的功能区标签放在查询串里
- * （`?video=` / `?file=` 为 JSON 的 FileTarget，`?files=1`，`?web=<id>&url=<地址>`）；
- * `/space/<分类>[/<项目>][?video=]`、`/settings/<节>`、`/settings/models/<类>[/<页>]`、`/tasks[/<任务>]`、
- * `/services[/<服务>]`、`/tools[/<工具>]`。
+ * In-app links: `/home`, `/c/<conversation>`, `/p/<project>` (starts a new conversation in this project); the Home side panel tabs go in the query string
+ * (`?video=` / `?file=` take a JSON FileTarget, `?files=1`, `?web=<id>&url=<address>`);
+ * `/space/<category>[/<project>][?video=]`, `/settings/<section>`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
+ * `/services[/<service>]`, `/tools[/<tool>]`.
  */
 export function hrefFor(route: Route): string {
   switch (route.tab) {
@@ -736,9 +736,9 @@ export function parseHref(href: string): Route {
     return isModelPage(c) ? { tab: 'models', category, page: c } : { tab: 'models', category };
   }
   if (head === 'settings') {
-    // 旧的模型深链（本地 / 云端 / 我的声音）落到设置内对应模型配置。
+    // Old model deep links (local / cloud / my voice) land on the matching model configuration in Settings.
     if (a === 'local' || a === 'cloud' || a === 'voices') return { tab: 'models', category: a === 'voices' ? 'tts' : 'asr', page: a };
-    // 旧的 `/settings/agent/<页签>`：技能、权限各去新的位置，其余留在 Agent 提供方。
+    // Old `/settings/agent/<tab>`: skills and permissions each go to their new locations; the rest stay in the Agent provider.
     if (a === 'agent') return { tab: 'settings', section: legacyAgentSection(b) };
     return { tab: 'settings', section: isSettingsSection(a) ? a : 'general' };
   }
@@ -747,10 +747,10 @@ export function parseHref(href: string): Route {
     return isModelPage(b) ? { tab: 'models', category, page: b } : { tab: 'models', category };
   }
   if (head === 'tasks') return a ? { tab: 'tasks', taskId: decodeURIComponent(a) } : { tab: 'tasks' };
-  // 远端算力的旧链接在服务页。
+  // Old links for remote compute are on the services page.
   if (head === 'tools' && a === 'remote') return { tab: 'services', service: 'remote' };
   if (head === 'services') return a ? { tab: 'services', service: decodeURIComponent(a) } : { tab: 'services' };
-  // 旧版的工具短名（translate、tts……）落到注册表 ID。
+  // Old short tool names (translate, tts, ...) map to registry IDs.
   if (head === 'tools') {
     const tool = toolIdOf(a);
     return tool ? { tab: 'tools', tool } : { tab: 'tools' };
@@ -784,7 +784,7 @@ function parseTarget(value: string | null): FileTarget | undefined {
     if (typeof parsed.projectId === 'string') return { projectId: parsed.projectId, path: parsed.path };
     if (typeof parsed.conversationId === 'string') return { conversationId: parsed.conversationId, path: parsed.path };
   } catch {
-    // 看不懂的链接当作没有这个标签。
+    // Links that cannot be understood are treated as having no such tab.
   }
   return undefined;
 }

@@ -6,7 +6,7 @@ import { grantRequiredDetails } from './grants/grant-errors.ts';
 import { taskFailure } from './localized.ts';
 import { videoDirName } from './videos/video-service.ts';
 
-/** Runtime 发出的文字按当前语言生成，引用随错误过线（仓库约定 §5）。测试进程默认钉在简体中文，这里换成英文。 */
+/** Text the Runtime emits is generated in the current language, and references travel with errors over the wire (repo convention §5). The test process is pinned to Simplified Chinese by default; here it is switched to English. */
 describe('runtime-core 的文案目录', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

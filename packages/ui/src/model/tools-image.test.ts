@@ -57,7 +57,7 @@ const qwen = imageModel('qwen-image-2.1@mlx-4bit', {
   local: { steps: { min: 8, max: 40, step: 4, default: 20 } },
 });
 
-/** 在 `fixtureView()` 上补一个本机 Provider：Qwen-Image 的状态由 `patch` 给。 */
+/** Adds a local Provider on top of `fixtureView()`: the Qwen-Image status is given by `patch`. */
 function withLocal(patch: Partial<ImageModelInfo> = {}, available = true): ModelCapabilitiesView {
   const view = fixtureView();
   const model = { ...qwen, ...patch };

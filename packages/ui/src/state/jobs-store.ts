@@ -8,15 +8,15 @@ import { jobLive } from '../model/task-list.ts';
 type Segments = Readonly<Record<Id, readonly JobLiveSegment[]>>;
 type Speeds = Readonly<Record<Id, SpeedTrack>>;
 
-/** 计算任务（Job）镜像：转写、配音、生成这些长活（架构设计 §7）。后台任务页、rail 角标与任务胶囊共用。 */
+/** Compute job (Job) mirror: long-running work such as transcription, dubbing and generation (architecture design §7). Shared by the background tasks page, the rail badge and the task capsule. */
 export interface JobsStore {
   ready: boolean;
   jobs: JobRecord[];
-  /** 还在跑的转录任务到目前为止识别出的段落，按 `jobId`（架构设计 §6.6「实时文稿」）。 */
+  /** Segments recognized so far by a transcription task still running, by `jobId` (architecture design §6.6, "live transcript"). */
   liveSegments: Segments;
-  /** 转写 Job 已完成、客户端丢掉了实时段落，但流程还在建字幕层：先留着，字幕轨出来之前临时行与文稿接着画（`holdSegments`）。 */
+  /** A transcription Job has completed and the client has dropped its live segments, but the flow is still building the subtitle layer. Keep them for now: until the subtitle track appears, the temporary line and the transcript keep drawing from them (`holdSegments`). */
   heldSegments: Segments;
-  /** 在跑的导出最近几秒的进度样本，按 `jobId`：导出窗口与后台任务据此写速度与剩余时间（`exportSpeed`）。 */
+  /** Progress samples from the last few seconds of a running export, by `jobId`. The export window and background tasks use them to compute speed and remaining time (`exportSpeed`). */
   speeds: Speeds;
   replace(snapshot: JobsSnapshot): void;
   apply(event: JobsEvent): void;
@@ -26,7 +26,7 @@ const NONE: Segments = Object.freeze({});
 const NO_SPEEDS: Speeds = Object.freeze({});
 const EMPTY: readonly JobLiveSegment[] = Object.freeze([]);
 
-/** 按新到的任务记录更新进度样本；不在跑的导出丢掉。没有变化时引用不变。 */
+/** Update progress samples with newly arrived task records. Exports that are not running are dropped. The reference is unchanged when nothing changes. */
 function trackSpeeds(speeds: Speeds, jobs: readonly JobRecord[]): Speeds {
   let next: Record<Id, SpeedTrack> | null = null;
   for (const job of jobs) {
@@ -49,7 +49,7 @@ export const useJobs = create<JobsStore>()((set) => ({
   replace: (snapshot) =>
     set((s) => {
       const liveSegments = snapshot.liveSegments ?? NONE;
-      // 整份替换：不在快照里的任务的样本一起丢掉。
+      // Full replacement: samples for tasks not in the snapshot are dropped too.
       const ids = new Set(snapshot.jobs.map((j) => j.jobId));
       const kept = Object.fromEntries(Object.entries(s.speeds).filter(([id]) => ids.has(id)));
       return {
@@ -60,7 +60,7 @@ export const useJobs = create<JobsStore>()((set) => ({
         speeds: trackSpeeds(kept, snapshot.jobs),
       };
     }),
-  // 只把快照的两项交给 reducer、两项都写回：reducer 删掉某个任务的段落时不能被浅合并留下旧的。
+  // Pass only the snapshot's two fields to the reducer, and write both back. When the reducer removes a task's segments, a shallow merge must not leave the old ones behind.
   apply: (event) =>
     set((s) => {
       const next = applyJobsEvent({ jobs: s.jobs, liveSegments: s.liveSegments as Record<Id, JobLiveSegment[]> }, event);
@@ -70,17 +70,17 @@ export const useJobs = create<JobsStore>()((set) => ({
     }),
 }));
 
-/** 还没结束的任务（含崩溃后正在自动重跑的，见 `jobLive`）。 */
+/** Tasks not yet finished (including ones being automatically re-run after a crash; see `jobLive`). */
 export function isJobLive(job: JobRecord): boolean {
   return jobLive(job);
 }
 
-/** 一个转写任务到目前为止识别出的段落（含刚结束、还留着的）；没有时是同一个空数组，不变时引用不变。 */
+/** Segments recognized so far by one transcription task (including ones that just finished and are still kept). When there are none, the same empty array is returned. The reference is unchanged when nothing changes. */
 export function useLiveSegments(jobId: Id | null | undefined): readonly JobLiveSegment[] {
   return useJobs((s) => (jobId ? (s.liveSegments[jobId] ?? s.heldSegments[jobId] ?? EMPTY) : EMPTY));
 }
 
-/** 一次导出的速度与预计剩余时间；不是在跑的导出、还算不出时 null。 */
+/** Speed and estimated remaining time of one export. null if it is not a running export or cannot be computed yet. */
 export function useExportSpeed(jobId: Id | null | undefined): ExportSpeed | null {
   const track = useJobs((s) => (jobId ? s.speeds[jobId] : undefined));
   const job = useJobs((s) => (jobId && s.speeds[jobId] ? s.jobs.find((j) => j.jobId === jobId) : undefined));

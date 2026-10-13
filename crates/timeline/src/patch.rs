@@ -1,56 +1,44 @@
-//! Timeline 局部补丁（`patchTimeline`）：把编辑器「整份 timeline.json 快照」的
-//! 差异压缩成只含改动的补丁，在服务端原地应用到 [`TimelineDocument`]。
+//! Timeline partial patch (`patchTimeline`): compresses the difference between the editor's “whole timeline.json snapshot” into a patch containing only the changes, and applies it in place on the server to [`TimelineDocument`].
 //!
-//! 动机与 `ccut-flow-core::patch`（`patchTranscript`）相同：Mac 编辑器本地持有
-//! 一份可变 `Doc`，任何 clip/元素/轨道手势都曾以 `replaceTimeline` 整份回传。
-//! timeline.json 通常只有几 KB，尺寸不是问题；问题是**语义**——整份替换把 cut
-//! 出处、词锚等客户端不该碰的字段一起交给客户端重建，也让「改了什么」在 journal
-//! 与应答里无从分辨。补丁让请求与改动成正比，语义仍是「客户端提交它想要的
-//! 最终值」，业务规则不搬回服务端。
+//! The motivation is the same as `ccut-flow-core::patch` (`patchTranscript`): the Mac editor holds a mutable `Doc` locally, and every clip / element / track gesture used to be sent back as a whole `replaceTimeline`. timeline.json is usually only a few KB, so size is not the problem; the problem is **semantics**. Replacing the whole document makes the client rebuild, along with everything else, fields it should not touch, such as cut provenance and word anchors, and it also makes “what changed” impossible to tell apart in the journal and in the reply. A patch makes the request proportional to the change, and the semantics stay “the client submits the final value it wants”; business rules do not move back to the server.
 //!
-//! 补丁形状（op 里除 `kind` 之外的字段；每一节都可省略）：
+//! Patch shape (fields in the op other than `kind`; every section may be omitted):
 //!
 //! ```jsonc
 //! {
-//!   // 媒体源：id → 完整 Source（新增或整体替换；一个 source 很小）；null 删除。
-//!   // "main" 只能写不能删。
+//!   // Media sources: id → full Source (added or replaced as a whole; a source is small); null deletes. "main" can be written but not deleted.
 //!   "sources": { "<id>": { path, kind, duration, … } | null },
-//!   // 主轨 clips 是有序数组：同 patchTranscript.words 的形状。
+//!   // The main-track clips are an ordered array, with the same shape as patchTranscript.words.
 //!   "clips": {
-//!     "update":  { "<id>": { "in"?, "out"?, "rate"?, "srcId"? } },   // 字段级合并；null 删可选字段
+//!     "update":  { "<id>": { "in"?, "out"?, "rate"?, "srcId"? } },   // field-level merge; null deletes an optional field
 //!     "splices": [
-//!       { "first": "<id>", "last": "<id>", "clips": [ {id,in,out,…}, … ] },   // 闭区间替换（空即删除）
-//!       { "after": "<id>" | null,          "clips": [ … ] }                  // 插入（after=null 为开头）
+//!       { "first": "<id>", "last": "<id>", "clips": [ {id,in,out,…}, … ] },   // closed-interval replacement (empty means delete)
+//!       { "after": "<id>" | null,          "clips": [ … ] }                  // insert (after=null means at the start)
 //!     ]
 //!   },
-//!   // 轨道也是有序数组：整轨增删走 splices，保留的轨道逐字段改。
+//!   // Tracks are also an ordered array: adding or removing whole tracks goes through splices; retained tracks are changed field by field.
 //!   "tracks": {
 //!     "update": {
 //!       "<trackId>": {
-//!         "kind"?, "name"?, "hidden"?, "muted"?, "locked"?,                  // 字段级合并；null 删可选字段
-//!         "elements": { "update": { "<elId>": { 字段: 值 | null } }, "splices": [ … ] }   // 同 clips 形状，元素键为 elements
+//!         "kind"?, "name"?, "hidden"?, "muted"?, "locked"?,                  // field-level merge; null deletes an optional field
+//!         "elements": { "update": { "<elId>": { 字段: 值 | null } }, "splices": [ … ] }   // same shape as clips; the element key is `elements`
 //!       }
 //!     },
 //!     "splices": [ { "first","last","tracks":[Track] } | { "after","tracks":[Track] } ]
 //!   },
-//!   // 主轨变换很小：整对象；null 删除。
+//!   // The main-track transform is small: a whole object; null deletes it.
 //!   "main": { place, background, muted } | null,
-//!   // 模板实例：整份层文档；null 摘掉（0.4）。
+//!   // Template instance: the whole layer document; null removes it (0.4).
 //!   "template": { id, name, layers, … } | null
 //! }
 //! ```
 //!
-//! 应用顺序：sources → clips(splices → update) → tracks(splices → update →
-//! 每轨 elements splices → update) → main。补丁作用在文档的 JSON 表示上，
-//! 结束后按 `ccutTimeline` **严格** schema 反序列化（未知字段即错误；读 `0.1`
-//!、`0.2`、`0.3` 与 `0.4`，反序列化后一律是 `0.4`，见
-//! `schema::TIMELINE_VERSIONS`），再由
-//! 调用方跑 `validate()` 与投影构建；任何一步失败都返回错误，调用方不得写盘。
+//! Application order: sources → clips (splices → update) → tracks (splices → update → each track's elements splices → update) → main. The patch operates on the JSON representation of the document; afterwards it is deserialized against the **strict** `ccutTimeline` schema (unknown fields are an error; `0.1`, `0.2`, `0.3` and `0.4` are read, and after deserialization it is always `0.4`, see `schema::TIMELINE_VERSIONS`). The caller then runs `validate()` and projection building; if any step fails an error is returned, and the caller must not write to disk.
 
 use crate::schema::{TimelineDocument, TimelineError};
 use serde_json::{Map, Value};
 
-/// 补丁应用后的统计，供 apply 回执里的 `applied` 条目描述改了什么。
+/// Statistics after the patch is applied, used for the `applied` entry in the apply receipt to describe what changed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PatchSummary {
     pub sources_put: usize,
@@ -96,7 +84,7 @@ fn invalid(message: impl Into<String>) -> TimelineError {
     TimelineError::Invalid(message.into())
 }
 
-/// 在 `document` 的副本上应用补丁，成功返回新文档与统计。原文档不动。
+/// Applies the patch to a copy of `document`; on success returns the new document and the statistics. The original document is left untouched.
 pub fn apply_patch(
     document: &TimelineDocument,
     patch: &Value,
@@ -247,7 +235,7 @@ fn ensure_array<'a>(root: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
     object[key].as_array_mut().expect("just ensured")
 }
 
-/// `{key: 值 | null}` 合并到对象上：null 删键，其余覆盖。
+/// Merges `{key: value | null}` into an object: null deletes the key, everything else overwrites.
 fn merge_field(target: &mut Value, key: &str, value: &Value) {
     let Some(object) = target.as_object_mut() else {
         return;
@@ -259,9 +247,8 @@ fn merge_field(target: &mut Value, key: &str, value: &Value) {
     }
 }
 
-/// 有序 id 数组的补丁：`{update: {id: {字段}}, splices: [...]}`。
-/// 返回 (inserted, removed, updated)。`items_key` 是 splice 里装项目的键名
-/// （`clips` / `elements` / `tracks`），`path` 只用于错误信息。
+/// Patch for an ordered id array: `{update: {id: {fields}}, splices: [...]}`.
+/// Returns (inserted, removed, updated). `items_key` is the key name in a splice that holds the items (`clips` / `elements` / `tracks`); `path` is used only for error messages.
 fn patch_array(
     array: &mut Vec<Value>,
     patch: &Value,
@@ -308,7 +295,7 @@ fn patch_array(
     Ok((inserted, removed, updated))
 }
 
-/// 返回 (inserted, removed)。
+/// Returns (inserted, removed).
 fn apply_splices(
     array: &mut Vec<Value>,
     splices: &Value,
@@ -432,7 +419,7 @@ mod tests {
         assert_eq!(summary.clips_updated, 1);
         assert_eq!(summary.clips_inserted, 1);
         assert_eq!(summary.clips_removed, 0);
-        // 未触及的部分原样保留。
+        // Parts that are not touched are kept as they are.
         assert_eq!(patched.sources.len(), 2);
         assert_eq!(patched.tracks.len(), 2);
         assert!(patched.main.is_some());
@@ -491,7 +478,7 @@ mod tests {
         assert!(summary.template_changed);
         assert!(cleared.template.is_none());
         assert!(apply_patch(&patched, &json!({"kind": "patchTimeline", "template": 3})).is_err());
-        // 层 kind 写错在补丁阶段就被严格 schema 挡住。
+        // A wrong layer kind is blocked by the strict schema already at the patch stage.
         assert!(apply_patch(
             &patched,
             &json!({"kind": "patchTimeline", "template": {"id": "t", "name": "n", "layers": [{"id": "a", "kind": "nope", "box": {"x": 0, "y": 0, "w": 10, "h": 10}}]}})
@@ -552,7 +539,7 @@ mod tests {
             let error = apply_patch(&original, &patch).expect_err(&patch.to_string());
             assert!(matches!(error, TimelineError::Invalid(_)), "{patch}");
         }
-        // 输入文档不被触碰。
+        // The input document is not touched.
         assert_eq!(original, document());
     }
 }

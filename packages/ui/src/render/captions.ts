@@ -1,13 +1,12 @@
 import { isObject, num } from './text-style.ts';
 
 /**
- * 字幕文档（`cuccut.caption/1`）的正文：时间折成文档时钟上的秒。时间线与字幕面板读它；字幕画在渲染内核里
- * （`crates/frame-render` 经 `crates/subtitle-render`）。
+ * Body of the caption document (`cuccut.caption/1`): times are folded into seconds on the document clock. The timeline and the caption panel read it; captions are drawn in the render kernel (`crates/frame-render` via `crates/subtitle-render`).
  */
 
 export interface CaptionCue {
   id: string;
-  /** 在文档时钟上的秒。 */
+  /** Seconds on the document clock. */
   start: number;
   end: number;
   text: string;
@@ -20,7 +19,7 @@ export interface CaptionTrack {
 
 const tracks = new WeakMap<object, CaptionTrack | null>();
 
-/** 读字幕文档的正文；不是 `cuccut.caption/1` 时返回 null。同一份正文只解析一次。 */
+/** Reads the body of the caption document; returns null when it is not `cuccut.caption/1`. The same body is parsed only once. */
 export function readCaptions(body: unknown): CaptionTrack | null {
   if (!isObject(body)) return null;
   const cached = tracks.get(body);

@@ -20,21 +20,18 @@ import { ModelsModelSelection as M } from '@cuccut/protocol/messages/models/mode
 import type { ModelText } from './model-text.ts';
 
 /**
- * Provider 与模型的选择（架构设计 §6.2），纯函数：输入是各 Provider 的描述（`select` 取法）与用户默认值。
+ * Selection of provider and model (architecture design §6.2), pure functions: input is each provider's description (as obtained by `select`) and the user's defaults.
  *
- * 顺序，取第一个给出的：
- * 1. 显式的 `provider` / `model`。只给 Provider 时：用户默认值指向它就用默认值的模型，否则用它的默认模型。
- *    只给模型时：用户默认值（或出厂默认）的 Provider 有这个模型就用它，否则 `local` 有就用 `local`，
- *    否则唯一列出它的 Provider；没有 Provider 列出它是 `not-found`，多个是 `invalid-request`。
- * 2. 用户为这种能力设的默认值；
- * 3. 出厂默认：只有 `transcribe` 有——本机有可用的模型包时用 `local` 的默认模型包。`synthesizeSpeech`、
- *    `generateImage` 与 `generateText` 没有出厂默认（即使将来 `local` 提供这些能力），要用户显式指定或设默认值；
- * 4. 都没有：`CAPABILITY_NOT_CONFIGURED`，`reason: 'no-default'`。
+ * Order; take the first that gives a result:
+ * 1. Explicit `provider` / `model`. When only the provider is given: if the user default points to it, use the default's model; otherwise use its default model.
+ *    When only the model is given: use the provider of the user default (or factory default) if it has this model; otherwise `local` if it has it; otherwise the single provider that lists it. If no provider lists it, it is `not-found`; if several do, `invalid-request`.
+ * 2. The default the user set for this capability;
+ * 3. Factory default: only `transcribe` has one. When the machine has a usable model package, use the default model package of `local`. `synthesizeSpeech`, `generateImage` and `generateText` have no factory default (even if `local` offers these capabilities in future); the user must specify them explicitly or set a default.
+ * 4. Neither: `CAPABILITY_NOT_CONFIGURED`, `reason: 'no-default'`.
  *
- * 选中的 Provider 或模型不可用时直接以 `CAPABILITY_NOT_CONFIGURED` 拒绝，不往下一条落，也不换 Provider。
- * 不认识的 Provider 或模型（显式给出的）是 `not-found`：那是标识错了，不是没有配置。
+ * When the selected provider or model is unavailable, reject directly with `CAPABILITY_NOT_CONFIGURED`; do not fall through to the next item, and do not switch provider. An unrecognized provider or model (explicitly given) is `not-found`: the identifier is wrong, not unconfigured.
  *
- * 节点的模型包由节点自己核对（节点协议规范 §9）：显式给出的模型不在节点的描述里时照样放行，交给尝试前的预检。
+ * A node's model packages are checked by the node itself (node protocol spec §9): an explicitly given model that is not in the node's description is still let through, leaving it to the pre-attempt check.
  */
 
 export type SelectionSource = 'explicit' | 'user-default' | 'factory-default';
@@ -51,7 +48,7 @@ export interface ModelChoice<C extends ModelServiceCapability = ModelServiceCapa
 
 export interface SelectionInput<C extends ModelServiceCapability> {
   capability: C;
-  /** 已经规范化的 `providerId`（节点别名已换成 `node:<nodeId>`）。 */
+  /** The already-normalized `providerId` (node aliases have been replaced with `node:<nodeId>`). */
   provider?: string;
   model?: string;
   userDefault: ModelRef | null;
@@ -67,12 +64,12 @@ const CAPABILITY_LABEL_BUILDERS: Record<ModelServiceCapability, () => Localized>
   generateMusic: M.capGenerateMusic,
 };
 
-/** 能力的名字（给人看）：嵌进句子时用它，带着引用。 */
+/** Capability name (for people): when embedded in a sentence, use it with quotes. */
 export function capabilityLabel(capability: ModelServiceCapability): Localized {
   return CAPABILITY_LABEL_BUILDERS[capability]();
 }
 
-/** 能力的名字（当前语言的文本）：每次读都按当前语言生成。 */
+/** Capability name (text in the current language): generated fresh in the current language on each read. */
 export const CAPABILITY_LABELS: Record<ModelServiceCapability, string> = live(() => ({
   transcribe: M.capTranscribe().text,
   synthesizeSpeech: M.capSynthesizeSpeech().text,
@@ -83,10 +80,10 @@ export const CAPABILITY_LABELS: Record<ModelServiceCapability, string> = live(()
 }));
 
 const FACTORY_PROVIDER = 'local';
-/** 有出厂默认的能力：都是本机的模型包。 */
+/** Capabilities with a factory default: all are local model packages. */
 const FACTORY_CAPABILITIES: ReadonlySet<ModelServiceCapability> = new Set(['transcribe', 'separateAudio']);
 
-/** 这种能力有没有出厂默认（§6.2 的第 3 条）：`transcribe` 与 `separateAudio` 有。 */
+/** Whether this capability has a factory default (item 3 of §6.2): `transcribe` and `separateAudio` do. */
 export function hasFactoryDefault(capability: ModelServiceCapability): boolean {
   return FACTORY_CAPABILITIES.has(capability);
 }
@@ -135,7 +132,7 @@ export function selectModel<C extends ModelServiceCapability>(input: SelectionIn
   throw noDefault(input);
 }
 
-/** 不显式指定时会用哪个（视图的 `effective`）：用户默认值或出厂默认；不可用或没有时 null。 */
+/** The one used when none is specified explicitly (the view's `effective`): the user default or the factory default; null if unavailable or absent. */
 export function effectiveChoice<C extends ModelServiceCapability>(
   input: Omit<SelectionInput<C>, 'provider' | 'model'>,
 ): (ModelRef & { source: 'user-default' | 'factory-default' }) | null {
@@ -148,8 +145,8 @@ export function effectiveChoice<C extends ModelServiceCapability>(
 }
 
 /**
- * 转写请求与模型的特性是否相容（提交时检查，不在执行到一半时失败）。识别提示不在这里把关：模型不收提示时提示被忽略，
- * 任务记 `hint-ignored` 提醒（JobManager 提交时处理），不拒绝。
+ * Whether a transcription request is compatible with the model's features (checked at submission, not failing midway through execution). The recognition hint is not gated here: when the model does not accept hints, the hint is ignored, and
+ * the task is recorded as `hint-ignored` as a notice (handled by JobManager at submission), not rejected.
  */
 export function checkTranscribeOptions(choice: ModelChoice<'transcribe'>, options: { assertedLanguage: string | null }): void {
   const model: TranscribeModelInfo = choice.model;
@@ -164,7 +161,7 @@ export function checkTranscribeOptions(choice: ModelChoice<'transcribe'>, option
   }
 }
 
-// ---- 内部 ----
+// ---- internal ----
 
 function capabilityOf<C extends ModelServiceCapability>(
   view: ProviderView,
@@ -178,7 +175,7 @@ function defaultModelOf<M extends ModelInfoBase>(capability: ProviderCapability<
   return capability.models.find((m) => m.default) ?? capability.models[0];
 }
 
-/** 不显式指定时的 Provider：用户默认值的，或出厂默认（`local` 可用时）。 */
+/** Provider when none is specified: the user's default, or the factory default (when `local` is available). */
 function effectiveProviderId(input: SelectionInput<ModelServiceCapability>): string | null {
   if (input.userDefault) return input.userDefault.providerId;
   if (!FACTORY_CAPABILITIES.has(input.capability)) return null;
@@ -210,7 +207,7 @@ function check<C extends ModelServiceCapability>(
   return { capability, providerId: view.providerId, modelId, kind: view.kind, label: view.label, source, model };
 }
 
-/** 节点没有列出的模型包：由节点自己核对，这里给一个不加限制的描述。 */
+/** Model packages not listed by the node: the node checks them itself, so an unrestricted description is given here. */
 function nodeModel(modelId: string): TranscribeModelInfo {
   return {
     modelId,
@@ -270,7 +267,7 @@ function fromUnavailable(
         M.localDisabled({ model }),
       );
     case 'not-configured': {
-      // 配置过（有密钥）只是停用了：重新启用；从没配置过：去配置。
+      // Configured before (has a key) but only disabled: re-enable; never configured: go and configure it.
       const configured = view.config?.credential === 'set';
       return configured
         ? capabilityNotConfigured(capability, 'disabled', view, 'enable-provider', M.providerDisabled({ name }))
@@ -285,8 +282,8 @@ function fromUnavailable(
 }
 
 /**
- * 智能体 Provider（§6.9）：安装、登录与升级在智能体运行时自己的界面里完成（`setup-agent`，`detail` 说明怎么做）；
- * 没有启用时启用它——启用即同意把提示词发给这个智能体的账号。
+ * Agent provider (§6.9): installation, login and upgrade are done in the agent runtime's own interface (`setup-agent`, `detail` explains how);
+ * enabling it when not enabled means consenting to send prompts to this agent's account.
  */
 function fromAgentUnavailable(
   capability: ModelServiceCapability,
@@ -366,8 +363,8 @@ function noDefault(input: SelectionInput<ModelServiceCapability>): RpcError {
       usable.providerId,
     );
   }
-  // 生图的本地模型包不作为没有默认值时的补救：界面开页只回落到已连接的云端模型（设计稿 model-cloud-image.js `preferred`），
-  // 本机生图要用户自己选或设为默认。
+  // A local image-generation model package is not a fallback when there is no default: the UI on opening a page falls back only to connected cloud models (design mockup `model-cloud-image.js` `preferred`),
+  // so for local image generation the user must choose it or set it as default themselves.
   const local = capability === 'generateImage' ? undefined : input.providers.find((p) => p.providerId === FACTORY_PROVIDER);
   const localNotInstalled = local && capabilityOf(local, capability)?.models.some((m) => m.unavailableReason === 'not-installed');
   if (localNotInstalled) {
@@ -411,8 +408,8 @@ function capabilityNotConfigured(
 }
 
 /**
- * 构造 `CAPABILITY_NOT_CONFIGURED`（`RpcError` 的 `code` 为 `conflict`）。`hint` 可以是目录文字：`details.remedy.hint` 存文本、
- * `hintRef` 存引用，错误的 `messageRef` 也带着引用过线。
+ * Build `CAPABILITY_NOT_CONFIGURED` (`RpcError` with `code` `conflict`). `hint` can be directory text: `details.remedy.hint` stores the text,
+ * `hintRef` stores the reference, and the error's `messageRef` also goes over the wire with its reference.
  */
 export function capabilityNotConfiguredError(
   capability: ModelServiceCapability,

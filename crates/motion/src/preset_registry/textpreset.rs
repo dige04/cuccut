@@ -1,37 +1,21 @@
-//! 文字预设包（`core/presets/builtin/textpreset/*.json`）——注册表的**第四种**
-//! 配方形状，`docs/design/app-v2/text-pane-and-groups.md` §6.2 的核心侧契约。
+//! Text preset packs (`core/presets/builtin/textpreset/*.json`): the **fourth** recipe shape of the registry,
+//! the core-side contract of `docs/design/app-v2/text-pane-and-groups.md` §6.2.
 //!
-//! 与既有三种并列：[`super::frozen`]（冻结的四条专用路径）、
-//! [`super::manifest`]（通用动画 manifest）、[`super::catalogue`]（shape /
-//! sticker / visualizer / progress 的形状库）。
+//! Alongside the existing three: [`super::frozen`] (the four dedicated frozen paths),
+//! [`super::manifest`] (the general animation manifest), and [`super::catalogue`] (the shape /
+//! sticker / visualizer / progress shape library).
 //!
-//! **为什么不复用 `parse_catalogue`**：目录型配方描述的是「**一个** kind 的一种
-//! 画法」（一份 recipe ↔ 一个 `ShapeProps.shape` 面值）；文字预设描述的是「一
-//! **组**排好版的元素」——1..5 个 text / shape，各带坐标、样式、进场错峰与动画。
-//! 那是场景模板，不是画法，硬塞进 `CatalogueBody` 只能靠编一个假 body。
+//! **Why not reuse `parse_catalogue`**: a catalogue recipe describes **one** way of drawing one kind (one recipe ↔ one `ShapeProps.shape` value); a text preset describes **a group** of arranged elements: 1..5 text / shape items, each with coordinates, style, entry stagger and animation. That is a scene template, not a drawing method, and forcing it into `CatalogueBody` would require inventing a fake body.
 //!
-//! 复用的仍是**纪律**：`builtin!` + `include_str!` 清单、`OnceLock` 一次性
-//! `build()`、`(id, version)` + `manifest_hash` 冻结、目录一致性由
-//! `tests/manifests.rs` 守住。
+//! What is reused is the **discipline**: the `builtin!` + `include_str!` list, a one-time `OnceLock` `build()`, `(id, version)` + `manifest_hash` freezing, and catalogue consistency guarded by `tests/manifests.rs`.
 //!
-//! ## 三条契约（改这里就是改契约）
+//! ## Three contracts (changing this means changing the contract)
 //!
-//! 1. **内容项是元素载荷本身**（`kind` / `place` / `text` / `style` / `shape` /
-//!    `animate`），字段名与 `ccut_timeline::schema::Element` 逐字对齐，
-//!    [`instantiate`] 只补 `start` / `end`。这样「预设落地的元素」与「手写
-//!    `addElement` 的元素」不可能长成两种形状。
-//! 2. **单位在生成期就换算完**：`place.x/y` 是画幅百分比、`style.fontSize` 是
-//!    参考短边 540 上的像素、`place.rot` 是角度。运行期没有第二套单位。
-//! 3. **动画名与形状名在解析期就核对注册表**：`enter` 查 `timeline.enter.*`、
-//!    `exit` 查 `timeline.exit.*`、`shape.shape` 查形状目录。文档层的 exit 闭集
-//!    （`EXIT_PRESETS` ∪ `EXIT_LEGACY_PRESETS`）为兼容 0.1 文档仍读入 `pop` /
-//!    `blurIn` 之类**没有出场配方**的名字（`lower_timeline::effective_exit` 视作
-//!    无退场）。预设是内置数据，不允许出现这种「合法但不动」的槽，所以这里按
-//!    配方表验，比文档层更严。
+//! 1. **Content items are the element payload itself** (`kind` / `place` / `text` / `style` / `shape` / `animate`). Field names align one-to-one with `ccut_timeline::schema::Element`, and [`instantiate`] only adds `start` / `end`. This way, an element landed by a preset and an element written with a hand-written `addElement` cannot take two different shapes.
+//! 2. **Units are converted at generation time**: `place.x/y` is a percentage of the frame, `style.fontSize` is pixels on a reference short side of 540, and `place.rot` is an angle. There is no second set of units at runtime.
+//! 3. **Animation names and shape names are checked against the registry at parse time**: `enter` looks up `timeline.enter.*`, `exit` looks up `timeline.exit.*`, and `shape.shape` looks up the shape catalogue. The document-level exit closed set (`EXIT_PRESETS` ∪ `EXIT_LEGACY_PRESETS`) still reads names such as `pop` / `blurIn` from 0.1 documents for compatibility, even though they have **no exit recipe** (`lower_timeline::effective_exit` treats them as no exit). Presets are built-in data, so a slot that is "legal but does not move" must not be allowed. That is why this validates against the recipe table, stricter than the document layer.
 //!
-//! **参照表由调用方传进来，解析期一律不查 `data()`**：预设表是在
-//! `build()` 内部建的，那时 `OnceLock` 还没初始化完，任何 `data()` 都是
-//! 重入——`get_or_init` 遇到重入是**死锁**，不是报错。
+//! **The reference tables are passed in by the caller; parse time never queries `data()`**: the preset tables are built inside `build()`, when the `OnceLock` is not yet fully initialized, so any `data()` call would be re-entrant. `get_or_init` on re-entry **deadlocks** rather than returning an error.
 
 use serde_json::{Map, Value};
 
@@ -41,8 +25,8 @@ use super::catalogue::CatalogueRecipe;
 use super::frozen::{LoopRecipe, SlotRecipe};
 use super::json::{field, number, text, version};
 
-/// 解析期要核对的三张表。全部由调用方（`preset_registry::build`）传入——
-/// 见模块头「参照表由调用方传进来」。
+/// The three tables checked at parse time. All are passed in by the caller (`preset_registry::build`);
+/// see "the reference tables are passed in by the caller" in the module header.
 #[derive(Clone, Copy)]
 pub struct TextPresetTables<'a> {
     pub shapes: &'a [CatalogueRecipe],
@@ -51,7 +35,7 @@ pub struct TextPresetTables<'a> {
     pub loops: &'a [LoopRecipe],
 }
 
-/// 面板分类（封闭集合）。顺序即 chip 行的顺序。
+/// Panel category (closed set). Order is the order of the chip row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TextPresetCategory {
     Simple,
@@ -63,7 +47,7 @@ pub enum TextPresetCategory {
 impl TextPresetCategory {
     pub const ALL: [Self; 4] = [Self::Simple, Self::Title, Self::LowerThird, Self::Other];
 
-    /// JSON `category` 字段的面值，同时是 UI 的查询键。
+    /// Value of the JSON `category` field, which is also the UI's lookup key.
     pub const fn key(self) -> &'static str {
         match self {
             Self::Simple => "simple",
@@ -78,11 +62,10 @@ impl TextPresetCategory {
     }
 }
 
-/// 内容项的元素类型（封闭集合）。
+/// Element type of a content item (closed set).
 ///
-/// 首批只有这两种：`text` 是主角，`shape` 承载目录里的色块 / 圆点 / 箭头
-/// （落到 CucCut 的 kind 闭集里是参数化形状，走矢量直出）。
-/// 图片型内容项**不在**首批：它要一份随包分发的素材，那是另一条管线。
+/// The first batch has only these two: `text` is the lead, and `shape` carries the color blocks / dots / arrows from the catalogue (in CucCut's kind closed set this is a parameterized shape, drawn directly as vector).
+/// Image-type content items are **not** in the first batch: they need a material asset distributed with the package, which is a separate pipeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextPresetItemKind {
     Text,
@@ -106,32 +89,32 @@ impl TextPresetItemKind {
     }
 }
 
-/// 一条内容项。
+/// One content item.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextPresetItem {
     pub kind: TextPresetItemKind,
-    /// 相对预设起点的进场错峰（秒，≥ 0）。
+    /// Entry stagger relative to the preset start (seconds, ≥ 0).
     pub delay: f64,
-    /// 元素载荷：解析期就校验过的对象，**不含** `start` / `end` / `id`。
+    /// Element payload: an object validated at parse time, **not containing** `start` / `end` / `id`.
     pub element: Value,
 }
 
-/// 一条文字预设。
+/// One text preset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextPresetRecipe {
     pub id: String,
     pub version: u32,
     pub category: TextPresetCategory,
-    /// 面板顺序（全局唯一，解析期查重）。
+    /// Panel order (globally unique, checked for duplicates at parse time).
     pub order: u32,
-    /// 默认时长（秒）。
+    /// Default duration (seconds).
     pub duration: f64,
     pub content: Vec<TextPresetItem>,
     pub manifest_hash: u64,
 }
 
 impl TextPresetRecipe {
-    /// 首个文字内容项的正文——面板卡片的可读标签与落地后的认领目标都用它。
+    /// Body text of the first text content item. The panel card's readable label and the claim target after landing both use it.
     pub fn headline(&self) -> Option<&str> {
         self.content
             .iter()
@@ -141,14 +124,14 @@ impl TextPresetRecipe {
     }
 }
 
-/// 时长下限：预设时长被片长夹到 0 时的兜底，避免造出零长元素。
+/// Duration floor: the fallback when the preset duration is clamped to 0 by the clip length, to avoid creating zero-length elements.
 const MIN_SPAN: f64 = 0.1;
 
-/// 一条预设 → N 个 `addElement` 的元素载荷（数组序即 z 序，低层在前）。
+/// One preset → N `addElement` element payloads (array order is z-order, lower layers first).
 ///
-/// * 整组占 `[start, end)`，`end` 被 `film_end` 夹住；
-/// * 成员起点 = `start + delay`（成组错峰），夹在 `end - MIN_SPAN` 以内；
-/// * 不分配 `id`：内核 `addElement` 见不到 `id` 就自己铸一个。
+/// * The whole group occupies `[start, end)`, and `end` is clamped by `film_end`;
+/// * Member start = `start + delay` (group stagger), clamped within `end - MIN_SPAN`;
+/// * No `id` is assigned: the kernel `addElement` mints its own when it sees no `id`.
 pub fn instantiate(recipe: &TextPresetRecipe, start: f64, film_end: f64) -> Vec<Value> {
     let start = if start.is_finite() {
         start.max(0.0)
@@ -178,7 +161,7 @@ fn round3(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
 }
 
-/// 解析一份预设包。`file` 是清单里的文件名（不含扩展名），同时是 id 的期望值。
+/// Parses a preset pack. `file` is the file name in the manifest (without extension) and is also the expected value of the id.
 pub fn parse_text_preset(
     file: &str,
     doc: &Value,
@@ -295,8 +278,7 @@ fn parse_item(
                 .get("shape")
                 .and_then(Value::as_str)
                 .ok_or_else(|| invalid("shape.shape 缺失".to_owned()))?;
-            // 形状名走**形状目录**，写一个目录里没有的名字在这里就红，
-            // 不会等到用户点了预设、元素落库、渲染期才发现画不出来。
+            // Shape names go through the **shape catalogue**. Writing a name the catalogue does not have fails here, instead of waiting until the user clicks the preset, the element is saved, and rendering discovers it cannot be drawn.
             if !tables.shapes.iter().any(|recipe| recipe.id == name) {
                 return Err(invalid(format!("形状目录里没有 \"{name}\"")));
             }
@@ -334,9 +316,8 @@ fn parse_item(
                     .as_f64()
                     .filter(|dur| dur.is_finite())
                     .ok_or_else(|| invalid(format!("animate.{slot}.dur 非法")))?;
-                // 与 `ccut_timeline::animations::{DURATION_MIN, DURATION_MAX}` 同口径。
-                // 那两个常量住在下游 crate，这里不能引用，所以复述并由
-                // `ccut-timeline` 的预设落地测试反向钉住。
+                // Same basis as `ccut_timeline::animations::{DURATION_MIN, DURATION_MAX}`.
+                // Those two constants live in a downstream crate and cannot be referenced here, so they are restated, and pinned in reverse by the preset-landing tests in `ccut-timeline`.
                 if !(0.1..=2.0).contains(&dur) {
                     return Err(invalid(format!("animate.{slot}.dur 须在 0.1..=2.0")));
                 }
@@ -344,7 +325,7 @@ fn parse_item(
         }
     }
 
-    // 载荷里不该出现由 `instantiate` 或内核负责的字段。
+    // The payload should not contain fields that `instantiate` or the kernel is responsible for.
     for key in ["id", "start", "end", "role"] {
         if object.contains_key(key) {
             return Err(invalid(format!("不许自带 \"{key}\"")));
@@ -368,7 +349,7 @@ mod tests {
         timeline_shapes,
     };
 
-    /// 测试期的参照表：走查询面拿，与 `build()` 里那份是同一批数据。
+    /// Reference table for tests: obtained through the query surface, and it is the same data as the one in `build()`.
     fn tables() -> (
         Vec<crate::preset_registry::frozen::SlotRecipe>,
         Vec<crate::preset_registry::frozen::SlotRecipe>,
@@ -389,8 +370,7 @@ mod tests {
         (enter, exit, loops)
     }
 
-    /// 目录形状：51 条、四个分类的条目数固定（simple 13 / title 10 / lowerThird 20 / other 8），
-    /// `order` 升序且分类连续（chip 过滤直接取子切片就成立）。
+    /// Catalogue shapes: 51 entries, with fixed entry counts per category (simple 13 / title 10 / lowerThird 20 / other 8). `order` is ascending and categories are contiguous, so chip filtering can take a sub-slice directly.
     #[test]
     fn the_builtin_catalogue_has_the_default_shape() {
         let all = text_presets();
@@ -413,7 +393,7 @@ mod tests {
         assert_eq!(counts, [13, 10, 20, 8]);
     }
 
-    /// 每条预设都能被 id 查回，且 id 与分类前缀一致（解析期已验，这里钉住查询面）。
+    /// Every preset can be looked up by id, and the id matches its category prefix (already verified at parse time; pinned here for the query surface).
     #[test]
     fn every_preset_is_reachable_by_id() {
         for recipe in text_presets() {
@@ -425,7 +405,7 @@ mod tests {
         }
     }
 
-    /// `instantiate` 的三条：成员数守恒、起点按 delay 错峰、终点被片长夹住。
+    /// The three cases of `instantiate`: member count is conserved, start times stagger by delay, and end time is clamped by clip length.
     #[test]
     fn instantiate_staggers_members_and_clamps_to_the_film_end() {
         let recipe = text_presets()
@@ -443,7 +423,7 @@ mod tests {
             assert!(element.get("id").is_none(), "id 由内核分配");
             assert_eq!(element["kind"].as_str().unwrap(), item.kind.key());
         }
-        // 片长夹取：整组被压到 3.0，成员起点也不许越过终点。
+        // Clip-length clamping: the whole group is squeezed to 3.0, and member starts may not pass the end.
         let clamped = instantiate(recipe, 2.0, 3.0);
         for element in &clamped {
             assert_eq!(element["end"].as_f64().unwrap(), 3.0);
@@ -451,7 +431,7 @@ mod tests {
         }
     }
 
-    /// 解析期的守卫逐条：未知分类 / 未知形状 / 没有配方的动画 / 自带 id。
+    /// Parse-time guards, one by one: unknown category / unknown shape / animation with no recipe / carrying its own id.
     #[test]
     fn the_parser_rejects_the_four_classes_of_bad_data() {
         let good = serde_json::json!({
@@ -481,8 +461,7 @@ mod tests {
         assert!(parse_text_preset("simple.99", &wrong_shape, 0, tables).is_err());
 
         let mut dead_exit = good.clone();
-        // `pop` 是文档闭集里的合法出场名，但 exit 配方表里没有它——写进内置
-        // 数据就是一个「合法但不会动」的槽，解析期必须拒绝。
+        // `pop` is a legal exit name in the document closed set, but the exit recipe table has no entry for it. Writing it into built-in data would make a "legal but never moves" slot, so parsing must reject it.
         dead_exit["content"][0]["animate"] = serde_json::json!({"exit": {"preset": "pop"}});
         assert!(parse_text_preset("simple.99", &dead_exit, 0, tables).is_err());
 

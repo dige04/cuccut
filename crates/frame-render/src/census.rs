@@ -1,10 +1,6 @@
-//! 成片要用到的本机字体（架构设计 §9.11 的冻结）：导出提交时问一次，Runtime 按结果在本机字体里挑好 face、记下文件与
-//! 摘要，执行时 Render Worker 只装这些 face。
+//! Local fonts needed by the final render (frozen per architecture design §9.11): asked once when the export is submitted; the Runtime picks faces from the local fonts based on the result, and records the files and digests. At execution time the Render Worker installs only these faces.
 //!
-//! 做法是把范围里出现的每个画面层（`render_graph::video_plan` 的概览，每个实例一次，按它第一次出现的样子）放进一帧，
-//! 用随内核发布的字体排一遍字：不画视频、图片、Lottie 与声波（它们不排字），转场按各自的层画。排字时点了名、随内核的
-//! 字体里没有的族连同字重与斜体记下来，就是要去本机找的 face（与预览向宿主要的同一份记录）。字幕在编译时排全部句子，
-//! 所以只出现在后面的句子也算在内。
+//! The approach is to put every picture layer in the range (the overview from `render_graph::video_plan`, one per instance, as it first appears) into one frame, and lay out text with the fonts shipped with the kernel: videos, images, Lottie and audio waveforms are not drawn (they do not lay out text), and transitions are drawn per their own layers. Families named during text layout that are not among the kernel's fonts are recorded together with their weight and italic flag; these are the faces to look for locally (the same record the preview asks the host for). Captions lay out all sentences at compile time, so sentences that appear only later are also counted.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -16,10 +12,10 @@ use crate::documents::Documents;
 use crate::renderer::{FrameRenderer, LayerMedia, RenderError, RenderOptions};
 use render_raster::fonts::FaceUse;
 
-/// 排字用的画面长边：字号随画面缩放，挑哪个 face 与字号无关，小一点省时间。
+/// Long edge of the frame used for text layout: font size scales with the frame, and the choice of face does not depend on size, so a smaller frame saves time.
 const CENSUS_LONG_EDGE: u32 = 480;
 
-/// 不给画面：视频与图片层本来就不放进来。
+/// No frame is given: video and image layers are not included in the first place.
 struct NoMedia;
 
 impl LayerMedia for NoMedia {
@@ -28,7 +24,7 @@ impl LayerMedia for NoMedia {
     }
 }
 
-/// 会排字的层：文字、图形、字幕与生成器（声波与 Lottie 贴纸除外）。
+/// Layers that lay out text: text, shapes, captions and generators (except audio waveforms and Lottie stickers).
 fn shapes_text(layer: &VisualLayer) -> bool {
     match layer.kind {
         LayerKind::Text | LayerKind::Shape | LayerKind::Caption => true,
@@ -40,20 +36,17 @@ fn shapes_text(layer: &VisualLayer) -> bool {
     }
 }
 
-/// 内置与本机都没有、也没下载到的字体族照它画（渲染内核的缺省无衬线族，也是 CJK 回退链的第一个）：缺字体的提示里
-/// 说的就是它，`fonts.usage` 也照这个名字告诉界面。
+/// A font family that is neither built in, nor installed locally, nor downloaded is drawn with this one (the kernel's default sans-serif family, and also the first in the CJK fallback chain): the missing-font notice names it, and `fonts.usage` reports it to the UI under this name.
 pub const FALLBACK_FAMILY: &str = render_raster::fonts::BUNDLED_CJK_FAMILY;
 
-/// 一次排字清点的结果：排字时点了名的全部 face（含随内核发布的族），以及其中随内核的字体里没有的族。
+/// The result of one text-layout census: all faces named during layout (including families shipped with the kernel), and among them the families missing from the kernel's fonts.
 #[derive(Debug, Clone, Default)]
 pub struct FontUsage {
     pub faces: Vec<FaceUse>,
     pub missing: BTreeSet<String>,
 }
 
-/// 把 `layers`（概览里的画面层）放进 `frame`（范围开头那一帧的计划，取它的序列与画布）排一遍字，返回要去本机找的
-/// face：排字时点了名、`fonts`（随内核发布的那一套）里没有的族的「族名、字重、斜体」，按名字排序。`seconds` 是
-/// `frame` 的时刻。
+/// Lays out text for `layers` (the frame layers from the overview) placed in `frame` (the plan for the first frame of the range, from which its sequence and canvas are taken), and returns the faces to look for locally: the family name, weight and italic for each family that was named during layout but is not in `fonts` (the set shipped with the kernel), sorted by name. `seconds` is the time of `frame`.
 pub fn font_census(
     video: VideoView,
     frame: &FramePlan,
@@ -71,8 +64,7 @@ pub fn font_census(
         .collect())
 }
 
-/// 与 [`font_census`] 同一遍排字，但点了名的 face 全部给出（随内核的族也在里面），另给出其中随内核没有的族：
-/// 视频用到哪些字体（`fonts.usage`）问的是这一份。
+/// Same text-layout pass as [`font_census`], but gives all named faces (including kernel-shipped families), and additionally gives the families among them that the kernel does not ship: this is the set that `fonts.usage` asks for, the fonts a video uses.
 pub fn font_usage(
     video: VideoView,
     frame: &FramePlan,

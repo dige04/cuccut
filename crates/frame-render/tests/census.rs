@@ -1,5 +1,4 @@
-//! 成片要用到的本机字体 face：范围里每个画面层排一遍字，随内核的字体里没有的族连同字重与斜体报出来；预览的渲染器
-//! 记的是同一份。
+//! The local font faces needed by the finished output: every picture layer in range is laid out with text, and families not in the kernel's bundled fonts are reported with their weight and italic style. The preview renderer records the same thing.
 
 mod common;
 
@@ -50,7 +49,7 @@ fn census_video() -> video_model::VideoSnapshot {
     caption["trackId"] = json!("trk_s1");
     video(
         vec![
-            // 一开头就在的粗体，与很久以后才出现的细体：都要报。
+            // A bold weight present from the start and a light weight that appears much later: both must be reported.
             text(
                 "early",
                 0,
@@ -61,7 +60,7 @@ fn census_video() -> video_model::VideoSnapshot {
                 200,
                 json!({ "fontSize": 40, "fontFamily": "Far Away Serif", "fontWeight": 300 }),
             ),
-            // 随内核发布的族不报。
+            // Families shipped with the kernel are not reported.
             text("bundled", 0, json!({ "fontSize": 40, "fontFamily": "Permanent Marker" })),
             caption,
         ],
@@ -95,7 +94,7 @@ fn every_layer_in_the_range_reports_the_local_faces_it_names() {
             ("Nowhere Sans".to_string(), 700, false),
         ]
     );
-    // 不烧字幕时字幕不排。
+    // Captions are not laid out when they are not burned in.
     let faces = font_census(
         view,
         &frame,
@@ -134,7 +133,7 @@ fn usage_lists_bundled_faces_too_and_marks_which_families_the_kernel_lacks() {
     assert!(usage.faces.contains(&("Nowhere Sans".to_string(), 700, false)), "{:?}", usage.faces);
     let missing: Vec<&str> = usage.missing.iter().map(String::as_str).collect();
     assert_eq!(missing, vec!["Caption Only Sans", "Far Away Serif", "Nowhere Sans"]);
-    // 回退族就是随内核的 CJK 族：缺的字都由它画。
+    // The fallback family is the kernel's bundled CJK family: any glyphs it lacks are drawn by it.
     assert_eq!(FALLBACK_FAMILY, "Noto Sans SC");
 }
 
@@ -147,7 +146,7 @@ fn the_preview_renderer_logs_the_same_faces_as_it_draws() {
     assert!(used.contains(&("Nowhere Sans".to_string(), 700, false)), "{used:?}");
     assert!(used.contains(&("Caption Only Sans".to_string(), 400, false)), "{used:?}");
     assert!(used.contains(&("Permanent Marker".to_string(), 400, false)), "{used:?}");
-    // 后面才出现的细体，画到那一帧时记上；记录是常设的（之后的帧不排字也还在）。
+    // A light weight that appears later is recorded when that frame draws it. The record is permanent (later frames that do not lay out text still keep it).
     assert!(!used.iter().any(|(family, ..)| family == "Far Away Serif"));
     renderer.clear_reports();
     render_with(&mut renderer, &video, at(205.0), &mut Media::default());

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * 测试用：在 `root` 下写一个 skill 文件夹。`name`、`description` 给空串时省掉那一行；`extra` 是正文；`files` 是同目录的其他文件。
+ * For tests: writes a skill folder under `root`. When `name` or `description` is an empty string, that line is left out; `extra` is the body; `files` are other files in the same directory.
  */
 export async function writeSkill(
   root: string,

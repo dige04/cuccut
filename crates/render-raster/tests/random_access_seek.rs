@@ -1,14 +1,10 @@
-//! 随机访问跳转（`MediaStore::set_random_access`）的取帧等价性。
+//! Frame equivalence for random-access seeking (`MediaStore::set_random_access`).
 //!
-//! 交互式预览拖 playhead 时会一次向前跳过成千上万帧，顺序抽干等于把整段视频
-//! 解一遍（实测跳到 600 s ≈ 75 s 墙钟）。开启随机访问后远跳会重开解码器，但
-//! `docs/design/bcf/cuccut-format-spec.md` §15.1 的「取哪一帧」是硬承诺：重开路径与抽干
-//! 路径必须落在**同一源帧**上，否则预览与导出会出现半帧错位。
+//! When the interactive preview drags the playhead, it can skip thousands of frames forward in one go, and draining sequentially would decode the whole video (measured: jumping to 600 s takes about 75 s of wall-clock time). With random access enabled, a long jump reopens the decoder, but "which frame to pick" in `docs/design/bcf/cuccut-format-spec.md` §15.1 is a hard promise: the reopen path and the drain path must land on **the same source frame**, otherwise preview and export would show a half-frame misalignment.
 //!
-//! 夹具用 ffmpeg 现生成，探测不到就整体跳过（仓库既有礼节）。
+//! The fixture is generated with ffmpeg at test time; if the probe finds nothing, the whole test is skipped (the repo's existing convention).
 //!
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore`（host 字节层），
-//! `wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` (host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
 use std::path::{Path, PathBuf};
@@ -18,8 +14,7 @@ use std::sync::Arc;
 use render_raster::{MediaStore, load_assets};
 use serde_json::{Value, json};
 
-/// 合成帧率刻意与源帧率不同：目标时刻大多落在源帧的中间，能把「重开点该取哪
-/// 一帧」的边界判定真的压出来。
+/// The composition frame rate is deliberately different from the source frame rate. Target times mostly fall between source frames, which actually exercises the boundary decision of "which frame to pick after reopening".
 const PLAN_FPS: f64 = 30.0;
 const SOURCE_FPS: u32 = 24;
 const DURATION_SECONDS: u32 = 6;
@@ -34,8 +29,7 @@ fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
-/// `testsrc` 每帧都带可见的帧计数，逐帧像素互不相同——错一帧就一定被字节对比
-/// 抓到。
+/// `testsrc` carries a visible frame counter in every frame, so per-frame pixels all differ. A one-frame error is guaranteed to be caught by the byte comparison.
 fn fixture() -> Option<(tempfile::TempDir, PathBuf)> {
     if !ffmpeg_available() {
         return None;
@@ -79,8 +73,8 @@ fn store(dir: &Path, random_access: bool) -> MediaStore {
     media
 }
 
-/// 从 `0.0` 起顺序推进到 `times` 里的每个时刻，交出各自的帧字节。
-/// `random_access = false` 时中间帧全部被抽干，那是导出走的路径。
+/// Advance sequentially from `0.0` up to each time in `times`, and return each one's frame bytes.
+/// With `random_access = false`, the intermediate frames are all drained; that is the path export takes.
 fn frames_after_jump(dir: &Path, random_access: bool, times: &[f64]) -> Vec<Vec<u8>> {
     let mut media = store(dir, random_access);
     media.video_frame("clip", 0.0).expect("首帧");
@@ -96,10 +90,9 @@ fn frames_after_jump(dir: &Path, random_access: bool, times: &[f64]) -> Vec<Vec<
         .collect()
 }
 
-/// 远跳重开与顺序抽干取到同一源帧——§15.1「取哪一帧」的硬承诺。
+/// A long jump with a reopen and a sequential drain land on the same source frame: the hard promise of §15.1 "which frame to pick".
 ///
-/// 时刻刻意选在合成网格上但**不在源帧边界上**（30 fps 网格 / 24 fps 源），
-/// 覆盖跳转点本身与跳转之后继续顺序前进的若干帧（验证网格没有被重开挪位）。
+/// The times are deliberately chosen on the composition grid but **not on source frame boundaries** (30 fps grid, 24 fps source). They cover the jump point itself and several frames of sequential advance after the jump, verifying that the reopen did not shift the grid.
 #[test]
 fn a_far_forward_jump_lands_on_the_same_frame_as_draining() {
     let Some((dir, _assets)) = fixture() else {
@@ -107,10 +100,9 @@ fn a_far_forward_jump_lands_on_the_same_frame_as_draining() {
     };
     let step = 1.0 / PLAN_FPS;
     let mut times = vec![4.0, 4.0 + step, 4.0 + 2.0 * step, 4.0 + 3.0 * step];
-    // 跳转点之后再来一次后退与远跳，确认重开后的原点没有把网格带偏。
+    // After the jump point, one more backward step and another long jump, confirming that the origin after reopening did not skew the grid.
     times.extend([1.5, 1.5 + step, 5.5, 5.5 + step]);
-    // 越过片尾会把 `eof` 置位，而远跳重开是 `!eof` 门控的：这里让两条路径都
-    // 先冲出片尾再回到片内继续远跳，确认 `eof` 之后重开能力没有被永久关掉。
+    // Passing the end of the clip sets `eof`, and the long-jump reopen is gated on `!eof`. Here both paths first run past the end and then return to the middle of the clip to keep jumping, confirming that the reopen capability is not permanently disabled after `eof`.
     times.extend([f64::from(DURATION_SECONDS) + 2.0, 2.0, 5.0]);
     let drained = frames_after_jump(dir.path(), false, &times);
     let jumped = frames_after_jump(dir.path(), true, &times);
@@ -122,7 +114,7 @@ fn a_far_forward_jump_lands_on_the_same_frame_as_draining() {
     }
 }
 
-/// 越过片尾时两条路径都冻结在同一张末帧上（重开点会夹到最后一个可解码时刻）。
+/// When passing the end, both paths freeze on the same last frame (the reopen point clamps to the last decodable instant).
 #[test]
 fn a_jump_past_the_end_freezes_on_the_same_last_frame() {
     let Some((dir, _assets)) = fixture() else {
@@ -134,12 +126,9 @@ fn a_jump_past_the_end_freezes_on_the_same_last_frame() {
     assert_eq!(drained[0], jumped[0], "片尾冻结帧应当一致");
 }
 
-/// 播放走到头之后继续逐帧前进（片段 / 项目比视频流长几十毫秒）：每一帧都冻结
-/// 在同一张末帧上，回到片内再照常解码。
+/// After playback runs to the end, continuing to advance frame by frame (a clip or project is longer than the video stream by tens of milliseconds): every frame freezes on the same last frame, and returning to the middle of the clip decodes as usual.
 ///
-/// 回归：EOF 关掉解码器后，下一帧会在片尾之外重开一个空解码器，再拿新原点的
-/// 帧号去比旧原点的 `last_idx`，误触 loop 折回守卫把末帧清掉，第二帧起报
-/// 「无帧可读」——App 的 overlay 调度器随之进入失败态，重播时画面卡死。
+/// Regression: after EOF closed the decoder, the next frame reopened an empty decoder past the end of the clip. It then compared the new origin's frame number against the old origin's `last_idx`, which falsely triggered the loop-wrap guard and cleared the last frame. From the second frame on it reported "no frame readable", the App's overlay scheduler entered its failure state, and on replay the picture froze.
 #[test]
 fn stepping_past_the_end_keeps_the_frozen_last_frame() {
     let Some((dir, _assets)) = fixture() else {
@@ -169,8 +158,7 @@ fn stepping_past_the_end_keeps_the_frozen_last_frame() {
     }
 }
 
-/// 冷启动第一次取帧就落在片尾之外（seek 到项目末尾）：退回去找到末帧冻结，
-/// 与从头抽干走到片尾交出同一张，而不是报「无帧可读」；之后继续前进仍是它。
+/// When the very first frame fetched after a cold start falls past the end of the clip (seek to the end of the project), fall back to the last frame and freeze on it. The result matches draining from the start to the end, rather than reporting "no frame readable"; subsequent forward advances still return that frame.
 #[test]
 fn a_first_request_past_the_end_freezes_on_the_last_frame() {
     let Some((dir, _assets)) = fixture() else {
@@ -193,7 +181,7 @@ fn a_first_request_past_the_end_freezes_on_the_last_frame() {
     }
 }
 
-/// 默认关闭：不显式打开时行为与改动前一字不差（导出走的就是这条）。
+/// Off by default: when not explicitly enabled, behavior is identical to before the change (export takes this path).
 #[test]
 fn random_access_is_off_by_default() {
     let Some((dir, _assets)) = fixture() else {

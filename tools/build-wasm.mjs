@@ -1,10 +1,9 @@
-// 把纯语义的 WASM 编出来放到用它的包里：
-// - 编辑器预览（bindings/preview-wasm）进界面包，界面以 `?inline` 引入，开发服务器与打包后的 file:// 页面都不用另外取文件；
-// - 界面与 Node 共用的编辑语义（bindings/editor-wasm：句子与指纹、舞台的框……）进 @cuccut/editor-wasm，浏览器内联、Node 从文件读。
-// 预览与导出共用随渲染内核发布的字体（crates/render-raster/assets/fonts）：原生构建编进二进制，WASM 不带，
-// 拷到界面包里由界面读了注入（字体有二十多 MB，不内联）。
-// 有 binaryen 的 wasm-opt 就再压一遍；没有也能用，只是大一些。
-// 用 rustup 的机器上缺 wasm32-unknown-unknown 目标时先补装。
+// Compile the purely semantic WASM and place it in the package that uses it:
+// - The editor preview (bindings/preview-wasm) goes into the UI package; the UI imports it with `?inline`, so neither the dev server nor the packaged file:// page needs to fetch a separate file;
+// - The editing semantics shared by the UI and Node (bindings/editor-wasm: sentences and fingerprints, stage frames……) go into @cuccut/editor-wasm; they are inlined in the browser and read from a file in Node.
+// The preview and export share the fonts shipped with the render core (crates/render-raster/assets/fonts). The native build compiles them into the binary, but WASM does not include them; they are copied into the UI package, and the UI reads and injects them (the fonts are over 20 MB, so they are not inlined).
+// If binaryen's wasm-opt is available, run it again to shrink the output; without it the build still works, just with a larger output.
+// On machines that use rustup, install the wasm32-unknown-unknown target first if it is missing.
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -20,8 +19,8 @@ const outputs = [
   { crate: 'editor-wasm', file: 'editor_wasm.wasm', output: 'packages/editor-wasm/src/generated/editor.wasm', label: '编辑语义 WASM' },
 ];
 
-// 打开 WASM 的 SIMD（tiny-skia 的 f32x4 等走 simd128）：预览逐帧光栅化快好几倍。Chromium、Electron 与 Node 都支持。
-// 只作用于 wasm32 目标，宿主上的构建脚本与过程宏不受影响。
+// Turn on WASM SIMD (tiny-skia's f32x4 and similar use simd128): frame-by-frame preview rasterization becomes several times faster. Chromium, Electron and Node all support it.
+// Applies only to the wasm32 target; host build scripts and proc macros are unaffected.
 const env = { ...process.env, CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: '-C target-feature=+simd128' };
 
 function run(command, args) {
@@ -30,7 +29,7 @@ function run(command, args) {
   return result.status === 0;
 }
 
-// 按仓库目录下生效的工具链查；没有 rustup（例如系统包管理器装的 Rust）时跳过，缺目标由下面的构建报出来。
+// Look up the toolchain that applies under the repo directory. If there is no rustup (for example, Rust installed by a system package manager), skip this; a missing target is reported by the build below.
 const targets = spawnSync('rustup', ['target', 'list', '--installed'], { cwd: root, encoding: 'utf8' });
 if (targets.status === 0 && !targets.stdout.split(/\r?\n/).includes('wasm32-unknown-unknown')) {
   console.log('> rustup target add wasm32-unknown-unknown');
@@ -43,7 +42,7 @@ if (!run('cargo', cargo)) {
   process.exit(1);
 }
 
-// target 目录可能被 .cargo/config.local.toml 挪到别处，向 cargo 要真实位置。
+// The target directory may have been moved elsewhere by .cargo/config.local.toml, so ask cargo for its real location.
 const metadata = spawnSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 if (metadata.status !== 0) {
   console.error(metadata.stderr);

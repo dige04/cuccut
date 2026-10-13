@@ -3,24 +3,24 @@ import { useTemplateCatalog } from '../state/template-catalog-store.ts';
 import type { RuntimeSession } from './session.ts';
 
 /**
- * 模板目录（`templates.*`，命令与协议规范 §4.1；模板包规范 §6）的读取：目录进 state/template-catalog-store，
- * 提示词按「id@版本:语言」缓存（同一版本同一语言的正文不会再变），随附文件的句柄有期限，到期前就重新要。
- * 目录按当前界面语言要（模板包规范 §3.6）：换了界面语言后再取一次，就换成那种语言的文案。
- * 单独成文件，不把会话通道撑大（同 library-commands.ts）。
+ * Reads the template catalog (`templates.*`, command and protocol spec §4.1; template package spec §6). The catalog is stored in state/template-catalog-store,
+ * prompts are cached by “id@version:locale” (the body for the same version and locale never changes), and handles for attached files expire and are re-requested before they expire.
+ * The catalog is requested in the current UI language (template package spec §3.6): after the UI language changes, it is fetched again and the copy comes in that language.
+ * Kept in its own file so the session channel does not grow (same as library-commands.ts).
  */
 
 type Session = Pick<RuntimeSession, 'client'>;
 
 let listing: { language: Locale; done: Promise<void> } | null = null;
-/** 同一版本的提示词不会再变：连同还在路上的请求一起记住；失败的不记，下次重取。 */
+/** A prompt for the same version never changes: remember it together with requests still in flight; failed ones are not remembered and are fetched again next time. */
 const prompts = new Map<string, Promise<string>>();
-/** 文件句柄有期限：到期前 30 秒就不再用。 */
+/** File handles expire: stop using one 30 seconds before it expires. */
 const handles = new Map<string, Promise<MediaHandle>>();
 const HANDLE_MARGIN_MS = 30_000;
 
 /**
- * 按当前界面语言取一次目录；同一语言已经在取时不重复发。旧的列表在取的过程中照常显示。
- * 取的过程中换了界面语言：旧语言的结果不再放进镜像，由新语言的那次取。
+ * Fetch the catalog once in the current UI language; do not send it again if the same language is already being fetched. The old list keeps displaying while the fetch is in progress.
+ * If the UI language changes during the fetch, the result for the old language is not put into the mirror; the fetch for the new language does that.
  */
 export function loadTemplates(session: Session): Promise<void> {
   const language = getLocale();
@@ -46,15 +46,15 @@ export function loadTemplates(session: Session): Promise<void> {
 }
 
 /**
- * 模板的提示词（`prompt.md` 或所选语言的译文全文）。`language` 用目录里这个模板的语言（`HomeTemplate.language`），
- * 和卡片上的文案同一版本。`templates.get` 不收版本、总给当前版本，所以按读到的实际版本再记一份。
+ * The template's prompt (`prompt.md`, or the full text of the translation in the chosen language). `language` uses this template's language from the catalog (`HomeTemplate.language`),
+ * the same version as the copy on the card. `templates.get` does not take a version and always returns the current version, so a copy is also recorded under the version actually read.
  */
 export function templatePrompt(session: Session, id: string, version: string, language: string): Promise<string> {
   const key = `${id}@${version}:${language}`;
   const cached = prompts.get(key);
   if (cached) return cached;
   const pending = session.client.request('templates.get', { id, language }).then(({ template, prompt }) => {
-    // 目录在两次读取之间换了版本：按实际读到的版本也记一份。
+    // The catalog changed version between two reads: also record under the version actually read.
     const actual = `${id}@${template.manifest.version}:${language}`;
     if (actual !== key) prompts.set(actual, Promise.resolve(prompt));
     return prompt;
@@ -64,7 +64,7 @@ export function templatePrompt(session: Session, id: string, version: string, la
   return pending;
 }
 
-/** 清单登记的随附文件（`cover.file`、`preview.file`、`assets[].path`）的媒体地址。 */
+/** Media URLs for the attached files registered in the manifest (`cover.file`, `preview.file`, `assets[].path`). */
 export function templateFileUrl(session: Session, id: string, path: string): Promise<string> {
   const key = `${id}:${path}`;
   const cached = handles.get(key);
@@ -83,12 +83,12 @@ function fresh(handle: MediaHandle): boolean {
   return Date.parse(handle.expiresAt) - Date.now() > HANDLE_MARGIN_MS;
 }
 
-/** 文件取不到了（媒体元素报错、Runtime 重启）：丢掉这个句柄，下次重新要。 */
+/** File cannot be fetched (media element error, Runtime restart): drop this handle and request it again next time. */
 export function forgetTemplateFile(id: string, path: string): void {
   handles.delete(`${id}:${path}`);
 }
 
-/** 测试用：清掉进行中的请求与缓存。 */
+/** For tests: clear in-flight requests and the cache. */
 export function resetTemplateCommands(): void {
   listing = null;
   prompts.clear();

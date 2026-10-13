@@ -8,15 +8,15 @@ import { UtilityShell } from '../utility-sidebar.tsx';
 import { PAGE_COPY } from './tools-copy.ts';
 
 /*
- * 工具工作台共用的版式（设计稿 tools.css `.ttsw*`）：左边表单的几节、右边吸住的记录栏，窄时上下叠放；
- * 子页顶上「← 工具」，标题右边是那行现状、⌘↵ 与主按钮（设计稿放在吸顶的导航栏里，这里放在页头）。
+ * Layout shared by the tool workbenches (design file tools.css `.ttsw*`): sections of the form on the left, and a sticky record column on the right that stacks vertically when narrow;
+ * at the top of a subpage, “← 工具” (← Tools); on the right of the title, the status line, ⌘↵ and the primary button (the design puts these in a sticky nav bar, here they go in the page header).
  */
 
 const back = style({ alignSelf: 'start' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, minWidth: 0, flexShrink: 1 });
 const chipRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
 
-/** 工具子页：返回总览、标题、页头右边一组控件、标题下一枚「走谁的服务」的标签。 */
+/** Tool subpage: back to the overview, the title, a group of controls on the right of the header, and under the title a tag for “走谁的服务” (which service it runs on). */
 export function ToolPage({ title, bar, chip, children }: { title: string; bar?: ReactNode; chip?: ReactNode; children: ReactNode }) {
   const go = useShell((s) => s.go);
   return (
@@ -47,7 +47,7 @@ const statusText = style({
 });
 const hotkey = style({ font: 'code-xs', color: 'gray-600', flexShrink: 0 });
 
-/** 页头那行现状（门没过或有问题时变橙）与快捷键提示。 */
+/** The status line in the header (turns orange when a gate is not passed or there is a problem), and the keyboard shortcut hint. */
 export function BarStatus({ text, bad, hint = true }: { text: string; bad: boolean; hint?: boolean }) {
   return (
     <>
@@ -63,7 +63,7 @@ export function BarStatus({ text, bad, hint = true }: { text: string; bad: boole
   );
 }
 
-/** 页头标题下那枚标签（设计稿 `Chip icon="remote" tone="notice"`）。 */
+/** The tag under the header title (design file `Chip icon="remote" tone="notice"`). */
 export function HeaderChip({ text, tone = 'notice' }: { text: string; tone?: 'notice' | 'neutral' }) {
   return (
     <Badge variant={tone} size="S" fillStyle="subtle">
@@ -72,7 +72,7 @@ export function HeaderChip({ text, tone = 'notice' }: { text: string; tone?: 'no
   );
 }
 
-// ---- 工作台：左表单、右记录 ----
+// ---- Workbench: form on the left, records on the right ----
 
 const bench = style({ containerType: 'inline-size', minWidth: 0 });
 const benchGrid = style({
@@ -91,7 +91,7 @@ const benchSide = style({
   minWidth: 0,
 });
 
-/** 左边一列表单、右边 360 宽的记录栏（右栏吸住）；内容区窄于 760 时上下叠放。 */
+/** A form column on the left and a 360-wide record column on the right (the right column is sticky); the content area stacks vertically when narrower than 760. */
 export function Workbench({ main, side, sideLabel, onKeyDown }: { main: ReactNode; side: ReactNode; sideLabel: string; onKeyDown?: (e: KeyboardEvent) => void }) {
   return (
     <div className={bench}>
@@ -105,7 +105,7 @@ export function Workbench({ main, side, sideLabel, onKeyDown }: { main: ReactNod
   );
 }
 
-/** ⌘↵ / Ctrl+↵：在表单里按下就提交（设计稿把它挂在整个工作台上）。 */
+/** ⌘↵ / Ctrl+↵: submits when pressed inside the form (the design attaches it to the whole workbench). */
 export function submitOnModEnter(submit: () => void) {
   return (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -132,7 +132,7 @@ const sectionHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHe
 const grow = style({ flexGrow: 1 });
 const sectionTitle = style({ flexGrow: 1, margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
-/** 表单的一节（`.ttsw__sec`）：小标题、右边的链接，下面是内容。 */
+/** A section of the form (`.ttsw__sec`): a small heading, a link on the right, and the content below. */
 export function Section({ title, aside, children, label }: { title?: string; aside?: ReactNode; children: ReactNode; label?: string }) {
   return (
     <section className={section} aria-label={label ?? title}>
@@ -151,7 +151,7 @@ const row = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap
 const rowLabel = style({ flexShrink: 0, width: 64, font: 'ui-sm', color: 'gray-700' });
 const indent = style({ marginStart: '[72px]', minWidth: 0 });
 
-/** 一行：左边 64 宽的名字，右边控件（`.ttsw__row` / `.ttsw__lab`）。 */
+/** A row: a 64-wide label on the left, and the control on the right (`.ttsw__row` / `.ttsw__lab`). */
 export function Row({ label, children, id }: { label?: string; children: ReactNode; id?: string }) {
   return (
     <div className={row}>
@@ -165,12 +165,12 @@ export function Row({ label, children, id }: { label?: string; children: ReactNo
   );
 }
 
-/** 与行里的控件对齐的缩进块（`.ttsw__indent`）。 */
+/** An indented block aligned with the controls in a row (`.ttsw__indent`). */
 export function Indent({ children }: { children: ReactNode }) {
   return <div className={indent}>{children}</div>;
 }
 
-/** 小字说明（`.t-detail-xs`）。 */
+/** Small-text note (`.t-detail-xs`). */
 export const detail = style({ font: 'ui-xs', color: 'gray-600', minWidth: 0 });
 export const detailGrow = style({ font: 'ui-xs', color: 'gray-600', minWidth: 0, flexGrow: 1 });
 export const detailOver = style({ font: 'ui-xs', color: 'red-900', minWidth: 0, flexGrow: 1 });
@@ -180,7 +180,7 @@ const sideHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHeigh
 const sideTitle = style({ flexGrow: 1, margin: 0, font: 'title-sm', color: 'gray-900' });
 const sideFoot = style({ padding: 4, font: 'ui-xs', color: 'gray-600', margin: 0 });
 
-/** 右栏的标题：「生成记录」+ 「N 条进行中」或「N 条」，可再带一个按钮。 */
+/** Right column title: “生成记录” (Generation records) plus “N 条进行中” (N in progress) or “N 条” (N items), optionally with one more button. */
 export function SideHead({ title, live, count, extra }: { title: string; live: string | null; count: string; extra?: ReactNode }) {
   return (
     <div className={sideHead}>
@@ -197,14 +197,14 @@ export function SideHead({ title, live, count, extra }: { title: string; live: s
   );
 }
 
-/** 右栏底下那段说明（`.ttsw__sidefoot`）。 */
+/** The note at the bottom of the right column (`.ttsw__sidefoot`). */
 export function SideFoot({ children }: { children: ReactNode }) {
   return <p className={sideFoot}>{children}</p>;
 }
 
 const gateActions = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 });
 
-/** 门卡（设计稿 `.aicard--warn`：先连接 X、先下载 X）：一句标题、一段说明、一排按钮。 */
+/** Gate card (design file `.aicard--warn`: “先连接 X” (Connect X first), “先下载 X” (Download X first)): a one-line title, a short paragraph, and a row of buttons. */
 export function Gate({ title, body, actions: buttons }: { title: string; body: ReactNode; actions?: ReactNode }) {
   return (
     <InlineAlert variant="notice">
@@ -240,8 +240,8 @@ const textBox = style({
 });
 
 /**
- * 工作台的大文本框（设计稿 `Field area` + `.ttsw__text`：至少六七行高、可往下拉）。S2 的 TextArea 随内容长高、
- * 空着时只有一行，这里用 RAC 的 TextField + TextArea 自己画。
+ * The large text box in the workbench (design file `Field area` + `.ttsw__text`: at least six or seven lines tall, and it can be dragged taller). S2's TextArea grows with its content
+ * and is only one line when empty, so here it is drawn with RAC's TextField + TextArea.
  */
 export function ToolTextArea({
   label,
@@ -256,7 +256,7 @@ export function ToolTextArea({
   onChange: (value: string) => void;
   placeholder: string;
   inputRef?: Ref<HTMLTextAreaElement>;
-  /** 窄栏（编辑器右侧面板）里矮一些，约四行。 */
+  /** Shorter in the narrow column (the editor's right-side panel), about four lines. */
   compact?: boolean;
 }) {
   return (
@@ -274,7 +274,7 @@ export function ToolTextArea({
 
 const linkButton = style({ flexShrink: 0 });
 
-/** 节头右边的小链接（设计稿 `.viewall`）。 */
+/** Small link on the right of a section header (design file `.viewall`). */
 export function SectionLink({ children, onPress, isDisabled }: { children: ReactNode; onPress: () => void; isDisabled?: boolean }) {
   return (
     <ActionButton isQuiet size="XS" styles={linkButton} onPress={onPress} isDisabled={isDisabled}>
@@ -283,7 +283,7 @@ export function SectionLink({ children, onPress, isDisabled }: { children: React
   );
 }
 
-// ---- 记录卡 ----
+// ---- Record cards ----
 
 const record = style({
   display: 'flex',

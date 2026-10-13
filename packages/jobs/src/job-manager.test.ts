@@ -26,8 +26,8 @@ import { LocalTranscribeProvider } from './local-provider.ts';
 import { FAKE_MODEL_WORKER } from './index.ts';
 
 /**
- * JobManager 与本地 Provider，对着假的 Model Worker（`testing/fake-model-worker.ts`）跑。
- * 故障由模型包 ID 的 `#` 后缀注入；模型目录是合成的小文件与清单。
+ * JobManager and the local Provider, run against a fake Model Worker (`testing/fake-model-worker.ts`).
+ * Faults are injected through a `#` suffix on the model package ID. The model catalog is a synthetic small file and manifest.
  */
 
 const COMPONENTS: BundleDefinition['components'] = {
@@ -45,7 +45,7 @@ const FAULTS = [
   '#load-fail:MODEL_NOT_INSTALLED',
   '#no-speech',
 ];
-/** 「说话人区分」模型包：装上之后假模型包的 Worker 带上它的组件，假 Worker 据此给段与词标说话人。 */
+/** The “speaker diarization” model package. Once installed, the fake model package's Worker carries its component, and the fake Worker uses it to tag speakers on segments and words. */
 const FAKE_DIARIZATION: BundleDefinition = {
   bundleId: 'fake-diarization@cpu',
   capability: 'diarize',
@@ -68,7 +68,7 @@ const BUNDLES: BundleDefinition[] = [
     diarization: FAKE_DIARIZATION.bundleId,
   })),
   FAKE_DIARIZATION,
-  // 自己切段、不收识别提示的模型包（MOSS 那样）。
+  // A model package that segments by itself and does not accept recognition prompts (like MOSS).
   {
     bundleId: 'fake-moss@cpu',
     capability: 'transcribe',
@@ -91,7 +91,7 @@ async function writeRepo(root: string, repo: string, revision: string): Promise<
   );
 }
 
-/** 内存里的视频：一个素材，记下租约与提交的编辑。 */
+/** In-memory video: one asset, and it records leases and submitted edits. */
 class FakeVideos implements JobVideos {
   leases = 0;
   revision = 7;
@@ -133,8 +133,7 @@ class FakeVideos implements JobVideos {
 }
 
 /**
- * 假的远端节点 Provider（id `node`）：记下每次尝试，按 `next` 的脚本执行。完成时借本地 Provider 在 staging 里产出真实的
- * 结果（`runGeneration` 可以换成节点自己的尝试序号），用来检查 JobManager 的路由、队列与失败归一化。
+ * Fake remote node Provider (id `node`): records each attempt and executes according to the `next` script. On completion it borrows the local Provider to produce a real result in staging (`runGeneration` can be replaced by the node's own attempt sequence number). It is used to check the JobManager's routing, queue and failure normalization.
  */
 class FakeNodeProvider implements TranscribeProvider {
   readonly id = 'node';
@@ -163,7 +162,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 测试用的节点来源：`resolveNode` 认得的节点都在线，接受任何模型包。 */
+/** Node source for tests: every node that `resolveNode` recognizes is online, and accepts any model package. */
 function fakeNodeSource(remote: TranscribeProvider, resolveNode: (node: string) => string | null): ProviderSource {
   const resolve = (providerId: string) => {
     const nodeId = providerId.startsWith('node:') ? resolveNode(providerId.slice('node:'.length)) : null;
@@ -230,7 +229,7 @@ describe('JobManager（假 Model Worker）', () => {
       crashWindowMs?: number;
       remote?: TranscribeProvider;
       resolveNode?: (node: string) => string | null;
-      /** 假 Worker 的控制文件内容（`capabilities`、`transcribeFamilies` 等）。 */
+      /** Contents of the fake Worker's control file (`capabilities`, `transcribeFamilies`, etc.). */
       control?: object;
     } = {},
   ) {
@@ -246,7 +245,7 @@ describe('JobManager（假 Model Worker）', () => {
       command: () => ({ command: process.execPath, args: [FAKE_MODEL_WORKER, ...controlArgs] }),
       env: async () => process.env,
       idleMs: options.idleMs ?? 60_000,
-      // 不给时用 Provider 的默认值（5 分钟内 3 次）。
+      // When not given, use the Provider's default (3 times within 5 minutes).
       ...(options.crashLimit !== undefined ? { crashLimit: options.crashLimit } : {}),
       ...(options.crashWindowMs !== undefined ? { crashWindowMs: options.crashWindowMs } : {}),
       cancelGraceMs: 5_000,
@@ -330,7 +329,7 @@ describe('JobManager（假 Model Worker）', () => {
     });
     expect(job.inputHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 
-    // 应用：一个 putDocument，以当时的视频版本为准。
+    // Apply: one putDocument, based on the video revision at that time.
     expect(videos.applied).toHaveLength(1);
     expect(videos.applied[0]!.expectedRevision).toBe('7');
     const op = videos.applied[0]!.operations[0] as Extract<EditOperation, { type: 'putDocument' }>;
@@ -372,13 +371,13 @@ describe('JobManager（假 Model Worker）', () => {
       inputHash: job.inputHash,
     });
 
-    // 产物与 staging
+    // Artifacts and staging
     const artifact = path.join(paths.artifactsDir, `${job.result!.artifactId.slice('sha256:'.length)}.json`);
     expect(JSON.parse(await fs.readFile(artifact, 'utf8'))).toMatchObject({ schema: 'cuccut.asr-result/v1', outcome: 'transcribed' });
     expect(await exists(stagingOf(job.jobId))).toBe(false);
     expect(videos.leases).toBe(0);
 
-    // 主题事件：排队 → 运行（加载、识别、校验、发布、应用）→ 完成
+    // Topic events: queued → running (load, recognize, validate, publish, apply) → completed
     const states = events.map((e) => e.state).filter((s, i, all) => s !== all[i - 1]);
     expect(states).toEqual(['queued', 'running', 'completed']);
     const phases = events.map((e) => e.phase).filter((p, i, all) => p !== all[i - 1]);
@@ -388,7 +387,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(phases.indexOf('transcribing')).toBeLessThan(phases.indexOf('applying'));
     expect(events.some((e) => e.progress?.unit === 'segments' && e.progress.total === 3)).toBe(true);
 
-    // 账本
+    // Ledger
     const ledger = { jobs: await new JobLedger(paths.jobsFile).load() };
     expect(ledger.jobs[0]!.record).toMatchObject({ jobId: job.jobId, state: 'completed' });
     expect(manager.list('mov_1').map((j) => j.jobId)).toEqual([job.jobId]);
@@ -397,7 +396,7 @@ describe('JobManager（假 Model Worker）', () => {
 
   it('说话人区分：不给 diarize 时按模型，装了「说话人区分」模型包就区分，说话人进 speech 文档；显式关掉不区分', async () => {
     await start();
-    // 每个任务都等它结束再提交下一个：最后应用的就是它的 speech 文档。
+    // Each task waits until it finishes before the next one is submitted, so the last applied one is its speech document.
     const lastSpeech = () => {
       const op = videos.applied.at(-1)!.operations[0];
       return (op as Extract<EditOperation, { type: 'putDocument' }>).body as {
@@ -405,11 +404,11 @@ describe('JobManager（假 Model Worker）', () => {
         words: Array<{ text: string; speaker?: string }>;
       };
     };
-    // 没装：不区分，也不报警告；显式要区分时报 diarization-unavailable。
+    // Not installed: no diarization, and no warning. When diarization is explicitly requested, report diarization-unavailable.
     const plain = await run();
     expect(plain.warnings).toEqual([]);
     expect(lastSpeech().speakers).toEqual([]);
-    // 记录上写着定下的语言请求与生效的说话人区分（视频卡的模型一行读它）。
+    // The record holds the requested language and the effective speaker diarization (the model line on the video card reads it).
     expect(plain.transcribe).toEqual({ language: { mode: 'prefer', tag: null }, diarize: false });
     const { jobId: wanted } = await submit('fake@cpu', { diarize: true });
     await manager.settled(wanted);
@@ -446,7 +445,7 @@ describe('JobManager（假 Model Worker）', () => {
     const job = manager.inspect(jobId);
     expect(job.state).toBe('completed');
     expect(job.warnings).toEqual(queued);
-    // 提示没进输入：不带提示的同样提交，输入摘要相同，也没有提醒。
+    // The prompt is not part of the input: the same submission without a prompt has the same input digest, and no reminder.
     const { jobId: plain } = await submit('fake-moss@cpu', { diarize: false });
     await manager.settled(plain);
     expect(manager.inspect(plain)).toMatchObject({ state: 'completed', inputHash: job.inputHash, warnings: [] });
@@ -477,7 +476,7 @@ describe('JobManager（假 Model Worker）', () => {
     await fs.rm(path.join(dir, 'models', 'test', 'vad'), { recursive: true });
     const error = await submit().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RpcError);
-    // 显式指定的本机模型包没有装好：在提交时以 `CAPABILITY_NOT_CONFIGURED` 拒绝，不创建任务（§6.2）。
+    // An explicitly specified local model package that is not installed is rejected at submission with `CAPABILITY_NOT_CONFIGURED`, and no task is created (§6.2).
     expect(error).toMatchObject({
       code: 'conflict',
       details: { code: 'CAPABILITY_NOT_CONFIGURED', reason: 'not-installed', providerId: 'local', remedy: { action: 'install-model' } },
@@ -542,7 +541,7 @@ describe('JobManager（假 Model Worker）', () => {
   });
 
   it('反复崩溃：两次尝试后 MODEL_WORKER_CRASHED；默认 5 分钟内第 3 次崩溃停用模型包，enable 恢复', async () => {
-    // 默认的上限与窗口：计的是崩溃次数，不是任务数——第一个任务自动重试一次，占两次。
+    // The default limit and window count crashes, not tasks: the first task retries automatically once, so it uses two.
     await start();
     const first = await run('fake@cpu#crash-on-run');
     expect(first).toMatchObject({ state: 'failed', attempt: 2, error: { code: 'MODEL_WORKER_CRASHED' } });
@@ -551,7 +550,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(details.exitCode).toBe(70);
     expect(await exists(stagingOf(first.jobId))).toBe(false);
 
-    // 第三次崩溃让模型包停用：这个任务不再重试。
+    // A third crash deactivates the model package: this task is not retried.
     const second = await run('fake@cpu#crash-on-run');
     expect(second).toMatchObject({ state: 'failed', attempt: 1, error: { code: 'MODEL_WORKER_CRASHED' } });
     expect(await catalog.status('fake@cpu#crash-on-run')).toMatchObject({ state: 'error', reason: 'resource' });
@@ -568,7 +567,7 @@ describe('JobManager（假 Model Worker）', () => {
     const first = await run('fake@cpu#crash-on-run');
     expect(first).toMatchObject({ state: 'failed', attempt: 2, error: { code: 'MODEL_WORKER_CRASHED' } });
     await new Promise((resolve) => setTimeout(resolve, 1_100));
-    // 窗口里只剩这个任务的两次崩溃：还会自动重试，模型包仍然可用。
+    // Only this task's two crashes remain in the window: it still retries automatically, and the model package remains usable.
     const second = await run('fake@cpu#crash-on-run');
     expect(second).toMatchObject({ state: 'failed', attempt: 2, error: { code: 'MODEL_WORKER_CRASHED' } });
     expect(await catalog.status('fake@cpu#crash-on-run')).toMatchObject({ state: 'installed' });
@@ -618,7 +617,7 @@ describe('JobManager（假 Model Worker）', () => {
   });
 
   it('空闲卸载：idleMs 之后 model.unload 并关闭进程', async () => {
-    // 发布结果与落盘可能超过 200 ms；留出时间检查完成后的存活状态，再验证空闲退出。
+    // Publishing the result and writing to disk may take longer than 200 ms. Leave time to check the alive state after completion, then verify the idle exit.
     await start({ idleMs: 1000 });
     await run();
     const pid = provider.workerPid('fake@cpu')!;
@@ -627,7 +626,7 @@ describe('JobManager（假 Model Worker）', () => {
     await until(() => !alive(pid), 3000);
     expect(provider.workerPid('fake@cpu')).toBeNull();
     await until(async () => (await catalog.status('fake@cpu'))!.state === 'installed');
-    // 下一个任务按需再起。
+    // The next task is started on demand.
     expect((await run()).state).toBe('completed');
   });
 
@@ -686,7 +685,7 @@ describe('JobManager（假 Model Worker）', () => {
       hint: null,
       outputContract: 'cuccut.asr-result/v1',
     };
-    // 旧格式的 `jobs.json`：启动时导入成 `jobs.jsonl`，旧文件改名为 `.migrated`。
+    // Old-format `jobs.json`: imported into `jobs.jsonl` at startup, and the old file is renamed `.migrated`.
     const legacy = path.join(path.dirname(paths.jobsFile), 'jobs.json');
     await fs.mkdir(path.dirname(paths.jobsFile), { recursive: true });
     await fs.writeFile(
@@ -868,7 +867,7 @@ describe('JobManager（假 Model Worker）', () => {
 
     it('不看本机模型目录：providerId 为 node:<nodeId>，结果照常校验、发布、应用', async () => {
       await startRemote();
-      // 节点上 Worker 崩溃重试过：结果回填的是节点的尝试序号 2。
+      // On the node, the Worker crashed and was retried: the result is backfilled with the node's attempt sequence number 2.
       remote.next = async (run, sink, signal) => {
         const attempt = await provider.transcribe({ ...run, bundleId: 'fake@cpu', runGeneration: 2 }, sink, signal);
         return attempt.outcome === 'completed' ? { ...attempt, runGeneration: 2 } : attempt;
@@ -921,7 +920,7 @@ describe('JobManager（假 Model Worker）', () => {
       const remoteJob = await submit('fake@cpu', { node: 'studio' });
       expect(await submit('fake@cpu', { node: 'node_a' })).toEqual(remoteJob);
       await until(() => manager.inspect(remoteJob.jobId).state === 'running');
-      // 远端任务卡住时，同一模型包的本机任务照常执行。
+      // While a remote task is stuck, local tasks for the same model package still run.
       const local = await run('fake@cpu');
       expect(local.state).toBe('completed');
       expect(local.jobId).not.toBe(remoteJob.jobId);
@@ -1049,7 +1048,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(videos.leases).toBe(0);
       expect(await fs.readdir(paths.artifactsDir).catch(() => [])).toEqual([]);
       expect(await exists(stagingOf(jobId))).toBe(false);
-      // 外部文件任务不去重：同样的输入再交一次就是新任务。
+      // External file tasks are not deduplicated: submitting the same input again is a new task.
       const again = await manager.submitFile(await fileRequest(), NODE);
       expect(again.jobId).not.toBe(jobId);
       await manager.settled(again.jobId);

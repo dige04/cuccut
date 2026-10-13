@@ -15,7 +15,7 @@ import { VIDEO_BAR_COPY } from './video-bar-copy.ts';
 
 const CJK = /[　-〿㐀-鿿＀-￯]/;
 
-/** 目录里所有不带参数的字符串（含嵌套对象），函数条目跳过。 */
+/** All strings in the catalog that take no parameters (including nested objects); function entries are skipped. */
 function strings(catalog: object): string[] {
   const out: string[] = [];
   for (const key of Object.keys(catalog)) {

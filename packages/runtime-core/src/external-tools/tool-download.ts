@@ -5,17 +5,17 @@ import { refOf, type Localized, type MessageRef } from '@cuccut/protocol';
 import { RcExternalTools } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 受管工具的单文件下载（架构设计 §12.9）：写进 `<文件>.part`，核对大小与 sha256 之后才交出。
+ * Single-file download for a managed tool (architecture design §12.9): written to `<file>.part`, and handed over only after the size and sha256 are checked.
  *
- * - 续传：`.part` 已有 n 字节时带 `Range: bytes=n-`；206 且 `Content-Range` 从 n 开始就接着写，200 表示来源不支持续传，从头写。
- * - 连不上、5xx、429 与读到一半断开按有界的退避重试；404、401、403 不重试。
- * - 续传出来的文件不符时删掉从头再下一次；从头下的仍不符就是校验失败（坏文件删掉）。
- * - 取消（信号中止）立即停下，`.part` 留着，下次续传。
+ * - Resume: when `.part` already has n bytes, send `Range: bytes=n-`. A 206 whose `Content-Range` starts at n continues writing; a 200 means the source does not support resume, so write from the start.
+ * - Connection failures, 5xx, 429, and reads cut off midway retry with bounded backoff. 404, 401, and 403 are not retried.
+ * - If a resumed file does not match, delete it and download again from the start. If the download from the start still does not match, it is a verification failure (the bad file is deleted).
+ * - Cancel (signal abort) stops at once and leaves `.part` in place, so the next run resumes.
  */
 
 export type ToolDownloadErrorCode = 'TOOL_DOWNLOAD_NO_SPACE' | 'TOOL_DOWNLOAD_NETWORK' | 'TOOL_DOWNLOAD_INTEGRITY' | 'TOOL_DOWNLOAD_SOURCE';
 
-/** 各错误码的补救说明（按当前语言）。 */
+/** The remedy text for each error code (in the current language). */
 export function toolDownloadRemedy(code: ToolDownloadErrorCode): Localized {
   switch (code) {
     case 'TOOL_DOWNLOAD_NO_SPACE':
@@ -29,7 +29,7 @@ export function toolDownloadRemedy(code: ToolDownloadErrorCode): Localized {
   }
 }
 
-/** 各错误码的补救说明的文字：读取时按当前语言生成。 */
+/** The remedy text for each error code: generated at read time in the current language. */
 export const TOOL_DOWNLOAD_REMEDIES: Readonly<Record<ToolDownloadErrorCode, string>> = {
   get TOOL_DOWNLOAD_NO_SPACE() {
     return toolDownloadRemedy('TOOL_DOWNLOAD_NO_SPACE').text;
@@ -66,10 +66,10 @@ export class ToolDownloadError extends Error {
 
 export interface ToolDownloadOptions {
   fetch?: typeof fetch;
-  /** 连续失败几次后放弃（默认 3）。 */
+  /** Gives up after this many consecutive failures (default 3). */
   retries?: number;
   backoffMs?: (attempt: number) => number;
-  /** 多久没有收到字节算停滞（默认 60 秒）。 */
+  /** How long without receiving bytes counts as a stall (default 60 seconds). */
   stallMs?: number;
 }
 
@@ -84,7 +84,7 @@ class Retryable extends Error {
   }
 }
 
-/** 下载 `url` 到 `part`，核对之后保留在 `part`（由调用方改名发布）。`onBytes` 收到目前的字节数。 */
+/** Downloads `url` into `part`; the file stays in `part` after verification (the caller publishes it by renaming). `onBytes` receives the byte count so far. */
 export async function downloadToolFile(
   url: string,
   part: string,
@@ -235,7 +235,7 @@ async function fetchInto(
       await handle.close();
     }
   } catch (error) {
-    // 比清单大：坏文件删掉，不留给续传。
+    // Larger than the manifest: delete the bad file so it is not left for resume.
     if (error instanceof ToolDownloadError && error.code === 'TOOL_DOWNLOAD_INTEGRITY') await fs.rm(part, { force: true });
     throw error;
   } finally {

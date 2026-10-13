@@ -1,10 +1,10 @@
-// 预览播放基准（`tools/preview-bench.mjs`）用的隔离 Runtime：由基准脚本用 node 启动，Home、项目与下载目录都在基准的临时目录里
-// （`CUCCUT_HOME`、`CUCCUT_PROJECTS_DIR`、`CUCCUT_DOWNLOADS_DIR`）。不注册任何智能体 Driver、不起模型 Worker、不监视来源目录、
-// 不广播也不发现局域网节点；凭据用明文文件后端（不碰钥匙串），外部工具的搜索路径只有一个空目录。
+// The isolated Runtime for the preview playback benchmark (`tools/preview-bench.mjs`): started by the benchmark script with node; Home, the projects and downloads directories are all in the benchmark's temp directory
+// (`CUCCUT_HOME`, `CUCCUT_PROJECTS_DIR`, `CUCCUT_DOWNLOADS_DIR`). It registers no agent Driver, starts no model Worker, watches no source directory,
+// and broadcasts and discovers no LAN nodes; credentials use the plaintext file backend (the keychain is not touched), and the external tools' search path is one empty directory.
 //
-// 起好之后把 `--project` 给的目录登记为项目；`--synthetic <JSON>` 给的合成素材（`[{name, file, width, height, fps}]`）
-// 各建一个视频：导入素材放上时间线，再放中英两条字幕（与导入字幕文件同一笔事务）。最后向 stdout 写一行
-// `{"type":"ready","projectId":…,"videos":[{name, path}]}`；令牌不经 stdout，基准的 Electron 主进程从发现文件读。收到 SIGTERM 就停。
+// After startup, the directory given by `--project` is registered as a project; each synthetic media item given by `--synthetic <JSON>` (`[{name, file, width, height, fps}]`)
+// gets one video: the imported media is placed on the timeline, then two captions, Chinese and English, are added (in one transaction, the same as importing a caption file). Finally it writes one line
+// `{"type":"ready","projectId":…,"videos":[{name, path}]}` to stdout. The token does not go to stdout; the benchmark's Electron main process reads it from the discovery file. It stops on SIGTERM.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -50,7 +50,7 @@ const client = new CucCutClient({
 await client.connect();
 const { project } = await client.request('projects.open', { path: values.project });
 
-/** 字幕：每 1.5 秒一句，覆盖整段素材。 */
+/** Captions: one every 1.5 seconds, covering the whole media. */
 function cues(seconds: number, text: (index: number) => string) {
   return Array.from({ length: Math.floor(seconds / 1.5) }, (_, i) => ({ index: i + 1, start: i * 1.5, end: i * 1.5 + 1.4, text: text(i) }));
 }

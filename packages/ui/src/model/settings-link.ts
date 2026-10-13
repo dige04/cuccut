@@ -2,7 +2,7 @@ import type { Route } from '../state/shell-store.ts';
 import { S } from '../components/shell-copy.ts';
 import { isModelCategory, isModelPage, isSettingsSection, modelCategory, MODEL_PAGE_LABEL, SETTINGS_SECTION_INFO } from './settings-nav.ts';
 
-/** Agent 回复中的设置深链（产品设计 §3.2.2）：严格识别，未知地址不能误跳到通用设置。 */
+/** Settings deep link in an Agent reply (product design §3.2.2): strictly recognized; unknown addresses must not wrongly jump to general settings. */
 export function settingsLink(href: string): { route: Route; trail: string } | null {
   const match = /^\/settings\/([a-z]+)(?:\/([a-z]+)(?:\/([a-z]+))?)?\/?$/.exec(href);
   if (!match) return null;

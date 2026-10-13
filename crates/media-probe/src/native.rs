@@ -1,4 +1,4 @@
-//! 纯 Rust 后端：容器嗅探 ＋ 四条解析路径（ISO-BMFF / EBML / symphonia / 图片）。
+//! Pure Rust backend: container sniffing plus four parsing paths (ISO-BMFF / EBML / symphonia / images).
 
 use std::path::Path;
 
@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{AudioInfo, MediaKind, MediaProbe, VideoInfo, is_image_path, read_magic};
 
-/// EBML（Matroska / WebM）的文件魔数。
+/// File magic of EBML (Matroska / WebM).
 const EBML_MAGIC: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3];
 
 pub(crate) fn probe_native(path: &Path) -> Result<MediaProbe> {
@@ -26,7 +26,7 @@ pub(crate) fn probe_native(path: &Path) -> Result<MediaProbe> {
     probe_symphonia(path)
 }
 
-// ── 图片 ───────────────────────────────────────────────────────────────────
+// ── Images ───────────────────────────────────────────────────────────────────
 
 fn probe_image(path: &Path) -> Result<MediaProbe> {
     use image::ImageDecoder as _;
@@ -69,7 +69,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
         .metadata()
         .map_err(|error| anyhow!("读取 {} 元数据失败：{error}", path.display()))?
         .len();
-    // `Mp4::read` 走 `Read + Seek` 并**跳过 mdat**：几 GB 的片子也只读 box 头。
+    // `Mp4::read` uses `Read + Seek` and **skips mdat**: even multi-GB files only have their box headers read.
     let mp4 = re_mp4::Mp4::read(std::io::BufReader::new(file), size)
         .map_err(|error| anyhow!("解析 MP4 {} 失败：{error}", path.display()))?;
 
@@ -89,8 +89,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
                     StsdBoxContent::Vp09(bx) => Some((bx.width, bx.height)),
                     _ => None,
                 };
-                // 编码尺寸优先取 `stsd`（ffprobe 的 `stream=width,height` 就是
-                // 它）；识别不了的 codec 退到 `tkhd` 的显示尺寸。
+                // The coded size is taken from `stsd` first (ffprobe's `stream=width,height` comes from it); for codecs that are not recognized, fall back to the display size in `tkhd`.
                 let (width, height) = coded.unwrap_or((track.width, track.height));
                 if width == 0 || height == 0 {
                     continue;
@@ -115,7 +114,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
                         },
                     ),
                     codec: iso_video_codec(stsd),
-                    // ISO-BMFF 没有 Matroska 的 `AlphaMode` 标注。
+                    // ISO-BMFF has no `AlphaMode` marker like Matroska's.
                     alpha: false,
                 });
             }
@@ -148,8 +147,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
                     Some(acc.map_or(value, |acc| acc.max(value)))
                 })
         })
-        // 分片 MP4 的 `mvhd.duration` 可能是 0 且样本表在 `moof` 里；这种情况
-        // 交给 symphonia 再问一次（它自己会算 `num_frames`）。
+        // In fragmented MP4, `mvhd.duration` may be 0 and the sample table is in `moof`; in this case, hand it to symphonia to ask again (it computes `num_frames` itself).
         .or_else(|| symphonia_duration(path));
 
     if video.is_none() && audio.is_none() {
@@ -168,9 +166,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
     })
 }
 
-/// ISO-BMFF `tkhd.matrix` 的 2×2 线性部分是 16.16 定点数。渲染解码后端
-/// 只承诺纯 90 度倍数旋转，所以这里只需判断矩阵是否把横纵轴互换；
-/// 平移项不影响输出像素尺寸。
+/// The 2×2 linear part of ISO-BMFF `tkhd.matrix` is 16.16 fixed-point. The render decoder backend only promises pure multiples of 90° rotation, so here it is only necessary to check whether the matrix swaps the horizontal and vertical axes; the translation term does not affect the output pixel size.
 fn iso_display_dimensions(width: u32, height: u32, [a, b, c, d]: [i32; 4]) -> (u32, u32) {
     const ONE: i64 = 1 << 16;
     const TOLERANCE: i64 = 4;
@@ -209,8 +205,7 @@ fn unknown_fourcc(stsd: &re_mp4::StsdBoxContent) -> Option<String> {
     }
 }
 
-/// 从样本表推 fps：所有样本步长一致时用 `timescale / delta`（等价 ffprobe 的
-/// `r_frame_rate`），否则退到 `样本数 / 时长`（等价 `avg_frame_rate`）。
+/// Derive fps from the sample table: when all sample steps are equal, use `timescale / delta` (equivalent to ffprobe's `r_frame_rate`); otherwise fall back to `sample count / duration` (equivalent to `avg_frame_rate`).
 fn sample_fps(track: &re_mp4::Track) -> Option<f64> {
     if track.samples.is_empty() || track.timescale == 0 {
         return None;
@@ -231,7 +226,7 @@ fn sample_fps(track: &re_mp4::Track) -> Option<f64> {
 
 // ── Matroska / WebM ────────────────────────────────────────────────────────
 
-/// 没有 `DefaultDuration` 时最多扫这么多帧来估帧率。
+/// When there is no `DefaultDuration`, scan at most this many frames to estimate the frame rate.
 const MKV_FPS_SCAN_FRAMES: usize = 240;
 
 fn probe_matroska(path: &Path) -> Result<MediaProbe> {
@@ -243,7 +238,7 @@ fn probe_matroska(path: &Path) -> Result<MediaProbe> {
         .map_err(|error| anyhow!("解析 Matroska {} 失败：{error}", path.display()))?;
 
     let info = mkv.info();
-    // `Info::duration` 的单位是 `TimestampScale`（纳秒/刻度）。
+    // The unit of `Info::duration` is `TimestampScale` (nanoseconds per tick).
     let scale_ns = info.timestamp_scale().get() as f64;
     let duration = info
         .duration()
@@ -267,13 +262,11 @@ fn probe_matroska(path: &Path) -> Result<MediaProbe> {
                     height: track_video.pixel_height().get() as u32,
                     display_width: track_video.pixel_width().get() as u32,
                     display_height: track_video.pixel_height().get() as u32,
-                    // `DefaultDuration` 是纳秒/帧。
+                    // `DefaultDuration` is nanoseconds per frame.
                     fps: video_default_duration.and_then(|ns| positive(1e9 / ns as f64)),
                     bitrate: None,
                     codec: matroska_codec(track.codec_id()),
-                    // Matroska 的 `AlphaMode`（0x53C0）：非 0 = 这条轨的每个
-                    // Block 带 `BlockAdditional` alpha 平面。迁移前 ffprobe 是
-                    // 用 `stream_tags=alpha_mode` 读同一个值。
+                    // Matroska's `AlphaMode` (0x53C0): non-zero = every Block in this track carries a `BlockAdditional` alpha plane. Before the migration, ffprobe read the same value via `stream_tags=alpha_mode`.
                     alpha: track_video.alpha_mode().is_some_and(|mode| mode != 0),
                 });
             }
@@ -292,9 +285,7 @@ fn probe_matroska(path: &Path) -> Result<MediaProbe> {
         }
     }
 
-    // ffmpeg 的 webm 复用器并不总写 `DefaultDuration`（`ccut sticker` 产出的
-    // 贴纸就可能没有）。fps 是 `sticker.loop = "once"` 夹取末帧的依据，问不出
-    // 来会让末帧解不出，所以退到"扫开头若干帧的时间戳中位数"。
+    // ffmpeg's webm muxer does not always write `DefaultDuration` (stickers produced by `ccut sticker` may lack it). fps is the basis for `sticker.loop = "once"` clamping to the last frame; if it cannot be determined, the last frame would fail to decode, so fall back to the median timestamp of the first few frames.
     if let (Some(video), None, Some(number)) =
         (video.as_mut(), video_default_duration, video_track_number)
         && let Some(fps) = scan_matroska_fps(&mut mkv, number, scale_ns)
@@ -353,7 +344,7 @@ fn scan_matroska_fps<R: std::io::Read + std::io::Seek>(
     positive(1e9 / median)
 }
 
-/// Matroska `CodecID` → ffprobe `codec_name` 口径的短名。
+/// Maps Matroska `CodecID` to the short name in ffprobe `codec_name` convention.
 fn matroska_codec(codec_id: &str) -> Option<String> {
     let name = match codec_id {
         "V_VP8" => "vp8",
@@ -380,7 +371,7 @@ fn matroska_codec(codec_id: &str) -> Option<String> {
     Some(name.to_owned())
 }
 
-// ── symphonia（纯音频容器，以及嗅探没认出来的杂项） ────────────────────────
+// ── symphonia (pure audio containers, plus miscellaneous files that sniffing did not recognize) ────────
 
 fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
     let format = symphonia_format(path)?;
@@ -390,8 +381,7 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
             .as_ref()
             .is_some_and(|params| params.audio().is_some())
     });
-    // 罕见但真实存在：没有 `ftyp` 的老 QuickTime。嗅探把它送到这里，如果只看
-    // 音轨就会把一份视频误判成 audio，所以视频轨也要认。
+    // Rare but real: old QuickTime without an `ftyp`. Sniffing routes it here; if only the audio track were checked, a video would be misclassified as audio, so the video track must also be recognized.
     let video_track = format.tracks().iter().find(|track| {
         track
             .codec_params
@@ -426,8 +416,7 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
                 height: u32::from(height),
                 display_width: u32::from(width),
                 display_height: u32::from(height),
-                // symphonia 不透出帧率，也不透出 Matroska 的 `AlphaMode`
-                // （EBML 层丢弃了它）——所以 MKV/WebM 走的是 matroska-demuxer。
+                // symphonia does not expose frame rate, nor Matroska's `AlphaMode` (the EBML layer discards it) — so MKV/WebM goes through matroska-demuxer.
                 fps: None,
                 bitrate: None,
                 codec: symphonia_video_codec(params.codec),
@@ -436,8 +425,7 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
         });
 
     if video.is_none() && audio.is_none() {
-        // 视频轨在，但连尺寸都问不出来——报失败比端出一份既没 video 也没
-        // audio 的"成功"结果好：调用方会退到 ffprobe。
+        // The video track is present, but not even its size can be determined. Reporting failure is better than returning a “success” result with neither video nor audio: the caller will fall back to ffprobe.
         bail!(
             "{} 的轨道信息不完整（问不出尺寸也没有音轨）",
             path.display()
@@ -457,8 +445,8 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
     })
 }
 
-/// symphonia 的 `VideoCodecId` → ffprobe `codec_name` 口径的短名。
-/// （视频解码器不在注册表里，问不到 `short_name`，只能显式映射常见项。）
+/// Maps symphonia's `VideoCodecId` to the short name in ffprobe `codec_name` convention.
+/// (Video decoders are not in the registry, so `short_name` cannot be queried; common entries have to be mapped explicitly.)
 fn symphonia_video_codec(codec: symphonia::core::codecs::video::VideoCodecId) -> Option<String> {
     use symphonia::core::codecs::video::well_known::*;
 
@@ -501,8 +489,7 @@ fn symphonia_format(
         .map_err(|error| anyhow!("Symphonia 无法识别 {}：{error}", path.display()))
 }
 
-/// 0.6 把时长拆成「timebase 单位的 `duration`」与「可播放帧数 `num_frames`」，
-/// 前者才是能过 `calc_duration` 的量；后者只能配采样率自己算。
+/// In 0.6, the duration is split into “`duration` in timebase units” and “playable frame count `num_frames`”; only the former is the quantity that can pass through `calc_duration`; the latter can only be computed from the sample rate.
 fn track_seconds(track: &symphonia::core::formats::Track) -> Option<f64> {
     if let (Some(base), Some(duration)) = (track.time_base, track.duration)
         && let Some(time) = base.calc_duration(duration)
@@ -521,7 +508,7 @@ fn symphonia_duration(path: &Path) -> Option<f64> {
     format.tracks().iter().find_map(track_seconds)
 }
 
-// ── 小工具 ─────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn scale(ticks: u64, timescale: u64) -> f64 {
     if timescale == 0 {

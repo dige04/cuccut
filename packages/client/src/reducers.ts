@@ -26,8 +26,8 @@ import {
 } from '@cuccut/protocol';
 
 /**
- * 本地镜像的纯函数归约（架构设计 §11.4）。只依赖事件本身，不做业务判断；
- * 返回新对象，供 Zustand 这类按引用比较的状态库使用。
+ * Pure reducers for the local mirror (architecture design §11.4). They depend only on the event itself and make no business decisions.
+ * They return new objects, for state libraries that compare by reference, such as Zustand.
  */
 export function applyDirectoryEvent(state: DirectorySnapshot, event: DirectoryEvent): DirectorySnapshot {
   switch (event.type) {
@@ -40,7 +40,7 @@ export function applyDirectoryEvent(state: DirectorySnapshot, event: DirectoryEv
   }
 }
 
-/** 新任务放在最前面，与快照的排序一致。 */
+/** New tasks go at the front, consistent with the snapshot's ordering. */
 export function applyTasksEvent(state: TasksSnapshot, event: TasksEvent): TasksSnapshot {
   switch (event.type) {
     case 'task.upsert': {
@@ -52,8 +52,8 @@ export function applyTasksEvent(state: TasksSnapshot, event: TasksEvent): TasksS
     }
     case 'task.removed':
       return withApprovals({ tasks: state.tasks.filter((t) => t.taskId !== event.taskId) }, state);
-    // 待处理的审批（会话的与对外服务的）：出现时追加在后面（旧的在前，与快照一致），结束时去掉。
-    // 旧镜像没有 `approvals` 时当作空列表。
+    // Pending approvals (both session approvals and external service approvals): appended at the end when they appear (older first, consistent with the snapshot), and removed when they end.
+    // A mirror without `approvals` is treated as an empty list.
     case 'approval.upsert': {
       const approvals = (state.approvals ?? []).slice();
       const index = approvals.findIndex((a) => a.approvalId === event.approval.approvalId);
@@ -71,9 +71,8 @@ function withApprovals(next: TasksSnapshot, state: TasksSnapshot): TasksSnapshot
 }
 
 /**
- * 后台任务（转写等）：一条记录的新状态替换旧的，新任务放在最前面，与快照的排序一致。
- * 转录的实时段落（`liveSegments`）：`job.segments` 从 `from` 起逐段写入，已有的序号替换、其后的保留；`from` 越过已有的段数
- * 时整条忽略（不补猜，下一次快照补齐）。记录不再是 `running` 时丢掉这个任务的段落，没有段落时不带 `liveSegments`。
+ * Background jobs (transcription etc.): a record's new state replaces the old one. New tasks go at the front, consistent with the snapshot's ordering.
+ * Live transcript segments (`liveSegments`): `job.segments` is written segment by segment starting at `from`. Existing indices are replaced and later ones are kept. When `from` goes past the existing segment count, the whole update is ignored (nothing is guessed; the next snapshot fills it in). When the record is no longer `running`, the job's segments are dropped. When there are no segments, `liveSegments` is not included.
  */
 export function applyJobsEvent(state: JobsSnapshot, event: JobsEvent): JobsSnapshot {
   switch (event.type) {
@@ -103,7 +102,7 @@ export function applyJobsEvent(state: JobsSnapshot, event: JobsEvent): JobsSnaps
   }
 }
 
-/** 模型：能力视图整个替换；一个模型包的新状态按 `bundleId` 替换（没有时追加）。 */
+/** Models: the capability view is replaced as a whole. A model bundle's new state replaces the old one by `bundleId` (appended if there is none). */
 export function applyModelsEvent(state: ModelsSnapshot, event: ModelsEvent): ModelsSnapshot {
   switch (event.type) {
     case 'capabilities.updated':
@@ -118,7 +117,7 @@ export function applyModelsEvent(state: ModelsSnapshot, event: ModelsEvent): Mod
   }
 }
 
-/** 偏好设置：变了的键换成新的有效值，默认值不变。 */
+/** Preferences: changed keys are replaced with their new effective values. Defaults stay the same. */
 export function applySettingsEvent(state: SettingsSnapshot, event: SettingsEvent): SettingsSnapshot {
   switch (event.type) {
     case 'settings.updated':
@@ -126,7 +125,7 @@ export function applySettingsEvent(state: SettingsSnapshot, event: SettingsEvent
   }
 }
 
-/** 对外服务：服务状态按 `serviceId` 替换；审批出现时追加，结束时移除。 */
+/** External services: a service's state is replaced by `serviceId`. Approvals are appended when they appear and removed when they end. */
 export function applyServicesEvent(state: ServicesSnapshot, event: ServicesEvent): ServicesSnapshot {
   switch (event.type) {
     case 'service.updated':
@@ -139,8 +138,8 @@ export function applyServicesEvent(state: ServicesSnapshot, event: ServicesEvent
 }
 
 /**
- * 应用内运行的 Agent 安装命令：新的一次放在最前面（与快照一致）；输出行追加，只留最后 `AGENT_SETUP_OUTPUT_LINES` 行。
- * 不认识的 `runId` 的输出丢掉（它的记录会随下一次快照到来）。
+ * Install commands for in-app agents: a new run goes at the front (consistent with the snapshot). Output lines are appended, keeping only the last `AGENT_SETUP_OUTPUT_LINES` lines.
+ * Output for an unrecognized `runId` is dropped (its record will arrive with the next snapshot).
  */
 export function applyAgentSetupEvent(state: AgentSetupSnapshot, event: AgentSetupEvent): AgentSetupSnapshot {
   switch (event.type) {
@@ -175,7 +174,7 @@ export function applySpaceEvent(state: SpaceSnapshot, event: SpaceEvent): SpaceS
   }
 }
 
-/** 会话被删除时返回 null。 */
+/** Returns null when the session is deleted. */
 export function applyConversationEvent(state: ConversationSnapshot, event: ConversationEvent): ConversationSnapshot | null {
   switch (event.type) {
     case 'item.upsert':
@@ -215,7 +214,7 @@ function upsertBy<T>(list: readonly T[], value: T, key: (v: T) => string): T[] {
   return next;
 }
 
-/** 视频主题：增量用共享的投影 reducer（与 Runtime 的镜像同一个）；视频关闭时返回 null。 */
+/** Video topic: incremental updates use the shared projection reducer (the same one the Runtime mirror uses). Returns null when the video is closed. */
 export function applyVideoTopicEvent(state: VideoTopicSnapshot, event: VideoTopicEvent): VideoTopicSnapshot | null {
   switch (event.type) {
     case 'video.event':

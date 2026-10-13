@@ -1,15 +1,13 @@
-//! mlx ↔ candle 跨后端对拍（移植自 v2 `ccut-speech` 的 `candle_parity`；仅 macOS Apple Silicon，需同时启用两个后端）：
+//! mlx ↔ candle cross-backend parity check (ported from v2 `ccut-speech`'s `candle_parity`; macOS Apple Silicon only, both backends must be enabled):
 //!
 //! cargo test -p model-runtime --features backend-candle --test candle_parity -- --test-threads=1
 //!
-//! 无权重的数值对拍（量化位序、RoPE 语义）默认运行。真模型对拍标记 `#[ignore]`，权重按
-//! `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` 核对后加载，不在时打印原因后跳过：
+//! Numeric parity without weights (quantization bit order, RoPE semantics) runs by default. Real-model parity is marked `#[ignore]`; weights are checked against `<CUCCUT_TEST_MODELS_DIR>/<repo>/.ccut-manifest.json` and loaded if present, otherwise the reason is printed and the test is skipped:
 //!
 //! CUCCUT_TEST_MODELS_DIR=… cargo test --release -p model-runtime --features backend-candle --test candle_parity \
 //!   -- --ignored --test-threads=1 --nocapture
 //!
-//! 真模型对拍要用 `--release`（同 v2 的 verify.sh）：dev 档构建的 MLX 在夹具上近乎平票的品牌名处会走到另一个 token
-//! （「Bocut」；把依赖或全部 crate 改成 O2、关掉 debug-assertions 也一样），release 构建的 MLX 与两档的 candle 都是「BioCut」。
+//! Real-model parity must use `--release` (same as v2's verify.sh): a dev-profile MLX build picks a different token at the brand-name position, where the probabilities are nearly tied (“Bocut”; changing dependencies or all crates to O2, or turning off debug-assertions, does the same), while a release-build MLX and both candle profiles all produce “BioCut”.
 
 #![cfg(all(feature = "backend-mlx", feature = "backend-candle", target_os = "macos", target_arch = "aarch64"))]
 
@@ -25,7 +23,7 @@ use model_runtime::speech::wespeaker_fbank::{EMBEDDING_DIM, cosine_distance};
 use model_runtime::speech::{ForcedAlignment, RecognitionRequest, SpeakerEmbedding, SpeechRecognizer, StreamingVad};
 use serde_json::{Value, json};
 
-/// MLX/Metal 不支持并发初始化，本文件内的 mlx 测试全部串行。
+/// MLX/Metal does not support concurrent initialization, so all mlx tests in this file run serially.
 static MLX_LOCK: Mutex<()> = Mutex::new(());
 
 const ASR_REPO: &str = "aufklarer/Qwen3-ASR-0.6B-MLX-4bit";
@@ -35,8 +33,8 @@ const WESPEAKER_REPO: &str = "aufklarer/WeSpeaker-ResNet34-LM-MLX";
 const PYANNOTE_REPO: &str = "aufklarer/Pyannote-Segmentation-MLX";
 const MOSS_REPO: &str = "OpenMOSS-Team/MOSS-Transcribe-Diarize";
 
-/// candle 的仿射反量化必须与 MLX `quantize`/`dequantize` 逐值一致——这是“复用 MLX 模型仓库”策略的根基
-/// （位打包顺序 + `w = q*scale + bias`）。
+/// candle's affine dequantization must match MLX `quantize`/`dequantize` value for value. This is the foundation of the “reuse the MLX model repository” strategy
+/// (bit-packing order + `w = q*scale + bias`).
 #[test]
 fn candle_dequantization_matches_mlx_for_4bit_and_8bit() {
     let _guard = MLX_LOCK.lock().unwrap();
@@ -71,7 +69,7 @@ fn candle_dequantization_matches_mlx_for_4bit_and_8bit() {
     }
 }
 
-/// candle 侧半分裂 RoPE 必须与 mlx `fast::rope(traditional=false)` 一致（含 KV cache offset 语义）。
+/// candle's half-split RoPE must match mlx `fast::rope(traditional=false)` (including KV cache offset semantics).
 #[test]
 fn candle_rope_matches_mlx_fast_rope() {
     let _guard = MLX_LOCK.lock().unwrap();
@@ -99,8 +97,8 @@ fn candle_rope_matches_mlx_fast_rope() {
     }
 }
 
-/// 真模型对拍：candle 与 mlx 对同一段音频的贪心转录应一致（同权重值、同贪心解码，仅浮点求和次序不同）。
-/// MLX 要是优化过的构建（见文件头）。
+/// Real-model parity: candle and mlx should produce the same greedy transcript for the same audio (same weight values, same greedy decoding; only the floating-point summation order differs).
+/// The MLX build must be optimized (see the file header).
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Qwen3-ASR 0.6B installed; run with --release"]
 fn candle_qwen3_transcription_matches_mlx() {
@@ -135,7 +133,7 @@ fn candle_qwen3_transcription_matches_mlx() {
     );
 }
 
-/// Silero VAD 逐块概率对拍：两个后端在同一波形上概率差应可忽略。
+/// Silero VAD per-chunk probability parity: on the same waveform, the probability difference between the two backends should be negligible.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Silero VAD installed"]
 fn candle_silero_probabilities_match_mlx() {
@@ -157,7 +155,7 @@ fn candle_silero_probabilities_match_mlx() {
     }
 }
 
-/// 词级时间戳对拍：强制对齐器在两个后端的输出词序一致，时间戳差 ≤0.08s（一个时间戳量化步长）。
+/// Word-level timestamp parity: the forced aligner must produce the same word order on both backends, and timestamp differences must be ≤0.08s (one timestamp quantization step).
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the forced aligner installed"]
 fn candle_aligner_timestamps_match_mlx() {
@@ -194,8 +192,7 @@ fn candle_aligner_timestamps_match_mlx() {
     }
 }
 
-/// MOSS 转录对拍：mlx 走 bf16（quality，不做加载期量化）、candle 走 f32，权重值相同，贪心解码文本应一致；说话人
-/// 分段时间允许小量浮点漂移。
+/// MOSS transcription parity: mlx runs in bf16 (quality, no load-time quantization), candle runs in f32; with the same weight values, the greedy-decoded text should match. Speaker segment times may drift slightly due to floating-point differences.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with MOSS Transcribe Diarize installed"]
 fn candle_moss_transcription_matches_mlx() {
@@ -232,13 +229,11 @@ fn candle_moss_transcription_matches_mlx() {
     }
 }
 
-/// Pyannote 分割对拍：同一批窗口喂给两个后端，**解码后的量**必须一致。
+/// Pyannote segmentation parity: the same batch of windows is fed to both backends, and the **decoded quantities** must match.
 ///
-/// 两侧共用 `pyannote_common` 的解码（softmax → 按说话人求和 → 迟滞二值化），所以真正决定输出的是逐帧说话人概率和
-/// 二值化 tracks，而不是 argmax 胜出类别。三条断言各管一层：概率（数值层）、tracks（判决层）、argmax（定位层）。只比
-/// argmax 是不够的——MLX 某帧概率 0.51、candle 0.49 时 argmax 完全一致，分段边界却已经翻转。
+/// Both sides share the `pyannote_common` decoding (softmax → sum per speaker → hysteresis binarization), so what actually determines the output is the per-frame speaker probability sums and the binarized tracks, not which class wins the argmax. Three assertions each cover one layer: probabilities (numerical layer), tracks (decision layer), argmax (localization layer). Comparing argmax alone is not enough: when MLX gives a frame probability of 0.51 and candle 0.49, the argmax is identical but the segment boundary has already flipped.
 ///
-/// 历史：candle 的 `Conv1d::load` permute 之后漏了 `contiguous()` 时，窗口 0 有 156/589 帧不一致（见那里的注释）。
+/// History: when candle's `Conv1d::load` omitted `contiguous()` after the permute, 156/589 frames of window 0 disagreed (see the comment there).
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with Pyannote installed"]
 fn candle_pyannote_classes_match_mlx() {
@@ -251,7 +246,7 @@ fn candle_pyannote_classes_match_mlx() {
     };
     let audio = audio("test-sample.wav");
 
-    // 三个窗口：开头、偏移一个滑窗步长、以及一段末尾补零窗口。
+    // Three windows: one at the start, one offset by one sliding-window step, and one ending in zero-padded windows.
     const BATCH: usize = 3;
     let mut packed = vec![0.0_f32; BATCH * WINDOW_SAMPLES];
     let starts = [0, STEP_SAMPLES.min(audio.len()), audio.len().saturating_sub(WINDOW_SAMPLES)];
@@ -277,7 +272,7 @@ fn candle_pyannote_classes_match_mlx() {
         for local in 0..LOCAL_SPEAKERS {
             assert_eq!(mlx_probabilities[local].len(), FRAMES_PER_WINDOW);
             assert_eq!(candle_probabilities[local].len(), FRAMES_PER_WINDOW);
-            // BiLSTM 的 f32 累积差让逐位相等不现实；1e-2 是能抓住权重读错级别偏差、又不会因累积误差抖动的量级。
+            // Bit-exact equality is unrealistic given the f32 accumulation differences in BiLSTM; 1e-2 is a magnitude that catches weight-reading errors at the wrong level without flapping from accumulated error.
             let worst = mlx_probabilities[local]
                 .iter()
                 .zip(candle_probabilities[local].iter())
@@ -292,14 +287,14 @@ fn candle_pyannote_classes_match_mlx() {
                 .zip(candle_track.iter())
                 .filter(|(left, right)| left != right)
                 .count();
-            // 概率贴着 onset/offset 时二值化可能翻转；沿用 1% 的宽容口径。
+            // When probabilities sit near onset/offset, binarization may flip; keep the 1% tolerance.
             assert!(
                 mismatched * 100 <= FRAMES_PER_WINDOW,
                 "窗口 {window} 说话人 {local} 有 {mismatched}/{FRAMES_PER_WINDOW} 帧活跃状态不一致"
             );
         }
 
-        // argmax 已不参与解码，保留它只为把差异定位到网络层。
+        // argmax no longer takes part in decoding; it is kept only to localize differences to a network layer.
         let mismatched = argmax_classes(mlx)
             .into_iter()
             .zip(argmax_classes(candle))
@@ -312,10 +307,9 @@ fn candle_pyannote_classes_match_mlx() {
     }
 }
 
-/// WeSpeaker 声纹对拍：同一段音频喂给两个后端，256 维嵌入必须逐维一致。
+/// WeSpeaker speaker-embedding parity: the same audio is fed to both backends, and the 256-dim embeddings must match element by element.
 ///
-/// 统计池化前的展平顺序错了（MLX 是 NHWC 的 `[B,F',T',C]` 转置成 C·F，candle 是 NCHW 直接 reshape）时，嵌入依然是
-/// 256 维、依然 L2 归一化、说话人依然可分，只是数值全错；用余弦距离 + 逐维差值才能钉住这个错误。
+/// If the flatten order before statistics pooling is wrong (MLX is NHWC `[B,F',T',C]` transposed to C·F, while candle is NCHW reshaped directly), the embedding is still 256-dim, still L2-normalized, and speakers are still separable, but the values are all wrong. Only a cosine distance plus per-dimension differences pin this error down.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with WeSpeaker installed"]
 fn candle_wespeaker_embedding_matches_mlx() {
@@ -353,7 +347,7 @@ fn audio(name: &str) -> Vec<f32> {
     decode_mono(&fixture(name), 16_000).expect("decode fixture")
 }
 
-/// 按 `<models-root>/<repo>/.ccut-manifest.json` 核对出一个组件的文件；权重不在时给 `None` 并打印原因。
+/// Resolves a component's files from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
         println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");

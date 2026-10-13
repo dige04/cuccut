@@ -7,10 +7,10 @@ interface ProjectsFile {
 }
 
 /**
- * 项目登记（架构设计 §1.5、§5.1）：项目的标识在目录里的 `.ccut/project.json`（`project-marker.ts`），
- * 这里只是「标识 → 最后见到的路径」的索引，加上显示名、置顶与归档。登记丢了可以由标记重建。
- * 路径是规范化的绝对路径（realpath）。
- * 文件坏了改名保留、从空开始（标记还在，打开项目时重新登记）；更新版本写下的不改写（`store-file.ts`）。
+ * Project registry (architecture design §1.5, §5.1): the project's identity lives in `.ccut/project.json` in the directory (`project-marker.ts`).
+ * This file is only an index of "identity → last seen path", plus display name, pinning, and archiving. If the registry is lost, it can be rebuilt from the markers.
+ * Paths are normalized absolute paths (realpath).
+ * If the file is corrupt, it is renamed and kept, and the registry starts empty (the marker still exists, and projects are registered again when opened). Files written by a newer version are not rewritten (`store-file.ts`).
  */
 export class ProjectStore {
   readonly #file: JsonStoreFile;
@@ -28,7 +28,7 @@ export class ProjectStore {
           ? raw.projects.filter((p): p is Project => isPlainObject(p) && typeof p.id === 'string' && typeof p.path === 'string')
           : null,
     });
-    // 0.1 写下的登记没有置顶与归档：补上默认值。
+    // Registrations written by 0.1 have no pinning or archiving, so fill in the defaults.
     this.#projects = new Map((value ?? []).map((p) => [p.id, { ...p, pinned: p.pinned ?? false, archived: p.archived ?? false }]));
     return this.list();
   }

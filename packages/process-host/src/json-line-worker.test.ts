@@ -11,7 +11,7 @@ import {
   type WorkerEvent,
 } from './json-line-worker.ts';
 
-/** 一个用 Node 写的小子进程：echo、error、event、hang、spam-stderr、exit。 */
+/** A small child process written in Node: echo, error, event, hang, spam-stderr, exit. */
 const SCRIPT = `
 const readline = require('node:readline');
 const rl = readline.createInterface({ input: process.stdin });
@@ -69,7 +69,7 @@ describe('JsonLineWorker', () => {
     const pending = worker.request('hang', {});
     const exits: unknown[] = [];
     worker.onExit((exit) => exits.push(exit));
-    // 退出之前写出的响应不会丢。
+    // Responses written before exit are not lost.
     expect(await worker.request('exit', { code: 3 })).toEqual({ bye: true });
     const error = await pending.catch((e: unknown) => e);
     expect(error).toBeInstanceOf(WorkerExitedError);

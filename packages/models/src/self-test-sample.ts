@@ -1,16 +1,14 @@
 import { modelAssetPath } from './model-assets.ts';
 
 /**
- * 模型包自检（`models.test`，架构设计 §6.3）用的固定样本：一段随附的英文朗读（约 3.7 秒，16 kHz 单声道 WAV），
- * 与 Model Worker 的集成测试用的是同一个文件。自检走一遍完整的 Worker 流程，结果要合 `cuccut.asr-result/v1`，
- * 并且识别出的文字（忽略大小写与标点，英文的个位数词与数字视作相同）包含 `expected`。
+ * Fixed sample for the model package self-test (`models.test`, architecture design §6.3): a bundled English reading (about 3.7 seconds, 16 kHz mono WAV), the same file used by the Model Worker's integration tests. The self-test runs the full Worker flow; the result must conform to `cuccut.asr-result/v1`, and the recognised text (ignoring case and punctuation; single-digit English number words count as equal to digits) must contain `expected`.
  */
 export interface SelfTestSample {
-  /** 模型数据目录里的相对路径（`model-assets.ts`）；绝对路径用 `selfTestSampleFile` 在用时求。 */
+  /** Relative path within the model data directory (`model-assets.ts`); the absolute path is resolved with `selfTestSampleFile` at the point of use. */
   asset: string;
-  /** 识别结果必须包含的文字（小写、单词以空格分隔）。 */
+  /** Text the recognition result must contain (lowercase, words separated by spaces). */
   expected: string;
-  /** 样本的语言（以「偏好」交给 Worker，不断言）。 */
+  /** Language of the sample (passed to the Worker as a preference; not asserted). */
   language: string;
 }
 
@@ -20,12 +18,12 @@ export const TRANSCRIBE_SELF_TEST: SelfTestSample = {
   language: 'en',
 };
 
-/** 样本的绝对路径；找不到模型数据目录时 null（读的地方报 `APP_FILE_MISSING`）。 */
+/** Absolute path of the sample; null when the model data directory cannot be found (reading it reports `APP_FILE_MISSING`). */
 export function selfTestSampleFile(sample: SelfTestSample, env: NodeJS.ProcessEnv = process.env): string | null {
   return modelAssetPath(sample.asset, env);
 }
 
-/** 把识别出的文字规整成小写、单词以一个空格分隔。 */
+/** Normalises recognised text to lowercase, with single spaces between words. */
 export function normalizeTranscript(text: string): string {
   return text
     .toLowerCase()
@@ -46,7 +44,7 @@ const DIGIT_WORDS: Record<string, string> = {
   nine: '9',
 };
 
-/** 规整后再把英文的个位数词换成数字：有的模型（Whisper）把「one two three」写成「1, 2, 3」。 */
+/** After normalising, also converts single-digit English number words to digits: some models (Whisper) write "one two three" as "1, 2, 3". */
 function withDigits(text: string): string {
   return normalizeTranscript(text)
     .split(' ')
@@ -54,7 +52,7 @@ function withDigits(text: string): string {
     .join(' ');
 }
 
-/** 识别结果是否包含样本的期望文字（数字写成阿拉伯数字也算）。 */
+/** Whether the recognition result contains the sample's expected text (digits written as Arabic numerals also count). */
 export function selfTestMatches(text: string, sample: SelfTestSample): boolean {
   return ` ${withDigits(text)} `.includes(` ${withDigits(sample.expected)} `);
 }

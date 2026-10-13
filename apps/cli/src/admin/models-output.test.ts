@@ -148,7 +148,7 @@ describe('models 的输出', () => {
       '磁盘空间：这次要 2.0 GB，只剩 512.0 MB',
       `补救：${remedy}`,
     ]);
-    // 写入时磁盘满了：只有文件名，没有字节数。
+    // Disk full on write: only the file name, no byte count.
     const midWrite = { code: 'MODEL_DOWNLOAD_NO_SPACE', message: '写入模型文件时磁盘满了', details: { file: 'a.bin', remedy } };
     expect(installFailureLines(midWrite)).toEqual([`补救：${remedy}`]);
     expect(installFailureLines({ code: 'MODEL_DOWNLOAD_NETWORK', message: '断了', details: { remedy: '检查网络' } })).toEqual([
@@ -160,7 +160,7 @@ describe('models 的输出', () => {
   it('remove 按 ID 区分在线服务与模型包', () => {
     expect(removeTarget('custom:my-llm')).toBe('provider');
     expect(removeTarget('qwen3-asr-0.6b@mlx-4bit')).toBe('bundle');
-    // 目录里的在线服务商也可以移除（§6.8）。
+    // Online providers in the directory can also be removed (§6.8).
     expect(removeTarget('anthropic', ['openai', 'anthropic'])).toBe('provider');
     expect(removeTarget('qwen3-asr-0.6b@mlx-4bit', ['openai', 'anthropic'])).toBe('bundle');
   });

@@ -1,27 +1,25 @@
 /**
- * 时间线只画看得见的那一段（横向裁剪）：轨道少、时间长，一条轨上可以有上千件（剪口播剪出来的片段、一句一块的配音），
- * 全画出来打开与缩放都要卡几秒。这里只算：一条轨上哪些件与时间窗相交、刻度尺在时间窗里有哪几格。不碰 React 与 DOM。
+ * The timeline draws only the visible part (horizontal clipping). There are few tracks but the time span is long, and one track can hold thousands of items (clips from talking-head cuts, one dub block per sentence); drawing everything would stall opening and zooming for seconds. This only computes which items on a track intersect the time window, and which ticks of the ruler fall inside the time window. It does not touch React or the DOM.
  *
- * 时间窗用什么单位都行（帧或秒），只要与 `span` 给的一致。
+ * The time window can use any unit (frames or seconds), as long as it matches what `span` gives.
  */
 
-/** 一件在时间轴上的起止（`start ≤ end`）。 */
+/** The start and end of an item on the timeline (`start ≤ end`). */
 export interface Span {
   start: number;
   end: number;
 }
 
 /**
- * 按起点排好的一条轨：`starts` 升序；`reach[k]` 是排序后前 k+1 件里最晚的终点（单调不减），
- * 用它跳过窗口左边早已结束的那一大段，起点在窗口左外、却伸进窗口的长片段也不会漏。
+ * A track sorted by start: `starts` is ascending; `reach[k]` is the latest end among the first k+1 items after sorting (non-decreasing). It is used to skip the long run to the left of the window that has already ended, and a long clip that starts left of the window but extends into it is not missed.
  */
 export interface SpanIndex<T> {
-  /** 按起点排序（起点相同按原来的次序）。 */
+  /** Sort by start (items with the same start keep their original order). */
   sorted: readonly T[];
   starts: Float64Array;
   ends: Float64Array;
   reach: Float64Array;
-  /** 每件在原来列表里的次序：结果按它排回去（同一轨上重叠的件，DOM 次序决定谁压在上面）。 */
+  /** Each item’s index in the original list. Results are sorted back by it: for overlapping items on the same track, DOM order decides which one is on top. */
   order: ReadonlyMap<T, number>;
 }
 
@@ -42,7 +40,7 @@ export function spanIndex<T>(items: readonly T[], span: (item: T) => Span): Span
   return { sorted: entries.map((e) => e.item), starts, ends, reach, order: new Map(entries.map((e) => [e.item, e.k])) };
 }
 
-/** 第一个满足 `pred` 的下标（`pred` 在数组上先假后真）；都不满足时是长度。 */
+/** The first index that satisfies `pred` (`pred` is false then true across the array); the length if none does. */
 function firstWhere(values: Float64Array, pred: (value: number) => boolean): number {
   let lo = 0;
   let hi = values.length;
@@ -55,8 +53,7 @@ function firstWhere(values: Float64Array, pred: (value: number) => boolean): num
 }
 
 /**
- * 与时间窗 `[from, to]` 相交的件（贴边也算：`start ≤ to` 且 `end ≥ from`），再并上 `extra` 里在这条轨上的件
- * （正在拖的、菜单开着的……不管在不在窗里都要画），去重后按原来的次序返回。
+ * Items that intersect the time window `[from, to]` (touching the edge counts: `start ≤ to` and `end ≥ from`), plus the items on this track from `extra` (the ones being dragged, the one whose menu is open, …), which must be drawn whether or not they are in the window. Deduplicated, returned in original order.
  */
 export function spansIn<T>(index: SpanIndex<T>, from: number, to: number, extra: Iterable<T> = []): T[] {
   const { sorted, starts, ends, reach, order } = index;
@@ -74,8 +71,7 @@ export interface RulerTick {
 }
 
 /**
- * 刻度尺在 `[from, to]` 秒里的刻度（左边多带上 `from` 之前的那一格；不超过 `end` 秒、最多 `limit` 格）。第 i 格总在 `i × minor` 秒，与从 0 画起的整条尺
- * 一格不差（key 与标注都不变），滚动时只是两头增减。
+ * The ticks of the ruler within `[from, to]` seconds. The left side also includes one tick before `from`; at most `limit` ticks, none past `end` seconds. Tick i is always at `i × minor` seconds, identical to the same tick on the whole ruler drawn from 0 (keys and labels unchanged); while scrolling, ticks are only added or removed at the two ends.
  */
 export function rulerTicks({
   minor,

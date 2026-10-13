@@ -1,10 +1,9 @@
-//! 视频的交换 DTO（视频格式规范 §3、§4）。画面元素的种类与参数采用 v2 的元素模型（`crates/timeline`）：
-//! 种类与 `ElementKind` 一一对应，参数的字段名、取值与范围以它为准；实例的身份、所在的轨道与时间是
-//! v3 的容器。各种类的 props 直接用 `timeline::schema` 的类型；几何、效果、动画等在 v2 里会写出
-//! `null` 的类型，这里另有不写 `null` 的交换形式，校验时换成 `timeline` 的同名类型。
-//! 文稿类内容（转写、翻译、字幕样式、剪口集合等）是版本化的文档：快照里只有文档头，正文按版本另取；
-//! 转写、译文与剪口集合正文的 DTO 在 [`speech`]、[`translation`] 与 [`cut_set`]（§5.2、§5.3、§6.7），字幕样式正文的
-//! 核对在 [`caption_style`]（§5.6）。
+//! Exchange DTOs for the video (video format spec §3, §4). Picture element kinds and parameters use the v2 element model (`crates/timeline`):
+//! kinds correspond one-to-one with `ElementKind`, and the parameter field names, values and ranges follow it; an instance's identity, its track and its time are the
+//! v3 container. The props of each kind use the types of `timeline::schema` directly; geometry, effects, animation and so on are types that v2 writes out as
+//! `null`, and here there is a separate exchange form that does not write `null`; during validation it is converted to the same-named types of `timeline`.
+//! Script-type content (transcripts, translations, caption styles, cut sets and so on) is versioned documents: the snapshot holds only the document header, and the body is fetched separately by version;
+//! the DTOs for transcript, translation and cut-set bodies are in [`speech`], [`translation`] and [`cut_set`] (§5.2, §5.3, §6.7), and the checks for the caption-style body are in [`caption_style`] (§5.6).
 
 use std::collections::BTreeMap;
 
@@ -43,9 +42,9 @@ pub type Id = String;
 pub type Revision = String;
 
 pub const VIDEO_FORMAT: &str = "cuccut.video";
-/// 当前的格式版本。3 起画面元素采用 v2 的元素模型（§1.4）；只接受这一个版本，旧版本的视频要重新导入。
+/// The current format version. From 3 onward, picture elements use the v2 element model (§1.4); only this version is accepted, and videos of older versions must be re-imported.
 pub const SCHEMA_VERSION: u32 = 3;
-/// 画布底色的缺省值（§3.2）。
+/// Default canvas background color (§3.2).
 pub const DEFAULT_CANVAS_BACKGROUND: &str = "#000000";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,7 +66,7 @@ impl FrameSpan {
     }
 }
 
-/// 视频快照（§3.1）。工作态由 VideoStore 持有；快照不是第二个写入端。
+/// Video snapshot (§3.1). The working state is held by VideoStore; the snapshot is not a second writer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoSnapshot {
@@ -80,7 +79,7 @@ pub struct VideoSnapshot {
     pub root_sequence_id: Id,
     pub sequences: BTreeMap<Id, Sequence>,
     pub assets: BTreeMap<Id, AssetRecord>,
-    /// 文档头（§4.4）。正文不在快照里。
+    /// Document header (§4.4). The body is not in the snapshot.
     pub documents: BTreeMap<Id, DocumentRecord>,
     pub fonts: BTreeMap<Id, Value>,
     pub localization_sets: BTreeMap<Id, Value>,
@@ -91,7 +90,7 @@ pub struct VideoSnapshot {
     pub links: Vec<Value>,
 }
 
-/// 序列（§3.2）。`tracks` 与 `items` 在存储里是各自的实体，快照时按顺序组装；`animationBindings` 在 [`SequenceHeader`] 里。
+/// Sequence (§3.2). `tracks` and `items` are separate entities in storage and are assembled in order when the snapshot is taken; `animationBindings` are in [`SequenceHeader`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sequence {
@@ -101,32 +100,32 @@ pub struct Sequence {
     pub header: SequenceHeader,
     pub tracks: Vec<Track>,
     pub items: Vec<TimelineItem>,
-    /// 转场（§3.9），按 ID 排序。
+    /// Transitions (§3.9), sorted by ID.
     #[serde(default)]
     pub transitions: Vec<Transition>,
-    /// 标记与章节（§3.13），按帧排序。
+    /// Markers and chapters (§3.13), sorted by frame.
     #[serde(default)]
     pub markers: Vec<Marker>,
-    /// 闪避规则（§3.9），按 ID 排序。
+    /// Ducking rules (§3.9), sorted by ID.
     #[serde(default)]
     pub ducking: Vec<DuckingRule>,
 }
 
-/// 序列自身的字段（不含轨道与实例），作为一个实体保存。
+/// The sequence's own fields (excluding tracks and instances), saved as one entity.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SequenceHeader {
     pub name: String,
-    /// `name` 还是引擎起的缺省名时，它的消息引用（§3.2）：界面按读者的语言重新生成。改名后没有。
+    /// While `name` is still the default name given by the engine, its message reference (§3.2): the UI regenerates it in the reader's language. Absent after a rename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name_ref: Option<MessageRef>,
     pub fps: Rate,
     pub canvas: Canvas,
     pub duration_policy: DurationPolicy,
-    /// 关键帧绑定（§3.15）。和序列的其余字段一起保存，所以在这里而不在 [`Sequence`] 上；交换形式一样。
+    /// Keyframe bindings (§3.15). They are saved together with the sequence's other fields, so they are here and not on [`Sequence`]; the exchange form is the same.
     #[serde(default)]
     pub animation_bindings: Vec<AnimationBinding>,
-    /// 模板层（§3.17）；没有时省略。
+    /// Template layers (§3.17); omitted when there are none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<TemplateLayers>,
 }
@@ -137,11 +136,11 @@ pub struct Canvas {
     pub width: u32,
     pub height: u32,
     pub working_space: String,
-    /// 画布底色：不透明的纯色 `#RRGGBB`，写出一律大写（§3.2）。
+    /// Canvas background: an opaque solid `#RRGGBB`, always written in uppercase (§3.2).
     pub background: String,
 }
 
-/// 画布底色：`#RRGGBB`（大小写不限），返回大写的写法；其他写法返回 `None`。
+/// Canvas background: `#RRGGBB` (case-insensitive); returns the uppercase form; other forms return `None`.
 pub fn canvas_background(text: &str) -> Option<String> {
     (text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())).then(|| text.to_ascii_uppercase())
 }
@@ -188,7 +187,7 @@ pub enum SoloGroup {
     Visual,
 }
 
-/// 所有实例共用的字段（§3.4）。
+/// Fields shared by all instances (§3.4).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemBase {
@@ -199,52 +198,52 @@ pub struct ItemBase {
     pub enabled: bool,
     pub locked: bool,
     pub paint_order: i64,
-    /// 没有这个字段的实例（早先的版本没有写）读作缺省的 `follow-cuts`（§3.16）。
+    /// An instance without this field (earlier versions did not write it) is read as the default `follow-cuts` (§3.16).
     #[serde(default)]
     pub follow_policy: FollowPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<ItemLineage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_group_id: Option<Id>,
-    /// 实例在视频里的作用（开放词表）。`broll`、`watermark`、`screentext`、`overlay`、`frame` 写入时校验与种类的搭配。
+    /// The role of the instance in the video (open vocabulary). For `broll`, `watermark`, `screentext`, `overlay` and `frame`, the pairing with the kind is checked on write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    /// 生成来源的说明；引擎不解释，原样保留。
+    /// Description of the generation source; the engine does not interpret it and keeps it as is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<Value>,
-    /// 终点跟着序列末尾（§3.16）；不是时省略。
+    /// The end point follows the sequence end (§3.16); omitted when it is not.
     #[serde(default, skip_serializing_if = "place::is_false")]
     pub until_sequence_end: bool,
-    /// 命名空间下的扩展（§1.4）：引擎不解释，写回时保留。
+    /// Extensions under a namespace (§1.4): the engine does not interpret them and keeps them on write-back.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// 实例跟着什么移动（§3.16）。缺省 `follow-cuts`：按时刻放置的实例跟着剪口走；`sequence-fixed` 要显式选择。
+/// What an instance moves with (§3.16). Default `follow-cuts`: instances placed by time follow the cuts; `sequence-fixed` must be chosen explicitly.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
-// 语义锚两头放在原处，读写与匹配都直接；实例数量不大，不为省内存装箱。
+// Semantic anchors on both ends stay in place, and reads, writes and matching are all direct; the number of instances is small, so they are not boxed to save memory.
 #[allow(clippy::large_enum_variant)]
 pub enum FollowPolicy {
-    /// 固定在序列时间上。
+    /// Fixed to sequence time.
     SequenceFixed,
-    /// 跟着剪口移动与缩短。
+    /// Moves with the cuts and shortens with them.
     #[default]
     FollowCuts,
-    /// 跟着指定的片段移动与裁切。
+    /// Moves and is trimmed with the specified clip.
     ItemLocal { item_id: Id },
-    /// 起点、终点挂在词或句上，至少一个。
+    /// Start and end points are attached to words or sentences; at least one.
     SpeechAnchor {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         start: Option<SemanticAnchor>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         end: Option<SemanticAnchor>,
     },
-    /// 音画成组，按规则联动。
+    /// Audio and picture grouped, linked by rules.
     ExplicitLinkGroup { group_id: Id },
 }
 
-/// 语义锚（§3.16）。
+/// Semantic anchor (§3.16).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
 pub enum SemanticAnchor {
@@ -254,7 +253,7 @@ pub enum SemanticAnchor {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         occurrence_id: Option<Id>,
         edge: AnchorEdge,
-        /// 带符号的精确时长，映射到序列时间之后加上。
+        /// An exact signed duration, added after mapping to sequence time.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<MediaTime>,
     },
@@ -304,19 +303,19 @@ pub struct VideoItem {
     pub media: MediaFields,
     pub asset_ref: VersionRef,
     pub time_map: TimeMap,
-    /// 源画面的裁剪，在 `fit` 之前生效（§3.5）。
+    /// Cropping of the source picture, applied before `fit` (§3.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop: Option<Crop>,
-    /// 内嵌音频的路由。拆开成独立音频实例之前，跟着画面播放。
+    /// Routing of embedded audio. Until it is split into a separate audio instance, it plays along with the picture.
     pub embedded_audio: EmbeddedAudio,
 }
 
-/// 视频实例的内嵌音频、合成实例自己的声音（§3.9）。
+/// The embedded audio of a video instance, and the composition instance's own sound (§3.9).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddedAudio {
     pub enabled: bool,
-    /// 线性倍数，[0, 4]。
+    /// Linear multiplier, [0, 4].
     pub volume: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fade_in: Option<MediaTime>,
@@ -342,15 +341,15 @@ pub struct ImageItem {
     pub crop: Option<Crop>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<Tile>,
-    /// 图片的编辑来源（`file` / `html`）；渲染只用 `assetRef`。
+    /// The editing source of an image (`file` / `html`); rendering uses only `assetRef`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// `source` 为 `html` 时保留的原始片段。
+    /// The original fragment kept when `source` is `html`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
 }
 
-/// 文字实例：一段文字或计时读数，加文字样式（§3.6）。样式是 v2 的文字样式对象，引擎按对象保存。
+/// Text instance: a piece of text or a timer readout, plus text style (§3.6). The style is a v2 text-style object, which the engine saves as an object.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextItem {
@@ -360,7 +359,7 @@ pub struct TextItem {
     pub place: Place,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub animate: Option<Animation>,
-    /// 与 `counter` 二选一，必须有其一。
+    /// Exactly one of this and `counter` is required; one must be present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -369,14 +368,14 @@ pub struct TextItem {
     pub style: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_preset_id: Option<String>,
-    /// `top` / `center` / `bottom`：`place.y` 钉住文字块的哪一处，缺省 `center`。
+    /// `top` / `center` / `bottom`: which part of the text block `place.y` pins; default `center`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertical_align: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<Tile>,
 }
 
-/// 图形实例（§3.6）。
+/// Shape instance (§3.6).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShapeItem {
@@ -389,8 +388,8 @@ pub struct ShapeItem {
     pub shape: ShapeProps,
 }
 
-/// 贴纸（§3.7）：模板贴纸画目录里的矢量，素材贴纸画 `assetRef` 指向的图片、视频或 Lottie。
-/// `MediaFields` 只用于素材贴纸。
+/// Sticker (§3.7): a template sticker draws a vector from the catalog; a material sticker draws the image, video or Lottie that `assetRef` points to.
+/// `MediaFields` is used only for material stickers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StickerItem {
@@ -413,7 +412,7 @@ impl StickerItem {
     }
 }
 
-/// 声波（§3.7）。
+/// Waveform (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualizerItem {
@@ -426,7 +425,7 @@ pub struct VisualizerItem {
     pub visualizer: VisualizerProps,
 }
 
-/// 进度条（§3.7）。
+/// Progress bar (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressItem {
@@ -439,7 +438,7 @@ pub struct ProgressItem {
     pub progress: ProgressProps,
 }
 
-/// 手绘（§3.7）。
+/// Hand-drawn (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DrawItem {
@@ -452,7 +451,7 @@ pub struct DrawItem {
     pub draw: DrawProps,
 }
 
-/// 占位框（§3.7）：没有 `assetRef` 时画占位的外观，有时按视觉媒体画。
+/// Placeholder frame (§3.7): when there is no `assetRef`, draws a placeholder appearance; sometimes drawn as visual media.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaceholderItem {
@@ -469,7 +468,7 @@ pub struct PlaceholderItem {
     pub placeholder: PlaceholderProps,
 }
 
-/// 彩纸（§3.7）。
+/// Confetti (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfettiItem {
@@ -482,7 +481,7 @@ pub struct ConfettiItem {
     pub confetti: ConfettiProps,
 }
 
-/// 白板手绘（§3.7）：一个图片素材按推导出的顺序画出来。
+/// Whiteboard drawing (§3.7): an image material drawn in a derived order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WhiteboardItem {
@@ -498,7 +497,7 @@ pub struct WhiteboardItem {
     pub whiteboard: WhiteboardProps,
 }
 
-/// 合成实例：由代码包按局部时间画出来的画面（§3.7）。
+/// Composition instance: a picture drawn by the code package by local time (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompositionItem {
@@ -511,11 +510,11 @@ pub struct CompositionItem {
     pub source: CompositionSource,
     pub parameter_values: Value,
     pub time_map: TimeMap,
-    /// 预渲染替身：把这段合成渲染好的视频素材，与合成共用一条时间映射。
-    /// 合成的运行环境不可用或来不及实时渲染时，预览与导出用它代替。
+    /// Pre-rendered stand-in: the video material rendered from this composition, sharing one time mapping with the composition.
+    /// Preview and export use it in place of the composition when the composition's runtime is unavailable or cannot render in real time in time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prerender: Option<VersionRef>,
-    /// 合成自己发出的声音的路由；没有声音的合成不写。
+    /// Routing of the sound the composition itself emits; compositions with no sound do not write it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<EmbeddedAudio>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -524,14 +523,14 @@ pub struct CompositionItem {
     pub fx: Option<Fx>,
 }
 
-/// 合成的来源：代码包素材的一个版本（§4.3、代码包规范）。
+/// The source of the composition: a version of a code package material (§4.3, code package spec).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum CompositionSource {
     Bundle { asset_ref: VersionRef },
 }
 
-/// 字幕实例：在一段序列时间里显示一份字幕文档（§3.8）。它跟随文档的当前版本，所以引用的是文档 ID。
+/// Caption instance: shows a caption document over a span of sequence time (§3.8). It follows the document's current version, so it references the document ID.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptionItem {
@@ -541,12 +540,12 @@ pub struct CaptionItem {
     pub document_id: Id,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_document_id: Option<Id>,
-    /// 字幕的词时间经过哪些实例的 timeMap 投影到序列上。空表示文档里的时间已经是序列时间。
+    /// The instances whose timeMap projects the caption's word times onto the sequence. Empty means the times in the document are already sequence times.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scope_item_ids: Vec<Id>,
 }
 
-/// 音频实例：精确的开始位置是 `fromFrame` + `subframeOffset`，长度是 `playDuration`（§2.10）。
+/// Audio instance: the exact start position is `fromFrame` + `subframeOffset`, and the length is `playDuration` (§2.10).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioItem {
@@ -560,11 +559,11 @@ pub struct AudioItem {
     pub mix: AudioMix,
 }
 
-/// 混音（§3.9）。实例上保存的增益只有线性倍数 `volume`。
+/// Mix (§3.9). The gain stored on the instance is only the linear multiplier `volume`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioMix {
-    /// 线性倍数，[0, 4]，缺省 1。
+    /// Linear multiplier, [0, 4], default 1.
     pub volume: f64,
     #[serde(default, skip_serializing_if = "place::is_false")]
     pub muted: bool,
@@ -572,12 +571,12 @@ pub struct AudioMix {
     pub fade_in: Option<MediaTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fade_out: Option<MediaTime>,
-    /// 音量包络；有它时取代 `volume`。
+    /// Volume envelope; when present, replaces `volume`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub envelope: Vec<EnvelopePoint>,
 }
 
-/// 音量包络的一个点：时刻是实例局部的精确时间或实例长度的百分比，二选一。
+/// One point of the volume envelope: the time is either an exact time local to the instance or a percentage of the instance length, one or the other.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvelopePoint {
@@ -585,9 +584,9 @@ pub struct EnvelopePoint {
     pub at: Option<MediaTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<f64>,
-    /// 线性倍数，[0, 4]。
+    /// Linear multiplier, [0, 4].
     pub volume: f64,
-    /// 进入这一点的那一段的缓动，缺省 `linear`。
+    /// The easing of the segment leading into this point; default `linear`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ease: Option<String>,
 }
@@ -611,7 +610,7 @@ pub enum TimelineItem {
     Caption(CaptionItem),
 }
 
-/// 对每个画面实例（有 `span` 与 `place` 的种类）展开同一段代码。
+/// Expands the same code for each picture instance (kinds that have `span` and `place`).
 macro_rules! visual_items {
     ($value:expr, $item:ident => $body:expr, $other:pat => $fallback:expr) => {
         match $value {
@@ -649,7 +648,7 @@ impl TimelineItem {
         }
     }
 
-    /// `type` 的写法，同 v2 的 `ElementKind::as_str`（另有 `composition`、`caption`）。
+    /// The spelling of `type`, same as v2's `ElementKind::as_str` (plus `composition` and `caption`).
     pub fn kind_name(&self) -> &'static str {
         match self {
             TimelineItem::Video(_) => "video",
@@ -669,7 +668,7 @@ impl TimelineItem {
         }
     }
 
-    /// 实例引用的素材版本。文字、图形、字幕、模板贴纸与多数生成类元素没有。
+    /// The material version the instance references. Text, shapes, captions, template stickers and most generated elements do not have one.
     pub fn asset_ref(&self) -> Option<&VersionRef> {
         match self {
             TimelineItem::Video(v) => Some(&v.asset_ref),
@@ -686,7 +685,7 @@ impl TimelineItem {
         }
     }
 
-    /// 实例引用的全部素材版本：内容本身，加上合成的预渲染替身。
+    /// All material versions the instance references: the content itself, plus the composition's pre-rendered stand-in.
     pub fn asset_refs(&self) -> impl Iterator<Item = &VersionRef> {
         let prerender = match self {
             TimelineItem::Composition(c) => c.prerender.as_ref(),
@@ -695,7 +694,7 @@ impl TimelineItem {
         self.asset_ref().into_iter().chain(prerender)
     }
 
-    /// 帧网格上的区间。音频实例在采样级定位，没有。
+    /// A range on the frame grid. Audio instances are positioned at sample level, so they do not have one.
     pub fn span(&self) -> Option<FrameSpan> {
         match self {
             TimelineItem::Audio(_) => None,
@@ -712,7 +711,7 @@ impl TimelineItem {
         }
     }
 
-    /// 画面实例的几何。音频与字幕没有。
+    /// Geometry of a picture instance. Audio and captions do not have it.
     pub fn place(&self) -> Option<&Place> {
         visual_items!(self, item => Some(&item.place), _ => None)
     }
@@ -721,17 +720,17 @@ impl TimelineItem {
         visual_items!(self, item => Some(&mut item.place), _ => None)
     }
 
-    /// 元素动画的三槽。音频与字幕没有。
+    /// The three slots of element animation. Audio and captions do not have them.
     pub fn animate(&self) -> Option<&Animation> {
         visual_items!(self, item => item.animate.as_ref(), _ => None)
     }
 
-    /// 画面实例的 `animate` 字段本身（可写）。音频与字幕没有。
+    /// The `animate` field of a picture instance itself (writable). Audio and captions do not have it.
     pub fn animate_mut(&mut self) -> Option<&mut Option<Animation>> {
         visual_items!(self, item => Some(&mut item.animate), _ => None)
     }
 
-    /// 视觉媒体的公共字段：视频、图片、占位框、白板与素材贴纸。贴纸不分来源都给出（字段本身只对素材贴纸适用，写入时校验）。
+    /// Common fields of visual media: video, image, placeholder frame, whiteboard and material stickers. Stickers are given regardless of source (the field itself applies only to material stickers, and is checked on write).
     pub fn media(&self) -> Option<&MediaFields> {
         match self {
             TimelineItem::Video(v) => Some(&v.media),
@@ -754,7 +753,7 @@ impl TimelineItem {
         }
     }
 
-    /// 是否视觉媒体（§3.4）：视频、图片、占位框、白板，以及素材贴纸。
+    /// Whether it is visual media (§3.4): video, image, placeholder frame, whiteboard, and material stickers.
     pub fn is_visual_media(&self) -> bool {
         match self {
             TimelineItem::Video(_) | TimelineItem::Image(_) | TimelineItem::Placeholder(_) | TimelineItem::Whiteboard(_) => true,
@@ -763,7 +762,7 @@ impl TimelineItem {
         }
     }
 
-    /// 效果（§3.9）：视觉媒体与合成实例有。
+    /// Effects (§3.9): visual media and composition instances have them.
     pub fn fx(&self) -> Option<&Fx> {
         match self {
             TimelineItem::Composition(c) => c.fx.as_ref(),
@@ -771,7 +770,7 @@ impl TimelineItem {
         }
     }
 
-    /// `fx` 字段本身（可写）：视觉媒体（含贴纸）与合成实例有。
+    /// The `fx` field itself (writable): visual media (including stickers) and composition instances have it.
     pub fn fx_mut(&mut self) -> Option<&mut Option<Fx>> {
         match self {
             TimelineItem::Composition(c) => Some(&mut c.fx),
@@ -779,7 +778,7 @@ impl TimelineItem {
         }
     }
 
-    /// 遮罩（§3.9）：视觉媒体与合成实例有。
+    /// Mask (§3.9): visual media and composition instances have it.
     pub fn mask(&self) -> Option<&Mask> {
         match self {
             TimelineItem::Composition(c) => c.mask.as_ref(),
@@ -787,7 +786,7 @@ impl TimelineItem {
         }
     }
 
-    /// `mask` 字段本身（可写）：视觉媒体（含贴纸）与合成实例有。
+    /// The `mask` field itself (writable): visual media (including stickers) and composition instances have it.
     pub fn mask_mut(&mut self) -> Option<&mut Option<Mask>> {
         match self {
             TimelineItem::Composition(c) => Some(&mut c.mask),
@@ -795,7 +794,7 @@ impl TimelineItem {
         }
     }
 
-    /// 平铺（§3.5）：图片与文字有。
+    /// Tiling (§3.5): images and text have it.
     pub fn tile_mut(&mut self) -> Option<&mut Option<Tile>> {
         match self {
             TimelineItem::Image(i) => Some(&mut i.tile),
@@ -804,7 +803,7 @@ impl TimelineItem {
         }
     }
 
-    /// 实例时间到源时间的映射。没有源时间的实例（图片、文字、图形、生成类元素、字幕）没有。
+    /// Mapping from instance time to source time. Instances with no source time (images, text, shapes, generated elements, captions) do not have it.
     pub fn time_map_mut(&mut self) -> Option<&mut TimeMap> {
         match self {
             TimelineItem::Video(v) => Some(&mut v.time_map),
@@ -814,7 +813,7 @@ impl TimelineItem {
         }
     }
 
-    /// 实例时间到源时间的映射（只读）。
+    /// Mapping from instance time to source time (read-only).
     pub fn time_map(&self) -> Option<&TimeMap> {
         match self {
             TimelineItem::Video(v) => Some(&v.time_map),
@@ -839,17 +838,17 @@ pub enum AssetKind {
     Video,
     Audio,
     Image,
-    /// Lottie 动画（JSON），只由素材贴纸引用（§3.7）。
+    /// Lottie animation (JSON), referenced only by material stickers (§3.7).
     Lottie,
     Font,
     Caption,
     Document,
-    /// 代码包：一个目录（§4.3）。
+    /// Code package: a directory (§4.3).
     Bundle,
     Other,
 }
 
-/// 素材记录（§4.1）：身份与它的各个版本。版本一旦写入不再修改。
+/// Material record (§4.1): identity and its versions. Once a version is written it is not modified.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetRecord {
@@ -876,34 +875,34 @@ pub struct AssetRevision {
     pub video: Option<VideoInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioInfo>,
-    /// 素材是一个目录时的文件清单概要。
+    /// Summary of the file listing when the material is a directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<TreeInfo>,
-    /// 代码包的清单（代码包规范 §2）。引擎按对象保存。
+    /// The code package manifest (code package spec §2). The engine saves it as an object.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundle: Option<Value>,
     pub provenance: Provenance,
 }
 
-/// bytes 放在哪里（§4.2）。位置不属于版本的身份：收纳与重新链接不产生新版本。
+/// Where the bytes are kept (§4.2). Location is not part of a version's identity: collecting and relinking do not produce a new version.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum AssetStorage {
-    /// 在视频目录的 `blobs/` 里，按内容寻址。
+    /// In the video directory's `blobs/`, content-addressed.
     Managed,
-    /// 留在原处，视频只记下去哪里找。
+    /// Stays where it is; the video only records where to find it.
     Linked { locator: FileLocator, frozen: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileLocator {
-    /// 绝对路径，或相对视频目录的路径（文件在项目目录里时）。
+    /// An absolute path, or a path relative to the video directory (when the file is in the project directory).
     pub path: String,
-    /// 链接时文件的修改时间，用来便宜地发现「文件可能变了」。
+    /// The file's modification time at link time, used to cheaply detect that “the file may have changed”.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_at: Option<String>,
-    /// 所在卷的名字，文件找不到时用来提示「请接上某个盘」。
+    /// The name of the volume it is on, used to prompt “please connect a certain drive” when the file cannot be found.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub volume: Option<String>,
 }
@@ -912,7 +911,7 @@ pub struct FileLocator {
 #[serde(rename_all = "camelCase")]
 pub struct TreeInfo {
     pub file_count: u32,
-    /// 只收目录里的这些文件或子目录（相对路径）。省略表示整个目录。
+    /// Collect only these files or subdirectories in the directory (relative paths). Omitted means the whole directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include: Option<Vec<String>>,
 }
@@ -950,14 +949,14 @@ pub struct AudioInfo {
     pub layout: Option<String>,
 }
 
-/// 来源（§4.5）。本机路径只出现在 `storage.locator` 里，这里留原始文件名与出处。
+/// Source (§4.5). Local paths appear only in `storage.locator`; here the original file name and provenance are kept.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Provenance {
     pub origin: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported_from: Option<ImportedFrom>,
-    /// 已知的出处：来源网址、原平台的元数据、生成记录等。
+    /// Known provenance: source URL, metadata from the original platform, generation records and so on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
 }
@@ -969,20 +968,20 @@ pub struct ImportedFrom {
     pub imported_at: String,
 }
 
-/// 文档头（§4.4）：身份与各个版本的指纹。正文按版本保存在存储里，不随快照下发。
+/// Document header (§4.4): identity and fingerprints of each version. Bodies are saved per version in storage and are not sent with the snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentRecord {
     pub id: Id,
-    /// 文档的种类：`speech`、`translation`、`caption`、`caption-style`……（开放词表，§5）。
+    /// Document kind: `speech`, `translation`, `caption`, `caption-style`, ... (open vocabulary, §5).
     pub kind: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    /// 这份文档描述的素材（例如转写对应的录音）。
+    /// The material this document describes (for example, the recording a transcript corresponds to).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_asset_id: Option<Id>,
-    /// 这份文档派生自哪份文档（例如译文对应的转写）。
+    /// Which document this one is derived from (for example, the transcript a translation corresponds to).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_document_id: Option<Id>,
     pub current_revision: Revision,
@@ -998,9 +997,9 @@ pub struct DocumentRevision {
     pub content_hash: String,
     pub byte_length: u64,
     pub created_at: String,
-    /// 写入这个版本的事务。
+    /// The transaction that wrote this version.
     pub created_by: Id,
-    /// 正文的概要（词数、句数等），让列表与智能体不必读正文。
+    /// A summary of the body (word count, sentence count and so on), so that lists and agents need not read the body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<Value>,
 }
@@ -1025,7 +1024,7 @@ pub struct CheckpointOrigin {
     pub task_id: Option<Id>,
 }
 
-/// 保护（§3.10）。0.4 只读取与校验；设置保护的操作随任务合同出现。
+/// Protection (§3.10). In 0.4 it is only read and validated; operations that set protection appear with the task contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectionRecord {
@@ -1037,7 +1036,7 @@ pub struct ProtectionRecord {
     pub note: Option<String>,
 }
 
-/// 操作者：由 Runtime 从已认证的连接构造，客户端不能声明（命令与协议规范 §2.2）。
+/// The actor: constructed by the Runtime from the authenticated connection; clients cannot declare it (command and protocol spec §2.2).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Actor {
     pub kind: ActorKind,
@@ -1056,7 +1055,7 @@ pub enum ActorKind {
 mod tests {
     use super::*;
 
-    /// 早先的版本没有写 `followPolicy` 的实例读作缺省的 `follow-cuts`；写了的照原样。
+    /// Instances from earlier versions that did not write `followPolicy` are read as the default `follow-cuts`; those that did are kept as they are.
     #[test]
     fn a_missing_follow_policy_reads_as_follow_cuts() {
         let base = |extra: serde_json::Value| -> ItemBase {

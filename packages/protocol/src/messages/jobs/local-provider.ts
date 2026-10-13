@@ -14,7 +14,7 @@ import { pl } from './local-provider.pl.ts';
 import { tr } from './local-provider.tr.ts';
 import { vi } from './local-provider.vi.ts';
 
-/** `packages/jobs/src/local-provider.ts`：本地推理（Model Worker）的失败说明与合成警告。 */
+/** `packages/jobs/src/local-provider.ts`: failure explanations for local inference (Model Worker) and synthesis warnings. */
 const en = {
   assetUnreadable: "Couldn't read the asset",
   notHandled: (p: { capability: string }) => `The local Provider doesn't run ${p.capability}`,
@@ -57,7 +57,7 @@ const en = {
   workerExitedOnLoad: 'Model Worker exited while loading',
   crashedRepeatedly: (p: { minutes: number; count: number }) =>
     `Crashed ${p.count} ${p.count === 1 ? 'time' : 'times'} in ${p.minutes} ${p.minutes === 1 ? 'minute' : 'minutes'}`,
-  /** `origin`：`user` / `phrase` / `dict` / `llm`（注记的来源，原样显示）。 */
+  /** `origin`: `user` / `phrase` / `dict` / `llm` (the source of a note, shown as is). */
   readingDroppedOne: (p: { at: number; reading: string; origin: string }) =>
     `Character ${p.at} wasn't synthesized with the reading "${p.reading}" (${p.origin})`,
   readingDroppedRange: (p: { from: number; to: number; reading: string; origin: string }) =>

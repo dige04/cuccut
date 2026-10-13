@@ -12,10 +12,10 @@ import {
 import type { ConversationRecord } from '@cuccut/runtime-storage';
 import { TopicLog, type TopicSubscription } from './topic-log.ts';
 
-/** 流式文本增量的默认合并窗口（毫秒）。 */
+/** Default merge window for streaming text deltas (milliseconds). */
 export const DEFAULT_APPEND_WINDOW_MS = 60;
 
-/** 某个 `itemId + field` 的合并状态：上次发布时间与窗口内待发的增量。 */
+/** Merge state for an `itemId + field`: last publish time and deltas pending within the window. */
 interface PendingAppend {
   itemId: Id;
   field: 'text' | 'output';
@@ -25,12 +25,9 @@ interface PendingAppend {
 }
 
 /**
- * 一个会话的内存状态：持久记录 + 条目索引 + 事件流。
- * 每次修改都同步标脏，序号随记录一起落盘。
+ * In-memory state for one session: persistent record + entry index + event stream. Every modification marks dirty synchronously; the sequence number is saved to disk along with the record.
  *
- * 流式文本增量按 `itemId + field` 合并（架构设计 §11.3）：记录里的文本同步追加，
- * 事件则「前沿立即发、窗口内合并、到期发一次」。任何非 append 事件、订阅与快照读取之前
- * 先 `flush()`，所以客户端看到终态事件或拿到快照时，之前的文本增量都已按序发布。
+ * Streaming text deltas are merged by `itemId + field` (architecture design §11.3): the text in the record is appended synchronously, while events are "sent immediately at the leading edge, merged within the window, sent once when it expires". Before any non-append event, subscription, or snapshot read, `flush()` is called, so when a client sees a terminal event or gets a snapshot, all earlier text deltas have already been published in order.
  */
 export class ConversationState {
   readonly record: ConversationRecord;
@@ -97,7 +94,7 @@ export class ConversationState {
     return this.record.items.filter((item): item is Extract<TimelineItem, { kind: 'task' }> => item.kind === 'task');
   }
 
-  /** 追加流式文本。`output` 超过上限时只保留末尾。 */
+  /** Appends streaming text. When `output` exceeds the limit, only the tail is kept. */
   append(id: Id, field: 'text' | 'output', delta: string): void {
     const item = this.item(id);
     if (!item || !delta) return;
@@ -112,12 +109,12 @@ export class ConversationState {
     this.#queueAppend(id, field, delta);
   }
 
-  /** 把所有待发的文本增量立即按序发布。 */
+  /** Immediately publishes all pending text deltas, in order. */
   flush(): void {
     for (const entry of this.#appends.values()) this.#publishPending(entry);
   }
 
-  /** 订阅前先 flush：快照里已含待发增量，不 flush 的话订阅者会再收到一遍同一段文本。 */
+  /** Flush before subscribing: the snapshot already contains pending deltas; without a flush, the subscriber would receive the same text again. */
   subscribe(
     afterSeq: Seq | undefined,
     listener: (event: SequencedEvent<ConversationEvent>) => void,
@@ -126,13 +123,13 @@ export class ConversationState {
     return this.log.subscribe(afterSeq, listener);
   }
 
-  /** 会话被丢弃：清掉定时器，未发的增量不再发布（订阅者随后被断开）。 */
+  /** Session discarded: clears the timer; unsent deltas are no longer published (subscribers are then disconnected). */
   dispose(): void {
     for (const entry of this.#appends.values()) if (entry.timer) clearTimeout(entry.timer);
     this.#appends.clear();
   }
 
-  /** `touch: false`：置顶、已读这类整理动作不算活动，不改变「最近活动」的排序。 */
+  /** `touch: false`: organizing actions like pinning or marking as read don't count as activity and don't change the "recent activity" ordering. */
   updateConversation(patch: Partial<Omit<Conversation, 'id'>>, options: { touch?: boolean } = {}): Conversation {
     const previous = this.record.conversation;
     const next = { ...previous, ...patch, updatedAt: options.touch === false ? previous.updatedAt : nowIso() };
@@ -152,7 +149,7 @@ export class ConversationState {
       this.#appends.set(key, entry);
     }
     entry.delta += delta;
-    if (entry.timer) return; // 窗口内已有待发定时器：只合并
+    if (entry.timer) return; // A pending timer already exists within the window: only merge
     const wait = entry.lastPublishedAt + this.#appendWindowMs - now;
     if (wait <= 0) {
       this.#publishPending(entry);
@@ -174,7 +171,7 @@ export class ConversationState {
     this.#publish({ type: 'item.append', itemId: entry.itemId, field: entry.field, delta });
   }
 
-  /** 丢掉窗口早已过去、没有待发内容的条目，避免长会话里 Map 一直增长。 */
+  /** Drops entries whose window has long passed and that have nothing pending, so the Map doesn't grow forever in long sessions. */
   #prune(now: number): void {
     if (this.#appends.size < 64) return;
     for (const [key, entry] of this.#appends) {
@@ -182,7 +179,7 @@ export class ConversationState {
     }
   }
 
-  /** 非 append 事件：完成边界，先刷出待发增量。 */
+  /** Non-append event: a completion boundary; flushes pending deltas first. */
   #publishOrdered(event: ConversationEvent): void {
     this.flush();
     this.#publish(event);

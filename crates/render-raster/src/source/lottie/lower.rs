@@ -1,15 +1,12 @@
-//! Lottie 图层树 → DrawOp。
+//! Lottie layer tree → DrawOp.
 //!
-//! **直接发原语，不先光栅化**（ADR-M11）：形状/描边/渐变落在 `FillPathPaint` /
-//! `StrokePathPaint`，图层不透明度与混合落在 `PushLayer`，遮罩与轨道遮罩落在
-//! `ClipPath` 或 `PushMatte`/`PopMatte`。这样 Lottie 与 BCF 自己的元素共享一条
-//! 指令流、一份帧指纹、一套静止帧缓存，而且矢量内容跟着元素盒缩放，不会先
-//! 光栅化到素材原尺寸再拉伸糊掉。
+//! **Emit primitives directly, without rasterizing first** (ADR-M11). Shape, stroke and gradient land in `FillPathPaint` and
+//! `StrokePathPaint`. Layer opacity and blend land in `PushLayer`. Masks and track mattes land in `ClipPath` or `PushMatte`/`PopMatte`. This way Lottie and BCF's own elements share one command
+//! stream, one frame fingerprint and one still-frame cache. Vector content also scales with the element box, instead of being rasterized first at the source size and then stretched and blurred.
 //!
-//! 时间一律用**合成帧号**（f64）。图层可见性按父合成帧比 `ip`/`op`，图层自己
-//! 的属性按 `compFrame − st` 求值，预合成的内部帧再除以 `sr` 或走时间重映射
-//! ——与 lottie-web 的口径一致（rlottie 把 `sr` 也摊到普通图层上，本实现跟
-//! lottie-web，因为它是事实参考实现）。
+//! Time is always the **composition frame number** (f64). Layer visibility is checked against the parent composition frame using `ip` and `op`. A layer's own properties are evaluated at
+//! `compFrame − st`. The internal frames of a precomposition are then divided by `sr`, or go through time remapping.
+//! This follows lottie-web's convention. rlottie also spreads `sr` across ordinary layers, but this implementation follows lottie-web because it is the de facto reference implementation.
 
 use super::geometry::{self, Affine, Contour, ShapePath};
 use super::schema::{Animation, Gradient, Layer, LayerKind, ShapeItem, StrokeStyle, color_at};
@@ -18,12 +15,12 @@ use anyhow::{Result, bail};
 use motion::effect::BlendMode;
 use std::collections::BTreeMap;
 
-/// 一次录制的上下文。
+/// Context for one recording.
 pub struct Lowering<'a> {
     doc: &'a Animation,
-    /// Lottie 图片资源 id → DrawOp string 侧表里的资产名。
+    /// Maps a Lottie image asset id to the asset name in the string side table of DrawOp.
     images: &'a BTreeMap<String, String>,
-    /// 预合成递归深度上限：素材里互相引用会无限递归，这里直接拒。
+    /// Upper limit on precomposition recursion depth. Assets that reference each other would recurse forever, so they are rejected here.
     depth: usize,
 }
 
@@ -38,9 +35,9 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// 录制整段动画在 `frame`（合成帧号）的指令。`tf` 把合成坐标系放到画布上。
+    /// Records the instructions for the whole animation at `frame` (a composition frame number). `tf` places the composition coordinate system onto the canvas.
     pub fn record(&self, frame: f64, tf: Affine, b: &mut FrameBuilder) -> Result<()> {
-        // 根合成裁到自己的画幅：播放器都这么做，不裁会让越界图层糊到元素盒外
+        // The root composition is clipped to its own frame size, as players do. Without clipping, out-of-bounds layers would bleed outside the element box.
         let clip = rect_path(self.doc.width, self.doc.height);
         let path = b.path_id(clip.to_path_data());
         b.push(DrawOp::ClipPath {
@@ -59,7 +56,7 @@ impl<'a> Lowering<'a> {
         tf: Affine,
         b: &mut FrameBuilder,
     ) -> Result<()> {
-        // bodymovin 的 layers[0] 是最上层；画的时候从最下面开始
+        // In bodymovin, layers[0] is the topmost layer, so drawing starts from the bottom.
         let mut consumed = vec![false; layers.len()];
         for idx in (0..layers.len()).rev() {
             if consumed[idx] {
@@ -67,7 +64,7 @@ impl<'a> Lowering<'a> {
             }
             let layer = &layers[idx];
             if layer.hidden || layer.is_matte_source {
-                // 遮罩源自己不出画；它由下面那层在 `matte_source` 里取用
+                // A matte source is not drawn itself. The layer below uses it through `matte_source`.
                 continue;
             }
             let matte = layer.matte.and_then(|mode| {
@@ -97,17 +94,15 @@ impl<'a> Lowering<'a> {
         if !visible(layer, frame) {
             return Ok(());
         }
-        // **属性时间就是所在合成的帧号**，不减 `st`。AE 把图层自己的关键帧写在
-        // **合成时间轴**上；`st`（Start Time）说的是"这一层的**源**从哪一帧开始"
-        // ——它只该挪预合成的内部时钟。踩过一次：把 `st` 也摊到属性上，某个
-        // `st = -25` 的 spinner 里 8 条 `tm` 轨（关键帧正好铺满 `[ip, op) = [0,22]`）
-        // 被整体推出取值范围，全部退化成末值常量，画面静止。
+        // **Property time is the frame number of the containing composition**, not minus `st`. AE writes a layer's own keyframes on the
+        // **composition timeline**. `st` (Start Time) means "the frame at which the **source** of this layer begins", and it should only
+        // shift the internal clock of the precomposition. I hit this once: when `st` was also subtracted from the properties, a spinner with `st = -25` had its 8 `tm` tracks
+        // (keyframes exactly covering `[ip, op) = [0,22]`) pushed wholesale outside the value range. They all degenerated into the constant end value, and the picture froze.
         //
-        // lottie-web 5.13.0 看着像在减 `st`，其实两边一起减、正好抵消：
-        // `getValueAtCurrentTime` 取 `frameNum = comp.renderedFrame − offsetTime`，
-        // 而查找与插值用的关键帧时刻也是 `keyData.t − offsetTime`
-        // （`lottie.js:3022/2802/2827`，形状属性 `:3491/:3516` 同款），
-        // `offsetTime = elem.data.st` 在差里消掉——等价于直接拿合成帧比原始 `t`。
+        // lottie-web 5.13.0 looks as if it subtracts `st`, but both sides subtract it and it cancels:
+        // `getValueAtCurrentTime` takes `frameNum = comp.renderedFrame − offsetTime`,
+        // while the keyframe times used for lookup and interpolation are also `keyData.t − offsetTime`
+        // (`lottie.js:3022/2802/2827`; shape properties `:3491/:3516` are the same). `offsetTime = elem.data.st` cancels in the difference. This is equivalent to taking the composition frame directly against the raw `t`.
         let local = frame;
         let alpha = layer.transform.alpha(local);
         if alpha <= 0.0 {
@@ -115,7 +110,7 @@ impl<'a> Lowering<'a> {
         }
         let matrix = self.layer_matrix(siblings, layer, frame).then(tf);
 
-        // 遮罩：单个满不透明的 add 遮罩走裁剪快路径，其余走离屏遮罩层
+        // Masks: a single fully opaque add mask takes the clip fast path. The rest go through an offscreen mask layer.
         let masks = MaskPlan::of(layer, local);
         let needs_layer = alpha < 1.0
             || layer.blend != BlendMode::Normal
@@ -176,11 +171,11 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
-    /// 图层自身矩阵 + 父链（`parent` 指向同一合成里的另一图层的 `ind`）。
+    /// The layer's own matrix plus its parent chain (`parent` points to the `ind` of another layer in the same composition).
     fn layer_matrix(&self, siblings: &[Layer], layer: &Layer, frame: f64) -> Affine {
         let mut matrix = layer.transform.matrix(frame);
         let mut parent = layer.parent;
-        // 父链上限 = 图层数：环形父链在这里自然终止，不会死循环
+        // Upper bound on the parent chain is the number of layers. A circular parent chain terminates naturally here, so it cannot loop forever.
         for _ in 0..siblings.len() {
             let Some(index) = parent else { break };
             let Some(next) = siblings.iter().find(|candidate| candidate.index == index) else {
@@ -235,7 +230,7 @@ impl<'a> Lowering<'a> {
                     );
                 };
                 let asset = b.string_id(name);
-                // 图片按天然尺寸画在图层原点；元素盒的缩放由 `matrix` 承担
+                // Images are drawn at their natural size at the layer origin. The scaling of the element box is carried by `matrix`.
                 let needs_alpha = alpha < 1.0;
                 if needs_alpha {
                     b.push(DrawOp::PushLayer {
@@ -270,9 +265,9 @@ impl<'a> Lowering<'a> {
                         layer.name
                     );
                 };
-                // **只有这里用 `st` / `sr`**：预合成的内部时钟。
-                // 有时间重映射时它给出的就是绝对内部帧（属性本身按合成帧求值）；
-                // 没有时才按 `(合成帧 − st) / sr` 平移伸缩。
+                // **Only `st` and `sr` are used here**, for the internal clock of the precomposition.
+                // When there is time remapping, it gives the absolute internal frame directly (the properties themselves are evaluated by composition frame).
+                // Otherwise it translates and scales by `(composition frame − st) / sr`.
                 let inner = match &layer.time_remap {
                     Some(remap) => remap.scalar(local) * self.doc.fr,
                     None => (local - layer.start) / layer.stretch,
@@ -308,19 +303,17 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    // ── 形状树 ─────────────────────────────────────────────────────
+    // ── shape tree ─────────────────────────────────────────────────────
 
-    /// 一个形状组。
+    /// One shape group.
     ///
-    /// AE 的形状组有两条**方向相反**的规则，这里都要照顾到：
+    /// AE's shape groups have two rules that run in **opposite directions**, and both must be handled here:
     ///
-    /// * 画笔（fill / stroke / 修改器）作用于它**上方**的路径——也就是数组里
-    ///   排在它**前面**的条目。于是路径要**正序**累积。
-    /// * 排在前面的条目画在**上层**。于是绘制要**倒序**发出。
+    /// * Brushes (fill, stroke, modifiers) act on the path **above** them. That means the entries that come **before** them in the array. So paths accumulate in **forward** order.
+    /// * Entries that come earlier are drawn **on top**. So drawing is emitted in **reverse** order.
     ///
-    /// 所以先正序走一遍把绘制记成 [`Pending`]，最后整组倒转；嵌套组作为一个
-    /// 整体块参与倒转，块内已经自己倒过了。返回值是本组产出的路径（已折进
-    /// 本组的 `tr`），供父组上方的画笔继续使用。
+    /// The code therefore walks forward first and records the draws as [`Pending`], then reverses the whole group at the end. A nested group takes part in the reversal as one block, and the block has already been reversed internally. The return value is the paths this group produces (already folded
+    /// with this group's `tr`), for use by brushes above the parent group.
     fn render_shapes(
         &self,
         items: &[ShapeItem],
@@ -336,19 +329,14 @@ impl<'a> Lowering<'a> {
         let group_tf = group.map(|t| t.matrix(frame)).unwrap_or(Affine::IDENTITY);
         let local_tf = group_tf.then(tf);
         let local_alpha = alpha * group.map(|t| t.alpha(frame)).unwrap_or(1.0);
-        // 修改器（Trim / Round Corners）作用于排在它**上方**的一切画笔，无论
-        // 画笔是本组里排在它前面的条目，还是更上方子组里的条目：
+        // Modifiers (Trim, Round Corners) act on all brushes **above** them, whether those brushes are entries earlier in this group or entries in a higher sub-group.
         //
-        // * 同组：`[sh, st, tm, tr]` 是 Trim Paths 描边动画最常见的写法（AE 面板
-        //   里 Trim 在 Stroke 下面）。按数组正序走到 `st` 时 `tm` 还没套上，
-        //   所以画笔必须自己回看 `items[index + 1..]`——否则描边永远整条画出，
-        //   Noto「Rainbow」那种生长动画就退化成一条静止的满弧。
-        // * 跨组：Noto「Chart Increasing」的折线是 `[gr{sh, st}, tm]`——描边在
-        //   子组里、tm 在父组里，靠 `inherited` 下传。
+        // * Same group: `[sh, st, tm, tr]` is the most common way to write a Trim Paths stroke animation (in the AE panel, Trim sits below Stroke). When walking forward and reaching `st`, `tm` has not been applied yet.
+        //   So the brush must look back at `items[index + 1..]` itself. Otherwise the stroke would always be drawn in full, and the Noto "Rainbow" growth animation would degrade into a static full arc.
+        // * Across groups: the Noto "Chart Increasing" polyline is `[gr{sh, st}, tm]`. The stroke is in the sub-group and tm is in the parent group, and `inherited` passes it down.
         //
-        // 两段按「先本组、后继承」的顺序套，和子组拿到的 `passed` 同一口径。
-        // 修改器在本组的局部坐标上套用（Trim 是百分比、对仿射变换不敏感；
-        // Round Corners 的半径不折算 `tr` 缩放，属可接受的近似）。
+        // The two passes are applied in the order "this group first, then inherited". This is the same convention as the `passed` that sub-groups receive.
+        // Modifiers are applied in the group's local coordinates. (Trim uses percentages and is insensitive to affine transforms. Round Corners' radius does not fold in the `tr` scale, which is an acceptable approximation.)
         let painted = |index: usize, paths: &ShapePath| -> ShapePath {
             items[index + 1..]
                 .iter()
@@ -363,7 +351,7 @@ impl<'a> Lowering<'a> {
             match item {
                 ShapeItem::Transform(_) | ShapeItem::MergeAppend => {}
                 ShapeItem::Group { items: sub_items } => {
-                    // 本组里排在子组下方的修改器先套，再套更外层继承来的。
+                    // Modifiers in this group that sit below a sub-group are applied first, then the modifiers inherited from further out.
                     let mut passed: Vec<Modifier> = items[index + 1..]
                         .iter()
                         .filter_map(|item| Modifier::evaluate(item, frame))
@@ -531,8 +519,7 @@ impl<'a> Lowering<'a> {
     }
 }
 
-/// 某一帧上已求值的路径修改器（Trim Paths / Round Corners），用来从父组
-/// 下传给排在它上方的子组。
+/// Path modifiers (Trim Paths, Round Corners) evaluated at one frame. Used to pass them down from a parent group to sub-groups that sit above it.
 #[derive(Clone, Debug)]
 enum Modifier {
     Trim {
@@ -580,8 +567,7 @@ impl Modifier {
     }
 }
 
-/// 一条待发的绘制。先记后发，才能同时满足「画笔取上方的路径」与
-/// 「上方的条目画在上层」这两条方向相反的规则。
+/// One pending draw. Recording first and emitting later lets both rules be satisfied at once: brushes take the paths above them, and entries above are drawn on top. These two rules run in opposite directions.
 enum Pending {
     Fill {
         path: ShapePath,
@@ -598,7 +584,7 @@ enum Pending {
         miter: f64,
         tf: Affine,
     },
-    /// 嵌套组：块内顺序已经定好，整体参与外层的倒转。
+    /// Nested group. The order inside the block is already settled, and as a whole it takes part in the outer reversal.
     Block(Vec<Pending>),
 }
 
@@ -650,7 +636,7 @@ fn visible(layer: &Layer, frame: f64) -> bool {
     frame >= layer.in_point && frame < layer.out_point
 }
 
-/// 中心在原点、尺寸 `w × h` 的矩形——纯粹是"左上角在 (0,0)"的画幅框。
+/// A rectangle centered at the origin with size `w × h`. It is simply the frame box whose top-left corner is at (0,0).
 fn rect_path(w: f64, h: f64) -> ShapePath {
     ShapePath::single(Contour {
         v: vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]],
@@ -705,7 +691,7 @@ fn stroke(
     })
 }
 
-/// 渐变 → paint 侧表条目。几何在形状本地坐标系里（与 op 的 `tf` 同一系）。
+/// Gradient → paint-side table entry. The geometry is in the shape's local coordinate system (the same frame as the op's `tf`).
 fn gradient_paint(gradient: &Gradient, frame: f64, alpha: f64) -> PaintData {
     let start = gradient.start.point(frame);
     let end = gradient.end.point(frame);
@@ -720,7 +706,7 @@ fn gradient_paint(gradient: &Gradient, frame: f64, alpha: f64) -> PaintData {
     let dx = end[0] - start[0];
     let dy = end[1] - start[1];
     let radius = (dx * dx + dy * dy).sqrt();
-    // 高光：沿 `a` 角、离圆心 `h`%（夹在 99% 以内，焦点落到圆周上会退化）
+    // Highlight: along angle `a`, at `h`% from the center (clamped to within 99%, since a focal point on the circumference would degenerate).
     let highlight = (gradient.highlight_length.scalar(frame) / 100.0).clamp(-0.99, 0.99);
     let angle = gradient.highlight_angle.scalar(frame).to_radians();
     let focus = [
@@ -735,8 +721,7 @@ fn gradient_paint(gradient: &Gradient, frame: f64, alpha: f64) -> PaintData {
     }
 }
 
-/// 扁平色标数组 → 色标表。颜色标与透明标各有自己的 offset 列表，取并集后
-/// 在两边各自插值——只取颜色标会把中途的透明变化整个丢掉。
+/// Flat color-stop array → color-stop table. Color stops and alpha stops each have their own offset list. Take the union and interpolate each on its own. Using only the color stops would drop all mid-way transparency changes.
 fn gradient_stops(gradient: &Gradient, frame: f64, alpha: f64) -> Vec<GradientStop> {
     let data = gradient.stops.value(frame);
     let count = gradient.stop_count.min(data.len() / 4);
@@ -837,12 +822,12 @@ fn interpolate_scalar(stops: &[(f64, f64)], at: f64) -> f64 {
     last.1
 }
 
-/// 图层遮罩的落地方式。
+/// How a layer mask is realized.
 enum MaskPlan {
     None,
-    /// 单个满不透明的 add 遮罩：一条 `ClipPath` 就够，不必起离屏层。
+    /// A single fully opaque add mask. One `ClipPath` is enough, with no offscreen layer needed.
     Clip(Contour),
-    /// 其余情况：遮罩形状画进离屏遮罩层，按 alpha 折进内容。
+    /// Otherwise: the mask shape is drawn into an offscreen mask layer and folded into the content by alpha.
     Matte(Vec<(Contour, f64)>),
 }
 
@@ -911,9 +896,7 @@ mod tests {
         json!({"ty": "fl", "c": {"a": 0, "k": [1, 0, 0, 1]}, "o": {"a": 0, "k": 100}})
     }
 
-    /// Noto「Rainbow」的彩虹弧：`[sh, st, tm, tr]`——Trim Paths 和描边在**同一组**
-    /// 里、排在描边下方。这是 Trim 生长动画最常见的写法；按数组正序画的话走到
-    /// `st` 时 `tm` 还没套上，整条弧会被画满，动画整体丢失。
+    /// Noto "Rainbow" rainbow arc: `[sh, st, tm, tr]`. Trim Paths and the stroke are in **the same group**, with the stroke below. This is the most common way to write a Trim growth animation. If it were drawn in array order, `tm` would not yet be applied when reaching `st`. The whole arc would then be drawn in full, and the animation would be lost.
     #[test]
     fn a_trim_below_a_stroke_in_the_same_group_trims_that_stroke() {
         fn doc(trim_end: f64) -> serde_json::Value {
@@ -950,8 +933,7 @@ mod tests {
         );
     }
 
-    /// Noto「Chart Increasing」的折线：描边在子组里、Trim Paths 在父组里排在
-    /// 子组下方。Trim 必须下传，否则折线整条画出、动画丢失。
+    /// Noto "Chart Increasing" polyline: the stroke is in a sub-group, and Trim Paths is in the parent group, ranked below the sub-group. Trim must be passed down. Otherwise the polyline would be drawn in full and the animation lost.
     #[test]
     fn a_trim_after_a_nested_group_trims_that_groups_stroke() {
         fn doc(trim_end: f64) -> serde_json::Value {

@@ -1,24 +1,24 @@
 /**
- * 标注的桥（docs/design/slides §8.2）：运行时的 `comments.customAnchors` 在 iframe 里，批注框与草稿在父窗口。
+ * Bridge for annotations (docs/design/slides §8.2). The runtime's `comments.customAnchors` runs in the iframe, while the composer and drafts live in the parent window.
  *
- * 1. 用户在编辑器里打开标注模式（运行时的按钮、快捷键 C，或父窗口的 `editor:set-mode`），点一个元素或框一块区域；
- * 2. 运行时调 `compose(anchor, point, { label, detail, area })`，这里转成 `editor:compose` 发给父窗口；
- * 3. 父窗口在对应位置弹出批注框，回 `editor:compose-result`；关掉时回 `editor:composer-closed`；
- * 4. 父窗口把草稿里属于这份 deck 的标注经 `editor:threads` 交回来，运行时算出位置（`placed`），这里画编号标记。
+ * 1. The user turns on annotation mode in the editor (the runtime's button, the C shortcut, or the parent's `editor:set-mode`), then clicks an element or drags out an area;
+ * 2. The runtime calls `compose(anchor, point, { label, detail, area })`, which is forwarded here as `editor:compose` to the parent window;
+ * 3. The parent window opens the composer at the matching position and replies with `editor:compose-result`; when it closes, it replies with `editor:composer-closed`;
+ * 4. The parent window sends back the annotations in its drafts that belong to this deck via `editor:threads`; the runtime computes their positions (`placed`), and here the numbered markers are drawn.
  *
- * 标记只是显示，不接收点击：运行时在标注模式下把容器外的按下当作退出标注模式。
+ * Markers are display only and do not take clicks: in annotation mode, the runtime treats a press outside the container as leaving annotation mode.
  */
 import type { EditorPoint, EditorThread, EditorToHostMessage, HostToEditorMessage } from '../editor-messages.ts';
 import { readHostMessage } from '../editor-messages.ts';
 import type { HostCommentsCapability, CommentAnchorController, CommentAnchorHandlers } from './slides-host.ts';
 
-/** 与父窗口的通道。 */
+/** Channel to the parent window. */
 export interface ParentLink {
   post(message: EditorToHostMessage): void;
   onMessage(listener: (message: HostToEditorMessage) => void): () => void;
 }
 
-/** 在 iframe 里时连到父窗口；页面单独打开（不在 iframe 里）时 null。 */
+/** Connects to the parent window when running inside an iframe; null when the page is opened on its own (not in an iframe). */
 export function windowParentLink(win: Window): ParentLink | null {
   if (win.parent === win) return null;
   return {
@@ -35,14 +35,14 @@ export function windowParentLink(win: Window): ParentLink | null {
   };
 }
 
-/** 画编号标记的图层。 */
+/** Layer that draws the numbered markers. */
 export interface PinLayer {
-  /** `positions` 是文档坐标；只画在 `threads` 里有编号的（`n` 不大于 0 的是父窗口为跳转临时给的，不画）。 */
+  /** `positions` are document coordinates. Only threads that have a number in `threads` are drawn (those with `n` not greater than 0 are temporary ones the parent window provides for jumping, and are not drawn). */
   render(positions: Record<string, EditorPoint>, threads: readonly EditorThread[]): void;
   clear(): void;
 }
 
-/** 文档里的一层绝对定位的编号标记（S2 蓝底白字的圆）。 */
+/** A layer of absolutely positioned numbered markers in the document (S2 white-on-blue circles). */
 export function domPinLayer(doc: Document): PinLayer {
   let layer: HTMLDivElement | null = null;
   const ensure = () => {
@@ -91,13 +91,13 @@ export function domPinLayer(doc: Document): PinLayer {
 
 export interface CommentsBridge {
   capability: HostCommentsCapability;
-  /** 标注模式开着没有。 */
+  /** Whether annotation mode is on. */
   readonly mode: boolean;
-  /** 停止收父窗口的消息。 */
+  /** Stops listening to messages from the parent window. */
   dispose(): void;
 }
 
-/** 批注框没回应时多久算没打开。 */
+/** How long to wait for the composer to respond before treating it as not opened. */
 const COMPOSE_TIMEOUT_MS = 10_000;
 
 export function createCommentsBridge(link: ParentLink, pins: PinLayer, newId: () => string = () => crypto.randomUUID()): CommentsBridge {
@@ -105,7 +105,7 @@ export function createCommentsBridge(link: ParentLink, pins: PinLayer, newId: ()
   let mode = false;
   let threads: EditorThread[] = [];
   let lastPositions: Record<string, EditorPoint> = {};
-  /** 正开着批注框的那次 compose。 */
+  /** The compose call whose composer is currently open. */
   let composing: string | null = null;
   const pending = new Map<string, (result: { opened: boolean }) => void>();
 
@@ -115,7 +115,7 @@ export function createCommentsBridge(link: ParentLink, pins: PinLayer, newId: ()
     if (mode === on) return;
     mode = on;
     handlers?.mode(on);
-    // 运行时关标注模式时会清空它手上的标注，再打开要重新给
+    // When the runtime turns off annotation mode it clears the annotations it holds, so they must be given again when it is turned back on
     if (on) feedThreads();
     else pins.clear();
     link.post({ type: 'editor:mode', on });
@@ -154,10 +154,10 @@ export function createCommentsBridge(link: ParentLink, pins: PinLayer, newId: ()
         setMode(message.on);
         return;
       case 'editor:flush':
-        // 由 editor-host 处理
+        // Handled by editor-host
         return;
       case 'editor:suggest-prompt-result':
-        // 由 chat-bridge 处理
+        // Handled by chat-bridge
         return;
     }
   });
@@ -171,7 +171,7 @@ export function createCommentsBridge(link: ParentLink, pins: PinLayer, newId: ()
         areas: true,
         compose(anchor, point, description) {
           const requestId = newId();
-          // 上一次还开着就先当它关了：父窗口同一时间只开一个批注框
+          // If one is still open, close it first: the parent window only opens one composer at a time
           if (composing !== null) settle(composing, false);
           composing = requestId;
           handlers?.composing(true);

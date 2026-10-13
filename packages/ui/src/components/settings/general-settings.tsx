@@ -46,13 +46,12 @@ import { useSaveSettings, useSettingsReady } from './save-settings.ts';
 import { SettingsGroup, SettingsRow } from './settings-ui.tsx';
 
 /*
- * 设置 › 通用（设计稿 page-settings.jsx `GeneralSection`、settings-update.jsx `AppUpdateAutoRow`、import-panel.jsx
- * `DownloaderSettings`）：界面、编辑与转录、下载与更新三组照设计稿；合同里有、设计稿这一页没画的键（下载来源、严格离线、
- * 回收站保留天数）按同样的行补在后面。取值读设置镜像（`useSetting`），改了就 `settings.set`，有效值经 `settings` 主题回来。
+ * Settings › General (design mockup page-settings.jsx `GeneralSection`, settings-update.jsx `AppUpdateAutoRow`, import-panel.jsx
+ * `DownloaderSettings`): the interface, editing and transcription, and download and update groups follow the design mockup. Keys that the contract has but this page of the design mockup does not draw (download source, strict offline,
+ * trash retention days) are appended after them in the same style. Values are read from the settings mirror (`useSetting`); a change calls `settings.set`, and the effective value comes back through the `settings` topic.
  *
- * 不造假：Runtime 与界面都还没有用到的键（转录完成后、字幕行长）以及设计稿里没有实现的项（cue 底纹）照样画出来，
- * 但置灰，行下写一句为什么。自动更新由桌面主进程按这两个键执行，只在管更新的桌面宿主里出现。分组与行的样式与设置页的
- * SettingsGroup / SettingsRow 相同（settings-ui.tsx 的面板与行）。外观（浅色/深色）不再提供：CucCut 只有深色。
+ * No fakes: keys that neither the Runtime nor the UI uses yet (after transcription completes, subtitle line length), and items the design mockup does not implement (cue background), are still drawn,
+ * but greyed out, with a line below each explaining why. Auto-update is executed by the desktop main process using these two keys, and appears only in the desktop host that manages updates. Groups and rows are styled the same as SettingsGroup / SettingsRow on the settings page (the panel and row in settings-ui.tsx). Appearance (light/dark) is no longer offered: CucCut is dark only.
  */
 
 const fieldLine = style({ display: 'flex', alignItems: 'start', flexWrap: 'wrap', gap: 8, paddingBottom: 4 });
@@ -99,7 +98,7 @@ function InterfaceGroup() {
   );
 }
 
-/** 编辑与转录：三项都还没有人用，照设计稿画、置灰，写明现在实际怎么做。 */
+/** Editing and transcription: none of the three items is used yet. They are drawn per the design mockup and greyed out, with a note stating what actually happens now. */
 function EditingGroup() {
   const after = useSetting('transcribe.afterComplete');
   const lineLength = useSetting('captions.maxLineLength');
@@ -137,9 +136,9 @@ function DownloadsGroup({ web, ready }: { web: boolean; ready: boolean }) {
 }
 
 /**
- * 自动检查并下载更新（设计稿 settings-update.jsx `AppUpdateAutoRow`）：一个开关管两个键——打开时两个都开，关上只关自动下载
- * （照样按节奏检查，发现新版本提醒「可以更新了」）。主进程按这两个键排检查与下载。宿主没有更新面（网页）或这一份不管更新
- * （开发构建、App Store 版）时这一行不出现。
+ * Automatically check for and download updates (design mockup settings-update.jsx `AppUpdateAutoRow`): one toggle controls two keys. When on, both are on; when off, only automatic download is turned off
+ * (it still checks on schedule, and when a new version is found it reminds the user “ready to update” (可以更新了)). The main process schedules checks and downloads by these two keys. This row does not appear when the host has no update surface (web) or when this build does not manage updates
+ * (development build, App Store build).
  */
 function AutoUpdateRow({ ready }: { ready: boolean }) {
   const updatable = useRuntime().host.updates !== undefined;
@@ -160,7 +159,7 @@ function AutoUpdateRow({ ready }: { ready: boolean }) {
   );
 }
 
-/** 默认保存位置（`downloads.directory`）：系统面板选文件夹；浏览器里选不了本机文件夹。 */
+/** Default save location (`downloads.directory`): the system panel picks the folder; in the browser a local folder cannot be picked. */
 function SaveDirRow({ web, ready }: { web: boolean; ready: boolean }) {
   const runtime = useRuntime();
   const save = useSaveSettings();
@@ -208,9 +207,9 @@ function SaveDirRow({ web, ready }: { web: boolean; ready: boolean }) {
 type ToolCheck = { status: 'checking' } | { status: 'done'; tool: ExternalToolStatus | null } | { status: 'failed'; message: string };
 
 /**
- * 视频下载工具（设计稿 `DownloaderSettings`）：只读的一行，写 yt-dlp 此刻能不能用。检测只在本机跑 `yt-dlp --version`、不联网
- * （`externalTools.detect`）。设计稿的安装、更新与「安装范围」不在这里做：CucCut 只在 Agent 从链接导入、你同意之后才下载它。
- * 浏览器里不检测（Runtime 不对网页开放外部工具）。
+ * Video download tool (design mockup `DownloaderSettings`): a read-only row stating whether yt-dlp is usable right now. Detection only runs `yt-dlp --version` locally and does not go online
+ * (`externalTools.detect`). The design mockup’s install, update and “install scope” (安装范围) are not done here: CucCut downloads it only when an agent imports from a link and you have agreed.
+ * Not detected in the browser (the Runtime does not expose external tools to web pages).
  */
 function DownloaderRow({ web }: { web: boolean }) {
   const runtime = useRuntime();
@@ -244,8 +243,8 @@ function DownloaderRow({ web }: { web: boolean }) {
 }
 
 /**
- * 合同里有、设计稿这一页没画的：下载来源与严格离线。模型的下载来源与本地模型页「下载与存储」是同一行（model-source-row.tsx）。
- * 浏览器里只读：Web 白名单不含 `settings.set`，置灰并写一句原因。
+ * Present in the contract but not drawn on this page of the design mockup: download source and strict offline. The model download source is the same row as “Download and storage” (下载与存储) on the local models page (model-source-row.tsx).
+ * Read-only in the browser: the web allowlist does not include `settings.set`, so it is greyed out with a line giving the reason.
  */
 function SourcesGroup({ web, ready }: { web: boolean; ready: boolean }) {
   const save = useSaveSettings();
@@ -273,7 +272,7 @@ function SourcesGroup({ web, ready }: { web: boolean; ready: boolean }) {
   );
 }
 
-/** 一个下载来源：填基址保存，清空保存或点「恢复默认」回到默认来源。规则与合同的校验相同，不合的不让存。 */
+/** A download source: enter a base URL and save. Clearing it and saving, or clicking “Restore default” (恢复默认), goes back to the default source. The rules are the same as the contract’s validation; invalid values cannot be saved. */
 function EndpointRow({
   settingKey,
   label,
@@ -334,7 +333,7 @@ function EndpointRow({
   );
 }
 
-/** 合同里有、设计稿这一页没画的：回收站保留天数。清空数字框 = 恢复默认。浏览器里只读。 */
+/** Present in the contract but not drawn on this page of the design mockup: trash retention days. Clearing the number box = restore default. Read-only in the browser. */
 function SpaceGroup({ web, ready }: { web: boolean; ready: boolean }) {
   const save = useSaveSettings();
   const days = useSetting('space.trashRetentionDays');

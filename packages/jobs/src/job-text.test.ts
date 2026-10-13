@@ -6,7 +6,7 @@ import { errorText, jobError, jobWarning, joinList, withCause } from './job-text
 import { DIMENSION_LABELS, ResourceExceedsCapacity } from './resource-scheduler.ts';
 import { TOOL_CATALOGUE } from './tool-catalogue.ts';
 
-/** 测试中途换成中文：`CUCCUT_LOCALE` 优先于 `setLocale`，两个一起换。 */
+/** Switches to Chinese in the middle of the test: `CUCCUT_LOCALE` takes precedence over `setLocale`; both are switched together. */
 function toChinese(): void {
   vi.stubEnv('CUCCUT_LOCALE', 'zh-Hans');
   setLocale('zh-Hans');
@@ -36,7 +36,7 @@ describe('任务文字的多语言', () => {
     expect(message.text).toBe("The check before re-queuing failed: The video isn't open");
     const error = jobError('STALE_JOB_INPUT', message);
     expect(formatRef(error.messageRef!, error.message, 'zh-Hans')).toBe('重新排队之前的校验没有通过：视频没有打开');
-    // 第三方原话没有引用：照原样嵌进去。
+    // Third-party original text is not quoted: embedded as is.
     expect(String(withCause(JobsManager.requeueCheckFailed(), new Error('ENOENT')))).toBe('The check before re-queuing failed: ENOENT');
   });
 

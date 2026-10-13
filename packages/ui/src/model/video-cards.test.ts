@@ -154,7 +154,7 @@ function translateJob(patch: Partial<JobRecord> = {}): JobRecord {
   });
 }
 
-/** 会话里的智能体自己翻译（`agentTranslate`）：没有步骤、没有百分比。 */
+/** The agent's own translation in the session (`agentTranslate`): no steps, no percentage. */
 function agentTranslateJob(patch: Partial<JobRecord> = {}): JobRecord {
   return job({
     kind: 'agentTranslate',
@@ -207,7 +207,7 @@ describe('threadCards：放置', () => {
       tool('c2', 't1'),
       change('x2', 'mov_1', 't1'),
     ];
-    // 回执与步骤是同一组：卡挂在第二组步骤后面
+    // Receipt and steps are one group: the card hangs after the second group of steps
     expect(cards(items, [])).toEqual({ 'steps/c2': ['video:mov_1[]'] });
   });
 
@@ -222,7 +222,7 @@ describe('threadCards：放置', () => {
       reply('a2', 't1'),
     ];
     expect(cards(items, [t])).toEqual({ 'steps/c2': [`video:mov_2[${t.jobId}]`] });
-    // 还没有 Job 时卡在新建那一步后面。
+    // Before there is a Job, the card sits after the create step.
     expect(cards(items, [])).toEqual({ 'steps/c1': ['video:mov_2[]'] });
   });
 
@@ -270,11 +270,11 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
       reply('a3', 't3'),
     ];
     expect(cards(items, [])).toEqual({ 'steps/change/x2': ['video:mov_1[]'] });
-    // 只到第一轮时卡在第一轮的引用后面
+    // When only the first round exists, the card sits after the first round's reference
     expect(cards(items.slice(0, 3), [])).toEqual({ 'steps/change/x1': ['video:mov_1[]'] });
   });
 
-  // 第一轮的任务提交了转录，第二轮只是聊天：卡跟不跟过去，看转录在第二轮开始时结束没有。
+  // The first round's task submitted a transcription and the second round is just chat: whether the card follows over depends on whether the transcription had finished when the second round started.
   const twoTurns = [user('u1', 't1', 10), tool('c1', 't1'), reply('a1', 't1'), user('u2', 't2', 20), reply('a2', 't2')];
 
   it('转录在下一条用户消息时还在跑：卡挂到最新一轮的最后一块；排队中同样算没结束', () => {
@@ -282,7 +282,7 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
     expect(cards(twoTurns, [running])).toEqual({ a2: [`video:mov_1[${running.jobId}]`] });
     const queued = job({ state: 'queued', startedAt: null });
     expect(cards(twoTurns, [queued])).toEqual({ a2: [`video:mov_1[${queued.jobId}]`] });
-    // 新一轮只有用户那一句时挂在它后面
+    // When a new round has only the user's message, the card hangs after that message
     expect(cards(twoTurns.slice(0, 4), [running])).toEqual({ u2: [`video:mov_1[${running.jobId}]`] });
   });
 
@@ -416,17 +416,17 @@ describe('videoStatus', () => {
     const pipeline = translateJob();
     expect(videoStatus('mov_1', [done, pipeline], false)).toEqual({ key: 'translating', text: '翻译中 · 5%' });
     expect(videoStatus('mov_1', [done, agentTranslateJob()], true)).toEqual({ key: 'translating', text: '翻译中' });
-    // 两件同时在跑：不写百分比。
+    // Two things running at once: no percentage is written.
     expect(videoStatus('mov_1', [pipeline, agentTranslateJob()], false)?.text).toBe('翻译中');
-    // 还没有步骤的流程不写 0%。
+    // A pipeline with no steps yet does not show 0%.
     const fresh = translateJob({ pipeline: { ...pipeline.pipeline!, steps: [] } });
     expect(videoStatus('mov_1', [fresh], false)?.text).toBe('翻译中');
-    // 转录在跑或排队时以转录为准；翻译排队或已结束不算。
+    // While the transcription is running or queued, it takes precedence; a translation that is queued or has ended does not count.
     expect(videoStatus('mov_1', [job(), agentTranslateJob()], false)?.key).toBe('transcribing');
     expect(videoStatus('mov_1', [job({ state: 'queued' }), agentTranslateJob()], false)?.key).toBe('queued');
     expect(videoStatus('mov_1', [done, translateJob({ state: 'queued' })], false)?.key).toBe('transcribed');
     expect(videoStatus('mov_1', [done, agentTranslateJob({ state: 'completed', endedAt: at(9) })], false)?.key).toBe('transcribed');
-    // 别的视频的翻译不算。
+    // Translations of other videos do not count.
     expect(videoStatus('mov_1', [agentTranslateJob({ videoId: 'mov_2' })], false)).toBeNull();
   });
 });
@@ -691,7 +691,7 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
       transcribe: { language: { mode: 'prefer', tag: null }, diarize: false },
     });
     expect(line(cloud)).toBe('OpenAI · gpt-4o-transcribe · 云端 · 自动检测');
-    // 模型包取它的名字；能力视图里没有的照写 ID
+    // The model pack takes its name; when it is not in the capability view, the ID is written as-is
     expect(line(job({ modelId: 'qwen3-asr-0.6b', transcribe: { language: { mode: 'prefer', tag: null }, diarize: false } }))).toBe(
       'Qwen3-ASR 0.6B · 本机 · 自动检测',
     );

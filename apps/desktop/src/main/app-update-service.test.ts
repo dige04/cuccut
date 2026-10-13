@@ -20,7 +20,7 @@ import {
 } from './app-update-service.ts';
 
 /*
- * 只用临时目录与 file:// 清单、安装包；网络、时钟、定时器、换包都是注入的假货。从不连 cuccut.app。
+ * Uses only temporary directories, file:// manifests and installer packages. The network, clock, timers and swap are injected fakes. It never connects to cuccut.app.
  */
 
 const TARGET = 'aarch64-apple-darwin';
@@ -83,7 +83,7 @@ const noRemote = async (): Promise<ByteSource> => {
   throw new Error('不该连网');
 };
 
-/** 一点点吐字节的远端；`gate` 放行前卡在第一块之后。 */
+/** A remote that sends bytes slowly; before `gate` is released, it stalls after the first chunk. */
 function gatedRemote(gate: Promise<void>): (url: string, signal: AbortSignal) => Promise<ByteSource> {
   return async () =>
     (async function* () {
@@ -175,7 +175,7 @@ interface Harness {
   deps: AppUpdateDeps;
   states: AppUpdateSnapshot[];
   notices: AppUpdateNotice[];
-  /** 把假时钟往前拨，并触发到点的定时器。 */
+  /** Advances the fake clock and fires the timers that are due. */
   advance(ms: number): void;
   state(): AppUpdateSnapshot['state'];
 }
@@ -428,7 +428,7 @@ describe('服务', () => {
 
 describe('分批推送', () => {
   const HOUR = 3600 * 1000;
-  /** 已放开 10%（harness 的时钟在发布后 1 小时，分 10 小时推完）。 */
+  /** 10% released (the harness clock is 1 hour after release; the rollout completes over 10 hours). */
   async function rolloutFeed(offsetHours = -1): Promise<AppUpdateDeps['feed']> {
     const releasedAt = new Date(Date.UTC(2026, 9, 3, 8, 0, 0) + offsetHours * HOUR).toISOString();
     const text = manifestText({ url: pathToFileURL(payloadPath).href }, { rolloutHours: 10, releasedAt });
@@ -512,7 +512,7 @@ describe('分批推送', () => {
   });
 });
 
-/** 像 macOS 那样把新包解开到 `unpack-<build>` 的假校验段。 */
+/** A fake verification stage that, as on macOS, unpacks the new package into `unpack-<build>`. */
 function stagingPrepare(): AppUpdateDeps['prepare'] {
   return vi.fn(async (info: AppUpdateInfo, archive: string): Promise<Prepared> => {
     const dir = path.join(path.dirname(archive), `unpack-${info.build}`);
@@ -521,14 +521,14 @@ function stagingPrepare(): AppUpdateDeps['prepare'] {
   });
 }
 
-/** 新一版 build 58 的清单（安装包内容与 57 相同，换个文件名）。 */
+/** Manifest for a new build 58 (the installer contents are the same as 57, with a different file name). */
 async function feed58(extra: Record<string, unknown> = {}): Promise<void> {
   const next = path.join(root, 'CucCut-2.4.0.zip');
   await fs.writeFile(next, PAYLOAD);
   await writeFeed(manifestText({ url: pathToFileURL(next).href }, { version: '2.4.0', build: 58, ...extra }));
 }
 
-/** 手动检查并下载到「已下载」。 */
+/** Manual check and download until “已下载” (downloaded). */
 async function toReady(h: Harness): Promise<void> {
   await h.service.check('manual');
   h.service.download();
@@ -676,7 +676,7 @@ describe('已下载时的静默检查', () => {
     expect(h.state()).toEqual({ k: 'ready', info: expect.objectContaining({ build: 57 }), path: ARCHIVE_57() });
     expect((await fs.readdir(cacheDir)).sort()).toEqual(['CucCut-2.3.0.zip', 'unpack-57']);
 
-    // 同一个缓存目录里留着 57 的包，清掉免得这一台直接从缓存走到已下载。
+    // The same cache directory still holds the 57 package. Clear it so this machine does not go straight from the cache to downloaded.
     await fs.rm(cacheDir, { recursive: true, force: true });
     const available = harness({ feed: await fileFeed() });
     available.service.configure({ autoCheck: true, autoDownload: false });
@@ -801,7 +801,7 @@ describe('节拍器', () => {
     expect(feed.count()).toBe(1);
     h.advance(CHECK_INTERVAL_S * 1000);
     await vi.waitFor(() => expect(feed.count()).toBe(2));
-    // 有新版本时的自动检查是静默的：不进「正在检查」。
+    // An automatic check while an update is available is silent: it does not enter “正在检查” (checking).
     expect(h.states.some((s, i) => i > 0 && s.state.k === 'checking' && h.states[i - 1]?.state.k === 'available')).toBe(false);
   });
 

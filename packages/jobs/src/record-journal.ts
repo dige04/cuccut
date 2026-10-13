@@ -10,51 +10,46 @@ import {
 import { silentLog, type JobsLogger } from './jobs-logger.ts';
 
 /**
- * 按条记账的 JSONL 日志（任务与应用两本账共用，架构设计 §7.3）。
+ * JSONL journal that records one entry per line (shared by the task and application ledgers; architecture design §7.3).
  *
- * 文件第一行是 `{"op":"header","formatVersion":2}`，之后每行一个操作：`{"op":"put", ...记录}` 写入或替换一条，
- * `{"op":"remove","<键名>":"<键>"}` 删掉一条。读的时候按顺序重放。每次追加都 fsync（崩溃安全的顺序靠它）。
+ * The first line of the file is `{"op":"header","formatVersion":2}`. After that, each line is one operation: `{"op":"put", ...record}` writes or replaces a record, and `{"op":"remove","<key name>":"<key>"}` deletes one. On read, the operations are replayed in order. Every append is fsync'd (crash-safe ordering depends on it).
  *
- * 日志记住上次排进写链的每条记录（序列化后的行），只追加变化了的；行数超过存活记录的 `ratio` 倍（且不少于
- * `minLines`），或字节数超过 `maxBytes`（且超过存活记录的两倍）时，把存活记录整份压缩成新文件。追加与压缩在同一条
- * 串行写链上；压缩用写的那一刻最新的存活记录，之后排着的追加重放时是幂等的。写失败之后下一次写整份压缩。
+ * The journal remembers each record as last enqueued on the write chain (as serialized lines) and only appends the ones that changed. When the number of lines exceeds `ratio` times the live record count (and is at least `minLines`), or the byte size exceeds `maxBytes` (and is more than twice the live records' size), the live records are compacted in full into a new file. Appends and compaction run on the same serial write chain. Compaction uses the live records as of the moment it is written, so appends queued after it are idempotent when replayed. After a write failure, the next write compacts the whole file.
  *
- * 读：末尾被截断的残行（崩溃）与认不出的行跳过并记日志，下一次写整份压缩把它们清掉；整个文件认不出时改名保留
- * `.corrupt-<时间>`、从空开始。`.jsonl` 不在而旧的整文件 JSON（`legacy`）在时，导入它、写成 `.jsonl` 之后把旧文件
- * 改名为 `.migrated`。
+ * Reading: a truncated trailing partial line (from a crash) and unrecognized lines are skipped and logged; the next full-compaction write clears them. If the whole file is unrecognizable, it is renamed to keep `.corrupt-<time>` and starts empty. When `.jsonl` is absent but an old whole-file JSON (`legacy`) exists, it is imported; after `.jsonl` is written, the old file is renamed to `.migrated`.
  */
 
 export const JOURNAL_HEADER = { op: 'header', formatVersion: 2 } as const;
 
 export interface JournalCompaction {
-  /** 行数超过存活记录数的这么多倍时压缩。 */
+  /** Compact when the line count exceeds this multiple of the live record count. */
   ratio: number;
-  /** 行数不到这么多时不按倍数压缩（记录很少时不必频繁重写）。 */
+  /** Do not compact by multiple below this line count (no need to rewrite often when there are few records). */
   minLines: number;
-  /** 文件超过这么多字节（且超过存活记录的两倍）时压缩。 */
+  /** Compact when the file exceeds this many bytes (and is more than twice the live records' size). */
   maxBytes: number;
 }
 
 export const DEFAULT_COMPACTION: JournalCompaction = { ratio: 4, minLines: 256, maxBytes: 8 * 1024 * 1024 };
 
-/** 两本账的构造选项。 */
+/** Constructor options for the two journals. */
 export interface LedgerOptions {
   log?: JobsLogger | undefined;
-  /** 压缩的阈值（测试用）。 */
+  /** Compaction thresholds (for tests). */
   compaction?: Partial<JournalCompaction> | undefined;
 }
 
 export interface RecordJournalOptions {
   file: string;
-  /** 删除行里键的字段名（`jobId`、`applicationId`）。 */
+  /** Field names of the key in delete lines (`jobId`, `applicationId`). */
   keyField: string;
-  /** 一条记录的键；不是合法记录时 null。 */
+  /** The key of a record; null if it is not a valid record. */
   key(value: unknown): string | null;
-  /** 写入一条已经存在的记录时把它移到最后（应用账本「旧的在前」）；否则留在原位（任务账本按创建先后）。 */
+  /** When writing an existing record, move it to the end (application ledger: oldest first); otherwise leave it in place (task ledger: creation order). */
   moveOnPut: boolean;
-  /** 旧格式：整文件 JSON，`records` 从中取出记录数组，认不出时 null。 */
+  /** Legacy format: a whole-file JSON; `records` is taken from it as the record array; null if unrecognized. */
   legacy?: { file: string; records(data: unknown): unknown[] | null } | undefined;
-  /** 写链上每一步执行前问一次；false 时这一步不写（故障注入模拟崩溃）。 */
+  /** Asked once before each step on the write chain; when false, that step is not written (fault injection simulating a crash). */
   writable?: (() => boolean) | undefined;
   compaction?: Partial<JournalCompaction> | undefined;
   log?: JobsLogger | undefined;
@@ -65,12 +60,12 @@ export class RecordJournal {
   readonly #options: RecordJournalOptions;
   readonly #compaction: JournalCompaction;
   readonly #log: JobsLogger;
-  /** 键 → 最近排进写链的 put 行，按记录的顺序。 */
+  /** Key → most recent put line enqueued on the write chain, in record order. */
   #live = new Map<string, string>();
   #chain: Promise<void> = Promise.resolve();
   #lines = 0;
   #bytes = 0;
-  /** 下一次写整份压缩（读到残行、写失败、刚从坏文件里恢复）。 */
+  /** The next write compacts the whole file (after reading a partial line, a write failure, or just recovering from a bad file). */
   #compactNext = false;
 
   constructor(options: RecordJournalOptions) {
@@ -80,7 +75,7 @@ export class RecordJournal {
     this.#log = options.log ?? silentLog;
   }
 
-  /** 读出全部存活的记录（按重放后的顺序），并记住它们作为之后比较的基准。 */
+  /** Reads all live records (in replayed order) and remembers them as the baseline for later comparison. */
   async load(): Promise<unknown[]> {
     await this.#chain;
     this.#live = new Map();
@@ -96,7 +91,7 @@ export class RecordJournal {
     }
     if (data === null) return this.#migrate();
     if (data.header === null) {
-      // 只有半行（写文件头时崩溃）：下一次写整份重写，不在残行后面追加。
+      // Only a partial line (crashed while writing the header): the next write rewrites the whole file instead of appending after the partial line.
       if (data.truncatedTail) this.#compactNext = true;
       return [];
     }
@@ -133,7 +128,7 @@ export class RecordJournal {
     return [...records.values()];
   }
 
-  /** 换成这份完整快照：只追加变化了的记录与删掉的键。没有变化时不写，返回之前排着的写入。 */
+  /** Replaces the contents with this complete snapshot: only appends changed records and deleted keys. Writes nothing when nothing changed, and returns the writes queued before. */
   replace(records: Iterable<readonly [string, unknown]>): Promise<void> {
     const next = new Map<string, string>();
     const rows: string[] = [];
@@ -147,7 +142,7 @@ export class RecordJournal {
     return this.#enqueue(rows);
   }
 
-  /** 写入一条。 */
+  /** Writes one record. */
   put(key: string, record: unknown): Promise<void> {
     const line = putLine(record);
     if (this.#options.moveOnPut) this.#live.delete(key);
@@ -155,14 +150,14 @@ export class RecordJournal {
     return this.#enqueue([line]);
   }
 
-  /** 删掉这些键（不在的忽略）。 */
+  /** Deletes these keys (keys that are not present are ignored). */
   remove(keys: Iterable<string>): Promise<void> {
     const rows: string[] = [];
     for (const key of keys) if (this.#live.delete(key)) rows.push(this.#removeLine(key));
     return this.#enqueue(rows);
   }
 
-  /** 等所有排队的写入完成。 */
+  /** Waits for all queued writes to complete. */
   flush(): Promise<void> {
     return this.#chain;
   }
@@ -214,7 +209,7 @@ export class RecordJournal {
     return [];
   }
 
-  /** `.jsonl` 不在：有旧的整文件 JSON 就导入，先把 `.jsonl` 写好再把旧文件改名为 `.migrated`。 */
+  /** `.jsonl` absent: if an old whole-file JSON exists, import it; write `.jsonl` first, then rename the old file to `.migrated`. */
   async #migrate(): Promise<unknown[]> {
     const legacy = this.#options.legacy;
     if (!legacy) return [];

@@ -18,7 +18,7 @@ import { vi } from './library-glossary.vi.ts';
 const chars = (n: number) => (n === 1 ? '1 character' : `${n} characters`);
 const terms = (n: number) => (n === 1 ? '1 term' : `${n} terms`);
 
-/** 术语库模型的文案（英文是键与类型的来源，译文在 `library-glossary.zh-Hans.ts`）。 */
+/** Copy for the glossary model (English is the source for keys and types; translations are in `library-glossary.zh-Hans.ts`). */
 const en = {
   kinds: {
     transcription: { label: 'Transcription glossary', a: 'Correct spelling', b: 'Often misheard as' },
@@ -50,18 +50,18 @@ const en = {
   merged: (n: number) => `${terms(n)} already in the glossary`,
   overflow: (n: number, limit: number) => `${terms(n)} not added: a glossary can hold up to ${limit} terms`,
   fileName: 'Glossary',
-  /** 一格里几种误写之间的分隔（`splitMisheard` 认得这几种）；不用带「和 / and」的列表格式，免得读回来多出一个词。 */
+  /** The separator between several misheard forms in one cell (`splitMisheard` recognizes these). Do not use a list format with “和 / and” (“and”), so that no extra word is read back. */
   misheardSeparator: ', ',
 };
 export type LibraryGlossaryMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 设置 › 术语库的纯模型（产品设计 §15.10，设计稿 designs/cuccut/app/model-glossary.js）。库里两种表各管一件事：
- * 转录术语表是「规范写法 ← 常听错成」，翻译术语表是「原文 → 译文」并带语言方向。
- * 写入规则以 Runtime 为准（`@cuccut/runtime-storage` 的 `normalizeGlossary`）：首尾空白去掉、不能为空、不能换行、
- * 一条不超过 200 字、一张表不超过 5000 条、一条最多 50 个误写、同一个规范写法（原文）只能出现一次。
- * 这里先把这些挡在界面上，免得用户填完了才在保存时被拒。
+ * Pure model for Settings › Glossary (product design §15.10, design draft designs/cuccut/app/model-glossary.js). The library has two tables, each doing one job:
+ * the transcription glossary is “canonical spelling ← often misheard as”; the translation glossary is “source → translation”, with a language direction.
+ * The write rules follow the Runtime (`normalizeGlossary` in `@cuccut/runtime-storage`): leading and trailing whitespace is trimmed, it cannot be empty, it cannot contain line breaks,
+ * one entry is at most 200 characters, one table is at most 5000 entries, one entry has at most 50 misheard forms, and the same canonical spelling (source) may appear only once.
+ * These are blocked in the interface first, so the user is not rejected at save time after filling everything in.
  */
 
 export type GlossaryKind = GlossaryContent['kind'];
@@ -70,12 +70,12 @@ export type TranslationTerm = TranslationGlossary['terms'][number];
 
 export const GLOSSARY_LIMITS = { name: 200, term: 200, terms: 5000, misheard: 50, note: 1000 } as const;
 
-/** 两种表的叫法与两格的名字（model-glossary.js `KINDS`）。 */
+/** The names of the two kinds of tables and of their two columns (model-glossary.js `KINDS`). */
 export const GLOSSARY_KINDS: Record<GlossaryKind, { label: string; a: string; b: string }> = live(() => M.kinds);
 
 /**
- * 归并键：小写、去空白、去 ASCII 标点（与设计稿 `normKey` 同口径）。`KV cache` / `kv-cache` / `KV Cache`
- * 是同一个词，往表里加的时候并成一条，而不是并存成三条。
+ * Merge key: lowercase, whitespace removed, ASCII punctuation removed (same rule as the design draft `normKey`). `KV cache` / `kv-cache` / `KV Cache`
+ * are the same word, so when adding to a table they merge into one entry instead of three.
  */
 export function normKey(text: string | null | undefined): string {
   return String(text ?? '')
@@ -86,7 +86,7 @@ export function normKey(text: string | null | undefined): string {
 
 const sameTerm = (a: string, b: string) => normKey(a) !== '' && normKey(a) === normKey(b);
 
-/** 一格里的几种误写：逗号、顿号、分号都算分隔；去掉空的与重复的。 */
+/** The several misheard forms in one cell: commas, enumeration commas and semicolons all count as separators; empty and duplicate ones are dropped. */
 export function splitMisheard(text: string): string[] {
   return [
     ...new Set(
@@ -102,12 +102,12 @@ export function joinMisheard(list: readonly string[]): string {
   return list.join(M.misheardSeparator);
 }
 
-// ---- 语言 ----
+// ---- Language ----
 
-/** 语言下拉里常备的几门（与「AI 工具」的语言表同一份）；表里已经用着的别的语言另外补上。 */
+/** The commonly used languages in the language dropdown (the same list as the language table of “AI tools”); languages already used in a table but not in this list are added separately. */
 export const COMMON_LANGUAGES: readonly string[] = ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'pt', 'ru', 'ar'];
 
-/** BCP 47 的规范写法；不合法时 null（Runtime 用同一个 `Intl.getCanonicalLocales` 判）。 */
+/** The canonical BCP 47 form; null when invalid (the Runtime checks with the same `Intl.getCanonicalLocales`). */
 export function canonicalLanguage(tag: string): string | null {
   const text = tag.trim();
   if (!text) return null;
@@ -118,31 +118,31 @@ export function canonicalLanguage(tag: string): string | null {
   }
 }
 
-/** 语言的名字（这门语言自己的叫法）；不限时「任意语言」。 */
+/** The name of the language (how the language calls itself); “Any language” when unrestricted. */
 export function languageLabel(tag: string | null): string {
   return tag ? languageName(tag) : M.anyLanguage;
 }
 
-/** 下拉里列出的语言：常备的几门，加上当前值里不在其中的。 */
+/** Languages listed in the dropdown: the commonly used ones, plus the current value if it is not among them. */
 export function languageOptions(current: readonly (string | null)[]): string[] {
   const out = [...COMMON_LANGUAGES];
   for (const tag of current) if (tag && !out.includes(tag)) out.push(tag);
   return out;
 }
 
-/** 表名旁边那句方向：`English → 中文`、`中文 口播`、`任意语言`。 */
+/** The direction shown beside the table name: `English → 中文`, `中文 口播` (Chinese voiceover), `任意语言` (any language). */
 export function pairLabel(content: GlossaryContent): string {
   if (content.kind === 'translation') return `${languageLabel(content.sourceLanguage)} → ${languageLabel(content.targetLanguage)}`;
   return content.language ? M.spoken(languageLabel(content.language)) : M.anyLanguage;
 }
 
-// ---- 新建 ----
+// ---- New ----
 
 export function newTranscriptionGlossary(name: string = M.newTranscription): TranscriptionGlossary {
   return { name, kind: 'transcription', language: null, defaultEnabled: true, terms: [] };
 }
 
-/** 新建翻译表先定方向：方向是这张表的身份（设计稿 `NewTrans`），名字默认就是方向。 */
+/** When creating a translation table, the direction is set first: the direction is the identity of this table (design draft `NewTrans`); the name defaults to the direction. */
 export function newTranslationGlossary(sourceLanguage: string | null, targetLanguage: string): TranslationGlossary {
   return {
     name: `${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`,
@@ -154,13 +154,13 @@ export function newTranslationGlossary(sourceLanguage: string | null, targetLang
   };
 }
 
-/** 源语言与目标语言是同一门（按主语种比）：这样的翻译表没有意义。 */
+/** The source and target languages are the same (compared by primary language subtag): such a translation table is meaningless. */
 export function sameLanguage(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   return a.toLowerCase().split(/[-_]/)[0] === b.toLowerCase().split(/[-_]/)[0];
 }
 
-// ---- 校验 ----
+// ---- Validation ----
 
 function textProblems(value: string, label: string, max: number): string[] {
   const text = value.trim();
@@ -172,8 +172,8 @@ function textProblems(value: string, label: string, max: number): string[] {
 }
 
 /**
- * 一条转录术语的问题（空数组 = 可以保存）。`others` 是表里别的条目：同一个词（按归并键）不能出现两次。
- * 误写可以不填——只想让识别模型认得这个写法。
+ * Problems with one transcription term (an empty array = can save). `others` are the other entries in the table: the same word (by merge key) cannot appear twice.
+ * The misheard forms may be left empty — the term only needs to make the recognition model recognize this spelling.
  */
 export function transcriptionTermProblems(term: TranscriptionTerm, others: readonly TranscriptionTerm[]): string[] {
   const out = textProblems(term.canonical, M.fieldCanonical, GLOSSARY_LIMITS.term);
@@ -187,7 +187,7 @@ export function transcriptionTermProblems(term: TranscriptionTerm, others: reado
   return out;
 }
 
-/** 一条翻译术语的问题：原文与译文都必填（没有译文的条目什么也不约束），备注可空。 */
+/** Problems with one translation term: the source and the translation are both required (an entry without a translation constrains nothing); the note may be empty. */
 export function translationTermProblems(term: TranslationTerm, others: readonly TranslationTerm[]): string[] {
   const out = [...textProblems(term.source, M.fieldSource, GLOSSARY_LIMITS.term), ...textProblems(term.target, M.fieldTarget, GLOSSARY_LIMITS.term)];
   const source = term.source.trim();
@@ -197,7 +197,7 @@ export function translationTermProblems(term: TranslationTerm, others: readonly 
   return out;
 }
 
-/** 表名的问题。 */
+/** Problems with the table name. */
 export function glossaryNameProblem(name: string): string | null {
   const text = name.trim();
   if (!text) return M.nameEmpty;
@@ -205,7 +205,7 @@ export function glossaryNameProblem(name: string): string | null {
   return null;
 }
 
-/** 整理成要交给 `library.put` 的样子：去掉首尾空白，误写去重并去掉与规范写法相同的，空备注写 null。 */
+/** Organizes the entry into the form to hand to `library.put`: trims leading and trailing whitespace, dedupes misheard forms and drops those equal to the canonical spelling, and writes an empty note as null. */
 export function tidyTranscriptionTerm(term: TranscriptionTerm): TranscriptionTerm {
   const canonical = term.canonical.trim();
   const misheard = [...new Set(term.misheard.map((m) => m.trim()).filter(Boolean))].filter((m) => m !== canonical);
@@ -217,7 +217,7 @@ export function tidyTranslationTerm(term: TranslationTerm): TranslationTerm {
   return { source: term.source.trim(), target: term.target.trim(), note: note || null };
 }
 
-// ---- 一次粘一批 ----
+// ---- Paste a batch at once ----
 
 export interface SkippedLine {
   line: string;
@@ -230,8 +230,8 @@ interface Columns {
 }
 
 /**
- * 把粘进来的一批行拆成单元格（设计稿 `parseLines`）。一行一条：`=`、`=>`、`->`、`→`、Tab 都算分隔；
- * Markdown 表与从表格软件复制的 Tab 分隔走同一只解析，Markdown 表按表头认列。标题、front matter、分隔行跳过。
+ * Splits a pasted batch of lines into cells (design draft `parseLines`). One entry per line: `=`, `=>`, `->`, `→` and Tab all count as separators;
+ * Markdown tables and Tab-separated text copied from spreadsheet software use the same parser, and a Markdown table takes its columns from the header row. Titles, front matter and separator lines are skipped.
  */
 function rowsOf(text: string, kind: GlossaryKind): { line: string; cells: string[]; cols: Columns | null }[] {
   const rows: { line: string; cells: string[]; cols: Columns | null }[] = [];
@@ -271,7 +271,7 @@ function termTooLong(...values: string[]): boolean {
   return values.some((value) => [...value].length > GLOSSARY_LIMITS.term);
 }
 
-/** 转录表：`KV cache = 开维缓存、KV 换成`，只写规范写法也行。同一批里重复的词并成一条，误写取并集。 */
+/** Transcription table: `KV cache = 开维缓存、KV 换成` (the misheard forms are 开维缓存 and KV 换成); writing only the canonical spelling is also fine. Words repeated in the same batch are merged into one entry, with their misheard forms combined. */
 export function parseTranscriptionLines(text: string): { terms: TranscriptionTerm[]; skipped: SkippedLine[] } {
   const terms: TranscriptionTerm[] = [];
   const skipped: SkippedLine[] = [];
@@ -301,7 +301,7 @@ export function parseTranscriptionLines(text: string): { terms: TranscriptionTer
   return { terms, skipped };
 }
 
-/** 翻译表：`commit = 突破确认`，第三格是备注。没有译文的行退回来并说明原因，不悄悄丢。 */
+/** Translation table: `commit = 突破确认` (the translation is 突破确认), and the third cell is the note. Lines with no translation are sent back with the reason explained, not silently dropped. */
 export function parseTranslationLines(text: string): { terms: TranslationTerm[]; skipped: SkippedLine[] } {
   const terms: TranslationTerm[] = [];
   const skipped: SkippedLine[] = [];
@@ -333,17 +333,17 @@ export function parseTranslationLines(text: string): { terms: TranslationTerm[];
   return { terms, skipped };
 }
 
-// ---- 加词 ----
+// ---- Add terms ----
 
 export interface AddResult<T> {
   terms: T[];
   added: number;
   merged: number;
-  /** 超过一张表的上限、没加进去的条数。 */
+  /** Number of entries not added because they would exceed the limit of one table. */
   overflow: number;
 }
 
-/** 把一批新词并进转录表：已有的词（按归并键）不重复加，只并入新的误写。 */
+/** Merges a new batch of words into the transcription table: existing words (by merge key) are not added again; only new misheard forms are merged in. */
 export function addTranscriptionTerms(terms: readonly TranscriptionTerm[], incoming: readonly TranscriptionTerm[]): AddResult<TranscriptionTerm> {
   const out = terms.map((t) => ({ ...t, misheard: [...t.misheard] }));
   let added = 0;
@@ -367,7 +367,7 @@ export function addTranscriptionTerms(terms: readonly TranscriptionTerm[], incom
   return { terms: out, added, merged, overflow };
 }
 
-/** 把一批新词并进翻译表：已有的词保留原来的译法（改译法到那一条上改）。 */
+/** Merges a new batch of words into the translation table: existing words keep their original translations (to change a translation, edit that entry). */
 export function addTranslationTerms(terms: readonly TranslationTerm[], incoming: readonly TranslationTerm[]): AddResult<TranslationTerm> {
   const out = terms.map((t) => ({ ...t }));
   let added = 0;
@@ -384,7 +384,7 @@ export function addTranslationTerms(terms: readonly TranslationTerm[], incoming:
   return { terms: out, added, merged, overflow };
 }
 
-/** 加词之后的回执。 */
+/** The receipt after adding words. */
 export function addedText(result: Pick<AddResult<unknown>, 'added' | 'merged' | 'overflow'>): string {
   if (!result.added && !result.overflow) return M.allExist;
   const parts = [M.added(result.added)];
@@ -393,9 +393,9 @@ export function addedText(result: Pick<AddResult<unknown>, 'added' | 'merged' | 
   return parts.join(' · ');
 }
 
-// ---- 搜索与反向 ----
+// ---- Search and reverse ----
 
-/** 搜规范写法、误写（转录表）或原文、译文、备注（翻译表）；返回命中的条目在表里的位置。 */
+/** Searches the canonical spelling and misheard forms (transcription table), or the source, translation and note (translation table); returns the positions in the table of the matching entries. */
 export function searchTerms(content: GlossaryContent, query: string): number[] {
   const key = normKey(query);
   const all = content.terms.map((_, index) => index);
@@ -408,8 +408,8 @@ export function searchTerms(content: GlossaryContent, query: string): number[] {
 }
 
 /**
- * 掉头生成反方向的翻译表（设计稿 `reversePack`）：原文与译文对调，译文相同的只留第一条。
- * 原表的源语言不限时生成不了——反向表的目标语言必须确定。新表默认不给新视频启用。
+ * Generates the reverse-direction translation table (design draft `reversePack`): the source and translation are swapped; where translations are identical, only the first is kept.
+ * If the source language of the original table is unrestricted, it cannot be generated — the target language of the reversed table must be known. A new table is not enabled for new videos by default.
  */
 export function reverseTranslation(content: TranslationGlossary): TranslationGlossary | null {
   if (!content.sourceLanguage) return null;
@@ -431,7 +431,7 @@ export function reverseTranslation(content: TranslationGlossary): TranslationGlo
   };
 }
 
-/** 导出时建议的文件名：表名去掉文件名里不能有的字符。 */
+/** The file name suggested on export: the table name with characters not allowed in file names removed. */
 export function exportFileName(name: string): string {
   const safe = name.replace(/[/\\:*?"<>|\u0000-\u001f]+/g, ' ').trim();
   return `${safe || M.fileName}.md`;

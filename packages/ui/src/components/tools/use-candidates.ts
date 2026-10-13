@@ -9,8 +9,7 @@ import { useJobs } from '../../state/jobs-store.ts';
 import { useSpace } from '../../state/space-store.ts';
 
 /*
- * 视频工具的候选视频（产品设计 §2.7「选已有的，不要求先打开」）：读 `tools.candidates`（Space 目录与内容索引，不打开视频），
- * 几个页面之间共用，Space 目录变了、又有任务做完时重读。筛选、排序与置灰原因在 model/tool-targets.ts。
+ * Candidate videos for the video tools (product design §2.7, “选已有的，不要求先打开” (pick existing ones, no need to open first)): reads `tools.candidates` (the Space catalog and content index, without opening videos); shared between pages and re-read when the Space catalog changes and a job finishes. Filtering, sorting and the greyed-out reasons are in model/tool-targets.ts.
  */
 
 export const PAGE = 100;
@@ -29,7 +28,7 @@ interface CandidateState {
   errors: Partial<Record<string, string>>;
 }
 
-/** 每个工具的候选（几个页面之间共用，回到同一页不闪）。转录另读一份有文稿规则的候选（`docs:` 前缀）补标注。 */
+/** Candidates for each tool (shared between pages, so going back to the same page does not flicker). Transcription reads a second set of candidates with transcript rules (`docs:` prefix) to add annotations. */
 const useCandidateStore = create<CandidateState>()(() => ({ pages: {}, errors: {} }));
 
 function pageOf(result: ToolCandidatesResult, list: ToolCandidate[]): CandidatePage {
@@ -43,7 +42,7 @@ function pageOf(result: ToolCandidatesResult, list: ToolCandidate[]): CandidateP
   };
 }
 
-/** 重读第一页（已经多列过的照样多列，最多 `TOOL_CANDIDATES_MAX_LIMIT`）。 */
+/** Re-reads the first page (items already listed more than once are still listed, up to `TOOL_CANDIDATES_MAX_LIMIT`). */
 function reload(session: RuntimeSession, key: string, toolId: string, limit: number): void {
   session.toolCandidates({ toolId, limit: Math.min(TOOL_CANDIDATES_MAX_LIMIT, Math.max(PAGE, limit)) }).then(
     (result) =>
@@ -53,20 +52,20 @@ function reload(session: RuntimeSession, key: string, toolId: string, limit: num
 }
 
 export interface Candidates {
-  /** 第一次还没读到。 */
+  /** The first read has not returned yet. */
   loading: boolean;
   error: string | null;
   page: CandidatePage | null;
-  /** 不带搜索词的全部行（页面用它找选中的那一行、算预选）。 */
+  /** All rows without a search term (the page uses these to find the selected row and compute the pre-selection). */
   rows: PickerRow[];
-  /** 带搜索词的行。 */
+  /** Rows with a search term. */
   rowsFor(query: string): PickerRow[];
   more(): void;
 }
 
 /**
- * 某个视频工具的候选：挂载时读，Space 目录变了、又有任务做完了（文稿可能多了一份）时稍等一下重读。
- * 「正在转录 / 在队列里 / 上次失败」从 `jobs` 推。
+ * Candidates for one video tool: read on mount; when the Space catalog changes, or a job finishes (a transcript may have been added), re-read after a short wait.
+ * “正在转录 / 在队列里 / 上次失败” (transcribing / queued / last failed) are derived from `jobs`.
  */
 export function useCandidates(tool: VideoToolId): Candidates {
   const session = useRuntime();
@@ -82,13 +81,13 @@ export function useCandidates(tool: VideoToolId): Candidates {
     const timer = setTimeout(
       () => {
         reload(session, tool, tool, shown);
-        // `videos` 规则不列文稿：用翻译字幕（有文稿的视频）的候选补上标注与「不覆盖」提示。
+        // The `videos` rule does not list transcripts: the candidates for translated subtitles (videos that have a transcript) supply the annotation and the “will not overwrite” hint.
         if (tool === 'transcribe') reload(session, `docs:${tool}`, 'translate-subtitles', TOOL_CANDIDATES_MAX_LIMIT);
       },
       useCandidateStore.getState().pages[tool] ? 400 : 0,
     );
     return () => clearTimeout(timer);
-    // `shown` 只决定重读几条，不触发重读。
+    // `shown` only decides how many rows to re-read; it does not trigger a re-read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, tool, entries, finished]);
 
@@ -113,8 +112,7 @@ export function useCandidates(tool: VideoToolId): Candidates {
 }
 
 /**
- * Space 视频条目菜单的「转录… / 重新转录…」（产品设计 §4.4）：这部视频有没有文稿。读有文稿规则的候选（与转录工具页共用
- * `docs:transcribe`），Space 目录变了、又有任务做完时重读。读不出时 null：还没读到、没建索引，或列表不全而条目不在里面。
+ * “转录… / 重新转录…” (transcribe… / re-transcribe…) in the Space video entry menu (product design §4.4): whether this video has a transcript. Reads candidates with the transcript rule (shared with the transcription tool page, `docs:transcribe`), and re-reads when the Space catalog changes and a job finishes. Returns null when it cannot be read: not yet read, no index built, or the list is incomplete and the entry is not in it.
  */
 export function useTranscribedEntries(): (entryId: Id) => boolean | null {
   const session = useRuntime();

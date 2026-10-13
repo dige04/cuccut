@@ -2,25 +2,25 @@ import type { Id, Sequence } from '@cuccut/protocol';
 import { itemFrames, trackRows } from './editor.ts';
 
 /**
- * 时间线缩放（原型 model-timeline.js 的缩放一节与 data.js `zoomMenu`）：每秒多少像素是真相值，百分比只是显示。
- * 横向几何 x = PAD + t × pxPerSecond，x 是泳道视口坐标（不含行头列）；`lane` 是泳道视口的宽。
- * 缩小的下限 = min(ZOOM_MIN, 整片铺满泳道的值)：短视频照旧停在 ZOOM_MIN，长视频总能缩到整片入镜（可以小于 1%）。
+ * Timeline zoom (prototype model-timeline.js zoom section and data.js `zoomMenu`). Pixels per second is the real value; the percentage is only the display.
+ * Horizontal geometry: x = PAD + t × pxPerSecond, where x is in the lane viewport’s coordinates (excluding the track header column); `lane` is the width of the lane viewport.
+ * Lower zoom limit = min(ZOOM_MIN, the value that fits the whole video across the lane). Short videos still stop at ZOOM_MIN; long videos can always zoom out far enough to fit the whole video in view (this can be below 1%).
  */
 
 export const ZOOM_MIN = 4;
 export const ZOOM_MAX = 400;
 /** = 100%。 */
 export const ZOOM_DEFAULT = 40;
-/** 放大 / 缩小一步的倍数。 */
+/** Multiplier for one zoom-in or zoom-out step. */
 export const ZOOM_STEP = 1.5;
-/** 「缩放到播放头」= 200%。 */
+/** “Zoom to playhead” = 200%. */
 export const ZOOM_PLAYHEAD = ZOOM_DEFAULT * 2;
-/** 泳道左右的内边距（与 timeline.tsx 同一个值）。 */
+/** Inner padding on the left and right of the lane (same value as in timeline.tsx). */
 export const ZOOM_PAD = 12;
 
 export type ZoomAction = 'in' | 'out' | '100' | 'fit' | 'fitClip' | 'playhead' | 'fitSelection';
 
-/** 菜单的顺序与快捷键（按 macOS 写，别的平台用 key-labels 换成 Ctrl+ / Alt+）。 */
+/** Menu order and shortcuts (written for macOS; other platforms swap in Ctrl+ / Alt+ via key-labels). */
 export const ZOOM_MENU: readonly { id: ZoomAction; keys: string }[] = [
   { id: 'in', keys: '⌘=' },
   { id: 'out', keys: '⌘−' },
@@ -31,26 +31,25 @@ export const ZOOM_MENU: readonly { id: ZoomAction; keys: string }[] = [
   { id: 'fitSelection', keys: '⌥⌘4' },
 ];
 
-/** 让 `seconds` 正好铺满泳道（两边各留 PAD）的每秒像素数。 */
+/** Pixels per second that makes `seconds` exactly fill the lane (leaving PAD on each side). */
 export function fitPxPerSecond(seconds: number, lane: number): number {
   return seconds > 0 ? (lane - ZOOM_PAD * 2) / seconds : ZOOM_DEFAULT;
 }
 
-/** 缩小的下限；没有时长或泳道还没量出来（≤ 2×PAD）时退回 ZOOM_MIN。 */
+/** The lower limit for zooming out. Falls back to ZOOM_MIN when there is no duration, or the lane has not been measured yet (≤ 2×PAD). */
 export function zoomFloor(duration: number, lane: number): number {
   if (!(duration > 0) || !(lane > ZOOM_PAD * 2)) return ZOOM_MIN;
   return Math.min(ZOOM_MIN, fitPxPerSecond(duration, lane));
 }
 
-/** 夹到 [min(ZOOM_MIN, floor), ZOOM_MAX]。`floor` 大于 ZOOM_MIN 时不抬高下限。 */
+/** Clamped to [min(ZOOM_MIN, floor), ZOOM_MAX]. When `floor` is greater than ZOOM_MIN, the lower limit is not raised. */
 export function clampZoom(pxPerSecond: number, floor: number): number {
   const min = Math.min(ZOOM_MIN, floor > 0 ? floor : ZOOM_MIN);
   return Math.min(ZOOM_MAX, Math.max(min, pxPerSecond));
 }
 
 /**
- * 百分比标签，100% = ZOOM_DEFAULT。≥10 取整（"22%"）；1–10 留一位小数、去掉多余的 .0（"4.4%"、"5%"）；
- * <1 取两位有效数字、去掉末尾的 0（"0.42%"、"0.05%"）。进位跨档（9.96 → "10%"）不写成 "10.0%"，有效缩放永远不显示 "0%"。
+ * Percentage label, where 100% = ZOOM_DEFAULT. Values ≥10 round to an integer (“22%”); 1–10 keep one decimal place and drop a trailing .0 (“4.4%”, “5%”); <1 use two significant digits and drop trailing zeros (“0.42%”, “0.05%”). When rounding carries across a tier (9.96 → “10%”), it is not written as “10.0%”, and an effective zoom never shows “0%”.
  */
 export function zoomLabel(pxPerSecond: number): string {
   const pct = (pxPerSecond / ZOOM_DEFAULT) * 100;
@@ -60,7 +59,7 @@ export function zoomLabel(pxPerSecond: number): string {
   return `${text.includes('.') ? text.replace(/\.?0+$/, '') : text}%`;
 }
 
-/** 缩放前后的视图：时间都是秒，`scroll` 是泳道的横向滚动偏移。 */
+/** The view before and after a zoom: times are in seconds, `scroll` is the lane’s horizontal scroll offset. */
 export interface ZoomView {
   pxPerSecond: number;
   scroll: number;
@@ -69,12 +68,12 @@ export interface ZoomView {
   playhead: number;
 }
 
-/** 把时刻 `seconds` 放在泳道视口的 `x` 处时的滚动偏移（不小于 0；右端由内容宽度自然收住）。 */
+/** The scroll offset that puts the moment `seconds` at position `x` in the lane viewport (not less than 0; the right end is bounded naturally by the content width). */
 export function anchoredScroll(seconds: number, x: number, pxPerSecond: number): number {
   return Math.max(0, ZOOM_PAD + seconds * pxPerSecond - x);
 }
 
-/** 锚点缩放的锚：播放头在视口内就让它留在原来的屏幕 x，否则让视口中线对应的时刻不动。 */
+/** The anchor for an anchored zoom: if the playhead is inside the viewport, keep it at its original screen x; otherwise keep the moment at the viewport’s center fixed. */
 export function zoomAnchor(view: ZoomView): { seconds: number; x: number } {
   const lane = Math.max(0, view.lane);
   const x = ZOOM_PAD + view.playhead * view.pxPerSecond - view.scroll;
@@ -83,9 +82,8 @@ export function zoomAnchor(view: ZoomView): { seconds: number; x: number } {
 }
 
 /**
- * 缩放动作 → 新的每秒像素数与滚动偏移；要不到结果（适应片段 / 所选却没有区间）时返回 null。
- * in / out / 100：锚点缩放；fit：整片入镜并回到 0；playhead：放到 200% 并让播放头居中；
- * fitClip / fitSelection：让区间铺满视口并居中（到了上限铺不满也居中）。
+ * Zoom action → new pixels per second and scroll offset. Returns null when no result can be obtained (fit clip or fit selection with nothing selected).
+ * in / out / 100: anchored zoom; fit: whole video in view, back to 0; playhead: zoom to 200% and center the playhead; fitClip / fitSelection: make the range fill the viewport and center it (if the limit prevents filling it, still center it).
  */
 export function zoomPlan(action: ZoomAction, view: ZoomView, span?: { start: number; end: number } | null): ZoomView | null {
   const floor = zoomFloor(view.duration, view.lane);
@@ -117,7 +115,7 @@ export function zoomPlan(action: ZoomAction, view: ZoomView, span?: { start: num
   }
 }
 
-/** 区间（秒）。 */
+/** A range (seconds). */
 export interface Span {
   start: number;
   end: number;
@@ -137,8 +135,7 @@ function spanOf(sequence: Sequence, ids: readonly Id[]): Span | null {
 }
 
 /**
- * 「适应当前片段」的区间：播放头下的片段。选中的片段里有盖住播放头的就用它；否则取最上面一条画面轨道上、
- * 播放头下的视频片段。都没有返回 null。
+ * The range for “fit current clip”: the clip under the playhead. If a selected clip covers the playhead, use it; otherwise take the video clip under the playhead on the topmost video track. Returns null if there is neither.
  */
 export function clipSpanAt(sequence: Sequence, selection: readonly Id[], playhead: number): Span | null {
   const frame = (playhead * sequence.fps.num) / sequence.fps.den;
@@ -158,7 +155,7 @@ export function clipSpanAt(sequence: Sequence, selection: readonly Id[], playhea
   return null;
 }
 
-/** 「适应所选」的区间：选中各件的并集；没有选中返回 null。 */
+/** The range for “fit selection”: the union of the selected items; returns null if nothing is selected. */
 export function selectionSpan(sequence: Sequence, selection: readonly Id[]): Span | null {
   return selection.length ? spanOf(sequence, selection) : null;
 }
@@ -166,8 +163,8 @@ export function selectionSpan(sequence: Sequence, selection: readonly Id[]): Spa
 const ALT_DIGITS: Record<string, ZoomAction> = { '1': 'fit', '2': 'fitClip', '3': 'playhead', '4': 'fitSelection' };
 
 /**
- * 键盘事件对应哪个缩放动作（与 ZOOM_MENU 的快捷键一一对应），不是缩放键返回 null。`mod` 是 macOS 的 ⌘、别处的 Ctrl。
- * 按住 ⌥ 时 macOS 的 `key` 是特殊字符，数字键一律认 `code`。
+ * Which zoom action a keyboard event maps to (one-to-one with the shortcuts in ZOOM_MENU). Returns null for a key that is not a zoom key. `mod` is ⌘ on macOS, Ctrl elsewhere.
+ * While ⌥ is held on macOS, `key` is a special character, so digit keys always use `code`.
  */
 export function zoomKey(event: { key: string; code: string; altKey: boolean; shiftKey: boolean }, mod: boolean): ZoomAction | null {
   if (!mod) return null;

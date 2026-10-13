@@ -34,10 +34,10 @@ const title = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900' });
 const body = style({ marginTop: 2, marginBottom: 0, font: 'ui-sm', color: 'gray-700' });
 
 /**
- * 「用 Codex 画图」（设计稿 settings-agent-provider.jsx:103-119）：挂在 Codex 卡头下面，只在 Codex 已找到时出现。
- * 开关是图片生成的智能体 Provider `agent:codex`（`models.configure`）；能不能打开看模型服务的视图——
- * 这一行出现时探测一次（Codex 重新检测、升级、登录之后再探测一次），没探测过之前开关先不让拨。
- * 打开后它不会被自动选中（图片生成没有出厂默认），想默认用它要在模型 › 图像生成里设。浏览器里开关置灰（`models.configure` 不在 Web 白名单里）。
+ * “Image generation with Codex” (設計稿 design mockup settings-agent-provider.jsx:103-119): placed under the Codex card header, shown only when Codex has been found.
+ * The toggle is the image-generation agent provider `agent:codex` (`models.configure`). Whether it can be turned on is decided by the model service’s view.
+ * It is probed once when this row appears (and probed again after Codex is re-detected, upgraded or logged in). Until it has been probed, the toggle cannot be switched.
+ * Once turned on, it is not selected automatically (image generation has no factory default). To make it the default, set it under Models › 图像生成 (Image generation). In the browser the toggle is greyed out (`models.configure` is not on the web allowlist).
  */
 export function CodexImageRow({ driver, connected }: { driver: DriverInfo; connected: boolean }) {
   const runtime = useRuntime();

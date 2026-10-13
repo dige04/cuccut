@@ -13,7 +13,7 @@ import {
   type FollowState,
 } from './follow-bottom.ts';
 
-/** 先观察一次 scrollTop，作为后续比较的基准。 */
+/** Observe scrollTop once first, as the baseline for later comparisons. */
 function settled(scrollTop: number, following = true): FollowState {
   const state = { ...initialFollowState(), following };
   return nextFollowState(state, { scrollTop, distanceFromBottom: following ? 0 : 300, now: 0 });

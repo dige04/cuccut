@@ -5,11 +5,11 @@ import path from 'node:path';
 import { M } from './agent-hosts-copy.ts';
 
 /**
- * 外部 Agent 宿主（Agent 面设计 §6.2、§8.6）：`cuccut skill install` 与 `cuccut mcp install` 往哪里写、怎么写。每个宿主的位置与格式
- * 都按宿主自己的 CLI 实际核对过（写在各项旁边）；位置全部从这次调用的环境变量算（`HOME`、`CLAUDE_CONFIG_DIR`、`CODEX_HOME`），
- * 测试换成临时目录，不碰真实的配置。
+ * External agent hosts (Agent-surface design §6.2, §8.6): where `cuccut skill install` and `cuccut mcp install` write, and how. Each host's location and format
+ * were checked against that host's own CLI (noted beside each entry). All locations are computed from the environment variables of the current call (`HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`),
+ * and tests swap in temporary directories so the real config is never touched.
  *
- * 写配置一律「读、改、原子替换」：只动 CucCut 那一项，其余键原样保留；读不懂的配置（JSON 坏了）报错，不覆盖。
+ * Config writes always follow read, modify, atomically replace: only the CucCut entry is changed, and other keys are kept as they are. Config that cannot be read (broken JSON) throws an error instead of being overwritten.
  */
 
 export const AGENT_HOSTS = ['claude-code', 'codex', 'cursor', 'gemini'] as const;
@@ -22,9 +22,9 @@ export const HOST_LABELS: Record<AgentHost, string> = {
   gemini: 'Gemini CLI',
 };
 
-/** 宿主 MCP 配置里 CucCut 那一项的名字。 */
+/** The name of CucCut's entry in the host's MCP config. */
 export const MCP_ENTRY_NAME = 'cuccut';
-/** Claude Code 的令牌放在它 `settings.json` 的 `env` 里，MCP 配置的请求头引用它。 */
+/** Claude Code keeps the token in the `env` of its `settings.json`, and the MCP config's request headers reference it. */
 export const MCP_TOKEN_ENV = 'CUCCUT_MCP_TOKEN';
 
 export function parseAgentHost(value: string | undefined): AgentHost {
@@ -33,25 +33,25 @@ export function parseAgentHost(value: string | undefined): AgentHost {
   return value as AgentHost;
 }
 
-/** 用户主目录：`HOME`（Windows 是 `USERPROFILE`），都没有时取系统的。 */
+/** User home directory: `HOME` (`USERPROFILE` on Windows), falling back to the system's when neither is set. */
 export function userHome(env: NodeJS.ProcessEnv): string {
   return env.HOME || env.USERPROFILE || os.homedir();
 }
 
-/** Claude Code 的配置目录：`CLAUDE_CONFIG_DIR`，默认 `~/.claude`。 */
+/** Claude Code's config directory: `CLAUDE_CONFIG_DIR`, default `~/.claude`. */
 function claudeConfigDir(env: NodeJS.ProcessEnv): string {
   return env.CLAUDE_CONFIG_DIR || path.join(userHome(env), '.claude');
 }
 
-/** Codex 的目录：`CODEX_HOME`，默认 `~/.codex`。 */
+/** Codex's directory: `CODEX_HOME`, default `~/.codex`. */
 function codexHome(env: NodeJS.ProcessEnv): string {
   return env.CODEX_HOME || path.join(userHome(env), '.codex');
 }
 
 /**
- * 宿主的用户级 skills 目录（skill 装在其下的 `<id>/`）：
- * Claude Code `~/.claude/skills`（`CLAUDE_CONFIG_DIR` 下的 `skills`）；Codex `~/.codex/skills`（`CODEX_HOME`）；Cursor
- * `~/.cursor/skills`；Gemini CLI `~/.gemini/skills`。
+ * The host's user-level skills directories (each skill is installed under it in `<id>/`):
+ * Claude Code `~/.claude/skills` (`skills` under `CLAUDE_CONFIG_DIR`); Codex `~/.codex/skills` (`CODEX_HOME`); Cursor
+ * `~/.cursor/skills`; Gemini CLI `~/.gemini/skills`.
  */
 export function hostSkillsDir(host: AgentHost, env: NodeJS.ProcessEnv): string {
   switch (host) {
@@ -66,25 +66,25 @@ export function hostSkillsDir(host: AgentHost, env: NodeJS.ProcessEnv): string {
   }
 }
 
-// ---- MCP 配置 ----
+// ---- MCP config ----
 
-/** 令牌怎么存：`env` 是放在宿主的环境变量段、配置里引用它；`plaintext` 是明文写在配置文件里。 */
+/** How the token is stored: `env` puts it in the host's environment-variable section and the config references it; `plaintext` writes it in clear text in the config file. */
 export type TokenStorage = 'env' | 'plaintext';
 
 export interface McpHostConfig {
-  /** 写 CucCut 那一项的文件。 */
+  /** The file that CucCut's entry is written to. */
   file: string;
   tokenStorage: TokenStorage;
-  /** `env` 时：放令牌的文件与变量名。 */
+  /** For `env`: the file that holds the token, and the variable name. */
   envFile?: string;
   envVar?: string;
 }
 
-/** 宿主的 MCP 配置放在哪里、令牌怎么存。 */
+/** Where the host's MCP config lives and how the token is stored. */
 export function mcpHostConfig(host: AgentHost, env: NodeJS.ProcessEnv): McpHostConfig {
   switch (host) {
-    // `claude mcp add --scope user` 写进 `~/.claude.json`（设了 `CLAUDE_CONFIG_DIR` 时是那个目录里的 `.claude.json`）的
-    // `mcpServers`；请求头里的 `${VAR}` 会展开，`settings.json` 的 `env` 段能提供它。
+    // `claude mcp add --scope user` writes to `~/.claude.json` (or `.claude.json` in that directory when `CLAUDE_CONFIG_DIR` is set), under
+    // `mcpServers`. `${VAR}` in request headers is expanded, and the `env` section of `settings.json` can supply it.
     case 'claude-code':
       return {
         file: env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(userHome(env), '.claude.json'),
@@ -92,21 +92,20 @@ export function mcpHostConfig(host: AgentHost, env: NodeJS.ProcessEnv): McpHostC
         envFile: path.join(claudeConfigDir(env), 'settings.json'),
         envVar: MCP_TOKEN_ENV,
       };
-    // `[mcp_servers.<名字>]` 的 `url` 与 `http_headers`；Codex 自己没有环境变量段（`bearer_token_env_var` 要在启动 Codex 的
-    // shell 里导出），所以明文。
+    // The `url` and `http_headers` of `[mcp_servers.<name>]`. Codex has no environment-variable section of its own (`bearer_token_env_var` has to be exported in the shell that launches Codex), so the token is plaintext.
     case 'codex':
       return { file: path.join(codexHome(env), 'config.toml'), tokenStorage: 'plaintext' };
-    // `mcpServers.<名字>` 的 `url` 与 `headers`；没有环境变量段，明文。
+    // The `url` and `headers` of `mcpServers.<name>`. There is no environment-variable section, so the token is plaintext.
     case 'cursor':
       return { file: path.join(userHome(env), '.cursor', 'mcp.json'), tokenStorage: 'plaintext' };
-    // `mcpServers.<名字>` 的 `url`、`type: 'http'` 与 `headers`；请求头里的变量只从进程环境或 `.env` 取，名字像令牌的还会被
-    // 过滤掉，所以明文。
+    // The `url`, `type: 'http'` and `headers` of `mcpServers.<name>`. Variables in request headers are taken only from the process environment or `.env`, and names that look like tokens are filtered out,
+    // so the token is plaintext.
     case 'gemini':
       return { file: path.join(userHome(env), '.gemini', 'settings.json'), tokenStorage: 'plaintext' };
   }
 }
 
-/** 宿主的配置里有没有这一项（用户级）。配置读不懂时抛错。 */
+/** Whether the host config has this entry (user level). Throws when the config cannot be read. */
 export function hasMcpEntry(host: AgentHost, env: NodeJS.ProcessEnv, name: string = MCP_ENTRY_NAME): boolean {
   const { file } = mcpHostConfig(host, env);
   if (host === 'codex') return codexSectionRange(readText(file) ?? '', name) !== null;
@@ -115,9 +114,9 @@ export function hasMcpEntry(host: AgentHost, env: NodeJS.ProcessEnv, name: strin
 }
 
 /**
- * 宿主配置里这一项现在用的令牌（替换前读，用来认出旧客户端）：JSON 宿主读 `mcpServers.<名字>.headers.Authorization`，
- * Claude Code 的 `${VAR}` 引用到 `settings.json` 的 `env` 里取；Codex 读那一段（含子表）里的 `Authorization = "…"`。
- * 没有这一项、没有请求头或认不出时 null；配置读不懂时抛错。
+ * The token this entry currently uses in the host config (read before replacing, to recognize the old client). JSON hosts: read `mcpServers.<name>.headers.Authorization`,
+ * and follow Claude Code's `${VAR}` reference into the `env` of `settings.json`. Codex: read `Authorization = "…"` in that section (including its sub-tables).
+ * Returns null when there is no such entry, no headers, or the token is not recognized. Throws when the config cannot be read.
  */
 export function readMcpEntryToken(host: AgentHost, env: NodeJS.ProcessEnv, name: string = MCP_ENTRY_NAME): string | null {
   const config = mcpHostConfig(host, env);
@@ -154,7 +153,7 @@ export function readMcpEntryToken(host: AgentHost, env: NodeJS.ProcessEnv, name:
   return typeof value === 'string' && value ? value : null;
 }
 
-/** 令牌里的客户端 id：CucCut 发的令牌是 `<clientId>.<密钥>`；不是这个形状时 null。 */
+/** The client id in a token: a token CucCut issues is `<clientId>.<secret>`; null when it does not have that shape. */
 export function clientIdOfToken(token: string): string | null {
   return /^([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/.exec(token)?.[1] ?? null;
 }
@@ -166,17 +165,17 @@ export interface McpEntry {
 }
 
 export interface WriteMcpOptions {
-  /** 调 `claude` 的函数：不给时在 `env.PATH` 上找，找不到或给 null 时直接写配置文件。 */
+  /** The function that calls `claude`: when not given, it is looked up on `env.PATH`. If it is not found, or null is given, the config file is written directly. */
   runClaude?: ((args: string[]) => void) | null;
 }
 
-/** 写（或替换）宿主配置里的这一项。返回写到了哪里、令牌怎么存。 */
+/** Writes (or replaces) this entry in the host config. Returns where it was written and how the token is stored. */
 export function writeMcpEntry(host: AgentHost, env: NodeJS.ProcessEnv, entry: McpEntry, options: WriteMcpOptions = {}): McpHostConfig {
   const config = mcpHostConfig(host, env);
   const bearer = `Bearer ${entry.token}`;
   switch (host) {
     case 'claude-code': {
-      // 令牌先进 settings.json 的 env，再写引用它的那一项；那一项没写成时把 env 里的旧值放回去（旧条目引用的是同一个变量）。
+      // The token goes into the env of settings.json first, then the entry that references it is written. If that entry fails to write, the old value in env is put back (the old entry references the same variable).
       let previous: unknown;
       updateJson(config.envFile!, (settings) => {
         const envBlock = isRecord(settings.env) ? settings.env : {};
@@ -207,7 +206,7 @@ export function writeMcpEntry(host: AgentHost, env: NodeJS.ProcessEnv, entry: Mc
             settings.env = envBlock;
           });
         } catch {
-          // 放不回去就算了：报的仍是原来的错。
+          // If putting it back fails, never mind: the error reported is still the original one.
         }
         throw error;
       }
@@ -238,7 +237,7 @@ export function writeMcpEntry(host: AgentHost, env: NodeJS.ProcessEnv, entry: Mc
   }
 }
 
-/** PATH 上有 `claude` 时返回调用它的函数（带上这次的环境变量，`CLAUDE_CONFIG_DIR` 照样生效）。 */
+/** When `claude` is on PATH, returns the function that calls it, carrying this call's environment variables so that `CLAUDE_CONFIG_DIR` still applies. */
 function claudeRunner(env: NodeJS.ProcessEnv): ((args: string[]) => void) | null {
   const command = findOnPath('claude', env);
   if (!command) return null;
@@ -256,16 +255,16 @@ export function findOnPath(name: string, env: NodeJS.ProcessEnv): string | null 
       try {
         if (fs.statSync(file).isFile()) return file;
       } catch {
-        // 下一个。
+        // Next.
       }
     }
   }
   return null;
 }
 
-// ---- Codex 的 TOML：只认 `[mcp_servers.<名字>]` 这一段（含它的子表），不解析整份文件 ----
+// ---- Codex TOML: recognizes only the `[mcp_servers.<name>]` section (and its sub-tables), without parsing the whole file ----
 
-/** `[mcp_servers.<名字>]` 与它的子表（`[mcp_servers.<名字>.env]` 等）所占的行；没有时 null。 */
+/** The lines occupied by `[mcp_servers.<name>]` and its sub-tables (`[mcp_servers.<name>.env]` etc.); null when there are none. */
 export function codexSectionRange(text: string, name: string): { start: number; end: number } | null {
   const lines = text.split('\n');
   const own = (line: string) => {
@@ -282,7 +281,7 @@ export function codexSectionRange(text: string, name: string): { start: number; 
     if (isHeader && own(lines[end]!) !== true) break;
     end++;
   }
-  // 段后的空行不算这一段。
+  // Blank lines after the section do not count as part of it.
   while (end > start + 1 && lines[end - 1]!.trim() === '') end--;
   return { start, end };
 }
@@ -302,7 +301,7 @@ function tomlString(value: string): string {
   return JSON.stringify(value);
 }
 
-// ---- 文件 ----
+// ---- Files ----
 
 function readText(file: string): string | null {
   try {
@@ -326,7 +325,7 @@ function readJson(file: string): Record<string, unknown> {
   return parsed;
 }
 
-/** 读、改、写回 JSON：沿用文件原来的缩进（制表符、几个空格或整份一行）、换行符与结尾有没有换行；新文件两个空格。 */
+/** Reads, modifies and writes back JSON. Keeps the file's original indentation (tabs, a few spaces, or the whole file on one line), its line endings, and whether it ends with a newline. New files use two spaces. */
 function updateJson(file: string, change: (root: Record<string, unknown>) => void): void {
   const before = readText(file);
   const root = readJson(file);
@@ -338,8 +337,8 @@ function updateJson(file: string, change: (root: Record<string, unknown>) => voi
 }
 
 /**
- * JSON 文本用的缩进：第一行有缩进的行的前导空白（制表符或几个空格）；有内容却整份写在一行时 0（照样写成一行）；
- * 空对象这类看不出的两个空格。
+ * Indentation for JSON text: the leading whitespace (tab or a few spaces) of the first indented line. 0 when there is content but it is all on one line (still written as one line).
+ * Two spaces for cases that cannot be told apart, such as an empty object.
  */
 export function jsonIndent(text: string): string | number {
   const match = /\n([ \t]+)\S/.exec(text);
@@ -347,7 +346,7 @@ export function jsonIndent(text: string): string | number {
   return !text.trim().includes('\n') && text.includes(':') ? 0 : 2;
 }
 
-/** 原子替换（配置是符号链接时替换它指向的文件）；已有文件保留它的权限，新文件只给自己读写（里面可能有令牌）。 */
+/** Atomic replace. When the config is a symlink, the file it points to is replaced. An existing file keeps its permissions; a new file is readable and writable by its owner only (it may hold a token). */
 function writeText(link: string, text: string): void {
   const file = fs.existsSync(link) ? fs.realpathSync(link) : link;
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -355,12 +354,12 @@ function writeText(link: string, text: string): void {
   try {
     mode = fs.statSync(file).mode & 0o777;
   } catch {
-    // 新文件。
+    // New file.
   }
   const temp = `${file}.cuccut-${process.pid}-${Date.now()}.tmp`;
   try {
     fs.writeFileSync(temp, text, { mode });
-    // 新建时的权限受 umask 影响：按原文件的再设一次。
+    // Permissions of a new file are affected by the umask, so set them again to match the original file.
     if (process.platform !== 'win32') fs.chmodSync(temp, mode);
     fs.renameSync(temp, file);
   } catch (error) {

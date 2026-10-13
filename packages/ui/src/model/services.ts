@@ -27,14 +27,13 @@ import { tr } from './services.tr.ts';
 import { vi } from './services.vi.ts';
 
 /**
- * 「服务」的纯模型（产品设计 §2.1；架构设计 §4.8；原型 designs/cuccut/app/model-services.js）。
- * 服务 = 这台 Mac 上由 CucCut 持有、等别人连进来的常驻进程：MCP 服务、远端算力、Web 服务、模型接口服务。
- * 这里只算：服务目录（界面 ID 与 Runtime ID 的对应）、统一的状态（off / starting / stopping / on / error，外加 Runtime 没有提供的
- * unavailable）、状态点与状态词、总览的汇总、快捷按钮、rail 角标、端口校验。
- * 状态读 `services` 主题（services-store）；远端算力另有 `nodes.share.status` 的轮询（更细：地址、配对码），两者都有时以后者为准。
+ * Pure model for “Services” (product design §2.1; architecture design §4.8; prototype designs/cuccut/app/model-services.js).
+ * A service = a resident process on this Mac, held by CucCut and waiting for others to connect in: MCP service, remote compute, web service, model API service.
+ * This only computes: the service catalog (mapping between UI IDs and Runtime IDs), the unified state (off / starting / stopping / on / error, plus unavailable, which Runtime does not provide), status dots and status words, the overview summary, quick buttons, the rail badge, and port validation.
+ * State is read from the `services` topic (services-store); remote compute also has `nodes.share.status` polling (more detailed: addresses, pairing code). When both exist, the latter wins.
  */
 
-/** 服务模型自己的文案：端口校验、浏览器会话、Runtime 卡的状态词（译文在 `services.<语言>.ts`）。 */
+/** The services model's own copy: port validation, browser sessions, and the status words on the Runtime card (translations are in `services.<language>.ts`). */
 const en = {
   portRange: 'Enter a port number between 1024 and 65535',
   portTaken: (port: number, service: string) => `${port} is already used by “${service}”; choose another port`,
@@ -48,15 +47,15 @@ const en = {
 export type ServicesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 服务的状态灯：绿 = 在跑、橙 = 出错、灰 = 关着或没有（起停中也是灰，另有呼吸，不靠颜色说话）。 */
+/** Service status light: green = running, orange = error, grey = off or absent (also grey while starting or stopping, with a pulse; it does not rely on colour alone). */
 export type ServiceTone = 'on' | 'error' | 'off';
 
 export type ServiceId = keyof typeof SERVICE_COPY;
 
-/** 顺序就是侧栏与总览的顺序：原型的三项照旧，模型接口（原型里是 Web 服务页的一节）跟在 Web 服务后面。 */
+/** The order is the sidebar and overview order: the prototype's three items stay as they are, and the model API (a section of the web service page in the prototype) follows web service. */
 export const SERVICE_IDS: readonly ServiceId[] = ['mcp', 'remote', 'web', 'model-api'];
 
-/** 界面把节点服务叫「远端算力」（路由 /services/remote），Runtime 叫 `node`。 */
+/** The UI calls the node service “Remote compute” (route /services/remote); Runtime calls it `node`. */
 export function runtimeServiceId(id: ServiceId): RuntimeServiceId {
   return id === 'remote' ? 'node' : id;
 }
@@ -76,8 +75,8 @@ export function isServiceId(value: string | undefined): value is ServiceId {
 }
 
 /**
- * 远端算力的运行态：起停中优先；开着却没在监听（端口被占用等）是出错；开着在监听是在跑；其余是关着。
- * 还没读到状态（`null`）按关着算。
+ * Runtime state of remote compute: starting or stopping takes priority; enabled but not listening (e.g. the port is taken) is error; enabled and listening is running; otherwise it is off.
+ * Not yet read (`null`) counts as off.
  */
 export function shareState(status: Pick<ShareStatus, 'enabled' | 'listening'> | null, phase: ServicePhase | null): ServiceState {
   if (phase) return phase;
@@ -85,7 +84,7 @@ export function shareState(status: Pick<ShareStatus, 'enabled' | 'listening'> | 
   return status.listening ? 'on' : 'error';
 }
 
-/** 一项 Runtime 服务的状态：这个版本没有提供的是 unavailable；还没读到按关着算。 */
+/** Runtime state of one service: unavailable if this version does not provide it; not yet read counts as off. */
 export function statusState(status: Pick<ServiceStatus, 'available' | 'state'> | undefined): ServiceState {
   if (!status) return 'off';
   if (!status.available) return 'unavailable';
@@ -98,7 +97,7 @@ export function findService(services: readonly ServiceStatus[], id: ServiceId): 
 }
 
 /**
- * 四项服务此刻的状态。远端算力：本地的起停中优先，其次 `nodes.share.status`（轮询来的，更新），再其次 `services` 主题里节点服务的投影。
+ * The state of the four services right now. Remote compute: local starting/stopping first, then `nodes.share.status` (polled, more recent), then the projection of the node service from the `services` topic.
  */
 export function serviceStates(
   services: readonly ServiceStatus[],
@@ -123,7 +122,7 @@ export function serviceBusy(state: ServiceState): boolean {
   return state === 'starting' || state === 'stopping';
 }
 
-/** 状态词：远端算力说「共享」，其余说「运行」。 */
+/** Status word: remote compute says “共享”（sharing); the others say “运行”（running). */
 export function serviceStateLabel(id: ServiceId, state: ServiceState): string {
   if (state === 'unavailable') return SERVICE_STATE_COPY.unavailable;
   return (id === 'remote' ? SERVICE_STATE_COPY.share : SERVICE_STATE_COPY.service)[state];
@@ -133,11 +132,11 @@ export interface ServiceLight {
   id: ServiceId;
   tone: ServiceTone;
   busy: boolean;
-  /** 侧栏行的提示与读屏：「远端算力 · 正在共享」 */
+  /** Sidebar row hint and screen-reader text: “远端算力 · 正在共享”（Remote compute · sharing） */
   label: string;
 }
 
-/** 一项一颗信号灯，顺序同目录。 */
+/** One signal light per service, in catalog order. */
 export function serviceLights(states: ServiceStates): ServiceLight[] {
   return SERVICE_IDS.map((id) => ({
     id,
@@ -152,7 +151,7 @@ export interface ServicesSummary {
   tone: 'error' | 'on' | 'off';
 }
 
-/** 总览标题旁的一小句：有出错的先说出错，其次说几项在跑，全关着说「全部未启动」。没有提供的服务不计入。 */
+/** Small line beside the overview title: if something has errored, say so first; otherwise say how many are running; if all are off, say “全部未启动”（all not started). Services not offered are not counted. */
 export function servicesSummary(states: ServiceStates): ServicesSummary {
   const all = SERVICE_IDS.map((id) => states[id]);
   const errors = all.filter((s) => s === 'error').length;
@@ -163,8 +162,7 @@ export function servicesSummary(states: ServiceStates): ServicesSummary {
 }
 
 /**
- * rail「服务」的角标（原型 apprail.jsx 的 `badge`）：有服务出错时亮；外部客户端的请求在等确认（服务审批，50 秒时限）时也亮，
- * 免得用户不在 MCP 服务页时错过。返回读屏用的说法，没有就是 null。
+ * Badge on the rail's “Services” (prototype apprail.jsx `badge`): lights up when a service has errored, and also when external client requests are waiting for confirmation (service approvals, 50-second time limit), so the user does not miss them when not on the MCP service page. Returns the wording for screen readers; null if there is none.
  */
 export function servicesAlert(states: ServiceStates, pendingApprovals = 0): string | null {
   const summary = servicesSummary(states);
@@ -178,8 +176,7 @@ export type ServiceQuickAction =
   | { kind: 'unavailable'; label: string };
 
 /**
- * 服务行行尾的快捷按钮：开着给停、关着给起、出错给「重新…」、起停中给一个转圈的禁用按钮；
- * 没有提供的服务不给按钮，原因由行的副文说。
+ * Quick button at the end of a service row: when on, offers stop; when off, offers start; when errored, offers “重新…”（restart…); while starting or stopping, a spinning disabled button; services that are not offered get no button, and the row's sub-line says why.
  */
 export function serviceQuickAction(id: ServiceId, state: ServiceState): ServiceQuickAction {
   const copy = SERVICE_COPY[id];
@@ -191,8 +188,7 @@ export function serviceQuickAction(id: ServiceId, state: ServiceState): ServiceQ
 }
 
 /**
- * 服务操作失败时给人看的一句：这个版本没有的服务（`SERVICE_NOT_AVAILABLE`）与没开着的服务（`SERVICE_NOT_RUNNING`）说人话，
- * 其余照 Runtime 的消息。
+ * One sentence shown to the person when a service operation fails: services not in this version (`SERVICE_NOT_AVAILABLE`) and services not running (`SERVICE_NOT_RUNNING`) are explained in plain words; others follow the Runtime message.
  */
 export function serviceErrorMessage(error: unknown): string {
   const details = (error as { details?: unknown } | null)?.details;
@@ -202,9 +198,9 @@ export function serviceErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// ---- 端口（原型 model-services.js `parsePort`） ----
+// ---- Port (prototype model-services.js `parsePort`) ----
 
-/** 各服务的默认端口（Runtime 的常量）：被占用时服务进入 error，不换端口。 */
+/** The default port for each service (Runtime constants): when it is taken, the service enters error; the port is not switched. */
 export const SERVICE_DEFAULT_PORT: Readonly<Record<ServiceId, number>> = {
   mcp: MCP_DEFAULT_PORT,
   remote: NODE_DEFAULT_PORT,
@@ -215,8 +211,8 @@ export const SERVICE_DEFAULT_PORT: Readonly<Record<ServiceId, number>> = {
 export type PortParse = { port: number; error?: undefined } | { error: string; port?: undefined };
 
 /**
- * 端口输入 → `{port}` 或 `{error}`。只收 1024–65535 的整数；和这台 Mac 上其他 CucCut 服务（配置的端口）撞口的直接说是谁。
- * `others`：其他服务此刻配置的端口。
+ * Port input → `{port}` or `{error}`. Accepts only integers from 1024 to 65535; if it collides with the port configured for another CucCut service on this Mac, it says directly which one.
+ * `others`: the ports other services are configured with right now.
  */
 export function parsePort(text: string, self: ServiceId, others: Partial<Record<ServiceId, number | null>>): PortParse {
   const t = text.trim();
@@ -229,7 +225,7 @@ export function parsePort(text: string, self: ServiceId, others: Partial<Record<
   return { port: n };
 }
 
-/** 各服务配置的端口（总览里校验撞口用）；远端算力取共享状态里的端口。 */
+/** The port each service is configured with (used to check collisions in the overview); remote compute takes its port from the shared state. */
 export function servicePorts(services: readonly ServiceStatus[], share: Pick<ShareStatus, 'port'> | null): Partial<Record<ServiceId, number | null>> {
   const ports: Partial<Record<ServiceId, number | null>> = {};
   for (const status of services) ports[uiServiceId(status.serviceId)] = status.port;
@@ -237,20 +233,19 @@ export function servicePorts(services: readonly ServiceStatus[], share: Pick<Sha
   return ports;
 }
 
-/** Runtime 监听失败的两种原因（service-clients.ts 的 `listenError`）：端口被占用、不能在端口上监听。 */
+/** The two reasons Runtime listening can fail (`listenError` in service-clients.ts): the port is already in use, or it cannot listen on the port. */
 const PORT_ERRORS = new Set(['rcServices.portInUse', 'rcServices.cannotListen']);
 
 /**
- * 出错的原因是不是端口的事（按 `errorRef` 的键认）。是才给「换个端口」的建议与「换回默认端口」；别的原因（例如 Web 客户端
- * 没有构建）照 Runtime 的原话，不乱指路。
+ * Whether the error is about the port (checked by the keys of `errorRef`). Only then does it give the “try another port” suggestion and “revert to the default port”. For other causes (e.g. the web client was not built), it shows Runtime's exact words without pointing the user the wrong way.
  */
 export function isPortError(status: Pick<ServiceStatus, 'errorRef'>): boolean {
   return !!status.errorRef && PORT_ERRORS.has(status.errorRef.key);
 }
 
-// ---- 浏览器 ----
+// ---- Browser ----
 
-/** 从登录时的 User-Agent 认出是哪个浏览器（Web 服务的会话列表）；认不出时说「浏览器」。 */
+/** Recognizes which browser it is from the User-Agent at login (the web service session list); says “浏览器”（browser) when it cannot tell. */
 export function browserLabel(userAgent: string | null): string {
   if (!userAgent) return M.browser;
   const ua = userAgent;
@@ -270,14 +265,14 @@ export function browserLabel(userAgent: string | null): string {
   return os ? `${name} · ${os}` : name;
 }
 
-/** 浏览器会话的副行：「2 个连接 · 3 分钟前活跃 · 21:40 过期」（会话从登录起 12 小时有效）。 */
+/** Sub-line of a browser session: “2 个连接 · 3 分钟前活跃 · 21:40 过期”（2 connections · active 3 minutes ago · expires 21:40). Sessions are valid for 12 hours from login. */
 export function webSessionMeta(session: Pick<WebSession, 'connections' | 'lastUsedAt' | 'expiresAt'>, now: number): string {
   const at = new Date(session.expiresAt);
   const expires = Number.isNaN(at.getTime()) ? null : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
   return M.sessionMeta(session.connections, agoLabel(session.lastUsedAt, now), expires);
 }
 
-// ---- CucCut Runtime（设置 › 诊断复用的 Runtime 卡） ----
+// ---- CucCut Runtime (the Runtime card reused by Settings › Diagnostics) ----
 
 export function runtimeTone(status: string): ServiceTone {
   if (status === 'connected') return 'on';

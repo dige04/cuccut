@@ -14,7 +14,7 @@ import { pl } from './quick-chat-copy.pl.ts';
 import { tr } from './quick-chat-copy.tr.ts';
 import { vi } from './quick-chat-copy.vi.ts';
 
-/** 视频右下角悬浮会话的文案。译文在 `quick-chat-copy.zh-Hans.ts`。 */
+/** Copy for the floating chat session at the bottom-right corner of the video. The translation is in `quick-chat-copy.zh-Hans.ts`. */
 const en = {
   label: 'This video’s session',
   expand: 'Expand session',

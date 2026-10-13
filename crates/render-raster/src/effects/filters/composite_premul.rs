@@ -1,8 +1,6 @@
-//! 预乘 RGBA 的整数 source-over。
+//! Integer source-over for premultiplied RGBA.
 //!
-//! **逐行搬自** `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs::composite_premultiplied_rgba`。
-//! 只遍历 `bounds`：盒外 source 的 alpha 与 RGB 恒为 0（预乘不变式 `rgb ≤ a`），
-//! `dst = 0 + dst * 255 / 255 = dst` 是恒等操作，因此跳过与整帧遍历逐字节一致。
+//! **Moved line by line from** `composite_premultiplied_rgba` in `core/crates/ccut-kernel/src/cmd/studio_export/raster.rs`. It only iterates over `bounds`: the source's alpha and RGB outside the box are always 0 (the premultiplication invariant `rgb ≤ a`), and `dst = 0 + dst * 255 / 255 = dst` is an identity operation, so skipping them is byte-identical to a full-frame traversal.
 
 use super::blur::ContentBox;
 
@@ -19,7 +17,7 @@ pub fn composite_premultiplied_rgba(
     }
 }
 
-/// 一段等长像素的 source-over（逐像素同上）；两段缓冲步长不同时按行调用它。
+/// Source-over over a run of pixels of equal length (per pixel as above); when the two buffers have different strides, call it per row.
 pub fn composite_premultiplied_row(destination: &mut [u8], source: &[u8]) {
     for (destination, source) in destination.chunks_exact_mut(4).zip(source.chunks_exact(4)) {
         let alpha = u16::from(source[3]);

@@ -15,9 +15,7 @@ import { FONT_DOWNLOAD_REMEDIES } from './font-download.ts';
 import { FontService, type FontSettings } from './font-service.ts';
 
 /**
- * 按需下载的字体（架构设计 §9.1）：Runtime 侧的下载、缓存、去重、失败、取消与删除。字体服务是本机的假服务
- * （把 https 的 Google Fonts 地址改写到 127.0.0.1），引擎是假的：「字体文件」是 `FONT:<族名>` 开头的字节，
- * 不是这个开头的当作解析不了。真实引擎的核对与成片导出在 `font-engine.test.ts` 与成片导出的端到端测试里。
+ * Downloaded fonts (architecture design §9.1): on the Runtime side, downloads, cache, de-duplication, failures, cancellation, and deletion. The font service is a local fake (it rewrites https Google Fonts URLs to 127.0.0.1), and the engine is also fake: a “font file” is bytes beginning with `FONT:<family name>`; anything without that prefix is treated as unparseable. Real engine verification and the final video export are covered in `font-engine.test.ts` and the end-to-end export test.
  */
 
 const CATALOGUE = FontCatalogue.parse({
@@ -40,15 +38,15 @@ const CATALOGUE = FontCatalogue.parse({
   ],
 });
 
-/** 本机已装的族（假引擎的扫描结果）。 */
+/** Families installed locally (the fake engine's scan results). */
 const LOCAL = ['Roboto', 'Local Only Sans'];
 
 interface FakeServer {
   url: string;
   requests: { url: string; userAgent: string | undefined }[];
-  /** 慢文件：每块之间等多久（取消用）。 */
+  /** Slow file: how long to wait between chunks (for cancellation). */
   slowMs: number;
-  /** 前几次请求 Flaky Font 的文件回 503。 */
+  /** The first few requests for the Flaky Font file get a 503. */
   flaky: number;
   close(): Promise<void>;
 }
@@ -62,7 +60,7 @@ async function fakeFonts(): Promise<FakeServer> {
       const [name, axes] = url.searchParams.get('family')!.split(':');
       const family = name!.replace(/\+/g, ' ');
       if (family === 'Broken Font') return void res.writeHead(404).end('no');
-      // 样张（`text`）：一个只含这几个字的子集，地址带查询参数（同 Google Fonts 的 `/l/font?kit=…`）。
+      // Sample (`text`): a subset containing only these few characters; the address carries query parameters (like Google Fonts' `/l/font?kit=…`).
       const text = url.searchParams.get('text');
       if (text !== null) {
         const host = family === 'Elsewhere Font' ? 'https://evil.example' : 'https://fonts.gstatic.com';
@@ -125,7 +123,7 @@ async function fakeFonts(): Promise<FakeServer> {
   }) as FakeServer;
 }
 
-/** 假引擎：本机字体是 `LOCAL`；本机没有时到下载缓存里挑（同字重优先，否则那个族的任何一个）。 */
+/** Fake engine: local fonts are `LOCAL`; when not installed locally, it picks from the download cache (same weight preferred, otherwise any face of that family). */
 function fakeEngine(cacheDir: string) {
   return {
     async fontFamilies() {
@@ -150,7 +148,7 @@ function fakeEngine(cacheDir: string) {
     },
     async inspectFont(file: string) {
       const bytes = await fs.readFile(file);
-      // 样张前面有 TrueType 的文件头（`00 01 00 00`）。
+      // The sample starts with a TrueType file header (`00 01 00 00`).
       const head = bytes.subarray(bytes[0] === 0 && bytes[1] === 1 ? 4 : 0, 64).toString('utf8');
       if (!head.startsWith('FONT:')) throw new RpcError('invalid-request', '不是字体', { code: 'FONT_INVALID' });
       return [{ index: 0, families: [head.slice(5).split('\n')[0]!], postScriptName: 'Fake', weight: 400, italic: false }];
@@ -161,7 +159,7 @@ function fakeEngine(cacheDir: string) {
 const videos = { retain: () => {}, release: () => {}, videoRevision: () => '1' } as unknown as JobVideos;
 const router = { selectTranscribe: async () => ({}), transcriber: () => null, executors: () => [] } as unknown as TranscribeRouter;
 const submitter = { kind: 'connection', id: 'conn_1' } as const;
-/** 假服务给的字体文件的字节数。 */
+/** Byte count of the font file served by the fake service. */
 const sizeOf = (family: string) => Buffer.byteLength(`FONT:${family}\n`) + 4096;
 
 describe('按需下载的字体（FontService）', () => {
@@ -228,7 +226,7 @@ describe('按需下载的字体（FontService）', () => {
       [400, 'downloaded'],
       [700, 'downloaded'],
     ]);
-    // 族只有 400：要 700 时对到 400，已经有了，不再下载。
+    // The family has only 400: asking for 700 matches 400, which is already present, so nothing is downloaded.
     expect(server.requests.map((r) => r.url)).toEqual(['/css2?family=Lobster:wght@400', '/s/lobster/400.ttf?v=1']);
     expect(server.requests.every((r) => r.userAgent === 'CucCut')).toBe(true);
 
@@ -245,7 +243,7 @@ describe('按需下载的字体（FontService）', () => {
       },
     ]);
     expect(totalBytes).toBe(sizeOf('Lobster'));
-    // 索引里不记地址；staging 里不留临时文件。
+    // The index does not record URLs, and no temporary files are left in staging.
     expect(await fs.readFile(path.join(dir, 'fonts', 'index.json'), 'utf8')).not.toContain('gstatic');
     expect(await fs.readdir(path.join(dir, 'fonts', '.staging'))).toEqual([]);
   });
@@ -255,7 +253,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(a.missing[0]!.jobId).toBe(b.missing[0]!.jobId);
     await jobs.settled(a.missing[0]!.jobId!);
     expect(server.requests.map((r) => r.url)).toEqual(['/css2?family=Noto+Serif+JP:wght@700', '/s/noto-serif-jp/700.ttf?v=1']);
-    // Roboto 是本机的；Poppins 随内核；不在目录里的族交给引擎（找不到就是 not-found）。都不下载。
+    // Roboto is local; Poppins ships with the kernel; families not in the catalogue are handed to the engine (not found if missing). None of them are downloaded.
     server.requests.length = 0;
     const others = await resolve([face('Roboto'), face('Poppins'), face('Nowhere Sans')]);
     expect(others.faces.map((f) => f.family)).toEqual(['Roboto']);
@@ -287,12 +285,12 @@ describe('按需下载的字体（FontService）', () => {
       expect(status, family).toMatchObject({ state: 'failed', error: { code, messageRef: { key: expect.stringMatching(/^rcFonts\./) } } });
     }
     expect(server.requests.some((r) => r.url.startsWith('/s/elsewhere'))).toBe(false);
-    // 补救写给人看：指向设置页上的名字，不写设置的键（键名对人没有用，CLI 的帮助里另有）。
+    // The remedy is written for people: it points to the name on the settings page, and does not write the settings key (key names mean nothing to people; the CLI help has them separately).
     for (const remedy of Object.values(FONT_DOWNLOAD_REMEDIES)) expect(remedy).not.toMatch(/fonts\.\w+/);
     expect(FONT_DOWNLOAD_REMEDIES.FONT_DOWNLOAD_NETWORK).toContain('「设置 › 字体」的「样式表地址」与「字体文件地址」');
     expect((await fonts.downloaded()).faces).toEqual([]);
     expect(await fs.readdir(path.join(dir, 'fonts', '.staging'))).toEqual([]);
-    // 最近失败过：不自动重试，记 download-failed；手动下载就是重试。
+    // Recently failed: no automatic retry; records download-failed. A manual download is the retry.
     server.requests.length = 0;
     const later = await resolve([face('Broken Font')]);
     expect(later.missing).toEqual([{ ...face('Broken Font'), reason: 'download-failed', code: 'FONT_DOWNLOAD_SOURCE' }]);
@@ -329,7 +327,7 @@ describe('按需下载的字体（FontService）', () => {
     const started = await fonts.download({ family: 'Slow Font', commandId: 'cmd_slow' }, submitter);
     const jobId = started.jobId!;
     expect((await fonts.download({ family: 'Slow Font', commandId: 'cmd_slow' }, submitter)).jobId).toBe(jobId);
-    // 等到真的在下载（有字节进来）再取消。
+    // Cancel only once the download is actually running (bytes have arrived), not while it is still waiting.
     for (let i = 0; i < 100 && !((await fonts.catalogueList({ families: ['Slow Font'] })).families[0]!.job?.doneBytes ?? 0); i++) {
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -357,7 +355,7 @@ describe('按需下载的字体（FontService）', () => {
       return (await fonts.catalogueList({ families: [family] })).families[0]!;
     };
 
-    // 取消下载任务（选字、字体条的跳过）：选字列表记「已取消」，下次清点或预览要它时重新下载。
+    // Cancels the download task (picker, skip in the font bar): the font picker records “已取消” (cancelled); the next scan or preview that needs it downloads again.
     const cancelled = (await fonts.download({ family: 'Slow Font' }, submitter)).jobId!;
     for (let i = 0; i < 100 && !((await fonts.catalogueList({ families: ['Slow Font'] })).families[0]!.job?.doneBytes ?? 0); i++) {
       await new Promise((r) => setTimeout(r, 20));
@@ -373,7 +371,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(again).not.toBe(cancelled);
     expect(await jobs.settled(again)).toBe('completed');
 
-    // 取消导出：导出自己开始的下载停下，下一次预览要这个 face 时自动下载。
+    // Cancels the export: downloads that the export itself started stop; the next preview that needs this face downloads it automatically.
     server.slowMs = 50;
     const controller = new AbortController();
     const exporting = fonts.ensureForExport([face('Slow Font Two')], 'job_export_cancelled', controller.signal, () => {});
@@ -385,7 +383,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(missing).toEqual([{ ...face('Slow Font Two'), reason: 'downloading', jobId: expect.stringMatching(/^job_/) }]);
     expect(await jobs.settled(missing[0]!.jobId!)).toBe('completed');
 
-    // 真的失败：十分钟内不自动重试，答「下载失败」，不提交新任务。
+    // A real failure: no automatic retry for ten minutes; answers “下载失败” (download failed) and does not submit a new task.
     const failed = (await resolve([face('Broken Font')])).missing[0]!.jobId!;
     expect(await jobs.settled(failed)).toBe('failed');
     const count = jobs.list().length;
@@ -410,13 +408,13 @@ describe('按需下载的字体（FontService）', () => {
       for (const family of families) ids.push((await fonts.download({ family }, submitter)).jobId!);
       for (const id of ids) expect(await jobs.settled(id)).toBe('completed');
       const [a, b, c] = ids.map((id) => seen.get(id)!);
-      // 马上开始的：第一条是不带 wait 的 queued，接着 running，从没在等。
+      // Starts right away: the first entry is a queued one without wait, then running; it never waits.
       for (const records of [a!, b!]) {
         expect(records[0]).toEqual({ state: 'queued', wait: null });
         expect(records[1]).toEqual({ state: 'running', wait: null });
         expect(records.some((r) => r.wait !== null)).toBe(false);
       }
-      // 要等的：第一条就带着 wait（界面头一眼就是「等待中」），等到前面的有一个结束才 running。
+      // Must wait: the first entry already carries wait (the UI shows “等待中” (waiting) at first glance), and becomes running only after one of the preceding ones finishes.
       expect(c![0]).toEqual({ state: 'queued', wait: 'concurrency' });
       const running = c!.findIndex((r) => r.state === 'running');
       expect(running).toBeGreaterThan(0);
@@ -466,7 +464,7 @@ describe('按需下载的字体（FontService）', () => {
     await jobs.settled((await fonts.download({ family: 'Lobster' }, submitter)).jobId!);
     await jobs.settled((await fonts.download({ family: 'Noto Serif JP', faces: [{ weight: 400, italic: false }] }, submitter)).jobId!);
     const [lobster] = (await fonts.resolve([face('Lobster')], { download: false, submitter })).faces;
-    // 一个还在跑的「导出」钉住 Lobster 的文件。
+    // A “导出” (export) still running pins Lobster's file.
     let finish!: () => void;
     const gate = new Promise<void>((r) => (finish = r));
     const { jobId } = jobs.submitTask(
@@ -493,7 +491,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(cleared.removed.map((f) => f.family)).toEqual(['Noto Serif JP']);
     expect(cleared.kept.map((f) => f.family)).toEqual(['Lobster']);
     expect(cleared.freedBytes).toBe(sizeOf('Noto Serif JP'));
-    // 客户端一收到终态就来取已下载列表：这时任务还没落盘算完（`settled`），也已经不算在用。
+    // When the client receives a terminal state, it fetches the downloaded list at once: at that point the task has not yet been settled on disk (`settled`), and it is no longer counted as in use.
     let atEnd: Promise<string[]> | null = null;
     const stop = jobs.onChange((job) => {
       if (job.jobId === jobId && job.state === 'completed') atEnd ??= fonts.downloaded().then((d) => d.inUse);
@@ -526,7 +524,7 @@ describe('按需下载的字体（FontService）', () => {
     );
     expect(outcomes.get('Lobster\u0000400\u00000')).toBeNull();
     expect(outcomes.get('Broken Font\u0000400\u00000')).toMatch(/下载失败：.*HTTP 404/);
-    // 失败的那个不算进进度：总数照样知道（界面念百分比）。
+    // A failed face is not counted in progress. The total is still known, so the UI can show a percentage.
     expect(progress.at(-1)).toEqual([sizeOf('Lobster'), sizeOf('Lobster')]);
     expect((await fonts.downloaded()).faces.map((f) => f.family)).toEqual(['Lobster']);
 
@@ -555,12 +553,12 @@ describe('按需下载的字体（FontService）', () => {
       '/l/font?kit=lobster&kind=ttf&text=Lobster',
     ]);
     expect(server.requests.every((r) => r.userAgent === 'CucCut')).toBe(true);
-    // 族名去掉空白与重复的字；WOFF2 只认文件头（引擎读不了压缩的）。
+    // Family names have whitespace and duplicate characters removed. WOFF2 is recognized only by its file header, since the engine cannot read compressed files.
     const jp = await fonts.sample({ family: 'Noto Serif JP' });
     expect(jp).toMatchObject({ text: 'NotSerifJP', format: 'woff2' });
     expect(server.requests[2]!.url).toBe('/css2?family=Noto+Serif+JP:wght@400&text=NotSerifJP');
 
-    // 缓存：再要不联网；严格离线时缓存里有的照给，没有的不取。
+    // Cache: no network access when asked again. In strict offline mode, cached items are returned and missing ones are not fetched.
     server.requests.length = 0;
     expect(await fonts.sample({ family: 'Lobster' })).toEqual(lobster);
     settings.offlineStrict = true;
@@ -581,7 +579,7 @@ describe('按需下载的字体（FontService）', () => {
     });
     await expect(fonts.sample({ family: 'Garbage Font' })).rejects.toMatchObject({ details: { code: 'FONT_DOWNLOAD_INTEGRITY' } });
     await expect(fonts.sample({ family: 'Broken Font' })).rejects.toMatchObject({ details: { code: 'FONT_DOWNLOAD_SOURCE' } });
-    // 样张不算下载的字体：不进索引、不占「已下载」。
+    // Samples are not downloaded fonts: they are not in the index and do not count as “已下载” (downloaded).
     expect((await fonts.downloaded()).faces).toEqual([]);
     expect(await fs.readdir(path.join(dir, 'fonts', 'samples'))).toHaveLength(2);
   });
@@ -614,7 +612,7 @@ describe('按需下载的字体（FontService）', () => {
     ]);
     expect(server.requests).toEqual([]);
 
-    // 自动下载关着：download 也不下载。
+    // With auto-download off, download does not download either.
     settings.autoDownload = false;
     expect((await fonts.usage(census, { download: true, submitter })).started).toEqual([]);
     settings.autoDownload = true;
@@ -627,7 +625,7 @@ describe('按需下载的字体（FontService）', () => {
     await jobs.settled(lobster.status.job!.jobId);
     await jobs.settled(opened.families.find((f) => f.family === 'Broken Font')!.status.job!.jobId);
 
-    // 再打开：下载好的不用回退；刚失败的不自动重试（十分钟内），状态是失败与原因。
+    // On reopen: downloaded fonts need no fallback; a recent failure is not retried automatically (within ten minutes), and the status is “下载失败” (download failed) with its reason.
     server.requests.length = 0;
     const again = await fonts.usage(census, { download: true, submitter });
     expect(again.started).toEqual([]);

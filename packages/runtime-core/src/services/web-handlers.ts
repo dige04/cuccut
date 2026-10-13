@@ -21,15 +21,13 @@ import type { RpcHandlers } from '../handlers.ts';
 import type { VideoService } from '../videos/video-service.ts';
 
 /**
- * Web 服务在网关处理函数上加的限制（架构设计 §4.8、§12.8）。处理函数本身与桌面界面是同一组，只多了这几条：
+ * Restrictions the web service adds on top of the gateway handlers (architecture design §4.8, §12.8). The handlers are the same set the desktop UI uses; only these extra rules apply:
  *
- * - **白名单**（`webAuthorize`）：在网关分发之前查方法与订阅的主题，白名单之外 `forbidden`；配置改了立即生效。
- * - **没有项目目录之外的文件访问**：`projects.open` 只接受已登记的项目；`edits.apply` 里 `importAsset` / `relinkAsset`
- *   的路径（相对视频目录或绝对路径）按真实路径必须在视频所在的项目目录（或不属于项目的会话的工作目录）里；
- *   `exports.create` 的目标目录同样要在这个目录里，且不能是视频目录或 `.ccut`（不给时是项目的 `exports/`）。
- *   `space.import` 的文件按真实路径必须在项目目录里；`videos.importPackage` 的便携包按真实路径必须在新视频的来源目录
- *   （项目目录，或不属于项目的会话的工作目录）里。导出便携包与工程同样走 `exports.create` 的目标目录约束。
- * - **审计**：写入类的调用记一条最近的请求（方法、目标视频与结果），不记参数正文。
+ * - **Allowlist** (`webAuthorize`): checks the method and the subscribed topic before gateway dispatch. Anything outside the allowlist gets `forbidden`. Configuration changes take effect immediately.
+ * - **No file access outside the project directory**: `projects.open` only accepts registered projects. The paths of `importAsset` / `relinkAsset` in `edits.apply` (relative to the video directory or absolute) must, by real path, lie inside the project directory of the video (or the working directory of a session that does not belong to a project).
+ *   The target directory of `exports.create` must likewise lie inside that directory, and must not be the video directory or `.ccut` (when not given, it defaults to the project's `exports/`).
+ *   The files of `space.import` must, by real path, lie inside the project directory. The portable packages of `videos.importPackage` must, by real path, lie inside the source directory of the new video (the project directory, or the working directory of a session that does not belong to a project). Exporting portable packages and projects also goes through the target-directory constraint of `exports.create`.
+ * - **Audit**: write-type calls record one recent request (method, target video and result), not the parameter bodies.
  */
 
 export function webAuthorize(method: RpcMethod, params: unknown, access: WebServiceAccess): RpcError | null {
@@ -56,9 +54,9 @@ export interface WebHandlerDeps {
   uploadUrl?: (sessionId: string, url: string) => string;
   harness: Harness;
   videos: VideoService;
-  /** 一次写入类调用结束：方法、主体、目标视频与结果（`ok` 或错误码）。 */
+  /** End of a write-type call: method, body, target video and result (`ok` or error code). */
   record: (method: RpcMethod, principal: TrustedPrincipal, videoId: string | null, outcome: string) => void;
-  /** 此刻的访问配置（白名单与只读）：工具目录据此标出浏览器里用不了的工具。 */
+  /** The current access configuration (allowlist and read-only). The tool catalog uses it to mark tools that cannot be used in the browser. */
   access: () => WebServiceAccess;
 }
 
@@ -102,14 +100,14 @@ export function webHandlers(base: RpcHandlers, deps: WebHandlerDeps): RpcHandler
     return importFile({ ...p, path: await confineImport(deps, p) }, principal);
   };
 
-  // 工具目录（§7.9）：执行方法在浏览器里调不了的工具标为不可用（例如固定流程 `pipelines.*` 不在默认集合里）；
-  // 保存位置不在任何已登记的项目目录里时，把结果写到保存位置的流程标出来（浏览器拿不到那里的文件）。
+  // Tool catalog (§7.9): tools whose execution method cannot be called from the browser are marked unavailable (for example the fixed-flow `pipelines.*` is not in the default set).
+  // When the save location is not inside any registered project directory, flows that write results to the save location are marked (the browser cannot reach files there).
   const listTools = base.methods['tools.list'];
   methods['tools.list'] = async (params, principal) => {
     const result = await listTools(params as RpcParams<'tools.list'>, principal);
     const access = deps.access();
     const saveOutside = result.saveDirectory !== undefined && !(await insideRegisteredProject(deps.harness, result.saveDirectory));
-    // 外部工具的说明可能带本机路径（探测失败的原因）：浏览器里只给错误码与工具名，同 `externalTools.*` 不对浏览器开放。
+    // The description of an external tool may contain a local machine path (the reason a probe failed). The browser only gets the error code and tool name, the same way `externalTools.*` is not exposed to the browser.
     const confine = (problems: ToolProblem[]): ToolProblem[] =>
       problems.map((p) => (p.tool ? { ...problemOf(p.code, RcWeb.externalToolUnavailable({ tool: p.tool })), tool: p.tool } : p));
     return {
@@ -127,7 +125,7 @@ export function webHandlers(base: RpcHandlers, deps: WebHandlerDeps): RpcHandler
     };
   };
 
-  // 直接任务的 `saveDir`（§7.9）：浏览器只能让副本写进已登记的项目目录。
+  // The `saveDir` of a direct task (§7.9): the browser can only make the copy write into a registered project directory.
   for (const name of ['models.synthesizeSpeech', 'models.generateImage', 'models.generateMusic', 'models.generateText'] as const) {
     const submit = base.methods[name] as (params: unknown, principal: TrustedPrincipal) => unknown;
     methods[name] = async (params, principal) => {
@@ -166,14 +164,13 @@ function saveLocationProblem(): ToolProblem {
   return problemOf('PATH_OUTSIDE_PROJECT', RcWeb.saveLocationOutsideProject());
 }
 
-/** 一条不可用的原因：文字连同引用（浏览器按自己的界面语言重新生成，Runtime 的语言可能与它不同）。 */
+/** The reason for one unavailable item: the text plus a reference. The browser regenerates the text in its own UI language, which may differ from the Runtime's language. */
 function problemOf(code: string, message: Localized): ToolProblem {
   return { code, message: message.text, messageRef: refOf(message) };
 }
 
 /**
- * 保存位置在项目目录之外时（§7.9，浏览器只碰已登记的项目目录）：结果只写到保存位置的流程不可用；还能写进视频的
- * （转录、翻译字幕）照样可用，文件输入受限、写进限制。直接任务的结果在产物库里、浏览器照样能读，不受影响。
+ * When the save location is outside the project directory (§7.9; the browser only touches registered project directories), results written only to the save location are unavailable. Results that can still be written into the video (transcription, translated subtitles) remain available, with file input and writing restricted. The results of direct tasks are in the asset library, which the browser can still read, so they are unaffected.
  */
 function gateSaveLocation<T extends Pick<ToolStatus, 'execution' | 'results' | 'problems' | 'limitations' | 'available'>>(tool: T): T {
   if (tool.execution.kind !== 'pipeline' || !tool.results.includes('artifact')) return tool;
@@ -181,7 +178,7 @@ function gateSaveLocation<T extends Pick<ToolStatus, 'execution' | 'results' | '
   return { ...tool, available: false, problems: [...tool.problems, saveLocationProblem()] };
 }
 
-/** 目录（可以还不存在：按最近的已有上级取真实路径）在某个已登记的项目目录里。 */
+/** The directory (it may not exist yet; its real path is taken from the nearest existing ancestor) is inside a registered project directory. */
 async function insideRegisteredProject(harness: Harness, dir: string): Promise<boolean> {
   if (!path.isAbsolute(dir)) return false;
   let existing = path.resolve(dir);
@@ -202,7 +199,7 @@ async function insideRegisteredProject(harness: Harness, dir: string): Promise<b
   return false;
 }
 
-/** 已登记的项目（按真实路径比较）。 */
+/** Registered projects (compared by real path). */
 async function registeredProject(harness: Harness, target: string): Promise<boolean> {
   if (!path.isAbsolute(target)) return false;
   const real = await fs.realpath(target).catch(() => null);
@@ -214,8 +211,8 @@ async function registeredProject(harness: Harness, target: string): Promise<bool
 }
 
 /**
- * `space.import` 的文件：相对项目目录或绝对路径，按真实路径必须在项目目录里（浏览器不能把项目之外的文件复制进来）。
- * 换成真实路径交给处理函数，检查与使用之间不再经过符号链接。
+ * Files for `space.import`: relative to the project directory or absolute. By real path they must lie inside the project directory (the browser cannot copy files from outside the project).
+ * The real path is handed to the handler, so no symbolic link is traversed between the check and the use.
  */
 async function confineImport(deps: WebHandlerDeps, params: RpcParams<'space.import'>): Promise<string> {
   const project = deps.harness.listProjects().find((p) => p.id === params.projectId);
@@ -230,8 +227,8 @@ async function confineImport(deps: WebHandlerDeps, params: RpcParams<'space.impo
 }
 
 /**
- * `videos.importPackage` 的包：相对来源目录或绝对路径，按真实路径必须在新视频的来源目录里（浏览器不能读项目之外的文件，
- * 也不能经符号链接指到别处）。换成真实路径交给处理函数。
+ * The package for `videos.importPackage`: relative to the source directory or absolute. By real path it must lie inside the source directory of the new video (the browser cannot read files outside the project, nor can it follow a symbolic link elsewhere).
+ * The real path is handed to the handler.
  */
 async function confinePackage(deps: WebHandlerDeps, params: RpcParams<'videos.importPackage'>): Promise<string> {
   let root: string;
@@ -254,7 +251,7 @@ async function confinePackage(deps: WebHandlerDeps, params: RpcParams<'videos.im
   return real;
 }
 
-/** `importAsset` / `relinkAsset` 的路径换成真实路径，并确认在视频的来源目录里。 */
+/** Turns the paths of `importAsset` / `relinkAsset` into real paths and confirms they lie inside the video's source directory. */
 async function confinePaths(deps: WebHandlerDeps, params: RpcParams<'edits.apply'>): Promise<RpcParams<'edits.apply'>['operations']> {
   const ops = params.operations as unknown as Record<string, unknown>[];
   if (!ops.some(hasPath)) return params.operations;
@@ -284,12 +281,11 @@ async function confinePaths(deps: WebHandlerDeps, params: RpcParams<'edits.apply
 }
 
 /**
- * `exports.create` 的目标目录：给了的按真实路径必须在视频的来源目录里、已经存在、不在视频目录（含 `video.db`）或 `.ccut` 里，
- * 换成真实路径交给导出服务；不给时检查默认的 `exports/`（已经存在时）没有经符号链接指到别处。
+ * The target directory of `exports.create`: when given, by real path it must lie inside the video's source directory, already exist, and not be inside the video directory (including `video.db`) or `.ccut`. The real path is handed to the export service. When not given, the default `exports/` (if it already exists) is checked so that it does not point elsewhere through a symbolic link.
  */
 async function confineExportDir(deps: WebHandlerDeps, params: RpcParams<'exports.create'>): Promise<string | undefined> {
   const ref = deps.videos.ref(params.videoId);
-  if (!ref) return undefined; // 视频没有打开：交给导出服务回答
+  if (!ref) return undefined; // The video is not open: let the export service answer
   const rootReal = await fs.realpath(sourceRoot(deps.harness, ref.source)).catch(() => null);
   if (!rootReal) throw new RpcError('not-found', RcWeb.videoProjectDirMissing());
   const refuse = () => new RpcError('forbidden', RcWeb.exportOutsideProject(), { code: 'PATH_OUTSIDE_PROJECT' });
@@ -342,7 +338,7 @@ function sourceRoot(harness: Harness, source: { projectId: string | null; conver
 }
 
 function videoIdOf(params: unknown): string | null {
-  // `compositions.*` 的视频参数叫 `video`（与工具相同）。
+  // The video parameter of `compositions.*` is named `video`, the same as in the tools.
   const p = params as { videoId?: unknown; video?: unknown } | null;
   const videoId = p?.videoId ?? p?.video;
   return typeof videoId === 'string' ? videoId : null;

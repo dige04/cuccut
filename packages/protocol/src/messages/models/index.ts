@@ -1,4 +1,4 @@
-/** `packages/models` 给人看的文字（message-ref.ts）。每个区域一个 `<区域>.ts` 与它的译文 `<区域>.zh-Hans.ts`，在这里 import 登记。 */
+/** Text shown to people for `packages/models` (message-ref.ts). Each area has one `<area>.ts` and its translation `<area>.zh-Hans.ts`, registered here by import. */
 import './asr-result.ts';
 import './bundle-registry.ts';
 import './download-source.ts';

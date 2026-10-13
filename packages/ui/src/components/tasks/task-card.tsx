@@ -16,7 +16,7 @@ import { TASK_KIND_RAIL_ICON } from './task-kind-icon.ts';
 import { TK } from './tasks-copy.ts';
 import { actionLabel, useTaskAction } from './use-task-actions.ts';
 
-/** 打开会话：会话还在目录里才给（智能体经工具提交的 Job 指回它的会话）。 */
+/** Open session: only offered while the session is still in the list (a Job submitted by an agent through a tool points back to its session). */
 export function useOpenConversation(row: Pick<TaskRow, 'conversationId'>): (() => void) | null {
   const go = useShell((s) => s.go);
   const exists = useDirectory((s) => !!row.conversationId && s.conversations.some((c) => c.id === row.conversationId));

@@ -1,12 +1,11 @@
-//! 端到端：真实的 HTDemucs-FT 模型包，`worker.hello` → `model.load` → `job.run`（`separate`）→ 结果。需要本机装好的模型，
-//! 默认忽略：
+//! End-to-end: a real HTDemucs-FT bundle, `worker.hello` → `model.load` → `job.run` (`separate`) → result. It needs models installed on this machine and is ignored by default:
 //!
 //! ```sh
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-worker --test separation -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
-//! 输入在测试里现做：16 kHz 的英文语音夹具升到 48 kHz，叠一条合成低音，写成立体声 WAV。模型目录只读。
+//! The input is built inside the test. The 16 kHz English speech fixture is upsampled to 48 kHz, a synthetic bass line is layered on top, and the result is written as a stereo WAV. The model directory is read-only.
 
 mod support;
 
@@ -32,7 +31,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// 语音（升到 48 kHz）与低音（82 Hz + 二次谐波），以及二者之和写成的立体声 WAV。
+/// The speech (upsampled to 48 kHz) and the bass (82 Hz + its second harmonic), plus the stereo WAV written from their sum.
 fn make_input(dir: &Path) -> (PathBuf, Vec<f32>, Vec<f32>) {
     let mut reader = hound::WavReader::open(fixture("test-sample.wav")).unwrap();
     let spec = reader.spec();
@@ -62,7 +61,7 @@ fn make_input(dir: &Path) -> (PathBuf, Vec<f32>, Vec<f32>) {
     (path, speech, tone)
 }
 
-/// 读 16-bit PCM 立体声 WAV，混成单声道。
+/// Read a 16-bit PCM stereo WAV and mix it down to mono.
 fn read_stereo(path: &Path) -> (u32, Vec<f32>) {
     let mut reader = hound::WavReader::open(path).unwrap();
     let spec = reader.spec();
@@ -189,7 +188,7 @@ fn htdemucs_splits_speech_from_a_bass_line_and_cancels() {
     assert!(vt.abs() < 0.1, "no bass in the vocals: {vt:.3}");
     assert!(bs.abs() < 0.1, "no speech in the background: {bs:.3}");
 
-    // 取消：第一个窗口的进度之后取消，结果是 cancelled、不写输出，Worker 回到 ready。
+    // Cancel: cancel after the first window's progress. The result is cancelled and no output is written, and the Worker returns to ready.
     let staging = dir.path().join("staging-cancel");
     std::fs::create_dir(&staging).unwrap();
     let run_id = worker.send("job.run", run_params("job-cancel", &input, &staging));

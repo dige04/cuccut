@@ -7,8 +7,8 @@ import { Gate } from './tool-parts.tsx';
 import { GATE_COPY } from './tools-copy.ts';
 
 /*
- * 工具页的「模型」一节（设计稿 tool-tts.jsx `ModelLine`、image-gen.jsx `ModelLine` 与 `EngineGate`）：
- * 一个按服务商分组的模型 Picker、连没连上、这只模型能做什么；选中的不能用时下面给门卡。
+ * The “模型” (Model) section of a tool page (design file tool-tts.jsx `ModelLine`, image-gen.jsx `ModelLine` and `EngineGate`):
+ * a model Picker grouped by provider, whether it is connected, and what this model can do; when the selected one cannot be used, a gate card is shown below.
  */
 
 const line = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, rowGap: 4, minHeight: 32, minWidth: 0 });
@@ -49,15 +49,15 @@ function groups<M>(options: readonly ToolModelOption<M>[], localGroup: string): 
 }
 
 /**
- * 菜单里一项的两行：云端写模型 ID，下面是不能用的原因或模型的名字；本机写模型的名字，没装好时下面是原因与去哪儿装
- * （设计稿 image-gen.jsx `ModelLine` 的本机一组）。
+ * The two lines of one menu item: for a cloud model, the model ID, with the reason it cannot be used or the model name below; for a local model, the model name, and when it is not installed, the reason and where to install it below
+ * (the local group of design file image-gen.jsx `ModelLine`).
  */
 function itemText<M>(o: ToolModelOption<M>): { label: string; description: string | null } {
   if (o.local) return { label: o.label, description: o.why ? GATE_COPY.localWhere(o.why) : null };
   return { label: o.modelId, description: o.why || o.label !== o.modelId ? (o.why ?? o.label) : null };
 }
 
-/** 模型那一行：Picker（按服务商分组；没连上的写「未连接」；本机模型自成一组）、状态、一句能力。 */
+/** The model row: Picker (grouped by provider; providers not connected are marked “未连接” (Not connected); local models form their own group), status, and one line on capability. */
 export function ModelLine<M>({
   label,
   options,
@@ -71,7 +71,7 @@ export function ModelLine<M>({
   selected: ToolModelOption<M> | null;
   onSelect: (option: ToolModelOption<M>) => void;
   factsOf: (option: ToolModelOption<M>) => string;
-  /** 没连上的不让选（设计稿 image-gen.jsx 的菜单）；语音照引擎卡片的样子，选了再给门卡。本机模型没装好也能选，选了给下载卡。 */
+  /** Models that are not connected cannot be selected (the menu in design file image-gen.jsx); speech follows the engine card's look, and a gate card appears after selection. A local model that is not installed can still be selected, and selecting it shows a download card. */
   disableUnusable?: boolean;
 }) {
   const disabled = disableUnusable ? options.filter((o) => !o.usable && !o.local && o.key !== selected?.key).map((o) => o.key) : [];
@@ -120,8 +120,8 @@ export function ModelLine<M>({
 }
 
 /**
- * 选中的模型不能用时的门卡（设计稿 image-gen.jsx `EngineGate` 的云端分支）：没连上的说「先连接 X」、给「去连接」，
- * 有能用的另一只时给「换用可用的 …」。本机模型的门卡（下载、平台不可用）在 local-model-gate.tsx。
+ * Gate card when the selected model cannot be used (the cloud branch of design file image-gen.jsx `EngineGate`): if it is not connected, it says “先连接 X” (Connect X first) and offers “去连接” (Connect);
+ * if another usable one exists, it offers “换用可用的 …” (Switch to an available …). Gate cards for local models (download, platform not available) are in local-model-gate.tsx.
  * The gate's buttons stay neutral: the form's own submit is the view's one yellow.
  */
 export function ModelGate<M>({
@@ -138,7 +138,7 @@ export function ModelGate<M>({
   onSwitch: (option: ToolModelOption<M>) => void;
 }): ReactNode {
   if (!selected || selected.usable || selected.local) return null;
-  // 回落只落到云端（设计稿 `EngineGate` 的 `preferred`）：不替用户换成本机模型。
+  // The fallback only goes to the cloud (the `preferred` of design file `EngineGate`): it does not switch the user to a local model on their behalf.
   const usable = options.filter((o) => o.usable && !o.local);
   const alt = usable.find((o) => o.providerId !== selected.providerId) ?? usable[0];
   const switchButton = alt ? (

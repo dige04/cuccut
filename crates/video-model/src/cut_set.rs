@@ -1,6 +1,6 @@
-//! 剪口集合的正文（视频格式规范 §6.7，文档 `kind: 'cut-set'`）：一个源素材上被口播剪辑删掉的区间。
+//! Body of a cut set (video format spec §6.7, document `kind: 'cut-set'`): the ranges cut from a source material by voice-over editing.
 //!
-//! 引擎的 `addCuts`、`restoreCut` 改它并按它重排实例；`putDocument` 写入时用 [`cut_set_body_problems`] 核对。
+//! The engine's `addCuts` and `restoreCut` modify it and rearrange instances according to it; `putDocument` checks it with [`cut_set_body_problems`] on write.
 
 use editor_semantics::Ratio;
 use message_ref::{Text, msg};
@@ -17,38 +17,38 @@ pub const CUT_SET_KIND: &str = "cut-set";
 pub struct CutSetBody {
     /// `cuccut.cut-set/1`。
     pub schema: String,
-    /// 每秒的刻度数。
+    /// Ticks per second.
     pub timescale: u64,
-    /// `source-asset`：时刻在被剪素材的时钟上。
+    /// `source-asset`: times are on the clock of the edited material.
     pub clock: String,
-    /// 按这份剪口排布的实例：源素材在序列上的视频、音频实例。
+    /// Instances arranged by this cut set: the source material's video and audio instances on the sequence.
     pub scope_item_ids: Vec<Id>,
-    /// 按 `t0` 排序，互不重叠。
+    /// Sorted by `t0`, non-overlapping.
     pub cuts: Vec<Cut>,
 }
 
-/// 删掉的源区间 `[t0, t1)`，整数刻度写成十进制字符串。
+/// The removed source range `[t0, t1)`; integer ticks are written as decimal strings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cut {
     pub id: Id,
     pub t0: String,
     pub t1: String,
-    /// 出处：剪辑提案里一条建议的 ID（§6.2）。
+    /// Origin: the ID of a suggestion in the editorial proposal (§6.2).
     #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
     pub r#ref: Option<Id>,
 }
 
 impl Cut {
-    /// 剪口在源素材时钟上的精确区间（秒）。刻度不是整数时为 `None`。
+    /// The exact range of the cut on the source material's clock (seconds). `None` when the ticks are not integers.
     pub fn range(&self, timescale: u64) -> Option<(Ratio, Ratio)> {
         let at = |ticks: &str| Ratio::new(ticks.parse::<i128>().ok()?, i128::from(timescale));
         Some((at(&self.t0)?, at(&self.t1)?))
     }
 }
 
-/// 正文与 §6.7 不合的地方（空表示合）：形状、`schema`、`clock`、`timescale`、刻度，剪口按 `t0` 排序、互不重叠（贴边允许）、
-/// `0 ≤ t0 < t1`，知道素材时长时 `t1` 不超过它。
+/// Places where the body does not match §6.7 (empty means it matches): shape, `schema`, `clock`, `timescale`, ticks; cuts sorted by `t0` and non-overlapping (touching edges allowed);
+/// `0 ≤ t0 < t1`, and when the material's duration is known, `t1` does not exceed it.
 pub fn cut_set_body_problems(body: &Value, duration: Option<Ratio>) -> Vec<Text> {
     let parsed = match serde_json::from_value::<CutSetBody>(body.clone()) {
         Ok(parsed) => parsed,

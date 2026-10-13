@@ -1,16 +1,16 @@
 import type { Id, MessageRef, TimelineItem } from '@cuccut/protocol';
 
-/** 视频的来源（`VideoRef.source`）：属于哪个项目，或在哪条无项目会话的工作目录里。 */
+/** The source of a video (`VideoRef.source`): which project it belongs to, or which working directory of a no-project session it is in. */
 export interface HandoffSource {
   projectId: Id | null;
   conversationId: Id | null;
 }
 
-/** 挑会话要看的会话字段（目录里的 `Conversation`）。 */
+/** Picks the session fields to show (the `Conversation` in the directory). */
 export interface HandoffConversation {
   id: Id;
   projectId: Id | null;
-  /** 共用另一条会话工作目录的会话：那条会话的 id。 */
+  /** For a session that shares another session's working directory: that session's id. */
   folderOf?: Id;
   title: string;
   archived: boolean;
@@ -18,14 +18,13 @@ export interface HandoffConversation {
 }
 
 /**
- * 「会话」行的「接着这个视频当前的会话」指哪一条（原型 model-ai-prompt.js `sessionOptions`：这个项目里最近的那条）：
+ * Which session “continue with this video's current session” refers to in the “Session” row (prototype model-ai-prompt.js `sessionOptions`: the most recent one in this project):
  *
- * 1. 当前就在一条会话里（Home 左侧的，或 Space 里这个视频的悬浮会话最近发起的那条），它和视频同属一个项目、或就是视频所在的
- *    那条无项目会话（或与它共用工作目录的）：就是它。
- * 2. 视频属于项目：这个项目里最近更新、没归档的那条。
- * 3. 视频不属于项目：它所在的那条会话与共用它工作目录的会话里最近更新、没归档的那条；都归档了时是它所在的那条。
+ * 1. If the user is currently in a session (the one on the left of Home, or the floating session for this video in Space that was started most recently): if it belongs to the same project as the video, or is the no-project session the video lives in (or one sharing its working directory), that is the one.
+ * 2. If the video belongs to a project: the most recently updated, non-archived session in that project.
+ * 3. If the video does not belong to a project: the most recently updated, non-archived session among the one it lives in and the sessions sharing its working directory; if all of them are archived, the one it lives in.
  *
- * 都没有时 null。有没有说过话（消息数）由调用方另看：没说过话的不给「接着」（`sessionOptions`）。
+ * null if there is none. Whether anything has been said (message count) is checked by the caller: a session with no messages does not get “continue” (`sessionOptions`).
  */
 export function currentConversation<T extends HandoffConversation>({
   source,
@@ -48,7 +47,7 @@ export function currentConversation<T extends HandoffConversation>({
 }
 
 /**
- * 交给 Agent 发到哪：新建一条（在视频的项目里，或与视频所在的那条无项目会话共用工作目录：`folderOf`），或接着已有的那条。
+ * Where a handoff to the Agent is sent: a new session (in the video's project, or sharing the working directory of the no-project session the video lives in: `folderOf`), or continuing an existing one.
  */
 export type HandoffPlan =
   | { kind: 'existing'; conversationId: Id }
@@ -57,9 +56,8 @@ export type HandoffPlan =
   | { kind: 'none' };
 
 /**
- * 按「会话」行的选择定下发到哪（产品设计 §5.10「交给智能体」）：新会话建在视频的项目里；视频不属于项目时新会话与它所在的那条会话
- * 共用工作目录（架构设计 §3.10，`conversations.create` 的 `folderOf`），同样打得开它，不建项目——那条会话要还在目录里。
- * 接着的那条要还在目录里。
+ * Where to send based on the choice in the “Session” row (product design §5.10 “hand to agent”): a new session is created in the video's project. If the video is not in a project, the new session shares its working directory with the session the video lives in (architecture design §3.10, `conversations.create` `folderOf`), and it can be opened the same way, without creating a project. That session must still be in the directory.
+ * The session being continued must also still be in the directory.
  */
 export function planHandoff({
   session,
@@ -78,7 +76,7 @@ export function planHandoff({
   return conversations.some((c) => c.id === session.id) ? { kind: 'existing', conversationId: session.id } : { kind: 'none' };
 }
 
-/** 一条会话里的消息数（「会话」行写「已有 n 条消息」）：用户说的与 Agent 回的都算，工具调用、思考与通知不算。 */
+/** The message count in a session (the “Session” row shows “already has n messages”): what the user said and what the Agent replied both count; tool calls, thinking, and notifications do not. */
 export function messageCount(items: readonly { kind: string }[]): number {
   let n = 0;
   for (const item of items) if (item.kind === 'user-message' || item.kind === 'agent-message') n++;
@@ -86,9 +84,7 @@ export function messageCount(items: readonly { kind: string }[]): number {
 }
 
 /**
- * 留在原地的工具页（找可剪的口、刷新过期译文，`agentStaysOnPage`）交出去的那一次走到哪了，从那条会话的时间线读（原型
- * model-agent.js `sessionProgress`）：话还排着或任务还没出现时是 `starting`；任务在跑时有待批的审批就是 `waiting`（等用户去会话里
- * 放行），否则 `running`，`step` 是最近一步的标题；任务结束按它的状态。结果本身（剪辑建议、重译的句子）照常写进视频，这里只报进度。
+ * How far the handoff from a tools page that stays in place (finding cut points, refreshing stale translations; `agentStaysOnPage`) has got, read from that session's timeline (prototype model-agent.js `sessionProgress`): `starting` while the messages are still queued or the task has not appeared yet. While the task runs, a pending approval means `waiting` (the user has to go to the session and allow it); otherwise it is `running`, and `step` is the title of the most recent step. When the task ends, it follows the task's status. The results themselves (cut suggestions, re-translated sentences) are written into the video as usual; this only reports progress.
  */
 export type AgentRunState =
   | { kind: 'starting' }
@@ -99,8 +95,7 @@ export type AgentRunState =
   | { kind: 'stopped' };
 
 /**
- * 认任务：发出去时拿到了任务号就按它；排了队的（会话正忙）没有，认交出去之后才开始的第一个任务——同一句话可能在这条会话里
- * 发过不止一次，不按正文认。
+ * Matching the task: if a task ID came back when the message was sent, match by it. A message that was queued (the session was busy) has none, so match the first task that starts after the handoff. The same sentence may have been sent more than once in this session, so it is not matched by its text.
  */
 export function agentRunState({
   taskId,
@@ -135,7 +130,7 @@ export function agentRunState({
   return waiting ? { kind: 'waiting', step } : { kind: 'running', step };
 }
 
-/** 记在本机的一次交接（`useAiToolAgentRuns`）：`restored` 是上次打开 App 时留下、这次还没认过的。 */
+/** A handoff recorded on this machine (`useAiToolAgentRuns`): `restored` marks one that was left from the last time the App was opened and has not been matched yet in this session. */
 export interface StoredAgentRun {
   conversationId: Id;
   taskId: Id | null;
@@ -143,9 +138,8 @@ export interface StoredAgentRun {
 }
 
 /**
- * 重启后接上还在跑的那一次（原型 panel-aitools.jsx「重新打开工具页时接上还在跑的那条」）：上次留下的记录，那条会话的任务还在跑
- * （发出去时拿到任务号的要是同一个任务；排了队的，会话在忙或话还在队里）就接上、去掉 `restored`，工具页照常画进度、跑完给结果；
- * 已经跑完、会话不在了的丢掉，工具页回参数页。目录还没读到时不动。这次打开后交出去的不受影响。没有变化时返回原对象。
+ * Reconnects to a handoff still running after a restart (prototype panel-aitools.jsx: “when the tools page is reopened, reconnect to the one still running”). For a record left over from last time: if that session's task is still running (one sent with a task ID must be the same task; one that was queued, when the session is busy or the message is still in the queue), it reconnects and removes `restored`, so the tools page keeps drawing progress and shows the result when it finishes.
+ * Ones that already finished, or whose session no longer exists, are dropped, and the tools page goes back to the parameters page. Nothing changes if the directory has not loaded yet. Handoffs made after this opening are not affected. Returns the original object when nothing changed.
  */
 export function adoptRestoredRuns<T extends StoredAgentRun>(
   runs: Record<string, T>,
@@ -175,7 +169,7 @@ export function adoptRestoredRuns<T extends StoredAgentRun>(
 }
 
 /**
- * 没发出去时把那句话放回输入框（比如 Agent 没连上、发送失败）：输入框里本来有字就接在后面（空一行），不覆盖用户写了一半的话；同一句已经在里面就不重复放。
+ * When a message was not sent, puts the sentence back into the input box (for example, the Agent is not connected, or sending failed). If the box already has text, it is appended after it with a blank line, so nothing the user was partway through writing is overwritten; if the same sentence is already there, it is not added again.
  */
 export function mergeDraft(existing: string | undefined, text: string): string {
   const before = existing ?? '';

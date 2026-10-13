@@ -14,9 +14,9 @@ import { pl } from './tasks-copy.pl.ts';
 import { tr } from './tasks-copy.tr.ts';
 import { vi } from './tasks-copy.vi.ts';
 
-/** `cuccut tasks` 的文案（英文是键与类型的来源，译文在 `tasks-copy.<语言>.ts`）。 */
+/** Copy for `cuccut tasks` (English is the source of the keys and types; translations are in `tasks-copy.<lang>.ts`). */
 const en = {
-  /** `cuccut tasks --help` 的正文。 */
+  /** Body of `cuccut tasks --help`. */
   help: `Usage:
   cuccut tasks contract <task id> [--revision <n>]
                                    Show a task contract: goal, scope, constraints, do-not-change list,

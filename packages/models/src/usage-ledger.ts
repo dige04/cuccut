@@ -3,15 +3,15 @@ import path from 'node:path';
 import { MODEL_SERVICE_CAPABILITIES, type UsageRecord, type UsageRecordCost, type UsageUnits } from '@cuccut/protocol';
 
 /**
- * 用量账本（架构设计 §6.10）：`<home>/store/usage.jsonl`，只追加，0600，一行一条 `UsageRecord`。
+ * Usage ledger (architecture design §6.10): `<home>/store/usage.jsonl`, append-only, mode 0600, one `UsageRecord` per line.
  *
- * - 写入串行（一次一行，`appendFile`），写不进去时报告给 `warn`，不影响那次调用的结果；
- * - 读的时候跳过坏的行（半行、认不出的字段），并报告跳过了几行；文件不存在是唯一当作「没有记录」的情况，
- *   别的读取错误照样抛出，不当作空账本。
+ * - Writes are serialized (one line at a time, `appendFile`). When a write fails, it is reported to `warn` and does not affect that call's result;
+ * - When reading, bad lines are skipped (half-written lines, unrecognized fields) and the number of skipped lines is reported. A missing file is the only case treated as “no records”;
+ *   other read errors are still thrown and are not treated as an empty ledger.
  */
 
 export interface UsageLedgerOptions {
-  /** 写不进去或读到坏行时的报告（不含密钥：记录本身就不含）。 */
+  /** Report for a failed write or a bad line read (contains no secrets: the records themselves contain none). */
   warn?: (message: string, data?: Record<string, unknown>) => void;
 }
 
@@ -29,14 +29,14 @@ export class UsageLedger {
     this.#options = options;
   }
 
-  /** 追加一条（排在之前的写入之后）。失败时报告给 `warn` 并兑现，不抛出。 */
+  /** Appends one record (queued after earlier writes). On failure, reports to `warn` and resolves; does not throw. */
   append(record: UsageRecord): Promise<void> {
     const line = `${JSON.stringify(record)}\n`;
     const next = this.#chain.then(async () => {
       if (!this.#prepared) await fs.mkdir(path.dirname(this.file), { recursive: true });
       await fs.appendFile(this.file, line, { encoding: 'utf8', mode: 0o600 });
       if (!this.#prepared) {
-        // umask 可能放宽了新文件的权限：第一次写之后收紧一次。
+        // The umask may have loosened the new file's permissions: tighten them once after the first write.
         await fs.chmod(this.file, 0o600);
         this.#prepared = true;
       }
@@ -47,7 +47,7 @@ export class UsageLedger {
     return this.#chain;
   }
 
-  /** 读全部记录（按文件顺序）。坏的行跳过并报告；文件不存在时为空；别的读取错误抛出。 */
+  /** Reads all records (in file order). Bad lines are skipped and reported; empty when the file does not exist; other read errors are thrown. */
   async read(): Promise<UsageRecord[]> {
     await this.#chain;
     let text: string;
@@ -76,13 +76,13 @@ export class UsageLedger {
     return records;
   }
 
-  /** 等待排队的写入（测试与停止时用）。 */
+  /** Waits for queued writes (used in tests and on stop). */
   flush(): Promise<void> {
     return this.#chain;
   }
 }
 
-/** 一行记录的形状检查；认不出时 null。 */
+/** Shape check for one record line; null when not recognized. */
 export function parseUsageRecord(value: unknown): UsageRecord | null {
   if (!isObject(value)) return null;
   const { at, providerId, accountId, capability, modelId, source, units, cost, durationMs, status } = value;

@@ -18,12 +18,12 @@ import {
 import { M } from './services-copy.ts';
 
 /**
- * `cuccut services` 的参数与输出（架构设计 §4.8）。从 main.ts 分出来，单独可测。
- * 取值是否合法最终由 Runtime 判断；这里认服务名、等级与开关，给出可读的用法错误。令牌只在 `add-client` 时打印一次。
- * 客户端的子命令 MCP 服务与模型接口服务各一套（`mcp …`、`model-api …`），令牌互不通用。
+ * Arguments and output of `cuccut services` (Architecture design §4.8). Split out of main.ts so it can be tested on its own.
+ * Whether a value is valid is ultimately decided by the Runtime. Here we recognize service names, levels and switches, and give readable usage errors. The token is printed only once, on `add-client`.
+ * Clients for the subcommands are separate for the MCP service and the model API service (`mcp …`, `model-api …`), and their tokens are not interchangeable.
  */
 
-/** 有自己客户端的服务。 */
+/** Services that have their own clients. */
 export type ClientService = 'mcp' | 'model-api';
 
 export type ServicesCommand =
@@ -100,7 +100,7 @@ export function parseServicesArgs(args: string[], flags: ServicesFlags = {}): Se
   throw new Error(M.usage);
 }
 
-/** `alias whisper-1 transcribe local`、`alias tts-1 synthesizeSpeech openai/gpt-4o-mini-tts`。不给模型时是那个 Provider 的默认模型。 */
+/** `alias whisper-1 transcribe local`, `alias tts-1 synthesizeSpeech openai/gpt-4o-mini-tts`. When no model is given, the default model of that Provider is used. */
 function parseAlias(args: string[]): ModelApiAlias {
   const [alias, capability, target, ...more] = args;
   if (!alias || !capability || !target || more.length > 0) throw new Error(M.aliasUsage(ONLINE_CAPABILITIES));
@@ -181,7 +181,7 @@ function parseConfigure(serviceId: ServiceId, flags: ServicesFlags): ServiceConf
   return params;
 }
 
-/** 一个服务：首行是名字、状态与地址，下面是配置与最近的请求。 */
+/** One service: the first line is its name, status and address; below are its config and recent requests. */
 export function formatService(service: ServiceStatus): string[] {
   if (!service.available) return [M.notProvided(service.serviceId, service.label)];
   const where = service.endpoint ?? (service.port !== null ? M.port(service.port) : '');
@@ -193,7 +193,7 @@ export function formatService(service: ServiceStatus): string[] {
   }
   lines.push(M.autostart(service.autostart));
   if (service.policy && service.serviceId === 'model-api') {
-    // 模型接口服务没有视频范围；ask 是每个生成请求逐次确认。
+    // The model API service has no video scope. ask means each generation request is confirmed one by one.
     lines.push(M.level(service.policy.level === 'ask' ? M.levelAskModelApi : M.levels[service.policy.level]));
   } else if (service.policy) {
     const { videos, level } = service.policy;
@@ -242,7 +242,7 @@ export function formatClients(clients: ServiceClient[], service: ClientService =
   return clients.map((c) => M.client(c.clientId, c.name, c.createdAt, c.lastUsedAt));
 }
 
-/** 新客户端：令牌只打印这一次，之后查不到。 */
+/** New client: the token is printed only this once and cannot be looked up later. */
 export function formatNewClient(client: ServiceClient, token: string, info: McpConnectionInfo | ModelApiConnectionInfo): string[] {
   return [
     M.clientCreated(client.name, client.clientId),
@@ -253,7 +253,7 @@ export function formatNewClient(client: ServiceClient, token: string, info: McpC
   ];
 }
 
-/** 连接信息与配置片段：不含令牌明文。 */
+/** Connection info and config snippet. Contains no plaintext token. */
 export function formatConnectionInfo(info: McpConnectionInfo | ModelApiConnectionInfo): string[] {
   return [
     M.address('url' in info ? info.url : info.baseUrl),
@@ -272,14 +272,14 @@ export function formatWebSessions(sessions: WebSession[]): string[] {
   );
 }
 
-/** 访问链接：只能用一次、几分钟内有效。给了视频时说明链接落在哪里。 */
+/** Access link: usable only once, and valid for a few minutes. When a video is given, says where the link leads. */
 export function formatAccessLink(link: WebAccessLink, video: string | null = null): string[] {
   return [link.url, ...(video ? [M.accessLinkVideo(video)] : []), M.accessLinkNote(link.expiresAt)];
 }
 
 /**
- * 访问链接拆成不带代码的登录页地址与代码。链接的形状是 `http://127.0.0.1:<端口><路径与查询>#code=<代码>`：路径与查询
- * 留在登录页地址里（直达视频时是 `/home?video=…`），登录之后回到它。
+ * An access link is split into the login page address without the code, and the code. The link's shape is `http://127.0.0.1:<port><path and query>#code=<code>`. The path and query
+ * stay in the login page address (when going straight to a video it is `/home?video=…`), and after logging in you return to it.
  */
 export function splitAccessLink(url: string): { loginUrl: string; code: string } {
   const match = /^(http:\/\/[^/#?]+\/[^#\s]*)#code=([A-Za-z0-9_-]+)$/.exec(url);
@@ -287,29 +287,29 @@ export function splitAccessLink(url: string): { loginUrl: string; code: string }
   return { loginUrl: match[1]!, code: match[2]! };
 }
 
-/** `--launch`：浏览器打开的是不带代码的登录页，代码只打在终端里，由用户粘进登录页。 */
+/** `--launch`: the browser opens the login page without the code. The code is printed only in the terminal, for the user to paste into the login page. */
 export function formatLaunchCode(loginUrl: string, code: string, expiresAt: string, video: string | null = null): string[] {
   return [M.accessCode(code), ...(video ? [M.accessLinkVideo(video)] : []), M.launchNote(loginUrl, expiresAt)];
 }
 
-/** 用系统默认浏览器打开一个地址的命令。 */
+/** The command that opens an address in the system's default browser. */
 export function browserCommand(platform: NodeJS.Platform, url: string): { command: string; args: string[] } {
   if (platform === 'darwin') return { command: 'open', args: [url] };
   if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', '""', url] };
   return { command: 'xdg-open', args: [url] };
 }
 
-/** `cuccut web open` 要调用的 Runtime 方法（测试里换成假的）。 */
+/** The Runtime method that `cuccut web open` calls (replaced with a fake in tests). */
 export interface WebOpenClient {
   start(): Promise<ServiceStatus>;
   createAccessLink(): Promise<WebAccessLink>;
 }
 
 /**
- * `cuccut web open`：确保 Web 服务开着 → 生成访问链接（给了视频时直达它的编辑器）→ 打印；服务开不起来（例如端口被占用、客户端没有构建）时抛出原因。
+ * `cuccut web open`: make sure the Web service is running → generate an access link (when a video is given, it goes straight to that video's editor) → print it. If the service cannot start (for example, the port is in use or the client is not built), throws the reason.
  *
- * `launch` 时不把带代码的链接交给浏览器：打开浏览器要经 `open` / `xdg-open` / `cmd` 的进程参数，本机其他用户与程序
- * 能在进程列表里看到它。浏览器打开不带代码的登录页，代码只打在终端里，由用户粘进登录页的输入框。
+ * With `launch`, the link carrying the code is not handed to the browser. Opening the browser passes arguments through the processes `open` / `xdg-open` / `cmd`, and other local users and programs
+ * can see them in the process list. The browser opens the login page without the code, and the code is printed only in the terminal, for the user to paste into the login page's input box.
  */
 export async function webOpen(
   client: WebOpenClient,

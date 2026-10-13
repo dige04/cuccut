@@ -19,8 +19,8 @@ import {
 import type { StagedApp } from './app-update-service.ts';
 
 /*
- * 换包只用假的 exec：ditto 在临时目录里建一个只有 Info.plist 的 CucCut.app，plutil / codesign / spctl / hdiutil 给预设的输出。
- * 生成的脚本只检查写出来没有，从不运行。
+ * The swap test uses only a fake exec: ditto creates a CucCut.app containing only Info.plist in a temporary directory, and plutil / codesign / spctl / hdiutil return preset output.
+ * The generated script is only checked to see whether it was written, and is never run.
  */
 
 const TEAM = 'ABCDE12345';
@@ -61,7 +61,7 @@ interface FakeOptions {
   mount?: string;
 }
 
-/** 假的外部命令；记下每一条调用。ditto 解开（`-x`）或拷贝时在目标里建一个只有 Info.plist 的 CucCut.app。 */
+/** Fake external command; records every call. When ditto extracts (`-x`) or copies, it creates a CucCut.app containing only Info.plist at the target. */
 function fakeExec(options: FakeOptions = {}): { exec: Exec; calls: string[][] } {
   const plist = { CFBundleIdentifier: 'com.cuccut.app', CFBundleShortVersionString: '2.3.0', CFBundleVersion: '57', ...options.plist };
   const calls: string[][] = [];
@@ -145,7 +145,7 @@ describe('macOS 校验与就位', () => {
   });
 
   it('DMG：只读挂上；挂上了却找不到 .app 时卸下，挂不上报校验失败', async () => {
-    // 挂载点按 hdiutil 的输出认 `/Volumes/…`，测试里建不出来，所以只走「里面没有 .app」这条路。
+    // The mount point is recognized as `/Volumes/…` from hdiutil's output, which cannot be created in the test, so only the “no .app inside” path is taken.
     const mount = '/Volumes/CucCut update test that does not exist';
     const empty = fakeExec({ mount });
     const dmg = path.join(cacheDir, 'CucCut.dmg');
@@ -277,7 +277,7 @@ describe('Windows 换包', () => {
     expect(await nsisInstalledCopy(exe, present)).toBe(true);
     expect(seen).toEqual(['C:\\Users\\me\\AppData\\Local\\Programs\\cuccut\\Uninstall CucCut.exe']);
     expect(await nsisInstalledCopy(exe, async () => false)).toBe(false);
-    // Inno 的卸载程序不算。
+    // Inno's uninstaller does not count.
     expect(await nsisInstalledCopy(exe, async (file) => file.endsWith('unins000.exe'))).toBe(false);
   });
 

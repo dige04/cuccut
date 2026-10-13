@@ -1,8 +1,7 @@
-//! Model Worker 进程入口（架构设计 §6.5，协议规范 docs/spec/model-worker-protocol-spec.md）。
+//! Model Worker process entry point (architecture design §6.5, protocol spec docs/spec/model-worker-protocol-spec.md).
 //!
-//! `model-worker --parent-pid <pid>`。stdin 每行一个请求 `{"id", "method", "params"}`；stdout 每行一个响应
-//! `{"id", "result"}` / `{"id", "error"}`，或一条事件 `{"event", "params"}`，事件总在所属的 `job.run` 响应之前。
-//! stdout 只写协议；日志写 stderr。stdin 关闭、stdout 写不进去、父进程不在了、或者一行超过 16 MiB 时退出。
+//! `model-worker --parent-pid <pid>`. stdin takes one request per line, `{"id", "method", "params"}`; stdout writes one response per line, `{"id", "result"}` / `{"id", "error"}`, or an event `{"event", "params"}`. Events are always sent before the response of the owning `job.run`.
+//! stdout carries only the protocol; logs go to stderr. The process exits when stdin closes, when stdout cannot be written, when the parent process is gone, or when a line exceeds 16 MiB.
 
 mod worker;
 
@@ -121,7 +120,7 @@ enum Line {
     Eof,
 }
 
-/// 读一行（不含换行符），最多 [`MAX_LINE_BYTES`] 字节；不先把超长的行整个读进内存。
+/// Reads one line (without the newline), up to [`MAX_LINE_BYTES`] bytes. It does not read an overlong line into memory in full first.
 fn read_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> {
     line.clear();
     let limit = MAX_LINE_BYTES as u64 + 1;
@@ -139,7 +138,7 @@ fn read_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> 
     if line.len() > MAX_LINE_BYTES {
         return Ok(Line::TooLong);
     }
-    // 最后一行没有换行符就到了 EOF：照常处理，下一次读到 EOF。
+    // If the last line reaches EOF without a newline, it is processed as usual; the next read hits EOF.
     Ok(Line::Complete)
 }
 

@@ -1,17 +1,15 @@
-// 预览内核的逐帧基准（开发流程 §2 的可选检查）：在 Node 里用编好的预览 WASM（与编辑器同一份 `RenderPlanner`）连续画 N 帧，
-// 按阶段记耗时：求计划（planAt）、送画面（setPicture，含预乘）、画帧（bc_render，含 WASM 里再求一次计划与结果 JSON）、
-// 取帧（从 WASM 内存拷出，相当于 putImageData 那一份拷贝）；再按层做消融（停用一层或关掉字幕再画），得到每层的光栅开销。
+// Frame-by-frame benchmark of the preview kernel (optional check in the dev workflow §2): in Node, using the compiled preview WASM (the same `RenderPlanner` as the editor), render N frames in a row,
+// recording time per stage: computing the plan (planAt), sending the picture (setPicture, including premultiplication), drawing the frame (bc_render, which includes computing the plan again inside the WASM and the result JSON), and fetching the frame (copying it out of WASM memory, equivalent to the one copy putImageData makes). Then ablate per layer (disable one layer, or turn captions off and redraw) to get each layer's rasterization cost.
 //
-// 场景：
-// - 缺省是合成的场景，取自一致性夹具（`crates/frame-render/tests/fixtures/parity.json`，画面是竖条），放大到 `--size` 画；
-// - `--video <视频目录>`（可多次）：本机的视频（只用副本），经引擎宿主的 `videos.open` 与 `exports.plan` 冻结，视频层的源画面
-//   由 ffmpeg 解出来（按预览读像素的尺寸，循环用一小段），字幕与转写照导出冻结的那份送。要先 `cargo build -p engine-host`。
+// Scenes:
+// - By default, a synthetic scene taken from the parity fixture (`crates/frame-render/tests/fixtures/parity.json`; the picture is vertical bars), scaled up and drawn at `--size`;
+// - `--video <video directory>` (repeatable): local videos (copies only), frozen via the engine host's `videos.open` and `exports.plan`. The video layer's source pictures are decoded by ffmpeg (sized to the preview's pixel-read size, looping over a short segment); captions and transcript are sent as frozen in the export. Run `cargo build -p engine-host` first.
 //
-// 用法：node tools/preview-bench.ts [--video <目录>]... [--at <秒>] [--frames 60] [--size 1920x1080,960x540]
-//       [--playback]（按预览播放时的尺寸规则另画一组）[--wasm <预览 WASM>]... [--no-ablate] [--json <输出文件>]
-// `--wasm` 给两份以上时逐帧轮流画（同一场景、同一尺寸），用来比改动前后：机器忙的时候绝对值会飘，轮流画的比值仍然可信。
-// 输出带上当时的负载（loadavg 与核数）。
-// 环境：CARGO_TARGET_DIR（找 engine-host），CUCCUT_FFMPEG / CUCCUT_FFPROBE（缺省 PATH 里的 ffmpeg、ffprobe）。
+// Usage: node tools/preview-bench.ts [--video <directory>]... [--at <seconds>] [--frames 60] [--size 1920x1080,960x540]
+//       [--playback] (draws another set using the size rule for preview playback) [--wasm <preview WASM>]... [--no-ablate] [--json <output file>]
+// When `--wasm` is given two or more times, frames are drawn in turn (same scene, same size), to compare before and after a change. When the machine is busy, absolute values drift, but ratios from alternating draws are still reliable.
+// The output records the load at the time (loadavg and core count).
+// Environment: CARGO_TARGET_DIR (to find engine-host), CUCCUT_FFMPEG / CUCCUT_FFPROBE (default to ffmpeg and ffprobe on PATH).
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -60,7 +58,7 @@ function parseOptions(argv: string[]): Options {
   return options;
 }
 
-/** 一个基准场景：视频、文档、素材字节，与每一帧各层的源画面。 */
+/** One benchmark scene: the video, the document, the asset bytes, and each layer's source picture for every frame. */
 interface Scene {
   name: string;
   fps: number;
@@ -70,9 +68,9 @@ interface Scene {
   documents: FrozenDocument[];
   assets: { asset: { id: string; revision: string }; bytes: Uint8Array }[];
   audioSpectra: { asset: { id: string; revision: string }; bytes: Uint8Array }[];
-  /** 素材的文件（声波要的素材频谱从它的声音算）；合成场景没有。 */
+  /** The asset's file (the waveform needs the asset's spectrum, computed from its audio); none for synthetic scenes. */
   file?(asset: { id: string; revision: string }): string | null;
-  /** 层的源画面：第 `index` 帧、实例、输出尺寸 → RGBA。 */
+  /** A layer's source picture: frame `index`, instance, and output size → RGBA. */
   picture(itemId: string, kind: string, asset: { id: string; revision: string }, index: number, seconds: number, out: Size): Picture | null;
   close(): void;
 }
@@ -88,7 +86,7 @@ interface Picture {
   height: number;
 }
 
-// ---------- 合成的场景 ----------
+// ---------- Synthetic scene ----------
 
 type Rgba = [number, number, number, number];
 
@@ -101,8 +99,8 @@ function bands(width: number, height: number, colours: Rgba[]): Uint8Array {
 }
 
 /**
- * 合成场景：夹具里的场景按名字挑出来，把实例与文档并成一个序列（各场景的轨道与实例 ID 不冲突就直接并），画面是竖条。
- * 视频层的源画面按 1920×1080 给（与真实 1080p 素材同样的上传量）。
+ * Synthetic scene: the scene is picked from the fixture by name, and its instances and documents are merged into one sequence (merged directly when the scenes' tracks and instance IDs do not clash). The picture is vertical bars.
+ * The video layer's source picture is given at 1920×1080 (the same upload size as real 1080p footage).
  */
 function syntheticScenes(): Scene[] {
   const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8'));
@@ -148,7 +146,7 @@ function syntheticScenes(): Scene[] {
       picture(itemId, _kind, _asset, _index, _seconds, out) {
         const source = pictures.get(itemId);
         if (!source) return null;
-        // 按预览读像素的规则：不比输出大，按铺满输出缩小（源当作 16:9 的 1080p）。
+        // Preview pixel-read rule: never larger than the output; scaled down to cover the output (the source is treated as 16:9 1080p).
         const fit = Math.min(1, Math.max(out.width / 1920, out.height / 1080));
         const width = Math.max(1, Math.round(1920 * fit));
         const height = Math.max(1, Math.round(1080 * fit));
@@ -174,7 +172,7 @@ function syntheticScenes(): Scene[] {
   ];
 }
 
-// ---------- 本机的视频（副本） ----------
+// ---------- Local video (copies) ----------
 
 class EngineHost {
   readonly #child;
@@ -205,7 +203,7 @@ class EngineHost {
 
 const probed = new Map<string, Size>();
 
-/** 源的显示尺寸（按旋转换宽高），按路径记住：每帧都要用，不能每次起一个 ffprobe。 */
+/** The display size of the source (width and height after rotation), remembered per path: it is needed every frame, so an ffprobe must not be started each time. */
 function probe(file: string): Size {
   const known = probed.get(file);
   if (known) return known;
@@ -222,7 +220,7 @@ function probe(file: string): Size {
   return size;
 }
 
-/** 从 `seconds` 起解 `count` 帧，缩到 `width`×`height` 的 RGBA。 */
+/** Decodes `count` frames starting at `seconds`, scaled to `width`×`height` RGBA. */
 function decodeRun(file: string, seconds: number, count: number, width: number, height: number): Uint8Array[] {
   const result = spawnSync(
     FFMPEG,
@@ -253,7 +251,7 @@ function decodeRun(file: string, seconds: number, count: number, width: number, 
   return frames;
 }
 
-/** 素材的声音解成 48 kHz 单声道 f32（预览用 Web Audio 解好后送进同一份分析）。 */
+/** Decodes the asset's sound to 48 kHz mono f32 (the preview decodes it with Web Audio and sends it into the same analysis). */
 function decodeAudio(file: string): Float32Array {
   const result = spawnSync(FFMPEG, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'], {
     maxBuffer: 4 * 1024 * 1024 * 1024,
@@ -262,7 +260,7 @@ function decodeAudio(file: string): Float32Array {
   return new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.length / 4)).slice();
 }
 
-/** 真实视频里的声波：画一帧看缺哪些素材频谱，按预览的路子算好放进场景（不放的话声波按静止的样子画，量不到它）。 */
+/** Real-video waveforms: draw one frame to see which asset spectra are missing, then compute them the way the preview does and put them into the scene. Without this, waveforms are drawn static and cannot be measured. */
 async function addAudioSpectra(base: RenderPlanner, scene: Scene): Promise<void> {
   if (!scene.file) return;
   const planner = await prepare(base, scene);
@@ -297,7 +295,7 @@ async function videoScene(host: EngineHost, dir: string, at: number | null, fram
   const canvas = { width: frozen.canvas.width, height: frozen.canvas.height };
   const decoded = new Map<string, Uint8Array[]>();
   const stills = new Map<string, Picture>();
-  // 源画面循环用的帧数：真实的解码内容对光栅耗时影响很小，不必把每一帧都放进内存。
+  // Number of frames the source picture loops over: the real decoded content has little effect on rasterization cost, so not every frame needs to be held in memory.
   const run = Math.min(frames, 24);
   return {
     name: dir.split('/').pop()!,
@@ -331,7 +329,7 @@ async function videoScene(host: EngineHost, dir: string, at: number | null, fram
   };
 }
 
-// ---------- 计时 ----------
+// ---------- Timing ----------
 
 interface Stages {
   plan: number[];
@@ -361,7 +359,7 @@ async function prepare(base: RenderPlanner, scene: Scene): Promise<RenderPlanner
   return planner;
 }
 
-/** 画一帧：与预览引擎一帧里的 WASM 调用相同（求计划、送画面、画、取帧），返回各段耗时。 */
+/** Draws one frame with the same WASM calls as a frame in the preview engine (compute plan, send picture, draw, fetch frame), and returns the time for each stage. */
 function frame(planner: RenderPlanner, scene: Scene, index: number, seconds: number, size: Size, captions = true) {
   const t0 = performance.now();
   const plan = planner.planAt(seconds);
@@ -381,7 +379,7 @@ function frame(planner: RenderPlanner, scene: Scene, index: number, seconds: num
   return { plan: t1 - t0, upload: t2 - t1, render: t3 - t2, readback: t4 - t3, total: t4 - t0, layers, rendered, pixels };
 }
 
-/** 没给 `--at` 时从层最多的一刻开始（每 0.25 秒看一次计划，最多看前 20 分钟）。 */
+/** Without `--at`, start from the moment with the most layers (checks the plan every 0.25 seconds, looking at most 20 minutes in). */
 async function busiest(base: RenderPlanner, scene: Scene): Promise<number> {
   const planner = await prepare(base, scene);
   let best = { seconds: 0, layers: -1 };
@@ -399,21 +397,21 @@ async function busiest(base: RenderPlanner, scene: Scene): Promise<number> {
   return best.seconds;
 }
 
-/** 一份预览 WASM：标签（文件名）与载入好字体的计划器。 */
+/** One preview WASM: a label (the file name) and a planner with its fonts loaded. */
 interface Kernel {
   label: string;
   base: RenderPlanner;
 }
 
 /**
- * 量一个场景在一个尺寸上的耗时：每份 WASM 先各画第一帧（另记），之后逐帧轮流画 `frames` 帧，最后按层消融。
- * 轮流画让机器的忙闲对各份 WASM 一样。
+ * Measures the time for one scene at one size: each WASM first draws its first frame (recorded separately), then the frames are drawn in turn for `frames` frames, and finally ablation is done per layer.
+ * Drawing in turn means the machine's load affects every WASM equally.
  */
 async function measure(kernels: Kernel[], scene: Scene, size: Size, frames: number, ablate: boolean) {
   const runs = [];
   for (const kernel of kernels) {
     const planner = await prepare(kernel.base, scene);
-    // 预热：建排版引擎、编字幕、解 Lottie（第一帧另记，只算内核画的那一段，不算取画面）。
+    // Warm-up: build the typesetting engine, compile the captions, decode Lottie. The first frame is recorded separately, and only the part the kernel draws is timed, not fetching the picture.
     const firstMs = frame(planner, scene, 0, scene.start, size).render;
     runs.push({
       kernel,
@@ -433,21 +431,21 @@ async function measure(kernels: Kernel[], scene: Scene, size: Size, frames: numb
   }
   const results = [];
   for (const run of runs) {
-    // 播放与停住来回切：先按另一个尺寸（降过的分辨率）画一帧，再切回这个尺寸画同一帧，取三次的中位数。
+    // Switching between play and pause: first draw one frame at a different size (a downscaled resolution), then switch back to this size and draw the same frame; take the median of three.
     const other = {
       width: Math.max(2, Math.round((size.width * 0.73) / 2) * 2),
       height: Math.max(2, Math.round((size.height * 0.73) / 2) * 2),
     };
     const middle = Math.floor(frames / 2);
     const mid = scene.start + middle / scene.fps;
-    // 第一次按另一个尺寸画（停着之后第一次播放）：那个尺寸的渲染器还是空的。
+    // The first draw at a different size (the first play after pausing): that size's renderer is still empty.
     const newSizeMs = frame(run.planner, scene, middle, mid, other).render;
     const switches: number[] = [];
     for (let k = 0; k < 3; k++) {
       frame(run.planner, scene, middle, mid, other);
       switches.push(frame(run.planner, scene, middle, mid, size).total);
     }
-    // 消融：在中间一刻逐层停用（字幕层用开关），各画几次取中位数，差值就是这一层的光栅开销。
+    // Ablation: at a middle moment, disable each layer in turn (the caption layer uses a switch), draw several times and take the median; the difference is that layer's rasterization cost.
     const layers: Record<string, number> = {};
     if (ablate) {
       const { planner } = run;
@@ -488,7 +486,7 @@ async function measure(kernels: Kernel[], scene: Scene, size: Size, frames: numb
   return results;
 }
 
-/** 当时的负载：1 分钟 loadavg 与核数（超过核数时绝对值不可信，只看轮流画的比值）。 */
+/** Current load: the 1-minute loadavg and the core count. Absolute values are not trustworthy when above the core count; look only at the ratios from alternating draws. */
 function load(): string {
   return `${loadavg()[0]!.toFixed(1)}/${cpus().length}`;
 }
@@ -510,7 +508,7 @@ async function main(): Promise<void> {
     const target = process.env.CARGO_TARGET_DIR ?? join(ROOT, 'target');
     const binary = join(target, 'debug/engine-host');
     if (!existsSync(binary)) throw new Error(`没有 ${binary}：先 cargo build -p engine-host`);
-    // 引擎宿主的 Home 放进临时目录，不碰真实的应用数据。
+    // The engine host's Home is placed in a temp directory, so the real application data is not touched.
     const home = mkdtempSync(join(tmpdir(), 'cuccut-preview-bench-'));
     process.env.CUCCUT_HOME = home;
     host = new EngineHost(binary);
@@ -525,7 +523,7 @@ async function main(): Promise<void> {
     await addAudioSpectra(kernels[0]!.base, scene);
     const sizes = options.sizes.length > 0 ? [...options.sizes] : [scaled(scene.canvas, 1080), scaled(scene.canvas, 540)];
     if (options.playback) {
-      // 预览播放时的尺寸：按编辑器常见的画布（约 960 CSS 像素宽、2 倍像素比）求出来的那一档。
+      // Preview playback size: the tier computed from a typical editor canvas (about 960 CSS pixels wide, at 2× pixel ratio).
       const display = { width: 960, height: Math.round((960 * scene.canvas.height) / scene.canvas.width) };
       sizes.push(display);
     }
@@ -540,7 +538,7 @@ async function main(): Promise<void> {
   if (options.json) writeFileSync(options.json, JSON.stringify(results, null, 1));
 }
 
-/** 序列画布按短边缩放到 `short` 像素（偶数；合成场景的画布很小，会放大）。 */
+/** The sequence canvas is scaled so its short side is `short` pixels (even; the synthetic scene's canvas is small, so it gets upscaled). */
 function scaled(canvas: Size, short: number): Size {
   const scale = short / Math.min(canvas.width, canvas.height);
   return {

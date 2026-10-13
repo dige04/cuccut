@@ -1,8 +1,7 @@
-//! 权重表：读取清单列出的 safetensors，按名字取走张量，并提供 weight-norm 融合。
+//! Weight table: reads the safetensors files listed in the manifest, takes tensors out by name, and provides weight-norm fusion.
 //!
-//! 移植自 v2 `ccut-tts::index_tts2::mlx::weights`（IndexTTS2 与 GPT-SoVITS 共用的那一份），只带
-//! GPT-SoVITS 用到的部分、去掉 Candle 分支；读文件改走 [`crate::synthesize::tensor::host::load_safetensors`]。
-//! 与 IndexTTS2 的同名权重表同源，两边都移植完可以合并成一份。
+//! Ported from v2 `ccut-tts::index_tts2::mlx::weights` (the copy shared by IndexTTS2 and GPT-SoVITS). Only the parts GPT-SoVITS uses are kept, and the Candle branch is removed. File reading now goes through [`crate::synthesize::tensor::host::load_safetensors`].
+//! It has the same origin as the same-named weight table in IndexTTS2; once both are ported, they can be merged into one.
 
 use crate::synthesize::tensor::host::load_safetensors;
 use crate::synthesize::tensor::{Array, Dtype};
@@ -16,7 +15,7 @@ pub struct WeightMap {
 }
 
 impl WeightMap {
-    /// 读取单个 safetensors 文件。
+    /// Reads a single safetensors file.
     pub fn load_file(path: &Path) -> Result<Self> {
         let map = load_safetensors(&[path]).map_err(|e| anyhow::anyhow!("读取 {} 失败：{e}", path.display()))?;
         Ok(Self {
@@ -25,7 +24,7 @@ impl WeightMap {
         })
     }
 
-    /// 取走一个张量（原始 dtype）。
+    /// Takes one tensor out (in its original dtype).
     pub fn take(&mut self, key: &str) -> Result<Array> {
         match self.map.remove(key) {
             Some(array) => Ok(array),
@@ -33,7 +32,7 @@ impl WeightMap {
         }
     }
 
-    /// 取走并转成 f32。
+    /// Takes one tensor out and converts it to f32.
     pub fn take_f32(&mut self, key: &str) -> Result<Array> {
         let array = self.take(key)?;
         Ok(array.as_dtype(Dtype::Float32)?)
@@ -47,8 +46,8 @@ impl WeightMap {
         }
     }
 
-    /// 取走 weight-norm 的 (g, v) 并融合成 f32 权重；已预融合的检查点
-    /// （只有 `{prefix}.weight`）直接取走该权重。
+    /// Takes the (g, v) pair of a weight-norm layer and fuses it into an f32 weight. For a checkpoint that is already fused
+    /// (it only has `{prefix}.weight`), that weight is taken directly.
     pub fn take_weight_norm(&mut self, prefix: &str) -> Result<Array> {
         let v_key = format!("{prefix}.weight_v");
         if !self.map.contains_key(&v_key) {
@@ -63,7 +62,7 @@ impl WeightMap {
     }
 }
 
-/// `w = g * v / ||v||`，范数在除第 0 维以外的所有维上计算（PyTorch `weight_norm(dim=0)`）。
+/// `w = g * v / ||v||`, with the norm computed over all dimensions except dimension 0 (PyTorch `weight_norm(dim=0)`).
 pub fn fuse_weight_norm(g: &Array, v: &Array) -> Result<Array> {
     let v32 = v.as_dtype(Dtype::Float32)?;
     let g32 = g.as_dtype(Dtype::Float32)?;

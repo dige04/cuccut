@@ -1,15 +1,14 @@
-//! Render Graph（设计 §6 / ADR-M04）：`FramePlan { surfaces, passes, output }`
-//! 表达滤镜、遮罩、混合与双画面转场，DrawOp 退回「单 surface 原语」的本职。
+//! Render Graph (design §6 / ADR-M04): `FramePlan { surfaces, passes, output }` expresses filters, masks, blending and dual-picture
+//! transitions, and DrawOp returns to its core role as a “single-surface primitive”.
 //!
-//! `FramePlan = f(resolvedDocument, data, registryVersions, capabilityProfile, t)`
-//! ——不依赖上一帧、播放顺序、运行时随机或网络。**无 effect 的文档折叠成
-//! 单个 Draw pass**，执行器对它直接调 `raster::rasterize_with_media`，与既有
-//! `record(t)` 路径逐字节相同（[`FramePlan::is_folded`]）。
+//! `FramePlan = f(resolvedDocument, data, registryVersions, capabilityProfile, t)` — it does not depend on the previous frame, playback
+//! order, runtime randomness or the network. **A document without effects folds into a single Draw pass**; the executor calls
+//! `raster::rasterize_with_media` directly for it, byte-identical to the existing `record(t)` path ([`FramePlan::is_folded`]).
 
 pub mod cache;
 pub mod capability;
 pub mod executor_cpu;
-/// wgpu 后端（元素方案 ADR-E06）。默认关闭，见 `Cargo.toml` 的 `gpu` feature。
+/// wgpu backend (element plan ADR-E06). Off by default; see the `gpu` feature in `Cargo.toml`.
 #[cfg(feature = "gpu-runtime")]
 pub mod executor_gpu;
 pub mod frame_plan;
@@ -50,23 +49,23 @@ use anyhow::Result;
 pub use motion::effect::{BlendMode, EffectRef};
 use scene_primitives::resolve::Ir;
 
-/// `BlendMode` → tiny-skia。实现在 [`crate::effects::composite::blend`]，
-/// 这里只保留 `plan::` 下的历史入口。
+/// `BlendMode` → tiny-skia. The implementation is in [`crate::effects::composite::blend`]; this only keeps the historical entry
+/// point under `plan::`.
 pub use crate::effects::blend_to_skia;
 
-/// 文档的效果拓扑。编译期算一次：为空 ⇒ 每一帧都折叠成单 Draw pass。
+/// The effect topology of the document. Computed once at compile time: if empty ⇒ every frame folds into a single Draw pass.
 ///
-/// 「需要离屏 surface」= 元素有非空 `effects[]`（规范 §6.6），或者有一条
-/// `blur` 通道（等价于效果栈末尾的隐式 `filter.blur`）。`blendMode` 与
-/// `clipPath` **不**在其列：它们是单 surface 语义，DrawOp v3 直接表达。
+/// “Needs an off-screen surface” means the element has a non-empty `effects[]` (spec §6.6), or has a `blur` channel (equivalent to an
+/// implicit `filter.blur` at the end of the effect stack). `blendMode` and `clipPath` are **not** on this list: they are single-surface
+/// semantics, which DrawOp v3 expresses directly.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EffectTopology {
-    /// 需要独立离屏 surface 的节点数（0 且没有 Surface Transition ⇒ 折叠）。
+    /// Number of nodes that need their own off-screen surface (0 and no Surface Transition ⇒ folded).
     pub surface_nodes: usize,
-    /// 全部被引用的效果（去重、有序）。preflight 与 `fallbacks[]` 用它。
+    /// All referenced effects (deduplicated, ordered). Used by preflight and `fallbacks[]`.
     pub effects: Vec<EffectRef>,
-    /// 声明为 Surface Transition 的剪辑点数（规范 §9）。它们要两张离屏
-    /// surface 加一个 `Transition` pass，因此同样破坏折叠。
+    /// Number of clip points declared as Surface Transition (spec §9). They need two off-screen surfaces plus a `Transition` pass, so
+    /// they likewise break folding.
     pub surface_transitions: usize,
 }
 
@@ -75,7 +74,7 @@ impl EffectTopology {
         self.surface_nodes == 0 && self.surface_transitions == 0
     }
 
-    /// 扫描 IR 决定哪些节点需要离屏 surface。
+    /// Scans the IR to decide which nodes need off-screen surfaces.
     pub fn of(ir: &Ir) -> Self {
         let mut out = EffectTopology::default();
         for clip in &ir.visual_clips {
@@ -86,8 +85,8 @@ impl EffectTopology {
     }
 
     fn scan(&mut self, node: &scene_primitives::resolve::RNode) {
-        // 元素级 `blur` 通道与文字 part 的 `blur` 通道（§6.4 分词模糊）都落成
-        // 隐式 `filter.blur` 的离屏层。
+        // Element-level `blur` channels and text part `blur` channels (§6.4 per-word blur) both become off-screen layers with an implicit
+        // `filter.blur`.
         let blur = node.channels.iter().any(|channel| channel.prop == "blur")
             || node.part_motion.as_ref().is_some_and(|parts| {
                 parts
@@ -120,29 +119,29 @@ impl EffectTopology {
         }
     }
 
-    /// 组合限制由 core 的依赖检查及执行后端的能力检查负责。
+    /// Composition restrictions are handled by core's dependency checks and the execution backend's capability checks.
     pub fn conflicts(_ir: &Ir) -> Vec<String> {
         Vec::new()
     }
 }
 
-/// 每帧计划的编译器。创建期跑一次 preflight 与拓扑扫描，逐帧只发计划。
+/// Compiler for the per-frame plan. Runs preflight and the topology scan once at creation time; each frame only emits the plan.
 pub struct FramePlanner {
     caps: CapabilityProfile,
     capability_fingerprint: u64,
     topology: EffectTopology,
     report: PreflightReport,
-    /// 跑不动、要退回 Motion 通道的 Surface Transition（按 `from_clip` 的 id）。
-    /// CPU reference 上恒为空——四条内置转场都是 strict 且有实现。
+    /// Surface Transitions that cannot run and must fall back to the Motion channel (by the id of `from_clip`). Always empty on the CPU
+    /// reference — all four built-in transitions are strict and implemented.
     transition_fallbacks: std::collections::BTreeSet<String>,
 }
 
 impl FramePlanner {
-    /// 创建期完成 preflight（设计 §6.5：正式逐帧前必须做完）。
+    /// Preflight is completed at creation time (design §6.5: it must be finished before formal per-frame work).
     pub fn compile(ir: &Ir, caps: CapabilityProfile) -> Result<Self> {
         let report = preflight(ir, &caps)?;
-        // `preflight` 已经把降级记进了报告，这里只要同一份名单（同一个纯函数、
-        // 同一份输入 ⇒ 同一个结果）。
+        // `preflight` has already recorded the downgrades in the report; here we only need the same list (the same pure function with the
+        // same input ⇒ the same result).
         let mut probe = PreflightReport::default();
         let transition_fallbacks = capability::preflight_transitions(ir, &caps, &mut probe);
         let capability_fingerprint = caps.fingerprint();
@@ -155,18 +154,17 @@ impl FramePlanner {
         })
     }
 
-    /// CPU reference 后端的便捷入口。
+    /// Convenience entry point for the CPU reference backend.
     pub fn cpu(ir: &Ir) -> Result<Self> {
         FramePlanner::compile(ir, CapabilityProfile::cpu_reference())
     }
 
-    /// CPU reference + **host 侧资源诊断**。
+    /// CPU reference + **host-side resource diagnostics**.
     ///
-    /// preflight 本身只看 `Ir`（纯函数，没有字节），可 Lottie 的
-    /// `lottie-unsupported-feature` warn 是解析素材时才知道的事——被忽略的
-    /// 表达式控制器组在 `load_assets` 里记账，在这里并进同一份报告，于是
-    /// `ccut render --json` / `ccut ops` 的 `diagnostics` 一处就能看全。
-    /// fail 级不走这条路：那种素材在 `load_assets` 就是 `Err`。
+    /// Preflight itself only looks at `Ir` (a pure function, with no bytes). But Lottie's `lottie-unsupported-feature` warning is something
+    /// known only when parsing the assets: ignored expression-controller groups are recorded in `load_assets`, and merged here into the same
+    /// report, so that `ccut render --json` / `ccut ops` `diagnostics` show everything in one place. The fail level does not take this path:
+    /// such assets are already an `Err` at `load_assets`.
     #[cfg(feature = "media")]
     pub fn cpu_with_assets(ir: &Ir, assets: &crate::assets::LoadedAssets) -> Result<Self> {
         let mut planner = FramePlanner::cpu(ir)?;
@@ -193,13 +191,13 @@ impl FramePlanner {
         &self.topology
     }
 
-    /// 本次编译里降级成 Motion Transition 的剪辑点（按 `from_clip` 的 id）。
+    /// Clip points downgraded to Motion Transition in this compilation (by the id of `from_clip`).
     pub fn transition_fallbacks(&self) -> &std::collections::BTreeSet<String> {
         &self.transition_fallbacks
     }
 
-    /// 编排 `t` 时刻的计划。录制走的是同一个 `FrameRenderer::record`——
-    /// 折叠路径上不存在「第二个录制器」。
+    /// Plans the frame at time `t`. Recording goes through the same `FrameRenderer::record` — there is no “second recorder” on the folded
+    /// path.
     pub fn plan(
         &self,
         renderer: &FrameRenderer,
@@ -220,12 +218,12 @@ impl FramePlanner {
         )
     }
 
-    /// 计划 + 执行的单帧便捷入口。
+    /// Single-frame convenience entry point for plan + execution.
     ///
-    /// **单帧渲染必须走这里**，不能直接调 [`FrameRenderer::draw`]：后者是
-    /// 平坦路径，效果栈是 `Filter` pass、不在指令流里，绕过计划就等于把
-    /// `effects[]` / `blur` 静默丢掉。无效果的文档在这条路上折叠成单个
-    /// Draw pass，执行器直接调 `rasterize_with_media`——与 `draw` 逐字节相同。
+    /// **Single-frame rendering must go through here**, and must not call [`FrameRenderer::draw`] directly: the latter is the flat path,
+    /// while the effect stack is `Filter` passes that are not in the instruction stream, so bypassing the plan would silently drop
+    /// `effects[]` / `blur`. A document without effects folds into a single Draw pass on this path, and the executor calls
+    /// `rasterize_with_media` directly — byte-identical to `draw`.
     #[cfg(feature = "media")]
     pub fn render(
         &self,
@@ -240,7 +238,7 @@ impl FramePlanner {
         execute_plan(&plan, &mut executor, media, None)
     }
 
-    /// 已有指令流时的入口（overlay 路径与测试用）。
+    /// Entry point when an instruction stream already exists (for the overlay path and tests).
     pub fn plan_from_ops(
         &self,
         width: u32,

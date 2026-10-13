@@ -2,33 +2,31 @@ import { opaqueBounds } from '../../render/thumbnails.ts';
 import type { Rect } from './thumb-scenes.ts';
 
 /**
- * 动起来的字幕样式卡一圈的帧。卡按「一圈第几格」取帧：同一格画过就不再叫内核画，一圈循环下去只是贴图。
+ * Frames for one lap of an animated caption style card. The card takes frames by “which cell of the lap”: once a cell has been drawn, the render kernel is not called for it again, and the lap just loops as a bitmap.
  *
- * 一格裁到不透明的那一块再存；画面一样的格共用一份（按词变色的一圈几十格只有几份不同的画面）。一张卡存的
- * 字节有上限：落入、弹跳这类每格都不一样的动画存满了，剩下的格每次现画。一圈都是同一份画面（没有逐词动画）时
- * `still` 为真，组件就不再跟着时钟走。
+ * Each cell is cropped to its opaque part before being stored, and cells with identical frames share one copy (a lap with per-word color changes has only a few dozen distinct frames). A card has a byte limit for stored frames: for animations where every cell differs, such as drop-in or bounce, once the store is full the remaining cells are drawn fresh each time. When every cell of a lap is the same frame (no per-word animation), `still` is true and the component stops following the clock.
  */
 
-/** 每秒几格：一个词一拍 0.62 秒，15 格看得出落入、弹跳的走势；时钟也按它取格。 */
+/** Cells per second: one word per 0.62 seconds, so 15 cells show the drop-in and bounce curve; the clock also picks cells at this rate. */
 export const CAPTION_FPS = 15;
 
-/** 一张卡最多存多少字节的帧（按词变色的一圈在高分屏上约 1 MB）。 */
+/** Maximum bytes of frames stored for one card (a per-word color lap is about 1 MB on high-DPI screens). */
 export const LOOP_BUDGET = 2 * 1024 * 1024;
 
-/** 一格：裁到不透明那一块的画面（全透明时为 null）与它贴在格子里的位置。 */
+/** One cell: the frame cropped to its opaque part (null if fully transparent), and its position within the cell. */
 export interface LoopCell {
   image: ImageData | null;
   at: Rect;
 }
 
 export class CaptionLoop {
-  /** 一圈多长（秒）。 */
+  /** Length of one lap, in seconds. */
   readonly period: number;
-  /** 一圈几格。 */
+  /** Number of cells in one lap. */
   readonly count: number;
   private readonly budget: number;
   private readonly cells: (LoopCell | undefined)[];
-  /** 存着的各份不同画面，按摘要分桶。 */
+  /** The distinct frames stored, bucketed by digest. */
   private readonly kept = new Map<number, LoopCell[]>();
   private bytes = 0;
   private filled = 0;
@@ -37,18 +35,18 @@ export class CaptionLoop {
   constructor(period: number, budget = LOOP_BUDGET) {
     this.period = period;
     this.budget = budget;
-    // 减一点点：浮点乘出来的 4.0000000001 不该多出一格。
+    // Subtract a tiny amount: a float multiply that gives 4.0000000001 must not add an extra cell.
     this.count = Math.max(1, Math.ceil(period * CAPTION_FPS - 1e-9));
     this.cells = new Array<LoopCell | undefined>(this.count);
   }
 
-  /** 时钟走到 `seconds` 时是一圈的第几格（各卡共用一个原点，同一刻念到同一个词）。 */
+  /** The cell index within the lap when the clock reaches `seconds` (all cards share one origin, so the same word is spoken at the same moment). */
   index(seconds: number): number {
     const phase = ((seconds % this.period) + this.period) % this.period;
     return Math.min(this.count - 1, Math.floor(phase * CAPTION_FPS));
   }
 
-  /** 第几格画的是哪一刻（秒）。 */
+  /** The moment, in seconds, at which cell n is drawn. */
   time(index: number): number {
     return index / CAPTION_FPS;
   }
@@ -57,14 +55,13 @@ export class CaptionLoop {
     return this.cells[index];
   }
 
-  /** 一圈每格都画过，而且都是同一份画面：不会动。 */
+  /** Every cell of the lap has been drawn, and they are all the same frame: it does not move. */
   get still(): boolean {
     return this.filled === this.count && this.unique === 1;
   }
 
   /**
-   * 收下第几格画出来的整格画面，返回要贴的那一块。与存着的哪一格画面一样就共用那一份（不必相邻：第一圈因时钟
-   * 预算跳过的格补画时也认得出）；存不下时不存，下一圈再现画。
+   * Accepts the full frame drawn for cell n and returns the part to paste. If it matches a stored frame, that copy is shared (cells need not be adjacent: a cell drawn later to fill in one skipped in the first lap because of the clock budget is still recognized). If there is no room to store it, it is not stored and is drawn again next lap.
    */
   put(index: number, image: ImageData): LoopCell {
     const known = this.cells[index];
@@ -87,7 +84,7 @@ export class CaptionLoop {
     return cell;
   }
 
-  /** 丢掉存着的帧（卡滚出视野时，省得一屏外的卡还占着内存）。 */
+  /** Drops stored frames when a card scrolls out of view, so off-screen cards do not keep memory. */
   clear(): void {
     this.cells.fill(undefined);
     this.kept.clear();
@@ -97,7 +94,7 @@ export class CaptionLoop {
   }
 }
 
-/** 裁到不透明的那一块。 */
+/** Crops to the opaque part. */
 function crop(image: ImageData): LoopCell {
   const bounds = opaqueBounds(image);
   if (!bounds) return { image: null, at: { x: 0, y: 0, width: 0, height: 0 } };
@@ -111,7 +108,7 @@ function crop(image: ImageData): LoopCell {
   return { image: new ImageData(data, bounds.width, bounds.height), at: bounds };
 }
 
-/** 一格的摘要（FNV-1a，按 4 字节一步）：摘要不同的两格画面一定不同，相同时再逐字节比。 */
+/** Digest of a cell (FNV-1a, stepping 4 bytes): two cells with different digests are certainly different frames; when the digests match, compare byte by byte. */
 function digest(cell: LoopCell): number {
   let hash = Math.imul(0x811c9dc5 ^ cell.at.x, 0x01000193);
   hash = Math.imul(hash ^ cell.at.y, 0x01000193);

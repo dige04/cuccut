@@ -14,7 +14,7 @@ import { pl } from './model-installer.pl.ts';
 import { tr } from './model-installer.tr.ts';
 import { vi } from './model-installer.vi.ts';
 
-/** `packages/models/src/model-installer.ts` 给人看的文字：安装模型包时的错误。 */
+/** Human-facing text for `packages/models/src/model-installer.ts`: errors when installing a model package. */
 const en = {
   noSpace: 'The disk that holds the models folder is out of space',
   noManifest: (p: { repo: string; revision: string }) => `There is no built-in manifest for ${p.repo}@${p.revision}`,

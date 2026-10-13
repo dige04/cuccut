@@ -45,7 +45,7 @@ describe('designSystemPath', () => {
   it('按 Space 条目打开的用条目的相对路径，找不到条目时不带', () => {
     expect(designSystemPath({ entryId: 'e1' }, [entry])).toBe('systems/brand');
     expect(designSystemPath({ entryId: 'missing' }, [entry])).toBeNull();
-    // 不在来源目录里的条目，relPath 只是显示用的名字
+    // An entry outside the source directory: relPath is only a display name
     expect(designSystemPath({ entryId: 'e1' }, [{ ...entry, source: { projectId: null, conversationId: null } }])).toBeNull();
   });
 });

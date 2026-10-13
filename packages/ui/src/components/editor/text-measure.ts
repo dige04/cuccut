@@ -4,16 +4,15 @@ import { PlanFailure, type RenderPlanner } from '../../render/render-planner.ts'
 
 type Size = { width: number; height: number };
 
-/** 量文字框要用的那部分渲染内核（`RenderPlanner`）。 */
+/** The part of the render kernel (`RenderPlanner`) used to measure text boxes. */
 export type TextKernel = Pick<RenderPlanner, 'measureText' | 'recovered'>;
 
-/** 内核接连在 `build` 里出错几次就不再等（同一段输入每次都让它陷阱时不会没完）。 */
+/** If the kernel fails several times in a row inside `build`, stop waiting (so that when the same input keeps tripping it, the wait does not go on forever). */
 const ATTEMPTS = 3;
 
 /**
- * 新建文字时量框：等渲染内核载入（含字体），把按某块序列画布量的量法交给 `build`（框与画出来的字同一台排版引擎、
- * 同一批字体，`frame_render::text_measure`）。内核正在重新载入（`PLANNER_CRASHED`）时等它好了，把 `build` 整个重跑，
- * 不拿半截量出来的结果。没有近似的量法：内核载入失败就拒绝，不建框。
+ * Measuring the box when a new text is created: waits for the render kernel to load (including fonts), then hands the measuring routine for a given sequence canvas to `build` (the box and the rendered text use the same typesetting engine and the same fonts, `frame_render::text_measure`).
+ * If the kernel is reloading (`PLANNER_CRASHED`), wait until it is ready and rerun all of `build`, rather than using a partially measured result. There is no approximate measuring method: if the kernel fails to load, reject and do not create the box.
  */
 export async function withTextMeasure<T>(
   build: (measureOn: (canvas: Size) => MeasureText) => T,

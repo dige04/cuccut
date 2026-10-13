@@ -3,16 +3,16 @@ import { create } from 'zustand';
 import { hostPanelTab, useEditor, type PanelTab } from '../../state/editor-store.ts';
 import { useTranscriptMode } from './transcript-mode.ts';
 
-/** 「去文稿调整」/「调起止」出发时右栏在哪（产品设计 §5.10）：横幅在文稿里换成回那里的一格。 */
+/** Where the right column was when “去文稿调整”(adjust in script) or “调起止”(adjust start and end) was started (product design §5.10). In the script, the banner is replaced by a cell that returns there. */
 export interface CutOrigin {
   videoId: Id;
   tab: PanelTab;
 }
 
 /**
- * 子视频进文稿调起止（原型 editor.jsx `openCutEntry` / `cutOrigin` / `closeCutEntry`）：
- * - `origin`：来处。用别的路径换面板（点工具栏、选中片段翻到属性、别的入口推过去）或换视频就清掉——那之后的文稿不算「从那儿跳过来的」。
- * - `jump`：要文稿滚到片段前面那条剪缝的请求，`seen` 是已经滚过的那一次；文稿面板挂上时消费，只滚一次，换页回来不再跳。
+ * Opening a child video's cut start and end from the script (prototype editor.jsx `openCutEntry` / `cutOrigin` / `closeCutEntry`):
+ * - `origin`: where the user came from. It is cleared when the panel is switched by another path (clicking the toolbar, selecting a clip and jumping to properties, another entry point pushing the user there) or when the video changes. A script opened after that does not count as “jumped here from there”.
+ * - `jump`: a request to make the script scroll to the cut seam in front of the clip; `seen` is the request that has already been scrolled to. It is consumed when the script panel mounts, scrolls only once, and does not jump again when the user returns to the page.
  */
 export const useCutEntry = create<{ origin: CutOrigin | null; jump: { videoId: Id; n: number } | null; seen: number }>(() => ({
   origin: null,
@@ -22,13 +22,13 @@ export const useCutEntry = create<{ origin: CutOrigin | null; jump: { videoId: I
 
 let jumps = 0;
 
-/** 去文稿调起止：记下来处（右栏在别的面板时），剪辑打开，切到文稿并展开面板，请文稿滚到片段前面。 */
+/** Adjusting the cut's start and end from the script: records the origin (when the right column is on another panel), opens the cut, switches to the script and expands the panel, and asks the script to scroll to the front of the clip. */
 export function openCutEntry(videoId: Id, web: boolean): void {
   const editor = useEditor.getState();
   const from = editor.panelHidden ? null : hostPanelTab(editor.panelTab, web);
   const kept = useCutEntry.getState().origin;
   useTranscriptMode.getState().setMode('cut');
-  // 换面板会清掉来处（下面的订阅）：先换，再记。
+  // Switching panels clears the origin (see the subscription below), so switch first, then record.
   editor.showPanel('transcript');
   jumps += 1;
   useCutEntry.setState({
@@ -37,7 +37,7 @@ export function openCutEntry(videoId: Id, web: boolean): void {
   });
 }
 
-/** 回到来处并清掉；没有来处时什么也不做。 */
+/** Goes back to the origin and clears it; does nothing if there is no origin. */
 export function closeCutEntry(): void {
   const { origin } = useCutEntry.getState();
   if (!origin) return;
@@ -49,12 +49,12 @@ export function clearCutOrigin(): void {
   if (useCutEntry.getState().origin) useCutEntry.setState({ origin: null });
 }
 
-/** 文稿滚过了第 `n` 次请求。 */
+/** The script has scrolled for the `n`-th request. */
 export function consumeCutJump(n: number): void {
   if (useCutEntry.getState().seen !== n) useCutEntry.setState({ seen: n });
 }
 
-// 面板或视频换了：来处作废（换视频时连没消费的滚动请求一起丢掉）。
+// Panel or video changed: the origin is invalidated (when the video changes, any unconsumed scroll request is dropped too).
 useEditor.subscribe((s, prev) => {
   if (s.videoId !== prev.videoId) {
     const { origin, jump } = useCutEntry.getState();

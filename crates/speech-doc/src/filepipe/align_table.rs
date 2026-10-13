@@ -1,25 +1,17 @@
-//! align 载体（`align-table/1`）的 HTML 表格编解码器（§8）。
+//! The HTML table codec for the align carrier (`align-table/1`) (§8).
 //!
-//! 四拍里的第一拍与第三拍：把「需要语义切分的超长句」渲染成一张表，
-//! 再把模型回来的表解析成「按 `data-sid` 分组的 (源文段, 译文片) 文本对」。
+//! Steps one and three of the four-step process: it renders an over-long sentence that needs semantic splitting into a table, and parses the table the model returns into "(source segment, translation piece) text pairs grouped by `data-sid`".
 //!
-//! 边界（M0 只做结构层，硬性划界）：
+//! Boundaries (M0 covers only the structural layer, a hard line):
 //!
-//! - **不做 atom-LCS 源文词区间映射，不产出 `from`/`to`**。§8.4 第 1 步的
-//!   顺序游标 + 词边界吸附是 M3 引擎的工作；在这里重复实现会造成双镜像。
-//! - **绝对时间戳不进载荷**（§8.2）。由停留秒数折算出的「建议片数」由调用方
-//!   算好后以 [`AlignSentenceInput::suggested_pieces`] 传入，秒数不进 filepipe。
-//! - **标签名不进协议**。定位一律走 `data-sid` / `class` / `scope` / `rowspan`
-//!   属性；`<tbody>`/`<tr>`/`<td>` 只是当下的形态。
-//! - **不做非回退检查**（§8.4 第 3 步）：它要「输入最坏行」与 `words[]` 时间
-//!   真相，属引擎层。
+//! - **No atom-LCS source-word interval mapping, and no `from`/`to` output**. The ordered cursor and word-boundary snapping of §8.4 step 1 are M3 engine work; reimplementing them here would create two mirrored copies.
+//! - **Absolute timestamps do not enter the payload** (§8.2). The "suggested piece count" derived from on-screen seconds is computed by the caller and passed in as [`AlignSentenceInput::suggested_pieces`]; seconds do not enter filepipe.
+//! - **Tag names are not part of the protocol**. Location always goes through the `data-sid` / `class` / `scope` / `rowspan` attributes; `<tbody>`/`<tr>`/`<td>` are just the current form.
+//! - **No non-regression check** (§8.4 step 3): it requires the "worst-case input rows" and the ground truth of `words[]` timing, which belongs to the engine layer.
 //!
-//! M3 起本模块是 file-v1 align 的**唯一字符串级校验**：引擎 provider 路径与
-//! agent 提交期 lint 都调 [`parse_align_table`]，后者再持有 §8.3 的 reordered
-//! 改写幅度护栏（算术共用 [`crate::split::reordered_rewrite_exceeds`]）。
-//! 需要 `words[]` 真相的判据（区间映射、配对密度、双语锚、非回退）仍留引擎。
+//! From M3 on, this module is the **only string-level validator** for file-v1 align. The engine provider path and the agent's submit-time lint both call [`parse_align_table`]; the latter also holds the §8.3 rewrite-magnitude guard for reordered rows (the arithmetic is shared with [`crate::split::reordered_rewrite_exceeds`]). Criteria that need the ground truth of `words[]` (interval mapping, pairing density, bilingual anchors, non-regression) remain in the engine.
 //!
-//! 本模块零 I/O、零时钟、零随机；全部是纯函数。
+//! This module has zero I/O, zero clock, zero randomness; everything is a pure function.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,20 +28,19 @@ use super::common::{
 };
 use super::html::{Element, Node, escape_attr, escape_text, parse_html, parse_html_in_table};
 
-/// 表里的一条只读上下文行（§8.2「前后各一句」）。
+/// One read-only context row in the table (§8.2: "up to one sentence before and after").
 ///
-/// 渲染成 `<tbody class="ctx">` 且**不带 `data-sid`**：它不是可编辑单元，
-/// 只是语境。模型改动其内容即报 [`ProblemCode::SourceDrift`]。
+/// Rendered as `<tbody class="ctx">` and **without `data-sid`**: it is not an editable unit, only context. If the model changes its content, that is reported as [`ProblemCode::SourceDrift`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignContextRow {
-    /// 只读源文（可见词序拼接）。
+    /// Read-only source text (concatenation of visible words in order).
     pub source: String,
-    /// 只读译文。
+    /// Read-only translation.
     pub translation: String,
 }
 
 impl AlignContextRow {
-    /// 构造一条上下文行。
+    /// Constructs a context row.
     pub fn new(source: impl Into<String>, translation: impl Into<String>) -> Self {
         Self {
             source: source.into(),
@@ -58,40 +49,33 @@ impl AlignContextRow {
     }
 }
 
-/// 一句在表里的渲染输入。
+/// Render input for one sentence in the table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlignSentenceInput {
-    /// 句 id（`data-sid`，逐字节精确匹配，不做大小写折叠）。
+    /// Sentence id (`data-sid`, exact byte-for-byte match, no case folding).
     pub id: String,
-    /// 整句源文（可见词序拼接）。不预切、不暴露 word id、不暴露源 Cue 边界。
+    /// Full source text of the sentence (concatenation of visible words in order). Not pre-split, does not expose word ids, does not expose source Cue boundaries.
     pub source: String,
-    /// 句级译文真相 `trans[lang][sid]`。行片拼接必须与之等价（§2 不变式）。
+    /// Sentence-level translation ground truth `trans[lang][sid]`. The concatenation of the line pieces must be equivalent to it (§2 invariant).
     pub translation: String,
-    /// 展示行数上限（`data-max-lines`），只是给模型的约束提示。
+    /// Display line limit (`data-max-lines`); only a constraint hint to the model.
     pub max_lines: usize,
-    /// 建议片数区间 `(下限, 上限)`：由调用方按停留时长折算，**秒数不进载荷**。
+    /// Suggested piece-count range `(lower, upper)`: converted by the caller from the on-screen duration. **Seconds do not enter the payload.**
     pub suggested_pieces: (usize, usize),
-    /// 上一轮模型标记过的「源侧确无切点」状态，回带以便定向轮复核；
-    /// 首轮恒为 `false`，为 `false` 时不渲染该属性。
+    /// The "no split point on the source side" state marked by the model in the previous round, carried back so that a targeted round can re-check it. The first round is always `false`; when `false`, the attribute is not rendered.
     pub unsplittable: bool,
-    /// translate 融合草稿已通过目标侧验收时的冻结目标片。非空时 worker 只能
-    /// 重选源边界；提交期可从载体完整复原同一约束。
+    /// The frozen target pieces, when the translate-fusion draft has already passed target-side acceptance. When non-empty, the worker may only reselect source boundaries; the submit-time lint can fully restore the same constraint from the carrier.
     pub frozen_target: Vec<String>,
-    /// 禁止 `data-reordered="true"`：这一轮只是重选源文切点，改写译文没有意义。
+    /// Forbids `data-reordered="true"`: this round only reselects source-text cut points, so rewriting the translation is meaningless.
     ///
-    /// 与 [`Self::frozen_target`] 的区别是它**不**规定目标片长什么样，只否掉
-    /// 「改写译文」这条出路——paired 补行轮要的正是重新选边界，冻结目标片会把
-    /// 这轮唯一该做的事一并禁掉。
+    /// The difference from [`Self::frozen_target`] is that it does **not** prescribe what the target pieces look like. It only rules out the "rewrite the translation" route. Paired line-filling rounds need exactly the reselection of boundaries, and frozen target pieces would forbid the one thing this round should do.
     ///
-    /// 需要它是因为 `data-reordered="true"` 是校验认账的改写通道：一旦标上，
-    /// 「行片拼接必须等于句级译文」这条就被换成一个宽得多的幅度阈值，答案照收，
-    /// 而 paired 轮的验收又只认原始 `trans` 度量，于是整轮调用注定作废。实测
-    /// 38 个候选全数被拒、0 句被修，就是这么烧掉的。
+    /// It is needed because `data-reordered="true"` is the rewrite channel that validation accepts. Once it is set, the "line pieces concatenated must equal the sentence-level translation" invariant is replaced by a much looser magnitude threshold, and answers are accepted anyway. Paired-round acceptance only measures the original `trans`, so the whole round's calls were doomed. Measured in practice: all 38 candidates were rejected and 0 sentences were fixed. That is how the calls were wasted.
     pub no_rewrite: bool,
 }
 
 impl AlignSentenceInput {
-    /// 构造一句渲染输入（`max_lines` 默认 2，建议片数默认 2–3，非不可拆）。
+    /// Constructs a one-sentence render input (`max_lines` defaults to 2, the suggested piece count defaults to 2–3, not unsplittable).
     pub fn new(
         id: impl Into<String>,
         source: impl Into<String>,
@@ -110,29 +94,27 @@ impl AlignSentenceInput {
     }
 }
 
-/// 一整张 align 表的渲染输入，同时是解析时的对账基准。
+/// The render input for a whole align table, which is also the reconciliation baseline at parse time.
 ///
-/// 解析必须同时拿到它（不能只吃字符串）：期望 id 集合、只读上下文行、
-/// 句级译文与源文，都要用它来对账。
+/// Parsing must take this as well, not just the string: the expected id set, the read-only context rows, and the sentence-level translations and sources are all reconciled against it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlignTableInput {
-    /// 目标语言标签（`data-lang`）。
+    /// Target language tag (`data-lang`).
     pub lang: String,
-    /// 目标语三阈值（`data-fit` / `data-hard` 由此而来）。
+    /// Target-language thresholds (`data-fit` / `data-hard` derive from this).
     pub params: TransParams,
-    /// 源语言标签（`data-source-lang`）。只喂「并列动作顿号缝」豁免的源行
-    /// 宽度口径（`source_fit` 按源语取值）；空串按拉丁源语预算计。
+    /// Source language tag (`data-source-lang`). It only feeds the source-line width measure for the "parallel-action comma seam" exemption (`source_fit` takes its value by source language). An empty string is measured with the Latin-source budget.
     pub source_lang: String,
-    /// 表前的只读上下文行。
+    /// Read-only context rows before the table.
     pub context_before: Vec<AlignContextRow>,
-    /// 本表要处理的句子（装箱由调用方按句数与体积双约束完成）。
+    /// The sentences to handle in this table (packing is done by the caller under both sentence-count and size constraints).
     pub sentences: Vec<AlignSentenceInput>,
-    /// 表后的只读上下文行。
+    /// Read-only context rows after the table.
     pub context_after: Vec<AlignContextRow>,
 }
 
 impl AlignTableInput {
-    /// 构造一张只含句子、无上下文的表输入（参数取目标语规范缺省）。
+    /// Constructs a table input containing only sentences, with no context (parameters take the target language's canonical defaults).
     pub fn new(lang: impl Into<String>, sentences: Vec<AlignSentenceInput>) -> Self {
         let lang = lang.into();
         let params = TransParams::for_lang(&lang);
@@ -147,51 +129,50 @@ impl AlignTableInput {
     }
 }
 
-/// 一句解析出来的行片：一个译文片 + 与之 1:1 的连续源文段。
+/// The parsed line pieces for one sentence: one translation piece plus a continuous source segment 1:1 with it.
 ///
-/// M0 只有文本；源词区间（`from`/`to`）由 M3 引擎用 atom-LCS 映射得出。
+/// M0 holds text only; source-word intervals (`from`/`to`) are derived by the M3 engine via atom-LCS mapping.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignParsedRow {
-    /// 该片对应的源文段（归一化后的可见文本）。
+    /// The source segment corresponding to this piece (normalized visible text).
     pub source: String,
-    /// 译文片（归一化后的可见文本）。
+    /// The translation piece (normalized visible text).
     pub target: String,
 }
 
-/// 一句解析出来的分组。
+/// The parsed group for one sentence.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignParsedGroup {
-    /// 句 id（`data-sid`）。
+    /// Sentence id (`data-sid`).
     pub id: String,
-    /// 按出现顺序的行片。
+    /// The line pieces, in order of appearance.
     pub rows: Vec<AlignParsedRow>,
-    /// `data-reordered="true"`：模型改写了译文以消除语序交叉。
-    /// 为真时本模块**不做**拼接一致性检查（改写幅度护栏属引擎层）。
+    /// `data-reordered="true"`: the model rewrote the translation to eliminate word-order crossings. When true, this module does **not** perform the concatenation consistency check (the rewrite-magnitude guard belongs to the engine layer).
     pub reordered: bool,
-    /// `data-crossing="true"`：残余语序交叉。与 [`Self::reordered`] 互斥。
+    /// `data-crossing="true"`: residual word-order crossing. Mutually exclusive with [`Self::reordered`].
     pub crossing: bool,
-    /// `data-unsplittable="true"`：源侧确无切点，归 `translation-unsplittable` 通道。
+    /// `data-unsplittable="true"`: the source side has no cut point at all; routed to the `translation-unsplittable` channel.
     pub unsplittable: bool,
 }
 
-/// 一次 align 表解析的结果。
+/// The result of one align-table parse.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlignParsed {
-    /// 按输出中出现顺序排列的分组（只含协议内 id）。
+    /// Groups in the order they appear in the output (only in-protocol ids).
     pub groups: Vec<AlignParsedGroup>,
-    /// 协议问题与非协议诊断。
+    /// Protocol problems and non-protocol diagnostics.
     pub diagnostics: Diagnostics,
 }
 
 impl AlignParsed {
-    /// 按 id 取分组。
+    /// Gets a group by id.
     pub fn group(&self, id: &str) -> Option<&AlignParsedGroup> {
         self.groups.iter().find(|group| group.id == id)
     }
 }
 
 // ---------------------------------------------------------------------------
-// 渲染
+// Rendering
 // ---------------------------------------------------------------------------
 
 /// Reject contradictory structured input before paying for a model response.
@@ -224,16 +205,11 @@ pub fn validate_input_constraints(input: &AlignTableInput) -> Result<(), String>
     Ok(())
 }
 
-/// 渲染一张 align 表（§8.2）。输出的属性顺序、缩进、行序固定；文本和属性
-/// 分别经 escape_text / escape_attr 转义。不内联预览 style，避免解析时丢弃。
+/// Renders one align table (§8.2). The attribute order, indentation and row order of the output are fixed; text and attributes are escaped by escape_text / escape_attr respectively. Styles are not previewed inline, so they are not discarded at parse time.
 pub fn render_align_table(input: &AlignTableInput) -> String {
     let mut output = String::new();
-    // `data-soft` 是相对 §8.2 属性清单的**有意增补**：提交期 lint 只拿得到
-    // 落盘的载荷 HTML，[`parse_align_table_input`] 必须能完整还原 TransParams
-    // 才能复算同一套接缝判据（soft 进 lint_pieces）。缺它就只能猜，猜错等于
-    // 两份不同的校验——正是设计 §2 要消灭的东西。
-    // `data-source-lang` 同理：「并列动作顿号缝」豁免要按源语预算量源行宽度，
-    // 提交期 lint 只能从载荷里拿到源语。
+    // `data-soft` is a **deliberate addition** to the §8.2 attribute list. Submit-time lint only gets the persisted payload HTML, and [`parse_align_table_input`] must be able to restore the full TransParams in order to recompute the same seam criteria (soft goes into lint_pieces). Without it one can only guess, and a wrong guess means two different validations, which is exactly what design §2 sets out to eliminate.
+    // `data-source-lang` works the same way: the "parallel-action comma seam" exemption needs the source-line width measured against the source-language budget, and submit-time lint can only get the source language from the payload.
     let source_lang = if input.source_lang.trim().is_empty() {
         String::new()
     } else {
@@ -264,7 +240,7 @@ pub fn render_align_table(input: &AlignTableInput) -> String {
     output
 }
 
-/// 渲染一条只读上下文分组。
+/// Renders one read-only context group.
 fn push_context_group(output: &mut String, row: &AlignContextRow) {
     output.push_str("  <tbody class=\"ctx\">\n");
     output.push_str(&format!(
@@ -275,7 +251,7 @@ fn push_context_group(output: &mut String, row: &AlignContextRow) {
     output.push_str("  </tbody>\n");
 }
 
-/// 渲染一句可编辑分组。
+/// Renders one editable sentence group.
 fn push_sentence_group(
     output: &mut String,
     sentence: &AlignSentenceInput,
@@ -320,12 +296,12 @@ fn push_sentence_group(
     output.push_str("  </tbody>\n");
 }
 
-/// 单元格文本：先清洗成单行，再做 HTML 转义。
+/// Cell text: first cleaned into a single line, then HTML-escaped.
 fn cell_text(text: &str) -> String {
     escape_text(&sanitize_inline_text(text))
 }
 
-/// `data-budget` 文案：只带相对预算（每行阈值 + 建议片数），不带秒数。
+/// `data-budget` text: carries only relative budgets (per-line threshold and suggested piece count), no seconds.
 fn budget_text(params: &TransParams, lang: &str, suggested: (usize, usize)) -> String {
     let unit = if matches!(primary_subtag(lang).as_str(), "zh" | "ja" | "ko") {
         "字"
@@ -344,30 +320,20 @@ fn budget_text(params: &TransParams, lang: &str, suggested: (usize, usize)) -> S
 }
 
 // ---------------------------------------------------------------------------
-// 解析
+// Parsing
 // ---------------------------------------------------------------------------
 
-/// 解析模型回来的 align 表（§8.3、§8.4 第 1 步之前的结构层）。
+/// Parses the align table returned by the model (the structural layer, which comes before §8.3 and §8.4 step 1).
 ///
-/// 流程：归一化（§10.2 零成本恢复）→ 体积护栏（§16）→ 宽容解析 →
-/// 分组对账。
+/// Flow: normalization (§10.2 zero-cost recovery) → size guard (§16) → lenient parsing → group reconciliation.
 ///
-/// - `table` 是对账基准（期望 id 集合、只读上下文、句级源文与译文），
-///   不是可选参数：只吃字符串无法查 id 集合与拼接不变式。
-/// - `input` 是**当初实际发给模型的那份渲染文本**（宿主手里的
-///   `DocumentRequest.input.content`），仅用作 [`guard_output_size`] 的体积
-///   基准；传 `None` 即跳过该护栏。这里不内部调用 [`render_align_table`]
-///   反推长度——那会把 parse 与 render 耦死，也白付一次分配。
+/// - `table` is the reconciliation baseline (expected id set, read-only context, sentence-level source and translation). It is not an optional parameter: the id set and the concatenation invariant cannot be checked from a string alone.
+/// - `input` is **the render text that was actually sent to the model** (the host's `DocumentRequest.input.content`). It is used only as the size baseline for [`guard_output_size`]; passing `None` skips that guard. It does not internally call [`render_align_table`] to back-compute the length, since that would couple parse to render and spend an extra allocation.
 ///
-/// 关键判据：
+/// Key criteria:
 ///
-/// - **裸 `<tbody>` 恢复**：模型只回 `<tbody>`/`<tr>` 而不带 `<table>` 外壳时，
-///   html5ever 的表格作用域会**静默丢掉所有行**。因此当文档模式解析出 0 个
-///   分组、而原文里含 `data-sid` 字样时，用 `<table>` 片段上下文重解析。
-///   这一步必须发生在截断判定之前，否则会误报「全句缺失」。
-/// - **截断 vs 散点缺失**：宽容解析器会自动闭合一切，不能靠它判截断。判据是
-///   「期望 id 的**连续后缀**整体缺失」→ [`ProblemCode::DocumentTruncated`]；
-///   散点缺失 → [`ProblemCode::MissingId`]。误判成漏译会白烧一整轮定向重试（§9.3）。
+/// - **Bare `<tbody>` recovery**: when the model returns only `<tbody>`/`<tr>` without a `<table>` wrapper, html5ever's table scope **silently drops all rows**. So when document-mode parsing yields 0 groups while the original text contains the literal string `data-sid`, re-parse using a `<table>` fragment context. This step must happen before the truncation check, otherwise it would falsely report "every sentence missing".
+/// - **Truncation vs. scattered missing**: the lenient parser auto-closes everything, so truncation cannot be judged from it. The criterion is "a **consecutive suffix** of expected ids missing as a whole" ⇒ [`ProblemCode::DocumentTruncated`]; scattered missing ids ⇒ [`ProblemCode::MissingId`]. Misjudging these as omissions would waste a whole round of targeted retries (§9.3).
 pub fn parse_align_table(
     table: &AlignTableInput,
     input: Option<&str>,
@@ -387,7 +353,7 @@ pub fn parse_align_table(
         diagnostics.push_warning(warning);
     }
 
-    // 体积护栏：超限直接拒绝，不再解析（防失控生成把后续判定拖成噪声）。
+    // Size guard: over the limit, reject outright without parsing (so that runaway generation does not turn the subsequent checks into noise).
     if let Some(problem) = input.and_then(|input| guard_output_size(input, &normalized.text)) {
         diagnostics.push_problem(problem);
         return AlignParsed {
@@ -470,18 +436,13 @@ pub fn parse_align_table(
     }
 }
 
-/// 从**当初发出的载荷 HTML** 反解出 [`AlignTableInput`]（§10.3 提交期 lint）。
+/// Recovers an [`AlignTableInput`] from the **originally emitted payload HTML** (§10.3 submit-time lint).
 ///
-/// `task submit` 进程没有 `TranscriptDoc`，只有落盘的 `payloads/<callId>.html`。
-/// 反解让提交期 lint 能调用与引擎完全相同的 [`parse_align_table`]，从而兑现
-/// 设计 §2 的「校验只有一份」——而不是照着判据再抄一遍。
+/// The `task submit` process has no `TranscriptDoc`, only the persisted `payloads/<callId>.html`. Recovery lets the submit-time lint call exactly the same [`parse_align_table`] as the engine, which fulfils design §2's "there is only one validation", rather than copying the criteria over again.
 ///
-/// 反解**必须**是 [`render_align_table`] 的严格逆：`render → parse_input →
-/// render` 逐字节相等由单测钉死。任何渲染侧新增属性都要在这里同步，否则
-/// lint 会静默退化成「读不出载荷 ⇒ 不拦」。
+/// Recovery **must** be the strict inverse of [`render_align_table`]: `render → parse_input → render` byte-for-byte equality is pinned by a unit test. Any attribute newly added on the render side must be synced here, otherwise the lint silently degrades into "payload unreadable ⇒ do not block".
 ///
-/// 返回 `None` 表示这不是一张 align 表（旧任务目录、别的 kind 的载荷）：
-/// 调用方按 M1/M2 惯例降级为「不挡」，不得凭空报错。
+/// Returns `None` when this is not an align table (old task directories, payloads of other kinds). The caller downgrades to "do not block" per the M1/M2 convention, and must not report an error out of nothing.
 pub fn parse_align_table_input(payload: &str) -> Option<AlignTableInput> {
     let tree = parse_html(payload);
     let table = tree
@@ -543,7 +504,7 @@ pub fn parse_align_table_input(payload: &str) -> Option<AlignTableInput> {
         let rows = extract_rows(element, None, &mut diagnostics);
         if let Some(row) = rows.first() {
             let context = AlignContextRow::new(row.source.clone(), row.target.clone());
-            // 前/后归属按文档序：第一条可编辑分组之前的是前文，其余是后文。
+            // Preceding / following attribution follows document order: everything before the first editable group is preceding context; the rest is following context.
             if sentences.is_empty() {
                 context_before.push(context);
             } else {
@@ -562,8 +523,7 @@ pub fn parse_align_table_input(payload: &str) -> Option<AlignTableInput> {
     })
 }
 
-/// 按文档序收集分组（可编辑与只读混排）。[`collect_groups`] 分两桶装、
-/// 丢失交错次序，反解载荷时需要次序来还原前文/后文归属。
+/// Collects groups in document order (editable and read-only mixed). [`collect_groups`] puts them into two buckets and loses the interleaving order, but recovering from the payload needs that order to restore preceding / following context attribution.
 fn walk_groups_ordered<'a>(nodes: &'a [Node], out: &mut Vec<&'a Element>) {
     for node in nodes {
         let Node::Element(element) = node else {
@@ -581,7 +541,7 @@ fn attr_usize(element: &Element, name: &str) -> Option<usize> {
     element.attr(name)?.trim().parse().ok()
 }
 
-/// [`budget_text`] 的逆：从 `…建议2–3片` / `…建议3片` 里取回建议片数区间。
+/// The inverse of [`budget_text`]: retrieves the suggested piece-count range from strings like `…建议2–3片` / `…建议3片`.
 fn parse_budget_pieces(budget: &str) -> Option<(usize, usize)> {
     let tail = budget.rsplit_once("建议")?.1;
     let body = tail.strip_suffix('片')?;
@@ -594,16 +554,15 @@ fn parse_budget_pieces(budget: &str) -> Option<(usize, usize)> {
     }
 }
 
-/// 分组收集结果：可编辑分组与只读上下文分组。
+/// Group collection result: editable groups and read-only context groups.
 struct CollectedGroups<'a> {
     sentences: Vec<&'a Element>,
     contexts: Vec<&'a Element>,
 }
 
-/// 递归收集分组：命中分组后**不再下钻**。
+/// Recursively collects groups: once a group is matched, it does **not** descend further.
 ///
-/// 不下钻是为了容忍模型把 `data-sid` 同时写在分组和每一行上——否则同一句
-/// 会被数成多个分组，凭空报 `duplicate-id`。
+/// Not descending tolerates the model writing `data-sid` on both the group and every row. Otherwise the same sentence would be counted as several groups, falsely reporting `duplicate-id`.
 fn collect_groups(nodes: &[Node]) -> CollectedGroups<'_> {
     let mut collected = CollectedGroups {
         sentences: Vec::new(),
@@ -630,7 +589,7 @@ fn walk_groups<'a>(nodes: &'a [Node], collected: &mut CollectedGroups<'a>) {
     }
 }
 
-/// 解析一句分组并跑句级验收。
+/// Parses one sentence group and runs the sentence-level acceptance checks.
 fn parse_group(
     element: &Element,
     sentence: &AlignSentenceInput,
@@ -644,7 +603,7 @@ fn parse_group(
     let mut crossing = bool_attr(element, "data-crossing", sid, diagnostics);
     let unsplittable = bool_attr(element, "data-unsplittable", sid, diagnostics);
     if reordered && crossing {
-        // §8：两者互斥。保留 reordered（改写确已发生），丢弃残余交叉自述。
+        // §8: the two are mutually exclusive. Keep reordered (the rewrite has indeed happened) and discard the self-reported residual crossing.
         crossing = false;
         diagnostics.push_warning(Warning::sentence(
             WarningCode::ContentIgnored,
@@ -674,10 +633,9 @@ fn parse_group(
     }
 }
 
-/// 句级验收：空译、源文漂移、拼接不变式、hard 上限、接缝 lint。
+/// Sentence-level acceptance: empty translation, source drift, concatenation invariant, hard limit, seam lint.
 ///
-/// 不因 `data-unsplittable` 抑制任何检查：抑制在解析器里是不可见的，会抹掉
-/// 「不可拆且合规」与「不可拆且超 hard（blocker 档）」的区别（§8.1）。
+/// No check is suppressed because of `data-unsplittable`. Suppression would be invisible in the parser, and it would erase the difference between "unsplittable and compliant" and "unsplittable but over hard (blocker level)" (§8.1).
 fn check_rows(
     rows: &[AlignParsedRow],
     sentence: &AlignSentenceInput,
@@ -703,7 +661,7 @@ fn check_rows(
         ));
     }
 
-    // 源文列是只读的：模型只许切，不许改。
+    // The source column is read-only: the model may only split, not modify.
     let source_concat: String = rows.iter().map(|row| row.source.as_str()).collect();
     if normalize_chars(&source_concat) != normalize_chars(&sentence.source) {
         diagnostics.push_problem(Problem::sentence(
@@ -713,9 +671,7 @@ fn check_rows(
         ));
     }
 
-    // 拼接不变式（§2）。reordered 分组允许改写译文，拼接自然不等——改判
-    // 改写幅度护栏（§8.3 ±25%）。两者都是纯字符串级判据，因此都在这里：
-    // 引擎 provider 路径与 agent 提交期 lint 由此共用同一份实现（§2）。
+    // Concatenation invariant (§2). reordered groups are allowed to rewrite the translation, so the concatenation naturally differs; they are judged by the rewrite-magnitude guard instead (§8.3 ±25%). Both are pure string-level criteria, so they live here: the engine provider path and the agent's submit-time lint share one implementation (§2).
     let target_concat: String = rows.iter().map(|row| row.target.as_str()).collect();
     if !sentence.frozen_target.is_empty() {
         let actual = rows
@@ -766,8 +722,7 @@ fn check_rows(
     let pieces: Vec<&str> = rows.iter().map(|row| row.target.as_str()).collect();
     check_over_hard(&pieces, &target_concat, sid, lang, params, diagnostics);
 
-    // 契约允许的「并列动作顿号缝」（源行过密 + 两片都是完整动作）与 json-v0
-    // 验收、`ccut check` 用同一份判据豁免；不豁免就是契约放行、lint 拒收。
+    // The "parallel-action comma seam" that the contract permits (source lines too dense + both pieces are complete actions) is exempted by the same criteria used by json-v0 acceptance and `ccut check`. If it were not exempted, the contract would allow it but the lint would reject it.
     let sources: Vec<&str> = rows.iter().map(|row| row.source.as_str()).collect();
     let allowed_list_seams = crate::engines::align::allowed_list_seam_indices_for_source_rows(
         &pieces,
@@ -792,21 +747,12 @@ fn check_rows(
     }
 }
 
-/// hard 上限校验，带可操作提示。
+/// hard-limit validation, with actionable hints.
 ///
-/// 只报「第 N 片 X 单位超过 hard」的裸消息时，worker 常常原地重复提交（同一
-/// 片连吃三次 lint try，最后由 force-through 放行、引擎再机械硬切）——
-/// 01a00494 现场 s-g109.20 的 23 单位片明明在「，」处就有合法切点。三档处理：
+/// A bare message reporting only "piece N: X units exceeds hard" often makes the worker resubmit in place. The same piece gets retried three times in lint, and finally force-through lets it pass and the engine hard-cuts it mechanically. In the live case 01a00494, piece 4 of s-g109.20 with 23 units already had a legal cut point at "，". Three handling tiers:
 ///
-/// 1. 译文存在合法切分（[`legal_split_for_lang`]：每片 ≤ hard、不切客观语病
-///    缝）→ 仍报 [`ProblemCode::AlignOverHard`]。切点由标点/空白背书时 detail
-///    直接给出切法；只剩 CJK 字界（切分器无词典，不能替 worker 选词边界）时
-///    只说明「片内无标点/空白缝，请在词边界处切开」。片内无解、整句有解时
-///    提示连同相邻片一起重切；
-/// 2. 整句译文也不存在合法切分（巨型 Latin 记号、每条缝都是客观语病）→ 只记
-///    [`WarningCode::AlignOverHardUncuttable`]，**不拒收**：worker 除改写译文
-///    外没有合法动作，拒收只会烧掉 lint try；引擎在验收侧本就把此码当 advisory
-///    并按 `enforce_target_hard_limit` 机械硬切，提交期放行不改变最终结果。
+/// 1. A legal split of the translation exists ([`legal_split_for_lang`]: every piece ≤ hard, no objective grammatical seams cut) ⇒ still report [`ProblemCode::AlignOverHard`]. When the cut point is backed by punctuation or whitespace, the detail gives the split directly. When only CJK character boundaries remain (the splitter has no dictionary, so it cannot choose word boundaries for the worker), it only says "no punctuation or whitespace seam inside the piece; please cut at a word boundary". When there is no solution inside the piece but there is one for the whole sentence, it hints to re-cut together with the adjacent pieces;
+/// 2. Even the whole translation has no legal split (a giant Latin token, where every seam is an objective grammatical error) ⇒ only [`WarningCode::AlignOverHardUncuttable`] is recorded, and it is **not rejected**. Apart from rewriting the translation, the worker has no legal action, and rejection would only burn lint tries. On the acceptance side the engine already treats this code as advisory and hard-cuts mechanically per `enforce_target_hard_limit`, so letting it pass at submit time does not change the final result.
 fn check_over_hard(
     pieces: &[&str],
     target_concat: &str,
@@ -829,7 +775,7 @@ fn check_over_hard(
 
     let mut fixable: Vec<String> = Vec::new();
     let mut uncuttable: Vec<String> = Vec::new();
-    // 整句合法切分只在片内无解时才算，且整句只算一次。
+    // The whole-sentence legal split is only computed when there is no solution inside the piece, and it is computed only once per sentence.
     let mut sentence_advice: Option<CutAdvice> = None;
     let mut sentence_hint: Option<Vec<String>> = None;
     for (index, width) in over_hard {
@@ -884,14 +830,13 @@ fn check_over_hard(
     }
 }
 
-/// 一段译文的合法切分建议。
+/// A legal-split suggestion for a stretch of translation.
 enum CutAdvice {
-    /// 存在合法切分，且每条缝都由标点/空白背书：可直接当切法提示。
+    /// A legal split exists and every seam is backed by punctuation or whitespace: it can be given directly as the split hint.
     Backed(Vec<String>),
-    /// 存在合法切分，但至少一条缝落在 CJK 字界上（[`cjk_midword_boundary`]）：
-    /// 切分器没有词典，不能替 worker 选词边界，只说明需要在词边界处切。
+    /// A legal split exists, but at least one seam falls on a CJK character boundary ([`cjk_midword_boundary`]): the splitter has no dictionary, so it cannot choose word boundaries for the worker. It only says that a cut at a word boundary is needed.
     MidwordOnly,
-    /// 不存在合法切分。
+    /// No legal split exists.
     None,
 }
 
@@ -913,9 +858,7 @@ impl From<Option<Vec<String>>> for CutAdvice {
     }
 }
 
-/// 第 `index` 片的片内合法切分建议：严格切分器给出的分片替换回整组后，客观
-/// 阻塞接缝数不得增加（末片可悬垂等规则依赖片在组内的位置，必须放回原位
-/// 再 lint）。
+/// The in-piece legal-split suggestion for piece `index`: after the strict splitter's pieces are substituted back into the whole group, the number of objective blocking seams must not increase. End-piece dangling and similar rules depend on a piece's position within the group, so it must be put back in place before linting.
 fn over_hard_piece_advice(
     pieces: &[&str],
     index: usize,
@@ -938,7 +881,7 @@ fn over_hard_piece_advice(
     }))
 }
 
-/// 整段文本的独立合法切分：全部 ≤ hard、自身没有客观阻塞接缝。
+/// An independent legal split of a whole text: every piece ≤ hard, and it has no objective blocking seams of its own.
 fn legal_partition(text: &str, lang: &str, params: &TransParams) -> Option<Vec<String>> {
     legal_partition_with(text, lang, params, |parts| {
         let borrowed: Vec<&str> = parts.iter().map(String::as_str).collect();
@@ -946,9 +889,7 @@ fn legal_partition(text: &str, lang: &str, params: &TransParams) -> Option<Vec<S
     })
 }
 
-/// 严格合法切分器（[`legal_split_for_lang`]：只切非客观语病缝、每片 ≤ hard、
-/// 不做字符位硬切）给出 ≥2 片且满足 `accept`（调用方放回上下文后的接缝判
-/// 据），即为合法切分。
+/// The strict legal splitter ([`legal_split_for_lang`]: only cuts non-objective-grammar seams, every piece ≤ hard, no hard cuts at character positions) gives ≥2 pieces and satisfies `accept` (the caller's seam criteria after putting the pieces back into context). Then it is a legal split.
 fn legal_partition_with(
     text: &str,
     lang: &str,
@@ -956,8 +897,7 @@ fn legal_partition_with(
     accept: impl Fn(&[String]) -> bool,
 ) -> Option<Vec<String>> {
     let width = target_cps_chars(text, lang);
-    // 片数上限只为限制 DP 规模：≥ ceil(width / soft) 就足以让每片落到 soft
-    // 附近，再多的片数不会改变「是否存在 ≤ hard 合法切分」的结论。
+    // The cap on the number of pieces only limits the scale of the DP. ≥ ceil(width / soft) is enough for every piece to land near soft; more pieces would not change the conclusion of "whether a legal split with every piece ≤ hard exists".
     let max_pieces = width.div_ceil(params.soft.max(1)) + 2;
     let parts = legal_split_for_lang(text, params, max_pieces, lang)?;
     if parts.len() < 2 {
@@ -987,7 +927,7 @@ fn render_cut_hint(parts: &[String]) -> String {
         .join("｜")
 }
 
-/// `rowspan` 冗余校验：不符只报诊断，不是协议问题（§8.3「纯冗余校验」）。
+/// `rowspan` redundancy check: a mismatch only reports a diagnostic, not a protocol problem (§8.3 "pure redundancy check").
 fn check_rowspan(element: &Element, sid: &str, rows: usize, diagnostics: &mut Diagnostics) {
     let Some(raw) = element
         .descendants()
@@ -1011,7 +951,7 @@ fn check_rowspan(element: &Element, sid: &str, rows: usize, diagnostics: &mut Di
     }
 }
 
-/// 读取布尔属性；出现无法解释的值时记诊断并按 `false` 处理。
+/// Reads a boolean attribute. When an uninterpretable value appears, a diagnostic is recorded and the value is treated as `false`.
 fn bool_attr(element: &Element, name: &str, sid: &str, diagnostics: &mut Diagnostics) -> bool {
     let Some(raw) = element.attr(name) else {
         return false;
@@ -1031,12 +971,12 @@ fn bool_attr(element: &Element, name: &str, sid: &str, diagnostics: &mut Diagnos
     false
 }
 
-/// 从一个分组里提取 (源文段, 译文片) 对。
+/// Extracts (source segment, translation piece) pairs from a group.
 ///
-/// 定位阶梯（标签名全程不参与）：
-/// 1. 同一行里同时有 `class="src"` 与 `class="tgt"` ⇒ 直接取；
-/// 2. 否则剔除 id 列（带 `rowspan`/`scope`，或文本恰为 sid）后按位置取；
-/// 3. 剔除后多于两格时取**最后两格**——id 列恒在最左，冗余列只会长在左边。
+/// Location ladder (tag names never take part):
+/// 1. If the same row contains both `class="src"` and `class="tgt"` ⇒ take them directly;
+/// 2. Otherwise, remove the id column (one with `rowspan` / `scope`, or whose text is exactly the sid) and take cells by position;
+/// 3. If more than two cells remain after removal, take the **last two cells**. The id column is always leftmost, and redundant columns can only appear on the left.
 fn extract_rows(
     element: &Element,
     sid: Option<&str>,
@@ -1080,7 +1020,7 @@ fn extract_rows(
     rows
 }
 
-/// 是否为 id 列单元格。
+/// Whether this is an id-column cell.
 fn is_id_cell(cell: &Element, sid: Option<&str>) -> bool {
     if cell.attrs.contains_key("rowspan") || cell.attrs.contains_key("scope") {
         return true;
@@ -1088,7 +1028,7 @@ fn is_id_cell(cell: &Element, sid: Option<&str>) -> bool {
     sid.is_some_and(|sid| cell.text().trim() == sid)
 }
 
-/// 缺失 id 判定：连续后缀整体缺失 ⇒ 截断；否则逐句 `missing-id`。
+/// Missing-id determination: a consecutive suffix missing as a whole ⇒ truncation; otherwise, per-sentence `missing-id`.
 fn report_missing(input: &AlignTableInput, seen: &BTreeSet<String>, diagnostics: &mut Diagnostics) {
     let missing: Vec<&str> = input
         .sentences
@@ -1127,11 +1067,9 @@ fn report_missing(input: &AlignTableInput, seen: &BTreeSet<String>, diagnostics:
     }
 }
 
-/// 只读上下文对账。
+/// Read-only context reconciliation.
 ///
-/// 按内容匹配而非位置：模型只回显其中一条时，位置比对会把「后文」错配到
-/// 「前文」上，白报一次 `source-drift`（一整页重试）。出现在输出里但与任何
-/// 一条期望上下文都对不上 ⇒ 被改过；整体不回显 ⇒ 只记诊断。
+/// It matches by content rather than by position. When the model echoes back only one of them, a positional comparison would match "following context" against "preceding context" and waste a `source-drift` (a whole-page retry). Text that appears in the output but matches none of the expected context rows ⇒ it was modified. Not echoed at all ⇒ only a diagnostic is recorded.
 fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &mut Diagnostics) {
     let expected: Vec<(String, String)> = input
         .context_before
@@ -1160,8 +1098,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
         ));
         return;
     }
-    // 上下文行的形状诊断没有可操作性（它本就不该被回显/改动），丢进一个
-    // 局部诊断桶，不污染句级账本。
+    // Shape diagnostics for context rows are not actionable (they should not be echoed or modified at all), so they go into a local diagnostics bucket and do not pollute the sentence-level ledger.
     let mut ignored = Diagnostics::new();
     for element in contexts {
         let rows = extract_rows(element, None, &mut ignored);
@@ -1196,7 +1133,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
     }
 }
 
-/// 归一化后是否仍残留代码块围栏（多 fence / 夹带解释 ⇒ `document-wrapped`）。
+/// Whether code-fence markers still remain after normalization (multiple fences, or extra explanation mixed in ⇒ `document-wrapped`).
 fn has_residual_fence(text: &str) -> bool {
     text.lines().any(|line| {
         let trimmed = line.trim();
@@ -1237,8 +1174,7 @@ mod tests {
         }
     }
 
-    /// 往返不变式的右侧：渲染做 [`sanitize_inline_text`]，解析做
-    /// [`normalize_html_text`]（含 CJK 空格折叠）。相等只在这个意义上成立。
+    /// The right-hand side of the round-trip invariant: rendering applies [`sanitize_inline_text`], and parsing applies [`normalize_html_text`] (which includes CJK space folding). Equality holds only in this sense.
     fn expect_cell(text: &str) -> String {
         normalize_html_text(&sanitize_inline_text(text))
     }
@@ -1247,8 +1183,7 @@ mod tests {
         AlignSentenceInput::new(id, source, translation)
     }
 
-    /// 测试侧的「模型回答」渲染器：刻意与生产渲染器分开，免得往返测试
-    /// 只是在验证自己。
+    /// Test-side "model answer" renderer: deliberately kept separate from the production renderer, so the round-trip tests do not just verify themselves.
     struct FakeGroup {
         sid: String,
         rows: Vec<(String, String)>,
@@ -1328,7 +1263,7 @@ mod tests {
         groups.iter().map(FakeGroup::html).collect()
     }
 
-    // -- 渲染与往返 --------------------------------------------------------
+    // -- Rendering and round-trip ----------------------------------------------
 
     #[test]
     fn render_carries_protocol_attributes_only() {
@@ -1345,7 +1280,7 @@ mod tests {
         assert!(html.contains("data-max-lines=\"2\""));
         assert!(html.contains("data-budget=\"每行≤16字，建议2–3片\""));
         assert!(html.contains("rowspan=\"1\""));
-        // 绝对时间戳、word id、源 Cue 边界都不进载荷。
+        // Absolute timestamps, word ids, and source Cue boundaries do not enter the payload.
         assert!(!html.contains("data-unsplittable"));
         assert!(!html.contains("<style"));
         assert!(!html.contains("秒"));
@@ -1455,7 +1390,7 @@ mod tests {
             assert_eq!(group.rows[0].source, expect_cell(source));
             assert_eq!(group.rows[0].target, expect_cell(translation));
         }
-        // CJK 之间的空格被折叠，Latin 之间的不被折叠：往返只在归一化意义上成立。
+        // Spaces between CJK characters are folded, while spaces between Latin characters are not. The round-trip holds only in the normalized sense.
         assert_eq!(expect_cell("纯 CJK 的一句"), "纯 CJK 的一句");
         assert_eq!(expect_cell("你好 世界"), "你好世界");
         assert_eq!(expect_cell("hello  world"), "hello world");
@@ -1491,7 +1426,7 @@ mod tests {
         let output = render_align_table(&input);
         let parsed = parse_align_table(&input, None, &output);
         assert_eq!(parsed.groups[0].rows[0].source, expect_cell(&source));
-        // 整句一片必然超 hard，但结构层不因此丢分组。
+        // A single piece for the whole sentence necessarily exceeds hard, but the structural layer does not drop the group because of that.
         assert!(parsed.diagnostics.has_code(ProblemCode::AlignOverHard));
         assert!(!parsed.diagnostics.has_code(ProblemCode::AlignContentDrift));
     }
@@ -1541,7 +1476,7 @@ mod tests {
         let parsed = parse_align_table(&input, None, &fake_table(&[reordered, unsplittable]));
         assert!(parsed.group("s-1").unwrap().reordered);
         assert!(parsed.group("s-2").unwrap().unsplittable);
-        // reordered 分组不做拼接一致性检查（改写幅度护栏在引擎层）。
+        // reordered groups skip the concatenation consistency check (the rewrite-magnitude guard is in the engine layer).
         assert!(!parsed.diagnostics.has_code(ProblemCode::AlignContentDrift));
     }
 
@@ -1556,14 +1491,14 @@ mod tests {
         assert!(parsed.diagnostics.has_code(ProblemCode::AlignOverHard));
     }
 
-    // -- 负面用例 ----------------------------------------------------------
+    // -- Negative cases ----------------------------------------------------------
 
     #[test]
     fn bare_tbody_without_table_wrapper_is_recovered() {
         let input = AlignTableInput::new("zh", vec![sentence("s-1", "abc def", "甲乙丙")]);
         let bare = fake_rows_only(&[FakeGroup::new("s-1", &[("abc", "甲乙"), ("def", "丙")])]);
         assert!(!bare.contains("<table"));
-        // 文档模式会静默丢掉所有行——恢复路径必须先于截断判定。
+        // Document mode silently drops all rows, so the recovery path must come before the truncation check.
         assert!(parse_html(&bare).elements_with_attr("data-sid").is_empty());
         let parsed = parse_align_table(&input, None, &bare);
         assert_eq!(parsed.groups.len(), 1);
@@ -1647,7 +1582,7 @@ mod tests {
     #[test]
     fn nested_sid_echo_is_not_a_duplicate() {
         let input = AlignTableInput::new("zh", vec![sentence("s-1", "a b", "甲乙")]);
-        // 模型把 data-sid 同时写在分组和每一行上。
+        // The model writes data-sid on both the group and every row.
         let output = concat!(
             "<table><tbody data-sid=\"s-1\">",
             "<tr data-sid=\"s-1\"><th rowspan=\"2\" scope=\"rowgroup\">s-1</th><td>a</td><td>甲</td></tr>",
@@ -1706,7 +1641,7 @@ mod tests {
             "<tbody data-sid=\"s-2\"></tbody></table>"
         );
         let parsed = parse_align_table(&input, None, output);
-        // 有 data-sid 即视为「id 已出现」：不算截断，只报空译。
+        // Having data-sid counts as "the id has appeared": it is not a truncation, only the empty translation is reported.
         assert!(!parsed.diagnostics.has_code(ProblemCode::DocumentTruncated));
         assert!(!parsed.diagnostics.has_code(ProblemCode::MissingId));
         assert!(parsed.diagnostics.has_code(ProblemCode::EmptyTranslation));
@@ -1783,7 +1718,7 @@ mod tests {
         let mut input = AlignTableInput::new("zh", vec![sentence("s-1", "a", "甲")]);
         input.context_before = vec![AlignContextRow::new("before", "前")];
         input.context_after = vec![AlignContextRow::new("after", "后")];
-        // 只回显了「后文」那一条：按位置比对会把它错配到 context_before。
+        // Only the "following context" row was echoed back: a positional comparison would match it to context_before.
         let output = concat!(
             "<table><tbody data-sid=\"s-1\"><tr><th rowspan=\"1\" scope=\"rowgroup\">s-1</th><td>a</td><td>甲</td></tr></tbody>",
             "<tbody class=\"ctx\"><tr><th scope=\"rowgroup\"></th><td class=\"src\">after</td><td class=\"tgt\">后</td></tr></tbody></table>"
@@ -1839,27 +1774,24 @@ mod tests {
         }));
     }
 
-    /// `data-no-rewrite` 的两条要求：随载体往返不丢，且拒掉改写通道。
+    /// The two requirements of `data-no-rewrite`: it must survive the round-trip with the carrier, and it must reject the rewrite channel.
     ///
-    /// p-fb353b44 实测：paired 补行轮 38 个候选全数被拒、0 句被修。答案里
-    /// `data-reordered="true"` 让校验换用宽得多的改写幅度阈值放行，而 paired
-    /// 验收只按原始 `trans` 度量数行，两把尺子对不上，整轮调用白烧。
+    /// Measured in p-fb353b44: in a paired line-filling round, all 38 candidates were rejected and 0 sentences were fixed. In the answer, `data-reordered="true"` made validation use a much looser rewrite-magnitude threshold and let the answers through. But paired acceptance only counts rows against the original `trans`. The two yardsticks did not agree, so the whole round's calls were wasted.
     ///
-    /// 这条校验住在 `parse_align_table` 里，所以引擎 provider 路径与
-    /// `lint_agent_answer_file` 的提交期校验共用同一份，不存在第二份可漂移的副本。
+    /// This check lives inside `parse_align_table`, so the engine provider path and the submit-time validation in `lint_agent_answer_file` share the same one. There is no second copy that could drift.
     #[test]
     fn no_rewrite_rejects_the_reorder_escape_hatch_in_the_shared_lint() {
         let mut locked = sentence("s-1", "a b", "第一段第二段");
         locked.no_rewrite = true;
         let input = AlignTableInput::new("zh", vec![locked]);
 
-        // 属性要能随载体往返：渲染出去、再解析回来仍然是 no_rewrite。
+        // The attribute must survive the round-trip: after rendering and parsing back, it is still no_rewrite.
         let rendered = render_align_table(&input);
         assert!(rendered.contains("data-no-rewrite=\"true\""), "{rendered}");
         let round_tripped = parse_align_table_input(&rendered).expect("round trip");
         assert!(round_tripped.sentences[0].no_rewrite);
 
-        // 只重选切点：照收。
+        // Only reselecting cut points: accept.
         let accepted = parse_align_table(
             &input,
             None,
@@ -1871,7 +1803,7 @@ mod tests {
             accepted.diagnostics
         );
 
-        // 改写译文并标 data-reordered：拒。
+        // Rewrote the translation and marked data-reordered: reject.
         let mut reordered = FakeGroup::new("s-1", &[("a", "第二段落"), ("b", "第一段落")]);
         reordered.reordered = true;
         let rejected = parse_align_table(&input, None, &fake_table(&[reordered]));
@@ -1884,13 +1816,13 @@ mod tests {
             rejected.diagnostics
         );
 
-        // 词序交叉的正当出路仍然开着。
+        // The legitimate route for word-order crossings remains open.
         let mut crossing = FakeGroup::new("s-1", &[("a", "第一段"), ("b", "第二段")]);
         crossing.crossing = true;
         let crossed = parse_align_table(&input, None, &fake_table(&[crossing]));
         assert!(!crossed.diagnostics.has_code(ProblemCode::AlignContentDrift));
 
-        // 不带该属性的句子不受影响：改写通道照常可用。
+        // Sentences without this attribute are unaffected: the rewrite channel remains available as usual.
         let free = AlignTableInput::new("zh", vec![sentence("s-2", "a b", "第一段第二段")]);
         let mut reordered = FakeGroup::new("s-2", &[("a", "第二段"), ("b", "第一段")]);
         reordered.reordered = true;
@@ -1930,8 +1862,7 @@ mod tests {
             .find(|p| p.code == ProblemCode::AlignOverHard)
             .expect("over-hard problem");
         assert!(problem.detail.contains("第 1 片"), "{}", problem.detail);
-        // 纯 CJK、无标点：切分器没有词典，不给具体切法（会切进词内），只说明
-        // 需在词边界处切开；仍是 Problem 而非放行。
+        // Pure CJK with no punctuation: the splitter has no dictionary, so it gives no concrete split (it would cut inside a word). It only says the cut must be made at word boundaries. It is still a Problem, not a pass.
         assert!(
             problem.detail.contains("请在词边界处切开") && !problem.detail.contains("可切为"),
             "{}",
@@ -1944,8 +1875,7 @@ mod tests {
         );
     }
 
-    /// 01a00494 现场 s-g109.20：第 4 片 23 单位，「，」处就有合法切点，worker
-    /// 却连吃三次 lint try。detail 必须直接给出切法，且该切法本身能过 lint。
+    /// The live case 01a00494, s-g109.20: piece 4 has 23 units, and there is a legal cut point at "，", yet the worker consumed three lint tries in a row. The detail must give the split directly, and that split itself must pass lint.
     #[test]
     fn over_hard_hint_names_a_legal_in_piece_cut() {
         let translation = "那就是你设定的目标。我们会持续这样做，直到模型自己调用工具update plan、update goal，说明计划或目标已真正实现。";
@@ -1994,7 +1924,7 @@ mod tests {
                 .any(|w| w.code == WarningCode::AlignOverHardUncuttable)
         );
 
-        // 照提示切开后：不再超 hard，也不引入 align-illegal-seam。
+        // After cutting as suggested: no longer over hard, and no align-illegal-seam is introduced.
         let fixed = parse_align_table(
             &input,
             None,
@@ -2017,10 +1947,10 @@ mod tests {
         );
     }
 
-    /// 整句无合法切分时降为 warning 放行——worker 没有合法动作，拒收只烧 try。
+    /// When the whole sentence has no legal split, it is downgraded to a warning and passed. The worker has no legal action, so rejection only burns tries.
     #[test]
     fn over_hard_without_legal_cut_downgrades_to_warning() {
-        // 单原子巨型 Latin 记号：切分器不做字符位硬切，整句无合法切分。
+        // A single atom, a giant Latin token: the splitter does no hard cuts at character positions, so the whole sentence has no legal split.
         let token = "supercalifragilisticexpialidocious_extremely_long_identifier_name";
         let input = AlignTableInput::new("zh", vec![sentence("s-1", "a b", token)]);
         assert!(piece_display_units(token, "zh") > input.params.hard);
@@ -2050,7 +1980,7 @@ mod tests {
 
     #[test]
     fn illegal_seam_is_reported() {
-        // 片尾悬垂连词「和」：seam::lint_pieces 的客观语病级问题。
+        // A dangling conjunction "和" at the end of a piece: an objective grammatical-error-level problem from seam::lint_pieces.
         let translation = "我们砍掉了付费营销和自建的渠道团队";
         let input = AlignTableInput::new("zh", vec![sentence("s-1", "a b", translation)]);
         let parsed = parse_align_table(
@@ -2068,8 +1998,7 @@ mod tests {
         );
     }
 
-    /// 契约的 paired-row balance 允许「源行过密 + 两侧都是完整并列动作」时切在
-    /// 顿号上；Shorts 验收 C6 实测 align-table 提交期 lint 仍按普通列表拒收。
+    /// The contract's paired-row balance permits cutting at the enumeration comma (、) when the source lines are too dense and both sides are complete parallel actions. In Shorts acceptance criterion C6, measurements showed that the align-table submit-time lint still rejected it as an ordinary list.
     fn list_seam_parsed(source_lang: &str, rows: &[(&str, &str)]) -> AlignParsed {
         let source: String = rows
             .iter()
@@ -2079,7 +2008,7 @@ mod tests {
         let translation: String = rows.iter().map(|(_, target)| *target).collect();
         let mut input = AlignTableInput::new("zh", vec![sentence("s-1", &source, &translation)]);
         input.source_lang = source_lang.to_owned();
-        // 走提交期 lint 的真实入口：从落盘载荷反解表输入。
+        // The real entry point of the submit-time lint: recover the table input from the persisted payload.
         let table = parse_align_table_input(&render_align_table(&input)).expect("align payload");
         parse_align_table(&table, None, &fake_table(&[FakeGroup::new("s-1", rows)]))
     }
@@ -2150,7 +2079,7 @@ mod tests {
 
     #[test]
     fn list_seam_source_width_follows_the_source_language_budget() {
-        // 同样 20 个源字：中文源语单行预算 16，已过密；拉丁源语预算 42，不过密。
+        // The same 20 source characters: a Chinese source has a single-line budget of 16, so it is already too dense; a Latin source has a budget of 42, so it is not dense.
         let rows = [
             (
                 "我们每一次都得回去把全部技能重新更新一",
@@ -2294,7 +2223,7 @@ mod tests {
         let output = format!("好的，这是结果：\n```html\n{body}```\n希望有帮助。");
         let parsed = parse_align_table(&input, None, &output);
         assert!(parsed.diagnostics.has_code(ProblemCode::DocumentWrapped));
-        // 夹带解释不妨碍继续提取结构。
+        // Extra explanation does not prevent continuing to extract the structure.
         assert_eq!(parsed.groups.len(), 1);
     }
 
@@ -2351,9 +2280,9 @@ mod tests {
         );
     }
 
-    // -- 确定性 property 测试 ----------------------------------------------
+    // -- Deterministic property tests ---------------------------------------------
 
-    /// 固定种子手写 LCG（禁止未播种随机；测试必须逐位可复现）。
+    /// A hand-written LCG with a fixed seed (unseeded randomness is forbidden; tests must be reproducible bit for bit).
     struct Lcg(u64);
 
     impl Lcg {
@@ -2471,7 +2400,7 @@ mod tests {
                     assert_eq!(row.target, expect_cell(target));
                 }
             }
-            // 结构层的账必须是干净的：内容类问题（超 hard / 缝）不在断言范围内。
+            // The structural-layer ledger must be clean: content problems (over hard, seams) are outside the scope of these assertions.
             for code in [
                 ProblemCode::DocumentTruncated,
                 ProblemCode::DocumentWrapped,
@@ -2490,10 +2419,7 @@ mod tests {
                 );
             }
 
-            // 第二条腿：走真正的 render_align_table（上面那条腿刻意用测试侧的
-            // 「模型答卷」渲染器，避免只自证其说）。渲染器的 escape_text /
-            // escape_attr 只有在这里才被 property 覆盖到。未切分的整句本身就是
-            // 合法答卷：一句一片、原文译文原样回写。
+            // The second leg: go through the real render_align_table. The leg above deliberately uses the test-side "model answer" renderer, to avoid merely confirming its own output. Only property tests cover the renderer's escape_text / escape_attr. An unsplit whole sentence is itself a legal answer: one sentence per piece, with the source and translation written back as they are.
             let rendered = render_align_table(&input);
             let direct = parse_align_table(&input, Some(&rendered), &rendered);
             assert_eq!(direct.groups.len(), input.sentences.len());
@@ -2522,7 +2448,7 @@ mod tests {
                     direct.diagnostics.problems
                 );
             }
-            // 自回环不得掉节点/掉属性：渲染器只能产出解析器允许的标签与属性。
+            // A self-loop must not drop nodes or attributes: the renderer may only produce tags and attributes that the parser accepts.
             for warning in &direct.diagnostics.warnings {
                 assert!(
                     warning.code != WarningCode::NodeDropped
@@ -2550,17 +2476,14 @@ mod tests {
             let junk: String = (0..length).map(|_| *rng.pick(CHUNKS)).collect();
             let first = parse_align_table(&input, None, &junk);
             let second = parse_align_table(&input, None, &junk);
-            // 纯函数：同一输入两次解析必须逐字段相等。
+            // A pure function: parsing the same input twice must give field-by-field equal results.
             assert_eq!(first, second);
         }
     }
 
     #[test]
     fn render_parse_input_render_is_byte_identical() {
-        // `parse_align_table_input` 必须是 `render_align_table` 的严格逆：
-        // 提交期 lint 只拿得到落盘的载荷 HTML，反解一旦缺字段就会静默退化成
-        // 「读不出载荷 ⇒ 不拦」，等于凭空多出第二套判据（§2）。渲染侧新增
-        // 任何属性都必须让这条断言先红。
+        // `parse_align_table_input` must be the strict inverse of `render_align_table`. Submit-time lint only gets the persisted payload HTML. If recovery lacks a field, it silently degrades into "payload unreadable ⇒ do not block", which amounts to a second set of criteria (§2). Any attribute newly added on the render side must make this assertion fail first.
         let input = AlignTableInput {
             lang: "zh".to_owned(),
             params: TransParams {
@@ -2601,7 +2524,7 @@ mod tests {
         let parsed = parse_align_table_input(&rendered).expect("payload is an align table");
         assert_eq!(parsed, input);
         assert_eq!(render_align_table(&parsed), rendered);
-        // 不是 align 表的载荷返回 None（调用方据此降级为「不挡」）。
+        // A payload that is not an align table returns None (the caller degrades to "do not block" accordingly).
         assert!(parse_align_table_input("<article><p id=\"s-1\">x</p></article>").is_none());
     }
 }

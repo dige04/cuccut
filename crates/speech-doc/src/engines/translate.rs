@@ -1,13 +1,8 @@
-//! 阶段四：翻译引擎（§8 / v0.3 §4）——句级整译，**逐页直落 doc**。
+//! Stage four: translation engine (§8 / v0.3 §4). Sentence-level whole-sentence translation, **written directly to the doc page by page**.
 //!
-//! 三层粒度：句（翻译与脏检测单位，见 `sentence` 模块）、页（打包单位）、
-//! 译文 Cue（展示单位，由 align 引擎的 `transAlign` 覆盖层派生）。
-//! v0.3 起本引擎写 doc：每页落 `trans[lang][s-…]`（完整自然译句）并盖
-//! `transSrc` 句指纹——句子翻完即持久化，doc 本身就是断点续跑现场；
-//! 展示切分（`transAlign`）归 align 引擎。
+//! Three granularities: sentence (the unit of translation and dirty checking, see the `sentence` module), page (the packing unit), and translated Cue (the display unit, derived from the `transAlign` overlay of the align engine). From v0.3 this engine writes the doc. Each page lands `trans[lang][s-…]` (complete, natural translated sentences) and stamps the `transSrc` sentence fingerprint. A sentence is persisted as soon as it is translated, so the doc itself is the checkpoint for resumable runs. Display splitting (`transAlign`) belongs to the align engine.
 //!
-//! 增量语义：先清理源结构变化后不再对应当前句子的孤儿键，缺译或 stale
-//! 的句才进 LLM；`force` 重翻全部；`sentences` 定向重翻指定句。
+//! Incremental semantics: first clean up orphan keys that no longer correspond to a current sentence after a source structure change. Only sentences that are missing a translation or are stale go to the LLM. `force` retranslates everything, and `sentences` retranslates the named sentences.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,72 +28,55 @@ use crate::split::{TransParams, primary_subtag};
 #[derive(Debug, Clone)]
 pub struct TranslateOptions {
     pub source_lang: String,
-    /// 目标语言（BCP-47）。
+    /// Target language (BCP-47).
     pub lang: String,
-    /// 重翻全部句（缺省只翻缺译 + stale 句）。
+    /// Retranslate all sentences. By default only missing and stale sentences are translated.
     pub force: bool,
-    /// `Some` 时只处理指定句；显式选中的句即使译文新鲜也会重翻。
+    /// When `Some`, only the named sentences are processed. Explicitly selected sentences are retranslated even if their translation is fresh.
     pub sentences: Option<BTreeSet<String>>,
-    /// 页预算（源文词数，口径见 [`crate::atomize::word_count`]），宿主按
-    /// 执行器取 [`crate::paging::PageExecutor::translate_words`]（§12）。
+    /// Page budget (source word count; counting rules in [`crate::atomize::word_count`]). The host takes it from the executor's [`crate::paging::PageExecutor::translate_words`] (§12).
     pub page_budget: usize,
-    /// 显式用户指令（进 system prompt 末尾）。
+    /// Explicit user instructions (appended at the end of the system prompt).
     pub instructions: Option<String>,
-    /// 全文源语 analysis；无双语 brief 时也是完整的降级语境。
+    /// Full-text source analysis. Also the complete fallback context when there is no bilingual brief.
     pub analysis: Option<Analysis>,
-    /// 每目标语言可编辑双语简报。
+    /// Editable bilingual brief for each target language.
     pub brief: Option<DocumentBrief>,
-    /// formal/casual；None 为 neutral。
+    /// formal or casual. None means neutral.
     pub tone: Option<TranslationTone>,
     /// Apply the default CJK punctuation/spacing/casing normalization.
     pub autocorrect: bool,
-    /// `Some` 时让 translate `file-v1` 回答顺带产出目标先行的对齐草稿；坏草稿
-    /// 只被丢弃，不影响译文验收。
+    /// When `Some`, the translate `file-v1` answer also carries a target-first alignment draft. A bad draft is only discarded and does not affect acceptance of the translation.
     pub align: Option<TransParams>,
-    /// 融合草稿的**行分区模式**（`--align-fusion rows`）：契约改为要求模型把
-    /// 译文按源词顺序切成显示行，载体额外带确定性源侧分组
-    /// （`data-align-groups`），覆盖面从"源侧已需拆分"放宽到"≥ 8 词"。
-    /// `align` 为 `None` 时本字段无效。
+    /// **Row-partition mode** of the fusion draft (`--align-fusion rows`). The contract changes to require the model to split the translation into display rows in source-word order. The carrier additionally carries deterministic source-side grouping (`data-align-groups`). Coverage widens from "the source side already needs splitting" to "≥ 8 words". This field has no effect when `align` is `None`.
     pub align_rows: bool,
-    /// 行文本载体（`--align-fusion lines`，[`crate::filepipe::lines_translation`]）：
-    /// 整页改走 `lines/1` 纯文本——一句一行、译文按块写、每块用首尾源词引用
-    /// 标出对应；对齐证据由引擎联合定位后直接进块核。为真时 `align_rows`
-    /// 无效；`align` 为 `None` 时本字段无效。
+    /// Line-text carrier (`--align-fusion lines`, [`crate::filepipe::lines_translation`]). The whole page switches to `lines/1` plain text: one sentence per line, translations written in blocks, and each block tied to its source by the first and last source-word references. The engine locates the alignment evidence jointly and checks blocks directly. When this is true, `align_rows` has no effect. This field has no effect when `align` is `None`.
     pub align_lines: bool,
-    /// 执行侧可用并发槽数。保留在选项中供宿主做 worker 计划；分页只看
-    /// `page_budget` 的源文词数，不随并发槽或句数改变。
+    /// Number of concurrent slots available on the execution side. Kept in the options so the host can plan workers. Pagination looks only at the source word count of `page_budget`, and does not change with concurrency slots or sentence count.
     pub worker_slots: Option<usize>,
-    /// 溯源判定为陈旧的句 id（§11.3，由宿主用
-    /// [`crate::provenance::scan_provenance`] 算出）。
+    /// Sentence ids judged stale by provenance (§11.3, computed by the host with [`crate::provenance::scan_provenance`]).
     ///
-    /// 这是**增量**判据：与 stale/缺译并列 OR 进待翻集合，但仍受
-    /// `sentences` 显式选择的限制——`sentences` 是收缩语义，溯源不得绕过它。
+    /// This is the **incremental** criterion. It is ORed into the set to translate alongside stale and missing translations, but it is still subject to the explicit `sentences` selection. `sentences` narrows the set, and provenance must not bypass that.
     pub provenance_stale: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TranslateOutcome {
-    /// 本次真正拿到译文并入库的句数（doc 路径 = `committed_sentences.len()`；
-    /// routed 路径无法逐句核对，仍是本次送翻的句数）。
+    /// Number of sentences whose translation was actually received and committed in this run. On the doc path this is `committed_sentences.len()`. The routed path cannot verify sentence by sentence, so it is still the number of sentences sent for translation in this run.
     pub translated_sentences: usize,
-    /// 跳过的句数（已有新鲜译文）。
+    /// Number of sentences skipped (they already have fresh translations).
     pub skipped_sentences: usize,
-    /// 当前文档的句总数。
+    /// Total number of sentences in the current document.
     pub total_sentences: usize,
-    /// 本次送翻却没有拿到译文的句 id（每页部分成功、补做轮也没收回的那些），
-    /// 升序。它们没有新指纹，下次仍会被选中重译；routed 路径恒为空。
+    /// IDs, in ascending order, of sentences sent in this run that got no translation back: the ones that were not recovered even after partial per-page success and the make-up round. They get no new fingerprint, so they will be selected for retranslation next time. Always empty on the routed path.
     pub missing_sentences: Vec<String>,
-    /// 本次真正入库译文的句 id（文件契约下按页部分成功，因此不等于 pending）。
-    /// 宿主据此写 `ai/state/translation.<lang>.json`（§11.3）：只有确实重译过
-    /// 的句子才刷新溯源快照。routed（最终时间线）路径不产出该集合。
+    /// IDs of sentences whose translation was actually committed in this run. Under the file contract, success is partial per page, so this set is not equal to the pending set. The host uses it to write `ai/state/translation.<lang>.json` (§11.3). Only sentences actually retranslated refresh their provenance snapshot. The routed (final timeline) path does not produce this set.
     pub committed_sentences: BTreeSet<String>,
-    /// 本次翻译回答中结构合法的融合草稿；align 仍会以 worker 答案同规复验。
+    /// A structurally valid fusion draft from this run's translation answer. Align still verifies it against the worker answer in the same way.
     pub alignment_drafts: FusionDrafts,
-    /// rows 模式下"行分区合格、但行边界没落在 `data-align-groups` 的组边界上"
-    /// 的句数。这类草稿**照常接受**，计数只用于观测分组提示的命中率。
+    /// In rows mode, the number of sentences whose row partition is qualified but whose row boundaries do not fall on the group boundaries in `data-align-groups`. These drafts are **still accepted**. The count is used only to observe the hit rate of the grouping hint.
     pub rows_off_group_sentences: usize,
-    /// rows 模式下因"整页交回纯译文"而软重发并成功取用第二次答案的页数
-    /// （每页最多 1 次，见 [`rows_page_gave_up`]）。
+    /// In rows mode, the number of pages where a whole-page return of plain translation with no rows led to a soft resend, and the second answer was used (at most one per page; see [`rows_page_gave_up`]).
     pub rows_page_retries: usize,
 }
 
@@ -132,18 +110,16 @@ pub struct RoutedTranslateOptions {
     pub force: bool,
     /// Durable `(srcId, sentenceId)` keys. Explicit selection always retranslates.
     pub sentences: Option<BTreeSet<(String, String)>>,
-    /// 页预算（源文词数，口径见 [`crate::atomize::word_count`]），宿主按
-    /// 执行器取 [`crate::paging::PageExecutor::translate_words`]（§12）。
+    /// Page budget (source word count; counting rules in [`crate::atomize::word_count`]). The host takes it from the executor's [`crate::paging::PageExecutor::translate_words`] (§12).
     pub page_budget: usize,
     pub instructions: Option<String>,
     pub analysis: Option<Analysis>,
     pub brief: Option<DocumentBrief>,
     pub tone: Option<TranslationTone>,
     pub autocorrect: bool,
-    /// 最终时间线路径没有单一 doc 可读时，由宿主投影的章节标题。
+    /// Chapter titles projected by the host, for the final-timeline path where no single doc can be read.
     pub chapter_titles: Vec<String>,
-    /// 执行侧可用并发槽数。保留在选项中供宿主做 worker 计划；分页只看
-    /// `page_budget` 的源文词数，不随并发槽或句数改变。
+    /// Number of concurrent slots available on the execution side. Kept in the options so the host can plan workers. Pagination looks only at the source word count of `page_budget`, and does not change with concurrency slots or sentence count.
     pub worker_slots: Option<usize>,
 }
 
@@ -151,13 +127,12 @@ fn identifier_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
 
-/// 与 VoiceInk `termPresent` 同口径：CJK 使用字面包含；Latin/标识符用
-/// 大小写不敏感匹配并检查两侧标识符边界，避免 Air 命中 Airport。
+/// Same counting rules as VoiceInk's `termPresent`. CJK uses literal substring matching. Latin and identifiers use case-insensitive matching and check identifier boundaries on both sides, so "Air" does not match "Airport".
 pub fn term_present(source: &str, term: &str) -> bool {
     term_occurrences(source, term) > 0
 }
 
-/// [`term_present`] 的计数版：这个词在 `source` 里按同一口径出现了几次。
+/// Counting version of [`term_present`]: how many times the term appears in `source` under the same rules.
 pub fn term_occurrences(source: &str, term: &str) -> usize {
     let term = term.trim();
     if term.is_empty() {
@@ -208,8 +183,7 @@ fn prune_orphans<T>(
     table.len() != before
 }
 
-/// 句级整译。零 I/O：LLM 注入、退避 sleep 注入；每页落盘 `doc.trans` /
-/// `doc.transSrc` 后回调 `on_page`（宿主负责把 doc 原子写盘——doc 即续跑现场）。
+/// Sentence-level whole-sentence translation. Zero I/O: the LLM and the backoff sleep are injected. After each page's `doc.trans` and `doc.transSrc` are written, `on_page` is called back. The host is responsible for atomically writing the doc to disk, since the doc is the checkpoint.
 pub fn run_translate(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -220,8 +194,7 @@ pub fn run_translate(
     run_translate_with_artifacts(doc, llm, options, on_page, &mut |_| {}, sleep)
 }
 
-/// 同 [`run_translate`]，另把页级尝试递给宿主落盘
-/// （`ai/translate/<lang>/vNNN/`，§4/§11）。
+/// Same as [`run_translate`], and it also hands the per-page attempts to the host to persist (`ai/translate/<lang>/vNNN/`, §4/§11).
 pub fn run_translate_with_artifacts(
     doc: &mut TranscriptDoc,
     llm: &mut dyn LlmJson,
@@ -237,9 +210,7 @@ pub fn run_translate_with_artifacts(
         .map(|sentence| sentence.id.as_str())
         .collect();
 
-    // 结构性重分句后，旧句 id 已无法被任何投影消费。若继续保留，check 会
-    // 永久报告 translation-orphan，用户也无法通过重跑翻译自然消除它们。
-    // 三张同源表必须一起收敛；先回调落盘，再进入可能失败的 LLM 阶段。
+    // After a structural re-split, the old sentence ids can no longer be consumed by any projection. If they were kept, check would permanently report translation-orphan, and the user could not clear them by rerunning translation. The three tables that share the same source must converge together. Call back and persist first, before entering the LLM stage that may fail.
     let pruned_orphans = prune_orphans(doc.trans.get_mut(&options.lang), &sentence_ids)
         | prune_orphans(doc.trans_src.get_mut(&options.lang), &sentence_ids)
         | prune_orphans(doc.trans_align.get_mut(&options.lang), &sentence_ids);
@@ -270,8 +241,7 @@ pub fn run_translate_with_artifacts(
     let skipped = sentences.len() - pending.len();
     let mut committed_sentences: BTreeSet<String> = BTreeSet::new();
 
-    // 页数与边界都只由源文的语言感知词数决定。这样 Latin 按词、CJK 按字，
-    // 不再让句数、序列化字符数或 worker 槽位暗中改变调用次数。
+    // Page count and boundaries are determined only by the language-aware word count of the source. Latin counts words and CJK counts characters. The number of sentences, the serialized character count, or worker slots no longer silently change how many calls are made.
     let prepared: Vec<PreparedLine<'_>> = pending
         .iter()
         .map(|sentence| PreparedLine::new(sentence, options.brief.as_ref()))
@@ -345,7 +315,7 @@ pub fn run_translate_with_artifacts(
         options.align.is_some(),
         carrier,
     );
-    // 融合草稿的行分区复验需要句的源词数（AutoCorrect 后再验一次）。
+    // The row-partition check of the fusion draft needs the source word count of the sentence. It is re-verified after AutoCorrect.
     let align_word_counts: BTreeMap<String, usize> = file_pages
         .iter()
         .flat_map(|page| page.lines.iter())
@@ -413,9 +383,7 @@ pub fn run_translate_with_artifacts(
                 trans_table.insert(id.clone(), text);
                 committed.push(id);
             }
-            // 句指纹只盖在**真正入库**的句上。一页可以部分成功，若按整页盖戳，
-            // 落空的句会带着新鲜指纹却没有译文，从此不再被 stale 选中——永久
-            // 漏译且不可见。
+            // The sentence fingerprint is stamped only on sentences that were **actually committed**. A page can succeed partially. If the whole page were stamped, the sentences that failed would carry a fresh fingerprint with no translation. They would never be selected as stale again, a permanent and invisible missed translation.
             let src_table = doc.trans_src.entry(options.lang.clone()).or_default();
             for id in committed {
                 if let Some(fingerprint) = fingerprint_by_id.get(&id) {
@@ -456,8 +424,7 @@ pub fn run_routed_translate(
     run_routed_translate_with_artifacts(sentences, llm, options, on_page, &mut |_| {}, sleep)
 }
 
-/// 同 [`run_routed_translate`]，另把页级尝试递给宿主落盘
-/// （`ai/translate/<lang>/vNNN/`，§4/§11）。
+/// Same as [`run_routed_translate`], and it also hands the per-page attempts to the host to persist (`ai/translate/<lang>/vNNN/`, §4/§11).
 pub fn run_routed_translate_with_artifacts(
     sentences: &[RoutedSentence],
     llm: &mut dyn LlmJson,
@@ -528,8 +495,7 @@ pub fn run_routed_translate_with_artifacts(
         skipped_sentences: skipped,
         total_sentences: sentences.len(),
         missing_sentences: Vec::new(),
-        // routed（最终时间线）路径的真相散射到多个源工程，没有单一
-        // doc 可挂溯源；§11.3 状态文件不覆盖该路径。
+        // The truth on the routed (final timeline) path is scattered across several source projects. There is no single doc to attach provenance to, so the §11.3 state file does not cover this path.
         committed_sentences: BTreeSet::new(),
         alignment_drafts: FusionDrafts::new(),
         rows_off_group_sentences: 0,
@@ -537,8 +503,7 @@ pub fn run_routed_translate_with_artifacts(
     })
 }
 
-/// routed 路径的文件契约分支。段以 `src_id` 为界（最终时间线里没有 doc 自然段，
-/// 同一源片段的连续句就是最接近的语境单位）。
+/// File-contract branch of the routed path. Paragraphs are bounded by `src_id`. The final timeline has no natural doc paragraphs, so consecutive sentences from the same source segment are the closest context unit.
 #[allow(clippy::too_many_arguments)]
 fn run_routed_translate_file(
     sentences: &[RoutedSentence],
@@ -598,8 +563,7 @@ fn run_routed_translate_file(
                 existing_translation: (!editable).then(|| sentence.translation.clone()).flatten(),
                 budget: editable
                     .then(|| reading_budget_duration(sentence.display_duration, &options.lang)),
-                // routed 最终时间线的源词属于多个源文档，当前没有单一 doc 可
-                // 生成稳定 bN 边界；保持 dedicated projected align 路径。
+                // The source words of the routed final timeline belong to several source documents, and there is currently no single doc that can generate stable bN boundaries. Keep the dedicated projected align path.
                 alignment: None,
             });
         }
@@ -638,7 +602,7 @@ fn run_routed_translate_file(
         &options.lang,
         &project_fingerprint,
         &file_pages,
-        // routed（最终时间线）路径不跑融合草稿，也就没有缺行可重发。
+        // The routed (final timeline) path does not run the fusion draft, so there are no missing rows to resend.
         FileCarrier::Html { rows: false },
         &mut 0,
         on_attempt,
@@ -670,15 +634,14 @@ fn run_routed_translate_file(
     )
 }
 
-// ---- 文件契约（file-v1）路径 ----------------------------------------------
+// ---- file contract (file-v1) path ----------------------------------------------
 
-/// 一次页级尝试的材料，供宿主写 `ai/translate/<lang>/vNNN/`（§4/§11）。
+/// Material from one page-level attempt, for the host to write to `ai/translate/<lang>/vNNN/` (§4/§11).
 ///
-/// 形状与 polish 共用 [`crate::filepipe::PageAttempt`]：`accepted` 在这里的含义
-/// 是 `page_rejected == false`。
+/// The shape is shared with polish via [`crate::filepipe::PageAttempt`]. Here, `accepted` means `page_rejected == false`.
 pub type TranslatePageAttempt<'a> = crate::filepipe::PageAttempt<'a>;
 
-/// 文件契约下的一句渲染投影：脱开 doc / routed 两条数据源的差异。
+/// One sentence's rendering projection under the file contract. It hides the difference between the two data sources, doc and routed.
 #[derive(Debug, Clone)]
 struct FileLine {
     id: String,
@@ -688,28 +651,26 @@ struct FileLine {
     required_targets: Vec<String>,
     source_id: Option<String>,
     sentence_id: Option<String>,
-    /// `false` 即 §7.6 冻结句：只为保住段落语境，不进 `translations`。
+    /// `false` means a §7.6 frozen sentence. It is kept only to preserve paragraph context and is not included in `translations`.
     editable: bool,
     existing_translation: Option<String>,
-    /// 阅读预算（[`reading_budget`] 同源），写进 `data-budget`。
+    /// Reading budget (same source as [`reading_budget`]), written into `data-budget`.
     ///
-    /// 与 `required_targets` 同样只给可编辑句：冻结句要的是逐字复制，给它挂
-    /// 预算只会诱导模型去「优化」不该动的译文。
+    /// As with `required_targets`, only editable sentences get this. Frozen sentences must be copied verbatim. Attaching a budget to them would only induce the model to "optimize" translations that should not change.
     budget: Option<usize>,
     alignment: Option<FusionLineInfo>,
 }
 
-/// 一页的渲染投影。
+/// Rendering projection of one page.
 #[derive(Debug, Clone)]
 struct FilePage {
     id: String,
     lines: Vec<FileLine>,
 }
 
-/// 把行投影拼成 [`TranslatePage`]。
+/// Assembles the row projections into a [`TranslatePage`].
 ///
-/// 段按 **id 合并**而不是按相邻分组：全局残余波次会把来自不同页的句重新打包，
-/// 跨页自然段在那里会出现两段同 id，落进渲染文本就是 `duplicate-id` 直接拒页。
+/// Paragraphs are merged **by id**, not by grouping adjacent ones. The global residual wave repacks sentences from different pages, so a cross-page natural paragraph would otherwise show up as two paragraphs with the same id. Rendered into the text, that is `duplicate-id`, and it rejects the page outright.
 fn build_translate_page(
     source_lang: &str,
     target_lang: &str,
@@ -763,20 +724,19 @@ fn build_translate_page(
     page
 }
 
-/// 翻译页的载体：HTML（`file-v1`，可带融合草稿通道）或行文本（`lines/1`）。
+/// Carrier for a translation page: HTML (`file-v1`, which may carry the fusion draft channel) or line text (`lines/1`).
 #[derive(Debug, Clone, Copy)]
 enum FileCarrier {
     Html {
-        /// `--align-fusion rows`：行分区草稿通道。
+        /// `--align-fusion rows`: the row-partition draft channel.
         rows: bool,
     },
-    /// `--align-fusion lines`：`row=` 与 `≥k` 提示按这组阈值给出。
+    /// `--align-fusion lines`: the `row=` and `≥k` hints are given according to this set of thresholds.
     Lines(TransParams),
 }
 
 impl FileCarrier {
-    /// [`LlmRequest::kind`]：两种载体在执行层是两个 kind（载体格式、条目
-    /// 计数与复用 lint 都按 kind 分派）。
+    /// [`LlmRequest::kind`]: the two carriers are two kinds at the execution layer. Carrier format, entry counting and reuse lint are all dispatched by kind.
     fn kind(self) -> &'static str {
         match self {
             Self::Html { .. } => "translate",
@@ -788,7 +748,7 @@ impl FileCarrier {
         matches!(self, Self::Html { rows: true })
     }
 
-    /// system prompt 的契约段（载体说明 + 质量规则）。
+    /// Contract section of the system prompt (carrier description plus quality rules).
     fn prompt_body(self) -> &'static str {
         match self {
             Self::Html { .. } => TRANSLATE_FILE_PROMPT_BODY,
@@ -796,7 +756,7 @@ impl FileCarrier {
         }
     }
 
-    /// 采样温度：行文本载体按实测对照的档位（0.2）。
+    /// Sampling temperature. The line-text carrier uses the setting chosen from measured comparisons (0.2).
     fn temperature(self) -> f32 {
         match self {
             Self::Html { .. } => 0.3,
@@ -811,7 +771,7 @@ impl FileCarrier {
         }
     }
 
-    /// 解析一次回答：两种载体都走各自唯一的解析 + 内容质量门。
+    /// Parses one answer. Both carriers go through their own unique parser and content quality gate.
     fn parse(self, page: &TranslatePage, rendered: &str, raw: &str) -> TranslateParsed {
         match self {
             Self::Html { .. } => {
@@ -826,7 +786,7 @@ impl FileCarrier {
     }
 }
 
-/// 渲染一页并把「发出去的那份文本」一起留下——§16 体积护栏要拿它当基准。
+/// Renders one page and also keeps "the text that was actually sent". The §16 size guardrail uses it as the baseline.
 fn render_file_page(
     source_lang: &str,
     target_lang: &str,
@@ -852,10 +812,7 @@ fn summarize_problems(diagnostics: &Diagnostics) -> String {
     if diagnostics.problems.is_empty() {
         return "unspecified".to_owned();
     }
-    // 定向重翻时一页会带大量只读语境。弱模型若把所有冻结句都重写，解析器
-    // 会逐句报 frozen-modified；把上百条同文案原样塞回 retryReason 既挤掉
-    // 真正的修复指令，也会让下一次调用继续照着噪声改。保持首见顺序，把
-    // 相同 code + detail 聚合成计数；细粒度诊断仍完整保留在尝试工件中。
+    // In a targeted retranslation, a page carries a large amount of read-only context. If a weak model rewrites every frozen sentence, the parser reports frozen-modified one sentence at a time. Stuffing hundreds of identically worded lines back into retryReason would both crowd out the real repair instruction and make the next call keep editing according to the noise. Keep first-seen order and aggregate identical code plus detail into counts. Fine-grained diagnostics remain fully preserved in the attempt artifacts.
     let mut groups: Vec<(crate::filepipe::ProblemCode, &str, usize)> = Vec::new();
     for problem in &diagnostics.problems {
         if let Some((_, _, count)) = groups
@@ -880,29 +837,20 @@ fn summarize_problems(diagnostics: &Diagnostics) -> String {
         .join("; ")
 }
 
-/// 跑一个波次：骨架 [`complete_batch_retry_report`] **一行不改**，靠注入的
-/// validate 闭包判 `page_rejected`（整页重试），靠 on_ready 收 `retry_ids`
-/// （句级修复留给下一波）。
+/// Runs one wave. The skeleton [`complete_batch_retry_report`] is **not changed at all**. The injected validate closure decides `page_rejected` (whole-page retry). The on_ready callback collects `retry_ids` (sentence-level repair is left to the next wave).
 ///
-/// 返回 `(每页需要进下一波的句 id, 整页尝试耗尽的页下标)`。页级耗尽**不再**
-/// 上抛（重试策略重设计 §2.3）：调用方按 [`RetryPolicy::SPLIT_THEN`] 对半缩窄，
-/// 仍失败的半页把自己的可编辑句丢进补做波次，最终缺失照 `translation-partial`
-/// 上报。Terminal/Cancelled 照常立即上抛。
+/// Returns `(sentence ids per page that need the next wave, page indices whose whole-page attempts were exhausted)`. Page-level exhaustion is **no longer** raised upward (retry policy redesign §2.3). The caller halves the set according to [`RetryPolicy::SPLIT_THEN`]. Half-pages that still fail put their editable sentences into the make-up wave, and final misses are reported as `translation-partial`. Terminal and Cancelled are still raised immediately.
 #[allow(clippy::too_many_arguments)]
-/// rows soft page retry：一页里"载体请求了行"的句子至少要有这么多，才值得
-/// 为缺行重发整页。
+/// rows soft page retry: a page needs at least this many sentences that requested rows before it is worth resending the whole page to fill in missing rows.
 const ROWS_RETRY_MIN_SENTENCES: usize = 3;
-/// 缺行比例门槛（百分比）：请求了行的句子里，拿到合格行分区的不足 30% 才重发。
+/// Missing-row ratio threshold (percent). Among sentences that requested rows, resend only if fewer than 30% got a qualifying row partition.
 const ROWS_RETRY_MISSING_PERCENT: usize = 70;
-/// 重发时挂在 `retry_reason` 上的强调文案。
+/// Emphasis text attached to `retry_reason` on resend.
 const ROWS_RETRY_REASON: &str = "Your previous answer for this page contained NO display rows: the sentences carrying data-align-groups came back as plain translations. Translate the page again and this time wrap EVERY such sentence's translation in <span data-src=\"a-b\"> display rows, exactly as the contract describes. Keep only the id attribute on each element.";
 
-/// 这一页是否"整页放弃了行"：请求了行的句子 ≥ [`ROWS_RETRY_MIN_SENTENCES`]，
-/// 且其中拿到合格行分区的不足 `100 - ROWS_RETRY_MISSING_PERCENT`%。
+/// Whether this page gave up on rows entirely: at least [`ROWS_RETRY_MIN_SENTENCES`] sentences requested rows, and fewer than `100 - ROWS_RETRY_MISSING_PERCENT`% of them got a qualifying row partition.
 ///
-/// 实测（第四轮对拍）模型偶尔会交回一份结构完整、只留 id 的干净答案，却一个
-/// `<span data-src>` 都不给——这不是坏草稿而是**整页漏做**，重发一次通常就
-/// 能拿到。判据故意保守：少量句子没标不算（那本来就允许），只抓整页放弃。
+/// Measured in round four of parity testing: the model occasionally returns a structurally complete, clean answer that keeps only the ids and gives no `<span data-src>` at all. That is not a bad draft but a **whole-page omission**, and one resend usually recovers it. The criterion is deliberately conservative: a few unmarked sentences do not count, since that is allowed anyway. Only whole-page omission is caught.
 fn rows_page_gave_up(page: &TranslatePage, parsed: &TranslateParsed) -> bool {
     let requested: Vec<&str> = page
         .sections
@@ -927,8 +875,7 @@ fn rows_page_gave_up(page: &TranslatePage, parsed: &TranslateParsed) -> bool {
     missing * 100 >= requested.len() * ROWS_RETRY_MISSING_PERCENT
 }
 
-/// 记下这一页里「没译成目标语」被拒的句（照抄源文、语言不符）：本页出现过的
-/// 句先清掉旧记录，再登记这一次仍被这两类问题拒收的。
+/// Records sentences on this page that were rejected for "not translated into the target language" (copied from the source, wrong language). Sentences that appear on this page have their old records cleared first. Then sentences still rejected for either of these two reasons this time are registered.
 fn note_untranslated(
     untranslated: &mut BTreeSet<String>,
     page: &TranslatePage,
@@ -951,9 +898,7 @@ fn note_untranslated(
     }
 }
 
-/// 补做波次的重问原因：这一页里有句子上一次交回的不是目标语译文时，点名
-/// 目标语言重问。实测（无 brief 的整页）同一请求原样重发会得到同一份照抄，
-/// 所以重问必须说出上一次错在哪。其余原因的补做（漂行、缺行）照旧不带原因。
+/// Re-ask reason for the make-up wave. When some sentence on this page last came back as something other than a target-language translation, the re-ask names the target language. Measured on a whole page with no brief: resending the same request verbatim gets the same copy-through, so the re-ask must say what went wrong last time. Make-up for other reasons (drifted rows, missing rows) still carries no reason, as before.
 fn untranslated_retry_reason(
     target_lang: &str,
     lines: &[FileLine],
@@ -978,7 +923,7 @@ fn run_file_wave(
     system: &str,
     page_ids: &[String],
     prepared: &[(TranslatePage, String)],
-    // 每页自带的重问原因（补做波次用）；空切片即都不带。
+    // Each page carries its own re-ask reasons for the make-up wave. An empty slice means none are attached.
     reasons: &[Option<String>],
     attempts: u32,
     attempt_base: u32,
@@ -1003,7 +948,7 @@ fn run_file_wave(
         .collect::<Vec<_>>();
     let mut retry_by_page = vec![Vec::new(); prepared.len()];
     let mut tries = vec![0_u32; prepared.len()];
-    // rows soft page retry：整页缺行的页下标（只在 rows 模式下填）。
+    // rows soft page retry: the page indices where the whole page is missing rows. Filled in only in rows mode.
     let mut gave_up_rows = vec![false; prepared.len()];
     let outcome = complete_batch_retry_report(
         llm,
@@ -1023,9 +968,7 @@ fn run_file_wave(
                 accepted: !parsed.page_rejected,
             });
             if parsed.page_rejected {
-                // 判据是 page_rejected 而不是 has_problems()：可编辑句的
-                // paragraph-move 与 unknown-id 会落在「其余全部接受」的结果上，
-                // 用 has_problems() 重发会无限空转。
+                // The criterion is page_rejected, not has_problems(). Paragraph-move and unknown-id on editable sentences occur in results where everything else was accepted, and resending on has_problems() would spin forever.
                 return Err(LlmError::Malformed(format!(
                     "translate page {} rejected — {}",
                     page_ids[index],
@@ -1043,12 +986,7 @@ fn run_file_wave(
         },
     )?;
 
-    // rows soft page retry（有界，每页最多 1 次）：整页交回纯译文时原样重发
-    // 一页，`retry_reason` 里点名"上一次一个行都没有"。这是**软**重试——
-    // 不走 `complete_batch_retry_report` 的失败账本，不消耗页级错误重试预算，
-    // 传输失败或第二次仍被拒都只是放弃重试，第一次的译文原样保留（坏草稿
-    // 不拒译文这条原则对整页缺行同样成立）。第二次可用时译文与行都以它为准
-    // ——`commit` 对同一批 id 是覆盖写。
+    // rows soft page retry (bounded, at most once per page): when the whole page comes back as plain translation, resend the page verbatim, with retry_reason naming "last time there were no rows at all". This is a **soft** retry. It does not go through the failure ledger of `complete_batch_retry_report` and does not consume the page-level error retry budget. A transport failure, or a second rejection, simply abandons the retry, and the first translation is kept as it was. The principle that a bad draft does not reject the translation applies equally to a whole page missing rows. When the second answer is usable, both the translation and the rows follow it. `commit` overwrites the same batch of ids.
     let retry_pages: Vec<usize> = (0..prepared.len())
         .filter(|&index| gave_up_rows[index])
         .collect();
@@ -1094,22 +1032,20 @@ fn run_file_wave(
             commit(parsed);
         }
     }
-    // 残余句宁可留空（check 报 translation-partial），也绝不写伪译。
+    // Leave remaining sentences blank (check reports translation-partial) rather than ever writing a fake translation.
     Ok((
         retry_by_page,
         outcome.failed.into_iter().map(|(index, _)| index).collect(),
     ))
 }
 
-/// 文件契约三波次（§7.5 句级账本：每句总共 3 次尝试）。
+/// File-contract three waves (§7.5 sentence-level ledger: each sentence gets 3 attempts in total).
 ///
-/// - 波 1：全部页，整页尝试 [`RetryPolicy::MAX_PAGE_ATTEMPTS`] 次（同时吸收
-///   传输错误）；耗尽的页对半切成两份句集各发一次（R3 拒绝即缩窄），仍失败的
-///   半页把可编辑句丢进补做波次——**不再** hard error；
-/// - 波 2：每页把自己的 `retry_ids` 单独打一页重发一次；
-/// - 波 3：跨页残余合成一页再发一次。
+/// - Wave 1: all pages. Whole-page attempts run up to [`RetryPolicy::MAX_PAGE_ATTEMPTS`] times (this also absorbs transport errors). Pages whose attempts are exhausted are split in half into two sentence sets, each sent once (an R3 rejection narrows the set). Half-pages that still fail put their editable sentences into the make-up wave, and nothing is a hard error any more.
+/// - Wave 2: each page sends its own `retry_ids` as a separate page once more.
+/// - Wave 3: the residual sentences across pages are merged into one page and sent once more.
 ///
-/// 三波都调用同一个未改动的骨架。
+/// All three waves call the same unchanged skeleton.
 #[allow(clippy::too_many_arguments)]
 fn run_translate_file_contract(
     llm: &mut dyn LlmJson,
@@ -1132,7 +1068,7 @@ fn run_translate_file_contract(
         .iter()
         .enumerate()
         .map(|(index, page)| {
-            // 静态邻页语境：只用源文，页间无串行数据依赖。
+            // Static neighbor-page context: source text only. There is no serial data dependency between pages.
             let before = index
                 .checked_sub(1)
                 .and_then(|previous| pages[previous].lines.last())
@@ -1170,18 +1106,17 @@ fn run_translate_file_contract(
         commit,
     )?;
 
-    // R3 拒绝即缩窄：整页尝试耗尽的页对半切成两份句集各发一次；仍失败的半页
-    // 把自己的可编辑句丢进波 2/3，最终缺失照 `translation-partial` 上报。
+    // R3 rejection narrows: pages whose whole-page attempts are exhausted are split in half into two sentence sets, each sent once. Half-pages that still fail put their editable sentences into wave 2 or 3, and final misses are reported as `translation-partial`.
     if RetryPolicy::SPLIT_THEN && !failed_pages.is_empty() {
         let mut half_ids = Vec::new();
         let mut half_prepared = Vec::new();
-        // (原页下标, 这半页的可编辑 id)
+        // (original page index, this half-page's editable ids)
         let mut half_origin: Vec<(usize, Vec<String>)> = Vec::new();
         for &index in &failed_pages {
             let lines = &pages[index].lines;
             let mid = lines.len() / 2;
             if mid == 0 {
-                // 单句页切不动：全部可编辑句直接进补做波次。
+                // A single-sentence page cannot be split, so all of its editable sentences go directly into the make-up wave.
                 wave_one[index].extend(
                     lines
                         .iter()
@@ -1236,7 +1171,7 @@ fn run_translate_file_contract(
         }
     }
 
-    // 波 2：逐页修复。
+    // Wave 2: per-page repair.
     let mut repair_ids = Vec::new();
     let mut repair_prepared = Vec::new();
     let mut repair_origin = Vec::new();
@@ -1287,15 +1222,14 @@ fn run_translate_file_contract(
         on_attempt,
         commit,
     )?;
-    // 波 2 整页被拒的那一页，它的全部待修句进波 3；不然它们连最后一次机会
-    // 都没有就直接落成 `translation-partial`。
+    // For a page that was rejected as a whole in wave 2, all of its pending sentences go into wave 3. Otherwise they would fall straight to `translation-partial` without their last chance.
     for slot in wave_two_failed {
         let index = repair_origin[slot];
         let wanted = wave_one[index].iter().cloned().collect::<BTreeSet<_>>();
         wave_two[slot] = wanted.into_iter().collect();
     }
 
-    // 波 3：跨页残余合成一页。
+    // Wave 3: merge the cross-page residuals into one page.
     let mut residual = Vec::new();
     for (slot, ids) in wave_two.iter().enumerate() {
         let wanted = ids.iter().map(String::as_str).collect::<BTreeSet<_>>();
@@ -1342,14 +1276,12 @@ fn run_translate_file_contract(
     Ok(())
 }
 
-/// rows 模式挂融合属性的最小源词数：低于它的短句本来就一行放得下，行分区
-/// 提示只是白付上下文。
+/// Minimum source word count for attaching fusion attributes in rows mode. Shorter sentences fit on one row anyway, so the row-partition hint would only cost context.
 const FUSED_ROWS_MIN_WORDS: usize = 8;
 
-/// doc 路径的行投影：句 → 段（`derive_paras`）、待翻句 → 可编辑、页内空隙里
-/// 已有译文的句 → §7.6 冻结句（保住段落语境而不允许被改写）。
+/// Row projection on the doc path: sentences are grouped into paragraphs (`derive_paras`). Sentences awaiting translation become editable. Sentences that already have translations in the gaps within the page become §7.6 frozen sentences, which preserve paragraph context but may not be rewritten.
 ///
-/// 冻结句只填在**本页首尾之间**的空隙里，不跨页扩张，因此不改变页数与波次对齐。
+/// Frozen sentences fill only the gaps **between the first and last sentence of this page**. They do not extend across pages, so the page count and wave alignment do not change.
 fn project_file_pages(
     doc: &TranscriptDoc,
     cues: &[crate::cue::Cue],
@@ -1390,7 +1322,7 @@ fn project_file_pages(
                 paras[index].id.clone(),
                 (!paras[index].sp.is_empty()).then(|| paras[index].sp.clone()),
             ),
-            // 派生不到段（理论上不该发生）时退回「一句一段」，绝不让 section id 撞号。
+            // If paragraphs cannot be derived (should not happen in theory), fall back to one sentence per paragraph, so section ids never collide.
             None => (format!("p-{}", sentence.id.trim_start_matches("s-")), None),
         }
     };
@@ -1433,17 +1365,11 @@ fn project_file_pages(
                 budget: editable.then(|| reading_budget(doc, sentence, lang)),
                 alignment: if editable && fused_alignment {
                     let info = fusion_line_info(doc, cues, sentence, fused_rows);
-                    // 常规融合只服务于确定性判据已经要求拆分的句子。短句即使
-                    // 译文偶尔超过 fit，dedicated align 仍会兜底；不给所有短句
-                    // 重复携带源文和逐边界提示，可显著降低 translate 单页上下文。
+                    // Regular fusion serves only the sentences that the deterministic criterion already requires to be split. Short sentences still get backstopped by dedicated align if their translation occasionally exceeds fit. Not giving every short sentence the source text and per-boundary hints again significantly reduces the translate single-page context.
                     //
-                    // rows 模式把判据放宽到「≥ FUSED_ROWS_MIN_WORDS 词」：行分
-                    // 区是免 align 调用的直通路径，多覆盖一句就少派一句 align，
-                    // 而它比逐块草稿更省提示（一句一条 groups 串）。
+                    // Rows mode relaxes the criterion to "≥ FUSED_ROWS_MIN_WORDS words". Row partitioning is a pass-through path that needs no align call, so covering one more sentence means dispatching one fewer align call. It is also cheaper in hints than per-chunk drafts, at one groups string per sentence.
                     //
-                    // lines 载体的每一句都用首尾源词引用标块，源词表是引用的
-                    // 定位依据，因此可编辑句一律携带（载体里不回显词表，只在
-                    // 长句间放分片记号，不付逐词序号的代价）。
+                    // Every sentence in the lines carrier is marked with its first and last source-word references, so the source word table is the basis for locating them. The carrier does not echo the word table. It places only segment markers between long sentences, without paying the cost of per-word ordinals. So editable sentences always carry it.
                     let covered = if fused_lines {
                         true
                     } else if fused_rows {
@@ -1465,7 +1391,7 @@ fn project_file_pages(
     file_pages
 }
 
-// ---- 请求构造 -------------------------------------------------------------
+// ---- request construction -------------------------------------------------------------
 
 struct PreparedLine<'a> {
     sentence: &'a Sentence,
@@ -1481,9 +1407,7 @@ impl<'a> PreparedLine<'a> {
     }
 }
 
-/// 单页判据（P2-1 单页免 brief）：句数不参与分页，只看整篇源文词数。
-/// 与 [`crate::paging::balanced_page_sizes`] 同一口径（预算 + slack），
-/// 判定为单页的文档在实际分页时也必然是一页。
+/// Single-page criterion (P2-1, single page without brief): the sentence count does not factor into pagination. Only the source word count of the whole text does. Same counting basis as [`crate::paging::balanced_page_sizes`] (budget plus slack). A document judged to be a single page is necessarily one page in actual pagination as well.
 pub fn fits_single_translate_page(
     sentence_count: usize,
     total_words: usize,
@@ -1496,14 +1420,7 @@ fn translate_page_sizes(source_words: &[usize], page_budget: usize) -> Vec<usize
     crate::paging::balanced_page_sizes(source_words, page_budget)
 }
 
-/// CPS 阅读预算：`maxChars = max(1, floor(显示时长 × cps))`；显示时长 =
-/// 句末词 t1 − 首词 t0；cps 按目标语言 zh→9、其他 CJK（ja/ko）→13、默认→21，
-/// 与 [`crate::split::target_reading_cps`] 的阅读单位/秒同源。计数口径 =
-/// [`crate::split::target_cps_chars`] 的阅读单位（普通逗号/句号免费；CJK 目标
-/// 语下 Latin 约半字），**不是**裸的非空白字符数——曾经两份提示词都声明
-/// "characters excluding whitespace"，对短句 + 必带 Latin 锁定术语（rt）的
-/// 组合是恒不可满足的预算（"description" 11 字符对预算 11），worker 只能
-/// 违约或砍语义。
+/// CPS reading budget: `maxChars = max(1, floor(display duration × cps))`. Display duration = the last word's t1 minus the first word's t0 of the sentence. cps by target language: zh → 9, other CJK (ja, ko) → 13, default → 21. Same source as the reading units per second in [`crate::split::target_reading_cps`]. The counting basis is the reading units of [`crate::split::target_cps_chars`]: ordinary commas and periods are free, and under a CJK target, Latin counts as about half a character. It is **not** the bare count of non-whitespace characters. Both prompt texts used to declare "characters excluding whitespace". That made for an unsatisfiable budget with short sentences plus mandatory Latin locked terms (rt). For example, "description" is 11 characters against a budget of 11. The worker could only exceed the budget or cut meaning.
 fn reading_budget(doc: &TranscriptDoc, sentence: &Sentence, target_lang: &str) -> usize {
     let first = &doc.words[*sentence.word_indices.first().expect("sentence non-empty")];
     let last = &doc.words[*sentence.word_indices.last().expect("sentence non-empty")];
@@ -1520,18 +1437,11 @@ fn reading_budget_duration(duration: f64, target_lang: &str) -> usize {
     ((duration * cps).floor() as usize).max(1)
 }
 
-// system prompt 底本取自 voice-ink `TranslatePrompts.translateSystemPrompt`。
-// analysis 与每语言 DocumentBrief 均可缺省；块级组装保证 brief 失败或
-// `--no-brief` 时稳定降级到源语 analysis，再降级到基础契约。
-// ccut 追加：顺句驱动（同传式顺译）偏好——在同样自然的几种语序中优先贴近
-// 源语小句顺序，从源头减少展示对齐的语序交叉；见字幕对齐三问题方案。
-/// 文件契约（`file-v1`）的契约段。
+// The system prompt base is taken from voice-ink `TranslatePrompts.translateSystemPrompt`. Both analysis and each language's DocumentBrief may be absent. Block-level assembly guarantees that when the brief fails or `--no-brief` is used, it degrades stably to the source-language analysis, and then to the base contract.
+// ccut addition: a preference for driving by sequential clauses (sequential translation in the style of simultaneous interpretation). Among several equally natural word orders, prefer the one closest to the source clause order, which reduces cross-ordering in display alignment at the source. See the three-question subtitle alignment scheme.
+/// Contract section of the file contract (`file-v1`).
 ///
-/// 长度通道：历史 json 版靠 `maxChars` 与融合段的每行展示上限压住译文宽度，
-/// file 版早期两条全无，实测展示宽度高出一成以上。因此契约直接声明「成品是
-/// 字幕」并把逐句预算挂在 `data-budget` 上。每行展示上限按目标语言变
-/// （CJK 约 16 格、拉丁文字约 42 字符），契约文本只描述**约束的性质**，
-/// 具体数字一律由载体的 `data-budget` 携带。
+/// The length channel: the legacy json version kept translation width in check with `maxChars` and each fused segment's per-row display limit. The early file version had neither, and measured display width ran more than 10% higher. So the contract states directly that the output is subtitles, and attaches the per-sentence budget to `data-budget`. The per-row display limit varies by target language (about 16 cells for CJK, about 42 characters for Latin scripts). The contract text describes only the **nature of the constraint**. The specific numbers are always carried by the carrier's `data-budget`.
 const TRANSLATE_FILE_PROMPT_BODY: &str = r#"The user message is ONE HTML document: an <article> whose <section> elements are paragraphs and whose elements carrying an "id" attribute are the sentences to translate.
 
 Respond with the SAME document structure and nothing else — no markdown fences, no prose, no explanation. Keep the <article> wrapper and every <section id>, and replace each sentence element's text content with its translation.
@@ -1553,10 +1463,7 @@ Rules:
 - Follow the target language's own spacing conventions: no spaces between Chinese or Japanese characters; Korean separates words with spaces and attaches a particle or counter to the word or numeral before it.
 - Do not insert newline characters or segmentation marks inside a sentence. When fusion metadata is present, the only markup allowed inside a sentence element is the `<span data-src>` annotation described below; the sentence text remains one complete translation."#;
 
-/// 行文本载体（`lines/1`，`--align-fusion lines`）的契约段：质量规则与
-/// [`TRANSLATE_FILE_PROMPT_BODY`] 同一套（预算与锁定术语改由 `≤n` 与
-/// `! N required=` 行携带），载体语法在 system prompt 末尾单独附上
-/// （[`lines_translation::PROTOCOL`]）。
+/// Contract section of the line-text carrier (`lines/1`, `--align-fusion lines`). Its quality rules are the same set as [`TRANSLATE_FILE_PROMPT_BODY`]. Budgets and locked terms are carried by the `≤n` and `! N required=` lines. The carrier syntax is appended separately at the end of the system prompt ([`lines_translation::PROTOCOL`]).
 const TRANSLATE_LINES_PROMPT_BODY: &str = r#"The user message is ONE plain-text page in the lines/1 format described at the end of these instructions: each numbered line is one sentence to translate, in document order.
 
 Rules:
@@ -1572,9 +1479,7 @@ Rules:
 - Follow the target language's own spacing conventions: no spaces between Chinese or Japanese characters; Korean separates words with spaces and attaches a particle or counter to the word or numeral before it.
 - A sentence's translation stays on its own numbered line: no newline inside it, and the chunk markers described below are the only structure inside a line."#;
 
-/// `file-v1` 翻译融合契约（对齐块设计 §6.1）。译文文本仍是唯一真相；
-/// `<span data-src>` 只是尽力而为的块对齐草稿通道，align 引擎把它展开成对齐边
-/// 后走与 dedicated `align-edges` 完全相同的确定性块合并 / 双语 DP。
+/// `file-v1` translation fusion contract (alignment block design §6.1). The translated text remains the only source of truth. `<span data-src>` is only a best-effort block-alignment draft channel. The align engine expands it into alignment edges and then passes it through exactly the same deterministic block merge and bilingual DP as dedicated `align-edges`.
 fn fusion_file_prompt_section(params: &TransParams, rows: bool) -> String {
     if rows {
         return fusion_rows_prompt_section(params);
@@ -1593,13 +1498,9 @@ Fused block alignment (optional draft channel): editable sentences that already 
     )
 }
 
-/// `file-v1` 翻译融合契约的**行分区**变体（`--align-fusion rows`）。整句译文
-/// 仍是唯一真相；`<span data-src>` 从"语义块草稿"升格为"显示行分区"：每个
-/// span 是一条字幕行，`data-src` 是连续递增的源词序号区间，全部区间首尾相接
-/// 覆盖 `1..N`。满足该形状的句子由引擎直接落 blocks/pieces，不再派 align 调用。
+/// **Row-partition** variant of the `file-v1` translation fusion contract (`--align-fusion rows`). The whole-sentence translation remains the only source of truth. `<span data-src>` is promoted from "semantic block draft" to "display row partition": each span is one subtitle row, `data-src` is a contiguous, increasing range of source word indices, and all ranges, joined end to end, cover `1..N`. Sentences of that shape are placed into blocks and pieces directly by the engine, with no further align call.
 ///
-/// 载体额外带 `data-align-groups`（确定性源侧分组 + 每组时长），让模型在切行
-/// 时同时看得见"这一小段说了多久"，从而兼顾读速与排版。
+/// The carrier also carries `data-align-groups` (deterministic source-side grouping, plus the duration of each group), so that while splitting rows the model can also see how long each short passage lasts. That balances reading speed against layout.
 fn fusion_rows_prompt_section(params: &TransParams) -> String {
     format!(
         r#"
@@ -1616,16 +1517,14 @@ Fused display rows (draft channel): editable sentences carry `data-align-words` 
 - Numbers, names, URLs and glossary terms must sit in the row whose ordinal range contains their source ordinal.
 - When the natural target word order does not follow the source order at some point, join the groups involved into ONE longer row instead of reordering; if the whole sentence cannot be laid out in source order, emit a single span covering `1-N`. Fewer, longer rows are always better than rows that misstate the correspondence.
 - Never distort, shorten, pad, or retranslate the sentence to make the rows come out — the translation is the truth and the rows are a draft. A malformed annotation is silently discarded and never rejects the translation."#,
-        // 下限缺省 10；Shorts 等窄预算下 soft 小于 10 时跟着 soft 收，免得写成「10 到 10」。
+        // The lower bound defaults to 10. Under narrow budgets such as Shorts, when soft is below 10 the lower bound follows soft, so it does not read "10 to 10".
         floor = params.soft.min(10),
         fit = params.fit,
         hard = params.hard,
     )
 }
 
-/// 融合草稿在译文经 AutoCorrect 入库后是否仍可用：块文本拼接与入库译文在
-/// [`normalize_chars`] 口径下相等（AutoCorrect 只动空白/标点/大小写）。可用即
-/// 原样交给 align 引擎（块在入库译文上的字符区间由 `chunks_to_edges` 顺序定位）。
+/// Whether the fusion draft is still usable after the translation has been committed through AutoCorrect. The concatenated block texts equal the committed translation under [`normalize_chars`] (AutoCorrect only changes whitespace, punctuation and case). If usable, it passes to the align engine as is. The character ranges of blocks within the committed translation are located in order by `chunks_to_edges`.
 fn format_fusion_draft(
     draft: &TranslateAlignmentDraft,
     committed_translation: &str,
@@ -1640,7 +1539,7 @@ fn format_fusion_draft(
     {
         return None;
     }
-    // 行分区在 AutoCorrect 之后再验一次：入库译文才是引擎将要切分的文本。
+    // The row partition is re-verified after AutoCorrect. The committed translation is the text the engine will actually split.
     let rows = draft.rows && is_row_partition(&draft.chunks, source_words);
     Some(FusionDraft {
         chunks: draft.chunks.clone(),
@@ -1650,9 +1549,7 @@ fn format_fusion_draft(
     })
 }
 
-/// 行文本载体的草稿在译文经 AutoCorrect 入库后是否仍可用：把记录的块文本按
-/// 有效字符顺序定位到入库译文上重切（[`lines_translation::rebase`]），块文本
-/// 拼接就是入库译文；定位不上（AutoCorrect 之外的改动）即丢弃。
+/// Whether the line-text carrier's draft is still usable after the translation has been committed through AutoCorrect. The recorded block texts are located, in effective-character order, on the committed translation and cut again ([`lines_translation::rebase`]). The concatenated block texts then equal the committed translation. If the relocation fails (a change beyond AutoCorrect), the draft is discarded.
 fn format_lines_draft(
     draft: &crate::filepipe::TranslateLinesDraft,
     committed_translation: &str,
@@ -1760,17 +1657,13 @@ fn translate_system_prompt(
     prompt
 }
 
-// ---- 响应校验 -------------------------------------------------------------
+// ---- response validation -------------------------------------------------------------
 
-/// 文件契约（`file-v1`）的 `task submit` 镜像 lint。
+/// Mirror lint of the `file-v1` contract for `task submit`.
 ///
-/// `input` 是磁盘上那份渲染文本。校验**只有一份**：这里先用
-/// [`parse_translate_source`] 复原校验等价的渲染结构，再走引擎同一个
-/// [`parse_translate_page`]，不存在第二套判据。
+/// `input` is the rendered text on disk. There is **only one** validation. First, [`parse_translate_source`] reconstructs a render structure equivalent for validation. Then the engine's own [`parse_translate_page`] runs. No second set of criteria exists.
 ///
-/// 判据同引擎：`page_rejected`（整页作废）或存在 `retry_ids`（缺句/空译/
-/// 术语缺失）才拒；可编辑句的 `paragraph-move` 与 `unknown-id` 是 advisory，
-/// 不拒——否则 agent 会在无法消除的告警上无限空转。
+/// The criteria match the engine's. A page is rejected only if `page_rejected` is set (the whole page is void) or there are `retry_ids` (missing sentences, empty translations, missing terms). `paragraph-move` and `unknown-id` on editable sentences are advisory and do not reject. Otherwise the agent would spin endlessly on warnings it cannot clear.
 pub fn lint_agent_answer_file(input: &str, answer: &str) -> Vec<String> {
     let Some(page) = parse_translate_source(input) else {
         return Vec::new();
@@ -1878,8 +1771,7 @@ mod tests {
         }
     }
 
-    /// 句1 = 两 Cue（"echo," 处 pause_punct 断行 / "hotel." 句末）；
-    /// 句2 = 单 Cue "Done."。
+    /// Sentence 1 is two Cues ("echo," breaks at pause_punct, and "hotel." ends the sentence). Sentence 2 is the single Cue "Done.".
     fn two_sentence_doc() -> TranscriptDoc {
         doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha", "s1"),
@@ -1925,7 +1817,7 @@ mod tests {
 
     #[test]
     fn sentence_count_does_not_split_a_page_under_the_word_budget() {
-        // 218 句 × 10 词 = 2180 ≤ 2000 + 200 slack：句数多也不拆页。
+        // 218 sentences × 10 words = 2180 ≤ 2000 + 200 slack. Many sentences do not split the page either.
         let source_words = vec![10_usize; 218];
         let budget = crate::paging::budgets::TRANSLATE_PROVIDER_WORDS;
         assert_eq!(218 * 10, 2180);
@@ -1935,7 +1827,7 @@ mod tests {
 
     #[test]
     fn long_documents_split_only_at_word_budget_multiples() {
-        // 9860 词 ÷ (2000 + 200 slack) → 5 页，每页约 1972 词。
+        // 9860 words ÷ (2000 + 200 slack) → 5 pages, about 1972 words each.
         let source_words = vec![20_usize; 493];
         let sizes = translate_page_sizes(
             &source_words,
@@ -1948,8 +1840,7 @@ mod tests {
 
     #[test]
     fn a_talk_that_the_old_budget_kept_whole_now_splits_in_two() {
-        // 193 句 / 3571 词的谈话（p-00ec2e27 基线）：旧 5000 档单页、多 worker
-        // 闲置；agent 与 provider 两档都分成 2 页并行认领。
+        // A 193-sentence, 3571-word conversation (p-00ec2e27 baseline). Under the old 5000 tier it was a single page with idle workers. Both the agent and provider tiers now split it into 2 pages to be claimed in parallel.
         let source_words = vec![18_usize; 199];
         assert_eq!(199 * 18, 3582);
         assert!(fits_single_translate_page(199, 3582, 5000));
@@ -1971,7 +1862,7 @@ mod tests {
         let budget = 1000;
         assert_eq!(translate_page_sizes(&source_words, budget), vec![2, 2, 2]);
 
-        // 预算把每条都单独成页时，页数被 clamp 回条目数，不会切出空页。
+        // When the budget puts every entry on its own page, the page count is clamped back to the number of entries, so no empty pages are cut.
         let dense_words = vec![100_usize; 10];
         let sizes = translate_page_sizes(&dense_words, 100);
         assert_eq!(sizes.len(), 10);
@@ -1999,7 +1890,7 @@ mod tests {
         assert_eq!(outcome.total_sentences, 2);
         assert_eq!(doc.trans["zh"]["s-g1.0"], "第一段译文，第二段收尾。");
         assert_eq!(doc.trans["zh"]["s-g2.0"], "完成。");
-        // 句指纹随页盖章 ⇒ stale 为空。
+        // Sentence fingerprints are stamped along with the page, so stale is empty.
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
         assert!(stale_sentences(&doc, "zh", &sentences).is_empty());
@@ -2011,7 +1902,7 @@ mod tests {
         assert!(system.contains("professional subtitle translator"));
         assert!(system.contains("from \"en\" to \"zh\""));
         assert!(retry.is_none());
-        // HTML 载荷；zh CPS=9：3.2s → 28、"Done." 0.4s×9 → 3。
+        // HTML payload. zh CPS=9: 3.2s → 28, and "Done." at 0.4s × 9 → 3.
         assert!(user.contains("id=\"s-g1.0\""), "{user}");
         assert!(user.contains("data-budget=\"整句≤28字\""), "{user}");
         assert!(user.contains("data-budget=\"整句≤3字\""), "{user}");
@@ -2135,7 +2026,7 @@ mod tests {
         assert!(user.find("先に見せる").unwrap() < user.find("Then the main").unwrap());
     }
 
-    /// routed 路径的两句最小语料：同一源片段 ⇒ 文件契约下同属 `p-main` 段。
+    /// Two-sentence minimal corpus for the routed path: the same source segment means they belong to the same `p-main` paragraph under the file contract.
     fn routed_pair() -> Vec<RoutedSentence> {
         vec![
             RoutedSentence {
@@ -2192,7 +2083,7 @@ mod tests {
     fn file_contract_routed_reports_every_page_attempt() {
         let rows = routed_pair();
         let mut llm = ScriptedBatchLlm::new(vec![
-            // 一个期望句都没解析到（page-fatal）⇒ 同一页第二次尝试。
+            // No expected sentence parsed at all (page-fatal) ⇒ a second attempt on the same page.
             vec![(0, Ok("好的，这是翻译：一。二。".to_owned()))],
             vec![(0, Ok(routed_file_answer(&[("r1", "一。"), ("r2", "二。")])))],
         ]);
@@ -2216,7 +2107,7 @@ mod tests {
         .expect("routed file contract translate");
 
         assert_eq!(outcome.translated_sentences, 2);
-        // 波 1 的两次页级尝试各回调一次；没有多余的修复波。
+        // The two page-level attempts of wave 1 each call back once. There is no extra repair wave.
         assert_eq!(llm.requests.len(), 2);
         assert_eq!(
             attempts.len(),
@@ -2241,7 +2132,7 @@ mod tests {
         let mut llm = FakeLlm::new([Ok(file_answer(&[("s-g1.0", "甲。"), ("s-g2.0", "乙。")]))]);
         run_translate(&mut doc, &mut llm, &options("zh"), &mut |_| {}, &mut |_| {}).unwrap();
 
-        // 全部新鲜 ⇒ 零调用。
+        // Everything is fresh ⇒ zero calls.
         let mut llm = FakeLlm::ok(std::iter::empty::<&'static str>());
         let outcome =
             run_translate(&mut doc, &mut llm, &options("zh"), &mut |_| {}, &mut |_| {}).unwrap();
@@ -2249,7 +2140,7 @@ mod tests {
         assert_eq!(outcome.translated_sentences, 0);
         assert_eq!(outcome.skipped_sentences, 2);
 
-        // 编辑句 1 的词 ⇒ 只重翻句 1。
+        // Edited words in sentence 1 ⇒ only sentence 1 is retranslated.
         doc.words[2].text = "charlee".to_owned();
         let mut llm = FakeLlm::new([Ok(file_answer(&[("s-g1.0", "重翻。")]))]);
         let outcome =
@@ -2260,7 +2151,7 @@ mod tests {
         assert_eq!(doc.trans["zh"]["s-g1.0"], "重翻。");
         assert_eq!(doc.trans["zh"]["s-g2.0"], "乙。");
 
-        // force ⇒ 全部重翻。
+        // force ⇒ everything is retranslated.
         let mut llm = FakeLlm::new([Ok(file_answer(&[
             ("s-g1.0", "强一。"),
             ("s-g2.0", "强二。"),
@@ -2347,8 +2238,7 @@ mod tests {
 
     #[test]
     fn run_translate_stops_on_terminal_without_retry() {
-        // 格式错误的重试/耗尽语义由 file_contract_* 系列测试覆盖；这里只钉
-        // Terminal 直接上抛、不重试、doc 不落任何页。
+        // The retry and exhaustion semantics for malformed responses are covered by the file_contract_* test series. Here we only pin that Terminal propagates immediately, without retry, and that the doc gets no pages.
         let mut doc = two_sentence_doc();
         let mut llm = FakeLlm::new([Err(LlmError::Terminal("401".to_owned()))]);
         let result = run_translate(&mut doc, &mut llm, &options("zh"), &mut |_| {}, &mut |_| {});
@@ -2361,7 +2251,7 @@ mod tests {
     fn paging_splits_by_budget_and_carries_static_neighbour_context() {
         let mut doc = two_sentence_doc();
         let mut opts = options("zh");
-        opts.page_budget = 1; // 词数预算 1：每句独占一页
+        opts.page_budget = 1; // Word-count budget 1: each sentence gets its own page
         let mut llm = FakeLlm::new([
             Ok(file_answer(&[("s-g1.0", "第一页。")])),
             Ok(file_answer(&[("s-g2.0", "第二页。")])),
@@ -2399,7 +2289,7 @@ mod tests {
         let mut llm = ScriptedBatchLlm::new(vec![
             vec![
                 (1, Ok(file_answer(&[("s-g2.0", "第二页。")]))),
-                // 一个期望句都没解析到 ⇒ page-fatal,只有这一页整页重试。
+                // No expected sentence parsed ⇒ page-fatal, so only this page is retried as a whole.
                 (0, Ok("好的，这是第一页的翻译。".to_owned())),
             ],
             vec![(0, Ok(file_answer(&[("s-g1.0", "第一页。")])))],
@@ -2539,9 +2429,9 @@ mod tests {
         assert!(system.contains("Opening"));
     }
 
-    // ---- 文件契约（file-v1）--------------------------------------------
+    // ---- file contract (file-v1) --------------------------------------------
 
-    /// 三句单段：`s-g1.0` / `s-g2.0` / `s-g3.0` 全落在段 `p-g1.0`。
+    /// Three sentences in one paragraph: `s-g1.0`, `s-g2.0` and `s-g3.0` all fall in paragraph `p-g1.0`.
     fn three_sentence_doc() -> TranscriptDoc {
         doc_with_words(vec![
             w("g1.0", 0.0, 0.4, "alpha", "s1"),
@@ -2554,7 +2444,7 @@ mod tests {
         ])
     }
 
-    /// `count` 句 × 10 词的稿，全部落在同一页（rows 档 880 词以内）。
+    /// `count` sentences of 10 words each, all on the same page (within 880 words for the rows tier).
     fn rows_page_doc(count: usize) -> TranscriptDoc {
         let mut words = Vec::new();
         let mut clock = 0.0f64;
@@ -2618,13 +2508,12 @@ mod tests {
             sent.contains("<section id=\"p-g1.0\" data-sp=\"s1\">"),
             "{sent}"
         );
-        // 逐句阅读预算是 file-v1 的长度通道（对拍 json-v0 的 `maxChars`）：
-        // 没有它，译者不知道成品是字幕，展示宽度会整体膨胀。
+        // The per-sentence reading budget is the length channel of file-v1 (parity with json-v0's `maxChars`). Without it, the translator does not know the output is subtitles, and display width would inflate across the board.
         assert!(
             sent.contains("<p id=\"s-g2.0\" data-budget=\"整句≤7字\">delta echo.</p>"),
             "{sent}"
         );
-        // §7.7：文件契约不再挂融合契约段。
+        // §7.7: the file contract no longer attaches the fusion contract section.
         assert!(!sent.contains("sourceBreaks"));
 
         assert_eq!(outcome.translated_sentences, 3);
@@ -2639,7 +2528,7 @@ mod tests {
     fn file_contract_rejected_page_retries_whole_page() {
         let mut doc = three_sentence_doc();
         let mut llm = ScriptedBatchLlm::new(vec![
-            // 一个期望句都没解析到 ⇒ page-fatal，整页重试。
+            // No expected sentence parsed ⇒ page-fatal, so the whole page is retried.
             vec![(0, Ok("好的，这是翻译：一。二。三。".to_owned()))],
             vec![(
                 0,
@@ -2666,11 +2555,9 @@ mod tests {
         assert!(reason.contains("document-wrapped"), "{reason}");
     }
 
-    /// M4 端到端：`context.md` / `context.<lang>.md` → brief → 文件契约
-    /// translate 的 `data-rt` → 缺锁定译名被拒 → align 的保护词/锚点。
+    /// M4 end to end: `context.md` / `context.<lang>.md` → brief → the file-contract translate's `data-rt` → rejection when a locked translated term is missing → align's protected words and anchors.
     ///
-    /// 只断言「转换后 locked=true」证明不了这条链是通的，所以这里从 Markdown
-    /// 原文起跳，一路断言到引擎真的拒页。
+    /// Asserting only that "locked=true after conversion" cannot prove the chain works. So this starts from the original Markdown and asserts all the way through to the engine actually rejecting the page.
     #[test]
     fn file_contract_terms_flow_from_context_md_into_translate_and_align() {
         let source_md = "---\nformat: \"context-doc/1\"\nfingerprint: \"fp\"\n---\n\n\
@@ -2689,7 +2576,7 @@ mod tests {
             .context
             .expect("target context parses");
         let brief = crate::engines::brief::brief_from_target_context(&target, Some(&source));
-        // Lock=yes → GlossaryEntry.locked；Category=product → 命名实体。
+        // Lock=yes → GlossaryEntry.locked. Category=product → named entity.
         assert!(brief.glossary[0].locked);
         assert_eq!(brief.named_entities, vec!["Air".to_owned()]);
 
@@ -2698,7 +2585,7 @@ mod tests {
         let mut opts = options("zh-Hans");
         opts.brief = Some(brief.clone());
 
-        // 漏掉锁定译名 → 三次尝试全被拒。
+        // A missing locked translated term → all three attempts rejected.
         let miss = file_answer(&[("s-g1.0", "一。"), ("s-g2.0", "二。"), ("s-g3.0", "三。")]);
         let mut llm = ScriptedBatchLlm::new(vec![
             vec![(0, Ok(miss.clone()))],
@@ -2707,12 +2594,11 @@ mod tests {
         ]);
         let outcome = run_translate(&mut doc, &mut llm, &opts, &mut |_| {}, &mut |_| {})
             .expect("file contract degrades per line, not per run");
-        // 文件契约按行部分成功：漏译锁定术语的那一句重试到耗尽后仍被拒，
-        // 既不入库也不进溯源账本；同页其它句照常落地。
+        // The file contract succeeds partially, line by line. The sentence that omitted a locked term is rejected even after its retries run out, so it is neither committed nor entered into the provenance ledger. The other sentences on the same page land as usual.
         assert!(!doc.trans["zh-Hans"].contains_key("s-g1.0"));
         assert!(!outcome.committed_sentences.contains("s-g1.0"));
         assert!(outcome.committed_sentences.contains("s-g2.0"));
-        // rt 确实随页面下发。
+        // rt is indeed delivered with the page.
         assert!(
             llm.requests[0][0].0.contains("data-rt="),
             "{}",
@@ -2736,7 +2622,7 @@ mod tests {
             .expect("locked target satisfied");
         assert_eq!(doc.trans["zh-Hans"]["s-g1.0"], "空气一。");
 
-        // align 侧：保护词与双语锚点（宿主按 glossary 直投）都拿到该术语。
+        // align side: protected words and bilingual anchors (the host injects them directly from the glossary) both receive the term.
         assert!(
             brief
                 .protected_targets_for_fit("zh-Hans", TransParams::for_lang("zh-Hans").fit)
@@ -2750,7 +2636,7 @@ mod tests {
     fn file_contract_missing_sentence_goes_to_a_repair_wave() {
         let mut doc = three_sentence_doc();
         let mut llm = ScriptedBatchLlm::new(vec![
-            // 中间句缺失：不是尾部连续缺失，因此按 missing-id 进句级修复波。
+            // A middle sentence is missing. It is not a trailing contiguous omission, so it goes into the sentence-level repair wave as missing-id.
             vec![(
                 0,
                 Ok(file_answer(&[("s-g1.0", "一。"), ("s-g3.0", "三。")])),
@@ -2767,7 +2653,7 @@ mod tests {
         .expect("repair wave succeeds");
         assert_eq!(doc.trans["zh-Hans"].len(), 3);
         assert_eq!(doc.trans["zh-Hans"]["s-g2.0"], "二。");
-        // 修复波只重发缺的那一句。
+        // The repair wave resends only the missing sentence.
         let repair = &llm.requests[1][0].0;
         assert!(repair.contains("id=\"s-g2.0\""), "{repair}");
         assert!(!repair.contains("id=\"s-g1.0\""), "{repair}");
@@ -2785,8 +2671,7 @@ mod tests {
             w("g4.0", 3.0, 3.4, "golf", "s1"),
             w("g4.1", 3.4, 3.8, "hotel.", "s1"),
         ]);
-        // 每一波都少交一句，且缺的都不是尾部连续缺失（那是 document-truncated 拒页），
-        // 于是 s-g2.0 一路走到跨页残余波仍然落空。
+        // Every wave omits one sentence, and none of the missing ones is a trailing contiguous omission (that would be a document-truncated page rejection). So s-g2.0 goes through to the cross-page residual wave and still fails there.
         let mut llm = ScriptedBatchLlm::new(vec![
             vec![(
                 0,
@@ -2803,33 +2688,31 @@ mod tests {
             &mut |_| {},
         )
         .expect("residual failure is not a translation failure");
-        // 波 1（整页）+ 波 2（页内修复）+ 波 3（跨页残余）各一次调用。
+        // Wave 1 (whole page), wave 2 (in-page repair) and wave 3 (cross-page residual), one call each.
         assert_eq!(llm.requests.len(), 3);
         assert!(llm.requests[2][0].0.contains("id=\"s-g2.0\""));
 
-        // 落空的句既没有译文，也没有指纹戳：盖了戳它就再也不会被 stale 选中。
+        // Sentences that fail have neither a translation nor a fingerprint stamp. Stamping them would mean they are never selected as stale again.
         assert!(!doc.trans["zh-Hans"].contains_key("s-g2.0"));
         assert!(!doc.trans_src["zh-Hans"].contains_key("s-g2.0"));
         assert_eq!(doc.trans["zh-Hans"].len(), 3);
         assert_eq!(doc.trans_src["zh-Hans"].len(), 3);
     }
 
-    /// §2.3：波 1 页级耗尽**不再** hard error。阶梯是「整页 2 次 → 对半各 1 次
-    /// → 半页的可编辑句进补做波次」；一句都没救回来时命令照常成功，缺失句由
-    /// `ccut check` 报 `translation-partial`。
+    /// §2.3: page-level exhaustion in wave 1 is **no longer** a hard error. The ladder is "whole page twice → each half once → the half-page's editable sentences go into the make-up wave". If no sentence is recovered at all, the command still succeeds, and the missing sentences are reported by `ccut check` as `translation-partial`.
     #[test]
     fn page_rejections_fall_through_to_the_unit_wave_without_failing_the_command() {
         let mut doc = three_sentence_doc();
         let garbage = || Ok("好的，这是翻译：一。二。三。".to_owned());
         let mut llm = ScriptedBatchLlm::new(vec![
-            // 波 1 两次整页尝试。
+            // Wave 1: two whole-page attempts.
             vec![(0, garbage())],
             vec![(0, garbage())],
-            // 对半缩窄：两个半页各一次。
+            // Halve on narrowing: one attempt per half-page.
             vec![(0, garbage()), (1, garbage())],
-            // 波 2：整页的待修句。
+            // Wave 2: the editable sentences still pending on the whole page.
             vec![(0, garbage())],
-            // 波 3：跨页残余。
+            // Wave 3: cross-page residuals.
             vec![(0, garbage())],
         ]);
         run_translate(
@@ -2845,7 +2728,7 @@ mod tests {
         assert_eq!(llm.requests[2].len(), 2, "第三轮是两个半页");
     }
 
-    /// 缩窄之后半页能翻出来时，那一半照常落库；只有仍失败的半页进补做波次。
+    /// After narrowing, when a half-page can be translated, that half is committed as usual. Only the half-pages that still fail go into the make-up wave.
     #[test]
     fn split_retry_saves_the_half_the_model_can_translate() {
         let mut doc = three_sentence_doc();
@@ -2853,9 +2736,9 @@ mod tests {
         let mut llm = ScriptedBatchLlm::new(vec![
             vec![(0, garbage())],
             vec![(0, garbage())],
-            // 半页 1（s-g1.0）翻出来了，半页 2 仍然答非所问。
+            // Half-page 1 (s-g1.0) was translated. Half-page 2 still gave off-target answers.
             vec![(0, Ok(file_answer(&[("s-g1.0", "一。")]))), (1, garbage())],
-            // 波 2：只剩后半页那两句。
+            // Wave 2: only the last two sentences remain.
             vec![(
                 0,
                 Ok(file_answer(&[("s-g2.0", "二。"), ("s-g3.0", "三。")])),
@@ -2877,7 +2760,7 @@ mod tests {
     #[test]
     fn file_contract_freezes_fresh_sentences_for_context() {
         let mut doc = three_sentence_doc();
-        // 先让中间句「新鲜」：有译文且指纹对得上 ⇒ 不进本次待翻集合。
+        // First make the middle sentence "fresh". If it has a translation and its fingerprint matches, it is not in this run's set to translate.
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
         let fresh = sentences
@@ -2915,24 +2798,18 @@ mod tests {
         let sent = &llm.requests[0][0].0;
         assert!(sent.contains("data-editable=\"false\""), "{sent}");
         assert!(sent.contains("data-translation=\"既有译文。\""), "{sent}");
-        // 冻结句要的是逐字复制：挂预算只会诱导模型「顺手压一压」不该动的译文。
-        // 断言落在冻结句那一行本身，而不是「data-editable 紧跟 data-budget」这种
-        // 属性顺序巧合上——否则调换渲染顺序就能让这条断言无声失效。
+        // Frozen sentences must be copied verbatim. Attaching a budget only induces the model to "tidy up" a translation that should not change. The assertion lands on the frozen sentence's own line, not on an attribute-order coincidence such as "data-editable immediately followed by data-budget". Otherwise, swapping the rendering order would silently disable the assertion.
         let frozen_line = sent
             .lines()
             .find(|line| line.contains("id=\"s-g2.0\""))
             .expect("frozen sentence renders on its own line");
         assert!(!frozen_line.contains("data-budget="), "{frozen_line}");
-        // 另外两句都是可编辑句，预算一句不落。
+        // The other two sentences are both editable, and both carry the budget.
         assert_eq!(sent.matches("data-budget=").count(), 2, "{sent}");
         assert_eq!(doc.trans["zh-Hans"]["s-g2.0"], "既有译文。");
     }
 
-    /// file-v1 的长度通道回归：json-v0 靠 `maxChars` 与融合段的每行展示上限
-    /// 压住译文宽度，file-v1 早期两条都没有，实测展示宽度整体高一成以上。
-    /// 契约文本只描述约束的性质（成品是字幕 + 逐句预算 + 反向护栏），具体
-    /// 数字由载体的 `data-budget` 按目标语言携带——所以这里同时断言它**不**
-    /// 把某个语言的每行格数写死。
+    /// Length-channel regression for file-v1. json-v0 kept translation width in check with `maxChars` and each fused segment's per-row display limit. file-v1 early on had neither, and measured display width ran more than 10% higher across the board. The contract text describes only the nature of the constraint: the output is subtitles, with a per-sentence budget and a reverse guardrail. The specific numbers are carried per target language by the carrier's `data-budget`. So this also asserts that it does **not** hard-code one language's per-row character count.
     #[test]
     fn file_contract_prompt_states_the_subtitle_length_channel() {
         let body = TRANSLATE_FILE_PROMPT_BODY;
@@ -2940,13 +2817,12 @@ mod tests {
         assert!(body.contains("data-budget"), "{body}");
         assert!(body.contains("reading-speed budget"), "{body}");
         assert!(body.contains("Prefer concise phrasing"), "{body}");
-        // 反向护栏：该长就长优先于压缩。
+        // Reverse guardrail: length takes priority over compression.
         assert!(body.contains("never outranks meaning"), "{body}");
         assert!(body.contains("past data-budget"), "{body}");
-        // 没有切分通道，就不能诱导模型自己往句子里塞分隔符。
+        // Without a splitting channel, the model must not be induced to insert separators into sentences on its own.
         assert!(body.contains("or segmentation marks"), "{body}");
-        // 每行展示上限按目标语言变（CJK ≈16 格、拉丁 ≈42 字符），常量提示词
-        // 里写死任何一个都会对另一半语言说假话。
+        // The per-row display limit varies by target language (CJK ≈16 cells, Latin ≈42 characters). Hard-coding either one in a constant prompt would lie to the other group of languages.
         assert!(!body.contains("16"), "{body}");
         assert!(!body.contains("42"), "{body}");
     }
@@ -2976,8 +2852,7 @@ mod tests {
     }
 
     #[test]
-    /// §2.3：冻结句被改动只记 Warning，本页照常接受——既有译文原样保留，
-    /// 不再为它整页重掷。
+    /// §2.3: a frozen sentence being modified only records a Warning, and the page is still accepted as usual. The existing translation is kept as it was, and the whole page is no longer re-rolled because of it.
     fn file_contract_ignores_a_modified_frozen_sentence() {
         let mut doc = three_sentence_doc();
         let cues = derive_cues(&doc, &CueParams::default());
@@ -3043,7 +2918,7 @@ mod tests {
         run_translate(&mut doc, &mut llm, &opts, &mut |_| {}, &mut |_| {})
             .expect("glossary repair wave");
         let sent = &llm.requests[0][0].0;
-        // 锁定术语以 JSON 数组落在 data-rt，含 `/` 也能原样往返。
+        // Locked terms land in data-rt as a JSON array, so content containing `/` round-trips intact.
         assert!(
             sent.contains("data-rt=\"[&quot;增量/差值&quot;]\""),
             "{sent}"
@@ -3087,66 +2962,61 @@ mod tests {
             complaints.iter().any(|line| line.contains("missing-id")),
             "{complaints:?}"
         );
-        // 载荷不是 translate 载体时 lint 静默放行（历史 json-v0 任务不误伤）。
+        // When the payload is not a translate carrier, lint passes silently (so legacy json-v0 tasks are not affected).
         assert!(lint_agent_answer_file("{\"lines\":[]}", "whatever").is_empty());
     }
 
     #[test]
     fn file_contract_budgets_are_declared_per_executor() {
         use crate::paging::{PageExecutor, budgets};
-        // 两档分开声明、宿主按执行器取档；当前实测都落在 2000（见 paging.rs）。
+        // The two tiers are declared separately, and the host picks by executor. Both currently measure at 2000 (see paging.rs).
         assert_eq!(budgets::TRANSLATE_AGENT_WORDS, 2000);
         assert_eq!(budgets::TRANSLATE_PROVIDER_WORDS, 2000);
         assert_eq!(PageExecutor::Agent.translate_words(), 2000);
         assert_eq!(PageExecutor::Provider.translate_words(), 2000);
         assert!(fits_single_translate_page(66, 1200, 2000));
-        // slack（预算 10%）以内仍算单页；一旦超出就分页。
+        // Within slack (10% of the budget) it still counts as a single page. Once that is exceeded, it is paginated.
         assert!(fits_single_translate_page(66, 2200, 2000));
         assert!(!fits_single_translate_page(66, 2201, 2000));
     }
 
-    /// rows 档（`--align-fusion rows`）：两种执行器共用更小的 1200 词预算。
-    /// rows 每源词成本约 1.6–2×，且长页会让模型整页放弃行标注（实测 59 句
-    /// 一页只标了 3 句），因此页要切得更小。
+    /// rows tier (`--align-fusion rows`): both executors share the smaller 1200-word budget. Rows cost about 1.6–2× per source word, and long pages make the model omit row markup for a whole page (measured: a 59-sentence page had only 3 sentences marked). So pages must be cut smaller.
     #[test]
     fn rows_mode_uses_a_smaller_translate_page_budget() {
         use crate::paging::{PageExecutor, budgets, page_count_for_total};
         assert_eq!(budgets::TRANSLATE_ROWS_WORDS, 800);
         assert_eq!(PageExecutor::Agent.translate_words_for(true), 800);
         assert_eq!(PageExecutor::Provider.translate_words_for(true), 800);
-        // `translate_words()` 仍是常规档，`translate_words_for(false)` 与它同义。
+        // `translate_words()` remains the regular tier. `translate_words_for(false)` is equivalent to it.
         assert_eq!(PageExecutor::Agent.translate_words_for(false), 2000);
         assert_eq!(
             PageExecutor::Provider.translate_words_for(false),
             PageExecutor::Provider.translate_words()
         );
 
-        // slack 仍是预算 10%：rows 单页上限 880 词，常规档 2200 词。
+        // Slack is still 10% of the budget. The rows single-page cap is 880 words, and the regular tier is 2200 words.
         let rows = budgets::TRANSLATE_ROWS_WORDS;
         let plain = budgets::TRANSLATE_PROVIDER_WORDS;
         assert!(fits_single_translate_page(60, 880, rows));
         assert!(!fits_single_translate_page(60, 881, rows));
-        // 同一篇稿：常规档一页、rows 档两页。
+        // The same article: one page in the regular tier, two pages in the rows tier.
         assert!(fits_single_translate_page(66, 1526, plain));
         assert!(!fits_single_translate_page(66, 1526, rows));
         assert_eq!(page_count_for_total(1526, plain), 1);
         assert_eq!(page_count_for_total(1526, rows), 2);
         assert_eq!(page_count_for_total(1257, plain), 1);
         assert_eq!(page_count_for_total(1257, rows), 2);
-        // 30 分钟谈话（约 3500 词）：常规档 2 页 → rows 档 4 页。
+        // A 30-minute conversation (about 3500 words): 2 pages in the regular tier, 4 pages in the rows tier.
         assert_eq!(page_count_for_total(3500, plain), 2);
         assert_eq!(page_count_for_total(3500, rows), 4);
     }
 
-    /// 显式 `page_budget` 永远是唯一分页依据——rows 也不例外。
+    /// An explicit `page_budget` is always the only basis for pagination, rows included.
     ///
-    /// 这是 `CCUT_LLM_PAGE_WORDS` 覆盖语义落在引擎侧的形式：档位选择归宿主
-    /// （[`crate::paging::PageExecutor::translate_words_for`]），引擎只认传进来
-    /// 的那个数，绝不因为 `align_rows` 自作主张缩页。
+    /// This is how the `CCUT_LLM_PAGE_WORDS` override takes effect on the engine side. The tier choice belongs to the host ([`crate::paging::PageExecutor::translate_words_for`]). The engine accepts only the number it is given, and never shrinks pages on its own just because `align_rows` is set.
     #[test]
     fn explicit_page_budget_always_wins_including_rows_mode() {
-        // 100 句 × 15 词 = 1500 词：rows 档（800 + 10% slack = 880）要 2 页，
-        // 常规档（2000 + slack = 2200）只要 1 页。
+        // 100 sentences × 15 words = 1500 words. The rows tier (800 + 10% slack = 880) needs 2 pages, while the regular tier (2000 + slack = 2200) needs only 1.
         let mut words = Vec::new();
         let mut clock = 0.0f64;
         for sentence in 0..100 {
@@ -3169,8 +3039,7 @@ mod tests {
         }
         let doc = doc_with_words(words);
         let ids: Vec<String> = (0..100).map(|index| format!("s-g{index}.0")).collect();
-        // 答案带合格行分区（整句一行），否则会触发 rows 的整页缺行软重发，
-        // 多出来的那次调用会污染"页数 = 调用数"的判据。
+        // The answer carries a qualifying row partition (one whole sentence per row). Otherwise it would trigger the rows whole-page missing-row soft resend, and the extra call would pollute the "page count = call count" criterion.
         let answer = rows_answer(&ids, "译文内容需要足够长。", 15);
 
         for (budget, expected_calls) in [(2000usize, 1usize), (800, 2)] {
@@ -3185,7 +3054,7 @@ mod tests {
         }
     }
 
-    /// 每句一条覆盖 `1..word_count` 的行 span：最小的合格行分区答案。
+    /// The minimal qualifying row-partition answer: one row span per sentence, covering `1..word_count`.
     fn rows_answer(ids: &[String], text: &str, word_count: usize) -> String {
         let mut out = String::from("<article><section id=\"p-g0.0\">");
         for id in ids {
@@ -3197,9 +3066,7 @@ mod tests {
         out
     }
 
-    /// rows 整页缺行的软重发：第一次交回结构完整、只留 id 的纯译文（一个
-    /// span 都没有），引擎原样重发一页并采用第二次答案的译文与行。有界：
-    /// 每页最多 1 次。
+    /// Soft resend for whole-page missing rows in rows mode. If the first answer is structurally complete and keeps only ids, with no span at all, the engine resends the page verbatim once and takes both the translation and the rows from the second answer. Bounded: at most once per page.
     #[test]
     fn a_rows_page_with_no_spans_is_resent_once_and_the_second_answer_wins() {
         let mut doc = rows_page_doc(12);
@@ -3220,7 +3087,7 @@ mod tests {
 
         assert_eq!(llm.calls.len(), 2, "整页缺行必须重发一次");
         assert_eq!(outcome.rows_page_retries, 1);
-        // 重发时 retry_reason 点名"上一次一个行都没有"。
+        // On resend, retry_reason names "last time there were no rows at all".
         assert!(
             llm.calls[1]
                 .3
@@ -3229,14 +3096,13 @@ mod tests {
             "{:?}",
             llm.calls[1].3
         );
-        // 译文与行都以第二次为准。
+        // Both the translation and the rows follow the second answer.
         assert_eq!(doc.trans["zh"]["s-g0.0"], "第二次的译文内容。");
         assert_eq!(outcome.alignment_drafts.len(), 12);
         assert!(outcome.alignment_drafts["s-g0.0"].rows);
     }
 
-    /// 第二次仍然不给行 ⇒ 不再重发（每页 1 次），第二次的译文照常采用，
-    /// 该句照常回落 dedicated align 路径。
+    /// If the second answer still gives no rows, there is no further resend (once per page). The second answer's translation is used as usual, and the sentence falls back to the dedicated align path as usual.
     #[test]
     fn a_rows_page_is_never_resent_more_than_once() {
         let mut doc = rows_page_doc(12);
@@ -3260,8 +3126,7 @@ mod tests {
         assert!(outcome.alignment_drafts.is_empty(), "没有行 ⇒ 没有草稿");
     }
 
-    /// 整页交回的是源文照抄（没译成目标语）时，补做波次的请求必须说出上一次
-    /// 错在哪、目标语言是什么：原样重发只会再得到同一份照抄。
+    /// When the whole page came back as a copy of the source (not translated into the target language), the make-up wave's request must say what went wrong last time and what the target language is. Resending verbatim would only get the same copy again.
     #[test]
     fn a_page_answered_in_the_source_language_is_asked_again_with_the_reason() {
         let mut doc = rows_page_doc(3);
@@ -3296,7 +3161,7 @@ mod tests {
         assert_eq!(doc.trans["zh"].len(), 3);
     }
 
-    /// 别的原因进补做波次（这里是漏了一行）不带这条原因。
+    /// Make-up for other reasons (here, a missing row) does not carry this reason.
     #[test]
     fn a_repair_wave_for_a_missing_line_carries_no_language_reason() {
         let mut doc = rows_page_doc(3);
@@ -3313,12 +3178,12 @@ mod tests {
         assert_eq!(doc.trans["zh"].len(), 3);
     }
 
-    /// 少量句子没标行不算"整页放弃"：门槛是请求了行的句 ≥ 3 且缺行 ≥ 70%。
+    /// A few unmarked sentences do not count as a "whole-page omission". The threshold is at least 3 sentences that requested rows, with at least 70% of them missing.
     #[test]
     fn a_page_where_most_sentences_carry_rows_is_not_resent() {
         let mut doc = rows_page_doc(12);
         let ids: Vec<String> = (0..12).map(|index| format!("s-g{index}.0")).collect();
-        // 12 句里 10 句给了行（缺行 2/12 ≈ 17% < 70%）。
+        // 10 of 12 sentences gave rows (2 of 12 ≈ 17% missing, below 70%).
         let mut answer = String::from("<article><section id=\"p-g0.0\">");
         for (index, id) in ids.iter().enumerate() {
             if index < 10 {
@@ -3343,7 +3208,7 @@ mod tests {
         assert_eq!(outcome.alignment_drafts.len(), 10);
     }
 
-    /// `on` 模式（非 rows）永不触发缺行重发：那条契约本来就允许没有草稿。
+    /// `on` mode (non-rows) never triggers a missing-row resend, because that contract already allows having no draft.
     #[test]
     fn a_chunk_mode_page_without_spans_is_never_resent() {
         let mut doc = rows_page_doc(12);
@@ -3363,10 +3228,9 @@ mod tests {
         assert_eq!(outcome.rows_page_retries, 0);
     }
 
-    // ---- M5.2：`--align-fusion off`（设计 §20.4 ③） -------------------------
+    // ---- M5.2: `--align-fusion off` (design §20.4 ③) -------------------------
 
-    /// `off`（`align: None`）时翻译提示不带 `data-align-*` 融合微格式，系统
-    /// 提示也不再挂融合契约段——这正是"提示更短"的可观测形式。
+    /// With `off` (`align: None`), the translation prompt carries no `data-align-*` fusion microformat, and the system prompt no longer attaches the fusion contract section. This is exactly the observable form of a "shorter prompt".
     #[test]
     fn align_fusion_off_drops_the_microformat_from_the_prompt() {
         let mut doc = two_sentence_doc();
@@ -3394,10 +3258,10 @@ mod tests {
         .unwrap();
         let (_, off_system, off_user, _) = &off_llm.calls[0];
         assert!(!off_user.contains("data-align-"), "{off_user}");
-        // 融合关掉时载荷末尾也不加提醒。
+        // When fusion is off, no reminder is appended to the end of the payload either.
         assert!(!off_user.contains("Reminder:"), "{off_user}");
         assert!(on_user.contains("Reminder: answer with"), "{on_user}");
-        // 只读属性一律可省：两种模式的契约都明说「OMIT every other attribute」。
+        // Read-only attributes may all be omitted. Both modes' contracts say explicitly "OMIT every other attribute".
         assert!(
             on_system.contains("OMIT every other attribute"),
             "{on_system}"
@@ -3413,8 +3277,7 @@ mod tests {
         assert!(off_system.len() < on_system.len());
     }
 
-    /// `off` 下解析仍兼容带微格式的回答：多余的 `<span data-src>` 只当译文
-    /// 文本，不拒页、不丢句（换开关不该让一次回答整页作废）。
+    /// With `off`, parsing still accepts answers that carry microformats. Extra `<span data-src>` is treated only as translation text. It does not reject the page or drop any sentence, since toggling a switch should not void a whole answer.
     #[test]
     fn align_fusion_off_still_parses_answers_that_carry_the_microformat() {
         let mut doc = two_sentence_doc();
@@ -3430,13 +3293,11 @@ mod tests {
         assert_eq!(outcome.translated_sentences, 2);
         assert_eq!(doc.trans["zh"]["s-g1.0"], "第一段译文，第二段收尾。");
         assert_eq!(doc.trans["zh"]["s-g2.0"], "完成。");
-        // 融合通道关着 ⇒ 不采信这份草稿。
+        // The fusion channel is off ⇒ this draft is not trusted.
         assert!(outcome.alignment_drafts.is_empty());
     }
 
-    /// 只读属性可省的 agent 镜像：rows 载荷 + 「只留 id」的答案必须通过提交期
-    /// lint，并且从载荷反解出的页仍能提取合格行分区。答案里的 `data-align-*`
-    /// 从来没人读，省掉它才是推荐形态（实测占 provider 输出一半以上）。
+    /// Agent-side mirror for the case where read-only attributes may be omitted. A rows payload plus an answer that keeps only ids must pass submit-time lint, and the page reconstructed from the payload must still yield a qualifying row partition. The `data-align-*` attributes in answers have never been read by anyone. Omitting them is the recommended form, and they were measured to be more than half of provider output.
     #[test]
     fn rows_answers_that_keep_only_ids_pass_the_agent_submit_lint() {
         let mut doc = two_sentence_doc();
@@ -3455,7 +3316,7 @@ mod tests {
         assert!(payload.contains("data-align-groups="), "{payload}");
         assert!(payload.contains("Reminder: answer with"), "{payload}");
 
-        // 答案：只留 id + 行 span，别的属性一个都不回显。
+        // The answer keeps only ids and row spans, and echoes no other attribute.
         let answer = "<article><section id=\"p-g1.0\">\
              <p id=\"s-g1.0\"><span data-src=\"1-5\">第一段译文需要自然对应，</span>\
              <span data-src=\"6-8\">第二段译文负责完整收尾。</span></p>\
@@ -3467,7 +3328,7 @@ mod tests {
             lint_agent_answer_file(&payload, answer)
         );
 
-        // 反解出的页 + 同一份答案仍然给出合格行分区。
+        // The reconstructed page plus the same answer still yield a qualifying row partition.
         let page = parse_translate_source(&payload).expect("translate carrier");
         let parsed = parse_translate_page(&page, Some(&payload), answer);
         assert!(
@@ -3478,9 +3339,7 @@ mod tests {
         assert!(parsed.alignments["s-g1.0"].rows);
     }
 
-    /// 同一件事在 agent 路径上的镜像：提交期 lint（`lint_agent_answer_file`）
-    /// 面对 fusion-off 载荷 + 带微格式的答案也必须放行。翻译对齐契约的两条
-    /// 路径共用同一份字符串级校验，这里各覆盖一次。
+    /// The same thing on the agent path: submit-time lint (`lint_agent_answer_file`) must also accept a fusion-off payload with an answer that carries microformats. The two paths of the translation alignment contract share the same string-level validation, and each is covered once here.
     #[test]
     fn align_fusion_off_answers_with_spans_pass_the_agent_submit_lint() {
         let mut doc = two_sentence_doc();

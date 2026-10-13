@@ -12,13 +12,13 @@ import { AGENT_PICKER, DRIVER_STATE_REASON, EFFORT_COPY, MODEL_TIER_LABEL } from
 import { listedInPicker } from './agent-catalog.ts';
 
 /**
- * 输入区的 Agent · 模型 · 推理强度选择（原型 agent-picker.jsx、model-agent.js `providerRows` / `modelRows` / `harnessLabel`）。
- * 这里只算行与文案；选了什么，建好的会话记在 Runtime，新会话的草稿记在 shell-store。
+ * Agent · model · reasoning effort selection in the input area (prototype agent-picker.jsx, model-agent.js `providerRows` / `modelRows` / `harnessLabel`).
+ * This only computes rows and copy. What was chosen is recorded in the Runtime for a built session, and in shell-store for a new session's draft.
  */
 
 /**
- * 新会话草稿上的选择。没选过的字段不出现，建会话时也不传，由 Runtime 按偏好给默认（默认 Agent、它的默认模型与强度）。
- * `model: null` 是明确选了「Agent 默认模型」（不传模型，按 CLI 配置）；`effort: null` 是模型自己的默认强度。
+ * The selection on a new session draft. Fields that were never chosen do not appear, and are not passed when the session is created, so the Runtime supplies defaults (default agent, its default model and effort).
+ * `model: null` explicitly means “Agent default model” (no model passed; follows the CLI configuration); `effort: null` means the model's own default effort.
  */
 export interface AgentChoice {
   driverId?: DriverId;
@@ -26,14 +26,14 @@ export interface AgentChoice {
   effort?: string | null;
 }
 
-/** 选择器的一次改动。换 Agent 时总是带上模型。 */
+/** One change made in the picker. Switching agents always includes the model. */
 export interface AgentChange {
   driverId: DriverId;
   model?: string | null;
   effort?: string | null;
 }
 
-/** 读回持久化的草稿选择：写法不对的 Agent id、类型不对的字段都丢掉（没注册的 Agent 由 Runtime 建会话时拒绝）。 */
+/** Reads back the persisted draft selection: agent ids in the wrong format and fields of the wrong type are dropped (an unregistered agent is rejected by the Runtime when the session is created). */
 export function parseAgentChoice(value: unknown): AgentChoice | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
@@ -45,9 +45,8 @@ export function parseAgentChoice(value: unknown): AgentChoice | null {
 }
 
 /**
- * 新会话实际会用的默认模型（设计稿 model-agent-setup.js `defaultModel`）：`DriverInfo.defaultModel` 没设过时已是推荐模型，
- * null 是明确选了「Agent 默认模型」；设过的模型从模型表里消失了，Runtime 建会话时改用推荐模型，这里同样换成推荐的。
- * 模型表为空（还没检测到）时没法判断，原样返回。
+ * The default model a new session will actually use (design spec model-agent-setup.js `defaultModel`): if `DriverInfo.defaultModel` was never set, it is already the recommended model; null means “Agent default model” was explicitly chosen. If a set model has disappeared from the model table, the Runtime uses the recommended model when it creates the session, so the recommended one is substituted here too.
+ * When the model table is empty (nothing detected yet), this cannot be judged, so the value is returned as is.
  */
 export function effectiveDefaultModel(driver: Pick<DriverInfo, 'id' | 'models' | 'defaultModel'>): string | null {
   const saved = driver.defaultModel;
@@ -55,7 +54,7 @@ export function effectiveDefaultModel(driver: Pick<DriverInfo, 'id' | 'models' |
   return recommendedDriverModel(driver.id, driver.models)?.id ?? saved;
 }
 
-/** 草稿当前用的模型与强度：选过的用选过的，否则用这个 Agent 新会话实际会用的默认（与 Runtime 建会话时的取法一致）。 */
+/** The model and effort the draft currently uses: the chosen ones if any were chosen, otherwise the default this agent's new session would actually use (matching how the Runtime picks it when creating a session). */
 export function draftSelection(driver: DriverInfo | null, choice: AgentChoice | undefined): { model: string | null; effort: string | null } {
   const mine = !!choice && (choice.driverId === undefined || choice.driverId === driver?.id);
   return {
@@ -64,7 +63,7 @@ export function draftSelection(driver: DriverInfo | null, choice: AgentChoice | 
   };
 }
 
-/** 草稿上叠一次改动。换了 Agent，原来的模型与强度不再适用，只留这次给的。 */
+/** Applies one change on top of a draft. If the agent was switched, the previous model and effort no longer apply, so only the values given in this change are kept. */
 export function applyAgentChange(choice: AgentChoice | undefined, current: DriverId | null, change: AgentChange): AgentChoice {
   if (change.driverId !== current) {
     const next: AgentChoice = { driverId: change.driverId };
@@ -83,8 +82,8 @@ function pick(change: AgentChange): Partial<AgentChoice> {
 }
 
 /**
- * 换模型时的改动：当前强度新模型也有就留着，否则回到模型自己的默认（null）。
- * 不认识新模型（不在列表里）时也回到默认，不替它猜。
+ * A model change: the current effort is kept if the new model also offers it; otherwise it falls back to the model's own default (null).
+ * If the new model is not recognized (not in the list), it also falls back to the default rather than guessing.
  */
 export function modelChange(driver: DriverInfo, model: string | null, effort: string | null): AgentChange {
   const next = effectiveModel(driver, model);
@@ -92,7 +91,7 @@ export function modelChange(driver: DriverInfo, model: string | null, effort: st
   return { driverId: driver.id, model, effort: keeps ? effort : null };
 }
 
-/** 这次实际会用哪个模型：选了的；没选时是 CLI 配置里的那个，再不然 Agent 自己标的默认。 */
+/** The model that will actually be used this time: the chosen one; if none was chosen, the one from the CLI configuration, and failing that, the default the agent itself marks. */
 export function effectiveModel(driver: DriverInfo | null, model: string | null): DriverModel | undefined {
   if (!driver) return undefined;
   if (model !== null) return driver.models.find((m) => m.id === model);
@@ -104,19 +103,19 @@ export function modelLabel(driver: DriverInfo | null, model: string | null): str
   return driver?.models.find((m) => m.id === model)?.label ?? model;
 }
 
-/** 选择器收起时的字样（原型 `harnessLabel`）：`Claude Code · Sonnet`。 */
+/** Label shown when the picker is collapsed (prototype `harnessLabel`): `Claude Code · Sonnet`. */
 export function harnessLabel(driver: DriverInfo | null, model: string | null): string {
   if (!driver) return AGENT_PICKER.detecting;
   return `${driver.name} · ${modelLabel(driver, model)}`;
 }
 
-/** 模型名打头常带的厂商或系列名：后面还有别的词时去掉（`Claude Opus 5.5` → `Opus`、`GPT-5.6 Sol` → `Sol`）。 */
+/** A vendor or family name at the start of a model name is removed when more words follow it (`Claude Opus 5.5` → `Opus`, `GPT-5.6 Sol` → `Sol`). */
 const MODEL_BRAND_WORDS = new Set(['claude', 'gpt', 'gemini', 'grok', 'kimi', 'codex']);
 
 /**
- * 输入区窄的时候模型只留级别名，不要版本号（原型 model-agent.js `compactModelLabel`，产品设计 §3.2.3）：
- * 去掉末尾的 `[1m]`、`(1M context)` 这类标注，带大写的词按连字符拆开（`GPT-6.1-Sol`），再去掉带数字的词（版本）和打头的厂商名。
- * 认不出的（剩下不是一两个词、原名超过四个词，或是 `gpt-6.1-sol` 这样全小写的一整个 id）原样返回，由样式截断。
+ * When the input area is narrow, the model shows only its tier name, without the version number (prototype model-agent.js `compactModelLabel`, product design §3.2.3):
+ * strip trailing annotations such as `[1m]` and `(1M context)`, split capitalized words apart with hyphens (`GPT-6.1-Sol`), then drop words containing digits (versions) and the leading vendor name.
+ * Names it cannot recognize (what remains is not one or two words, the original name has more than four words, or it is a whole all-lowercase id such as `gpt-6.1-sol`) are returned as is and truncated by the style.
  */
 export function compactModelLabel(label: string): string {
   const full = label.trim();
@@ -133,17 +132,17 @@ export function compactModelLabel(label: string): string {
   return named.join(' ');
 }
 
-/** 窄的时候收起来的字样：Agent 只剩图标，这里只给模型——「Agent 默认模型」写「默认」，其余取级别名。 */
+/** Label shown when collapsed and the agent is only an icon: only the model is shown here. “Agent default model” becomes “Default” (默认); anything else uses the tier name. */
 export function compactHarnessLabel(driver: DriverInfo | null, model: string | null): string {
   if (!driver) return AGENT_PICKER.detecting;
   if (model === null) return AGENT_PICKER.defaultMark;
   return compactModelLabel(modelLabel(driver, model));
 }
 
-/** Agent 图标（lobe-icons，`components/vendor-icons/<file>.svg`）：mono 的跟文字颜色，彩色的原样显示。 */
+/** Agent icon (lobe-icons, `components/vendor-icons/<file>.svg`): mono icons take the text color; colored ones are shown as they are. */
 export type AgentIconSpec = { kind: 'vendor'; file: string; mono: boolean } | { kind: 'letter'; letter: string };
 
-/** 内置 Agent → 图标文件（与原型 model-vendors.js `AGENT_ICONS` 是同一张表）。 */
+/** Built-in agent → icon file (the same table as prototype model-vendors.js `AGENT_ICONS`). */
 export const AGENT_ICON_FILES: Readonly<Record<string, { file: string; mono: boolean }>> = {
   claude: { file: 'anthropic', mono: true },
   codex: { file: 'codex', mono: false },
@@ -156,7 +155,7 @@ export const AGENT_ICON_FILES: Readonly<Record<string, { file: string; mono: boo
   kimi: { file: 'moonshot', mono: true },
 };
 
-/** 这个 Agent 用哪个图标：内置的查表；用户添加的 ACP 智能体（以及没有图标的）用名字首字母。 */
+/** Which icon this agent uses: built-in ones are looked up in the table; user-added ACP agents (and any without an icon) use the first letter of their name. */
 export function agentIcon(driver: Pick<DriverInfo, 'id' | 'name'> & { source?: DriverInfo['source'] }): AgentIconSpec {
   const known = driver.source === 'custom' ? undefined : AGENT_ICON_FILES[driver.id];
   if (known) return { kind: 'vendor', ...known };
@@ -164,12 +163,12 @@ export function agentIcon(driver: Pick<DriverInfo, 'id' | 'name'> & { source?: D
   return { kind: 'letter', letter: letter.toLocaleUpperCase() };
 }
 
-/** 账号描述的第一段（去掉「已登录」这类状态词）；没有时说「本机」。 */
+/** The first segment of the account description, with status words such as “logged in” (已登录) removed; “This machine” (本机) when there is none. */
 export function accountLabel(driver: DriverInfo): string {
   return (localizeText(driver.account, driver.accountRef) ?? '').split(' · ')[0]!.trim() || AGENT_PICKER.localAccount;
 }
 
-/** 行的状态（原型 `providerState`）：能用、没装、要处理（没登录 / 太旧 / 出错）、在设置里停用。行尾的图标据此画。 */
+/** Row status (prototype `providerState`): usable, not installed, needs attention (not logged in / too old / error), or disabled in Settings. The icon at the end of the row is drawn from this. */
 export type ProviderState = 'ready' | 'missing' | 'attention' | 'off';
 
 export function providerState(state: DriverState): ProviderState {
@@ -183,17 +182,17 @@ export interface ProviderRow {
   name: string;
   sub: string;
   state: ProviderState;
-  /** 能进第二级选模型。 */
+  /** Can proceed to pick a model at the second level. */
   ready: boolean;
-  /** 会话已经开始，不能换成它。 */
+  /** The session has already started, so it cannot be switched to this agent. */
   locked: boolean;
   selected: boolean;
 }
 
 /**
- * 第一级：每个 Agent 一行（原型 `providerRows`）。能用的写当前模型与账号；用不了的写原因，点了去设置。
- * `lockedTo`：会话有任务后 Agent 固定，其他 Agent 的行标出原因、不能选。
- * 「更多」四家与用户添加的没检测到时不列（`listedInPicker`）；当前选着的那个照列，免得收起时的字样找不到行。
+ * Level one: one row per agent (prototype `providerRows`). Usable agents show the current model and account; unusable ones show the reason, and tapping goes to Settings.
+ * `lockedTo`: once the session has a task, the agent is fixed; other agents' rows show why they cannot be selected.
+ * The four “More” agents and user-added agents are not listed when not detected (`listedInPicker`); the one currently selected is still listed, so the collapsed label has a matching row.
  */
 export function providerRows(
   drivers: readonly DriverInfo[],
@@ -217,7 +216,7 @@ export function providerRows(
 }
 
 export interface ModelRow {
-  /** null = Agent 默认模型。 */
+  /** null = Agent default model. */
   model: string | null;
   label: string;
   sub: string | null;
@@ -226,8 +225,7 @@ export interface ModelRow {
 const TIER_ORDER: ModelTier[] = ['balanced', 'max', 'fast'];
 
 /**
- * 模型显示的定位（设计稿 model-agent-setup.js `modelChoices` 的 `tierOf`）：「推荐」只挂在 `recommendedDriverModel` 选中的那一个上，
- * 模型表里别的 `balanced` 不标；「最强」「最快」照模型表。设置页的默认模型下拉用同一条规则。
+ * Placement of model labels (design spec model-agent-setup.js `modelChoices`, `tierOf`): “Recommended” is attached only to the one selected in `recommendedDriverModel`; other `balanced` models in the table are not labeled. “Most capable” and “Fastest” follow the model table. The default-model dropdown in Settings uses the same rule.
  */
 export function modelTierOf(driver: Pick<DriverInfo, 'id' | 'models'>): (model: DriverModel) => ModelTier | null {
   const recommended = recommendedDriverModel(driver.id, driver.models)?.id ?? null;
@@ -235,8 +233,8 @@ export function modelTierOf(driver: Pick<DriverInfo, 'id' | 'models'>): (model: 
 }
 
 /**
- * 第二级的模型表（原型 `modelRows`）：「Agent 默认模型」打头；选中却不在列表里的模型也露出来；
- * 其余按定位排（推荐、最强、最快，再是没标的），副文案标定位和 Agent 自己的默认。
+ * Model table at the second level (prototype `modelRows`): starts with “Agent default model”; a selected model that is not in the list is still shown.
+ * The rest are sorted by tier (recommended, most capable, fastest, then unlabeled), and the secondary text shows each tier and the agent's own default.
  */
 export function modelRows(driver: DriverInfo, selected: string | null): ModelRow[] {
   const config = driver.configModel;
@@ -250,7 +248,7 @@ export function modelRows(driver: DriverInfo, selected: string | null): ModelRow
   if (selected !== null && !driver.models.some((m) => m.id === selected)) {
     rows.push({ model: selected, label: selected, sub: AGENT_PICKER.notListed });
   }
-  // 次序按模型表自己的定位排；标签只给推荐的那一个挂「推荐」（`modelTierOf`）。
+  // Order follows the model table's own tiers; only the recommended one gets the “Recommended” label (`modelTierOf`).
   const tierOf = modelTierOf(driver);
   const rank = (m: DriverModel) => (m.tier ? TIER_ORDER.indexOf(m.tier) : TIER_ORDER.length);
   const sorted = driver.models.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i);
@@ -262,7 +260,7 @@ export function modelRows(driver: DriverInfo, selected: string | null): ModelRow
   return rows;
 }
 
-/** 推理强度的中文：低、中、高；认不出的原样显示（原生标签，没有就是 id）。 */
+/** Chinese labels for reasoning effort: 低 (low), 中 (medium), 高 (high). Unrecognized values are shown as is (native label; if there is none, the id). */
 export function effortLabel(id: string, nativeLabel?: string | null): string {
   return EFFORT_COPY[id]?.label ?? (nativeLabel || id);
 }
@@ -273,7 +271,7 @@ export interface EffortRow {
   sub: string | null;
 }
 
-/** 这个模型的推理强度（原型 data.js `efforts` 的下拉）。模型自己的默认那一行标「默认」。空表 = 不分强度。 */
+/** The reasoning effort options for this model (dropdown from prototype data.js `efforts`). The row for the model's own default is labeled “Default”. Empty table = no effort levels. */
 export function effortRows(model: DriverModel | undefined): EffortRow[] {
   if (!model) return [];
   return model.efforts.map((effort) => {
@@ -284,7 +282,7 @@ export function effortRows(model: DriverModel | undefined): EffortRow[] {
   });
 }
 
-/** 当前生效的强度：选了的；没选时是模型自己的默认。 */
+/** The effort currently in effect: the chosen one; if none was chosen, the model's own default. */
 export function currentEffort(model: DriverModel | undefined, effort: string | null): string | null {
   return effort ?? model?.defaultEffort ?? null;
 }

@@ -122,7 +122,7 @@ const findCount = style({
 });
 const findNote = style({ paddingX: 8, paddingY: 4, borderRadius: 'default', backgroundColor: 'red-100', font: 'ui-xs', color: 'red-1100' });
 const list = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingBottom: 12 });
-/** 一句（原型 .sb）：左边一道色条，正在播的那句蓝底，正在改的那句蓝框。与上一张的 8px 间距由 `cueSlot` 给。 */
+/** One cue (prototype .sb): a colored bar on the left, the cue being played gets a blue background, the cue being edited gets a blue border. The 8px gap to the previous card is supplied by `cueSlot`. */
 const cueCard = style({
   position: 'relative',
   overflow: 'hidden',
@@ -135,7 +135,7 @@ const cueCard = style({
   borderColor: { default: 'gray-200', isOn: 'blue-400', isEditing: 'blue-800' },
   backgroundColor: { default: 'gray-25', isOn: 'blue-100' },
 });
-/** 宏里没有逐边的边框色：左边那道色条单画一块。 */
+/** The style macro has no per-edge border colors: the colored bar on the left is drawn as its own block. */
 const cueAccent = style({
   position: 'absolute',
   top: 0,
@@ -204,12 +204,12 @@ const editor = style({
 const mark = style({ borderRadius: 'sm', backgroundColor: { default: 'yellow-200', isCurrent: 'orange-400' }, color: 'gray-900' });
 const muted = style({ font: 'ui-sm', color: 'gray-600', paddingY: 24, textAlign: 'center' });
 /**
- * 虚拟列表的一行：一张 cue 卡连同它上边线上的接缝（`cueCard` 裁掉了溢出，骑在边线上的钮只能挂在卡外面）。行与行之间不能有
- * 外边距（虚拟列表按行的 border-box 高排），卡间距是这一层的上内边距 8px，第一张离顶也是 8px。
+ * One row of the virtual list: a cue card together with the seam on its top edge (`cueCard` clips overflow, so the button straddling the edge can only hang outside the card). Rows must not have
+ * margins between them (the virtual list lays rows out by border-box height); the gap between cards is this layer's 8px top padding, and the first card is also 8px from the top.
  */
 const cueSlot = style({ position: 'relative', paddingTop: 8 });
-/** 「并入上一条」（原型 ui.css .sbseam）：骑在卡的上边线上、悬停才出（editor.css 的 .cc-cue-seam），不占布局。 */
-// 卡的上边线在这一层上沿往下 8px：钮高 20，上沿在 -2px，正好骑在线上（连焦点环探进上一行 4px，盖在它上面）。
+/** “并入上一条” (merge into previous) (prototype ui.css .sbseam): straddles the card's top edge and only appears on hover (.cc-cue-seam in editor.css); it takes no layout space. */
+// The card's top edge is 8px below the top of this layer: the button is 20px tall with its top at -2px, so it straddles the line exactly (the focus ring also reaches 4px into the row above, overlapping it).
 const seamRow = style({
   position: 'absolute',
   top: '[-2px]',
@@ -244,8 +244,8 @@ const seamPill = style({
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
 /**
- * 一行的估计高（量到之前顶着）：上内边距 8 + 卡的边框 2 + 上下内边距 18 + 卡头 20 + 卡头下 5，正文每行 22.4（14px × 1.6），
- * 正文比列表内容窄 24（边框 2、左右内边距 12 与 10）。
+ * Estimated height of a row (used until it is measured): top padding 8 + card border 2 + top and bottom padding 18 + card header 20 + space below the header 5; body text is 22.4 per line (14px × 1.6),
+ * and the body is 24 narrower than the list content (border 2, left and right padding 12 and 10).
  */
 const ROW_BASE = 53;
 const TEXT_SIZE = 14;
@@ -259,14 +259,14 @@ function captionItemsOf(sequence: Sequence): CaptionItem[] {
     .sort((a, b) => (order.get(a.trackId) ?? 0) - (order.get(b.trackId) ?? 0) || a.span.fromFrame - b.span.fromFrame);
 }
 
-/** 转录收尾时的提示：成功的带「撤销」。 */
+/** Notice when transcription finishes: successful ones have an “撤销” (Undo). */
 const transcribeToast: TranscribeDeps['toast'] = (kind, message, undo) =>
   ToastQueue[kind](message, undo ? { timeout: 5000, actionLabel: C.undo, onAction: undo, shouldCloseOnAction: true } : { timeout: 5000 });
 
 /**
- * 字幕面板（原型 §13.2、panel-subtitle.jsx）：一份字幕文档一张句子列表，改字、拆、并、查找替换都写成这份文档的新版本，
- * 一次动作一条撤销。顶上是样式入口卡与「画面上」的字幕轨条，轨条是选哪一份字幕来校对的唯一入口。还没有字幕时
- * 「生成字幕」（转录时间线上的素材，切成字幕）或导入字幕文件（SRT、WebVTT、ASS）；转录中显示任务的阶段与进度。
+ * Subtitle panel (prototype §13.2, panel-subtitle.jsx): one subtitle document is one list of cues; editing text, splitting, merging, and find-and-replace are each written as a new version of that document,
+ * one action per undo entry. At the top are the style entry card and the track strip for “画面上” (on the picture); the track strip is the only way to pick which subtitle to proofread. When there are no subtitles yet,
+ * “生成字幕” (transcribes the clips on the timeline and cuts them into subtitles) or importing a subtitle file (SRT, WebVTT, ASS); while transcribing, the task's stage and progress are shown.
  */
 export function SubtitlePanel({
   sequence,
@@ -286,7 +286,7 @@ export function SubtitlePanel({
   const focus = useSubtitleRun((s) => (videoId ? s.focus[videoId] : undefined));
   const run = useSubtitleRun((s) => (videoId ? (s.runs[videoId] ?? null) : null));
   const problem = useSubtitleRun((s) => (videoId ? (s.problems[videoId] ?? null) : null));
-  // 这一轮的任务；没有在跑的一轮时，看看别处（智能体、命令行）是不是正在转录这个视频。
+  // The task for this round; when no round is running, check whether something elsewhere (an agent, the command line) is transcribing this video.
   const job = useJobs((s) =>
     run
       ? run.jobId
@@ -295,13 +295,13 @@ export function SubtitlePanel({
       : (s.jobs.find((j) => j.kind === 'transcribe' && j.videoId === videoId && (isJobLive(j) || j.state === 'needs-reconciliation')) ??
         null),
   );
-  // 从这里提交的是转录流程（父任务）：进度看它的转写一步提交的 `transcribe` Job，取消取消父任务。
+  // Submissions from here are the transcription flow (the parent task): progress follows the `transcribe` Job submitted by its transcription step, and cancelling cancels the parent task.
   const step = useJobs((s) => (job ? transcribeStepJob(job, s.jobs) : null));
   const live = !!run || !!job;
-  // 等用户在后台任务里拿主意的转录（别处发起的）：不画进度，指过去。从这里发起的已经收尾成了问题卡，不再画一遍。
+  // Transcriptions waiting for the user to decide in a background task (started elsewhere): no progress is drawn, just point to it. Ones started from here have already wrapped up into an issue card, so they are not drawn again.
   const deciding = job && awaitingDecision(job) && problem?.kind !== 'decide' ? job : null;
 
-  // 刚生成或导入的那份：轨条选中它。
+  // The one just generated or imported: the track strip selects it.
   useEffect(() => {
     if (!videoId || !focus) return;
     const target = chips.find((c) => c.documentId === focus);
@@ -314,7 +314,7 @@ export function SubtitlePanel({
   const record = current ? documents[current.documentId] : undefined;
   const importer = useCaptionImport(sequence, (documentId) => videoId && focusDocument(videoId, documentId));
 
-  // 翻译：设置页（推进来的子页）、运行态、问题与收据、对照条。
+  // Translation: the settings page (a sub-page pushed in), the running state, issues and receipts, and the comparison bar.
   useEffect(() => bindTranslate({ runtime, toast: transcribeToast }), [runtime]);
   const flowOpen = useTranslateRun((s) => (videoId ? !!s.flow[videoId] : false));
   const galleryOpen = useCaptionGallery((s) => (videoId ? !!s.open[videoId] : false));
@@ -324,23 +324,23 @@ export function SubtitlePanel({
   const translating = useTranslateLive(videoId);
   const translations = useMemo(() => Object.values(documents).filter((d) => d.kind === 'translation'), [documents]);
   const compared = translations.find((d) => d.id === compare?.documentId) ?? translations[0] ?? null;
-  /** 译文 chip 对应的 `translation` 文档；原文 chip 为 null。 */
+  /** The `translation` document for a translation chip; null for a source chip. */
   const translationOf = (key: string | undefined) => {
     const chip = chips.find((c) => c.key === key);
     return chip?.kind === 'translation' ? (documents[chip.documentId]?.sourceDocumentId ?? null) : null;
   };
-  // 只看原文时列表是原文那份：选中的是译文轨时取与它配对的原文轨（样式的编辑对象仍是选中的那条）。
+  // When only the source is shown, the list is the source document: if a translation track is selected, use its paired source track (the style being edited is still the selected track).
   const currentTranslation = translationOf(current?.key);
   const original = currentTranslation
     ? pairedOriginal(chips, documents, documents[currentTranslation]?.sourceDocumentId ?? '')
     : current;
   const originalRecord = original ? documents[original.documentId] : undefined;
   const preferred: CompareMode = compared ? (compare?.mode ?? 'src') : 'src';
-  // 画面上没有原文可看（只剩译文轨、或还没放到画面上）时，列表落在译文上。
+  // When there is no source to show on the picture (only translation tracks remain, or it has not been placed on the picture yet), the list falls on the translation.
   const mode: CompareMode = preferred === 'src' && !originalRecord && compared ? 'trans' : preferred;
   const select = (key: string) => {
     if (!videoId) return;
-    // 选中一条译文轨：对照条切到这门，只看原文时顺便切到双语（原型 BC_SUBLIST.onPick）。选中原文轨不动列表。
+    // Selecting a translation track switches the comparison bar to that language, and if only the source was showing, also switches to bilingual (prototype BC_SUBLIST.onPick). Selecting a source track leaves the list as it is.
     const translation = translationOf(key);
     if (translation && documents[translation]) setCompare(videoId, { mode: mode === 'src' ? 'bi' : mode, documentId: translation });
     chooseChip(videoId, key);
@@ -438,7 +438,7 @@ export function SubtitlePanel({
   );
 }
 
-/** 选字幕文件、读出来、一笔事务落成文档加字幕实例。宿主没有读文件的接口，走浏览器的文件选择。 */
+/** Pick a subtitle file, read it, and in one transaction turn it into a document plus a subtitle instance. The host has no file-reading interface, so it uses the browser's file picker. */
 function useCaptionImport(sequence: Sequence, onImported: (documentId: Id) => void) {
   const { apply, undo } = useEditorActions();
   const editable = useVideo((s) => canEdit(s.video));
@@ -488,7 +488,7 @@ function useCaptionImport(sequence: Sequence, onImported: (documentId: Id) => vo
   return { input, editable, open: () => ref.current?.click() };
 }
 
-/** 文档的正文；新版本还在取时先用上一版，免得每改一次列表闪一下。 */
+/** The document body; while the new version is still being fetched, use the previous version so the list does not flicker on every edit. */
 function useLoadedBody(record: DocumentRecord): unknown {
   const body = useDocumentBody(record);
   const last = useRef<unknown>(undefined);
@@ -499,7 +499,7 @@ function useLoadedBody(record: DocumentRecord): unknown {
 interface Editing {
   id: string;
   caret: number | 'end';
-  /** 每次进入编辑都换一个：并进同一句之后编辑框要按新文字重来。 */
+  /** A new one is generated every time editing starts: after merging into the same cue, the edit box must start over with the new text. */
   token: number;
 }
 
@@ -509,7 +509,7 @@ interface Match extends TextRange {
 
 const NO_OPTIONS: FindOptions = { matchCase: false, wholeWord: false, regex: false };
 
-/** 命中按句归组，组内保持原来的先后。 */
+/** Hits are grouped by cue, keeping their original order within each group. */
 function groupById(matches: readonly Match[]): Map<string, Match[]> {
   const map = new Map<string, Match[]>();
   for (const match of matches) {
@@ -520,8 +520,8 @@ function groupById(matches: readonly Match[]): Map<string, Match[]> {
   return map;
 }
 
-// 整遍扫一次的派生结果按正文版本记在组件外（做法同文稿面板）：切回字幕面板重新挂载时直接取，不再重算。
-// 正文、句表都是不可变快照，换了版本就是新对象，旧的跟着回收。
+// The derived result of a full scan is cached outside the component, keyed by body version (same approach as the script panel): when switching back to the subtitle panel and it remounts, the cached result is used directly instead of being recomputed.
+// The body and cue table are immutable snapshots; a new version is a new object, and the old one is collected along with it.
 const cueLists = new WeakMap<object, CueList | null>();
 function cachedCues(body: unknown): CueList | null {
   if (typeof body !== 'object' || body === null) return listCues(body);
@@ -535,7 +535,7 @@ function cachedSentences(cues: CueList | null): number {
   return sentenceCounts.get(cues)!;
 }
 const speedCache = new WeakMap<CueList, Map<string, ReadonlyMap<string, ReturnType<typeof readingSpeed>>>>();
-/** 每句的阅读速度，按句表与语言缓存（语言只决定阈值，没有时与空串同一口径）。 */
+/** Reading speed for each cue, cached by cue table and language (the language only sets the threshold; when missing, it is treated the same as an empty string). */
 function cachedSpeeds(cues: CueList | null, language: string | undefined): ReadonlyMap<string, ReturnType<typeof readingSpeed>> {
   if (!cues) return new Map();
   let byLanguage = speedCache.get(cues);
@@ -552,15 +552,15 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
   const { apply, undo, seek } = useEditorActions();
   const editable = useVideo((s) => canEdit(s.video));
   const loaded = useLoadedBody(record);
-  // 刚写下去、新版本还没取回来的正文：后面连着的动作接着它改。
+  // Body just written whose new version has not come back yet: the actions chained after it build on it.
   const [local, setLocal] = useState<{ base: unknown; body: Json } | null>(null);
   const body = local && local.base === loaded ? local.body : loaded;
-  // 新版本一到就丢掉本地那份：撤销退回旧版本时，旧正文正是它当初的 base，不能再拿它冒充。
+  // As soon as the new version arrives, drop the local copy: when undo goes back to the old version, the old body is exactly the base it was built on, so it must not be reused in its place.
   useEffect(() => {
     if (local && local.base !== loaded) setLocal(null);
   }, [local, loaded]);
   const cues = useMemo(() => cachedCues(body), [body]);
-  // 句数的口径见 countSentences：按终止标点数，跨条接着数，没收尾的最后一段也算一句。
+  // For how cues are counted, see countSentences: count terminal punctuation, continue counting across cues, and a final unterminated segment also counts as one sentence.
   const sentences = useMemo(() => cachedSentences(cues), [cues]);
   const [editing, setEditingState] = useState<Editing | null>(null);
   const tokens = useRef(0);
@@ -584,7 +584,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     [record.language, cues],
   );
 
-  /** 每一句在序列上出现在哪（源素材时钟的经作用实例投过去，剪掉的不出现）。 */
+  /** Where each cue appears on the sequence (the source clip clock is projected through the applied instance; cut-away cues do not appear). */
   const occurrences = useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();
     const track = readCaptions(loaded);
@@ -616,15 +616,15 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     return cues.cues.flatMap((cue) => findRanges(cue.text, compiled.re!, options.wholeWord).map((range) => ({ ...range, id: cue.id })));
   }, [compiled, cues, options.wholeWord]);
   const byCue = useMemo(() => groupById(matches), [matches]);
-  /** 每句的阅读速度算一次：状态栏的超速条数与卡上的 cps 共用。 */
+  /** Reading speed per cue is computed once: the status bar's over-speed count and the cps on the cards share it. */
   const speeds = useMemo(() => cachedSpeeds(cues, language), [cues, language]);
   const fast = useMemo(() => [...speeds.values()].filter((speed) => speed.level === 'warn' || speed.level === 'bad').length, [speeds]);
-  // 卡上的动作：卡是 memo 的，拿这个不变的 ref 调最新的处理函数，播放时只重画进出「正在播」的两张。
+  // Card actions: the cards are memoized, so they call the latest handlers through this stable ref; during playback only the two cards entering or leaving “正在播” (playing) are redrawn.
   const actions = useRef<CueActions>(null!);
   const current = matches.length ? matches[Math.min(matchIndex, matches.length - 1)]! : null;
   useEffect(() => setMatchIndex(0), [query, options]);
 
-  // 虚拟列表：只挂视口前后一屏的卡，外加正在改的（编辑框卸掉会丢掉没提交的字、打断输入法组字）与查找命中的那一张。
+  // Virtual list: only the cards within one screen before and after the viewport are mounted, plus the one being edited (unmounting the edit box would lose uncommitted text and interrupt IME composition) and the one matching the search.
   const keys = useMemo(() => (cues?.cues ?? []).map((cue) => cue.id), [cues]);
   const cueIndex = useMemo(() => new Map(keys.map((key, index) => [key, index])), [keys]);
   const estimate = useCallback(
@@ -633,17 +633,17 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
   );
   const rows = useVirtualRows({ scrollRef: listRef, keys, estimate, pinned: [editing?.id, current?.id] });
   const { scrollToIndex, scrollTo } = rows;
-  // 播放跟随的开关（产品设计 §5.7）：手动滚开就停，本面板里跳播、重新开始播放时恢复。
+  // Playback-follow switch (product design §5.7): turns off when the user scrolls manually, and is restored when jumping or restarting playback in this panel.
   const follow = usePlaybackFollow(listRef);
-  // 播放时跟着正在播的那句，滚到看得见为止（只在换句、开始播放、退出编辑时滚一次）。
+  // During playback, scroll to keep the cue being played in view (scrolls only once when the cue changes, playback starts, or editing exits).
   useEffect(() => {
     if (!playing || !activeId || editing || follow.off.current) return;
     const index = cueIndex.get(activeId);
     if (index !== undefined) void scrollToIndex(index, { align: 'nearest' });
-    // 只在换句、开始播放、退出编辑时跟一次。
+    // Follow only once, when the cue changes, playback starts, or editing exits.
   }, [activeId, playing, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** 本面板里的跳播（点时间、点卡片、查找跳转）：恢复跟随。 */
+  /** Jumps in this panel (clicking a time, clicking a card, search navigation) restore following. */
   const seekTo = (cue: ListCue) => {
     const at = occurrences.get(cue.id)?.[0]?.start ?? (cues?.clock === 'sequence' ? cue.start : null);
     if (at === null) return;
@@ -654,7 +654,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     if (!current || !cues) return;
     const index = cueIndex.get(current.id);
     if (index === undefined) return;
-    // 先把那一张卡居中，挂上量过之后再把高亮那几个字对到视口中间。
+    // First center that card; after it mounts and has been measured, center the highlighted characters in the viewport.
     void scrollToIndex(index, { align: 'center' }).then((done) => {
       const list = listRef.current;
       const mark = list?.querySelector('[data-match-current]');
@@ -664,13 +664,13 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
       scrollTo(list.scrollTop + at.top - box.top - (list.clientHeight - at.height) / 2);
     });
     seekTo(cues.cues[index]!);
-    // 只在跳到另一条命中时定位。
+    // Only position when jumping to a different match.
   }, [current?.id, current?.start]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (body === undefined) return <div className={muted}>{C.readingCues}</div>;
   if (!cues) return <div className={muted}>{C.unsupportedDoc}</div>;
 
-  /** 写一个新版本：成功了提示带「撤销」，失败了丢掉本地那份。 */
+  /** Write a new version: on success the notice has an “撤销” (Undo); on failure, drop the local copy. */
   const write = async (next: Json, label: Localized, done: string) => {
     if (!editable) return;
     setLocal({ base: loaded, body: next });
@@ -705,7 +705,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     setEditing({ id: result.id, caret: 0 });
     void write(result.body, EditLabel.splitSubtitle(), C.splitDone);
   };
-  /** 并不了（到头了、说话人不同）时返回 false，接着编辑。 */
+  /** Returns false when merging is not possible (end reached, different speakers), and editing continues. */
   const merge = (cue: ListCue, value: string, direction: -1 | 1): boolean => {
     const result = mergeCue(source, cue.id, value, direction);
     if ('refused' in result) {
@@ -718,7 +718,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     void write(result.body, EditLabel.mergeSubtitles(), direction < 0 ? C.mergedUp : C.mergedDown);
     return true;
   };
-  /** 接缝上的「并入上一条」：不进编辑，直接并。 */
+  /** “并入上一条” (merge into previous) on a seam: no editing, merges directly. */
   const mergeUp = (cue: ListCue) => {
     const result = mergeCue(source, cue.id, null, -1);
     if ('refused' in result) {
@@ -728,7 +728,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     void write(result.body, EditLabel.mergeSubtitles(), C.mergedUp);
   };
   const replace = (targets: Match[]) => {
-    // 按句归组、按 id 查句：全部替换时命中与句子都上千，不能逐个命中扫一遍句表。
+    // Group by cue and look up cues by id: during replace-all there can be thousands of hits and cues, so the cue table must not be scanned once per hit.
     const byId = new Map(cues.cues.map((cue) => [cue.id, cue]));
     const texts = new Map<string, string>();
     let count = 0;
@@ -951,7 +951,7 @@ function FindBar({
   );
 }
 
-/** 点中的那个字在文字里的位置（文字里夹着高亮也算得对）。 */
+/** Position of the clicked character within the text (correct even when highlights are interleaved in the text). */
 function caretIn(element: HTMLElement): number | null {
   const selection = window.getSelection();
   if (!selection || !selection.rangeCount) return null;
@@ -963,14 +963,14 @@ function caretIn(element: HTMLElement): number | null {
   return before.toString().length;
 }
 
-/** 卡上的动作（CueEditor 每次渲染换成最新的一份，卡经 ref 调）。 */
+/** Card actions (CueEditor replaces them with a fresh set on every render; cards call them through a ref). */
 interface CueActions {
   seek(cue: ListCue): void;
   begin(cue: ListCue, caret: number | 'end'): void;
   commit(cue: ListCue, value: string): void;
   cancel(): void;
   split(cue: ListCue, value: string, at: number): void;
-  /** 并不了时返回 false，接着编辑。 */
+  /** Returns false when merging is not possible, and editing continues. */
   merge(cue: ListCue, value: string, direction: -1 | 1): boolean;
   mergeUp(cue: ListCue): void;
 }
@@ -992,15 +992,15 @@ const CueCard = memo(function CueCard({
   current,
   actions,
 }: {
-  /** 虚拟列表量这一行的 ref（按 key 不变）。 */
+  /** Ref the virtual list uses to measure this row (stable per key). */
   measure: (element: HTMLElement | null) => void;
-  /** 一共几句（列表项的 aria-setsize）。 */
+  /** Total number of cues (the list item's aria-setsize). */
   count: number;
-  /** 上边线上的「并入上一条」：能并时是 `'merge'`，说话人不同时是 `'speaker'`（显示原因、不能按），不挂时 null。 */
+  /** “并入上一条” (merge into previous) on the top edge: `'merge'` when merging is possible, `'speaker'` when the speakers differ (shows the reason and cannot be clicked), null when it is not shown. */
   seam: 'merge' | 'speaker' | null;
   cue: ListCue;
   index: number;
-  /** 这一句在序列上第一次出现的时刻；没出现（剪掉了）是 null。 */
+  /** The moment this cue first appears on the sequence; null if it does not appear (cut away). */
   at: number | null;
   speed: ReturnType<typeof readingSpeed>;
   on: boolean;
@@ -1083,7 +1083,7 @@ const CueCard = memo(function CueCard({
   );
 });
 
-/** 时间那一格：一颗没有外框的按钮。 */
+/** The time cell: a button without a frame. */
 function ActionButtonLike({ missing, onPress, children }: { missing: boolean; onPress(): void; children: ReactNode }) {
   return (
     <RACButton
@@ -1114,8 +1114,8 @@ function Highlighted({ text, matches, current }: { text: string; matches: Match[
 }
 
 /**
- * 改一句（旧版 `cue_edit.rs` 的键位）：Enter 在光标处拆、在两端提交；行首 ⌫ 并进上一条，行尾 ⌦ 并进下一条；
- * ⌘Enter 或失焦提交，Esc 放弃，Shift+Enter 换行。输入法组字时的 Enter 不算。
+ * Editing a cue (key bindings from the old `cue_edit.rs`): Enter splits at the cursor, and Enter at either end commits; ⌫ at the start of the line merges into the previous cue, ⌦ at the end of the line merges into the next cue;
+ * ⌘Enter or losing focus commits, Esc discards, Shift+Enter inserts a line break. Enter during IME composition does not count.
  */
 function CueTextEditor({
   initial,
@@ -1133,7 +1133,7 @@ function CueTextEditor({
   onMerge(value: string, direction: -1 | 1): boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  // 键位已经处理过这一次编辑，失焦时不再提交。
+  // The key handler has already handled this edit, so losing focus does not commit it again.
   const handled = useRef(false);
   const fit = () => {
     const element = ref.current;

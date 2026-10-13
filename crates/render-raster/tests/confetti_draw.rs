@@ -1,13 +1,11 @@
-//! confetti 的 DrawOp golden：10 款样式 × 6 个时刻（设计稿 §4.5 / §9）。
+//! DrawOp golden for confetti: 10 styles × 6 moments (design doc §4.5 / §9).
 //!
-//! confetti **没有素材源**，输入只有 `(配方, 覆盖参数, 元素本地时刻, 元素盒)`，
-//! 因此夹具自带一份 `cases.json`（与 `core/fixtures/progress/cases.json` 平级、
-//! 互不引用）。比法同样是**序列化文本逐字节比对**。
+//! Confetti has **no asset source**. Its input is only `(recipe, override parameters, element-local time, element box)`, so the fixture carries its own `cases.json` (at the same level as `core/fixtures/progress/cases.json`, and not referencing it). The comparison method is likewise **byte-for-byte comparison of serialized text**.
 //!
 //! ```bash
 //! cd core
 //! cargo test -p ccut-render --test confetti_draw
-//! cargo test -p ccut-render --test confetti_draw -- --ignored   # 确认过再重生成
+//! cargo test -p ccut-render --test confetti_draw -- --ignored   # regenerate once the output has been checked
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -19,23 +17,16 @@ use render_raster::source::{
 };
 use serde_json::{Value, json};
 
-/// 元素本地时刻（秒）。`0.0` 是「第一波刚出生」（continuous 在 t=0 只有 0 号
-/// 粒子可能活着；burst 整波同时出生）；[`TILE_FRAME`] 是目录磁贴的静止帧；
-/// `12.0` 超过所有配方的 `lifeSec`，考的是连续发射 / 重复爆发的第 N 轮，以及
-/// `interval: 0` 只爆一次的样式在这里必须是空帧。
+/// Element-local time in seconds. `0.0` is “the first wave has just been born” (for continuous, at t=0 only particle 0 can be alive; for burst, the whole wave is born at once). [`TILE_FRAME`] is the still frame of the catalog tile. `12.0` exceeds every recipe's `lifeSec`, testing the Nth round of continuous emission / repeated bursts, and styles with `interval: 0` (burst once) must be an empty frame here.
 const TIMES: [f64; 6] = [0.0, 0.4, 1.2, 2.5, TILE_FRAME, 12.0];
-/// 目录磁贴的静止帧（秒），与 `apps/cuccut` 的 `CONFETTI_THUMB_TIME`、原型
-/// `panel-elements-tile.jsx` 的 `TILE_T` 同一个数。
+/// Still-frame time of the catalog tile (seconds). It is the same number as `CONFETTI_THUMB_TIME` in `apps/cuccut` and as `TILE_T` in the prototype `panel-elements-tile.jsx`.
 ///
-/// 第 234 轮从 1.2 提到 4.5：1.2 s 上连续款才发了一两拍（`hearts-petals`
-/// 只有 19 颗、还全挤在顶边那一成里），磁贴看上去是几粒尘。4.5 s 是十款里
-/// 「最弱的一款也最强」的时刻——爆发款四种间隔（1.6 / 1.8 / 2.0 / 2.4 s）
-/// 在这里都已经炸过且散开，连续款已进稳态。
+/// In round 234 it was raised from 1.2 to 4.5. At 1.2 s the continuous styles had only fired a beat or two (`hearts-petals` had only 19 pieces, all crowded into the top tenth), so the tile looked like a few specks of dust. 4.5 s is the moment where “even the weakest of the ten is at its best”: the four burst intervals (1.6 / 1.8 / 2.0 / 2.4 s) have all already burst and spread out by then, and the continuous styles have reached steady state.
 const TILE_FRAME: f64 = 4.5;
 const CANVAS: (f64, f64) = (1920.0, 1080.0);
 const PIXEL_SCALE: f64 = 2.0;
 const SEED: u64 = 20_260_909;
-/// 磁贴静止帧上每款至少要有的活粒子数。
+/// The minimum number of live particles each style must have on the tile still frame.
 const TILE_MIN_ALIVE: u64 = 24;
 
 fn fixture_dir() -> PathBuf {
@@ -71,7 +62,7 @@ fn hex(color: &str) -> [f32; 4] {
     ]
 }
 
-/// 配方缺省 + 固定种子：`colors` / `shapes` 用配方的，倍率全 1。
+/// Recipe defaults with a fixed seed: `colors` / `shapes` use the recipe's own values, and all multipliers are 1.
 fn params(recipe: &CatalogueRecipe) -> ConfettiParams {
     let body = recipe.confetti().expect("confetti 配方");
     ConfettiParams {
@@ -152,7 +143,7 @@ fn pretty(value: &Value) -> Vec<u8> {
     out
 }
 
-/// 重新生成夹具。确认过再跑：
+/// Regenerate the fixtures. Run only after confirming the output:
 /// `cargo test -p ccut-render --test confetti_draw -- --ignored`
 #[test]
 #[ignore]
@@ -163,7 +154,7 @@ fn write_confetti_draw_fixture() {
     std::fs::write(dir.join("expected-draw.json"), pretty(&expected_json())).unwrap();
 }
 
-/// 日常门禁：当场重算再**逐字节**比。
+/// Everyday gate: recompute on the spot, then compare **byte for byte**.
 #[test]
 fn the_confetti_fixtures_are_up_to_date() {
     let dir = fixture_dir();
@@ -177,13 +168,10 @@ fn the_confetti_fixtures_are_up_to_date() {
     }
 }
 
-/// **10 款在磁贴静止帧上都画得满**：[`TILE_FRAME`] 上每款至少 [`TILE_MIN_ALIVE`]
-/// 颗粒子，且指令流形状恒为 `ClipPath … PopClip`、路径按形状去重
-/// （path 数 ≤ 形状数 + 1）。
+/// **All 10 styles are fully painted on the tile still frame**: on [`TILE_FRAME`], every style has at least [`TILE_MIN_ALIVE`]
+/// particles, and the instruction stream always has the shape `ClipPath … PopClip`, with paths deduplicated by shape (path count ≤ shape count + 1).
 ///
-/// 下限不是「> 0」：磁贴是用户认款的唯一凭据，一两颗粒子的帧技术上「活着」
-/// 却什么也没告诉他——第 234 轮之前这一条卡在 `ops >= 3`，而 `hearts-petals`
-/// 在旧的 1.2 s 上只有 19 颗、全挤在顶边一成里，门禁照样是绿的。
+/// The floor is not “> 0”: the tile is the user's only basis for recognizing a style, and a frame with one or two particles is technically “alive” but tells the user nothing. Before round 234 this check was stuck at `ops >= 3`, and `hearts-petals` at the old 1.2 s had only 19 particles, all crowded into the top tenth, yet the gate still passed.
 #[test]
 fn every_style_is_live_at_the_tile_frame() {
     let styles = timeline_confettis();
@@ -213,7 +201,7 @@ fn every_style_is_live_at_the_tile_frame() {
     }
 }
 
-/// 负时刻与空帧：`t < 0` 一条 op 都不压；`interval: 0` 的爆发款在寿命之后是空帧。
+/// Negative times and empty frames: at `t < 0`, no ops are pushed at all; burst styles with `interval: 0` are empty frames after their lifetime.
 #[test]
 fn negative_time_and_finished_bursts_push_nothing() {
     for recipe in timeline_confettis() {
@@ -230,7 +218,7 @@ fn negative_time_and_finished_bursts_push_nothing() {
         assert_eq!(pushed, 0, "{} 在 t<0 不得画", recipe.qualified_id());
         assert!(builder.finish().ops.is_empty());
     }
-    // 单次爆发：用户覆盖 interval = 0 后，t = 12 s 一定是空帧。
+    // Single burst: after the user overrides interval = 0, t = 12 s must be an empty frame.
     let recipe = timeline_confettis()
         .iter()
         .find(|r| r.qualified_id().ends_with("golden-starburst"))
@@ -250,8 +238,7 @@ fn negative_time_and_finished_bursts_push_nothing() {
     assert_eq!(pushed, 0);
 }
 
-/// 乱序采样 == 顺序采样（导出并行 / 拖播放头的前提）：同一时刻不论之前采过
-/// 什么都得到同一指纹；换种子指纹必变。
+/// Shuffled sampling == sequential sampling (the precondition for parallel export and for dragging the playhead): at the same moment, regardless of what was sampled before, you get the same fingerprint; changing the seed must change the fingerprint.
 #[test]
 fn sampling_is_order_independent_and_seeded() {
     for recipe in timeline_confettis() {
@@ -282,7 +269,7 @@ fn sampling_is_order_independent_and_seeded() {
     }
 }
 
-/// `settle`：给定元素时长后，最后 `lifeSec` 秒不再发射，片尾自然清空。
+/// `settle`: given the element duration, the last `lifeSec` seconds emit nothing, so the end of the clip naturally clears.
 #[test]
 fn settle_empties_the_frame_before_the_element_ends() {
     let recipe = timeline_confettis()
@@ -318,21 +305,14 @@ fn settle_empties_the_frame_before_the_element_ends() {
 }
 
 // ---------------------------------------------------------------------------
-// 铺满整幅（第 234 轮）
+// Covering the full frame (round 234)
 // ---------------------------------------------------------------------------
 
-/// **阻力不得把粒子钉死在画面里**。
+/// **Drag must not pin particles inside the frame**.
 ///
-/// 闭式核 `axis(p0, v0, a, k, τ)` 在 `a == 0 && k > 0` 时的位移有硬渐近线
-/// `v0 / k`——再长的寿命也越不过去。`hearts-petals` 曾经带着 `gravityPx: 0`
-/// 配 `dragY: 0.4`，纵向渐近线只有 `136 / 0.4 = 340` 参考 px，而它是从顶边
-/// （`spreadY: 0`）撒下来的，整幅高度都得靠飞行铺，于是画面永远只铺到 51%，
-/// 下半幅是空的（用户报的「只铺满了一半」）。
+/// The closed-form kernel `axis(p0, v0, a, k, τ)` has a hard asymptote `v0 / k` for displacement when `a == 0 && k > 0`, so no lifetime, however long, can get past it. `hearts-petals` once had `gravityPx: 0` with `dragY: 0.4`. Its vertical asymptote was only `136 / 0.4 = 340` reference px. It falls from the top edge (`spreadY: 0`), so the whole frame height has to be covered by flight, and the frame would stop at 51% forever, leaving the lower half empty (the user's report: “only fills half”).
 ///
-/// 门禁按轴看**发射器本来就铺开了多少**：某一轴上发射带已经占满元素盒
-/// （`spread == 100`，例如顶边款的横向）时，覆盖不依赖飞行，阻力随便设；
-/// 发射带在这一轴上是窄的，剩下的 `(100 − spread)%` 就必须靠位移补上，
-/// 而没有加速度（重力 / 风）时位移的上限只有 `speed / drag`。
+/// The gate checks, per axis, **how much the emitter already spreads**. When on some axis the emission band already covers the full element box (`spread == 100`, e.g. the horizontal of a top-edge style), coverage does not depend on flight, and drag can be set freely. When the emission band is narrow on that axis, the remaining `(100 − spread)%` must be made up by displacement, and without acceleration (gravity / wind) the displacement is capped at `speed / drag`.
 #[test]
 fn drag_never_pins_particles_to_a_frontier_inside_the_frame() {
     const REF_SHORT: f64 = render_raster::source::confetti::kernel::REF_SHORT;
@@ -367,8 +347,7 @@ fn drag_never_pins_particles_to_a_frontier_inside_the_frame() {
             if drag <= 0.0 || accel.unwrap_or(0.0) != 0.0 {
                 continue;
             }
-            // 这一轴上还得靠飞行铺开的比例，折成参考短边上的像素（保守下界：
-            // 长边方向要求更高，但按短边算已经能拦住整幅留白）。
+            // The share that flight must still cover on this axis, converted to pixels on the reference short edge (a conservative lower bound: the long-edge direction demands more, but measuring against the short edge already catches blank space across the whole frame).
             let gap = (100.0 - spread).max(0.0) / 100.0 * REF_SHORT;
             assert!(
                 speed / drag >= gap,
@@ -382,19 +361,16 @@ fn drag_never_pins_particles_to_a_frontier_inside_the_frame() {
     }
 }
 
-/// **从顶边或整幅带发射的款必须铺到底边**。
+/// **Styles that emit from the top edge or from a full-frame band must reach the bottom edge**.
 ///
-/// 上一条是配方层的必要条件，这一条是画面层的实测：把发射器覆盖到画面上半段
-/// （顶边撒落）或整幅（全屏带）的那几款采到稳态（`t = 6 s`，已过所有配方的
-/// `lifeSec`），画面最上一成与最下一成都必须有粒子。底部礼炮 / 低空爆发那几款
-/// 顶部本来就该是空的（那是它们的形，不是缺陷），按发射器带自动豁免。
+/// The previous check is a necessary condition at the recipe level; this one is a measurement at the frame level. For the styles whose emitter covers the upper half of the frame (scattering from the top edge) or the whole frame (a full-screen band), sample at steady state (`t = 6 s`, past every recipe's `lifeSec`); both the top tenth and the bottom tenth of the frame must contain particles. For styles such as bottom confetti cannons and low-altitude bursts, the top is supposed to be empty (that is their shape, not a defect), and they are automatically exempted based on their emitter band.
 #[test]
 fn styles_seeded_across_the_frame_reach_both_edges() {
     let mut checked = 0;
     for recipe in timeline_confettis() {
         let body = recipe.confetti().unwrap();
         let emitters = body.recipe.array("emitters").expect("配方必须有发射器");
-        // 发射器带的上下沿（元素盒百分比）。
+        // Top and bottom edges of the emitter band (percent of the element box).
         let (mut top, mut bottom) = (f64::MAX, f64::MIN);
         for e in emitters {
             let y = e.get("y").and_then(Value::as_f64).unwrap_or(50.0);
@@ -402,7 +378,7 @@ fn styles_seeded_across_the_frame_reach_both_edges() {
             top = top.min(y - h / 2.0);
             bottom = bottom.max(y + h / 2.0);
         }
-        // 只考「从画面上半段起跑」的款：顶边撒落（带顶沿在 20% 以上）或整幅带。
+        // Only checks styles that “start in the upper half of the frame”: top-edge scatter (band's top edge at 20% or more) or a full-frame band.
         if top > 20.0 {
             continue;
         }

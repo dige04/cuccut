@@ -2,32 +2,29 @@ import type { FoldPlan } from './shorts-fold.ts';
 import type { TranscriptParagraph, TranscriptWord } from './transcript-cut.ts';
 
 /**
- * 子视频进文稿调起止（产品设计 §5.10「改一支短视频」，原型 model-shorts-cut.js `cutEntryAction` / `childLanding` / `entryAnchor`）：
- * 起止就在文稿里调——片段外的话划掉保留，点一下放回来，再剪就是普通的剪（§4.6）。这里只是入口的规则：
- * 横幅那一格写什么、点了去哪；子视频打开时右栏落在哪；进文稿时滚到哪。文案不在这里，界面按 `kind` 取。
+ * Entering the script from a child video to adjust its in and out points (product design §5.10 “Change a short video”; prototype model-shorts-cut.js `cutEntryAction` / `childLanding` / `entryAnchor`): in and out are adjusted right in the script. Words outside the clip are struck through and kept; clicking one brings it back, and cutting again is an ordinary cut (§4.6). This module holds only the entry rules: what the banner cell says, where a click goes, where the right column lands when a child video opens, and where the script scrolls to on entry. The copy is not here; the UI picks it by `kind`.
  */
 
 /**
- * 横幅入口那一格：
- * - `adjust`：右栏不在文稿（或收着），「去文稿调整」——切到文稿、剪辑打开、滚到片段前面的剪缝，记下来处。
- * - `backResult`：从 AI 工具 Tab 跳进文稿、这一支有结果页且这个表面有 AI 工具，「回到结果页」。
- * - `back`：从别的面板跳进文稿，「回到<那个面板>」（`railLabel` 是它在工具栏上的名字）。
- * - `result`：直接落在文稿（或跳过来之后又换过面板），有结果页且有 AI 工具时「看结果页」。
- * - `null`：都不是，不摆。
+ * The cell in the banner entry:
+ * - `adjust`: the right column is not on the script (or is collapsed); “去文稿调整”（Adjust in script) — switch to the script, open cut editing, scroll to the cut seam in front of the clip, and record the origin.
+ * - `backResult`: jumped into the script from the AI tools tab, this branch has a result page, and this surface has an AI tool; “回到结果页”（Back to result page).
+ * - `back`: jumped into the script from another panel; “回到<那个面板>”（Back to <that panel>), where `railLabel` is that panel's name on the toolbar.
+ * - `result`: landed directly on the script (or switched panels after jumping over); has a result page and an AI tool; “看结果页”（View result page).
+ * - `null`: none of these; nothing is shown.
  */
 export type CutEntryKind = 'adjust' | 'back' | 'backResult' | 'result';
 
 export interface CutEntryAction<T extends string> {
   kind: CutEntryKind | null;
-  /** 点了去哪个面板；`adjust` 是文稿，`result` / `backResult` 是 AI 工具。 */
+  /** Which panel a click goes to: `adjust` is the script; `result` and `backResult` are the AI tools. */
   to: T | 'transcript' | 'aitools' | null;
-  /** `back` 时来处的工具栏名字。 */
+  /** For `back`, the origin's name on the toolbar. */
   railLabel: string | null;
 }
 
 /**
- * `tab` 是右栏现在的面板（收着时传 null）；`origin` 是「去文稿调整」/「调起止」记下的来处（别的路径换面板、换视频时清掉）；
- * `hasResult` 这一支有结果页，`ai` 这个表面有 AI 工具，`railLabel` 是来处在工具栏上的名字。
+ * `tab` is the panel currently in the right column (pass null when it is collapsed); `origin` is the origin recorded by “去文稿调整” / “调起止”（adjust in/out) (cleared when another path switches panels or videos); `hasResult` means this branch has a result page; `ai` means this surface has AI tools; `railLabel` is the origin's name on the toolbar.
  */
 export function cutEntryAction<T extends string>(
   tab: T | null,
@@ -45,9 +42,7 @@ export function cutEntryAction<T extends string>(
 }
 
 /**
- * 打开一部视频时右栏落在哪、要不要打开文稿的剪辑：交接带了面板（结果页点卡、横幅回到原片带的是 AI 工具 Tab）就听它；
- * 没带——Space、会话里的视频卡、父视频「切出的短视频」、直接打开——子视频落在文稿并打开剪辑（片段外的话划掉显示）；
- * 别的视频有内容落在文稿、空的落在视频。`hasItems` 还不知道（快照没到）时不动。
+ * Which panel the right column lands on when a video opens, and whether the script's cut editing opens: when a handoff carries a panel (clicking a card on the result page, or the banner's return-to-original carries the AI tools tab), follow it. When none is carried — Space, a video card in the session, a “切出的短视频”（cut-out short video) from its parent video, or a direct open — a child video lands on the script and opens cut editing (words outside the clip shown struck through); another video with content lands on the script, and an empty one lands on the video. While `hasItems` is not yet known (the snapshot has not arrived), nothing is changed.
  */
 export function landingPanel<T extends string>(options: {
   handoff: T | null | undefined;
@@ -60,12 +55,11 @@ export function landingPanel<T extends string>(options: {
   return { tab: options.hasItems ? 'transcript' : 'video', cut: false };
 }
 
-/** 进文稿时滚到的那一行：片段前面那条剪缝，或片段第一句所在的段（`paragraphs` 里的下标）。 */
+/** The line to scroll to when entering the script: the cut seam in front of the clip, or the paragraph (its index in `paragraphs`) holding the clip's first sentence. */
 export type EntryAnchor = { fold: 'before' } | { paragraph: number };
 
 /**
- * 「去文稿调整」/「调起止」滚到哪：片段前面收着话就落在那条剪缝（铺开过的也还在）；没有剪缝（片段前面没几句）就落在
- * 片段第一个留下的词所在的段。`words` 是文稿的词，`paragraphs` 是去掉收起的词之后画出来的段。整支剪光了（没有折叠）时 null。
+ * Where “去文稿调整” / “调起止”（adjust in/out) scrolls to: if words in front of the clip are collapsed, it lands on that cut seam (ones already spread out are still there); if there is no seam (few sentences before the clip), it lands on the paragraph holding the clip's first kept word. `words` are the script's words, and `paragraphs` are the paragraphs drawn after removing collapsed words. null when the whole branch has been cut away (no folding).
  */
 export function entryAnchor(
   plan: FoldPlan | null,

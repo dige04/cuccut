@@ -14,7 +14,7 @@ import { pl } from './save-location.pl.ts';
 import { tr } from './save-location.tr.ts';
 import { vi } from './save-location.vi.ts';
 
-/** `packages/jobs/src/pipelines/save-location.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/save-location.ts`. */
 const en = {
   notDirectory: 'Not a folder',
   unwritable: (p: { dir: string; problem: string }) => `Can't write to the save location: ${p.dir} (${p.problem})`,

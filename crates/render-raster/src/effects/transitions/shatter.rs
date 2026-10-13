@@ -1,52 +1,42 @@
-//! `transition.shatter@1`：出场画面像玻璃一样碎开，碎片从爆心飞散、旋转、受重力
-//! 下落并淡出，露出入场画面。
+//! `transition.shatter@1`: the outgoing picture shatters like glass. Fragments fly out from the point of impact, rotate, fall under gravity and fade out, revealing the incoming picture.
 //!
-//! **只有一次离屏**：出场画面就是 Transition pass 的 `from` 输入（录制器对每侧
-//! 只录一次），这里只把它切片、逐片做仿射变换再叠回去，不会把出场镜头复制 N 份。
+//! **Only one offscreen pass**: the outgoing picture is the `from` input of the Transition pass. The recorder records each side only once. Here the picture is only sliced, and each piece is transformed affinely and composited back. The outgoing shot is not copied N times.
 //!
-//! 切片是对数极坐标里的抖动网格 Voronoi：以爆心为原点，`U = ln(1 + r/r₀)`、
-//! `V = θ`，各按网格边长归一化，每格一个带 seed 抖动的种子点，像素归属查 3×3
-//! 邻格（`V` 方向首尾相接）。对数半径让靠近爆心的碎片小、外圈的大，格边在画面里
-//! 是放射裂纹加同心弧——一眼是「玻璃被击碎」。
+//! The slicing is a jittered grid Voronoi in log-polar space. It is centered on the point of impact, with `U = ln(1 + r/r₀)` and `V = θ`. Each axis is normalized by the grid cell size. Each cell has one seed point, jittered by the seed. A pixel's cell is found by checking the 3×3 neighboring cells, and `V` wraps around from the last cell to the first. The logarithmic radius makes fragments near the point of impact small and fragments on the outer ring large. The cell edges appear as radial cracks plus concentric arcs, so at a glance it reads as glass being shattered.
 //!
-//! 每片的运动只由 `(seed, 片号)` 与 progress 决定（可 seek、无增量时钟）：
-//! 离爆心越远越晚起飞（裂纹先传开），`τ = clamp((p − delay) / (1 − delay))`；
-//! 位移 = 方向 × force × 速度 × τ(2 − τ) + (0, gravity × τ²)；旋转与向镜头的放大
-//! 都与 τ 成正比；`τ ≥ 0.55` 之后线性淡出，`τ = 1` 时完全透明。
-//! 还没起飞的碎片停在原位，只在片与片的边界上画一道渐显的亮裂纹（`crack`）。
+//! Each piece's motion depends only on `(seed, piece index)` and progress. It is seekable and has no incremental clock. The farther a piece is from the point of impact, the later it takes off, so the cracks spread outward first: `τ = clamp((p − delay) / (1 − delay))`. Displacement = direction × force × speed × τ(2 − τ) + (0, gravity × τ²). Rotation and the zoom toward the camera are both proportional to τ. After `τ ≥ 0.55` the piece fades out linearly, and at `τ = 1` it is fully transparent. Pieces that have not taken off yet stay in place. Along the boundaries between pieces, only a bright crack that fades in is drawn (`crack`).
 //!
-//! 确定性：超越函数一律走 `libm`（native 与 wasm 同一份实现），其余是 f64
-//! 四则运算；`progress = 0` / `1` 直接拷贝 `from` / `to`，端点逐字节成立。
+//! Determinism: the transcendental functions all go through `libm`, so native and wasm use the same implementation. The rest is f64 arithmetic. `progress = 0` and `1` copy `from` and `to` directly, so the endpoints are byte-for-byte exact.
 
 use motion::rng::splitmix64_unit;
 
-/// 对数半径的零点：爆心附近这块圆里的碎片最小。
+/// Zero point of the log radius: the fragments inside the small circle near the point of impact are the smallest.
 const CORE_RADIUS: f64 = 0.04;
-/// 种子点在格内的抖动幅度（格宽的比例）。
+/// Jitter amplitude of the seed points inside a cell (as a fraction of the cell width).
 const JITTER: f64 = 0.85;
-/// 裂纹在 progress 的这一段里渐显。
+/// The cracks fade in during this part of progress.
 const CRACK_RAMP: f64 = 0.06;
-/// 起飞延迟：离爆心最远的碎片比最近的晚这么多 progress。
+/// Takeoff delay: the fragment farthest from the point of impact takes off this much later in progress than the nearest one.
 const DELAY_SPREAD: f64 = 0.3;
 const DELAY_JITTER: f64 = 0.06;
-/// 碎片从 τ = FADE_START 开始淡出。
+/// Fragments start fading out at τ = FADE_START.
 const FADE_START: f64 = 0.55;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Shatter {
-    /// 目标片数（取整，4..=400）；实际片数按网格取整后相近。
+    /// Target number of pieces (rounded to an integer, 4..=400). The actual count is close to this after the grid is rounded.
     pub pieces: f64,
     pub seed: u64,
-    /// 爆心，画布宽 / 高的比例。
+    /// Point of impact, as a ratio of the canvas width and height.
     pub cx: f64,
     pub cy: f64,
-    /// 飞散距离（像素，已按画布短边换算）。
+    /// Flight distance (pixels, already converted from the canvas short side).
     pub force: f64,
-    /// 每片在整段转场里最多转过的角度（度）。
+    /// Maximum angle each piece turns over the whole transition (degrees).
     pub rotation: f64,
-    /// 重力下落距离（像素，已换算；负值向上）。
+    /// Gravity fall distance (pixels, already converted. Negative values are upward).
     pub gravity: f64,
-    /// 裂纹亮度 `0..1`，0 = 不画裂纹。
+    /// Crack brightness, `0..1`. 0 = draw no cracks.
     pub crack: f64,
 }
 
@@ -58,7 +48,7 @@ struct Grid {
     r0: f64,
     ox: f64,
     oy: f64,
-    /// `[ring][spoke]` 的种子点，格单位（未取模的 `V`）。
+    /// Seed points for `[ring][spoke]`, in cell units (the unwrapped `V`).
     seeds: Vec<(f64, f64)>,
 }
 
@@ -75,7 +65,7 @@ impl Grid {
         }
         let u_max = libm::log(1.0 + r_max / r0).max(1e-6);
         let pieces = params.pieces.round().clamp(4.0, 400.0);
-        // 方格：2π·u_max / c² = pieces。
+        // Grid cells: 2π·u_max / c² = pieces.
         let tau = std::f64::consts::TAU;
         let cell = (tau * u_max / pieces).sqrt();
         let n_theta = ((tau / cell).round() as usize).max(3);
@@ -125,7 +115,7 @@ impl Grid {
                 let wrapped = spoke.rem_euclid(n_theta);
                 let label = ring as usize * self.n_theta + wrapped as usize;
                 let (seed_u, seed_v) = self.seeds[label];
-                // 种子点的 V 按未取模的格号展开，跨 ±π 的邻格距离才对。
+                // Seed points expand `V` by unwrapped cell index, so the distances to neighbor cells across ±π are correct.
                 let seed_v = seed_v + (spoke - wrapped) as f64;
                 let (eu, ev) = (u - seed_u, v - seed_v);
                 let distance = eu * eu + ev * ev;
@@ -157,14 +147,14 @@ fn over(out: &mut [u8], offset: usize, src: [f64; 4]) {
         let value = src[channel] + f64::from(out[offset + channel]) * keep;
         out[offset + channel] = value.round().clamp(0.0, 255.0) as u8;
     }
-    // 预乘不变量：RGB 不超过 alpha。
+    // Premultiplication invariant: RGB does not exceed alpha.
     let alpha = out[offset + 3];
     for channel in 0..3 {
         out[offset + channel] = out[offset + channel].min(alpha);
     }
 }
 
-/// 双线性取样（像素中心坐标、边缘夹取），预乘值原样插值。
+/// Bilinear sampling (pixel-center coordinates, edge clamping). Premultiplied values are interpolated as they are.
 #[inline]
 fn bilinear(data: &[u8], width: u32, height: u32, x: f64, y: f64) -> [f64; 4] {
     let max_x = f64::from(width - 1);
@@ -233,7 +223,7 @@ pub fn shatter(
         }
     }
 
-    // 底图是入场画面：碎片飞走的地方露出它。
+    // The base layer is the incoming picture. It shows through where the fragments fly away.
     out.copy_from_slice(to);
 
     let short = f64::from(width.min(height));
@@ -277,7 +267,7 @@ pub fn shatter(
         let delay = DELAY_SPREAD * near + DELAY_JITTER * random(0);
         let tau = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
         if tau <= 0.0 {
-            // 还没起飞：原位画这一片，外加裂纹。
+            // Not yet taken off: draw this piece in its original place, plus the cracks.
             for y in piece.y0..=piece.y1 {
                 for x in piece.x0..=piece.x1 {
                     let index = (y * width + x) as usize;
@@ -324,7 +314,7 @@ pub fn shatter(
         }
         let (dx, dy) = (dir_x * travel, dir_y * travel + fall);
         let (cos, sin) = (libm::cos(angle), libm::sin(angle));
-        // 源包围盒（像素边）正变换后的外接框。
+        // The axis-aligned bounding box, in pixel edges, of the source after the forward transform.
         let (sx0, sy0) = (f64::from(piece.x0), f64::from(piece.y0));
         let (sx1, sy1) = (f64::from(piece.x1) + 1.0, f64::from(piece.y1) + 1.0);
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (
@@ -365,13 +355,13 @@ pub fn shatter(
         });
     }
 
-    // 越靠近镜头（放大越多）的碎片越后画；同深度按片号，顺序完全确定。
+    // Pieces closer to the camera (scaled up more) are drawn later. Pieces at the same depth are ordered by piece index, so the order is fully deterministic.
     flights.sort_by(|a, b| a.depth.total_cmp(&b.depth).then(a.label.cmp(&b.label)));
     for flight in &flights {
         let (x0, y0, x1, y1) = flight.bbox;
         for y in y0..=y1 {
             for x in x0..=x1 {
-                // 逆变换：q → 源坐标。
+                // Inverse transform: q → source coordinates.
                 let (qx, qy) = (
                     f64::from(x) + 0.5 - flight.cx - flight.dx,
                     f64::from(y) + 0.5 - flight.cy - flight.dy,

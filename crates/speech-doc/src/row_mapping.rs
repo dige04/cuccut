@@ -1,7 +1,6 @@
-//! ASR row 顺序与 `g<row>.<column>[~atom]` 词 id 的公共映射。
+//! Shared mapping between ASR row order and `g<row>.<column>[~atom]` word ids.
 //!
-//! `build_doc`、说话人行归属还原与初始软分段必须重放同一套「去空行、按
-//! start 稳定排序」规则。集中在这里可避免三个读者各自猜行号。
+//! `build_doc`, speaker row-attribution recovery, and the initial soft segmentation must replay the same rule: "drop empty rows, then stable-sort by start". Keeping it centralized here prevents the three readers from each guessing row numbers.
 
 use std::collections::BTreeMap;
 
@@ -11,7 +10,7 @@ use crate::doc::TranscriptDoc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RowWordMap {
-    /// 经过 `build_doc` 行序重放后的零基行号。
+    /// Zero-based row number after replaying the row order through `build_doc`.
     pub row_index: usize,
     pub first_word_index: usize,
     pub last_word_index: usize,
@@ -22,7 +21,7 @@ pub fn sorted_nonempty_rows(rows: &[RowIn]) -> Vec<&RowIn> {
         .iter()
         .filter(|row| !row.text.trim().is_empty())
         .collect::<Vec<_>>();
-    // slice::sort_by 是稳定排序；同 start 的输入行保持文件顺序。
+    // slice::sort_by is a stable sort; input rows with the same start keep their file order.
     sorted.sort_by(|left, right| left.start.total_cmp(&right.start));
     sorted
 }
@@ -36,7 +35,7 @@ pub fn row_has_atoms(row: &RowIn) -> bool {
     }
 }
 
-/// 解析 `g<row>.<column>[~atom]`，返回零基 `(row, column, atom)`。
+/// Parse `g<row>.<column>[~atom]`, returning zero-based `(row, column, atom)`.
 pub fn row_column_of(id: &str) -> Option<(usize, usize, usize)> {
     let (row, column) = id.strip_prefix('g')?.split_once('.')?;
     if row.is_empty() || column.is_empty() {
@@ -68,8 +67,7 @@ pub fn has_initial_row_ids(doc: &TranscriptDoc) -> bool {
             .all(|word| row_column_of(&word.id).is_some())
 }
 
-/// 只返回真正产出词的行。首词按最小 `(column, atom)` 选，不假设列号从 0
-/// 开始；空原子行占据行号但不会产生映射。
+/// Returns only the rows that actually produce words. The first word is chosen by the smallest `(column, atom)`, without assuming column numbers start at 0. Empty-atom rows occupy a row number but produce no mapping.
 pub fn row_word_maps(doc: &TranscriptDoc, rows: &[RowIn]) -> Vec<RowWordMap> {
     let sorted = sorted_nonempty_rows(rows);
     let mut by_row: BTreeMap<usize, Vec<(usize, usize, usize)>> = BTreeMap::new();

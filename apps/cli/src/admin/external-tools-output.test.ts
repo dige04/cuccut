@@ -160,11 +160,11 @@ describe('外部工具的输出', () => {
 
   it('更新：逐行跟随输出，截掉的行用一行说明代替；结束时说更新到了哪个版本', () => {
     const run = (output: string, lines: number) => ({ line: 'brew upgrade yt-dlp', output, lines, truncated: false, exitCode: null });
-    // 只打印写完的行；没写完的那一行留到结束。
+    // Print only lines that have been fully written. The unfinished line is held until the end.
     expect(newCommandLines(run('a\nb\nprogress 50%', 2), 0, false)).toEqual({ lines: ['a', 'b'], printed: 2 });
     expect(newCommandLines(run('a\nb\nc\n', 3), 2, false)).toEqual({ lines: ['c'], printed: 3 });
     expect(newCommandLines(run('a\nb\nc\ndone', 3), 3, true)).toEqual({ lines: ['done'], printed: 4 });
-    // 任务记录只留末尾：前面截掉而没打印过的行。
+    // The task record keeps only the tail: lines cut off from the front that were never printed.
     expect(newCommandLines(run('y\nz\n', 10), 3, false)).toEqual({ lines: ['…（省略 5 行）', 'y', 'z'], printed: 10 });
     expect(newCommandLines(run('y\nz\n', 10), 9, false)).toEqual({ lines: ['z'], printed: 10 });
     expect(newCommandLines(run('', 0), 0, true)).toEqual({ lines: [], printed: 0 });

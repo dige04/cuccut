@@ -14,7 +14,7 @@ import { pl } from './stage-media-copy.pl.ts';
 import { tr } from './stage-media-copy.tr.ts';
 import { vi } from './stage-media-copy.vi.ts';
 
-/** 主媒体放不出来时舞台卡片的文案（model/stage-media.ts；译文在 `stage-media-copy.<语言>.ts`）。 */
+/** Stage card copy shown when the main media cannot be played (model/stage-media.ts; translations are in `stage-media-copy.<language>.ts`). */
 const en = {
   titles: {
     missing: 'Source file not found',
@@ -28,12 +28,12 @@ const en = {
     'outside-project': 'The recorded location is outside the project folder that holds this video, and CucCut doesn’t read files there.',
   } satisfies Record<MissingAsset['reason'], string>,
   unplayable: (error: string) => `The player can’t open this file: ${error}.`,
-  /** 字幕照常播（预览的时钟不依赖媒体）；缺的是画面与原声，或者只是一段声音。 */
+  /** Subtitles still play as usual (the preview clock does not depend on the media); what is missing is the picture and original sound, or only an audio clip. */
   tail: {
     video: 'Subtitles still play; there’s just no picture or original sound.',
     audio: 'Subtitles still play; you just won’t hear this audio.',
   },
-  /** 原因与结尾两句接成正文。 */
+  /** The reason and the closing sentence are joined into the body text. */
   body: (cause: string, tail: string) => `${cause} ${tail}`,
   volume: (volume: string) => `The file is on “${volume}”. Connect that drive and it will recover automatically.`,
   more: (count: number) => `${count} more video or audio ${count === 1 ? 'asset' : 'assets'} can’t be played either.`,

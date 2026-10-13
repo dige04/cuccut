@@ -1,19 +1,19 @@
-//! 解码：ffmpeg 子进程把画面解成原始 RGBA 帧，经管道读出（`-f rawvideo -pix_fmt rgba`）。
+//! Decoding: an ffmpeg child process decodes the picture into raw RGBA frames, read out through a pipe (`-f rawvideo -pix_fmt rgba`).
 //!
-//! 每个视频实例一条顺序的解码流：导出的源时刻单调向前，流也只向前读，不逐帧重新定位。帧的时刻来自 `showinfo`
-//! 滤镜（stderr），与 stdout 上的帧一一对应；`-copyts` 保留素材自己的时间戳，减去素材的 PTS 原点就是源时刻。
-//! 取帧的规则与预览的媒体元素一致：取时间戳不晚于目标时刻的最后一帧（目标在第一帧之前时取第一帧，读到末尾之后停在最后一帧）。
-//! 倒退或向前跳得很远时重开解码流，从目标前的关键帧开始。ffmpeg 按旋转元数据自动转正。
-//! 每条流有一个读帧线程，把管道里的帧读在取帧前面（有界的几帧），取帧时 ffmpeg 已经解好的帧不用再等管道。
+//! Each video instance has one sequential decode stream: the source times requested only move forward, and the stream only reads forward, without repositioning frame by frame. Frame times come from the `showinfo`
+//! filter (stderr), matched one-to-one with the frames on stdout; `-copyts` keeps the media's own timestamps, and subtracting the media's PTS origin gives the source time.
+//! Frame selection follows the same rule as the preview's media element: take the last frame whose timestamp is not later than the target time (if the target is before the first frame, take the first frame; after reading to the end, stay on the last frame).
+//! When going backwards or jumping far forward, the decode stream is reopened, starting from the keyframe before the target. ffmpeg applies rotation metadata automatically.
+//! Each stream has a frame-reading thread that reads frames from the pipe ahead of frame selection (a bounded number of frames), so when a frame is needed, a frame ffmpeg has already decoded does not have to wait on the pipe.
 //!
-//! ## 原生解码优先
+//! ## Native decoding first
 //!
-//! 调用方可以用 [`VideoDecoder::with_native`] 挂一个平台原生的顺序帧源（[`FrameFeed`]，比如 AVFoundation 的
-//! asset reader）。挂上之后每条解码流先走原生帧源，取帧规则、倒退 / 远跳重开、读帧线程与缓冲回收都和 ffmpeg 流一样；
-//! 原生帧源的时间戳必须与 ffmpeg `-copyts` 同一条时间线（素材自己的 PTS，含 PTS 原点）。
-//! 原生打不开、读到一半失败、或一帧都交不出时，这个解码器**就此改走 ffmpeg**（从同一时刻接着解），
-//! 回落原因记在 [`VideoDecoder::fallback`]；回落引起的重开不计入 [`VideoDecoder::restarts`]。
-//! 本 crate 不依赖任何平台库：原生帧源由调用方构造。
+//! The caller can attach a platform-native sequential frame source with [`VideoDecoder::with_native`] (a [`FrameFeed`], for example an AVFoundation
+//! asset reader). Once attached, each decode stream tries the native frame source first; frame selection, reopening on rewind or long jump, the frame-reading thread and buffer recycling all work the same as for ffmpeg streams.
+//! The native frame source's timestamps must be on the same timeline as ffmpeg `-copyts` (the media's own PTS, including the PTS origin).
+//! If the native source cannot be opened, fails midway, or cannot hand out a single frame, this decoder **switches permanently to ffmpeg** (continuing decoding from the same moment),
+//! and the reason is recorded in [`VideoDecoder::fallback`]; reopens caused by the fallback are not counted in [`VideoDecoder::restarts`].
+//! This crate depends on no platform library: the native frame source is constructed by the caller.
 
 use std::io::{BufRead, BufReader, ErrorKind, Read};
 use std::path::{Path, PathBuf};
@@ -24,13 +24,13 @@ use std::thread::JoinHandle;
 
 use crate::{MediaError, Picture, Tools, tail};
 
-/// 帧时间戳与目标时刻的容差（秒）：精确的源时刻换成浮点之后与帧的时间戳可能差在末位。
+/// Tolerance (seconds) between a frame's timestamp and the target time: an exact source time converted to floating point may differ from the frame timestamp in the last digit.
 const EPSILON: f64 = 1e-4;
-/// 目标比下一帧还晚这么多秒时，重新定位比一路解过去快。
+/// When the target is this many seconds later than the next frame, seeking is faster than decoding through.
 const JUMP_SECONDS: f64 = 5.0;
-/// 重开时从目标之前这么多秒的位置找关键帧。
+/// When reopening, look for a keyframe this many seconds before the target.
 const SEEK_MARGIN: f64 = 0.05;
-/// 读帧线程最多读在前面这么多帧（每帧一个缓冲，1080p 的 RGBA 一帧 8.3 MB）。
+/// The frame-reading thread reads at most this many frames ahead (one buffer per frame; one 1080p RGBA frame is 8.3 MB).
 const READ_AHEAD: usize = 2;
 
 struct Timed {
@@ -38,35 +38,35 @@ struct Timed {
     picture: Picture,
 }
 
-/// 读帧线程交出来的：一帧（像素与素材时间线上的原始时间戳）、流读完了、或读失败。
+/// What the frame-reading thread hands back: a frame (its pixels and its original timestamp on the media timeline), end of stream, or a read failure.
 enum Chunk {
     Frame(Vec<u8>, f64),
     End,
     Failed(String),
-    /// 原生帧源失败（原因代码、说明）：解码器据此回落 ffmpeg。
+    /// Native frame source failure (reason code, message): the decoder falls back to ffmpeg on this basis.
     NativeFailed(&'static str, String),
 }
 
-/// 平台原生的顺序帧源：按呈现顺序交出 RGBA 帧。
+/// A platform-native sequential frame source: hands out RGBA frames in presentation order.
 ///
-/// 每帧写进 `data`（长度必须恰为 `width * height * 4`，紧密排布、top-down、alpha 不透明），返回该帧在素材时间线上的
-/// 时间戳（秒，与 ffmpeg `-copyts` 一致，**不**减 PTS 原点）；读完返回 `None`，失败返回说明。
-/// 帧源只在读帧线程里构造与使用，不要求 `Send`。
+/// Each frame is written into `data` (its length must be exactly `width * height * 4`, tightly packed, top-down, alpha opaque), and returns the frame's
+/// timestamp on the media timeline (seconds, consistent with ffmpeg `-copyts`, **not** minus the PTS origin); returns `None` at the end, or a message on failure.
+/// The frame source is constructed and used only on the frame-reading thread, so it does not need `Send`.
 pub trait FrameFeed {
     fn next_into(&mut self, data: &mut Vec<u8>) -> Result<Option<f64>, String>;
 }
 
-/// 打开原生帧源：`(素材路径, 起点（素材时间线上的秒）, 输出宽, 输出高)`。第一帧应当覆盖起点。
+/// Open a native frame source: `(media path, start (seconds on the media timeline), output width, output height)`. The first frame should cover the start.
 pub type FeedOpener = Arc<dyn Fn(&Path, f64, u32, u32) -> Result<Box<dyn FrameFeed>, String> + Send + Sync>;
 
-/// 挂到 [`VideoDecoder`] 上的原生解码：后端名（诊断用，如 `avfoundation`）与帧源的打开方式。
+/// Native decoding attached to a [`VideoDecoder`]: the backend name (for diagnostics, e.g. `avfoundation`) and how to open the frame source.
 #[derive(Clone)]
 pub struct NativeDecode {
     pub backend: &'static str,
     pub open: FeedOpener,
 }
 
-/// 原生解码回落 ffmpeg 的记录。`reason` 是英文代码：`open-failed`、`read-failed`、`no-frames`。
+/// Record of a native decode falling back to ffmpeg. `reason` is an English code: `open-failed`, `read-failed`, `no-frames`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodeFallback {
     pub reason: &'static str,
@@ -74,16 +74,16 @@ pub struct DecodeFallback {
 }
 
 struct Stream {
-    /// ffmpeg 解码进程；原生帧源没有子进程。
+    /// The ffmpeg decode process; a native frame source has no child process.
     child: Option<Child>,
-    /// 读帧线程读在前面的帧（有界）。
+    /// Frames read ahead by the frame-reading thread (bounded).
     frames: Option<Receiver<Chunk>>,
-    /// 用过的帧缓冲送回读帧线程。
+    /// Used frame buffers are sent back to the frame-reading thread.
     recycle: Sender<Vec<u8>>,
     log: Arc<Mutex<String>>,
-    /// 读 stderr（`showinfo` 的时间戳与日志）的线程。
+    /// Thread that reads stderr (the `showinfo` timestamps and log).
     reader: Option<JoinHandle<()>>,
-    /// 读 stdout 帧的线程。
+    /// Thread that reads frames from stdout.
     puller: Option<JoinHandle<()>>,
 }
 
@@ -93,7 +93,7 @@ impl Stream {
             let _ = child.kill();
             let _ = child.wait();
         }
-        // 读帧线程可能卡在队列满的发送上：先丢掉接收端，再等它。
+        // The frame-reading thread may be stuck sending into a full queue: drop the receiver first, then wait for it.
         drop(self.frames.take());
         if let Some(puller) = self.puller.take() {
             let _ = puller.join();
@@ -104,7 +104,7 @@ impl Stream {
     }
 }
 
-/// 读帧线程：从 ffmpeg 的 stdout 一帧一帧读满，配上 stderr 线程给的时间戳，读在合成前面最多 [`READ_AHEAD`] 帧。
+/// Frame-reading thread: reads frames one by one from ffmpeg's stdout until the stream ends, pairs each with the timestamp from the stderr thread, and reads at most [`READ_AHEAD`] frames ahead of compositing.
 fn pull_frames(mut stdout: ChildStdout, times: Receiver<f64>, spares: Receiver<Vec<u8>>, frames: SyncSender<Chunk>, len: usize) {
     loop {
         let mut data = spares.try_recv().unwrap_or_default();
@@ -124,8 +124,8 @@ fn pull_frames(mut stdout: ChildStdout, times: Receiver<f64>, spares: Receiver<V
     }
 }
 
-/// 原生读帧线程：在线程里打开帧源（帧源不必 `Send`），一帧一帧读在合成前面，规则同 [`pull_frames`]。
-/// 打不开、读失败、尺寸不符或一帧都没有，都以 [`Chunk::NativeFailed`] 交回，由解码器回落 ffmpeg。
+/// Native frame-reading thread: opens the frame source inside the thread (the frame source need not be `Send`) and reads frames one by one ahead of compositing, with the same rules as [`pull_frames`].
+/// If it cannot be opened, a read fails, the size does not match, or there are no frames at all, that is handed back as [`Chunk::NativeFailed`], and the decoder falls back to ffmpeg.
 fn pull_native(native: NativeDecode, path: PathBuf, from: f64, size: (u32, u32), spares: Receiver<Vec<u8>>, frames: SyncSender<Chunk>) {
     let mut feed = match (native.open)(&path, from, size.0, size.1) {
         Ok(feed) => feed,
@@ -161,7 +161,7 @@ impl Drop for Stream {
     }
 }
 
-/// 一个视频实例的顺序解码流。
+/// The sequential decode stream of one video instance.
 pub struct VideoDecoder {
     tools: Tools,
     path: PathBuf,
@@ -171,24 +171,24 @@ pub struct VideoDecoder {
     stream: Option<Stream>,
     current: Option<Timed>,
     next: Option<Timed>,
-    /// 没有解码流时留着的一个帧缓冲，下一条流先用它。
+    /// One frame buffer kept while there is no decode stream; the next stream uses it first.
     spare: Vec<u8>,
     ended: bool,
-    /// 启动过解码流：之后再启动（倒退、远跳、关掉之后再用到）都算重开。
+    /// Whether a decode stream has been started before: any later start (after a rewind, a long jump, or reuse after being shut down) counts as a reopen.
     started: bool,
     restarts: u32,
-    /// 当前帧的代号：每换上一帧加一，重开之后接着数，不回头。
+    /// Generation number of the current frame: incremented each time a new frame is swapped in; it keeps counting across reopens and never goes back.
     generation: u64,
-    /// 挂着的原生解码；回落 ffmpeg 之后清空，不再尝试。
+    /// The attached native decoder; cleared after falling back to ffmpeg, and not tried again.
     native: Option<NativeDecode>,
-    /// 原生回落的记录（只记第一次）。
+    /// Record of the native fallback (only the first one is kept).
     fallback: Option<DecodeFallback>,
-    /// 当前流从哪个源时刻起解（回落时没有当前帧就从这里接着解）。
+    /// The source time the current stream started decoding from (if there is no current frame when falling back, decoding continues from here).
     from: f64,
 }
 
 impl VideoDecoder {
-    /// `origin` 是素材的 PTS 原点（秒），源时刻 0 对应它；画面缩放到 `width`×`height` 输出。第一次取帧时才启动 ffmpeg。
+    /// `origin` is the media's PTS origin (seconds), and source time 0 corresponds to it. Output frames are scaled to `width`×`height`. ffmpeg starts only on the first frame fetch.
     pub fn new(tools: &Tools, path: &Path, origin: f64, width: u32, height: u32) -> VideoDecoder {
         VideoDecoder {
             tools: tools.clone(),
@@ -210,35 +210,35 @@ impl VideoDecoder {
         }
     }
 
-    /// 先走原生帧源，失败再回落 ffmpeg（见模块文档）。要在第一次取帧之前挂上。
+    /// Try the native frame source first, falling back to ffmpeg on failure (see the module docs). Must be attached before the first frame fetch.
     pub fn with_native(mut self, native: NativeDecode) -> VideoDecoder {
         self.native = Some(native);
         self
     }
 
-    /// 顺序导出里只有素材闲置后又用到、倒退或远跳时才不是 0。
-    /// 顺序导出里应当是 0。原生回落 ffmpeg 引起的重开不算。
+    /// In sequential export this is non-zero only when the media is reused after being idle, or on a rewind or long jump.
+    /// In sequential export it should be 0. Reopens caused by a native fallback to ffmpeg are not counted.
     pub fn restarts(&self) -> u32 {
         self.restarts
     }
 
-    /// 正在用（或将要用）的解码后端：原生后端名，或 `ffmpeg`。
+    /// The decode backend in use (or about to be used): the native backend name, or `ffmpeg`.
     pub fn backend(&self) -> &'static str {
         self.native.as_ref().map_or("ffmpeg", |native| native.backend)
     }
 
-    /// 原生解码回落 ffmpeg 的记录；没有挂原生或没回落时为 `None`。
+    /// Record of a native decode falling back to ffmpeg; `None` if no native decoder was attached or no fallback happened.
     pub fn fallback(&self) -> Option<&DecodeFallback> {
         self.fallback.as_ref()
     }
 
-    /// 源时刻 `seconds` 的画面。
+    /// The picture at source time `seconds`.
     pub fn frame_at(&mut self, seconds: f64) -> Result<&Picture, MediaError> {
         self.advance(seconds)?;
         Ok(&self.current.as_ref().expect("advance 成功就有当前帧").picture)
     }
 
-    /// 走到源时刻 `seconds` 的画面（规则同 [`frame_at`](Self::frame_at)），返回当前帧的代号：与上一次相同说明还是同一帧。
+    /// Advance to the picture at source time `seconds` (same rules as [`frame_at`](Self::frame_at)), and return the current frame's generation number: the same value as last time means it is still the same frame.
     pub fn advance(&mut self, seconds: f64) -> Result<u64, MediaError> {
         let target = seconds + EPSILON;
         let behind = self.current.as_ref().is_some_and(|c| target < c.seconds);
@@ -279,9 +279,9 @@ impl VideoDecoder {
         }
     }
 
-    /// 把当前帧的像素换出来，留下 `spare`（长度不限，之后回收给读帧线程）：调用方拿走像素，不再复制一遍。
-    /// 换出之后当前帧的像素不再有效，直到 [`advance`](Self::advance) 换上新的一帧（代号变了）；
-    /// 同一帧不要再用 [`frame_at`](Self::frame_at) 读。没有当前帧时为 `None`。
+    /// Swap the current frame's pixels out, leaving `spare` in their place (any length; it is later recycled to the frame-reading thread). The caller takes the pixels and does not copy them again.
+    /// After the swap, the current frame's pixels are no longer valid until [`advance`](Self::advance) swaps in a new frame (the generation changes);
+    /// do not read the same frame again with [`frame_at`](Self::frame_at). `None` if there is no current frame.
     pub fn swap_current(&mut self, spare: Vec<u8>) -> Option<Picture> {
         let current = self.current.as_mut()?;
         let data = std::mem::replace(&mut current.picture.data, spare);
@@ -292,7 +292,7 @@ impl VideoDecoder {
         })
     }
 
-    /// 停下解码进程，留着最后一帧之外的状态都丢掉。
+    /// Stop the decode process and drop all state except the last frame.
     pub fn close(&mut self) {
         if let Some(mut stream) = self.stream.take() {
             stream.stop();
@@ -315,7 +315,7 @@ impl VideoDecoder {
         self.open_stream(seconds)
     }
 
-    /// 从源时刻 `seconds` 开一条解码流（有原生就走原生），不动当前帧。
+    /// Open a decode stream from source time `seconds` (native if available), leaving the current frame untouched.
     fn open_stream(&mut self, seconds: f64) -> Result<(), MediaError> {
         if let Some(mut stream) = self.stream.take() {
             stream.stop();
@@ -328,8 +328,8 @@ impl VideoDecoder {
             let _ = recycle.send(spare);
         }
         if let Some(native) = self.native.clone() {
-            // 原生帧源与 ffmpeg `-copyts` 同一条时间线：起点要加上 PTS 原点。原生 reader 交出的第一帧就覆盖起点，
-            // 不必像 ffmpeg 那样往前留余量找关键帧。
+            // The native frame source uses the same timeline as ffmpeg `-copyts`, so the start must include the PTS origin. The first frame the native reader hands out already covers the start,
+            // so there is no need to leave a margin before it to find a keyframe, as ffmpeg does.
             let from = (self.origin + seconds).max(0.0);
             let path = self.path.clone();
             let size = (self.width, self.height);
@@ -398,7 +398,7 @@ impl VideoDecoder {
         Ok(())
     }
 
-    /// 用过的帧缓冲：有解码流时送回读帧线程，否则留一个给下一条流。
+    /// Used frame buffer: sent back to the frame-reading thread when a decode stream exists, otherwise kept for the next stream.
     fn recycle(&mut self, data: Vec<u8>) {
         match &self.stream {
             Some(stream) => {
@@ -408,8 +408,8 @@ impl VideoDecoder {
         }
     }
 
-    /// 原生帧源失败：记下原因、摘掉原生，从当前帧（没有就从这条流的起点）起改开 ffmpeg 流。当前帧留着，
-    /// 之后读到的帧照常按"不晚于目标的最后一帧"替换它。不计入重开次数。
+    /// Native frame source failure: record the reason, detach the native source, and open an ffmpeg stream from the current frame (or from this stream's start if there is none). The current frame is kept,
+    /// and frames read afterwards replace it as usual with "the last frame not later than the target". Not counted as a reopen.
     fn fall_back(&mut self, reason: &'static str, message: String) -> Result<(), MediaError> {
         let Some(native) = self.native.take() else {
             return Err(MediaError::new("EXPORT_DECODE_FAILED", message));
@@ -424,7 +424,7 @@ impl VideoDecoder {
         self.open_stream(resume)
     }
 
-    /// 读下一帧（读帧线程读好了就不等）；流结束时为 `None`。进程失败、一帧都没有时报错。
+    /// Read the next frame (if the frame-reading thread has already read it, do not wait); `None` at the end of the stream. Reports an error if the process fails or there are no frames at all.
     fn read(&mut self) -> Result<Option<Timed>, MediaError> {
         let Some(stream) = self.stream.as_mut() else {
             return Ok(None);
@@ -477,7 +477,7 @@ fn pts_time(line: &str) -> Option<f64> {
     rest.split_whitespace().next()?.parse().ok()
 }
 
-/// 图片（或视频的第一帧）解成一帧，缩放到 `width`×`height`。GIF 与动图只取第一帧。
+/// Decode an image (or the first frame of a video) into one frame, scaled to `width`×`height`. GIFs and animated images take only the first frame.
 pub fn decode_still(tools: &Tools, path: &Path, width: u32, height: u32) -> Result<Picture, MediaError> {
     let output = Command::new(&tools.ffmpeg)
         .args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-i"])
@@ -509,7 +509,7 @@ mod tests {
     use super::{FeedOpener, FrameFeed, NativeDecode, VideoDecoder, pts_time};
     use crate::Tools;
 
-    /// 假的原生帧源：10 fps、`count` 帧，素材时间线从 `origin` 起；每帧的像素填帧号；第 `fail_at` 帧报错。
+    /// Fake native frame source: 10 fps, `count` frames, media timeline starting at `origin`; each frame's pixels are filled with its frame number; frame `fail_at` reports an error.
     struct Fake {
         next: u32,
         count: u32,
@@ -534,7 +534,7 @@ mod tests {
         }
     }
 
-    /// 打开记录（素材时间线上的起点）与帧源工厂。`fail_open` 时打不开。
+    /// Open record (start on the media timeline) and frame source factory. With `fail_open`, it cannot be opened.
     fn fake(origin: f64, fail_open: bool, fail_at: Option<u32>) -> (NativeDecode, Arc<Mutex<Vec<f64>>>) {
         let opens = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&opens);
@@ -555,7 +555,7 @@ mod tests {
         (NativeDecode { backend: "fake", open }, opens)
     }
 
-    /// 不存在的 ffmpeg：回落之后一启动就失败，测试不依赖本机 ffmpeg。
+    /// A non-existent ffmpeg: after falling back it fails as soon as it starts, so the test does not depend on the local ffmpeg.
     fn no_ffmpeg() -> Tools {
         Tools {
             ffmpeg: PathBuf::from("/nonexistent/ffmpeg"),
@@ -568,17 +568,17 @@ mod tests {
         let (native, opens) = fake(10.0, false, None);
         let mut decoder = VideoDecoder::new(&no_ffmpeg(), Path::new("a.mp4"), 10.0, 4, 2).with_native(native);
         assert_eq!(decoder.backend(), "fake");
-        // 0.25 秒：不晚于它的最后一帧是第 2 帧（0.2）。
+        // 0.25 s: the last frame not later than it is frame 2 (0.2).
         assert_eq!(decoder.frame_at(0.25).unwrap().data[0], 2);
         let first = decoder.advance(0.25).unwrap();
         assert_eq!(decoder.advance(0.29).unwrap(), first, "同一帧代号不变");
         assert_eq!(decoder.frame_at(1.0).unwrap().data[0], 10);
         assert_eq!(decoder.restarts(), 0);
-        // 倒退：重开，计一次；起点按素材时间线（加 PTS 原点）。
+        // Rewind: reopen, counted once; the start is on the media timeline (plus the PTS origin).
         assert_eq!(decoder.frame_at(0.5).unwrap().data[0], 5);
         assert_eq!(decoder.restarts(), 1);
         assert_eq!(*opens.lock().unwrap(), vec![10.25, 10.5]);
-        // 读完之后停在最后一帧。
+        // After reading to the end, stay on the last frame.
         assert_eq!(decoder.frame_at(4.0).unwrap().data[0], 29);
         assert!(decoder.fallback().is_none());
     }
@@ -587,7 +587,7 @@ mod tests {
     fn an_unopenable_native_source_falls_back_to_ffmpeg_without_counting_a_restart() {
         let (native, _) = fake(0.0, true, None);
         let mut decoder = VideoDecoder::new(&no_ffmpeg(), Path::new("a.mkv"), 0.0, 4, 2).with_native(native);
-        // 回落之后启动 ffmpeg：这里没有 ffmpeg，报的是启动失败。
+        // Start ffmpeg after the fallback: there is no ffmpeg here, so the reported error is a start failure.
         let error = decoder.frame_at(0.0).unwrap_err();
         assert_ne!(error.code, "EXPORT_DECODE_FAILED", "{error:?}");
         let fallback = decoder.fallback().expect("记下回落");
@@ -612,7 +612,7 @@ mod tests {
     fn a_native_source_without_frames_falls_back() {
         let (native, _) = fake(0.0, false, None);
         let mut decoder = VideoDecoder::new(&no_ffmpeg(), Path::new("a.mp4"), 0.0, 4, 2).with_native(native);
-        // 起点在 30 帧之后：原生一帧都交不出。
+        // The start is 30 frames later: native cannot hand out a single frame.
         assert!(decoder.frame_at(5.0).is_err());
         assert_eq!(decoder.fallback().map(|f| f.reason), Some("no-frames"));
     }

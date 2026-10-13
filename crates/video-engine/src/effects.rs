@@ -1,7 +1,6 @@
-//! 效果（视频格式规范 §3.8）与裁剪（§3.5）。
+//! Effects (video format spec §3.8) and cropping (§3.5).
 //!
-//! 效果是 v2 的 `fx`：一组固定字段，按固定顺序作用。`setEffects` 整个替换；字段的取值区间由
-//! `elements::check_item` 交给 `timeline` 校验。
+//! An effect is v2's `fx`: a fixed set of fields, applied in a fixed order. `setEffects` replaces the whole set. The valid range of each field's value is checked by `elements::check_item` through `timeline`.
 
 use serde_json::json;
 
@@ -10,7 +9,7 @@ use crate::model::*;
 use crate::ops::{editable_item, not_applicable};
 use crate::state::VideoState;
 
-/// 整个替换实例的 `fx`。`None` 或全空的 `fx` 去掉效果。
+/// Replaces the `fx` of the whole instance. `None` or an entirely empty `fx` removes the effects.
 pub(crate) fn set_effects(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, fx: Option<&Fx>) -> EngineResult<()> {
     let item = editable_item(state, sequence_id, item_id)?;
     let slot = item
@@ -35,7 +34,7 @@ pub(crate) fn check_crop(item_id: &str, crop: &Crop) -> EngineResult<()> {
     Ok(())
 }
 
-/// `setStyle` 的 `crop`：`null` 去掉，四边都是 0 也等于去掉。只有视频与图片能裁。
+/// `crop` in `setStyle`: `null` removes it; all four sides at 0 is also equivalent to removing it. Only videos and images can be cropped.
 pub(crate) fn apply_crop(item: &mut TimelineItem, item_id: &str, crop: Option<&Crop>) -> EngineResult<()> {
     if let Some(c) = crop {
         check_crop(item_id, c)?;

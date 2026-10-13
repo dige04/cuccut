@@ -14,16 +14,16 @@ import { pl } from './transcribe-setup-copy.pl.ts';
 import { tr } from './transcribe-setup-copy.tr.ts';
 import { vi } from './transcribe-setup-copy.vi.ts';
 
-/** 「生成字幕」转录设置的文案（model/transcribe-setup.ts；译文在 `transcribe-setup-copy.<语言>.ts`）。 */
+/** Copy for the 「生成字幕」 (Generate subtitles) transcription settings (model/transcribe-setup.ts; translations are in `transcribe-setup-copy.<language>.ts`). */
 const en = {
   notConnected: 'Not connected',
   unavailable: 'Unavailable',
   autoDetect: 'Detect automatically',
   hintNoModel: 'It isn’t known yet which speech model will be used. Choose one above to see whether it accepts recognition hints.',
-  /** `alt`：收识别提示、能换的另一只模型；没有时 null。 */
+  /** `alt`: another model that accepts recognition hints and can be swapped in; null when there is none. */
   hintUnsupported: (model: string, alt: string | null) =>
     `${model} doesn’t accept recognition hints, so glossaries and the prompt can’t be used in this step and will be skipped when transcribing.${alt ? ` To use them while transcribing, switch to ${alt}.` : ''}`,
-  /** 预算那一行：送给哪只模型、提示词几个字、几个术语、拼好约多少字、放不下几条。 */
+  /** The budget line: which model it is sent to, how many characters the prompt has, how many terms there are, roughly how many characters after composing, and how many entries do not fit. */
   budget: (model: string, b: { custom: number; terms: number; chars: number; dropped: number }, max: number) => {
     const custom = b.custom ? `${b.custom}-character prompt` : 'no prompt';
     const dropped = b.dropped ? ` · ${b.dropped} more don’t fit; glossaries listed first go in first` : '';

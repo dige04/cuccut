@@ -2,16 +2,16 @@ import type { Id } from './domain.ts';
 import type { MessageRef } from './message-ref.ts';
 
 /**
- * 资源调度（架构设计 §7.6、§7.7）：重的本机任务先按峰值工作集准入，拿到租约才开始；放不下时排队，记录上写着在等什么。
- * 字节数一律是 bytes。
+ * Resource scheduling (architecture design §7.6, §7.7): heavy local jobs first pass admission by peak working set and only start once they hold a lease; if they don't fit, they queue, and the record says what they are waiting for.
+ * Byte counts are always bytes.
  */
 
-/** 准入的资源维度：内存、GPU 内存（统一内存的机器上同时计入内存）、CPU 线程、staging 所在卷的磁盘。 */
+/** Admission dimensions: memory, GPU memory (on unified-memory machines it is also counted in memory), CPU threads, and the disk of the volume where staging lives. */
 export type ResourceDimension = 'memory' | 'gpuMemory' | 'cpuThreads' | 'scratchDisk';
 
 export const RESOURCE_DIMENSIONS: readonly ResourceDimension[] = ['memory', 'gpuMemory', 'cpuThreads', 'scratchDisk'];
 
-/** 各维度的量。容量里 null 表示未知（不按这一维准入，§9.6「未知时报告未知」）。 */
+/** Amounts per dimension. In a capacity, null means unknown (no admission on that dimension; §9.6 “report unknown when unknown”). */
 export interface ResourceAmounts {
   memory: number;
   gpuMemory: number | null;
@@ -19,33 +19,33 @@ export interface ResourceAmounts {
   scratchDisk: number | null;
 }
 
-/** 一项工作声明的峰值需求；没有的维度为 0。 */
+/** Peak demand declared by one unit of work; dimensions not listed are 0. */
 export type ResourceDemand = Partial<Record<ResourceDimension, number>>;
 
-/** 准入的优先级：`interactive` 是用户在界面上同步等着的短操作，可以用交互预留；其余都是 `background`。 */
+/** Admission priority: `interactive` is a short operation the user is synchronously waiting for in the UI, and may use the interactive reserve; everything else is `background`. */
 export type ResourcePriority = 'interactive' | 'background';
 
 /**
- * 排队任务在等什么（`JobRecord.wait`）：`concurrency` 是同一队列的并发上限（同一个模型包、同一个 Provider……），
- * `resources` 是机器上的资源不够（`dimensions` 是缺的维度；前面有任务在等同样的资源时也算，不插队）。开始执行时去掉。
+ * Why a queued job is waiting (`JobRecord.wait`): `concurrency` is the concurrency cap of the same queue (same model bundle, same provider…),
+ * `resources` means the machine lacks resources (`dimensions` lists the missing ones; a job also counts here when earlier jobs are waiting for the same resources, and does not jump the queue). Cleared when execution starts.
  */
 export interface JobWait {
   reason: 'concurrency' | 'resources';
-  /** `resources` 时：缺的维度。 */
+  /** For `resources`: the missing dimensions. */
   dimensions?: ResourceDimension[];
-  /** 同一队列或同样的资源前面还有几个在等。 */
+  /** How many jobs are waiting ahead in the same queue or for the same resources. */
   ahead?: number;
-  /** 给人看的一句话。 */
+  /** A one-sentence description for people. */
   detail: string;
-  /** `detail` 的消息引用：显示时按读者的语言重新渲染。 */
+  /** Message reference for `detail`: re-rendered in the reader's language when displayed. */
   detailRef?: MessageRef;
-  /** 开始等的时间。 */
+  /** When waiting started. */
   since: string;
 }
 
-/** 机器的容量与来源：`system` 取自操作系统，`setting` 取自偏好设置 `resources.capacity`，`unified-estimate` 按统一内存估计。 */
+/** Machine capacity and its source: `system` from the OS, `setting` from the preference `resources.capacity`, `unified-estimate` estimated from unified memory. */
 export interface ResourceCapacity extends ResourceAmounts {
-  /** GPU 与 CPU 共用内存（Apple 芯片）：GPU 的需求同时计入内存。 */
+  /** GPU and CPU share memory (Apple chips): GPU demand is also counted in memory. */
   unifiedMemory: boolean;
   sources: {
     memory: 'system' | 'setting';
@@ -55,30 +55,30 @@ export interface ResourceCapacity extends ResourceAmounts {
   };
 }
 
-/** 一份租约：任务（或其中一步）占用的量。 */
+/** A lease: the amount held by a job (or one of its steps). */
 export interface ResourceLeaseView {
   leaseId: string;
-  /** 任务的 `jobId`。 */
+  /** The job's `jobId`. */
   owner: Id;
-  /** 给人看的种类：`transcribe`、`export:video`…… */
+  /** Human-readable kind: `transcribe`, `export:video`… */
   label: string;
   priority: ResourcePriority;
-  /** 这份租约自己计入的量（共用 holder 的量记在 holder 上，不重复计）。 */
+  /** The amount this lease counts itself (amounts of a shared holder are recorded on the holder and not double-counted). */
   demand: ResourceDemand;
-  /** 用到的共用 holder（例如 `model-worker:<bundleId>`）。 */
+  /** Shared holder used (e.g. `model-worker:<bundleId>`). */
   holder: string | null;
-  /** 所在的并发队列。 */
+  /** The concurrency queue it belongs to. */
   queue: string | null;
   since: string;
 }
 
-/** 被几个任务先后共用的常驻资源（例如一个模型包的 Model Worker 进程）：量只计一次。 */
+/** A long-lived resource shared by several jobs in turn (e.g. a Model Worker process for a model bundle): counted once. */
 export interface ResourceHolderView {
   holder: string;
   demand: ResourceDemand;
-  /** 正在用它的租约数；0 表示空闲（进程还在，可以被驱逐给别的任务让位）。 */
+  /** Number of leases currently using it; 0 means idle (the process is still there and can be evicted to make way for other jobs). */
   users: number;
-  /** 还没确认退出的进程数：进程真的退出（或模型卸载）之前，holder 的量不归还。 */
+  /** Number of processes not yet confirmed to have exited: the holder's amounts are not released until the process actually exits (or the model is unloaded). */
   processes: number;
   since: string;
 }
@@ -93,13 +93,13 @@ export interface ResourceWaiterView {
   wait: JobWait | null;
 }
 
-/** `jobs.resources`：容量、预留、已租出的量、此刻各优先级还能用的量、租约与排队。 */
+/** `jobs.resources`: capacity, reservations, amounts leased out, what each priority can use right now, and leases and the queue. */
 export interface ResourcesSnapshot {
   capacity: ResourceCapacity;
   reserves: {
-    /** 留给系统与其他应用，任何任务都不用。 */
+    /** Reserved for the system and other apps; no job may use it. */
     system: ResourceAmounts;
-    /** 留给交互操作：后台任务不能用。 */
+    /** Reserved for interactive operations: background jobs cannot use it. */
     interactive: ResourceAmounts;
   };
   leased: ResourceAmounts;
@@ -110,8 +110,8 @@ export interface ResourcesSnapshot {
 }
 
 /**
- * 偏好设置 `resources.capacity`：覆盖自动探测的容量（MiB 与线程数）。某一项为 null 时照旧自动探测；
- * 整个设置为 null 时全部自动。磁盘不能覆盖（按 staging 所在卷的可用空间）。
+ * Preference `resources.capacity`: overrides the auto-detected capacity (MiB and thread count). When a field is null it is still auto-detected;
+ * when the whole setting is null, everything is automatic. Disk cannot be overridden (it uses the free space of the volume where staging lives).
  */
 export interface ResourceCapacitySetting {
   memoryMiB: number | null;

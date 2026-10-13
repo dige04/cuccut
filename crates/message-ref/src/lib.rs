@@ -1,19 +1,16 @@
-//! Rust 一侧给人看的文字（仓库约定 §5、命令与协议规范 §11.1）：英文文本 + 消息引用。
+//! Human-readable text on the Rust side (repo convention §5, command and protocol spec §11.1): English text plus message references.
 //!
-//! 与 `@cuccut/protocol` 的 `message-ref.ts` 同形：引用是 `{ key, params? }`，`key` 是 `<区域>.<名字>`。
-//! Rust 只出英文（缺省与兜底）；各语言的译文在 `packages/protocol/src/messages/<crate>/`，界面与 CLI 用
-//! `localizeText(text, ref)` 按自己的语言重新生成。两边的英文由 `tools/rust-messages.test.ts` 核对。
+//! Same shape as `message-ref.ts` in `@cuccut/protocol`: a reference is `{ key, params? }`, where `key` is `<area>.<name>`.
+//! Rust only emits English (default and fallback); translations for each language live in `packages/protocol/src/messages/<crate>/`, and the UI and CLI regenerate them in their own language with `localizeText(text, ref)`. The English on both sides is checked by `tools/rust-messages.test.ts`.
 //!
-//! 写法：`msg!("engine.notFound", "{kind} {id} does not exist", kind = kind, id)`。模板只用 `{名字}` 占位，
-//! 每个占位都要在参数里给出；参数是标量或另一条 `Text`（嵌套的引用按读者的语言展开）。供应商原话、文件名、
-//! 下层的错误说明作为字符串参数原样传。
+//! Usage: `msg!("engine.notFound", "{kind} {id} does not exist", kind = kind, id)`. Templates only use `{name}` placeholders, and every placeholder must be supplied as an argument; arguments are scalars or another `Text` (nested references are expanded in the reader's language). Vendor quotes, file names, and lower-level error descriptions are passed through unchanged as string arguments.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// 消息引用：`key` 发布后不改名、不复用。
+/// Message reference: once published, a `key` is never renamed or reused.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageRef {
     pub key: String,
@@ -35,7 +32,7 @@ impl MessageRef {
     }
 }
 
-/// 一段给人看的文字：英文文本，能翻译的带着引用。第三方原话与未迁移的文字没有引用。
+/// A piece of human-readable text: English text, carrying a reference if it can be translated. Third-party quotes and text not yet migrated carry no reference.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Text {
     pub text: String,
@@ -57,7 +54,7 @@ impl Text {
         }
     }
 
-    /// 作为嵌套参数：`{ key, params?, text }`；没有引用时就是文本。
+    /// As a nested argument: `{ key, params?, text }`; without a reference it is just text.
     pub fn to_param(&self) -> Value {
         match &self.message_ref {
             Some(message_ref) => {
@@ -96,7 +93,7 @@ impl From<&String> for Text {
     }
 }
 
-/// 把几段文字连成一段（英文用 `; ` 分隔）。每段的引用都保留：连接本身也是一条引用（`list.join`），按读者的语言换分隔符。
+/// Joins several pieces of text into one (English uses `; ` as separator). Each piece's reference is kept: the join itself is also a reference (`list.join`), and the separator is swapped according to the reader's language.
 pub fn join(items: impl IntoIterator<Item = Text>) -> Text {
     let mut items = items.into_iter();
     let Some(first) = items.next() else {
@@ -105,7 +102,7 @@ pub fn join(items: impl IntoIterator<Item = Text>) -> Text {
     items.fold(first, |head, tail| msg!("list.join", "{head}; {tail}", head, tail))
 }
 
-/// 能作为参数的值。
+/// Values that can be used as arguments.
 pub trait Param {
     fn to_param(&self) -> Value;
 }
@@ -152,8 +149,8 @@ macro_rules! number_params {
 
 number_params!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize, f32, f64);
 
-/// `msg!("area.name", "English {a} and {b}", a = expr, b)`：英文文本与引用一起生成。
-/// 只写名字的参数取同名的变量。参数各求值一次。
+/// `msg!("area.name", "English {a} and {b}", a = expr, b)`: generates the English text together with the reference.
+/// An argument written with only a name takes the variable of the same name. Each argument is evaluated once.
 #[macro_export]
 macro_rules! msg {
     ($key:literal, $template:literal $(,)?) => {
@@ -192,7 +189,7 @@ mod tests {
             serde_json::to_value(text.message_ref).unwrap(),
             json!({ "key": "test.params", "params": { "id": "seq_1", "count": 3 } })
         );
-        // 参数借用，不移走。
+        // Arguments are borrowed, not moved.
         assert_eq!(id, "seq_1");
     }
 

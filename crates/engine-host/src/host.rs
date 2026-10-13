@@ -1,7 +1,7 @@
-//! Engine Host 的请求处理：一个进程管理多个打开的视频，每个视频持有自己的写锁。
+//! Engine Host request handling: one process manages multiple open videos, and each video holds its own write lock.
 //!
-//! 同一目录在本进程里只打开一次：第二个打开者拿到同一个 videoId，而不是被自己的锁挡住（验收 A01）。
-//! 打开者的引用计数由 Runtime 管理；`videos.close` 到来时才真正关闭并释放锁。
+//! The same directory is opened only once within this process: a second opener gets the same videoId, rather than being blocked by its own lock (acceptance A01).
+//! Reference counting for openers is managed by the Runtime; the video is actually closed and the lock released only when `videos.close` arrives.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ struct CreateParams {
     fps: Rate,
     width: u32,
     height: u32,
-    /// 所属项目（架构设计 §5.1）。不属于项目的视频不传。
+    /// Owning project (architecture design §5.1). Omit for videos that do not belong to a project.
     #[serde(default)]
     project_id: Option<Id>,
 }
@@ -53,7 +53,7 @@ struct PathParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct OpenParams {
     path: String,
-    /// 所属项目：库里记的项目与它不同时，视频换成新的 videoId（副本）。不传时不认领。
+    /// Owning project: when the project recorded in the library differs from it, the video gets a new videoId (a copy). If not given, nothing is claimed.
     #[serde(default)]
     project_id: Option<Id>,
 }
@@ -85,11 +85,11 @@ struct ApplyParams {
     actor: Actor,
     #[serde(default)]
     task_id: Option<Id>,
-    /// 任务与流水线的写入所属的执行（§7.4 停止屏障）；普通编辑不带。
+    /// The run that task and pipeline writes belong to (§7.4 stop barrier); ordinary edits do not carry it.
     #[serde(default)]
     run: Option<RunRef>,
-    /// 任务合同的保护范围（架构设计 §3.2）：只在带 taskId 的非用户提交上生效（智能体自己的提交，任务下的 Job 与
-    /// 流程把结果应用到视频）；用户的提交、不带 taskId 的提交带了也不检查。
+    /// Protection scope of the task contract (architecture design §3.2): applies only to non-user submissions that carry a taskId (the agent's own submissions, and Jobs and flows under the task that apply results to the video);
+    /// user submissions, and submissions without a taskId, are not checked even if they carry one.
     #[serde(default)]
     protections: Vec<TaskProtection>,
 }
@@ -111,7 +111,7 @@ struct UndoParams {
     #[serde(default)]
     expected_revision: Option<String>,
     actor: Actor,
-    /// 同 `ApplyParams.protections`：智能体的撤销与重做同样不能触碰任务的保护范围。
+    /// Same as `ApplyParams.protections`: the agent's undo and redo likewise may not touch the task's protected scope.
     #[serde(default)]
     protections: Vec<TaskProtection>,
 }
@@ -156,7 +156,7 @@ struct BlobParams {
     revision: Option<String>,
 }
 
-/// 按视频目录找素材版本的 bytes（`videos.resolveAsset`）：不要求视频已经打开。
+/// Finds the bytes of an asset version by video directory (`videos.resolveAsset`): does not require the video to be open.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssetAtParams {
@@ -211,7 +211,7 @@ fn opened(video: &Video) -> Value {
     })
 }
 
-/// 认领的结果写进 stderr 日志：换标识是值得留痕的事。
+/// The result of the claim is written to the stderr log: changing an identifier is worth recording.
 fn log_claim(dir: &Path, claim: &ProjectClaim) {
     if let ProjectClaim::Reassigned {
         previous_video_id,
@@ -225,11 +225,11 @@ fn log_claim(dir: &Path, claim: &ProjectClaim) {
     }
 }
 
-/// Space 目录用的概要：不取写锁。
+/// Summary for the Space directory: takes no write lock.
 fn summary(video: &Video) -> Value {
     let state = video.state();
     let root = state.sequences.get(&state.root_sequence_id);
-    // 语义锚求不出、或摆不下的实例（视频格式规范 §3.16）：按时间线现算，读不出时不列。
+    // Instances whose semantic anchor cannot be resolved, or that do not fit (video format spec §3.16): computed on the fly from the timeline; not listed when it cannot be read.
     let orphaned = video.orphaned_anchors().unwrap_or_default();
     let mut summary = json!({
         "videoId": video.id(),
@@ -277,7 +277,7 @@ impl Host {
         Ok(result)
     }
 
-    /// 处理一个请求。提交产生的事件先交给 `emit`，再返回响应：事件只从这一处发出。
+    /// Handles one request. Events produced by a commit are handed to `emit` first, then the response is returned; events are emitted only from this one place.
     pub fn handle(&mut self, method: &str, value: Value, emit: &mut dyn FnMut(&VideoEvent)) -> Result<Value, ErrorBody> {
         match method {
             "host.hello" => Ok(json!({ "version": HOST_VERSION, "pid": std::process::id() })),
@@ -305,14 +305,14 @@ impl Host {
                     return Ok(opened(video));
                 }
                 let mut video = Video::open(&dir, OpenMode::Write, &self.ffprobe)?;
-                // 先认领再查重：副本换了标识，就不会与原视频撞上。
+                // Claim first, then check for duplicates: the copy gets a new identifier, so it will not collide with the original video.
                 if let Some(project_id) = &p.project_id {
                     let claim = video.claim_project(project_id)?;
                     log_claim(&dir, &claim);
                 }
                 if let Some(existing) = self.videos.get(video.id()) {
-                    // 同一个 videoId 出现在两个目录（被移动之后，或不属于项目、无从区分的副本）：
-                    // 保留先打开的那一个，新打开的放下锁。
+                    // The same videoId appears in two directories (after a move, or copies that do not belong to a project and cannot be told apart):
+                    // keep the one opened first, and the newly opened one releases its lock.
                     eprintln!(
                         "engine-host: {} 与已打开的 {} 是同一个视频 {}，保留已打开的",
                         dir.display(),
@@ -327,7 +327,7 @@ impl Host {
                 let p: ClaimParams = params(value)?;
                 let dir = canonical(&absolute(&p.path)?)?;
                 if let Some(id) = self.by_path.get(&dir) {
-                    // 正在打开的视频打开时已经认领过：不动它。
+                    // A video being opened that was already claimed when it was opened: leave it alone.
                     return Ok(json!({ "videoId": id, "outcome": "open" }));
                 }
                 let (video_id, claim) = claim_project_dir(&dir, &p.project_id)?;
@@ -337,8 +337,8 @@ impl Host {
                 Ok(result)
             }
             "videos.gcBlobs" => {
-                // 视频目录 `blobs/` 的 GC（架构设计 §5.2、§5.5）：要写锁。开着的视频就地做；没开的临时取写锁，
-                // 别的进程锁着时照常以 `VIDEO_LOCKED` 拒绝。还有冻结任务租约、导出或便携包导入时由 Runtime 决定不调用。
+                // GC of the video directory's `blobs/` (architecture design §5.2, §5.5): requires the write lock. Open videos are collected in place; for videos that are not open, a write lock is taken temporarily;
+                // if another process holds the lock, it is rejected with `VIDEO_LOCKED` as usual. The Runtime decides not to call it while a frozen task lease, an export, or a portable package import is in progress.
                 let p: PathParams = params(value)?;
                 let dir = canonical(&absolute(&p.path)?)?;
                 let report = match self.by_path.get(&dir).and_then(|id| self.videos.get(id)) {
@@ -367,7 +367,7 @@ impl Host {
                 Ok(summary(&video))
             }
             "videos.readContent" => {
-                // 内容索引（架构设计 §5.11）：与 `videos.inspect` 一样不取写锁。
+                // Content index (architecture design §5.11): like `videos.inspect`, takes no write lock.
                 let p: PathParams = params(value)?;
                 let dir = canonical(&absolute(&p.path)?)?;
                 if let Some(video) = self.by_path.get(&dir).and_then(|id| self.videos.get(id)) {
@@ -377,7 +377,7 @@ impl Host {
                 Ok(crate::content::read(&video))
             }
             "videos.resolveAsset" => {
-                // Space 的缩略图（架构设计 §5.7）：与 `assets.blobPath` 同一个结果，但按目录找、不要求打开，不取写锁。
+                // Space thumbnails (architecture design §5.7): the same result as `assets.blobPath`, but looked up by directory, does not require the video to be open, and takes no write lock.
                 let p: AssetAtParams = params(value)?;
                 let dir = canonical(&absolute(&p.path)?)?;
                 let resolved = match self.by_path.get(&dir).and_then(|id| self.videos.get(id)) {
@@ -404,13 +404,13 @@ impl Host {
                 Ok(json!({ "missing": missing }))
             }
             "videos.unusedAssets" => {
-                // 没有引用的素材（`removeAssets` 能删的那些）：`assets_prune` 的预检清单。只读。
+                // Unreferenced assets (the ones `removeAssets` can delete): the pre-check list for `assets_prune`. Read-only.
                 let p: VideoParams = params(value)?;
                 let unused = self.video(&p.video_id)?.unused_assets();
                 Ok(json!({ "unused": unused }))
             }
             "runs.invalidate" => {
-                // 只给打开着的视频记：没打开的视频不会有提交到来，关闭时记录也一起清掉。
+                // Only recorded for open videos: a video that is not open receives no submissions, and its records are cleared together when it closes.
                 let p: InvalidateParams = params(value)?;
                 let run = RunRef {
                     run_id: p.run_id,
@@ -432,7 +432,7 @@ impl Host {
                 };
                 let video = self.video(&p.video_id)?;
                 if let Some((run, generation)) = stopped
-                    // 已经提交过的命令照常重放回执：屏障只挡新的事务。
+                    // Commands that were already committed still replay their receipts as usual: the barrier only blocks new transactions.
                     && video.find_receipt(&p.command_id)?.is_none()
                 {
                     return Err(
@@ -449,7 +449,7 @@ impl Host {
                             })),
                     );
                 }
-                // 任务里的写入（智能体自己的，或任务下的 Job、流程以系统身份写的）受任务保护；用户的决定不受限制。
+                // Writes within a task (the agent's own, or those written under the task by Jobs and flows with system identity) are protected by the task; the user's decisions are not restricted.
                 let guarded = p.actor.kind != ActorKind::User && p.task_id.is_some();
                 let protections = if guarded { p.protections.as_slice() } else { &[] };
                 let committed = video.apply_guarded(
@@ -539,7 +539,7 @@ impl Host {
                 let video = crate::package::import(p, &self.ffprobe)?;
                 self.register(video)
             }
-            // `fonts.*` 不经这里：main 把它们交给字体线程（`fonts::FontWorker`）。
+            // `fonts.*` does not go through here: main hands them to the font thread (`fonts::FontWorker`).
             "exports.plan" => {
                 let p: crate::exports::PlanParams = params(value)?;
                 let video = self.video(&p.video_id)?;
@@ -576,7 +576,7 @@ mod tests {
         let created = create(&mut host, &dir);
         let opened = host.handle("videos.open", json!({ "path": dir }), &mut |_| {}).unwrap();
         assert_eq!(opened["videoId"], created["videoId"]);
-        // 经过不同写法的同一路径。
+        // The same path written in different ways.
         let dotted = root.path().join(".").join("片子");
         let again = host.handle("videos.open", json!({ "path": dotted }), &mut |_| {}).unwrap();
         assert_eq!(again["videoId"], created["videoId"]);
@@ -603,13 +603,13 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(result["receipt"]["videoRevision"], json!("1"));
         assert_eq!(result["replayed"], json!(false));
-        // 调用方给的修改名引用原样带到回执与事件上（命令与协议规范 §3.1）。
+        // The caller-supplied change-name reference is carried as-is onto the receipt and events (command and protocol spec §3.1).
         assert_eq!(result["receipt"]["labelRef"], label_ref);
         assert_eq!(serde_json::to_value(&events[0].label_ref).unwrap(), label_ref);
         let replay = host.handle("edits.apply", params.clone(), &mut |e| events.push(e.clone())).unwrap();
         assert_eq!(replay["replayed"], json!(true));
         assert_eq!(events.len(), 1, "重放不发事件");
-        // 同一个命令换了引用就是另一份载荷。
+        // The same command with a different reference is a different payload.
         let mut other = params;
         other["labelRef"] = json!({ "key": "editLabel.other" });
         assert!(host.handle("edits.apply", other, &mut |_| {}).is_err());
@@ -642,7 +642,7 @@ mod tests {
         for name in ["video.db", "video.lock"] {
             std::fs::copy(original.join(name), copy.join(name)).unwrap();
         }
-        // 原视频先打开着：副本认领之后不会撞上它。
+        // The original video is already open: after the copy is claimed, it will not collide with it.
         host.handle("videos.open", json!({ "path": original, "projectId": "proj_a" }), &mut |_| {})
             .unwrap();
         let opened = host
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(opened["path"], json!(copy.canonicalize().unwrap()));
         assert_eq!(opened["previousVideoIds"], json!([id]));
 
-        // 已经打开的视频不预处理；没打开的相同项目什么也不做。
+        // Videos already open are not pre-processed; for matching projects that are not open, nothing is done.
         let busy = host
             .handle("videos.claimProject", json!({ "path": copy, "projectId": "proj_c" }), &mut |_| {})
             .unwrap();
@@ -678,21 +678,21 @@ mod tests {
             path
         };
 
-        // 开着的视频就地做。
+        // Open videos are processed in place.
         let first = orphan("a");
         let report = host.handle("videos.gcBlobs", json!({ "path": dir }), &mut |_| {}).unwrap();
         assert!(!first.exists());
         assert_eq!(report["removed"][0]["path"], json!(format!("blobs/{}.png", "a".repeat(64))));
         assert_eq!(report["freedBytes"], json!(6));
 
-        // 别的进程（这里是另一个 Host）锁着时拒绝，什么都不删。
+        // If another process (here, another Host) holds the lock, it is rejected and nothing is deleted.
         let second = orphan("b");
         let mut other = Host::new(PathBuf::from("ffprobe"));
         let err = other.handle("videos.gcBlobs", json!({ "path": dir }), &mut |_| {}).unwrap_err();
         assert_eq!(err.code, "VIDEO_LOCKED");
         assert!(second.exists());
 
-        // 关闭之后临时取写锁来做，做完放下。
+        // After closing, a write lock is taken temporarily to do it, and released when done.
         host.handle("videos.close", json!({ "videoId": created["videoId"] }), &mut |_| {})
             .unwrap();
         other.handle("videos.gcBlobs", json!({ "path": dir }), &mut |_| {}).unwrap();
@@ -761,7 +761,7 @@ mod tests {
         });
         writer.handle("edits.apply", params, &mut |_| {}).unwrap();
 
-        // 另一个进程（写锁在 writer 手里）照样读得到；读完不占锁。
+        // Another process (whose write lock is held by the writer) can still read it; after reading, it holds no lock.
         let mut reader = host();
         let content = reader.handle("videos.readContent", json!({ "path": dir }), &mut |_| {}).unwrap();
         assert_eq!(content["videoId"], json!(video_id));
@@ -772,7 +772,7 @@ mod tests {
         assert_eq!(documents[0]["body"]["words"][0]["text"], json!("你好"));
         assert!(documents[0].get("plan").is_some());
         assert!(content["snapshot"]["sequences"].is_object());
-        // 打开的视频用打开的那一份。
+        // Open videos use the open instance.
         let open = writer.handle("videos.readContent", json!({ "path": dir }), &mut |_| {}).unwrap();
         assert_eq!(open["revision"], json!("1"));
         assert_eq!(
@@ -784,14 +784,14 @@ mod tests {
         );
     }
 
-    /// 按目录找素材的 bytes：没打开的视频以只读方式打开（不取写锁），收纳的在视频目录的 `blobs/` 里，链接的是原文件；
-    /// 结果与打开时的 `assets.blobPath` 一样。
+    /// Finds an asset's bytes by directory: a video that is not open is opened read-only (no write lock); imported assets are in the video directory's `blobs/`, and linked assets point to the original file;
+    /// the result is the same as `assets.blobPath` at open time.
     #[test]
     fn resolve_asset_finds_bytes_without_opening_the_video() {
         let root = tempfile::tempdir().unwrap();
         let wav = root.path().join("vo.wav");
         write_wav(&wav, 1);
-        // 内容相同的文件是同一个素材：收纳的用另一段。
+        // Files with identical content are the same asset; the imported one uses the other segment.
         let copied = root.path().join("bed.wav");
         write_wav(&copied, 2);
         let dir = root.path().join("素材");
@@ -817,7 +817,7 @@ mod tests {
         assert!(blob.starts_with(dir.canonicalize().unwrap().join("blobs")) && blob.is_file());
         assert_eq!(managed["mediaType"], json!("audio/wav"));
         assert_eq!(resolve(&json!("asset_none")).unwrap_err().code, "ENTITY_NOT_FOUND");
-        // 打开的视频用打开的那一份，与 `assets.blobPath` 相同。
+        // Open videos use the open instance, the same as `assets.blobPath`.
         let open = writer
             .handle(
                 "videos.resolveAsset",
@@ -835,7 +835,7 @@ mod tests {
         assert_eq!(open, by_id);
         let canonical = |v: &Value| PathBuf::from(v.as_str().unwrap()).canonicalize().unwrap();
         assert_eq!(canonical(&open["path"]), canonical(&managed["path"]));
-        // 链接的原文件不在了：与打开时一样报 `ASSET_MISSING`。
+        // The linked original file is gone: reports `ASSET_MISSING`, as at open time.
         std::fs::remove_file(&wav).unwrap();
         let missing = reader
             .handle(
@@ -847,8 +847,8 @@ mod tests {
         assert_eq!(missing.code, "ASSET_MISSING");
     }
 
-    /// 成片烧字幕时，派生自译文的字幕是译文行：译文是 `cuccut.translation/1` 还是 `/2` 都一样（按父文档的种类判断，
-    /// 字幕文档自带每条的文字，不再按句子去译文里找）。
+    /// When burning subtitles into the final cut, subtitles derived from a translation are translation lines: it is the same whether the translation is `cuccut.translation/1` or `/2` (judged by the parent document's kind;
+    /// the subtitle document carries each line's text itself and no longer looks it up by sentence in the translation).
     #[test]
     fn video_plan_marks_captions_derived_from_either_translation_schema_as_translation_lines() {
         let root = tempfile::tempdir().unwrap();
@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(kinds.get("orig").map(String::as_str), Some("original"));
         assert_eq!(kinds.get("from1").map(String::as_str), Some("translation"));
         assert_eq!(kinds.get("from2").map(String::as_str), Some("translation"));
-        // 原文字幕派生自转写：转写随计划冻结，字幕文档带着 `sourceDocumentId`（字幕取词）；译文不带出转写以外的文档。
+        // Source-language subtitles are derived from the transcript: the transcript is frozen with the plan, and the subtitle document carries `sourceDocumentId` (for looking up subtitle words); a translation does not bring along any documents other than the transcript.
         let documents = plan["documents"].as_array().unwrap();
         let orig = documents.iter().find(|d| d["body"]["cues"][0]["text"] == json!("orig")).unwrap();
         let speech_id = orig["sourceDocumentId"].as_str().unwrap();
@@ -924,7 +924,7 @@ mod tests {
         let created = create(&mut host, &root.path().join("e"));
         let video_id = created["videoId"].clone();
         let mut call = |params: Value| host.handle("exports.plan", params, &mut |_| {});
-        // 空序列：整条范围是空的。
+        // Empty sequence: the whole range is empty.
         let empty = call(json!({ "videoId": video_id, "kind": "audio" })).unwrap_err();
         assert_eq!(empty.code, "EXPORT_RANGE_EMPTY");
         let backwards = call(json!({ "videoId": video_id, "kind": "audio", "ranges": [{ "start": 2.0, "end": 1.0 }] })).unwrap_err();
@@ -953,7 +953,7 @@ mod tests {
         );
     }
 
-    /// 只要原声 / 只要一组配音（架构设计 §9.13）：实例的选择只用于声音计划（音频与成片），文字计划与形状不对时拒绝。
+    /// Only the original sound / only one group of voiceover (architecture design §9.13): the instance selection applies only to the audio plan (audio and final cut); rejected when the text plan or shape does not match.
     #[test]
     fn exports_plan_takes_an_audio_item_selection_only_for_audio_and_video() {
         let root = tempfile::tempdir().unwrap();
@@ -962,7 +962,7 @@ mod tests {
         let video_id = created["videoId"].clone();
         let mut call = |params: Value| host.handle("exports.plan", params, &mut |_| {});
         let selection = json!({ "disable": ["item_nope"], "unmute": [] });
-        // 序列里没有的 ID 忽略：空序列照常报空范围。
+        // IDs not in the sequence are ignored: an empty sequence still reports an empty range as usual.
         assert_eq!(
             call(json!({ "videoId": video_id, "kind": "audio", "audioItems": selection }))
                 .unwrap_err()
@@ -987,7 +987,7 @@ mod tests {
                 .code,
             "INVALID_PARAMS"
         );
-        // 输出尺寸只用于成片，宽高是正整数。
+        // The output size is used only for the final cut; width and height are positive integers.
         for (kind, output) in [
             ("audio", json!({ "height": 720 })),
             ("video", json!({ "width": 0 })),
@@ -1003,7 +1003,7 @@ mod tests {
         }
     }
 
-    /// 清点字体用的成片计划（`skipAssets`）：不冻结素材，素材文件不见了也照样给出序列与文档；导出用的计划照样报 `ASSET_MISSING`。
+    /// Final cut plan used for font inventory (`skipAssets`): does not freeze assets, and still provides the sequence and documents even if asset files are missing; the plan used for export still reports `ASSET_MISSING`.
     #[test]
     fn a_video_plan_without_assets_ignores_missing_files() {
         let root = tempfile::tempdir().unwrap();
@@ -1053,7 +1053,7 @@ mod tests {
         );
     }
 
-    /// 成片的声音来源（架构设计 §9.13）：选择只套在声音计划上，画面计划与冻结的序列（`document`）照原样，视频本身也不变。
+    /// Audio source for the final cut (architecture design §9.13): the selection applies only to the audio plan; the visual plan and frozen sequence (`document`) stay as they are, and the video itself is unchanged.
     #[test]
     fn a_video_plan_applies_the_audio_item_selection_to_the_sound_only() {
         let root = tempfile::tempdir().unwrap();
@@ -1081,7 +1081,7 @@ mod tests {
         let item_id = snapshot["snapshot"]["sequences"][&sequence_id]["items"][0]["id"].clone();
         let revision = snapshot["snapshot"]["revision"].clone();
 
-        // 停用的是画面上的实例：声音计划之外什么都不变（声音来源从来不改画面）。
+        // What is disabled is the on-screen instance: nothing changes outside the audio plan (the audio source never changes the picture).
         let selection = json!({ "disable": [item_id], "unmute": [] });
         let plan = host
             .handle(
@@ -1098,7 +1098,7 @@ mod tests {
             json!([plan["documents"][0]["documentId"].clone()])
         );
         assert!(plan["parts"][0]["audio"].is_object());
-        // 没给输出尺寸：画布尺寸，画面铺满；宽高都给、比例不同：画面居中，其余是黑边。
+        // No output size given: the canvas size, with the picture filling it; both width and height given with a different aspect ratio: the picture is centered and the rest is letterboxed in black.
         let canvas = &plan["canvas"];
         let (cw, ch) = (canvas["width"].clone(), canvas["height"].clone());
         assert_eq!(
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(error.retryability, Retryability::Never);
         assert_eq!(error.details["stoppedGeneration"], json!("1"));
         assert!(events.is_empty(), "被拒的提交不发事件");
-        // 没有回执、没有事务。
+        // No receipt, no transaction.
         let receipt = host
             .handle(
                 "receipts.byCommand",
@@ -1219,7 +1219,7 @@ mod tests {
         assert_eq!(error.details["protections"][0]["protectionId"], json!("prot_1"));
         assert!(events.is_empty(), "被拒的提交不发事件");
 
-        // 任务下的 Job 与流程以系统身份应用结果：带着 taskId 同样受保护。
+        // Jobs and flows under a task apply results with system identity: carrying a taskId, they are protected in the same way.
         let error = host
             .handle("edits.apply", with(jobs.clone(), "cmd_job", "0", true), &mut |e| {
                 events.push(e.clone())
@@ -1229,7 +1229,7 @@ mod tests {
         assert_eq!(error.details["protections"][0]["protectionId"], json!("prot_1"));
         assert!(events.is_empty(), "被拒的提交不发事件");
 
-        // 用户的修改（包括用户决定应用任务的结果）、不在任务里的智能体与系统写入不受任务保护限制。
+        // The user's changes (including the user deciding to apply a task's results), and agent and system writes outside any task, are not restricted by task protection.
         host.handle("edits.apply", with(user, "cmd_user", "0", true), &mut |_| {}).unwrap();
         host.handle("edits.apply", with(agent, "cmd_free", "1", false), &mut |_| {})
             .unwrap();
@@ -1245,7 +1245,7 @@ mod tests {
         let video_id = created["videoId"].as_str().unwrap().to_string();
         invalidate(&mut host, &video_id, "job_a", "1");
 
-        // 重试换代之后的同一任务、别的任务、不带 run 的普通编辑都照常提交。
+        // The same task after a retry starts a new generation, other tasks, and ordinary edits without a run are all committed as usual.
         let next = json!({ "runId": "job_a", "runGeneration": "2" });
         let other = json!({ "runId": "job_b", "runGeneration": "1" });
         let r1 = host
@@ -1276,7 +1276,7 @@ mod tests {
         let first = host.handle("edits.apply", params.clone(), &mut |_| {}).unwrap();
         invalidate(&mut host, &video_id, "job_a", "1");
 
-        // 提交过的命令照常重放同一份回执，按 commandId 也查得到。
+        // Commands already committed still replay the same receipt, and it can also be looked up by commandId.
         let mut events = Vec::new();
         let replay = host.handle("edits.apply", params, &mut |e| events.push(e.clone())).unwrap();
         assert_eq!(replay["replayed"], json!(true));
@@ -1327,7 +1327,7 @@ mod tests {
         ok
     }
 
-    /// 8 kHz 单声道 16 位的静音 wav。
+    /// Silent 8 kHz mono 16-bit WAV.
     fn write_wav(path: &Path, seconds: u32) {
         let samples = 8000 * seconds;
         let data_len = samples * 2;
@@ -1348,8 +1348,8 @@ mod tests {
         std::fs::write(path, bytes).unwrap();
     }
 
-    /// 端到端：经 `edits.apply` 写进转写与按文稿触发的闪避，`exports.plan` 的声音计划按有效词流压低音乐，
-    /// 不再报预览没有施加（预览把同一份词流交给逐帧计划）；词全被剪掉之后不压低，报 `DUCK_NO_SPEECH`。
+    /// End to end: write a transcript and script-triggered ducking through `edits.apply`; `exports.plan`'s audio plan lowers the music according to the effective word stream,
+    /// and no longer reports that preview did not apply it (preview hands the same word stream to the frame-by-frame plan); after all words have been cut, it does not lower the music and reports `DUCK_NO_SPEECH`.
     #[test]
     fn export_plans_duck_music_under_the_effective_word_stream() {
         if !has_ffprobe() {
@@ -1358,7 +1358,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let wav = root.path().join("vo.wav");
         write_wav(&wav, 4);
-        // 音乐是另一个素材（长度不同，内容就不同）：转写只投到旁白上。
+        // Music is a different asset (different length, different content): the transcript is projected only onto the narration.
         let bed = root.path().join("music.wav");
         write_wav(&bed, 5);
         let mut host = host();
@@ -1446,7 +1446,7 @@ mod tests {
         assert!((at(2.8) - 12.0).abs() < 1e-9);
         assert_eq!(audio_plan["notes"], json!([]));
 
-        // 成片计划：没有写了 `speaker` 的声波时不给说话人的区间；加一个之后给（只算写了说话人的词）。
+        // Final cut plan: without a waveform that has `speaker` set, no speaker intervals are given; once one is added, they are given (counting only words that have a speaker set).
         let video_plan = |host: &mut Host| {
             host.handle("exports.plan", json!({ "videoId": video_id, "kind": "video" }), &mut |_| {})
                 .unwrap()
@@ -1462,7 +1462,7 @@ mod tests {
         );
         assert_eq!(video_plan(&mut host)["speakers"], json!({ "spk_a": [[0.0, 0.4]] }));
 
-        // 把两个词所在的部分都剪掉（只留源 [1, 2) 秒）：有效词流为空，不压低。
+        // Cut out the parts containing both words (keeping only source [1, 2) s): the effective word stream is empty, so nothing is lowered.
         apply(
             &mut host,
             json!([{ "type": "trimItem", "sequenceId": sequence_id, "itemId": voice, "edge": "start",
@@ -1481,8 +1481,8 @@ mod tests {
         assert_eq!(audio_plan["notes"], json!([{ "code": "DUCK_NO_SPEECH", "itemId": music }]));
     }
 
-    /// 端到端：经 `edits.apply` 剪掉旁白源 [1, 2) 秒，旁白拆开、后半段前移，跟随剪口的图形一起前移；推送的事件带上剪口集合
-    /// 文档与移动的实例。恢复剪口是新的事务，放回之后接回一段、图形回到原处。
+    /// End to end: cut source [1, 2) s of the narration through `edits.apply`; the narration is split, and the second half moves forward, with graphics attached to the cut moving forward as well; the pushed event carries the cut-point set
+    /// document and the moved instances. Restoring the cut is a new transaction: after it is put back, the segments rejoin into one and the graphics return to their original positions.
     #[test]
     fn cuts_relay_the_voice_and_its_followers_through_the_host() {
         if !has_ffprobe() {
@@ -1563,7 +1563,7 @@ mod tests {
         assert_eq!(voices.len(), 2, "旁白在剪口处拆成两段：{after:?}");
         let shape = after.iter().find(|i| i["id"] == shape_id.as_str()).unwrap();
         assert_eq!(shape["span"], json!({ "fromFrame": 60, "durationFrames": 30 }));
-        // 一笔事务推送一条事件，带上新建的剪口集合文档与移动的实例。
+        // One transaction pushes one event, carrying the newly created cut-point set document and the moved instances.
         assert_eq!(events.len(), 1);
         let documents = snapshot(&mut host)["documents"].clone();
         let (cut_set_id, cut_set) = documents

@@ -14,7 +14,7 @@ import { pl } from './yt-dlp.pl.ts';
 import { tr } from './yt-dlp.tr.ts';
 import { vi } from './yt-dlp.vi.ts';
 
-/** `packages/jobs/src/pipelines/yt-dlp.ts` 给人看的文字：错误与补救（`details.remedy`）。 */
+/** `packages/jobs/src/pipelines/yt-dlp.ts`: text shown to people for errors and remedies (`details.remedy`). */
 const en = {
   toolNotFound: (p: { code: string }) => `Can't find an executable yt-dlp (${p.code})`,
   remedyUnsupported: "The download tool doesn't support this link: use the link to the video page itself (not a playlist, live stream, or search page)",

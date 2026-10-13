@@ -1,7 +1,7 @@
-//! translate 载体（§7）：`<article>` 裸根 HTML 的渲染与解析。
+//! translate carrier (§7): rendering and parsing of the bare-root `<article>` HTML.
 //!
-//! 渲染只产出句级结构，**不含时间戳、不含 word id**；解析一律按 `id` 抽取，
-//! 标签名不进协议（模型把 `<p>` 改成 `<div>` 但 id 在，照样接受）。
+//! Rendering emits only sentence-level structure, **with no timestamps and no word ids**; parsing always extracts by `id`,
+//! and tag names are not part of the protocol (if the model changes `<p>` to `<div>` but the id is kept, it is still accepted).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,71 +22,71 @@ use super::common::{
 };
 use super::html::{Element, escape_attr, escape_text, index_by_id, parse_html};
 
-/// 一句在翻译载体里的渲染输入。
+/// Rendering input for one sentence in the translation carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TranslateSentence {
-    /// HTML id：常规场景为 `s-<首词 id>`，timeline 多源场景为全局唯一 route id。
+    /// HTML id: `s-<first word id>` in the normal case, a globally unique route id in the multi-source timeline case.
     pub id: String,
-    /// 源文（渲染时转义）。
+    /// Source text (escaped when rendered).
     pub source: String,
-    /// 是否可编辑；`false` 即 §7.6 的冻结句。
+    /// Whether the sentence is editable; `false` marks a frozen sentence per §7.6.
     pub editable: bool,
-    /// 已有译文：冻结句的只读参照，写入 `data-translation`。
+    /// Existing translation: the read-only reference for a frozen sentence, written to `data-translation`.
     ///
-    /// 用属性而不是 HTML 注释承载，是为了让 [`parse_translate_source`] 能从渲染文本
-    /// 单独复原校验所需的一切（注释在清洗解析里会被丢弃，且转义不可逆）。
+    /// It is carried in an attribute rather than an HTML comment so that [`parse_translate_source`] can
+    /// rebuild everything validation needs from the rendered text alone (comments are dropped by the sanitizing parser, and escaping cannot be undone).
     pub existing_translation: Option<String>,
-    /// 锁定术语编译出的 required targets（§5.2 的 `rt`），写入 `data-rt` 的 JSON 数组。
+    /// Required targets compiled from locked terms (`rt` in §5.2), written as a JSON array to `data-rt`.
     pub required_targets: Vec<String>,
-    /// timeline 多源路由的源 id（写入 `data-source-id`）。
+    /// Source id for timeline multi-source routing (written to `data-source-id`).
     pub source_id: Option<String>,
-    /// timeline 多源路由的句 id（写入 `data-sid`）。
+    /// Sentence id for timeline multi-source routing (written to `data-sid`).
     pub sentence_id: Option<String>,
-    /// 本句的阅读预算（阅读单位，见 `target_cps_chars` 口径），写入 `data-budget`。
+    /// Reading budget for this sentence (in reading units, see the `target_cps_chars` convention), written to `data-budget`.
     ///
-    /// 口径与 align 表格的 `data-budget` 一致——只带相对预算文案、绝不带秒数；
-    /// 数值由引擎侧的 `reading_budget`（显示时长 × 目标语 cps）算好传进来，
-    /// 载体只负责措辞。`None` 即不渲染该属性（冻结句、以及不带预算的旧载荷）。
+    /// The convention matches `data-budget` in the align table: it carries only a relative budget phrase and never seconds;
+    /// the value is computed on the engine side as `reading_budget` (display duration × target-language cps) and passed in,
+    /// so the carrier only handles the wording. `None` means the attribute is not rendered (frozen sentences, and old payloads without a budget).
     pub budget: Option<usize>,
-    /// 翻译调用顺带产出展示切分草稿时的源侧提示。输出中的草稿只是尽力而为
-    /// 的旁路信息；解析失败绝不影响本句译文验收。
+    /// Source-side hint for when the translation call also produces a display-split draft. The draft in the output is only best-effort
+    /// side information; a parse failure never affects acceptance of this sentence's translation.
     pub alignment: Option<TranslateAlignmentInput>,
 }
 
-/// `file-v1` 翻译载体的一句融合对齐提示（对齐块设计 §6.1）。
+/// Fusion alignment hint for one sentence in the `file-v1` translation carrier (alignment block design §6.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranslateAlignmentInput {
-    /// 句内锚定词，顺序即序号；渲染成 `data-align-words="[1]I [2]didn't …"`
-    /// （与 `align-edges/1` 载体同一序号词串，见 [`render_ordinal_words`]）。
+    /// Anchor words within the sentence; order is the index. Rendered as `data-align-words="[1]I [2]didn't …"`
+    /// (the same ordinal word string as the `align-edges/1` carrier, see [`render_ordinal_words`]).
     pub source_words: Vec<String>,
-    /// 与 `source_words` 同下标的「贴前」标记（[`crate::doc::Word::glue`]）；
-    /// 空 = 都没有。只在进程内用：从 HTML 解析回来的输入不带它。
+    /// “Glue to previous” markers at the same indices as `source_words` ([`crate::doc::Word::glue`]);
+    /// empty = none present. Used in-process only: input parsed back from HTML does not carry it.
     pub source_glue: Vec<bool>,
-    /// 源侧已经要求拆分；false 时模型仍可因目标译文超 fit 给出草稿。
+    /// The source side already requires a split; when false, the model may still give a draft if the target translation exceeds fit.
     pub needs_split: bool,
-    /// 确定性源侧分组（rows 模式）；渲染成 `data-align-groups`。空 = 不渲染。
+    /// Deterministic source-side grouping (rows mode); rendered as `data-align-groups`. Empty = not rendered.
     pub groups: Vec<FusionGroup>,
 }
 
-/// 翻译回答携带的可选块对齐草稿：`<p>` 内按 `<span data-src="…">` 标注的
-/// 译文语义块（[`AlignChunk`]，序号 0-based）。span 剥离后逐字等于 `<p>` 正文；
-/// 块合并、双语 DP 与验收由 align 引擎完成。
+/// Optional block-alignment draft carried by the translation answer: the target-text semantic blocks marked with `<span data-src="…">` inside `<p>`
+/// ([`AlignChunk`], 0-based indices). With the spans stripped, the text equals the `<p>` body verbatim;
+/// block merging, bilingual DP and acceptance are done by the align engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranslateAlignmentDraft {
     pub chunks: Vec<AlignChunk>,
-    /// 草稿是合格的行分区（见 [`is_row_partition`]）。
+    /// The draft is a valid row partition (see [`is_row_partition`]).
     pub rows: bool,
-    /// 行边界全部落在 `data-align-groups` 的组边界上（见
-    /// [`rows_on_group_boundaries`]）。不满足不影响接受，只作计数。
+    /// All row boundaries fall on group boundaries of `data-align-groups` (see
+    /// [`rows_on_group_boundaries`]). Failing this does not affect acceptance; it is only counted.
     pub on_groups: bool,
 }
 
-/// 块序列是否构成合格的**行分区**：每块序号非空、连续递增；块间首尾相接；
-/// 整体恰好覆盖 `0..word_count`；块文本非空。
+/// Whether the block sequence forms a valid **row partition**: each block has non-empty indices that increase consecutively; adjacent blocks join end to start;
+/// together they cover `0..word_count` exactly; block text is non-empty.
 ///
-/// 满足即可把每块直接当一条显示行落库（引擎侧仍会校验行边界能否成为块边界）。
-/// 注意：判定为行分区**不等于**要按行落库——只有 rows 模式（载体带
-/// `data-align-groups`）的草稿才走行直通，常规 fusion 契约要的是最小语义块。
+/// When satisfied, each block can be stored directly as one display row (the engine still checks whether row boundaries can become block boundaries).
+/// Note: being classified as a row partition does **not** mean the rows should be stored as rows. Only drafts in rows mode (carrier has
+/// `data-align-groups`) take the direct row path; the normal fusion contract asks for minimal semantic blocks.
 pub fn is_row_partition(chunks: &[AlignChunk], word_count: usize) -> bool {
     if chunks.is_empty() || word_count == 0 {
         return false;
@@ -107,10 +107,10 @@ pub fn is_row_partition(chunks: &[AlignChunk], word_count: usize) -> bool {
     expected == word_count
 }
 
-/// 行边界是否全部落在确定性分组的边界上：每行的首序号都是某组的首序号，
-/// 且末序号都是某组的末序号（即"行 = 一个组或若干相邻组的并"）。
+/// Whether all row boundaries fall on the boundaries of the deterministic groups: each row's first index is the first index of some group,
+/// and its last index is the last index of some group (i.e. "a row = one group, or the union of several adjacent groups").
 ///
-/// `groups` 为空时恒 `true`（没有分组提示就没有这条约束）。
+/// Always `true` when `groups` is empty (no grouping hint means no such constraint).
 pub fn rows_on_group_boundaries(chunks: &[AlignChunk], groups: &[FusionGroup]) -> bool {
     if groups.is_empty() {
         return true;
@@ -120,14 +120,14 @@ pub fn rows_on_group_boundaries(chunks: &[AlignChunk], groups: &[FusionGroup]) -
     chunks.iter().all(|chunk| {
         match (chunk.ordinals.first(), chunk.ordinals.last()) {
             (Some(first), Some(last)) => starts.contains(first) && ends.contains(last),
-            // 空序号块在行分区里已被排除；这里按"不在组边界上"处理。
+            // Empty-index blocks are already excluded from the row partition; here they are treated as "not on a group boundary".
             _ => false,
         }
     })
 }
 
-/// `data-align-groups` 的渲染：`1-4@0.0-1.4;5-9@1.4-3.2`——序号为 1-based
-/// 闭区间，时间是相对句首的秒数（固定一位小数）。空表返回空串（不渲染属性）。
+/// Rendering of `data-align-groups`: `1-4@0.0-1.4;5-9@1.4-3.2` — indices are 1-based
+/// closed ranges, and times are seconds relative to the sentence start (fixed to one decimal place). An empty table returns an empty string (the attribute is not rendered).
 pub fn render_align_groups(groups: &[FusionGroup]) -> String {
     groups
         .iter()
@@ -155,8 +155,8 @@ fn parse_deciseconds(raw: &str) -> Option<u32> {
     Some(whole * 10 + fraction)
 }
 
-/// [`render_align_groups`] 的逆。任一项不可解析 ⇒ 空表（分组只是提示，
-/// 解析失败绝不影响译文）。
+/// The inverse of [`render_align_groups`]. If any item cannot be parsed ⇒ empty table (groups are only a hint,
+/// and a parse failure never affects the translation).
 pub fn parse_align_groups(raw: &str) -> Vec<FusionGroup> {
     let mut groups = Vec::new();
     for item in raw.split(';').filter(|item| !item.trim().is_empty()) {
@@ -187,7 +187,7 @@ pub fn parse_align_groups(raw: &str) -> Vec<FusionGroup> {
 }
 
 impl TranslateSentence {
-    /// 构造可编辑句。
+    /// Constructs an editable sentence.
     pub fn new(id: impl Into<String>, source: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -202,7 +202,7 @@ impl TranslateSentence {
         }
     }
 
-    /// 构造冻结句（stale-only 页里保语境的已译句）。
+    /// Constructs a frozen sentence (an already-translated sentence kept for context on a stale-only page).
     pub fn frozen(
         id: impl Into<String>,
         source: impl Into<String>,
@@ -216,36 +216,36 @@ impl TranslateSentence {
     }
 }
 
-/// 一个自然段（`<section>` 是分页原子，不跨页拆分）。
+/// One paragraph (`<section>` is the pagination atom and is never split across pages).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TranslateSection {
-    /// 段 id（`p-<段首词 id>`）。
+    /// Paragraph id (`p-<first word id of the paragraph>`).
     pub id: String,
-    /// 说话人标签，写入 `data-sp`，仅供模型调语气，不要求回写。
+    /// Speaker label, written to `data-sp`. It is only there so the model can adjust tone; it is not required to be written back.
     pub speaker: Option<String>,
-    /// 段内句子。
+    /// Sentences within the paragraph.
     pub sentences: Vec<TranslateSentence>,
 }
 
-/// 一页翻译载体。
+/// One page of the translation carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TranslatePage {
-    /// 源语言标签。
+    /// Source language tag.
     pub source_lang: String,
-    /// 目标语言标签。
+    /// Target language tag.
     pub target_lang: String,
-    /// 工程指纹，写入 `data-project-fp`。
+    /// Project fingerprint, written to `data-project-fp`.
     pub project_fingerprint: String,
-    /// 上页尾部语境（HTML 注释静态注入，不要求模型输出）。
+    /// Context from the tail of the previous page (injected statically as an HTML comment; the model is not asked to output it).
     pub context_before: Option<String>,
-    /// 下页头部语境。
+    /// Context from the head of the next page.
     pub context_after: Option<String>,
-    /// 段落列表。
+    /// List of paragraphs.
     pub sections: Vec<TranslateSection>,
 }
 
 impl TranslatePage {
-    /// 按渲染顺序列出全部句 id。
+    /// All sentence ids, listed in rendering order.
     pub fn sentence_ids(&self) -> Vec<&str> {
         self.sections
             .iter()
@@ -254,7 +254,7 @@ impl TranslatePage {
             .collect()
     }
 
-    /// 按 id 查句。
+    /// Look up a sentence by id.
     pub fn sentence(&self, id: &str) -> Option<&TranslateSentence> {
         self.sections
             .iter()
@@ -262,7 +262,7 @@ impl TranslatePage {
             .find(|sentence| sentence.id == id)
     }
 
-    /// 句 id → 所属段 id。
+    /// Sentence id → id of the paragraph it belongs to.
     pub fn section_of(&self) -> BTreeMap<&str, &str> {
         let mut map = BTreeMap::new();
         for section in &self.sections {
@@ -274,53 +274,52 @@ impl TranslatePage {
     }
 }
 
-/// 解析结果。
+/// Parse result.
 ///
-/// **重试判据是 [`page_rejected`](Self::page_rejected) 与 [`retry_ids`](Self::retry_ids)，
-/// 不是 `diagnostics.has_problems()`。** 有两个 §10 码会落在一页「其余内容全部接受」的
-/// 结果上：可编辑句的 `paragraph-move`（版式建议已记录，译文照常入库）与 `unknown-id`
-/// （多余节点已丢弃）。调用方若用 `has_problems()` 决定是否重发，这两种情况会无限空转。
+/// **The retry criteria are [`page_rejected`](Self::page_rejected) and [`retry_ids`](Self::retry_ids),
+/// not `diagnostics.has_problems()`.** Two §10 codes can land on a page whose result is “everything else accepted”: `paragraph-move` on an editable sentence (the layout suggestion is recorded and the translation is still stored as usual) and `unknown-id`
+/// (extra nodes have been discarded). If a caller uses `has_problems()` to decide whether to resend, these two cases will retry endlessly.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranslateParsed {
-    /// 通过校验、可以落盘的句译（句 id → 译文）。冻结句不在其中。
+    /// Sentence translations that passed validation and can be persisted (sentence id → translation). Frozen sentences are not included.
     pub translations: BTreeMap<String, String>,
-    /// 尽力而为的融合对齐草稿。坏草稿静默丢弃，不进入 `retry_ids`，因此
-    /// submit 成功只证明译文正确，不代表草稿已被 align 验收。
+    /// Best-effort fusion alignment drafts. Bad drafts are silently dropped and do not enter `retry_ids`, so
+    /// a successful submit only proves the translations are correct; it does not mean the draft has been accepted by align.
     pub alignments: BTreeMap<String, TranslateAlignmentDraft>,
-    /// 行文本载体（`lines/1`，[`super::lines_translation`]）的逐句对齐草稿；
-    /// HTML 载体下恒空。同 `alignments`：坏草稿只丢弃，不影响译文验收。
+    /// Per-sentence alignment drafts from the line-text carrier (`lines/1`, [`super::lines_translation`]);
+    /// always empty under the HTML carrier. As with `alignments`: bad drafts are only dropped and do not affect translation acceptance.
     pub lines: BTreeMap<String, super::lines_translation::TranslateLinesDraft>,
-    /// 需要进修复波次的句 id（缺失/空译/术语缺失/截断尾部）。
+    /// Sentence ids that need to go into a repair wave (missing / empty translation / missing term / truncated tail).
     pub retry_ids: Vec<String>,
-    /// 本页是否整体拒绝。
+    /// Whether this whole page is rejected.
     ///
-    /// 重试策略重设计 §2.3 之后只剩两种 page-fatal：体积超硬顶
-    /// （`document-oversize`），以及一个期望句都没解析到（`document-truncated` /
-    /// `document-wrapped`）。重复 id、截断尾部、冻结句被改/被搬都已降为
-    /// 单元级或 advisory。
+    /// After the retry-strategy redesign (§2.3), only two page-fatal cases remain: the size exceeds the hard cap
+    /// (`document-oversize`), and not a single expected sentence was parsed (`document-truncated` /
+    /// `document-wrapped`). Duplicate ids, a truncated tail, and frozen sentences being edited or moved have all been downgraded
+    /// to unit-level or advisory.
     pub page_rejected: bool,
-    /// 诊断。
+    /// Diagnostics.
     pub diagnostics: Diagnostics,
 }
 
-/// 把注释文本变成安全的 HTML 注释内容（`--` 会提前闭合注释）。
+/// Turns comment text into safe HTML comment content (`--` would close the comment early).
 fn escape_comment(text: &str) -> String {
     sanitize_inline_text(text).replace("--", "- -")
 }
 
-/// `data-rt` 的编码：JSON 数组，保证任意目标词（含 `"` `<` `&` `/`）都能原样回来。
+/// Encoding of `data-rt`: a JSON array, so that any target term (including `"` `<` `&` `/`) round-trips unchanged.
 fn encode_required_targets(targets: &[String]) -> String {
     serde_json::to_string(targets).unwrap_or_else(|_| "[]".to_owned())
 }
 
-/// `data-rt` 的解码；非法值按「没有锁定术语」处理，绝不因此拒页。
+/// Decoding of `data-rt`; an invalid value is treated as “no locked terms”, and never causes the page to be rejected.
 fn decode_required_targets(raw: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(raw).unwrap_or_default()
 }
 
-/// 从回答的 `<p>` 里抽取块对齐草稿：至少一个 `<span data-src>`、每个序号
-/// 合法且句内不重复、块文本拼接（[`normalize_chars`] 口径）等于译文。任一
-/// 条不满足 ⇒ `None`（丢草稿，不拒译文）。
+/// Extracts the block-alignment draft from the answer's `<p>`: at least one `<span data-src>`, each index
+/// valid and not repeated within the sentence, and the concatenated block text (under the [`normalize_chars`] convention) equals the translation. If any
+/// condition fails ⇒ `None` (the draft is dropped, the translation is not rejected).
 fn fused_chunks(
     element: &Element,
     word_count: usize,
@@ -352,10 +351,9 @@ fn fused_chunks(
     (normalize_chars(&concat) == normalize_chars(translation)).then_some(chunks)
 }
 
-/// `data-budget` 文案：只带相对预算（整句字数上限），不带秒数。
+/// `data-budget` wording: carries only a relative budget (the whole-sentence character limit), not seconds.
 ///
-/// 与 [`super::align_table`] 的同名属性同口径：单位按**目标语**在 CJK 与
-/// 其他文字之间切换，数值本身已由引擎按目标语 cps 算好。
+/// It follows the same convention as the attribute of the same name in [`super::align_table`]: the unit switches between CJK and other scripts based on the **target language**, and the value itself has already been computed by the engine from the target-language cps.
 fn budget_text(budget: usize, target_lang: &str) -> String {
     let unit = if matches!(
         crate::split::primary_subtag(target_lang).as_str(),
@@ -368,7 +366,7 @@ fn budget_text(budget: usize, target_lang: &str) -> String {
     format!("整句≤{budget}{unit}")
 }
 
-/// 渲染一页翻译载体（§7.1）。
+/// Renders one page of the translation carrier (§7.1).
 pub fn render_translate_page(page: &TranslatePage) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -453,15 +451,12 @@ pub fn render_translate_page(page: &TranslatePage) -> String {
     out
 }
 
-/// 载荷末尾的融合提醒（`</article>` 之后一行纯文本）。
+/// Fusion reminder at the end of the payload (one line of plain text after `</article>`).
 ///
-/// system prompt 里的融合契约在长文档上会被"稀释"：实测 deepseek 一页 59 句
-/// 只给前 3 句标了行，其余全部退回纯译文。把最关键的一条要求贴在用户消息
-/// **末尾**（模型最后读到的地方）是侵入最小的补救——不改协议、不改解析
-/// （[`parse_translate_source`] 按 `data-ccut-format` 定位 `<article>`，
-/// 根级尾随文本一律忽略），也不影响 §16 体积护栏（它只看长度）。
+/// On long documents, the fusion contract in the system prompt gets "diluted": in testing, deepseek on a 59-sentence page only marked rows for the first 3 sentences, and everything else fell back to plain translation. Placing the most critical requirement at the **end** of the user message (where the model reads last) is the least intrusive fix: it changes no protocol and no parsing
+/// ([`parse_translate_source`] locates `<article>` via `data-ccut-format`, and trailing text at the root level is always ignored), and it does not affect the §16 size guard (which only looks at length).
 ///
-/// 返回 `None` = 本页没有任何融合句，不加提醒。
+/// Returns `None` = this page has no fusion sentences, so no reminder is added.
 fn fusion_reminder(page: &TranslatePage) -> Option<&'static str> {
     let alignments = page
         .sections
@@ -485,21 +480,21 @@ fn fusion_reminder(page: &TranslatePage) -> Option<&'static str> {
     })
 }
 
-/// 从渲染文本反解出**校验等价**的 [`TranslatePage`]（§2「校验只有一份」）。
+/// Recovers a [`TranslatePage`] from rendered text that is **validation-equivalent** (§2: “there is only one validation”).
 ///
-/// `ccut task submit` 在独立进程里只拿得到磁盘上的输入文件与模型答案，手上没有渲染侧
-/// 结构；本函数让 agent lint 与 provider validate 都能落到同一个 [`parse_translate_page`]，
-/// 而不是各写一份校验。
+/// `ccut task submit` runs in a separate process and only has the input file on disk and the model's answer; it has no render-side
+/// structure. This function lets the agent lint and the provider validate both reach the same [`parse_translate_page`],
+/// instead of each keeping its own validation.
 ///
-/// 只复原**校验相关**的字段：句 id 与顺序、段归属、`editable`、既有译文、required
-/// targets。源文按归一化文本回填（[`parse_translate_page`] 从不读 `source`），
-/// 语境注释与 `budget` 不复原（它们是给模型看的提示，没有对应的校验项；重试波次
-/// 由引擎侧的行投影重新渲染，不会从这里回推预算）。
+/// It restores only the **validation-relevant** fields: sentence ids and order, paragraph membership, `editable`, existing translations, and required
+/// targets. Source text is refilled from normalized text ([`parse_translate_page`] never reads `source`).
+/// Context comments and `budget` are not restored (they are hints for the model and have no corresponding validation item; retry waves
+/// are re-rendered by the engine's row projection and do not infer budgets from here).
 ///
-/// 解析对**未知属性一律忽略**：新增载体属性不会让旧任务目录里的 `src.html`
-/// 变成 `document-*` 问题，反之亦然。
+/// Parsing **ignores unknown attributes**: a newly added carrier attribute will not turn an old task directory's `src.html`
+/// into a `document-*` problem, and vice versa.
 ///
-/// 返回 `None` 表示这不是一份 translate 载体（找不到 `data-ccut-format` 根）。
+/// Returns `None` if this is not a translate carrier (no `data-ccut-format` root found).
 pub fn parse_translate_source(input: &str) -> Option<TranslatePage> {
     let tree = parse_html(input);
     let article = tree
@@ -560,13 +555,13 @@ pub fn parse_translate_source(input: &str) -> Option<TranslatePage> {
     Some(page)
 }
 
-/// 解析并 lint 模型返回的翻译 HTML（§7.4 症状对账表）。
+/// Parses and lints the translation HTML returned by the model (§7.4 symptom reconciliation table).
 ///
-/// `page` 是渲染侧结构：id 集合、冻结句与 required targets 都从这里来，
-/// 因此解析入口不接受裸字符串。
+/// `page` is the render-side structure: the id set, frozen sentences and required targets all come from here,
+/// so the parse entry point does not accept a bare string.
 ///
-/// `input` 是当初实际发给模型的那份渲染文本（宿主手上即 `DocumentRequest.input.content`），
-/// 只用作 §16 体积护栏的基准；传 `None` 表示跳过体积护栏。parse 不会自己调用 render 反推长度。
+/// `input` is the rendered text that was actually sent to the model (on the host side this is `DocumentRequest.input.content`),
+/// used only as the baseline for the §16 size guard; passing `None` skips the size guard. parse never calls render itself to infer the length.
 pub fn parse_translate_page(
     page: &TranslatePage,
     input: Option<&str>,
@@ -592,11 +587,9 @@ pub fn parse_translate_page(
     let expected_sentences: BTreeSet<&str> = page.sentence_ids().into_iter().collect();
     let expected_sections: BTreeSet<&str> = page.sections.iter().map(|s| s.id.as_str()).collect();
 
-    // 重复 id：取**首个**并记 Warning（重试策略重设计 §2.3）。
+    // Duplicate id: keep the **first** one and record a Warning (retry-strategy redesign §2.3).
     //
-    // `index_by_id` 已经按首见保留，因此这里只需要说明取舍。旧实现整页拒收
-    // 重试——重复 id 是模型把同一句写了两遍，其余句子完全可用，为它重掷整页
-    // 是纯烧 token。
+    // `index_by_id` already keeps the first occurrence, so here we only need to state the trade-off. The old implementation rejected the whole page and retried it; a duplicate id means the model wrote one sentence twice while the rest were fine, so re-generating the whole page just wastes tokens.
     for id in &duplicates {
         if expected_sentences.contains(id.as_str()) || expected_sections.contains(id.as_str()) {
             parsed.diagnostics.push_warning(Warning::sentence(
@@ -607,14 +600,14 @@ pub fn parse_translate_page(
         }
     }
 
-    // 未知 id：判据是**结构**而不是 id 字面量。
+    // Unknown id: the criterion is **structure**, not the literal id value.
     //
-    // id 方案不止一种：常规是 `s-<首词 id>`，timeline 多源场景是全局唯一 route id
-    // （现行 `r%06d`）。按前缀猜「像不像协议 id」会让 route id 场景的幻觉句被静默丢掉，
-    // 所以改为看它包不包着本页期望的 id：
-    // - 包着期望 id → 模型自己套的容器（`<div id="page">` 之类）→ ContentIgnored 警告，
-    //   advisory 不进重试账本，免得污染 §10 的封闭集合语义；
-    // - 不包任何期望 id → 凭空多出来的内容节点 → `unknown-id`。
+    // There is more than one id scheme: the usual one is `s-<first word id>`, and the timeline multi-source case uses a globally unique route id
+    // (currently `r%06d`). Guessing by prefix whether something "looks like a protocol id" would silently drop hallucinated sentences in the route-id case,
+    // so instead we check whether it wraps any expected id on this page:
+    // - wraps an expected id → a container the model added itself (such as `<div id="page">`) → ContentIgnored warning,
+    //   advisory and not recorded in the retry ledger, so it does not pollute the closed-set semantics of §10;
+    // - wraps no expected id → an extra content node that appeared out of nowhere → `unknown-id`.
     for (id, element) in index.iter() {
         if expected_sentences.contains(id.as_str()) || expected_sections.contains(id.as_str()) {
             continue;
@@ -639,7 +632,7 @@ pub fn parse_translate_page(
         }
     }
 
-    // 段落归属：只在「句落在另一个已知段里」时判 paragraph-move。
+    // Paragraph membership: flag paragraph-move only when a sentence has landed inside a different known paragraph.
     let mut actual_section: BTreeMap<&str, &str> = BTreeMap::new();
     for section_id in &expected_sections {
         if let Some(element) = index.get(*section_id) {
@@ -665,13 +658,13 @@ pub fn parse_translate_page(
         }
     }
 
-    // §9.3：截断与漏译必须区分——期望 id 的「连续后缀」整体缺失才是截断。
+    // §9.3: truncation and omission must be told apart — truncation means the whole “contiguous suffix” of expected ids is missing.
     let truncated = !missing.is_empty()
         && !present.is_empty()
         && ordered_ids[ordered_ids.len() - missing.len()..] == missing[..];
-    // 一个期望句都没解析到：这已经不是「漏了几句」而是整页失败，本页拒绝。
-    // 判据：输出里还有别的 id（含 section id）→ 结构在但句子没了，按截断处理；
-    // 输出里一个 id 都没有 → 模型多半把文档整个改写/包裹了，按 document-wrapped 处理。
+    // Not a single expected sentence was parsed: this is no longer “a few sentences missing” but a whole-page failure, so this page is rejected.
+    // Criterion: if the output still contains other ids (including section ids) → the structure is there but the sentences are gone, handled as truncation;
+    // if the output has no ids at all → the model most likely rewrote or wrapped the whole document, handled as document-wrapped.
     let nothing_parsed = present.is_empty() && !ordered_ids.is_empty();
     if nothing_parsed {
         let has_any_id = !index.is_empty();
@@ -687,10 +680,10 @@ pub fn parse_translate_page(
         ));
         return parsed;
     }
-    // 截断（期望 id 的连续后缀整体缺失）与散点漏译现在**同样按单元处理**
-    // （重试策略重设计 §2.3）：已解析的句照常接受落库，缺失 id 进 `retry_ids`
-    // 交给波 2/3 重发。一个期望句都没解析到才 page-fatal（上面 `nothing_parsed`
-    // 那一支）。旧实现把截断整页拒收，前面几十句白翻一遍。
+    // Truncation (the contiguous suffix of expected ids is entirely missing) and scattered omissions are now **handled the same way, per unit**
+    // (retry-strategy redesign §2.3): parsed sentences are accepted and stored as usual, and missing ids go into `retry_ids`
+    // for waves 2/3 to resend. Only when not a single expected sentence is parsed is it page-fatal (the `nothing_parsed`
+    // branch above). The old implementation rejected the whole page on truncation, so dozens of sentences translated up front were thrown away.
     if truncated {
         parsed.diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
@@ -719,10 +712,10 @@ pub fn parse_translate_page(
         let element = index[id];
         let text = element.text();
 
-        // 段落归属：可编辑句被挪段是单元级问题（照常记 problem，不拒页）；
-        // 冻结句被挪段降为 advisory——冻结句的**文本从不进 `translations`**
-        // （下面那个 `continue` 是唯一出口），既有译文在 apply 侧原样保留，
-        // 因此挪动它对真相没有任何影响（重试策略重设计 §2.3）。
+        // Paragraph membership: an editable sentence moved to another paragraph is a unit-level problem (recorded as a problem as usual, does not reject the page);
+        // a frozen sentence moved to another paragraph is downgraded to advisory — the **text of a frozen sentence never enters `translations`**
+        // (the `continue` below is the only exit), and the existing translation is kept as-is on the apply side,
+        // so moving it has no effect on the truth (retry-strategy redesign §2.3).
         let moved = match (actual_section.get(id), expected_section_of.get(id)) {
             (Some(actual), Some(expected)) => actual != expected,
             _ => false,
@@ -783,14 +776,13 @@ pub fn parse_translate_page(
             continue;
         }
 
-        // 融合块对齐草稿（对齐块设计 §6.1）：`<p>` 内的 `<span data-src>`。
-        // 坏草稿静默丢弃，绝不拒译文。
+        // Fusion block-alignment draft (alignment block design §6.1): `<span data-src>` inside `<p>`.
+        // Bad drafts are silently dropped and never reject the translation.
         if let Some(alignment) = sentence.alignment.as_ref()
             && let Some(chunks) = fused_chunks(element, alignment.source_words.len(), &text)
         {
-            // 行分区只在**载体请求了行**时采信：`data-align-groups` 就是
-            // rows 模式的载体信号（常规 fusion 契约要的是最小语义块，把它
-            // 当显示行会把一句切成一串碎行）。
+            // A row partition is trusted only when the **carrier requested rows**: `data-align-groups` is exactly
+            // the carrier signal for rows mode (the normal fusion contract wants minimal semantic blocks; treating them as display rows would cut a sentence into a string of fragments).
             let rows = !alignment.groups.is_empty()
                 && is_row_partition(&chunks, alignment.source_words.len());
             let on_groups = rows && rows_on_group_boundaries(&chunks, &alignment.groups);
@@ -816,8 +808,8 @@ pub fn parse_translate_page(
     parsed
 }
 
-/// 在结构解析之后追加内容质量门。拆成显式步骤，让底层 HTML 解析器仍可单独
-/// 测试结构恢复；生产 provider 与 Agent lint 都必须调用本函数。
+/// Appends the content quality gate after structural parsing. It is split into an explicit step so that the underlying HTML parser can still be
+/// tested on its own for structure recovery; both the production provider and the Agent lint must call this function.
 pub fn validate_translation_quality(page: &TranslatePage, parsed: &mut TranslateParsed) {
     let accepted = parsed.translations.clone();
     for (id, text) in accepted {
@@ -998,8 +990,8 @@ mod tests {
         );
     }
 
-    /// 逐句阅读预算是 file-v1 的长度通道：`data-budget` 只带相对预算文案，
-    /// 单位随目标语言切换，绝不带秒数。
+    /// The per-sentence reading budget is the length channel of file-v1: `data-budget` carries only relative budget wording,
+    /// with the unit switching according to the target language, and never seconds.
     #[test]
     fn budget_renders_as_a_readable_attribute() {
         let mut page = sample_page();
@@ -1011,7 +1003,7 @@ mod tests {
             ),
             "{rendered}"
         );
-        // 没有预算的句子照旧不带该属性。
+        // Sentences without a budget still omit this attribute.
         assert!(
             rendered.contains("    <p id=\"s-g1.7\">We did it without ads.</p>\n"),
             "{rendered}"
@@ -1025,8 +1017,8 @@ mod tests {
         );
     }
 
-    /// 新属性不进校验：解析器忽略它，旧任务目录里不带 `data-budget` 的
-    /// `src.html` 与新渲染文本必须给出完全一致的判定。
+    /// New attributes are not part of validation: the parser ignores them, and an old task directory's `src.html` without `data-budget`
+    /// must give exactly the same verdict as the new rendered text.
     #[test]
     fn budget_is_ignored_by_the_parser() {
         let mut page = sample_page();
@@ -1050,7 +1042,7 @@ mod tests {
         let without_budget = parse_translate_page(&legacy, Some(&legacy_rendered), &answer);
         assert!(!with_budget.diagnostics.has_problems());
         assert_eq!(with_budget, without_budget);
-        // 反向兼容：旧载荷配新渲染结构、新载荷配旧结构，判定都不变。
+        // Backward compatibility: an old payload paired with the new render structure, or a new payload paired with the old structure, gets the same verdict either way.
         assert_eq!(
             parse_translate_page(&recovered, Some(&rendered), &answer),
             without_budget
@@ -1093,7 +1085,7 @@ mod tests {
         let parsed = parse_translate_page(&page, Some(&rendered), output);
         assert!(!parsed.page_rejected);
         assert!(parsed.retry_ids.is_empty(), "{:?}", parsed.diagnostics);
-        // span 对译文透明：正文仍是完整译句。
+        // The span is transparent to the translation: the body is still the complete translated sentence.
         assert_eq!(parsed.translations["s-g1.0"], "九十天增长八倍。");
         assert_eq!(
             parsed.alignments["s-g1.0"],
@@ -1108,7 +1100,7 @@ mod tests {
                         ordinals: vec![2, 3, 5],
                     },
                 ],
-                // 序号有缺口（4 未覆盖）⇒ 不是行分区。
+                // Index gap (4 not covered) ⇒ not a row partition.
                 rows: false,
                 on_groups: false,
             }
@@ -1127,7 +1119,7 @@ mod tests {
             groups: Vec::new(),
             source_glue: Vec::new(),
         });
-        // 序号越界（9 > 6）与序号跨块重复各一例；译文本身照常入库。
+        // One example each of an out-of-range index (9 > 6) and an index repeated across blocks; the translation itself is still stored as usual.
         for output in [
             concat!(
                 "<article><section id=\"p-g1.0\">",
@@ -1163,7 +1155,7 @@ mod tests {
 
     #[test]
     fn cjk_spaces_are_collapsed_on_parse() {
-        // 与 `markers::sanitize_corrected` 同口径：CJK 之间的空格是模型噪声。
+        // Same convention as `markers::sanitize_corrected`: spaces between CJK characters are model noise.
         let page = sample_page();
         let parsed = parse_translate_page(
             &page,
@@ -1198,8 +1190,8 @@ mod tests {
     }
 
     #[test]
-    /// §2.3：连续后缀缺失（截断）且已解析 ≥1 句 ⇒ 接受已解析句，缺失 id 进
-    /// `retry_ids`（波 2/3 既有机制），不再整页拒收把前面几十句白翻一遍。
+    /// §2.3: a missing contiguous suffix (truncation) with ≥1 parsed sentence ⇒ accept the parsed sentences, and missing ids go into
+    /// `retry_ids` (the existing waves 2/3 mechanism); the whole page is no longer rejected, which would throw away dozens of sentences already translated.
     fn missing_suffix_is_truncation_but_keeps_the_parsed_prefix() {
         let mut page = sample_page();
         page.sections[0]
@@ -1241,7 +1233,7 @@ mod tests {
     }
 
     #[test]
-    /// §2.3：重复 id 取首个 + Warning，不再整页拒收——其余句子完全可用。
+    /// §2.3: for a duplicate id, keep the first one and emit a Warning; the whole page is no longer rejected, since the other sentences are fully usable.
     fn duplicate_id_takes_the_first_and_warns() {
         let page = sample_page();
         let parsed = parse_translate_page(
@@ -1277,7 +1269,7 @@ mod tests {
 
     #[test]
     fn non_protocol_wrapper_id_is_only_a_warning() {
-        // 模型自己套一层 `<div id="page">` 不是协议违规，不能进重试账本。
+        // The model wrapping things in its own `<div id="page">` is not a protocol violation and must not enter the retry ledger.
         let page = sample_page();
         let body = answer(&[("s-g1.0", "一"), ("s-g1.7", "二")]);
         let wrapped = format!("<div id=\"page\">\n{body}</div>\n");
@@ -1296,8 +1288,8 @@ mod tests {
 
     #[test]
     fn route_style_stray_leaf_is_an_unknown_id() {
-        // timeline 多源场景的 id 是全局唯一 route id（`r%06d`），没有 `s-` 前缀。
-        // 凭空多出来的这类叶子节点必须判 unknown-id，不能被当成模型容器静默丢掉。
+        // In the timeline multi-source case, ids are globally unique route ids (`r%06d`) with no `s-` prefix.
+        // Leaf nodes of this kind that appear out of nowhere must be flagged as unknown-id, and must not be silently dropped as if they were model containers.
         let page = sample_page();
         let body = answer(&[("s-g1.0", "一"), ("s-g1.7", "二")]);
         let polluted = format!("{body}<p id=\"r000999\">凭空</p>\n");
@@ -1352,8 +1344,8 @@ mod tests {
         assert!(!intact.diagnostics.has_code(ProblemCode::FrozenModified));
         assert_eq!(intact.translations.len(), 1);
 
-        // §2.3：冻结句被改动只记 Warning——它的文本从不进 `translations`，
-        // 既有译文在 apply 侧原样保留，整页拒收只是白白重掷其余句子。
+        // §2.3: a frozen sentence that was changed only records a Warning — its text never enters `translations`,
+        // and the existing translation is kept as-is on the apply side, so rejecting the whole page would only needlessly re-roll the other sentences.
         let touched = parse_translate_page(
             &page,
             None,
@@ -1393,7 +1385,7 @@ mod tests {
 
     #[test]
     fn moving_a_frozen_sentence_is_only_a_warning() {
-        // §2.3：挪动冻结句同样只记 Warning——冻结句文本从不写回真相。
+        // §2.3: moving a frozen sentence likewise only records a Warning — frozen sentence text is never written back to the truth.
         let mut page = sample_page();
         page.sections[0].sentences[1] =
             TranslateSentence::frozen("s-g1.7", "We did it without ads.", "没投一分广告。");
@@ -1476,7 +1468,7 @@ mod tests {
         assert!(parsed.diagnostics.has_code(ProblemCode::DocumentOversize));
         assert!(parsed.page_rejected);
 
-        // 不传 input 就没有护栏基准，同一份输出必须放行到正常解析流程。
+        // Without input there is no guard baseline, so the same output must pass through to the normal parsing flow.
         let unguarded = parse_translate_page(&page, None, &bloat);
         assert!(
             !unguarded
@@ -1485,7 +1477,7 @@ mod tests {
         );
     }
 
-    // --- property 测试：固定种子 LCG，禁止未播种随机 ---
+    // --- property tests: fixed-seed LCG; unseeded randomness is forbidden ---
 
     struct Lcg(u64);
 
@@ -1611,9 +1603,9 @@ mod tests {
             let text: String = (0..len)
                 .map(|_| CHARS[(rng.next() as usize) % CHARS.len()])
                 .collect();
-            // 契约：转义在「HTML 空白归一化之后」的文本上逐字往返。
-            // `Element::text()` 会折叠 CJK 之间的空格（与 `sanitize_corrected` 同口径），
-            // 所以基准文本先过一遍同样的归一化，保证幂等。
+            // Contract: escaping round-trips verbatim on text that has been “after HTML whitespace normalization”.
+            // `Element::text()` collapses spaces between CJK characters (same convention as `sanitize_corrected`),
+            // so the baseline text first goes through the same normalization, guaranteeing idempotence.
             let text = super::super::html::normalize_html_text(&sanitize_inline_text(&text));
             if text.is_empty() {
                 continue;
@@ -1627,8 +1619,8 @@ mod tests {
 
     #[test]
     fn parse_source_recovers_validation_shape() {
-        // 渲染文本必须自带校验所需的全部机读信息：`task submit` 在独立进程里
-        // 只有输入文件和答案，没有渲染侧结构。
+        // The rendered text must carry all the machine-readable information validation needs: `task submit` runs in a separate process
+        // with only the input file and the answer, and has no render-side structure.
         let mut page = sample_page();
         page.sections[0].sentences[0].required_targets =
             vec!["A&<B> \"C\"".to_owned(), "/compact".to_owned()];
@@ -1678,17 +1670,17 @@ mod tests {
         let recovered = parse_translate_source(&rendered).expect("translate carrier");
 
         let outputs = [
-            // 全部合格
+            // All valid
             "<article><section id=\"p-g1.0\"><p id=\"s-g1.0\">CucCut 八倍</p><p id=\"s-g1.7\">没投一分广告。</p></section><section id=\"p-g2.0\"><p id=\"s-g2.0\">三</p></section></article>".to_owned(),
-            // 术语缺失 + 空译
+            // Missing term + empty translation
             "<article><section id=\"p-g1.0\"><p id=\"s-g1.0\">宝卡特八倍</p><p id=\"s-g1.7\">没投一分广告。</p></section><section id=\"p-g2.0\"><p id=\"s-g2.0\"> </p></section></article>".to_owned(),
-            // 冻结句被改
+            // Frozen sentence edited
             "<article><section id=\"p-g1.0\"><p id=\"s-g1.0\">CucCut 八倍</p><p id=\"s-g1.7\">改了</p></section><section id=\"p-g2.0\"><p id=\"s-g2.0\">三</p></section></article>".to_owned(),
-            // 冻结句被挪段
+            // Frozen sentence moved to another paragraph
             "<article><section id=\"p-g1.0\"><p id=\"s-g1.0\">CucCut 八倍</p></section><section id=\"p-g2.0\"><p id=\"s-g1.7\">没投一分广告。</p><p id=\"s-g2.0\">三</p></section></article>".to_owned(),
-            // 尾部截断
+            // Tail truncation
             "<article><section id=\"p-g1.0\"><p id=\"s-g1.0\">CucCut 八倍</p></section></article>".to_owned(),
-            // 垃圾
+            // Garbage
             "好的，这是翻译".to_owned(),
         ];
         for output in &outputs {
@@ -1704,7 +1696,7 @@ mod tests {
         assert!(parse_translate_source("").is_none());
     }
 
-    // ---- 行分区（`--align-fusion rows`） -----------------------------------
+    // ---- Row partition (`--align-fusion rows`) -----------------------------------
 
     fn chunk(text: &str, ordinals: &[usize]) -> AlignChunk {
         AlignChunk {
@@ -1713,48 +1705,48 @@ mod tests {
         }
     }
 
-    /// 合格行分区：每块序号连续递增、块间首尾相接、恰好覆盖 `0..N`。
+    /// Valid row partition: each block's indices increase consecutively, adjacent blocks join end to start, and together they cover `0..N` exactly.
     #[test]
     fn row_partition_accepts_contiguous_full_coverage() {
         let chunks = vec![chunk("九十天", &[0, 1]), chunk("增长八倍。", &[2, 3, 4, 5])];
         assert!(is_row_partition(&chunks, 6));
-        // 单行覆盖整句（语序对不上时的合法退化形态）。
+        // A single row covering the whole sentence (a valid degenerate form when the word order does not line up).
         assert!(is_row_partition(
             &[chunk("九十天增长八倍。", &[0, 1, 2, 3, 4, 5])],
             6
         ));
     }
 
-    /// 反例逐条：区间有缺口 / 区间不递增 / 覆盖不到 N / 起点不是 1 /
-    /// 空序号 / 空文本。这些草稿在 rows 模式下一律不进直通路径。
+    /// Counterexamples, one per case: a gap in the ranges / ranges not increasing / not covering N / start not at 1 /
+    /// empty index / empty text. In rows mode these drafts never take the direct path.
     #[test]
     fn row_partition_rejects_gaps_reordering_and_short_coverage() {
-        // 拼接可以恰好等于译文，但序号 3 谁也没覆盖——缺口。
+        // The concatenation can exactly equal the translation, yet index 3 is covered by nobody — a gap.
         assert!(!is_row_partition(
             &[chunk("九十天", &[0, 1, 2]), chunk("增长八倍。", &[4, 5])],
             6
         ));
-        // 块内序号不递增。
+        // Indices within a block do not increase.
         assert!(!is_row_partition(
             &[chunk("九十天", &[1, 0]), chunk("增长八倍。", &[2, 3, 4, 5])],
             6
         ));
-        // 块间逆序（第二块回头）。
+        // Blocks out of order between them (the second block goes backwards).
         assert!(!is_row_partition(
             &[chunk("九十天", &[3, 4, 5]), chunk("增长八倍。", &[0, 1, 2])],
             6
         ));
-        // 覆盖不到 N。
+        // Does not cover N.
         assert!(!is_row_partition(
             &[chunk("九十天", &[0, 1]), chunk("增长八倍。", &[2, 3])],
             6
         ));
-        // 首块不从 0 起。
+        // First block does not start at 0.
         assert!(!is_row_partition(
             &[chunk("九十天增长八倍。", &[1, 2, 3, 4, 5])],
             6
         ));
-        // 空序号块 / 空文本块 / 空表。
+        // Empty-index block / empty-text block / empty table.
         assert!(!is_row_partition(
             &[chunk("九十天", &[0, 1]), chunk("增长八倍。", &[])],
             2
@@ -1766,8 +1758,8 @@ mod tests {
         assert!(!is_row_partition(&[], 6));
     }
 
-    /// 行 = 一个组或若干相邻组的并；在组内部切开就不算落在组边界上
-    /// （只影响计数，不影响接受）。
+    /// Row = one group, or the union of several adjacent groups; a row cut inside a group does not count as lying on a group boundary
+    /// (this only affects the count, not acceptance).
     #[test]
     fn rows_on_group_boundaries_only_accepts_unions_of_whole_groups() {
         let groups = vec![
@@ -1790,24 +1782,24 @@ mod tests {
                 t1_ds: 41,
             },
         ];
-        // 前两组合成一行，第三组独立成行。
+        // The first two groups merge into one row; the third group is its own row.
         let joined = vec![
             chunk("甲", &(0..=8).collect::<Vec<_>>()),
             chunk("乙", &(9..=11).collect::<Vec<_>>()),
         ];
         assert!(rows_on_group_boundaries(&joined, &groups));
-        // 在第二组内部切开。
+        // Cut inside the second group.
         let split_inside = vec![
             chunk("甲", &(0..=5).collect::<Vec<_>>()),
             chunk("乙", &(6..=11).collect::<Vec<_>>()),
         ];
         assert!(!rows_on_group_boundaries(&split_inside, &groups));
-        // 没有分组提示时这条约束不存在。
+        // Without a grouping hint, this constraint does not apply.
         assert!(rows_on_group_boundaries(&split_inside, &[]));
     }
 
-    /// `data-align-groups` 的渲染/解析同源；不可解析的值退回空表（分组只是
-    /// 提示，绝不因此影响译文）。
+    /// Rendering and parsing of `data-align-groups` share one source; an unparseable value falls back to an empty table (groups are only
+    /// a hint and never affect the translation).
     #[test]
     fn align_groups_round_trip_through_the_carrier() {
         let groups = vec![
@@ -1866,8 +1858,8 @@ mod tests {
         page
     }
 
-    /// rows 模式载体：`data-align-groups` 渲染并反解；合格行分区被标成
-    /// `rows` 且落在组边界上。
+    /// Rows-mode carrier: `data-align-groups` is rendered and parsed back; a valid row partition is marked
+    /// `rows` and lies on group boundaries.
     #[test]
     fn rows_carrier_round_trips_groups_and_extracts_a_row_partition() {
         let page = rows_page();
@@ -1898,7 +1890,7 @@ mod tests {
         assert_eq!(draft.chunks.len(), 2);
     }
 
-    /// 行边界切在组内部：仍是合格行分区（照常接受），只是 `on_groups` 为假。
+    /// Row boundaries cut inside a group: still a valid row partition (accepted as usual), but `on_groups` is false.
     #[test]
     fn rows_off_group_boundaries_are_still_accepted_as_rows() {
         let page = rows_page();
@@ -1914,8 +1906,8 @@ mod tests {
         assert!(!draft.on_groups);
     }
 
-    /// 常规 fusion（载体不带 `data-align-groups`）的草稿即使形状上恰好是行
-    /// 分区，也不标 `rows`——它的契约要的是最小语义块，按行落库会切出碎行。
+    /// A draft from normal fusion (the carrier has no `data-align-groups`) is not marked `rows`, even if its shape happens to be a row
+    /// partition: its contract asks for minimal semantic blocks, and storing by row would cut out fragments.
     #[test]
     fn row_shaped_draft_without_groups_is_not_marked_as_rows() {
         let mut page = sample_page();
@@ -1941,14 +1933,13 @@ mod tests {
         assert!(!draft.on_groups);
     }
 
-    /// 只读属性可省：答案里每个 `<p>` 只留 `id`（连 `data-align-*` 一起丢掉）
-    /// 时，译文与**行分区**草稿照常提取，零 problem。这是 rows 模式压缩输出的
-    /// 关键——校验用的是输入页，答案里回显那些属性纯属白付 token。
+    /// Read-only attributes may be omitted: when each `<p>` in the answer keeps only `id` (dropping `data-align-*` as well),
+    /// the translation and the **row-partition** draft are still extracted as usual, with zero problems. This is the key to compressing rows-mode output — validation uses the input page, so echoing those attributes in the answer is pure wasted tokens.
     #[test]
     fn an_answer_that_keeps_only_ids_still_yields_translations_and_row_drafts() {
         let page = rows_page();
         let rendered = render_translate_page(&page);
-        // 输入页当然带着全套只读属性。
+        // The input page of course carries the full set of read-only attributes.
         assert!(rendered.contains("data-align-words="), "{rendered}");
         assert!(rendered.contains("data-align-groups="), "{rendered}");
 
@@ -1974,8 +1965,8 @@ mod tests {
         assert!(draft.rows && draft.on_groups);
     }
 
-    /// 同一件事在 `on` 模式（块草稿）与冻结句/术语句上的镜像：`data-editable`、
-    /// `data-translation`、`data-rt` 全部只从**输入页**读，答案丢光也不改判定。
+    /// The same principle in `on` mode (block drafts) and for frozen/term sentences: `data-editable`,
+    /// `data-translation` and `data-rt` are all read only from the **input page**, so even if the answer drops them all, the verdict does not change.
     #[test]
     fn readonly_attributes_are_read_from_the_input_page_not_the_answer() {
         let mut page = sample_page();
@@ -1993,7 +1984,7 @@ mod tests {
             TranslateSentence::frozen("s-g1.7", "We did it without ads.", "没投一分广告。");
         let rendered = render_translate_page(&page);
 
-        // 答案：全部属性省略，冻结句原样回显其既有译文文本。
+        // Answer: all attributes omitted; the frozen sentence echoes its existing translation text as-is.
         let output = concat!(
             "<article><section id=\"p-g1.0\">",
             "<p id=\"s-g1.0\"><span data-src=\"1-2\">九十天，</span>",
@@ -2008,14 +1999,14 @@ mod tests {
             "{:?}",
             parsed.diagnostics
         );
-        // 冻结句仍不进 translations（判据来自输入页的 editable=false）。
+        // Frozen sentences still do not enter translations (the criterion comes from `editable=false` on the input page).
         assert!(!parsed.translations.contains_key("s-g1.7"));
-        // 术语校验也用输入页的 data-rt：答案没回显，依然生效。
+        // Term validation also uses `data-rt` from the input page: the answer did not echo it, and it still applies.
         assert_eq!(parsed.translations["s-g1.0"], "九十天，ARR 增长八倍。");
         assert_eq!(parsed.alignments["s-g1.0"].chunks.len(), 2);
     }
 
-    /// 载荷末尾的融合提醒：有融合句才加，rows / on 文案不同，且不影响反解。
+    /// Fusion reminder at the end of the payload: added only when there are fusion sentences; the rows and on wording differ, and it does not affect parsing back.
     #[test]
     fn the_payload_carries_a_trailing_fusion_reminder_that_parsing_ignores() {
         let plain = render_translate_page(&sample_page());
@@ -2027,7 +2018,7 @@ mod tests {
             "{rows}"
         );
         assert!(rows.trim_end().ends_with("display rows."), "{rows}");
-        // 提醒是 `</article>` 之后的根级文本，反解一律忽略。
+        // The reminder is root-level text after `</article>`, and parsing back always ignores it.
         let recovered = parse_translate_source(&rows).expect("translate carrier");
         assert_eq!(recovered.sentence_ids(), vec!["s-g1.0", "s-g1.7"]);
         assert_eq!(
@@ -2046,7 +2037,7 @@ mod tests {
         assert!(chunks.contains("chunk annotation"), "{chunks}");
     }
 
-    /// 行分区不合格（区间有缺口）时草稿仍按普通块草稿保留，译文照常入库。
+    /// When a row partition is invalid (ranges have a gap), the draft is still kept as an ordinary block draft, and the translation is stored as usual.
     #[test]
     fn row_partition_failure_keeps_the_translation_and_the_plain_draft() {
         let page = rows_page();

@@ -58,10 +58,7 @@ import { FONT_COPY as FC } from './font-copy.ts';
 import { intlLocale } from '@cuccut/protocol';
 
 /**
- * 选字框的一张表（原型 panel-font-picker.jsx 的 LibraryPicker）：搜索、分类与文字筛选，分段「这个视频里用到 → 最近用过 →
- * 全部字体」（检索或筛选时合成「搜索结果」），每一行写着此刻的状态。约两千行按定高虚拟滚动，只画视野里的；样张滚进视野
- * 120ms 后才取。打开着的时候行序不动（下载完的族不在光标底下跳位置）。原型的「品牌字体」一段与「导入字体…」没有：
- * 品牌库的字体还不能在字体框里选，真实应用也没有导入本机字体文件的路径。
+ * One table in the font picker (prototype panel-font-picker.jsx's LibraryPicker): search, category and text filters, and segments “这个视频里用到” (used in this video) → “最近用过” (recently used) → “全部字体” (all fonts). When searching or filtering, these combine into “搜索结果” (search results). Each row shows its status at that moment. About two thousand rows use fixed-height virtual scrolling and only draw what is in view; a sample is fetched 120ms after it scrolls into view. While open, the row order does not change (a just-downloaded family does not jump out from under the cursor). The prototype's “品牌字体” (brand fonts) section and “导入字体…” (import font…) are absent: brand-library fonts cannot yet be picked in the font box, and the real app has no path for importing local font files.
  */
 
 type Client = ReturnType<typeof useRuntime>['client'];
@@ -149,7 +146,7 @@ const pct = style({ minWidth: 32, font: 'code-xs', color: 'gray-700', textAlign:
 const info = style({ opacity: { default: 0, isShown: 1 } });
 const empty = style({ paddingX: 8, paddingY: '[14px]', textAlign: 'center', font: 'ui-sm', color: 'gray-500' });
 
-/** 浏览器说离线（`navigator.onLine`）：上线、断线时跟着变。 */
+/** The browser reports offline (`navigator.onLine`); this changes when going online or offline. */
 function useOnline(): boolean {
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
   useEffect(() => {
@@ -164,7 +161,7 @@ function useOnline(): boolean {
   return online;
 }
 
-/** 选中一个族：立即生效（`onPick`），还没下载的开始下载并按原型的规则给 toast。 */
+/** Select a family: takes effect immediately (`onPick`). If it is not downloaded yet, the download starts and a toast is shown per the prototype's rules. */
 export function pickFamily(client: Client, family: string, fallback: string): void {
   if (family === SYSTEM_FONT) return;
   void chooseFamily(client, family).then(
@@ -172,12 +169,12 @@ export function pickFamily(client: Client, family: string, fallback: string): vo
       if (!started) return;
       const toast = pickToast(started, fallback);
       if (!toast.cancellable) return void ToastQueue.neutral(toast.text, { timeout: 5000 });
-      // 带动作的 toast 在 S2 里不会按 timeout 自己消失：下载结束（下完、失败、取消）或 8 秒后由这里关掉。
+      // A toast with an action does not dismiss itself on timeout in S2: it is closed here when the download ends (completed, failed, cancelled), or after 8 seconds.
       const close = ToastQueue.neutral(toast.text, {
         actionLabel: FC.cancelDownload,
         shouldCloseOnAction: true,
         onAction: () => {
-          // 点的时候再看：已经下完就照实说。
+          // Check at the moment of the click: if it has already finished downloading, say so accurately.
           const live = liveFontJobs(useJobs.getState().jobs).has(familyKey(family));
           const status = useFontLibrary.getState().statuses[familyKey(family)];
           if (live || status?.state === 'downloading') void cancelFamily(client, family).catch(() => {});
@@ -231,13 +228,13 @@ export function FontLibraryList({ value, onPick, inline = false }: { value: stri
   }, [client]);
 
   const rows = useMemo(() => pickerRows(statuses, order, value), [statuses, order, value]);
-  // 打开着的选字框里行序不动：表取到之后记下一次，之后按它排（下次打开再按新状态排）。
+  // While the font picker is open, the row order does not change: after the table is fetched, record the order once and sort by it from then on (the next open sorts by the new status).
   const frozen = useRef<Map<string, number> | null>(null);
   if (!frozen.current && loaded) frozen.current = orderKey(rows);
   const inVideo = useMemo(() => usage?.families.map((f) => f.family) ?? [], [usage]);
   const sections = useMemo(
     () => fontSections(rows, { query, category, script, inVideo, recent, frozen: frozen.current ?? undefined }),
-    // frozen 只在表取到的那一刻变（跟着 loaded）
+    // `frozen` changes only at the moment the table is fetched (it follows `loaded`)
     [rows, query, category, script, inVideo, recent, loaded],
   );
   const layout = useMemo(() => fontListLayout(sections), [sections]);
@@ -245,7 +242,7 @@ export function FontLibraryList({ value, onPick, inline = false }: { value: stri
   const live = useMemo(() => liveFontJobs(jobs), [jobs]);
   const downloadable = useMemo(() => catalogueCount(rows), [rows]);
 
-  // 第一次画出整表时把当前选中的那一行滚进视野。
+  // When the whole table is first drawn, scroll the currently selected row into view.
   const scrolled = useRef(false);
   useEffect(() => {
     if (scrolled.current || !loaded || !scrollRef.current) return;
@@ -255,7 +252,7 @@ export function FontLibraryList({ value, onPick, inline = false }: { value: stri
     setScrollTop(top);
   }, [layout, loaded, value]);
 
-  // 样张：停下 120ms 后取视野里还没取过的。
+  // Samples: after pausing for 120ms, fetch the ones in view that have not been fetched yet.
   useEffect(() => {
     const timer = setTimeout(() => {
       const known = (family: string) => family === SYSTEM_FONT || !!useFontLibrary.getState().samples[familyKey(family)];
@@ -358,7 +355,7 @@ export function FontLibraryList({ value, onPick, inline = false }: { value: stri
   );
 }
 
-/** 一行：样张 ＋ 选中勾 ＋ 状态（标签 / 下载 / 进度与取消 / 失败与重试）＋ 悬停时的详情钮。 */
+/** One row: sample, selected check, status (label / download / progress and cancel / failure and retry), and a details button on hover. */
 function FontRowView({
   row: f,
   top,

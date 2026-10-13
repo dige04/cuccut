@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cleanOutputLine, runShellCommand } from './shell-command.ts';
 
-/** 用 `/bin/sh` 跑小命令：不碰 brew、npm、网络。 */
+/** Runs small commands with `/bin/sh`: does not touch brew, npm, or the network. */
 
 function collect(command: string, extra: { killGraceMs?: number } = {}) {
   const lines: string[] = [];

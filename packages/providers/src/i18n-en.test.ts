@@ -5,7 +5,7 @@ import { startFakeProviderServer, type FakeProviderServer } from './testing/fake
 import { providerFetch } from './http/provider-fetch.ts';
 import { COMPAT_VENDORS } from './vendor-catalog.ts';
 
-/** 界面语言是英文时，在线服务的错误分类说明与供应商名字是英文；供应商的原话原样作为参数。 */
+/** When the UI language is English, the error classification notes and provider names for online services are in English; the provider's original text is passed through unchanged as a parameter. */
 describe('providers 的英文文案', () => {
   const servers: FakeProviderServer[] = [];
 

@@ -14,7 +14,7 @@ import { pl } from './video-create.pl.ts';
 import { tr } from './video-create.tr.ts';
 import { vi } from './video-create.vi.ts';
 
-/** `packages/jobs/src/pipelines/video-create.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/video-create.ts`. */
 const en = {
   videoClosed: 'The video was closed, so nothing was imported: open the video and try again',
   noAsset: "The import didn't return an asset",

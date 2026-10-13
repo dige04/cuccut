@@ -14,9 +14,9 @@ import { pl } from './caption-layer.pl.ts';
 import { tr } from './caption-layer.tr.ts';
 import { vi } from './caption-layer.vi.ts';
 
-/** `packages/jobs/src/pipelines/caption-layer.ts`：「建立字幕层」一步的步骤名、错误、警告与写进视频的名字。 */
+/** `packages/jobs/src/pipelines/caption-layer.ts`: step names, errors, warnings and names written into the video for the “build caption layer” step. */
 const en = {
-  /** 步骤名，也是事务的标签。 */
+  /** Step name, also the label of the transaction. */
   label: 'Add subtitle layer',
   noSource: 'There is no document to add a subtitle layer for',
   videoClosed: 'The video was closed, so no subtitle layer was added. Open the video and try again.',
@@ -32,11 +32,11 @@ const en = {
   unaligned: (p: { count: number }) =>
     `${p.count} translation units aren't aligned (alignment is null), so their timing can't be worked out`,
   noSourceSpeech: "Couldn't find the transcript this translation was made from",
-  /** 写进视频的名字：字幕轨、字幕文档与字幕实例。 */
+  /** Names written into the video: the caption track, the caption document and the caption instance. */
   subtitlesName: 'Subtitles',
-  /** 写进视频的名字：没有语言的译文字幕层。 */
+  /** Name written into the video: the translated caption layer with no language. */
   translationName: 'Translation',
-  /** 写进视频的名字：双语共用的字幕样式文档。 */
+  /** Name written into the video: the caption style document shared by bilingual captions. */
   styleName: 'Subtitle style',
 };
 

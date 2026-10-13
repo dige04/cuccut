@@ -3,17 +3,17 @@ import { EDITOR_COPY as E } from './editor-copy.ts';
 import type { StallReport, StallStep } from './preview-watch.ts';
 
 /**
- * 预览载入与卡住（产品设计 §5.1）：舞台上画什么。卡没卡住由预览引擎的卡住诊断判（`preview-watch.ts`，门槛 `STALL_MS`）；
- * 这里只把诊断的步骤换成给人看的一句话（点名素材、字幕文档或字体族），开发细节（元素状态、意外的错）留在开发日志里。
+ * Preview loading and stalls (product design §5.1): what is drawn on the stage. Whether it is stuck is decided by the preview engine's stall diagnostics (`preview-watch.ts`, threshold `STALL_MS`);
+ * here the diagnostic step is only turned into a one-line message for people (naming the asset, caption document or font family). Development details (element state, unexpected errors) stay in the dev log.
  */
 
-/** 载入这么久还没好才露出转圈（打开很快的视频不闪一下）。 */
+/** Only show the spinner if loading still hasn't finished after this long (a video that opens quickly doesn't flash). */
 export const SPINNER_DELAY_MS = 500;
 
-/** 转换没完成前最多显示 99%：挂着 100% 读起来像卡死（设计稿 model-stage-load.js 的 `MAX_PCT`）。 */
+/** Show at most 99% until conversion finishes: sitting at 100% reads like a freeze (design draft model-stage-load.js `MAX_PCT`). */
 const MAX_PERCENT = 99;
 
-/** 卡住提示说的是哪一类（与设计稿 model-stage-load.js 的步骤同一套）。 */
+/** Which kind of stall the hint describes (the same set of steps as design draft model-stage-load.js). */
 export type StallTopic = 'engine' | 'video' | 'media' | 'prepare' | 'captions' | 'fonts' | 'paint';
 
 export function stallTopic(step: StallStep): StallTopic {
@@ -38,13 +38,13 @@ export function stallTopic(step: StallStep): StallTopic {
   }
 }
 
-/** 按 ID 查名字（素材记录与文档记录的 `name`）。 */
+/** Look up a name by ID (the `name` of asset records and document records). */
 export interface StallNames {
   asset(id: Id): string | undefined;
   document(id: Id): string | undefined;
 }
 
-/** 卡在哪一步的那一句；点名的对象查不到名字时用通用说法。 */
+/** The sentence for the step it is stuck at; when the named object's name can't be found, a generic phrase is used. */
 export function stallDetail(report: Pick<StallReport, 'step' | 'media' | 'documents' | 'fonts'>, names: StallNames): string {
   const topic = stallTopic(report.step);
   if (topic === 'media' || topic === 'prepare') {
@@ -63,13 +63,13 @@ export function stallDetail(report: Pick<StallReport, 'step' | 'media' | 'docume
   return topic === 'engine' ? E.stall.engine : topic === 'video' ? E.stall.video : E.stall.paint;
 }
 
-/** 转换进度（0–1）→ 显示的百分比：向下取整、封顶 99；不知道进度是 null（进度条不定）。 */
+/** Conversion progress (0–1) → displayed percentage: rounded down, capped at 99; null when progress is unknown (the progress bar is indeterminate). */
 export function preparePercent(progress: number | null | undefined): number | null {
   if (typeof progress !== 'number' || !(progress >= 0)) return null;
   return Math.min(MAX_PERCENT, Math.floor(progress * 100));
 }
 
-/** 已经等了几秒（`now` 与 `since` 是诊断的同一个时钟）。 */
+/** How many seconds have been waited (`now` and `since` are on the same diagnostic clock). */
 export function waitedSeconds(report: Pick<StallReport, 'since'>, now: number): number {
   return Math.max(0, Math.floor((now - report.since) / 1000));
 }

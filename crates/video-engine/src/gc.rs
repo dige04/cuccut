@@ -1,28 +1,25 @@
-//! 视频目录里 `blobs/` 的 GC（架构设计 §5.2、§5.5）：按引用图删掉没有任何记录提到的 blob，清掉过了宽限期的 staging 残留。
+//! GC of `blobs/` in the video directory (architecture design §5.2, §5.5): deletes blobs that no record mentions according to the reference graph, and clears staging leftovers that are past the grace period.
 //!
-//! - 引用集合来自视频库（[`crate::store::Store::referenced_content_hashes`]）：素材的全部版本、代码包版本、
-//!   当前实体与撤销记录里出现的摘要。撤销能把删掉的素材放回来，所以历史版本也算引用。
-//! - `blobs/<sha256>.<ext>` 与 `blobs/<sha256>/` 按摘要匹配，摘要不在引用集合里才删；名字不是这个样子的条目
-//!   不归视频管理，不碰。
-//! - `blobs/.staging/` 里最近修改时间早于宽限期的条目删掉；宽限期内的留着（可能正在写入）。
-//! - 只有持有写锁的引擎调用（[`crate::Video::gc_blobs`]）：同一时刻没有别的写入者往 `blobs/` 发布新的 bytes，
-//!   这个视频自己的导入在同一个 `&mut Video` 上串行完成，不会与 GC 交错。
-//! - 冻结中的任务租约、导出与便携包导入在引擎之外：何时调用由 Runtime 决定（还有租约时不调用）。
+//! - The reference set comes from the video store ([`crate::store::Store::referenced_content_hashes`]): digests appearing in all versions of assets, code bundle versions, current entities and the undo records. Undo can bring back deleted assets, so historical versions also count as references.
+//! - `blobs/<sha256>.<ext>` and `blobs/<sha256>/` are matched by digest; they are deleted only if the digest is not in the reference set. Entries whose names do not look like this are not managed by the video and are not touched.
+//! - Entries in `blobs/.staging/` whose modification time is earlier than the grace period are deleted; those within the grace period are kept (they may be being written).
+//! - Only called by the engine while it holds the write lock ([`crate::Video::gc_blobs`]): at the same time no other writer publishes new bytes to `blobs/`. This video's own imports are completed serially on the same `&mut Video`, so they do not interleave with GC.
+//! - Frozen task leases, export and portable-package import are outside the engine: when to call is decided by the Runtime (and it does not call while a lease is held).
 //!
-//! 删除失败（权限、文件被占）记日志、计入回执的 `failed`，不让整次 GC 失败。
+//! A failed deletion (permissions, file in use) is logged and counted in the receipt's `failed`, and does not fail the whole GC.
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-/// staging 条目的缺省宽限期：比这新的可能还在写入，留着。
+/// Default grace period for staging entries: anything newer than this may still be being written, so it is kept.
 pub const STAGING_GRACE: Duration = Duration::from_secs(60 * 60);
 
 const HASH_PREFIX: &str = "sha256:";
 const HASH_HEX_LEN: usize = 64;
 
-/// 一次 GC 删掉的一个条目。`path` 相对视频目录，用 `/` 分隔。
+/// One entry deleted by a GC run. `path` is relative to the video directory, using `/` as separator.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemovedEntry {
@@ -30,7 +27,7 @@ pub struct RemovedEntry {
     pub bytes: u64,
 }
 
-/// 删不掉的条目与原因。
+/// An entry that could not be deleted, and the reason.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GcFailure {
@@ -38,26 +35,26 @@ pub struct GcFailure {
     pub error: String,
 }
 
-/// 一次 GC 的回执。
+/// The receipt of one GC run.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlobGcReport {
-    /// 没有引用、已删掉的 blob。
+    /// Unreferenced blobs that were deleted.
     pub removed: Vec<RemovedEntry>,
-    /// 过了宽限期、已删掉的 staging 条目。
+    /// Staging entries past the grace period that were deleted.
     pub staging_removed: Vec<RemovedEntry>,
-    /// 以上两类一共释放的字节数。
+    /// Total bytes freed by the two categories above.
     pub freed_bytes: u64,
-    /// 仍被引用、留着的 blob 数。
+    /// Number of blobs still referenced and kept.
     pub kept: u64,
-    /// 宽限期内、留着的 staging 条目数。
+    /// Number of staging entries kept because they are within the grace period.
     pub staging_kept: u64,
-    /// 不像 blob 的条目（不归视频管理），没有动。
+    /// Entries that do not look like a blob (not managed by the video); not touched.
     pub skipped: Vec<String>,
     pub failed: Vec<GcFailure>,
 }
 
-/// 从一段文本（库里存的 JSON 或摘要列）里收集所有 `sha256:<64 位小写十六进制>`，只记十六进制部分。
+/// Collects all `sha256:<64 lowercase hex digits>` from a piece of text (JSON stored in the database or a digest column), recording only the hex part.
 pub(crate) fn collect_hashes(text: &str, out: &mut HashSet<String>) {
     let mut rest = text;
     while let Some(at) = rest.find(HASH_PREFIX) {
@@ -76,7 +73,7 @@ fn is_hash_hex(text: &str) -> bool {
     text.len() == HASH_HEX_LEN && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// `blobs/` 里一个条目名对应的摘要：文件是 `<hex>.<ext>`，目录是 `<hex>`。不是这个样子的返回 `None`。
+/// The digest corresponding to an entry name in `blobs/`: the file is `<hex>.<ext>`, the directory is `<hex>`. Returns `None` if the name is not in this form.
 fn blob_hash(name: &str, is_dir: bool) -> Option<&str> {
     if is_dir {
         return is_hash_hex(name).then_some(name);
@@ -85,7 +82,7 @@ fn blob_hash(name: &str, is_dir: bool) -> Option<&str> {
     (is_hash_hex(stem) && !ext.is_empty() && ext.bytes().all(|b| b.is_ascii_alphanumeric())).then_some(stem)
 }
 
-/// 条目占用的字节数：目录按里面的文件累加。不跟随符号链接。
+/// Bytes occupied by an entry: for a directory, the sum of its files. Does not follow symbolic links.
 fn entry_size(path: &Path) -> u64 {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return 0;
@@ -98,7 +95,7 @@ fn entry_size(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// 条目里最近的修改时间：目录取它自己与所有后代中最新的（往深层目录写文件不更新顶层目录的时间）。
+/// The most recent modification time within an entry: for a directory, the newest of itself and all its descendants (writing a file deep inside does not update the top-level directory's time).
 fn newest_mtime(path: &Path) -> Option<SystemTime> {
     let meta = fs::symlink_metadata(path).ok()?;
     let mut newest = meta.modified().ok();
@@ -131,7 +128,7 @@ fn rel(video_dir: &Path, path: &Path) -> String {
         .join("/")
 }
 
-/// 删一个条目，结果记进回执；失败只记日志与 `failed`。
+/// Deletes one entry and records the result in the receipt; on failure, only logs and `failed`.
 fn sweep(video_dir: &Path, path: &Path, removed: &mut Vec<RemovedEntry>, report_freed: &mut u64, failed: &mut Vec<GcFailure>) {
     let bytes = entry_size(path);
     let shown = rel(video_dir, path);
@@ -150,9 +147,9 @@ fn sweep(video_dir: &Path, path: &Path, removed: &mut Vec<RemovedEntry>, report_
     }
 }
 
-/// 按给定的引用集合清理 `video_dir/blobs/`。`referenced` 是摘要的十六进制部分（不带 `sha256:`）。
+/// Cleans `video_dir/blobs/` against the given reference set. `referenced` holds the hex part of digests (without `sha256:`).
 ///
-/// 调用方必须持有视频的写锁（见模块说明）；一般经 [`crate::Video::gc_blobs`] 调用。
+/// The caller must hold the video's write lock (see the module description); usually called through [`crate::Video::gc_blobs`].
 pub fn gc_blob_dir(video_dir: &Path, referenced: &HashSet<String>, staging_grace: Duration, now: SystemTime) -> BlobGcReport {
     let mut report = BlobGcReport::default();
     let blobs = video_dir.join("blobs");
@@ -195,7 +192,7 @@ pub fn gc_blob_dir(video_dir: &Path, referenced: &HashSet<String>, staging_grace
         let mut expired = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            // 读不到时间的当作刚写的，时间在将来的当作刚写的：宁可多留一轮。
+            // If the time cannot be read, treat it as just written; if the time is in the future, also treat it as just written. Better to keep it one more round.
             match newest_mtime(&path) {
                 Some(time) if now.duration_since(time).unwrap_or(Duration::ZERO) >= staging_grace => expired.push(path),
                 _ => report.staging_kept += 1,

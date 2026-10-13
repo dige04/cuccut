@@ -1,4 +1,4 @@
-//! 任务保护（架构设计 §3.2）：智能体在任务里的提交与撤销带上保护范围，触碰时整笔以 `TASK_PROTECTED` 拒绝、什么都不写。
+//! Task protection (architecture design §3.2): commits and undos made by an agent within a task carry a protected range; when touched, the whole edit is rejected with `TASK_PROTECTED` and nothing is written.
 
 #![allow(clippy::result_large_err)]
 
@@ -60,11 +60,11 @@ struct Fixture {
     seq: String,
     v1: String,
     v2: String,
-    /// V1 上 0–60 帧的文字。
+    /// Text at frames 0–60 on V1.
     title: String,
-    /// V1 上 60–90 帧的形状。
+    /// A shape at frames 60–90 on V1.
     shape: String,
-    /// V2 上 0–90 帧的文字。
+    /// Text at frames 0–90 on V2.
     overlay: String,
     _dir: tempfile::TempDir,
 }
@@ -183,7 +183,7 @@ fn entity_protection_only_covers_that_entity() {
         &guard,
     )
     .expect("别的实体照常修改");
-    // 删除受保护的实体也算触碰。
+    // Deleting a protected entity also counts as touching it.
     let error = apply_as(
         &mut video,
         ActorKind::Agent,
@@ -234,7 +234,7 @@ fn interval_protection_covers_items_overlapping_before_or_after_and_honours_trac
         overlay,
         ..
     } = fixture();
-    // 0–30 帧，只看 V1：标题（0–60）相交，形状（60–90）不相交，V2 上的角标不看。
+    // Frames 0–30, only V1 is checked: the title (0–60) intersects, the shape (60–90) does not, and the corner badge on V2 is not checked.
     let guard = protections(json!([{
         "protectionId": "prot_i",
         "target": { "kind": "interval", "sequenceId": seq, "span": { "fromFrame": 0, "durationFrames": 30 }, "trackIds": [v1] }
@@ -264,7 +264,7 @@ fn interval_protection_covers_items_overlapping_before_or_after_and_honours_trac
         &guard,
     )
     .expect("别的轨道不受这项保护");
-    // 修改后进入区间也算触碰：形状原来在 60–90 帧，挪到 V2 的 110 帧进入 100–130 帧的受保护区间。
+    // Entering a range after a change also counts as touching: the shape was originally at frames 60–90, and moving it to frame 110 on V2 enters the protected range of frames 100–130.
     let later = protections(json!([{
         "protectionId": "prot_later",
         "target": { "kind": "interval", "sequenceId": seq, "span": { "fromFrame": 100, "durationFrames": 30 } }

@@ -43,7 +43,7 @@ const node = (nodeId: string): PairedNode => ({
 
 type Handler = (params: unknown) => unknown;
 
-/** 只换掉 `client.request` 的会话：记下发出的方法与参数，按方法名回结果（可以是一个等着放行的 Promise）。 */
+/** Only swaps the session of `client.request`: it records the methods and parameters sent, and answers by method name (the answer can be a Promise that waits to be released). */
 function fakeSession(handlers: Record<string, Handler>) {
   const calls: Array<[string, unknown]> = [];
   const session = Object.create(RuntimeSession.prototype) as RuntimeSession;

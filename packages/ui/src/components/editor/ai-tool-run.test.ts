@@ -96,7 +96,7 @@ describe('直接调模型的运行', () => {
     expect(await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'Summarize' }, 'gpt-5-mini')).toBe(true);
     expect(deps.runtime.startPipeline).toHaveBeenCalledWith('ai-tool', { videoId: 'vid', tool: 'summary', prompt: 'Summarize' });
     expect(useAiToolRun.getState().runs[key]).toMatchObject({ jobId: 'p1', status: 'running', model: 'gpt-5-mini' });
-    // 同一个工具同时只跑一次；别的工具照跑。
+    // The same tool runs only once at a time; other tools run as usual.
     expect(await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'again' }, 'gpt-5-mini')).toBe(false);
     expect(await startAiTool({ videoId: 'vid', tool: 'blog', prompt: 'Blog' }, 'gpt-5-mini')).toBe(true);
     useJobs.setState({ jobs: [job('p1', 'running')] });
@@ -121,7 +121,7 @@ describe('直接调模型的运行', () => {
     await undoAiTool(key);
     expect(undone).toHaveLength(1);
     expect(toasts).toEqual([]);
-    // 收据关掉之后列表仍知道那一次撤销过。
+    // After the receipt is closed, the list still knows that undo happened.
     closeAiToolResult(key);
     expect(useAiToolRun.getState().undoneJobs).toEqual({ p1: true });
   });
@@ -144,7 +144,7 @@ describe('直接调模型的运行', () => {
     expect(useAiToolRun.getState().problems[key]).toMatchObject({ message: 'bad output', retryJobId: 'p1', tool: 'chapters' });
     await retryAiTool(key);
     expect(deps.runtime.retryPipeline).toHaveBeenCalledWith('p1');
-    // 镜像里还是那条失败的记录：不收尾。
+    // The mirror still holds that failed record: do not finish it.
     useJobs.setState({ jobs: [job('p1', 'failed', null, { error: { code: 'X', message: 'x' } as JobRecord['error'] })] });
     expect(useAiToolRun.getState().runs[key]).toBeDefined();
     useJobs.setState({ jobs: [job('p1', 'cancelled', null, { updatedAt: 'u2' })] });

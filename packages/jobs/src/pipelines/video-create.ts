@@ -10,30 +10,27 @@ import type { PipelineVideos } from './translate.ts';
 import type { PipelineTargets, VideoLease } from './video-target.ts';
 
 /**
- * 视频工具共用的几步（架构设计 §7.9）：新建视频、把一个文件以链接素材导入（新建的视频与时间线还空着的视频同一笔事务放上主轨）、
- * 提交转写并等它。
- * 从链接导入（`link-import.ts`）与转录（`transcribe.ts`）都用这一份。
+ * Steps shared by the video tools (architecture design §7.9): creating a video, importing a file as a linked media item (a new video or an empty timeline video gets the item on its main track in the same transaction), and submitting a transcription and waiting for it.
+ * Both link import (`link-import.ts`) and transcription (`transcribe.ts`) use this one.
  *
- * 中断之后重试不重复做（流程的产出在步骤完成时才记下，「做完了、还没记下」的窗口靠下面各自的办法认回）：
- * - 新建视频：先在项目（或会话的来源目录）里占下目录（`PipelineTargets.reserve`，占下之后别的新建都跳过它），把位置写进这次运行的 staging
- *   （`create-intent.json`，失败与中断时保留），再新建到那里。重试时读回位置：那里已经有视频就认回它，还是空目录就建进去。
- * - 导入：事务的 `commandId` 固定（`<父任务>:import`），先按它向引擎查回执，提交过的直接用回执里的素材。
- * - 转写：先在 Job Ledger 里找这次运行提交过的转写 Job（`submitter` 是这个父任务、同一个视频与素材），完成了的直接用、
- *   还在跑的接着等，不再提交第二个（否则重试会多出一份转写）。
+ * Retries after an interruption do not repeat work. A pipeline's output is recorded when its step completes, so the "work done, not yet recorded" window is recognized by the separate methods below:
+ * - Creating a video: first reserve a directory in the project (or the session's source directory) (`PipelineTargets.reserve`; once reserved, other creations skip it), write the location into this run's staging (`create-intent.json`, kept on failure or interruption), then create the video there. On retry, read the location back: if a video is already there, adopt it; if the directory is empty, create the video in it.
+ * - Import: the transaction's `commandId` is fixed (`<parent job>:import`). Query the engine for a receipt by it first; if already committed, use the media from the receipt directly.
+ * - Transcription: first look in the Job Ledger for the transcription job this run submitted (`submitter` is this parent job, with the same video and media). If it has completed, use it directly; if it is still running, keep waiting; do not submit a second one (otherwise a retry would produce an extra transcript).
  */
 
-/** 新建视频的意图：占下的位置。 */
+/** Intent for creating a video: the reserved location. */
 const CREATE_INTENT = 'create-intent.json';
 
-/** 导入要用到的视频能力：有回执查询时先查（重启之后的重试）。 */
+/** Video capabilities the import needs: when a receipt lookup is available, it is tried first (retries after a restart). */
 export type MediaVideos = PipelineVideos & {
-  /** 按 `commandId` 查已经提交的事务的回执；没有时 null。 */
+  /** Looks up the receipt of an already committed transaction by `commandId`. null when there is none. */
   receipt?(videoId: Id, commandId: Id): Promise<{ refs: Record<string, Id> } | null>;
-  /** 根序列（`place: 'if-empty'` 时看时间线空不空）；没打开时 null。 */
+  /** Root sequence (checked for emptiness with `place: 'if-empty'`). null when not open. */
   rootSequence?(videoId: Id): Sequence | null;
 };
 
-/** 新建视频（`target.create`）：占位、记下意图、新建（或认回），交给流程持有。 */
+/** Creates a video (`target.create`): reserves a location, records the intent, creates the video (or adopts an existing one), and hands it to the pipeline to hold. */
 export async function createHeldVideo(
   targets: Pick<PipelineTargets, 'reserve' | 'create'>,
   context: Pick<PipelineStepContext<unknown>, 'staging' | 'parentJobId' | 'hold'>,
@@ -46,7 +43,7 @@ export async function createHeldVideo(
     try {
       await writeJsonAtomic(file, { place });
     } catch (error) {
-      // 意图没记下：占下的空目录不留。
+      // If the intent was not recorded, do not leave the reserved empty directory behind.
       await fs.rmdir(path.join(String(place.root), String(place.file))).catch(() => {});
       throw error;
     }
@@ -59,20 +56,19 @@ export async function createHeldVideo(
 
 export interface MediaImport {
   videoId: Id;
-  /** 文件的绝对路径：以链接素材导入（文件留在原处）。 */
+  /** Absolute path of the file: imported as a linked media item (the file stays where it is). */
   file: string;
   name: string;
   provenance: { origin: string; source?: unknown };
   /**
-   * 同一笔事务把素材放上主轨（第一条同类轨道），从 0 开始、覆盖整段媒体（新建的视频用）；`'if-empty'` 时只在根序列上还没有
-   * 任何片段时放（导入已有的空视频，例如对外服务先 `videos_create` 再下载进去）。
+   * In the same transaction, puts the media on the main track (the first track of its kind), starting at 0 and covering the whole media (used for new videos). With `'if-empty'`, it is placed only when the root sequence has no clips yet (for importing into an existing empty video, for example when an external service calls `videos_create` first and then downloads into it).
    */
   place: boolean | 'if-empty';
-  /** 事务的标签（写进视频的历史）：目录文字的 `.text`。 */
+  /** The transaction's label (written into the video's history): the `.text` of the catalog string. */
   label: string;
 }
 
-/** 以链接素材导入一个文件（可选同一笔事务放上时间线），返回素材 ID。 */
+/** Imports a file as a linked media item (optionally putting it on the timeline in the same transaction) and returns the media ID. */
 export async function importMedia(
   videos: MediaVideos,
   context: Pick<PipelineStepContext<unknown>, 'parentJobId' | 'run'>,
@@ -80,7 +76,7 @@ export async function importMedia(
 ): Promise<{ assetId: Id }> {
   const commandId = `${context.parentJobId}:import`;
   const { videoId } = request;
-  // 上次提交了、产出还没记下就中断了：按命令认回那笔事务。
+  // The last run committed the transaction, but the output was not recorded before the interruption. Adopt that transaction by its command.
   const previous = await videos.receipt?.(videoId, commandId);
   if (previous?.refs.link) return { assetId: previous.refs.link };
   const state = videos.state(videoId);
@@ -111,12 +107,12 @@ export async function importMedia(
   return { assetId };
 }
 
-/** 流程里的转写：提交前检查配置、提交、等待与取消（复用 `models.transcribe` 的提交）。 */
+/** Transcription within the pipeline: checks configuration before submitting, submits, waits, and cancels (reuses the submission from `models.transcribe`). */
 export interface PipelineTranscriber {
-  /** 选定 Provider 与模型（没有配置时抛 `CAPABILITY_NOT_CONFIGURED`）。 */
+  /** Selects the Provider and model (throws `CAPABILITY_NOT_CONFIGURED` when none is configured). */
   check(target?: { provider?: string; model?: string }): Promise<{ providerId: string; modelId: string }>;
   submit(request: TranscribeRequest, submitter: JobSubmitter): Promise<{ jobId: Id }>;
-  /** 没有视频的转写（文件的转录）。`language` 是断言的语言（BCP 47）。 */
+  /** Transcription with no video (transcribing a file). `language` is the asserted language (BCP 47). */
   submitFile?(
     request: { file: string; provider?: string; model?: string; language?: string; hint?: string },
     submitter: JobSubmitter,
@@ -124,19 +120,18 @@ export interface PipelineTranscriber {
   settled(jobId: Id): Promise<JobState>;
   cancel(jobId: Id): Promise<unknown>;
   inspect(jobId: Id): JobRecord;
-  /** Job Ledger 里的任务（重试时找这次运行提交过的转写）；没有时每次都重新提交。 */
+  /** Job in the Job Ledger (used on retry to find the transcription this run submitted). When there is none, it is submitted again every time. */
   list?(): JobRecord[];
 }
 
 /**
- * 提交转写并等它完成（Job 自己把语音文档应用到视频，§7.3），返回 Job 与它写入的文档。重试时先认回这次运行提交过的、
- * 完成了或还在跑的转写。
+ * Submits a transcription and waits for it to complete (the Job itself applies the speech document to the video, §7.3). Returns the Job and the document it wrote. On retry, first adopts the transcription this run submitted, whether it has completed or is still running.
  */
 export async function transcribeInVideo(
   jobs: PipelineTranscriber,
   context: Pick<PipelineStepContext<unknown>, 'parentJobId' | 'attempt' | 'signal' | 'progress'>,
   request: Omit<TranscribeRequest, 'commandId'>,
-  /** 完成了的转写还能不能用（例如它写入的文档被删了时不能）；不给时都能用。还在跑的总是接着等。 */
+  /** Whether a completed transcription can still be used (for example, not when the document it wrote has been deleted). When not given, all are usable. A transcription still running is always waited for. */
   usable: (job: JobRecord) => boolean = () => true,
 ): Promise<{ jobId: Id; documentId: Id | null; artifactId: string | null; transactionId: Id | null }> {
   const { parentJobId, signal } = context;
@@ -152,7 +147,7 @@ export async function transcribeInVideo(
         ((job.state === 'completed' && usable(job)) || job.state === 'queued' || job.state === 'running'),
     )
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
-  // 每次执行一个命令：同一个命令会拿回上次失败的那个 Job。
+  // Each execution runs one command. The same command gets back the Job that failed last time.
   const commandId = context.attempt > 1 ? `${parentJobId}:transcribe:${context.attempt}` : `${parentJobId}:transcribe`;
   const { jobId } = earlier
     ? { jobId: earlier.jobId }
@@ -175,7 +170,7 @@ export async function transcribeInVideo(
   }
   const record = jobs.inspect(jobId);
   const result = record.result;
-  // 写入文档的那笔事务（应用提交了的最后一次）。
+  // The transaction that wrote the document (the last one whose apply was committed).
   const applied = record.applications?.filter((app) => app.state === 'committed').at(-1);
   return {
     jobId,

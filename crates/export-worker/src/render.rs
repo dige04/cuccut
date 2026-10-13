@@ -1,6 +1,5 @@
-//! 逐帧合成与编码。输出帧 k 的序列时刻是 `start + k / fps`（精确值，架构设计 §9.10）；输出帧率与序列帧率不同时，
-//! 帧计划按这个时刻所在的序列帧取实例，视频按这个时刻映射到的源时刻取帧。
-//! 解码与编码都是平台原生优先、ffmpeg 兜底（[`crate::native`]）；用了哪条路、为什么回落，记在 `done` 的 `video` 里。
+//! Frame-by-frame composition and encoding. Output frame k's sequence time is `start + k / fps` (an exact value, architecture design §9.10). When the output frame rate differs from the sequence frame rate, the frame plan takes instances from the sequence frame containing this time, and the video takes its frame at the source time this time maps to.
+//! Decoding and encoding both prefer the platform-native path, with ffmpeg as fallback ([`crate::native`]). Which path was used, and why fallback happened, is recorded in `video` of `done`.
 
 use std::collections::HashSet;
 use std::io::{BufRead, Read};
@@ -24,9 +23,9 @@ use crate::preflight;
 use crate::sources::Sources;
 use crate::{Failure, emit};
 
-/// 进度最多这么频繁地报一次。
+/// Progress is reported at most this often.
 pub(crate) const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
-/// 排队等着写进编码器的帧数（1080p 的 RGBA 一帧 8.3 MB，池里多一个正在画的）。
+/// Number of frames queued to be written into the encoder (one 1080p RGBA frame is 8.3 MB; the pool has one more being drawn).
 const ENCODE_QUEUE: usize = 2;
 
 fn render_failure(error: RenderError) -> Failure {
@@ -41,7 +40,7 @@ fn render_failure(error: RenderError) -> Failure {
     }
 }
 
-/// 标准输入收到 `cancel` 或被关闭时置位。
+/// Set when `cancel` is received on stdin or stdin is closed.
 pub(crate) fn watch_cancel() -> Arc<AtomicBool> {
     let flag = Arc::new(AtomicBool::new(false));
     let set = Arc::clone(&flag);
@@ -82,7 +81,7 @@ pub fn run(path: &Path) -> Result<ExitCode, Failure> {
         return Err(failure);
     }
     let settings = input.encode_settings()?;
-    // 按画布画在画面那一块的尺寸上；比输出小时贴进黑底的输出帧（黑边），排版不按输出的比例重排。
+    // Drawn to the canvas at the size of the picture block. When smaller than the output, it is placed onto a black output frame (letterboxing); the layout is not rescaled to the output's aspect ratio.
     let picture = input.output.picture();
     let boxed = Letterbox::new(input.output.width, input.output.height, picture);
     let mut renderer = FrameRenderer::new(
@@ -97,13 +96,13 @@ pub fn run(path: &Path) -> Result<ExitCode, Failure> {
     )
     .map_err(render_failure)?;
     renderer.set_speakers(input.speakers.clone().map(Arc::new));
-    // 冻结的本机字体在画第一帧之前装上；之后不再去本机找（成片按冻结的字体画，不随机器上后来的字体变）。
+    // Frozen local fonts are loaded before the first frame is drawn; after that the machine is not searched again. The export is drawn with the frozen fonts and does not change with fonts installed on the machine later.
     let fonts = frozen_fonts(&input.fonts)?;
     if !fonts.is_empty() {
         renderer.add_fonts(fonts);
     }
     let mut sources = Sources::new(&input, tools.clone(), report.pictures.clone(), skip);
-    // 写编码器在单独的线程：合成线程把帧交进队列就画下一帧（`progress` 的帧数是交进队列的帧数）。
+    // Writing to the encoder happens on a separate thread: the composition thread hands a frame to the queue and draws the next frame straight away (the frame count in `progress` is the number handed to the queue).
     let (mut encoder, encoder_backend, encoder_fallback) = start_encoder(&input, &tools, &settings, &report)?;
     let view = input.document.view();
     let total = report.frames;
@@ -176,8 +175,8 @@ pub fn run(path: &Path) -> Result<ExitCode, Failure> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// 起编码队列：按预检选的路走原生写入器，原生打不开时回落 ffmpeg（缺编码器时以 `EXPORT_TOOL_MISSING` 失败）。
-/// 返回队列、编码后端名与回落记录。
+/// Starts the encode queue: uses the native writer on the path chosen by preflight, and falls back to ffmpeg if native fails to open (fails with `EXPORT_TOOL_MISSING` when encoders are missing).
+/// Returns the queue, the encode backend name, and the fallback records.
 fn start_encoder(
     input: &Input,
     tools: &media_core::Tools,
@@ -219,9 +218,7 @@ fn start_encoder(
     Ok((QueuedEncoder::new(encoder, ENCODE_QUEUE, Letterbox::BAR), "ffmpeg", Some(fallback)))
 }
 
-/// 冻结的本机字体（架构设计 §9.11 的「字体」）：按冻结时记下的文件与文件里第几个，抽出那一个 face（与预览同一个抽法）。
-/// 文件不见了、字节数或摘要与冻结时不同时以 `FONT_MISSING` 失败——成片不悄悄换成别的字体；冻结时就没找到的族不在
-/// 这里，照回退字体画、渲染器报提示。同一个文件只核对一次，同一个 face 只装一次。
+/// Frozen local fonts (architecture design §9.11 “fonts”): by the file and the face index recorded at freeze time, extracts that one face (same extraction as the preview). If the file is gone, or its byte count or digest differs from freeze time, it fails with `FONT_MISSING`, so the export does not silently swap in another font. Families that were not found at freeze time are not here; they are drawn with the fallback font, and the renderer reports a notice. The same file is verified only once, and the same face is loaded only once.
 fn frozen_fonts(frozen: &[InputFont]) -> Result<Vec<Arc<Vec<u8>>>, Failure> {
     let mut checked: HashSet<PathBuf> = HashSet::new();
     let mut loaded: HashSet<(PathBuf, u32)> = HashSet::new();
@@ -262,7 +259,7 @@ fn frozen_fonts(frozen: &[InputFont]) -> Result<Vec<Arc<Vec<u8>>>, Failure> {
     Ok(fonts)
 }
 
-/// 文件的字节数与内容摘要（`sha256:` 加十六进制，与 Runtime 冻结素材与字体时的写法相同）。
+/// File byte count and content digest (`sha256:` followed by hex, in the same format the Runtime uses when freezing assets and fonts).
 fn file_digest(path: &Path) -> std::io::Result<(u64, String)> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -280,8 +277,7 @@ fn file_digest(path: &Path) -> std::io::Result<(u64, String)> {
     Ok((total, format!("sha256:{hex}")))
 }
 
-/// 输出帧：画面与输出同尺寸时整帧复制进编码队列的缓冲；否则把画面逐行贴进画面那一块。缓冲来自编码队列的池，
-/// 一开始铺满不透明黑（RGBA 0, 0, 0, 255）、回收时原样留着，画面以外的黑边不再重写。
+/// Output frame: when the picture and the output are the same size, the whole frame is copied into the encode queue's buffer; otherwise the picture is copied row by row into the picture block. The buffer comes from the encode queue's pool and is initially filled with opaque black (RGBA 0, 0, 0, 255). When recycled it is left as is, so the black bars outside the picture are not rewritten.
 struct Letterbox {
     picture: PictureRect,
     full: bool,
@@ -289,7 +285,7 @@ struct Letterbox {
 }
 
 impl Letterbox {
-    /// 黑边的颜色，也是编码队列的缓冲一开始铺的颜色。
+    /// The color of the black bars, which is also the color the encode queue's buffer is initially filled with.
     const BAR: [u8; 4] = [0, 0, 0, 255];
 
     fn new(width: u32, height: u32, picture: PictureRect) -> Letterbox {
@@ -300,7 +296,7 @@ impl Letterbox {
         }
     }
 
-    /// 把画面写进输出帧 `frame`（黑边已经铺好）。
+    /// Writes the picture into output frame `frame` (the black bars are already filled).
     fn place(&self, picture: &[u8], frame: &mut [u8]) {
         if self.full {
             frame.copy_from_slice(picture);
@@ -337,7 +333,7 @@ mod tests {
         }
     }
 
-    /// 冻结的字体按摘要核对后抽出来装上（同一个 face 只装一次）；文件改了或不见了是 `FONT_MISSING`，不悄悄换字体。
+    /// The frozen font is verified by digest and then extracted and loaded (the same face is loaded only once). A changed or missing file is `FONT_MISSING`; the font is not silently swapped.
     #[test]
     fn frozen_fonts_load_only_when_the_file_is_unchanged() {
         let dir = tempfile::tempdir().unwrap();
@@ -368,7 +364,7 @@ mod tests {
         assert!(frozen_fonts(&[]).unwrap().is_empty());
     }
 
-    /// 黑边与画面：画面逐行落在居中的那一块，其余是不透明的黑；与输出同尺寸时原样交出。
+    /// Black bars and picture: the picture is placed row by row in the centered block, and the rest is opaque black. Passed through as is when it is the same size as the output.
     #[test]
     fn the_picture_lands_centred_between_opaque_black_bars() {
         let picture = PictureRect {
@@ -377,7 +373,7 @@ mod tests {
             width: 4,
             height: 2,
         };
-        // 画面每个像素按坐标上色，好认出落点。
+        // Each pixel is colored by its coordinates, so it is easy to see where it lands.
         let source: Vec<u8> = (0..2u8)
             .flat_map(|y| (0..4u8).flat_map(move |x| [10 + x, 20 + y, 200, 255]))
             .collect();
@@ -395,7 +391,7 @@ mod tests {
                 }
             }
         }
-        // 上下黑边。
+        // Top and bottom black bars.
         let tall = Letterbox::new(
             2,
             6,
@@ -412,7 +408,7 @@ mod tests {
         assert_eq!(rows[1], [0, 0, 0, 255, 0, 0, 0, 255]);
         assert_eq!(rows[2], [255; 8]);
         assert_eq!(rows[4], [0, 0, 0, 255, 0, 0, 0, 255]);
-        // 铺满：整帧照抄。
+        // Full-bleed: copy the whole frame as is.
         let full = Letterbox::new(
             4,
             2,

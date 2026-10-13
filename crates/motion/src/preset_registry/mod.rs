@@ -1,22 +1,21 @@
-//! Preset 配方注册表（ADR-M03，设计 §5.4）。
+//! Preset recipe registry (ADR-M03, design §5.4).
 //!
-//! 内置配方是**数据**：`core/presets/builtin/{motion,transition}/*.json`，
-//! 经 `include_str!` 嵌入、`OnceLock` 一次性解析成 `'static` 结构。
-//! 数字全部来自 manifest，算法按名字引用（`lattice-murmur-v1`、`idle-ramp-v1`），
-//! 未知算法名在解析期就被拒绝（`manifest-invalid`）。
+//! Built-in recipes are **data**: `core/presets/builtin/{motion,transition}/*.json`,
+//! embedded via `include_str!` and parsed once through `OnceLock` into `'static` structures.
+//! Numbers all come from the manifest; algorithms are referenced by name (`lattice-murmur-v1`, `idle-ramp-v1`).
+//! Unknown algorithm names are rejected at parse time (`manifest-invalid`).
 //!
-//! 两种形状并存（ADR-M08）：
+//! Two shapes coexist (ADR-M08):
 //!
-//! - [`frozen`]：阶段 1 已发布的 `timeline.*@1` / `bcf.*@1` / 转场配方，
-//!   四条专用解析路径，**不得改写**——它们钉着旧项目的像素。
-//! - [`manifest`]：设计 §5.4.1 的通用 manifest（`tracks` 或 `compose` + `params`
-//!   + `aliases` + `exposedTo`），阶段 2 的 canonical family 走它；
-//!   展开在 [`compose`]，`"{param}"` 替换在 [`substitute`]。
+//! - [`frozen`]: the `timeline.*@1` / `bcf.*@1` / transition recipes published in phase 1. They have four dedicated parse paths and **must not be rewritten**, because they pin the pixels of old projects.
+//! - [`manifest`]: the generic manifest of design §5.4.1 (`tracks` or `compose` + `params`
+//!   + `aliases` + `exposedTo`). Phase 2's canonical families use it.
+//!   Expansion is in [`compose`], and `"{param}"` substitution is in [`substitute`].
 //!
-//! 为什么用显式 `include_str!` 清单而不是 `build.rs`：清单可 grep、改名即红、
-//! `cargo build --offline` 与 `apps/gpui` 的独立 lockfile 都不受影响，
-//! "加一个 preset = 加一行"是字面意义上的。目录与清单的一致性由
-//! `tests/manifests.rs`（dev-only，可以读文件系统）守住。
+//! Why an explicit `include_str!` list instead of `build.rs`: the list is greppable, renaming turns it red,
+//! `cargo build --offline` and `apps/gpui`'s separate lockfile are both unaffected, and
+//! "adding a preset = adding one line" holds literally. Consistency between the directory and the list is guarded by
+//! `tests/manifests.rs` (dev-only, may read the filesystem).
 
 use std::sync::OnceLock;
 
@@ -34,7 +33,7 @@ macro_rules! builtin {
     };
 }
 
-/// 加一个 motion 配方 = 加一行。
+/// Adding a motion recipe = adding one line.
 static MOTION_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "timeline.enter.none"),
     builtin!("motion", "timeline.enter.fade"),
@@ -50,15 +49,15 @@ static MOTION_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "timeline.enter.typewriter"),
     builtin!("motion", "timeline.enter.riseWords"),
     builtin!("motion", "timeline.enter.wipe"),
-    // 设计稿文字动画目录补齐（`designs/cuccut/app/model-textpresets.js`）：
-    // 姿态按同名动画的起点与时长感觉取值，单 pose 模型近似。
+    // Supplement to the text animation catalogue in the design draft (`designs/cuccut/app/model-textpresets.js`):
+    // pose values are taken from the start and duration feel of the same-named animation; approximated with a single-pose model.
     builtin!("motion", "timeline.enter.compress"),
     builtin!("motion", "timeline.enter.bounce"),
     builtin!("motion", "timeline.enter.fall"),
     builtin!("motion", "timeline.enter.skid"),
     builtin!("motion", "timeline.enter.roll"),
-    // 第 156 轮补齐到设计稿 In 19 / Out 16 / Loop 9：slide 补上下两向
-    // （入场方向 = 从哪一侧来），wave/flipboard/dragonfly/billboard 首次落核。
+    // Round 156 supplement to reach the design draft's In 19 / Out 16 / Loop 9: slide adds the up and down directions
+    // (entry direction = which side it comes from); wave/flipboard/dragonfly/billboard land in core for the first time.
     builtin!("motion", "timeline.enter.slideUp"),
     builtin!("motion", "timeline.enter.slideDown"),
     builtin!("motion", "timeline.enter.wave"),
@@ -108,7 +107,7 @@ static MOTION_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "timeline.exit.fall"),
     builtin!("motion", "timeline.exit.skid"),
     builtin!("motion", "timeline.exit.roll"),
-    // 出场方向 = 往哪一侧去；`drop` 是设计稿 stomp 的出场（下沉放大）。
+    // Exit direction = which side it goes toward; `drop` is the design draft's stomp exit (sinks and enlarges).
     builtin!("motion", "timeline.exit.slideUp"),
     builtin!("motion", "timeline.exit.slideDown"),
     builtin!("motion", "timeline.exit.drop"),
@@ -148,8 +147,8 @@ static MOTION_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "timeline.loop.sway"),
     builtin!("motion", "timeline.loop.jitter"),
     builtin!("motion", "timeline.loop.blink"),
-    // 设计稿 Loop 目录：rotate 走 ramp 波（360° 接缝闭合）、heartBeat 走
-    // heartbeat 波，其余是 sine/dip 的多通道组合。
+    // Design draft Loop catalogue: rotate uses the ramp wave (the 360° seam closes), heartBeat uses the
+    // heartbeat wave, and the rest are multi-channel combinations of sine/dip.
     builtin!("motion", "timeline.loop.rotate"),
     builtin!("motion", "timeline.loop.heartBeat"),
     builtin!("motion", "timeline.loop.vogue"),
@@ -179,39 +178,31 @@ static TRANSITION_SOURCES: &[(&str, &str)] = &[
     builtin!("transition", "bcf.slideRight"),
     builtin!("transition", "bcf.slideUp"),
     builtin!("transition", "bcf.slideDown"),
-    // 阶段 5：补齐规范 §9 的 Motion Transition 词汇。
+    // Phase 5: fills in the Motion Transition vocabulary of spec §9.
     builtin!("transition", "bcf.wipeLeft"),
     builtin!("transition", "bcf.wipeRight"),
     builtin!("transition", "bcf.zoomThrough"),
     builtin!("transition", "bcf.whipPan"),
 ];
 
-/// 字幕入场姿态配方（阶段 5 收编的 `magic-*`）。与 `TRANSITION_SOURCES` 分表：
-/// 它们不产生 BCF 通道，消费者是 `studio_export` 的字幕合成。
+/// Caption entry-pose recipes (the `magic-*` set absorbed in phase 5). Kept in a table separate from `TRANSITION_SOURCES`:
+/// they produce no BCF channels, and their consumer is caption compositing in `studio_export`.
 static CAPTION_TRANSITION_SOURCES: &[(&str, &str)] = &[
     builtin!("transition", "caption.fade"),
     builtin!("transition", "caption.pop"),
     builtin!("transition", "caption.flip"),
 ];
 
-/// 目录型配方（ADR-E05）：**shape / visualizer / progress 的形状库**。
+/// Catalogue-type recipes (ADR-E05): **shape libraries for shape / visualizer / progress**.
 ///
-/// 与 `MOTION_SOURCES` / `TRANSITION_SOURCES` / `MANIFEST_SOURCES` 三份清单
-/// 并列的第四份，走独立循环与独立 parser，解析结果存 [`RegistryData`] 的独立
-/// 字段——**不进 `manifests` 向量**，因此不出现在 `families()` / `manifest_ids()`
-/// 里，阶段 2 的三条守卫不受影响。
+/// The fourth list, alongside the three lists MOTION_SOURCES / TRANSITION_SOURCES / MANIFEST_SOURCES. It goes through its own loop and its own parser, and its parse results are stored in separate fields of [`RegistryData`]. **They do not go into the `manifests` vector**, so they do not appear in `families()` / `manifest_ids()`, and phase 2's three guards are unaffected.
 ///
-/// P0 只落首批 4 份 shape；P7 扩到 23 种基础形状，P2 补 visualizer / progress。
-/// 形状目录（设计 §10 P7）。清单顺序无所谓——面板顺序来自 `order` 字段，
-/// 这里按面板网格序书写只是为了好读。
+/// P0 lands only the first batch of 4 shapes. P7 expands to 23 basic shapes, and P2 adds visualizer / progress.
+/// Shape catalogue (design §10 P7). List order does not matter: panel order comes from the `order` field, and writing the entries here in panel grid order is only for readability.
 ///
-/// **23 种基础形状**：21 份 `viewBox="0 0 100 100"` 的 `d=` → 0..1 归一化
-/// outline；`rect` / `ellipse` 是参数化的 `path.kind`。
-/// **`line` 是 CucCut 自有的第 24 份**：P0 已经把它写进
-/// 契约、golden 与三端孪生，删掉等于让现存文档的形状静默消失，收益为零。
-/// `arrow` 是 P0 的**线段 + 端头**
-/// （带 `endpoints` / `head` 两个参数，标注用途更强），不是块状箭头——
-/// 块状箭头的形状由同族的 `squig2`（右向块状箭头）覆盖。
+/// **23 basic shapes**: 21 `d=` paths with `viewBox="0 0 100 100"` → 0..1 normalized outlines; `rect` / `ellipse` are parameterized `path.kind`.
+/// **`line` is CucCut's own 24th entry**: P0 already wrote it into the contract, the golden and the three-way twin. Deleting it would silently make existing documents' shapes disappear, with no benefit.
+/// `arrow` is P0's **line segment + head** (with the two parameters `endpoints` / `head`, which is stronger for annotation use), not a block arrow. The block-arrow shape is covered by the same family's `squig2` (right-pointing block arrow).
 static SHAPE_SOURCES: &[(&str, &str)] = &[
     builtin!("shape", "rect"),
     builtin!("shape", "ellipse"),
@@ -239,14 +230,13 @@ static SHAPE_SOURCES: &[(&str, &str)] = &[
     builtin!("shape", "sharp2"),
 ];
 
-/// 模板贴纸（设计 §10 P7 的 `StickerProps.source == "template"`）。
+/// Template stickers (design §10 P7's `StickerProps.source == "template"`).
 ///
-/// **首批 10 份，全部是 CucCut 自绘的归一化 path**，不含第三方美术资产。
-/// 静态贴纸就是单帧 SVG/PNG，动态贴纸 = 带 alpha 的循环 WebM。
+/// **The first batch of 10, all CucCut-drawn normalized paths**, with no third-party artwork assets.
+/// A static sticker is a single-frame SVG/PNG; an animated sticker is a looping WebM with alpha.
 ///
-/// 首批刻意选**可精确构造的几何**（圆、正多边形、星形、圆角矩形、三次贝塞尔
-/// 心形/水滴），这样"结构对不对"能被 golden 钉死；补充美术型模板是纯数据，
-/// 加一份 = 加一行 + 一个 JSON（P7c）。
+/// The first batch deliberately picks **precisely constructible geometry** (circle, regular polygon, star, rounded rectangle, cubic-Bézier
+/// heart and teardrop), so that "is the structure right" can be pinned by a golden. Adding artwork-style templates is pure data: one more = one line + one JSON (P7c).
 static STICKER_SOURCES: &[(&str, &str)] = &[
     builtin!("sticker", "badge_check"),
     builtin!("sticker", "badge_cross"),
@@ -260,7 +250,7 @@ static STICKER_SOURCES: &[(&str, &str)] = &[
     builtin!("sticker", "crown"),
 ];
 
-/// 10 种 sound wave（设计 §7.3）。顺序无所谓——目录顺序来自 `order` 字段。
+/// 10 sound wave styles (design §7.3). Order does not matter; catalogue order comes from the `order` field.
 static VISUALIZER_SOURCES: &[(&str, &str)] = &[
     builtin!("visualizer", "bars"),
     builtin!("visualizer", "bars_rounded"),
@@ -274,10 +264,8 @@ static VISUALIZER_SOURCES: &[(&str, &str)] = &[
     builtin!("visualizer", "ribbons"),
 ];
 
-/// 2026-09 之前的声波目录是旧的 15 款；换代后老 `timeline.json` 里的
-/// `visualizer.style` 仍可能写着旧 id。这张表把每个旧 id 指到造型最接近的新款，
-/// 让老项目照常打开、照常渲染（属性面板会显示新款）。表是只增不删的兼容层，
-/// 新目录自身的 id 不在表里。
+/// The sound-wave catalogue before 2026-09 was the old set of 15. After the generation change, old `timeline.json` files may still contain old ids in
+/// `visualizer.style`. This table maps each old id to the closest-looking new style, so old projects still open and render as before (the property panel shows the new style). The table is a compatibility layer that is only added to, never removed from. The new catalogue's own ids are not in the table.
 static VISUALIZER_STYLE_ALIASES: &[(&str, &str)] = &[
     ("trio_wave", "bars"),
     ("formation", "bars"),
@@ -296,8 +284,7 @@ static VISUALIZER_STYLE_ALIASES: &[(&str, &str)] = &[
     ("ripple_wave", "pulse_rings"),
 ];
 
-/// 14 种 progress（设计 §7.4）。面板上有 16 个 tile，但 Countdown / Count Up
-/// 实为文字元素，不是 progress shader——这里只登记真正的 14 种。
+/// 14 progress styles (design §7.4). The panel has 16 tiles, but Countdown / Count Up are actually text elements, not progress shaders, so only the real 14 are registered here.
 static PROGRESS_SOURCES: &[(&str, &str)] = &[
     builtin!("progress", "normal"),
     builtin!("progress", "rounded"),
@@ -315,8 +302,8 @@ static PROGRESS_SOURCES: &[(&str, &str)] = &[
     builtin!("progress", "snake_spin_rainbow"),
 ];
 
-/// 10 款彩纸（`docs/design/elements/ccut-confetti-element-design.md` §4.4）：改编自 react-confetti /
-/// party-js / js-confetti 三个 MIT 来源，一款一份配方。
+/// 10 confetti styles (`docs/design/elements/ccut-confetti-element-design.md` §4.4): adapted from three MIT sources,
+/// react-confetti / party-js / js-confetti. One recipe per style.
 static CONFETTI_SOURCES: &[(&str, &str)] = &[
     builtin!("confetti", "rainbow-paper"),
     builtin!("confetti", "pastel-fall"),
@@ -330,15 +317,11 @@ static CONFETTI_SOURCES: &[(&str, &str)] = &[
     builtin!("confetti", "champagne-sparkle"),
 ];
 
-/// 文字预设包（`docs/design/app-v2/text-pane-and-groups.md` §6.2）：Text 面板预设库的
-/// 目录。**第五份清单**，独立结构、独立循环、独立字段——一条预设是「一组排好版
-/// 的元素」，不是「一个 kind 的一种画法」，塞不进 `CatalogueRecipe`（见
-/// [`textpreset`] 模块头）。
+/// Text preset pack (`docs/design/app-v2/text-pane-and-groups.md` §6.2): the catalogue for the Text panel's preset library.
+/// **The fifth list**, with its own structure, its own loop and its own fields. A preset is "a group of elements already laid out",
+/// not "one way of drawing one kind", so it cannot be stuffed into `CatalogueRecipe` (see the [`textpreset`] module header).
 ///
-/// 首批 51 条，分四类（simple 13 / title 10 / lowerThird 20 / other 8）。
-/// 每条是**配置参数**——分类、坐标、字号、字体名、颜色、动画时序与 delay，
-/// 单位在生成期换算成 CucCut 自己的（画幅百分比 / 短边 540 像素 / 角度）；
-/// 图片型装饰用本目录已有的等价形状（`arrow` / `diamond`），不含第三方美术素材。
+/// The first batch has 51 presets in four categories (simple 13 / title 10 / lowerThird 20 / other 8). Each entry is a **configuration parameter**: category, coordinates, font size, font name, color, animation timing and delay. Units are converted at generation time into CucCut's own units (frame-size percentages / 540-pixel short edge / degrees). Image-type decorations use the equivalent shapes already in this catalogue (`arrow` / `diamond`), with no third-party artwork.
 static TEXTPRESET_SOURCES: &[(&str, &str)] = &[
     builtin!("textpreset", "simple.01"),
     builtin!("textpreset", "simple.02"),
@@ -420,21 +403,19 @@ pub use textpreset::{
     TextPresetCategory, TextPresetItem, TextPresetItemKind, TextPresetRecipe, TextPresetTables,
 };
 
-/// 设计 §13「Preset 词汇膨胀」风险行与 §5.4.3：**元素** canonical family 上限。
-/// 改这个常量前回到 ADR——UI 变体靠**参数**扩张，不靠新家族。
+/// Design §13 "preset vocabulary inflation" risk row and §5.4.3: the cap on **element** canonical families.
+/// Before changing this constant, go back to the ADR. UI variants expand through **parameters**, not through new families.
 ///
-/// 设计 §5.4.3 列的 12 个家族里没有 `fadeIn`（本实现把它单独发成一个家族，
-/// 它是 Gallery 里最常用的一张卡），因此实际预算是 12 + 1（§15 阶段 3 偏离）。
+/// Of the 12 families listed in design §5.4.3, none is `fadeIn`. This implementation issues it as its own family, since it is the most-used card in the Gallery, so the actual budget is 12 + 1 (a phase 3 deviation from §15).
 pub const CANONICAL_FAMILY_BUDGET: usize = 13;
 
-/// 文字 part 家族的独立预算（规范 §7.9）。part 效果是另一套词汇，
-/// 混进元素预算只会让两边互相挤占。
+/// Separate budget for text-part families (spec §7.9). Part effects are a different vocabulary; mixing them into the element budget would only make both crowd each other out.
 pub const PART_FAMILY_BUDGET: usize = 8;
 
 use frozen::{parse_bcf, parse_caption_transition, parse_loop, parse_slot, parse_transition};
 
-/// 通用 manifest（设计 §5.4.1）。加一个 family = 加一行。
-/// 前八个是**内部积木**（`family: null`），只被 `compose` 引用，不进 Gallery。
+/// Generic manifest (design §5.4.1). Adding a family = adding one line.
+/// The first eight are **internal building blocks** (`family: null`), referenced only by `compose`, and they do not enter the Gallery.
 static MANIFEST_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "motion.shiftIn"),
     builtin!("motion", "motion.shiftOut"),
@@ -465,7 +446,7 @@ static MANIFEST_SOURCES: &[(&str, &str)] = &[
     builtin!("motion", "motion.tilt"),
     builtin!("motion", "motion.shake"),
     builtin!("motion", "motion.drift"),
-    // 文字 part 配方（`appliesTo: "part"`，规范 §7.9）
+    // Text part recipes (`appliesTo: "part"`, spec §7.9)
     builtin!("motion", "motion.typewriter"),
     builtin!("motion", "motion.riseParts"),
     builtin!("motion", "motion.wipeParts"),
@@ -480,25 +461,25 @@ pub enum Domain {
     TimelineLoop,
     BcfMotion,
     BcfTransition,
-    /// 目录型配方：Timeline `shape` 元素的形状库（ADR-E05）。
+    /// Catalogue-type recipes: the shape library for Timeline `shape` elements (ADR-E05).
     TimelineShape,
-    /// 目录型配方：Timeline `sticker` 元素的模板贴纸库（设计 §10 P7）。
+    /// Catalogue-type recipes: the template sticker library for Timeline `sticker` elements (design §10 P7).
     TimelineSticker,
-    /// 目录型配方：Timeline `visualizer` 元素的 10 种 sound wave（设计 §7.3）。
+    /// Catalogue-type recipes: the 10 sound-wave styles for Timeline `visualizer` elements (design §7.3).
     TimelineVisualizer,
-    /// 目录型配方：Timeline `progress` 元素的 14 种进度条（设计 §7.4）。
+    /// Catalogue-type recipes: the 14 progress bar styles for Timeline `progress` elements (design §7.4).
     TimelineProgress,
-    /// 目录型配方：Timeline `confetti` 元素的 10 款彩纸（彩纸设计稿 §4）。
+    /// Catalogue-type recipes: the 10 confetti styles for Timeline `confetti` elements (confetti design draft §4).
     TimelineConfetti,
-    /// 文字预设包：Text 面板预设库的 51 条场景模板（§6.2）。
+    /// Text preset pack: the 51 scene templates of the Text panel's preset library (§6.2).
     TextPreset,
 }
 
-/// 逐通道 `Option<f64>`，字段顺序与 `AnimationPose` 一致。
+/// Per-channel `Option<f64>`; field order matches `AnimationPose`.
 
 struct RegistryData {
     manifests: Vec<PresetManifest>,
-    /// alias → canonical id。解析期建，冲突即 `manifest-invalid`。
+    /// alias → canonical id. Built at parse time; a conflict is `manifest-invalid`.
     aliases: Vec<(String, String)>,
     enter: Vec<SlotRecipe>,
     exit: Vec<SlotRecipe>,
@@ -506,13 +487,13 @@ struct RegistryData {
     bcf: Vec<BcfPreset>,
     transitions: Vec<TransitionRecipe>,
     caption_transitions: Vec<CaptionTransitionRecipe>,
-    /// 目录型配方（ADR-E05）：**独立字段**，刻意不混进 `manifests`。
+    /// Catalogue-type recipes (ADR-E05): **separate fields**, deliberately not mixed into `manifests`.
     shapes: Vec<CatalogueRecipe>,
     stickers: Vec<CatalogueRecipe>,
     visualizers: Vec<CatalogueRecipe>,
     progresses: Vec<CatalogueRecipe>,
     confettis: Vec<CatalogueRecipe>,
-    /// 文字预设包：同样是独立字段，不混进任何一张动画表。
+    /// Text preset pack: likewise a separate field, not mixed into any animation table.
     text_presets: Vec<TextPresetRecipe>,
     bcf_map: Value,
 }
@@ -607,8 +588,8 @@ fn build() -> Result<RegistryData, MotionError> {
         }
     }
     aliases.sort();
-    // 目录型配方的独立循环（ADR-E05）：三份清单、三个循环、共用
-    // `parse_catalogue` 骨架；结果不进 `manifests`，也不参与 alias 表。
+    // Separate loops for catalogue-type recipes (ADR-E05): three lists, three loops, sharing the
+    // `parse_catalogue` skeleton. Results do not go into `manifests`, and they do not take part in the alias table.
     let shapes = build_catalogue(CatalogueKind::Shape, SHAPE_SOURCES)?;
     let stickers = build_catalogue(CatalogueKind::Sticker, STICKER_SOURCES)?;
     let visualizers = build_catalogue(CatalogueKind::Visualizer, VISUALIZER_SOURCES)?;
@@ -639,7 +620,7 @@ fn build() -> Result<RegistryData, MotionError> {
     })
 }
 
-/// 一份目录型清单 → 排好序、查过重的配方表。
+/// One catalogue-type list → a sorted, duplicate-checked recipe table.
 fn build_catalogue(
     kind: CatalogueKind,
     sources: &[(&str, &str)],
@@ -666,11 +647,9 @@ fn build_catalogue(
     Ok(out)
 }
 
-/// 文字预设清单 → 按 `order` 排好序、查过重的预设表。
+/// Text preset list → preset table sorted by `order` and checked for duplicates.
 ///
-/// 参照表（形状目录与三张动画表）是**参数**而不是查询面：这个函数跑在
-/// `build()` 内部，那时 `data()` 的 `OnceLock` 还没初始化完，查一次就是重入，
-/// 而 `get_or_init` 遇到重入是死锁不是报错。
+/// The reference tables (the shape catalogue and the three animation tables) are **parameters** rather than a query surface. This function runs inside `build()`, when `data()`'s `OnceLock` is not yet initialized. Querying here would re-enter, and `get_or_init` deadlocks on re-entry rather than reporting an error.
 fn build_text_presets(
     tables: textpreset::TextPresetTables<'_>,
 ) -> Result<Vec<TextPresetRecipe>, MotionError> {
@@ -694,7 +673,7 @@ fn build_text_presets(
     Ok(out)
 }
 
-// ── 查询面 ───────────────────────────────────────────────────────────
+// ── Query surface ───────────────────────────────────────────────────────────
 
 pub fn timeline_enter(id: &str) -> Option<&'static SlotRecipe> {
     data().enter.iter().find(|recipe| recipe.id == id)
@@ -712,17 +691,17 @@ pub fn bcf_preset(name: &str) -> Option<&'static BcfPreset> {
     data().bcf.iter().find(|preset| preset.id == name)
 }
 
-/// `{params?, keyframes}` 定义体，供 `Resolver::expand_preset_def` 消费。
+/// `{params?, keyframes}` definition body, consumed by `Resolver::expand_preset_def`.
 pub fn bcf_builtin(name: &str) -> Option<&'static Value> {
     bcf_preset(name).map(|preset| &preset.definition)
 }
 
-/// 与 `resolve.rs::BUILTIN_PRESETS` 解析结果逐字相同的 `Value::Object`。
+/// A `Value::Object` identical word for word to the result of parsing `resolve.rs::BUILTIN_PRESETS`.
 pub fn bcf_builtin_map() -> &'static Value {
     &data().bcf_map
 }
 
-/// 替代 `resolve.rs:709` 的 `name == "countUp"` 硬编码。
+/// Replaces the hard-coded `name == "countUp"` at `resolve.rs:709`.
 pub fn emits_params_meta(name: &str) -> bool {
     bcf_preset(name).is_some_and(|preset| preset.emits_params_meta)
 }
@@ -731,8 +710,8 @@ pub fn bcf_transition(name: &str) -> Option<&'static TransitionRecipe> {
     data().transitions.iter().find(|recipe| recipe.id == name)
 }
 
-/// 字幕入场姿态配方。**按持久化里那个历史 id 查**（`magic-fade` …）——
-/// 字幕样式存的就是它，配方 id `transition.caption.fade` 是收编后的规范名。
+/// Caption entry-pose recipe. **Looked up by the historical id stored in persistence** (`magic-fade` …).
+/// Caption styles store this id. The recipe id `transition.caption.fade` is the canonical name after absorption.
 pub fn caption_transition(legacy_id: &str) -> Option<&'static CaptionTransitionRecipe> {
     data()
         .caption_transitions
@@ -740,12 +719,12 @@ pub fn caption_transition(legacy_id: &str) -> Option<&'static CaptionTransitionR
         .find(|recipe| recipe.legacy_id == legacy_id)
 }
 
-/// 全部字幕入场姿态配方（目录顺序）。
+/// All caption entry-pose recipes (catalogue order).
 pub fn caption_transitions() -> &'static [CaptionTransitionRecipe] {
     &data().caption_transitions
 }
 
-/// UI 目录顺序（数据，不是文件名排序）。
+/// UI catalogue order (data, not filename sorting).
 pub fn ids(domain: Domain) -> Vec<&'static str> {
     match domain {
         Domain::TimelineEnter => data().enter.iter().map(|r| r.id.as_str()).collect(),
@@ -762,38 +741,38 @@ pub fn ids(domain: Domain) -> Vec<&'static str> {
     }
 }
 
-/// Timeline `shape` 元素的形状配方。查询键就是 `timeline.json` 里
-/// `shape.shape` 的面值（`rect` / `ellipse` / `line` / `arrow`）。
+/// Shape recipe for Timeline `shape` elements. The lookup key is the value of `shape.shape` in `timeline.json`
+/// (`rect` / `ellipse` / `line` / `arrow`).
 pub fn timeline_shape(id: &str) -> Option<&'static CatalogueRecipe> {
     data().shapes.iter().find(|recipe| recipe.id == id)
 }
 
-/// 属性面板可选到的形状（`available: true`，目录顺序）。
+/// Shapes selectable in the property panel (`available: true`, catalogue order).
 pub fn timeline_shapes() -> &'static [CatalogueRecipe] {
     &data().shapes
 }
 
-/// Timeline `sticker` 元素的模板配方。查询键是 `sticker.templateId` 的面值
-/// （`heart` / `badge_check` / …，设计 §10 P7）。
+/// Template recipe for Timeline `sticker` elements. The lookup key is the value of `sticker.templateId`
+/// (`heart` / `badge_check` / …, design §10 P7).
 pub fn timeline_sticker(id: &str) -> Option<&'static CatalogueRecipe> {
     data().stickers.iter().find(|recipe| recipe.id == id)
 }
 
-/// 全部模板贴纸（目录顺序）——贴纸选择器的数据源。
+/// All template stickers (catalogue order): the data source for the sticker picker.
 pub fn timeline_stickers() -> &'static [CatalogueRecipe] {
     &data().stickers
 }
 
-/// Timeline `visualizer` 元素的样式配方。查询键是 `visualizer.style` 的面值
-/// （`bars` / `ribbons` / …，设计 §7.3）；旧目录的 id 经
-/// [`canonical_visualizer_style`] 折到新款，老项目不会因此丢元素。
+/// Style recipe for Timeline `visualizer` elements. The lookup key is the value of `visualizer.style`
+/// (`bars` / `ribbons` / …, design §7.3). Old catalogue ids are folded to the new styles via
+/// [`canonical_visualizer_style`], so old projects do not lose elements because of it.
 pub fn timeline_visualizer(id: &str) -> Option<&'static CatalogueRecipe> {
     let id = canonical_visualizer_style(id);
     data().visualizers.iter().find(|recipe| recipe.id == id)
 }
 
-/// 把旧目录的声波 style id 折到当前目录的等价款；当前目录的 id 与未知 id
-/// 原样返回（未知 id 交给 [`timeline_visualizer`] 返回 `None`）。
+/// Folds an old-catalogue sound-wave style id to the equivalent style in the current catalogue. Current-catalogue ids and unknown ids
+/// are returned as-is (unknown ids are left to [`timeline_visualizer`] to return `None`).
 pub fn canonical_visualizer_style(id: &str) -> &str {
     VISUALIZER_STYLE_ALIASES
         .iter()
@@ -801,35 +780,34 @@ pub fn canonical_visualizer_style(id: &str) -> &str {
         .map_or(id, |(_, new)| new)
 }
 
-/// 全部 10 种 sound wave（目录顺序）。
+/// All 10 sound-wave styles (catalogue order).
 pub fn timeline_visualizers() -> &'static [CatalogueRecipe] {
     &data().visualizers
 }
 
-/// Timeline `progress` 元素的样式配方（设计 §7.4）。
+/// Style recipe for Timeline `progress` elements (design §7.4).
 pub fn timeline_progress(id: &str) -> Option<&'static CatalogueRecipe> {
     data().progresses.iter().find(|recipe| recipe.id == id)
 }
 
-/// 全部 14 种进度条（目录顺序）。
+/// All 14 progress bar styles (catalogue order).
 pub fn timeline_progresses() -> &'static [CatalogueRecipe] {
     &data().progresses
 }
 
-/// Timeline `confetti` 元素的款式配方（彩纸设计稿 §4）。查询键是
-/// `confetti.style` 的面值（`rainbow-paper` / `party-cannons` / …）。
+/// Style recipe for Timeline `confetti` elements (confetti design draft §4). The lookup key is the value of
+/// `confetti.style` (`rainbow-paper` / `party-cannons` / …).
 pub fn timeline_confetti(id: &str) -> Option<&'static CatalogueRecipe> {
     data().confettis.iter().find(|recipe| recipe.id == id)
 }
 
-/// 全部 10 款彩纸（目录顺序）——「彩纸」磁贴格的数据源。
+/// All 10 confetti styles (catalogue order): the data source for the "confetti" tile grid.
 pub fn timeline_confettis() -> &'static [CatalogueRecipe] {
     &data().confettis
 }
 
-/// 只解析一类目录型配方，不建整张注册表：调用方只引用这一类的清单，别的内置配方就不会链接进它的产物
-/// （界面的编辑语义 WASM 只要声波、进度条与彩纸的目录）。解析与 [`timeline_visualizers`] 等查询面是同一份，
-/// 每次调用都重新解析，调用方自己缓存。
+/// Parses only one class of catalogue-type recipes, without building the whole registry. The caller references only this class's list, so the other built-in recipes are not linked into its artifact
+/// (the interface's edit-semantics WASM only needs the sound-wave, progress-bar and confetti catalogues). The parsing is the same as the query surfaces such as [`timeline_visualizers`]. Each call re-parses, and the caller caches the result itself.
 pub fn parse_builtin_catalogue(kind: CatalogueKind) -> Result<Vec<CatalogueRecipe>, MotionError> {
     let sources = match kind {
         CatalogueKind::Shape => SHAPE_SOURCES,
@@ -841,27 +819,27 @@ pub fn parse_builtin_catalogue(kind: CatalogueKind) -> Result<Vec<CatalogueRecip
     build_catalogue(kind, sources)
 }
 
-/// 声波旧 style id → 当前目录的等价款（[`canonical_visualizer_style`] 查的那张表）。
+/// Old sound-wave style id → equivalent in the current catalogue (the table that [`canonical_visualizer_style`] looks up).
 pub fn visualizer_style_aliases() -> &'static [(&'static str, &'static str)] {
     VISUALIZER_STYLE_ALIASES
 }
 
-/// 一条文字预设（§6.2）。查询键是预设 id（`lowerThird.07`），也是文件名。
+/// One text preset (§6.2). The lookup key is the preset id (`lowerThird.07`), which is also the filename.
 pub fn text_preset(id: &str) -> Option<&'static TextPresetRecipe> {
     data().text_presets.iter().find(|recipe| recipe.id == id)
 }
 
-/// 全部文字预设（`order` 升序）——Text 面板预设库的数据源。
+/// All text presets (ascending `order`): the data source for the Text panel's preset library.
 pub fn text_presets() -> &'static [TextPresetRecipe] {
     &data().text_presets
 }
 
-/// 通用 manifest 查询（设计 §5.4.1）。
+/// Generic manifest query (design §5.4.1).
 pub fn manifest(id: &str) -> Option<&'static PresetManifest> {
     data().manifests.iter().find(|m| m.id == id)
 }
 
-/// alias → canonical id；不是 alias 时原样返回。
+/// alias → canonical id; returned as-is when it is not an alias.
 pub fn canonical_id<'a>(id: &'a str) -> &'a str {
     match data().aliases.iter().find(|(alias, _)| alias == id) {
         Some((_, canonical)) => canonical.as_str(),
@@ -869,12 +847,12 @@ pub fn canonical_id<'a>(id: &'a str) -> &'a str {
     }
 }
 
-/// 通用 manifest 的全部 canonical id（升序）。
+/// All canonical ids of the generic manifest (ascending).
 pub fn manifest_ids() -> Vec<&'static str> {
     data().manifests.iter().map(|m| m.id.as_str()).collect()
 }
 
-/// 全部 alias（升序），`(alias, canonical)`。
+/// All aliases (ascending), as `(alias, canonical)`.
 pub fn aliases() -> Vec<(&'static str, &'static str)> {
     data()
         .aliases
@@ -883,12 +861,12 @@ pub fn aliases() -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
-/// 去重后的**元素** UI 家族（不含内部积木的 `family: null`，也不含 part 家族）。
+/// Deduplicated **element** UI families (excluding internal building blocks with `family: null`, and excluding part families).
 pub fn families() -> Vec<&'static str> {
     families_of(AppliesTo::Element)
 }
 
-/// 去重后的**文字 part** 家族（规范 §7.9）。
+/// Deduplicated **text part** families (spec §7.9).
 pub fn part_families() -> Vec<&'static str> {
     families_of(AppliesTo::Part)
 }
@@ -909,17 +887,17 @@ fn families_of(scope: AppliesTo) -> Vec<&'static str> {
     out
 }
 
-/// 配方作用域（`appliesTo`）。未知 id 返回 `None`。
+/// Recipe scope (`appliesTo`). An unknown id returns `None`.
 pub fn applies_to(id: &str) -> Option<AppliesTo> {
     manifest(canonical_id(id)).map(|entry| entry.applies_to)
 }
 
-/// preset id → 家族（`preset-sprawl` 的归一口径）。未知 id 返回 `None`。
+/// preset id → family (the normalized count used by `preset-sprawl`). An unknown id returns `None`.
 pub fn family_of(id: &str) -> Option<&'static str> {
     manifest(canonical_id(id)).and_then(|m| m.family.as_deref())
 }
 
-/// `include_str!` 清单里的文件名（不含扩展名），目录一致性测试用。
+/// Filename (without extension) in the `include_str!` list, used by the directory consistency test.
 pub fn registered_files(domain_dir: &str) -> Vec<&'static str> {
     match domain_dir {
         "motion" => MOTION_SOURCES
@@ -942,7 +920,7 @@ pub fn registered_files(domain_dir: &str) -> Vec<&'static str> {
     }
 }
 
-/// 强制解析全部 manifest；解析错误在这里暴露而不是在第一次采样时 panic。
+/// Force-parses all manifests. Parse errors surface here instead of panicking at the first sample.
 pub fn validate_all() -> Result<(), MotionError> {
     build().map(|_| ())
 }
@@ -978,8 +956,8 @@ mod tests {
 
     #[test]
     fn catalogue_is_frozen_at_fifty_three_enter_forty_nine_exit_twenty_loop() {
-        // 文字目录 25/21/11（2026-09-05 冻结）+ 元素目录 28/28/9（2026-09-08，
-        // `surface: "element"`，走多关键帧形态）。
+        // Text catalogue 25/21/11 (frozen 2026-09-05) + element catalogue 28/28/9 (2026-09-08,
+        // `surface: "element"`, uses the multi-keyframe form).
         assert_eq!(ids(Domain::TimelineEnter).len(), 53);
         assert_eq!(ids(Domain::TimelineExit).len(), 49);
         assert_eq!(ids(Domain::TimelineLoop).len(), 20);
@@ -1001,9 +979,9 @@ mod tests {
         assert_eq!(
             ids(Domain::TimelineEnter),
             vec![
-                // 第 156 轮起 slide 四向在 `order` 上连续（方向族成员必须相邻，
-                // 否则 `anim_direction::families` 的展平与注册表不一致）；其余
-                // 新配方追加在尾部。schema 枚举只管成员资格，不管顺序。
+                // From round 156 onward, slide's four directions are contiguous in `order` (members of a direction family must be adjacent,
+                // otherwise the flattening in `anim_direction::families` would not match the registry). Other
+                // new recipes are appended at the tail. The schema enum only governs membership, not order.
                 "none",
                 "fade",
                 "rise",
@@ -1088,12 +1066,10 @@ mod tests {
 
     #[test]
     fn enter_and_exit_tables_stay_asymmetric() {
-        // exit 表接受 sink/shrink，两者没有同名入场；反过来
-        // pop/blurIn/typewriter/riseWords 没有 exit 配方（`drop` 自
-        // 第 156 轮起有同名出场 = 设计稿 stomp 的出场，enter drop 镜像改指它）。
-        // `bounce` 自己不做出场配方——倒放的弹跳（先弹再飞走）没有设计稿
-        // 条目——但镜像指向 `rise`：App 律 6 要求每条入场都能派生「跟随入场」
-        // 的退场，配对与 drop→rise 相同（从上方进场、向上离场）。
+        // The exit table accepts sink/shrink, which have no same-named entry. Conversely,
+        // pop/blurIn/typewriter/riseWords have no exit recipe (`drop` has a same-named exit since round 156 = the design draft's stomp exit; the enter drop mirror now points to it).
+        // `bounce` does not have an exit recipe of its own: a reversed bounce (bounce first, then fly away) has no entry in the design draft.
+        // Its mirror points to `rise`, though. App rule 6 requires every entry to be able to derive a "follow-through" exit. The pairing is the same as drop→rise (enter from above, leave upward).
         assert!(timeline_exit("sink").is_some());
         assert!(timeline_exit("shrink").is_some());
         assert!(timeline_enter("sink").is_none());
@@ -1108,7 +1084,7 @@ mod tests {
             timeline_enter("drop").unwrap().mirror.as_deref(),
             Some("drop")
         );
-        // slide 四向：入场「从哪一侧来」与出场「往哪一侧去」同名配对。
+        // Slide's four directions: the entry "from which side" and the exit "toward which side" are paired by the same name.
         for id in ["slideL", "slideR", "slideUp", "slideDown"] {
             assert_eq!(timeline_enter(id).unwrap().mirror.as_deref(), Some(id));
         }
@@ -1141,7 +1117,7 @@ mod tests {
 
     #[test]
     fn timeline_numbers_match_the_old_hardcoded_tables_bit_for_bit() {
-        // 旧表（`ccut-timeline/src/motion.rs:154-391`、`:905-941`）逐行对照。
+        // Old table (`ccut-timeline/src/motion.rs:154-391`, `:905-941`), compared line by line.
         let enter_expect: &[(&str, f64, Option<&str>)] = &[
             ("none", 0.0, None),
             ("fade", 0.40, Some("fade")),
@@ -1157,7 +1133,7 @@ mod tests {
             ("typewriter", 0.60, Some("fade")),
             ("riseWords", 0.90, Some("sink")),
             ("wipe", 0.45, Some("wipe")),
-            // 第 156 轮新配方与镜像。
+            // Round 156 new recipes and their mirrors.
             ("slideUp", 0.5, Some("slideUp")),
             ("slideDown", 0.5, Some("slideDown")),
             ("wave", 0.6, Some("sink")),
@@ -1268,8 +1244,8 @@ mod tests {
 
     #[test]
     fn builtin_map_equals_the_old_resolve_literal() {
-        // `ccut-core/src/resolve.rs:425-438` 的字符串常量副本。提取无损性由这条
-        // 测试证明；发布一版后可以删掉字面量。
+        // String constant copy of `ccut-core/src/resolve.rs:425-438`. Lossless extraction is proven by this
+        // test. After one version is released, the literals can be deleted.
         const OLD_BUILTIN_PRESETS: &str = r#"{
   "fadeIn":  { "keyframes": [ { "prop": "opacity", "frames": [ { "t": "0%", "v": 0 }, { "t": "100%", "v": 1 } ] } ] },
   "fadeOut": { "keyframes": [ { "prop": "opacity", "frames": [ { "t": "0%", "v": 1 }, { "t": "100%", "v": 0 } ] } ] },
@@ -1323,8 +1299,8 @@ mod tests {
         assert!(bcf_transition("nope").is_none());
     }
 
-    /// 阶段 5 补齐的规范 §9 词汇：两侧 `prop` 不同（wipe）、一侧多条通道
-    /// （zoomThrough / whipPan）都必须解析成通道表。
+    /// The spec §9 vocabulary completed in phase 5: the `prop` differs between the two sides (wipe), and sides with multiple channels
+    /// (zoomThrough / whipPan) must both parse into channel tables.
     #[test]
     fn the_spec_section_nine_vocabulary_is_complete() {
         assert_eq!(
@@ -1343,7 +1319,7 @@ mod tests {
             ]
         );
 
-        // wipe：同一条边，两侧裁不同的一半。
+        // wipe: the same edge, with the two sides clipping different halves.
         let left = bcf_transition("wipeLeft").unwrap();
         assert!(left.prop.is_none());
         assert_eq!(left.out[0].prop, "clipInsetRight");
@@ -1353,14 +1329,14 @@ mod tests {
         let right = bcf_transition("wipeRight").unwrap();
         assert_eq!(right.out[0].prop, "clipInsetLeft");
         assert_eq!(right.r#in[0].prop, "clipInsetRight");
-        // 每条通道都继承了配方的默认 ease。
+        // Every channel inherits the recipe's default ease.
         for recipe in [left, right] {
             for channel in recipe.out.iter().chain(recipe.r#in.iter()) {
                 assert_eq!(channel.ease.as_deref(), Some("easeInOutSine"));
             }
         }
 
-        // zoomThrough / whipPan：一侧两条通道，各带自己的 ease。
+        // zoomThrough / whipPan: two channels per side, each with its own ease.
         let zoom = bcf_transition("zoomThrough").unwrap();
         assert_eq!(
             zoom.out.iter().map(|c| c.prop.as_str()).collect::<Vec<_>>(),
@@ -1376,7 +1352,7 @@ mod tests {
             whip.out.iter().map(|c| c.prop.as_str()).collect::<Vec<_>>(),
             ["x", "opacity"]
         );
-        // 出方甩向左、入方从右边刹停回来——方向必须相反，否则两张画面会叠着走。
+        // The out side swings to the left; the in side brakes back in from the right. The directions must be opposite, otherwise the two frames would move stacked together.
         assert_eq!(whip.out[0].to.value, -1.2);
         assert_eq!(whip.out[0].to.basis, LengthBasis::CanvasWidth);
         assert_eq!(whip.r#in[0].from.value, 1.2);
@@ -1424,8 +1400,8 @@ mod tests {
         ));
     }
 
-    /// 通道表的解析纪律：空数组、缺 `prop`、`channels` 不是数组都必须报错，
-    /// 而不是静默产出零通道（零通道 = `cut`，那是另一个意思）。
+    /// Parsing discipline for channel tables: empty arrays, a missing `prop`, and a `channels` that is not an array must all raise errors,
+    /// rather than silently producing zero channels (zero channels = `cut`, which means something else).
     #[test]
     fn transition_channel_tables_are_parsed_strictly() {
         let base = serde_json::json!({
@@ -1455,7 +1431,7 @@ mod tests {
             Err(MotionError::ManifestInvalid(_))
         ));
 
-        // 单通道糖与通道表解析成同一个结构。
+        // The single-channel sugar and the channel table parse into the same structure.
         let sugar = serde_json::json!({
             "id": "x", "version": 1, "order": 0, "prop": "opacity", "ease": "linear",
             "out": { "from": {"value": 1, "basis": "absolute"},
@@ -1476,37 +1452,37 @@ mod tests {
     #[test]
     fn all_manifests_parse() {
         validate_all().unwrap();
-        // 127 份冻结形状（timeline 文字 57 + 元素 65 + bcf 5）+ 34 份通用 manifest。
+        // 127 frozen shapes (timeline text 57 + element 65 + bcf 5) + 34 generic manifests.
         assert_eq!(registered_files("motion").len(), 161);
         assert_eq!(MANIFEST_SOURCES.len(), 34);
         assert_eq!(registered_files("transition").len(), 13);
-        // P7a：23 种基础形状 + CucCut 自有的 `line`（见 SHAPE_SOURCES）。
+        // P7a: 23 basic shapes + CucCut's own `line` (see SHAPE_SOURCES).
         assert_eq!(registered_files("shape").len(), 24);
         assert_eq!(registered_files("visualizer").len(), 10);
         assert_eq!(registered_files("progress").len(), 14);
-        // P7b：模板贴纸首批 10 份（见 `STICKER_SOURCES`）。
+        // P7b: the first batch of 10 template stickers (see `STICKER_SOURCES`).
         assert_eq!(registered_files("sticker").len(), 10);
-        // 彩纸十款（见 `CONFETTI_SOURCES`）。
+        // Ten confetti styles (see `CONFETTI_SOURCES`).
         assert_eq!(registered_files("confetti").len(), 10);
-        // 未知目录仍返回空——`registered_files` 是硬编码 match，忘了补臂就静默
-        // 漏检，所以 `tests/manifests.rs` 的目录循环必须同步扩。哨兵用 `filter`：
-        // 它是 effect 注册表的目录（`tests/effects.rs` 管），preset 这边永远不认。
+        // An unknown catalogue still returns empty. `registered_files` is a hard-coded match, so forgetting to add an arm silently
+        // misses it. Therefore the catalogue loop in `tests/manifests.rs` must be extended in sync. The sentinel uses `filter`:
+        // it is the effect registry's catalogue (`tests/effects.rs` manages it), and the preset side never recognizes it.
         assert!(registered_files("filter").is_empty());
     }
 
-    // ── 目录型配方（ADR-E05）─────────────────────────────────────────
+    // ── Catalogue-type recipes (ADR-E05) ─────────────────────────────────────────
 
     #[test]
     fn the_shape_catalogue_is_a_third_recipe_shape_not_a_manifest() {
-        // 数据不进 `manifests` 向量：三条阶段 2 守卫因此不受影响。
+        // Data does not go into the `manifests` vector, so the three phase-2 guards are unaffected.
         for id in ids(Domain::TimelineShape) {
             assert!(manifest(id).is_none(), "{id} 不该出现在通用 manifest 里");
             assert!(!manifest_ids().contains(&id), "{id}");
             assert_eq!(canonical_id(id), id, "{id} 不该有 alias");
             assert!(family_of(id).is_none(), "{id} 不该占 family 预算");
         }
-        // 面板顺序 = 固定网格序，`line` 与线段版 `arrow` 占箭头槽位。
-        // **不是**文件名排序，也不是清单书写序。
+        // Panel order = fixed grid order; `line` and the line-segment `arrow` take the arrow slot.
+        // **Not** filename sorting, nor the order of writing in the list.
         assert_eq!(
             ids(Domain::TimelineShape),
             vec![
@@ -1518,9 +1494,9 @@ mod tests {
         );
     }
 
-    /// §10 P7 的验收判据：**23 种基础形状的名字一个不少**，
-    /// 而且每一个都真的能查到配方。`line` 是 CucCut 自有的第 24 份，单列断言，
-    /// 免得"少一个基础形状但多一个自有形状"在总数上互相抵消。
+    /// Acceptance criterion for §10 P7: **none of the 23 basic shape names is missing**,
+    /// and each one can actually be looked up to a recipe. `line` is CucCut's own 24th entry and is asserted separately,
+    /// so that "one basic shape missing but one own shape added" does not cancel out in the total.
     #[test]
     fn the_shape_catalogue_covers_every_base_shape_name() {
         const BASE_SHAPE_NAMES: [&str; 23] = [
@@ -1539,8 +1515,7 @@ mod tests {
         );
         assert_eq!(timeline_shapes().len(), BASE_SHAPE_NAMES.len() + 1);
 
-        // 21 份 path 形状全部落在 `outline`（`rect` / `ellipse` 是
-        // 参数化 path.kind，`line` / `arrow` 是线段）。
+        // All 21 path shapes fall under `outline` (`rect` / `ellipse` are parameterized path.kind, and `line` / `arrow` are line segments).
         let outlines = timeline_shapes()
             .iter()
             .filter(|recipe| matches!(recipe.shape().unwrap().path, ShapePath::Outline { .. }))
@@ -1577,7 +1552,7 @@ mod tests {
             }
         );
         assert!(arrow.supports(ShapeParam::Head));
-        // 椭圆不吃圆角：属性面板据此隐藏控件，渲染据此不读那个字段。
+        // Ellipse does not take a corner radius. The property panel hides the control accordingly, and rendering accordingly does not read that field.
         assert!(
             !timeline_shape("ellipse")
                 .unwrap()
@@ -1588,7 +1563,7 @@ mod tests {
         assert!(timeline_shape("hexagon").is_none());
     }
 
-    /// `(id, version)` + `manifest_hash` 冻结纪律：同一份源逐位相同 ⇒ 同一个 hash。
+    /// `(id, version)` + `manifest_hash` freeze discipline: the same source, byte for byte, gives the same hash.
     #[test]
     fn the_shape_manifest_hash_is_the_content_hash_of_the_source_file() {
         for (file, source) in SHAPE_SOURCES {
@@ -1627,8 +1602,8 @@ mod tests {
         }
     }
 
-    /// P7 的 19 种形状走 `outline`：点全部归一化到元素盒 0..1，
-    /// verb 与点数在解析期就配好对，消费者不必再防。
+    /// P7's 19 shapes go through `outline`: points are all normalized to the element box 0..1,
+    /// and verbs and point counts are paired at parse time, so consumers need not guard against mismatches.
     #[test]
     fn outline_paths_are_validated_at_parse_time() {
         let doc = serde_json::json!({
@@ -1662,11 +1637,11 @@ mod tests {
         assert!(catalogue::parse_catalogue(CatalogueKind::Shape, "tri", &headless, 0).is_err());
     }
 
-    // ── visualizer / progress 目录（设计 §7.3 / §7.4）─────────────────
+    // ── visualizer / progress catalogues (design §7.3 / §7.4) ─────────────────
 
-    /// 两个新 domain 与 shape 同构：数据在独立字段里，绝不进 `manifests`，
-    /// 因此阶段 2 的守卫（family 预算 / `manifest_ids()` 的 `exposedTo` 全量断言 /
-    /// 内置 preset id 查询面）**不需要修改也不会变红**。
+    /// The two new domains are isomorphic to shape: their data is in separate fields and never in `manifests`,
+    /// so phase 2's guards (the family budget, the full `exposedTo` assertion of `manifest_ids()`,
+    /// and the built-in preset id query surface) **need no modification and will not turn red**.
     #[test]
     fn the_new_catalogues_stay_out_of_the_manifest_pipeline() {
         for domain in [
@@ -1684,8 +1659,8 @@ mod tests {
         }
     }
 
-    /// 目录顺序来自 `order` 字段：声波按设计 §7.3 的表序（柱状 → 波形 → 面积 →
-    /// 点阵 → 脉冲 → 丝带），进度条按 style 下拉的固定次序。
+    /// Catalogue order comes from the `order` field. Sound waves follow the table order of design §7.3 (bars → waveform → area →
+    /// dot matrix → pulse → ribbons), and progress bars follow the fixed order of the style dropdown.
     #[test]
     fn the_catalogue_order_matches_the_style_dropdowns() {
         assert_eq!(
@@ -1714,7 +1689,7 @@ mod tests {
                 "reverse_border",
                 "rainbow_border",
                 "reverse_rainbow_border",
-                // 拼写是 `strobe`（频闪）。
+                // The spelling is `strobe` (频闪, stroboscopic flashing).
                 "strobe_border",
                 "reverse_strobe_border",
                 "snake",
@@ -1723,7 +1698,7 @@ mod tests {
                 "snake_spin_rainbow",
             ]
         );
-        // 彩纸目录顺序 = 设计稿 §4.4 的表序，也是原型「彩纸」磁贴格的格序。
+        // Confetti catalogue order = the table order of design draft §4.4, which is also the grid order of the prototype's "confetti" tile grid.
         assert_eq!(
             ids(Domain::TimelineConfetti),
             vec![
@@ -1741,8 +1716,8 @@ mod tests {
         );
     }
 
-    /// 十款彩纸：调色板 1–8 色、形状全在封闭表里、算法恒为 `confetti-v1`、
-    /// 每款都署了改编来源。`recipe()` 对它有值（渲染核靠它取参数包）。
+    /// Ten confetti styles: palette of 1–8 colors, shapes all within a closed table, algorithm always `confetti-v1`,
+    /// and each one credits its adaptation source. `recipe()` has a value for it (the render core uses it to fetch the parameter bundle).
     #[test]
     fn every_confetti_recipe_is_well_formed() {
         assert_eq!(timeline_confettis().len(), 10);
@@ -1770,7 +1745,7 @@ mod tests {
         assert!(timeline_confetti("dyn-confetti-01").is_none());
     }
 
-    /// CucCut 不做付费分层：目录里每一款都可选。
+    /// CucCut has no paid tiers: every style in the catalogue is selectable.
     #[test]
     fn every_catalogue_recipe_is_available_at_version_one() {
         for recipe in timeline_visualizers()
@@ -1794,13 +1769,12 @@ mod tests {
         assert!(timeline_progress("countdown").is_none());
     }
 
-    /// 进度条的色板编制：**四类**而不是一类。
+    /// Palette arrangement for progress bars: **four categories**, not one.
     ///
-    /// 两条彩虹边框整段颜色不出（`numColors == 0`：那两款的描边色写死在着色器的
-    /// 彩虹里，色板改下去不会有画面变化）；两条游走彩虹只出一张，标题是
-    /// `Background` 且落在**主色**上；两条频闪边框的两色
-    /// 叫 `Color 1` / `Color 2`；其余按 `Bar/Base`（条与底）、`Bar/Background`
-    /// （边框与画布底）、`Foreground/Background`（游走）分。
+    /// The two rainbow-border styles emit no colors across their whole segment (`numColors == 0`: their stroke colors are hard-coded in the shader's rainbow, so changing the palette makes no visual difference).
+    /// The two traveling-rainbow styles output only one swatch, titled `Background`, which sits on the **main color**. The two strobe-border styles name their two colors
+    /// `Color 1` / `Color 2`. The rest are split into `Bar/Base` (bar and track), `Bar/Background`
+    /// (border and canvas background), and `Foreground/Background` (traveling).
     #[test]
     fn the_progress_color_table_matches_the_registry() {
         let expect: &[(&str, u8, &[&str])] = &[
@@ -1827,9 +1801,9 @@ mod tests {
         }
     }
 
-    /// 样式属性表逐条对齐设计 §7.3：两款时域波形（oscilloscope / ring_wave）用窄
-    /// dB 窗、`half` bin、无 dB 控件；四款双色板（spectrum_area / dots / pulse /
-    /// ribbons）各自的两个标题是属性面板色板的名字。
+    /// The style property table, aligned one by one to design §7.3: the two time-domain waveforms (oscilloscope / ring_wave) use a narrow
+    /// dB window, `half` bins, and no dB control. The four dual-palette styles (spectrum_area / dots / pulse /
+    /// ribbons) each have two titles, which are the names of the property panel's palette swatches.
     #[test]
     fn the_visualizer_style_table_matches_the_design() {
         // (id, numColors, main, minDb, maxDb, hasControl, binWidth, aspect)
@@ -1951,7 +1925,7 @@ mod tests {
                 "{id}: 声波配方全部是 CPU 矢量，没有 WGSL"
             );
         }
-        // 只有读时域行的两款用窄 dB 窗，也只有它们是 `half` 且无 dB 控件。
+        // Only the two styles that read time-domain rows use the narrow dB window, and only they are `half` and have no dB control.
         let half: Vec<&str> = timeline_visualizers()
             .iter()
             .filter(|r| r.visualizer().unwrap().bin_width == BinWidth::Half)
@@ -1980,8 +1954,8 @@ mod tests {
         );
     }
 
-    /// 旧目录的 15 个 id 全部折到新目录：老项目的 `visualizer.style` 不会
-    /// 变成 `None`；新 id 与未知 id 原样返回。
+    /// All 15 ids of the old catalogue are folded into the new catalogue, so an old project's `visualizer.style` does not
+    /// become `None`. New ids and unknown ids are returned as-is.
     #[test]
     fn every_legacy_visualizer_style_resolves_to_a_current_recipe() {
         let expect: &[(&str, &str)] = &[
@@ -2005,7 +1979,7 @@ mod tests {
         for (old, new) in expect {
             assert_eq!(canonical_visualizer_style(old), *new, "{old}");
             assert_eq!(timeline_visualizer(old).unwrap().id, *new, "{old}");
-            // 别名只是兼容层：目录本身不再登记旧 id。
+            // The alias is only a compatibility layer. The catalogue itself no longer registers the old ids.
             assert!(!ids(Domain::TimelineVisualizer).contains(old), "{old}");
         }
         for id in ids(Domain::TimelineVisualizer) {
@@ -2015,7 +1989,7 @@ mod tests {
         assert!(timeline_visualizer("nope").is_none());
     }
 
-    /// determinism 分级是 ADR-E05 的表，值是既有的 Rust 枚举，不是新字符串常量。
+    /// The determinism grading is the ADR-E05 table. The values are existing Rust enums, not new string constants.
     #[test]
     fn the_determinism_grades_match_adr_e05() {
         let visual_visualizers: Vec<&str> = timeline_visualizers()
@@ -2023,7 +1997,7 @@ mod tests {
             .filter(|r| r.visualizer().unwrap().determinism == Determinism::Visual)
             .map(|r| r.id.as_str())
             .collect();
-        // 声波 10 款全是纯矢量、无噪声、无 GPU 分支——没有一款需要 `visual` 级。
+        // All 10 sound waves are pure vector, with no noise and no GPU branch. None of them needs the `visual` level.
         assert!(visual_visualizers.is_empty(), "{visual_visualizers:?}");
         let visual_progress: Vec<&str> = timeline_progresses()
             .iter()
@@ -2041,7 +2015,7 @@ mod tests {
                 "snake_spin_rainbow",
             ]
         );
-        // 其余全是 strict，且没有一份用 backend 级。
+        // All the rest are strict, and none of them uses the backend level.
         for recipe in timeline_visualizers()
             .iter()
             .chain(timeline_progresses().iter())
@@ -2057,7 +2031,7 @@ mod tests {
         }
     }
 
-    /// 算法名是封闭集合，且逐条对齐设计 §7.3 / §7.4 的 recipe 列。
+    /// Algorithm names are a closed set, aligned one by one to the recipe column of design §7.3 / §7.4.
     #[test]
     fn every_recipe_declares_one_of_the_closed_algorithm_names() {
         let expect: &[(&str, RecipeAlgorithm)] = &[
@@ -2097,8 +2071,7 @@ mod tests {
             let recipe = timeline_progress(id).unwrap().recipe().unwrap();
             assert_eq!(recipe.algorithm, *algorithm, "{id}");
         }
-        // rainbow / strobe 变体不新造算法名——它们是 frame-v1 / snake-v1 的
-        // `colorMode` 参数（设计 §7.4 注）。
+        // Rainbow and strobe variants do not coin new algorithm names. They are the `colorMode` parameter of frame-v1 / snake-v1 (design §7.4 note).
         assert_eq!(
             timeline_progress("rainbow_border")
                 .unwrap()
@@ -2140,8 +2113,8 @@ mod tests {
         );
     }
 
-    /// 三款柱状共用 `spectrum-bars-v1`，只差参数（旧目录的六种 formation + static +
-    /// trio_wave 就是靠这几个自由度合并掉的）：Rust 内核一个数字都不带。
+    /// The three bar styles share `spectrum-bars-v1` and differ only in parameters (the six formations + static +
+    /// trio_wave of the old catalogue were merged precisely by these degrees of freedom). The Rust core carries no numbers at all.
     #[test]
     fn the_spectrum_bars_parameters_are_the_only_thing_separating_the_three_bar_styles() {
         // (id, barCount, align, gap, radius, minHeight, easing)
@@ -2159,7 +2132,7 @@ mod tests {
             assert_eq!(recipe.number("minHeight"), Some(*min_height), "{id}");
             assert_eq!(recipe.text("easing"), Some(*easing), "{id}");
         }
-        // 两款时域波形同样只差 `layout` 与半径。
+        // The two time-domain waveforms likewise differ only in `layout` and radius.
         let linear = timeline_visualizer("oscilloscope")
             .unwrap()
             .recipe()
@@ -2172,8 +2145,8 @@ mod tests {
         assert_eq!(linear.integer("samples"), polar.integer("samples"));
     }
 
-    /// 只有 `ribbons` 读时钟（`speed` / `cycles`）——其余九款是纯频谱/时域函数，
-    /// 同一帧数据在任何时刻画出同一张图（`tests/visualizer_draw.rs` 靠这一点冻结 golden）。
+    /// Only `ribbons` reads the clock (`speed` / `cycles`). The other nine are pure spectrum or time-domain functions:
+    /// the same frame data draws the same picture at any moment (`tests/visualizer_draw.rs` relies on this to freeze the golden).
     #[test]
     fn only_the_ribbons_recipe_reads_the_clock() {
         for recipe in timeline_visualizers() {
@@ -2186,7 +2159,7 @@ mod tests {
         assert_eq!(ribbons.number("cycles"), Some(2.5));
     }
 
-    /// `(id, version)` + `manifest_hash` 冻结纪律覆盖 24 份目录配方（声波 10 + 进度 14）。
+    /// The `(id, version)` + `manifest_hash` freeze discipline covers the 24 catalogue recipes (10 sound waves + 14 progress).
     #[test]
     fn the_catalogue_manifest_hashes_are_the_content_hashes_of_the_source_files() {
         for (file, source) in VISUALIZER_SOURCES {
@@ -2197,7 +2170,7 @@ mod tests {
             let recipe = timeline_progress(file).unwrap();
             assert_eq!(recipe.manifest_hash, fnv1a64(source.as_bytes()), "{file}");
         }
-        // 24 份互不相同——同名不同目录也不会撞。
+        // The 24 are mutually distinct, so even same-named entries in different catalogues will not collide.
         let mut hashes: Vec<u64> = timeline_visualizers()
             .iter()
             .chain(timeline_progresses().iter())
@@ -2210,8 +2183,8 @@ mod tests {
         assert_eq!(total, 24);
     }
 
-    /// 未知算法名、串门算法名、缺参数、越界数值、坏颜色、坏 dB 窗——
-    /// 全部在**注册表解析期**报 `manifest-invalid`，而不是第一次绘制时 panic。
+    /// Unknown algorithm names, algorithm names from another family, missing parameters, out-of-range values, bad colors, and bad dB windows
+    /// all report `manifest-invalid` at **registry parse time**, rather than panicking on the first draw.
     #[test]
     fn a_catalogue_recipe_that_lies_about_itself_is_rejected_at_parse_time() {
         use catalogue::parse_catalogue;
@@ -2291,8 +2264,8 @@ mod tests {
         }
     }
 
-    /// 曲线族的采样密度与时钟参数也在解析期把关：`samples` 至少 2、
-    /// `speed` / `cycles` / `amplitude` 必须是正数。
+    /// Sampling density and clock parameters of curve families are also checked at parse time: `samples` must be at least 2,
+    /// and `speed` / `cycles` / `amplitude` must be positive numbers.
     #[test]
     fn the_curve_recipes_reject_degenerate_densities_and_clocks() {
         use catalogue::parse_catalogue;
@@ -2377,7 +2350,7 @@ mod tests {
                 "wipeParts",
             ]
         );
-        // part 家族不占元素预算，反之亦然
+        // Part families do not occupy the element budget, and vice versa
         for family in &families {
             assert!(!super::families().contains(family), "{family}");
         }
@@ -2386,8 +2359,8 @@ mod tests {
         assert_eq!(applies_to("typeIn"), Some(AppliesTo::Part));
     }
 
-    /// `shake` / `drift` / `seededJitter` 的真身是 `oscillate` / `noise` op
-    /// （阶段 2 因为 graph 未实现而推迟到这里，§15 阶段 2 偏离 5）。
+    /// The real form of `shake` / `drift` / `seededJitter` is `oscillate` / `noise` ops
+    /// (phase 2 deferred them to here because the graph was not yet implemented; §15 phase 2 deviation 5).
     #[test]
     fn the_op_bodied_recipes_expand_to_keyframes() {
         for id in ["motion.shake", "motion.drift", "motion.seededJitter"] {
@@ -2397,14 +2370,14 @@ mod tests {
             assert_eq!(out.tracks.len(), 2, "{id}");
             for track in &out.tracks {
                 assert!(track.frames.len() > 4, "{id}: {:?}", track.prop);
-                // 相对长度原文保留，布局之后才求值
+                // Relative length raw text is preserved and evaluated only after layout
                 assert!(
                     track.frames.iter().all(|f| f.v.get("basis").is_some()),
                     "{id}"
                 );
             }
         }
-        // 同 seed 同输出
+        // Same seed, same output
         let a = expand("motion.shake", None, &Map::new(), &ExpandCtx::with_dur(1.0)).unwrap();
         let b = expand("motion.shake", None, &Map::new(), &ExpandCtx::with_dur(1.0)).unwrap();
         assert_eq!(a.tracks, b.tracks);
@@ -2430,7 +2403,7 @@ mod tests {
                 manifest(canonical).unwrap().family.as_deref()
             );
         }
-        // 冻结的 bcf 配方名没有被 alias 抢走
+        // The frozen bcf recipe names are not taken over by an alias
         assert_eq!(canonical_id("fadeIn"), "fadeIn");
         assert!(bcf_preset("fadeIn").is_some());
     }

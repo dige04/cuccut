@@ -1,5 +1,4 @@
-//! 像素测试的公共部分：按 JSON 片段拼一份最小的视频快照（160×90、30 fps、一条画面轨），按实例 ID 给源画面，
-//! 求帧计划再画出来。字体用内核随带的那一批（与原生导出相同）。
+//! Shared parts for pixel tests: builds a minimal video snapshot from a JSON fragment (160×90, 30 fps, one picture track), supplies source pictures by instance ID, then computes the frame plan and draws it. Fonts are the set bundled with the kernel (same as native export).
 
 #![allow(dead_code)]
 
@@ -27,22 +26,22 @@ pub fn fonts() -> Vec<Vec<u8>> {
     FONTS.get_or_init(frame_render::bundled_fonts).clone()
 }
 
-/// 一个图片素材（`displayWidth`×`displayHeight`）。
+/// An image asset (`displayWidth`×`displayHeight`).
 pub fn image_asset(id: &str, width: u32, height: u32) -> (String, Value) {
     asset(id, "image", "image/png", width, height)
 }
 
-/// 一个 SVG 图片素材（`image/svg+xml`，画面由内核从素材字节光栅）。
+/// An SVG image asset (`image/svg+xml`; the kernel rasterizes the picture from the asset bytes).
 pub fn svg_asset(id: &str, width: u32, height: u32) -> (String, Value) {
     asset(id, "image", "image/svg+xml", width, height)
 }
 
-/// 一个 GIF 图片素材（`image/gif`，画面由内核从素材字节解，动图按时刻取帧）。
+/// A GIF image asset (`image/gif`; the kernel decodes the picture from the asset bytes, and animated frames are picked by time).
 pub fn gif_asset(id: &str, width: u32, height: u32) -> (String, Value) {
     asset(id, "image", "image/gif", width, height)
 }
 
-/// 8×8 的四帧 GIF：整幅纯色，依次是 [`STRIPES`] 的四色，各停 100、200、300、400 ms（总长 1 秒，无限循环）。
+/// An 8×8 four-frame GIF: each frame is a solid color, in the order of the four colors in [`STRIPES`], each held for 100, 200, 300 and 400 ms (1 second total, looping forever).
 pub const STRIPES_GIF: &[u8] = include_bytes!("../../../render-raster/tests/fixtures/animated/stripes.gif");
 pub const STRIPES: [[u8; 4]; 4] = [
     [0xe0, 0x20, 0x20, 255],
@@ -51,7 +50,7 @@ pub const STRIPES: [[u8; 4]; 4] = [
     [0xf0, 0xd0, 0x00, 255],
 ];
 
-/// 1×1 的 GIF：`frames` 帧，第 i 帧是调色板的第 `i % 4` 色（红、绿、蓝、白），每帧停 `delay_cs` 个 10 ms。
+/// A 1×1 GIF with `frames` frames. Frame i uses palette color `i % 4` (red, green, blue, white), and each frame is held for `delay_cs` × 10 ms.
 pub fn tiny_gif(frames: usize, delay_cs: u16) -> Vec<u8> {
     let mut out = b"GIF89a".to_vec();
     out.extend([1, 0, 1, 0, 0b1000_0001, 0, 0]);
@@ -64,7 +63,7 @@ pub fn tiny_gif(frames: usize, delay_cs: u16) -> Vec<u8> {
         out.extend(delay_cs.to_le_bytes());
         out.extend([0, 0]);
         out.extend([0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
-        // LZW 最小码长 2：清除码 4、像素、结束码 5，各 3 位，低位在前。
+        // LZW minimum code size 2: clear code 4, pixels, end code 5, each 3 bits, low bits first.
         let codes = 4u16 | ((i % 4) as u16) << 3 | 5 << 6;
         out.extend([2, 2]);
         out.extend(codes.to_le_bytes());
@@ -91,7 +90,7 @@ pub fn lottie_asset(id: &str) -> (String, Value) {
     )
 }
 
-/// 一个声音素材（48 kHz 立体声）。
+/// A sound asset (48 kHz stereo).
 pub fn audio_asset(id: &str) -> (String, Value) {
     (
         id.to_string(),
@@ -125,7 +124,7 @@ fn asset(id: &str, kind: &str, media_type: &str, width: u32, height: u32) -> (St
     )
 }
 
-/// 画面实例的公共字段：轨道 `trk_v1`、从第 0 帧起 `frames` 帧。`body` 并进去（类型、几何与各自的字段）。
+/// Common fields of a picture instance: track `trk_v1`, from frame 0 for `frames` frames. `body` is merged in (its type, geometry and own fields).
 pub fn item(id: &str, order: i64, frames: i64, body: Value) -> Value {
     let mut base = json!({
         "id": id, "trackId": "trk_v1", "enabled": true, "locked": false, "paintOrder": order,
@@ -136,7 +135,7 @@ pub fn item(id: &str, order: i64, frames: i64, body: Value) -> Value {
     base
 }
 
-/// 视频实例：源时间与序列时间相同。
+/// Video instance: source time and sequence time are the same.
 pub fn video_item(id: &str, asset: &str, from: i64, frames: i64, body: Value) -> Value {
     let mut value = item(
         id,
@@ -154,7 +153,7 @@ pub fn video_item(id: &str, asset: &str, from: i64, frames: i64, body: Value) ->
     value
 }
 
-/// 图片实例：素材是 `a_<id>`，从 `from` 帧起 `frames` 帧，`body` 并进去（缺省按画中画摆在 `place`）。
+/// Image instance: the asset is `a_<id>`, from frame `from` for `frames` frames. `body` is merged in (by default it is placed picture-in-picture at `place`).
 pub fn image(id: &str, order: i64, from: i64, frames: i64, body: Value) -> Value {
     let mut value = item(
         id,
@@ -167,12 +166,12 @@ pub fn image(id: &str, order: i64, from: i64, frames: i64, body: Value) -> Value
     value
 }
 
-/// 铺满画布的图片实例。
+/// Image instance that fills the whole canvas.
 pub fn full_image(id: &str, order: i64, from: i64, frames: i64) -> Value {
     image(id, order, from, frames, json!({ "mode": "fullscreen" }))
 }
 
-/// 一个线性、居中摆放的转场。
+/// A linear, centered transition.
 pub fn transition(id: &str, left: Option<&str>, right: Option<&str>, kind: &str, params: Value, frames: i64) -> Value {
     let mut value = json!({
         "id": id, "kind": kind, "params": params, "durationFrames": frames,
@@ -195,7 +194,7 @@ fn merge(base: &mut Value, extra: Value) {
     }
 }
 
-/// 拼一份视频快照。`sequence` 并进序列（转场、模板、关键帧绑定、标记等）。
+/// Builds a video snapshot. `sequence` is merged into the sequence (transitions, templates, keyframe bindings, markers, etc.).
 pub fn video(items: Vec<Value>, assets: Vec<(String, Value)>, sequence: Value) -> VideoSnapshot {
     let mut seq = json!({
         "id": "seq", "revision": "1", "name": "测试序列", "fps": { "num": 30, "den": 1 },
@@ -220,7 +219,7 @@ pub fn video(items: Vec<Value>, assets: Vec<(String, Value)>, sequence: Value) -
     serde_json::from_value(value).expect("测试视频是完整的快照")
 }
 
-/// 按实例 ID 给源画面与声波频谱、按素材 ID 给素材字节、按 `素材ID@版本` 给素材频谱。
+/// Supplies picture and waveform spectra by instance ID, asset bytes by asset ID, and asset spectra by `asset ID@version`.
 #[derive(Default)]
 pub struct Media {
     pub pictures: HashMap<String, Pixmap>,
@@ -254,12 +253,12 @@ impl LayerMedia for Media {
     }
 }
 
-/// 一份 BCS1 频谱：`frames` 帧都一样，频域行是 `level(bin)`（canonical 字节），时域行是一段正弦。
+/// One BCS1 spectrum: all `frames` frames are the same. The frequency row is `level(bin)` (canonical bytes), and the time row is a sine segment.
 pub fn spectrum(frames: u32, level: impl Fn(usize) -> u8) -> Vec<u8> {
     spectrum_by_frame(frames, |_, bin| level(bin))
 }
 
-/// 一份 BCS1 频谱：第 `frame` 帧的频域行是 `level(frame, bin)`，时域行是一段正弦。
+/// One BCS1 spectrum: the frequency row of frame `frame` is `level(frame, bin)`, and the time row is a sine segment.
 pub fn spectrum_by_frame(frames: u32, level: impl Fn(usize, usize) -> u8) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend(b"BCS1");
@@ -280,7 +279,7 @@ pub fn solid(w: u32, h: u32, color: [u8; 4]) -> Pixmap {
     premultiplied(w, h, color.repeat((w * h) as usize)).unwrap()
 }
 
-/// 左半一种颜色、右半另一种颜色。
+/// Left half one color, right half another color.
 pub fn halves(w: u32, h: u32, left: [u8; 4], right: [u8; 4]) -> Pixmap {
     let mut data = Vec::new();
     for _ in 0..h {
@@ -309,7 +308,7 @@ pub fn plan(video: &VideoSnapshot, seconds: f64) -> FramePlan {
     plan_interactive(VideoView::from(video), "seq", seconds).expect("求计划")
 }
 
-/// 画 `seconds` 这一帧。
+/// Draws the frame at `seconds`.
 pub fn render(video: &VideoSnapshot, seconds: f64, media: &mut Media) -> Vec<u8> {
     render_with(&mut renderer(false, Documents::default()), video, seconds, media)
 }
@@ -323,7 +322,7 @@ pub fn try_render(renderer: &mut FrameRenderer, video: &VideoSnapshot, seconds: 
     renderer.render(VideoView::from(video), &plan, seconds, media).map(<[u8]>::to_vec)
 }
 
-/// 帧 `frame`（30 fps）的秒。
+/// The seconds of frame `frame` (30 fps).
 pub fn at(frame: f64) -> f64 {
     frame / 30.0
 }
@@ -339,7 +338,7 @@ pub fn near(actual: [u8; 4], expected: [u8; 4], tolerance: i32) {
     assert!(close, "{actual:?} ≠ {expected:?}");
 }
 
-/// 不是背景黑色的像素的包围盒 `(x0, y0, x1, y1)`（含两端）。
+/// Bounding box `(x0, y0, x1, y1)` of the pixels that are not the black background (inclusive).
 pub fn painted_bounds(frame: &[u8]) -> Option<(u32, u32, u32, u32)> {
     let mut bounds: Option<(u32, u32, u32, u32)> = None;
     for y in 0..H {
@@ -356,12 +355,12 @@ pub fn painted_bounds(frame: &[u8]) -> Option<(u32, u32, u32, u32)> {
     bounds
 }
 
-/// 不是背景黑色的像素个数。
+/// Count of pixels that are not the black background.
 pub fn painted(frame: &[u8]) -> usize {
     frame.chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count()
 }
 
-/// `.lottie` 素材（压缩包）：kind 仍是 lottie，字节是 zip。
+/// `.lottie` asset (an archive): the kind is still lottie, and the bytes are a zip.
 pub fn dotlottie_asset(id: &str) -> (String, Value) {
     let (id, mut value) = lottie_asset(id);
     value["name"] = json!(format!("{id}.lottie"));
@@ -369,7 +368,7 @@ pub fn dotlottie_asset(id: &str) -> (String, Value) {
     (id, value)
 }
 
-/// 手拼一个只用「存储」方式的 zip（`(名字, 内容)`），CRC 用内核自己的那一份。
+/// Hand-builds a zip that uses only the 'stored' method (`(name, content)`), with the kernel's own CRC.
 pub fn stored_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
     let crc32 = render_raster::source::lottie::archive::crc32;
     let (mut out, mut central) = (Vec::new(), Vec::new());
@@ -406,8 +405,7 @@ pub fn stored_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
     out
 }
 
-/// 一份 `.lottie`：120×90 的合成，左边一张包里的 PNG（8×8 红，放大 4 倍，从上往下移），右边一张内嵌的 SVG
-/// （data URI，6×6 的绿圆声明成 24×24）。
+/// A `.lottie`: a 120×90 composition with, on the left, a PNG in the package (8×8 red, scaled up 4×, moving from top to bottom), and on the right an embedded SVG (a data URI, a 6×6 green circle declared as 24×24).
 pub fn dotlottie_fixture() -> Vec<u8> {
     let mut red = Pixmap::new(8, 8).unwrap();
     red.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));

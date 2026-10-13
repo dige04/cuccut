@@ -26,16 +26,16 @@ import { GLOSSARY_COPY } from './glossary-copy.ts';
 
 const T = () => GLOSSARY_COPY.terms;
 
-/** 一条术语（两种表各自的形状）。 */
+/** One term (the shape differs for each of the two kinds of table). */
 export type GlossaryTerm = TranscriptionTerm | TranslationTerm;
 
-/** 条目在表里的身份：规范写法（原文）的归并键（同一张表里不会有两条同键的）；全是标点时用原文。 */
+/** An entry’s identity within the table: the merge key of its canonical form (the source text). No two entries in the same table share a key. When it is all punctuation, the source text is used. */
 export function termKey(term: GlossaryTerm): string {
   const text = 'canonical' in term ? term.canonical : term.source;
   return normKey(text) || `=${text}`;
 }
 
-/** 一次最多画这么多行；再多的用搜索缩小范围（一张表最多 5000 条）。 */
+/** At most this many rows are drawn at once; for more, narrow the range with search (a table holds at most 5000 entries). */
 const MAX_ROWS = 200;
 
 const addBox = style({ display: 'flex', flexDirection: 'column', gap: 4 });
@@ -104,7 +104,7 @@ const enter = (event: KeyboardEvent, run: () => void) => {
   }
 };
 
-/** 加词：常驻一行两格，回车就进表（设计稿 `QuickAdd`）。表里已有的词由调用方并进去，这里只挡自身的问题。 */
+/** Adding words: a permanent row with two fields; Enter adds it to the table (design mockup `QuickAdd`). Words already in the table are merged in by the caller; this only blocks its own problems. */
 export function QuickAdd({ kind, isDisabled, onAdd }: { kind: GlossaryKind; isDisabled: boolean; onAdd(terms: GlossaryTerm[]): Promise<boolean> }) {
   const names = GLOSSARY_KINDS[kind];
   const [a, setA] = useState('');
@@ -161,7 +161,7 @@ export function QuickAdd({ kind, isDisabled, onAdd }: { kind: GlossaryKind; isDi
   );
 }
 
-/** 一次粘一批：一行一条，解析不了的行原样退回来、不悄悄丢（设计稿 `BulkAdd`）。 */
+/** Paste a batch at once: one entry per line. Lines that cannot be parsed are returned as they are rather than silently dropped (design mockup `BulkAdd`). */
 export function BulkAdd({ kind, isDisabled, onAdd }: { kind: GlossaryKind; isDisabled: boolean; onAdd(terms: GlossaryTerm[]): Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -212,8 +212,8 @@ export function BulkAdd({ kind, isDisabled, onAdd }: { kind: GlossaryKind; isDis
 }
 
 /**
- * 条目列表：一行读完，点「编辑」就地展开（设计稿 `TermRow` / `TermEditor`）。条数多时有搜索；
- * 打开的那一条按身份（规范写法）记，表在别处改了也不会错位。
+ * Entry list: each entry is read on one line, and clicking “Edit” (编辑) expands it in place (design mockup `TermRow` / `TermEditor`). When there are many entries, search is available.
+ * The open entry is remembered by its identity (canonical form), so it does not shift if the table is changed elsewhere.
  */
 export function TermList({
   content,
@@ -371,7 +371,7 @@ function TermEditor({
             placeholder={T().notePlaceholder}
             onKeyDown={keys}
           />
-          {/* 设计稿的「可变通」：术语表格式（library.ts 的 TranslationGlossary）没有这一项，如实置灰。 */}
+          {/* The design mockup’s “Variable transliteration” (可变通): the glossary format (TranslationGlossary in library.ts) has no such item, so it is honestly greyed out. */}
           <div className={addRow}>
             <Switch size="S" isDisabled>
               {T().flexible}

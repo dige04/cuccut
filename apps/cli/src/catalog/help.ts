@@ -5,11 +5,11 @@ import { buildTree, needsConfirmation, renderToolNames, summaryOf, type CatalogC
 import { flagSpecs, kebab, soleTextField, type FlagSpec } from './flags.ts';
 
 /**
- * 帮助（Agent 面设计 §4.5、§5.7）：全部从目录派生。`cuccut` / `--help` 一屏（不超过 40 行）：流程、对象、本机管理、更多；
- * `help <命令>` 给参数、效果与示例。工具说明（目录里的 `description`）是给模型的原文，不翻译；标题与提示按当前语言。
+ * Help (agent-surface design §4.5, §5.7): all derived from the catalog. `cuccut` / `--help` on one screen (no more than 40 lines): workflow, objects, local management, more;
+ * `help <command>` gives arguments, effects and examples. Tool descriptions (`description` in the catalog) are the original text for the model and are not translated; titles and hints follow the current language.
  */
 
-/** 一屏帮助里流程与名词组的顺序（目录里新增的排在后面）。 */
+/** Order of workflow and noun groups in the one-screen help (new entries added to the catalog go after them). */
 const FLOW_ORDER = ['transcribe', 'translate', 'dub', 'download', 'export', 'transcode', 'speak', 'image', 'music'];
 const NOUN_ORDER = [
   'videos',
@@ -26,16 +26,16 @@ const NOUN_ORDER = [
   'library',
 ];
 
-/** 一屏帮助的行数上限（§5.7）。 */
+/** Line limit for the one-screen help (§5.7). */
 export const HELP_MAX_LINES = 40;
 const WIDTH = 100;
 
-/** 管理桶的一个名词：一屏帮助只列名字，`help <名字>` 列子命令。 */
+/** A noun in the admin bucket: the one-screen help lists only its name; `help <name>` lists the subcommands. */
 export interface AdminEntry {
   name: string;
-  /** 子命令（`models configure|accounts|…`）；没有时只列名字。 */
+  /** Subcommands (`models configure|accounts|…`); if there are none, only the names are listed. */
   verbs?: readonly string[];
-  /** 管理命令的用法正文（`admin/<名词>.ts` 手写）；`help <名词>` 把它放在派生命令之后。 */
+  /** Usage text for admin commands (handwritten in `admin/<noun>.ts`); `help <noun>` places it after the derived commands. */
   usage?: string;
 }
 
@@ -69,7 +69,7 @@ export function renderMainHelp(tools: readonly CatalogTool[], admin: readonly Ad
   return out.join('\n');
 }
 
-/** `models configure|accounts|…`：最多列四个，其余用省略号。 */
+/** `models configure|accounts|…`: lists at most four, the rest with an ellipsis. */
 function shortVerbs(verbs: readonly string[]): string {
   return verbs.length > 4 ? `${verbs.slice(0, 3).join('|')}|…` : verbs.join('|');
 }
@@ -93,11 +93,11 @@ function wrap(words: readonly string[], separator: string, width: number): strin
   return lines;
 }
 
-/** 名词组的帮助：目录里的动词与摘要，再列管理桶里同名词的子命令。 */
+/** Help for a noun group: the verbs and summaries from the catalog, then the subcommands of the same-named noun in the admin bucket. */
 export function renderGroupHelp(tools: readonly CatalogTool[], noun: string, admin: AdminEntry | undefined): string | null {
   const group = buildTree(tools).nouns.get(noun);
   if (!group && !admin) return null;
-  // 只有管理命令的名词（`chat`、`settings` 等）：直接给它的用法。
+  // Nouns that only have admin commands (`chat`, `settings`, etc.): show their usage directly.
   if (!group && admin?.usage) return admin.usage;
   const out: string[] = [`cuccut ${noun} <command>`, ''];
   if (group) {
@@ -111,7 +111,7 @@ export function renderGroupHelp(tools: readonly CatalogTool[], noun: string, adm
   return out.join('\n');
 }
 
-/** `help <命令>`：用法、效果、说明、参数与示例。`names` 是目录里的全部工具名（说明里的工具名换成命令）。 */
+/** `help <command>`: usage, effects, description, arguments and examples. `names` is the full list of tool names in the catalog (tool names in descriptions are replaced by commands). */
 export function renderCommandHelp(command: CatalogCommand, names: readonly string[] = []): string {
   const { tool } = command;
   const render = (text: string) => renderToolNames(text, names);
@@ -133,7 +133,7 @@ export function renderCommandHelp(command: CatalogCommand, names: readonly strin
     const head = `  ${left[index]!}`;
     out.push(head.length + 1 > width + 2 ? `${head}\n${' '.repeat(width + 2)}${text}` : `${head.padEnd(width + 2)}${text}`);
   });
-  // 快捷开关（`cliSwitches`）：写成它等价的旗标。
+  // Shortcut switches (`cliSwitches`): written as their equivalent flags.
   for (const entry of tool.cliSwitches ?? []) {
     const spec = specs.find((candidate) => candidate.field === entry.field);
     if (spec) out.push(`  ${`--${entry.flag}`.padEnd(width)}= --${spec.flag} ${String(entry.value)}`);
@@ -155,19 +155,19 @@ function effectText(effect: ToolEffect): string {
 function commonFlags(tool: CatalogTool): string {
   const flags = ['--json', '--project <dir>', '--max-bytes <n>', '--result-file <file>', '--no-start'];
   if (tool.effect === 'job') flags.unshift('--no-wait', '--timeout <s>', '--progress jsonl');
-  // `jobs wait` 与默认等待同一条路径（run.ts），只是没有「不等」。
+  // `jobs wait` takes the same path as the default wait (run.ts), except that there is no “don't wait”.
   else if (tool.name === 'jobs_wait') flags.unshift('--timeout <s>', '--progress jsonl');
   if (needsConfirmation(tool)) flags.unshift('--yes');
   return flags.join('  ');
 }
 
-/** 一个旗标的写法：`--document-id <string>`、`--bilingual`、`--kind <audio|video>`、`<video> | --video <string>`。 */
+/** How a flag is written: `--document-id <string>`, `--bilingual`, `--kind <audio|video>`, `<video> | --video <string>`. */
 function flagUsage(spec: FlagSpec, positional: boolean): string {
   const flag = spec.switch ? `--${spec.flag}${valueAlternative(spec.schema)}` : `--${spec.flag} ${placeholder(spec.schema)}`;
   return positional ? `<${spec.field}> | ${flag}` : flag;
 }
 
-/** 开关另有的取值（`--bilingual[=<json>]`）。 */
+/** Other values a switch can take (`--bilingual[=<json>]`). */
 function valueAlternative(schema: Record<string, unknown>): string {
   if (!Array.isArray(schema.anyOf)) return '';
   const others = (schema.anyOf as Record<string, unknown>[]).filter((branch) => branch.type !== 'boolean');
@@ -199,7 +199,7 @@ function placeholder(schema: Record<string, unknown>): string {
   }
 }
 
-/** 目录示例（JSON 参数）写成命令行；要确认的命令带上 `--yes`（示例是用户已经同意之后的写法）。 */
+/** Catalog examples (JSON arguments) written as command lines; commands that need confirmation carry `--yes` (the examples show the form after the user has already agreed). */
 export function exampleCommand(command: CatalogCommand, args: Record<string, unknown>): string {
   const parts = ['cuccut', command.display];
   const positional = command.tool.positional;
@@ -237,7 +237,7 @@ function trimPeriod(text: string): string {
   return text.replace(/[。.]$/, '');
 }
 
-/** 终端里的显示宽度：全角字符算 2。 */
+/** Display width in the terminal: full-width characters count as 2. */
 export function displayWidth(text: string): number {
   let width = 0;
   for (const char of text) width += isWide(char.codePointAt(0)!) ? 2 : 1;

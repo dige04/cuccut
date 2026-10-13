@@ -1,13 +1,12 @@
-//! 部分实现改写自 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 上游文件：`Sources/MLXCommon/WeightLoading.swift`。
+//! Partly rewritten from speech-swift (https://github.com/soniqo/speech-swift).
+//! Upstream file: `Sources/MLXCommon/WeightLoading.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 将相关 Swift 实现改写为 Rust，并适配本项目的张量后端与模型包接口。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut rewrote the related Swift implementations in Rust and adapted them to this project's tensor backend and model-package interface.
+//! Full original license: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of sources, see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! 权重表：按文件 / 目录读取 safetensors，按名字取走张量，并提供
-//! weight-norm 融合（对照 speech-swift `MLXCommon/WeightLoading.swift` 的
-//! `fuseWeightNorm` 语义）。
+//! Weight table: reads safetensors per file or directory, takes tensors out by name, and provides
+//! weight-norm fusion (matching the `fuseWeightNorm` semantics of speech-swift `MLXCommon/WeightLoading.swift`).
 
 use crate::synthesize::tensor::{Array, Dtype};
 use anyhow::{Result, bail};
@@ -20,7 +19,7 @@ pub struct WeightMap {
 }
 
 impl WeightMap {
-    /// 读取单个 safetensors 文件。
+    /// Reads a single safetensors file.
     pub fn load_file(path: &Path) -> Result<Self> {
         let map = Array::load_safetensors(path).map_err(|e| anyhow::anyhow!("读取 {} 失败：{e}", path.display()))?;
         Ok(Self {
@@ -29,7 +28,7 @@ impl WeightMap {
         })
     }
 
-    /// 由内存中的张量构造（测试用）。
+    /// Builds from in-memory tensors (for tests).
     #[cfg(test)]
     pub fn from_arrays(name: &str, arrays: impl IntoIterator<Item = (String, Array)>) -> Self {
         Self {
@@ -42,12 +41,12 @@ impl WeightMap {
         self.map.contains_key(key)
     }
 
-    /// 借看一个张量（不取走）。
+    /// Borrows a tensor (without removing it).
     pub fn get(&self, key: &str) -> Option<&Array> {
         self.map.get(key)
     }
 
-    /// 取走一个张量（原始 dtype）。
+    /// Takes a tensor out (original dtype).
     pub fn take(&mut self, key: &str) -> Result<Array> {
         match self.map.remove(key) {
             Some(array) => Ok(array),
@@ -59,7 +58,7 @@ impl WeightMap {
         self.map.remove(key)
     }
 
-    /// 取走并转成 f32。
+    /// Takes a tensor out and converts it to f32.
     pub fn take_f32(&mut self, key: &str) -> Result<Array> {
         let array = self.take(key)?;
         Ok(array.as_dtype(Dtype::Float32)?)
@@ -73,7 +72,7 @@ impl WeightMap {
         }
     }
 
-    /// 只保留以 `prefix` 开头的键并去掉前缀。
+    /// Keeps only keys starting with `prefix` and strips the prefix.
     pub fn retain_prefix(&mut self, prefix: &str) {
         let old = std::mem::take(&mut self.map);
         for (key, value) in old {
@@ -83,8 +82,8 @@ impl WeightMap {
         }
     }
 
-    /// 取走 weight-norm 的 (g, v) 并融合成 f32 权重；已预融合的检查点
-    /// （只有 `{prefix}.weight`）直接取走该权重。
+    /// Takes the weight-norm (g, v) pair and fuses it into an f32 weight; checkpoints that are already fused
+    /// (only `{prefix}.weight`) take that weight directly.
     pub fn take_weight_norm(&mut self, prefix: &str) -> Result<Array> {
         let v_key = format!("{prefix}.weight_v");
         if !self.map.contains_key(&v_key) {
@@ -102,21 +101,21 @@ impl WeightMap {
         self.map.insert(key.into(), array);
     }
 
-    /// 当前全部键（排序后返回，便于确定性遍历）。
+    /// All current keys (returned sorted, for deterministic iteration).
     pub fn keys(&self) -> Vec<String> {
         let mut keys: Vec<String> = self.map.keys().cloned().collect();
         keys.sort();
         keys
     }
 
-    /// 改名；源键不存在时什么都不做。
+    /// Renames a key; does nothing if the source key does not exist.
     pub fn rename(&mut self, from: &str, to: impl Into<String>) {
         if let Some(array) = self.map.remove(from) {
             self.map.insert(to.into(), array);
         }
     }
 
-    /// 对所有键做一次改名映射（返回 `None` 的键保持不变）。
+    /// Applies one renaming map to all keys (keys for which it returns `None` stay unchanged).
     pub fn rename_all(&mut self, mut rename: impl FnMut(&str) -> Option<String>) {
         let old = std::mem::take(&mut self.map);
         for (key, value) in old {
@@ -125,7 +124,7 @@ impl WeightMap {
         }
     }
 
-    /// 对所有键调用 `f`，用返回值替换张量。
+    /// Calls `f` on every key and replaces the tensor with the returned value.
     pub fn map_arrays(&mut self, mut f: impl FnMut(&str, Array) -> Result<Array>) -> Result<()> {
         let old = std::mem::take(&mut self.map);
         for (key, value) in old {
@@ -136,7 +135,7 @@ impl WeightMap {
     }
 }
 
-/// `w = g * v / ||v||`，范数在除第 0 维以外的所有维上计算（PyTorch `weight_norm(dim=0)`）。
+/// `w = g * v / ||v||`, with the norm computed over all dimensions except dimension 0 (PyTorch `weight_norm(dim=0)`).
 pub fn fuse_weight_norm(g: &Array, v: &Array) -> Result<Array> {
     let v32 = v.as_dtype(Dtype::Float32)?;
     let g32 = g.as_dtype(Dtype::Float32)?;

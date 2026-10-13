@@ -13,19 +13,18 @@ export interface PiInstall {
   env: NodeJS.ProcessEnv;
 }
 
-/** 覆盖可执行文件位置的环境变量。 */
+/** Environment variable that overrides the executable location. */
 export const PI_PATH_VARIABLE = 'CUCCUT_PI_PATH';
 
 /**
- * 每次起 pi 都带上：不去网上查新版本（探测与会话都不需要，省一次网络往返）。旧版不认识这个变量，照样能跑。
- */
+ * Passed on every pi launch: do not check online for new versions (neither the probe nor the session needs it, and it saves a network round trip). Older versions do not recognize this variable and still run. */
 export const PI_ENV: Record<string, string> = { PI_SKIP_VERSION_CHECK: '1' };
 
 let located: { at: number; result: Promise<PiInstall | null> } | null = null;
 
 /**
- * `CUCCUT_PI_PATH` 优先；否则在登录 shell 的 PATH 与常见安装位置（`~/.local/bin`、Homebrew、`/usr/local/bin`、nvm 各版本的 bin）
- * 里取版本最新的一个。结果缓存 30 秒，避免每次开会话都跑一遍 `--version`。
+ * `CUCCUT_PI_PATH` takes precedence. Otherwise, take the newest version found on the login shell's PATH and in common install locations (`~/.local/bin`, Homebrew, `/usr/local/bin`, and the bin directory of each nvm version).
+ * The result is cached for 30 seconds, to avoid running `--version` every time a session opens.
  */
 export function locatePi(): Promise<PiInstall | null> {
   if (located && Date.now() - located.at <= 30_000) return located.result;
@@ -46,7 +45,7 @@ async function findPi(): Promise<PiInstall | null> {
   return pickNewest(candidates, async (command) => ({ command, version: await readPiVersion(command, env), env }));
 }
 
-/** npm 全局安装常见的落点。nvm 每个 Node 版本一套全局目录，逐个列出来。 */
+/** Common landing spots for npm global installs. nvm has one global directory per Node version; list each one. */
 async function knownLocations(): Promise<string[]> {
   const home = os.homedir();
   const out = [path.join(home, '.local/bin/pi'), '/opt/homebrew/bin/pi', '/usr/local/bin/pi'];
@@ -56,14 +55,14 @@ async function knownLocations(): Promise<string[]> {
   return out;
 }
 
-/** 用户手动指定的可执行文件：只认这一个，不再到别处找。不存在或不可执行时为 null。 */
+/** Executable the user specified manually: only this one is used, with no searching elsewhere. Null when it is missing or not executable. */
 export async function piAt(command: string): Promise<PiInstall | null> {
   if (!(await isExecutable(command))) return null;
   const env = await agentEnv();
   return { command, version: await readPiVersion(command, env), env };
 }
 
-/** `pi --version` 输出里的版本号（实测 1.0.4 只打印 `1.0.4`）。 */
+/** Version number in the output of `pi --version` (measured: 1.0.4 prints only `1.0.4`). */
 export function parsePiVersion(output: string): string | null {
   return /(\d+(?:\.\d+)+)/.exec(output)?.[1] ?? null;
 }

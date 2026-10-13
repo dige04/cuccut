@@ -52,8 +52,7 @@ const alertBox = style({ flexShrink: 0, paddingX: 12, paddingTop: 12 });
 const alertActions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 });
 
 /**
- * 任务阶段 → 四段阶梯（原型 model-transcript.js `LIVE_STAGES`：解码音频 / 识别 / 词级对齐 / 落盘）。按 Runtime 报来的真实阶段走，
- * 不按百分比猜；生成任务的几个阶段在这里用不到，也给个落点。
+ * Task stage → four-step ladder (prototype model-transcript.js `LIVE_STAGES`: decode audio / recognize / word-level alignment / write to disk). It follows the real stages reported by the Runtime rather than guessing from the percentage. The stages of a generation task aren't used here, but they get a landing spot too.
  */
 const STAGE_OF: Record<JobPhase, number> = {
   queued: 0,
@@ -77,9 +76,7 @@ const STAGE_OF: Record<JobPhase, number> = {
 };
 
 /**
- * 转录运行态头（原型 panel-shared.jsx `LiveHead`）：标题、百分比、进度条、计数、四段阶梯、取消。`job` 是画进度的那个
- * （转录流程时是它的转写一步），`cancelJobId` 是取消的那个（转录流程的父任务）；不给时取消 `job`。`note` 换掉取消钮旁边那句
- * （文稿面板的实时态说「识别出来的部分会一段一段出现」）。
+ * Header of a running transcription (prototype panel-shared.jsx `LiveHead`): title, percentage, progress bar, counter, four-step ladder, and cancel. `job` is the one whose progress is drawn (in the transcription flow, its transcribe step). `cancelJobId` is the one that gets cancelled (the flow's parent task); when not given, `job` is cancelled. `note` replaces the sentence next to the cancel button (the transcript panel's live state says that recognized parts appear paragraph by paragraph).
  */
 export function TranscribeProgress({
   run,
@@ -94,13 +91,13 @@ export function TranscribeProgress({
   cancelJobId?: Id | null;
   assetName: string | null;
   note?: string;
-  /** 换掉「生成字幕」那一级的标题（实时文稿：识别做完、结果还在写进视频时，不一定要建字幕）。 */
+  /** Replaces the title at the “Generate subtitles” level (live transcript: once recognition is done and the result is still being written into the video, a subtitle doesn't necessarily need to be created). */
   heading?: string;
 }) {
   const writing = run?.status === 'writing';
   const submitting = run?.status === 'submitting' || (run?.status === 'running' && !job);
   const live = !writing && !submitting && job ? job : null;
-  // 总量不明时不造百分比（`progress.total` 为 null）。
+  // When the total is unknown, no percentage is made (`progress.total` is null).
   const pct = live ? jobPercent(live) : null;
   const stage = writing ? 3 : live ? STAGE_OF[live.phase] : 0;
   const heading = writing ? (headingText ?? C.writing) : submitting ? C.submitting : C.liveTitle;
@@ -158,8 +155,8 @@ export function TranscribeProgress({
 const VARIANT = { 'not-configured': 'notice', failed: 'negative', empty: 'informative', pending: 'informative', decide: 'notice' } as const;
 
 /**
- * 转录没走通：配置缺失给原因、`remedy.hint` 与去处；失败、没有语音、没有音轨如实说；要用户拿主意的指到后台任务。
- * `onDismiss` 缺省收起这条问题；null 时不给收起（别处发起、等着处理的任务）。
+ * Transcription failed. Missing configuration gives the reason, `remedy.hint`, and where to go. Failures, no speech, and no audio track are stated plainly. Cases that need the user to make a decision point to the background task.
+ * `onDismiss` defaults to dismissing this issue; null means it can't be dismissed (a task started elsewhere, waiting to be handled).
  */
 export function TranscribeProblemAlert({
   videoId,

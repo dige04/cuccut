@@ -1536,8 +1536,8 @@ mod tests {
         }
     }
 
-    /// 块边界两侧的空白是传输噪声：宽字符之间去掉，拉丁词之间收成一个空格，
-    /// 只有空白的块变成无文块（并入前一块）。
+    /// Whitespace on either side of a block boundary is transmission noise: between wide characters it is removed, between Latin words it is collapsed to one space;
+    /// a block that is only whitespace becomes a textless block (merged into the previous block).
     #[test]
     fn joint_whitespace_is_tidied_by_script() {
         let p = zh_page("So the history of modern AI cannot exist without open ecosystems.");
@@ -1581,8 +1581,7 @@ mod tests {
         assert!(record.chunks[1].text.is_empty(), "{record:?}");
     }
 
-    /// 韩文目标按空格分词：块缝上模型写的空格留着，模型没写空格的块缝按整行
-    /// 的写法补回（和拉丁文字目标同一条规则），不会把两个어절粘在一起。
+    /// A Korean target is split into words by spaces: a space the model wrote at a block seam is kept, and a block seam where the model wrote no space is restored according to the whole-line convention (the same rule as for Latin-script targets), so that two 어절 (eojeol, Korean word units) are not glued together.
     #[test]
     fn korean_targets_keep_the_space_at_joints() {
         let mut p = zh_page("So the history of modern AI cannot exist without open ecosystems.");
@@ -1612,8 +1611,7 @@ mod tests {
         );
     }
 
-    /// 切分提示的打分：韩文只有在 0.5 之前逐音节的文稿里（词带「贴前」标记）
-    /// 才按「一字一词」算；按어절成词的韩文和别的带空格的文字一样打分。
+    /// Scoring of the split hint: Korean counts as “one character per word” only in a script that is syllable-by-syllable before 0.5 (where the segment carries the 「贴前」 (attach-front) marker). Korean that forms words by 어절 is scored like other space-delimited scripts.
     #[test]
     fn korean_piece_boundaries_score_per_character_only_for_legacy_words() {
         let words: Vec<String> = "저는 어제 서울에서 친구를 만났고, 오늘은 집에서 쉬고 있습니다"
@@ -1627,8 +1625,7 @@ mod tests {
         );
     }
 
-    /// 词间不留空格的非 CJK 目标（泰文）：块缝不补空格；模型自己写的空格（短语
-    /// 停顿）留一个；夹在里面的两个拉丁词相遇时空格照留。
+    /// A non-CJK target with no spaces between words (Thai): no space is added at block seams; a space the model wrote itself (a phrase pause) is kept as one space; when two Latin words meet inside it, the space is kept as usual.
     #[test]
     fn unspaced_script_targets_get_no_space_added_at_joints() {
         let mut p = zh_page("So the history of modern AI cannot exist without open ecosystems.");
@@ -1666,9 +1663,7 @@ mod tests {
         );
     }
 
-    /// 宽字符目标里两个拉丁词隔着块缝相遇时空格要留住（`University|of` 不能拼成
-    /// `Universityof`）；只有标点的块并进前一块，前一块已经以标点结尾时丢掉
-    /// （`，` + `，` 不得印成 `，，`）。
+    /// In a wide-character target, when two Latin words meet across a block seam the space must be kept (`University|of` must not become `Universityof`). A block with only punctuation is merged into the previous block, and is dropped if the previous block already ends in punctuation (`，` (fullwidth comma) + `，` must not print as `，，`).
     #[test]
     fn latin_words_keep_their_space_and_punctuation_chunks_fold_back() {
         let p = zh_page("Geoffrey Hinton's University of Toronto team entered with AlexNet.");
@@ -1712,8 +1707,7 @@ mod tests {
         assert_eq!(result.records[&1].chunks[0].text, "我们比孩子少一把椅子，");
     }
 
-    /// 页尾那句后面跟着 `# after` 上下文行时，模型偶尔把上下文也译进最后一行；
-    /// 引用只落在上下文里的块丢掉、其余照收，只剩上下文的行按缺译处理。
+    /// When the sentence at the end of a page is followed by a `# after` context line, the model occasionally also translates the context into the last line. Blocks that cite only the context are dropped and the rest are kept; a line left with only context is treated as a missing translation.
     #[test]
     fn chunks_quoting_the_context_line_are_dropped() {
         let mut p = zh_page("Hey, did you see it coming?");
@@ -1755,9 +1749,7 @@ mod tests {
         assert_eq!(result.translation.retry_ids, vec!["a".to_owned()]);
     }
 
-    /// 空格文字的目标语里，模型把 `|` 两侧的空格全省掉时要补回来（标点后一律补，
-    /// 词与词之间按整行惯例补）；整行别处有空格而某一处故意黏着的（片标切进了
-    /// 一个目标词）保持黏着；宽字符目标不受影响。
+    /// For a target that uses spaces between words, when the model omits all spaces on both sides of `|`, they are restored (always after punctuation; between words per the whole-line convention). A space elsewhere in the line that a deliberately glued seam keeps (a segment tag cutting into a target word) stays glued. Wide-character targets are not affected.
     #[test]
     fn glued_joints_get_their_space_back_by_line_convention() {
         let mut p =
@@ -1820,7 +1812,7 @@ mod tests {
         );
     }
 
-    /// 为凑块数把同一段译文写两遍的行拒收重问，不让重复文字进字幕。
+    /// A line that writes the same translation twice to pad the block count is rejected and re-asked, so duplicated text does not get into the subtitles.
     #[test]
     fn a_chunk_that_repeats_its_neighbour_rejects_the_line() {
         let p = zh_page(
@@ -1840,7 +1832,7 @@ mod tests {
                 .diagnostics
                 .has_code(ProblemCode::TranslationChunkRepeat)
         );
-        // 正常的相邻块（共用少数字）不受影响。
+        // Normal adjacent blocks (sharing a few characters) are not affected.
         let result = parse(
             &p,
             &input,
@@ -1849,8 +1841,7 @@ mod tests {
         assert!(result.translation.translations.contains_key("a"));
     }
 
-    /// 重复护栏按阅读单位比（中日韩一字一单位、其余一词一单位），且放过源文
-    /// 自己就重复的句子：一个共用的长专名、一句强调、一句否定对比都不是凑数。
+    /// The repetition guard measures by reading unit (one unit per character for CJK, one unit per word for the rest), and lets through sentences that repeat in the source itself: a long proper name shared across blocks, an emphatic sentence, or a negative contrast are not padding.
     #[test]
     fn repeat_guard_counts_units_and_spares_source_repetition() {
         let p = zh_page("He still uses Salesforce, but he uses it together with Claude.");
@@ -2007,9 +1998,7 @@ mod tests {
         );
     }
 
-    /// 分片符写在了下一个标记的开口处（`译文 ¦ LEFT..RIGHT|译文`）：按字面读，
-    /// 引文会落进上一块的译文、下一块的译文被当成标记。能在本句原文里找到的
-    /// 引文才算，分片符改读成 `|`；正文里的分片符（切点提示）不受影响。
+    /// A split marker written at the opening of the next tag (`translation ¦ LEFT..RIGHT|translation`) is read literally: the quotation would fall into the previous block's translation, and the next block's translation would be taken as the tag. Only a quotation that can be found in this sentence's source counts; then the split marker is read as `|`. Split markers in the body text (cut-point hints) are not affected.
     #[test]
     fn piece_mark_written_as_a_marker_opener_is_read_as_a_bar() {
         let mut p = zh_page(
@@ -2044,7 +2033,7 @@ mod tests {
             "{:?}",
             result.translation.diagnostics
         );
-        // 只错一处时原样读是语法错（竖线成单），改读后整行可用。
+        // Read literally, a single wrong place is a grammar error (a lone vertical bar); once read as corrected, the whole line is usable.
         let result = parse(
             &p,
             &input,
@@ -2054,7 +2043,7 @@ mod tests {
             result.translation.translations["a"],
             "하지만 AI는 소프트웨어 개발의 전통적인 여러 역할을 뒤섞고 있습니다."
         );
-        // 分片符后面不是本句的引文：仍是正文里的切点提示。
+        // A split marker not followed by a quotation from this sentence is still a cut-point hint in the body text.
         let result = parse(
             &p,
             &input,
@@ -2067,7 +2056,7 @@ mod tests {
         assert_eq!(result.translation.lines["a"].record.chunks.len(), 2);
     }
 
-    /// 回答里出现的未转义分片符是回显，去掉并记诊断；`\¦` 是正文，保留。
+    /// An unescaped split marker appearing in the answer is an echo: it is removed and a diagnostic is recorded. `\¦` is body text and is kept.
     #[test]
     fn piece_marks_echoed_are_removed_with_a_warning_and_literals_survive() {
         let mut p = zh_page("Use the delimiter.");
@@ -2130,26 +2119,24 @@ mod tests {
         );
     }
 
-    /// 有长度预测（拉丁 → 中日韩）时，预计落在 fit 与 hard 之间的句子也请求
-    /// 两块；只有预算时仍按 hard 判一行。
+    /// When there is a length prediction (Latin → CJK), sentences predicted to land between fit and hard are also requested as two blocks. When there is only a budget, a line is still judged against hard.
     #[test]
     fn predicted_over_fit_rows_are_asked_to_chunk() {
         let params = TransParams::for_lang("zh");
         assert!(params.fit < params.hard);
-        // 50 个非空白字符 × 0.34 ≈ 17 单位：超 fit（16）不超 hard（20）。
+        // 50 non-whitespace characters × 0.34 ≈ 17 units: over fit (16), not over hard (20).
         let mut sentence = TranslateSentence::new("a", &"abcde ".repeat(10));
         sentence.budget = Some(params.hard);
         assert_eq!(chunk_hint(&sentence, "en", "zh", &params), 2);
-        // 40 字符 ≈ 14 单位：一行。
+        // 40 characters ≈ 14 units: one line.
         let mut short = TranslateSentence::new("b", &"abcde ".repeat(8));
         short.budget = Some(params.hard);
         assert_eq!(chunk_hint(&short, "en", "zh", &params), 1);
-        // 没有预测的语言对只看预算，预算不超 hard 就是一行。
+        // A language pair with no prediction looks only at the budget; a budget not above hard means one line.
         assert_eq!(chunk_hint(&sentence, "de", "es", &params), 1);
     }
 
-    /// 源文按字母数取主导文字：数字、标点不算，夹一个外文词不改判；没有
-    /// 字母或打平不判。
+    /// The dominant script of the source text is taken by letter count: digits and punctuation do not count, and an embedded foreign word does not change the decision. With no letters, or a tie, no decision is made.
     #[test]
     fn the_dominant_script_counts_letters_only() {
         assert_eq!(
@@ -2172,9 +2159,7 @@ mod tests {
         assert_eq!(dominant_script("ab ขก"), None);
     }
 
-    /// 只有量过的语言对有长度预测；泰文源只登记了英文目标（中文量过但会让
-    /// 模型照抄原文，不登记），其余目标语、老挝 / 高棉 / 缅甸文源、中日韩源
-    /// 都回到预算。
+    /// Only measured language pairs have length predictions. Thai source has only English targets registered (Chinese was measured, but it would make the model copy the source text, so it is not registered). Other target languages, Lao / Khmer / Burmese sources, and CJK sources all fall back to the budget.
     #[test]
     fn only_measured_pairs_are_estimated() {
         let thai = "ลลิตาไม่ได้ยกเลิกการประชุมแต่เลื่อนไปเป็นวันพฤหัสบดีเวลา14:30น.";
@@ -2206,8 +2191,7 @@ mod tests {
         assert_eq!(estimated_units("我用 ChatGPT 写代码", "zh", "ja"), None);
     }
 
-    /// 泰文源带预算翻成英文：首轮的 `≥k` 按预测长度要，不再按预算上限要
-    /// （验收页 th-01：≥4 → ≥3）。翻成中文仍按预算（≥5）。
+    /// Thai source translated into English with a budget: the first round asks for `≥k` according to the predicted length, not the budget upper bound (acceptance page th-01: ≥4 → ≥3). Translation into Chinese still uses the budget (≥5).
     #[test]
     fn a_thai_sentence_is_hinted_by_its_predicted_length() {
         let source = "ลลิตาไม่ได้ยกเลิกการประชุมแต่เลื่อนไปเป็นวันพฤหัสบดีเวลา14:30น.";
@@ -2251,8 +2235,7 @@ mod tests {
         assert_eq!(chunk_hint(&sentence, "th", "de", &de), 4);
     }
 
-    /// 带旧译文再问的可编辑句至少要两块，但一个词的句子切不开：上限 1 时
-    /// 给 1，不因下限高于上限而崩溃（`clamp(2, 1)` 会 panic）。
+    /// An editable sentence re-asked with an old translation needs at least two blocks, but a one-word sentence cannot be split. When the upper bound is 1, give 1, rather than crashing because the lower bound is above the upper bound (`clamp(2, 1)` panics).
     #[test]
     fn a_one_word_sentence_asked_again_is_hinted_one_chunk() {
         let params = TransParams::for_lang("en");
@@ -2266,8 +2249,7 @@ mod tests {
         assert!(chunk_hint(&longer, "en", "es", &params) >= 2);
     }
 
-    /// 无预算的页（实验页、没有时间的来源）里，带旧译文再问的句子也按旧译文
-    /// 长度要块数；首轮与冻结句无预算仍是一块。
+    /// On a page without a budget (experimental pages, sources with no timing), a sentence re-asked with an old translation also uses the old translation's length to request its block count; the first round and frozen sentences without a budget are still one block.
     #[test]
     fn a_sentence_asked_again_without_budget_is_sized_by_its_previous_text() {
         let params = TransParams::for_lang("en");
@@ -2325,10 +2307,7 @@ mod tests {
         assert!(unsure_boundaries("something else", &words).is_empty());
     }
 
-    /// 片标不落在括号、引号里侧：开引号紧贴后文（泰文、中文逐字时开引号挂
-    /// 在前一个词尾）或独立成词（法文 `« mot »`）时，它后面那条缝不可信；
-    /// 闭引号同理。德文 `„…“` 的 `“`、瑞典文 `”…”` 的 `”` 方向与英文相反，
-    /// 隔着空格，照旧可信。
+    /// A segment marker does not fall on the inner side of brackets or quotes. When an opening quote is attached tightly to the following text (Thai, or Chinese character by character, where the opening quote hangs at the end of the previous word) or stands as its own word (French `« mot »`), the seam after it is not trustworthy; likewise for closing quotes. The German `„…“` `“` and Swedish `”…”` `”` run in the opposite direction from English and are separated by a space, so they remain trustworthy.
     #[test]
     fn pieces_never_open_just_inside_a_bracket_or_quote() {
         // th-05 as stored (2026-10-01 acceptance): the old mark came after
@@ -2400,9 +2379,7 @@ mod tests {
         assert!(unsure_boundaries("He said (and I agree) that", &words).is_empty());
     }
 
-    /// 块缝在开引号之后、闭引号之前不留空格，模型写了也去掉（th-05 的
-    /// `“ confirmed”`）；方向要靠上下文定：德文闭引号 `“`、瑞典文开引号
-    /// `”`、法文 `« »` 里的空格照留。
+    /// No space is left at a block seam between an opening quote and the text after it, and a space the model wrote there is removed (th-05's `“ confirmed”`). The direction must be determined from context: a German closing `“`, a Swedish opening `”`, and the spaces inside French `« »` are kept.
     #[test]
     fn joints_just_inside_a_quote_lose_the_space() {
         let joined = |texts: &[&str], spaced_target: bool| -> String {
@@ -2464,7 +2441,7 @@ mod tests {
         );
     }
 
-    /// 均匀切点落在词内时挪到最近的可信边界；整窗都不可信就往外找。
+    /// When an even cut point falls inside a word, move it to the nearest trustworthy boundary; if the whole window is untrustworthy, search outward.
     #[test]
     fn thai_pieces_open_only_at_sure_boundaries() {
         let words = thai_words();
@@ -2490,9 +2467,7 @@ mod tests {
         assert!(piece_boundaries_over(&words, 3, "th", false, &none).is_empty());
     }
 
-    /// 中文、日文一个字一个词：两个汉字 / 假名之间、词典分词器不断开的边界
-    /// 不可信，片标挪到最近的词界（`视 ¦ 频` → `视频 ¦`）。夹着拉丁词或标点
-    /// 的边界照旧可信。
+    /// In Chinese and Japanese, one character per word: a boundary between two Han characters or kana that the dictionary tokenizer does not break is not trustworthy, and the segment marker moves to the nearest word boundary (`视 ¦ 频` (two characters for “video”) → `视频 (video) ¦`). Boundaries next to Latin words or punctuation remain trustworthy.
     #[test]
     fn chinese_and_japanese_pieces_open_at_dictionary_word_boundaries() {
         let source = "今天这期视频我会分享最终筛选出来的";
@@ -2534,7 +2509,7 @@ mod tests {
         );
     }
 
-    /// 入库译文只在空白 / 标点 / 大小写上与回答不同时，块文本按入库译文重切。
+    /// The stored translation is re-split from the block text only when it differs from the answer in whitespace, punctuation, or case alone.
     #[test]
     fn rebase_recuts_chunks_on_the_committed_text() {
         let record = lines::parse("1 |a..b|Hello , |c..d|world|e..f||g..h|!").unwrap();
@@ -2543,7 +2518,7 @@ mod tests {
         assert_eq!(rebased.chunks[0].text, "Hello, ");
         assert_eq!(rebased.chunks[1].text, "World");
         assert!(rebased.chunks[2].text.is_empty());
-        // 收尾的纯标点块没有有效字符可定位，只是把入库译文的尾巴接过去。
+        // A trailing punctuation-only block has no valid characters to locate; it simply takes over the tail of the stored translation.
         assert_eq!(rebased.chunks[3].text, "!");
         assert_eq!(rebase(&record, "Goodbye, World!"), None);
     }
@@ -2589,10 +2564,7 @@ mod tests {
         assert_eq!(result.translation.retry_ids.len(), 2);
     }
 
-    /// 模型把标记写进了译文位置（多语言复验的 es-06 原行）：第二块的正文是
-    /// 本句的一条 `LEFT..RIGHT` 引用，第一块的正文是源文的后半句。整行拒收
-    /// 重问，不能拼成 `llegó diez minutos después de él. llegó..él` 收下。
-    /// 去掉那条引用之后剩下的残句照抄由内容门拦住；正常译文不受影响。
+    /// The model wrote a marker into the translation position (the es-06 original line from the multilingual re-check): the body of the second block is a `LEFT..RIGHT` reference to a line of this sentence, and the body of the first block is the second half of the source sentence. The whole line is rejected and re-asked, so it cannot be accepted as the concatenation “llegó diez minutos después de él. llegó..él”. The leftover fragment, copied verbatim after the reference is removed, is blocked by the content gate. Normal translations are not affected.
     #[test]
     fn a_marker_in_the_text_slot_rejects_the_line() {
         let p = TranslatePage {
@@ -2648,7 +2620,7 @@ mod tests {
             "{:?}",
             translated.translation.diagnostics
         );
-        // 译文里的两个点不是引用：两端在本句源文里都找不到。
+        // The two dots in the translation are not a reference: neither end can be found in this sentence's source.
         let dotted = parse(
             &p,
             &input,

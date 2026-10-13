@@ -2,25 +2,25 @@ import type { FileTarget, MediaTarget, SpaceEntry } from '@cuccut/protocol';
 import { entryOfTarget, type WorkspaceItem } from './workspace.ts';
 
 /**
- * 页签缩略卡的纯逻辑（产品设计 §3.3「页签条」；原型 home-shell-chrome.jsx `WorkspaceTabPreview`）。
- * 计时与位置都在这里，组件只接 DOM 事件。
+ * Pure logic for the tab thumbnail card (product design §3.3 “tab strip”; prototype home-shell-chrome.jsx `WorkspaceTabPreview`).
+ * Timing and position live here; the component only wires DOM events.
  */
 
-/** 指针在页签上停多久显示缩略卡。 */
+/** How long the pointer must rest on a tab before the thumbnail card is shown. */
 export const TAB_PREVIEW_DELAY_MS = 500;
-/** 缩略卡的宽度与它离视口边缘、离页签的距离。 */
+/** Width of the thumbnail card, and its distance from the viewport edge and from the tab. */
 export const TAB_PREVIEW_WIDTH = 280;
 export const TAB_PREVIEW_MARGIN = 8;
 
-/** 缩略卡的位置：左缘对齐页签、夹在视口里（两侧各留 8），顶在页签下方 8。 */
+/** Position of the thumbnail card: left edge aligned with the tab, clamped within the viewport (8 kept on each side), placed 8 below the tab. */
 export function tabPreviewPosition(tab: { left: number; bottom: number }, viewportWidth: number) {
   const max = viewportWidth - TAB_PREVIEW_WIDTH - TAB_PREVIEW_MARGIN;
   return { left: Math.max(TAB_PREVIEW_MARGIN, Math.min(tab.left, max)), top: tab.bottom + TAB_PREVIEW_MARGIN };
 }
 
 /**
- * 缩略卡的副标题：网页写地址（空白页写「新标签页」），文件与视频写项目内路径，会话页签写「会话」；
- * 找不到路径时用标题。文字由调用方按当前语言给。
+ * Subtitle of the thumbnail card: web pages show the address (blank pages show “新标签页” (“New Tab”)), files and videos show the path inside the project, session tabs show “会话” (“Session”);
+ * when no path is found, the title is used. The caller supplies the text in the current language.
  */
 export function tabPreviewSubtitle(
   item: WorkspaceItem | 'conversation',

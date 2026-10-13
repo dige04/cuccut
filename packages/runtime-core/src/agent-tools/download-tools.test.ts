@@ -9,8 +9,7 @@ import { ToolError } from './tool-catalog.ts';
 import { TOOL_RISK, toolRisk, type ToolConfirmation, type ToolScope } from './tool-scope.ts';
 
 /**
- * `downloads_save`：工作目录里的文件复制到下载目录。路径检查（`..`、绝对路径、符号链接、目录、视频目录）在审批之前拒绝；
- * 只新建文件，重名加序号；文件名按下载的文件同一套规则清理，扩展名沿用源文件的。
+ * `downloads_save`: copies a file from the working directory into the downloads directory. Path checks (`..`, absolute paths, symlinks, directories, the video directory) reject before approval. It only creates new files; on a name clash it adds a sequence number. File names are sanitised by the same rules as downloaded files, and the extension is kept from the source file.
  */
 
 let tmp: string;
@@ -38,7 +37,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   throw new Error('应当拒绝');
 }
 
-/** 只实现这个工具用到的三件事：授权、确认（记下请求）、工作目录。 */
+/** Implements only the three things this tool uses: authorization, confirmation (records the request), and the working directory. */
 function fakeScope(write = true): { scope: ToolScope; confirmed: ToolConfirmation[] } {
   const confirmed: ToolConfirmation[] = [];
   const scope = {
@@ -89,13 +88,13 @@ describe('downloads_save', () => {
     expect(confirmed[0]).toMatchObject({ tool: 'downloads_save', targets: [target] });
     expect(TOOL_RISK.downloads_save).toBe('command');
 
-    // 已有同名文件：不覆盖，加序号。
+    // A file with the same name exists: do not overwrite; add a sequence number.
     await fs.writeFile(target, 'user edited');
     const second = (await tools.dispatch('downloads_save', { path: 'out/talk.zh-Hans.srt' }, principal)) as Record<string, unknown>;
     expect(second.path).toBe(path.join(downloads, 'talk.zh-Hans-2.srt'));
     expect(await fs.readFile(target, 'utf8')).toBe('user edited');
 
-    // 给了 name：清理过，扩展名沿用源文件的。
+    // name is given: sanitised; the extension is kept from the source file.
     const named = (await tools.dispatch('downloads_save', { path: 'out/talk.zh-Hans.srt', name: '../../-字幕:中文' }, principal)) as Record<
       string,
       unknown
@@ -134,7 +133,7 @@ describe('downloads_save', () => {
     expect(confirmed).toHaveLength(0);
     await expect(fs.stat(downloads)).rejects.toThrow();
 
-    // 规划模式（只读）：写操作在授权时拒绝。
+    // Plan mode (read-only): write operations are rejected at authorization.
     const plan = new DownloadTools({ scope: fakeScope(false).scope, downloadsDirectory: () => downloads });
     expect(await rejected(plan.dispatch('downloads_save', { path: 'big.txt' }, principal))).toBe('PLAN_ONLY');
   });

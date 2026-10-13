@@ -10,7 +10,7 @@ import { PackageError, readPackage } from './package-reader.ts';
 import { checkSpace } from './portable-export.ts';
 import { pathUrl, xmemlRate } from './project-export.ts';
 
-/** `.cuccut` 归档的读写与核对：不信任包里的路径、条目种类、清单与内容。 */
+/** Reads, writes, and verifies `.cuccut` archives: does not trust the paths, entry types, manifest, or contents in the package. */
 
 const sha = (data: string | Buffer) => `sha256:${createHash('sha256').update(data).digest('hex')}`;
 
@@ -69,7 +69,7 @@ function manifestFor(files: Record<string, Buffer>, patch: Partial<PackageManife
   };
 }
 
-/** 按给定的条目写一个归档（清单可以单独给，用来造不一致的包）。 */
+/** Writes an archive from the given entries (the manifest can be supplied separately, to build inconsistent packages). */
 async function archive(files: Record<string, Buffer>, manifest: PackageManifest | null = manifestFor(files)): Promise<string> {
   const file = path.join(dir, `${Math.random().toString(36).slice(2)}.cuccut`);
   const writer = await TarWriter.create(file, 0);
@@ -89,7 +89,7 @@ async function codeOf(promise: Promise<unknown>): Promise<string> {
   throw new Error('应该被拒绝');
 }
 
-/** 改第 `index` 个头的一个字节，并重算这个头的校验和。 */
+/** Changes one byte of header number `index` and recomputes that header's checksum. */
 async function patchHeader(file: string, index: number, offset: number, value: string): Promise<void> {
   const entries = await listArchive(file);
   const headerAt = entries[index]!.offset - 512;
@@ -113,7 +113,7 @@ describe('便携包的归档', () => {
     expect(result.manifest.videoId).toBe('vid_1');
     for (const [name, data] of Object.entries(files)) expect(await fs.readFile(path.join(out, name))).toEqual(data);
     expect((await listArchive(file)).map((e) => e.path)).toEqual([...Object.keys(files), 'video.manifest.json']);
-    // 是标准的 ustar：系统的 tar 能列出来（有 tar 时）。
+    // It is standard ustar: the system tar can list it (when tar is available).
     const listed = (() => {
       try {
         return execFileSync('tar', ['-tf', file], { encoding: 'utf8' }).trim().split('\n');
@@ -130,7 +130,7 @@ describe('便携包的归档', () => {
       const file = await archive({ ...baseFiles(), [name]: Buffer.from('x') }, null);
       expect(await codeOf(readPackage(file)), name).toBe('PACKAGE_PATH_UNSAFE');
     }
-    // 清单里写着不安全的路径同样拒绝。
+    // A manifest that lists unsafe paths is rejected as well.
     const files = baseFiles();
     const manifest = manifestFor(files);
     manifest.files.push({ path: '../x', byteLength: 0, sha256: sha('') });
@@ -172,7 +172,7 @@ describe('便携包的归档', () => {
     await fs.writeFile(file, bytes);
     expect(await codeOf(readPackage(file))).toBe('PACKAGE_DIGEST_MISMATCH');
 
-    // 清单说收进来的版本，文件的摘要却不是版本的内容摘要。
+    // The manifest says the version was collected, but the file's digest is not the version's content digest.
     const files = baseFiles();
     const manifest = manifestFor(files);
     manifest.entries[0] = { ...manifest.entries[0]!, contentHash: sha('something else') };

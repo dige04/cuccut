@@ -16,7 +16,7 @@ import { vi } from './link-cookies.vi.ts';
 
 const andList = (names: readonly string[]) => new Intl.ListFormat(intlLocale('en'), { type: 'conjunction' }).format(names);
 
-/** 「网站登录」的文案（英文是键与类型的来源，译文在 `link-cookies.zh-Hans.ts`）。 */
+/** Copy for “website login” (English is the source for keys and types; translations are in `link-cookies.zh-Hans.ts`). */
 const en = {
   noneChecked: 'Leave them all unchecked to download anonymously. If the site asks you to sign in or verify, sign in to it in a browser first, then check that browser.',
   oneChecked: (name: string) => `Uses ${name} cookies to access the site.`,
@@ -32,7 +32,7 @@ const en = {
       : `While ${names[0]} is open, its cookie database is locked and can’t be read. Quit this browser completely before downloading, including if it’s running in the background.`,
   appBound: (names: readonly string[]) =>
     `On Windows, ${andList(names)} usually ${names.length > 1 ? 'protect' : 'protects'} cookies with App-Bound Encryption, which yt-dlp may not be able to read, even after you quit the browser.`,
-  /** 接在上一句后面（英文带前导空格）。 */
+  /** Attaches to the end of the previous sentence (the English form has a leading space). */
   firefoxTip: ' If you need to sign in, sign in to the site in Firefox and check Firefox instead.',
   noBrowsers: 'No browser cookies were found on this computer, so downloads can only be anonymous. After you sign in to the site in a browser, click “Detect browsers again”.',
   used: (name: string) => `Used ${name} cookies`,
@@ -41,12 +41,12 @@ export type LinkCookiesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 下载视频的「网站登录」（产品设计 §2.7「下载视频」，架构设计 §7.9 Cookie、§12.9「本机浏览器」；设计稿 model-tool-cookies.js）。
+ * The “网站登录” (website login) option for downloading videos (product design §2.7 “下载视频”, architecture design §7.9 Cookies and §12.9 “本机浏览器”; design draft model-tool-cookies.js).
  *
- * - 只列出 Runtime 检测到有 Cookie 库的浏览器（`externalTools.cookieBrowsers`），最近用过的在前。
- * - 勾选的浏览器按列出的顺序逐个试（不是按点选的先后）：读不到 Cookie 或网站仍要求登录时换下一个，用上一个就停。
- * - 「所有浏览器」不是一个取值：勾上就是全选检测到的，提交的仍是浏览器列表；只勾了一部分时半选。都不勾是匿名下载。
- * - 系统授权的提示看 Runtime 所在主机的平台（检测结果带的 `platform`），不看这个界面跑在哪。
+ * - Lists only the browsers for which the Runtime detected a cookie store (`externalTools.cookieBrowsers`), most recently used first.
+ * - Ticked browsers are tried one by one in the listed order (not the order in which they were clicked): when a cookie cannot be read, or the site still asks for login, the next one is tried; it stops at the first that works.
+ * - “所有浏览器” (all browsers) is not a value: ticking it selects all detected browsers, and what is submitted is still the browser list; when only some are ticked it shows the partial state. Ticking none means an anonymous download.
+ * - System authorization prompts follow the platform of the host the Runtime runs on (the `platform` carried in the detection result), not the platform this interface runs on.
  */
 
 export const COOKIE_BROWSER_LABEL: Readonly<Record<LinkCookieBrowser, string>> = {
@@ -61,12 +61,12 @@ export const COOKIE_BROWSER_LABEL: Readonly<Record<LinkCookieBrowser, string>> =
   whale: 'Whale',
 };
 
-/** Chromium 内核：macOS 上 Cookie 用钥匙串里的密钥加密、读取时会弹授权；Windows 上浏览器开着时 Cookie 库被占用（yt-dlp #7271）。 */
+/** Chromium-based browsers: on macOS, cookies are encrypted with a key in the Keychain, and reading them prompts for authorization; on Windows, the cookie store is locked while the browser is open (yt-dlp #7271). */
 const CHROMIUM: readonly LinkCookieBrowser[] = ['chrome', 'edge', 'brave', 'chromium', 'opera', 'vivaldi', 'whale'];
 
 /**
- * Windows 上用应用绑定加密（App-Bound Encryption）保护 Cookie、yt-dlp 目前解不开的（yt-dlp #10927，2026-10 核对）：
- * Chrome 127 起的系统级安装、Edge（总是系统级安装）、Brave 的系统级安装。Opera、Vivaldi 目前没有启用，不在此列。
+ * On Windows, cookies protected by App-Bound Encryption, which yt-dlp cannot currently decrypt (yt-dlp #10927, checked 2026-10):
+ * Chrome 127 and later when installed system-wide, Edge (always installed system-wide), and Brave when installed system-wide. Opera and Vivaldi do not enable it yet, so they are not listed.
  */
 const APP_BOUND: readonly LinkCookieBrowser[] = ['chrome', 'edge', 'brave'];
 
@@ -74,33 +74,33 @@ export const cookieBrowserLabel = (id: LinkCookieBrowser): string => COOKIE_BROW
 
 type Detected = readonly Pick<CookieBrowserInfo, 'id'>[];
 
-/** 勾选的浏览器按检测到的顺序排（就是尝试的顺序）；重新检测后不在列表里的去掉。 */
+/** Ticked browsers are kept in the detected order (which is the try order); after re-detection, any no longer in the list are removed. */
 export function orderedBrowsers(checked: readonly LinkCookieBrowser[], detected: Detected): LinkCookieBrowser[] {
   const set = new Set(checked);
   return detected.map((b) => b.id).filter((id) => set.has(id));
 }
 
-/** 「所有浏览器」：检测到的都勾上是全选，勾了一部分是半选。 */
+/** “所有浏览器” (all browsers): when every detected browser is ticked it is select-all; when some are ticked it is partial. */
 export function allBrowsersState(checked: readonly LinkCookieBrowser[], detected: Detected): { selected: boolean; indeterminate: boolean } {
   const n = orderedBrowsers(checked, detected).length;
   const total = detected.length;
   return { selected: total > 0 && n === total, indeterminate: n > 0 && n < total };
 }
 
-/** 点「所有浏览器」：全选时清空，没选或半选时选上全部。 */
+/** Clicking “所有浏览器” (all browsers): when all are selected it clears; when none or partially selected it selects all. */
 export function toggleAllBrowsers(checked: readonly LinkCookieBrowser[], detected: Detected): LinkCookieBrowser[] {
   return allBrowsersState(checked, detected).selected ? [] : detected.map((b) => b.id);
 }
 
-/** 勾上或取消一个浏览器，结果仍按检测到的顺序。 */
+/** Ticking or unticking one browser keeps the result in the detected order. */
 export function toggleBrowser(checked: readonly LinkCookieBrowser[], id: LinkCookieBrowser, on: boolean, detected: Detected): LinkCookieBrowser[] {
   const rest = checked.filter((x) => x !== id);
   return orderedBrowsers(on ? [...rest, id] : rest, detected);
 }
 
 /**
- * 复选框下面的说明：先说按勾选怎么用，再说读了什么、CucCut 记什么；再按 Runtime 所在主机与勾了哪些浏览器提示：
- * macOS 上的系统授权，Windows 上 Cookie 库被占用与应用绑定加密（没勾 Firefox 时建议改用它）。
+ * The description below the checkboxes: first how the ticks are used, then what is read and what CucCut keeps; then hints based on the host the Runtime runs on and which browsers are ticked:
+ * the system authorization on macOS, and on Windows the locked cookie store and app-bound encryption (when Firefox is not ticked, it is suggested instead).
  */
 export function cookieNotes(list: readonly LinkCookieBrowser[], platform: string | null): string[] {
   const names = list.map(cookieBrowserLabel);
@@ -123,12 +123,12 @@ export function cookieNotes(list: readonly LinkCookieBrowser[], platform: string
   return lines;
 }
 
-/** 一个都没检测到时的说明。 */
-// 旧的具名字符串导出：字符串没法按读取取当前语言，换语言时改写这个绑定（ES 模块的导入是活绑定；界面换语言时整体重画）。
+/** The description when no browser is detected at all. */
+// The old named string exports: a string cannot be read for the current language, so rewrite this binding when the language changes (ES module imports are live bindings; the whole interface is redrawn when the language changes).
 export let NO_COOKIE_BROWSERS: string = M.noBrowsers;
 onLocaleChange(() => {
   NO_COOKIE_BROWSERS = M.noBrowsers;
 });
 
-/** 运行的结果里写明用上的浏览器。 */
+/** The result of the run states which browser was used. */
 export const usedCookieText = (id: LinkCookieBrowser): string => M.used(cookieBrowserLabel(id));

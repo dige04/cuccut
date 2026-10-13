@@ -14,8 +14,8 @@ import { resolveRuntimeHome, type RuntimeHome } from '@cuccut/runtime-storage';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 模型接口服务（架构设计 §4.8、§12.8）：OpenAI 形状的本机端点。临时的 Runtime Home、系统挑的端口、假的 OpenAI
- * （本机 HTTP）与假的 Model Worker；不需要视频引擎。本机转写要 Apple Silicon（默认模型包是 MLX）与 ffmpeg，缺了就跳过那几条。
+ * Model API service (architecture design §4.8, §12.8): a local OpenAI-shaped endpoint. A temporary Runtime Home, a system-chosen port, a fake OpenAI
+ * (local HTTP) and a fake Model Worker; no video engine needed. Local transcription needs Apple Silicon (the default model pack is MLX) and ffmpeg; if they are missing, those cases are skipped.
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-model-api-0123456789';
@@ -45,7 +45,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-/** 给默认模型包的每个仓库写一份合成的清单与文件。 */
+/** Writes a synthetic manifest and files for each repo of the default model pack. */
 async function installSyntheticModels(modelsDir: string): Promise<void> {
   const bundle = BUNDLES.find((b) => b.bundleId === DEFAULT_TRANSCRIBE_BUNDLE)!;
   for (const source of Object.values(bundle.components)) {
@@ -80,11 +80,11 @@ interface Send {
   json?: unknown;
   body?: Buffer;
   contentType?: string;
-  /** 不带 Content-Length（分块传输）。 */
+  /** Without Content-Length (chunked transfer). */
   chunked?: boolean;
 }
 
-/** 原始 HTTP 请求：`Host`、`Origin` 与 `Authorization` 都由测试决定。服务端先回答再关连接（413）时照样拿到回答。 */
+/** Raw HTTP request: `Host`, `Origin` and `Authorization` are all decided by the test. When the server answers and closes the connection first (413), the answer is still received. */
 function open(base: string, pathname: string, options: Send = {}): { request: http.ClientRequest; reply: Promise<Reply> } {
   const target = new URL(base);
   const payload = options.json !== undefined ? Buffer.from(JSON.stringify(options.json)) : options.body;
@@ -116,7 +116,7 @@ function open(base: string, pathname: string, options: Send = {}): { request: ht
           try {
             json = JSON.parse(text);
           } catch {
-            // 不是 JSON。
+            // Not JSON.
           }
           resolve({ status: response.statusCode ?? 0, headers: response.headers, body, text, json });
         });
@@ -265,7 +265,7 @@ describe('模型接口服务', () => {
     const host = await send(base, '/v1/models', { token, headers: { Host: 'evil.example' } });
     expect(host.status).toBe(403);
     expect(host.json.error.code).toBe('HOST_NOT_ALLOWED');
-    // 服务的令牌各管各的：MCP 的令牌不能用在这里。
+    // Each service's tokens are separate: an MCP token cannot be used here.
     const { token: mcpToken } = await client.request('services.mcp.createClient', { name: 'mcp' });
     expect((await send(base, '/v1/models', { token: mcpToken })).status).toBe(401);
 
@@ -279,7 +279,7 @@ describe('模型接口服务', () => {
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.allow).toBe('POST');
 
-    // 连接信息不带令牌明文。
+    // Connection info carries no plaintext token.
     const connection = await client.request('services.modelApi.connectionInfo', { clientId });
     expect(connection).toMatchObject({ baseUrl: `${base}/v1`, interfaceVersion: MODEL_API_INTERFACE_VERSION, notice: null });
     expect(connection.snippet).toContain(`OPENAI_BASE_URL=${base}/v1`);
@@ -304,7 +304,7 @@ describe('模型接口服务', () => {
       expect(local).toContain(`local/${DEFAULT_TRANSCRIBE_BUNDLE}`);
     }
 
-    // 在线服务启用了，但路由没开：仍然看不见。
+    // The online service is enabled, but routing is not: still not visible.
     await client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     expect((await modelIds(token)).some((id) => id.startsWith('openai/'))).toBe(false);
     const closed = await send(base, '/v1/audio/speech', { token, json: { model: 'openai/gpt-4o-mini-tts', input: 'hi' } });
@@ -324,14 +324,14 @@ describe('模型接口服务', () => {
     expect((await modelIds(token)).some((id) => id.startsWith('openai/'))).toBe(false);
     expect((await send(base, '/v1/models/openai/gpt-image-1', { token })).status).toBe(404);
     if (appleSilicon) {
-      // 转写本机就有：在线模型按名请求是 404。
+      // Transcription is available locally: an online model requested by name is 404.
       const { body, contentType } = multipart({ model: 'openai/whisper-1' }, { name: 'a.wav', type: 'audio/wav', data: Buffer.alloc(64) });
       const hidden = await send(base, '/v1/audio/transcriptions', { token, body, contentType });
       expect(hidden.status).toBe(404);
       expect(hidden.json.error).toMatchObject({ code: 'MODEL_NOT_FOUND', type: 'not_found_error' });
     }
 
-    // 节点与智能体的开关各自独立、落盘；只适用于模型接口服务。
+    // The node and agent switches are independent and persisted to disk; they apply only to the model API service.
     await client.request('services.configure', { serviceId: 'model-api', routing: { nodes: true }, maxConcurrentPerClient: 2 });
     const stored = JSON.parse(await fs.readFile(home.servicesFile, 'utf8'));
     expect(JSON.stringify(stored)).toContain('"nodes":true');
@@ -339,7 +339,7 @@ describe('模型接口服务', () => {
     const refused = await client.request('services.configure', { serviceId: 'mcp', routing: { online: true } }).catch((e: unknown) => e);
     expect(refused).toMatchObject({ code: 'invalid-request' });
 
-    // 别名：设、用、删。
+    // Aliases: set, use, delete.
     const { aliases } = await client.request('services.modelApi.setAlias', {
       alias: 'my-voice',
       capability: 'synthesizeSpeech',
@@ -351,7 +351,7 @@ describe('模型接口服务', () => {
     expect((await modelIds(token)).slice(0, appleSilicon ? 2 : 1)).toContain('my-voice');
     const viaAlias = await send(base, '/v1/audio/speech', { token, json: { model: 'my-voice', input: 'hi' } });
     expect(viaAlias.status).toBe(200);
-    // 别名的能力不对：404。
+    // Alias with the wrong capability: 404.
     const wrongCapability = await send(base, '/v1/chat/completions', {
       token,
       json: { model: 'my-voice', messages: [{ role: 'user', content: 'hi' }] },
@@ -392,7 +392,7 @@ describe('模型接口服务', () => {
       (await send(base, '/v1/audio/speech', { token, json: { model: 'openai/gpt-4o-mini-tts', input: 'hi', stream_format: 'sse' } })).json
         .error.code,
     ).toBe('UNSUPPORTED_PARAMETER');
-    // 用户库的音色不对外部程序开放（架构设计 §5.9）：400，不创建任务，请求不到达供应商。
+    // User library voices are not exposed to external programs (architecture design §5.9): 400, no task is created, and the request does not reach the provider.
     const speechCalls = openai.requests.filter((r) => r.path.endsWith('/audio/speech')).length;
     const jobsBefore = (await client.request('jobs.list', {})).jobs.length;
     const libraryVoice = await send(base, '/v1/audio/speech', {
@@ -486,7 +486,7 @@ describe('模型接口服务', () => {
     });
     expect(chunkedTooLarge.status).toBe(413);
 
-    // 密钥、令牌与请求正文都不进日志、配置与最近请求。
+    // Keys, tokens and request bodies do not enter logs, config, or recent requests.
     const { services } = await client.request('services.list', {});
     const recent = JSON.stringify(services.find((s) => s.serviceId === 'model-api')!.recentRequests);
     expect(recent).toContain('POST /v1/chat/completions');
@@ -520,7 +520,7 @@ describe('模型接口服务', () => {
     const sent = openai.requests.at(-1)!.json as Record<string, any>;
     expect(sent.response_format).toMatchObject({ type: 'json_schema', json_schema: { schema } });
 
-    // json_object：任意 JSON 对象。
+    // json_object: any JSON object.
     openai.handler = (request) => chatCompletionReply(request, '{"a":1}');
     const object = await send(base, '/v1/chat/completions', {
       token,
@@ -594,7 +594,7 @@ describe('模型接口服务', () => {
     const speechCalls = () => openai.requests.filter((r) => r.path.endsWith('/audio/speech')).length;
     const speak = () => send(base, '/v1/audio/speech', { token, json: { model: 'openai/gpt-4o-mini-tts', input: 'hi' } });
 
-    // 启用 openai 时发放的默认授权（迁移规则）：照常 200；任务记录带着授权、预留与结算（金额未知，只计次数）。
+    // The default authorization issued when openai is enabled (migration rule): 200 as usual; the task record carries the authorization, the reservation and the settlement (amount unknown, only the count is tracked).
     const ok = await speak();
     expect(ok.status).toBe(200);
     const [byDefault] = (await client.request('grants.list', { recipient: 'openai' })).grants;
@@ -607,7 +607,7 @@ describe('模型接口服务', () => {
       settled: { calls: 1, amount: null, basis: 'unknown' },
     });
 
-    // 撤销：如实报告已经交出的；auto 等级不等于外发授权，请求到不了供应商。
+    // Revocation: honestly reports what was already handed out. The auto level is not an outbound-sending authorization, and the request does not reach the provider.
     const revoked = await client.request('grants.revoke', { grantId: byDefault!.grantId });
     expect(revoked.alreadySent).toEqual({ calls: 1, amount: null, unknownCostCalls: 1 });
     const before = speechCalls();
@@ -616,7 +616,7 @@ describe('模型接口服务', () => {
     expect(refused.json.error).toMatchObject({ code: 'GRANT_REQUIRED', type: 'permission_error' });
     expect(speechCalls()).toBe(before);
 
-    // ask：带外发的高风险审批；允许并发放一条持续授权（次数上限 2）。
+    // ask: a high-risk approval for outbound sending; allowing it issues a standing authorization (count limit 2).
     await client.request('services.configure', { serviceId: 'model-api', level: 'ask' });
     const pending = speak();
     const approval = await until(() => runtime.harness.approvals.pending()[0]);
@@ -633,7 +633,7 @@ describe('模型接口服务', () => {
     const persistent = (await client.request('grants.list', { recipient: 'openai' })).grants.find((g) => g.origin === 'approval')!;
     expect(persistent).toMatchObject({ once: false, maxCalls: 2, scope: { videoId: null } });
 
-    // 回到 auto：有授权覆盖就不再问；第二次用完上限，第三次在审批与提交之前就是 409，不到供应商。
+    // Back to auto: when an authorization covers it, no more asking; after the second use reaches the limit, the third is 409 before approval and submission, and never reaches the provider.
     await client.request('services.configure', { serviceId: 'model-api', level: 'auto' });
     expect((await speak()).status).toBe(200);
     const atCap = speechCalls();
@@ -668,7 +668,7 @@ describe('模型接口服务', () => {
     expect(limited.status).toBe(429);
     expect(limited.headers['retry-after']).toBe('1');
     expect(limited.json.error).toMatchObject({ code: 'TOO_MANY_REQUESTS', type: 'rate_limit_error' });
-    // 乙不受甲的上限影响：请求照常进到供应商。
+    // B is not affected by A's limit: the request still reaches the provider.
     const other = open(base, '/v1/chat/completions', { token: second.token, json: body });
     other.reply.catch(() => {});
     await openai.waitForRequests(2);
@@ -679,7 +679,7 @@ describe('模型接口服务', () => {
     other.request.destroy();
     await until(async () => (await client.request('jobs.list', {})).jobs.every((j) => j.state === 'cancelled'));
 
-    // 名额随请求结束归还：任务的终态先落盘（fsync）再算结束，列表看到 cancelled 时请求可能还没收尾，所以等名额回来。
+    // The slot is returned when the request ends: the task's terminal state is persisted (fsync) before it counts as ended; when the list shows cancelled, the request may not have finished, so wait for the slot to come back.
     openai.handler = fakeOpenAiHandler();
     await until(async () => (await send(base, '/v1/chat/completions', { token: first.token, json: body })).status === 200);
   });
@@ -735,7 +735,7 @@ describe('模型接口服务', () => {
       expect(text.headers['content-type']).toMatch(/^text\/plain/);
       expect(text.text).toBe('testing one two three cuccut is ready\n');
 
-      // 规范写法 `<providerId>/<modelId>`：取 /v1/models 里本机的那一项。
+      // Canonical form `<providerId>/<modelId>`: take the local entry from /v1/models.
       const localId = (await modelIds(token)).find((id) => id.startsWith('local/'))!;
       const srtReply = await transcribe(token, { model: localId, response_format: 'srt' });
       expect(srtReply.status).toBe(200);

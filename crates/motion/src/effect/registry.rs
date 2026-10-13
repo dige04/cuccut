@@ -1,10 +1,10 @@
-//! 内置效果注册表。与 preset 注册表同一纪律（设计 §5.4 / §6.3）：
-//! `core/presets/builtin/{filter,composite}/*.json` 经 `include_str!` 嵌入、
-//! `OnceLock` 一次性解析成 `'static` 结构；加一个效果 = 加一行。
+//! Built-in effect registry. Same discipline as the preset registry (design §5.4 / §6.3): the
+//! `core/presets/builtin/{filter,composite}/*.json` files are embedded via `include_str!` and parsed once into `'static`
+//! structures by `OnceLock`. Adding an effect means adding one line.
 //!
-//! 目录与清单的一致性由 `tests/effects.rs`（dev-only，可以读文件系统）守住；
-//! **每个 strict manifest 的 `kernel` 都有 CPU 参考实现**由
-//! `ccut-render::effects` 的注册表测试守住——两边合起来才是 ADR-M05 的承诺。
+//! Consistency between the directory and the manifests is kept by `tests/effects.rs` (dev-only, may read the filesystem).
+//! **Every strict manifest's `kernel` has a CPU reference implementation**, kept by the registry tests in
+//! `ccut-render::effects`. Together the two are the promise of ADR-M05.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -23,7 +23,7 @@ macro_rules! builtin_effect {
     };
 }
 
-/// 加一个效果 = 加一行。
+/// Adding an effect means adding one line.
 static EFFECT_SOURCES: &[(&str, &str, &str)] = &[
     builtin_effect!("filter", "filter.blur"),
     builtin_effect!("filter", "filter.brightness"),
@@ -52,8 +52,8 @@ static EFFECT_SOURCES: &[(&str, &str, &str)] = &[
     builtin_effect!("filter", "mask.image"),
     builtin_effect!("filter", "mask.luma"),
     builtin_effect!("composite", "blend"),
-    // Surface Transition（阶段 5，规范 §9）。与同目录的 `bcf.*.json` 分居两张
-    // 注册表：前者是**双画面效果**，后者是双通道属性配方，只是词汇同源。
+    // Surface Transition (stage 5, spec §9). It sits in a separate registry from the `bcf.*.json` files in the same directory:
+    // the former are **two-picture effects**, the latter are dual-channel property recipes; the vocabulary is shared.
     builtin_effect!("transition", "transition.crossfade"),
     builtin_effect!("transition", "transition.slide"),
     builtin_effect!("transition", "transition.wipe"),
@@ -64,7 +64,7 @@ static EFFECT_SOURCES: &[(&str, &str, &str)] = &[
 ];
 
 pub struct EffectRegistry {
-    /// `(id, version) → manifest`，按 id 再按 version 排序。
+    /// `(id, version) → manifest`, sorted by id and then by version.
     by_id: BTreeMap<(String, u32), EffectManifest>,
 }
 
@@ -73,8 +73,8 @@ impl EffectRegistry {
         self.by_id.get(&(id.to_owned(), version))
     }
 
-    /// 只给 id 时取**最高**已注册版本。用于诊断，不用于求值：
-    /// 求值一律要求显式版本（`preset-version-unknown` 不得静默升版）。
+    /// Given only an id, returns the **highest** registered version. Used for diagnostics, not for evaluation: evaluation always
+    /// requires an explicit version (`preset-version-unknown` must not upgrade silently).
     pub fn latest(&self, id: &str) -> Option<&EffectManifest> {
         self.by_id
             .iter()
@@ -114,7 +114,7 @@ fn build() -> Result<EffectRegistry, String> {
     for (_, file, source) in EFFECT_SOURCES {
         let manifest = parse_manifest(source, fnv1a64(source.as_bytes()))
             .map_err(|error| error.to_string())?;
-        // 文件名必须等于 id：改名即红，不需要额外索引。
+        // The file name must equal the id: a rename turns it red, with no extra index needed.
         if manifest.id != *file && !(*file == "blend" && manifest.id == "composite.blend") {
             return Err(format!(
                 "manifest-invalid: {file}.json 声明的 id 是 {}",
@@ -129,7 +129,7 @@ fn build() -> Result<EffectRegistry, String> {
     Ok(EffectRegistry { by_id })
 }
 
-/// 内置效果注册表（进程内解析一次）。
+/// Built-in effect registry (parsed once per process).
 pub fn builtin_registry() -> &'static EffectRegistry {
     match REGISTRY.get_or_init(build) {
         Ok(registry) => registry,
@@ -137,7 +137,7 @@ pub fn builtin_registry() -> &'static EffectRegistry {
     }
 }
 
-/// 解析期自检：给 `validate_all` 风格的 dev 测试用，不 panic。
+/// Parse-time self-check: for dev tests in the style of `validate_all`; does not panic.
 pub fn validate_all_effects() -> Result<(), MotionError> {
     REGISTRY
         .get_or_init(build)
@@ -146,7 +146,7 @@ pub fn validate_all_effects() -> Result<(), MotionError> {
         .map_err(|error| MotionError::ManifestInvalid(error.clone()))
 }
 
-/// 某个目录下已注册的文件名（不含 `.json`）。目录一致性测试用。
+/// File names registered under a directory (without `.json`). Used by the directory consistency test.
 pub fn registered_effect_files(namespace: &str) -> Vec<&'static str> {
     EFFECT_SOURCES
         .iter()
@@ -155,7 +155,7 @@ pub fn registered_effect_files(namespace: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// 查一个 `(id, version)`，区分「没这个效果」与「没这个版本」。
+/// Looks up an `(id, version)`, distinguishing “no such effect” from “no such version”.
 pub fn lookup(id: &str, version: u32) -> Result<&'static EffectManifest, MotionError> {
     let registry = builtin_registry();
     if let Some(manifest) = registry.get(id, version) {

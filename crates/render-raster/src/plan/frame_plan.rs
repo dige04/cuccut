@@ -1,20 +1,19 @@
-//! `FramePlan` 与它的分层指纹（设计 §6.1 / §6.6）。
+//! `FramePlan` and its layered fingerprints (design §6.1 / §6.6).
 //!
-//! 三层指纹，各管各的：
-//! * **DrawOp 指纹**（`drawop::fingerprint`）——单个指令流的原语身份，
-//!   `ccut ops` 与 overlay 响应头继续用它。
-//! * **FramePlan 指纹**（[`FramePlan::plan_fingerprint`]）——整张计划的结构身份，
-//!   含 surface 尺寸、pass 顺序、effect id/version、uniforms 与 capability。
-//! * **Surface 指纹**（[`FramePlan::surface_fingerprint`]）——某张 surface 的
-//!   **内容**身份：它的描述、写它的那些 pass、以及各输入 surface 的指纹。
-//!   **帧指纹 := 输出 surface 的指纹**（[`FramePlan::frame_fingerprint`]），
-//!   这是静止帧缓存的键与渲染清单里那一列。
+//! Three layers of fingerprints, each with its own scope:
+//! * **DrawOp fingerprint** (`drawop::fingerprint`): the primitive identity of a single instruction stream; `ccut ops` and the
+//!   overlay response header continue to use it.
+//! * **FramePlan fingerprint** ([`FramePlan::plan_fingerprint`]): the structural identity of the whole plan, including surface sizes,
+//!   pass order, effect id/version, uniforms and capabilities.
+//! * **Surface fingerprint** ([`FramePlan::surface_fingerprint`]): the **content** identity of a surface: its description, the passes
+//!   that write to it, and the fingerprints of its input surfaces. **Frame fingerprint := the fingerprint of the output surface**
+//!   ([`FramePlan::frame_fingerprint`]); this is the key for the still-frame cache and the column in the render manifest.
 //!
-//! 编码规则与 DrawOp 同源：小端、`-0.0 → +0.0`、侧表按声明序、`UniformMap`
-//! 是 `BTreeMap` ⇒ 键序天然确定，不需要在编码期再排序。
+//! The encoding rules share a source with DrawOp: little-endian, `-0.0 → +0.0`, side tables in declaration order, and `UniformMap`
+//! is a `BTreeMap` ⇒ key order is naturally deterministic, so no re-sorting is needed at encoding time.
 
 use super::pass::RenderPass;
-// `CompositeInput` / `BlendMode` 只有 `from_layers`（BCF 分层录制）用得上。
+// `CompositeInput` / `BlendMode` are only needed by `from_layers` (BCF layered recording).
 use super::surface::CompositeInput;
 use super::surface::{SurfaceId, SurfacePlan};
 use crate::drawop::{self, Color4, FrameOps};
@@ -31,12 +30,12 @@ const SURFACE_MAGIC: u32 = 0x42_53_46_50; // "BSFP"
 #[derive(Debug)]
 pub struct FramePlan {
     pub version: u32,
-    /// 按 `id` 升序（`validate` 守）。
+    /// Sorted ascending by `id` (enforced by `validate`).
     pub surfaces: Vec<SurfacePlan>,
-    /// 拓扑序：每个 pass 的输入必须由更早的 pass 产出，或是未被写过的清屏 surface。
+    /// Topological order: each pass's inputs must be produced by an earlier pass, or be a clear surface that has not been written.
     pub passes: Vec<RenderPass>,
     pub output: SurfaceId,
-    /// 执行后端能力档案的指纹（[`super::CapabilityProfile::fingerprint`]）。
+    /// Fingerprint of the execution backend's capability profile ([`super::CapabilityProfile::fingerprint`]).
     pub capability: u64,
 }
 
@@ -259,9 +258,9 @@ impl PlanBuilder {
 }
 
 impl FramePlan {
-    /// 无 effect 文档的**折叠形态**：一张画布 surface + 一个 Draw pass。
-    /// 执行器对这个形状直接调 `raster::rasterize_with_media`——与 `record(t)`
-    /// 之后原样光栅化是同一条代码路径，逐字节相同（设计 §6.1）。
+    /// The **folded shape** of a document with no effects: one canvas surface + one Draw pass. The executor calls
+    /// `raster::rasterize_with_media` directly for this shape. It is the same code path as rasterizing as-is after `record(t)`,
+    /// byte-identical (design §6.1).
     pub fn single_draw(width: u32, height: u32, ops: FrameOps, capability: u64) -> Self {
         FramePlan {
             version: FRAME_PLAN_VERSION,
@@ -275,13 +274,13 @@ impl FramePlan {
         }
     }
 
-    /// 分层录制结果 → 计划（设计 §6.3）。
+    /// Layered recording result → plan (design §6.3).
     ///
-    /// 每一层先画进自己的 surface，效果层再串一条 `Filter` pass 链，最后按
-    /// 声明序逐层 `Composite` 回累积画面。只有一层普通指令流时**折叠**成
-    /// [`FramePlan::single_draw`]——无效果文档因此仍走单 Draw pass。
+    /// Each layer is first drawn into its own surface; effect layers then chain a series of `Filter` passes; and finally each layer is
+    /// `Composite`d back into the accumulated picture in declaration order. When there is only one plain instruction-stream layer, it is
+    /// **folded** into [`FramePlan::single_draw`], so a document without effects still goes through a single Draw pass.
     ///
-    /// 入参来自无 I/O 的 BCF 录制器；native 与 WASM 共用同一份计划。
+    /// The inputs come from the BCF recorder, which does no I/O; native and WASM share the same plan.
     pub fn from_layers(
         width: u32,
         height: u32,
@@ -311,7 +310,7 @@ impl FramePlan {
         }
     }
 
-    /// 恰好一个 Draw pass 且直接写输出 surface ⇒ 执行器走 fast path。
+    /// Exactly one Draw pass that writes directly to the output surface ⇒ the executor takes the fast path.
     pub fn is_folded(&self) -> bool {
         self.surfaces.len() == 1
             && self.passes.len() == 1
@@ -326,8 +325,8 @@ impl FramePlan {
         self.surface(self.output)
     }
 
-    /// 结构合法性：surface id 升序去重、输出存在、每个 pass 的 output/input
-    /// 都已声明、输入必须在使用前被写过或是清屏 surface（拓扑序）。
+    /// Structural validity: surface ids are sorted ascending with no duplicates, the output exists, every pass's output/input is
+    /// declared, and inputs must be written before use or be a clear surface (topological order).
     pub fn validate(&self) -> Result<()> {
         if self.version != FRAME_PLAN_VERSION {
             bail!("frameplan-version-unsupported: {}", self.version);
@@ -344,7 +343,7 @@ impl FramePlan {
         if self.surface(self.output).is_none() {
             bail!("frameplan-output-unknown: {:?}", self.output);
         }
-        // `External` surface 的内容由调用方提供，视为「一开始就写好了」。
+        // The content of an `External` surface is supplied by the caller and treated as already written from the start.
         let mut written: Vec<SurfaceId> = self
             .surfaces
             .iter()
@@ -396,12 +395,12 @@ impl FramePlan {
         Ok(())
     }
 
-    /// 整张计划的结构指纹。
+    /// Structural fingerprint of the whole plan.
     pub fn plan_fingerprint(&self) -> u64 {
         drawop::fnv1a64(&encode_plan(self))
     }
 
-    /// 某张 surface 的内容指纹。递归蕴含全部上游输入。
+    /// Content fingerprint of a surface. Recursively implies all upstream inputs.
     pub fn surface_fingerprint(&self, id: SurfaceId) -> Result<u64> {
         let table = self.surface_fingerprints()?;
         table
@@ -410,19 +409,18 @@ impl FramePlan {
             .ok_or_else(|| anyhow::anyhow!("frameplan-surface-unknown: {id:?}"))
     }
 
-    /// **帧指纹**：输出 surface 的内容指纹。
+    /// **Frame fingerprint**: the content fingerprint of the output surface.
     pub fn frame_fingerprint(&self) -> Result<u64> {
         self.frame_fingerprints().map(|(frame, _)| frame)
     }
 
-    /// 帧指纹 **加上**算它时顺手得到的整张 surface 指纹表。
+    /// The frame fingerprint **plus** the full surface fingerprint table obtained as a by-product of computing it.
     ///
-    /// 指纹表的代价是对每个 Draw pass 做一次全量 `drawop::encode`，而执行器
-    /// 内部也要同一张表来当中间 surface 的缓存键。调用方先算指纹、再按缓存
-    /// 未命中执行时，用这个入口取表并交给
-    /// [`super::execute_plan_with_fingerprints`]，可以省掉第二次编码。
+    /// The cost of the fingerprint table is a full `drawop::encode` for each Draw pass, and the executor internally also needs the same
+    /// table as the cache keys for intermediate surfaces. When the caller computes the fingerprint first and then executes on a cache
+    /// miss, it can use this entry to get the table and pass it to [`super::execute_plan_with_fingerprints`], saving a second encoding.
     ///
-    /// **表与计划绑定**：取表之后不得再改写 `plan` 的任何字段，否则表就过期了。
+    /// **The table is bound to the plan**: after the table is obtained, no field of `plan` may be modified, or the table becomes stale.
     pub fn frame_fingerprints(&self) -> Result<(u64, BTreeMap<u32, u64>)> {
         let table = self.surface_fingerprints()?;
         let frame = table
@@ -432,8 +430,8 @@ impl FramePlan {
         Ok((frame, table))
     }
 
-    /// 全部 surface 的内容指纹。计划已是拓扑序（`validate`），因此一趟前向
-    /// 传播即可，无需递归也不可能成环。
+    /// Content fingerprints of all surfaces. The plan is already in topological order (`validate`), so a single forward pass suffices;
+    /// no recursion is needed and cycles are impossible.
     pub fn surface_fingerprints(&self) -> Result<BTreeMap<u32, u64>> {
         self.validate()?;
         let mut table: BTreeMap<u32, u64> = self
@@ -468,7 +466,7 @@ impl FramePlan {
     }
 }
 
-// ── 二进制编码（LE；节顺序 header → surfaces → passes → output）─────────
+// ── Binary encoding (LE; section order: header → surfaces → passes → output) ─────────
 
 fn put_u32(out: &mut Vec<u8>, v: u32) {
     out.extend_from_slice(&v.to_le_bytes());
@@ -479,7 +477,7 @@ fn put_u64(out: &mut Vec<u8>, v: u64) {
 }
 
 fn put_f32(out: &mut Vec<u8>, v: f32) {
-    // 与 DrawOp 同规则：-0.0 归一到 +0.0
+    // Same rule as DrawOp: -0.0 is normalized to +0.0
     let v = if v == 0.0 { 0.0f32 } else { v };
     out.extend_from_slice(&v.to_le_bytes());
 }
@@ -528,7 +526,7 @@ fn encode_effect(effect: &EffectRef, out: &mut Vec<u8>) {
     }
 }
 
-/// `UniformMap` 是 `BTreeMap` ⇒ 迭代序 = 键的字典序，编码天然确定。
+/// `UniformMap` is a `BTreeMap` ⇒ iteration order = lexicographic key order, so the encoding is naturally deterministic.
 fn encode_uniforms(uniforms: &UniformMap, out: &mut Vec<u8>) {
     put_u32(out, uniforms.len() as u32);
     for (key, value) in uniforms.iter() {
@@ -547,8 +545,8 @@ fn encode_uniforms(uniforms: &UniformMap, out: &mut Vec<u8>) {
     }
 }
 
-/// pass 的**本体**：不含输入 surface 的 id（surface 指纹改用输入的指纹值，
-/// 这样「同一条 pass 作用在不同内容上」才会得到不同的 surface 指纹）。
+/// The **body** of a pass: it does not include the ids of its input surfaces (the surface fingerprint uses the input fingerprint
+/// values instead, so that “the same pass applied to different content” yields different surface fingerprints).
 fn encode_pass_body(pass: &RenderPass, out: &mut Vec<u8>) {
     out.push(pass.tag());
     match pass {
@@ -593,8 +591,8 @@ fn encode_pass_body(pass: &RenderPass, out: &mut Vec<u8>) {
     }
 }
 
-/// 计划的完整编码（结构指纹的输入）。与 surface 指纹不同，这里**带上**
-/// 输入 surface 的 id：计划身份关心接线，内容身份关心上游取值。
+/// The full encoding of the plan (the input to the structural fingerprint). Unlike the surface fingerprint, this **includes** the
+/// ids of input surfaces: plan identity cares about wiring, content identity cares about upstream values.
 pub fn encode_plan(plan: &FramePlan) -> Vec<u8> {
     let mut out = Vec::with_capacity(4096);
     put_u32(&mut out, PLAN_MAGIC);

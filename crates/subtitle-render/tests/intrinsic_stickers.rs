@@ -1,14 +1,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-// v2 的路径（`apps/cuccut/assets/stickers`）。v3 还没有贴纸库，用到它的测试标了 ignore。
+// v2's path (`apps/cuccut/assets/stickers`). v3 has no sticker library yet, so tests that use it are marked ignore.
 fn anim_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../apps/cuccut/assets/stickers/anim")
 }
 
-/// 一张 640×360 的宽画幅贴纸：16 个方块铺满 4×4 网格，每块带各自的 SMIL 位移，
-/// 用来验证 `fullscreen` + `cover` 在三种画幅下都把贴纸铺到画布边缘。第 231 轮之前
-/// 这里用的是 Confetti 动图；Confetti 改为算法元素后由这张内联测试图接替。
+/// A 640×360 wide-frame sticker: 16 squares fill a 4×4 grid, each with its own SMIL displacement.
+/// Used to verify that `fullscreen` + `cover` spread the sticker to the canvas edges in all three aspect ratios. Before round 231 this used an animated Confetti image; after Confetti became an algorithmic element, this inline test image took over.
 fn fullscreen_grid_svg() -> String {
     let mut body = String::new();
     for row in 0..4 {
@@ -28,9 +27,7 @@ fn fullscreen_grid_svg() -> String {
     )
 }
 
-/// 一张 128×128 的 SMIL 贴纸：一个方块 3 s 内从左滑到右再回来，用来验证共享源
-/// 的独立时钟。内置目录自第 238 轮起只剩 Lottie，SVG 动画走用户上传，所以这里
-/// 内联一张而不是借内置素材。
+/// A 128×128 SMIL sticker: one square slides from left to right and back within 3 s. Used to verify the independent clock of a shared source. Since round 238 the built-in catalog has only Lottie, and SVG animation comes from user uploads, so one is inlined here instead of borrowing built-in material.
 fn sliding_square_svg() -> String {
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"128\" height=\"128\" viewBox=\"0 0 128 128\">\
      <rect x=\"8\" y=\"40\" width=\"48\" height=\"48\" fill=\"#2170E6\">\
@@ -76,9 +73,7 @@ fn fullscreen_cover_reaches_the_edges_in_landscape_portrait_and_square() {
     }
 }
 
-/// 两个贴纸共用一个源、错开 0.5 s 上场：`loop` 下各走各的时钟，`hold` 定格首帧、
-/// `once` 播完停末帧时两者才相同。SVG 动画（用户上传）与 Lottie（内置 / 上传）
-/// 两种动态源都要守这条。
+/// Two stickers share one source and enter 0.5 s apart. Under `loop` each runs on its own clock. Under `hold` (freeze on the first frame) and `once` (play, then stop on the last frame) the two only match. Both dynamic sources, SVG animation (user-uploaded) and Lottie (built-in / uploaded), must uphold this.
 #[test]
 #[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
 fn shared_sources_keep_independent_clocks_and_honor_hold_and_once() {
@@ -87,7 +82,7 @@ fn shared_sources_keep_independent_clocks_and_honor_hold_and_once() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("media")).unwrap();
     std::fs::write(root.path().join("media/a.svg"), sliding_square_svg()).unwrap();
-    // Noto ghost：144 帧 @ 60 fps = 2.4 s，主体在 1.0 s 后上下浮动。
+    // Noto ghost: 144 frames @ 60 fps = 2.4 s, with the body floating up and down after 1.0 s.
     std::fs::copy(
         anim_root().join("dyn-emoji-01.json"),
         root.path().join("media/a.json"),
@@ -147,8 +142,7 @@ fn shared_sources_keep_independent_clocks_and_honor_hold_and_once() {
     }
 }
 
-/// 内置动态目录（81 款 Noto Lottie）每一款都要靠自己的帧动起来——不依赖元素级
-/// `animate`——并且换色后仍然动。渲染走 `OverlayRenderPlan`，与导出同一条取帧路径。
+/// Every entry in the built-in dynamic catalog (81 Noto Lottie) must animate by its own frames, without relying on element-level `animate`, and must still animate after recoloring. Rendering goes through `OverlayRenderPlan`, the same frame-fetch path as export.
 #[test]
 #[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
 fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
@@ -167,9 +161,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
         })
         .collect();
     entries.sort();
-    // 逐款走元素路径的正式入口 `Lottie::record`，比对指令流而不是整帧像素：
-    // 指令流就是 `ccut render` / 导出实际重放的东西，且 81 款 × 5 采样点 × 2
-    // 只要不到一秒。像素级的证明由上面的 ghost 用例承担。
+    // Each entry goes through the formal element-path entry `Lottie::record`, comparing the instruction stream rather than whole-frame pixels. The instruction stream is exactly what `ccut render` / export replays, and 81 entries × 5 sample points × 2 finish in under one second. Pixel-level proof is carried by the ghost case above.
     for p in entries {
         let bytes = std::fs::read(&p).unwrap();
         let mut lottie = Lottie::parse("test", "sticker", &bytes)
@@ -182,8 +174,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
             .unwrap_or(0);
         assert!(total_ms > 0, "{}", p.display());
         let distinct_frames = |lottie: &Lottie| {
-            // 有些款从空画面淡入（首帧全透明），所以只要求「有过画笔」，
-            // 不要求每一采样点都有。
+            // Some entries fade in from an empty picture (first frame fully transparent), so the check only requires that the brush has been used at some point, not that every sample point has content.
             let mut frames = HashSet::new();
             let mut visible = false;
             for fraction in [0.0, 0.2, 0.45, 0.7, 0.9] {
@@ -217,8 +208,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
             "{} has no intrinsic pixel motion",
             p.display()
         );
-        // 换色（把每一种静态纯色填充都换成同一个绿）后仍然要动。全靠渐变或
-        // 动画色的款没有可换的静态填充，跳过换色一步。
+        // After recoloring (replacing every static solid fill with the same green), it must still move. Entries that rely entirely on gradients or animated colors have no static fill to recolor, so the recolor step is skipped for them.
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let mut colours = std::collections::BTreeMap::new();
         collect_fill_colours(&value, &mut colours);
@@ -242,7 +232,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
     assert!(recoloured >= 40, "只有 {recoloured} 款带静态纯色填充");
 }
 
-/// 收集 bodymovin 里所有 `ty:"fl"` 静态纯色填充的 `#RRGGBB`（0..1 方言）。
+/// Collect the `#RRGGBB` of every `ty:"fl"` static solid fill in bodymovin (0..1 dialect).
 fn collect_fill_colours(
     value: &serde_json::Value,
     out: &mut std::collections::BTreeMap<String, ()>,

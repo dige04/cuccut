@@ -1,4 +1,4 @@
-//! Pyannote 说话人分段的后处理，MLX 与 candle 共用。移植自 v2 `ccut-speech` 的 `pyannote_common.rs`。
+//! Post-processing of Pyannote speaker segmentation, shared by MLX and candle. Ported from v2 `ccut-speech`'s `pyannote_common.rs`.
 //!
 //! The compact PyanNet model emits seven powerset logits per frame (silence,
 //! three single-speaker classes and three two-speaker overlaps). Both backends
@@ -24,50 +24,38 @@ pub use crate::speech::speaker_cluster::DEFAULT_MERGE_THRESHOLD;
 pub const SAMPLE_RATE: usize = 16_000;
 pub const WINDOW_SECONDS: f64 = 10.0;
 pub const WINDOW_SAMPLES: usize = SAMPLE_RATE * 10;
-/// 滑窗步长 = 半个窗口（5 秒，`step = windowSamples / 2`）。
+/// Sliding-window step = half a window (5 seconds, `step = windowSamples / 2`).
 ///
-/// 曾经是 1 秒。1 秒步长下每一句话会横跨十来个窗口，而窗口之间的 local speaker
-/// 编号互不相干，于是同一段连续语音被拆进十几个各自独立的归属区，任何一个窗口
-/// 判错都会在时间线上留下一个碎片——实测 102 个 turn 内部自相矛盾。5 秒步长把
-/// 归属区宽度也变成 5 秒（见 `render_segments`），一整句话通常落在同一个窗口的
-/// 归属区里，碎片化随之消失，顺带把分割推理量降到原来的 1/5。
+/// It used to be 1 second. With a 1-second step, each sentence spans a dozen-odd windows, and the local speaker numbers between windows are unrelated, so the same continuous speech gets split into a dozen-odd separate attribution zones; any single window misjudging leaves a fragment on the timeline. Measured: 102 turns were internally self-contradictory. A 5-second step also makes the attribution zone 5 seconds wide (see `render_segments`), so a whole sentence usually falls inside one window's attribution zone. That removes the fragmentation, and it also cuts segmentation inference to 1/5 of the original.
 pub const STEP_SAMPLES: usize = WINDOW_SAMPLES / 2;
-/// 一个窗口跨越多少个步长；同时是 IoU 回看的历史窗口数（见 [`STEP_SAMPLES`]）。
+/// Number of step-lengths a window spans; also the number of history windows looked back at for IoU (see [`STEP_SAMPLES`]).
 pub const WINDOW_STEPS: usize = WINDOW_SAMPLES / STEP_SAMPLES;
 pub const FRAMES_PER_WINDOW: usize = 589;
 pub const LOCAL_SPEAKERS: usize = 3;
-/// powerset 类别数：0 静音、1..=3 单人、4..=6 两人重叠。
+/// Number of powerset classes: 0 silence, 1..=3 single speaker, 4..=6 two-speaker overlap.
 pub const CLASS_COUNT: usize = 7;
 pub const INFERENCE_BATCH: usize = 8;
 
-/// 迟滞二值化的开启阈值。
+/// Onset threshold for hysteresis binarization.
 pub const ONSET: f32 = 0.5;
-/// 迟滞二值化的关闭阈值。
+/// Offset threshold for hysteresis binarization.
 pub const OFFSET: f32 = 0.3;
 
-/// 最短语音段（`minSpeechDuration`）。
+/// Minimum speech segment (`minSpeechDuration`).
 const MIN_SPEECH_SECONDS: f64 = 0.30;
-/// 最短静音间隔；短于它的空隙在窗口内先被填平，跨窗口再用同一个值合并。
+/// Minimum silence gap. Gaps shorter than this are first filled within the window, and the same value is used to merge across windows.
 const MIN_SILENCE_SECONDS: f64 = 0.15;
 const MERGE_GAP_SECONDS: f64 = MIN_SILENCE_SECONDS;
-/// 判定「相邻窗口的两个 local speaker 是同一人」的最低 IoU。
+/// Minimum IoU for judging that two local speakers in adjacent windows are the same person.
 ///
-/// 只在**没有声纹后端**的降级路径上生效（见 [`diarize_with`]）。步长改成 5 秒
-/// 后重叠区是 5 秒而不再是 9 秒，但 IoU 只在重叠区内统计，量纲不随重叠长度漂移，
-/// 因此阈值维持不变。
+/// Applies only on the degraded path with **no voiceprint backend** (see [`diarize_with`]). After changing the step to 5 seconds, the overlap is 5 seconds rather than 9, but IoU is computed only within the overlap, so its scale does not drift with the overlap length, and the threshold stays unchanged.
 const MATCH_THRESHOLD: f64 = 0.08;
-/// 提取声纹所需的最短独占语音（0.5 秒，`sampleRate/2`），与 `wespeaker::MINIMUM_SAMPLES` 一致。
+/// Minimum exclusive speech needed to extract a voiceprint (0.5 seconds, `sampleRate/2`), consistent with `wespeaker::MINIMUM_SAMPLES`.
 const MIN_EMBEDDING_SAMPLES: usize = SAMPLE_RATE / 2;
 
-/// 严格独占攒不够声纹时的「主导」判据裕度。
+/// Margin for the 'dominant' criterion when strict exclusivity cannot accumulate enough voiceprint audio.
 ///
-/// 严格独占要求其余 local 的原始概率全部低于 [`OFFSET`]。在连续对话里主讲人的
-/// 概率几乎不会掉到 0.3 以下，于是次要说话人在整个窗口里拿到 **0 毫秒** 独占
-/// 语音——实测 121 个窗口里有 81 个因此丢掉至少一个说话人，那个人永远进不了
-/// 聚类，也就永远不会成为独立身份。兜底判据改问「本人概率是否显著压过其余
-/// local」，0.20 是消融扫描（0.00/0.05/0.10/0.15/0.20/0.30）里 purity 与碎片化
-/// 同时达标的工作点：0 会把重叠段全部收进来（碎片化 76 turns），过大又退化回
-/// 严格独占。
+/// Strict exclusivity requires the raw probabilities of all other locals to be below [`OFFSET`]. In continuous conversation the main speaker's probability hardly ever drops below 0.3, so the secondary speaker gets **0 ms** of exclusive speech across the whole window. Measured: 81 of 121 windows lost at least one speaker this way; that person could never enter clustering and so never became an independent identity. The fallback criterion instead asks whether this person's probability clearly outranks the other locals. 0.20 is the operating point from the ablation scan (0.00/0.05/0.10/0.15/0.20/0.30) where purity and fragmentation both meet target: 0 pulls in all overlapping segments (fragmentation 76 turns), while too large a value degrades back to strict exclusivity.
 const DOMINANCE_MARGIN: f32 = 0.20;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,12 +90,12 @@ impl Default for PyannoteCallbacks<'_> {
     }
 }
 
-/// 说话人分离参数。
+/// Speaker diarization parameters.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PyannoteOptions {
-    /// 全局说话人数上限；`None` 表示不限制。
+    /// Global speaker-count cap; `None` means unlimited.
     pub max_speakers: Option<usize>,
-    /// 声纹聚类阈值（余弦距离，严格小于才合并）。越小越保守（人越多）。
+    /// Voiceprint clustering threshold (cosine distance; merge only when strictly less). Smaller is more conservative (more people).
     pub clustering_threshold: f32,
 }
 
@@ -120,28 +108,22 @@ impl Default for PyannoteOptions {
     }
 }
 
-/// 声纹提取回调：输入 16 kHz 单声道独占语音，返回嵌入向量；`None` 表示本段
-/// 提不出可用向量（音频过短或后端不可用），该 local speaker 不参与全局身份。
+/// Voiceprint extraction callback: input is 16 kHz mono exclusive speech, returns an embedding vector. `None` means this segment yields no usable vector (audio too short or backend unavailable), and that local speaker does not take part in global identity.
 pub type SpeakerEmbedder<'a> = &'a mut dyn FnMut(&[f32]) -> Option<Vec<f32>>;
 
 #[derive(Debug, Clone)]
 struct WindowActivity {
     start_sample: usize,
     end_sample: usize,
-    /// 每帧每 local speaker 的说话概率（powerset 类概率之和，见
-    /// [`speaker_probabilities`]）。独占判定必须用它而不是二值化后的
-    /// [`Self::tracks`]：迟滞关闭阈值是 0.3，一个概率 0.4 但处于迟滞 off
-    /// 的说话人在 tracks 里是静音，把这种帧当独占会污染声纹。
+    /// Per-frame speaking probability for each local speaker (sum of powerset class probabilities, see [`speaker_probabilities`]). Exclusivity judgments must use this rather than the binarized [`Self::tracks`]: the hysteresis offset threshold is 0.3, so a speaker with probability 0.4 who is in the hysteresis-off state appears silent in tracks, and treating such a frame as exclusive would contaminate the voiceprint.
     probabilities: [Vec<f32>; LOCAL_SPEAKERS],
-    /// 迟滞 + 最短语音/静音平滑之后的逐帧活跃标志；允许多人同时为 true。
+    /// Per-frame active flags after hysteresis and minimum speech/silence smoothing; multiple speakers may be true at once.
     tracks: [Vec<bool>; LOCAL_SPEAKERS],
 }
 
-/// 逐帧 softmax 后按说话人把 powerset 类概率求和。
+/// Sums powerset class probabilities per speaker after per-frame softmax.
 ///
-/// 映射与 pyannote 的 powerset 定义一致，也与旧 `decode_powerset` 的 tracks
-/// 映射逐位相同：spk1 = {1,4,5}、spk2 = {2,4,6}、spk3 = {3,5,6}。
-/// softmax 用「减去逐帧最大值」的数值稳定写法；整帧含 NaN 时该帧概率退化为 0。
+/// The mapping follows pyannote's powerset definition and is bit-identical to the tracks mapping in the old `decode_powerset`: spk1 = {1,4,5}, spk2 = {2,4,6}, spk3 = {3,5,6}. The softmax uses the numerically stable form that subtracts the per-frame maximum; if a whole frame contains NaN, that frame's probabilities degrade to 0.
 pub fn speaker_probabilities(logits: &[f32]) -> [Vec<f32>; LOCAL_SPEAKERS] {
     let frames = logits.len() / CLASS_COUNT;
     let mut probabilities: [Vec<f32>; LOCAL_SPEAKERS] = std::array::from_fn(|_| Vec::with_capacity(frames));
@@ -155,7 +137,7 @@ pub fn speaker_probabilities(logits: &[f32]) -> [Vec<f32>; LOCAL_SPEAKERS] {
             exponentials[index] = exponential;
             total += exponential;
         }
-        // total 非有限（logits 含 NaN）时 scale 归零，本帧不会激活任何说话人。
+        // When total is not finite (logits contain NaN), scale is zeroed, so this frame activates no speaker.
         let scale = if total > 0.0 && total.is_finite() { 1.0 / total } else { 0.0 };
         probabilities[0].push((exponentials[1] + exponentials[4] + exponentials[5]) * scale);
         probabilities[1].push((exponentials[2] + exponentials[4] + exponentials[6]) * scale);
@@ -164,12 +146,9 @@ pub fn speaker_probabilities(logits: &[f32]) -> [Vec<f32>; LOCAL_SPEAKERS] {
     probabilities
 }
 
-/// 单个说话人的迟滞二值化 + 最短语音/静音平滑。
+/// Hysteresis binarization plus minimum speech/silence smoothing for a single speaker.
 ///
-/// 迟滞：静默态需 `prob >= ONSET` 才开启，活跃态需 `prob < OFFSET` 才关闭。
-/// 随后填平短于
-/// [`MIN_SILENCE_SECONDS`] 的**内部**空隙，再丢弃短于 [`MIN_SPEECH_SECONDS`]
-/// 的语音段。
+/// Hysteresis: from the silent state, it turns on only when `prob >= ONSET`; from the active state, it turns off only when `prob < OFFSET`. Then it fills **internal** gaps shorter than [`MIN_SILENCE_SECONDS`], and discards speech segments shorter than [`MIN_SPEECH_SECONDS`].
 pub fn binarize_speaker_track(probabilities: &[f32]) -> Vec<bool> {
     let mut active = vec![false; probabilities.len()];
     let mut open = false;
@@ -182,7 +161,7 @@ pub fn binarize_speaker_track(probabilities: &[f32]) -> Vec<bool> {
     let min_silence_frames = (MIN_SILENCE_SECONDS / frame_seconds).round() as usize;
     let min_speech_frames = (MIN_SPEECH_SECONDS / frame_seconds).round() as usize;
 
-    // 只填内部空隙：前导/尾随静音可能只是被窗口切断，填了会凭空造出语音。
+    // Only internal gaps are filled: leading and trailing silence may just be cut off by the window, and filling it would invent speech.
     let mut index = 0;
     while index < active.len() {
         if active[index] {
@@ -216,9 +195,7 @@ pub fn binarize_speaker_track(probabilities: &[f32]) -> Vec<bool> {
     active
 }
 
-/// 跨后端对拍用：逐帧 powerset 胜出类别。**不参与实际解码**，保留它只是为了
-/// 把两个后端的差异定位到网络层；真正决定输出的是
-/// [`speaker_probabilities`] + [`binarize_speaker_track`]。
+/// For cross-backend comparison: the per-frame powerset winning class. **Not used in actual decoding**; it is kept only to pinpoint differences between the two backends at the network layer. What actually determines the output is [`speaker_probabilities`] + [`binarize_speaker_track`].
 pub fn argmax_classes(logits: &[f32]) -> Vec<u8> {
     (0..logits.len() / CLASS_COUNT)
         .map(|frame| {
@@ -234,14 +211,9 @@ pub fn argmax_classes(logits: &[f32]) -> Vec<u8> {
         .collect()
 }
 
-/// Runs batched segmentation and turns local powerset logits into stable global
-/// speaker ranges. `infer` receives tightly packed, zero-padded 10-second
-/// windows and returns `FRAMES_PER_WINDOW * CLASS_COUNT` **raw logits** per
-/// batch item (row-major, frame outer / class inner).
+/// Runs batched segmentation and turns local powerset logits into stable global speaker ranges. `infer` receives tightly packed, zero-padded 10-second windows and returns `FRAMES_PER_WINDOW * CLASS_COUNT` **raw logits** per batch item (row-major, frame outer / class inner).
 ///
-/// `embed` 是可选的声纹提取器：提供时全局身份由约束层次聚类决定；不提供时退化
-/// 为纯 IoU 链式传递，跨长静音的同一说话人会被判成新身份——这是后端能力缺失
-/// 下的显式降级，不是默认路径。
+/// `embed` is an optional voiceprint extractor: when provided, global identity is decided by constrained hierarchical clustering; when absent, it degrades to pure IoU chaining, and the same speaker across a long silence is judged a new identity. This is an explicit degradation when the backend capability is missing, not the default path.
 pub fn diarize_with<F>(
     samples: &[f32],
     options: &PyannoteOptions,
@@ -260,7 +232,7 @@ where
     }
 
     let positions = window_positions(samples.len());
-    // 有声纹阶段时进度分母翻倍：分割一遍、嵌入一遍。
+    // With the voiceprint stage, the progress denominator doubles: one pass for segmentation, one for embedding.
     let progress_total = (positions.len() * if embed.is_some() { 2 } else { 1 }) as f64;
     let mut windows = Vec::with_capacity(positions.len());
     for batch_start in (0..positions.len()).step_by(INFERENCE_BATCH) {
@@ -304,7 +276,7 @@ where
         Some(embed) => {
             match cluster_window_speakers(&windows, samples, options, callbacks, embed)? {
                 Some(mappings) => mappings,
-                // 全片没有任何一段满足最短独占语音要求：无声纹可用，退回 IoU。
+                // No segment anywhere in the file meets the minimum exclusive-speech requirement: no voiceprint is available, so fall back to IoU.
                 None => stitch_window_speakers(&windows, options.max_speakers),
             }
         }
@@ -313,16 +285,11 @@ where
     Ok(render_segments(&windows, &mappings, samples.len()))
 }
 
-/// 声纹再识别：每窗每 local speaker 取独占语音提嵌入，约束层次聚类定全局身份。
+/// Voiceprint re-identification: for each window and local speaker, extracts an embedding from exclusive speech, and constrained hierarchical clustering determines global identity.
 ///
-/// 返回 `None` 表示一个可用嵌入都没有，调用方应退回纯 IoU。
+/// Returns `None` when not a single usable embedding exists; the caller should fall back to pure IoU.
 ///
-/// **没有 IoU 桥。** 旧实现在这里给「提不出嵌入的 local speaker」按 IoU 链的
-/// 多数簇补一个标签，理由写在当时的注释里：1 秒步长下归属区只有 1 秒，丢一个
-/// 窗口就是在时间线上打一个 1 秒的洞。但那条路径给出的标签与声纹无关，实测
-/// 0–1 秒短 turn 的错误率高达 70%。步长改成 5 秒后前提消失：归属区宽 5 秒，
-/// 独占语音普遍够长，直接跳过这种 local speaker 即可。跳过的代价只是这一小段没有说话人标注，
-/// 而桥接的代价是给出一个错误标注——后者更糟。
+/// **No IoU bridge.** The old implementation filled in labels for local speakers that could not yield an embedding, using the majority cluster of the IoU chain, with the reasoning given in the comment at the time: with a 1-second step, the attribution zone was only 1 second, so dropping one window would punch a 1-second hole in the timeline. But that path produced labels unrelated to voiceprints, and the measured error rate for 0–1 second short turns was as high as 70%. With a 5-second step the premise disappears: the attribution zone is 5 seconds wide and exclusive speech is generally long enough, so simply skipping such a local speaker suffices. The cost of skipping is only that this short stretch has no speaker annotation; bridging would cost a wrong annotation, and the latter is worse.
 fn cluster_window_speakers(
     windows: &[WindowActivity],
     samples: &[f32],
@@ -334,7 +301,7 @@ fn cluster_window_speakers(
     let mut owners: Vec<(usize, usize)> = Vec::new();
     let mut seconds: Vec<f64> = Vec::new();
     for (window_index, window) in windows.iter().enumerate() {
-        // 嵌入是第二长的阶段，取消检查必须落在循环里。
+        // Embedding is the second-longest stage, so the cancellation check must sit inside the loop.
         check_cancelled(callbacks)?;
         for local in 0..LOCAL_SPEAKERS {
             let Some((audio, first_start)) = exclusive_audio(window, local, samples) else {
@@ -366,15 +333,11 @@ fn cluster_window_speakers(
         options.clustering_threshold,
         options.max_speakers,
         &seconds,
-        // `seconds[]` 统计的是每 (窗口, local) 的独占秒数，同一秒真实语音被
-        // `WINDOW_STEPS` 个窗口各计一次；5s 步长下 2.0 等价于 1.0 秒真实时长。
+        // `seconds[]` counts exclusive seconds per (window, local): the same real second of speech is counted once by each of the `WINDOW_STEPS` windows. With a 5 s step, 2.0 is equivalent to 1.0 seconds of real duration.
         DEFAULT_MIN_CLUSTER_SECONDS,
     );
 
-    // 说话人上限是硬承诺，但同 chunk 互斥同样是硬约束，两者冲突时聚类只能留下
-    // 超额的簇（例如单人素材里某个窗口误报了第二个 local speaker）。这里按累计
-    // 独占时长保留最响的 cap 个簇，其余 local speaker 本窗口不输出——宁可少标，
-    // 不可错标。
+    // The speaker cap is a hard commitment, but mutual exclusion within the same chunk is also a hard constraint. When the two conflict, clustering can only leave excess clusters (for example, in single-speaker material one window falsely reported a second local speaker). Here the `cap` clusters with the most cumulative exclusive duration are kept, and the other local speakers are not output in this window: better to under-label than to mislabel.
     let keep = surviving_clusters(&assignment, &seconds, options.max_speakers);
 
     let mut mappings = vec![[None; LOCAL_SPEAKERS]; windows.len()];
@@ -389,8 +352,7 @@ fn cluster_window_speakers(
     Ok(Some(mappings))
 }
 
-/// 超出说话人上限时按累计独占时长挑出要保留的簇；未超限返回 `None`。
-/// 时长相同则保留 id 更小者，保证确定性。
+/// When over the speaker cap, picks the clusters to keep by cumulative exclusive duration; returns `None` when not over the limit. On equal duration, keeps the smaller id, to guarantee determinism.
 fn surviving_clusters(assignment: &[usize], seconds: &[f64], max_speakers: Option<usize>) -> Option<BTreeSet<usize>> {
     let cap = max_speakers?;
     let mut totals: BTreeMap<usize, f64> = BTreeMap::new();
@@ -405,26 +367,21 @@ fn surviving_clusters(assignment: &[usize], seconds: &[f64], max_speakers: Optio
     Some(ranked.into_iter().take(cap).map(|(id, _)| id).collect())
 }
 
-/// 取某个 local speaker 在本窗口内的独占语音（本帧没有别人同时说话）。
+/// Takes a local speaker's exclusive speech within this window (no one else is speaking in that frame).
 ///
-/// 「独占」= 本人二值化后活跃，且其余 local speaker 的**原始概率**都低于
-/// [`OFFSET`]。用原始
-/// 概率而不是二值化 tracks 是刻意的：迟滞让一个概率 0.4 的说话人可能仍处于
-/// off，按 tracks 判会把这种帧当成独占，混入他人声音污染 WeSpeaker 向量。
+/// 'Exclusive' means this person is active after binarization, and the **raw probabilities** of all other local speakers are below [`OFFSET`]. Using raw probabilities rather than the binarized tracks is deliberate: hysteresis can leave a speaker with probability 0.4 in the off state, so judging by tracks would count such frames as exclusive and mix in others' voices, contaminating the WeSpeaker vector.
 ///
-/// 返回 `(音频, 首个独占帧的绝对秒数)`；不足 [`MIN_EMBEDDING_SAMPLES`] 返回
-/// `None`。采样一律夹到 `end_sample` 与 `samples.len()`：末窗是补零对齐的，
-/// 把补零段喂进 WeSpeaker 会污染向量。
+/// Returns `(audio, absolute seconds of the first exclusive frame)`; returns `None` when there are fewer than [`MIN_EMBEDDING_SAMPLES`]. Sampling is always clamped to `end_sample` and `samples.len()`: the last window is zero-padded for alignment, and feeding padded segments into WeSpeaker would contaminate the vector.
 fn exclusive_audio(window: &WindowActivity, local: usize, samples: &[f32]) -> Option<(Vec<f32>, f64)> {
     if let Some(strict) = collect_clean_audio(window, local, samples, None) {
         return Some(strict);
     }
-    // 严格独占攒不够时的兜底：并上本人「显著压过其余 local」的帧。
+    // Fallback when strict exclusivity cannot accumulate enough: union in this person's frames that clearly outrank the other locals.
     collect_clean_audio(window, local, samples, Some(DOMINANCE_MARGIN))
 }
 
-/// `margin = None` ⇒ 严格独占（其余 local 原始概率 < OFFSET）。
-/// `margin = Some(m)` ⇒ 主导判据（本人概率比其余 local 至少高 m）。
+/// `margin = None` ⇒ strict exclusivity (raw probabilities of other locals < OFFSET).
+/// `margin = Some(m)` ⇒ dominance criterion (this person's probability is at least m higher than the other locals).
 fn collect_clean_audio(window: &WindowActivity, local: usize, samples: &[f32], margin: Option<f32>) -> Option<(Vec<f32>, f64)> {
     let frame_samples = WINDOW_SAMPLES as f64 / FRAMES_PER_WINDOW as f64;
     let limit = window.end_sample.min(samples.len());
@@ -435,8 +392,7 @@ fn collect_clean_audio(window: &WindowActivity, local: usize, samples: &[f32], m
             continue;
         }
         let own = window.probabilities[local][frame];
-        // margin = Some(m) 时取「严格独占 ∪ 主导」的并集：严格独占帧本身就是最纯的
-        // 那批，放宽判据不应该把它们排除掉。
+        // With margin = Some(m), take the union of 'strict exclusivity ∪ dominance': strictly exclusive frames are themselves the purest batch, and relaxing the criterion should not exclude them.
         let clean = (0..LOCAL_SPEAKERS)
             .filter(|other| *other != local)
             .all(|other| window.probabilities[other][frame] < OFFSET)
@@ -504,7 +460,7 @@ fn stitch_window_speakers(windows: &[WindowActivity], max_speakers: Option<usize
         }
 
         let mut scores = Vec::new();
-        // 只回看仍与当前窗口有共同采样的历史窗口；更早的窗口交集恒为 0。
+        // Only look back at history windows that still share samples with the current window; earlier windows have zero overlap.
         let history_start = window_index.saturating_sub(WINDOW_STEPS);
         for local in active.iter().copied() {
             let mut by_global = BTreeMap::<usize, (usize, usize)>::new();
@@ -552,10 +508,7 @@ fn stitch_window_speakers(windows: &[WindowActivity], max_speakers: Option<usize
             if mapping[local].is_some() {
                 continue;
             }
-            // 达到上限时不再臆造身份：既没有重叠证据也没有空位可分，就让这个
-            // local speaker 在本窗口不参与输出——它的时间大概率被相邻窗口覆盖。
-            // （旧实现在这里按序号找空位并 `unwrap_or(0)`，等于把无证据的语音
-            // 硬塞进 speaker 0。）
+            // When the cap is reached, do not invent identities: with neither overlap evidence nor an empty slot to assign, this local speaker does not take part in output for this window, since its time is most likely covered by adjacent windows. (The old implementation searched for an empty slot by index with `unwrap_or(0)`, which effectively forced evidence-less speech into speaker 0.)
             if max_speakers.is_some_and(|limit| next_speaker >= limit) {
                 continue;
             }
@@ -610,8 +563,7 @@ fn render_segments(windows: &[WindowActivity], mappings: &[[Option<usize>; LOCAL
             .get(index + 1)
             .map(|next| next.start_sample as f64 / SAMPLE_RATE as f64)
             .unwrap_or(duration);
-        // 归属区（center zone）：步长 5 秒时正好是窗口中间的 5 秒，首窗左边界
-        // 拉到 0、末窗右边界拉到片长。
+        // Center zone: with a 5-second step it is exactly the middle 5 seconds of the window; the first window's left edge is pulled to 0, and the last window's right edge is pulled to the end of the file.
         let own_start = if index == 0 { 0.0 } else { (window_start + previous_end) * 0.5 };
         let own_end = if index + 1 == windows.len() {
             duration
@@ -629,9 +581,7 @@ fn render_segments(windows: &[WindowActivity], mappings: &[[Option<usize>; LOCAL
                 if active && run_start.is_none() {
                     run_start = Some(frame);
                 } else if !active && let Some(start_frame) = run_start.take() {
-                    // 时长门槛已经在 binarize_speaker_track 里按窗口内原始 run
-                    // 判过，这里只做归属区裁剪；跨归属区被切开的两半时间相邻，
-                    // 下面的 MERGE_GAP_SECONDS 合并会把它们接回去。
+                    // The duration threshold has already been checked on the raw run within the window in binarize_speaker_track; here we only trim to the attribution zone. The two halves of a segment cut across attribution zones are adjacent in time, and the MERGE_GAP_SECONDS merge below joins them back.
                     let raw_start = window_start + start_frame as f64 * frame_duration;
                     let raw_end = window_start + frame as f64 * frame_duration;
                     let start = raw_start.max(own_start);
@@ -660,7 +610,7 @@ fn render_segments(windows: &[WindowActivity], mappings: &[[Option<usize>; LOCAL
             merged.push(segment);
         }
     }
-    // 合并后再兜一次底：孤立的、被归属区切到极短的碎片仍然不输出。
+    // After merging, one more floor check: isolated fragments that the attribution zone cut down to an extremely short length still are not output.
     merged.retain(|segment| segment.end - segment.start >= MIN_SPEECH_SECONDS);
 
     let used = merged.iter().map(|segment| segment.speaker).collect::<BTreeSet<_>>();
@@ -680,8 +630,7 @@ fn render_segments(windows: &[WindowActivity], mappings: &[[Option<usize>; LOCAL
 mod tests {
     use super::*;
 
-    /// 把「每帧一个 powerset 类别」的意图翻译成 logits：胜出类给 10.0，其余 0.0。
-    /// softmax 后胜出类概率 ≈0.99994，稳稳越过 [`ONSET`]。
+    /// Translates the intent of 'one powerset class per frame' into logits: the winning class gets 10.0, the others 0.0. After softmax, the winning class probability is ≈0.99994, comfortably above [`ONSET`].
     fn logits_from_classes(classes: &[u8]) -> Vec<f32> {
         let mut logits = vec![0.0_f32; classes.len() * CLASS_COUNT];
         for (frame, class) in classes.iter().enumerate() {
@@ -697,13 +646,13 @@ mod tests {
         assert_eq!(WINDOW_STEPS, 2);
         let positions = window_positions(WINDOW_SAMPLES + 2 * STEP_SAMPLES);
         assert_eq!(positions, vec![(0, 160_000), (80_000, 240_000), (160_000, 320_000)]);
-        // 尾部不足一个步长时补一个贴边窗口。
+        // If the tail is shorter than one step, add an edge-aligned window.
         assert_eq!(window_positions(WINDOW_SAMPLES + 20_000), vec![(0, 160_000), (20_000, 180_000)]);
     }
 
     #[test]
     fn powerset_probabilities_sum_per_speaker() {
-        // 帧 0 静音、帧 1 只有 spk1、帧 2 是 spk1+spk2、帧 3 是 spk2+spk3。
+        // Frame 0 silence, frame 1 only spk1, frame 2 is spk1+spk2, frame 3 is spk2+spk3.
         let probabilities = speaker_probabilities(&logits_from_classes(&[0, 1, 4, 6]));
         let active: Vec<Vec<bool>> = probabilities
             .iter()
@@ -716,9 +665,7 @@ mod tests {
 
     #[test]
     fn overlap_probability_survives_when_argmax_would_lose() {
-        // 单人类 1 拿 0.40，重叠类 4 拿 0.35：argmax 判「只有 spk1」，
-        // 概率求和后 spk2 = 0.35 < onset 但 spk1 = 0.75 —— 关键是 spk2 的
-        // 0.35 高于 OFFSET，会让这一帧不再被当成 spk1 的独占语音。
+        // Single-speaker class 1 gets 0.40, overlap class 4 gets 0.35: argmax judges 'only spk1'. After summing probabilities, spk2 = 0.35 < onset but spk1 = 0.75. The key is that spk2's 0.35 is above OFFSET, which would stop this frame from counting as spk1's exclusive speech.
         let mut logits = vec![f32::NEG_INFINITY; CLASS_COUNT];
         logits[0] = 0.25_f32.ln();
         logits[1] = 0.40_f32.ln();
@@ -732,7 +679,7 @@ mod tests {
 
     #[test]
     fn hysteresis_keeps_a_dipping_speaker_active() {
-        // 0.6 开启 → 0.4 落在 onset 与 offset 之间，迟滞保持活跃 → 0.1 关闭。
+        // 0.6 turns on → 0.4 sits between onset and offset, so hysteresis keeps it active → 0.1 turns off.
         let probabilities = std::iter::repeat_n(0.6_f32, 40)
             .chain(std::iter::repeat_n(0.4, 40))
             .chain(std::iter::repeat_n(0.1, 40))
@@ -740,14 +687,14 @@ mod tests {
         let track = binarize_speaker_track(&probabilities);
         assert!(track[0..80].iter().all(|value| *value));
         assert!(track[80..].iter().all(|value| !*value));
-        // 没有迟滞（单阈值 0.5）时中间 40 帧会被误判为静音。
+        // Without hysteresis (single threshold 0.5), the middle 40 frames would be misjudged as silence.
         assert!(probabilities[40] < ONSET && probabilities[40] >= OFFSET);
     }
 
     #[test]
     fn smoothing_fills_short_gaps_and_drops_short_speech() {
         let frame_seconds = WINDOW_SECONDS / FRAMES_PER_WINDOW as f64;
-        let long = (1.0 / frame_seconds) as usize; // 1 秒
+        let long = (1.0 / frame_seconds) as usize; // 1 second
         let short_gap = (0.10 / frame_seconds) as usize; // < MIN_SILENCE_SECONDS
         let short_speech = (0.20 / frame_seconds) as usize; // < MIN_SPEECH_SECONDS
         let probabilities = std::iter::repeat_n(0.9_f32, long)
@@ -757,9 +704,9 @@ mod tests {
             .chain(std::iter::repeat_n(0.9, short_speech))
             .collect::<Vec<_>>();
         let track = binarize_speaker_track(&probabilities);
-        // 短空隙被填平：前 2 秒 + 中间空隙连成一段。
+        // Short gap filled: the first 2 seconds and the middle gap join into one segment.
         assert!(track[..2 * long + short_gap].iter().all(|value| *value));
-        // 结尾 0.2 秒语音短于 MIN_SPEECH_SECONDS，被丢弃。
+        // The final 0.2 seconds of speech is shorter than MIN_SPEECH_SECONDS and is discarded.
         assert!(track[2 * long + short_gap..].iter().all(|value| !*value));
     }
 
@@ -772,7 +719,7 @@ mod tests {
         }
     }
 
-    /// 把窗口某个 local speaker 的一段帧区间置为活跃（概率与 tracks 同时写）。
+    /// Sets a range of frames for a window's local speaker to active (writes both probability and tracks).
     fn activate(window: &mut WindowActivity, local: usize, range: std::ops::Range<usize>) {
         window.probabilities[local][range.clone()].fill(1.0);
         window.tracks[local][range].fill(true);
@@ -780,14 +727,13 @@ mod tests {
 
     #[test]
     fn overlap_stitching_survives_local_label_swap() {
-        // 步长 5 秒 = 294.5 帧：窗口 0 的帧 f（f ≥ 294）对应窗口 1 的帧 f-294，
-        // 由 `track_overlap` 的帧中心映射决定。下面的区间是照这条映射手算的。
+        // Step 5 s = 294.5 frames: frame f of window 0 (f ≥ 294) corresponds to frame f-294 of window 1, as determined by the frame-center mapping in `track_overlap`. The intervals below were computed by hand following this mapping.
         let mut first = blank_window(0);
         let mut second = blank_window(STEP_SAMPLES);
         activate(&mut first, 0, 300..500);
         activate(&mut first, 1, 520..580);
-        activate(&mut second, 1, 6..206); // 与 first.tracks[0] 完全重合
-        activate(&mut second, 0, 226..286); // 与 first.tracks[1] 完全重合
+        activate(&mut second, 1, 6..206); // Fully coincides with first.tracks[0]
+        activate(&mut second, 0, 226..286); // Fully coincides with first.tracks[1]
         let mappings = stitch_window_speakers(&[first, second], None);
         assert_eq!(mappings[0][0], mappings[1][1]);
         assert_eq!(mappings[0][1], mappings[1][0]);
@@ -803,13 +749,11 @@ mod tests {
         let mappings = stitch_window_speakers(&[window], Some(2));
         let ids = mappings[0].into_iter().flatten().collect::<BTreeSet<_>>();
         assert_eq!(ids, BTreeSet::from([0, 1]));
-        // 第三个 local speaker 没有空位也没有重叠证据，不再被硬塞进 speaker 0。
+        // The third local speaker has neither an empty slot nor overlap evidence, so it is no longer forced into speaker 0.
         assert_eq!(mappings[0].iter().flatten().count(), 2);
     }
 
-    /// 同一个人先说 0–5 秒，静默 25 秒后在 30–35 秒回来，且模型给了不同的
-    /// local 编号。IoU 回看只有 [`WINDOW_STEPS`] 个窗口，必然判成两个人；
-    /// 声纹聚类必须把两段并回同一个全局 id。
+    /// The same person speaks first for 0–5 s, goes silent for 25 s, returns at 30–35 s, and the model gives them different local numbers. IoU look-back covers only [`WINDOW_STEPS`] windows, so it necessarily judges two people; voiceprint clustering must merge the two segments back into the same global id.
     #[test]
     fn same_speaker_returning_after_long_silence_keeps_one_identity() {
         const DURATION_SECONDS: usize = 40;
@@ -823,7 +767,7 @@ mod tests {
                     if (0.0..5.0).contains(&time) {
                         1 // local 0
                     } else if (30.0..35.0).contains(&time) {
-                        2 // 同一个人，模型这次给的是 local 1
+                        2 // Same person; this time the model gives local 1
                     } else {
                         0
                     }
@@ -841,7 +785,7 @@ mod tests {
             }
         }
 
-        // 纯 IoU（无声纹后端）：长静音后回来的同一个人被判成第二个说话人。
+        // Pure IoU (no voiceprint backend): the same person returning after a long silence is judged a second speaker.
         let iou_only = diarize_with(
             &samples,
             &PyannoteOptions::default(),
@@ -853,7 +797,7 @@ mod tests {
         let iou_speakers = iou_only.iter().map(|segment| segment.speaker).collect::<BTreeSet<_>>();
         assert_eq!(iou_speakers.len(), 2, "{iou_only:?}");
 
-        // 接入声纹后：两段嵌入相同 → 约束层次聚类合成同一个全局身份。
+        // With voiceprints connected: the two segments' embeddings are the same, so constrained hierarchical clustering merges them into the same global identity.
         let mut embed = |audio: &[f32]| {
             assert!(audio.len() >= MIN_EMBEDDING_SAMPLES);
             Some(vec![1.0_f32, 0.0])
@@ -872,7 +816,7 @@ mod tests {
         assert!(clustered.iter().any(|segment| segment.end > 34.0));
     }
 
-    /// 一段跨越多个归属区的连续语音必须作为一段整体输出，不能被裁剪切碎。
+    /// A continuous stretch of speech spanning multiple attribution zones must be output as one whole and must not be chopped up by trimming.
     #[test]
     fn continuous_speech_survives_ownership_zone_clipping() {
         let step_seconds = STEP_SAMPLES as f64 / SAMPLE_RATE as f64;
@@ -898,8 +842,7 @@ mod tests {
 
     #[test]
     fn speaker_cap_drops_the_quietest_cluster_when_chunks_conflict() {
-        // 同一个 chunk 里的两个单元互斥、永远合不掉；cap=1 时必须靠时长排序
-        // 把短的那个丢掉，而不是输出两个说话人。
+        // Two units in the same chunk are mutually exclusive and can never be merged; with cap=1, the shorter one must be dropped by duration ordering rather than outputting two speakers.
         let assignment = vec![0, 1];
         let seconds = vec![9.0, 0.4];
         let keep = surviving_clusters(&assignment, &seconds, Some(1)).expect("超限");

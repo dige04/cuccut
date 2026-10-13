@@ -1,12 +1,11 @@
-//! RBJ（Audio EQ Cookbook）双二阶滤波器，与由它级联出的 Butterworth 低通 / 高通 / 带通。
+//! RBJ (Audio EQ Cookbook) biquad filters, and the Butterworth low-pass / high-pass / band-pass filters cascaded from them.
 //!
-//! 每次调用都从零状态开始（离线渲染没有「上一块」）；状态与系数是 `f64`，DF-II 转置结构。
-//! 截止频率夹在 `(0, 0.49·sr)` 之内——参考工程的 `lp()` 也把上限钉在 `0.45·sr`，避开
-//! 双线性变换在奈奎斯特附近的畸变（低通按 `0.45·sr` 夹）。
+//! Each call starts from zero state (offline rendering has no “previous block”); state and coefficients are `f64`, in DF-II transposed form.
+//! The cutoff frequency is clamped within `(0, 0.49·sr)`. The reference project's `lp()` also pins the upper limit at `0.45·sr`, to avoid the distortion of the bilinear transform near Nyquist (low-pass is clamped at `0.45·sr`).
 
 use crate::math::TAU;
 
-/// 归一化（`a0 = 1`）的双二阶系数。
+/// Normalized (`a0 = 1`) biquad coefficients.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Biquad {
     pub b0: f64,
@@ -25,7 +24,7 @@ fn w0(f: f64, sr: f64) -> (f64, f64) {
 }
 
 impl Biquad {
-    /// 直通。
+    /// Pass-through.
     pub const IDENTITY: Biquad = Biquad {
         b0: 1.0,
         b1: 0.0,
@@ -44,7 +43,7 @@ impl Biquad {
         }
     }
 
-    /// 二阶低通，`q = 1/√2` 为 Butterworth。
+    /// Second-order low-pass; `q = 1/√2` is Butterworth.
     pub fn lowpass(sr: f64, f: f64, q: f64) -> Self {
         let (s, c) = w0(f.min(0.45 * sr), sr);
         let alpha = s / (2.0 * q);
@@ -58,7 +57,7 @@ impl Biquad {
         )
     }
 
-    /// 二阶高通。
+    /// Second-order high-pass.
     pub fn highpass(sr: f64, f: f64, q: f64) -> Self {
         let (s, c) = w0(f, sr);
         let alpha = s / (2.0 * q);
@@ -72,14 +71,14 @@ impl Biquad {
         )
     }
 
-    /// 带通，中心增益 0 dB（等同 scipy `iirpeak`：共振器）。
+    /// Band-pass, center gain 0 dB (equivalent to scipy `iirpeak`: a resonator).
     pub fn bandpass(sr: f64, f: f64, q: f64) -> Self {
         let (s, c) = w0(f, sr);
         let alpha = s / (2.0 * q);
         Self::normalized(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * c, 1.0 - alpha)
     }
 
-    /// 峰值 EQ：中心 `gain_db`，宽度 `q`。
+    /// Peaking EQ: `gain_db` at the center, width `q`.
     pub fn peak(sr: f64, f: f64, q: f64, gain_db: f64) -> Self {
         let (s, c) = w0(f, sr);
         let a = libm::pow(10.0, gain_db / 40.0);
@@ -94,7 +93,7 @@ impl Biquad {
         )
     }
 
-    /// 低架：`f` 以下提升 / 衰减 `gain_db`。
+    /// Low shelf: boosts / cuts `gain_db` below `f`.
     pub fn low_shelf(sr: f64, f: f64, q: f64, gain_db: f64) -> Self {
         let (s, c) = w0(f, sr);
         let a = libm::pow(10.0, gain_db / 40.0);
@@ -110,7 +109,7 @@ impl Biquad {
         )
     }
 
-    /// 高架：`f` 以上提升 / 衰减 `gain_db`。
+    /// High shelf: boosts / cuts `gain_db` above `f`.
     pub fn high_shelf(sr: f64, f: f64, q: f64, gain_db: f64) -> Self {
         let (s, c) = w0(f, sr);
         let a = libm::pow(10.0, gain_db / 40.0);
@@ -126,7 +125,7 @@ impl Biquad {
         )
     }
 
-    /// 一阶低通（双线性变换）。
+    /// First-order low-pass (bilinear transform).
     pub fn lowpass1(sr: f64, f: f64) -> Self {
         let k = libm::tan(core::f64::consts::PI * clamp_freq(f.min(0.45 * sr), sr) / sr);
         Self {
@@ -138,7 +137,7 @@ impl Biquad {
         }
     }
 
-    /// 一阶高通（双线性变换）。
+    /// First-order high-pass (bilinear transform).
     pub fn highpass1(sr: f64, f: f64) -> Self {
         let k = libm::tan(core::f64::consts::PI * clamp_freq(f, sr) / sr);
         Self {
@@ -150,7 +149,7 @@ impl Biquad {
         }
     }
 
-    /// 就地滤波（零初始状态）。
+    /// Filter in place (zero initial state).
     pub fn process(&self, x: &mut [f32]) {
         let (mut z1, mut z2) = (0.0f64, 0.0f64);
         for v in x.iter_mut() {
@@ -162,7 +161,7 @@ impl Biquad {
         }
     }
 
-    /// `f` Hz 处的幅度响应（线性）。
+    /// Magnitude response at `f` Hz (linear).
     pub fn magnitude(&self, sr: f64, f: f64) -> f64 {
         let (s1, c1) = libm::sincos(TAU * f / sr);
         let (s2, c2) = libm::sincos(2.0 * TAU * f / sr);
@@ -174,7 +173,7 @@ impl Biquad {
     }
 }
 
-/// 双二阶级联。
+/// Biquad cascade.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Cascade(pub Vec<Biquad>);
 
@@ -189,12 +188,12 @@ impl Cascade {
         self.0.iter().map(|s| s.magnitude(sr, f)).product()
     }
 
-    /// `order` 阶 Butterworth 低通（1..=8）。
+    /// `order`-order Butterworth low-pass (1..=8).
     pub fn butter_lowpass(sr: f64, f: f64, order: usize) -> Self {
         Self::butter(sr, f, order, false)
     }
 
-    /// `order` 阶 Butterworth 高通（1..=8）。
+    /// `order`-order Butterworth high-pass (1..=8).
     pub fn butter_highpass(sr: f64, f: f64, order: usize) -> Self {
         Self::butter(sr, f, order, true)
     }
@@ -209,7 +208,7 @@ impl Cascade {
                 Biquad::lowpass1(sr, f)
             });
         }
-        // 极点对 k 的 Q：1 / (2·sin((2k+1)π / 2n))，奇数阶跳过实极点那一个。
+        // Q of pole pair k: 1 / (2·sin((2k+1)π / 2n)); for odd orders, skip the real pole.
         let pairs = order / 2;
         for k in 0..pairs {
             let index = if order % 2 == 1 { k + 1 } else { k };
@@ -233,21 +232,21 @@ impl Cascade {
     }
 }
 
-/// Butterworth 低通（`order` 阶），返回新向量。
+/// Butterworth low-pass (`order`-order), returns a new vector.
 pub fn lowpass(x: &[f32], sr: f64, f: f64, order: usize) -> Vec<f32> {
     let mut y = x.to_vec();
     Cascade::butter_lowpass(sr, f, order).process(&mut y);
     y
 }
 
-/// Butterworth 高通（`order` 阶）。
+/// Butterworth high-pass (`order`-order).
 pub fn highpass(x: &[f32], sr: f64, f: f64, order: usize) -> Vec<f32> {
     let mut y = x.to_vec();
     Cascade::butter_highpass(sr, f, order).process(&mut y);
     y
 }
 
-/// 带通 = `order` 阶高通（`lo`）串 `order` 阶低通（`hi`）。
+/// Band-pass = `order`-order high-pass (`lo`) in series with `order`-order low-pass (`hi`).
 pub fn bandpass(x: &[f32], sr: f64, lo: f64, hi: f64, order: usize) -> Vec<f32> {
     let mut y = x.to_vec();
     Cascade::butter_highpass(sr, lo, order).process(&mut y);
@@ -255,7 +254,7 @@ pub fn bandpass(x: &[f32], sr: f64, lo: f64, hi: f64, order: usize) -> Vec<f32> 
     y
 }
 
-/// 共振器：中心 `f`、品质因数 `q`、峰值增益 0 dB 的带通（共振峰、琴体）。
+/// Resonator: band-pass with center `f`, quality factor `q`, and 0 dB peak gain (formants, instrument bodies).
 pub fn resonator(x: &[f32], sr: f64, f: f64, q: f64) -> Vec<f32> {
     let mut y = x.to_vec();
     Biquad::bandpass(sr, f, q).process(&mut y);
@@ -274,7 +273,7 @@ mod tests {
             .collect()
     }
 
-    /// 稳态 RMS（跳过前 1/4 的瞬态）。
+    /// Steady-state RMS (skipping the first quarter as transient).
     fn steady_rms(x: &[f32]) -> f64 {
         let tail = &x[x.len() / 4..];
         libm::sqrt(tail.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>() / tail.len() as f64)

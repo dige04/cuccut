@@ -80,7 +80,7 @@ export function VideoEditor() {
   const active = usePaneActive();
   // In a session the layout already spaces its columns; elsewhere (Space) the pane keeps its own margin.
   const inSession = useSessionSlotFilled('header-actions');
-  // 属性页拖动中的值只叠给预览与属性页；时间线、快捷键与提交都按视频里的实际值。
+  // Values being dragged in the property page are applied only to the preview and the property page. The timeline, shortcuts and commits all use the actual values in the video.
   const draft = useEditor((s) => s.draft);
   const shown = useMemo(() => sequence && applyDraft(sequence, draft), [sequence, draft]);
 
@@ -94,9 +94,9 @@ export function VideoEditor() {
         undefined,
         new DraftDocuments(runtime.videos.documents),
         runtime.videos.assets,
-        // 本机没有、字体目录里有的族按设置下载，下载好了再注入（§9.1）。
+        // Families not installed locally but present in the font directory are downloaded per settings, and injected once downloaded (§9.1).
         runtimeFonts(downloadingResolve((params) => runtime.client.request('fonts.resolve', params))),
-        // 在等兼容副本的媒体（卡住诊断分清在转换与在等媒体）：按当前打开的视频问媒体地址缓存。
+        // While waiting for media of the compatibility copy (so the stuck diagnostics can tell conversion apart from waiting for media): ask the media address cache about the currently open video.
         (asset) => {
           const videoId = useVideo.getState().video?.videoId;
           return videoId ? runtime.videos.mediaUrls.progress(videoId, asset) : undefined;
@@ -108,7 +108,7 @@ export function VideoEditor() {
     engine.resume();
     return () => engine.dispose();
   }, [engine]);
-  // 一个族变成已下载（不论是谁开始的下载）：预览之前报缺、问过的这个族再去要一次，画面自动换上。
+  // When a family becomes downloaded (regardless of who started the download): a family that was reported missing before and was asked for is requested again, and the picture switches automatically.
   useEffect(
     () =>
       useFontLibrary.subscribe((s, prev) => {
@@ -144,9 +144,7 @@ export function VideoEditor() {
     [engine, runtime],
   );
 
-  // 换了视频：选区与播放头归零（同一个视频在 Home 与 Space 之间切换时保持，产品设计 §5.1）；
-  // 右侧面板落在文稿，时间线还是空的落在视频（设计稿 editor.jsx 的落点）。剪成短视频的结果页打开一支、横幅回到原片：
-  // 落在 AI 工具 Tab（`setPanelLanding`）；没带面板打开的子视频落在文稿、剪辑打开（产品设计 §5.10，`landingPanel`）。
+  // On switching videos: selection and playhead reset to zero (kept when the same video moves between Home and Space, product design §5.1). The right panel lands on the transcript; an empty timeline lands on the video (design editor.jsx landing). When the result page of a short-form cut opens a clip and the banner returns to the source, it lands on the AI tools tab (`setPanelLanding`). A child video opened without a panel lands on the transcript with the timeline open (product design §5.10, `landingPanel`).
   const videoId = video?.videoId ?? null;
   useEffect(() => {
     if (!videoId) return;
@@ -164,7 +162,7 @@ export function VideoEditor() {
     engine.seek(useEditor.getState().playhead);
   }, [videoId, engine]);
 
-  // 剪成短视频跑完、切出了子视频：开着父视频时右侧翻到结果页（网页没有 AI 工具 Tab）。
+  // After a short-form cut finishes and a child video is switched out: with the parent open, the right side flips to the result page (the web has no AI tools tab).
   useShortsLanding(videoId, runtime.host.platform !== 'web');
 
   const assets = snapshot?.assets ?? null;
@@ -173,7 +171,7 @@ export function VideoEditor() {
     if (shown && assets) engine.setVideo(shown, assets, documents ?? {});
   }, [engine, shown, assets, documents]);
 
-  // 删除或被别人改掉的片段从选区里拿掉。
+  // Clips that are deleted, or changed by someone else, are removed from the selection.
   useEffect(() => {
     if (!sequence) return;
     const { selection, select } = useEditor.getState();
@@ -181,7 +179,7 @@ export function VideoEditor() {
     if (selection.some((id) => !ids.has(id))) select(selection.filter((id) => ids.has(id)));
   }, [sequence]);
 
-  // 命令失败：引擎的说明原样给出（已经是中文），不静默吞掉（产品设计 §5.5）。
+  // Command failed: the engine's explanation is shown as-is (it is already in Chinese) and not silently swallowed (product design §5.5).
   const commandError = video?.commandError ?? null;
   useEffect(() => {
     if (!commandError) return;
@@ -241,7 +239,7 @@ export function VideoEditor() {
   );
 }
 
-/** 预览与时间线之间的拖动条：往上拖时间线变高。 */
+/** The drag bar between preview and timeline: dragging up makes the timeline taller. */
 function TimelineSplitter() {
   const height = useEditor((s) => s.timelineHeight);
   const setHeight = useEditor((s) => s.setTimelineHeight);
@@ -280,7 +278,7 @@ function TimelineSplitter() {
   );
 }
 
-/** 文字输入、对话框与菜单里的按键不归编辑器；会话的输入框和编辑器在同一屏，这条必须守住。 */
+/** Keys typed in text fields, dialogs and menus do not belong to the editor. The session input and the editor are on the same screen, so this must hold. */
 function belongsToEditor(event: KeyboardEvent, root: HTMLElement): boolean {
   const target = event.target as HTMLElement | null;
   if (!target) return false;
@@ -288,7 +286,7 @@ function belongsToEditor(event: KeyboardEvent, root: HTMLElement): boolean {
   if (target !== document.body && !root.contains(target) && !target.closest('[data-editor-scope]')) return false;
   if (target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]')) return false;
   if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return false;
-  // 焦点在按钮上时，空格与回车留给按钮自己。
+  // When focus is on a button, Space and Enter are left to the button itself.
   if ((event.key === ' ' || event.key === 'Enter') && target.closest('button, [role="button"], a, [role="tab"], [role="radio"]'))
     return false;
   return true;
@@ -296,11 +294,11 @@ function belongsToEditor(event: KeyboardEvent, root: HTMLElement): boolean {
 
 const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
-/** 播放中 ←/→、J/L 一次跳多少秒（原型 editor-keys：借全屏的键）。 */
+/** How many seconds ←/→ and J/L jump during playback (prototype editor-keys: keys borrowed from fullscreen). */
 const JUMP_PLAYING = 5;
 const JUMP_JL = 10;
 
-/** 字母键：先认字符（Dvorak 等布局按字符走），认不出（输入法、⌥ 组合出的符号）再按物理键位。 */
+/** Letter keys: match by character first (layouts such as Dvorak work by character). If no character matches (input method, symbols produced by ⌥ combinations), fall back to the physical key. */
 function letterOf(event: KeyboardEvent): string {
   const key = event.key.length === 1 ? event.key.toLowerCase() : '';
   if (/^[a-z]$/.test(key)) return key;
@@ -308,19 +306,17 @@ function letterOf(event: KeyboardEvent): string {
   return key;
 }
 
-/** 页面上选着一段文字（不在输入框里）：⌘C 留给系统复制这段文字。 */
+/** Some text is selected on the page (not in an input): ⌘C is left to the system to copy that text. */
 function hasTextSelection(): boolean {
   const text = window.getSelection();
   return !!text && !text.isCollapsed && text.toString().trim() !== '';
 }
 
 /**
- * 编辑器快捷键（原型 editor-keys.jsx:170-296，清单见 shortcut-sheet）。命令与右键菜单同一份（timeline-commands）。
- * 字母键都不带 ⇧（⇧⌘B 等是外壳的键）。播放中 ↑/↓ 与 M 调预览的监听音量（model/preview-volume，不进视频）；
- * F 进全屏播放（fullscreen-player.tsx）；全屏时键盘整个让给全屏播放器（它在捕获阶段接自己的键），这里一个都不接。
+ * Editor shortcuts (prototype editor-keys.jsx:170-296; list in shortcut-sheet). Commands are shared with the context menu (timeline-commands).
+ * Letter keys never take ⇧ (⇧⌘B etc. belong to the shell). During playback, ↑/↓ and M adjust the preview's listening volume (model/preview-volume, not stored in the video). F enters fullscreen playback (fullscreen-player.tsx). In fullscreen, the keyboard is given entirely to the fullscreen player (it handles its own keys in the capture phase), and nothing is handled here.
  *
- * 舞台的方向键：舞台已经处理掉（`defaultPrevented`，它推动了选中元素）时，←/→ 不移播放头；舞台有焦点但没选中时照常逐帧；
- * ⌥←/→ 始终是时间微调（原型：⌥←/→ 让给时间微调）。
+ * Stage arrow keys: when the stage has already handled them (`defaultPrevented`, because it moved the selected element), ←/→ do not move the playhead. When the stage has focus but nothing is selected, frame-stepping proceeds as usual. ⌥←/→ is always time nudging (prototype: ⌥←/→ is reserved for time nudging).
  */
 function useEditorKeys(
   rootRef: { current: HTMLDivElement | null },
@@ -335,7 +331,7 @@ function useEditorKeys(
       const root = rootRef.current;
       const seq = latest.current;
       if (!root || !seq || !belongsToEditor(event, root)) return;
-      // 全屏播放时键盘归全屏播放器（原型 editor-keys：第 222 轮的让位），连 ⌘Z、删除这类编辑键也不接——看不见的时间线不该被改。
+      // In fullscreen playback the keyboard belongs to the fullscreen player (prototype editor-keys: the yield added in round 222). Even editing keys such as ⌘Z and Delete are not handled, because a timeline that cannot be seen should not be edited.
       if (useEditor.getState().fullscreen) return;
       const mod = MAC ? event.metaKey : event.ctrlKey;
       const letter = letterOf(event);
@@ -353,7 +349,7 @@ function useEditorKeys(
       };
       const jump = (seconds: number) => actions.seek(Math.min(duration, Math.max(0, useEditor.getState().playhead + seconds)));
 
-      // ⌘Z / ⇧⌘Z：还没提交的微调直接丢掉（撤销）或先提交（新的修改清掉了重做）。
+      // ⌘Z / ⇧⌘Z: an uncommitted nudge is discarded (undo), or committed first (a new edit clears redo).
       if (mod && !event.altKey && (letter === 'z' || letter === 'y')) {
         handled();
         const redo = letter === 'y' || event.shiftKey;
@@ -370,17 +366,17 @@ function useEditorKeys(
         void actions.undo(redo ? 'redo' : 'undo');
         return;
       }
-      // 连按 ⌥←/→ 之外的键：先把攒着的微调提交掉。
+      // For keys other than consecutive ⌥←/→, commit any accumulated nudge first.
       if (!(arrow && event.altKey && !mod) && !MODIFIER_KEYS.has(event.key)) flushNudge(actions);
 
-      // 缩放：⌘= / ⌘− / ⌘0（100%）与 ⌥⌘1–4，和走带的缩放菜单同一组动作（timeline 的 handle.zoom）。
+      // Zoom: ⌘= / ⌘− / ⌘0 (100%) and ⌥⌘1–4, the same set of actions as the zoom menu on the transport bar (the timeline's handle.zoom).
       const zoom = zoomKey(event, mod);
       if (zoom) return (handled(), timeline.current?.zoom(zoom));
 
       if (mod && !event.altKey) {
         if (event.shiftKey) return;
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-          // ⌘↑ / ⌘↓：选中的画面元素前移 / 后移一层（画布工具条「层级」的两行）。
+          // ⌘↑ / ⌘↓: move the selected canvas element forward or backward one layer (the two rows of “层级” (Layer order) in the canvas toolbar).
           if (arrangeSelection(actions, event.key === 'ArrowUp' ? 'forward' : 'backward')) handled();
           return;
         }
@@ -423,13 +419,13 @@ function useEditorKeys(
       if (arrow) {
         if (event.defaultPrevented) return;
         if (event.altKey) {
-          // ⌥←/→ 把选中的片段挪一帧（⇧ 一秒），停手后合成一笔。
+          // ⌥←/→ nudges the selected clip one frame (⇧ for one second). The nudges are merged into one edit once the user stops.
           if (!editor.selection.length) return;
           handled();
           nudgeTime(actions, direction * (event.shiftKey ? perSecond : 1));
           return;
         }
-        // 舞台（stage-objects）推得动选中元素时已经 preventDefault（React 的监听先于 window）；没选中时照常走帧。
+        // When the stage (stage-objects) can move the selected element, it has already called preventDefault (React's listeners run before window). When nothing is selected, step frames as usual.
         handled();
         if (editor.playing && !event.shiftKey) return jump(direction * JUMP_PLAYING);
         const frame = frameAt(editor.playhead, fps);
@@ -438,7 +434,7 @@ function useEditorKeys(
         return;
       }
       if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.altKey) {
-        // 播放中借全屏播放器的键调音量；舞台推了选中元素（defaultPrevented）时让给它，停着时不接。
+        // During playback, adjust volume with the fullscreen player's keys. When the stage moved a selected element (defaultPrevented), yield to it; when stopped, do not handle it.
         if (event.defaultPrevented || !editor.playing) return;
         handled();
         const before = monitorLevel(actions.engine.monitor);
@@ -468,15 +464,15 @@ function useEditorKeys(
         return;
       }
       if (!event.altKey && !event.shiftKey && letter === 'f') {
-        // 选中画布上的一件时 F 是「移到最前」；没选中时进全屏播放，要在按键这一拍里请求（浏览器只认用户手势）。
-        // 退出由全屏播放器那侧接（同一个键）。
+        // With one canvas item selected, F is “移到最前” (Bring to front). With nothing selected, it enters fullscreen playback, which must be requested within this key press (browsers honor only user gestures).
+        // Exit is handled by the fullscreen player (same key).
         handled();
         if (arrangeSelection(actions, 'front')) return;
         enterPreviewFullscreen(root.querySelector<HTMLElement>('[data-preview-stage]'));
         return;
       }
       if (!event.altKey && !event.shiftKey && letter === 'b') {
-        // B：选中的画面元素移到最后。
+        // B: move the selected canvas element to the back.
         if (arrangeSelection(actions, 'back')) handled();
         return;
       }
@@ -484,11 +480,11 @@ function useEditorKeys(
         case 'Delete':
         case 'Backspace':
           handled();
-          // ⇧Delete：选中片段盖住的时间从所有轨道拿掉、后面前移；Delete 只删片段（所有轨道都空了的那段合拢）。
+          // ⇧Delete: remove the time the selected clip covers from all tracks, and shift later content forward. Delete removes only the clip (if all tracks are empty over that span, it closes up).
           void (event.shiftKey ? removeSelectionSpan(actions) : deleteSelection(actions));
           return;
         case 'Escape':
-          // 菜单、对话框、拖动各自先接 Esc（belongsToEditor、时间线的捕获监听）；到这里只剩取消选中。
+          // Menus, dialogs and drags each handle Esc first (belongsToEditor, the timeline's capture listener). By this point, only deselection remains.
           if (!editor.selection.length) return;
           handled();
           editor.select([]);
@@ -508,10 +504,10 @@ function useEditorKeys(
   }, [rootRef, actions, timeline]);
 }
 
-/** 上一条音量提示：连按时先收掉，不排成一串。 */
+/** The previous volume toast: dismiss it first when pressed repeatedly, so they do not stack up. */
 let closeVolumeToast: (() => void) | null = null;
 
-/** 换预览的监听音量，提示一句现在多大。 */
+/** Changes the preview's listening volume; the toast shows the current level. */
 function setMonitor(actions: EditorActions, before: MonitorLevel, next: MonitorLevel): void {
   actions.engine.setMonitor(monitorGain(next));
   closeVolumeToast?.();
@@ -519,7 +515,7 @@ function setMonitor(actions: EditorActions, before: MonitorLevel, next: MonitorL
   closeVolumeToast = ToastQueue.neutral(text, { timeout: 5000 });
 }
 
-/** 攒着的 ⌥←/→ 微调：换了选区、点了别处、窗口失焦、离开编辑器时提交。 */
+/** Accumulated ⌥←/→ nudge: committed when the selection changes, when the user clicks elsewhere, when the window loses focus, or when the editor is left. */
 function useNudgeFlush(actions: EditorActions) {
   useEffect(() => {
     const flush = () => flushNudge(actions);

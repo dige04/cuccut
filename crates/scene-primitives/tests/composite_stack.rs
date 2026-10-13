@@ -1,9 +1,6 @@
-//! 主运动 + 强调可叠加（设计 §10 阶段 2 验收 / 规范 §7.7）。
+//! Main motion and emphasis can stack (design §10 stage 2 acceptance / spec §7.7).
 //!
-//! 真实的多轨来源就是这一条：BCF 的 `enter` 写 `motion.moveIn`（y=add）、
-//! `emphasis` 写 `motion.pulse`（scale=multiply）/ `motion.flash`（opacity=multiply）
-//! / `motion.tilt`（rotation=add），两者时间交叠时**相加 / 相乘**，
-//! 而不是像 legacy 四槽那样后写覆盖。
+//! The real multi-track source is this: BCF's `enter` writes `motion.moveIn` (y=add), and `emphasis` writes `motion.pulse` (scale=multiply) / `motion.flash` (opacity=multiply) / `motion.tilt` (rotation=add). When the two overlap in time they are **added / multiplied**, rather than the later write overriding as in the legacy four slots.
 
 use scene_primitives::layout::{TextMeasure, TextMetricsLine};
 use scene_primitives::resolve::{Ir, RNode, Resolver};
@@ -69,7 +66,7 @@ fn move_in_and_pulse_stack_additively_and_multiplicatively() {
                       "params": {"scale": 2.0, "curve": "linear"}}]
     }));
     let node = card(&ir);
-    // 两条轨真的存在，而且合成模式不同
+    // The two tracks really exist, and their composite modes differ
     let y = node.channels.iter().find(|c| c.prop == "y").expect("y");
     let scale = node
         .channels
@@ -79,15 +76,15 @@ fn move_in_and_pulse_stack_additively_and_multiplicatively() {
     assert_eq!(y.composite, motion::CompositeMode::Add);
     assert_eq!(scale.composite, motion::CompositeMode::Multiply);
 
-    // t = 0.5：moveIn 走完一半（100 → 0，linear ⇒ 50），pulse 在 55% 峰值前
+    // t = 0.5: moveIn is halfway (100 → 0, linear ⇒ 50), pulse is before its 55% peak
     let pose = sample_channels(&node.channels, 0.5);
-    // base y = 0（元素静态位移），add 轨给 +50
+    // base y = 0 (the element's static offset), the add track contributes +50
     assert!(
         (pose.scalar("y", 0.0) - 50.0).abs() < 1e-9,
         "{}",
         pose.scalar("y", 0.0)
     );
-    // base scale = 1.3（假想的元素静态缩放）× pulse 的乘子
+    // base scale = 1.3 (a hypothetical static element scale) × the pulse multiplier
     let pulse = pose.scalar("scale", 1.0);
     let with_base = pose.scalar("scale", 1.3);
     assert!(pulse > 1.0 && pulse < 2.0, "{pulse}");
@@ -128,16 +125,15 @@ fn flash_and_tilt_also_stack_on_top_of_a_main_motion() {
         .collect();
     assert_eq!(opacities.len(), 2, "不透明度是两条 multiply 轨");
 
-    // t = 0.25：rotateIn 的 -20 → 0（linear）走到 -15；tilt 的 0 → 10（峰值在 50%）
-    // 走到 5 ⇒ **相加** = -10。旧的「后写覆盖」在这里只会给 5 或 -15。
+    // t = 0.25: rotateIn's -20 → 0 (linear) reaches -15; tilt's 0 → 10 (peak at 50%) reaches 5 ⇒ **added** = -10. The old “later write overrides” would only give 5 or -15 here.
     let pose = sample_channels(&node.channels, 0.25);
     assert!(
         (pose.scalar("rotation", 0.0) - (-10.0)).abs() < 1e-9,
         "{}",
         pose.scalar("rotation", 0.0)
     );
-    // fadeIn 走 easeOutCubic（compose 步没有传 curve，用 motion.fadeIn 自己的缺省），
-    // flash 的 1 → 0.5 走 linear 到 0.75 ⇒ **相乘**。
+    // fadeIn uses easeOutCubic (the compose step does not pass a curve, so motion.fadeIn's own default is used);
+    // flash's 1 → 0.5 goes linearly to 0.75 ⇒ **multiplied**.
     let fade = 1.0 - (1.0f64 - 0.25).powi(3);
     assert!(
         (pose.scalar("opacity", 1.0) - fade * 0.75).abs() < 1e-9,
@@ -148,9 +144,7 @@ fn flash_and_tilt_also_stack_on_top_of_a_main_motion() {
 
 #[test]
 fn legacy_enter_and_exit_on_one_prop_each_own_their_window() {
-    // 两个 legacy 配方写同一个 opacity 通道：enter(order 0) 在 [0, 1]，exit(order 1000)
-    // 在 [3, 4]。窗口不重叠 ⇒ 各管各的：exit 尚未开始时不得拿它回填的首值 1.0
-    // 盖掉正在进行的淡入（旧折叠只比 order，淡入整段看不见）。
+    // Two legacy recipes write the same opacity channel: enter (order 0) on [0, 1], exit (order 1000) on [3, 4]. The windows do not overlap ⇒ each keeps to its own: before exit has started, it must not cover the fade-in in progress with the first value 1.0 that it backfills (the old fold only compared order, so the whole fade-in was invisible).
     let ir = resolved(json!({
         "enter": {"preset": "fadeIn", "dur": 1.0},
         "exit": {"preset": "fadeOut", "dur": 1.0}
@@ -173,7 +167,7 @@ fn legacy_enter_and_exit_on_one_prop_each_own_their_window() {
 
 #[test]
 fn overlapping_replace_tracks_still_resolve_by_declaration_order() {
-    // 真正重叠时仍是 §7.1「后声明覆盖」：keyframes(order ≥ 1_000_000) 压过 enter。
+    // Where they really overlap it is still §7.1 “later declaration overrides”: keyframes (order ≥ 1_000_000) override enter.
     let ir = resolved(json!({
         "enter": {"preset": "fadeIn", "dur": 1.0},
         "keyframes": [{"prop": "opacity", "frames": [{"t": 0.25, "v": 0.6}, {"t": 0.75, "v": 0.6}]}]
@@ -181,7 +175,7 @@ fn overlapping_replace_tracks_still_resolve_by_declaration_order() {
     let node = card(&ir);
     let at = |t: f64| sample_channels(&node.channels, t).scalar("opacity", 1.0);
     assert_eq!(at(0.5), 0.6);
-    // 窗口外各管各的：keyframes 开始前淡入在走，结束后回到仍在进行的淡入
+    // Outside the window each keeps to its own: the fade-in runs before keyframes start, and after they end it returns to the fade-in still in progress
     assert!(at(0.1) < 0.6, "{}", at(0.1));
     assert!(at(0.9) > 0.6 && at(0.9) < 1.0, "{}", at(0.9));
 }

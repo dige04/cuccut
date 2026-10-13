@@ -1,8 +1,8 @@
 /*
- * toast 只停几秒（2026-10-08 用户要求：「toast 只显示几秒即可，不用一直在那里」）。S2 的 ToastQueue 有两处不合：
- * 不给 `timeout` 的 toast 一直挂着；带按钮（`actionLabel`）的 toast 不管给不给 `timeout` 都不自动关（S2 按 WCAG 2.2.1 的取舍）。
- * 这里在启动时包一层：没给 `timeout` 的按 DEFAULT_MS；带按钮的由这里计时关掉，指针停在 toast 上或焦点在里面时顺延，
- * 免得正要点「撤销」时它消失。时长不短于 S2 的 5 秒下限。
+ * The toast stays up only a few seconds (user request on 2026-10-08: "toast 只显示几秒即可，不用一直在那里", i.e. "a toast only needs to show for a few seconds, it should not stay there all the time"). S2's ToastQueue has two mismatches:
+ * a toast without `timeout` stays up forever; a toast with a button (`actionLabel`) is never auto-dismissed, whether or not `timeout` is given (S2's trade-off per WCAG 2.2.1).
+ * Here we wrap it at startup: a toast without `timeout` gets DEFAULT_MS; a toast with a button is timed and dismissed here, and the timer is extended while the pointer is on the toast or focus is inside it,
+ * so it does not vanish just as the user is about to click "Undo". The duration is not shorter than S2's 5-second minimum.
  */
 
 export const DEFAULT_MS = 5000;
@@ -11,7 +11,7 @@ const MIN_MS = 5000;
 type Variant = 'neutral' | 'positive' | 'negative' | 'info';
 const VARIANTS: readonly Variant[] = ['neutral', 'positive', 'negative', 'info'];
 
-/** S2 `ToastQueue` 的形状（参数按 S2 的 `SpectrumToastOptions` 取需要的几样）。 */
+/** Shape of S2's `ToastQueue` (only the parameters needed from S2's `SpectrumToastOptions` are taken). */
 export interface ToastOptions {
   timeout?: number;
   actionLabel?: string;
@@ -20,7 +20,7 @@ export interface ToastOptions {
 }
 export type ToastQueueLike = Record<Variant, (children: string, options?: ToastOptions) => () => void>;
 
-/** 指针或焦点还在 toast 上：S2 自己计时的 toast 这时也会暂停。 */
+/** The pointer or focus is still on the toast: S2's own timed toasts also pause at this point. */
 function toastHeld(): boolean {
   if (typeof document === 'undefined') return false;
   return !!document.querySelector('[role="region"] [role="alertdialog"]:hover, [role="region"] [role="alertdialog"]:focus-within');
@@ -28,7 +28,7 @@ function toastHeld(): boolean {
 
 const installed = new WeakSet<object>();
 
-/** 给 toast 队列（S2 的 `ToastQueue`）装上自动关闭；同一个队列只装一次。返回卸下的函数（测试用）。 */
+/** Installs auto-dismiss on the toast queue (S2's `ToastQueue`); each queue is patched only once. Returns a function that removes the patch (for tests). */
 export function installToastAutoDismiss(queue: ToastQueueLike, held = toastHeld): () => void {
   if (installed.has(queue)) return () => {};
   installed.add(queue);

@@ -1,9 +1,7 @@
 /**
- * 假 opencode 的入口（由 fake-opencode.ts 写出的 shell 包装调用）。`--version` 按场景输出版本；`serve` 起一个只监听
- * 127.0.0.1 的 HTTP 服务，形状照 OpenCode 2.x 的 v2 API（2.0.24 实测）：Basic 认证（用户名 opencode、密码取
- * OPENCODE_PASSWORD）、`server listening on http://127.0.0.1:<port>` 一行、冷启动时第一次 `/api/plugin` 回空表、
- * `/api/event` 是带心跳注释的 SSE。回合按场景发事件；拒绝工具后以 `interrupted(shutdown)` 结束执行（同真实行为）。
- * 收到的每个请求记进 `log.jsonl`；会话存进 `sessions.json`，换一个进程也能按 id 恢复。
+ * Entry point of the fake opencode (called by the shell wrapper written by fake-opencode.ts). `--version` prints a version according to the scenario. `serve` starts an HTTP service listening only on
+ * 127.0.0.1, shaped after OpenCode 2.x's v2 API (measured on 2.0.24): Basic auth (username opencode, password taken from OPENCODE_PASSWORD), a single line `server listening on http://127.0.0.1:<port>`, on cold start the first `/api/plugin` returns an empty table, and `/api/event` is SSE with heartbeat comments. Turns emit events according to the scenario. After a tool is rejected, execution ends with `interrupted(shutdown)` (same as real behavior).
+ * Every request received is recorded in `log.jsonl`. Sessions are stored in `sessions.json`, so another process can resume them by id.
  */
 import http from 'node:http';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -60,10 +58,10 @@ let pluginCalls = 0;
 let seq = 0;
 let nextId = 1;
 const id = (prefix: string) => `${prefix}_fake${process.pid}x${nextId++}`;
-/** 等待中的权限请求：requestID → 收到答复时继续。 */
+/** Pending permission requests: requestID → continue when the reply arrives. */
 const permissionWaiters = new Map<string, (decision: string) => void>();
 const interruptWaiters = new Map<string, () => void>();
-/** 收到中断、但执行还没走到等待点的会话：走到时直接结束。 */
+/** Sessions that received an interrupt before execution reached its waiting point: end immediately when it gets there. */
 const interruptRequested = new Set<string>();
 
 function broadcast(type: string, data: Record<string, unknown>, durable = false): void {
@@ -267,7 +265,7 @@ const server = http.createServer(async (req, res) => {
     case 'POST /api/session/:id/prompt': {
       const delivery = payload.delivery ?? 'steer';
       send(res, 200, { data: { id: id('msg'), sessionID, type: 'user', payload: { text: payload.text }, delivery } });
-      if (active.has(sessionID!)) return; // 插话：并入进行中的执行。
+      if (active.has(sessionID!)) return; // Mid-turn messages: merged into the execution in progress.
       void runTurn(sessionID!, scenario.turn);
       return;
     }

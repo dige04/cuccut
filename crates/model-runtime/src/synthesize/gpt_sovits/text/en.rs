@@ -1,8 +1,8 @@
-//! GPT-SoVITS v2 英文 G2P：`text/english.py` 的 `en_G2p`、`g2p` 与 `clean_text(..., "en")`。
+//! GPT-SoVITS v2 English G2P: `en_G2p`, `g2p` and `clean_text(..., "en")` from `text/english.py`.
 //!
-//! 上游组件：nltk 3.10.3 `TweetTokenizer` 与 `averaged_perceptron_tagger_eng`、wordsegment 1.3.1、
-//! g2p_en 2.1.0 GRU 编解码器。管线里的输入只来自 [`en_norm::text_normalize`]，字符集是 ASCII
-//! 字母、空格与 `'.,?!-`；分词器只移植在这个字母表上可达的规则。
+//! Upstream components: nltk 3.10.3 `TweetTokenizer` and `averaged_perceptron_tagger_eng`, wordsegment 1.3.1,
+//! and the g2p_en 2.1.0 GRU encoder/decoder. The pipeline's input comes only from [`en_norm::text_normalize`], whose character set is ASCII
+//! letters, spaces and `'.,?!-`; the tokenizer ports only the rules reachable on this alphabet.
 
 use std::sync::LazyLock;
 
@@ -16,9 +16,9 @@ use super::symbols::symbol_id;
 
 // ---------------------------------------------------------------- TweetTokenizer
 
-/// `TweetTokenizer.PHONE_WORD_RE` 在规范化字母表上可达的分支，交替顺序与上游一致：
-/// 裸域名、带撇号/连字符的词、数字、普通词、省略号、其余非空白字符。
-/// URL 协议、电话、表情、HTML、箭头、@/#、邮箱与 emoji 分支都需要该字母表之外的字符。
+/// The branches of `TweetTokenizer.PHONE_WORD_RE` reachable on the normalized alphabet, in the same alternation order as upstream:
+/// bare domain names, words with apostrophes/hyphens, numbers, plain words, ellipses, and other non-whitespace characters.
+/// The URL-protocol, phone, emoticon, HTML, arrow, @/#, email and emoji branches all need characters outside this alphabet.
 static WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"[A-Za-z0-9]+(?:[.\-][A-Za-z0-9]+){0,126}\.[A-Za-z]{2,13}\b",
@@ -31,7 +31,7 @@ static WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("WORD_RE")
 });
 
-/// `HANG_RE.sub(r"\1\1\1", text)`：同一个非字母数字字符连续 4 次以上截成 3 次。
+/// `HANG_RE.sub(r"\1\1\1", text)`: the same non-alphanumeric character repeated 4 or more times in a row is cut down to 3.
 fn shorten_runs(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -51,12 +51,12 @@ pub fn tokenize(text: &str) -> Vec<String> {
     WORD_RE.find_iter(&shorten_runs(text)).map(|m| m.as_str().to_owned()).collect()
 }
 
-// ---------------------------------------------------------------- 感知机词性标注
+// ---------------------------------------------------------------- Perceptron POS tagging
 
 const TAG_START: [&str; 2] = ["-START-", "-START2-"];
 const TAG_END: [&str; 2] = ["-END-", "-END2-"];
 
-/// 末尾至多 `n` 个字符（Python `s[-n:]`）。
+/// At most the last `n` characters (Python `s[-n:]`).
 fn last_chars(s: &str, n: usize) -> &str {
     match s.char_indices().rev().nth(n - 1) {
         Some((i, _)) => &s[i..],
@@ -79,7 +79,7 @@ fn tag_normalize(word: &str) -> String {
     word.to_lowercase()
 }
 
-/// `nltk.pos_tag(tokens)` 的标签序列。
+/// The tag sequence from `nltk.pos_tag(tokens)`.
 pub fn pos_tag(tokens: &[String]) -> Vec<String> {
     let tagger = &*EN_TAGGER;
     let mut context: Vec<String> = TAG_START.iter().map(|s| (*s).to_owned()).collect();
@@ -95,7 +95,7 @@ pub fn pos_tag(tokens: &[String]) -> Vec<String> {
             None => {
                 let i = i + TAG_START.len();
                 let first = word.chars().next().map(String::from).unwrap_or_default();
-                // 顺序即上游 `_get_features` 的插入顺序，决定浮点累加顺序
+                // The order matches the insertion order of upstream `_get_features`, which determines the floating-point summation order
                 let features = [
                     "bias".to_owned(),
                     format!("i suffix {}", last_chars(word, 3)),
@@ -139,13 +139,13 @@ pub fn pos_tag(tokens: &[String]) -> Vec<String> {
 const WS_TOTAL: f64 = 1_024_908_267_229.0;
 const WS_LIMIT: usize = 24;
 const WS_CHUNK: usize = 250;
-/// Python `float(10 ** n)`（正确舍入），`n <= WS_LIMIT`。
+/// Python `float(10 ** n)` (correctly rounded), for `n <= WS_LIMIT`.
 const POW10: [f64; WS_LIMIT + 1] = [
     1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22, 1e23,
     1e24,
 ];
 
-/// `Segmenter.score(word, previous)`，`previous` 非空。
+/// `Segmenter.score(word, previous)`, with `previous` non-empty.
 fn ws_score(word: &str, previous: &str) -> f64 {
     let freq = &*WORDSEGMENT;
     if let Some(bigram) = freq.bigram(&format!("{previous} {word}"))
@@ -159,12 +159,12 @@ fn ws_score(word: &str, previous: &str) -> f64 {
     }
 }
 
-/// `isegment` 内的 `search(text)`（ASCII 小写字母数字）：状态为（位置, 前一词长度），
-/// 长度 0 表示 `"<s>"`。上游 `max` 比较 `(score, words)`，分数相同时首词更长者字符串更大。
+/// `search(text)` inside `isegment` (ASCII lowercase alphanumerics): the state is (position, length of the previous word),
+/// where length 0 denotes `"<s>"`. Upstream `max` compares `(score, words)`; on equal scores, the string whose first word is longer compares larger.
 fn ws_search(text: &str) -> Vec<String> {
     let n = text.len();
     let width = WS_LIMIT + 1;
-    // best[pos * width + k] = (text[pos..] 的最高分, 首词长度)，前一词为 text[pos - k..pos]
+    // best[pos * width + k] = (best score for text[pos..], first-word length), where the previous word is text[pos - k..pos]
     let mut best = vec![(0.0f64, 0usize); (n + 1) * width];
     for pos in (0..n).rev() {
         let prevs = if pos == 0 { 0..=0 } else { 1..=pos.min(WS_LIMIT) };
@@ -226,7 +226,7 @@ const PHONEME_BOS: usize = 2;
 const PHONEME_EOS: usize = 3;
 const MAX_DECODE: usize = 20;
 
-/// `x @ w.T + b`（float32，逐行顺序累加）。
+/// `x @ w.T + b` (float32, accumulated in row order).
 fn affine(x: &[f32], w: &[f32], b: &[f32], out: &mut Vec<f32>) {
     out.clear();
     out.extend(
@@ -248,7 +248,7 @@ struct GruCell<'a> {
 }
 
 impl GruCell<'_> {
-    /// `G2p.grucell`：原地更新 `h`；`ih` / `hh` 是复用的缓冲。
+    /// `G2p.grucell`: updates `h` in place; `ih` / `hh` are reused buffers.
     fn step(&self, x: &[f32], h: &mut [f32], ih: &mut Vec<f32>, hh: &mut Vec<f32>) {
         affine(x, self.w_ih, self.b_ih, ih);
         affine(h, self.w_hh, self.b_hh, hh);
@@ -262,7 +262,7 @@ impl GruCell<'_> {
     }
 }
 
-/// `G2p.predict(word)`：GRU 编码字母序列、贪心解码至多 20 个音素。
+/// `G2p.predict(word)`: GRU encodes the letter sequence, then greedy-decodes at most 20 phonemes.
 pub fn predict(word: &str) -> Vec<&'static str> {
     let gru = &*G2P_GRU;
     let d = GRU_HIDDEN;
@@ -299,7 +299,7 @@ pub fn predict(word: &str) -> Vec<&'static str> {
     for _ in 0..MAX_DECODE {
         decoder.step(row(&gru.dec_emb, prev), &mut h, &mut ih, &mut hh);
         affine(&h, &gru.fc_w, &gru.fc_b, &mut logits);
-        // numpy argmax：取第一个最大值
+        // numpy argmax: takes the first maximum
         let mut pred = 0;
         for (i, &v) in logits.iter().enumerate() {
             if v > logits[pred] {
@@ -321,7 +321,7 @@ fn cmu(word: &str) -> Result<Vec<String>, PyError> {
     CMUDICT.get(word).cloned().ok_or(PyError::Key)
 }
 
-/// `str.istitle()`（不含标题大小写字母 Lt）。
+/// `str.istitle()` (not counting titlecase letters, category Lt).
 fn is_title(s: &str) -> bool {
     let (mut cased, mut prev_cased) = (false, false);
     for c in s.chars() {
@@ -356,7 +356,7 @@ fn qryword(o_word: &str) -> Result<Vec<String>, PyError> {
     {
         return Ok(phones.clone());
     }
-    // 词典外的短词逐字母读
+    // Short out-of-dictionary words are read letter by letter
     if len <= 3 {
         let mut phones = Vec::new();
         for c in word.chars() {
@@ -370,7 +370,7 @@ fn qryword(o_word: &str) -> Result<Vec<String>, PyError> {
         }
         return Ok(phones);
     }
-    // 所有格 ^[a-z]+'s$
+    // Possessive ^[a-z]+'s$
     if let Some(stem) = word.strip_suffix("'s")
         && !stem.is_empty()
         && stem.bytes().all(|b| b.is_ascii_lowercase())
@@ -384,7 +384,7 @@ fn qryword(o_word: &str) -> Result<Vec<String>, PyError> {
         phones.extend(suffix.iter().map(|s| (*s).to_owned()));
         return Ok(phones);
     }
-    // 复合词拆开递归，拆不开交给 GRU
+    // Compound words are split recursively; if they cannot be split, they go to the GRU
     let comps = segment(&word);
     if comps.len() == 1 {
         return Ok(predict(&word).into_iter().map(str::to_owned).collect());
@@ -396,7 +396,7 @@ fn qryword(o_word: &str) -> Result<Vec<String>, PyError> {
     Ok(phones)
 }
 
-/// `en_G2p.__call__(text)`：词间以 `" "` 分隔的音素序列。
+/// `en_G2p.__call__(text)`: the phoneme sequence, with words separated by `" "`.
 pub fn g2p_call(text: &str) -> Result<Vec<String>, PyError> {
     let tokens = tokenize(text);
     let tags = pos_tag(&tokens);
@@ -424,7 +424,7 @@ pub fn g2p_call(text: &str) -> Result<Vec<String>, PyError> {
     Ok(prons)
 }
 
-/// `english.g2p(text)`：去掉分隔与特殊记号，`<unk>` 记作 `UNK`，符号表外的丢弃（`'` 改 `-`）。
+/// `english.g2p(text)`: removes separators and special markers, records `<unk>` as `UNK`, and drops symbols outside the symbol table (`'` becomes `-`).
 pub fn g2p(text: &str) -> Result<Vec<String>, PyError> {
     let mut phones = Vec::new();
     for ph in g2p_call(text)? {
@@ -439,7 +439,7 @@ pub fn g2p(text: &str) -> Result<Vec<String>, PyError> {
     Ok(phones)
 }
 
-/// `clean_text(text, "en", "v2")`：返回 (音素, 规范化文本)。
+/// `clean_text(text, "en", "v2")`: returns (phonemes, normalized text).
 pub fn clean_text(text: &str) -> Result<(Vec<String>, String), PyError> {
     let norm = en_norm::text_normalize(text)?;
     let mut phones = g2p(&norm)?;

@@ -7,7 +7,7 @@ import {
   parseAudioCppVersion,
 } from './music-engine.ts';
 
-/** audio.cpp 引擎的发布登记（架构设计 §6.3）：每个登记的平台都有完整的摘要与大小，格式、文件名与可执行文件一致。 */
+/** Release registration of the audio.cpp engine (architecture design §6.3): every registered platform has a full digest and size, and the format, file name and executable match. */
 describe('audio.cpp engine release', () => {
   it('pins one archive per supported platform with a full digest', () => {
     expect(AUDIO_CPP_TOOL).toBe('audiocpp');

@@ -15,22 +15,22 @@ import { pl } from './cut-band-copy.pl.ts';
 import { tr } from './cut-band-copy.tr.ts';
 import { vi } from './cut-band-copy.vi.ts';
 
-/** 被剪文字太长时只引前面这么多字。 */
+/** When the cut text is too long, only this many leading characters are quoted. */
 const QUOTE_MAX = 40;
 
 const quote = (text: string) => `“${text.length > QUOTE_MAX ? `${text.slice(0, QUOTE_MAX - 1)}…` : text}”`;
 
 const cut = (seconds: number, text: string) => (text ? `Cut ${secondsLabel(seconds)}: ${quote(text)}` : `Cut ${secondsLabel(seconds)}`);
 
-/** 时间线剪口带的文案（原型 timeline-cutbands.jsx、editor-cuts.jsx 的 `retime`）。译文在 `cut-band-copy.zh-Hans.ts`。 */
+/** Copy for the timeline cut bands (prototype timeline-cutbands.jsx, `retime` in editor-cuts.jsx). Translations are in `cut-band-copy.zh-Hans.ts`. */
 const en = {
-  /** 悬停第一行：剪掉了多长、剪掉的是哪些字。 */
+  /** Hover line one: how much was cut, and which words were cut. */
   cut,
-  /** 悬停第二行：怎么操作。按住 Alt（macOS 上是 Option）不吸附。 */
+  /** Hover line two: how to operate. Hold Alt (Option on macOS) to not snap. */
   hint: (mac: boolean) => `Click to restore · drag the edges to change the range (hold ${mac ? 'Option' : 'Alt'} to turn off snapping)`,
-  /** 读屏名。 */
+  /** Screen-reader name. */
   label: (seconds: number, text: string) => `Cut, ${cut(seconds, text)}, click to restore`,
-  /** 拖动中浮在带上的读数：新的剪切长度，吸到的词；拖到零宽是恢复。 */
+  /** Readout that floats over the band while dragging: the new cut length and the word snapped to; dragging to zero width restores it. */
   tag: (seconds: number, edge: 'start' | 'end', word: string | null) =>
     `−${secondsLabel(seconds)}${word ? (edge === 'start' ? ` · from “${word.trim()}”` : ` · to “${word.trim()}”`) : ''}`,
   tagRestore: 'Release to restore',

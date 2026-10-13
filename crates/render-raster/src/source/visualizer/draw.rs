@@ -1,32 +1,18 @@
-//! `visualizer_frame`：配方 + 参数 + 一帧频谱 → DrawOp（ADR-E04 的「纯绘制函数」）。
+//! `visualizer_frame`: recipe + parameters + one frame of spectrum → DrawOp (ADR-E04's "pure drawing function").
 //!
-//! 2026-09 重设计后声波是 **10 款样式 / 7 个算法名**，全部是 CPU 矢量配方
-//! （目录见 [`recipes`] 的模块文档）。没有 GPU 侧的 visualizer shader：设计 §8.6
-//! 的 visualizer WGSL 清单整体退役，wgpu 后端把声波当普通矢量层合成。
+//! After the September 2026 redesign, the audio visualizer has **10 styles across 7 algorithm names**, all of them CPU vector recipes (catalog in the module docs of [`recipes`]). There is no GPU-side visualizer shader: the visualizer WGSL list in design §8.6 is retired as a whole, and the wgpu backend composites the visualizer as an ordinary vector layer.
 //!
-//! ## 三个签名上的取舍
+//! ## Three deliberate choices in the signature
 //!
-//! 1. **`&mut FrameBuilder` 而不是 `-> Vec<DrawOp>`**（ADR-E04 写的是后者）：
-//!    `DrawOp::FillPath` / `StrokePath` 的 `path` 是**侧表下标**，只有 builder
-//!    能发号。柱状类只用 `FillRect`，其余六个算法都要 path。已落地的孪生
-//!    `element_draw::push_shape_ops` 也是这个形状，两者保持一致。
-//! 2. **配方类型直接用 `motion::preset_registry::CatalogueRecipe`**：
-//!    `ccut-render` 本来就依赖 `ccut-motion`，配方是数据不是代码，再抄一份
-//!    「渲染侧配方」就等于让 10 份 manifest 有两个读法。
-//! 3. **参数类型是本 crate 自己的 [`VisualizerParams`]，不是
-//!    `ccut_timeline::schema::VisualizerProps`**：`ccut-render` **不依赖**
-//!    `ccut-timeline`（方案 §2.3 记载的依赖图），加这条边会让渲染层反过来知道
-//!    产品时间轴的 schema。映射（含缺省回落到配方的 `defaultMainColor` 等）是
-//!    host 的活，`apps/cli` 的 `element_draw` 做这一步。
+//! 1. **`&mut FrameBuilder` instead of `-> Vec<DrawOp>`** (ADR-E04 wrote the latter). `DrawOp::FillPath` / `StrokePath`'s `path` is an **index into a side table**, and only the builder can assign those numbers. The bar-type styles use only `FillRect`, and the other six algorithms all need paths. The already-landed counterpart, `element_draw::push_shape_ops`, has the same shape, so the two stay consistent.
+//! 2. **The recipe type is `motion::preset_registry::CatalogueRecipe` directly.** `ccut-render` already depends on `ccut-motion`, and recipes are data, not code. Copying them into a "render-side recipe" would give the 10 manifests two readings.
+//! 3. **The parameter type is this crate's own [`VisualizerParams`], not `ccut_timeline::schema::VisualizerProps`.** `ccut-render` **does not depend on** `ccut-timeline` (the dependency graph recorded in plan §2.3), and adding that edge would make the rendering layer know the product timeline's schema. The mapping (including falling back to the recipe's `defaultMainColor` and so on when a value is unset) is the host's job. `element_draw` in `apps/cli` does this step.
 //!
-//! 颜色与坐标约定跟 `element_draw` 逐字相同：路径点是**画布绝对像素**，
-//! `tf` 只承载绕元素盒中心的旋转 / 镜像 / 动画位姿；`Color4` 非预乘、0..1。
+//! Color and coordinate conventions are identical to `element_draw`: path points are **absolute canvas pixels**, and `tf` carries only the pose (rotation, mirroring, animation) around the center of the element box. `Color4` is non-premultiplied, 0..1.
 //!
-//! ## 静音语义
+//! ## Silence semantics
 //!
-//! 静音（频域行全 0、时域行 128）时**每一款仍然画得出东西**：柱状留 `minHeight`
-//! 的短柱、点阵留一排底灯、示波器画一条直线 / 一个圆、脉冲环停在静止位、丝带
-//! 退化成中线。元素在无声段不会从画面上消失，`alwaysShow` 的显隐由合成（`frame-render`）决定。
+//! When silent (frequency rows all 0, time-domain rows 128), **every style still draws something**. Bars keep short columns at `minHeight`, the dot matrix keeps a row of base lights, the oscilloscope draws a straight line or a circle, the pulse ring stays at its rest position, and the ribbons degenerate to a centerline. The element does not vanish from the picture during silent stretches. Whether `alwaysShow` is visible is decided by compositing (`frame-render`).
 
 use motion::preset_registry::{CatalogueRecipe, RecipeAlgorithm, VisualizerAspect};
 
@@ -37,27 +23,20 @@ use super::recipes;
 
 pub use crate::source::kernel::DrawBox as VizBox;
 
-/// 绘制参数：**已经解析好的**颜色（host 负责从 `VisualizerProps` 取值，
-/// 缺省回落到配方的 `defaultMainColor` / `defaultSecondaryColor`）。
+/// Drawing parameters: **already-resolved** colors. The host reads them from `VisualizerProps` and falls back to the recipe's `defaultMainColor` / `defaultSecondaryColor` when unset.
 ///
-/// dB 窗 / smoothing / gain **不在这里**——它们在 preflight 就烘进
-/// [`super::VizTrack`] 了（ADR-E04 数据流第 2 步），绘制期再读一次就会出现
-/// 「派生用一套、绘制用另一套」。
+/// The dB window, smoothing and gain are **not here**. They are baked into [`super::VizTrack`] during preflight (step 2 of the ADR-E04 data flow). Reading them again at draw time would produce "one set for derivation and another for drawing".
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VisualizerParams {
     pub main_color: Color4,
     pub secondary_color: Color4,
 }
 
-/// 一帧 visualizer → 指令流；返回**新压入的 DrawOp 条数**。
+/// One frame of visualizer → command stream; returns the **number of DrawOps newly pushed**.
 ///
-/// 返回 `0` 的含义是「这个样式这一帧没有可画的东西」（例如零尺寸的盒子）——
-/// 10 种全部有绘制实现，host 的占位分支只剩"没有频谱轨"这一种真实故障。
+/// A return value of `0` means "nothing to draw for this style this frame" (for example, a zero-size box). All 10 styles have drawing implementations, so the host's placeholder branch now covers only one real failure: "no spectrum track".
 ///
-/// `time` 是**元素本地时刻**（`t − element.start`，秒），对应参考实现的 `u_time`
-/// ——口径与 [`crate::source::progress::progress_frame`] 逐字相同（§13 P4 偏离 9）：
-/// 同一个元素搬到时间轴别处，画出来的东西不变。当前只有 `ribbons-v1`
-/// （丝带相位）读它。
+/// `time` is the **element-local time** (`t − element.start`, in seconds), corresponding to the reference implementation's `u_time`. The convention is the same as [`crate::source::progress::progress_frame`] (§13 P4 deviation 9): moving the same element elsewhere on the timeline leaves what is drawn unchanged. Currently only `ribbons-v1` (the ribbon phase) reads it.
 pub fn visualizer_frame(
     builder: &mut FrameBuilder,
     recipe: &CatalogueRecipe,
@@ -68,12 +47,10 @@ pub fn visualizer_frame(
     tf: Mat6,
 ) -> usize {
     let Some(body) = recipe.visualizer() else {
-        // progress / shape 的配方走到这里是 host 的分派错误，不是数据错误。
+        // Routing a progress or shape recipe here is a host dispatch error, not a data error.
         return 0;
     };
-    // `aspect: "square"` 是**配方声明的**几何约束：在盒内取内切正方形再画，
-    // 圆形类样式因此在任何元素盒里都是正圆而不是椭圆（几何默认表给的
-    // 「画幅宽 30% × 画幅高 30%」在 16:9 上并不是像素正方）。
+    // `aspect: "square"` is a **geometric constraint declared by the recipe**: the style is drawn in the largest inscribed square of the box, so circular styles are perfect circles in any element box rather than ellipses. (The default geometry table's "30% of frame width × 30% of frame height" is not a pixel square at 16:9.)
     let bbox = match body.aspect {
         VisualizerAspect::Square => bbox.inscribed_square(),
         VisualizerAspect::Free => bbox,
@@ -101,8 +78,7 @@ pub fn visualizer_frame(
         RecipeAlgorithm::RibbonsV1 => {
             recipes::ribbons_v1::draw(builder, body, params, viz, time, bbox, tf)
         }
-        // progress / confetti 的算法名不可能出现在 visualizer 配方体里：配方解析期
-        // 已经按 `RecipeAlgorithm::kind()` 拦下了（`manifest-invalid`）。
+        // Progress and confetti algorithm names cannot appear in a visualizer recipe body. They are already rejected at recipe parse time by `RecipeAlgorithm::kind()` (`manifest-invalid`).
         RecipeAlgorithm::BarV1
         | RecipeAlgorithm::FrameV1
         | RecipeAlgorithm::RingV1
@@ -130,7 +106,7 @@ mod tests {
         }
     }
 
-    /// 一帧有起伏的波形 + 前半段高、后半段低的频谱。
+    /// One frame with a rising and falling waveform, plus a spectrum that is high in the first half and low in the second half.
     fn shaped() -> VizFrame {
         let time: Vec<u8> = (0..128)
             .map(|i| {
@@ -192,7 +168,7 @@ mod tests {
         builder.frame.ops.iter().filter(|op| pred(op)).count()
     }
 
-    /// **10 种全部画得出东西**，且返回值就是压入的条数；静音也不例外。
+    /// **All 10 styles draw something**, and the return value is the number of ops pushed. This holds even in silence.
     #[test]
     fn every_catalogue_style_draws_something_even_in_silence() {
         let styles = motion::preset_registry::timeline_visualizers();
@@ -207,7 +183,7 @@ mod tests {
         }
     }
 
-    /// 旧 id 经别名表折到新样式，画出来的东西逐条相同。
+    /// Old ids are folded into the new styles through the alias table, and the output is identical item by item.
     #[test]
     fn legacy_ids_draw_through_the_alias_table() {
         for (old, new) in [
@@ -226,7 +202,7 @@ mod tests {
         }
     }
 
-    /// `u_time` 的口径（§13 P4 偏离 9）：只有 `ribbons` 随时刻变。
+    /// The meaning of `u_time` (§13 P4 deviation 9): only `ribbons` changes over time.
     #[test]
     fn only_the_ribbons_read_the_clock() {
         let print =
@@ -238,13 +214,13 @@ mod tests {
         }
     }
 
-    /// 柱数、圆角与对齐全部来自 manifest。
+    /// Column count, corner radius and alignment all come from the manifest.
     #[test]
     fn the_bar_family_follows_the_manifest() {
         let bars = rects(&draw("bars", &frame()));
         assert_eq!(bars.len(), 48);
         assert!(bars.iter().all(|r| r.4 == 0.0), "bars 没有圆角");
-        // mirror：柱子以盒子中线对称。
+        // mirror: the columns are symmetric about the box's center line.
         for (_, y, _, h, _) in &bars {
             assert!((y + h / 2.0 - 45.0).abs() < 1e-3, "y={y} h={h}");
         }
@@ -265,7 +241,7 @@ mod tests {
         }
     }
 
-    /// 静音只剩 `minHeight` 的短柱；有声时柱子变高，且不超出盒子。
+    /// In silence only short columns at `minHeight` remain. With sound, the columns grow taller, without exceeding the box.
     #[test]
     fn silence_leaves_the_minimum_bars() {
         let quiet = rects(&draw("bars", &silence()));
@@ -277,7 +253,7 @@ mod tests {
         assert!(loud.iter().all(|r| r.3 > 30.0 && r.3 <= 50.0), "{loud:?}");
     }
 
-    /// `gap` 是槽宽的分数：柱宽 = 槽宽 × (1 − gap)，柱子在槽内居中。
+    /// `gap` is a fraction of the slot width: column width = slot width × (1 − gap), and each column is centered in its slot.
     #[test]
     fn the_gap_is_a_fraction_of_the_slot() {
         let bottom = rects(&draw("bars_bottom", &frame()));
@@ -289,7 +265,7 @@ mod tests {
         }
     }
 
-    /// `square` 配方在内切正方形里画：`ring_bars` 的扇区全部落在 x ∈ [35, 85]。
+    /// The `square` recipe is drawn within the inscribed square: `ring_bars`' sectors all fall within x ∈ [35, 85].
     #[test]
     fn the_square_aspect_draws_inside_the_inscribed_square() {
         let builder = draw("ring_bars", &frame());
@@ -321,7 +297,7 @@ mod tests {
         }
     }
 
-    /// 示波器读时域行：静音是一条平直的中线，有波形就离开中线。
+    /// The oscilloscope reads the time-domain row. In silence it is a flat centerline, and any waveform moves away from it.
     #[test]
     fn the_oscilloscope_reads_the_time_row() {
         let flat = draw("oscilloscope", &silence());
@@ -342,7 +318,7 @@ mod tests {
         assert!(min >= 20.0 && max <= 70.0, "不出盒子");
     }
 
-    /// `ring_wave` 是闭合的极坐标示波器：静音是基圆，路径以 close 收口。
+    /// `ring_wave` is a closed polar oscilloscope. In silence it is the base circle, and the path closes with `close`.
     #[test]
     fn the_ring_wave_closes_around_the_base_circle() {
         let flat = draw("ring_wave", &silence());
@@ -359,7 +335,7 @@ mod tests {
         }
     }
 
-    /// 面积图：一条填充 + 一条描边，填充闭合到盒底。
+    /// Area chart: one fill and one stroke. The fill closes down to the bottom of the box.
     #[test]
     fn the_spectrum_area_fills_down_to_the_bottom_edge() {
         let builder = draw("spectrum_area", &frame());
@@ -377,7 +353,7 @@ mod tests {
         assert_eq!(area[66].verb, 4);
     }
 
-    /// 点阵：列数来自 manifest，每列最高一颗用副色，静音仍留一排底灯。
+    /// Dot matrix: the column count comes from the manifest. The top dot of each column uses the secondary color, and silence still leaves a row of base lights.
     #[test]
     fn the_dot_matrix_lights_a_peak_per_column() {
         let loud = draw("dots", &frame());
@@ -400,12 +376,12 @@ mod tests {
         );
     }
 
-    /// 脉冲环：圆盘 + `bands` 个环，静音停在静止位，有声向外推。
+    /// Pulse ring: a disc plus `bands` rings. In silence it stays at its rest position, and with sound it is pushed outward.
     #[test]
     fn the_pulse_rings_expand_with_the_bands() {
         let radius_of = |builder: &FrameBuilder, index: usize| -> f32 {
             let seg = &builder.frame.paths[index].0[0];
-            // 环从正上方起：圆心 (60, 45)，move 点在 (60, 45 − r)。
+            // The ring starts from straight up: center (60, 45), with the move point at (60, 45 − r).
             45.0 - seg.pts[1]
         };
         let quiet = draw("pulse_rings", &silence());
@@ -422,7 +398,7 @@ mod tests {
         }
     }
 
-    /// 丝带：条数与采样点来自 manifest，颜色从主色渐变到副色。
+    /// Ribbons: the number of strands and the sample points come from the manifest. The color fades from the primary to the secondary.
     #[test]
     fn the_ribbons_blend_from_main_to_secondary() {
         let builder = draw("ribbons", &shaped());
@@ -442,7 +418,7 @@ mod tests {
         assert!(builder.frame.paths.iter().all(|path| path.0.len() == 96));
     }
 
-    /// progress 的配方走到 visualizer 入口：返回 0，不 panic。
+    /// A progress recipe reaching the visualizer entry: returns 0 and does not panic.
     #[test]
     fn a_progress_recipe_draws_nothing_instead_of_panicking() {
         let recipe = motion::preset_registry::timeline_progress("normal").expect("已登记");

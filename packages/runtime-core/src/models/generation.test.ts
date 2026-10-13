@@ -20,9 +20,7 @@ import { resolveEngineHostCommand } from '../videos/engine-host.ts';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 
 /**
- * 生成能力（`models.synthesizeSpeech`、`models.generateImage`，架构设计 §6.6、§7）经网关端到端：选择与「没有配置」、
- * 提交时的检查、JobManager → 假供应商 → ffprobe 解码校验 → 产物 → `artifacts.openHandle` 读回；给了视频时经真实引擎
- * 导入为素材。测试只连本机回环地址上的假供应商，密钥是测试里编的字符串。
+ * Generation capabilities (`models.synthesizeSpeech`, `models.generateImage`, architecture design §6.6, §7), end to end through the gateway: selection and “not configured”, checks at submission, JobManager → fake provider → ffprobe decode check → artifact → read back via `artifacts.openHandle`. When a video is given, it is imported as an asset through the real engine. The test connects only to fake providers on the loopback address; the keys are strings made up in the test.
  */
 
 const engine = resolveEngineHostCommand();
@@ -118,7 +116,7 @@ function settled(side: Side, jobId: string): Promise<JobRecord> {
   return until(() => side.jobs()!.jobs.find((j) => j.jobId === jobId && ['completed', 'failed', 'cancelled'].includes(j.state)));
 }
 
-/** 日志、账本、配置、主题与 CLI 会看到的记录里都不能出现密钥；诊断目录也一样。 */
+/** Keys must not appear in logs, ledgers, config, themes, or the records the CLI sees; the diagnostics directory is the same. */
 async function expectNoSecret(side: Side, secret: string) {
   const files = [path.join(side.home.logsDir, 'runtime.log'), side.home.jobsFile, side.home.modelServicesFile];
   for (const file of files) expect(await fs.readFile(file, 'utf8').catch(() => ''), file).not.toContain(secret);
@@ -132,7 +130,7 @@ async function expectNoSecret(side: Side, secret: string) {
   expect(JSON.stringify(await side.client.request('jobs.list', {}))).not.toContain(secret);
 }
 
-/** 经 `artifacts.openHandle` 取回产物的字节。 */
+/** Bytes of the artifact retrieved through `artifacts.openHandle`. */
 async function readArtifact(side: Side, artifactId: string): Promise<{ bytes: Buffer; mimeType: string }> {
   const handle = await side.client.request('artifacts.openHandle', { artifactId });
   const response = await fetch(handle.url);
@@ -154,17 +152,17 @@ describe('生成能力：选择与提交时的检查（不需要 ffprobe）', ()
     side = await startSide({});
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.synthesizeSpeech).toMatchObject({ default: null, effective: null });
-    // 本地 Provider 列出语音合成（模型包还没装，不可用），在线的两家也都不可用。
+    // The local Provider lists speech synthesis (the model bundle is not installed, so it is unavailable); both online providers are unavailable too.
     expect(capabilities.synthesizeSpeech.providers.map((p) => [p.providerId, p.available])).toEqual([
       ['local', false],
       ['openai', false],
       ['elevenlabs', false],
     ]);
-    // 图片生成同样列出本地 Provider（文生图模型包还没装），排在在线服务之后。
+    // Image generation also lists the local Provider (the text-to-image model bundle is not installed), ranked after the online services.
     expect(capabilities.generateImage.providers.map((p) => p.providerId)).toEqual(['openai', 'google', 'local']);
     expect(capabilities.generateImage.providers.every((p) => !p.available)).toBe(true);
 
-    // 语音合成有可以安装的本地模型包，补救是安装模型；图片生成的本机模型包不作补救（界面只回落到云端），补救是配置在线服务。
+    // Speech synthesis has an installable local model bundle, so the remedy is to install the model; the local model bundle for image generation is not offered as a remedy (the UI only falls back to the cloud), so the remedy is to configure an online service.
     for (const [method, params, capability, action] of [
       ['models.synthesizeSpeech', { text: '你好' }, 'synthesizeSpeech', 'install-model'],
       ['models.generateImage', { prompt: 'a cat' }, 'generateImage', 'configure-provider'],
@@ -189,7 +187,7 @@ describe('生成能力：选择与提交时的检查（不需要 ffprobe）', ()
       details: { code: 'CAPABILITY_NOT_CONFIGURED', reason: 'no-default', remedy: { action: 'set-default' } },
     });
 
-    // 提交时的检查：超过模型上限的文本、模型没有的音色、模型不接受的参数都在提交时拒绝，不截断。
+    // Checks at submission: text over the model's limit, voices the model does not have, and parameters the model does not accept are all rejected at submission, not truncated.
     const long = 'a'.repeat(4097);
     const tooLong = await side.client.request('models.synthesizeSpeech', { text: long, provider: 'openai' }).catch((e: unknown) => e);
     expect(tooLong).toMatchObject({
@@ -439,12 +437,12 @@ describe.skipIf(!ffprobe || !engine)('生成结果导入视频（真实引擎）
         parameters: { voice: 'marin', format: 'mp3' },
       },
     });
-    // 来源里不记原文。
+    // The source does not record the original text.
     expect(JSON.stringify(revision.provenance)).not.toContain('第一句旁白');
 
     const images = imageJob.result!.outputs!.map((o) => video.assets[o.assetId!]!);
     expect(images.map((a) => a.name)).toEqual(['图片：a lighthouse 1', '图片：a lighthouse 2']);
-    // 只是候选素材：时间线没有变化。
+    // It is only a candidate asset: the timeline is unchanged.
     expect(JSON.stringify(video.sequences)).toBe(JSON.stringify(before.sequences));
     await expectNoSecret(side, OPENAI_KEY);
   });

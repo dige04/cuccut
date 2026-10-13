@@ -9,8 +9,7 @@ import type { FindOptions } from '../../model/text-find.ts';
 import { TRANSCRIPT_TOOLS_COPY as T } from './transcript-copy.ts';
 
 /**
- * 文稿面板的查找替换条（设计稿 panels.jsx `<FindBar find placeholder="在文稿里查找" hint={lockHint}>`）。外观与键位照字幕面板的
- * 查找条（Enter 下一个、⇧Enter 上一个、Esc 关）；多一行 `hint`：当前命中为什么改不了（译文只查不改等），这时「替换」是灰的。
+ * Find and replace bar for the transcript panel (design mock panels.jsx `<FindBar find placeholder="在文稿里查找" hint={lockHint}>`, “Find in transcript”). Look and keys follow the subtitle panel's find bar (Enter for next, ⇧Enter for previous, Esc to close). It adds one line, `hint`: why the current match cannot be changed (translation is find-only, and so on). In that case “Replace” is greyed out.
  */
 
 const findbar = style({
@@ -71,11 +70,11 @@ export function TranscriptFindBar({
   index: number;
   onStep(direction: 1 | -1): void;
   onClose(): void;
-  /** 当前这一处能不能替换。 */
+  /** Whether this one occurrence can be replaced. */
   canReplace: boolean;
-  /** 有没有能替换的命中。 */
+  /** Whether there is any match that can be replaced. */
   canReplaceAll: boolean;
-  /** 当前命中改不了的原因。 */
+  /** Why the current match cannot be changed. */
   hint: string | null;
   onReplace(): void;
   onReplaceAll(): void;

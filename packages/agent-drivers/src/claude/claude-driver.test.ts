@@ -10,8 +10,8 @@ import { FALLBACK_CLAUDE_MODELS } from './claude-models.ts';
 import { ClaudeSession } from './claude-session.ts';
 
 /**
- * Claude Driver 的探测，对着假 claude（`--version`、`auth status`）与假 Query（`supportedModels()`）。
- * 从不启动本机真实的 claude。
+ * Claude Driver probing, against a fake claude (`--version`, `auth status`) and a fake Query (`supportedModels()`).
+ * It never starts the real claude on this machine.
  */
 
 describe('ClaudeDriver 探测（假 claude）', () => {
@@ -46,7 +46,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     cli.scenario({ version: '2.1.284', auth: { loggedIn: false, authMethod: 'none', apiProvider: 'firstParty' } });
     const signedOut = await driver.probe();
     expect(signedOut).toMatchObject({ state: 'signed-out', unavailableReason: 'not-connected', version: '2.1.284', account: null });
-    // 没登录也拿得到模型表。
+    // The model table is still available when not logged in.
     expect(signedOut.models.length).toBeGreaterThan(0);
 
     cli.scenario({ auth: { loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', subscriptionType: 'max', email: 'someone@example.com' } });
@@ -61,7 +61,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
       capabilities: { steer: true, approvals: true, resume: true, images: true },
       realExecutable: await fs.realpath(cli.command),
     });
-    // 账号描述不带邮箱。
+    // The account description has no email.
     expect(JSON.stringify(ready)).not.toContain('someone@example.com');
     expect(ready.install.map((i) => [i.kind, i.command, i.upgrade])).toEqual([
       ['script', 'curl -fsSL https://claude.ai/install.sh | bash', 'claude update'],
@@ -192,7 +192,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
       ['claude-fable-5-1[1m]', 'max'],
       ['sonnet', 'balanced'],
       ['haiku', 'fast'],
-      // claude-opus-5-5 是 opus 解析到的完整 id，不重复列。
+      // claude-opus-5-5 is the full id that opus resolves to, so it is not listed twice.
       ['gateway-main', null],
       ['corp-sonnet-proxy', 'balanced'],
     ]);

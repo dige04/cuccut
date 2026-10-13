@@ -63,7 +63,7 @@ function videoItem(id: string, fromFrame: number, durationFrames: number, source
   };
 }
 
-/** 1s + 1/60s 起播 4 秒的配乐。 */
+/** 4-second background music that starts at 1 s + 1/60 s. */
 const audio = {
   ...base,
   id: 'item_music',
@@ -100,7 +100,7 @@ const translationBody = {
   units: [{ id: 'u1', alignment: { sourceWordIds: ['w2'] } }],
 };
 
-/** 父视频已有的剪口：源时钟 3s–10s（item_a 播到 3s，item_b 从 10s 起播，正是剪掉之后的样子）。 */
+/** The parent video already has cuts: source clock 3 s–10 s (item_a plays up to 3 s, item_b starts playing at 10 s, which is how it looks after the cut). */
 const parentCutSet = {
   schema: 'cuccut.cut-set/1',
   timescale: 1000,
@@ -172,7 +172,7 @@ function video(items: SequenceItem[], extra: Partial<Seq> = {}, withCutSet = fal
 }
 
 const settings: DeriveSettings = { width: 1080, height: 1920, fit: 'cover', crop: null, captions: true, translations: true, chapters: true };
-/** item_a：0–3s 播源 0–3s；item_b：3–6s 以两倍速播源 10–16s；配乐另起一轨。 */
+/** item_a: 0–3 s plays source 0–3 s; item_b: 3–6 s plays source 10–16 s at 2× speed; the music is on its own track. */
 const items: SequenceItem[] = [videoItem('item_a', 0, 90, 0), videoItem('item_b', 90, 90, 10, 2), audio];
 const childTracks = [track('trk_c1', 0, 'visual'), track('trk_c2', 1, 'audio')];
 
@@ -208,7 +208,7 @@ function plan(
   });
 }
 
-/** 子视频第一笔事务之后的样子：实例同位置、换了 ID 与轨道。 */
+/** What the child video looks like after the first transaction: instances in the same positions, with new IDs and tracks. */
 function childAfterCopy(parentItems: SequenceItem[], trackMap: Record<string, string>) {
   const copied = parentItems.map((item) => ({ ...item, id: `new_${item.id}`, trackId: trackMap[item.trackId]! }));
   return {
@@ -240,28 +240,28 @@ describe('alignRange', () => {
 
   it('句间停顿比一帧短时边界留在停顿里：终点越过下一个词的起点改向下，起点落进上一个词改向上', () => {
     const sequence = video(items).sequences.seq_1!;
-    // 30 fps 一帧约 33 ms；两处停顿都只有 30–35 ms。
+    // At 30 fps one frame is about 33 ms; both pauses are only 30–35 ms.
     const words = [
       { start: 0.2, end: 1.005 },
       { start: 1.04, end: 1.995 },
       { start: 2.025, end: 2.5 },
     ];
-    // 终点 2.01：向上是 61 帧（2.033s），越过下一个词的起点 2.025，改为 60 帧（2.0s）。
-    // 起点 1.02：向下是 30 帧（1.0s），落在上一个词结束（1.005s）之前，改为 31 帧（1.033s）。
+    // End 2.01: rounding up gives 61 frames (2.033 s), which crosses the start of the next word at 2.025, so it becomes 60 frames (2.0 s).
+    // Start 1.02: rounding down gives 30 frames (1.0 s), which falls before the end of the previous word (1.005 s), so it becomes 31 frames (1.033 s).
     expect(alignRange(sequence, 1.02, 2.01, words)).toMatchObject({ startFrame: 31, endFrame: 60, end: 2 });
-    // 不给词时照旧。
+    // Without words, the behaviour is unchanged.
     expect(alignRange(sequence, 1.02, 2.01)).toMatchObject({ startFrame: 30, endFrame: 61 });
-    // 取整没碰到词：不改。
+    // Rounding did not touch a word: no change.
     expect(alignRange(sequence, 1.5, 1.99, words)).toMatchObject({ startFrame: 45, endFrame: 60 });
-    // 区间落在一个词里（终点之后的词才算下一个）：照常向上。
+    // The range falls inside a word (only a word after the end counts as the next one): round up as usual.
     expect(alignRange(sequence, 1.1, 1.9, words)).toMatchObject({ startFrame: 33, endFrame: 57 });
-    // 改了之后区间会空：不改。
+    // After the change the range would be empty: no change.
     expect(alignRange(sequence, 2.005, 2.01, words)).toMatchObject({ startFrame: 60, endFrame: 61 });
   });
 
   it('timelineWords 把转写的词按播放它的实例投到剪辑后的时间线上（变速、剪掉的不在）', () => {
     const words = timelineWords(video(items), new Map([['doc_speech', speechBody]]));
-    // w1、w2 在 item_a（源 0–3s 原速）；w3（源 3.5s）没播放；w4（源 11s）在 item_b（时间线 3s 起两倍速播源 10s）。
+    // w1 and w2 are in item_a (source 0–3 s at normal speed); w3 (source 3.5 s) is not played; w4 (source 11 s) is in item_b (from timeline 3 s it plays source 10 s at 2× speed).
     expect(words).toEqual([
       { start: 0.5, end: 1 },
       { start: 1.6, end: 2 },
@@ -285,7 +285,7 @@ describe('planDerivation：整份复制', () => {
       expect(item).not.toHaveProperty('assetRef');
       expect(item.followPolicy).toEqual({ kind: 'follow-cuts' });
     }
-    // 淡入淡出不改。
+    // Fades are unchanged.
     expect(a!.embeddedAudio.fadeIn).toBeDefined();
     expect(b!.embeddedAudio.fadeOut).toBeDefined();
     expect(p.itemCount).toBe(3);
@@ -296,7 +296,7 @@ describe('planDerivation：整份复制', () => {
     ]);
     const speech = op(p.operations, 'putDocument').find((d) => d.kind === 'speech')!;
     expect(speech).toMatchObject({ ref: 'speech-1', sourceAsset: { ref: 'asset-1' }, language: 'en' });
-    // 整份：词、句子、章节都在。
+    // The whole document: words, sentences and chapters are all there.
     expect(speech.body).toEqual(speechBody);
     expect(p.speech).toEqual([{ ref: 'speech-1', from: 'doc_speech', assetId: 'asset_v', words: 4 }]);
 
@@ -366,7 +366,7 @@ describe('planDerivation：整份复制', () => {
 describe('planDerivation：区间之外的剪口', () => {
   it('对主素材记 [0, S) 与 [E, 时长) 播放的源区间（源时钟、按速度换算）；配乐不剪', () => {
     const p = plan(video(items), 1.5, 4.5);
-    // item_a 的 0–1.5s 播源 0–1.5s；item_b 的 4.5–6s 以两倍速播源 13–16s。
+    // item_a's 0–1.5 s plays source 0–1.5 s; item_b's 4.5–6 s plays source 13–16 s at 2× speed.
     expect(p.cuts).toEqual([
       { assetId: 'asset_v', from: 0, to: 1.5 },
       { assetId: 'asset_v', from: 13, to: 16 },
@@ -379,14 +379,14 @@ describe('planDerivation：区间之外的剪口', () => {
       ],
     });
     expect(p.derivation.cuts).toEqual(p.cuts);
-    // 两个媒体素材：只对主素材记剪口，说明。区间之外都盖住了，配乐跨着区间，不会整个被删。
+    // Two media assets: cuts are recorded only for the main asset, as stated. Everything outside the range is covered; the music spans the range, so it is not deleted as a whole.
     expect(p.warnings).toContainEqual({ code: 'multiple-assets', count: 2 });
     expect(codes(p)).not.toContain('range-not-exact');
     expect(codes(p)).not.toContain('items-not-restorable');
   });
 
   it('同一段源在区间里也播放时不剪那段；没盖住的帧以 range-not-exact 说明', () => {
-    // item_c 在 3–4s 重放源 0–1s：区间 [3, 4) 留着它，所以 item_a 的源 0–1s 不能剪。
+    // item_c replays source 0–1 s at 3–4 s: the range [3, 4) keeps it, so item_a's source 0–1 s cannot be cut.
     const replay: SequenceItem[] = [videoItem('item_a', 0, 90, 0), videoItem('item_c', 90, 30, 0, 1, 1)];
     const p = plan(video(replay, { transitions: [] }), 3, 4);
     expect(p.cuts).toEqual([{ assetId: 'asset_v', from: 1, to: 3 }]);
@@ -411,7 +411,7 @@ describe('planDerivation：区间之外的剪口', () => {
   });
 
   it('别的素材的实例整个落在剪掉的范围里时说明恢复不回来', () => {
-    // 区间 [5.5, 6)：配乐（1.02–5.02s）整个落在 [0, 5.5) 的剪口里。
+    // Range [5.5, 6): the music (1.02–5.02 s) falls entirely within the cut at [0, 5.5).
     const p = plan(video(items), 5.5, 6);
     expect(p.warnings).toContainEqual({ code: 'items-not-restorable', count: 1 });
   });
@@ -419,7 +419,7 @@ describe('planDerivation：区间之外的剪口', () => {
 
 describe('区间里的字幕条', () => {
   it('kept 是区间里播放的源区间（按素材，变速换算）；cuesInRange 只数与它重叠的字幕条', () => {
-    // 时间线 [1.5, 4.5)：item_a 播源 1.5–3s，item_b 两倍速播源 10–13s；配乐（1s+1/60s 起播）播源 0.4833…–3.4833…s。
+    // Timeline [1.5, 4.5): item_a plays source 1.5–3 s, item_b plays source 10–13 s at 2× speed; the music (starting at 1 s + 1/60 s) plays source 0.4833…–3.4833… s.
     const p = plan(video(items), 1.5, 4.5);
     expect(p.kept.map((k) => ({ ...k, from: Number(k.from.toFixed(4)), to: Number(k.to.toFixed(4)) }))).toEqual([
       { assetId: 'asset_a', from: 0.4833, to: 3.4833 },
@@ -452,7 +452,7 @@ describe('planDerivation：父视频已有的剪口（cut-set）', () => {
     const [copied] = p.trim.cutSets;
     expect(copied).toMatchObject({ from: 'doc_cuts', importRef: 'asset-1', body: parentCutSet });
     expect(copied!.scope).toHaveLength(2);
-    // 父视频的剪口（源 3–10s）不在复制的实例里：新剪口不覆盖它，也不重复记。
+    // The parent video's cut (source 3–10 s) is not in the copied instances: the new cut neither overwrites it nor records it again.
     for (const cut of p.cuts) expect(cut.to <= 3 || cut.from >= 10).toBe(true);
     expect(p.cuts).toEqual([
       { assetId: 'asset_v', from: 0, to: 1.5 },
@@ -463,15 +463,15 @@ describe('planDerivation：父视频已有的剪口（cut-set）', () => {
     const trim = planDerivationTrim(p, child, { 'asset-1': 'asset_new_v', 'speech-1': 'doc_new' });
     const cutSet = op(trim, 'putDocument').find((d) => d.kind === 'cut-set')!;
     expect(cutSet).toMatchObject({ sourceAsset: { assetId: 'asset_new_v' }, body: { ...parentCutSet, scopeItemIds: ['new_item_a', 'new_item_b'] } });
-    // 剪口集合先写，再记区间之外的剪口（addCuts 合进同一个集合）。
+    // The cut set is written first, then the cuts outside the range are recorded (addCuts merges them into the same set).
     expect(trim.indexOf(cutSet)).toBeLessThan(trim.findIndex((o) => o.type === 'addCuts'));
   });
 });
 
 describe.skipIf(!editorWasmAvailable())('planDerivation：旧项目的译文（cuccut.translation/1）', () => {
   /**
-   * 旧项目的译文：单元 ID 是旧的句子 ID；一句记着词的范围，一句与规则句同 ID，一句找不到对应的词。
-   * 规则句子（章节在 1s 处断句）：s-w1 [w1]、s-w2 [w2, w3]、s-w4 [w4]。
+   * Translation from an old project: unit IDs are the old sentence IDs; one sentence records a word range, one shares an ID with a rule sentence, and one finds no matching word.
+   * Rule sentences (chapter breaks the sentence at 1 s): s-w1 [w1], s-w2 [w2, w3], s-w4 [w4].
    */
   const legacy = {
     schema: 'cuccut.translation/1',
@@ -504,12 +504,12 @@ describe.skipIf(!editorWasmAvailable())('planDerivation：旧项目的译文（c
       sourceSentenceId: 's-w2',
       sourceFingerprint: expect.stringMatching(/^2:w2:w3:/),
       naturalText: '乙丙',
-      // 旧的显示改写不带（没有改写依据的指纹）。
+      // The old display rewrite is not carried over (a fingerprint with no basis for the rewrite).
       alignment: { basis: 'natural', correspondence: 'sentence', blocks: [], sourceWordIds: ['w2', 'w3'], textHash: `sha256:${sha256Hex('乙丙')}` },
       status: 'draft',
     });
 
-    // 收尾照常写成子视频的译文：sourceBasis 换成子视频的转写与序列。
+    // Finalisation still writes the child video's translation as usual: sourceBasis is switched to the child video's transcript and sequence.
     const child = childAfterCopy(items, { trk_v1: 'trk_c1', trk_a1: 'trk_c2' });
     const trim = planDerivationTrim(p, child, { 'asset-1': 'asset_new_v', 'speech-1': 'doc_new' });
     expect(op(trim, 'putDocument').find((d) => d.kind === 'translation')).toMatchObject({
@@ -561,7 +561,7 @@ describe('planDerivationTrim', () => {
     expect(trim[2]).toMatchObject({ leftItemId: 'new_item_a', rightItemId: 'new_item_b', duration: { unit: 'frames', value: 10 } });
     expect(trim[3]).toMatchObject({
       sourceDocument: { documentId: 'doc_new' },
-      // 文稿整份复制，编辑视图指纹不变。
+      // The document is copied in full; the editing-view fingerprint is unchanged.
       body: { sourceBasis: { speechRef: { id: 'doc_new', revision: '3' }, sequenceId: 'seq_child', editViewHash: 'old' } },
     });
     expect(trim[5]).toEqual({
@@ -577,13 +577,13 @@ describe('planDerivationTrim', () => {
   });
 });
 
-/** 加分段取景之前的幂等键（同一份输入）：没给 crops 的调用键不能变。 */
+/** Idempotency key before per-segment crop was added (same input): the key for a call without crops must not change. */
 const KEY_WITHOUT_CROPS = '72c510ba5c43';
 const A = { left: 0.1, top: 0, right: 0.5, bottom: 0 };
 const B = { left: 0.4, top: 0, right: 0.2, bottom: 0 };
 const C = { left: 0.3, top: 0.05, right: 0.3, bottom: 0.05 };
 const shot = (from: number, to: number, crop: typeof A) => ({ from, to, ...crop });
-/** 区间对齐之后再对齐分段取景，与 prepareDerive 一样。 */
+/** After range alignment, per-segment crop is aligned too, as in prepareDerive. */
 function framed(snapshot: VideoSnapshot, start: number, end: number, crops: ReturnType<typeof shot>[], extra: Partial<DeriveSettings> = {}) {
   const range = alignRange(snapshot.sequences.seq_1!, start, end);
   const aligned = alignCrops(snapshot.sequences.seq_1!, range, crops);
@@ -597,7 +597,7 @@ describe('planDerivation：分段取景（crops）', () => {
     const range = alignRange(sequence, 1, 5);
     const out = alignCrops(sequence, range, [shot(3, 9, C), shot(0, 2, A), shot(2, 2.01, B), shot(2.05, 2.5, B)]);
     expect(out.adjusted).toBe(3);
-    // 2.05 × 30 = 61.5 取 61。
+    // 2.05 × 30 = 61.5, truncated to 61.
     expect(out.crops).toEqual([shot(1, 2, A), shot(61 / 30, 2.5, B), shot(3, 5, C)]);
     expect(alignCrops(sequence, range, [shot(1.5, 2.5, A)])).toEqual({ crops: [shot(1.5, 2.5, A)], adjusted: 0 });
   });
@@ -605,11 +605,11 @@ describe('planDerivation：分段取景（crops）', () => {
   it('alignCrops：区间首尾不足 0.5 秒的缺口并入第一段、最后一段，不计 adjusted；0.6 秒的缺口不并入', () => {
     const sequence = video(items).sequences.seq_1!;
     const range = alignRange(sequence, 1, 5);
-    // 首段晚 0.04 秒起、末段早 0.04 秒止：向外延到区间边界。
+    // The first segment starts 0.04 s late and the last segment ends 0.04 s early: extend them outward to the range boundaries.
     expect(alignCrops(sequence, range, [shot(1.04, 3, A), shot(3, 4.96, B)])).toEqual({ crops: [shot(1, 3, A), shot(3, 5, B)], adjusted: 0 });
-    // 只有一段时两头都延。
+    // With only one segment, both ends are extended.
     expect(alignCrops(sequence, range, [shot(1.1, 4.9, A)])).toEqual({ crops: [shot(1, 5, A)], adjusted: 0 });
-    // 0.6 秒的缺口留给缺省裁剪。
+    // The 0.6 s gap is left to the default trim.
     expect(alignCrops(sequence, range, [shot(1.6, 3, A), shot(3, 4.4, B)])).toEqual({ crops: [shot(1.6, 3, A), shot(3, 4.4, B)], adjusted: 0 });
   });
 
@@ -645,7 +645,7 @@ describe('planDerivation：分段取景（crops）', () => {
         { from: 10, to: 14, crop: C },
       ],
     });
-    // 收尾里转场按位置找回首末段。
+    // In finalisation, transitions find the first and last segments by position.
     const parentItems = items;
     const child = childAfterCopy(parentItems, { trk_v1: 'trk_c1', trk_a1: 'trk_c2' });
     const pieces = entries.map((e, n) => ({ ...parentItems[0]!, id: `piece_${n}`, trackId: 'trk_c1', span: e.span }) as SequenceItem);
@@ -656,7 +656,7 @@ describe('planDerivation：分段取景（crops）', () => {
   });
 
   it('变速片段的拆点 sourceIn 用有理数精算；没盖住的地方用缺省裁剪（没有时不裁）', () => {
-    // 100 帧 = 10/3 秒；item_b 从 3 秒起以两倍速播源 10 秒：源 10 + (10/3 − 3) × 2 = 32/3。
+    // 100 frames = 10/3 s; item_b starts at 3 s and plays source from 10 s at 2× speed: source 10 + (10/3 − 3) × 2 = 32/3.
     const p = framed(video(items), 1, 5, [shot(1, 100 / 30, A)]);
     expect(videoEntries(p).map((e) => [e.span.fromFrame, e.span.durationFrames, e.timeMap.sourceIn, e.crop ?? null])).toEqual([
       [0, 90, { ticks: '0', timescale: 1000 }, A],
@@ -665,7 +665,7 @@ describe('planDerivation：分段取景（crops）', () => {
     ]);
     const withDefault = framed(video(items), 1, 5, [shot(1, 100 / 30, A)], { crop: C });
     expect(videoEntries(withDefault).map((e) => e.crop)).toEqual([A, A, C]);
-    // 拆开的片段在右侧时转场接第一段。
+    // When the split clip is on the right, the transition attaches to the first segment.
     expect(p.trim.transitions[0]).toMatchObject({ left: { position: 'v:0:90' }, right: { position: 'v:90:10' } });
   });
 
@@ -680,13 +680,13 @@ describe('planDerivation：分段取景（crops）', () => {
     expect(middle!.embeddedAudio).toEqual({ enabled: true, volume: 1 });
     expect(last!.embeddedAudio).toEqual({ enabled: true, volume: 1, fadeOut: { ticks: '1', timescale: 2 } });
     expect(p.warnings).toContainEqual({ code: 'animation-split', itemId: 'item_a' });
-    // 没循环、没包络时不提醒。
+    // No warning when there is no loop and no envelope.
     expect(codes(framed(video(items), 0.5, 5, [shot(0.5, 1.5, A), shot(1.5, 2.5, B)]))).not.toContain('animation-split');
   });
 
   it('边界在区间起止上不拆；相邻两段裁剪相同不拆；截过的段以 crops-adjusted 说明', () => {
     const p = framed(video(items), 1, 3, [shot(0, 2, A), shot(2, 3, A), shot(3, 6, B)]);
-    // [3, 6) 截完为空丢掉，[0, 2) 截到 1 秒：两段。
+    // [3, 6) becomes empty after trimming and is dropped; [0, 2) is trimmed to 1 s: two segments.
     expect(p.warnings).toContainEqual({ code: 'crops-adjusted', count: 2 });
     expect(videoEntries(p).map((e) => [e.span.fromFrame, e.crop])).toEqual([
       [0, A],
@@ -721,7 +721,7 @@ describe('clockLabel', () => {
   });
 });
 
-// ---- 真实引擎：恢复剪口回到父视频全貌，父视频的剪口不丢、不重复 ----
+// ---- Real engine: restoring the cuts returns the parent video to its full extent; the parent's cuts are neither lost nor duplicated ----
 
 const engine = resolveEngineHostCommand();
 const ffmpeg = (() => {
@@ -798,7 +798,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     });
   }
 
-  /** 时间线上播放的源：相邻且源时钟连续的段合成一段（恢复剪口时实例可能是拆开的）。 */
+  /** Source played on the timeline: adjacent segments whose source clock is continuous are merged into one (instances may be split apart when cuts are restored). */
   function playback(videoId: string) {
     const sequence = sequenceOf(videoId);
     const fps = sequence.fps.num / sequence.fps.den;
@@ -850,7 +850,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
       },
     ]);
     const assetId = Object.keys(snapshotOf(videoId).assets)[0]!;
-    // 父视频先剪掉源 1.5–2s：时间线 0–1.5s 播源 0–1.5s，1.5–3.5s 播源 2–4s。
+    // The parent first cuts source 1.5–2 s: timeline 0–1.5 s plays source 0–1.5 s, and 1.5–3.5 s plays source 2–4 s.
     await apply(videoId, [{ type: 'addCuts', sequenceId, assetId, cuts: [{ from: '1.5', to: '2' }] }]);
     return { videoId, assetId };
   }
@@ -866,7 +866,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     const parentCuts = seconds((await documentOf(parent.videoId, 'cut-set')) as CutSetBodyShape);
     expect(parentCuts).toEqual([{ id: expect.any(String), from: 1.5, to: 2 }]);
 
-    // 时间线 [1, 2)：源 1–1.5s 与 2–2.5s 留下；区间之外是源 0–1s 与 2.5–4s。
+    // Timeline [1, 2): source 1–1.5 s and 2–2.5 s remain; outside the range are source 0–1 s and 2.5–4 s.
     const derived = await client.request('videos.derive', {
       videoId: parent.videoId,
       start: 1,
@@ -882,7 +882,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
       reason: 'Short and complete',
       notes: ['Opens mid-thought'],
     });
-    // 结果回显写进派生来源文档的那份挑选说明。
+    // The result echo is written into the selection note of the derived source document.
     expect(derived).toMatchObject({ hook: 'beta gamma', reason: 'Short and complete', notes: ['Opens mid-thought'] });
     expect(derived.primaryAssetId).toBe(parent.assetId);
     expect(derived.cuts).toEqual([
@@ -893,27 +893,27 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     const childId = derived.video.videoId;
     expect(childId).not.toBe(parent.videoId);
 
-    // 剪掉之后，子视频的时间线只剩区间：1 秒，播源 1–1.5s 与 2–2.5s。
+    // After cutting, the child video's timeline is only the range: 1 s, playing source 1–1.5 s and 2–2.5 s.
     expect(playback(childId)).toEqual([
       { from: 0, to: 15, sourceIn: 1 },
       { from: 15, to: 30, sourceIn: 2 },
     ]);
-    // 文稿是整份（区间之外的话显示为剪掉的）。
+    // The document is whole (lines outside the range show as cut).
     expect(await documentOf(childId, 'speech')).toEqual(parentSpeech);
-    // 字幕层按整份文稿切条（两条），cueCount 只数区间里（源 1–1.5s 与 2–2.5s）看得到的那一条。
+    // The subtitle layer is split per cue across the whole document (two cues); cueCount counts only the one visible within the range (source 1–1.5 s and 2–2.5 s).
     expect(((await documentOf(childId, 'caption')) as { cues: unknown[] }).cues).toHaveLength(2);
     expect(derived.captions).toEqual([expect.objectContaining({ cueCount: 1 })]);
-    // (b) 剪口集合：父视频的剪口在，区间之外的两个剪口各记一次，没有重复。
+    // (b) Cut set: the parent's cut is present, and the two cuts outside the range are each recorded once, with no duplicates.
     const childCuts = seconds((await documentOf(childId, 'cut-set')) as CutSetBodyShape);
     expect(childCuts.map(({ from, to }) => ({ from, to }))).toEqual([
       { from: 0, to: 1 },
       { from: 1.5, to: 2 },
       { from: 2.5, to: 4 },
     ]);
-    // 父视频本身不变。
+    // The parent video itself is unchanged.
     expect(playback(parent.videoId)).toEqual(parentPlayback);
 
-    // (a) 恢复区间之外的剪口：回到父视频的全貌（父视频自己的剪口仍剪着）。
+    // (a) Restore the cuts outside the range: back to the parent video's full extent (its own cuts remain).
     const childAsset = Object.keys(snapshotOf(childId).assets)[0]!;
     const childSequence = snapshotOf(childId).rootSequenceId;
     for (const cut of childCuts.filter((c) => c.from !== 1.5)) {
@@ -923,7 +923,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     expect(await documentOf(childId, 'speech')).toEqual(parentSpeech);
     expect(seconds((await documentOf(childId, 'cut-set')) as CutSetBodyShape).map(({ from, to }) => ({ from, to }))).toEqual([{ from: 1.5, to: 2 }]);
 
-    // 父视频的剪口也恢复：子视频与恢复同一个剪口的父视频一样。
+    // The parent's cut is restored too: the child video matches a parent that restores the same cut.
     const inherited = childCuts.find((c) => c.from === 1.5)!;
     await apply(childId, [{ type: 'restoreCut', sequenceId: childSequence, assetId: childAsset, cutId: inherited.id }]);
     await apply(parent.videoId, [{ type: 'restoreCut', sequenceId: snapshotOf(parent.videoId).rootSequenceId, assetId: parent.assetId, cutId: parentCuts[0]!.id }]);
@@ -936,7 +936,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     const A = { left: 0.1, top: 0, right: 0.5, bottom: 0 };
     const B = { left: 0.4, top: 0, right: 0.2, bottom: 0 };
     const C = { left: 0.3, top: 0, right: 0.3, bottom: 0 };
-    // 父视频：时间线 0–1.5s 播源 0–1.5s，1.5–3.5s 播源 2–4s。区间 [0.5, 3)，取景在 1s 与 2.5s 换：两个片段各拆一刀。
+    // Parent: timeline 0–1.5 s plays source 0–1.5 s, and 1.5–3.5 s plays source 2–4 s. Range [0.5, 3), crop switches at 1 s and 2.5 s: each of the two clips is cut once.
     const derived = await client.request('videos.derive', {
       videoId: parent.videoId,
       start: 0.5,
@@ -964,7 +964,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
         const map = item.timeMap as { sourceIn: { ticks: string; timescale: number } };
         return [item.span.fromFrame, item.span.durationFrames, Number((Number(map.sourceIn.ticks) / map.sourceIn.timescale).toFixed(6)), item.crop];
       });
-    // 剪掉区间之外（源 0–0.5s 与 3.5–4s）之后：四段，各自的裁剪。
+    // After cutting outside the range (source 0–0.5 s and 3.5–4 s): four segments, each with its own crop.
     expect(shape()).toEqual([
       [0, 15, 0.5, A],
       [15, 15, 1, B],
@@ -982,11 +982,11 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
         { from: 3, to: 3.5, crop: C },
       ],
     });
-    // 原文字幕层的范围是全部各段。
+    // The original subtitle layer covers all segments.
     const caption = sequenceOf(childId).items.find((item) => item.type === 'caption') as { scopeItemIds?: string[] } | undefined;
     expect([...(caption?.scopeItemIds ?? [])].sort()).toEqual(videoItems().map((i) => i.id).sort());
 
-    // 恢复开头的剪口（源 0–0.5s）：第一段往前延长，各段裁剪不变。
+    // Restoring the opening cut (source 0–0.5 s): the first segment extends backward; the crops of each segment are unchanged.
     const childAsset = Object.keys(snapshotOf(childId).assets)[0]!;
     const cutSet = seconds((await documentOf(childId, 'cut-set')) as CutSetBodyShape);
     const head = cutSet.find((c) => c.from === 0)!;
@@ -1034,7 +1034,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     expect(body.units).toEqual([
       expect.objectContaining({ sourceSentenceId: 's-w1', naturalText: '阿尔法贝塔伽马德尔塔欧米伽。', status: 'draft' }),
     ]);
-    // 子视频里原文与译文各一层字幕。
+    // The child video has an original-text subtitle layer and a translation subtitle layer.
     expect(derived.captions.map((c) => c.sourceDocumentId).sort()).toEqual([translation.sourceDocumentId, translation.documentId].sort());
     const child = snapshotOf(childId);
     const layers = sequenceOf(childId).items.filter((i) => i.type === 'caption');
@@ -1051,7 +1051,7 @@ describe.skipIf(!engine || !ffmpeg)('videos.derive（真实引擎）', () => {
     expect(first).not.toHaveProperty('reason');
     const revision = snapshotOf(first.video.videoId).revision;
     const again = await client.request('videos.derive', { videoId: parent.videoId, start: 1, end: 2, hook: 'Something else', reason: 'Changed my mind' });
-    // 认回时派生来源文档不改写，回显的是原来那份。
+    // On recognition the derived source document is not rewritten; the echo returns the original one.
     expect(again).toMatchObject({ hook: 'beta gamma', notes: ['Opens mid-thought'] });
     expect(again).not.toHaveProperty('reason');
     expect(again.video.videoId).toBe(first.video.videoId);

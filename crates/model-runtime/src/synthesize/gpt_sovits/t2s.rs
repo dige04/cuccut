@@ -1,9 +1,9 @@
-//! T2S：GPT-SoVITS 的自回归语义 token 生成器（`s1bert25hz-5kh-longer`），对照
-//! `AR/models/t2s_model.py::Text2SemanticDecoder.infer_panel_naive`。
+//! T2S: GPT-SoVITS's autoregressive semantic token generator (`s1bert25hz-5kh-longer`), matching
+//! `AR/models/t2s_model.py::Text2SemanticDecoder.infer_panel_naive`.
 //!
-//! 24 层 post-norm Transformer（512 维、16 头、FFN 2048、ReLU）。文本侧 = 音素嵌入 +
-//! `bert_proj`（1024 → 512）+ 正弦位置编码；语音侧 = 语义 token 嵌入 + 正弦位置编码。
-//! 预填充时文本行看不到语音列、语音列之间因果；之后逐 token 解码，KV 沿序列拼接。
+//! 24-layer post-norm Transformer (512 dims, 16 heads, FFN 2048, ReLU). Text side = phoneme embedding +
+//! `bert_proj` (1024 → 512) + sinusoidal positional encoding; speech side = semantic token embedding + sinusoidal positional encoding.
+//! During prefill, text rows cannot see speech columns, and speech columns are causal among themselves; afterwards decoding proceeds token by token, with the KV cache concatenated along the sequence.
 
 use super::ABORT_MESSAGE;
 use super::layers::{LayerNorm, Linear};
@@ -15,20 +15,20 @@ use crate::synthesize::tensor::ops::indexing::IndexOp;
 use crate::synthesize::tensor::{Array, Dtype, fast, ops};
 use anyhow::{Result, bail, ensure};
 
-/// 语义 token 词表 1025 项，最后一项是 EOS。
+/// The semantic token vocabulary has 1025 entries; the last one is EOS.
 pub const EOS: usize = 1024;
-/// BERT 逐音素特征维度。
+/// Dimension of the per-phoneme BERT features.
 pub const BERT_DIM: usize = 1024;
-/// 音素词表（`text/symbols2.py`）。
+/// Phoneme vocabulary (`text/symbols2.py`).
 pub const PHONE_VOCAB: usize = 732;
 const D_MODEL: i32 = 512;
 const HEADS: i32 = 16;
 const HEAD_DIM: i32 = D_MODEL / HEADS;
 const LAYERS: usize = 24;
 const LAYER_NORM_EPS: f32 = 1e-5;
-/// 每句最多生成的语义 token（25 Hz，一分钟）；`SamplingOptions::max_tokens` 只能调小。
+/// Maximum semantic tokens generated per sentence (25 Hz, one minute); `SamplingOptions::max_tokens` can only lower it.
 pub const MAX_STEPS: usize = super::sampling::DEFAULT_MAX_TOKENS;
-/// 前 11 步去掉 EOS 列（至少 0.4 秒语音才允许停）。
+/// For the first 11 steps the EOS column is removed (speech must be at least 0.4 seconds before it may stop).
 const MIN_STEPS_BEFORE_EOS: usize = 11;
 
 struct Block {
@@ -117,8 +117,8 @@ impl T2s {
         })
     }
 
-    /// `phones` / `bert`（`[phones, 1024]` 行优先）是提示文本与目标文本拼接后的结果；
-    /// `prompt` 为空表示无参考文本模式（ref_free）。返回新生成的语义 token（不含提示与 EOS）。
+    /// `phones` / `bert` (`[phones, 1024]`, row-major) are the result of concatenating the prompt text and the target text;
+    /// an empty `prompt` means no-reference-text mode (ref_free). Returns the newly generated semantic tokens (excluding the prompt and EOS).
     pub fn generate(
         &self,
         phones: &[i32],
@@ -196,7 +196,7 @@ fn scalar(array: &Array) -> Result<f32> {
     Ok(array.as_slice::<f32>()[0])
 }
 
-/// `SinePositionalEmbedding`（`x_scale = 1`）：偶数维 sin、奇数维 cos。
+/// `SinePositionalEmbedding` (`x_scale = 1`): sin on even dimensions, cos on odd dimensions.
 fn positional_encoding_values(start: usize, len: usize) -> Vec<f32> {
     let dim = D_MODEL as usize;
     let factor = -(10000.0f32.ln() / D_MODEL as f32);
@@ -215,7 +215,7 @@ fn positional_encoding(start: usize, len: usize) -> Array {
     Array::from_slice(&positional_encoding_values(start, len), &[1, len as i32, D_MODEL])
 }
 
-/// 预填充加性掩码 `[x_len + y_len]²`：文本行屏蔽全部语音列，语音行对文本全开、对语音因果。
+/// Additive prefill mask `[x_len + y_len]²`: text rows mask out all speech columns; speech rows are fully open to text and causal to speech.
 fn prefill_mask(x_len: usize, y_len: usize) -> Vec<f32> {
     let total = x_len + y_len;
     let mut mask = vec![0.0f32; total * total];
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(pe[1], 1.0);
         assert!((pe[dim] - 1.0f32.sin()).abs() < 1e-6);
         assert!((pe[dim + 1] - 1.0f32.cos()).abs() < 1e-6);
-        // 第 2 个频率：div = exp(2 · -ln(10000)/512)。
+        // Second frequency: div = exp(2 · -ln(10000)/512).
         let div = (2.0 * -(10000.0f32.ln() / 512.0)).exp();
         assert!((pe[2 * dim + 2] - (2.0 * div).sin()).abs() < 1e-6);
         let shifted = positional_encoding_values(2, 1);

@@ -36,7 +36,7 @@ type DubStatus = 'failed' | 'needs-fit' | 'stale' | 'draft';
 const sentencesEn = (n: number) => (n === 1 ? '1 sentence' : `${n} sentences`);
 const filesEn = (n: number) => (n === 1 ? '1 file' : `${n} files`);
 
-/** 编辑操作与配音分组卡片的文案（英文是键与类型的来源，译文在 `editor-ops.zh-Hans.ts`）。 */
+/** Copy for the edit operations and the dub-group card (English is the source of keys and types; translations are in `editor-ops.zh-Hans.ts`). */
 const en = {
   dubStatus: {
     failed: 'Not synthesized',
@@ -62,13 +62,12 @@ export type EditorOpsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 编辑器里手工操作对应的引擎操作（命令与协议规范 §4.2）。拖动与拆分按帧提交（落点就在帧上，不再量化）；
- * 输入框里打的秒数按十进制字符串提交，由引擎量化并在回执里给出实际落点（产品设计 §5.8）。
+ * The engine operations behind manual actions in the editor (command and protocol spec §4.2). Drag and split commit on frames: the drop point is on a frame, and nothing is quantized again. Seconds typed into an input box are committed as a decimal string. The engine quantizes them and reports the actual landing point in the receipt (product design §5.8).
  */
 
 const frames = (value: number) => ({ unit: 'frames' as const, value: Math.max(0, Math.round(value)) });
 
-/** 图片放上时间线的默认长度（与引擎一致）。 */
+/** The default length of an image placed on the timeline (matches the engine). */
 const IMAGE_SECONDS = 5;
 
 export type PlaceableKind = 'video' | 'image' | 'audio';
@@ -77,21 +76,21 @@ export function isPlaceable(asset: AssetRecord): asset is AssetRecord & { kind: 
   return asset.kind === 'video' || asset.kind === 'image' || asset.kind === 'audio';
 }
 
-/** 素材库里某一类的素材，按名字排（素材面板的图片、视频、音频各一页）。 */
+/** The assets of one kind in the library, sorted by name. The image, video and audio pages of the asset panel each have one. */
 export function libraryAssets<K extends PlaceableKind>(assets: Record<Id, AssetRecord>, kind: K): (AssetRecord & { kind: K })[] {
   return Object.values(assets)
     .filter((asset): asset is AssetRecord & { kind: K } => asset.kind === kind)
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
 }
 
-/** 素材放上时间线大约占多少帧（判断放不放得下用；实际长度以引擎为准）。 */
+/** Roughly how many frames an asset takes on the timeline. Used to judge whether it fits; the engine decides the actual length. */
 export function assetFrames(asset: AssetRecord, sequence: Sequence): number {
   const revision = asset.revisions[asset.currentRevision];
   const seconds = asset.kind === 'image' || !revision?.duration ? IMAGE_SECONDS : mediaTimeToSeconds(revision.duration);
   return Math.max(1, Math.floor((seconds * sequence.fps.num) / sequence.fps.den));
 }
 
-/** 这条轨道在 [start, end) 帧之间空着吗（不算 `ignore` 里的实例）。 */
+/** Whether this track is empty between frames [start, end). Instances in `ignore` are not counted. */
 export function trackFree(sequence: Sequence, trackId: Id, start: number, end: number, ignore: ReadonlySet<Id> = new Set()): boolean {
   return sequence.items.every((item) => {
     if (item.trackId !== trackId || ignore.has(item.id)) return true;
@@ -107,11 +106,10 @@ function unlockedTracks(sequence: Sequence, kind: PlaceableKind): Track[] {
 }
 
 /**
- * 「添加到时间线」：放在播放头处（原型 editor-elements.jsx `addElement`：从面板加的东西是播放头处的一层）。
- * - 图片、视频要压在画面最上面才看得见：只用这段时间里有东西的最上面一条视觉轨之上的空轨；没有就在最上面新建一条
- *   （`addItem` 不能引用同一事务里新建的轨道，所以按引擎 `addItem` 的缺省字段用 `insertItems` 写入）。
- * - 音频放进第一条在那里空着的音频轨；都被占了就接在第一条音频轨的末尾。
- * - 指定了轨道（拖到某一行上）时只看那一条：空着就放在落点，否则接在它末尾。
+ * “添加到时间线” (add to timeline): placed at the playhead. In the prototype (editor-elements.jsx `addElement`), what is added from the panel is a layer at the playhead.
+ * - Images and videos must be on top to be seen. Only an empty track above the topmost visual track that has content during this span is used. If there is none, a new track is created at the top (`addItem` cannot reference a track created in the same transaction, so it is written with `insertItems`, using the engine `addItem` default fields).
+ * - Audio goes onto the first audio track that is empty there. If all of them are taken, it is appended to the end of the first audio track.
+ * - When a track is specified (dragged onto a row), only that track is considered. If it is empty, the asset goes at the drop point. Otherwise it is appended to its end.
  */
 export function placeAsset(sequence: Sequence, asset: AssetRecord & { kind: PlaceableKind }, atFrame: number, trackId?: Id): EditOperation[] {
   const length = assetFrames(asset, sequence);
@@ -135,7 +133,7 @@ export function placeAsset(sequence: Sequence, asset: AssetRecord & { kind: Plac
   ];
 }
 
-/** 与引擎 `addItem` 缺省相同的一层图片或视频：铺满画布（`fullscreen` + `contain`）、不透明、从素材开头起；图片 5 秒，视频取整帧的全长。 */
+/** An image or video layer matching the engine's `addItem` default: it covers the canvas (`fullscreen` + `contain`), is opaque, and starts from the asset's beginning. An image is 5 s, and a video is its whole length. */
 function overlayItem(sequence: Sequence, asset: AssetRecord & { kind: PlaceableKind }, atFrame: number, trackRef: string): SequenceItemInput {
   const perSecond = sequence.fps.num / sequence.fps.den;
   const duration = asset.revisions[asset.currentRevision]?.duration;
@@ -161,8 +159,7 @@ function overlayItem(sequence: Sequence, asset: AssetRecord & { kind: PlaceableK
 }
 
 /**
- * 从电脑里拖进来的文件：导入与放置在同一笔事务里（导入用 ref 让后面的放置引用）。导入方知道素材名与来源时一并带上
- * （首页链接导入下载的文件记 `link-import` 的来源）。
+ * Files dragged in from the computer: import and placement are in one transaction (the import uses a ref so the later placement can reference it). When the importer knows the asset's name and source, it passes them along (files downloaded by home-page link import are recorded with the `link-import` source).
  */
 export function importAndPlace(
   sequence: Sequence,
@@ -183,7 +180,7 @@ export function importAndPlace(
     if (!file.kind) return;
     const track = trackId ? sequence.tracks.find((t) => t.id === trackId) : undefined;
     const fits = track && !track.locked && trackAccepts(track, { type: file.kind });
-    // 第一个文件放在落点，之后的接在同一条轨道末尾，不叠在一起。
+    // The first file goes at the drop point. Later ones are appended to the end of the same track, not stacked on top.
     operations.push({
       type: 'addItem',
       sequenceId: sequence.id,
@@ -197,17 +194,17 @@ export function importAndPlace(
 }
 
 export interface DragMove {
-  /** 被抓住的实例。 */
+  /** The instance that was grabbed. */
   itemId: Id;
-  /** 一起移动的实例（含被抓住的那个）。 */
+  /** The instances moved together (including the one grabbed). */
   itemIds: Id[];
-  /** 移动了多少帧。 */
+  /** How many frames it moved. */
   deltaFrames: number;
-  /** 被抓住的实例换到的轨道；不换轨道时为 null。只有单个实例时才换轨道。 */
+  /** The track the grabbed instance moves to. null when the track does not change. It only changes track when there is a single instance. */
   trackId: Id | null;
 }
 
-/** 拖动：一个实例用 moveItem（可以换轨道），多个一起用 moveItems（同一笔事务，重叠在全部移动之后检查）。 */
+/** Drag: one instance uses moveItem (which can change track). Several use moveItems in one transaction, and overlap is checked after all the moves. */
 export function moveOperation(sequence: Sequence, drag: DragMove): EditOperation | null {
   const byId = new Map(sequence.items.map((item) => [item.id, item]));
   const moved = drag.itemIds.map((id) => byId.get(id)).filter((item): item is SequenceItem => !!item);
@@ -234,7 +231,7 @@ export function moveOperation(sequence: Sequence, drag: DragMove): EditOperation
   };
 }
 
-/** 裁切一端到某一帧。至少留一帧；不合理时返回 null。 */
+/** Trim one end to a frame. Keeps at least one frame. Returns null when unreasonable. */
 export function trimOperation(sequence: Sequence, item: SequenceItem, edge: 'start' | 'end', frame: number): EditOperation | null {
   const range = itemFrames(item, sequence.fps);
   const target = Math.round(frame);
@@ -243,7 +240,7 @@ export function trimOperation(sequence: Sequence, item: SequenceItem, edge: 'sta
   return { type: 'trimItem', sequenceId: sequence.id, itemId: item.id, edge, at: frames(target), alignment: 'exact-frame' };
 }
 
-/** 在播放头处拆分：选中的实例里跨过播放头的；没有选中时拆所有跨过播放头、没有锁定的实例。 */
+/** Split at the playhead: among the selected instances, those that cross the playhead. With no selection, split all unlocked instances that cross the playhead. */
 export function splitOperations(sequence: Sequence, selection: readonly Id[], playheadFrame: number): EditOperation[] {
   const locked = new Set(sequence.tracks.filter((t) => t.locked).map((t) => t.id));
   const pool = selection.length ? sequence.items.filter((item) => selection.includes(item.id)) : sequence.items;
@@ -257,8 +254,8 @@ export function splitOperations(sequence: Sequence, selection: readonly Id[], pl
 }
 
 /**
- * Delete 删除的片段：选区里还在时间线上的实例（按时间线上的次序）。没有就没有可删的，走带的删除键置灰。
- * 锁定不在这里拦（与 Delete 键一致，由引擎判）。
+ * The clips Delete removes: the instances in the selection that are still on the timeline (in timeline order). If there are none, there is nothing to delete, and the transport's delete key is greyed out.
+ * Locking is not checked here (consistent with the Delete key; the engine decides).
  */
 export function deletableItemIds(sequence: Sequence, selection: readonly Id[]): Id[] {
   if (!selection.length) return [];
@@ -266,15 +263,15 @@ export function deletableItemIds(sequence: Sequence, selection: readonly Id[]): 
   return sequence.items.filter((item) => ids.has(item.id)).map((item) => item.id);
 }
 
-/** 素材在时间线上用了几次（合成的预渲染替身也算）。 */
+/** How many times an asset is used on the timeline (pre-rendered stand-ins of compositions count too). */
 export function usageCount(sequence: Sequence | null, assetId: Id): number {
   return sequence ? sequence.items.filter((item) => itemAssetRefs(item).some((ref) => ref.id === assetId)).length : 0;
 }
 
 /**
- * 裁切能拉到哪里（帧）：开始端不早于素材的开头，结束端不晚于素材的结尾，两端至少隔一帧。
- * 没有源时间的实例（图片、文字、图形、字幕）没有长度限制。合成的结尾只受预渲染替身的长度限制（代码包本身没有时长），
- * 没有替身时只有开头的限制。只是界面上的限制，越界时引擎同样会拒绝。
+ * How far a trim can go, in frames: the start is not earlier than the asset's beginning, the end is not later than the asset's end, and the two ends are at least one frame apart.
+ * Instances without source time (images, text, shapes, subtitles) have no length limit. A composition's end is limited only by its pre-rendered stand-in's length (the code package itself has no duration). Without a stand-in, only the start limit applies.
+ * This limit is only in the UI. The engine also rejects trims that go out of bounds.
  */
 export function trimBounds(item: SequenceItem, assets: Record<Id, AssetRecord>, sequence: Sequence): { min: number; max: number } {
   const { start, end } = itemFrames(item, sequence.fps);
@@ -291,7 +288,7 @@ export function trimBounds(item: SequenceItem, assets: Record<Id, AssetRecord>, 
   return { min, max: Math.max(max, Math.ceil(end)) };
 }
 
-/** ⌘A：时段覆盖播放头那一帧的片段（原型 visibleAt：播放头下的元素）。 */
+/** ⌘A: the clips whose time span covers the frame under the playhead (prototype visibleAt: the elements under the playhead). */
 export function itemsAtFrame(sequence: Sequence, frame: number): Id[] {
   return sequence.items
     .filter((item) => {
@@ -302,8 +299,7 @@ export function itemsAtFrame(sequence: Sequence, frame: number): Id[] {
 }
 
 /**
- * ⌥←/→ 微调时间的一步：选中的片段整体再挪 `step` 帧之后，起点不早于 0、不撞到同轨道上没选中的片段，
- * 就返回新的累计偏移；挪不动（或有锁住的）时原样返回。`delta` 是还没提交的那段累计偏移。
+ * The step for ⌥←/→ time nudging. After the selected clips move `step` frames further, if the start is not before 0 and does not collide with unselected clips on the same track, return the new cumulative offset. If it cannot move (or something is locked), return the input unchanged. `delta` is the cumulative offset not yet committed.
  */
 export function nudgeDelta(sequence: Sequence, itemIds: readonly Id[], delta: number, step: number): number {
   const ids = new Set(itemIds);
@@ -326,20 +322,20 @@ export function nudgeDelta(sequence: Sequence, itemIds: readonly Id[], delta: nu
   return next;
 }
 
-// ---- 素材面板的 ⋯ 菜单与配音组（设计稿 panel-media.jsx `MediaMenu`、`AudioGroup`）----
+// ---- The asset panel's ⋯ menu and dub groups (design draft panel-media.jsx `MediaMenu`, `AudioGroup`) ----
 
-/** 素材在时间线上的一处用法（「用在哪」）。 */
+/** One place an asset is used on the timeline (“where it's used”). */
 export interface AssetUsage {
   itemId: Id;
-  /** 轨道行头上的名字（与时间线一致）。 */
+  /** The name on the track header (matches the timeline). */
   track: string;
   name: string;
-  /** 起止（秒）。 */
+  /** Start and end (seconds). */
   start: number;
   end: number;
 }
 
-/** 素材用在时间线的哪里：按起点排，带轨道名；合成的预渲染替身也算。 */
+/** Where the asset is used on the timeline: sorted by start, with the track name. Pre-rendered stand-ins of compositions count too. */
 export function assetUsages(sequence: Sequence | null, assetId: Id): AssetUsage[] {
   if (!sequence) return [];
   const labels = new Map(trackRows(sequence).map((row) => [row.track.id, row.label]));
@@ -354,21 +350,20 @@ export function assetUsages(sequence: Sequence | null, assetId: Id): AssetUsage[
 }
 
 /**
- * 「在文件夹中显示」的文件：链接的素材是登记的原文件（相对路径接在视频目录后面）。收进视频目录的素材由 CucCut 管理，
- * Runtime 不给出它在磁盘上的位置（同 library-brand 的说法），返回 null。
+ * The file for “在文件夹中显示” (show in folder). A linked asset is its registered original file (the relative path is appended after the video directory). Assets imported into the video directory are managed by CucCut. The Runtime does not give their location on disk (same wording as library-brand), so this returns null.
  */
 export function assetFilePath(asset: AssetRecord, videoDir: string | null): string | null {
   const storage = asset.revisions[asset.currentRevision]?.storage;
   if (storage?.mode !== 'linked') return null;
   const path = storage.locator.path;
-  // 绝对路径：macOS / Linux 的 `/…`，Windows 的 `C:\…` 或 `\\server\…`（同 tools-transcode 的 isAbsolutePath）。
+  // Absolute paths: macOS / Linux `/…`, Windows `C:\…` or `\\server\…` (same as isAbsolutePath in tools-transcode).
   if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\')) return path;
   if (!videoDir) return null;
   const windows = /^[A-Za-z]:\\/.test(videoDir) || videoDir.startsWith('\\\\');
-  // 链到视频目录外的（`../downloads/a.webm`）折掉 `.` 与 `..`，显示与交给文件管理器的都是干净的路径。
+  // A link outside the video directory (`../downloads/a.webm`) has `.` and `..` folded away, so both the display and the path handed to the file manager are clean.
   const sep = windows ? '\\' : '/';
   const parts = videoDir.replace(/[\\/]+$/, '').split(/[\\/]/);
-  // 不越过根：`/`（分出来是空串）、`C:`，或 UNC 的 `\\server\share`。
+  // Does not go past the root: `/` (splitting gives an empty string), `C:`, or UNC `\\server\share`.
   const root = videoDir.startsWith('\\\\') ? 4 : 1;
   for (const segment of path.split(/[\\/]+/)) {
     if (!segment || segment === '.') continue;
@@ -379,38 +374,38 @@ export function assetFilePath(asset: AssetRecord, videoDir: string | null): stri
   return parts.length === 1 ? `${parts[0]}${sep}` : parts.join(sep);
 }
 
-/** 配音组里的一行文件（设计稿 `.agfile`）：分离出的背景声（与人声）各一行，每句一行；没合成、过长、译文过期的句没有实例，也列出来。 */
+/** One file row in a dub group (design draft `.agfile`). The separated background (and vocals) each get a row, one per sentence. Sentences that were not synthesized, are too long, or have a stale translation have no instance, but they are listed too. */
 export interface DubFileRow {
   key: string;
   kind: 'bed' | 'sentence';
-  /** 时间线上的实例：点一行选中它、跳过去。没放上时间线的为 null。 */
+  /** The instance on the timeline. Clicking a row selects it and jumps there. null when it is not on the timeline. */
   itemId: Id | null;
   name: string;
-  /** 这一句的译文；分轨写「分离出来的背景声」或「分离出来的人声」。 */
+  /** This sentence's translation. The separated tracks say “分离出来的背景声” (separated background) or “分离出来的人声” (separated vocals). */
   text: string;
   status: 'failed' | 'needs-fit' | 'stale' | 'draft' | null;
   muted: boolean;
-  /** 时长（秒）；没有实例也不知道素材时长时为 null。 */
+  /** Duration in seconds. null when there is no instance and the asset's length is unknown. */
   seconds: number | null;
 }
 
 export interface DubGroupCard {
   groupId: string;
   language: string | null;
-  /** 行头小牌：语言子标签（EN、JA）；不知道语言时写「配音」。 */
+  /** Small tag on the row header: the language sub-tag (EN, JA). When the language is unknown, write “配音” (dub). */
   badge: string;
-  /** 「配音 · English」。 */
+  /** “配音 · English” (Dub · English). */
   title: string;
-  /** 组头副题：`63 个文件 · 62 句 · 3 句没合成 · 模型`。 */
+  /** Group header subtitle: `63 个文件 · 62 句 · 3 句没合成 · 模型` (sample text, kept as is). */
   line: string;
-  /** 已在时间线 / 轨已关 / 不在时间线（实例都删了，素材还在库里）。 */
+  /** On the timeline / track off / not on the timeline (the instances were all deleted, but the asset is still in the library). */
   state: 'on' | 'off' | 'gone';
   files: DubFileRow[];
-  /** 配音轨（「移除这组配音」去掉以它为触发的闪避）。 */
+  /** The dub track (“移除这组配音” (remove this dub group) removes the ducking triggered by it). */
   trackId: Id | null;
-  /** 时间线上这一组的实例（含分离出来的背景）。 */
+  /** This group's instances on the timeline (including the separated background). */
   itemIds: Id[];
-  /** 需要重新生成的句：没合成的与过长的。 */
+  /** Sentences that need regenerating: the ones not synthesized and the overlong ones. */
   regen: number;
 }
 
@@ -423,7 +418,7 @@ const dubMark = (extensions: Record<string, unknown> | undefined): (Json & { gro
   return isJson(mark) && typeof mark.groupId === 'string' ? (mark as Json & { groupId: string }) : null;
 };
 
-/** 配音流程生成的素材属于哪一组：`groupId` 由流程按任务 ID 起（`dub_<任务>`）。 */
+/** Which group an asset generated by the dub flow belongs to: the flow creates `groupId` from the task ID (`dub_<task>`). */
 function dubGroupOfAsset(asset: AssetRecord): { groupId: string; language: string | null; stem: string | null } | null {
   const source = asset.revisions[asset.currentRevision]?.provenance.source;
   if (!isJson(source) || source.pipeline !== 'dub' || typeof source.jobId !== 'string') return null;
@@ -434,7 +429,7 @@ function dubGroupOfAsset(asset: AssetRecord): { groupId: string; language: strin
   };
 }
 
-/** 配音计划文档：当前版本的概要记着 `groupId`。 */
+/** Dub plan document: the summary of the current version records the `groupId`. */
 export function dubPlanRecord(documents: Record<Id, DocumentRecord>, groupId: string): DocumentRecord | undefined {
   return Object.values(documents).find((record) => {
     if (record.kind !== 'dubbing-plan') return false;
@@ -444,8 +439,7 @@ export function dubPlanRecord(documents: Record<Id, DocumentRecord>, groupId: st
 }
 
 /**
- * 音频页按配音分组（设计稿 `audioGroups`）：时间线上带 `extensions['cuccut.dub']` 的实例与配音流程生成的素材，一组一张卡；
- * 剩下的音频素材照旧平铺（`loose`）。组的顺序按第一次出现（时间线上的在前）。
+ * The audio page groups by dub (design draft `audioGroups`): the instances on the timeline that carry `extensions['cuccut.dub']`, and the assets generated by the dub flow, with one card per group. The remaining audio assets stay flat (`loose`). Groups are ordered by first appearance, with those on the timeline first.
  */
 export function dubGroupIds<A extends AssetRecord>(sequence: Sequence | null, assets: readonly A[]): { groups: string[]; loose: A[] } {
   const groups: string[] = [];
@@ -490,7 +484,7 @@ function planUnits(body: unknown): PlanUnit[] | null {
   return out;
 }
 
-/** 配音用的模型（计划正文 `extensions['cuccut.dub'].voice`）。 */
+/** The model used for dubbing (the plan body's `extensions['cuccut.dub'].voice`). */
 function planEngine(body: unknown): string | null {
   if (!isJson(body) || !isJson(body.extensions)) return null;
   const own = body.extensions[DUB_EXTENSION];
@@ -503,7 +497,7 @@ function planEngine(body: unknown): string | null {
       : null;
 }
 
-/** 一组配音的卡片（设计稿 `audioGroups` 的一组与 `groupLine`）。`planBody` 是配音计划的正文，还没取到时给 undefined。 */
+/** A dub group's card (one group of the design draft `audioGroups`, and `groupLine`). `planBody` is the body of the dub plan. It is undefined when not yet fetched. */
 export function dubGroupCard(sequence: Sequence | null, assets: Record<Id, AssetRecord>, groupId: string, planBody: unknown): DubGroupCard {
   const fps = sequence?.fps ?? { num: 30, den: 1 };
   const perSecond = fps.num / fps.den;
@@ -528,7 +522,7 @@ export function dubGroupCard(sequence: Sequence | null, assets: Record<Id, Asset
   };
   const silent = (item: SequenceItem) => !item.enabled || (item.type === 'audio' && item.mix.muted === true);
   const files: DubFileRow[] = [];
-  // 分离出的背景声与人声：时间线上那几段用的素材（各一份）；实例删了、素材还在库里的也列一行。
+  // The separated background and vocals: the assets used on the timeline for those segments (one each). Instances that were deleted while their assets remain in the library are also listed as one row.
   const stemText = (stem: unknown) => (stem === 'vocals' ? M.stemVocals : M.stemBackground);
   const bedAssets = new Set<Id>();
   for (const { item, mark, range } of beds) {
@@ -616,16 +610,15 @@ export function dubGroupCard(sequence: Sequence | null, assets: Record<Id, Asset
   };
 }
 
-/** 段头旁注（设计稿 `audioAside`）：`2 组配音 · 65 个文件` / `2 个文件`。 */
+/** The side note on the section header (design draft `audioAside`): `2 组配音 · 65 个文件` / `2 个文件` (sample text, kept as is). */
 export function audioAside(groups: number, files: number): string {
   return M.aside(groups, files);
 }
 
-// ---- 画布上的「层级」 ----
+// ---- Layers on the canvas ----
 
 /**
- * 这一件还能不能往这个方向换一层。叠放次序就是轨道的上下（命令协议规范 §4.2 `arrangeItem`）：与别的片段共用一条轨道的
- * 总能拆到相邻新建的轨道上；独占一条轨道、又已经在这一叠（画面与字幕轨道同一叠）的最上 / 最下时不能再走。声音没有叠放次序，字幕实例不从画布上调。
+ * Whether this item can still move one layer in this direction. The stacking order is the track's up and down order (command protocol spec §4.2 `arrangeItem`). An item that shares its track with other clips can always be split onto a newly created adjacent track. An item that has its own track and is already at the top or bottom of this stack (the picture and subtitle tracks share one stack) cannot move further. Sound has no stacking order, and subtitle instances are not adjusted on the canvas.
  */
 export function canArrange(sequence: Sequence, itemId: Id, direction: ArrangeDirection): boolean {
   const item = sequence.items.find((candidate) => candidate.id === itemId);
@@ -638,7 +631,7 @@ export function canArrange(sequence: Sequence, itemId: Id, direction: ArrangeDir
   return sequence.tracks.some((other) => stackingGroup(other.kind) === group && (upward ? other.order > track.order : other.order < track.order));
 }
 
-/** 「层级」的一笔；走不动时 null（菜单项灰着，快捷键什么都不做）。 */
+/** The result of one layer move. null when it cannot move (the menu item is greyed out, and the shortcut does nothing). */
 export function arrangeOperation(sequence: Sequence, itemId: Id, direction: ArrangeDirection): EditOperation | null {
   if (!canArrange(sequence, itemId, direction)) return null;
   return { type: 'arrangeItem', sequenceId: sequence.id, itemId, direction };

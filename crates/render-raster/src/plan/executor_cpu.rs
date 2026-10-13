@@ -1,8 +1,7 @@
-//! `PassExecutor` 与 tiny-skia 的 CPU reference 执行器（设计 §6.5）。
+//! CPU reference executor for `PassExecutor` built on tiny-skia (design §6.5).
 //!
-//! **折叠保证**：`FramePlan::is_folded()` 为真时，[`execute_plan`] 直接调
-//! `raster::rasterize_with_media`——与「`record(t)` 之后原样光栅化」是同一个
-//! 函数调用，不多一次分配、不多一次拷贝，因此逐字节相同。
+//! **Folding guarantee**: when `FramePlan::is_folded()` is true, [`execute_plan`] calls
+//! `raster::rasterize_with_media` directly. It is the same function call as rasterizing as-is after `record(t)`, with no extra allocation or copy, so the output is byte-identical.
 
 use super::cache::SurfaceCache;
 use super::capability::CapabilityProfile;
@@ -17,8 +16,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tiny_skia::Pixmap;
 
-/// 一个后端要能执行 FramePlan 必须提供的四件事。CPU reference 是规范实现；
-/// 未来的 GPU executor 只是加速，且必须过同一套 conformance 夹具。
+/// The four things a backend must provide to execute a FramePlan. The CPU reference is the canonical implementation;
+/// a future GPU executor is only an accelerator and must pass the same conformance fixtures.
 pub trait PassExecutor {
     fn profile(&self) -> &CapabilityProfile;
 
@@ -183,7 +182,7 @@ impl PassExecutor for CpuExecutor {
     ) -> Result<Pixmap> {
         let mut pixmap = rasterize_with_media(ops, surface.width, surface.height, media)?;
         if let Some(clear) = surface.clear {
-            // 清屏色在 DrawOp 之前生效；`Clear` 指令会覆盖它，两者不冲突。
+            // The clear color takes effect before DrawOps; a `Clear` instruction overrides it, so the two do not conflict.
             let mut base = Pixmap::new(surface.width, surface.height)
                 .ok_or_else(|| anyhow!("surface {:?} 尺寸非法", surface.id))?;
             base.fill(
@@ -215,8 +214,8 @@ impl PassExecutor for CpuExecutor {
         effect: &EffectRef,
         uniforms: &UniformMap,
     ) -> Result<Pixmap> {
-        // 相对长度的基准是**输出 surface 的短边**：同一份配方在不同画幅下
-        // 得到成比例的半径 / 羽化（设计 §5.5 的 `canvasShortEdge`）。
+        // Relative lengths are measured against the **short edge of the output surface**, so the same recipe yields
+        // radii and feathers that scale with the frame size (`canvasShortEdge` in design §5.5).
         let short_edge = f64::from(surface.width.min(surface.height));
         crate::effects::apply_filter(effect, uniforms, input, short_edge)
     }
@@ -230,7 +229,7 @@ impl PassExecutor for CpuExecutor {
         progress: f32,
         uniforms: &UniformMap,
     ) -> Result<Pixmap> {
-        // 与 `filter` 同一口径：相对长度的基准是输出 surface 的短边。
+        // Same basis as `filter`: relative lengths are measured against the short edge of the output surface.
         let short_edge = f64::from(surface.width.min(surface.height));
         crate::effects::apply_transition(effect, uniforms, from, to, progress, short_edge)
     }
@@ -255,17 +254,11 @@ impl PassExecutor for CpuExecutor {
     }
 }
 
-/// 把一张图层叠进 `out`，结果与整幅 `out.draw_pixmap(0, 0, layer, …)` 逐字节相同。
+/// Composites one layer into `out`, byte-identical to drawing the whole `out.draw_pixmap(0, 0, layer, …)`.
 ///
-/// 图层大多只有一小块内容（一张贴纸、一行字），其余是预乘全零的透明像素；而
-/// `draw_pixmap` 的 Pattern 着色器只有 highp 实现，整幅走一遍是逐像素的浮点管线
-/// ——动画项目 release 导出的 profile 里，这里约占 BCF 渲染 CPU 的一半。九种
-/// [`BlendMode`] 在 src = (0,0,0,0) 时都把 dst 原样留下，所以只在覆盖全部非零像素的
-/// [`content_rect`] 里跑同一条管线；此前什么都没画（`out_blank`）且 Normal、不透明度
-/// 1 时，src-over 到全零就是 src 本身，整块拷贝、不扫描。两条捷径都由
-/// `tests::bounded_composite_matches_full_draw_pixmap` 与整幅 `draw_pixmap` 逐字节对拍。
+/// Most layers hold only a small patch of content (one sticker, one line of text); the rest is premultiplied all-zero transparent pixels. But `draw_pixmap`'s Pattern shader only has a highp implementation, so a full-frame pass is a per-pixel float pipeline. In the release export profile of animation projects, this accounts for about half of the BCF render CPU. For all nine [`BlendMode`]s, src = (0,0,0,0) leaves dst unchanged, so the same pipeline runs only inside [`content_rect`], which covers all non-zero pixels. Also, when nothing has been drawn yet (`out_blank`) and the mode is Normal with opacity 1, src-over onto zeros is just src itself, so it is copied as one block without scanning. Both shortcuts are checked byte-for-byte against the full `draw_pixmap` by `tests::bounded_composite_matches_full_draw_pixmap`.
 ///
-/// 返回这一层是否可能改了 `out`。
+/// Returns whether this layer may have changed `out`.
 fn composite_layer(
     out: &mut Pixmap,
     layer: &Pixmap,
@@ -288,9 +281,10 @@ fn composite_layer(
     bounded(out, layer, opacity, super::blend_to_skia(blend))
 }
 
-/// [`composite_layer`] 的收窄部分给别的调用方用：与整幅 `out.draw_pixmap(0, 0, layer, …)`（最近邻、恒等变换、
-/// 不裁剪）逐字节相同，只在图层非零像素的外包矩形里跑管线。`blend` 只收 [`BlendMode`] 对得上的九种（src 全零时
-/// 都不动 dst）；别的混合方式返回 `None`，调用方照整幅画。返回 `Some(这一层是否可能改了 out)`。
+/// The narrowed part of [`composite_layer`], for other callers: byte-identical to a full `out.draw_pixmap(0, 0, layer, …)`
+/// (nearest-neighbour, identity transform, no clipping), but runs the pipeline only within the bounding rectangle of the layer's
+/// non-zero pixels. `blend` accepts only the nine [`BlendMode`]s that fit (with src all zero, they leave dst unchanged); for other
+/// blend modes it returns `None` and the caller draws the full frame. Returns `Some(whether this layer may have changed out)`.
 pub fn composite_bounded(
     out: &mut Pixmap,
     layer: &Pixmap,
@@ -303,9 +297,9 @@ pub fn composite_bounded(
         .then(|| bounded(out, layer, opacity.clamp(0.0, 1.0), blend))
 }
 
-/// 与 [`composite_bounded`] 相同，但内容框由调用方给（`(left, top, right, bottom)`，像素、右下开区间），
-/// 不再扫描图层。框必须盖住图层全部非零像素；任何这样的超集都与整幅画逐字节相同（src 全零时九种混合
-/// 都不动 dst）。超出图层的部分按图层尺寸截掉。
+/// Same as [`composite_bounded`], but the caller supplies the content box (`(left, top, right, bottom)`, pixels, right/bottom exclusive),
+/// so the layer is not scanned. The box must cover all non-zero pixels of the layer; any such superset is byte-identical to the full
+/// draw (with src all zero, the nine blend modes leave dst unchanged). Parts outside the layer are clipped to the layer size.
 pub fn composite_bounded_rect(
     out: &mut Pixmap,
     layer: tiny_skia::PixmapRef<'_>,
@@ -340,7 +334,7 @@ fn bounded(out: &mut Pixmap, layer: &Pixmap, opacity: f32, blend: tiny_skia::Ble
     fill_content(out, layer.as_ref(), rect, opacity, blend)
 }
 
-/// 只在 `(left, top, right, bottom)` 里按整幅 `draw_pixmap` 的画法叠 `layer`。
+/// Composites `layer` only within `(left, top, right, bottom)`, drawn the same way as the full `draw_pixmap`.
 fn fill_content(
     out: &mut Pixmap,
     layer: tiny_skia::PixmapRef<'_>,
@@ -356,8 +350,8 @@ fn fill_content(
     else {
         return false;
     };
-    // 与 `draw_pixmap` 内部拼的那支 Paint 相同（Nearest、Pad、不抗锯齿），只把
-    // 填充矩形从整幅收窄到内容框。
+    // Same Paint as the one `draw_pixmap` builds internally (Nearest, Pad, no anti-aliasing); only the fill rectangle
+    // is narrowed from the full frame to the content box.
     let paint = tiny_skia::Paint {
         shader: tiny_skia::Pattern::new(
             layer,
@@ -374,14 +368,14 @@ fn fill_content(
     true
 }
 
-/// 宽 `width` 的 RGBA 行里非零字节的外包矩形 `(left, top, right, bottom)`，像素单位、
-/// 右下开区间；全零返回 `None`。行是精确的，列按 16 像素一块向外取整——调用方只要
-/// 一个非零像素的超集。
+/// Bounding rectangle `(left, top, right, bottom)` of the non-zero bytes in RGBA rows of `width`, in pixels, right/bottom exclusive;
+/// returns `None` if all zero. Rows are exact, while columns are rounded outward in 16-pixel blocks, so the caller only gets a
+/// superset of the non-zero pixels.
 ///
-/// 整行、整块都与全零切片比较（落到 `memcmp`），不逐字节迭代：dev profile 只优化
-/// 第三方依赖，本 crate 在 debug 构建里是 O0，逐字节扫一幅 1080p 要几十毫秒，比它
-/// 省下的 tiny-skia 绘制还贵（`effects::alpha_bbox` 就是那样扫的）。列只查当前边界
-/// 之外的那一截，内容框定下来以后每行只剩两次整行比较。
+/// Whole rows and blocks are compared against an all-zero slice (which falls through to `memcmp`) rather than iterated byte by byte.
+/// The dev profile only optimizes third-party dependencies, and this crate is O0 in debug builds, so a byte-by-byte scan of a 1080p
+/// frame takes tens of milliseconds, which costs more than the tiny-skia drawing it saves (`effects::alpha_bbox` scans that way).
+/// Columns only check the stretch beyond the current bounds; once the content box is settled, each row needs just two whole-row comparisons.
 fn content_rect(data: &[u8], width: usize) -> Option<(usize, usize, usize, usize)> {
     const COL_BLOCK: usize = 16 * 4;
     static ZEROS: [u8; 4096] = [0; 4096];
@@ -402,8 +396,8 @@ fn content_rect(data: &[u8], width: usize) -> Option<(usize, usize, usize, usize
         }
         top.get_or_insert(y);
         bottom = y + 1;
-        // 块边界从行首按 64 字节切，`rchunks` 从行尾切；行长是 4 的倍数，两边的
-        // 边界都落在像素边界上。
+        // Block boundaries are cut every 64 bytes from the start of the row, and `rchunks` cuts from the end. Row length is a
+        // multiple of 4, so the boundaries from both ends fall on pixel boundaries.
         if let Some(block) = row[..left].chunks(COL_BLOCK).position(|c| !is_zero(c)) {
             left = block * COL_BLOCK;
         }
@@ -414,10 +408,10 @@ fn content_rect(data: &[u8], width: usize) -> Option<(usize, usize, usize, usize
     Some((left / 4, top?, right / 4, bottom))
 }
 
-/// 执行一张 FramePlan，返回输出 surface 的像素。
+/// Executes a FramePlan and returns the pixels of the output surface.
 ///
-/// `cache` 命中的是**中间** surface（键 = surface 内容指纹）；整帧缓存由调用方
-/// （`video.rs`）在计划之外自己做，两层不重复计数。
+/// `cache` holds **intermediate** surfaces (key = surface content fingerprint). The whole-frame cache is handled by the caller
+/// (`video.rs`) outside the plan, so the two layers do not double-count.
 pub fn execute_plan<E: PassExecutor, M: FrameMedia>(
     plan: &FramePlan,
     executor: &mut E,
@@ -427,16 +421,16 @@ pub fn execute_plan<E: PassExecutor, M: FrameMedia>(
     execute(plan, executor, media, cache, &BTreeMap::new(), None)
 }
 
-/// 与 [`execute_plan`] 相同，但复用调用方**已经算好**的 surface 指纹表
-/// （[`FramePlan::frame_fingerprints`]）。
+/// Same as [`execute_plan`], but reuses the surface fingerprint table that the caller has **already computed**
+/// ([`FramePlan::frame_fingerprints`]).
 ///
-/// 算指纹表要对每个 Draw pass 做一次全量 `drawop::encode`，而执行器本来也要
-/// 同一张表当中间 surface 的缓存键；合成路径先按帧指纹查整帧缓存、未命中才
-/// 执行，于是同一张表会被算两遍。传表进来就只算一遍——`surface_fingerprints`
-/// 内部已经 `validate` 过，因此这条路径上也不再重复 `validate`。
+/// Building the fingerprint table requires a full `drawop::encode` for each Draw pass, and the executor also needs the same table
+/// as the cache keys for intermediate surfaces. The compositing path first looks up the whole-frame cache by frame fingerprint and
+/// only executes on a miss, so the same table would be computed twice. Passing the table in computes it only once; `surface_fingerprints`
+/// has already run `validate` internally, so `validate` is not repeated on this path either.
 ///
-/// **调用约束**：`fingerprints` 必须来自**这一张、且此后未被改写过**的计划。
-/// `FramePlan` 的字段是 `pub`，改了计划再用旧表就会拿到过期的缓存键。
+/// **Calling constraint**: `fingerprints` must come from **this same plan, unmodified since**.
+/// The fields of `FramePlan` are `pub`; if the plan is changed and the old table is reused, stale cache keys will be obtained.
 pub fn execute_plan_with_fingerprints<E: PassExecutor, M: FrameMedia>(
     plan: &FramePlan,
     executor: &mut E,
@@ -454,13 +448,13 @@ pub fn execute_plan_with_fingerprints<E: PassExecutor, M: FrameMedia>(
     )
 }
 
-/// 带**外部输入 surface** 的执行入口（[`super::SurfaceLifetime::External`]）。
+/// Execution entry point with an **external input surface** ([`super::SurfaceLifetime::External`]).
 ///
-/// 用于「已经有一张画好的 pixmap，要对它跑一条效果链」：直接把它当输入，
-/// 而不是先 blit 进一张 surface——blit 走的是 `draw_pixmap`，有可能改字节。
+/// Used for "there is already a drawn pixmap, and an effect chain should run on it": it is taken directly as the input,
+/// rather than first blitted into a surface, since blit goes through `draw_pixmap` and may alter bytes.
 ///
-/// **外部 surface 的内容不在计划里**，因此 surface 指纹描述不了它：这条路径
-/// 上不接受 `cache`（传了就报错），也不要拿它的 `frame_fingerprint()` 当帧身份。
+/// **The content of an external surface is not in the plan**, so the surface fingerprint cannot describe it: this path
+/// does not accept `cache` (an error is raised if one is passed), and its `frame_fingerprint()` must not be used as frame identity.
 pub fn execute_plan_with_inputs<E: PassExecutor, M: FrameMedia>(
     plan: &FramePlan,
     executor: &mut E,
@@ -471,8 +465,8 @@ pub fn execute_plan_with_inputs<E: PassExecutor, M: FrameMedia>(
     execute(plan, executor, media, cache, external, None)
 }
 
-/// 三个公共入口的共同实现。`fingerprints` 为 `Some` 时表示调用方已经算过
-/// surface 指纹表（因而 `validate` 也已经通过），此处跳过这两步。
+/// The shared implementation of the three public entry points. When `fingerprints` is `Some`, the caller has already computed
+/// the surface fingerprint table (so `validate` has also already passed), and both steps are skipped here.
 fn execute<E: PassExecutor, M: FrameMedia>(
     plan: &FramePlan,
     executor: &mut E,
@@ -514,7 +508,7 @@ fn execute<E: PassExecutor, M: FrameMedia>(
         .output_surface()
         .ok_or_else(|| anyhow!("frameplan-output-unknown: {:?}", plan.output))?;
 
-    // 折叠形态：与 record + rasterize 完全同一条路径。
+    // Folded shape: exactly the same path as record + rasterize.
     if plan.is_folded() {
         let RenderPass::Draw { ops, .. } = &plan.passes[0] else {
             unreachable!("is_folded 已判定为 Draw");
@@ -548,8 +542,8 @@ fn execute<E: PassExecutor, M: FrameMedia>(
         let surface = plan
             .surface(target)
             .ok_or_else(|| anyhow!("frameplan-pass-output-unknown: {target:?}"))?;
-        // 自算的表由 `validate` 保证覆盖全部 surface；外部传入的表若与计划不
-        // 匹配则在这里报错，而不是 panic。
+        // A table computed internally is guaranteed by `validate` to cover all surfaces. An externally passed table that does not
+        // match the plan is reported as an error here rather than panicking.
         let key = *fingerprints
             .get(&target.0)
             .ok_or_else(|| anyhow!("frameplan-fingerprint-missing: {target:?}"))?;
@@ -657,7 +651,7 @@ fn release_inputs(
 mod tests {
     use super::*;
 
-    /// 固定种子的 xorshift：夹具要可复现，不引 `rand`。
+    /// Fixed-seed xorshift: the fixtures must be reproducible, so `rand` is not pulled in.
     struct Rng(u64);
 
     impl Rng {
@@ -672,7 +666,7 @@ mod tests {
             self.next() % n
         }
 
-        /// 合法的预乘像素：颜色通道不超过 alpha。
+        /// A valid premultiplied pixel: colour channels do not exceed alpha.
         fn premul(&mut self) -> [u8; 4] {
             let alpha = self.below(256) as u8;
             let channel = |rng: &mut Self| rng.below(u64::from(alpha) + 1) as u8;
@@ -699,7 +693,7 @@ mod tests {
         pixmap
     }
 
-    /// 各种形状的图层：全透明、全满、中间一块、贴着四条边的角点、稀疏散点。
+    /// Layers of various shapes: fully transparent, fully opaque, a block in the middle, corner pixels touching all four edges, and sparse scattered points.
     fn layers(width: u32, height: u32, rng: &mut Rng) -> Vec<Pixmap> {
         let (w, h) = (width as usize, height as usize);
         let (left, top) = (rng.below(w as u64) as usize, rng.below(h as u64) as usize);
@@ -739,8 +733,7 @@ mod tests {
     #[test]
     fn bounded_composite_matches_full_draw_pixmap() {
         let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
-        // 1100 px 一行 4400 字节，跨过 4096 字节的零块；16 / 64 / 65 px 压着 16 像素
-        // 列块的边界。
+        // 1100 px per row is 4400 bytes, which spans the 4096-byte zero block; 16 / 64 / 65 px sit right on the 16-pixel column block boundaries.
         for (width, height) in [
             (37, 23),
             (16, 5),
@@ -785,7 +778,7 @@ mod tests {
         }
     }
 
-    /// src 全零时会改 dst 的混合方式（清掉、只留交集……）不能只画外包矩形：公开入口不收，`out` 不动。
+    /// Blend modes that change dst even when src is all zero (clear it, keep only the intersection, ...) cannot be drawn only within the bounding rectangle: the public entry point does not accept them, and `out` is left unchanged.
     #[test]
     fn bounded_composite_refuses_modes_that_touch_the_backdrop() {
         let mut rng = Rng(7);
@@ -807,8 +800,7 @@ mod tests {
         }
     }
 
-    /// 整条 `composite`：透明层与不透明度 0 的层不算「画过」，空底整块拷贝之后
-    /// 的层照常叠加。
+    /// For the whole `composite`: transparent layers and layers with opacity 0 do not count as drawn; after a blank base is copied as one block, later layers are composited as usual.
     #[test]
     fn composite_pass_matches_sequential_full_draws() {
         let mut rng = Rng(0x2545_f491_4f6c_dd1d);

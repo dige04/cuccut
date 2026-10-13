@@ -1,12 +1,12 @@
-//! 十二种单位形（设计稿 §4.4）：每个形状是一条**单位路径**，外接盒约为
-//! `[-0.5, 0.5]²`（长条类到 ±0.9），画时按粒子的 `size` 缩放。
+//! Twelve unit shapes (design doc §4.4). Each shape is a **unit path** whose bounding box is roughly
+//! `[-0.5, 0.5]²` (elongated shapes extend to ±0.9), scaled by the particle's `size` when drawn.
 //!
-//! 形状路径按内容 hash 去重进 `FrameBuilder`（`path_id`），一帧里同一形状只存
-//! 一份，N 枚粒子只有 N 条 `FillPath` 的矩阵不同。与原型
-//! `designs/cuccut/app/model-confetti.js` 的 `SHAPE_PATHS` 逐点相同。
+//! Shape paths are deduplicated into `FrameBuilder` by content hash (`path_id`). Within a frame each shape is stored
+//! only once, and N particles differ only in the matrices of their N `FillPath` ops. Point-for-point identical to `SHAPE_PATHS` in the prototype
+//! `designs/cuccut/app/model-confetti.js`.
 //!
-//! 心形 / 花瓣 / 缎带轮廓改编自 `party-js/shapes`（MIT），署名见
-//! `core/assets/elements/vendor/sources.json`。
+//! The heart, petal and ribbon outlines are adapted from `party-js/shapes` (MIT). Attribution is in
+//! `core/assets/elements/vendor/sources.json`.
 
 use std::f64::consts::PI;
 
@@ -15,7 +15,7 @@ use crate::source::kernel::{
     path_seg_close, path_seg_cubic, path_seg_line, path_seg_move, rect_subpath,
 };
 
-/// 与 `ccut_timeline::CONFETTI_SHAPES` / `motion::CONFETTI_SHAPES` 同一张表。
+/// Same table as `ccut_timeline::CONFETTI_SHAPES` and `motion::CONFETTI_SHAPES`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConfettiShape {
     Rect,
@@ -84,7 +84,7 @@ impl ConfettiShape {
     }
 }
 
-/// 四段三次贝塞尔逼近圆的控制臂系数。
+/// Control-arm coefficients for approximating a circle with four cubic Béziers.
 const KAPPA: f64 = 0.552_284_749_8;
 
 fn ellipse_subpath(out: &mut Vec<PathSeg>, rx: f64, ry: f64) {
@@ -109,7 +109,7 @@ fn polygon_subpath(out: &mut Vec<PathSeg>, pts: &[(f64, f64)]) {
     out.push(path_seg_close());
 }
 
-/// `n` 角星：从正上方起，外径 `ro` 与内径 `ri` 交替。
+/// `n`-pointed star: starting from straight up, outer radius `ro` and inner radius `ri` alternate.
 fn star_subpath(out: &mut Vec<PathSeg>, n: usize, ro: f64, ri: f64) {
     let mut pts = Vec::with_capacity(2 * n);
     for k in 0..2 * n {
@@ -120,7 +120,7 @@ fn star_subpath(out: &mut Vec<PathSeg>, n: usize, ro: f64, ri: f64) {
     polygon_subpath(out, &pts);
 }
 
-/// 一种形状的单位路径。
+/// Unit path of one shape.
 pub fn unit_path(shape: ConfettiShape) -> PathData {
     let mut out = Vec::new();
     match shape {

@@ -54,10 +54,10 @@ describe('转场一节', () => {
       joined: true,
       audioCrossfade: false,
     });
-    // 没有转场：有邻居时缺省衔接。
+    // No transition: with a neighbour, the default is a joined transition.
     expect(slotState(sequence([a, b]), b, 'in')).toMatchObject({ kind: 'none', joined: true, direction: 'right', seconds: 0.5 });
     expect(slotState(sequence([c]), c, 'in')).toMatchObject({ kind: 'none', joined: false });
-    // 认不出的种类：不选中任何瓦片，写明。
+    // Unrecognised kind: no tile is selected, and this is stated.
     expect(slotState(sequence([a, b], [{ ...pair, kind: 'iris' }]), b, 'in')).toMatchObject({ kind: 'none', unknownKind: 'iris' });
   });
 

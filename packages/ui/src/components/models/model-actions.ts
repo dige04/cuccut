@@ -23,8 +23,8 @@ import type { RuntimeSession } from '../../runtime/session.ts';
 import { PROBE_COPY } from './models-copy.ts';
 
 /**
- * 模型页的命令：把按钮的意思换成 `RuntimeSession` 上的一次调用。新的能力视图由 `models` 主题送回来，这里不改本地状态。
- * 失败原样抛给调用方（对话框留着、把原因写在里面）。
+ * Commands for the model page: each button's intent becomes one call on `RuntimeSession`. The new capability views are sent back by the `models` topic; this code does not change local state.
+ * Failures are thrown as-is to the caller (the dialog stays open and writes the reason in it).
  */
 
 type Session = Pick<
@@ -41,18 +41,18 @@ type Session = Pick<
   | 'openArtifact'
 >;
 
-/** 云端页的默认模型菜单选了一项。 */
+/** The default model menu on the cloud page selected an item. */
 export async function chooseCloudDefault(session: Session, capability: ModelServiceCapability, key: string): Promise<void> {
   const ref = parseDefaultKey(key);
   await session.setModelDefault(capability, ref?.providerId ?? null, ref?.modelId);
 }
 
-/** 文本生成的「推理强度」分段选了一项（「自动」= 清掉，交给模型自己的默认）。新值经 `models` 主题送回。 */
+/** The “推理强度”(Reasoning effort) segment for text generation selected an item (“自动”(Auto) = clear it and leave it to the model's own default). The new value is sent back through the `models` topic. */
 export async function setTextEffort(session: Session, key: string): Promise<void> {
   await session.setCapabilityParameters(effortRequest(key));
 }
 
-/** 文本生成的「并发请求数」改了；不是数时不提交。 */
+/** The text generation “并发请求数”(Concurrent requests) changed; not submitted when the value is not a number. */
 export async function setTextConcurrency(session: Session, value: number): Promise<boolean> {
   const request = concurrencyRequest(value);
   if (!request) return false;
@@ -60,7 +60,7 @@ export async function setTextConcurrency(session: Session, value: number): Promi
   return true;
 }
 
-/** 本地页的默认模型菜单选了一项。选中的模型包停用或加载失败过时先重新启用（`models.enable` 会让它重新校验，所以只在这时调）。 */
+/** The default model menu on the local page selected an item. If the selected model package was disabled or failed to load before, it is re-enabled first (`models.enable` re-validates it, so it is only called at this point). */
 export async function chooseLocalDefault(
   session: Session,
   key: string,
@@ -73,30 +73,30 @@ export async function chooseLocalDefault(
   await session.setModelDefault(VIEW_CAPABILITY[kind], choice.providerId, choice.modelId);
 }
 
-/** 密钥对话框的「保存」：启用并验证，不过时 Runtime 拒绝、不保存。 */
+/** The key dialog's “保存”(Save): enable and verify; if verification fails, the Runtime rejects it and nothing is saved. */
 export async function saveProviderKey(session: Session, providerId: string, key: string): Promise<void> {
   await session.configureModelProvider(connectRequest(providerId, key));
 }
 
-/** 卡头的「刷新」：向服务商取模型与音色列表。取不到（`ok: false`）不算失败，原因记在它的配置里、由 `models` 主题送回。 */
+/** The card header's “刷新”(Refresh): fetches the model and voice lists from the provider. If they cannot be fetched (`ok: false`), it is not counted as a failure; the reason is recorded in its config and sent back by the `models` topic. */
 export async function refreshProvider(session: Session, providerId: string): Promise<void> {
   await session.refreshModelProvider(providerId);
 }
 
-/** 内置的「移除密钥」= 清掉并停用；自建的「删除服务商」= 连同声明的模型一起删。 */
+/** Built-in “移除密钥”(Remove key) = clear and disable; custom “删除服务商”(Delete provider) = delete together with its declared models. */
 export async function disconnectProvider(session: Session, providerId: string): Promise<void> {
   if (isCustomProvider(providerId)) await session.removeModelProvider(providerId);
   else await session.configureModelProvider(disconnectRequest(providerId));
 }
 
-/** 添加自建服务商，返回它的 ID（随后打开它的密钥对话框）。 */
+/** Adds a custom provider and returns its ID (then opens its key dialog). */
 export async function addCustomProvider(session: Session, view: ModelCapabilitiesView, draft: CustomProviderDraft): Promise<string> {
   const request = customProviderRequest(view, draft);
   await session.configureModelProvider(request);
   return request.providerId;
 }
 
-/** 在一家自建服务商下添加一只模型。 */
+/** Adds a model under a custom provider. */
 export async function addProviderModel(
   session: Session,
   view: ModelCapabilitiesView,
@@ -106,7 +106,7 @@ export async function addProviderModel(
   await session.configureModelProvider(addModelRequest(view, providerId, model));
 }
 
-/** 开始一次测试（合成一句话、生成一张图，或让文本模型回一句），返回任务 ID。 */
+/** Starts a test (synthesizes one sentence, generates one image, or has a text model reply with one sentence) and returns the task ID. */
 export async function startProbe(
   session: Session,
   capability: ModelServiceCapability,
@@ -120,7 +120,7 @@ export async function startProbe(
   throw new Error(PROBE_COPY.asrUnsupported);
 }
 
-/** 测试结果的受限地址（给 `<audio>` / `<img>`）。 */
+/** Restricted URL for test results (for `<audio>` / `<img>`). */
 export async function probeMediaUrl(session: Session, output: GeneratedOutput): Promise<string> {
   const handle = await session.openArtifact(output.artifactId);
   return handle.url;

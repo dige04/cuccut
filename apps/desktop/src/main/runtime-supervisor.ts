@@ -13,51 +13,51 @@ export interface ConnectionTarget {
 
 export interface RuntimeSupervisorOptions {
   home: RuntimeHome;
-  /** 默认桌面 Home（含开发态）启动历史迁移；显式沙盒默认关闭。 */
+  /** Launch history migration for the default desktop Home (including dev mode). Off by default when an explicit sandbox is set. */
   legacyAutoDetect?: boolean;
-  /** 构建出来的 Runtime 入口（out/main/runtime.js）。 */
+  /** The built Runtime entry point (out/main/runtime.js). */
   script: string;
   allowedOrigins: string[];
-  /** 把 Runtime 的日志也打到主进程的 stderr（开发时用）。 */
+  /** Also writes the Runtime's logs to the main process's stderr (for development). */
   echoLogs: boolean;
   /**
-   * 凭据后端（架构设计 §6.8）：正式版本用系统的安全存储（经 `<resources>/bin` 里的 `credential-helper`），开发时用明文文件。
-   * 由构建类型决定，不是用户设置。
+   * Credential backend (architecture design §6.8): release builds use the system's secure storage (through `credential-helper` in `<resources>/bin`); development uses a plaintext file.
+   * It is determined by the build type, not by a user setting.
    */
   credentialStore: 'file' | 'keychain';
   /**
-   * 打包后的应用随带的东西（`packaged-resources.ts`）：原生程序（Worker、凭据助手）、内置模板（模板包规范 §6）、内置 Agent skill
-   * （架构设计 §3.8）、按路径读的模型数据（Model Worker 要读，所以在 asar 外面）与 Web 客户端，都在 `<resources>` 下，由主进程经
-   * 环境变量告诉 Runtime。开发时为 null，Runtime 自己从仓库里找。
+   * What a packaged app ships with (`packaged-resources.ts`): native programs (the Worker, the credential helper), built-in templates (template package specification §6), built-in agent skills
+   * (architecture design §3.8), model data read by path (the Model Worker reads it, so it is outside the asar), and the web client. All of these are under `<resources>`, and the main process tells the Runtime about them via
+   * environment variables. In development this is null, and the Runtime finds them itself in the repository.
    */
   resources: PackagedResources | null;
   /**
-   * 系统的下载文件夹（Electron 的 `app.getPath('downloads')`）：从链接导入没有设置下载目录时用它。它认得 Windows 移动过的
-   * 已知文件夹与 Linux 的 XDG 目录（例如 `~/下载`），Runtime 自己只能猜 `~/Downloads`。取不到时为 null。
+   * The system's Downloads folder (Electron's `app.getPath('downloads')`): used for imports from a link when no download directory is set. It recognises the known folders that Windows has moved and the Linux XDG directories
+   * (for example `~/下载`); the Runtime alone can only guess `~/Downloads`. null if it cannot be obtained.
    */
   downloadsDir: string | null;
   /**
-   * 系统的文稿 / 文档文件夹（`app.getPath('documents')`）：旧版项目导入询问的默认目录在它下面（架构设计 §2.7）。取不到时为
-   * null，Runtime 用 `~/Documents`。
+   * The system's Documents folder (`app.getPath('documents')`): the default directory offered when importing legacy projects is under it (architecture design §2.7). null if it cannot be obtained,
+   * in which case the Runtime uses `~/Documents`.
    */
   documentsDir: string | null;
-  /** 操作系统的首选语言（BCP 47，按优先顺序）：界面语言跟随系统时 Runtime 按它选语言。拉起时才取。 */
+  /** The OS preferred languages (BCP 47, in priority order). When the UI language follows the system, the Runtime chooses its language from these. Read only at launch. */
   systemLanguages: () => readonly string[];
 }
 
 const READY_TIMEOUT_MS = 20_000;
 
 /**
- * 找到或启动 Runtime（架构设计 §2.2）。
+ * Finds or starts the Runtime (architecture design §2.2).
  *
- * 先读发现文件；进程活着就直接用。否则用 Electron 自带的 Node 起一个，等它报告就绪后再读发现文件。
- * 令牌只经发现文件与 IPC 传给渲染进程，不进 URL、不进命令行参数。
+ * It first reads the discovery file; if the process is alive, it uses it directly. Otherwise it starts one with Electron's bundled Node, and reads the discovery file again after the Runtime reports ready.
+ * The token is passed to the renderer process only through the discovery file and IPC. It does not go into a URL or into command-line arguments.
  */
 export class RuntimeSupervisor {
   readonly #options: RuntimeSupervisorOptions;
   #child: ChildProcess | null = null;
   #ensuring: Promise<ConnectionTarget> | null = null;
-  /** 应用开始退出（调过 `stop`）之后不再拉起 Runtime。 */
+  /** After the app starts quitting (`stop` has been called), the Runtime is no longer launched. */
   #stopped = false;
 
   constructor(options: RuntimeSupervisorOptions) {
@@ -65,8 +65,8 @@ export class RuntimeSupervisor {
   }
 
   /**
-   * 渲染进程每次（重新）连接前调用；Runtime 不在了就再起一个。应用退出途中不起：自己的 Runtime 停下后窗口还开着，界面会按
-   * 重连退避再来要连接，这时起的 Runtime 没人再停，主进程退出后成了孤儿。
+   * Called by the renderer process before each (re)connection; if the Runtime is gone, starts another one. Not started while the app is quitting: after its own Runtime has stopped, the window is still open and the UI will ask to connect again on its reconnect backoff.
+   * A Runtime started then would have no one to stop it, and would be orphaned once the main process exits.
    */
   connection(): Promise<ConnectionTarget> {
     if (this.#stopped) return Promise.reject(new Error(M.runtimeQuitting));
@@ -79,7 +79,7 @@ export class RuntimeSupervisor {
   async #ensure(): Promise<ConnectionTarget> {
     const existing = await this.#discover();
     if (existing) return existing;
-    // 读发现文件期间可能开始了退出。
+    // Quitting may have started while the discovery file was being read.
     if (this.#stopped) throw new Error(M.runtimeQuitting);
     await this.#spawn();
     const started = await this.#discover();
@@ -105,16 +105,16 @@ export class RuntimeSupervisor {
         CUCCUT_PROJECTS_DIR: home.projectsDir,
         ...(this.#options.legacyAutoDetect ? { CUCCUT_LEGACY_AUTO_DETECT: '1' } : {}),
         CUCCUT_ALLOWED_ORIGINS: allowedOrigins.join(','),
-        // 以 Node 方式运行的 Runtime 不一定能拿到 resourcesPath：Worker、凭据助手、内置模板等的位置由主进程告诉它。
+        // A Runtime running in Node mode may not have resourcesPath: the main process tells it where the Worker, the credential helper, the built-in templates and so on are.
         ...(resources ? packagedResourceEnv(resources) : {}),
-        // 系统的下载文件夹；环境里已经给了（测试指到临时目录）时不覆盖。
+        // The system's Downloads folder. Not overwritten if the environment already provides one (tests point it to a temporary directory).
         ...(downloadsDir && !process.env.CUCCUT_DOWNLOADS_DIR ? { CUCCUT_DOWNLOADS_DIR: downloadsDir } : {}),
-        // 系统的文稿文件夹：同上。
+        // The system's Documents folder: same as above.
         ...(documentsDir && !process.env.CUCCUT_DOCUMENTS_DIR ? { CUCCUT_DOCUMENTS_DIR: documentsDir } : {}),
-        // 从桌面启动的进程多半没有 LANG：系统语言由主进程告诉它。
+        // Processes launched from the desktop mostly have no LANG set, so the main process tells it the system language.
         CUCCUT_SYSTEM_LANGUAGES: systemLanguages().join(','),
       },
-      // IPC 通道只用来请 Runtime 停下（见 stop）。主进程退出或崩溃时通道断开，Runtime 不跟着停，下次启动经发现文件找回它。
+      // The IPC channel is used only to ask the Runtime to stop (see stop). When the main process exits or crashes, the channel closes and the Runtime does not stop with it; the next launch finds it again through the discovery file.
       stdio: ['ignore', 'pipe', echoLogs ? 'inherit' : 'ignore', 'ipc'],
     });
     this.#child = child;
@@ -133,7 +133,7 @@ export class RuntimeSupervisor {
         else resolve();
       };
       const onExit = (code: number | null) => {
-        // 退出码 3：同一个 Home 已经有 Runtime 在跑（另一个窗口或 CLI 起的），读它的发现文件即可。
+        // Exit code 3: a Runtime is already running for the same Home (started by another window or the CLI), so reading its discovery file is enough.
         finish(code === 3 ? undefined : new Error(M.runtimeExited(code)));
       };
       child.once('exit', onExit);
@@ -142,15 +142,15 @@ export class RuntimeSupervisor {
           const message = JSON.parse(line) as { type?: string };
           if (message.type === 'ready' || message.type === 'already-running') finish();
         } catch {
-          // 不是就绪消息，忽略。
+          // Not a ready message; ignore it.
         }
       });
     });
   }
 
   /**
-   * 应用退出时调。只停自己起的 Runtime；连上的别人的 Runtime 不动。经 IPC 通道请它按停止顺序收尾（各平台一样，Windows 上
-   * 没有能被处理的 SIGTERM），超过 `timeoutMs` 强杀。Runtime 自己另有 15 秒的兜底退出。此后 `connection` 不再拉起 Runtime。
+   * Called when the app quits. Stops only the Runtime it started itself; a Runtime connected from elsewhere is left alone. It asks the Runtime through the IPC channel to wind down in stop order (the same on all platforms, since Windows has no SIGTERM that can be handled),
+   * and force-kills it after `timeoutMs`. The Runtime has its own 15-second fallback exit. After this, `connection` no longer launches a Runtime.
    */
   async stop(timeoutMs = 8_000): Promise<void> {
     this.#stopped = true;

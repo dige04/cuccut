@@ -16,14 +16,14 @@ import { tr } from './glossary-copy.tr.ts';
 import { vi } from './glossary-copy.vi.ts';
 
 /**
- * 设置 › 术语库（glossary-settings.tsx、glossary-detail.tsx、glossary-terms.tsx）的文案。
- * 英文是键与类型的来源，译文在 `glossary-copy.<语言>.ts`。
- * 以 `action` 结尾的条目是交给 `libraryErrorText(action, error)` 的动作短语，套进「没能…：原因」那一句。
+ * Copy for Settings › Glossary (glossary-settings.tsx, glossary-detail.tsx, glossary-terms.tsx).
+ * English is the source of keys and types; translations live in `glossary-copy.<language>.ts`.
+ * Entries ending in `action` are action phrases passed to `libraryErrorText(action, error)`, and are slotted into the sentence “could not …: reason” (没能…：原因).
  */
 const en = {
   list: {
     importFilter: 'Glossary (Markdown)',
-    /** 导入的文件进了别的库时那个库的名字。 */
+    /** The name of the library, when an imported file went into a different library. */
     otherLibrary: { voices: 'My voices', brand: 'Brand kit' } as Record<string, string>,
     userLibrary: 'the user library',
     createAction: 'create the glossary',
@@ -107,13 +107,13 @@ const en = {
     targetPlaceholder: 'Translation, e.g. confirmación',
     misheardPlaceholder: 'Misheard as (optional), e.g. KB cache, cave cache',
     add: 'Add',
-    /** 把几条问题连成一句。 */
+    /** Joins several problems into one sentence. */
     problems: (list: readonly string[]) => list.join('; '),
     bulkOpen: 'Paste a batch…',
     bulkLabel: 'Paste a batch',
     translationSample: 'commit = confirmación\nWyckoff = Wyckoff\nspring = resorte = not “manantial”',
     transcriptionSample: 'KV cache = KB cache, cave cache\nLoRA = Laura\ninference framework',
-    /** `eq`、`arrow` 是排成等宽字体的 = 与 →。 */
+    /** `eq` and `arrow` are the = and → signs, set in a monospace font. */
     bulkHow: (translation: boolean, eq: ReactNode, arrow: ReactNode): ReactNode =>
       createElement(
         Fragment,

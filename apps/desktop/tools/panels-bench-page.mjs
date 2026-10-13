@@ -1,10 +1,10 @@
-// 面板基准（`tools/panels-bench.mjs`）在页面里跑的部分：宿主桥（代替 Electron 的预加载脚本）、量具函数，以及一次新载入里的整套测量。
-// 宿主桥与量具都由 CDP 的 `Page.addScriptToEvaluateOnNewDocument` 在页面脚本之前注入（不受页面 CSP 的 `script-src 'self'` 限制）；
-// 测量的每一步用 `Runtime.evaluate` 发进页面，在页面里等完再取结果。
+// The part of the panel benchmark (`tools/panels-bench.mjs`) that runs in the page: the host bridge (in place of Electron's preload script), the measurement helpers, and the full measurement pass on a fresh load.
+// The host bridge and measurement helpers are injected before the page scripts by CDP's `Page.addScriptToEvaluateOnNewDocument` (not subject to the page's CSP `script-src 'self'`);
+// each measurement step is sent into the page with `Runtime.evaluate`, which waits inside the page until it finishes before the result is fetched.
 
 /**
- * 宿主桥：形状与 `src/preload/index.ts` 一致。连接取隔离 Runtime 的端点与令牌；选文件、打开网址之类都是无害的空实现，
- * 更新的 `get` 永不返回（与 `bench:preview` 一样不查更新），订阅返回空的取消函数。
+ * Host bridge: same shape as `src/preload/index.ts`. The connection uses the isolated Runtime's endpoint and token; picking files, opening URLs and the like are harmless no-op stubs,
+ * the update `get` never returns (as with `bench:preview`, updates are not checked), and subscribe returns a no-op unsubscribe function.
  */
 export function hostBridgeSource(connection, platform) {
   return `(() => {
@@ -40,11 +40,11 @@ export function hostBridgeSource(connection, platform) {
 }
 
 /**
- * 量具（在页面里求值）。心跳都用 MessageChannel，不受 setTimeout 的节流影响：
- * - `__measure(fn)`：在一个新任务里调 fn，等主线程安静 1.5 秒；longest 是 longtask 的最长（只报 ≥ 50 ms 的任务，没有时为 0），
- *   maxGap 是细心跳（间隔 > 8 ms 就记）测到的最长一段占用（含排版绘制），total 是粗心跳（> 50 ms）的总占用。
- * - `__frames(el, axis, px, frames)`：rAF 每帧滚 px 像素，到头折返，返回帧间隔。
- * - `__mountedList()` / `__mountedTl()`：当前列表与时间线挂了多少行、件、剪口带与元素，以及视口大小。
+ * Measurement helpers (evaluated in the page). The heartbeats all use MessageChannel, so they are not throttled by setTimeout:
+ * - `__measure(fn)`: calls fn in a new task, then waits until the main thread has been quiet for 1.5 seconds; longest is the longest longtask (only tasks ≥ 50 ms are reported, 0 if none),
+ *   maxGap is the longest stretch of busy time measured by the fine heartbeat (recorded when the interval is > 8 ms; includes layout and paint), and total is the total busy time from the coarse heartbeat (> 50 ms).
+ * - `__frames(el, axis, px, frames)`: rAF scrolls px pixels per frame, turns around at the end, and returns the frame intervals.
+ * - `__mountedList()` / `__mountedTl()`: how many rows, clips, cut-point bands and elements are mounted in the current list and timeline, plus the viewport size.
  */
 export function installHelpers() {
   window.__sleep = (ms) =>
@@ -96,7 +96,7 @@ export function installHelpers() {
       };
       ch.port2.postMessage(0);
     });
-  // 时间线的缩放快捷键：⌘⌥1 整片入镜、⌘0 回 100%、⌘= 放大一级、⌘- 缩小一级。
+  // Timeline zoom shortcuts: ⌘⌥1 fit the whole clip in view, ⌘0 back to 100%, ⌘= zoom in one step, ⌘- zoom out one step.
   window.__z = {
     fit: () => window.__key('1', { code: 'Digit1', meta: true, alt: true }),
     z100: () => window.__key('0', { code: 'Digit0', meta: true }),
@@ -123,7 +123,7 @@ export function installHelpers() {
       },
     };
   };
-  // 粗心跳（> 50 ms）只用来判断「安静下来了」；细心跳（> 8 ms）量最长的一段占用。
+  // The coarse heartbeat (> 50 ms) is only used to decide that things have gone quiet; the fine heartbeat (> 8 ms) measures the longest stretch of busy time.
   window.__hb = () => heartbeat(50);
   window.__fine = () => heartbeat(8);
   window.__quiet = async (hb) => {
@@ -163,7 +163,7 @@ export function installHelpers() {
       tasks: window.__lt.length,
     };
   };
-  // 在 Space 里按名字打开视频（列表的行以名字开头），等时间线出来、主线程安静下来。
+  // Open a video by name in Space (list rows start with the name), and wait for the timeline to appear and the main thread to go quiet.
   window.__open = async (name) => {
     [...document.querySelectorAll('button')]
       .find((b) => b.getAttribute('aria-label') === 'Space' || b.textContent.trim() === 'Space')
@@ -259,7 +259,7 @@ export function installHelpers() {
       scrollW: sc.scrollWidth,
     };
   };
-  // 查找条上「第几 / 共几」的共几；没有命中时不显示，记 0。
+  // The total in the "item N of M" count on the find bar; not shown when there are no matches, records 0.
   window.__hits = (find) => {
     let e = find;
     for (let i = 0; i < 5; i++) e = e.parentElement;
@@ -273,15 +273,15 @@ export function installHelpers() {
 }
 
 /**
- * 一次新载入的整套测量（页面已经导航、宿主桥与量具已注入）：打开视频、热身后量页签切换、各列表与时间线连续滚动的帧间隔、
- * 各面板挂载数、字幕全部替换与撤销、时间线缩放一步与整片入镜。`page` 给 `ev(表达式)`（在页面里的 async 函数体）与 `sleep(ms)`。
+ * A full measurement pass on a fresh load (the page is already navigated, the host bridge and helpers already injected): open a video, warm up, measure tab switching, the frame intervals of continuous scrolling in each list and the timeline,
+ * the mounted counts per panel, replacing and undoing all captions, and one timeline zoom step and fit-to-view. `page` provides `ev(expression)` (an async function body run in the page) and `sleep(ms)`.
  */
 export async function runSuite(page, { video, px = 40, fast = 200, frames = 240, log = () => {} }) {
   const ev = (body) => page.ev(body);
   const J = async (body) => JSON.parse(await ev(body));
   const result = { px, fast, frames };
 
-  // 打开：等界面出来（Space 按钮），再在 Space 里打开视频，等时间线出来。
+  // Open: wait for the UI to appear (Space button), then open a video in Space and wait for the timeline to appear.
   await page.sleep(5000);
   await ev(
     `for (let i = 0; i < 480 && ![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-label') === 'Space' || b.textContent.trim() === 'Space'); i++) await window.__sleep(250);
@@ -293,19 +293,19 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   );
   await page.sleep(3000);
 
-  // 浮层与侧栏：会话浮层最小化，Space 侧栏收起，编辑区宽一些（两档一致）。
+  // Overlays and sidebar: the session overlay is minimized, the Space sidebar is collapsed, and the editing area is wider (both tiers the same).
   await ev(
     `for (const l of ['最小化', '隐藏侧边栏']) [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === l)?.click(); await window.__sleep(1500); return 1`,
   );
   result.window = await J(`return JSON.stringify({ innerW: innerWidth, innerH: innerHeight })`);
 
-  // 侧栏与列表模式都是 radio：已选中的再点会收起面板，只点没选中的。
+  // The sidebar and list modes are radios: clicking one that is already selected collapses the panel, so only click ones that are not selected.
   const rail = (label) => `{ const b = window.__btn(${JSON.stringify(label)}); if (b.getAttribute('aria-checked') !== 'true') b.click(); }`;
   const mode = (text) =>
     `{ const b = window.__byText(${JSON.stringify(text)}); if (b.getAttribute('aria-checked') !== 'true') b.click(); }`;
   const go = (expr) => ev(`${expr}; await window.__sleep(800); return 1`);
 
-  // 热身：每个面板与模式走一遍、各滚一下（生产构建按需载入的块在这里载完）。
+  // Warm-up: go through each panel and mode once and scroll each (production builds load their on-demand chunks here, so they finish loading here).
   for (const step of [rail('字幕'), mode('原文 ＋ 译文'), mode('只看原文'), rail('元素'), rail('文稿'), rail('字幕')]) await go(step);
   for (const step of [rail('文稿'), rail('字幕'), mode('原文 ＋ 译文')]) {
     await go(step);
@@ -316,7 +316,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   await go(mode('只看原文'));
   await go(rail('文稿'));
 
-  // 页签切换：四种状态（文稿、字幕＝只看原文、译文＝原文＋译文、元素）之间的 12 个有序对，两轮。
+  // Tab switching: the 12 ordered pairs among the four states (script, captions = original text only, translation = original plus translation, elements), two rounds.
   const pairs = [
     ['transcript-to-captions', rail('字幕')],
     ['captions-to-translation', mode('原文 ＋ 译文')],
@@ -340,7 +340,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   }
   log('页签切换');
 
-  // 列表：连续滚动的帧间隔（从 20% 处起，每帧 px 像素，先热身 60 帧；再按每帧 fast 像素快甩），再滚到 50% 处数挂载。
+  // Lists: frame intervals while scrolling continuously (starting at 20%, px pixels per frame, with 60 warm-up frames first; then a fast fling at fast pixels per frame), then scroll to 50% and count the mounted items.
   result.lists = {};
   for (const [name, steps] of [
     ['transcript', [rail('文稿')]],
@@ -360,7 +360,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   log('列表滚动');
   await go(mode('只看原文'));
 
-  // 字幕全部替换与撤销：查 marker、替换为 beacon，三轮（每轮撤销后回到原状）。
+  // Replacing and undoing all captions: find the markers, replace them with beacon, three rounds (each round undoes back to the original state).
   await go(`window.__btn('查找和替换').click()`);
   result.replace = [];
   for (let i = 0; i < 3; i++) {
@@ -380,8 +380,8 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   }
   log('全部替换');
 
-  // 时间线：100% 时居中的挂载；缩放一步（100% → ⌘= → ⌘-）与整片入镜各三次；最大缩放（连按 ⌘= 到宽度不再变）所需步数；
-  // 最大缩放与 100% 下的连续横向滚动（之后滚到 50% 处数挂载）。
+  // Timeline: the mounted count when centered at 100%; one zoom step (100% → ⌘= → ⌘-) and fit-to-view, three times each; the number of steps needed to reach maximum zoom (pressing ⌘= repeatedly until the width stops changing);
+  // continuous horizontal scrolling at maximum zoom and at 100% (then scroll to 50% and count the mounted items).
   const z100 = () => ev(`await window.__run(window.__z.z100); await window.__sleep(800); return 1`);
   const zoomStep = (fn) =>
     J(

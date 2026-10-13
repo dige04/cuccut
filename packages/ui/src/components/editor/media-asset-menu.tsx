@@ -38,8 +38,8 @@ import { useAssetUrl } from './use-asset-url.ts';
 import { MEDIA_COPY as MC } from './media-copy.ts';
 
 /**
- * 素材卡片上的 ⋯（设计稿 panel-media.jsx `MediaMenu`）：预览、复制文件名、在文件夹中显示、用在哪（点一处选中它并跳过去）、
- * 替换…、收进视频目录（只对链接的素材）、从视频移除。Runtime 没有删除素材的操作，「从视频移除」置灰并写明原因。
+ * The ⋯ on a media card (design draft panel-media.jsx `MediaMenu`): preview, copy file name, show in folder, where it is used (click one place to select it and jump there),
+ * Replace…, move into the video folder (only for linked media), remove from video. The Runtime has no operation to delete media, so “Remove from video” is greyed out with the reason stated.
  */
 
 const C = {
@@ -196,7 +196,7 @@ export function MediaAssetMenu({
   );
 }
 
-/** 「预览」：在窗口里放一遍素材本身（不经时间线）。地址按素材版本向 Runtime 要（`media.resolve`）。 */
+/** “Preview”: plays the media itself in a window (bypassing the timeline). The address is requested from the Runtime per media version (`media.resolve`). */
 function AssetPreviewDialog({ asset, onClose }: { asset: AssetRecord & { kind: PlaceableKind }; onClose(): void }) {
   const videoId = useVideo((s) => s.video?.videoId ?? null);
   const { url, error, retry } = useAssetUrl(videoId, { id: asset.id, revision: asset.currentRevision });

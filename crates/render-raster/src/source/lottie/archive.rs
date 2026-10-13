@@ -1,24 +1,23 @@
-//! `.lottie` 压缩包（dotLottie）：一个 zip，里面是 `manifest.json`、`animations/<id>.json` 与 `images/` 下的子资源。
+//! `.lottie` archive (dotLottie): a zip containing `manifest.json`, `animations/<id>.json`, and sub-resources under `images/`.
 //!
-//! 只读中央目录，不读本地头里的长度（数据描述符一律忽略）：
+//! It reads only the central directory and ignores the lengths in local headers (data descriptors are always ignored):
 //!
-//! - 只认「存储」（0）与「deflate」（8）两种压缩；加密、ZIP64、分卷一律拒绝；
-//! - 每一项先按中央目录声明的大小设上限（单项 [`MAX_ENTRY_BYTES`]、全部 [`MAX_TOTAL_BYTES`]、至多 [`MAX_ENTRIES`] 项），
-//!   解压时按声明的大小截断，解出来的长度与 CRC-32 都要对得上；
-//! - 名字只认相对路径：带 `..`、绝对路径、反斜杠、盘符或 NUL 的项让整个包作废——不往文件系统写东西，但这样的包本身就不可信。
+//! - Only "stored" (0) and "deflate" (8) compression are accepted. Encryption, ZIP64 and multi-disk archives are all rejected.
+//! - Each entry is first capped by the size its central directory declares (per entry [`MAX_ENTRY_BYTES`], in total [`MAX_TOTAL_BYTES`], at most [`MAX_ENTRIES`] entries). On decompression it is truncated to the declared size, and the decompressed length and CRC-32 must both match.
+//! - Only relative paths are accepted as names. An entry with `..`, an absolute path, a backslash, a drive letter or NUL invalidates the whole archive. Nothing is written to the file system, but an archive like that is not trustworthy in the first place.
 //!
-//! 选哪一段动画：`manifest.json` 的 `activeAnimationId`（第 1 版）或 `initial.animation`（第 2 版），都没有时取
-//! `animations` 的第一项，再没有就取按名字排在最前的动画文件。动画在 `animations/<id>.json`（第 1 版）或
-//! `a/<id>.json`（第 2 版）。图片子资源按 [`Archive::resolve`] 的次序在包里找。
+//! Choosing which animation: `activeAnimationId` in `manifest.json` (version 1) or `initial.animation` (version 2). If neither is present, take the first item in
+//! `animations`. If there is none, take the animation file whose name sorts first. Animations live at `animations/<id>.json` (version 1) or
+//! `a/<id>.json` (version 2). Image sub-resources are searched for in the archive in the order given by [`Archive::resolve`].
 
 use anyhow::{Result, anyhow, bail};
 use std::collections::BTreeMap;
 
-/// 包里至多这么多项。
+/// At most this many entries in the archive.
 pub const MAX_ENTRIES: usize = 4096;
-/// 单项解压后至多这么大。
+/// After decompression, a single entry is at most this large.
 pub const MAX_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
-/// 全部项解压后加起来至多这么大。
+/// After decompression, all entries together are at most this large.
 pub const MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 
 const EOCD_SIGNATURE: u32 = 0x0605_4b50;
@@ -27,7 +26,7 @@ const CENTRAL_SIGNATURE: u32 = 0x0201_4b50;
 const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
 const EOCD_LEN: usize = 22;
 
-/// 字节是不是 zip（本地头或空包的结尾记录开头）。
+/// Whether the bytes are a zip (the start of a local header, or of the end record of an empty archive).
 pub fn looks_like_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
 }
@@ -41,7 +40,7 @@ struct Entry {
     local_offset: u64,
 }
 
-/// 读好中央目录的 zip：按名字取解压后的字节。
+/// A zip whose central directory has been read. Gets decompressed bytes by name.
 #[derive(Debug)]
 pub struct Archive<'a> {
     bytes: &'a [u8],
@@ -62,7 +61,7 @@ fn u32_at(bytes: &[u8], at: usize) -> Result<u32> {
         .ok_or_else(|| anyhow!("zip 截断了（偏移 {at}）"))
 }
 
-/// 包里的名字规范成 `a/b/c`：去掉开头的 `./`；不安全的名字报错。
+/// Normalizes names in the archive to `a/b/c`: strips a leading `./`. Unsafe names raise an error.
 fn normalise(name: &str) -> Result<String> {
     if name.is_empty()
         || name.contains('\\')
@@ -84,12 +83,12 @@ fn normalise(name: &str) -> Result<String> {
 }
 
 impl<'a> Archive<'a> {
-    /// 读结尾记录与中央目录。只校验结构与上限，不解压。
+    /// Reads the end record and the central directory. Validates structure and limits only, and does not decompress.
     pub fn open(bytes: &'a [u8]) -> Result<Archive<'a>> {
         if bytes.len() < EOCD_LEN {
             bail!("不是 zip：太短");
         }
-        // 结尾记录在最后 22 字节到 22 + 65535（注释）之间，从后往前找。
+        // The end record lies between the last 22 bytes and 22 + 65535 (comment) from the end. Search from back to front.
         let last = bytes.len() - EOCD_LEN;
         let first = last.saturating_sub(u16::MAX as usize);
         let eocd = (first..=last)
@@ -149,7 +148,7 @@ impl<'a> Archive<'a> {
             }
             let name = normalise(raw_name)?;
             if raw_name.ends_with('/') {
-                continue; // 目录
+                continue; // Directory
             }
             if !matches!(method, 0 | 8) {
                 bail!("zip 里的 {name} 用了不支持的压缩方式 {method}（只认存储与 deflate）");
@@ -178,12 +177,12 @@ impl<'a> Archive<'a> {
         Ok(Archive { bytes, entries })
     }
 
-    /// 包里的文件名（规范化之后，按名字排序；不含目录）。
+    /// File names in the archive (normalized, sorted by name, directories excluded).
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.keys().map(String::as_str)
     }
 
-    /// 解出一项（名字按 [`normalise`] 的规则比较）；没有这一项是 `Ok(None)`。
+    /// Extracts one entry. Names are compared using the rules of [`normalise`]. If there is no such entry, returns `Ok(None)`.
     pub fn read(&self, name: &str) -> Result<Option<Vec<u8>>> {
         let Ok(name) = normalise(name) else {
             return Ok(None);
@@ -217,7 +216,7 @@ impl<'a> Archive<'a> {
         Ok(Some(out))
     }
 
-    /// 选一段动画（见模块说明），返回它在包里的名字与 JSON 字节。
+    /// Selects one animation (see the module description). Returns its name in the archive and its JSON bytes.
     pub fn animation(&self) -> Result<(String, Vec<u8>)> {
         let manifest = self
             .read("manifest.json")?
@@ -254,8 +253,7 @@ impl<'a> Archive<'a> {
         Ok((first, bytes))
     }
 
-    /// 图片子资源（bodymovin 的 `u` + `p`）在包里的字节：依次找这个路径本身（去掉开头的 `/`，打包工具常写
-    /// `/images/`）、`images/<文件名>`、`i/<文件名>`、`<文件名>`。
+    /// Bytes of an image sub-resource in the archive (bodymovin's `u` + `p`). Tries, in turn: this path itself (with the leading `/` stripped, since packaging tools often write `/images/`), `images/<filename>`, `i/<filename>`, and `<filename>`.
     pub fn resolve(&self, path: &str) -> Result<Option<Vec<u8>>> {
         let file_name = path.rsplit('/').next().unwrap_or(path);
         let candidates = [
@@ -273,7 +271,7 @@ impl<'a> Archive<'a> {
     }
 }
 
-/// CRC-32（IEEE，zip 用的那一个）。
+/// CRC-32 (IEEE, the one zip uses).
 pub fn crc32(bytes: &[u8]) -> u32 {
     static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
     let table = TABLE.get_or_init(|| {
@@ -300,7 +298,7 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 pub(crate) mod tests {
     use super::*;
 
-    /// 手拼一个 zip：`(名字, 内容, 是否 deflate)`。
+    /// Hand-assembles a zip. Each entry is `(name, content, is_deflate)`.
     pub(crate) fn zip(files: &[(&str, &[u8], bool)]) -> Vec<u8> {
         let mut out = Vec::new();
         let mut central = Vec::new();
@@ -384,7 +382,7 @@ pub(crate) mod tests {
             assert!(error.contains("不安全"), "{name}: {error}");
         }
         assert!(Archive::open(b"PK\x03\x04rest").is_err());
-        // 内容被改：CRC 对不上。
+        // Content altered: CRC mismatch.
         let mut bytes = zip(&[("a.txt", b"hello", false)]);
         let at = bytes.windows(5).position(|w| w == b"hello").unwrap();
         bytes[at] = b'j';
@@ -396,7 +394,7 @@ pub(crate) mod tests {
                 .to_string()
                 .contains("校验和")
         );
-        // 中央目录声明的大小比实际小：按声明截断，大小对不上。
+        // The size declared in the central directory is smaller than the actual size. Truncated to the declared size, so the sizes do not match.
         let mut bytes = zip(&[("b.txt", &b"x".repeat(1000), true)]);
         let cd = bytes
             .windows(4)
@@ -420,7 +418,7 @@ pub(crate) mod tests {
             archive.animation().unwrap(),
             ("animations/main.json".into(), b"{\"a\":2}".to_vec())
         );
-        // 没有清单：按名字取第一段。
+        // No manifest: take the first segment by name.
         let bytes = zip(&[
             ("animations/b.json", b"{}", false),
             ("animations/a.json", b"[]", false),
@@ -431,7 +429,7 @@ pub(crate) mod tests {
         );
         let bytes = zip(&[("images/x.png", b"", false)]);
         assert!(Archive::open(&bytes).unwrap().animation().is_err());
-        // 第 2 版的布局。
+        // Version 2 layout.
         let bytes = zip(&[
             (
                 "manifest.json",

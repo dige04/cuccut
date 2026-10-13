@@ -16,12 +16,11 @@ type ExternalToolMethod =
   | 'externalTools.cookieBrowsers';
 
 /**
- * `externalTools.*` 的处理函数（架构设计 §12.9），由 `handlers.ts` 并进方法表。它们管的是这台机器（下载并执行第三方程序、
- * 代用户执行更新命令），只给界面与 CLI：Web 服务的白名单里没有 `externalTools.*`，对外服务不走网关、工具目录里也没有安装与更新。
+ * Handlers for `externalTools.*` (architecture design §12.9), merged into the method table by `handlers.ts`. They manage this machine (downloading and running third-party programs, running update commands on the user's behalf), so they are offered only to the UI and the CLI: the Web service allowlist has no `externalTools.*`, and public-facing services do not go through the gateway and the tool catalog has no install or update.
  */
 export function externalToolMethods(tools: () => ExternalToolService): Pick<RpcHandlers['methods'], ExternalToolMethod> {
   const own = (principal: TrustedPrincipal) => {
-    // 白名单之外再挡一次：浏览器与对外服务都不能下载、更新或指定可执行文件。
+    // A second check beyond the allowlist: neither the browser nor public-facing services may download, update, or specify an executable.
     if (principal.kind === 'service' || principal.kind === 'web') throw new RpcError('forbidden', RcExternalTools.manageOnlyInAppOrCli());
   };
   return {
@@ -47,7 +46,7 @@ export function externalToolMethods(tools: () => ExternalToolService): Pick<RpcH
       own(principal);
       return tools().consent(p);
     },
-    // 只看各浏览器的 Cookie 库在不在、什么时候改过，不读内容；与从链接导入一样只给界面与 CLI（白名单里没有）。
+    // Only checks whether each browser's cookie database exists and when it last changed; does not read the contents. Like importing from a link, it is given only to the UI and the CLI (not in the allowlist).
     'externalTools.cookieBrowsers': async () => ({ platform: process.platform, browsers: await detectCookieBrowsers() }),
   };
 }

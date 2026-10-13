@@ -1,7 +1,6 @@
-//! 运行时 IR：绝对或元素局部时间、强类型、已展开（ADR-M02、设计 §5.3）。
+//! Runtime IR: absolute or element-local time, strongly typed, already expanded (ADR-M02, design §5.3).
 //!
-//! MotionProgram 不落盘（debug 除外），也不残留 preset 名——provenance 只以
-//! `sources` 侧车形式保留，采样期从不查它。
+//! MotionProgram is not written to disk (except in debug), and does not retain preset names. Provenance is kept only as a `sources` sidecar, and sampling never looks at it.
 
 use crate::composite::{CompositeMode, PostOp};
 use crate::curve::CurveSpec;
@@ -12,7 +11,7 @@ use crate::value::{MotionValue, PropertyId};
 
 pub const MOTION_PROGRAM_VERSION: u32 = 1;
 
-/// 采样目标。`0` 是元素自身；文字 part 由 `PartPlan` 描述。
+/// Sampling target. `0` is the element itself; text parts are described by `PartPlan`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TargetId(pub u32);
 
@@ -20,24 +19,21 @@ impl TargetId {
     pub const SELF: Self = Self(0);
 }
 
-/// 时间基准。**这不是装饰**（计划 §2.1）：Timeline 的窗口全部相对 `start`，
-/// `local = (quantize(t) - start).clamp(0, lifetime)` 与
-/// `t - (start + begin)` 不是同一个 double，所以 Timeline lowering 必须发
-/// `ElementLocal`，由调用方先做减法再 clamp；BCF 通道本来就是绝对时间。
+/// Time base. **This is not decoration** (plan §2.1): Timeline windows are all relative to `start`, and `local = (quantize(t) - start).clamp(0, lifetime)` is not the same double as `t - (start + begin)`. So Timeline lowering must emit `ElementLocal`, with the caller doing the subtraction before the clamp. BCF channels are already absolute time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimeBase {
     ElementLocal,
     Absolute,
 }
 
-/// 区间外的取值方式。`Hold` = 夹到该段端点求值，`Off` = 该轨在此刻无输出。
+/// Value behavior outside the interval. `Hold` = clamp to the segment endpoint and evaluate there; `Off` = the track produces no output at this moment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fill {
     Off,
     Hold,
 }
 
-/// `MotionProgram::loop_kernels` 的下标。
+/// Index into `MotionProgram::loop_kernels`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LoopKernelRef(pub usize);
 
@@ -70,23 +66,21 @@ pub struct MotionSegment {
 pub struct PropertyTrack {
     pub target: TargetId,
     pub property: PropertyId,
-    /// 整轨的合成模式。**不变式：一条轨只有一种 `(composite, order)`**——同一属性
-    /// 的多种合成用多条轨表达，`sample()` 按 target 遍历全部轨，天然叠加
-    /// （设计 §5.1）。段上的同名字段保留（指纹已编码它们），必须与轨一致。
+    /// Composite mode of the whole track. **Invariant: a track has only one `(composite, order)`.** Multiple composites of the same property are expressed with multiple tracks, and `sample()` traverses all tracks for a target, so they stack naturally (design §5.1). The same-named fields kept on segments (the fingerprint already encodes them) must match the track.
     pub composite: CompositeMode,
-    /// replace 轨之间的覆盖序：大者胜（规范 §7.1「后声明覆盖」的显式化）。
+    /// Overlap order between replace tracks: the larger wins (making explicit spec §7.1's "later declaration overrides").
     pub order: u32,
-    /// 通道 identity（opacity/scale 为 1，dx/dy/rotation/blur 为 0）。
+    /// Channel identity (opacity/scale are 1, dx/dy/rotation/blur are 0).
     pub base: MotionValue,
     pub post: PostOp,
-    /// `reveal` 这类通道：没有 segment 覆盖时 pose 字段保持缺席，而不是取 base。
+    /// For channels like `reveal`: when no segment covers the time, pose fields stay absent rather than taking base.
     pub optional: bool,
-    /// 按 `t0` 升序、互不重叠（证明见计划 §2.4）。
+    /// Sorted ascending by `t0`, non-overlapping (proof in plan §2.4).
     pub segments: Vec<MotionSegment>,
 }
 
 impl PropertyTrack {
-    /// 轨与段的 `(composite, order)` 必须一致。debug 下断言，release 下以轨为准。
+    /// The track's and segment's `(composite, order)` must match. Asserted in debug; in release the track wins.
     pub fn assert_segments_agree(&self) {
         debug_assert!(
             self.segments
@@ -97,7 +91,7 @@ impl PropertyTrack {
         );
     }
 
-    /// 该轨覆盖的时间区间（`None` = 空轨）。
+    /// Time interval covered by this track (`None` = empty track).
     pub fn span(&self) -> Option<(f64, f64)> {
         let first = self.segments.first()?;
         let last = self.segments.last()?;
@@ -105,8 +99,7 @@ impl PropertyTrack {
     }
 }
 
-/// 同一 target / 同一属性上时间交叠的两条 `replace` 轨（规范 §7.7 / §16
-/// `motion-replace-overlap`）。
+/// Two `replace` tracks on the same target and same property that overlap in time (spec §7.7 / §16 `motion-replace-overlap`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplaceOverlap {
     pub property: PropertyId,
@@ -116,9 +109,7 @@ pub struct ReplaceOverlap {
     pub later_order: u32,
 }
 
-/// 文字级联计划（计划 §2.10）。`delay`/`part_duration`/`begin_i` 分开保存，
-/// 因为 `(local - delay - begin_i) / part_duration` 与
-/// `(local - (delay + begin_i)) / part_duration` 不是同一个 double。
+/// Text cascade plan (plan §2.10). `delay`/`part_duration`/`begin_i` are stored separately, because `(local - delay - begin_i) / part_duration` and `(local - (delay + begin_i)) / part_duration` are not the same double.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartPlan {
     pub unit: PartUnit,
@@ -126,12 +117,12 @@ pub struct PartPlan {
     pub delay: f64,
     pub part_duration: f64,
     pub step: f64,
-    /// `stagger_order(i, count, stagger_from)`，长度 = `count`。
+    /// `stagger_order(i, count, stagger_from)`, length = `count`.
     pub orders: Vec<usize>,
 }
 
 impl PartPlan {
-    /// 逐式来自 `motion.rs:657-662`。
+    /// Taken verbatim from `motion.rs:657-662`.
     pub fn progress(&self, index: usize, local: f64) -> f64 {
         let begin = self.orders[index] as f64 * self.step;
         if self.part_duration > 0.0 {
@@ -142,7 +133,7 @@ impl PartPlan {
     }
 }
 
-/// 配方来源。只进 `full_fingerprint()`，采样期不查。
+/// Recipe source. Only enters `full_fingerprint()`; not consulted at sampling time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PresetRef {
     pub id: String,
@@ -182,7 +173,7 @@ impl MotionProgram {
             .find(|track| track.property.as_str() == property)
     }
 
-    /// 时间交叠的多条 replace 轨。`ccut lint` 用它发 `motion-replace-overlap`。
+    /// Multiple replace tracks that overlap in time. `ccut lint` uses it to emit `motion-replace-overlap`.
     pub fn replace_overlaps(&self) -> Vec<ReplaceOverlap> {
         let mut out = Vec::new();
         for (i, a) in self.property_tracks.iter().enumerate() {
@@ -220,7 +211,7 @@ impl MotionProgram {
         out
     }
 
-    /// 把 `ElementLocal` 程序平移到绝对时间。等价性测试（Timeline ≡ BCF）用。
+    /// Shifts an `ElementLocal` program to absolute time. Used by the equivalence test (Timeline ≡ BCF).
     pub fn rebased(&self, offset: f64) -> Self {
         let mut next = self.clone();
         next.time_base = TimeBase::Absolute;

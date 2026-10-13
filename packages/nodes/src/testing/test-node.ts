@@ -21,8 +21,8 @@ import { NodeService, type NodeServiceOptions } from '../node-service.ts';
 import type { Clock, PairingLimits } from '../pairing.ts';
 
 /**
- * 测试工具：在临时目录里起一个只听回环地址的节点，背后是真的 JobManager 与假的 Model Worker。
- * 节点端与发起端的测试都用它；不碰真实的 mDNS，端口由系统分配。
+ * Test utility: starts a node in a temporary directory that listens only on the loopback address, backed by a real JobManager and a fake Model Worker.
+ * Both the node-side and the initiator-side tests use it; it does not touch real mDNS, and the port is assigned by the system.
  */
 
 const COMPONENTS: BundleDefinition['components'] = {
@@ -30,7 +30,7 @@ const COMPONENTS: BundleDefinition['components'] = {
   vad: { family: 'silero-vad', repo: 'test/vad', revision: 'r-vad' },
 };
 
-/** 假 Model Worker 认得的故障后缀（见 `@cuccut/jobs` 的 `testing/fake-model-worker.ts`）。 */
+/** Fault suffixes recognized by the fake Model Worker (see `testing/fake-model-worker.ts` in `@cuccut/jobs`). */
 export const TEST_NODE_FAULTS = [
   '',
   '#crash-once',
@@ -42,9 +42,9 @@ export const TEST_NODE_FAULTS = [
   '#no-speech',
 ] as const;
 
-/** 默认可用的模型包。 */
+/** Model package available by default. */
 export const TEST_NODE_BUNDLE = 'fake@cpu';
-/** 仓库没有安装的模型包：`models.status` 为 `not-installed`。 */
+/** Model package not installed in the repository: `models.status` is `not-installed`. */
 export const TEST_NODE_MISSING_BUNDLE = 'fake@cpu#missing';
 
 export const TEST_NODE_BUNDLES: BundleDefinition[] = [
@@ -66,7 +66,7 @@ export const TEST_NODE_BUNDLES: BundleDefinition[] = [
   },
 ];
 
-/** 给合成模型包的仓库写清单与小文件。 */
+/** Writes a manifest and small files into the repository of the synthetic model package. */
 export async function installTestModels(modelsDir: string): Promise<void> {
   for (const [repo, revision] of [
     ['test/asr', 'r-asr'],
@@ -84,7 +84,7 @@ export async function installTestModels(modelsDir: string): Promise<void> {
   }
 }
 
-/** 记下登记与撤销，不碰真实的 mDNS。 */
+/** Records registrations and revocations, without touching real mDNS. */
 export class FakeAdvertiser implements Advertiser {
   readonly started: AdvertiseInfo[] = [];
   stops = 0;
@@ -101,7 +101,7 @@ export class FakeAdvertiser implements Advertiser {
   }
 }
 
-/** 手动拨动的时钟（配对码期限与锁定）。 */
+/** Manually advanced clock (for pairing code expiry and lockout). */
 export class ManualClock implements Clock {
   #now: number;
 
@@ -118,7 +118,7 @@ export class ManualClock implements Clock {
   }
 }
 
-/** 没有打开任何视频：节点的任务不该碰视频，碰了就抛错。 */
+/** No video is opened: the node's tasks should not touch video, and if they do, they throw. */
 export const noVideos: JobVideos = {
   retain() {
     throw new Error('节点任务不应该租用视频');
@@ -140,27 +140,27 @@ export const noVideos: JobVideos = {
   },
 };
 
-/** `ShareStatus.pairing` 里的配对码；没有（或已锁定）时为 null。 */
+/** The pairing code in `ShareStatus.pairing`; null if there is none (or it is locked). */
 export function pairingCodeOf(status: ShareStatus): string | null {
   const pairing = status.pairing;
   return pairing && 'code' in pairing ? pairing.code : null;
 }
 
 export interface TestNodeOptions {
-  /** 换掉默认的空视频（共享队列的测试要一个本地视频任务）。 */
+  /** Replaces the default empty video (the shared-queue tests need a local video task). */
   videos?: JobVideos;
   clock?: Clock;
   limits?: Partial<NodeLimits>;
   pairing?: Partial<PairingLimits>;
   freeBytes?: (dir: string) => Promise<number>;
-  /** 开启共享之后经 `setCapability` 设的能力开关（与网关同一条路）。 */
+  /** Capability switches set through `setCapability` after sharing is turned on (the same path as the gateway). */
   capabilities?: Record<string, boolean>;
-  /** 支持共享的模型能力（模拟将来新加的能力）。 */
+  /** Model capabilities that support sharing (simulates capabilities added in the future). */
   shareableCapabilities?: readonly string[];
   heartbeatMs?: number;
-  /** 传给 `nodes.share.start`；默认 `{ port: 0 }`。null 表示不开启共享。 */
+  /** Passed to `nodes.share.start`; default `{ port: 0 }`. null means do not start sharing. */
   share?: ShareStartParams | null;
-  /** 复用已有的临时目录（重启测试）。 */
+  /** Reuses an existing temporary directory (for restart tests). */
   dir?: string;
 }
 
@@ -172,15 +172,15 @@ export interface TestNode {
   catalog: ModelCatalog;
   provider: LocalTranscribeProvider;
   advertiser: FakeAdvertiser;
-  /** `http://127.0.0.1:<port>`（跟随当前监听的端口）。 */
+  /** `http://127.0.0.1:<port>` (follows the port currently listening). */
   readonly baseUrl: string;
-  /** 用当前配对码（没有就新发一个）配对，返回令牌。 */
+  /** Pairs using the current pairing code (issues a new one if there is none), and returns the token. */
   pair(clientId?: string, clientName?: string): Promise<string>;
-  /** 停服务与 JobManager；`keepDir` 为真时留下临时目录。 */
+  /** Stops the service and the JobManager; when `keepDir` is true, leaves the temporary directory in place. */
   close(options?: { keepDir?: boolean }): Promise<void>;
 }
 
-/** 起一个只听 127.0.0.1 的测试节点，默认已开启共享（端口由系统分配）。 */
+/** Starts a test node that listens only on 127.0.0.1, with sharing on by default (port assigned by the system). */
 export async function startTestNode(options: TestNodeOptions = {}): Promise<TestNode> {
   const dir = options.dir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-node-')));
   const home = resolveRuntimeHome({ CUCCUT_HOME: dir });
@@ -217,7 +217,7 @@ export async function startTestNode(options: TestNodeOptions = {}): Promise<Test
     host: '127.0.0.1',
     advertiser,
     hostname: () => 'test-node',
-    // 只在监听所有接口时用到；测试节点只听 127.0.0.1，status 里应该只看到它，看不到这个文档用的地址。
+    // Only used when listening on all interfaces; the test node listens only on 127.0.0.1, so status should show only that, not the address used in this document.
     addresses: () => ['192.0.2.1'],
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.limits ? { limits: options.limits } : {}),
@@ -261,7 +261,7 @@ export async function startTestNode(options: TestNodeOptions = {}): Promise<Test
   };
 }
 
-/** 带协议版本头与令牌的 fetch。 */
+/** fetch with the protocol version header and the token. */
 export function nodeFetch(baseUrl: string, token: string | null, pathname: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has(NODE_PROTOCOL_HEADER)) headers.set(NODE_PROTOCOL_HEADER, String(NODE_PROTOCOL_VERSION));
@@ -269,7 +269,7 @@ export function nodeFetch(baseUrl: string, token: string | null, pathname: strin
   return fetch(`${baseUrl}${pathname}`, { ...init, headers });
 }
 
-/** 一份合规的创建请求，摘要与长度按 `media` 算。 */
+/** A compliant create request; the digest and length are computed from `media`. */
 export function testJobRequest(media: Buffer, overrides: Partial<NodeJobRequest> = {}): NodeJobRequest {
   return {
     clientJobId: overrides.clientJobId ?? `cj_${crypto.randomUUID()}`,
@@ -286,7 +286,7 @@ export function testJobRequest(media: Buffer, overrides: Partial<NodeJobRequest>
   };
 }
 
-/** 读完一条 NDJSON 事件流（节点在终态后关闭它），去掉心跳。 */
+/** Reads a whole NDJSON event stream (the node closes it after the terminal state), dropping heartbeats. */
 export async function readEvents(response: Response): Promise<Exclude<NodeJobEvent, { type: 'heartbeat' }>[]> {
   const text = await response.text();
   return text
@@ -296,7 +296,7 @@ export async function readEvents(response: Response): Promise<Exclude<NodeJobEve
     .filter((event): event is Exclude<NodeJobEvent, { type: 'heartbeat' }> => event.type !== 'heartbeat');
 }
 
-/** 创建任务并上传媒体，返回创建时的任务与请求。 */
+/** Creates a job and uploads the media; returns the job and the request as they were when created. */
 export async function submitTestJob(
   baseUrl: string,
   token: string,

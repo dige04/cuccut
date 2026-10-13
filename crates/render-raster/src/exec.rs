@@ -1,31 +1,22 @@
-//! 外部二进制（ffmpeg / ffprobe）的查找与 `Command` 构造，只给 `media` 用。
+//! Lookup of the external binaries (ffmpeg / ffprobe) and `Command` construction. Only `media` uses this.
 //!
-//! v2 由 `ccut-exec` 统一提供（搜索目录表、登录 shell 的 PATH 捕获、Homebrew / MacPorts
-//! 等硬编码目录、`CCUT_REAL_EXE` 硬链接身份）；它在架构设计 §13.6 定为不移植，进程与
-//! 工具的发现归 Runtime。这里只留 `media` 实际用到的三样：[`command`]、[`find_executable`]、
-//! [`current_exe`]，名字与形状同 v2，查找规则跟 v3：
+//! v2 provided this through `ccut-exec`, which handled the search directory table, PATH capture from the login shell, hard-coded directories such as Homebrew and MacPorts, and the `CCUT_REAL_EXE` hard-link identity. The architecture design §13.6 decided not to port it, and process and tool discovery belongs to the Runtime. Only the three items `media` actually uses are kept here: [`command`], [`find_executable`], and [`current_exe`]. Their names and shapes match v2, but the lookup rules follow v3:
 //!
-//! 1. ffmpeg / ffprobe 先看环境变量 `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE`（与 `media-core`、
-//!    `model-runtime` 和 Runtime 的外部工具解析同一组变量）。绝对路径原样使用；裸名字在
-//!    `PATH` 里找。给了却找不到时不换成别的来源（与 Runtime 一致：显式指定的不悄悄替换）。
-//! 2. 否则在本进程的 `PATH` 里找。Runtime 拉起 Worker 时给的就是登录 shell 的 PATH，
-//!    这里不再补任何猜测的目录，也不改写子进程的 `PATH`。
+//! 1. ffmpeg / ffprobe first check the environment variables `CUCCUT_FFMPEG` / `CUCCUT_FFPROBE`. These are the same variables used by `media-core`, `model-runtime`, and the Runtime's external tool resolution. An absolute path is used as it is. A bare name is searched for in `PATH`. If a value is given but cannot be found, no other source is substituted. This matches the Runtime: an explicitly specified value is never silently replaced.
+//! 2. Otherwise, search the `PATH` of the current process. When the Runtime starts a Worker, it passes the login shell's PATH. Here no guessed directories are added, and the child process's `PATH` is not rewritten.
 //!
-//! 用户在设置里指定的路径与受管副本只在 Runtime 的登记表里（ffmpeg 没有受管副本），Rust 侧
-//! 看不到；接线时由调用方把解析好的路径交进来（同 `media-core::Tools`）。
+//! Paths the user set in Settings, and managed copies, exist only in the Runtime's registry. ffmpeg has no managed copy. The Rust side cannot see them. At wiring time, the caller passes in the resolved path (the same as `media-core::Tools`).
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// 覆盖 ffmpeg 可执行文件的环境变量（与 `model-runtime::audio::FFMPEG_ENV` 同名）。
+/// The environment variable that overrides the ffmpeg executable (same name as `model-runtime::audio::FFMPEG_ENV`).
 pub const FFMPEG_ENV: &str = "CUCCUT_FFMPEG";
-/// 覆盖 ffprobe 可执行文件的环境变量。
+/// The environment variable that overrides the ffprobe executable.
 pub const FFPROBE_ENV: &str = "CUCCUT_FFPROBE";
 
-/// 构造启动 `program` 的 `Command`：按 [`find_executable`] 的规则解析出路径再启动。解析
-/// 不到时让 spawn 照常失败（调用方据此回落或报错）：给了覆盖变量就用变量的值去启动，
-/// 不退回 `PATH` 里的同名程序；没给才用原名。Windows 上隐藏子进程的控制台窗口。
+/// Builds a `Command` that launches `program`. The path is resolved by the rules of [`find_executable`] before launch. If resolution fails, spawn is left to fail as usual, and the caller falls back or reports the error. If an override variable is set, the variable's value is used to launch, and the code does not fall back to a same-named program on `PATH`. Only when no override is set is the original name used. On Windows, the child process's console window is hidden.
 pub fn command(program: impl AsRef<OsStr>) -> Command {
     let program = program.as_ref();
     let resolved = match program.to_str() {
@@ -44,8 +35,7 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
     command
 }
 
-/// [`command`] 实际启动的程序：找得到就是找到的路径；找不到时是覆盖变量的值（有的话），
-/// 否则是原名。
+/// The program actually launched by [`command`]. If the lookup finds it, this is the found path. If not, it is the override variable's value (if set), otherwise the original name.
 fn resolve_program(name: &str, overridden: Option<&OsStr>, path: Option<&OsStr>) -> OsString {
     if let Some(found) = find_executable_in(name, overridden, path) {
         return found.into_os_string();
@@ -56,7 +46,7 @@ fn resolve_program(name: &str, overridden: Option<&OsStr>, path: Option<&OsStr>)
     }
 }
 
-/// 找一个外部二进制，只接受裸命令名（不能含路径分隔符）。规则见模块文档。
+/// Finds an external binary. Only a bare command name is accepted (it must not contain path separators). See the module docs for the rules.
 pub fn find_executable(name: &str) -> Option<PathBuf> {
     let overridden = override_env(name).and_then(std::env::var_os);
     find_executable_in(
@@ -66,7 +56,7 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     )
 }
 
-/// 可注入环境的查找入口，供单元测试钉住规则。`overridden` 是对应环境变量的值。
+/// Lookup entry point with an injectable environment, so unit tests can pin the rules. `overridden` is the value of the matching environment variable.
 fn find_executable_in(
     name: &str,
     overridden: Option<&OsStr>,
@@ -88,7 +78,7 @@ fn find_executable_in(
     search_path(name, path)
 }
 
-/// ffmpeg / ffprobe 的覆盖变量；其余命令没有（Windows 的 `.exe` 后缀也认）。
+/// Override variables for ffmpeg and ffprobe. The other commands have none. The Windows `.exe` suffix is also accepted.
 fn override_env(name: &str) -> Option<&'static str> {
     let stem = name
         .strip_suffix(".exe")
@@ -101,7 +91,7 @@ fn override_env(name: &str) -> Option<&'static str> {
     }
 }
 
-/// 按 `PATH` 的顺序找第一个具备平台意义上可执行性的文件。
+/// Finds the first file that is executable in the platform's sense, in `PATH` order.
 fn search_path(name: &str, path: Option<&OsStr>) -> Option<PathBuf> {
     let candidates = candidate_names(name);
     std::env::split_paths(path.unwrap_or_default())
@@ -114,7 +104,7 @@ fn search_path(name: &str, path: Option<&OsStr>) -> Option<PathBuf> {
         })
 }
 
-/// Windows 上按 `.exe` → `.cmd` → `.bat` 尝试，不接受无扩展名文件（同 v2 `ccut-exec`）。
+/// On Windows, tries `.exe`, then `.cmd`, then `.bat`. Files without an extension are not accepted (same as v2 `ccut-exec`).
 #[cfg(windows)]
 fn candidate_names(name: &str) -> Vec<OsString> {
     let lower = name.to_ascii_lowercase();
@@ -136,7 +126,7 @@ fn candidate_names(name: &str) -> Vec<OsString> {
     vec![name.into()]
 }
 
-/// Windows 下避免为子进程弹出控制台窗口；非 Windows 为 no-op。
+/// On Windows, stops the child process from opening a console window. No-op on other platforms.
 fn hide_console(command: &mut Command) {
     #[cfg(windows)]
     {
@@ -161,8 +151,7 @@ fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
-/// 本进程可执行文件的真实路径：`std::env::current_exe()` 再 canonicalize（解开符号链接），
-/// 解析失败时退回原值。v2 另认 `CCUT_REAL_EXE`（按角色名硬链接启动的 `ccut`），v3 没有这种启动方式。
+/// The real path of this process's executable: `std::env::current_exe()`, then canonicalized (symbolic links resolved). If resolution fails, the original value is returned. v2 also recognized `CCUT_REAL_EXE` (a `ccut` started through a hard link named after a role). v3 has no such way of starting.
 pub fn current_exe() -> std::io::Result<PathBuf> {
     let raw = std::env::current_exe()?;
     Ok(std::fs::canonicalize(&raw).unwrap_or(raw))

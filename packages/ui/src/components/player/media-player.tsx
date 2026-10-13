@@ -35,7 +35,7 @@ import { SubtitleList } from './subtitle-list.tsx';
 import './player.css';
 import { pauseOtherPreviews } from '../../model/image-preview.ts';
 
-/** 字幕文件读全文的上限。 */
+/** Upper limit for reading the whole subtitle file. */
 const SUBTITLE_LIMIT = 5 * 1024 * 1024;
 const NO_TRACK = '__none__';
 
@@ -90,13 +90,13 @@ const controls = style({ display: 'flex', flexDirection: 'column', gap: 2 });
 const controlRow = style({ display: 'flex', alignItems: 'center', gap: 4 });
 const spacer = style({ flexGrow: 1 });
 const clock = style({ font: 'ui-sm', color: 'gray-700', whiteSpace: 'nowrap', paddingX: 4 });
-// 滑块拇指以数值为中心，两端留出半个拇指，免得压到边上的按钮。
+// The slider thumb is centered on its value, leaving half a thumb of space at each end so it does not press against the buttons at the edges.
 const scrubber = style({ width: 'full', paddingX: 8 });
 const volumeSlider = style({ width: 80, paddingX: 8, flexShrink: 0 });
 const track = style({ position: 'relative', height: 20, width: 'full', cursor: 'default' });
 const rail = style({ position: 'absolute', insetX: 0, top: 8, height: 4, borderRadius: 'full', backgroundColor: 'gray-300' });
 const fill = style({ position: 'absolute', insetStart: 0, top: 8, height: 4, borderRadius: 'full', backgroundColor: 'accent' });
-// react-aria 给拇指的是 translate(-50%, -50%)：顶边放在杆的竖向中线上，拇指才压在细轨正中。
+// react-aria positions the thumb with translate(-50%, -50%): its top edge sits on the track's vertical midline, so the thumb is centered on the thin track.
 const thumb = style({
   top: '[50%]',
   size: 14,
@@ -120,9 +120,9 @@ const note = style({ font: 'ui-sm', color: 'gray-600', margin: 0, paddingY: 8 })
 type CueState = { status: 'none' } | { status: 'loading' } | { status: 'ready'; cues: Cue[] } | { status: 'error'; message: string };
 
 /**
- * 只读播放器（产品设计 §11.1 的 0.3）：播放项目目录里的视频或音频，叠加同目录的字幕文件，
- * 字幕列表与画面同步，点一句跳到那里。会话的功能区与 Space 的查看框用的是同一个组件：
- * 功能区窄，列表在下（column）；查看框宽，列表在右（row）。播放器不写任何文件。
+ * Read-only player (product design §11.1, 0.3): plays a video or audio file from the project directory and overlays a subtitle file from the same directory.
+ * The subtitle list is kept in sync with the picture, and clicking a line jumps there. The session's feature area and Space's preview box use the same component:
+ * the feature area is narrow, so the list goes below (column); the preview box is wide, so the list goes to the right (row). The player does not write any files.
  */
 export function MediaPlayer({
   target,
@@ -135,7 +135,7 @@ export function MediaPlayer({
   target: MediaTarget;
   fileName: string;
   layout?: 'column' | 'row';
-  /** 记播放位置与字幕选择用的键。项目里的文件从会话还是从 Space 打开都该记在一处；不给时按 target。 */
+  /** Key under which playback position and subtitle selection are remembered. A project file should be remembered in one place whether it is opened from the session or from Space; when no key is given, it falls back to target. */
   memoryKey?: string;
   resolvedHandle?: MediaHandle;
   mediaKind?: 'audio' | 'video';
@@ -161,13 +161,13 @@ export function MediaPlayer({
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const rate = usePlayer((s) => s.rate);
-  // 没选过时自动用同名的字幕；选了「不用字幕」就是 null。
+  // If nothing has been chosen, the subtitle with the same name is used automatically; choosing “No subtitles” gives null.
   const chosen = choice === undefined ? (tracks?.find((t) => t.matched)?.fileName ?? null) : choice;
   const track = tracks?.find((t) => t.fileName === chosen) ?? null;
   const cueState = useCues(track);
   const cues = cueState.status === 'ready' ? cueState.cues : NO_CUES;
 
-  // target 由 key 唯一确定，不把每次新建的对象放进依赖。
+  // target is uniquely determined by key, so the newly created objects are not put into the dependencies.
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -180,7 +180,7 @@ export function MediaPlayer({
         (handle) => !cancelled && setUrl({ status: 'ready', url: handle.url }),
         (error: Error) => !cancelled && setUrl({ status: 'error', message: error.message }),
       );
-    // 视频里的素材、消息附的图片没有旁边的字幕文件。
+    // Clips embedded in videos and images attached to messages have no subtitle file next to them.
     ('videoId' in target || 'attachmentId' in target || 'localPath' in target ? Promise.resolve([]) : runtime.listSubtitles(target)).then(
       (found) => !cancelled && setTracks(found),
       (error: Error) => !cancelled && setTracksError(error.message),
@@ -191,7 +191,7 @@ export function MediaPlayer({
     };
   }, [runtime, key, resolvedHandle]);
 
-  // 控制器跟着媒体元素：元素换了（换了文件）就重建。关掉时记下播放位置（产品设计 §3.3）。
+  // The controller follows the media element: when the element changes (a different file is loaded), it is rebuilt. When closed, the playback position is recorded (product design §3.3).
   useEffect(() => {
     if (!media) return;
     const next = new PlaybackController(media);
@@ -203,7 +203,7 @@ export function MediaPlayer({
     };
   }, [media, memory]);
 
-  // 元数据到了再回到上次的位置。
+  // Return to the last position once the metadata has loaded.
   useEffect(() => {
     if (!controller || !status.ready) return;
     const position = usePlayer.getState().positions[memory];
@@ -220,7 +220,7 @@ export function MediaPlayer({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!controller || e.metaKey || e.ctrlKey || e.altKey) return;
     const el = e.target as HTMLElement;
-    // 输入框、滑杆、菜单、字幕列表有自己的键；按钮上的空格与回车是按下按钮。
+    // Input boxes, sliders, menus and the subtitle list have their own keys; on buttons, Space and Enter mean pressing the button.
     if (el.closest('input, textarea, [contenteditable="true"], [role="slider"], [role="menu"], [role="listbox"]')) return;
     if (el.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
     const player = usePlayer.getState();
@@ -284,7 +284,7 @@ export function MediaPlayer({
         src={url.url}
         preload="metadata"
         playsInline
-        // 没有画面时声音照样播。
+        // Audio keeps playing when there is no picture.
         aria-hidden={isAudio || undefined}
       />
     ) : null;
@@ -401,7 +401,7 @@ function SubtitleBody({
   return <SubtitleList cues={cues} controller={controller} onSeek={(cue) => controller?.seek(seekTimeOf(cue))} />;
 }
 
-/** 读并解析一个字幕文件。换了文件时丢掉旧的结果，晚到的旧请求不覆盖新的。 */
+/** Reads and parses a subtitle file. When the file changes, the old result is discarded, and a late reply to an old request does not overwrite the new one. */
 function useCues(track: SubtitleTrack | null): CueState {
   const runtime = useRuntime();
   const [state, setState] = useState<CueState>({ status: 'none' });
@@ -432,7 +432,7 @@ function useCues(track: SubtitleTrack | null): CueState {
     return () => {
       cancelled = true;
     };
-    // track 由 trackKey 唯一确定。
+    // track is uniquely determined by trackKey.
   }, [runtime, trackKey]);
   return state;
 }
@@ -453,7 +453,7 @@ function Captions({ controller, cues }: { controller: PlaybackController | null;
   );
 }
 
-/** 音频没有画面：舞台上写当前句，没有字幕时写文件名。 */
+/** Audio has no picture: the stage shows the current line, or the file name when there are no subtitles. */
 function AudioFace({ controller, cues, fileName }: { controller: PlaybackController | null; cues: readonly Cue[]; fileName: string }) {
   const shown = usePlaybackTime(controller, (t) =>
     activeCues(cues, t)
@@ -581,14 +581,14 @@ function Controls({
 }
 
 function ClockText({ controller, long }: { controller: PlaybackController | null; long: boolean }) {
-  // 只在显示的秒数变了才重画。
+  // Only redraw when the displayed seconds value changes.
   const text = usePlaybackTime(controller, (t) => formatClock(t, { hours: long }));
   return <>{text}</>;
 }
 
 /**
- * 进度条。拖动中每次变化都发定位请求，由 SeekQueue 合并；手里的位置优先于媒体报上来的时间，
- * 松手后交还（验收 T30：旧的定位结果不把滑块拉回去）。
+ * Progress bar. Every change while dragging sends a seek request, which SeekQueue coalesces. The position held by the user takes priority over the time reported by the media,
+ * and is handed back after release (acceptance T30: an old seek result must not pull the slider back).
  */
 function Scrubber({ controller, duration, isDisabled }: { controller: PlaybackController | null; duration: number; isDisabled: boolean }) {
   const time = usePlaybackTime(controller, (t) => t);

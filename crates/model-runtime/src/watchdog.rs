@@ -1,29 +1,28 @@
-//! 父进程看护（协议规范 §1）：启动时立刻检查一次，之后每 2 秒检查一次父进程仍然存在、且就是启动时
-//! 传入的 `--parent-pid`；不是就退出。
+//! Parent-process watchdog (protocol spec §1): checks once at startup, then every 2 seconds checks that the parent process still exists and is still the one passed as `--parent-pid` at startup;
+//! if not, it exits.
 //!
-//! Unix 上比较 `getppid()`：父进程一死，本进程就被 init/launchd 收养，`getppid()` 随之改变，
-//! PID 被复用也不会骗过它。
+//! On Unix, `getppid()` is compared: when the parent dies, this process is adopted by init/launchd and `getppid()` changes,
+//! so reuse of the PID does not fool it.
 //!
-//! Windows 没有收养：启动时按 PID 打开父进程并一直拿着句柄（句柄钉住的是那一个进程对象，之后 PID 被复用也认得出），
-//! 打开时再比一次创建时间，比本进程晚创建的不可能是父进程（父进程在本进程启动前就死了、PID 已被复用）。之后看句柄
-//! 有没有变成已结束。打不开（进程不在、PID 不对）就当父进程不在了。
+//! Windows has no adoption. At startup the parent is opened by PID and the handle is held for the whole run (the handle pins that one process object, so a reused PID is still recognized). At open time the creation time is also compared, since a process created later than this one cannot be the parent (the parent died before this process started and its PID was reused). After that, it watches whether the handle has become signaled (finished).
+//! If it cannot be opened (process absent, wrong PID), the parent is treated as gone.
 //!
-//! 其他平台没有实现，看护不生效（stdin EOF 仍会退出）。
+//! Other platforms are not implemented; the watchdog has no effect there (stdin EOF still causes exit).
 
 use std::time::Duration;
 
-/// 检查间隔。
+/// Check interval.
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(2);
 
-/// 父进程仍是启动时那一个。
+/// The parent process is still the one from startup.
 #[cfg(unix)]
 pub fn parent_alive(parent_pid: u32) -> bool {
-    // SAFETY: getppid 没有参数，总是成功。
+    // SAFETY: getppid takes no arguments and always succeeds.
     let actual = unsafe { libc::getppid() };
     i64::from(actual) == i64::from(parent_pid)
 }
 
-/// 父进程仍是启动时那一个：打得开、不比本进程晚创建、还没有结束。
+/// The parent process is still the one from startup: it can be opened, was not created after this process, and has not ended.
 #[cfg(windows)]
 pub fn parent_alive(parent_pid: u32) -> bool {
     windows_parent::Parent::open(parent_pid).is_some_and(|parent| parent.running() != Some(false))
@@ -34,7 +33,7 @@ pub fn parent_alive(_parent_pid: u32) -> bool {
     true
 }
 
-/// 启动看护线程。父进程不在时调用 `on_orphaned`（它负责让进程退出）。
+/// Starts the watchdog thread. Calls `on_orphaned` when the parent is gone (it is responsible for making the process exit).
 #[cfg(not(windows))]
 pub fn spawn(parent_pid: u32, on_orphaned: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
     std::thread::Builder::new().name("parent-watchdog".into()).spawn(move || {
@@ -49,12 +48,12 @@ pub fn spawn(parent_pid: u32, on_orphaned: impl FnOnce() + Send + 'static) -> st
     Ok(())
 }
 
-/// 启动看护线程。父进程不在时调用 `on_orphaned`（它负责让进程退出）。句柄从启动时一直拿到线程结束。
+/// Starts the watchdog thread. Calls `on_orphaned` when the parent is gone (it is responsible for making the process exit). The handle is held from startup until the thread ends.
 #[cfg(windows)]
 pub fn spawn(parent_pid: u32, on_orphaned: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
     std::thread::Builder::new().name("parent-watchdog".into()).spawn(move || {
         if let Some(parent) = windows_parent::Parent::open(parent_pid) {
-            // 等待失败（None）算不知道，接着看；只有确认结束才退出。
+            // A failed wait (None) counts as unknown, so keep checking; only a confirmed exit leads to quitting.
             while parent.wait_for_exit(CHECK_INTERVAL) != Some(true) {}
         }
         on_orphaned();
@@ -96,31 +95,31 @@ mod windows_parent {
         fn CloseHandle(handle: Handle) -> i32;
     }
 
-    /// 进程的创建时间（自 1601 年起的 100 纳秒数）；读不到时 None。
+    /// The process's creation time (100-nanosecond units since 1601); None if it cannot be read.
     fn creation_time(process: Handle) -> Option<u64> {
         let mut creation = FileTime::default();
         let mut exit = FileTime::default();
         let mut kernel = FileTime::default();
         let mut user = FileTime::default();
-        // SAFETY: `process` 是有效的进程句柄（打开的或当前进程的伪句柄），四个输出指针指向本栈帧上的 FILETIME。
+        // SAFETY: `process` is a valid process handle (an opened one or the current process's pseudo-handle), and the four output pointers point to FILETIMEs on this stack frame.
         let ok = unsafe { GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) };
         (ok != 0).then(|| (u64::from(creation.high) << 32) | u64::from(creation.low))
     }
 
-    /// 打开的父进程句柄。
+    /// Handle to the opened parent process.
     pub struct Parent(Handle);
 
     impl Parent {
-        /// 按 PID 打开父进程。进程不在、不让打开，或者它比本进程晚创建（PID 已被复用）时为 None。
-        /// 创建时间读不到时不据此判断（宁可多活，也不误退）。
+        /// Opens the parent process by PID. Returns None if the process is absent, cannot be opened, or was created after this process (the PID has been reused).
+        /// If the creation time cannot be read, no judgment is made from it (better to stay alive longer than to exit by mistake).
         pub fn open(pid: u32) -> Option<Self> {
-            // SAFETY: 普通的 Win32 调用；失败返回空指针。
+            // SAFETY: An ordinary Win32 call; on failure it returns a null pointer.
             let handle = unsafe { OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
             if handle.is_null() {
                 return None;
             }
             let parent = Parent(handle);
-            // SAFETY: GetCurrentProcess 返回不需要关闭的伪句柄。
+            // SAFETY: GetCurrentProcess returns a pseudo-handle that does not need to be closed.
             let ours = creation_time(unsafe { GetCurrentProcess() });
             match (creation_time(parent.0), ours) {
                 (Some(theirs), Some(ours)) if theirs > ours => None,
@@ -128,10 +127,10 @@ mod windows_parent {
             }
         }
 
-        /// 等它结束，最多 `timeout`：结束了 `Some(true)`，还在 `Some(false)`，等待失败 None。
+        /// Waits for it to finish, for at most `timeout`: `Some(true)` if it has finished, `Some(false)` if still running, None if the wait failed.
         pub fn wait_for_exit(&self, timeout: Duration) -> Option<bool> {
             let millis = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX - 1);
-            // SAFETY: 句柄由本对象持有、在 Drop 之前一直有效，带 SYNCHRONIZE 权限。
+            // SAFETY: The handle is owned by this object and stays valid until Drop; it has SYNCHRONIZE access.
             match unsafe { WaitForSingleObject(self.0, millis) } {
                 WAIT_OBJECT_0 => Some(true),
                 WAIT_TIMEOUT => Some(false),
@@ -139,7 +138,7 @@ mod windows_parent {
             }
         }
 
-        /// 还在运行：`Some(true)`；已经结束：`Some(false)`；查询失败：None。
+        /// Still running: `Some(true)`; already finished: `Some(false)`; query failed: None.
         pub fn running(&self) -> Option<bool> {
             self.wait_for_exit(Duration::ZERO).map(|exited| !exited)
         }
@@ -147,7 +146,7 @@ mod windows_parent {
 
     impl Drop for Parent {
         fn drop(&mut self) {
-            // SAFETY: 句柄由本对象独占，只关一次。
+            // SAFETY: The handle is exclusively owned by this object and is closed only once.
             unsafe { CloseHandle(self.0) };
         }
     }
@@ -159,7 +158,7 @@ mod tests {
 
     #[test]
     fn parent_is_the_process_that_spawned_us() {
-        // SAFETY: 同上。
+        // SAFETY: Same as above.
         let parent = unsafe { libc::getppid() } as u32;
         assert!(parent_alive(parent));
         assert!(!parent_alive(parent.wrapping_add(1)));
@@ -172,7 +171,7 @@ mod tests {
 
     #[test]
     fn a_process_created_after_us_is_never_the_parent() {
-        // 比本进程晚创建的进程（模拟父进程死后 PID 被复用）不算父进程，哪怕它还活着。
+        // A process created after this one (simulating a reused PID after the parent died) does not count as the parent, even if it is still alive.
         let mut child = std::process::Command::new("cmd")
             .args(["/C", "ping", "-n", "5", "127.0.0.1"])
             .stdout(std::process::Stdio::null())
@@ -193,7 +192,7 @@ mod tests {
 
     #[test]
     fn a_running_older_process_is_alive() {
-        // 本进程自己：同一个创建时间、还在运行。
+        // This process itself: same creation time, still running.
         assert!(parent_alive(std::process::id()));
     }
 }

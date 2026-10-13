@@ -13,7 +13,7 @@ const music = (seconds: number, extra: Partial<AssetRecord> = {}): AssetRecord =
     ...extra,
   }) as unknown as AssetRecord;
 
-/** 每一刻都有声音：相邻两段重叠正好一个交叉淡化，交替两条轨，最后一段收在视频结尾（设计稿 model-music.test.js `assertCovers`）。 */
+/** Sound at every moment: two adjacent segments overlap by exactly one crossfade, alternating across two tracks, and the last segment ends at the end of the video (design draft model-music.test.js `assertCovers`). */
 function expectCovers(layout: LoopPiece[], total: number) {
   expect(layout[0]!.start).toBe(0);
   layout.forEach((s, i) => {
@@ -50,11 +50,11 @@ describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
   });
 
   it('正好整段数、剩一小截时最后一段仍长过交叉淡化；音乐写长了按实际时长铺；超长视频', () => {
-    const exact = loopLayout(300, 598); // 300 + 298：第二段正好放完
+    const exact = loopLayout(300, 598); // 300 + 298: the second segment finishes exactly
     expectCovers(exact, 598);
     expect(exact).toHaveLength(2);
     expect(exact[1]!.dur).toBe(300);
-    const sliver = loopLayout(300, 299); // 只多出 1 秒：前一段收尾时第二段进来
+    const sliver = loopLayout(300, 299); // Only 1 second extra: the second segment comes in as the previous one ends
     expectCovers(sliver, 299);
     expect(sliver).toHaveLength(1);
     const tiny = loopLayout(300, 301);
@@ -77,7 +77,7 @@ describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
 });
 
 describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音频实例', () => {
-  // 742 秒 = 22260 帧 @30fps
+  // 742 s = 22260 frames @30fps
   const long = sequence([track('t1', 'visual', 0)], [videoItem('v1', 't1', 0, 742 * 30)]);
 
   it('视频比音乐长：两条音乐轨交替，起点拆成帧与帧内偏移，长度与淡化按铺法', () => {
@@ -117,7 +117,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     const insert = r.operations.find((op) => op.type === 'insertItems')!;
     if (insert.type !== 'insertItems') throw new Error(insert.type);
     const second = insert.items[1] as Extract<(typeof insert.items)[number], { type: 'audio' }>;
-    // 298 秒 = 298000 ms；帧 = floor(298000 × 30000 / (1000 × 1001)) = 8931；余下的刻度小于一帧（1001 × 1000）
+    // 298 s = 298000 ms; frames = floor(298000 × 30000 / (1000 × 1001)) = 8931; the remaining ticks are less than one frame (1001 × 1000)
     expect(second.fromFrame).toBe(8931);
     expect(second.subframeOffset.timescale).toBe(30_000_000);
     const ticks = Number(second.subframeOffset.ticks);
@@ -143,19 +143,19 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
   });
 
   it('素材时长不是整毫秒：铺的长度向下取整，不比素材长；最后一段不越过序列末尾', () => {
-    // 299.99977… 秒 @44.1 kHz
+    // 299.99977… s @44.1 kHz
     const odd = music(300, { revisions: { '2': { revision: '2', duration: { ticks: '13229990', timescale: 44100 } } } } as unknown as Partial<AssetRecord>);
     const r = musicBedOperations(long, odd, 'job_1')!;
     const insert = r.operations.find((op) => op.type === 'insertItems')!;
     if (insert.type !== 'insertItems') throw new Error(insert.type);
     for (const item of insert.items as Extract<(typeof insert.items)[number], { type: 'audio' }>[]) {
-      // playDuration ≤ 素材时长，按有理数比：ticks/1000 ≤ 13229990/44100
+      // playDuration ≤ source duration, as a rational ratio: ticks/1000 ≤ 13229990/44100
       expect(Number(item.playDuration.ticks) * 44100).toBeLessThanOrEqual(13229990 * 1000);
     }
     expect(insert.items[0]).toMatchObject({ playDuration: { ticks: '299999', timescale: 1000 } });
     const last = r.layout[r.layout.length - 1]!;
     expect(last.start + last.dur).toBeLessThanOrEqual(742 + 1e-9);
-    // 序列时长不是整毫秒（NTSC 20000 帧 = 667.333… 秒）：总长向下取整，最后一段的终点不越过序列末尾
+    // Sequence duration is not a whole number of milliseconds (NTSC 20000 frames = 667.333… s): the total length is rounded down, and the last segment's end does not go past the end of the sequence
     const ntsc = sequence([track('t1', 'visual', 0)], [videoItem('v1', 't1', 0, 20000)], { fps: { num: 30000, den: 1001 } });
     const n = musicBedOperations(ntsc, music(300), 'job_1')!;
     expect(n.totalSec).toBe(667.333);
@@ -172,7 +172,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
         audioItem('b1', 'm1', 0, 300, { extensions: mark }),
         audioItem('b2', 'm2', 298 * 30, 300, { extensions: mark }),
         audioItem('b3', 'm1', 596 * 30, 146, { extensions: mark }),
-        // 第三条音乐轨上用户自己放了别的声音：轨留着
+        // The user had other sounds on the third music track: the track is kept
         audioItem('b4', 'a3', 0, 10, { extensions: mark }),
         audioItem('x1', 'a3', 400 * 30, 5, { assetRef: { id: 'asset_x', revision: '1' } }),
       ],

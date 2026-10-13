@@ -26,17 +26,17 @@ const items = style({ margin: 0, paddingStart: 20, display: 'flex', flexDirectio
 const refKind = style({ fontWeight: 'bold' });
 const hint = style({ font: 'ui-sm', color: 'gray-600', margin: 0 });
 
-/** 一次最多列出几个由视频生成、导出的条目，其余写「等」。 */
+/** Maximum number of generated or exported items listed at once; the rest are written as “等” (etc.). */
 const RELATED_SHOWN = 8;
 
 export type SourceVideoResult = Extract<SpaceOpenForEditResult, { mode: 'source-video' }>;
 
-/** Space 页上一次只开一个的对话框。状态放在页面里：S2 的 Dialog 会在几个 slot 里各渲染一遍 children。 */
+/** Dialog on the Space page; only one is open at a time. State lives in the page, because S2's Dialog renders its children several times across slots. */
 export type SpaceDialogState =
   | { kind: 'rename'; entry: SpaceEntry }
   | { kind: 'purge'; entry: SpaceEntry }
   | { kind: 'blocked'; entry: SpaceEntry; references: SpaceReference[] }
-  /** `shorts`：从它派生的子视频数，它们不随父视频删除。 */
+  /** `shorts`: number of child videos derived from this one; they are not deleted with the parent video. */
   | { kind: 'trash-video'; entry: SpaceEntry; related: SpaceEntry[]; shorts: number }
   | { kind: 'source-changed'; entry: SpaceEntry; result: SourceVideoResult & { target: { entryId: Id } } }
   | { kind: 'import' };
@@ -52,7 +52,7 @@ export function SpaceDialogs({
   onOpenSource,
 }: {
   dialog: SpaceDialogState | null;
-  /** 可以导入到的项目（没有归档的）。 */
+  /** Projects that items can be imported into (those not archived). */
   projects: readonly { id: Id; name: string; path: string }[];
   defaultProjectId: Id | null;
   onClose: () => void;
@@ -150,9 +150,9 @@ export function SpaceDialogs({
 }
 
 /**
- * 导入素材（原型 SpaceImport、产品设计 §4.8）：选项目 → 选文件。每个文件经 `space.import` 登记为项目的素材，
- * 项目之外的复制进项目的 `imports/`；不放进任何视频（导入与放上时间线是两件事，§5.9）。
- * 选中的项目放在对话框外层（Dialog 会把 children 渲染几遍）。
+ * Import media (prototype SpaceImport, product design §4.8): choose a project → choose files. Each file is registered as the project's media via `space.import`;
+ * files outside the project are copied into the project's `imports/`. They are not placed into any video (importing and placing on the timeline are separate, §5.9).
+ * The selected project sits in the outer layer of the dialog (Dialog renders children several times).
  */
 function ImportDialog({
   projects,

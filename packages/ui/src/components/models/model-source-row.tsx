@@ -20,10 +20,9 @@ import { useSaveSettings, useSettingsReady } from '../settings/save-settings.ts'
 import { Card } from './model-parts.tsx';
 
 /*
- * 本地模型的下载来源（架构设计 §6.3「来源」；设计稿 settings-local.jsx `SourceRow`、`ModelDisclosure`）：Hugging Face /
- * ModelScope / 自定义，写 `models.downloadEndpoint`。本地模型页底部「下载与存储」与 设置 › 通用 › 下载来源与离线 共用这一行。
- * 选「自定义」先出基址框，填好保存才改用它。浏览器里只读：Web 白名单不含 `settings.set`，也不能下载本地模型。
- * 设计稿在设了环境变量时把选择器锁住；Runtime 不告诉界面环境变量设没设，这里只在说明里提一句。
+ * Download source for local models (architecture design §6.3 “来源”(Source); design mock settings-local.jsx `SourceRow`, `ModelDisclosure`): Hugging Face / ModelScope / custom, writes `models.downloadEndpoint`. The “下载与存储”(Download and storage) section at the bottom of the local models page and 设置 › 通用 › 下载来源与离线(Settings › General › Download source and offline) share this row.
+ * Choosing “自定义”(Custom) first shows the base URL box; the change only takes effect after filling it in and saving. In the browser it is read-only: the Web allowlist does not include `settings.set`, and local models cannot be downloaded there.
+ * The design mock locks the picker when an environment variable is set; the Runtime does not tell the UI whether an environment variable is set, so this only mentions it in the description.
  */
 
 const row = style({
@@ -42,21 +41,21 @@ const rowText = style({ flexGrow: 1, flexBasis: 0, minWidth: 200 });
 const rowLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 const rowDesc = style({ marginTop: 4, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere' });
 const notesLine = style({ margin: 0, font: 'ui-xs', color: 'gray-600', overflowWrap: 'anywhere' });
-/** 浏览器里为什么不能改：比说明深一档，与通用页置灰行的原因一样。 */
+/** Why it cannot be changed in the browser: one level deeper than the description; same as the reason for the greyed-out rows on the general page. */
 const webLine = style({ margin: 0, font: 'ui-sm', color: 'gray-800', overflowWrap: 'anywhere' });
 const fieldLine = style({ display: 'flex', alignItems: 'start', flexWrap: 'wrap', gap: 8 });
 const field = style({ flexGrow: 1, minWidth: 220, maxWidth: 360 });
 const fold = style({ marginTop: 24 });
 const foldSummary = style({ marginStart: 8, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
 
-/** 下载来源一行：左边行名与所选来源的说明，右边选择器；下面整行是补充说明与（选了自定义时）基址框。 */
+/** Download source row: the row name and a description of the selected source on the left, the picker on the right; below, the full-width supplementary note and (if “自定义”(Custom) is selected) the base URL box. */
 export function ModelSourceRow({ label = M.label, compact = false }: { label?: string; compact?: boolean }) {
   const web = useRuntime().host.platform === 'web';
   const ready = useSettingsReady();
   const save = useSaveSettings();
   const saved = useSetting('models.downloadEndpoint') ?? null;
   const savedId = sourceOf(saved);
-  const [custom, setCustom] = useState(false); // 选了「自定义」、还没保存
+  const [custom, setCustom] = useState(false); // “自定义”(Custom) selected, not saved yet
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const off = web || !ready || busy;
@@ -113,7 +112,7 @@ export function ModelSourceRow({ label = M.label, compact = false }: { label?: s
         </Picker>
       </div>
       {ready ? <p className={notesLine}>{sourceNotes(picked, saved).join(' ')}</p> : null}
-      {/* 浏览器里也画出来（置灰），存着的镜像地址才看得见。 */}
+      {/* Also drawn in the browser (greyed out), so the saved mirror address stays visible. */}
       {picked === 'custom' ? (
         <div className={fieldLine}>
           <TextField
@@ -141,7 +140,7 @@ export function ModelSourceRow({ label = M.label, compact = false }: { label?: s
   );
 }
 
-/** 本地模型页底部的「下载与存储」折叠区：标题旁写现在从哪里下载，展开是下载来源一行。 */
+/** The collapsible “下载与存储”(Download and storage) section at the bottom of the local models page: the title shows where downloads currently come from; expanding it shows the download source row. */
 export function ModelSourceFold() {
   const saved = useSetting('models.downloadEndpoint');
   const ready = useSettingsReady();

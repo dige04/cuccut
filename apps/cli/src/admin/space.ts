@@ -4,8 +4,8 @@ import { M } from './space-copy.ts';
 import { formatSpaceContinue, formatSpacePurge, formatVideoDelete, parseSpaceArgs } from './space-output.ts';
 
 /**
- * 管理桶 `cuccut space rescan|rebuild|trash|restore|purge|delete-video|continue`（架构设计 §5.7、§5.11）。
- * 列出与检索在 Agent 面（`space list|search`）。
+ * Admin bucket `cuccut space rescan|rebuild|trash|restore|purge|delete-video|continue` (architecture design §5.7, §5.11).
+ * Listing and searching are on the agent surface (`space list|search`).
  */
 export const space = defineNoun({
   name: 'space',

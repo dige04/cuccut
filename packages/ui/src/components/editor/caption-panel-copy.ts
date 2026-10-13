@@ -20,11 +20,10 @@ type SequencePreset = 'standard' | 'light';
 type PaletteId = 'classic' | 'neon' | 'paper' | 'ice' | 'custom';
 
 /**
- * 字幕样式画廊的卡片角标与属性页「当前词」「动效」「倒鸭子」三段的文案（原型 panel-subactive.jsx、panel-submotion.jsx、
- * panel-daoyazi.jsx；字幕样式模型设计 §9）。译文在 `caption-panel-copy.zh-Hans.ts` 等。
+ * Copy for the caption style gallery card badges and the three sections of the properties page: “Current word”, “Motion” and “倒鸭子 (daoyazi)” (prototypes panel-subactive.jsx, panel-submotion.jsx, panel-daoyazi.jsx; caption style model design §9). Translations are in `caption-panel-copy.zh-Hans.ts` and the others.
  */
 const en = {
-  // 画廊
+  // Gallery
   modes: { none: 'None', color: 'Color', box: 'Box', scale: 'Scale', lift: 'Lift', underline: 'Underline', sweep: 'Sweep' } as Record<ActiveMode, string>,
   badgeSequence: 'Kinetic',
   badgeTip: (mode: string) => `Active word: ${mode}`,
@@ -33,7 +32,7 @@ const en = {
   revertLabel: (name: string) => `Revert to “${name}”`,
   galleryHint: 'A card also sets the active word and motion; position, size and timing stay as they are.',
 
-  // 当前词
+  // Current word
   active: 'Active word',
   activeAria: 'How the active word looks',
   color: 'Color',
@@ -54,7 +53,7 @@ const en = {
   nextLineNote: 'Show the next line smaller below',
   noWordTiming: 'Translation lines have no word timing, so the active word stays plain here.',
 
-  // 动效
+  // Motion
   motion: 'Motion',
   stages: { in: 'In', out: 'Out', loop: 'Loop' } as Record<MotionStage, string>,
   stageAria: (stage: string) => `${stage} motion`,
@@ -99,7 +98,7 @@ const en = {
     loop: 'The subtitle stays still while on screen.',
   } as Record<MotionStage, string>,
 
-  // 倒鸭子
+  // "倒鸭子" (sample text)
   sequencePreset: 'Preset',
   sequencePresets: { standard: 'Standard', light: 'Light' } as Record<SequencePreset, string>,
   energy: 'Energy',

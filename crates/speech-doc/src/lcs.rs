@@ -1,30 +1,18 @@
-//! 序列 LCS 匹配（对拍 voice-ink `SegmentLCS.lcsMatches`）。
+//! Sequence LCS matching (cross-checked against voice-ink `SegmentLCS.lcsMatches`).
 //!
-//! 公共前后缀先行剥离；中段 DP 受 cell 预算约束（超限返回 `None`，调用方
-//! 走下一级降级）。`rows <= cap / columns` 的整数除法形式是 test-locked 的。
+//! The common prefix and suffix are stripped first; the middle-section DP is bounded by a cell budget (it returns `None` when exceeded, and the caller falls back to the next degradation level). The integer-division form `rows <= cap / columns` is locked by tests.
 //!
-//! 中段规模 ≤ [`FULL_TABLE_CELLS`] 时填完整长度表并回溯（历史路径，结果与
-//! voice-ink 逐位一致）；更大的表改走线性空间的 Hirschberg 分治：内存 O(n+m)、
-//! 时间约 2×n×m。两条路径给出的匹配数都等于 LCS 长度，只是同长时的具体
-//! 配对可能不同——所以阈值以内刻意不换算法，避免既有页面的边界回贴发生
-//! 漂移。
+//! When the middle section is ≤ [`FULL_TABLE_CELLS`], the full length table is filled and backtracked (the historical path; the results match voice-ink bit for bit). Larger tables switch to linear-space Hirschberg divide-and-conquer: memory O(n+m), time about 2×n×m. Both paths return a match count equal to the LCS length; only the specific pairing may differ when lengths are equal. This is why the algorithm is deliberately not switched below the threshold: it avoids drift in the re-anchoring of existing pages' boundaries.
 //!
-//! 为什么要有第二条路径：中文一字一原子，一页 8000–10000 原子的表是
-//! 6400 万–1 亿 cell，全表（u32）要 256–400 MB，旧上限 2500 万直接判
-//! `None`；对 polish 这意味着**任何答案都过不了回贴**——逐字相同的零改动答案
-//! 也一样（只要中段有一处差异，前后缀剥离就救不了）——引擎却把它当成模型
-//! 答错重试 3 次后整页兜底。容量应当由算法兜住，而不是让分页器去猜。
+//! Why the second path exists: in Chinese each character is one atom, so a page of 8000–10000 atoms gives a table of 64–100 million cells. A full table (u32) needs 256–400 MB, and the old cap of 25 million returned `None` directly. For polish this means **no answer can be re-anchored**: even a zero-change answer, identical character by character, fails as soon as there is one difference in the middle section (prefix/suffix stripping cannot save it). The engine then treats it as a model error, retries 3 times, and finally falls back to the whole page. Capacity should be guaranteed by the algorithm, not left for the paginator to guess.
 
-/// 中段完整长度表的 cell 上限（u32 每 cell，即约 100 MB）。以内走全表回溯，
-/// 以外走 Hirschberg。
+/// Cell cap for the full length table of the middle section (u32 per cell, about 100 MB). Within it, full-table backtracking is used; beyond it, Hirschberg.
 pub const FULL_TABLE_CELLS: usize = 25_000_000;
 
-/// 中段 DP 的总 cell 预算（时间上限）：超过返回 `None`。Hirschberg 内存与
-/// 规模无关，这里只是防止病态输入（如模型把整页复读了十遍）把一次校验拖到
-/// 分钟级：2.5 亿 cell ≈ 15.8k × 15.8k 原子，release 构建约 1–2 s。
+/// The total cell budget of the middle-section DP (a time cap): above it, returns `None`. Hirschberg memory is independent of size; this limit only guards against pathological input (for example, the model repeating the whole page ten times) dragging a single check into minutes. 250 million cells ≈ 15.8k × 15.8k atoms, about 1–2 s in a release build.
 pub const LCS_CELL_CAP: usize = 250_000_000;
 
-/// 返回按序匹配对 `(indexA, indexB)`；表规模超过 `cell_cap` 时返回 `None`。
+/// Returns the ordered matched pairs `(indexA, indexB)`; returns `None` when the table size exceeds `cell_cap`.
 pub fn lcs_matches(a: &[u32], b: &[u32], cell_cap: usize) -> Option<Vec<(usize, usize)>> {
     let mut prefix = 0;
     while prefix < a.len() && prefix < b.len() && a[prefix] == b[prefix] {
@@ -41,7 +29,7 @@ pub fn lcs_matches(a: &[u32], b: &[u32], cell_cap: usize) -> Option<Vec<(usize, 
     let mid_b = &b[prefix..b.len() - suffix];
     let rows = mid_a.len() + 1;
     let columns = mid_b.len() + 1;
-    // 整数除法是刻意的（15→nil / 16→[] 的边界被 voice-ink 测试锁定）。
+    // Integer division is deliberate (the 15→nil / 16→[] boundary is locked by voice-ink tests).
     if rows > cell_cap / columns {
         return None;
     }
@@ -62,7 +50,7 @@ pub fn lcs_matches(a: &[u32], b: &[u32], cell_cap: usize) -> Option<Vec<(usize, 
     Some(matches)
 }
 
-/// 全表路径：反向填表（长度矩阵，u32 足够），正向回溯。
+/// Full-table path: fill the table in reverse (a length matrix; u32 is enough), then backtrack forward.
 fn full_table_matches(
     a: &[u32],
     b: &[u32],
@@ -95,7 +83,7 @@ fn full_table_matches(
     }
 }
 
-/// `row[j] = LCS(a, b[..j])`（正向长度行）。
+/// `row[j] = LCS(a, b[..j])` (the forward length row).
 fn lcs_row_forward(a: &[u32], b: &[u32]) -> Vec<u32> {
     let mut previous = vec![0_u32; b.len() + 1];
     let mut current = vec![0_u32; b.len() + 1];
@@ -113,7 +101,7 @@ fn lcs_row_forward(a: &[u32], b: &[u32]) -> Vec<u32> {
     previous
 }
 
-/// `row[j] = LCS(a, b[j..])`（反向长度行）。
+/// `row[j] = LCS(a, b[j..])` (the reverse length row).
 fn lcs_row_backward(a: &[u32], b: &[u32]) -> Vec<u32> {
     let mut previous = vec![0_u32; b.len() + 1];
     let mut current = vec![0_u32; b.len() + 1];
@@ -131,8 +119,7 @@ fn lcs_row_backward(a: &[u32], b: &[u32]) -> Vec<u32> {
     previous
 }
 
-/// Hirschberg 分治：按 `a` 的中线切开，用正/反两行长度找 `b` 的最优切点，
-/// 递归到单元素时直接取首个相等位置。输出按序追加到 `matches`。
+/// Hirschberg divide-and-conquer: split `a` at its midline, use the forward and reverse length rows to find the optimal split point in `b`, and recurse down to single elements, taking the first equal position directly. Output is appended in order to `matches`.
 fn hirschberg_matches(
     a: &[u32],
     b: &[u32],
@@ -177,7 +164,7 @@ fn hirschberg_matches(
     );
 }
 
-/// 原子键 interner：把字符串键映射为紧凑整数，供 [`lcs_matches`] 使用。
+/// Atom interner: maps string keys to compact integers, for use by [`lcs_matches`].
 #[derive(Default)]
 pub struct AtomInterner {
     keys: std::collections::HashMap<String, u32>,
@@ -200,7 +187,7 @@ mod tests {
 
     #[test]
     fn cell_cap_boundary_is_integer_division() {
-        // 3+1=4 行 × 4 列 = 16 cells:cap 15 → None,cap 16 → 空匹配
+        // 3+1=4 rows × 4 columns = 16 cells: cap 15 → None, cap 16 → empty matches
         assert_eq!(lcs_matches(&[1, 2, 3], &[4, 5, 6], 15), None);
         assert_eq!(lcs_matches(&[1, 2, 3], &[4, 5, 6], 16), Some(vec![]));
     }
@@ -224,7 +211,7 @@ mod tests {
         assert_eq!(matches.len(), 4497);
     }
 
-    /// 全表与 Hirschberg 在同一输入上匹配数相同、匹配对都合法且严格递增。
+    /// On the same input, the full-table and Hirschberg paths give the same match count; the matched pairs are both valid and strictly increasing.
     fn assert_valid_lcs(a: &[u32], b: &[u32], matches: &[(usize, usize)], expected_len: usize) {
         assert_eq!(matches.len(), expected_len);
         let mut last: Option<(usize, usize)> = None;
@@ -239,7 +226,7 @@ mod tests {
 
     #[test]
     fn hirschberg_agrees_with_full_table_on_random_like_inputs() {
-        // 确定性伪随机（LCG），小字母表制造大量重复键。
+        // Deterministic pseudo-random numbers (LCG), with a small alphabet to produce many repeated keys.
         let mut seed = 0x2545_F491_u64;
         let mut next = || {
             seed = seed
@@ -261,9 +248,7 @@ mod tests {
         }
     }
 
-    /// 报告场景：中文一页约 1 万原子、答案头尾各有一处差异（前后缀剥离救不了，
-    /// 中段仍近整页）——旧上限下判 `None`（任何答案都无法回贴），现在必须
-    /// 回贴成功且匹配数 = 长度 − 差异数。
+    /// Report scenario: a Chinese page of about 10k atoms, with one difference at the head and one at the tail of the answer. Prefix/suffix stripping cannot save it, and the middle section is still nearly the whole page. Under the old cap it returned `None` (no answer can be re-anchored); now it must re-anchor successfully, with match count = length − number of differences.
     #[test]
     fn ten_thousand_atom_page_with_two_edits_is_matched_via_hirschberg() {
         let n = 10_111usize;

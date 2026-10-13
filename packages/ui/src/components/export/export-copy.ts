@@ -19,9 +19,8 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 const list = (labels: readonly string[]) => new Intl.ListFormat(intlLocale('en'), { type: 'conjunction' }).format(labels);
 
 /**
- * 导出弹层的文案（设计稿 export.jsx、export-range.jsx、export-audio.jsx、export-loudness.jsx、export-transcript.jsx、
- * export-project.jsx）。设计稿里 Runtime 做不到的，置灰并照实说一句原因（与 tools-gallery.ts 的 `plannedReason` 同一个说法）。
- * 英文是键与类型的来源，译文在 `export-copy.<语言>.ts`。
+ * Copy for the export popover (design mockup export.jsx, export-range.jsx, export-audio.jsx, export-loudness.jsx, export-transcript.jsx, export-project.jsx). Anything in the mockup that the Runtime cannot do is disabled, with a plain one-sentence reason (same wording as `plannedReason` in tools-gallery.ts).
+ * English is the source of the keys and types; translations are in `export-copy.<lang>.ts`.
  */
 const en = {
   title: 'Export',
@@ -29,7 +28,7 @@ const en = {
   buttonBusyTitle: 'Exporting · open to see progress or cancel',
   tabsLabel: 'What to export',
 
-  // ---- 通用 ----
+  // ---- Common ----
   cancel: 'Cancel',
   close: 'Close',
   done: 'Done',
@@ -56,7 +55,7 @@ const en = {
   submitting: 'Submitting…',
   notOpen: 'The video isn’t fully open yet, so it can’t be exported',
 
-  // ---- 运行态 ----
+  // ---- Running ----
   running: 'Exporting',
   queued: 'Queued for export',
   cancelling: 'Cancelling…',
@@ -69,7 +68,7 @@ const en = {
   cancelFailed: (message: string) => `Couldn’t cancel: ${message}`,
   plannedFiles: (first: string, n: number) => `${first} and ${n - 1} more`,
 
-  // ---- 完成 / 取消 / 失败 ----
+  // ---- Done / cancelled / failed ----
   exported: 'Exported',
   exportedToast: (name: string) => `Export finished · ${name}`,
   failedToast: (title: string) => `Export failed · ${title}`,
@@ -87,7 +86,7 @@ const en = {
   skipMissing: 'Skip missing assets and export again',
   useDocument: (name: string) => `Use “${name}”`,
 
-  // ---- 范围（export-range.jsx）----
+  // ---- Range (export-range.jsx) ----
   range: 'Range',
   rangeChapters: 'Chapters',
   rangeClips: 'Clips',
@@ -110,7 +109,7 @@ const en = {
   eachNote: 'One file per part',
   mergeBlocked: 'Joining non-adjacent parts into one file isn’t available in this version yet; each part is exported as its own file',
 
-  // ---- 视频页 ----
+  // ---- Video page ----
   quality: 'Quality & size',
   resolution: 'Resolution',
   sourceResolution: 'Original resolution',
@@ -136,7 +135,7 @@ const en = {
   captionsBurned: 'Subtitles burned in',
   captionsNotBurned: 'Subtitles not burned in',
 
-  // ---- 音频页 ----
+  // ---- Audio page ----
   soundLanes: 'What’s in the sound',
   quick: 'Quick pick',
   musicOnly: 'Music only',
@@ -155,7 +154,7 @@ const en = {
   monoNoteLossless: 'Mono · half the size · enough for speech-only videos',
   monoNoteLossy: 'Mono keeps the bitrate · the whole bitrate goes to one channel, so voices sound cleaner',
   exportAudio: (format: string) => `Export ${format}`,
-  // 人声分几份（设计稿 export-audio.jsx）：这一版只能按配音组分
+  // Vocal split (design mockup export-audio.jsx): this version can only split by dub group
   voiceSplit: 'Voice files',
   splitOne: 'Mix into one',
   splitEach: 'One per voice-over',
@@ -171,14 +170,14 @@ const en = {
   eachPartial: (done: number, left: number, reason: string) => `Submitted ${done}; the remaining ${left} weren’t exported: ${reason}`,
   exportAudioEach: (n: number, format: string) => `Export ${n} ${format} ${n === 1 ? 'file' : 'files'}`,
 
-  // ---- 响度（export-loudness.jsx）----
+  // ---- Loudness (export-loudness.jsx) ----
   loudness: 'Loudness',
   loudnessSwitch: 'Normalize loudness',
   loudnessTarget: 'Target',
   truePeak: 'Peak ceiling',
   defaultMark: 'Default',
 
-  // ---- 字幕页 ----
+  // ---- Subtitles page ----
   subtitleLanes: 'Which tracks',
   subtitlesWhat: (labels: readonly string[]) => (labels.length === 2 ? `${labels.join(' + ')} bilingual` : labels.join(' + ')),
   hiddenOnTimeline: 'Disabled on the timeline',
@@ -191,7 +190,7 @@ const en = {
   pickOne: 'Turn on at least one',
   exportSubtitles: 'Export subtitles',
 
-  // ---- 文稿页 ----
+  // ---- Transcript page ----
   language: 'Language',
   original: 'Original',
   translation: 'Translation',
@@ -219,7 +218,7 @@ const en = {
   noTranscriptSub: 'Transcribe first, or add a subtitle track on the timeline',
   exportTranscript: 'Export transcript',
 
-  // ---- 工程页 ----
+  // ---- Project page ----
   editors: 'Export to an editor',
   xmemlName: 'Premiere Pro / DaVinci Resolve',
   xmemlMeta: 'FCP7 XML (.xml)',
@@ -246,7 +245,7 @@ export type ExportMessages = typeof en;
 
 export const EXPORT_COPY = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 设计稿里有、这一版还没有接上的工程目标（设计稿 model-export.js `PROJECT_TARGETS`）。 */
+/** Project targets in the mockup that are not yet wired up in this version (mockup model-export.js `PROJECT_TARGETS`). */
 export const PLANNED_PROJECT_TARGETS: readonly { id: string; name: string; meta: string }[] = [
   {
     id: 'jianying',
@@ -269,7 +268,7 @@ export const PLANNED_PROJECT_TARGETS: readonly { id: string; name: string; meta:
   { id: 'kdenlive', name: 'Kdenlive', meta: '.kdenlive' },
 ];
 
-/** 设计稿的算法元素三选一（对应设计稿内核 `--bake auto|lossy|none`），这一版置灰。 */
+/** The mockup's three-way choice for algorithmic elements (corresponds to the mockup core's `--bake auto|lossy|none`) is disabled in this version. */
 export const BAKE_POLICIES: readonly { key: string; label: string }[] = [
   {
     key: 'auto',

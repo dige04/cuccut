@@ -1,12 +1,10 @@
-//! 口播剪口（视频格式规范 §6.7、§3.16）：`addCuts` 与 `restoreCut` 改源素材的剪口集合（`cuccut.cut-set/1`），
-//! 并在同一笔事务里按新的保留区间重排序列上的实例。
+//! Spoken-content cuts (video format spec §6.7, §3.16): `addCuts` and `restoreCut` change the cut set of a source asset (`cuccut.cut-set/1`),
+//! and in the same transaction reflow the instances on the sequence against the new kept ranges.
 //!
-//! - 剪口集合的实例（`scopeItemIds` 与由它们拆出来的实例）：剪口经它们的源时钟映射到序列上，量化到最近的帧；
-//!   在这些实例所在的轨道上按 `removeRange` 波纹删除，恢复时在接缝处插回、把两边接上。
-//! - 其余轨道上的实例按 `followPolicy`：`follow-cuts` 按 §3.16 移动、缩短或删掉，其余不动。
-//! - 章节跟着内容走（§3.13 的例外）：剪掉时按拿掉的帧前移，恢复时接缝之后的后移（`chapters::close_spans`、`open_gap`）。
-//! - 加入剪口按 `timeline::cuts` 的规则合并（间隔不超过 [`CUT_MERGE_GAP`] 的并成一个，保留靠前那个的 ID 与出处），
-//!   时刻用精确有理数比较；合并之后的集合再用 [`CutSet::new`] 核对结构。
+//! - Instances of the cut set (`scopeItemIds` and the instances split out of them): cuts are mapped onto the sequence through their source clock and quantized to the nearest frame. On the tracks these instances sit on, they are ripple-deleted by `removeRange`; on restore, they are inserted back at the seam and the two sides are joined.
+//! - Instances on other tracks follow `followPolicy`: `follow-cuts` moves, shortens or deletes them per §3.16; others do not move.
+//! - Chapters move with content (the exception in §3.13): on cut, they shift forward by the frames removed; on restore, those after the seam shift back (`chapters::close_spans`, `open_gap`).
+//! - Adding cuts merges per the rules of `timeline::cuts` (cuts whose gap does not exceed [`CUT_MERGE_GAP`] are merged into one, keeping the ID and provenance of the earlier one). Times are compared as exact rationals. After merging, the set is checked for structure with [`CutSet::new`].
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -26,7 +24,7 @@ use crate::ops::{
 };
 use crate::state::{VideoState, item_range};
 
-/// `addCuts` 的一个剪口：源素材时钟上的 `[from, to)`（十进制秒），`ref` 是出处（剪辑建议的 ID，§6.2）。
+/// One cut for `addCuts`: `[from, to)` on the source asset's clock (decimal seconds); `ref` is the provenance (the ID of an edit suggestion, §6.2).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CutInput {
@@ -36,16 +34,16 @@ pub struct CutInput {
     pub reference: Option<Id>,
 }
 
-/// 剪口操作写进回执 `impact` 的结果。
+/// The result of a cut operation, written into the receipt's `impact`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CutImpact {
-    /// 随剪口删掉的实例：整个落在剪掉的区间里。
+    /// Instances deleted along with a cut: those lying entirely within the removed range.
     pub removed: Vec<Id>,
-    /// 恢复了、却找不到接缝放回去的剪口：剪口集合里已经去掉，实例不动。
+    /// A restored cut for which no seam could be found to put it back: it has been removed from the cut set, and the instances are not moved.
     pub not_relaid: Vec<Id>,
 }
 
-/// 这笔事务要读的剪口集合：源素材的剪口集合文档（至多一份，§6.7）。
+/// The cut set this transaction reads: the source asset's cut-set document (at most one, §6.7).
 pub fn cut_set_document(state: &VideoState, asset_id: &str) -> Option<Id> {
     state
         .documents
@@ -55,7 +53,7 @@ pub fn cut_set_document(state: &VideoState, asset_id: &str) -> Option<Id> {
         .min()
 }
 
-/// 精确时刻的剪口。
+/// A cut at an exact time.
 #[derive(Clone, Debug)]
 struct ExactCut {
     id: Id,
@@ -70,7 +68,7 @@ struct Loaded {
     cuts: Vec<ExactCut>,
 }
 
-/// 读源素材当前的剪口集合：同一笔事务里先写过的以写过的为准。
+/// Reads the asset's current cut set: anything already written earlier in the same transaction takes precedence.
 fn load(state: &VideoState, ctx: &EditContext<'_>, asset_id: &str) -> EngineResult<Loaded> {
     let Some(id) = cut_set_document(state, asset_id) else {
         return Ok(Loaded {
@@ -117,7 +115,7 @@ fn load(state: &VideoState, ctx: &EditContext<'_>, asset_id: &str) -> EngineResu
     })
 }
 
-/// 写回剪口集合：`timescale` 取能精确表示全部剪口的最小值（各分母的最小公倍数），不舍入。
+/// Writes the cut set back: `timescale` is the smallest value that can represent all cuts exactly (the least common multiple of the denominators), with no rounding.
 fn write(state: &mut VideoState, ctx: &mut EditContext<'_>, asset_id: &str, loaded: &Loaded) -> EngineResult<()> {
     let mut timescale: i128 = 1;
     for cut in &loaded.cuts {
@@ -180,7 +178,7 @@ fn lcm(a: i128, b: i128) -> i128 {
     a / gcd(a, b) * b
 }
 
-/// 被剪素材当前版本的时长：剪口不能超出它。
+/// The duration of the current version of the cut asset: cuts cannot exceed it.
 pub(crate) fn source_duration(state: &VideoState, asset_id: &str) -> EngineResult<Ratio> {
     let asset = state.assets.get(asset_id).ok_or_else(|| ErrorBody::not_found(kinds::asset(), asset_id))?;
     let duration = asset.revisions[&asset.current_revision]
@@ -190,8 +188,7 @@ pub(crate) fn source_duration(state: &VideoState, asset_id: &str) -> EngineResul
     Ok(duration.to_ratio("duration")?)
 }
 
-/// 间隔不超过 [`CUT_MERGE_GAP`]（0.02 秒）的剪口并成一个，保留靠前那个的 ID 与出处（与 `timeline::cuts::insert_cut` 同一规则，
-/// 在精确时刻上比较：恰好 0.02 秒的间隔也合并）。
+/// Cuts whose gap is no more than [`CUT_MERGE_GAP`] (0.02 seconds) are merged into one, keeping the ID and provenance of the earlier one (same rule as `timeline::cuts::insert_cut`, compared at exact times: a gap of exactly 0.02 seconds also merges).
 fn insert_exact(cuts: &mut Vec<ExactCut>, incoming: ExactCut) {
     let gap = Ratio::new(1, 50).expect("常量");
     debug_assert!((gap.to_f64() - CUT_MERGE_GAP).abs() < 1e-12);
@@ -221,21 +218,21 @@ fn projected(cuts: &[ExactCut]) -> Vec<timeline::schema::Cut> {
         .collect()
 }
 
-/// 源素材当前的剪口集合（含这笔事务里先加的），供剪辑建议跳过已经剪掉的区间。
+/// The asset's current cut set (including cuts added earlier in this transaction), so that edit suggestions can skip ranges already cut.
 pub(crate) fn current_cut_set(state: &VideoState, ctx: &EditContext<'_>, asset_id: &str) -> EngineResult<CutSet> {
     let duration = source_duration(state, asset_id)?;
     let loaded = load(state, ctx, asset_id)?;
     CutSet::new(duration.to_f64(), projected(&loaded.cuts)).map_err(|e| ErrorBody::invalid_operation(msg!("engine.cutSetInvalid", "The cut set is invalid: {error}", error = e.to_string())))
 }
 
-/// 结构核对：按 `t0` 排序、互不重叠、在素材之内（`timeline::cuts::CutSet`）。
+/// Structural check: sorted by `t0`, non-overlapping, within the asset (`timeline::cuts::CutSet`).
 fn check_structure(cuts: &[ExactCut], duration: Ratio) -> EngineResult<()> {
     CutSet::new(duration.to_f64(), projected(cuts))
         .map(|_| ())
         .map_err(|e| ErrorBody::invalid_operation(msg!("engine.cutSetInvalid", "The cut set is invalid: {error}", error = e.to_string())))
 }
 
-/// 剪口集合的一个实例：在序列上的区间与线性的源时钟。
+/// One instance of the cut set: its range on the sequence and its linear source clock.
 #[derive(Clone, Debug)]
 struct Scoped {
     id: Id,
@@ -254,7 +251,7 @@ impl Scoped {
             .ok_or_else(overflow)
     }
 
-    /// 源时刻在序列上的位置。
+    /// The position of a source time on the sequence.
     fn at_source(&self, s: Ratio) -> EngineResult<Ratio> {
         let offset = s.checked_sub(self.source_in).ok_or_else(overflow)?;
         self.start
@@ -263,7 +260,7 @@ impl Scoped {
     }
 }
 
-/// 序列上播放这个素材的视频与音频实例。
+/// The video and audio instances that play this asset on the sequence.
 fn asset_items<'s>(state: &'s VideoState, sequence_id: &str, asset_id: &str) -> impl Iterator<Item = &'s TimelineItem> {
     state.items.values().filter_map(move |p| {
         let plays = match &p.value {
@@ -275,8 +272,7 @@ fn asset_items<'s>(state: &'s VideoState, sequence_id: &str, asset_id: &str) -> 
     })
 }
 
-/// 剪口集合的实例：`scopeItemIds` 里的，以及 lineage 指回它们的（拆出来的右半）；一个都不在时取序列上播放这个素材的
-/// 全部视频、音频实例。源时钟须是正速率的线性映射。按起点、再按 ID 排。
+/// The instances of the cut set: those in `scopeItemIds`, plus those whose lineage points back to them (the right halves split out). When none of these are present, all video and audio instances on the sequence that play this asset. The source clock must be a linear mapping with positive rate. Sorted by start, then by ID.
 fn scope_of(state: &VideoState, sequence_id: &str, fps: Rate, asset_id: &str, stored: &[Id]) -> EngineResult<Vec<Scoped>> {
     let stored: HashSet<&str> = stored.iter().map(String::as_str).collect();
     let listed = |item: &&TimelineItem| {
@@ -326,7 +322,7 @@ fn scope_of(state: &VideoState, sequence_id: &str, fps: Rate, asset_id: &str, st
     Ok(scope)
 }
 
-/// 重排之后的 `scopeItemIds`：原来的实例里还在的，加上这笔操作里新出现的、播放这个素材的实例（拆出来的右半），按起点排。
+/// `scopeItemIds` after reflow: those of the original instances still present, plus the instances newly created by this operation that play this asset (the right halves from splits), sorted by start.
 fn rewrite_scope(
     state: &VideoState,
     sequence_id: &str,
@@ -356,7 +352,7 @@ fn sequence_item_ids(state: &VideoState, sequence_id: &str) -> HashSet<Id> {
         .collect()
 }
 
-/// 源区间的并集减去另一个并集：这次新删掉的源区间。
+/// The union of source ranges minus another union: the source ranges newly deleted by this call.
 fn newly_removed(after: &[ExactCut], before: &[(Ratio, Ratio)]) -> Vec<(Ratio, Ratio)> {
     let mut out = Vec::new();
     for cut in after {
@@ -384,15 +380,14 @@ fn newly_removed(after: &[ExactCut], before: &[(Ratio, Ratio)]) -> Vec<(Ratio, R
     out
 }
 
-/// 一段要波纹删除的序列区间与产生它的轨道。
+/// A sequence range to ripple-delete, and the track that produced it.
 struct Removal {
     f0: i64,
     f1: i64,
     tracks: BTreeSet<Id>,
 }
 
-/// 新删掉的源区间经每个实例映射到序列上（量化到最近的帧）。同一轨道上重叠的并起来；不同轨道上的区间要么完全相同
-/// （同步放置的音画），要么互不相交，部分重叠时整笔拒绝。
+/// The newly deleted source ranges are mapped through each instance onto the sequence (quantized to the nearest frame). Overlapping ones on the same track are merged together. Ranges on different tracks must either be exactly identical (synchronously placed audio and video) or not intersect at all; if they partially overlap, the whole transaction is rejected.
 fn removals(scope: &[Scoped], regions: &[(Ratio, Ratio)], fps: Rate) -> EngineResult<Vec<Removal>> {
     let mut per_track: BTreeMap<Id, Vec<(i64, i64)>> = BTreeMap::new();
     for item in scope {
@@ -442,7 +437,7 @@ fn frames(value: i64) -> TimelineTimeInput {
     TimelineTimeInput::Frames { value }
 }
 
-/// 在源素材的剪口集合里加入剪口并重排实例（§6.7）。
+/// Adds a cut to the source asset's cut set and reflows the instances (§6.7).
 pub(crate) fn add_cuts(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -455,7 +450,7 @@ pub(crate) fn add_cuts(
     }
     let mut ranges = Vec::with_capacity(inputs.len());
     for input in inputs {
-        // 十进制秒按最短的写法读成精确有理数（§6.7）。
+        // Decimal seconds are read as exact rationals in their shortest form (§6.7).
         let t0 = editor_semantics::parse_decimal_seconds(&input.from, "from")?;
         let t1 = editor_semantics::parse_decimal_seconds(&input.to, "to")?;
         ranges.push(CutRange {
@@ -467,7 +462,7 @@ pub(crate) fn add_cuts(
     add_cut_ranges(state, sequence_id, asset_id, &ranges, ctx)
 }
 
-/// 精确时刻的一个待加的剪口：源素材时钟上的 `[t0, t1)`（秒），`reference` 是出处。
+/// A pending cut in exact time: `[t0, t1)` (seconds) on the source asset's clock; `reference` is its provenance.
 #[derive(Clone, Debug)]
 pub(crate) struct CutRange {
     pub t0: Ratio,
@@ -475,7 +470,7 @@ pub(crate) struct CutRange {
     pub reference: Option<Id>,
 }
 
-/// [`add_cuts`] 的本体：区间已经是精确有理数（接受剪辑建议时按刻度直接换算，不经十进制秒）。
+/// The body of [`add_cuts`]: the ranges are already exact rationals (when an edit suggestion is accepted, they are converted directly by tick, without going through decimal seconds).
 pub(crate) fn add_cut_ranges(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -516,7 +511,7 @@ pub(crate) fn add_cut_ranges(
     let existing = sequence_item_ids(state, &sequence_id);
     let regions = newly_removed(&loaded.cuts, &before);
     let planned = removals(&scope, &regions, fps)?;
-    // 从后往前删：前面的区间位置不受后面的影响。
+    // Delete from back to front: the positions of earlier ranges are not affected by later ones.
     for removal in planned.iter().rev() {
         let tracks: Vec<Id> = removal.tracks.iter().cloned().collect();
         remove_range(
@@ -544,8 +539,7 @@ pub(crate) fn add_cut_ranges(
     write(state, ctx, asset_id, &loaded)
 }
 
-/// 被剪轨道之外、`follow-cuts` 的实例跟着一段波纹删除走（§3.16）：之后的前移；起点落进去的推到区间终点（带源时钟的
-/// 源起点同步后移）再前移；终点落进去的拉回区间起点；跨过的只缩短；整个落在里面的删掉。
+/// Instances outside the cut track that have `follow-cuts` follow a ripple-delete of a span (§3.16): those after move forward; one whose start falls inside moves to the end of the range (and its source start, if it has a source clock, moves back in sync) and then forward; one whose end falls inside is pulled back to the start of the range; one that straddles is only shortened; one lying entirely within is deleted.
 fn follow_removal(state: &mut VideoState, sequence_id: &str, removal: &Removal, fps: Rate, ctx: &mut EditContext<'_>) -> EngineResult<()> {
     let t0 = frame_time(removal.f0 as i128, fps).ok_or_else(overflow)?;
     let t1 = frame_time(removal.f1 as i128, fps).ok_or_else(overflow)?;
@@ -590,7 +584,7 @@ pub(crate) fn negate(value: Ratio) -> EngineResult<Ratio> {
     Ratio::ZERO.checked_sub(value).ok_or_else(overflow)
 }
 
-/// 只改终点：长度加 `delta`（帧网格上的实例加 `delta_frames` 帧，音频按精确时间），关键帧按起点不动的窗口换算（§3.15）。
+/// Only the end changes: length increases by `delta` (instances on the frame grid by `delta_frames` frames; audio by exact time); keyframes are converted with the window whose start does not move (§3.15).
 pub(crate) fn resize_end(state: &mut VideoState, item_id: &str, delta: Ratio, delta_frames: i64, fps: Rate) -> EngineResult<()> {
     let placed = state.items.get_mut(item_id).ok_or_else(|| ErrorBody::not_found(kinds::item(), item_id))?;
     let (start, old_end) = item_range(&placed.value, fps)?;
@@ -613,14 +607,14 @@ pub(crate) fn resize_end(state: &mut VideoState, item_id: &str, delta: Ratio, de
     crate::item_keyframes::rewindow_item(state, item_id, window, fps)
 }
 
-/// 恢复剪口的一处接缝：左边实例的源终点对着剪口起点、右边实例的源起点对着剪口终点；只有一边时在实例首尾放回。
+/// One seam for restoring a cut: the source end of the left instance faces the cut's start, and the source start of the right instance faces the cut's end. When only one side exists, it is put back at the instance's head or tail.
 enum Seam {
     Both { left: Id, right: Id },
     Tail { left: Id },
     Head { right: Id },
 }
 
-/// 序列上的一处插回：在 `frame` 处放回 `frames` 帧，`tracks` 是接缝所在的轨道。
+/// An insertion point on the sequence: `frames` frames are put back at `frame`; `tracks` are the tracks the seam lies on.
 struct Insertion {
     frame: i64,
     frames: i64,
@@ -628,8 +622,7 @@ struct Insertion {
     seams: Vec<Seam>,
 }
 
-/// 找恢复的剪口在各个实例上的接缝。源时刻与剪口边界相差不超过一帧（换到源时钟上）时算对上：剪口映射到序列时量化过。
-/// 接缝要落在帧网格上；放回的长度按源区间除以速率、量化到最近的帧。
+/// Finds the seams of a restored cut on each instance. A match is when the source time is within one frame of the cut boundary (converted to the source clock), because the cut was quantized when it was mapped to the sequence. The seam must fall on the frame grid; the restored length is the source range divided by the rate, quantized to the nearest frame.
 fn insertions(scope: &[Scoped], cut: &ExactCut, fps: Rate) -> EngineResult<Vec<Insertion>> {
     let frame = fps.frame_duration();
     let near = |a: Ratio, b: Ratio, rate: Ratio| -> EngineResult<bool> {
@@ -720,8 +713,7 @@ fn insertions(scope: &[Scoped], cut: &ExactCut, fps: Rate) -> EngineResult<Vec<I
     Ok(by_frame.into_values().collect())
 }
 
-/// 恢复一个剪口（§6.7）：从剪口集合里去掉它，在每处接缝放回它删掉的源区间，之后的内容后移。找不到接缝时只改剪口集合，
-/// 剪口列在回执的 `impact.cutsNotRelaid`。
+/// Restores a cut (§6.7): removes it from the cut set, puts back the source range it deleted at each seam, and moves later content back. When no seam is found, only the cut set is changed, and the cut is listed in the receipt's `impact.cutsNotRelaid`.
 pub(crate) fn restore_cut(
     state: &mut VideoState,
     sequence_id: Option<&str>,
@@ -751,7 +743,7 @@ pub(crate) fn restore_cut(
     }
     let seq = Some(sequence_id.as_str());
     let exact = FrameAlignment::ExactFrame;
-    // 从后往前插：前面的接缝位置不受后面的影响。
+    // Insert from back to front: the positions of earlier seams are not affected by later ones.
     for insertion in plan.iter().rev() {
         insert_gap(state, &sequence_id, insertion, fps)?;
         crate::chapters::open_gap(state, &sequence_id, insertion.frame, insertion.frames);
@@ -760,7 +752,7 @@ pub(crate) fn restore_cut(
             match seam {
                 Seam::Both { left, right } => {
                     trim_item(state, seq, left, Edge::End, &frames(at + count), exact, ctx)?;
-                    // 两段接回原来的一段；字段已经不一致（之后单独改过）时留成两段。
+                    // Join the two parts back into the original one. If the fields are no longer consistent (edited separately afterwards), leave them as two.
                     let pair = [left.clone(), right.clone()];
                     let _ = join_items(state, seq, &pair, None);
                 }
@@ -773,8 +765,7 @@ pub(crate) fn restore_cut(
     write(state, ctx, asset_id, &loaded)
 }
 
-/// 在序列的 `frame` 处放回 `frames` 帧：接缝所在的轨道上从这里开始的实例都后移；其余轨道上 `follow-cuts` 的实例按
-/// 恢复之后的时间线移动（§3.16）：从这里开始的后移，跨过这一点的延长（带源时钟的不超出素材），终点正好在这里的不动。
+/// Puts back `frames` frames at `frame` on the sequence: instances on the seam track that start here move back. On other tracks, `follow-cuts` instances move according to the timeline after restore (§3.16): those starting here move back; those straddling this point are extended (not beyond the asset, for those with a source clock); one whose end falls exactly here does not move.
 fn insert_gap(state: &mut VideoState, sequence_id: &str, insertion: &Insertion, fps: Rate) -> EngineResult<()> {
     let at = frame_time(insertion.frame as i128, fps).ok_or_else(overflow)?;
     let length = frame_time(insertion.frames as i128, fps).ok_or_else(overflow)?;
@@ -811,7 +802,7 @@ fn insert_gap(state: &mut VideoState, sequence_id: &str, insertion: &Insertion, 
     Ok(())
 }
 
-/// 跨过插回点的实例能延长多少：带源时钟的不超出素材（帧网格上的取整帧），其余照放回的长度。
+/// How much an instance straddling the insertion point can be extended: for those with a source clock, not beyond the asset (rounded to whole frames on the frame grid); otherwise the length put back as is.
 pub(crate) fn extension(state: &VideoState, item_id: &str, length: Ratio, count: i64, fps: Rate) -> EngineResult<(Ratio, i64)> {
     let item = &state.items[item_id].value;
     let (start, end) = item_range(item, fps)?;

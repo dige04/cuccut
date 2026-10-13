@@ -1,26 +1,26 @@
 /*
- * 忙时排队：会话有任务在跑时发的话先排着，任务结束后按顺序发出；也可以「立即发送」插进当前回合。
+ * Queue while busy: a message sent while a task is running on the session is queued and sent in order after the task ends; it can also be “立即发送” (send now) to insert it into the current turn.
  *
- * 「先移出队列、发送失败再放回队首」的做法移植自 paseo（Apache-2.0，Copyright (c) 2025-present Mohamed Boudra）
- * packages/app/src/composer/actions.ts（`sendQueuedComposerMessageNow`、`editQueuedComposerMessage`），modified：
- * 立即发送先走 `conversations.steer`，按它的结果决定移出、留在队列还是改走 `conversations.send`；队列按会话存在 shell-store。
+ * The approach of “remove from the queue first, and put it back at the head if sending fails” is ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra)
+ * packages/app/src/composer/actions.ts (`sendQueuedComposerMessageNow`, `editQueuedComposerMessage`), modified:
+ * “立即发送” (send now) first goes through `conversations.steer`, and its result decides whether to remove the message, keep it in the queue, or switch to `conversations.send`; the queue is stored per session in shell-store.
  */
 import { sendSkillRefs, type AttachmentRef, type EditorContext, type Id, type SkillSendRef, type SlideAnnotation, type DesignAnnotation, type DesignSystemAnnotation } from '@cuccut/protocol';
 
 export interface QueuedMessage {
   id: Id;
   text: string;
-  /** 入队前已经上传完的图片。 */
+  /** Images already uploaded before the message was queued. */
   attachments: AttachmentRef[];
-  /** 入队那一刻编辑器的状态；走 `conversations.send` 时带上（`steer` 不收上下文）。 */
+  /** Editor state at the moment of queuing; included when going through `conversations.send` (`steer` does not accept context). */
   context?: EditorContext;
-  /** 点选的 skill，按挂上的顺序；走 `conversations.send` 时带上（`steer` 不收 skill，带 skill 的不插话，等这一轮结束再发）。 */
+  /** Skills picked, in the order attached; included when going through `conversations.send` (`steer` does not accept skills, so a message with skills is not inserted mid-turn and waits until the current turn ends). */
   skills?: SkillSendRef[];
-  /** 加进对话的幻灯片标注（docs/design/slides §8.2）；`send` 与 `steer` 都带上。 */
+  /** Slide annotations added to the conversation (docs/design/slides §8.2); included for both `send` and `steer`. */
   slideAnnotations?: SlideAnnotation[];
-  /** 加进对话的设计稿标注（docs/design/canvas §8.2）；同幻灯片标注。 */
+  /** Design-canvas annotations added to the conversation (docs/design/canvas §8.2); same as slide annotations. */
   designAnnotations?: DesignAnnotation[];
-  /** 加进对话的设计系统标注（docs/design/canvas §10.6）；同幻灯片标注。 */
+  /** Design-system annotations added to the conversation (docs/design/canvas §10.6); same as slide annotations. */
   designSystemAnnotations?: DesignSystemAnnotation[];
   queuedAt: string;
 }
@@ -33,7 +33,7 @@ export function removeQueuedMessage(queue: readonly QueuedMessage[], id: Id): Qu
   return queue.filter((m) => m.id !== id);
 }
 
-/** 改排队的文字；改成空的就是删掉（消息必须有正文，图片与标注不能单独发）。 */
+/** Edited text of a queued message; setting it to empty deletes the message (a message must have a body; images and annotations cannot be sent on their own). */
 export function editQueuedMessage(queue: readonly QueuedMessage[], id: Id, text: string): QueuedMessage[] {
   const trimmed = text.trim();
   return queue.flatMap((m) => {
@@ -46,7 +46,7 @@ function isSkillRef(value: unknown): value is SkillSendRef {
   return !!value && typeof value === 'object' && typeof (value as SkillSendRef).id === 'string';
 }
 
-/** 持久化的一条幻灯片标注：只核对形状，长度与条数由 Runtime 的 schema 把关。 */
+/** A persisted slide annotation: only the shape is checked here; length and count are enforced by the Runtime schema. */
 function isSlideAnnotation(value: unknown): value is SlideAnnotation {
   if (!value || typeof value !== 'object') return false;
   const a = value as Record<string, unknown>;
@@ -62,7 +62,7 @@ function isSlideAnnotation(value: unknown): value is SlideAnnotation {
   );
 }
 
-/** 持久化的一条设计稿标注：同幻灯片标注，只核对形状。 */
+/** A persisted design-canvas annotation: same as slide annotations, shape check only. */
 function isDesignAnnotation(value: unknown): value is DesignAnnotation {
   if (!value || typeof value !== 'object') return false;
   const a = value as Record<string, unknown>;
@@ -78,7 +78,7 @@ function isDesignAnnotation(value: unknown): value is DesignAnnotation {
   );
 }
 
-/** 持久化的一条设计系统标注：同幻灯片标注，只核对形状。 */
+/** A persisted design-system annotation: same as slide annotations, shape check only. */
 function isDesignSystemAnnotation(value: unknown): value is DesignSystemAnnotation {
   if (!value || typeof value !== 'object') return false;
   const a = value as Record<string, unknown>;
@@ -93,7 +93,7 @@ function isDesignSystemAnnotation(value: unknown): value is DesignSystemAnnotati
   );
 }
 
-/** 读回持久化的一条：形状不对的不要。只能点一个 skill 时存的 `skill` 也认（`readQueuedMessage` 把它换成 `skills`）。 */
+/** Reads back a persisted entry: discard it if its shape is wrong. The `skill` field saved when only one skill could be picked is also accepted (`readQueuedMessage` converts it to `skills`). */
 export function isQueuedMessage(value: unknown): value is QueuedMessage {
   if (!value || typeof value !== 'object') return false;
   const m = value as Record<string, unknown>;
@@ -113,7 +113,7 @@ export function isQueuedMessage(value: unknown): value is QueuedMessage {
   );
 }
 
-/** 读回持久化的一条，旧的单个 `skill` 换成 `skills`；形状不对时为 null。 */
+/** Reads back a persisted entry, converting the old single `skill` into `skills`; null if the shape is wrong. */
 export function readQueuedMessage(value: unknown): QueuedMessage | null {
   if (!isQueuedMessage(value)) return null;
   const { skill, skills, ...base } = value as QueuedMessage & { skill?: SkillSendRef };
@@ -121,7 +121,7 @@ export function readQueuedMessage(value: unknown): QueuedMessage | null {
   return refs.length ? { ...base, skills: refs } : base;
 }
 
-/** 一条会话的队列：读最新的，整条写回。 */
+/** The queue of one session: reads the latest, writes the whole queue back. */
 export interface QueueAccess {
   read(): readonly QueuedMessage[];
   write(next: QueuedMessage[]): void;
@@ -136,18 +136,18 @@ export interface QueueTransport {
 
 export type QueueSendResult =
   | { status: 'missing' }
-  /** 插进了当前回合，移出队列。 */
+  /** Inserted into the current turn; removed from the queue. */
   | { status: 'steered' }
-  /** 没有在跑的回合，直接发了一条新消息。 */
+  /** No turn was running, so the message was sent directly as a new message. */
   | { status: 'sent' }
-  /** Agent 不支持插话：放回队首，当前任务结束后先发它。 */
+  /** The Agent does not support mid-turn insertion: put it back at the head of the queue and send it first once the current task ends. */
   | { status: 'deferred' }
-  /** 发送出错：放回队首。 */
+  /** Send failed: put back at the head of the queue. */
   | { status: 'failed'; error: string };
 
 /**
- * 「立即发送」：先移出队列（同一条不会被任务结束时的自动发送再发一次），再试着插进当前回合。
- * `steered` 就此移出；`unsupported` 放回队首等任务结束；`no-active-turn` 说明任务刚好结束了，直接发送。
+ * “立即发送” (send now): first remove the message from the queue (so the same message is not sent again by the automatic send when the task ends), then try to insert it into the current turn.
+ * `steered` is removed here; `unsupported` is put back at the head of the queue to wait for the task to end; `no-active-turn` means the task has just ended, so it is sent directly.
  */
 export async function sendQueuedNow(queue: QueueAccess, transport: QueueTransport, id: Id): Promise<QueueSendResult> {
   const item = queue.read().find((m) => m.id === id);
@@ -168,7 +168,7 @@ export async function sendQueuedNow(queue: QueueAccess, transport: QueueTranspor
   }
 }
 
-/** 任务结束后发出队首那一条。失败放回队首，不重试：等下一次任务结束，或用户自己点「立即发送」。 */
+/** Sends the head of the queue after a task ends. On failure it is put back at the head and not retried: wait for the next task to end, or for the user to press “立即发送” (send now). */
 export async function sendQueueHead(queue: QueueAccess, transport: Pick<QueueTransport, 'send'>): Promise<QueueSendResult> {
   const item = queue.read()[0];
   if (!item) return { status: 'missing' };

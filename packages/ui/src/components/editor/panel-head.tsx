@@ -28,7 +28,7 @@ const title = style({
   whiteSpace: "nowrap",
 });
 
-/** 页头下面滚动的那一块。 */
+/** The area that scrolls below the page header. */
 export const panelBody = style({
   flexGrow: 1,
   minHeight: 0,
@@ -51,7 +51,7 @@ export function PanelHead({
   children,
 }: {
   title: string;
-  /** 页头左边的返回钮：`label` 是它的说明。 */
+  /** Back button on the left of the page header: `label` is its description. */
   back?: { label: string; onPress(): void };
   children?: ReactNode;
 }) {
@@ -93,7 +93,7 @@ const chipRow = style({
   paddingBottom: 4,
 });
 
-/** 页头下面那一行分类（原型 .chiprow）：单选，选中的那一格总有一格。 */
+/** The category row below the page header (prototype .chiprow): single-select, and one cell is always selected. */
 export function PanelChips<K extends string>({
   label,
   items,

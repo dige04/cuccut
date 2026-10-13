@@ -2,7 +2,7 @@ import path from 'node:path';
 import { ModelCatalog } from '@cuccut/models';
 import { JobManager, type JobManagerOptions, type JobVideos, type TranscribeRouter } from '../job-manager.ts';
 
-/** 测试用：临时目录里的 JobManager（没有模型 Provider），固定流程只用它记账。 */
+/** For tests: a JobManager in a temporary directory (no model Provider). The fixed pipeline uses it only for bookkeeping. */
 export function testJobManager(
   dir: string,
   videos: Partial<JobVideos> = {},

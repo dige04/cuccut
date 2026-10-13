@@ -1,9 +1,6 @@
-//! rebind：把改好的文本落回词区间，LCS 匹配上的词原样保留 id/t0/t1，
-//! 新 token 在空隙内按字符权重插值（对拍 voice-ink `TranscriptRebinding` +
-//! `SubAlign.rebindCorrected`）。
+//! Rebind: writes the corrected text back into the word range. Words matched by LCS keep their id/t0/t1 unchanged, and new tokens are interpolated within the gap by character weight (cross-checked against voice-ink `TranscriptRebinding` + `SubAlign.rebindCorrected`).
 //!
-//! 这是增量体系的根基：小范围润色只换被动过的词的 id，从而分段（id 键）
-//! 不过期、翻译（组文本指纹）只有被碰的组过期。
+//! This is the foundation of the incremental system: a small-scope polish only changes the ids of the words it touched, so segmentation (keyed by id) doesn't go stale, and translation (keyed by group text fingerprint) only goes stale for the groups that were touched.
 
 use crate::atomize::{
     atomize_words_like, correction_timing_weight, is_legacy_glued, is_script_glued, legacy_glue,
@@ -11,13 +8,12 @@ use crate::atomize::{
 use crate::doc::Word;
 use crate::timing::{normalize_doc_words, r2};
 
-/// 新词 id 源。voice-ink 的 `uid()` 用墙钟毫秒 + 进程级计数（唯一的非确定
-/// 因素），这里做成可注入以便测试 golden-lock。
+/// Source of new word ids. voice-ink's `uid()` uses wall-clock milliseconds plus a process-level counter (the only non-deterministic factor), so here it is made injectable to allow golden-lock testing.
 pub trait IdSource {
     fn next_id(&mut self) -> String;
 }
 
-/// 生产实现：`w<base36 毫秒>-<n>`。
+/// Production implementation: `w<base36 milliseconds>-<n>`.
 pub struct WallClockIds {
     counter: usize,
 }
@@ -45,7 +41,7 @@ impl IdSource for WallClockIds {
     }
 }
 
-/// 测试实现：`w0-1, w0-2, …`。
+/// Test implementation: `w0-1, w0-2, …`.
 #[derive(Default)]
 pub struct SeqIds {
     counter: usize,
@@ -72,17 +68,16 @@ fn base36(mut value: u64) -> String {
     String::from_utf8(output).expect("ascii")
 }
 
-/// rebind 词级 LCS 表的 cell 上限（超限走全量权重均摊的退化路径）。
+/// Cell limit for the word-level LCS table in rebind (beyond it, the degenerate path of spreading all weight evenly is taken).
 const REBIND_TABLE_CAP: usize = 4_000_000;
 
 fn tokenize(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_owned).collect()
 }
 
-/// 把 `new_text`（空白分词）落回 `old_words` 区间。
+/// Write `new_text` (split on whitespace) back into the `old_words` range.
 ///
-/// `sp` 只是**兜底**说话人：新 token 一律继承 LCS 邻居的 `sp`（先前一个保留
-/// 词、再后一个保留词），区间里一个词都没保留下来时才用它。
+/// `sp` is only a **fallback** speaker: new tokens always inherit the `sp` of their LCS neighbours (the preceding retained word, then the following retained word), and it is used only when no word in the range was retained.
 pub fn rebind(old_words: &[Word], new_text: &str, sp: &str, ids: &mut dyn IdSource) -> Vec<Word> {
     let tokens = tokenize(new_text)
         .into_iter()
@@ -91,19 +86,11 @@ pub fn rebind(old_words: &[Word], new_text: &str, sp: &str, ids: &mut dyn IdSour
     rebind_tokens(old_words, tokens, false, sp, ids)
 }
 
-/// 润色/分段回写入口：统一用无损 atomize 重新分词。Latin 也必须走同一原子器，
-/// 否则 `matters—the` 一类无空格强标点会被 whitespace tokenizer 熔成一个词，
-/// 后续翻译对齐便无法表达 `matters— | the part` 的真实语义边界。
-/// 未改字符仍通过 LCS 保持原 id 与时间。
+/// Entry point for polish/segment write-back: re-tokenize uniformly with lossless atomize. Latin must also go through the same atomizer, otherwise no-space strong punctuation like `matters—the` would be fused by the whitespace tokenizer into one word, and later translation alignment could not express the real semantic boundary `matters— | the part`. Unchanged characters still keep their original id and timing via LCS.
 ///
-/// 粒度跟着区间走（[`crate::atomize::atomize_like`]）：韩文按어절成词；0.5 之前逐音节的韩文
-/// 区间（词带「贴前」标记）沿用逐音节，这样没改的音节保住 id 与时间。后一种
-/// 区间写回文稿后要调 [`reglue_legacy_span`] 给新词补标记。
+/// Granularity follows the range ([`crate::atomize::atomize_like`]): Korean is split into words by 어절 (eojeol). A Korean range from before 0.5 (where words carry the "glued-front" marker) keeps per-syllable splitting, so that unchanged syllables keep their id and timing. For the latter kind of range, after the range is written back to the transcript, [`reglue_legacy_span`] must be called to add markers to the new words.
 ///
-/// 说话人：句区间偶尔会跨说话人（⏹ 强制边界切不动、退化为吸附到句首；或
-/// 区间开头是被模型删掉的另一方语气词）。新 token 的 `sp` 因此**不能**取
-/// `span[0].sp`——那会把 S2 整句里每个被加了标点的字（"啊，""的，""吗？"）
-/// 都标成 S1，在 UI 里表现为两个说话人逐字交替。改为继承 LCS 邻居。
+/// Speaker: a sentence range occasionally crosses speakers (a ⏹ forced boundary can't be moved and degrades to snapping to the sentence start; or the range starts with an interjection from the other party that the model deleted). So the new token's `sp` must **not** take `span[0].sp`. That would label every punctuated character in an S2 sentence ("啊，" "的，" "吗？") as S1, which in the UI shows as two speakers alternating character by character. Instead, it inherits from the LCS neighbours.
 pub fn rebind_corrected(span: &[Word], corrected: &str, ids: &mut dyn IdSource) -> Vec<Word> {
     if span.is_empty() {
         return Vec::new();
@@ -111,9 +98,7 @@ pub fn rebind_corrected(span: &[Word], corrected: &str, ids: &mut dyn IdSource) 
     let sp = span[0].sp.clone();
     let tokens = atomize_words_like(span, corrected);
     if !tokens.is_empty() {
-        // 按词切开的泰文一类区间：「贴前」标记跟着改写后的文本走（保留下来的
-        // 词也取新文本里的标记），首词保持它与区间前一个词的关系。其余区间的
-        // 原子都不带标记，结果与以前相同；逐音节的旧韩文区间由调用方重定。
+        // For ranges split by word, such as Thai: the “glued-front” marker follows the rewritten text (retained words also take the marker from the new text), and the first word keeps its relationship to the word before the range. Atoms in other ranges carry no marker, and the result is the same as before; old Korean per-syllable ranges are re-marked by the caller.
         let adopt = !is_legacy_span(span) && span.iter().any(is_script_glued);
         let mut words = rebind_tokens(span, tokens, adopt, &sp, ids);
         if adopt && let Some(first) = words.first_mut() {
@@ -124,26 +109,16 @@ pub fn rebind_corrected(span: &[Word], corrected: &str, ids: &mut dyn IdSource) 
     rebind(span, corrected, &sp, ids)
 }
 
-/// 区间是不是 0.5 之前逐音节的韩文（有词是 [`is_legacy_glued`]）。这种区间
-/// 改写时新词沿用逐音节（[`rebind_corrected`]），写回后要
-/// [`reglue_legacy_span`]。泰文一类按词切开的「贴前」词不算：它们的标记来自
-/// 原文里没有空白，按旧规则重定会全部清掉、在词间印出空格。
+/// Whether the range is Korean per-syllable text from before 0.5 (some word is [`is_legacy_glued`]). For such a range, when rewritten, new words keep per-syllable splitting ([`rebind_corrected`]), and after write-back [`reglue_legacy_span`] must be called. Thai-style "glued-front" words split by word do not count: their markers come from the original text having no whitespace, and re-marking them under the old rules would clear them all and print spaces between words.
 pub fn is_legacy_span(span: &[Word]) -> bool {
     span.iter().any(is_legacy_glued)
 }
 
-/// 逐音节的旧区间被改写之后，按旧拼接规则重定标记：`range` 是改写结果在
-/// `words` 里的位置。区间里每个词、以及区间之后直到第一个可见词为止的词，
-/// 都用 [`legacy_glue`] 重新判一遍——与读旧文稿时打标记是同一条规则
-/// （[`crate::doc::mark_legacy_glue`]）：可见词对它前面最近的可见词，隐藏词
-/// 对紧挨着的前一个词。
+/// After a per-syllable old range is rewritten, re-mark its glue using the old concatenation rule: `range` is the position of the rewritten result within `words`. Every word in the range, plus the words after the range up to the first visible word, are re-judged with [`legacy_glue`]. This is the same rule used when marking old transcripts when reading them ([`crate::doc::mark_legacy_glue`]): a visible word is glued to the nearest visible word before it, and a hidden word is glued to the word immediately before it.
 ///
-/// 这种区间里的标记本来就是按这条规则推出来的，所以重判不丢信息，没改的
-/// 词重判结果不变；显示与 0.5 之前改写同一段文本的结果逐字相同——模型或
-/// 用户写的空格不会出现在这种文稿里，要拿回空格得重新转录。
+/// Markers in such a range were originally derived by this rule, so re-judging loses no information, and re-judged results for unchanged words stay the same. The display is character-for-character identical to the result of rewriting the same text before 0.5. Spaces written by the model or the user never appear in such a transcript; to get spaces back, the transcript must be re-transcribed.
 ///
-/// 旧规则只给谚文一侧打标记，所以不含谚文的词身上的标记只可能是泰文一类
-/// 按词切开时打的（[`is_script_glued`]），原样留着，不按旧规则清掉。
+/// The old rule only marks the Hangul side, so a marker on a word containing no Hangul can only be one applied when splitting by word, as with Thai ([`is_script_glued`]). It is left as-is and not cleared by the old rule.
 pub fn reglue_legacy_span(
     words: &mut [Word],
     range: std::ops::Range<usize>,
@@ -169,7 +144,7 @@ pub fn reglue_legacy_span(
     }
 }
 
-/// 区间里词数最多的说话人（并列取先出现者）；空区间为 `None`。
+/// The speaker with the most words in the range (ties go to whoever appears first); `None` for an empty range.
 fn majority_speaker(words: &[Word]) -> Option<&str> {
     let mut counts: Vec<(&str, usize)> = Vec::new();
     for word in words {
@@ -178,7 +153,7 @@ fn majority_speaker(words: &[Word]) -> Option<&str> {
             None => counts.push((word.sp.as_str(), 1)),
         }
     }
-    // `max_by` 并列取最后一个；反转后取到的就是原序里先出现的那个。
+    // `max_by` takes the last of tied items; after reversing, the one taken is the one that appears first in the original order.
     counts
         .into_iter()
         .rev()
@@ -186,8 +161,7 @@ fn majority_speaker(words: &[Word]) -> Option<&str> {
         .map(|(sp, _)| sp)
 }
 
-/// `tokens` 是 `(文本, 贴前)`。新词的标记取 token 的；`adopt_glue` 为真时
-/// 保留下来的旧词也改取对应 token 的标记，否则保持旧词自己的。
+/// `tokens` are `(text, glued-front)`. New words take their token's marker. When `adopt_glue` is true, retained old words also take the marker of their corresponding token; otherwise they keep their own.
 fn rebind_tokens(
     old_words: &[Word],
     tokens: Vec<(String, bool)>,
@@ -227,8 +201,7 @@ fn rebind_tokens(
     let table_rows = old_count + 1;
     let table_columns = new_count + 1;
     if table_rows > REBIND_TABLE_CAP / table_columns {
-        // 退化路径：全部 token 按权重均摊到旧区间，旧 id 一个不留；说话人取
-        // 区间里词数最多的那个（并列取先出现者），而不是 span[0]。
+        // Degenerate path: all tokens are spread evenly over the old range by weight, and no old id is kept. The speaker is the one with the most words in the range (ties go to whoever appears first), not span[0].
         let sp = majority_speaker(old_words).unwrap_or(sp);
         let weights: Vec<f64> = tokens
             .iter()
@@ -254,7 +227,7 @@ fn rebind_tokens(
         return output;
     }
 
-    // 词级 LCS（文本严格相等），反向填表。
+    // Word-level LCS (exact text equality), filling the table in reverse.
     let stride = table_columns;
     let mut table = vec![0_i32; table_rows * stride];
     if old_count > 0 && new_count > 0 {
@@ -274,7 +247,7 @@ fn rebind_tokens(
     let mut output: Vec<Word> = Vec::new();
     let mut pending: Vec<(String, bool)> = Vec::new();
     let mut gap_start = old_words.first().map_or(0.0, |word| word.t0);
-    // 新 token 的说话人：前一个保留词 > 后一个保留词（flush 时的锚） > 兜底。
+    // Speaker of a new token: the preceding retained word > the following retained word (the anchor at flush time) > fallback.
     let mut last_kept_sp: Option<String> = None;
 
     macro_rules! flush {
@@ -369,7 +342,7 @@ mod tests {
         }
     }
 
-    /// 0.5 起的韩文文稿一个어절一个词：改写后新词也按어절，词间照常加空格。
+    /// Korean transcripts from 0.5 onward have one 어절 (eojeol) per word: after rewriting, new words are also split by 어절, with spaces between words as usual.
     #[test]
     fn korean_rebind_forms_words_at_spaces() {
         let old = vec![
@@ -398,8 +371,7 @@ mod tests {
         }
     }
 
-    /// 泰文按词切开的区间不是旧韩文区间：改写后新词按词切、带标记，没改的词
-    /// 保住 id 与时间，拼出来等于改写后的文本（不会在词间印出空格）。
+    /// A Thai range split by word is not an old Korean range: after rewriting, new words are split by word and carry markers, and unchanged words keep their id and timing. Concatenated, the result equals the rewritten text (no spaces are printed between words).
     #[test]
     fn a_thai_word_span_keeps_its_glue_through_a_rewrite() {
         let text = "ลลิตาไม่ได้ยกเลิก การประชุม";
@@ -435,15 +407,14 @@ mod tests {
         assert!(!edited[0].glue);
         assert!(edited[1..].iter().all(|word| word.glue));
 
-        // 区间从短语中间开始：首词保持贴着区间前一个词。
+        // The range starts mid-phrase: the first word stays glued to the word before the range.
         let tail = &old[1..3];
         let tail_text = crate::atomize::join_word_texts(tail.iter());
         let rebound = rebind_corrected(tail, &format!("{tail_text}นี้"), &mut ids);
         assert!(rebound[0].glue);
         assert_eq!(rebound[0].id, tail[0].id);
 
-        // 从短语中间开始的区间原文不变：每个词原样保留（单独重切这段会换
-        // 切法，见 `atomize_words_anchored`）。
+        // For a range starting mid-phrase whose text is unchanged, every word is kept as-is (re-splitting this segment on its own would change the split; see `atomize_words_anchored`).
         for start in 0..old.len() {
             for end in start + 1..=old.len() {
                 let span = &old[start..end];
@@ -452,8 +423,7 @@ mod tests {
             }
         }
 
-        // 旧规则重定只碰谚文词：泰文的标记留着（同一文稿里混进 0.5 的韩文
-        // 词也不会被旧规则粘上，因为这种区间根本不算逐音节旧稿）。
+        // The old re-marking rule only touches Hangul words: Thai markers are left alone. Korean words from 0.5 mixed into the same transcript are not glued by the old rule either, because such a range does not count as an old per-syllable transcript at all.
         let mut reglued = old.clone();
         let len = reglued.len();
         reglue_legacy_span(&mut reglued, 0..len, &Default::default());
@@ -464,8 +434,7 @@ mod tests {
         assert!(!is_legacy_span(&mixed));
     }
 
-    /// 润色在泰文引号外加了空格（沙盒真跑的答案）：引号贴在词上，不单成一个
-    /// 纯标点的词；开头没改的词保住 id；拼出来等于改写后的文本。
+    /// Polish added a space outside Thai quotation marks (the answer from an actual sandbox run): the quotes stay attached to words rather than forming a standalone pure-punctuation word; unchanged words at the start keep their id; concatenated, the result equals the rewritten text.
     #[test]
     fn a_space_added_outside_a_thai_quote_keeps_the_quote_on_a_word() {
         let source = "รหัสF-07ปรากฏข้างคำว่า“ยืนยันแล้ว”แต่ยังไม่ได้ส่งพัสดุ";
@@ -499,9 +468,7 @@ mod tests {
         assert_eq!(out.last().unwrap().id, old.last().unwrap().id);
     }
 
-    /// 0.5 之前逐音节的韩文区间（词带「贴前」标记）：改写沿用逐音节，没改的
-    /// 音节保住 id；重定标记后读出来与旧规则拼出的文本逐字相同——模型写的
-    /// 空格不进这种文稿。
+    /// A Korean per-syllable range from before 0.5 (words carry the "glued-front" marker): rewriting keeps per-syllable splitting, and unchanged syllables keep their id. After re-marking, reading it back gives text character-for-character identical to what the old rules concatenate. Spaces written by the model never enter this kind of transcript.
     #[test]
     fn a_legacy_korean_span_is_rewritten_per_syllable_and_stays_glued() {
         let mut old = vec![
@@ -536,8 +503,7 @@ mod tests {
         );
     }
 
-    /// 重定标记与读旧文稿时用同一条规则：可见词对前面最近的可见词，区间之后
-    /// 一直判到第一个可见词为止；没改的词结果不变。
+    /// Re-marking uses the same rule as when reading old transcripts: a visible word is judged against the nearest visible word before it, and after the range judging continues up to the first visible word. The result for unchanged words stays the same.
     #[test]
     fn reglue_follows_the_visible_neighbour_and_reaches_the_next_visible_word() {
         let hidden: std::collections::BTreeMap<String, bool> =
@@ -552,7 +518,7 @@ mod tests {
         crate::doc::mark_legacy_glue(&mut words, &hidden);
         let before: Vec<bool> = words.iter().map(|word| word.glue).collect();
         assert_eq!(before, [false, true, false, true, true]);
-        // 重判整段与只重判开头两个词，结果都与读入时相同。
+        // Re-judging the whole segment and re-judging only the first two words both give the same result as on read-in.
         let mut all = words.clone();
         reglue_legacy_span(&mut all, 0..5, &hidden);
         assert_eq!(all, words);
@@ -581,7 +547,7 @@ mod tests {
 
     #[test]
     fn camelot_split_uses_semantic_weight_ratio() {
-        // Camelot → came a lot 按 4:1:3 占据原词窗(voice-ink 测试用例)。
+        // Camelot → came a lot occupies the original word window in a 4:1:3 ratio (voice-ink test case).
         let old = vec![
             word("w0", 0.0, 0.4, "King"),
             word("w1", 0.4, 0.8, "Arthur"),
@@ -633,7 +599,7 @@ mod tests {
         let joined = crate::atomize::join_word_texts(out.iter());
         assert_eq!(joined, "他用 Agent 来做任务。");
         assert!(out.iter().any(|w| w.text == "Agent"));
-        // 未改字符保住原 id
+        // Unchanged characters keep their original id
         assert_eq!(out[0].id, "g1.0~0");
         assert_eq!(out[1].id, "g1.0~1");
         let lai = out.iter().find(|w| w.text == "来").unwrap();
@@ -670,9 +636,7 @@ mod tests {
         }
     }
 
-    /// 回归锁（2026-08 双人访谈截图）：句区间开头是被模型删掉的另一方语气词
-    /// "呃"（s1），正文全是 s2。加了标点的字（"啊，""的，""吗？"）是新 token，
-    /// 必须继承 LCS 邻居的 s2，而不是 `span[0]` 的 s1——否则 UI 里 s1/s2 逐字交替。
+    /// Regression lock (screenshot of a two-person interview, 2026-08): the sentence range starts with an interjection from the other party, "呃" (s1), that the model deleted, while the body is all s2. Punctuated characters ("啊，" "的，" "吗？") are new tokens, and they must inherit the LCS neighbour's s2 rather than the s1 of `span[0]`. Otherwise s1/s2 alternate character by character in the UI.
     #[test]
     fn new_tokens_inherit_the_neighbouring_speaker_not_the_span_head() {
         let old = vec![
@@ -698,7 +662,7 @@ mod tests {
         assert_eq!(out[0].id, "g174.1", "未改字保住原 id");
     }
 
-    /// 区间开头就是新 token 且前面没有保留词 ⇒ 继承后一个保留词的说话人。
+    /// The range starts with a new token and there is no retained word before it ⇒ inherit the speaker of the following retained word.
     #[test]
     fn leading_new_tokens_inherit_the_next_kept_speaker() {
         let old = vec![
@@ -713,7 +677,7 @@ mod tests {
         assert_eq!(out[1].id, "b");
     }
 
-    /// 一个词都没保留下来时才退回 `span[0]` 的说话人（兜底）。
+    /// Fall back to the speaker of `span[0]` only when no word was retained at all (fallback).
     #[test]
     fn fully_rewritten_span_falls_back_to_the_span_head_speaker() {
         let old = vec![

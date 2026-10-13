@@ -18,12 +18,12 @@ import { vi } from './edit-label.vi.ts';
 const noun: Record<string, string> = { video: 'video', image: 'image', audio: 'audio' };
 
 /**
- * 编辑器提交编辑事务时给的修改名（`edits.apply` 的 `label` 与 `labelRef`，命令与协议规范 §3.1）：历史、撤销提示、改动卡片
- * 与 Agent 读到的都按读者的语言重新生成。素材名、元素名这类内容作为字符串参数原样传；`language` 参数是语言标签，按读者的
- * 语言显示语言名。键发布后不改名、不复用。
+ * The change name given when the editor submits an edit transaction (`label` and `labelRef` of `edits.apply`; command and protocol spec §3.1): history, undo hints, change cards
+ * and what the Agent reads are all regenerated in the reader's language. Content such as asset names and element names is passed as is, as string parameters; the `language` parameter is a language tag, and the language name is shown in the reader's
+ * language. Keys are never renamed or reused once published.
  */
 const en = {
-  // 时间线：片段与轨道
+  // Timeline: clips and tracks
   addClip: 'Add clip',
   addSoundtrack: 'Add soundtrack',
   importAndAdd: 'Import and add assets',
@@ -46,7 +46,7 @@ const en = {
   removeSpan: 'Delete span from all tracks',
   detachAudio: 'Detach audio',
   changeStacking: 'Change stacking order',
-  // 素材
+  // Assets
   replaceAsset: (p: { kind: string }) => `Replace ${noun[p.kind] ?? p.kind}`,
   collectAsset: 'Collect into video folder',
   importAssets: 'Import assets',
@@ -54,7 +54,7 @@ const en = {
   addWaveform: 'Add waveform',
   relinkAsset: (p: { name: string }) => `Relink “${p.name}”`,
   addNamed: (p: { name: string }) => `Add ${p.name}`,
-  // 画面
+  // Picture
   alignClips: 'Align clips',
   distributeClips: 'Distribute clips',
   fillCanvas: 'Fill canvas',
@@ -72,10 +72,10 @@ const en = {
   nudgePosition: 'Nudge position',
   applyFramingToAll: 'Apply to whole short',
   aspectRatio: (p: { ratio: string }) => `Aspect ratio ${p.ratio}`,
-  /** `aspectRatio` 的 `ratio`：原始画幅。 */
+  /** `ratio` of `aspectRatio`: the original aspect ratio. */
   originalRatio: 'Original',
   renameVideo: 'Rename video',
-  // 字幕
+  // Captions
   applySubtitleStyle: 'Apply subtitle style',
   editSubtitleStyle: 'Edit subtitle style',
   importSubtitles: 'Import subtitles',
@@ -87,13 +87,13 @@ const en = {
   dropSubtitle: 'Remove subtitles from the canvas',
   landSubtitle: 'Put subtitles back on the canvas',
   flipSubtitle: 'Swap subtitle order',
-  /** `language` 是目标语言的自称（各语言的读者看到的一样），没有目标语言时传 `unnamedTranslation`。 */
+  /** `language` is the target language's own name (readers in each language see the same thing); when there is no target language, pass `unnamedTranslation`. */
   translateTo: (p: { language: string }) => `Translate to ${p.language}`,
   unnamedTranslation: 'Translation',
   editTranslation: 'Edit translation',
   markTranslationStale: 'Mark translation out of date',
   clearTranslationStale: 'Clear out-of-date mark',
-  // 文字稿与章节
+  // Transcript and chapters
   cutText: 'Cut in transcript',
   restoreText: 'Restore cut content',
   editTranscript: 'Edit text',
@@ -105,18 +105,18 @@ const en = {
   renameChapter: 'Rename chapter',
   removeChapter: 'Delete chapter',
   moveChapter: 'Move chapter start',
-  // 配音
+  // Dubbing
   editDubText: 'Edit translation (revoice)',
   switchDubTake: (p: { take: number }) => `Switch to voice-over take ${p.take}`,
   hearDub: 'Hear voice-over',
   hearOriginal: 'Hear original',
   hearBoth: 'Hear both',
-  /** `language` 是语言标签。 */
+  /** `language` is a language tag. */
   undoDub: (p: { language: string }) => `Undo voice-over (${languageName('en', p.language)})`,
   muteDub: 'Mute voice-over',
   unmuteDub: 'Unmute voice-over',
   removeDub: 'Delete voice-over',
-  /** `language` 是语言标签，配音组没记语言时为空。 */
+  /** `language` is a language tag; empty when the dub group did not record a language. */
   removeDubGroup: (p: { language: string }) => `Remove voice-over (${languageName('en', p.language)})`,
   removeThisDubGroup: 'Remove this voice-over group',
   stretchDub: 'Change voice-over speed',

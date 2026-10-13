@@ -1,4 +1,4 @@
-//! 资源生命周期 + 媒体节点 + audio clip 的 core 侧语义测试（无 I/O，元数据经 HostInputs 注入）。
+//! Core-side semantic tests for asset lifecycle + media nodes + audio clips (no I/O; metadata is injected via HostInputs).
 
 use scene_primitives::layout::{self, TextMeasure, TextMetricsLine};
 use scene_primitives::sample::sample_frames;
@@ -55,7 +55,7 @@ fn requirements_cover_all_kinds() {
     let reqs = host_requirements(&doc()).unwrap();
     let kinds: Vec<AssetKind> = reqs.iter().map(|r| r.kind).collect();
     assert_eq!(reqs.len(), 4);
-    // 按 id 排序：bgm, demo, hero, logo
+    // Sorted by id: bgm, demo, hero, logo
     assert_eq!(reqs[0].id, "bgm");
     assert_eq!(
         kinds,
@@ -78,7 +78,7 @@ fn media_nodes_and_audio_clip() {
     r.set_host_inputs(inputs);
     let mut ir = r.resolve().unwrap();
 
-    // image：给宽 200 → 高按 400:300 比例 = 150；video 显式 640×360
+    // image: given width 200 → height 150 at a 400:300 ratio; video explicitly 640×360
     let tree = &mut ir.visual_clips[0].tree;
     layout::layout_tree(tree, 1920.0, 1080.0, &mut FakeMeasure);
     let im = &tree.children[0];
@@ -87,10 +87,10 @@ fn media_nodes_and_audio_clip() {
     let vid = &tree.children[1];
     assert_eq!(vid.asset_id.as_deref(), Some("demo"));
     assert_eq!((vid.frame.w, vid.frame.h), (640.0, 360.0));
-    // media_t0 = clip.start - mediaStart = 0 - 1.5；t=3 时媒体时间应为 4.5
+    // media_t0 = clip.start - mediaStart = 0 - 1.5; at t=3 the media time should be 4.5
     assert!((3.0 - vid.media_t0 - 4.5).abs() < 1e-9);
 
-    // audio clip：窗口 [0,10]，volume 通道 @b±0.5 = 3.5/4.5 秒
+    // audio clip: window [0,10], volume channel @b±0.5 = 3.5/4.5 seconds
     assert_eq!(ir.audio_clips.len(), 1);
     let a = &ir.audio_clips[0];
     assert_eq!(a.asset_id, "bgm");
@@ -131,12 +131,12 @@ fn video_semantics_and_with_audio_expansion() {
     assert_eq!(vid.fit, scene_primitives::Fit::Contain);
     assert!(!vid.loop_media);
     assert!(vid.with_audio);
-    // mediaStart 缺省 = segment 起点（§6.5）
+    // mediaStart defaults to the segment start (§6.5)
     assert_eq!(vid.media_start, 1.0);
     assert_eq!(vid.media_win_start, 1.0);
     assert_eq!((vid.media_fps, vid.media_duration), (24.0, 12.0));
 
-    // withAudio 展开：同窗口 audio 条目，rate/volume 继承
+    // withAudio expansion: audio entry in the same window, rate/volume inherited
     assert_eq!(ir.audio_clips.len(), 1);
     let a = &ir.audio_clips[0];
     assert_eq!(a.asset_id, "demo");
@@ -190,13 +190,13 @@ fn lint_video_window_overrun_warns_with_media_meta() {
             ] }
         ]
     });
-    // 无元数据：不报（duration 未知）
+    // No metadata: not reported (duration unknown)
     assert!(
         !scene_primitives::lint::lint(&doc)
             .iter()
             .any(|d| d.rule == "video-window-overrun")
     );
-    // duration=12：需要 [5, 15) 超出 → warn；loop: true 后消失
+    // duration=12: needs [5, 15), which overruns → warn; disappears after loop: true
     let mut inputs = HostInputs::default();
     inputs.insert_video("demo", 1280.0, 720.0, 12.0, 24.0);
     let diags = scene_primitives::lint::lint_with_inputs(&doc, Some(&inputs));
@@ -216,7 +216,7 @@ fn lint_video_window_overrun_warns_with_media_meta() {
 
 #[test]
 fn lint_asset_rules() {
-    // 裸路径 src、未声明资源、kind 不匹配、坏 hash 全部拦为 error
+    // Bare path src, undeclared asset, kind mismatch, and bad hash are all blocked as errors
     let bad = json!({
         "meta": { "id": "m", "width": 1920, "height": 1080 },
         "scenes": [ { "id": "a", "dur": 4, "desc": "d" } ],

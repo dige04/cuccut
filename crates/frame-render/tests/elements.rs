@@ -1,5 +1,4 @@
-//! 每种画面实例画出来的像素：摆放、裁剪、不透明度、`fx` 的顺序、遮罩与平铺、元素动画与关键帧，
-//! 以及文字、图形和各个生成器。
+//! The pixels each kind of picture instance draws: placement, cropping, opacity, the order of `fx`, masks and tiling, element animation and keyframes, and text, shapes and each generator.
 
 mod common;
 
@@ -35,7 +34,7 @@ fn fullscreen_image_fills_the_canvas() {
 
 #[test]
 fn cropped_pip_image_fills_the_planned_box() {
-    // 上边裁掉 40%：留下 160×54，框高按留下的宽高比（格式规范 §3.5）。
+    // Top 40% cropped, leaving 160×54. The box height follows the kept aspect ratio (format spec §3.5).
     let video = video(
         vec![item(
             "img",
@@ -90,7 +89,7 @@ fn text_is_drawn_with_its_opacity() {
     assert!((120..=136).contains(&brightest), "半透明的白字最亮 ≈ 128，实际 {brightest}");
 }
 
-/// 画中画红图（16×9）摆在画布中间、宽 50%：框 80×45，左上角 (40, 22.5)。
+/// A red picture-in-picture image (16×9) placed in the middle of the canvas, 50% wide: box 80×45, top-left corner at (40, 22.5).
 fn red_pip(body: serde_json::Value) -> video_model::VideoSnapshot {
     let mut value = image("a", 0, 0, 90, json!({ "place": { "w": 50 } }));
     if let (Some(item), serde_json::Value::Object(extra)) = (value.as_object_mut(), body) {
@@ -141,7 +140,7 @@ fn shapes_fill_stroke_and_round_their_corners() {
     near(px(&frame, cx, cy), RED, 2);
     near(px(&frame, x0 as u32 + 1, y0 as u32 + 1), RED, 2);
     near(px(&frame, x0 as u32 - 3, cy), BLACK, 0);
-    // 只描边：边上是白的，中间不填。
+    // Stroke only: the edge is white and the middle is not filled.
     let frame = render(
         &shape(json!({ "shape": "rect", "stroke": "#FFFFFF", "strokeWidth": 30 })),
         0.0,
@@ -149,7 +148,7 @@ fn shapes_fill_stroke_and_round_their_corners() {
     );
     assert!(px(&frame, x0 as u32 + 1, cy)[0] > 200);
     near(px(&frame, cx, cy), BLACK, 0);
-    // 圆角：角上空出来，边的中段照样填。
+    // Rounded corners: the corners are empty, and the middle of each edge is still filled.
     let frame = render(
         &shape(json!({ "shape": "rect", "fill": "#FF0000", "cornerRadius": [150, 150, 150, 150] })),
         0.0,
@@ -157,7 +156,7 @@ fn shapes_fill_stroke_and_round_their_corners() {
     );
     near(px(&frame, x0 as u32 + 1, y0 as u32 + 1), BLACK, 8);
     near(px(&frame, cx, y0 as u32 + 1), RED, 2);
-    // 椭圆：框角空、中心满。
+    // Ellipse: the box corners are empty and the center is filled.
     let frame = render(&shape(json!({ "shape": "ellipse", "fill": "#0000FF" })), 0.0, &mut Media::default());
     near(px(&frame, cx, cy), BLUE, 2);
     near(px(&frame, x0 as u32 + 1, y0 as u32 + 1), BLACK, 8);
@@ -165,11 +164,11 @@ fn shapes_fill_stroke_and_round_their_corners() {
 
 #[test]
 fn colour_fx_run_in_the_fixed_order_before_opacity() {
-    // 去饱和：灰。
+    // Desaturated: gray.
     let frame = render(&red_pip(json!({ "fx": { "saturation": -1 } })), 0.5, &mut red_media());
     let [r, g, b, _] = px(&frame, 80, 45);
     assert!(r.abs_diff(g) <= 3 && g.abs_diff(b) <= 3 && r > 20, "{r} {g} {b}");
-    // 先去饱和（第 6 步）再加暖（第 8 步）：灰被染暖，红 > 绿 > 蓝；反过来的顺序会是纯灰。
+    // Desaturate first (step 6), then warm (step 8): the gray is tinted warm, red > green > blue. The reverse order would give pure gray.
     let frame = render(
         &red_pip(json!({ "fx": { "saturation": -1, "temperature": 1 } })),
         0.5,
@@ -177,7 +176,7 @@ fn colour_fx_run_in_the_fixed_order_before_opacity() {
     );
     let [r, g, b, _] = px(&frame, 80, 45);
     assert!(r > g && g > b, "{r} {g} {b}");
-    // 变暗之后再乘不透明度。
+    // Darken first, then multiply by opacity.
     let dim = px(
         &render(&red_pip(json!({ "fx": { "brightness": -0.5 } })), 0.5, &mut red_media()),
         80,
@@ -212,7 +211,7 @@ fn blur_softens_the_source_edges() {
 
 #[test]
 fn stroke_and_shadow_sit_around_and_under_the_layer() {
-    // 描边：框外紧贴一圈绿色，框里仍是红的。
+    // Stroke: a green ring just outside the box, while the inside stays red.
     let frame = render(
         &red_pip(json!({ "fx": { "stroke": { "width": 20, "color": "#00FF00" } } })),
         0.5,
@@ -222,7 +221,7 @@ fn stroke_and_shadow_sit_around_and_under_the_layer() {
     let ring = px(&frame, 38, 45);
     assert!(ring[1] > 150 && ring[0] < 100, "{ring:?}");
     near(px(&frame, 5, 5), BLACK, 0);
-    // 投影：右下方错开的白影，盖在层下面。
+    // Drop shadow: a white shadow offset to the lower right, drawn beneath the layer.
     let frame = render(
         &red_pip(json!({ "fx": { "shadow": { "offsetX": 60, "offsetY": 60, "blur": 0, "color": "#FFFFFF", "opacity": 1 } } })),
         0.5,
@@ -236,8 +235,7 @@ fn stroke_and_shadow_sit_around_and_under_the_layer() {
 
 #[test]
 fn stroke_and_shadow_offsets_follow_the_canvas_not_the_rotation() {
-    // 转 30 度的红框，投影 offsetX 60（540 短边）= 画布上正右方 10 像素、不模糊：没被层盖住的地方，
-    // 投影的亮度正好是左边 10 像素处层的覆盖度。偏移若跟着实例转，会落在 (8.66, 5) 上，对不上。
+    // A red box rotated 30°, with drop shadow offsetX 60 (540 short side) = exactly 10 pixels to the right on the canvas, not blurred. Where the layer does not cover it, the shadow's brightness is exactly the coverage of the layer 10 pixels to the left. If the offset followed the instance's rotation, it would land at (8.66, 5), which would not match.
     let rotated = |fx: Value| red_pip(json!({ "place": { "w": 50, "rot": 30 }, "fx": fx }));
     let plain = render(&rotated(json!({})), 0.5, &mut red_media());
     let shadowed = render(
@@ -263,7 +261,7 @@ fn stroke_and_shadow_offsets_follow_the_canvas_not_the_rotation() {
         }
     }
     assert!(solid_shadow > 100, "只露出投影的像素太少：{solid_shadow}");
-    // 描边沿转过之后的轮廓：转 90 度的框左边在 x = 57.5，紧贴它的是绿色；没转时的左边（x = 38）是黑的。
+    // The stroke follows the outline after rotation: for a box rotated 90°, the left edge is at x = 57.5 and green hugs it. The unrotated left edge (x = 38) is black.
     let frame = render(
         &red_pip(json!({ "place": { "w": 50, "rot": 90 }, "fx": { "stroke": { "width": 20, "color": "#00FF00" } } })),
         0.5,
@@ -284,8 +282,7 @@ fn ellipse_masks_cut_the_box_corners() {
 
 #[test]
 fn tiled_media_repeat_across_the_canvas() {
-    // 平铺是斜向错行的网格（印章之间留缝），所以不看某一个像素，看四个象限各自有没有红：
-    // 不平铺时 20% 宽的框只在画布中间，四个角落的象限都碰不到。
+    // Tiling is a diagonally staggered grid (with gaps between stamps), so instead of checking one pixel, check whether each of the four quadrants contains red. When not tiled, a box 20% wide sits only in the middle of the canvas, and none of the four corner quadrants reach it.
     let quadrants = |frame: &[u8]| {
         let mut red = [0usize; 4];
         for y in 0..90usize {
@@ -350,11 +347,11 @@ fn keyframe_bindings_drive_place_fields() {
         video.sequences.get_mut("seq").unwrap().header.animation_bindings.push(binding);
         video
     };
-    // 不透明度 0 → 1：第 30 帧大约一半。
+    // Opacity 0 → 1: at frame 30 it is about half.
     let frame = render(&bound("opacity", 0.0, 1.0), 1.0, &mut red_media());
     let r = px(&frame, 80, 45)[0];
     assert!((100..=160).contains(&r), "{r}");
-    // x 从 25% 移到 75%：开头框在左边，末尾在右边。
+    // x moves from 25% to 75%: the box starts on the left and ends on the right.
     let start = render(&bound("x", 25.0, 75.0), 0.0, &mut red_media());
     let end = render(&bound("x", 25.0, 75.0), 2.0, &mut red_media());
     near(px(&start, 40, 45), RED, 2);
@@ -385,7 +382,7 @@ fn text_styles_reach_the_pixels() {
     assert!(blues > 20, "蓝底板 {blues}");
 }
 
-/// 一个生成类实例（`body` 是种类与字段），在 `seconds` 画出来。
+/// A generated-type instance (`body` is the kind and fields), drawn at `seconds`.
 fn generated(body: serde_json::Value, seconds: f64) -> (Vec<u8>, frame_render::FrameRenderer) {
     let mut value = item("g", 0, 90, json!({ "place": { "w": 60 } }));
     if let (Some(item), serde_json::Value::Object(extra)) = (value.as_object_mut(), body) {
@@ -417,8 +414,8 @@ fn progress_bars_fill_over_the_span() {
 
 #[test]
 fn visualizers_without_any_audio_draw_at_rest() {
-    // 序列里没有声音：听到的是静音，按静止的样子画（每款静音时都画得出东西），不报提示。
-    // 缺素材频谱时的占位与提示见 `tests/spectrum.rs`。
+    // No sound in the sequence: what is heard is silence, so it is drawn in its still look (every silent style still draws something), and no hint is reported.
+    // For the placeholder and hint when asset spectra are missing, see `tests/spectrum.rs`.
     let (frame, renderer) = generated(
         json!({ "type": "visualizer", "visualizer": { "style": "bars", "mainColor": "#FFFFFF" } }),
         0.5,
@@ -448,7 +445,7 @@ fn visualizers_follow_the_injected_spectrum_and_its_db_window() {
         json!({ "type": "visualizer", "visualizer": { "style": "bars", "mainColor": "#FFFFFF" } }),
         0.5,
     );
-    // 低频响、高频静：频谱送进去之后不再是静态的样子，也不再报提示。
+    // Low frequencies loud, high frequencies quiet: once the spectrum is fed in, it no longer looks static and no longer reports a hint.
     media
         .spectra
         .insert("g".into(), spectrum(30, |bin| if bin < 128 { 220 } else { 40 }));
@@ -456,11 +453,11 @@ fn visualizers_follow_the_injected_spectrum_and_its_db_window() {
     let loud = render_with(&mut renderer, &video(40.0), 0.5, &mut media);
     assert!(renderer.warnings().is_empty(), "{:?}", renderer.warnings());
     assert_ne!(loud, silent);
-    // dB 窗变了，按新的窗重新推（缓存键带着参数）：同一份频谱在更宽的窗里更矮。
+    // The dB window changed, so the spectrum is re-derived with the new window (the cache key carries the parameters): the same spectrum is shorter in a wider window.
     renderer.clear_reports();
     let wide = render_with(&mut renderer, &video(140.0), 0.5, &mut media);
     assert!(painted(&wide) < painted(&loud), "{} {}", painted(&wide), painted(&loud));
-    // 宿主换了频谱：清掉缓存之后跟着换。
+    // The host swapped the spectrum: after the cache is cleared, it follows the swap.
     media.spectra.insert("g".into(), spectrum(30, |_| 0));
     renderer.clear_spectra();
     let quiet = render_with(&mut renderer, &video(140.0), 0.5, &mut media);
@@ -478,7 +475,7 @@ fn confetti_falls() {
 
 #[test]
 fn draw_items_paint_their_strokes() {
-    // 笔画的点是画布百分比（0..=100）。
+    // Stroke points are canvas percentages (0..=100).
     let body = json!({ "type": "draw", "draw": {
         "brush": "round", "color": "#FFFFFF", "size": 8,
         "strokes": [{ "points": [[10, 50], [50, 20], [90, 50]] }]
@@ -521,7 +518,7 @@ fn template_stickers_draw_their_vector() {
 
 #[test]
 fn catalogue_entries_missing_from_the_core_are_refused() {
-    // 内核只能跳过的目录项（不发布第三方素材）：整层报出来，不画成空白。
+    // A catalog entry the kernel can only skip (third-party assets are not distributed): the whole layer is reported rather than drawn as blank.
     for (body, id) in [
         (
             json!({ "type": "sticker", "sticker": { "source": "template", "templateId": "vendor-star" } }),
@@ -552,7 +549,7 @@ fn catalogue_entries_missing_from_the_core_are_refused() {
             ("layer", "preset-unknown", Some(id))
         );
     }
-    // 贴纸可以不写模板：同样画不出来，报「没有指定」。
+    // A sticker may omit its template. It likewise cannot be drawn, and reports 'not specified'.
     let video = video(
         vec![item(
             "g",
@@ -645,7 +642,7 @@ fn lottie_fill_overrides_recolour_flat_fills() {
     media.assets.insert("a_lottie".into(), LOTTIE.to_vec());
     let plain = render(&lottie_video(), 0.3, &mut media);
     assert_eq!(magenta(&plain), 0);
-    // 夹具里橙色（#FF4000）的纯色填充换成品红；同一份素材不换色的实例照旧（变体按换色表另存）。
+    // In the fixture, the pure orange (#FF4000) fill is swapped to magenta. The same asset's instance without recoloring is unchanged (variants are saved separately in a recolor table).
     let mut renderer = renderer(false, frame_render::Documents::default());
     let recoloured = render_with(&mut renderer, &lottie_with(json!({ "#FF4000": "#FF00FF" })), 0.3, &mut media);
     assert!(magenta(&recoloured) > 20, "换色之后要有品红，实际 {}", magenta(&recoloured));
@@ -660,7 +657,7 @@ fn lottie_embedded_images_are_drawn_and_external_ones_are_missing() {
     let b = render(&lottie_video(), 0.8, &mut media);
     assert!(painted(&a) > 30, "内嵌的位图要画出来");
     assert_ne!(a, b, "位图图层跟着关键帧动");
-    // 只写了路径的图片：素材只是一份 JSON，读不到。
+    // An image that gives only a path: the asset is just a JSON file, so it cannot be read.
     let mut external: Value = serde_json::from_slice(LOTTIE_IMAGE).unwrap();
     external["assets"][0]["e"] = json!(0);
     external["assets"][0]["u"] = json!("images/");
@@ -684,8 +681,7 @@ fn lottie_embedded_images_are_drawn_and_external_ones_are_missing() {
     assert!(frame_render::lottie_problem(LOTTIE_IMAGE).is_none());
 }
 
-/// `.lottie` 压缩包：取清单里的动画，图片从包里找；内嵌的 SVG 按声明的宽高光栅。贴纸宽 75%（120 px），
-/// 120×90 的合成正好一比一落在输出的 x 20–140 上。
+/// A `.lottie` archive: takes the animation from the manifest, and images are found inside the package. The embedded SVG is rasterized at its declared width and height. The sticker is 75% wide (120 px), so the 120×90 composition lands exactly 1:1 on output x 20–140.
 #[test]
 fn dotlottie_archives_draw_with_images_from_the_archive_and_svg_images() {
     let video = video(
@@ -722,7 +718,7 @@ fn dotlottie_archives_draw_with_images_from_the_archive_and_svg_images() {
     let (top, bottom) = reds(&start);
     assert!(top.is_some_and(|y| y.abs_diff(10) <= 1), "包里的 PNG 画在 (10,10) 起：{top:?}");
     assert!(bottom.is_some_and(|y| y.abs_diff(41) <= 1), "放大 4 倍（32 像素）：{bottom:?}");
-    // 6×6 的绿圆声明成 24×24，画在合成的 (80,30) 起：输出上 x 100–124，面积约 π·12² ≈ 452。
+    // The 6×6 green circle, declared as 24×24, is drawn starting at composition (80, 30): on the output it spans x 100–124, with an area of about π·12² ≈ 452.
     let (area, left, right) = greens(&start);
     assert!((380..520).contains(&area), "SVG 按声明的 24×24 光栅：{area}");
     assert!(
@@ -732,7 +728,7 @@ fn dotlottie_archives_draw_with_images_from_the_archive_and_svg_images() {
     let later = render(&video, 0.5, &mut media);
     assert!(reds(&later).0.unwrap() > top.unwrap() + 10, "PNG 跟着关键帧往下移");
 
-    // 包里缺图：照旧是 `lottie-asset-missing`。
+    // An image missing from the package: it is still `lottie-asset-missing`.
     let broken = stored_zip(&[(
         "animations/main.json",
         br#"{"v":"5","fr":30,"ip":0,"op":30,"w":8,"h":8,"assets":[{"id":"x","w":1,"h":1,"u":"images/","p":"x.png"}],"layers":[]}"#,
@@ -822,8 +818,7 @@ fn prerendered_compositions_draw_their_stand_in() {
 
 #[test]
 fn prerendered_compositions_have_no_backdrop_so_transparent_pixels_show_the_layer_below() {
-    // 下层一段全屏视频（绿），上层一个铺满的合成：替身左半透明、右半红。合成没有 `bg`，
-    // 全屏 + contain 不预填黑底，透明的左半露出下层的绿。
+    // A full-screen video (green) on the lower layer, and a full-canvas composition on the upper layer: the stand-in is semi-transparent on the left and red on the right. The composition has no `bg`. Full screen + contain does not pre-fill a black background, so the transparent left half shows the green below.
     let video = video(
         vec![
             video_item("clip", "a_clip", 0, 30, json!({})),
@@ -864,12 +859,12 @@ fn template_layers_draw_from_the_sequence_template() {
         }),
     );
     let frame = render(&video, 1.5, &mut Media::default());
-    // 进度条在底部：左边走过的是强调色，右边还没走到的是底色。
+    // The progress bar is at the bottom: the part already passed on the left is the accent color, and the part not yet reached on the right is the base color.
     let left = px(&frame, 20, 86);
     let right = px(&frame, 140, 86);
     assert!(left[0] > 150 && left[2] < 100, "{left:?}");
     assert!(right[2] > 150 && right[0] < 100, "{right:?}");
-    // 文字台标的底色。
+    // The background color of a text logo.
     let logo = px(&frame, 6, 6);
     assert!(logo[1] > 150, "{logo:?}");
 }
@@ -896,7 +891,7 @@ fn image_logos_in_templates_are_refused() {
     assert_eq!(error.items[0].reason, "template-logo-image-not-supported");
 }
 
-/// 纯色填充的 SVG：上半红、下半蓝。
+/// An SVG with a solid fill: top half red, bottom half blue.
 const FLAT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="5" fill="#FF0000"/><rect y="5" width="10" height="5" fill="#0000ff"/></svg>"##;
 
 fn svg_sticker(fill_overrides: Value) -> video_model::VideoSnapshot {
@@ -917,16 +912,16 @@ fn svg_sticker(fill_overrides: Value) -> video_model::VideoSnapshot {
 fn svg_stickers_are_rasterised_from_their_bytes_and_recoloured() {
     let mut media = Media::default();
     media.assets.insert("a_svg".into(), FLAT_SVG.as_bytes().to_vec());
-    // 30% 宽的方框在画面中间：48×48 px，上半红、下半蓝。
+    // A 30% wide square in the middle of the frame: 48×48 px, top half red, bottom half blue.
     let plain = render(&svg_sticker(json!({})), 0.5, &mut media);
     near(px(&plain, 80, 35), RED, 2);
     near(px(&plain, 80, 55), BLUE, 2);
-    // `fillOverrides` 的键是源颜色（大小写按同一份规范化），只换命中的那一组。
+    // The keys of `fillOverrides` are source colors (case is normalized the same way), and only the matching group is swapped.
     let mut renderer = renderer(false, frame_render::Documents::default());
     let recoloured = render_with(&mut renderer, &svg_sticker(json!({ "#ff0000": "#00FF00" })), 0.5, &mut media);
     near(px(&recoloured, 80, 35), GREEN, 2);
     near(px(&recoloured, 80, 55), BLUE, 2);
-    // 同一个渲染器里不换色的实例照旧（变体按换色表另存）。
+    // In the same renderer, instances that are not recolored are unchanged (variants are saved separately in a recolor table).
     assert_eq!(render_with(&mut renderer, &svg_sticker(json!({})), 0.5, &mut media), plain);
 }
 
@@ -934,7 +929,7 @@ fn svg_stickers_are_rasterised_from_their_bytes_and_recoloured() {
 fn svg_images_use_the_kernel_raster_and_missing_bytes_are_refused() {
     let video = video(vec![full_image("im", 0, 0, 30)], vec![svg_asset("a_im", 10, 10)], json!({}));
     let mut media = Media::default();
-    // 界面给的画面不用：SVG 只从素材字节画。
+    // Do not use the picture given by the UI: the SVG is drawn only from the asset bytes.
     media.pictures.insert("im".into(), solid(10, 10, YELLOW));
     let error = try_render(&mut renderer(false, frame_render::Documents::default()), &video, 0.5, &mut media).unwrap_err();
     assert_eq!(
@@ -961,7 +956,7 @@ fn gif_sticker(mode: &str) -> video_model::VideoSnapshot {
     )
 }
 
-/// 只装回退字体（思源黑体）的渲染器。
+/// A renderer loaded only with the fallback font (Source Han Sans).
 fn fallback_only_renderer() -> frame_render::FrameRenderer {
     frame_render::FrameRenderer::new(
         frame_render::RenderOptions {
@@ -996,11 +991,11 @@ fn marker_title() -> video_model::VideoSnapshot {
 fn gif_images_play_from_their_bytes_and_loop() {
     let video = video(vec![full_image("im", 0, 0, 90)], vec![gif_asset("a_im", 8, 8)], json!({}));
     let mut media = Media::default();
-    // 界面给的画面不用：GIF 只从素材字节解。
+    // Do not use the picture given by the UI: the GIF is decoded only from the asset bytes.
     media.pictures.insert("im".into(), solid(8, 8, WHITE));
     media.assets.insert("a_im".into(), STRIPES_GIF.to_vec());
     let mut renderer = renderer(false, frame_render::Documents::default());
-    // 帧表 [0, 100) [100, 300) [300, 600) [600, 1000)；过了 1 秒从头再来。
+    // Frame table [0, 100) [100, 300) [300, 600) [600, 1000). After 1 second it starts again from the beginning.
     for (seconds, frame) in [(0.05, 0), (0.15, 1), (0.35, 2), (0.75, 3), (1.05, 0), (1.35, 2)] {
         let pixels = render_with(&mut renderer, &video, seconds, &mut media);
         near(px(&pixels, 80, 45), STRIPES[frame], 2);
@@ -1014,7 +1009,7 @@ fn gif_stickers_follow_their_loop_mode() {
     for (mode, seconds, frame) in [
         ("loop", 1.15, 1),
         ("once", 0.15, 1),
-        // 播一次停在末帧。
+        // Plays once and stops on the last frame.
         ("once", 1.5, 3),
         ("hold", 0.5, 0),
     ] {
@@ -1025,13 +1020,13 @@ fn gif_stickers_follow_their_loop_mode() {
 
 #[test]
 fn gifs_that_cannot_animate_draw_their_first_frame() {
-    // 每帧都不停留：按第一帧画，不提示。
+    // Frames with no hold: drawn from the first frame, with no hint.
     let still = frame_render::load_gif("still", &tiny_gif(3, 0)).unwrap();
     assert!(matches!(still, (frame_render::Gif::Still(_), None)));
-    // 文件名里的中文不能把零时长误判为预算超限。
+    // Chinese characters in the file name must not make a zero duration be misjudged as exceeding the budget.
     let still = frame_render::load_gif("超过上限.gif", &tiny_gif(3, 0)).unwrap();
     assert!(matches!(still, (frame_render::Gif::Still(_), None)));
-    // 帧数超过上限：按第一帧画，并提示。
+    // Frame count over the limit: drawn from the first frame, with a hint.
     let (gif, note) = frame_render::load_gif("big", &tiny_gif(frame_render::GIF_BUDGET.max_frames + 1, 1)).unwrap();
     assert!(matches!(gif, frame_render::Gif::Still(_)));
     assert!(note.unwrap().contains("只画第一帧"));
@@ -1080,15 +1075,14 @@ fn text_in_a_missing_family_is_reported_on_every_frame_until_its_font_arrives() 
     let fallback = render_with(&mut renderer, &video, 0.5, &mut Media::default());
     assert_eq!(renderer.missing_fonts(), vec!["Permanent Marker".to_string()]);
     assert!(renderer.warnings().iter().any(|w| w.detail == note), "{:?}", renderer.warnings());
-    // 预览每帧清掉报告：内核缓存了排好的字，下一帧照样报（与导出一致）。
+    // Preview clears the reports on every frame. The kernel caches the laid-out text, so the next frame still reports it (consistent with export).
     renderer.clear_reports();
     assert!(renderer.missing_fonts().is_empty());
     let again = render_with(&mut renderer, &video, 0.6, &mut Media::default());
     assert_eq!(again, fallback);
     assert_eq!(renderer.missing_fonts(), vec!["Permanent Marker".to_string()]);
     assert!(renderer.warnings().iter().any(|w| w.detail == note), "{:?}", renderer.warnings());
-    // 宿主把字体送进来：已报的缺字体撤回（导出重画这一帧时不留提示）；按它重排，不再报，画出来与一开始就装着这份
-    // 字体的一样。
+    // The host sends fonts in: the missing-font reports already made are withdrawn (when export redraws this frame, no hint is left). Re-laid out with them, nothing is reported, and the drawing matches one that had this font from the start.
     renderer.add_fonts(vec![std::sync::Arc::new(
         include_bytes!("../../render-raster/assets/fonts/PermanentMarker-Regular.ttf").to_vec(),
     )]);

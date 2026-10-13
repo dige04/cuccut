@@ -19,12 +19,10 @@ import { ToolFailure, runTool, type MasterRunner, type ToolCommand } from './aud
 import type { AudioPlan, PlanRange, PlannedAsset } from './export-plan.ts';
 
 /**
- * 成片导出（架构设计 §9.13）：画面由 Render Worker（`crates/export-worker`，独立进程）逐帧求计划、合成、交给 ffmpeg 编码；
- * 声音先按音频导出混成 WAV，由 Worker 一并封装。这里是 Runtime 这一侧：Worker 的位置、输入文件、进程的启停与取消、
- * 发布前用 ffprobe 校验输出（流、帧数、尺寸、帧率、时长）。
+ * Video export (architecture design §9.13): the picture is computed frame by frame by the Render Worker (`crates/export-worker`, a separate process), composited, and handed to ffmpeg for encoding. The sound is first mixed to WAV by audio export, and the Worker packages it in together. This is the Runtime side: the Worker's location, the input files, starting and stopping the process and cancelling it, and verifying the output with ffprobe before publishing (streams, frame count, size, frame rate, duration).
  */
 
-/** 引擎 `exports.plan` 的 `video` 计划。`document` 是逐帧求计划用的那部分视频（这条序列与它引用的素材记录）。 */
+/** The `video` plan from the engine's `exports.plan`. `document` is the part of the video used for computing frames one by one (this sequence and the asset records it references). */
 export interface VideoPlanResult {
   videoId: Id;
   videoName: string;
@@ -37,13 +35,13 @@ export interface VideoPlanResult {
   documents: FrozenDocument[];
   assets: Array<PlannedAsset & { video?: unknown }>;
   parts: Array<{ video: VideoPlan; audio: AudioPlan }>;
-  /** 定下的输出尺寸与画面在其中的位置（`render_graph::video_plan::output_geometry`）。 */
+  /** The output size that was decided, and the position of the picture within it (`render_graph::video_plan::output_geometry`). */
   output: OutputGeometry;
-  /** 序列上有写了 `speaker` 的声波、视频里又有转写时：各说话人在序列上说话的区间（秒）。原样交给 Worker。 */
+  /** When the sequence has waveforms with `speaker` set and the video has transcripts: the intervals (seconds) during which each speaker talks on the sequence. Passed through to the Worker as-is. */
   speakers?: Record<string, Array<[number, number]>>;
 }
 
-/** 画面在输出里的一块（像素）。 */
+/** A block of the picture in the output (pixels). */
 export interface PictureRect {
   x: number;
   y: number;
@@ -51,7 +49,7 @@ export interface PictureRect {
   height: number;
 }
 
-/** 输出尺寸：画面与输出同尺寸时铺满，宽高比与画布不同时画面居中、其余是黑边；`adjusted` 是取偶数时调过。 */
+/** The output size: when the picture and the output are the same size, the picture fills it. When the aspect ratio differs from the canvas, the picture is centred with black bars elsewhere. `adjusted` means it was adjusted to make the dimensions even. */
 export interface OutputGeometry {
   width: number;
   height: number;
@@ -65,13 +63,13 @@ export interface FrozenDocument {
   revision: string | null;
   schema: string | null;
   lineKind: 'original' | 'translation';
-  /** 文档头的 `sourceDocumentId`（字幕取词）；字幕的词所在的转写也在冻结的文档里。 */
+  /** The `sourceDocumentId` in the document header (used for subtitle words). The transcript containing the subtitle's words is also in the frozen document. */
   sourceDocumentId?: Id | null;
   sourceAssetId?: Id | null;
   body: unknown;
 }
 
-/** 范围里的画面概览（`render-graph` 的 `video_plan`）。 */
+/** An overview of the picture over the range (`video_plan` in `render-graph`). */
 export interface VideoPlan {
   sequenceId: Id;
   range: PlanRange & { start: MediaTimeJson; end: MediaTimeJson };
@@ -88,7 +86,7 @@ export interface MediaTimeJson {
   timescale: number;
 }
 
-/** 画不出来的一项（Worker 的 `UnsupportedItem`）。 */
+/** One item that can't be drawn (the Worker's `UnsupportedItem`). */
 export interface UnsupportedItem {
   itemId: Id;
   scope: 'layer' | 'effect' | 'transition' | 'asset';
@@ -105,7 +103,7 @@ export interface VideoOutput {
   codec: VideoExportCodec;
   width: number;
   height: number;
-  /** 画面在输出里的一块；与输出同尺寸时铺满。 */
+  /** A block of the picture in the output. It fills the output when the sizes match. */
   picture: PictureRect;
   fps: { num: number; den: number };
   crf: number | null;
@@ -116,8 +114,7 @@ export interface VideoOutput {
 export const DEFAULT_VIDEO_AUDIO_KBPS: Record<VideoExportFormat, number> = { mp4: 192, webm: 128 };
 
 /**
- * Render Worker 的位置：`CUCCUT_EXPORT_WORKER` 环境变量；引擎宿主旁边的 `export-worker`（同一次 cargo 构建的产物，或打包后同在
- * `<resources>/bin`）；随应用分发的原生程序目录；或者从本模块往上找 cargo 产物目录（开发时由 `npm run build:engine` 构建）。
+ * Where the Render Worker is: the `CUCCUT_EXPORT_WORKER` environment variable. Or the `export-worker` next to the engine host (the output of the same cargo build, or both in `<resources>/bin` once packaged). Or the native program directory shipped with the app. Or, from this module, searching upward for the cargo output directory (during development, built by `npm run build:engine`).
  */
 export function resolveExportWorkerCommand(engineHost: string | null, env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.CUCCUT_EXPORT_WORKER) return env.CUCCUT_EXPORT_WORKER;
@@ -128,7 +125,7 @@ export function resolveExportWorkerCommand(engineHost: string | null, env: NodeJ
   return findBundledBinary('export-worker', path.dirname(fileURLToPath(import.meta.url)), env);
 }
 
-/** Worker 报的失败：`code` 是协议的错误码，`details.items` 是画不出来的项。 */
+/** A failure reported by the Worker. `code` is the protocol's error code, and `details.items` are the items that can't be drawn. */
 export class WorkerFailure extends Error {
   readonly code: string;
   readonly details: Record<string, unknown>;
@@ -141,7 +138,7 @@ export class WorkerFailure extends Error {
   }
 }
 
-/** Worker 的一行输出。 */
+/** One line of output from the Worker. */
 export type WorkerEvent =
   | {
       event: 'preflight';
@@ -149,11 +146,11 @@ export type WorkerEvent =
       items: UnsupportedItem[];
       warnings: Array<{ code: string; detail: string }>;
       missingEncoders: string[];
-      /** 要用到的本机字体 face（随渲染内核的字体里没有的族）：Runtime 按它冻结字体。 */
+      /** A local font face that is needed (a family not in the fonts bundled with the rendering core). The Runtime freezes fonts by it. */
       faces?: Array<{ family: string; weight: number; italic: boolean }>;
     }
   | {
-      /** `census`：视频用到的全部 face（`bundled` 是随渲染内核发布的族）与内核的回退族（`fonts.usage`）。 */
+      /** `census`: all faces the video uses (`bundled` marks families shipped with the rendering core), and the core's fallback families (`fonts.usage`). */
       event: 'census';
       faces: Array<{ family: string; weight: number; italic: boolean; bundled: boolean }>;
       fallback: string;
@@ -166,44 +163,43 @@ export type WorkerEvent =
       warnings: Array<{ code: string; detail: string }>;
       decoderRestarts: number;
       renderSeconds: number;
-      /** 画面编解码走了哪条路（架构设计 §9.11「画面」）：后端名（`avfoundation`、`media-foundation`、`ffmpeg`，解码混用时
-       *  `mixed`，没有视频素材时 `decoder` 为 `null`）与原生回落 ffmpeg 的记录。旧版 Worker 不报，所以可选。 */
+      /**
+       * Which path the picture's encoding and decoding took (architecture design §9.11 “picture”): the backend name (`avfoundation`, `media-foundation`, or `ffmpeg`; `mixed` when decoding mixes backends, and `decoder` is `null` when there is no video asset), and the record of any native fallback to ffmpeg. Older Workers don't report it, so it is optional. */
       video?: WorkerVideoBackends;
     }
   | { event: 'mastered'; frames: number; inputLufs: number; lufs: number; truePeak: number; staticGainDb: number }
   | { event: 'cancelled'; frame: number; total: number }
   | { event: 'error'; code: string; message: string; details: Record<string, unknown> | null };
 
-/** `done.video`：编解码后端与回落记录。`reason` 是英文代码（如 `codec`、`odd-size`、`open-failed`、`alpha-unsupported`）。 */
+/** `done.video`: the encoding and decoding backends and the fallback record. `reason` is an English code (such as `codec`, `odd-size`, `open-failed`, `alpha-unsupported`). */
 export interface WorkerVideoBackends {
   decoder: string | null;
   encoder: string;
   fallbacks: Array<{ scope: 'decoder' | 'encoder'; assetId?: string; reason: string; message: string }>;
 }
 
-/** 取消之后等 Worker 自己收尾（杀掉 ffmpeg、删掉没写完的输出）多久，过了就强杀。 */
+/** After a cancel, how long to wait for the Worker to clean up on its own (killing ffmpeg and deleting an unfinished output) before a forced kill. */
 const CANCEL_GRACE_MS = 5_000;
 
-/** POSIX 上 Worker 自成一个进程组，它启动的 ffmpeg 都在组里；Windows 没有进程组，只能杀 Worker 本身。 */
+/** On POSIX, the Worker forms its own process group, and the ffmpeg processes it starts are in that group. Windows has no process groups, so only the Worker itself can be killed. */
 const PROCESS_GROUPS = process.platform !== 'win32';
 
-/** 杀掉 Worker 的整个进程组（Worker 已经退出时，只剩它留下的 ffmpeg）。组已经不在时什么也不做。 */
+/** Kills the Worker's entire process group (when the Worker has already exited, only the ffmpeg processes it left behind). Does nothing if the group is already gone. */
 function killGroup(pid: number | undefined): void {
   if (!PROCESS_GROUPS || pid === undefined) return;
   try {
     process.kill(-pid, 'SIGKILL');
   } catch {
-    // ESRCH：组里已经没有进程
+    // ESRCH: no processes left in the group
   }
 }
 
-/** 强杀之后最多等进程组消失多久（SIGKILL 不能被忽略，正常在几毫秒内结束；这只是不让异常情况挂住任务）。 */
+/** After a forced kill, waits at most this long for the process group to disappear. SIGKILL cannot be ignored and normally finishes within milliseconds; this only keeps an abnormal case from hanging the job. */
 const GROUP_EXIT_WAIT_MS = 5_000;
 const GROUP_POLL_MS = 20;
 
 /**
- * 等进程组里的进程真的都退出（`kill(-pid, 0)` 返回 ESRCH）：发出 SIGKILL 不等于资源已经归还（架构设计 §7.7），
- * 任务的租约要等这之后才归还。有上限，超过时照样结束。Windows 没有进程组，Worker 本身已经退出就算结束。
+ * Waits until the processes in the group have really exited (`kill(-pid, 0)` returns ESRCH). Sending SIGKILL doesn't mean the resources have been returned (architecture design §7.7), and the job's lease is released only after this. It has a cap: past it, the wait ends anyway. On Windows, which has no process group, it counts as finished once the Worker itself has exited.
  */
 async function groupGone(pid: number | undefined): Promise<void> {
   if (!PROCESS_GROUPS || pid === undefined) return;
@@ -219,7 +215,7 @@ async function groupGone(pid: number | undefined): Promise<void> {
   }
 }
 
-/** 一次 Worker 子命令正常结束时的最后一行。 */
+/** The last line of a Worker subcommand that ended normally. */
 type FinalEvent<C extends WorkerCommand> = Extract<
   WorkerEvent,
   { event: { preflight: 'preflight'; census: 'census'; render: 'done'; master: 'mastered' }[C] }
@@ -233,12 +229,9 @@ const FINAL_EVENT: Record<WorkerCommand, WorkerEvent['event']> = {
 };
 
 /**
- * 跑一次 Worker（`preflight`、清点字体的 `census`、`render` 或响度母带 `master`），返回最后一行（`preflight`、`census`、`done` 或 `mastered`）。取消时在标准输入写 `cancel` 并关掉，
- * 等它退出（超时强杀）之后才以 `ToolFailure('aborted')` 结束：调用方随后删 staging，不能和 Worker 抢文件。
+ * Runs the Worker once (`preflight`, the `census` font glyph survey, `render`, or the loudness `master`), and returns its last line (`preflight`, `census`, `done`, or `mastered`). On cancel, it writes `cancel` to stdin, closes it, and waits for the process to exit (forced kill on timeout). Only then does it end with `ToolFailure('aborted')`. The caller then deletes the staging area, and must not race the Worker for files.
  *
- * Worker 以自己为首建一个进程组（`detached`），解码与编码的 ffmpeg 随之在组里。Worker 没有正常结束时（崩溃、被强杀、
- * 取消超时）在结束这个 Promise 之前杀掉整个组：Worker 被 SIGKILL 时它来不及停下子进程，这样 ffmpeg 不会留成孤儿，
- * 也不会在 staging 删掉之后还往里写。
+ * The Worker creates its own process group, with itself as the leader (`detached`), so the decoding and encoding ffmpeg processes are in the group. When the Worker doesn't end normally (it crashed, was force-killed, or the cancel timed out), the whole group is killed before this Promise ends. When the Worker is killed with SIGKILL it has no chance to stop its child processes, so this keeps ffmpeg from being left as an orphan and from writing into staging after it has been deleted.
  */
 export function runWorker<C extends WorkerCommand>(
   worker: ToolCommand,
@@ -300,11 +293,11 @@ export function runWorker<C extends WorkerCommand>(
         if (signal?.aborted) return reject(new ToolFailure('aborted', RcCommon.cancelled()));
         if (clean) return resolve(event as FinalEvent<C>);
         if (event?.event === 'error') return reject(new WorkerFailure(event.code, event.message, event.details ?? {}));
-        // 没有说明就退出了（崩溃、被杀）：合成在独立进程里，Runtime 不受影响，这一个输出算失败。
+        // Exited without explanation (a crash, or killed): compositing runs in a separate process, so the Runtime is unaffected, and this one output counts as failed.
         const tail = stderr.trim().split('\n').slice(-3).join('\n');
         reject(new WorkerFailure('EXPORT_RENDER_FAILED', RcExport.workerExitedUnexpectedly({ signal: sig ?? null, code: String(code), output: tail })));
       };
-      // 正常结束的 Worker 已经等过它的 ffmpeg；其余情况（含取消）收掉组里可能剩下的进程，等它们真的退出再结束。
+      // A Worker that ended normally has already waited for its ffmpeg. In every other case (including cancel), kill whatever processes may remain in the group, and wait for them to really exit before ending.
       if (clean) return settle();
       killGroup(child.pid);
       void groupGone(child.pid).then(settle);
@@ -313,12 +306,12 @@ export function runWorker<C extends WorkerCommand>(
   });
 }
 
-/** 响度母带（`renderAudio` 的 `master`）：在 Worker 里跑 `master` 子命令，取消与进程组的处理同 `render`。 */
+/** Loudness mastering (`master` of `renderAudio`): runs the `master` subcommand in the Worker. Cancellation and process-group handling are the same as for `render`. */
 export function masterRunner(worker: ToolCommand): MasterRunner {
   return (inputFile, signal, onProgress) => runWorker(worker, 'master', inputFile, { signal, ...(onProgress ? { onProgress } : {}) });
 }
 
-/** 一个成片的 ffprobe 读数。 */
+/** The ffprobe readings of a finished video. */
 export interface ProbedVideo {
   durationSec: number;
   frames: number;
@@ -331,7 +324,7 @@ export interface ProbedVideo {
   colorSpace: string | null;
 }
 
-/** ffprobe 读成片：流、帧数（数包，不解码）、尺寸、帧率与时长。 */
+/** ffprobe reads the finished video: its streams, frame count (counts packets, no decoding), size, frame rate, and duration. */
 export async function probeVideo(ffprobe: ToolCommand, file: string, signal: AbortSignal): Promise<ProbedVideo> {
   const { stdout } = await runTool(
     ffprobe,
@@ -347,7 +340,7 @@ export async function probeVideo(ffprobe: ToolCommand, file: string, signal: Abo
   const audio = streams.find((s) => s.codec_type === 'audio');
   if (!video) throw new Error(RcExport.noVideoStream().text);
   const number = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN);
-  // WebM（Matroska）的流没有 duration，时长在标签 `DURATION`（`HH:MM:SS.nnnnnnnnn`）里。
+  // WebM (Matroska) streams have no duration. The time is in the `DURATION` tag (`HH:MM:SS.nnnnnnnnn`).
   const streamDuration = (stream: Record<string, unknown>) => {
     const direct = number(stream.duration);
     if (Number.isFinite(direct)) return direct;
@@ -370,7 +363,7 @@ export async function probeVideo(ffprobe: ToolCommand, file: string, signal: Abo
 
 const CODEC_NAMES: Record<VideoExportCodec, string> = { h264: 'h264', hevc: 'hevc', vp9: 'vp9' };
 
-/** 发布前的校验：两条流都在、帧数与时长差不过一帧、尺寸与帧率符合设置。 */
+/** Verification before publishing: both streams are present, the frame count and duration differ by no more than one frame, and the size and frame rate match the settings. */
 export function checkVideo(
   probed: ProbedVideo,
   expected: { frames: number; output: VideoOutput; audio: boolean },
@@ -391,7 +384,7 @@ export function checkVideo(
   const duration = Number.isFinite(probed.videoDurationSec) ? probed.videoDurationSec : probed.durationSec;
   if (!(Math.abs(duration - expectedDuration) <= frameSec + 1e-3))
     problems.push(RcExport.videoDurationMismatch({ actual: duration, expected: expectedDuration }).text);
-  // 声音按编码器的帧补齐（AAC 1024 个样本、Opus 20 ms），容差多给 50 ms。
+  // Audio is padded to the encoder's frames (AAC 1024 samples, Opus 20 ms). The tolerance is 50 ms more than that.
   if (expected.audio && !probed.audio) problems.push(RcExport.noAudioInOutput().text);
   if (probed.audio && !(Math.abs(probed.audio.durationSec - expectedDuration) <= frameSec + 0.05))
     problems.push(RcExport.audioDurationMismatch({ actual: probed.audio.durationSec, expected: expectedDuration }).text);
@@ -425,7 +418,7 @@ export function checkVideo(
   };
 }
 
-/** Worker 的输入文件（`crates/export-worker/src/input.rs`）。 */
+/** The Worker's input file (`crates/export-worker/src/input.rs`). */
 export function workerInput(options: {
   plan: VideoPlanResult;
   part: number;
@@ -435,7 +428,7 @@ export function workerInput(options: {
   audioPath: string | null;
   burnCaptions: boolean;
   onUnsupported: 'fail' | 'skip';
-  /** 冻结的本机字体（只给找到的；预检时还没有）。 */
+  /** Frozen local fonts (only the ones found; at preflight, not yet present). */
   fonts?: readonly ExportFontFace[];
   ffmpeg: string;
   ffprobe: string;
@@ -482,7 +475,7 @@ export function workerInput(options: {
   };
 }
 
-/** 一项画不出来的内容写成任务警告。 */
+/** Writes an item that can't be drawn as a task warning. */
 export function skippedWarning(item: UnsupportedItem): { code: string; detail: string; detailRef: MessageRef } {
   const { message } = item;
   const detail =

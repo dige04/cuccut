@@ -1,5 +1,5 @@
-//! 视频引擎的验收测试：事务、幂等、写锁、撤销与编辑语义。
-//! 需要媒体的测试用 ffmpeg 现场生成素材；没有 ffmpeg 时跳过并打印原因。
+//! Acceptance tests for the video engine: transactions, idempotency, the write lock, and undo and editing semantics.
+//! Tests that need media generate the assets with ffmpeg on the spot; without ffmpeg they are skipped and the reason is printed.
 
 #![allow(clippy::result_large_err)]
 
@@ -25,7 +25,7 @@ struct Fixtures {
     audio: PathBuf,
 }
 
-/// 2 秒 30 fps 的视频（带声音）与 1.5 秒的 wav。
+/// A 2-second, 30 fps video (with sound) and a 1.5-second wav.
 fn fixtures() -> Option<&'static Fixtures> {
     static FIXTURES: OnceLock<Option<Fixtures>> = OnceLock::new();
     FIXTURES
@@ -152,7 +152,7 @@ fn err_code(result: Result<impl std::fmt::Debug, ErrorBody>) -> String {
     result.expect_err("应当失败").code
 }
 
-/// 导入视频并在 V1 上依次放 `count` 个实例（每个 60 帧）。
+/// Imports a video and places `count` instances in turn on V1 (each 60 frames long).
 fn import_video(video: &mut Video, fixtures: &Fixtures, count: usize) -> Vec<String> {
     let mut ops = vec![json!({ "type": "importAsset", "path": fixtures.video_file, "ref": "clip" })];
     for _ in 0..count {
@@ -202,12 +202,12 @@ fn default_root_sequence_name_carries_a_message_ref_until_renamed() {
     let mut video = new_video(dir.path());
     let s = seq(&video);
     let header = |video: &Video| video.snapshot().sequences[&s].header.clone();
-    // 缺省名存英文与引用，界面按读者的语言显示（视频格式规范 §3.2）。
+    // The default name is stored in English with a reference; the UI displays it in the reader's language (video format spec §3.2).
     let created = header(&video);
     assert_eq!(created.name, "Main sequence");
     assert_eq!(created.name_ref.as_ref().map(|r| r.key.as_str()), Some("engine.mainSequence"));
 
-    // 只改画布不动名字：仍是缺省名。
+    // Only the canvas changed and the name did not: it is still the default name.
     video
         .apply(&tx(
             &video,
@@ -217,7 +217,7 @@ fn default_root_sequence_name_carries_a_message_ref_until_renamed() {
         .unwrap();
     assert_eq!(header(&video).name_ref, created.name_ref);
 
-    // 改名：用户起的名字原样显示，引用去掉，交换形式里没有 nameRef；重开后也一样。
+    // Renamed: the user's name is displayed as is, the reference is dropped, the exchange form has no nameRef; the same after reopening.
     let renamed = video
         .apply(&tx(
             &video,
@@ -236,7 +236,7 @@ fn default_root_sequence_name_carries_a_message_ref_until_renamed() {
     let mut reopened = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
     assert_eq!(header(&reopened).name_ref, None);
 
-    // 撤销改名：缺省名与引用一起回来。
+    // Undo the rename: the default name and its reference come back together.
     reopened
         .undo(&UndoRequest {
             command_id: "cmd_undo_name".into(),
@@ -253,7 +253,7 @@ fn default_root_sequence_name_carries_a_message_ref_until_renamed() {
 
 #[test]
 fn sequence_header_without_name_ref_round_trips_unchanged() {
-    // 有 nameRef 之前写下的序列：读入时没有引用，引擎也不补，写回与原样一致（撤销按原样比对）。
+    // Sequences written before nameRef existed: no reference on read, the engine does not add one, and writing back matches the original (undo compares as is).
     let stored = json!({
         "name": "主序列",
         "fps": { "num": 30, "den": 1 },
@@ -275,7 +275,7 @@ fn default_labels_are_english_with_a_message_ref_and_caller_labels_stay_as_given
     let dir = tempfile::tempdir().unwrap();
     let mut video = new_video(dir.path());
 
-    // 引擎起的修改名：英文与引用，界面按读者的语言重新生成（命令与协议规范 §3.1）。
+    // An engine-generated change name: English with a reference; the UI regenerates it in the reader's language (command and protocol spec §3.1).
     let renamed = video
         .apply(&tx(&video, "cmd_rename", vec![json!({ "type": "renameVideo", "name": "一" })]))
         .unwrap();
@@ -287,7 +287,7 @@ fn default_labels_are_english_with_a_message_ref_and_caller_labels_stay_as_given
         ("Rename video", &renamed.receipt.label_ref)
     );
 
-    // 几种修改：主修改名作为嵌套参数，次数按全部操作算。
+    // Several changes: the main change name is a nested parameter, and the count covers all operations.
     let mixed = video
         .apply(&tx(
             &video,
@@ -307,21 +307,21 @@ fn default_labels_are_english_with_a_message_ref_and_caller_labels_stay_as_given
         })
     );
 
-    // 调用方给的修改名原样保存（去掉首尾空白）；没给引用就没有引用。
+    // The caller's change name is stored as given (leading and trailing whitespace removed); with no reference given, there is no reference.
     let mut named = tx(&video, "cmd_named", vec![json!({ "type": "renameVideo", "name": "三" })]);
     named.label = Some("  整理标题  ".into());
     let named = video.apply(&named).unwrap();
     assert_eq!((named.receipt.label.as_str(), &named.receipt.label_ref), ("整理标题", &None));
     assert!(serde_json::to_value(&named.receipt).unwrap().get("labelRef").is_none());
 
-    // 历史与补发的事件带着同样的引用。
+    // History and replayed events carry the same reference.
     let history = video.history(10).unwrap();
     assert_eq!(history[0].label_ref, None);
     assert_eq!(history[1].label_ref, mixed.receipt.label_ref);
     let events = video.events_after(0, 10).unwrap();
     assert_eq!(events[0].label_ref, renamed.receipt.label_ref);
 
-    // 「导入并添加」算一次添加。
+    // “Import and add” counts as one add.
     if let Some(fixtures) = fixtures() {
         let ops = vec![
             json!({ "type": "importAsset", "path": fixtures.video_file, "ref": "clip" }),
@@ -359,7 +359,7 @@ fn undo_and_redo_labels_wrap_the_original_label() {
         ref_json(&undone.receipt.label_ref),
         json!({ "key": "engine.labelUndo", "params": { "label": rename_ref } })
     );
-    // 撤销栈上的一步用正向修改名，引用跟着走。
+    // A step on the undo stack uses the forward change name, and the reference goes with it.
     let redo = video.undo_state(&user()).unwrap().redo.unwrap();
     assert_eq!(
         (redo.label.as_str(), ref_json(&redo.label_ref)),
@@ -372,7 +372,7 @@ fn undo_and_redo_labels_wrap_the_original_label() {
         json!({ "key": "engine.labelRedo", "params": { "label": rename_ref } })
     );
 
-    // 调用方给的修改名没有引用时作为字符串参数原样显示。
+    // A change name given by the caller with no reference is displayed as given, as a string parameter.
     let mut named = tx(&video, "cmd_named", vec![json!({ "type": "renameVideo", "name": "二" })]);
     named.label = Some("整理标题".into());
     video.apply(&named).unwrap();
@@ -383,7 +383,7 @@ fn undo_and_redo_labels_wrap_the_original_label() {
         json!({ "key": "engine.labelUndo", "params": { "label": "整理标题" } })
     );
 
-    // 重新打开之后，历史与撤销栈的引用还在。
+    // After reopening, the references in the history and undo stack are still there.
     drop(video);
     let reopened = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
     let history = reopened.history(10).unwrap();
@@ -402,7 +402,7 @@ fn caller_labels_keep_the_ref_they_came_with() {
     let mut video = new_video(dir.path());
     let caller_ref = json!({ "key": "editLabel.moveClips", "params": { "count": 2 } });
 
-    // 调用方给的修改名带着引用：文字与引用原样存下，引擎不认这个键（命令与协议规范 §3.1）。
+    // A change name given by the caller carries a reference: the text and the reference are stored as given; the engine does not recognize this key (command and protocol spec §3.1).
     let mut named = tx(&video, "cmd_named", vec![json!({ "type": "renameVideo", "name": "一" })]);
     named.label = Some(" Move 2 clips ".into());
     named.label_ref = serde_json::from_value(caller_ref.clone()).unwrap();
@@ -415,7 +415,7 @@ fn caller_labels_keep_the_ref_they_came_with() {
     let undo = video.undo_state(&user()).unwrap().undo.unwrap();
     assert_eq!(ref_json(&undo.label_ref), caller_ref);
 
-    // 撤销把它作为嵌套参数，连同当时的文字（读者认不出这个键时用）。
+    // Undo passes it as a nested parameter, together with the text at that time (used when the reader does not recognize the key).
     let undone = video
         .undo(&UndoRequest {
             command_id: "cmd_undo".into(),
@@ -433,7 +433,7 @@ fn caller_labels_keep_the_ref_they_came_with() {
         })
     );
 
-    // 只有引用、没有文字：不算调用方给了名字，引擎照常起名。
+    // Only a reference and no text: the caller is not considered to have given a name, so the engine names it as usual.
     let mut ref_only = tx(&video, "cmd_ref_only", vec![json!({ "type": "renameVideo", "name": "二" })]);
     ref_only.label = Some("  ".into());
     ref_only.label_ref = serde_json::from_value(caller_ref.clone()).unwrap();
@@ -443,7 +443,7 @@ fn caller_labels_keep_the_ref_they_came_with() {
         ("Rename video", json!({ "key": "engine.labelRenameVideo" }))
     );
 
-    // 重新打开之后，历史里还是调用方的引用。
+    // After reopening, the history still holds the caller's reference.
     drop(video);
     let reopened = Video::open(dir.path(), OpenMode::ReadOnly, &ffprobe()).unwrap();
     let history = reopened.history(10).unwrap();
@@ -459,7 +459,7 @@ fn transactions_without_label_ref_columns_read_as_stored_text() {
         .apply(&tx(&video, "cmd_rename", vec![json!({ "type": "renameVideo", "name": "一" })]))
         .unwrap();
     drop(video);
-    // 加上引用列之前的库：没有这两列，修改名是当时写下的中文。
+    // A library from before the reference columns were added: without those two columns, the change name is the text written at the time (in Chinese).
     {
         let conn = rusqlite::Connection::open(dir.path().join("video.db")).unwrap();
         conn.execute_batch(
@@ -470,7 +470,7 @@ fn transactions_without_label_ref_columns_read_as_stored_text() {
         .unwrap();
     }
 
-    // 只读打开不改库：照存下的文字读，没有引用。
+    // A read-only open does not modify the library: it reads the stored text as is, with no reference.
     let read_only = Video::open(dir.path(), OpenMode::ReadOnly, &ffprobe()).unwrap();
     let history = read_only.history(10).unwrap();
     assert_eq!((history[0].label.as_str(), &history[0].label_ref), ("重命名视频", &None));
@@ -478,7 +478,7 @@ fn transactions_without_label_ref_columns_read_as_stored_text() {
     assert_eq!((undo.label.as_str(), &undo.label_ref), ("重命名视频", &None));
     drop(read_only);
 
-    // 可写打开时补上两列；撤销旧修改，旧名字作为字符串参数。
+    // A writable open adds the two columns; when an old change is undone, the old name is passed as a string parameter.
     let mut video = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
     let undone = video
         .undo(&UndoRequest {
@@ -513,12 +513,12 @@ fn c03_second_writer_is_rejected_and_read_only_cannot_write() {
     let rename = tx(&reader, "cmd_ro", vec![json!({ "type": "renameVideo", "name": "x" })]);
     assert_eq!(err_code(reader.apply(&rename)), "VIDEO_READ_ONLY");
 
-    // 释放之后可以重新取得写锁，所有者代递增。
+    // After release, the write lock can be taken again, and the owner generation is incremented.
     drop(video);
     Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("锁已释放");
 }
 
-/// 别的线程正在起子进程时关掉视频，马上就能重新取得写锁：子进程起来时复制走的锁文件描述符不拖住锁。
+/// The video is closed while another thread is spawning child processes, and the write lock can be taken again right away: the lock file descriptors copied when the child processes started do not hold the lock.
 #[cfg(unix)]
 #[test]
 fn closing_releases_the_lock_while_other_threads_spawn_children() {
@@ -560,7 +560,7 @@ fn stale_owner_cannot_commit_after_the_lock_moves() {
     let video = new_video(dir.path());
     drop(video);
     let mut first = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
-    // 模拟锁被另一方合法取得（例如旧宿主被判定失联之后）：直接递增所有者代。
+    // Simulates the lock being legitimately taken by another party (for example, after the old host was judged unreachable): the owner generation is incremented directly.
     {
         let conn = rusqlite::Connection::open(dir.path().join("video.db")).unwrap();
         conn.execute("UPDATE videos SET owner_generation = owner_generation + 1", [])
@@ -603,7 +603,7 @@ fn c05_same_key_with_another_payload_is_rejected_and_outbox_survives() {
     assert_eq!(err_code(video.apply(&changed)), "IDEMPOTENCY_CONFLICT");
     assert_eq!(video.state().name, "第一版");
 
-    // 广播丢失：从持久的 outbox 补发同一个事件，序号与内容不变。
+    // A broadcast was lost: the same event is re-sent from the durable outbox, with its sequence number and content unchanged.
     drop(video);
     let reopened = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
     let events = reopened.events_after(0, 100).unwrap();
@@ -663,7 +663,7 @@ fn unknown_fields_and_missing_sequence_are_rejected() {
     let mut video = new_video(dir.path());
     let bad = vec![json!({ "type": "renameVideo", "name": "x", "patch": {} })];
     assert_eq!(err_code(video.apply(&tx(&video, "cmd_bad", bad))), "INVALID_OPERATION");
-    // TM04：帧输入没有序列时不猜帧率。
+    // TM04: the frame rate is not guessed when the frame input has no sequence.
     let no_seq =
         vec![json!({ "type": "moveItem", "itemId": "item_x", "at": { "unit": "frames", "value": 3 }, "alignment": "exact-frame" })];
     assert_eq!(err_code(video.apply(&tx(&video, "cmd_noseq", no_seq))), "TIME_DOMAIN_MISMATCH");
@@ -690,7 +690,7 @@ fn tm01_seconds_and_frames_resolve_to_the_same_frame() {
         .apply(&tx(&video, "cmd_frame", vec![json!({ "type": "moveItem", "sequenceId": s, "itemId": ids[0], "at": { "unit": "frames", "value": 375 }, "alignment": "exact-frame" })]))
         .unwrap();
     assert_eq!(by_frames.receipt.time_resolution[0].actual_time, receipt.actual_time);
-    // 位置相同：第二笔事务没有改变任何实体。
+    // Same position: the second transaction did not change any entity.
     assert!(by_frames.receipt.updated_ids.is_empty());
     assert!(!by_frames.receipt.undo.available);
 }
@@ -748,7 +748,7 @@ fn split_keeps_the_left_id_and_maps_the_right_source_exactly() {
     assert_eq!((source_in.ticks.as_str(), source_in.timescale), ("1", 2));
     assert_eq!(r.base.lineage.as_ref().unwrap().origin_item_id, ids[0]);
 
-    // 撤销拆分：右段删除，左段恢复原长。
+    // Undo the split: the right segment is deleted, and the left segment is restored to its original length.
     let undone = video
         .undo(&UndoRequest {
             command_id: "cmd_undo_split".into(),
@@ -785,7 +785,7 @@ fn caption_scope_follows_split_and_delete() {
         c.scope_item_ids.clone()
     };
 
-    // 拆分：右半边紧跟原实例进入作用实例，拆分点之后的字幕照样经它投影。
+    // Split: the right half follows the original instance into the acting instance, and subtitles past the split point still project through it.
     let split = vec![
         json!({ "type": "splitItem", "sequenceId": s, "itemId": ids[0], "at": { "unit": "frames", "value": 30 }, "alignment": "exact-frame" }),
     ];
@@ -794,7 +794,7 @@ fn caption_scope_follows_split_and_delete() {
     assert_eq!(scope(&video), vec![ids[0].clone(), right.clone()]);
     assert!(committed.receipt.updated_ids.contains(&caption));
 
-    // 删掉一半：从作用实例里拿掉；删掉最后一个时保留原样（拿空等于换成序列时钟）。
+    // Delete one half: it is removed from the acting instance; when the last one is deleted, it is kept as is (emptying it would be the same as switching to the sequence clock).
     video
         .apply(&tx(
             &video,
@@ -812,7 +812,7 @@ fn caption_scope_follows_split_and_delete() {
         .unwrap();
     assert_eq!(scope(&video), vec![ids[0].clone()]);
 
-    // 撤销拆分之前的几步都撤掉：作用实例回到拆分前。
+    // Undo all the steps before the split: the acting instance returns to what it was before the split.
     for command in ["cmd_undo_left", "cmd_undo_right"] {
         video
             .undo(&UndoRequest {
@@ -835,7 +835,7 @@ fn caption_scope_follows_split_and_delete() {
     assert_eq!(scope(&video), vec![ids[0].clone()]);
 }
 
-/// 实例在 JSON 里的 `timeMap.sourceIn`（秒）。
+/// The instance's `timeMap.sourceIn` (in seconds) in JSON.
 fn source_in_seconds(video: &Video, id: &str) -> f64 {
     let value = serde_json::to_value(&video.state().items[id].value).unwrap();
     let source_in = &value["timeMap"]["sourceIn"];
@@ -843,7 +843,7 @@ fn source_in_seconds(video: &Video, id: &str) -> f64 {
     ticks / source_in["timescale"].as_f64().unwrap()
 }
 
-/// 音频实例的起点与长度（秒）。
+/// The start and length (in seconds) of an audio instance.
 fn audio_range(video: &Video, id: &str) -> (f64, f64) {
     let TimelineItem::Audio(audio) = &video.state().items[id].value else {
         panic!("不是音频")
@@ -860,7 +860,7 @@ fn remove_range_ripples_the_declared_tracks_and_captions_follow() {
     let Some(fixtures) = fixtures() else { return };
     let dir = tempfile::tempdir().unwrap();
     let mut video = new_video(dir.path());
-    // V1：A [0, 60)、B [60, 120)；A1：音频 0.25–1.75 秒；V2：文字 [0, 120)；字幕 [0, 120) 经 A、B 投影。
+    // V1: A [0, 60), B [60, 120); A1: audio 0.25–1.75 seconds; V2: text [0, 120); subtitles [0, 120) projected through A and B.
     let ids = import_video(&mut video, fixtures, 2);
     let (a, b) = (ids[0].clone(), ids[1].clone());
     let s = seq(&video);
@@ -890,7 +890,7 @@ fn remove_range_ripples_the_declared_tracks_and_captions_follow() {
     let subs = video.state().items[&caption].value.base().track_id.clone();
     let declared = json!([track(&video, "V1"), track(&video, "A1"), subs]);
 
-    // 删掉 [20, 40) 帧：A 拆开、删掉中间、右段前移；B 前移；音频同样拆开前移；字幕缩短，作用实例加上 A 的右段；文字不动。
+    // Delete frames [20, 40): A is split, the middle is deleted, and the right segment moves forward; B moves forward; the audio is likewise split and moved forward; the subtitles are shortened, and the acting instance adds A's right segment; the text does not move.
     let cut = vec![
         json!({ "type": "removeRange", "sequenceId": s, "from": { "unit": "frames", "value": 20 },
         "to": { "unit": "frames", "value": 40 }, "trackIds": declared, "alignment": "exact-frame" }),
@@ -920,7 +920,7 @@ fn remove_range_ripples_the_declared_tracks_and_captions_follow() {
     };
     assert_eq!(c.scope_item_ids, vec![a.clone(), right.clone(), b.clone()]);
 
-    // 整个落在区间里的删掉：[20, 40) 现在正好是 A 的右段。
+    // Anything that falls entirely within the range is deleted: [20, 40) is now exactly A's right segment.
     let again = vec![
         json!({ "type": "removeRange", "sequenceId": s, "from": { "unit": "frames", "value": 20 },
         "to": { "unit": "frames", "value": 40 }, "trackIds": [track(&video, "V1")], "alignment": "exact-frame" }),
@@ -929,7 +929,7 @@ fn remove_range_ripples_the_declared_tracks_and_captions_follow() {
     assert!(!video.state().items.contains_key(&right));
     assert_eq!(span_of(&video, &b), (20, 60));
 
-    // 声明的轨道锁着：整笔拒绝。区间不足一帧、没声明轨道：拒绝。
+    // A declared track is locked: the whole transaction is rejected. A range shorter than one frame, or with no track declared: rejected.
     video
         .apply(&tx(
             &video,
@@ -953,7 +953,7 @@ fn remove_range_ripples_the_declared_tracks_and_captions_follow() {
     ];
     assert_eq!(err_code(video.apply(&tx(&video, "cmd_none", none))), "INVALID_OPERATION");
 
-    // 撤销第一次剪切（选择性撤销，之后的步骤先撤）：回到剪切前。
+    // Undo the first cut (selective undo, with the later steps undone first): back to before the cut.
     for command in ["cmd_undo_lock", "cmd_undo_again", "cmd_undo_cut"] {
         video
             .undo(&UndoRequest {
@@ -987,7 +987,7 @@ fn trimming_past_the_source_is_rejected() {
         json!({ "type": "trimItem", "sequenceId": seq(&video), "itemId": ids[0], "edge": "start", "at": { "unit": "frames", "value": 60 }, "alignment": "exact-frame" }),
     ];
     assert_eq!(err_code(video.apply(&tx(&video, "cmd_collapse", collapse))), "TIME_RANGE_COLLAPSED");
-    // 从头裁掉 10 帧：sourceIn 前移 1/3 秒。
+    // Trim 10 frames from the start: sourceIn moves forward 1/3 second.
     let start = vec![
         json!({ "type": "trimItem", "sequenceId": seq(&video), "itemId": ids[0], "edge": "start", "at": { "unit": "frames", "value": 10 }, "alignment": "exact-frame" }),
     ];
@@ -1084,7 +1084,7 @@ fn reimporting_the_same_bytes_reuses_the_asset() {
         .unwrap();
     assert_eq!(video.state().assets.len(), 1);
     assert_eq!(again.receipt.preserved, vec![asset_id.clone()]);
-    // 不指定存放方式（链接）导入同样的 bytes 也复用原素材。
+    // Importing the same bytes without a storage mode (linked) also reuses the original asset.
     let linked = video
         .apply(&tx(
             &video,
@@ -1112,7 +1112,7 @@ fn t08_undo_does_not_erase_later_additions_and_redo_works() {
     let asset = video.state().assets.keys().next().unwrap().clone();
     let s = seq(&video);
 
-    // 用户移动片段；之后智能体又加了一个片段。
+    // The user moves a clip; afterwards, the agent adds another clip.
     let moved = video
         .apply(&tx(&video, "cmd_move", vec![json!({ "type": "moveItem", "sequenceId": s, "itemId": ids[0], "at": { "unit": "frames", "value": 100 }, "alignment": "exact-frame" })]))
         .unwrap();
@@ -1126,7 +1126,7 @@ fn t08_undo_does_not_erase_later_additions_and_redo_works() {
     by_agent.actor = agent();
     let added = video.apply(&by_agent).unwrap().receipt.created_ids[0].clone();
 
-    // 撤销用户的移动：只补偿那一笔，智能体的片段保留。
+    // Undo the user's move: only that transaction is compensated; the agent's clip is kept.
     let undo = UndoRequest {
         command_id: "cmd_undo_move".into(),
         target: UndoTarget::Transaction(moved.receipt.transaction_id.clone()),
@@ -1145,10 +1145,10 @@ fn t08_undo_does_not_erase_later_additions_and_redo_works() {
         "UNDO_UNAVAILABLE"
     );
 
-    // 同一个撤销请求重试：返回原回执。
+    // A retry of the same undo request returns the original receipt.
     assert_eq!(video.undo(&undo).unwrap().receipt, undone.receipt);
 
-    // 重做 = 撤销那次撤销。
+    // Redo = undo that undo.
     let redo = UndoRequest {
         command_id: "cmd_redo".into(),
         target: UndoTarget::Transaction(undone.receipt.transaction_id.clone()),
@@ -1245,7 +1245,7 @@ fn read_only_open_works_after_the_writer_closed() {
     drop(video);
     let reader = Video::open(dir.path(), OpenMode::ReadOnly, &ffprobe()).unwrap();
     assert_eq!(reader.snapshot(), snapshot);
-    // 只读打开不占写锁。
+    // A read-only open does not take the write lock.
     Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("写锁可用");
 }
 
@@ -1270,7 +1270,7 @@ fn undo_stack_follows_the_actor_and_clears_redo_after_a_new_edit() {
             ))
             .unwrap();
     }
-    // 智能体的修改不进入用户的撤销栈。
+    // The agent's changes do not enter the user's undo stack.
     let mut by_agent = tx(
         &video,
         "cmd_agent_track",
@@ -1292,14 +1292,14 @@ fn undo_stack_follows_the_actor_and_clears_redo_after_a_new_edit() {
     assert!(video.undo_state(&user()).unwrap().redo.is_none());
     assert_eq!(err_code(step(&mut video, "r3", UndoTarget::Redo)), "UNDO_UNAVAILABLE");
 
-    // 撤销之后又有新的修改：重做栈清空。
+    // After an undo, a new change is made: the redo stack is cleared.
     step(&mut video, "u3", UndoTarget::Undo).unwrap();
     assert!(video.undo_state(&user()).unwrap().redo.is_some());
     video
         .apply(&tx(&video, "cmd_new", vec![json!({ "type": "renameVideo", "name": "四" })]))
         .unwrap();
     assert!(video.undo_state(&user()).unwrap().redo.is_none());
-    // 重试同一个方向撤销：取回原回执，不再撤销一步。
+    // Retrying the same undo in the same direction returns the original receipt and does not undo another step.
     let first = step(&mut video, "u4", UndoTarget::Undo).unwrap();
     let again = step(&mut video, "u4", UndoTarget::Undo).unwrap();
     assert_eq!(first.receipt, again.receipt);
@@ -1348,7 +1348,7 @@ fn speed_changes_keep_the_source_range_and_refuse_to_push_neighbours() {
     let speed =
         |id: &str, num: i64, den: i64| json!({ "type": "setSpeed", "sequenceId": s, "itemId": id, "rate": { "num": num, "den": den } });
 
-    // 2 秒的素材以 2 倍速播放：长度减半，源区间不变。
+    // A 2-second asset played at 2× speed: the length is halved, and the source interval does not change.
     video.apply(&tx(&video, "cmd_fast", vec![speed(&ids[0], 2, 1)])).unwrap();
     assert_eq!(span_of(&video, &ids[0]), (0, 30));
     let TimelineItem::Video(v) = &video.state().items[&ids[0]].value else {
@@ -1362,7 +1362,7 @@ fn speed_changes_keep_the_source_range_and_refuse_to_push_neighbours() {
         }
     );
 
-    // 放慢到 0.5 倍会盖住后面的实例：拒绝，不推开别人。
+    // Slowing it to 0.5× would cover the instance after it: rejected, and others are not pushed away.
     assert_eq!(
         err_code(video.apply(&tx(&video, "cmd_slow", vec![speed(&ids[0], 1, 2)]))),
         "TIMELINE_OVERLAP"
@@ -1371,11 +1371,11 @@ fn speed_changes_keep_the_source_range_and_refuse_to_push_neighbours() {
         err_code(video.apply(&tx(&video, "cmd_range", vec![speed(&ids[0], 1, 20)]))),
         "INVALID_OPERATION"
     );
-    // 3/2 倍：60 帧的源区间放 40 帧。
+    // 3/2×: a 60-frame source interval is played in 40 frames.
     video.apply(&tx(&video, "cmd_mid", vec![speed(&ids[0], 3, 2)])).unwrap();
     assert_eq!(span_of(&video, &ids[0]), (0, 40));
 
-    // 音频的长度保持精确，不落到帧上。
+    // The audio length stays exact and is not snapped to frames.
     let ops = vec![
         json!({ "type": "importAsset", "path": fixtures.audio, "ref": "tone" }),
         json!({ "type": "addItem", "sequenceId": s, "asset": { "ref": "tone" }, "at": { "unit": "frames", "value": 0 }, "alignment": "exact-frame" }),
@@ -1421,7 +1421,7 @@ fn audio_mix_and_picture_fit_follow_the_item_kind() {
         (Some(VisualMode::Pip), Some(Fit::Cover), Some(Background::Blur), Some(0.8))
     );
 
-    // 淡入淡出之和超过片段长度（2 秒）、音量超出 v2 的 [0, 4]、写错的秒数：都拒绝。
+    // A sum of fade-in and fade-out longer than the clip (2 seconds), a volume outside v2's [0, 4], and wrong seconds: all rejected.
     for (n, op) in [
         json!({ "type": "setAudioMix", "itemId": id, "fadeIn": "1.5", "fadeOut": "0.6" }),
         json!({ "type": "setAudioMix", "itemId": id, "volume": 5 }),
@@ -1439,7 +1439,7 @@ fn audio_mix_and_picture_fit_follow_the_item_kind() {
     let bad_seconds = json!({ "type": "setAudioMix", "itemId": id, "fadeIn": "1e3" });
     assert!(video.apply(&tx(&video, "cmd_bad_seconds", vec![bad_seconds])).is_err());
 
-    // 去掉留边、恢复声音。
+    // Remove the padding and restore the sound.
     let ops = vec![
         json!({ "type": "setStyle", "itemId": id, "bg": null }),
         json!({ "type": "setAudioMix", "itemId": id, "muted": false, "fadeIn": "0" }),

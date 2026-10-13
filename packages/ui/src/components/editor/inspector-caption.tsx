@@ -50,27 +50,24 @@ const LINES = [
 ] as const;
 type Anchor = (typeof S.anchors)[number]['key'];
 
-/** 页顶「更换样式」（原型 panel-subprops.jsx 的 .mact）。 */
+/** “更换样式” (change style) at the top of the page (prototype panel-subprops.jsx's .mact). */
 const actions = style({ display: 'flex', flexWrap: 'wrap', gap: '[6px]', paddingTop: 4 });
-/** 一句说明加一颗退回钮（原型 .subscope__s）。 */
+/** A line of explanation plus a revert button (prototype .subscope__s). */
 const noteRow = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24 });
 const noteText = style({ flexGrow: 1, minWidth: 0 });
 
 const fixed = (value: number, digits: number) => String(+value.toFixed(digits));
 
 /**
- * 字幕属性：改的是字幕样式文档（`caption-style`），用同一份样式的字幕一起变。字幕还没有样式文档时，第一次修改新建一份，
- * 让序列里还没有样式、能改的字幕都用它（锁住的实例与锁住轨道上的跳过，引擎会拒绝）。拖动中的值叠给预览（见 video-editor
- * 的 DraftDocuments），松手写入文档的新版本。
+ * Caption properties: edits the caption style document (`caption-style`), so all captions using the same style change together. When a caption has no style document yet, the first edit creates one, so that the captions in the sequence that have no style yet and can be edited all use it. Locked instances and those on locked tracks are skipped; the engine would reject them. Values during a drag are overlaid on the preview (see DraftDocuments in video-editor), and the new version is written to the document on release.
  *
- * 原文与译文共用这份样式才叠成双语两行（预览按样式文档分组），所以双语时顶上给「原文 | 译文」：文字样式写进那一行的
- * `origStyle` / `transStyle` 覆盖，位置、双语次序与显示时机是两行共用的根样式（见 model/caption-lines.ts）。
+ * Original and translation share this style to form two bilingual lines (the preview groups by style document). So when bilingual, the top shows “原文 | 译文” (original | translation): text styles are written to that line's `origStyle` / `transStyle` overrides, while position, bilingual order and display timing are root styles shared by both lines (see model/caption-lines.ts).
  */
 export function CaptionPage(props: ItemPageProps<CaptionItem> & { documents: Record<Id, DocumentRecord> }) {
   const { item, sequence, documents, canChange } = props;
   const { apply } = useEditorActions();
   const videoId = useVideo((s) => s.video?.videoId ?? null);
-  // 这份样式管哪几种行：画面上用它的字幕；还没有样式时是画面上同样没有样式、第一次修改会一起挂上的那些。
+  // Which lines this style governs: the captions on screen that use it. When there is no style yet, these are the captions on screen that also have none, and they attach to it on the first edit.
   const { record, body, root, chip, own, sharing, paired } = useCaptionStyle(item, sequence, documents);
   const [picked, setPicked] = useState<{ itemId: Id; kind: LineKind } | null>(null);
   const kind: LineKind = paired && picked?.itemId === item.id ? picked.kind : own;
@@ -99,13 +96,13 @@ export function CaptionPage(props: ItemPageProps<CaptionItem> & { documents: Rec
     );
 
   const disabled = !canChange;
-  // 根样式上的补丁（位置、双语、显示）；文字样式按这一行落进覆盖或根样式。
+  // Patch on the root style (position, bilingual, display). Text styles go into the line's override or root style.
   const live = (patch: Json) => preview({ ...root, ...patch });
   const commit = (patch: Json) => save({ ...root, ...patch });
   const liveLine = (patch: Json) => preview(editLine(root, patch, kind, paired, paired));
   const commitLine = (patch: Json) => save(editLine(root, patch, kind, paired, paired), paired ? undefined : kind);
 
-  // 当前词、动效与倒鸭子（字幕样式模型设计 §9）：只改词级键，写到这一行该在的地方（`editWordStyle`）。
+  // Current word, motion and reverse (caption style model design §9): only word-level keys are changed, written where this line should have them (`editWordStyle`).
   const word: WordSectionProps = { root, kind, paired, isDisabled: disabled, onLive: preview, onCommit: (next) => save(next) };
   const sequenceMode = kind === 'original' && lineBody(root, kind).layout.mode === 'sequence';
 

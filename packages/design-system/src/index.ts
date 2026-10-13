@@ -1,4 +1,4 @@
-// 设计系统的目录布局、识别与检查（docs/design/canvas §10）。
+// Directory layout, recognition and checks for the design system (docs/design/canvas §10).
 export * from './layout.ts';
 export * from './tokens-check.ts';
 export * from './check.ts';

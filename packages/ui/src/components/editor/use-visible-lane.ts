@@ -1,12 +1,11 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 
-/** 看得见的范围按这个粒度取整，滚动时少重画几次。 */
+/** The visible range is rounded to this granularity, so that it repaints less often while scrolling. */
 const WINDOW_STEP = 256;
 
 /**
- * 一个滚动容器的宽与横向滚动位置，同一容器上的各处（时间线、每个胶片条、字幕块）共用一份与一个滚动监听：
- * 建立时量一次，之后由滚动事件与 ResizeObserver 回调更新，再一并通知各处。
+ * The width and horizontal scroll position of one scroll container. Everything on the same container (the timeline, each filmstrip, each subtitle block) shares one measurement and one scroll listener. It is measured once on creation, then updated by scroll events and ResizeObserver callbacks, and broadcast to each consumer.
  */
 interface Viewport {
   width: number;
@@ -24,9 +23,9 @@ function attach(element: HTMLElement, listener: () => void): Viewport {
     const notify = () => {
       for (const each of listeners) each();
     };
-    // 用户滚动、尺寸变化：各处的新范围当场一起画进 DOM（flushSync），这一帧画出来的就是新位置的内容。
-    // 不这样的话 React 把它排到这一帧之后，一次滚过一屏以上（滚轮甩得快、拖滚动条）会露白一帧。
-    // 时间线在 layout effect 里补发的 scroll（isTrusted 为 false）本来就在提交里同步处理，不能也不必再 flushSync。
+    // On user scroll or size change, each consumer's new range is drawn into the DOM together right away (flushSync), so the content drawn in this frame matches the new position.
+    // Otherwise React schedules it after this frame, and a scroll of more than one screen at once (a fast wheel flick, dragging the scrollbar) would show a blank frame.
+    // A scroll the timeline re-emits in a layout effect (isTrusted false) is already handled synchronously within the commit, so it must not and need not use flushSync again.
     const onScroll = (event: Event) => {
       created.scrollLeft = element.scrollLeft;
       if (event.isTrusted) flushSync(notify);
@@ -72,19 +71,17 @@ function rangeOf(viewport: Viewport, head: number, margin: number): { left: numb
 }
 
 /**
- * 时间线横向看得见的范围（相对轨道内容的左边，像素）。`margin` 是两边各多算几屏：
- * 片段、字幕句子多画一屏，滚动时不露白；要向 Runtime 取东西的（胶片条）只算看得见的。
+ * The horizontal visible range of the timeline (relative to the left edge of the track content, in pixels). `margin` extends the range by that many screens on each side: clips and subtitle sentences are drawn one extra screen so that no blank shows while scrolling. Consumers that request data from the Runtime (filmstrips) compute only the visible range.
  *
- * 滚动与尺寸变化时当场重算（不经 requestAnimationFrame：窗口在后台时它不触发），按 256px 取整，没跨格不重画。
- * 缩放后时间线在 layout effect 里摆好滚动位置，再补发一次 `scroll`，让各处在画上去之前就换到新的范围。
+ * Recomputed immediately on scroll and size change (not through requestAnimationFrame, which does not fire while the window is in the background), rounded to 256px, and not repainted if the cell did not change. After zooming, the timeline sets its scroll position in a layout effect and then re-emits one `scroll`, so each consumer switches to the new range before painting.
  */
 export function useVisibleLane(scrollRef: RefObject<HTMLDivElement | null>, head: number, margin = 1): { left: number; right: number } {
-  // 容器已经量过（滚动中新挂上的片段、字幕）就直接按它起范围，第一次渲染不按缺省范围画。
+  // If the container has already been measured (clips and subtitles mounted mid-scroll), start the range from it directly, so the first render is not drawn with the default range.
   const [range, setRange] = useState(() => {
     const viewport = scrollRef.current ? viewports.get(scrollRef.current) : undefined;
     return viewport ? rangeOf(viewport, head, margin) : { left: 0, right: 4096 };
   });
-  // 在画上去之前算：第一帧就按真实的范围画，不先按缺省范围露白一帧。
+  // Computed before painting: the first frame is drawn with the real range, not with the default range first (which would show a blank frame).
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;

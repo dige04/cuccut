@@ -4,7 +4,7 @@ import type { RenderPlanner } from '../../render/render-planner.ts';
 import { PreviewEngine, imageKey, type PreviewStatus } from './preview-engine.ts';
 import { POLL_MS, STALL_MS } from './preview-watch.ts';
 
-// 引擎跑在浏览器里；这里补上 Node 没有的动画帧函数与 ImageData（装下像素就行）。
+// The engine runs in the browser; here we add the animation frame function and ImageData that Node lacks (just enough to hold pixels).
 vi.stubGlobal('cancelAnimationFrame', () => {});
 vi.stubGlobal('ImageData', function (data: Uint8ClampedArray, width: number, height: number) {
   return { data, width, height };
@@ -35,7 +35,7 @@ test('渲染内核一直没载入完：过了门槛打一条开发日志，报�
   expect(warn).toHaveBeenCalledTimes(1);
   expect(engine.stallReport).toMatchObject({ step: 'planner-loading', status: 'loading', video: true, ongoing: true });
   engine.dispose();
-  // 停用之后不再看。
+  // Stop looking once disabled.
   await vi.advanceTimersByTimeAsync(STALL_MS * 3);
   expect(warn).toHaveBeenCalledTimes(1);
 });
@@ -92,9 +92,9 @@ test('播放的 tick 里抛了意外的错：打出来、接着排下一帧，�
   tick(200);
   expect(engine.playing).toBe(true);
   expect(callbacks).toHaveLength(1);
-  // 同一个错一阵只打一次。
+  // The same error is logged only once for a while.
   expect(error).toHaveBeenCalledTimes(1);
-  // 不改状态（界面照旧）。
+  // Does not change state (the UI stays as it is).
   expect(statuses.at(-1)).toEqual({ kind: 'ready' });
 
   broken = false;
@@ -106,7 +106,7 @@ test('播放的 tick 里抛了意外的错：打出来、接着排下一帧，�
   vi.stubGlobal('requestAnimationFrame', () => 0);
 });
 
-/** 只会给出一份计划的计划器（`layers` 是这一刻要画的层）。 */
+/** A planner that only ever returns one plan (`layers` are the layers to draw at this moment). */
 function stubPlanner(layers: unknown[] = []) {
   const setVideo = vi.fn();
   const planner = {
@@ -153,7 +153,7 @@ test('卡住时通知订阅者；重试不等卡住的那次载入、重新载�
   await vi.advanceTimersByTimeAsync(0);
   expect(fresh.setVideo).toHaveBeenCalled();
   expect(late.setVideo).not.toHaveBeenCalled();
-  // 内核好了，不再卡在载入内核（这里没给画布，之后卡在「还没有画布」）。
+  // The kernel is ready and no longer stuck loading it (no canvas is given here, so it later gets stuck at “no canvas yet”).
   await vi.advanceTimersByTimeAsync(STALL_MS * 2);
   expect(engine.stall?.step).toBe('no-canvas');
   engine.dispose();
@@ -162,7 +162,7 @@ test('卡住时通知订阅者；重试不等卡住的那次载入、重新载�
 test('素材地址一直没到（页面上没有元素）：画面是空的、状态照常，满门槛报在等这个素材', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
-  // Node 里没有这几个元素类：引擎只拿它们做 instanceof。
+  // Node has none of these element classes: the engine only uses them for instanceof.
   vi.stubGlobal('HTMLVideoElement', class {});
   vi.stubGlobal('HTMLImageElement', class {});
   const { planner } = stubPlanner([
@@ -220,7 +220,7 @@ test('媒体在等兼容副本：画面不算出来过；进度不动满门槛�
   engine.onPicture((pictured) => pictures.push(pictured));
   engine.setVideo(playable, {});
 
-  // 还不知道进度：画了黑帧，但画面不算出来过，也不算卡住。
+  // Progress unknown: a black frame was drawn, but the picture does not count as having come out, nor as stalled.
   await vi.advanceTimersByTimeAsync(STALL_MS * 2);
   expect(putImageData).toHaveBeenCalled();
   expect(engine.pictured).toBe(false);
@@ -230,7 +230,7 @@ test('媒体在等兼容副本：画面不算出来过；进度不动满门槛�
   await vi.advanceTimersByTimeAsync(STALL_MS + 2 * POLL_MS);
   expect(engine.stall).toMatchObject({ step: 'media-preparing', media: [{ assetId: 'asset_a', wait: 'preparing', progress: 0.4 }] });
 
-  // 转好了、这一刻没有要等的媒体：画面出来了。
+  // Converted, and no media is waited on at this moment: the picture has come out.
   progress = undefined;
   layers = [];
   engine.setVideo(playable, {});
@@ -241,14 +241,14 @@ test('媒体在等兼容副本：画面不算出来过；进度不动满门槛�
   expect(engine.pictured).toBe(false);
   await vi.advanceTimersByTimeAsync(0);
   expect(engine.pictured).toBe(true);
-  // 同一部视频换一版不从头算；换一部视频从头算。
+  // Switching to another version of the same video does not restart the count; switching to a different video does.
   engine.setVideo(playable, {});
   expect(engine.pictured).toBe(true);
   engine.setVideo({ ...playable, id: 'seq_other' } as Sequence, {});
   expect(engine.pictured).toBe(false);
   await vi.advanceTimersByTimeAsync(0);
   expect(pictures).toEqual([false, true, false, true, false, true]);
-  // 载入失败的图片不再等：这一帧照画、跳过它，画面算出来了（缺的由卡住诊断与问题提示说）。
+  // Images that failed to load are no longer waited on: the frame is drawn as usual with that one skipped, and the picture counts as produced (what is missing is reported by the stall diagnostics and problem hints).
   const broken = { kind: 'image', itemId: 'logo', asset: { id: 'asset_img', revision: '1' }, matrix: [1, 0, 0, 1, 0, 0], opacity: 1 };
   layers = [broken];
   engine.retry();

@@ -8,8 +8,7 @@ import { FAKE_MODEL_WORKER } from './index.ts';
 import { LocalTranscribeProvider } from './local-provider.ts';
 
 /**
- * 已有转写的说话人区分（架构设计 §6.6、Model Worker 协议规范 §2.5.5）：本地 Provider 的 `diarize()` 在假的 Model Worker
- * 里执行。模型包是测试用的「说话人区分」包（只带 `segmentation` 与 `speaker`）。
+ * Speaker diarization of an existing transcript (architecture design §6.6, Model Worker protocol spec §2.5.5): the local Provider's `diarize()` runs in a fake Model Worker. The model package is a test “speaker diarization” package (carrying only `segmentation` and `speaker`).
  */
 
 const BUNDLE = 'spk@cpu';

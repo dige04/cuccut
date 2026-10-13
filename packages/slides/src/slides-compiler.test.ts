@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { compilerAvailable, resolveSlidesEditorDist } from './slides-compiler.ts';
 
-/** 编辑器构建产物的查找（docs/design/slides §3）：环境变量指的目录要真有构建产物才算。 */
+/** Lookup of the editor build output (docs/design/slides §3): the directory the environment variable points to only counts if it actually contains build output. */
 
 let dir: string;
 

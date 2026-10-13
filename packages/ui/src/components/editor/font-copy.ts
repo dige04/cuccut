@@ -14,7 +14,7 @@ import { pl } from './font-copy.pl.ts';
 import { tr } from './font-copy.tr.ts';
 import { vi } from './font-copy.vi.ts';
 
-/** 字体表、字体详情、字体框与字体下载条的文案。译文在 `font-copy.zh-Hans.ts`。 */
+/** Copy for the font table, font details, font box and font download bar. Translations are in `font-copy.zh-Hans.ts`. */
 const en = {
   cancelDownload: 'Cancel download',
   searchFonts: 'Search fonts',

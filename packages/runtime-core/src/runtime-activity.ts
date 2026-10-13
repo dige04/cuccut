@@ -2,36 +2,34 @@ import type { RuntimeInfo, RuntimeStatus } from '@cuccut/protocol';
 import type { TrustedPrincipal } from './gateway.ts';
 
 /**
- * Runtime 有没有人在用（架构设计 §2.2）：本机网关上已认证的连接、还没结束的任务、开着的对外服务，以及同一端口上的 HTTP 请求
- * （会话里的智能体经工具桥调用工具，不占 WebSocket 连接）。`runtime.status` 报告它；CLI 拉起的 Runtime（`--idle-exit`）
- * 空闲满 `runtime.idleExitMinutes` 时经 `onIdle` 自己退出。
+ * Whether anyone is using the Runtime (architecture design §2.2): authenticated connections on the local gateway, unfinished tasks, open external services, and HTTP requests on the same port
+ * (an agent in a session calls tools through the tool bridge over HTTP and holds no WebSocket connection). `runtime.status` reports it. A Runtime started by the CLI (`--idle-exit`) exits itself through `onIdle` when it has been idle for `runtime.idleExitMinutes`.
  *
- * Web 服务与对外服务的连接走各自的端口，不在连接数里；它们开着就算不空闲。
+ * Connections to the web service and to external services use their own ports and are not counted; while those are open, the Runtime is not idle.
  *
- * CLI 连接在发出第一个别的请求之前不算在用：只查状态（`runtime.status`、`runtime.info`）的连接（`cuccut runtime status`）
- * 既不让空闲计时清零，断开时也不让它重新算，报出的 `idleSince` 是查询之前的值。
+ * A CLI connection does not count as in use until it sends a request other than the Runtime's status methods. A connection that only queries status (`runtime.status`, `runtime.info`, as in `cuccut runtime status`) neither resets the idle timer nor restarts it on disconnect, and the reported `idleSince` is the value from before the query.
  */
 
 export interface ActivitySources {
   info: RuntimeInfo;
-  /** 排队或运行中的任务数。 */
+  /** Number of queued or running tasks. */
   activeJobs: () => number;
-  /** 开着（或正在开、正在关）的对外服务的 id。 */
+  /** IDs of the external services that are open (or opening or closing). */
   runningServices: () => string[];
 }
 
 export interface IdleExitOptions {
-  /** 空闲多少分钟后退出（设置 `runtime.idleExitMinutes`，每次检查时读）。 */
+  /** Minutes of idle time before exit (setting `runtime.idleExitMinutes`, read at each check). */
   minutes: () => number;
   onIdle: () => void;
-  /** 检查的间隔（默认 15 秒）。测试用短的。 */
+  /** Interval between checks (default 15 seconds). Shorter in tests. */
   checkMs?: number;
   now?: () => number;
 }
 
 const DEFAULT_CHECK_MS = 15_000;
 
-/** 只读 Runtime 本身状态的方法：CLI 连接只发这些时不算在用。 */
+/** Methods that only read the Runtime's own state. A CLI connection that sends only these does not count as in use. */
 const PASSIVE_METHODS: ReadonlySet<string> = new Set(['runtime.status', 'runtime.info']);
 
 type CountedKind = keyof RuntimeStatus['connections'];
@@ -41,7 +39,7 @@ export class RuntimeActivity {
   readonly #idle: IdleExitOptions | null;
   readonly #now: () => number;
   readonly #connections: Record<CountedKind, number> = { desktop: 0, cli: 0, agent: 0 };
-  /** 还没发过别的请求的 CLI 连接。 */
+  /** A CLI connection that has not yet sent any request other than these. */
   readonly #passive = new Set<string>();
   #idleSince: number | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -53,7 +51,7 @@ export class RuntimeActivity {
     this.#now = idle?.now ?? Date.now;
   }
 
-  /** 开始按间隔检查（只有带空闲退出时）。计时器不挡进程退出。 */
+  /** Starts the periodic check (only when idle exit is enabled). The timer does not keep the process alive. */
   start(): void {
     if (!this.#idle || this.#timer) return;
     this.#idleSince = this.#busy() ? null : this.#now();
@@ -72,7 +70,7 @@ export class RuntimeActivity {
     else this.#idleSince = null;
   }
 
-  /** 连接发来一个请求（握手之后）：CLI 连接第一次发出查状态以外的请求时开始算在用。 */
+  /** A request arrives on a connection (after the handshake). A CLI connection starts counting as in use when it first sends a request other than a status query. */
   requested(principal: TrustedPrincipal, method: string): void {
     if (PASSIVE_METHODS.has(method) || !this.#passive.delete(principal.connectionId)) return;
     this.#idleSince = null;
@@ -80,17 +78,17 @@ export class RuntimeActivity {
 
   disconnected(principal: TrustedPrincipal): void {
     if (isCounted(principal.kind)) this.#connections[principal.kind] = Math.max(0, this.#connections[principal.kind] - 1);
-    // 只查过状态的连接来去不改空闲计时；在用的连接断开后不再忙时，空闲从现在算。
+    // A connection that only queried status does not change the idle timer, either when it arrives or when it leaves. Once an in-use connection disconnects and nothing else is busy, idle time counts from now.
     if (this.#passive.delete(principal.connectionId)) return;
     if (!this.#busy()) this.#idleSince = this.#now();
   }
 
-  /** 有请求进来（HTTP 的工具桥、媒体通道）：空闲从现在重新算。 */
+  /** A request arrives (the HTTP tool bridge, the media channel): idle time is recomputed from now. */
   touch(): void {
     if (this.#idleSince !== null) this.#idleSince = this.#now();
   }
 
-  /** 检查一次：忙就清零；空闲满时调用 `onIdle`（只调一次）。 */
+  /** Checks once: if busy, resets to zero; if idle long enough, calls `onIdle` (only once). */
   check(): void {
     if (!this.#idle || this.#fired) return;
     if (this.#busy()) {

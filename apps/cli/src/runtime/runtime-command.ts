@@ -4,11 +4,11 @@ import { CliError, EXIT, type ExitCode, type Output } from '../envelope.ts';
 import { ensureRuntime, findRuntime, isProcessAlive, openClient } from './connection.ts';
 
 /**
- * `cuccut runtime ensure|status|stop`（Agent 面设计 §5.6；架构设计 §2.2）。
+ * `cuccut runtime ensure|status|stop` (Agent-facing design §5.6; architecture design §2.2).
  *
- * - `ensure`：找到正在跑的（`reused`）或拉起一个（`started`）。
- * - `status`：进程、端口、版本、谁拉起的、各种连接数（不含这条命令自己）、任务与对外服务、空闲退出；没在跑时 `running: false`。
- * - `stop`：只停 CLI 拉起的那一个；桌面端、别的 CLI 或没结束的任务还在用时，Runtime 以 `RUNTIME_IN_USE` 拒绝（退出码 1）。
+ * - `ensure`: finds the running one (`reused`) or starts one (`started`).
+ * - `status`: process, port, version, who started it, connection counts (excluding this command itself), tasks and external services, idle exit; `running: false` when it is not running.
+ * - `stop`: stops only the one the CLI started; while the desktop app, another CLI or unfinished tasks are still using it, the Runtime refuses with `RUNTIME_IN_USE` (exit code 1).
  */
 export async function runtimeCommand(output: Output, home: string, args: readonly string[], noStart: boolean): Promise<ExitCode> {
   const [action, ...extra] = args;
@@ -36,7 +36,7 @@ export async function runtimeCommand(output: Output, home: string, args: readonl
       ? output.success({ stopped: false, running: false, home })
       : output.success({ running: false, home }, 'cuccut runtime ensure');
   }
-  // 状态查询只返回结构化字段，不额外读语言偏好，避免 settings.get 清零空闲计时。
+  // The status query returns only structured fields and does not read the language preference, so that settings.get does not reset the idle timer.
   const { client, info } = await openClient(discovery, { readLanguage: action !== 'status' });
   try {
     if (action === 'status') {
@@ -52,7 +52,7 @@ export async function runtimeCommand(output: Output, home: string, args: readonl
         startedAt: info.startedAt,
         launchedBy: info.launchedBy,
         desktopConnected: state.connections.desktop > 0,
-        // 这条命令自己也是一个 CLI 连接，不算。
+        // This command is itself a CLI connection, and is not counted.
         connections: { ...state.connections, cli: Math.max(0, state.connections.cli - 1) },
         activeJobs: state.activeJobs,
         runningServices: state.runningServices,

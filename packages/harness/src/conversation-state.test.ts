@@ -68,7 +68,7 @@ describe('ConversationState 流式增量合并', () => {
     state.append('m1', 'text', 'b');
     vi.advanceTimersByTime(10);
     state.append('m1', 'text', 'c');
-    // 记录里同步追加，事件还没发。
+    // Appended synchronously to the record; the event has not been emitted yet.
     expect((record.items[0] as { text: string }).text).toBe('abc');
     expect(appends(events)).toHaveLength(1);
 
@@ -78,14 +78,14 @@ describe('ConversationState 流式增量合并', () => {
       { id: 'm1', field: 'text', delta: 'bc' },
     ]);
 
-    // 合并发布之后又进入一个窗口：紧接着的 delta 继续被合并，不是立即发。
+    // After a merged publish, a new window opens: subsequent deltas continue to be merged, not sent immediately.
     state.append('m1', 'text', 'd');
     expect(appends(events)).toHaveLength(2);
     vi.advanceTimersByTime(WINDOW * 3);
     expect(appends(events).at(-1)).toEqual({ id: 'm1', field: 'text', delta: 'd' });
     expect(appends(events)).toHaveLength(3);
 
-    // 安静超过窗口后第一个 delta 立即发。
+    // The first delta after a quiet period longer than the window is sent immediately.
     state.append('m1', 'text', 'e');
     expect(appends(events)).toHaveLength(4);
     expect(events.map((e) => e.seq)).toEqual(['1', '2', '3', '4']);
@@ -99,7 +99,7 @@ describe('ConversationState 流式增量合并', () => {
     state.upsert({ ...message('m1', 'abc'), streaming: false } as TimelineItem);
     expect(events.map((e) => e.event.type)).toEqual(['item.append', 'item.append', 'item.upsert']);
     expect(appends(events).map((a) => a.delta)).toEqual(['a', 'bc']);
-    // 定时器已清，不会再补发。
+    // Timer cleared; nothing will be flushed later.
     vi.advanceTimersByTime(WINDOW * 3);
     expect(events).toHaveLength(3);
   });

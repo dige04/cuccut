@@ -15,10 +15,10 @@ import { approvalCardTr, clientsTr, commonTr, mcpTr, modelApiTr, webTr } from '.
 import { approvalCardVi, clientsVi, commonVi, mcpVi, modelApiVi, webVi } from './services-copy.vi.ts';
 
 /**
- * MCP 服务、模型接口服务、Web 服务三页的文案（原型 designs/cuccut/app/page-services.jsx、page-services-api.jsx、
- * page-services-api-map.jsx、page-services-mcp-tools.jsx 原文，按 Runtime 实际能做的改写；原型里的演示话术不搬）。
- * 服务目录与状态词在 copy.ts（侧栏、总览共用）；这里只放三页自己的话。
- * 英文是键与类型的来源，译文在 `services-copy.<语言>.ts`；每个导出各自一个目录，读属性时取当前语言。
+ * Copy for the three pages MCP service, model API service and Web service (from the prototype designs/cuccut/app/page-services.jsx, page-services-api.jsx,
+ * page-services-api-map.jsx and page-services-mcp-tools.jsx, rewritten to what the Runtime can actually do; the prototype's demo wording is not carried over).
+ * The service catalog and status words are in copy.ts (shared by the sidebar and the overview); this file holds only the three pages' own text.
+ * English is the source of keys and types; translations are in `services-copy.<language>.ts`. Each export has its own catalog, and the current language is picked when a property is read.
  */
 
 const commonEn = {
@@ -46,7 +46,7 @@ const commonEn = {
     requests: 'Recent requests',
     settings: 'Settings',
   },
-  /** 允许的操作：三档的说明随服务不同。 */
+  /** Allowed operations: the description of each tier varies by service. */
   levelLabel: 'Allowed actions',
   levelSaved: (title: string) => `Allowed actions set to "${title}". Takes effect right away.`,
   liveNote: 'Changes take effect right away, no restart needed.',
@@ -57,7 +57,7 @@ const commonEn = {
   needTokenFixed:
     "Tokens are always required in this version and can't be turned off. Each app gets its own token that you can revoke separately, which is safer than no token.",
   cancel: 'Cancel',
-  /** 总览标题旁那排灯的读屏文字：每颗灯的说明连成一句。 */
+  /** Screen-reader text for the row of lights next to the overview title: each light's description joined into one sentence. */
   lightsLabel: (labels: readonly string[]) => labels.join(', '),
 };
 

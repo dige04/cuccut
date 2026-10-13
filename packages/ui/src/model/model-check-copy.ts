@@ -15,12 +15,12 @@ import { tr } from './model-check-copy.tr.ts';
 import { vi } from './model-check-copy.vi.ts';
 
 /**
- * 本地模型的「检查」与试用（试听）失败的说法（设计稿 model-local-check.js）：检查代码 → 一句哪里不对 + 怎么办。
- * 代码与技术细节只进「技术详情」，正文不放代码。修复帮不帮得上不在这里判断，由 `@cuccut/protocol` 的 `modelCheckRepair` 决定。
- * 英文是键与类型的来源，译文在 `model-check-copy.<语言>.ts`；读当前语言要在调用时读。
+ * Wording for failed local-model “检查” (check) and trial (listen) runs (design model-local-check.js): check code → one sentence on what is wrong + what to do.
+ * Code and technical details go only into “技术详情” (technical details); the body text contains no code. Whether a fix will help is not decided here; it is decided by `modelCheckRepair` in `@cuccut/protocol`.
+ * The English is the source of the keys and types; translations are in `model-check-copy.<locale>.ts`; the current language must be read at call time.
  */
 
-/** 能力的种类：识别与分离（没有试用）、合成（试听）、生图与音乐（试听）。「不对」长什么样各说各的。 */
+/** Kinds of capability: recognition and separation (no trial), synthesis (listen), image and music generation (listen). What “不对” (wrong) looks like is described separately for each. */
 export type CheckSubject = 'transcribe' | 'synthesize' | 'image' | 'separate' | 'music';
 
 export interface CheckSentence {
@@ -29,19 +29,19 @@ export interface CheckSentence {
 }
 
 /**
- * 试用说的是哪一件：语音合成是「试听」，图像生成是「试画」（设计稿 model-local-check.js `TRY`、`tryFailure`）。
- * 各语言把整句写全，不在调用处拼动词与名词。
+ * What a trial refers to: speech synthesis is “试听” (listen), image generation is “试画” (try drawing) (design model-local-check.js `TRY`, `tryFailure`).
+ * Each language writes out the whole sentence; verbs and nouns are not assembled at the call site.
  */
 export interface TrySubject {
-  /** 内存不够，没做完。 */
+  /** Not enough memory; did not finish. */
   noMemory: CheckSentence;
-  /** 模型出错，没做出来。 */
+  /** The model errored; did not produce output. */
   modelError: CheckSentence;
-  /** 别的失败：Runtime 的原话。 */
+  /** Other failure: the Runtime's own message. */
   other: (message: string) => CheckSentence;
-  /** 没能开始：Runtime 的原话；没有「怎么办」（`todo` 为空）。 */
+  /** Could not start: the Runtime's own message; there is no “怎么办” (what to do) (`todo` is empty). */
   notStarted: (message: string) => CheckSentence;
-  /** 试用面板开头的提醒的第二句：上次检查的「怎么办」后接「现在试听多半也会失败」。 */
+  /** Second sentence of the reminder at the top of the trial panel: the “怎么办” (what to do) from the last check, followed by “现在试听多半也会失败” (listening now will most likely fail too). */
   noticeTodo: (todo: string) => string;
 }
 
@@ -74,7 +74,7 @@ const checkSentences = {
 } satisfies Record<ModelCheckCode, (subject: CheckSubject) => CheckSentence>;
 
 const en = {
-  /** 按钮与标题。 */
+  /** Buttons and headings. */
   label: {
     check: 'Check',
     checkFull: 'Check model',
@@ -91,7 +91,7 @@ const en = {
     pickRef: 'Choose another recording…',
     useSample: 'Use sample recording',
   },
-  /** 已安装列表上方那句：检查和修复各做什么；第二句是删除的规矩。 */
+  /** The sentence above the installed list: what check and repair each do; the second sentence is the rule for deletion. */
   caption:
     'Check confirms a model works; Repair only downloads the damaged files again. When you delete a model, shared components that other models still use are kept.',
   head: {
@@ -100,7 +100,7 @@ const en = {
     failed: 'Check failed:',
     notStarted: "Check couldn't start:",
   },
-  /** 「哪里不对」后面接「怎么办」时的句号。 */
+  /** The full stop used when “哪里不对” (what is wrong) is followed by “怎么办” (what to do). */
   sentence: (text: string) => `${text}.`,
   phase: {
     queued: 'Queued',
@@ -109,14 +109,14 @@ const en = {
     verifying: 'Verifying the result',
     repairing: 'Downloading the damaged files again; it checks again automatically once fixed',
   },
-  /** 检查没通过：认得的代码各一句。 */
+  /** Check failed: one sentence for each recognized code. */
   checkSentences: checkSentences as Record<ModelCheckCode, (subject: CheckSubject) => CheckSentence>,
-  /** 认不得的代码（旧记录、新版 Runtime 加的）：通用的一句，Runtime 的原话放进技术详情。 */
+  /** Unrecognized codes (old records, codes added in a newer Runtime): one generic sentence; the Runtime's own message goes into the technical details. */
   unknown: {
     text: "The model didn't work properly",
     todo: 'Check again. If it keeps happening, copy the technical details and send them to us.',
   } as CheckSentence,
-  /** 检查没能开始（提交被拒）：`details.code` → 一句。 */
+  /** Check could not start (submission rejected): `details.code` → one sentence. */
   notStarted: {
     RUNTIME_UNREACHABLE: {
       text: "CucCut's background service isn't responding",
@@ -138,22 +138,22 @@ const en = {
     text: "CucCut didn't accept this check",
     todo: 'Check again later. If it keeps happening, copy the technical details and send them to us.',
   } as CheckSentence,
-  /** 技术详情的几行。 */
+  /** Lines of the technical details. */
   detail: {
     code: (code: string) => `Code ${code}`,
     model: (id: string, when: string) => `Model ${id} · ${when}`,
     message: (message: string) => `Message ${message}`,
     passed: (when: string) => `Check passed · ${when}`,
   },
-  /** 试用面板开头的提醒：上次检查没通过。 */
+  /** Reminder at the top of the trial panel: the last check did not pass. */
   noticeText: (what: string) => `This model failed its last check: ${what}`,
-  /** 读不出用户给的参考录音。 */
+  /** The user's reference recording could not be read. */
   refUnreadable: (file: string) => ({
     text: `Couldn't read your recording "${file}". The file may be damaged, or it isn't audio`,
     todo: 'Try another recording, or hear how it sounds with the sample recording first.',
   }),
   refUnknown: 'recording',
-  /** 语音合成的试听。 */
+  /** Speech synthesis listen test. */
   trySpeech: {
     noMemory: {
       text: 'Not enough memory to finish synthesizing',
@@ -167,7 +167,7 @@ const en = {
     notStarted: (message: string) => ({ text: `Couldn't start synthesizing: ${message}`, todo: '' }),
     noticeTodo: (todo: string) => `${todo} A preview now will most likely fail too.`,
   } as TrySubject,
-  /** 图像生成的试画。 */
+  /** Image generation trial drawing. */
   tryImage: {
     noMemory: {
       text: 'Not enough memory to finish drawing',
@@ -181,7 +181,7 @@ const en = {
     notStarted: (message: string) => ({ text: `Couldn't start drawing: ${message}`, todo: '' }),
     noticeTodo: (todo: string) => `${todo} A test drawing now will most likely fail too.`,
   } as TrySubject,
-  /** 音乐生成的试听。 */
+  /** Music generation listen test. */
   tryMusic: {
     noMemory: {
       text: 'Not enough memory to finish generating',
@@ -201,39 +201,39 @@ export type ModelCheckMessages = typeof en;
 
 export const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** 按钮与标题。 */
+/** Buttons and headings. */
 export const CHECK_LABEL: ModelCheckMessages['label'] = live(() => M.label);
 
-/** 已安装列表上方那句：检查和修复各做什么；第二句是删除的规矩。 */
+/** The sentence above the installed list: what check and repair each do; the second sentence is the rule for deletion. */
 export const checkCaption = (): string => M.caption;
 
 export const CHECK_HEAD: ModelCheckMessages['head'] = live(() => M.head);
 
-/** 「哪里不对」后面接「怎么办」时的句号。 */
+/** The full stop used when “哪里不对” (what is wrong) is followed by “怎么办” (what to do). */
 export const sentence = (text: string): string => M.sentence(text);
 
 export const CHECK_PHASE: ModelCheckMessages['phase'] = live(() => M.phase);
 
-/** 检查没通过：认得的代码各一句。 */
+/** Check failed: one sentence for each recognized code. */
 export const CHECK_SENTENCES: Record<ModelCheckCode, (subject: CheckSubject) => CheckSentence> = live(() => M.checkSentences);
 
-/** 认不得的代码（旧记录、新版 Runtime 加的）：通用的一句，Runtime 的原话放进技术详情。 */
+/** Unrecognized codes (old records, codes added in a newer Runtime): one generic sentence; the Runtime's own message goes into the technical details. */
 export const CHECK_UNKNOWN: CheckSentence = live(() => M.unknown);
 
-/** 检查没能开始（提交被拒）：`details.code` → 一句。 */
+/** Check could not start (submission rejected): `details.code` → one sentence. */
 export const CHECK_NOT_STARTED: Record<string, CheckSentence> = live(() => M.notStarted);
 
 export const CHECK_NOT_STARTED_UNKNOWN: CheckSentence = live(() => M.notStartedUnknown);
 
-/** 技术详情的几行。 */
+/** Lines of the technical details. */
 export const CHECK_DETAIL: ModelCheckMessages['detail'] = live(() => M.detail);
 
-/** 试用面板开头的提醒：上次检查没通过。第二句随试用的种类（`TrySubject.noticeTodo`）。 */
+/** Reminder at the top of the trial panel: the last check did not pass. The second sentence depends on the kind of trial (`TrySubject.noticeTodo`). */
 export const TRY_NOTICE = {
   text: (what: string) => M.noticeText(what),
 };
 
-/** 试用（试听、试画）共有的失败；随种类变的说法在 `TrySubject` 里。 */
+/** Failure shared by trials (listen and try drawing); the wording that varies by kind is in `TrySubject`. */
 export const TRY_FAILURE = {
   refUnreadable: (file: string): CheckSentence => M.refUnreadable(file),
   get refUnknown(): string {

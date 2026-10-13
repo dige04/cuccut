@@ -4,8 +4,8 @@ import readline from 'node:readline';
 import type { FakeCodexLogEntry, FakeCodexScenario } from './fake-codex.ts';
 
 /**
- * 假 codex 的进程入口（见 `fake-codex.ts`）。由 node 直接运行，只用 Node 自带的模块。
- * 行为来自 `$FAKE_CODEX_DIR/scenario.json`，收到的消息记进 `$FAKE_CODEX_DIR/log.jsonl`。
+ * The process entry point for the fake codex (see `fake-codex.ts`). Run directly by node, using only Node's built-in modules.
+ * Behavior comes from `$FAKE_CODEX_DIR/scenario.json`, and received messages are recorded in `$FAKE_CODEX_DIR/log.jsonl`.
  */
 
 const dir = process.env.FAKE_CODEX_DIR;
@@ -41,7 +41,7 @@ if (args[0] !== 'app-server') {
 
 type Message = { id?: number | string; method?: string; params?: Record<string, unknown>; result?: unknown; error?: unknown };
 
-// 是会话还是探测取模型表，要等初始化之后的第一个请求才知道（见 `fake-codex.ts`）；启动时间先记下。
+// Whether this is a session or a probe fetching the model table is only known from the first request after initialization (see `fake-codex.ts`), so the start time is recorded first.
 const startedAt = Date.now();
 let role: 'session' | 'catalog' | null = null;
 function classify(method: string | undefined): void {
@@ -67,7 +67,7 @@ rl.on('line', (line) => {
   if (message.method && message.id !== undefined) handleRequest(message);
   else if (message.id !== undefined) serverRequests.get(message.id)?.(message);
 });
-// CucCut 关闭连接时先关 stdin：立即退出（不让它等到 SIGTERM）。
+// When CucCut closes the connection, it closes stdin first so the process exits immediately (rather than waiting for SIGTERM).
 rl.on('close', () => {
   if (!role) classify('(closed)');
   log({ kind: role === 'catalog' ? 'catalog-exit' : 'exit' });

@@ -57,8 +57,8 @@ import { useToolStatus } from './use-tool-status.ts';
 import { useRerun } from './video-tool-parts.tsx';
 
 /*
- * 设计稿 tool-image.jsx `ImageToolPage`（32-88）与 image-gen.jsx `ImageGenForm`（299-373）的云端与本机部分：
- * 提示词、模型、画幅、数量、高级（种子；本机模型另有步数），右边生成记录。参考图与局域网节点这一版没有后端，置灰写原因。
+ * The cloud and local parts of design file tool-image.jsx `ImageToolPage` (32-88) and image-gen.jsx `ImageGenForm` (299-373):
+ * prompt, model, aspect ratio, count, advanced (seed; local models also have a step count), with the generation records on the right. Reference images and LAN nodes have no backend in this version, so they are greyed out with the reason.
  */
 
 const textFoot = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
@@ -93,12 +93,12 @@ const countField = style({ width: 112 });
 const seedField = style({ width: 140 });
 const stepsField = style({ width: 112 });
 
-/** 画幅示意框：长边 18px（设计稿 `AspectRow` 的 `box`）。 */
+/** Aspect-ratio preview box: long side 18px (the `box` of design file `AspectRow`). */
 function boxSize(ratio: number): { width: number; height: number } {
   return ratio >= 1 ? { width: 18, height: Math.max(6, Math.round(18 / ratio)) } : { width: Math.max(6, Math.round(18 * ratio)), height: 18 };
 }
 
-/** 生成图片（云端与本机）。提交走 `models.generateImage`，记录是 `jobs` 主题里这类任务。 */
+/** Generate images (cloud and local). Submission goes through `models.generateImage`; the records are jobs of this kind in the `jobs` topic. */
 export function ImageTool() {
   const runtime = useRuntime();
   const go = useShell((s) => s.go);
@@ -113,12 +113,12 @@ export function ImageTool() {
   const submitFailed = useSubmitFailed('generateImage', IMAGE_COPY.submitFailed);
   const [sample, setSample] = useState(0);
   const { saveDirectory } = useToolStatus();
-  // 「更改…」选的目录只活在这一页（不写回设置）。
+  // The directory picked with “更改…” (Change…) lives only on this page (it is not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
 
   const options = useMemo(() => (view ? imageModelOptions(view) : []), [view]);
   const option = findOption(options, initialModelKey(options, draft.model, view?.generateImage.effective ?? null, imageFallback));
-  // 本机模型没装好时照 `imageStatus` 说「先下载」，与就地的下载卡一致。
+  // When the local model is not installed, `imageStatus` says “先下载” (Download first), consistent with the in-place download card.
   const reason = view && !option?.local ? modelReason(options, option, FRAME_COPY.imageNoun) : null;
   const status = reason ? { text: reason, bad: true } : imageStatus(draft, option, tried);
   const toSettings = () => go({ tab: 'models', category: 'image', page: option?.local ? 'local' : 'cloud' });
@@ -258,7 +258,7 @@ export function ImageTool() {
   );
 }
 
-/** 画幅、数量、高级（设计稿 `AspectRow` 222-240 与 `ImageGenForm` 的后三节）。 */
+/** Aspect ratio, count and advanced (design file `AspectRow` 222-240 and the last three sections of `ImageGenForm`). */
 function ImageOptions({ draft, option, patch }: { draft: ImageDraft; option: ImageOption; patch: (patch: Partial<ImageDraft>) => void }) {
   const info = option.info;
   const sizes = aspectOptions(info);

@@ -1,5 +1,4 @@
-//! 阶段 3：`animate.flow` / `animate.parts` / `split` 进 BCF 0.1 草稿
-//! （规范 §7.5 / §7.9、设计 §10 阶段 3）。
+//! Stage 3: `animate.flow` / `animate.parts` / `split` go into the BCF 0.1 draft (spec §7.5 / §7.9, design §10 stage 3).
 
 use scene_primitives::layout::{TextMeasure, TextMetricsLine};
 use scene_primitives::lint::lint;
@@ -7,7 +6,7 @@ use scene_primitives::resolve::Resolver;
 use scene_primitives::sample::sample_channels;
 use serde_json::{Value, json};
 
-/// 固定度量：测试不依赖系统字体。
+/// Fixed metrics: the test does not depend on system fonts.
 struct FixedMeasure;
 
 impl TextMeasure for FixedMeasure {
@@ -44,7 +43,7 @@ fn text_with(animate: Value, extra: &[(&str, Value)]) -> Value {
 fn resolved(doc: &Value) -> scene_primitives::resolve::Ir {
     let mut resolver = Resolver::new(doc.clone(), None).expect("resolver");
     let mut ir = resolver.resolve().expect("resolve");
-    // 相对长度在布局之后求值（设计 §5.5）；这里用零度量布局跑同一条链。
+    // Relative lengths are evaluated after layout (design §5.5); here the same chain runs with a zero-metrics layout.
     let (w, h) = (ir.w, ir.h);
     for clip in &mut ir.visual_clips {
         scene_primitives::layout::layout_tree(&mut clip.tree, w, h, &mut FixedMeasure);
@@ -80,7 +79,7 @@ fn a_flow_document_resolves_to_absolute_time_channels() {
     let ir = resolved(&document);
     let node = &ir.visual_clips[0].tree;
     assert!(!node.channels.is_empty());
-    // 相对长度已换算成 px（短边 1080 × 0.04）
+    // The relative length has already been converted to px (short side 1080 × 0.04)
     let y_add = node
         .channels
         .iter()
@@ -88,11 +87,11 @@ fn a_flow_document_resolves_to_absolute_time_channels() {
         .expect("y add channel");
     assert_eq!(y_add.frames[0].v, json!(43.2));
 
-    // t = 0.2 时不透明度是 easeOutCubic 的一半进度
+    // At t = 0.2 the opacity is half of the easeOutCubic progress
     let pose = sample_channels(&node.channels, 0.2);
     let opacity = pose.scalar("opacity", 1.0);
     assert!(opacity > 0.5 && opacity < 1.0, "{opacity}");
-    // repeat 一直铺到 clip.end 附近
+    // repeat fills all the way up to near clip.end
     let last = y_add.frames.last().unwrap().t;
     assert!(last >= 4.0 - 1.2, "{last}");
 }
@@ -107,7 +106,7 @@ fn flow_and_the_legacy_slots_are_mutually_exclusive() {
         &[],
     ));
     assert!(codes(&document).contains(&"motion-legacy-and-flow"));
-    // resolve 也拒绝（lint / resolve 双保险）
+    // resolve also rejects it (double safeguard: lint and resolve)
     let mut resolver = Resolver::new(document, None).unwrap();
     let error = match resolver.resolve() {
         Ok(_) => panic!("resolve 应当拒绝 flow + 四槽"),
@@ -186,7 +185,7 @@ fn parts_compile_one_channel_set_per_part_with_a_stable_map() {
         part_motion.map.fingerprint,
         motion::PartMap::build("CucCut 剪辑", motion::PartUnit::Word).fingerprint
     );
-    // 级联：第 i 个 part 的第一帧比第 i-1 个晚 gap
+    // Cascade: the first frame of part i is later than that of part i-1 by gap
     let start = |index: usize| part_motion.channels[index][0].frames[0].t;
     for index in 1..3 {
         assert!(
@@ -196,7 +195,7 @@ fn parts_compile_one_channel_set_per_part_with_a_stable_map() {
             start(index - 1)
         );
     }
-    // 相对长度已按短边求值
+    // Relative lengths have already been evaluated against the short side
     let y = part_motion.channels[0]
         .iter()
         .find(|ch| ch.prop == "y")
@@ -249,8 +248,7 @@ fn use_stagger_delay_wraps_the_whole_flow() {
     }
 }
 
-/// `sampled`（规范 §7.5）：逐帧采样 = 采样序列的线性插值。采样率（100）与文档帧率（30）
-/// 不同、`from` 不落在采样网格上，插值的每一段都会被测到。
+/// `sampled` (spec §7.5): per-frame sampling = linear interpolation of the sample sequence. The sample rate (100) differs from the document frame rate (30), and `from` does not fall on the sampling grid, so every interpolated segment gets exercised.
 #[test]
 fn a_sampled_flow_samples_to_the_linear_interpolation_frame_by_frame() {
     let fps = 100.0;

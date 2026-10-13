@@ -6,7 +6,7 @@ function handle(fileName: string, size: number): MediaHandle {
   return { url: `http://runtime/media/${fileName}`, mimeType: 'font/collection', size, fileName, expiresAt: '2026-01-01T00:00:00Z' };
 }
 
-/** 一个 20 字节的「字体集合」，第二个 face 的两张表在 [8, 12) 与 [16, 19)。 */
+/** A 20-byte “font collection”; the two tables of the second face are at [8, 12) and [16, 19). */
 const FILE = Uint8Array.from({ length: 20 }, (_, i) => 100 + i);
 const LAYOUT = {
   faceIndex: 1,
@@ -25,7 +25,7 @@ function face(query: FontFaceQuery) {
   return { ...query, ...LAYOUT, source: 'local' as const, file: handle('Fake.ttc', FILE.length) };
 }
 
-/** 按 `Range` 回 206 的读取句柄；`whole` 时像不认区间的服务一样回整个文件。 */
+/** A read handle that answers `Range` requests with 206; with `whole`, it returns the whole file, like a service that does not honor ranges. */
 function server(requests: string[], whole = false) {
   return async (url: string, init?: RequestInit) => {
     const range = new Headers(init?.headers).get('Range') ?? '';
@@ -50,9 +50,9 @@ test('按 face 要本机字体：只按区间取这个 face 的表拼起来；�
   const loaded = await source.load([regular, medium, nowhere]);
   expect(asked).toEqual([[regular, medium, nowhere]]);
   expect(loaded.map((f) => [f.query, [...f.bytes]])).toEqual([[regular, EXPECTED]]);
-  // 两张非空的表各取一次，不取整个文件。
+  // Fetch each of the two non-empty tables once, not the whole file.
   expect(requests).toEqual(['http://runtime/media/Fake.ttc bytes=8-11', 'http://runtime/media/Fake.ttc bytes=16-18']);
-  // 渲染内核重新载入时按 `load` 重新要：重新解析一次（句柄会过期），拼出同样的字节。
+  // When the render kernel reloads, it asks again by `load`: parse again (the handle has expired) and assemble the same bytes.
   expect([...(await loaded[0]!.font.load())]).toEqual(EXPECTED);
   expect(asked.at(-1)).toEqual([regular]);
 });

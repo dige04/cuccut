@@ -25,8 +25,8 @@ import { ToolDriver, tool, until } from '../agent-tools/testing/fake-agent.ts';
 import { call, raw, rpc, type Loose } from './testing/mcp-client.ts';
 
 /**
- * 对外服务（架构设计 §4.8、§12.8）：ServiceManager 的生命周期与配置、节点服务的投影，以及 MCP 服务的认证与来源检查。
- * 只用回环地址、系统挑的端口与临时的 Runtime Home；不需要视频引擎。
+ * External services (architecture design §4.8, §12.8): the ServiceManager lifecycle and config, the node service projection, and the MCP service's auth and origin checks.
+ * Uses only loopback addresses, a system-chosen port, and a temporary Runtime Home; no video engine is needed.
  */
 
 describe('对外服务', () => {
@@ -97,7 +97,7 @@ describe('对外服务', () => {
     return services.find((s) => s.serviceId === id)!;
   }
 
-  /** 开着的 MCP 服务（系统挑的端口）、一个客户端令牌。 */
+  /** A running MCP service (system-chosen port) and one client token. */
   async function openMcp(level: 'read' | 'ask' | 'auto' = 'auto'): Promise<{ url: string; token: string; clientId: string }> {
     await client!.request('services.configure', { serviceId: 'mcp', port: 0, level });
     const { service } = await client!.request('services.start', { serviceId: 'mcp' });
@@ -130,11 +130,11 @@ describe('对外服务', () => {
       { alias: 'whisper-1', capability: 'transcribe', providerId: 'local', modelId: null },
     ]);
     expect(find(services, 'web')).toMatchObject({ available: true, autostart: false, port: 47622, policy: null, clients: [] });
-    // 节点服务的配置用 nodes.share.*。
+    // The node service's config uses nodes.share.*.
     expect(await client.request('services.configure', { serviceId: 'node', port: 1234 }).catch((e: unknown) => e)).toMatchObject({
       code: 'invalid-request',
     });
-    // 只是列出，不落盘。
+    // Only listing; nothing is persisted.
     expect(await fs.stat(home.servicesFile).catch(() => null)).toBeNull();
   });
 
@@ -163,7 +163,7 @@ describe('对外服务', () => {
     const mcp = find((await again.request('services.list', {})).services, 'mcp');
     expect(mcp).toMatchObject({ state: 'on', autostart: true, policy: { level: 'read', videos: { ids: ['vid_a', 'vid_b'] } } });
     expect(mcp.clients.map((c) => c.clientId)).toEqual([clientId]);
-    // 令牌跨重启有效（只存哈希）。
+    // Tokens remain valid across restarts (only hashes are stored).
     const restored = mcp.endpoint!;
     expect((await rpc(restored, token, 'ping')).status).toBe(200);
     const port = Number(new URL(restored).port);
@@ -182,7 +182,7 @@ describe('对外服务', () => {
     expect(mcp).toMatchObject({ state: 'error', port: taken, endpoint: null });
     expect(mcp.error).toContain(`端口 ${taken} 已被占用`);
 
-    // 手动开启同样失败；换一个端口之后能开（改端口时按新端口重新开启）。
+    // A manual start also fails; after changing to another port, it can start (when the port changes, it restarts on the new port).
     expect((await again.request('services.start', { serviceId: 'mcp' })).service.state).toBe('error');
     const moved = await again.request('services.configure', { serviceId: 'mcp', port: 0 });
     expect(moved.service.state).toBe('on');
@@ -214,16 +214,16 @@ describe('对外服务', () => {
     expect(states).toContain('starting');
     expect(states).toContain('on');
 
-    // 节点服务：nodes.share.* 是权威，services 只是投影。
+    // The node service: nodes.share.* is the authority; services is only a projection.
     const share = await client.request('nodes.share.start', { port: 0 });
     expect(share.listening).toBe(true);
     const node = find((await client.request('services.list', {})).services, 'node');
     expect(node).toMatchObject({ state: 'on', autostart: true, port: share.port, error: null, policy: null });
     await until(() => mirror && find(mirror.services, 'node').state === 'on');
-    // 投影里没有配对码。
+    // No pairing code in the projection.
     expect(JSON.stringify(node)).not.toContain((share.pairing as { code: string }).code);
 
-    // 经 services.stop 关闭等同 nodes.share.stop。
+    // Closing via services.stop is equivalent to nodes.share.stop.
     await client.request('services.stop', { serviceId: 'node' });
     expect((await client.request('nodes.share.status', {})).enabled).toBe(false);
     expect(find((await client.request('services.list', {})).services, 'node').state).toBe('off');
@@ -310,17 +310,17 @@ describe('对外服务', () => {
     await client.request('services.configure', { serviceId: 'mcp', level: 'auto' });
     const auto = await names();
     expect(auto).toEqual(allowed());
-    // 目录项的 surfaces 不含 mcp 的工具不开放：删除视频、写文件、装模型、申请授权、存下载件。
+    // Tools whose catalog entries' surfaces do not include mcp are not exposed: deleting videos, writing files, installing models, requesting authorization, saving downloads.
     for (const name of ['videos_delete', 'artifacts_save', 'models_install', 'grants_request', 'downloads_save']) {
       expect(auto).not.toContain(name);
     }
-    // 任务合同的工具只在工具桥一面（§3.2）：对外服务没有任务，调用时与不存在一样。
+    // Task-contract tools are only on the tool bridge side (§3.2): external services have no tasks, so calling them is the same as them not existing.
     for (const name of ['tasks_contract', 'tasks_update_contract', 'tasks_record_check']) {
       expect(auto).not.toContain(name);
       const call = await rpc(url, token, 'tools/call', { name, arguments: {} });
       expect(JSON.parse((call.result!.content as { text: string }[])[0]!.text).error.code).toBe('UNKNOWN_TOOL');
     }
-    // 对外的说明不提会话与工作目录。
+    // The external description does not mention sessions or working directories.
     const tools = (await rpc(url, token, 'tools/list')).result!.tools as { name: string; description: string }[];
     expect(tools.find((t) => t.name === 'videos_list')!.description).not.toContain('工作目录');
   });
@@ -334,7 +334,7 @@ describe('对外服务', () => {
     const secret = token.split('.')[1]!;
     expect(token.startsWith(`${clientId}.`)).toBe(true);
 
-    // 一次成功、一次被拒绝的工具调用，留下审计与错误。
+    // One successful and one rejected tool call each leave an audit and an error.
     expect((await rpc(url, token, 'tools/call', { name: 'videos_list', arguments: {} })).status).toBe(200);
     const refused = await rpc(url, token, 'tools/call', { name: 'videos_inspect', arguments: { video: 'vid_missing' } });
     expect(JSON.stringify(refused)).not.toContain(secret);
@@ -380,7 +380,7 @@ describe('对外服务', () => {
   });
 });
 
-// ---- 需要真实引擎与 ffmpeg 的部分 ----
+// ---- Parts that need the real engine and ffmpeg ----
 
 const engine = resolveEngineHostCommand();
 const ffmpeg = (() => {
@@ -432,7 +432,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       initiator: { discoverer: null },
       nodes: { host: '127.0.0.1', advertiser: null },
       services: { approvalTimeoutMs: 400 },
-      // PATH 只有一个空目录：yt-dlp 只有测试指定的假工具，链接的主机解析成公网地址。
+      // PATH has only one empty directory: yt-dlp is only the fake tool the test specifies, and the link's host resolves to a public address.
       externalTools: { env: async () => ({ PATH: emptyPath }), overrides: {}, lookup: async () => ['93.184.216.34'] },
     });
     const { endpoint, token: gatewayToken } = runtime.discovery;
@@ -448,7 +448,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     const second = await client.request('videos.create', { projectId: project.id, name: '私密' });
     a = { videoId: first.ref.videoId, relPath: first.ref.relPath };
     b = { videoId: second.ref.videoId, relPath: second.ref.relPath };
-    // 界面关掉两个视频：外部请求自己打开。
+    // The UI closes both videos: the external request opens them itself.
     await client.request('videos.close', { videoId: a.videoId });
     await client.request('videos.close', { videoId: b.videoId });
     await client.request('services.configure', { serviceId: 'mcp', port: 0, level: 'auto', videos: { ids: [a.videoId] } });
@@ -481,10 +481,10 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       operations: [{ type: 'renameVideo', name: '改名' }],
     });
     expect(write.body.error.code).toBe('VIDEO_NOT_FOUND');
-    // 没有因此被打开。
+    // Nothing was opened because of this.
     expect(runtime.videos.ref(b.videoId)).toBeNull();
 
-    // 改成全部视频立即生效。
+    // Switching to all videos takes effect immediately.
     await client.request('services.configure', { serviceId: 'mcp', videos: 'all' });
     const all = await call(url, token, 'videos_list', {});
     expect(all.body.videos.map((v: Loose) => v.videoId).sort()).toEqual([a.videoId, b.videoId].sort());
@@ -505,7 +505,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       [a.videoId, videoId].sort(),
     );
     expect((await call(url, token, 'videos_inspect', { video: videoId })).body.videoId).toBe(videoId);
-    // 名单落进服务配置：界面看得到，b 仍然不在里面。
+    // The list is saved into the service config: visible in the UI, and b is still not in it.
     const { services } = await client.request('services.list', {});
     expect(services.find((s) => s.serviceId === 'mcp')!.policy).toMatchObject({ videos: { ids: [a.videoId, videoId] } });
   });
@@ -517,9 +517,9 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       expect(refused.body.error).toMatchObject({ code: 'INVALID_ARGUMENTS' });
       expect(refused.body.error.next).toContain('projects_list');
     }
-    // transcribe 给 url 默认新建视频：不给 project 同样拒绝。
+    // transcribe with a url defaults to creating a video: not giving a project is also rejected.
     expect((await call(url, token, 'transcribe', { url: link })).body.error).toMatchObject({ code: 'INVALID_ARGUMENTS' });
-    // 新的 Runtime Home 里没有同意的记录：不生成审批、不提交安装。
+    // The new Runtime Home has no record of consent: no approval is generated and no install is submitted.
     for (const [name, args] of [
       ['download', { url: link, video: a.videoId }],
       ['download', { url: link, project: project.id }],
@@ -569,7 +569,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       expect(refused.body.error.next).toContain('video');
       expect(refused.body.error.next).toContain('url');
     }
-    // 名单之外的视频：与不存在的一样回答，不启动流程。
+    // A video outside the list: answered the same as a nonexistent one, and no flow is started.
     const outside = await call(url, token, 'transcribe', { video: b.videoId });
     expect(outside.body.error.code).toMatch(/VIDEO_NOT_FOUND|VIDEO_OUTSIDE/);
     expect((await call(url, token, 'transcode', { files: ['a.mp4'] })).body.error.code).toBe('UNKNOWN_TOOL');
@@ -615,7 +615,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     const listed = await call(url, token, 'space_list', { kind: ['video'] });
     expect(listed.body.entries.map((e: Loose) => e.videoId)).toEqual([a.videoId]);
     expect((await call(url, token, 'space_list', { videoId: b.videoId })).body.entries).toEqual([]);
-    // 用户在界面里看得到全部。
+    // The user sees everything in the UI.
     expect((await client.request('space.search', { query: '剪辑' })).hits).toHaveLength(2);
   });
 
@@ -638,7 +638,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     const entry = entries.find((e) => e.transactionId === applied.body.transactionId)!;
     expect(entry.actor).toEqual({ kind: 'agent', id: 'external:mcp' });
 
-    // 译文：putDocument 写入，documents_read 读回。
+    // Translation: written with putDocument, read back with documents_read.
     const put = await call(url, token, 'edits_apply', {
       video: a.videoId,
       expectedRevision: applied.body.revision.after,
@@ -655,7 +655,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       'DOCUMENT_NOT_FOUND',
     );
 
-    // 素材文件只能在项目目录里。
+    // Source material files can only be in the project directory.
     const outside = path.join(fixtures, 'clip.mp4');
     for (const file of [outside, '../outside.mp4', path.relative(project.path, outside)]) {
       const refused = await call(url, token, 'edits_apply', {
@@ -667,7 +667,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       expect(refused.body.error.code, file).toBe('PATH_OUTSIDE_PROJECT');
     }
 
-    // 审计：服务里记下请求与视频。
+    // Audit: the request and the video are recorded in the service.
     const mcp = (await client.request('services.list', {})).services.find((s) => s.serviceId === 'mcp')!;
     expect(mcp.recentRequests[0]).toMatchObject({
       clientName: '剪辑助手',
@@ -697,7 +697,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     });
     expect(path.dirname(frames.body.frames[0].file)).toBe(framesDir);
     expect((await fs.stat(frames.body.frames[0].file)).size).toBeGreaterThan(0);
-    // 名单之外的视频与不存在一样。
+    // Videos outside the list are the same as nonexistent ones.
     expect((await call(url, token, 'videos_frames', { video: b.videoId, at: ['0'] })).body.error.code).toBe('VIDEO_NOT_FOUND');
   });
 
@@ -718,7 +718,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     expect(submitted.isError).toBe(false);
     const exportsDir = path.join(await fs.realpath(project.path), 'exports');
     expect(submitted.body).toMatchObject({ kind: 'export', videoId: a.videoId, dir: exportsDir, files: ['样片.audio.wav'] });
-    // 同一个客户端带同一个 commandId 重试：同一个任务。
+    // The same client retries with the same commandId: the same task.
     expect((await call(url, token, 'export', { video: a.videoId, kind: 'audio', format: 'wav', commandId: 'once' })).body.jobId).toBe(
       submitted.body.jobId,
     );
@@ -731,7 +731,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     expect((await fs.stat(job.outputs[0].path)).size).toBeGreaterThan(0);
     expect((await client.request('jobs.inspect', { jobId: submitted.body.jobId })).submitter).toMatchObject({ kind: 'service', id: 'mcp' });
 
-    // 目录只能是 exports/ 里已有的子目录：出项目、出 exports/、经符号链接出去都拒绝。
+    // The directory can only be an existing subdirectory of exports/: leaving the project, leaving exports/, or going out through a symlink are all rejected.
     await fs.mkdir(path.join(exportsDir, 'sub'));
     await fs.symlink(fixtures, path.join(exportsDir, 'away'));
     const codeOf = async (args: Record<string, unknown>) =>
@@ -740,11 +740,11 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     expect((await codeOf({ dir: 'missing' })).error.code).toBe('INVALID_PATH');
     expect((await codeOf({ dir: 'sub', fileName: '片段' })).files).toEqual(['片段.wav']);
 
-    // 名单之外的视频：不存在，不会因此被打开。
+    // A video outside the list: nonexistent, and not opened because of it.
     expect((await codeOf({ video: b.videoId })).error.code).toBe('VIDEO_NOT_FOUND');
     expect(runtime.videos.ref(b.videoId)).toBeNull();
 
-    // ask：先生成服务审批，拒绝时不建任务。
+    // ask: generates a service approval first; on rejection, no task is created.
     await client.request('services.configure', { serviceId: 'mcp', level: 'ask' });
     let mirror: ServicesSnapshot | null = null;
     client.subscribeServices({
@@ -793,7 +793,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       });
     };
 
-    // 同意：执行。
+    // Allowed: executed.
     const allowed = rename('新名字');
     const approval = await until(() => mirror?.approvals[0]);
     expect(approval).toMatchObject({
@@ -813,21 +813,21 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       status: 'already-resolved',
     });
 
-    // 拒绝：不执行。
+    // Rejected: not executed.
     const before = (await call(url, token, 'videos_inspect', { video: a.videoId })).body.revision;
     const denied = rename('不该改');
     const second = await until(() => mirror?.approvals[0]);
     await client.request('services.respondToApproval', { approvalId: second.approvalId, decision: 'deny' });
     expect((await denied).body.error).toMatchObject({ code: 'SERVICE_APPROVAL_DENIED', serviceId: 'mcp', reason: 'denied' });
 
-    // 超时：按拒绝处理。
+    // Timeout: treated as rejection.
     const timedOut = await rename('也不该改');
     expect(timedOut.body.error).toMatchObject({ code: 'SERVICE_APPROVAL_DENIED', serviceId: 'mcp', reason: 'timeout' });
     expect(resolved.map((e) => (e as { outcome: string }).outcome)).toEqual(['allowed', 'denied', 'timeout']);
     expect((await call(url, token, 'videos_inspect', { video: a.videoId })).body.revision).toBe(before);
     expect(mirror!.approvals).toEqual([]);
 
-    // 范围之外的视频：直接不存在，不生成审批。
+    // A video outside the scope: simply nonexistent, no approval generated.
     const outside = await call(url, token, 'edits_apply', {
       video: b.videoId,
       expectedRevision: '1',
@@ -837,7 +837,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     expect(outside.body.error.code).toBe('VIDEO_NOT_FOUND');
     expect(resolved).toHaveLength(3);
 
-    // 服务停止时，待处理的审批取消。
+    // When the service stops, pending approvals are cancelled.
     const pending = rename('停服务').catch(() => null);
     await until(() => mirror?.approvals[0]);
     await client.request('services.stop', { serviceId: 'mcp' });
@@ -875,7 +875,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
       });
     };
 
-    // 统一列表里的一条：主体是服务与客户端，依据是服务等级，有时限；与服务主题里的是同一个号。
+    // An entry in the unified list: the principals are the service and the client, the basis is the service level, and it has a time limit; it is the same ID as in the services topic.
     const allowed = rename('经统一列表允许');
     const unified = await until(() => tasks?.approvals?.[0]);
     expect(unified).toMatchObject({
@@ -895,13 +895,13 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
     });
     await until(() => tasks?.approvals?.length === 0 && services?.approvals.length === 0);
 
-    // approvals.respond 拒绝：外部请求得到 SERVICE_APPROVAL_DENIED。
+    // approvals.respond rejects: the external request gets SERVICE_APPROVAL_DENIED.
     const denied = rename('不该改');
     const second = await until(() => tasks?.approvals?.[0]);
     expect(await client.request('approvals.respond', { approvalId: second.approvalId, decision: 'deny' })).toEqual({ status: 'denied' });
     expect((await denied).body.error).toMatchObject({ code: 'SERVICE_APPROVAL_DENIED', reason: 'denied' });
 
-    // services.respondToApproval 处理的：统一列表里同样消失。
+    // Handled by services.respondToApproval: likewise disappears from the unified list.
     const viaServices = rename('经服务允许');
     const third = await until(() => services?.approvals[0]);
     await until(() => tasks?.approvals?.some((p) => p.approvalId === third.approvalId));
@@ -912,7 +912,7 @@ describe.skipIf(!engine || !ffmpeg)('对外服务：范围、等级与审批（�
   });
 });
 
-// ---- 任务：本机回环地址上的假供应商 ----
+// ---- Tasks: a fake provider on the loopback address ----
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-services-0123456789';
 
@@ -974,7 +974,7 @@ describe('对外服务：任务的提交者与可见性', () => {
       clientId: first.client.clientId,
     });
 
-    // 同一个 commandId：同一个客户端重试得到同一个任务，别的客户端不会撞上。
+    // Same commandId: the same client retrying gets the same task; other clients do not collide with it.
     expect((await call(url, first.token, 'speak', { text: 'hi', provider: 'openai', commandId: 'same' })).body.jobId).toBe(jobId);
     const other = await call(url, second.token, 'speak', { text: 'hi', provider: 'openai', commandId: 'same' });
     expect(other.body.jobId).not.toBe(jobId);
@@ -982,7 +982,7 @@ describe('对外服务：任务的提交者与可见性', () => {
     expect((await call(url, first.token, 'jobs_inspect', { jobId })).body).toMatchObject({ jobId, submittedBy: 'external' });
     expect((await call(url, second.token, 'jobs_inspect', { jobId })).body.error.code).toBe('JOB_NOT_FOUND');
 
-    // 界面连接与智能体会话提交的任务，服务的客户端都看不到。
+    // Jobs submitted by the UI connection and agent sessions are not visible to the service's clients.
     const { jobId: fromUi } = await client.request('models.synthesizeSpeech', { text: 'hi', provider: 'openai' });
     const { project } = await client.request('projects.create', { name: '会话' });
     const { conversation } = await client.request('conversations.create', { projectId: project.id });
@@ -994,10 +994,10 @@ describe('对外服务：任务的提交者与可见性', () => {
     for (const hidden of [fromUi, fromAgent]) {
       expect((await call(url, first.token, 'jobs_inspect', { jobId: hidden })).body.error.code).toBe('JOB_NOT_FOUND');
     }
-    // 智能体也看不到服务的任务。
+    // Agents also cannot see the service's tasks.
     expect((await tool(session, 'jobs_inspect', { jobId })).body.error.code).toBe('JOB_NOT_FOUND');
 
-    // 停止服务不取消它提交的任务（任务归 JobManager）。
+    // Stopping the service does not cancel the jobs it submitted (jobs belong to the JobManager).
     await client.request('services.stop', { serviceId: 'mcp' });
     expect((await client.request('jobs.inspect', { jobId })).state).not.toBe('cancelled');
 
@@ -1014,14 +1014,14 @@ describe('对外服务：任务的提交者与可见性', () => {
     const url = (await client.request('services.start', { serviceId: 'mcp' })).service.endpoint!;
     const { token } = await client.request('services.mcp.createClient', { name: '甲' });
 
-    // 启用时的默认授权覆盖：照常提交，任务记录带着授权。
+    // The default authorization coverage when enabled: submitted as usual, and the job record carries the authorization.
     const [byDefault] = (await client.request('grants.list', { recipient: 'openai' })).grants;
     expect(byDefault).toMatchObject({ origin: 'provider-enable', state: 'active' });
     const covered = await call(url, token, 'speak', { text: 'hi', provider: 'openai' });
     expect(covered.isError).toBe(false);
     expect((await client.request('jobs.inspect', { jobId: covered.body.jobId })).grant).toMatchObject({ grantId: byDefault!.grantId });
 
-    // 撤销之后：auto 等级免的是逐次确认，不是外发授权。
+    // After revocation: the auto level skips per-request confirmation, not the outbound-sending authorization.
     await client.request('grants.revoke', { grantId: byDefault!.grantId });
     const refused = await call(url, token, 'speak', { text: 'hi', provider: 'openai' });
     expect(refused.body.error).toMatchObject({
@@ -1033,7 +1033,7 @@ describe('对外服务：任务的提交者与可见性', () => {
     });
     expect((await client.request('jobs.list', {})).jobs).toHaveLength(1);
 
-    // ask 等级：一条带外发的高风险审批；允许（只这一次）后提交，任务点名用那条「只这一次」的授权。
+    // ask level: one high-risk approval for outbound sending; after allowing it (this time only), submit, and the task names the "this time only" authorization.
     await client.request('services.configure', { serviceId: 'mcp', level: 'ask' });
     const pending = call(url, token, 'speak', { text: 'hi', provider: 'openai' });
     const approval = await until(() => runtime.harness.approvals.pending()[0]);
@@ -1049,7 +1049,7 @@ describe('对外服务：任务的提交者与可见性', () => {
     const { grants } = await client.request('grants.list', { includeEnded: true });
     expect(grants.find((g) => g.grantId === record.grant!.grantId)).toMatchObject({ once: true, origin: 'approval', recipient: 'openai' });
 
-    // 合并申请只给会话：对外服务看不到这个工具。
+    // The merge-request tool is given only to sessions: the external service cannot see this tool.
     const request = await call(url, token, 'grants_request', { items: [{ capability: 'synthesizeSpeech', calls: 2, purpose: '旁白' }] });
     expect(request.body.error.code).toBe('UNKNOWN_TOOL');
   });

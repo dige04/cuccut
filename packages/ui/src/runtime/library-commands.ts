@@ -16,18 +16,18 @@ import { useVideo } from '../state/video-store.ts';
 import type { RuntimeSession } from './session.ts';
 
 /**
- * 用户库（架构设计 §5.9，`library.*`）的命令：设置 › 术语库与编辑器 › 品牌共用。条目列表来自 `library` 主题
- * （state/library-store），这里只放读写：读写本身用会话上的用户库方法，这里加上按版本的缓存与文件句柄复用；
- * 会话没有的 `library.applyToVideo` 在这里发。单独成文件，不把会话通道撑大。
+ * Commands for the user library (architecture design §5.9, `library.*`). Settings › Glossary & Editor › Brand sharing. The list of entries comes from the `library` topic
+ * (state/library-store); this file holds only reads and writes. The reads and writes themselves use the user-library methods on the session; this file adds the per-version cache and file-handle reuse;
+ * `library.applyToVideo`, which the session does not have, is sent from here. It lives in its own file so the session channel does not grow.
  */
 
-/** 条目某个版本的内容不会再变：按「库/ID@版本」记住（连同还在路上的请求，免得几处同时要同一条时重复发）。 */
+/** The content of one version of an entry never changes, so it is remembered under “library/ID@version” (along with in-flight requests, so the same entry requested from several places at once is not sent twice). */
 const entries = new Map<string, Promise<LibraryEntry>>();
-/** 文件句柄有期限：到期前 30 秒就不再用。 */
+/** File handles expire: stop using one 30 seconds before it expires. */
 const handles = new Map<string, Promise<MediaHandle>>();
 const HANDLE_MARGIN_MS = 30_000;
 
-/** 读一条。带版本时走缓存；失败的不记，下次重取。 */
+/** Read one entry. When a version is given, use the cache; failures are not recorded, so the next call fetches again. */
 export function getLibraryEntry(session: RuntimeSession, ref: LibraryEntryRef): Promise<LibraryEntry> {
   if (ref.version === undefined) return session.getLibraryEntry(ref).then(remember);
   const key = entryKey({ library: ref.library, id: ref.id, version: ref.version });
@@ -44,7 +44,7 @@ function remember(entry: LibraryEntry): LibraryEntry {
   return entry;
 }
 
-/** 新建或修改。修改时带 `expectedVersion`：别处先改了就是 `LIBRARY_VERSION_CONFLICT`。 */
+/** Create or update. An update passes `expectedVersion`; if it was changed elsewhere first, the result is `LIBRARY_VERSION_CONFLICT`. */
 export async function putLibraryEntry(
   session: RuntimeSession,
   params: Omit<LibraryPutParams, 'commandId'>,
@@ -58,17 +58,17 @@ export function removeLibraryEntry(session: RuntimeSession, library: LibraryName
   return session.removeLibraryEntry(library, id);
 }
 
-/** 从文件导入：Runtime 按内容认格式，决定进哪个库。 */
+/** Import from a file: the Runtime detects the format from the content and decides which library it goes into. */
 export async function importLibraryFile(session: RuntimeSession, path: string): Promise<LibraryEntry> {
   return remember(await session.importLibraryFile(path));
 }
 
-/** 导出到一个新文件；目标已存在时 Runtime 不覆盖（`conflict`）。 */
+/** Export to a new file; if the target already exists, the Runtime does not overwrite it (`conflict`). */
 export function exportLibraryEntry(session: RuntimeSession, entry: LibraryEntryRef, path: string): Promise<LibraryExportResult> {
   return session.exportLibraryEntry(entry, path);
 }
 
-/** 带文件的条目（图片、视频、贴纸、字体）的读取地址；同一个版本在句柄到期前复用。 */
+/** Read address for entries that carry a file (images, videos, stickers, fonts); the same version reuses it until the handle expires. */
 export function openLibraryHandle(session: RuntimeSession, ref: LibraryEntryRef & { version: number }): Promise<MediaHandle> {
   const key = entryKey(ref);
   const cached = handles.get(key);
@@ -88,8 +88,8 @@ export function openLibraryHandle(session: RuntimeSession, ref: LibraryEntryRef 
 }
 
 /**
- * 把条目放进视频（拷一份，之后库里的改动不影响视频）。这一笔不经编辑器的命令队列，所以先等队列里的修改都有了结果；
- * 不给 `expectedRevision`，由 Runtime 用视频的当前版本。
+ * Put the entry into the video (a copy is made, so later changes in the library do not affect the video). This write does not go through the editor's command queue, so first wait until the queued edits have results;
+ * `expectedRevision` is not given, so the Runtime uses the video's current revision.
  */
 export async function applyLibraryEntry(
   session: RuntimeSession,
@@ -100,8 +100,8 @@ export async function applyLibraryEntry(
 }
 
 /**
- * 等新导入的素材出现在编辑器的视频镜像里（视频主题的事件到了）。之后再提交放到时间线的修改，版本号就是新的。
- * 超时返回 null。
+ * Wait until the newly imported asset appears in the editor's video mirror (the video topic's event has arrived). A timeline edit submitted after this uses the new version number.
+ * Returns null on timeout.
  */
 export function waitForAsset(assetId: Id, timeoutMs = 5000): Promise<AssetRecord | null> {
   const find = () => useVideo.getState().video?.state?.video.assets[assetId] ?? null;

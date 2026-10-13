@@ -9,7 +9,7 @@ const item = (id: string, start: number, end: number): Item => ({ id, start, end
 const ids = (items: readonly Item[]) => items.map((i) => i.id);
 const index = (items: Item[]) => spanIndex(items, (i) => i);
 
-/** 不用索引、逐件比：与窗相交（贴边算）就留下，按原来的次序。 */
+/** No index; compare item by item. Items that intersect the window (touching the edge counts) are kept, in their original order. */
 const brute = (items: Item[], from: number, to: number) => items.filter((i) => i.start <= to && i.end >= from);
 
 describe('spansIn', () => {

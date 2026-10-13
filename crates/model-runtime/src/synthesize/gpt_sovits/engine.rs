@@ -1,12 +1,12 @@
-//! `GptSovits` 引擎：GPT-SoVITS v2 接到 `TtsEngine`，对照官方
-//! `GPT_SoVITS/inference_webui.py::get_tts_wav`（v2，逐句串行路径）。
+//! `GptSovits` engine: connects GPT-SoVITS v2 to `TtsEngine`, matching the official
+//! `GPT_SoVITS/inference_webui.py::get_tts_wav` (v2, the sentence-by-sentence serial path).
 //!
-//! - 参考音频限 3~10 秒。有参考文本时，16 kHz 波形尾部补 `zero_wav` 后经 HuBERT +
-//!   `ssl_proj` + VQ 得到提示语义 token，提示文本的音素 / BERT 特征拼在每句目标文本前；
-//!   没有参考文本走 ref_free，T2S 不带提示。
-//! - 32 kHz 参考波形峰值超过 1 时按 `min(2, peak)` 缩放，再算线性谱给 SoVITS 取音色。
-//! - 每句：T2S 生成语义 token → SoVITS 只用目标文本音素解码 → 峰值超过 1 时归一；
-//!   句间插 0.3 秒静音。
+//! - Reference audio is limited to 3–10 seconds. When there is reference text, the 16 kHz waveform is padded at the end with `zero_wav`, then passed through HuBERT +
+//!   `ssl_proj` + VQ to get the prompt semantic tokens; the prompt text's phoneme / BERT features are prepended to each target sentence.
+//!   Without reference text it takes the ref_free path, and T2S runs without a prompt.
+//! - If the 32 kHz reference waveform peaks above 1, it is scaled by `min(2, peak)`, and then the linear spectrogram is computed for SoVITS to extract the timbre.
+//! - Per sentence: T2S generates semantic tokens → SoVITS decodes using only the target text's phonemes → normalized if the peak exceeds 1;
+//!   0.3 seconds of silence is inserted between sentences.
 
 use super::bert::{Bert, FEATURE_DIM};
 use super::hubert::Hubert;
@@ -32,10 +32,10 @@ const BERT_FILE: &str = "chinese-roberta-wwm-ext-large/model.safetensors";
 const BERT_TOKENIZER_FILE: &str = "chinese-roberta-wwm-ext-large/tokenizer.json";
 const T2S_FILE: &str = "gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.safetensors";
 const SOVITS_FILE: &str = "gsv-v2final-pretrained/s2G2333k.safetensors";
-/// 官方只接受 3~10 秒的参考音频（按 16 kHz 样本数判断）。
+/// The official implementation accepts only 3–10 second reference audio (judged by the number of 16 kHz samples).
 const MIN_REFERENCE_SAMPLES: usize = super::REFERENCE_SECONDS_WITH_TEXT[0] as usize * SSL_SAMPLE_RATE as usize;
 const MAX_REFERENCE_SAMPLES: usize = super::REFERENCE_SECONDS_WITH_TEXT[1] as usize * SSL_SAMPLE_RATE as usize;
-/// 官方的 `zero_wav`（32 kHz × 0.3 秒）：既插在句间，也原样接在 16 kHz 参考波形尾部。
+/// The official `zero_wav` (32 kHz × 0.3 seconds): inserted between sentences, and also appended unchanged to the end of the 16 kHz reference waveform.
 const ZERO_WAV_SAMPLES: usize = 9_600;
 
 pub struct GptSovits {
@@ -43,11 +43,11 @@ pub struct GptSovits {
     bert: Bert,
     t2s: T2s,
     sovits: Sovits,
-    /// 最后一个字段：权重先析构，再等 GPU 并清缓存。
+    /// Last field: the weights are dropped first, then the GPU is waited on and the cache is cleared.
     _cache_guard: ModelMemoryCacheGuard,
 }
 
-/// 克隆提示：语义 token 与提示文本的音素 / BERT 特征；ref_free 时三者皆空。
+/// Cloning prompt: the semantic tokens and the phoneme / BERT features of the prompt text; all three are empty in ref_free mode.
 struct Prompt {
     semantic: Vec<u32>,
     phones: Vec<i32>,
@@ -55,9 +55,7 @@ struct Prompt {
 }
 
 impl GptSovits {
-    /// chinese-hubert → chinese-roberta → T2S → SoVITS，文件按清单取（模型包是一个组件，
-    /// 五个文件都在 `PJMixers-Dev/lj1995_GPT-SoVITS-safetensors` 里）。缺文件是 `MODEL_NOT_INSTALLED`，
-    /// 在碰 Metal 之前就报。
+    /// chinese-hubert → chinese-roberta → T2S → SoVITS; the files are taken from the manifest (the model package is one component, and all five files are in `PJMixers-Dev/lj1995_GPT-SoVITS-safetensors`). A missing file is reported as `MODEL_NOT_INSTALLED`, and is raised before Metal is touched.
     pub fn load(model: &VerifiedFiles) -> Result<Self> {
         Self::load_with_progress(model, &mut |_| true)
     }
@@ -70,7 +68,7 @@ impl GptSovits {
         let sovits_path = model.require(SOVITS_FILE)?;
         ensure_device()?;
         configure_memory_cache()?;
-        // 先建守卫：后面任何一步加载失败，展开时也会等 GPU 并清掉已分配的缓存。
+        // Create the guard first: if any later loading step fails, unwinding will also wait on the GPU and clear the cache that was already allocated.
         let cache_guard = ModelMemoryCacheGuard;
 
         let mut stage = |name: &str| -> Result<()> {
@@ -100,7 +98,7 @@ impl GptSovits {
         })
     }
 
-    /// `get_phones_and_bert`：中文片段取 BERT 逐音素特征，其余语言补零。
+    /// `get_phones_and_bert`: Chinese segments take per-phoneme BERT features; other languages are zero-padded.
     fn phones_and_bert(&self, text: &str, language: text::Language) -> Result<(Vec<i32>, Vec<f32>)> {
         let mut phones = Vec::new();
         let mut bert = Vec::new();
@@ -147,8 +145,8 @@ impl GptSovits {
     }
 }
 
-/// 参考音频解成 `sample_rate` 的单声道：文件走 ffmpeg 解码，内置音色在内存里解码再重采样
-/// （[`ReferenceAudio::samples`]）。
+/// Decodes the reference audio to mono at `sample_rate`: files are decoded with ffmpeg, and built-in voices are decoded in memory and then resampled
+/// ([`ReferenceAudio::samples`]).
 fn decode_reference(audio: &ReferenceAudio, sample_rate: u32) -> Result<Vec<f32>> {
     audio
         .samples(sample_rate)
@@ -162,7 +160,7 @@ fn describe(audio: &ReferenceAudio) -> String {
     }
 }
 
-/// `get_spepc`：32 kHz 波形峰值超过 1 时按 `min(2, peak)` 缩放后取线性谱。
+/// `get_spepc`: if the 32 kHz waveform peaks above 1, it is scaled by `min(2, peak)` before taking the linear spectrogram.
 fn reference_spectrogram(audio: &ReferenceAudio) -> Result<Spectrogram> {
     let mut wav32k = decode_reference(audio, SAMPLE_RATE)?;
     let peak = peak(&wav32k);
@@ -177,9 +175,7 @@ fn peak(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0f32, |max, sample| max.max(sample.abs()))
 }
 
-/// 这一次合成拿哪段参考音频与它的原文：调用方给的文件，或内置音色（`Preset`
-/// 按 id、`Default` 按语言）。内置音色一律连原文一起带上——GPT-SoVITS 有参考
-/// 文本时更像，八段录音都在带文本要求的 3–10 秒之内。
+/// Which reference audio and its original text this synthesis uses: either the file supplied by the caller, or a built-in voice (`Preset` by id, `Default` by language). Built-in voices always come with their original text, since GPT-SoVITS sounds closer when it has reference text; all eight recordings fall within the 3–10 second range that requires text.
 fn reference(request: &TtsRequest) -> Result<(ReferenceAudio, Option<String>)> {
     let picked = crate::synthesize::voices::reference_for(request, ENGINE_NAME)?;
     Ok((picked.audio, picked.text))
@@ -194,7 +190,7 @@ impl TtsEngine for GptSovits {
         SAMPLE_RATE
     }
 
-    /// 模型自己没有说话人表；露出来的是随包的内置音色（`VoiceSpec::Preset` 的取值）。
+    /// The model has no speaker table of its own; what is exposed is the built-in voices shipped with the package (the values of `VoiceSpec::Preset`).
     fn preset_speakers(&self) -> Vec<String> {
         crate::synthesize::voices::ids()
     }
@@ -265,7 +261,7 @@ mod tests {
     use crate::bundle::{FAMILY_GPT_SOVITS, FileEntry, ModelFiles};
     use std::path::{Path, PathBuf};
 
-    /// `CUCCUT_TEST_MODELS_DIR/<repo>/.ccut-manifest.json` 列出的文件（与集成测试同一口径）。
+    /// Files listed in `CUCCUT_TEST_MODELS_DIR/<repo>/.ccut-manifest.json` (the same basis as the integration tests).
     fn model_files() -> VerifiedFiles {
         let root = PathBuf::from(std::env::var_os("CUCCUT_TEST_MODELS_DIR").expect("CUCCUT_TEST_MODELS_DIR"));
         let dir = root.join("PJMixers-Dev/lj1995_GPT-SoVITS-safetensors");
@@ -294,8 +290,7 @@ mod tests {
         ReferenceAudio::File(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test-sample.wav"))
     }
 
-    /// 真权重：参考音频自己的语义 token 经 SoVITS 重建，应能听出原句（`CUCCUT_TEST_OUTPUT_DIR`
-    /// 给定时写 WAV 供回听）；再让 T2S 以它为提示续写几步，确认整条图能跑。
+    /// Real weights: the reference audio's own semantic tokens, rebuilt through SoVITS, should be recognizable as the original sentence (when `CUCCUT_TEST_OUTPUT_DIR` is given, a WAV is written for listening back); then T2S continues a few steps using it as the prompt, to confirm the whole graph runs.
     #[test]
     #[ignore = "needs the GPT-SoVITS bundle under CUCCUT_TEST_MODELS_DIR"]
     fn real_weights_reconstruct_reference_speech() {

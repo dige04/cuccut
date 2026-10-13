@@ -1,8 +1,7 @@
-//! BCF 文档的版本常量。
+//! Version constants of BCF documents.
 //!
-//! v2 放在 `ccut-protocol/src/version.rs` 的 `versions` 模块里；本 crate 只用到这两个，
-//! 不移植 `ccut-protocol`，原值照搬到这里。`migrate` 仍以原来的公共名字导出它们。
+//! v2 lives in the `versions` module of `ccut-protocol/src/version.rs`. This crate uses only these two, does not port `ccut-protocol`, and copies the original values here. `migrate` still exports them under their original public names.
 
-/// BCF（`main.ccut.tsx` 的 `bcf` 字段）：读 0.1/0.2，写 0.2。
+/// BCF (the `bcf` field of `main.ccut.tsx`): reads 0.1/0.2, writes 0.2.
 pub const BCF_SUPPORTED: &[&str] = &["0.1", "0.2"];
 pub const BCF_CURRENT: &str = "0.2";

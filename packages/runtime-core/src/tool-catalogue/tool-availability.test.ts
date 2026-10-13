@@ -3,7 +3,7 @@ import { RpcError, type ExternalToolStatus, type ModelServiceCapability } from '
 import { TOOL_CATALOGUE } from '@cuccut/jobs';
 import { capabilityError, toolStatuses, type ToolAvailabilityDeps } from './tool-availability.ts';
 
-/** 工具目录的可用性：能力与外部工具换成假的状态，不探测、不联网。 */
+/** Availability of the tool catalogue: capabilities and external tools are replaced with fake states; no probing, no network. */
 
 function external(name: string, partial: Partial<ExternalToolStatus> = {}): ExternalToolStatus {
   return {
@@ -77,7 +77,7 @@ describe('工具的可用性', () => {
       ],
     });
     expect(byId(statuses, 'transcribe')).toMatchObject({ available: false, problems: [{ capability: 'transcribe' }] });
-    // 配音的文本生成只在要翻译时用：照样可用，限制里说明。
+    // Text generation for dubbing is used only when translating: still available, with the limitation stated.
     expect(byId(statuses, 'dub')).toMatchObject({ available: true, problems: [], limitations: [{ capability: 'generateText' }] });
     expect(byId(statuses, 'link-import')).toMatchObject({ available: true, limitations: [{ capability: 'transcribe' }] });
     expect(byId(statuses, 'compress-video').available).toBe(true);
@@ -95,7 +95,7 @@ describe('工具的可用性', () => {
       available: false,
       problems: [{ code: 'TOOL_NOT_INSTALLED', tool: 'ffmpeg', remedy: '在设置里下载 ffmpeg' }],
     });
-    // 提取音频同样只靠 ffmpeg。
+    // Audio extraction likewise depends only on ffmpeg.
     expect(byId(statuses, 'extract-audio')).toMatchObject({
       available: false,
       problems: [{ code: 'TOOL_NOT_INSTALLED', tool: 'ffmpeg' }],
@@ -105,9 +105,9 @@ describe('工具的可用性', () => {
       available: false,
       problems: [{ code: 'TOOL_CONSENT_REQUIRED', tool: 'yt-dlp' }],
     });
-    // 转录不用下载工具（链接走「从链接导入」）。
+    // Transcription does not need a download tool (links go through “从链接导入” (import from link)).
     expect(byId(statuses, 'transcribe')).toMatchObject({ available: true, limitations: [] });
-    // 只在某些输入下才用的外部工具：可用，限制里说明。
+    // External tools used only for certain inputs: available, with the limitation stated.
     const optional = { ...structuredClone(TOOL_CATALOGUE[0]!), id: 'optional-tool', optionalExternalTools: ['yt-dlp'] };
     expect((await toolStatuses([optional], deps({ tools })))[0]).toMatchObject({
       available: true,

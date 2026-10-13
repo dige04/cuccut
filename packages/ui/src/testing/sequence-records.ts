@@ -1,6 +1,6 @@
 import type { AudioItem, CaptionItem, DocumentRecord, Marker, Sequence, Track, VideoItem } from '@cuccut/protocol';
 
-/** 导出相关测试共用的序列记录：30 fps、1920×1080。 */
+/** Sequence record shared by the export-related tests: 30 fps, 1920×1080. */
 const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };
 
 export function track(id: string, kind: Track['kind'], order: number, extra: Partial<Track> = {}): Track {

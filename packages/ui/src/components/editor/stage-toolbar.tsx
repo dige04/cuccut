@@ -23,10 +23,10 @@ import { useItemEdit } from './use-item-edit.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 /**
- * 画布浮动工具条（原型 stage-toolbar.jsx、model-toolbar.js）：选中画面上的一件时浮在选中框上方，贴着舞台顶就翻到下方；
- * 拖动、改大小、旋转中整条让位（透明、不接指针），松手回来。每一格做什么由 model/stage-toolbar 的规则给出，
- * 改值与属性页同一条写法：拖动中只叠草稿，松手一笔提交。挂在舞台叠加层里，带 `data-stage-editor`，
- * 舞台的点选与框选不接它上面的指针。
+ * Floating canvas toolbar (prototype stage-toolbar.jsx, model-toolbar.js): when one on-screen item is selected, it floats above the selection box and flips below it when it would touch the top of the stage;
+ * while dragging, resizing or rotating, the whole bar steps aside (transparent, no pointer events) and comes back on release. What each cell does comes from the rules in model/stage-toolbar;
+ * value changes use the same path as the properties page: while dragging only a draft is overlaid, and on release one change is committed. It is mounted in the stage overlay with `data-stage-editor`,
+ * so stage click and box selection do not take pointer events on it.
  */
 
 const bar = style({
@@ -69,15 +69,15 @@ const dim = style({ display: 'flex', opacity: 0.4 });
 const panel = style({ display: 'flex', flexDirection: 'column', gap: 8, width: 248 });
 export const quiet = style({ paddingX: '[6px]' });
 
-/** 字号下拉的常用档（属性页的滑杆是 8–140）；现值不在其中时也列出来。 */
+/** Common sizes in the font-size dropdown (the properties page slider runs 8–140); the current value is listed too when it is not among them. */
 const SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 56, 64, 72, 80, 96, 120, 140];
-/** 原型里条子上只出图标的几格（`icon: true`）。 */
+/** Cells on the bar that show only an icon in the prototype (`icon: true`). */
 const ICON_ONLY = new Set(['text-styles', 'animation', 'volume', 'speed']);
-/** 图标加字的几格（原型字幕条子的 Edit / Styles / Animation）。 */
+/** Cells with an icon plus a label (the prototype caption bar's Edit / Styles / Animation). */
 const ICON_TEXT = new Set(['sub-edit', 'sub-style', 'sub-animation']);
 const NO_ASSETS: Record<Id, AssetRecord> = {};
 
-/** 一格按钮：图标格出图标加悬停提示，其余出字。 */
+/** A cell button: icon cells show the icon plus a hover tooltip, the rest show text. */
 export function ToolButton({ tool, onPress, label }: { tool: Tool; onPress?: () => void; label?: string }) {
   const Icon = TOOL_ICON[tool.id];
   if (ICON_ONLY.has(tool.id) && Icon)
@@ -97,7 +97,7 @@ export function ToolButton({ tool, onPress, label }: { tool: Tool; onPress?: () 
   );
 }
 
-/** 字号下拉：常用档，现值不在其中时也列出来（文字元素与字幕共用）。 */
+/** Font-size dropdown: common sizes; the current value is listed too when it is not among them (shared by text elements and captions). */
 export function SizePicker({ label, size, isDisabled, onChange }: { label: string; size: number; isDisabled: boolean; onChange(size: number): void }) {
   const sizes = SIZES.includes(size) ? SIZES : [...SIZES, size].sort((a, b) => a - b);
   return (
@@ -119,7 +119,7 @@ export function SizePicker({ label, size, isDisabled, onChange }: { label: strin
   );
 }
 
-/** 条子上开弹层改值的格：颜色、字体、字号、描边、音量、变速。 */
+/** Cells on the bar that open a popover to change a value: color, font, size, outline, volume, speed. */
 function PopTool({ tool, props }: { tool: Tool; props: ToolProps }) {
   const { item, sequence, edit, canChange } = props;
   const target = { sequenceId: sequence.id, itemId: item.id };
@@ -223,7 +223,7 @@ function PopTool({ tool, props }: { tool: Tool; props: ToolProps }) {
   return null;
 }
 
-/** 条子上的一格：`render` 给了的（开弹层改值的格等）照它画，其余按动作画成按钮。 */
+/** One cell on the bar: if `render` is given (e.g. the cells that open a popover to change a value), it draws the cell; the rest are drawn as buttons from their action. */
 function BarTool({ tool, host, render }: { tool: Tool; host: ToolHost; render(tool: Tool): ReactNode | undefined }) {
   const own = render(tool);
   if (own !== undefined) return <>{own}</>;
@@ -244,7 +244,7 @@ function BarTool({ tool, host, render }: { tool: Tool; host: ToolHost; render(to
   }
 }
 
-/** 条子的内容：分组之间画竖分隔线，最后是 ⋯ 溢出菜单。 */
+/** Bar contents: vertical dividers between groups, with the ⋯ overflow menu at the end. */
 export function ToolbarBody({ spec, host, render }: { spec: ToolbarSpec; host: ToolHost; render(tool: Tool): ReactNode | undefined }) {
   return (
     <>
@@ -267,8 +267,8 @@ export function ToolbarBody({ spec, host, render }: { spec: ToolbarSpec; host: T
 }
 
 /**
- * 浮在选中框旁边的那根条子（画面元素与字幕共用）：量自己与舞台，按 `box`（舞台像素的外包盒）落位；
- * `knob` 是选框上方有旋转钮，条子抬高跨过它。拖动中让位（透明、不接指针）。
+ * The bar that floats beside the selection box (shared by on-screen elements and captions): it measures itself and the stage, and is placed by `box` (the bounding box in stage pixels);
+ * if `knob` is set, there is a rotation handle above the selection box and the bar rises above it. While dragging it steps aside (transparent, no pointer events).
  */
 export function FloatingBar(props: { box: Rect; knob: boolean; yielding: boolean; label: string; children: ReactNode }) {
   const row = useContext(ToolbarRowContext);
@@ -287,7 +287,7 @@ function FloatBar({ box, knob, yielding, label, children }: { box: Rect; knob: b
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ bar: Size; area: Size } | null>(null);
 
-  // 量条子与舞台：条子换了内容、舞台改了尺寸都重量一次。
+  // Measure the bar and the stage again whenever the bar's content changes or the stage is resized.
   useLayoutEffect(() => {
     const node = ref.current;
     const area = node?.parentElement;
@@ -317,7 +317,7 @@ function FloatBar({ box, knob, yielding, label, children }: { box: Rect; knob: b
   );
 }
 
-/** 舞台叠加层里的工具条。`frame` 是画面在舞台里的位置，`view` 是画布像素到显示像素的比例。 */
+/** Toolbar in the stage overlay. `frame` is the position of the picture within the stage; `view` is the ratio from canvas pixels to display pixels. */
 export function StageToolbar({
   item,
   sequence,
@@ -343,7 +343,7 @@ export function StageToolbar({
   const box = { x: frame.left + aabb.x * view.kx, y: frame.top + aabb.y * view.ky, w: aabb.w * view.kx, h: aabb.h * view.ky };
   const props: ToolProps = { item, sequence, assets, edit, canChange: true };
 
-  // 选中框上方有旋转钮（能改的才出工具条，能改的一定有旋转钮）：条子抬高跨过它。
+  // There is a rotation handle above the selection box (the toolbar only appears for items that can be changed, and those always have a rotation handle): the bar rises above it.
   return (
     <FloatingBar box={box} knob yielding={yielding} label={COPY.label}>
       <ToolbarBody

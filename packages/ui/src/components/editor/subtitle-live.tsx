@@ -12,7 +12,7 @@ import { TRANSCRIPT_COPY as T } from './transcript-copy.ts';
 const frame = style({ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' });
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 8, paddingBottom: 12 });
 const list = style({ display: 'flex', flexDirection: 'column', gap: 8 });
-/** 一条（原型 `.sb.sb--live`）：与字幕列表的句子卡同一个外形（subtitle-panel.tsx `cueCard`），只读，点了跳过去。 */
+/** One item (prototype `.sb.sb--live`): same shape as the sentence card in the subtitle list (`cueCard` in subtitle-panel.tsx); read-only, and clicking it jumps there. */
 const card = style({
   position: 'relative',
   overflow: 'hidden',
@@ -26,11 +26,11 @@ const card = style({
   backgroundColor: 'gray-25',
   cursor: 'pointer',
 });
-/** 宏里没有逐边的边框色：左边那道色条单画一块。还没有说话人，退灰。 */
+/** The style macro has no per-edge border colors: the colored bar on the left is drawn as its own block. No speaker yet, so it is greyed out. */
 const accent = style({ position: 'absolute', top: 0, bottom: 0, insetStart: 0, width: '[3px]', backgroundColor: 'gray-300' });
 const head = style({ display: 'flex', alignItems: 'center', gap: '[6px]', marginBottom: '[5px]', minHeight: 20 });
 const number = style({ fontSize: '[10px]', color: 'gray-500', minWidth: 16 });
-/** 说话人要等转录完成才有：在长的那一条写「识别中」，退灰（原型 `.sbsp--unk`）。 */
+/** Speaker labels only exist once transcription finishes: on the longer item, write “识别中” (Recognizing), greyed out (prototype `.sbsp--unk`). */
 const unknown = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-500' });
 const time = style({ font: 'ui-xs', color: 'gray-500' });
 const text = style({
@@ -40,7 +40,7 @@ const text = style({
   whiteSpace: 'pre-wrap',
   overflowWrap: 'break-word',
 });
-/** 光标只跟在还在长的那一条后面（原型 `.caret`）。 */
+/** The caret only follows the item that is still growing (prototype `.caret`). */
 const caret = style({
   display: 'inline-block',
   width: 2,
@@ -51,10 +51,9 @@ const caret = style({
 });
 
 /**
- * 转录中的字幕面板（原型 panel-subtitle.jsx 第 220 轮）：第一次转录、还没有字幕可校对时，运行态头（进度、阶梯、取消）下面按到达
- * 顺序列出已识别的段落，一段一张只读卡（序号、时间、正文），点了跳过去；不能改字、不进撤销——这些还不是字幕文档，转录流程
- * 最后一步才切成字幕。只列落在时间线上的段落（字幕只为时间线上的部分生成），时间是它在时间线上第一次出现的位置。还一条都
- * 没有时画骨架；默认跟着最新的往下滚，往上翻就停住，浮出「回到最新」。`jobId` 是跑识别的转写 Job；还在提交时为 null。
+ * Subtitle panel while transcribing (prototype panel-subtitle.jsx, round 220): on the first transcription, before there is any subtitle to proofread, the running header (progress, steps, cancel) is followed by the recognized segments in arrival
+ * order, one read-only card per segment (index, time, text), and clicking one jumps there. Text cannot be edited and nothing enters undo, because these are not yet a subtitle document; the transcription flow switches to subtitles only at its last step.
+ * Only segments that land on the timeline are listed (subtitles are only generated for the part on the timeline), and the time is where the segment first appears on the timeline. When nothing is listed yet, a skeleton is drawn; by default it follows the newest at the bottom, and if the user scrolls up it stops and a “回到最新” (Back to latest) button floats up. `jobId` is the transcription Job that runs recognition; it is null while still submitting.
  */
 export function SubtitleLive({ jobId, sequence }: { jobId: Id | null; sequence: Sequence }) {
   const { seek } = useEditorActions();
@@ -62,7 +61,7 @@ export function SubtitleLive({ jobId, sequence }: { jobId: Id | null; sequence: 
   const segments = useLiveSegments(jobId);
   const assetId = step?.assetId ?? null;
   const running = !!step && jobLive(step);
-  // 每段一张卡：跨剪辑点裁成几块的取第一块的起点，整段被剪掉的不列。
+  // One card per segment: if a segment is cut into several pieces across edit points, use the start of the first piece; segments cut away entirely are not listed.
   const cards = useMemo(() => {
     if (!assetId) return [];
     const seen = new Set<number>();

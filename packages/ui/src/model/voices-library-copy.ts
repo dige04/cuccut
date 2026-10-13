@@ -14,9 +14,9 @@ import { pl } from './voices-library-copy.pl.ts';
 import { tr } from './voices-library-copy.tr.ts';
 import { vi } from './voices-library-copy.vi.ts';
 
-/** 我的声音（模型 › 语音合成）的文案（译文在 `voices-library-copy.<语言>.ts`）。「编辑」「云端模型」引用别处的按钮与页面名。 */
+/** Copy for 「我的声音」(My voices; Models › Speech synthesis) (translations are in `voices-library-copy.<language>.ts`). “编辑” (Edit) and 「云端模型」(Cloud models) refer to a button and a page name elsewhere. */
 const en = {
-  /** 勾上「本人声明」时写进 `consent.statement` 的话，也是勾选框上的字。 */
+  /** The statement written into `consent.statement` when “I declare” is ticked. It is also the text on the checkbox. */
   consentStatement: 'This is my own voice, or I have the speaker’s permission',
   uploading: (label: string) => `Uploading to ${label}…`,
   noConsent: 'Not marked as your own voice or used with permission, so it won’t be uploaded to a third party. Check the statement in “Edit” first.',
@@ -38,7 +38,7 @@ const en = {
   deleteBody: (clones: string) => `Videos that use it fall back to the default voice the next time they generate; voice-overs already generated are unaffected. ${clones}`.trim(),
   uploadNotice: (name: string, size: string | null, label: string) =>
     `The reference recording of “${name}”${size ? ` (${size})` : ''} will be uploaded to ${label} to create a clone. After that, using this voice on ${label} uses their voice ID directly; deleting the voice deletes this clone first.`,
-  /** Runtime 的原因后面接一句补救（原因句末的标点先去掉）。 */
+  /** After the Runtime's reason, add a remedy sentence (the trailing punctuation of the reason is removed first). */
   withRemedy: (message: string, remedy: string) => `${message.replace(/[。.]$/, '')}. ${remedy}`,
   remedyConsent: 'Voices without a consent statement aren’t uploaded to third parties: check the statement in “Edit” first.',
   remedyConfigure: 'Enable this provider and set its key in “Cloud models”.',

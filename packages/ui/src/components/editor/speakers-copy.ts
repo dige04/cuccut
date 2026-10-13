@@ -16,13 +16,13 @@ import { vi } from './speakers-copy.vi.ts';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** AI 工具「识别说话人」的文案（原型 panel-aitools-flows.jsx `SpeakerFlow`、tool-setup.jsx `ToolSetup`）。译文在 `speakers-copy.zh-Hans.ts`。 */
+/** Copy for the AI tool “识别说话人”(identify speakers) (prototypes panel-aitools-flows.jsx `SpeakerFlow` and tool-setup.jsx `ToolSetup`). Translations are in `speakers-copy.zh-Hans.ts`. */
 const en = {
   title: 'Identify speakers',
   back: 'Back',
   background: 'Running in the background',
 
-  // 设置
+  // Settings
   cardTitle: 'Tell who is speaking',
   cardBody: 'Re-identifies speakers by voiceprint and labels the subtitles and transcript with names. You review the result first; nothing changes until you apply it.',
   who: 'Use',
@@ -46,7 +46,7 @@ const en = {
   web: 'Speakers can’t be identified in the browser',
   webBody: 'Identifying speakers uses the on-device voiceprint model on this computer. Use the CucCut desktop app.',
 
-  // 运行
+  // Run
   submitting: 'Submitting…',
   queued: 'Queued…',
   running: 'Identifying speakers…',
@@ -56,7 +56,7 @@ const en = {
   cancelled: 'Speaker identification cancelled',
   cancelFailed: (message: string) => `Couldn’t cancel: ${message}`,
 
-  // 确认
+  // Confirm
   found: (n: number) =>
     `Found ${plural(n, 'speaker', 'speakers')}. Listen to the samples to confirm who’s who, click a name to rename, then apply.`,
   same: 'Speaker boundaries match the current labels; applying only changes names.',
@@ -73,7 +73,7 @@ const en = {
   applyHint: 'You can undo this at any time after applying.',
   discard: 'Discard this result',
 
-  // 收据
+  // Receipt
   engine: 'On-device voiceprint model',
   undoneReceipt: 'Undone · speaker labels restored',
   undo: 'Undo',
@@ -90,7 +90,7 @@ const en = {
   undoFailed: 'Couldn’t undo',
   redoFailed: 'Couldn’t redo',
 
-  // 问题
+  // Issues
   failed: 'Speaker identification failed',
   interrupted: 'Speaker identification was interrupted',
   submitFailed: 'Couldn’t start speaker identification',

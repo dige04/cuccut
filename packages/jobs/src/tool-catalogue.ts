@@ -8,20 +8,19 @@ import { TRANSLATE_PIPELINE } from './pipelines/translate.ts';
 import { TRANSLATE_SUBTITLES_PIPELINE } from './pipelines/translate-subtitles.ts';
 
 /**
- * 工具目录的静态注册表（架构设计 §7.9；产品设计 §2.7）。纯数据，不依赖 Runtime：此刻能不能用由 Runtime 按能力配置、
- * 外部工具与严格离线判断（`tools.list`）。新增工具时在这里加一项；ID 一旦发布就不改（产物的来源记着它）。
+ * Static registry of the tool catalogue (architecture design §7.9; product design §2.7). Pure data, with no dependency on the Runtime: whether a tool is usable right now is decided by the Runtime from capability configuration, external tools, and strict-offline checks (`tools.list`). To add a tool, add an entry here. Once an ID is published it is not changed, because the source of an artifact records it.
  */
 
-/** 转录流程的名字（流程与它的转写步骤同名，§7.9）。 */
+/** The name of the transcription workflow (the workflow has the same name as its transcription step, §7.9). */
 export { TRANSCRIBE_PIPELINE };
 
-/** 下载工具与 ffmpeg 在受管外部工具登记表里的名字（§12.9）。 */
+/** The names of the download tool and ffmpeg in the managed external-tool registry (§12.9). */
 const YT_DLP = 'yt-dlp';
 const FFMPEG = 'ffmpeg';
 
-/** 名字与说明是 getter：读的时候按当前语言生成（目录在模块加载时就构造，不能在那时取文字）。 */
+/** Name and description are getters: they produce text in the current language when read (the catalogue is constructed at module load, when text cannot yet be fetched). */
 export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
-  // 语音与字幕
+  // Speech and subtitles
   {
     id: 'transcribe',
     get label() {
@@ -32,7 +31,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
     },
     category: 'speech',
     inputs: ['file', 'video'],
-    // 只给文件（`file`）的结果是保存位置里的 TXT 与 SRT；给视频或新建视频时写进视频。
+    // A file-only (`file`) result is TXT and SRT in the save location; given a video or a new video, it is written into the video.
     results: ['artifact', 'video'],
     execution: { kind: 'pipeline', method: 'pipelines.start', pipeline: TRANSCRIBE_PIPELINE },
     capabilities: ['transcribe'],
@@ -53,9 +52,9 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
     category: 'speech',
     inputs: ['video', 'document', 'file'],
     results: ['video', 'artifact'],
-    // 视频输入：从工具入口发起时建立目标语言的字幕层（流程参数默认不建，§7.9）。
+    // Video input: when started from the tool entry, a subtitle track in the target language is created (workflow parameters do not create one by default, §7.9).
     execution: { kind: 'pipeline', method: 'pipelines.start', pipeline: TRANSLATE_PIPELINE, params: { captions: true } },
-    // 字幕文件：文件到文件，条数与时间码不变，不碰视频。
+    // Subtitle file: file to file, with the entry count and timecodes unchanged; the video is not touched.
     executionByInput: { file: { kind: 'pipeline', method: 'pipelines.start', pipeline: TRANSLATE_SUBTITLES_PIPELINE } },
     capabilities: ['generateText'],
     optionalCapabilities: [],
@@ -92,7 +91,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
       return T.synthesizeSpeechDescription().text;
     },
     category: 'speech',
-    // `document`：Space 里的文档、字幕条目，经 `material` 提交（§7.9「Space 条目作为输入」）。
+    // `document`: Space documents and subtitle entries, submitted via `material` (§7.9 “Space entries as input”).
     inputs: ['text', 'document'],
     results: ['artifact'],
     execution: { kind: 'job', method: 'models.synthesizeSpeech', capability: 'synthesizeSpeech' },
@@ -103,7 +102,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
     network: 'none',
     candidates: null,
   },
-  // 文字与图片
+  // Text and images
   {
     id: 'generate-text',
     get label() {
@@ -113,7 +112,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
       return T.generateTextDescription().text;
     },
     category: 'text-image',
-    // `document`：同生成语音，素材的文字接在提示后面。
+    // `document`: same as generated speech; the material's text is appended after the prompt.
     inputs: ['text', 'document'],
     results: ['artifact'],
     execution: { kind: 'job', method: 'models.generateText', capability: 'generateText' },
@@ -162,7 +161,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
     network: 'none',
     candidates: null,
   },
-  // 视频文件
+  // Video files
   {
     id: 'link-import',
     get label() {
@@ -241,7 +240,7 @@ export const TOOL_CATALOGUE: readonly ToolDefinition[] = [
   },
 ];
 
-/** 按 ID 找工具；没有时 null。 */
+/** Finds a tool by ID; null if there is none. */
 export function toolDefinition(id: string): ToolDefinition | null {
   return TOOL_CATALOGUE.find((tool) => tool.id === id) ?? null;
 }

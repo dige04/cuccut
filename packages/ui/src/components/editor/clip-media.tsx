@@ -5,11 +5,11 @@ import { filmstripTiles, sourceClock, waveEnvelope } from '../../model/clip-medi
 import { useRuntime } from '../../runtime/context.tsx';
 import { useVisibleLane } from './use-visible-lane.ts';
 
-/** 波形带的高（像素）。 */
+/** Height of the waveform band (px). */
 const WAVE_BAND = 16;
-/** 波形画布的高：波形带上下各留 2px。写成常数，画的时候不必回头量（一次挂上千段时，逐个量会让浏览器逐个重排）。 */
+/** Height of the waveform canvas: 2px above and below the waveform band. Written as a constant so drawing does not have to measure it (when a thousand clips are mounted at once, measuring each one would make the browser reflow one by one). */
 const WAVE_HEIGHT = WAVE_BAND - 4;
-/** 波形每隔这么多像素取一点。 */
+/** The waveform takes a point every this many pixels. */
 const WAVE_STEP = 2;
 
 const layer = style({ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', pointerEvents: 'none' });
@@ -41,7 +41,7 @@ const band = style({
   borderStyle: 'solid',
   borderColor: { default: 'yellow-400', isSelected: 'yellow-800' },
 });
-// 画布是替换元素：只给 top/bottom 撑不开，高度要写明（`WAVE_HEIGHT`，写在 style 里）。
+// The canvas is a replaced element: top and bottom alone do not size it, so the height must be stated (`WAVE_HEIGHT`, written in style).
 const wave = style({
   position: 'absolute',
   top: 2,
@@ -64,8 +64,7 @@ const titleChip = style({
 });
 
 /**
- * 视频片段里的胶片条与波形带（同旧版网页时间线的 `ElementMedia`）。画面与峰值由 Runtime 用 ffmpeg 算好（`media.thumbnail`、
- * `media.peaks`），这里只取看得见的那几格。片段名压在胶片条左上角。不接指针事件：拖动与裁切照常落在片段上。
+ * The film strip and waveform band in a video clip (same as `ElementMedia` in the old web timeline). The frames and peaks are computed by the Runtime with ffmpeg (`media.thumbnail`, `media.peaks`); here only the visible ones are fetched. The clip name is overlaid on the top-left corner of the film strip. It takes no pointer events: dragging and trimming still land on the clip.
  */
 export function ClipMedia({
   videoId,
@@ -84,14 +83,14 @@ export function ClipMedia({
 }: {
   videoId: string | null;
   item: VideoItem;
-  /** 实例引用的素材版本；快照里还没有时只画片段名。 */
+  /** The asset version the instance references; before it is in the snapshot, only the clip name is drawn. */
   record: AssetRevision | undefined;
-  /** 片段在轨道内容里的位置与宽度（像素）。 */
+  /** The clip's position and width within the track content (px). */
   clipLeft: number;
   clipWidth: number;
-  /** 片段左边的序列时间（秒）。 */
+  /** The sequence time (seconds) at the clip's left edge. */
   clipStart: number;
-  /** 实例内容开始的序列时间（秒）：拖动时跟着片段走，裁切开头时不动。 */
+  /** The sequence time (seconds) at which the instance content starts: follows the clip when dragged, does not move when the start is trimmed. */
   contentStart: number;
   pxPerSecond: number;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -115,13 +114,13 @@ export function ClipMedia({
         }))
       : [];
 
-  // 定格没有声音；素材没有声音时不画波形带，胶片条占满。
+  // A freeze frame has no sound; when the source has no sound, the waveform band is not drawn and the film strip fills the space.
   const hasWave = !!videoId && !!record?.audio && clock.kind === 'linear';
   const peaks = hasWave ? media.peaks(asset) : null;
   const ready = peaks?.state === 'ready' ? peaks.value : null;
   const canvasLeft = Math.max(clipLeft, view.left);
   const canvasWidth = Math.max(0, Math.round(Math.min(clipLeft + clipWidth, view.right) - canvasLeft));
-  // 缩略图陆续到达时会重画，包络只在位置、缩放或峰值变了时重算。
+  // Thumbnails arrive gradually and cause redraws; the envelope is recomputed only when position, scale or peaks change.
   const points = useMemo(
     () =>
       ready
@@ -162,7 +161,7 @@ export function ClipMedia({
   );
 }
 
-/** 峰值包络：上下对称地填满。颜色取画布自己的 `color`，随主题变。 */
+/** Peak envelope: filled symmetrically up and down. The color is the canvas's own `color`, which changes with the theme. */
 function WaveCanvas({ left, width, muted, points }: { left: number; width: number; muted: boolean; points: number[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useLayoutEffect(() => {

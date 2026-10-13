@@ -26,8 +26,8 @@ import { text } from './text.ts';
 import { web } from './web.ts';
 
 /**
- * 管理桶（Agent 面设计 §7）：只给人用的手写命令，按名词与子命令精确匹配，先于派生命令。与目录同名的名词（`models`、
- * `jobs`、`space`、`library`、`skills`）只认列出的子命令，其余交给派生命令。顺序就是 `--help` 后半屏的顺序。
+ * Admin bucket (Agent-surface design §7): hand-written commands for people only, matched exactly by noun and subcommand, and checked before derived commands. Nouns named the same as a directory (`models`,
+ * `jobs`, `space`, `library`, `skills`) accept only the listed subcommands; the rest go to derived commands. The order is the order in the second half of `--help`.
  */
 const NOUNS: readonly AdminNoun<ParseArgsOptionsConfig>[] = [
   models,
@@ -53,7 +53,7 @@ const NOUNS: readonly AdminNoun<ParseArgsOptionsConfig>[] = [
 ] as readonly unknown[] as readonly AdminNoun<ParseArgsOptionsConfig>[];
 
 export const adminBucket: AdminBucket = {
-  // 用法按用的时候的语言读（名词的 usage 是 getter）。
+  // Usage is read in the language in use at the time (a noun's usage is a getter).
   entries: NOUNS.map((noun) => ({
     name: noun.name,
     ...(noun.verbs ? { verbs: noun.verbs } : {}),
@@ -90,7 +90,7 @@ export const adminBucket: AdminBucket = {
       const ctx = new AdminRun({ client, output, cwd, home, env, args, values: parsed.values, usage: noun.usage });
       return await noun.run(ctx as never);
     } catch (error) {
-      // 名词里抛的普通错误（读不了文件、取不回产物等）是这条命令没做成，不是 CLI 自己的故障。
+      // Plain errors thrown by nouns (a file cannot be read, an artifact cannot be fetched, etc.) mean this command did not get done. They are not a fault of the CLI itself.
       if (error instanceof Error && !(error instanceof CliError) && !(error instanceof RpcError)) {
         return output.failure({ code: 'COMMAND_FAILED', message: error.message }, EXIT.failed);
       }
@@ -101,7 +101,7 @@ export const adminBucket: AdminBucket = {
   },
 };
 
-/** 名词自己的旗标（按命令行里的第一个词找名词；找不到时只有公共旗标）。 */
+/** The noun's own flags (the noun is found by the first word on the command line; when none is found, only the common flags). */
 function allOptions(argv: readonly string[]): ParseArgsOptionsConfig {
   const name = argv.find((token) => !token.startsWith('-'));
   return NOUNS.find((noun) => noun.name === name)?.options ?? {};

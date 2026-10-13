@@ -1,4 +1,4 @@
-//! Effect manifest 目录一致性与解析守卫（dev-only：`ccut-motion` 本体无 I/O）。
+//! Effect manifest directory consistency and parse guards (dev-only: `ccut-motion` itself does no I/O).
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -14,10 +14,7 @@ fn presets_dir(namespace: &str) -> PathBuf {
         .join(namespace)
 }
 
-/// `core/presets/builtin/transition/` 里住着**两张**注册表的 manifest：
-/// `bcf.*` 是 preset_registry 的双通道属性配方（`tests/manifests.rs` 管），
-/// `transition.*` 是 effect registry 的双画面效果（本文件管）。按前缀切分，
-/// 两边加起来必须覆盖目录里的每一个文件（`the_transition_directory_is_partitioned`）。
+/// `core/presets/builtin/transition/` houses the manifests of **two** registries. `bcf.*` is the dual-channel property recipe of preset_registry (managed by `tests/manifests.rs`), and `transition.*` is the dual-picture effect of the effect registry (managed by this file). Split by prefix, the two together must cover every file in the directory (`the_transition_directory_is_partitioned`).
 fn files_on_disk(namespace: &str) -> BTreeSet<String> {
     std::fs::read_dir(presets_dir(namespace))
         .expect("effect directory")
@@ -35,8 +32,7 @@ fn files_on_disk(namespace: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// transition 目录里不许出现第三种前缀：新文件要么进 preset 注册表、要么进
-/// effect 注册表，不能两边都不认领。
+/// No third prefix may appear in the transition directory. A new file must go either into the preset registry or into the effect registry, not be claimed by neither.
 #[test]
 fn the_transition_directory_is_partitioned() {
     for entry in std::fs::read_dir(presets_dir("transition")).expect("transition directory") {
@@ -76,7 +72,7 @@ fn all_effect_manifests_parse_and_declare_srgb_u8() {
     let registry = builtin_registry();
     assert_eq!(registry.len(), 34);
     for manifest in registry.iter() {
-        // 迁移配方的颜色契约是决策（设计 §15 阶段 4A）：保像素不变。
+        // The color contract of migration recipes is a decision (design §15 stage 4A): pixels stay unchanged.
         assert_eq!(
             manifest.color.space,
             ColorSpace::SrgbPremultiplied,
@@ -95,7 +91,7 @@ fn all_effect_manifests_parse_and_declare_srgb_u8() {
     assert_eq!(registry.in_domain(EffectDomain::Composite).len(), 1);
     assert_eq!(registry.in_domain(EffectDomain::Transition).len(), 7);
 
-    // 双画面转场必须声明两个输入；单输入的滤镜 / 遮罩不许混进这个域。
+    // A dual-picture transition must declare two inputs. Single-input filters and masks must not slip into this domain.
     for manifest in registry.in_domain(EffectDomain::Transition) {
         assert_eq!(manifest.inputs, 2, "{}", manifest.qualified());
         assert_eq!(
@@ -104,8 +100,7 @@ fn all_effect_manifests_parse_and_declare_srgb_u8() {
             "{}",
             manifest.qualified()
         );
-        // `progress` 是 pass 的字段，不是 uniform——写进 params 会让
-        // `resolve_uniforms` 多要一个值，两处定义立刻分叉。
+        // `progress` is a field of the pass, not a uniform. Writing it into params would make `resolve_uniforms` require one more value, and the two definitions would immediately diverge.
         assert!(
             !manifest.params.contains_key("progress"),
             "{}",
@@ -148,7 +143,7 @@ fn resolve_uniforms_fills_defaults_clamps_and_rejects_unknown_params() {
     let filled = blur.resolve_uniforms(&UniformMap::new()).unwrap();
     assert_eq!(filled.scalar("radius"), Some(0.0));
 
-    // `length` 参数是画布短边的**比例**，因此上限也是比例（0.5 = 半个短边）。
+    // The `length` parameter is a **ratio** of the canvas short side, so its upper bound is also a ratio (0.5 = half the short side).
     let clamped = blur
         .resolve_uniforms(&UniformMap::new().with("radius", UniformValue::Scalar(9000.0)))
         .unwrap();

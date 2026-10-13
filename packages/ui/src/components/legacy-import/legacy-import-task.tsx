@@ -33,19 +33,17 @@ import { useNow } from '../use-now.ts';
 import { UtilityShell } from '../utility-sidebar.tsx';
 
 /*
- * 旧版项目导入这一轮的界面（设计稿 legacy-import-task.jsx；进度、分组、原因与补救的文案在 model/legacy-import-run.ts）：
- * - LegacyImportCardNote：任务页卡片上的原因一句、怎么办一句，加「全部重试」「全部跳过」。
- * - LegacyImportDetail：任务详情里的计数、没导入的项目（按原因分组，每组写原因与怎么办，整组或逐个重试 / 跳过）、
- *   正在导入与排队的、已导入的、已跳过的（可以改为导入）。
- * - LegacyImportBanner：Home 顶上一条。导入是全局的事，视频顶栏的任务胶囊只报这部视频的任务，不报它；
- *   在跑时报进度，跑完留了没导入的报结果与原因，可以关掉。
- * 重试 / 跳过发给 Runtime（`legacyImport.retry` / `legacyImport.setSkipped`），结果经 `legacy-import` 主题回来。
+ * UI for one round of the legacy-project import (design mockup legacy-import-task.jsx; the copy for progress, grouping, reasons and remedies lives in model/legacy-import-run.ts):
+ * - LegacyImportCardNote: on the task-page card, one line for the reason and one for what to do, plus "Retry all" and "Skip all".
+ * - LegacyImportDetail: in the task detail, the counts, the projects not imported (grouped by reason; each group states the reason and what to do, and the whole group or each one can be retried or skipped), the ones in progress and queued, the imported ones, and the skipped ones (which can be changed to import).
+ * - LegacyImportBanner: one strip at the top of Home. The import is global, so the task capsule in the video top bar only reports this video's tasks, not this one. While running it shows progress; when it has finished and left some projects unimported, it shows the result and the reason, and it can be dismissed.
+ * Retry and skip are sent to the Runtime (`legacyImport.retry` / `legacyImport.setSkipped`), and the result comes back through the `legacy-import` topic.
  */
 
-/** 每一节先列这么多行，其余收起。 */
+/** Each section first lists this many rows; the rest are collapsed. */
 const FOLD = 5;
 
-/** 去 Space 看导入的项目：导入目录就是一个项目；还没在目录里时去 Space 的总览。 */
+/** Go to Space to see the imported projects: the import directory is a project; if it is not yet in a directory, go to Space's overview. */
 export function useOpenImported(): (run: Pick<LegacyImportRun, 'directory'> | null) => void {
   const go = useShell((s) => s.go);
   return (run) => {
@@ -56,7 +54,7 @@ export function useOpenImported(): (run: Pick<LegacyImportRun, 'directory'> | nu
   };
 }
 
-/** 重试 / 跳过 / 撤销跳过。数字按 Runtime 给的「改了几个」念。 */
+/** Retry / skip / undo skip. The numbers read the "how many changed" that the Runtime gives. */
 export function useLegacyActions(): { retry(paths?: string[]): void; skip(paths?: string[]): void } {
   const runtime = useRuntime();
   const fail = (error: unknown) =>
@@ -100,7 +98,7 @@ const noteWhy = style({
 const noteFix = style({ font: 'ui-xs', color: 'gray-800', marginTop: 4 });
 const noteActs = style({ display: 'flex', gap: 8, marginTop: 8 });
 
-/** 任务页卡片上：原因一句、怎么办一句、全部重试 / 全部跳过。没有没导入的不画。 */
+/** On the task-page card: one line for the reason, one for what to do, and retry all / skip all. Not drawn when nothing is unimported. */
 export function LegacyImportCardNote() {
   const run = useLegacyImport((s) => s.run);
   const act = useLegacyActions();
@@ -217,7 +215,7 @@ function Stat({ n, label, tone }: { n: number; label: string; tone?: 'positive' 
   );
 }
 
-/** 一节里的行：先列 FOLD 行，其余一颗「展开」。 */
+/** Rows in a section: the first FOLD rows are listed, and the rest sit behind one "Expand" button. */
 function Fold<T>({ items, render }: { items: readonly T[]; render(item: T): ReactNode }) {
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, FOLD);
@@ -309,7 +307,7 @@ function ProblemGroup({ group, act }: { group: Group; act: ReturnType<typeof use
   );
 }
 
-/** 任务详情：标题、状态行、进度，然后是计数与各节（设计稿 `LegacyImportTaskPanel`）。 */
+/** Task detail: title, status line, progress, then the counts and sections (mockup `LegacyImportTaskPanel`). */
 export function LegacyImportDetail({ row, run, backButton }: { row: TaskRow; run: LegacyImportRun; backButton: ReactNode }) {
   const now = useNow(1000, row.live);
   const act = useLegacyActions();
@@ -453,12 +451,12 @@ const bannerIcon = style({
 });
 const bannerBody = style({ flexGrow: 1, minWidth: 0 });
 const bannerTitle = style({ font: 'title-sm', color: 'gray-900' });
-/** 在跑时那一句只占一行；跑完的原因要读全，换行。 */
+/** The line shown while running takes only one line; the reasons once finished must be read in full, so they wrap. */
 const bannerDetail = style({ font: 'ui-sm', color: 'gray-600', marginTop: 2, truncate: true });
 const bannerReason = style({ font: 'ui-sm', color: 'gray-800', marginTop: 2 });
 const bannerProgress = style({ marginTop: 8, maxWidth: 360 });
 
-/** Home 顶上那一条：在跑报进度，跑完留了没导入的报结果与原因（可以关掉，新的结果会再出来）。 */
+/** The strip at the top of Home: while running it reports progress; when finished and some projects were left unimported, it reports the result and the reason (it can be dismissed; new results will appear again). */
 export function LegacyImportBanner() {
   const platform = useRuntime().host.platform;
   const run = useLegacyImport((s) => s.run);

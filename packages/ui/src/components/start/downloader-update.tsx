@@ -12,31 +12,31 @@ import { ST } from './start-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * 下载工具卡片里的「更新」一节（产品设计 §2.7；设计稿 tool-link.jsx 的 `UpdateSection`）：按探测出的安装方式给一行命令，
- * 右边是执行（三角）与复制。看到的就是要执行的那一条，点执行即执行、不再弹确认；执行中三角换成停止，输出显示在命令下面。
- * 判断不了安装方式时按 Runtime 所在主机列常用命令（Windows 四条、其他系统三条），要管理员权限时给 Runtime 写好的那条
- * （macOS 与 Linux 上带 `sudo`），都只能复制。状态与动作由卡片交进来。
+ * The “更新” (Update) section in the download tool card (product design §2.7; design draft tool-link.jsx `UpdateSection`): based on the detected install method, it shows one line of command,
+ * with Run (triangle) and Copy on the right. What you see is the command that will run; pressing Run runs it with no further confirmation; while it runs, the triangle becomes Stop and the output shows below the command.
+ * When the install method cannot be determined, common commands for the Runtime's host platform are listed (four for Windows, three for other systems); where admin rights are needed, the command the Runtime wrote is given
+ * (with `sudo` on macOS and Linux). These can only be copied. Status and actions are passed in from the card.
  */
 
-/** 卡片里这一次更新的状态（`useDownloader` 的 `update`）。 */
+/** This update's status in the card (`update` from `useDownloader`). */
 export interface DownloaderUpdateRun {
   jobId: string;
-  /** 更新前的版本（点执行时记下的，或任务记录里的）。 */
+  /** Version before the update (recorded when Run was pressed, or taken from the task record). */
   before: string | null;
-  /** 输出框展开着。 */
+  /** The output box is expanded. */
   open: boolean;
-  /** 任务结束、重新检测完了：此时才说结果，免得版本还没刷新时先说「已是最新」。 */
+  /** The task has finished and re-detection is done: only then report the result, so it does not say “already latest” before the version has refreshed. */
   settled: boolean;
   after: string | null;
 }
 
 export interface DownloaderUpdateProps {
   plan: ExternalToolUpdatePlan | null;
-  /** Runtime 所在主机的平台（状态里的 `platform`）：判断不了安装方式时按它列常用命令。 */
+  /** The platform of the host the Runtime runs on (`platform` in the status): used to list common commands when the install method cannot be determined. */
   platform: string | null;
   run: DownloaderUpdateRun | null;
   job: JobRecord | null;
-  /** 正在提交（点了执行、Runtime 还没回话）。 */
+  /** Submitting (Run was pressed, the Runtime has not replied yet). */
   busy: boolean;
   onRun: (plan: ExternalToolUpdatePlan) => void;
   onStop: (jobId: string) => void;
@@ -78,7 +78,7 @@ const log = style({
 });
 const actions = style({ display: 'flex', alignItems: 'center', gap: 8 });
 
-/** 只有图标的按钮：名字在 `aria-label` 与提示里。 */
+/** Icon-only button: its name is in `aria-label` and the tooltip. */
 function IconAction({ name, onPress, isDisabled, isPending, children }: { name: string; onPress: () => void; isDisabled?: boolean; isPending?: boolean; children: ReactNode }) {
   return (
     <TooltipTrigger delay={400}>
@@ -90,7 +90,7 @@ function IconAction({ name, onPress, isDisabled, isPending, children }: { name: 
   );
 }
 
-/** 一行命令：等宽、可选中；能代为执行的多一颗执行（执行中换成停止），总有复制。 */
+/** One line of command: monospace and selectable; if it can be run on the user's behalf, there is an extra Run button (it becomes Stop while running); Copy is always present. */
 function CommandRow({ command, runner }: { command: string; runner?: { running: boolean; canStop: boolean; busy: boolean; onRun: () => void; onStop: () => void } }) {
   return (
     <div className={row}>
@@ -113,7 +113,7 @@ function CommandRow({ command, runner }: { command: string; runner?: { running: 
   );
 }
 
-/** 命令下面的输出：执行中逐行追加并跟到最后（用户往上翻着看时不抢滚动条）；结束后一句结果，输出可收起。 */
+/** Output below the command: while running, lines are appended and it follows to the bottom (it does not fight the scrollbar when the user scrolls up); after it ends, a one-line result, and the output can be collapsed. */
 function UpdateOutput({ run, job, onToggle, onClose }: { run: DownloaderUpdateRun; job: JobRecord | null; onToggle: () => void; onClose: () => void }) {
   const live = !job || isJobLive(job);
   const running = live || !run.settled;

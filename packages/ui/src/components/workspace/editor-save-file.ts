@@ -4,7 +4,7 @@ import type { HostBridge } from '../../host.ts';
 import { shortenPath } from '../../model/format.ts';
 import { downloadBlob } from '../media/gif.ts';
 
-/** 导出的文案（设计稿 `DESIGN`，docs/design/canvas §8.3）。 */
+/** Export copy (design draft `DESIGN`, docs/design/canvas §8.3). */
 export interface EditorExportCopy {
   exportMenu: string;
   exportHtml: string;
@@ -18,9 +18,9 @@ export interface EditorExportCopy {
 }
 
 /**
- * 保存编辑器交来的导出文件（`editor:save-file`）：桌面端弹系统存储对话框、主进程写入（`host.saveFile`），存好后提示路径；
- * Web 没有本机路径，按扩展名给文件类型后交给浏览器下载，浏览器自己显示下载。扩展名不在允许的范围里、写不进去时提示，回 `failed`；
- * 在对话框里取消回 `declined`，编辑器不再提示。
+ * Save an export file handed over by the editor (`editor:save-file`). On desktop, show the system save dialog and let the main process write it (`host.saveFile`), then show the saved path.
+ * The web has no local paths, so it picks a file type from the extension and hands the file to the browser to download; the browser shows the download itself. If the extension is not allowed or the write fails, show a message and return `failed`.
+ * Cancelling the dialog returns `declined`, and the editor stops prompting.
  */
 export async function saveEditorFile(
   host: Pick<HostBridge, 'saveFile'>,

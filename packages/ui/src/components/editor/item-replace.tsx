@@ -3,10 +3,10 @@ import { create } from 'zustand';
 import { AssetReplaceDialog } from './asset-replace-dialog.tsx';
 
 /**
- * 画布工具条的「替换视频 / 替换图片」：开素材库那一个替换窗口，只换选中的这一段（asset-replace.ts 的 `itemId`）。
- * 窗口常驻挂在时间线上（timeline-menu.tsx，与「改译文并重配」一处）：工具条跟着选中框走，替换落地后旧片段换成新 ID，
- * 条子会收起，窗口不能挂在条子里；也不挂在舞台里，免得窗口里的指针事件冒泡到舞台的选择与拖动。
- * 打开时记下片段与素材：落地之后旧片段不在了，窗口照样收尾（回执与撤销提示），不看片段还在不在。
+ * The “Replace video / Replace image” entries on the canvas toolbar: open the media library in a single replace window that swaps only the selected clip (`itemId` in asset-replace.ts).
+ * The window is mounted permanently on the timeline (timeline-menu.tsx, next to “Edit translation and redub”): the toolbar follows the selection frame, and after a replacement lands the old clip gets a new ID,
+ * so the toolbar collapses; the window must not sit inside the toolbar, nor on the stage, so that pointer events in the window do not bubble up to the stage's selection and dragging.
+ * The clip and asset are recorded on open: after landing the old clip is gone, but the window still finishes up (receipt and undo hint), regardless of whether the clip still exists.
  */
 interface Target {
   itemId: Id;

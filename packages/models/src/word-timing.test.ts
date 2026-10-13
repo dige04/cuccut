@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Segment } from './worker-contract.ts';
 import { estimateWords, fixWordTimes, secondsToTicks, splitIntoWordPairs } from './word-timing.ts';
 
-/** 与 Rust 端 `word_timing.rs`、`text_prep.rs` 的测试同样的用例，加上 TS 侧的边界。 */
+/** The same cases as the tests for `word_timing.rs` and `text_prep.rs` on the Rust side, plus the edge cases on the TS side. */
 
 const close = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 

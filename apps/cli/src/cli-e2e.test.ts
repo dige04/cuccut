@@ -12,8 +12,8 @@ import { startRuntime, type RunningRuntime } from '../../../packages/runtime-cor
 import { isProcessAlive } from './runtime/connection.ts';
 
 /**
- * 端到端：把 CLI 当子进程跑（`node apps/cli/src/main.ts`），对着隔离 CUCCUT_HOME 里的真实 Runtime。
- * 输出不是终端，所以默认是 JSON 信封；断言信封、退出码与落盘。需要 engine-host 与 ffmpeg，缺了就跳过。
+ * End-to-end: runs the CLI as a child process (`node apps/cli/src/main.ts`) against a real Runtime in an isolated CUCCUT_HOME.
+ * Output is not a terminal, so the default is the JSON envelope; asserts the envelope, exit codes and files written to disk. Requires engine-host and ffmpeg; skipped if they are missing.
  */
 
 const MAIN = fileURLToPath(new URL('./main.ts', import.meta.url));
@@ -53,7 +53,7 @@ function cli(args: string[], options: { cwd: string; home: string; env?: Record<
         try {
           json = JSON.parse(stdout);
         } catch {
-          // 不是 JSON 的输出（帮助文字）由各个用例自己看。
+          // Non-JSON output (help text) is checked by each case itself.
         }
         resolve({ code, stdout, stderr, json });
       },
@@ -154,7 +154,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
       expect(ran.code, ran.stdout).toBe(0);
       expect(ran.json.result).toMatchObject({ videoId, name: 'CLI 样片' });
     }
-    // 两个都给是用法错误。
+    // Giving both is a usage error.
     const both = await run(['videos', 'inspect', videoId, '--video', videoId]);
     expect(both.code).toBe(4);
     expect(both.json.error.code).toBe('INVALID_ARGUMENTS');
@@ -203,7 +203,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
 
   it('transcribe --file … --no-wait：提交就返回', async () => {
     const ran = await run(['transcribe', '--file', clip, '--no-video', '--no-wait']);
-    // 这台测试 Runtime 没配转写能力：要么提交成功返回 jobId，要么在提交前就报需要配置（退出码 2）。
+    // This test Runtime has no transcription capability configured: either submission succeeds and returns a jobId, or it reports before submission that configuration is needed (exit code 2).
     if (ran.code === 0) {
       expect(ran.json.result.jobId).toMatch(/^job_/);
     } else {
@@ -240,7 +240,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(settings.code, settings.stdout + settings.stderr).toBe(0);
     expect(settings.json.ok).toBe(true);
 
-    // `jobs list` 是派生命令，`jobs resources` 是管理命令。
+    // `jobs list` is a derived command; `jobs resources` is an admin command.
     const jobs = await run(['jobs', 'list']);
     expect(jobs.code, jobs.stdout + jobs.stderr).toBe(0);
     const resources = await run(['jobs', 'resources']);
@@ -291,7 +291,7 @@ describe('runtime ensure / stop（隔离 CUCCUT_HOME，从仓库入口拉起）'
     const status = await run(['runtime', 'status']);
     expect(status.json.result).toMatchObject({ running: true, pid, launchedBy: 'cli', desktopConnected: false });
     expect(status.json.result.idleExit.minutes).toBe(10);
-    // 查状态本身不让空闲计时清零：再查一次，idleSince 不变。
+    // Checking status itself does not reset the idle timer: check again and idleSince does not change.
     expect(status.json.result.idleExit.idleSince).toEqual(expect.any(String));
     const again = await run(['runtime', 'status']);
     expect(again.json.result.idleExit.idleSince).toBe(status.json.result.idleExit.idleSince);

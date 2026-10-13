@@ -8,21 +8,20 @@ import { PipelineStepError } from './pipeline.ts';
 import { redactUrlsInText } from './link-url.ts';
 
 /**
- * 用 yt-dlp 解析与下载（架构设计 §7.9、§12.9）。
+ * Parsing and downloading with yt-dlp (architecture design §7.9, §12.9).
  *
- * - 参数总是一个数组，不经 shell；链接放在 `--` 之后，不会被当成选项。
- * - 每次都带 `--ignore-config`（不读用户的配置文件，那里可以写 `--exec`）、`--no-plugin-dirs`（不加载插件）、
- *   `--no-cache-dir`、`--no-playlist`；输出模板固定在 staging 里，文件名不取自网页。
- * - 进度只取工具自己报告的字节数（`--progress-template`），不知道总数时不报总数。
- * - 中止时向整个进程组发 SIGTERM，宽限之后 SIGKILL（yt-dlp 合并时会起 ffmpeg 子进程），等它退出才返回。
- *   Windows 上没有进程组：用 taskkill /T /F 结束整棵进程树（PyInstaller 打包的 yt-dlp.exe 自己也会派生子进程）。
+ * - Arguments are always an array and do not go through a shell. The link goes after `--`, so it is never taken as an option.
+ * - Always passes `--ignore-config` (does not read the user's config file, where `--exec` could be written), `--no-plugin-dirs` (does not load plugins), `--no-cache-dir`, and `--no-playlist`. The output template is fixed inside staging, and the file name is not taken from the web page.
+ * - Progress uses only the byte counts the tool itself reports (`--progress-template`). When the total is unknown, no total is reported.
+ * - On abort, SIGTERM is sent to the whole process group, then SIGKILL after a grace period (yt-dlp starts ffmpeg child processes when merging). It returns only after the process has exited.
+ *   On Windows there are no process groups: the whole process tree is ended with taskkill /T /F (the PyInstaller-packaged yt-dlp.exe also spawns child processes itself).
  */
 
 const KILL_GRACE_MS = 2000;
 const STDERR_TAIL = 6000;
 const STDOUT_LIMIT = 64 * 1024 * 1024;
 
-/** 进度行的前缀；模板的字段依次是已下载、总数、估计的总数（不知道时是 `NA`）。 */
+/** Prefix of a progress line. The template fields are, in order, downloaded, total, and estimated total (`NA` when unknown). */
 export const PROGRESS_PREFIX = 'ccut-progress';
 const PROGRESS_TEMPLATE = `download:${PROGRESS_PREFIX} %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s`;
 
@@ -30,7 +29,7 @@ const COMMON_ARGS = ['--ignore-config', '--no-plugin-dirs', '--no-cache-dir', '-
 
 export interface YtDlpTool {
   command: string;
-  /** 用解释器运行脚本时的固定参数；同样不经 shell。 */
+  /** Fixed arguments when running a script through an interpreter. Likewise not through a shell. */
   args?: readonly string[];
   env?: NodeJS.ProcessEnv;
 }
@@ -43,27 +42,27 @@ function cookieArgs(browser?: CookieBrowser): string[] {
   return ['--cookies-from-browser', browser];
 }
 
-/** 解析链接：只取元数据（单个 JSON），不下载。 */
+/** Resolves a link: fetches only the metadata (a single JSON), without downloading. */
 export function resolveArgs(url: string, browser?: CookieBrowser): string[] {
   return [...COMMON_ARGS, ...cookieArgs(browser), '--dump-single-json', '--skip-download', '--', url];
 }
 
 export interface DownloadOptions {
   cookieBrowser?: CookieBrowser;
-  /** 输出模板（staging 里的绝对路径，带 `%(ext)s`）。 */
+  /** Output template (absolute path inside staging, with `%(ext)s`). */
   output: string;
   audioOnly: boolean;
   subtitleLanguages: readonly string[];
-  /** 给了时用这个 ffmpeg 合并音视频。 */
+  /** When given, this ffmpeg is used to merge audio and video. */
   ffmpegLocation?: string | null;
 }
 
-/** 下载媒体（与可选的字幕）。 */
+/** Downloads the media (and optional subtitles). */
 export function downloadArgs(url: string, options: DownloadOptions): string[] {
   // Metadata can advertise CDN formats that are no longer downloadable. Let yt-dlp reject them before selecting a stream.
   const args = [...COMMON_ARGS, ...cookieArgs(options.cookieBrowser), '--check-formats', '--newline', '--progress-template', PROGRESS_TEMPLATE, '--no-mtime', '-o', options.output];
-  // 默认要 MP4：画面与声音优先挑 MP4 / M4A 的流、合并成 MP4，浏览器与 Electron 直接播放，不用先转换。网站没有时退回
-  // 最好的任意格式；合并时 MP4 装不下的编码（VP9 + Opus 一类）放进 WebM，再不行放进 MKV。
+  // Defaults to MP4: video and audio prefer MP4 / M4A streams, merged into MP4 so the browser and Electron can play them directly without converting first. When the site has none, falls back to the best format of any kind;
+  // when merging, codecs MP4 cannot hold (such as VP9 + Opus) go into WebM, and failing that, into MKV.
   args.push('-f', options.audioOnly ? 'ba[ext=m4a]/ba/b' : 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b');
   if (!options.audioOnly) args.push('--merge-output-format', 'mp4/webm/mkv');
   if (options.ffmpegLocation) args.push('--ffmpeg-location', options.ffmpegLocation);
@@ -72,7 +71,7 @@ export function downloadArgs(url: string, options: DownloadOptions): string[] {
   return args;
 }
 
-/** 一行进度：已下载的字节数与总数（不知道时 null）。不是进度行时 null。 */
+/** One progress line: downloaded bytes and total (null when the total is unknown). null when the line is not a progress line. */
 export function parseProgressLine(line: string): { downloaded: number; total: number | null } | null {
   const parts = line.trim().split(/\s+/);
   if (parts[0] !== PROGRESS_PREFIX || parts.length < 4) return null;
@@ -86,8 +85,7 @@ export function parseProgressLine(line: string): { downloaded: number; total: nu
 }
 
 /**
- * 逐个流累计的字节进度：yt-dlp 分别下载画面与声音，每个流的计数从 0 开始。前一个流结束时它的字节数计入基数；
- * 总数只在当前流的总数已知时给出（基数加当前流的总数），不预先猜后面还有多少。
+ * Byte progress accumulated across streams. yt-dlp downloads video and audio separately, and each stream's count starts from 0. When a stream finishes, its byte count is added to the base. The total is given only when the current stream's total is known (base plus the current stream's total); it does not guess in advance how much remains.
  */
 export class ProgressTracker {
   #base = 0;
@@ -109,7 +107,7 @@ export interface RunResult {
   stderr: string;
 }
 
-/** 执行一次 yt-dlp。`onLine` 收到逐行的标准输出（下载时；解析时整段收集）。 */
+/** Runs yt-dlp once. `onLine` receives standard output line by line (during download; while parsing, the whole output is collected at once). */
 export async function runYtDlp(
   tool: YtDlpTool,
   args: string[],
@@ -117,7 +115,7 @@ export async function runYtDlp(
     signal: AbortSignal;
     onLine?: (line: string) => void;
     keepStdout?: boolean;
-    /** 测试注入。 */
+    /** Injected for tests. */
     platform?: NodeJS.Platform;
     spawn?: SpawnProcess;
   },
@@ -173,8 +171,8 @@ export async function runYtDlp(
 }
 
 /**
- * 失败的种类与给人看的补救（命令与协议规范 §11.3），记进错误的 `details.remedy`：按当前语言生成的文字（`details` 没有引用字段）。
- * 不认识的种类 undefined。
+ * Failure kinds and the remedy shown to people (command and protocol spec §11.3), recorded in the error's `details.remedy` as text generated in the current language (`details` has no reference field).
+ * undefined for unrecognized kinds.
  */
 export function linkFailureRemedy(code: string): string | undefined {
   const remedies: Record<string, () => Localized> = {
@@ -190,7 +188,7 @@ export function linkFailureRemedy(code: string): string | undefined {
   return remedies[code]?.().text;
 }
 
-/** 按 yt-dlp 的报错（标准错误的结尾）判断失败的种类。链接在报错里一律脱敏。 */
+/** Classifies the failure from yt-dlp's error (the end of standard error). Links are always redacted in errors. */
 export function classifyFailure(stderr: string, exitCode: number | null): PipelineStepError {
   const text = redactUrlsInText(stderr).trim();
   const errorLine =
@@ -207,7 +205,7 @@ export function classifyFailure(stderr: string, exitCode: number | null): Pipeli
     }
     if (/update.*yt-dlp|yt-dlp.*outdated|signature extraction failed|nsig extraction failed|Unable to extract/i.test(errorLine)) return 'LINK_TOOL_UPDATE_REQUIRED';
     if (/Unsupported URL|is not a valid URL|no suitable extractor/i.test(errorLine)) return 'LINK_UNSUPPORTED';
-    // 旧提取器常在读完元数据后遇到 CDN 403；工具已明确报告过期时先更新，不误导用户交出浏览器 Cookie。
+    // Old extractors often hit a CDN 403 after reading the metadata. When the tool clearly reports that it is outdated, update first, and do not mislead the user into handing over browser cookies.
     if (
       /Your yt-dlp version .+ is older than \d+ days|yt-dlp.*outdated/i.test(text) &&
       /HTTP Error 403|403: Forbidden/i.test(errorLine) &&
@@ -238,19 +236,18 @@ export function classifyFailure(stderr: string, exitCode: number | null): Pipeli
     }
     return 'LINK_DOWNLOAD_FAILED';
   })();
-  // 工具的原话照原样；没有时说明退出码。
+  // Use the tool's own words as they are. When there are none, state the exit code.
   const message: JobText = errorLine.replace(/^ERROR:\s*/, '').slice(0, 300) || JobsYtDlp.exited({ code: exitCode });
   return new PipelineStepError(code, message, { exitCode, stderr: text.slice(-1000), remedy: linkFailureRemedy(code) });
 }
 
-/** 换下一个浏览器的 Cookie 可能有用的失败：读不到这个浏览器的 Cookie，或网站仍要求登录。别的失败换浏览器也一样。 */
+/** Failures for which trying the next browser's cookies may help: this browser's cookies cannot be read, or the site still requires login. Other failures are the same whichever browser is tried. */
 export function worthAnotherCookieBrowser(error: PipelineStepError): boolean {
   return error.code === 'LINK_COOKIES_UNAVAILABLE' || error.code === 'LINK_LOGIN_REQUIRED';
 }
 
 /**
- * 逐个试过的浏览器都没成功（每一次都是 `worthAnotherCookieBrowser`）：有一个是网站要求登录时按要登录报（Cookie 读到了，
- * 只是没登录），否则按读不到 Cookie 报；`details.attempts` 是每个浏览器的结果。只试了一个时原样报那一次的失败。
+ * Every browser tried failed (each time with `worthAnotherCookieBrowser`). If any of them failed because the site required login, report it as a login requirement (the cookies were read, but the user was not logged in). Otherwise report that the cookies could not be read. `details.attempts` holds each browser's result. When only one browser was tried, report that failure as it was.
  */
 export function cookieAttemptsFailure(attempts: ReadonlyArray<{ browser: CookieBrowser; error: PipelineStepError }>): PipelineStepError {
   const last = attempts.at(-1)!.error;
@@ -267,8 +264,7 @@ export function cookieAttemptsFailure(attempts: ReadonlyArray<{ browser: CookieB
 }
 
 /**
- * 发布用的文件名：去掉控制字符与路径、保留字符（`/ \ : * ? " < > |`），不以点开头，压缩空白，至多 120 个字符；
- * 什么都不剩时用 `download`。空格与单引号保留（参数不经 shell）。
+ * File name for publishing: removes control characters and path and reserved characters (`/ \ : * ? " < > |`), does not start with a dot, collapses whitespace, and is at most 120 characters. When nothing remains, uses `download`. Spaces and single quotes are kept (arguments do not go through a shell).
  */
 export function sanitizeFileName(title: string | null | undefined): string {
   const cleaned = [...(title ?? '')]
@@ -282,7 +278,7 @@ export function sanitizeFileName(title: string | null | undefined): string {
   return limited || 'download';
 }
 
-/** 解析出的元数据里流程用到的部分（都可能缺）。 */
+/** The parts of the parsed metadata that the pipeline uses (any of them may be missing). */
 export interface LinkMetadata {
   title: string | null;
   platform: string | null;
@@ -291,31 +287,31 @@ export interface LinkMetadata {
   uploadDate: string | null;
   durationSec: number | null;
   webpageUrl: string | null;
-  /** 视频简介（去掉首尾空白，最多 20000 个字符）：润色与识别说话人时的背景，没有自带章节时从中解析时间戳大纲。之前的版本没有这个字段。 */
+  /** Video description (trimmed, at most 20000 characters): background for polishing and speaker identification. When the video has no chapters of its own, a timestamp outline is parsed from it. Earlier versions did not have this field. */
   description: string | null;
-  /** 平台给的章节（info JSON 的 `chapters[]`，源时间秒）：按起点排序、同起点去重，最多 400 条；没有时 null。之前的版本没有这个字段。 */
+  /** Chapters provided by the platform (`chapters[]` in the info JSON, source time in seconds): sorted by start, duplicates with the same start removed, at most 400 entries. null when there are none. Earlier versions did not have this field. */
   chapters: LinkChapter[] | null;
 }
 
-/** 平台给的一章：作者写的标题与起点（秒），平台给了终点时带 `end`。 */
+/** One chapter provided by the platform: the author's title and start (seconds). Includes `end` when the platform provides one. */
 export interface LinkChapter {
   start: number;
   end?: number;
   title: string;
 }
 
-/** 简介最多保留的字符数。 */
+/** Maximum number of characters kept from the description. */
 const MAX_DESCRIPTION_CHARS = 20_000;
-/** 章节最多保留的条数与标题长度（与字幕与翻译核心的 `source_chapters` 相同）。 */
+/** Maximum number of chapters kept and maximum title length (the same as `source_chapters` in the subtitle and translation core). */
 const MAX_CHAPTERS = 400;
 const MAX_CHAPTER_TITLE_CHARS = 160;
 
-/** 按字符（码点）截断，不切开代理对。 */
+/** Truncates by character (code point), without splitting a surrogate pair. */
 function clipChars(text: string, max: number): string {
   return text.length <= max ? text : [...text].slice(0, max).join('');
 }
 
-/** info JSON 的 `chapters[]`：丢掉起点不是有限非负数、标题为空的条目；终点不比起点大时不要。 */
+/** `chapters[]` of the info JSON: drops entries whose start is not a finite non-negative number or whose title is empty. The end is omitted when it is not later than the start. */
 export function parseChapters(raw: unknown): LinkChapter[] | null {
   if (!Array.isArray(raw)) return null;
   const chapters: LinkChapter[] = [];
@@ -332,7 +328,7 @@ export function parseChapters(raw: unknown): LinkChapter[] | null {
   return unique.length > 0 ? unique : null;
 }
 
-/** 读 `--dump-single-json` 的输出。不是单个视频（播放列表、直播）时 `LINK_UNSUPPORTED`。 */
+/** Reads the output of `--dump-single-json`. When it is not a single video (a playlist or a live stream), throws `LINK_UNSUPPORTED`. */
 export function parseMetadata(stdout: string): LinkMetadata {
   let data: Record<string, unknown>;
   try {

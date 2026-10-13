@@ -11,7 +11,7 @@ import {
 } from './slide-annotations.ts';
 import { useDraftSlideAnnotations } from '../state/draft-slide-annotations-store.ts';
 
-// 用例移植自原型 designs/cuccut/app/model-home-slides.test.js（加、删、编号标记），deck 换成协议的 FileTarget。
+// Test cases ported from the prototype designs/cuccut/app/model-home-slides.test.js (add, remove, number markers), with the deck replaced by the protocol's FileTarget.
 const deck1: FileTarget = { conversationId: 'c1', path: 'talk/deck.json' };
 const deck2: FileTarget = { projectId: 'p1', path: 'slides/intro/deck.json' };
 const note = (over: Partial<DraftSlideAnnotation> = {}): DraftSlideAnnotation => ({
@@ -46,7 +46,7 @@ describe('幻灯片标注草稿', () => {
       { id: 'n2', anchor: 's02#list', n: 2 },
       { id: 'n4', anchor: 's01#title', n: 4 },
     ]);
-    // 同一份 deck 换了对象也认（按 targetKey 比较）
+    // The same deck is still recognized when the object is swapped (compared by targetKey)
     expect(deckThreads(notes, { projectId: 'p1', path: 'slides/intro/deck.json' })).toEqual([{ id: 'n3', anchor: 's01#title', n: 3 }]);
   });
 

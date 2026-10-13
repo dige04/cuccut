@@ -35,7 +35,7 @@ import { tr } from './dub-setup.tr.ts';
 import { vi } from './dub-setup.vi.ts';
 import { remedyHintText } from './localized-text.ts';
 
-/** 配音设置模型的文案（英文是键与类型的来源，译文在 `dub-setup.zh-Hans.ts`）。 */
+/** Copy for the dub setup model (English is the source of keys and types; translations are in `dub-setup.zh-Hans.ts`). */
 const en = {
   useExisting: (name: string) => `Use existing translation · ${name}`,
   translateFirst: (language: string) => `${language} · Translate first`,
@@ -73,43 +73,41 @@ export type DubSetupMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 翻译配音设置页（设计稿 panel-dub-setup.jsx `DubSetup`）的纯逻辑：配成哪种语言（已有译文或先翻译）、每位说话人生效的音色、
- * 交给 `pipelines.start`（`dub`）的参数，以及第一次配音被 `GRANT_REQUIRED` 拒绝时要发的那条授权。
- * 设计稿里的引擎自动挑选、本机模型下载、注音、时长对比与样片都是本机引擎的模拟，Runtime 的 `dub` 合同里没有，这里不做。
+ * Pure logic for the translated-dub setup page (design draft panel-dub-setup.jsx `DubSetup`): which language is chosen (an existing translation, or translate first), the voice in effect for each speaker, the parameters handed to `pipelines.start` (`dub`), and the grant to send when the first dub is rejected with `GRANT_REQUIRED`.
+ * The design draft's automatic engine choice, local model download, 注音 (phonetic annotation), duration comparison and sample clips are simulations of the local engine. They are not part of the Runtime's `dub` contract, so they are not done here.
  */
 
 export const DUB_PIPELINE = 'dub';
 export const DEFAULT_DUCK_DB = 18;
 export const DUCK_DB_MIN = 1;
 export const DUCK_DB_MAX = 60;
-/** 风格提示的上限（与翻译同）。 */
+/** Upper limit for style hints (same as translation). */
 export const DUB_STYLE_MAX = 500;
-/** 授权用途的上限（`grants.create` 的 `purpose`）。 */
+/** Upper limit for the grant's purpose (`purpose` of `grants.create`). */
 export const GRANT_PURPOSE_MAX = 200;
 
-/** 压低多少 dB：1–60 的整数（Runtime 按整数收）；不是数时用默认的 12。 */
+/** How many dB to lower: an integer from 1 to 60 (the Runtime accepts integers). The default 12 when it is not a number. */
 export function clampDuckDb(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_DUCK_DB;
   return Math.min(DUCK_DB_MAX, Math.max(DUCK_DB_MIN, Math.round(value)));
 }
 
-// ---- 配成哪种语言 ----
+// ---- Which language ----
 
 export interface DubLanguageOption {
-  /** `doc:<译文 ID>` 用已有译文；`lang:<标签>` 先翻译成这门语言。 */
+  /** `doc:<translation ID>` uses an existing translation. `lang:<tag>` translates into this language first. */
   key: string;
-  /** 这门语言自己的叫法。 */
+  /** The language's own name. */
   label: string;
   description: string;
   language: string;
   translationId: Id | null;
-  /** 不能选的原因（和原文同一种语言）；能选时 null。 */
+  /** The reason it cannot be chosen (same language as the source). null when it can be chosen. */
   disabled: string | null;
 }
 
 /**
- * 语言下拉：先列这份转写已有的译文（用它，语言跟着它走），再列常用语言（先翻译）。已有译文的语言不再列「先翻译」：
- * 一门语言一份译文，要重翻在字幕面板里做。
+ * Language dropdown: lists this transcript's existing translations first (use one, and the language follows it), then common languages (translate first). Languages that already have a translation are not listed with “translate first”: there is one translation per language, and redoing it is done in the subtitle panel.
  */
 export function dubLanguageOptions(sourceLanguage: string | null, translations: readonly DocumentRecord[]): DubLanguageOption[] {
   const docs: DubLanguageOption[] = translations
@@ -133,7 +131,7 @@ export function dubLanguageOptions(sourceLanguage: string | null, translations: 
   return [...docs, ...fresh];
 }
 
-/** 默认选哪一项：有已有译文时第一份；否则原文是中文时英语、别的简体中文；都不能选时第一项能选的。 */
+/** Which item is selected by default: the first existing translation when there is one. Otherwise, English when the source is Chinese, else another Simplified Chinese. When none can be chosen, the first selectable item. */
 export function defaultDubLanguage(options: readonly DubLanguageOption[], sourceLanguage: string | null): string | null {
   const doc = options.find((o) => o.translationId !== null && !o.disabled);
   if (doc) return doc.key;
@@ -141,32 +139,31 @@ export function defaultDubLanguage(options: readonly DubLanguageOption[], source
   return (options.find((o) => o.key === preferred && !o.disabled) ?? options.find((o) => !o.disabled))?.key ?? null;
 }
 
-// ---- 参数 ----
+// ---- Parameters ----
 
 export interface DubSetup {
   videoId: Id;
-  /** 原文（`speech`）。用已有译文时 Runtime 取译文的来源，这里不传。 */
+  /** The source text (`speech`). When an existing translation is used, the Runtime takes the source from the translation, so it is not passed here. */
   speechDocumentId: Id;
-  /** 已有的译文；null 时先翻译成 `targetLanguage`。 */
+  /** An existing translation. When null, translate into `targetLanguage` first. */
   translationId: Id | null;
   targetLanguage: string;
-  /** 语音合成的 Provider 与模型；null 时用语音合成的默认值。 */
+  /** The speech synthesis Provider and model. When null, the speech synthesis default is used. */
   voiceModel: { providerId: string; modelId: string } | null;
-  /** 没有绑定音色的说话人用的音色；null 时用模型的默认音色。 */
+  /** The voice for speakers without a bound voice. When null, the model's default voice is used. */
   voice: string | null;
-  /** 先翻译时用的文本模型；null 时用文本生成的默认值。 */
+  /** The text model used when translating first. When null, the text generation default is used. */
   textModel: { providerId: string; modelId: string } | null;
   style: string;
   originalAudio: DubOriginalAudio;
   duckDb: number;
-  /** 先分离人声与背景（`separateBackground`）：背景声单独成轨，原声只剩人声（静音或压低）；`keep` 时 Runtime 不分离。 */
+  /** Separate vocals and background first (`separateBackground`): the background sound becomes its own track, and the original audio keeps only the vocals (muted or lowered). When `keep`, the Runtime does not separate. */
   separateBackground: boolean;
 }
 
 /**
- * `pipelines.start` 的 `params`：只放流程认得的键。给了 `translationId` 时不翻译，`targetLanguage`、`style` 与文本模型都不传
- * （Runtime 拒绝这种组合，语言跟着译文走）。术语表不在这里传：先翻译时用视频里启用的（与翻译同）。
- * 分离只在打开时传 `separateBackground: true`（与 CLI 的 `--separate-background` 相同），没有分离模型时 Runtime 跳过这一步并告警。
+ * `params` for `pipelines.start`: only keys the flow recognizes. When `translationId` is given, there is no translation, so `targetLanguage`, `style` and the text model are not passed either. The Runtime rejects that combination, and the language follows the translation. The glossary is not passed here: when translating first, the glossary enabled in the video is used (same as translation).
+ * Separation is passed only as `separateBackground: true` when it is turned on (same as the CLI's `--separate-background`). Without a separation model, the Runtime skips the step and warns.
  */
 export function dubParams(setup: DubSetup): DubParams {
   const voice = setup.voice?.trim();
@@ -189,19 +186,19 @@ export function dubParams(setup: DubSetup): DubParams {
   };
 }
 
-// ---- 说话人与音色 ----
+// ---- Speakers and voices ----
 
 export interface SpeechSpeaker {
   speakerId: string;
   name: string;
-  /** 这位说话人的句数（句子的说话人取它第一个没隐藏的词的，与 Runtime 一致）。 */
+  /** The sentence count for this speaker. A sentence's speaker is taken from its first unhidden word, as the Runtime does. */
   sentences: number;
 }
 
 type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** 转写里的说话人与各自的句数；没有说话人信息时为空（所有句子都用参数音色或模型默认）。 */
+/** The speakers in the transcript and their sentence counts. Empty when there is no speaker info (all sentences use the parameter voice or the model default). */
 export function speechSpeakers(body: unknown): SpeechSpeaker[] {
   const sentences = speechSentences(body);
   if (!sentences || !isObject(body)) return [];
@@ -224,19 +221,19 @@ export function speechSpeakers(body: unknown): SpeechSpeaker[] {
     const first = sentence.wordIds.map((id) => words.get(id)).find((w) => w && !w.hidden);
     if (first?.speaker) counts.set(first.speaker, (counts.get(first.speaker) ?? 0) + 1);
   }
-  // 先按转写里说话人的次序，再是没登记名字的。
+  // Ordered by speaker appearance in the transcript first, then speakers without a registered name.
   const order = [...names.keys(), ...[...counts.keys()].filter((id) => !names.has(id))];
   return order.filter((id) => counts.has(id)).map((id) => ({ speakerId: id, name: names.get(id) ?? id, sentences: counts.get(id)! }));
 }
 
 const LIBRARY_PREFIX = 'library:';
 
-/** `library:<id>` 的条目 ID；不是库里的音色时 null。 */
+/** The entry ID for `library:<id>`. null when the voice is not in the library. */
 export function libraryVoiceId(voice: string): string | null {
   return voice.startsWith(LIBRARY_PREFIX) && voice.length > LIBRARY_PREFIX.length ? voice.slice(LIBRARY_PREFIX.length) : null;
 }
 
-/** 音色的短名：库里的取条目名，预置的取模型给的名字，别的照写 ID。 */
+/** A voice's short name: a library voice uses the entry name, a built-in voice uses the name the model gives, and others use the ID as written. */
 export function voiceName(voice: string, info: Pick<SpeechModelInfo, 'voices'> | null, library: readonly LibraryEntrySummary[]): string {
   const id = libraryVoiceId(voice);
   if (id !== null) return library.find((e) => e.id === id)?.name ?? M.missingLibraryVoice(id);
@@ -244,8 +241,7 @@ export function voiceName(voice: string, info: Pick<SpeechModelInfo, 'voices'> |
 }
 
 /**
- * 库里的音色在这家服务商上用不用得上：没有本人声明不上传（`VOICE_CONSENT_REQUIRED`），没有有效克隆不能合成
- * （`VOICE_CLONE_REQUIRED`）。用得上时 null。
+ * Whether a library voice can be used with this provider. Without the person's own declaration of consent it is not uploaded (`VOICE_CONSENT_REQUIRED`). Without a valid clone it cannot be synthesized (`VOICE_CLONE_REQUIRED`). null when it can be used.
  */
 export function libraryVoiceProblem(entry: LibraryEntrySummary | undefined, providerId: string | null, providerLabel: string): string | null {
   if (!entry) return M.voiceRemoved;
@@ -262,18 +258,16 @@ export interface VoiceChoice {
   key: string;
   label: string;
   description: string | null;
-  /** 交给 Runtime（参数 `voice`）或写进绑定的值；`default` 与 `custom` 为 null。 */
+  /** The value handed to the Runtime (parameter `voice`) or written into the binding. `default` and `custom` give null. */
   voice: string | null;
-  /** 预置音色只在这家服务商上有意义：写绑定时带上；库里的音色不带（Runtime 按配音选的服务商换成克隆）。 */
+  /** A built-in voice only makes sense on its own provider: include the provider when writing the binding. Library voices do not include it (the Runtime swaps in the clone for the provider chosen for the dub). */
   providerId?: string;
-  /** 不能选的原因；能选时 null。 */
+  /** The reason it cannot be chosen. null when it can be chosen. */
   disabled: string | null;
 }
 
 /**
- * 音色下拉：模型默认（`defaultLabel`，绑定里写「不绑定」）、模型的预置音色、库里的音色（写清在这家服务商上能不能用）、
- * 手填音色 ID（`custom` 为 true 且模型收手填时）。参数音色用库里的音色时要有有效克隆，否则启动就被拒，所以那时不能选；
- * 绑定可以先绑上、之后再克隆（这次用不上的说话人逐句报告）。
+ * Voice dropdown: the model default (`defaultLabel`; in a binding it is written as “不绑定” (unbound)), the model's built-in voices, library voices (saying clearly whether each works with this provider), and a hand-typed voice ID (when `custom` is true and the model accepts typed IDs). A library voice used as the parameter voice needs a valid clone, or the start is rejected at launch, so it cannot be chosen then. A binding can be set first and cloned later. Sentences that cannot use it this time are reported one by one.
  */
 export function voiceChoices(options: {
   info: SpeechModelInfo | null;
@@ -281,7 +275,7 @@ export function voiceChoices(options: {
   providerLabel: string;
   library: readonly LibraryEntrySummary[];
   defaultLabel: string;
-  /** 参数音色的下拉（库里的音色要能用才能选；可以手填）。 */
+  /** The dropdown for the parameter voice. A library voice can be chosen only if it works. Typing is allowed. */
   forParams: boolean;
 }): VoiceChoice[] {
   const { info, providerId, providerLabel, library, defaultLabel, forParams } = options;
@@ -320,7 +314,7 @@ export function voiceChoices(options: {
   return list;
 }
 
-/** 一个音色值在下拉里对应哪一项；不在里面（别处绑的、换了模型）时 null。 */
+/** Which dropdown item a voice value corresponds to. null when it is not in the list (bound elsewhere, or the model has changed). */
 export function choiceKeyOf(voice: string, choices: readonly VoiceChoice[]): string | null {
   return choices.find((c) => c.voice === voice)?.key ?? null;
 }
@@ -329,19 +323,19 @@ export interface SpeakerRow {
   speakerId: string;
   name: string;
   sentences: number;
-  /** 视频里给这位说话人（这份转写）绑定的音色；没有时 null。 */
+  /** The voice bound in this video to this speaker (in this transcript). null when there is none. */
   binding: SpeakerVoiceBinding | null;
-  /** 绑定的是别家服务商的预置音色：这次不用，退到参数音色或模型默认。 */
+  /** The bound voice is a built-in voice of another provider: it is not used this time, and falls back to the parameter voice or the model default. */
   bindingIgnored: boolean;
-  /** 生效的音色（绑定 → 参数 `voice` → 模型默认）：给人看的名字与来源。 */
+  /** The voice in effect (binding → parameter `voice` → model default): the name shown to people, and its source. */
   effective: { label: string; source: DubVoiceSource };
-  /** 生效的是库里的音色、却在这家服务商上用不上：这位说话人的句子不会合成。 */
+  /** The voice in effect is a library voice that does not work with this provider, so this speaker's sentences will not be synthesized. */
   warning: string | null;
 }
 
 /**
- * 设置页「声音」一节每位说话人一行：生效的音色按 Runtime 的优先级（视频里的绑定 → 参数 `voice` → 模型默认）。
- * 指定了别家服务商的绑定 Runtime 不用（`providerId` 不符），这里同样退下去并写明。
+ * In the setup page's “声音” (voice) section, one row per speaker. The voice in effect follows the Runtime's priority: the binding in the video → the parameter `voice` → the model default.
+ * A binding for another provider is not used by the Runtime (`providerId` does not match). Here it also falls back and says so.
  */
 export function speakerRows(options: {
   speakers: readonly SpeechSpeaker[];
@@ -386,8 +380,7 @@ export function speakerRows(options: {
 }
 
 /**
- * 改一位说话人的绑定：换掉（原位）或去掉这份转写里这位说话人的那条，别的照旧；新的排到最后。`library:` 音色不带
- * `providerId`（Runtime 拒绝），预置音色带上它所在的服务商。
+ * Change one speaker's binding: replace it in place or remove this speaker's entry in this transcript, and leave the others as they are. A new one goes last. `library:` voices do not carry `providerId` (the Runtime rejects it). Built-in voices carry the provider they belong to.
  */
 export function withBinding(
   bindings: readonly SpeakerVoiceBinding[],
@@ -411,9 +404,9 @@ export function withBinding(
   return out;
 }
 
-// ---- 授权 ----
+// ---- Grant ----
 
-/** 第一次配音被拒在授权上：要把哪些数据交给谁、给哪个视频，Runtime 给的补救说明与命令。 */
+/** When the first dub is rejected for lack of a grant: which data goes to whom, for which video, and the Runtime's remedy note and command. */
 export interface GrantRefusal {
   code: 'GRANT_REQUIRED' | 'GRANT_REVOKED';
   message: string;
@@ -427,8 +420,7 @@ export interface GrantRefusal {
 const GRANT_CODES = new Set(['GRANT_REQUIRED', 'GRANT_REVOKED']);
 
 /**
- * 读 `pipelines.start` / `pipelines.retry` 的拒绝：`GRANT_REQUIRED` 或 `GRANT_REVOKED`、补救是「发放授权」时给出要发的那条；
- * 别的拒绝（预算、没有配置……）为 null。接收方、数据种类与视频取 details 顶层的（不去解析命令）。
+ * Reads a rejection from `pipelines.start` / `pipelines.retry`. For `GRANT_REQUIRED` or `GRANT_REVOKED`, when the remedy is “发放授权” (grant access), it gives the message to send. Other rejections (budget, missing config, …) give null. The recipient, data kind and video come from the top-level details (the command is not parsed).
  */
 export function grantRefusal(error: unknown): GrantRefusal | null {
   const details = error instanceof RpcError ? error.details : (error as { details?: unknown } | null)?.details;
@@ -450,20 +442,19 @@ export function grantRefusal(error: unknown): GrantRefusal | null {
   };
 }
 
-/** 同一位接收方、同一组数据种类：发过一次还被拒时不再循环。 */
+/** The same recipient and the same data kinds. When it was sent once and still rejected, do not loop. */
 export function refusalKey(refusal: Pick<GrantRefusal, 'recipient' | 'dataKinds'>): string {
   return `${refusal.recipient}|${[...refusal.dataKinds].sort().join(',')}`;
 }
 
-/** 授权的用途（给人看，`grants.create` 的 `purpose`，最多 200 字）。 */
+/** The purpose of the grant (shown to people; `purpose` in `grants.create`, up to 200 characters). */
 export function grantPurpose(language: string, videoName: string | null): string {
   const what = M.purpose(langName(language), videoName);
   return what.slice(0, GRANT_PURPOSE_MAX);
 }
 
 /**
- * 用户确认之后发的那条授权：数据种类与接收方照拒绝里的（配音是 `transcript`），只限这个视频，用途照设置页写的，
- * 金额未知、按次计、次数不限（`per-call-unknown-cost`，不设金额上限；有上限要 `estimate-cap` 与 `budgetCap`）。
+ * The grant sent after the user confirms. The data kind and recipient follow the rejection (for dubbing it is `transcript`). It is limited to this video. The purpose is as written on the settings page. The amount is unknown and charged per call with no call limit (`per-call-unknown-cost`, no amount cap; a cap needs `estimate-cap` and `budgetCap`).
  */
 export function grantRequest(refusal: Pick<GrantRefusal, 'recipient' | 'dataKinds' | 'videoId'>, videoId: Id, purpose: string): GrantCreateParams {
   return {
@@ -475,7 +466,7 @@ export function grantRequest(refusal: Pick<GrantRefusal, 'recipient' | 'dataKind
   };
 }
 
-/** 确认框里的几行：外发什么、交给谁、限哪个视频、用途、预算、怎么撤销。 */
+/** The lines in the confirmation dialog: what leaves, who receives it, which video it is limited to, the purpose, the budget, and how to revoke it. */
 export function grantFacts(
   refusal: Pick<GrantRefusal, 'recipient' | 'dataKinds'>,
   labels: ReadonlyMap<string, string>,

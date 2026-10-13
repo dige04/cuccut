@@ -1,11 +1,11 @@
-//! 本文件的部分实现参考 speech-swift（https://github.com/soniqo/speech-swift）。
-//! 对应上游文件：`Sources/Qwen3ASR/QuantizedTextDecoder.swift`。
+//! Parts of this file's implementation are based on speech-swift (https://github.com/soniqo/speech-swift).
+//! Corresponding upstream file: `Sources/Qwen3ASR/QuantizedTextDecoder.swift`.
 //! Copyright 2025 Ivan Digital
 //! SPDX-License-Identifier: Apache-2.0
-//! 修改：CucCut 以 Rust 实现相关算法，并适配本项目的后端、模型包与转写接口；原有上游来源说明保留。
-//! 原始许可全文：`crates/model-runtime/licenses/speech-swift.txt`；来源范围见根目录 `THIRD_PARTY_NOTICES.md`。
+//! Changes: CucCut implements the related algorithms in Rust and adapts them to this project's backend, model packs and transcription interface; the original upstream attribution is retained.
+//! Full original license text: `crates/model-runtime/licenses/speech-swift.txt`; for the scope of the sources see `THIRD_PARTY_NOTICES.md` in the repository root.
 //!
-//! Qwen3 的基础层：稠密与量化投影、LayerNorm、RMSNorm、词嵌入与保持 dtype 的 GELU。
+//! Qwen3's base layers: dense and quantized projections, LayerNorm, RMSNorm, word embedding, and a dtype-preserving GELU.
 
 use super::WeightStore;
 use anyhow::{Result, bail};
@@ -14,12 +14,12 @@ use mlx_rs::fast;
 use mlx_rs::ops;
 use mlx_rs::ops::indexing::IndexOp;
 
-/// 保持输入 dtype 的精确 GELU：`x * (1 + erf(x / √2)) / 2`。
+/// Exact GELU that preserves the input dtype: `x * (1 + erf(x / √2)) / 2`.
 ///
-/// `mlx_rs::nn::gelu` 的常量是 f32 数组，会把 bf16 激活提升成 f32，
-/// 并顺着音频编码器污染整个解码图（KV cache、逐 token 生成全部变成
-/// f32，权重每步被动上转换，实测生成速度掉到 1/4）。这里把常量显式
-/// 转成输入 dtype，与 mlx-swift 标量语义对齐。
+/// `mlx_rs::nn::gelu`'s constants are f32 arrays, which promote bf16 activations to f32,
+/// and through the audio encoder contaminate the whole decoder graph (the KV cache and per-token generation all become
+/// f32, and the weights get upcast on every step; measured generation speed dropped to 1/4). Here the constant is explicitly
+/// cast to the input dtype, aligning with mlx-swift's scalar semantics.
 pub fn gelu_same_dtype(x: &Array) -> Result<Array> {
     let dtype = x.dtype();
     let sqrt_two = Array::from_f32(std::f32::consts::SQRT_2).as_dtype(dtype)?;
@@ -89,7 +89,7 @@ pub enum Projection {
 impl Projection {
     pub fn load(store: &mut WeightStore, prefix: &str, group_size: i32, bits: i32) -> Result<Self> {
         if store.contains(&format!("{prefix}.scales")) {
-            // 预量化的权重要配置里声明位数（`quantization.bits`）；没声明时按 16 位去解包只会算出乱码。
+            // Pre-quantized weights must declare their bit width in the config (`quantization.bits`); if it is undeclared, unpacking as 16-bit produces garbage.
             if !matches!(bits, 4 | 8) {
                 bail!("权重 {prefix} 带 scales 但配置未声明 4 或 8 位量化（bits = {bits}）");
             }

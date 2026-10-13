@@ -67,8 +67,8 @@ const OPTIONS = {
 type Ctx = AdminRun<AdminValues<typeof OPTIONS>>;
 
 /**
- * 管理桶 `cuccut models configure|accounts|usage|default|remove|refresh|parameters|dir|cancel|repair`（架构设计 §6）：
- * 凭据、默认值与本机模型目录只由用户改。能力查询、模型包的列出、安装与检查在 Agent 面（`models capabilities|list|install|test`）。
+ * Admin bucket `cuccut models configure|accounts|usage|default|remove|refresh|parameters|dir|cancel|repair` (Architecture design §6):
+ * credentials, defaults and the local model directory are changed only by the user. Capability queries, and listing, installing and checking model packages, are on the Agent surface (`models capabilities|list|install|test`).
  */
 export const models = defineNoun({
   name: 'models',
@@ -180,7 +180,7 @@ async function configure(ctx: Ctx, providerId: string | undefined): Promise<Exit
   const request: ConfigureProviderRequest = { providerId };
   if (values.enable) request.enabled = true;
   if (values.disable) request.enabled = false;
-  // 密钥只从标准输入读：命令行参数会留在 shell 历史与进程列表里。
+  // Keys are read only from standard input: command-line arguments would stay in the shell history and the process list.
   if (values['key-stdin']) request.credential = await readKey(ctx);
   if (values.endpoint !== undefined) request.endpoint = values.endpoint;
   if (values.model || values['speech-model'] || values['image-model'] || values['text-model']) {
@@ -224,8 +224,8 @@ async function parameters(ctx: Ctx, capability: string | undefined): Promise<Exi
 }
 
 /**
- * 服务商的账号（架构设计 §6.8）：列出、添加（密钥只从标准输入读）、移除、设为首选。调用总是用第一个启用且有密钥的账号，
- * 出错不换下一个；`use` 把一个账号排到最前（`models.arrangeAccounts`）。输出只有掩码。
+ * Provider accounts (Architecture design §6.8): list, add (the key is read only from standard input), remove, and set as preferred. Calls always use the first account that is enabled and has a key,
+ * and do not move on to the next on error. `use` moves an account to the front (`models.arrangeAccounts`). Output shows only masks.
  */
 async function modelAccounts(ctx: Ctx, args: string[]): Promise<ExitCode> {
   const { client, values } = ctx;
@@ -261,14 +261,14 @@ async function modelAccounts(ctx: Ctx, args: string[]): Promise<ExitCode> {
     return ctx.done(result, [M.accountPreferred(account.label ?? account.masked), ...lines(result.provider)]);
   }
   if (action && !providerId) {
-    // `cuccut models accounts <providerId>`：列出。
+    // `cuccut models accounts <providerId>`: list.
     const accounts = await providerAccounts(ctx, action);
     return ctx.done({ providerId: action, accounts }, formatAccountLines(accounts, ''));
   }
   throw ctx.usageError(usage);
 }
 
-/** 一家服务商的账号（从能力视图里取它的配置）；不是在线服务商时报错。 */
+/** A provider's accounts (its config is taken from the capability view). Errors when it is not an online provider. */
 async function providerAccounts(ctx: Ctx, providerId: string): Promise<ProviderAccountView[]> {
   const { capabilities } = await ctx.client.request('models.capabilities', {});
   for (const capability of MODEL_SERVICE_CAPABILITIES) {
@@ -281,8 +281,8 @@ async function providerAccounts(ctx: Ctx, providerId: string): Promise<ProviderA
 }
 
 /**
- * 修复一个模型包：先打印计划（大小与来源），确认之后提交并跟着任务的进度。只有 `--yes` 跳过确认；不在终端里运行又没给
- * `--yes` 时拒绝，不默认同意。（安装在 Agent 面的 `models install`。）
+ * Repairs a model package. First prints the plan (size and source). After confirmation, submits it and follows the task's progress. Only `--yes` skips the confirmation. When not running in a terminal and `--yes` is not given, it refuses and does not default to consent.
+ * (Installing is `models install` on the Agent surface.)
  */
 async function repairBundle(ctx: Ctx, bundleId: string): Promise<ExitCode> {
   const { client } = ctx;
@@ -318,8 +318,8 @@ async function repairBundle(ctx: Ctx, bundleId: string): Promise<ExitCode> {
 }
 
 /**
- * 显示或更改模型目录（架构设计 §6.3）。更改前先说明新位置里已有的模型与可用空间；当前目录里有模型时要用户在
- * `--move` 与 `--switch` 之间选，不替用户决定。移动是后台任务，跟着显示进度；Ctrl-C 取消，失败或取消时回滚。
+ * Shows or changes the model directory (Architecture design §6.3). Before changing it, explains the models already in the new location and the available space. When the current directory has models, the user chooses between
+ * `--move` and `--switch`, and the choice is not made for them. Moving is a background task, shown with progress. Ctrl-C cancels it, and on failure or cancellation it rolls back.
  */
 async function modelsDir(ctx: Ctx): Promise<ExitCode> {
   const { client, values } = ctx;
@@ -356,7 +356,7 @@ async function modelsDir(ctx: Ctx): Promise<ExitCode> {
   });
 }
 
-/** 读标准输入的全部内容作为密钥。终端里直接运行时提示怎么结束输入；密钥不回显到输出。 */
+/** Reads all of standard input as the key. When run directly in a terminal, shows how to end the input. The key is not echoed to the output. */
 async function readKey(ctx: Ctx): Promise<string> {
   const key = (await readStdin(M.pasteKeyHint)).trim();
   if (!key) throw ctx.usageError(M.noKeyOnStdin);

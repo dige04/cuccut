@@ -1,4 +1,4 @@
-//! LLM 粗剪建议：模型只看页内词序号，持久工件只保存稳定词 id。
+//! LLM rough-cut suggestions: the model sees only the word sequence numbers within the page, and the persisted artifact stores only the stable word ids.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,11 +30,10 @@ impl CleanupStrength {
     }
 }
 
-/// LLM 可返回的细分类别；`repeat` 只在 standard/tight 强度下采纳（conservative 静默丢弃）。
+/// The fine-grained categories the LLM may return. `repeat` is accepted only at standard/tight intensity (conservative silently drops it).
 pub const LLM_CATEGORIES: [&str; 4] = ["retake", "falseStart", "filler", "repeat"];
 
-/// 细分类别 → `ai/cuts.json` 的封闭 `kind`（silence|filler|badTake|manual|match）。
-/// 设计见 docs/design/editor/ccut-talking-head-cut-design.md C8。
+/// Fine-grained category → the closed `kind` of `ai/cuts.json` (silence|filler|badTake|manual|match). Design in docs/design/editor/ccut-talking-head-cut-design.md, C8.
 pub fn closed_kind(category: &str) -> &'static str {
     match category {
         "filler" => "filler",
@@ -46,7 +45,7 @@ pub fn closed_kind(category: &str) -> &'static str {
 }
 
 impl CleanupStrength {
-    /// conservative 只保留明确的口误/填充词，不采纳「重复表达」类建议。
+    /// conservative keeps only clear slips of the tongue and filler words, and does not accept "repetition" suggestions.
     pub fn accepts_category(self, category: &str) -> bool {
         !(category == "repeat" && self == Self::Conservative)
     }
@@ -77,7 +76,7 @@ pub struct CleanupArtifact {
 pub struct CleanupOptions {
     pub strength: CleanupStrength,
     pub instructions: Option<String>,
-    /// 已有 source cut 的媒体时间窗；建议不得相交。
+    /// Media time windows of existing source cuts. Suggestions must not intersect them.
     pub existing_cuts: Vec<(f64, f64)>,
 }
 
@@ -97,7 +96,7 @@ struct AnswerCut {
     reason: String,
 }
 
-/// Agent submit lint：镜像无需 transcript 的确定性范围/类别护栏。
+/// Agent submit lint: mirrors the deterministic range and category guardrails that need no transcript.
 pub fn lint_agent_answer(payload: &str, answer: &str) -> Vec<String> {
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(payload) else {
         return Vec::new();
@@ -193,7 +192,7 @@ fn validate_page(
                 cut.cat
             )));
         }
-        // conservative 不采纳 repeat：模型偶尔仍会给出，静默丢弃而不是让整页重试。
+        // conservative does not accept repeat. The model occasionally still gives it, and it is silently dropped rather than retrying the whole page.
         if !options.strength.accepts_category(&cut.cat) {
             continue;
         }

@@ -14,7 +14,7 @@ import { pl } from './space-copy.pl.ts';
 import { tr } from './space-copy.tr.ts';
 import { vi } from './space-copy.vi.ts';
 
-/** Space 列表区的文案（model/space.ts；译文在 `space-copy.<语言>.ts`）。 */
+/** Copy for the Space list area (model/space.ts; translations are in `space-copy.<locale>.ts`). */
 const en = {
   kind: {
     video: 'Video',
@@ -48,13 +48,13 @@ const en = {
   noProject: 'Not in a project',
   removedProject: 'Removed project',
   conversation: (title: string) => `Session “${title}”`,
-  /** 「来源」一列里派生子视频的父视频。 */
+  /** In the “Source” column, the parent video of a derived sub-video. */
   derivedFrom: (name: string) => `From “${name}”`,
-  /** 卡片「N 个文件」的明细里的一项：类型与个数。 */
+  /** One item in the details of a card's “N files”: the type and the count. */
   kindCount: (kind: string, n: number) => `${kind} ${n}`,
-  /** 只靠名下文件对上搜索或筛选时写是哪个文件：`n` 是对上的文件数。 */
+  /** When a search or filter matches only through the files under a video, write which file: `n` is the number of matching files. */
   foundFiles: (name: string, n: number) => (n === 1 ? `Found: ${name}` : `Found: ${name} and ${n - 1} more`),
-  /** 视频自己没有状态时替名下文件说话：一个文件写类型与状态，几个文件写个数与状态。 */
+  /** When the video has no status of its own, it speaks for its files: one file writes its type and status; several files write the count and status. */
   fileStatus: (kind: string, status: string) => `${kind}: ${status}`,
   filesStatus: (n: number, status: string) => `${n} ${n === 1 ? 'file' : 'files'}: ${status}`,
 };

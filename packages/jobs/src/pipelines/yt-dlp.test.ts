@@ -19,7 +19,7 @@ import {
   worthAnotherCookieBrowser,
 } from './yt-dlp.ts';
 
-/** yt-dlp 的参数、进度、失败分类与文件名（架构设计 §7.9）。进程只跑测试里的假 yt-dlp。 */
+/** yt-dlp arguments, progress, failure classification and file names (architecture design §7.9). The process runs only the fake yt-dlp from the tests. */
 
 describe('参数', () => {
   it('仅使用显式选择的浏览器，解析和下载参数一致', () => {

@@ -1,24 +1,24 @@
 import { renderCliToolNames, toolCommandName, type CatalogTool } from '@cuccut/protocol';
 
 /**
- * 目录 → 命令树（Agent 面设计 §4.1）：工具名 `<名词>_<动词>` 是 `cuccut <名词> <动词>`，多词动词的 `_` 换成 `-`
- * （`videos_import_package` → `videos import-package`）；没有 `_` 的是一级动词，两边同名（`transcribe`）。规则只有一份，在
- * `@cuccut/protocol` 的 `toolCommandName`（Runtime 渲染 `next` 与说明书的渲染器也用它）。
+ * Catalog → command tree (agent-surface design §4.1): the tool name `<noun>_<verb>` is `cuccut <noun> <verb>`, with the `_` in multi-word verbs replaced by `-`
+ * (`videos_import_package` → `videos import-package`); a name without `_` is a top-level verb, the same on both sides (`transcribe`). The rule exists in only one place, `toolCommandName` in
+ * `@cuccut/protocol` (the Runtime's renderer for `next` and for the instructions also uses it).
  */
 
 export interface CatalogCommand {
   tool: CatalogTool;
-  /** 名词组；一级动词为 null。 */
+  /** Noun group; null for a top-level verb. */
   noun: string | null;
   verb: string;
-  /** 命令行上的写法（不含 `cuccut`）：`videos import-package`、`export`。 */
+  /** How it is written on the command line (without `cuccut`): `videos import-package`, `export`. */
   display: string;
 }
 
 export interface CommandTree {
-  /** 一级动词，按目录顺序。 */
+  /** Top-level verbs, in catalog order. */
   verbs: Map<string, CatalogCommand>;
-  /** 名词组 → 动词 → 命令，按目录顺序。 */
+  /** Noun group → verbs → commands, in catalog order. */
   nouns: Map<string, Map<string, CatalogCommand>>;
   byTool: Map<string, CatalogCommand>;
 }
@@ -44,11 +44,11 @@ export function buildTree(tools: readonly CatalogTool[]): CommandTree {
 
 export type Lookup =
   | { kind: 'command'; command: CatalogCommand; rest: string[] }
-  /** 只给了名词（或名词后跟着不认识的动词）：交给管理桶，或列出这个组。 */
+  /** Only a noun was given (or a noun followed by an unknown verb): hand off to the admin bucket, or list this group. */
   | { kind: 'group'; noun: string; verb: string | null; rest: string[] }
   | { kind: 'none' };
 
-/** 按命令行的前一两个词找命令。 */
+/** Finds a command by the first one or two words on the command line. */
 export function lookup(tree: CommandTree, argv: readonly string[]): Lookup {
   const [first, second, ...rest] = argv;
   if (!first) return { kind: 'none' };
@@ -62,22 +62,22 @@ export function lookup(tree: CommandTree, argv: readonly string[]): Lookup {
 }
 
 /**
- * 要用户点头才执行的命令（不可撤销的，以及先报大小的 `models install`，Agent 面设计 §3.3、§4.3）：没有 `--yes` 时不执行，
- * 退出码 4。帮助里的示例与通用旗标据此带上 `--yes`。
+ * Commands that run only after the user confirms (irreversible ones, and `models install`, which reports the size first; agent-surface design §3.3, §4.3): without `--yes` they do not run,
+ * and the exit code is 4. Examples in help and the common flags include `--yes` accordingly.
  */
 export function needsConfirmation(tool: CatalogTool): boolean {
   return tool.effect === 'destructive' || tool.name === 'models_install';
 }
 
-/** 工具说明的第一句（`ToolDefinition.description` 约定第一句是一行摘要）。句号后紧跟字母的（`video.db`）不算句末。 */
+/** The first sentence of the tool description (the `ToolDefinition.description` convention is that the first sentence is a one-line summary). A period directly followed by a letter (`video.db`) does not count as the end of a sentence. */
 export function summaryOf(description: string): string {
   const match = /^[\s\S]*?(?:[。！？]|[.!?](?=\s|$))/.exec(description);
   return (match ? match[0] : description).trim();
 }
 
 /**
- * 说明里的工具名换成命令（`videos_list` → `cuccut videos list`），与 Runtime 给 CLI 渲染 `next` 的是同一个函数
- * （`@cuccut/protocol` 的 `renderCliToolNames`）：只换目录里带 `_` 的名字，一级动词两边同名、又常是普通词，不动。
+ * Tool names in the description are replaced by commands (`videos_list` → `cuccut videos list`), using the same function the Runtime uses to render `next` for the CLI
+ * (`renderCliToolNames` in `@cuccut/protocol`): only names in the catalog that contain `_` are replaced; top-level verbs are the same on both sides and are often ordinary words, so they are left alone.
  */
 export function renderToolNames(text: string, names: readonly string[]): string {
   return renderCliToolNames(text, names);

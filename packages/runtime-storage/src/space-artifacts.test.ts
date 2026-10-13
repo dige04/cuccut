@@ -135,7 +135,7 @@ describe('Space 的产物记录', () => {
       steps: [{ ...step('create', 'completed', null), output: { videoId: 'vid_new' } }],
     });
     expect(artifactIdsOf(facts)).toEqual([]);
-    // 还在跑、没有新建视频的流程不留。
+    // Flows that are still running or did not create a video are not kept.
     expect(spaceJobFacts({ ...pipeline, state: 'running' })).toBeNull();
     expect(spaceJobFacts({ ...pipeline, pipeline: { ...pipeline.pipeline!, steps: [step('create', 'skipped', null)] } })).toBeNull();
 
@@ -205,7 +205,7 @@ describe('Space 的产物记录', () => {
     expect(loaded.quarantined).toMatch(/\.corrupt-\d+$/);
     expect(store.list()).toEqual([]);
     expect((await store.referencedArtifactIds()).has(lost)).toBe(true);
-    // 下次启动：主文件已是新的，留存的文件还在，引用还在。
+    // Next startup: the main file is already new, the retained files still exist, and the references still exist.
     const next = new SpaceArtifactStore(file);
     expect((await next.load()).quarantined).toBeNull();
     expect((await next.referencedArtifactIds()).has(lost)).toBe(true);

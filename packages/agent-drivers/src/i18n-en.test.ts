@@ -11,7 +11,7 @@ import { OpenCodeDriver } from './opencode/opencode-driver.ts';
 import { PiDriver } from './pi/pi-driver.ts';
 import { piAccessWarning } from './pi/pi-session.ts';
 
-/** 界面语言是英文时，Driver 写给人看的文字（探测说明、账号、安装方式、会话提示）是英文，并带上消息引用。 */
+/** When the UI language is English, the text the Driver writes for people (probe notes, account, install method, session hints) is in English and carries message references. */
 describe('agent-drivers 的英文文案', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');

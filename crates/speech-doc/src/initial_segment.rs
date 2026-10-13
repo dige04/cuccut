@@ -1,7 +1,7 @@
-//! ASR row → 初始软段落计划。
+//! ASR row → initial soft paragraph plan.
 //!
-//! 计划只是一份可提升的投影：调用方可把成对边界注入文档克隆体，但不得在
-//! 转录完成时写进 `transcript.json` 或提前盖 `stages.segment`。
+//! The plan is only a projection that can be promoted: a caller may inject paired boundaries into a clone of the document, but must not
+//! write it to `transcript.json` when transcription completes, nor stamp `stages.segment` ahead of time.
 
 use crate::asr_rows::{RowIn, RowSegmentation};
 use serde::Serialize;
@@ -173,7 +173,7 @@ fn best_candidate(candidates: &[Candidate], require_minimum: bool) -> Option<Can
         .cloned()
 }
 
-/// 由模型/provider row 接缝生成确定性的初始软段落计划。
+/// Generates a deterministic initial soft paragraph plan from the model/provider row seam.
 pub fn derive_initial_segment_plan(
     doc: &TranscriptDoc,
     rows: &[RowIn],
@@ -209,8 +209,8 @@ pub fn derive_initial_segment_plan(
 
         let paragraph_first_word = maps[paragraph_map_index].first_word_index;
         let mut current = candidate(doc, &maps, seam, paragraph_first_word);
-        // 行文本可能经过词化/AutoCorrect；句末证据以模型 row 原文补一次，时间和
-        // 锚仍严格来自 doc。这样标点未被独立 atom 保留时不会丢强证据。
+        // Row text may have gone through tokenization/AutoCorrect; the sentence-end evidence is supplemented once from the model's original row text, while times and
+        // anchors still come strictly from doc. This way, strong evidence is not lost when punctuation was not kept as an independent atom.
         let row_text = sorted_rows
             .get(left.row_index)
             .map(|row| row.text.as_str())
@@ -243,8 +243,7 @@ pub fn derive_initial_segment_plan(
             boundaries.push(chosen.boundary);
             paragraph_map_index = chosen.right_map_index;
             pending.retain(|candidate| candidate.right_map_index > paragraph_map_index);
-            // 若最佳切点落在当前接缝之前，从新段起点重算后续候选，避免沿用旧段
-            // 的内容量统计。
+            // If the best cut point falls before the current seam, recompute the subsequent candidates from the new segment's start, to avoid carrying over the old segment's content-volume statistics.
             if paragraph_map_index <= seam {
                 pending.clear();
                 seam = paragraph_map_index;

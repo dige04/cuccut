@@ -32,8 +32,7 @@ import { Harness } from './harness.ts';
 import { silentLogger } from './logger.ts';
 
 /**
- * 用户添加的智能体（`agents.addProvider` / `removeProvider`，架构设计 §3.11）与没有逐次审批通道的 Driver 的访问模式门禁（§3.12）。
- * Driver 全是假的，文件都在临时目录里。
+ * User-added agents (`agents.addProvider` / `removeProvider`, architecture design §3.11) and the access-mode gate (§3.12) for Drivers without a per-action approval channel. Drivers are all fakes; files are in a temp directory.
  */
 
 class Session implements AgentSession {
@@ -135,7 +134,7 @@ class FakeDriver implements AgentDriver {
   }
 }
 
-/** 内存里的偏好设置：能读能写，记下写入。 */
+/** In-memory preferences: can read and write, and records writes. */
 class Settings {
   readonly values: Partial<SettingValues> = {};
   readonly writes: unknown[] = [];
@@ -263,7 +262,7 @@ describe('添加智能体', () => {
     });
     if (process.platform !== 'win32') expect((await fs.stat(home.agentProvidersFile)).mode & 0o777).toBe(0o600);
 
-    // 同一个 commandId 重试：同一结果，不重复添加；另一个 commandId 是重名。
+    // Retrying with the same commandId: same result, not added twice; a different commandId is a name conflict.
     await h.addProvider({ ...pinned, commandId: 'cmd-1' });
     expect(created).toHaveLength(1);
     const dup = await rejection(h.addProvider({ ...pinned, commandId: 'cmd-2' }));
@@ -281,7 +280,7 @@ describe('添加智能体', () => {
     expect(JSON.parse(await fs.readFile(home.agentProbesFile, 'utf8')).drivers['gemini-pinned']).toMatchObject({ state: 'ready' });
 
     h = await open([new FakeDriver('codex')]);
-    // 缓存里的结果立刻可见（不在 checking 里）。
+    // Results in the cache are visible immediately (not in checking).
     expect(h.agentsSnapshot().checking).not.toContain('gemini-pinned');
     expect(h.agentsSnapshot().drivers.find((d) => d.id === 'gemini-pinned')).toMatchObject({ source: 'custom', name: 'Gemini 0.52' });
   });
@@ -331,7 +330,7 @@ describe('移除智能体', () => {
       }),
     );
     expect(refused.code).toBe('driver-unavailable');
-    // 没建任务。
+    // No task created.
     expect(reopened.getConversation(conversation.id).conversation.activeTaskId).toBeNull();
   });
 
@@ -356,7 +355,7 @@ describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
 
   it('发送时模式不是 fullAccess：以 AGENT_ACCESS_MODE_UNSUPPORTED 拒绝，不建任务、不改会话的模式', async () => {
     const { h, conversationId } = await fullOnly();
-    // 默认模式（auto）。
+    // Default mode (auto).
     const byDefault = await rejection(() => h.send({ conversationId, text: 'a', commandId: newId('cmd') }));
     expect(byDefault.code).toBe('conflict');
     expect(byDefault.details).toMatchObject({
@@ -379,7 +378,7 @@ describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
     expect(snapshot.conversation.accessMode).toBeNull();
     expect(snapshot.items).toEqual([]);
 
-    // fullAccess 照常。
+    // fullAccess works as usual.
     await h.send({
       conversationId,
       text: 'a',
@@ -397,7 +396,7 @@ describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
     expect((await rejection(h.updateConversation({ conversationId, accessMode: 'plan' }))).code).toBe('conflict');
     await h.updateConversation({ conversationId, accessMode: 'fullAccess' });
     await h.updateConversation({ conversationId, accessMode: null });
-    // 有逐次审批通道的不受影响。
+    // Those with a per-action approval channel are unaffected.
     const codex = await h.createConversation({
       driverId: 'codex',
       accessMode: 'ask',

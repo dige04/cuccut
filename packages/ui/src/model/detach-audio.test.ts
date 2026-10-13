@@ -46,7 +46,7 @@ describe('分离音频', () => {
             subframeOffset: { ticks: '0', timescale: 1 },
             playDuration: { ticks: String(91 * 1001), timescale: 30000 },
             timeMap,
-            // 空包络省略；`enabled` 不是混音的字段。
+            // Empty envelopes are omitted; `enabled` is not a mixing field.
             mix: { volume: 0.5, fadeIn: { ticks: '1', timescale: 2 } },
             name: '开场',
           },

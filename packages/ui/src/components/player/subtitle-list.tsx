@@ -13,8 +13,8 @@ const follow = style({ position: 'absolute', bottom: 12, insetX: 0, display: 'fl
 const followButton = style({ display: 'flex', pointerEvents: 'auto' });
 
 /**
- * 与画面同步的字幕列表（产品设计 §11.1 的 0.3）。当前句高亮，播放时跟着滚；用户自己滚了就不再跟，
- * 给一个「回到当前句」（架构设计 §11.6：播放不和用户抢滚动）。点一句跳到那里。
+ * Subtitle list synced with the picture (product design §11.1, 0.3). The current line is highlighted, and the list scrolls along during playback. Once the user scrolls manually, it stops following,
+ * and a “Back to current line” control is offered (architecture design §11.6: playback does not fight the user for scrolling). Clicking a line jumps there.
  */
 export function SubtitleList({
   cues,
@@ -25,7 +25,7 @@ export function SubtitleList({
   controller: PlaybackController | null;
   onSeek: (cue: Cue) => void;
 }) {
-  // 只订阅由时间推出的两个值：正在显示的句子（可能重叠）与该滚到的那一句，句子变了才重画。
+  // Subscribes only to two values derived from time: the sentences being displayed (they may overlap) and the line to scroll to. It redraws only when the sentence changes.
   const activeKey = usePlaybackTime(controller, (t) =>
     activeCues(cues, t)
       .map((c) => c.index)
@@ -75,7 +75,7 @@ export function SubtitleList({
         onKeyDown={onKeyDown}
         onWheel={() => setFollowing(false)}
         onTouchMove={() => setFollowing(false)}
-        // 按在滚动条上（目标是列表本身）也算用户自己滚。
+        // Pressing on the scrollbar (the target is the list itself) also counts as the user scrolling.
         onPointerDown={(e) => e.target === e.currentTarget && setFollowing(false)}>
         {cues.map((cue) => (
           <CueRow

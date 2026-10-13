@@ -1,4 +1,4 @@
-//! 合成小权重单测：用确定性的小权重跑一遍完整的 MLX 模型图（v2 同一份测试，原样移植）。
+//! Unit test with synthetic small weights: runs the full MLX model graph with deterministic small weights (the same test as v2, ported unchanged).
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use crate::synthesize::qwen3_tts::weights::Weights;
 use crate::synthesize::tensor::Array;
 use crate::synthesize::tensor::ops::indexing::IndexOp;
 
-/// MLX 单测互斥并先确认 Metal：同一进程里并发提交 MLX 图会互相干扰（与 `backend::mlx` 的单测同一把锁）。
+/// MLX unit tests are mutually exclusive and check for Metal first: submitting MLX graphs concurrently in the same process interferes with each other (same lock as the unit tests in `backend::mlx`).
 pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     let guard = crate::synthesize::tensor::host::TEST_LOCK
         .lock()
@@ -20,7 +20,7 @@ pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     guard
 }
 
-/// 确定性的小权重：LCG 出 `[-scale, scale)` 均匀值。
+/// Deterministic small weights: an LCG produces uniform values in `[-scale, scale)`.
 pub(crate) struct Filler {
     state: u64,
     pub tensors: HashMap<String, Array>,
@@ -96,7 +96,7 @@ impl Filler {
         }
     }
 
-    /// `audio_vae.` 之下的全部键（深度可分离）。
+    /// All keys under `audio_vae.` (depthwise-separable).
     pub fn audio_vae(&mut self, c: &AudioVaeConfig) {
         let mut dim = c.encoder_dim as i32;
         self.rand("audio_vae.encoder.conv_in.weight", &[dim, 7, 1], 0.5);
@@ -189,7 +189,7 @@ fn long_rope_tables_start_at_identity_and_divide_by_factors() {
     let (cos, sin) = (host(&cos), host(&sin));
     assert_close(&cos[..4], &[1.0; 4], 1e-6);
     assert_close(&sin[..4], &[0.0; 4], 1e-6);
-    // 位置 1：freq_0 = 1/1，freq_1 = 10000^(-1/2)/2 = 0.005（short_factor，因为未超出原长）。
+    // Position 1: freq_0 = 1/1, freq_1 = 10000^(-1/2)/2 = 0.005 (short_factor, since the original length is not exceeded).
     let expect = [1f32.sin(), 0.005f32.sin(), 1f32.sin(), 0.005f32.sin()];
     assert_close(&sin[4..], &expect, 1e-6);
 }
@@ -212,7 +212,7 @@ fn incremental_decode_with_cache_matches_full_causal_prefill() {
     let (step, cache) = model.forward(&x.index((.., 4..5, ..)), Some(&cache), true).unwrap();
     assert_eq!(cache[1].len(), 5);
     assert_close(&host(&full.index((.., 4..5, ..))), &host(&step), 1e-4);
-    // 因果：前 4 个位置的输出不受第 5 个输入影响。
+    // Causality: the outputs at the first 4 positions are unaffected by the 5th input.
     let (prefix, _) = model.forward(&x.index((.., ..4, ..)), None, true).unwrap();
     assert_close(&host(&full.index((.., ..4, ..))), &host(&prefix), 1e-4);
 }
@@ -275,7 +275,7 @@ fn euler_zero_star_skips_first_step_and_is_deterministic() {
     let mu = g.tensors.remove("mu").unwrap();
     let cond = g.tensors.remove("cond").unwrap();
     let estimator = dit(0.5);
-    // 一步时唯一一步落在 zero-init 里：输出就是噪声。
+    // With one step, the only step falls within the zero-init: the output is just noise.
     let one = solve_euler(&estimator, noise.clone(), &mu, &cond, 1, 2.0).unwrap();
     assert_close(&host(&one), &host(&noise), 0.0);
     let a = solve_euler(&estimator, noise.clone(), &mu, &cond, 4, 2.0).unwrap();
@@ -283,7 +283,7 @@ fn euler_zero_star_skips_first_step_and_is_deterministic() {
     assert_eq!(a.shape(), vec![1, 3, 2]);
     assert_close(&host(&a), &host(&b), 0.0);
     assert!(host(&a).iter().zip(host(&noise)).any(|(x, y)| (x - y).abs() > 1e-4));
-    // 速度场为零（out_proj 全零）时 x 一路不动。
+    // When the velocity field is zero (out_proj all zeros), the x path does not move.
     let still = solve_euler(&dit(0.0), noise.clone(), &mu, &cond, 4, 2.0).unwrap();
     assert_close(&host(&still), &host(&noise), 1e-6);
 }
@@ -336,7 +336,7 @@ fn audio_vae_is_causal_with_expected_hop_lengths() {
     let wave = g.tensors.remove("wave").unwrap();
     let z = vae.encode(&wave).unwrap();
     assert_eq!(z.shape(), vec![1, 4, 3]);
-    // 改最后 6 个样本只影响最后一帧 latent（左补零的因果卷积）。
+    // Changing the last 6 samples only affects the last frame's latent (a causal convolution with left zero-padding).
     let mut tail = host(&wave);
     tail[20] += 1.0;
     let z2 = vae.encode(&Array::from_slice(&tail, &[1, 24, 1])).unwrap();
@@ -349,7 +349,7 @@ fn audio_vae_is_causal_with_expected_hop_lengths() {
     assert_close(&host(&audio)[..24], &host(&head), 1e-5);
 }
 
-/// 整机小模型：隐藏 8、局部 8、patch 2、latent 3、VAE 6→12 样本/帧；词表 128（够放 101–104）。
+/// Whole-model small config: hidden 8, local 8, patch 2, latent 3, VAE 6→12 samples/frame; vocabulary 128 (enough to hold 101–104).
 pub(crate) fn tiny_model() -> VoxCpm2 {
     let config: VoxCpm2Config = serde_json::from_value(serde_json::json!({
         "lm_config": {
@@ -414,7 +414,7 @@ pub(crate) fn tiny_model() -> VoxCpm2 {
     model
 }
 
-/// 48 kHz 输出版的 [`tiny_vae_config`]（整机要求输出 48 kHz）。
+/// The 48 kHz output variant of [`tiny_vae_config`] (the whole model is required to output 48 kHz).
 fn tiny_vae_config_json() -> serde_json::Value {
     serde_json::json!({
         "encoder_dim": 2,

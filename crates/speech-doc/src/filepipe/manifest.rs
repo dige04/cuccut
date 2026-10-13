@@ -1,6 +1,6 @@
-//! `ai/<stage>/manifest.json` 的 serde 类型（§4.2）。
+//! The serde types for `ai/<stage>/manifest.json` (§4.2).
 //!
-//! core 不产生时间戳：`RunRecord::at` 由宿主填入。
+//! core does not produce timestamps: `RunRecord::at` is filled in by the host.
 
 use std::collections::BTreeMap;
 
@@ -8,23 +8,23 @@ use serde::{Deserialize, Serialize};
 
 use super::common::{PROTOCOL_VERSION, Problem};
 
-/// 阶段/页的执行状态。
+/// Execution state of a stage or page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RunStatus {
-    /// 尚未开始。
+    /// Not started yet.
     #[default]
     Pending,
-    /// 进行中。
+    /// In progress.
     Running,
-    /// 已完成。
+    /// Completed.
     Done,
-    /// 已失败（问题写在 `problems`）。
+    /// Failed (the problems are written in `problems`).
     Failed,
 }
 
 impl RunStatus {
-    /// 机器可读串。
+    /// Machine-readable string.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -35,29 +35,29 @@ impl RunStatus {
     }
 }
 
-/// 单页审计记录。
+/// Audit record for a single page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PageRecord {
-    /// 页 id（如 `p001`）。
+    /// Page id (e.g. `p001`).
     pub id: String,
-    /// 页状态。
+    /// Page state.
     pub status: RunStatus,
-    /// 已尝试次数。
+    /// Number of attempts made.
     #[serde(default)]
     pub attempts: u32,
-    /// 输入文件名。
+    /// Input file name.
     pub src: String,
-    /// 输出文件名（未完成时为 None）。
+    /// Output file name (None until finished).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub out: Option<String>,
-    /// 最近一次解析的协议问题。
+    /// Most recent protocol problem from parsing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<Problem>,
 }
 
 impl PageRecord {
-    /// 构造待执行的页记录。
+    /// Constructs a page record to be executed.
     pub fn pending(id: impl Into<String>, src: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -70,15 +70,15 @@ impl PageRecord {
     }
 }
 
-/// 一次运行的审计记录。
+/// Audit record for one run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunRecord {
-    /// 宿主填入的时间戳（core 不取时钟）。
+    /// Timestamp filled in by the host (core does not read the clock).
     pub at: String,
-    /// 运行类型（`full` / `stale-only` / `targeted` …）。
+    /// Run type (`full` / `stale-only` / `targeted` …).
     pub kind: String,
-    /// 本次覆盖的句数（可选）。
+    /// Number of sentences covered by this run (optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sentences: Option<usize>,
 }
@@ -87,38 +87,38 @@ pub struct RunRecord {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
-    /// 阶段名。
+    /// Stage name.
     pub stage: String,
-    /// 目标语（仅 translate/align 有）。
+    /// Target language (translate/align only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
-    /// 阶段版本号（`v003` 的数字部分）。
+    /// Stage version number (the numeric part of `v003`).
     pub version: u32,
-    /// 协议版本，恒为 [`PROTOCOL_VERSION`]。
+    /// Protocol version, always [`PROTOCOL_VERSION`].
     pub protocol_version: String,
-    /// 输入指纹（词指纹 + 上游阶段戳）。
+    /// Input fingerprint (word fingerprint + upstream stage stamps).
     pub input_fingerprint: String,
-    /// 上游阶段版本（如 `{"context":"v001","polish":"v002"}`）。
+    /// Upstream stage versions (e.g. `{"context":"v001","polish":"v002"}`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parents: BTreeMap<String, String>,
-    /// 模型标识。
+    /// Model identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// 阶段参数（如 `{"fit":16}`）。
+    /// Stage parameters (e.g. `{"fit":16}`).
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub params: serde_json::Map<String, serde_json::Value>,
-    /// 分页审计表。
+    /// Per-page audit table.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<PageRecord>,
-    /// 运行历史。
+    /// Run history.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub runs: Vec<RunRecord>,
-    /// 阶段状态。
+    /// Stage state.
     pub status: RunStatus,
 }
 
 impl Manifest {
-    /// 构造新 manifest（`protocolVersion` 自动填入）。
+    /// Constructs a new manifest (`protocolVersion` is filled in automatically).
     pub fn new(
         stage: impl Into<String>,
         version: u32,
@@ -139,17 +139,17 @@ impl Manifest {
         }
     }
 
-    /// 协议版本是否被本构建支持。
+    /// Whether this build supports the protocol version.
     pub fn protocol_supported(&self) -> bool {
         self.protocol_version == PROTOCOL_VERSION
     }
 
-    /// 指纹是否与给定输入一致（不一致即需要重跑）。
+    /// Whether the fingerprint matches the given input (a mismatch means a rerun is needed).
     pub fn matches_input(&self, input_fingerprint: &str) -> bool {
         self.input_fingerprint == input_fingerprint
     }
 
-    /// 尚未完成的页。
+    /// Pages not yet completed.
     pub fn unfinished_pages(&self) -> Vec<&PageRecord> {
         self.pages
             .iter()

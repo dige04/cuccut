@@ -1,16 +1,11 @@
-//! 响度母带（架构设计 §9.13）：`export-worker master <input.json>` 把混好的整段声音（staging 里 32 位浮点的 WAV）做成
-//! 目标响度，写成 staging 里的 32 位浮点裸 PCM（交错，`f32le`），再由 Runtime 交给 ffmpeg 编码。
+//! Loudness mastering (architecture design §9.13): `export-worker master <input.json>` takes the whole mixed audio (a 32-bit float WAV in staging) and makes it reach the target loudness. It writes the result as 32-bit float raw PCM in staging (interleaved, `f32le`), and the Runtime then hands it to ffmpeg for encoding.
 //!
-//! 链是 v2 导出母带的同一条（`ccut-render` 的 `chain::master_store`）：响度归一（BS.1770 积分响度，静音或不足 400 ms
-//! 不动）→ 真峰值限幅（上限是目标真峰值 − 0.1 dB），交替三轮；最后按 4 倍过采样的真峰值静态兜底到目标真峰值以下，
-//! 夹到 [−1, 1]。全程是 `audio-dsp` 的纯函数，超越函数只走 libm：同一份混音在各平台得到逐位相同的样本。
+//! The chain is the same one v2's export mastering uses (`chain::master_store` in `ccut-render`): loudness normalization (BS.1770 integrated loudness; silence or less than 400 ms is left alone), then true-peak limiting (the ceiling is the target true peak minus 0.1 dB), alternating for three rounds. Finally a static fallback brings the signal below the target true peak, based on a 4× oversampled true peak, and clamps it to [−1, 1].
+//! Throughout, these are pure functions of `audio-dsp`. Transcendental functions use only libm, so the same mix yields bit-identical samples on every platform.
 //!
-//! 整段按固定长度的窗口流式处理，内存与时长无关：响度计跨窗延续状态，限幅器每侧带 [`limiter_context`] 个采样的上下文，
-//! 真峰值每侧带 [`PEAK_CONTEXT`]；分窗的结果与对整段一次算逐位相同（本文件的测试对拍）。每一轮的中间结果写成 staging 里的
-//! 文件，用完删掉。v2 只有 48 kHz 立体声；这里按输出的采样率与声道数算，单声道按一个声道测响度（与 ffmpeg `ebur128` 相同）。
+//! The whole track is processed as a stream of fixed-length windows, so memory is independent of duration. The loudness meter carries its state across windows, the limiter carries a context of [`limiter_context`] samples on each side, and the true peak carries [`PEAK_CONTEXT`] on each side. The windowed result is bit-identical to computing the whole track at once (this file's tests cross-check it). The intermediate result of each round is written to a file in staging and deleted after use. v2 is only 48 kHz stereo; here we compute by the output's sample rate and channel count, and mono measures loudness as one channel (same as ffmpeg `ebur128`).
 //!
-//! stdout 是 JSON 行：`progress`（已处理的采样帧数与总数，三轮的测量与处理、峰值扫描与写出都算在内），最后一行
-//! `mastered`（`inputLufs`、`lufs`、`truePeak`、`staticGainDb`）、`error` 或 `cancelled`。
+//! stdout is JSON lines: `progress` (sample frames processed and the total; the measuring and processing of the three rounds, the peak scan, and the write-out are all counted), then a final line `mastered` (`inputLufs`, `lufs`, `truePeak`, `staticGainDb`), `error`, or `cancelled`.
 
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
@@ -28,42 +23,42 @@ use serde_json::json;
 use crate::render::{PROGRESS_INTERVAL, watch_cancel};
 use crate::{Failure, emit};
 
-/// 归一 + 限幅的轮数。
+/// Number of rounds of normalization and limiting.
 const PASSES: usize = 3;
-/// 目标积分响度与真峰值的范围（v2 `ccut export --loudness / --true-peak`）。
+/// Target integrated loudness and true-peak range (v2 `ccut export --loudness / --true-peak`).
 pub const LUFS_RANGE: (f64, f64) = (-70.0, 0.0);
 pub const TRUE_PEAK_RANGE: (f64, f64) = (-20.0, 0.0);
 
-/// 母带的目标。
+/// Mastering target.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
-    /// 积分响度（LUFS）。
+    /// Integrated loudness (LUFS).
     pub lufs: f64,
-    /// 真峰值上限（dBTP）。
+    /// True-peak ceiling (dBTP).
     pub true_peak: f64,
 }
 
-/// 母带实测。
+/// Mastering measurements.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measure {
-    /// 母带前的积分响度（LUFS）；测不出（静音或不足 400 ms）时是 [`SILENCE_LUFS`]。
+    /// Integrated loudness before mastering (LUFS); when it cannot be measured (silence or under 400 ms) it is [`SILENCE_LUFS`].
     pub input_lufs: f64,
-    /// 母带后的积分响度（LUFS）。
+    /// Integrated loudness after mastering (LUFS).
     pub lufs: f64,
-    /// 母带后的真峰值（dBTP）。
+    /// True peak after mastering (dBTP).
     pub true_peak: f64,
-    /// 各轮响度归一的静态增益之和（dB）。
+    /// Sum of the static gains from loudness normalization across rounds (dB).
     pub static_gain_db: f64,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MasterInput {
-    /// 混音：32 位浮点的 WAV。
+    /// Mix: 32-bit float WAV.
     input: PathBuf,
-    /// 写出的裸 PCM（`f32le`，交错）。
+    /// Written raw PCM (`f32le`, interleaved).
     output: PathBuf,
-    /// 中间文件放在这里（任务的 staging）。
+    /// Intermediate files go here (the task's staging).
     staging: PathBuf,
     sample_rate: u32,
     channels: usize,
@@ -79,7 +74,7 @@ fn io_failure(what: &str, error: std::io::Error) -> Failure {
     Failure::new("EXPORT_RENDER_FAILED", format!("{what}：{error}"))
 }
 
-/// 声道分开的一段样本。
+/// A segment of samples with channels separated.
 struct Planes(Vec<Vec<f32>>);
 
 impl Planes {
@@ -106,14 +101,14 @@ impl Planes {
         self.0.iter().map(Vec::as_slice).collect()
     }
 
-    /// 各声道乘 `g`（与 `Stereo::scale` 同式）。
+    /// Multiplies each channel by `g` (same formula as `Stereo::scale`).
     fn scale(&mut self, g: f64) {
         for v in self.0.iter_mut().flatten() {
             *v = (*v as f64 * g) as f32;
         }
     }
 
-    /// `[lo, hi)` 这一段乘增益曲线（与 `Stereo::apply_gain` 同式）。
+    /// Applies the gain curve over the segment `[lo, hi)` (same formula as `Stereo::apply_gain`).
     fn slice_with_gain(&self, lo: usize, hi: usize, gain: &[f64]) -> Planes {
         let g: Vec<f32> = gain[lo..hi].iter().map(|v| *v as f32).collect();
         Planes(
@@ -125,17 +120,17 @@ impl Planes {
     }
 }
 
-/// 整段的交错样本：内存里、staging 里的裸 `f32le` 文件、或 WAV 文件的数据块。
+/// The whole track's interleaved samples: in memory, as a raw `f32le` file in staging, or as the data chunk of a WAV file.
 enum Store {
-    /// 内存里的整段：测试拿它与写文件的路径对拍。
+    /// The whole track in memory: tests cross-check it against the file-writing path.
     #[cfg_attr(not(test), allow(dead_code))]
     Mem(Vec<f32>),
     File {
         path: PathBuf,
-        /// 数据从这个字节开始。
+        /// Data starts at this byte.
         offset: u64,
         writer: Option<BufWriter<File>>,
-        /// 母带自己建的中间文件：用完删掉。输入的混音不归这里删。
+        /// Intermediate files that mastering creates itself are deleted after use. The input mix is not deleted here.
         owned: bool,
     },
 }
@@ -166,7 +161,7 @@ impl Store {
         Ok(())
     }
 
-    /// 写完：之后只读。
+    /// Written: read-only from now on.
     fn finish(&mut self) -> Result<(), Failure> {
         if let Store::File { writer, .. } = self
             && let Some(mut w) = writer.take()
@@ -176,7 +171,7 @@ impl Store {
         Ok(())
     }
 
-    /// 帧 `[a, b)` 的交错样本。
+    /// Interleaved samples of frames `[a, b)`.
     fn read(&self, a: u64, b: u64, channels: usize) -> Result<Vec<f32>, Failure> {
         let (from, to) = (a as usize * channels, b as usize * channels);
         match self {
@@ -199,7 +194,7 @@ impl Store {
         Ok(Planes::from_interleaved(&self.read(a, b, channels)?, channels))
     }
 
-    /// 删掉自己建的中间文件。
+    /// Deletes the intermediate file it created itself.
     fn discard(self) {
         if let Store::File { path, owned: true, .. } = self {
             let _ = std::fs::remove_file(path);
@@ -207,7 +202,7 @@ impl Store {
     }
 }
 
-/// 读 32 位浮点 WAV 的格式与数据块：返回数据块的起点与帧数。数据块的长度写成 0 或 `0xFFFFFFFF`、或比文件长时按到文件末尾算。
+/// Reads the format and data chunk of a 32-bit float WAV: returns the start of the data chunk and the frame count. If the data chunk length is written as 0 or `0xFFFFFFFF`, or exceeds the file, it is taken to run to the end of the file.
 fn wav_data(path: &Path, sample_rate: u32, channels: usize) -> Result<(u64, u64), Failure> {
     let mut file = File::open(path).map_err(|e| io_failure("读混音失败", e))?;
     let len = file.metadata().map_err(|e| io_failure("读混音失败", e))?.len();
@@ -236,7 +231,7 @@ fn wav_data(path: &Path, sample_rate: u32, channels: usize) -> Result<(u64, u64)
                 let chans = usize::from(u16::from_le_bytes([fmt[2], fmt[3]]));
                 let rate = u32::from_le_bytes([fmt[4], fmt[5], fmt[6], fmt[7]]);
                 let bits = u16::from_le_bytes([fmt[14], fmt[15]]);
-                // 3 是 IEEE 浮点；0xFFFE（WAVE_FORMAT_EXTENSIBLE）时子格式 GUID 的前两个字节是 3。
+                // 3 is IEEE float; with 0xFFFE (WAVE_FORMAT_EXTENSIBLE), the first two bytes of the sub-format GUID are 3.
                 let float = tag == 3 || (tag == 0xFFFE && fmt.len() >= 26 && u16::from_le_bytes([fmt[24], fmt[25]]) == 3);
                 if !float || bits != 32 || chans != channels || rate != sample_rate {
                     return Err(invalid(format!(
@@ -259,14 +254,13 @@ fn wav_data(path: &Path, sample_rate: u32, channels: usize) -> Result<(u64, u64)
             }
             _ => {}
         }
-        // 块按偶数字节对齐。
+        // Chunks are aligned to even byte boundaries.
         at = body + size + (size & 1);
         file.seek(SeekFrom::Start(at)).map_err(|e| io_failure("读混音失败", e))?;
     }
 }
 
-/// 分窗母带：与对整段跑 `(归一 → 限幅) × 3 → 静态兜底` 逐位相同。`input` 是母带前的整段，`scratch(k)` 给第 k 轮的
-/// 中间存放处，`out` 逐窗收下结果（交错，已夹到 [−1, 1]），`step(n)` 报告处理了 n 帧（取消时返回 `Err`）。
+/// Windowed mastering: bit-identical to running `(normalize → limit) × 3 → static fallback` over the whole track. `input` is the whole track before mastering, `scratch(k)` gives the storage for round k's intermediate results, `out` receives results window by window (interleaved, clamped to [−1, 1]), and `step(n)` reports that n frames were processed (returns `Err` on cancel).
 #[allow(clippy::too_many_arguments)]
 fn master_store(
     input: Store,
@@ -299,7 +293,7 @@ fn master_store(
     for pass in 0..PASSES {
         let now = measure(&cur, step)?;
         input_lufs.get_or_insert(now);
-        // 与 normalize_to_lufs 同：静音或不足 400 ms 不动。
+        // Same as normalize_to_lufs: silence or under 400 ms is left alone.
         let gain = (now > SILENCE_LUFS).then_some(target.lufs - now);
         static_gain_db += gain.unwrap_or(0.0);
         let mut next = scratch(pass)?;
@@ -318,7 +312,7 @@ fn master_store(
         cur.discard();
         cur = next;
     }
-    // 静态兜底：整段真峰值（每侧带过采样上下文）。
+    // Static fallback: the whole track's true peak (with oversampling context on each side).
     let mut peak = 0.0f64;
     let pc = PEAK_CONTEXT as u64;
     for (a, b) in windows() {
@@ -355,7 +349,7 @@ fn master_store(
     })
 }
 
-/// 整段处理几遍（进度的总量 = 帧数 × 遍数）：每轮测量与处理各一遍，峰值扫描与写出各一遍。
+/// Number of passes over the whole track (progress total = frames × passes): one measuring and one processing pass per round, plus one peak scan and one write-out pass.
 const SWEEPS: u64 = 2 * PASSES as u64 + 2;
 
 pub fn run(path: &Path) -> Result<ExitCode, Failure> {
@@ -462,7 +456,7 @@ mod tests {
         rng.normals(n).into_iter().map(|v| v * 0.3).collect()
     }
 
-    /// 跑一遍分窗母带：`streamed` 时输入与中间结果都是临时目录里的文件。
+    /// Runs one windowed mastering pass. When `streamed`, both the input and the intermediate results are files in the temp directory.
     fn run_store(pre: &[f32], channels: usize, sr: f64, target: Target, window: u64, streamed: bool) -> (Vec<f32>, Measure) {
         let dir = tempfile::tempdir().unwrap();
         let frames = (pre.len() / channels) as u64;
@@ -498,7 +492,7 @@ mod tests {
         )
         .unwrap();
         if streamed {
-            // 中间文件用完就删。
+            // Intermediate files are deleted as soon as they are used.
             let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
             assert!(left.is_empty(), "{left:?}");
         }
@@ -518,7 +512,7 @@ mod tests {
             true_peak: -1.2,
         };
         let pre = s.interleaved();
-        // 参考：v2 的整段一次算。
+        // Reference: v2's whole-track one-shot computation.
         let lim = Limiter {
             ceiling_db: target.true_peak - 0.1,
             ..Limiter::default()
@@ -529,7 +523,7 @@ mod tests {
         }
         trim_to_ceiling(&mut s, target.true_peak);
         let expected: Vec<f32> = s.interleaved().into_iter().map(|v| v.clamp(-1.0, 1.0)).collect();
-        // 窗口长不必是 10 ms 的整数倍：响度计逐样本延续状态。
+        // The window length need not be a multiple of 10 ms: the loudness meter carries its state sample by sample.
         for (streamed, window) in [(false, 4800 * 3), (true, 4800 * 3), (true, 7777)] {
             let (got, m) = run_store(&pre, 2, 48_000.0, target, window, streamed);
             assert_eq!(got, expected, "streamed={streamed} window={window}");
@@ -539,8 +533,7 @@ mod tests {
         }
     }
 
-    /// v2 `export_loudness_masters_the_mix_and_refuses_the_ffmpeg_fallback` 的母带部分：两秒 440 Hz 立体声正弦，峰值 0.9，
-    /// 响度远高于 −20 LUFS；母带后到目标，真峰值不过上限，再跑一遍逐位相同。
+    /// Mastering part of v2 `export_loudness_masters_the_mix_and_refuses_the_ffmpeg_fallback`: a two-second 440 Hz stereo sine, peak 0.9, loudness far above −20 LUFS. After mastering it reaches the target, the true peak does not exceed the ceiling, and running it again is bit-identical.
     #[test]
     fn a_loud_tone_lands_on_the_target() {
         let target = Target {
@@ -561,7 +554,7 @@ mod tests {
         assert_eq!(out, again);
     }
 
-    /// 单声道、44.1 kHz：按一个声道测响度，与整段一次算（同一组函数）逐位相同。
+    /// Mono, 44.1 kHz: loudness is measured as one channel, and the result is bit-identical to the whole-track computation (same set of functions).
     #[test]
     fn mono_masters_against_its_own_whole_signal_reference() {
         let sr = 44_100.0;
@@ -607,7 +600,7 @@ mod tests {
         assert!(m.true_peak <= target.true_peak + 1e-6, "{m:?}");
     }
 
-    /// 静音：测不出响度，不加增益，照样写出（全是 0）。
+    /// Silence: loudness cannot be measured, so no gain is added; it is written out anyway (all zeros).
     #[test]
     fn silence_is_not_normalized() {
         let (out, m) = run_store(
@@ -626,7 +619,7 @@ mod tests {
         assert!(out.iter().all(|v| *v == 0.0));
     }
 
-    /// 读 ffmpeg 写的浮点 WAV（含 EXTENSIBLE）：格式不符时拒绝；数据块长度写坏时按到文件末尾算。
+    /// Reads a float WAV written by ffmpeg (including EXTENSIBLE): rejected when the format does not match; when the data chunk length is malformed, it is taken to run to the end of the file.
     #[test]
     fn reads_float_wav_headers() {
         let dir = tempfile::tempdir().unwrap();

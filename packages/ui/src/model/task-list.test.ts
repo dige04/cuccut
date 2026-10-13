@@ -335,12 +335,12 @@ describe('taskRows / taskGroups', () => {
       conversationId: 'c1',
       action: { type: 'cancel', jobId: 'retx' },
     });
-    // 转写排队时这一行也在排队。
+    // While the transcription is queued, this row is also queued.
     expect(taskRows([], [parent, { ...asr, state: 'queued', progress: null }], ctx)[0]).toMatchObject({ id: 'retx', queued: true, label: '排队中' });
-    // 转写做完、流程还在写回：仍念「转录」与它的标题，不露「流程」。
+    // Transcription is done and the pipeline is still writing back: it still shows “转录” (“Transcription”) with its title, not “流程” (“Pipeline”).
     const writing = taskRows([], [{ ...parent, phase: 'applying', progress: { done: 3, total: 4, unit: 'steps' } }, { ...asr, state: 'completed' }], ctx);
     expect(writing.find((r) => r.id === 'retx')).toMatchObject({ kind: 'transcribe', kindText: '转录', title: '转录 · 主视频 · interview.mp4' });
-    // 编辑器没开着这个视频时只念种类。
+    // When the editor does not have this video open, only the kind is shown.
     expect(jobRow(parent, { ...ctx, video: null })).toMatchObject({ title: '转录', kindText: '转录' });
   });
 
@@ -366,7 +366,7 @@ describe('taskRows / taskGroups', () => {
       pct: 62,
       action: { type: 'cancel', jobId: 'imp' },
     });
-    // 任务详情按 ID 找原样的行；转录结束后（或导入已经结束）各是各的。
+    // Task details find the row as-is by ID; after transcription ends (or the import has already ended), each stands on its own.
     expect(
       taskRows([], [parent, asr], ctx, { fold: false })
         .map((r) => r.id)

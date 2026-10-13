@@ -1,46 +1,46 @@
-//! 从工程扁平样式 blob 合成 ASS `[V4+ Styles]` 头。
+//! Synthesizes the full ASS `[V4+ Styles]` header from the project's flat style blob.
 //!
-//! 与 MP4 烧录同源：字号、颜色、描边、底板全部走 [`resolve_line_style`]，因此
-//! `origStyle` / `transStyle` 行级 partial 与双语字号比例语义自动生效，不在这里
-//! 重新实现一遍。这个文件只负责「把 [`LineStyle`] 翻译成 ASS 字段」。
+//! Same source as MP4 burn-in: font size, colour, outline, and background box all go through [`resolve_line_style`], so
+//! the per-line partial overrides of `origStyle` / `transStyle` and the bilingual font-size ratio semantics apply automatically. This file is only responsible for
+//! "translating [`LineStyle`] into ASS fields". It does not reimplement that here.
 //!
-//! ## 单位换算
+//! ## Unit conversion
 //!
-//! - **描边**：工程里的 `textOutline.width` 是「可见外扩量」占字号的百分比。
-//!   [`LineStyle::outline_width`] 存的是跨轮廓居中的整条线宽（`w/100·fontSize·0.5`），
-//!   而 ASS 的 `Outline` 是向外生长的边框厚度，所以这里取它的一半，等价于
-//!   `w/400·fontSize`。三个数不是一回事，改任何一处前先确认自己在说哪一个。
+//! - **Outline**: `textOutline.width` in the project is the visible outward extent as a percentage of font size.
+//!   [`LineStyle::outline_width`] stores the full line width centred across the outline (`w/100·fontSize·0.5`),
+//!   while ASS `Outline` is the border thickness that grows outward. So here we take half of it, which is equivalent to
+//!   `w/400·fontSize`. The three figures are not the same thing: before changing any one of them, confirm which one you are talking about.
 //!
-//! ## 无法 1:1 映射的字段（近似规则）
+//! ## Fields that cannot be mapped 1:1 (approximation rules)
 //!
-//! ASS 的样式模型比 CucCut 的字幕样式弱，下列语义只能近似或直接丢弃。改这里前
-//! 先同步 `docs/design/cli/ccut-cli-server-reference.md` 的同名说明。
+//! ASS's style model is weaker than CucCut's subtitle styles, so the semantics below can only be approximated or are dropped outright. Before changing this,
+//! sync the same-named notes in `docs/design/cli/ccut-cli-server-reference.md`.
 //!
-//! - **水平位置 `x`**：ASS 只有九宫格 Alignment，没有百分比锚点。`x` 只用来选左
-//!   /中/右（`<33.3` 左、`>66.7` 右，其余居中），精确百分比丢失。
-//! - **`width`（换行宽度）**：折成左右对称的 `MarginL`/`MarginR`。锚点不在画面中
-//!   央时，这组对称边距与真实摆放会有偏移。
-//! - **垂直位置 `y` + `verticalAlign`**：统一折算成「底对齐 + `MarginV`」。文本块
-//!   高度按 `fontSize × lineHeight`（双语再加 `gap`）估算，不做真实排版度量，所以
-//!   与烧录会有半行级误差。`verticalAlign` 缺席时按 `center` 近似——真实渲染此时
-//!   走接缝规则，两者并不等价。
-//! - **行级 `origStyle.x/y` / `verticalAlign`（脱离堆栈的行）**：完全忽略。ASS 的
-//!   两个 Style 共享同一组 Alignment/Margin，无法各自摆放。
-//! - **`order`（译文在上）**：不生效。sidecar 字幕的正文一直是「原文行在前」，这
-//!   是 srt/vtt 既有行为，ASS 沿用。
-//! - **`rotation`**：写进 `Angle`，符号取反（ASS 逆时针为正）。转场动画不导出。
-//! - **`textTransform`**：不生效。正文文本由 sidecar 共用投影产出，不做大小写变换。
-//! - **`glow` / `dropShadow.blur`**：ASS 没有模糊半径字段。发光/阴影只保留颜色与
-//!   偏移量（发光偏移为 0，等价于关阴影），模糊丢失。
-//! - **底板纵向内边距**：`BorderStyle=3` 只有一个 `Outline` 字段当内边距，这里取
-//!   横向 `background_pad_h`，纵向内边距丢失。
-//! - **`backgroundMode: "shared"`（共享底板）**：ASS 每行自带底板，无法共享一块。
+//! - **Horizontal position `x`**: ASS only has a 3x3 numpad Alignment and no percentage anchor. `x` is only used to pick left,
+//!   centre or right (`<33.3` left, `>66.7` right, otherwise centred), so exact percentages are lost.
+//! - **`width` (wrap width)**: folded into symmetric `MarginL`/`MarginR`. When the anchor is not at the centre of the frame,
+//!   this symmetric margin pair will be offset from the real placement.
+//! - **Vertical position `y` + `verticalAlign`**: uniformly folded into "bottom-aligned + `MarginV`". The text block
+//!   height is estimated as `fontSize × lineHeight` (plus `gap` for bilingual), with no real typesetting metrics, so
+//!   it differs from burn-in by up to half a line. When `verticalAlign` is absent it is approximated as `center`. Real rendering in that case
+//!   uses the seam rule, so the two are not equivalent.
+//! - **Per-line `origStyle.x/y` / `verticalAlign` (lines taken out of the stack)**: ignored entirely. ASS's
+//!   two Styles share one set of Alignment/Margin and cannot be placed independently.
+//! - **`order` (translation on top)**: has no effect. The sidecar subtitle body has always been "source line first". This
+//!   is the existing srt/vtt behaviour, and ASS keeps it.
+//! - **`rotation`**: written to `Angle` with the sign inverted (ASS is counter-clockwise positive). Transition animations are not exported.
+//! - **`textTransform`**: has no effect. The body text comes from the projection shared with the sidecar, and no case transform is applied.
+//! - **`glow` / `dropShadow.blur`**: ASS has no blur radius field. Only the colour and offset are kept for glow / shadow
+//!   (glow offset is 0, equivalent to shadow off). The blur is lost.
+//! - **Background box vertical padding**: `BorderStyle=3` has only one `Outline` field serving as padding, so here we use
+//!   the horizontal `background_pad_h`, and the vertical padding is lost.
+//! - **`backgroundMode: "shared"` (shared background box)**: ASS gives each line its own box, so one box cannot be shared.
 //!
-//! v3：移植自 CucCut v2 `ccut-kernel` 的 `cmd/studio_export/ass_style.rs`（那里经 `include!` 进
-//! `studio_export`，与本 crate 的扁平命名空间共用名字）。两个样式名、[`AssStyleSheet`]、
-//! `--no-style` 的固定头与两行 `Format:` 已在 `speech-doc`（字幕导出用它们），这里从那边取，
-//! 不再定义第二份；读工程文件的 `ass_play_res` / `ass_play_res_from_manifest` 不移植，画幅由
-//! 调用方传入。
+//! v3: ported from CucCut v2 `ccut-kernel`'s `cmd/studio_export/ass_style.rs`. There it was pulled in via `include!` into
+//! `studio_export`, sharing names with this crate's flat namespace. The two style names, [`AssStyleSheet`],
+//! the fixed header for `--no-style`, and the two `Format:` lines already live in `speech-doc` (subtitle export uses them), so they are taken from there
+//! and not defined a second time. `ass_play_res` / `ass_play_res_from_manifest`, which read the project file, are not ported; the frame size is
+//! passed in by the caller.
 
 use serde_json::Value;
 use speech_doc::export::ass_style::{ASS_EVENT_FORMAT, ASS_STYLE_FORMAT};
@@ -51,7 +51,7 @@ use crate::{
     finite, parse_vertical_align, resolve_line_style,
 };
 
-/// ASS 数值字段：整数不带小数点，其余保留一位，避免头里出现 `2.0000000001`。
+/// ASS numeric fields: integers have no decimal point, others keep one decimal place, to avoid values like `2.0000000001` appearing in the header.
 fn ass_number(value: f64) -> String {
     let value = if value.is_finite() { value } else { 0.0 };
     let rounded = (value * 10.0).round() / 10.0;
@@ -62,8 +62,8 @@ fn ass_number(value: f64) -> String {
     }
 }
 
-/// `&HAABBGGRR`。[`SubtitleColor::a`] 存的就是 ASS 语义的「透明度」
-/// （`0` 不透明、`255` 全透明），这里直接落位，不做取反。
+/// `&HAABBGGRR`. [`SubtitleColor::a`] already stores the ASS-semantic "transparency"
+/// (`0` opaque, `255` fully transparent), so it is written directly here without inversion.
 fn ass_color(color: SubtitleColor) -> String {
     format!(
         "&H{:02X}{:02X}{:02X}{:02X}",
@@ -71,7 +71,7 @@ fn ass_color(color: SubtitleColor) -> String {
     )
 }
 
-/// 样式名里的逗号会撕开 `Style:` 行；同时挡掉换行与 ASS 覆盖标签定界符。
+/// A comma in a style name would split the `Style:` line. This also blocks newlines and the ASS override-tag delimiters.
 fn ass_font_field(name: &str) -> String {
     name.replace(',', " ")
         .replace(['\r', '\n', '{', '}'], "")
@@ -79,9 +79,9 @@ fn ass_font_field(name: &str) -> String {
         .to_owned()
 }
 
-/// sidecar 的字体名要给外部播放器看，因此把 [`font_name`] 为 MP4 shaping 做的
-/// SwiftPM 内部 family 映射回用户可见的产品名；其余别名（system / montserrat …）
-/// 与烧录共用同一张表，不在这里重写。
+/// Sidecar font names are shown to external players, so the SwiftPM-internal family mapping that [`font_name`] applies for MP4 shaping
+/// is mapped back to the user-visible product name. Other aliases (system / montserrat …)
+/// share the same table as burn-in and are not rewritten here.
 fn ass_font_name(shaped: &str) -> String {
     let product = match shaped {
         "VK Sans" => "Source Sans 3",
@@ -91,12 +91,12 @@ fn ass_font_name(shaped: &str) -> String {
     ass_font_field(product)
 }
 
-/// 单行文本块的估算高度：`fontSize × lineHeight`。不做真实排版度量。
+/// Estimated height of a single-line text block: `fontSize × lineHeight`. No real typesetting metrics are used.
 fn line_block_height(style: &LineStyle) -> f64 {
     style.font_size * style.line_height
 }
 
-/// 一条 `Style:` 行。
+/// One `Style:` line.
 #[allow(clippy::too_many_arguments)]
 fn ass_style_row(
     name: &str,
@@ -107,8 +107,8 @@ fn ass_style_row(
     margin_v: i64,
     angle: f64,
 ) -> String {
-    // 有底板 → BorderStyle=3（不透明块）：此时 OutlineColour 是块颜色，
-    // Outline 字段是块的内边距；没底板 → BorderStyle=1（描边+阴影）。
+    // With a background box → BorderStyle=3 (opaque box): OutlineColour is then the box colour,
+    // and the Outline field is the box padding. Without one → BorderStyle=1 (outline + shadow).
     let border_style = if style.background_on { 3 } else { 1 };
     let outline_colour = if style.background_on {
         style.background_color
@@ -118,10 +118,10 @@ fn ass_style_row(
     let outline = if style.background_on {
         style.background_pad_h
     } else if style.outline_on {
-        // libass / VSFilter 的 `Outline` 是**向外生长**的边框厚度，而
-        // [`LineStyle::outline_width`] 存的是跨轮廓居中的整条线宽，外扩量只有一半。
-        // 直接落位会让播放器画出两倍粗的描边（= 持久化 `textOutline.width` 的
-        // `w/100·fontSize`，而不是正确的 `w/400·fontSize`）。
+        // libass / VSFilter's `Outline` is the border thickness that grows **outward**, whereas
+        // [`LineStyle::outline_width`] stores the full line width centred across the outline, so the outward extent is only half.
+        // Writing it directly would make the player draw an outline twice as thick (= the persisted `textOutline.width`'s
+        // `w/100·fontSize`, instead of the correct `w/400·fontSize`).
         style.outline_width / 2.0
     } else {
         0.0
@@ -149,7 +149,7 @@ fn ass_style_row(
         font = ass_font_name(&style.font_name),
         size = ass_number(style.font_size.max(1.0).round()),
         primary = ass_color(style.color),
-        // 卡拉 OK 未播报色：sidecar 不做逐词高亮，与主色保持一致。
+        // Karaoke not-yet-sung colour: the sidecar does no word-by-word highlighting, so it matches the main colour.
         secondary = ass_color(style.color),
         outline_colour = ass_color(outline_colour),
         back_colour = ass_color(back_colour),
@@ -163,11 +163,10 @@ fn ass_style_row(
     )
 }
 
-/// 从扁平样式 blob 合成完整 ASS 头。
+/// Synthesizes the full ASS header from the flat style blob.
 ///
-/// `mode` 取 `orig` / `trans` / `bi`（同 `StudioMode::parse`），无法识别时退回
-/// `orig`——sidecar 的内容模式由 `--mode` 决定，不能因为样式里存着别的模式串就
-/// 换一套字号。
+/// `mode` is `orig` / `trans` / `bi` (same as `StudioMode::parse`). When unrecognized it falls back to
+/// `orig`. The sidecar's content mode is decided by `--mode`, and must not switch to a different set of font sizes just because the style blob stores some other mode string.
 pub fn ass_style_sheet(style_root: &Value, mode: &str, play_res: (u32, u32)) -> AssStyleSheet {
     let (width, height) = play_res;
     let mode = StudioMode::parse(mode).unwrap_or(StudioMode::Original);
@@ -175,7 +174,7 @@ pub fn ass_style_sheet(style_root: &Value, mode: &str, play_res: (u32, u32)) -> 
     let original = resolve_line_style(style_root, LineKind::Original, width, height, bilingual);
     let translation =
         resolve_line_style(style_root, LineKind::Translation, width, height, bilingual);
-    // Dialogue 声明的主样式：单语译文导出只有译文行，主样式就该是译文样式。
+    // The main style declared by Dialogue: a monolingual translation export has only translation lines, so the main style should be the translation style.
     let primary = match mode {
         StudioMode::Translated => &translation,
         StudioMode::Original | StudioMode::Bilingual => &original,
@@ -189,8 +188,8 @@ pub fn ass_style_sheet(style_root: &Value, mode: &str, play_res: (u32, u32)) -> 
     } else {
         line_block_height(primary)
     };
-    // 锚线：`y` 是文本块锚点的画面百分比。折算成「块底边到画面底边的距离」，
-    // 这样无论字幕在顶部还是底部，都能用底对齐 + MarginV 表达。
+    // Anchor line: `y` is the frame percentage of the text block's anchor point. It is converted to "the distance from the bottom edge of the block to the bottom edge of the frame",
+    // so whether the subtitle is at the top or bottom, it can be expressed with bottom alignment + MarginV.
     let anchor = f64::from(height) * finite(style_root.get("y"), 86.0) / 100.0;
     let block_bottom = match parse_vertical_align(style_root.get("verticalAlign")) {
         Some(VerticalAlign::Top) => anchor + block_height,
@@ -199,7 +198,7 @@ pub fn ass_style_sheet(style_root: &Value, mode: &str, play_res: (u32, u32)) -> 
     };
     let margin_v = clamp(f64::from(height) - block_bottom, 0.0, f64::from(height)).round() as i64;
     let x = finite(style_root.get("x"), 50.0);
-    // 底对齐三格：1 左 / 2 中 / 3 右。
+    // The three bottom-alignment cells: 1 left / 2 centre / 3 right.
     let alignment = if x < 33.3 {
         1
     } else if x > 66.7 {
@@ -212,7 +211,7 @@ pub fn ass_style_sheet(style_root: &Value, mode: &str, play_res: (u32, u32)) -> 
         / 200.0)
         .round()
         .max(0.0) as i64;
-    // 屏幕坐标顺时针为正，ASS `Angle` 逆时针为正。
+    // Screen coordinates are clockwise-positive; ASS `Angle` is counter-clockwise-positive.
     let angle = -finite(style_root.get("rotation"), 0.0);
 
     let mut styles = vec![ass_style_row(
@@ -247,9 +246,9 @@ ScaledBorderAndShadow: yes\nPlayResX: {width}\nPlayResY: {height}\n\n\
     }
 }
 
-// v3：两条测试原样取自 v2 `ccut-kernel` 的 `cmd/studio_export/tests.rs`（描边口径）与
-// `cmd/media/tests.rs`（双语缺译）。夹具 helper（`document`、`word_doc`）是 JSON / 行字面量，
-// 照 v2 的做法就地各留一份。
+// v3: the two tests are taken verbatim from v2 `ccut-kernel`'s `cmd/studio_export/tests.rs` (outline convention) and
+// `cmd/media/tests.rs` (bilingual missing translation). The fixture helpers (`document`, `word_doc`) are JSON / line literals,
+// and each is kept in place, as v2 did.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,18 +313,17 @@ mod tests {
         )
     }
 
-    /// 描边宽度的口径闭环。持久化的 `textOutline.width` 是「可见外扩量」占字号的
-    /// 百分比（Mac `StagePaneView` 的 `.strokeWidth = -width * 0.5`），所以：
+    /// Closed-loop convention for the outline width. The persisted `textOutline.width` is the "visible outward extent" as a percentage of font size (Mac `StagePaneView`'s `.strokeWidth = -width * 0.5`), so:
     ///
-    /// - [`LineStyle::outline_width`]（tiny-skia 居中描边的整条线宽）= `w/200 × fontSize`
-    /// - ASS `Outline`（向外生长厚度）= 它的一半 = `w/400 × fontSize`
+    /// - [`LineStyle::outline_width`] (the full line width of a tiny-skia centred stroke) = `w/200 × fontSize`
+    /// - ASS `Outline` (outward-growing thickness) = half of that = `w/400 × fontSize`
     ///
-    /// 曾经两处都少乘一个 0.5，烧录与 sidecar 的描边比预览粗一倍。
+    /// Both places used to miss a factor of 0.5 once, so burn-in and the sidecar outline came out twice as thick as the preview.
     #[test]
     fn outline_width_is_the_centred_line_width_and_ass_takes_half_of_it() {
         let mut style = document("None", "none")["style"].clone();
         style["textOutline"] = json!({"color": "#000000", "width": 15, "on": true});
-        // 底板开着会让 ASS 走 BorderStyle=3，`Outline` 字段变成块内边距。
+        // With the background box on, ASS uses BorderStyle=3, and the `Outline` field becomes the box padding.
         style["background"] = json!(false);
 
         // 1080p ⇒ canvas_scale = 1080/540 = 2；fontSize 30 ⇒ 60px。
@@ -343,7 +341,7 @@ mod tests {
             .lines()
             .find(|line| line.starts_with("Style: CucCut,"))
             .expect("必须有主样式行");
-        // Format 第 17 个字段（0 起算 16）是 Outline。
+        // The 17th field of Format (0-based, index 16) is Outline.
         let outline = row
             .trim_start_matches("Style: ")
             .split(',')
@@ -355,8 +353,8 @@ mod tests {
         );
     }
 
-    /// ASS 双语是「一条 Dialogue 两行」，缺译时那条事件只剩原文一行：
-    /// 正文里没有 `\N`，也就不该出现切到译文样式的 `{\r...}` 标签。
+    /// ASS bilingual is "one Dialogue, two lines". When the translation is missing, that event keeps only the source line:
+    /// the body has no `\N`, so there should be no `{\r...}` tag that switches to the translation style.
     #[test]
     fn ass_bilingual_missing_translation_stays_a_single_primary_line() {
         let mut doc = word_doc();
@@ -398,7 +396,7 @@ mod tests {
             .collect();
         assert_eq!(dialogues.len(), 2, "{rendered}");
         assert!(dialogues[0].contains("hello there\\N"), "{rendered}");
-        // 缺译那条：单行原文，没有换行也没有译文样式切换。
+        // The missing-translation case: a single source line, with no line break and no switch to the translation style.
         let missing_line = dialogues[1];
         assert!(missing_line.contains("goodbye now"), "{rendered}");
         assert!(!missing_line.contains("\\N"), "{rendered}");

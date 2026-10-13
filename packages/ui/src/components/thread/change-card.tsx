@@ -18,8 +18,7 @@ import { useVideoHistory } from './use-video-history.ts';
 type VideoChange = Extract<TimelineItem, { kind: 'video-change' }>;
 
 /**
- * 回执是工作记录框里的一行（原型 agent-messages.css `.asteps--box .arcpt`）：不另起底色与边框，行间分隔线由框给；
- * 生效中图标是绿色，撤销之后转灰。
+ * A receipt is one row inside the work-log box (prototype agent-messages.css `.asteps--box .arcpt`): it sets no background or border of its own; the row dividers come from the box. The icon is green while the change is in effect, and turns grey after it is undone.
  */
 const row = style({ display: 'flex', flexDirection: 'column', gap: 4, paddingX: 12, paddingY: 4 });
 const head = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minHeight: 32 });
@@ -51,23 +50,18 @@ function factsOf(item: VideoChange): string[] {
   ].filter(Boolean);
 }
 
-/** 编辑器此刻占着这个视频（正在打开或已经开着）。 */
+/** The editor is holding this video right now (it is opening or already open). */
 function editorHolds(target: FileTarget, videoId: Id): boolean {
   const video = useVideo.getState().video;
   return video !== null && (video.videoId === videoId || sameTarget(video.target, target));
 }
 
 /**
- * 变更卡（产品设计 §6.5，原型 agent-steps.jsx `ReceiptStep`）：Agent 经工具提交的一笔视频修改，是工作记录展开后框里的一行
- * （steps-group.tsx）。内容全部来自引擎的回执，不取 Agent 自己的说法。
+ * Change card (product design §6.5, prototype agent-steps.jsx `ReceiptStep`): one video edit that the agent submitted through a tool, shown as a row inside the expanded work-log box (steps-group.tsx). All content comes from the engine's receipt; the agent's own account is not used.
  *
- * - 撤销：先确认（原型 `ConfirmDialog`）。编辑器开着这个视频时走编辑器的命令队列；没开着时在后台打开视频撤销再关掉
- *   （`undoInBackground`），不再要求视频开在旁边。编辑器正在打开它时先等打开完。撤销冲突由引擎判断。
- * - 撤销之后是「已撤销 · 改动已还原」。只有编辑器开着这个视频、这一笔的撤销正是当前连接「重做」栈顶时才给「恢复」：
- *   栈顶只能从编辑器订阅的 `edits.undoState` 看到；不是栈顶时（之后又改过这个视频、或撤销是 Agent 做的）
- *   撤销那笔补偿事务不一定等于把这一步放回去，不画。恢复按事务撤销那一笔（`{ transaction }`），不发 `'redo'`：
- *   按下时栈顶万一已经变了，也不会重做到别的修改上。
- * - Agent 自己撤销的那一笔（`undoOf`）只记一行，不给撤销或恢复。
+ * - Undo: confirm first (prototype `ConfirmDialog`). When the editor has this video open, the undo goes through the editor's command queue; when it is not open, the video is opened in the background, undone and closed again (`undoInBackground`), so the video no longer needs to be open alongside. If the editor is in the middle of opening it, wait for that to finish first. Undo conflicts are judged by the engine.
+ * - After undo, the card reads “已撤销 · 改动已还原” (Undone · changes reverted). “恢复” (Restore) is offered only when the editor has this video open and this edit's undo is exactly the top of the connection's “重做” (redo) stack. The top of the stack is only visible through `edits.undoState`, which the editor subscribes to. When it is not the top (the video has been edited since, or the undo was done by the agent), the compensating transaction for the undo is not necessarily the same as putting this step back, so no Restore is shown. Restore undoes that one transaction (`{ transaction }`) rather than sending `'redo'`: if the top of the stack has changed by the time it is pressed, it will not redo onto some other change either.
+ * - The edit the agent undid itself (`undoOf`) is recorded as one line only, with no undo or restore.
  */
 export const ChangeCard = memo(function ChangeCard({
   item,
@@ -138,7 +132,7 @@ export const ChangeCard = memo(function ChangeCard({
     }
   };
 
-  // 引擎起的修改名带引用，按界面的语言显示；旧卡片与调用方给的名字照原样（命令与协议规范 §3.1）。
+  // Change names created by the engine carry references and are shown in the interface language; older cards and names supplied by callers are kept as they are (command and protocol spec §3.1).
   const changeLabel = localizeText(item.label, item.labelRef);
   const label = isUndone
     ? CHANGE_COPY.undone

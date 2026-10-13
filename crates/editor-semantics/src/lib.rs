@@ -1,5 +1,5 @@
-//! CucCut 的编辑语义（架构设计 §13.1 `crates/editor-semantics`）：时间类型、十进制秒、
-//! 帧量化与映射。纯函数，没有状态，也不碰文件；视频引擎与将来的 WASM 预测共用它。
+//! CucCut's editing semantics (architecture design §13.1 `crates/editor-semantics`): time types, decimal seconds,
+//! frame quantization and mapping. Pure functions with no state that do not touch files; the video engine and the future WASM prediction share it.
 
 pub mod ratio;
 pub mod time;

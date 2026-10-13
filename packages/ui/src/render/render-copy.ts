@@ -14,7 +14,7 @@ import { pl } from './render-copy.pl.ts';
 import { tr } from './render-copy.tr.ts';
 import { vi } from './render-copy.vi.ts';
 
-/** 预览渲染（彩纸的款名与形状名、帧计划器与字体载入的报错）的文案。英文写在这里，译文在 `render-copy.zh-Hans.ts`。 */
+/** Copy for preview rendering (confetti style and shape names, frame planner and font-loading error messages). English is written here; the translations are in `render-copy.zh-Hans.ts`. */
 const en = {
   confetti: {
     shapes: {

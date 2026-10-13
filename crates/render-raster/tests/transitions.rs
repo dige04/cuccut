@@ -1,12 +1,11 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer` (the BCF document rendering pipeline and the host byte layer), which do not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
-//! 转场（规范 §9，设计 §6.4）。
+//! Transitions (spec §9, design §6.4).
 //!
-//! 本文件只管 **Motion Transition**：双方 clip 的属性轨道，不起离屏 surface。
-//! 因此每一条都必须保持「计划折叠成单个 Draw pass」——转场不是效果栈。
-//! Surface Transition 的 `Transition` pass 见 `surface_transitions.rs`。
+//! This file covers only **Motion Transitions**: the property tracks of both clips, without starting an offscreen surface.
+//! So every one of these must keep "the plan collapses into a single Draw pass": a transition is not an effect stack.
+//! The `Transition` pass for Surface Transitions is in `surface_transitions.rs`.
 
 use render_raster::plan::FramePlanner;
 use render_raster::{FrameRenderer, LoadedAssets, MediaStore, TextEngine};
@@ -16,7 +15,7 @@ use std::sync::Arc;
 
 const W: u32 = 240;
 const H: u32 = 160;
-/// 剪辑点。窗口是对称的 `[t0 - dur/2, t0 + dur/2]` = `[0.8, 1.2]`。
+/// Cut point. The window is symmetric: `[t0 - dur/2, t0 + dur/2]` = `[0.8, 1.2]`.
 const T0: f64 = 1.0;
 const DUR: f64 = 0.4;
 
@@ -46,7 +45,7 @@ fn ir_of(document: Value) -> Ir {
     Resolver::new(document, None).unwrap().resolve().unwrap()
 }
 
-/// 渲染一刻，同时把 pass 数带出来——Motion Transition 必须恒为 1。
+/// Render one instant, and also report the pass count: a Motion Transition must always be 1.
 fn render(preset: &str, t: f64) -> (Vec<u8>, usize) {
     let mut ir = ir_of(doc(preset));
     let mut engine = TextEngine::new();
@@ -71,8 +70,7 @@ fn uniform(data: &[u8], expected: [u8; 4]) -> bool {
         .all(|x| (0..H).step_by(11).all(|y| px(data, x, y) == expected))
 }
 
-/// 规范 §9 附录 B 的十个词。阶段 5 之前后四个在 resolve 期就报
-/// `transition-unknown`。
+/// The ten words from spec §9 Appendix B. Before stage 5, the last four already report `transition-unknown` at resolve time.
 const VOCABULARY: &[&str] = &[
     "cut",
     "crossfade",
@@ -86,9 +84,7 @@ const VOCABULARY: &[&str] = &[
     "whipPan",
 ];
 
-/// 窗口两端是**干净**的单画面：`t0 - dur/2` 只剩离场画面，`t0 + dur/2` 只剩
-/// 入场画面。`cut` 例外——它不产通道，交叠期两张画面直接叠着（这就是 `cut`
-/// 的定义，不是缺陷）。
+/// Both ends of the window are **clean** single frames: at `t0 - dur/2` only the outgoing frame remains, and at `t0 + dur/2` only the incoming frame remains. `cut` is the exception: it produces no channel, so during the overlap the two frames are stacked directly (this is the definition of `cut`, not a defect).
 #[test]
 fn every_motion_transition_starts_at_from_and_ends_at_to() {
     for preset in VOCABULARY {
@@ -102,7 +98,7 @@ fn every_motion_transition_starts_at_from_and_ends_at_to() {
     }
 }
 
-/// Motion Transition 是属性轨道，**一个 pass 都不多**。
+/// A Motion Transition is a property track, with **not a single extra pass**.
 #[test]
 fn motion_transitions_stay_in_one_draw_pass() {
     for preset in VOCABULARY {
@@ -113,7 +109,7 @@ fn motion_transitions_stay_in_one_draw_pass() {
     }
 }
 
-/// 窗口中点必须与两端都不同——「配方存在但什么都没动」会在这里红。
+/// The window midpoint must differ from both ends: "the recipe exists but nothing moved" fails here.
 #[test]
 fn every_motion_transition_actually_moves_at_the_midpoint() {
     for preset in VOCABULARY {
@@ -126,16 +122,14 @@ fn every_motion_transition_actually_moves_at_the_midpoint() {
     }
 }
 
-/// `wipeLeft` 的擦除边在 `x = (1 - p)·W`，`wipeRight` 在 `x = p·W`——中点各是
-/// 画布正中，两侧硬边、无羽化，且**画面本身不移动**（这正是 wipe 与 slide 的
-/// 区别：slide 在同一时刻两张画面都偏了半屏）。
+/// The wipe edge of `wipeLeft` is at `x = (1 - p)·W`, and that of `wipeRight` is at `x = p·W`. At the midpoint both edges are at the exact center of the canvas, with hard edges on both sides and no feathering, and **the frame itself does not move** (this is exactly the difference between wipe and slide: with slide, both frames are offset by half a screen at the same instant).
 #[test]
 fn the_wipe_edge_sweeps_the_declared_direction() {
     let (left, _) = render("wipeLeft", T0);
     for y in (0..H).step_by(11) {
         assert_eq!(px(&left, 60, y), RED, "wipeLeft: 边左侧应是离场画面");
         assert_eq!(px(&left, 180, y), BLUE, "wipeLeft: 边右侧应是入场画面");
-        // 硬边：边两侧相邻像素直接换色，中间没有混色。
+        // Hard edge: the adjacent pixels on either side of the edge switch colors directly, with no blending in between.
         assert_eq!(px(&left, 119, y), RED);
         assert_eq!(px(&left, 120, y), BLUE);
     }
@@ -149,28 +143,23 @@ fn the_wipe_edge_sweeps_the_declared_direction() {
     }
 }
 
-/// `zoomThrough` 以**画布中心**为锚点：入场画面在中点缩到 0.9375×，因此四角
-/// 露出背景（黑），而正中仍是画面。缩放锚点错成元素左上角时这条会红。
+/// `zoomThrough` is anchored on the **canvas center**: the incoming frame shrinks to 0.9375× at the midpoint, so the four corners show the background (black), while the center is still the frame. This test fails if the scale anchor is wrongly set to the element's top-left corner.
 #[test]
 fn zoom_through_scales_about_the_canvas_centre() {
     let (mid, _) = render("zoomThrough", T0);
-    // 0.9375× 的入场板在 240×160 上留出左右各 7.5px、上下各 5px 的空隙；
-    // 离场板是 1.1875×，只覆盖到画布之外，因此角上剩下的是它。
+    // At 240×160 the 0.9375× incoming board leaves a 7.5px gap on the left and right and a 5px gap on the top and bottom; the outgoing board is 1.1875×, covering only up to beyond the canvas, so what remains at the corners is the outgoing one.
     assert_ne!(px(&mid, 0, 0), [0, 0, 0, 255], "角上不该是纯背景");
-    // 正中两张板都盖得到，合成后既不是纯红也不是纯蓝。
+    // Both boards cover the center, so after compositing it is neither pure red nor pure blue.
     let centre = px(&mid, W / 2, H / 2);
     assert_ne!(centre, RED);
     assert_ne!(centre, BLUE);
 }
 
-/// `whipPan` 的两张画面**朝相反方向**走：中点时离场画面已经偏左、入场画面
-/// 还在右边。同向就成了两张叠着平移的画面（发布前踩过的坑）。
+/// The two frames of `whipPan` travel in **opposite directions**: at the midpoint the outgoing frame has already moved left, while the incoming frame is still on the right. If they moved in the same direction, the two frames would be stacked and panning together (a pitfall hit before release).
 #[test]
 fn whip_pan_moves_the_two_shots_in_opposite_directions() {
     let (mid, _) = render("whipPan", T0);
-    // 出方 x = easeInQuart(0.5) · (-1.2·W) = -18，覆盖 [-18, 222)；
-    // 入方 x = +18，覆盖 [18, 258)。因此最右 18px 只有入场画面、最左 18px
-    // 只有离场画面。两侧还各带 0.9375 的甩程透明度，所以比的是色相不是等值。
+    // Outgoing x = easeInQuart(0.5) · (-1.2·W) = -18, covering [-18, 222); incoming x = +18, covering [18, 258). So the rightmost 18px shows only the incoming frame, and the leftmost 18px shows only the outgoing frame. Both sides also carry 0.9375 opacity from the whip travel, so what is compared is hue, not equal value.
     let right = px(&mid, W - 4, H / 2);
     assert!(
         right[2] > right[0],

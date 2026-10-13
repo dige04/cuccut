@@ -14,9 +14,9 @@ import { pl } from './approvals-copy.pl.ts';
 import { tr } from './approvals-copy.tr.ts';
 import { vi } from './approvals-copy.vi.ts';
 
-/** 访问模式的命令行写法与 `cuccut approvals` 的文案（英文是键与类型的来源，译文在 `approvals-copy.<语言>.ts`）。 */
+/** Command-line spellings of access modes and the copy for `cuccut approvals`. The English is the source of the keys and types; the translations are in `approvals-copy.<language>.ts`. */
 const en = {
-  /** `cuccut approvals --help` 的正文。 */
+  /** The body of `cuccut approvals --help`. */
   help: `Usage:
   cuccut approvals                 List pending approvals, from sessions and from external services
   cuccut approvals allow <id>      Allow a pending approval; approvals that share data

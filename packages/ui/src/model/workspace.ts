@@ -14,7 +14,7 @@ import { pl } from './workspace.pl.ts';
 import { tr } from './workspace.tr.ts';
 import { vi } from './workspace.vi.ts';
 
-/** 标签名的兜底文案（译文在 `workspace.<语言>.ts`）。 */
+/** Fallback text for tab names (translations are in `workspace.<language>.ts`). */
 const en = {
   newTab: 'New tab',
   projectFiles: 'Project files',
@@ -28,9 +28,9 @@ export type WorkspaceMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * Home 功能区的标签页（产品设计 §2.5、§3.3 用户修订）：视频、单个文件、项目文件浏览、网页、幻灯片（deck 目录，docs/design/slides §8.1）、
- * 设计稿（含 `canvas.json` 的目录，docs/design/canvas §8.1）、设计系统（含 `design-system.json` 的目录，§10.6）。
- * 每条会话各自记着一组标签；路由只带当前那一个。预览不改变会话的写入目标。
+ * The tabs in the Home workspace area (product design §2.5, §3.3 user revision): videos, single files, project file browsing, web pages, slides (a deck directory, docs/design/slides §8.1),
+ * design drafts (directories containing `canvas.json`, docs/design/canvas §8.1), and design systems (directories containing `design-system.json`, §10.6).
+ * Each conversation keeps its own set of tabs, and the route carries only the current one. Previewing does not change the conversation's write target.
  */
 export type WorkspaceItem =
   | { kind: 'video'; target: FileTarget }
@@ -41,23 +41,23 @@ export type WorkspaceItem =
   | { kind: 'design'; target: FileTarget }
   | { kind: 'design-system'; target: FileTarget };
 
-/** 用 iframe 里的编辑器打开一个目录的标签（`EditorPane`）。 */
+/** A tab that opens a directory in the editor running in an iframe (`EditorPane`). */
 export type EditorKind = 'slides' | 'design' | 'design-system';
 
-/** 有标注的编辑器标签：三种都有（幻灯片 docs/design/slides §8.2、设计稿与设计系统 docs/design/canvas §8.2、§10.6）。 */
+/** Editor tabs with annotations. All three kinds have them: slides (docs/design/slides §8.2), design drafts and design systems (docs/design/canvas §8.2, §10.6). */
 export type AnnotatedEditorKind = EditorKind;
 
 export interface WorkspaceTabs {
   tabs: WorkspaceItem[];
-  /** 当前标签的 key；null 表示功能区收起（会话独占主区）。 */
+  /** The key of the current tab. null means the workspace area is collapsed (the conversation takes the main area). */
   active: string | null;
-  /** 收起前最后一个当前标签：「显示右侧区域」时回到它（原型 home-workspace-store.jsx `remembered`）。 */
+  /** The last current tab before collapsing. “Show right area” returns to it (prototype home-workspace-store.jsx `remembered`). */
   last?: string;
 }
 
 export const EMPTY_WORKSPACE: WorkspaceTabs = { tabs: [], active: null };
 
-/** 新会话（还没说第一句）的工作区键：在某个项目里，或不属于项目。 */
+/** The workspace key for a new conversation (no first sentence yet): inside a project, or not belonging to one. */
 export function workspaceKey(conversationId: Id | null, projectId: Id | null): string {
   if (conversationId) return conversationId;
   return projectId ? `new:${projectId}` : 'new';
@@ -91,7 +91,7 @@ export function targetKey(target: MediaTarget): string {
   return `c:${target.conversationId}:${target.path}`;
 }
 
-/** 打开（或换到）一个标签：已有同 key 的就地更新，否则排到最后。 */
+/** Opens (or switches to) a tab. If a tab with the same key exists, it is updated in place; otherwise it is added at the end. */
 export function openTab(state: WorkspaceTabs, item: WorkspaceItem): WorkspaceTabs {
   const key = itemKey(item);
   const exists = state.tabs.some((t) => itemKey(t) === key);
@@ -102,8 +102,8 @@ export function openTab(state: WorkspaceTabs, item: WorkspaceItem): WorkspaceTab
 }
 
 /**
- * 原地换掉一个标签（原型 model-home-workspace.js `replace`）：新标签放在 `key` 的位置并成为当前标签，像浏览器在同一个标签页里换页面；
- * 新标签已在别处打开时挪过来，不留两份。没有 `key` 这个标签时等于 `openTab`。
+ * Replaces a tab in place (prototype model-home-workspace.js `replace`). The new tab takes the position of `key` and becomes current, like a browser navigating within the same tab page.
+ * If the new tab is already open elsewhere, it is moved over rather than kept twice. If there is no tab with `key`, this equals `openTab`.
  */
 export function replaceTab(state: WorkspaceTabs, key: string, item: WorkspaceItem): WorkspaceTabs {
   if (!state.tabs.some((t) => itemKey(t) === key)) return openTab(state, item);
@@ -112,7 +112,7 @@ export function replaceTab(state: WorkspaceTabs, key: string, item: WorkspaceIte
   return { tabs, active: next };
 }
 
-/** 关掉一个标签：关的是当前标签时，同一位置的下一个（没有就前一个）接上。 */
+/** Closes a tab. If the current tab is closed, the next one in the same position takes over (or the previous one if there is none). */
 export function closeTab(state: WorkspaceTabs, key: string): WorkspaceTabs {
   const index = state.tabs.findIndex((t) => itemKey(t) === key);
   if (index < 0) return state;
@@ -122,7 +122,7 @@ export function closeTab(state: WorkspaceTabs, key: string): WorkspaceTabs {
   return state.last && state.last !== key ? { tabs, active, last: state.last } : { tabs, active };
 }
 
-/** 把 `key` 挪到 `targetKey` 的前面（`after` 时后面）。 */
+/** Moves `key` in front of `targetKey` (after it when `after`). */
 export function moveTab(state: WorkspaceTabs, key: string, target: string, after = false): WorkspaceTabs {
   if (key === target) return state;
   const item = state.tabs.find((t) => itemKey(t) === key);
@@ -132,18 +132,18 @@ export function moveTab(state: WorkspaceTabs, key: string, target: string, after
   return tabs.every((t, i) => t === state.tabs[i]) ? state : { ...state, tabs };
 }
 
-/** 有没有哪条会话的标签组还开着这个视频（`key` 是 `targetKey`）：没有了才真正关掉它。 */
+/** Whether any conversation's tab group still has this video open (`key` is `targetKey`). It is only really closed when none does. */
 export function isVideoReferenced(workspaces: Record<string, WorkspaceTabs>, key: string): boolean {
   return Object.values(workspaces).some((book) => book.tabs.some((t) => t.kind === 'video' && targetKey(t.target) === key));
 }
 
-/** 路由换到这条会话的某个标签（或没有标签）时，标签组跟着变；收起时记下刚才的标签。没有变化时返回原对象。 */
+/** When the route switches to one of this conversation's tabs (or to none), the tab group follows. When collapsing, the tab that was just current is remembered. Returns the original object when nothing changes. */
 export function reconcileTabs(state: WorkspaceTabs, pane: WorkspaceItem | undefined): WorkspaceTabs {
   const next = pane ? openTab(state, pane) : state.active === null ? state : { tabs: state.tabs, active: null, last: state.active };
   return JSON.stringify(next) === JSON.stringify(state) ? state : next;
 }
 
-/** 「显示右侧区域」回到哪个标签：当前的，收起前的，都没有就最后一个（原型 `toggleWorkspace`）。 */
+/** Which tab “Show right area” returns to: the current one, the one before collapsing, or the last one if neither exists (prototype `toggleWorkspace`). */
 export function restoreKey(state: WorkspaceTabs): string | null {
   const has = (key: string | null | undefined): key is string => !!key && state.tabs.some((t) => itemKey(t) === key);
   if (has(state.active)) return state.active;
@@ -153,8 +153,8 @@ export function restoreKey(state: WorkspaceTabs): string | null {
 }
 
 /**
- * 地址栏的输入变成一个可以打开的网址；不是网址时返回 null（由调用方改成搜索）。
- * 只允许 http/https，去掉账号密码以外的写法一律拒绝；localhost 与 `主机:端口` 补上协议。
+ * Turns address bar input into a URL that can be opened. Returns null when the input is not a URL (the caller turns it into a search).
+ * Only http and https are allowed. Every form except the plain URL forms is rejected. localhost and `host:port` get the protocol added.
  */
 export function safeUrl(input: string): string | null {
   const text = input.trim();
@@ -171,7 +171,7 @@ export function safeUrl(input: string): string | null {
   }
 }
 
-/** 网页标签的名字：主机名；还没有地址时是「新标签页」。 */
+/** The name of a web tab: the hostname. When there is no address yet, it is 「新标签页」(New tab page). */
 export function webTitle(url: string): string {
   try {
     return new URL(url).hostname || M.newTab;
@@ -186,7 +186,7 @@ export interface TabRect {
   width: number;
 }
 
-/** 拖动标签时落在哪：按未变换的槽位判断，动画中的邻居不会把目标挤走。 */
+/** When dragging a tab, decide where it lands by its untransformed slots. Neighbors that are mid-animation do not push the target away. */
 export function dragTarget(rects: TabRect[], key: string, x: number): { key: string; after: boolean } | null {
   const others = rects.filter((r) => r.key !== key);
   if (!others.length) return null;
@@ -194,7 +194,7 @@ export function dragTarget(rects: TabRect[], key: string, x: number): { key: str
   return next ? { key: next.key, after: false } : { key: others.at(-1)!.key, after: true };
 }
 
-/** 拖动预览里每个标签要平移多少，才能排成放下之后的顺序。 */
+/** How far each tab shifts during the drag preview so that they line up in the order they will have after dropping. */
 export function dragOffsets(
   rects: TabRect[],
   key: string,
@@ -216,7 +216,7 @@ export function dragOffsets(
   return offsets;
 }
 
-/** 会话列至少 320，默认 380；最大宽度由工作区决定，中缝双击回到默认。 */
+/** The conversation column is at least 320 and defaults to 380. The maximum width is set by the workspace. Double-clicking the seam in the middle returns it to the default. */
 export const DOCK_MIN = 320;
 export const DOCK_DEFAULT = 380;
 export const PANE_MIN_WIDTH = 320;
@@ -226,7 +226,7 @@ export function clampDock(width: number): number {
   return Number.isFinite(width) ? Math.round(Math.max(DOCK_MIN, width)) : DOCK_DEFAULT;
 }
 
-/** 正常分栏保留右侧最小宽度，实际指针仍可越过这个边界（product-design §3.3）。 */
+/** In normal split layout, keep a minimum width for the right side. The actual pointer can still cross this boundary (product-design §3.3). */
 export function dockFor(contentWidth: number, dock: number): number {
   return Math.max(DOCK_MIN, Math.min(clampDock(dock), contentWidth - PANE_MIN_WIDTH));
 }
@@ -235,7 +235,7 @@ export function resizeSplit(conversationWidth: number, contentWidth: number): { 
   return { width: dockFor(contentWidth, conversationWidth), hidden: contentWidth - conversationWidth < PANE_HIDE_WIDTH };
 }
 
-/** 编辑器最小宽度：工具栏 68 + 缝 7 + 面板 300 + 预览 320。 */
+/** Editor minimum width: toolbar 68 + seam 7 + panel 300 + preview 320. */
 export const EDITOR_MIN_WIDTH = 695;
 
 /** Width of the selection inspector when it sits as a column of its own beside the docked conversation. */
@@ -251,22 +251,22 @@ export function inspectorBeside(contentWidth: number, dock: number): boolean {
 }
 
 /**
- * 窄模式只由容器宽度决定，不能随拖宽的会话列切换，否则拖动会在收起阈值前中断。
- * 原型用 960px 近似；应用按最窄会话 320 + 实际编辑器 695 预留（product-design §3.3）。
+ * Narrow mode is decided only by the container width. It must not switch with the width of the dragged conversation column, or dragging would be interrupted before the collapse threshold.
+ * The prototype approximates this as 960px. The app reserves 320 for the narrowest conversation plus the actual editor width of 695 (product-design §3.3).
  */
 export function isNarrow(contentWidth: number): boolean {
   return Number.isFinite(contentWidth) && contentWidth > 0 && contentWidth < DOCK_MIN + EDITOR_MIN_WIDTH;
 }
 
 /**
- * 并排切到单列的那一刻选哪个标签（原型 `narrowShowsConversation`）：焦点在会话区里，或功能区本来就收起时选会话；
- * 否则停在正在用的标签。
+ * Which tab is chosen at the moment the split switches to a single column (prototype `narrowShowsConversation`). If focus is in the conversation area, or the workspace area was already collapsed, the conversation is chosen.
+ * Otherwise it stays on the tab in use.
  */
 export function narrowShowsConversation(focusInConversation: boolean, paneVisible: boolean): boolean {
   return focusInConversation || !paneVisible;
 }
 
-/** 标签上的名字（原型 model-home-workspace.js `title`）：项目文件、网页标题（还没有时用主机名），或文件、视频与幻灯片的名字（幻灯片退到目录名）。 */
+/** The name on a tab (prototype model-home-workspace.js `title`): project files, the web page title (or the hostname when there is no title yet), or the name of a file, video or slide (a slide falls back to its directory name). */
 export function workspaceTitle(item: WorkspaceItem, name?: string | null): string {
   if (item.kind === 'files') return M.projectFiles;
   if (item.kind === 'web') return name || webTitle(item.url);
@@ -277,7 +277,7 @@ export function workspaceTitle(item: WorkspaceItem, name?: string | null): strin
   return base || (item.kind === 'video' ? M.videoUnavailable : item.kind === 'slides' ? M.slidesUnavailable : item.kind === 'design' ? M.designUnavailable : item.kind === 'design-system' ? M.designSystemUnavailable : M.fileUnavailable);
 }
 
-/** 网页标签里的页面换了地址：就地改这个标签的 `url`，不改当前标签与顺序；没有这个标签或没变化时返回原对象。 */
+/** The page in a web tab navigated to a new address: update this tab's `url` in place, without changing the current tab or the order. Returns the original object if there is no such tab or nothing changed. */
 export function updateWebUrl(state: WorkspaceTabs, id: string, url: string): WorkspaceTabs {
   const index = state.tabs.findIndex((t) => t.kind === 'web' && t.id === id);
   const tab = state.tabs[index];
@@ -287,14 +287,14 @@ export function updateWebUrl(state: WorkspaceTabs, id: string, url: string): Wor
   return { ...state, tabs };
 }
 
-/** 标签对应的 Space 条目：按条目 id，或按来源目录加相对路径。 */
+/** The Space entry for a tab: matched by entry id, or by source directory plus relative path. */
 export function entryOfTarget(entries: readonly SpaceEntry[], target: MediaTarget): SpaceEntry | undefined {
   if ('entryId' in target) return entries.find((e) => e.id === target.entryId);
   if ('projectId' in target) return entries.find((e) => e.source.projectId === target.projectId && e.relPath === target.path);
   return 'path' in target ? entries.find((e) => e.source.conversationId === target.conversationId && e.relPath === target.path) : undefined;
 }
 
-/** 标签条的方向键：左右循环，Home / End 到两头；别的键返回 null。 */
+/** Arrow keys on the tab bar: left and right cycle; Home and End go to the ends. Other keys return null. */
 export function tabKeyIndex(key: string, index: number, count: number): number | null {
   if (count <= 0) return null;
   if (key === 'ArrowRight') return (index + 1) % count;
@@ -305,11 +305,11 @@ export function tabKeyIndex(key: string, index: number, count: number): number |
 }
 
 /**
- * 窄窗口与完整视图里会话那个固定的第一个标签（产品设计 §2.5、§3.3）。它不在 `tabs` 里：挪动、关闭与路由都看不到它。
+ * The fixed first tab of the conversation in narrow windows and the full view (product design §2.5, §3.3). It is not in `tabs`, so moving, closing, and routing do not see it.
  */
 export const CONVERSATION_TAB = '__conversation__';
 
-/** 每条会话（新会话按草稿键）自己的视图：功能区收起（会话标签选中）与完整视图。 */
+/** Each conversation's own view (a new conversation is keyed by its draft key): workspace area collapsed (the conversation tab selected), and the full view. */
 export interface WorkspaceView {
   hidden: boolean;
   full: boolean;
@@ -318,9 +318,9 @@ export interface WorkspaceView {
 export const DEFAULT_VIEW: WorkspaceView = { hidden: false, full: false };
 
 /**
- * 三种布局（产品设计 §2.5、§3.3 用户修订）：会话（功能区收起）、分屏（会话在左、标签在右）、完整视图（一条标签条，会话是固定的第一格）。
- * 窄窗口与完整视图共用单条标签条（`single`）；单条标签条里没显示标签就是选中了会话标签（`conversation`）。
- * 完整视图要有标签：没有标签时即使记着 `full` 也不算。
+ * Three layouts (product design §2.5, §3.3 user revision): conversation (workspace area collapsed), split (conversation on the left, tabs on the right), and full view (one tab bar, with the conversation as the fixed first cell).
+ * Narrow windows and the full view share one tab bar (`single`). When no tab is shown in that single tab bar, the conversation tab is selected (`conversation`).
+ * The full view needs tabs: without any, it does not apply even if `full` was remembered.
  */
 export function workspaceMode(input: { active: string | null; count: number; view: WorkspaceView; narrow: boolean }): {
   visible: boolean;
@@ -334,27 +334,27 @@ export function workspaceMode(input: { active: string | null; count: number; vie
   return { visible, full, single, conversation: single && !visible };
 }
 
-/** 进入完整视图时选哪一格：保留屏幕上的样子，显示着的标签继续选中，否则选会话标签。 */
+/** The cell to choose when entering the full view: keep what is on screen. A tab that is showing stays selected; otherwise the conversation tab is selected. */
 export function fullViewEntry(paneVisible: boolean, active: string | null): string {
   return paneVisible && active ? active : CONVERSATION_TAB;
 }
 
 export type TabsButtonAction = 'open' | 'split' | 'hide' | 'show';
 
-/** 标题栏「标签页」按钮的样子与动作。 */
+/** The look and action of the “Tabs” button in the title bar. */
 export interface TabsButtonState {
   action: TabsButtonAction;
-  /** `tabs-plus`：标签框里一个小加号；`hide-tabs`：隐藏标签页图标；`count`：标签框里是标签数。 */
+  /** `tabs-plus`: a small plus sign in the tab box. `hide-tabs`: hides the tabs icon. `count`: the tab box shows the number of tabs. */
   glyph: 'tabs-plus' | 'hide-tabs' | 'count';
-  /** 只在 `count` 时有：框里的数字，九个以上写「9+」。 */
+  /** Only with `count`: the number in the box. Nine or more is written as “9+”. */
   badge?: string;
-  /** 只有 `count`（分屏收起）时悬停才列出已打开的标签页。 */
+  /** Only with `count` (split collapsed): hovering lists the open tabs. */
   listed: boolean;
 }
 
 /**
- * 「标签页」按钮（标题栏右侧按钮组最右）：没有标签时打开新标签页；完整视图里回到分屏；分屏显示着时隐藏标签页；
- * 分屏收起时显示标签数，点了显示标签页，悬停列出已打开的标签页。
+ * The “Tabs” button (rightmost in the title bar's button group): with no tabs, it opens a new tab page. In the full view, it returns to split. When the split is showing, it hides the tabs.
+ * When the split is collapsed, it shows the tab count. Clicking shows the tabs; hovering lists the open tabs.
  */
 export function tabsButton({ count, visible, full }: { count: number; visible: boolean; full: boolean }): TabsButtonState {
   if (!count) return { action: 'open', glyph: 'tabs-plus', listed: false };

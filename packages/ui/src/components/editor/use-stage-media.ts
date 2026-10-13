@@ -16,33 +16,32 @@ import { useRuntime } from '../../runtime/context.tsx';
 import { canEdit, useVideo } from '../../state/video-store.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
-/** 卡还在时多久再查一次：盘接上了、文件挪回来了，不用重开视频就能恢复。 */
+/** How long until the next check while the card is still present: when the drive reconnects or the file is moved back, playback recovers without reopening the video. */
 const POLL_MS = 5000;
-/** 源元素取不到地址时，攒一会儿再查（同一时刻往往好几个元素一起失败）。 */
+/** When the source element cannot get an address, wait a moment before checking again (several elements often fail together at the same time). */
 const UNRESOLVED_DEBOUNCE_MS = 400;
 
 export interface StageMedia {
-  /** 卡片内容；主媒体都放得出来时是 null。 */
+  /** Card content; null when the main media can all be shown. */
   notice: StageMediaNotice | null;
-  /** 这个素材恢复过几次：预览的源元素按它重挂，重新取地址、重新载入。 */
+  /** How many times this asset has recovered. The preview's source element is remounted with this, so it fetches the address again and reloads. */
   revived(assetId: Id): number;
-  /** 源元素的一次载入结果。稳定的回调。 */
+  /** Result of one load of the source element. Stable callback. */
   report(mediaKey: string, ref: VersionRef, outcome: MediaOutcome): void;
-  /** 选文件并重新关联卡上那个素材。 */
+  /** Pick a file and re-link the asset on the card. */
   relink(): void;
-  /** 正在核对内容（大文件要几秒）。 */
+  /** Verifying content (large files take a few seconds). */
   busy: boolean;
-  /** 能提交修改（视频已追平）。 */
+  /** Edits can be committed (the video has caught up). */
   canRelink: boolean;
-  /** 上一次重新关联失败的原因（引擎的原话）。 */
+  /** Reason the last re-link failed (the engine's own words). */
   error: string | null;
 }
 
 /**
- * 主媒体放得出来没有（设计稿 model-stage-media.js）：查 `videos.assetStatus`，并收预览源元素的载入结果。
+ * Whether the main media can be shown (design model-stage-media.js): checks `videos.assetStatus`, and receives the load result of the preview's source element.
  *
- * 什么时候查：视频追平（打开、重新连上）、收到 `video.replaced`、素材登记变了（提交了素材类操作，包括别的窗口和智能体）、
- * 窗口回到前台、源元素取不到地址；卡还在时每隔几秒再查一次（盘接上就自动恢复）。只认最后一次查询的结果。
+ * When it checks: the video catches up (open, reconnect), on `video.replaced`, when the asset registration changes (after an asset-type operation is submitted, including from other windows and from agents), when the window comes back to the foreground, and when the source element cannot get an address. While the card is present, it checks again every few seconds (recovers automatically once the drive reconnects). Only the result of the last query is accepted.
  */
 export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedia {
   const runtime = useRuntime();
@@ -52,7 +51,7 @@ export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedi
   const assets = useVideo((s) => s.video?.state?.video.assets);
   const fingerprint = useMemo(() => (assets ? assetsFingerprint(assets) : ''), [assets]);
 
-  // 结果按视频记：切换视频时不串用上一个视频的结果。
+  // Results are kept per video: switching videos does not reuse the previous video's result.
   const [status, setStatus] = useState<{ videoId: Id; missing: MissingAsset[] } | null>(null);
   const [revive, setRevive] = useState<{ videoId: Id | null; counts: Record<Id, number> }>({ videoId: null, counts: {} });
   const [log, setLog] = useState<{ videoId: Id | null; entries: PlaybackLog }>({ videoId: null, entries: {} });
@@ -68,7 +67,7 @@ export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedi
     try {
       ({ missing } = await runtime.client.request('videos.assetStatus', { videoId }));
     } catch {
-      return; // 断线或视频关了：重新追平后再查。
+      return; // On disconnect, or when the video is closed: check again after catching up.
     }
     if (n !== latest.current) return;
     const before = previous.current?.videoId === videoId ? previous.current.missing : null;
@@ -95,7 +94,7 @@ export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedi
     return () => window.removeEventListener('focus', onFocus);
   }, [check, ready]);
 
-  // 换了视频（`check` 跟着换）或卸载时撤掉还没到点的那次：不拿上一个视频去查，免得抢掉新视频的结果。
+  // On switching video (`check` changes with it) or on unmount, cancel the pending check that has not yet come due. Do not query with the previous video, so as not to override the new video's result.
   const unresolvedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -129,7 +128,7 @@ export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedi
     [sequence, assets, missing, unplayable, canPick],
   );
 
-  // 读不到的还在：隔几秒再查。播放器打不开的不轮询（文件在，查了也一样）。
+  // If it still cannot be read, check again after a few seconds. Do not poll when the player cannot open (the file exists, and checking again would give the same result).
   const waiting = !!notice && notice.kind !== 'unplayable' && ready;
   useEffect(() => {
     if (!waiting) return;
@@ -145,7 +144,7 @@ export function useStageMedia(videoId: Id | null, sequence: Sequence): StageMedi
     if (!path) return;
     setError(null);
     setBusy(true);
-    // 失败的原因记在视频 store 里，编辑器随即弹提示并清掉它：在它被清掉之前接住。
+    // The failure reason is recorded in the video store. The editor shows a toast and clears it right away, so catch it before it is cleared.
     let failure: string | null = null;
     const unsubscribe = useVideo.subscribe((s) => {
       const reason = s.video?.commandError?.message;

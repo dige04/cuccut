@@ -3,15 +3,14 @@ import { ModelsSeparationSelfTest as M } from '@cuccut/protocol/messages/models/
 import { parseWav, SPEECH_SELF_TEST_LIMITS, type WavFacts } from './speech-self-test.ts';
 
 /**
- * 分离模型包的自检（`models.test`，Model Worker 协议规范 §4.3）：把识别自检的英文朗读样本（只有人声）整段分离，
- * 判定两路输出。阈值写在协议规范里。
+ * Self-test for separation model packages (`models.test`, Model Worker protocol spec §4.3): separates the whole of the English reading sample used for the recognition self-test (vocals only), and judges the two output streams. The thresholds are written in the protocol spec.
  */
 export const SEPARATION_SELF_TEST_LIMITS = {
-  /** 两路输出与样本的时长之差的上限（秒，一帧音频 20 毫秒）。 */
+  /** Upper limit on the difference between each output stream's duration and the sample's duration (seconds; one audio frame is 20 ms). */
   durationToleranceSec: 0.02,
-  /** 人声的均方根低于这个值就当作静音（与合成自检相同）。 */
+  /** A vocal RMS below this value counts as silence (same as the synthesis self-test). */
   minVocalsRms: SPEECH_SELF_TEST_LIMITS.minRms,
-  /** 样本只有人声：人声的均方根至少是背景的这么多倍（约 6 dB）。 */
+  /** The sample is vocals only: the vocal RMS must be at least this many times the background (about 6 dB). */
   minVocalsToBackground: 2,
 } as const;
 
@@ -20,8 +19,7 @@ export type SeparationSelfTestVerdict =
   | { passed: false; problem: string; problemRef?: MessageRef; vocals?: WavFacts; background?: WavFacts };
 
 /**
- * 判定：两路都能解码、立体声、采样率相同、与样本等长；人声不是静音，并且明显比背景响。不通过时 `problem` 是当前语言的文本，
- * `problemRef` 是它的消息引用。
+ * Verdict: both streams decode, are stereo, have the same sample rate, and match the sample's length; the vocals are not silent and are clearly louder than the background. If it fails, `problem` is the text in the current language, and `problemRef` is its message reference.
  */
 export function separationSelfTestVerdict(
   stems: { vocals: Buffer; background: Buffer },

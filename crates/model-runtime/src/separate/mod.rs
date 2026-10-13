@@ -1,13 +1,11 @@
-//! 人声与伴奏分离（本地 `separate`）：HTDemucs-FT（Demucs v4 hybrid transformer）的 mlx-rs 与 candle 移植。
+//! Vocal and accompaniment separation (local `separate`): the mlx-rs and candle ports of HTDemucs-FT (Demucs v4 hybrid transformer).
 //!
-//! 移植自 v2 的 `ccut-separate`。用途：配音前把原人声与背景声（鼓、贝斯、其他）分开，配音后只保留背景声，
-//! 再叠上合成的人声。与 v2 不同的只有边界：v2 按「模型目录 + 文件名」找文件，这里经
-//! [`crate::bundle::VerifiedFiles`] 按清单取（缺文件 `MODEL_NOT_INSTALLED`）；MLX 设备与缓存走
-//! [`crate::backend::mlx::runtime`]，candle 的设备由 candle 后端按模型包的 `device` 设定；一次 `job.run` 的编排在 [`job`]。
+//! Ported from v2's `ccut-separate`. Purpose: before dubbing, split the original vocals from the background (drums, bass, other); after dubbing, keep only the background and overlay the synthesized vocals. The only differences from v2 are at the boundary: v2 finds files by "model directory + file name", whereas here files are fetched from the manifest via
+//! [`crate::bundle::VerifiedFiles`] (a missing file gives `MODEL_NOT_INSTALLED`); the MLX device and cache go through [`crate::backend::mlx::runtime`], and the candle device is set by the candle backend according to the bundle's `device`; the orchestration of one `job.run` is in [`job`].
 //!
-//! 类型与纯逻辑（[`config`]、[`segment`]、[`stft`]、[`resample`]、[`wav`]、[`types`]）全平台编译并带单测；
-//! 模型图（`htdemucs`）在 `backend-mlx` + macOS Apple Silicon 上编一份 MLX 的，开了 `backend-candle` 时再编一份 candle 的
-//! （全平台；CPU，开 `cuda` 时 NVIDIA GPU）。
+//! Types and pure logic ([`config`], [`segment`], [`stft`], [`resample`], [`wav`], [`types`]) compile on all platforms and have unit tests;
+//! the model graph (`htdemucs`) is compiled once as MLX on `backend-mlx` + macOS Apple Silicon, and once more as candle when `backend-candle` is enabled
+//! (all platforms; CPU, or an NVIDIA GPU when `cuda` is enabled).
 
 pub mod config;
 pub mod job;
@@ -29,10 +27,10 @@ pub use types::{SeparatedStems, SeparationProgress, StereoAudio};
 use crate::bundle::VerifiedFiles;
 use anyhow::Result;
 
-/// 分离进度回调；返回 `false` 请求取消。
+/// Separation progress callback; returning `false` requests cancellation.
 pub type ProgressSink<'a> = &'a mut dyn FnMut(SeparationProgress) -> bool;
 
-/// 这个构建里有没有可用的本地分离后端。
+/// Whether a local separation backend is available in this build.
 pub const fn local_separation_available() -> bool {
     cfg!(any(
         feature = "backend-candle",
@@ -40,7 +38,7 @@ pub const fn local_separation_available() -> bool {
     ))
 }
 
-/// 这个构建能加载的分离模型 family（`components.separator.family`）。`worker.hello` 的 `separateFamilies` 就是它。
+/// The separation model families this build can load (`components.separator.family`). `separateFamilies` in `worker.hello` is exactly this.
 pub fn available_families() -> Vec<&'static str> {
     if local_separation_available() {
         vec![crate::bundle::FAMILY_HTDEMUCS_FT]
@@ -49,24 +47,24 @@ pub fn available_families() -> Vec<&'static str> {
     }
 }
 
-/// 已加载的分离模型。持有权重，不是 `Send`：在哪个线程加载就在哪个线程分离。
+/// A loaded separation model. Holds the weights and is not `Send`: separation happens on the same thread where it was loaded.
 pub trait Separator {
-    /// 模型工作采样率（HTDemucs 为 44 100 Hz）。
+    /// The model's working sample rate (44 100 Hz for HTDemucs).
     fn sample_rate(&self) -> u32;
 
-    /// 把立体声混音分成四个 stem（模型采样率、同长度）。
+    /// Splits a stereo mix into four stems (at the model's sample rate, same length).
     fn separate(&mut self, mix: &StereoAudio, progress: ProgressSink<'_>) -> Result<SeparatedStems>;
 }
 
-/// 用 MLX 加载 HTDemucs-FT（`htdemucs_ft.safetensors` + `htdemucs_ft_config.json`）。调用前不需要自己确认 Metal。
+/// Loads HTDemucs-FT with MLX (`htdemucs_ft.safetensors` + `htdemucs_ft_config.json`). The caller does not need to check for Metal beforehand.
 ///
-/// 错误里的 [`crate::protocol::ErrorBody`]（缺文件）可以 `downcast_ref` 出来原样上报；其余是加载失败。
+/// The [`crate::protocol::ErrorBody`] inside the error (a missing file) can be recovered with `downcast_ref` and reported as is; anything else is a loading failure.
 #[cfg(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64"))]
 pub fn load_separator(files: &VerifiedFiles) -> Result<Box<dyn Separator>> {
     Ok(Box::new(htdemucs::mlx::HtDemucs::load(files)?))
 }
 
-/// 没编 MLX 的构建：MLX 后端本身不可用，不会走到这里；candle 用 [`load_candle_separator`]。
+/// Builds without MLX: the MLX backend itself is unavailable and this is never reached; candle uses [`load_candle_separator`].
 #[cfg(not(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64")))]
 pub fn load_separator(files: &VerifiedFiles) -> Result<Box<dyn Separator>> {
     let _ = files;
@@ -78,8 +76,8 @@ pub fn load_separator(files: &VerifiedFiles) -> Result<Box<dyn Separator>> {
     .into())
 }
 
-/// 用 candle 在 `device` 上加载 HTDemucs-FT（与 MLX 读同一个仓库：fp16 权重加载时升成 f32，CPU 与 CUDA 都按 f32 算，
-/// 同 v2）。错误的约定同 [`load_separator`]。
+/// Loads HTDemucs-FT with candle on `device` (reads the same repository as MLX: fp16 weights are upcast to f32 at load time, and both CPU and CUDA compute in f32,
+/// same as v2). Error conventions are the same as [`load_separator`].
 #[cfg(feature = "backend-candle")]
 pub fn load_candle_separator(files: &VerifiedFiles, device: candle_core::Device) -> Result<Box<dyn Separator>> {
     htdemucs::candle::use_device(device);

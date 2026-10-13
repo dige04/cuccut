@@ -1,5 +1,5 @@
-//! `RenderPass`：绘制、滤镜、双画面转场、合成、遮罩与背景滤镜。
-//! DrawOp 只出现在 `Draw` 里，其余 pass 只处理 surface。
+//! `RenderPass`: draw, filters, dual-frame transitions, compositing, masks and background filters.
+//! DrawOp only appears in `Draw`; the other passes only process surfaces.
 
 use super::surface::{CompositeInput, SurfaceId};
 use crate::drawop::FrameOps;
@@ -7,7 +7,7 @@ use motion::effect::{EffectRef, UniformMap};
 
 #[derive(Debug)]
 pub enum RenderPass {
-    /// DrawOp v3 指令流 → 单张 surface。
+    /// DrawOp v3 instruction stream → a single surface.
     Draw { target: SurfaceId, ops: FrameOps },
     Filter {
         input: SurfaceId,
@@ -20,7 +20,7 @@ pub enum RenderPass {
         to: SurfaceId,
         output: SurfaceId,
         effect: EffectRef,
-        /// 闭区间 `[0, 1]`：0 逐字节等于 `from`，1 逐字节等于 `to`。
+        /// Closed interval `[0, 1]`: at 0, byte-for-byte equal to `from`; at 1, byte-for-byte equal to `to`.
         progress: f32,
         uniforms: UniformMap,
     },
@@ -67,7 +67,7 @@ impl RenderPass {
         }
     }
 
-    /// 依赖的输入 surface（不含 output 自身）。指纹与拓扑校验都用它。
+    /// Input surfaces this pass depends on (excluding its own output). The fingerprint and topology validation both use it.
     pub fn inputs(&self) -> Vec<SurfaceId> {
         match self {
             RenderPass::Draw { .. } => Vec::new(),
@@ -88,7 +88,7 @@ impl RenderPass {
         }
     }
 
-    /// 编码/诊断用的稳定标签。
+    /// Stable label for encoding and diagnostics.
     pub fn tag(&self) -> u8 {
         match self {
             RenderPass::Draw { .. } => 0,
@@ -115,7 +115,7 @@ impl RenderPass {
         }
     }
 
-    /// 该 pass 引用的效果（`Draw`/`Composite` 没有）。
+    /// The effect this pass references (`Draw` and `Composite` do not have one).
     pub fn effect(&self) -> Option<&EffectRef> {
         match self {
             RenderPass::Filter { effect, .. } | RenderPass::Transition { effect, .. } => {

@@ -1,14 +1,8 @@
-//! Qwen-Image-2.1 的 candle 引擎（CPU，`cuda` feature 时 NVIDIA CUDA），移植自 v2 `ccut-image-local::candle`。
+//! Qwen-Image-2.1 candle engine (CPU; NVIDIA CUDA with the `cuda` feature), ported from v2 `ccut-image-local::candle`.
 //!
-//! 直接读装好的 MLX 4-bit safetensors（与 MLX 路径同一个模型包仓库），不要第二份 checkpoint：三段顺序运行、绝不同时
-//! 驻留，文本编码器逐层、DiT 逐层（每一步都重新反量化这一层的矩阵）、VAE 逐个卷积从映射的文件里读，用完即丢。计算精度
-//! 按设备：CPU 上 f32，CUDA 上 bf16（v2 同）。初始噪声在主机上用 ChaCha20 按 seed 抽（candle 的 CPU 设备不能设种子，
-//! 也不该动进程级的 CUDA 随机数），所以同一 seed 在 candle 与 MLX 上出的不是同一张图，同一后端、同一设备上逐字节复现。
+//! Reads the installed MLX 4-bit safetensors directly (the same model package repository as the MLX path); there is no second checkpoint. The three parts run in sequence and never reside together: the text encoder layer by layer, the DiT layer by layer (each step dequantizes this layer's matrices again), and the VAE convolution by convolution. Each is read from the mapped files and dropped after use. Compute precision depends on the device: f32 on CPU, bf16 on CUDA (same as v2). The initial noise is drawn on the host with ChaCha20 from the seed, because candle's CPU device cannot take a seed and the process-wide CUDA RNG should not be touched. So the same seed gives different images on candle and MLX, but reproduces byte for byte on the same backend and device.
 //!
-//! 与 v2 不同的只有边界：文件经 [`VerifiedFiles`] 按清单取出（缺文件 `MODEL_NOT_INSTALLED`），分词用与 MLX 路径共用的
-//! [`super::prompt::Prompter`]，取消与进度走 [`crate::image`] 的 [`Cancelled`] 与 [`ImageProgress`]。v2 只在
-//! Windows / Linux x86_64 上编译这条路；这里随 `backend-candle` 在任何平台编译（是否列出 candle 模型包由 Runtime 按平台
-//! 决定），开发机上也能用真实权重跑它的测试。
+//! The only differences from v2 are at the boundary: files are fetched by manifest via [`VerifiedFiles`] (a missing file gives `MODEL_NOT_INSTALLED`); tokenization uses [`super::prompt::Prompter`], shared with the MLX path; cancellation and progress go through [`Cancelled`] and [`ImageProgress`] from [`crate::image`]. v2 compiles this path only on Windows and Linux x86_64. Here it compiles on any platform with `backend-candle` (the Runtime decides per platform whether the candle model package is listed), so its tests can run with real weights on a development machine.
 
 mod dit;
 mod text_encoder;
@@ -32,10 +26,10 @@ use crate::bundle::{FAMILY_QWEN_IMAGE, VerifiedFiles};
 use crate::image::{Cancelled, ImageEngine, ImageProgress, ImageRequest, RawImage};
 use crate::protocol::{ErrorBody, codes};
 
-/// DiT 每层按多少个图像 token 分块算 q 与输出（v2 同值）。
+/// The number of image tokens per block over which each DiT layer computes q and the output (same value as v2).
 const DIT_CHUNK: usize = 1024;
 
-/// 按清单取出的文件。
+/// Files fetched by manifest.
 struct Files {
     text_encoder: Vec<PathBuf>,
     transformer: Vec<PathBuf>,
@@ -51,7 +45,7 @@ fn owned(files: Vec<&Path>) -> Vec<PathBuf> {
     files.into_iter().map(PathBuf::from).collect()
 }
 
-/// Qwen-Image-2.1 的 candle 引擎。加载时不读权重：三段权重在每次生成里按阶段打开、用完即丢。
+/// Qwen-Image-2.1 candle engine. Loading does not read the weights: the three weight sets are opened per stage during each generation and dropped after use.
 pub struct QwenImage {
     device: Device,
     files: Files,
@@ -64,7 +58,7 @@ fn seeded_noise(seed: u64, count: usize) -> Vec<f32> {
     (0..count).map(|_| StandardNormal.sample(&mut rng)).collect()
 }
 
-/// `[1,H,W,4]`、范围 [-1,1] 的 VAE 输出 → 8 位 RGBA。
+/// `[1,H,W,4]`, range [-1,1] VAE output → 8-bit RGBA.
 fn to_rgba(image: &Tensor) -> Result<RawImage> {
     let (batch, height, width, channels) = image.dims4()?;
     if batch != 1 || channels != 4 {
@@ -89,7 +83,7 @@ fn to_rgba(image: &Tensor) -> Result<RawImage> {
     })
 }
 
-/// 核对三份配置是 Qwen-Image-2.1 的 MLX affine 4-bit 包（v2 同一组检查）：candle 的实现按这些形状写死。
+/// Checks that the three configs are the Qwen-Image-2.1 MLX affine 4-bit package (the same checks as v2). The candle implementation hard-codes these shapes.
 fn verify_model_config(model_index: &Value, transformer: &Value, text: &Value) -> Result<()> {
     let expected = [
         ("_class_name", json!("QwenImage21Transformer2DModel")),
@@ -144,8 +138,7 @@ fn check(cancel: &dyn Fn() -> bool) -> Result<()> {
 }
 
 impl QwenImage {
-    /// 先核对清单（缺文件是 `MODEL_NOT_INSTALLED`），再核对配置（不是这只模型的 MLX 4-bit 包是 `MODEL_UNSUPPORTED`），
-    /// 最后读分词表与调度器配置。`device` 由后端按模型包的 `device` 定好。
+    /// Checks the manifest first (a missing file is `MODEL_NOT_INSTALLED`), then the config (a package that is not this model's MLX 4-bit package is `MODEL_UNSUPPORTED`), and finally reads the tokenizer vocabulary and scheduler config. `device` is set by the backend according to the model package's `device`.
     pub fn load(files: &VerifiedFiles, device: Device) -> Result<Self> {
         let tokenizer = files.require("processor/tokenizer.json")?.to_path_buf();
         let scheduler = files.require("scheduler/scheduler_config.json")?.to_path_buf();
@@ -186,7 +179,7 @@ impl QwenImage {
         })
     }
 
-    /// 计算精度：CUDA 上 bf16，CPU 上 f32（v2 同）。
+    /// Compute precision: bf16 on CUDA, f32 on CPU (same as v2).
     fn compute_dtype(&self) -> DType {
         if self.device.is_cuda() { DType::BF16 } else { DType::F32 }
     }
@@ -198,7 +191,7 @@ impl QwenImage {
         let compute = self.compute_dtype();
         check(cancel)?;
 
-        // 1. 文本编码
+        // 1. Text encoding
         progress(ImageProgress::EncodingPrompt);
         let t0 = Instant::now();
         let condition = text_encoder::encode(
@@ -213,7 +206,7 @@ impl QwenImage {
         mem("after text");
         check(cancel)?;
 
-        // 2. DiT 去噪
+        // 2. DiT denoising
         let t1 = Instant::now();
         let dit = dit::Dit::load(&refs(&self.files.transformer), &self.device, compute)?;
         let mut cache = dit.prepare_text(&condition, gh, gw)?;
@@ -246,7 +239,7 @@ impl QwenImage {
         drop((condition, cache, dit));
         check(cancel)?;
 
-        // 3. VAE 解码
+        // 3. VAE decoding
         progress(ImageProgress::Decoding);
         let t2 = Instant::now();
         let decoder = vae::Decoder::load(&refs(&self.files.vae), &self.files.vae_config, &self.device, compute)?;
@@ -303,8 +296,7 @@ impl ImageEngine for QwenImage {
     }
 }
 
-/// 计时开关打开时打一行进程内存：常驻（含映射进来的权重文件页，可回收）与它的峰值；macOS 上另报 phys_footprint
-/// （不含干净的文件页，是真正和别的进程抢内存的量）。
+/// When the timing switch is on, prints one line of process memory: resident (including the mapped weight-file pages, which can be reclaimed) and its peak. On macOS it also reports phys_footprint (which excludes clean file pages, and is the amount actually competing with other processes for memory).
 fn mem(tag: &str) {
     if !super::timing() {
         return;
@@ -319,11 +311,11 @@ fn mem(tag: &str) {
     );
 }
 
-/// 进程的常驻峰值（字节）。`ru_maxrss` 在 macOS 上是字节，在 Linux 上是 KiB。
+/// The process's resident peak, in bytes. `ru_maxrss` is in bytes on macOS and in KiB on Linux.
 #[cfg(unix)]
 fn peak_resident_bytes() -> Option<u64> {
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    // SAFETY: `usage` 是按 C 布局的输出缓冲区。
+    // SAFETY: `usage` is an output buffer with C layout.
     if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 {
         return None;
     }
@@ -336,10 +328,10 @@ fn peak_resident_bytes() -> Option<u64> {
     None
 }
 
-/// 进程当前与生命周期最大的 phys_footprint（只有 macOS）。
+/// The process's current and lifetime-maximum phys_footprint (macOS only).
 #[cfg(target_os = "macos")]
 fn footprint() -> (Option<u64>, Option<u64>) {
-    // SAFETY: rusage_info_v4 是纯数据结构，零初始化合法；proc_pid_rusage 按 flavor 写满它。
+    // SAFETY: rusage_info_v4 is a plain data structure, so zero-initialization is valid; proc_pid_rusage fills it in for the flavor.
     unsafe {
         let mut info: libc::rusage_info_v4 = std::mem::zeroed();
         let rc = libc::proc_pid_rusage(
@@ -382,7 +374,7 @@ mod tests {
         assert!(to_rgba(&invalid).is_err());
     }
 
-    /// 只放几份小文件的 `image` 组件（不含权重）。
+    /// An `image` component made of a few small files only (no weights).
     fn component(dir: &Path, files: &[(&str, &[u8])]) -> VerifiedFiles {
         let mut entries = Vec::new();
         for (path, body) in files {
@@ -477,7 +469,7 @@ mod tests {
         assert!(verify_model_config(&model_index, &eight_bit, &text).is_err());
     }
 
-    /// 按 `.ccut-manifest.json` 拼 `image` 组件（只读；不写安装记录）。
+    /// Assembles the `image` component from `.ccut-manifest.json` (read-only; does not write install records).
     fn installed(root: &Path) -> VerifiedFiles {
         let dir = root.join("mlx-community/Qwen-Image-2.1-MLX-4bit");
         let manifest: Value =
@@ -502,9 +494,9 @@ mod tests {
         .unwrap()
     }
 
-    /// 真跑（要装好的权重；CPU 上几分钟）：在 candle 的默认设备上生成一张，核对尺寸、阶段与同一 seed 的复现。
-    /// 量峰值时可以换尺寸与步数：`CUCCUT_TEST_IMAGE_EDGE=512`、`CUCCUT_TEST_IMAGE_STEPS=1`（峰值与步数无关）；
-    /// `CUCCUT_TEST_IMAGE_REPEAT=0` 时不跑第二张。`CCUT_IMAGE_TIMING=1` 打出各段耗时与内存。
+    /// Real run (needs installed weights; a few minutes on CPU): generates one image on candle's default device, and checks the size, the stages and reproduction with the same seed.
+    /// To measure peak memory, the size and step count can be changed: `CUCCUT_TEST_IMAGE_EDGE=512`, `CUCCUT_TEST_IMAGE_STEPS=1` (the peak is independent of the step count).
+    /// With `CUCCUT_TEST_IMAGE_REPEAT=0` the second image is skipped. `CCUT_IMAGE_TIMING=1` prints the time and memory of each stage.
     ///
     /// ```sh
     /// CUCCUT_TEST_MODELS_DIR=/path/to/models CCUT_IMAGE_TIMING=1 cargo test -p model-runtime --release \

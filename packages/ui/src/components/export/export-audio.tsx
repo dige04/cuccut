@@ -30,12 +30,11 @@ import { ExportRangeSection, type RangeBundle } from './export-range.tsx';
 import type { ExportEnv, ExportSubmit } from './use-export-submit.ts';
 
 /**
- * 「音频」页（设计稿 export-audio.jsx、model-audio-export.js）：声音里有什么、范围、格式与音质、响度、人声分几份、摘要。
+ * The "Audio" page (design mockup export-audio.jsx, model-audio-export.js): what sound is in the export, range, format and quality, loudness, how many stems the vocals are split into, and the summary.
  *
- * - 快速选择落成 Runtime 的声音来源（`source`）：成片混音 / 只要原声 / 只要某组配音。「只要音乐」没有对应的来源，置灰。
- * - 轨道清单只读，跟着时间轴的静音 / 独听（没有逐轨覆盖）。
- * - 人声分几份：混成一份（按快速选择）/ 每种一份（每组配音各提交一次导出，来源 `{ dubGroupId }`）。设计稿里原声也算一份、
- *   每份还带背景声与音乐，Runtime 的声音来源表达不了：这里只按配音组分，每份只有这一组配音，界面上写明。没有配音时置灰。
+ * - Quick picks map to the Runtime sound source (`source`): full mix / original audio only / one dub group only. "Music only" has no matching source, so it is disabled.
+ * - The track list is read-only and follows the timeline's mute / solo (no per-track override).
+ * - Vocal split: one mixed file (per the quick pick) / one file per kind (each dub group submits its own export, source `{ dubGroupId }`). The mockup counts the original as one file too, and each file also carries background sound and music, which the Runtime sound source cannot express: here the split is by dub group only, each file has just that one dub group, and the UI says so. Disabled when there is no dub.
  */
 
 const row = style({ marginTop: 8 });
@@ -66,7 +65,7 @@ export function ExportAudioTab({
 
   const scope = rangeScope(range.plan);
   const mixed = range.plan.empty || !lanes.length ? null : audioSettings({ ...form, source: source.key }, scope, loudness);
-  // 每种一份：每组配音一份；有配音、范围不空时才有。
+  // One per kind: one per dub group; only available when there is dubbing and the range is not empty.
   const each = split === 'each' && groups.length > 0;
   const parts = each && mixed ? dubParts(groups, form, scope, loudness, env.videoName) : [];
   const settings = each ? (parts[0]?.settings ?? null) : mixed;

@@ -53,7 +53,7 @@ function video(id: string, fromFrame: number, durationFrames: number, sourceIn: 
   };
 }
 
-/** 帧网格上的音频（`fromFrame` 帧起，`seconds` 秒长），可以给子帧偏移（48 kHz 采样数）。 */
+/** Audio on the frame grid (starting at frame `fromFrame`, `seconds` long); a sub-frame offset (in 48 kHz samples) can be given. */
 function audio(
   id: string,
   fromFrame: number,
@@ -152,12 +152,12 @@ const ASSETS: Record<string, AssetRecord> = {
   },
 };
 
-/** 12 秒的素材，每秒一个词：`词0` 在 [0, len)、`词1` 在 [1, 1 + len)……（产品设计 S03 的例子）。 */
+/** A 12-second clip with one word per second: `词0` (word 0) is at [0, len), `词1` (word 1) at [1, 1 + len), and so on (the example from product design S03). */
 function words(len = 1, count = 12): SpeechWord[] {
   return Array.from({ length: count }, (_, i) => ({ id: `w${i}`, start: i, end: i + len, text: `词${i}`, paragraphStart: false }));
 }
 
-/** S03：整段放上时间线，视频与链接的音频，加一条作用实例指向它们的字幕。 */
+/** S03: the whole clip is placed on the timeline with its linked audio, plus an effect instance that points to their subtitles. */
 function whole(): Sequence {
   return seq([
     video('va', 0, 360, 0, { linkGroupId: 'g1' }),
@@ -167,7 +167,7 @@ function whole(): Sequence {
   ]);
 }
 
-/** S03 剪完的样子：源 [0, 4) 在 [0, 120)，源 [6, 12) 在 [120, 300)。 */
+/** S03 after cutting: source [0, 4) at [0, 120), source [6, 12) at [120, 300). */
 function afterCut(extra: Sequence['items'] = []): Sequence {
   return seq([
     video('va', 0, 120, 0, { linkGroupId: 'g1' }),
@@ -180,7 +180,7 @@ function afterCut(extra: Sequence['items'] = []): Sequence {
   ]);
 }
 
-/** `afterCut()` 对应的剪口集合：素材 [4, 6) 一个剪口，刻度 1000。 */
+/** The cut set corresponding to `afterCut()`: one cut for clip [4, 6), on a 1000 scale. */
 const CUT_SET: CutSetBody = {
   schema: 'cuccut.cut-set/1',
   timescale: 1000,
@@ -210,7 +210,7 @@ describe('transcriptWords', () => {
       'kept',
       'kept',
     ]);
-    // 链接的视频与音频取用同一素材：按起点、再按 ID 排，先占窗口的是音频（与 text_plan.rs 相同）。
+    // Linked video and audio use the same clip: sort by start, then by ID; the audio takes the window first (same as text_plan.rs).
     expect(result[6]!.placements.map((p) => [p.scopeItemId, p.start])).toEqual([['ab', 4]]);
     expect(result.map((w) => w.index)).toEqual([...Array(12).keys()]);
   });
@@ -244,24 +244,24 @@ describe('transcriptWords', () => {
     const index = placementIndex(result);
     expect(wordAt(index, 0.5)).toBe(0);
     expect(wordAt(index, 0.9)).toBeNull();
-    // 序列 4.2 秒是素材 6.2 秒：词6。
+    // Sequence 4.2 s maps to clip 6.2 s: 词6 (word 6).
     expect(wordAt(index, 4.2)).toBe(6);
   });
 });
 
 describe('已读的词（播放跟随）', () => {
   it('游标只在播放头跨过词尾时变；剪掉的词不算', () => {
-    // afterCut：词0–3 在序列 [i, i + 0.8)，词4、5 剪掉，词6–11 在 [i - 2, i - 1.2)。
+    // afterCut: 词0–3 (words 0–3) at sequence [i, i + 0.8), 词4, 词5 (words 4, 5) cut, 词6–11 (words 6–11) at [i - 2, i - 1.2).
     const result = transcriptWords(afterCut(), 'asset_a', words(0.8));
     const ends = playedIndex(result);
     expect(ends).toHaveLength(10);
     expect(playedUntil(ends, 0.5)).toBe(-Infinity);
     expect(playedUntil(ends, 0.8)).toBeCloseTo(0.8);
-    // 停顿里、下一个词里都不变。
+    // Unchanged within the pause and within the next word.
     expect(playedUntil(ends, 0.95)).toBeCloseTo(0.8);
     expect(playedUntil(ends, 1.5)).toBeCloseTo(0.8);
     expect(playedUntil(ends, 1.8)).toBeCloseTo(1.8);
-    // 序列 4.9 秒：词6 在 [4, 4.8) 读完了。
+    // Sequence 4.9 s: 词6 (word 6), at [4, 4.8), has been read through.
     expect(playedUntil(ends, 4.9)).toBeCloseTo(4.8);
     expect(playedUntil(ends, 100)).toBeCloseTo(9.8);
   });
@@ -273,7 +273,7 @@ describe('已读的词（播放跟随）', () => {
     const ends = playedIndex(result);
     expect(ends).toHaveLength(4);
     expect(playedUntil(ends, 0.9)).toBeCloseTo(0.8);
-    // 序列 4.5 秒在词0 的第二处落点里：它早已读过（游标停在词3 的第一处）。
+    // Sequence 4.5 s is within the second placement of 词0 (word 0): it was already read (the cursor stopped at the first placement of 词3 (word 3)).
     expect(playedUntil(ends, 4.5)).toBeCloseTo(3.8);
   });
 
@@ -291,7 +291,7 @@ describe('已读的词（播放跟随）', () => {
   });
 
   it('居中位置夹在可滚范围里', () => {
-    // 视口 400、内容 2000：第 1000 像素处 20 高的词 → 810。
+    // Viewport 400, content 2000: a 20-high word at pixel 1000 → 810.
     expect(centerScrollTop(2000, 400, 1000, 20)).toBe(810);
     expect(centerScrollTop(2000, 400, 50, 20)).toBe(0);
     expect(centerScrollTop(2000, 400, 1990, 20)).toBe(1600);
@@ -366,10 +366,10 @@ describe('cutOperations', () => {
   it('没选中的已剪词不打断一串；跨剪口的两段合成一段', () => {
     const sequence = afterCut();
     const list = transcriptWords(sequence, 'asset_a', words());
-    // 词3（va 的最后一个词）、词4/5 已剪、词6（vb 的第一个词）：一段素材 [3, 7)，引擎与已有的剪口合并。
+    // 词3 (word 3, the last word of va), 词4 and 词5 (words 4 and 5) already cut, 词6 (word 6, the first word of vb): one clip segment [3, 7), merged by the engine with the existing cuts.
     const plan = cutOperations(sequence, ASSETS, 'asset_a', list, new Set([3, 6]));
     expect(plan.ok && [plan.ranges, plan.frames]).toEqual([[{ from: 3, to: 7 }], 60]);
-    // 选中的都已经剪掉了。
+    // The selected ones are all already cut.
     expect(cutOperations(sequence, ASSETS, 'asset_a', list, new Set([4, 5]))).toEqual({ ok: false, reason: 'nothing' });
   });
 

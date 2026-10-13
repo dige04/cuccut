@@ -14,7 +14,7 @@ import { pl } from './rc-templates.pl.ts';
 import { tr } from './rc-templates.tr.ts';
 import { vi } from './rc-templates.vi.ts';
 
-/** 模板（templates/）的错误。英文是键与类型的来源，译文在 `rc-templates.<语言>.ts`。 */
+/** Errors for templates (templates/). English is the source of keys and types; translations are in `rc-templates.<language>.ts`. */
 const en = {
   builtinConflict: (p: { id: string }) =>
     `A built-in template with the id "${p.id}" already exists, so this copy wasn't loaded. Change the id (folder name) and add it again`,

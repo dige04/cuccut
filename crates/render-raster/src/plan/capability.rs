@@ -1,7 +1,6 @@
-//! 后端能力档案与 preflight（设计 §6.5）。
+//! Backend capability profile and preflight (design §6.5).
 //!
-//! Preflight 在**正式逐帧之前**跑完：能力不足、效果不存在、确定性等级不满足
-//! 都在这里变成可见的诊断或 fallback 记录，而不是第 900 帧才炸。
+//! Preflight runs to completion **before the formal frame-by-frame rendering**. Insufficient capabilities, nonexistent effects, and unmet determinism levels all become visible diagnostics or fallback records here, rather than blowing up at frame 900.
 
 use crate::drawop;
 use anyhow::{Result, bail};
@@ -9,27 +8,26 @@ use motion::effect::{Determinism, EffectRef, lookup};
 use scene_primitives::resolve::Ir;
 use std::collections::BTreeSet;
 
-/// CPU reference 后端的名字与版本。版本进 capability 指纹 ⇒ tiny-skia 升级
-/// 会让帧指纹整体变值，这正是我们想要的（光栅化结果可能变）。
+/// Name and version of the CPU reference backend. The version goes into the capability fingerprint, so upgrading tiny-skia changes the frame fingerprint values wholesale, which is exactly what we want (rasterization results may change).
 pub const CPU_BACKEND: &str = "cpu-tiny-skia";
 pub const CPU_BACKEND_VERSION: &str = "0.11";
 
-/// 单张 surface 的边长上限。4K 有余，挡住手写 JSON 的病态值。
+/// Upper bound on the side length of a single surface. Comfortably covers 4K, and guards against pathological values in hand-written JSON.
 pub const DEFAULT_MAX_SURFACE: u32 = 16384;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityProfile {
     pub backend: String,
     pub backend_version: String,
-    /// 后端声明支持的能力名（effect manifest 的 `capabilities` 与之求交）。
+    /// Capability names the backend declares support for (the `capabilities` of an effect manifest are intersected with these).
     pub features: BTreeSet<String>,
     pub max_surface: u32,
-    /// 允许进入正式导出的最低确定性等级。
+    /// Minimum determinism level allowed into formal export.
     pub determinism_floor: Determinism,
 }
 
 impl CapabilityProfile {
-    /// tiny-skia CPU reference：strict-only，无扩展能力。
+    /// tiny-skia CPU reference: strict-only, no extension capabilities.
     pub fn cpu_reference() -> Self {
         CapabilityProfile {
             backend: CPU_BACKEND.to_owned(),
@@ -44,7 +42,7 @@ impl CapabilityProfile {
         self.features.contains(feature)
     }
 
-    /// 能力档案指纹。进 FramePlan 与每张 surface 的指纹 ⇒ 换后端必然换帧指纹。
+    /// Capability profile fingerprint. It goes into the FramePlan and every surface's fingerprint, so switching backends necessarily changes the frame fingerprints.
     pub fn fingerprint(&self) -> u64 {
         let mut bytes = Vec::with_capacity(64);
         bytes.extend_from_slice(&(self.backend.len() as u32).to_le_bytes());
@@ -62,22 +60,20 @@ impl CapabilityProfile {
     }
 }
 
-/// 一次被应用（或被拒绝）的降级。
+/// A downgrade that was applied (or rejected).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FallbackRecord {
     pub effect: EffectRef,
-    /// 触发降级的原因码（`effect-capability-unsupported` / `effect-unknown`…）。
+    /// Reason code that triggered the downgrade (`effect-capability-unsupported` / `effect-unknown`…).
     pub reason: String,
-    /// 实际替用的效果；`None` = 没有效果级降级。
+    /// The effect actually substituted; `None` = no effect-level downgrade.
     pub applied: Option<EffectRef>,
-    /// Surface Transition 专用：降级落到的 **Motion Transition** 配方名
-    /// （规范 §9）。转场的降级落点是双方 clip 的属性轨道，不是另一条效果，
-    /// 因此不能塞进 `applied`。
+    /// Specific to Surface Transition: the name of the **Motion Transition** recipe the downgrade lands on (spec §9). A transition's downgrade target is the property tracks of both clips, not another effect, so it cannot be put into `applied`.
     pub applied_preset: Option<String>,
     pub determinism: Determinism,
 }
 
-/// 一条 preflight 诊断。`rule` 是规范 §16 的码，与 `ccut lint` 同一张表。
+/// One preflight diagnostic. `rule` is the code from spec §16, from the same table as `ccut lint`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreflightDiagnostic {
     pub rule: &'static str,
@@ -87,14 +83,14 @@ pub struct PreflightDiagnostic {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PreflightReport {
     pub fallbacks: Vec<FallbackRecord>,
-    /// 诊断（进 `ccut render --json` / `ccut ops` 的 `diagnostics`）。
+    /// Diagnostics (these enter the `diagnostics` of `ccut render --json` / `ccut ops`).
     pub diagnostics: Vec<PreflightDiagnostic>,
-    /// 本次渲染的**实际**确定性等级：全部效果的最弱等级。
+    /// The **actual** determinism level of this render: the weakest level among all effects.
     pub determinism: Determinism,
 }
 
 impl PreflightReport {
-    /// 没有任何「无可用降级」的记录。
+    /// A record with no usable downgrade.
     pub fn is_ok(&self) -> bool {
         self.fallbacks
             .iter()
@@ -102,12 +98,9 @@ impl PreflightReport {
     }
 }
 
-/// 逐帧之前的一次性检查（设计 §6.5）。
+/// One-time check before frame-by-frame rendering (design §6.5).
 ///
-/// 三层：① 画布尺寸落在后端 `max_surface` 之内；② 文档里的每一条效果都能
-/// 在**当前后端**上跑（版本已注册、capability 齐备、有 CPU 实现），不行就按
-/// manifest 的 `fallback` 降级并记账，没有 fallback 就是硬错误；③ 效果元素的
-/// 局部画布尺寸约束。**不允许渲染到一半才发现后端不支持。**
+/// Three layers: ① the canvas size falls within the backend's `max_surface`; ② every effect in the document can run on the **current backend** (version registered, capabilities complete, has a CPU implementation); if not, it is downgraded per the manifest's `fallback` and recorded, and with no fallback it is a hard error; ③ the local canvas size constraints of effect elements. **It must not discover halfway through rendering that the backend does not support something.**
 pub fn preflight(ir: &Ir, caps: &CapabilityProfile) -> Result<PreflightReport> {
     let width = ir.w.round().max(0.0) as u64;
     let height = ir.h.round().max(0.0) as u64;
@@ -139,7 +132,7 @@ pub fn preflight(ir: &Ir, caps: &CapabilityProfile) -> Result<PreflightReport> {
     for clip in &ir.visual_clips {
         check_local(&clip.tree, caps)?;
     }
-    // v2 原样；新版 clippy 把 `never_loop` 定为 deny，这里只放行，写法不动。
+    // v2 as-is; newer clippy makes `never_loop` deny, so this only allows it and the code is left unchanged.
     #[allow(clippy::never_loop)]
     for conflict in super::EffectTopology::conflicts(ir) {
         bail!("{conflict}");
@@ -150,12 +143,9 @@ pub fn preflight(ir: &Ir, caps: &CapabilityProfile) -> Result<PreflightReport> {
     Ok(report)
 }
 
-/// Surface Transition 的 preflight（规范 §9）。
+/// Preflight for Surface Transitions (spec §9).
 ///
-/// 与效果不同，转场的降级落点是**双方 clip 的属性轨道**（resolve 期就算好的
-/// `fallback_out` / `fallback_in`），因此这里不会硬错误：任何一条跑不动的
-/// 转场都能退回它的 Motion 版本。返回的是**降级名单**（按 `from_clip` 的 id），
-/// 录制器按它选路。
+/// Unlike effects, a transition's downgrade target is the **property tracks of both clips** (`fallback_out` / `fallback_in`, computed at resolve time), so this never hard-errors: any transition that cannot run can fall back to its Motion version. It returns a **downgrade list** (keyed by the id of `from_clip`), and the recorder chooses its path according to it.
 pub fn preflight_transitions(
     ir: &Ir,
     caps: &CapabilityProfile,
@@ -219,8 +209,7 @@ pub fn preflight_transitions(
     degraded
 }
 
-/// 一组效果引用的 preflight。BCF 文档走 [`preflight`]，Product Timeline 的
-/// overlay 直接把 lowering 出来的引用交到这里——两条路同一套判定。
+/// Preflight for a group of effect references. BCF documents go through [`preflight`]; the Product Timeline's overlays pass the lowered references directly here, so both routes use the same set of checks.
 pub fn preflight_effects(
     effects: &[EffectRef],
     caps: &CapabilityProfile,
@@ -232,7 +221,7 @@ pub fn preflight_effects(
     Ok(report)
 }
 
-/// 单条效果的可用性判定。`depth` 挡住 manifest 里写成环的 `fallback` 链。
+/// Availability check for a single effect. `depth` guards against `fallback` chains that form a cycle in the manifest.
 fn resolve_one(
     effect: &EffectRef,
     caps: &CapabilityProfile,

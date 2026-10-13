@@ -1,38 +1,38 @@
-//! Timeline 0.1 的效果字段 → 效果配方引用（设计 §6.3 / 阶段 4 的 lowering）。
+//! Translating the effect fields of a Timeline 0.1 element into effect-recipe references (design §6.3 / the stage 4 lowering).
 //!
-//! `timeline.json` 的持久格式**一个字节都不改**：`fx {grayscale, blur,
-//! brightness}`、`mask {shape, feather}`、`place.radius` 与动画姿态的 `reveal`
-//! 在这里被翻译成 `(EffectRef, UniformMap)` 的**有序**列表，渲染侧照单执行。
+//! The persisted `timeline.json` format **does not change by a single byte**. `fx {grayscale, blur,
+//! brightness}`, `mask {shape, feather}`, `place.radius`, and the `reveal` of the animation pose are
+//! translated here into an **ordered** list of `(EffectRef, UniformMap)`, which the render side executes as given.
 //!
-//! 顺序是**今天的实际执行顺序**，不是重新设计的顺序（阶段 4 的硬约束是像素
-//! 不变）：
+//! The order is **the order of actual execution today**, not a redesigned order (the hard constraint of stage 4 is pixel
+//! stability):
 //!
-//! | # | 效果 | 作用的缓冲 |
+//! | # | Effect | Buffer it acts on |
 //! | --- | --- | --- |
-//! | 1 | `filter.colorAdjust@1` | 媒体源（天然尺寸） |
-//! | 2 | `filter.blur@1` | 媒体源（天然尺寸） |
-//! | 3 | `mask.shape@1` | 元素局部画布 |
-//! | 4 | `mask.progress@1` | 元素局部画布 |
+//! | 1 | `filter.colorAdjust@1` | media source (native size) |
+//! | 2 | `filter.blur@1` | media source (native size) |
+//! | 3 | `mask.shape@1` | element-local canvas |
+//! | 4 | `mask.progress@1` | element-local canvas |
 //!
-//! 「作用在哪张缓冲上」这一列**还不在本层**——那要等元素的每张离屏 pixmap
-//! 都变成 FramePlan 的 surface（阶段 4B）。本层只负责词汇：id、版本、uniform
-//! 与顺序。
+//! The "which buffer it acts on" column **does not belong to this layer yet**. That has to wait until each off-screen pixmap of an element
+//! becomes a surface of the FramePlan (stage 4B). This layer only handles the vocabulary: id, version, uniforms
+//! and order.
 //!
-//! ## 长度单位
+//! ## Length units
 //!
-//! 三个长度参数（`filter.blur.radius`、`mask.shape.radius/feather`）都声明
-//! `basis: canvasShortEdge`，即**画布短边的比例**。Timeline 0.1 里它们是
-//! 「540 短边下的像素数」，因此 lowering 一律除以 [`REFERENCE_SHORT_EDGE`]：
-//! 渲染侧再乘回真实短边，得到的像素值与既有实现逐位相同。
+//! The three length parameters (`filter.blur.radius`, `mask.shape.radius/feather`) all declare
+//! `basis: canvasShortEdge`, that is, a **proportion of the canvas short edge**. In Timeline 0.1 they are
+//! "pixel counts at a 540 short edge", so lowering always divides by [`REFERENCE_SHORT_EDGE`].
+//! The render side multiplies back by the real short edge, and the resulting pixel values are bit-for-bit identical to the existing implementation.
 
 use ::motion::effect::{EffectRef, UniformMap, UniformValue};
 
 use crate::schema::{EffectPreset, FilterPreset, Fx, Mask, MaskShape, Place};
 
-/// Timeline 0.1 视觉参数的参考短边。`fx.blur = 8` 意思是「540 短边下 8 px」。
+/// Reference short edge for Timeline 0.1 visual parameters. `fx.blur = 8` means "8 px at a 540 short edge".
 pub const REFERENCE_SHORT_EDGE: f64 = 540.0;
 
-/// 一条 lowering 出来的效果。
+/// One effect produced by lowering.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoweredEffect {
     pub effect: EffectRef,
@@ -52,17 +52,17 @@ impl LoweredEffect {
     }
 }
 
-/// 把一个 timeline 元素的效果字段翻译成有序效果栈。
+/// Translates the effect fields of one timeline element into an ordered effect stack.
 ///
-/// * `fx` / `mask` —— 元素上的持久字段；
-/// * `place` —— 只取 `radius`（圆角遮罩）；
-/// * `reveal` —— 动画姿态的 reveal 通道（`Some` 才产出 `mask.progress`）；
-/// * `pip_or_tiled` —— 圆角 / 椭圆遮罩只在画中画或平铺形态下生效（与
-///   `render_media_element` 的既有判定一致；全屏铺满时不裁角）。
+/// * `fx` / `mask` — the persisted fields on the element;
+/// * `place` — only `radius` is taken (rounded-corner mask);
+/// * `reveal` — the reveal channel of the animation pose (only `Some` produces `mask.progress`);
+/// * `pip_or_tiled` — rounded / elliptical masks take effect only in picture-in-picture or tiled layouts (consistent with the
+///   existing check in `render_media_element`; corners are not clipped when fullscreen-filled).
 ///
-/// 恒等的效果**不产出条目**：`fx {grayscale: 0, brightness: 0}` 不发
-/// `colorAdjust`、`radius = 0 && !ellipse` 不发 `mask.shape`。这样「效果栈为空」
-/// 就精确等于「这个元素不需要离屏 surface」，planner 的折叠判定可以直接用它。
+/// Identity effects **produce no entry**: `fx {grayscale: 0, brightness: 0}` emits no
+/// `colorAdjust`, and `radius = 0 && !ellipse` emits no `mask.shape`. This way "the effect stack is empty"
+/// exactly equals "this element does not need an off-screen surface", so the planner's folding decision can use it directly.
 pub fn lower_element_effects(
     fx: Option<&Fx>,
     mask: Option<&Mask>,
@@ -450,8 +450,8 @@ mod tests {
         assert!(stack.is_empty());
     }
 
-    /// 每条 lowering 出来的 uniform 都必须能过 manifest 的校验——顺序表与
-    /// 注册表脱钩了就在这里红。
+    /// Every uniform produced by lowering must pass the manifest's validation — if the order table gets out of sync with
+    /// the registry, it fails here.
     #[test]
     fn every_lowered_effect_resolves_against_its_manifest() {
         let stack = lower_element_effects(

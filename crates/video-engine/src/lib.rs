@@ -1,9 +1,9 @@
-//! CucCut 视频引擎：视频的唯一写入者（架构设计 §2.3、§5）。
+//! CucCut video engine: the sole writer of videos (architecture design §2.3, §5).
 //!
-//! 一个视频是一个目录：`video.db`（SQLite，WAL）、`video.lock`（写锁）与 `blobs/`（按内容寻址的素材）。
-//! 编辑通过经过校验的操作提交为事务；每笔事务原子地写入实体、回执、撤销记录与事件 outbox。
+//! A video is a directory: `video.db` (SQLite, WAL), `video.lock` (write lock) and `blobs/` (content-addressed media).
+//! Edits are committed as validated operations in transactions; each transaction atomically writes entities, the receipt, undo records and the event outbox.
 
-// 错误体带实体、版本与细节，只在失败路径上出现；不为了缩小 Result 而装箱。
+// The error body carries the entity, version and details, and only appears on the failure path; it is not boxed just to shrink the Result.
 #![allow(clippy::result_large_err)]
 
 pub mod anchors;
@@ -30,7 +30,7 @@ pub mod task_guard;
 pub mod transitions;
 pub mod video;
 
-/// 交换 DTO 在 `video-model` 里，渲染计划与 WASM 预览也用它；这里保留原来的路径。
+/// The exchange DTOs live in `video-model`; the render plan and the WASM preview use them too, so the original path is kept here.
 pub use video_model as model;
 
 pub use error::{EngineResult, ErrorBody, Retryability};

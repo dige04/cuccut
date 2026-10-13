@@ -1,10 +1,9 @@
-//! Qwen3-TTS 真权重合成：0.6B / 1.7B Base（参考录音克隆、内置音色）与 CustomVoice（预置说话人），
-//! 各念一句中文、一句英文，检查时长合理、不是静音、峰值不超过 −1 dBFS，并把 WAV 写到仓库外供试听。
+//! Qwen3-TTS real-weight synthesis: 0.6B / 1.7B Base (cloning from a reference recording, built-in voice) and CustomVoice (preset speakers). Each speaks one Chinese and one English sentence. Checks that the duration is reasonable, the output is not silent, and the peak does not exceed −1 dBFS. Writes the WAVs outside the repo for listening.
 //!
 //! CUCCUT_TEST_MODELS_DIR="$HOME/Library/Application Support/CucCut/models" \
 //!   cargo test -p model-runtime --test synthesize_qwen3_tts -- --ignored --test-threads=1 --nocapture
 //!
-//! WAV 写到 `CUCCUT_TEST_OUTPUT_DIR`（没设时是系统临时目录下的 `cuccut-tts-listen/`）。
+//! WAVs are written to `CUCCUT_TEST_OUTPUT_DIR` (if unset, to the `cuccut-tts-listen/` directory under the system temp directory).
 
 #![cfg(any(
     feature = "backend-candle",
@@ -39,7 +38,7 @@ fn output_dir() -> PathBuf {
     dir
 }
 
-/// 从 `<models-root>/<repo>/.ccut-manifest.json` 构造并校验一个组件的文件清单。
+/// Builds and validates a component's file manifest from `<models-root>/<repo>/.ccut-manifest.json`.
 fn verified(repo: &str, family: &str, component: &'static str) -> VerifiedFiles {
     let dir = models_root().join(repo);
     let manifest: Value =
@@ -68,7 +67,7 @@ fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
 }
 
-/// 时长合理（每句 0.5–20 s）、峰值与 RMS 都不是静音、峰值不超过 −1 dBFS。
+/// Duration reasonable (0.5–20 s per sentence), peak and RMS not silent, and peak not above −1 dBFS.
 fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     assert_eq!(audio.sample_rate, 24_000);
     let seconds = audio.samples.len() as f32 / audio.sample_rate as f32;
@@ -86,7 +85,7 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
     assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s 不在 0.5–20 s 内");
     assert!(peak > 0.01, "{name}: 峰值 {peak} 像静音");
     assert!(rms > 0.003, "{name}: RMS {rms} 像静音");
-    // 峰值限到 −1 dBFS（`synthesize::loudness`）：不再有削到满幅的样本。
+    // Peak limited to −1 dBFS (`synthesize::loudness`): no sample is driven to full scale any more.
     assert!(
         peak <= synthesize::loudness::PEAK_CEILING + 1e-6,
         "{name}: 峰值 {peak} 超过 −1 dBFS"
@@ -131,7 +130,7 @@ fn synthesize_pair(model_repo: &str, voice: VoiceSpec, label: &str) {
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-TTS 0.6B Base and tokenizer bundles installed"]
 fn base_clones_a_reference_recording_in_chinese_and_english() {
-    // 不带参考原文：x-vector 克隆（不经 codec 编码器）。
+    // No reference transcript: x-vector cloning (does not go through the codec encoder).
     synthesize_pair(
         BASE_REPO,
         VoiceSpec::Clone {
@@ -145,8 +144,7 @@ fn base_clones_a_reference_recording_in_chinese_and_english() {
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-TTS 0.6B Base and tokenizer bundles installed"]
 fn base_default_voice_uses_the_builtin_recording() {
-    // 内置音色在内存里解码，不落盘；`Default` 走 x-vector。Runtime 发来的内置音色是「录音文件 + 原文」，
-    // 走 ICL，见 `base_builtin_voice_levels_with_and_without_the_transcript`。
+    // Built-in voices are decoded in memory and not written to disk; `Default` uses x-vector. The built-in voices the Runtime sends are “recording file + transcript” and take the ICL path; see `base_builtin_voice_levels_with_and_without_the_transcript`.
     synthesize_pair(BASE_REPO, VoiceSpec::Default, "0.6b-base-builtin");
 }
 
@@ -180,7 +178,7 @@ fn large_quantized_custom_voice_speaks_with_a_preset_speaker() {
     );
 }
 
-/// 峰值、RMS 与按 400 ms 块门限后的平均电平（dBFS；不做 K 加权，只作相对比较）。
+/// Peak, RMS, and the average level after a 400 ms block gate (dBFS; no K-weighting, for relative comparison only).
 fn levels(samples: &[f32], sample_rate: u32) -> (f32, f32, f32) {
     let db = |power: f64| (10.0 * power.max(1e-12).log10()) as f32;
     let peak = samples.iter().fold(0.0_f32, |max, s| max.max(s.abs()));
@@ -194,7 +192,7 @@ fn levels(samples: &[f32], sample_rate: u32) -> (f32, f32, f32) {
     (20.0 * peak.max(1e-6).log10(), db(power(samples)), db(mean(&gated)))
 }
 
-/// 内置音色在 Base 上走 ICL（带原文）与走 x-vector（不带原文）的电平与时长对比，只打印不断言。
+/// Level and duration comparison of the built-in voice on Base via ICL (with transcript) versus x-vector (without transcript). Prints only, does not assert.
 #[test]
 #[ignore = "needs CUCCUT_TEST_MODELS_DIR with the Qwen3-TTS 0.6B Base and tokenizer bundles installed"]
 fn base_builtin_voice_levels_with_and_without_the_transcript() {
@@ -246,26 +244,25 @@ fn base_builtin_voice_levels_with_and_without_the_transcript() {
     }
 }
 
-// ---- 长旁白的块接缝实验 ----
+// ---- Chunk-seam experiment for long narration ----
 //
-// 同一段长旁白按六种方式各出一份 WAV，比较段与段之间的停顿、音高与响度是否一致（复现工具，只打印不断言）：
+// The same long narration is rendered as one WAV in each of six ways, to compare whether the pauses, pitch, and loudness between segments are consistent (a reproduction tool; prints only, no assertions):
 //
-// | 行 | 模型 | 调用 | 采样 |
-// | a | 0.6B CustomVoice Vivian + 语气说明 | 整段一次（引擎内部切块） | 默认，seed 7 |
-// | b | 同上 | 整段一次 | temperature 0.6，seed 7 |
-// | c | 同上 | 按句（。！？）逐句调用 | 默认，每句同一个 seed 7 |
-// | d | 同上 | 按句逐句调用 | 默认，每句不同 seed（1000 + 句序） |
-// | e | 1.7B CustomVoice 8-bit Vivian + 语气说明 | 整段一次 | 默认，seed 7 |
-// | f | 0.6B Base，内置音色 zh-female（录音 + 原文，ICL） | 整段一次 | 默认，seed 7 |
+// | row | model | call | sampling |
+// | a | 0.6B CustomVoice Vivian + tone instruction | whole text in one call (the engine chunks internally) | default, seed 7 |
+// | b | same as above | whole text in one call | temperature 0.6, seed 7 |
+// | c | same as above | one call per sentence (。！？) | default, same seed 7 for each sentence |
+// | d | same as above | one call per sentence | default, a different seed per sentence (1000 + sentence index) |
+// | e | 1.7B CustomVoice 8-bit Vivian + tone instruction | whole text in one call | default, seed 7 |
+// | f | 0.6B Base, built-in voice zh-female (recording + transcript, ICL) | whole text in one call | default, seed 7 |
 //
 // CUCCUT_TEST_MODELS_DIR=<models-root> CUCCUT_TEST_OUTPUT_DIR=<仓库外目录> \
 //   CUCCUT_TTS_EXP_SCRIPT=<台词.txt> CUCCUT_TTS_EXP_INSTRUCT=<语气说明.txt> [CUCCUT_TTS_EXP_ROWS=abcdef] \
 //   cargo test -p model-runtime --test synthesize_qwen3_tts long_narration_seam_experiment -- --ignored --test-threads=1 --nocapture
 //
-// 每行写 `seam-exp-<行>.wav` 与 `seam-exp-<行>.segments.json`（`[{start, end, text}]`：整段调用的是引擎报的块，
-// 逐句调用的是每句在拼接结果里的位置）；c、d 另写逐句的 `seam-exp-<行>-<NN>.wav`，句间插 0.3 s 静音拼成整份。
+// Each row writes `seam-exp-<行>.wav` and `seam-exp-<行>.segments.json` (`[{start, end, text}]`: for whole-text calls, the chunks reported by the engine; for per-sentence calls, each sentence's position in the concatenated result). Rows c and d also write per-sentence `seam-exp-<行>-<NN>.wav` files, and assemble the full file with 0.3 s of silence between sentences.
 
-/// 逐句拼接时句间插的静音（秒）。
+/// Silence (seconds) inserted between sentences when concatenating per sentence.
 const SENTENCE_GAP_SECONDS: f32 = 0.3;
 
 fn experiment_text(var: &str) -> String {
@@ -311,7 +308,7 @@ fn report(name: &str, audio: &TtsAudio, elapsed: f32, units: usize) {
     );
 }
 
-/// 整段一次：引擎自己切块；块的位置取自 `ChunkFinished.seconds`（累计秒数）。
+/// Whole text in one call: the engine chunks it itself. Chunk positions come from `ChunkFinished.seconds` (cumulative seconds).
 fn whole_passage(engine: &mut Box<dyn synthesize::TtsEngine>, name: &str, request: &TtsRequest, units: usize) {
     let chunks = synthesize::text::chunk(&request.text, synthesize::text::DEFAULT_MAX_UNITS);
     let mut ends: Vec<f64> = Vec::new();
@@ -345,7 +342,7 @@ fn whole_passage(engine: &mut Box<dyn synthesize::TtsEngine>, name: &str, reques
     report(name, &audio, elapsed, units);
 }
 
-/// 按句逐句调用，句间插 [`SENTENCE_GAP_SECONDS`] 静音拼成整份。
+/// Calls per sentence, inserting [`SENTENCE_GAP_SECONDS`] of silence between sentences to assemble the full output.
 fn per_sentence(engine: &mut Box<dyn synthesize::TtsEngine>, name: &str, base: &TtsRequest, seed: impl Fn(usize) -> u64, units: usize) {
     let sentences = synthesize::text::split_sentences(&base.text);
     let mut samples: Vec<f32> = Vec::new();
@@ -406,7 +403,7 @@ fn long_narration_seam_experiment() {
         request
     };
 
-    // a–d 共用 0.6B CustomVoice，加载一次；跑完释放再加载下一只。
+    // Rows a–d share the 0.6B CustomVoice and load it once; after running, release it and load the next model.
     if rows.contains(['a', 'b', 'c', 'd']) {
         let mut engine = load_qwen3(CUSTOM_VOICE_REPO);
         if rows.contains('a') {
@@ -430,7 +427,7 @@ fn long_narration_seam_experiment() {
     }
     if rows.contains('f') {
         let mut engine = load_qwen3(BASE_REPO);
-        // Runtime 发来的内置音色就是「录音文件 + 原文」：Base 上走 ICL。Base 不吃语气说明。
+        // The built-in voices the Runtime sends are “recording file + transcript”, so on Base they use ICL. Base does not accept tone instructions.
         let voice = synthesize::voices::find("zh-female").unwrap();
         let file = output_dir().join("builtin-zh-female.wav");
         std::fs::write(&file, synthesize::voices::wav(voice)).unwrap();

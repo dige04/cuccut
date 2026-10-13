@@ -2,26 +2,26 @@ import { EditorWasmError, EditorWasmUnavailable, speechSentences as deriveSenten
 import type { Id } from '@cuccut/protocol';
 
 /**
- * 译文文档（视频格式规范 §5.3，`cuccut.translation/2`）在界面这边的读与改：原文的句子、句子的内容指纹、
- * 原文与译文逐句配对、哪一句过期了，以及就地改一句译文。
+ * Reading and editing of the translation document (video format spec §5.3, `cuccut.translation/2`) on the UI side: the source sentences, each sentence's content fingerprint,
+ * sentence-by-sentence pairing of source and translation, which sentence is stale, and editing one translation in place.
  *
- * 原文的句子与指纹只有一份规则：字幕与翻译核心（`speech-doc`）的派生，经 `@cuccut/editor-wasm` 调同一个 WASM，
- * 与翻译流程冻结原文、Speech Worker 写译文、配音判过期用的是同一份代码（§5.2：停顿不少于 1.8 秒、换说话人、
- * 句末标点断句，分号不断；正文里存下的 `sentences` 不参与；指纹形如 `<词数>:<首词 ID>:<末词 ID>:<FNV-1a>`）。
+ * There is one rule set for source sentences and fingerprints: the derivation in the captions and translation core (`speech-doc`), called through `@cuccut/editor-wasm` as the same WASM,
+ * the same code the translation pipeline uses when freezing the source, the Speech Worker uses when writing the translation, and dubbing uses when judging staleness (§5.2: a pause of at least 1.8 seconds, a speaker change,
+ * and sentence-ending punctuation split; semicolons do not; `sentences` stored in the body are not used; the fingerprint has the form `<word count>:<first word ID>:<last word ID>:<FNV-1a>`).
  */
 
 export const TRANSLATION_SCHEMA = 'cuccut.translation/2';
 export const SPEECH_SCHEMA = 'cuccut.speech/1';
 
-// ---- 原文的句子 ----
+// ---- Source sentences ----
 
 export interface SourceSentence {
-  /** `s-<首词 ID>`。 */
+  /** `s-<first word ID>`. */
   id: Id;
-  /** 句内可见的词，按词序。 */
+  /** Visible words in the sentence, in word order. */
   wordIds: Id[];
   text: string;
-  /** 核心的内容指纹；与译文单元的 `sourceFingerprint` 比，不同就是原句改过了。 */
+  /** The core's content fingerprint; compared with the translation unit's `sourceFingerprint`, a difference means the source sentence has changed. */
   fingerprint: string;
 }
 
@@ -29,8 +29,8 @@ type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * 转写正文的句子连同指纹（同步：WASM 在第一次调用时同步实例化）。正文不是合格的 `cuccut.speech/1`，或 WASM 没有构建时
- * null——界面把它当作原文读不出来，不去猜句子。
+ * The sentences of the transcript body together with their fingerprints (synchronous: the WASM is instantiated synchronously on the first call). null when the body is not a valid `cuccut.speech/1`, or when the WASM has not been built;
+ * the UI then treats it as unreadable source and does not guess sentences.
  */
 export function speechSentences(body: unknown): SourceSentence[] | null {
   if (!isObject(body) || body.schema !== SPEECH_SCHEMA) return null;
@@ -42,18 +42,18 @@ export function speechSentences(body: unknown): SourceSentence[] | null {
   }
 }
 
-/** UTF-8 文本的 SHA-256（十六进制）。 */
+/** SHA-256 (hex) of UTF-8 text. */
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** 译文文本的摘要（`alignment.textHash`，§5.3），与句子指纹无关。 */
+/** Digest of the translation text (`alignment.textHash`, §5.3), unrelated to the sentence fingerprint. */
 export async function textHash(text: string): Promise<string> {
   return `sha256:${await sha256Hex(text)}`;
 }
 
-// ---- 译文 ----
+// ---- Translation ----
 
 export interface TranslationUnit {
   id: Id;
@@ -79,7 +79,7 @@ export interface TranslationBody {
   units: TranslationUnit[];
 }
 
-/** 读 `/2` 的译文正文；别的格式（旧项目的 `/1`）返回 null，界面只读不改。 */
+/** Reads the translation body of `/2`; other formats (`/1` from older projects) return null, and the UI only reads them without editing. */
 export function readTranslation(body: unknown): TranslationBody | null {
   if (!isObject(body) || body.schema !== TRANSLATION_SCHEMA || !Array.isArray(body.units)) return null;
   const units = body.units.filter(
@@ -89,18 +89,18 @@ export function readTranslation(body: unknown): TranslationBody | null {
   return units.length === body.units.length ? (body as unknown as TranslationBody) : null;
 }
 
-/** 画面与导出用的译文：有字幕显示改写时用它（§5.3 的双语合并同一个取法）。 */
+/** The translation used for the picture and export: the caption display rewrite is used when present (same way as the bilingual merge in §5.3). */
 export function unitText(unit: Pick<TranslationUnit, 'naturalText' | 'displayRewrite'>): string {
   return (unit.displayRewrite?.text || unit.naturalText).trim();
 }
 
 /**
- * 一句译文的状态（照 jobs 的 dub.ts 判过期的顺序）：
- * - `marked-stale`：文档里标了 `status: 'stale'`；
- * - `sentence-gone`：原句不在转写里了；
- * - `source-changed`：原句的内容指纹与翻译时的不同（改了字、增删了词）；
- * - `empty`：没有译文；
- * - `untranslated`：原句还没有对应的译文单元（翻译之后新出现的句子）。
+ * State of one translated sentence (in the order that jobs' dub.ts uses to judge staleness):
+ * - `marked-stale`: the document marks it `status: 'stale'`;
+ * - `sentence-gone`: the source sentence is no longer in the transcript;
+ * - `source-changed`: the source sentence's content fingerprint differs from the one at translation time (text changed, words added or removed);
+ * - `empty`: no translation;
+ * - `untranslated`: the source sentence has no corresponding translation unit yet (a sentence that appeared after translating).
  */
 export type UnitState = 'ok' | 'marked-stale' | 'sentence-gone' | 'source-changed' | 'empty' | 'untranslated';
 
@@ -113,7 +113,7 @@ export function unitState(unit: TranslationUnit | null, sentence: SourceSentence
   return 'ok';
 }
 
-/** 过期：标了过期，或原句改过。 */
+/** Stale: marked stale, or the source sentence has changed. */
 export const isStale = (state: UnitState) => state === 'marked-stale' || state === 'source-changed';
 
 export interface PairRow {
@@ -124,14 +124,14 @@ export interface PairRow {
 }
 
 /**
- * 原文与译文逐句配对：按转写的句子次序；原句已经没了的译文单元排在它在译文里前一个单元的后面；
- * 翻译之后新出现、还没有译文的句子也列出来（state `untranslated`）。
+ * Source and translation paired sentence by sentence: in the transcript's sentence order; translation units whose source sentence is gone are placed after the unit that preceded them in the translation;
+ * sentences that appeared after translating and have no translation yet are also listed (state `untranslated`).
  */
 export function pairRows(sentences: readonly SourceSentence[], translation: TranslationBody): PairRow[] {
   const bySentence = new Map<Id, TranslationUnit>();
   for (const unit of translation.units) if (!bySentence.has(unit.sourceSentenceId)) bySentence.set(unit.sourceSentenceId, unit);
   const known = new Set(sentences.map((s) => s.id));
-  // 原句没了的单元挂在前一个还在的单元的句子后面；开头就没了的挂在 '' 上。
+  // A unit whose source sentence is gone hangs after the sentence of the previous unit that still exists; one missing from the very start hangs on ''.
   const orphans = new Map<string, TranslationUnit[]>();
   let anchor = '';
   for (const unit of translation.units) {
@@ -143,7 +143,7 @@ export function pairRows(sentences: readonly SourceSentence[], translation: Tran
   }
   const gone = (anchorId: string): PairRow[] =>
     (orphans.get(anchorId) ?? []).map((unit) => {
-      // 同一句被两个单元对着（重复的单元）：后面那个也按原句还在算，只是不再配对。
+      // One sentence matched by two units (duplicate units): the later one also counts as its source still existing; it is just no longer paired.
       const sentence = sentences.find((s) => s.id === unit.sourceSentenceId) ?? null;
       return { key: unit.id, sentence, unit, state: unitState(unit, sentence) };
     });
@@ -157,13 +157,13 @@ export function pairRows(sentences: readonly SourceSentence[], translation: Tran
 }
 
 export interface PairStats {
-  /** 有原句的行。 */
+  /** Rows that have a source sentence. */
   sentences: number;
-  /** 还没有译文的句子（没有单元或译文是空的）。 */
+  /** Sentences without a translation yet (no unit, or the translation is empty). */
   untranslated: number;
-  /** 过期的译文。 */
+  /** Stale translations. */
   stale: number;
-  /** 原句已经不在的译文。 */
+  /** Translations whose source sentence is no longer there. */
   gone: number;
 }
 
@@ -176,17 +176,17 @@ export function pairStats(rows: readonly PairRow[]): PairStats {
   };
 }
 
-// ---- 改一句 ----
+// ---- Edit one sentence ----
 
-/** 能就地改的行：原句还在。原句没了的单元只读（改了也没有地方放）。 */
+/** Rows that can be edited in place: the source sentence still exists. Units whose source sentence is gone are read-only (an edit would have nowhere to go). */
 export const editableRow = (row: PairRow) => row.sentence !== null && row.state !== 'sentence-gone';
 
 /**
- * 就地改一句译文，返回新的正文与改动的单元；文字没变、或这一行不能改时 null。
+ * Edits one translation in place, returning the new body and the changed unit; null when the text is unchanged or this row cannot be edited.
  *
- * - 有字幕显示改写的单元改的是改写（`naturalText` 不动，§5.3：改写不得覆盖自然译文）；否则改 `naturalText` 并更新 `textHash`。
- * - 改过的单元记为 `reviewed`；原句改过或标了过期的，用户对着现在的原文改，单元的指纹与词成员换成现在这一句的。
- * - 还没有译文的句子新建一个单元，插在前面最近一句已有译文的单元后面。
+ * - A unit with a caption display rewrite edits the rewrite (`naturalText` is untouched; §5.3: a rewrite must not overwrite the natural translation); otherwise `naturalText` is edited and `textHash` is updated.
+ * - An edited unit is marked `reviewed`. If the source sentence changed or was marked stale, the user edits against the current source, and the unit's fingerprint and word members are replaced with those of the current sentence.
+ * - A sentence without a translation gets a new unit, inserted after the unit of the nearest preceding sentence that already has a translation.
  */
 export async function editUnit(
   body: TranslationBody,
@@ -229,7 +229,7 @@ export async function editUnit(
     },
     status: 'reviewed',
   };
-  // 插在前面最近一句已有译文的单元后面；前面都没有时放在最前。
+  // Inserted after the unit of the nearest preceding sentence that already has a translation; placed at the very front when there is none before it.
   const order = sentences.findIndex((s) => s.id === sentence.id);
   let at = 0;
   for (let i = order - 1; i >= 0; i--) {
@@ -244,11 +244,11 @@ export async function editUnit(
 }
 
 /**
- * 标为过期或去掉过期标记（产品设计 §5.10「逐句与过期译文」）：「过期」与「待翻译」是同一个标记（`status: 'stale'`），刷新过期
- * 译文与交给 Agent 都会重译它。只改单元的状态，返回新的正文与改动的单元；已经是那个样子、或这一行没有单元时 null。
+ * Marks a translation stale or clears the stale mark (product design §5.10 “Sentence-by-sentence and stale translations”): “stale” and “to be translated” are the same mark (`status: 'stale'`), and both refreshing stale
+ * translations and handing off to an agent will retranslate it. Only the unit's status is changed; returns the new body and the changed unit; null when it is already in that state or this row has no unit.
  *
- * 去掉标记就是认下这一句现在的译文：记为 `reviewed`；原句改过（指纹不同）的同 `editUnit`，指纹与词成员换成现在这一句的，
- * 不然标记去掉了还是过期（`rebound` 为 true，字幕里这一句的几条要跟着按新的词重切）。
+ * Clearing the mark means accepting this sentence's current translation: it is recorded as `reviewed`. If the source sentence changed (different fingerprint), the same `editUnit` gets the fingerprint and word members of the current sentence;
+ * otherwise the mark would be cleared but the sentence would still be stale (`rebound` is true, and this sentence's cues in the captions must be re-cut against the new words).
  */
 export function markUnit(
   body: TranslationBody,
@@ -278,5 +278,5 @@ export function markUnit(
   return { body: { ...body, units: body.units.map((u) => (u === current ? next : u)) }, unit: next, rebound };
 }
 
-/** 要重译的句子（批量重译的范围，与 Runtime 就地刷新不点名时一样）：过期的与还没有译文的。 */
+/** Sentences to retranslate (the scope of a batch retranslation, same as the Runtime's in-place refresh when no sentences are named): stale ones and ones without a translation yet. */
 export const needsTranslation = (row: PairRow) => isStale(row.state) || row.state === 'untranslated' || row.state === 'empty';

@@ -13,14 +13,14 @@ import { installNow, requestRestart } from './use-update-actions.ts';
 import { useWaitingCount } from './use-waiting-count.ts';
 
 /*
- * 应用更新的宿主（设计稿 settings-update.jsx `AppUpdateProvider`）：挂在外壳根上，离开设置页照样收主进程的状态、弹 toast。
- * 它把主进程推来的快照放进 `useAppUpdate`，把 Runtime 持有的 `updates.autoCheck` / `updates.autoDownload` 推给主进程，
- * 开合更新窗与停止屏障，并在「等任务结束后安装」时数着任务、数到零就安装。宿主没有 `updates` 面（网页）时什么都不做。
+ * Host for app updates (design settings-update.jsx `AppUpdateProvider`): mounted on the shell root, so the main process's status is still received and toasts still appear after leaving the settings page.
+ * It puts the snapshots pushed from the main process into `useAppUpdate`, pushes the `updates.autoCheck` / `updates.autoDownload` held by the Runtime to the main process,
+ * opens and closes the update window and the stop barrier, and when “等任务结束后安装” (install after tasks finish) is selected, counts the tasks and installs once the count reaches zero. When the host has no `updates` surface (the web), it does nothing.
  */
 
 const TOAST_TIMEOUT = 10_000;
 
-/** toast「查看」：更新窗这一态能开就开；开不了（已经变了态）就去设置 › 关于看。 */
+/** Toast “查看” (view): opens the update window if it can in this state; if it cannot (the state has already changed), goes to 设置 › 关于 (Settings › About). */
 function openUpdate(): void {
   const state = useAppUpdate.getState().snapshot?.state;
   if (state && sideButton(state).visible) useAppUpdate.getState().openWindow();
@@ -42,7 +42,7 @@ export function AppUpdateHost() {
   const updates = runtime.host.updates;
   const setSnapshot = useAppUpdate((s) => s.setSnapshot);
 
-  // 状态镜像与提醒。先订阅再取一次：取回来之前已经推来过新状态的话，取回来的那份作废。
+  // State mirror and reminders. Subscribe first, then fetch once: if a new state was already pushed before the fetch returns, the fetched copy is discarded.
   useEffect(() => {
     if (!updates) return;
     let alive = true;
@@ -65,7 +65,7 @@ export function AppUpdateHost() {
     };
   }, [runtime, updates, setSnapshot]);
 
-  // 偏好在 Runtime 那边：设置镜像到了才推；主进程在收到之前不自动检查。
+  // Preferences live in the Runtime: they are pushed only once the settings mirror has arrived; the main process does not check automatically until it receives them.
   const autoCheck = useSetting('updates.autoCheck');
   const autoDownload = useSetting('updates.autoDownload');
   useEffect(() => {
@@ -79,13 +79,13 @@ export function AppUpdateHost() {
   const waitingFor = useWaitingCount();
   const view = snapshot ? dialog(snapshot.state, { lang: NOTES_LANG, current: snapshot.current, waiting: waitingFor }) : null;
 
-  // 窗只在 rail 按钮该显示的态里开着：变成安装中、空闲、检查失败这类态时自己关。
+  // The window stays open only in the states where the rail button should show: when it changes to states such as installing, idle or check failed, it closes itself.
   const viewable = view !== null;
   useEffect(() => {
     if (windowOpen && !viewable) closeWindow();
   }, [windowOpen, viewable, closeWindow]);
 
-  // 「等任务结束后安装」：包还在就等着，任务数到零就安装；包没了（取消、出错、重新检查）就不等了。
+  // “等任务结束后安装” (install after tasks finish): while the package is still there, wait; when the task count reaches zero, install. If the package is gone (canceled, errored, or rechecked), stop waiting.
   const stateKind = snapshot?.state.k ?? null;
   useEffect(() => {
     if (waitingFor === null) return;

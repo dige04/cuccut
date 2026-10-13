@@ -54,9 +54,9 @@ const loading = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui
 const D = () => GLOSSARY_COPY.detail;
 
 /**
- * 一张术语表的详情（设计稿 `PackDetail`）：表名、语言、加词、条目、导出、反向与删除。每一处修改立刻存：
- * 在手上这一版上改，带 `expectedVersion` 写回；别处先改了就说明、重读最新的一版。修改排队一个一个发，
- * 连着加几条也不会和自己冲突。
+ * Details of one glossary (design mockup `PackDetail`): table name, language, adding words, entries, export, reverse and delete. Every change is saved immediately:
+ * it edits the version in hand and writes back with `expectedVersion`. If it was changed elsewhere first, it says so and re-reads the latest version. Changes are queued and sent one at a time,
+ * so adding several entries in a row will not conflict with itself.
  */
 export function GlossaryDetail({ summary, onBack, onOpen }: { summary: LibraryEntrySummary; onBack(): void; onOpen(id: string): void }) {
   const runtime = useRuntime();
@@ -69,7 +69,7 @@ export function GlossaryDetail({ summary, onBack, onOpen }: { summary: LibraryEn
   const [pending, setPending] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  /** 在最新的一版上改一处并存下。`mutate` 返回 null 表示不用存。 */
+  /** Changes one spot on the latest version and saves it. A `mutate` that returns null means nothing needs saving. */
   const commit = (action: string, mutate: (content: GlossaryContent) => GlossaryContent | null, done?: (next: GlossaryContent) => string) => {
     const run = async (): Promise<boolean> => {
       const base = latest.current;
@@ -121,7 +121,7 @@ export function GlossaryDetail({ summary, onBack, onOpen }: { summary: LibraryEn
   const content = entry.content as GlossaryContent;
   const busy = pending > 0;
 
-  /** 加一批词：表里已有的并进去（转录表并入新误写）；什么都没变时只提示，不存。返回 true 表示可以清空输入。 */
+  /** Adds a batch of words: those already in the table are merged in (the transcription table merges in new misspellings). When nothing changed, it only shows a hint and does not save. Returns true when the input can be cleared. */
   const addTerms = async (incoming: GlossaryTerm[]) => {
     let receipt = '';
     let unchanged = false;
@@ -309,7 +309,7 @@ function BackButton({ onBack }: { onBack(): void }) {
   );
 }
 
-/** 表名：改完回车或离开输入框时存；清空或超长时不存并提示。别处改了名字时跟上。 */
+/** Table name: saved when Enter is pressed or the field loses focus after editing. When cleared or too long, it is not saved and a hint is shown. If the name is changed elsewhere, it follows. */
 function NameField({ name, onCommit }: { name: string; onCommit(name: string): Promise<unknown> }) {
   const [value, setValue] = useState(name);
   useEffect(() => setValue(name), [name]);

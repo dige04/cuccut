@@ -1,13 +1,12 @@
-//! progress 的 DrawOp golden：14 种样式 × 5 个（进度, 时刻）（设计 §11）。
+//! progress DrawOp golden: 14 styles × 5 (progress, time) samples (design §11).
 //!
-//! progress **没有素材源**，输入只有 `(progress, 元素盒, 两个颜色)`，因此夹具
-//! 自带一份 `cases.json`（与 `core/fixtures/visualizer/cases.json` 平级、互不引用）。
-//! 比法同样是**序列化文本逐字节比对**。
+//! progress has **no media source**; its input is only `(progress, element box, two colors)`, so the fixture ships its own `cases.json` (a peer of `core/fixtures/visualizer/cases.json`, not referenced by it).
+//! The comparison is again **byte-for-byte comparison of serialized text**.
 //!
 //! ```bash
 //! cd core
 //! cargo test -p ccut-render --test progress_draw
-//! cargo test -p ccut-render --test progress_draw -- --ignored   # 确认过再重生成
+//! cargo test -p ccut-render --test progress_draw -- --ignored   # regenerate only after confirming
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -18,29 +17,26 @@ use render_raster::source::progress::ProgressBox;
 use render_raster::source::{ProgressParams, progress_frame};
 use serde_json::{Value, json};
 
-/// 端点必须精确（`progress(t)` 在 `[start, end]` 上单调、端点恰好 0/1，§11）。
+/// Endpoints must be exact (`progress(t)` is monotonic on `[start, end]` and hits exactly 0/1, §11).
 const STEPS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
-/// 与 `STEPS` 一一配对的**元素本地时刻**（秒，P4 追加）。
+/// **Element-local times** (seconds, added in P4), paired one-to-one with `STEPS`.
 ///
-/// P3 的六种与时刻无关，加这一列不会动它们的指纹；`snake_spin` 的自转相位读它。
-/// 刻意取 3 秒长的元素上的五个整齐时刻（`0.75 s` 一步 ⇒ 50 °/s 下每步转 37.5°），
-/// 而不是 `progress × 7.2 s`——那样"一整圈"会正好抵消掉自转，测了等于没测。
+/// The six from P3 are time-independent, so adding this column does not change their fingerprints; the rotation phase of `snake_spin` reads it.
+/// Deliberately uses five neat instants on a 3-second element (a `0.75 s` step gives 37.5° per step at 50°/s), rather than `progress × 7.2 s`. With that, "one full turn" would exactly cancel out the self-rotation, and the test would prove nothing.
 const TIMES: [f64; 5] = [0.0, 0.75, 1.5, 2.25, 3.0];
 
 const CANVAS: (f64, f64) = (1920.0, 1080.0);
 
-/// 参考短边 540 → 1080p 的折算系数（`short_edge / REFERENCE_SHORT_EDGE`）。
-/// 真相在 `ccut_timeline::REFERENCE_SHORT_EDGE`；`ccut-render` 不依赖那条 crate 边，
-/// 夹具因此把系数写成显式常量并在注释里点名出处。
+/// Scale factor from the 540 reference short edge to 1080p (`short_edge / REFERENCE_SHORT_EDGE`).
+/// The source of truth is `ccut_timeline::REFERENCE_SHORT_EDGE`. The `ccut-render` crate does not depend on that crate, so the fixture writes the factor as an explicit constant and names its origin in a comment.
 const PIXEL_SCALE: f64 = 2.0;
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/progress")
 }
 
-/// 三只元素盒，直接来自 `ccut_timeline::geometry` 的默认几何表：
-/// `bar` = 80% × 5%、`square` = 30% × 30%、`frame` = 100% × 100%，均居中。
+/// Three element boxes taken directly from the default geometry table of `ccut_timeline::geometry`: `bar` = 80% × 5%, `square` = 30% × 30%, `frame` = 100% × 100%, all centered.
 fn element_box(aspect: ProgressAspect) -> ProgressBox {
     let (width, height) = match aspect {
         ProgressAspect::Bar => (0.8, 0.05),
@@ -144,7 +140,7 @@ fn pretty(value: &Value) -> Vec<u8> {
     bytes
 }
 
-/// 重新生成夹具。确认过再跑：
+/// Regenerate the fixture. Only after confirming:
 /// `cargo test -p ccut-render --test progress_draw -- --ignored`
 #[test]
 #[ignore]
@@ -155,7 +151,7 @@ fn write_progress_draw_fixture() {
     std::fs::write(dir.join("expected-draw.json"), pretty(&expected_json())).unwrap();
 }
 
-/// 日常门禁：当场重算再**逐字节**比。
+/// Daily gate: recompute on the spot and compare **byte for byte**.
 #[test]
 fn the_progress_fixtures_are_up_to_date() {
     let dir = fixture_dir();
@@ -169,10 +165,9 @@ fn the_progress_fixtures_are_up_to_date() {
     }
 }
 
-/// **14 种全部画得出东西**（P5b 之后没有空臂了）。
+/// **All 14 styles produce visible output** (since P5b there are no empty arms).
 ///
-/// 半进度是唯一对全部 14 种都非退化的采样点：端点上 `reverse_*` 的进度框会整个
-/// 消失，`background: false` 的 strobe 两种因此在那一端确实是 0 条指令。
+/// The half-progress point is the only sample where all 14 styles are non-degenerate. At the endpoints the progress box of `reverse_*` disappears entirely, and the two `background: false` strobe styles then genuinely emit 0 instructions at that end.
 #[test]
 fn every_style_is_live_in_the_golden() {
     let styles = expected_json();
@@ -188,8 +183,8 @@ fn every_style_is_live_in_the_golden() {
     }
 }
 
-/// 进度单调：同一样式下相邻两步的指令流必须不同（除了退化端点）。
-/// 这条挡住"进度值没接进去"这类静默失效。
+/// Progress is monotonic: for the same style, the instruction streams of two adjacent steps must differ (except at degenerate endpoints).
+/// This catches the silent failure where the progress value is never wired through.
 #[test]
 fn every_step_changes_the_instruction_stream() {
     for recipe in timeline_progresses() {

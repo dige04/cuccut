@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AssetRecord, AudioItem, CaptionItem, EditOperation, Sequence, SequenceItem, Track, VideoItem } from '@cuccut/protocol';
 import { describeReplace, planAssetReplace, REPLACE_IMPORT_REF, replaceSideEffects, type AssetReplacePlan } from './asset-replace.ts';
 
-// 用例照设计稿 model-video-replace.test.js：主轨拆成三段 a / b / c，另一条轨道上一段 B-roll。帧率 30。
+// Cases follow the design spec model-video-replace.test.js: the main track is split into three segments a / b / c, and one B-roll segment sits on another track. Frame rate 30.
 const fps = { num: 30, den: 1 };
 const f = (seconds: number) => Math.round(seconds * 30);
 
@@ -110,7 +110,7 @@ describe('planAssetReplace', () => {
     expect(written).not.toHaveProperty('id');
     expect(written).not.toHaveProperty('lineage');
     expect(describeReplace(plan)).toBe('新素材够长，片段长度不变，时间线不变。');
-    // 更长的新素材不把片段拉长（素材库这一层的偏离，见模型说明）。
+    // A longer new asset does not stretch the clip (a deviation at the asset-library layer; see the model notes).
     const longer = ok(planAssetReplace({ sequence: seq, asset: asset('old', 'video', 100), source: { from: 'library', asset: asset('new', 'video', 60) } }));
     expect(longer.replaced[0]!.delta).toBe(0);
   });
@@ -118,7 +118,7 @@ describe('planAssetReplace', () => {
   it('新素材不够长：片段变短（按速度换算），这条轨道只有它时轨道跟着变短', () => {
     const seq = sequence([clip('v', 'v1', 'old', 10, 20, 30, 2)]);
     const plan = ok(planAssetReplace({ sequence: seq, asset: asset('old', 'video', 100), source: { from: 'library', asset: asset('new', 'video', 6) } }));
-    // 设计稿：dur 6、速度 2 → 新长 3 秒，终点 13，短 7 秒。
+    // Design spec: dur 6, speed 2 → new length 3 s, end point 13, 7 s shorter.
     expect(plan.replaced[0]).toMatchObject({ newEnd: 13, delta: -7 });
     expect((op(plan, 'insertItems')!.items[0] as VideoItem).span).toEqual({ fromFrame: 300, durationFrames: 90 });
     expect(op(plan, 'moveItems')).toBeUndefined();
@@ -132,7 +132,7 @@ describe('planAssetReplace', () => {
     expect(op(plan, 'moveItems')!.moves).toEqual([{ itemId: 'c', offset: { unit: 'frames', value: -300 } }]);
     expect(plan.moved).toBe(1);
     expect(describeReplace(plan)).toBe('片段会变短 10.0 秒，同轨后面 1 段往前挪。');
-    // B-roll 自己一条轨道：只改自己。
+    // The B-roll has its own track: only it changes.
     const broll = ok(planAssetReplace({ sequence: seq, asset: asset('desk', 'video', 30), source: { from: 'library', asset: asset('x', 'video', 4) } }));
     expect(broll.moved).toBe(0);
     expect(broll.replaced[0]).toMatchObject({ itemId: 'broll', newEnd: 9 });
@@ -153,10 +153,10 @@ describe('planAssetReplace', () => {
       ['c', 37.2, 57.2],
     ]);
     expect(op(plan, 'deleteItems')!.itemIds).toEqual(['a', 'b', 'c']);
-    // d 跟着 a、c 一共短的 20.8 秒往前。
+    // d moves forward by the 20.8 s that a and c are shorter in total.
     expect(op(plan, 'moveItems')!.moves).toEqual([{ itemId: 'd', offset: { unit: 'frames', value: -624 } }]);
     expect(describeReplace(plan)).toBe('2 段会变短，一共短 20.8 秒，同轨后面 1 段往前挪。');
-    // 操作顺序：删 → 挪 → 写回（重叠在整笔之后检查）。
+    // Operation order: delete → move → write back (overlaps are checked after the whole transaction).
     expect(plan.operations.map((o) => o.type)).toEqual(['deleteItems', 'moveItems', 'insertItems']);
   });
 
@@ -171,7 +171,7 @@ describe('planAssetReplace', () => {
     const plan = ok(planAssetReplace({ sequence: seq, asset: main, source: { from: 'library', asset: asset('x', 'video', 10) }, itemId: 'b' }));
     expect(plan.replaced.map((r) => [r.itemId, r.newStart, +r.newEnd.toFixed(3)])).toEqual([['b', 28, 38]]);
     expect(op(plan, 'deleteItems')!.itemIds).toEqual(['b']);
-    // b 从 17.2 秒变成 10 秒：c（同一素材，没换）与 d 都往前 7.2 秒。
+    // b goes from 17.2 s to 10 s: c (same asset, not replaced) and d both move forward by 7.2 s.
     expect(op(plan, 'moveItems')!.moves).toEqual([
       { itemId: 'c', offset: { unit: 'frames', value: -216 } },
       { itemId: 'd', offset: { unit: 'frames', value: -216 } },
@@ -304,7 +304,7 @@ describe('planAssetReplace', () => {
     const seq = sequence([voice('m', 'music', 0, 48000 * 5), voice('n', 'other', 150, 48000)], [track('a1', 'audio')]);
     const plan = ok(planAssetReplace({ sequence: seq, asset: asset('music', 'audio', 60), source: { from: 'library', asset: asset('song', 'audio', 2.51) } }));
     const written = op(plan, 'insertItems')!.items[0] as AudioItem;
-    // 5 秒 → 2.51 秒放不下：短 ceil(2.49 × 30) = 75 帧，新长 2.5 秒。
+    // 5 s → 2.51 s does not fit: shorter by ceil(2.49 × 30) = 75 frames, new length 2.5 s.
     expect(written.playDuration).toEqual({ ticks: '5', timescale: 2 });
     expect(written.timeMap).toMatchObject({ sourceIn: { ticks: '0', timescale: 48000 } });
     expect(written.mix).toEqual({

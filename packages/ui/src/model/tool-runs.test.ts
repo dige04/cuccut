@@ -200,7 +200,7 @@ describe('运行视图', () => {
       ['diarize', 'done'],
       ['captions', 'done'],
     ]);
-    // 不单列时照旧。
+    // Unchanged when not listed separately.
     expect(runView(job(), [asr('diarizing')])!.steps.map((s) => s.name)).toEqual(['create', 'transcribe', 'captions']);
   });
 
@@ -253,7 +253,7 @@ describe('当场授权', () => {
     expect(grantKey({ recipient: 'a', dataKinds: ['transcript', 'audio'] })).toBe('a:audio,transcript');
   });
 
-  /** 假会话：前几次按给的结果拒绝，记下每次提交的 commandId 与发放的授权。 */
+  /** Fake session: the first few submissions are rejected with the given results; records each submitted commandId and each grant issued. */
   function fake(rejections: unknown[]): ToolStartSession & { starts: string[]; grants: GrantCreateParams[] } {
     const starts: string[] = [];
     const grants: GrantCreateParams[] = [];
@@ -338,7 +338,7 @@ describe('提交参数', () => {
     expect(transcribeParams({ entryId: 'e' }, { language: 'zh' }, 'ast_2')).toEqual({ target: { entryId: 'e' }, assetId: 'ast_2', language: 'zh' });
     expect(transcribeParams({ entryId: 'e' }, { diarize: false })).toEqual({ target: { entryId: 'e' }, diarize: false });
     expect(transcribeParams({ entryId: 'e' }, { diarize: true })).toEqual({ target: { entryId: 'e' }, diarize: true });
-    // 重新转录的落点（产品设计 §5.11）：新建视频带名字；取代带译文结转，确认过改过的文稿时带 acceptEdited。
+    // Landing for re-transcription (product design §5.11): a new video takes a name; replace carries translations over; when the user has confirmed a hand-edited transcript, pass acceptEdited.
     expect(transcribeParams({ entryId: 'e' }, {}, null, { destination: 'new-video', name: ' 片花 · 重新转录 ' })).toEqual({
       target: { entryId: 'e' },
       destination: 'new-video',
@@ -377,7 +377,7 @@ describe('提交参数', () => {
       originalAudio: 'duck',
     });
     expect(dubParams({ entryId: 'e', translation: null, targetLanguage: 'ja', originalAudio: 'mute' })).toMatchObject({ targetLanguage: 'ja' });
-    // 先翻译：带来源文稿与翻译用的文本模型；选了已有译文时不带。
+    // Translate first: passes the source transcript and the text model used for translation; not passed when an existing translation was chosen.
     expect(
       dubParams({
         entryId: 'e',

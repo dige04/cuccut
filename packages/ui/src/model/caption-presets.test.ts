@@ -241,7 +241,7 @@ describe('套用', () => {
     const style = DEFAULT_CAPTION_STYLE.style as Json;
     expect(DEFAULT_CAPTION_STYLE.schema).toBe(STUDIO);
     expect(style).toEqual({ ...preset('classic').style, wordAnimation: CLASSIC_WORD_ANIMATION, punct: true });
-    // 与流程、内核各自的字面量相同（三处一起改）。
+    // Same literals as in the pipeline and the kernel (change all three together).
     expect(CLASSIC_WORD_ANIMATION).toEqual({
       animationId: 'magic-wbw',
       animationName: 'Color',
@@ -350,11 +350,11 @@ describe('缩略图', () => {
     const root = { x: 10, y: 90, width: 40, fontSize: 60, verticalAlign: 'bottom', scale: 2, transStyle: { fontSize: 50, fontColor: '#fff' } };
     const scene = thumbScene(root, ['original', 'translation'], { width: 160, height: 66 }, 13);
     expect(scene.root).toMatchObject({ x: 50, y: 50, verticalAlign: 'center', fontSize: 30 });
-    // 双语时大的那一行是译文：30 × 20/30 × 32/20 = 32
+    // In bilingual mode the larger line is the translation: 30 × 20/30 × 32/20 = 32
     expect(scene.root.scale).toBeCloseTo((13 * 540) / (32 * 66));
     expect(thumbScene({}, ['original'], { width: 160, height: 66 }, 13).root.scale).toBeCloseTo((13 * 540) / (30 * 66));
     expect(scene.root.transStyle).toEqual({ fontColor: '#fff' });
-    // 画面上单独拖过的一行（行覆盖里的落位）在缩略图里叠回堆栈。
+    // A line dragged separately on screen (its placement in the line override) is stacked back into the stack in the thumbnail.
     const dragged = { ...root, origStyle: { x: 30, y: 12, verticalAlign: 'center', fontColor: '#ff0' } };
     expect(thumbScene(dragged, ['original', 'translation'], { width: 160, height: 66 }, 13).root.origStyle).toEqual({ fontColor: '#ff0' });
     expect(scene.bilingual).toBe(true);

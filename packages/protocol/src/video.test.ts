@@ -189,7 +189,7 @@ describe('applyVideoEvent', () => {
     expect(state.video.sequences.seq_1!.transitions).toEqual([]);
     expect(state.video.sequences.seq_1!.ducking).toEqual([]);
 
-    // 改一章的时间会重新排序；删掉的转场与规则不再出现。
+    // Changing a chapter's time re-sorts chapters; deleted transitions and rules no longer appear.
     const moved = applyVideoEvent(
       next,
       event('3', {
@@ -330,7 +330,7 @@ describe('applyVideoEvent', () => {
   });
 });
 
-/** 序列的缺省名按读者的语言显示（视频格式规范 §3.2）；用户起的名字原样。 */
+/** The default name of a sequence is shown in the reader's language (video format spec §3.2); names the user gave are kept as they are. */
 describe('sequenceDisplayName', () => {
   const created = { name: 'Main sequence', nameRef: { key: 'engine.mainSequence' } };
   const legacy = { name: '主序列' };
@@ -365,7 +365,7 @@ describe('sequenceDisplayName', () => {
   });
 });
 
-/** 引擎起的修改名带引用，按读者的语言显示；撤销、重做与几种修改把别的修改名作为嵌套参数（命令与协议规范 §3.1）。 */
+/** Engine-generated edit names carry references and are shown in the reader's language. Undo, redo and several edits take other edit names as nested arguments (command and protocol spec §3.1). */
 describe('事务的修改名', () => {
   const trim = { key: 'engine.labelTrimClip', text: 'Trim clip' };
   const undoTrim = { key: 'engine.labelUndo', params: { label: trim } };

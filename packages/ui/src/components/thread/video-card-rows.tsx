@@ -36,9 +36,9 @@ import './agent-thread.css';
 import './video-cards.css';
 
 /**
- * 视频卡下面的一件活一行、下载卡（产品设计 §3.2.2、§6.5；原型 agent-cards.jsx `JobRow` / `DownloadCard`、agent-cards.css）。
- * 逐边边框、等宽数字这些 style 宏表达不了的规则在 video-cards.css；颜色变量挂在卡片根上（会话头的「产物」弹层经 portal 渲染，
- * 拿不到线程列上的变量）。
+ * One-line job rows under the video card, and the download card (product design §3.2.2, §6.5; prototype agent-cards.jsx `JobRow` / `DownloadCard`, agent-cards.css).
+ * Rules that the style macros cannot express, such as per-edge borders and tabular figures, live in video-cards.css. Color variables are set on the card root,
+ * because the “产物” (Outputs) popover in the session header renders through a portal and cannot read the variables on the thread column.
  */
 export const cardVars = style({
   '--cc-vc-text': { type: 'color', value: 'gray-900' },
@@ -54,11 +54,11 @@ export const cardVars = style({
   '--cc-vc-ic-bg': { type: 'backgroundColor', value: 'blue-100' },
   '--cc-vc-ic-err-bg': { type: 'backgroundColor', value: 'red-100' },
   '--cc-vc-ic-idle-bg': { type: 'backgroundColor', value: 'gray-75' },
-  // 「之前的 N 项」那一行（照线程步骤行 thread.tsx 的 --cc-at-faint / row-hover / focus）。
+  // The “之前的 N 项” (“N earlier items”) row (follows the --cc-at-faint / row-hover / focus of the thread step row in thread.tsx).
   '--cc-vc-chev': { type: 'color', value: 'gray-500' },
   '--cc-vc-hover': { type: 'backgroundColor', value: 'gray-75' },
   '--cc-vc-focus': { type: 'outlineColor', value: 'focus-ring' },
-  // 运行中的扫光（agent-thread.css `.cc-shimmer`）在弹层里也要。
+  // The running shimmer (agent-thread.css `.cc-shimmer`) is needed in the popover too.
   '--cc-at-shimmer': { type: 'color', value: 'gray-700' },
   '--cc-at-shimmer-hi': { type: 'color', value: 'gray-300' },
 });
@@ -79,7 +79,7 @@ const BADGE: Record<VideoStatus['key'], 'informative' | 'neutral' | 'positive' |
   failed: 'negative',
 };
 
-/** 视频卡头上的状态词（转录中 · 45% / 排队中 / 翻译中 · 30% / 已转录 / 失败）。 */
+/** Status words on the video card header: 转录中 · 45% (transcribing, 45%) / 排队中 (queued) / 翻译中 · 30% (translating, 30%) / 已转录 (transcribed) / 失败 (failed). */
 export function VideoStatusBadge({ status }: { status: VideoStatus }) {
   return (
     <Badge variant={BADGE[status.key]} fillStyle="subtle" size="S">
@@ -89,8 +89,8 @@ export function VideoStatusBadge({ status }: { status: VideoStatus }) {
 }
 
 /**
- * Job 镜像里决定卡片放在哪、是哪部视频的那几项（ID、提交者、视频、父任务、状态与结束时刻、链接标题）。进度一秒变几次，线程不必跟着重排；
- * 只在这些变了时取一次镜像。每张卡自己订阅镜像画进度。
+ * The fields of the job mirror that decide where a card goes and which video it belongs to (ID, submitter, video, parent job, status and end time, link title). Progress changes several times a second, so the thread does not need to re-sort on every tick;
+ * the mirror is read only when these fields change. Each card subscribes to the mirror itself to draw its progress.
  */
 export function useJobsForPlacement(): readonly JobRecord[] {
   const key = useJobs((s) =>
@@ -106,7 +106,7 @@ export function useJobsForPlacement(): readonly JobRecord[] {
           sub.kind,
           who,
           j.createdAt,
-          // 卡挂在哪一轮要看活结束没有、什么时候结束（还在跑的活把卡带到最新一轮）。
+          // Which turn the card is attached to depends on whether the job has ended and when it ended (a job still running moves the card to the latest turn).
           j.state,
           j.endedAt,
           j.pipeline?.name ?? '',
@@ -118,13 +118,13 @@ export function useJobsForPlacement(): readonly JobRecord[] {
       })
       .join('\n'),
   );
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在结构变了时重取
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only when the structure changes
   return useMemo(() => useJobs.getState().jobs, [key]);
 }
 
 const progress = style({ width: 'full' });
 
-/** 转录那一行的字（`asrLine`）：模型名从能力视图与模型包取，「自动检测」「识别说话人」与转录工具页同一套用词。 */
+/** The text of the transcription line (`asrLine`): the model name comes from the capability view and model pack, and “自动检测” (Auto-detect) and “识别说话人” (Identify speakers) use the same wording as the transcription tool page. */
 function useAsrText(): (row: JobRowView) => string | null {
   const view = useModels((s) => s.capabilities);
   const bundles = useModels((s) => s.bundles);
@@ -158,9 +158,9 @@ function useRowActions() {
 }
 
 /**
- * 视频卡下面这条会话归这部视频的活（线程里与「产物」弹层里同一份）。没有行时不画。只摊开进行中的，都结束了只摊开最后一件；
- * 其余收进一行「之前的 N 项」（`foldRows`，产品设计 §3.2.2；原型 agent-cards.jsx `MovieJobRows`），默认收起，
- * 展开是紧凑的历史行，新的在前。开合只是这张卡自己的事，不进 store；样子照线程的步骤行（steps-group.tsx）。
+ * The jobs under the video card that belong to this video in this session (the same set as in the thread and in the “产物” (Outputs) popover). Nothing is drawn when there are no rows. Only running jobs are expanded; if all have ended, only the last one is expanded.
+ * The rest are folded into one “之前的 N 项” (“N earlier items”) row (`foldRows`, product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`), collapsed by default.
+ * When expanded, it shows compact history rows, newest first. Open/close state belongs to this card alone and is not kept in the store; the look follows the thread step rows (steps-group.tsx).
  */
 export function VideoJobRows({ jobIds }: { jobIds: readonly Id[] }) {
   const jobs = useJobs((s) => s.jobs);
@@ -178,7 +178,7 @@ export function VideoJobRows({ jobIds }: { jobIds: readonly Id[] }) {
       ))}
       {earlier.length ? (
         <li className="cc-vjobs__more">
-          {/* 有待处理时两段字读屏会连成一串，另给一句完整的名字；没有时就念按钮文字。 */}
+          {/* When there are pending items, the two text segments would be read out as one run-on string, so a complete name is given; otherwise the button text is read. */}
           <button
             type="button"
             className="cc-vjobs__toggle"
@@ -208,9 +208,9 @@ export function VideoJobRows({ jobIds }: { jobIds: readonly Id[] }) {
 }
 
 /**
- * 一件活一行。`compact` 是「之前的 N 项」展开后的历史行：只留头一行、导出的文件名与按钮、失败原因与补救 / 重试，
- * 不画进度、结果事实、转录的模型、提醒、文件尺寸与说明（展开的历史只用来找回导出的文件和失败的去处）。
- * `asr`：转录与重新转录用的模型与参数，只读（产品设计 §3.2.2）。
+ * One job per line. `compact` is the history row shown after expanding “之前的 N 项” (“N earlier items”): it keeps only the first line, the exported file name and its button, and the failure reason with its remedy / retry,
+ * and omits progress, result facts, the transcription model, reminders, file size and notes (expanded history is only for finding an exported file and where a failure stopped).
+ * `asr`: the model and parameters used for transcription and re-transcription, read-only (product design §3.2.2).
  */
 function JobRow({
   row,
@@ -225,7 +225,7 @@ function JobRow({
 }) {
   const full = !compact;
   const running = row.state === 'running';
-  // 导出在渲染时，已用时长后面接预计剩余时间（与导出窗口同一份推算，`useExportSpeed`）；算不出、别的活不写。
+  // While exporting, the estimated time remaining follows the elapsed time (the same estimate as the export window, `useExportSpeed`). If it cannot be computed, nothing is shown, and other jobs never show it.
   const left = exportTimeLeft(useExportSpeed(full && running && row.kind === 'export' ? row.jobId : null));
   const time = full ? [row.elapsed, left].filter(Boolean).join(' · ') || null : null;
   const hasFoot = !!time || row.canCancel || row.canRetry || !!row.remedy;
@@ -309,7 +309,7 @@ function JobRow({
   );
 }
 
-/** 下载卡（原型 agent-cards.jsx `DownloadCard`）：智能体从链接导入、视频还没建出来时的一张。 */
+/** Download card (prototype agent-cards.jsx `DownloadCard`): shown when the agent imports from a link and the video has not been created yet. */
 export function DownloadCard({ jobId }: { jobId: Id }) {
   const jobs = useJobs((s) => s.jobs);
   const job = jobs.find((j) => j.jobId === jobId);

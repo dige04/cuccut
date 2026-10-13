@@ -3,18 +3,15 @@ import { itemFrames } from './editor.ts';
 import { M } from './stage-media-copy.ts';
 
 /**
- * 主媒体放不出来时的舞台提示（设计稿 model-stage-media.js、stage.jsx 的 `StageMediaNotice`）。纯函数，不碰 React 与 DOM。
+ * Stage notice shown when the main media cannot be played (design draft model-stage-media.js, `StageMediaNotice` in stage.jsx). A pure function; does not touch React or the DOM.
  *
- * 主媒体：根序列里启用的视频、音频实例用到的素材版本，按在时间线上出现的先后排。缺了它们视频照常打开，
- * 字幕、元素与时钟照常走（预览的时钟不依赖媒体），只是没有画面或声音——卡片常驻画面正中，播放时也不收。
- * 只缺图片等别的素材时不出卡。没有主媒体的视频（空白、纯元素）不出卡。
+ * Main media: the asset versions used by the enabled video and audio instances in the root sequence, ordered by when they first appear on the timeline. When they are missing, the video still opens, and subtitles, elements and the clock keep running (the preview clock does not depend on the media); there is just no picture or sound. The card stays at the center of the frame, and does not hide during playback. Missing other assets such as images alone does not show a card. Videos without main media (blank, element-only) do not show a card.
  *
- * 四种情形，同一张卡：
- * - `missing` / `changed` / `outside-project`：`videos.assetStatus` 报告读不到（视频格式规范 §4.2），原因原样沿用；
- * - `unplayable`：文件在、地址也取到了，但播放器打不开或解不了码（附播放器原话）。
+ * Four cases, one card:
+ * - `missing` / `changed` / `outside-project`: `videos.assetStatus` reports that it cannot be read (video format spec §4.2); the reason is passed through as is;
+ * - `unplayable`: the file exists and its address was obtained, but the player cannot open or decode it (with the player's own message).
  *
- * 找回画面：设计稿把「重新关联媒体…」放在 Space 视频卡的 ⋯ 菜单里；但 Space 不打开视频就不知道缺不缺素材，
- * 这里改为桌面端在卡上放「重新关联…」（宿主有 `pickFiles` 才放），网页宿主在卡上说明要到桌面端找回。
+ * Recovering the picture: the design draft puts “Relink media…” in the ⋯ menu of the Space video card; but Space does not open the video, so it cannot know whether assets are missing. Instead, on the desktop, the card shows “Relink…” (only if the host has `pickFiles`); on the web host, the card explains that recovery must be done in the desktop app.
  */
 
 export type StageMediaKind = MissingAsset['reason'] | 'unplayable';
@@ -22,23 +19,23 @@ export type StageMediaKind = MissingAsset['reason'] | 'unplayable';
 export interface StageMediaNotice {
   kind: StageMediaKind;
   title: string;
-  /** 第一个读不到的主媒体的文件名（不给整条路径）。 */
+  /** File name of the first main media that cannot be read (not the full path). */
   name: string;
   body: string;
-  /** 登记了所在的盘时：接上它就能自动恢复。 */
+  /** When the volume it lives on is registered, reconnecting that volume restores it automatically. */
   volume: string | null;
-  /** 还有几个主媒体也放不出来。 */
+  /** How many other main media also cannot be played. */
   more: string | null;
-  /** 去哪儿找回、或者为什么这一个找不回。 */
+  /** Where to recover it from, or why this one cannot be recovered. */
   hint: string | null;
-  /** 可以在卡上重新关联的那一个（桌面端、链接素材、当前版本）。 */
+  /** The one that can be relinked on the card (desktop, linked asset, current version). */
   relink: { assetId: Id; name: string } | null;
 }
 
-/** 卡片的文案（译文在 `stage-media-copy.<语言>.ts`）。 */
+/** Card copy (translations are in `stage-media-copy.<language>.ts`). */
 export const STAGE_MEDIA_COPY = M;
 
-/** 主媒体：素材版本与它的种类（决定说「画面和原声」还是「这段声音」）。 */
+/** Main media: the asset version and its kind (decides whether it says “picture and original sound” or “this audio”). */
 export interface PrimaryMedia {
   ref: VersionRef;
   kind: 'video' | 'audio';
@@ -48,7 +45,7 @@ export function refKey(ref: VersionRef): string {
   return `${ref.id}@${ref.revision}`;
 }
 
-/** 根序列里启用的视频、音频实例用到的素材版本：按起点排（同时开始的视频在前），同一版本只算一次。 */
+/** Asset versions used by the enabled video and audio instances in the root sequence: sorted by start point (videos starting at the same time come first); each version is counted only once. */
 export function primaryMedia(sequence: Sequence): PrimaryMedia[] {
   const found = sequence.items
     .filter((item) => (item.type === 'video' || item.type === 'audio') && item.enabled)
@@ -71,13 +68,13 @@ export function primaryMedia(sequence: Sequence): PrimaryMedia[] {
   return out;
 }
 
-/** 路径 → 文件名；取不到文件名就原样给路径。 */
+/** Path → file name; if no file name can be derived, the path is returned as is. */
 export function fileName(path: string): string {
   const match = /[^/\\]+$/.exec(path);
   return match ? match[0] : path;
 }
 
-/** 素材在卡上叫什么：登记的路径的文件名，没有路径（收在视频目录里）时用素材名。 */
+/** The name an asset shows on the card: the file name of its registered path; when there is no path (it is stored in the video folder), the asset name is used. */
 function assetName(ref: VersionRef, assets: Record<Id, AssetRecord>, path?: string): string {
   if (path) return fileName(path);
   const asset = assets[ref.id];
@@ -89,17 +86,17 @@ function assetName(ref: VersionRef, assets: Record<Id, AssetRecord>, path?: stri
 export interface StageMediaInput {
   sequence: Sequence;
   assets: Record<Id, AssetRecord>;
-  /** `videos.assetStatus` 的结果；还没查到时是 null。 */
+  /** Result of `videos.assetStatus`; null until it has been checked. */
   missing: readonly MissingAsset[] | null;
-  /** 文件在、播放器打不开的素材版本（`refKey` → 播放器原话）。 */
+  /** Asset versions whose file exists but the player cannot open (`refKey` → the player's message). */
   unplayable: ReadonlyMap<string, string>;
-  /** 宿主能选文件（桌面端）：卡上放「重新关联…」。 */
+  /** The host can pick files (desktop): the card shows “Relink…”. */
   canPick: boolean;
 }
 
 type Problem = { media: PrimaryMedia; missing: MissingAsset } | { media: PrimaryMedia; error: string };
 
-/** 卡片内容；主媒体都放得出来时是 null。 */
+/** Card content; null when all main media can be played. */
 export function stageMediaNotice({ sequence, assets, missing, unplayable, canPick }: StageMediaInput): StageMediaNotice | null {
   const lost = new Map((missing ?? []).map((m) => [refKey({ id: m.assetId, revision: m.revision }), m]));
   const problems: Problem[] = [];
@@ -129,7 +126,7 @@ export function stageMediaNotice({ sequence, assets, missing, unplayable, canPic
   }
   const m = first.missing;
   const name = assetName(first.media.ref, assets, m.path);
-  // 重新关联只认链接素材（有登记的路径），且只改素材的当前版本（引擎 relink_asset）。
+  // Relinking only applies to linked assets (with a registered path), and only changes the asset's current version (engine relink_asset).
   const current = assets[m.assetId]?.currentRevision === m.revision;
   const relinkable = !!m.path && current;
   return {
@@ -145,8 +142,7 @@ export function stageMediaNotice({ sequence, assets, missing, unplayable, canPic
 }
 
 /**
- * 素材登记的指纹：素材的增删、换当前版本、收进视频、换位置都会变。视频事件每次都重建 `assets`，
- * 身份不能用来判断「提交了素材类操作」，按这个字符串判断要不要重查 `videos.assetStatus`。
+ * Fingerprint of the asset registry: it changes when assets are added or removed, the current version is switched, assets are collected into the video, or they are moved. Video events rebuild `assets` every time, so identity cannot be used to tell whether an asset operation was committed; this string is used to decide whether to re-check `videos.assetStatus`.
  */
 export function assetsFingerprint(assets: Record<Id, AssetRecord>): string {
   return Object.keys(assets)
@@ -164,27 +160,27 @@ export function assetsFingerprint(assets: Record<Id, AssetRecord>): string {
     .join(';');
 }
 
-/** 上一次读不到、这一次读得到的素材（重新关联了、盘接上了）：预览要重新取它们的地址。 */
+/** Assets that could not be read last time but can be read now (relinked, or the drive reconnected): the preview must fetch their addresses again. */
 export function recoveredAssets(before: readonly MissingAsset[] | null, after: readonly MissingAsset[]): Id[] {
   if (!before) return [];
   const still = new Set(after.map((m) => m.assetId));
   return [...new Set(before.map((m) => m.assetId))].filter((id) => !still.has(id));
 }
 
-/** 源元素一次载入的结果：载入了；出错了（`MediaError` 的 code 与原话）；地址取不到（`media.resolve` 失败）。 */
+/** Result of one load of a source element: loaded; errored (the `MediaError` code and its message); address could not be obtained (`media.resolve` failed). */
 export type MediaOutcome = { kind: 'loaded' } | { kind: 'error'; code: number; message: string } | { kind: 'unresolved' };
 
-/** 每个源元素（按预览的媒体键）连续几次解不了，最后一次的原话。 */
+/** For each source element (keyed by the preview's media key), how many times in a row it failed to decode, plus the message from the last failure. */
 export type PlaybackLog = Readonly<Record<string, { ref: string; failures: number; message: string }>>;
 
 const MEDIA_ERR_DECODE = 3;
 const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
-/** 换了新地址还是解不了才算放不出来：媒体句柄过期（Runtime 重启）时第一次也会报错，重取一次就好。 */
+/** It only counts as unplayable when it still fails to decode after getting a new address: a stale media handle (after a Runtime restart) also errors the first time, and fetching once more fixes it. */
 const UNPLAYABLE_AFTER = 2;
 
 /**
- * 记一次载入结果。只有解码失败、格式不支持算数（网络中断、中止不算）；载入成功清零。
- * 媒体地址每次重取都是新的，元素报错后会重取，所以「连续两次」就是换了地址还是不行。
+ * Records one load result. Only decode failures and unsupported formats count (network interruptions and aborts do not); a successful load resets the count.
+ * Media addresses are new each time they are fetched, and the element re-fetches after an error, so “two in a row” means it still fails after getting a new address.
  */
 export function notePlayback(log: PlaybackLog, key: string, ref: VersionRef, outcome: MediaOutcome): PlaybackLog {
   if (outcome.kind === 'loaded') {
@@ -199,14 +195,14 @@ export function notePlayback(log: PlaybackLog, key: string, ref: VersionRef, out
   return { ...log, [key]: { ref: refKey(ref), failures, message: mediaErrorText(outcome.code, outcome.message) } };
 }
 
-/** 放不出来的素材版本（`refKey` → 播放器原话）。 */
+/** Asset versions that cannot be played (`refKey` → the player's message). */
 export function unplayableRefs(log: PlaybackLog): Map<string, string> {
   const out = new Map<string, string>();
   for (const entry of Object.values(log)) if (entry.failures >= UNPLAYABLE_AFTER && !out.has(entry.ref)) out.set(entry.ref, entry.message);
   return out;
 }
 
-/** 播放器原话；浏览器没给时按错误码说一句。 */
+/** The player's message; if the browser does not provide one, a sentence is built from the error code. */
 export function mediaErrorText(code: number, message: string): string {
   const said = message.trim();
   if (said) return said;

@@ -1,44 +1,44 @@
 import type { Id } from '@cuccut/protocol';
 import { JsonStoreFile, isPlainObject, type StoreOptions } from './store-file.ts';
 
-/** Space 条目上的用户标记（架构设计 §5.7 的 `user.*`）。索引重建不丢它们。 */
+/** User marks on Space entries (`user.*` in architecture design §5.7). Index rebuilds do not lose them. */
 export interface SpaceMark {
   favorite: boolean;
   displayName: string | null;
   trashedAt: string | null;
-  /** 用户清除了这条失败的占位（`space.purge`）：它没有 bytes，清除只是不再显示。旧文件里没有这一项。 */
+  /** The user cleared this failed placeholder (`space.purge`). It has no bytes, so clearing only stops showing it. Old files do not have this entry. */
   dismissedAt?: string | null;
 }
 
 /**
- * 经 `space.import` 登记的项目文件（架构设计 §5.7「项目里不属于视频的文件」）。bytes 的权威是项目目录里的文件本身，
- * 这里只记它属于哪个项目、在项目里的相对路径与登记时间；文件被外部移走或删掉后条目显示为 `missing`。
+ * Project files registered through `space.import` (architecture design §5.7, "project files that are not videos"). The bytes' authority is the file itself in the project directory.
+ * This records only which project the file belongs to, its relative path within the project, and the registration time. If the file is moved or deleted outside the app, the entry shows as `missing`.
  */
 export interface SpaceImport {
   projectId: Id;
-  /** 相对项目目录，用 `/` 分隔。 */
+  /** Relative to the project directory, separated by `/`. */
   relPath: string;
   importedAt: string;
-  /** 从项目之外复制进来时，原文件的文件名（不记原路径）。 */
+  /** When copied in from outside the project, the original file name (the original path is not recorded). */
   copiedFrom: string | null;
 }
 
 /**
- * 删除了的视频（`videos.delete`，架构设计 §5.5、§5.7）：视频目录整个移进来源目录里的回收站 `.ccut-trash/<trashId>/<目录名>`。
- * 键是它在回收站里的条目 id（来源键与 `trashRelPath` 的摘要）：原来的位置之后可能放进另一个视频，两者不能共用一个 id。
- * 先写这条记录再移动目录，恢复时先移回再删记录：中途崩溃，启动时按目录实际在哪里对账。
- * 路径都相对来源目录，项目目录被移动之后照样找得到。
+ * A deleted video (`videos.delete`, architecture design §5.5 and §5.7): the whole video directory is moved into the trash in the source directory, at `.ccut-trash/<trashId>/<directory name>`.
+ * The key is its entry id in the trash (the digest of the source key and `trashRelPath`). The original location may later receive another video, so the two cannot share an id.
+ * Write this record first, then move the directory. On restore, move the directory back first, then delete the record. If it crashes midway, startup reconciles the record against where the directory actually is.
+ * All paths are relative to the source directory, so they are still found after the project directory is moved.
  */
 export interface TrashedVideo {
-  /** 删除之前的条目 id：撤销与恢复可以用它找到这条记录。 */
+  /** The entry id from before deletion. Undo and restore can use it to find this record. */
   formerEntryId: Id;
-  /** 来源键：`project:<id>` 或 `conv:<id>`。 */
+  /** Source key: `project:<id>` or `conv:<id>`. */
   sourceKey: string;
   projectId: Id | null;
   conversationId: Id | null;
-  /** 原来的相对路径，用 `/` 分隔。 */
+  /** Original relative path, separated by `/`. */
   relPath: string;
-  /** 在回收站里的相对路径：`.ccut-trash/<trashId>/<目录名>`。 */
+  /** Relative path in the trash: `.ccut-trash/<trashId>/<directory name>`. */
   trashRelPath: string;
   videoId: Id | null;
   name: string;
@@ -49,20 +49,20 @@ export interface TrashedVideo {
 interface SpaceFile {
   schemaVersion: 1;
   marks: Record<Id, SpaceMark>;
-  /** 后加的：旧文件没有。 */
+  /** Added later: old files do not have it. */
   imports?: Record<Id, SpaceImport>;
-  /** 后加的：旧文件没有。 */
+  /** Added later: old files do not have it. */
   trashedVideos?: Record<Id, TrashedVideo>;
 }
 
 export const EMPTY_MARK: SpaceMark = { favorite: false, displayName: null, trashedAt: null };
 
-/** 标记全空的条目不落盘，文件只记有意义的东西。 */
+/** Entries whose marks are all empty are not written to disk. The file records only meaningful things. */
 function isEmpty(mark: SpaceMark): boolean {
   return !mark.favorite && mark.displayName === null && mark.trashedAt === null && !mark.dismissedAt;
 }
 
-/** 文件坏了改名保留、从空开始；更新版本写下的不改写（`store-file.ts`）。 */
+/** If the file is corrupt, it is renamed and kept, and the store starts empty. Files written by a newer version are not rewritten (`store-file.ts`). */
 export class SpaceMarkStore {
   readonly #file: JsonStoreFile;
   #marks = new Map<Id, SpaceMark>();
@@ -98,7 +98,7 @@ export class SpaceMarkStore {
     return this.#save();
   }
 
-  /** 物理删除之后：标记、登记与删除的视频的记录一起去掉。 */
+  /** After physical deletion, the marks, the registration, and the record of the deleted video are removed together. */
   remove(id: Id): Promise<void> {
     this.#marks.delete(id);
     this.#imports.delete(id);
@@ -110,7 +110,7 @@ export class SpaceMarkStore {
     return this.#trashedVideos;
   }
 
-  /** 记下删除的视频：用户标记从原来的条目搬过来，写上回收站标记（一次落盘）。 */
+  /** Records a deleted video. The user's marks move from the original entry, and the trash mark is written (one disk write). */
   putTrashedVideo(id: Id, record: TrashedVideo): Promise<void> {
     this.#trashedVideos.set(id, record);
     this.#marks.set(id, { ...this.get(record.formerEntryId), trashedAt: record.trashedAt });
@@ -118,7 +118,7 @@ export class SpaceMarkStore {
     return this.#save();
   }
 
-  /** 视频回到来源目录（恢复，或启动时发现移动没有发生）：去掉记录，用户标记去掉回收站标记后搬到 `to`。 */
+  /** The video returns to the source directory (restore, or at startup when the move never happened). The record is removed. The user's marks have the trash mark removed, then move to `to`. */
   dropTrashedVideo(id: Id, to: Id): Promise<void> {
     this.#trashedVideos.delete(id);
     const mark = { ...this.get(id), trashedAt: null };

@@ -25,12 +25,12 @@ import { pl } from './tools-gallery.pl.ts';
 import { tr } from './tools-gallery.tr.ts';
 import { vi } from './tools-gallery.vi.ts';
 
-/** 工具卡现状行的文案（译文在 `tools-gallery.<语言>.ts`）。 */
+/** Copy for the status line on tool cards (translations in `tools-gallery.<语言>.ts`). */
 const en = {
   transcode: 'Encoded on this computer with ffmpeg · nothing uploaded',
   linkReady: 'Download tool ready',
   pipelineMissing: 'This version of Runtime doesn’t have a pipeline for this tool yet, so it can’t be used for now',
-  /** 原因后面接补救（两句都是 Runtime 给的，原因已去掉句末标点）。 */
+  /** After the reason, the remedy follows (both sentences come from the Runtime; the trailing punctuation of the reason has been removed). */
   withRemedy: (message: string, remedy: string) => `${message}. ${remedy}`,
   localModels: (n: number) => `${n} local ${n === 1 ? 'model' : 'models'}`,
   cloudConnected: (n: number) => `${n} online ${n === 1 ? 'provider' : 'providers'} connected`,
@@ -42,28 +42,28 @@ export type ToolsGalleryMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * 工具总览（设计稿 page-tools.jsx `ToolsGallery`）：每张卡的一行现状。
- * 能不能用以 Runtime 的 `tools.list` 为准（不可用时写它给的第一条原因）；能用时用模型的三个工具按 `models` 主题的能力视图数本机模型与云端服务商，
- * 压缩与合并写在这台电脑上用 ffmpeg，从链接导入写下载工具就绪。
+ * Tool overview (design mock page-tools.jsx `ToolsGallery`): one status line per card.
+ * Whether a tool is usable follows the Runtime's `tools.list` (when unavailable, show its first reason). When usable, the model tools count local models and cloud providers from the capability view of the `models` topic, by `models`;
+ * compression and merging run locally with ffmpeg on this computer, and importing from a link shows that the download tool is ready.
  */
 
-/** 还没做成的工具与原因。现在没有：字幕翻译已经能翻一份字幕文件（`translate-subtitles` 流程）。 */
+/** Tools not built yet, and their reasons. None now: subtitle translation can already translate a subtitle file (`translate-subtitles` flow). */
 const PLANNED_REASON: Partial<Record<ToolId, string>> = {};
 
-/** 压缩、合并与提取音频走 Runtime 的 `transcode` 流程，在这台电脑上用 ffmpeg 编码、不上传。 */
+/** Compress, merge and extract audio run through the Runtime's `transcode` flow, encoded locally with ffmpeg on this computer, not uploaded. */
 export function transcodeCardStatus(): string {
   return M.transcode;
 }
-/** 从链接导入能用（下载工具就绪）时的现状。 */
+/** Status when importing from a link is usable (the download tool is ready). */
 export function linkReadyStatus(): string {
   return M.linkReady;
 }
-/** 注册表列了工具，Runtime 却还没有执行它的流程（`pipelines.list` 里没有）：按不了。 */
+/** The registry lists the tool, but the Runtime has no flow to run it yet (not in `pipelines.list`), so it can't be run. */
 export function pipelineMissing(): string {
   return M.pipelineMissing;
 }
 
-/** 还不能用的工具的原因；能用的为 null。 */
+/** Reason a tool isn't usable yet; null when it is usable. */
 export function plannedReason(id: ToolId): string | null {
   return PLANNED_REASON[id] ?? null;
 }
@@ -73,22 +73,22 @@ export interface ToolCardStatus {
   text: string;
 }
 
-/** 一条不可用原因给人看的那句：Runtime 的 `message`，要补救时接在后面。 */
+/** The sentence shown for one unavailable reason: the Runtime's `message`, with the remedy appended when there is one. */
 export function problemText(problem: ToolProblem, withRemedy = false): string {
-  // 原因与补救按界面当前语言重新生成（Runtime 的语言可能不同，或在切换语言之前读的）。
+  // Reasons and remedies are regenerated in the current UI language (the Runtime's language may differ, or they were read before the language was switched).
   const said = localizeText(problem.message, problem.messageRef);
   const remedy = problem.remedy ? localizeText(problem.remedy, problem.remedyRef) : '';
   if (!withRemedy || !remedy) return said;
   const message = said.replace(/[。.]$/, '');
-  // 补救与原因是同一句（Runtime 把 CAPABILITY_NOT_CONFIGURED 的 hint 也当原因给）时只写一遍。
+  // When the remedy and the reason are the same sentence (the Runtime also gives CAPABILITY_NOT_CONFIGURED's hint as the reason), write it only once.
   if (message.includes(remedy.replace(/[。.]$/, ''))) return said;
   return M.withRemedy(message, remedy);
 }
 
 /**
- * 这个工具此刻为什么按不了（以 `tools.list` 为准）：不可用时第一条原因；执行它的流程（按输入种类，`executionByInput`）
- * 不在 `pipelines.list` 里时写 `pipelineMissing()`。`requiredCapabilities` 把本次选中的可选能力限制也算进来。
- * 能用、或状态还没到时 null。`pipelines` 为 null 时不判断流程。
+ * Why this tool can't be run right now (per `tools.list`): the first reason when unavailable; if the flow that runs it (by input kind, `executionByInput`) is not in `pipelines.list`, `pipelineMissing()`.
+ * `requiredCapabilities` also counts the optional capability limits selected for this run.
+ * null when usable, or when the state hasn't arrived yet. When `pipelines` is null, the flow is not checked.
  */
 export function toolBlock(
   status: ToolStatus | null | undefined,
@@ -99,7 +99,7 @@ export function toolBlock(
 ): string | null {
   if (!status) return null;
   if (!status.available) return status.problems[0] ? problemText(status.problems[0], withRemedy) : M.pipelineMissing;
-  // 下载本身不要求转录模型；用户要同时转录时，对应的可选能力限制就是提交的阻碍。
+  // Downloading itself doesn't need a transcription model; when the user also wants transcription, the matching optional capability limit is what blocks submission.
   const missing = status.limitations.find((problem) => problem.capability && requiredCapabilities.includes(problem.capability));
   if (missing) return problemText(missing, withRemedy);
   const execution = (input && status.executionByInput?.[input]) || status.execution;
@@ -107,21 +107,21 @@ export function toolBlock(
   return null;
 }
 
-/** 这种能力下能用的云端服务商有几家（连上了、这一档也可用；Codex 画图这类智能体 Provider 不算）。 */
+/** How many cloud providers are usable for this capability (connected and usable at this tier; agent providers such as Codex image generation are not counted). */
 export function usableCloudCount(view: ModelCapabilitiesView, capability: ModelServiceCapability): number {
-  // 人声分离与音乐生成只在本机，没有云端服务商。
+  // Vocal separation and music generation are local only; there are no cloud providers.
   if (capability === 'separateAudio' || capability === 'generateMusic') return 0;
   return cloudProviders(view, capability).filter((card) => card.connected && card.available).length;
 }
 
-/** 这种能力下装好、能用的本机模型有几只（`kind: 'local'` 的 Provider；文本生成没有本机模型）。 */
+/** How many usable local models are installed for this capability (`kind: 'local'` providers; text generation has no local models). */
 export function usableLocalCount(view: ModelCapabilitiesView, capability: ModelServiceCapability): number {
   return view[capability].providers
     .filter((p) => p.kind === 'local' && p.available)
     .reduce((n, p) => n + p.models.filter((m) => m.available !== false && !m.unavailableReason).length, 0);
 }
 
-/** 用模型的工具那一行：本机几只、云端几家；都没有时照 `none` 写、点变灰。 */
+/** The tool's row for models: how many local and how many cloud providers; when there are none, write `none` per the tier and grey it out. */
 function modelStatus(view: ModelCapabilitiesView, capability: ModelServiceCapability, none: string): ToolCardStatus {
   const local = usableLocalCount(view, capability);
   const cloud = usableCloudCount(view, capability);
@@ -130,8 +130,8 @@ function modelStatus(view: ModelCapabilitiesView, capability: ModelServiceCapabi
 }
 
 /**
- * 卡片的现状行；什么都说不出时 null。`block` 是 `toolBlock` 算出的不可用原因（`tools.list` 为准，Web 服务上的
- * `WEB_METHOD_NOT_ALLOWED`、`PATH_OUTSIDE_PROJECT` 也在这里）：给了就照写、点变灰；为 null 是确认能用，undefined 是状态还没到。
+ * The card's status line; null when nothing can be said. `block` is the unavailable reason computed by `toolBlock` (per `tools.list`; on the Web service,
+ * `WEB_METHOD_NOT_ALLOWED` and `PATH_OUTSIDE_PROJECT` also appear here): when given, show it and grey the card. null means confirmed usable; undefined means the state hasn't arrived yet.
  */
 export function toolCardStatus(id: ToolId, view: ModelCapabilitiesView | null, block?: string | null): ToolCardStatus | null {
   const planned = plannedReason(id);

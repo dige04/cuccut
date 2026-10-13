@@ -7,7 +7,7 @@ import { RenderPlanner } from '../../render/render-planner.ts';
 import { opaqueBounds, thumbSequence } from '../../render/thumbnails.ts';
 import { CAPTION_BEAT, captionFrame, captionSample, captionThumb, confettiThumb, layerThumb, lottieMeta, lottieThumb, presetThumb, type ThumbPicture } from './thumb-scenes.ts';
 
-// 缩略图由编出来的预览 WASM 画（与导出同一个内核）；Node 没有 ImageData，补一个装下像素的。
+// Thumbnails are drawn by the compiled preview WASM (the same kernel as export); Node has no ImageData, so supply one that holds the pixels.
 vi.stubGlobal('ImageData', function (data: Uint8ClampedArray, width: number, height: number) {
   return { data, width, height };
 });
@@ -21,7 +21,7 @@ if (!built) console.warn('没有找到预览 WASM，跳过缩略图测试：先�
 const canvas = { width: 1920, height: 1080 };
 let planner: RenderPlanner;
 
-/** 贴上去的第一块画面里不透明的像素数。 */
+/** Number of opaque pixels in the first picture piece that was pasted onto the cell. */
 function opaque(picture: ThumbPicture, index = 0): number {
   const { data } = picture.blits[index]!.image;
   let count = 0;
@@ -74,7 +74,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
       expect(opaque(picture), tile.key).toBeGreaterThan(0);
       const { image, target } = picture.blits[0]!;
       const bounds = opaqueBounds(image)!;
-      // 画出来的东西贴到格子里后大致居中、不超出格子太多（描边与阴影可以越出框一点）。
+      // What is drawn is roughly centered in the cell after it is pasted in, and does not overflow the cell by much (outlines and shadows may extend slightly past the box).
       const sx = target.width / image.width;
       const sy = target.height / image.height;
       const cx = target.x + (bounds.x + bounds.width / 2) * sx;
@@ -108,7 +108,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     const double = opaqueBounds(two.blits[0]!.image)!;
     expect(one.problems).toEqual([]);
     expect(double.height).toBeGreaterThan(single.height * 1.5);
-    // 字号推得很大：缩到格子的 92% 以内，还是一行。
+    // With a very large font size, it still fits on one line, scaled down to within 92% of the cell.
     const huge = opaqueBounds(captionThumb(planner, {}, ['original'], 120, 320, 132).blits[0]!.image)!;
     expect(huge.width).toBeLessThanOrEqual(Math.ceil(320 * 0.92) + 2);
     expect(huge.width).toBeGreaterThan(320 * 0.8);
@@ -117,26 +117,26 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
 
   it('字幕样式卡动起来：原文一拍一个词、念完停一拍，逐词动画照样式自己的；字号按不动时量', () => {
     const sample = captionSample(planner, {}, ['original'], 26, 320, 132);
-    // 英文原文三个词：一圈四拍。
+    // English source with three words: one cycle of four beats.
     expect(sample.period).toBeCloseTo(4 * CAPTION_BEAT);
     const at = (seconds: number) => captionFrame(planner, sample, seconds, 320, 132).blits[0]!.image.data;
-    // 没写逐词动画按变色走：念到第二个词时画面换了，同一拍里不变。
+    // With no per-word animation, the color change drives it: the picture changes when the second word is read, and stays unchanged within the same beat.
     expect(at(0.1)).not.toEqual(at(0.1 + CAPTION_BEAT));
     expect(at(0.1)).toEqual(at(0.4));
-    // 不动的那一格停在第二个词念到三成五。
+    // The still cell freezes at 35% through the second word being read.
     expect(captionThumb(planner, {}, ['original'], 26, 320, 132).blits[0]!.image.data).toEqual(at(1.35 * CAPTION_BEAT));
-    // 关掉逐词动画的样式一圈都一样。
+    // With per-word animation turned off, every frame of the cycle looks the same.
     const none = captionSample(planner, { anim: { name: 'None' } }, ['original'], 26, 320, 132);
     expect(captionFrame(planner, none, 0.1, 320, 132).blits[0]!.image.data).toEqual(
       captionFrame(planner, none, 0.1 + CAPTION_BEAT, 320, 132).blits[0]!.image.data,
     );
-    // 落入会让词变大变小：量字号时不带动画，同一份涂装缩到同一个字号。
+    // The drop-in animation makes words grow and shrink: measure the font size without animation, so the same styling scales to the same font size.
     const scale = (root: Record<string, unknown>, px: number) => {
       const style = captionSample(planner, root, ['original'], px, 320, 132).scene.documents![0]!.body as { style: { scale: number } };
       return style.style.scale;
     };
     expect(scale({ anim: { catalogId: 'dropIn' } }, 120)).toBe(scale({}, 120));
-    // 120 像素放不下，缩过；26 像素放得下，没缩。
+    // 120 px does not fit, so it was scaled down; 26 px fits, so it was not scaled.
     expect(scale({}, 120) / scale({}, 26)).toBeLessThan(120 / 26);
   });
 

@@ -1,3 +1,3 @@
 /// <reference types="vite/client" />
-// dependencies.tsx 以 `?raw` 导入 generated/ 里的脚本文本（apps/design-editor/build.mjs 用 esbuild 打出，不进 git），类型由 vite/client 声明。
-// CucCut 加的文件：原工程在自己的 tsconfig 里引入 vite/client。
+// dependencies.tsx imports script text from generated/ via `?raw` (built by apps/design-editor/build.mjs with esbuild, not committed to git); the types are declared by vite/client.
+// Added by CucCut: the original project pulls in vite/client in its own tsconfig.

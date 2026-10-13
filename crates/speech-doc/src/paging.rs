@@ -1,115 +1,73 @@
-//! 分页（源自 voice-ink `PipelinePagination.paginateWordRanges`，现为均衡版）。
+//! Pagination (derived from voice-ink `PipelinePagination.paginateWordRanges`; now the balanced version).
 //!
-//! 页数先按 `ceil(总词数 / (预算 + slack))` 确定——slack 是每页允许的溢出
-//! 冗余，词数只比 N 页预算多出一小截时不再为尾巴多切一页；随后每页目标取
-//! 「剩余词数 / 剩余页数」，避免贪心装填留下碎尾页（预算 6000、全文 24200
-//! 时应是 4 页 ×6050，而不是 8000 时代的 3 页 + 200 词尾页）。断点仍在页
-//! 目标最后 20% 窗口内按 rank 选取：说话人切换(3) > 长停顿(2) > 句末标点(1)
-//! > 无(0)，平局取靠后者；末页过短并入前页。分页边界不落盘——从指纹化的
-//! 词流确定性重导出。
+//! The page count is first determined as `ceil(total words / (budget + slack))`. Slack is the overflow allowance per page: when the word count exceeds N pages' budget by only a small amount, no extra page is cut for the tail. Each page's target is then "remaining words / remaining pages", which avoids greedy filling leaving a short tail page (with budget 6000 and 24200 total words, the result should be 4 pages of 6050 each, not the 3 pages plus a 200-word tail page of the version when the budget was 8000). Breakpoints are still chosen by rank within the last 20% window of each page's target: speaker change (3) > long pause (2) > sentence-final punctuation (1) > none (0); ties go to the later one. A final page that is too short is merged into the previous page. Page boundaries are not persisted; they are deterministically re-derived from the fingerprinted word stream.
 //!
-//! 有说话人信息时还可以把分页单位从"词流 + 断点评分"抬到**轮次序列**
-//! （[`turn_boundary_cut`]，polish 载体在用）：页 = 连续整轮次的并，词预算
-//! 目标不变；只有单独超预算的长轮次才在内部按句界切开。无说话人信息的
-//! 文档不进这条路径，逐页结果与改造前相同。
+//! When speaker information is available, the paging unit can be raised from "word stream + breakpoint scoring" to a **sequence of turns** ([`turn_boundary_cut`], used by the polish carrier): a page is a union of consecutive whole turns, and the word-budget target stays the same. Only long turns that exceed the budget on their own are split internally at sentence boundaries. Documents without speaker information do not take this path, and their per-page results are the same as before the change.
 
 use crate::atomize::{sentence_end, word_count};
 use crate::doc::Word;
 
-/// 页预算，全部按 [`crate::atomize::word_count`] 的语言感知词数计量：
-/// Latin 按词，CJK 按字，依附标点不单独计数。
+/// Page budgets, all measured in the language-aware word count from [`crate::atomize::word_count`]: Latin is counted by word, CJK by character, and attached punctuation is not counted separately.
 pub mod budgets {
     pub const ORGANIZE: usize = 12000;
     pub const SEGMENT: usize = 8000;
     pub const ANALYSIS: usize = 8000;
-    /// 分章节 Map 页预算（段落为原子）；一页以下直接单次出章节，多页走
-    /// Map/Reduce。与 segment/analysis 同档：一次调用能稳妥读完、并行页数适中。
+    /// Page budget for the per-chapter Map step (paragraphs are atomic). One page or less goes straight to a single call for the chapters; multiple pages go through Map/Reduce. Same tier as segment/analysis: one call can safely read it all, and the number of parallel pages stays moderate.
     pub const CHAPTERS: usize = 8000;
-    /// 文件契约（`file-v1`）的翻译/对齐页预算（§12），按执行器分档。
+    /// Translation/alignment page budgets for the file contract (`file-v1`) (§12), tiered by executor.
     ///
-    /// 单位是词数（口径见 [`crate::atomize::word_count`]）：Latin 一词约
-    /// 5.5 字符，按词计量语言中立，CJK 与 Latin 页的信息密度一致。
+    /// The unit is words (see [`crate::atomize::word_count`]): a Latin word is about 5.5 characters, so counting by words is language-neutral, and CJK and Latin pages carry similar information density.
     ///
-    /// 翻译与对齐都只按源文词数分页，不再叠加句数、字符数或 worker 槽位档。
-    /// 两档的动机相同——单页应答时长近似随页词数线性，页数太少喂不满并发
-    /// ——但两类执行器的单页曲线差很多：
+    /// Translation and alignment both page only by source word count, with no extra tiers for sentence count, character count, or worker slots.
+    /// Both tiers share the same motivation: a single page's response time scales roughly linearly with its word count, and too few pages cannot fill the concurrency. But the per-page curves of the two executor types differ a lot:
     ///
-    /// - **Agent worker**（外部编码代理会话逐句手写答案）：实测 5000 词页
-    ///   一个 worker 要 5–11 分钟，193 句谈话（3571 词）在 5000 档下只有
-    ///   1 页，多 worker 槽全部闲置。2000 + 10% slack 让一场 30 分钟谈话
-    ///   分成 2–3 页并行认领，单页落到 2–4 分钟量级，租约超时与整页重做的
-    ///   敞口也随之缩小。
-    /// - **Provider 直连**（云模型一次生成整页）：单页时长以输出 token 为主，
-    ///   近似随页词数线性，而并发泳道（默认 8）通常吃不满——把页切小就是把
-    ///   串行的输出时间摊到并行泳道上。DeepSeek v4-flash 实测（brief 已缓存）：
-    ///   3571 词谈话 4000 档 1 页 147/208s，2000 档 2 页 108/95s；9784 词谈话
-    ///   4000 档 3 页 244s，2000 档 5 页 140s；残余 violations 也更少。因此
-    ///   provider 档目前与 agent 同为 2000，只多付一次 brief 与页首 system
-    ///   prompt；两档仍分开声明，宿主按执行器取档，日后可以独立再调。
+    /// - **Agent worker** (an external coding-agent session that hand-writes answers sentence by sentence): measured, a 5000-word page takes one worker 5–11 minutes, and a 193-sentence talk (3571 words) is only 1 page at the 5000 tier, leaving all the worker slots idle. At 2000 + 10% slack, a 30-minute talk splits into 2–3 pages that are claimed in parallel, each landing around 2–4 minutes, which also shrinks the exposure to lease timeouts and whole-page redos.
+    /// - **Provider direct** (a cloud model generates a whole page in one go): a single page's duration is dominated by output tokens and scales roughly linearly with word count, while the concurrent lanes (default 8) usually aren't saturated. Splitting pages smaller spreads serial output time across parallel lanes. Measured with DeepSeek v4-flash (brief cached): a 3571-word talk at the 4000 tier is 1 page at 147/208s, and at the 2000 tier 2 pages at 108/95s; a 9784-word talk at 4000 is 3 pages at 244s, and at 2000 is 5 pages at 140s; residual violations are also fewer. So the provider tier is currently 2000, the same as agent, and only pays for one extra brief and the page-head system prompt. The two tiers are still declared separately, the host picks the tier by executor, and they can be tuned independently later.
     ///
-    /// 宿主按执行器取档：[`PageExecutor::translate_words_for`] /
-    /// [`PageExecutor::align_words`]。
+    /// The host picks the tier by executor: [`PageExecutor::translate_words_for`] / [`PageExecutor::align_words`].
     pub const TRANSLATE_AGENT_WORDS: usize = 2000;
     pub const ALIGN_AGENT_WORDS: usize = 2000;
     pub const TRANSLATE_PROVIDER_WORDS: usize = 2000;
     pub const ALIGN_PROVIDER_WORDS: usize = 2000;
 
-    /// 融合**行分区**模式（`--align-fusion rows`）的翻译页预算，agent 与
-    /// provider 共用一档。
+    /// Translation page budget for the fused **row-partition** mode (`--align-fusion rows`); agent and provider share one tier.
     ///
-    /// rows 把每源词的调用成本抬高约 1.6–2×，两侧都变贵：
+    /// rows raises the cost of each source word's call by about 1.6–2×, making both sides more expensive:
     ///
-    /// - **输入**：覆盖面从"源侧已需拆分"放宽到"≥ 8 词"，且每个覆盖句多带
-    ///   一条 `data-align-groups`。实测同一页（30 句混合长度英文）用户载荷
-    ///   8928 → 10206 字符。
-    /// - **输出**：每个覆盖句要把译文切成 `<span data-src>` 显示行，答案不再
-    ///   是"整句一行文本"。provider 单页时长以输出 token 为主（见上），这部分
-    ///   直接落在关键路径上。
+    /// - **Input**: coverage is widened from "the source side already needs splitting" to "≥ 8 words", and each covered sentence carries an extra `data-align-groups` entry. Measured on the same page (30 sentences of mixed-length English), the user payload went from 8928 to 10206 characters.
+    /// - **Output**: each covered sentence must cut its translation into `<span data-src>` display rows, so the answer is no longer "one line of text per sentence". Provider single-page duration is dominated by output tokens (see above), so this lands directly on the critical path.
     ///
-    /// 更关键的是**合规率随页长下降**：deepseek-v4-flash 实测一页 59 句时，
-    /// 只有输出中最前面 3 句给了行 span，其余 56 句整体退回纯译文（回复完整、
-    /// 未截断、给出的 span 本身也合法）——长页会让模型在中途放弃微格式。同一
-    /// 模型在较短的页上稳定给出 38/50。
+    /// More critically, **compliance drops as page length grows**: measured with deepseek-v4-flash, on a page of 59 sentences only the first 3 sentences in the output got row spans, and the remaining 56 fell back to plain translation as a whole (the reply was complete, not truncated, and the spans given were themselves valid). On long pages the model gives up on the micro-format midway. The same model reliably gives 38/50 on shorter pages.
     ///
-    /// 因此 rows 档取 **800**（加 10% slack 后单页上限 880 词）。取值经过两轮
-    /// 收紧：先按 `2000 / 1.67 ≈ 1200` 落档，第四轮对拍显示 1200 已经让
-    /// Trilemma 分成 2 页并行、墙钟 58–61 s → 16–22 s，但同一轮里 Pi Agent 仍
-    /// 出现整页 0 span（回复干净、结构完整、就是不给行）。页再切一半是压这个
-    /// 敞口最直接的手段：一场 30 分钟谈话（约 3500 词）从 3 页变 4 页，单页
-    /// 句数落到 30 上下，正处在实测稳定给行的区间。
+    /// So the rows tier is **800** (with 10% slack, a page's cap is 880 words). The value was tightened over two rounds: first it landed at `2000 / 1.67 ≈ 1200`; in the fourth round of comparison runs, 1200 already made Trilemma split into 2 parallel pages, with wall-clock going from 58–61 s to 16–22 s. But in the same round Pi Agent still produced whole pages with 0 spans (the reply was clean and well-structured, it just didn't give rows). Halving the page is the most direct means of reducing this exposure: a 30-minute talk (about 3500 words) goes from 3 pages to 4, and sentences per page fall to around 30, right in the range where row-giving was measured to be stable.
     ///
-    /// 页级重发是同一件事的另一半：仍然整页缺行时由
-    /// [`crate::engines::translate`] 的 soft page retry 原样重发一次（有界，
-    /// 每页最多 1 次），两者一起把"整页放弃微格式"从不可恢复变成可恢复。
+    /// Page-level retry is the other half of the same thing: if a whole page is still missing rows, [`crate::engines::translate`]'s soft page retry resends it once, unchanged (bounded, at most 1 time per page). Together they turn "a whole page abandons the micro-format" from unrecoverable into recoverable.
     ///
-    /// 宿主取档：[`PageExecutor::translate_words_for`]。`CCUT_LLM_PAGE_WORDS`
-    /// 的覆盖语义不变——设置了就整体覆盖，rows 也不例外。
+    /// The host picks the tier with [`PageExecutor::translate_words_for`]. The override semantics of `CCUT_LLM_PAGE_WORDS` are unchanged: if set, it overrides everything, rows included.
     pub const TRANSLATE_ROWS_WORDS: usize = 800;
     pub const ORGANIZE_MIN_LAST: usize = 100;
     pub const SEGMENT_MIN_LAST: usize = 200;
     pub const ANALYSIS_MIN_LAST: usize = 500;
 }
 
-/// 翻译/对齐页预算的执行器档位（宿主从 `--llm` 模式映射）。
+/// Executor tier for translation/alignment page budgets (the host maps it from the `--llm` mode).
 ///
-/// 只决定 [`budgets`] 里取哪一档源文词预算；分页算法本身
-/// （[`balanced_page_sizes`] / [`paginate_word_ranges`]）与执行器无关。
+/// It only decides which source-word budget tier to take from [`budgets`]; the paging algorithm itself ([`balanced_page_sizes`] / [`paginate_word_ranges`]) is independent of the executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageExecutor {
-    /// `--llm agent`：外部 worker 池经任务队列逐页认领。
+    /// `--llm agent`: an external worker pool claims pages one by one through a task queue.
     Agent,
-    /// `--llm provider:<vendor>/<model>`：本进程多泳道直连云模型。
+    /// `--llm provider:<vendor>/<model>`: this process connects directly to the cloud model over multiple lanes.
     Provider,
 }
 
 impl PageExecutor {
-    /// 翻译页预算（源文词数），常规融合/无融合档。
+    /// Translation page budget (source word count), for the regular fusion / no-fusion tiers.
     pub fn translate_words(self) -> usize {
         self.translate_words_for(false)
     }
 
-    /// 翻译页预算（源文词数）。`rows` = `--align-fusion rows`：两种执行器
-    /// 共用更小的 [`budgets::TRANSLATE_ROWS_WORDS`] 档（理由见该常量）。
+    /// Translation page budget (source word count). `rows` = `--align-fusion rows`: both executor types share the smaller [`budgets::TRANSLATE_ROWS_WORDS`] tier (see that constant for the reasoning).
     pub fn translate_words_for(self, rows: bool) -> usize {
         if rows {
             return budgets::TRANSLATE_ROWS_WORDS;
@@ -120,7 +78,7 @@ impl PageExecutor {
         }
     }
 
-    /// 对齐页预算（源文词数），首轮、定点修复与全局修复轮共用。
+    /// Alignment page budget (source word count), shared by the first pass, the fixed-point repair, and the global repair rounds.
     pub fn align_words(self) -> usize {
         match self {
             Self::Agent => budgets::ALIGN_AGENT_WORDS,
@@ -129,26 +87,24 @@ impl PageExecutor {
     }
 }
 
-/// 每页允许的溢出冗余（预算的 10%）：只用于**页数**计算。
+/// Overflow allowance per page (10% of the budget): used **only for the page count** calculation.
 ///
-/// 总词数只比 N 页预算多出一小截时（例如预算 5000、全文 10300），均衡后每页
-/// 5150 仍在可接受区间，不值得为 300 词多切一页多付一次调用。
+/// When the total word count exceeds N pages' budget by only a small amount (for example, budget 5000 and total 10300), each page after balancing is 5150, which is still within an acceptable range. It isn't worth cutting an extra page and paying for one more call for 300 words.
 pub fn page_slack(budget: usize) -> usize {
     budget / 10
 }
 
-/// 预算 + slack 下的目标页数（至少 1）。
+/// Target page count under budget + slack (at least 1).
 pub fn page_count_for_total(total_cost: usize, budget: usize) -> usize {
     total_cost
         .div_ceil(budget.max(1) + page_slack(budget))
         .max(1)
 }
 
-/// 停顿断点阈值（`Rules.pauseSec`）。
+/// Pause breakpoint threshold (`Rules.pauseSec`).
 const PAUSE_SEC: f64 = 0.6;
 
-/// 词成本的前缀和（`prefix[i]` = `counts[..i]` 之和），供轮次分页 O(1) 取
-/// 任意区间的词预算成本。
+/// Prefix sums of word costs (`prefix[i]` = sum of `counts[..i]`), so turn-based paging can get the word-budget cost of any range in O(1).
 pub fn cost_prefix(counts: &[usize]) -> Vec<usize> {
     let mut prefix = Vec::with_capacity(counts.len() + 1);
     prefix.push(0usize);
@@ -159,13 +115,9 @@ pub fn cost_prefix(counts: &[usize]) -> Vec<usize> {
     prefix
 }
 
-/// 轮次感知分页的页界选择：在 `(start, limit]` 内挑一个**轮次起点**，使
-/// 本页词成本最接近 `target`；平局取靠后者。区间内没有轮次起点时返回
-/// `None`——那意味着当前轮次单独就超过了页预算（长独白），调用方改为在
-/// 轮次内部按句界取断点。
+/// Page-boundary selection for turn-aware paging: within `(start, limit]`, pick a **turn start** so that this page's word cost is closest to `target`; ties go to the later one. If there is no turn start in the range, return `None`. That means the current turn alone exceeds the page budget (a long monologue), and the caller instead takes a breakpoint at a sentence boundary inside the turn.
 ///
-/// 页 = 连续整轮次的并：短轮次（对话、问答）自然成组，页缝不再劈开一个人
-/// 的话。`turn_starts` 必须升序（[`crate::speaker::speaker_turns`] 的起点）。
+/// A page is a union of consecutive whole turns: short turns (dialogue, Q&A) naturally group together, and a page seam no longer splits one person's speech. `turn_starts` must be in ascending order (the starts from [`crate::speaker::speaker_turns`]).
 pub fn turn_boundary_cut(
     turn_starts: &[usize],
     prefix_cost: &[usize],
@@ -186,9 +138,9 @@ pub fn turn_boundary_cut(
         .map(|(boundary, _)| boundary)
 }
 
-/// 词间断点评分：说话人切换 3 > 停顿 2 > 句末 1 > 无 0。
+/// Scoring of word-gap breakpoints: speaker change 3 > pause 2 > sentence end 1 > none 0.
 ///
-/// `word` 为断点左侧词，`next` 为右侧词；分页时在 `word` 之后切开。
+/// `word` is the word to the left of the breakpoint and `next` the word to the right; when paging, the cut is made after `word`.
 pub fn breakpoint_rank(word: &Word, next: &Word) -> u8 {
     if next.sp != word.sp {
         3
@@ -201,15 +153,9 @@ pub fn breakpoint_rank(word: &Word, next: &Word) -> u8 {
     }
 }
 
-/// 把词流切成页区间 `[start, end)`。
+/// Split the word stream into page ranges `[start, end)`.
 ///
-/// `max_words` 是**名义**页预算：先经 [`page_count_for_total`]（含 slack）
-/// 确定目标页数，再把每页目标定为「剩余词数 / 剩余页数」并在其最后 20%
-/// 窗口内找最佳断点。断点按「词位 + rank×(目标/20)」联合评分：语义更强的
-/// 断点每档只能换取约 5% 目标词数的提前量，不会一票否决窗口尾部更均衡的
-/// 低档断点。目标随剩余量逐页重算，前页略短时后页自动补齐；剩余页数还按
-/// `ceil(剩余词数 / (预算 + slack))` 兜底，因此单页实际词数最多超出名义
-/// 预算一个 slack——前页亏空过大时宁可多出一页，也不让末页超载。
+/// `max_words` is the **nominal** page budget: first the target page count is determined via [`page_count_for_total`] (including slack), then each page's target is set to "remaining words / remaining pages", and the best breakpoint is searched within its last 20% window. Breakpoints are scored jointly as "word position + rank×(target/20)": a stronger breakpoint can only buy an advance of about 5% of the target word count per rank level, so it does not veto a more balanced lower-rank breakpoint at the tail of the window. The target is recomputed page by page as the remainder shrinks, so if an earlier page comes up a little short, later pages make it up automatically. The remaining page count is also floored by `ceil(remaining words / (budget + slack))`, so a single page's actual word count exceeds the nominal budget by at most one slack. If an earlier page falls too far short, it is better to add a page than to overload the last page.
 pub fn paginate_word_ranges(
     words: &[Word],
     max_words: usize,
@@ -241,7 +187,7 @@ pub fn paginate_word_ranges(
         let rank_bonus = (page_target / 20).max(1) as i64;
         let mut page_words = 0;
         let mut end = start;
-        let mut candidate: Option<(usize, i64)> = None; // (idx, 联合评分)
+        let mut candidate: Option<(usize, i64)> = None; // (idx, joint score)
         while end < words.len() {
             let add = counts[end];
             if page_words + add > page_target && end > start {
@@ -250,7 +196,7 @@ pub fn paginate_word_ranges(
             page_words += add;
             if page_words >= window_floor && end + 1 < words.len() {
                 let rank = breakpoint_rank(&words[end], &words[end + 1]);
-                // 评分 = 词位 + rank 加成；平局取靠后者(>=)。
+                // score = word position + rank bonus; ties go to the later one (>=).
                 if rank > 0 {
                     let score = page_words as i64 + i64::from(rank) * rank_bonus;
                     if candidate.is_none_or(|(_, s)| score >= s) {
@@ -281,12 +227,9 @@ pub fn paginate_word_ranges(
     pages
 }
 
-/// 在固定页数与每页条数上限下，按顺序切分条目，并最小化最重一页的成本。
+/// Split items in order under a fixed page count and a per-page item-count cap, minimizing the cost of the heaviest page.
 ///
-/// 二分搜索最小可行的最大页成本，再按该上限贪心构造恰好指定数量的连续页；
-/// 结果确定、顺序不变，复杂度为 O(n log Σcost)。返回每页条目数，Σ = 条目
-/// 总数。调用方可用原始源文预算决定页数，再用更接近真实请求复杂度的
-/// `item_costs` 均衡长尾，而不改变调用次数。
+/// Binary-search the smallest feasible maximum page cost, then greedily build exactly the specified number of contiguous pages under that cap. The result is deterministic and order-preserving, with complexity O(n log Σcost). Returns the item count per page, with Σ = the total number of items. The caller can decide the page count from the original source-word budget, then use `item_costs`, which is closer to the real request complexity, to balance the long tail, without changing the number of calls.
 pub fn balanced_page_sizes_for_count(
     item_costs: &[usize],
     page_count: usize,
@@ -376,8 +319,7 @@ pub fn balanced_page_sizes_for_count(
                 end = candidate;
             }
         }
-        // 靠均值选出的早边界若让后缀需要过多页，向右扩到后缀可行；最小
-        // capacity 的全局贪心边界保证一定能在当前页上限内找到该位置。
+        // If an early boundary chosen by the mean would make the suffix need too many pages, extend it rightward until the suffix is feasible. The global greedy boundary at minimal capacity guarantees that this position can always be found within the current page cap.
         while remaining_pages > 0 && required_pages(&item_costs[end..], capacity) > remaining_pages
         {
             end += 1;
@@ -392,13 +334,9 @@ pub fn balanced_page_sizes_for_count(
     sizes
 }
 
-/// 均衡分页：按预算 + slack 先算最少页数（[`page_count_for_total`]），再用
-/// [`balanced_page_sizes_for_count`] 最小化最重一页的成本。
+/// Balanced paging: first compute the minimum page count from budget + slack ([`page_count_for_total`]), then use [`balanced_page_sizes_for_count`] to minimize the cost of the heaviest page.
 ///
-/// 贪心装填会在结尾留碎尾页（G3 基线实测 67 句 → 31/30/6），碎页独占一次
-/// LLM 调用与一个 worker 回合；均分（→ 23/22/22）同时缩短最大页——并行
-/// 派发下批次墙钟就是最大页的应答时间。slack 则挡住另一头的浪费：总量只比
-/// N 页预算多一小截时不为尾巴多付一次调用。
+/// Greedy filling leaves a short tail page at the end (measured on the G3 baseline: 67 sentences → 31/30/6). A tiny page occupies a whole LLM call and a worker turn on its own. An even split (→ 23/22/22) also shortens the largest page: under parallel dispatch, a batch's wall-clock time is the response time of the largest page. Slack guards against the opposite waste: when the total exceeds N pages' budget by only a small amount, no extra call is paid for the tail.
 pub fn balanced_page_sizes(item_costs: &[usize], budget: usize) -> Vec<usize> {
     if item_costs.is_empty() {
         return Vec::new();
@@ -410,8 +348,7 @@ pub fn balanced_page_sizes(item_costs: &[usize], budget: usize) -> Vec<usize> {
     balanced_page_sizes_for_count(item_costs, pages, item_costs.len())
 }
 
-/// 同时受成本预算和每页条数上限约束的均衡分页。页数取两种约束所需页数的
-/// 较大值，随后仍按连续顺序最小化最大页成本。
+/// Balanced paging constrained by both the cost budget and the per-page item-count cap. The page count is the larger of the counts each constraint requires; then the maximum page cost is still minimized in contiguous order.
 pub fn balanced_bounded_page_sizes(
     item_costs: &[usize],
     budget: usize,
@@ -447,7 +384,7 @@ mod tests {
 
     #[test]
     fn prefers_higher_ranked_speaker_boundary() {
-        // 5 词,预算容 3 词多一点;窗口内既有句末(rank1)也有说话人切换(rank3)。
+        // 5 words; the budget holds a little more than 3 words; the window contains both a sentence end (rank 1) and a speaker change (rank 3).
         let words = vec![
             word(0.0, 1.0, "aaaa.", "s1"),
             word(1.0, 2.0, "bbbb", "s1"),
@@ -465,14 +402,14 @@ mod tests {
         let prefix = cost_prefix(&counts);
         assert_eq!(prefix.last(), Some(&12));
         let turn_starts = vec![0usize, 2, 5, 9];
-        // 目标 4：候选 2(差2) / 5(差1) / 9(超出上限) → 取 5。
+        // target 4: candidates 2 (off by 2) / 5 (off by 1) / 9 (over the cap) → pick 5.
         assert_eq!(turn_boundary_cut(&turn_starts, &prefix, 0, 6, 4), Some(5));
-        // 平局取靠后者：目标 3.5 时 2 与 5 等距。
+        // Ties go to the later one: with target 3.5, 2 and 5 are equidistant.
         assert_eq!(turn_boundary_cut(&turn_starts, &prefix, 0, 6, 3), Some(2));
         assert_eq!(turn_boundary_cut(&turn_starts, &prefix, 0, 6, 4), Some(5));
-        // 上限内没有轮次起点（长轮次）→ None，调用方改走句界。
+        // No turn start within the cap (a long turn) → None; the caller falls back to sentence boundaries.
         assert_eq!(turn_boundary_cut(&turn_starts, &prefix, 5, 8, 3), None);
-        // 只剩一个偏短的候选时仍取它——下一轮次超预算，留给它自己的页。
+        // When only one slightly short candidate remains, still take it: the next turn would exceed the budget, so it gets its own page.
         assert_eq!(turn_boundary_cut(&turn_starts, &prefix, 2, 6, 9), Some(5));
     }
 
@@ -504,15 +441,14 @@ mod tests {
             word(1.0, 2.0, "三四", "s1"),
             word(2.0, 3.0, "five", "s1"),
         ];
-        // 总 5 词、预算 4 → 2 页，均衡后每页目标 3：首页只装下 "one two"
-        //（再加 CJK 两字就到 4 超目标）。裸字符计数会得出不同边界。
+        // 5 words total, budget 4 → 2 pages, balanced target 3 per page: the first page holds only "one two"
+        // (adding two CJK characters would bring it to 4, over the target). A raw character count would yield a different boundary.
         assert_eq!(paginate_word_ranges(&words, 4, 1), vec![0..1, 1..3]);
     }
 
     #[test]
     fn word_pages_balance_instead_of_leaving_a_fragment_tail() {
-        // 用户场景：预算 6000、全文 24200 词——旧贪心是 6000×4 + 200 尾页，
-        // 均衡后是 4 页 ×6050（slack 600 吸收溢出）。
+        // User scenario: budget 6000, full text 24200 words. The old greedy approach gave 6000×4 + a 200-word tail page; after balancing it is 4 pages of 6050 (slack 600 absorbs the overflow).
         let words: Vec<Word> = (0..24_200)
             .map(|i| word(i as f64, i as f64 + 1.0, "aaaa", "s1"))
             .collect();
@@ -527,22 +463,19 @@ mod tests {
 
     #[test]
     fn stronger_rank_cannot_veto_a_much_later_breakpoint() {
-        // 真实词流回归：窗口早段有停顿(rank2)、尾段有句末(rank1)。旧逻辑
-        // rank 高者一票否决，首页在 42 词处早断、末页超载；联合评分下
-        // rank 只值 5% 目标的提前量，应选 48 词处的句末断点。
+        // Regression on a real word stream: the window has a pause (rank 2) in its early part and a sentence end (rank 1) in its tail. Under the old logic the higher rank vetoed everything else: the first page broke early at word 42 and the last page was overloaded. Under joint scoring a rank is only worth 5% of the target as an advance, so the sentence-end breakpoint at word 48 should be chosen.
         let mut words: Vec<Word> = (0..100)
             .map(|i| word(i as f64, i as f64 + 0.9, "aaaa", "s1"))
             .collect();
-        words[42].t0 = 42.7; // 41→42 之间 0.8s 停顿（rank2）
-        words[47].text = "aaaa.".to_owned(); // 47→48 句末（rank1）
+        words[42].t0 = 42.7; // 0.8s pause between 41→42 (rank 2)
+        words[47].text = "aaaa.".to_owned(); // sentence end at 47→48 (rank 1)
         let pages = paginate_word_ranges(&words, 90, 10);
         assert_eq!(pages, vec![0..48, 48..100]);
     }
 
     #[test]
     fn accumulated_deficit_adds_a_page_instead_of_overloading_the_tail() {
-        // 前两页都只有一个偏早的停顿断点，亏空持续转嫁；cap 兜底应多切一
-        // 页，任何一页都不得超过 预算+slack（100+10）。
+        // The first two pages each have only an early pause breakpoint, so the shortfall keeps being passed on. The cap backstop should cut an extra page, and no page may exceed budget + slack (100+10).
         let mut words: Vec<Word> = (0..300)
             .map(|i| word(i as f64, i as f64 + 0.9, "aaaa", "s1"))
             .collect();
@@ -563,21 +496,20 @@ mod tests {
 
     #[test]
     fn slack_absorbs_a_small_overflow_without_an_extra_page() {
-        // 8300 词、预算 8000：slack 800 内，单页吃下，不为 300 词付一次调用。
+        // 8300 words, budget 8000: within the 800 slack, one page absorbs it; no extra call is paid for 300 words.
         let words: Vec<Word> = (0..8300)
             .map(|i| word(i as f64, i as f64 + 1.0, "aaaa", "s1"))
             .collect();
         assert_eq!(paginate_word_ranges(&words, 8000, 500), vec![0..8300]);
         assert_eq!(page_count_for_total(8300, 8000), 1);
-        // 超过 slack 才分页，且一分就均衡。
+        // Paging happens only when the total exceeds slack, and once it splits, the pages are balanced.
         assert_eq!(page_count_for_total(8801, 8000), 2);
         assert_eq!(page_count_for_total(24_200, 6000), 4);
     }
 
     #[test]
     fn balanced_pages_avoid_fragment_tail() {
-        // 67 条等长条目 ×128 = 8576：贪心装填是 31/31/5 的碎尾页；slack
-        //（4000+400）先把页数压到 2，均衡再切成 34/33（每页 4352 ≤ 4400）。
+        // 67 equal-length items ×128 = 8576: greedy filling gives a tiny tail page of 31/31/5. Slack (4000+400) first brings the page count down to 2, and balancing then cuts it into 34/33 (each page 4352 ≤ 4400).
         let items = vec![128_usize; 67];
         let sizes = balanced_page_sizes(&items, 4000);
         assert_eq!(sizes.iter().sum::<usize>(), 67);
@@ -585,7 +517,7 @@ mod tests {
         let max = *sizes.iter().max().unwrap();
         let min = *sizes.iter().min().unwrap();
         assert!(max - min <= 1, "sizes not balanced: {sizes:?}");
-        // slack 吸收不了时页数照常增长，且仍均衡。
+        // When slack cannot absorb the excess, the page count grows as usual, and the pages are still balanced.
         let items = vec![128_usize; 110];
         let sizes = balanced_page_sizes(&items, 4000);
         assert_eq!(sizes.len(), 4);
@@ -595,13 +527,13 @@ mod tests {
     #[test]
     fn balanced_pages_edge_cases() {
         assert!(balanced_page_sizes(&[], 100).is_empty());
-        // 全部塞进单页。
+        // Everything goes into a single page.
         assert_eq!(balanced_page_sizes(&[10, 20, 30], 1000), vec![3]);
-        // 单条超预算仍独占一页，不 panic。
+        // A single item over budget still takes its own page, without panicking.
         assert_eq!(balanced_page_sizes(&[5000], 100), vec![1]);
-        // 页数不超过条目数。
+        // The page count does not exceed the item count.
         assert_eq!(balanced_page_sizes(&[5000, 5000], 100), vec![1, 1]);
-        // 变长条目也保持覆盖完整、页数正确。
+        // Variable-length items also keep full coverage and the correct page count.
         let items = vec![900, 100, 100, 900, 100, 900];
         let sizes = balanced_page_sizes(&items, 1000);
         assert_eq!(sizes.iter().sum::<usize>(), items.len());

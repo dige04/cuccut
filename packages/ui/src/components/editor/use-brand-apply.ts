@@ -20,9 +20,7 @@ function currentSequence(): Sequence | null {
 }
 
 /**
- * 品牌条目放进这个视频（架构设计 §5.9）：先用 `library.applyToVideo` 拷进视频（一笔编辑，之后库里的修改不影响视频），
- * 再按种类放：图片、视频与图片贴纸放到播放头处的时间线上，Lottie 贴纸用内置播放器新建一层，字体只进素材库；
- * 字幕样式在同一笔里让这个视频的字幕都用它。
+ * Put a brand item into this video (architecture design §5.9): first copy it into the video with `library.applyToVideo` (one edit; later changes in the library do not affect the video), then place it by kind. Images, videos and image stickers go onto the timeline at the playhead; Lottie stickers create a new layer with the built-in player; fonts go only into the asset library. Caption style is set in the same edit, so this video's captions use it.
  */
 export function useBrandApply(): (entry: LibraryEntry) => Promise<void> {
   const runtime = useRuntime();

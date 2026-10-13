@@ -137,7 +137,7 @@ describe('识别说话人的运行', () => {
     expect(useSpeakersRun.getState().problems.vid).toMatchObject({ kind: 'failed', message: '模型载入失败', retryJobId: 'p1' });
     await retrySpeakers('vid');
     expect(deps.runtime.retryPipeline).toHaveBeenCalledWith('p1');
-    // 镜像里还是那条失败的记录：不收尾。
+    // The mirror still holds the failed record: do not finalize.
     useJobs.setState({ jobs: [job('p1', 'failed')] });
     expect(useSpeakersRun.getState().runs.vid).toMatchObject({ status: 'running' });
     useJobs.setState({ jobs: [job('p1', 'cancelled', { updatedAt: 'u2' })] });

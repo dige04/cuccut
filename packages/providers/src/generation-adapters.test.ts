@@ -24,8 +24,7 @@ import {
 } from './testing/fake-provider-server.ts';
 
 /**
- * 生成类适配器（架构设计 §6.4）对着本机的假供应商：请求形状、响应解析、错误分类与密钥卫生。从不连接真实的云服务；
- * 密钥是这里编的字符串。
+ * Generation adapters (architecture design §6.4), tested against a local fake provider: request shape, response parsing, error classification and key hygiene. They never connect to real cloud services. The keys are strings made up here.
  */
 
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-0123456789abcdef';

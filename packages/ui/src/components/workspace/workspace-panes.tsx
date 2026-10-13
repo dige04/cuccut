@@ -18,7 +18,7 @@ import { WebTab } from './web-tab.tsx';
 import { WORKSPACE_OVERLAY_ATTRIBUTE } from './workspace-overlay.ts';
 import { workspacePanelId, workspaceTabId } from './workspace-tabs.tsx';
 
-/** 原型 home-workspace.css `.home-workspace__panes` / `.home-workspace__pane`：隐藏的用 display none（样式宏的 flex 会盖过 [hidden]）。 */
+/** Prototype home-workspace.css `.home-workspace__panes` / `.home-workspace__pane`: hidden panes use display none (the flex from the style macro would override [hidden]). */
 const panes = style({
   position: 'relative',
   display: { default: 'flex', isHidden: 'none' },
@@ -57,12 +57,10 @@ const centered = style({
 });
 
 /**
- * 功能区的内容（产品设计 §3.3，原型 home-workspace.jsx `HomeWorkspace` 的 panes）：每个标签一块 role=tabpanel，
- * 不是当前标签时隐藏但不卸载。视频只有一个编辑器：它不跟着某个标签或某条会话走，而是跟着打开的视频走——
- * 换标签、换会话都不关视频，编辑器用 React 19 的 `<Activity>` 收起（暂停播放、停掉效果与快捷键，保留选区、播放头与撤销栈）。
- * 网页标签常驻挂载（原生视图挂上时建、卸下时销毁），隐藏时只传 `active={false}`。
- * 浏览器预览里实测过：视频标签与文件标签来回切，编辑器是同一个 DOM 节点、播放头不变，也不发 videos.open / close；
- * 关掉视频标签才发 videos.close。桌面端（Electron）未实测。
+ * The workspace area's content (product design §3.3, prototype home-workspace.jsx `HomeWorkspace` panes): each tab gets one role=tabpanel, which is hidden but not unmounted when it is not the current tab.
+ * There is only one video editor. It follows the open video, not a particular tab or conversation: switching tabs or conversations does not close the video. The editor is collapsed with React 19's `<Activity>` (playback paused, effects and shortcuts stopped, while selection, playhead and undo stack are kept).
+ * Web tabs stay mounted all the time (the native view is created when mounted and destroyed when unmounted), and when hidden only `active={false}` is passed.
+ * Verified in browser preview: switching back and forth between a video tab and a file tab keeps the editor as the same DOM node with the playhead unchanged, and no videos.open / close is sent; videos.close is sent only when the video tab is closed. Not verified on desktop (Electron).
  */
 export function WorkspacePanes({
   conversationId,
@@ -72,22 +70,22 @@ export function WorkspacePanes({
   visible,
 }: {
   conversationId: Id | null;
-  /** 这组标签的键（`workspaceKey`）：换会话时整组换掉。 */
+  /** The key for this group of tabs (`workspaceKey`): the whole group is replaced when the conversation changes. */
   book: string;
   tabs: WorkspaceItem[];
   active: string | null;
-  /** 右侧区域显示着（有当前标签且没有收起）。 */
+  /** The right-hand area is shown (there is a current tab and it is not collapsed). */
   visible: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const covered = useCovered(rootRef);
   const parkedWidth = useShownWidth(rootRef, visible);
-  // 收起整个右侧区域时，有幻灯片或设计稿标签就不用 display none：编辑器 iframe 里的布局会全部量成 0，回来时缩放闪动（见 `Pane`）。
-  // 改为按收起前的宽度叠在会话列下面、看不见；其他标签各自仍是 display none。一开始就是收起的（没量过宽度）照旧。
+  // When the whole right-hand area is collapsed, slides or design-canvas tabs must not use display none: the layout inside the editor iframe would all measure as 0, and the scale would flicker when it comes back (see `Pane`).
+  // Instead, stack it under the conversation column at its pre-collapse width, invisible; other tabs still use display none each. A pane that starts collapsed (its width was never measured) keeps the old behaviour.
   const park = !visible && parkedWidth.current !== undefined && tabs.some(isEditorTab);
   const openKey = useVideo((s) => (s.video ? targetKey(s.video.target) : null));
   const current = visible ? tabs.find((t) => itemKey(t) === active) : undefined;
-  // 当前标签就是打开着的视频：编辑器那一格接管这个标签的面板 id。
+  // The current tab is the open video: the editor slot takes over this tab's panel id.
   const editorKey = current?.kind === 'video' && targetKey(current.target) === openKey ? itemKey(current) : null;
 
   return (
@@ -111,16 +109,16 @@ export function WorkspacePanes({
   );
 }
 
-/** 编辑器 iframe 的标签（幻灯片、设计稿、设计系统）：隐藏时保留布局。 */
+/** Tabs that hold an editor iframe (slides, design canvas, design system): keep the layout when hidden. */
 function isEditorTab(item: WorkspaceItem): boolean {
   return item.kind === 'slides' || item.kind === 'design' || item.kind === 'design-system';
 }
 
 const PARKED: CSSProperties = { position: 'absolute', inset: 0, visibility: 'hidden' };
-/** 收起的右侧区域停在内容区右侧，宽度另给（收起前的宽度）。 */
+/** The collapsed right-hand area sits at the right of the content area; its width is given separately (the width from before collapsing). */
 const PARKED_AREA: CSSProperties = { position: 'absolute', top: 0, bottom: 0, right: 0, visibility: 'hidden', pointerEvents: 'none' };
 
-/** 右侧区域显示着时的宽度，收起后保留最后一次的值（不触发重新渲染）。 */
+/** The width while the right-hand area is shown; after collapsing, the last value is kept (without triggering a re-render). */
 function useShownWidth(ref: RefObject<HTMLElement | null>, shown: boolean): RefObject<number | undefined> {
   const width = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -136,10 +134,10 @@ function useShownWidth(ref: RefObject<HTMLElement | null>, shown: boolean): RefO
 }
 
 /**
- * 一个标签的面板。隐藏时把里面的播放器停下（网页视图由 WebTab 按 `active` 自己隐藏）。
+ * The panel for one tab. When hidden, the player inside is stopped (the web view hides itself through WebTab according to `active`).
  *
- * `keepLayout`（幻灯片标签）隐藏时不用 display none：编辑器的 iframe 重新显示时会先量到一个错的尺寸，缩放闪动约 1 秒。
- * 改为叠在当前标签下面、保持同样的尺寸，只是看不见：visibility hidden 不接收指针、不进 Tab 顺序与读屏。
+ * `keepLayout` (slides tab): when hidden, it does not use display none. When the editor's iframe is shown again it would first measure a wrong size, and the scale would flicker for about 1 second.
+ * Instead it stacks under the current tab at the same size and is simply invisible: visibility hidden takes no pointer events and is not in the Tab order or the screen reader.
  */
 function Pane({ paneKey, shown, keepLayout, children }: { paneKey: string; shown: boolean; keepLayout?: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -161,11 +159,11 @@ function Pane({ paneKey, shown, keepLayout, children }: { paneKey: string; shown
   );
 }
 
-/** 编辑器那一格：打开着视频就一直挂着；不是当前标签时 Activity 收起，并把播放状态归位。 */
+/** The editor slot: stays mounted while a video is open; when it is not the current tab, Activity collapses it and resets the playback state. */
 function EditorPane({ paneKey }: { paneKey: string | null }) {
   const shown = paneKey !== null;
   useEffect(() => {
-    // 收起时引擎的效果清理会停下播放（dispose → pause）；store 里的播放状态跟着归位，回来时不显示成在播。
+    // When collapsed, the engine's effect cleanup stops playback (dispose → pause); the playback state in the store is reset to match, so on return it does not show as playing.
     if (!shown) useEditor.getState().setPlaying(false);
   }, [shown]);
   const panel = paneKey !== null ? { id: workspacePanelId(paneKey), role: 'tabpanel', 'aria-labelledby': workspaceTabId(paneKey), tabIndex: 0 } : {};
@@ -195,7 +193,7 @@ function PaneContent({
   const setWebTitle = useShell((s) => s.setWebTitle);
   switch (item.kind) {
     case 'video':
-      // 视频标签刚切过来、编辑器还没换上这个视频（打开在下一拍发出）。
+      // The video tab has just been switched to, and the editor has not yet loaded this video (the open is sent on the next tick).
       return shown ? <Opening /> : null;
     case 'file':
       return <FilePane active={shown} fileNameHint={item.name} target={item.target} conversationId={conversationId} />;
@@ -230,8 +228,7 @@ function Opening() {
 }
 
 /**
- * 项目文件：点文件开单文件标签，点视频开视频标签。属于项目的会话改按项目定位（`{projectId, path}`）——
- * 列表的根就是项目目录，和 Space 打开的是同一个标签，Agent 上下文也按项目算。
+ * Project files: clicking a file opens a single-file tab, clicking a video opens a video tab. Conversations that belong to a project are located by project instead (`{projectId, path}`): the list's root is the project directory, it is the same tab that Space opens, and the agent context is also computed per project.
  */
 function ConversationFiles({ conversationId }: { conversationId: Id }) {
   const projectId = useDirectory((s) => s.conversations.find((c) => c.id === conversationId)?.projectId ?? null);
@@ -249,11 +246,9 @@ function ConversationFiles({ conversationId }: { conversationId: Id }) {
 }
 
 /**
- * 原生网页视图永远盖在界面之上：有覆盖层压到功能区时让它暂时让开（整块隐藏，不做局部裁切）。React Aria 打开模态框、
- * 菜单、Popover 时会给 body 下其余的节点加 aria-hidden（或 inert），功能区在其中就算被盖住；提示框不加，不算。
- * 不加这些属性的覆盖层（标签与分栏的拖动遮罩、侧栏浮出、页签缩略卡）经 `workspace-overlay.ts` 登记，显示期间 body 带
- * `data-workspace-overlay`。侧栏浮层 100 ms、缩略卡 500 ms 后才出现，划过 Rail、普通地悬停页签不会让网页视图闪烁。
- * 未验证：浏览器预览里没有网页视图（显示「这个环境不能内嵌网页」），这条路径只在桌面端起作用。
+ * The native web view always sits above the UI: when an overlay covers the workspace area, it makes way for now (the whole view is hidden; no partial clipping). When React Aria opens a modal dialog, menu or Popover, it adds aria-hidden (or inert) to the other nodes under body; the workspace area counts as covered in that case. Tooltips do not add it, so they do not count.
+ * Overlays without these attributes (the drag masks for tabs and splits, the sidebar flyout, the tab thumbnail card) register through `workspace-overlay.ts`, and body carries `data-workspace-overlay` while they are shown. The sidebar flyout appears only after 100 ms and the thumbnail card only after 500 ms, so passing over the Rail or ordinarily hovering a tab does not make the web view flicker.
+ * Not verified: browser preview has no web view (it shows “This environment cannot embed web pages”), so this path only works on desktop.
  */
 function useCovered(ref: RefObject<HTMLElement | null>): boolean {
   const [covered, setCovered] = useState(false);
@@ -263,7 +258,7 @@ function useCovered(ref: RefObject<HTMLElement | null>): boolean {
       const hidden = !!element?.closest('[aria-hidden="true"], [inert]');
       setCovered(hidden || document.body.hasAttribute(WORKSPACE_OVERLAY_ATTRIBUTE));
     };
-    // body 的直接子节点（弹层）进出；任意节点的 aria-hidden / inert 变化；body 上覆盖层登记的变化。
+    // Direct children of body (popups) being added or removed; any node's aria-hidden / inert changes; changes to overlay registrations on body.
     const portals = new MutationObserver(check);
     portals.observe(document.body, { childList: true });
     const hiding = new MutationObserver(check);

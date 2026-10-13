@@ -34,7 +34,7 @@ import { CAPTION_STYLE_COPY as S } from './subtitle-copy.ts';
 import { useDocumentBody } from './use-document-body.ts';
 import { SUBTITLE_COPY as C } from './subtitle-copy.ts';
 
-/** 画廊开着的视频（推进来的一页，同翻译设置页 `openFlow`）。 */
+/** The video the gallery is open for (a page pushed in, same as the translation settings page's `openFlow`). */
 export const useCaptionGallery = create<{ open: Record<Id, true> }>(() => ({ open: {} }));
 
 export function openGallery(videoId: Id, open: boolean): void {
@@ -49,7 +49,7 @@ export function openGallery(videoId: Id, open: boolean): void {
 const scopeRow = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingX: 12, paddingTop: 8 });
 const scopeLabel = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
 const grid = style({ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 });
-/** 一张卡（原型 .scard）：圆角 10、细边，选中的 2px 蓝边。 */
+/** One card (mockup .scard): 10px radius, thin border, a 2px blue border when selected. */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -93,7 +93,7 @@ const tick = style({
   '--iconPrimary': { type: 'fill', value: 'gray-25' },
 });
 const tickIcon = iconStyle({ size: 'XS' });
-/** 左上角的当前词角标（原型 .scard__badge）：画在缩略图上，浅底深字，不随主题变。 */
+/** Top-left badge for the current word (mockup .scard__badge): drawn on the thumbnail, light background with dark text, not changed by theme. */
 const badge = style({
   position: 'absolute',
   top: '[6px]',
@@ -131,7 +131,7 @@ function GalleryCard({
 }: {
   preset: CaptionPreset;
   on: boolean;
-  /** 亮着、但改过别的维度（原型「已修改 · 还原」）；点「还原」= 再套一次这张卡。 */
+  /** Active, but another dimension has been changed (mockup “modified · revert”); clicking “revert” applies this card again. */
   modified: boolean;
   root: Json;
   kinds: readonly LineKind[];
@@ -183,10 +183,10 @@ function GalleryCard({
 }
 
 /**
- * 字幕样式画廊（原型 panel-substyle.jsx `SubGallery`）：推进来的一页，页头下是「画面上」轨条，再是按分区陈列的卡。
- * 每张卡画的是套上去之后画面上这几行的样子；点卡 = 一笔事务套用（可撤销），卡上的「编辑」= 套上再去属性页逐项改。
+ * Caption style gallery (mockup panel-substyle.jsx `SubGallery`): a page pushed in. Under the header is the “on screen” track strip, then cards laid out by section.
+ * Each card draws what those lines look like once applied. Clicking a card is one transaction that applies it (undoable); the card's “Edit” applies it, then goes to the properties page to change items one by one.
  *
- * 套到哪份样式见 `galleryTarget`：原文与译文共用一份时「套到」能指到一行（写进那一行的覆盖）。
+ * For which style is applied to where, see `galleryTarget`: when the source and translation share one style, “apply to” can point at a single line (written as an override on that line).
  */
 export function CaptionGallery({
   videoId,
@@ -203,7 +203,7 @@ export function CaptionGallery({
   chips: CaptionChip[];
   selected: string | null;
   onBack(): void;
-  /** 页头下的轨条。 */
+  /** The track strip under the header. */
   children: ReactNode;
 }) {
   const { apply, undo } = useEditorActions();
@@ -218,7 +218,7 @@ export function CaptionGallery({
   }, [record, loaded]);
   const root = body === undefined ? null : captionStyleRoot(body);
 
-  // 「套到」：这份样式管两种行时才出；作用域是这一页自己的，不写进选中（原型第 152 轮）。
+  // “Apply to”: shown only when this style governs two kinds of line; its scope is this page's own and is not written into the selection (mockup round 152).
   const [picked, setPicked] = useState<PresetScope>('all');
   const scope: PresetScope = picked !== 'all' && target.kinds.includes(picked) ? picked : 'all';
   const showing = onScreen(chips);
@@ -263,11 +263,11 @@ export function CaptionGallery({
     });
     return true;
   };
-  /** 卡上的「编辑」：套上（已经是它就不再套一次），再去属性页逐项改（原型 `onEdit={() => { apply(p); onEdit(); }}`）。 */
+  /** A card's “Edit”: applies it (not applied again if it is already the current style), then goes to the properties page to change items one by one (mockup `onEdit={() => { apply(p); onEdit(); }}`). */
   const edit = async (preset: CaptionPreset) => {
     const itemId = current?.itemIds[0];
     if (!itemId) return;
-    // 先选中再套：选中会清掉样式草稿，反过来新样式取到之前会闪回旧的一下。
+    // Select first, then apply: selecting clears the style draft; if the new style were read first, the old one would briefly flash back.
     useEditor.getState().select([itemId]);
     if (!onCard(preset) && !(await pick(preset))) return;
     openGallery(videoId, false);

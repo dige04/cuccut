@@ -1,46 +1,43 @@
-//! 跨 chunk 说话人合并的纯逻辑聚类。
+//! Pure-logic clustering that merges speakers across chunks.
 //!
-//! 长音频按 chunk 分段转写后，每个 chunk 内部只知道自己的局部说话人编号。
-//! 本模块把各 chunk 的局部聚类当作「单元」，用带约束的凝聚聚类（centroid
-//! linkage）在全局把同一个人的单元并起来：
+//! When long audio is transcribed chunk by chunk, each chunk only knows its own local speaker numbers.
+//! This module treats each chunk's local clusters as “units”, and uses constrained agglomerative clustering (centroid
+//! linkage) to merge the units of the same person globally:
 //!
-//! - 同一个 chunk 内的两个单元来自同一次局部聚类，已经被判定为不同的人，
-//!   因此永远不允许合并；这个约束在合并后按 chunk 集合的并集继续传递。
-//! - 没有嵌入的单元（音频太短提不出向量）不参与距离计算，各自独占一个 id。
-//! - 全流程无 I/O、无浮点排序容器，同一输入必然得到同一输出。
+//! - Two units in the same chunk come from the same local clustering run, so they have already been judged to be different people,
+//!   and merging them is never allowed; this constraint keeps propagating after a merge as the union of the chunk sets.
+//! - Units without an embedding (audio too short to yield a vector) take no part in distance computation; each keeps its own id.
+//! - The whole pipeline has no I/O and no float-keyed sorted containers, so the same input always produces the same output.
 //!
-//! 从 v2 的同名模块原样移植，行为与阈值不变。
+//! Ported unchanged from the v2 module of the same name; behaviour and thresholds are unchanged.
 
 use std::collections::BTreeSet;
 
-/// 参与跨 chunk 合并的最小单元：某个 chunk 内的一个局部聚类。
+/// The smallest unit that takes part in cross-chunk merging: one local cluster within a chunk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeakerUnit {
-    /// 来源 chunk 序号；同 chunk 的单元互斥，永不合并。
+    /// Source chunk index; units from the same chunk are mutually exclusive and never merge.
     pub chunk: usize,
-    /// chunk 内局部聚类 id（已做全局平移），本模块仅透传不参与判定。
+    /// Local cluster id within the chunk (already shifted to a global numbering); this module only passes it through and does not use it in decisions.
     pub local_cluster: usize,
-    /// 说话人嵌入；`None` 表示音频不足未提取，永不参与合并。
+    /// Speaker embedding; `None` means the audio was too short and no embedding was extracted, so the unit never takes part in merging.
     pub embedding: Option<Vec<f32>>,
-    /// 该单元最早发声时间，用于最终标签排序。
+    /// The earliest speaking time of this unit, used to sort the final labels.
     pub first_start: f64,
 }
 
-/// 默认合并阈值，单位是余弦距离（0..=2）；严格小于该值才合并。
+/// Default merge threshold, in cosine distance (0..=2); merge only when the distance is strictly less than this value.
 pub const DEFAULT_MERGE_THRESHOLD: f32 = 0.715;
 
-/// 判定「孤儿簇」的累计时长门槛，单位秒；见
-/// [`merge_speaker_units_with_durations`]。
+/// Cumulative-duration threshold, in seconds, for identifying “orphan clusters”; see
+/// [`merge_speaker_units_with_durations`].
 ///
-/// 2 秒是按 Pyannote 的取样口径定的：10 秒窗口 / 5 秒步长意味着每一秒真实语音
-/// 会被相邻两个窗口各取一次，所以簇的累计时长约等于真实时长的两倍——低于 2 秒
-/// 的簇实际独占语音不足 1 秒，落在「短 turn 误判」的高发区间。
+/// The 2-second value follows Pyannote's sampling scheme: with a 10-second window and a 5-second step, every second of real speech is picked up by two adjacent windows, so a cluster's cumulative duration is about twice its real duration. A cluster under 2 seconds actually owns less than 1 second of speech, which is where short-turn misjudgments are most frequent.
 pub const DEFAULT_MIN_CLUSTER_SECONDS: f64 = 2.0;
 
-/// 余弦距离，取值落在闭区间 0..=2。
+/// Cosine distance, with values in the closed interval 0..=2.
 ///
-/// 空向量、维度不一致或分母 ≤ 1e-10（任一侧近似零向量）都返回 2.0，
-/// 即「最远」，在任何正常阈值下都不会被合并。
+/// An empty vector, mismatched dimensions, or a denominator ≤ 1e-10 (either side being close to the zero vector) all return 2.0, i.e. “farthest”, so such a pair is never merged under any normal threshold.
 pub fn cosine_distance(first: &[f32], second: &[f32]) -> f32 {
     if first.is_empty() || first.len() != second.len() {
         return 2.0;
@@ -54,7 +51,7 @@ pub fn cosine_distance(first: &[f32], second: &[f32]) -> f32 {
         second_norm += right * right;
     }
     let denominator = first_norm.sqrt() * second_norm.sqrt();
-    // 用正向比较写法，NaN 会让 usable 为 false，同样落到 2.0。
+    // Written as a positive comparison: NaN makes `usable` false, which likewise falls to 2.0.
     let usable = denominator > 1e-10;
     if !usable {
         return 2.0;
@@ -62,43 +59,34 @@ pub fn cosine_distance(first: &[f32], second: &[f32]) -> f32 {
     1.0 - dot / denominator
 }
 
-/// 把跨 chunk 的说话人单元合并为全局聚类，返回每个单元的最终聚类 id。
+/// Merges the cross-chunk speaker units into global clusters and returns the final cluster id of each unit.
 ///
-/// id 被压缩为连续的 `0..K`，并按「聚类内最早 `first_start`」升序分配，
-/// 因此 id 0（展示为 S01）一定是最先发声的说话人。
+/// The ids are compacted to a contiguous `0..K` and assigned in ascending order of each cluster's earliest `first_start`,
+/// so id 0 (displayed as S01) is always the speaker who speaks first.
 pub fn merge_speaker_units(units: &[SpeakerUnit], threshold: f32) -> Vec<usize> {
     cluster_speaker_units(units, threshold, None, None).assignment
 }
 
-/// 与 [`merge_speaker_units`] 相同，但额外把最终簇数压到 `max_clusters` 以内。
+/// Same as [`merge_speaker_units`], but additionally caps the final cluster count to `max_clusters`.
 ///
-/// 阈值循环结束后若簇数仍超上限，继续合并「当前最近且 chunk 不冲突」的一对，
-/// 直到满足上限或再无可合并对为止（同 chunk 约束永远优先于上限）。
+/// After the threshold loop ends, if the cluster count still exceeds the cap, keep merging the closest pair whose chunks do not conflict,
+/// until the cap is met or no mergeable pair remains (the same-chunk constraint always takes priority over the cap).
 ///
-/// 注意：无嵌入的单元各自独占一个 id，同样计入上限，但它们永远无法被合并，
-/// 因此调用方若需要硬上限，应只传入带嵌入的单元。
+/// Note: units without an embedding each keep their own id and count toward the cap, but they can never be merged. A caller that needs a hard cap should therefore pass only units that have embeddings.
 pub fn merge_speaker_units_capped(units: &[SpeakerUnit], threshold: f32, max_clusters: Option<usize>) -> Vec<usize> {
     cluster_speaker_units(units, threshold, max_clusters, None).assignment
 }
 
-/// 与 [`merge_speaker_units_capped`] 相同，外加「孤儿簇重指派」。
+/// Same as [`merge_speaker_units_capped`], plus “orphan cluster reassignment”.
 ///
-/// `unit_seconds[i]` 是 `units[i]` 的语音时长（秒）。阈值循环结束后，累计时长
-/// 低于 `min_cluster_seconds` 的簇被判为孤儿：它的每个单元按声纹距离并入最近的
-/// 「大簇」，chunk 冲突时跳过该候选；一个目标都找不到就原样保留。
+/// `unit_seconds[i]` is the speech duration (seconds) of `units[i]`. After the threshold loop ends, a cluster whose cumulative duration is below `min_cluster_seconds` is judged an orphan:
+/// each of its units is merged into the nearest “large cluster” by voiceprint distance, skipping candidates that have a chunk conflict; a unit that finds no target is kept where it is.
 ///
-/// 为什么需要这一步：同 chunk 互斥是**整簇**约束——两个簇只要各有一个单元落在
-/// 同一个 chunk 就永远合不掉，哪怕其余单元声纹完全一致。真实说话人被这条约束
-/// 挡在门外时会碎成若干个只有一两秒的簇，把说话人数顶到真实值的两倍。这里把
-/// 约束放宽到**单元级**（只要目标簇里没有该单元自己那个 chunk 就可以并入），
-/// 既解开了整簇死锁，又保住了「同一窗口的两个 local speaker 不是同一个人」这条
-/// 模型给出的硬事实。
+/// Why this step is needed: same-chunk exclusion is a **whole-cluster** constraint. Two clusters that each have one unit in the same chunk can never be merged, even if their other units have identical voiceprints. When this constraint blocks a real speaker from merging, the speaker shatters into several clusters of only one or two seconds each, pushing the speaker count to twice the true value. Here the constraint is relaxed to the **unit level** (a unit may join a target cluster as long as the target does not already contain that unit's own chunk). This breaks the whole-cluster deadlock while keeping the hard fact the model provides: two local speakers in the same window are not the same person.
 ///
-/// 确定性：所有距离都对**重指派开始前冻结的**质心计算，处理顺序固定为孤儿簇
-/// id 升序、簇内单元下标升序，因此同一输入必然得到同一输出。
+/// Determinism: all distances are computed against the **centroids frozen before reassignment begins**, and the processing order is fixed: orphan cluster id ascending, then unit index within the cluster ascending, so the same input always produces the same output.
 ///
-/// `unit_seconds` 长度与 `units` 不一致，或 `min_cluster_seconds <= 0` 时，
-/// 本函数等价于 [`merge_speaker_units_capped`]。
+/// If `unit_seconds` does not match `units` in length, or `min_cluster_seconds <= 0`, this function is equivalent to [`merge_speaker_units_capped`].
 pub fn merge_speaker_units_with_durations(
     units: &[SpeakerUnit],
     threshold: f32,
@@ -109,31 +97,30 @@ pub fn merge_speaker_units_with_durations(
     let orphan = (unit_seconds.len() == units.len() && min_cluster_seconds > 0.0).then_some(OrphanRule {
         unit_seconds,
         min_cluster_seconds,
-        // 孤儿只能并进「本来就够近、只是被同 chunk 互斥挡住」的簇。没有这条
-        // 上限，每个小簇都会被吸进最近的大簇——不管有多远——于是灵敏度旋钮
-        // 失效（aggressive 与 balanced 输出逐字节相同）。
+        // An orphan may only join a cluster that was already close enough and is blocked only by the same-chunk exclusion. Without this cap,
+        // every small cluster would be absorbed by its nearest large cluster no matter how far away it is, and the sensitivity knob would stop working (aggressive and balanced would produce byte-identical output).
         max_distance: threshold,
     });
     cluster_speaker_units(units, threshold, max_clusters, orphan).assignment
 }
 
-/// 孤儿簇重指派规则；见 [`merge_speaker_units_with_durations`]。
+/// Orphan cluster reassignment rule; see [`merge_speaker_units_with_durations`].
 #[derive(Debug, Clone, Copy)]
 struct OrphanRule<'a> {
     unit_seconds: &'a [f64],
     min_cluster_seconds: f64,
-    /// 孤儿单元并入大簇所允许的最大余弦距离；超过它就保留原簇。
+    /// Maximum cosine distance at which an orphan unit may merge into a large cluster; beyond it, the original cluster is kept.
     max_distance: f32,
 }
 
-/// 聚类结果；`centroids[id]` 与最终 id 对齐，无嵌入的单元为 `None`。
+/// Clustering result; `centroids[id]` aligns with the final id, and units without an embedding are `None`.
 #[derive(Debug, Clone, PartialEq)]
 struct ClusterOutcome {
     assignment: Vec<usize>,
     centroids: Vec<Option<Vec<f32>>>,
 }
 
-/// 内部实现，额外暴露合并后的质心供测试断言加权平均语义。
+/// Internal implementation; additionally exposes the merged centroids so tests can assert the weighted-average semantics.
 fn cluster_speaker_units(
     units: &[SpeakerUnit],
     threshold: f32,
@@ -147,8 +134,8 @@ fn cluster_speaker_units(
         };
     }
 
-    // 以第一个非空嵌入的维度为准；维度不符或为空的单元退化成「无嵌入」，
-    // 既不参与距离矩阵，也保证质心加权平均永远在等长向量上进行。
+    // Uses the dimension of the first non-empty embedding. Units whose dimension does not match, or that are empty, degrade to “no embedding”:
+    // they take part neither in the distance matrix nor in the centroid weighted average, which always runs on equal-length vectors.
     let dimension = units
         .iter()
         .filter_map(|unit| unit.embedding.as_deref())
@@ -174,10 +161,10 @@ fn cluster_speaker_units(
     let mut chunks: Vec<BTreeSet<usize>> = seeds.iter().map(|&index| BTreeSet::from([units[index].chunk])).collect();
     let mut active = vec![true; count];
     let mut active_count = count;
-    // 无嵌入的单元永远自成一簇，计入最终簇数，因此也计入上限。
+    // Units without an embedding always form their own cluster and count toward the final cluster count, and therefore toward the cap.
     let solo_count = units.len() - count;
 
-    // 簇对距离只在其中一侧发生合并时改变，缓存对称矩阵，每轮只刷新幸存行。
+    // A cluster-pair distance changes only when one side is merged, so the symmetric matrix is cached and each round refreshes only the surviving rows.
     let mut distances = vec![f32::INFINITY; count * count];
     for first in 0..count {
         for second in (first + 1)..count {
@@ -191,7 +178,7 @@ fn cluster_speaker_units(
     }
 
     while active_count > 1 {
-        // 按索引顺序线性扫描并用严格小于比较，天然让先出现的组合赢得平票。
+        // A linear scan in index order with a strict less-than comparison naturally lets the pair that appears first win ties.
         let mut best_distance = f32::MAX;
         let mut best_first = usize::MAX;
         let mut best_second = usize::MAX;
@@ -211,9 +198,8 @@ fn cluster_speaker_units(
                 }
             }
         }
-        // 严格小于才合并；阈值或距离为 NaN 时 mergeable 为 false。
-        // 超出簇数上限时放宽阈值，继续合并最近的一对（无穷远＝同 chunk 冲突，
-        // 属于硬约束，任何情况下都不放行）。
+        // Merge only when strictly less than; if the threshold or distance is NaN, `mergeable` is false.
+        // When the cluster count is above the cap, relax the threshold and keep merging the nearest pair (infinity = same-chunk conflict is a hard constraint and is never allowed in any case).
         let over_cap = max_clusters.is_some_and(|cap| active_count + solo_count > cap);
         let mergeable = best_distance < threshold || (over_cap && best_distance.is_finite());
         if best_first == usize::MAX || !mergeable {
@@ -253,7 +239,7 @@ fn cluster_speaker_units(
 
     if let Some(rule) = orphan {
         reassign_orphan_clusters(units, rule, &active, &mut members, &mut chunks, &mut centroids);
-        // 单元被搬空的簇不再是一个说话人。
+        // A cluster whose units have all been moved out is no longer a speaker.
         for cluster in 0..count {
             if members[cluster].is_empty() {
                 active[cluster] = false;
@@ -261,7 +247,7 @@ fn cluster_speaker_units(
         }
     }
 
-    // 存活簇与无嵌入单元一起按「组内最早 first_start」升序压缩成连续 id。
+    // The surviving clusters and the units without an embedding are compacted into contiguous ids in ascending order of the earliest `first_start` in each group.
     struct Group {
         first_start: f64,
         anchor: usize,
@@ -298,7 +284,7 @@ fn cluster_speaker_units(
             centroid: None,
         });
     }
-    // first_start 相同时用最小单元下标兜底，保证顺序完全确定。
+    // When `first_start` is equal, the smallest unit index breaks the tie, so the order is fully deterministic.
     groups.sort_by(|left, right| left.first_start.total_cmp(&right.first_start).then(left.anchor.cmp(&right.anchor)));
 
     let mut assignment = vec![0usize; units.len()];
@@ -315,10 +301,9 @@ fn cluster_speaker_units(
     }
 }
 
-/// 把累计时长不足的孤儿簇拆开，按声纹距离并入最近的大簇。
+/// Breaks up orphan clusters whose cumulative duration is insufficient, and merges each unit into the nearest large cluster by voiceprint distance.
 ///
-/// 距离一律对 `centroids` 的**冻结快照**计算，因此处理顺序只影响 chunk 冲突的
-/// 判定，不影响距离本身；顺序固定为孤儿簇 id 升序、簇内单元下标升序。
+/// Distances are always computed against a **frozen snapshot** of `centroids`, so the processing order affects only the chunk-conflict decisions, not the distances themselves. The order is fixed: orphan cluster id ascending, then unit index within the cluster ascending.
 fn reassign_orphan_clusters(
     units: &[SpeakerUnit],
     rule: OrphanRule<'_>,
@@ -353,8 +338,8 @@ fn reassign_orphan_clusters(
             };
             let mut best: Option<(f32, usize)> = None;
             for &target in &targets {
-                // 同一窗口的两个 local speaker 已被模型判为不同人：这条硬事实
-                // 在单元级仍然生效，只是不再要求整簇 chunk 集合互斥。
+                // Two local speakers in the same window have already been judged by the model to be different people. This hard fact still holds at the unit level;
+                // it just no longer requires the whole clusters' chunk sets to be disjoint.
                 if chunks[target].contains(&units[index].chunk) {
                     continue;
                 }
@@ -362,7 +347,7 @@ fn reassign_orphan_clusters(
                 if !distance.is_finite() || distance >= rule.max_distance {
                     continue;
                 }
-                // 严格小于让扫描顺序（簇 id 升序）赢得平票。
+                // Strict less-than lets the scan order (cluster id ascending) win ties.
                 if best.is_none_or(|(current, _)| distance < current) {
                     best = Some((distance, target));
                 }
@@ -419,7 +404,7 @@ mod tests {
 
     #[test]
     fn three_speakers_merge_across_chunks_and_sort_by_first_speech() {
-        // 三个近似正交的说话人，同人跨 chunk 距离 ≈0.02，异人距离 ≈0.8~1.0。
+        // Three nearly orthogonal speakers: the same person across chunks has a distance of ≈0.02, different people have distances of ≈0.8~1.0.
         let units = vec![
             unit(0, &[1.0, 0.0, 0.0], 10.0),  // A@chunk0
             unit(0, &[0.0, 1.0, 0.0], 5.0),   // B@chunk0
@@ -431,7 +416,7 @@ mod tests {
         assert!(cosine_distance(&[1.0, 0.0, 0.0], &[0.98, 0.2, 0.0]) < DEFAULT_MERGE_THRESHOLD);
         assert!(cosine_distance(&[1.0, 0.0, 0.0], &[0.2, 0.98, 0.0]) > DEFAULT_MERGE_THRESHOLD);
 
-        // C 最先发声 → 0，其次 B → 1，最后 A → 2。
+        // C speaks first → 0, then B → 1, and A last → 2.
         assert_eq!(merge_speaker_units(&units, DEFAULT_MERGE_THRESHOLD), vec![2, 1, 0, 2, 1, 0]);
     }
 
@@ -443,8 +428,7 @@ mod tests {
 
     #[test]
     fn merged_chunk_sets_keep_blocking_further_merges() {
-        // A(chunk0) 与 B(chunk1) 合并后 chunk 集合是 {0,1}，
-        // 因此即使 C(chunk1) 距离为 0 也不得再并进来。
+        // After A(chunk0) and B(chunk1) merge, their chunk set is {0,1}, so even if C(chunk1) has distance 0 it must not be merged in.
         let units = vec![unit(0, &[1.0, 0.0], 0.0), unit(1, &[1.0, 0.0], 1.0), unit(1, &[1.0, 0.0], 2.0)];
         assert_eq!(merge_speaker_units(&units, DEFAULT_MERGE_THRESHOLD), vec![0, 0, 1]);
     }
@@ -457,7 +441,7 @@ mod tests {
             unit(1, &[1.0, 0.0], 1.0),
             silent_unit(1, 0.5),
         ];
-        // 合并簇最早 1.0，静默单元分别是 0.5 与 5.0。
+        // The merged cluster's earliest time is 1.0; the silent units are 0.5 and 5.0.
         assert_eq!(merge_speaker_units(&units, DEFAULT_MERGE_THRESHOLD), vec![2, 1, 1, 0]);
     }
 
@@ -465,7 +449,7 @@ mod tests {
     fn distance_exactly_at_threshold_does_not_merge() {
         let units = vec![unit(0, &[1.0, 0.0], 0.0), unit(1, &[0.0, 1.0], 1.0)];
         assert_eq!(cosine_distance(&[1.0, 0.0], &[0.0, 1.0]), 1.0);
-        // 严格小于才合并。
+        // Merge only when strictly less than.
         assert_eq!(merge_speaker_units(&units, 1.0), vec![0, 1]);
         assert_eq!(merge_speaker_units(&units, 1.000_001), vec![0, 0]);
     }
@@ -473,11 +457,9 @@ mod tests {
     #[test]
     fn centroid_uses_size_weighted_average_without_renormalizing() {
         let units = vec![unit(0, &[2.0, 0.0], 0.0), unit(1, &[2.0, 2.0], 1.0), unit(2, &[0.0, 2.0], 2.0)];
-        // 第一轮：d(0,1)=d(1,2)≈0.29289，扫描顺序让 (0,1) 先赢 → 质心 [2,1]。
-        // 第二轮：[2,1](size2) 与 [0,2](size1) 距离≈0.55279 < 0.6 → 合并，
-        //         质心 = ([2,1]*2 + [0,2]*1)/3 = [4/3, 4/3]。
-        // 若错误地重新 L2 归一化会得到 [0.7071, 0.7071]，
-        // 若错误地用等权平均会得到 [1.0, 1.5]，两者都会被下面的断言拒绝。
+        // Round 1: d(0,1)=d(1,2)≈0.29289; the scan order lets (0,1) win first → centroid [2,1].
+        // Round 2: [2,1](size 2) and [0,2](size 1) have a distance ≈0.55279 < 0.6 → merge, centroid = ([2,1]*2 + [0,2]*1)/3 = [4/3, 4/3].
+        // If the centroid were wrongly re-L2-normalized it would be [0.7071, 0.7071]; if it were a equal-weight average it would be [1.0, 1.5]. Both would be rejected by the assertions below.
         let outcome = cluster_speaker_units(&units, 0.6, None, None);
         assert_eq!(outcome.assignment, vec![0, 0, 0]);
         assert_eq!(outcome.centroids.len(), 1);
@@ -492,8 +474,8 @@ mod tests {
 
         let units = vec![
             unit(0, &[1.0, 0.0], 0.0),
-            unit(1, &[1.0, 0.0, 0.0], 1.0), // 维度不符 → 退化为无嵌入
-            unit(2, &[0.0, 0.0], 2.0),      // 零向量 → 距离恒为 2.0
+            unit(1, &[1.0, 0.0, 0.0], 1.0), // Dimension mismatch → degrades to no embedding
+            unit(2, &[0.0, 0.0], 2.0),      // Zero vector → distance is always 2.0
         ];
         assert_eq!(merge_speaker_units(&units, DEFAULT_MERGE_THRESHOLD), vec![0, 1, 2]);
     }
@@ -514,31 +496,31 @@ mod tests {
 
     #[test]
     fn cap_keeps_merging_nearest_clusters_beyond_threshold() {
-        // 三个互相远离的说话人（两两距离 1.0 > 阈值），不设上限时得到 3 个簇。
+        // Three speakers far from one another (pairwise distance 1.0 > threshold); with no cap, three clusters remain.
         let units = vec![
             unit(0, &[1.0, 0.0, 0.0], 0.0),
             unit(1, &[0.0, 1.0, 0.0], 1.0),
             unit(2, &[0.0, 0.0, 1.0], 2.0),
         ];
         assert_eq!(merge_speaker_units_capped(&units, DEFAULT_MERGE_THRESHOLD, None), vec![0, 1, 2]);
-        // 上限 2 时继续合并最近的一对：距离全等，扫描顺序让 (0,1) 先赢。
+        // With a cap of 2, keep merging the nearest pair: the distances are all equal, so the scan order lets (0,1) win first.
         assert_eq!(merge_speaker_units_capped(&units, DEFAULT_MERGE_THRESHOLD, Some(2)), vec![0, 0, 1]);
         assert_eq!(merge_speaker_units_capped(&units, DEFAULT_MERGE_THRESHOLD, Some(1)), vec![0, 0, 0]);
-        // 上限宽于实际簇数时不产生任何额外合并。
+        // When the cap is wider than the actual cluster count, no extra merges happen.
         assert_eq!(merge_speaker_units_capped(&units, DEFAULT_MERGE_THRESHOLD, Some(9)), vec![0, 1, 2]);
     }
 
     #[test]
     fn cap_never_overrides_same_chunk_constraint() {
-        // 三个单元全在 chunk 0，互斥约束是硬的：即便上限为 1 也不能合并。
+        // All three units are in chunk 0, so the exclusion constraint is hard: they cannot be merged even with a cap of 1.
         let units = vec![unit(0, &[1.0, 0.0], 0.0), unit(0, &[1.0, 0.0], 1.0), unit(0, &[1.0, 0.0], 2.0)];
         assert_eq!(merge_speaker_units_capped(&units, DEFAULT_MERGE_THRESHOLD, Some(1)), vec![0, 1, 2]);
     }
 
     #[test]
     fn symmetric_input_has_fixed_tie_break_and_is_deterministic() {
-        // 四个完全相同的嵌入分布在两个 chunk 上：距离全为 0，靠扫描顺序定胜负。
-        // (0,1) 先合并后 chunk 集合变成 {0,1}，剩下 (2,3) 只能自成一簇。
+        // Four identical embeddings spread across two chunks: all distances are 0, so the scan order decides the winner.
+        // (0,1) merges first, the chunk set becomes {0,1}, and the remaining (2,3) can only form a cluster of their own.
         let units = vec![
             unit(0, &[1.0, 0.0], 3.0),
             unit(1, &[1.0, 0.0], 4.0),
@@ -551,13 +533,12 @@ mod tests {
         assert_eq!(first, vec![1, 1, 0, 0]);
     }
 
-    /// 两个说话人各占两个 chunk，外加一个只有 0.5 秒、声纹被噪声推到阈值之外的
-    /// 碎片。阈值聚类必然给它一个独立 id；孤儿重指派要把它并回最近的大簇。
+    /// Two speakers each occupy two chunks, plus a fragment of only 0.5 seconds whose voiceprint noise pushed beyond the threshold.
+    /// Threshold clustering necessarily gives it its own id; orphan reassignment should merge it back into the nearest large cluster.
     #[test]
     fn orphan_cluster_joins_nearest_large_cluster() {
-        // A = {u0, u1}；O = {u2, u3}。O 与 A 的质心距离本来够近，但 O 里的 u2 与
-        // A 里的 u0 同属 chunk 0，整簇互斥挡住了合并。重指派在单元级放开这条：
-        // u3（chunk 2，A 没有）可以并入 A，u2 仍然留在原簇。
+        // A = {u0, u1}; O = {u2, u3}. The centroid distance between O and A is close enough, but u2 in O and u0 in A both belong to chunk 0,
+        // so whole-cluster exclusion blocks the merge. Reassignment at the unit level relaxes this: u3 (chunk 2, which A does not have) may join A, while u2 stays in its original cluster.
         let units = vec![
             unit(0, &[1.0, 0.0, 0.0], 0.0),
             unit(1, &[1.0, 0.0, 0.0], 10.0),
@@ -573,15 +554,15 @@ mod tests {
             merge_speaker_units_with_durations(&units, DEFAULT_MERGE_THRESHOLD, None, &seconds, DEFAULT_MIN_CLUSTER_SECONDS),
             vec![0, 0, 1, 0]
         );
-        // 门槛降到碎片时长以下时不再触发重指派。
+        // When the threshold is lowered below the fragment's duration, reassignment is no longer triggered.
         assert_eq!(
             merge_speaker_units_with_durations(&units, DEFAULT_MERGE_THRESHOLD, None, &seconds, 0.1),
             vec![0, 0, 1, 1]
         );
     }
 
-    /// 距离上限：孤儿离最近的大簇比合并阈值还远时保留自己的身份，不被吞掉。
-    /// 没有这条，任何小簇都会被最近的大簇吸收，灵敏度旋钮随之失效。
+    /// Distance cap: an orphan that is farther from the nearest large cluster than the merge threshold keeps its own identity and is not absorbed.
+    /// Without this, every small cluster would be absorbed by its nearest large cluster, and the sensitivity knob would stop working.
     #[test]
     fn orphan_cluster_beyond_threshold_keeps_its_identity() {
         let units = vec![
@@ -592,7 +573,7 @@ mod tests {
             unit(4, &[0.3, 0.2, 1.0], 40.0),
         ];
         let seconds = vec![10.0, 10.0, 10.0, 10.0, 0.5];
-        // 碎片到两个大簇的距离都越过了合并阈值。
+        // The fragment's distances to both large clusters exceed the merge threshold.
         let to_a = cosine_distance(&[0.3, 0.2, 1.0], &[1.0, 0.0, 0.0]);
         let to_b = cosine_distance(&[0.3, 0.2, 1.0], &[0.0, 1.0, 0.0]);
         assert!(to_a > DEFAULT_MERGE_THRESHOLD && to_b > DEFAULT_MERGE_THRESHOLD);
@@ -607,13 +588,12 @@ mod tests {
         );
     }
 
-    /// 距离完全相同时按簇的内部扫描顺序取胜，重复调用结果必须一致。
+    /// When distances are exactly equal, the cluster's internal scan order decides the winner; repeated calls must give the same result.
     #[test]
     fn orphan_reassignment_tie_break_is_deterministic() {
-        // A = {u0, u1}，B = {u2, u3}，孤儿簇 O = {u4, u5, u6}。O 与 A、B 的距离
-        // 相等且都在阈值内，只是 u5/u6 分别与 A、B 撞了 chunk，整簇合并被互斥挡住。
-        // 单元级重指派按下标升序处理：u4（chunk 4，两边都没有）平票归 id 更小的 A，
-        // 随后 u5 只剩 B、u6 只剩 A。
+        // A = {u0, u1}, B = {u2, u3}, orphan cluster O = {u4, u5, u6}. O's distances to A and B are equal and both within the threshold, but u5/u6 each share a chunk with A and B respectively,
+        // so whole-cluster merging is blocked by exclusion. Unit-level reassignment processes in ascending index order: u4 (chunk 4, neither side has that chunk) ties and goes to A, the smaller id;
+        // then u5 has only B left as a candidate, and u6 only A.
         let units = vec![
             unit(0, &[1.0, 0.0, 0.0], 0.0),
             unit(1, &[1.0, 0.0, 0.0], 10.0),
@@ -635,8 +615,8 @@ mod tests {
         assert_eq!(first, vec![0, 0, 1, 1, 0, 1, 0]);
     }
 
-    /// 目标簇已经包含碎片所在的 chunk 时不得吸收：同一窗口的两个 local speaker
-    /// 是模型给出的「不同人」硬事实。
+    /// When the target cluster already contains the chunk where the fragment sits, it must not absorb it: two local speakers in the same window
+    /// are the model's hard fact that they are “different people”.
     #[test]
     fn orphan_reassignment_respects_same_chunk_constraint() {
         let units = vec![
@@ -651,7 +631,7 @@ mod tests {
         );
     }
 
-    /// 全部都是孤儿时没有可并入的目标，行为退化为普通聚类。
+    /// If every cluster is an orphan there is no target to merge into, and the behaviour degrades to ordinary clustering.
     #[test]
     fn orphan_reassignment_needs_at_least_one_large_cluster() {
         let units = vec![unit(0, &[1.0, 0.0, 0.0], 0.0), unit(1, &[0.0, 1.0, 0.0], 1.0)];
@@ -662,7 +642,7 @@ mod tests {
         );
     }
 
-    /// 时长数组长度对不上或门槛非正时，静默退化为 [`merge_speaker_units_capped`]。
+    /// When the duration array length does not match or the duration threshold is non-positive, silently degrades to [`merge_speaker_units_capped`].
     #[test]
     fn orphan_reassignment_is_skipped_on_malformed_input() {
         let units = vec![

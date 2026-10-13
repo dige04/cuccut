@@ -1,8 +1,7 @@
-//! `videos.readContent`：Space 内容索引（架构设计 §5.11）用的只读查询。已经打开的视频用打开的那一份；
-//! 没有打开的以只读方式打开，不取写锁，读完就放下。
+//! `videos.readContent`: a read-only query used by the Space content index (architecture design §5.11). For a video that is already open, it uses the open instance; a video that is not open is opened read-only, takes no write lock, and is released once read.
 //!
-//! 返回视频快照（素材、序列、标记），以及文字类文档（转写、字幕、译文）的当前正文；转写与字幕另带在根序列上的
-//! 时间线投影（与导出、预览同一个 `plan_text`），投影不出来时带原因，由 Runtime 退回到源时间。
+//! Returns the video snapshot (assets, sequences, markers), plus the current body of text documents (transcripts, subtitles, translations). Transcripts and subtitles also carry a timeline projection on the root sequence
+//! (the same `plan_text` as export and preview). If the projection cannot be produced, the reason is included, and the Runtime falls back to source time.
 
 use render_graph::VideoView;
 use render_graph::text_plan::plan_text;
@@ -11,7 +10,7 @@ use video_engine::Video;
 
 const SPEECH_SCHEMA: &str = "cuccut.speech/1";
 const CAPTION_SCHEMA: &str = "cuccut.caption/1";
-/// 译文：`/2` 是现行格式，`/1` 是旧项目导入的只读兼容（视频格式规范 §5.3）。
+/// Translation: `/2` is the current format; `/1` is read-only compatibility for old imported projects (video format spec §5.3).
 const TRANSLATION_SCHEMAS: [&str; 2] = ["cuccut.translation/2", "cuccut.translation/1"];
 const TEXT_KINDS: [&str; 3] = ["speech", "caption", "translation"];
 

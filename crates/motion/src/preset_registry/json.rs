@@ -1,4 +1,4 @@
-//! manifest 解析的共享取值助手（阶段 2 从 `preset_registry.rs` 原样搬出）。
+//! Shared value helpers for manifest parsing (moved verbatim out of `preset_registry.rs` in phase 2).
 
 use serde_json::Value;
 

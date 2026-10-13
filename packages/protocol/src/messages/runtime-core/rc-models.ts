@@ -14,9 +14,9 @@ import { pl } from './rc-models.pl.ts';
 import { tr } from './rc-models.tr.ts';
 import { vi } from './rc-models.vi.ts';
 
-/** 模型（models/）的安装、目录与生成的错误。英文是键与类型的来源，译文在 `rc-models.<语言>.ts`。 */
+/** Errors for installation, catalog and generation of models (models/). English is the source of keys and types; translations are in `rc-models.<language>.ts`. */
 const en = {
-  // 安装与删除（model-install-service）
+  // Install and delete (model-install-service)
   offlineStrict: "Models aren't downloaded in strict offline mode",
   sizeChanged: 'The number of bytes to download has changed. Confirm again with the new plan',
   bundleInUse: 'The model package is in use. Delete it after the tasks finish or are cancelled',
@@ -30,7 +30,7 @@ const en = {
     "The models folder doesn't exist (this also happens when an external drive isn't connected). Connect it and try again, or choose another models folder in Settings",
   selfTestSampleLabel: 'the recognition check sample',
 
-  // 检查（models.test）
+  // Checks (models.test)
   workerFailed: (p: { reason: string }) => `Worker failed: ${p.reason}`,
   workerCancelledCheck: 'The Worker cancelled the check itself',
   noWorkerOutput: "The Worker didn't produce any output",
@@ -47,7 +47,7 @@ const en = {
   imagePassed: (p: { width: number; height: number; steps: number }) => `${p.width}×${p.height} · ${p.steps} steps`,
   musicPassed: (p: { duration: string; sampleRate: number; steps: number }) => `${p.duration} s · ${p.sampleRate} Hz · ${p.steps} steps`,
 
-  // 模型目录（models-dir-service）
+  // Model catalog (models-dir-service)
   envLocked: 'The models folder is set by the CUCCUT_MODELS_DIR environment variable. To change it, change the variable and restart CucCut',
   movingDirWaitOrCancel: 'The models folder is being moved. Change it after the move finishes or is cancelled',
   folderMissing: "This folder doesn't exist (this also happens when an external drive isn't connected)",
@@ -62,7 +62,7 @@ const en = {
   moveFailed: 'Something went wrong while moving the models. The move was rolled back',
   moveFailedRemedy: "The original models folder hasn't changed, and the models still work",
 
-  // 配音（dub-speech）
+  // Dubbing (dub-speech)
   noAlignableFormat: (p: { modelId: string }) => `Model ${p.modelId} doesn't output an audio format that can be aligned`,
   synthOutputCount: (p: { count: number }) => `Speech synthesis produced ${p.count} outputs; it should produce 1`,
   synthOutputOutsideStaging: "The speech synthesis output isn't in the staging folder",
@@ -70,13 +70,13 @@ const en = {
     `Voice-over sends the transcript (the translation, plus the original where a translation is missing) to ${p.recipient}. The default grant created when a provider is turned on doesn't include transcripts, so the user has to issue a grant explicitly (with the command below, or in CucCut's Settings), then run this voice-over again.`,
   voiceRemoved: (p: { reason: string; voice: string }) => `${p.reason}: voice ${p.voice}`,
 
-  // 识别说话人（speakers-apply）
+  // Speaker identification (speakers-apply)
   notSpeakersJob: "This task isn't speaker recognition",
   jobNotForVideo: "This recognition doesn't belong to this video",
   speakersNotDone: "Speaker recognition hasn't finished",
   speakersCleaned: 'The recognition results were cleaned up. Recognize speakers again',
 
-  // 任务恢复（model-jobs）
+  // Task recovery (model-jobs)
   recoveryPrincipalName: 'Task recovery',
 };
 

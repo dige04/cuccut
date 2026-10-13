@@ -16,11 +16,9 @@ import { localizedOf } from '../localized.ts';
 import { ArchiveError, hashEntry, listArchive, readEntry, safePackagePath, type ArchiveEntry } from './package-archive.ts';
 
 /**
- * 读一个 `.cuccut` 便携包并核对它（视频格式规范 §8）：导出发布前用它从写好的归档里重新读一遍，打开包时用它边核对边解开。
+ * Reads a `.cuccut` portable package and verifies it (video format spec §8). Before an export is published, it is used to read back the written archive and verify it. When a package is opened, it verifies and unpacks in the same pass.
  *
- * 不信任清单与归档：格式与打包版本要认得（更高的版本拒绝），清单列出的文件与归档里的文件一一对应（多出、缺少、长度不同都拒绝），
- * 每个文件的 sha256 重算后与清单一致，清单里每个收进来的版本指向的文件存在、文件的摘要就是版本的内容摘要（目录素材由引擎按
- * 目录的摘要再核对）。路径与条目种类的规则见 `package-archive.ts`。
+ * The manifest and archive are not trusted. The format and packaging version must be recognized (higher versions are rejected). The files listed in the manifest must correspond one-to-one with the files in the archive (extra, missing, or differently sized files are all rejected). Each file's sha256 is recomputed and must match the manifest. For each collected version in the manifest, the file it points to must exist, and the file's digest must be the version's content digest (directory assets are verified by the engine against the directory's digest). For the path and entry-type rules, see `package-archive.ts`.
  */
 
 export type PackageErrorCode = 'PACKAGE_INVALID' | 'PACKAGE_DIGEST_MISMATCH' | 'PACKAGE_VERSION_UNSUPPORTED' | 'PACKAGE_PATH_UNSAFE';
@@ -41,10 +39,10 @@ const MANIFEST_LIMIT = 64 * 1024 * 1024;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 
 export interface ReadPackageOptions {
-  /** 边核对边把文件解开到这个目录（必须已经存在且是空的）。 */
+  /** Unpacks into this directory while verifying (it must already exist and be empty). */
   extractTo?: string;
   signal?: AbortSignal;
-  /** 每核对完一个文件回报一次。 */
+  /** Reports once after each file is verified. */
   progress?: (done: number, total: number) => void;
 }
 
@@ -58,7 +56,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** 清单的外形。版本更高的包在这之前就以 `PACKAGE_VERSION_UNSUPPORTED` 拒绝，不去猜新版本的字段。 */
+/** The shape of the manifest. A package with a higher version is rejected earlier with `PACKAGE_VERSION_UNSUPPORTED`, without guessing the fields of the newer version. */
 export function parseManifest(text: string): PackageManifest {
   let data: unknown;
   try {
@@ -124,7 +122,7 @@ function archiveError(error: unknown): unknown {
   return error;
 }
 
-/** 读清单、逐个核对文件（可选地同时解开），返回清单。任何一项不符都抛 `PackageError`。 */
+/** Reads the manifest, verifies each file (and optionally unpacks it at the same time), and returns the manifest. Any mismatch throws `PackageError`. */
 export async function readPackage(file: string, options: ReadPackageOptions = {}): Promise<ReadPackageResult> {
   let entries: ArchiveEntry[];
   try {
@@ -188,7 +186,7 @@ export async function readPackage(file: string, options: ReadPackageOptions = {}
   return { manifest, files: listed.size, bytes };
 }
 
-/** 清单里收进来的版本：指向的文件在，单个文件的摘要就是版本的内容摘要；目录素材下面至少有一个文件。 */
+/** A collected version in the manifest: the file it points to exists, and for a single file its digest is the version's content digest. A directory asset has at least one file beneath it. */
 function checkEntries(entries: PackageEntry[], files: Map<string, PackageFile>): void {
   for (const entry of entries) {
     if (entry.inclusion !== 'included') continue;

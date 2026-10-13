@@ -1,6 +1,4 @@
-//! 中文文本规范化：复刻上游 `text/zh_normalization`（源自 PaddleSpeech）的 `TextNormalizer.normalize`，
-//! 含 `num.py`、`chronology.py`、`phonecode.py`、`quantifier.py`。上游已知的怪异行为照抄
-//! （温度单位恒为「度」、时间段第二个「半」看的是第一个分钟）。
+//! Chinese text normalization: replicates `TextNormalizer.normalize` from upstream `text/zh_normalization` (originally from PaddleSpeech), including `num.py`, `chronology.py`, `phonecode.py` and `quantifier.py`. Known quirks of upstream are copied as they are (the temperature unit is always 「度」, and the second 「半」 in a time range looks at the first minute).
 
 use std::cell::Cell;
 use std::sync::LazyLock;
@@ -38,11 +36,11 @@ fn sign(caps: &Captures, index: usize, word: &str) -> String {
 // ---- num.py ----
 
 thread_local! {
-    /// 替换回调的签名固定返回字符串，查表失败先记在这里，由 [`normalize`] 统一报错。
+    /// The replacement callback's signature must return a string, so a failed lookup is recorded here first and reported as one error by [`normalize`].
     static MISSING_DIGIT: Cell<bool> = const { Cell::new(false) };
 }
 
-/// `DIGITS[digit]`：上游的表只有 ASCII 数字，`\d` 匹配到的其他数字（如 `٣`）查表抛 KeyError。
+/// `DIGITS[digit]`: upstream's table only has ASCII digits, so other digits matched by `\d` (e.g. `٣`) raise KeyError on lookup.
 fn digit_word(c: char, alt_one: bool) -> String {
     match c {
         '1' if alt_one => "幺".to_owned(),
@@ -324,7 +322,7 @@ fn replace_phone(caps: &Captures) -> String {
 
 static RE_TEMPERATURE: LazyLock<Regex> = LazyLock::new(|| regex(r"(-?)(\d+(\.\d+)?)(°C|℃|度|摄氏度)"));
 fn replace_temperature(caps: &Captures) -> String {
-    // 上游取的是 group(3)（小数部分），所以单位永远是「度」
+    // Upstream takes group(3) (the decimal part), so the unit is always 「度」
     format!("{}{}度", sign(caps, 1, "零下"), num2str(group(caps, 2)))
 }
 

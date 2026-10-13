@@ -3,7 +3,7 @@ import { formatInvalid, libraryError } from './library-errors.ts';
 import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-storage';
 
 /**
- * 条目内容的规范化与语义检查。RPC 的外形由协议的 zod 查过；交换文件导入不经 zod，所以这里自己把关，两条路得到同样的内容。
+ * Normalization and semantic checks for entry content. The RPC shape is checked by the protocol's zod. Exchange-file imports do not go through zod, so this file does the checks itself, and both paths get the same content.
  */
 
 export const MAX_NAME_CHARS = 200;
@@ -13,7 +13,7 @@ export const MAX_MISHEARD_PER_TERM = 50;
 export const MAX_NOTE_CHARS = 1000;
 export const MAX_TRANSCRIPT_CHARS = 10_000;
 export const MAX_STATEMENT_CHARS = 2000;
-/** 字幕样式的上限，与 `setStyle` 的样式对象相同。 */
+/** Upper limit for subtitle style, same as the style object of `setStyle`. */
 export const MAX_CAPTION_STYLE_BYTES = 64 * 1024;
 
 export const BRAND_MEDIA_KINDS: readonly BrandMediaKind[] = ['image', 'video', 'sticker', 'font'];
@@ -30,7 +30,7 @@ function text(value: unknown, field: string, max: number, options: { allowEmpty?
   return trimmed;
 }
 
-/** 术语是一行文本：不能有换行。 */
+/** A term is one line of text: it cannot contain line breaks. */
 function term(value: unknown, field: string): string {
   const t = text(value, field, MAX_TERM_CHARS);
   if (/[\r\n]/.test(t)) throw formatInvalid(SL.fieldNoNewline({ field }), { field });
@@ -48,7 +48,7 @@ function language(value: unknown, field: string): string {
     const [canonical] = Intl.getCanonicalLocales(value.trim());
     if (canonical) return canonical;
   } catch {
-    // 下面统一报错
+    // The errors below are reported uniformly.
   }
   throw formatInvalid(SL.fieldBadLanguageTag({ field, value }), { field });
 }
@@ -69,7 +69,7 @@ function list(value: unknown, field: string, max: number): unknown[] {
   return value;
 }
 
-/** 术语表：去掉首尾空白；误写去重并去掉与规范写法相同的；同一个规范写法（或源词）出现两次时拒绝。 */
+/** Glossary: trims leading and trailing whitespace. Removes duplicate mishearings and any that match the canonical spelling. Rejects the glossary if the same canonical spelling (or source term) appears twice. */
 export function normalizeGlossary(value: unknown): GlossaryContent {
   const v = object(value, 'content');
   const name = text(v.name, 'name', MAX_NAME_CHARS);
@@ -110,7 +110,7 @@ export function normalizeGlossary(value: unknown): GlossaryContent {
   throw formatInvalid(SL.glossaryKind(), { field: 'kind' });
 }
 
-/** 音色里由用户给的字段（参考录音与授权时间由库处理）。 */
+/** Fields the user provides for a voice (the library handles the reference recording and the consent time). */
 export interface VoiceFields {
   name: string;
   language: string | null;
@@ -136,7 +136,7 @@ export function normalizeVoiceFields(value: unknown): VoiceFields {
   };
 }
 
-/** 品牌库不带文件的部分。带文件的种类只有名字；`overlayTemplate` 拒绝。 */
+/** The part of a brand library entry that has no files. Kinds that carry files have only a name. `overlayTemplate` is rejected. */
 export type BrandFields =
   | { name: string; kind: BrandMediaKind }
   | { name: string; kind: 'color'; value: string }
@@ -173,7 +173,7 @@ export function normalizeBrandFields(value: unknown): BrandFields {
   throw formatInvalid(SL.brandKind(), { field: 'kind' });
 }
 
-/** 条目的显示名与种类（列表用）。 */
+/** Display name and kind of an entry (for lists). */
 export function kindOf(library: LibraryName, content: LibraryContentInput): string {
   return library === 'voices' ? 'voice' : (content as { kind: string }).kind;
 }

@@ -14,7 +14,7 @@ import { pl } from './link-url.pl.ts';
 import { tr } from './link-url.tr.ts';
 import { vi } from './link-url.vi.ts';
 
-/** `packages/jobs/src/pipelines/link-url.ts` 给人看的文字。 */
+/** Text shown to people for `packages/jobs/src/pipelines/link-url.ts`. */
 const en = {
   startsWithDash: "A link can't start with -",
   invalidLink: 'Not a valid link',

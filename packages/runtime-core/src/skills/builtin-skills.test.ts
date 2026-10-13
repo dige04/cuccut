@@ -7,8 +7,7 @@ import { SkillPrefsStore } from '@cuccut/runtime-storage';
 import { SkillCatalog, resolveBuiltinSkillsDir, type LoadedSkill } from './skill-catalog.ts';
 
 /**
- * 仓库根 `skills/cuccut/built-in-skills/` 里随应用分发的内置 skill。新增或改名时同步这里、那里 `README.md` 的索引与说明书
- * `SKILL.md` 的「内置 skill」表。
+ * Built-in skills shipped with the app, under `skills/cuccut/built-in-skills/` in the repository root. When adding or renaming one, update this file as well as the index in `README.md` there and the “Built-in skills” table in the instruction manual `SKILL.md`.
  */
 const EXPECTED_IDS = [
   'cover-and-title',
@@ -30,10 +29,10 @@ const EXPECTED_IDS = [
   'video-summary',
 ];
 
-/** 只给会话内智能体的内置 skill：说明书的路由只在工具桥面列出它们，CLI 面的「内置 skill」表也不列。 */
+/** Built-in skills only for the in-session agent. The routing in the instruction manual lists them only on the tool-bridge surface, and the “Built-in skills” table on the CLI surface does not list them. */
 const AGENT_ONLY_IDS = ['design', 'design-system', 'slides'];
 
-/** 会话开始时的 skill 索引只取 description 的前 300 个字符（`skill-brief.ts`），内置的写在这个长度以内。 */
+/** The skill index at session start takes only the first 300 characters of description (`skill-brief.ts`). The built-in ones are written within this length. */
 const INDEX_DESCRIPTION_CHARS = 300;
 
 describe('仓库里的内置 skill', () => {

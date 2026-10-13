@@ -1,16 +1,16 @@
 import { mediaTimeToSeconds, type TimeMap } from '@cuccut/protocol';
 
 /**
- * 时间线上视频片段里的胶片条与波形（同旧版网页时间线的 `ElementMedia` / `WaveCanvas`）：
- * 片段里的横坐标 → 序列时间 → 经实例的 `timeMap` 到素材的源时间，再去取那个时间的画面与声音峰值。
+ * The filmstrip and waveform inside video clips on the timeline (same as `ElementMedia` / `WaveCanvas` in the older web timeline):
+ * x-coordinate in the clip → sequence time → source time in the media via the instance's `timeMap`, then the frame and audio peak at that time are fetched.
  */
 
-/** 胶片条一格的宽（像素）。格子从片段左边开始排。 */
+/** Width of one filmstrip cell (px). Cells are laid out starting from the clip's left edge. */
 export const TILE_WIDTH = 64;
 
 /**
- * 序列时间到源时间的换算。线性映射：`sourceIn + (t − contentStart) × rate`，`contentStart` 是实例内容开始的序列时间
- * （拖动时跟着片段走，裁切开头时不动）。定格：一直是 `sourceAt`。
+ * Conversion from sequence time to source time. Linear mapping: `sourceIn + (t − contentStart) × rate`, where `contentStart` is the sequence time at which the instance's content starts
+ * (it moves with the clip when dragged, and stays put when the start is trimmed). Freeze frame: always `sourceAt`.
  */
 export type SourceClock = { kind: 'linear'; contentStart: number; sourceIn: number; rate: number } | { kind: 'hold'; sourceAt: number };
 
@@ -19,12 +19,12 @@ export function sourceClock(timeMap: TimeMap, contentStart: number): SourceClock
   return { kind: 'linear', contentStart, sourceIn: mediaTimeToSeconds(timeMap.sourceIn), rate: timeMap.rate.num / timeMap.rate.den };
 }
 
-/** 序列时间（秒）在素材里的源时间（秒）。 */
+/** Source time (seconds) in the media for a sequence time (seconds). */
 export function sourceSecondsAt(clock: SourceClock, seconds: number): number {
   return clock.kind === 'hold' ? clock.sourceAt : clock.sourceIn + (seconds - clock.contentStart) * clock.rate;
 }
 
-/** 片段里看得见的格子 `[first, end)`。`clipLeft`、`view` 都是轨道内容里的横坐标。 */
+/** Visible cells in the clip `[first, end)`. `clipLeft` and `view` are both x-coordinates within the track content. */
 export function visibleTiles(
   clipLeft: number,
   clipWidth: number,
@@ -40,7 +40,7 @@ export function visibleTiles(
 const GRID = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 
 /**
- * 取帧时间的粒度：不超过一格覆盖的源时长的最大一档。相邻两格取到不同的帧；缩放之后落在同一档上的时间还能复用缓存。
+ * Granularity of frame lookup: the largest step that does not exceed the source duration one cell covers. Adjacent cells get different frames; after zooming, times that land on the same step can still reuse the cache.
  */
 export function thumbnailGrid(tileSourceSeconds: number): number {
   let step = GRID[0]!;
@@ -50,22 +50,22 @@ export function thumbnailGrid(tileSourceSeconds: number): number {
 
 export interface FilmstripTile {
   index: number;
-  /** 相对片段左边。 */
+  /** Relative to the clip's left edge. */
   left: number;
   width: number;
-  /** 取帧的源时间（秒），已经按粒度取整。 */
+  /** Source time (seconds) for the frame lookup, already rounded to the granularity. */
   at: number;
 }
 
-/** 胶片条要画的格子：只算看得见的。每格取它左边那一刻的画面。 */
+/** Filmstrip cells to draw: only visible ones are computed. Each cell takes the frame at its left edge. */
 export function filmstripTiles(options: {
   clipLeft: number;
   clipWidth: number;
-  /** 片段左边的序列时间（秒）。 */
+  /** Sequence time (seconds) at the clip's left edge. */
   clipStart: number;
   pxPerSecond: number;
   clock: SourceClock;
-  /** 素材时长（秒）；不知道时不限制。 */
+  /** Media duration (seconds); unlimited when unknown. */
   sourceDuration: number | null;
   view: { left: number; right: number };
   tileWidth?: number;
@@ -73,7 +73,7 @@ export function filmstripTiles(options: {
   const { clipLeft, clipWidth, clipStart, pxPerSecond, clock, sourceDuration, view } = options;
   const tileWidth = options.tileWidth ?? TILE_WIDTH;
   const [first, end] = visibleTiles(clipLeft, clipWidth, view, tileWidth);
-  // 定格的每一格都是同一帧，不用取整。
+  // Every cell of a freeze frame is the same frame, so no rounding is needed.
   const grid = clock.kind === 'linear' ? thumbnailGrid((tileWidth / pxPerSecond) * clock.rate) : 0;
   const tiles: FilmstripTile[] = [];
   for (let index = first; index < end; index++) {
@@ -86,7 +86,7 @@ export function filmstripTiles(options: {
   return tiles;
 }
 
-/** `media.peaks` 的 base64 → 每格一个字节。 */
+/** base64 of `media.peaks` → one byte per cell. */
 export function decodePeaks(base64: string): Uint8Array {
   const text = atob(base64);
   const bytes = new Uint8Array(text.length);
@@ -94,12 +94,12 @@ export function decodePeaks(base64: string): Uint8Array {
   return bytes;
 }
 
-/** 归一化时第 98 百分位至少按这么大算（约 −24 dBFS）：几乎静音的素材不会把底噪放大成满格。 */
+/** When normalising, the 98th percentile is taken as at least this large (about −24 dBFS), so near-silent media does not amplify the noise floor to full scale. */
 const SCALE_FLOOR = 16;
 
 /**
- * 显示用的放大倍数：按第 98 百分位归一化，个别爆音不会把整条包络压平（同旧版 BCW1）。
- * 峰值本身没有归一化，这样轻声的素材画出来不会太扁。
+ * Display gain: normalised to the 98th percentile, so individual loud spikes do not flatten the whole envelope (same as the older BCW1).
+ * The peak values themselves are not normalised, so quiet media does not render too flat.
  */
 export function peakScale(peaks: Uint8Array): number {
   if (peaks.length === 0) return 1;
@@ -114,7 +114,7 @@ export function peakScale(peaks: Uint8Array): number {
   return 1;
 }
 
-/** 一段源时间 `[s0, s1)` 里最大的峰值（0–255）。 */
+/** Largest peak (0–255) within a source time range `[s0, s1)`. */
 export function peakIn(peaks: Uint8Array, binsPerSecond: number, s0: number, s1: number): number {
   const from = Math.max(0, Math.floor(Math.min(s0, s1) * binsPerSecond));
   const to = Math.min(peaks.length, Math.max(from + 1, Math.ceil(Math.max(s0, s1) * binsPerSecond)));
@@ -124,8 +124,8 @@ export function peakIn(peaks: Uint8Array, binsPerSecond: number, s0: number, s1:
 }
 
 /**
- * 波形包络：画布从轨道内容的 `canvasLeft` 起、宽 `width`，每 `step` 像素一点，返回每点的幅度（0–1，已经乘了 `scale`）。
- * 定格没有声音，返回空。
+ * Waveform envelope: the canvas starts at `canvasLeft` in the track content and is `width` wide, with one point every `step` pixels; returns the amplitude of each point (0–1, already multiplied by `scale`).
+ * A freeze frame has no sound, so it returns empty.
  */
 export function waveEnvelope(options: {
   canvasLeft: number;

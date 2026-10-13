@@ -1,5 +1,5 @@
-//! `media` 门内：本文件用 `LoadedAssets` / `MediaStore` / `FrameRenderer`
-//! （BCF 文档渲染链路与 host 字节层），`wasm-safe` 构建里不存在（设计 §9.1）。
+//! Inside the `media` gate: this file uses `LoadedAssets` / `MediaStore` / `FrameRenderer`
+//! (the BCF document rendering path and the host byte layer). It does not exist in `wasm-safe` builds (design §9.1).
 #![cfg(feature = "media")]
 
 use render_raster::drawop::{self, DrawOp};
@@ -7,8 +7,7 @@ use render_raster::{FrameRenderer, LoadedAssets, MediaStore, TextEngine};
 use serde_json::Value;
 use std::sync::Arc;
 
-/// 读取 golden IR。JSON 是跟踪进版本库的 fixture，任何 checkout 上都存在，
-/// 因此读取失败一律 panic。
+/// Read the golden IR. The JSON is a fixture tracked in the repo and present on any checkout, so a read failure always panics.
 fn golden_ir() -> scene_primitives::Ir {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -76,7 +75,7 @@ fn golden_timeline_records_shapes_text_transitions_and_captions() {
     );
 }
 
-/// region 字幕（§3.6）：core 排定的行盒必须把字形绘制约束在矩形内，且向上增长。
+/// Region subtitles (§3.6): the line boxes arranged by core must constrain glyph drawing within the rectangle, and grow upward.
 #[test]
 fn region_captions_draw_inside_the_rect_growing_up() {
     let doc: Value = serde_json::from_str(
@@ -112,7 +111,7 @@ fn region_captions_draw_inside_the_rect_growing_up() {
         assert!(b.x >= 200.0 - 1e-6 && b.x + b.w <= 600.0 + 1e-6);
         assert!(b.y >= 300.0 - 1e-6 && b.y + b.h <= 600.0 + 1e-6);
     }
-    // grow up：末行底边贴住 region 底边（行盒在行高内垂直居中，故留半个行距）
+    // grow up: the bottom edge of the last line sits against the region's bottom edge (line boxes are vertically centered within the line height, so half a line gap is left over)
     let last = boxes.last().unwrap();
     assert!(600.0 - (last.y + last.h) < 30.0 * 1.3);
 
@@ -130,8 +129,7 @@ fn region_captions_draw_inside_the_rect_growing_up() {
     }
 }
 
-/// lane 的 `animate.exit`（§8.4）锚定本条 `until`：声明了就按它的时长退场，
-/// 不再被 clip 的整块 `fade`（缺省 0.18 秒）提前压暗；没声明的 lane 照旧按 `fade` 淡出。
+/// A lane's `animate.exit` (§8.4) anchors to this entry's `until`. When declared, the exit runs for its declared duration and is no longer darkened early by the clip-wide `fade` (default 0.18 s). A lane without a declared exit still fades out according to `fade`, as before.
 #[test]
 fn caption_lane_exit_overrides_block_fade() {
     let doc = |exit: Value| -> Value {
@@ -146,7 +144,7 @@ fn caption_lane_exit_overrides_block_fade() {
           } ] } ]
         })
     };
-    // 首个 PushLayer 的不透明度；没有图层 = 全不透明
+    // Opacity of the first PushLayer; no layer = fully opaque
     let alpha_at = |doc: Value, t: f64| -> f32 {
         let mut ir = resolve_doc(doc);
         let mut engine = TextEngine::new();
@@ -169,12 +167,12 @@ fn caption_lane_exit_overrides_block_fade() {
             .unwrap_or(1.0)
     };
     let short = serde_json::json!({ "preset": "fadeOut", "dur": 0.04 });
-    // until 前 0.1 秒：短退场还没开始
+    // 0.1 s before until: the short exit has not started yet
     assert!(alpha_at(doc(short.clone()), 1.9) > 0.999);
-    // until 前 0.02 秒：短退场走了一半
+    // 0.02 s before until: the short exit is halfway done
     let mid = alpha_at(doc(short), 1.98);
     assert!(mid > 0.05 && mid < 0.95, "fadeOut 0.04 中点不透明度 {mid}");
-    // 没声明 exit：按 clip 的 fade（0.18 秒）整块淡出，until 前 0.1 秒已经变暗
+    // No exit declared: fades out as a whole per the clip's fade (0.18 s), already darkened 0.1 s before until
     let dim = alpha_at(doc(Value::Null), 1.9);
     assert!(
         dim < 0.9,
@@ -209,8 +207,7 @@ fn pixel(pixmap: &tiny_skia::Pixmap, x: u32, y: u32) -> [u8; 4] {
     [d[i], d[i + 1], d[i + 2], d[i + 3]]
 }
 
-/// `style.mask`（规范 §6.3）：被遮罩元素只在遮罩源的 alpha 里出画，遮罩源自己
-/// 不进正常流；指令流里是 `PushLayer → … → PushMatte → 源 → PopMatte → PopLayer`。
+/// `style.mask` (spec §6.3): a masked element only appears within the alpha of the mask source, and the mask source itself does not enter the normal flow. The instruction stream is `PushLayer → … → PushMatte → source → PopMatte → PopLayer`.
 #[test]
 fn element_mask_records_a_matte_and_hides_its_source() {
     let mut ir = resolve_doc(small_doc(serde_json::json!([
@@ -253,7 +250,7 @@ fn element_mask_records_a_matte_and_hides_its_source() {
     assert_eq!(pixel(&pixmap, 149, 100), [255, 255, 255, 255]);
 }
 
-/// `style.background` 渐变对象（§6.3）→ `FillPathPaint`，两端颜色落在各自的端点。
+/// `style.background` gradient object (§6.3) → `FillPathPaint`, with the two colors landing at their respective endpoints.
 #[test]
 fn gradient_background_fills_with_a_paint_side_table() {
     let mut ir = resolve_doc(small_doc(serde_json::json!([
@@ -286,7 +283,7 @@ fn gradient_background_fills_with_a_paint_side_table() {
     assert!((100..=160).contains(&mid[0]), "中点在中灰 {mid:?}");
 }
 
-/// `style.border`（§6.3）：盒内侧一圈 even-odd 填充，跟着圆角；没有背景时中间透出底下的画面。
+/// `style.border` (§6.3): an even-odd fill of a ring just inside the box, following the rounded corners; without a background, the picture below shows through the middle.
 #[test]
 fn border_paints_an_inner_ring_that_follows_the_radius() {
     let mut ir = resolve_doc(small_doc(serde_json::json!([
@@ -345,7 +342,7 @@ fn border_paints_an_inner_ring_that_follows_the_radius() {
     assert_eq!(pixel(&pixmap, 316, 80), [255, 255, 255, 255], "不向外扩");
 }
 
-/// `skewX`（§6.4）是仿射变换：正角度把盒子下边往右推，上边往左推（CSS 口径）。
+/// `skewX` (§6.4) is an affine transform: a positive angle pushes the bottom edge of the box to the right and the top edge to the left (CSS convention).
 #[test]
 fn skew_x_channel_shears_the_box() {
     let mut ir = resolve_doc(small_doc(serde_json::json!([
@@ -359,7 +356,7 @@ fn skew_x_channel_shears_the_box() {
     let assets = Arc::new(LoadedAssets::default());
     let mut media = MediaStore::new(assets, ir.fps);
     let pixmap = renderer.draw(&ir, &mut engine, &mut media, 1.0).unwrap();
-    // 锚点在盒中心：底边右移 tan(30°)·50 ≈ 29px，顶边左移同样距离。
+    // Anchor at box center: the bottom edge shifts right by tan(30°)·50 ≈ 29px, and the top edge shifts left by the same distance.
     assert_eq!(
         pixel(&pixmap, 260, 140),
         [0, 0, 0, 255],

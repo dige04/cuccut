@@ -25,6 +25,6 @@ test('播放中缩到像素预算之内，比例不变，不比停住时大', ()
     expect(Math.abs(playback.width / playback.height - canvas.width / canvas.height)).toBeLessThan(0.01);
   }
   expect(paintSize({ width: 1920, height: 1080 }, 0.684, 'playback')).toEqual({ width: 960, height: 540 });
-  // 本来就在预算之内的（竖屏的小预览）不变。
+  // Something already within budget (a small portrait preview) is unchanged.
   expect(paintSize({ width: 1080, height: 1920 }, 0.4, 'playback')).toEqual({ width: 432, height: 768 });
 });

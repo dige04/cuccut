@@ -20,9 +20,7 @@ import { scanModelsDir } from './models-dir.ts';
 import { REPO_MANIFESTS, repoManifestFor, weightBytes } from './repo-manifests.ts';
 
 /**
- * 本地识别的模型包登记（Model Worker 协议规范 §4.1）：大一档的 Qwen3-ASR、预先登记的仓库清单、按模型族的语言表，
- * 以及可选组件——几个模型包共用、后来才加的组件（对齐器、说话人模型）缺了不让模型包变得不完整。Whisper（CoreML 与 GGML）的
- * 各两个模型包与 MOSS 的模型包都已登记。
+ * Registration of local speech-recognition model bundles (Model Worker protocol spec §4.1): the larger-tier Qwen3-ASR, the pre-registered repository manifests, the per-model-family language tables, and optional components. Components shared by several bundles that were added later (the aligner, the speaker model) are optional, so a missing one does not make a bundle incomplete. Two bundles each for Whisper (Core ML and GGML) and the MOSS bundles are registered.
  */
 
 const ASR_REPOS = [
@@ -44,7 +42,7 @@ const source = (family: Parameters<typeof transcribeLanguages>[0], repo: string,
   ...(optional ? { optional: true as const } : {}),
 });
 
-/** Whisper 形状：Core ML 的识别模型、VAD、单独仓库的分词器，可选的对齐器。 */
+/** Whisper shape: the Core ML recognition model, VAD, a tokenizer in a separate repository, and an optional aligner. */
 const WHISPER_SHAPED: BundleDefinition = {
   bundleId: 'whisper-large-v3-turbo@coreml',
   capability: 'transcribe',
@@ -59,7 +57,7 @@ const WHISPER_SHAPED: BundleDefinition = {
   },
 };
 
-/** MOSS：自己分段（没有 VAD），可选的对齐器与说话人模型。 */
+/** MOSS: segments by itself (no VAD), with an optional aligner and speaker model. */
 const MOSS = BUNDLES.find((b) => b.bundleId === 'moss-transcribe-diarize@mlx-8bit')!;
 
 describe('本地识别的模型包登记', () => {
@@ -84,7 +82,7 @@ describe('本地识别的模型包登记', () => {
 
   it('识别模型包共用可选的对齐器，只有 MOSS 带说话人模型；对齐器与说话人模型各有上游许可', () => {
     const transcribe = BUNDLES.filter((b) => b.capability === 'transcribe');
-    // MLX 的 5 个（含不列出的 2 个 Whisper）与 Core ML 的 2 个，加上 candle 的 3 个（同样的组件）与 GGML 的 2 个。
+    // The 5 MLX bundles (including 2 Whisper bundles not listed), the 2 Core ML bundles, plus the 3 candle bundles (same components) and the 2 GGML bundles.
     expect(transcribe).toHaveLength(12);
     for (const def of transcribe) {
       expect(def.components.aligner, def.bundleId).toBe(QWEN3_FORCED_ALIGNER);
@@ -107,7 +105,7 @@ describe('本地识别的模型包登记', () => {
       ...source('wespeaker', 'aufklarer/WeSpeaker-ResNet34-LM-MLX', true),
       license: { name: 'CC-BY-4.0', commercialUse: true },
     });
-    // CC-BY-4.0 要署名：许可的说明里写明作品、出处（WeSpeaker 与 pyannote.audio）与转换。
+    // CC-BY-4.0 requires attribution: the license note states the work, its sources (WeSpeaker and pyannote.audio), and the conversion.
     expect(WESPEAKER.license!.summary).toMatch(/WeSpeaker.*pyannote\.audio.*CC-BY-4\.0.*MLX/);
   });
 
@@ -125,9 +123,9 @@ describe('本地识别的模型包登记', () => {
       expect(manifest.estimatedBytes, repo).toBe(manifest.files.reduce((sum, f) => sum + f.size!, 0));
       expect(weightBytes([manifest]), repo).toBe(manifest.estimatedBytes);
     }
-    // Core ML 的模型是目录（.mlmodelc）：清单逐个列出目录里的文件。
+    // Core ML models are directories (.mlmodelc): the manifest lists each file in the directory.
     expect(manifestOf('aufklarer/Whisper-Large-v3-Turbo-CoreML').files.some((f) => f.path.includes('.mlmodelc/'))).toBe(true);
-    // 每个登记的模型包的组件都有清单；发布页组件（audio.cpp 引擎）按平台登记压缩包，没有仓库清单。
+    // Every registered bundle's components have a manifest. Release-page components (the audio.cpp engine) register archives per platform and have no repository manifest.
     for (const def of BUNDLES) {
       for (const s of Object.values(def.components)) {
         if (s!.release) continue;
@@ -175,7 +173,7 @@ describe('本地识别的模型包登记', () => {
       ...source('whisper-coreml', 'argmaxinc/whisperkit-coreml'),
       subdir: 'openai_whisper-large-v3_947MB',
     });
-    // 子目录里的文件就是内置清单的全部文件。
+    // Files in a subdirectory are all of the built-in manifest's files.
     expect(manifestOf('argmaxinc/whisperkit-coreml').files.every((f) => f.path.startsWith('openai_whisper-large-v3_947MB/'))).toBe(true);
     expect(turbo.components.asr).toEqual(WHISPER_SHAPED.components.asr);
     expect(large.license).toMatchObject({ name: 'Apache-2.0', commercialUse: true });
@@ -205,7 +203,7 @@ describe('本地识别的模型包登记', () => {
     expect(turbo.label).toBe(coreml.label);
     expect(large.license).toMatchObject({ name: 'Apache-2.0', commercialUse: true });
     expect(turbo.license).toMatchObject({ name: 'MIT', commercialUse: true });
-    // MLX 的 Whisper 读分词器仓库里的 generation_config.json（Core ML 的不读）。
+    // The MLX Whisper reads generation_config.json from the tokenizer repository (the Core ML one does not).
     expect(manifestOf('openai/whisper-large-v3').files.map((f) => f.path)).toContain('generation_config.json');
   });
 
@@ -225,7 +223,7 @@ describe('本地识别的模型包登记', () => {
     expect(large.components.asr).toEqual(source('whisper-ggml', 'ggerganov/whisper.cpp-large-v3'));
     expect(turbo.components.asr).toEqual(source('whisper-ggml', 'ggerganov/whisper.cpp'));
     expect(large.components.asr!.revision).toBe(turbo.components.asr!.revision);
-    // 两个清单的文件不重叠：装一个不连带下载另一个；large-v3 的文件仍从上游仓库下载。
+    // The two manifests' files do not overlap: installing one does not pull down the other. large-v3's files are still downloaded from the upstream repository.
     const largeManifest = manifestOf('ggerganov/whisper.cpp-large-v3');
     const turboManifest = manifestOf('ggerganov/whisper.cpp');
     expect(largeManifest.files.map((f) => [f.path, f.size])).toEqual([['ggml-large-v3-q5_0.bin', null]]);
@@ -275,7 +273,7 @@ describe('本地识别的模型包登记', () => {
   });
 });
 
-/** 在模型目录里写一个合成的仓库：一个小文件和与之相符的清单。 */
+/** Writes a synthetic repository in the model directory: one small file and a manifest that matches it. */
 async function writeRepo(root: string, repo: string, revision: string): Promise<void> {
   const dir = path.join(root, ...repo.split('/'));
   await fs.mkdir(dir, { recursive: true });
@@ -316,11 +314,11 @@ describe('可选组件', () => {
     ]);
     expect(status.components![0]).not.toHaveProperty('optional');
     expect(Object.keys((await catalog.bundleFor(MOSS.bundleId)).components)).toEqual(['asr']);
-    // 没装的可选组件不计入 Worker 要加载的权重。
+    // Optional components that are not installed do not count toward the weights the Worker loads.
     expect(await catalog.workerWeightBytes(MOSS.bundleId)).toBe(manifestOf('OpenMOSS-Team/MOSS-Transcribe-Diarize').estimatedBytes);
     expect((await catalog.verify(MOSS.bundleId)).ok).toBe(true);
 
-    // 必需组件缺一部分照样是 incomplete；可选的不算在里面。
+    // If part of a required component is missing, the bundle is still incomplete. Optional ones do not count toward that.
     await install(WHISPER_SHAPED, 'required');
     await fs.rm(path.join(root, 'openai'), { recursive: true });
     expect(await catalog.status(WHISPER_SHAPED.bundleId)).toMatchObject({ state: 'not-installed', reason: 'incomplete' });
@@ -334,9 +332,9 @@ describe('可选组件', () => {
       family: 'whisper-tokenizer',
       revision: WHISPER_SHAPED.components.tokenizer!.revision,
     });
-    // 共用的对齐器装上之后，MOSS 形状的模型包也带上它。
+    // Once the shared aligner is installed, a MOSS-shaped bundle includes it too.
     expect(Object.keys((await catalog.bundleFor(MOSS.bundleId)).components)).toEqual(['asr', 'aligner']);
-    // Worker 要加载的权重：必需组件加上装好了的可选组件（对齐器装了，说话人模型没装）。
+    // Weights the Worker loads: the required components plus the installed optional ones (aligner installed, speaker model not installed).
     expect(await catalog.workerWeightBytes(MOSS.bundleId)).toBe(
       ['OpenMOSS-Team/MOSS-Transcribe-Diarize', 'aufklarer/Qwen3-ForcedAligner-0.6B-4bit'].reduce(
         (sum, repo) => sum + manifestOf(repo).estimatedBytes,
@@ -456,7 +454,7 @@ describe('可选组件', () => {
   it('Whisper 的 large-v3 在仓库子目录里：交给 Worker 的是子目录与其下的文件；叠放在仓库根的分词器文件不影响装好', async () => {
     const large = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3@coreml')!;
     const catalog = new ModelCatalog({ root, bundles: [large], ...mac, threads: 2 });
-    // 旧版的布局：子目录里是 CoreML 模型，仓库根叠放着分词器文件，清单把两者都列出。
+    // Old layout: the subdirectory holds the CoreML model, and the tokenizer files are stacked at the repository root. The manifest lists both.
     const repo = large.components.asr!;
     const dir = path.join(root, ...repo.repo.split('/'));
     const files = [`${repo.subdir}/MelSpectrogram.mlmodelc/model.mil`, `${repo.subdir}/generation_config.json`, 'tokenizer.json'];

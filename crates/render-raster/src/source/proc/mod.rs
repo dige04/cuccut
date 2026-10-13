@@ -1,13 +1,10 @@
-//! 程序化画面源 `type:"proc"`（规范 §6.12）：雨、溅落、夜空。
+//! Procedural picture source `type:"proc"` (spec §6.12): rain, splashes, night sky.
 //!
-//! 与 [`super::confetti`] 同一纪律——**没有逐帧状态**。每一帧都是
-//! `(局部秒 τ, seed, 参数, 元素盒)` 的闭式函数：`ccut render --t 7.5` 直接跳到
-//! 第 225 帧、导出按 stride 把帧分给多个 worker，画出来的都是同一批字节。
-//! 随机性只来自 [`unit`] 的整数哈希（splitmix64），超越函数只走 `libm`
-//! （`tests/proc_libm_only.rs` 文本扫描把关），native 与 wasm32 逐位一致。
+//! Same discipline as [`super::confetti`]: **no per-frame state**. Every frame is a closed-form function of `(local seconds τ, seed, params, element box)`. `ccut render --t 7.5` jumps straight to frame 225, and export splits frames across several workers by stride; the output is the same bytes either way.
+//! Randomness comes only from the integer hash of [`unit`] (splitmix64). Transcendental functions go only through `libm` (checked by the text scan in `tests/proc_libm_only.rs`), so native and wasm32 match bit for bit.
 //!
-//! 坐标系是**元素盒本地像素**（左上原点，y 向下），`tf` 把它映射到 surface；
-//! 解析与缺省在 `scene_primitives::proc`，这里只把参数变成 DrawOp。
+//! The coordinate system is **element-box-local pixels** (top-left origin, y down); `tf` maps it onto the surface.
+//! Parsing and defaults live in `scene_primitives::proc`; this file only turns the parameters into DrawOps.
 mod noise;
 mod rain;
 mod sky;
@@ -19,7 +16,7 @@ use scene_primitives::Rgba;
 use scene_primitives::proc::{ProcKind, ProcSource};
 use tiny_skia::Transform;
 
-/// 把一个 proc 节点在局部秒 `time` 的画面录进 `b`。`w × h` 是元素盒。
+/// Records the picture of a proc node at local time `time` into `b`. `w × h` is the element box.
 pub fn record_proc(
     proc: &ProcSource,
     w: f64,
@@ -38,7 +35,7 @@ pub fn record_proc(
     }
 }
 
-/// splitmix64 终混：整数进、均匀 64 位出。
+/// splitmix64 final mix: integer in, uniform 64 bits out.
 pub(crate) fn mix(mut z: u64) -> u64 {
     z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -46,7 +43,7 @@ pub(crate) fn mix(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// `[0, 1)` 均匀数：`(seed, 编号, 用途)` 三元组各自独立。
+/// `[0, 1)` uniform number: each `(seed, index, purpose)` triple is independent.
 pub(crate) fn unit(seed: u64, index: u64, salt: u64) -> f64 {
     let h = mix(seed ^ mix(index ^ salt.wrapping_mul(0xD6E8_FEB8_6659_FD93)));
     (h >> 11) as f64 / (1u64 << 53) as f64
@@ -56,7 +53,7 @@ pub(crate) fn mat(tf: Transform) -> [f32; 6] {
     [tf.sx, tf.ky, tf.kx, tf.sy, tf.tx, tf.ty]
 }
 
-/// 非预乘颜色，`alpha` 乘进颜色自带的 a。
+/// Non-premultiplied color; `alpha` multiplies into the color's own a.
 pub(crate) fn color(c: &Rgba, alpha: f64) -> Color4 {
     [
         (c.r / 255.0).clamp(0.0, 1.0) as f32,
@@ -66,7 +63,7 @@ pub(crate) fn color(c: &Rgba, alpha: f64) -> Color4 {
     ]
 }
 
-/// 四段三次贝塞尔近似的圆（κ = 0.5522847498），不经三角函数。
+/// Circle approximated by four cubic Béziers (κ = 0.5522847498), without trigonometry.
 pub(crate) fn circle(out: &mut Vec<PathSeg>, cx: f64, cy: f64, rx: f64, ry: f64) {
     const K: f64 = 0.552_284_749_8;
     let (kx, ky) = (rx * K, ry * K);
@@ -102,7 +99,7 @@ pub(crate) fn rect(out: &mut Vec<PathSeg>, w: f64, h: f64) {
     out.push(path_seg_close());
 }
 
-/// 把盒子裁出来：雨丝与云不越界。与 `PopClip` 成对，不跨 `PushLayer`。
+/// Clips to the box so rain streaks and clouds do not overflow. Paired with `PopClip`; must not span `PushLayer`.
 pub(crate) fn push_box_clip(w: f64, h: f64, tf: Transform, b: &mut FrameBuilder) {
     let mut segs = Vec::new();
     rect(&mut segs, w, h);

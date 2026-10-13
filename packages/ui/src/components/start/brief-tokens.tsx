@@ -11,8 +11,8 @@ import { TemplateCover } from './template-cover.tsx';
 const KIND_ICON = { media: Video, image: ImageIcon, document: FileText } as const;
 
 /**
- * 输入框正文上方（原型 new-agent.jsx `AgentHero` 的 attachments）：点选的 skill、选中的模板，和要交给 Agent 的本机素材。
- * 素材只列名字，悬停看完整路径；发出去时路径写进那条消息。标记的样子在 composer-token.tsx，会话输入框上的 skill 标记同款。
+ * Above the input box text (prototype new-agent.jsx `AgentHero` attachments): the picked skills, the chosen template, and the local materials to hand to the Agent.
+ * Materials list only their names; hovering shows the full path, and the path is written into the message when sent. The marker look is in composer-token.tsx, the same as the skill markers in the session input box.
  */
 export function BriefTokens({
   skills,
@@ -22,7 +22,7 @@ export function BriefTokens({
   onRemoveTemplate,
   onRemoveMaterial,
 }: {
-  /** 点选的 skill，按挂上的顺序；没选时为空。 */
+  /** Picked skills, in the order attached; empty when none is chosen. */
   skills: readonly { id: string; name: string }[];
   template: HomeTemplate | null;
   materials: readonly HomeMaterial[];
@@ -43,7 +43,7 @@ export function BriefTokens({
         />
       ))}
       {template ? (
-        // 输入框上方选中的模板（原型 `.home-template-token`）：小封面、名字、移除。
+        // The template chosen above the input box (prototype `.home-template-token`): small cover, name, remove.
         <ComposerToken
           icon={<TemplateCover template={template} size="xs" />}
           label={HOME_COPY.templateToken(template.title)}

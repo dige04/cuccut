@@ -15,8 +15,8 @@ import { tr } from './providers-http.tr.ts';
 import { vi } from './providers-http.vi.ts';
 
 /**
- * 在线服务请求与响应的错误分类说明（`packages/providers`）。`label` 是服务的名字；`message`、`said`、`reply`
- * 是供应商的原话，原样传入。
+ * Descriptions of error categories for online service requests and responses (`packages/providers`). `label` is the service's name; `message`, `said` and `reply`
+ * are the provider's own words, passed in unchanged.
  */
 const en = {
   aborted: 'Request cancelled',
@@ -24,7 +24,7 @@ const en = {
   unreachable: (p: { label: string }) => `Can't reach ${p.label}`,
   httpStatus: (p: { label: string; status: number }) => `${p.label} returned HTTP ${p.status}`,
   failedAfterAttempts: (p: { what: string; attempts: number }) => `${p.what}, still failing after ${p.attempts} attempts`,
-  /** 一句说明后面接供应商的原话或底层错误。 */
+  /** A line of explanation followed by the provider's own words or the underlying error. */
   withMessage: (p: { text: string; message: string }) => `${p.text}: ${p.message}`,
   errorCode: (p: { message: string; code: string }) => `${p.message} (${p.code})`,
   noResponse: (p: { label: string; seconds: number }) => `${p.label} didn't respond within ${p.seconds} seconds`,

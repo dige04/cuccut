@@ -1,7 +1,6 @@
-//! 程序化源 `type:"proc"`（规范 §6.12）：雨 / 溅落 / 夜空。
+//! Procedural source `type:"proc"` (spec §6.12): rain, splashes, night sky.
 //!
-//! 闭式求值的三条承诺都在这里钉住：同一时刻同一批字节（乱序渲染也一样）、
-//! 画面随时间变（帧指纹跟着变）、`seed` 换一个画面就换一个。
+//! The three promises of closed-form evaluation are pinned here: the same bytes at the same moment (also when rendered out of order); the picture changes over time (the frame fingerprint changes with it); and a different `seed` gives a different picture.
 #![cfg(feature = "media")]
 
 use render_raster::plan::{CapabilityProfile, CpuExecutor, FramePlanner, execute_plan};
@@ -31,7 +30,7 @@ fn ir_of(doc: Value) -> Ir {
     Resolver::new(doc, None).unwrap().resolve().unwrap()
 }
 
-/// `(像素, 帧指纹)`。
+/// `(pixels, frame fingerprint)`.
 fn render(doc: &Value, t: f64) -> (Vec<u8>, String) {
     let mut ir = ir_of(doc.clone());
     let mut engine = TextEngine::new();
@@ -51,7 +50,7 @@ fn px(data: &[u8], x: u32, y: u32) -> [u8; 4] {
     [data[i], data[i + 1], data[i + 2], data[i + 3]]
 }
 
-/// 比背景（纯黑）亮的像素数，限定在 `[x0, x1) × [y0, y1)`。
+/// Number of pixels brighter than the background (pure black), restricted to `[x0, x1) × [y0, y1)`.
 fn lit(data: &[u8], (x0, y0, x1, y1): (u32, u32, u32, u32)) -> usize {
     let mut n = 0;
     for y in y0..y1 {
@@ -78,13 +77,13 @@ fn rain_moves_with_time_is_repeatable_and_stays_in_its_box() {
     let (a1, f1) = render(&d, 0.8);
     assert_ne!(f0, f1, "雨在动，帧指纹必须跟着变");
     assert_ne!(a0, a1);
-    // 乱序：先跳到 0.8 再回 0.5，逐字节相同
+    // Out of order: jump first to 0.8, then back to 0.5; byte-identical
     let (again, f_again) = render(&d, 0.5);
     assert_eq!((a0.clone(), f0.clone()), (again, f_again));
 
     let inside = lit(&a0, (40, 20, 240, 140));
     assert!(inside > 150, "盒内应有雨丝：{inside}");
-    // 盒外一个亮像素都没有（ClipPath 把越界的雨丝头尾裁掉）
+    // Not a single bright pixel outside the box (ClipPath trims the out-of-bounds heads and tails of the rain streaks)
     assert_eq!(lit(&a0, (0, 0, W, 18)), 0);
     assert_eq!(lit(&a0, (242, 0, W, H)), 0);
 
@@ -108,7 +107,7 @@ fn splash_is_one_shot() {
     assert_ne!(f_before, f_during);
     let n = lit(&during, (0, 0, W, H));
     assert!(n > 20, "溅落中应有水珠：{n}");
-    // 水珠向上飞：落点线（y = 144）上方有亮像素
+    // Water drops fly upward: there are bright pixels above the landing line (y = 144)
     assert!(lit(&during, (0, 0, W, 140)) > 0);
 }
 
@@ -121,17 +120,17 @@ fn sky_draws_gradient_moon_and_twinkling_stars() {
     let d = doc(sky(json!({"stars": 1.0,
         "moon": {"x": 0.75, "y": 0.3, "r": 0.1, "glow": 0.8, "color": "#f4f1e6"}})));
     let (a, fa) = render(&d, 0.0);
-    // 缺省铺满画布；竖向渐变底：底部比顶部亮
+    // Covers the full canvas by default; vertical gradient background: the bottom is brighter than the top
     let (top, bottom) = (px(&a, 5, 1), px(&a, 5, H - 2));
     assert!(bottom[2] > top[2], "{top:?} {bottom:?}");
-    // 月面中心接近月色
+    // The moon surface center is close to moon color
     let moon = px(&a, 240, 54);
     assert!(moon[0] > 200 && moon[1] > 190, "{moon:?}");
-    // 光晕：月面外一圈比远处天空亮
+    // Halo: the ring outside the moon surface is brighter than the distant sky
     let halo = px(&a, 240 + 28, 54);
     let far = px(&a, 20, 54);
     assert!(halo[0] > far[0] + 20, "{halo:?} vs {far:?}");
-    // 星在闪：同一片天空换个时刻画面不同
+    // Stars twinkle: the same patch of sky at a different moment gives a different picture
     let (b, fb) = render(&d, 1.3);
     assert_ne!(fa, fb);
     assert_ne!(a, b);
@@ -139,7 +138,7 @@ fn sky_draws_gradient_moon_and_twinkling_stars() {
 
 #[test]
 fn sky_clouds_drift_and_a_static_sky_keeps_its_fingerprint() {
-    // 无星无云：整片天空不随时间变，帧指纹恒定（缓存可复用）
+    // No stars, no clouds: the whole sky does not change over time, so the frame fingerprint is constant (the cache can be reused)
     let still = doc(sky(json!({"stars": 0, "milkyWay": 0.8,
         "moon": {"x": 0.5, "y": 0.4, "r": 0.08}})));
     assert_eq!(render(&still, 0.0).1, render(&still, 2.0).1);

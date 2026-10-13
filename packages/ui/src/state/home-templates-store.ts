@@ -3,17 +3,17 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { shelfAfterPick, type HomeTemplate } from '../model/home-templates.ts';
 
 /**
- * 起始页模板网格摆哪几个（原型 prefs.homeTemplates.recent）：最近用过的模板的 id，记在这台电脑上。
- * 读出来时模板目录还没取到，所以这里只留字符串，不按目录过滤；摆的时候 `templateShelf(catalog, recent)` 过滤并补齐，
- * 选的时候按当时的目录重算一遍，旧版本存下的键（`tips`、`anim` 之类）就在第一次选时清掉。
+ * Which templates the start page's template grid shows (prototype prefs.homeTemplates.recent): the ids of recently used templates, recorded on this computer.
+ * When read back, the template catalog has not been fetched yet, so only strings are kept here and they are not filtered by the catalog. When shown, `templateShelf(catalog, recent)` filters and fills in.
+ * When one is picked, the list is recomputed against the catalog at that time. Keys saved by old versions (`tips`, `anim` and so on) are cleared the first time a template is picked.
  */
 interface HomeTemplatesStore {
   recent: string[];
-  /** 选了一个模板：不在网格里的排到最前。 */
+  /** A template was picked: one not in the grid moves to the front. */
   pick(id: string, catalog: readonly HomeTemplate[]): void;
 }
 
-/** 读出来的记忆只认字符串数组，别的一律当空。 */
+/** Only a string array read back counts. Anything else is treated as empty. */
 export function recentOf(persisted: unknown): string[] {
   const recent = (persisted as { recent?: unknown } | null)?.recent;
   return Array.isArray(recent) ? recent.filter((k): k is string => typeof k === 'string' && k.length > 0) : [];

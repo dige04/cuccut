@@ -1,14 +1,10 @@
-//! 帧光栅（架构设计 §9.3、§13.1）：按帧计划（`render-graph`）把各层交给移植来的 CPU 渲染内核画成一帧 RGBA。
+//! Frame rasterizer (architecture design §9.3, §13.1): given the frame plan (`render-graph`), it hands each layer to the ported CPU rendering kernel and draws one RGBA frame.
 //!
-//! 这是像素的单一实现：原生导出直接链它，编辑器预览经 `bindings/preview-wasm` 用同一份。计划给出层、顺序、时刻与转场；
-//! 每层的像素按实例本身的字段画——几何、关键帧、元素动画、遮罩、平铺、文字样式与图形、生成类元素都由
-//! `subtitle-render` 的元素管线画（[`element`] 把 v3 实例换成它的元素），`fx` 的调色与模糊先作用在源画面上，
-//! 描边与阴影作用在画好的层上（[`effects`]，格式规范 §3.9 的固定顺序）；转场在层上按实例自己的框画（[`transition`]）；
-//! 字幕按样式文档交给同一个内核排版（[`captions`]）；模板层按 `timeline` 的模板文档画（[`template`]）。
+//! This is the single implementation of pixels: native export links it directly, and the editor preview uses the same one through `bindings/preview-wasm`. The plan gives the layers, their order, timing and transitions;
+//! each layer's pixels are drawn from the instance's own fields: geometry, keyframes, element animation, masks, tiling, text styles and graphics, and generated elements are all drawn by the element pipeline of `subtitle-render` ([`element`] converts v3 instances into its elements). The color grading and blur of `fx` are applied first to the source picture, while stroke and shadow are applied to the finished layer ([`effects`], the fixed order of format spec §3.9); transitions are drawn on the layers within the instance's own box ([`transition`]);
+//! captions are laid out by the same kernel according to the style document ([`captions`]); template layers are drawn from the template document in `timeline` ([`template`]).
 //!
-//! 画面从哪里来由调用方经 [`LayerMedia`] 给（导出时是 `media-core` 的解码器，预览时是界面解好的帧），字体由调用方
-//! 注入（[`bundled_fonts`] 是随内核发布的那一套）。画不出来的东西由 [`support`] 统一判断：预检列出来，合成时按选项
-//! 报错或跳过，从不画成空白。
+//! The caller supplies the picture sources through [`LayerMedia`] (on export, the `media-core` decoders; in preview, frames decoded by the UI), and the caller injects fonts ([`bundled_fonts`] is the set shipped with the kernel). Anything that cannot be drawn is judged uniformly by [`support`]: preflight lists it, and composition either reports an error or skips it depending on options, and never draws a blank.
 
 pub mod caption_words;
 pub mod captions;
@@ -33,7 +29,7 @@ pub use text_measure::TextBox;
 
 use tiny_skia::{IntSize, Pixmap};
 
-/// 非预乘的 RGBA 字节换成预乘的画面（不透明的像素不变）。
+/// Converts non-premultiplied RGBA bytes to a premultiplied picture (opaque pixels unchanged).
 pub fn premultiplied(width: u32, height: u32, mut data: Vec<u8>) -> Option<Pixmap> {
     for px in data.chunks_exact_mut(4) {
         let a = px[3] as u32;
@@ -46,7 +42,7 @@ pub fn premultiplied(width: u32, height: u32, mut data: Vec<u8>) -> Option<Pixma
     Pixmap::from_vec(data, IntSize::from_wh(width, height)?)
 }
 
-/// 预乘的 RGBA 还原成非预乘（界面的 ImageData 要非预乘）。
+/// Restores premultiplied RGBA to non-premultiplied (the UI's ImageData needs non-premultiplied data).
 pub fn demultiplied(data: &[u8]) -> Vec<u8> {
     let mut out = data.to_vec();
     for px in out.chunks_exact_mut(4) {
@@ -60,8 +56,7 @@ pub fn demultiplied(data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// [`bundled_fonts`] 的文件名（`crates/render-raster/assets/fonts` 下），次序相同。预览的构建按它把字体拷给界面、
-/// 界面按它的次序读出来注入（第一份是回退字体）；与内核里的那份列表逐字节对拍（本 crate 的测试）。
+/// File names for [`bundled_fonts`] (under `crates/render-raster/assets/fonts`), in the same order. The preview build uses them to copy the fonts to the UI, and the UI reads them in this order and injects them (the first is the fallback font); byte-for-byte checked against the list in the kernel (this crate's tests).
 pub const BUNDLED_FONT_FILES: &[&str] = &[
     "NotoSansSC-Variable.ttf",
     "Montserrat.ttf",
@@ -103,35 +98,31 @@ pub const BUNDLED_FONT_FILES: &[&str] = &[
     "PlayfairDisplay-Regular.ttf",
 ];
 
-/// 随内核发布的字体：思源黑体（缺字的回退，排第一）加 Studio 字幕与文字样式用到的展示字体，都在
-/// `render-raster/assets/fonts`，许可见同目录的 `LICENSES`。导出与预览注入同一套；预览的 WASM 不内嵌字体，
-/// 由构建把同一批文件拷给界面，界面读出来注入。
+/// Fonts shipped with the kernel: Source Han Sans (the fallback for missing glyphs, listed first) plus the display fonts used by Studio captions and text styles, all in `render-raster/assets/fonts`; licenses are in `LICENSES` in the same directory. Export and preview inject the same set; the preview's WASM does not embed the fonts: the build copies the same files to the UI, which reads them and injects them.
 #[cfg(feature = "host")]
 pub fn bundled_fonts() -> Vec<Vec<u8>> {
     subtitle_render::bundled_studio_fonts()
 }
 
-/// SVG 图片按长边 `long_edge` 光栅成预乘的画面。图片层的 SVG 由 [`FrameRenderer`] 从素材字节按输出的长边光栅
-/// （预览与导出同一份）；导出的预检也用它判断解不解得开。SVG 里的 `<text>` 不画（两侧的 resvg 都没有字体）。
+/// Rasterizes an SVG image into a premultiplied picture at `long_edge` on its long side. For image layers, [`FrameRenderer`] rasterizes the SVG from the asset bytes at the output's long edge (the same for preview and export); the export preflight also uses it to check whether it can be decoded. `<text>` in SVG is not drawn (resvg on both sides has no fonts).
 pub fn decode_svg(bytes: &[u8], long_edge: u32) -> anyhow::Result<Pixmap> {
     render_raster::svg::decode_svg_at_long_edge(bytes, long_edge)
 }
 
-/// GIF 解码的上限：动图全帧驻留（`render_raster::source::AnimatedImage`），超过上限的只画第一帧。预览与导出用同一个
-/// 上限，同一份素材两边画出的才是同一帧。
+/// Limit for GIF decoding: animated GIFs keep all frames resident (`render_raster::source::AnimatedImage`), and anything over the limit draws only its first frame. Preview and export use the same limit, so the same asset draws the same frame on both sides.
 pub const GIF_BUDGET: render_raster::source::PrepareCtx = render_raster::source::PrepareCtx {
     max_frames: 2048,
     max_bytes: 128 << 20,
 };
 
-/// 读出来的 GIF：多于一帧、总时长大于 0 的按动图画，其余（单帧、每帧都不停留、超过 [`GIF_BUDGET`]）画第一帧。
+/// For a GIF that is read: one with more than one frame and a total duration greater than 0 is drawn as animation; the rest (single frame, every frame with zero dwell, or over [`GIF_BUDGET`]) draw the first frame.
 pub enum Gif {
     Animated(render_raster::source::AnimatedImage),
     Still(std::sync::Arc<Pixmap>),
 }
 
 impl Gif {
-    /// 画面的尺寸。
+    /// The size of the picture.
     pub fn size(&self) -> (u32, u32) {
         match self {
             Gif::Animated(animated) => (animated.metadata().width, animated.metadata().height),
@@ -139,8 +130,7 @@ impl Gif {
         }
     }
 
-    /// 在实例里过了 `elapsed` 秒时的画面（预乘的 RGBA）。`mode` 是贴纸的 `loop`（格式规范 §3.7）：`loop` 对动图的总时长
-    /// 取模，`once` 停在末帧，`hold` 停在首帧；图片实例按 `loop`。时刻按整毫秒落到 GIF 的帧表上。
+    /// The picture when `elapsed` seconds have passed in the instance (premultiplied RGBA). `mode` is the sticker's `loop` (format spec §3.7): `loop` takes the animation's total duration modulo, `once` stops at the last frame, and `hold` stops at the first frame; image instances use `loop`. The time is mapped to the GIF frame table in whole milliseconds.
     pub fn frame_at(&self, elapsed: f64, mode: &str) -> anyhow::Result<std::sync::Arc<Pixmap>> {
         use render_raster::source::{MediaTime, VisualSource};
         let animated = match self {
@@ -162,8 +152,7 @@ impl Gif {
     }
 }
 
-/// 读 GIF 素材（预览与导出同一份；导出的预检也用它判断解不解得开）。动图解不开时退回解第一帧，第二个返回值是给用户的
-/// 提示（超过 [`GIF_BUDGET`] 时）；第一帧也解不开才算失败。
+/// Reads a GIF asset (the same for preview and export; the export preflight also uses it to check whether it can be decoded). If the animation cannot be decoded, it falls back to decoding the first frame; the second return value is a notice for the user (when over [`GIF_BUDGET`]); it fails only if the first frame also cannot be decoded.
 pub fn load_gif(label: &str, bytes: &[u8]) -> anyhow::Result<(Gif, Option<String>)> {
     match render_raster::source::AnimatedImage::decode(label, bytes, &GIF_BUDGET) {
         Ok(animated) if animated.frame_count() > 1 => Ok((Gif::Animated(animated), None)),
@@ -181,9 +170,7 @@ pub fn load_gif(label: &str, bytes: &[u8]) -> anyhow::Result<(Gif, Option<String
     }
 }
 
-/// 读 Lottie 素材：解析（JSON 或 `.lottie` 压缩包），挂上内嵌或包里的图片子资源（位图与 SVG），`overrides`（贴纸的
-/// `fillOverrides`）非空时换色。只有路径、包里也没有的外部图片读不到。失败时给出跳过原因（`lottie-asset-missing` 或
-/// `lottie-unreadable`）与说明。
+/// Reads a Lottie asset: parses it (JSON or a `.lottie` archive) and attaches the embedded or packaged image sub-assets (bitmaps and SVG). When `overrides` (the sticker's `fillOverrides`) is not empty, colors are replaced. External images that are referenced only by path and are not in the archive cannot be read. On failure, gives the skip reason (`lottie-asset-missing` or `lottie-unreadable`) and an explanation.
 pub fn load_lottie(
     label: &str,
     bytes: &[u8],
@@ -206,7 +193,7 @@ pub fn load_lottie(
     Ok(lottie)
 }
 
-/// Lottie 素材的字节读不读得出来：读不出来时给出原因（预检用，与合成时同一个读法）。
+/// Whether the bytes of a Lottie asset can be read: when not, gives the reason (used by preflight; read the same way as at composition).
 pub fn lottie_problem(bytes: &[u8]) -> Option<(&'static str, String)> {
     load_lottie("lottie", bytes, None).err()
 }

@@ -1,9 +1,7 @@
 //! Timeline element animation sampling.
 //!
-//! 数值内核在 [`ccut_motion`]（阶段 1，设计 §5.3）：本模块只做 lowering 与投影。
-//! `resolve_animation_pose` / `resolve_text_animation` 的签名与语义不变，
-//! `AnimationPose` 降为 `PoseBuffer` 的投影类型。预览与导出必须消费同一函数，
-//! 不得在渲染器里维护本地 preset 公式。
+//! The numeric kernel lives in [`ccut_motion`] (phase 1, design §5.3); this module only does lowering and projection.
+//! The signatures and semantics of `resolve_animation_pose` / `resolve_text_animation` are unchanged; `AnimationPose` is reduced to a projection type of `PoseBuffer`. Preview and export must consume the same function and must not keep a local preset formula in the renderer.
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -18,11 +16,11 @@ use ::motion::program::TargetId;
 use crate::schema::{Animation, AnimationSlot};
 
 pub use ::motion::lower_timeline::TimelineProgram;
-/// 预览与导出共用的采样网格量化器（ADR-M10：调用方传项目 fps）。
+/// The sampling-grid quantizer shared by preview and export (ADR-M10: the caller passes the project fps).
 pub use ::motion::sample::quantize_time;
-/// 文字 part 切分单元。唯一实现在 `motion::text_parts`。
+/// The unit used to split text into parts. The only implementation is in `motion::text_parts`.
 pub use ::motion::text_parts::PartUnit as AnimationPartUnit;
-/// 用 VoiceInk `AnimParts.split` 的规则切分文本；返回 UTF-8 字节区间。
+/// Splits text by the rules of VoiceInk `AnimParts.split`; returns UTF-8 byte ranges.
 pub use ::motion::text_parts::split_animation_parts;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +53,7 @@ impl AnimationPose {
         self == Self::IDENTITY
     }
 
-    /// `PoseBuffer` → `AnimationPose`（设计 §5.3 的投影）。
+    /// `PoseBuffer` → `AnimationPose` (the projection in design §5.3).
     fn from_buffer(buffer: &PoseBuffer) -> Self {
         Self {
             opacity: buffer.scalar_or("opacity", 1.0),
@@ -143,10 +141,9 @@ fn animation_view(animation: &Animation) -> AnimationInput<'_> {
     }
 }
 
-/// 把动画槽编译成 `MotionProgram`。`None` = 生命期非法（非有限或 ≤ 0）。
+/// Compiles an animation slot into a `MotionProgram`. `None` = invalid lifetime (non-finite or ≤ 0).
 ///
-/// `resolve_animation_pose` 走线程本地缓存；需要把编译提到帧循环外面的调用方
-/// （导出计划、舞台节点）可以直接用这个入口。
+/// `resolve_animation_pose` uses a thread-local cache; callers that need to hoist compilation out of the frame loop (the export plan, stage nodes) can call this entry point directly.
 pub fn compile_animation(
     animation: &Animation,
     start: f64,
@@ -163,11 +160,9 @@ pub fn compile_animation(
     )
 }
 
-// ── 编译缓存 ─────────────────────────────────────────────────────────
+// ── Compile cache ─────────────────────────────────────────────────────────
 //
-// `resolve_animation_pose` 是逐元素逐帧调用的（`render_plan.rs` 的帧循环、
-// GPUI 的舞台 tick），每次重新 lowering 会是明显回退。直接映射的定长缓存：
-// 命中路径不分配堆内存，未命中才 clone 一份 `Animation` 存 key。
+// `resolve_animation_pose` is called per element per frame (the frame loop in `render_plan.rs`, GPUI's stage tick); re-lowering each time would be a clear regression. It is a direct-mapped fixed-size cache: the hit path allocates no heap memory, and only on a miss is an `Animation` cloned to store as the key.
 
 const CACHE_SLOTS: usize = 512;
 
@@ -347,8 +342,7 @@ pub fn resolve_text_animation(
     };
     let local = (quantize_time(time, fps) - start).clamp(0.0, cascade.lifetime);
     if local >= cascade.finish {
-        // 旧实现在这里递归时传的是已 unwrap 的 `Some(end)`：等价，但会重新量化一次，
-        // 阶段 0 的 golden 是经这条路径录的，保持原样。
+        // The old implementation passed the already-unwrapped `Some(end)` when recursing here: equivalent, but it quantizes once more. The phase 0 golden was recorded through this path, so it is kept as is.
         return TextAnimationFrame::container(resolve_animation_pose(
             Some(animation),
             start,
@@ -473,7 +467,7 @@ mod tests {
 
     #[test]
     fn overshooting_user_ease_degrades_only_constrained_channels() {
-        // `rise` 缺省 0.5s：t = 0.25 正好是进度 0.5。
+        // `rise` defaults to 0.5s: t = 0.25 is exactly progress 0.5.
         let mut custom = slot("rise");
         custom.ease = Some("easeOutBack".to_owned());
         let animation = Animation {
@@ -531,7 +525,7 @@ mod tests {
             assert_eq!(pose_a.dy, 0.0);
             assert!(pose_b.dy > 0.0);
         }
-        // 同一个动画换窗口必须重新编译
+        // The same animation must be recompiled when its window changes
         let short = resolve_animation_pose(Some(&a), 0.0, Some(0.2), 0.2, 0.1, 60.0);
         let long = resolve_animation_pose(Some(&a), 0.0, Some(4.0), 4.0, 0.1, 60.0);
         assert!(short.opacity > long.opacity);

@@ -1,22 +1,19 @@
-//! 目录型配方绘制内核的**共用件**（元素方案 §7.2 / §7.4）。
+//! The **shared parts** of the drawing kernels for directory-type recipes (element plan §7.2 / §7.4).
 //!
-//! visualizer 与 progress 的配方内核都只描述"怎么把参数变成几何"，
-//! **一个样式参数都不自带**（与 motion 文档阶段 1 的 `loop_kernel` 同一纪律）。
-//! 本模块住着两类东西：
+//! The recipe kernels for visualizer and progress only describe "how parameters become geometry",
+//! and **carry no style parameters of their own** (the same discipline as `loop_kernel` in the motion doc, stage 1).
+//! This module holds two kinds of things:
 //!
-//! 1. **换算规则本身**：[`smoothstep`] / [`Easing`] / [`sample_row_linear`]。
-//!    这些是公式，不是配方数据。
-//! 2. **矢量几何工具**：[`DrawBox`] 的坐标换算与 [`rect_subpath`] /
-//!    [`sector_subpath`] / [`ring_subpath`] / [`swept_arc_subpath`] 几个 path
-//!    组装器。
+//! 1. **The conversion rules themselves**: [`smoothstep`], [`Easing`] and [`sample_row_linear`].
+//!    These are formulas, not recipe data.
+//! 2. **Vector geometry tools**: the coordinate conversion of [`DrawBox`] and the path assemblers [`rect_subpath`],
+//!    [`sector_subpath`], [`ring_subpath`] and [`swept_arc_subpath`].
 //!
-//! 这里的每一件都同时服务 CPU 矢量配方（visualizer 10 款、progress 的 CPU 参照）
-//! 与 progress 的 WGSL 打包（[`Easing::code`]）：两侧共用同一份换算，对拍才有
-//! 意义。只被某一个配方用到的东西不进本模块，放在配方自己的文件里。
+//! Each item here serves both the CPU vector recipes (visualizer's 10, progress's CPU reference) and the WGSL packing for progress ([`Easing::code`]). Both sides share the same conversion, so cross-checking them is meaningful. Anything used by only one recipe does not belong in this module; it stays in that recipe's own file.
 
 use crate::drawop::PathSeg;
 
-/// path 段构造（`verb` 编码见 [`PathSeg`]）。f64 → f32 的截断只发生在这里。
+/// Path segment construction (`verb` encoding: see [`PathSeg`]). The f64 → f32 truncation happens only here.
 pub(crate) fn seg(verb: u8, pts: [f64; 6]) -> PathSeg {
     PathSeg {
         verb,
@@ -47,17 +44,16 @@ pub(crate) fn path_seg_close() -> PathSeg {
     seg(4, [0.0; 6])
 }
 
-/// 元素盒的**纵向中线**（归一化 v）。
+/// The **vertical midline** of the element box (normalized v).
 ///
-/// 示波器 / 丝带这类"围绕中线摆动"的配方以它为零位。几何常量，不是样式参数
-/// （柱状家族的 `align: bottom` 形态把零位挪到盒底，那是配方自己的事）。
+/// Recipes that "swing around a midline", such as the oscilloscope and ribbon, use it as zero. It is a geometric constant, not a style parameter.
+/// (The `align: bottom` form of the bar family moves zero to the bottom of the box. That is the recipe's own business.)
 pub const MID_V: f64 = 0.5;
 
-/// 元素盒（画布像素，左上原点）。
+/// Element box (canvas pixels, origin top-left).
 ///
-/// 配方在归一化的 `(u, v)` 里工作，且 **v 轴向上**（progress 的环"从正上方
-/// 顺时针"、柱状家族的"贴底对齐"两处互相印证，见 [`DrawBox::at`]）；画布是
-/// y 向下的，因此换算必须翻一次 v。
+/// Recipes work in normalized `(u, v)` coordinates with **the v axis pointing up**. The progress ring's "clockwise from straight up" and the bar family's
+/// "bottom-aligned" corroborate each other (see [`DrawBox::at`]). The canvas is y-down, so the conversion must flip v once.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawBox {
     pub x: f64,
@@ -71,12 +67,12 @@ impl DrawBox {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
 
-    /// 盒内居中的最大正方形。
+    /// The largest square centered inside the box.
     ///
-    /// `aspect: "square"` 的配方（`ring_bars` / `ring_wave` / `pulse_rings` /
-    /// `circle` / `donut` …）用它把圆画成**圆**而不是椭圆。CucCut 的几何表把
-    /// 这类元素的默认盒写成"画幅宽 30% × 画幅高 30%"（`ccut_timeline::geometry`），
-    /// 在 16:9 上**不是**像素正方。配方既然显式声明了 `square`，绘制端就按它办。
+    /// Recipes with `aspect: "square"` (`ring_bars`, `ring_wave`, `pulse_rings`,
+    /// `circle`, `donut` and so on) use it to draw a circle as a **circle** rather than an ellipse. CucCut's geometry table sets the default
+    /// box for such elements to "30% of frame width × 30% of frame height" (`ccut_timeline::geometry`), which is **not** a pixel square at 16:9.
+    /// Since the recipe explicitly declares `square`, the drawing side follows that.
     pub fn inscribed_square(&self) -> DrawBox {
         let side = self.w.min(self.h);
         DrawBox {
@@ -87,13 +83,13 @@ impl DrawBox {
         }
     }
 
-    /// 归一化 `(u, v)`（左下原点、v 向上）→ 画布像素（左上原点、y 向下）。
+    /// Normalized `(u, v)` (origin bottom-left, v up) → canvas pixels (origin top-left, y down).
     pub fn at(&self, u: f64, v: f64) -> (f64, f64) {
         (self.x + self.w * u, self.y + self.h * (1.0 - v))
     }
 }
 
-/// GLSL 的 `smoothstep`：`edge0 == edge1` 时退化成阶跃（GLSL 未定义，这里定死）。
+/// GLSL's `smoothstep`. When `edge0 == edge1` it degenerates into a step (undefined in GLSL, so fixed here).
 pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     if edge0 == edge1 {
         return if x < edge0 { 0.0 } else { 1.0 };
@@ -102,11 +98,11 @@ pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// 配方 `easing` 的封闭取值（注册表解析期已按 `ENUM_KEYS` 校验过取值域）。
+/// The closed set of values for recipe `easing` (the value domain was already validated against `ENUM_KEYS` at registry parse time).
 ///
-/// visualizer 与 progress 共用一个枚举：它们的取值**同族**（都是 `easeOut*`，
-/// 都作用在一个 0..1 的幅度上），取值域的差别是注册表的事，绘制端只需要
-/// "名字 → 曲线"。
+/// visualizer and progress share one enum. Their values belong to **the same family** (both are `easeOut*` and both act on a
+/// 0..1 amplitude). Differences in the value domains are the registry's business, and the drawing side only needs
+/// "name → curve".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Easing {
     None,
@@ -117,8 +113,8 @@ pub enum Easing {
 }
 
 impl Easing {
-    /// 未知名在**注册表解析期**就被拦下（`manifest-invalid`），绘制端读到
-    /// `None` 只可能是有人绕过了注册表；此时按恒等处理，不 panic。
+    /// Unknown names are caught at **registry parse time** (`manifest-invalid`). If the drawing side reads `None`, someone must have bypassed
+    /// the registry. In that case treat it as identity, and do not panic.
     pub fn parse(name: &str) -> Option<Easing> {
         match name {
             "none" => Some(Easing::None),
@@ -136,8 +132,8 @@ impl Easing {
             Easing::OutQuad => 1.0 - (1.0 - x) * (1.0 - x),
             Easing::OutSine => (x * std::f64::consts::PI / 2.0).sin(),
             Easing::OutCubic => 1.0 - (1.0 - x).powi(3),
-            // `exp2` 比 `pow(2, −10x)` 少一次 `exp(ln 2 · ·)` 的往返，
-            // 两边（CPU / WGSL）都用它。
+            // `exp2` saves one `exp(ln 2 · ·)` round trip compared with `pow(2, −10x)`.
+            // Both sides (CPU and WGSL) use it.
             Easing::OutExpo => {
                 if x >= 1.0 {
                     1.0
@@ -148,11 +144,11 @@ impl Easing {
         }
     }
 
-    /// 送进 WGSL 的**数值编码**（`common.wgsl` 的 `applyEasing` 按它分派）。
+    /// The **numeric encoding** sent to WGSL (`applyEasing` in `common.wgsl` dispatches on it).
     ///
-    /// 编码表的唯一真相在这里：shader 里因此没有"哪个样式用哪条缓动"的知识，
-    /// 配方的字符串名也不必进 WGSL。改这里必须同步改 `applyEasing`，
-    /// `tests/shader_wgsl.rs` 用一条对拍钉住两边。
+    /// The single source of truth for the encoding table is here. The shader therefore has no knowledge of "which style uses which easing", and
+    /// the recipe's string names never need to enter WGSL. Any change here must be synchronized with `applyEasing`.
+    /// `tests/shader_wgsl.rs` pins the two sides together with a cross-check.
     pub fn code(self) -> u32 {
         match self {
             Easing::None => 0,
@@ -164,11 +160,11 @@ impl Easing {
     }
 }
 
-/// 一条字节行的**双线性等价采样**：`GL_LINEAR` + `CLAMP_TO_EDGE`，还 `0..1`。
+/// **Bilinear-equivalent sampling** of one byte row: `GL_LINEAR` + `CLAMP_TO_EDGE`, and `0..1`.
 ///
-/// 与 §8.3 的音频纹理（`w × 2` 的 `R8Unorm`，采样器 linear / clamp-to-edge）
-/// 同一套换算：纹素中心在 `(i + 0.5) / w`，所以归一化坐标 `u` 对应的纹素坐标是
-/// `u·w − 0.5`。声波配方读频谱行都经这里，将来若有 GPU 声波配方也按同一条采样。
+/// It uses the same conversion as the audio texture in §8.3 (`w × 2` `R8Unorm`, sampler linear / clamp-to-edge).
+/// Texel centers sit at `(i + 0.5) / w`, so the texel coordinate for a normalized coordinate `u` is
+/// `u·w − 0.5`. Waveform recipes read spectrum rows through here, and any future GPU waveform recipe will sample the same way.
 pub fn sample_row_linear(row: &[u8], u: f64) -> f64 {
     if row.is_empty() {
         return 0.0;
@@ -184,12 +180,12 @@ pub fn sample_row_linear(row: &[u8], u: f64) -> f64 {
     index(0.0) * (1.0 - fraction) + index(1.0) * fraction
 }
 
-// ── path 组装 ─────────────────────────────────────────────────────
+// ── path assembly ─────────────────────────────────────────────────────
 
-/// 一个矩形子路径（画布顺时针）。
+/// One rectangle subpath (clockwise on the canvas).
 ///
-/// 多个子路径同向叠在一条 path 里，用 **nonzero** 填充就是并集；分成多条
-/// `FillRect` 画会在重叠处把半透明色叠两次。
+/// Several subpaths in the same direction stacked in one path fill as a union under **nonzero**. Drawing them as separate `FillRect`s would
+/// blend a semi-transparent color twice where they overlap.
 pub fn rect_subpath(out: &mut Vec<PathSeg>, x: f64, y: f64, w: f64, h: f64) {
     if !(w > 0.0 && h > 0.0) {
         return;
@@ -201,21 +197,21 @@ pub fn rect_subpath(out: &mut Vec<PathSeg>, x: f64, y: f64, w: f64, h: f64) {
     out.push(path_seg_close());
 }
 
-/// 极角 → 画布点：`phi` 自**正上方**起、**顺时针**为正。
+/// Polar angle → canvas point. `phi` starts from **straight up** and is positive **clockwise**.
 ///
-/// 与 `progress_circle` / `progress_donut` 的 `atan(-centred.x, -centred.y) + PI`
-/// 同一朝向（那条公式在 v 向上的 `texCoord` 里给出"从正上方顺时针"）。
+/// Same orientation as `atan(-centred.x, -centred.y) + PI` in `progress_circle` and `progress_donut`.
+/// That formula gives "clockwise from straight up" in the v-up `texCoord`.
 pub fn polar(center: (f64, f64), radius: f64, phi: f64) -> (f64, f64) {
     (center.0 + radius * phi.sin(), center.1 - radius * phi.cos())
 }
 
-/// 一段圆弧的三次贝塞尔近似，追加到 `out`（不含 move）。
+/// Cubic Bézier approximation of an arc, appended to `out` (no move included).
 fn arc_segments(out: &mut Vec<PathSeg>, center: (f64, f64), radius: f64, from: f64, to: f64) {
     let sweep = to - from;
     if sweep == 0.0 || radius <= 0.0 {
         return;
     }
-    // 每段不超过四分之一圆：贝塞尔近似的误差在 π/2 以内可以忽略。
+    // Each segment spans no more than a quarter circle, so the Bézier approximation error (within π/2) is negligible.
     let count = (sweep.abs() / (std::f64::consts::FRAC_PI_2))
         .ceil()
         .max(1.0);
@@ -240,9 +236,9 @@ fn arc_segments(out: &mut Vec<PathSeg>, center: (f64, f64), radius: f64, from: f
     }
 }
 
-/// 完整的圆环（`inner <= 0` 时是实心圆盘）。
+/// A full ring (`inner <= 0` gives a solid disc).
 ///
-/// 外圈顺时针、内圈逆时针 ⇒ nonzero 填充自然挖空，不需要 even-odd。
+/// Outer circle clockwise and inner circle counter-clockwise, so a nonzero fill hollows it out naturally. No even-odd is needed.
 pub fn ring_subpath(out: &mut Vec<PathSeg>, center: (f64, f64), outer: f64, inner: f64) {
     if outer <= 0.0 {
         return;
@@ -257,11 +253,11 @@ pub fn ring_subpath(out: &mut Vec<PathSeg>, center: (f64, f64), outer: f64, inne
     }
 }
 
-/// **反向绕**的整圆子路径：追加在正向子路径（[`rect_subpath`] / [`ring_subpath`]
-/// 的外圈）后面，nonzero 填充下就是一个**洞**。
+/// **Reverse-wound** full circle subpath. Appended after the forward subpath (the outer circle from [`rect_subpath`] or
+/// [`ring_subpath`]), it becomes a **hole** under nonzero fill.
 ///
-/// [`polar`] 的 φ=0 在顶点、φ 增大往右——在 y 向下的画布上是顺时针，与
-/// [`rect_subpath`] 同向，因此洞必须反着扫一圈。
+/// The φ=0 point of [`polar`] is at the top, and φ increasing goes right. On the y-down canvas that is clockwise, the same direction as
+/// [`rect_subpath`], so the hole must be traced counter-clockwise.
 pub fn hole_subpath(out: &mut Vec<PathSeg>, center: (f64, f64), radius: f64) {
     if radius <= 0.0 {
         return;
@@ -272,8 +268,7 @@ pub fn hole_subpath(out: &mut Vec<PathSeg>, center: (f64, f64), radius: f64) {
     out.push(path_seg_close());
 }
 
-/// 环形扇区：`[from, to]` 角区间 × `[inner, outer]` 半径区间。
-/// `inner <= 0` 时退化成饼形。
+/// Ring sector: angle range `[from, to]` × radius range `[inner, outer]`. When `inner <= 0` it degenerates into a pie slice.
 pub fn sector_subpath(
     out: &mut Vec<PathSeg>,
     center: (f64, f64),
@@ -302,20 +297,18 @@ pub fn sector_subpath(
     out.push(path_seg_close());
 }
 
-/// 半径 `dot` 的圆盘沿半径 `orbit` 的圆弧 `[from, to]` 扫过的**并集**。
+/// The **union** of a disc of radius `dot` swept along the arc `[from, to]` of radius `orbit`.
 ///
-/// `snake` 系列的参考实现是「逐度累加一个个小圆的 alpha 再 `min(…, 1)`」。
-/// 圆心间距（1° 上的 0.4 半径 ≈ 0.007）只有圆半径（0.1）的十四分之一，叠加场
-/// 因此在整个并集内部早就饱和，半覆盖等值线就是**并集的边界**本身。
+/// The reference implementation of the `snake` family adds up the alpha of many small circles, one per degree, and then applies `min(…, 1)`.
+/// The spacing between circle centers (0.4 of the radius at 1°, about 0.007) is only one-fourteenth of the circle radius (0.1), so the summed field
+/// is already saturated throughout the interior of the union. The half-coverage contour is therefore the **boundary of the union** itself.
 ///
-/// 而这个并集有闭式：到圆弧距离 ≤ `dot` 的点集 = `[orbit − dot, orbit + dot]`
-/// 的环形扇区 ∪ 两个端点圆盘。角度落在扇区内的点，最近的弧上点与它同角；
-/// 角度在扇区外的点，最近的弧上点是端点——两种情形正好穷尽，没有第三种。
-/// 于是逐度循环只剩下**定圈数**这一件事（`maxIterations` / `angleIncrementDeg`
-/// 仍是数据真相），几何本身一条 [`sector_subpath`] + 两条 [`ring_subpath`] 说完。
+/// This union has a closed form. The set of points within distance `dot` of the arc is the ring sector `[orbit − dot, orbit + dot]`
+/// together with two endpoint discs. For a point whose angle falls inside the sector, the nearest arc point lies at the same angle. For a point whose angle falls outside the sector, the nearest arc point is an endpoint.
+/// These two cases cover everything, with no third case. The per-degree loop therefore reduces to **a fixed number of loops** (`maxIterations` and `angleIncrementDeg`
+/// remain the source of truth for the data). The geometry itself is stated by one [`sector_subpath`] and two [`ring_subpath`] calls.
 ///
-/// 三段一律按 [`ring_subpath`] 的朝向（`phi` 增加）压入：nonzero 填充求并集的
-/// 前提是同向，反向的扇区会把端点圆盘**挖掉**。
+/// All three pieces are pushed in the orientation of [`ring_subpath`] (`phi` increasing). A nonzero fill computes a union only when the directions agree. A sector in the opposite direction would **cut out** the endpoint discs.
 pub fn swept_arc_subpath(
     out: &mut Vec<PathSeg>,
     center: (f64, f64),
@@ -340,7 +333,7 @@ pub fn swept_arc_subpath(
 mod tests {
     use super::*;
 
-    /// `edge0 == edge1` 退化成阶跃；其余处与 GLSL 同式。
+    /// `edge0 == edge1` degenerates into a step. Elsewhere it uses the same formula as GLSL.
     #[test]
     fn the_smoothstep_degenerates_to_a_step() {
         assert_eq!(smoothstep(0.5, 0.5, 0.4), 0.0);
@@ -350,16 +343,16 @@ mod tests {
         assert_eq!(smoothstep(0.0, 1.0, 2.0), 1.0);
     }
 
-    /// 纹素中心在 `(i + 0.5)/w`：`u = 0` 与 `u = 1` 落在 clamp-to-edge 上。
+    /// Texel centers sit at `(i + 0.5)/w`, so `u = 0` and `u = 1` fall on clamp-to-edge.
     #[test]
     fn the_row_sampler_matches_gl_linear_clamp_to_edge() {
         let row = [0u8, 255, 0, 255];
         assert!((sample_row_linear(&row, 0.0) - 0.0).abs() < 1e-12);
         assert!((sample_row_linear(&row, 1.0) - 1.0).abs() < 1e-12);
-        // 第 0 与第 1 个纹素的正中间 = 两者平均。
+        // Exactly midway between texels 0 and 1, which is their average.
         let middle = sample_row_linear(&row, 0.25);
         assert!((middle - 0.5).abs() < 1e-9, "{middle}");
-        // 纹素中心处取到纹素本身。
+        // At a texel center, the texel itself is returned.
         assert!((sample_row_linear(&row, 0.375) - 1.0).abs() < 1e-12);
         assert_eq!(sample_row_linear(&[], 0.5), 0.0);
     }
@@ -380,7 +373,7 @@ mod tests {
         assert!(Easing::parse("easeInBounce").is_none());
     }
 
-    /// v 轴翻转：归一化 `v = 0` 是盒子**底边**。
+    /// v-axis flip: normalized `v = 0` is the **bottom edge** of the box.
     #[test]
     fn the_box_flips_v_from_bottom_up_to_canvas_down() {
         let bbox = DrawBox {
@@ -397,7 +390,7 @@ mod tests {
         assert_eq!(square.center(), bbox.center());
     }
 
-    /// 极角自正上方顺时针：π/2 在右、π 在下。
+    /// Polar angle runs clockwise from straight up: π/2 is on the right, π is at the bottom.
     #[test]
     fn the_polar_helper_starts_at_the_top_and_turns_clockwise() {
         let center = (0.0, 0.0);
@@ -409,7 +402,7 @@ mod tests {
         assert!(bottom.0.abs() < 1e-12 && (bottom.1 - 1.0).abs() < 1e-12);
     }
 
-    /// 扫掠并集：单点退化成一个圆盘；反向区间与正向区间画出同一条路径。
+    /// Swept union: a single point degenerates into a disc. A reverse interval and a forward interval draw the same path.
     #[test]
     fn the_swept_arc_is_direction_independent_and_degenerates_to_a_disc() {
         let center = (0.0, 0.0);
@@ -426,8 +419,8 @@ mod tests {
         expected.extend(disc.iter().copied());
         ring_subpath(&mut expected, polar(center, 0.4, 1.0), 0.1, 0.0);
         assert_eq!(forward, expected);
-        // 反向区间：扇区的朝向被扶正（否则 nonzero 会把端点圆盘挖掉），
-        // 只有两个端点圆盘的先后次序不同。
+        // Reverse interval: the sector's orientation is corrected (otherwise nonzero would cut out the endpoint discs).
+        // Only the order of the two endpoint discs differs.
         let mut backward = Vec::new();
         swept_arc_subpath(&mut backward, center, 0.4, 0.1, 1.0, 0.0);
         let sector_len = expected.len() - 2 * disc.len();

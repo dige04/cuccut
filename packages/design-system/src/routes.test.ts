@@ -35,7 +35,7 @@ const DESIGN_INDEX = '<!doctype html><html><head><script>window.design=1</script
 const SYSTEM_INDEX = '<!doctype html><html><head><script>window.designSystem=1</script></head><body></body></html>';
 const RUN_HTML = '<!doctype html><html><head><script>window.run=1</script></head><body></body></html>';
 const INDEX = JSON.stringify({ v: 3, layout: 'files', createdOnFiles: { v: 1, at: '2026-01-01T00:00:00.000Z' }, title: 'Acme', namespace: 'Acme' });
-/** 设计稿的布局（这个包不依赖 @cuccut/design）：根目录里不在 assets/ 下的文件。 */
+/** Layout of a design canvas (this package does not depend on @cuccut/design): the files in the root directory that are not under assets/. */
 const CANVAS_LAYOUT: DeckLayout = {
   isFile: rel => !rel.startsWith('assets/') && rel !== 'assets',
   roots: [{ rel: '', descend: true }],
@@ -152,7 +152,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(await run.text()).toBe(RUN_HTML);
     expect((await fetch(at('assets/app-1.js'))).headers.get('content-type')).toBe('text/javascript; charset=utf-8');
     expect((await fetch(at('artifact-type/missing.html'))).status).toBe(404);
-    // 与设计稿编辑器的 CSP 不是同一个函数，但同样不放行 CDN
+    // Not the same function as the design canvas editor's CSP, but likewise does not allow CDNs
     expect(designSystemEditorCsp()).toBe(designEditorCsp());
   });
 
@@ -244,7 +244,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
       options = { canEdit: true, blobScope: scope as DeckRouteOptions['blobScope'] };
       expect([await status(systemBlob), await status(designBlob), await status(deckBlob)], scope).toEqual([system, design, deck]);
     }
-    // grant 下的素材只在自己的目录里找
+    // Assets under a grant are looked up only in their own directory
     expect((await fetch(at(`_blob/${designBlob}`))).status).toBe(404);
   });
 

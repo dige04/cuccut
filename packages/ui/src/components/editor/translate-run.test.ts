@@ -195,7 +195,7 @@ const created: PipelineCaptionsSummary = {
   transactionId: 'tx-cap',
 };
 
-/** 翻译流程完成时的摘要；`captions` 不给时是没有这一步的旧记录。 */
+/** Summary when the translation flow completes. `captions` absent means an old record without that step. */
 const summary = (captions?: PipelineCaptionsSummary) =>
   ({
     videoId: 'vid',
@@ -281,7 +281,7 @@ describe('提交翻译', () => {
         style: '口语',
         provider: 'openai',
         model: 'gpt-5',
-        // 字幕层由流程建，双语照用户选的。
+        // The caption layer is created by the flow, and bilingual follows the user's choice.
         captions: true,
         bilingual: true,
         captionStyle: DEFAULT_CAPTION_STYLE,
@@ -289,7 +289,7 @@ describe('提交翻译', () => {
       commandId: expect.stringMatching(/^cmd_/),
     });
     expect(useTranslateRun.getState().runs.vid).toMatchObject({ jobId: 'p1', status: 'running', targetLanguage: 'en' });
-    // 同一个视频同时只翻一门。
+    // Only one language can be translated per video at a time.
     expect(await startTranslate({ ...setup, targetLanguage: 'ja' })).toBe(false);
     expect(calls).toHaveLength(1);
   });
@@ -440,13 +440,13 @@ describe('失败、中断与重试', () => {
     expect(deps.runtime.retryPipeline).toHaveBeenCalledWith('p1');
     expect(useTranslateRun.getState().runs.vid).toMatchObject({ jobId: 'p1', status: 'running', retriedAt: 'u1' });
     expect(useTranslateRun.getState().problems.vid).toBeUndefined();
-    // 别的任务的事件进来，镜像里还是那条失败的旧记录：不收尾。
+    // Events from another task arrive while the mirror still holds the old failed record: do not wrap up.
     useJobs.setState({ jobs: [failed, job('running', { jobId: 'other', kind: 'transcribe', pipeline: undefined })] });
     await flush();
     expect(useTranslateRun.getState().runs.vid?.status).toBe('running');
     expect(useTranslateRun.getState().problems.vid).toBeUndefined();
 
-    // 重跑起来、做完了（字幕层由流程建）：留收据。
+    // The re-run finished (the flow created the caption layer): leave a receipt.
     useJobs.setState({ jobs: [job('running', { updatedAt: 'u2' })] });
     await flush();
     useJobs.setState({
@@ -510,7 +510,7 @@ describe('改一句译文', () => {
     };
     const sentences = speechSentences(speechBody)!;
     const body = readTranslation(translationBody)!;
-    // 指纹对上现在的原句，配对出来是正常的两句。
+    // The fingerprint matches the current source sentence, so the pair is two normal sentences.
     body.units = body.units.map((u, i) => ({ ...u, sourceFingerprint: sentences[i]!.fingerprint }));
     const rows = pairRows(sentences, body);
     const documents = { speech: speechRecord, tr: translationRecord, 'cap-en': captionRecord };
@@ -542,7 +542,7 @@ describe('改一句译文', () => {
     });
     expect(toasts).toEqual([['positive', '已改写这一句译文', true]]);
 
-    // 文字没变：不写。
+    // The text is unchanged: do not write.
     expect(
       await editTranslation({
         videoId: 'vid',
@@ -576,9 +576,9 @@ describe('就地重译过期句', () => {
       model: 'gpt-5',
     });
     expect(useTranslateRun.getState().refreshes.tr).toMatchObject({ jobId: 'p1', count: 1 });
-    // 同一份译文同时只刷新一次。
+    // The same translation is refreshed only once at a time.
     expect(await startRefresh({ videoId: 'vid', record: translationRecord, language: 'en', count: 2, model })).toBe(false);
-    // 这不是一次新翻译：不占翻译的运行态。
+    // This is not a new translation, so it does not take up the translation's running state.
     expect(useTranslateRun.getState().runs.vid).toBeUndefined();
 
     const refresh = { revision: '2', sentences: ['s-w3'], removedUnitIds: [], captionDocumentIds: ['cap-en'], transactionId: 'tx-refresh' };
@@ -590,7 +590,7 @@ describe('就地重译过期句', () => {
     expect(useTranslateRun.getState().refreshes.tr).toBeUndefined();
     expect(useTranslateRun.getState().receipts.vid).toBeUndefined();
     expect(toasts).toEqual([['positive', '已重译 1 句 · 字幕跟着更新', true]]);
-    // 提示上的撤销：撤流程写译文连同字幕的那一笔。
+    // Undo on the notice: undoes the transaction in which the flow wrote the translation and created the caption layer.
     undos[0]!();
     expect(deps.runtime.videos.undo).toHaveBeenCalledWith({ transaction: 'tx-refresh' });
   });
@@ -603,7 +603,7 @@ describe('就地重译过期句', () => {
     useJobs.setState({ jobs: [job('failed', { stoppedAt: 'translate', error: { code: 'MODEL_OUTPUT_INVALID', message: '模型回的不是合法的 JSON' } })] });
     await flush();
     expect(useTranslateRun.getState().refreshes.tr).toBeUndefined();
-    // 带着是哪一份译文：刷新过期译文的工具页只挂就地刷新的问题，新翻译的不挂。
+    // Carries which translation document it is for. The tool page that refreshes outdated translations only attaches in-place refresh issues, not new-translation issues.
     expect(useTranslateRun.getState().problems.vid).toMatchObject({ kind: 'failed', title: '重译失败', message: '模型回的不是合法的 JSON', retry: null, refresh: 'tr' });
   });
 
@@ -670,7 +670,7 @@ describe('标为过期与去掉过期标记', () => {
     bindTranslate(deps);
     const sentences = speechSentences(speechBody)!;
     const body = readTranslation(structuredClone(translationBody))!;
-    // 第二句的指纹对上，第一句的指纹是旧的：原文改过。
+    // The second sentence's fingerprint matches but the first sentence's is old: the source was edited.
     body.units = body.units.map((u, i) => ({ ...u, sourceFingerprint: i === 1 ? sentences[1]!.fingerprint : 'sha256:old' }));
     const rows = pairRows(sentences, body);
     expect(rows[0]!.state).toBe('source-changed');

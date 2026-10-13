@@ -7,16 +7,12 @@ import type { GrantService } from './grant-service.ts';
 import { RcGrants } from '@cuccut/protocol/messages/runtime-core';
 
 /**
- * 固定流程里的外发调用（架构设计 §7.9、§12.5）：流程的步骤在进程内逐批调用文本模型，不经 JobManager 的提交，
- * 所以在这里接上授权与预算：
+ * Outbound calls in fixed pipelines (architecture design §7.9, §12.5). Pipeline steps call the text model in batches within the process, without going through JobManager submission, so authorization and budget are attached here:
  *
- * - 启动（与重试）时先判断：没有授权覆盖、额度不够时 `pipelines.start` 直接以 `GRANT_REQUIRED` / `BUDGET_EXCEEDED` 拒绝，
- *   一次拒绝覆盖流程的全部几种外发（`remedy.commands` 逐项给出）；在场的用户（桌面界面）的拒绝另带 `pendingGrants`；
- * - 执行时每一次调用（含输出不合约定的重发）各预留一次、结束时结算：重试也消耗预算；额度在中途用完时这一步以
- *   `BUDGET_EXCEEDED` 失败，可以在调高上限之后 `pipelines.retry`；
- * - 步骤的子任务 `jobId` 记在预留上（`grants.usage` 看得到），步骤记录本身不带 `grant`（一步有很多次调用）；
- * - 智能体在任务里启动的流程，每次调用同样占用这个任务的预算（经子任务找到任务，`GrantService.begin`）；启动前不看任务预算
- *   （§7.8）：不外发的步骤（下载、导入）照常完成，超出时停在外发的那一步、以 `TASK_BUDGET_EXCEEDED` 失败。
+ * - At start (and on retry), check first. Without a grant covering it, or with insufficient quota, `pipelines.start` rejects directly with `GRANT_REQUIRED` / `BUDGET_EXCEEDED`. One rejection covers all the kinds of outbound calls the pipeline makes (`remedy.commands` gives each one). A rejection to a user who is present (the desktop UI) also carries `pendingGrants`.
+ * - At execution, each call (including re-sends when the output does not match the contract) reserves once and settles when it ends. Retries also consume budget. If quota runs out midway, this step fails with `BUDGET_EXCEEDED`, and it can be retried with `pipelines.retry` after the limit is raised.
+ * - A step's subtask `jobId` is recorded on the reservation (visible in `grants.usage`). The step record itself carries no `grant`, since a step makes many calls.
+ * - A pipeline started by an agent within a task charges each call to that task's budget (the task is found through the subtask, `GrantService.begin`). The task budget is not checked at start (§7.8). Steps that send nothing out (download, import) still complete. When the budget is exceeded, the pipeline stops at the outbound step and fails with `TASK_BUDGET_EXCEEDED`.
  */
 
 interface StepGrantContext {
@@ -26,7 +22,7 @@ interface StepGrantContext {
 
 const stepContext = new AsyncLocalStorage<StepGrantContext>();
 
-/** 流程启动前要判断的一种外发：哪种能力、交给哪个 Provider 与模型、外发哪些数据。 */
+/** An outbound call to judge before a pipeline starts: which capability, which Provider and model it goes to, and which data it sends. */
 export interface PipelineOutbound {
   capability: ModelServiceCapability;
   providerId: string;
@@ -35,8 +31,7 @@ export interface PipelineOutbound {
 }
 
 /**
- * 包一层：步骤在执行期间带上视频与子任务，外发调用据此匹配授权的范围。`outbound` 列出启动前要判断的外发
- * （不给时是冻结的执行者的一次文本生成）；一个流程可以有几种（例如翻译配音的文本生成与语音合成）。
+ * Wrapper: while a step runs, it carries the video and subtask, so outbound calls can be matched against the scope of the grant. `outbound` lists the outbound calls to judge before start (when not given, it is the one text generation of the frozen executor). A pipeline can have several kinds, for example text generation and speech synthesis for translation and dubbing.
  */
 export function withPipelineGrants<P, R>(
   definition: PipelineDefinition<P, R>,
@@ -48,13 +43,13 @@ export function withPipelineGrants<P, R>(
     ...definition,
     async prepare(params, options) {
       const plan = await definition.prepare(params, options);
-      // 智能体在任务里启动（或重试）的流程：任务只用来匹配只属于它的授权，任务预算留到每一步外发时接纳（§7.8）。
+      // A pipeline started (or retried) by an agent within a task: the task is used only to match grants that belong to it. The task budget is checked at each outbound step (§7.8).
       const taskId = options.submitter ? grants.taskOf(options.submitter) : null;
       const calls = outbound
         ? outbound(plan)
         : [{ capability: 'generateText' as const, providerId: plan.providerId, modelId: plan.modelId, dataKinds }];
-      // 启动前的判断：没有授权、额度不够时不创建流程。先判断全部几种外发，一次拒绝说清楚要做的全部；
-      // 在场的用户（工具页）的拒绝带上待批准的项，由客户端发放之后用同一个 commandId 重新提交（§7.9）。这里从不发放授权。
+      // Judgment before start: with no grant or insufficient quota, no pipeline is created. All kinds of outbound calls are judged first, so one rejection explains everything to be done.
+      // A rejection to a user who is present (the tool page) carries the pending items. The client grants them and resubmits with the same commandId (§7.9). Grants are never issued here.
       const items: GrantRequestItem[] = [];
       const refusals: RpcError[] = [];
       const purpose = RcGrants.pipelinePurpose({ label: typeof definition.label === 'function' ? definition.label() : definition.label });
@@ -98,7 +93,7 @@ export function withPipelineGrants<P, R>(
   };
 }
 
-/** 流程用的文本生成：每次调用判断、预留并结算。本机与节点的调用不经过授权。 */
+/** Text generation for pipelines: each call is judged, reserved and settled. Calls to local and node models do not go through grants. */
 export function grantedTextGenerator(
   text: Pick<TextGenerator, 'generate'>,
   grants: GrantService,
@@ -135,7 +130,7 @@ export function grantedTextGenerator(
   };
 }
 
-/** 同一个接收方、同样的数据、同一个视频：一条授权就覆盖两者。 */
+/** Same recipient, same data, same video: one grant covers both. */
 function sameOutbound(a: GrantRequestItem, b: GrantRequestItem): boolean {
   return (
     a.recipient === b.recipient &&

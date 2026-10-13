@@ -14,7 +14,7 @@ import { pl } from './rc-common.pl.ts';
 import { tr } from './rc-common.tr.ts';
 import { vi } from './rc-common.vi.ts';
 
-/** runtime-core 各处共用的短句。英文是键与类型的来源，译文在 `rc-common.<语言>.ts`。 */
+/** Short phrases shared across runtime-core. English is the source of keys and types; translations are in `rc-common.<language>.ts`. */
 const en = {
   cancelled: 'Cancelled',
   videoNotOpen: "The video isn't open",
